@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/proposed/architecture/2026-08-20-coding-go-clients-shared-node-host.md
+2026-08-20-coding-go-clients-shared-node-host.md: 2186259757050bfebd5d1c4bfef5d8e2ac229618
+2026-08-20-coding-go-clients-shared-node-host.zh.md: b3d852ce751d1c6295110ff52d2473ae6327fd9a

@@ -23,16 +23,21 @@ export const WEB_STARTUP_SERVICE = 'webStartup'
 export interface WebStartupValues {
   /** Whether this invocation opens the default browser after startup. */
   openBrowser: boolean
+  /** Whether this invocation prints the human-readable URL line after startup. */
+  printUrl: boolean
   /** `--host`, absent when the invocation did not name one. */
   host?: string
   /** `--port`, absent when the invocation did not name one. */
   port?: number
   /** Explicit `--trusted-host` authorities, in argument order. */
   trustedHosts: string[]
+  /** Whether a Coding native launcher owns this loopback-only Host process. */
+  managedHost: boolean
 }
 
 /** The web flag family, as commander parsed it. */
 interface WebOptions {
+  codingHost?: boolean
   host?: string
   open: boolean
   port?: string
@@ -49,6 +54,7 @@ function webCommand(): Command {
     .description('Serve the DeepSeek Harness browser UI.')
     .helpOption('-h, --help', 'show this help')
     .option('--host <host>', 'bind host')
+    .option('--coding-host', 'run as the local Host managed by a Coding native client')
     .option('--no-open', 'do not open the Web UI in the default browser')
     .option('--port <port>', 'listen port; pass 0 to let the OS pick a free one')
     .option('--trusted-host <authority...>', 'extra authority the /api browser-trust fence accepts (host or host:port; repeatable)')
@@ -57,6 +63,7 @@ Examples:
   dsh --profile web                          serve on the composed host and port
   dsh --profile web --no-open                serve without opening a browser
   dsh --profile web --port 8080              serve on another port
+  dsh --profile web --coding-host            serve a Coding native client on an OS-selected loopback port
 `)
 }
 
@@ -77,11 +84,20 @@ export function apply(ctx: Context): void {
     if (options.port !== undefined && !/^\d+$/.test(options.port)) {
       program.error(`error: --port must be a number, got ${JSON.stringify(options.port)}`)
     }
+    if (options.codingHost === true && options.port !== undefined && options.port !== '0') {
+      program.error('error: --coding-host only supports --port 0')
+    }
     ctx.provide(WEB_STARTUP_SERVICE, {
-      openBrowser: options.open,
-      ...options.host !== undefined && { host: options.host },
-      ...options.port !== undefined && { port: Number(options.port) },
+      openBrowser: options.codingHost === true ? false : options.open,
+      printUrl: options.codingHost !== true,
+      ...options.codingHost === true
+        ? { host: '127.0.0.1' }
+        : options.host !== undefined ? { host: options.host } : {},
+      ...options.codingHost === true
+        ? { port: 0 }
+        : options.port !== undefined ? { port: Number(options.port) } : {},
       trustedHosts: options.trustedHost ?? [],
+      managedHost: options.codingHost === true,
     } satisfies WebStartupValues)
   })
   parseCmdline(ctx, program)

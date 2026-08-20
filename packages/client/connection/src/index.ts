@@ -10,6 +10,17 @@ import { bridge, DEFAULT_MAX_REQUEST_BODY_BYTES } from './http-bridge.ts'
 import { assertTrustedAuthority, isTrustedApiRequest } from './api-request-trust.ts'
 import { HostConnectionService } from './rpc-host.ts'
 import { rejectWebSocketUpgrade, WebSocketDownlinks } from './websocket-downlink.ts'
+import { WebClientConnections } from './web-client-connections.ts'
+
+export { WebClientConnections } from './web-client-connections.ts'
+export type { WebClientConnectionListener } from './web-client-connections.ts'
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /** Live count of WebSocket downlinks owned by this Host. */
+    webClientConnections?: WebClientConnections
+  }
+}
 
 export type {
   ConnectionRpcAuthority,
@@ -135,6 +146,8 @@ export function apply(ctx: Context, config?: ConnectionConfig): void {
   // silently authorizing its hostname prefix at request time.
   for (const entry of trustedHosts) assertTrustedAuthority(entry)
   if (ctx.get('apiProxy') !== undefined) assertImageBodyCapacity(ctx, maxRequestBodyBytes)
+  const webClientConnections = new WebClientConnections()
+  ctx.provide('webClientConnections', webClientConnections)
   const connection = new HostConnectionService(ctx, trustedHosts)
   const fetchHandler = connection.createSharedFetchHandler(API_PATH, {
     async fetch(request) {
@@ -173,7 +186,7 @@ export function apply(ctx: Context, config?: ConnectionConfig): void {
   ctx.effect(() => ctx.webServer.register(route), 'client-connection: /api route')
   ctx.inject(['apiProxy'], (apiCtx) => {
     assertImageBodyCapacity(apiCtx, maxRequestBodyBytes)
-    const downlinks = new WebSocketDownlinks(apiCtx.apiProxy)
+    const downlinks = new WebSocketDownlinks(apiCtx.apiProxy, webClientConnections)
     const registerDownlink = (
       path: string,
       handle: WebUpgradeRoute['handler'],

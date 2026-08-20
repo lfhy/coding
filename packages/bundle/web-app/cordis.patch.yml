@@ -139,9 +139,11 @@
       inject: [webStartup]
       config:
         openBrowser: !!js ctx.webStartup.openBrowser
-        printUrl: true
+        printUrl: !!js ctx.webStartup.printUrl
         surfaceContext: true
         trustedHosts: !!js ctx.webStartup.trustedHosts
+        managedHost: !!js ctx.webStartup.managedHost
+        idleTimeoutMs: 300000
 
     # The client-plugin reload chain, always mounted: it is idle until a
     # rebuild watcher (pnpm run dev:web) actually rewrites client bundles. It

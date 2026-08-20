@@ -1,18 +1,28 @@
-# DeepSeek Harness
+# Coding
 
 [English](README.md) | 中文
 
-DeepSeek Harness（`dsh`）是由 [DeepSeek AI](https://deepseek.com) 开发的开源 agent harness（智能体框架）。
+Coding 是构建在 [DeepSeek AI](https://deepseek.com) 开发的 DeepSeek Harness（`dsh`）运行时之上的个人 AI 编程客户端。产品名、应用名和 Linux 命令均为 `Coding` / `coding`；内部 `@deepseek-ai/dsh` 包、插件、协议标识和 `$DSH_HOME` 数据保持与 DeepSeek Harness 运行时兼容。
 
 它采用**一切皆插件**的架构，并由 [Cordis](https://github.com/cordiverse/cordis) 驱动，其设计参见论文 [_A Programming Paradigm for Spatiotemporal Composability_](https://github.com/cordiverse/paper)。
 
 ## 开发者预览
 
-DeepSeek Harness 目前处于 _开发者预览_ 阶段，正在快速迭代。**未来将出现破坏兼容性的变更。**
+Coding 目前处于 _开发者预览_ 阶段，正在快速迭代。**未来将出现破坏兼容性的变更。**
+
+## 客户端
+
+| 平台 | 客户端 | 状态 |
+| --- | --- | --- |
+| macOS arm64 | 由本地 Node Host 驱动的 Coding 原生 GUI | 计划中 |
+| Windows amd64 | 由本地 Node Host 驱动的 Coding 原生 GUI | 计划中 |
+| Linux amd64 | 由本地 Node Host 驱动的交互式 `coding` 终端 UI | 计划中 |
+
+桌面 GUI 会在原生 WebView 中复用现有 Web 界面。终端 UI 和 GUI 通过 `$DSH_HOME`（通常为 `~/.dsh`）共享会话、设置和凭据，并在可用时连接同一个本地 Host。发布产物会包含 Host 运行时，最终用户无需单独安装 Node。
 
 ## 运行
 
-### 通过 `npm` 运行
+### 通过 `npm` 运行当前运行时
 
 安装 `Node.js`，然后运行：
 
@@ -20,21 +30,21 @@ DeepSeek Harness 目前处于 _开发者预览_ 阶段，正在快速迭代。**
 npx @deepseek-ai/dsh web
 ```
 
-该命令默认会在 `http://127.0.0.1:3080` 启动 Web UI，本机启动时还会用默认浏览器打开页面。通过 SSH 启动时只打印宿主机 URL，因为本地转发地址由 SSH 客户端或编辑器持有。传入 `--no-open` 可仅运行服务器而不打开浏览器。详见 [Web UI 指南](docs/user/guide/index.md)。
+当前运行时命令默认会在 `http://127.0.0.1:3080` 启动 Web UI，本机启动时还会用默认浏览器打开页面。通过 SSH 启动时只打印宿主机 URL，因为本地转发地址由 SSH 客户端或编辑器持有。传入 `--no-open` 可仅运行服务器而不打开浏览器。详见 [Web UI 指南](docs/user/guide/index.md)。
 
 ### 从源码运行
 
 如需从仓库源码运行：
 
 ```sh
-git clone https://github.com/deepseek-ai/deepseek-harness.git
-cd deepseek-harness
+git clone https://github.com/deepseek-ai/deepseek-harness.git coding
+cd coding
 pnpm install
 pnpm run build
 pnpm dsh web
 ```
 
-`pnpm run build` 会准备仓库产物。`pnpm dsh web` 会直接使用这些已构建产物，不会重新构建。
+`pnpm run build` 会准备仓库产物。`pnpm dsh web` 会直接使用这些已构建产物，不会重新构建。原生 Coding 桌面端与终端启动器的实施记录见 [TODO.md](TODO.md)。
 
 ## 社区与支持
 

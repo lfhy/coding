@@ -8,6 +8,7 @@ import type {
   ApiProxy, HostFrame, MuxFrame, RpcRequest, ServerRequest,
 } from '@deepseek-ai/dsh-host-apiproxy/api'
 import { RpcId } from '@deepseek-ai/dsh-host-apiproxy/api'
+import type { WebClientConnections } from './web-client-connections.ts'
 
 type Frame = MuxFrame | HostFrame
 
@@ -53,7 +54,10 @@ export class WebSocketDownlinks {
   private readonly pumps = new Set<Promise<void>>()
 
   /** @param api - host API supplying the typed event streams. */
-  constructor(private readonly api: ApiProxy) {}
+  constructor(
+    private readonly api: ApiProxy,
+    private readonly connections?: WebClientConnections,
+  ) {}
 
   /**
    * Upgrade one socket and pump the mux stream until either side closes.
@@ -104,8 +108,13 @@ export class WebSocketDownlinks {
   ): void {
     this.server.handleUpgrade(req, socket, head, (websocket) => {
       const abort = new AbortController()
-      websocket.once('close', () => { abort.abort() })
-      websocket.once('error', () => { abort.abort() })
+      const detach = this.connections?.attach()
+      const close = (): void => {
+        detach?.()
+        abort.abort()
+      }
+      websocket.once('close', close)
+      websocket.once('error', close)
       websocket.once('message', () => {
         websocket.close(1008, 'downlink only')
       })

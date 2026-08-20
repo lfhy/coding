@@ -57,6 +57,8 @@ export const apply = ctx => globalThis.__webStartupApply(ctx)
     '  config:',
     "    host: !!js ctx.webStartup.host ?? '127.0.0.1'",
     '    openBrowser: !!js ctx.webStartup.openBrowser',
+    '    printUrl: !!js ctx.webStartup.printUrl',
+    '    managedHost: !!js ctx.webStartup.managedHost',
     '    port: !!js ctx.webStartup.port ?? 3080',
     '    trustedHosts: !!js ctx.webStartup.trustedHosts',
     '- id: provider',
@@ -98,8 +100,10 @@ describe('web command-line provider', () => {
     expect(values).toEqual({
       host: '127.0.0.1',
       openBrowser: false,
+      printUrl: true,
       port: 8080,
       trustedHosts: ['lab.internal', 'lab-2.internal', '10.0.0.9'],
+      managedHost: false,
     })
     expect(observed.readerConfig).toEqual(values)
     expect(observed.exits).toEqual([])
@@ -107,13 +111,37 @@ describe('web command-line provider', () => {
 
   it('leaves deployment values to each consumer when flags omit them', async () => {
     const { values, observed } = await bootProvider([])
-    expect(values).toEqual({ openBrowser: true, trustedHosts: [] })
+    expect(values).toEqual({ openBrowser: true, printUrl: true, trustedHosts: [], managedHost: false })
     expect(observed.readerConfig).toEqual({
       host: '127.0.0.1',
       openBrowser: true,
+      printUrl: true,
       port: 3080,
       trustedHosts: [],
+      managedHost: false,
     })
+  })
+
+  it('forces a loopback random-port Host with no browser or human URL output', async () => {
+    const { values, observed } = await bootProvider(['--coding-host'])
+    expect(values).toEqual({
+      host: '127.0.0.1',
+      openBrowser: false,
+      printUrl: false,
+      port: 0,
+      trustedHosts: [],
+      managedHost: true,
+    })
+    expect(observed.readerConfig).toEqual(values)
+    expect(observed.exits).toEqual([])
+  })
+
+  it('rejects a fixed port for a Coding-managed Host before publishing startup values', async () => {
+    const { values, observed } = await bootProvider(['--coding-host', '--port', '8080'])
+    expect(values).toBeUndefined()
+    expect(observed.readerConfig).toBeUndefined()
+    expect(observed.out).toContain('--coding-host only supports --port 0')
+    expect(observed.exits).toEqual([1])
   })
 
   it('prints its own help and leaves the consumer pending', async () => {

@@ -356,6 +356,12 @@ importers:
         specifier: ^10.0.0
         version: 10.0.0
 
+  apps/runtime:
+    dependencies:
+      '@deepseek-ai/dsh':
+        specifier: workspace:^
+        version: link:../cli
+
   apps/web:
     devDependencies:
       '@deepseek-ai/cordis-plugin-group':
@@ -1275,6 +1281,9 @@ importers:
 
   packages/bundle/web-app:
     dependencies:
+      '@deepseek-ai/dsh-agent':
+        specifier: workspace:^
+        version: link:../../core/agent
       '@deepseek-ai/dsh-agent-presets':
         specifier: workspace:^
         version: link:../../preset/agent-presets
@@ -1437,6 +1446,9 @@ importers:
       '@deepseek-ai/dsh-host-webserver':
         specifier: workspace:^
         version: link:../../host/webserver
+      '@deepseek-ai/dsh-jobs':
+        specifier: workspace:^
+        version: link:../../jobs/jobs
       '@deepseek-ai/dsh-launch-environment':
         specifier: workspace:^
         version: link:../../util/launch-environment

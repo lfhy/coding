@@ -21,6 +21,7 @@ import { addHarnessSourceSection } from '@deepseek-ai/dsh-app-boot'
 import * as FrontendStatic from '@deepseek-ai/dsh-host-frontend-static'
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
 import { scrubbedParentEnv } from '@deepseek-ai/dsh-subprocess'
+import { startManagedHost } from './managed-host.ts'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-system-prompt'
@@ -35,8 +36,8 @@ const SOURCE_ROOT = fileURLToPath(new URL('../../../..', import.meta.url))
 /** Runtime service that releases Web rows after bind-dependent values resolve. */
 const WEB_RUNTIME_SERVICE = 'webRuntime'
 
-/** Services required before the web runtime can mount. */
-export const inject = ['webServer']
+/** Web runtime 必须在回环服务器与 Agent 注册表就绪后挂载。 */
+export const inject = ['webServer', 'agents']
 
 /** Plugin config: composed deployment settings plus per-invocation command-line values. */
 export interface Config {
@@ -53,6 +54,10 @@ export interface Config {
   surfaceContext: boolean
   /** Explicit `--trusted-host` authorities from this invocation. */
   trustedHosts: string[]
+  /** Publish local discovery and let Coding native clients own this Host's lifetime. */
+  managedHost: boolean
+  /** Delay before an unused managed Host exits. */
+  idleTimeoutMs: number
 }
 
 export const Config: z<Config> = z.object({
@@ -60,6 +65,8 @@ export const Config: z<Config> = z.object({
   printUrl: z.boolean().default(true),
   surfaceContext: z.boolean().default(true),
   trustedHosts: z.array(String).default([]),
+  managedHost: z.boolean().default(false),
+  idleTimeoutMs: z.natural().min(1).default(300_000),
 })
 
 /** Bind-dependent Web values shared by the trust fence and URL display. */
@@ -143,7 +150,7 @@ function webSurfacePrompt(webUrl: string): string {
   const updateContract = 'The client-plugin HMR receiver is active, but client-plugin changes reload without a refresh only while '
     + '`pnpm run dev:web` is also running from this same checkout to rebuild their bundles; verify that watcher before promising automatic updates. '
     + 'Every other change — the apps/web shell and plain packages — requires rebuilding the affected Web artifacts and verifying this existing URL after a page refresh. '
-  return `You are interacting with the user through the DeepSeek Harness Web GUI at ${webUrl}. `
+  return `You are interacting with the user through the Coding GUI at ${webUrl}. `
     + 'When the user refers to "this page", "this GUI", or "this app" without naming another target, they mean this GUI. '
     + 'The browser provides no implicit DOM, route, or screenshot context. '
     + updateContract
@@ -244,19 +251,19 @@ export function apply(ctx: Context, config: Config): void {
       runtimeCtx.shellEnv.register({
         name: 'web-runtime',
         variables: {
-          [DSH_WEB_URL]: { description: 'Canonical local URL of the DeepSeek Harness Web GUI serving this session.' },
+          [DSH_WEB_URL]: { description: 'Canonical local URL of the Coding GUI serving this session.' },
         },
         resolve: () => ({ [DSH_WEB_URL]: localWebUrl(runtimeCtx) }),
       })
     })
   }
-  if (config.printUrl || handoffBrowser) {
+  if (config.printUrl || handoffBrowser || config.managedHost) {
     // The URL line and browser handoff are readiness signals: supervisors RPC
     // as soon as they observe the line, while a browser requests the page as
     // soon as it opens. Neither may run while sibling rows such as the /api
     // route owner are still mounting. Await Loader settlement first; a
     // hand-built tree without a Loader is already the complete tree.
-    const announceReady = (): void => {
+    const announceReady = async (): Promise<void> => {
       const webUrl = localWebUrl(ctx)
       // Reuse the exact LAN snapshot provided to the /api trust fence.
       const lanCandidate = runtime.lanAddresses[0]
@@ -271,19 +278,36 @@ export function apply(ctx: Context, config: Config): void {
           console.error(`web-app: could not open the default browser because ${reason}; visit ${webUrl} manually`)
         })
       }
+      if (config.managedHost) {
+        const record = await startManagedHost(ctx, {
+          port,
+          idleTimeoutMs: config.idleTimeoutMs,
+        })
+        console.log(JSON.stringify(record))
+      }
     }
     // This row's own activation can precede a sibling failure. The app owns
     // readiness by waiting for its Loader tree, or announces at once in a
     // hand-built context without Loader.
     const settled = ctx.get('loader')?.await()
-    if (settled === undefined) announceReady()
+    if (settled === undefined) {
+      void announceReady().catch((error: unknown) => {
+        console.error(`web-app: failed to publish Coding Host readiness: ${String(error)}`)
+        ctx.get('appExit')?.(1)
+      })
+    }
     else {
       void settled.then(() => {
         // The tree can be disposed while the boot was in flight (early
         // SIGTERM); a URL line or browser tab for a dead server would only
         // mislead, and reading the torn-down port would turn a clean shutdown
         // into a crash.
-        if (ctx.get('webServer') !== undefined) announceReady()
+        if (ctx.get('webServer') !== undefined) {
+          void announceReady().catch((error: unknown) => {
+            console.error(`web-app: failed to publish Coding Host readiness: ${String(error)}`)
+            ctx.get('appExit')?.(1)
+          })
+        }
       // Loader reports a failed boot; this row only stays quiet.
       }, () => {})
     }

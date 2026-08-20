@@ -1,0 +1,9 @@
+{
+  "name": "coding-host-runtime",
+  "private": true,
+  "version": "0.1.0-rc.8",
+  "description": "Production dependency closure embedded by Coding native launchers.",
+  "dependencies": {
+    "@deepseek-ai/dsh": "workspace:^"
+  }
+}
