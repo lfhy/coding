@@ -57,4 +57,4 @@ pnpm build:native    # this Linux architecture's binaries (apt-get install musl-
 pnpm test
 ```
 
-Binaries are git-ignored and built natively per architecture — locally for your own machine, by CI's per-arch runners as the builders of record. Release flow: [docs/release.md](docs/release.md).
+Binaries are git-ignored and built natively for the current architecture. This fork has no native CI or release flow; use the [local packaging notes](docs/release.md) to rehearse a matching platform tarball.

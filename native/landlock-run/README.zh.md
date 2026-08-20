@@ -57,4 +57,4 @@ pnpm build:native    # this Linux architecture's binaries (apt-get install musl-
 pnpm test
 ```
 
-二进制文件被 git 忽略，并且按架构原生构建：本地只构建当前机器的版本，CI 各架构 runner 产出的构建则作为正式发布依据。发布流程详见 [docs/release.md](docs/release.md)。
+二进制文件被 git 忽略，并且只为当前架构原生构建。本 fork 没有原生 CI 或发布流程；通过[本地打包说明](docs/release.md)演练匹配平台的 tarball。

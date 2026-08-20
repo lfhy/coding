@@ -75,12 +75,8 @@ pip install \
   "dist-python/deepseek_harness_runtime_bin-$version-py3-none-macosx_14_0_arm64.whl"
 ```
 
-The runtime distribution is wheel-only. The release pipeline publishes three platform wheels with the pure SDK wheel: Linux x64, Linux arm64, and macOS 14 or newer on arm64. A `python-v<repository-version>` tag is accepted only when it matches the repository version; prerelease repository versions such as `0.0.1-rc.1` use their normalized PEP 440 spelling, such as `0.0.1rc1`, inside wheel filenames and metadata.
+The runtime distribution is wheel-only. This fork does not publish or validate Python wheels in CI. Build a wheel for its native target locally and install the matching SDK and runtime wheels in a clean virtual environment before using them. The current builder supports Linux x64, Linux arm64, and macOS 14 or newer on arm64; a later distribution decision may revise those targets and add an opt-in workflow.
 
-## Validate a release candidate
+## Validate a local wheel
 
-Label a pull request `python-release-dry-run`, or manually run the GitHub `Release (Python)` workflow with `publish=false`, to build all four wheels, install the Linux release set on Python 3.10 and 3.14, check exact filenames and metadata, enforce PyPI's default per-file size limit, and retain one aggregate artifact with SHA-256 hashes. Both paths have no registry credentials; a pull request run cannot enter either publication job.
-
-Public publication runs from the private automation repository; package metadata points to the separate read-only public source mirror, which does not run release Actions. The private repository defines the repository variable `PYPI_PUBLISHER_REPOSITORY` as its own `owner/name` and keeps `PUBLIC_PYPI_RELEASE_ENABLED=false` except during an intentional release.
-
-Separate runtime and SDK jobs let an SDK upload failure resume without resending immutable runtime files. They accept `publish=true` only when the workflow runs from the configured publisher repository at the matching `python-v*` tag and the protected `pypi-runtime` and `pypi` environments approve the runtime and SDK jobs, respectively. PyPI Trusted Publishing still supplies short-lived OIDC credentials, but public attestations are disabled because they would disclose the private publisher identity.
+This fork has no Python release or publishing workflow. Verify a candidate by installing the matching wheel pair in a clean virtual environment and exercising the SDK path you intend to distribute. Do not upload packages, configure publishing credentials, or treat `python-v*` tags as release triggers until the package namespace, supported platforms, signing model, and distribution owner are chosen.

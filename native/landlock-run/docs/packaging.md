@@ -2,7 +2,7 @@
 
 The package family uses the same layout as native packages such as esbuild: one JS entry package plus platform optional packages. Unlike Node addons there is no ABI or backend division — each platform package carries exactly the static executables its `prebuilds.json` declares.
 
-## Published packages
+## Package family
 
 ```text
 @deepseek-ai/node-addon-landlock-run
@@ -19,9 +19,9 @@ The matrix is explicit in checked-in metadata:
 - `packages/entry/package.json` lists the platform packages as `optionalDependencies`.
 - `packages/<name>/package.json` declares `os` and `cpu`. There is no `libc` field on purpose: the binaries are statically linked against musl and run on glibc and musl distros alike.
 - `packages/<name>/prebuilds.json` declares the binaries that may exist in that package (`tool`, `kind`, `path`).
-- [support-matrix.md](support-matrix.md) explains why unsupported platform packages are not published.
+- [support-matrix.md](support-matrix.md) explains why unsupported platform packages are absent.
 
-`scripts/github-matrix.mjs` derives the CI and Release matrices from these files. `scripts/build.ts` builds only the current host's targets, into `packages/<name>/bin/`; it is not a matrix generator. When changing the matrix, update package metadata, `prebuilds.json`, the lockfile, and the support/release docs in the same change.
+`scripts/github-matrix.mjs` derives reusable build matrices from these files. `scripts/build.ts` builds only the current host's targets, into `packages/<name>/bin/`; it is not a matrix generator. When changing the matrix, update package metadata, `prebuilds.json`, the lockfile, and the support and local-packaging docs in the same change.
 
 ## Runtime selection
 
@@ -37,7 +37,7 @@ The entry package has NO install script and never compiles on the consumer host.
 
 Platform tarballs are produced by `npm pack`, entry tarballs by `pnpm pack` — deliberately split: `pnpm pack` (observed on 11.7.0) normalizes file modes and strips the executable bit, which would ship a launcher no consumer can spawn, while platform packages have no dependencies and so need none of pnpm's workspace-protocol conversion; entry packages need that conversion and carry no executables. `scripts/pack-release.mjs` encodes the split — never hand-pack a platform package with pnpm.
 
-Both pack paths produce the exact publish bytes behind a `prepack` gate:
+Both pack paths produce the exact tarball bytes behind a `prepack` gate:
 
 - Platform packages: `scripts/verify-launcher-binary.mjs` — every declared binary present, executable, ELF `e_machine` matching the declared `cpu`, nothing undeclared in `bin/`.
 - Entry packages: `scripts/verify-entry-lib.mjs` — built `lib/` present.
