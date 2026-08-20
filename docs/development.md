@@ -114,13 +114,13 @@ lefthook is configured in `lefthook.yml` as a fast local checkpoint:
 
 The vendor manifest guard checks that changes under `vendor/*/src` are staged with the matching `vendor/README.md` manifest update. See `vendor/README.md` before editing vendored code.
 
-Apart from the scoped staged-record verification, the hooks intentionally do not run tests, snapshots, documentation checks, builds, or hygiene. Contributors run the [checks relevant to the changed behavior](../AGENTS.md); CI repeats the credential-free typecheck, lint, test, and build baseline on Node 24.
+Apart from the scoped staged-record verification, the hooks intentionally do not run tests, snapshots, documentation checks, builds, or hygiene. Contributors run the [checks relevant to the changed behavior](../AGENTS.md); the release-tag CI repeats the credential-free typecheck, lint, test, and build baseline on Node 24.
 
 Contributors can opt into the comprehensive local gate set with `pnpm run check:all`. The command is independent of the Git hooks and is not an agent instruction.
 
 ### CI gates
 
-The keyless [CI workflow](../.github/workflows/ci.yml) runs one GitHub-hosted Ubuntu job for pushes to `master` or `main`, pull requests, and manual dispatches. It installs immutable dependencies and runs `pnpm run typecheck`, `pnpm run lint`, `pnpm run test`, and `pnpm run build` on Node 24. It has no credentials, release, deployment, real-provider, or desktop-packaging step. Add those workflows only when a concrete distribution target needs them.
+The keyless [CI workflow](../.github/workflows/ci.yml) runs one GitHub-hosted Ubuntu job only when a `v<version>` release tag such as `v0.0.1` is pushed. It validates that tag's source with immutable dependencies, `pnpm run typecheck`, `pnpm run lint`, `pnpm run test`, and `pnpm run build` on Node 24. It has no credentials, publishing, deployment, real-provider, or desktop-packaging step. Daily pushes and pull requests rely on local checks and Git hooks; add separate workflows only when a concrete distribution target needs them.
 
 ### Daily commands
 

@@ -114,13 +114,13 @@ lefthook 在 `lefthook.yml` 中配置，作为快速的本地检查点：
 
 vendor manifest 守卫检查 `vendor/*/src` 下的改动是否连同对应的 `vendor/README.md` manifest 更新一起暂存。请在编辑 vendor 代码前先阅读 `vendor/README.md`。
 
-除限定范围的暂存记录校验外，这些钩子有意不运行测试、快照、文档检查、构建或 `hygiene`。贡献者只运行一次[与改动行为相关的检查](../AGENTS.md)；CI 会在 Node 24 上重复无凭据的 typecheck、lint、test 和 build 基线。
+除限定范围的暂存记录校验外，这些钩子有意不运行测试、快照、文档检查、构建或 `hygiene`。贡献者只运行一次[与改动行为相关的检查](../AGENTS.md)；发版 tag CI 会在 Node 24 上重复无凭据的 typecheck、lint、test 和 build 基线。
 
 贡献者可以选择运行 `pnpm run check:all`，执行全面的本地门禁集。该命令独立于 Git 钩子，也不是对 agent 的指令。
 
 ### CI 门禁
 
-无凭据的 [CI 工作流](../.github/workflows/ci.yml) 会在向 `master` 或 `main` push、Pull Request 和手动触发时运行一个 GitHub-hosted Ubuntu job。它安装锁定依赖，并在 Node 24 上执行 `pnpm run typecheck`、`pnpm run lint`、`pnpm run test` 和 `pnpm run build`。工作流不含凭据、发布、部署、真实提供方或桌面打包步骤；只有明确的分发目标需要时才新增这些工作流。
+无凭据的 [CI 工作流](../.github/workflows/ci.yml) 只会在推送 `v<version>` 发版 tag（例如 `v0.0.1`）时运行一个 GitHub-hosted Ubuntu job。它使用锁定依赖，在 Node 24 上验证该 tag 指向的源码，并执行 `pnpm run typecheck`、`pnpm run lint`、`pnpm run test` 和 `pnpm run build`。工作流不含凭据、上传、部署、真实提供方或桌面打包步骤；日常 push 和 Pull Request 依赖本地检查与 Git 钩子，只有明确的分发目标需要时才新增独立工作流。
 
 ### 日常命令
 

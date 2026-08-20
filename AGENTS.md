@@ -46,7 +46,7 @@ pnpm run test:e2e            # 有 DEEPSEEK_API_KEY 时才运行真实 API 测�
 
 ## CI 规则
 
-`.github/workflows/ci.yml` 是当前唯一的 GitHub Actions 工作流，在 `master`/`main` push、Pull Request 和手动触发时使用 `ubuntu-latest` 执行 `pnpm install --frozen-lockfile`、`typecheck`、`lint`、`test` 和 `build`。它必须保持无凭据、无自托管 runner、无发布和无真实 API 调用；需要 API、桌面打包或发布时另建手动触发的独立工作流，并将凭据限制在实际使用步骤。
+`.github/workflows/ci.yml` 是当前唯一的 GitHub Actions 工作流，仅在推送 `v<version>` 发版 tag（例如 `v0.0.1`）后使用 `ubuntu-latest` 执行 `pnpm install --frozen-lockfile`、`typecheck`、`lint`、`test` 和 `build`。它只验证 tag 指向的源码，必须保持无凭据、无自托管 runner、无发布和无真实 API 调用；需要 API、桌面打包或发布时另建独立工作流，并将凭据限制在实际使用步骤。
 
 CI 不代表桌面端所有平台已经支持。新增桌面壳或原生模块后，先在本机完成对应平台验证，再按稳定性和维护成本把平台构建加入单独的 opt-in 工作流。工作流使用 GitHub-hosted runner 的通用标签，不依赖组织专属 runner 名称、环境变量、项目 token 或上游仓库配置。
 

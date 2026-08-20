@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决策
 
-仓库只保留一个无凭据的 GitHub Actions 工作流。它的 `checks` job 使用 Node 24 在 `ubuntu-latest` 上处理向 `master` 或 `main` 的 push、Pull Request 和手动触发；该 job 安装锁定依赖，并执行 `pnpm run typecheck`、`pnpm run lint`、`pnpm run test` 和 `pnpm run build`。
+仓库只保留一个无凭据的 GitHub Actions 工作流。它的 `checks` job 只在推送 `v<version>` 发版 tag（例如 `v0.0.1`）时使用 Node 24 在 `ubuntu-latest` 上运行；该 job 安装锁定依赖，并针对该 tag 指向的源码执行 `pnpm run typecheck`、`pnpm run lint`、`pnpm run test` 和 `pnpm run build`。
 
 fork 不保留 GitLab CI、Dependabot、Issue 生命周期自动化、文档部署、提供方 E2E、包发布、原生发布或 Python runtime 工作流。剩余的本地发布与平台脚本不是 CI 入口；只要对应源码仍需维护，它们仅作为本地工具或未来产品专用打包的基础保留。
 
@@ -20,7 +20,7 @@ fork 不保留 GitLab CI、Dependabot、Issue 生命周期自动化、文档部�
 
 **保留继承的 CI 矩阵。** 不予采用，因为它依赖不可用的组织 runner 与凭据，并验证本 fork 不会发布的包族。
 
-**关闭全部自动化。** 不予采用，因为类型错误、测试失败和构建损坏将完全依赖本地执行才能发现。
+**在每次 push 和 Pull Request 上运行基线。** 不予采用，因为日常开发使用针对性的本地检查和 Git 钩子；GitHub-hosted 基线只验证发版 tag 指向的源码。
 
 **在创建桌面应用前先加入桌面发布自动化。** 不予采用，因为打包器、支持平台、签名方式和产物名称尚未选定。占位发布工作流只会形成另一项未被支持的接口。
 

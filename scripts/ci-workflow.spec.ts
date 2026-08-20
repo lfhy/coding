@@ -6,15 +6,11 @@ import { describe, expect, it } from 'vitest'
 const root = resolve(import.meta.dirname, '..')
 
 describe('personal CI workflow', () => {
-  it('runs the credential-free client checks on hosted runners', () => {
+  it('runs the credential-free client checks only for version release tags', () => {
     const workflow = loadWorkflow()
 
     expect(workflow.name).toBe('CI')
-    expect(workflow.on).toMatchObject({
-      push: { branches: ['master', 'main'] },
-      pull_request: null,
-      workflow_dispatch: null,
-    })
+    expect(workflow.on).toEqual({ push: { tags: ['v*'] } })
     expect(workflow.permissions).toEqual({ contents: 'read' })
     expect(workflow.env).toMatchObject({
       NODE_VERSION: '24',
@@ -22,7 +18,7 @@ describe('personal CI workflow', () => {
     })
     expect(workflow.concurrency).toMatchObject({
       group: 'ci-${{ github.ref }}',
-      'cancel-in-progress': "${{ github.event_name == 'pull_request' }}",
+      'cancel-in-progress': true,
     })
 
     const jobs = workflow.jobs

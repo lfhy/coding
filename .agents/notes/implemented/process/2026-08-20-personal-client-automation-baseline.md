@@ -10,7 +10,7 @@ The inherited GitHub and GitLab automation assumed organization-owned runners, p
 
 ## Decision
 
-The repository has one credential-free GitHub Actions workflow. Its `checks` job runs on `ubuntu-latest` with Node 24 for pushes to `master` or `main`, pull requests, and manual dispatches. It installs the lockfile and runs `pnpm run typecheck`, `pnpm run lint`, `pnpm run test`, and `pnpm run build`.
+The repository has one credential-free GitHub Actions workflow. Its `checks` job runs on `ubuntu-latest` with Node 24 only when a `v<version>` release tag such as `v0.0.1` is pushed. It installs the lockfile and runs `pnpm run typecheck`, `pnpm run lint`, `pnpm run test`, and `pnpm run build` against that tag's source.
 
 The fork does not carry GitLab CI, Dependabot, issue lifecycle automation, documentation deployment, provider E2E, package publication, native-release, or Python-runtime workflows. The remaining local release and platform scripts are not CI entry points. They stay available only while their source code still needs local maintenance or later product-specific packaging.
 
@@ -20,7 +20,7 @@ Desktop packaging, platform matrices, code signing, release uploads, and real-pr
 
 **Keep the inherited CI matrix.** Rejected because it depends on unavailable organization runners and credentials, and it validates package families that this fork is not publishing.
 
-**Disable all automation.** Rejected because type errors, test failures, and build breakage would then depend entirely on local execution.
+**Run the baseline on every push and pull request.** Rejected because daily development uses focused local checks and Git hooks; the hosted baseline is reserved for the source identified by a release tag.
 
 **Add desktop release automation before creating the desktop application.** Rejected because the packager, supported platforms, signing model, and artifact names are not selected yet. A placeholder release workflow would only create another unsupported interface.
 
