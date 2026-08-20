@@ -78,7 +78,7 @@ SQLite schema、session format、配置文件和 wire/RPC 数据一旦被代码�
 
 ## Git 与 Agent 工作
 
-单次改动聚焦一个主题，保留用户已有的未相关改动，不使用破坏性 reset 或 checkout。修改前先用 `rg` 查找现有实现、文档入口和测试；优先复用仓库已有依赖与抽象，不复制工具逻辑。完成后运行与改动匹配的验证、`git diff --check`，并在交付说明中列出实际执行的命令和未执行的检查。
+单次改动聚焦一个主题，保留用户已有的未相关改动，不使用破坏性 reset 或 checkout。修改前先用 `rg` 查找现有实现、文档入口和测试；优先复用仓库已有依赖与抽象，不复制工具逻辑。完成后运行与改动匹配的验证、`git diff --check`，并在交付说明中列出实际执行的命令和未执行的检查。仅修改 `AGENTS.md`、技能或普通说明时检查变更内容和 `git diff --check`，不运行 `lint` 或 `doc-sync`；双语文档额外运行对应 pair 的 `verify-translation-pairing --write` 与 scoped check，Agent Note 额外运行 `verify-agent-note-classification` 和 `verify-agent-note-format`。只有修改代码、lint 配置、生成器/生成目录、网站投影或需要全库交叉引用校验时，才运行所属的 `lint`、`doc-sync` 或构建；不要因为无关输入存在而跑全量门禁，也不要并行执行会读写同一构建产物的重型命令。
 
 新增功能、参数、默认行为、输出格式、配置项或桌面交互时，同步更新用户文档、README、测试和必要的 keyless snapshot。修改 `vendor/`、生成目录或快照时遵循各自的 AGENTS.md，不直接把生成文件当作源文件编辑。文件保持 ASCII 优先，并以恰好一个换行结尾。
 
