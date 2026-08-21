@@ -38,7 +38,8 @@ install: $(INSTALL)
 
 install-app: desktop runtime
 	./scripts/package-macos-app.sh
-	@echo "Coding: 已生成签名 dist/Coding.app；拖入 /Applications 即完成安装"
+	cp -R dist/Coding.app /Applications/
+	@echo "Coding: 已安装 /Applications/Coding.app"
 
 install-cli: tui runtime
 	mkdir -p $(BINDIR)
@@ -50,8 +51,9 @@ check: runtime
 	@DSH_HOME=$$(mktemp -d) ./scripts/check-runtime-start.sh
 
 uninstall:
+	rm -rf /Applications/Coding.app
 	rm -f $(BINDIR)/coding
 
 help:
-	@echo "目标：runtime / desktop / tui / install（按平台选 app 或 cli）/ uninstall"
+	@echo "目标：runtime / desktop / tui / install（macOS 装 /Applications，Linux 装 ~/.local/bin）/ uninstall"
 	@echo "签名：CODESIGN_IDENTITY=\"Apple Development: …\" make install（默认 ad-hoc）"
