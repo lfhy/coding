@@ -114,8 +114,16 @@ type Model struct {
 	question *PendingQuestion
 	// questionView 的当前选择下标，与 questions 一一对应。
 	questionIndex int
-	// questionSelected 记录 multiSelect 模式下当前问题已勾选的选项。
-	questionSelected map[int]bool
+	// panel 打开时的面板名；空串表示没有面板覆盖层。
+	panel string
+	// panelLines 是当前面板的渲染行（数据已在打开/刷新时加载）。
+	panelLines []string
+	// panelSelected 是面板内的选择下标。
+	panelSelected int
+	// jobs 是最近一次 session/jobs 帧的后台任务快照。
+	jobs []JobView
+	// goal 是最近一次 goal/change 事件的目标描述。
+	goal string
 }
 
 var (
@@ -318,6 +326,12 @@ func (model Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		model.width, model.height = value.Width, value.Height
 	case tea.KeyMsg:
 		// 交互帧存在时优先接管按键，避免把 y/n/回车误输入 composer。
+		if model.panel != "" {
+			if command := model.handlePanel(value.String()); command != nil {
+				return model, command
+			}
+			return model, model.noop
+		}
 		if command := model.handleInteraction(value.String()); command != nil {
 			return model, command
 		}
@@ -336,6 +350,12 @@ func (model Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+n":
 			model.status = "Creating session"
 			return model, model.createSession()
+		case "ctrl+p":
+			// 无会话时也可浏览面板（除 jobs/subagents/models 需要 active）。
+			model.panel = ""
+			model.panelLines = panelNames()
+			model.panelSelected = 0
+			return model, model.noop
 		case "up", "k":
 			if model.selected > 0 {
 				model.selected--
@@ -399,6 +419,12 @@ func (model Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case generationMsg:
 		model.generation = value.Number
 		model.status = fmt.Sprintf("Connected (generation %d)", value.Number)
+	case panelMsg:
+		if value.Err != nil {
+			model.panelLines = []string{value.Err.Error()}
+			return model, nil
+		}
+		model.panelLines = value.Lines
 	case frameMsg:
 		var envelope struct {
 			Type      string          `json:"type"`
@@ -412,19 +438,43 @@ func (model Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 					return model, model.subscribe()
 				}
 				var event struct {
+					Type string `json:"type"`
 					Data struct {
 						Content []struct {
 							Type string `json:"type"`
 							Text string `json:"text"`
 						} `json:"content"`
+						Objective string `json:"objective"`
 					} `json:"data"`
 				}
 				if json.Unmarshal(envelope.Event, &event) == nil {
-					for _, block := range event.Data.Content {
-						if block.Type == "text" && block.Text != "" {
-							model.transcript = append(model.transcript, block.Text)
+					switch event.Type {
+					case "assistant/message", "user/message":
+						for _, block := range event.Data.Content {
+							if block.Type == "text" && block.Text != "" {
+								model.transcript = append(model.transcript, block.Text)
+							}
+						}
+					case "goal/change":
+						model.goal = event.Data.Objective
+					case "tool/call":
+						var call struct {
+							Data struct {
+								Name string `json:"name"`
+							} `json:"data"`
+						}
+						if json.Unmarshal(envelope.Event, &call) == nil {
+							model.transcript = append(model.transcript, "⚙ "+call.Data.Name)
 						}
 					}
+				}
+			case "session/jobs":
+				var frame struct {
+					SessionID string    `json:"sessionId"`
+					Jobs      []JobView `json:"jobs"`
+				}
+				if json.Unmarshal(value.Frame.Payload, &frame) == nil && frame.SessionID == model.active {
+					model.jobs = frame.Jobs
 				}
 			case "approval/requested":
 				var pending PendingApproval
@@ -501,5 +551,5 @@ func (model Model) View() string {
 	if len(lines) == 0 {
 		lines = append(lines, dimStyle.Render("No messages yet."))
 	}
-	return titleStyle.Render("Coding") + "  " + dimStyle.Render(model.active) + "\n\n" + model.interactionView() + strings.Join(lines, "\n\n") + "\n\n" + activeStyle.Render("> "+model.composer) + "\n" + dimStyle.Render(model.status+"  Enter send  Esc sessions  Ctrl+C interrupt")
+	return titleStyle.Render("Coding") + "  " + dimStyle.Render(model.active) + "\n\n" + model.panelView() + model.interactionView() + strings.Join(lines, "\n\n") + "\n\n" + activeStyle.Render("> "+model.composer) + "\n" + dimStyle.Render(model.status+"  Enter send  Ctrl+N new  Ctrl+P panels  Esc sessions  Ctrl+C interrupt")
 }

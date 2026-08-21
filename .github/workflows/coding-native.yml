@@ -1,0 +1,88 @@
+name: Coding native clients
+
+# 面向 darwin/arm64、windows/amd64、linux/amd64 的 Go 客户端构建与
+# SEA 运行时打包。仅无凭据的构建检查，不发布、不调用真实 API。
+on:
+  workflow_dispatch:
+  push:
+    tags: ['coding-v*']
+
+concurrency:
+  group: coding-native-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '24'
+  GO_VERSION: '1.24'
+  DSH_TELEMETRY_DISABLED: '1'
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: darwin-arm64
+            os: macos-latest
+          - target: windows-amd64
+            os: windows-latest
+          - target: linux-amd64
+            os: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Install Linux webview build dependencies
+        if: matrix.target == 'linux-amd64'
+        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the SEA runtime
+        if: matrix.target == 'linux-amd64'
+        run: pnpm run build:runtime -- --target=${{ matrix.target }}
+
+      - name: Build the TUI (linux)
+        if: matrix.target == 'linux-amd64'
+        run: pnpm run build:tui
+
+      - name: Build the desktop app (macOS)
+        if: matrix.target == 'darwin-arm64'
+        run: pnpm run build:desktop
+        env:
+          CGO_ENABLED: '1'
+
+      - name: Build the desktop app (Windows)
+        if: matrix.target == 'windows-amd64'
+        run: pnpm run build:desktop
+        env:
+          CGO_ENABLED: '1'
+
+      - name: Checksum artifacts
+        shell: bash
+        run: |
+          ls -l dist || true
+          if compgen -G 'dist/Coding*' > /dev/null; then shasum -a 256 dist/Coding* > dist/checksums.txt; fi
+          if compgen -G 'dist/coding' > /dev/null; then shasum -a 256 dist/coding >> dist/checksums.txt; fi
+          cat dist/checksums.txt || true

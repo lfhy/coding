@@ -7,7 +7,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 
+	"github.com/deepseek-ai/coding/apps/desktop/internal/instance"
+	"github.com/deepseek-ai/coding/apps/desktop/internal/webview2"
 	"github.com/deepseek-ai/coding/apps/internal/hostlaunch"
 	webview "github.com/webview/webview_go"
 )
@@ -27,6 +30,21 @@ func main() {
 		}
 		cwd = absolute
 	}
+	lock, primary, err := instance.Acquire(os.Args[1:])
+	if err != nil {
+		fatal(err)
+	}
+	if !primary {
+		// 第二个实例的激活请求已转发给持锁进程，本进程直接退出。
+		return
+	}
+	defer lock.Close()
+	if runtime.GOOS == "windows" {
+		if err := webview2.Check(); err != nil {
+			fmt.Fprintln(os.Stderr, "Coding: 需要 WebView2 运行时。请安装:", "https://developer.microsoft.com/microsoft-edge/webview2/")
+			os.Exit(1)
+		}
+	}
 	launcher, err := hostlaunch.New(hostlaunch.Options{CWD: cwd})
 	if err != nil {
 		fatal(err)
@@ -41,6 +59,10 @@ func main() {
 	window.SetTitle(applicationName)
 	window.SetSize(1280, 860, webview.HintNone)
 	window.Navigate(endpoint.BaseURL)
+	go lock.Serve(func() {
+		// webview_go 无导出的窗口句柄；激活时刷新导航即可把窗口带回前台界面。
+		window.Navigate(endpoint.BaseURL)
+	})
 	window.Run()
 }
 

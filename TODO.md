@@ -22,12 +22,12 @@ This file is the cross-session implementation record for Coding. Update it when 
 
 ## Phase 0: identity and design record
 
-Status: done (guides pending release artifacts).
+Status: done.
 
 - [x] Record the product name and delivery decisions in this file.
 - [x] Update paired root README files with Coding identity and client platform matrix.
 - [x] Add the proposed architecture Agent Note for the shared Host and Go-client decision.
-- [ ] Add user-facing desktop and terminal installation guides once artifacts exist.
+- [x] Add user-facing desktop and terminal installation guides (`docs/user/guide/install.md` bilingual pair).
 
 Acceptance: the product name, supported platforms, compatibility boundary, and implementation ownership are visible in the root README and Agent Note; bilingual and Agent Note checks pass.
 
@@ -46,13 +46,13 @@ Acceptance: two local clients sharing one home attach to one compatible Host, a 
 
 ## Phase 2: desktop GUI shell
 
-Status: in progress (macOS dev form verified; single-instance/packaging pending).
+Status: in progress (dev form on macOS; single-instance + WebView2 check wired; platform smoke pending).
 
 - [x] Create `apps/desktop` Go module and shared launcher package. (`apps/desktop`, `apps/internal/hostlaunch`)
 - [x] Parse `--cwd`; discover or start the Host; wait for readiness; navigate a `webview_go` window to its loopback URL.
 - [x] Use `Coding` in the window title, application metadata, and installer metadata. (window title; installer metadata pending packaging)
-- [ ] Implement platform single-instance behavior: forward a second invocation's arguments and focus the existing window.
-- [ ] Detect missing Windows WebView2 and present a recovery path. Package macOS as `.app`/`.dmg`, retaining signing/notarization configuration hooks.
+- [x] Implement platform single-instance behavior: forward a second invocation's arguments and focus the existing window. (`apps/desktop/internal/instance`)
+- [x] Detect missing Windows WebView2 and present a recovery path. (`apps/desktop/internal/webview2`; macOS `.app`/`.dmg` packaging pending)
 - [ ] Smoke-test fresh launch, existing-Host attach, second-instance focus, and post-close idle shutdown on the supported desktop platforms.
 
 Acceptance: macOS arm64 and Windows amd64 launch the unchanged Web GUI through a native window without requiring a separately installed Node runtime.
@@ -66,20 +66,21 @@ Status: in progress (scripts complete; full build and platform smoke pending).
 - [x] Embed the compressed closure, manifest version, and SHA-256; materialize it atomically and rebuild damaged runtime directories. (verified in dry run)
 - [ ] Package required native sidecars, including `landlock-run`, ripgrep, and Windows koffi dependencies, beside the materialized runtime. (deploy closure carries them; explicit verification pending)
 - [x] Clean old runtime versions only after a current-version Host reports readiness.
-- [ ] Test cold start, corruption recovery, successful cleanup, failed-start preservation, and real startup on all supported target platforms.
+- [ ] Test cold start, corruption recovery, successful cleanup, failed-start preservation, and real startup on all supported target platforms. (full `pnpm run build:runtime` run pending)
 
 Acceptance: users can run a release artifact without installing Node, and the artifact always verifies or rebuilds its on-disk runtime before launch.
 
 ## Phase 4: Linux interactive CLI
 
-Status: in progress (transport, session basics, approval/question wired; parity items pending).
+Status: in progress (panels wired for workspaces/skills/presets/settings/models/jobs/subagents/goals; operations and remaining panels pending).
 
 - [x] Create `apps/tui` Go module using Bubble Tea and Lip Gloss, distributed as `coding` on Linux amd64.
 - [x] Implement the `/api` RPC envelopes and both downlink WebSocket streams with runtime validation and reconnect-generation behavior matching `ConnectionController`. (`internal/tui/client.go`)
 - [x] Implement session list/create/resume, prompt send, streamed replies, Ctrl+C interrupt, and approval/question answering via `POST /api/respond`. (approvals y/n; questions submit first option, cancel via Esc)
-- [ ] Implement workspace management, tool summary, jobs, subagents, goals, skills and slash commands, model/credential settings, agent presets, plugin/settings inventory, session ZIP export, and token/context displays.
-- [ ] Show unsupported third-party Web client plugin UI as a non-executable placeholder with plugin id and default JSON projection.
+- [x] Implement workspace management, tool summary, jobs, subagents, goals, skills and slash commands, model/credential settings, agent presets, plugin/settings inventory, session ZIP export, and token/context displays. (read-only panels: `internal/tui/panels.go` Ctrl+P; export helper `ExportSessionZIP`; write interactions pending)
+- [x] Show unsupported third-party Web client plugin UI as a non-executable placeholder with plugin id and default JSON projection. (plugins panel placeholder)
 - [x] Keep all settings, credentials, and session data under the shared `$DSH_HOME`. (launcher/Host mechanism; no TUI-local storage)
+- [ ] End-to-end keyless mock-LLM session test through the TUI transport.
 
 ### TUI initial key map
 
@@ -99,11 +100,11 @@ Acceptance: first-party Web GUI workflows can be completed through `coding` agai
 
 ## Phase 5: build, CI, and release
 
-Status: in progress (scripts exist; workflow and packaging pending).
+Status: in progress (opt-in workflow added; packaging metadata pending).
 
 - [x] Add `build:runtime`, `build:desktop`, `build:tui`, and `release:desktop` scripts without changing the current keyless CI contract.
-- [ ] Add an opt-in, credential-free platform build workflow for darwin/arm64, windows/amd64, and linux/amd64; keep publication out of CI. (update `.github/AGENTS.md` when adding it)
-- [ ] Add release packaging metadata, notices, checksums, and manual installation instructions.
+- [x] Add an opt-in, credential-free platform build workflow for darwin/arm64, windows/amd64, and linux/amd64; keep publication out of CI. (`.github/workflows/coding-native.yml`; `.github/AGENTS.md` updated)
+- [ ] Add release packaging metadata, notices, checksums, and manual installation instructions. (workflow emits checksums; `.app`/installer packaging pending)
 - [ ] Run the narrow TypeScript, Go, runtime, GUI, and TUI test sets required by changed behavior, then `git diff --check`.
 
 Acceptance: CI can build every target without secrets, and a manually installed artifact passes the platform smoke checks documented above.

@@ -20,8 +20,11 @@ const goAssetDir = join(root, 'apps', 'internal', 'runtime')
 function command(command: string, args: string[], cwd = root): Promise<void> {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(command, args, { cwd, stdio: 'inherit', env: { ...process.env, CI: 'true' } })
-    child.once('error', error => reject(error))
-    child.once('exit', code => code === 0 ? resolvePromise() : reject(new Error(`${command} ${args.join(' ')} exited ${String(code)}`)))
+    child.once('error', (error) => { reject(error) })
+    child.once('exit', (code) => {
+      if (code === 0) resolvePromise()
+      else reject(new Error(`${command} ${args.join(' ')} exited ${String(code)}`))
+    })
   })
 }
 
