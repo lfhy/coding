@@ -52,7 +52,7 @@ Status: in progress (dev form on macOS; single-instance + WebView2 check wired; 
 - [x] Parse `--cwd`; discover or start the Host; wait for readiness; navigate a `webview_go` window to its loopback URL.
 - [x] Use `Coding` in the window title, application metadata, and installer metadata. (window title; installer metadata pending packaging)
 - [x] Implement platform single-instance behavior: forward a second invocation's arguments and focus the existing window. (`apps/desktop/internal/instance`)
-- [x] Detect missing Windows WebView2 and present a recovery path. (`apps/desktop/internal/webview2`; macOS `.app`/`.dmg` packaging pending)
+- [x] Detect missing Windows WebView2 and present a recovery path. Package macOS as `.app`/`.dmg`, retaining signing/notarization configuration hooks. (WebView2 check done; `scripts/package-macos-app.sh` builds+signs `.app` with developer identity or ad-hoc; notarization command documented in script output)
 - [ ] Smoke-test fresh launch, existing-Host attach, second-instance focus, and post-close idle shutdown on the supported desktop platforms.
 
 Acceptance: macOS arm64 and Windows amd64 launch the unchanged Web GUI through a native window without requiring a separately installed Node runtime.

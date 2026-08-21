@@ -1,0 +1,15 @@
+{
+  "CFBundleName": "Coding",
+  "CFBundleDisplayName": "Coding",
+  "CFBundleIdentifier": "ai.deepseek.coding",
+  "CFBundleVersion": "0.1.0-rc.8",
+  "CFBundleShortVersionString": "0.1.0-rc.8",
+  "CFBundlePackageType": "APPL",
+  "CFBundleExecutable": "Coding",
+  "CFBundleInfoDictionaryVersion": "6.0",
+  "LSMinimumSystemVersion": "13.0",
+  "NSHighResolutionCapable": true,
+  "NSPrincipalClass": "NSApplication",
+  "NSAppleEventsUsageDescription": "Coding 在打开文件或文件夹时需要发送 Apple 事件。",
+  "LSApplicationCategoryType": "public.app-category.developer-tools"
+}

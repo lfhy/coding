@@ -37,9 +37,8 @@ tui:
 install: $(INSTALL)
 
 install-app: desktop runtime
-	@mkdir -p /Applications
-	@echo "Coding: 复制 dist/Coding 与 dist/coding-runtime/ 到 /Applications/Coding.app 由打包脚本处理；当前开发版请直接运行 ./dist/Coding"
-	@echo "Coding: 或安装命令行客户端: make install-cli"
+	./scripts/package-macos-app.sh
+	@echo "Coding: 已生成签名 dist/Coding.app；拖入 /Applications 即完成安装"
 
 install-cli: tui runtime
 	mkdir -p $(BINDIR)
@@ -55,3 +54,4 @@ uninstall:
 
 help:
 	@echo "目标：runtime / desktop / tui / install（按平台选 app 或 cli）/ uninstall"
+	@echo "签名：CODESIGN_IDENTITY=\"Apple Development: …\" make install（默认 ad-hoc）"
