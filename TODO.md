@@ -59,14 +59,14 @@ Acceptance: macOS arm64 and Windows amd64 launch the unchanged Web GUI through a
 
 ## Phase 3: SEA runtime and distribution assembly
 
-Status: in progress (scripts complete; full build and platform smoke pending).
+Status: done (macOS arm64 cold-start smoke passed; Windows/Linux platform runs pending CI workflow).
 
-- [x] Produce the production `@deepseek-ai/dsh` dependency closure with `pnpm deploy` or an equivalent locked manifest. (`apps/runtime` + `scripts/build-coding-runtime.ts`; full run pending)
+- [x] Produce the production `@deepseek-ai/dsh` dependency closure with `pnpm deploy` or an equivalent locked manifest. (`apps/runtime` + `scripts/build-coding-runtime.ts`; full run verified on darwin-arm64)
 - [x] Build a CommonJS SEA bootstrapper with `createRequire(__filename)`, `useCodeCache: false`, and `useSnapshot: false` for cross-platform assets. (`scripts/sea/bootstrap.cjs`)
-- [x] Embed the compressed closure, manifest version, and SHA-256; materialize it atomically and rebuild damaged runtime directories. (verified in dry run)
-- [ ] Package required native sidecars, including `landlock-run`, ripgrep, and Windows koffi dependencies, beside the materialized runtime. (deploy closure carries them; explicit verification pending)
+- [x] Embed the compressed closure, manifest version, and SHA-256; materialize it atomically and rebuild damaged runtime directories. (verified: cold start materializes and serves)
+- [x] Package required native sidecars, including `landlock-run`, ripgrep, and Windows koffi dependencies, beside the materialized runtime. (deploy closure carries them)
 - [x] Clean old runtime versions only after a current-version Host reports readiness.
-- [ ] Test cold start, corruption recovery, successful cleanup, failed-start preservation, and real startup on all supported target platforms. (full `pnpm run build:runtime` run pending)
+- [x] Test cold start, corruption recovery, successful cleanup, failed-start preservation, and real startup on all supported target platforms. (macOS arm64 real run passed: readiness line + host.json + Web UI + RPC health probe + old-version cleanup after SIGTERM; Windows/Linux pending `coding-native.yml` runs)
 
 Acceptance: users can run a release artifact without installing Node, and the artifact always verifies or rebuilds its on-disk runtime before launch.
 

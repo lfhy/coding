@@ -2,7 +2,7 @@
 
 const { createHash } = require('node:crypto')
 const { createRequire } = require('node:module')
-const { mkdirSync, existsSync, renameSync, rmSync, writeFileSync, readFileSync, chmodSync, readdirSync } = require('node:fs')
+const { mkdirSync, existsSync, renameSync, rmSync, writeFileSync, readFileSync, chmodSync, copyFileSync, readdirSync } = require('node:fs')
 const { homedir } = require('node:os')
 const { dirname, join, resolve, relative, sep } = require('node:path')
 const { gunzipSync } = require('node:zlib')
@@ -11,7 +11,7 @@ const { pathToFileURL } = require('node:url')
 require = createRequire(__filename)
 
 const metadata = JSON.parse(require('node:sea').getAsset('coding-runtime-manifest.json', 'utf8'))
-const archive = require('node:sea').getAsset('coding-runtime.tgz')
+const archive = Buffer.from(require('node:sea').getAsset('coding-runtime.tgz'))
 const home = resolve(process.env.DSH_HOME && process.env.DSH_HOME.trim() ? process.env.DSH_HOME : join(homedir(), '.dsh'))
 const runtime = join(home, 'runtime', metadata.version)
 const marker = join(runtime, '.coding-runtime.json')
@@ -36,6 +36,8 @@ function octal(buffer, start, length) {
 }
 
 function archivePath(root, value) {
+  // "./" 是归档根目录条目，物化目标就是 destination 本身，跳过即可。
+  if (value === './' || value === '.') return null
   const target = resolve(root, value)
   const contained = relative(root, target)
   if (contained === '' || contained === '..' || contained.startsWith(`..${sep}`)) {
@@ -59,12 +61,22 @@ function unpack(buffer, destination) {
     const bodyEnd = bodyStart + size
     if (bodyEnd > tar.length) throw new Error('Coding runtime archive is truncated')
     const target = archivePath(destination, filename)
-    if (type === '5') {
+    if (target === null) {
+      // 根目录条目：目录本身已由 ensureRuntime 创建。
+    } else if (type === '5') {
       mkdirSync(target, { recursive: true, mode: mode || 0o700 })
     } else if (type === '0') {
       mkdirSync(dirname(target), { recursive: true, mode: 0o700 })
       writeFileSync(target, tar.subarray(bodyStart, bodyEnd), { mode: mode || 0o600 })
       chmodSync(target, mode || 0o600)
+    } else if (type === '1') {
+      // 硬链接：pnpm deploy 的 .bin 入口共享目标 inode，物化为可执行副本。
+      const linkname = header.subarray(157, 257).toString('utf8').replace(/\0.*$/u, '')
+      const source = archivePath(destination, linkname.replace(/^\.\//u, ''))
+      if (source === null) throw new Error(`Coding runtime archive has a root hardlink for ${JSON.stringify(filename)}`)
+      mkdirSync(dirname(target), { recursive: true, mode: 0o700 })
+      copyFileSync(source, target)
+      chmodSync(target, 0o755)
     } else {
       throw new Error(`Coding runtime archive has unsupported entry type ${JSON.stringify(type)} for ${JSON.stringify(filename)}`)
     }
