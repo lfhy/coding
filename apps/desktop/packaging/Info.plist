@@ -11,5 +11,6 @@
   "NSHighResolutionCapable": true,
   "NSPrincipalClass": "NSApplication",
   "NSAppleEventsUsageDescription": "Coding 在打开文件或文件夹时需要发送 Apple 事件。",
-  "LSApplicationCategoryType": "public.app-category.developer-tools"
+  "LSApplicationCategoryType": "public.app-category.developer-tools",
+  "CFBundleIconFile": "AppIcon"
 }

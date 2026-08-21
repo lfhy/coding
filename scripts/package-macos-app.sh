@@ -18,6 +18,7 @@ rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$app/Contents/Frameworks"
 cp dist/Coding "$app/Contents/MacOS/Coding"
 cp apps/desktop/packaging/Info.plist "$app/Contents/Info.plist"
+cp apps/desktop/packaging/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"
 
 # 内嵌 SEA Host：首个运行物化到 $DSH_HOME/runtime，.app 内保持只读资源。
 if ls dist/coding-runtime/coding-host-darwin-* >/dev/null 2>&1; then
