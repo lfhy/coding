@@ -14,7 +14,7 @@ Coding 保留 TypeScript/Cordis Node 进程作为唯一业务 Host。Go 应用�
 
 由 Go 管理的 Host 启动会绑定 OS 分配的回环端口，并在完整 Web 树结算后输出结构化 JSON 就绪信息。Host 记录包含端口、PID、运行时版本和协议版本。启动器会先验证连通性和兼容性再连接；只有记录的所有者已经退出时，才会替换陈旧或不兼容的记录。Host 只删除自己拥有的记录，并会在没有客户端且没有活跃 Agent/后台工作五分钟后退出。
 
-发布启动器内嵌 Node SEA 引导资产。它会先将经过校验的生产闭包和所需原生侧车物化到 `$DSH_HOME/runtime/<version>`，再启动 Host。成功启动后删除旧运行时目录，启动失败则保留它们。这让最终用户无需预装 Node，同时不承诺把必须依赖文件的原生侧车塞进纯单文件中。
+发布启动器内嵌 Node SEA 引导资产。它会先将经过校验的生产闭包和所需原生侧车物化到 `$DSH_HOME/runtime/<sha256>`，再启动 Host。目录名是归档内容哈希，因此后续产品版本若携带相同字节会复用该目录。成功启动后删除旧运行时目录，启动失败则保留它们。这让最终用户无需预装 Node，同时不承诺把必须依赖文件的原生侧车塞进纯单文件中。
 
 Coding 的产品名和公开 Linux 命令不会重命名内部 `@deepseek-ai/dsh` 包、插件、协议或数据目录标识。现有语义仍是兼容性边界，面向产品的产物使用 Coding。跨会话交付记录 [TODO.md](../../../TODO.md) 负责分阶段实施状态和详细验收工作。
 
@@ -33,7 +33,7 @@ Coding 的产品名和公开 Linux 命令不会重命名内部 `@deepseek-ai/dsh
 - Host 可以发布并清理带版本的本地发现记录，Go 客户端仅在 PID、协议、版本和回环 RPC 检查成功后连接。
 - `apps/desktop` 在 macOS arm64 或 Windows amd64 原生 WebView 中打开现有 Web 应用，不引入第二条 HTTP 传输。
 - `apps/tui` 是 Linux amd64 的 Bubble Tea 应用，校验既有 RPC 信封，并按 generation 重连两条下行流。
-- 发布产物将已校验 SHA-256 的 Host 运行时物化到 `$DSH_HOME/runtime/<version>`，不需要全局安装 Node 可执行文件。
+- 发布产物将已校验 SHA-256 的 Host 运行时物化到 `$DSH_HOME/runtime/<sha256>`，不需要全局安装 Node 可执行文件。
 - 第一方工作流仍由 Node Host 拥有；仅浏览器可用的第三方客户端视图在 TUI 中显示为不可执行占位。
 
 ## Risks

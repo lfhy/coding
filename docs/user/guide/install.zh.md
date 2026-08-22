@@ -14,7 +14,7 @@ Coding 以同一个本地 agent Host 提供两种客户端：macOS 与 Windows �
 
 ## 本机运行的进程
 
-客户端二进制内嵌 Node Host 运行时。首次运行会把运行时物化到 `$DSH_HOME/runtime/<version>` 并从该目录启动 Host，无需单独安装 Node。当前版本成功启动后只保留该版本的运行时目录。
+客户端二进制内嵌 Node Host 运行时。首次运行会把运行时物化到 `$DSH_HOME/runtime/<sha256>` 并从该目录启动 Host，无需单独安装 Node。目录名是内嵌归档的内容哈希，因此后续产品版本若携带相同字节会复用该目录。当前归档成功启动后只保留该归档对应的运行时目录。
 
 Host 只绑定回环地址。客户端通过 `$DSH_HOME/host.json` 发现 Host，并使用现有 HTTP/WebSocket API 连接；空闲（无客户端连接且无运行中任务）的 Host 在五分钟后自动退出。
 

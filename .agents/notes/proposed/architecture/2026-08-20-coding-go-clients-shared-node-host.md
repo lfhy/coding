@@ -14,7 +14,7 @@ Coding keeps the TypeScript/Cordis Node process as the only business Host. Go ap
 
 Go-managed Host launches bind loopback on an OS-selected port and report readiness as structured JSON after the full Web tree settles. A Host record carries its port, PID, runtime version, and protocol version. Launchers validate reachability and compatibility before attaching; a stale or incompatible record is replaced only after its owner is gone. The Host removes only the record it owns and stops after five minutes with neither clients nor active Agent/background work.
 
-Release launchers embed a Node SEA bootstrap asset. It materializes a verified production closure and required native sidecars under `$DSH_HOME/runtime/<version>` before starting the Host. Successful startup removes older runtime directories; a failed startup preserves them. This keeps Node out of the end-user prerequisite list without claiming that native sidecars can live inside a pure single executable.
+Release launchers embed a Node SEA bootstrap asset. It materializes a verified production closure and required native sidecars under `$DSH_HOME/runtime/<sha256>` before starting the Host. The directory name is the archive content hash, so a later product version that ships the same bytes reuses that directory. Successful startup removes older runtime directories; a failed startup preserves them. This keeps Node out of the end-user prerequisite list without claiming that native sidecars can live inside a pure single executable.
 
 The Coding product name and public Linux command do not rename the internal `@deepseek-ai/dsh` package, plugin, protocol, or data-home identifiers. The existing semantics remain the compatibility boundary while product-facing artifacts use Coding. The cross-session delivery record in [TODO.md](../../../TODO.md) owns the phased implementation status and detailed acceptance work.
 
@@ -33,7 +33,7 @@ The Coding product name and public Linux command do not rename the internal `@de
 - The Host can publish and clean up a versioned local discovery record, and Go clients attach only after PID, protocol, version, and loopback RPC checks succeed.
 - `apps/desktop` opens the existing Web application inside a native macOS arm64 or Windows amd64 WebView without introducing a second HTTP transport.
 - `apps/tui` is a Linux amd64 Bubble Tea application that validates the existing RPC envelopes and reconnects both downlinks by generation.
-- Release artifacts materialize a checksum-verified Host runtime under `$DSH_HOME/runtime/<version>` and do not require a globally installed Node executable.
+- Release artifacts materialize a checksum-verified Host runtime under `$DSH_HOME/runtime/<sha256>` and do not require a globally installed Node executable.
 - First-party workflows remain owned by the Node Host; browser-only third-party client views render a non-executable TUI placeholder.
 
 ## Risks

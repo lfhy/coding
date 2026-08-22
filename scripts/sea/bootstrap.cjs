@@ -13,7 +13,9 @@ require = createRequire(__filename)
 const metadata = JSON.parse(require('node:sea').getAsset('coding-runtime-manifest.json', 'utf8'))
 const archive = Buffer.from(require('node:sea').getAsset('coding-runtime.tgz'))
 const home = resolve(process.env.DSH_HOME && process.env.DSH_HOME.trim() ? process.env.DSH_HOME : join(homedir(), '.dsh'))
-const runtime = join(home, 'runtime', metadata.version)
+// 物化目录只按内容 hash 命名。产品版本写在 marker 里，语义版本变化本身不触发重新解压。
+const runtimeId = String(metadata.sha256)
+const runtime = join(home, 'runtime', runtimeId)
 const marker = join(runtime, '.coding-runtime.json')
 
 function sha256(value) {
@@ -24,7 +26,7 @@ function materialized() {
   if (!existsSync(marker)) return false
   try {
     const current = JSON.parse(readFileSync(marker, 'utf8'))
-    return current.version === metadata.version && current.sha256 === metadata.sha256 && existsSync(join(runtime, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js'))
+    return current.sha256 === metadata.sha256 && existsSync(join(runtime, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js'))
   } catch {
     return false
   }
@@ -143,7 +145,7 @@ void import(pathToFileURL(entry).href).then(() => {
       const record = JSON.parse(readFileSync(recordPath, 'utf8'))
       if (record.version !== metadata.version || record.pid !== process.pid) return false
       for (const name of readdirSync(join(home, 'runtime'))) {
-        if (name !== metadata.version) rmSync(join(home, 'runtime', name), { recursive: true, force: true })
+        if (name !== runtimeId) rmSync(join(home, 'runtime', name), { recursive: true, force: true })
       }
       return true
     } catch {

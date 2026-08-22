@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/proposed/architecture/2026-08-20-coding-go-clients-shared-node-host.md
-2026-08-20-coding-go-clients-shared-node-host.md: 2186259757050bfebd5d1c4bfef5d8e2ac229618
-2026-08-20-coding-go-clients-shared-node-host.zh.md: b3d852ce751d1c6295110ff52d2473ae6327fd9a
+2026-08-20-coding-go-clients-shared-node-host.md: 6fe277a88a13b3f3f44c209be6f7d520a8579763
+2026-08-20-coding-go-clients-shared-node-host.zh.md: fbf39971c7eb0b2368fdeb70cc1ac6f7f5dc519a

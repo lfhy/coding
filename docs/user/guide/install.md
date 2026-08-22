@@ -14,7 +14,7 @@ Coding ships the same local agent Host with two clients: a native desktop GUI on
 
 ## What runs on your machine
 
-The client binary embeds the Node Host runtime. On first run it materializes the runtime into `$DSH_HOME/runtime/<version>` and starts the Host from there; installing Node separately is not required. Only the current version's runtime directory is kept after a successful start.
+The client binary embeds the Node Host runtime. On first run it materializes the runtime into `$DSH_HOME/runtime/<sha256>` and starts the Host from there; installing Node separately is not required. The directory name is the content hash of the embedded archive, so a later product version that ships the same bytes reuses that directory. Only the current archive's runtime directory is kept after a successful start.
 
 The Host binds to loopback only. Clients discover it through `$DSH_HOME/host.json` and connect over the existing HTTP/WebSocket API; an idle Host with no connected client and no running task exits after five minutes.
 
