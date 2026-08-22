@@ -1,16 +1,34 @@
-{
-  "CFBundleName": "Coding",
-  "CFBundleDisplayName": "Coding",
-  "CFBundleIdentifier": "ai.deepseek.coding",
-  "CFBundleVersion": "0.1.0-rc.8",
-  "CFBundleShortVersionString": "0.1.0-rc.8",
-  "CFBundlePackageType": "APPL",
-  "CFBundleExecutable": "Coding",
-  "CFBundleInfoDictionaryVersion": "6.0",
-  "LSMinimumSystemVersion": "13.0",
-  "NSHighResolutionCapable": true,
-  "NSPrincipalClass": "NSApplication",
-  "NSAppleEventsUsageDescription": "Coding 在打开文件或文件夹时需要发送 Apple 事件。",
-  "LSApplicationCategoryType": "public.app-category.developer-tools",
-  "CFBundleIconFile": "AppIcon"
-}
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>Coding</string>
+	<key>CFBundleDisplayName</key>
+	<string>Coding</string>
+	<key>CFBundleIdentifier</key>
+	<string>ai.deepseek.coding</string>
+	<key>CFBundleVersion</key>
+	<string>0.1.0-rc.8</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0-rc.8</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleExecutable</key>
+	<string>Coding</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>13.0</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Coding 在打开文件或文件夹时需要发送 Apple 事件。</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.developer-tools</string>
+</dict>
+</plist>

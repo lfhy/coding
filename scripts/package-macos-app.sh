@@ -17,7 +17,7 @@ fi
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$app/Contents/Frameworks"
 cp dist/Coding "$app/Contents/MacOS/Coding"
-cp apps/desktop/packaging/Info.plist "$app/Contents/Info.plist"
+plutil -convert binary1 apps/desktop/packaging/Info.plist -o "$app/Contents/Info.plist"
 cp apps/desktop/packaging/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"
 # 触发 Finder/桌面重读图标缓存，避免沿用未带图标版本的旧图标。
 rm -rf "$app/Icon\r"
