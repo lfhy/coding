@@ -80,7 +80,7 @@ func main() {
 		Height:           860,
 		MinWidth:         720,
 		MinHeight:        480,
-		BackgroundColour: &options.RGBA{R: 11, G: 13, B: 16, A: 1},
+		BackgroundColour: &options.RGBA{R: 245, G: 245, B: 247, A: 1},
 		SingleInstanceLock: &options.SingleInstanceLock{
 			UniqueId: "ai.deepseek.coding.desktop",
 			OnSecondInstanceLaunch: func(_ options.SecondInstanceData) {
@@ -100,6 +100,7 @@ func main() {
 			},
 			About:                &mac.AboutInfo{Title: applicationName, Message: "Coding"},
 			WebviewIsTransparent: false,
+			Appearance:           mac.DefaultAppearance,
 		},
 		Menu: menu,
 		OnStartup: func(ctx context.Context) {

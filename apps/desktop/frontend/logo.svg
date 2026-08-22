@@ -1,0 +1,81 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="256" y2="256" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2B1A4A"/>
+      <stop offset="1" stop-color="#1A1030"/>
+    </linearGradient>
+  </defs>
+
+  <!-- GitHub 风格圆角方块底 -->
+  <rect width="256" height="256" rx="56" fill="url(#bg)"/>
+
+  <!-- 喵宝剪影（白色，统一像 GitHub octocat 那样用正空间造型） -->
+  <g fill="#F8F4FC">
+
+    <!-- 弯月呆毛：从头顶弯出 -->
+    <path d="M128 32
+             C126 24 130 16 140 14
+             C134 18 132 24 134 32
+             Z"/>
+
+    <!-- 左猫耳 -->
+    <path d="M76 80
+             L56 36
+             L102 66
+             Z"/>
+    <!-- 右猫耳 -->
+    <path d="M180 80
+             L200 36
+             L154 66
+             Z"/>
+
+    <!-- 耳朵内侧（暗色，用背景色挖空） -->
+    <path d="M80 72 L66 46 L94 64 Z" fill="#2B1A4A"/>
+    <path d="M176 72 L190 46 L162 64 Z" fill="#2B1A4A"/>
+
+    <!-- 头部主体（圆脸） -->
+    <ellipse cx="128" cy="116" rx="48" ry="44"/>
+
+    <!-- 左蝴蝶结（简约三角剪影） -->
+    <path d="M62 112
+             L48 100
+             L50 124
+             L66 120
+             Z"/>
+    <path d="M62 112
+             L48 124
+             L52 100
+             L66 104
+             Z"/>
+    <circle cx="62" cy="112" r="5"/>
+
+    <!-- 右蝴蝶结 -->
+    <path d="M194 112
+             L208 100
+             L206 124
+             L190 120
+             Z"/>
+    <path d="M194 112
+             L208 124
+             L204 100
+             L190 104
+             Z"/>
+    <circle cx="194" cy="112" r="5"/>
+
+    <!-- 眯眼笑（两条弧线，用背景色挖出） -->
+    <path d="M108 110 Q114 104 120 110" fill="none" stroke="#2B1A4A" stroke-width="4" stroke-linecap="round"/>
+    <path d="M136 110 Q142 104 148 110" fill="none" stroke="#2B1A4A" stroke-width="4" stroke-linecap="round"/>
+
+    <!-- 嘴巴（小三角，用背景色挖出） -->
+    <path d="M122 128 Q128 134 134 128 Q128 130 122 128 Z" fill="#2B1A4A"/>
+
+    <!-- 胡须暗示（两小竖线） -->
+    <line x1="96" y1="122" x2="86" y2="120" stroke="#F8F4FC" stroke-width="2" stroke-linecap="round" opacity="0.7"/>
+    <line x1="96" y1="128" x2="86" y2="130" stroke="#F8F4FC" stroke-width="2" stroke-linecap="round" opacity="0.7"/>
+    <line x1="160" y1="122" x2="170" y2="120" stroke="#F8F4FC" stroke-width="2" stroke-linecap="round" opacity="0.7"/>
+    <line x1="160" y1="128" x2="170" y2="130" stroke="#F8F4FC" stroke-width="2" stroke-linecap="round" opacity="0.7"/>
+
+    <!-- 哥特裙领口暗示（V 形） -->
+    <path d="M104 158 L128 178 L152 158 L148 170 L128 184 L108 170 Z"/>
+  </g>
+</svg>
