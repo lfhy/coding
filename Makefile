@@ -40,6 +40,8 @@ install-app: desktop runtime
 	./scripts/package-macos-app.sh
 	rm -rf /Applications/Coding.app
 	cp -R dist/Coding.app /Applications/
+	@touch /Applications/Coding.app
+	@/usr/bin/killall Finder >/dev/null 2>&1 || true
 	@echo "Coding: 已安装 /Applications/Coding.app"
 
 install-cli: tui runtime
