@@ -185,7 +185,7 @@ async function main(): Promise<void> {
     '--config.link-workspace-packages=true', staging,
   ])
   await normalizeStaging(staging)
-  await command('tar', ['--format=ustar', '-chzf', archive, '-C', staging, '.'])
+  await command('tar', ['--format=pax', '-chzf', archive, '-C', staging, '.'])
   const archiveBytes = await readFile(archive)
   const metadata = { version: manifest.version, sha256: sha256(archiveBytes) }
   const metadataPath = join(staging, 'coding-runtime-manifest.json')

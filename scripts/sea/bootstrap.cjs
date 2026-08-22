@@ -46,8 +46,31 @@ function archivePath(root, value) {
   return target
 }
 
+function parsePaxPath(body) {
+  // pax 扩展头由重复的 "<len> key=value\n" 记录组成，len 是含数字与空格的十进制总长；返回最后一条 path 记录。
+  let path = null
+  let cursor = 0
+  while (cursor < body.length) {
+    const space = body.indexOf(' ', cursor)
+    if (space < 0) throw new Error('Coding runtime pax header is malformed')
+    const length = Number.parseInt(body.subarray(cursor, space).toString('utf8'), 10)
+    if (!Number.isSafeInteger(length) || length <= 0 || cursor + length > body.length) {
+      throw new Error('Coding runtime pax header has an invalid record length')
+    }
+    const record = body.subarray(cursor + 1, cursor + length - 1).toString('utf8')
+    const eq = record.indexOf('=')
+    if (eq < 0) throw new Error('Coding runtime pax header has a malformed record')
+    if (record.slice(0, eq) === 'path') path = record.slice(eq + 1)
+    cursor += length
+  }
+  return path
+}
+
 function unpack(buffer, destination) {
   const tar = gunzipSync(buffer)
+  // 扩展头只作用于紧随其后的条目；全局头作用于后续所有条目直到被覆盖。
+  let extendedPath = null
+  let globalPath = null
   for (let offset = 0; offset + 512 <= tar.length;) {
     const header = tar.subarray(offset, offset + 512)
     if (header.every(byte => byte === 0)) return
@@ -60,14 +83,24 @@ function unpack(buffer, destination) {
     const bodyStart = offset + 512
     const bodyEnd = bodyStart + size
     if (bodyEnd > tar.length) throw new Error('Coding runtime archive is truncated')
-    const target = archivePath(destination, filename)
+    const body = tar.subarray(bodyStart, bodyEnd)
+    if (type === 'x' || type === 'g') {
+      const parsed = parsePaxPath(body)
+      if (type === 'x') extendedPath = parsed
+      else if (parsed !== null) globalPath = parsed
+      offset = bodyStart + Math.ceil(size / 512) * 512
+      continue
+    }
+    const entryPath = extendedPath ?? globalPath ?? filename
+    extendedPath = null
+    const target = archivePath(destination, entryPath)
     if (target === null) {
       // 根目录条目：目录本身已由 ensureRuntime 创建。
     } else if (type === '5') {
       mkdirSync(target, { recursive: true, mode: mode || 0o700 })
     } else if (type === '0') {
       mkdirSync(dirname(target), { recursive: true, mode: 0o700 })
-      writeFileSync(target, tar.subarray(bodyStart, bodyEnd), { mode: mode || 0o600 })
+      writeFileSync(target, body, { mode: mode || 0o600 })
       chmodSync(target, mode || 0o600)
     } else if (type === '1') {
       // 硬链接：pnpm deploy 的 .bin 入口共享目标 inode，物化为可执行副本。
