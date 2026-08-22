@@ -7,11 +7,11 @@ package chrome
 #cgo LDFLAGS: -framework Cocoa
 #import <Cocoa/Cocoa.h>
 
-// styleWindow 将 NSWindow 切换为无边框等价样式：隐藏标题栏，
-// 保留全尺寸内容视图与系统拖拽区，使 Web 页面铺满整个窗口。
+// styleWindow 在保留标题栏结构的前提下做成无边框观感：标题栏透明、标题隐藏，
+// 窗口保持系统圆角与红绿灯按钮，Web 页面铺满全尺寸内容视图。
 void styleWindow(void *window) {
 	NSWindow *nsWindow = (__bridge NSWindow *)window;
-	[nsWindow setStyleMask:NSWindowStyleMaskFullSizeContentView];
+	[nsWindow setStyleMask:([nsWindow styleMask] | NSWindowStyleMaskFullSizeContentView)];
 	[nsWindow setTitlebarAppearsTransparent:YES];
 	[nsWindow setTitleVisibility:NSWindowTitleHidden];
 	[nsWindow setMovableByWindowBackground:YES];
