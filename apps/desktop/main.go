@@ -105,6 +105,8 @@ func main() {
 		Menu: menu,
 		OnStartup: func(ctx context.Context) {
 			app.ctx = ctx
+			// 无边框模式下交通灯浮在内容上方；注入安全区变量供页面避让。
+			wailsruntime.WindowExecJS(ctx, "document.documentElement.style.setProperty('--app-safe-area-inset-top','38px')")
 			go app.startHost(ctx)
 		},
 		Bind: []interface{}{app},
