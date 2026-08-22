@@ -60,7 +60,11 @@ func main() {
 	}
 	defer lock.Close()
 
-	launcher, err := hostlaunch.New(hostlaunch.Options{CWD: cwd})
+	launcher, err := hostlaunch.New(hostlaunch.Options{
+		CWD:         cwd,
+		RuntimeRoot: packagedRuntimeRoot(),
+		Version:     hostlaunch.AppVersion,
+	})
 	if err != nil {
 		fatal(err)
 	}
@@ -105,9 +109,10 @@ func main() {
 		Menu: menu,
 		OnStartup: func(ctx context.Context) {
 			app.ctx = ctx
-			// 无边框模式下交通灯浮在内容上方；注入安全区变量供页面避让。
-			wailsruntime.WindowExecJS(ctx, "document.documentElement.style.setProperty('--app-safe-area-inset-top','38px')")
 			go app.startHost(ctx)
+		},
+		OnDomReady: func(ctx context.Context) {
+			wailsruntime.WindowExecJS(ctx, "document.documentElement.style.setProperty('--app-safe-area-inset-top','38px')")
 		},
 		Bind: []interface{}{app},
 	})
@@ -116,11 +121,12 @@ func main() {
 	}
 }
 
-// startHost 在窗口就绪后启动或连接共享 Host，解析 endpoint 后整窗导航。
+// startHost 在窗口就绪后启动或连接共享 Host，解析 endpoint 后通知启动页跳转。
 func (a *App) startHost(ctx context.Context) {
 	endpoint, err := a.launcher.Ensure(ctx)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, applicationName+":", err)
+		wailsruntime.EventsEmit(a.ctx, "coding:host-error", err.Error())
 		return
 	}
 	parsed, perr := url.Parse(endpoint.BaseURL)
@@ -130,6 +136,7 @@ func (a *App) startHost(ctx context.Context) {
 	}
 	a.endpoint = parsed
 	close(a.ready)
+	wailsruntime.EventsEmit(a.ctx, "coding:host-ready", parsed.String()+"/")
 }
 
 // Endpoint 暴露给启动页轮询：就绪后由前端主动跳转，与后台导航互为兜底。
@@ -157,4 +164,16 @@ func (a *App) focusPrimary() {
 func fatal(err error) {
 	fmt.Fprintln(os.Stderr, applicationName+":", err)
 	os.Exit(1)
+}
+
+// packagedRuntimeRoot 定位 .app Resources 目录下的 SEA Host；开发运行（无打包）返回空。
+func packagedRuntimeRoot() string {
+	if _, err := os.Stat(filepath.Join("apps", "cli", "src", "bin.ts")); err == nil {
+		return ""
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(executable), "..", "Resources")
 }
