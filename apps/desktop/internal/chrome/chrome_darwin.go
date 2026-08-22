@@ -8,7 +8,7 @@ package chrome
 #import <Cocoa/Cocoa.h>
 
 // styleWindow 在保留标题栏结构的前提下做成无边框观感：标题栏透明、标题隐藏，
-// 窗口保持系统圆角与红绿灯按钮，Web 页面铺满全尺寸内容视图。
+// 窗口保持系统圆角与红绿灯按钮；内容区通过 safe-area inset 获得交通灯避让。
 void styleWindow(void *window) {
 	NSWindow *nsWindow = (__bridge NSWindow *)window;
 	[nsWindow setStyleMask:([nsWindow styleMask] | NSWindowStyleMaskFullSizeContentView)];
@@ -78,10 +78,13 @@ import "C"
 
 import "unsafe"
 
-// apply 修改 NSWindow 样式为全尺寸内容视图（无边框观感），保留系统拖拽区。
+// apply 修改 NSWindow 样式并返回交通灯高度对应的顶部安全区。
 func apply(window interface{ Window() unsafe.Pointer }) {
 	C.ensureMainMenu()
 	if handle := window.Window(); handle != nil {
 		C.styleWindow(handle)
 	}
 }
+
+// safeAreaTop 返回 macOS 交通灯占用的顶部安全区高度。
+func safeAreaTop() string { return "38px" }

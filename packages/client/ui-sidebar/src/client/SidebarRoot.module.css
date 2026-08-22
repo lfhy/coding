@@ -11,7 +11,8 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: 6px var(--dsh-sidebar-inline-padding);
+  /* 桌面无边框壳把交通灯高度注入 --app-safe-area-inset-top；浏览器中该变量缺省为 0。 */
+  padding: calc(6px + var(--app-safe-area-inset-top, 0px)) var(--dsh-sidebar-inline-padding);
   box-sizing: border-box;
   background: var(--dsw-specific-sidebar-fill);
   color: var(--dsw-alias-label-primary);

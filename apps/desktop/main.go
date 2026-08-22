@@ -57,6 +57,8 @@ func main() {
 	window.SetSize(1280, 860, webview.HintNone)
 	window.SetHtml(splashHTML("正在准备 Coding"))
 	chrome.Decorate(window)
+	// 无边框样式下交通灯浮在页面上方；注入统一安全区变量，真实页面与启动页共用。
+	window.Init(chrome.PageSafeAreaScript())
 	ready := make(chan hostlaunch.Endpoint, 1)
 	failed := make(chan error, 1)
 	go func() {
