@@ -6,6 +6,7 @@ import "html"
 func splashHTML(message string) string {
 	return `<!doctype html><html><head><meta charset="utf-8"><style>
 html,body{margin:0;height:100%;display:flex;align-items:center;justify-content:center;background:#0b0d10;color:#e6e8ea;font-family:-apple-system,"Segoe UI",sans-serif}
+body{padding-top:var(--app-safe-area-inset-top,0px)}
 .box{display:flex;flex-direction:column;align-items:center;gap:18px}
 .logo{width:72px;height:72px;border-radius:18px;background:linear-gradient(135deg,#4f6ef7,#7a5cf0);display:flex;align-items:center;justify-content:center;font-size:34px;font-weight:700;color:#fff}
 .spinner{width:26px;height:26px;border:3px solid rgba(255,255,255,.15);border-top-color:#7a5cf0;border-radius:50%;animation:spin 1s linear infinite}

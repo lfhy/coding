@@ -70,6 +70,14 @@ func main() {
 		ready <- endpoint
 	}()
 	readyThen := make(chan hostlaunch.Endpoint, 1)
+	// 菜单"新建会话"→ 模拟点击侧边栏的新建按钮；选择器失败时无副作用。
+	newSessionJS := `(() => {
+		const button = document.querySelector('[aria-label="新建会话"], [aria-label="New session"], [aria-label="New Session"]');
+		if (button instanceof HTMLElement) button.click();
+	})()`
+	chrome.OnNewSession(func() {
+		window.Dispatch(func() { window.Eval(newSessionJS) })
+	})
 	go lock.Serve(func() {
 		// webview_go 无导出的窗口句柄；激活时刷新导航即可把窗口带回前台界面。
 		if endpoint := <-readyThen; endpoint.BaseURL != "" {
