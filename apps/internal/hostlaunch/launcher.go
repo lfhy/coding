@@ -319,6 +319,8 @@ func (lock *launchLock) Close() error {
 	return os.Remove(lock.path)
 }
 
+// acquireLock 获取启动锁。锁文件首行是持锁进程 PID；若该进程已死亡，视为残留锁
+// 直接清除后重试，避免崩溃/强杀留下的锁把后续启动阻塞到超时（表现为启动页一直转圈）。
 func acquireLock(ctx context.Context, path string, timeout, interval time.Duration) (*launchLock, error) {
 	deadline := time.Now().Add(timeout)
 	for {
@@ -329,6 +331,10 @@ func acquireLock(ctx context.Context, path string, timeout, interval time.Durati
 		}
 		if !errors.Is(err, os.ErrExist) {
 			return nil, fmt.Errorf("coding: acquire Host launch lock: %w", err)
+		}
+		if owner := readLockOwner(path); owner > 0 && !processAlive(owner) {
+			_ = os.Remove(path)
+			continue
 		}
 		if time.Now().After(deadline) {
 			return nil, fmt.Errorf("coding: timed out waiting for Host launch lock")
@@ -341,4 +347,18 @@ func acquireLock(ctx context.Context, path string, timeout, interval time.Durati
 		case <-timer.C:
 		}
 	}
+}
+
+// readLockOwner 解析锁文件首行的持锁 PID；文件缺失或内容非法时返回 0。
+func readLockOwner(path string) int {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	line := strings.TrimSpace(strings.SplitN(string(data), "\n", 2)[0])
+	owner, err := strconv.Atoi(line)
+	if err != nil || owner <= 0 {
+		return 0
+	}
+	return owner
 }
