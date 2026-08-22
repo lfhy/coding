@@ -55,7 +55,7 @@ func main() {
 	defer window.Destroy()
 	window.SetTitle(applicationName)
 	window.SetSize(1280, 860, webview.HintNone)
-	window.Navigate(splashHTML("正在准备 Coding"))
+	window.SetHtml(splashHTML("正在准备 Coding"))
 	chrome.Decorate(window)
 	ready := make(chan hostlaunch.Endpoint, 1)
 	failed := make(chan error, 1)
