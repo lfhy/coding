@@ -259,11 +259,11 @@ function mount(
 }
 
 describe('Hero chrome', () => {
-  it('renders the English preview badge through the hero locale seat', () => {
+  it('renders the English headline through the hero locale seat without a preview badge', () => {
     const renderSlot = vi.fn<HeroShellProps['renderSlot']>(() => null)
     const view = render(<HeroShell t={makeTranslate(en, commonEn)} renderSlot={renderSlot} />)
     expect(view.getByText('Into the Unknown')).toBeTruthy()
-    expect(view.getByText('Preview')).toBeTruthy()
+    expect(view.queryByText('Preview')).toBeNull()
     expect(renderSlot).toHaveBeenCalledOnce()
     expect(renderSlot.mock.calls[0]?.[0]).toBe('conversation.hero.brand.mark')
     const brandMarkOwner = renderSlot.mock.calls[0]?.[1]
@@ -374,7 +374,7 @@ describe('ConversationRoot resident composer', () => {
     expect(host).not.toBeNull()
     expect(header?.getAttribute('aria-hidden')).toBe('true')
     expect(b.view.getByText('探索未至之境')).toBeTruthy()
-    expect(b.view.getByText('预览版')).toBeTruthy()
+    expect(b.view.queryByText('预览版')).toBeNull()
     expect(b.view.queryByTestId('view-chat')).toBeNull()
     // The same machine-backed textarea is live in the hero, and the
     // persistence mirror stays bound (ConversationSession mounts chrome-hidden
