@@ -1,28 +1,47 @@
-// Coding opens the existing local Web application in a native WebView.
+// Coding Wails 桌面壳：窗口、菜单、单实例与 Host 启动编排。
 package main
 
 import (
 	"context"
+	"embed"
 	"flag"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
 
-	"github.com/deepseek-ai/coding/apps/desktop/internal/chrome"
 	"github.com/deepseek-ai/coding/apps/desktop/internal/instance"
-	"github.com/deepseek-ai/coding/apps/desktop/internal/webview2"
 	"github.com/deepseek-ai/coding/apps/internal/hostlaunch"
-	webview "github.com/webview/webview_go"
+	"github.com/wailsapp/wails/v2"
+	wmenu "github.com/wailsapp/wails/v2/pkg/menu"
+	"github.com/wailsapp/wails/v2/pkg/menu/keys"
+	"github.com/wailsapp/wails/v2/pkg/options"
+	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/mac"
+	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
+
+/*
+#cgo darwin LDFLAGS: -framework UniformTypeIdentifiers
+*/
+import "C"
+
+//go:embed all:frontend
+var assets embed.FS
 
 const applicationName = "Coding"
 
+// App 承载 Wails 绑定与窗口/运行时引用。
+type App struct {
+	ctx      context.Context
+	launcher *hostlaunch.Launcher
+	endpoint *url.URL
+	ready    chan struct{}
+}
+
 func main() {
 	var cwd string
-	var debug bool
 	flag.StringVar(&cwd, "cwd", "", "default workspace directory")
-	flag.BoolVar(&debug, "debug", false, "enable WebView developer tools")
 	flag.Parse()
 	if cwd != "" {
 		absolute, err := filepath.Abs(cwd)
@@ -40,58 +59,96 @@ func main() {
 		return
 	}
 	defer lock.Close()
-	if runtime.GOOS == "windows" {
-		if err := webview2.Check(); err != nil {
-			fmt.Fprintln(os.Stderr, "Coding: 需要 WebView2 运行时。请安装:", "https://developer.microsoft.com/microsoft-edge/webview2/")
-			os.Exit(1)
-		}
-	}
+
 	launcher, err := hostlaunch.New(hostlaunch.Options{CWD: cwd})
 	if err != nil {
 		fatal(err)
 	}
+	app := &App{launcher: launcher, ready: make(chan struct{})}
 
-	window := webview.New(debug)
-	defer window.Destroy()
-	window.SetTitle(applicationName)
-	window.SetSize(1280, 860, webview.HintNone)
-	window.SetHtml(splashHTML("正在准备 Coding"))
-	chrome.Decorate(window)
-	// 无边框样式下交通灯浮在页面上方；注入统一安全区变量，真实页面与启动页共用。
-	window.Init(chrome.PageSafeAreaScript())
-	ready := make(chan hostlaunch.Endpoint, 1)
-	failed := make(chan error, 1)
-	go func() {
-		endpoint, err := launcher.Ensure(context.Background())
-		if err != nil {
-			failed <- err
-			return
-		}
-		ready <- endpoint
-	}()
-	readyThen := make(chan hostlaunch.Endpoint, 1)
-	// 菜单"新建会话"→ 模拟点击侧边栏的新建按钮；选择器失败时无副作用。
-	newSessionJS := `(() => {
+	menu := wmenu.NewMenu()
+	fileMenu := menu.AddSubmenu("文件")
+	fileMenu.AddText("新建会话", keys.CmdOrCtrl("n"), func(*wmenu.CallbackData) {
+		app.dispatchNewSession()
+	})
+	fileMenu.AddSeparator()
+	fileMenu.AddText("关闭窗口", keys.CmdOrCtrl("w"), nil)
+
+	err = wails.Run(&options.App{
+		Title:            applicationName,
+		Width:            1280,
+		Height:           860,
+		MinWidth:         720,
+		MinHeight:        480,
+		BackgroundColour: &options.RGBA{R: 11, G: 13, B: 16, A: 1},
+		SingleInstanceLock: &options.SingleInstanceLock{
+			UniqueId: "ai.deepseek.coding.desktop",
+			OnSecondInstanceLaunch: func(_ options.SecondInstanceData) {
+				app.focusPrimary()
+			},
+		},
+		AssetServer: &assetserver.Options{
+			// 纯静态壳：只服务内嵌启动页；Host 就绪后整窗导航到回环 URL，
+			// 不经壳层转发任何 /api 流量。
+			Assets: assets,
+		},
+		Mac: &mac.Options{
+			TitleBar: &mac.TitleBar{
+				TitlebarAppearsTransparent: true,
+				HideTitle:                  true,
+				FullSizeContent:            true,
+			},
+			About:                &mac.AboutInfo{Title: applicationName, Message: "Coding"},
+			WebviewIsTransparent: false,
+		},
+		Menu: menu,
+		OnStartup: func(ctx context.Context) {
+			app.ctx = ctx
+			go app.startHost(ctx)
+		},
+		Bind: []interface{}{app},
+	})
+	if err != nil {
+		fatal(err)
+	}
+}
+
+// startHost 在窗口就绪后启动或连接共享 Host，解析 endpoint 后整窗导航。
+func (a *App) startHost(ctx context.Context) {
+	endpoint, err := a.launcher.Ensure(ctx)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, applicationName+":", err)
+		return
+	}
+	parsed, perr := url.Parse(endpoint.BaseURL)
+	if perr != nil {
+		fmt.Fprintln(os.Stderr, applicationName+":", perr)
+		return
+	}
+	a.endpoint = parsed
+	close(a.ready)
+}
+
+// Endpoint 暴露给启动页轮询：就绪后由前端主动跳转，与后台导航互为兜底。
+func (a *App) Endpoint() string {
+	select {
+	case <-a.ready:
+		return a.endpoint.String() + "/"
+	default:
+		return ""
+	}
+}
+
+func (a *App) dispatchNewSession() {
+	// 与 Web 端同一动作：模拟点击侧边栏"新建会话"按钮；选择器失败无副作用。
+	wailsruntime.WindowExecJS(a.ctx, `(() => {
 		const button = document.querySelector('[aria-label="新建会话"], [aria-label="New session"], [aria-label="New Session"]');
 		if (button instanceof HTMLElement) button.click();
-	})()`
-	chrome.OnNewSession(func() {
-		window.Dispatch(func() { window.Eval(newSessionJS) })
-	})
-	go lock.Serve(func() {
-		// webview_go 无导出的窗口句柄；激活时刷新导航即可把窗口带回前台界面。
-		if endpoint := <-readyThen; endpoint.BaseURL != "" {
-			window.Navigate(endpoint.BaseURL)
-		}
-	})
-	select {
-	case endpoint := <-ready:
-		readyThen <- endpoint
-		window.Navigate(endpoint.BaseURL)
-	case err := <-failed:
-		window.Dispatch(func() { window.Navigate(errorHTML(err)) })
-	}
-	window.Run()
+	})()`)
+}
+
+func (a *App) focusPrimary() {
+	wailsruntime.WindowUnminimise(a.ctx)
 }
 
 func fatal(err error) {

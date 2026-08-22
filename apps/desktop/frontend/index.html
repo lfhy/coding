@@ -1,0 +1,23 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Coding</title>
+<style>
+html,body{margin:0;height:100%;display:flex;align-items:center;justify-content:center;background:#0b0d10;color:#e6e8ea;font-family:-apple-system,"Segoe UI",sans-serif}
+.box{display:flex;flex-direction:column;align-items:center;gap:18px}
+.logo{width:72px;height:72px;border-radius:18px;background:linear-gradient(135deg,#4f6ef7,#7a5cf0);display:flex;align-items:center;justify-content:center;font-size:34px;font-weight:700;color:#fff}
+.spinner{width:26px;height:26px;border:3px solid rgba(255,255,255,.15);border-top-color:#7a5cf0;border-radius:50%;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.msg{font-size:13px;color:#9aa0a6}
+</style></head>
+<body><div class="box"><div class="logo">C</div><div class="spinner"></div><div class="msg">正在准备 Coding</div></div>
+<script>
+// 轮询壳层 Host endpoint；就绪后由壳层后台导航兜底，前端跳转保证即时性。
+const poll = async () => {
+  try {
+    const ep = await window.go.main.App.Endpoint()
+    if (ep) { window.location.href = ep; return }
+  } catch {}
+  setTimeout(poll, 500)
+}
+poll()
+</script>
+</body></html>
