@@ -161,6 +161,7 @@ function mount(
           renderSlot={renderSlot as never}
           views={views}
           open={open}
+          startSession={vi.fn()}
           t={t}
         />
       )

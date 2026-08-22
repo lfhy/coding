@@ -120,6 +120,26 @@
   gap: 8px;
 }
 
+/* 顶栏新建会话按钮：与 headerActions 同一行动作区，仅图标 + 原生悬停提示。 */
+.headerNewSession {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.headerNewSession:hover {
+  background: var(--dsw-alias-fill-secondary-hover, rgba(128, 128, 128, 0.15));
+}
+
 .headerUtilities {
   display: flex;
   flex: none;

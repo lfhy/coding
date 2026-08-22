@@ -488,6 +488,8 @@ export interface ConversationSessionHeaderInjected {
   }
   /** Select a real Session through the runtime navigation owner. */
   open: (sessionId: SessionId) => void
+  /** Open a fresh blank session (current Session Workspace first). */
+  startSession: () => void
 }
 
 /**

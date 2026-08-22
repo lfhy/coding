@@ -2,6 +2,7 @@
 
 import { useEffect, useSyncExternalStore } from 'react'
 import clsx from 'clsx'
+import { IconNewChatOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionId, SessionListState, SessionSummary } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
   ConversationSessionHeaderSlotProps, ConversationSessionSlotProps,
@@ -60,7 +61,7 @@ function equalBreadcrumbs(left: readonly Breadcrumb[], right: readonly Breadcrum
  */
 export function ConversationSessionHeader({
   sessionId, useSession, useSessions, useStore, actions,
-  renderSlot, views, open, t,
+  renderSlot, views, open, startSession, t,
 }: ConversationSessionHeaderProps) {
   useSyncExternalStore(views.subscribe, views.version)
   const tabs = views.list()
@@ -102,6 +103,15 @@ export function ConversationSessionHeader({
               <div className={css.headerActions}>
                 {renderSlot('conversation.session.header.actions', {})}
               </div>
+              <button
+                type="button"
+                className={css.headerNewSession}
+                aria-label={t('session.new.label')}
+                title={t('session.new.label')}
+                onClick={() => { startSession() }}
+              >
+                <IconNewChatOutline16 size={14} />
+              </button>
             </div>
             <div className={css.headerUtilities}>
               {renderSlot('conversation.session.header.utilities', {})}

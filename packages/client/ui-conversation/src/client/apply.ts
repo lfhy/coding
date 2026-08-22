@@ -266,6 +266,7 @@ export function apply(ctx: Context): void {
     inject: (): ConversationSessionHeaderInjected => ({
       views,
       open: (id) => { sessions.open(id) },
+      startSession: () => { workspaces.startSession() },
     }),
   }, ConversationSessionHeader)
 
