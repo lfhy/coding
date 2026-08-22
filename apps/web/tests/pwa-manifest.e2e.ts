@@ -22,14 +22,20 @@ it('ships install metadata with the built web application', async () => {
       sizes: 'any',
       type: 'image/svg+xml',
       purpose: 'any',
+    }, {
+      src: '/favicon.png',
+      sizes: '512x512',
+      type: 'image/png',
+      purpose: 'any',
     }],
   })
 })
 
-it('ships a favicon that switches to a light mark under dark color scheme', async () => {
+it('ships the app logo as the site favicon', async () => {
+  // 位图 logo 以内嵌 PNG 打包进 SVG，保证任何环境下浏览器都能渲染同一标识。
   const favicon = await readFile(join(DIST_ROOT, 'favicon.svg'), 'utf8')
-  // The light fill must live inside the dark-scheme media query, so the icon
-  // stays black in light mode and only turns white under a dark scheme.
-  expect(favicon).toMatch(/@media \(prefers-color-scheme: dark\)\s*{\s*path\s*{[^}]*fill:\s*#fff/i)
-  expect(favicon).toContain('fill="#000"')
+  expect(favicon).toMatch(/<image[^>]*href="data:image\/png;base64,/)
+
+  const png = await readFile(join(DIST_ROOT, 'favicon.png'))
+  expect(png.subarray(1, 4).toString('ascii')).toBe('PNG')
 })

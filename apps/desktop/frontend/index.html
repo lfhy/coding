@@ -12,17 +12,34 @@ html,body{margin:0;height:100%;display:flex;align-items:center;justify-content:c
 .msg{font-size:13px;opacity:.65}
 </style></head>
 <body><div class="box">
-<div class="logo"><img src="logo.svg" alt="Coding"></div>
+<div class="logo"><img src="logo.png" alt="Coding"></div>
 <div class="spinner"></div><div class="msg">正在准备 Coding</div>
 </div>
 <script>
-// 轮询壳层 Host endpoint；就绪后由壳层后台导航兜底，前端跳转保证即时性。
+const goTo = (ep) => {
+  if (!ep) return false
+  window.location.replace(ep)
+  return true
+}
 const poll = async () => {
+  const go = window.go && window.go.main && window.go.main.App
+  if (!go || typeof go.Endpoint !== 'function') {
+    setTimeout(poll, 200)
+    return
+  }
   try {
-    const ep = await window.go.main.App.Endpoint()
-    if (ep) { window.location.href = ep; return }
-  } catch {}
-  setTimeout(poll, 500)
+    if (goTo(await go.Endpoint())) return
+  } catch (err) {
+    console.error('Coding host probe failed', err)
+  }
+  setTimeout(poll, 400)
+}
+if (window.runtime && typeof window.runtime.EventsOn === 'function') {
+  window.runtime.EventsOn('coding:host-ready', goTo)
+  window.runtime.EventsOn('coding:host-error', (msg) => {
+    document.querySelector('.msg').textContent = '启动失败: ' + msg
+    document.querySelector('.spinner').style.display = 'none'
+  })
 }
 poll()
 </script>
