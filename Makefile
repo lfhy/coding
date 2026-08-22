@@ -38,6 +38,7 @@ install: $(INSTALL)
 
 install-app: desktop runtime
 	./scripts/package-macos-app.sh
+	rm -rf /Applications/Coding.app
 	cp -R dist/Coding.app /Applications/
 	@echo "Coding: 已安装 /Applications/Coding.app"
 
