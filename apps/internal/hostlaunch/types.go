@@ -41,4 +41,7 @@ type Options struct {
 	// RuntimeRoot is the materialized SEA runtime directory. When set, its
 	// coding-host executable is preferred over development fallbacks.
 	RuntimeRoot string
+	// OnProgress receives SEA materialization progress reports emitted on
+	// Host stdout before readiness; nil ignores them.
+	OnProgress func(done, total int)
 }

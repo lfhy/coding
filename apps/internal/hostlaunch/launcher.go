@@ -207,6 +207,14 @@ func (l *Launcher) start(ctx context.Context) (Endpoint, error) {
 				ready <- record
 				return
 			}
+			var progress struct {
+				Type  string `json:"type"`
+				Done  int    `json:"done"`
+				Total int    `json:"total"`
+			}
+			if json.Unmarshal(scanner.Bytes(), &progress) == nil && progress.Type == "coding-runtime-progress" && l.options.OnProgress != nil {
+				l.options.OnProgress(progress.Done, progress.Total)
+			}
 		}
 		if err := scanner.Err(); err != nil {
 			readErr <- err

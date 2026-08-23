@@ -73,6 +73,23 @@ function unpack(buffer, destination) {
   // 扩展头只作用于紧随其后的条目；全局头作用于后续所有条目直到被覆盖。
   let extendedPath = null
   let globalPath = null
+  let total = 0
+  for (let offset = 0; offset + 512 <= tar.length;) {
+    const header = tar.subarray(offset, offset + 512)
+    if (header.every(byte => byte === 0)) break
+    total += 1
+    offset += 512 + Math.ceil(octal(header, 124, 12) / 512) * 512
+  }
+  let done = 0
+  let last = -1
+  const progress = () => {
+    // 冷物化每 500 个条目上报一次；日志量保持有界，启动器只转发百分比。
+    const step = Math.floor((done / total) * 200)
+    if (done !== total && step === last) return
+    last = step
+    process.stdout.write(`${JSON.stringify({ type: 'coding-runtime-progress', done, total })}\n`)
+  }
+  progress()
   for (let offset = 0; offset + 512 <= tar.length;) {
     const header = tar.subarray(offset, offset + 512)
     if (header.every(byte => byte === 0)) return
@@ -116,6 +133,8 @@ function unpack(buffer, destination) {
       throw new Error(`Coding runtime archive has unsupported entry type ${JSON.stringify(type)} for ${JSON.stringify(filename)}`)
     }
     offset = bodyStart + Math.ceil(size / 512) * 512
+    done += 1
+    progress()
   }
   throw new Error('Coding runtime archive is missing its terminal block')
 }

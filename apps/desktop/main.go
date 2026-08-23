@@ -60,15 +60,22 @@ func main() {
 	}
 	defer lock.Close()
 
+	app := &App{ready: make(chan struct{})}
 	launcher, err := hostlaunch.New(hostlaunch.Options{
 		CWD:         cwd,
 		RuntimeRoot: packagedRuntimeRoot(),
 		Version:     hostlaunch.AppVersion,
+		OnProgress: func(done, total int) {
+			if app.ctx == nil {
+				return
+			}
+			wailsruntime.EventsEmit(app.ctx, "coding:host-progress", map[string]int{"done": done, "total": total})
+		},
 	})
 	if err != nil {
 		fatal(err)
 	}
-	app := &App{launcher: launcher, ready: make(chan struct{})}
+	app.launcher = launcher
 
 	menu := wmenu.NewMenu()
 	fileMenu := menu.AddSubmenu("文件")
