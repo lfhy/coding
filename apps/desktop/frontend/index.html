@@ -1,20 +1,23 @@
 <!doctype html>
 <html><head><meta charset="utf-8"><title>Coding</title>
 <style>
-/* 跟随系统外观：背景用 macOS 窗口底色变量，与目标页面的亮/暗一致。 */
-html,body{margin:0;height:100%;display:flex;align-items:center;justify-content:center;background:#f5f5f7;color:#1d1d1f;font-family:-apple-system,"Segoe UI",sans-serif}
-@media (prefers-color-scheme: dark){html,body{background:#0b0d10;color:#e6e8ea}}
-.box{display:flex;flex-direction:column;align-items:center;gap:18px}
+/* 与 Web 端 boot page 同一视觉：卡片式 wordmark + 进度弧，避免双 loading 风格跳变。 */
+html,body{margin:0;height:100%;display:grid;place-items:center;background:#fff;color:#0f1115;font-family:-apple-system,"Segoe UI",sans-serif}
+@media (prefers-color-scheme: dark){html,body{background:#151517;color:#f9fafb}}
+.box{display:flex;flex-direction:column;align-items:center;gap:16px}
 .logo{width:84px;height:84px;border-radius:20px;overflow:hidden}
 .logo img,.logo svg{width:100%;height:100%;display:block}
-.spinner{width:26px;height:26px;border:3px solid rgba(128,128,128,.25);border-top-color:#7a5cf0;border-radius:50%;animation:spin 1s linear infinite}
+.wordmark{font-size:16px;line-height:24px;font-weight:600;letter-spacing:.08em}
+.spinner{position:relative;width:26px;height:26px;border-radius:50%;border:3px solid rgba(128,128,128,.25);animation:spin 1s linear infinite;--arc:72deg}
+.spinner::after{content:'';position:absolute;inset:-3px;border-radius:inherit;background:conic-gradient(currentColor var(--arc),transparent 0);-webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 3px),#000 0);mask:radial-gradient(farthest-side,transparent calc(100% - 3px),#000 0)}
 @keyframes spin{to{transform:rotate(360deg)}}
-.msg{font-size:13px;opacity:.65}
+.msg{font-size:12px;line-height:18px;opacity:.55}
 .bar{width:220px;height:6px;border-radius:3px;background:rgba(128,128,128,.25);overflow:hidden;display:none}
 .bar .fill{height:100%;width:0;border-radius:3px;background:#7a5cf0;transition:width .2s ease}
 </style></head>
 <body><div class="box">
 <div class="logo"><img src="logo.png" alt="Coding"></div>
+<div class="wordmark">HARNESS</div>
 <div class="spinner"></div>
 <div class="msg">正在准备 Coding</div>
 <div class="bar"><div class="fill"></div></div>

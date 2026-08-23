@@ -2,8 +2,9 @@
  * Official-DeepSeek first-run step. Readiness comes from the same
  * provider/settings/credential join as the Models page: any provider the user
  * can already talk to ends the step, and only a user with none is offered the
- * official DeepSeek route. The step reuses that page's credential editor in
- * the onboarding plugin's shared modal, so the key is entered once.
+ * official DeepSeek route. The step reuses that page's provider editor in the
+ * onboarding plugin's shared modal, so key, base URL, and the model catalog
+ * are all editable on first run.
  */
 
 import { useEffect } from 'react'
@@ -110,8 +111,6 @@ export function DeepSeekOnboardingDialog(props: DeepSeekOnboardingDialogProps): 
           t={t}
           readOnly={false}
           hideTitle
-          credentialOnly
-          credentialRequired
           autoFocusCredential
           cancelLabel="onboardingLater"
           submitLabel="onboardingSave"

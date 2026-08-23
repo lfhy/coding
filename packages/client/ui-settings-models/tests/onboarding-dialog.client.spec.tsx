@@ -156,7 +156,7 @@ describe('DeepSeekOnboardingDialog', () => {
     expect(await screen.findByRole('dialog', { name: en.onboardingTitle })).toBeTruthy()
   })
 
-  it('loads a credential-only modal, inerts the product, and focuses the key', async () => {
+  it('loads a full-provider modal, inerts the product, and focuses the key', async () => {
     const h = harness()
     render(<DeepSeekOnboardingDialog {...h.props} />)
     expect(await screen.findByRole('dialog', { name: en.onboardingTitle })).toBeTruthy()
@@ -164,7 +164,8 @@ describe('DeepSeekOnboardingDialog', () => {
     expect(screen.getByText(en.onboardingDescription)).toBeTruthy()
     const key = screen.getByLabelText<HTMLInputElement>(en.keyInput)
     await waitFor(() => { expect(document.activeElement).toBe(key) })
-    expect(screen.queryByText(en.customized)).toBeNull()
+    // Base URL and models are configurable on first run alongside the key.
+    expect(screen.getByText(en.customized)).toBeTruthy()
   })
 
   it('cannot be dismissed implicitly and restores the previous inert state', async () => {
@@ -183,16 +184,16 @@ describe('DeepSeekOnboardingDialog', () => {
     expect(appRoot.inert).toBe(true)
   })
 
-  it('requires a non-blank key before Save and continue is available', async () => {
+  it('submits with a blank key by closing the step unchanged', async () => {
     const h = harness()
-    render(<DeepSeekOnboardingDialog {...h.props} />)
+    const view = render(<DeepSeekOnboardingDialog {...h.props} />)
     await screen.findByRole('dialog')
-    const save = screen.getByRole<HTMLButtonElement>('button', { name: en.onboardingSave })
-    expect(save.disabled).toBe(true)
-    fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: '   ' } })
-    expect(save.disabled).toBe(true)
-    expect(screen.getByText(en.keyRequired)).toBeTruthy()
+    // 空密钥 + 未改动任何字段时，保存等同于稍后配置：直接完成步骤。
+    fireEvent.click(screen.getByRole('button', { name: en.onboardingLater }))
+    expect(h.complete).toHaveBeenCalledOnce()
     expect(h.set).not.toHaveBeenCalled()
+    expect(h.mutate).not.toHaveBeenCalled()
+    view.unmount()
   })
 
   it('keeps the modal open and reports rejected and failed credential writes', async () => {
