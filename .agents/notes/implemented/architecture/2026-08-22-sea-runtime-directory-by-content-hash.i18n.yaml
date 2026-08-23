@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-22-sea-runtime-directory-by-content-hash.md
-2026-08-22-sea-runtime-directory-by-content-hash.md: bbd6ce82915790995a17ae10511703aa73c9a8a0
-2026-08-22-sea-runtime-directory-by-content-hash.zh.md: 41610fe31ec9e74daa4f05bda3d0979908810b13
+2026-08-22-sea-runtime-directory-by-content-hash.md: f766d3e46fa43f3d9d338a74743f3f20197bb93c
+2026-08-22-sea-runtime-directory-by-content-hash.zh.md: a877b483e273727155f4da8d9d911d83c9d0a59d

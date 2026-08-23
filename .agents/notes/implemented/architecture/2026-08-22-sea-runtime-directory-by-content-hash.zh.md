@@ -10,7 +10,7 @@ Coding 的 SEA 引导器把 Host 闭包物化到 `$DSH_HOME/runtime/<version>`�
 
 ## Decision
 
-`scripts/sea/bootstrap.cjs` 把物化目录命名为 `$DSH_HOME/runtime/<sha256>`。命中只要求 marker 的 `sha256` 与内嵌归档一致，且 `node_modules/@deepseek-ai/dsh/lib/bin.js` 存在。产品版本仍写在 marker 中，并继续拥有 `DSH_APP_VERSION` 和 Host 就绪记录。当前 Host 拥有 `host.json` 后，清理会删除名称不是当前归档哈希的所有运行时兄弟目录。
+`scripts/sea/bootstrap.cjs` 把物化目录命名为 `$DSH_HOME/runtime/<sha256>`。命中只要求 marker 的 `sha256` 与内嵌归档一致，且 `node_modules/@deepseek-ai/dsh/lib/bin.js` 存在。产品版本仍写在 marker 中，并继续拥有 `DSH_APP_VERSION` 和 Host 就绪记录。当前 Host 拥有 `host.json` 后，清理会删除名称不是当前归档哈希的所有运行时兄弟目录。`scripts/build-coding-runtime.ts` 在完整构建未产出 `apps/cli/lib/bin.js` 时于 deploy 前失败，在暂存闭包缺少 `node_modules/@deepseek-ai/dsh/lib/bin.js` 时于 deploy 后失败；host tsdown workspace 入口包含 `lib/types/bin.js`，因此构建出的 bin 会随闭包发布。
 
 ## Alternatives considered
 

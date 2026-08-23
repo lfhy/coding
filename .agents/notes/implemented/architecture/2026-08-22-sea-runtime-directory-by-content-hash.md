@@ -10,7 +10,7 @@ The Coding SEA bootstrapper materialized the Host closure under `$DSH_HOME/runti
 
 ## Decision
 
-`scripts/sea/bootstrap.cjs` names the materialized directory `$DSH_HOME/runtime/<sha256>`. A hit requires only that the marker's `sha256` match the embedded archive and that `node_modules/@deepseek-ai/dsh/lib/bin.js` exist. The product version remains in the marker and still owns `DSH_APP_VERSION` plus Host readiness records. After the current Host owns `host.json`, cleanup deletes every runtime sibling whose name is not the current archive hash.
+`scripts/sea/bootstrap.cjs` names the materialized directory `$DSH_HOME/runtime/<sha256>`. A hit requires only that the marker's `sha256` match the embedded archive and that `node_modules/@deepseek-ai/dsh/lib/bin.js` exist. The product version remains in the marker and still owns `DSH_APP_VERSION` plus Host readiness records. After the current Host owns `host.json`, cleanup deletes every runtime sibling whose name is not the current archive hash. `scripts/build-coding-runtime.ts` fails before deploy when the complete build did not emit `apps/cli/lib/bin.js`, and fails after deploy when the staged closure omits `node_modules/@deepseek-ai/dsh/lib/bin.js`; the host tsdown workspace entry includes `lib/types/bin.js` so the built bin ships in the closure.
 
 ## Alternatives considered
 

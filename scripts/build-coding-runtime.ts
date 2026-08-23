@@ -2,7 +2,7 @@
 
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { copyFile, cp, lstat, mkdir, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises'
+import { copyFile, cp, lstat, mkdir, readFile, readdir, realpath, rm, stat, writeFile, chmod } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
 import { spawn } from 'node:child_process'
 import { parseArgs } from 'node:util'
@@ -170,7 +170,11 @@ async function main(): Promise<void> {
     },
   }).values
   const manifest = JSON.parse(await readFile(runtimeManifest, 'utf8')) as { version: string }
-  if (!values['skip-build']) await command('pnpm', ['run', 'build'])
+  if (!values['skip-build']) await command(process.execPath, ['--import', 'tsx/esm', join(root, 'scripts', 'build.ts')])
+  const cliBin = join(root, 'apps', 'cli', 'lib', 'bin.js')
+  if (!existsSync(cliBin)) {
+    throw new Error(`build:runtime: missing ${cliBin}; pnpm run build must emit the CLI bin before deploy`)
+  }
   if (values['dry-run']) {
     console.log(`build:runtime: deploy ${runtimeManifest} into ${staging}`)
     console.log('build:runtime: create tgz and Node SEA blob with useCodeCache=false/useSnapshot=false')
@@ -184,6 +188,10 @@ async function main(): Promise<void> {
     '--config.node-linker=hoisted', '--config.auto-install-peers=false',
     '--config.link-workspace-packages=true', staging,
   ])
+  const stagedBin = join(staging, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
+  if (!existsSync(stagedBin)) {
+    throw new Error(`build:runtime: deploy omitted ${stagedBin}`)
+  }
   await normalizeStaging(staging)
   await command('tar', ['--format=pax', '-chzf', archive, '-C', staging, '.'])
   const archiveBytes = await readFile(archive)
@@ -206,6 +214,8 @@ async function main(): Promise<void> {
   const target = values.target ?? `${process.platform}-${process.arch}`
   const output = join(dist, `coding-host-${target}${process.platform === 'win32' ? '.exe' : ''}`)
   await copyFile(process.execPath, output)
+  // Homebrew 的 node 是 555，copyFile 会保留只读位；postject 需要写回同一路径。
+  await chmod(output, 0o755)
   if (process.platform === 'darwin') await command('codesign', ['--remove-signature', output])
   const postject = process.platform === 'win32' ? 'npx.cmd' : 'npx'
   const args = ['--yes', 'postject@1.0.0-alpha.6', output, 'NODE_SEA_BLOB', seaBlob, '--sentinel-fuse', 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2']
