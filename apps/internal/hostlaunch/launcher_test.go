@@ -6,11 +6,21 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"testing"
 	"time"
 )
+
+// sleepBinary 返回当前平台的休眠命令二进制。
+func sleepBinary() string {
+	if runtime.GOOS == "windows" {
+		return "ping"
+	}
+	return "sleep"
+}
 
 func TestEnsureAttachesToCompatibleHost(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -62,14 +72,63 @@ func TestEnsureRefusesLiveIncompatibleHost(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(home, "host.json"), data, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	launcher, err := New(Options{Home: home, Version: "current"})
+	launcher, err := New(Options{Home: home, Version: "current", PollInterval: time.Millisecond})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = launcher.Ensure(context.Background())
-	if err != ErrHostIncompatible {
-		t.Fatalf("expected ErrHostIncompatible, got %v", err)
+	// discovery 对自身 PID 的存活检查成立但探针失败（端口无人监听），
+	// 该记录随后按死进程处理，Ensure 会走 start 而不是报不兼容。
+	// 真正的 live-incompatible Host 由 TestEnsureReplacesIncompatibleHost 覆盖。
+	_ = launcher
+}
+
+// TestEnsureReplacesIncompatibleHost 验证启动器会请求活着的旧版本 Host
+// 退出并等待其释放共享 home，而不是把用户挡在 ErrHostIncompatible 上。
+func TestEnsureReplacesIncompatibleHost(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		http.NotFound(writer, request)
+	}))
+	t.Cleanup(server.Close)
+	port, err := strconv.Atoi(server.URL[len("http://127.0.0.1:"):])
+	if err != nil {
+		t.Fatal(err)
 	}
+	// 用一个会被 SIGTERM 立即终止的休眠子进程扮演旧 Host。
+	host := execSleepProcess(t)
+	pid := host.Process.Pid
+	home := t.TempDir()
+	record := Record{Type: "coding-host-ready", Port: port, PID: pid, Version: "other", Protocol: Protocol, Token: "token"}
+	data, _ := json.Marshal(record)
+	if err := os.WriteFile(filepath.Join(home, "host.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	launcher, err := New(Options{Home: home, Version: "current", PollInterval: 5 * time.Millisecond, Command: []string{"false"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = launcher.Ensure(context.Background())
+	// 等待 Wait 回收，避免子进程停留在僵尸态干扰 processAlive 判定。
+	_ = host.Wait()
+	if processAlive(pid) {
+		t.Fatalf("incompatible host pid %d is still alive", pid)
+	}
+}
+
+// execSleepProcess 启动一个会被 SIGTERM 终止的子进程；未调用 Wait 时进程
+// 可能停留在僵尸态，调用方负责在断言前 Wait 回收。
+func execSleepProcess(t *testing.T) *exec.Cmd {
+	t.Helper()
+	command := exec.Command(sleepBinary())
+	if runtime.GOOS == "windows" {
+		command.Args = append(command.Args, "-n", "30", "127.0.0.1")
+	} else {
+		command.Args = append(command.Args, "30")
+	}
+	if err := command.Start(); err != nil {
+		t.Fatalf("start sleep process: %v", err)
+	}
+	t.Cleanup(func() { _ = command.Process.Kill(); _ = command.Wait() })
+	return command
 }
 
 func TestAcquireLockTimesOutWithoutRemovingOwner(t *testing.T) {

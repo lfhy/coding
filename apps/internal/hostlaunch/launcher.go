@@ -100,9 +100,48 @@ func (l *Launcher) Ensure(ctx context.Context) (Endpoint, error) {
 	if endpoint, state := l.discover(ctx); state == discoveryCompatible {
 		return endpoint, nil
 	} else if state == discoveryLiveIncompatible {
-		return Endpoint{}, ErrHostIncompatible
+		// 版本不匹配的旧 Host 会挡住本次启动；请求它退出（SIGTERM 即其
+		// 常规停止信号），等进程消失后再重新发现或拉起新版本。
+		l.requestExit(ctx)
+		for attempt := 0; ; attempt++ {
+			if endpoint, state := l.discover(ctx); state == discoveryCompatible {
+				return endpoint, nil
+			} else if state != discoveryLiveIncompatible {
+				break
+			}
+			if attempt >= incompatibleExitWaitTicks {
+				return Endpoint{}, ErrHostIncompatible
+			}
+			timer := time.NewTimer(l.options.PollInterval)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return Endpoint{}, ctx.Err()
+			case <-timer.C:
+			}
+		}
 	}
 	return l.start(ctx)
+}
+
+// incompatibleExitWaitTicks bounds how long Ensure waits for an incompatible
+// live Host to honor the exit request before surfacing ErrHostIncompatible.
+var incompatibleExitWaitTicks = 100
+
+// requestExit asks the Host named by the discovery record to stop. TERM is the
+// runtime's ordinary supervisor stop signal and exits cleanly; when the
+// process cannot be signalled the request is silently ignored and discovery
+// decides the rest.
+func (l *Launcher) requestExit(ctx context.Context) {
+	data, err := os.ReadFile(l.RecordPath())
+	if err != nil {
+		return
+	}
+	var record Record
+	if json.Unmarshal(data, &record) != nil {
+		return
+	}
+	terminateProcess(record.PID)
 }
 
 type discoveryState uint8
