@@ -9,6 +9,13 @@
   margin-top: 24px;
 }
 
+/* 引导弹窗本体即容器：去掉 ProviderEditor 默认的模块底色与内边距，
+   使密钥表单平铺为弹窗一级内容，避免卡片套卡片。 */
+.editor > :first-child {
+  background: none;
+  padding: 0;
+}
+
 @media (max-width: 560px) {
   .editor {
     margin-top: 20px;

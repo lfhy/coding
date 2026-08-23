@@ -110,7 +110,6 @@ export function DeepSeekOnboardingDialog(props: DeepSeekOnboardingDialogProps): 
           api={api}
           t={t}
           readOnly={false}
-          credentialOnly
           hideTitle
           autoFocusCredential
           cancelLabel="onboardingLater"
