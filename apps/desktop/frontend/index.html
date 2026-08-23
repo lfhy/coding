@@ -67,13 +67,14 @@ if (window.runtime && typeof window.runtime.EventsOn === 'function') {
   window.runtime.EventsOn('coding:host-progress', ({ done, total }) => {
     if (!Number.isFinite(total) || total <= 0) return
     const ratio = Math.max(0, Math.min(1, done / total))
-    const pct = Math.round(ratio * 100)
-    spinner.style.setProperty('--dsh-boot-arc', `${Math.round(72 + ratio * 216)}deg`)
+    // 物化条目过半后剩余阶段无事件，直接收敛到 100%，避免停在半程百分比。
+    const pct = ratio >= 0.5 ? 100 : Math.round(ratio * 100)
+    spinner.style.setProperty('--dsh-boot-arc', `${Math.round(72 + (pct / 100) * 216)}deg`)
     hint.textContent = `正在准备 Coding ${pct}%`
   })
   window.runtime.EventsOn('coding:host-error', (msg) => {
     const report = div('failed')
-    report.append(div('failedTitle', 'Failed to load plugins'))
+    report.append(div('failedTitle', '插件加载失败'))
     report.append(div('failedItem', String(msg)))
     card.replaceChildren(wordmark, report)
   })

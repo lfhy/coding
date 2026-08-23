@@ -205,7 +205,7 @@ describe('web e2e: settings modal and General preferences', () => {
     let reload: ReturnType<Page['reload']> | undefined
     try {
       reload = page.reload({ waitUntil: 'domcontentloaded' })
-      const loading = page.getByText('Loading plugins…', { exact: true })
+      const loading = page.getByText('正在加载插件…', { exact: true })
       await loading.waitFor({ timeout: 10_000 })
       const state = await loading.evaluate((element) => {
         const boot = element.parentElement?.parentElement

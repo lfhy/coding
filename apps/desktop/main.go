@@ -143,10 +143,10 @@ func main() {
 			go app.startHost(ctx)
 		},
 		OnDomReady: func(ctx context.Context) {
-			// FullSizeContent 窗口没有原生标题栏可拖，Wails 依赖元素上的
-			// --wails-draggable 标记。宿主页面顶部区域由壳层统一标记：
-			// 顶部 40px 内、非交互元素在指针经过时挂上拖拽标记，交给
-			// Wails runtime 的 mousedown 处理器执行 performWindowDrag。
+			// FullSizeContent 窗口没有原生标题栏可拖。宿主页不是 Wails 资源页，
+			// runtime 脚本与 CSS 拖拽标记都可能缺席，因此由壳层直接接管：
+			// 顶部 40px 内按下鼠标且目标非交互元素时，向 WKWebView 的
+			// external 消息通道发送 drag，由原生侧 performWindowDrag 拖动窗口。
 			wailsruntime.WindowExecJS(ctx, `(() => {
 				if (window.__codingWindowDrag) {
 					document.documentElement.style.setProperty('--app-safe-area-inset-top','38px')
@@ -154,24 +154,18 @@ func main() {
 				}
 				window.__codingWindowDrag = true
 				document.documentElement.style.setProperty('--app-safe-area-inset-top','38px')
-				const style = document.createElement('style')
-				style.textContent = '[data-coding-window-drag]{--wails-draggable:drag}'
-				document.head.append(style)
 				const interactive = 'button,a,input,textarea,select,label,[role="button"],[role="tab"],[role="menuitem"]'
-				let marked = null
-				const unmark = () => {
-					if (marked) { marked.removeAttribute('data-coding-window-drag'); marked = null }
+				const post = (message) => {
+					if (typeof window.WailsInvoke === 'function') window.WailsInvoke(message)
+					else window.webkit?.messageHandlers?.external?.postMessage(message)
 				}
-				const update = (event) => {
+				document.addEventListener('mousedown', (event) => {
+					if (event.button !== 0 || event.detail !== 1) return
 					const element = event.target instanceof Element ? event.target : null
-					if (marked && marked !== element) unmark()
 					if (!element || event.clientY > 40 || element.closest(interactive)) return
-					element.setAttribute('data-coding-window-drag','')
-					marked = element
-				}
-				document.addEventListener('pointermove', update, true)
-				document.addEventListener('pointerleave', unmark, true)
-				window.addEventListener('blur', unmark)
+					event.preventDefault()
+					post('drag')
+				}, true)
 			})()`)
 		},
 		Bind: []interface{}{app},

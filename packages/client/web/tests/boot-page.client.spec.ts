@@ -15,7 +15,7 @@ describe('BootPage', () => {
     const { el } = mount()
     expect(el.firstElementChild?.getAttribute('data-dsh-boot')).toBe('')
     expect(el.textContent).toContain('HARNESS')
-    expect(el.textContent).toContain('Loading plugins…')
+    expect(el.textContent).toContain('正在加载插件…')
   })
 
   it('keeps loading while entries are active or loading', () => {
@@ -29,8 +29,8 @@ describe('BootPage', () => {
     expect(el.querySelector('[data-dsh-boot-spinner]')).toBe(spinner)
     page.setState('b', 'active')
     expect(spinner?.style.getPropertyValue('--dsh-boot-arc')).toBe('288deg')
-    expect(el.textContent).toContain('Loading plugins…')
-    expect(el.textContent).not.toContain('Failed to load plugins')
+    expect(el.textContent).toContain('正在加载插件…')
+    expect(el.textContent).not.toContain('插件加载失败')
   })
 
   it('lists failed entries', () => {
@@ -41,7 +41,7 @@ describe('BootPage', () => {
     expect(el.textContent).toContain('@deepseek-ai/dsh-client-ui-layout')
     expect(el.textContent).toContain('@deepseek-ai/dsh-client-ui-tool')
     expect(el.textContent).not.toContain('ok')
-    expect(el.textContent).not.toContain('Loading plugins…')
+    expect(el.textContent).not.toContain('正在加载插件…')
   })
 
   it('shows the complete sweep report', () => {
@@ -50,7 +50,7 @@ describe('BootPage', () => {
     page.fail(report)
     page.setState('a', 'active')
     expect(el.textContent).toContain(report)
-    expect(el.textContent).not.toContain('Loading plugins…')
+    expect(el.textContent).not.toContain('正在加载插件…')
   })
 
   it('detaches on disposal', () => {
