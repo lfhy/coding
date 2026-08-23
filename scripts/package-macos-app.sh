@@ -26,6 +26,7 @@ rm -rf "$app/Icon\r"
 if ls dist/coding-runtime/coding-host-darwin-* >/dev/null 2>&1; then
   cp dist/coding-runtime/coding-host-darwin-* "$app/Contents/Resources/coding-host"
   chmod 755 "$app/Contents/Resources/coding-host"
+  cp apps/internal/runtime/metadata.json "$app/Contents/Resources/metadata.json"
 fi
 
 # codesign 自身输出重定向：只保留脚本自己的单行结论，避免多行噪音。

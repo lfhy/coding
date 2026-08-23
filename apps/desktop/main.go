@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"embed"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"net/url"
@@ -64,7 +65,7 @@ func main() {
 	launcher, err := hostlaunch.New(hostlaunch.Options{
 		CWD:         cwd,
 		RuntimeRoot: packagedRuntimeRoot(),
-		Version:     hostlaunch.AppVersion,
+		Version:     packagedHostVersion(),
 		OnProgress: func(done, total int) {
 			if app.ctx == nil {
 				return
@@ -183,4 +184,20 @@ func packagedRuntimeRoot() string {
 		return ""
 	}
 	return filepath.Join(filepath.Dir(executable), "..", "Resources")
+}
+
+// packagedHostVersion 读取打包 Runtime 旁 metadata.json 中的产品版本；
+// Host 就绪记录按该版本校验。读不到时回退编译期默认值（开发模式）。
+func packagedHostVersion() string {
+	if root := packagedRuntimeRoot(); root != "" {
+		if data, err := os.ReadFile(filepath.Join(root, "metadata.json")); err == nil {
+			var metadata struct {
+				Version string `json:"version"`
+			}
+			if json.Unmarshal(data, &metadata) == nil && metadata.Version != "" {
+				return metadata.Version
+			}
+		}
+	}
+	return hostlaunch.AppVersion
 }
