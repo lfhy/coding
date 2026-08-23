@@ -79,12 +79,35 @@ func main() {
 	app.launcher = launcher
 
 	menu := wmenu.NewMenu()
+	menu.Append(wmenu.AppMenu())
 	fileMenu := menu.AddSubmenu("文件")
 	fileMenu.AddText("新建会话", keys.CmdOrCtrl("n"), func(*wmenu.CallbackData) {
 		app.dispatchNewSession()
 	})
 	fileMenu.AddSeparator()
-	fileMenu.AddText("关闭窗口", keys.CmdOrCtrl("w"), nil)
+	fileMenu.AddText("关闭窗口", keys.CmdOrCtrl("w"), func(*wmenu.CallbackData) {
+		// 单窗口应用：关闭窗口即结束本次桌面会话，同时释放 Host。
+		wailsruntime.Quit(app.ctx)
+	})
+	menu.Append(wmenu.EditMenu())
+	viewMenu := menu.AddSubmenu("视图")
+	viewMenu.AddText("重新加载", keys.CmdOrCtrl("r"), func(*wmenu.CallbackData) {
+		wailsruntime.WindowReload(app.ctx)
+	})
+	viewMenu.AddText("切换全屏", keys.CmdOrCtrl("f"), func(*wmenu.CallbackData) {
+		app.toggleFullscreen()
+	})
+	menu.Append(wmenu.WindowMenu())
+	helpMenu := menu.AddSubmenu("帮助")
+	helpMenu.AddText("关于 Coding", nil, func(*wmenu.CallbackData) {
+		wailsruntime.MessageDialog(app.ctx, wailsruntime.MessageDialogOptions{
+			Type:          wailsruntime.InfoDialog,
+			Title:         applicationName,
+			Message:       "Coding 桌面客户端",
+			Buttons:       []string{"好"},
+			DefaultButton: "好",
+		})
+	})
 
 	err = wails.Run(&options.App{
 		Title:            applicationName,
@@ -167,6 +190,15 @@ func (a *App) dispatchNewSession() {
 
 func (a *App) focusPrimary() {
 	wailsruntime.WindowUnminimise(a.ctx)
+}
+
+// toggleFullscreen 在全屏与普通窗口之间切换。
+func (a *App) toggleFullscreen() {
+	if wailsruntime.WindowIsFullscreen(a.ctx) {
+		wailsruntime.WindowUnfullscreen(a.ctx)
+	} else {
+		wailsruntime.WindowFullscreen(a.ctx)
+	}
 }
 
 func fatal(err error) {
