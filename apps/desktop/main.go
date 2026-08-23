@@ -143,7 +143,36 @@ func main() {
 			go app.startHost(ctx)
 		},
 		OnDomReady: func(ctx context.Context) {
-			wailsruntime.WindowExecJS(ctx, "document.documentElement.style.setProperty('--app-safe-area-inset-top','38px')")
+			// FullSizeContent 窗口没有原生标题栏可拖，Wails 依赖元素上的
+			// --wails-draggable 标记。宿主页面顶部区域由壳层统一标记：
+			// 顶部 40px 内、非交互元素在指针经过时挂上拖拽标记，交给
+			// Wails runtime 的 mousedown 处理器执行 performWindowDrag。
+			wailsruntime.WindowExecJS(ctx, `(() => {
+				if (window.__codingWindowDrag) {
+					document.documentElement.style.setProperty('--app-safe-area-inset-top','38px')
+					return
+				}
+				window.__codingWindowDrag = true
+				document.documentElement.style.setProperty('--app-safe-area-inset-top','38px')
+				const style = document.createElement('style')
+				style.textContent = '[data-coding-window-drag]{--wails-draggable:drag}'
+				document.head.append(style)
+				const interactive = 'button,a,input,textarea,select,label,[role="button"],[role="tab"],[role="menuitem"]'
+				let marked = null
+				const unmark = () => {
+					if (marked) { marked.removeAttribute('data-coding-window-drag'); marked = null }
+				}
+				const update = (event) => {
+					const element = event.target instanceof Element ? event.target : null
+					if (marked && marked !== element) unmark()
+					if (!element || event.clientY > 40 || element.closest(interactive)) return
+					element.setAttribute('data-coding-window-drag','')
+					marked = element
+				}
+				document.addEventListener('pointermove', update, true)
+				document.addEventListener('pointerleave', unmark, true)
+				window.addEventListener('blur', unmark)
+			})()`)
 		},
 		Bind: []interface{}{app},
 	})
