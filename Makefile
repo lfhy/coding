@@ -26,8 +26,10 @@ all: $(CLIENT)
 runtime:
 	pnpm run build:runtime
 
-# macOS/Windows 桌面 GUI 壳（需要 CGO 与系统 WebView）。
+# macOS/Windows 桌面 GUI 壳（需要 CGO 与系统 WebView）。先补齐 devDependencies：
+# pnpm 的 deps 自检可能以生产模式重装并删除 lefthook 等 devDeps，导致 postinstall 失败。
 desktop:
+	pnpm install --frozen-lockfile
 	pnpm run build:desktop
 
 # Linux 交互式 TUI。
