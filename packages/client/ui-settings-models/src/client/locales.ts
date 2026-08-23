@@ -196,7 +196,7 @@ export const zh: { [Key in keyof typeof en]: string } = {
   welcomeContinue: WELCOME_NOTICE_COPY.zh.continueLabel,
   welcomeError: '暂时无法保存确认状态，请重试。',
   onboardingTitle: '添加一个 API Key 开始使用',
-  onboardingDescription: '配置 DeepSeek 官方模型，即可开始使用。',
+  onboardingDescription: '配置一个 AI 模型，即可开始使用。',
   onboardingLater: '稍后配置',
   onboardingSave: '保存并继续',
   onboardingSaving: '保存中…',

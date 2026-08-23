@@ -164,8 +164,8 @@ describe('DeepSeekOnboardingDialog', () => {
     expect(screen.getByText(en.onboardingDescription)).toBeTruthy()
     const key = screen.getByLabelText<HTMLInputElement>(en.keyInput)
     await waitFor(() => { expect(document.activeElement).toBe(key) })
-    // Base URL and models are configurable on first run alongside the key.
-    expect(screen.getByText(en.customized)).toBeTruthy()
+    // 引导弹窗只保留密钥卡片本体（credentialOnly），Base URL 和模型目录由设置页继续配置。
+    expect(screen.queryByText(en.customized)).toBeNull()
   })
 
   it('cannot be dismissed implicitly and restores the previous inert state', async () => {
