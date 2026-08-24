@@ -17,24 +17,6 @@ exports[`sidebar shell snapshots > renders the collapsed rail after the crossfad
         class="iconButton toggle"
         type="button"
       >
-        <span
-          aria-hidden="true"
-          class="railMark"
-        >
-          <div
-            data-slot="sidebar.brand.mark"
-            style="display: contents;"
-          >
-            <img
-              alt=""
-              aria-hidden="true"
-              draggable="false"
-              height="24"
-              src="/favicon.png"
-              width="24"
-            />
-          </div>
-        </span>
         <svg
           class="panelIcon"
           data-content="35f95b0c"

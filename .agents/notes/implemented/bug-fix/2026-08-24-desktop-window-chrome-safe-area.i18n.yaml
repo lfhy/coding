@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-24-desktop-window-chrome-safe-area.md
-2026-08-24-desktop-window-chrome-safe-area.md: de7b4a439339c4fb73001c2fa42e42e9d6bc493c
-2026-08-24-desktop-window-chrome-safe-area.zh.md: 71246d7f495c843d175c3d3ab28b59ab5e221770
+2026-08-24-desktop-window-chrome-safe-area.md: 678f35b61053dd92fb5fea8c6cdd60c85b74bf73
+2026-08-24-desktop-window-chrome-safe-area.zh.md: d09afc2c95171010ad0df10c31ffa500c8eb5a0b

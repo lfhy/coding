@@ -23,7 +23,7 @@
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
-/* 收起 rail 使用 36×36 控件盒，居中于 56px 宽度；顶部到 24px 品牌图标盒保留 18px。 */
+/* 收起 rail 使用 36×36 控件盒，居中于 56px 宽度；顶部保留 18px。 */
 .root.collapsed {
   padding: calc(18px + var(--app-safe-area-inset-top, 0px)) 10px 0;
 }
@@ -118,21 +118,12 @@
   cursor: pointer;
 }
 
-/* 品牌名称占据固定基线、高度与间距，避免在标识切换时改变标题行几何。 */
+/* 品牌名称占据固定基线与高度，避免名称更新改变标题行几何。 */
 .brandIdentity {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
   height: 24px;
   min-width: 0;
-}
-
-.railMark > img {
-  display: block;
-  width: 24px;
-  height: 24px;
-  border-radius: 5px;
-  object-fit: cover;
 }
 
 .brandName {
@@ -175,25 +166,6 @@
 .collapsed .iconButton {
   width: 36px;
   height: 36px;
-}
-
-/* 收起侧栏时，切换按钮默认展示品牌图标；悬停后展示展开侧栏的面板图标。 */
-.collapsed .toggle .panelIcon {
-  display: none;
-}
-
-.collapsed .toggle:hover .panelIcon {
-  display: inline;
-}
-
-.collapsed .toggle:hover .railMark {
-  display: none;
-}
-
-.railMark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
 }
 
 /* 收起 rail 使用主文字色；展开侧栏保留图标按钮的次级文字色。 */

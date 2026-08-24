@@ -18,7 +18,7 @@
 import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
-  BrandMark, IconNewChatOutline16, IconPanelLeftOutline16, Tooltip,
+  IconNewChatOutline16, IconPanelLeftOutline16, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SidebarRootComponentProps } from './contract/slots.ts'
 import css from './SidebarRoot.module.css'
@@ -126,7 +126,7 @@ export function SidebarRoot({
       onPointerLeave={() => { armLinger() }}
     >
       <div className={css.logoRow}>
-        {/* 展开时品牌行兼作新建会话快捷入口；收起后由下方切换按钮显示品牌图标。 */}
+        {/* 展开时品牌行兼作新建会话快捷入口；收起后保留切换按钮作为展开入口。 */}
         {wide && (
           <button
             type="button"
@@ -143,7 +143,6 @@ export function SidebarRoot({
             </span>
           </button>
         )}
-        {/* 收起时显示品牌图标，悬停后改为展开侧栏的面板图标。 */}
         <Tooltip label={collapsed ? t('toggle.open') : t('toggle.collapse')} delayMs={500}>
           <button
             type="button"
@@ -151,14 +150,7 @@ export function SidebarRoot({
             aria-label={collapsed ? t('toggle.open') : t('toggle.collapse')}
             onClick={() => { toggleSidebar() }}
           >
-            {!wide && (
-              <span className={css.railMark} aria-hidden="true">
-                {renderSlot('sidebar.brand.mark', { size: 24 }, {
-                  fallback: <BrandMark size={24} />,
-                })}
-              </span>
-            )}
-            {/* 收起 rail 使用 18px 图标；展开侧栏保持图标自身的默认尺寸。 */}
+            {/* 收起 rail 始终显示展开图标，避免把品牌标识误作控制。 */}
             <IconPanelLeftOutline16 className={css.panelIcon} size={wide ? 16 : 18} />
           </button>
         </Tooltip>

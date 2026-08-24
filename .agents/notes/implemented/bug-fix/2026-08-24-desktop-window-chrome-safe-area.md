@@ -14,9 +14,11 @@ The Coding desktop shell uses Wails `FullSizeContent`, so the WebView owns the v
 
 The desktop bundle identifier and Wails single-instance identifier are both `com.coding.desktop`; DeepSeek Harness package scopes remain runtime implementation details rather than Coding product identity.
 
-Official browser brand slots and their shell fallbacks use `BrandMark`, which renders the public `/favicon.png` asset. The expanded sidebar name is `Coding` only; source commit metadata stays build-only. The client title and PWA manifest use the same product name.
+The official browser image-mark slot uses `BrandMark`, which renders the public `/favicon.png` asset. The expanded sidebar name is `Coding` only; source commit metadata stays build-only. The client title and PWA manifest use the same product name.
 
 The sidebar root adds `--app-safe-area-inset-top` to the collapsed rail's top padding as well as the expanded column. The footer owns an auto top margin, while the Settings trigger removes its bottom margin in both wide and rail modes; the root has no bottom inset so the trigger reaches the viewport edge.
+
+The collapsed rail's top control always renders the panel icon that opens the sidebar. A brand mark never replaces an interaction control.
 
 [macOS menu-bar residency](../feature/2026-08-24-macos-menu-bar-resident-desktop.md) owns the hidden-window lifecycle; this record remains limited to title gestures and client safe areas.
 

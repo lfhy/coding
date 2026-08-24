@@ -60,11 +60,11 @@ static void codingShowPrimaryWindowOnMainThread(void) {
 
 @end
 
-// codingTrayImage 复用应用图标，保证菜单栏与桌面包使用同一品牌资产。
+// codingTrayImage 复用应用图标，并填满标准状态项的可用高度。
 static NSImage *codingTrayImage(void) {
     NSImage *source = NSApp.applicationIconImage;
     NSImage *image = [source copy];
-    [image setSize:NSMakeSize(18.0, 18.0)];
+    [image setSize:NSMakeSize(22.0, 22.0)];
     [image setTemplate:NO];
     return [image autorelease];
 }

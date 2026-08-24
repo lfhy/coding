@@ -10,7 +10,7 @@ Coding's macOS window used the normal close path, which ended the desktop proces
 
 ## Decision
 
-[`apps/desktop/main.go`](../../../../apps/desktop/main.go) enables `HideWindowOnClose` on macOS and labels the Cmd+W File action “隐藏窗口”. [`apps/desktop/tray_darwin.m`](../../../../apps/desktop/tray_darwin.m) creates one Cocoa `NSStatusItem` from the application icon. Its menu shows or hides Coding and provides the explicit “退出 Coding” action; the quit action routes through `NSApplication` so Wails still owns shutdown.
+[`apps/desktop/main.go`](../../../../apps/desktop/main.go) enables `HideWindowOnClose` on macOS and labels the Cmd+W File action “隐藏窗口”. [`apps/desktop/tray_darwin.m`](../../../../apps/desktop/tray_darwin.m) creates one Cocoa `NSStatusItem` from a non-template 22pt copy of the application icon, filling the standard item's available height. Its menu shows or hides Coding and provides the explicit “退出 Coding” action; the quit action routes through `NSApplication` so Wails still owns shutdown.
 
 The same native show helper removes application hiding, restores a minimized window, and brings the Wails primary window forward. The status item and both single-instance paths share it, so a second launch recovers a hidden session. The app starts its `instance.Listener` before Wails and waits for `OnStartup` to publish the native window before handling an activation request. [`apps/desktop/tray_other.go`](../../../../apps/desktop/tray_other.go) leaves platforms without this native status item on their normal close-to-quit behavior.
 

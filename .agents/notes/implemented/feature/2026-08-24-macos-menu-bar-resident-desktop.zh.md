@@ -10,7 +10,7 @@ Coding 的 macOS 窗口原来遵循普通关闭路径，即使用户只是想暂
 
 ## Decision
 
-[`apps/desktop/main.go`](../../../../apps/desktop/main.go) 仅在 macOS 启用 `HideWindowOnClose`，并把文件菜单的 Cmd+W 动作标为“隐藏窗口”。[`apps/desktop/tray_darwin.m`](../../../../apps/desktop/tray_darwin.m) 用应用图标创建唯一的 Cocoa `NSStatusItem`。它的菜单可以显示或隐藏 Coding，并提供明确的“退出 Coding”动作；退出动作经由 `NSApplication`，因此 Wails 仍拥有关闭过程。
+[`apps/desktop/main.go`](../../../../apps/desktop/main.go) 仅在 macOS 启用 `HideWindowOnClose`，并把文件菜单的 Cmd+W 动作标为“隐藏窗口”。[`apps/desktop/tray_darwin.m`](../../../../apps/desktop/tray_darwin.m) 用应用图标的非模板 22pt 副本创建唯一的 Cocoa `NSStatusItem`，填满标准状态项的可用高度。它的菜单可以显示或隐藏 Coding，并提供明确的“退出 Coding”动作；退出动作经由 `NSApplication`，因此 Wails 仍拥有关闭过程。
 
 同一个原生显示帮助函数会解除应用隐藏、恢复最小化窗口并把 Wails 主窗口前置。状态项和两条单实例路径共用它，所以再次启动能够恢复被隐藏的会话。应用会在 Wails 前启动 `instance.Listener`，并等待 `OnStartup` 发布原生窗口后才处理激活请求。[`apps/desktop/tray_other.go`](../../../../apps/desktop/tray_other.go) 让没有该原生状态项的平台保持原有的关闭即退出行为。
 

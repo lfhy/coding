@@ -16,14 +16,7 @@ import type { WorkspaceId } from '@deepseek-ai/dsh-client-runtime/client'
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
     /**
-     * 在展开品牌行和收起 rail 中渲染的品牌图标。
-     * 此 package 的 `sidebar` entry 声明它；部署可替换 shell 的 Coding
-     * 图片后备实现，而无需替换周围控件。
-     */
-    'sidebar.brand.mark': { kind: 'single'; scope: 'root'; owner: SidebarBrandMarkOwnerProps }
-    /**
-     * Brand name rendered beside the expanded mark. Declared by this
-     * package's `sidebar` entry; the shell supplies a generic text fallback.
+     * 宽侧边栏中渲染的品牌名称。由本包的 `sidebar` 条目声明；壳层提供通用文本兜底。
      */
     'sidebar.brand.name': { kind: 'single'; scope: 'root'; owner: SidebarBrandNameOwnerProps }
     /**
@@ -47,15 +40,9 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 }
 
-/** Geometry supplied to the sidebar brand-mark occupant. */
-export interface SidebarBrandMarkOwnerProps {
-  /** Requested square edge in pixels. */
-  size: number
-}
-
-/** Empty owner share for the sidebar brand-name occupant. */
+/** 侧边栏品牌名称占用者的空 owner share。 */
 export interface SidebarBrandNameOwnerProps {
-  /** Marker field: the occupant owns its own content and width. */
+  /** 标记字段：占用者自行持有内容和宽度。 */
   children?: never
 }
 
@@ -109,7 +96,6 @@ export type SidebarRootInjected = {
 export type SidebarRootComponentProps =
   PropsRuntime<'sidebar'>
   & PropsRenderSlots<
-    | 'sidebar.brand.mark'
     | 'sidebar.brand.name'
     | 'sidebar.workspaces'
     | 'sidebar.settings'

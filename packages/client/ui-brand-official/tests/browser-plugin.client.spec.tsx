@@ -12,7 +12,6 @@ afterEach(() => {
 })
 
 const HOLES = [
-  'sidebar.brand.mark',
   'sidebar.brand.name',
   'conversation.hero.brand.mark',
 ] as const
@@ -65,7 +64,7 @@ describe('official browser-brand plugin', () => {
     for (const hole of HOLES) expect(after.slots.entries(hole)).toHaveLength(1)
   })
 
-  it('renders the official name independently from both requested brand-mark sizes', () => {
+  it('renders the official name and Hero brand mark independently', () => {
     const name = render(<OfficialBrandName />)
     expect(name.container.querySelector('svg')?.getAttribute('viewBox')).toBe('0 0 74 24')
     name.unmount()
@@ -75,7 +74,5 @@ describe('official browser-brand plugin', () => {
     expect(mark.container.querySelector('img')?.getAttribute('width')).toBe('34')
     expect(mark.container.querySelector('img')?.getAttribute('height')).toBe('34')
     expect(mark.container.querySelector('img')?.getAttribute('class')).toBe('hero-mark')
-    mark.rerender(<OfficialBrandMark size={24} />)
-    expect(mark.container.querySelector('img')?.getAttribute('width')).toBe('24')
   })
 })

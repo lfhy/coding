@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-24-macos-menu-bar-resident-desktop.md
-2026-08-24-macos-menu-bar-resident-desktop.md: c335e7a843f1d6280feb14e6f547c27fdd5c4f66
-2026-08-24-macos-menu-bar-resident-desktop.zh.md: f6cc9588a6c2efac24f6d34e4e958f5d479a5df9
+2026-08-24-macos-menu-bar-resident-desktop.md: b5c7ccc203b3ca1da18dec5ca3dd5ab0c0efa046
+2026-08-24-macos-menu-bar-resident-desktop.zh.md: a9f0da9e559d67a198835fe4b2cd1e743bfd7fba
