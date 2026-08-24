@@ -3,6 +3,7 @@
 import { spawnSync } from 'node:child_process'
 import { rmSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
 import {
   CLIENT_BUILD_RECORD_PATH,
@@ -29,6 +30,16 @@ function runScript(script: string, environment: NodeJS.ProcessEnv): void {
   }
 }
 
+/**
+ * 判断当前模块是否由 Node 直接执行，而非被另一个构建脚本导入。
+ * @param moduleURL - 当前模块的 ESM URL。
+ * @param invokedPath - Node 接收到的入口文件路径。
+ * @returns 当前模块是直接入口时返回 true。
+ */
+export function isDirectScriptEntry(moduleURL: string, invokedPath = process.argv[1]): boolean {
+  return invokedPath !== undefined && moduleURL === pathToFileURL(resolve(invokedPath)).href
+}
+
 /** Run the full build selected by `--profile` or `DSH_BUILD_CLIENT_PROFILE`. */
 function main(): void {
   const { values } = parseArgs({
@@ -52,4 +63,4 @@ function main(): void {
   )
 }
 
-if (import.meta.main) main()
+if (isDirectScriptEntry(import.meta.url)) main()

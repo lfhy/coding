@@ -33,7 +33,7 @@ describe('SidebarRoot.module.css', () => {
       'calc(6px + var(--app-safe-area-inset-top, 0px)) var(--dsh-sidebar-inline-padding) 0',
     )
     expect(declarations('.root.collapsed')?.get('padding')).toBe(
-      'calc(18px + var(--app-safe-area-inset-top, 0px)) 10px 0',
+      'calc(28px + var(--app-safe-area-inset-top, 0px)) 10px 0',
     )
     expect(declarations('.regionArea')?.get('margin-left')).toBe('-4px')
     expect(declarations('.regionArea')?.get('padding-left')).toBe('4px')
