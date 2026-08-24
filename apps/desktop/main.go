@@ -148,6 +148,7 @@ func main() {
 		OnStartup: func(ctx context.Context) {
 			app.ctx = ctx
 			close(app.windowReady)
+			localizeNativeMenus()
 			installNativeWindowChrome()
 			installNativeTray()
 			go app.startHost(ctx)
