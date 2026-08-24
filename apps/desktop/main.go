@@ -34,10 +34,11 @@ const applicationName = "Coding"
 
 // App 承载 Wails 绑定与窗口/运行时引用。
 type App struct {
-	ctx      context.Context
-	launcher *hostlaunch.Launcher
-	endpoint *url.URL
-	ready    chan struct{}
+	ctx         context.Context
+	launcher    *hostlaunch.Launcher
+	endpoint    *url.URL
+	ready       chan struct{}
+	windowReady chan struct{}
 }
 
 func main() {
@@ -61,7 +62,12 @@ func main() {
 	}
 	defer lock.Close()
 
-	app := &App{ready: make(chan struct{})}
+	app := &App{ready: make(chan struct{}), windowReady: make(chan struct{})}
+	go lock.Serve(func() {
+		// 可能在 Wails 启动前收到第二次启动请求，待原生窗口可用后再恢复。
+		<-app.windowReady
+		app.focusPrimary()
+	})
 	launcher, err := hostlaunch.New(hostlaunch.Options{
 		CWD:         cwd,
 		RuntimeRoot: packagedRuntimeRoot(),
@@ -85,9 +91,8 @@ func main() {
 		app.dispatchNewSession()
 	})
 	fileMenu.AddSeparator()
-	fileMenu.AddText("关闭窗口", keys.CmdOrCtrl("w"), func(*wmenu.CallbackData) {
-		// 单窗口应用：关闭窗口即结束本次桌面会话，同时释放 Host。
-		wailsruntime.Quit(app.ctx)
+	fileMenu.AddText(closeWindowMenuLabel(), keys.CmdOrCtrl("w"), func(*wmenu.CallbackData) {
+		app.closePrimary()
 	})
 	menu.Append(wmenu.EditMenu())
 	viewMenu := menu.AddSubmenu("视图")
@@ -110,13 +115,14 @@ func main() {
 	})
 
 	err = wails.Run(&options.App{
-		Title:            applicationName,
-		Width:            1280,
-		Height:           860,
-		WindowStartState: options.Maximised,
-		MinWidth:         720,
-		MinHeight:        480,
-		BackgroundColour: &options.RGBA{R: 245, G: 245, B: 247, A: 1},
+		Title:             applicationName,
+		Width:             1280,
+		Height:            860,
+		WindowStartState:  options.Maximised,
+		MinWidth:          720,
+		MinHeight:         480,
+		HideWindowOnClose: hideWindowOnClose(),
+		BackgroundColour:  &options.RGBA{R: 245, G: 245, B: 247, A: 1},
 		SingleInstanceLock: &options.SingleInstanceLock{
 			UniqueId: "com.coding.desktop",
 			OnSecondInstanceLaunch: func(_ options.SecondInstanceData) {
@@ -141,8 +147,13 @@ func main() {
 		Menu: menu,
 		OnStartup: func(ctx context.Context) {
 			app.ctx = ctx
+			close(app.windowReady)
 			installNativeWindowChrome()
+			installNativeTray()
 			go app.startHost(ctx)
+		},
+		OnShutdown: func(context.Context) {
+			removeNativeTray()
 		},
 		OnDomReady: func(ctx context.Context) {
 			// FullSizeContent 窗口没有原生标题栏可拖。宿主页不是 Wails 资源页，
@@ -238,7 +249,11 @@ func (a *App) dispatchNewSession() {
 }
 
 func (a *App) focusPrimary() {
-	wailsruntime.WindowUnminimise(a.ctx)
+	showPrimaryWindow(a.ctx)
+}
+
+func (a *App) closePrimary() {
+	closePrimaryWindow(a.ctx)
 }
 
 // toggleFullscreen 在全屏与普通窗口之间切换。

@@ -18,6 +18,8 @@ Coding 桌面壳使用 Wails `FullSizeContent`，因此 WebView 承担可见的�
 
 侧边栏根节点让折叠 rail 的顶部内边距也叠加 `--app-safe-area-inset-top`，与展开列保持一致。footer 使用自动顶部外边距，设置触发器在宽列和 rail 两种状态都移除底部外边距；根节点不再保留底部内边距，让触发器贴到视口底边。
 
+[macOS 菜单栏常驻](../feature/2026-08-24-macos-menu-bar-resident-desktop.md)拥有隐藏窗口生命周期；本记录仍只涵盖标题栏手势与 Client 安全区。
+
 ## 备选方案
 
 - **恢复原生标题栏。** 不采用：桌面壳刻意使用 full-size content，并需要由 WebView 提供共享的顶部拖拽区域。

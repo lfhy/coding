@@ -25,7 +25,7 @@ Download the release artifact for your platform and install it manually:
 - macOS: mount the `.dmg` and drag **Coding** into `Applications`.
 - Windows: run the installer. If the WebView2 runtime is missing, the app shows the official Microsoft download link before exiting.
 
-Start **Coding** from your applications menu. The window loads the local Web UI directly; there is no browser dependency. A second launch focuses the existing window instead of starting a new app.
+Start **Coding** from your applications menu. The window loads the local Web UI directly; there is no browser dependency. A second launch focuses the existing window instead of starting a new app. On macOS, closing the main window keeps Coding in the menu bar; use its status item to show or hide the window, or choose **Quit Coding** to end the desktop app.
 
 ## Install the Linux client
 

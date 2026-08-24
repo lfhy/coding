@@ -18,6 +18,8 @@ Official browser brand slots and their shell fallbacks use `BrandMark`, which re
 
 The sidebar root adds `--app-safe-area-inset-top` to the collapsed rail's top padding as well as the expanded column. The footer owns an auto top margin, while the Settings trigger removes its bottom margin in both wide and rail modes; the root has no bottom inset so the trigger reaches the viewport edge.
 
+[macOS menu-bar residency](../feature/2026-08-24-macos-menu-bar-resident-desktop.md) owns the hidden-window lifecycle; this record remains limited to title gestures and client safe areas.
+
 ## Alternatives considered
 
 - **Restore the native title bar.** Rejected: the desktop shell deliberately uses full-size content and needs the WebView to provide the shared top drag surface.
