@@ -1,6 +1,4 @@
-/* NEW SESSION hero (figma Input_Bottom 75:8208): fish + title, workspace chip
-   above the shared InputBar card. The input itself is InputBar — only stack
-   geometry and the chip live here. */
+/* 新会话引导层：品牌图标和标题，以及共享 InputBar 卡片上方的工作区选择器。 */
 
 .root {
   display: flex;
@@ -11,21 +9,19 @@
   padding: 0 24px;
 }
 
-/* Cap matches the InputBar card. Glow may paint past the sides. */
+/* 内容宽度与 InputBar 卡片一致，发光背景可以超出两侧。 */
 .stack {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  /* figma 75:8208: 12 between title block / workspace / card. */
+  /* 标题、工作区和卡片之间保持 12px。 */
   gap: 12px;
   width: 100%;
   max-width: var(--dsh-composer-card-max-width);
   overflow: visible;
 }
 
-/* figma 34:10411: fish + title, gap 10, centered; 26/32 wt500. The preview
-   badge is a product addition outside that source: a mono superscript pill
-   riding the title's top-right. */
+/* 标题和品牌图标居中排列，预览标记放在标题右上角。 */
 .headline {
   display: grid;
   grid-template-columns: 34px auto auto;
@@ -61,8 +57,8 @@
   white-space: nowrap;
 }
 
-/* Keep hover detection on a stationary box while the mark moves within it. */
-.fishHitbox {
+/* 品牌图标保持固定的栅格尺寸，以免标题在图片加载后发生位移。 */
+.brandMarkHitbox {
   grid-row: 1;
   grid-column: 1;
   display: inline-flex;
@@ -70,35 +66,15 @@
   justify-content: center;
 }
 
-/* Keep the hero mark in the same primary ink as its headline. */
-.fish {
-  color: var(--dsw-alias-label-primary);
-  transform-origin: 50% 60%;
+.brandMark {
+  display: block;
+  width: 34px;
+  height: 34px;
+  border-radius: 7px;
+  object-fit: cover;
 }
 
-@keyframes hero-fish-swim {
-  0%, 100% {
-    transform: translate(0, 0) rotate(0deg);
-  }
-
-  35% {
-    transform: translate(-1px, -1px) rotate(-5deg);
-  }
-
-  70% {
-    transform: translate(1px, 0) rotate(3deg);
-  }
-}
-
-@media (hover: hover) and (prefers-reduced-motion: no-preference) {
-  .fishHitbox:hover .fish {
-    animation: hero-fish-swim var(--ds-transition-duration-slow) var(--ds-ease-in-out);
-  }
-}
-
-/* Workspace row sits 12px above the input card (figma y80 → y112). The blue
-   glow lives with the owner (ConversationRoot .heroGlow) so it can center on
-   the input card. */
+/* 工作区行位于输入卡片上方 12px；蓝色发光背景由 owner 持有，以便与输入卡片居中。 */
 .body {
   position: relative;
   display: flex;

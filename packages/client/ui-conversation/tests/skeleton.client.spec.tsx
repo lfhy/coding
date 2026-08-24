@@ -273,7 +273,10 @@ describe('Hero chrome', () => {
     }
     expect(brandMarkOwner.size).toBe(34)
     expect(brandMarkOwner.className).toBeTypeOf('string')
-    expect(renderSlot.mock.calls[0]?.[2]?.fallback).toBeTruthy()
+    const fallback = renderSlot.mock.calls[0]?.[2]?.fallback
+    expect(fallback).toBeTruthy()
+    const fallbackView = render(<>{fallback}</>)
+    expect(fallbackView.container.querySelector('img')?.getAttribute('src')).toBe('/favicon.png')
   })
 })
 

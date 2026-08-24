@@ -167,8 +167,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      */
     'conversation.hero.workspace': { kind: 'single'; scope: 'root'; owner: EmptyWorkspaceOwnerProps }
     /**
-     * Brand mark leading the blank-session headline. Declared by this
-     * package's `conversation` entry; the shell supplies a fish fallback.
+     * 位于空白会话标题前的品牌图标。此 package 的 `conversation` entry
+     * 声明它；shell 提供 Coding 图片后备实现。
      */
     'conversation.hero.brand.mark': { kind: 'single'; scope: 'root'; owner: HeroBrandMarkOwnerProps }
     /**

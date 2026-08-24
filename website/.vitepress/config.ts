@@ -1,6 +1,5 @@
 /** VitePress configuration for the locally projected documentation site. */
 
-import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { DefaultTheme, PageData } from 'vitepress'
 import type { ViteDevServer } from 'vite'
@@ -160,31 +159,21 @@ const sharedTheme: Pick<DefaultTheme.Config, 'search' | 'socialLinks' | 'editLin
   },
 }
 
-/** Site base path, carrying the leading and trailing slashes VitePress requires. */
+/** 站点基础路径，保留 VitePress 要求的首尾斜杠。 */
 const base = process.env.DOCS_BASE ?? '/'
 
 /**
- * The DeepSeek wordmark, inlined so its `currentColor` fills follow the active
- * theme. An `<img>` would freeze the mark at the colors the file declares.
- */
-const wordmark = readFileSync(resolve(import.meta.dirname, '../public/wordmark.svg'), 'utf8')
-  .trim()
-  .replace('<svg ', '<svg class="dsh-wordmark" ')
-
-/**
- * Styles the default theme does not provide, carried inline because the site
- * runs the stock theme with no theme directory of its own.
+ * 默认主题不提供的内联样式；站点使用默认主题，未维护独立主题目录。
  *
- * The navigation-bar lockup pairs with `siteTitle`. The scrollbar rules replace
- * the sidebar's platform bar, which reserves 15px of a 265px column and draws a
- * track the rest of the navigation has no border for; `scrollbarScript` supplies
- * the marker that reveals the thumb. Chrome drops `::-webkit-scrollbar` once
- * `scrollbar-width` is set to anything but `auto`, so the standard properties
- * stay behind a query only Firefox answers.
+ * 导航栏组合标识由 `siteTitle` 提供。滚动条规则替换侧边栏平台滚动条：
+ * 后者会在 265px 列中预留 15px 并显示无边框轨道，`scrollbarScript` 负责
+ * 提供显示滑块的标记。Chrome 一旦将 `scrollbar-width` 设为非 `auto` 就会
+ * 忽略 `::-webkit-scrollbar`，因此标准属性只放在 Firefox 会匹配的查询中。
  */
 const siteStyle = `
 .dsh-lockup { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
-.dsh-wordmark { display: block; height: 22px; width: auto; color: var(--vp-c-text-1); }
+.dsh-brand-mark { display: block; width: 24px; height: 24px; border-radius: 5px; object-fit: cover; }
+.dsh-product-name { color: var(--vp-c-text-1); font-size: 18px; font-weight: 600; line-height: 24px; }
 .dsh-tag {
   display: inline-flex;
   align-items: center;
@@ -236,23 +225,23 @@ const scrollbarScript = `
 `
 
 /**
- * Navigation-bar title: the DeepSeek wordmark and the release-stage tag.
- * VitePress renders `siteTitle` as HTML.
+ * 导航栏标题由 Coding 图标、产品名称和发布阶段标记组成。
+ * VitePress 会将 `siteTitle` 渲染为 HTML。
  *
- * @param previewTag - Localized release-stage label.
- * @returns Markup placed beside the navigation-bar home link.
+ * @param previewTag - 本地化的发布阶段标签。
+ * @returns 放置在导航栏主页链接旁的标记。
  */
 function siteTitle(previewTag: string): string {
-  return `<span class="dsh-lockup">${wordmark}<span class="dsh-tag">${previewTag}</span></span>`
+  return `<span class="dsh-lockup"><img class="dsh-brand-mark" src="${base}favicon.png" alt="" aria-hidden="true"><span class="dsh-product-name">Coding</span><span class="dsh-tag">${previewTag}</span></span>`
 }
 
 export default withMermaid({
-  title: 'DeepSeek Harness',
-  description: '用于构建 Agent Harness 的插件化 SDK',
+  title: 'Coding',
+  description: '通用 Coding 工具',
   base,
   head: [
-    // VitePress leaves head hrefs untouched, so the base belongs here explicitly.
-    ['link', { rel: 'icon', type: 'image/svg+xml', href: `${base}favicon.svg` }],
+    // VitePress 不会改写 head 中的 href，因此在这里显式拼接 base。
+    ['link', { rel: 'icon', type: 'image/png', href: `${base}favicon.png` }],
     ['style', {}, siteStyle],
     ['script', {}, scrollbarScript],
   ],

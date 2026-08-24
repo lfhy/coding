@@ -1,13 +1,10 @@
-// Hero chrome for the blank-draft phase of ConversationRoot: fish headline,
-// glow backdrop, and the workspace row. Pure presentation — the resident
-// composer is NOT rendered here (it keeps its own stable tree position in
-// ConversationRoot so the textarea survives the hero → composer flip); CSS
-// positions it over this shell's glow area during the hero phase.
+// 空白草稿阶段的会话引导层：品牌图标、标题、发光背景和工作区行。这里只承担呈现；
+// 常驻编辑器仍由 ConversationRoot 持有，以便在引导层和常规编辑器间切换时保留 textarea。
 
 import { useId } from 'react'
 import type { ReactNode, RefObject } from 'react'
 import {
-  FishLogo, IconChevronDownOutline14, IconFolderClose16, IconFolderOpen16,
+  BrandMark, IconChevronDownOutline14, IconFolderClose16, IconFolderOpen16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { workspaceTitleOf } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ConversationSlotProps } from '../contract/slots.ts'
@@ -98,31 +95,30 @@ export function HeroGlow({ className }: { className?: string | undefined }) {
   )
 }
 
-/** Hero chrome props. The workspace row rides the InputBar accessory hole, not here. */
+/** 会话引导层的属性；工作区行由 InputBar 的 accessory slot 承载。 */
 export interface HeroShellProps {
-  /** The owner's locale seat, passed down as a plain prop. */
+  /** owner 的 locale seat，以普通属性传入。 */
   t: HeroTranslate
-  /** Authorized renderer for the hero brand-mark slot. */
+  /** 获授权的会话引导品牌 slot 渲染函数。 */
   renderSlot: ConversationSlotProps['renderSlot']
-  /** Overlay content after the stack (modals). */
+  /** 位于内容栈之后的叠层内容（如模态框）。 */
   children?: ReactNode
 }
 
 /**
- * Render the hero chrome (headline only; no glow, no composer, no workspace
- * row — the glow is the owner's {@link HeroGlow}).
- * @param props - see {@link HeroShellProps}.
- * @returns the centered hero element tree.
+ * 渲染会话引导层的标题部分；发光背景、编辑器和工作区行由 owner 单独持有。
+ * @param props - 见 {@link HeroShellProps}。
+ * @returns 居中的会话引导元素树。
  */
 export function HeroShell({ t, renderSlot, children }: HeroShellProps) {
   return (
     <div className={css.root}>
       <div className={css.stack}>
         <div className={css.headline}>
-          {/* figma 34:10412: fish 34×25 leading the headline, gap 10. */}
-          <span className={css.fishHitbox}>
-            {renderSlot('conversation.hero.brand.mark', { size: 34, className: css.fish }, {
-              fallback: <FishLogo size={34} className={css.fish} />,
+          {/* 品牌图标位于标题前方，和标题保持 10px 间距。 */}
+          <span className={css.brandMarkHitbox}>
+            {renderSlot('conversation.hero.brand.mark', { size: 34, className: css.brandMark }, {
+              fallback: <BrandMark size={34} className={css.brandMark} />,
             })}
           </span>
           <span className={css.headlineText}>{t('hero.headline')}</span>

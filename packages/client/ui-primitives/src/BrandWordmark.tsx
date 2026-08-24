@@ -3,21 +3,21 @@
 
 import type { IconProps } from './icons/props.ts'
 
-/** Display options for the official brand wordmark. */
+/** Coding 品牌字标的显示选项。 */
 export interface BrandWordmarkProps extends IconProps {
-  /** Whether to include the leading whale mark; defaults to true. */
+  /** 保留该参数以兼容既有调用；当前字标始终不包含前置图标。 */
   includeMark?: boolean | undefined
 }
 
 /**
- * Render the full brand wordmark.
- * @param props.size - height in px (default 24; width follows the selected artwork).
- * @param props.className - extra class for layout placement.
- * @param props.includeMark - whether to include the leading whale mark.
- * @returns the wordmark svg (aria-hidden decorative brand art).
+ * 渲染 Coding 品牌字标。
+ * @param props.size - 高度，默认 24px；宽度随字标比例变化。
+ * @param props.className - 供布局使用的附加类名。
+ * @param props.includeMark - 兼容既有调用的保留参数，不影响当前字标渲染。
+ * @returns 不参与无障碍名称计算的字标 SVG。
  */
 export function BrandWordmark({ size = 24, className }: BrandWordmarkProps) {
-  // Coding wordmark: text-based so the name stays editable across locales and themes.
+  // 用文本绘制字标，使名称可随主题和语言环境保持可编辑。
   const width = 74
   return (
     <svg

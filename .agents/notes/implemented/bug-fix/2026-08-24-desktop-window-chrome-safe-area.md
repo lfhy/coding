@@ -14,6 +14,8 @@ The Coding desktop shell uses Wails `FullSizeContent`, so the WebView owns the v
 
 The desktop bundle identifier and Wails single-instance identifier are both `com.coding.desktop`; DeepSeek Harness package scopes remain runtime implementation details rather than Coding product identity.
 
+Official browser brand slots and their shell fallbacks use `BrandMark`, which renders the public `/favicon.png` asset. The expanded sidebar name is `Coding` only; source commit metadata stays build-only. The client title and PWA manifest use the same product name.
+
 The sidebar root adds `--app-safe-area-inset-top` to the collapsed rail's top padding as well as the expanded column. The footer owns an auto top margin, while the Settings trigger removes its bottom margin in both wide and rail modes; the root has no bottom inset so the trigger reaches the viewport edge.
 
 ## Alternatives considered
@@ -29,3 +31,5 @@ Desktop launches open maximized, and an empty top double-click toggles that stat
 ## Testing
 
 The sidebar and Settings CSS contracts are covered by focused Vitest specs. `CGO_ENABLED=1 go test ./...`, a tagged desktop production build, and the Web build pass; the rebuilt desktop Host geometry check places the Settings trigger at the viewport bottom in both wide and rail states.
+
+Primitive, sidebar, brand, and PWA checks pin the shared image mark, the absence of a commit badge, and the Coding browser identity.

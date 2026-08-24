@@ -92,9 +92,9 @@ describe('SidebarRoot shell', () => {
     expect(b.toggleSidebar).toHaveBeenCalledOnce()
   })
 
-  it('renders generic brand fallbacks when no package fills the slots', () => {
+  it('renders generic brand fallbacks without build metadata when no package fills the slots', () => {
     vi.stubEnv('DSH_CLIENT_COMMIT_HASH', '0123456')
-    const { container } = render(<SidebarRoot
+    render(<SidebarRoot
       collapsed={false} width={300}
       useSessions={neverHook} useWorkspaces={neverHook}
       startSession={vi.fn()} toggleSidebar={vi.fn()} t={t}
@@ -103,8 +103,7 @@ describe('SidebarRoot shell', () => {
     />)
 
     expect(screen.getByText('Coding')).toBeTruthy()
-    expect(screen.getByText('0123456')).toBeTruthy()
-    expect(container.querySelector('svg')).not.toBeNull()
+    expect(screen.queryByText('0123456')).toBeNull()
   })
 
   it('hands the region its wide flag and clamps expandSidebar to the collapsed state', () => {

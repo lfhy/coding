@@ -487,8 +487,8 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     key: 'conversation.hero.brand.mark',
     kind: 'single',
     scope: 'root',
-    summary: 'Brand mark leading the blank-session headline.',
-    doc: 'Brand mark leading the blank-session headline. Declared by this\npackage\'s `conversation` entry; the shell supplies a fish fallback.',
+    summary: '位于空白会话标题前的品牌图标。此 package 的 `conversation` entry 声明它；shell 提供 Coding 图片后备实现。',
+    doc: '位于空白会话标题前的品牌图标。此 package 的 `conversation` entry\n声明它；shell 提供 Coding 图片后备实现。',
     registerOptions: [],
     ownerProps: [
       '/** Presentation props supplied to the blank-session brand-mark occupant. */\nexport interface HeroBrandMarkOwnerProps {\n  /** Requested square edge in pixels. */\n  size: number\n  /** Host CSS class for preserving the default hero mark color and hover motion. */\n  className?: string | undefined\n}',
@@ -1353,7 +1353,6 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     slotInject: '',
     declaredBy: 'an entry in \'sidebar.settings\' (client-ui-settings-general), so it exists while that entry is mounted',
     occupants: [
-      'client-ui-settings-models WelcomeNotice id \'welcome-notice\'',
       'client-ui-settings-models DeepSeekOnboardingDialog id \'deepseek-official\'',
     ],
     replaceRisk: 'none',
@@ -1586,8 +1585,8 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     key: 'sidebar.brand.mark',
     kind: 'single',
     scope: 'root',
-    summary: 'Brand mark rendered in the expanded brand row and collapsed rail.',
-    doc: 'Brand mark rendered in the expanded brand row and collapsed rail.\nDeclared by this package\'s `sidebar` entry; deployments may replace\nthe shell\'s fish fallback without replacing the surrounding controls.',
+    summary: '在展开品牌行和收起 rail 中渲染的品牌图标。 此 package 的 `sidebar` entry 声明它；部署可替换 shell 的 Coding 图片后备实现，而无需替换周围控件。',
+    doc: '在展开品牌行和收起 rail 中渲染的品牌图标。\n此 package 的 `sidebar` entry 声明它；部署可替换 shell 的 Coding\n图片后备实现，而无需替换周围控件。',
     registerOptions: [],
     ownerProps: [
       '/** Geometry supplied to the sidebar brand-mark occupant. */\nexport interface SidebarBrandMarkOwnerProps {\n  /** Requested square edge in pixels. */\n  size: number\n}',

@@ -45,13 +45,13 @@ interface WebOptions {
 }
 
 /**
- * This app's command: its flags, its description, and its help text.
- * @returns a fresh program, so one process can parse more than once (tests).
+ * 创建 Web 应用的命令、参数和帮助文本。
+ * @returns 新建的命令对象，供同一进程重复解析（测试使用）。
  */
 function webCommand(): Command {
   return new Command()
     .name('dsh --profile web')
-    .description('Serve the DeepSeek Harness browser UI.')
+    .description('Serve the Coding browser UI.')
     .helpOption('-h, --help', 'show this help')
     .option('--host <host>', 'bind host')
     .option('--coding-host', 'run as the local Host managed by a Coding native client')

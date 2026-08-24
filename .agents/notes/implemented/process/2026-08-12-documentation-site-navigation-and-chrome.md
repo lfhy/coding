@@ -22,7 +22,7 @@ Subsystem pages are grouped by concern — overview, core and scopes, sessions a
 
 `projectedPageContent` in [scripts/project-doc-site.ts](../../../../scripts/project-doc-site.ts) drops the language-switcher line and the repository badge. The switcher match is confined to the first eight lines so a tutorial that shows the convention still renders its example.
 
-The navigation-bar title is the DeepSeek wordmark inlined into `siteTitle`, which VitePress renders as HTML. Inlining is what lets the mark's `currentColor` fills follow the active theme; `themeConfig.logo` renders an `<img>`, which freezes the mark at the colors its file declares and would need one asset per theme. The sidebar scrollbar rests invisible and appears while scrolling, marked by a `data-` attribute rather than a class because Vue rewrites `class` wholesale when it patches the element.
+The navigation-bar title is the Coding image mark followed by the product name and release-stage tag in `siteTitle`, which VitePress renders as HTML. The image points to the shared `website/public/favicon.png` asset so the documentation site carries the same supplied brand artwork as the client. The sidebar scrollbar rests invisible and appears while scrolling, marked by a `data-` attribute rather than a class because Vue rewrites `class` wholesale when it patches the element.
 
 ## Alternatives considered
 
@@ -38,4 +38,4 @@ The reference sidebar measures 1452px with every subsystem group collapsed, agai
 
 Canonical Markdown is unchanged by the chrome stripping — the switcher and badge still serve GitHub readers. The cost is that the projector now knows two presentation conventions of the source corpus, which a page written with a different switcher wording would not match.
 
-The wordmark is a second copy of a mark that also lives in `apps/web/public/favicon.svg` and `packages/client/ui-primitives/src/FishLogo.tsx`, each carrying its own presentation. A change to the DeepSeek wordmark reaches the documentation site only by updating this copy.
+The documentation site serves `website/public/favicon.png` as a symlink to `apps/web/public/favicon.png`, while browser UI components render that public client asset through `BrandMark`. The supplied artwork therefore has one repository source.

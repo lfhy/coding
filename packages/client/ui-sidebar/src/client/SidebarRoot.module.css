@@ -23,9 +23,7 @@
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
-/* Rail geometry (figma rail spec): 36x36 control boxes centered in the 56px
-   rail (10px side padding), 12px vertical rhythm, 18px from the rail top to
-   the whale's box (24px to the 24-wide whale glyph itself). */
+/* 收起 rail 使用 36×36 控件盒，居中于 56px 宽度；顶部到 24px 品牌图标盒保留 18px。 */
 .root.collapsed {
   padding: calc(18px + var(--app-safe-area-inset-top, 0px)) 10px 0;
 }
@@ -85,9 +83,7 @@
   from { opacity: 0; }
 }
 
-/* Logo row (figma pad (4,8,4,8)): expanded keeps the panel toggle at the
-   right edge; the rail gives every control the same base left anchor before
-   the shared entry translation is applied. */
+/* 品牌行在展开时将面板切换置于右侧；收起 rail 中的控件共用同一左侧基准。 */
 .logoRow {
   flex: none;
   display: flex;
@@ -108,10 +104,7 @@
   justify-content: flex-start;
 }
 
-/* Brand group (figma I133:7632): the full wordmark rides the text ink
-   (figma flows: the main-screen instance is black; blue is brand
-   emphasis only). A button only in behavior (New Session shortcut): the
-   pointer cursor is the sole affordance — no hover chrome on the mark. */
+/* 品牌行兼作新建会话快捷入口，仅以指针样式表明可点击，不添加悬停底色。 */
 .brand {
   flex: 1;
   min-width: 0;
@@ -125,8 +118,7 @@
   cursor: pointer;
 }
 
-/* Mark and name are independent slots; the shell owns their shared baseline,
-   spacing, and height so either occupant can vary in width. */
+/* 品牌名称占据固定基线、高度与间距，避免在标识切换时改变标题行几何。 */
 .brandIdentity {
   display: inline-flex;
   align-items: center;
@@ -135,11 +127,12 @@
   min-width: 0;
 }
 
-.brandMark {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+.railMark > img {
+  display: block;
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  object-fit: cover;
 }
 
 .brandName {
@@ -184,9 +177,7 @@
   height: 36px;
 }
 
-/* Rail logo swap: collapsed, the toggle rests as the whale mark (brand ink,
-   no hover circle) and hovering reveals the panel icon — the expand
-   affordance (figma sidebar-hover flow). Expanded it is a plain panel icon. */
+/* 收起侧栏时，切换按钮默认展示品牌图标；悬停后展示展开侧栏的面板图标。 */
 .collapsed .toggle .panelIcon {
   display: none;
 }
@@ -205,24 +196,9 @@
   justify-content: center;
 }
 
-/* Rail icons ride the primary ink (figma rail spec); expanded keeps the
-   secondary icon-button ink. */
+/* 收起 rail 使用主文字色；展开侧栏保留图标按钮的次级文字色。 */
 .collapsed .iconButton {
   color: var(--dsw-alias-label-primary);
-}
-
-.buildRevision {
-  display: inline-flex;
-  align-items: center;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: 3px;
-  color: var(--dsw-alias-label-primary-inverted);
-  background: var(--dsw-alias-label-primary);
-  font-family: var(--ds-font-family-code);
-  font-size: 8px;
-  font-weight: 500;
-  line-height: 16px;
 }
 
 /* New Session: 38px bar, 12px radius (figma 133:7634 geometry, squared-off
