@@ -4,5 +4,34 @@
   - text: API 密钥
   - textbox "API 密钥":
     - /placeholder: 输入 API 密钥
+  - group:
+    - text: 自定义设置 API 地址
+    - textbox "API 地址":
+      - /placeholder: https://api.deepseek.com
+    - region "模型目录":
+      - text: 模型目录 正在使用适配器默认模型
+      - textbox "模型 ID 1":
+        - /placeholder: 模型 ID
+        - text: deepseek-v4-flash
+      - textbox "显示名称 1":
+        - /placeholder: 显示名称
+        - text: DeepSeek-V4-Flash
+      - button "容量 1":
+        - img
+      - button "删除模型 1":
+        - img
+      - textbox "模型 ID 2":
+        - /placeholder: 模型 ID
+        - text: deepseek-v4-pro
+      - textbox "显示名称 2":
+        - /placeholder: 显示名称
+        - text: DeepSeek-V4-Pro
+      - button "容量 2":
+        - img
+      - button "删除模型 2":
+        - img
+      - button "添加模型":
+        - img
+        - text: 添加模型
   - button "稍后配置"
-  - button "保存并继续" [disabled]
+  - button "保存并继续"

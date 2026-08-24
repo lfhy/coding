@@ -47,7 +47,7 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     await scaffold?.close()
   })
 
-  it('stores a key write-only and observes configured state without restarting', async () => {
+  it('stores the key, endpoint, and model settings without restarting', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-onboarding-deepseek-config'))
     const welcome = page.getByRole('dialog', { name: WELCOME_NOTICE_COPY.zh.title })
     await welcome.waitFor({ timeout: 15_000 })
@@ -78,6 +78,10 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     const initial = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(MISSING_EXPECTED, initial, MODE)
 
+    expect(await credentialStep.locator('details').evaluate(node => (node as HTMLDetailsElement).open)).toBe(true)
+    await credentialStep.getByLabel('API 地址', { exact: true }).fill('https://gateway.example/v1')
+    await credentialStep.getByRole('button', { name: '容量 2' }).click()
+    await credentialStep.getByLabel('最大输出 token 数 2').fill('32K')
     const secret = `dsh_onboarding_${randomBytes(12).toString('hex')}`
     await keyInput.fill(secret)
     await credentialStep.getByRole('button', { name: '保存并继续' }).click()
@@ -92,6 +96,8 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
 
     const acknowledgedSettings = await readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8')
     expect(acknowledgedSettings).toContain(`${WELCOME_NOTICE_ACK_FIELD}: ${WELCOME_NOTICE_VERSION}`)
+    expect(acknowledgedSettings).toContain('baseURL: https://gateway.example/v1')
+    expect(acknowledgedSettings).toContain('maxTokens: 32000')
 
     // The ordinary Models surface reuses the refreshed join and exposes the
     // configured write-only placeholder without a reload.

@@ -6,7 +6,7 @@
  * has none. The pi-ai profile records that derivation as `apiKeyEnv` only when
  * a key is entered; a blank key materializes a reference-free profile for
  * provider-native authentication);
- * the collapsed 自定义设置 area carries the per-family extras (`baseURL` for
+ * the 自定义设置 area carries the per-family extras (`baseURL` for
  * both families, DeepSeek's id/name/context-window model catalog, and the
  * display name and wire protocol of a pi-ai route the adapter does not ship —
  * the two fields the create card asked that route for, editable here for the
@@ -75,6 +75,8 @@ export interface ProviderEditorProps {
   credentialRequired?: boolean
   /** Give the credential field initial focus when this editor mounts. */
   autoFocusCredential?: boolean
+  /** 初始展开自定义设置区；引导弹窗用它直接展示 Base URL 和模型目录。 */
+  defaultCustomizedOpen?: boolean
   /** Override the dismiss action copy. */
   cancelLabel?: keyof typeof en
   /** Override the idle commit action copy. */
@@ -158,6 +160,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   const [keyState, setKeyState] = useState<CredentialView | undefined>(undefined)
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<string | undefined>(undefined)
+  const [customizedOpen, setCustomizedOpen] = useState(() => props.defaultCustomizedOpen === true)
   // A settings success advances both retry baselines immediately. Keeping the
   // derived fields in the draft prevents a pushed namespace refresh from
   // turning them into deletions when the following credential write is retried.
@@ -387,7 +390,11 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
           />
           {shownKeyFailure === undefined ? null : <p className={styles['error']}>{t(shownKeyFailure)}</p>}
         </div>
-        {props.credentialOnly === true ? null : <details className={styles['customized']}>
+        {props.credentialOnly === true ? null : <details
+          className={styles['customized']}
+          open={customizedOpen}
+          onToggle={(event) => { setCustomizedOpen(event.currentTarget.open) }}
+        >
           <summary className={styles['customizedSummary']}>{t('customized')}</summary>
           <div className={styles['customizedBody']}>
             {/* The name and the protocol are the create card's two remaining

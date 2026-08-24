@@ -112,6 +112,7 @@ export function DeepSeekOnboardingDialog(props: DeepSeekOnboardingDialogProps): 
           readOnly={false}
           hideTitle
           autoFocusCredential
+          defaultCustomizedOpen
           cancelLabel="onboardingLater"
           submitLabel="onboardingSave"
           submitBusyLabel="onboardingSaving"

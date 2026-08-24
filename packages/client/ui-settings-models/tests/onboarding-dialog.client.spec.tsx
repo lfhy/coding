@@ -77,7 +77,7 @@ function harness(options: {
   let fileConfigured = false
   const configured = options.configured ?? (() => fileConfigured)
   const apiKeyEnv = options.apiKeyEnv === undefined ? 'DEEPSEEK_API_KEY' : options.apiKeyEnv
-  const mutate = vi.fn(() => Promise.resolve(ok(deepSeekNamespace(apiKeyEnv))))
+  const mutate = vi.fn((_payload: unknown) => Promise.resolve(ok(deepSeekNamespace(apiKeyEnv))))
   const set = vi.fn((_payload: { ref: string; value: string }) => {
     if (options.setReject !== undefined) return Promise.reject(new Error(options.setReject))
     if (options.setFailure !== undefined) return Promise.resolve(fail(options.setFailure))
@@ -165,7 +165,41 @@ describe('DeepSeekOnboardingDialog', () => {
     const key = screen.getByLabelText<HTMLInputElement>(en.keyInput)
     await waitFor(() => { expect(document.activeElement).toBe(key) })
     // 引导保留完整自定义区：Base URL、模型目录等随密钥一同可配。
-    expect(screen.getByText(en.customized)).toBeTruthy()
+    const customized = screen.getByText(en.customized).closest('details')
+    expect(customized).not.toBeNull()
+    // 自定义设置区默认展开，使 Base URL 和模型目录直接可见。
+    expect((customized as HTMLDetailsElement).open).toBe(true)
+    expect(screen.getByLabelText(en.baseUrl)).toBeTruthy()
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: en.onboardingSave }).disabled).toBe(false)
+
+    // 初始状态只是默认值，用户仍可按需收起设置区。
+    fireEvent.click(screen.getByText(en.customized))
+    expect((customized as HTMLDetailsElement).open).toBe(false)
+  })
+
+  it('saves the endpoint and model catalog with a typed key', async () => {
+    const h = harness()
+    render(<DeepSeekOnboardingDialog {...h.props} />)
+    await screen.findByRole('dialog')
+
+    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://gateway.example/v1' } })
+    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
+    fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'bootstrap-model' } })
+    fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'sk-onboarding' } })
+    fireEvent.click(screen.getByRole('button', { name: en.onboardingSave }))
+
+    await waitFor(() => {
+      const firstCall: unknown = h.mutate.mock.calls[0]?.[0]
+      if (typeof firstCall !== 'object' || firstCall === null) throw new Error('settings mutation was not recorded')
+      const record = firstCall as { ns?: unknown; expectedRevision?: unknown; ops?: unknown }
+      expect(record.ns).toBe('llm-deepseek')
+      expect(record.expectedRevision).toBe(0)
+      if (!Array.isArray(record.ops)) throw new Error('settings mutation did not contain ops')
+      expect(record.ops).toContainEqual({ op: 'set', path: ['baseURL'], value: 'https://gateway.example/v1' })
+      expect(record.ops).toContainEqual({ op: 'set', path: ['models'], value: [{ id: 'bootstrap-model' }] })
+    })
+    await waitFor(() => { expect(h.set).toHaveBeenCalledWith({ ref: 'DEEPSEEK_API_KEY', value: 'sk-onboarding' }) })
+    await waitFor(() => { expect(h.complete).toHaveBeenCalledOnce() })
   })
 
   it('cannot be dismissed implicitly and restores the previous inert state', async () => {
