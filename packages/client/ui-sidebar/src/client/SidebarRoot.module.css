@@ -27,7 +27,7 @@
    rail (10px side padding), 12px vertical rhythm, 18px from the rail top to
    the whale's box (24px to the 24-wide whale glyph itself). */
 .root.collapsed {
-  padding: 18px 10px 6px;
+  padding: calc(18px + var(--app-safe-area-inset-top, 0px)) 10px 6px;
 }
 
 /* Scrollbars in the column are a pointer affordance: the shell adds this
@@ -303,6 +303,7 @@
   flex: none;
   display: flex;
   flex-direction: column;
+  margin-top: auto;
 }
 
 .settingsArea,

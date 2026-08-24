@@ -20,6 +20,8 @@ Coding is currently in _developer preview_ and is iterating rapidly. **THERE WIL
 
 The desktop GUI reuses the existing Web interface in a native WebView. The terminal UI and GUI share sessions, settings, and credentials through `$DSH_HOME` (normally `~/.dsh`) and attach to one local Host when possible. Release artifacts will include the Host runtime, so end users will not need a separate Node installation.
 
+The native desktop window starts maximized. Double-clicking the empty top window area toggles maximization, and sidebar controls keep clear of the macOS traffic-light safe area.
+
 ## Run
 
 ### Run the current runtime from `npm`

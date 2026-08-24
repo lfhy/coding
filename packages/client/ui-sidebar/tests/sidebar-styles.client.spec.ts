@@ -30,6 +30,9 @@ describe('SidebarRoot.module.css', () => {
     const root = declarations('.root')
     expect(root?.get('--dsh-sidebar-inline-padding')).toBe('12px')
     expect(root?.get('padding')).toBe('calc(6px + var(--app-safe-area-inset-top, 0px)) var(--dsh-sidebar-inline-padding)')
+    expect(declarations('.root.collapsed')?.get('padding')).toBe(
+      'calc(18px + var(--app-safe-area-inset-top, 0px)) 10px 6px',
+    )
     expect(declarations('.regionArea')?.get('margin-left')).toBe('-4px')
     expect(declarations('.regionArea')?.get('padding-left')).toBe('4px')
     expect(declarations('.regionArea')?.get('margin-right')).toBe(
@@ -38,6 +41,7 @@ describe('SidebarRoot.module.css', () => {
     expect(declarations('.collapsed .regionArea')?.get('margin-left')).toBe('0')
     expect(declarations('.collapsed .regionArea')?.get('padding-left')).toBe('0')
     expect(declarations('.collapsed .regionArea')?.get('margin-right')).toBe('0')
+    expect(declarations('.footArea')?.get('margin-top')).toBe('auto')
   })
 
   it('moves the four upper controls while the settings seat only fades', () => {

@@ -113,6 +113,7 @@ func main() {
 		Title:            applicationName,
 		Width:            1280,
 		Height:           860,
+		WindowStartState: options.Maximised,
 		MinWidth:         720,
 		MinHeight:        480,
 		BackgroundColour: &options.RGBA{R: 245, G: 245, B: 247, A: 1},
@@ -159,12 +160,28 @@ func main() {
 					if (typeof window.WailsInvoke === 'function') window.WailsInvoke(message)
 					else window.webkit?.messageHandlers?.external?.postMessage(message)
 				}
+				const toggleMaximise = () => {
+					if (typeof window.runtime?.WindowToggleMaximise === 'function') {
+						window.runtime.WindowToggleMaximise()
+					} else {
+						post('Wt')
+					}
+				}
+				// 双击同一非交互顶部区域沿用原生标题栏的最大化切换习惯。
 				document.addEventListener('mousedown', (event) => {
 					if (event.button !== 0 || event.detail !== 1) return
 					const element = event.target instanceof Element ? event.target : null
 					if (!element || event.clientY > 40 || element.closest(interactive)) return
 					event.preventDefault()
 					post('drag')
+				}, true)
+				document.addEventListener('dblclick', (event) => {
+					if (event.button !== 0 || event.clientY > 40) return
+					const element = event.target instanceof Element ? event.target : null
+					if (!element || element.closest(interactive)) return
+					event.preventDefault()
+					event.stopPropagation()
+					toggleMaximise()
 				}, true)
 			})()`)
 		},
