@@ -10,7 +10,9 @@ The Coding desktop shell uses Wails `FullSizeContent`, so the WebView owns the v
 
 ## Decision
 
-[`apps/desktop/main.go`](../../../../apps/desktop/main.go) starts the Wails window in `options.Maximised`. Its `OnDomReady` bridge defers the drag message for non-interactive top content until the pointer moves, so a stationary double-click can send the `Wt` toggle-maximise message without being consumed by the first drag event.
+[`apps/desktop/main.go`](../../../../apps/desktop/main.go) starts the Wails window in `options.Maximised`. Its `OnDomReady` bridge defers the drag message for non-interactive top content until the pointer moves. A macOS local event monitor handles a stationary double-click in the same top area and calls `NSWindow`'s native zoom toggle directly, because the Host's random loopback origin cannot send Wails window messages through the binding-origin validator.
+
+The desktop bundle identifier and Wails single-instance identifier are both `com.coding.desktop`; DeepSeek Harness package scopes remain runtime implementation details rather than Coding product identity.
 
 The sidebar root adds `--app-safe-area-inset-top` to the collapsed rail's top padding as well as the expanded column. The footer owns an auto top margin, while the Settings trigger removes its bottom margin in both wide and rail modes; the root has no bottom inset so the trigger reaches the viewport edge.
 
@@ -22,8 +24,8 @@ The sidebar root adds `--app-safe-area-inset-top` to the collapsed rail's top pa
 
 ## Consequences
 
-Desktop launches open maximized, and an empty top double-click toggles that state without treating buttons or form controls as title chrome. Browser builds keep the safe-area variable at its zero fallback. Rail controls clear the macOS traffic lights, and the Settings control reaches the sidebar's bottom edge while footer contributions remain composable.
+Desktop launches open maximized, and an empty top double-click toggles that state without treating the macOS traffic lights as title chrome. Browser builds keep the safe-area variable at its zero fallback. Rail controls clear the macOS traffic lights, and the Settings control reaches the sidebar's bottom edge while footer contributions remain composable.
 
 ## Testing
 
-The sidebar and Settings CSS contracts are covered by focused Vitest specs. `go test ./...`, a tagged desktop production build, and the Web build pass; the rebuilt desktop Host geometry check places the Settings trigger at the viewport bottom in both wide and rail states.
+The sidebar and Settings CSS contracts are covered by focused Vitest specs. `CGO_ENABLED=1 go test ./...`, a tagged desktop production build, and the Web build pass; the rebuilt desktop Host geometry check places the Settings trigger at the viewport bottom in both wide and rail states.

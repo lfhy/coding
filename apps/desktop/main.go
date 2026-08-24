@@ -118,7 +118,7 @@ func main() {
 		MinHeight:        480,
 		BackgroundColour: &options.RGBA{R: 245, G: 245, B: 247, A: 1},
 		SingleInstanceLock: &options.SingleInstanceLock{
-			UniqueId: "ai.deepseek.coding.desktop",
+			UniqueId: "com.coding.desktop",
 			OnSecondInstanceLaunch: func(_ options.SecondInstanceData) {
 				app.focusPrimary()
 			},
@@ -141,13 +141,15 @@ func main() {
 		Menu: menu,
 		OnStartup: func(ctx context.Context) {
 			app.ctx = ctx
+			installNativeWindowChrome()
 			go app.startHost(ctx)
 		},
 		OnDomReady: func(ctx context.Context) {
 			// FullSizeContent 窗口没有原生标题栏可拖。宿主页不是 Wails 资源页，
 			// runtime 脚本与 CSS 拖拽标记都可能缺席，因此由壳层直接接管：
 			// 顶部 40px 内按下鼠标且目标非交互元素时先等待移动；移动后才向
-			// external 消息通道发送 drag，静止的两次点击则保留给 dblclick 最大化。
+			// external 消息通道发送 drag。双击最大化由 macOS 原生事件监听处理，
+			// 不经随机端口 Host 页面会被拒绝的 Wails binding 消息通道。
 			wailsruntime.WindowExecJS(ctx, `(() => {
 				if (window.__codingWindowDrag) {
 					document.documentElement.style.setProperty('--app-safe-area-inset-top','38px')
@@ -160,9 +162,6 @@ func main() {
 					if (typeof window.WailsInvoke === 'function') window.WailsInvoke(message)
 					else window.webkit?.messageHandlers?.external?.postMessage(message)
 				}
-				const toggleMaximise = () => {
-					post('Wt')
-				}
 				const isTopDragTarget = (event) => {
 					if (event.clientY > 40) return false
 					const element = event.target instanceof Element ? event.target : null
@@ -171,7 +170,7 @@ func main() {
 				let pendingDrag = false
 				let dragStartX = 0
 				let dragStartY = 0
-				// 先记录按下位置，避免同步发送 drag 抢走浏览器的 dblclick。
+				// 先记录按下位置，移动后才启动原生窗口拖拽。
 				document.addEventListener('mousedown', (event) => {
 					if (event.button !== 0) return
 					if (event.detail !== 1 || !isTopDragTarget(event)) {
@@ -193,14 +192,6 @@ func main() {
 					if (event.button === 0) pendingDrag = false
 				}, true)
 				document.addEventListener('blur', () => { pendingDrag = false }, true)
-				// 双击同一非交互顶部区域沿用原生标题栏的最大化切换习惯。
-				document.addEventListener('dblclick', (event) => {
-					if (event.button !== 0 || !isTopDragTarget(event)) return
-					pendingDrag = false
-					event.preventDefault()
-					event.stopImmediatePropagation()
-					toggleMaximise()
-				}, true)
 			})()`)
 		},
 		Bind: []interface{}{app},

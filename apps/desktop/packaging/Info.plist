@@ -7,7 +7,7 @@
 	<key>CFBundleDisplayName</key>
 	<string>Coding</string>
 	<key>CFBundleIdentifier</key>
-	<string>ai.deepseek.coding</string>
+	<string>com.coding.desktop</string>
 	<key>CFBundleVersion</key>
 	<string>0.1.0-rc.8</string>
 	<key>CFBundleShortVersionString</key>
