@@ -283,30 +283,18 @@ func packagedRuntimeRoot() string {
 	return filepath.Join(filepath.Dir(executable), "..", "Resources")
 }
 
-// packagedHostVersion 读取打包 Runtime 的产品版本和内容哈希；
-// Host 就绪记录用两者共同校验，避免同版本的旧运行时继续服务新桌面壳。
+// packagedHostVersion 读取打包 Runtime 旁 metadata.json 中的产品版本；
+// Host 就绪记录按该版本校验。读不到时回退编译期默认值（开发模式）。
 func packagedHostVersion() string {
 	if root := packagedRuntimeRoot(); root != "" {
 		if data, err := os.ReadFile(filepath.Join(root, "metadata.json")); err == nil {
 			var metadata struct {
 				Version string `json:"version"`
-				SHA256  string `json:"sha256"`
 			}
-			if json.Unmarshal(data, &metadata) == nil {
-				return hostCompatibilityVersion(metadata.Version, metadata.SHA256)
+			if json.Unmarshal(data, &metadata) == nil && metadata.Version != "" {
+				return metadata.Version
 			}
 		}
 	}
 	return hostlaunch.AppVersion
-}
-
-// hostCompatibilityVersion 为运行时内容生成 Host 发现标识，缺少哈希时保留产品版本。
-func hostCompatibilityVersion(version, sha256 string) string {
-	if version == "" {
-		return hostlaunch.AppVersion
-	}
-	if sha256 == "" {
-		return version
-	}
-	return version + "+" + sha256
 }

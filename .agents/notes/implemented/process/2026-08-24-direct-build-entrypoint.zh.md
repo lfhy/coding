@@ -18,7 +18,6 @@ Status: implemented
 
 [按内容哈希划分的 SEA 运行时目录](../architecture/2026-08-22-sea-runtime-directory-by-content-hash.md) 管理 archive 构建完成后的缓存选择；本记录管理生成该 archive 的直接构建调用。
 
-桌面启动器将打包 archive 的哈希附加到 Host 兼容性版本。活动 Host 的 archive 哈希不同时，会在启动器拉起当前运行时前退出；产品版本仍是本地发现值的前缀。
 
 ## 考虑过的替代方案
 
@@ -30,4 +29,4 @@ Status: implemented
 
 ## 后果
 
-构建入口保留一个明确的 ESM 判断和一条聚焦测试。`make install` 仍使用完整 Client 构建，打包后的 Host 反映源码树，而非旧的 `lib/` 目录。用同一产品版本安装新 archive 时，也会替换服务旧 archive 的活动 Host。
+构建入口保留一个明确的 ESM 判断和一条聚焦测试。`make install` 仍使用完整 Client 构建，打包后的 Host 反映源码树，而非旧的 `lib/` 目录。

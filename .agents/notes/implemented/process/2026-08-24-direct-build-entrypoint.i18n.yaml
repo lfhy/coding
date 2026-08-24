@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-08-24-direct-build-entrypoint.md
-2026-08-24-direct-build-entrypoint.md: 159febcaf296f5bac6f4c1842c1ed73cbb030628
-2026-08-24-direct-build-entrypoint.zh.md: f242abcf10ebf63e2c069a4cae9fdb885f1fe42e
+2026-08-24-direct-build-entrypoint.md: 1e87c9517f0ec3c1858536bd04eedd4c8cac891c
+2026-08-24-direct-build-entrypoint.zh.md: 80202c2ce39880b5d28f3f2f6ee90ed00510ce7d

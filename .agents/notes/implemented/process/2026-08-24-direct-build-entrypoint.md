@@ -18,7 +18,6 @@ English | [中文](2026-08-24-direct-build-entrypoint.zh.md)
 
 The [content-addressed SEA runtime directory](../architecture/2026-08-22-sea-runtime-directory-by-content-hash.md) owns cache selection after the archive is built; this note owns the direct build invocation that produces that archive.
 
-The desktop launcher appends the packaged archive hash to its Host compatibility version. A live Host from a different archive hash exits before the launcher starts the current runtime, while the product version remains the prefix of the local discovery value.
 
 ## Alternatives considered
 
@@ -30,4 +29,4 @@ The desktop launcher appends the packaged archive hash to its Host compatibility
 
 ## Consequences
 
-The build entrypoint has one explicit ESM check and one focused test. `make install` continues to use the complete client build, and a packaged Host reflects the source tree rather than an older `lib/` directory. Installing a new archive under the same product version also replaces a live Host that serves the earlier archive.
+The build entrypoint has one explicit ESM check and one focused test. `make install` continues to use the complete client build, and a packaged Host reflects the source tree rather than an older `lib/` directory.
