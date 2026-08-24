@@ -26,12 +26,14 @@ function declarations(selector: string): Map<string, string> | undefined {
 }
 
 describe('SidebarRoot.module.css', () => {
-  it('shares and cancels the wide shell trailing padding structurally', () => {
+  it('keeps the safe area and footer edge geometry structural', () => {
     const root = declarations('.root')
     expect(root?.get('--dsh-sidebar-inline-padding')).toBe('12px')
-    expect(root?.get('padding')).toBe('calc(6px + var(--app-safe-area-inset-top, 0px)) var(--dsh-sidebar-inline-padding)')
+    expect(root?.get('padding')).toBe(
+      'calc(6px + var(--app-safe-area-inset-top, 0px)) var(--dsh-sidebar-inline-padding) 0',
+    )
     expect(declarations('.root.collapsed')?.get('padding')).toBe(
-      'calc(18px + var(--app-safe-area-inset-top, 0px)) 10px 6px',
+      'calc(18px + var(--app-safe-area-inset-top, 0px)) 10px 0',
     )
     expect(declarations('.regionArea')?.get('margin-left')).toBe('-4px')
     expect(declarations('.regionArea')?.get('padding-left')).toBe('4px')

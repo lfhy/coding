@@ -146,8 +146,8 @@ func main() {
 		OnDomReady: func(ctx context.Context) {
 			// FullSizeContent 窗口没有原生标题栏可拖。宿主页不是 Wails 资源页，
 			// runtime 脚本与 CSS 拖拽标记都可能缺席，因此由壳层直接接管：
-			// 顶部 40px 内按下鼠标且目标非交互元素时，向 WKWebView 的
-			// external 消息通道发送 drag，由原生侧 performWindowDrag 拖动窗口。
+			// 顶部 40px 内按下鼠标且目标非交互元素时先等待移动；移动后才向
+			// external 消息通道发送 drag，静止的两次点击则保留给 dblclick 最大化。
 			wailsruntime.WindowExecJS(ctx, `(() => {
 				if (window.__codingWindowDrag) {
 					document.documentElement.style.setProperty('--app-safe-area-inset-top','38px')
@@ -161,26 +161,44 @@ func main() {
 					else window.webkit?.messageHandlers?.external?.postMessage(message)
 				}
 				const toggleMaximise = () => {
-					if (typeof window.runtime?.WindowToggleMaximise === 'function') {
-						window.runtime.WindowToggleMaximise()
-					} else {
-						post('Wt')
-					}
+					post('Wt')
 				}
-				// 双击同一非交互顶部区域沿用原生标题栏的最大化切换习惯。
-				document.addEventListener('mousedown', (event) => {
-					if (event.button !== 0 || event.detail !== 1) return
+				const isTopDragTarget = (event) => {
+					if (event.clientY > 40) return false
 					const element = event.target instanceof Element ? event.target : null
-					if (!element || event.clientY > 40 || element.closest(interactive)) return
+					return element !== null && !element.closest(interactive)
+				}
+				let pendingDrag = false
+				let dragStartX = 0
+				let dragStartY = 0
+				// 先记录按下位置，避免同步发送 drag 抢走浏览器的 dblclick。
+				document.addEventListener('mousedown', (event) => {
+					if (event.button !== 0) return
+					if (event.detail !== 1 || !isTopDragTarget(event)) {
+						pendingDrag = false
+						return
+					}
+					pendingDrag = true
+					dragStartX = event.clientX
+					dragStartY = event.clientY
+				}, true)
+				document.addEventListener('mousemove', (event) => {
+					if (!pendingDrag || event.buttons !== 1) return
+					if (Math.abs(event.clientX - dragStartX) < 4 && Math.abs(event.clientY - dragStartY) < 4) return
+					pendingDrag = false
 					event.preventDefault()
 					post('drag')
 				}, true)
+				document.addEventListener('mouseup', (event) => {
+					if (event.button === 0) pendingDrag = false
+				}, true)
+				document.addEventListener('blur', () => { pendingDrag = false }, true)
+				// 双击同一非交互顶部区域沿用原生标题栏的最大化切换习惯。
 				document.addEventListener('dblclick', (event) => {
-					if (event.button !== 0 || event.clientY > 40) return
-					const element = event.target instanceof Element ? event.target : null
-					if (!element || element.closest(interactive)) return
+					if (event.button !== 0 || !isTopDragTarget(event)) return
+					pendingDrag = false
 					event.preventDefault()
-					event.stopPropagation()
+					event.stopImmediatePropagation()
 					toggleMaximise()
 				}, true)
 			})()`)
