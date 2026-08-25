@@ -1,7 +1,28 @@
-/* The adoption error dialog's footer and message styles; the dialog itself is
- * the shared Modal (same figma dialog family as the browser's own dialogs). */
+/* 目录接纳错误对话框的页脚与消息样式；对话框本体复用共享 Modal。 */
 .modalAction {
   min-width: 72px;
+}
+
+.searchInput {
+  box-sizing: border-box;
+  width: 272px;
+  max-width: 100%;
+}
+
+.remoteForm {
+  display: grid;
+  gap: 8px;
+}
+
+.remoteLabel {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.remoteInput {
+  box-sizing: border-box;
+  width: 100%;
 }
 
 .modalError,

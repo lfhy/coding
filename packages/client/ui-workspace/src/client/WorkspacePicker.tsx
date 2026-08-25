@@ -1,17 +1,9 @@
-/**
- * Workspace pick/add flow. WorkspacePickFlow is the reusable core (menu +
- * path error dialog) consumed directly by WorkspaceBrowser (same package) and
- * wrapped by WorkspacePicker for the conversation empty-state slot
- * registration. Directory picking itself lives in the composed flow package's
- * slot occupant (see the contract module doc): this core only opens the flow,
- * adopts the picked path, and owns the error surface. Adding a workspace has
- * exactly one route — pick a host directory, new or existing — because the
- * occupant's own create-folder affordance already covers creating one.
- */
-import type { ReactNode, RefObject } from 'react'
-import { useCallback, useEffect, useState } from 'react'
+/** 工作区选择菜单、目录采用流程与远程连接输入。 */
+import type { FormEvent, ReactNode, RefObject } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  Button, IconFolderClose16, IconPlusOutline16, Menu, Modal, type MenuEntry,
+  Button, IconFolderClose16, IconGlobeOutline14, IconProjectAddOutline16,
+  IconNewChatOutline16, IconSearchOutline16, Input, Menu, Modal, type MenuEntry,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   WorkspaceId, WorkspaceListState, WorkspaceView,
@@ -19,41 +11,64 @@ import type {
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import type { DirectoryFlowOwnerProps, WorkspacePickerProps } from './contract/slots.ts'
 import css from './WorkspacePicker.module.css'
+import { RemoteHostUrlError } from './remote.ts'
 
-const ADD_WORKSPACE = '::add-workspace'
+const OPEN_FOLDER = '::open-folder'
+const CONNECT_REMOTE = '::connect-remote'
+const WITHOUT_PROJECT = '::without-project'
 
-/** Core flow props: the owner supplies popover control and pick semantics. */
+/** 选择器核心属性；侧边栏只传目录操作，Hero 额外传远程和无项目操作。 */
 export interface WorkspacePickFlowProps {
-  /** The standard locale seat, forwarded by whichever slot entry hosts the flow. */
+  /** 所在 slot 的本地化函数。 */
   t: WorkspacePickerProps['t']
-  /** Popover visibility (anchor button toggle state, owner-local). */
+  /** 锚点选择器是否展开。 */
   open: boolean
-  /** The anchor button element — the popover's placement anchor. */
+  /** 菜单定位锚点。 */
   anchorRef?: RefObject<HTMLElement | null> | undefined
-  /** Selector hook over the workspace list (framework standard hook). */
+  /** 工作区列表的标准 selector hook。 */
   useWorkspaces: <S>(selector: (state: WorkspaceListState) => S) => S
-  /** Adopt a picked host directory as a real Workspace. */
+  /** 采用 Host 目录并创建工作区。 */
   createWorkspace: (input: { path: string }) => Promise<WorkspaceView>
-  /** Bound occupancy selector hook for this surface's directory-flow hole (empty leaves the surface with no add action). */
+  /** 当前表层的目录流是否已由能力包占用。 */
   useDirectoryFlow: SnapshotSelectorHook<boolean>
-  /** Render this surface's directory-flow hole with the owner conversation (the entry's narrowed renderSlot). */
+  /** 渲染目录流 slot。 */
   renderDirectoryFlow: (owner: DirectoryFlowOwnerProps) => ReactNode
-  /** A real Workspace was picked or created. */
+  /** 选中已有或新建的工作区。 */
   onPick: (workspaceId: WorkspaceId) => void
-  /** Close the popover (outside click / Escape / post-pick). */
+  /** 关闭菜单。 */
   onClose: () => void
-  /** Only offer the add action, hide existing workspaces. */
+  /** 侧边栏“添加工作区”入口只保留目录流。 */
   addOnly?: boolean
-  /** Menu opening direction relative to the anchor. */
+  /** 菜单相对锚点的展开方向。 */
   side?: 'bottom' | 'top' | 'right'
-  /** Currently active workspace (trailing check in the picker list). */
+  /** 当前工作区。 */
   selectedId?: WorkspaceId | undefined
+  /** 创建并打开不归属任何工作区的会话。 */
+  startSessionWithoutWorkspace?: (() => Promise<void>) | undefined
+  /** 跳转至输入地址对应的远程 Host 页面。 */
+  connectRemote?: ((address: string) => void | Promise<void>) | undefined
+}
+
+/** 将任意失败值转换为可显示的错误文本。 */
+function errorText(reason: unknown): string {
+  return reason instanceof Error ? reason.message : String(reason)
+}
+
+/** 将远程地址校验错误转换为当前界面的本地化文案。 */
+function remoteErrorText(t: WorkspacePickerProps['t'], reason: unknown): string {
+  if (!(reason instanceof RemoteHostUrlError)) return errorText(reason)
+  switch (reason.code) {
+    case 'empty': return t('picker.remote.error.empty')
+    case 'missing-protocol': return t('picker.remote.error.missingProtocol')
+    case 'unsupported-protocol': return t('picker.remote.error.unsupportedProtocol')
+    case 'credentials': return t('picker.remote.error.credentials')
+  }
 }
 
 /**
- * Render the pick menu plus the adoption error dialog.
- * @param props - owner-controlled flow props.
- * @returns menu + dialog elements.
+ * 渲染工作区选择菜单及其目录、远程和无项目操作。
+ * @param props - 选择器的数据、操作与 slot 渲染权限。
+ * @returns 菜单与所拥有的对话框。
  */
 export function WorkspacePickFlow({
   t,
@@ -68,6 +83,8 @@ export function WorkspacePickFlow({
   addOnly = false,
   side = 'bottom',
   selectedId,
+  startSessionWithoutWorkspace,
+  connectRemote,
 }: WorkspacePickFlowProps) {
   const workspaceSnapshot = useWorkspaces(state => state)
   const workspaces = workspaceSnapshot.items
@@ -75,88 +92,130 @@ export function WorkspacePickFlow({
     () => anchorRef?.current?.getBoundingClientRect() ?? null,
     [anchorRef],
   )
-  const [errorOpen, setErrorOpen] = useState(false)
-  const [modalError, setModalError] = useState<string | null>(null)
+  const [folderErrorOpen, setFolderErrorOpen] = useState(false)
+  const [folderError, setFolderError] = useState<string | null>(null)
   const [flowOpen, setFlowOpen] = useState(false)
   const [pickingFolder, setPickingFolder] = useState(false)
-  // One picking interaction at a time: while the flow is open (native chooser
-  // pending, browse dialog up) or its pick is being adopted, every other
-  // menu action stays disabled — a late outcome must not race a concurrent
-  // selection or adoption.
+  const [query, setQuery] = useState('')
+  const [remoteOpen, setRemoteOpen] = useState(false)
+  const [remoteAddress, setRemoteAddress] = useState('')
+  const [remoteError, setRemoteError] = useState<string | null>(null)
+  const [remoteConnecting, setRemoteConnecting] = useState(false)
+  const [startingWithoutProject, setStartingWithoutProject] = useState(false)
+  const [sessionError, setSessionError] = useState<string | null>(null)
   const flowBusy = flowOpen || pickingFolder
-
-  // The occupied hole gates the picking affordance: with no composed flow the
-  // entry simply is not there (the seam's documented no-flow default). The
-  // framework-bound hook keeps occupancy live: flow plugins activate (and
-  // HMR-reload) independently of this menu's renders.
+  const actionBusy = flowBusy || remoteConnecting || startingWithoutProject
   const flowAvailable = useDirectoryFlow(occupied => occupied)
-  // An occupant that unloads mid-interaction leaves nobody to cancel: an
-  // open flow over an empty hole withdraws so the menu actions come back.
-  // flowOpen is a dependency because the flow can also OPEN over an already
-  // empty hole (Choose again after the occupant unloaded with the error
-  // dialog up) — that transition must snap back too, not just occupancy loss.
+  const normalizedQuery = query.trim().toLocaleLowerCase()
+  const visibleWorkspaces = useMemo(() => workspaces.filter(workspace => (
+    normalizedQuery === ''
+      || workspace.title.toLocaleLowerCase().includes(normalizedQuery)
+      || workspace.path.toLocaleLowerCase().includes(normalizedQuery)
+  )), [normalizedQuery, workspaces])
+
+  useEffect(() => {
+    if (!open) setQuery('')
+  }, [open])
+
   useEffect(() => {
     if (flowOpen && !flowAvailable) setFlowOpen(false)
-  }, [flowOpen, flowAvailable])
-  const addEntries: MenuEntry[] = flowAvailable
-    ? [{ id: ADD_WORKSPACE, label: t('menu.addWorkspace'), icon: <IconPlusOutline16 size={16} />, disabled: flowBusy }]
-    : []
-  // With workspaces listed, the add action pins below the scroll region
-  // (divider + always visible); otherwise it IS the menu.
-  const pinAdd = !addOnly && workspaces.length > 0
-  const items: MenuEntry[] = pinAdd
-    ? workspaces.map(workspace => ({
-      id: workspace.workspaceId,
-      label: workspace.title,
-      icon: <IconFolderClose16 size={16} />,
-      disabled: flowBusy,
-    }))
-    : addEntries
-  // Nothing listed and nothing to add with (a composition that mounts this
-  // package without any directory-picker): an empty popover would claim a
-  // choice that does not exist, so the anchor gesture shows nothing at all.
-  const menuIsEmpty = items.length === 0
+  }, [flowAvailable, flowOpen])
 
-  const closeModal = (): void => {
-    setErrorOpen(false)
-    setModalError(null)
+  const closeFolderError = (): void => {
+    setFolderErrorOpen(false)
+    setFolderError(null)
   }
 
-  /** Adopt a picked directory; failures land in the folder-error dialog (Choose again reopens the flow). */
-  const adoptDirectory = (path: string): Promise<void> =>
+  const adoptDirectory = (path: string): Promise<void> => (
     createWorkspace({ path }).then((workspace) => {
       setFlowOpen(false)
       onPick(workspace.workspaceId)
     }).catch((reason: unknown) => {
-      setModalError(reason instanceof Error ? reason.message : String(reason))
+      setFolderError(errorText(reason))
       setFlowOpen(false)
-      setErrorOpen(true)
+      setFolderErrorOpen(true)
     })
+  )
 
   const openDirectoryFlow = useCallback((): void => {
     onClose()
-    setErrorOpen(false)
-    setModalError(null)
+    setFolderErrorOpen(false)
+    setFolderError(null)
     setFlowOpen(true)
   }, [onClose])
 
-  // A menu exists to disambiguate between targets. With no workspaces listed
-  // and the add action the only entry left, the anchor gesture IS that action:
-  // a one-row popover would cost a click and offer nothing to choose between.
-  // The owner's open request is consumed the same way selecting the entry
-  // would consume it (close the popover, raise the flow). An empty list is
-  // only final once the baseline lands — until then the menu stays up with its
-  // loading status instead of jumping into a flow the arriving list would have
-  // made unnecessary; the add-only surface lists nothing and never waits.
+  const closeRemote = (): void => {
+    if (remoteConnecting) return
+    setRemoteOpen(false)
+    setRemoteAddress('')
+    setRemoteError(null)
+  }
+
+  const submitRemote = (event?: FormEvent<HTMLFormElement>): void => {
+    event?.preventDefault()
+    if (connectRemote === undefined || remoteConnecting) return
+    setRemoteError(null)
+    setRemoteConnecting(true)
+    void Promise.resolve().then(() => connectRemote(remoteAddress)).then(
+      () => { setRemoteOpen(false) },
+      (reason: unknown) => { setRemoteError(remoteErrorText(t, reason)) },
+    ).finally(() => { setRemoteConnecting(false) })
+  }
+
+  const startWithoutProject = (): void => {
+    if (startSessionWithoutWorkspace === undefined || startingWithoutProject) return
+    onClose()
+    setSessionError(null)
+    setStartingWithoutProject(true)
+    void startSessionWithoutWorkspace().catch((reason: unknown) => {
+      setSessionError(errorText(reason))
+    }).finally(() => { setStartingWithoutProject(false) })
+  }
+
+  const folderEntries: MenuEntry[] = flowAvailable
+    ? [{
+      id: OPEN_FOLDER,
+      label: addOnly ? t('menu.addWorkspace') : t('picker.openFolder'),
+      icon: <IconProjectAddOutline16 size={16} />,
+      disabled: actionBusy,
+    }]
+    : []
+  const workspaceEntries: MenuEntry[] = visibleWorkspaces.map(workspace => ({
+    id: workspace.workspaceId,
+    label: workspace.title,
+    icon: <IconFolderClose16 size={16} />,
+    disabled: actionBusy,
+  }))
+  if (!addOnly && normalizedQuery !== '' && workspaceEntries.length === 0 && workspaceSnapshot.phase === 'ready') {
+    workspaceEntries.push({ type: 'label', id: '::no-matches', text: t('picker.noMatches') })
+  }
+  const auxiliaryEntries: MenuEntry[] = addOnly
+    ? []
+    : [
+      ...folderEntries,
+      ...(connectRemote === undefined ? [] : [{
+        id: CONNECT_REMOTE,
+        label: t('picker.remoteConnect'),
+        icon: <IconGlobeOutline14 size={16} />,
+        disabled: actionBusy,
+      }]),
+      ...(startSessionWithoutWorkspace === undefined ? [] : [{
+        id: WITHOUT_PROJECT,
+        label: t('picker.noProject'),
+        icon: <IconNewChatOutline16 size={16} />,
+        disabled: actionBusy,
+      }]),
+    ]
+  const menuEntries = addOnly ? folderEntries : workspaceEntries
+  const menuFooter = addOnly ? undefined : auxiliaryEntries
+  const menuIsEmpty = menuEntries.length === 0 && (menuFooter?.length ?? 0) === 0
   const listSettled = addOnly || workspaceSnapshot.phase === 'ready'
-  const addIsTheOnlyEntry = !pinAdd && listSettled && addEntries.length === 1
-  // `flowBusy` gates this exactly as it disables the equivalent menu entry: a
-  // pick still being adopted owns the surface until it settles.
+  const addIsTheOnlyEntry = addOnly && listSettled && folderEntries.length === 1
+
   useEffect(() => {
     if (open && addIsTheOnlyEntry && !flowBusy) openDirectoryFlow()
-  }, [open, addIsTheOnlyEntry, flowBusy, openDirectoryFlow])
+  }, [addIsTheOnlyEntry, flowBusy, open, openDirectoryFlow])
 
-  /** Owner side of the flow conversation: adopt keeps the flow open (busy) until the Host answers. */
   const flowOwner: DirectoryFlowOwnerProps = {
     open: flowOpen,
     busy: pickingFolder,
@@ -167,14 +226,23 @@ export function WorkspacePickFlow({
     onCancel: () => { setFlowOpen(false) },
     onError: (message) => {
       setFlowOpen(false)
-      setModalError(message)
-      setErrorOpen(true)
+      setFolderError(message)
+      setFolderErrorOpen(true)
     },
   }
 
   const handleSelect = (id: string): void => {
-    if (id === ADD_WORKSPACE) {
+    if (id === OPEN_FOLDER) {
       openDirectoryFlow()
+      return
+    }
+    if (id === CONNECT_REMOTE) {
+      onClose()
+      setRemoteOpen(true)
+      return
+    }
+    if (id === WITHOUT_PROJECT) {
+      startWithoutProject()
       return
     }
     onPick(id as WorkspaceId)
@@ -185,8 +253,19 @@ export function WorkspacePickFlow({
       <Menu
         open={open && !addIsTheOnlyEntry && !menuIsEmpty}
         anchor={null}
-        items={items}
-        {...pinAdd ? { footer: addEntries } : {}}
+        header={!addOnly ? (
+          <Input
+            className={css.searchInput ?? ''}
+            icon={<IconSearchOutline16 size={16} />}
+            aria-label={t('picker.search.aria')}
+            placeholder={t('picker.search.placeholder')}
+            value={query}
+            autoFocus
+            onChange={(event) => { setQuery(event.target.value) }}
+          />
+        ) : undefined}
+        items={menuEntries}
+        {...menuFooter !== undefined ? { footer: menuFooter } : {}}
         selectedId={selectedId}
         onSelect={handleSelect}
         onClose={onClose}
@@ -194,34 +273,74 @@ export function WorkspacePickFlow({
         portal
         getAnchorRect={getAnchorRect}
       />
-      {open && !addIsTheOnlyEntry && !menuIsEmpty && workspaceSnapshot.phase === 'pending' && <div className={css.menuStatus} role="status">{t('picker.loading')}</div>}
+      {open && !addIsTheOnlyEntry && !menuIsEmpty && workspaceSnapshot.phase === 'pending' && (
+        <div className={css.menuStatus} role="status">{t('picker.loading')}</div>
+      )}
       {renderDirectoryFlow(flowOwner)}
       <Modal
-        open={errorOpen}
-        onClose={closeModal}
+        open={folderErrorOpen}
+        onClose={closeFolderError}
         closeLabel={t('close')}
         title={t('folderError.title')}
         footer={(
           <>
-            <Button variant="outline" className={css.modalAction} onClick={closeModal}>{t('cancel')}</Button>
-            {/* Retrying needs an occupant to serve the flow; without one the
-              * button would open a flow nobody can answer or cancel. */}
+            <Button variant="outline" className={css.modalAction} onClick={closeFolderError}>{t('cancel')}</Button>
             <Button variant="primary" className={css.modalAction} disabled={!flowAvailable} onClick={openDirectoryFlow}>{t('folderError.retry')}</Button>
           </>
         )}
       >
-        <div className={css.modalError} role="alert">{modalError}</div>
+        <div className={css.modalError} role="alert">{folderError}</div>
+      </Modal>
+      <Modal
+        open={remoteOpen}
+        onClose={closeRemote}
+        closeLabel={t('close')}
+        title={t('picker.remote.title')}
+        description={t('picker.remote.description')}
+        footer={(
+          <>
+            <Button variant="outline" className={css.modalAction} disabled={remoteConnecting} onClick={closeRemote}>{t('cancel')}</Button>
+            <Button
+              variant="primary"
+              className={css.modalAction}
+              disabled={remoteConnecting || remoteAddress.trim() === ''}
+              onClick={() => { submitRemote() }}
+            >
+              {t('picker.remote.confirm')}
+            </Button>
+          </>
+        )}
+      >
+        <form className={css.remoteForm} onSubmit={submitRemote}>
+          <label className={css.remoteLabel} htmlFor="workspace-remote-address">{t('picker.remote.address')}</label>
+          <Input
+            id="workspace-remote-address"
+            className={css.remoteInput ?? ''}
+            type="url"
+            inputMode="url"
+            autoFocus
+            disabled={remoteConnecting}
+            placeholder={t('picker.remote.placeholder')}
+            value={remoteAddress}
+            onChange={(event) => { setRemoteAddress(event.target.value) }}
+          />
+          {remoteError !== null && <div className={css.modalError} role="alert">{remoteError}</div>}
+        </form>
+      </Modal>
+      <Modal
+        open={sessionError !== null}
+        onClose={() => { setSessionError(null) }}
+        closeLabel={t('close')}
+        title={t('picker.sessionError.title')}
+        footer={<Button variant="primary" className={css.modalAction} onClick={() => { setSessionError(null) }}>{t('close')}</Button>}
+      >
+        <div className={css.modalError} role="alert">{sessionError}</div>
       </Modal>
     </>
   )
 }
 
-/**
- * The conversation empty-state registration: adapts the owner share to the
- * core flow (all state and semantics live in the flow / the owner).
- * @param props - empty-state slot props (owner share + injected creation callback).
- * @returns the flow element.
- */
+/** 将 Hero slot 的属性适配到通用选择器。 */
 export function WorkspacePicker({
   open,
   anchorRef,
@@ -230,6 +349,8 @@ export function WorkspacePicker({
   onPick,
   onClose,
   createWorkspace,
+  startSessionWithoutWorkspace,
+  connectRemote,
   useDirectoryFlow,
   renderSlot,
   t,
@@ -241,6 +362,8 @@ export function WorkspacePicker({
       anchorRef={anchorRef}
       useWorkspaces={useWorkspaces}
       createWorkspace={createWorkspace}
+      startSessionWithoutWorkspace={startSessionWithoutWorkspace}
+      connectRemote={connectRemote}
       useDirectoryFlow={useDirectoryFlow}
       renderDirectoryFlow={owner => renderSlot('conversation.hero.workspace.directoryFlow', owner)}
       selectedId={selectedId}

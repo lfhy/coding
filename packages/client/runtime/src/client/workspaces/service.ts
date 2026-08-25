@@ -191,6 +191,12 @@ export class WorkspaceRuntime implements IWorkspaces {
     )
   }
 
+  /** 创建并选择一个不归属工作区的会话；失败交给调用方呈现。 */
+  async startSessionWithoutWorkspace(): Promise<void> {
+    const sessionId = await this.sessions.createUnscoped()
+    this.sessions.open(sessionId)
+  }
+
   /**
    * Register an existing path as a Workspace.
    * @param input - the Host create payload.

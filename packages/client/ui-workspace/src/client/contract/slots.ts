@@ -156,6 +156,10 @@ export type WorkspaceBrowserProps =
 export type WorkspacePickerInjected = DirectoryPickingInjected & {
   /** Adopt a picked host directory as a real Workspace before targeting a Session. */
   createWorkspace: (input: { path: string }) => Promise<WorkspaceView>
+  /** 创建并打开不归属任何工作区的会话。 */
+  startSessionWithoutWorkspace: () => Promise<void>
+  /** 切换到用户指定的远程 Host 页面。 */
+  connectRemote: (address: string) => void | Promise<void>
 }
 
 /**

@@ -30,6 +30,7 @@ const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/workspace-management', i
 const SEED = fileURLToPath(new URL('./snapshots/seeded-history/seed.jsonl', import.meta.url))
 const MODE = webSnapshotMode()
 const BROWSER_EXPECTED = join(SNAPSHOT_DIR, 'directory-browser.expected.md')
+const HERO_PICKER_EXPECTED = join(SNAPSHOT_DIR, 'hero-picker.expected.md')
 const SEED_ID = 'workspace-management-web-e2e'
 // Both waits exceed ui-primitives' 200ms POINTER_GRACE_MS. Keep them above
 // that value if the shared setting changes.
@@ -131,6 +132,17 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
   afterAll(async () => {
     await browser?.close()
     await scaffold?.close()
+  })
+
+  it('presents local, remote, and no-project starts in the Hero picker', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-ws-hero-picker'))
+    await page.getByRole('textbox', { name: 'Choose workspace' }).click()
+    await page.getByRole('menu').waitFor({ timeout: 10_000 })
+    const snapshot = await captureStableAria(page, '[role="menu"]', scaffold.workspaceCwd)
+    await compareOrRefreshGolden(HERO_PICKER_EXPECTED, snapshot, MODE)
+    await page.keyboard.press('Escape')
+    await page.getByRole('menu').waitFor({ state: 'hidden', timeout: 10_000 })
+    expect(tripwire.pageErrors).toEqual([])
   })
 
   it('adds two workspaces through the dialog, each on a folder it created', async () => {
@@ -620,8 +632,8 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
 
   it.skipIf(MODE === 'record')('issued zero model calls and stayed clean', async () => {
     expect(tripwire.warnings).toEqual([])
-    // The directory-browser aria golden is this spec's one owned artifact;
-    // the seed it reuses is owned (and inventory-guarded) by seeded-history.
-    await assertFixtureInventory(SNAPSHOT_DIR, ['.gitkeep', 'directory-browser.expected.md'])
+    // 目录浏览器和 Hero 选择器 aria golden 由本规格拥有；复用的 seed
+    // 则仍由 seeded-history 拥有并由其清单检查。
+    await assertFixtureInventory(SNAPSHOT_DIR, ['.gitkeep', 'directory-browser.expected.md', 'hero-picker.expected.md'])
   })
 })

@@ -73,6 +73,13 @@
   min-height: 0;
 }
 
+/* 搜索框等固定内容不随结果列表滚动，长列表也不会挤走当前控件。 */
+.header {
+  flex: none;
+  padding: 4px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
 .scrollable .viewport {
   overflow-y: auto;
 }

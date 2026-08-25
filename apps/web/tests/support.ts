@@ -55,18 +55,13 @@ export function probeFreePort(): Promise<number> {
 }
 
 /**
- * Drive the hero's workspace picker through the composed directory dialog
- * until the live composer unlocks. A fresh world has no Workspace, so the boot
- * lands in the Workspace-trigger view state (startup auto-selection has nothing to
- * select); every scenario that types into the composer must connect one
- * first. With nothing to list, activating the textarea raises the dialog directly —
- * adding a workspace is the picker's only entry. The directory is staged here
- * and adopted through the path editor, which is idempotent across the repeated
- * connects a scenario may make; creating a folder from inside the dialog (the
- * product's other half of the same route) is covered by
- * workspace-management.e2e.ts. The default name 'workspace' keeps the session
- * header cwd at <root>/workspace, the materialization proof several scenarios
- * assert.
+ * 经 Hero 工作区菜单的“打开文件夹”入口走完已组合的目录对话框，直到真实
+ * 编辑器解锁。新环境没有 Workspace，启动选择也没有目标；所有要向编辑器输入
+ * 的场景都先经此流程建立一个本地 Workspace。选择器会先呈现所有开始路径，
+ * 测试显式选取本地文件夹入口，而不是依赖旧的自动跳转。目录通过路径编辑器
+ * 暂存并接纳，重复调用仍是幂等的；对话框内新建文件夹的另一半路径由
+ * workspace-management.e2e.ts 覆盖。默认名称 `workspace` 使会话页头 cwd
+ * 保持为 <root>/workspace，供多个场景断言物化结果。
  * @param page - the page under test.
  * @param root - host directory the workspace folder is staged in (the scaffold's `workspaceCwd`).
  * @param name - folder name staged and adopted as the workspace.
@@ -74,6 +69,7 @@ export function probeFreePort(): Promise<number> {
 export async function connectFreshWorkspace(page: Page, root: string, name = 'workspace'): Promise<void> {
   mkdirSync(join(root, name), { recursive: true })
   await page.getByRole('textbox', { name: 'Choose workspace' }).click()
+  await page.getByRole('menuitem', { name: 'Open folder' }).click()
   const dialog = page.getByRole('dialog', { name: 'Select Workspace Directory' })
   await dialog.waitFor({ timeout: 10_000 })
   await dialog.getByRole('button', { name: 'Edit path' }).click()
@@ -81,17 +77,14 @@ export async function connectFreshWorkspace(page: Page, root: string, name = 'wo
   await pathInput.fill(join(root, name))
   await pathInput.press('Enter')
   await dialog.getByRole('button', { name: 'Open', exact: true }).click()
-  // The pick connected the workspace: the blank session's live composer
-  // replaces the locked placeholder and enables.
+  // 接纳完成后空白会话的真实编辑器替换锁定占位并启用。
   await page.locator('textarea:enabled[placeholder="Describe what you want to build"]')
     .waitFor({ timeout: 15_000 })
 }
 
 /**
- * {@link connectFreshWorkspace} over a page that advertises
- * {@link ZH_BROWSER_LOCALE}: the English helper's anchors assume the locale
- * most other scenarios boot, so a scenario that deliberately keeps zh needs
- * the localized picker copy.
+ * 在声明 {@link ZH_BROWSER_LOCALE} 的页面中执行
+ * {@link connectFreshWorkspace}；刻意保持中文的场景需要本地化后的选择器文案。
  * @param page - the browser page under test.
  * @param root - workspace parent directory.
  * @param name - directory created under `root` and connected.
@@ -99,6 +92,7 @@ export async function connectFreshWorkspace(page: Page, root: string, name = 'wo
 export async function connectFreshWorkspaceZh(page: Page, root: string, name = 'workspace'): Promise<void> {
   mkdirSync(join(root, name), { recursive: true })
   await page.getByRole('textbox', { name: '选择工作区' }).click()
+  await page.getByRole('menuitem', { name: '打开文件夹' }).click()
   const dialog = page.getByRole('dialog', { name: '选择工作区目录' })
   await dialog.waitFor({ timeout: 10_000 })
   await dialog.getByRole('button', { name: '编辑路径' }).click()

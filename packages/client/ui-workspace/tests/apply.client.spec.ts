@@ -16,6 +16,7 @@ async function bench() {
     title: 'new', sessionIds: [], createdAt: '0', updatedAt: '0',
   }))
   const startSession = vi.fn()
+  const startSessionWithoutWorkspace = vi.fn(async () => {})
   const rename = vi.fn(async () => ({}))
   const insertSessionBefore = vi.fn(async () => ({}))
   const open = vi.fn()
@@ -28,7 +29,7 @@ async function bench() {
   const binding = vi.fn(() => ({ session: { rename: renameSession } }))
   const fork = vi.fn(async () => 'forked' as never)
   ctx.provide('workspaces', {
-    create, startSession, rename, insertSessionBefore,
+    create, startSession, startSessionWithoutWorkspace, rename, insertSessionBefore,
   } as never)
   ctx.provide('sessions', { open, clear, search, searchResultLimit: 20, binding, fork } as never)
   ctx.provide('connection', {
@@ -41,7 +42,7 @@ async function bench() {
   locale.setLocale('zh')
   ctx.provide('locale', locale)
   return {
-    ctx, slots: ctx.get('slots') as SlotRegistry, locale, create, startSession, rename,
+    ctx, slots: ctx.get('slots') as SlotRegistry, locale, create, startSession, startSessionWithoutWorkspace, rename,
     insertSessionBefore, open, clear, search, renameSession, binding, fork,
   }
 }
@@ -115,6 +116,17 @@ describe('ui-workspace apply', () => {
     const picker = (b.slots.entries('conversation.hero.workspace')[0]!.inject as () => WorkspacePickerInjected)()
     await picker.createWorkspace({ path: '/tmp/project' })
     expect(b.create).toHaveBeenCalledWith({ path: '/tmp/project' })
+    await picker.startSessionWithoutWorkspace()
+    expect(b.startSessionWithoutWorkspace).toHaveBeenCalledOnce()
+
+    const assign = vi.fn()
+    vi.stubGlobal('location', { assign })
+    try {
+      void picker.connectRemote('https://host.example.com')
+      expect(assign).toHaveBeenCalledWith('https://host.example.com/')
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('declares the two directory-flow holes and reports their occupancy per surface', async () => {

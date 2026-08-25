@@ -37,6 +37,8 @@ export interface SessionsPort {
    * @returns the new session id.
    */
   create(opts: { workspaceId: WorkspaceId }): Promise<SessionId>
+  /** 创建一个不归属任何工作区、使用 Host 默认目录的会话。 */
+  createUnscoped(): Promise<SessionId>
   /**
    * Select a session as current.
    * @param id - session id (must exist in the list store).

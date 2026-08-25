@@ -29,6 +29,11 @@ export interface IWorkspaces {
    */
   startSession(workspaceId?: WorkspaceId): void
   /**
+   * 创建并打开一个不归属任何工作区的会话，Host 默认目录仍是其 cwd。
+   * @returns 新会话在列表中可同步寻址后完成。
+   */
+  startSessionWithoutWorkspace(): Promise<void>
+  /**
    * Register an existing path as a Workspace.
    * @param input - the Host create payload.
    * @returns the created or idempotently resolved Workspace.

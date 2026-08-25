@@ -301,20 +301,19 @@ describe('ConversationRoot resident composer', () => {
     expect(seat('conversation.input.plan')).toEqual({ locked: true })
   })
 
-  it('lets the no-workspace posture win over a block', () => {
-    // Picking a workspace is the earlier prerequisite; naming a model first
-    // would send the user somewhere they cannot act yet.
+  it('lets an ungrouped blank session work without a project', () => {
     const b = mount(conversationSnapshot({ composerPhase: 'blank' }), [], undefined, {
       summaryBlank: true,
-      composerBlock: { reason: 'select a model first' },
     })
     const box = b.view.getByRole('textbox') as HTMLTextAreaElement
     expect(box.disabled).toBe(false)
-    expect(box.readOnly).toBe(true)
-    expect(box.getAttribute('aria-haspopup')).toBe('menu')
-    expect(box.placeholder).not.toBe('select a model first')
+    expect(box.readOnly).toBe(false)
+    expect(box.placeholder).not.toBe('选择一个工作区开始')
+    expect(b.view.getByText('不在项目中工作')).toBeTruthy()
+    fireEvent.keyDown(box, { key: 'Enter' })
+    expect(b.sink).toHaveBeenCalledWith('ordinary draft', [], 'queue', expect.any(AbortSignal))
     const modelSeat = b.seatOwners.filter(call => call.key === 'conversation.input.model').at(-1)?.owner
-    expect(modelSeat).toEqual({ locked: true })
+    expect(modelSeat).toEqual({ locked: false })
   })
 
   it('keeps composer text in the machine, mirrors to the chat store, and submits through the sink', () => {

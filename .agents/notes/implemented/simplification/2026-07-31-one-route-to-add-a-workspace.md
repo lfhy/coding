@@ -14,14 +14,14 @@ Removing the weaker entry leaves the sidebar header with exactly one action, whi
 
 Adding a Workspace has one route: pick a host directory through the composed directory flow, new or existing. `menu.addWorkspace` ("添加工作区…" / "Add workspace…") is the entry; the create-by-name dialog and its `create.*` / `menu.createWorkspace` / `workspace.new` strings are gone. The label names the outcome, not the mechanism, because it is now the only door to that outcome — a user looking for "新建" must find it.
 
-**A menu exists to disambiguate between targets.** When the only entry left is the add action — the add-only sidebar surface, or the hero with an empty list — the anchor gesture *is* that action: the flow opens directly and no popover renders. A one-row popover costs a click and offers nothing to choose between. The rule is one predicate (`addIsTheOnlyEntry`) covering both surfaces rather than a per-surface special case.
+**A menu exists to disambiguate between targets.** On the add-only sidebar surface, the add action is the only target, so the anchor gesture *is* that action: the directory flow opens directly and no one-row popover renders. The Hero is a broader start menu: it retains registered Workspaces alongside the folder, remote, and no-project actions, so an empty Workspace list never opens the directory flow automatically. The [local, remote, and no-project entry decision](../feature/2026-08-25-workspace-picker-local-remote-and-no-project-entry.md) owns those Hero actions.
 
 Two boundaries fall out of that rule and are part of it:
 
-- **An empty list is only final once the baseline lands.** While `phase` is `pending` the hero keeps its menu and loading status instead of jumping into a flow that the arriving workspaces would have made unnecessary. The add-only surface lists nothing and never waits.
-- **An unoccupied directory-flow hole leaves nothing to add with.** The sidebar header then renders no button at all rather than a dead one; the hero's menu keeps working as a picker over whatever is listed, and shows nothing when nothing is listed either — an empty popover would claim a choice that does not exist. This is the seam's documented no-flow default reaching its conclusion: with the occupant gone, so is the only creation affordance. The hero's anchor chip belongs to ui-conversation, so this package can suppress the popover but cannot hide the chip.
+- **An empty list is only final once the baseline lands.** While `phase` is `pending` the Hero keeps its menu and loading status instead of jumping into a flow that the arriving Workspaces would have made unnecessary. Once the baseline lands, its other start actions still keep the menu useful. The add-only surface lists nothing and never waits.
+- **An unoccupied directory-flow hole leaves nothing to add with.** The sidebar header then renders no button at all rather than a dead one. The Hero omits its folder action but keeps any registered Workspaces, remote navigation, and no-project creation; an absent directory-flow occupant cannot withdraw those independent paths.
 
-The direct-open path carries the busy rule the menu entry states: while a pick is still being adopted (`flowBusy`), the anchor gesture is held exactly as the entry is disabled, so a late outcome cannot race a second flow.
+The add-only direct-open path carries the busy rule its menu entry states: while a pick is still being adopted (`flowBusy`), the sidebar anchor gesture is held exactly as the entry is disabled, so a late outcome cannot race a second flow.
 
 `WorkspaceCreateFlow` is now `WorkspacePickFlow` and its `createOnly` prop is `addOnly`; the injected `createWorkspace` narrows from `{ name } | { path }` to `{ path }`.
 
@@ -41,9 +41,9 @@ The direct-open path carries the busy rule the menu entry states: while a pick i
 
 **Keep the two-entry menu and make `Create a new workspace` open the same flow.** Rejected: two labels for one action is the confusion this change removes, not a smaller version of it.
 
-**Keep a one-row popover for consistency with the hero's menu.** Rejected: a popover that offers no choice is a wasted click and reads as unfinished. Consistency here is the *rule* (menu ⇔ a choice exists), not the widget.
+**Keep a one-row popover on the add-only sidebar for consistency with the Hero.** Rejected: a popover that offers no choice is a wasted click and reads as unfinished. The Hero is a complete start menu; the sidebar's focused local action does not need to imitate it.
 
-**Keep the menu shell for entries we might add later (clone a repo, remote directory).** Rejected under "require a current owner and need": no such entry exists, and restoring a menu when one arrives is a smaller change than shipping an empty frame now.
+**Keep an empty add-only sidebar menu for future actions (clone a repo, remote directory).** Rejected under "require a current owner and need": no such sidebar action exists, and restoring a menu when one arrives is a smaller change than shipping an empty frame now.
 
 **Delete the wire's create-by-name branch in the same change.** Rejected because the UI decision did not depend on the backend and CLI deletion, whose separate contracts and tests formed an independently reviewable change.
 
@@ -54,4 +54,4 @@ The direct-open path carries the busy rule the menu entry states: while a pick i
 - The UI creates Workspace folders only under a directory the operator chooses. No server-controlled configuration constrains that location; a deployment that needs such a constraint must add it deliberately.
 - The picker's configured reach defines the host filesystem available to the remaining route; there is no separate configured parent.
 - A composition that mounts `ui-workspace` without a directory-picker package cannot add a Workspace and omits the button.
-- The hero chip still announces `aria-haspopup="menu"` while the direct-open path raises a dialog instead. Making that truthful means routing the flow's presentation choice up through the `conversation.hero.workspace` owner contract — the flow owns the decision, the chip owns the announcement, and they sit in different packages — so it is a named follow-up rather than a silent inconsistency. The sidebar button this change added makes no popup claim at all.
+- The Hero chip announces `aria-haspopup="menu"` truthfully because it always opens the complete start menu. The direct local-folder action remains confined to the add-only sidebar button, which makes no popup claim.

@@ -490,6 +490,14 @@ export class SessionRuntime implements ISessions {
   }
 
   /**
+   * 创建使用 Host 默认目录且不加入工作区台账的会话。
+   * @returns 已进入会话列表、可立即打开的会话 id。
+   */
+  async createUnscoped(): Promise<SessionId> {
+    return await this.create()
+  }
+
+  /**
    * Fork a session from a completed-turn prefix of the source (same
    * synchronous-addressability guarantee as {@link SessionRuntime.create}:
    * on resolution the child is in the list store and open() can target it).

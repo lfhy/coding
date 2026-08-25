@@ -1,0 +1,12 @@
+- menu:
+  - img
+  - textbox "Search workspaces"
+  - menuitem "Open folder":
+    - img
+    - text: Open folder
+  - menuitem "Connect to remote":
+    - img
+    - text: Connect to remote
+  - menuitem "Work without a project":
+    - img
+    - text: Work without a project

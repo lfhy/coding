@@ -4,7 +4,7 @@
 import { useId } from 'react'
 import type { ReactNode, RefObject } from 'react'
 import {
-  BrandMark, IconChevronDownOutline14, IconFolderClose16, IconFolderOpen16,
+  BrandMark, IconChevronDownOutline14, IconFolderClose16, IconFolderOpen16, IconNewChatOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { workspaceTitleOf } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ConversationSlotProps } from '../contract/slots.ts'
@@ -24,20 +24,11 @@ export function workspaceLabel(cwd: string): string {
   return base !== '' ? base : cwd
 }
 
-/**
- * The workspace chip (folder + label + chevron), always interactive: before
- * the first message the workspace stays switchable — picking another one
- * moves the New Session flow to that workspace's blank session. Without a
- * label the chip renders its placeholder state: closed folder + the
- * "Choose workspace" call to action.
- * @param props.label - chip label (see {@link workspaceLabel}); omitted → placeholder.
- * @param props.menuOpen - menu expansion echo.
- * @param props.onClick - menu toggle.
- * @returns the chip button element.
- */
-export function WorkspaceChip({ buttonRef, label, menuOpen = false, onClick, t }: {
+/** 会话引导区的工作区状态入口；无项目会话显示聊天图标。 */
+export function WorkspaceChip({ buttonRef, label, mode, menuOpen = false, onClick, t }: {
   buttonRef?: RefObject<HTMLButtonElement>
   label?: string | undefined
+  mode?: 'no-project' | undefined
   menuOpen?: boolean
   onClick?: () => void
   t: HeroTranslate
@@ -54,7 +45,9 @@ export function WorkspaceChip({ buttonRef, label, menuOpen = false, onClick, t }
     >
       {label === undefined
         ? <IconFolderClose16 className={css.folder} size={16} />
-        : <IconFolderOpen16 className={css.folder} size={16} />}
+        : mode === 'no-project'
+          ? <IconNewChatOutline16 className={css.folder} size={16} />
+          : <IconFolderOpen16 className={css.folder} size={16} />}
       <span className={css.workspaceLabel}>{label ?? t('hero.chooseWorkspace')}</span>
       <IconChevronDownOutline14 className={css.chevron} size={12} />
     </button>

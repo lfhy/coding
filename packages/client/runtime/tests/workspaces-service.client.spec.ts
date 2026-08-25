@@ -442,6 +442,19 @@ describe('WorkspaceRuntime', () => {
     expect(clear).toHaveBeenCalledOnce()
   })
 
+  it('creates and selects a session outside every Workspace', async () => {
+    const ctx = new Context()
+    const api = new FakeApiClient()
+    const sessions = new SessionRuntime(ctx, api, fakeRemote())
+    const workspaces = new WorkspaceRuntime(ctx, api, sessions)
+    api.onCreate = () => Promise.resolve(ok({ sessionId: sid('unscoped') }))
+
+    await workspaces.startSessionWithoutWorkspace()
+
+    expect(api.callsOf('session.create')).toEqual([{}])
+    expect(sessions.list.getSnapshot().current).toBe(sid('unscoped'))
+  })
+
   it('archives a session, projects the set from the response, list, and frame, and clears only the current one', async () => {
     const ctx = new Context()
     const api = new FakeApiClient()

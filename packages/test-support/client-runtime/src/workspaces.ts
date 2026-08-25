@@ -70,6 +70,12 @@ export class TestWorkspaces implements IWorkspaces {
     this.stubs.get('startSession')?.(workspaceId)
   }
 
+  /** 创建不归属工作区的会话（记录；安装 stub 时执行其行为）。 */
+  async startSessionWithoutWorkspace(): Promise<void> {
+    this.calls.push({ method: 'startSessionWithoutWorkspace', args: [] })
+    await (this.stubs.get('startSessionWithoutWorkspace')?.() as Promise<void> | undefined)
+  }
+
   /**
    * Create a Workspace (recorded). The default echoes a view derived from
    * the input; stub for failure or list-coupled flows.

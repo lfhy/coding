@@ -81,27 +81,26 @@ export function ConversationRoot({
   const zone: InputZone | undefined =
     session === undefined || inputState === undefined ? undefined : { session, input: inputState }
 
-  // The chip is a selector; label resolution walks the flow top-down:
-  //   1. a just-picked workspace (pending) → its title;
-  //   2. cold start, no session yet → placeholder ("Choose workspace");
-  //   3. the blank session's workspace is in the list → its title;
-  //   4. list still loading → cwd folder name bridges so the title does not
-  //      flash on refresh (empty cwd → placeholder);
-  //   5. list ready but no owning workspace (deleted from the sidebar) →
-  //      placeholder, never the deleted folder's name via cwd.
+  // 菜单刚选中的工作区优先显示；列表尚未就绪时以 cwd 名称防闪烁，确认
+  // 会话不属于任何工作区后才显示无项目状态，避免把已删除的项目误标出来。
+  const noProject = sessionId !== undefined && pendingWorkspace === undefined
+    && sessionWorkspace === undefined && workspaces.phase === 'ready'
   const chipTitle = pendingWorkspace?.title
     ?? (sessionId === undefined
       ? undefined
       : sessionWorkspace?.title
-        ?? (workspaces.phase === 'ready' || cwd === undefined || cwd === ''
-          ? undefined
-          : workspaceLabel(cwd)))
+        ?? (workspaces.phase === 'ready'
+          ? t('hero.noProject')
+          : cwd === undefined || cwd === ''
+            ? undefined
+            : workspaceLabel(cwd)))
 
   const heroWorkspaceRow = (
     <div className={css.heroWorkspaceRow}>
       <WorkspaceChip
         buttonRef={pickerAnchor}
         label={chipTitle}
+        mode={noProject ? 'no-project' : undefined}
         menuOpen={pickerOpen}
         onClick={() => { setPickerOpen(open => !open) }}
         t={t}
@@ -123,15 +122,10 @@ export function ConversationRoot({
     </div>
   )
 
-  // The placeholder chip ("Choose workspace") and the Workspace-trigger input travel
-  // together: no workspace picked yet (cold start, no session at all), or a
-  // blank session whose workspace vanished (deleted from the sidebar). The
-  // bar is ONE session-maybe slot rendered unconditionally — inert is a prop,
-  // not a different tree, so the textarea DOM survives the transition.
-  const inert = sessionId === undefined || (hero && chipTitle === undefined)
-  // A raised block is the same inert posture with the blocker's own reason:
-  // one disabled textarea, never a second tree. The no-workspace state wins
-  // when both hold — picking a workspace is the earlier prerequisite.
+  // 没有会话时只能先选择入口；已有但未归属项目的会话使用 Host 默认 cwd，
+  // 可直接发送。输入栏始终复用同一棵树，切换状态不会销毁 textarea。
+  const inert = sessionId === undefined
+  // 发送限制仍优先于普通输入；模型选择器保留可用，便于解除其自身的限制。
   const blocked = !inert && composerBlock !== undefined
   const inputBar = renderSlot('conversation.composer.bar', {
     variant: hero ? 'hero' : 'composer',
@@ -143,9 +137,8 @@ export function ConversationRoot({
         onRequestWorkspace: () => { setPickerOpen(true) },
       }
       : blocked
-        // `blocked`, not `disabled`: the bar refuses input either way, but a
-        // block keeps the model seat live because choosing a model is how the
-        // user clears it.
+        // 使用 blocked 而非 disabled：输入栏都会拒绝输入，但阻塞态必须保留模型
+        // seat，用户选择模型后才能解除这个阻塞。
         ? { blocked: composerBlock, placeholder: composerBlock.reason }
         : hero ? { placeholder: t('placeholder.hero') } : {}),
     overlay: renderSlot('conversation.input.overlay', {}),

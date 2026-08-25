@@ -57,39 +57,33 @@ function isLabel(entry: MenuEntry): entry is MenuLabel {
 const MEASURE_STYLE: CSSProperties = { visibility: 'hidden', left: 0, top: 0 }
 
 /**
- * Render an anchored dropdown menu.
- * @param props.open - whether the list is showing (owner-controlled).
- * @param props.anchor - the trigger element (rendered in place).
- * @param props.items - selectable rows and optional separators.
- * @param props.selectedId - row shown as selected.
- * @param props.selectedIds - rows shown as selected when a menu contains independent option groups.
- * @param props.onSelect - row click callback (not called for disabled rows or submenu parents that only open children).
- * @param props.onClose - invoked on outside click or Escape.
- * @param props.align - list alignment against the anchor (default 'start').
- * @param props.side - open below (`bottom`, default) or above (`top`) the anchor.
- * @param props.portal - render the list into document.body, fixed-positioned
- * from the anchor rect (repositions on scroll/resize while open). Use when an
- * ancestor's overflow clipping would crop the in-place list; default false
- * keeps the pure-CSS in-place behavior.
- * @param props.closeOnPointerLeave - close the list once the pointer has left
- * both trigger and list for the pointer grace (default false keeps it open
- * until outside click/Escape/selection). The grace makes the 4px trigger->list
- * gap and a brief overshoot survivable; coming back cancels the close.
- * @param props.dense - reduce vertical row spacing without changing the standard typography or card width.
- * @param props.compact - use reduced menu typography and spacing.
- * @param props.getAnchorRect - portal mode only: supply the anchor rect
- * directly (e.g. from a host-owned trigger button) instead of measuring the
- * Menu's own wrapper span. Required when the wrapper isn't itself laid out at
- * the trigger (render-prop anchors, effect-positioned proxies — measuring the
- * wrapper there races the host's layout effects). Called on open and on every
- * scroll/resize; return null to skip placement for that frame.
- * @param props.footer - rows pinned below the scrolling items area, separated
- * by a hairline; they stay visible while the items above scroll.
- * @returns anchor wrapper with the conditional list.
+ * 渲染相对锚点定位的下拉菜单。
+ * @param props.open - 列表是否显示，由 owner 控制。
+ * @param props.anchor - 原位渲染的触发元素。
+ * @param props.header - 固定在滚动列表上方的可选非行内容。
+ * @param props.items - 可选行与分隔符。
+ * @param props.selectedId - 显示为选中的行。
+ * @param props.selectedIds - 存在独立选项组时显示为选中的行。
+ * @param props.onSelect - 行点击回调；禁用行及仅展开子菜单的父行不会调用。
+ * @param props.onClose - 外部点击或 Escape 时调用。
+ * @param props.align - 相对锚点的列表对齐方式，默认 start。
+ * @param props.side - 在锚点下方（默认 bottom）或上方（top）展开。
+ * @param props.portal - 是否渲染到 document.body 并根据锚点矩形固定定位；
+ * 适用于祖先 overflow 会裁剪原位列表的场景，默认保留纯 CSS 原位定位。
+ * @param props.closeOnPointerLeave - 指针离开触发元素与列表后是否在宽限期关闭；
+ * 默认直到外部点击、Escape 或选择才关闭，宽限期允许跨越 4px 间隙后返回。
+ * @param props.dense - 在不改变标准字体或卡片宽度的情况下缩小行距。
+ * @param props.compact - 使用紧凑的菜单字体与间距。
+ * @param props.getAnchorRect - 仅 portal 模式：直接提供锚点矩形，而不是测量
+ * Menu 自身 wrapper；当 wrapper 不参与触发元素布局时必须提供。每次打开、
+ * 滚动和窗口尺寸变化都会调用；返回 null 会跳过当帧定位。
+ * @param props.footer - 固定在可滚动项目区下方、以细线分隔的行。
+ * @returns 含条件列表的锚点 wrapper。
  */
-export function Menu({ open, anchor, items, selectedId, selectedIds, onSelect, onClose, align = 'start', side = 'bottom', portal = false, closeOnPointerLeave = false, dense = false, compact = false, getAnchorRect, footer, className }: {
+export function Menu({ open, anchor, header, items, selectedId, selectedIds, onSelect, onClose, align = 'start', side = 'bottom', portal = false, closeOnPointerLeave = false, dense = false, compact = false, getAnchorRect, footer, className }: {
   open: boolean
   anchor: ReactNode
+  header?: ReactNode
   items: readonly MenuEntry[]
   footer?: readonly MenuEntry[]
   selectedId?: string | undefined
@@ -273,6 +267,7 @@ export function Menu({ open, anchor, items, selectedId, selectedIds, onSelect, o
       // (open/toggle) after onSelect.
       onClick={(e) => { e.stopPropagation() }}
     >
+      {header !== undefined && <div className={css.header}>{header}</div>}
       <div className={css.viewport} role="presentation">
         {items.map(renderEntry)}
       </div>
