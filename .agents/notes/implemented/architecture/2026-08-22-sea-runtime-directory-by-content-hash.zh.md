@@ -6,11 +6,11 @@ Status: implemented
 
 ## Problem
 
-Coding 的 SEA 引导器把 Host 闭包物化到 `$DSH_HOME/runtime/<version>`，并把匹配的产品版本与归档 SHA-256 视为命中。原生启动器仍用产品版本发布 `host.json` 和 `DSH_APP_VERSION`，因此该标签仍是在线兼容性键。磁盘目录却只是归档字节的缓存。后续产品版本若携带同一闭包仍会再次解压，因此重新构建或改标签的桌面应用即使 Host 文件未变，也要再付一次首次运行的拷贝成本。
+Linux 的 Coding SEA 引导器把 Host 闭包物化到 `$DSH_HOME/runtime/<version>`，并把匹配的产品版本与归档 SHA-256 视为命中。原生启动器仍用产品版本发布 `host.json` 和 `DSH_APP_VERSION`，因此该标签仍是在线兼容性键。磁盘目录却只是归档字节的缓存。后续产品版本若携带同一闭包，若不改进命中规则仍会再次解压，即使 Host 文件未变。
 
 ## Decision
 
-`scripts/sea/bootstrap.cjs` 把物化目录命名为 `$DSH_HOME/runtime/<sha256>`。命中只要求 marker 的 `sha256` 与内嵌归档一致，且 `node_modules/@deepseek-ai/dsh/lib/bin.js` 存在。产品版本仍写在 marker 中，并继续拥有 `DSH_APP_VERSION` 和 Host 就绪记录。当前 Host 拥有 `host.json` 后，清理会删除名称不是当前归档哈希的所有运行时兄弟目录。`scripts/build-coding-runtime.ts` 在完整构建未产出 `apps/cli/lib/bin.js` 时于 deploy 前失败，在暂存闭包缺少 `node_modules/@deepseek-ai/dsh/lib/bin.js` 时于 deploy 后失败；host tsdown workspace 入口包含 `lib/types/bin.js`，因此构建出的 bin 会随闭包发布。
+`scripts/sea/bootstrap.cjs` 把 Linux 物化目录命名为 `$DSH_HOME/runtime/<sha256>`。命中只要求 marker 的 `sha256` 与内嵌归档一致，且 `node_modules/@deepseek-ai/dsh/lib/bin.js` 存在。产品版本仍写在 marker 中，并继续拥有 `DSH_APP_VERSION` 和 Host 就绪记录。当前 Host 拥有 `host.json` 后，清理会删除名称不是当前归档哈希的所有运行时兄弟目录。`scripts/build-coding-runtime.ts` 在完整构建未产出 `apps/cli/lib/bin.js` 时于 deploy 前失败，在暂存闭包缺少 `node_modules/@deepseek-ai/dsh/lib/bin.js` 时于 deploy 后失败；host tsdown workspace 入口包含 `lib/types/bin.js`，因此构建出的 bin 会随闭包发布。macOS 桌面包则按[应用包运行时决策](2026-08-25-desktop-host-closure-in-app-bundle.md)携带同一份预展开闭包。
 
 ## Alternatives considered
 
@@ -20,4 +20,4 @@ Coding 的 SEA 引导器把 Host 闭包物化到 `$DSH_HOME/runtime/<version>`�
 
 ## Consequences
 
-后续产品版本若携带相同归档字节，会从已有运行时目录启动。不同的归档哈希仍会解压一次到新目录。Host 发现继续比较产品版本，因此另一个产品版本的在线 Host 即使重启后会共享缓存目录，当前仍视为不兼容。
+后续 Linux 产品版本若携带相同归档字节，会从已有运行时目录启动。不同的归档哈希仍会解压一次到新目录。Host 发现继续比较产品版本，因此另一个产品版本的在线 Host 即使重启后会共享缓存目录，当前仍视为不兼容。macOS 桌面路径不会创建这份缓存。

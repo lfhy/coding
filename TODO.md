@@ -17,7 +17,7 @@ This file is the cross-session implementation record for Coding. Update it when 
 - GUI and TUI share `$DSH_HOME`. At most one same-version Host owns that home. Clients read `$DSH_HOME/host.json`, verify loopback reachability and protocol/version compatibility, and attach to a live Host; stale records are replaced only after the recorded PID is no longer alive or the endpoint is unreachable.
 - The Host binds `127.0.0.1:0` for Go-managed launches and emits one machine-readable readiness line after the complete Web tree settles. The record contains port, pid, version, and protocol. A Host with no connected clients and no running Agent or background task exits after five minutes and removes its own record.
 - Desktop startup uses the user's home directory as Host cwd unless `--cwd <dir>` is supplied. The Host's existing `session.create` fallback applies this value to new sessions.
-- Release launchers embed a Node SEA bootstrapper. On first run it materializes the production Host closure and native sidecars into `$DSH_HOME/runtime/<sha256>`, verifies the content SHA-256, then starts the Host from that directory. The directory name is the archive content hash, so a later product version that ships the same bytes reuses that directory. A successful current-archive startup removes older runtime directories; failures leave them available. Linux embeds this SEA asset into one `coding` executable, while native sidecars remain materialized files.
+- macOS `Coding.app` contains a raw Node executable at `Contents/Resources/coding-host` and a pre-expanded, symlink-free Host closure at `Contents/Resources/runtime`; the desktop launcher starts its `bin.js` directly and leaves `$DSH_HOME` for user data. Linux embeds a Node SEA bootstrapper in the `coding` executable. Its first run materializes the verified Host closure and native sidecars into `$DSH_HOME/runtime/<sha256>`; the content-hash directory is reused across product versions with identical bytes, and a successful current-archive startup removes older runtime directories.
 - Initial distribution is manual installation only: macOS `.app`/`.dmg`, Windows installer, and one Linux executable. Signing and notarization hooks are prepared but do not block development; automatic update is excluded.
 - Mobile clients will be mobile Web clients of the same Web GUI, not native shells: phones never run the Host; they reach a Host on the user's desktop or a server. The enabling work is Host-side remote-access security (token auth exists; TLS and LAN discovery remain), plus responsive Web GUI adaptation. If a store app is ever needed, package the existing Web GUI with Capacitor; do not adopt Tauri (no maintained Go bindings) or Wails for this.
 
@@ -63,13 +63,14 @@ Acceptance: macOS arm64 and Windows amd64 launch the unchanged Web GUI through a
 Status: done (macOS arm64 cold-start smoke passed; Windows/Linux platform runs pending CI workflow).
 
 - [x] Produce the production `@deepseek-ai/dsh` dependency closure with `pnpm deploy` or an equivalent locked manifest. (`apps/runtime` + `scripts/build-coding-runtime.ts`; full run verified on darwin-arm64)
-- [x] Build a CommonJS SEA bootstrapper with `createRequire(__filename)`, `useCodeCache: false`, and `useSnapshot: false` for cross-platform assets. (`scripts/sea/bootstrap.cjs`)
-- [x] Embed the compressed closure, manifest version, and SHA-256; materialize it atomically and rebuild damaged runtime directories. (verified: cold start materializes and serves)
-- [x] Package required native sidecars, including `landlock-run`, ripgrep, and Windows koffi dependencies, beside the materialized runtime. (deploy closure carries them)
+- [x] Build a CommonJS SEA bootstrapper with `createRequire(__filename)`, `useCodeCache: false`, and `useSnapshot: false` for the Linux terminal asset. (`scripts/sea/bootstrap.cjs`)
+- [x] Embed the compressed closure, manifest version, and SHA-256; the Linux bootstrapper materializes it atomically and rebuilds damaged runtime directories. (verified: cold start materializes and serves)
+- [x] Package the macOS Node executable and pre-expanded closure under `Coding.app/Contents/Resources`; the desktop launcher runs its `bin.js` without a first-run extraction. (`scripts/build-coding-runtime.ts`, `scripts/package-macos-app.sh`)
+- [x] Package required native sidecars, including `landlock-run`, ripgrep, and Windows koffi dependencies, in the deployed closure. (Linux materializes it; macOS ships it in the app bundle.)
 - [x] Clean old runtime versions only after a current-version Host reports readiness.
 - [x] Test cold start, corruption recovery, successful cleanup, failed-start preservation, and real startup on all supported target platforms. (macOS arm64 real run passed: readiness line + host.json + Web UI + RPC health probe + old-version cleanup after SIGTERM; Windows/Linux pending `coding-native.yml` runs)
 
-Acceptance: users can run a release artifact without installing Node, and the artifact always verifies or rebuilds its on-disk runtime before launch.
+Acceptance: users can run a release artifact without installing Node; macOS reads its signed app-bundle runtime directly, while Linux verifies or rebuilds its on-disk runtime before launch.
 
 ## Phase 4: Linux interactive CLI
 

@@ -14,9 +14,9 @@ Coding keeps the TypeScript/Cordis Node process as the only business Host. Go ap
 
 Go-managed Host launches bind loopback on an OS-selected port and report readiness as structured JSON after the full Web tree settles. A Host record carries its port, PID, runtime version, and protocol version. Launchers validate reachability and compatibility before attaching; a stale or incompatible record is replaced only after its owner is gone. The Host removes only the record it owns and stops after five minutes with neither clients nor active Agent/background work.
 
-Release launchers embed a Node SEA bootstrap asset. It materializes a verified production closure and required native sidecars under `$DSH_HOME/runtime/<sha256>` before starting the Host. The directory name is the archive content hash, so a later product version that ships the same bytes reuses that directory. Successful startup removes older runtime directories; a failed startup preserves them. This keeps Node out of the end-user prerequisite list without claiming that native sidecars can live inside a pure single executable.
+The macOS desktop package carries a raw Node executable at `Coding.app/Contents/Resources/coding-host` and a pre-expanded Host closure at `Coding.app/Contents/Resources/runtime`, then starts the closure's `bin.js` directly. The Linux terminal launcher embeds a Node SEA bootstrap asset. It materializes a verified production closure and required native sidecars under `$DSH_HOME/runtime/<sha256>` before starting the Host. The directory name is the archive content hash, so a later product version that ships the same bytes reuses that directory. Successful startup removes older runtime directories; a failed startup preserves them. Both forms keep Node out of the end-user prerequisite list while retaining real paths for native sidecars.
 
-The Coding product name and public Linux command do not rename the internal `@deepseek-ai/dsh` package, plugin, protocol, or data-home identifiers. The existing semantics remain the compatibility boundary while product-facing artifacts use Coding. The cross-session delivery record in [TODO.md](../../../TODO.md) owns the phased implementation status and detailed acceptance work.
+The Coding product name and public Linux command do not rename the internal `@deepseek-ai/dsh` package, plugin, protocol, or data-home identifiers. The existing semantics remain the compatibility boundary while product-facing artifacts use Coding. The cross-session delivery record in [TODO.md](../../../../TODO.md) owns the phased implementation status and detailed acceptance work.
 
 ## Alternatives considered
 
@@ -33,13 +33,13 @@ The Coding product name and public Linux command do not rename the internal `@de
 - The Host can publish and clean up a versioned local discovery record, and Go clients attach only after PID, protocol, version, and loopback RPC checks succeed.
 - `apps/desktop` opens the existing Web application inside a native macOS arm64 or Windows amd64 WebView without introducing a second HTTP transport.
 - `apps/tui` is a Linux amd64 Bubble Tea application that validates the existing RPC envelopes and reconnects both downlinks by generation.
-- Release artifacts materialize a checksum-verified Host runtime under `$DSH_HOME/runtime/<sha256>` and do not require a globally installed Node executable.
+- Release artifacts do not require a globally installed Node executable: macOS starts its app-bundle closure directly, while Linux materializes its SEA closure under `$DSH_HOME/runtime/<sha256>`.
 - First-party workflows remain owned by the Node Host; browser-only third-party client views render a non-executable TUI placeholder.
 
 ## Risks
 
 - Host discovery is a cross-process ownership protocol. A launcher lock and record-token cleanup are required so concurrent launchers cannot create competing writers for one `$DSH_HOME`.
-- Node SEA packages JavaScript into one executable but native modules still need files. The runtime assembly must preserve platform sidecars and validate every target rather than claiming a pure universal binary.
+- Native modules need files. The macOS package preserves them in the app-bundle closure, while the Linux SEA path materializes platform sidecars; neither path claims a pure universal binary.
 - The Go TUI has no generated TypeScript contract bindings. It must decode the stable wire envelopes defensively and keep its supported feature matrix explicit until a fixture-backed compatibility suite covers the full first-party API.
 
 Host tests cover readiness records, stale-record takeover, runtime-version compatibility, and idle termination. SEA tests cover cold materialization, corruption recovery, and cleanup only after readiness. Desktop and TUI tests cover attachment to an existing Host, reconnect behavior, and the first-party client workflows each presentation exposes.

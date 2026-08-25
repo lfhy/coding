@@ -22,12 +22,25 @@ cp apps/desktop/packaging/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"
 # 触发 Finder/桌面重读图标缓存，避免沿用未带图标版本的旧图标。
 rm -rf "$app/Icon\r"
 
-# 内嵌 SEA Host：首个运行物化到 $DSH_HOME/runtime，.app 内保持只读资源。
-if ls dist/coding-runtime/coding-host-darwin-* >/dev/null 2>&1; then
-  cp dist/coding-runtime/coding-host-darwin-* "$app/Contents/Resources/coding-host"
-  chmod 755 "$app/Contents/Resources/coding-host"
-  cp apps/internal/runtime/metadata.json "$app/Contents/Resources/metadata.json"
+# 应用资源包含原始 Node 可执行文件和预展开的 Host 闭包；启动时不向 $DSH_HOME 解压。
+host=
+for candidate in dist/coding-runtime/coding-node-darwin-*; do
+  if [ -f "$candidate" ]; then
+    host=$candidate
+    break
+  fi
+done
+runtime=dist/coding-runtime/runtime
+entry="$runtime/node_modules/@deepseek-ai/dsh/lib/bin.js"
+metadata=dist/coding-runtime/metadata.json
+if [ -z "$host" ] || [ ! -f "$entry" ] || [ ! -f "$metadata" ]; then
+  echo "package-macos-app: preexpanded desktop runtime missing; run 'make runtime' first" >&2
+  exit 1
 fi
+cp "$host" "$app/Contents/Resources/coding-host"
+chmod 755 "$app/Contents/Resources/coding-host"
+cp -R "$runtime" "$app/Contents/Resources/runtime"
+cp "$metadata" "$app/Contents/Resources/metadata.json"
 
 # codesign 自身输出重定向：只保留脚本自己的单行结论，避免多行噪音。
 if [ -n "$identity" ]; then

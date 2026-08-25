@@ -14,7 +14,9 @@ Coding ships the same local agent Host with two clients: a native desktop GUI on
 
 ## What runs on your machine
 
-The client binary embeds the Node Host runtime. On first run it materializes the runtime into `$DSH_HOME/runtime/<sha256>` and starts the Host from there; installing Node separately is not required. The directory name is the content hash of the embedded archive, so a later product version that ships the same bytes reuses that directory. Only the current archive's runtime directory is kept after a successful start.
+On macOS, `Coding.app` contains the Node executable at `Coding.app/Contents/Resources/coding-host` and a pre-expanded Host closure at `Coding.app/Contents/Resources/runtime`. The app starts that read-only closure directly, so it does not unpack a runtime into your home directory. Installing Node separately is not required.
+
+The Linux `coding` executable retains a Node SEA archive. Its first run materializes the runtime into `$DSH_HOME/runtime/<sha256>` and starts the Host there. The directory name is the archive content hash, so a later product version that ships the same bytes reuses it. Only the current archive's runtime directory is kept after a successful start.
 
 The Host binds to loopback only. Clients discover it through `$DSH_HOME/host.json` and connect over the existing HTTP/WebSocket API; an idle Host with no connected client and no running task exits after five minutes.
 
@@ -39,4 +41,4 @@ Run `coding` in any terminal. Use `coding --cwd <dir>` to change the default wor
 
 ## Where data lives
 
-All sessions, settings, credentials, plugins, and materialized runtimes stay under `$DSH_HOME`. Set the `DSH_HOME` environment variable to relocate everything. Removing that directory resets the client to a clean install.
+Sessions, settings, credentials, and plugins stay under `$DSH_HOME`. The Linux client's materialized runtime also stays there. Set the `DSH_HOME` environment variable to relocate this user data. Removing that directory resets the client to a clean install.

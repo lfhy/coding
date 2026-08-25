@@ -297,7 +297,11 @@ func (l *Launcher) command() ([]string, error) {
 		if _, err := os.Stat(executable); err != nil {
 			return nil, fmt.Errorf("coding: packaged Host is missing at %s: %w", executable, err)
 		}
-		return []string{executable, "web", "--coding-host"}, nil
+		entry := packagedHostEntry(l.options.RuntimeRoot)
+		if _, err := os.Stat(entry); err != nil {
+			return nil, fmt.Errorf("coding: packaged Host entry is missing at %s: %w", entry, err)
+		}
+		return []string{executable, entry, "web", "--coding-host"}, nil
 	}
 	if executable, err := exec.LookPath("coding-host"); err == nil {
 		return []string{executable, "web", "--coding-host"}, nil
@@ -320,6 +324,11 @@ func runtimeHostExecutableName() string {
 		return "coding-host.exe"
 	}
 	return "coding-host"
+}
+
+// packagedHostEntry 返回桌面应用内预展开闭包的 Node 入口。
+func packagedHostEntry(root string) string {
+	return filepath.Join(root, "runtime", "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js")
 }
 
 func repoRoot() string {

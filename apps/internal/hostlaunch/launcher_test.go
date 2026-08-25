@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -144,5 +145,47 @@ func TestAcquireLockTimesOutWithoutRemovingOwner(t *testing.T) {
 	}
 	if _, statErr := os.Stat(path); statErr != nil {
 		t.Fatalf("owner lock was removed: %v", statErr)
+	}
+}
+
+func TestCommandUsesPreexpandedPackagedRuntime(t *testing.T) {
+	root := t.TempDir()
+	executable := filepath.Join(root, runtimeHostExecutableName())
+	if err := os.WriteFile(executable, nil, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	entry := packagedHostEntry(root)
+	if err := os.MkdirAll(filepath.Dir(entry), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(entry, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	launcher, err := New(Options{RuntimeRoot: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	command, err := launcher.command()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{executable, entry, "web", "--coding-host"}
+	if !slices.Equal(command, want) {
+		t.Fatalf("command = %#v, want %#v", command, want)
+	}
+}
+
+func TestCommandRejectsPackagedRuntimeWithoutEntry(t *testing.T) {
+	root := t.TempDir()
+	executable := filepath.Join(root, runtimeHostExecutableName())
+	if err := os.WriteFile(executable, nil, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	launcher, err := New(Options{RuntimeRoot: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := launcher.command(); err == nil {
+		t.Fatal("expected missing packaged Host entry error")
 	}
 }

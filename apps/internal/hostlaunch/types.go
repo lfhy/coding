@@ -38,10 +38,9 @@ type Options struct {
 	StartupTimeout time.Duration
 	LockTimeout    time.Duration
 	PollInterval   time.Duration
-	// RuntimeRoot is the materialized SEA runtime directory. When set, its
-	// coding-host executable is preferred over development fallbacks.
+	// RuntimeRoot 是桌面应用 Resources 目录。设置后，从其中的 Node 可执行文件
+	// 和预展开闭包启动 Host，不回退到开发环境命令。
 	RuntimeRoot string
-	// OnProgress receives SEA materialization progress reports emitted on
-	// Host stdout before readiness; nil ignores them.
+	// OnProgress 接收 Host 在就绪前写到 stdout 的可选启动进度；nil 会忽略它。
 	OnProgress func(done, total int)
 }

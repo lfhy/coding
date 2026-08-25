@@ -14,7 +14,9 @@ Coding 以同一个本地 agent Host 提供两种客户端：macOS 与 Windows �
 
 ## 本机运行的进程
 
-客户端二进制内嵌 Node Host 运行时。首次运行会把运行时物化到 `$DSH_HOME/runtime/<sha256>` 并从该目录启动 Host，无需单独安装 Node。目录名是内嵌归档的内容哈希，因此后续产品版本若携带相同字节会复用该目录。当前归档成功启动后只保留该归档对应的运行时目录。
+macOS 的 `Coding.app` 将 Node 可执行文件放在 `Coding.app/Contents/Resources/coding-host`，并将预展开的 Host 闭包放在 `Coding.app/Contents/Resources/runtime`。应用直接从这份只读闭包启动，不会向用户主目录解压运行时，也无需单独安装 Node。
+
+Linux 的 `coding` 可执行文件仍使用 Node SEA 归档。首次运行会把运行时物化到 `$DSH_HOME/runtime/<sha256>` 并从该目录启动 Host。目录名是归档内容哈希，因此后续产品版本若携带相同字节会复用该目录。当前归档成功启动后只保留该归档对应的运行时目录。
 
 Host 只绑定回环地址。客户端通过 `$DSH_HOME/host.json` 发现 Host，并使用现有 HTTP/WebSocket API 连接；空闲（无客户端连接且无运行中任务）的 Host 在五分钟后自动退出。
 
@@ -39,4 +41,4 @@ sudo install coding /usr/local/bin/coding
 
 ## 数据位置
 
-所有会话、设置、凭据、插件和物化运行时都保存在 `$DSH_HOME` 下。设置 `DSH_HOME` 环境变量可以整体迁移。删除该目录即恢复全新安装。
+会话、设置、凭据和插件都保存在 `$DSH_HOME` 下；Linux 客户端的物化运行时也保存在这里。设置 `DSH_HOME` 环境变量可以整体迁移这些用户数据。删除该目录即恢复全新安装。

@@ -271,7 +271,7 @@ func fatal(err error) {
 	os.Exit(1)
 }
 
-// packagedRuntimeRoot 定位 .app Resources 目录下的 SEA Host；开发运行（无打包）返回空。
+// packagedRuntimeRoot 定位 .app Resources 目录下的 Node 与预展开 Host 闭包；开发运行（无打包）返回空。
 func packagedRuntimeRoot() string {
 	if _, err := os.Stat(filepath.Join("apps", "cli", "src", "bin.ts")); err == nil {
 		return ""

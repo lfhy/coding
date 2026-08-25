@@ -12,11 +12,12 @@ const runtimeManifest = join(root, 'apps', 'runtime', 'package.json')
 const artifacts = join(root, '.artifacts', 'coding-runtime')
 const staging = join(artifacts, 'deploy')
 const dist = join(root, 'dist', 'coding-runtime')
+const desktopRuntime = join(dist, 'runtime')
+const desktopMetadata = join(dist, 'metadata.json')
 const seaBootstrap = join(root, 'scripts', 'sea', 'bootstrap.cjs')
 const seaConfig = join(artifacts, 'sea-config.json')
 const seaBlob = join(artifacts, 'sea-prep.blob')
 const archive = join(artifacts, 'coding-runtime.tgz')
-const goAssetDir = join(root, 'apps', 'internal', 'runtime')
 
 function command(command: string, args: string[], cwd = root): Promise<void> {
   return new Promise((resolvePromise, reject) => {
@@ -183,6 +184,7 @@ async function main(): Promise<void> {
   await rm(artifacts, { recursive: true, force: true })
   await rm(dist, { recursive: true, force: true })
   await mkdir(staging, { recursive: true })
+  await mkdir(dist, { recursive: true })
   await command('pnpm', [
     '--filter', 'coding-host-runtime', 'deploy', '--legacy', '--prod',
     '--config.node-linker=hoisted', '--config.auto-install-peers=false',
@@ -193,11 +195,22 @@ async function main(): Promise<void> {
     throw new Error(`build:runtime: deploy omitted ${stagedBin}`)
   }
   await normalizeStaging(staging)
+  await cp(staging, desktopRuntime, { recursive: true, dereference: true })
+  const desktopBin = join(desktopRuntime, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
+  if (!existsSync(desktopBin)) {
+    throw new Error(`build:runtime: desktop runtime omitted ${desktopBin}`)
+  }
+  const desktopSymlink = await findSymlink(desktopRuntime)
+  if (desktopSymlink !== undefined) {
+    throw new Error(`build:runtime: desktop runtime contains symbolic link ${desktopSymlink}`)
+  }
   await command('tar', ['--format=pax', '-chzf', archive, '-C', staging, '.'])
   const archiveBytes = await readFile(archive)
   const metadata = { version: manifest.version, sha256: sha256(archiveBytes) }
   const metadataPath = join(staging, 'coding-runtime-manifest.json')
-  await writeFile(metadataPath, `${JSON.stringify(metadata)}\n`)
+  const metadataText = `${JSON.stringify(metadata)}\n`
+  await writeFile(metadataPath, metadataText)
+  await writeFile(desktopMetadata, metadataText)
   await writeFile(seaConfig, `${JSON.stringify({
     main: seaBootstrap,
     output: seaBlob,
@@ -210,9 +223,11 @@ async function main(): Promise<void> {
     },
   }, null, 2)}\n`)
   await command(process.execPath, ['--experimental-sea-config', seaConfig])
-  await mkdir(dist, { recursive: true })
   const target = values.target ?? `${process.platform}-${process.arch}`
   const output = join(dist, `coding-host-${target}${process.platform === 'win32' ? '.exe' : ''}`)
+  const desktopHost = join(dist, `coding-node-${target}${process.platform === 'win32' ? '.exe' : ''}`)
+  await copyFile(process.execPath, desktopHost)
+  await chmod(desktopHost, 0o755)
   await copyFile(process.execPath, output)
   // Homebrew 的 node 是 555，copyFile 会保留只读位；postject 需要写回同一路径。
   await chmod(output, 0o755)
@@ -222,10 +237,7 @@ async function main(): Promise<void> {
   if (process.platform === 'darwin') args.push('--macho-segment-name', 'NODE_SEA')
   await command(postject, args)
   if (process.platform === 'darwin') await command('codesign', ['--sign', '-', output])
-  await mkdir(goAssetDir, { recursive: true })
-  await copyFile(output, join(goAssetDir, process.platform === 'win32' ? 'coding-host.exe' : 'coding-host'))
-  await writeFile(join(goAssetDir, 'metadata.json'), `${JSON.stringify({ ...metadata, placeholder: false })}\n`)
-  console.log(`build:runtime: ${output} (${(await stat(output)).size} bytes), runtime sha256 ${metadata.sha256}`)
+  console.log(`build:runtime: ${output} (${(await stat(output)).size} bytes), desktop runtime ${desktopRuntime}, runtime sha256 ${metadata.sha256}`)
 }
 
 await main()
