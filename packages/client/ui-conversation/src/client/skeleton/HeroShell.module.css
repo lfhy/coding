@@ -100,17 +100,18 @@
   padding-left: 8px;
 }
 
-/* Folder + label + chevron — transparent at rest; fill only on hover / open. */
+/* 工作区选择框保留稳定的输入面几何，来源与路径等附加信息可在其中扩展。 */
 .workspace {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
   max-width: min(100%, 360px);
-  min-height: 28px;
-  padding: 0 8px;
-  border: none;
-  border-radius: 16px;
-  background: transparent;
+  min-width: 248px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-button-elevated-fill);
   color: var(--dsw-alias-label-primary);
   font-size: 13px;
   line-height: 20px;
@@ -120,7 +121,8 @@
 
 .workspace:not(:disabled):hover,
 .workspace[aria-expanded='true'] {
-  background: var(--dsw-alias-interactive-bg-hover);
+  border-color: var(--dsw-alias-border-l3);
+  background: var(--dsw-alias-button-floating-hover);
 }
 
 /* Locked form (bound guidance state): a static echo — no hover feedback, no
@@ -135,6 +137,8 @@
 }
 
 .workspaceLabel {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
