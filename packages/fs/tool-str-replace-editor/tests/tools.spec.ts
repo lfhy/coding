@@ -15,6 +15,7 @@ import SandboxPolicy from '@deepseek-ai/dsh-sandbox-policy'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import * as ToolStrReplaceEditor from '@deepseek-ai/dsh-tool-str-replace-editor'
+import { REMOTE_WORKSPACE_MARKER } from '@deepseek-ai/dsh-subprocess'
 
 const contexts: Context[] = []
 const roots: string[] = []
@@ -85,6 +86,22 @@ async function setup(
 }
 
 describe('tool-str-replace-editor', () => {
+  it('accepts a Windows remote absolute path only when the session cwd has a marker', async () => {
+    const { ctx, root, owner } = await setup()
+    await writeFile(join(root, REMOTE_WORKSPACE_MARKER), JSON.stringify({
+      version: 1,
+      remoteRoot: String.raw`C:\project`,
+      connectionId: 'connection-1',
+    }))
+    const result = await call(ctx, owner, {
+      command: 'view',
+      path: String.raw`c:\project\source.ts`,
+    })
+    expect(result.isError).toBe(true)
+    expect(text(result)).not.toContain('is not an absolute path')
+    expect(text(result)).toContain('remote workspace bridge failed')
+  })
+
   it('registers the standalone schema and configurable description', async () => {
     const { ctx, fiber } = await setup({ description: 'custom editor description' })
     const schema = ctx.tools.schemas()[0]

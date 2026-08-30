@@ -4,6 +4,8 @@ English | [中文](README.zh.md)
 
 The subprocess seam (`ctx.subprocess`) is the process half of one execution world. The abstract `SubprocessRuntime` exposes executable lookup, ordinary managed `spawn`, and one terminal-process primitive; its vocabulary covers raw/collected stdio, process and terminal handles, exit facts, tree/session cleanup, and the managed `DSH_*` environment namespace. The local implementation lives in [`dsh-subprocess-local`](../subprocess-local/README.md).
 
+The package root also exports the credential-free marker and authenticated loopback-bridge helpers used by the desktop Remote-SSH filesystem and Bash adapters. Those helpers validate that a local marker path maps beneath its declared remote root, revalidate the marker before each request, and keep the bridge token in the local Host environment. They do not turn `ctx.subprocess` into a remote provider: generic spawn, PTY, LSP, and search-process consumers must reject a marker workspace instead of receiving a local process path. The isolated Code worker remains local and can reach only the supported remote filesystem and foreground-Bash operations through their bindings; it receives no generic remote subprocess capability.
+
 ## Contract
 
 - `spawn(spec)` returns immediately with a live handle; `done` resolves at process close with exit facts (`SubprocessOutcome` carries no output and no cause classification) and rejects only for spawn-level failures.
@@ -29,3 +31,4 @@ No direct invalidation; the named consumers own any request-prefix changes.
 
 - **SDK-managed spawns remain outside** — an SDK transport that owns its internal spawn cannot route that call through this service; it can still import `scrubbedParentEnv` so environment policy stays single-sourced.
 - **Teardown ladders are consumer-owned** — the seam ships signalling verbs and the tree-liveness wait, not a canned quiesce sequence; each out-of-process consumer encodes its child's cooperation shape itself (the ACP backend's stdin-EOF-first ladder is the in-repo template).
+- **Remote-SSH is not a subprocess backend** — only the bounded foreground Bash adapter uses the marker bridge, and only with `danger-full-access`; ordinary process publication, background handles, PTYs, and persistent terminals remain unsupported remotely.

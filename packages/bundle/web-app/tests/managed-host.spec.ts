@@ -1,11 +1,12 @@
 /** Coding 受管理 Host 记录和空闲生命周期的行为验证。 */
 
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { WebClientConnections } from '@deepseek-ai/dsh-client-connection'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { MANAGED_HOST_RECORD_TOKEN_ENV } from '@deepseek-ai/dsh-host-apiproxy/api/host'
 import {
   CODING_HOST_PROTOCOL,
   codingHostRecordPath,
@@ -16,9 +17,12 @@ import {
 } from '../src/managed-host.ts'
 
 const homes: string[] = []
+const originalManagedHostToken = process.env[MANAGED_HOST_RECORD_TOKEN_ENV]
 
 afterEach(() => {
   vi.useRealTimers()
+  if (originalManagedHostToken === undefined) delete process.env.DSH_MANAGED_HOST_RECORD_TOKEN
+  else process.env[MANAGED_HOST_RECORD_TOKEN_ENV] = originalManagedHostToken
   for (const home of homes.splice(0)) rmSync(home, { recursive: true, force: true })
 })
 
@@ -87,6 +91,7 @@ describe('Coding managed Host', () => {
       protocol: CODING_HOST_PROTOCOL,
     })
     expect(JSON.parse(readFileSync(codingHostRecordPath(home), 'utf8'))).toEqual(ready)
+    expect(process.env[MANAGED_HOST_RECORD_TOKEN_ENV]).toBe(ready.token)
 
     await vi.advanceTimersByTimeAsync(60)
     expect(exits).toEqual([])
@@ -99,6 +104,7 @@ describe('Coding managed Host', () => {
 
     await ctx.fiber.dispose()
     expect(() => readFileSync(codingHostRecordPath(home), 'utf8')).toThrow(/ENOENT/)
+    expect(process.env[MANAGED_HOST_RECORD_TOKEN_ENV]).toBeUndefined()
   })
 
   it('keeps a replacement record when the original Host disposes', async () => {
@@ -119,5 +125,24 @@ describe('Coding managed Host', () => {
     await ctx.fiber.dispose()
     detach()
     expect(JSON.parse(readFileSync(codingHostRecordPath(home), 'utf8'))).toEqual(replacement)
+  })
+
+  it('does not restore an old token after a newer managed Host begins publishing', async () => {
+    const blockedHome = join(temporaryHome(), 'not-a-directory')
+    writeFileSync(blockedHome, '')
+    const ctx = managedContext(new WebClientConnections(), [])
+    const pending = startManagedHost(ctx, {
+      home: blockedHome,
+      port: 43123,
+      version: 'test-version',
+      idleTimeoutMs: 1_000,
+    })
+    const failedToken = process.env[MANAGED_HOST_RECORD_TOKEN_ENV]
+    expect(failedToken).toBeTruthy()
+    process.env[MANAGED_HOST_RECORD_TOKEN_ENV] = 'newer-token'
+
+    await expect(pending).rejects.toThrow()
+    expect(process.env[MANAGED_HOST_RECORD_TOKEN_ENV]).toBe('newer-token')
+    await ctx.fiber.dispose()
   })
 })

@@ -21,7 +21,7 @@ The workspace manager must upsert the returned workspace before the selection ca
 - A duplicate path selects the existing workspace.
 - A different canonical path adopts a separate Workspace even when its derived title matches another Workspace ([identity decision](../bug-fix/2026-07-31-same-basename-workspace-adoption.md)).
 - Other picker failures show a compact retryable error.
-- The create-by-name flow this decision left untouched is gone; picking a directory is now the whole of adding a workspace ([one-route Note](../simplification/2026-07-31-one-route-to-add-a-workspace.md)).
+- The create-by-name flow this decision left untouched is gone; picking a directory is now the whole local-directory route for adding a Workspace ([one-route Note](../simplification/2026-07-31-one-route-to-add-a-workspace.md)). The desktop-only [Remote-SSH tool gateway](2026-08-30-desktop-remote-ssh-tool-gateway.md) independently opens a selected remote directory.
 
 ## Host boundary
 
@@ -41,7 +41,7 @@ Platform adapters open the dialog without a shell — spawned native tools on PO
 
 ## Consequences
 
-The current GUI opens one local folder through a native picker on macOS, Windows, and Linux. Cancelling changes no state, failures remain retryable, duplicate paths are idempotent, and distinct same-basename paths coexist as separate Workspaces. The selected workspace and its displayed name refresh before a new blank session starts. This picker is now the only route to a workspace ([one-route Note](../simplification/2026-07-31-one-route-to-add-a-workspace.md)): the operator picks an existing directory, or creates one inside the chooser.
+The current GUI opens one local folder through a native picker on macOS, Windows, and Linux. Cancelling changes no state, failures remain retryable, duplicate paths are idempotent, and distinct same-basename paths coexist as separate Workspaces. The selected workspace and its displayed name refresh before a new blank session starts. This picker is the only local-directory route to a Workspace ([one-route Note](../simplification/2026-07-31-one-route-to-add-a-workspace.md)): the operator picks an existing directory, or creates one inside the chooser. The desktop-only [Remote-SSH tool gateway](2026-08-30-desktop-remote-ssh-tool-gateway.md) remains a separate route for remote directories.
 
 The added host, runtime, component, and GUI tests cover the native boundary, request trust checks, cancellation and failure handling, existing-path reuse, same-basename adoption, and the immediate visible-name update. The privileged RPC remains specific to the local desktop carrier; a remote Web directory browser is outside this decision.
 

@@ -1,0 +1,150 @@
+.dialog {
+  width: min(720px, calc(100vw - 48px));
+  max-height: min(760px, calc(100vh - 48px));
+}
+
+.shell {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  min-height: 460px;
+}
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  list-style: none;
+  padding: 28px 16px 28px 24px;
+  border-right: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.step {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 8px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  text-align: left;
+}
+
+.stepActive {
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
+}
+
+.stepDone { color: var(--dsw-alias-label-primary); }
+
+.stepNumber {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 50%;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.stepActive .stepNumber {
+  border-color: var(--dsw-alias-brand-primary);
+  background: var(--dsw-alias-brand-primary);
+  color: var(--dsw-alias-label-primary-foreground);
+}
+
+.stepDone .stepNumber { border-color: var(--dsw-alias-brand-primary); }
+
+.stepText { min-width: 0; }
+.stepTitle { font-size: 13px; line-height: 20px; font-weight: 500; }
+.stepHint { margin-top: 1px; font-size: 11px; line-height: 16px; color: var(--dsw-alias-label-tertiary); }
+
+.content {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 460px;
+  padding: 34px 36px 28px;
+}
+
+.header { margin-bottom: 24px; }
+.close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+.close:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.title { margin: 0; font-size: 20px; line-height: 28px; font-weight: 600; color: var(--dsw-alias-label-primary); }
+.description { margin: 6px 0 0; font-size: 13px; line-height: 20px; color: var(--dsw-alias-label-secondary); }
+.body { display: flex; flex: 1; min-height: 0; flex-direction: column; gap: 16px; }
+.form { display: grid; gap: 14px; }
+.field { display: grid; gap: 6px; }
+.label { font-size: 13px; line-height: 20px; color: var(--dsw-alias-label-primary); }
+.input { width: 100%; box-sizing: border-box; }
+.privateKey {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+  padding: 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  outline: none;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 18px;
+}
+.privateKey:focus { border-color: var(--dsw-alias-brand-primary); }
+.secretRow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.authModes { display: flex; gap: 8px; }
+.authMode { flex: 1; justify-content: flex-start; border: 1px solid var(--dsw-alias-border-l2); }
+.authModeActive { border-color: var(--dsw-alias-brand-primary); background: var(--dsw-alias-interactive-bg-active); }
+.notice { padding: 12px; border-radius: 8px; background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 18px; }
+.warning { padding: 12px; border: 1px solid var(--dsw-alias-brand-primary); border-radius: 8px; color: var(--dsw-alias-label-primary); font-size: 13px; line-height: 20px; }
+.error { margin-top: 4px; color: var(--dsw-alias-state-error-primary); font-size: 12px; line-height: 18px; }
+.fingerprint { margin-top: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; overflow-wrap: anywhere; }
+.progressList { display: grid; gap: 10px; }
+.progressRow { display: grid; grid-template-columns: 10px minmax(0, 1fr); gap: 10px; align-items: start; font-size: 13px; line-height: 20px; color: var(--dsw-alias-label-secondary); }
+.progressDot { width: 8px; height: 8px; margin-top: 6px; border-radius: 50%; background: var(--dsw-alias-label-tertiary); }
+.progressCurrent .progressDot { background: var(--dsw-alias-brand-primary); box-shadow: 0 0 0 4px var(--dsw-alias-interactive-bg-active); }
+.progressDone .progressDot { background: var(--dsw-alias-state-success-primary); }
+.progressCurrent { color: var(--dsw-alias-label-primary); }
+.directoryList { flex: 1; min-height: 180px; overflow: auto; border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; }
+.directoryRow { display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px 12px; border: 0; border-bottom: 1px solid var(--dsw-alias-border-l2); background: transparent; color: var(--dsw-alias-label-primary); text-align: left; cursor: pointer; }
+.directoryRow:last-child { border-bottom: 0; }
+.directoryRow:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.directoryEmpty { padding: 18px 12px; color: var(--dsw-alias-label-tertiary); font-size: 12px; }
+.directoryPath { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 24px; }
+.footerActions { display: flex; gap: 8px; margin-left: auto; }
+.back { margin-right: auto; }
+@media (max-width: 620px) {
+  .dialog { width: calc(100vw - 24px); max-height: calc(100vh - 24px); }
+  .shell { grid-template-columns: 1fr; }
+  .steps { flex-direction: row; overflow-x: auto; padding: 12px; border-right: 0; border-bottom: 1px solid var(--dsw-alias-border-l2); }
+  .step { min-width: 132px; grid-template-columns: 24px minmax(0, 1fr); min-height: 42px; }
+  .stepNumber { width: 24px; height: 24px; }
+  .stepHint { display: none; }
+  .content { min-height: 430px; padding: 24px 20px 20px; }
+}

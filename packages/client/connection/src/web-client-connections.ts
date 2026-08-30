@@ -16,7 +16,10 @@ export class WebClientConnections {
     return this.live.size
   }
 
-  /** 登记一个已打开的下行连接，并返回幂等的关闭释放函数。 */
+  /**
+   * 登记一个已打开的下行连接，并返回幂等的关闭释放函数。
+   * @returns 用于撤销本次连接登记的幂等函数。
+   */
   attach(): () => void {
     const token = Symbol('web-client-connection')
     this.live.add(token)
@@ -30,7 +33,11 @@ export class WebClientConnections {
     }
   }
 
-  /** 订阅后续数量变化；当前状态仍可通过 {@link count} 读取。 */
+  /**
+   * 订阅后续数量变化；当前状态仍可通过 {@link count} 读取。
+   * @param listener - 收到最新活跃连接数量的监听器。
+   * @returns 用于撤销该监听器的函数。
+   */
   subscribe(listener: WebClientConnectionListener): () => void {
     this.listeners.add(listener)
     return () => { this.listeners.delete(listener) }

@@ -1,4 +1,4 @@
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
@@ -18,6 +18,7 @@ import ApprovalService from '@deepseek-ai/dsh-user-approval'
 import type { ApprovalOutcome } from '@deepseek-ai/dsh-user-approval'
 import { LocalBashExecutor } from '@deepseek-ai/dsh-bash-local'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
+import { REMOTE_WORKSPACE_MARKER } from '@deepseek-ai/dsh-subprocess'
 import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
 import * as ToolBash from '@deepseek-ai/dsh-tool-bash'
 import * as BashEnvPlugin from '@deepseek-ai/dsh-shell-env'
@@ -1170,6 +1171,70 @@ describe('the model-facing bash tool builds its request from named args only (no
       DSH_SESSION_JSONL: path,
       DSH_SHELL: '1',
     })
+  })
+
+  it('maps a Windows remote absolute workdir through the session marker before resolving the shell request', async () => {
+    const markerRoot = mkdtempSync(join(tmpdir(), 'dsh-tool-bash-remote-marker-'))
+    writeFileSync(join(markerRoot, REMOTE_WORKSPACE_MARKER), JSON.stringify({
+      version: 1,
+      remoteRoot: String.raw`C:\project`,
+      connectionId: 'connection-1',
+    }))
+    const { ctx, bash } = await setupRecording()
+    const owner = registerFakeAgent(ctx, 'request-remote-workdir')
+    Object.assign(owner.session.header, { cwd: markerRoot })
+    try {
+      await ctx.tools.execute({
+        signal: testToolSignal,
+        callId: CallId('remote-workdir'),
+        name: 'bash',
+        arguments: {
+          command: 'pwd',
+          description: 'print remote directory',
+          workdir: String.raw`c:\project\src`,
+        },
+        agent: owner,
+      })
+      expect(bash.requests[0]?.workdir).toBe(join(realpathSync(markerRoot), 'src'))
+    } finally {
+      rmSync(markerRoot, { recursive: true, force: true })
+    }
+  })
+
+  it.each([
+    ['..', false],
+    ['..', true],
+    ['../other', false],
+    ['../other', true],
+  ])('rejects remote marker workdir %s before a %s command reaches an executor', async (workdir, runInBackground) => {
+    const markerRoot = mkdtempSync(join(tmpdir(), 'dsh-tool-bash-remote-marker-'))
+    writeFileSync(join(markerRoot, REMOTE_WORKSPACE_MARKER), JSON.stringify({
+      version: 1,
+      remoteRoot: '/srv/project',
+      connectionId: 'connection-1',
+    }))
+    const { ctx, bash } = await setupRecording()
+    const owner = registerFakeAgent(ctx, 'request-remote-escape')
+    Object.assign(owner.session.header, { cwd: markerRoot })
+    try {
+      const result = await ctx.tools.execute({
+        signal: testToolSignal,
+        callId: CallId(`remote-escape-${String(runInBackground)}`),
+        name: 'bash',
+        arguments: {
+          command: 'pwd',
+          description: 'reject escaped workdir',
+          workdir,
+          run_in_background: runInBackground,
+        },
+        agent: owner,
+      })
+      expect(result.isError).toBe(true)
+      expect(text(result)).toContain('remote workspace path escapes its marker')
+      expect(bash.requests).toHaveLength(0)
+    } finally {
+      rmSync(markerRoot, { recursive: true, force: true })
+    }
   })
 
   it('injects built-ins and the stable session id when no JSONL locator is available', async () => {

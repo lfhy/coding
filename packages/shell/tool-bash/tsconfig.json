@@ -39,6 +39,9 @@
       "path": "../../shell/shell-env"
     },
     {
+      "path": "../../subprocess/subprocess"
+    },
+    {
       "path": "../../interaction/user-approval"
     },
     {

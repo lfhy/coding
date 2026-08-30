@@ -9,22 +9,6 @@
   max-width: 100%;
 }
 
-.remoteForm {
-  display: grid;
-  gap: 8px;
-}
-
-.remoteLabel {
-  font-size: 13px;
-  line-height: 20px;
-  color: var(--dsw-alias-label-secondary);
-}
-
-.remoteInput {
-  box-sizing: border-box;
-  width: 100%;
-}
-
 .modalError,
 .menuStatus {
   margin-top: 8px;

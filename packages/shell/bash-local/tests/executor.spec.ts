@@ -1,9 +1,12 @@
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { createServer } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { LocalBashExecutor } from '@deepseek-ai/dsh-bash-local'
+import { REMOTE_WORKSPACE_MARKER } from '@deepseek-ai/dsh-subprocess'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import type { ShellProcess } from '@deepseek-ai/dsh-shell'
@@ -156,9 +159,144 @@ describe('LocalBashExecutor.run', () => {
     expect('env' in spec).toBe(false)
     expect('dshEnv' in spec).toBe(false)
   })
+
+  it('routes a marker workdir through the desktop bridge instead of spawning local bash', async () => {
+    const markerRoot = mkdtempSync(join(tmpdir(), 'dsh-bash-remote-marker-'))
+    writeFileSync(join(markerRoot, REMOTE_WORKSPACE_MARKER), JSON.stringify({
+      version: 1,
+      remoteRoot: '/srv/project',
+      connectionId: 'connection-1',
+    }))
+    const originalUrl = process.env.DSH_REMOTE_BRIDGE_URL
+    const originalToken = process.env.DSH_REMOTE_BRIDGE_TOKEN
+    let received: {
+      url: string | undefined
+      authorization: string | undefined
+      connection: string | string[] | undefined
+      body?: Record<string, unknown>
+    } | undefined
+    const server = createServer((request, response) => {
+      const chunks: Buffer[] = []
+      request.on('data', (chunk: Buffer) => { chunks.push(chunk) })
+      request.on('end', () => {
+        const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown
+        const body = typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+          ? parsed as Record<string, unknown>
+          : undefined
+        received = {
+          url: request.url,
+          authorization: request.headers.authorization,
+          connection: request.headers['x-coding-remote-connection'],
+          ...body === undefined ? {} : { body },
+        }
+        response.setHeader('Content-Type', 'application/json')
+        response.end(JSON.stringify({
+          exitCode: 0,
+          timedOut: false,
+          stdout: 'remote output\n',
+          stderr: '',
+          stdoutTruncated: false,
+          stderrTruncated: false,
+        }))
+      })
+    })
+    try {
+      await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+      const address = server.address() as AddressInfo
+      process.env.DSH_REMOTE_BRIDGE_URL = `http://127.0.0.1:${address.port}`
+      process.env.DSH_REMOTE_BRIDGE_TOKEN = 'test-bridge-token-which-is-long-enough'
+
+      const { bash } = await setup()
+      const result = await bash.run(bash.resolve({ command: 'pwd', workdir: markerRoot }))
+
+      expect(result.stdout).toEqual({ text: 'remote output\n', truncated: false })
+      expect(received).toMatchObject({
+        url: '/v1/exec',
+        authorization: 'Bearer test-bridge-token-which-is-long-enough',
+        connection: 'connection-1',
+      })
+      expect(received?.body).toMatchObject({ path: '/srv/project', shell: 'bash', command: 'pwd' })
+    } finally {
+      if (originalUrl === undefined) delete process.env.DSH_REMOTE_BRIDGE_URL
+      else process.env.DSH_REMOTE_BRIDGE_URL = originalUrl
+      if (originalToken === undefined) delete process.env.DSH_REMOTE_BRIDGE_TOKEN
+      else process.env.DSH_REMOTE_BRIDGE_TOKEN = originalToken
+      await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
+      rmSync(markerRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('waits for the agent timeout result during the transport grace period', async () => {
+    const markerRoot = mkdtempSync(join(tmpdir(), 'dsh-bash-remote-timeout-'))
+    writeFileSync(join(markerRoot, REMOTE_WORKSPACE_MARKER), JSON.stringify({
+      version: 1,
+      remoteRoot: '/srv/project',
+      connectionId: 'connection-1',
+    }))
+    const originalUrl = process.env.DSH_REMOTE_BRIDGE_URL
+    const originalToken = process.env.DSH_REMOTE_BRIDGE_TOKEN
+    const server = createServer((request, response) => {
+      request.resume()
+      request.on('end', () => {
+        setTimeout(() => {
+          response.setHeader('Content-Type', 'application/json')
+          response.end(JSON.stringify({
+            exitCode: null,
+            signal: 'SIGKILL',
+            timedOut: true,
+            stdout: 'before timeout\n',
+            stderr: '',
+            stdoutTruncated: false,
+            stderrTruncated: false,
+          }))
+        }, 50)
+      })
+    })
+    try {
+      await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+      const address = server.address() as AddressInfo
+      process.env.DSH_REMOTE_BRIDGE_URL = `http://127.0.0.1:${address.port}`
+      process.env.DSH_REMOTE_BRIDGE_TOKEN = 'test-bridge-token-which-is-long-enough'
+
+      const { bash } = await setup()
+      const result = await bash.run(bash.resolve({ command: 'sleep 60', workdir: markerRoot, timeoutMs: 10 }))
+
+      expect(result).toMatchObject({
+        exitCode: null,
+        signal: 'SIGKILL',
+        timedOut: true,
+        aborted: false,
+        timeoutMs: 10,
+        stdout: { text: 'before timeout\n', truncated: false },
+      })
+    } finally {
+      if (originalUrl === undefined) delete process.env.DSH_REMOTE_BRIDGE_URL
+      else process.env.DSH_REMOTE_BRIDGE_URL = originalUrl
+      if (originalToken === undefined) delete process.env.DSH_REMOTE_BRIDGE_TOKEN
+      else process.env.DSH_REMOTE_BRIDGE_TOKEN = originalToken
+      await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
+      rmSync(markerRoot, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('LocalBashExecutor.start (background process handles)', () => {
+  it('rejects a remote marker workdir synchronously instead of creating a lossy pseudo-process', async () => {
+    const markerRoot = mkdtempSync(join(tmpdir(), 'dsh-bash-remote-background-'))
+    writeFileSync(join(markerRoot, REMOTE_WORKSPACE_MARKER), JSON.stringify({
+      version: 1,
+      remoteRoot: '/srv/project',
+      connectionId: 'connection-1',
+    }))
+    try {
+      const { bash } = await setup()
+      expect(() => { bash.start(bash.resolve({ command: 'sleep 1', workdir: markerRoot })) })
+        .toThrow('remote background commands are unsupported')
+    } finally {
+      rmSync(markerRoot, { recursive: true, force: true })
+    }
+  })
+
   it('start returns immediately with a running handle that settles as completed', async () => {
     const { bash } = await setup()
     const before = Date.now()

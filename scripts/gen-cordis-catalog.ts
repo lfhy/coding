@@ -111,22 +111,19 @@ export const SERVICE_PAGE: Record<string, string> = {
 }
 
 /**
- * Context keys declared in `interface Context` merges that the rendering
- * projection cannot see, each with the reason and its documentation owner.
- * The scan that enforces this list reads EVERY `declare module '@deepseek-ai/cordis'`
- * Context merge under `packages/x/x/src/**` — any depth, not only root
- * `index.ts` files with a same-named service class — so a new service can
- * never silently join this blind spot: it either enters {@link SERVICE_PAGE}
- * or names itself here. Client-face keys (the projection analyzes the host
- * face only) name the package README that owns their surface.
+ * `interface Context` 合并中已声明、但渲染投影不可见的键，以及每个键的原因和
+ * 文档归属。强制此列表的扫描器读取 `packages/x/x/src/**` 下每一个
+ * `declare module '@deepseek-ai/cordis'` Context 合并，不只读取带同名服务类的
+ * 根 `index.ts`；因此新服务不会悄悄落入这个盲区：它要么进入
+ * {@link SERVICE_PAGE}，要么在此具名说明。投影只分析 Host face，所以客户端
+ * Context 键在这里指向拥有其表面的包 README。
  *
- * Two categories remain, and neither is a projection gap a scanning rule could
- * close. An OPTIONAL key (`key?: X`) is a value the launcher or boot code
- * installs before the tree mounts, which the analyzer skips by rule because no
- * plugin provides it and `inject` cannot reach it. A client-face key belongs to
- * the browser Context, which this host-face program never sees; the browser
- * surface has its own generated catalog (`scripts/gen-client-catalog.ts`, served
- * to a model as `cordis_runtime_inspect what:"client"`).
+ * 不可渲染的键有三类，扫描规则不能把它们当作投影遗漏来修复。可选键
+ * （`key?: X`）通常是树挂载前由启动器或 boot 代码安装的值，也可以是只能经
+ * `ctx.get` 供 Host 生命周期读取的私有辅助器；每项豁免说明实际归属。客户端
+ * face 键属于浏览器 Context，这个 Host-face 程序不会看到；浏览器表面另有
+ * 生成目录（`scripts/gen-client-catalog.ts`，模型通过
+ * `cordis_runtime_inspect what:"client"` 读取）。
  */
 export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
   agent: 'not a service: the DX accessor field on Agent.ctx (root accessor defaulting to undefined) — docs/subsystems/core.md owns the Agent handle',
@@ -137,6 +134,7 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
   dshHomePath: 'not a service: boot-provided root accessor function (typeof dshHomePath | undefined) for Loader !!js config expressions — packages/boot/app-boot/README.md owns the boot contract',
   launchEnvironment: 'not a service: launcher-provided root accessor value (LaunchEnvironmentSnapshot | undefined) — packages/util/launch-environment/README.md owns this launcher contract',
   connection: 'interface-typed (HostConnectionHandle); implementing class HostConnectionService is declared in rpc-host.ts — packages/client/connection/README.md owns the API',
+  webClientConnections: 'Host-side WebSocket downlink counter used only by the managed-Host lifecycle — packages/client/connection/README.md owns the internal helper',
   uiRenderer: 'client-side interface-typed browser service — packages/client/ui-renderer/README.md owns the API',
   settingsSchema: 'client-side schema introspection service — packages/client/ui-settings/README.md owns the API',
   settingsScope: 'client-side settings-namespace transport service — packages/client/ui-settings/README.md owns the API',

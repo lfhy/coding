@@ -9,7 +9,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join, parse } from 'node:path'
@@ -19,6 +19,7 @@ import type { FsTarget } from '@deepseek-ai/dsh-fs'
 import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
 import type { SandboxMode } from '@deepseek-ai/dsh-sandbox'
 import { SandboxedFileSystem } from '@deepseek-ai/dsh-fs-sandbox'
+import { REMOTE_WORKSPACE_MARKER, remoteWorkspaceTargetKey } from '@deepseek-ai/dsh-subprocess'
 
 let base: string
 let workspace: string
@@ -107,6 +108,52 @@ describe('workspace-write containment', () => {
     const path = join(outside, 'escape.txt')
     await expect(fs.writeText(await target(path), 'x')).rejects.toMatchObject({ code: 'FS_SANDBOX_DENIED' })
     expect(existsSync(path)).toBe(false)
+  })
+
+  it('rejects a remote target whose marker is not this session workspace before contacting a bridge', async () => {
+    await writeFile(join(workspace, REMOTE_WORKSPACE_MARKER), JSON.stringify({
+      version: 1,
+      remoteRoot: '/srv/one',
+      connectionId: 'connection-1',
+    }))
+    await writeFile(join(outside, REMOTE_WORKSPACE_MARKER), JSON.stringify({
+      version: 1,
+      remoteRoot: '/srv/two',
+      connectionId: 'connection-2',
+    }))
+    const foreignTarget: FsTarget = {
+      displayPath: '/srv/two/file.ts',
+      targetKey: FsTargetKey(remoteWorkspaceTargetKey({
+        markerRoot: await realpath(outside),
+        remoteRoot: '/srv/two',
+        remotePath: '/srv/two/file.ts',
+        connectionId: 'connection-2',
+      })),
+    }
+    await expect(fs.writeText(foreignTarget, 'x')).rejects.toMatchObject({ code: 'FS_SANDBOX_DENIED' })
+  })
+
+  it('rejects a same-marker remote target outside the policy workspace subdirectory', async () => {
+    await writeFile(join(workspace, REMOTE_WORKSPACE_MARKER), JSON.stringify({
+      version: 1,
+      remoteRoot: '/srv/project',
+      connectionId: 'connection-1',
+    }))
+    const allowed = join(workspace, 'allowed')
+    await mkdir(allowed)
+    const targetOutsidePolicy: FsTarget = {
+      displayPath: '/srv/project/outside.txt',
+      targetKey: FsTargetKey(remoteWorkspaceTargetKey({
+        markerRoot: await realpath(workspace),
+        remoteRoot: '/srv/project',
+        remotePath: '/srv/project/outside.txt',
+        connectionId: 'connection-1',
+      })),
+    }
+    await expect(fs.writeText(targetOutsidePolicy, 'x', undefined, undefined, {
+      mode: 'workspace-write',
+      workspaceRoot: allowed,
+    })).rejects.toMatchObject({ code: 'FS_SANDBOX_DENIED' })
   })
 
   it('a `..` traversal out of the workspace is denied', async () => {

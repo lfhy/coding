@@ -1,8 +1,11 @@
 import { PassThrough } from 'node:stream'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { describe, expect, it, vi } from 'vitest'
-import { basename, dirname, relative, resolve } from 'node:path'
+import { tmpdir } from 'node:os'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
+import { REMOTE_WORKSPACE_MARKER } from '@deepseek-ai/dsh-subprocess'
 import type { SubprocessSpawnSpec, SubprocessTerminalHandle, SubprocessTerminalSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { childEnv } from '../src/spawn.ts'
 
@@ -398,6 +401,32 @@ describe('LocalSubprocessRuntime', () => {
     expect(result.exitCode).toBe(0)
     expect(handle.collected.stdout!.readFrom(0).text).toBe('managed\n')
     await fiber.dispose()
+  })
+
+  it('refuses executable lookup, managed spawn, and PTY allocation in a remote marker workspace', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-subprocess-remote-marker-'))
+    await writeFile(join(root, REMOTE_WORKSPACE_MARKER), JSON.stringify({
+      version: 1,
+      remoteRoot: '/srv/project',
+      connectionId: 'connection-1',
+    }))
+    const ctx = new Context()
+    const fiber = await ctx.plugin(LocalSubprocessRuntime)
+    const originalCwd = process.cwd()
+    try {
+      expect(() => { ctx.subprocess.spawn(spec('true', { cwd: root })) })
+        .toThrow('remote workspace execution is unsupported')
+      await expect(ctx.subprocess.spawnTerminal({
+        argv: ['shell'], cwd: root, rows: 24, cols: 80, graceMs: 1,
+      })).rejects.toThrow('remote workspace execution is unsupported')
+      process.chdir(root)
+      await expect(ctx.subprocess.resolveExecutable(process.execPath))
+        .rejects.toThrow('remote workspace execution is unsupported')
+    } finally {
+      process.chdir(originalCwd)
+      await fiber.dispose()
+      await rm(root, { recursive: true, force: true })
+    }
   })
 
   it('disposal kills still-running processes and awaits their exit', async () => {

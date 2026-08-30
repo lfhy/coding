@@ -312,9 +312,9 @@ describe('host domain schemas', () => {
   it('validates describe request/value', () => {
     expect(hostDescribeRequestSchema.parse({})).toEqual({})
     const value = hostDescribeValueSchema.parse({
-      version: '1', cwd: '/x', provider: 'p', model: 'm', attachedSessions: 2, home: '/h', canOpenPath: true,
+      version: '1', cwd: '/x', provider: 'p', model: 'm', attachedSessions: 2, home: '/h', canOpenPath: true, managedHostToken: 'record-token',
     })
-    expect(value).toMatchObject({ provider: 'p', model: 'm', attachedSessions: 2, canOpenPath: true })
+    expect(value).toMatchObject({ provider: 'p', model: 'm', attachedSessions: 2, canOpenPath: true, managedHostToken: 'record-token' })
     expect(hostDescribeValueSchema.parse({
       version: '1', cwd: '/x', attachedSessions: 0, home: '/h', canOpenPath: false,
     }).provider).toBeUndefined()
@@ -323,6 +323,9 @@ describe('host domain schemas', () => {
     })).toThrow()
     expect(() => hostDescribeValueSchema.parse({
       version: '1', cwd: '/x', attachedSessions: 0, canOpenPath: true,
+    })).toThrow()
+    expect(() => hostDescribeValueSchema.parse({
+      version: '1', cwd: '/x', attachedSessions: 0, home: '/h', canOpenPath: true, managedHostToken: '',
     })).toThrow()
   })
 

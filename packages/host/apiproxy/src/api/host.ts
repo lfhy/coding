@@ -5,6 +5,9 @@
 
 import type { RpcRequest, RpcResponse } from './rpc.ts'
 
+/** 受管 Host 在自身进程中保存 host.json 所有权 token 的环境变量。 */
+export const MANAGED_HOST_RECORD_TOKEN_ENV = 'DSH_MANAGED_HOST_RECORD_TOKEN'
+
 /** One directory row of a listing: a child entry or a breadcrumb ancestor. */
 export interface DirectoryEntry {
   /** Base name shown in a browser row (a root crumb carries its full path). */
@@ -35,14 +38,12 @@ export interface DirectoryListing {
 /** Host-level unary methods. */
 export interface HostApi {
   /**
-   * One-shot host snapshot. Empty payload uses the literal `{}` (extend in place when fields arrive).
-   * version = the host app's (apps/cli) package.json version; cwd = the host process working
-   * directory (root for session persistence and tool execution); provider/model = the defaults
-   * applied when a new agent doesn't specify them explicitly, absent when the host configures
-   * no explicit default (the adapter falls back internally);
-   * attachedSessions = count of currently attached sessions (those with a live agent);
-   * home = the host account home directory (Web display abbreviation on POSIX);
-   * canOpenPath = whether this deployment can hand a path to a user-visible native desktop.
+   * Host 的一次性快照。请求 payload 固定为 `{}`，新增字段在此扩展。version 是
+   * Host 应用版本；cwd 是 session 持久化和工具执行使用的工作目录；provider/model
+   * 是新 agent 未显式指定时采用的默认值，未配置时省略；attachedSessions 是当前
+   * 已附着 session 数；home 是账户主目录；canOpenPath 表示部署能否把路径交给可见
+   * 的原生桌面。managedHostToken 在受管启动为 host.json 生成 token 后返回，原生
+   * 启动器用它与记录逐字比对后才会终止或替换该 PID；普通 Host 必须省略此字段。
    */
   describe(request: RpcRequest<{}>): Promise<RpcResponse<{
     version: string
@@ -52,6 +53,7 @@ export interface HostApi {
     attachedSessions: number
     home: string
     canOpenPath: boolean
+    managedHostToken?: string
   }>>
 
   /**

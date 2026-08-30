@@ -404,6 +404,23 @@ describe('Web session model selection', () => {
     await ctx.fiber.dispose()
   })
 
+  it('returns the managed Host ownership token only when this process has one', async () => {
+    const { ctx } = await harness()
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      cwd: '/tmp',
+    })
+    vi.stubEnv('DSH_MANAGED_HOST_RECORD_TOKEN', 'record-token')
+    try {
+      expect(expectValue(await api.host.describe(request({})))).toMatchObject({ managedHostToken: 'record-token' })
+      vi.stubEnv('DSH_MANAGED_HOST_RECORD_TOKEN', '')
+      expect(expectValue(await api.host.describe(request({}))).managedHostToken).toBeUndefined()
+    } finally {
+      vi.unstubAllEnvs()
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('keeps a session on its logged selection when the Agent default differs', async () => {
     const { ctx, sessionId } = await harness({
       provider: 'deepseek-official',

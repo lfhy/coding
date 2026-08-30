@@ -133,6 +133,7 @@ const NON_SOURCE_DIRECTORIES = new Set([
   '.pnpm-store',
   '.cache',
   'coverage',
+  'dist',
   '.sessions',
   '.storages',
   'tmp',
@@ -151,6 +152,7 @@ export const TRANSLATION_SCOPE_GLOB_EXCLUDES = [
   '**/.pnpm-store/**',
   '**/.cache/**',
   '**/coverage/**',
+  '**/dist/**',
   '**/.doc-typecheck-*/**',
   '**/.node-next-types-*/**',
   '**/.sessions/**',
@@ -159,7 +161,6 @@ export const TRANSLATION_SCOPE_GLOB_EXCLUDES = [
   '**/dist-exe/**',
   '**/__pycache__/**',
   '**/.pytest_cache/**',
-  'apps/web/dist/**',
   '.artifacts/**',
   'python/sdk-runtime/src/deepseek_harness_runtime/runtime/dsh-jsonrpc-agent-*/**',
   'python/sdk-runtime/src/deepseek_harness_runtime/runtime/node/**',
@@ -172,7 +173,6 @@ function isTranslationSourceExcluded(file: string): boolean {
   return segments.some(segment => NON_SOURCE_DIRECTORIES.has(segment)
       || segment.startsWith('.doc-typecheck-')
     || segment.startsWith('.node-next-types-'))
-    || file.startsWith('apps/web/dist/')
     || file.startsWith('python/sdk-runtime/src/deepseek_harness_runtime/runtime/dsh-jsonrpc-agent-')
     || file.startsWith('python/sdk-runtime/src/deepseek_harness_runtime/runtime/node/')
 }

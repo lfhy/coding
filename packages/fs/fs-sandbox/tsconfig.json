@@ -27,6 +27,9 @@
       "path": "../../sandbox/sandbox-policy"
     },
     {
+      "path": "../../subprocess/subprocess"
+    },
+    {
       "path": "../../runtime-diagnostics/invariants"
     }
   ]

@@ -24,6 +24,6 @@ Workspace selection retains the existing owner and flow. `ConversationRoot` open
 
 ## Consequences
 
-The first composer click now continues a clear start flow, and keyboard users can activate the same path. The textarea accurately reports read-only state until a Session exists, while adjacent controls remain disabled. The UI introduces no pre-Session draft state; its picker may choose a Workspace, create an ungrouped Session, or navigate to an already reachable remote Host page.
+The first composer click now continues a clear start flow, and keyboard users can activate the same path. The textarea accurately reports read-only state until a Session exists, while adjacent controls remain disabled. The UI introduces no pre-Session draft state; its picker may choose a Workspace, create an ungrouped Session, or start the desktop-only [Remote-SSH Workspace flow](2026-08-30-desktop-remote-ssh-tool-gateway.md).
 
 Component coverage pins pointer and keyboard activation, the card-wide click target, the contained `pointerdown`, locked adjacent controls, picker expansion, no-project Session creation, and the same-node transition to an editable textarea. The assembled Web helper begins through the textarea, so replayed browser scenarios exercise the shipped path.

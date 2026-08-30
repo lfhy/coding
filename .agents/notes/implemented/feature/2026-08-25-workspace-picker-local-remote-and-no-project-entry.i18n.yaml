@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-25-workspace-picker-local-remote-and-no-project-entry.md
-2026-08-25-workspace-picker-local-remote-and-no-project-entry.md: 2b5225471cf86d7498088d1147147c38ac39bcd0
-2026-08-25-workspace-picker-local-remote-and-no-project-entry.zh.md: a58445b2f133d40c9c8cf7183422aa46f09aa560
+2026-08-25-workspace-picker-local-remote-and-no-project-entry.md: 435ae388a3e81be6b0f7df0c3700b0cccac942d7
+2026-08-25-workspace-picker-local-remote-and-no-project-entry.zh.md: bee0a6f14da65709ddfab2f410abf65a20dcdf97

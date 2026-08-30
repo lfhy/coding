@@ -18,13 +18,17 @@ CLIENT := dist/coding
 INSTALL := install-cli
 endif
 
-.PHONY: all runtime desktop tui install install-app install-cli check uninstall help
+.PHONY: all runtime remote-agent desktop tui install install-app install-cli check uninstall help
 
 all: $(CLIENT)
 
 # 内嵌 Node Host 的 SEA 单文件运行时（所有客户端共用）。
 runtime:
 	pnpm run build:runtime
+
+# SSH 首连部署的跨平台 Go remote agent（不包含 Node 运行时）。
+remote-agent:
+	pnpm run build:remote-agent
 
 # macOS/Windows 桌面 GUI 壳（需要 CGO 与系统 WebView）。先补齐 devDependencies：
 # pnpm 的 deps 自检可能以生产模式重装并删除 lefthook 等 devDeps，导致 postinstall 失败。
@@ -38,7 +42,7 @@ tui:
 
 install: $(INSTALL)
 
-install-app: desktop runtime
+install-app: desktop runtime remote-agent
 	./scripts/package-macos-app.sh
 	rm -rf /Applications/Coding.app
 	cp -R dist/Coding.app /Applications/

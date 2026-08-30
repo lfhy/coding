@@ -143,7 +143,7 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
           rpcId: request.rpcId,
           result: {
             ok: true,
-            value: { version: 'v', cwd: '/w', attachedSessions: 0, home: '/h', canOpenPath: true },
+            value: { version: 'v', cwd: '/w', attachedSessions: 0, home: '/h', canOpenPath: true, managedHostToken: 'record-token' },
           },
         }
       },
@@ -364,7 +364,10 @@ describe('unary round trip (handler ⇄ client, no network)', () => {
       action: { kind: 'remove' },
     })).result.ok).toBe(true)
     expect((await c.sessions.cancel({ sessionId: 's' as never })).result.ok).toBe(true)
-    expect((await c.host.describe({})).result.ok).toBe(true)
+    expect((await c.host.describe({})).result).toEqual({
+      ok: true,
+      value: { version: 'v', cwd: '/w', attachedSessions: 0, home: '/h', canOpenPath: true, managedHostToken: 'record-token' },
+    })
   })
 
   it('round-trips every agent-preset method, authoring included', async () => {

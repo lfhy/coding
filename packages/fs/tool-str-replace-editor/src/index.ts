@@ -13,6 +13,7 @@ import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ToolCallView, ToolRunContext } from '@deepseek-ai/dsh-tools'
+import { isRemoteAbsolutePath, remoteWorkspacePath } from '@deepseek-ai/dsh-subprocess'
 
 const TRUNCATED_MESSAGE = '<response clipped><NOTE>To save on context only part of this file has been shown to you. You should retry this tool after you have searched inside the file with `grep -n` in order to find the line numbers of what you are looking for.</NOTE>'
 
@@ -88,13 +89,21 @@ class MutationPolicy {
 async function resolveTarget(
   ctx: Context,
   path: string,
-  signal: AbortSignal,
+  exec: ToolRunContext,
 ): Promise<FsTarget> {
   if (path.trim().length === 0) throw new Error('path must be a non-empty string')
-  if (!isAbsolute(path)) {
+  const cwd = exec.agent?.session.header.cwd
+  const remoteAbsolute = !isAbsolute(path) && cwd !== undefined && isRemoteAbsolutePath(path)
+    && await remoteWorkspacePath('.', cwd, exec.signal) !== undefined
+  if (!isAbsolute(path) && !remoteAbsolute) {
     throw new Error(`The path ${path} is not an absolute path, it should start with \`/\`. Maybe you meant /${path}?`)
   }
-  return ctx.fs.resolve(path, { signal })
+  // 绝对 path 在本地工作区仍保持原义；marker 工作区则借助 cwd 识别此前
+  // 返回给模型的远端绝对路径，避免其意外退回桌面文件系统。
+  return ctx.fs.resolve(path, {
+    ...cwd === undefined ? {} : { cwd },
+    signal: exec.signal,
+  })
 }
 
 async function statExisting(
@@ -220,7 +229,7 @@ async function viewPath(
   maxOutputChars: number,
   exec: ToolRunContext,
 ): Promise<string> {
-  const target = await resolveTarget(ctx, path, exec.signal)
+  const target = await resolveTarget(ctx, path, exec)
   const info = await statExisting(ctx, target, 'view', exec)
   if (info.type === 'directory') {
     if (viewRange !== undefined) {
@@ -245,7 +254,7 @@ async function createFile(
 ): Promise<string> {
   const content = requiredForCommand(fileText, 'file_text', 'create')
   const sandboxPolicy = policy.resolve(exec)
-  const target = await resolveTarget(ctx, path, exec.signal)
+  const target = await resolveTarget(ctx, path, exec)
   if (await ctx.fs.stat(target, exec.signal) !== undefined) {
     throw new Error(`File already exists at: ${target.displayPath}. Cannot overwrite files using command \`create\`.`)
   }
@@ -280,7 +289,7 @@ async function replaceInFile(
   exec: ToolRunContext,
 ): Promise<string> {
   const sandboxPolicy = policy.resolve(exec)
-  const target = await resolveTarget(ctx, path, exec.signal)
+  const target = await resolveTarget(ctx, path, exec)
   const intent = await ctx.waterfall('fs/edit-intent', target, exec, () => undefined)
   const oldValue = requiredForCommand(oldStr, 'old_str', 'str_replace', false)
   const newValue = newStr ?? ''
@@ -333,7 +342,7 @@ async function insertInFile(
   if (insertLine === undefined) throw new Error('Parameter `insert_line` is required for command: insert')
   const value = requiredForCommand(newStr, 'new_str', 'insert')
   const sandboxPolicy = policy.resolve(exec)
-  const target = await resolveTarget(ctx, path, exec.signal)
+  const target = await resolveTarget(ctx, path, exec)
   const intent = await ctx.waterfall('fs/edit-intent', target, exec, () => undefined)
   const info = await statExisting(ctx, target, 'insert', exec)
   if (info.type !== 'file') {

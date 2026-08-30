@@ -12,6 +12,10 @@ node 半侧在桥接或 upgrade 前守卫 `/api` 下的每个入口（`src/api-r
 
 `/api/events.mux` 与 `/api/events.host` 各接受一条 WebSocket upgrade，并只向浏览器发送对应的 `ServerRequest` 文本消息；客户端不会在这些 socket 上发送业务数据。任一 socket 结束都会使当前 connection generation 失败并重建两条流，连接就绪仍要求两条 socket 均已打开且 `host.describe` HTTP 调用成功。Host teardown 会终止两条 socket、中止各自的 source，并等待 source 清理完成后再返回。普通网络 GET 这些路径会返回 426，不保留 SSE（Server-Sent Events）回退；`toFetchHandler` 的 SSE 编解码只服务进程内同构载体。
 
+## 受管理 Host 生命周期
+
+Host 还为 Web app 的原生受管理 Host 生命周期提供 `ctx.webClientConnections`。它统计已打开的下行 socket；`attach()` 返回幂等的释放函数，`subscribe()` 报告后续数量变化。这个内部 Host 辅助器既不是浏览器 RPC，也不进入面向模型的 Cordis 目录；Web app 仅用它在原生客户端仍保有下行连接时延后空闲退出。
+
 ## 模型体验
 
 无。协议消费层只在浏览器与主机之间搬运已经组合好的消息；这里没有任何内容进入模型请求。

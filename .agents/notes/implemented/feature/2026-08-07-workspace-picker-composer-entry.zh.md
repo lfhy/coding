@@ -24,6 +24,6 @@ Workspace 选择继续使用现有 owner 和流程。`ConversationRoot` 打开�
 
 ## 后果
 
-用户首次点击编辑器即可进入清晰的开始流程，键盘用户也能激活同一路径。textarea 会如实报告只读状态，直到 Session 存在；相邻控件仍处于禁用状态。界面不引入 Session 前草稿状态；其选择器可以选择 Workspace、创建未分组 Session，或导航到已经可达的远程 Host 页面。
+用户首次点击编辑器即可进入清晰的开始流程，键盘用户也能激活同一路径。textarea 会如实报告只读状态，直到 Session 存在；相邻控件仍处于禁用状态。界面不引入 Session 前草稿状态；其选择器可以选择 Workspace、创建未分组 Session，或启动仅桌面端可用的 [Remote-SSH Workspace 流程](2026-08-30-desktop-remote-ssh-tool-gateway.md)。
 
 组件测试会固定鼠标和键盘激活、覆盖整卡的点击目标、被拦下的 `pointerdown`、相邻控件锁定、选择器展开、无项目 Session 创建，以及同一节点变为可编辑 textarea 的过渡。组装后的 Web helper 会通过 textarea 开始，因此重放浏览器场景会覆盖实际交付路径。

@@ -10,9 +10,8 @@ import type { DirectoryFlowOwnerProps, WorkspacePickerProps } from '../src/clien
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { WorkspacePicker } from '../src/client/WorkspacePicker.tsx'
 import { zh } from '../src/client/locales.ts'
-import { remoteHostUrl } from '../src/client/remote.ts'
 
-afterEach(cleanup)
+afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 // The seat's key domain is workspace ∪ common; the stub mirrors the real
 // lookup chain (namespace, then common vocabulary, then the key).
@@ -83,7 +82,6 @@ function mount(
   createWorkspace = vi.fn(),
   occupancy = occupancySource(),
   startSessionWithoutWorkspace = vi.fn(async () => {}),
-  connectRemote = vi.fn(),
 ) {
   const onPick = vi.fn()
   const onClose = vi.fn()
@@ -99,7 +97,6 @@ function mount(
       onClose={onClose}
       createWorkspace={createWorkspace}
       startSessionWithoutWorkspace={startSessionWithoutWorkspace}
-      connectRemote={connectRemote}
       useDirectoryFlow={occupancy.useDirectoryFlow}
       renderSlot={renderSlot}
       t={t}
@@ -109,7 +106,7 @@ function mount(
     renderPicker(items),
   )
   return {
-    view, onPick, onClose, createWorkspace, startSessionWithoutWorkspace, connectRemote, probe, occupancy,
+    view, onPick, onClose, createWorkspace, startSessionWithoutWorkspace, probe, occupancy,
     rerenderItems: (nextItems: readonly WorkspaceView[]) => { view.rerender(renderPicker(nextItems)) },
   }
 }
@@ -132,36 +129,6 @@ describe('WorkspacePicker', () => {
     fireEvent.change(screen.getByRole('textbox', { name: '搜索工作区' }), { target: { value: 'beta' } })
     expect(screen.queryByRole('menuitem', { name: 'Alpha' })).toBeNull()
     expect(screen.getByRole('menuitem', { name: 'Beta' })).toBeTruthy()
-  })
-
-  it('opens the remote dialog and forwards the supplied Host address', async () => {
-    const b = mount()
-    fireEvent.click(screen.getByRole('menuitem', { name: '远程连接' }))
-    screen.getByRole('dialog', { name: '连接远程 Host' })
-    fireEvent.change(screen.getByRole('textbox', { name: 'Host 地址' }), { target: { value: 'http://127.0.0.1:4312' } })
-    fireEvent.click(screen.getByRole('button', { name: '连接' }))
-    await waitFor(() => { expect(b.connectRemote).toHaveBeenCalledWith('http://127.0.0.1:4312') })
-    await waitFor(() => { expect(screen.queryByRole('dialog', { name: '连接远程 Host' })).toBeNull() })
-  })
-
-  it('keeps the remote dialog open and shows an address error when navigation is rejected', async () => {
-    const connectRemote = vi.fn(async () => { throw new Error('目标 Host 无法访问') })
-    mount([], vi.fn(), occupancySource(), vi.fn(async () => {}), connectRemote)
-    fireEvent.click(screen.getByRole('menuitem', { name: '远程连接' }))
-    fireEvent.change(screen.getByRole('textbox', { name: 'Host 地址' }), { target: { value: 'https://host.example.com' } })
-    fireEvent.click(screen.getByRole('button', { name: '连接' }))
-    await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('目标 Host 无法访问') })
-    expect(screen.getByRole('dialog', { name: '连接远程 Host' })).toBeTruthy()
-  })
-
-  it('localizes a rejected remote address', async () => {
-    const connectRemote = vi.fn((address: string) => { remoteHostUrl(address) })
-    mount([], vi.fn(), occupancySource(), vi.fn(async () => {}), connectRemote)
-    fireEvent.click(screen.getByRole('menuitem', { name: '远程连接' }))
-    fireEvent.change(screen.getByRole('textbox', { name: 'Host 地址' }), { target: { value: 'ssh://host.example.com' } })
-    fireEvent.click(screen.getByRole('button', { name: '连接' }))
-    await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('远程 Host 仅支持 http 或 https 地址。') })
-    expect(screen.getByRole('dialog', { name: '连接远程 Host' })).toBeTruthy()
   })
 
   it('starts an ungrouped session from the no-project action', async () => {
@@ -199,7 +166,7 @@ describe('WorkspacePicker', () => {
     const b = mount([])
     expect(screen.getByRole('menu')).toBeTruthy()
     expect(screen.getByRole('menuitem', { name: '打开文件夹' })).toBeTruthy()
-    expect(screen.getByRole('menuitem', { name: '远程连接' })).toBeTruthy()
+    expect(screen.getByRole('menuitem', { name: '连接 Remote-SSH' })).toBeTruthy()
     expect(screen.getByRole('menuitem', { name: '不在项目中工作' })).toBeTruthy()
     expect(b.onClose).not.toHaveBeenCalled()
     expect(screen.queryByTestId('directory-flow')).toBeNull()
@@ -270,7 +237,7 @@ describe('WorkspacePicker', () => {
       <WorkspacePicker
         open useSessions={hook(sessions)} useWorkspaces={hook(workspaceState([workspace('alpha', 'Alpha')]))}
         onPick={vi.fn()} onClose={vi.fn()} createWorkspace={vi.fn()}
-        startSessionWithoutWorkspace={vi.fn(async () => {})} connectRemote={vi.fn()}
+        startSessionWithoutWorkspace={vi.fn(async () => {})}
         useDirectoryFlow={occupancySource().useDirectoryFlow} renderSlot={renderSlot} t={t}
       />,
     )
@@ -286,7 +253,7 @@ describe('WorkspacePicker', () => {
       <WorkspacePicker
         open anchorRef={anchor()} useSessions={hook(sessions)} useWorkspaces={hook(state)}
         onPick={vi.fn()} onClose={vi.fn()} createWorkspace={vi.fn()}
-        startSessionWithoutWorkspace={vi.fn(async () => {})} connectRemote={vi.fn()}
+        startSessionWithoutWorkspace={vi.fn(async () => {})}
         useDirectoryFlow={occupancySource().useDirectoryFlow} renderSlot={renderSlot} t={t}
       />,
     )
@@ -301,7 +268,7 @@ describe('WorkspacePicker', () => {
     const b = mount([], vi.fn(), occupancySource(false))
     expect(screen.getByRole('menu')).toBeTruthy()
     expect(screen.queryByRole('menuitem', { name: '打开文件夹' })).toBeNull()
-    expect(screen.getByRole('menuitem', { name: '远程连接' })).toBeTruthy()
+    expect(screen.getByRole('menuitem', { name: '连接 Remote-SSH' })).toBeTruthy()
     expect(screen.getByRole('menuitem', { name: '不在项目中工作' })).toBeTruthy()
     expect(screen.queryByTestId('directory-flow')).toBeNull()
     expect(b.createWorkspace).not.toHaveBeenCalled()

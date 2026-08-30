@@ -16,7 +16,9 @@ Click **Choose workspace** to search the listed Workspaces. To work locally, sel
 
 Choose **Work without a project** to create a Session at the Host's default working directory without registering a Workspace. The composer is unavailable only while there is no current Session.
 
-Choose **Connect to remote** to open an already reachable Host page. Enter its full `http://` or `https://` address, such as an HTTPS deployment or an SSH local port-forward address. This action navigates to the target; it does not create an SSH tunnel, authenticate, or discover a Host.
+In the Coding desktop app, choose **Connect Remote-SSH** to enter an SSH host, authenticate with a password or private key, confirm an unknown host key, and select a remote directory. Credentials stay in the current dialog/connection and are not saved; after restarting the app, run the connection flow again. The ordinary browser UI cannot start an SSH connection.
+
+Remote-SSH currently routes semantic file reads and edits plus foreground Bash to the selected directory. Remote Bash requires **Full access** (`danger-full-access`). Background commands, persistent terminals/PTYs, LSP, and dedicated glob/search processes are not remote-capable and fail instead of running on the local machine. Code Mode keeps its isolated worker local; it can orchestrate the supported remote file and foreground-Bash tools through their bindings, but there is no remote Code runtime or generic remote process access.
 
 ## Run a task
 

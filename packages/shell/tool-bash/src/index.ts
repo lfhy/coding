@@ -24,6 +24,12 @@ import { ESCALATION_TARGETS, approveEscalation, canonicalPath, validateEscalatio
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import { DSH_ENV_PREFIX } from '@deepseek-ai/dsh-shell'
 import type { ShellRunResult } from '@deepseek-ai/dsh-shell'
+import {
+  isRemoteAbsolutePath,
+  remoteWorkspaceLocalPath,
+  remoteWorkspacePathSync,
+  RemoteWorkspaceError,
+} from '@deepseek-ai/dsh-subprocess'
 import { processOutcome } from './background.ts'
 import { parseExitStatus, renderProcessRead, renderResult } from './render.ts'
 
@@ -136,10 +142,9 @@ function presentBashResult(args: unknown, result: ToolResult): ToolResultView | 
 }
 
 /**
- * Resolve an explicit workdir first, making a relative one session-workspace-relative;
- * otherwise use the filesystem identity of the session cwd and leave executor
- * defaulting as the fallback. A resolved sandbox-policy root wins so workdir
- * and confinement use the exact same per-call identity.
+ * 先解析显式 workdir；相对路径以会话工作区为基准。沙箱策略已解析出的根目录优先，
+ * 让工作目录与限制使用同一身份。Remote-SSH 会话的相对路径必须仍位于同一 marker，
+ * 不能借由本地路径逃出后回退到本机执行器。
  */
 function resolveWorkdir(
   modelWorkdir: string | undefined,
@@ -149,6 +154,18 @@ function resolveWorkdir(
   const headerCwd = exec.agent?.session.header.cwd
   const sessionCwd = policyWorkspaceRoot ?? (headerCwd === undefined ? undefined : canonicalPath(headerCwd))
   if (modelWorkdir === undefined) return sessionCwd
+  const remote = sessionCwd === undefined ? undefined : remoteWorkspacePathSync('.', sessionCwd)
+  if (remote !== undefined && sessionCwd !== undefined) {
+    if (isRemoteAbsolutePath(modelWorkdir)) return remoteWorkspaceLocalPath(remote, modelWorkdir)
+    if (!isAbsolute(modelWorkdir)) {
+      const localWorkdir = resolvePath(sessionCwd, modelWorkdir)
+      const resolvedRemote = remoteWorkspacePathSync(localWorkdir)
+      if (resolvedRemote?.markerRoot !== remote.markerRoot) {
+        throw new RemoteWorkspaceError('REMOTE_WORKSPACE_TARGET_INVALID', 'remote workspace path escapes its marker')
+      }
+      return localWorkdir
+    }
+  }
   if (sessionCwd !== undefined && !isAbsolute(modelWorkdir)) {
     return resolvePath(sessionCwd, modelWorkdir)
   }

@@ -4,6 +4,8 @@
 
 子进程 seam（`ctx.subprocess`）是一个执行世界的进程部分。抽象的 `SubprocessRuntime` 公开可执行文件查找、普通受管 `spawn` 和一项终端进程原语；其词汇涵盖原始／收集式 stdio、进程与终端句柄、退出事实、进程树／会话清理，以及受管的 `DSH_*` 环境命名空间。本地实现位于 [`dsh-subprocess-local`](../subprocess-local/README.md)。
 
+包根还导出桌面 Remote-SSH 文件系统与 Bash 适配器共用的无凭据 marker 和已认证回环 bridge helper。这些 helper 会校验本地 marker 路径映射后位于其声明的远程根目录下，在每次请求前重新校验 marker，并只让本地 Host 环境持有 bridge token。它们不会把 `ctx.subprocess` 变成远程提供方：通用 spawn、PTY、LSP 和搜索进程消费方必须拒绝 marker 工作区，不能取得本地进程路径。隔离的 Code worker 仍在本地运行，只能通过 binding 访问已支持的远端文件系统与前台 Bash 操作，不会取得通用远程 subprocess 能力。
+
 ## 约定
 
 - `spawn(spec)` 立即返回一个活动句柄；`done` 在进程关闭时以退出事实 resolve（`SubprocessOutcome` 不携带输出，也不携带原因分类），仅在 spawn 层面失败时 reject。
@@ -29,3 +31,4 @@
 
 - **由 SDK 管理的 spawn 仍在服务之外**：拥有内部 spawn 的 SDK 传输无法把该调用路由到本服务；它仍可导入 `scrubbedParentEnv`，使环境策略保持单一来源。
 - **拆卸阶梯归消费方所有**：该 seam 只提供信号动词与进程树存活等待，不提供现成的停稳序列；每个进程外消费方自行编码其子进程的配合方式（ACP 后端以 stdin EOF 打头的阶梯是仓库内模板）。
+- **Remote-SSH 不是子进程后端**：只有有界的前台 Bash 适配器会使用 marker bridge，且仅限 `danger-full-access`；普通进程发布、后台句柄、PTY 与持久终端仍不支持远程运行。

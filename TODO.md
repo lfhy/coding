@@ -115,7 +115,7 @@ Acceptance: CI can build every target without secrets, and a manually installed 
 
 Status: not started (decision recorded; revisit after desktop stabilizes).
 
-- [x] Offer local-folder, supplied-remote-address, and no-project starts from the Hero Workspace picker; remote navigation accepts only an already reachable credential-free `http(s)` Host address and does not add transport security or SSH setup.
+- [x] Offer local-folder, desktop-only Remote-SSH, and no-project starts from the Hero Workspace picker; the desktop flow opens a bounded Remote-SSH Workspace while ordinary browser deployments report that the capability is unavailable.
 - [ ] Host remote-access security: token auth hardening, TLS termination guidance, and LAN discovery so a phone browser can reach a desktop/server Host without exposing it to the local network unauthenticated.
 - [ ] Responsive adaptation of the existing Web GUI for phone-sized viewports (composer, session list, approvals).
 - [ ] Optional store shell: package the adapted Web GUI with Capacitor only if a native app becomes necessary.

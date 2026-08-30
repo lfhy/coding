@@ -14,7 +14,11 @@ import { delimiter, extname, isAbsolute, resolve } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import * as nodePty from 'node-pty'
 import type { IPtyForkOptions } from 'node-pty'
-import { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
+import {
+  remoteWorkspacePath,
+  remoteWorkspacePathSync,
+  SubprocessRuntime,
+} from '@deepseek-ai/dsh-subprocess'
 import type {
   SubprocessHandle,
   SubprocessSpawnSpec,
@@ -108,6 +112,9 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
   ): Promise<string> {
     if (command.length === 0) throw new Error('subprocess-local: executable must be non-empty')
     signal?.throwIfAborted()
+    if (await remoteWorkspacePath('.', process.cwd(), signal) !== undefined) {
+      throw new Error('subprocess-local: remote workspace execution is unsupported')
+    }
     const environment = childEnv(env)
     const absolute = isAbsolute(command)
     if (!absolute && (command.includes('/') || (process.platform === 'win32' && command.includes('\\')))) {
@@ -144,6 +151,9 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
   }
 
   spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
+    if (remoteWorkspacePathSync(spec.cwd, process.cwd()) !== undefined) {
+      throw new Error('subprocess-local: remote workspace execution is unsupported')
+    }
     const handle = spawnSubprocess(spec, this.internals)
     this.live.add(handle)
     // Release ownership only once the whole TREE is gone, not at direct-child
@@ -156,14 +166,16 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
     return handle
   }
 
-  // Local PTY allocation is synchronous, but the provider contract permits remote asynchronous allocation.
-  // oxlint-disable-next-line typescript/require-await -- Preserve promise rejection semantics at the async provider contract.
+  // 本地 PTY 分配本身同步，但 provider 契约允许在分配前执行异步的远端边界检查。
   async spawnTerminal(spec: SubprocessTerminalSpawnSpec): Promise<SubprocessTerminalHandle> {
     const file = spec.argv[0]
     if (file === undefined || file.length === 0) {
       throw new Error('subprocess-local: terminal argv must contain a program')
     }
     spec.signal?.throwIfAborted()
+    if (await remoteWorkspacePath(spec.cwd, process.cwd(), spec.signal) !== undefined) {
+      throw new Error('subprocess-local: remote workspace execution is unsupported')
+    }
     const options: IPtyForkOptions = {
       name: 'dumb',
       rows: spec.rows,

@@ -18,7 +18,6 @@ import { createWorkspaceViewStore } from './stores.ts'
 import { WorkspaceBrowser } from './WorkspaceBrowser.tsx'
 import { WorkspacePicker } from './WorkspacePicker.tsx'
 import { en, zh, type WorkspaceKey } from './locales.ts'
-import { remoteHostUrl } from './remote.ts'
 
 export type {
   DirectoryFlowOwnerProps, DirectoryFlowSlotName, DirectoryPickingHooks, DirectoryPickingInjected,
@@ -108,10 +107,6 @@ export function apply(ctx: ClientContext): void {
   const pickerInjected = (): WorkspacePickerInjected => ({
     createWorkspace: input => ctx.workspaces.create(input),
     startSessionWithoutWorkspace: () => ctx.workspaces.startSessionWithoutWorkspace(),
-    connectRemote: (address) => {
-      const target = remoteHostUrl(address)
-      location.assign(target)
-    },
     hooks: { directoryFlow: pickerFlowSource },
   })
   // Each registration declares its directory-flow child in the same call;

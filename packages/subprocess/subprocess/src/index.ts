@@ -14,6 +14,28 @@ import type { SubprocessHandle, SubprocessSpawnSpec } from './types.ts'
 import type { SubprocessTerminalHandle, SubprocessTerminalSpawnSpec } from './types.ts'
 
 export { DSH_ENV_PREFIX } from './types.ts'
+export {
+  REMOTE_BRIDGE_TOKEN_ENV,
+  REMOTE_BRIDGE_URL_ENV,
+  REMOTE_WORKSPACE_MARKER,
+  RemoteWorkspaceError,
+  callRemoteWorkspaceBridge,
+  isRemoteAbsolutePath,
+  isRemotePathWithin,
+  parseRemoteWorkspaceTargetKey,
+  readRemoteWorkspaceMarker,
+  remoteWorkspaceLocalPath,
+  remoteWorkspacePath,
+  remoteWorkspacePathSync,
+  remoteWorkspaceTargetKey,
+  verifyRemoteWorkspaceTarget,
+} from './remote-workspace.ts'
+export type {
+  RemoteWorkspace,
+  RemoteWorkspaceErrorCode,
+  RemoteWorkspacePath,
+  RemoteWorkspaceTarget,
+} from './remote-workspace.ts'
 export type {
   CollectedOutput,
   DshEnvironment,

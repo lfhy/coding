@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,24 +22,33 @@ import (
 )
 
 var (
-	ErrHostUnavailable  = errors.New("coding: no compatible local Host is available")
-	ErrHostIncompatible = errors.New("coding: a different live Coding Host owns the shared home")
+	ErrHostUnavailable    = errors.New("coding: no compatible local Host is available")
+	ErrHostNotReplaceable = errors.New("coding: a live Coding Host could not be replaced in the shared home")
 )
 
-// Launcher owns no Host process. It serializes discovery/start operations and
-// returns a client endpoint; the managed Host remains independent after ready.
+// Launcher 串行执行 Host 发现和启动；Host 就绪后独立运行，不归 Launcher 所有。
 type Launcher struct {
 	options Options
 	client  *http.Client
 	mu      sync.Mutex
 }
 
-// AppVersion is the product version compiled into release launchers.
-// Development builds deliberately use dev so they accept the checkout Host.
+// AppVersion 是发行启动器编译进来的产品版本；开发构建使用 dev 连接当前源码 Host。
 var AppVersion = "dev"
 
-// New returns a launcher with platform defaults filled in.
+// New 填充平台默认值并校验由调用方附加的 Host 环境。
 func New(options Options) (*Launcher, error) {
+	seenEnvironmentKeys := make(map[string]string, len(options.Environment))
+	for key, value := range options.Environment {
+		if key == "" || strings.ContainsAny(key, "=\x00") || strings.ContainsRune(value, '\x00') {
+			return nil, fmt.Errorf("coding: invalid Host environment variable %q", key)
+		}
+		normalized := environmentKey(key)
+		if previous, exists := seenEnvironmentKeys[normalized]; exists {
+			return nil, fmt.Errorf("coding: duplicate Host environment variables %q and %q", previous, key)
+		}
+		seenEnvironmentKeys[normalized] = key
+	}
 	if options.Home == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
@@ -76,15 +86,13 @@ func New(options Options) (*Launcher, error) {
 	return &Launcher{options: options, client: &http.Client{Timeout: 2 * time.Second}}, nil
 }
 
-// RecordPath returns the shared discovery filename.
+// RecordPath 返回共享 Host 发现记录的路径。
 func (l *Launcher) RecordPath() string { return filepath.Join(l.options.Home, "host.json") }
 
-// Home returns the resolved shared DSH_HOME used for discovery and runtime files.
+// Home 返回发现记录和运行时文件共用的绝对 DSH_HOME。
 func (l *Launcher) Home() string { return l.options.Home }
 
-// Ensure returns a compatible running Host or starts one while holding the
-// cross-process launch lock. The lock is released as soon as readiness is
-// observed, so clients never serialize normal request traffic.
+// Ensure 在跨进程启动锁内连接兼容 Host 或启动新 Host；观察到就绪后立即释放锁。
 func (l *Launcher) Ensure(ctx context.Context) (Endpoint, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -97,51 +105,57 @@ func (l *Launcher) Ensure(ctx context.Context) (Endpoint, error) {
 	}
 	defer lock.Close()
 
-	if endpoint, state := l.discover(ctx); state == discoveryCompatible {
+	endpoint, state := l.discover(ctx)
+	if err := ctx.Err(); err != nil {
+		return Endpoint{}, err
+	}
+	if state == discoveryCompatible && !l.options.ReplaceCompatibleHost {
 		return endpoint, nil
-	} else if state == discoveryLiveIncompatible {
-		// 版本不匹配的旧 Host 会挡住本次启动；请求它退出（SIGTERM 即其
-		// 常规停止信号），等进程消失后再重新发现或拉起新版本。
-		l.requestExit(ctx)
-		for attempt := 0; ; attempt++ {
-			if endpoint, state := l.discover(ctx); state == discoveryCompatible {
-				return endpoint, nil
-			} else if state != discoveryLiveIncompatible {
-				break
-			}
-			if attempt >= incompatibleExitWaitTicks {
-				return Endpoint{}, ErrHostIncompatible
-			}
-			timer := time.NewTimer(l.options.PollInterval)
-			select {
-			case <-ctx.Done():
-				timer.Stop()
-				return Endpoint{}, ctx.Err()
-			case <-timer.C:
-			}
+	}
+	if state == discoveryCompatible || state == discoveryLiveIncompatible {
+		// 私有 bridge 环境不能被 host.json 表达；附着旧 Host 会保留已经失效
+		// 的 token。停止受管进程后由本次启动继承当前窗口的环境。
+		if err := l.stopExisting(ctx, endpoint.Record.PID); err != nil {
+			return Endpoint{}, err
 		}
+		_, state = l.discover(ctx)
+		if err := ctx.Err(); err != nil {
+			return Endpoint{}, err
+		}
+		if state != discoveryMissing {
+			return Endpoint{}, ErrHostNotReplaceable
+		}
+	} else if state == discoveryUnverifiedLive {
+		return Endpoint{}, ErrHostNotReplaceable
 	}
 	return l.start(ctx)
 }
 
-// incompatibleExitWaitTicks bounds how long Ensure waits for an incompatible
-// live Host to honor the exit request before surfacing ErrHostIncompatible.
-var incompatibleExitWaitTicks = 100
+// hostExitWaitTicks 限制已有 Host 响应退出请求的轮询次数。
+var hostExitWaitTicks = 100
 
-// requestExit asks the Host named by the discovery record to stop. TERM is the
-// runtime's ordinary supervisor stop signal and exits cleanly; when the
-// process cannot be signalled the request is silently ignored and discovery
-// decides the rest.
-func (l *Launcher) requestExit(ctx context.Context) {
-	data, err := os.ReadFile(l.RecordPath())
-	if err != nil {
-		return
+// stopExisting 请求已验证的 Host 退出，并等待其原始 PID 结束。探针短暂失败
+// 不代表旧进程已退出；在它仍存活时启动新 Host 会让两者共享 DSH_HOME。
+func (l *Launcher) stopExisting(ctx context.Context, pid int) error {
+	if pid < 1 || !processAlive(pid) {
+		return nil
 	}
-	var record Record
-	if json.Unmarshal(data, &record) != nil {
-		return
+	terminateProcess(pid)
+	for attempt := 0; ; attempt++ {
+		if !processAlive(pid) {
+			return nil
+		}
+		if attempt >= hostExitWaitTicks {
+			return ErrHostNotReplaceable
+		}
+		timer := time.NewTimer(l.options.PollInterval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
 	}
-	terminateProcess(record.PID)
 }
 
 type discoveryState uint8
@@ -150,6 +164,7 @@ const (
 	discoveryMissing discoveryState = iota
 	discoveryCompatible
 	discoveryLiveIncompatible
+	discoveryUnverifiedLive
 )
 
 func (l *Launcher) discover(ctx context.Context) (Endpoint, discoveryState) {
@@ -162,14 +177,19 @@ func (l *Launcher) discover(ctx context.Context) (Endpoint, discoveryState) {
 		return Endpoint{}, discoveryMissing
 	}
 	endpoint := Endpoint{Record: record, BaseURL: baseURL(record.Port)}
-	if record.Protocol != Protocol || record.Version != l.options.Version {
-		if processAlive(record.PID) || l.probe(ctx, endpoint) {
-			return Endpoint{}, discoveryLiveIncompatible
-		}
+	alive := processAlive(record.PID)
+	responsive := l.probe(ctx, endpoint)
+	if alive != responsive {
+		// PID 记录和 loopback 探针必须同时成立，才能把该进程视为本记录的
+		// Host。任一方不成立都可能是损坏记录、PID 复用或另一个占用端口的
+		// 进程；此时不能终止 PID，也不能覆盖共享 home 启动第二个 Host。
+		return endpoint, discoveryUnverifiedLive
+	}
+	if !alive {
 		return Endpoint{}, discoveryMissing
 	}
-	if !processAlive(record.PID) || !l.probe(ctx, endpoint) {
-		return Endpoint{}, discoveryMissing
+	if record.Protocol != Protocol || record.Version != l.options.Version {
+		return endpoint, discoveryLiveIncompatible
 	}
 	return endpoint, discoveryCompatible
 }
@@ -205,14 +225,17 @@ func (l *Launcher) probe(ctx context.Context, endpoint Endpoint) bool {
 		Result struct {
 			OK    bool `json:"ok"`
 			Value struct {
-				Version string `json:"version"`
+				Version          string `json:"version"`
+				ManagedHostToken string `json:"managedHostToken"`
 			} `json:"value"`
 		} `json:"result"`
 	}
 	if json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&envelope) != nil {
 		return false
 	}
-	return envelope.Type == "server-response" && envelope.RPCID == rpcID && envelope.Result.OK && envelope.Result.Value.Version == endpoint.Record.Version
+	return envelope.Type == "server-response" && envelope.RPCID == rpcID && envelope.Result.OK &&
+		envelope.Result.Value.Version == endpoint.Record.Version &&
+		envelope.Result.Value.ManagedHostToken == endpoint.Record.Token
 }
 
 func (l *Launcher) start(ctx context.Context) (Endpoint, error) {
@@ -225,7 +248,7 @@ func (l *Launcher) start(ctx context.Context) (Endpoint, error) {
 	}
 	child := exec.Command(command[0], command[1:]...)
 	child.Dir = l.commandWorkingDirectory()
-	child.Env = append(os.Environ(), "DSH_HOME="+l.options.Home, "DSH_CWD="+l.options.CWD, "DSH_APP_VERSION="+l.options.Version)
+	child.Env = l.childEnvironment()
 	stdout, err := child.StdoutPipe()
 	if err != nil {
 		return Endpoint{}, fmt.Errorf("coding: capture Host stdout: %w", err)
@@ -263,7 +286,7 @@ func (l *Launcher) start(ctx context.Context) (Endpoint, error) {
 	}()
 	select {
 	case record := <-ready:
-		if record.Protocol != Protocol || record.Port < 1 || record.Port > 65535 || record.Version != l.options.Version {
+		if record.Protocol != Protocol || record.Port < 1 || record.Port > 65535 || record.Version != l.options.Version || record.Token == "" {
 			return Endpoint{}, fmt.Errorf("coding: invalid Host readiness record")
 		}
 		endpoint := Endpoint{Record: record, BaseURL: baseURL(record.Port), Started: true}
@@ -276,6 +299,47 @@ func (l *Launcher) start(ctx context.Context) (Endpoint, error) {
 	case <-readyCtx.Done():
 		return Endpoint{}, fmt.Errorf("coding: Host readiness timeout: %w", readyCtx.Err())
 	}
+}
+
+// childEnvironment 合并父进程环境、调用方私有变量和启动器拥有的变量。按 key
+// 去重后再排序，使敏感变量不会因重复项被旧值覆盖，也便于测试精确观察启动环境。
+func (l *Launcher) childEnvironment() []string {
+	type variable struct {
+		key   string
+		value string
+	}
+	values := make(map[string]variable)
+	for _, entry := range os.Environ() {
+		key, value, found := strings.Cut(entry, "=")
+		if found {
+			values[environmentKey(key)] = variable{key: key, value: value}
+		}
+	}
+	for key, value := range l.options.Environment {
+		values[environmentKey(key)] = variable{key: key, value: value}
+	}
+	// 这些变量是启动器的所有权边界，不能由附加环境覆盖。
+	values[environmentKey("DSH_HOME")] = variable{key: "DSH_HOME", value: l.options.Home}
+	values[environmentKey("DSH_CWD")] = variable{key: "DSH_CWD", value: l.options.CWD}
+	values[environmentKey("DSH_APP_VERSION")] = variable{key: "DSH_APP_VERSION", value: l.options.Version}
+	keys := make([]string, 0, len(values))
+	for _, entry := range values {
+		keys = append(keys, entry.key)
+	}
+	sort.Strings(keys)
+	result := make([]string, 0, len(keys))
+	for _, key := range keys {
+		entry := values[environmentKey(key)]
+		result = append(result, entry.key+"="+entry.value)
+	}
+	return result
+}
+
+func environmentKey(key string) string {
+	if runtime.GOOS == "windows" {
+		return strings.ToUpper(key)
+	}
+	return key
 }
 
 func (l *Launcher) commandWorkingDirectory() string {

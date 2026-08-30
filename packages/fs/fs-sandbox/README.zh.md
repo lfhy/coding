@@ -13,8 +13,8 @@
 按调用策略携带有效模式（会话覆盖值或升级授权）和调用会话不可变的 cwd 根目录；只有没有会话的调用才回退到部署策略：
 
 - `read-only`：以结构化 `FS_SANDBOX_DENIED` 拒绝所有变更；
-- `workspace-write`：只有目标规范化后位于可写根目录下，才允许变更。可写根包括工作区根目录和平台临时区域（`/tmp`、`os.tmpdir()`），与 Seatbelt profile 授权的集合相同；该集合由唯一的 [`writableRoots`](../../sandbox/README.md) 函数派生，使 fs 围栏与 bash runner 不会漂移。规范拼写使用词法快速路径；基于身份的祖先回退可以识别 Windows 长名称和 8.3 名称等别名等价根目录，而不会把无关前缀视为包含关系。委托前会立即重新规范化目标，因此工具解析后被替换的祖先符号链接也会被发现；
-- `danger-full-access`：不加围栏直接委托。
+- `workspace-write`：本地变更只有在目标规范化后位于可写根目录下时才会被允许。可写根包括工作区根目录和平台临时区域（`/tmp`、`os.tmpdir()`），与 Seatbelt profile 授权的集合相同；该集合由唯一的 [`writableRoots`](../../sandbox/README.md) 函数派生，使 fs 围栏与 bash runner 不会漂移。规范拼写使用词法快速路径；基于身份的祖先回退可以识别 Windows 长名称和 8.3 名称等别名等价根目录，而不会把无关前缀视为包含关系。委托前会立即重新规范化目标，因此工具解析后被替换的祖先符号链接也会被发现。对于 Remote-SSH，可写根只有调用 Session cwd 在 marker 远程根下映射出的目录；本地临时目录不会投影到远程执行世界；
+- `danger-full-access`：不经过策略围栏直接委托。Remote-SSH 变更仍受该 marker 所选目录约束，因为远程 agent 会独立实施根目录限制。
 
 ## 威胁模型：策略围栏，而非内核边界
 
@@ -43,3 +43,4 @@
 - **策略围栏，而非内核边界**：该检查是可信代码处理模型控制的路径，因此解析到系统调用之间残留的 TOCTOU 会被原位重新规范化缩小，但不会消除；对抗性宿主进程不在范围内。不可信代码的内核级隔离仍属于 `ctx.shell`。
 - **围栏与 runner 的一致性由单一所有方派生**：可写集合来自 `writableRoots`，该函数与 Seatbelt profile 共享；在其他位置定义可写集合的 runner profile 会发生漂移。
 - **要求 `ctx.sandboxPolicy`**：工具使用它解析每个会话策略，后端用它处理无 agent（智能体）调用的回退；未组合该服务时，后端不会实施约束。
+- **远程 Bash 比远程文件系统变更更严格**：`workspace-write` 可以把语义远程文件变更约束到 Session 子目录，但本地内核沙箱无法约束远程 Shell，因此 Bash 适配器要求 `danger-full-access`。

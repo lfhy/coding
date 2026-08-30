@@ -33,14 +33,54 @@ done
 runtime=dist/coding-runtime/runtime
 entry="$runtime/node_modules/@deepseek-ai/dsh/lib/bin.js"
 metadata=dist/coding-runtime/metadata.json
-if [ -z "$host" ] || [ ! -f "$entry" ] || [ ! -f "$metadata" ]; then
-  echo "package-macos-app: preexpanded desktop runtime missing; run 'make runtime' first" >&2
+remote_agent_dir=dist/remote-agent
+remote_agent_manifest="$remote_agent_dir/manifest.json"
+remote_agent_ok=1
+for artifact in \
+  coding-remote-agent-darwin-amd64 \
+  coding-remote-agent-darwin-arm64 \
+  coding-remote-agent-linux-amd64 \
+  coding-remote-agent-linux-arm64 \
+  coding-remote-agent-windows-amd64.exe \
+  coding-remote-agent-windows-arm64.exe
+do
+  case "$artifact" in
+    *.exe) [ -f "$remote_agent_dir/$artifact" ] || remote_agent_ok=0 ;;
+    *) [ -x "$remote_agent_dir/$artifact" ] || remote_agent_ok=0 ;;
+  esac
+done
+if [ -f "$remote_agent_manifest" ]; then
+  node - "$remote_agent_manifest" <<'NODE' || remote_agent_ok=0
+const fs = require('node:fs')
+const manifest = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'))
+const expected = new Set([
+  'darwin/amd64/coding-remote-agent-darwin-amd64',
+  'darwin/arm64/coding-remote-agent-darwin-arm64',
+  'linux/amd64/coding-remote-agent-linux-amd64',
+  'linux/arm64/coding-remote-agent-linux-arm64',
+  'windows/amd64/coding-remote-agent-windows-amd64.exe',
+  'windows/arm64/coding-remote-agent-windows-arm64.exe',
+])
+if (manifest.protocol !== 1 || !Array.isArray(manifest.artifacts) || manifest.artifacts.length !== expected.size) process.exit(1)
+for (const artifact of manifest.artifacts) {
+  if (artifact === null || typeof artifact !== 'object') process.exit(1)
+  const key = `${artifact.goos}/${artifact.goarch}/${artifact.file}`
+  if (!expected.delete(key)) process.exit(1)
+}
+if (expected.size !== 0) process.exit(1)
+NODE
+else
+  remote_agent_ok=0
+fi
+if [ -z "$host" ] || [ ! -f "$entry" ] || [ ! -f "$metadata" ] || [ "$remote_agent_ok" -ne 1 ]; then
+  echo "package-macos-app: desktop runtime or remote-agent artifacts missing; run 'make runtime remote-agent' (or 'make install-app') first" >&2
   exit 1
 fi
 cp "$host" "$app/Contents/Resources/coding-host"
 chmod 755 "$app/Contents/Resources/coding-host"
 cp -R "$runtime" "$app/Contents/Resources/runtime"
 cp "$metadata" "$app/Contents/Resources/metadata.json"
+cp -R "$remote_agent_dir" "$app/Contents/Resources/remote-agent"
 
 # codesign 自身输出重定向：只保留脚本自己的单行结论，避免多行噪音。
 if [ -n "$identity" ]; then

@@ -165,6 +165,40 @@ describe('the provider hand-off', () => {
 })
 
 describe('fail closed', () => {
+  it('refuses a marker workdir under a confined local policy before any local sandbox runner executes', async () => {
+    const markerRoot = mkdtempSync(join(tmpdir(), 'dsh-bash-sandbox-remote-marker-'))
+    writeFileSync(join(markerRoot, '.coding-remote-workspace.json'), JSON.stringify({
+      version: 1,
+      remoteRoot: '/srv/project',
+      connectionId: 'connection-1',
+    }))
+    const { bash, calls } = await setup({ mode: 'workspace-write' })
+    try {
+      await expect(bash.run(bash.resolve({ command: 'pwd', workdir: markerRoot })))
+        .rejects.toThrow('remote SSH bash requires danger-full-access')
+      expect(calls).toHaveLength(0)
+    } finally {
+      rmSync(markerRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses a remote background command even under danger-full-access', async () => {
+    const markerRoot = mkdtempSync(join(tmpdir(), 'dsh-bash-sandbox-remote-background-'))
+    writeFileSync(join(markerRoot, '.coding-remote-workspace.json'), JSON.stringify({
+      version: 1,
+      remoteRoot: '/srv/project',
+      connectionId: 'connection-1',
+    }))
+    const { bash, calls } = await setup({ mode: 'danger-full-access' })
+    try {
+      expect(() => { bash.start(bash.resolve({ command: 'sleep 1', workdir: markerRoot })) })
+        .toThrow('remote background commands are unsupported')
+      expect(calls).toHaveLength(0)
+    } finally {
+      rmSync(markerRoot, { recursive: true, force: true })
+    }
+  })
+
   it('propagates the provider\'s structured SANDBOX_UNAVAILABLE on run() and start()', async () => {
     const { bash } = await setup({}, () => { throw new SandboxUnavailableError('read-only') })
     const spec = bash.resolve({ command: 'echo hi' })

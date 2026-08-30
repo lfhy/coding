@@ -14,6 +14,8 @@ Every command is confined by handing the provider the exact `['bash', '-c', comm
 | `workspace-write` | Writes only under `workspaceRoot` + `/tmp` (ephemeral under bwrap, the host `/tmp` under Landlock, `/private/tmp` plus the per-user temp dir under Seatbelt) |
 | `danger-full-access` | No confinement; the provider is never consulted. Foreground results carry `sandbox: { mode, denied: false }`; background process handles carry no sandbox facts. |
 
+For a Remote-SSH marker cwd, only a foreground `danger-full-access` call is executable. `read-only` and `workspace-write` fail before consulting the local sandbox provider because its kernel runner cannot confine a process on another machine; background `start()` also fails because the remote gateway has no process-handle lifecycle. The remote agent still confines the workdir to the directory selected for the marker, scrubs ambient credential-shaped and `DSH_*` variables, and requires `bash` on the target.
+
 Semantics:
 
 - **Denials are result facts.** A failed run whose stderr carries the selected backend's own denial dialect — the signatures the provider stamps on every wrap (EROFS text under bwrap, EACCES under Landlock, EPERM under Seatbelt) — is reported as `ShellRunResult.sandbox.denied: true` (conservative classification, read from the collected stderr tail); every CONFINED run also carries the mode it executed under (`result.sandbox.mode`) and the provider's enforcement completeness (`result.sandbox.enforcement`: `full`, or `partial` on an older Landlock ABI).
@@ -86,3 +88,4 @@ Append-only; newly visible content follows the reusable request prefix and does 
 - **Denials are inferred from failed-command stderr** — backend signatures make the inference portable, but a matching application error can be classified as a denial and a denial omitted from the retained tail can be missed.
 - **An asynchronously observed background runner failure has no immediate error channel** — it is recorded on the settled process and surfaces when the caller reads the generic task with `job_output`; a synchronous `SubprocessRuntime` throw that names the runner path instead fails `start()` immediately.
 - **`danger-full-access` deliberately bypasses `ctx.sandbox`** — it is an explicit unconfined mode, not a wider sandbox profile.
+- **Remote-SSH has no confined Shell mode** — `workspace-write` remains available for semantic remote filesystem mutations, but remote Bash cannot use it until a real remote sandbox provider exists.

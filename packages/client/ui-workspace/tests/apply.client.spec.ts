@@ -118,15 +118,6 @@ describe('ui-workspace apply', () => {
     expect(b.create).toHaveBeenCalledWith({ path: '/tmp/project' })
     await picker.startSessionWithoutWorkspace()
     expect(b.startSessionWithoutWorkspace).toHaveBeenCalledOnce()
-
-    const assign = vi.fn()
-    vi.stubGlobal('location', { assign })
-    try {
-      void picker.connectRemote('https://host.example.com')
-      expect(assign).toHaveBeenCalledWith('https://host.example.com/')
-    } finally {
-      vi.unstubAllGlobals()
-    }
   })
 
   it('declares the two directory-flow holes and reports their occupancy per surface', async () => {

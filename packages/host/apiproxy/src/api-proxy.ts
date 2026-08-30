@@ -42,6 +42,7 @@ import type {
   QueuedInboxItem, SessionSummary, SettingsNamespaceView, SubagentAddress, JobView, ToolEventView,
   WorkspaceId, WorkspaceView,
 } from './api/index.ts'
+import { MANAGED_HOST_RECORD_TOKEN_ENV } from './api/host.ts'
 import {
   DEFAULT_SESSION_LOG_COMPRESSION_LEVEL,
   flushLiveSessionLog,
@@ -2838,20 +2839,21 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
     host: {
       describe(request) {
-        // TODO: version should read apps/cli's package.json; placeholder for now.
+        // TODO: version 应读取 apps/cli 的 package.json；当前保留占位值。
         const selection = defaults.defaultModelSelection()
+        const managedHostToken = process.env[MANAGED_HOST_RECORD_TOKEN_ENV]
         return Promise.resolve(ok(request, {
           version: process.env.DSH_APP_VERSION ?? '0.0.1',
-          // Same source as session.create's fallback: the UI's default project
-          // must match where an unspecified-cwd session actually lands.
+          // 与 session.create 的 fallback 同源，保证 UI 默认项目和未指定 cwd 的
+          // session 实际落点一致。
           cwd: defaults.cwd,
-          // Read live for the same reason: this is what the NEXT session will
-          // start from, so a saved default has to be what it reports.
+          // 读取实时值：下一条 session 会据此启动，保存后的默认值必须立即可见。
           provider: selection.provider,
           model: selection.model,
           attachedSessions: ctx.agents.list().length,
           home: homedir(),
           canOpenPath: canOpenPaths(),
+          ...managedHostToken === undefined || managedHostToken === '' ? {} : { managedHostToken },
         }))
       },
 

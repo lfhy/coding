@@ -11,6 +11,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-agent'
 import type { WebClientConnections } from '@deepseek-ai/dsh-client-connection'
 import type {} from '@deepseek-ai/dsh-cmdline'
+import { MANAGED_HOST_RECORD_TOKEN_ENV } from '@deepseek-ai/dsh-host-apiproxy/api/host'
 import type {} from '@deepseek-ai/dsh-jobs'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 
@@ -32,7 +33,7 @@ export interface CodingHostRecord {
   version: string
   /** 带版本的原生客户端/Host 发现协议。 */
   protocol: number
-  /** 随机记录所有权 token；原生客户端不会解释其语义。 */
+  /** 随机记录所有权 token；启动器以 host.describe 的回显证明 PID 仍拥有该记录。 */
   token: string
 }
 
@@ -48,12 +49,21 @@ export interface ManagedHostOptions {
   version?: string
 }
 
-/** 解析一个共享 Harness home 的记录路径。 */
+/**
+ * 解析一个共享 Harness home 的记录路径。
+ * @param home - 存放受管 Host 记录的 Harness 主目录。
+ * @returns 受管 Host 记录文件的绝对路径。
+ */
 export function codingHostRecordPath(home: string = resolveDshHome()): string {
   return join(home, CODING_HOST_RECORD_FILENAME)
 }
 
-/** 通过同目录临时文件和原子 rename 写入一条记录。 */
+/**
+ * 通过同目录临时文件和原子 rename 写入一条记录。
+ * @param home - 存放受管 Host 记录的 Harness 主目录。
+ * @param record - 已就绪 Host 的待发布记录。
+ * @returns 记录原子发布后完成。
+ */
 export async function writeCodingHostRecord(home: string, record: CodingHostRecord): Promise<void> {
   await mkdir(home, { recursive: true })
   const path = codingHostRecordPath(home)
@@ -66,7 +76,12 @@ export async function writeCodingHostRecord(home: string, record: CodingHostReco
   }
 }
 
-/** 仅当当前 Host 仍拥有 token 时删除记录。 */
+/**
+ * 仅当当前 Host 仍拥有 token 时删除记录。
+ * @param home - 存放受管 Host 记录的 Harness 主目录。
+ * @param token - 当前 Host 的记录所有权 token。
+ * @returns 当前 Host 仍拥有记录时删除后完成。
+ */
 export async function removeCodingHostRecord(home: string, token: string): Promise<void> {
   const path = codingHostRecordPath(home)
   let raw: string
@@ -148,7 +163,13 @@ function installManagedHostLifecycle(
     unsubscribeConnections()
     unsubscribeAgentStatus()
     unsubscribeJobs?.()
-    await removeCodingHostRecord(home, record.token)
+    try {
+      await removeCodingHostRecord(home, record.token)
+    } finally {
+      if (process.env[MANAGED_HOST_RECORD_TOKEN_ENV] === record.token) {
+        delete process.env.DSH_MANAGED_HOST_RECORD_TOKEN
+      }
+    }
   }, 'coding managed host lifecycle')
   evaluateIdle()
 }
@@ -156,6 +177,9 @@ function installManagedHostLifecycle(
 /**
  * 发布已就绪的受管理 Host 并安装其生命周期。只能在完整 Loader 树结算后调用，
  * 使观察到记录的客户端可以立刻打开两条 API 下行连接。
+ * @param ctx - 已完成 Loader 装配的 Host 上下文。
+ * @param options - 已绑定端口、空闲策略和可选测试覆盖。
+ * @returns 已原子发布并受生命周期 effect 管理的 Host 记录。
  */
 export async function startManagedHost(ctx: Context, options: ManagedHostOptions): Promise<CodingHostRecord> {
   const connections = ctx.get('webClientConnections')
@@ -166,15 +190,28 @@ export async function startManagedHost(ctx: Context, options: ManagedHostOptions
     throw new Error('coding managed host: launcher appExit is unavailable')
   }
   const home = options.home ?? resolveDshHome()
+  const token = randomUUID()
+  const previousToken = process.env[MANAGED_HOST_RECORD_TOKEN_ENV]
+  // host.describe 必须在 host.json 可被其他进程观察到前就持有同一 token；启动器
+  // 因而能证明响应者、端口和记录中的 PID 属于同一个受管 Host。
+  process.env[MANAGED_HOST_RECORD_TOKEN_ENV] = token
   const record: CodingHostRecord = {
     type: 'coding-host-ready',
     port: options.port,
     pid: process.pid,
     version: options.version ?? process.env.DSH_APP_VERSION ?? '0.0.0',
     protocol: CODING_HOST_PROTOCOL,
-    token: randomUUID(),
+    token,
   }
-  await writeCodingHostRecord(home, record)
+  try {
+    await writeCodingHostRecord(home, record)
+  } catch (error) {
+    if (process.env[MANAGED_HOST_RECORD_TOKEN_ENV] === token) {
+      if (previousToken === undefined) delete process.env.DSH_MANAGED_HOST_RECORD_TOKEN
+      else process.env[MANAGED_HOST_RECORD_TOKEN_ENV] = previousToken
+    }
+    throw error
+  }
   installManagedHostLifecycle(ctx, connections, home, record, options.idleTimeoutMs)
   return record
 }

@@ -7,10 +7,10 @@ import type { DirectoryEntry } from './host.ts'
 import type { RequestPayload, ResponseValue } from './rpc-map.ts'
 import type { Wire } from './rpc.schema.ts'
 
-/** host.describe request payload (empty object literal). */
+/** host.describe 请求 payload（空对象字面量）。 */
 export const hostDescribeRequestSchema = z.object({}) satisfies z.ZodType<Wire<RequestPayload<'host.describe'>>>
 
-/** host.describe response value. */
+/** host.describe 响应值。 */
 export const hostDescribeValueSchema = z.object({
   version: z.string(),
   cwd: z.string(),
@@ -19,6 +19,7 @@ export const hostDescribeValueSchema = z.object({
   attachedSessions: z.number().int().nonnegative(),
   home: z.string(),
   canOpenPath: z.boolean(),
+  managedHostToken: z.string().min(1).optional(),
 }) satisfies z.ZodType<Wire<ResponseValue<'host.describe'>>>
 
 /** host.pickDirectory request payload (empty object literal). */
