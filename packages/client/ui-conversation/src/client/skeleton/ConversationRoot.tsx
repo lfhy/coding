@@ -97,6 +97,7 @@ export function ConversationRoot({
 
   const heroWorkspaceRow = (
     <div className={css.heroWorkspaceRow}>
+      {renderSlot('conversation.hero.agentPreset', {})}
       <WorkspaceChip
         buttonRef={pickerAnchor}
         label={chipTitle}
@@ -118,7 +119,6 @@ export function ConversationRoot({
         },
         onClose: () => { setPickerOpen(false) },
       })}
-      {renderSlot('conversation.hero.agentPreset', {})}
     </div>
   )
 

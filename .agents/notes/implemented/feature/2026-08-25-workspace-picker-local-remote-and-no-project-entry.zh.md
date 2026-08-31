@@ -12,6 +12,8 @@ Hero Workspace 选择器把选择已注册本地 Workspace 作为开始输入的
 
 `WorkspacePicker` 渲染可搜索的已注册 Workspace 列表，并保留三项固定 Hero 操作。**打开文件夹**只委托给既有目录流 slot，因此同一个原生或应用内选择器仍拥有本地路径选择。**连接 Remote-SSH**由[有界桌面工具网关决策](2026-08-30-desktop-remote-ssh-tool-gateway.md)拥有；该决策取代本记录原有的地址导航分支，但不改变三项操作布局。
 
+空态 Hero 不保留固定产品标题或预览状态徽标。它在品牌标记旁显示按本地时间时段选择的本地化问候，并在下一行先渲染 agent preset 控件，再渲染工作区 chip。工作区 chip 是紧凑的无边框透明触发器；悬停和展开状态使用共享交互填充，不另造输入面。
+
 **不在项目中工作**调用 `IWorkspaces.startSessionWithoutWorkspace()`。`WorkspaceRuntime` 经由 `SessionRuntime.createUnscoped()` 创建 `session.create({})`，并打开返回的、可在列表中寻址的 Session。Host 提供其正常的默认 cwd；缺少 `workspaceId` 会使该 Session 不写入任何 Workspace 账目。这个 Session 存在后，即使 Hero chip 显示无项目状态，常驻编辑器仍可编辑。
 
 侧边栏的仅添加按钮仍只用于本地文件夹。它不暴露远程导航，也不创建未分组 Session，因为它是添加 Workspace 的快捷操作，而不是 Hero 的完整开始菜单。[无 Session 编辑器入口](2026-08-07-workspace-picker-composer-entry.md)、[添加 Workspace 的唯一路径](../simplification/2026-07-31-one-route-to-add-a-workspace.md)、[Workspace 产品流程](2026-07-25-workspace-ui-product-flow.md)、[目录选择器能力 seam](../architecture/2026-07-28-directory-picker-capability-seam.md)和[目录选择器自适应默认值](2026-07-29-directory-picker-adaptive-default.md)仍各自保留其所有权规则。
@@ -28,4 +30,4 @@ Hero Workspace 选择器把选择已注册本地 Workspace 作为开始输入的
 
 ## 验证
 
-组件测试覆盖搜索、三项 Hero 操作、Remote-SSH 能力缺失和无项目创建失败。运行时测试固定未分组的 `session.create({})` 调用及其即时选中；Remote-SSH 记录拥有 bridge、校验和生命周期证据。
+组件测试覆盖搜索、三项 Hero 操作、Remote-SSH 能力缺失和无项目创建失败。会话测试固定四个问候时段及其边界刷新；Hero ARIA golden 固定 agent preset 位于工作区之前的顺序。运行时测试固定未分组的 `session.create({})` 调用及其即时选中；Remote-SSH 记录拥有 bridge、校验和生命周期证据。

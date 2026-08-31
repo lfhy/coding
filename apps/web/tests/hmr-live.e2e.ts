@@ -78,10 +78,18 @@ it('hot-reloads a real client-plugin source edit without refreshing the page', a
     .map(path => join(REPO_ROOT, path))
   const originalClientBundles = await Promise.all(clientBundlePaths.map(async path => [path, await readFile(path)] as const))
   const originalSource = await readFile(sourcePath)
-  const oldText = 'Into the Unknown'
-  const sourceNeedle = "'hero.headline': 'Into the Unknown'"
+  const hour = new Date().getHours()
+  const greeting = hour >= 5 && hour < 11
+    ? { key: 'morning', text: 'Good morning, a new day is starting' }
+    : hour >= 11 && hour < 14
+      ? { key: 'noon', text: 'Good midday, take a short break' }
+      : hour >= 14 && hour < 19
+        ? { key: 'afternoon', text: 'Good afternoon, I will take it from here' }
+        : { key: 'evening', text: 'Good evening, you did a lot today' }
+  const oldText = greeting.text
+  const sourceNeedle = `'hero.greeting.${greeting.key}': '${greeting.text}'`
   const newText = `HMR UPDATED ${'x'.repeat(80)}`
-  const updatedSource = originalSource.toString().replace(sourceNeedle, `'hero.headline': '${newText}'`)
+  const updatedSource = originalSource.toString().replace(sourceNeedle, `'hero.greeting.${greeting.key}': '${newText}'`)
   if (updatedSource === originalSource.toString()) throw new Error(`HMR source lacks ${JSON.stringify(sourceNeedle)}`)
 
   const subprocessCtx = new Context()

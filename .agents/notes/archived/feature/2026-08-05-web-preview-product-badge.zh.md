@@ -1,6 +1,7 @@
 # Agent Note: Web 预览版产品徽标
 
 Status: implemented
+Archived: 2026-08-31
 
 [English](2026-08-05-web-preview-product-badge.md) | 中文
 

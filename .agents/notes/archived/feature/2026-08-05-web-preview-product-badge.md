@@ -1,6 +1,7 @@
 # Agent Note: Web preview product badge
 
 Status: implemented
+Archived: 2026-08-31
 
 English | [中文](2026-08-05-web-preview-product-badge.zh.md)
 

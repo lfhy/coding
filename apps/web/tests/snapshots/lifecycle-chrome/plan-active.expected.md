@@ -20,14 +20,14 @@
 - button "Settings":
   - img
   - text: Settings
-- text: Into the Unknown Preview
-- button "Choose workspace":
-  - img
-  - text: workspace
-  - img
+- text: {{greeting}}
 - button "Standard mode":
   - img
   - text: Standard mode
+  - img
+- button "Choose workspace":
+  - img
+  - text: workspace
   - img
 - textbox "Describe what you want to build"
 - button "Commands":

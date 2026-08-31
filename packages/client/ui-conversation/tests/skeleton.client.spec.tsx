@@ -21,7 +21,9 @@ import { SessionInputShell } from '../src/client/input/facade.ts'
 import { en, zh } from '../src/client/locales.ts'
 import { ConversationRoot } from '../src/client/skeleton/ConversationRoot.tsx'
 import { ConversationSession, ConversationSessionHeader } from '../src/client/skeleton/ConversationSession.tsx'
-import { HeroShell } from '../src/client/skeleton/EmptyHero.tsx'
+import {
+  heroGreetingKey, heroGreetingPeriod, HeroShell,
+} from '../src/client/skeleton/EmptyHero.tsx'
 import type { HeroShellProps } from '../src/client/skeleton/EmptyHero.tsx'
 import { InputBar } from '../src/client/skeleton/InputBar.tsx'
 import type { InputBarProps } from '../src/client/skeleton/InputBar.tsx'
@@ -46,6 +48,7 @@ class ResizeObserverStub {
 
 afterEach(() => {
   cleanup()
+  vi.useRealTimers()
   vi.unstubAllGlobals()
 })
 beforeEach(() => {
@@ -260,10 +263,12 @@ function mount(
 }
 
 describe('Hero chrome', () => {
-  it('renders the English headline through the hero locale seat without a preview badge', () => {
+  it('renders the time-based English greeting through the hero locale seat', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 0, 1, 8, 0, 0))
     const renderSlot = vi.fn<HeroShellProps['renderSlot']>(() => null)
     const view = render(<HeroShell t={makeTranslate(en, commonEn)} renderSlot={renderSlot} />)
-    expect(view.getByText('Into the Unknown')).toBeTruthy()
+    expect(view.getByTestId('hero-greeting').textContent).toBe('Good morning, a new day is starting')
     expect(view.queryByText('Preview')).toBeNull()
     expect(renderSlot).toHaveBeenCalledOnce()
     expect(renderSlot.mock.calls[0]?.[0]).toBe('conversation.hero.brand.mark')
@@ -277,6 +282,28 @@ describe('Hero chrome', () => {
     expect(fallback).toBeTruthy()
     const fallbackView = render(<>{fallback}</>)
     expect(fallbackView.container.querySelector('img')?.getAttribute('src')).toBe('/favicon.png')
+  })
+
+  it('maps each local hour to the reference greeting period', () => {
+    expect([4, 19, 23].map(heroGreetingPeriod)).toEqual(['evening', 'evening', 'evening'])
+    expect([5, 10].map(heroGreetingPeriod)).toEqual(['morning', 'morning'])
+    expect([11, 13].map(heroGreetingPeriod)).toEqual(['noon', 'noon'])
+    expect([14, 18].map(heroGreetingPeriod)).toEqual(['afternoon', 'afternoon'])
+    expect(heroGreetingKey(14)).toBe('hero.greeting.afternoon')
+  })
+
+  it('refreshes the greeting at a period boundary and clears the timer on unmount', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 0, 1, 10, 59, 59, 900))
+    const renderSlot = vi.fn<HeroShellProps['renderSlot']>(() => null)
+    const view = render(<HeroShell t={makeTranslate(en, commonEn)} renderSlot={renderSlot} />)
+    expect(view.getByTestId('hero-greeting').textContent).toBe('Good morning, a new day is starting')
+
+    await act(async () => { vi.advanceTimersByTime(1_000) })
+    expect(view.getByTestId('hero-greeting').textContent).toBe('Good midday, take a short break')
+
+    view.unmount()
+    expect(vi.getTimerCount()).toBe(0)
   })
 })
 
@@ -376,7 +403,7 @@ describe('ConversationRoot resident composer', () => {
     const header = b.view.container.querySelector('header')
     expect(host).not.toBeNull()
     expect(header?.getAttribute('aria-hidden')).toBe('true')
-    expect(b.view.getByText('探索未至之境')).toBeTruthy()
+    expect(b.view.getByTestId('hero-greeting')).toBeTruthy()
     expect(b.view.queryByText('预览版')).toBeNull()
     expect(b.view.queryByTestId('view-chat')).toBeNull()
     // The same machine-backed textarea is live in the hero, and the
@@ -396,11 +423,21 @@ describe('ConversationRoot resident composer', () => {
     expect(b.view.getByText('Selected Folder')).toBeTruthy()
   })
 
+  it('hero row places the mode before the workspace chip', () => {
+    const b = mount(conversationSnapshot({ composerPhase: 'blank', blank: true }))
+    const workspace = b.view.getByRole('button', { name: '选择工作区' })
+    const preset = b.view.getByTestId('view-conversation.hero.agentPreset')
+    const row = workspace.parentElement
+
+    expect(row?.firstElementChild).toBe(preset)
+    expect(row?.lastElementChild).toBe(workspace)
+  })
+
   it('settling phase: a summary that does not prove the session blank hides the composer while it opens', () => {
     const b = mount(conversationSnapshot({ composerPhase: 'blank', blank: true, openState: 'loading' }))
     const root = b.view.container.querySelector('[data-phase]')
     expect(root?.getAttribute('data-phase')).toBe('settling')
-    expect(b.view.queryByText('探索未至之境')).toBeNull()
+    expect(b.view.queryByTestId('hero-greeting')).toBeNull()
   })
 
   it('settling phase: a session the list has no row for settles conservatively', () => {
@@ -425,7 +462,7 @@ describe('ConversationRoot resident composer', () => {
     // blank the column for the history round-trip.
     const root = b.view.container.querySelector('[data-phase]')
     expect(root?.getAttribute('data-phase')).toBe('hero')
-    expect(b.view.getByText('探索未至之境')).toBeTruthy()
+    expect(b.view.getByTestId('hero-greeting')).toBeTruthy()
     expect(b.view.getByRole('textbox')).toBeTruthy()
   })
 
@@ -443,7 +480,7 @@ describe('ConversationRoot resident composer', () => {
     expect(after.value).toBe('kept across flip')
     expect(b.chat.store.getSnapshot().draft).toBe('kept across flip')
     expect(b.view.container.querySelector('[data-conversation-scroll]')?.contains(after)).toBe(true)
-    expect(b.view.queryByText('探索未至之境')).toBeNull()
+    expect(b.view.queryByTestId('hero-greeting')).toBeNull()
     expect(b.view.getByTestId('view-chat')).toBeTruthy()
   })
 

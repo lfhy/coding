@@ -68,8 +68,8 @@ describe('web e2e: startup auto-selection', () => {
   it('keeps the resident Hero and composer nodes when the first Workspace session appears', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-first-workspace-stable-tree'))
     await page.locator(`${ROOT_PHASE}[data-phase="hero"]`).waitFor({ timeout: 15_000 })
-    const headline = page.getByText('Into the Unknown', { exact: true })
-    const brandMark = headline.locator('xpath=preceding-sibling::span[1]').locator('img')
+    const greeting = page.getByTestId('hero-greeting')
+    const brandMark = greeting.locator('xpath=preceding-sibling::span[1]').locator('img')
     expect(await brandMark.getAttribute('src')).toBe('/favicon.png')
     expect(await brandMark.getAttribute('width')).toBe('34')
     expect(await brandMark.getAttribute('height')).toBe('34')
@@ -150,7 +150,7 @@ describe('web e2e: startup auto-selection', () => {
     // seat with `visibility:hidden`, which Playwright reports as not visible).
     await page.waitForSelector(ROOT_PHASE, { timeout: 15_000 })
     expect(await page.locator(ROOT_PHASE).first().getAttribute('data-phase')).toBe('hero')
-    expect(await page.getByText('Into the Unknown').isVisible()).toBe(true)
+    expect(await page.getByTestId('hero-greeting').isVisible()).toBe(true)
     expect(await page.locator('textarea').first().isVisible()).toBe(true)
 
     releaseHistory()

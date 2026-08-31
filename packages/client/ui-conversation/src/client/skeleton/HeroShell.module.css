@@ -1,4 +1,4 @@
-/* 新会话引导层：品牌图标和标题，以及共享 InputBar 卡片上方的工作区选择器。 */
+/* 新会话引导层：品牌图标和时段问候，以及共享 InputBar 卡片上方的工作区选择器。 */
 
 .root {
   display: flex;
@@ -21,47 +21,30 @@
   overflow: visible;
 }
 
-/* 标题和品牌图标居中排列，预览标记放在标题右上角。 */
+/* 问候和品牌图标居中排列。 */
 .headline {
-  display: grid;
-  grid-template-columns: 34px auto auto;
-  column-gap: 10px;
+  display: flex;
   align-items: center;
   justify-content: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.greetingText {
+  min-width: 0;
+  max-width: calc(100% - 44px);
+  overflow-wrap: anywhere;
+  color: var(--dsw-alias-label-primary);
   font-size: 26px;
   line-height: 32px;
   font-weight: 500;
-  color: var(--dsw-alias-label-primary);
-}
-
-.headlineText {
-  grid-row: 1;
-  grid-column: 2;
-}
-
-.previewBadge {
-  grid-row: 1;
-  grid-column: 3;
-  align-self: start;
-  margin-top: 2px;
-  margin-left: -3px;
-  padding: 1px 7px 0;
-  border: 1px solid var(--dsw-alias-interactive-bg-hover);
-  border-radius: 24px;
-  background: var(--dsw-alias-state-business-tertiary);
-  color: var(--dsw-alias-label-primary-bluish);
-  font-family: var(--ds-font-family-code);
-  font-size: 12px;
-  line-height: 18px;
-  font-weight: 500;
-  white-space: nowrap;
+  text-align: left;
 }
 
 /* 品牌图标保持固定的栅格尺寸，以免标题在图片加载后发生位移。 */
 .brandMarkHitbox {
-  grid-row: 1;
-  grid-column: 1;
   display: inline-flex;
+  flex: none;
   align-items: center;
   justify-content: center;
 }
@@ -100,18 +83,18 @@
   padding-left: 8px;
 }
 
-/* 工作区选择框保留稳定的输入面几何，来源与路径等附加信息可在其中扩展。 */
+/* 工作区选择器与模式选择器共用紧凑的透明 chip 外观。 */
 .workspace {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   max-width: min(100%, 360px);
-  min-width: 248px;
-  min-height: 36px;
-  padding: 0 12px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 10px;
-  background: var(--dsw-alias-button-elevated-fill);
+  min-width: 0;
+  min-height: 28px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 16px;
+  background: transparent;
   color: var(--dsw-alias-label-primary);
   font-size: 13px;
   line-height: 20px;
@@ -121,8 +104,12 @@
 
 .workspace:not(:disabled):hover,
 .workspace[aria-expanded='true'] {
-  border-color: var(--dsw-alias-border-l3);
-  background: var(--dsw-alias-button-floating-hover);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.workspace:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--dsw-alias-border-l3);
 }
 
 /* Locked form (bound guidance state): a static echo — no hover feedback, no
@@ -137,8 +124,6 @@
 }
 
 .workspaceLabel {
-  flex: 1;
-  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

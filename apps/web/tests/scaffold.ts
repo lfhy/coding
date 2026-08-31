@@ -864,6 +864,8 @@ function normalizeAria(snapshot: string, workspaceCwd: string): string {
     .replace(/\d{1,2}月\d{1,2}日 \d{2}:\d{2}/g, '{{clock}}')
     .replace(/(?<!\d)\d{1,2}:\d{2}:\d{2}(?:\.\d+)?(?:\s*[AP]M)?(?!\d)/gi, '{{clock}}')
     .replace(/(?<!\d)\d{2}:\d{2}(?!\d)/g, '{{clock}}')
+    .replace(/Good (?:morning, a new day is starting|midday, take a short break|afternoon, I will take it from here|evening, you did a lot today)/g, '{{greeting}}')
+    .replace(/(?:早上好呀，新的一天开始啦|中午好呀，要不要先休息一下|下午好呀，接下来交给我吧|晚上好呀，今天辛苦啦)/g, '{{greeting}}')
 }
 
 /**

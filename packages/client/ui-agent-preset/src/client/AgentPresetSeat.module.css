@@ -26,6 +26,11 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
+.seat:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--dsw-alias-border-l3);
+}
+
 .seat:disabled {
   cursor: default;
   color: var(--dsw-alias-label-quaternary);

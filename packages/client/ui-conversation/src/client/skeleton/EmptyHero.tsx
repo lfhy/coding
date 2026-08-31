@@ -1,7 +1,7 @@
-// 空白草稿阶段的会话引导层：品牌图标、标题、发光背景和工作区行。这里只承担呈现；
+// 空白草稿阶段的会话引导层：品牌图标、时段问候、发光背景和工作区行。这里只承担呈现；
 // 常驻编辑器仍由 ConversationRoot 持有，以便在引导层和常规编辑器间切换时保留 textarea。
 
-import { useId } from 'react'
+import { useEffect, useId, useState } from 'react'
 import type { ReactNode, RefObject } from 'react'
 import {
   BrandMark, IconChevronDownOutline14, IconFolderClose16, IconFolderOpen16, IconNewChatOutline16,
@@ -12,6 +12,64 @@ import css from './HeroShell.module.css'
 
 /** The owner's locale seat type, passed to hero chrome as a plain prop. */
 type HeroTranslate = ConversationSlotProps['t']
+
+/** 空态问候按本地时间划分的四个时段。 */
+export type HeroGreetingPeriod = 'morning' | 'noon' | 'afternoon' | 'evening'
+
+/** 空态问候使用的本地化键。 */
+export type HeroGreetingKey =
+  | 'hero.greeting.morning'
+  | 'hero.greeting.noon'
+  | 'hero.greeting.afternoon'
+  | 'hero.greeting.evening'
+
+/**
+ * 根据本地小时选择空态问候时段。
+ * @param hour - `Date#getHours()` 返回的本地小时。
+ * @returns 当前问候时段。
+ */
+export function heroGreetingPeriod(hour: number): HeroGreetingPeriod {
+  if (hour >= 5 && hour < 11) return 'morning'
+  if (hour >= 11 && hour < 14) return 'noon'
+  if (hour >= 14 && hour < 19) return 'afternoon'
+  return 'evening'
+}
+
+/**
+ * 根据本地小时返回空态问候的本地化键。
+ * @param hour - `Date#getHours()` 返回的本地小时。
+ * @returns 问候文案键。
+ */
+export function heroGreetingKey(hour: number): HeroGreetingKey {
+  return `hero.greeting.${heroGreetingPeriod(hour)}`
+}
+
+/**
+ * 计算下一次问候时段切换前的等待时间。
+ * @param now - 当前本地时间。
+ * @returns 到下一个时段边界的毫秒数，包含一个短暂的边界缓冲。
+ */
+export function heroGreetingDelay(now: Date): number {
+  const hour = now.getHours()
+  const nextHour = hour < 5 ? 5 : hour < 11 ? 11 : hour < 14 ? 14 : hour < 19 ? 19 : 5
+  const next = new Date(now)
+  next.setMinutes(0, 0, 0)
+  if (nextHour <= hour) next.setDate(next.getDate() + 1)
+  next.setHours(nextHour, 0, 0, 0)
+  return Math.max(1_000, next.getTime() - now.getTime() + 100)
+}
+
+/** 只在四个时段边界更新一次，避免空态组件随分钟变化反复渲染。 */
+function useHeroClock(): Date {
+  const [now, setNow] = useState(() => new Date())
+
+  useEffect(() => {
+    const timer = setTimeout(() => { setNow(new Date()) }, heroGreetingDelay(now))
+    return () => { clearTimeout(timer) }
+  }, [now])
+
+  return now
+}
 
 /**
  * Basename label for the workspace chip (the shared derivation);
@@ -104,17 +162,21 @@ export interface HeroShellProps {
  * @returns 居中的会话引导元素树。
  */
 export function HeroShell({ t, renderSlot, children }: HeroShellProps) {
+  const now = useHeroClock()
+
   return (
     <div className={css.root}>
       <div className={css.stack}>
         <div className={css.headline}>
-          {/* 品牌图标位于标题前方，和标题保持 10px 间距。 */}
-          <span className={css.brandMarkHitbox}>
+          {/* 品牌图标位于问候前方，和文字保持 10px 间距。 */}
+          <span className={css.brandMarkHitbox} data-testid="hero-brand-mark">
             {renderSlot('conversation.hero.brand.mark', { size: 34, className: css.brandMark }, {
               fallback: <BrandMark size={34} className={css.brandMark} />,
             })}
           </span>
-          <span className={css.headlineText}>{t('hero.headline')}</span>
+          <span className={css.greetingText} data-testid="hero-greeting">
+            {t(heroGreetingKey(now.getHours()))}
+          </span>
         </div>
         <div className={css.body}>
           {/* The resident composer (ConversationRoot's root-owned scrollport;
