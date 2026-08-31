@@ -160,21 +160,27 @@ describe('LocalBashExecutor.run', () => {
     expect('dshEnv' in spec).toBe(false)
   })
 
-  it('routes a marker workdir through the desktop bridge instead of spawning local bash', async () => {
+  it('routes a marker workdir through the managed remote-process bridge instead of spawning local bash', async () => {
     const markerRoot = mkdtempSync(join(tmpdir(), 'dsh-bash-remote-marker-'))
     writeFileSync(join(markerRoot, REMOTE_WORKSPACE_MARKER), JSON.stringify({
-      version: 1,
+      version: 2,
       remoteRoot: '/srv/project',
       connectionId: 'connection-1',
+      generation: 1,
     }))
     const originalUrl = process.env.DSH_REMOTE_BRIDGE_URL
     const originalToken = process.env.DSH_REMOTE_BRIDGE_TOKEN
-    let received: {
+    const received: Array<{
       url: string | undefined
       authorization: string | undefined
       connection: string | string[] | undefined
       body?: Record<string, unknown>
-    } | undefined
+    }> = []
+    const running = {
+      id: 'p'.repeat(32), pid: 4321, running: true, closed: false,
+      exitCode: null, signal: null, stdinClosed: true, startedAt: 1,
+    }
+    const closed = { ...running, running: false, closed: true, exitCode: 0, exitedAt: 2 }
     const server = createServer((request, response) => {
       const chunks: Buffer[] = []
       request.on('data', (chunk: Buffer) => { chunks.push(chunk) })
@@ -183,21 +189,33 @@ describe('LocalBashExecutor.run', () => {
         const body = typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
           ? parsed as Record<string, unknown>
           : undefined
-        received = {
+        received.push({
           url: request.url,
           authorization: request.headers.authorization,
           connection: request.headers['x-coding-remote-connection'],
           ...body === undefined ? {} : { body },
-        }
+        })
         response.setHeader('Content-Type', 'application/json')
-        response.end(JSON.stringify({
-          exitCode: 0,
-          timedOut: false,
-          stdout: 'remote output\n',
-          stderr: '',
-          stdoutTruncated: false,
-          stderrTruncated: false,
-        }))
+        switch (request.url) {
+          case '/v1/processes/start':
+            response.end(JSON.stringify({ process: running }))
+            return
+          case '/v1/processes/read': {
+            const stdout = body?.stream === 'stdout'
+            response.end(JSON.stringify({
+              dataBase64: stdout ? Buffer.from('remote output\n').toString('base64') : '',
+              nextOffset: stdout ? Buffer.byteLength('remote output\n') : 0,
+              lossy: false, truncated: false, eof: true, closed: true, process: closed,
+            }))
+            return
+          }
+          case '/v1/processes/wait':
+            response.end(JSON.stringify({ completed: true, process: closed }))
+            return
+          default:
+            response.statusCode = 500
+            response.end(JSON.stringify({ error: { code: 'unexpected-route' } }))
+        }
       })
     })
     try {
@@ -210,12 +228,15 @@ describe('LocalBashExecutor.run', () => {
       const result = await bash.run(bash.resolve({ command: 'pwd', workdir: markerRoot }))
 
       expect(result.stdout).toEqual({ text: 'remote output\n', truncated: false })
-      expect(received).toMatchObject({
-        url: '/v1/exec',
+      expect(received).toContainEqual(expect.objectContaining({
+        url: '/v1/processes/start',
         authorization: 'Bearer test-bridge-token-which-is-long-enough',
         connection: 'connection-1',
+      }))
+      expect(received.find(request => request.url === '/v1/processes/start')?.body).toMatchObject({
+        path: '/srv/project', argv: ['bash', '-c', 'pwd'],
+        stdout: { mode: 'collect' }, stderr: { mode: 'collect' },
       })
-      expect(received?.body).toMatchObject({ path: '/srv/project', shell: 'bash', command: 'pwd' })
     } finally {
       if (originalUrl === undefined) delete process.env.DSH_REMOTE_BRIDGE_URL
       else process.env.DSH_REMOTE_BRIDGE_URL = originalUrl
@@ -229,27 +250,47 @@ describe('LocalBashExecutor.run', () => {
   it('waits for the agent timeout result during the transport grace period', async () => {
     const markerRoot = mkdtempSync(join(tmpdir(), 'dsh-bash-remote-timeout-'))
     writeFileSync(join(markerRoot, REMOTE_WORKSPACE_MARKER), JSON.stringify({
-      version: 1,
+      version: 2,
       remoteRoot: '/srv/project',
       connectionId: 'connection-1',
+      generation: 1,
     }))
     const originalUrl = process.env.DSH_REMOTE_BRIDGE_URL
     const originalToken = process.env.DSH_REMOTE_BRIDGE_TOKEN
+    const running = {
+      id: 'p'.repeat(32), pid: 4321, running: true, closed: false,
+      exitCode: null, signal: null, stdinClosed: true, startedAt: 1,
+    }
+    const closed = { ...running, running: false, closed: true, signal: 'SIGKILL', exitedAt: 2 }
     const server = createServer((request, response) => {
-      request.resume()
+      const chunks: Buffer[] = []
+      request.on('data', (chunk: Buffer) => { chunks.push(chunk) })
       request.on('end', () => {
-        setTimeout(() => {
-          response.setHeader('Content-Type', 'application/json')
-          response.end(JSON.stringify({
-            exitCode: null,
-            signal: 'SIGKILL',
-            timedOut: true,
-            stdout: 'before timeout\n',
-            stderr: '',
-            stdoutTruncated: false,
-            stderrTruncated: false,
-          }))
-        }, 50)
+        const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>
+        response.setHeader('Content-Type', 'application/json')
+        switch (request.url) {
+          case '/v1/processes/start':
+            setTimeout(() => { response.end(JSON.stringify({ process: running })) }, 50)
+            return
+          case '/v1/processes/read': {
+            const stdout = body.stream === 'stdout'
+            response.end(JSON.stringify({
+              dataBase64: stdout ? Buffer.from('before timeout\n').toString('base64') : '',
+              nextOffset: stdout ? Buffer.byteLength('before timeout\n') : 0,
+              lossy: false, truncated: false, eof: true, closed: true, process: closed,
+            }))
+            return
+          }
+          case '/v1/processes/wait':
+            response.end(JSON.stringify({ completed: true, process: closed }))
+            return
+          case '/v1/processes/kill':
+            response.end(JSON.stringify({ process: closed }))
+            return
+          default:
+            response.statusCode = 500
+            response.end(JSON.stringify({ error: { code: 'unexpected-route' } }))
+        }
       })
     })
     try {
@@ -281,18 +322,63 @@ describe('LocalBashExecutor.run', () => {
 })
 
 describe('LocalBashExecutor.start (background process handles)', () => {
-  it('rejects a remote marker workdir synchronously instead of creating a lossy pseudo-process', async () => {
+  it('publishes a marker workdir as a remote process handle', async () => {
     const markerRoot = mkdtempSync(join(tmpdir(), 'dsh-bash-remote-background-'))
     writeFileSync(join(markerRoot, REMOTE_WORKSPACE_MARKER), JSON.stringify({
-      version: 1,
+      version: 2,
       remoteRoot: '/srv/project',
       connectionId: 'connection-1',
+      generation: 1,
     }))
+    const originalUrl = process.env.DSH_REMOTE_BRIDGE_URL
+    const originalToken = process.env.DSH_REMOTE_BRIDGE_TOKEN
+    const running = {
+      id: 'p'.repeat(32), pid: 4321, running: true, closed: false,
+      exitCode: null, signal: null, stdinClosed: true, startedAt: 1,
+    }
+    const closed = { ...running, running: false, closed: true, exitCode: 0, exitedAt: 2 }
+    const server = createServer((request, response) => {
+      const chunks: Buffer[] = []
+      request.on('data', (chunk: Buffer) => { chunks.push(chunk) })
+      request.on('end', () => {
+        const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>
+        response.setHeader('Content-Type', 'application/json')
+        switch (request.url) {
+          case '/v1/processes/start':
+            response.end(JSON.stringify({ process: running }))
+            return
+          case '/v1/processes/read':
+            response.end(JSON.stringify({
+              dataBase64: body.stream === 'stdout' ? Buffer.from('remote background\n').toString('base64') : '',
+              nextOffset: body.stream === 'stdout' ? Buffer.byteLength('remote background\n') : 0,
+              lossy: false, truncated: false, eof: true, closed: true, process: closed,
+            }))
+            return
+          case '/v1/processes/wait':
+            response.end(JSON.stringify({ completed: true, process: closed }))
+            return
+          default:
+            response.statusCode = 500
+            response.end(JSON.stringify({ error: { code: 'unexpected-route' } }))
+        }
+      })
+    })
     try {
+      await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+      const address = server.address() as AddressInfo
+      process.env.DSH_REMOTE_BRIDGE_URL = `http://127.0.0.1:${address.port}`
+      process.env.DSH_REMOTE_BRIDGE_TOKEN = 'test-bridge-token-which-is-long-enough'
       const { bash } = await setup()
-      expect(() => { bash.start(bash.resolve({ command: 'sleep 1', workdir: markerRoot })) })
-        .toThrow('remote background commands are unsupported')
+      const remoteProcess = bash.start(bash.resolve({ command: 'sleep 1', workdir: markerRoot }))
+      await remoteProcess.done
+      expect(remoteProcess.status).toBe('completed')
+      expect(remoteProcess.readOutput()).toEqual({ delta: 'remote background\n', lossy: false })
     } finally {
+      if (originalUrl === undefined) delete process.env.DSH_REMOTE_BRIDGE_URL
+      else process.env.DSH_REMOTE_BRIDGE_URL = originalUrl
+      if (originalToken === undefined) delete process.env.DSH_REMOTE_BRIDGE_TOKEN
+      else process.env.DSH_REMOTE_BRIDGE_TOKEN = originalToken
+      await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
       rmSync(markerRoot, { recursive: true, force: true })
     }
   })

@@ -1176,9 +1176,10 @@ describe('the model-facing bash tool builds its request from named args only (no
   it('maps a Windows remote absolute workdir through the session marker before resolving the shell request', async () => {
     const markerRoot = mkdtempSync(join(tmpdir(), 'dsh-tool-bash-remote-marker-'))
     writeFileSync(join(markerRoot, REMOTE_WORKSPACE_MARKER), JSON.stringify({
-      version: 1,
+      version: 2,
       remoteRoot: String.raw`C:\project`,
       connectionId: 'connection-1',
+      generation: 1,
     }))
     const { ctx, bash } = await setupRecording()
     const owner = registerFakeAgent(ctx, 'request-remote-workdir')
@@ -1209,9 +1210,10 @@ describe('the model-facing bash tool builds its request from named args only (no
   ])('rejects remote marker workdir %s before a %s command reaches an executor', async (workdir, runInBackground) => {
     const markerRoot = mkdtempSync(join(tmpdir(), 'dsh-tool-bash-remote-marker-'))
     writeFileSync(join(markerRoot, REMOTE_WORKSPACE_MARKER), JSON.stringify({
-      version: 1,
+      version: 2,
       remoteRoot: '/srv/project',
       connectionId: 'connection-1',
+      generation: 1,
     }))
     const { ctx, bash } = await setupRecording()
     const owner = registerFakeAgent(ctx, 'request-remote-escape')

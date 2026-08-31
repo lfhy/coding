@@ -6,6 +6,8 @@
  */
 
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { createServer } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
@@ -16,6 +18,7 @@ import type { ConfinedArgv, SandboxExecutionPolicy, SandboxMode, SandboxPolicy }
 import { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import { SandboxBashExecutor } from '@deepseek-ai/dsh-bash-sandbox'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
+import { REMOTE_WORKSPACE_MARKER } from '@deepseek-ai/dsh-subprocess'
 import type { SubprocessHandle, SubprocessOutputReader } from '@deepseek-ai/dsh-subprocess'
 import { classifyDenial, classifyRunnerFailure, isRunnerSpawnFailure } from '../src/helpers.ts'
 import type { Config } from '@deepseek-ai/dsh-bash-sandbox'
@@ -168,9 +171,10 @@ describe('fail closed', () => {
   it('refuses a marker workdir under a confined local policy before any local sandbox runner executes', async () => {
     const markerRoot = mkdtempSync(join(tmpdir(), 'dsh-bash-sandbox-remote-marker-'))
     writeFileSync(join(markerRoot, '.coding-remote-workspace.json'), JSON.stringify({
-      version: 1,
+      version: 2,
       remoteRoot: '/srv/project',
       connectionId: 'connection-1',
+      generation: 1,
     }))
     const { bash, calls } = await setup({ mode: 'workspace-write' })
     try {
@@ -182,19 +186,64 @@ describe('fail closed', () => {
     }
   })
 
-  it('refuses a remote background command even under danger-full-access', async () => {
+  it('routes a danger-full-access remote background command to the Go process endpoint', async () => {
     const markerRoot = mkdtempSync(join(tmpdir(), 'dsh-bash-sandbox-remote-background-'))
-    writeFileSync(join(markerRoot, '.coding-remote-workspace.json'), JSON.stringify({
-      version: 1,
+    writeFileSync(join(markerRoot, REMOTE_WORKSPACE_MARKER), JSON.stringify({
+      version: 2,
       remoteRoot: '/srv/project',
       connectionId: 'connection-1',
+      generation: 1,
     }))
+    const originalUrl = process.env.DSH_REMOTE_BRIDGE_URL
+    const originalToken = process.env.DSH_REMOTE_BRIDGE_TOKEN
+    const running = {
+      id: 'p'.repeat(32), pid: 4321, running: true, closed: false,
+      exitCode: null, signal: null, stdinClosed: true, startedAt: 1,
+    }
+    const closed = { ...running, running: false, closed: true, exitCode: 0, exitedAt: 2 }
+    const server = createServer((request, response) => {
+      const chunks: Buffer[] = []
+      request.on('data', (chunk: Buffer) => { chunks.push(chunk) })
+      request.on('end', () => {
+        const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>
+        response.setHeader('Content-Type', 'application/json')
+        switch (request.url) {
+          case '/v1/processes/start':
+            response.end(JSON.stringify({ process: running }))
+            return
+          case '/v1/processes/read':
+            response.end(JSON.stringify({
+              dataBase64: body.stream === 'stdout' ? Buffer.from('remote background\n').toString('base64') : '',
+              nextOffset: body.stream === 'stdout' ? Buffer.byteLength('remote background\n') : 0,
+              lossy: false, truncated: false, eof: true, closed: true, process: closed,
+            }))
+            return
+          case '/v1/processes/wait':
+            response.end(JSON.stringify({ completed: true, process: closed }))
+            return
+          default:
+            response.statusCode = 500
+            response.end(JSON.stringify({ error: { code: 'unexpected-route' } }))
+        }
+      })
+    })
     const { bash, calls } = await setup({ mode: 'danger-full-access' })
     try {
-      expect(() => { bash.start(bash.resolve({ command: 'sleep 1', workdir: markerRoot })) })
-        .toThrow('remote background commands are unsupported')
+      await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+      const address = server.address() as AddressInfo
+      process.env.DSH_REMOTE_BRIDGE_URL = `http://127.0.0.1:${address.port}`
+      process.env.DSH_REMOTE_BRIDGE_TOKEN = 'test-bridge-token-which-is-long-enough'
+      const remoteProcess = bash.start(bash.resolve({ command: 'sleep 1', workdir: markerRoot }))
+      await remoteProcess.done
+      expect(remoteProcess.status).toBe('completed')
+      expect(remoteProcess.readOutput()).toEqual({ delta: 'remote background\n', lossy: false })
       expect(calls).toHaveLength(0)
     } finally {
+      if (originalUrl === undefined) delete process.env.DSH_REMOTE_BRIDGE_URL
+      else process.env.DSH_REMOTE_BRIDGE_URL = originalUrl
+      if (originalToken === undefined) delete process.env.DSH_REMOTE_BRIDGE_TOKEN
+      else process.env.DSH_REMOTE_BRIDGE_TOKEN = originalToken
+      await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
       rmSync(markerRoot, { recursive: true, force: true })
     }
   })

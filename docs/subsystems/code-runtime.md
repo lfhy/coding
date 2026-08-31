@@ -8,7 +8,7 @@ Source: [`packages/code-runtime/code-runtime/src/types.ts`](../../packages/code-
 
 ## The run: request in, result out
 
-A `CodeRunRequest` carries **everything the runtime acts on** — per the "explicit > implicit at package boundaries" rule, defaulting (time budgets, output caps) is the implementation's validated config, never a hidden `??` inside `run()`:
+A `CodeRunRequest` carries **everything the runtime acts on** — per the "explicit > implicit at package boundaries" rule, defaulting (time budgets, output caps) is the implementation's validated config, never a hidden `??` inside `run()`. Its optional `cwd` is a caller-owned workspace execution coordinate, not a program global; the desktop worker uses a current Remote-SSH marker to choose a fresh constrained Goja child while binding calls remain on the local Host ([decision](../../.agents/notes/implemented/feature/2026-08-31-desktop-remote-ssh-go-execution-world.md)):
 
 ```ts type-equiv
 /**
@@ -25,6 +25,12 @@ interface CodeRunRequest {
    * {@link CodeRunResult.value}.
    */
   program: string
+  /**
+   * 调用方拥有工作区时传入的执行世界工作目录。提供方可据此选择本地或
+   * Remote-SSH 基底；它不会暴露给程序，省略时仍采用没有 Workspace 的
+   * 调用方原有宿主默认执行方式。
+   */
+  cwd?: string
   /** Host functions exposed to the program, one global object per namespace. */
   bindings: CodeBindingNamespace[]
   /**

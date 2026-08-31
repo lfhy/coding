@@ -10,10 +10,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func agentRequest(server *Server, method, path, body string) *httptest.ResponseRecorder {
@@ -75,6 +77,350 @@ func TestRoutesRejectWrongMethodAndTrailingJSON(t *testing.T) {
 		if response := agentRequest(server, http.MethodPost, removed, `{}`); response.Code != http.StatusMethodNotAllowed {
 			t.Fatalf("removed route %s status = %d", removed, response.Code)
 		}
+	}
+}
+
+func TestCodeRunRoutesPollReplyAndClassifyRecoverableErrors(t *testing.T) {
+	server, err := NewServer(strings.Repeat("a", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = server.Shutdown(context.Background()) })
+	if response := agentRequest(server, http.MethodGet, "/v1/code/start", ""); response.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("GET code start status = %d, want %d", response.Code, http.StatusMethodNotAllowed)
+	}
+
+	root := t.TempDir()
+	startedResponse := agentJSONRequest(t, server, "/v1/code/start", CodeRunStartRequest{
+		// callRemoteWorkspaceBridge 会给所有请求附带 root；Code API 必须接受它。
+		Root:             root,
+		Program:          `const result = await tools.echo({ value: 41 }); console.info("ready"); return result.value + 1`,
+		Bindings:         []CodeBindingNamespace{{Global: "tools", Names: []string{"echo"}}},
+		ComputeMs:        1_000,
+		MemoryLimitBytes: defaultCodeMemoryLimitBytes,
+		StartNonce:       "10000000000000000000000000000001",
+	})
+	if startedResponse.Code != http.StatusOK {
+		t.Fatalf("code start status = %d: %s", startedResponse.Code, startedResponse.Body.String())
+	}
+	var started CodeRunStartResponse
+	if err := json.Unmarshal(startedResponse.Body.Bytes(), &started); err != nil {
+		t.Fatal(err)
+	}
+	if started.ID == "" {
+		t.Fatal("code start returned an empty session id")
+	}
+	retriedResponse := agentJSONRequest(t, server, "/v1/code/start", CodeRunStartRequest{
+		Root: root, Program: `const result = await tools.echo({ value: 41 }); console.info("ready"); return result.value + 1`,
+		Bindings: []CodeBindingNamespace{{Global: "tools", Names: []string{"echo"}}}, ComputeMs: 1_000, MemoryLimitBytes: defaultCodeMemoryLimitBytes,
+		StartNonce: "10000000000000000000000000000001",
+	})
+	if retriedResponse.Code != http.StatusOK {
+		t.Fatalf("retried code start = %d: %s", retriedResponse.Code, retriedResponse.Body.String())
+	}
+	var retried CodeRunStartResponse
+	if err := json.Unmarshal(retriedResponse.Body.Bytes(), &retried); err != nil || retried.ID != started.ID {
+		t.Fatalf("retried code start = %#v, %v; want id %q", retried, err, started.ID)
+	}
+	conflictingResponse := agentJSONRequest(t, server, "/v1/code/start", CodeRunStartRequest{
+		Root: root, Program: `return 0`, ComputeMs: 1_000, MemoryLimitBytes: defaultCodeMemoryLimitBytes, StartNonce: "10000000000000000000000000000001",
+	})
+	if conflictingResponse.Code != http.StatusConflict || responseErrorCode(t, conflictingResponse) != "code-start-nonce-conflict" {
+		t.Fatalf("conflicting code start = %d: %s", conflictingResponse.Code, conflictingResponse.Body.String())
+	}
+
+	firstResponse := agentJSONRequest(t, server, "/v1/code/next", CodeRunNextRequest{
+		Root: root, ID: started.ID, WaitMs: 5_000,
+	})
+	if firstResponse.Code != http.StatusOK {
+		t.Fatalf("first code poll status = %d: %s", firstResponse.Code, firstResponse.Body.String())
+	}
+	var first CodeRunNextResponse
+	if err := json.Unmarshal(firstResponse.Body.Bytes(), &first); err != nil {
+		t.Fatal(err)
+	}
+	if len(first.Events) != 1 || first.Events[0].Type != "tool_call" {
+		t.Fatalf("first code poll = %#v", first)
+	}
+	call := first.Events[0]
+	if call.CallID == 0 || call.Global != "tools" || call.Name != "echo" {
+		t.Fatalf("tool call = %#v", call)
+	}
+	replyResponse := agentJSONRequest(t, server, "/v1/code/reply", CodeRunReplyRequest{
+		Root: root, ID: started.ID, CallID: call.CallID, OK: true, Value: json.RawMessage(`{"value":41}`),
+	})
+	if replyResponse.Code != http.StatusOK || replyResponse.Body.String() != "{\"accepted\":true}\n" {
+		t.Fatalf("code reply = %d %s", replyResponse.Code, replyResponse.Body.String())
+	}
+	finishedResponse := agentJSONRequest(t, server, "/v1/code/next", CodeRunNextRequest{
+		Root: root, ID: started.ID, After: first.Cursor, WaitMs: 5_000,
+	})
+	if finishedResponse.Code != http.StatusOK {
+		t.Fatalf("final code poll status = %d: %s", finishedResponse.Code, finishedResponse.Body.String())
+	}
+	var finished CodeRunNextResponse
+	if err := json.Unmarshal(finishedResponse.Body.Bytes(), &finished); err != nil {
+		t.Fatal(err)
+	}
+	for !finished.Done {
+		finishedResponse = agentJSONRequest(t, server, "/v1/code/next", CodeRunNextRequest{
+			Root: root, ID: started.ID, After: finished.Cursor, WaitMs: 5_000,
+		})
+		if finishedResponse.Code != http.StatusOK {
+			t.Fatalf("continued final poll status = %d: %s", finishedResponse.Code, finishedResponse.Body.String())
+		}
+		if err := json.Unmarshal(finishedResponse.Body.Bytes(), &finished); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(finished.Events) == 0 {
+		t.Fatalf("terminal code poll = %#v", finished)
+	}
+	terminal := finished.Events[len(finished.Events)-1]
+	if terminal.Type != "done" || terminal.Error != nil {
+		t.Fatalf("terminal event = %#v", terminal)
+	}
+	requireCodeJSON(t, terminal.Value, `42`)
+	if len(terminal.Logs) != 1 || terminal.Logs[0] != "ready" {
+		t.Fatalf("terminal logs = %#v", terminal.Logs)
+	}
+
+	missing := agentJSONRequest(t, server, "/v1/code/next", CodeRunNextRequest{ID: "missing", WaitMs: 1})
+	if missing.Code != http.StatusNotFound || responseErrorCode(t, missing) != "code-session-not-found" {
+		t.Fatalf("missing code session = %d %s", missing.Code, missing.Body.String())
+	}
+	unknownCall := agentJSONRequest(t, server, "/v1/code/reply", CodeRunReplyRequest{
+		Root: root, ID: started.ID, CallID: call.CallID + 1, OK: true, Value: json.RawMessage(`null`),
+	})
+	if unknownCall.Code != http.StatusConflict || responseErrorCode(t, unknownCall) != "code-call-not-pending" {
+		t.Fatalf("unknown code call = %d %s", unknownCall.Code, unknownCall.Body.String())
+	}
+}
+
+func TestCodeRunRoutesCancelAndServerShutdownAbortRuns(t *testing.T) {
+	server, err := NewServer(strings.Repeat("a", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = server.Shutdown(context.Background()) })
+	root := t.TempDir()
+	startedResponse := agentJSONRequest(t, server, "/v1/code/start", CodeRunStartRequest{
+		Root:             root,
+		Program:          `await tools.wait({}); return "unreachable"`,
+		Bindings:         []CodeBindingNamespace{{Global: "tools", Names: []string{"wait"}}},
+		ComputeMs:        1_000,
+		MemoryLimitBytes: defaultCodeMemoryLimitBytes,
+		StartNonce:       "10000000000000000000000000000002",
+	})
+	if startedResponse.Code != http.StatusOK {
+		t.Fatalf("code start status = %d: %s", startedResponse.Code, startedResponse.Body.String())
+	}
+	var started CodeRunStartResponse
+	if err := json.Unmarshal(startedResponse.Body.Bytes(), &started); err != nil {
+		t.Fatal(err)
+	}
+	firstResponse := agentJSONRequest(t, server, "/v1/code/next", CodeRunNextRequest{Root: root, ID: started.ID, WaitMs: 5_000})
+	if firstResponse.Code != http.StatusOK {
+		t.Fatalf("first code poll status = %d: %s", firstResponse.Code, firstResponse.Body.String())
+	}
+	var first CodeRunNextResponse
+	if err := json.Unmarshal(firstResponse.Body.Bytes(), &first); err != nil {
+		t.Fatal(err)
+	}
+	if len(first.Events) != 1 || first.Events[0].Type != "tool_call" {
+		t.Fatalf("first code poll = %#v", first)
+	}
+	canceled := agentJSONRequest(t, server, "/v1/code/cancel", CodeRunCancelRequest{Root: root, ID: started.ID})
+	if canceled.Code != http.StatusOK || canceled.Body.String() != "{\"accepted\":true}\n" {
+		t.Fatalf("code cancel = %d %s", canceled.Code, canceled.Body.String())
+	}
+	if session := server.codeRuns.session(started.ID); session == nil {
+		t.Fatal("canceled session disappeared before its terminal event could be replayed")
+	} else {
+		select {
+		case <-session.terminalDone:
+		default:
+			t.Fatal("cancel accepted before the terminal event was collected")
+		}
+	}
+	terminalResponse := agentJSONRequest(t, server, "/v1/code/next", CodeRunNextRequest{Root: root, ID: started.ID, After: first.Cursor, WaitMs: 5_000})
+	if terminalResponse.Code != http.StatusOK {
+		t.Fatalf("cancel terminal status = %d: %s", terminalResponse.Code, terminalResponse.Body.String())
+	}
+	var terminal CodeRunNextResponse
+	if err := json.Unmarshal(terminalResponse.Body.Bytes(), &terminal); err != nil {
+		t.Fatal(err)
+	}
+	if !terminal.Done || len(terminal.Events) == 0 || terminal.Events[len(terminal.Events)-1].Error == nil || terminal.Events[len(terminal.Events)-1].Error.Kind != "abort" {
+		t.Fatalf("cancel terminal = %#v", terminal)
+	}
+
+	secondStarted := agentJSONRequest(t, server, "/v1/code/start", CodeRunStartRequest{
+		Program:          `await tools.wait({}); return "unreachable"`,
+		Bindings:         []CodeBindingNamespace{{Global: "tools", Names: []string{"wait"}}},
+		ComputeMs:        1_000,
+		MemoryLimitBytes: defaultCodeMemoryLimitBytes,
+		StartNonce:       "10000000000000000000000000000003",
+	})
+	if secondStarted.Code != http.StatusOK {
+		t.Fatalf("second code start status = %d: %s", secondStarted.Code, secondStarted.Body.String())
+	}
+	var second CodeRunStartResponse
+	if err := json.Unmarshal(secondStarted.Body.Bytes(), &second); err != nil {
+		t.Fatal(err)
+	}
+	secondSession := server.codeRuns.session(second.ID)
+	if secondSession == nil {
+		t.Fatal("second code session was not registered")
+	}
+	if err := server.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-secondSession.collectorDone:
+		terminal := secondSession.next(context.Background(), 0, time.Second)
+		if len(terminal.Events) == 0 || terminal.Events[len(terminal.Events)-1].Error == nil || terminal.Events[len(terminal.Events)-1].Error.Kind != "abort" {
+			t.Fatalf("shutdown terminal = %#v", terminal)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("server shutdown did not collect the code terminal event")
+	}
+	missingAfterShutdown := agentJSONRequest(t, server, "/v1/code/cancel", CodeRunCancelRequest{ID: second.ID})
+	if missingAfterShutdown.Code != http.StatusNotFound || responseErrorCode(t, missingAfterShutdown) != "code-session-not-found" {
+		t.Fatalf("shutdown session = %d %s", missingAfterShutdown.Code, missingAfterShutdown.Body.String())
+	}
+}
+
+func TestCodeRunStartRouteReturnsCapacityStatus(t *testing.T) {
+	server, err := NewServer(strings.Repeat("a", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessions, err := NewCodeRunSessions(CodeRunSessionsOptions{
+		MaxSessions: 1,
+		RunnerOptions: CodeRunnerOptions{
+			DefaultTimeout: time.Second, MaxTimeout: time.Second, MaxOutputBytes: 1 << 20,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.codeRuns = sessions
+	t.Cleanup(func() { _ = server.Shutdown(context.Background()) })
+	missingLimit := agentJSONRequest(t, server, "/v1/code/start", CodeRunStartRequest{Program: `return 1`})
+	if missingLimit.Code != http.StatusBadRequest || responseErrorCode(t, missingLimit) != "invalid-code-request" {
+		t.Fatalf("missing memory limit = %d %s", missingLimit.Code, missingLimit.Body.String())
+	}
+	invalidNonce := agentJSONRequest(t, server, "/v1/code/start", CodeRunStartRequest{Program: `return 1`, ComputeMs: 1_000, MemoryLimitBytes: defaultCodeMemoryLimitBytes, StartNonce: "bad"})
+	if invalidNonce.Code != http.StatusBadRequest || responseErrorCode(t, invalidNonce) != "invalid-code-request" {
+		t.Fatalf("invalid start nonce = %d %s", invalidNonce.Code, invalidNonce.Body.String())
+	}
+	for _, rawMemory := range []string{"0", "-1", "1.5", "1e3", "2147483649", "9007199254740992"} {
+		body := `{"program":"return 1","computeMs":1000,"memoryLimitBytes":` + rawMemory + `,"startNonce":"1000000000000000000000000000000a"}`
+		response := agentRequest(server, http.MethodPost, "/v1/code/start", body)
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("memoryLimitBytes %s = %d %s", rawMemory, response.Code, response.Body.String())
+		}
+	}
+	first := agentJSONRequest(t, server, "/v1/code/start", CodeRunStartRequest{Program: `await tools.wait({})`, Bindings: []CodeBindingNamespace{{Global: "tools", Names: []string{"wait"}}}, ComputeMs: 1_000, MemoryLimitBytes: defaultCodeMemoryLimitBytes, StartNonce: "10000000000000000000000000000004"})
+	if first.Code != http.StatusOK {
+		t.Fatalf("first code start = %d %s", first.Code, first.Body.String())
+	}
+	second := agentJSONRequest(t, server, "/v1/code/start", CodeRunStartRequest{Program: `return 2`, ComputeMs: 1_000, MemoryLimitBytes: defaultCodeMemoryLimitBytes, StartNonce: "10000000000000000000000000000005"})
+	if second.Code != http.StatusTooManyRequests || responseErrorCode(t, second) != "code-session-limit" {
+		t.Fatalf("capacity code start = %d %s", second.Code, second.Body.String())
+	}
+}
+
+func TestCodeRunSessionsRejectCrossRootAccess(t *testing.T) {
+	server, err := NewServer(strings.Repeat("a", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = server.Shutdown(context.Background()) })
+	ownerRoot := t.TempDir()
+	foreignRoot := t.TempDir()
+	started := agentJSONRequest(t, server, "/v1/code/start", CodeRunStartRequest{
+		Root: ownerRoot, Program: `await tools.wait({})`,
+		Bindings:         []CodeBindingNamespace{{Global: "tools", Names: []string{"wait"}}},
+		ComputeMs:        1_000,
+		MemoryLimitBytes: defaultCodeMemoryLimitBytes,
+		StartNonce:       "10000000000000000000000000000006",
+	})
+	if started.Code != http.StatusOK {
+		t.Fatalf("code start = %d %s", started.Code, started.Body.String())
+	}
+	var response CodeRunStartResponse
+	if err := json.Unmarshal(started.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	for _, request := range []struct {
+		path string
+		body any
+	}{
+		{"/v1/code/next", CodeRunNextRequest{Root: foreignRoot, ID: response.ID, WaitMs: 1}},
+		{"/v1/code/reply", CodeRunReplyRequest{Root: foreignRoot, ID: response.ID, CallID: 1, OK: true, Value: json.RawMessage(`null`)}},
+		{"/v1/code/cancel", CodeRunCancelRequest{Root: foreignRoot, ID: response.ID}},
+	} {
+		got := agentJSONRequest(t, server, request.path, request.body)
+		if got.Code != http.StatusNotFound || responseErrorCode(t, got) != "code-session-not-found" {
+			t.Fatalf("cross-root %s = %d %s", request.path, got.Code, got.Body.String())
+		}
+	}
+	if canceled := agentJSONRequest(t, server, "/v1/code/cancel", CodeRunCancelRequest{Root: ownerRoot, ID: response.ID}); canceled.Code != http.StatusOK {
+		t.Fatalf("owner cancel = %d %s", canceled.Code, canceled.Body.String())
+	}
+}
+
+func TestCodeRunSessionsKeepLaunchOwnerAfterRootAliasChanges(t *testing.T) {
+	server, err := NewServer(strings.Repeat("a", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = server.Shutdown(context.Background()) })
+	realRoot := t.TempDir()
+	aliasParent := t.TempDir()
+	aliasRoot := filepath.Join(aliasParent, "workspace")
+	if err := os.Symlink(realRoot, aliasRoot); err != nil {
+		t.Fatal(err)
+	}
+	started := agentJSONRequest(t, server, "/v1/code/start", CodeRunStartRequest{
+		Root: aliasRoot, Program: `await tools.wait({})`,
+		Bindings:         []CodeBindingNamespace{{Global: "tools", Names: []string{"wait"}}},
+		ComputeMs:        1_000,
+		MemoryLimitBytes: defaultCodeMemoryLimitBytes,
+		StartNonce:       "10000000000000000000000000000007",
+	})
+	if started.Code != http.StatusOK {
+		t.Fatalf("code start = %d %s", started.Code, started.Body.String())
+	}
+	var startResponse CodeRunStartResponse
+	if err := json.Unmarshal(started.Body.Bytes(), &startResponse); err != nil {
+		t.Fatal(err)
+	}
+	for _, request := range []struct {
+		path string
+		body any
+	}{
+		{"/v1/code/next", CodeRunNextRequest{Root: realRoot, ID: startResponse.ID, WaitMs: 1}},
+		{"/v1/code/cancel", CodeRunCancelRequest{Root: realRoot, ID: startResponse.ID}},
+	} {
+		got := agentJSONRequest(t, server, request.path, request.body)
+		if got.Code != http.StatusNotFound || responseErrorCode(t, got) != "code-session-not-found" {
+			t.Fatalf("canonical-root %s = %d %s", request.path, got.Code, got.Body.String())
+		}
+	}
+	if err := os.Remove(aliasRoot); err != nil {
+		t.Fatal(err)
+	}
+	if owner := agentJSONRequest(t, server, "/v1/code/next", CodeRunNextRequest{
+		Root: aliasRoot, ID: startResponse.ID, WaitMs: 1,
+	}); owner.Code != http.StatusOK {
+		t.Fatalf("owner next after alias removal = %d %s", owner.Code, owner.Body.String())
+	}
+	canceled := agentJSONRequest(t, server, "/v1/code/cancel", CodeRunCancelRequest{Root: aliasRoot, ID: startResponse.ID})
+	if canceled.Code != http.StatusOK {
+		t.Fatalf("owner cancel after alias removal = %d %s", canceled.Code, canceled.Body.String())
 	}
 }
 
@@ -227,6 +573,184 @@ func TestReadRejectsOversizedFileBeforeBuffering(t *testing.T) {
 	response := agentJSONRequest(t, server, "/v1/read_bytes", ReadRequest{Root: root, Path: path})
 	if response.Code != http.StatusRequestEntityTooLarge || responseErrorCode(t, response) != "too-large" {
 		t.Fatalf("oversized read = %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestSearchGlobAndGrepStayScopedAndStable(t *testing.T) {
+	server, err := NewServer(strings.Repeat("a", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	nested := filepath.Join(root, "nested")
+	if err := os.Mkdir(nested, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for path, content := range map[string]string{
+		filepath.Join(root, "new.ts"):          "export const newest = true\n",
+		filepath.Join(nested, "old.ts"):        "export const oldest = true\n",
+		filepath.Join(root, "first.txt"):       "before\nneedle one\nafter\n",
+		filepath.Join(nested, "second.md"):     "needle two\n",
+		filepath.Join(root, ".git", "skip.ts"): "needle hidden\n",
+	} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	older := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(filepath.Join(nested, "old.ts"), older, older); err != nil {
+		t.Fatal(err)
+	}
+	canonicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	glob := agentJSONRequest(t, server, "/v1/search", SearchRequest{
+		Root: root, Kind: "glob", Pattern: "**/*.ts",
+	})
+	if glob.Code != http.StatusOK {
+		t.Fatalf("glob status = %d: %s", glob.Code, glob.Body.String())
+	}
+	var globResult SearchResponse
+	if err := json.Unmarshal(glob.Body.Bytes(), &globResult); err != nil {
+		t.Fatal(err)
+	}
+	if globResult.Root != canonicalRoot || !reflect.DeepEqual(globResult.Paths, []string{"new.ts", "nested/old.ts"}) || globResult.Truncated {
+		t.Fatalf("glob result = %#v", globResult)
+	}
+	basename := agentJSONRequest(t, server, "/v1/search", SearchRequest{
+		Root: root, Kind: "glob", Pattern: "*.ts",
+	})
+	if basename.Code != http.StatusOK {
+		t.Fatalf("basename glob status = %d: %s", basename.Code, basename.Body.String())
+	}
+	var basenameResult SearchResponse
+	if err := json.Unmarshal(basename.Body.Bytes(), &basenameResult); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(basenameResult.Paths, globResult.Paths) {
+		t.Fatalf("basename glob = %#v, want %#v", basenameResult.Paths, globResult.Paths)
+	}
+
+	grep := agentJSONRequest(t, server, "/v1/search", SearchRequest{
+		Root: root, Kind: "grep", Pattern: "needle", Include: "*.{txt,md}",
+	})
+	if grep.Code != http.StatusOK {
+		t.Fatalf("grep status = %d: %s", grep.Code, grep.Body.String())
+	}
+	var grepResult SearchResponse
+	if err := json.Unmarshal(grep.Body.Bytes(), &grepResult); err != nil {
+		t.Fatal(err)
+	}
+	wantMatches := []SearchMatch{
+		{Path: "first.txt", LineNumber: 2, Line: "needle one"},
+		{Path: "nested/second.md", LineNumber: 1, Line: "needle two"},
+	}
+	if !reflect.DeepEqual(grepResult.Matches, wantMatches) || grepResult.Truncated {
+		t.Fatalf("grep result = %#v", grepResult)
+	}
+}
+
+func TestSearchRejectsEscapesInvalidPatternsAndCancellation(t *testing.T) {
+	server, err := NewServer(strings.Repeat("a", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(root, "escape")); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	escape := agentJSONRequest(t, server, "/v1/search", SearchRequest{
+		Root: root, Path: "escape", Kind: "glob", Pattern: "*",
+	})
+	if escape.Code != http.StatusForbidden || responseErrorCode(t, escape) != "outside-root" {
+		t.Fatalf("escaped search = %d %s", escape.Code, escape.Body.String())
+	}
+	missingRoot := agentJSONRequest(t, server, "/v1/search", SearchRequest{Kind: "glob", Pattern: "*"})
+	if missingRoot.Code != http.StatusBadRequest || responseErrorCode(t, missingRoot) != "invalid-root" {
+		t.Fatalf("missing root search = %d %s", missingRoot.Code, missingRoot.Body.String())
+	}
+	for _, request := range []SearchRequest{
+		{Root: root, Kind: "glob", Pattern: "["},
+		{Root: root, Kind: "grep", Pattern: "["},
+		{Root: root, Kind: "grep", Pattern: "x", Include: "!*.ts"},
+		{Root: root, Kind: "grep", Pattern: "x", Include: "*.ts,*.tsx"},
+	} {
+		response := agentJSONRequest(t, server, "/v1/search", request)
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("invalid search %#v = %d %s", request, response.Code, response.Body.String())
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = searchWorkspace(ctx, SearchRequest{Root: root, Kind: "glob", Pattern: "*"})
+	var failure *agentFailure
+	if !errors.As(err, &failure) || failure.code != "request-canceled" {
+		t.Fatalf("canceled search error = %#v", err)
+	}
+}
+
+func TestSearchReportsResultFileAndResponseBounds(t *testing.T) {
+	server, err := NewServer(strings.Repeat("a", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	for _, name := range []string{"a.txt", "b.txt", "long.txt"} {
+		content := "needle\n"
+		if name == "long.txt" {
+			content = strings.Repeat("x", 2048) + " needle\n"
+		}
+		if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	resultBound := agentJSONRequest(t, server, "/v1/search", SearchRequest{
+		Root: root, Kind: "grep", Pattern: "needle", MaxResults: 1,
+	})
+	if resultBound.Code != http.StatusOK {
+		t.Fatalf("result bound status = %d: %s", resultBound.Code, resultBound.Body.String())
+	}
+	var resultBoundValue SearchResponse
+	if err := json.Unmarshal(resultBound.Body.Bytes(), &resultBoundValue); err != nil {
+		t.Fatal(err)
+	}
+	if len(resultBoundValue.Matches) != 1 || !containsSearchTruncation(resultBoundValue.TruncatedBy, "results") {
+		t.Fatalf("result bound = %#v", resultBoundValue)
+	}
+	fileBound := agentJSONRequest(t, server, "/v1/search", SearchRequest{
+		Root: root, Kind: "glob", Pattern: "*", MaxFiles: 1,
+	})
+	if fileBound.Code != http.StatusOK {
+		t.Fatalf("file bound status = %d: %s", fileBound.Code, fileBound.Body.String())
+	}
+	var fileBoundValue SearchResponse
+	if err := json.Unmarshal(fileBound.Body.Bytes(), &fileBoundValue); err != nil {
+		t.Fatal(err)
+	}
+	if !fileBoundValue.Truncated || !containsSearchTruncation(fileBoundValue.TruncatedBy, "files") {
+		t.Fatalf("file bound = %#v", fileBoundValue)
+	}
+	byteBound := agentJSONRequest(t, server, "/v1/search", SearchRequest{
+		Root: root, Path: "long.txt", Kind: "grep", Pattern: "needle", MaxBytes: 800,
+	})
+	if byteBound.Code != http.StatusOK {
+		t.Fatalf("byte bound status = %d: %s", byteBound.Code, byteBound.Body.String())
+	}
+	if byteBound.Body.Len() > 800 {
+		t.Fatalf("byte bound response = %d bytes, want <= 800", byteBound.Body.Len())
+	}
+	var byteBoundValue SearchResponse
+	if err := json.Unmarshal(byteBound.Body.Bytes(), &byteBoundValue); err != nil {
+		t.Fatal(err)
+	}
+	if len(byteBoundValue.Matches) != 0 || !byteBoundValue.Truncated || !containsSearchTruncation(byteBoundValue.TruncatedBy, "bytes") {
+		t.Fatalf("byte bound = %#v", byteBoundValue)
 	}
 }
 

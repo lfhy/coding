@@ -4,11 +4,33 @@ English | [中文](subprocess.zh.md)
 
 The subprocess seam is split across a Service Definition ([dsh-subprocess](../../packages/subprocess/subprocess), `ctx.subprocess`) and Service Provider ([dsh-subprocess-local](../../packages/subprocess/subprocess-local)); its Consumers are other capability seams and out-of-process backends: the [bash executor family](shell.md) uses collected batch output, LSP uses raw protocol pipes, the PTY backend uses the terminal primitive, and the ACP subagent backend uses piped ndjson plus inherited stderr. This seam owns the managed `DSH_*` environment namespace, the shared credential scrub (`scrubbedParentEnv`), and the `CollectedOutput` shape; [dsh-shell](../../packages/shell/shell) re-exports the vocabulary so bash consumers keep one import root.
 
-Source: [`packages/subprocess/subprocess/src/types.ts`](../../packages/subprocess/subprocess/src/types.ts) and [`packages/subprocess/subprocess/src/index.ts`](../../packages/subprocess/subprocess/src/index.ts)
+Source: [`packages/subprocess/subprocess/src/types.ts`](../../packages/subprocess/subprocess/src/types.ts), [`packages/subprocess/subprocess/src/index.ts`](../../packages/subprocess/subprocess/src/index.ts), and [`packages/subprocess/subprocess/src/remote-workspace.ts`](../../packages/subprocess/subprocess/src/remote-workspace.ts)
 
 ## Executable lookup
 
-One provider's spawn working directories, executable paths, ordinary processes, and terminal sessions inhabit the same path and process namespace as the mounted filesystem provider. `resolveExecutable(command, env?, signal?)` verifies absolute executable paths or resolves bare names through the provider's scrubbed `PATH` plus deliberate overrides.
+One provider's spawn working directories, executable paths, ordinary processes, and terminal sessions inhabit the same path and process namespace as the mounted filesystem provider. `resolveExecutable(command, env?, signal?, remoteTarget?)` verifies absolute executable paths or resolves bare names through the provider's scrubbed `PATH` plus deliberate overrides. A caller that already has a verified Remote-SSH target supplies it on lookup and `SubprocessSpawnSpec`; the provider revalidates that marker identity before selecting the target rather than treating a local marker alias as a process directory. The remote root is a request-time execution coordinate and path constraint, not an OS sandbox; it does not defend against a target-side concurrent replacement of a checked symlink or ancestor.
+
+```ts type-equiv
+/** 已验证 marker 的当前身份；connectionId 不是凭据。 */
+interface RemoteWorkspace {
+  /** marker 目录的真实本地路径，用于防止伪造 targetKey 跨工作区。 */
+  markerRoot: string
+  /** marker 声明且由目录选择流程规范化的远端绝对目录。 */
+  remoteRoot: string
+  /** 多个 SSH 连接共用一个本地 bridge 时的路由 id。 */
+  connectionId: string
+  /** 与 marker 文件同轮发布的单调 generation。 */
+  markerGeneration: number
+}
+```
+
+```ts type-equiv
+/** 已验证的无凭据远端执行身份；可编码为 FsTargetKey。 */
+interface RemoteWorkspaceTarget extends RemoteWorkspace {
+  /** 已解析并受 remoteRoot 限制的远端路径。 */
+  remotePath: string
+}
+```
 
 ## Managed environment namespace and captured output
 
@@ -102,6 +124,13 @@ interface SubprocessSpawnSpec {
   argv: readonly string[]
   /** Working directory for the child. */
   cwd: string
+  /**
+   * 已验证 Remote-SSH 工作区的执行身份。存在时 `cwd` 是该身份的远端路径，
+   * Provider 在启动前复核 marker，随后在远端而非 Node Host 上运行 `argv`。
+   * 普通本地调用省略此字段；以本地 marker 路径作为 cwd 的调用可由 Provider
+   * 自行派生相同身份。
+   */
+  remoteTarget?: RemoteWorkspaceTarget | undefined
   /** Per-stream stdio dispositions. */
   stdio: SubprocessStdio
   /**
@@ -131,17 +160,15 @@ interface SubprocessSpawnSpec {
 
 ## Handles: streams, readers, and tree-scoped termination
 
-A spawn returns a live handle immediately. Collect-mode readers take whole-stream byte offsets and never consume, so independent readers cannot steal one another's deltas; piped streams belong to the caller. Termination is tree-scoped on every platform: `terminate()` — the only termination verb — escalates SIGTERM→grace→SIGKILL, and `waitForExit()` observes the whole tree — enough for a consumer to build its own teardown ladder (the ACP backend's stdin-EOF-first `disposeAcpChild` is the template).
+A spawn returns a live handle immediately. Collect-mode readers take whole-stream byte offsets and never consume, so independent readers cannot steal one another's deltas; piped streams belong to the caller. Termination is tree-scoped: POSIX providers may use detached process groups, while Windows providers use their native managed-tree lifecycle. `terminate()` — the only termination verb — starts the seam's TERM→grace→KILL cleanup, and `waitForExit()` observes the whole tree — enough for a consumer to build its own teardown ladder (the ACP backend's stdin-EOF-first `disposeAcpChild` is the template). Providers document platform control semantics and timing. When an active execution-world transport fails before it proves exit, `done` and `waitForExit()` reject rather than inventing exit facts.
 
 ```ts type-equiv
 /**
- * A live child process rooted in its own process tree. Collected output
- * remains readable after exit; piped streams belong to the caller.
+ * 一个以自身进程树为根的活动子进程。退出后仍可读取收集输出；管道流归调用方所有。
  *
- * Termination is tree-scoped everywhere: POSIX signals the detached process
- * group (falling back to the direct child when the group is gone), Windows
- * terminates the tree via `taskkill /T`, so helper processes cannot outlive
- * the handle unnoticed.
+ * 终止始终以进程树为范围：POSIX 提供方可向 detached 进程组发信号（进程组已
+ * 消失时回退到直接子进程）；Windows 提供方使用原生的受管进程树机制。此接口
+ * 不把 Windows 控制动作承诺为 POSIX 信号、进程组或固定的强杀时序。
  */
 interface SubprocessHandle {
   /** Process id (tree root); -1 when the spawn itself failed. */
@@ -154,13 +181,13 @@ interface SubprocessHandle {
   readonly stderr: Readable | undefined
   /** Offset-based readers for collect-mode streams (also readable after exit). */
   readonly collected: SubprocessCollectedOutputs
-  /** Resolves at process close with exit facts; rejects only for spawn-level failures. */
+  /** 在进程关闭时以退出事实 resolve；若 spawn 无法完成，或活动执行世界的传输在退出前失败则 reject。 */
   readonly done: Promise<SubprocessOutcome>
   /**
-   * Begin the SIGTERM → `graceMs` → SIGKILL escalation on the process tree
-   * (Windows force-terminates immediately) — the seam's only termination
-   * verb. Idempotent, a no-op once the tree is gone (the pid may be reused),
-   * and also triggered by the spec's abort signal.
+   * 启动将进程树带至停止状态的 SIGTERM → `graceMs` → SIGKILL 清理流程；
+   * 这是该 seam 唯一的终止动词。提供方以平台原生的受管树生命周期实现它，
+   * Windows 不承诺 POSIX 信号或固定的强杀时序。操作幂等，进程树消失后为空
+   * 操作（pid 可能被复用），spec 的 abort 信号也会触发它。
    */
   terminate(): void
   /**
@@ -168,6 +195,7 @@ interface SubprocessHandle {
    * child, so a still-running helper is observable before teardown returns.
    * @param signal - optional bound for the wait.
    * @returns `true` when the tree exited, `false` when the signal aborted first.
+   * @throws 当活动执行世界的传输在证明进程树退出前失败时。
    */
   waitForExit(signal?: AbortSignal): Promise<boolean>
 }
@@ -240,13 +268,13 @@ interface SubprocessOutcome {
 
 ## Terminal-process primitive
 
-`spawnTerminal(spec)` is the non-pipe process primitive. The provider allocates the controlling terminal and owns UTF-8 text transport, foreground-process-group inspection and signalling, and one awaited TERM-to-KILL operation that reaches quiescence for every session member the provider can still observe; providers document substrate-specific observability limits. The PTY backend remains responsible for prompt detection, readiness inference, scrollback, sandbox policy, and persistent-session ownership; ordinary `spawn()` cannot reconstruct controlling-terminal semantics.
+`spawnTerminal(spec)` is the non-pipe process primitive. The provider allocates the controlling terminal and owns UTF-8 text transport, foreground-control-identity inspection and terminal-specific control, and one awaited termination operation that reaches quiescence for every session member it can still observe. On POSIX the identity is a foreground process group; a Windows provider may publish a provider-defined compatibility identity. The PTY backend remains responsible for prompt detection, readiness inference, scrollback, sandbox policy, and persistent-session ownership; ordinary `spawn()` cannot reconstruct controlling-terminal semantics.
 
 The terminal spec fully specifies argv, cwd, environment overrides, dimensions, cleanup grace, and optional allocation cancellation. Its handle exposes `pid`, ordered output, `done`, `write`, `inspectForeground`, `signalForeground`, and awaited `terminate`; the exact public shapes are generated into the [`ctx.subprocess` service catalog](#ctxsubprocess--subprocessruntime-abstract-seam).
 
 ## Service behavior
 
-The abstract [`SubprocessRuntime`](../../packages/subprocess/subprocess/src/index.ts) Service Definition specifies execution-world coordinates, executable lookup, ordinary `spawn`, and `spawnTerminal`. [`LocalSubprocessRuntime`](../../packages/subprocess/subprocess-local/src/index.ts) provides them with detached process trees, per-disposition wiring, credential scrubbing, `node-pty`, platform process inspection, and terminate-and-join disposal. See [`dsh-subprocess`](../../packages/subprocess/subprocess/README.md) for the Service Definition contract and [`dsh-subprocess-local`](../../packages/subprocess/subprocess-local/README.md) for local mechanics.
+The abstract [`SubprocessRuntime`](../../packages/subprocess/subprocess/src/index.ts) Service Definition specifies execution-world coordinates, executable lookup, ordinary `spawn`, and `spawnTerminal`. [`LocalSubprocessRuntime`](../../packages/subprocess/subprocess-local/src/index.ts) provides local calls with detached process trees, per-disposition wiring, credential scrubbing, `node-pty`, platform process inspection, and terminate-and-join disposal; it forwards a verified Remote-SSH marker target to its Go agent. See [`dsh-subprocess`](../../packages/subprocess/subprocess/README.md) for the Service Definition contract and [`dsh-subprocess-local`](../../packages/subprocess/subprocess-local/README.md) for provider-specific mechanics and limits.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -282,11 +310,11 @@ Abstract subprocess service. Subclass, implement spawn, and load the subclass as
 Implementations must honor these semantics:
 
 - Executable paths belong to one execution world shared with the mounted filesystem provider.
-- spawn returns immediately with a live handle; `done` resolves at process close with exit facts and rejects only for spawn-level failures.
+- spawn 会立即返回活动句柄；`done` 在进程关闭时以退出事实 resolve； 若 spawn 无法完成或活动执行世界的传输在退出前失败则 reject。
 - Collect-mode readers are offset-based and non-consuming, so independent readers never consume one another's output; lossy reads report truncation and the spill file holding the complete stream when one exists. Piped streams are handed to the caller raw and never buffered here.
-- SubprocessHandle.terminate (and the spec's abort signal) escalates SIGTERM→grace→SIGKILL — the only termination verb — tree-scoped on every platform. SubprocessHandle.waitForExit observes whole-tree liveness, so a consumer-owned teardown ladder can hold each tier on real quiescence.
+- SubprocessHandle.terminate（及 spec 的 abort 信号）启动以进程树为范围的 TERM→宽限→KILL 清理。 它是唯一的终止动词。POSIX 提供方可使用 detached 进程组；Windows 提供方使用原生的受管树机制。 此接口不承诺 Windows 的 POSIX 信号、进程组或固定的强杀时序。 SubprocessHandle.waitForExit 观察整棵进程树的存活状态。 若活动执行世界的传输在证明退出前失败，该 promise 会 reject，不能伪造停稳。
 - Disposal of the service terminates all still-running managed processes and awaits their exit.
-- spawnTerminal owns terminal allocation, text transport, foreground groups, signalling, and whole-session quiescence behind one awaited termination method; readiness and persistent-shell policy stay in the PTY consumer. Its output stream ends after queued terminal output when the top-level process exits.
+- spawnTerminal 负责终端分配、文本传输、前台控制身份与终端特定控制。 它还提供一项须等待的完整会话停稳操作。 POSIX 前台身份为进程组，Windows 可使用提供方定义的兼容身份。 就绪状态与持久 shell 策略仍归 PTY 消费方所有。 顶层进程退出后，其输出流会在已排队的终端输出之后结束。
 
 ```ts cordis-catalog
 /**
@@ -298,9 +326,10 @@ Implementations must honor these semantics:
  * @param command - absolute executable path or bare PATH name.
  * @param env - explicit environment entries used for lookup.
  * @param signal - aborts remote or local lookup.
+ * @param remoteTarget - 可选的已验证 Remote-SSH 执行身份。
  * @returns a canonical executable path.
  */
-abstract resolveExecutable( command: string, env?: Readonly<Record<string, string>>, signal?: AbortSignal, ): Promise<string>
+abstract resolveExecutable( command: string, env?: Readonly<Record<string, string>>, signal?: AbortSignal, remoteTarget?: RemoteWorkspaceTarget, ): Promise<string>
 
 /**
  * Start one managed child process from a fully-specified spec; this seam
@@ -311,14 +340,14 @@ abstract resolveExecutable( command: string, env?: Readonly<Record<string, strin
 abstract spawn(spec: SubprocessSpawnSpec): SubprocessHandle
 
 /**
- * Allocate a real terminal and start one owned process session. This is the
- * only non-pipe process primitive: implementations own terminal byte I/O,
- * foreground groups, signals, and complete session-tree cleanup.
- * @param spec - fully specified argv, cwd, environment, dimensions, grace, and allocation cancellation.
- * @returns the live terminal handle after allocation succeeds.
+ * 分配真实控制终端并启动一个由提供方管理的进程会话。这是唯一的非 pipe
+ * 进程原语：实现负责终端字节 I/O、前台控制身份、终端特定控制动作及完整
+ * 会话树清理。
+ * @param spec - 完全指定的 argv、cwd、环境、尺寸、宽限期与分配取消。
+ * @returns 分配成功后的活动终端句柄。
  */
 abstract spawnTerminal(spec: SubprocessTerminalSpawnSpec): Promise<SubprocessTerminalHandle>
 ```
 
-Source: [`packages/subprocess/subprocess/src/index.ts:124`](../../packages/subprocess/subprocess/src/index.ts)
+Source: [`packages/subprocess/subprocess/src/index.ts:125`](../../packages/subprocess/subprocess/src/index.ts)
 <!-- END GENERATED cordis-surface -->

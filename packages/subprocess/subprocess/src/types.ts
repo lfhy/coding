@@ -8,6 +8,7 @@
  */
 
 import type { Readable, Writable } from 'node:stream'
+import type { RemoteWorkspaceTarget } from './remote-workspace.ts'
 
 /** Namespace prefix reserved for DeepSeek Harness-managed child environment facts. */
 export const DSH_ENV_PREFIX = 'DSH_' as const
@@ -77,6 +78,13 @@ export interface SubprocessSpawnSpec {
   argv: readonly string[]
   /** Working directory for the child. */
   cwd: string
+  /**
+   * 已验证 Remote-SSH 工作区的执行身份。存在时 `cwd` 是该身份的远端路径，
+   * Provider 在启动前复核 marker，随后在远端而非 Node Host 上运行 `argv`。
+   * 普通本地调用省略此字段；以本地 marker 路径作为 cwd 的调用可由 Provider
+   * 自行派生相同身份。
+   */
+  remoteTarget?: RemoteWorkspaceTarget | undefined
   /** Per-stream stdio dispositions. */
   stdio: SubprocessStdio
   /**
@@ -156,13 +164,11 @@ export interface SubprocessCollectedOutputs {
 }
 
 /**
- * A live child process rooted in its own process tree. Collected output
- * remains readable after exit; piped streams belong to the caller.
+ * 一个以自身进程树为根的活动子进程。退出后仍可读取收集输出；管道流归调用方所有。
  *
- * Termination is tree-scoped everywhere: POSIX signals the detached process
- * group (falling back to the direct child when the group is gone), Windows
- * terminates the tree via `taskkill /T`, so helper processes cannot outlive
- * the handle unnoticed.
+ * 终止始终以进程树为范围：POSIX 提供方可向 detached 进程组发信号（进程组已
+ * 消失时回退到直接子进程）；Windows 提供方使用原生的受管进程树机制。此接口
+ * 不把 Windows 控制动作承诺为 POSIX 信号、进程组或固定的强杀时序。
  */
 export interface SubprocessHandle {
   /** Process id (tree root); -1 when the spawn itself failed. */
@@ -175,13 +181,13 @@ export interface SubprocessHandle {
   readonly stderr: Readable | undefined
   /** Offset-based readers for collect-mode streams (also readable after exit). */
   readonly collected: SubprocessCollectedOutputs
-  /** Resolves at process close with exit facts; rejects only for spawn-level failures. */
+  /** 在进程关闭时以退出事实 resolve；若 spawn 无法完成，或活动执行世界的传输在退出前失败则 reject。 */
   readonly done: Promise<SubprocessOutcome>
   /**
-   * Begin the SIGTERM → `graceMs` → SIGKILL escalation on the process tree
-   * (Windows force-terminates immediately) — the seam's only termination
-   * verb. Idempotent, a no-op once the tree is gone (the pid may be reused),
-   * and also triggered by the spec's abort signal.
+   * 启动将进程树带至停止状态的 SIGTERM → `graceMs` → SIGKILL 清理流程；
+   * 这是该 seam 唯一的终止动词。提供方以平台原生的受管树生命周期实现它，
+   * Windows 不承诺 POSIX 信号或固定的强杀时序。操作幂等，进程树消失后为空
+   * 操作（pid 可能被复用），spec 的 abort 信号也会触发它。
    */
   terminate(): void
   /**
@@ -189,6 +195,7 @@ export interface SubprocessHandle {
    * child, so a still-running helper is observable before teardown returns.
    * @param signal - optional bound for the wait.
    * @returns `true` when the tree exited, `false` when the signal aborted first.
+   * @throws 当活动执行世界的传输在证明进程树退出前失败时。
    */
   waitForExit(signal?: AbortSignal): Promise<boolean>
 }
@@ -206,6 +213,11 @@ export interface SubprocessTerminalSpawnSpec {
   argv: readonly string[]
   /** Working directory in this subprocess provider's execution world. */
   cwd: string
+  /**
+   * 已验证 Remote-SSH 工作区的执行身份。存在时 `cwd` 是远端工作目录；Provider
+   * 在分配 PTY 前复核 marker。普通本地终端省略此字段。
+   */
+  remoteTarget?: RemoteWorkspaceTarget | undefined
   /** Explicit environment layered after the provider's ambient scrub. */
   env?: Record<string, string> | undefined
   /** Initial terminal row count. */
@@ -218,19 +230,18 @@ export interface SubprocessTerminalSpawnSpec {
   signal?: AbortSignal | undefined
 }
 
-/** Current foreground process-group facts for one terminal. */
+/** 一个终端当前的前台控制身份；POSIX 为进程组，Windows 可为提供方定义的兼容身份。 */
 export interface SubprocessTerminalForeground {
-  /** Foreground process-group id published by the terminal driver. */
+  /** 终端驱动发布的前台控制身份；POSIX 为进程组 id，Windows 可为兼容 id。 */
   processGroupId: number
-  /** Whether the provider can currently prove that group is waiting on terminal input. */
+  /** 提供方能否证明该控制身份当前正在等待终端输入。 */
   inputWaiting: boolean
 }
 
 /**
- * One live terminal process and its owned OS session. Terminal allocation,
- * foreground-group inspection/signalling, and session-tree cleanup are one
- * deep subprocess primitive because none can be reconstructed from ordinary
- * piped stdio without substrate-specific process control.
+ * 一个活动终端进程及其由操作系统管理的会话。终端分配、前台控制身份的检查和
+ * 控制、以及会话树清理由同一项深层子进程原语承担，因为普通管道 stdio 无法在
+ * 没有执行基底特定进程控制的情况下重建它们。
  */
 export interface SubprocessTerminalHandle {
   /** Top-level terminal process id. */
@@ -245,14 +256,14 @@ export interface SubprocessTerminalHandle {
    */
   write(data: string): Promise<void>
   /**
-   * Inspect the current foreground process group.
-   * @returns its id and input-wait fact, or undefined when no foreground group can be resolved.
+   * 检查当前前台控制身份。
+   * @returns 该身份及其输入等待事实；无法解析时返回 undefined。
    */
   inspectForeground(): Promise<SubprocessTerminalForeground | undefined>
   /**
-   * Deliver a signal to the current foreground process group.
-   * @param signal - permitted terminal signal.
-   * @returns the exact group id that received it.
+   * 向当前前台控制身份请求终端控制动作。
+   * @param signal - 允许的终端信号名；Windows 提供方可拒绝不具备的 POSIX 语义。
+   * @returns 实际接收该动作的控制身份。
    */
   signalForeground(signal: SubprocessTerminalSignal): Promise<number>
   /**

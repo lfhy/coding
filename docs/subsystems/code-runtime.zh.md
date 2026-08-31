@@ -8,7 +8,7 @@
 
 ## 运行：请求进，结果出
 
-`CodeRunRequest` 携带**运行时要处理的一切内容**。按照「包边界处显式优于隐式」的规则，默认值（时间预算、输出上限）来自实现的已校验配置，绝不是 `run()` 内部隐藏的 `??`：
+`CodeRunRequest` 携带**运行时要处理的一切内容**。按照「包边界处显式优于隐式」的规则，默认值（时间预算、输出上限）来自实现的已校验配置，绝不是 `run()` 内部隐藏的 `??`。可选的 `cwd` 是调用方拥有的 Workspace 执行世界坐标，不是程序全局变量；桌面 worker 会在它指向当前 Remote-SSH marker 时选择全新的受限 Goja 子进程，而 binding 调用仍留在本地 Host（[决策](../../.agents/notes/implemented/feature/2026-08-31-desktop-remote-ssh-go-execution-world.md)）：
 
 ```ts type-equiv
 /**
@@ -25,6 +25,12 @@ interface CodeRunRequest {
    * {@link CodeRunResult.value}.
    */
   program: string
+  /**
+   * 调用方拥有工作区时传入的执行世界工作目录。提供方可据此选择本地或
+   * Remote-SSH 基底；它不会暴露给程序，省略时仍采用没有 Workspace 的
+   * 调用方原有宿主默认执行方式。
+   */
+  cwd?: string
   /** Host functions exposed to the program, one global object per namespace. */
   bindings: CodeBindingNamespace[]
   /**

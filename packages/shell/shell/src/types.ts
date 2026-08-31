@@ -8,7 +8,7 @@
  */
 
 import type { SandboxEnforcement, SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
-import type { CollectedOutput, DshEnvironment } from '@deepseek-ai/dsh-subprocess'
+import type { CollectedOutput, DshEnvironment, RemoteWorkspaceTarget } from '@deepseek-ai/dsh-subprocess'
 
 export { DSH_ENV_PREFIX } from '@deepseek-ai/dsh-subprocess'
 export type { CollectedOutput, DshEnvironment, DshEnvironmentKey } from '@deepseek-ai/dsh-subprocess'
@@ -86,6 +86,8 @@ export interface ShellExecRequest {
 export interface ShellExecSpec {
   command: string
   workdir: string
+  /** 已验证的 Remote-SSH 执行身份；存在时 subprocess provider 在远端启动 argv。 */
+  remoteTarget?: RemoteWorkspaceTarget | undefined
   timeoutMs: number
   /**
    * Resolved foreground stdout capture budget in bytes. `run()` uses it for

@@ -99,7 +99,7 @@ The session log is the source of the context the model sees. `deriveMessages()` 
 
 A **seam** is a swappable capability with three roles: a **Service Definition** declaring the interface, a **Service Provider** implementing it, and a **Consumer** using it, commonly a model-facing tool. A package may combine roles, but one role alone is not a seam; adding a capability means designing all three ([capability graph](capability-seams.md)).
 
-Seams are why one provider swap changes the whole product. Filesystem and subprocess providers share one execution world, so pointing them at a remote sandbox moves Bash, PTY, and LSP with them, with no provider forks. [Subagent providers](subsystems/subagent.md) vary just as widely behind one interface, from a fresh child agent to a delegated turn in another product.
+Seams are why one provider swap changes the whole product. Filesystem and subprocess providers share one execution world, so targeting both at the same remote execution environment moves Bash, PTY, and LSP with no provider forks. A Remote-SSH marker is such an execution environment, not a sandbox; sandbox policy remains a separate provider. The desktop's marker realization sends those capabilities to a Go agent while leaving the Host control plane local ([decision](../.agents/notes/implemented/feature/2026-08-31-desktop-remote-ssh-go-execution-world.md)). [Subagent providers](subsystems/subagent.md) vary just as widely behind one interface, from a fresh child agent to a delegated turn in another product.
 
 [Experimental Agent Teams](subsystems/agent-team.md) is a private opt-in coordination seam on `ctx.agentTeams`, with a durable roster, task board, and mailbox layered over continuable subagents.
 

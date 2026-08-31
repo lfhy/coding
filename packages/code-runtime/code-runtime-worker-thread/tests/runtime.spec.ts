@@ -863,6 +863,21 @@ describe('WorkerThreadCodeRuntime — seam misuse and lifecycle', () => {
     await expect(ctx.plugin(WorkerThreadCodeRuntime, { maxOutputBytes: 4.5 })).rejects.toThrow(/safe integer of at least 4/)
   })
 
+  it('requires the worker heap configuration to encode an exact remote byte limit', async () => {
+    const fractional = new Context()
+    await expect(fractional.plugin(WorkerThreadCodeRuntime, { maxOldGenerationSizeMb: 1.5 }))
+      .rejects.toThrow(/maxOldGenerationSizeMb must be a safe integer/)
+    const oversized = new Context()
+    await expect(oversized.plugin(WorkerThreadCodeRuntime, {
+      maxOldGenerationSizeMb: Math.floor(Number.MAX_SAFE_INTEGER / (1024 * 1024)) + 1,
+    })).rejects.toThrow(/maxOldGenerationSizeMb must be a safe integer/)
+    const boundary = new Context()
+    await expect(boundary.plugin(WorkerThreadCodeRuntime, { maxOldGenerationSizeMb: 2_048 })).resolves.toBeTruthy()
+    const overBoundary = new Context()
+    await expect(overBoundary.plugin(WorkerThreadCodeRuntime, { maxOldGenerationSizeMb: 2_049 }))
+      .rejects.toThrow(/maxOldGenerationSizeMb must be a safe integer from 1 through 2048 MiB/)
+  })
+
   it('keeps runs isolated: no state survives from one run to the next', async () => {
     const { runtime } = await setup()
     await runtime.run({ program: 'globalThis.leak = "value"; return 1', bindings: [] })

@@ -30,7 +30,7 @@ Consumer 包仅依赖 Service Definition 包，从不依赖 `dsh-fs-local`。需
 
 读后写/编辑与观测状态策略是第四个包 `@deepseek-ai/dsh-fs-observation-policy`（`packages/fs/fs-observation-policy`），通过 `fs/*` 事件门控贡献，而非挂在 `ctx.fs` 上；加载 `dsh-tool-fs` 的部署同时加载 `dsh-fs-observation-policy` 以获得读后写/编辑能力。本决策确立了由三个包构成的边界；策略从提供方基类拆出的决策由 [拆分文件系统 seam Agent Note](../simplification/2026-06-26-fsspec-style-fs-seam.md) 做出，其以事件门控插件（而非方法服务）实现的方式由 [事件门控 Agent Note](2026-06-26-file-context-as-event-gate.md) 做出。
 
-第一个后端有意仅限本地：`dsh-fs-local` 基于宿主文件系统实现 `ctx.fs`。未来的兄弟后端可在同一接口之后提供沙箱、远程、虚拟或项目作用域的文件系统。
+第一个后端默认使用宿主文件系统。对于当前桌面 Remote-SSH marker target，`dsh-fs-local` 会通过 Go 执行世界 agent 把语义文件系统操作路由至所选远程根目录；它会为每个请求复核四段 marker 身份，绝不回退到宿主路径。该路由由[桌面 Remote-SSH 使用 Go 执行世界 agent](../feature/2026-08-31-desktop-remote-ssh-go-execution-world.md)定义。未来的兄弟后端可在同一接口之后提供沙箱、远程、虚拟或项目作用域的文件系统。
 
 第一个消费方有意仅限文本文件：`dsh-tool-fs` 暴露面向模型的 `read`、`write` 和 `edit` 工具，处理 UTF-8 文本文件。未来的消费方可以添加目录列表、搜索/glob、二进制安全操作、文件监视或更高层的项目操作，只要 `ctx.fs` 上存在所需能力，就无需改动本地后端包。直接目录列表后来由[为文件系统 seam 添加直接目录列举能力](../../archived/architecture/2026-07-03-filesystem-directory-listing-seam.md)添加。
 
@@ -49,7 +49,7 @@ Consumer 包仅依赖 Service Definition 包，从不依赖 `dsh-fs-local`。需
 
 `@deepseek-ai/dsh-fs` 仅依赖 `cordis` 加上来自 `@deepseek-ai/dsh-llm` 的仓库级 `HarnessError` 基类。它声明 `ctx.fs` 键、抽象 `FileSystem` 服务、后端和消费方共享的词汇类型、文件系统错误词汇，以及 `fs/*` 策略事件词汇。它不持有观测状态存储，也不持有 owner 推导形态；事件传递一个不透明的 `object` actor，提供方从不读取它，`dsh-fs-observation-policy` 插件在这些事件之上拥有 owner 推导形态和观测状态存储。
 
-`@deepseek-ai/dsh-fs-local` 依赖 `@deepseek-ai/dsh-fs` 和 `cordis`。它继承 `FileSystem`，将自身注册为 `ctx.fs`，拥有本地后端配置（如基目录），并包含所有直接的 `node:fs` / `node:path` 访问。它不持有观测状态存储——新鲜度是后端铸造、策略插件记录的版本令牌。
+`@deepseek-ai/dsh-fs-local` 依赖 `@deepseek-ai/dsh-fs` 和 `cordis`。它继承 `FileSystem`，将自身注册为 `ctx.fs`，拥有本地后端配置（如基目录），包含宿主侧的 `node:fs` / `node:path` 访问，并会通过本地 bridge 把当前桌面 Remote-SSH marker 路由至 Go agent。它不持有观测状态存储——新鲜度是后端铸造、策略插件记录的版本令牌。
 
 `@deepseek-ai/dsh-tool-fs` 依赖 `@deepseek-ai/dsh-fs`、`@deepseek-ai/dsh-tools`、`@deepseek-ai/dsh-system-prompt` 和 `cordis`。它注册面向模型的工具和提示词段落。它禁止导入 `node:fs`、`node:path` 或 `@deepseek-ai/dsh-fs-local`；文件系统执行始终通过 `ctx.fs`。如果实现需要具体的 agent（智能体）或会话辅助类型，这些依赖属于 `tool-fs`；它们禁止回漏到 `dsh-fs` 中。
 

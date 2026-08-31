@@ -9,7 +9,7 @@
  * writes CRLF on Windows, so exact text assertions normalize line endings.
  */
 
-import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -17,7 +17,7 @@ import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { PwshLocalExecutor, ENCODING_PREAMBLE, candidatePwshPaths, resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
-import SubprocessRuntime from '@deepseek-ai/dsh-subprocess'
+import { REMOTE_WORKSPACE_MARKER, SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type { SubprocessHandle, SubprocessOutputReader, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import type { ShellProcess } from '@deepseek-ai/dsh-shell'
@@ -186,6 +186,38 @@ describe('spawn construction (pure, every platform)', () => {
     expect(argv[5]).toBe(`${ENCODING_PREAMBLE}Write-Output 你好`)
     expect(ENCODING_PREAMBLE).toContain('[Console]::OutputEncoding')
     expect(ENCODING_PREAMBLE).toContain('$OutputEncoding')
+  })
+
+  it('maps a marker workdir to the remote execution world', async () => {
+    const markerRoot = mkdtempSync(join(tmpdir(), 'dsh-pwsh-remote-marker-'))
+    try {
+      writeFileSync(join(markerRoot, REMOTE_WORKSPACE_MARKER), JSON.stringify({
+        version: 2,
+        remoteRoot: '/srv/project',
+        connectionId: 'connection-1',
+        generation: 1,
+      }))
+      const ctx = new Context()
+      const subprocess = new CapturingSubprocessRuntime(ctx)
+      await ctx.plugin(PwshLocalExecutor, { pwshPath: '/remote-tools/pwsh' })
+
+      await ctx.shell.run(ctx.shell.resolve({ command: 'Write-Output remote', workdir: markerRoot }))
+
+      expect(subprocess.specs).toHaveLength(1)
+      expect(subprocess.specs[0]).toMatchObject({
+        argv: ['/remote-tools/pwsh', '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', `${ENCODING_PREAMBLE}Write-Output remote`],
+        cwd: '/srv/project',
+        remoteTarget: {
+          // marker 身份使用文件系统规范拼写；macOS 的 /var 展示路径会不同。
+          markerRoot: realpathSync.native(markerRoot),
+          remoteRoot: '/srv/project',
+          remotePath: '/srv/project',
+          connectionId: 'connection-1',
+        },
+      })
+    } finally {
+      rmSync(markerRoot, { recursive: true, force: true })
+    }
   })
 })
 

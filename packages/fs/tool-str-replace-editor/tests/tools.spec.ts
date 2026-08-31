@@ -89,9 +89,10 @@ describe('tool-str-replace-editor', () => {
   it('accepts a Windows remote absolute path only when the session cwd has a marker', async () => {
     const { ctx, root, owner } = await setup()
     await writeFile(join(root, REMOTE_WORKSPACE_MARKER), JSON.stringify({
-      version: 1,
+      version: 2,
       remoteRoot: String.raw`C:\project`,
       connectionId: 'connection-1',
+      generation: 1,
     }))
     const result = await call(ctx, owner, {
       command: 'view',

@@ -230,7 +230,7 @@ func TestRemoteSSHDirectoryBindingsFilterAndRebindDeterministicMarker(t *testing
 			"rold": {ID: "rold", TargetHost: "example.com", TargetPort: 22, TargetUser: "coding"},
 		},
 	}
-	app := &App{bridgeToken: "window-token", remoteManager: manager, launcher: launcher}
+	app := &App{bridgeToken: "window-token", remoteManager: manager, remoteBridge: desktopTestRemoteBridge(t), launcher: launcher}
 	listing, err := app.RemoteSSHListDirectories("window-token", "rnew", "/srv/project")
 	if err != nil || len(listing.Entries) != 1 || !listing.Entries[0].Directory || listing.Entries[0].Name != "nested" {
 		t.Fatalf("listing = %#v, %v", listing, err)
@@ -251,7 +251,7 @@ func TestRemoteSSHDirectoryBindingsFilterAndRebindDeterministicMarker(t *testing
 		t.Fatalf("closed connections = %#v", manager.closed)
 	}
 	marker, err := readRemoteWorkspaceMarker(root, "/srv/project")
-	if err != nil || marker == nil || marker.ConnectionID != "rnew" {
+	if err != nil || marker == nil || marker.Version != 2 || marker.Generation != 1 || marker.ConnectionID != "rnew" {
 		t.Fatalf("rewritten marker = %#v, %v", marker, err)
 	}
 	info, err := os.Stat(filepath.Join(root, remoteWorkspaceMarkerName))
@@ -288,7 +288,7 @@ func TestRemoteSSHDirectorySelectionKeepsPublishedMarkerWhenReplacedCloseFails(t
 	if err := writeRemoteWorkspaceMarker(root, remoteagent.RemoteWorkspaceMarker{Version: 1, RemoteRoot: "/srv/project", ConnectionID: "rold"}); err != nil {
 		t.Fatal(err)
 	}
-	app := &App{bridgeToken: "window-token", remoteManager: manager, launcher: launcher}
+	app := &App{bridgeToken: "window-token", remoteManager: manager, remoteBridge: desktopTestRemoteBridge(t), launcher: launcher}
 	selection, err := app.RemoteSSHSelectDirectory("window-token", "rnew", "/srv/project")
 	if err != nil || selection.MarkerPath != root || selection.RemotePath != "/srv/project" {
 		t.Fatalf("selection = %#v, %v", selection, err)
@@ -311,7 +311,7 @@ func TestRemoteSSHCloseRejectsConnectionReferencedByPublishedMarker(t *testing.T
 			"rnew": {ID: "rnew", TargetHost: "example.com", TargetPort: 22, TargetUser: "coding"},
 		},
 	}
-	app := &App{bridgeToken: "window-token", remoteManager: manager, launcher: launcher}
+	app := &App{bridgeToken: "window-token", remoteManager: manager, remoteBridge: desktopTestRemoteBridge(t), launcher: launcher}
 	if _, err := app.RemoteSSHSelectDirectory("window-token", "rnew", "/srv/project"); err != nil {
 		t.Fatal(err)
 	}
@@ -338,7 +338,7 @@ func TestRemoteSSHDirectoryRebindingKeepsConnectionReferencedByAnotherMarker(t *
 			"rb": {ID: "rb", TargetHost: "example.com", TargetPort: 22, TargetUser: "coding"},
 		},
 	}
-	app := &App{bridgeToken: "window-token", remoteManager: manager, launcher: launcher}
+	app := &App{bridgeToken: "window-token", remoteManager: manager, remoteBridge: desktopTestRemoteBridge(t), launcher: launcher}
 	for _, selection := range []struct {
 		connectionID string
 		remotePath   string
@@ -434,7 +434,7 @@ func TestRemoteSSHDirectorySelectionSerializesMarkerRebinding(t *testing.T) {
 		manager.mu.Unlock()
 		return nil
 	}
-	app := &App{bridgeToken: "window-token", remoteManager: manager, launcher: launcher}
+	app := &App{bridgeToken: "window-token", remoteManager: manager, remoteBridge: desktopTestRemoteBridge(t), launcher: launcher}
 	firstResult := make(chan error, 1)
 	go func() {
 		_, err := app.RemoteSSHSelectDirectory("window-token", "ra", "/srv/project")
@@ -495,7 +495,7 @@ func TestRemoteSSHDirectorySelectionDoesNotWriteAfterWaitingContextIsCancelled(t
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	app := &App{ctx: ctx, bridgeToken: "window-token", remoteManager: manager, launcher: launcher}
+	app := &App{ctx: ctx, bridgeToken: "window-token", remoteManager: manager, remoteBridge: desktopTestRemoteBridge(t), launcher: launcher}
 	app.remoteMarkerMu.Lock()
 	locked := true
 	t.Cleanup(func() {
@@ -555,6 +555,18 @@ func TestRemoteSSHDirectoryAndCloseBindingsUseDeadlines(t *testing.T) {
 
 func sshPasswordInput(secret string) RemoteSSHConnectInput {
 	return RemoteSSHConnectInput{AttemptID: "rattempt", Host: "example.com", Port: 22, Username: "coding", Auth: RemoteSSHAuthInput{Kind: "password", Secret: secret}}
+}
+
+func desktopTestRemoteBridge(t *testing.T) *remoteBridge {
+	t.Helper()
+	bridge, err := newRemoteBridge("abcdefghijklmnopqrstuvwxyz0123456789abcdef", func(context.Context, string, string, string, []byte) (int, []byte, error) {
+		return 200, []byte(`{"ok":true}`), nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = bridge.Close() })
+	return bridge
 }
 
 type fakeRemoteSSHManager struct {

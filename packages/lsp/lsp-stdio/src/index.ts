@@ -54,7 +54,7 @@ const DEFAULT_KILL_GRACE_MS = 2_000
 
 /** One configured local language server and its host bounds. */
 export interface LspLocalServerConfig {
-  /** Executable to spawn (absolute, or resolved on PATH at load). */
+  /** 要启动的可执行文件：绝对路径，或在查询时从所选 Workspace 的 PATH 中解析。 */
   command: string
   /** Lowercase leading-dot extension → LSP language id (e.g. `{ '.ts': 'typescript' }`). */
   extensionToLanguage: Record<string, string>
@@ -117,56 +117,30 @@ function throwTeardownFailures(results: readonly PromiseSettledResult<void>[], m
 }
 
 /**
- * Register the configured stdio LSP providers. Resolves every executable at load (after credential
- * scrubbing) before publishing any provider; each process launches lazily on its first matching
- * query.
- * @param ctx - the plugin context carrying `fs`, `lsp`, and `subprocess`.
- * @param config - the resolved plugin configuration (schemastery has filled every default).
+ * 注册配置的 stdio LSP 提供方。发布任何提供方前会先校验配置；可执行文件会延迟到查询选定
+ * 具体 Workspace 与执行世界后解析，而每个进程仍在该查询中惰性启动。
+ * @param ctx - 携带 `fs`、`lsp` 与 `subprocess` 的插件上下文。
+ * @param config - 已解析的插件配置（schemastery 已填充所有默认值）。
  */
-export async function apply(ctx: Context, config: Config): Promise<void> {
+export function apply(ctx: Context, config: Config): void {
   const entries = Object.entries(config.servers)
   if (entries.length === 0) throw new Error('lsp-stdio: servers must contain at least one server')
 
-  const setupAbort = new AbortController()
-  const stopSetupCancellation = ctx.on('internal/plugin', (fiber) => {
-    // An async plugin callback must observe its own disposal before Cordis can
-    // run effect cleanup, because unload otherwise waits for this callback.
-    if (fiber === ctx.fiber && fiber.uid === null) {
-      setupAbort.abort(new Error('lsp-stdio setup disposed'))
-    }
+  // 只在发布前校验配置；可执行文件属于具体 Workspace 的执行世界，留到查询
+  // 选择 Workspace 后解析。这样 Remote-SSH 不会把 Node Host 的路径带到远端，
+  // 同时保留配置错误的全量校验和原子注册语义。
+  const providers = entries.map(([providerId, rawConfig]) => {
+    if (providerId.trim() === '') throw new Error('lsp-stdio: server ids must be non-empty strings')
+    const resolved = rawConfig as ResolvedServerConfig
+    validateServerConfig(providerId, resolved)
+    return new LocalLspProvider(
+      providerId,
+      ctx.fs,
+      resolved,
+      ctx.subprocess,
+      spec => ctx.subprocess.spawn(spec),
+    )
   })
-
-  // Resolve every server-local setting before registration so a bad later command or bound cannot
-  // publish an earlier provider. Registry-level mapping conflicts are rolled back below.
-  const providers = await (async () => {
-    const lookups = entries.map(async ([providerId, rawConfig]) => {
-      if (providerId.trim() === '') throw new Error('lsp-stdio: server ids must be non-empty strings')
-      const resolved = rawConfig as ResolvedServerConfig
-      validateServerConfig(providerId, resolved)
-      const executable = await ctx.subprocess.resolveExecutable(
-        resolved.command,
-        resolved.env,
-        setupAbort.signal,
-      )
-      setupAbort.signal.throwIfAborted()
-      return new LocalLspProvider(
-        providerId,
-        ctx.fs,
-        resolved,
-        executable,
-        spec => ctx.subprocess.spawn(spec),
-      )
-    })
-    try {
-      return await Promise.all(lookups)
-    } catch (error: unknown) {
-      setupAbort.abort(error)
-      await Promise.allSettled(lookups)
-      throw error
-    } finally {
-      stopSetupCancellation()
-    }
-  })()
 
   ctx.effect(() => {
     const disposers: Array<() => void> = []
@@ -230,7 +204,7 @@ class LocalLspProvider implements LspProvider {
     providerId: string,
     private readonly fs: Context['fs'],
     private readonly config: ResolvedServerConfig,
-    private readonly executable: string,
+    private readonly subprocess: Context['subprocess'],
     private readonly spawner: ConnectionSpawner,
   ) {
     this.id = LspProviderId(providerId)
@@ -280,7 +254,7 @@ class LocalLspProvider implements LspProvider {
       // Disposal may have snapshotted the instance map while host I/O was pending. Re-check before a
       // synchronous get-or-create so every spawned process remains owned by teardown.
       this.assertActive(querySignal)
-      let instance = this.instanceFor(workspaceKey, workspace)
+      let instance = await this.instanceFor(workspaceKey, workspace, querySignal)
       try {
         return await instance.query(request, source, querySignal)
       } catch (error) {
@@ -290,7 +264,7 @@ class LocalLspProvider implements LspProvider {
         await instance.dispose()
         this.evictIfCurrent(workspaceKey, instance)
         this.assertActive(querySignal)
-        instance = this.instanceFor(workspaceKey, workspace)
+        instance = await this.instanceFor(workspaceKey, workspace, querySignal)
         return await instance.query(request, source, querySignal)
       } finally {
         // Reach quiescence before dropping a dead slot; a replacement must survive this ownership check.
@@ -316,12 +290,27 @@ class LocalLspProvider implements LspProvider {
     return result
   }
 
-  /** Return or synchronously publish the one instance for a canonical workspace. */
-  private instanceFor(workspaceKey: WorkspaceKey, workspace: HostWorkspace): LspInstance {
+  /** 返回或发布一个规范 Workspace 对应的实例；可执行文件解析完成后才取得所有权。 */
+  private async instanceFor(
+    workspaceKey: WorkspaceKey,
+    workspace: HostWorkspace,
+    signal?: AbortSignal,
+  ): Promise<LspInstance> {
     this.assertActive()
     const existing = this.instances.get(workspaceKey)
     if (existing !== undefined) return existing
-    const created = this.createInstance(workspace)
+    const created = await this.createInstance(workspace, signal)
+    try {
+      this.assertActive(signal)
+    } catch (error) {
+      await created.dispose().catch(() => {})
+      throw error
+    }
+    const raced = this.instances.get(workspaceKey)
+    if (raced !== undefined) {
+      await created.dispose()
+      return raced
+    }
     this.instances.set(workspaceKey, created)
     return created
   }
@@ -332,11 +321,18 @@ class LocalLspProvider implements LspProvider {
     if (this.instances.get(workspace) === instance) this.instances.delete(workspace)
   }
 
-  private createInstance(workspace: HostWorkspace): LspInstance {
+  private async createInstance(workspace: HostWorkspace, signal?: AbortSignal): Promise<LspInstance> {
+    const command = await this.subprocess.resolveExecutable(
+      this.config.command,
+      this.config.env,
+      signal,
+      workspace.remoteTarget,
+    )
     const spec: InstanceSpec = {
-      command: this.executable,
+      command,
       args: this.config.args,
       cwd: workspace.canonicalPath,
+      ...workspace.remoteTarget === undefined ? {} : { remoteTarget: workspace.remoteTarget },
       workspaceUri: workspace.fileUrl,
       env: this.config.env,
       configuration: this.config.configuration,

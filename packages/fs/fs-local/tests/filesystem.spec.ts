@@ -185,7 +185,9 @@ describe('lstat', () => {
 
 describe('metadata cancellation', () => {
   it('rejects stat and lstat when their signals abort while the metadata probes are in flight', async () => {
-    await writeFile(join(dir, 'slow.txt'), 'hello')
+    const slowPath = join(dir, 'slow.txt')
+    await writeFile(slowPath, 'hello')
+    const slowTargetPath = await realpath(slowPath)
     const statStarted = Promise.withResolvers<undefined>()
     const statRelease = Promise.withResolvers<undefined>()
     const lstatStarted = Promise.withResolvers<undefined>()
@@ -196,16 +198,20 @@ describe('metadata cancellation', () => {
       const actual = await importOriginal<typeof import('node:fs/promises')>()
       return {
         ...actual,
-        async stat(path: string) {
-          statStarted.resolve(undefined)
-          await statRelease.promise
-          return actual.stat(path, { bigint: true })
-        },
-        async lstat(path: string) {
-          lstatStarted.resolve(undefined)
-          await lstatRelease.promise
-          return actual.lstat(path, { bigint: true })
-        },
+        stat: (async (...args: Parameters<typeof actual.stat>) => {
+          if (String(args[0]) === slowTargetPath) {
+            statStarted.resolve(undefined)
+            await statRelease.promise
+          }
+          return await actual.stat(...args)
+        }) as typeof actual.stat,
+        lstat: (async (...args: Parameters<typeof actual.lstat>) => {
+          if (String(args[0]) === slowPath) {
+            lstatStarted.resolve(undefined)
+            await lstatRelease.promise
+          }
+          return await actual.lstat(...args)
+        }) as typeof actual.lstat,
       }
     })
 
@@ -225,10 +231,10 @@ describe('metadata cancellation', () => {
       lstatController.abort()
       const statRejected = expect(pendingStat).rejects.toMatchObject({ code: 'FS_ABORTED' })
       const lstatRejected = expect(pendingLstat).rejects.toMatchObject({ code: 'FS_ABORTED' })
-      statRelease.resolve(undefined)
-      lstatRelease.resolve(undefined)
 
       await Promise.all([statRejected, lstatRejected])
+      statRelease.resolve(undefined)
+      lstatRelease.resolve(undefined)
     } finally {
       statRelease.resolve(undefined)
       lstatRelease.resolve(undefined)

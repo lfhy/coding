@@ -11,7 +11,7 @@
  */
 
 import type { Writable } from 'node:stream'
-import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
+import type { RemoteWorkspaceTarget, SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { encodeMessage, MessageDecoder } from './framing.ts'
 
 /** How to launch the server and answer its config requests. */
@@ -22,6 +22,8 @@ export interface ConnectionSpec {
   readonly args: readonly string[]
   /** The child's working directory (the canonical workspace). */
   readonly cwd: string
+  /** 执行世界中的语言服务器进程所用的 Remote-SSH 身份。 */
+  readonly remoteTarget?: RemoteWorkspaceTarget
   /** Explicit child environment overrides; the subprocess provider owns its ambient scrub. */
   readonly env: Record<string, string>
   /** Largest single framed message accepted from the server. */
@@ -92,6 +94,7 @@ export class LspConnection {
     this.handle = spawner({
       argv: [spec.command, ...spec.args],
       cwd: spec.cwd,
+      ...spec.remoteTarget === undefined ? {} : { remoteTarget: spec.remoteTarget },
       stdio: {
         stdin: 'pipe',
         stdout: 'pipe',

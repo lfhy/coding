@@ -32,11 +32,13 @@ const (
 	maxRemoteDirectoryListingBytes = int(remoteBridgeMaxPayloadBytes) - remoteDirectoryListingReserve
 	remoteWorkspaceMarkerName      = ".coding-remote-workspace.json"
 	remoteWorkspaceMarkerMaxSize   = 16 << 10
-	remoteDirectoryTimeout         = 15 * time.Second
-	remoteSelectionTimeout         = 20 * time.Second
-	remoteCloseTimeout             = 8 * time.Second
-	remoteCancelledAttemptTTL      = 5 * time.Minute
-	maxRemoteCancelledAttempts     = 64
+	// marker generation 会经 JSON number 进入 Node，不能超过 IEEE-754 的安全整数。
+	remoteWorkspaceMarkerMaxGeneration uint64 = 1<<53 - 1
+	remoteDirectoryTimeout                    = 15 * time.Second
+	remoteSelectionTimeout                    = 20 * time.Second
+	remoteCloseTimeout                        = 8 * time.Second
+	remoteCancelledAttemptTTL                 = 5 * time.Minute
+	maxRemoteCancelledAttempts                = 64
 )
 
 // RemoteSSHConnectInput 是 Wails 边界接收的一次性 SSH 连接输入。
@@ -300,7 +302,18 @@ func (a *App) RemoteSSHSelectDirectory(receivedToken, connectionID, remotePath s
 	if err := ctx.Err(); err != nil {
 		return RemoteSSHDirectorySelection{}, err
 	}
-	if err := writeRemoteWorkspaceMarker(markerRoot, marker); err != nil {
+	previousGeneration := remoteWorkspaceMarkerGeneration(previous)
+	if a.remoteBridge == nil {
+		return RemoteSSHDirectorySelection{}, errors.New("Remote-SSH bridge is unavailable")
+	}
+	// bridge 的写锁覆盖文件替换和路由发布。Node 即使在文件读取后才到达
+	// bridge，也必须带上这一轮 generation；旧快照不会被转发到旧连接。
+	_, err = a.remoteBridge.publishMarker(ctx, markerRoot, marker.RemoteRoot, marker.ConnectionID, previousGeneration, func(generation uint64) error {
+		marker.Version = 2
+		marker.Generation = generation
+		return writeRemoteWorkspaceMarker(markerRoot, marker)
+	})
+	if err != nil {
 		return RemoteSSHDirectorySelection{}, err
 	}
 	if a.remoteMarkers == nil {
@@ -539,7 +552,16 @@ func remoteMarkerRoot(home string, info remoteagent.ConnectionInfo, remoteRoot s
 			return "", err
 		}
 	}
-	return markerRoot, nil
+	// Node 通过 realpath 记住 markerRoot；桥接器必须注册同一规范本地身份，
+	// 否则 Home 中的合法符号链接会让每次请求都被误认为未发布 marker。
+	canonical, err := filepath.EvalSymlinks(markerRoot)
+	if err != nil {
+		return "", fmt.Errorf("canonicalize remote workspace marker directory: %w", err)
+	}
+	if !filepath.IsAbs(canonical) {
+		return "", errors.New("remote workspace marker directory is not absolute")
+	}
+	return canonical, nil
 }
 
 func stableRemoteHash(parts ...string) string {
@@ -628,14 +650,32 @@ func readRemoteWorkspaceMarker(markerRoot, expectedRemoteRoot string) (*remoteag
 	var marker remoteagent.RemoteWorkspaceMarker
 	decoder := json.NewDecoder(strings.NewReader(string(data)))
 	decoder.DisallowUnknownFields()
-	if decoder.Decode(&marker) != nil || decoder.Decode(&struct{}{}) != io.EOF || marker.Version != 1 ||
+	if decoder.Decode(&marker) != nil || decoder.Decode(&struct{}{}) != io.EOF || !validRemoteWorkspaceMarker(marker) ||
 		marker.RemoteRoot != expectedRemoteRoot || !validOpaqueID(marker.ConnectionID) {
 		return nil, errors.New("existing remote workspace marker is invalid")
 	}
 	return &marker, nil
 }
 
+// validRemoteWorkspaceMarker 同时接受旧的 v1 文件，以便下一次官方目录选择可将
+// 它迁移为带 generation 的 v2。v1 不能通过新 bridge 的身份头校验，因此不会
+// 重新获得远端访问能力。
+func validRemoteWorkspaceMarker(marker remoteagent.RemoteWorkspaceMarker) bool {
+	return marker.Version == 1 && marker.Generation == 0 ||
+		marker.Version == 2 && marker.Generation > 0 && marker.Generation <= remoteWorkspaceMarkerMaxGeneration
+}
+
+func remoteWorkspaceMarkerGeneration(marker *remoteagent.RemoteWorkspaceMarker) uint64 {
+	if marker != nil && marker.Version == 2 {
+		return marker.Generation
+	}
+	return 0
+}
+
 func writeRemoteWorkspaceMarker(markerRoot string, marker remoteagent.RemoteWorkspaceMarker) error {
+	if !validRemoteWorkspaceMarker(marker) {
+		return errors.New("remote workspace marker generation is invalid")
+	}
 	data, err := json.Marshal(marker)
 	if err != nil {
 		return fmt.Errorf("encode remote workspace marker: %w", err)

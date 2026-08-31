@@ -18,7 +18,7 @@
 
 在 Coding 桌面端中，选择**连接 Remote-SSH**，即可输入 SSH 主机、使用密码或私钥认证、确认未知主机密钥并选择远程目录。凭据只保留在当前对话框／连接中，不会保存；应用重启后需要重新执行连接流程。普通浏览器界面不能发起 SSH 连接。
 
-Remote-SSH 当前会把语义文件读取与编辑以及前台 Bash 路由到所选目录。远程 Bash 要求使用**完全访问**（`danger-full-access`）。后台命令、持久终端／PTY、LSP 和专用 glob／搜索进程尚不能在远端运行；这些能力会直接失败，不会退回本机执行。Code Mode 的隔离 worker 仍在本地运行，可以通过 binding 编排已支持的远端文件与前台 Bash 工具，但没有远端 Code runtime 或通用远程进程访问能力。
+Remote-SSH 会通过紧凑的 Go agent 在所选目录中运行语义文件系统操作、`glob`／`grep`、前台和后台 Bash、持久终端／PTY、LSP 与 Code Mode。目标侧不需要 Node；本地 Host 仍负责工具审批和持久 Session 日志。在拥有同执行世界的远程沙箱 Provider 出现前，远程 Bash 需要使用**完全访问**（`danger-full-access`）。Code Mode 会经 esbuild 转换 TypeScript，并在 Goja 中运行，因此它拥有声明的工具 binding，但没有 Node 内建模块、`process`、`require` 或 Host 环境。过期 marker 或已断开的连接会失败，而不会在本机运行操作。
 
 ## 运行任务
 

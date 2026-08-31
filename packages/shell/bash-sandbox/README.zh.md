@@ -14,7 +14,7 @@
 | `workspace-write` | 只能写入 `workspaceRoot` + `/tmp`（在 bwrap 下为临时目录，在 Landlock 下为宿主 `/tmp`，在 Seatbelt 下为 `/private/tmp` 加每用户临时目录） |
 | `danger-full-access` | 不作限制；绝不咨询提供方。前台结果携带 `sandbox: { mode, denied: false }`；后台进程句柄不携带沙箱事实。 |
 
-对于 Remote-SSH marker cwd，只有前台 `danger-full-access` 调用可以执行。`read-only` 和 `workspace-write` 会在咨询本地沙箱提供方之前失败，因为其内核 runner 无法约束另一台机器上的进程；后台 `start()` 也会失败，因为远程网关不提供进程句柄生命周期。远程 agent 仍会把工作目录约束到该 marker 所选目录，清除环境中形似凭据的变量及 `DSH_*` 变量，并要求目标上存在 `bash`。
+对于 Remote-SSH marker cwd，`danger-full-access` 的前台和后台调用都会通过目标 Go agent 运行。`read-only` 和 `workspace-write` 会在咨询本地沙箱提供方之前失败，因为其内核 runner 无法约束另一台机器上的进程。远程 agent 仍会把工作目录约束到该 marker 所选目录，清除环境中形似凭据的变量及 `DSH_*` 变量，并要求目标上存在 `bash`。
 
 语义：
 

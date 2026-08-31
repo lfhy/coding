@@ -366,7 +366,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/shell/bash-local/src/index.ts:48`](../packages/shell/bash-local/src/index.ts)
+Source: [`packages/shell/bash-local/src/index.ts:44`](../packages/shell/bash-local/src/index.ts)
 
 <a id="deepseek-aidsh-bash-sandbox"></a>
 
@@ -387,7 +387,7 @@ export type Config = LocalConfig
 
 Depends on: [`LocalConfig`](#deepseek-aidsh-bash-local)
 
-Source: [`packages/shell/bash-sandbox/src/index.ts:35`](../packages/shell/bash-sandbox/src/index.ts)
+Source: [`packages/shell/bash-sandbox/src/index.ts:36`](../packages/shell/bash-sandbox/src/index.ts)
 
 <a id="deepseek-aidsh-client-connection"></a>
 
@@ -460,12 +460,16 @@ export interface Config {
    * fixed result-envelope syntax is excluded.
    */
   maxOutputBytes?: number
-  /** The worker's max old-generation heap in MiB (`resourceLimits`); overflow kills the worker, surfacing as kind `'worker-exit'`. */
+  /**
+   * worker 的旧生代堆上限，单位为 MiB（`resourceLimits`），必须是 1 到
+   * 2048 的安全整数。Remote-SSH marker 会把该值作为远端子进程的字节上限；
+   * 溢出会终止 worker 或子进程，并以 `'worker-exit'` 返回。
+   */
   maxOldGenerationSizeMb?: number
 }
 ```
 
-Source: [`packages/code-runtime/code-runtime-worker-thread/src/index.ts:25`](../packages/code-runtime/code-runtime-worker-thread/src/index.ts)
+Source: [`packages/code-runtime/code-runtime-worker-thread/src/index.ts:33`](../packages/code-runtime/code-runtime-worker-thread/src/index.ts)
 
 <a id="deepseek-aidsh-compaction-basic"></a>
 
@@ -1305,7 +1309,7 @@ export interface Config {
 
 /** One configured local language server and its host bounds. */
 export interface LspLocalServerConfig {
-  /** Executable to spawn (absolute, or resolved on PATH at load). */
+  /** 要启动的可执行文件：绝对路径，或在查询时从所选 Workspace 的 PATH 中解析。 */
   command: string
   /** Lowercase leading-dot extension → LSP language id (e.g. `{ '.ts': 'typescript' }`). */
   extensionToLanguage: Record<string, string>
@@ -1531,7 +1535,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/shell/pwsh-local/src/index.ts:58`](../packages/shell/pwsh-local/src/index.ts)
+Source: [`packages/shell/pwsh-local/src/index.ts:59`](../packages/shell/pwsh-local/src/index.ts)
 
 <a id="deepseek-aidsh-pwsh-sandbox"></a>
 

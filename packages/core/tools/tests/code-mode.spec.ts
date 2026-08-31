@@ -1273,6 +1273,20 @@ describe('the run_code dispatch bridge', () => {
     expect(events.filter(event => event.type === 'tool/code-dispatch').map(event => (event.data as { name: string }).name)).toEqual(['slow'])
   })
 
+  it('forwards an owning session workspace and leaves a sessionless agent on the local runtime path', async () => {
+    const { ctx, runtime } = await setup({ mode: 'code' })
+    const { agent: owningAgent } = fakeAgent()
+    const { agent: sessionlessAgent } = await mintAgentScope(ctx, 'sessionless')
+
+    const owned = await runCode(ctx, 'return 1', { agent: owningAgent })
+    expect(owned.isError).toBe(false)
+    expect(runtime.lastRequest?.cwd).toBe('/workspace')
+
+    const sessionless = await runCode(ctx, 'return 1', { agent: sessionlessAgent })
+    expect(sessionless.isError).toBe(false)
+    expect(runtime.lastRequest).not.toHaveProperty('cwd')
+  })
+
   it('runs without an owning agent: dispatches work, event logging is skipped', async () => {
     const { ctx, runtime } = await setup({ mode: 'code' })
     const calls = registerEcho(ctx)

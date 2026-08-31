@@ -7,9 +7,12 @@ import { execFile } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
 import { Context } from '@deepseek-ai/cordis'
+import { FsTargetKey } from '@deepseek-ai/dsh-fs'
 import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
 import { deadline } from '@deepseek-ai/dsh-timeout'
+import { REMOTE_WORKSPACE_MARKER } from '@deepseek-ai/dsh-subprocess'
 import { canonicalizeWorkspace, readHostSource } from '@deepseek-ai/dsh-lsp-stdio'
+import type { FileSystem } from '@deepseek-ai/dsh-fs'
 
 const execFileAsync = promisify(execFile)
 
@@ -85,6 +88,46 @@ describe('canonicalizeWorkspace', () => {
 })
 
 describe('readHostSource', () => {
+  it('maps a remote absolute source back through its verified local marker', async () => {
+    await writeFile(join(root, REMOTE_WORKSPACE_MARKER), JSON.stringify({
+      version: 2,
+      remoteRoot: '/srv/project',
+      connectionId: 'connection-1',
+      generation: 1,
+    }))
+    const workspaceTarget = { targetKey: FsTargetKey('remote-workspace'), displayPath: '/srv/project' }
+    const sourceTarget = { targetKey: FsTargetKey('remote-source'), displayPath: '/srv/project/src/a.ts' }
+    const calls: Array<{ path: string; cwd: string | undefined }> = []
+    const remoteFs = {
+      resolve: async (path: string, options?: { cwd?: string }) => {
+        calls.push({ path, cwd: options?.cwd })
+        return sourceTarget
+      },
+      contains: () => true,
+      streamText: async () => (async function*() { yield 'const remote = true\n' })(),
+      fileUrl: () => 'file:///srv/project/src/a.ts',
+    } as unknown as FileSystem
+    const remoteWorkspace = {
+      target: workspaceTarget,
+      canonicalPath: '/srv/project',
+      fileUrl: 'file:///srv/project',
+      fsCwd: join(root, 'stale-marker-path'),
+      remoteTarget: {
+        markerRoot: root,
+        remoteRoot: '/srv/project',
+        remotePath: '/srv/project',
+        connectionId: 'connection-1',
+        markerGeneration: 1,
+      },
+    }
+
+    await expect(readHostSource(remoteFs, '/srv/project/src/a.ts', remoteWorkspace, BIG)).resolves.toEqual({
+      fileUrl: 'file:///srv/project/src/a.ts',
+      text: 'const remote = true\n',
+    })
+    expect(calls).toEqual([{ path: join(root, 'src', 'a.ts'), cwd: root }])
+  })
+
   it('reads a relative path against the workspace', async () => {
     await writeFile(join(ws, 'a.ts'), 'const x = 1\n')
     const source = await readSource('a.ts')

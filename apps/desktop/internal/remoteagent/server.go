@@ -26,23 +26,33 @@ import (
 )
 
 const (
-	maxRequestBytes   = 40 << 20
-	maxResponseBytes  = 40 << 20
-	maxFileBytes      = 16 << 20
-	maxOutputBytes    = 1 << 20
-	maxDirectoryItems = 10_000
-	defaultTimeout    = 120 * time.Second
-	maxTimeout        = 10 * time.Minute
+	maxRequestBytes    = 40 << 20
+	maxResponseBytes   = 40 << 20
+	maxFileBytes       = 16 << 20
+	maxOutputBytes     = 1 << 20
+	maxDirectoryItems  = 10_000
+	maxSearchResults   = 100_000
+	maxSearchBytes     = 20 << 20
+	maxSearchFiles     = 100_000
+	maxSearchLine      = 64 << 10
+	maxSearchReadBytes = 20 << 20
+	defaultTimeout     = 120 * time.Second
+	maxTimeout         = 10 * time.Minute
+	shutdownEscalation = 2 * time.Second
 )
 
 // Server 是不依赖 Node 的远程 agent HTTP 服务。它只绑定回环地址，SSH
 // 控制端负责把该端口转发到本机；每个请求还必须携带一次性 bearer token。
 type Server struct {
-	token      string
-	server     *http.Server
-	listener   net.Listener
-	shutdown   chan struct{}
-	shutdownMu sync.Once
+	token       string
+	server      *http.Server
+	listener    net.Listener
+	codeRuns    *CodeRunSessions
+	terminals   *TerminalSessions
+	processes   *ProcessSessions
+	shutdown    chan struct{}
+	shutdownMu  sync.Once
+	shutdownErr error
 }
 
 // NewServer 创建一个尚未监听的 agent 服务。
@@ -50,7 +60,23 @@ func NewServer(token string) (*Server, error) {
 	if len(token) < 32 {
 		return nil, errors.New("remote agent: bearer token is too short")
 	}
-	return &Server{token: token, shutdown: make(chan struct{})}, nil
+	codeRuns, err := NewCodeRunSessions(CodeRunSessionsOptions{
+		RunnerOptions: CodeRunnerOptions{
+			DefaultTimeout: defaultCodeTimeout,
+			MaxTimeout:     maxCodeTimeout,
+			// 给终态事件的协议封装留出余量，避免有效的运行结果在 HTTP
+			// 响应边界才被拒绝。
+			MaxOutputBytes: maxResponseBytes - (1 << 20),
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("remote agent: initialize code runner: %w", err)
+	}
+	return &Server{
+		token: token, codeRuns: codeRuns, terminals: NewTerminalSessions(TerminalSessionsOptions{}),
+		processes: NewProcessSessions(ProcessSessionsOptions{}),
+		shutdown:  make(chan struct{}),
+	}, nil
 }
 
 // ListenAndServe 在远端回环接口随机监听端口，并返回就绪信息。
@@ -71,17 +97,83 @@ func (s *Server) ListenAndServe() (ReadyRecord, error) {
 	return ready, nil
 }
 
-// Shutdown 停止服务并释放监听器。
+// Shutdown 开始一次共享的服务关闭。Done 只会在 HTTP、代码运行、普通进程和
+// PTY 都已完成各自的回收后关闭；调用方的 context 只限制这次等待。
 func (s *Server) Shutdown(ctx context.Context) error {
-	s.shutdownMu.Do(func() { close(s.shutdown) })
-	if s.server == nil {
-		return nil
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	return s.server.Shutdown(ctx)
+	s.shutdownMu.Do(func() {
+		go s.shutdownWorker()
+	})
+	select {
+	case <-s.shutdown:
+		return s.shutdownErr
+	case <-ctx.Done():
+		// 三个 registry 的 Close 都是共享关闭；对已完成或正在等待中的 Close
+		// 再传入已取消 context 会立即升级为强杀，而不会提前关闭 Done。
+		if s.codeRuns != nil {
+			_ = s.codeRuns.Close(ctx)
+		}
+		if s.processes != nil {
+			s.processes.Close(ctx)
+		}
+		if s.terminals != nil {
+			s.terminals.Close(ctx)
+		}
+		return ctx.Err()
+	}
 }
 
-// Done 在服务收到关闭请求后关闭，命令入口据此退出 SSH 会话。
+// Done 在关闭链真正收敛后关闭，命令入口据此退出 SSH 会话。
 func (s *Server) Done() <-chan struct{} { return s.shutdown }
+
+func (s *Server) shutdownWorker() {
+	var group sync.WaitGroup
+	var errMu sync.Mutex
+	recordShutdownErr := func(err error) {
+		if err == nil {
+			return
+		}
+		errMu.Lock()
+		defer errMu.Unlock()
+		if s.shutdownErr == nil {
+			s.shutdownErr = err
+		}
+	}
+	if s.codeRuns != nil {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			recordShutdownErr(s.codeRuns.Close(context.Background()))
+		}()
+	}
+	if s.processes != nil {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			s.processes.Close(context.Background())
+		}()
+	}
+	if s.terminals != nil {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			s.terminals.Close(context.Background())
+		}()
+	}
+	if s.server != nil {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			if err := s.server.Shutdown(context.Background()); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				recordShutdownErr(err)
+			}
+		}()
+	}
+	group.Wait()
+	close(s.shutdown)
+}
 
 func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
@@ -94,6 +186,23 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/v1/update_file", s.handleUpdate)
 	mux.HandleFunc("/v1/edit_file", s.handleEdit)
 	mux.HandleFunc("/v1/exec", s.handleExec)
+	mux.HandleFunc("/v1/search", s.handleSearch)
+	mux.HandleFunc("/v1/code/start", s.handleCodeStart)
+	mux.HandleFunc("/v1/code/next", s.handleCodeNext)
+	mux.HandleFunc("/v1/code/reply", s.handleCodeReply)
+	mux.HandleFunc("/v1/code/cancel", s.handleCodeCancel)
+	mux.HandleFunc("/v1/terminals/start", s.handleTerminalStart)
+	mux.HandleFunc("/v1/terminals/read", s.handleTerminalRead)
+	mux.HandleFunc("/v1/terminals/write", s.handleTerminalWrite)
+	mux.HandleFunc("/v1/terminals/foreground", s.handleTerminalForeground)
+	mux.HandleFunc("/v1/terminals/signal", s.handleTerminalSignal)
+	mux.HandleFunc("/v1/terminals/terminate", s.handleTerminalTerminate)
+	mux.HandleFunc("/v1/processes/resolve", s.handleProcessResolve)
+	mux.HandleFunc("/v1/processes/start", s.handleProcessStart)
+	mux.HandleFunc("/v1/processes/read", s.handleProcessRead)
+	mux.HandleFunc("/v1/processes/write", s.handleProcessWrite)
+	mux.HandleFunc("/v1/processes/wait", s.handleProcessWait)
+	mux.HandleFunc("/v1/processes/kill", s.handleProcessKill)
 	mux.HandleFunc("/v1/shutdown", s.handleShutdown)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !allowedAgentRoute(r.Method, r.URL.Path) {
@@ -112,7 +221,7 @@ func allowedAgentRoute(method, path string) bool {
 	switch path {
 	case "/v1/health":
 		return method == http.MethodGet
-	case "/v1/resolve", "/v1/stat", "/v1/directories", "/v1/read_file", "/v1/read_bytes", "/v1/update_file", "/v1/edit_file", "/v1/exec", "/v1/shutdown":
+	case "/v1/resolve", "/v1/stat", "/v1/directories", "/v1/read_file", "/v1/read_bytes", "/v1/update_file", "/v1/edit_file", "/v1/exec", "/v1/search", "/v1/code/start", "/v1/code/next", "/v1/code/reply", "/v1/code/cancel", "/v1/terminals/start", "/v1/terminals/read", "/v1/terminals/write", "/v1/terminals/foreground", "/v1/terminals/signal", "/v1/terminals/terminate", "/v1/processes/resolve", "/v1/processes/start", "/v1/processes/read", "/v1/processes/write", "/v1/processes/wait", "/v1/processes/kill", "/v1/shutdown":
 		return method == http.MethodPost
 	default:
 		return false
@@ -329,10 +438,229 @@ func (s *Server) handleExec(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
+	var request SearchRequest
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	result, err := searchWorkspace(r.Context(), request)
+	if err != nil {
+		writeAgentError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleCodeStart(w http.ResponseWriter, r *http.Request) {
+	var request CodeRunStartRequest
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	response, err := s.codeRuns.Start(request)
+	if err != nil {
+		writeCodeRunError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *Server) handleCodeNext(w http.ResponseWriter, r *http.Request) {
+	var request CodeRunNextRequest
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	response, err := s.codeRuns.Next(r.Context(), request)
+	if err != nil {
+		writeCodeRunError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *Server) handleCodeReply(w http.ResponseWriter, r *http.Request) {
+	var request CodeRunReplyRequest
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	if err := s.codeRuns.Reply(request); err != nil {
+		writeCodeRunError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"accepted": true})
+}
+
+func (s *Server) handleCodeCancel(w http.ResponseWriter, r *http.Request) {
+	var request CodeRunCancelRequest
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	if err := s.codeRuns.Cancel(r.Context(), request); err != nil {
+		writeCodeRunError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"accepted": true})
+}
+
+func (s *Server) handleTerminalStart(w http.ResponseWriter, r *http.Request) {
+	var request TerminalStartRequest
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	response, err := s.terminals.Start(request)
+	if err != nil {
+		writeTerminalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *Server) handleTerminalRead(w http.ResponseWriter, r *http.Request) {
+	var request TerminalReadRequest
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	response, err := s.terminals.Read(r.Context(), request)
+	if err != nil {
+		writeTerminalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *Server) handleTerminalWrite(w http.ResponseWriter, r *http.Request) {
+	var request TerminalWriteRequest
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	if err := s.terminals.Write(request); err != nil {
+		writeTerminalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"accepted": true})
+}
+
+func (s *Server) handleTerminalForeground(w http.ResponseWriter, r *http.Request) {
+	var request TerminalForegroundRequest
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	response, err := s.terminals.Foreground(request)
+	if err != nil {
+		writeTerminalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *Server) handleTerminalSignal(w http.ResponseWriter, r *http.Request) {
+	var request TerminalSignalRequest
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	response, err := s.terminals.SignalForeground(request)
+	if err != nil {
+		writeTerminalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *Server) handleTerminalTerminate(w http.ResponseWriter, r *http.Request) {
+	var request TerminalTerminateRequest
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	if err := s.terminals.Terminate(r.Context(), request); err != nil {
+		writeTerminalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"accepted": true})
+}
+
+func (s *Server) handleProcessResolve(w http.ResponseWriter, r *http.Request) {
+	var request ProcessResolveRequest
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	response, err := s.processes.Resolve(request)
+	if err != nil {
+		writeProcessError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *Server) handleProcessStart(w http.ResponseWriter, r *http.Request) {
+	var request ProcessStartRequest
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	response, err := s.processes.Start(request)
+	if err != nil {
+		writeProcessError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *Server) handleProcessRead(w http.ResponseWriter, r *http.Request) {
+	var request ProcessReadRequest
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	response, err := s.processes.Read(r.Context(), request)
+	if err != nil {
+		writeProcessError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *Server) handleProcessWrite(w http.ResponseWriter, r *http.Request) {
+	var request ProcessWriteRequest
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	response, err := s.processes.Write(request)
+	if err != nil {
+		writeProcessError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *Server) handleProcessWait(w http.ResponseWriter, r *http.Request) {
+	var request ProcessWaitRequest
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	response, err := s.processes.Wait(r.Context(), request)
+	if err != nil {
+		writeProcessError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *Server) handleProcessKill(w http.ResponseWriter, r *http.Request) {
+	var request ProcessKillRequest
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	response, err := s.processes.Kill(request)
+	if err != nil {
+		writeProcessError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
 func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"accepted": true})
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		// 响应写回后使用独立的关闭看门狗：到期会强杀仍存活的子树，但共享
+		// shutdown worker 继续等待 reap，故 cmd/main 不会因这次超时提前退出。
+		ctx, cancel := context.WithTimeout(context.Background(), shutdownEscalation)
 		defer cancel()
 		_ = s.Shutdown(ctx)
 	}()
@@ -394,6 +722,76 @@ func writeAgentError(w http.ResponseWriter, err error) {
 		status, code = http.StatusForbidden, "permission-denied"
 	}
 	writeError(w, status, code, err.Error())
+}
+
+// writeCodeRunError 固定远端 Code 会话的可恢复错误，避免调用方依赖 Go 文本。
+func writeCodeRunError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, ErrCodeRunSessionLimit):
+		writeError(w, http.StatusTooManyRequests, "code-session-limit", "code execution session capacity is exhausted")
+	case errors.Is(err, ErrCodeRunStartNonceConflict):
+		writeError(w, http.StatusConflict, "code-start-nonce-conflict", "start nonce was already used for different code execution input")
+	case errors.Is(err, ErrCodeRunSessionNotFound):
+		writeError(w, http.StatusNotFound, "code-session-not-found", "code execution session was not found")
+	case errors.Is(err, ErrCodeRunCallNotFound):
+		writeError(w, http.StatusConflict, "code-call-not-pending", "code execution call is not pending")
+	case errors.Is(err, ErrCodeRunFinished), errors.Is(err, ErrCodeToolCallSettled):
+		writeError(w, http.StatusConflict, "code-run-finished", "code execution session has already finished")
+	default:
+		writeError(w, http.StatusBadRequest, "invalid-code-request", "invalid code execution request")
+	}
+}
+
+// writeTerminalError 固定 PTY 会话可恢复的失败分类，避免 Node provider 解析系统错误文本。
+func writeTerminalError(w http.ResponseWriter, err error) {
+	var failure *agentFailure
+	if errors.As(err, &failure) {
+		writeAgentError(w, err)
+		return
+	}
+	switch {
+	case errors.Is(err, ErrTerminalNotFound):
+		writeError(w, http.StatusNotFound, "terminal-not-found", "terminal session was not found")
+	case errors.Is(err, ErrTerminalClosed):
+		writeError(w, http.StatusConflict, "terminal-closed", "terminal session is closed")
+	case errors.Is(err, ErrTerminalUnavailable):
+		writeError(w, http.StatusNotImplemented, "pty-unavailable", "a real PTY is unavailable on this platform")
+	case errors.Is(err, ErrTerminalNoForeground):
+		writeError(w, http.StatusConflict, "terminal-no-foreground", "terminal has no foreground process group")
+	case errors.Is(err, ErrTerminalRootKillRefused):
+		writeError(w, http.StatusConflict, "terminal-root-kill-refused", "terminate the terminal session instead")
+	case errors.Is(err, ErrTerminalInputBackpressure):
+		writeError(w, http.StatusTooManyRequests, "terminal-input-backpressure", "terminal input queue is full")
+	case errors.Is(err, ErrTerminalStartConflict):
+		writeError(w, http.StatusConflict, "terminal-start-conflict", "start nonce conflicts with an existing terminal request")
+	case errors.Is(err, os.ErrNotExist):
+		writeError(w, http.StatusNotFound, "not-found", "terminal path was not found")
+	case errors.Is(err, os.ErrPermission):
+		writeError(w, http.StatusForbidden, "permission-denied", "terminal operation is not permitted")
+	default:
+		writeError(w, http.StatusBadRequest, "invalid-terminal-request", "invalid terminal request")
+	}
+}
+
+// writeProcessError 固定普通进程会话的恢复错误，避免 Node provider 依赖系统文本。
+func writeProcessError(w http.ResponseWriter, err error) {
+	var failure *agentFailure
+	if errors.As(err, &failure) {
+		writeAgentError(w, err)
+		return
+	}
+	switch {
+	case errors.Is(err, ErrProcessNotFound):
+		writeError(w, http.StatusNotFound, "process-not-found", "process was not found")
+	case errors.Is(err, ErrProcessClosed):
+		writeError(w, http.StatusConflict, "process-closed", "process stdin is closed")
+	case errors.Is(err, ErrProcessInputBackpressure):
+		writeError(w, http.StatusTooManyRequests, "process-input-backpressure", "process input queue is full")
+	case errors.Is(err, ErrProcessStartConflict):
+		writeError(w, http.StatusConflict, "process-start-conflict", "start nonce conflicts with an existing process request")
+	default:
+		writeAgentError(w, err)
+	}
 }
 
 // agentFailure 保留工具层可依赖的错误分类，不把底层错误文本作为协议。

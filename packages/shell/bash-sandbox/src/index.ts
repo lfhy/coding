@@ -11,6 +11,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import type { ShellExecRequest, ShellExecSpec, ShellProcess, ShellRunResult } from '@deepseek-ai/dsh-shell'
 import { SandboxUnavailableError } from '@deepseek-ai/dsh-sandbox'
+import { remoteWorkspacePath, remoteWorkspacePathSync } from '@deepseek-ai/dsh-subprocess'
 import type {
   ConfinedArgv,
   ConfinedSandboxMode,
@@ -86,19 +87,15 @@ export class SandboxBashExecutor extends LocalBashExecutor {
   }
 
   override async run(spec: ShellExecSpec): Promise<ShellRunResult> {
+    spec.signal?.throwIfAborted()
     const policy = spec.sandboxPolicy as SandboxExecutionPolicy
     const { mode } = policy
-    const remote = await this.remoteWorkspaceForWorkdir(spec.workdir, spec.signal)
-    if (remote !== undefined) {
-      if (mode !== 'danger-full-access') {
-        throw new Error('remote SSH bash requires danger-full-access: the local file sandbox cannot enforce this mode on a remote shell')
-      }
-      const result = await this.runRemoteWorkspace(spec, remote)
-      return { ...result, sandbox: { mode, denied: false } }
-    }
     if (mode === 'danger-full-access') {
       const result = await super.run(spec)
       return { ...result, sandbox: { mode, denied: false } }
+    }
+    if (await remoteWorkspacePath(spec.workdir, process.cwd(), spec.signal) !== undefined) {
+      throw new Error('remote SSH bash requires danger-full-access: the local file sandbox cannot enforce this mode on a remote shell')
     }
     const confined = this.confine(spec.command, { ...policy, mode })
     let result: ShellRunResult
@@ -124,11 +121,10 @@ export class SandboxBashExecutor extends LocalBashExecutor {
   override start(spec: ShellExecSpec): ShellProcess {
     const policy = spec.sandboxPolicy as SandboxExecutionPolicy
     const { mode } = policy
-    const remote = this.remoteWorkspaceForWorkdirSync(spec.workdir)
-    if (remote !== undefined) {
-      throw new Error('remote background commands are unsupported')
-    }
     if (mode === 'danger-full-access') return super.start(spec)
+    if (remoteWorkspacePathSync(spec.workdir, process.cwd()) !== undefined) {
+      throw new Error('remote SSH bash requires danger-full-access: the local file sandbox cannot enforce this mode on a remote shell')
+    }
     // Once startArgv returns, install facts synchronously; promise settlement
     // cannot run before start() returns.
     const confined = this.confine(spec.command, { ...policy, mode })

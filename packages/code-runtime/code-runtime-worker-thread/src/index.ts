@@ -6,13 +6,21 @@
  * @module @deepseek-ai/dsh-code-runtime-worker-thread
  */
 
+import { randomBytes } from 'node:crypto'
 import { Worker } from 'node:worker_threads'
 import { stripTypeScriptTypes } from 'node:module'
 import type { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
+import {
+  callRemoteWorkspaceBridge,
+  remoteWorkspacePath,
+  RemoteWorkspaceError,
+  verifyRemoteWorkspaceTarget,
+} from '@deepseek-ai/dsh-subprocess'
+import type { RemoteWorkspaceTarget } from '@deepseek-ai/dsh-subprocess'
+import { deadline, MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import { CodeRuntime, DUNDER_MEMBER, PORTABLE_RESERVED_WORDS, RESERVED_BINDING_GLOBALS, RESERVED_ERROR_MEMBERS } from '@deepseek-ai/dsh-code-runtime'
 import type { CodeBindingNamespace, CodeJsonValue, CodeRunFailure, CodeRunRequest, CodeRunResult } from '@deepseek-ai/dsh-code-runtime'
 import { snapshotJsonValue } from '@deepseek-ai/dsh-session'
@@ -46,7 +54,11 @@ export interface Config {
    * fixed result-envelope syntax is excluded.
    */
   maxOutputBytes?: number
-  /** The worker's max old-generation heap in MiB (`resourceLimits`); overflow kills the worker, surfacing as kind `'worker-exit'`. */
+  /**
+   * worker 的旧生代堆上限，单位为 MiB（`resourceLimits`），必须是 1 到
+   * 2048 的安全整数。Remote-SSH marker 会把该值作为远端子进程的字节上限；
+   * 溢出会终止 worker 或子进程，并以 `'worker-exit'` 返回。
+   */
   maxOldGenerationSizeMb?: number
 }
 
@@ -64,6 +76,27 @@ const ELU_POLL_INTERVAL_MS = 25
 
 /** Smallest cap that can represent the counted payloads: an empty logs array plus an empty JSON failure message. */
 const MIN_OUTPUT_BYTES = 4
+
+/** 一 MiB 的字节数；远端子进程接收字节上限而本地 worker 配置使用 MiB。 */
+const BYTES_PER_MIB = 1024 * 1024
+
+/** Go agent 与本地 worker 共用的单次内存硬上限（2 GiB）。 */
+const MAX_REMOTE_MEMORY_MIB = 2_048
+
+/** Remote agent 的 Goja runner 当前接受的最大单次墙钟预算。 */
+const REMOTE_CODE_MAX_TIMEOUT_MS = 10 * 60 * 1_000
+
+/** 一次远端 bridge RPC 的最长等待；它受调用方更短的墙钟预算进一步收紧。 */
+const REMOTE_CODE_BRIDGE_TIMEOUT_MS = 30_000
+
+/** Go agent 的 Code Mode 事件槽位上限，Host 也以它约束尚未回包的本地 binding。 */
+const REMOTE_CODE_MAX_PENDING_BINDINGS = 128
+
+/** 供 timeout 工具标识远端 RPC 自己的等待上限，不与用户取消混淆。 */
+const REMOTE_CODE_BRIDGE_TIMEOUT = 'REMOTE_CODE_BRIDGE_TIMEOUT'
+
+/** 已派发但丢失响应的 code start 最多以同一 nonce 重试一次。 */
+const REMOTE_CODE_START_ATTEMPTS = 2
 
 /**
  * The seam's language-portable identifier subset (see
@@ -90,6 +123,12 @@ interface LiveRun {
   finished: Promise<void>
 }
 
+/** 一项已启动的远端 Goja 执行；与本地 worker 一样由 provider 清理。 */
+interface LiveRemoteRun {
+  cancel(): Promise<void>
+  finished: Promise<void>
+}
+
 /**
  * The worker entry path. Source runs unbuilt (`src/worker.ts`, loadable
  * directly on this repo's Node range via native type stripping — the file
@@ -108,6 +147,11 @@ const WORKER_PATH = fileURLToPath(new URL(new URL(import.meta.url).pathname.ends
 /** Render an unknown thrown value as a message, `Error` or not. */
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+/** AbortSignal 可在任意 await 期间变化，读取时不能由当前同步控制流推断。 */
+function remoteRunWasAborted(signal: AbortSignal): boolean {
+  return signal.aborted
 }
 
 /** Resolve after a worker pipe emits all queued data, or closes/errors during termination. */
@@ -228,12 +272,237 @@ class OutputLedger {
   }
 }
 
+type RemoteCodeFailureKind = CodeRunFailure['kind']
+
+interface RemoteCodeWireEvent {
+  type: 'tool_call' | 'log' | 'done'
+  sequence: number
+  callId?: number
+  global?: string
+  name?: string
+  arguments?: CodeJsonValue
+  level?: string
+  text?: string
+  result?: CodeRunResult
+}
+
+interface RemoteCodeNext {
+  events: RemoteCodeWireEvent[]
+  cursor: number
+  done: boolean
+}
+
+function remoteCodeRecord(value: unknown): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new RemoteWorkspaceError('REMOTE_BRIDGE_RESPONSE_INVALID', 'remote code runtime returned an invalid response')
+  }
+  return value as Record<string, unknown>
+}
+
+/** 远端 agent 的每一种成功载荷都有封闭字段集，避免未知字段悄然改变协议语义。 */
+function remoteCodeOnlyKeys(record: Record<string, unknown>, keys: readonly string[]): void {
+  if (Object.keys(record).some(key => !keys.includes(key))) {
+    throw new RemoteWorkspaceError('REMOTE_BRIDGE_RESPONSE_INVALID', 'remote code runtime returned an invalid response')
+  }
+}
+
+function remoteCodeString(record: Record<string, unknown>, key: string): string {
+  const value = record[key]
+  if (!Object.hasOwn(record, key) || typeof value !== 'string') {
+    throw new RemoteWorkspaceError('REMOTE_BRIDGE_RESPONSE_INVALID', 'remote code runtime returned an invalid response')
+  }
+  return value
+}
+
+function remoteCodeInteger(record: Record<string, unknown>, key: string, minimum = 0): number {
+  const value = record[key]
+  if (!Object.hasOwn(record, key) || typeof value !== 'number' || !Number.isSafeInteger(value) || value < minimum) {
+    throw new RemoteWorkspaceError('REMOTE_BRIDGE_RESPONSE_INVALID', 'remote code runtime returned an invalid response')
+  }
+  return value
+}
+
+/** 将 bridge 解出的值重新快照，拒绝 JSON 无法无损表示的外部载荷。 */
+function remoteCodeJson(value: unknown): CodeJsonValue | undefined {
+  try {
+    return snapshotJsonValue(value) as CodeJsonValue | undefined
+  } catch {
+    return undefined
+  }
+}
+
+function parseRemoteCodeResult(value: unknown): CodeRunResult {
+  const record = remoteCodeRecord(value)
+  remoteCodeOnlyKeys(record, ['logs', 'value', 'error'])
+  const rawLogs = record.logs
+  if (!Object.hasOwn(record, 'logs') || !Array.isArray(rawLogs)) {
+    throw new RemoteWorkspaceError('REMOTE_BRIDGE_RESPONSE_INVALID', 'remote code runtime returned an invalid response')
+  }
+  const logs: string[] = []
+  for (const log of rawLogs) {
+    if (typeof log !== 'string') {
+      throw new RemoteWorkspaceError('REMOTE_BRIDGE_RESPONSE_INVALID', 'remote code runtime returned an invalid response')
+    }
+    logs.push(log)
+  }
+  const hasValue = Object.hasOwn(record, 'value')
+  const hasError = Object.hasOwn(record, 'error')
+  if (hasValue && hasError) {
+    throw new RemoteWorkspaceError('REMOTE_BRIDGE_RESPONSE_INVALID', 'remote code runtime returned an invalid response')
+  }
+  if (hasError) {
+    const failure = remoteCodeRecord(record.error)
+    remoteCodeOnlyKeys(failure, ['kind', 'message'])
+    const kind = remoteCodeString(failure, 'kind')
+    if (!isRemoteCodeFailureKind(kind)) {
+      throw new RemoteWorkspaceError('REMOTE_BRIDGE_RESPONSE_INVALID', 'remote code runtime returned an invalid response')
+    }
+    return { logs, error: { kind, message: remoteCodeString(failure, 'message') } }
+  }
+  if (!hasValue) return { logs }
+  const completion = remoteCodeJson(record.value)
+  if (completion === undefined) {
+    throw new RemoteWorkspaceError('REMOTE_BRIDGE_RESPONSE_INVALID', 'remote code runtime returned an invalid response')
+  }
+  return { logs, value: completion }
+}
+
+function isRemoteCodeFailureKind(value: string): value is RemoteCodeFailureKind {
+  return value === 'exception' || value === 'timeout' || value === 'abort'
+    || value === 'worker-exit' || value === 'invalid-output' || value === 'output-limit'
+}
+
+/** 只有父端可收敛的预算/取消终态能与尚未回包的 binding 并存。 */
+function remoteCodeDoneMayContainPending(result: CodeRunResult): boolean {
+  return result.error?.kind === 'timeout' || result.error?.kind === 'abort'
+}
+
+function parseRemoteCodeStart(value: unknown): string {
+  const record = remoteCodeRecord(value)
+  remoteCodeOnlyKeys(record, ['id'])
+  const id = remoteCodeString(record, 'id')
+  if (!/^[a-f0-9]{32}$/u.test(id)) {
+    throw new RemoteWorkspaceError('REMOTE_BRIDGE_RESPONSE_INVALID', 'remote code runtime returned an invalid response')
+  }
+  return id
+}
+
+function parseRemoteCodeAccepted(value: unknown): void {
+  const record = remoteCodeRecord(value)
+  remoteCodeOnlyKeys(record, ['accepted'])
+  if (!Object.hasOwn(record, 'accepted') || record.accepted !== true) {
+    throw new RemoteWorkspaceError('REMOTE_BRIDGE_RESPONSE_INVALID', 'remote code runtime returned an invalid response')
+  }
+}
+
+function parseRemoteCodeEvent(value: unknown): RemoteCodeWireEvent {
+  const record = remoteCodeRecord(value)
+  const type = remoteCodeString(record, 'type')
+  const sequence = remoteCodeInteger(record, 'sequence', 1)
+  if (type === 'log') {
+    remoteCodeOnlyKeys(record, ['type', 'sequence', 'level', 'text'])
+    // level 仅供远端诊断分级；CodeRuntime 的稳定结果仍是有序文本数组。
+    remoteCodeString(record, 'level')
+    return { type, sequence, text: remoteCodeString(record, 'text') }
+  }
+  if (type === 'tool_call') {
+    remoteCodeOnlyKeys(record, ['type', 'sequence', 'callId', 'global', 'name', 'arguments'])
+    if (!Object.hasOwn(record, 'arguments')) {
+      throw new RemoteWorkspaceError('REMOTE_BRIDGE_RESPONSE_INVALID', 'remote code runtime returned an invalid response')
+    }
+    const argumentsValue = remoteCodeJson(record.arguments)
+    if (argumentsValue === undefined) {
+      throw new RemoteWorkspaceError('REMOTE_BRIDGE_RESPONSE_INVALID', 'remote code runtime returned an invalid response')
+    }
+    return {
+      type,
+      sequence,
+      callId: remoteCodeInteger(record, 'callId', 1),
+      global: remoteCodeString(record, 'global'),
+      name: remoteCodeString(record, 'name'),
+      arguments: argumentsValue,
+    }
+  }
+  if (type === 'done') {
+    remoteCodeOnlyKeys(record, ['type', 'sequence', 'value', 'logs', 'error'])
+    // done 保留完整 logs；流式 log 事件可能因远端事件队列饱和而被省略。
+    const result: Record<string, unknown> = {}
+    for (const key of ['logs', 'value', 'error']) {
+      if (Object.hasOwn(record, key)) result[key] = record[key]
+    }
+    return { type, sequence, result: parseRemoteCodeResult(result) }
+  }
+  throw new RemoteWorkspaceError('REMOTE_BRIDGE_RESPONSE_INVALID', 'remote code runtime returned an invalid response')
+}
+
+function parseRemoteCodeNext(value: unknown, after: number): RemoteCodeNext {
+  const record = remoteCodeRecord(value)
+  remoteCodeOnlyKeys(record, ['events', 'cursor', 'done'])
+  if (!Object.hasOwn(record, 'events') || !Array.isArray(record.events)
+    || !Object.hasOwn(record, 'done') || typeof record.done !== 'boolean') {
+    throw new RemoteWorkspaceError('REMOTE_BRIDGE_RESPONSE_INVALID', 'remote code runtime returned an invalid response')
+  }
+  const events = record.events.map(parseRemoteCodeEvent)
+  const cursor = remoteCodeInteger(record, 'cursor')
+  let expected = after
+  let doneAt = -1
+  for (const [index, event] of events.entries()) {
+    if (event.sequence !== expected + 1) {
+      throw new RemoteWorkspaceError('REMOTE_BRIDGE_RESPONSE_INVALID', 'remote code runtime returned an invalid response')
+    }
+    expected = event.sequence
+    if (event.type === 'done') doneAt = index
+  }
+  // done:true 必须携带最后一条 done 事件；空批次不能伪造远端已经静默。
+  if (cursor !== expected || (record.done ? doneAt < 0 || doneAt !== events.length - 1 : doneAt !== -1)) {
+    throw new RemoteWorkspaceError('REMOTE_BRIDGE_RESPONSE_INVALID', 'remote code runtime returned an invalid response')
+  }
+  return { events, cursor, done: record.done }
+}
+
+function remoteCodeFailure(message: string): CodeRunFailure {
+  return { kind: 'worker-exit', message }
+}
+
+/** 为一次远端 code start 生成可跨重试复用的 agent 幂等键。 */
+function remoteCodeStartNonce(): string {
+  return randomBytes(16).toString('hex')
+}
+
+/** 将本地数值配置转换为远端 wire 所需的正毫秒整数。远端墙钟最多十分钟，超过它的计算预算不会先于墙钟生效。 */
+function remoteCodeComputeMs(computeMs: number): number {
+  return Math.min(Math.ceil(computeMs), REMOTE_CODE_MAX_TIMEOUT_MS)
+}
+
 /**
- * The shipped {@link CodeRuntime} backend (`ctx.codeRuntime`). Registers as
- * the `codeRuntime` service; every cap comes from validated config. See the
- * module doc for the containment model and the Service Definition's class JSDoc for
- * the contract this implements (error-as-field, hostile-peer port,
- * no cross-run state, dispose to quiescence).
+ * 只有传输层未给出确定 HTTP 结果时，才能拿同一 nonce 重试 start。业务拒绝已
+ * 是确定结果，不能误作一次新的创建尝试。
+ */
+function canRetryRemoteCodeStart(error: unknown): boolean {
+  return error instanceof RemoteWorkspaceError
+    && (error.code === 'REMOTE_BRIDGE_UNAVAILABLE' || error.code === 'REMOTE_BRIDGE_RESPONSE_INVALID')
+}
+
+/** bridge 在 marker 已重绑后对旧 generation 返回的明确拒绝。 */
+function isStaleMarkerRejection(error: unknown): boolean {
+  return error instanceof RemoteWorkspaceError
+    && error.code === 'REMOTE_BRIDGE_REJECTED'
+    && error.bridgeCode === 'stale-marker'
+}
+
+/** 重试创建前必须证明 marker 仍指向最初派发 start 的同一远端世界。 */
+function sameRemoteWorkspaceTarget(left: RemoteWorkspaceTarget, right: RemoteWorkspaceTarget): boolean {
+  return left.markerRoot === right.markerRoot
+    && left.remoteRoot === right.remoteRoot
+    && left.remotePath === right.remotePath
+    && left.connectionId === right.connectionId
+    && left.markerGeneration === right.markerGeneration
+}
+
+/**
+ * 已交付的 {@link CodeRuntime} 后端（`ctx.codeRuntime`）。它注册为
+ * `codeRuntime` 服务，全部上限都来自已校验配置。隔离模型见模块说明，服务定义
+ * 类的 JSDoc 规定本实现的结果字段、敌对端口、跨运行无状态和处置静默合约。
  */
 export class WorkerThreadCodeRuntime extends CodeRuntime {
   static Config: z<Config> = z.object({
@@ -248,18 +517,23 @@ export class WorkerThreadCodeRuntime extends CodeRuntime {
 
   private readonly config: ResolvedConfig
   private readonly live = new Set<LiveRun>()
+  private readonly remoteLive = new Set<LiveRemoteRun>()
   private disposed = false
 
   constructor(ctx: Context, config: Config) {
     super(ctx)
-    // Schemastery filled the defaults; the cast records that. Positivity is a
-    // semantic check the schema's plain number type does not carry.
+    // Schemastery 已补齐默认值；断言记录该事实。正数约束不属于 schema 的
+    // 普通 number 类型，必须在 provider 注册时复核。
     this.config = config as ResolvedConfig
     for (const [key, value] of Object.entries(this.config)) {
       if (!(Number.isFinite(value) && value > 0)) throw new Error(`dsh-code-runtime-worker-thread: config.${key} must be a positive number, got ${String(value)}`)
     }
     if (!Number.isSafeInteger(this.config.maxOutputBytes) || this.config.maxOutputBytes < MIN_OUTPUT_BYTES) {
       throw new Error(`dsh-code-runtime-worker-thread: config.maxOutputBytes must be a safe integer of at least ${MIN_OUTPUT_BYTES}, got ${String(this.config.maxOutputBytes)}`)
+    }
+    if (!Number.isSafeInteger(this.config.maxOldGenerationSizeMb)
+      || this.config.maxOldGenerationSizeMb > MAX_REMOTE_MEMORY_MIB) {
+      throw new Error(`dsh-code-runtime-worker-thread: config.maxOldGenerationSizeMb must be a safe integer from 1 through ${MAX_REMOTE_MEMORY_MIB} MiB, got ${String(this.config.maxOldGenerationSizeMb)}`)
     }
     // maxWallMs reaches setTimeout, which clamps any delay above
     // MAX_TIMER_DELAY_MS to 1 ms; the positivity check above accepts such a
@@ -270,25 +544,27 @@ export class WorkerThreadCodeRuntime extends CodeRuntime {
     ctx.effect(() => () => this.teardown(), 'worker code-runtime teardown')
   }
 
-  /**
-   * Dispose to quiescence: mark the service unusable, fail every in-flight
-   * run as aborted, and AWAIT each worker's exit so no worker outlives the
-   * fiber.
-   */
+  /** 将服务置为不可用，令全部运行以 abort 结束并等待本地或远端执行静默。 */
   private async teardown(): Promise<void> {
     this.disposed = true
     const runs = [...this.live]
+    const remoteRuns = [...this.remoteLive]
     for (const run of runs) run.settle({ kind: 'abort', message: 'runtime disposed' })
-    await Promise.all(runs.map(run => run.finished))
+    await Promise.all([
+      ...runs.map(run => run.finished),
+      ...remoteRuns.map(async (run) => {
+        await run.cancel()
+        await run.finished
+      }),
+    ])
   }
 
   /**
-   * Execute one program in a fresh worker. Program outcomes — including a
-   * type-strip syntax error, which never spawns a worker — resolve with
-   * `result.error`; the method rejects only for Service Definition contract misuse (a disposed
-   * runtime, an invalid binding namespace).
-   * @param request - the program, its bindings, and the abort signal.
-   * @returns the run's outcome per the seam contract.
+   * 执行一个程序；marker 工作目录会选择远端 Goja，否则使用新的本地 worker。
+   * 程序失败（包括未创建 worker 的类型剥离语法错误）写入 `result.error`；只有
+   * 已处置运行时或非法 binding namespace 这类服务定义误用才会拒绝。
+   * @param request - 程序、bindings 与取消信号。
+   * @returns 此次运行的能力接口结果。
    */
   async run(request: CodeRunRequest): Promise<CodeRunResult> {
     if (this.disposed) throw new Error('dsh-code-runtime-worker-thread: run() after disposal')
@@ -297,26 +573,388 @@ export class WorkerThreadCodeRuntime extends CodeRuntime {
       return this.failureBeforeWorker({ kind: 'abort', message: String(request.signal.reason) })
     }
 
+    let remote: RemoteWorkspaceTarget | undefined
+    try {
+      remote = await this.remoteWorkspaceForRequest(request)
+    } catch {
+      return this.failureBeforeWorker(remoteCodeFailure('remote code runtime became unavailable'))
+    }
+    if (request.signal?.aborted) {
+      return this.failureBeforeWorker({ kind: 'abort', message: String(request.signal.reason) })
+    }
+    if (remote !== undefined) return await this.executeRemote(request, bindings, remote)
+
     let code: string
     try {
       const stripped = stripTypeScriptTypes(STRIP_WRAP.prefix + request.program + STRIP_WRAP.suffix)
       code = stripped.slice(STRIP_WRAP.prefix.length, stripped.length - STRIP_WRAP.suffix.length)
     } catch (error: unknown) {
-      // A program that does not survive the type-strip (syntax error,
-      // non-erasable syntax like `enum`) is a program failure, reported the
-      // same way a thrown exception would be — and no worker ever spawns.
+      // 无法通过类型剥离的程序（语法错误或 enum 等不可擦除语法）属于程序失败，
+      // 与抛出异常一样写入结果，且不会创建 worker。
       return this.failureBeforeWorker({ kind: 'exception', message: messageOf(error) })
     }
 
     return await this.execute(request, code, bindings)
   }
 
-  /** Apply the outer-output ledger to failures that occur before a worker owns one. */
+  /** 把 worker 接管前的失败纳入外层输出账本。 */
   private failureBeforeWorker(error: CodeRunFailure): CodeRunResult {
     return new OutputLedger(this.config.maxOutputBytes).failure([], error)
   }
 
-  /** Reject malformed binding globals or typed-error declarations as Service Definition contract misuse. */
+  /**
+   * 远端 done 事件的 logs 是权威终态载荷；逐项重放到账本后，远端执行不能越过
+   * 本机 Host 的输出配置，也不会把早先的流式 log 重复计入。
+   */
+  private settleRemoteOutput(result: CodeRunResult): CodeRunResult {
+    const output = new OutputLedger(this.config.maxOutputBytes)
+    const logs: string[] = []
+    for (const log of result.logs) {
+      if (!output.admit(log, logs)) return output.limit([...logs, log])
+    }
+    return result.error === undefined
+      ? output.success(logs, result.value)
+      : output.failure(logs, result.error)
+  }
+
+  /** 为一项远端 HTTP 操作创建可清理的有界 deadline。 */
+  private remoteBridgeDeadline(signal: AbortSignal | undefined) {
+    return deadline(
+      signal,
+      Math.min(this.config.maxWallMs, REMOTE_CODE_BRIDGE_TIMEOUT_MS),
+      REMOTE_CODE_BRIDGE_TIMEOUT,
+    )
+  }
+
+  /** 仅当调用方明确给出 marker 工作目录时，才把执行迁移到 Remote-SSH。 */
+  private async remoteWorkspaceForRequest(request: CodeRunRequest): Promise<RemoteWorkspaceTarget | undefined> {
+    if (request.cwd === undefined) return undefined
+    try {
+      const workspace = await remoteWorkspacePath('.', request.cwd, request.signal)
+      if (workspace === undefined) return undefined
+      return {
+        markerRoot: workspace.markerRoot,
+        remoteRoot: workspace.remoteRoot,
+        remotePath: workspace.remotePath,
+        connectionId: workspace.connectionId,
+        markerGeneration: workspace.markerGeneration,
+      }
+    } catch (error: unknown) {
+      if (request.signal?.aborted) return undefined
+      throw new Error(`dsh-code-runtime-worker-thread: cannot resolve remote workspace (${messageOf(error)})`, { cause: error })
+    }
+  }
+
+  /**
+   * 通过 marker bridge 驱动远端 Goja 会话。程序继续在远端执行，绑定调用回到
+   * 本机 Node Host，因此工具审批、Session 日志与调度的所有权不发生迁移。
+   */
+  private async executeRemote(
+    request: CodeRunRequest,
+    bindings: Map<string, CodeBindingNamespace>,
+    workspace: RemoteWorkspaceTarget,
+  ): Promise<CodeRunResult> {
+    const transport = new AbortController()
+    const abortState = new AbortController()
+    const finished = Promise.withResolvers<void>()
+    const pendingBindings = new Set<Promise<void>>()
+    let lastCallId = 0
+    let settled = false
+    let id: string | undefined
+    let ownerTarget: RemoteWorkspaceTarget | undefined
+    let cancelPromise: Promise<void> | undefined
+    const cancelTransport = async (): Promise<void> => {
+      // 当前 long-poll 不能继续占用 caller 的取消路径；远端 cancel 另走
+      // 独立 deadline 仍让 agent 结束已确认创建的会话，而不会无限阻塞 dispose。
+      transport.abort('remote code runtime canceled')
+      const sessionId = id
+      if (sessionId === undefined) return
+      cancelPromise ??= (async () => {
+        const owner = ownerTarget
+        let current: RemoteWorkspaceTarget | undefined
+        try {
+          // 普通清理仍先复验 marker；若 marker 已指向另一连接，绝不向新世界
+          // 发送旧 session id，而是只用已发布的 owner 终止旧会话。
+          using operation = this.remoteBridgeDeadline(undefined)
+          current = await verifyRemoteWorkspaceTarget(workspace, operation.signal)
+          if (owner !== undefined && !sameRemoteWorkspaceTarget(owner, current)) {
+            await callRemoteWorkspaceBridge(
+              owner,
+              '/v1/code/cancel',
+              'POST',
+              { id: sessionId },
+              parseRemoteCodeAccepted,
+              operation.signal,
+              false,
+              undefined,
+              true,
+            )
+            return
+          }
+          await callRemoteWorkspaceBridge(
+            current,
+            '/v1/code/cancel',
+            'POST',
+            { id: sessionId },
+            parseRemoteCodeAccepted,
+            operation.signal,
+          )
+        } catch (error: unknown) {
+          // 已发布的 session 在 marker 失效、重绑、next/reply 传输失败后都必须
+          // 尝试回收。若刚才已经向 owner 本身发送 cancel，重复请求没有更多价值。
+          if (
+            owner === undefined
+            || (current !== undefined && sameRemoteWorkspaceTarget(owner, current) && !isStaleMarkerRejection(error))
+          ) return
+          try {
+            using operation = this.remoteBridgeDeadline(undefined)
+            await callRemoteWorkspaceBridge(
+              owner,
+              '/v1/code/cancel',
+              'POST',
+              { id: sessionId },
+              parseRemoteCodeAccepted,
+              operation.signal,
+              false,
+              undefined,
+              true,
+            )
+          } catch {
+            // 清理是 best-effort；主路径仍以 fail-closed 终态结束本地运行。
+          }
+        }
+      })()
+      await cancelPromise
+    }
+    const requestAbort = (): void => {
+      abortState.abort(request.signal?.reason)
+      void cancelTransport()
+    }
+    const live: LiveRemoteRun = {
+      cancel: async () => {
+        if (!abortState.signal.aborted) abortState.abort('runtime disposed')
+        await cancelTransport()
+      },
+      finished: finished.promise,
+    }
+    this.remoteLive.add(live)
+    const onAbort = (): void => { requestAbort() }
+    request.signal?.addEventListener('abort', onAbort, { once: true })
+    // signal 可能在 run() 的上一次检查与 listener 安装之间触发；补一次状态读取
+    // 才能保证已取消请求永远不会在远端创建新会话。
+    if (request.signal?.aborted) requestAbort()
+    const finish = (result: CodeRunResult): CodeRunResult => {
+      if (settled) return result
+      settled = true
+      request.signal?.removeEventListener('abort', onAbort)
+      this.remoteLive.delete(live)
+      // CodeRuntime 合约把已经调用的 Host binding 交给调用方结算；这里不等待
+      // 一个可能永远不返回的 Promise。所有失败和取消路径已中止 transport，故其
+      // 后续完成只会被吞掉，绝不会再向远端会话发送 reply。
+      finished.resolve()
+      return result
+    }
+    const aborted = (): CodeRunResult => this.failureBeforeWorker({
+      kind: 'abort', message: request.signal?.aborted ? String(request.signal.reason) : 'runtime disposed',
+    })
+    const failed = (): CodeRunResult => this.failureBeforeWorker(remoteCodeFailure('remote code runtime became unavailable'))
+
+    try {
+      {
+        // start 一旦到达 agent 就会创建独立会话。它不能继承 caller 的取消
+        // signal：必须先拿到确定响应（或在限定时间内失败），以便已提交的会话
+        // 得到 cancel，而不是成为远端孤儿。
+        using operation = this.remoteBridgeDeadline(undefined)
+        const startTarget = await verifyRemoteWorkspaceTarget(workspace, operation.signal)
+        // marker 复验与 start 之间仍可能发生取消；尚未派发前绝不能创建远端
+        // 会话。派发后的取消则必须等 nonce 找回会话 id 后再终止。
+        operation.signal.throwIfAborted()
+        if (remoteRunWasAborted(abortState.signal)) return finish(aborted())
+        const startNonce = remoteCodeStartNonce()
+        const startRequest = {
+          program: request.program,
+          namespaces: [...bindings.values()].map(namespace => ({
+            global: namespace.global,
+            names: Object.keys(namespace.functions),
+            ...namespace.errorClass === undefined ? {} : { errorClass: namespace.errorClass },
+          })),
+          timeoutMs: Math.min(this.config.maxWallMs, REMOTE_CODE_MAX_TIMEOUT_MS),
+          computeMs: remoteCodeComputeMs(this.config.computeMs),
+          // 远端每次运行都在受限子进程中执行；沿用本地 worker 的堆上限，避免
+          // 模型程序耗尽常驻 Go agent 的内存。
+          memoryLimitBytes: this.config.maxOldGenerationSizeMb * BYTES_PER_MIB,
+          startNonce,
+        }
+        for (let attempt = 0; ; attempt += 1) {
+          try {
+            id = await callRemoteWorkspaceBridge(
+              startTarget, '/v1/code/start', 'POST', startRequest, parseRemoteCodeStart,
+              operation.signal, true, operation.signal,
+            )
+            break
+          } catch (error: unknown) {
+            if (attempt + 1 >= REMOTE_CODE_START_ATTEMPTS || !canRetryRemoteCodeStart(error) || operation.signal.aborted) {
+              throw error
+            }
+            // 同一 nonce 只能向仍被 marker 认证的同一目标重发；重绑后宁可
+            // fail-closed，也不能用尚未确认的会话身份控制旧连接。
+            const retryTarget = await verifyRemoteWorkspaceTarget(workspace, operation.signal)
+            if (!sameRemoteWorkspaceTarget(startTarget, retryTarget)) throw error
+          }
+        }
+        // 仅拿到合法 start 响应后才把该连接升级为可补偿的 owner。
+        ownerTarget = startTarget
+      }
+      if (remoteRunWasAborted(abortState.signal)) {
+        await cancelTransport()
+        return finish(aborted())
+      }
+
+      let after = 0
+      for (;;) {
+        let next: RemoteCodeNext
+        try {
+          using operation = this.remoteBridgeDeadline(transport.signal)
+          const nextTarget = await verifyRemoteWorkspaceTarget(workspace, operation.signal)
+          const owner = ownerTarget
+          if (!sameRemoteWorkspaceTarget(owner, nextTarget)) {
+            throw new RemoteWorkspaceError('REMOTE_WORKSPACE_TARGET_INVALID', 'remote code runtime marker changed after start')
+          }
+          next = await callRemoteWorkspaceBridge(nextTarget, '/v1/code/next', 'POST', {
+            id,
+            after,
+            waitMs: 25_000,
+          }, value => parseRemoteCodeNext(value, after), operation.signal)
+        } catch {
+          if (remoteRunWasAborted(abortState.signal)) {
+            await cancelTransport()
+            return finish(aborted())
+          }
+          await cancelTransport()
+          return finish(failed())
+        }
+        // 一批事件先整体验证再调度：重复或倒退的 callId、超过远端事件槽位
+        // 的未回包调用，以及与 pending callback 并存的非可收敛 done，都按敌对协议处理。
+        const scheduled: RemoteCodeWireEvent[] = []
+        for (const event of next.events) {
+          if (event.sequence !== after + 1) {
+            await cancelTransport()
+            return finish(failed())
+          }
+          after = event.sequence
+          if (event.type === 'tool_call') {
+            const callId = event.callId
+            if (callId === undefined || callId <= lastCallId
+              || pendingBindings.size + scheduled.length >= REMOTE_CODE_MAX_PENDING_BINDINGS) {
+              await cancelTransport()
+              return finish(failed())
+            }
+            lastCallId = callId
+            scheduled.push(event)
+            continue
+          }
+          if (event.type === 'done') {
+            // reply 的 accepted 响应与 next 的终态响应可能同一轮微任务到达，
+            // 先让已完成 callback 从集合移除，再判断是否仍有真正未回包调用。
+            await Promise.resolve()
+            if (event.result === undefined) {
+              await cancelTransport()
+              return finish(failed())
+            }
+            const hasPending = scheduled.length > 0 || pendingBindings.size > 0
+            if (hasPending && !remoteCodeDoneMayContainPending(event.result)) {
+              await cancelTransport()
+              return finish(failed())
+            }
+            if (event.result.error !== undefined) {
+              // 远端已经发布终态；尚未派发或仍在本机执行的 binding 不再回传，
+              // 避免迟到结果触碰已结束的会话。timeout/abort 也正是唯一允许与
+              // pending binding 并存的终态（由上面的 helper 严格限定）。终态已
+              // 经确认，不再额外等待 cancel RPC，否则 bridge 失联会拖住合法结果。
+              transport.abort('remote code runtime completed')
+              pendingBindings.clear()
+            }
+            return finish(this.settleRemoteOutput(event.result))
+          }
+        }
+        for (const event of scheduled) {
+          const owner = ownerTarget
+          const dispatch = this.replyRemoteBinding(workspace, owner, id, bindings, event, cancelTransport, transport.signal)
+          pendingBindings.add(dispatch)
+          void dispatch.finally(() => { pendingBindings.delete(dispatch) }).catch(() => { void cancelTransport() })
+        }
+        if (next.done) return finish(failed())
+        after = next.cursor
+        if (remoteRunWasAborted(abortState.signal)) {
+          await cancelTransport()
+          return finish(aborted())
+        }
+      }
+    } catch {
+      if (remoteRunWasAborted(abortState.signal)) {
+        await cancelTransport()
+        return finish(aborted())
+      }
+      await cancelTransport()
+      return finish(failed())
+    }
+  }
+
+  /** 在本机执行一项远端程序请求的 binding，并把无损 JSON 结果送回会话。 */
+  private async replyRemoteBinding(
+    workspace: RemoteWorkspaceTarget,
+    owner: RemoteWorkspaceTarget,
+    id: string,
+    bindings: Map<string, CodeBindingNamespace>,
+    event: RemoteCodeWireEvent,
+    cancel: () => Promise<void>,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const callId = event.callId
+    const global = event.global
+    const name = event.name
+    if (callId === undefined || global === undefined || name === undefined || event.arguments === undefined) {
+      await cancel()
+      return
+    }
+    const fn = bindings.get(global)?.functions
+    const binding = fn !== undefined && Object.hasOwn(fn, name) ? fn[name] : undefined
+    let body: Record<string, unknown>
+    try {
+      if (signal.aborted) {
+        return
+      }
+      if (typeof binding !== 'function') {
+        body = { id, callId, ok: false, message: `unknown binding ${JSON.stringify(`${global}.${name}`)}` }
+      } else {
+        const value = remoteCodeJson(await binding(event.arguments))
+        if (remoteRunWasAborted(signal)) {
+          return
+        }
+        body = value === undefined
+          ? { id, callId, ok: false, message: 'binding resolution must be lossless JSON' }
+          : { id, callId, ok: true, value }
+      }
+    } catch (error: unknown) {
+      body = { id, callId, ok: false, message: messageOf(error) }
+    }
+    try {
+      // reply 是普通会话操作，必须在本次发送前复验 marker，绝不回退 owner。
+      using operation = this.remoteBridgeDeadline(signal)
+      const target = await verifyRemoteWorkspaceTarget(workspace, operation.signal)
+      if (!sameRemoteWorkspaceTarget(owner, target)) {
+        await cancel()
+        return
+      }
+      operation.signal.throwIfAborted()
+      await callRemoteWorkspaceBridge(target, '/v1/code/reply', 'POST', body, parseRemoteCodeAccepted, operation.signal)
+    } catch {
+      if (signal.aborted) return
+      await cancel()
+    }
+  }
+
+  /** 将畸形 binding global 或类型错误声明按服务定义误用拒绝。 */
   private validateBindings(request: CodeRunRequest): Map<string, CodeBindingNamespace> {
     const bindings = new Map<string, CodeBindingNamespace>()
     for (const namespace of request.bindings) {

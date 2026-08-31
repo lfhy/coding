@@ -14,7 +14,7 @@ Ordinary pipes do not cover one requirement. A persistent terminal needs PTY all
 
 ## Decision
 
-`ctx.fs` and `ctx.subprocess` together define one execution world. Providers mounted together must describe the same path namespace, executables, processes, and terminal sessions; higher capabilities consume those two interfaces rather than name the provider.
+`ctx.fs` and `ctx.subprocess` together define one execution world. Providers mounted together must describe the same path namespace, executables, processes, and terminal sessions; higher capabilities consume those two interfaces rather than name the provider. The desktop Remote-SSH marker target is one such realization ([decision](../feature/2026-08-31-desktop-remote-ssh-go-execution-world.md)).
 
 The filesystem interface owns the path facts that another capability needs without exposing its opaque target identity: a canonical process path, canonical `file:` URI, and containment. Existing whole and streaming text operations remain filesystem-owned; protocol consumers enforce their own retention limits while consuming the stream.
 

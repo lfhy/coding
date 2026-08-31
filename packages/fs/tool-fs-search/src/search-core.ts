@@ -22,6 +22,15 @@
 import { existsSync } from 'node:fs'
 import { isAbsolute, relative, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
+import {
+  callRemoteWorkspaceBridge,
+  isRemoteAbsolutePath,
+  isRemotePathWithin,
+  remoteWorkspacePath,
+  RemoteWorkspaceError,
+  verifyRemoteWorkspaceTarget,
+} from '@deepseek-ai/dsh-subprocess'
+import type { RemoteWorkspaceTarget } from '@deepseek-ai/dsh-subprocess'
 import { HarnessError } from '@deepseek-ai/dsh-llm'
 import { ItemRetainer, TextRetainer } from '@deepseek-ai/dsh-output-retention'
 import type { RetainedItems } from '@deepseek-ai/dsh-output-retention'
@@ -65,15 +74,12 @@ export const SEARCH_GRACE_MS = 3_000
 export const SEARCH_META_MAX_BYTES = 65_536
 
 /**
- * Stable, machine-routable codes for search failures. Package-owned (not
- * `FsErrorCode`) because these tools are spawn-backed discovery, not `ctx.fs`
- * provider operations: `SEARCH_INVALID_PATTERN` — ripgrep rejected the regex or
- * glob; `SEARCH_FAILED` — the search could not run or its output could not be
- * parsed (a failed `rg` launch, inaccessible target, signal kill, malformed
- * `--json`); `SEARCH_RAW_OUTPUT_OVERFLOW` — raw `rg` output exceeded
- * `rawOutputMaxBytes` or stayed truncated after that requested stdout budget;
- * `SEARCH_ABORTED` — the cooperative tool timeout or caller cancellation cut
- * the search short.
+ * 搜索失败的稳定机器码。它归本包所有（不归 `FsErrorCode`），因为工具通过
+ * 进程或远端 agent 执行搜索，而不是调用 `ctx.fs` 提供方：
+ * `SEARCH_INVALID_PATTERN` 表示本地 ripgrep 或远端 agent 拒绝正则、glob 或
+ * include；`SEARCH_FAILED` 表示搜索不能运行或响应不能解析；
+ * `SEARCH_RAW_OUTPUT_OVERFLOW` 表示原始输出超过 `rawOutputMaxBytes` 或在请求的
+ * stdout 预算后仍被截断；`SEARCH_ABORTED` 表示协作式工具超时或调用方取消搜索。
  */
 export type SearchErrorCode =
   | 'SEARCH_INVALID_PATTERN'
@@ -105,6 +111,27 @@ export interface RipgrepRun {
   /** The resolved working directory the command ran in (the display-relativization base). */
   workdir: string
 }
+
+/** 远端 agent 对 glob/grep 的受限搜索请求。 */
+export interface RemoteSearchInput {
+  /** 对应工具的搜索种类。 */
+  readonly kind: 'glob' | 'grep'
+  /** 模型给出的 glob 或正则。 */
+  readonly pattern: string
+  /** 可选的相对或远端绝对搜索目标。 */
+  readonly path?: string
+  /** grep 的单个正向 glob 过滤器。 */
+  readonly include?: string
+}
+
+/** 远端搜索的规范结果；路径均相对于远端 Workspace 根。 */
+export type RemoteSearchRun =
+  | { readonly kind: 'glob'; readonly root: string; readonly paths: string[] }
+  | { readonly kind: 'grep'; readonly matches: GrepMatch[] }
+
+const REMOTE_SEARCH_MAX_RESULTS = 100_000
+const REMOTE_SEARCH_MAX_LINE_BYTES = 64 * 1024
+const REMOTE_SEARCH_TRUNCATION_REASONS = new Set(['results', 'bytes', 'files', 'read-bytes', 'line-bytes'])
 
 /**
  * The retained stderr tail as a diagnostic excerpt, with a truncation note when
@@ -276,6 +303,156 @@ export async function runRipgrep(
   }
   const text = completeStdout(toolName, stdout, rawOutputMaxBytes)
   return { stdout: text, noMatches: outcome.exitCode === 1, workdir }
+}
+
+function remoteDisplayPath(root: string, path: string): string {
+  const normalizedRoot = root.replace(/\\/gu, '/').replace(/\/+$/u, '') || '/'
+  const normalizedPath = path.replace(/\\/gu, '/')
+  if (normalizedPath === normalizedRoot) return '.'
+  if (normalizedRoot === '/') return normalizedPath.slice(1)
+  return normalizedPath.startsWith(`${normalizedRoot}/`) ? normalizedPath.slice(normalizedRoot.length + 1) : normalizedPath
+}
+
+function remoteSearchError(toolName: string, error: unknown): SearchError {
+  if (error instanceof SearchError) return error
+  if (error instanceof RemoteWorkspaceError) {
+    if (error.code === 'REMOTE_BRIDGE_ABORTED') {
+      return new SearchError(`${toolName} was aborted before completion (tool timeout or caller cancellation)`, 'SEARCH_ABORTED', { cause: error })
+    }
+    if (error.code === 'REMOTE_BRIDGE_REJECTED' && (error.bridgeCode === 'invalid-pattern' || error.bridgeCode === 'invalid-include')) {
+      const subject = error.bridgeCode === 'invalid-pattern' ? 'pattern' : 'include filter'
+      return new SearchError(`${toolName} ${subject} rejected by remote search agent`, 'SEARCH_INVALID_PATTERN', { cause: error })
+    }
+  }
+  return new SearchError(`${toolName} could not complete its remote search`, 'SEARCH_FAILED', { cause: error })
+}
+
+function bridgeSearchResponse(
+  value: unknown,
+  workspace: RemoteWorkspaceTarget,
+  kind: RemoteSearchInput['kind'],
+): { paths: string[]; matches: GrepMatch[]; truncated: boolean; truncatedBy: string[]; payloadBytes: number } {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error('response is not an object')
+  const record = value as Record<string, unknown>
+  const expectedKeys = kind === 'glob'
+    ? new Set(['root', 'paths', 'truncated', 'truncatedBy'])
+    : new Set(['root', 'matches', 'truncated', 'truncatedBy'])
+  if (Object.keys(record).some(key => !expectedKeys.has(key))) throw new Error('response has an unknown field')
+  if (typeof record.root !== 'string'
+    || !isRemotePathWithin(workspace.remoteRoot, record.root)
+    || !isRemotePathWithin(record.root, workspace.remoteRoot)) {
+    throw new Error('response root is outside the workspace')
+  }
+  if (typeof record.truncated !== 'boolean') throw new Error('response truncation state is invalid')
+  const truncatedBy = record.truncatedBy === undefined ? [] : (() => {
+    if (!Array.isArray(record.truncatedBy) || record.truncatedBy.length > REMOTE_SEARCH_TRUNCATION_REASONS.size
+      || record.truncatedBy.some(item => typeof item !== 'string' || !REMOTE_SEARCH_TRUNCATION_REASONS.has(item))
+      || new Set(record.truncatedBy).size !== record.truncatedBy.length) {
+      throw new Error('response truncation details are invalid')
+    }
+    return record.truncatedBy as string[]
+  })()
+  if (record.truncated !== (truncatedBy.length > 0)) throw new Error('response truncation state is inconsistent')
+  const paths: string[] = []
+  const matches: GrepMatch[] = []
+  if (kind === 'glob') {
+    if (record.paths !== undefined && !Array.isArray(record.paths)) throw new Error('glob response has invalid results')
+    if ((record.paths?.length ?? 0) > REMOTE_SEARCH_MAX_RESULTS) throw new Error('glob response has too many results')
+    for (const path of record.paths ?? []) {
+      if (typeof path !== 'string' || path.length === 0 || path.startsWith('/') || path.split('/').some(part => part === '' || part === '.' || part === '..')) {
+        throw new Error('glob response has an invalid path')
+      }
+      paths.push(path)
+    }
+  } else {
+    if (record.matches !== undefined && !Array.isArray(record.matches)) throw new Error('grep response has invalid results')
+    if ((record.matches?.length ?? 0) > REMOTE_SEARCH_MAX_RESULTS) throw new Error('grep response has too many results')
+    for (const raw of record.matches ?? []) {
+      if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) throw new Error('grep response has an invalid match')
+      const match = raw as Record<string, unknown>
+      if (Object.keys(match).some(key => key !== 'path' && key !== 'lineNumber' && key !== 'line')
+        || typeof match.path !== 'string' || match.path.length === 0 || match.path.startsWith('/')
+        || match.path.split('/').some(part => part === '' || part === '.' || part === '..')
+        || !Number.isSafeInteger(match.lineNumber) || (match.lineNumber as number) < 1 || typeof match.line !== 'string'
+        || Buffer.byteLength(match.line, 'utf8') > REMOTE_SEARCH_MAX_LINE_BYTES) {
+        throw new Error('grep response has an invalid match')
+      }
+      matches.push({ path: match.path, lineNumber: match.lineNumber as number, line: match.line })
+    }
+  }
+  const normalized = {
+    root: record.root,
+    ...kind === 'glob' ? { paths } : { matches },
+    truncated: record.truncated,
+    ...truncatedBy.length === 0 ? {} : { truncatedBy },
+  }
+  const bytes = Buffer.byteLength(JSON.stringify(normalized), 'utf8') + 1
+  return { paths, matches, truncated: record.truncated, truncatedBy, payloadBytes: bytes }
+}
+
+/**
+ * 在 marker Workspace 内由远端 Go agent 完成搜索；普通路径返回 undefined，
+ * 让本地 ripgrep 路径保持原有行为。远端结果若达到 agent 的任一硬上限会失败，
+ * 不把不完整列表伪装为完整的工具规范值。
+ * @param exec - 当前工具调用的执行上下文和取消信号。
+ * @param toolName - 产生面向模型诊断的工具名称。
+ * @param input - 已通过工具 schema 校验的搜索参数。
+ * @param rawOutputMaxBytes - 此次搜索允许返回的原始输出字节上限。
+ * @returns marker Workspace 的规范化搜索结果；路径不属于远端工作区时返回 `undefined`。
+ */
+export async function runRemoteSearch(
+  exec: ToolExecution,
+  toolName: string,
+  input: RemoteSearchInput,
+  rawOutputMaxBytes: number,
+): Promise<RemoteSearchRun | undefined> {
+  const cwd = exec.agent?.session.header.cwd ?? process.cwd()
+  try {
+    const workspace = await remoteWorkspacePath('.', cwd, exec.signal)
+    if (workspace === undefined) return undefined
+    let target = workspace
+    if (input.path !== undefined) {
+      if (isRemoteAbsolutePath(input.path) && isRemotePathWithin(workspace.remoteRoot, input.path)) {
+        target = { ...workspace, remotePath: input.path }
+      } else {
+        const mapped = await remoteWorkspacePath(input.path, cwd, exec.signal)
+        if (mapped === undefined || mapped.markerRoot !== workspace.markerRoot
+          || mapped.remoteRoot !== workspace.remoteRoot || mapped.connectionId !== workspace.connectionId) {
+          throw new Error('search path is outside the remote workspace')
+        }
+        target = mapped
+      }
+    }
+    // 解析参数路径期间 marker 可能被重绑；把根目录和连接身份交给 bridge 前必须
+    // 立即复核精确 target，避免搜索仍然到达旧主机。
+    const verified = await verifyRemoteWorkspaceTarget(target, exec.signal)
+    const response = await callRemoteWorkspaceBridge(verified, '/v1/search', 'POST', {
+      path: verified.remotePath,
+      kind: input.kind,
+      pattern: input.pattern,
+      ...input.include === undefined ? {} : { include: input.include },
+      maxBytes: rawOutputMaxBytes,
+    }, value => bridgeSearchResponse(value, verified, input.kind), exec.signal)
+    if (response.payloadBytes > rawOutputMaxBytes) {
+      throw new SearchError(
+        `remote search returned ${response.payloadBytes} bytes of raw output, over the ${rawOutputMaxBytes}-byte cap; narrow pattern, path, or include and retry`,
+        'SEARCH_RAW_OUTPUT_OVERFLOW',
+      )
+    }
+    if (response.truncated) {
+      const detail = response.truncatedBy.length === 0 ? '' : ` (${response.truncatedBy.join(', ')})`
+      throw new SearchError(
+        `${toolName} produced more remote search data than the configured ${rawOutputMaxBytes}-byte cap${detail}; narrow pattern, path, or include and retry`,
+        'SEARCH_RAW_OUTPUT_OVERFLOW',
+      )
+    }
+    if (input.kind === 'glob') {
+      return { kind: 'glob', root: remoteDisplayPath(verified.remoteRoot, verified.remotePath), paths: response.paths }
+    }
+    return { kind: 'grep', matches: response.matches }
+  } catch (error: unknown) {
+    throw remoteSearchError(toolName, error)
+  }
 }
 
 /**

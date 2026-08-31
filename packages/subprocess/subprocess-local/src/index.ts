@@ -18,8 +18,10 @@ import {
   remoteWorkspacePath,
   remoteWorkspacePathSync,
   SubprocessRuntime,
+  verifyRemoteWorkspaceTarget,
 } from '@deepseek-ai/dsh-subprocess'
 import type {
+  RemoteWorkspaceTarget,
   SubprocessHandle,
   SubprocessSpawnSpec,
   SubprocessTerminalHandle,
@@ -29,6 +31,8 @@ import { childEnv, spawnSubprocess } from './spawn.ts'
 import type { LocalSubprocessHandle, SpawnInternals } from './spawn.ts'
 import { createProcessInspector } from './process-inspector.ts'
 import type { ProcessInspector } from './process-inspector.ts'
+import { RemoteSubprocessHandle, resolveRemoteExecutable } from './remote-process.ts'
+import { RemoteTerminalHandle, spawnRemoteTerminal } from './remote-terminal.ts'
 import { LocalTerminalHandle } from './terminal.ts'
 
 /**
@@ -40,9 +44,9 @@ import { LocalTerminalHandle } from './terminal.ts'
  */
 export class LocalSubprocessRuntime extends SubprocessRuntime {
   /** Live handles retained for normal disposal and synchronous host-exit finalization. */
-  private live = new Set<LocalSubprocessHandle>()
+  private live = new Set<LocalSubprocessHandle | RemoteSubprocessHandle>()
   /** Live terminals retained through normal quiescence or host-exit finalization. */
-  private terminals = new Set<LocalTerminalHandle>()
+  private terminals = new Set<LocalTerminalHandle | RemoteTerminalHandle>()
   /** Test hook: spill and platform knobs forwarded to spawnSubprocess. */
   internals: SpawnInternals = {}
   /** Test hook for platform process inspection; production resolves lazily on terminal spawn. */
@@ -109,12 +113,14 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
     command: string,
     env?: Readonly<Record<string, string>>,
     signal?: AbortSignal,
+    remoteTarget?: RemoteWorkspaceTarget,
   ): Promise<string> {
     if (command.length === 0) throw new Error('subprocess-local: executable must be non-empty')
     signal?.throwIfAborted()
-    if (await remoteWorkspacePath('.', process.cwd(), signal) !== undefined) {
-      throw new Error('subprocess-local: remote workspace execution is unsupported')
-    }
+    const remote = remoteTarget === undefined
+      ? await remoteWorkspacePath('.', process.cwd(), signal)
+      : await verifyRemoteWorkspaceTarget(remoteTarget, signal)
+    if (remote !== undefined) return await resolveRemoteExecutable(remote, command, env, signal)
     const environment = childEnv(env)
     const absolute = isAbsolute(command)
     if (!absolute && (command.includes('/') || (process.platform === 'win32' && command.includes('\\')))) {
@@ -151,8 +157,14 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
   }
 
   spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
-    if (remoteWorkspacePathSync(spec.cwd, process.cwd()) !== undefined) {
-      throw new Error('subprocess-local: remote workspace execution is unsupported')
+    const remoteTarget = spec.remoteTarget ?? remoteWorkspacePathSync(spec.cwd, process.cwd())
+    if (remoteTarget !== undefined) {
+      const handle = new RemoteSubprocessHandle(remoteTarget, spec)
+      this.live.add(handle)
+      const release = (): Promise<void> =>
+        handle.waitForExit().then(() => { this.live.delete(handle) })
+      handle.done.then(release, release).catch(() => {})
+      return handle
     }
     const handle = spawnSubprocess(spec, this.internals)
     this.live.add(handle)
@@ -173,8 +185,20 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
       throw new Error('subprocess-local: terminal argv must contain a program')
     }
     spec.signal?.throwIfAborted()
-    if (await remoteWorkspacePath(spec.cwd, process.cwd(), spec.signal) !== undefined) {
-      throw new Error('subprocess-local: remote workspace execution is unsupported')
+    const remoteTarget = spec.remoteTarget === undefined
+      ? await remoteWorkspacePath('.', spec.cwd, spec.signal)
+      : await verifyRemoteWorkspaceTarget(spec.remoteTarget, spec.signal)
+    if (remoteTarget !== undefined) {
+      const terminal = await spawnRemoteTerminal(remoteTarget, spec)
+      this.terminals.add(terminal)
+      const releaseAfterFailure = async (): Promise<void> => {
+        await terminal.terminate().catch(() => {})
+        this.terminals.delete(terminal)
+      }
+      // 成功的远端 `done` 发生在 Go agent 排空 PTY 并结束进程之后，已经达到
+      // 静默；只有传输失败才需要发送补偿 terminate 请求。
+      void terminal.done.then(() => { this.terminals.delete(terminal) }, releaseAfterFailure).catch(() => {})
+      return terminal
     }
     const options: IPtyForkOptions = {
       name: 'dumb',

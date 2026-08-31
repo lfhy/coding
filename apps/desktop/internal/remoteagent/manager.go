@@ -62,11 +62,14 @@ type ProxyResponse struct {
 }
 
 // RemoteWorkspaceMarker 是可落盘的远端工作区引用。connectionId 是仅在桌面进程
-// 内有效的随机标识；它不携带地址、认证材料、host key 或 agent token。
+// 内有效的随机标识；generation 由桌面 bridge 在正式发布时分配，用于把 Node
+// 的 marker 复验与实际 dispatch 绑定到同一轮重绑。它不携带地址、认证材料、
+// host key 或 agent token。
 type RemoteWorkspaceMarker struct {
 	Version      int    `json:"version"`
 	RemoteRoot   string `json:"remoteRoot"`
 	ConnectionID string `json:"connectionId"`
+	Generation   uint64 `json:"generation,omitempty"`
 }
 
 // RemoteDirectory 是远端目录选择器的一层结果，不暴露 SSH 或 agent 凭据。

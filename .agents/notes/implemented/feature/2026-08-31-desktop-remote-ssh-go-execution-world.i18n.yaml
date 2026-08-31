@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-31-desktop-remote-ssh-go-execution-world.md
+2026-08-31-desktop-remote-ssh-go-execution-world.md: 60a8567cc2a96c61548b2502d25cd6149e28960e
+2026-08-31-desktop-remote-ssh-go-execution-world.zh.md: 4501e22273ca6e4d01f7ed84b2a0cabb2c565172

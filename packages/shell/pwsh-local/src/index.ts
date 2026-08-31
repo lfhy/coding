@@ -19,6 +19,7 @@ import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { SHELL_SETTINGS_NAMESPACE, ShellExecutor } from '@deepseek-ai/dsh-shell'
 import type { ShellExecRequest, ShellExecSpec, ShellProcess, ShellProcessRead, ShellRunResult, CollectedOutput } from '@deepseek-ai/dsh-shell'
+import { remoteWorkspacePathSync } from '@deepseek-ai/dsh-subprocess'
 import type { SubprocessCollect, SubprocessHandle, SubprocessOutputReader, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { installSettingsSection } from '@deepseek-ai/dsh-settings'
 import { clampTimeout, deadline, MAX_TIMER_DELAY_MS, timeoutOf } from '@deepseek-ai/dsh-timeout'
@@ -195,11 +196,14 @@ export class PwshLocalExecutor extends ShellExecutor {
     )
     const stdoutMaxBytes = request.stdoutMaxBytes ?? this.config.maxOutputBytes
     assertPositiveFinite('request.stdoutMaxBytes', stdoutMaxBytes)
+    const workdir = request.workdir ?? this.config.cwd ?? process.cwd()
+    const remoteTarget = remoteWorkspacePathSync(workdir, process.cwd())
     return {
       command: request.command,
-      workdir: request.workdir ?? this.config.cwd ?? process.cwd(),
+      workdir,
       timeoutMs,
       stdoutMaxBytes,
+      ...remoteTarget === undefined ? {} : { remoteTarget },
       ...request.signal ? { signal: request.signal } : {},
       ...request.stdin !== undefined ? { stdin: request.stdin } : {},
       ...request.env !== undefined ? { env: request.env } : {},
@@ -215,7 +219,12 @@ export class PwshLocalExecutor extends ShellExecutor {
    * `@deepseek-ai/dsh-pwsh-sandbox`).
    */
   protected argv(spec: ShellExecSpec): string[] {
-    return [this.pwshPath, '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', `${ENCODING_PREAMBLE}${spec.command}`]
+    // 远端不能使用本机解析出的绝对 pwsh 路径。显式配置仍是调用者的
+    // 意图；省略时由 Go agent 在其受控 PATH 中解析裸命令。
+    const executable = spec.remoteTarget === undefined
+      ? this.pwshPath
+      : this.config.pwshPath ?? 'pwsh'
+    return [executable, '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', `${ENCODING_PREAMBLE}${spec.command}`]
   }
 
   /** Map one resolved spec plus its argv onto a fully-specified subprocess spawn. */
@@ -229,7 +238,8 @@ export class PwshLocalExecutor extends ShellExecutor {
       ({ maxBytes, spill: { maxBytes: this.config.maxSpillBytes } })
     return {
       argv: [...argv],
-      cwd: spec.workdir,
+      cwd: spec.remoteTarget?.remotePath ?? spec.workdir,
+      ...spec.remoteTarget === undefined ? {} : { remoteTarget: spec.remoteTarget },
       stdio: {
         stdin: spec.stdin !== undefined ? { data: spec.stdin } : 'ignore',
         stdout: collect(stdoutMaxBytes),

@@ -46,14 +46,16 @@ export class RemoteWorkspaceError extends Error {
   }
 }
 
-/** 一个已验证 marker 的稳定身份；connectionId 不是凭据。 */
+/** 已验证 marker 的当前身份；connectionId 不是凭据。 */
 export interface RemoteWorkspace {
   /** marker 目录的真实本地路径，用于防止伪造 targetKey 跨工作区。 */
   markerRoot: string
   /** marker 声明且由目录选择流程规范化的远端绝对目录。 */
   remoteRoot: string
-  /** 多个 SSH 连接共用一个本地 bridge 时的可选路由 id。 */
-  connectionId?: string
+  /** 多个 SSH 连接共用一个本地 bridge 时的路由 id。 */
+  connectionId: string
+  /** 与 marker 文件同轮发布的单调 generation。 */
+  markerGeneration: number
 }
 
 /** 一个从本地 marker 路径映射出的远端路径。 */
@@ -64,22 +66,26 @@ export interface RemoteWorkspacePath extends RemoteWorkspace {
   remotePath: string
 }
 
-/** 写入 FsTargetKey 的无凭据远端身份。 */
+/** 已验证的无凭据远端执行身份；可编码为 FsTargetKey。 */
 export interface RemoteWorkspaceTarget extends RemoteWorkspace {
   /** 已解析并受 remoteRoot 限制的远端路径。 */
   remotePath: string
 }
 
 interface MarkerRecord {
-  version: 1
+  version: 2
   remoteRoot: string
-  connectionId?: string
+  connectionId: string
+  generation: number
 }
 
 interface BridgeConfig {
   baseUrl: URL
   token: string
 }
+
+/** bridge dispatch 所需的完整 marker 快照；缺少任一字段都不能发起远端请求。 */
+type RemoteWorkspaceBridgeTarget = Pick<RemoteWorkspace, 'markerRoot' | 'remoteRoot' | 'connectionId' | 'markerGeneration'>
 
 function abortIfNeeded(signal: AbortSignal | undefined): void {
   if (signal?.aborted) throw new RemoteWorkspaceError('REMOTE_BRIDGE_ABORTED', 'remote workspace request was aborted')
@@ -114,14 +120,15 @@ function parseMarker(value: unknown): MarkerRecord {
   const record = asRecord(value)
   if (record === undefined) return markerInvalid()
   const keys = Object.keys(record)
-  if (keys.some(key => key !== 'version' && key !== 'remoteRoot' && key !== 'connectionId')) return markerInvalid()
-  if (record.version !== 1 || typeof record.remoteRoot !== 'string') return markerInvalid()
+  if (keys.some(key => key !== 'version' && key !== 'remoteRoot' && key !== 'connectionId' && key !== 'generation')) return markerInvalid()
+  const generation = record.generation
+  if (record.version !== 2 || typeof record.remoteRoot !== 'string' || typeof record.connectionId !== 'string'
+    || typeof generation !== 'number' || !Number.isSafeInteger(generation) || generation <= 0) return markerInvalid()
   const remoteRoot = record.remoteRoot
   if (remoteRoot.length === 0 || remoteRoot.length > 4096 || remoteRoot !== remoteRoot.trim()
     || remoteRoot.includes('\0') || !isRemoteAbsolutePath(remoteRoot) || hasRemoteTraversal(remoteRoot)) return markerInvalid()
-  if (record.connectionId === undefined) return { version: 1, remoteRoot }
-  if (typeof record.connectionId !== 'string' || !CONNECTION_ID.test(record.connectionId)) return markerInvalid()
-  return { version: 1, remoteRoot, connectionId: record.connectionId }
+  if (!CONNECTION_ID.test(record.connectionId)) return markerInvalid()
+  return { version: 2, remoteRoot, connectionId: record.connectionId, generation }
 }
 
 function isMissingMarker(error: unknown): boolean {
@@ -202,7 +209,8 @@ async function markerAt(directory: string, signal?: AbortSignal): Promise<Remote
   return {
     markerRoot,
     remoteRoot: record.remoteRoot,
-    ...record.connectionId === undefined ? {} : { connectionId: record.connectionId },
+    connectionId: record.connectionId,
+    markerGeneration: record.generation,
   }
 }
 
@@ -233,7 +241,8 @@ function markerAtSync(directory: string): RemoteWorkspace | undefined {
   return {
     markerRoot,
     remoteRoot: record.remoteRoot,
-    ...record.connectionId === undefined ? {} : { connectionId: record.connectionId },
+    connectionId: record.connectionId,
+    markerGeneration: record.generation,
   }
 }
 
@@ -293,7 +302,7 @@ export function isRemotePathWithin(remoteRoot: string, candidate: string): boole
  * @param remotePath - 该工作区内的远端绝对路径。
  * @returns 用于后续 bridge 路由的本地 marker 占位路径。
  */
-export function remoteWorkspaceLocalPath(workspace: RemoteWorkspace, remotePath: string): string {
+export function remoteWorkspaceLocalPath(workspace: Pick<RemoteWorkspace, 'markerRoot' | 'remoteRoot'>, remotePath: string): string {
   if (!isRemoteAbsolutePath(remotePath) || !isRemotePathWithin(workspace.remoteRoot, remotePath)) {
     throw new RemoteWorkspaceError('REMOTE_WORKSPACE_TARGET_INVALID', 'remote workspace path escapes its marker')
   }
@@ -375,14 +384,16 @@ export function remoteWorkspacePathSync(path: string, cwd = process.cwd()): Remo
  * @returns 可写入 FsTargetKey 的无凭据编码。
  */
 export function remoteWorkspaceTargetKey(target: RemoteWorkspaceTarget): string {
-  if (!isAbsolute(target.markerRoot) || !isRemotePathWithin(target.remoteRoot, target.remotePath)) {
+  if (!isAbsolute(target.markerRoot) || !Number.isSafeInteger(target.markerGeneration) || target.markerGeneration <= 0
+    || !isRemotePathWithin(target.remoteRoot, target.remotePath)) {
     throw new RemoteWorkspaceError('REMOTE_WORKSPACE_TARGET_INVALID', 'remote workspace target is invalid')
   }
   const payload = JSON.stringify({
     markerRoot: target.markerRoot,
     remoteRoot: target.remoteRoot,
     remotePath: target.remotePath,
-    ...target.connectionId === undefined ? {} : { connectionId: target.connectionId },
+    connectionId: target.connectionId,
+    markerGeneration: target.markerGeneration,
   })
   return REMOTE_TARGET_PREFIX + Buffer.from(payload, 'utf8').toString('base64url')
 }
@@ -406,16 +417,15 @@ export function parseRemoteWorkspaceTargetKey(targetKey: string): RemoteWorkspac
     throw new RemoteWorkspaceError('REMOTE_WORKSPACE_TARGET_INVALID', 'remote workspace target is invalid')
   }
   const record = asRecord(value)
-  if (record === undefined || Object.keys(record).some(key => key !== 'markerRoot' && key !== 'remoteRoot' && key !== 'remotePath' && key !== 'connectionId')
+  const markerGeneration = record?.markerGeneration
+  if (record === undefined || Object.keys(record).some(key => key !== 'markerRoot' && key !== 'remoteRoot' && key !== 'remotePath' && key !== 'connectionId' && key !== 'markerGeneration')
     || typeof record.markerRoot !== 'string' || typeof record.remoteRoot !== 'string' || typeof record.remotePath !== 'string'
+    || typeof record.connectionId !== 'string' || typeof markerGeneration !== 'number' || !Number.isSafeInteger(markerGeneration) || markerGeneration <= 0
     || !isAbsolute(record.markerRoot) || !isRemoteAbsolutePath(record.remoteRoot) || !isRemoteAbsolutePath(record.remotePath)
     || !isRemotePathWithin(record.remoteRoot, record.remotePath)) {
     throw new RemoteWorkspaceError('REMOTE_WORKSPACE_TARGET_INVALID', 'remote workspace target is invalid')
   }
-  if (record.connectionId === undefined) {
-    return { markerRoot: record.markerRoot, remoteRoot: record.remoteRoot, remotePath: record.remotePath }
-  }
-  if (typeof record.connectionId !== 'string' || !CONNECTION_ID.test(record.connectionId)) {
+  if (!CONNECTION_ID.test(record.connectionId)) {
     throw new RemoteWorkspaceError('REMOTE_WORKSPACE_TARGET_INVALID', 'remote workspace target is invalid')
   }
   return {
@@ -423,6 +433,7 @@ export function parseRemoteWorkspaceTargetKey(targetKey: string): RemoteWorkspac
     remoteRoot: record.remoteRoot,
     remotePath: record.remotePath,
     connectionId: record.connectionId,
+    markerGeneration,
   }
 }
 
@@ -438,8 +449,12 @@ export async function verifyRemoteWorkspaceTarget(
   signal?: AbortSignal,
 ): Promise<RemoteWorkspaceTarget> {
   const current = await readRemoteWorkspaceMarker(target.markerRoot, signal)
-  if (current.remoteRoot !== target.remoteRoot || current.connectionId !== target.connectionId
-    || !isRemotePathWithin(current.remoteRoot, target.remotePath)) {
+  if (
+    current.remoteRoot !== target.remoteRoot
+    || current.connectionId !== target.connectionId
+    || current.markerGeneration !== target.markerGeneration
+    || !isRemotePathWithin(current.remoteRoot, target.remotePath)
+  ) {
     throw new RemoteWorkspaceError('REMOTE_WORKSPACE_TARGET_INVALID', 'remote workspace target no longer matches its marker')
   }
   return { ...current, remotePath: target.remotePath }
@@ -527,31 +542,45 @@ function bridgeErrorCode(payload: unknown): string | undefined {
  * @param signal - 取消当前 bridge 请求。
  * @param awaitDefinitiveResponse - mutation 派发后不再用 caller signal 中断传输，
  * 以取得已提交或拒绝的最终响应。
+ * @param definitiveResponseSignal - `awaitDefinitiveResponse` 时仍可用于传输的独立
+ * deadline；当 `signal` 是 caller 取消信号时，调用方传入另建的有界 signal。
+ * @param retiredCleanup - 仅已发布句柄的旧 owner 终止/取消路径可设为 true；bridge
+ * 仍只放行固定的清理 route，普通读写、创建和会话操作绝不能借此回退。
  * @returns 已通过调用方校验的成功响应。
  */
 export async function callRemoteWorkspaceBridge<T>(
-  workspace: Pick<RemoteWorkspace, 'connectionId'> & Partial<Pick<RemoteWorkspace, 'remoteRoot'>>,
+  workspace: RemoteWorkspaceBridgeTarget,
   path: `/v1/${string}`,
   method: 'GET' | 'POST',
   body: unknown,
   parseResponse: (value: unknown) => T,
   signal?: AbortSignal,
   awaitDefinitiveResponse = false,
+  definitiveResponseSignal?: AbortSignal,
+  retiredCleanup = false,
 ): Promise<T> {
   abortIfNeeded(signal)
+  if (!isAbsolute(workspace.markerRoot) || !Number.isSafeInteger(workspace.markerGeneration) || workspace.markerGeneration <= 0
+    || !CONNECTION_ID.test(workspace.connectionId) || !isRemoteAbsolutePath(workspace.remoteRoot)) {
+    throw new RemoteWorkspaceError('REMOTE_WORKSPACE_TARGET_INVALID', 'remote workspace target is invalid')
+  }
   const config = bridgeConfig()
   const requestUrl = new URL(path, config.baseUrl)
   const requestPayload = bridgePayload(workspace, body)
   // 写入类请求一旦开始 fetch 就可能已在远端提交。此后必须等待确定响应，不能因
   // caller 取消而把已提交的 mutation 误报为 abort。
-  const responseSignal = awaitDefinitiveResponse ? undefined : signal
+  const responseSignal = awaitDefinitiveResponse ? definitiveResponseSignal : signal
   let response: Response
   try {
     response = await fetch(requestUrl, {
       method,
       headers: {
         Authorization: `Bearer ${config.token}`,
-        ...workspace.connectionId === undefined ? {} : { 'X-Coding-Remote-Connection': workspace.connectionId },
+        'X-Coding-Remote-Connection': workspace.connectionId,
+        'X-Coding-Remote-Marker-Root': workspace.markerRoot,
+        'X-Coding-Remote-Marker-Generation': String(workspace.markerGeneration),
+        'X-Coding-Remote-Root': workspace.remoteRoot,
+        ...retiredCleanup ? { 'X-Coding-Remote-Cleanup': '1' } : {},
         ...requestPayload === undefined ? {} : { 'Content-Type': 'application/json' },
       },
       ...requestPayload === undefined ? {} : { body: JSON.stringify(requestPayload) },
@@ -584,10 +613,10 @@ export async function callRemoteWorkspaceBridge<T>(
  * 上下文的调用仍可省略根限制。
  */
 function bridgePayload(
-  workspace: Pick<RemoteWorkspace, 'connectionId'> & Partial<Pick<RemoteWorkspace, 'remoteRoot'>>,
+  workspace: RemoteWorkspaceBridgeTarget,
   body: unknown,
 ): unknown {
-  if (body === undefined || workspace.remoteRoot === undefined) return body
+  if (body === undefined) return body
   const record = asRecord(body)
   if (record === undefined) {
     throw new RemoteWorkspaceError('REMOTE_WORKSPACE_TARGET_INVALID', 'remote workspace request is invalid')

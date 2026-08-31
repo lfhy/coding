@@ -27,9 +27,10 @@ async function workspaceMarker(remoteRoot = '/srv/project'): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'dsh-fs-remote-marker-'))
   roots.push(root)
   await writeFile(join(root, REMOTE_WORKSPACE_MARKER), JSON.stringify({
-    version: 1,
+    version: 2,
     remoteRoot,
     connectionId: 'connection-1',
+    generation: 1,
   }))
   return root
 }
@@ -109,8 +110,8 @@ describe('LocalFileSystem Remote-SSH marker routing', () => {
       await expect(fs.lstat('link.ts', { cwd: root })).resolves.toMatchObject({ type: 'symlink', version: 'link-v1' })
       expect(await fs.readText(target)).toBe('hello')
       expect(await fs.readBytes(target, undefined, 2)).toEqual(Buffer.from([0, 0xff]))
-      expect(() => fs.processPath(target)).toThrow(expect.objectContaining({ code: 'FS_IO_ERROR' }))
-      expect(() => fs.fileUrl(target)).toThrow(expect.objectContaining({ code: 'FS_IO_ERROR' }))
+      expect(fs.processPath(target)).toBe('/srv/project/source.ts')
+      expect(fs.fileUrl(target)).toBe('file:///srv/project/source.ts')
       await expect(fs.writeText(target, 'next', { kind: 'replaceIfVersion', version: FsVersion('v1') }))
         .resolves.toMatchObject({ operation: 'update', version: 'v2', before: 'hello', after: 'next' })
       await expect(fs.editText(target, { oldString: 'next', newString: 'done', replaceAll: false }, { version: FsVersion('v2') }))

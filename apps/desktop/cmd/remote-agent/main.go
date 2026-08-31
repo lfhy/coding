@@ -13,6 +13,15 @@ import (
 )
 
 func main() {
+	// isolate child 的 stdout 是父 agent 的私有 NDJSON wire；必须在 flag
+	// 解析和 Server 创建前短路，避免 token/readiness 文本污染协议流。
+	if len(os.Args) == 2 && os.Args[1] == "--code-isolate" {
+		if err := remoteagent.RunCodeIsolateStdio(os.Stdin, os.Stdout, os.Stderr); err != nil {
+			fmt.Fprintln(os.Stderr, "coding-remote-agent isolate:", err)
+			os.Exit(2)
+		}
+		return
+	}
 	var tokenFromStdin bool
 	var showVersion bool
 	flag.BoolVar(&tokenFromStdin, "token-stdin", false, "read the bearer token from standard input")

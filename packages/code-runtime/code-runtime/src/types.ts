@@ -78,6 +78,12 @@ export interface CodeRunRequest {
    * {@link CodeRunResult.value}.
    */
   program: string
+  /**
+   * 调用方拥有工作区时传入的执行世界工作目录。提供方可据此选择本地或
+   * Remote-SSH 基底；它不会暴露给程序，省略时仍采用没有 Workspace 的
+   * 调用方原有宿主默认执行方式。
+   */
+  cwd?: string
   /** Host functions exposed to the program, one global object per namespace. */
   bindings: CodeBindingNamespace[]
   /**

@@ -2,6 +2,14 @@
 
 import { Buffer } from 'node:buffer'
 import type { FileSystem, FsTarget } from '@deepseek-ai/dsh-fs'
+import {
+  isRemoteAbsolutePath,
+  isRemotePathWithin,
+  parseRemoteWorkspaceTargetKey,
+  remoteWorkspaceLocalPath,
+  verifyRemoteWorkspaceTarget,
+} from '@deepseek-ai/dsh-subprocess'
+import type { RemoteWorkspaceTarget } from '@deepseek-ai/dsh-subprocess'
 import { throwIfAborted } from './abort.ts'
 
 /** A canonical workspace in the filesystem/subprocess execution world. */
@@ -12,6 +20,10 @@ export interface HostWorkspace {
   readonly canonicalPath: string
   /** Canonical file URI sent during LSP initialization. */
   readonly fileUrl: string
+  /** Workspace 属于远端执行世界时使用的 Remote-SSH marker 身份。 */
+  readonly remoteTarget?: RemoteWorkspaceTarget
+  /** 供文件系统再次解析相对源文件的本地 marker 路径；不会传给远端进程。 */
+  readonly fsCwd?: string
 }
 
 /** A validated source and the exact URI sent to the language server. */
@@ -51,10 +63,17 @@ export async function canonicalizeWorkspace(
   if (info?.type !== 'directory') {
     throw new Error(`workspace root "${workspaceRoot}" is not a directory`)
   }
+  const parsedRemote = parseRemoteWorkspaceTargetKey(String(target.targetKey))
+  const remoteTarget = parsedRemote === undefined ? undefined : await verifyRemoteWorkspaceTarget(parsedRemote, signal)
+  throwIfAborted(signal)
   return {
     target,
     canonicalPath: fs.processPath(target),
     fileUrl: fs.fileUrl(target),
+    ...remoteTarget === undefined ? {} : {
+      remoteTarget,
+      fsCwd: remoteWorkspaceLocalPath(remoteTarget, remoteTarget.remotePath),
+    },
   }
 }
 
@@ -77,10 +96,27 @@ export async function readHostSource(
   signal?: AbortSignal,
 ): Promise<HostSource> {
   throwIfAborted(signal)
+  const remoteTarget = workspace.remoteTarget === undefined
+    ? undefined
+    : await verifyRemoteWorkspaceTarget(workspace.remoteTarget, signal)
+  throwIfAborted(signal)
+  let path = filePath
+  let cwd = workspace.fsCwd ?? workspace.canonicalPath
+  if (remoteTarget !== undefined) {
+    cwd = remoteWorkspaceLocalPath(remoteTarget, remoteTarget.remotePath)
+    if (isRemoteAbsolutePath(filePath)) {
+      if (!isRemotePathWithin(remoteTarget.remoteRoot, filePath)) {
+        throw new Error(`source "${filePath}" resolves outside the workspace`)
+      }
+      // LSP 请求使用语言服务器的远端 URI 命名空间；文件系统 Provider 必须经由
+      // 本地 marker 命名空间路由，不能把形似远端绝对路径的 Host 路径交给本机。
+      path = remoteWorkspaceLocalPath(remoteTarget, filePath)
+    }
+  }
   let target: FsTarget
   try {
-    target = await fs.resolve(filePath, {
-      cwd: workspace.canonicalPath,
+    target = await fs.resolve(path, {
+      cwd,
       ...signal === undefined ? {} : { signal },
     })
   } catch (error: unknown) {

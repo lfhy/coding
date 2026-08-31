@@ -14,7 +14,7 @@ Every command is confined by handing the provider the exact `['bash', '-c', comm
 | `workspace-write` | Writes only under `workspaceRoot` + `/tmp` (ephemeral under bwrap, the host `/tmp` under Landlock, `/private/tmp` plus the per-user temp dir under Seatbelt) |
 | `danger-full-access` | No confinement; the provider is never consulted. Foreground results carry `sandbox: { mode, denied: false }`; background process handles carry no sandbox facts. |
 
-For a Remote-SSH marker cwd, only a foreground `danger-full-access` call is executable. `read-only` and `workspace-write` fail before consulting the local sandbox provider because its kernel runner cannot confine a process on another machine; background `start()` also fails because the remote gateway has no process-handle lifecycle. The remote agent still confines the workdir to the directory selected for the marker, scrubs ambient credential-shaped and `DSH_*` variables, and requires `bash` on the target.
+For a Remote-SSH marker cwd, `danger-full-access` foreground and background calls run through the target Go agent. `read-only` and `workspace-write` fail before consulting the local sandbox provider because its kernel runner cannot confine a process on another machine. The remote agent still confines the workdir to the directory selected for the marker, scrubs ambient credential-shaped and `DSH_*` variables, and requires `bash` on the target.
 
 Semantics:
 

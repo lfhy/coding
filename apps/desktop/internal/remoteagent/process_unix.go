@@ -3,6 +3,7 @@
 package remoteagent
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"syscall"
@@ -18,6 +19,39 @@ func killProcessTree(command *exec.Cmd) {
 		return
 	}
 	_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
+}
+
+// signalProcessTree 向 detached 进程组发送受限信号；进程组已消失时回退到
+// 直接子进程，覆盖极短的退出竞态。
+func signalProcessTree(command *exec.Cmd, signal string) error {
+	if command.Process == nil {
+		return nil
+	}
+	value, ok := processUnixSignal(signal)
+	if !ok {
+		return errors.New("remote process: unsupported signal")
+	}
+	err := syscall.Kill(-command.Process.Pid, value)
+	if err != nil && !errors.Is(err, syscall.ESRCH) {
+		return err
+	}
+	if errors.Is(err, syscall.ESRCH) {
+		if directErr := command.Process.Signal(value); directErr != nil && !errors.Is(directErr, os.ErrProcessDone) {
+			return directErr
+		}
+	}
+	return nil
+}
+
+func processUnixSignal(signal string) (syscall.Signal, bool) {
+	switch signal {
+	case "SIGTERM":
+		return syscall.SIGTERM, true
+	case "SIGKILL":
+		return syscall.SIGKILL, true
+	default:
+		return 0, false
+	}
 }
 
 func commandSignal(state *os.ProcessState) string {

@@ -14,12 +14,9 @@ import z from '@deepseek-ai/schemastery'
 import { SHELL_SETTINGS_NAMESPACE, ShellExecutor } from '@deepseek-ai/dsh-shell'
 import type { ShellExecRequest, ShellExecSpec, ShellProcess, ShellProcessRead, ShellRunResult, CollectedOutput } from '@deepseek-ai/dsh-shell'
 import {
-  callRemoteWorkspaceBridge,
-  remoteWorkspacePath,
   remoteWorkspacePathSync,
-  RemoteWorkspaceError,
 } from '@deepseek-ai/dsh-subprocess'
-import type { RemoteWorkspacePath, SubprocessCollect, SubprocessHandle, SubprocessOutputReader, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
+import type { SubprocessCollect, SubprocessHandle, SubprocessOutputReader, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { installSettingsSection } from '@deepseek-ai/dsh-settings'
 import { clampTimeout, deadline, MAX_TIMER_DELAY_MS, timeoutOf } from '@deepseek-ai/dsh-timeout'
 
@@ -42,7 +39,6 @@ const DEFAULT_GRACE_MS = 3_000
 
 /** Default per-stream spill cap (the `maxSpillBytes` config). */
 const DEFAULT_MAX_SPILL_BYTES = 64 * 1024 * 1024
-const REMOTE_TRANSPORT_GRACE_MS = 5_000
 
 /** Plugin config (all optional — `static Config` supplies the defaults). */
 export interface Config {
@@ -97,94 +93,6 @@ export function assertServiceableBashConfig(config: Config): void {
   if (resolved.graceMs > MAX_TIMER_DELAY_MS) {
     throw new Error(`bash-local: graceMs must be no greater than ${MAX_TIMER_DELAY_MS}`)
   }
-}
-
-interface RemoteExecResult {
-  exitCode: number | null
-  signal: NodeJS.Signals | null
-  timedOut: boolean
-  stdout: string
-  stderr: string
-  stdoutTruncated: boolean
-  stderrTruncated: boolean
-}
-
-function bridgeRecord(value: unknown): Record<string, unknown> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new RemoteWorkspaceError('REMOTE_BRIDGE_RESPONSE_INVALID', 'remote workspace bridge returned an invalid response')
-  }
-  return value as Record<string, unknown>
-}
-
-function bridgeString(record: Record<string, unknown>, key: string): string {
-  const value = record[key]
-  if (typeof value !== 'string') {
-    throw new RemoteWorkspaceError('REMOTE_BRIDGE_RESPONSE_INVALID', 'remote workspace bridge returned an invalid response')
-  }
-  return value
-}
-
-function bridgeBoolean(record: Record<string, unknown>, key: string): boolean {
-  const value = record[key]
-  if (typeof value !== 'boolean') {
-    throw new RemoteWorkspaceError('REMOTE_BRIDGE_RESPONSE_INVALID', 'remote workspace bridge returned an invalid response')
-  }
-  return value
-}
-
-const SIGNALS: ReadonlySet<NodeJS.Signals> = new Set([
-  'SIGABRT', 'SIGALRM', 'SIGBUS', 'SIGCHLD', 'SIGCONT', 'SIGFPE', 'SIGHUP', 'SIGILL', 'SIGINT', 'SIGIO',
-  'SIGIOT', 'SIGKILL', 'SIGPIPE', 'SIGPOLL', 'SIGPROF', 'SIGPWR', 'SIGQUIT', 'SIGSEGV', 'SIGSTKFLT',
-  'SIGSTOP', 'SIGSYS', 'SIGTERM', 'SIGTRAP', 'SIGTSTP', 'SIGTTIN', 'SIGTTOU', 'SIGURG', 'SIGUSR1',
-  'SIGUSR2', 'SIGVTALRM', 'SIGWINCH', 'SIGXCPU', 'SIGXFSZ',
-])
-
-function parseRemoteExec(value: unknown): RemoteExecResult {
-  const record = bridgeRecord(value)
-  const rawExitCode = record.exitCode
-  let exitCode: number | null
-  if (rawExitCode === null) exitCode = null
-  else if (typeof rawExitCode === 'number' && Number.isSafeInteger(rawExitCode) && rawExitCode >= 0) exitCode = rawExitCode
-  else throw new RemoteWorkspaceError('REMOTE_BRIDGE_RESPONSE_INVALID', 'remote workspace bridge returned an invalid response')
-  const rawSignal = record.signal
-  if (rawSignal !== undefined && (typeof rawSignal !== 'string' || !SIGNALS.has(rawSignal as NodeJS.Signals))) {
-    throw new RemoteWorkspaceError('REMOTE_BRIDGE_RESPONSE_INVALID', 'remote workspace bridge returned an invalid response')
-  }
-  return {
-    exitCode,
-    signal: rawSignal === undefined ? null : rawSignal as NodeJS.Signals,
-    timedOut: bridgeBoolean(record, 'timedOut'),
-    stdout: bridgeString(record, 'stdout'),
-    stderr: bridgeString(record, 'stderr'),
-    stdoutTruncated: bridgeBoolean(record, 'stdoutTruncated'),
-    stderrTruncated: bridgeBoolean(record, 'stderrTruncated'),
-  }
-}
-
-/** 远端 agent 已有上限；此处再应用 Shell seam 的调用侧输出预算。 */
-function tailUtf8(text: string, maxBytes: number): { text: string; truncated: boolean } {
-  const bytes = Buffer.from(text, 'utf8')
-  if (bytes.byteLength <= maxBytes) return { text, truncated: false }
-  let start = bytes.byteLength - maxBytes
-  while (start < bytes.byteLength) {
-    const byte = bytes[start]
-    if (byte === undefined || (byte & 0b1100_0000) !== 0b1000_0000) break
-    start++
-  }
-  return { text: new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(start)), truncated: true }
-}
-
-function remoteOutput(text: string, agentTruncated: boolean, maxBytes: number): CollectedOutput {
-  const bounded = tailUtf8(text, maxBytes)
-  return { text: bounded.text, truncated: agentTruncated || bounded.truncated }
-}
-
-function remoteExecutionError(error: unknown): Error {
-  if (error instanceof RemoteWorkspaceError) {
-    if (error.code === 'REMOTE_BRIDGE_ABORTED') return error
-    return new Error('remote workspace command could not be executed')
-  }
-  return error instanceof Error ? error : new Error('remote workspace command could not be executed')
 }
 
 /**
@@ -247,11 +155,14 @@ export class LocalBashExecutor extends ShellExecutor {
     )
     const stdoutMaxBytes = request.stdoutMaxBytes ?? this.config.maxOutputBytes
     assertPositiveFinite('request.stdoutMaxBytes', stdoutMaxBytes)
+    const workdir = request.workdir ?? this.config.cwd ?? process.cwd()
+    const remoteTarget = remoteWorkspacePathSync(workdir, process.cwd())
     return {
       command: request.command,
-      workdir: request.workdir ?? this.config.cwd ?? process.cwd(),
+      workdir,
       timeoutMs,
       stdoutMaxBytes,
+      ...remoteTarget === undefined ? {} : { remoteTarget },
       ...request.signal ? { signal: request.signal } : {},
       // Carry stdin/ordinary env/trusted dshEnv through verbatim — optional,
       // no config default. The subprocess service owns the scrub and merge order.
@@ -277,7 +188,8 @@ export class LocalBashExecutor extends ShellExecutor {
       ({ maxBytes, spill: { maxBytes: this.config.maxSpillBytes } })
     return {
       argv,
-      cwd: spec.workdir,
+      cwd: spec.remoteTarget?.remotePath ?? spec.workdir,
+      ...spec.remoteTarget === undefined ? {} : { remoteTarget: spec.remoteTarget },
       stdio: {
         stdin: spec.stdin !== undefined ? { data: spec.stdin } : 'ignore',
         stdout: collect(stdoutMaxBytes),
@@ -303,78 +215,7 @@ export class LocalBashExecutor extends ShellExecutor {
     return { stdout, stderr }
   }
 
-  /** 异步识别当前 workdir 是否落在 Remote-SSH marker 内。 */
-  protected async remoteWorkspaceForWorkdir(workdir: string, signal?: AbortSignal): Promise<RemoteWorkspacePath | undefined> {
-    signal?.throwIfAborted()
-    try {
-      return await remoteWorkspacePath(workdir, process.cwd(), signal)
-    } catch (error: unknown) {
-      throw remoteExecutionError(error)
-    }
-  }
-
-  /** `start()` 必须同步返回 handle，因此只做有界 marker 读取，不建立网络连接。 */
-  protected remoteWorkspaceForWorkdirSync(workdir: string): RemoteWorkspacePath | undefined {
-    try {
-      return remoteWorkspacePathSync(workdir, process.cwd())
-    } catch (error: unknown) {
-      throw remoteExecutionError(error)
-    }
-  }
-
-  /** 把一个已经受 marker 根限制的 Shell spec 发给本地 bridge。 */
-  protected async executeRemoteWorkspace(
-    spec: ShellExecSpec,
-    workspace: RemoteWorkspacePath,
-    signal: AbortSignal | undefined,
-    timeoutMs: number,
-  ): Promise<RemoteExecResult> {
-    return callRemoteWorkspaceBridge(workspace, '/v1/exec', 'POST', {
-      path: workspace.remotePath,
-      shell: 'bash',
-      command: spec.command,
-      timeoutMs,
-      ...spec.stdin === undefined ? {} : { stdin: spec.stdin },
-      env: { ...ENV_OVERRIDES, ...spec.env, ...spec.dshEnv },
-    }, parseRemoteExec, signal)
-  }
-
-  /** 用 Shell seam 的超时/取消语义结算一次远端前台命令。 */
-  protected async runRemoteWorkspace(spec: ShellExecSpec, workspace: RemoteWorkspacePath): Promise<ShellRunResult> {
-    // Agent 拥有命令超时；传输只在超时结果缺席一个宽限期后才兜底中止。
-    using d = deadline(spec.signal, spec.timeoutMs + REMOTE_TRANSPORT_GRACE_MS, 'BASH_REMOTE_TRANSPORT_TIMEOUT')
-    let result: RemoteExecResult
-    try {
-      result = await this.executeRemoteWorkspace(spec, workspace, d.signal, spec.timeoutMs)
-    } catch (error: unknown) {
-      const timedOut = timeoutOf(d.signal, 'BASH_REMOTE_TRANSPORT_TIMEOUT') !== undefined
-      if (d.signal.aborted) {
-        return {
-          exitCode: null,
-          signal: timedOut ? 'SIGKILL' : 'SIGTERM',
-          timedOut,
-          aborted: !timedOut,
-          timeoutMs: spec.timeoutMs,
-          stdout: { text: '', truncated: false },
-          stderr: { text: '', truncated: false },
-        }
-      }
-      throw remoteExecutionError(error)
-    }
-    return {
-      exitCode: result.exitCode,
-      signal: result.signal,
-      timedOut: result.timedOut,
-      aborted: false,
-      timeoutMs: spec.timeoutMs,
-      stdout: remoteOutput(result.stdout, result.stdoutTruncated, spec.stdoutMaxBytes),
-      stderr: remoteOutput(result.stderr, result.stderrTruncated, this.config.maxOutputBytes),
-    }
-  }
-
   async run(spec: ShellExecSpec): Promise<ShellRunResult> {
-    const remote = await this.remoteWorkspaceForWorkdir(spec.workdir, spec.signal)
-    if (remote !== undefined) return this.runRemoteWorkspace(spec, remote)
     return this.runArgv(spec, ['bash', '-c', spec.command])
   }
 
@@ -406,8 +247,6 @@ export class LocalBashExecutor extends ShellExecutor {
   }
 
   start(spec: ShellExecSpec): ShellProcess {
-    const remote = this.remoteWorkspaceForWorkdirSync(spec.workdir)
-    if (remote !== undefined) throw new Error('remote background commands are unsupported')
     return this.startArgv(spec, ['bash', '-c', spec.command])
   }
 

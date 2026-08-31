@@ -282,6 +282,13 @@ export interface RunCodeBridgeOptions {
   shapeDispatchLog: (dispatch: CodeDispatchLog) => Promise<ContentBlock[]>
 }
 
+/** 从可能尚未附加 session 的 Agent 句柄读取工作目录。 */
+function agentWorkspaceCwd(agent: {
+  readonly session?: { readonly header?: { readonly cwd?: string } }
+} | undefined): string | undefined {
+  return agent?.session?.header?.cwd
+}
+
 /**
  * Build the `run_code` {@link ToolDefinition}: required `code` and
  * `description` parameters, executed through the dispatch bridge described
@@ -619,8 +626,10 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
       try {
         let result: CodeRunResult
         try {
+          const cwd = agentWorkspaceCwd(exec.agent)
           result = await runtime.run({
             program: args.code,
+            ...cwd !== undefined ? { cwd } : {},
             bindings: [{
               global: 'tools',
               functions,

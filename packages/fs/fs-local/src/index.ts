@@ -126,6 +126,50 @@ function sameRemotePath(left: string, right: string): boolean {
   return isRemotePathWithin(left, right) && isRemotePathWithin(right, left)
 }
 
+/**
+ * Node 的 stat/lstat API 不接受 AbortSignal。取消时先向调用方返回统一错误，
+ * 底层 probe 的晚到结果仍由 race 注册的处理器消费。
+ */
+async function awaitMetadataProbe<T>(
+  probeOperation: () => Promise<T>,
+  signal: AbortSignal | undefined,
+  verb: 'stat' | 'lstat',
+): Promise<T> {
+  if (signal?.aborted) throw new FsError(`${verb} aborted`, 'FS_ABORTED')
+  if (signal === undefined) return await probeOperation()
+  const aborted = Promise.withResolvers<never>()
+  const onAbort = (): void => { aborted.reject(new FsError(`${verb} aborted`, 'FS_ABORTED')) }
+  signal.addEventListener('abort', onAbort, { once: true })
+  try {
+    return await Promise.race([probeOperation(), aborted.promise])
+  } finally {
+    signal.removeEventListener('abort', onAbort)
+  }
+}
+
+/**
+ * 将远端 agent 已规范化的路径转换为该执行世界可交给 LSP 的 file URI。不能使用
+ * 本机的 pathToFileURL：Remote-SSH 目标可以与 Host 采用不同的平台路径语法。
+ */
+function remoteFileUrl(path: string): string {
+  const normalized = path.replace(/\\/gu, '/')
+  const encodePath = (value: string): string => value.split('/').map((part, index) => {
+    // Windows 驱动器中的冒号是 file URI 的语法，不是待转义的数据。
+    if (index === 0 && /^[A-Za-z]:$/u.test(part)) return part
+    return encodeURIComponent(part)
+  }).join('/')
+  if (normalized.startsWith('//')) {
+    const [host, ...parts] = normalized.slice(2).split('/')
+    if (host === undefined || host.length === 0 || parts.length === 0) {
+      throw new FsError(`cannot create file URI for remote target ${JSON.stringify(path)}`, 'FS_IO_ERROR')
+    }
+    return `file://${host}/${encodePath(parts.join('/'))}`
+  }
+  if (/^[A-Za-z]:\//u.test(normalized)) return `file:///${encodePath(normalized)}`
+  if (normalized.startsWith('/')) return `file://${encodePath(normalized)}`
+  throw new FsError(`cannot create file URI for remote target ${JSON.stringify(path)}`, 'FS_IO_ERROR')
+}
+
 function fsRemoteError(error: unknown, operation: string, displayPath: string): FsError {
   if (error instanceof FsError) return error
   if (error instanceof RemoteWorkspaceError) {
@@ -256,7 +300,8 @@ export class LocalFileSystem extends FileSystem {
       if (isAbsolute(path)) {
         const localAbsolute = await remoteWorkspacePath(path, cwd, signal)
         if (localAbsolute !== undefined && localAbsolute.markerRoot === workspace.markerRoot
-          && localAbsolute.remoteRoot === workspace.remoteRoot && localAbsolute.connectionId === workspace.connectionId) {
+          && localAbsolute.remoteRoot === workspace.remoteRoot && localAbsolute.connectionId === workspace.connectionId
+          && localAbsolute.markerGeneration === workspace.markerGeneration) {
           return localAbsolute
         }
       }
@@ -268,7 +313,8 @@ export class LocalFileSystem extends FileSystem {
       }
       const mapped = await remoteWorkspacePath(path, cwd, signal)
       if (mapped !== undefined && mapped.markerRoot === workspace.markerRoot
-        && mapped.remoteRoot === workspace.remoteRoot && mapped.connectionId === workspace.connectionId) {
+        && mapped.remoteRoot === workspace.remoteRoot && mapped.connectionId === workspace.connectionId
+        && mapped.markerGeneration === workspace.markerGeneration) {
         return mapped
       }
       throw new FsError(`cannot ${operation} "${path}": path is outside the remote workspace`, 'FS_NOT_FOUND')
@@ -309,7 +355,8 @@ export class LocalFileSystem extends FileSystem {
         markerRoot: workspace.markerRoot,
         remoteRoot: workspace.remoteRoot,
         remotePath,
-        ...workspace.connectionId === undefined ? {} : { connectionId: workspace.connectionId },
+        connectionId: workspace.connectionId,
+        markerGeneration: workspace.markerGeneration,
       }
     } catch (error: unknown) {
       throw fsRemoteError(error, 'resolve', workspace.remotePath)
@@ -337,9 +384,7 @@ export class LocalFileSystem extends FileSystem {
   override processPath(target: FsTarget): string {
     try {
       const remote = parseRemoteWorkspaceTargetKey(String(target.targetKey))
-      if (remote !== undefined) {
-        throw new FsError(`cannot expose remote target "${target.displayPath}" to a local process`, 'FS_IO_ERROR')
-      }
+      if (remote !== undefined) return remote.remotePath
     } catch (error: unknown) {
       if (error instanceof FsError) throw error
       throw new FsError(`cannot expose target "${target.displayPath}" to a local process`, 'FS_IO_ERROR', { cause: error })
@@ -348,6 +393,13 @@ export class LocalFileSystem extends FileSystem {
   }
 
   override fileUrl(target: FsTarget): string {
+    try {
+      const remote = parseRemoteWorkspaceTargetKey(String(target.targetKey))
+      if (remote !== undefined) return remoteFileUrl(remote.remotePath)
+    } catch (error: unknown) {
+      if (error instanceof FsError) throw error
+      throw new FsError(`cannot create file URI for remote target "${target.displayPath}"`, 'FS_IO_ERROR', { cause: error })
+    }
     return pathToFileURL(this.processPath(target)).href
   }
 
@@ -389,7 +441,7 @@ export class LocalFileSystem extends FileSystem {
         throw fsRemoteError(error, 'stat', target.displayPath)
       }
     }
-    const info = await probe(target.targetKey)
+    const info = await awaitMetadataProbe(() => probe(target.targetKey), signal, 'stat')
     if (signal?.aborted) throw new FsError('stat aborted', 'FS_ABORTED')
     if (!info) return undefined
     return { version: info.version, type: info.type, size: info.size }
@@ -421,7 +473,7 @@ export class LocalFileSystem extends FileSystem {
         throw fsRemoteError(error, 'lstat', path)
       }
     }
-    const info = await probeNoFollow(resolve(cwd, path))
+    const info = await awaitMetadataProbe(() => probeNoFollow(resolve(cwd, path)), signal, 'lstat')
     if (signal?.aborted) throw new FsError('lstat aborted', 'FS_ABORTED')
     if (!info) return undefined
     return { version: info.version, type: info.type, size: info.size }

@@ -28,10 +28,10 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
 })
 
-async function marker(remoteRoot = '/srv/project', connectionId = 'connection-1'): Promise<string> {
+async function marker(remoteRoot = '/srv/project', connectionId = 'connection-1', generation = 1): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'dsh-remote-marker-'))
   roots.push(root)
-  await writeFile(join(root, REMOTE_WORKSPACE_MARKER), JSON.stringify({ version: 1, remoteRoot, connectionId }))
+  await writeFile(join(root, REMOTE_WORKSPACE_MARKER), JSON.stringify({ version: 2, remoteRoot, connectionId, generation }))
   return root
 }
 
@@ -52,11 +52,12 @@ describe('Remote-SSH workspace marker', () => {
       remoteRoot: '/srv/project',
       remotePath: '/srv/project/src/index.ts',
       connectionId: 'connection-1',
+      markerGeneration: 1,
     })
     const key = remoteWorkspaceTargetKey(mapped!)
     expect(key).not.toContain('token')
     const parsed = parseRemoteWorkspaceTargetKey(key)
-    expect(parsed).toMatchObject({ remotePath: '/srv/project/src/index.ts', connectionId: 'connection-1' })
+    expect(parsed).toMatchObject({ remotePath: '/srv/project/src/index.ts', connectionId: 'connection-1', markerGeneration: 1 })
     await expect(verifyRemoteWorkspaceTarget(parsed!)).resolves.toMatchObject({ remoteRoot: '/srv/project' })
   })
 
@@ -74,10 +75,37 @@ describe('Remote-SSH workspace marker', () => {
     const root = await marker()
     expect(await remoteWorkspacePath('../outside.txt', root)).toBeUndefined()
     await writeFile(join(root, REMOTE_WORKSPACE_MARKER), JSON.stringify({
+      version: 2,
+      remoteRoot: '/srv/project',
+      connectionId: 'connection-1',
+      generation: 1,
+      token: 'must-not-persist',
+    }))
+    await expect(remoteWorkspacePath('file.txt', root)).rejects.toMatchObject({
+      code: 'REMOTE_WORKSPACE_MARKER_INVALID',
+    })
+  })
+
+  it('fails closed when the marker generation changes without changing the connection id', async () => {
+    const root = await marker()
+    const target = await remoteWorkspacePath('file.txt', root)
+    await writeFile(join(root, REMOTE_WORKSPACE_MARKER), JSON.stringify({
+      version: 2,
+      remoteRoot: '/srv/project',
+      connectionId: 'connection-1',
+      generation: 2,
+    }))
+    await expect(verifyRemoteWorkspaceTarget(target!)).rejects.toMatchObject({
+      code: 'REMOTE_WORKSPACE_TARGET_INVALID',
+    })
+  })
+
+  it('rejects a legacy v1 marker instead of dispatching it without a bridge generation', async () => {
+    const root = await marker()
+    await writeFile(join(root, REMOTE_WORKSPACE_MARKER), JSON.stringify({
       version: 1,
       remoteRoot: '/srv/project',
       connectionId: 'connection-1',
-      token: 'must-not-persist',
     }))
     await expect(remoteWorkspacePath('file.txt', root)).rejects.toMatchObject({
       code: 'REMOTE_WORKSPACE_MARKER_INVALID',
@@ -87,7 +115,14 @@ describe('Remote-SSH workspace marker', () => {
 
 describe('Remote-SSH local bridge', () => {
   it('sends only the process token in Authorization and routes a marker connection id in its own header', async () => {
-    let received: { authorization: string | undefined; connection: string | undefined; body: unknown } | undefined
+    let received: {
+      authorization: string | undefined
+      connection: string | undefined
+      markerRoot: string | undefined
+      generation: string | undefined
+      remoteRoot: string | undefined
+      body: unknown
+    } | undefined
     const server = createServer((request, response) => {
       const chunks: Buffer[] = []
       request.on('data', (chunk: Buffer) => { chunks.push(chunk) })
@@ -95,6 +130,9 @@ describe('Remote-SSH local bridge', () => {
         received = {
           authorization: request.headers.authorization,
           connection: request.headers['x-coding-remote-connection'] as string | undefined,
+          markerRoot: request.headers['x-coding-remote-marker-root'] as string | undefined,
+          generation: request.headers['x-coding-remote-marker-generation'] as string | undefined,
+          remoteRoot: request.headers['x-coding-remote-root'] as string | undefined,
           body: JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown,
         }
         response.setHeader('Content-Type', 'application/json')
@@ -105,7 +143,7 @@ describe('Remote-SSH local bridge', () => {
     process.env.DSH_REMOTE_BRIDGE_TOKEN = 'test-bridge-token-which-is-long-enough'
 
     const response = await callRemoteWorkspaceBridge(
-      { connectionId: 'connection-1', remoteRoot: '/srv/project' },
+      { markerRoot: '/tmp/dsh-remote-marker', connectionId: 'connection-1', remoteRoot: '/srv/project', markerGeneration: 1 },
       '/v1/resolve',
       'POST',
       { path: '/srv/project/src/index.ts' },
@@ -120,6 +158,9 @@ describe('Remote-SSH local bridge', () => {
     expect(received).toEqual({
       authorization: 'Bearer test-bridge-token-which-is-long-enough',
       connection: 'connection-1',
+      markerRoot: '/tmp/dsh-remote-marker',
+      generation: '1',
+      remoteRoot: '/srv/project',
       body: { path: '/srv/project/src/index.ts', root: '/srv/project' },
     })
   })

@@ -291,6 +291,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   ShellProcess: 'shell.md',
   ShellRunResult: 'shell.md',
   DshEnvironment: 'subprocess.md',
+  RemoteWorkspaceTarget: 'subprocess.md',
   SubprocessHandle: 'subprocess.md',
   SubprocessOutcome: 'subprocess.md',
   SubprocessOutputRead: 'subprocess.md',

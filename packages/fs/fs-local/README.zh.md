@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-`ctx.fs` 提供方约定（[`@deepseek-ai/dsh-fs`](../fs)）的**本地文件系统实现**。它使用宿主文件系统支持十二个 `FileSystem` 原语；将其作为插件加载会填充 `ctx.fs`。在桌面端组合中，它还会识别无凭据的 Remote-SSH Workspace marker，并且只经已认证的本地 bridge 路由语义文件系统原语。普通本地路径仍保留宿主文件系统行为。
+`ctx.fs` 提供方约定（[`@deepseek-ai/dsh-fs`](../fs)）的**本地文件系统实现**。它使用宿主文件系统支持十二个 `FileSystem` 原语；将其作为插件加载会填充 `ctx.fs`。在桌面端组合中，它还会识别无凭据的 Remote-SSH Workspace marker，并经已认证的本地 bridge 将文件系统原语路由到所选远程根目录。普通本地路径仍保留宿主文件系统行为。
 
 ```ts ignore-check
 import { LocalFileSystem } from '@deepseek-ai/dsh-fs-local'
@@ -15,7 +15,7 @@ await ctx.plugin(LocalFileSystem, { cwd: process.cwd() })
 ## 行为
 
 - **`resolve(path, opts?)`**：相对 `path` 在调用方提供 `opts.cwd` 时以该值为基准解析（面向模型的工具会传入调用 agent（智能体）的会话 cwd；见[每会话 cwd Agent Note](../../../.agents/notes/implemented/architecture/2026-07-02-fs-per-session-cwd.md)），否则以 `config.cwd` 为基准（默认 `process.cwd()`）；绝对 `path` 会忽略两者。`opts.signal` 会在解析前后检查。对于本地目标，`targetKey` 是文件的 `realpath`，因此经符号链接到达同一文件的两个输入路径会共享一个身份，写入／编辑落在链接目标上，同时保留链接；尚不存在的路径在父目录存在时使用 realpath 后的父目录加 basename，只有父目录无法解析时才回退到绝对路径。Remote-SSH marker 则生成 `coding-remote-target:v1:` 身份，并把规范远程路径作为 `displayPath`；后续每次 I/O 都会针对 marker 当前连接重新验证该身份。
-- **执行世界坐标**：对于本地目标，`processPath` 公开规范化宿主路径，`fileUrl` 通过 Node 的平台感知 URL 转换对其编码。Remote-SSH 目标没有可安全使用的本地进程路径或 `file:` URI，因此这两项操作会快速失败；`contains` 仍可比较同一当前 marker／连接内的远程目标，消费方无需解析 `targetKey`。
+- **执行世界坐标**：对于本地目标，`processPath` 公开规范化宿主路径，`fileUrl` 通过 Node 的平台感知 URL 转换对其编码。对于 Remote-SSH 目标，`processPath` 返回规范远程路径，`fileUrl` 使用目标平台的 `file:` 语法；已验证的 marker target 会把这些坐标携带给远程子进程 Provider，绝不会交给本地 Node 进程。`contains` 仍可比较同一当前 marker／连接内的远程目标，Consumer 无需解析 `targetKey`。
 - **`stat` / `lstat`**：返回目标元数据；目标不存在时返回 `undefined`。`stat` 为已解析目标报告 `FsInfo`（`type` 为 `file`/`directory`/`other`，另有不透明 `version` 与字节 `size`）；路径形态的 `lstat` 不跟随最后一个符号链接，报告 `FsPathInfo`，因此可以返回 `symlink`。本地版本由 bigint `dev:ino:size:mtimeNs:ctimeNs` 派生；Remote-SSH 版本和元数据来自有界 agent 响应。两者都会在异步元数据探测前后检查取消，因此异步探测进行期间发生的中止会报告 `FS_ABORTED`，而非陈旧的不存在结果。
 - **`readText` / `streamText`**：只支持 UTF-8。对于本地目标，`readText` 读取整个文件，`streamText` 按分片解码，因此超大文件无需整体保存在内存中；两者都会拒绝无效 UTF-8、包含 NUL 字节的二进制样本（`FS_NOT_TEXT`）以及非普通文件目标。Remote-SSH 通过已认证 bridge 接收完整且有大小限制的文本，并将其作为单个 `streamText` 分片公开。`read` 工具（`@deepseek-ai/dsh-tool-fs`）拥有行窗口逻辑。
 - **`readBytes`**：按原始字节读取整个文件，不做解码或二进制拒绝（`read_image` 工具通过附件服务校验内容）。对于本地目标，必填的字节上限在任何内容 I/O 之前先按 stat 大小短路，随后的流最多多读一个字节。Remote-SSH 会针对请求上限与固定的 16 MiB 上限校验规范 base64 bridge 响应。
@@ -43,4 +43,4 @@ await ctx.plugin(LocalFileSystem, { cwd: process.cwd() })
 - **每目标变更锁仅限进程内**：即使跨进程，带防护的创建仍采用原子且不替换的发布方式；但只有当可选版本防护观察到元数据变化时，系统才能发现其他进程中的替换写入方，且绝不会将其串行化。
 - **带防护的创建要求支持硬链接**：拒绝硬链接发布的文件系统或挂载点无法支持 `createIfAbsent`；提供方会使目标保持缺失状态并报告 `FS_IO_ERROR`。
 - **提交后清理采用尽力而为语义**：如果移除仅所有者可访问的暂存目录失败，成功发布仍视为成功，并留下私有残留供运维人员后续清理。
-- **Remote-SSH 是有界适配器**：远程文本、字节、元数据、目录列出、写入与编辑调用使用有完整大小限制的 bridge 响应，并非通用远程 `ctx.fs` 提供方。搜索子进程以及要求本地进程路径或文件 URL 的消费方仍不受支持。
+- **Remote-SSH 以连接为作用域**：每个远程文件系统操作都会重新验证 marker，并使用有大小限制的 bridge 响应；桌面端重启、SSH 丢失或 marker 重新绑定会使陈旧操作失败，用户需要重新连接。所选根目录是执行坐标，不是文件系统沙箱。

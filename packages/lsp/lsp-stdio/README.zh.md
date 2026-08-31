@@ -8,12 +8,12 @@ Namespace 插件（`name`／`inject`／`Config`／`apply`，无默认导出）�
 
 ## 功能
 
-- 在注册前解析每项服务器局部设置；无效映射或注册冲突会回滚较早配置项，因此加载失败不会留下提供方路由。
+- 在注册前校验每项服务器局部设置；无效映射或注册冲突会回滚较早配置项，因此加载失败不会留下提供方路由。可执行文件查找会等待选择其执行世界的 Workspace。
 - 每个 `(server id, canonical workspace target)` 惰性 single-flight 一个服务器进程。服务器仍存活时返回的错误不会触发重试；如果选中的池化传输在只读查询之前或期间发生故障，提供方会等待其 dispose（资源释放）完成，并在新进程上重试该查询一次。
 - 每次查询都使用兼容性优先的**临时打开**序列：通过 `ctx.fs` 流式读取源文件，同时解析并限制其字节数；随后执行 `textDocument/didOpen`（版本 1、完整文本）、所请求操作，再执行位于 `finally` 中的 `textDocument/didClose`。写入 `didOpen` 失败或取消时，会在池复用该实例前将其终止。文档在每次调用后关闭，因此第一版不需要 `didChange`、内容 cache 或文档 LRU。
 - 通过一条逐 Workspace、可中止的队列，串行执行每个源读取／打开／查询／关闭生命周期，因此排队调用只会在轮到自身时读取当前源；不同 Workspace 并行运行。提供方 dispose 会中止文件系统与协议工作，等待尚未进入队列的 Workspace 查找完成，随后排空每条队列与每个服务器。
 - 协议 shutdown 失败后，经由子进程 seam 终止服务器后代树（POSIX 进程组信号；Windows `taskkill /T /F`）。树终止的投递结果与所有进程组信号一样被就地吸收，不向外抛出（投递与服务器退出存在竞态）；服务器是否完全停稳，由句柄的进程树存活等待确认，而非由这次终止自身的结果确认。
-- 通过 `ctx.subprocess` 解析服务器可执行文件、cwd、进程和协议流；`initialize.processId` 为 `null`，因为另一台机器或 PID namespace 不得监视 harness 进程。
+- 对每个规范 Workspace target，经由 `ctx.subprocess` 解析服务器可执行文件、cwd、进程和协议流；因此 Remote-SSH marker 会在所选远程 target 上启动配置的服务器，而不是通过本地 Node Host 启动。`initialize.processId` 为 `null`，因为另一台机器或 PID namespace 不得监视 harness 进程。
 - 使用 `ctx.fs` 提供的规范化包含关系、文件 URI 与流式文本验证，但不发出 `fs/observed`：只有 LSP 结果对模型可见，因此查询不满足先读后写策略。
 
 ## 配置
@@ -22,7 +22,7 @@ Namespace 插件（`name`／`inject`／`Config`／`apply`，无默认导出）�
 
 | 服务器 key | 默认值 | 含义 |
 |---|---|---|
-| `command` | （必填） | 要 spawn 的可执行文件：绝对路径，或在加载时从子进程 PATH 解析。不使用 shell 启动。 |
+| `command` | （必填） | 要 spawn 的可执行文件：绝对路径，或在所选 Workspace 的第一次查询时从其子进程 PATH 解析。不使用 shell 启动。 |
 | `args` | `[]` | 传给可执行文件的参数。 |
 | `env` | `{}` | 合并到已清理 credential 的环境之上的额外 env（匹配 `KEY`／`PASSWORD`／`SECRET`／`TOKEN` 的变量不会转发）；显式 `DSH_*` 条目在 seam 清除环境中同名值之后合并。 |
 | `extensionToLanguage` | （必填） | 小写、以点开头的扩展名 → LSP language id（例如 `{ '.ts': 'typescript' }`）。 |
@@ -34,7 +34,7 @@ Namespace 插件（`name`／`inject`／`Config`／`apply`，无默认导出）�
 | `shutdownTimeoutMs` | `5000` | 升级前用于优雅 `shutdown`／`exit` 的预算。 |
 | `killGraceMs` | `2000` | 请求取消及 SIGTERM→SIGKILL 升级的宽限期。 |
 
-`servers` 必须至少包含一个配置项，每个 id 都必须非空。定时器预算必须是正整数，且不超过 Node 的 `2_147_483_647` ms 定时器上限。所有可执行文件都会在清理 credential 后于加载时解析；后面的坏配置项会阻止所有提供方注册。进程在第一次匹配查询时惰性启动。
+`servers` 必须至少包含一个配置项，每个 id 都必须非空。定时器预算必须是正整数，且不超过 Node 的 `2_147_483_647` ms 定时器上限。配置错误会阻止所有提供方注册；可执行文件会在清理 credential 后，于第一次匹配的 Workspace 查询选择执行世界时解析。进程在该查询时惰性启动。
 
 ## 协议行为
 

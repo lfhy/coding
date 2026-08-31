@@ -9,6 +9,6 @@ The code-execution capability seam (see [capability seams](../../.agents/notes/i
 | [`code-runtime/`](code-runtime/README.md) | Service Definition and shared vocabulary | `ctx.codeRuntime` |
 | [`code-runtime-worker/`](code-runtime-worker-thread/README.md) | Worker-thread backend | registers `ctx.codeRuntime` |
 
-Providers register the service without changing its Consumer. The child READMEs own language, isolation, and execution-budget details.
+Providers register the service without changing its Consumer. `WorkerThreadCodeRuntime` chooses its local worker or a fresh constrained Goja child of the desktop Remote-SSH agent from the caller's `cwd`; tool bindings still execute through the local Host. The child READMEs own language, isolation, and execution-budget details.
 
 The subsystem reference — run requests/results, binding namespaces, the failure taxonomy — is [docs/subsystems/code-runtime.md](../../docs/subsystems/code-runtime.md).

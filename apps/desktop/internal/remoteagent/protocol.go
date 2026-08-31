@@ -158,3 +158,33 @@ type ExecResponse struct {
 	StdoutTruncated bool   `json:"stdoutTruncated"`
 	StderrTruncated bool   `json:"stderrTruncated"`
 }
+
+// SearchRequest 请求在受 Root 约束的远端工作区中执行 glob 或 grep。Path 为空
+// 时搜索 Root；MaxResults、MaxBytes 和 MaxFiles 只能收紧服务端固定上限。
+type SearchRequest struct {
+	Root       string `json:"root"`
+	Path       string `json:"path,omitempty"`
+	Kind       string `json:"kind"`
+	Pattern    string `json:"pattern"`
+	Include    string `json:"include,omitempty"`
+	MaxResults int    `json:"maxResults,omitempty"`
+	MaxBytes   int64  `json:"maxBytes,omitempty"`
+	MaxFiles   int    `json:"maxFiles,omitempty"`
+}
+
+// SearchMatch 是 grep 命中的远端根目录相对路径、1-based 行号和行文本。
+type SearchMatch struct {
+	Path       string `json:"path"`
+	LineNumber int    `json:"lineNumber"`
+	Line       string `json:"line"`
+}
+
+// SearchResponse 返回稳定排序的远端根目录相对路径。触及结果、响应字节、扫描
+// 文件或读取字节上限时，Truncated 为 true，TruncatedBy 给出所有已触及的上限。
+type SearchResponse struct {
+	Root        string        `json:"root"`
+	Paths       []string      `json:"paths,omitempty"`
+	Matches     []SearchMatch `json:"matches,omitempty"`
+	Truncated   bool          `json:"truncated"`
+	TruncatedBy []string      `json:"truncatedBy,omitempty"`
+}

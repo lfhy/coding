@@ -74,6 +74,8 @@ interface ShellExecRequest {
 interface ShellExecSpec {
   command: string
   workdir: string
+  /** 已验证的 Remote-SSH 执行身份；存在时 subprocess provider 在远端启动 argv。 */
+  remoteTarget?: RemoteWorkspaceTarget | undefined
   timeoutMs: number
   /**
    * Resolved foreground stdout capture budget in bytes. `run()` uses it for

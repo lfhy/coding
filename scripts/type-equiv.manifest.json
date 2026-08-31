@@ -1537,6 +1537,16 @@
     },
     {
       "doc": "docs/subsystems/subprocess.md",
+      "symbol": "RemoteWorkspace",
+      "source": "packages/subprocess/subprocess/src/remote-workspace.ts"
+    },
+    {
+      "doc": "docs/subsystems/subprocess.md",
+      "symbol": "RemoteWorkspaceTarget",
+      "source": "packages/subprocess/subprocess/src/remote-workspace.ts"
+    },
+    {
+      "doc": "docs/subsystems/subprocess.md",
       "symbol": "SubprocessSpawnSpec",
       "source": "packages/subprocess/subprocess/src/types.ts"
     },
