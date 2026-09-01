@@ -727,29 +727,31 @@ export function RemoteSshWizard({ open, onClose, t, createWorkspace, onPick }: R
   return (
     <Modal open={open} onClose={dismiss} title={t('picker.remote.title')} closeLabel={t('close')} headless className={remoteCss.dialog ?? ''}>
       <div className={remoteCss.shell}>
-        <ol className={remoteCss.steps} aria-label={t('picker.remote.steps.aria')}>
-          {remoteSteps.map((item, index) => (
-            <li
-              key={item.id}
-              className={clsx(
-                remoteCss.step,
-                index === currentStepIndex && remoteCss.stepActive,
-                completedStep(item.id) && remoteCss.stepDone,
-              )}
-              {...index === currentStepIndex ? { 'aria-current': 'step' as const } : {}}
-            >
-              <span className={remoteCss.stepNumber}>
-                {completedStep(item.id) ? <IconCheckOutline16 size={14} /> : index + 1}
-              </span>
-              <span className={remoteCss.stepText}>
-                <span className={remoteCss.stepTitle}>{t(item.label)}</span>
-                <span className={remoteCss.stepHint}>{t(item.hint)}</span>
-              </span>
-            </li>
-          ))}
-        </ol>
+        <nav className={remoteCss.steps} aria-label={t('picker.remote.steps.aria')}>
+          <ol className={remoteCss.stepList}>
+            {remoteSteps.map((item, index) => (
+              <li
+                key={item.id}
+                className={clsx(
+                  remoteCss.step,
+                  index === currentStepIndex && remoteCss.stepActive,
+                  completedStep(item.id) && remoteCss.stepDone,
+                )}
+                {...index === currentStepIndex ? { 'aria-current': 'step' as const } : {}}
+              >
+                <span className={remoteCss.stepNumber}>
+                  {completedStep(item.id) ? <IconCheckOutline16 size={14} /> : index + 1}
+                </span>
+                <span className={remoteCss.stepText}>
+                  <span className={remoteCss.stepTitle}>{t(item.label)}</span>
+                  <span className={remoteCss.stepHint}>{t(item.hint)}</span>
+                </span>
+              </li>
+            ))}
+          </ol>
+        </nav>
         <section className={remoteCss.content}>
-          <button type="button" className={remoteCss.close} aria-label={t('close')} disabled={selectingDirectory} onClick={dismiss}><IconCloseOutline16 size={16} /></button>
+          <button type="button" className={remoteCss.close} aria-label={t('close')} disabled={selectingDirectory} onClick={dismiss}><IconCloseOutline16 size={14} /></button>
           <header className={remoteCss.header}>
             <h2 className={remoteCss.title}>{title}</h2>
             <p className={remoteCss.description}>{description}</p>

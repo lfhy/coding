@@ -1,12 +1,12 @@
 .dialog {
   box-sizing: border-box;
   width: min(800px, calc(100vw - 48px));
-  height: min(720px, calc(100vh - 48px));
+  height: min(800px, calc(100vh - 48px));
   max-width: calc(100vw - 48px);
   max-height: calc(100vh - 48px);
   gap: 0;
   padding: 0;
-  border: 1px solid var(--dsw-alias-border-inverted);
+  border: 0;
   border-radius: 24px;
   background: var(--dsw-alias-bg-layer-2);
   box-shadow: var(--dsw-shadow-lv3);
@@ -24,13 +24,21 @@
 .steps {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 0;
   min-width: 0;
-  margin: 0;
-  list-style: none;
-  padding: 22px 12px 20px;
+  padding: 22px 12px 0;
+  box-sizing: border-box;
   border-right: 1px solid var(--dsw-alias-border-l1);
   background: transparent;
+}
+
+.stepList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .step {
@@ -39,9 +47,9 @@
   align-items: center;
   gap: 8px;
   width: 100%;
-  min-height: 52px;
+  min-height: 40px;
   box-sizing: border-box;
-  padding: 8px 10px;
+  padding: 0 12px;
   border: 0;
   border-radius: 12px;
   background: transparent;
@@ -87,16 +95,16 @@
 
 .stepTitle {
   display: block;
-  font-size: 13px;
-  line-height: 20px;
-  font-weight: 500;
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 400;
 }
 
 .stepHint {
   display: block;
-  margin-top: 1px;
-  font-size: 11px;
-  line-height: 16px;
+  margin-top: 0;
+  font-size: 12px;
+  line-height: 18px;
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -166,17 +174,17 @@
   flex-direction: column;
   gap: 16px;
   overflow-y: auto;
-  padding: 20px 24px 0;
+  padding: 24px 24px 0;
 }
 
 .form {
   display: grid;
-  gap: 14px;
+  gap: 16px;
 }
 
 .field {
   display: grid;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
 }
 
@@ -188,8 +196,8 @@ fieldset.field {
 }
 
 .label {
-  font-size: 13px;
-  line-height: 20px;
+  font-size: 14px;
+  line-height: 22px;
   color: var(--dsw-alias-label-primary);
 }
 
@@ -226,8 +234,9 @@ fieldset.field {
 }
 
 .authModes {
-  display: inline-flex;
-  align-self: start;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-self: stretch;
   gap: 4px;
   padding: 4px;
   border-radius: 12px;
@@ -235,8 +244,8 @@ fieldset.field {
 }
 
 .authMode {
-  flex: none;
-  min-width: 92px;
+  min-width: 0;
+  width: 100%;
   height: 32px;
   padding: 0 12px;
   border: 0;
@@ -394,10 +403,15 @@ fieldset.field {
 
   .steps {
     flex-direction: row;
+    gap: 0;
     overflow-x: auto;
     padding: 12px;
     border-right: 0;
     border-bottom: 1px solid var(--dsw-alias-border-l1);
+  }
+
+  .stepList {
+    flex-direction: row;
   }
 
   .step {

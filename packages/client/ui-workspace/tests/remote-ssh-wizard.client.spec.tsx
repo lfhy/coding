@@ -112,7 +112,9 @@ describe('RemoteSshWizard', () => {
     })
     const b = mount()
     expect(screen.getByRole('dialog', { name: '连接 Remote-SSH' })).toBeTruthy()
-    expect(screen.getByRole('list', { name: 'Remote-SSH 连接步骤' }).children).toHaveLength(3)
+    expect(screen.getByRole('navigation', { name: 'Remote-SSH 连接步骤' })).toBeTruthy()
+    expect(screen.getByRole('list').children).toHaveLength(3)
+    expect(screen.getByRole('heading', { name: '配置 SSH 连接' })).toBeTruthy()
     expect(screen.getByLabelText('主机')).toBeTruthy()
     expect(document.body.textContent).not.toContain('Docker')
 
