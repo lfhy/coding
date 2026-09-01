@@ -728,6 +728,7 @@ export function RemoteSshWizard({ open, onClose, t, createWorkspace, onPick }: R
     <Modal open={open} onClose={dismiss} title={t('picker.remote.title')} closeLabel={t('close')} headless className={remoteCss.dialog ?? ''}>
       <div className={remoteCss.shell}>
         <nav className={remoteCss.steps} aria-label={t('picker.remote.steps.aria')}>
+          <div className={remoteCss.stepsTitle}>{t('picker.remote.title')}</div>
           <ol className={remoteCss.stepList}>
             {remoteSteps.map((item, index) => (
               <li

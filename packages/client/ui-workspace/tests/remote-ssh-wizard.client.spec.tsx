@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-client-runtime/client'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
@@ -113,6 +113,7 @@ describe('RemoteSshWizard', () => {
     const b = mount()
     expect(screen.getByRole('dialog', { name: '连接 Remote-SSH' })).toBeTruthy()
     expect(screen.getByRole('navigation', { name: 'Remote-SSH 连接步骤' })).toBeTruthy()
+    expect(within(screen.getByRole('navigation')).getByText('连接 Remote-SSH')).toBeTruthy()
     expect(screen.getByRole('list').children).toHaveLength(3)
     expect(screen.getByRole('heading', { name: '配置 SSH 连接' })).toBeTruthy()
     expect(screen.getByLabelText('主机')).toBeTruthy()

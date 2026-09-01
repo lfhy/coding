@@ -24,12 +24,20 @@
 .steps {
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: 18px;
   min-width: 0;
   padding: 22px 12px 0;
   box-sizing: border-box;
   border-right: 1px solid var(--dsw-alias-border-l1);
   background: transparent;
+}
+
+.stepsTitle {
+  padding: 0 12px;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
 }
 
 .stepList {
@@ -408,6 +416,15 @@ fieldset.field {
     padding: 12px;
     border-right: 0;
     border-bottom: 1px solid var(--dsw-alias-border-l1);
+  }
+
+  .stepsTitle {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
   }
 
   .stepList {
