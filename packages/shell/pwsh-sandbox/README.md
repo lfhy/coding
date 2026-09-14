@@ -9,7 +9,7 @@ The executor inherits [`@deepseek-ai/dsh-pwsh-local`](../pwsh-local/)'s process 
 ## Behavior
 
 - `danger-full-access`: commands run through the local executor unchanged; results carry `sandbox: { mode, denied: false }`.
-- Confined modes (`read-only`, `workspace-write`): the pwsh argv is wrapped by `ctx.sandbox.confine()`; runner-launch refusal fails closed with `SANDBOX_UNAVAILABLE` (foreground throw, background `runnerFailed` fact), and a denied write classifies against the selected backend's `denialSignatures` into `sandbox.denied`.
+- Confined modes (`read-only`, `workspace-write`): the pwsh argv is wrapped by `ctx.sandbox.confine()`; runner-launch refusal fails closed with `SANDBOX_UNAVAILABLE` (foreground throw, background `runnerFailed` fact), other provider rejections keep the local executor's stage-neutral failure note, and a denied write classifies against the selected backend's `denialSignatures` into `sandbox.denied`.
 
 ## Model Experience
 

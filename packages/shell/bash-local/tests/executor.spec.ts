@@ -3,11 +3,12 @@ import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { LocalBashExecutor } from '@deepseek-ai/dsh-bash-local'
 import { REMOTE_WORKSPACE_MARKER } from '@deepseek-ai/dsh-subprocess'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
+import type { SubprocessHandle, SubprocessOutputReader } from '@deepseek-ai/dsh-subprocess'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import type { ShellProcess } from '@deepseek-ai/dsh-shell'
 
@@ -512,13 +513,46 @@ describe('LocalBashExecutor.start (background process handles)', () => {
     expect(proc.signal).toBe('SIGTERM')
   })
 
-  it('a background spawn failure settles as killed with the error readable on stderr', async () => {
-    const { bash } = await setup()
-    const proc = bash.start(bash.resolve({ command: 'true', workdir: '/nonexistent-dsh' }))
-    // done resolves (never rejects) even though the process never ran.
+  it('reports unread stderr and an asynchronous provider rejection exactly once', async () => {
+    const { ctx, bash } = await setup()
+    const emptyReader: SubprocessOutputReader = {
+      readFrom: () => ({ text: '', nextOffset: 0, lossy: false }),
+    }
+    const stderrText = 'target stderr'
+    const stderrReader: SubprocessOutputReader = {
+      readFrom: offset => ({
+        text: stderrText.slice(offset),
+        nextOffset: stderrText.length,
+        lossy: false,
+      }),
+    }
+    vi.spyOn(ctx.subprocess, 'spawn').mockReturnValue({
+      pid: -1,
+      stdin: undefined,
+      stdout: undefined,
+      stderr: undefined,
+      collected: { stdout: emptyReader, stderr: stderrReader },
+      done: Promise.reject(new Error('provider lost the direct outcome')),
+      terminate: vi.fn(),
+      waitForExit: async () => true,
+    } satisfies SubprocessHandle)
+
+    const proc = bash.start(bash.resolve({ command: 'true' }))
     await expect(proc.done).resolves.toBeUndefined()
     expect(proc.status).toBe('killed')
-    expect(proc.readOutput().delta).toContain('spawn failed:')
+    expect(proc.readOutput().delta).toBe(
+      '[stderr]\ntarget stderr\nsubprocess failed before reporting an outcome: Error: provider lost the direct outcome',
+    )
+    expect(proc.readOutput().delta).toBe('')
+  })
+
+  it('an asynchronous creation failure settles as killed with a stage-neutral note', async () => {
+    const { bash } = await setup()
+    const proc = bash.start(bash.resolve({ command: 'true', workdir: '/nonexistent-dsh' }))
+    // 即使进程未运行，done 也 resolve（绝不 reject）。
+    await expect(proc.done).resolves.toBeUndefined()
+    expect(proc.status).toBe('killed')
+    expect(proc.readOutput().delta).toContain('subprocess failed before reporting an outcome:')
   })
 })
 

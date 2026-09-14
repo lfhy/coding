@@ -290,18 +290,18 @@ export class PwshLocalExecutor extends ShellExecutor {
     return this.startArgv(spec, this.argv(spec))
   }
 
-  /** Background start of an exact argv (the confining subclass re-wraps it). */
+  /** 启动精确 argv 的后台任务（隔离子类会再次包装它）。 */
   protected startArgv(spec: ShellExecSpec, argv: readonly string[]): ShellProcess {
-    // Background runs ignore timeoutMs; callers stop them through kill() or spec.signal.
+    // 后台运行忽略 timeoutMs；调用方通过 kill() 或 spec.signal 停止它们。
     const running = this.ctx.subprocess.spawn(this.spawnSpec(spec, this.config.maxOutputBytes, spec.signal, argv))
     const collected = PwshLocalExecutor.collected(running)
 
-    // A spawn failure produces no process output, so the subprocess service has nothing
-    // to buffer; the note is delivered exactly once through the read path.
-    let spawnFailureNote: string | undefined
-    const consumeSpawnFailure = (): string => {
-      const note = spawnFailureNote ?? ''
-      spawnFailureNote = undefined
+    // Provider rejection 没有可展示的直接结果，且不公开失败阶段；通过读取
+    // 路径恰好交付一次中性提示。
+    let providerFailureNote: string | undefined
+    const consumeProviderFailure = (): string => {
+      const note = providerFailureNote ?? ''
+      providerFailureNote = undefined
       return note
     }
 
@@ -312,7 +312,7 @@ export class PwshLocalExecutor extends ShellExecutor {
       exitCode: null,
       signal: null,
       done: running.done.then((outcome) => {
-        // Any signal termination is killed, including a command signaling itself.
+        // 所有信号终止都归类为 killed，包括命令自行发出信号。
         if (proc.status === 'running') {
           proc.status = spec.signal?.aborted === true || outcome.signal !== null ? 'killed' : 'completed'
         }
@@ -320,10 +320,10 @@ export class PwshLocalExecutor extends ShellExecutor {
         proc.signal = outcome.signal
         this.onProcessDone(proc, collected.stderr.readFrom(0).text, false)
       }, (error: unknown) => {
-        // Background spawn failures settle as killed and surface through the read path.
+        // 后台 provider failure 以 killed 结算，并通过读取路径暴露。
         proc.status = 'killed'
-        spawnFailureNote = `spawn failed: ${String(error)}`
-        this.onProcessDone(proc, spawnFailureNote, true, error)
+        providerFailureNote = `subprocess failed before reporting an outcome: ${String(error)}`
+        this.onProcessDone(proc, providerFailureNote, true, error)
       }),
       readOutput: (): ShellProcessRead => {
         const out = collected.stdout.readFrom(stdoutOffset)
@@ -331,11 +331,11 @@ export class PwshLocalExecutor extends ShellExecutor {
         stdoutOffset = out.nextOffset
         stderrOffset = err.nextOffset
 
-        // A failed spawn never produced process output, so the note and real
-        // stderr text are mutually exclusive.
-        const errText = err.text.length > 0 ? err.text : consumeSpawnFailure()
-        // Single newline between sections: stdout chunks usually end with one
-        // already; add it only when missing.
+        const providerFailure = consumeProviderFailure()
+        const failureSeparator = err.text.length > 0 && !err.text.endsWith('\n') ? '\n' : ''
+        const errText = err.text
+          + (providerFailure.length > 0 ? `${failureSeparator}${providerFailure}` : '')
+        // 两个区块之间只保留一个换行：stdout chunk 通常已有换行，仅在缺失时补充。
         const separator = out.text.length > 0 && !out.text.endsWith('\n') ? '\n' : ''
         const delta = out.text
           + (errText.length > 0 ? `${separator}[stderr]\n${errText}` : '')
@@ -357,16 +357,15 @@ export class PwshLocalExecutor extends ShellExecutor {
   }
 
   /**
-   * Settlement hook for subclasses that attach execution facts to a process.
-   * The base implementation is intentionally empty. Mirrored from
-   * `dsh-bash-local` (whose sandboxing subclass consumes the same hook); the
-   * pwsh-confining consumer is `@deepseek-ai/dsh-pwsh-sandbox`.
-   * @param _proc - the settled process handle.
-   * @param _stderr - the process's retained stderr tail used by subclasses for settlement classification.
-   * @param _spawnFailed - whether the spawn rejected before any process existed.
-   * @param _spawnError - the spawn rejection, when `_spawnFailed`.
+   * 供子类在进程上附加执行事实的结算钩子。基类刻意不处理；与
+   * `dsh-bash-local` 的对应钩子保持镜像，使用者是
+   * `@deepseek-ai/dsh-pwsh-sandbox`。
+   * @param _proc - 已结算的进程句柄。
+   * @param _stderr - 子类用于结算分类的进程保留 stderr 尾部。
+   * @param _providerRejected - subprocess promise 是否在没有直接结果时 reject。
+   * @param _providerError - provider rejection 原因，可能是 undefined。
    */
-  protected onProcessDone(_proc: ShellProcess, _stderr: string, _spawnFailed: boolean, _spawnError?: unknown): void {}
+  protected onProcessDone(_proc: ShellProcess, _stderr: string, _providerRejected: boolean, _providerError?: unknown): void {}
 }
 /* jscpd:ignore-end */
 

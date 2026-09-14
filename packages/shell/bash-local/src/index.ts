@@ -251,25 +251,23 @@ export class LocalBashExecutor extends ShellExecutor {
   }
 
   /**
-   * Start an explicit argv with the background lifecycle, environment, output,
-   * cancellation, and process-tree ownership semantics of this executor.
-   * Subclasses use this after replacing the public command's shell argv at an
-   * execution boundary.
-   * @param spec - resolved execution settings and caller-owned command metadata.
-   * @param argv - exact executable and arguments to hand to `ctx.subprocess`.
-   * @returns the live background handle; spawn rejection settles it as killed.
+   * 以本执行器的后台生命周期、环境、输出、取消与进程树所有权语义启动显式
+   * argv。子类在执行边界替换公共命令的 shell argv 后调用此方法。
+   * @param spec - 已解析的执行设置和调用方拥有的命令元数据。
+   * @param argv - 交给 `ctx.subprocess` 的精确可执行文件与参数。
+   * @returns 实时后台句柄；provider rejection 以 killed 状态结算。
    */
   protected startArgv(spec: ShellExecSpec, argv: readonly string[]): ShellProcess {
-    // Background runs ignore timeoutMs; callers stop them through kill() or spec.signal.
+    // 后台运行忽略 timeoutMs；调用方通过 kill() 或 spec.signal 停止它们。
     const running = this.ctx.subprocess.spawn(this.spawnSpec(spec, argv, this.config.maxOutputBytes, spec.signal))
     const collected = LocalBashExecutor.collected(running)
 
-    // A spawn failure produces no process output, so the subprocess service has nothing
-    // to buffer; the note is delivered exactly once through the read path.
-    let spawnFailureNote: string | undefined
-    const consumeSpawnFailure = (): string => {
-      const note = spawnFailureNote ?? ''
-      spawnFailureNote = undefined
+    // Provider rejection 没有可展示的直接结果，且不公开失败阶段；通过读取
+    // 路径恰好交付一次中性提示。
+    let providerFailureNote: string | undefined
+    const consumeProviderFailure = (): string => {
+      const note = providerFailureNote ?? ''
+      providerFailureNote = undefined
       return note
     }
 
@@ -280,7 +278,7 @@ export class LocalBashExecutor extends ShellExecutor {
       exitCode: null,
       signal: null,
       done: running.done.then((outcome) => {
-        // Any signal termination is killed, including a command signaling itself.
+        // 所有信号终止都归类为 killed，包括命令自行发出信号。
         if (proc.status === 'running') {
           proc.status = spec.signal?.aborted === true || outcome.signal !== null ? 'killed' : 'completed'
         }
@@ -288,10 +286,10 @@ export class LocalBashExecutor extends ShellExecutor {
         proc.signal = outcome.signal
         this.onProcessDone(proc, collected.stderr.readFrom(0).text, false)
       }, (error: unknown) => {
-        // Background spawn failures settle as killed and surface through the read path.
+        // 后台 provider failure 以 killed 结算，并通过读取路径暴露。
         proc.status = 'killed'
-        spawnFailureNote = `spawn failed: ${String(error)}`
-        this.onProcessDone(proc, spawnFailureNote, true, error)
+        providerFailureNote = `subprocess failed before reporting an outcome: ${String(error)}`
+        this.onProcessDone(proc, providerFailureNote, true, error)
       }),
       readOutput: (): ShellProcessRead => {
         const out = collected.stdout.readFrom(stdoutOffset)
@@ -299,11 +297,11 @@ export class LocalBashExecutor extends ShellExecutor {
         stdoutOffset = out.nextOffset
         stderrOffset = err.nextOffset
 
-        // A failed spawn never produced process output, so the note and real
-        // stderr text are mutually exclusive.
-        const errText = err.text.length > 0 ? err.text : consumeSpawnFailure()
-        // Single newline between sections: stdout chunks usually end with one
-        // already; add it only when missing.
+        const providerFailure = consumeProviderFailure()
+        const failureSeparator = err.text.length > 0 && !err.text.endsWith('\n') ? '\n' : ''
+        const errText = err.text
+          + (providerFailure.length > 0 ? `${failureSeparator}${providerFailure}` : '')
+        // 两个区块之间只保留一个换行：stdout chunk 通常已有换行，仅在缺失时补充。
         const separator = out.text.length > 0 && !out.text.endsWith('\n') ? '\n' : ''
         const delta = out.text
           + (errText.length > 0 ? `${separator}[stderr]\n${errText}` : '')
@@ -325,16 +323,14 @@ export class LocalBashExecutor extends ShellExecutor {
   }
 
   /**
-   * Settlement hook for subclasses that attach execution facts to a process.
-   * Called after exit facts or spawn-failure output are stamped and before
-   * {@link ShellProcess.done} resolves. The base implementation is intentionally
-   * empty.
-   * @param _proc - the settled process handle.
-   * @param _stderr - the process's retained stderr tail used by subclasses for settlement classification.
-   * @param _spawnFailed - whether the subprocess promise rejected before a process started.
-   * @param _spawnError - the original spawn rejection reason, which may itself be undefined.
+   * 供子类在进程上附加执行事实的结算钩子。退出事实或 provider-failure 输出
+   * 已写入、且 {@link ShellProcess.done} resolve 前调用；基类刻意不处理。
+   * @param _proc - 已结算的进程句柄。
+   * @param _stderr - 子类用于结算分类的进程保留 stderr 尾部。
+   * @param _providerRejected - subprocess promise 是否在没有直接结果时 reject。
+   * @param _providerError - provider rejection 原因，可能是 undefined。
    */
-  protected onProcessDone(_proc: ShellProcess, _stderr: string, _spawnFailed: boolean, _spawnError?: unknown): void {}
+  protected onProcessDone(_proc: ShellProcess, _stderr: string, _providerRejected: boolean, _providerError?: unknown): void {}
 }
 
 export default LocalBashExecutor

@@ -149,18 +149,15 @@ export class SandboxPwshExecutor extends PwshLocalExecutor {
     return proc
   }
 
-  /**
-   * Stamp per-process sandbox facts before `done` settles. Full-access
-   * processes have no facts; signal deaths are not denials.
-   */
-  protected override onProcessDone(proc: ShellProcess, stderr: string, spawnFailed: boolean, spawnError?: unknown): void {
+  /** 在 `done` 结算前写入进程级 sandbox 事实；完全访问的进程没有事实，信号死亡也不是拒绝。 */
+  protected override onProcessDone(proc: ShellProcess, stderr: string, providerRejected: boolean, providerError?: unknown): void {
     const facts = this.processFacts.get(proc)
     if (facts !== undefined) {
       this.processFacts.delete(proc)
-      // A rejected spawn never started the confined launch. Otherwise runner
-      // failure outranks denial because its diagnostics may contain denial terms.
-      const runnerFailed = spawnFailed
-        ? isRunnerSpawnFailure(spawnError, facts.runnerProgram, facts.workdir)
+      // Provider rejection 不公开失败阶段；仅当错误自行指向 argv[0] 时归因
+      // 给 confinement runner，否则已结算 runner failure 优先于拒绝诊断。
+      const runnerFailed = providerRejected
+        ? isRunnerSpawnFailure(providerError, facts.runnerProgram, facts.workdir)
         : classifyRunnerFailure(proc.exitCode, stderr, facts.runnerFailureRules) !== undefined
       proc.sandbox = {
         mode: facts.mode,
@@ -169,7 +166,7 @@ export class SandboxPwshExecutor extends PwshLocalExecutor {
         ...(runnerFailed ? { runnerFailed } : {}),
       }
     }
-    super.onProcessDone(proc, stderr, spawnFailed, spawnError)
+    super.onProcessDone(proc, stderr, providerRejected, providerError)
   }
 
   /**
