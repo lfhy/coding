@@ -397,10 +397,11 @@
     # resolves the same DEEPSEEK_API_KEY credential the Models page manages for
     # chat, at each search; its Messages endpoint is separate from the
     # chat-completions endpoint, so it takes its own base-URL override. Fetch stays
-    # disabled and no fetch provider is mounted: that provider defers SSRF
-    # protection and the model would choose the request target. Search is a full
-    # auxiliary model request with server-side retrieval, so this shipped DeepSeek
-    # route gets 60s while the provider-neutral tool default remains 30s.
+    # disabled and no fetch provider is mounted because the shipped permission
+    # presets do not yet classify public network access; web_fetch otherwise runs
+    # without approval. Search is a full auxiliary model request with server-side
+    # retrieval, so this shipped DeepSeek route gets 60s while the provider-neutral
+    # tool default remains 30s.
     - id: web
       name: '@deepseek-ai/dsh-web'
       config:

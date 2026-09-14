@@ -24,7 +24,7 @@ Status: implemented
 
 **`dsh-tool-cordis`** 让模型写一段 JavaScript 并挂成临时插件。它的 README 写明了这个界限:「The sandbox is containment for honest code, not a security boundary — host-realm helpers on the sandbox global are reachable, so mount code can reach Node」([Known limitations](../../../../packages/extensions/tool-cordis/README.md))。`node:vm` 的 realm 就在 harness 进程内,而 `dsh-sandbox-local` 只约束它 spawn 出去的 argv,因此在 Web surface 上,沙箱与批准接缝是被绕过而非被执行。
 
-**`dsh-web-fetch-http`** 保持不挂,`dsh-tool-web` 保持 `fetch: false`。SSRF 防护在实现中是 deferred 状态([`policy.ts`](../../../../packages/web/web-fetch-http/src/policy.ts) 只校验协议、凭据与长度),包里也直说了:「this provider is an SSRF primitive and **must not be enabled** in a deployment that can reach sensitive internal network targets」([README](../../../../packages/web/web-fetch-http/README.md))。目标由模型选择,其中包括 harness 自己跑在环回地址上的网关、内网段和云元数据端点。
+**`dsh-web-fetch-http`** 保持不挂，`dsh-tool-web` 保持 `fetch: false`。该提供方会把连接限制在已验证的公开 IP 目的地址，但 `dsh-tool-web` 没有 web 专用权限策略，执行时也不会请求 `ctx.approval`（见 [README](../../../../packages/web/tool-web/README.md)）。因此，交付的权限 preset 不会从沙箱文件访问无提示地扩大到模型选择的公开网络请求。
 
 不挂载它收窄的是接触面而非可达性：`bash` 是挂着的,`curl` 照样能拿到同一个页面——一次真实运行确认了这点。这个缺席买到的是去掉一个无需 shell、以参数成形的请求原语,以及随之而来的那条意外路径:一次「帮我总结这个页面」悄悄打到环回地址。真要收住出站流量的部署需要的是网络层管控。
 

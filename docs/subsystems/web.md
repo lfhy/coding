@@ -130,7 +130,7 @@ Selection never depends on registration, config, or HMR order: a capability has 
 
 ## The service
 
-`WebRuntime` registers search and fetch providers, rejects duplicate ids with `WEB_DUPLICATE_PROVIDER`, and resolves providers at execution time with structured selection errors. The local fetch backend accepts only HTTP(S), rejects credentials, caps redirects, bytes, characters, and time, revalidates every same-origin redirect hop, and decodes the body; the tool owns presentation. The local backend does not block private-network targets; do not enable `web_fetch` where it can reach sensitive internal ones.
+`WebRuntime` registers search and fetch providers, rejects duplicate ids with `WEB_DUPLICATE_PROVIDER`, and resolves providers at execution time with structured selection errors. The local fetch backend accepts only HTTP(S), rejects credentials, resolves each hostname once, rejects any answer set containing a non-public IPv4 or IPv6 destination, checks DNS64/NAT64 translations, pins the request connection to the validated addresses, repeats those checks for every same-origin redirect hop, caps redirects, bytes, characters, and time, and decodes the body; the tool owns presentation.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 

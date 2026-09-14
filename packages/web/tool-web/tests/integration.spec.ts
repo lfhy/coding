@@ -2,8 +2,8 @@
  * Integration: the real fetch backend (`dsh-web-fetch-http`) + a real search provider
  * (`dsh-web-search-exa`) + the real seam (`dsh-web`) + the model tool (`dsh-tool-web`) + the
  * tool-call timeout policy (`dsh-tool-call-timeout-policy`), exercised through `ctx.tools.execute()` —
- * nothing bypasses the tool registry. Fetch verifies world effects against loopback HTTP; search
- * uses the real Exa provider with only its network boundary stubbed.
+ * 测试不绕过工具注册表。Fetch 通过将公开地址解析替换为 fixture 地址来验证
+ * loopback HTTP 的实际效果；搜索使用真实 Exa 提供方，只替换其网络边界。
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -18,6 +18,7 @@ import * as WebFetchLocal from '@deepseek-ai/dsh-web-fetch-http'
 import * as WebSearchExa from '@deepseek-ai/dsh-web-search-exa'
 import * as ToolWeb from '@deepseek-ai/dsh-tool-web'
 import * as TimeoutPolicy from '@deepseek-ai/dsh-tool-call-timeout-policy'
+import { publicHttpNetwork } from '../../web-fetch-http/src/network.ts'
 
 const testToolSignal = new AbortController().signal
 
@@ -30,6 +31,7 @@ let ctx: Context
 let fiber: Awaited<ReturnType<Context['plugin']>>
 
 beforeEach(async () => {
+  vi.spyOn(publicHttpNetwork, 'resolve').mockResolvedValue([{ address: '127.0.0.1', family: 4 }])
   handler = (_req, res) => { res.writeHead(200, { 'content-type': 'text/html' }); res.end('<h1>Hello</h1><p>World</p>') }
   server = createServer((req, res) => { handler(req, res) })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
@@ -52,6 +54,7 @@ beforeEach(async () => {
 afterEach(async () => {
   await fiber.dispose()
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
   await new Promise<void>(resolve => server.close(() => { resolve() }))
 })
 

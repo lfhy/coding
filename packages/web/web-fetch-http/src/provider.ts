@@ -1,16 +1,15 @@
 /**
- * Safe HTTP(S) retrieval for `ctx.web`: validates URLs, follows only same-origin redirects,
- * enforces time and size limits, classifies and decodes text, and leaves presentation to
- * `@deepseek-ai/dsh-tool-web`. Requests carry no browser cookies or ambient credentials.
- *
- * Private-network and SSRF protection is not implemented; do not enable this provider where
- * it can reach sensitive internal targets.
+ * `ctx.web` 的安全 HTTP(S) 获取：校验并固定公开 IP 目的地，只跟随同源重定向，
+ * 强制执行时间与大小限制，分类并解码文本，展示交给 `@deepseek-ai/dsh-tool-web`。
+ * 请求不携带浏览器 cookie 或环境凭据。
  * @module @deepseek-ai/dsh-web-fetch-http/provider
  */
 
 import { WebError } from '@deepseek-ai/dsh-web'
 import type { WebFetchBody, WebFetchProvider, WebFetchRequest, WebFetchResult } from '@deepseek-ai/dsh-web'
 import { deadline, timeoutOf } from '@deepseek-ai/dsh-timeout'
+import type { Response } from 'undici'
+import { publicHttpNetwork } from './network.ts'
 import { classifyContentType, decoderForCharset, isSameOrigin, parseCharset, validateFetchUrl } from './policy.ts'
 
 /** Resolved provider limits (the plugin's schemastery Config supplies defaults). */
@@ -58,57 +57,60 @@ export class HttpFetchProvider implements WebFetchProvider {
     let redirectsFollowed = 0
 
     for (;;) {
-      const response = await this.requestOnce(currentUrl, signal)
-
-      if (isRedirectStatus(response.status)) {
-        // Enforce the redirect budget before resolving or validating the next hop.
-        if (redirectsFollowed >= this.limits.maxRedirects) {
-          await response.body?.cancel()
-          throw new WebError(`exceeded the maximum of ${this.limits.maxRedirects} redirects`, 'WEB_REDIRECT_BLOCKED')
-        }
-        const location = response.headers.get('location')
-        if (location === null) {
-          // A redirect status with no Location is not a usable resource. Cancel
-          // the (possibly streaming) body before throwing so no socket leaks.
-          await response.body?.cancel()
-          throw new WebError(`redirect response (HTTP ${response.status}) without a Location header`, 'WEB_PROVIDER_ERROR')
-        }
-        const target = resolveRedirect(location, currentUrl)
-        // Re-validate the target against the same transport hygiene a direct request gets: a
-        // redirect must not be a back door to a credentialed, non-http(s), or over-long URL
-        // that validateFetchUrl would reject.
-        let validatedTarget: URL
-        try {
-          validatedTarget = validateFetchUrl(target.toString(), this.limits.maxUrlLength)
-          if (!isSameOrigin(validatedTarget, currentUrl)) {
-            throw new WebError(
-              `cross-origin redirect to ${validatedTarget.origin} is not followed automatically; retry against that URL directly`,
-              'WEB_REDIRECT_BLOCKED',
-            )
+      const request = await this.requestOnce(currentUrl, signal)
+      const { response } = request
+      try {
+        if (isRedirectStatus(response.status)) {
+          // 在解析和校验下一跳之前先执行重定向预算。
+          if (redirectsFollowed >= this.limits.maxRedirects) {
+            await response.body?.cancel()
+            throw new WebError(`exceeded the maximum of ${this.limits.maxRedirects} redirects`, 'WEB_REDIRECT_BLOCKED')
           }
-        } catch (error: unknown) {
+          const location = response.headers.get('location')
+          if (location === null) {
+            // 没有 Location 的重定向状态不是可用资源。抛出前取消可能正在流式
+            // 读取的主体，避免连接泄漏。
+            await response.body?.cancel()
+            throw new WebError(`redirect response (HTTP ${response.status}) without a Location header`, 'WEB_PROVIDER_ERROR')
+          }
+          const target = resolveRedirect(location, currentUrl)
+          // 按直接请求的同一套传输卫生规则重新校验目标：重定向不能绕过
+          // validateFetchUrl 对凭据、非 HTTP(S) 或过长 URL 的拒绝。
+          let validatedTarget: URL
+          try {
+            validatedTarget = validateFetchUrl(target.toString(), this.limits.maxUrlLength)
+            if (!isSameOrigin(validatedTarget, currentUrl)) {
+              throw new WebError(
+                `cross-origin redirect to ${validatedTarget.origin} is not followed automatically; retry against that URL directly`,
+                'WEB_REDIRECT_BLOCKED',
+              )
+            }
+          } catch (error: unknown) {
+            await response.body?.cancel()
+            throw error
+          }
           await response.body?.cancel()
-          throw error
+          currentUrl = validatedTarget
+          redirectsFollowed++
+          continue
         }
-        await response.body?.cancel()
-        currentUrl = validatedTarget
-        redirectsFollowed++
-        continue
-      }
 
-      return await this.readBody(response, currentUrl, signal)
+        return await this.readBody(response, currentUrl, signal)
+      } finally {
+        await request.close()
+      }
     }
   }
 
-  private async requestOnce(url: URL, signal: AbortSignal): Promise<Response> {
+  private async requestOnce(url: URL, signal: AbortSignal) {
     try {
-      return await fetch(url, {
-        method: 'GET',
-        redirect: 'manual',
-        headers: { 'user-agent': this.limits.userAgent, 'accept': 'text/html,application/xhtml+xml,text/*;q=0.9,application/json;q=0.8' },
-        signal,
-      })
+      const addresses = await publicHttpNetwork.resolve(url.hostname, signal)
+      return await publicHttpNetwork.request(url, addresses, {
+        'user-agent': this.limits.userAgent,
+        'accept': 'text/html,application/xhtml+xml,text/*;q=0.9,application/json;q=0.8',
+      }, signal)
     } catch (error: unknown) {
+      if (error instanceof WebError) throw error
       throw translateAbortOrNetwork(error, signal)
     }
   }
@@ -168,7 +170,8 @@ export class HttpFetchProvider implements WebFetchProvider {
     const chunks: Uint8Array[] = []
     let total = 0
     let truncatedByBytes = false
-    const reader = response.body.getReader()
+    // Undici 将响应块暴露为 any；Fetch 保证主体块是 Uint8Array。
+    const reader = response.body.getReader() as ReadableStreamDefaultReader<Uint8Array>
     try {
       for (;;) {
         const { done, value } = await reader.read()

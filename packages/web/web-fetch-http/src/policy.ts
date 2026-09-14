@@ -15,7 +15,7 @@ export type FetchableKind = 'html' | 'text'
  * Validate a request URL against the basic transport hygiene the provider
  * enforces before any network access: http(s) only, no embedded credentials,
  * bounded length. Returns the parsed `URL`. Throws {@link WebError} otherwise.
- * (SSRF / private-network blocking is deferred — see the package Agent Note.)
+ * 语法检查完成后，提供方再解析公开地址并固定连接。
  *
  * @param input - the raw URL string from the fetch request.
  * @param maxUrlLength - inclusive upper bound on `input`'s length.
