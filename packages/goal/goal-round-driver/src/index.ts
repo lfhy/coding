@@ -275,9 +275,15 @@ export function apply(ctx: Context): void {
         requestDrive(state)
       }
     })
-    ctx.on('goal/changed', ({ agent }) => {
+    ctx.on('goal/changed', ({ agent, change }) => {
       const state = stateFor(agent)
       state.needsCheckpoint = true
+      // 宿主发起的暂停要停止目标执行并中止当前轮次，避免模型继续行动或在
+      // 同一轮恢复；模型在自己的轮次内通过 update_goal 发起的暂停则正常收尾。
+      if (change.operation === 'pause' && agent.status === 'running'
+        && ctx.agents.currentInitiator() !== agent) {
+        agent.cancel({ kind: 'user' }, { keepInbox: true })
+      }
       requestDrive(state)
     })
 

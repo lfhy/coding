@@ -314,6 +314,24 @@ describe('same-session goal driving', () => {
     expect(test.adapter.requests).toHaveLength(1)
   })
 
+  it('aborts an in-flight round when a host-initiated pause lands mid-step', async () => {
+    const test = await harness(['hang'])
+    test.ctx.goals.create(test.agent, { objective: 'stop on host pause' })
+    await waitForRequests(test.adapter, 1)
+
+    // 宿主暂停（Web 按钮）发生在 Agent 自己的轮次之外，因此 round driver
+    // 必须停止当前轮次，不能让模型继续行动或恢复刚暂停的目标。
+    const current = test.ctx.goals.get(test.agent)
+    if (current === undefined) throw new Error('missing goal before host pause')
+    test.ctx.goals.pause(test.agent, { id: current.id, revision: current.revision })
+
+    await test.agent.whenIdle()
+    const goal = await waitForGoal(test.ctx, test.agent, current => current?.phase === 'paused')
+
+    expect(goal).toMatchObject({ roundsStarted: 1, activation: 'disarmed' })
+    expect(test.adapter.requests).toHaveLength(1)
+  })
+
   it('lets already-queued human work finish before reserving the next round', async () => {
     const test = await harness([textResponse('human answer'), textResponse('goal answer')])
     test.ctx.goals.create(test.agent, { objective: 'continue after the human', maxGoalRounds: 1 })

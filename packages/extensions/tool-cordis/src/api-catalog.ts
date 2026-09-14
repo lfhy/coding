@@ -2130,7 +2130,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Ask the active UI provider and wait for the user\'s answer.\n\nWhen a caller supplies an agent, human interaction is valid only for the exact live runtime root. Runtime ownership, not durable session lineage, decides this boundary: an owned child has no human answerer and would block forever, while a lineage-bearing session resumed as a new runtime root may ask normally.',
         parameters: [{ name: 'request', description: 'Questions, owner agent, and abort signal.' }],
         returns: 'The answer chosen or typed by the human.',
-        throws: ['{UserQuestionError} code `CALLER_NOT_LIVE` when a supplied agent is not the registry\'s exact live instance, or `DELEGATED_CALLER` when that live agent is owned by another agent.'],
+        throws: ['{UserQuestionError} 传入的 signal 已中止或在等待期间中止时使用 `ASK_ABORTED`；传入 Agent 不是注册表中的当前实例时使用 `CALLER_NOT_LIVE`；当前实例属于另一个 Agent 时使用 `DELEGATED_CALLER`。'],
       },
     ],
   },

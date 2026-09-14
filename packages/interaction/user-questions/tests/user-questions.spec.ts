@@ -82,6 +82,46 @@ describe('UserQuestionService', () => {
     expect(p.ask).not.toHaveBeenCalled()
   })
 
+  it('normalizes an in-flight signal cancellation to ASK_ABORTED', async () => {
+    const ctx = new Context()
+    await ctx.plugin(UserQuestionService)
+    const pending = Promise.withResolvers<never>()
+    ctx.userQuestions.registerProvider({ ask: () => pending.promise })
+    const controller = new AbortController()
+    const reason = new Error('question cancelled')
+
+    const answer = ctx.userQuestions.ask({
+      questions: [{ id: 'confirm', question: 'Proceed?' }],
+      signal: controller.signal,
+    })
+    controller.abort(reason)
+    pending.reject(reason)
+
+    await expect(answer).rejects.toMatchObject({
+      name: 'UserQuestionError',
+      code: 'ASK_ABORTED',
+      cause: reason,
+    })
+  })
+
+  it('preserves a domain rejection when its provider also aborts the signal', async () => {
+    const ctx = new Context()
+    await ctx.plugin(UserQuestionService)
+    const controller = new AbortController()
+    const cancelled = new UserQuestionError('the user cancelled ask_user_question', 'ASK_CANCELLED')
+    ctx.userQuestions.registerProvider({
+      ask: () => {
+        controller.abort()
+        return Promise.reject(cancelled)
+      },
+    })
+
+    await expect(ctx.userQuestions.ask({
+      questions: [{ id: 'confirm', question: 'Proceed?' }],
+      signal: controller.signal,
+    })).rejects.toBe(cancelled)
+  })
+
   it('rejects empty question batches before reaching the provider', async () => {
     const ctx = new Context()
     await ctx.plugin(UserQuestionService)

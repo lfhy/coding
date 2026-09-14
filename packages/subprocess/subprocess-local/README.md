@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-Service Provider for the [`@deepseek-ai/dsh-subprocess`](../subprocess/README.md) seam. `LocalSubprocessRuntime` runs ordinary local work by resolving local executables, spawning detached process trees with explicit stdio, and implementing terminal processes through `node-pty` plus platform process inspection. For a verified desktop Remote-SSH marker it forwards the same operations to the target's loopback-only Go agent. It has no config: every disposition, limit, terminal dimension, grace, and directory arrives from the calling capability seams ([`dsh-bash-local`](../../shell/bash-local/README.md), [`dsh-lsp-stdio`](../../lsp/lsp-stdio/README.md), and [`dsh-terminal-bash`](../../terminal/terminal-bash/README.md)).
+Service Provider for the [`@deepseek-ai/dsh-subprocess`](../subprocess/README.md) seam. `LocalSubprocessRuntime` runs ordinary local work by resolving local executables, spawning detached process trees with explicit stdio, and implementing terminal processes through `node-pty` plus platform process inspection. On Windows, non-terminal children start with their console windows hidden so background commands do not take focus. For a verified desktop Remote-SSH marker it forwards the same operations to the target's loopback-only Go agent. It has no config: every disposition, limit, terminal dimension, grace, and directory arrives from the calling capability seams ([`dsh-bash-local`](../../shell/bash-local/README.md), [`dsh-lsp-stdio`](../../lsp/lsp-stdio/README.md), and [`dsh-terminal-bash`](../../terminal/terminal-bash/README.md)).
 
 ## Behavior
 

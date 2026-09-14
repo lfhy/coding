@@ -37,7 +37,9 @@ interface Koffi {
 function readUtf16(koffi: Koffi, address: unknown): string {
   const bytes = Buffer.from(koffi.view(address, 32768))
   let end = 0
-  while (end + 1 < bytes.length && bytes[end] !== 0) end += 2
+  // UTF-16LE 的 NUL 由两个零字节组成。单个零低字节可能是有效的 BMP
+  // 码元（例如开 = U+5F00），不能因此提前结束扫描。
+  while (end + 1 < bytes.length && !(bytes[end] === 0 && bytes[end + 1] === 0)) end += 2
   return bytes.toString('utf16le', 0, end)
 }
 

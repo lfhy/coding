@@ -1,3 +1,4 @@
+import { spawn as nodeSpawn } from 'node:child_process'
 import { mkdtempSync, readFileSync, statSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -631,6 +632,30 @@ describe('stdio dispositions', () => {
 })
 
 describe('windows tree semantics (injected platform)', () => {
+  it('hides the child window without changing output, exit, stdio, or tree-root options', async () => {
+    let options: Parameters<typeof nodeSpawn>[2]
+    const result = await finish(spawnSubprocess(spec('echo hello'), {
+      spillDir,
+      platform: 'win32',
+      spawn: (program, args, spawnOptions) => {
+        options = spawnOptions
+        return nodeSpawn(program, args, spawnOptions)
+      },
+    }))
+
+    expect(options!).toMatchObject({
+      windowsHide: true,
+      detached: false,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    expect(result).toMatchObject({
+      exitCode: 0,
+      signal: null,
+      stdout: { text: 'hello\n', truncated: false },
+      stderr: { text: '', truncated: false },
+    })
+  })
+
   it('host-exit termination routes through taskkill immediately', async () => {
     const killed: number[] = []
     const running = spawnSubprocess(spec('exec sleep 60', { graceMs: 60_000 }), {
