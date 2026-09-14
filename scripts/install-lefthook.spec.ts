@@ -195,9 +195,10 @@ function runInstaller(
   fixture: Fixture,
   root: string,
   extraEnv: NodeJS.ProcessEnv = {},
+  script = installer,
 ): Promise<CommandResult> {
   return new Promise((resolveResult, reject) => {
-    const child = spawn(process.execPath, [installer], {
+    const child = spawn(process.execPath, [script], {
       cwd: root,
       env: { ...fixture.env, ...extraEnv },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -239,6 +240,19 @@ describe('worktree-local Lefthook installer', { timeout: 30_000 }, () => {
       ]).status).toBe(1)
     })
   }
+
+  it('skips hook installation when the Lefthook development dependency is absent', async () => {
+    const fixture = createFixture()
+    const isolatedInstaller = join(fixture.container, 'isolated', 'install-lefthook.mjs')
+    write(isolatedInstaller, readFileSync(installer, 'utf8'), 0o755)
+
+    const result = await runInstaller(fixture, fixture.main, {}, isolatedInstaller)
+
+    expect(result.status, result.stderr).toBe(0)
+    expect(gitResult(fixture, fixture.main, ['config', '--get', 'extensions.worktreeConfig']).status).toBe(1)
+    expect(gitResult(fixture, fixture.main, ['config', '--get', 'core.hooksPath']).status).toBe(1)
+    expect(existsSync(hooksPath(fixture, fixture.main))).toBe(false)
+  })
 
   it('isolates main and linked worktrees without changing legacy common hooks', async () => {
     const fixture = createFixture()

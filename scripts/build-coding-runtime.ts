@@ -19,6 +19,8 @@ const seaConfig = join(artifacts, 'sea-config.json')
 const seaBlob = join(artifacts, 'sea-prep.blob')
 const archive = join(artifacts, 'coding-runtime.tgz')
 
+type CommandRunner = (command: string, args: string[]) => Promise<void>
+
 function command(command: string, args: string[], cwd = root): Promise<void> {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(command, args, { cwd, stdio: 'inherit', env: { ...process.env, CI: 'true' } })
@@ -28,6 +30,49 @@ function command(command: string, args: string[], cwd = root): Promise<void> {
       else reject(new Error(`${command} ${args.join(' ')} exited ${String(code)}`))
     })
   })
+}
+
+/**
+ * 生成生产依赖闭包，并在返回前恢复源码工作区的完整依赖状态。
+ *
+ * pnpm 11 的 legacy deploy 会把目标的生产模式与 hoisted 布局写入根
+ * `node_modules` 元数据；恢复失败时不得继续打包基于受污染工作区的产物。
+ * @param output - 生产依赖闭包的暂存目录。
+ * @param runCommand - 执行 pnpm 的命令入口；测试可注入替身。
+ * @returns 部署与工作区恢复均完成后结算的 Promise。
+ */
+export async function deployProductionClosure(
+  output: string,
+  runCommand: CommandRunner = command,
+): Promise<void> {
+  let deploymentError: Error | undefined
+  try {
+    await runCommand('pnpm', [
+      '--filter', 'coding-host-runtime', 'deploy', '--legacy', '--prod',
+      '--config.node-linker=hoisted', '--config.auto-install-peers=false',
+      '--config.link-workspace-packages=true', output,
+    ])
+  } catch (error) {
+    deploymentError = error instanceof Error ? error : new Error(String(error), { cause: error })
+  }
+
+  let restorationError: Error | undefined
+  try {
+    await runCommand('pnpm', [
+      'install', '--frozen-lockfile', '--config.confirm-modules-purge=false',
+    ])
+  } catch (error) {
+    restorationError = error instanceof Error ? error : new Error(String(error), { cause: error })
+  }
+
+  if (deploymentError !== undefined && restorationError !== undefined) {
+    throw new AggregateError(
+      [deploymentError, restorationError],
+      'build:runtime: production deploy failed and workspace dependencies could not be restored',
+    )
+  }
+  if (deploymentError !== undefined) throw deploymentError
+  if (restorationError !== undefined) throw restorationError
 }
 
 function sha256(bytes: Uint8Array): string {
@@ -185,11 +230,7 @@ async function main(): Promise<void> {
   await rm(dist, { recursive: true, force: true })
   await mkdir(staging, { recursive: true })
   await mkdir(dist, { recursive: true })
-  await command('pnpm', [
-    '--filter', 'coding-host-runtime', 'deploy', '--legacy', '--prod',
-    '--config.node-linker=hoisted', '--config.auto-install-peers=false',
-    '--config.link-workspace-packages=true', staging,
-  ])
+  await deployProductionClosure(staging)
   const stagedBin = join(staging, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
   if (!existsSync(stagedBin)) {
     throw new Error(`build:runtime: deploy omitted ${stagedBin}`)
@@ -240,4 +281,4 @@ async function main(): Promise<void> {
   console.log(`build:runtime: ${output} (${(await stat(output)).size} bytes), desktop runtime ${desktopRuntime}, runtime sha256 ${metadata.sha256}`)
 }
 
-await main()
+if (import.meta.main) await main()

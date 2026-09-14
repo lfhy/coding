@@ -14,7 +14,6 @@ import {
 } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
-import lefthookPackage from 'lefthook/package.json' with { type: 'json' }
 
 const MINIMUM_GIT = [2, 26, 0]
 const HOOKS_DIRECTORY = 'dsh-hooks'
@@ -45,6 +44,15 @@ function errorCode(error) {
   return typeof error === 'object' && error !== null && 'code' in error
     ? error.code
     : undefined
+}
+
+async function loadLefthookPackage() {
+  try {
+    return (await import('lefthook/package.json', { with: { type: 'json' } })).default
+  } catch (error) {
+    if (errorCode(error) === 'ERR_MODULE_NOT_FOUND') return undefined
+    throw error
+  }
 }
 
 function commandFailure(command, args, result) {
@@ -690,7 +698,8 @@ function probePairingMergeDriver(root) {
 
 async function main() {
   if (process.env.CI === 'true' || process.env.GITHUB_ACTIONS === 'true') return
-  if (typeof lefthookPackage.bin?.lefthook !== 'string') return
+  const lefthookPackage = await loadLefthookPackage()
+  if (typeof lefthookPackage?.bin?.lefthook !== 'string') return
   const probe = spawnSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' })
   if (probe.status !== 0) return
   const root = stripGitLineTerminator(probe.stdout)

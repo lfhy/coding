@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-25-desktop-host-closure-in-app-bundle.md
-2026-08-25-desktop-host-closure-in-app-bundle.md: cb21d00ad64bf7f43ffd6af04877525a9697c470
-2026-08-25-desktop-host-closure-in-app-bundle.zh.md: 49468d22081f3985d3ba42da82e9f3673204740b
+2026-08-25-desktop-host-closure-in-app-bundle.md: bc9fe588dafe9f0770e5a14ed0fb240384bd4bd6
+2026-08-25-desktop-host-closure-in-app-bundle.zh.md: 4a1cf1958d023f989175b7c4de9bf79c80af139b

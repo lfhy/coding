@@ -30,10 +30,10 @@ runtime:
 remote-agent:
 	pnpm run build:remote-agent
 
-# macOS/Windows 桌面 GUI 壳（需要 CGO 与系统 WebView）。先补齐 devDependencies：
-# pnpm 的 deps 自检可能以生产模式重装并删除 lefthook 等 devDeps，导致 postinstall 失败。
+# macOS/Windows 桌面 GUI 壳（需要 CGO 与系统 WebView）。先补齐 devDependencies，
+# 同时修复被中断的 legacy runtime deploy 可能留下的生产依赖状态。
 desktop:
-	pnpm install --frozen-lockfile
+	pnpm install --frozen-lockfile --config.confirm-modules-purge=false
 	pnpm run build:desktop
 
 # Linux 交互式 TUI。
