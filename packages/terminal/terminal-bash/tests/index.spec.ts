@@ -379,7 +379,7 @@ describe('BashTerminalBackend startup rollback', () => {
     expect(spawned?.env?.PROMPT_COMMAND).toBeUndefined()
   })
 
-  it('keeps waiting for the marker prompt when the first send settles on silence', async () => {
+  it('回显的引导提示符字面量不能发布 pwsh 启动', async () => {
     const ctx = new Context()
     await ctx.plugin(EmptySandbox)
     await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
@@ -391,8 +391,8 @@ describe('BashTerminalBackend startup rollback', () => {
         const second = sends.length > 1
         return {
           done: Promise.resolve({
-            viewport: second ? 'dsh> ' : 'PowerShell 7.6.4\n',
-            waitReason: 'inferred_idle' as const,
+            viewport: second ? 'dsh> ' : "function prompt { 'dsh> ' }\n",
+            waitReason: second ? 'stdin_read' as const : 'inferred_idle' as const,
             sessionStatus: { kind: 'running' as const }, truncated: false,
           }),
           readOutput: () => ({ delta: '', truncated: false }),
@@ -411,6 +411,53 @@ describe('BashTerminalBackend startup rollback', () => {
     expect(sends).toHaveLength(2)
     expect(sends[1]).toMatchObject({ text: '', submit: false })
     expect(session.motd).toBe('dsh> ')
+  })
+
+  it('用同一条截止时间限制完整 pwsh 启动重试', async () => {
+    const ctx = new Context()
+    await ctx.plugin(EmptySandbox)
+    await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
+    const pending = Promise.withResolvers<{
+      viewport: string
+      waitReason: 'inferred_idle'
+      sessionStatus: { kind: 'running' }
+      truncated: boolean
+    }>()
+    let sends = 0
+    let cancellations = 0
+    let closes = 0
+    const session = {
+      motd: '',
+      startSend: () => {
+        sends += 1
+        return {
+          done: sends === 1
+            ? Promise.resolve({
+              viewport: 'setup echo', waitReason: 'inferred_idle' as const,
+              sessionStatus: { kind: 'running' as const }, truncated: false,
+            })
+            : pending.promise,
+          readOutput: () => ({ delta: '', truncated: false }),
+          cancel: () => { cancellations += 1; return true },
+        }
+      },
+      read: () => ({ text: '', totalLines: 0, lineBegin: 0, lineEnd: 0, truncated: false }),
+      close: () => { closes += 1; return Promise.resolve() },
+    } as unknown as LocalPtySession
+    const backend = new BashTerminalBackend(
+      ctx,
+      { ...config(), shellDialect: 'pwsh', shellPath: 'pwsh', timeoutMs: 30 },
+      async () => terminalHandle(),
+      () => session,
+    )
+
+    const spawning = backend.spawn(spec(agent(ctx)))
+    const rejected = expect(spawning).rejects.toThrow('did not reach readiness before startup timeout')
+    await vi.waitFor(() => { expect(sends).toBe(2) })
+
+    await rejected
+    expect(cancellations).toBe(1)
+    expect(closes).toBe(1)
   })
 
   it('rejects a pwsh bootstrap whose shell exits or times out', async () => {

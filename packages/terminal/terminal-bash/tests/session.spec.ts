@@ -148,6 +148,310 @@ async function initialize(session: LocalPtySession, terminal: FakeTerminal): Pro
 }
 
 describe('LocalPtySession readiness and output', () => {
+  it('在发布提示符就绪前回应拆分的光标位置查询', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const inspector = new FakeInspector()
+    const session = makeSession(terminal, inspector, config())
+    const responseGate = Promise.withResolvers<undefined>()
+    terminal.write = async (data) => {
+      terminal.writes.push(data)
+      await responseGate.promise
+    }
+
+    let initialized = false
+    const pending = session.initialize().then(() => { initialized = true })
+    terminal.emitData('\x1b]133;D;0\x07dsh> \x1b[')
+    terminal.emitData('6n')
+    await vi.advanceTimersByTimeAsync(20)
+
+    expect(terminal.writes).toContain('\x1b[1;6R')
+    expect(initialized).toBe(false)
+    responseGate.resolve(undefined)
+    await vi.advanceTimersByTimeAsync(10)
+    await pending
+    expect(session.motd).toBe('dsh> ')
+  })
+
+  it('在调用方输入前排空协议响应，并在检查期间有输出时重新检查前台状态', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const inspector = new FakeInspector()
+    const session = makeSession(terminal, inspector, config())
+    await initialize(session, terminal)
+    const firstInspection = Promise.withResolvers<{ processGroupId: number; inputWaiting: boolean }>()
+    const secondInspection = Promise.withResolvers<{ processGroupId: number; inputWaiting: boolean }>()
+    let inspections = 0
+    terminal.inspectForeground = async () => {
+      inspections += 1
+      if (inspections === 1) return await firstInspection.promise
+      if (inspections === 2) return await secondInspection.promise
+      return { processGroupId: 456, inputWaiting: false }
+    }
+    const responseGate = Promise.withResolvers<undefined>()
+    terminal.write = async (data) => {
+      terminal.writes.push(data)
+      if (data === '\x1b[1;6R') await responseGate.promise
+    }
+
+    const operation = session.startSend({ text: 'caller input', submit: true })
+    await Promise.resolve()
+    terminal.emitData('\x1b[6n')
+    await vi.advanceTimersByTimeAsync(0)
+    firstInspection.resolve({ processGroupId: 456, inputWaiting: true })
+    await Promise.resolve()
+
+    expect(terminal.writes).toEqual(['\x1b[1;6R'])
+    responseGate.resolve(undefined)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(inspections).toBe(2)
+    terminal.emitData('\x1b[6n')
+    await vi.advanceTimersByTimeAsync(0)
+    secondInspection.resolve({ processGroupId: 456, inputWaiting: true })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(inspections).toBe(3)
+    expect(terminal.writes).toEqual(['\x1b[1;6R', '\x1b[1;6R', 'caller input\r'])
+
+    terminal.emitData('\x1b]133;D;0\x07dsh> ')
+    await vi.advanceTimersByTimeAsync(10)
+    expect((await operation.done).waitReason).toBe('stdin_read')
+  })
+
+  it('调用方输入开始时排空已挂起的终端响应', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const inspector = new FakeInspector()
+    const session = makeSession(terminal, inspector, config())
+    await initialize(session, terminal)
+    const responseGate = Promise.withResolvers<undefined>()
+    terminal.write = async (data) => {
+      terminal.writes.push(data)
+      if (data === '\x1b[1;6R') await responseGate.promise
+    }
+    terminal.emitData('\x1b[6n')
+    await vi.advanceTimersByTimeAsync(0)
+
+    const operation = session.startSend({ text: 'caller input', submit: true })
+    await Promise.resolve()
+    expect(terminal.writes).toEqual(['\x1b[1;6R'])
+    responseGate.resolve(undefined)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(terminal.writes).toEqual(['\x1b[1;6R', 'caller input\r'])
+
+    terminal.emitData('\x1b]133;D;0\x07dsh> ')
+    await vi.advanceTimersByTimeAsync(10)
+    expect((await operation.done).waitReason).toBe('stdin_read')
+  })
+
+  it('前台检查期间出现协议活动后重新采样就绪状态', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const inspector = new FakeInspector()
+    const session = makeSession(terminal, inspector, config())
+    await initialize(session, terminal)
+    const operation = session.startSend({ text: '', submit: false })
+    await Promise.resolve()
+    await Promise.resolve()
+    const internal = session as unknown as {
+      stopReadinessPolling(): void
+      pollReadiness(operation: TerminalSendOperation): Promise<void>
+      settleActive(reason: 'timeout'): void
+    }
+    internal.stopReadinessPolling()
+    await vi.advanceTimersByTimeAsync(20)
+
+    const firstInspection = Promise.withResolvers<{ processGroupId: number; inputWaiting: boolean }>()
+    let inspections = 0
+    terminal.inspectForeground = async () => {
+      inspections += 1
+      return inspections === 1
+        ? await firstInspection.promise
+        : { processGroupId: 456, inputWaiting: false }
+    }
+    const polling = internal.pollReadiness(operation)
+    await Promise.resolve()
+    terminal.emitData('\x1b[6n')
+    await vi.advanceTimersByTimeAsync(0)
+    firstInspection.resolve({ processGroupId: 456, inputWaiting: true })
+    await polling
+
+    expect(inspections).toBe(2)
+    expect((operation as unknown as { settled: boolean }).settled).toBe(false)
+    internal.settleActive('timeout')
+    expect((await operation.done).waitReason).toBe('timeout')
+  })
+
+  it('检查失败但仍在排空终端响应时保留发送所有权', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const inspector = new FakeInspector()
+    const session = makeSession(terminal, inspector, config())
+    await initialize(session, terminal)
+    const operation = session.startSend({ text: '', submit: false })
+    await Promise.resolve()
+    await Promise.resolve()
+    const internal = session as unknown as {
+      stopReadinessPolling(): void
+      pollReadiness(operation: TerminalSendOperation): Promise<void>
+    }
+    internal.stopReadinessPolling()
+
+    const inspection = Promise.withResolvers<{ processGroupId: number; inputWaiting: boolean }>()
+    terminal.inspectForeground = async () => await inspection.promise
+    const responseGate = Promise.withResolvers<undefined>()
+    terminal.write = async (data) => {
+      terminal.writes.push(data)
+      await responseGate.promise
+    }
+    const polling = internal.pollReadiness(operation)
+    await Promise.resolve()
+    terminal.emitData('\x1b[6n')
+    await vi.advanceTimersByTimeAsync(0)
+    inspection.reject(new Error('inspection failed with reply pending'))
+    await Promise.resolve()
+
+    expect(() => session.startSend({ text: 'successor', submit: true })).toThrow('active send')
+    responseGate.resolve(undefined)
+    await polling
+    await expect(operation.done).rejects.toThrow('inspection failed with reply pending')
+  })
+
+  it('写入前的检查失败且有终端响应时保留发送所有权', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const inspector = new FakeInspector()
+    const session = makeSession(terminal, inspector, config())
+    await initialize(session, terminal)
+    const inspection = Promise.withResolvers<{ processGroupId: number; inputWaiting: boolean }>()
+    terminal.inspectForeground = async () => await inspection.promise
+    const responseGate = Promise.withResolvers<undefined>()
+    terminal.write = async (data) => {
+      terminal.writes.push(data)
+      await responseGate.promise
+    }
+
+    const operation = session.startSend({ text: 'must not execute', submit: true })
+    await Promise.resolve()
+    terminal.emitData('\x1b[6n')
+    await vi.advanceTimersByTimeAsync(0)
+    inspection.reject(new Error('pre-write inspection failed with reply pending'))
+    await Promise.resolve()
+
+    expect(() => session.startSend({ text: 'successor', submit: true })).toThrow('active send')
+    responseGate.resolve(undefined)
+    await expect(operation.done).rejects.toThrow('pre-write inspection failed with reply pending')
+    expect(terminal.writes).toEqual(['\x1b[1;6R'])
+  })
+
+  it('超时的发送会持有所有权直至终端协议响应完成', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const inspector = new FakeInspector()
+    const session = makeSession(terminal, inspector, config())
+    await initialize(session, terminal)
+    const responseGate = Promise.withResolvers<undefined>()
+    terminal.write = async (data) => {
+      terminal.writes.push(data)
+      await responseGate.promise
+    }
+
+    const operation = session.startSend({ text: '', submit: false })
+    terminal.emitData('\x1b[6n')
+    await vi.advanceTimersByTimeAsync(100)
+    expect((await operation.done).waitReason).toBe('timeout')
+    expect(() => session.startSend({ text: 'successor', submit: true })).toThrow('active send')
+
+    responseGate.resolve(undefined)
+    await vi.advanceTimersByTimeAsync(0)
+    const successor = session.startSend({ text: '', submit: false })
+    terminal.emitData('\x1b]133;D;0\x07dsh> ')
+    await vi.advanceTimersByTimeAsync(10)
+    expect((await successor.done).waitReason).toBe('stdin_read')
+  })
+
+  it('将终端模拟器与协议响应失败收敛为会话失败', async () => {
+    const responseTerminal = new FakeTerminal()
+    responseTerminal.throwWrite = true
+    const responseSession = new LocalPtySession(responseTerminal, config())
+    const responseOperation = responseSession.startSend({ text: '', submit: false })
+    responseTerminal.emitData('\x1b[6n')
+    await expect(responseOperation.done).rejects.toThrow('write failed')
+    expect(responseSession.status()).toEqual({ kind: 'exited', exitCode: null, signal: null })
+
+    const emulatorTerminal = new FakeTerminal()
+    const emulatorSession = new LocalPtySession(emulatorTerminal, config())
+    const emulatorOperation = emulatorSession.startSend({ text: '', submit: false })
+    const emulator = (emulatorSession as unknown as {
+      emulator: { write(data: string, callback?: () => void): void }
+    }).emulator
+    emulator.write = () => { throw new Error('emulator failed') }
+    emulatorTerminal.emitData('output')
+    await expect(emulatorOperation.done).rejects.toThrow('emulator failed')
+    expect(emulatorSession.status()).toEqual({ kind: 'exited', exitCode: null, signal: null })
+  })
+
+  it('开始关闭后忽略终端协议失败，并排空不断变化的队列', async () => {
+    const terminal = new FakeTerminal()
+    const session = new LocalPtySession(terminal, config())
+    const internal = session as unknown as {
+      closing: boolean
+      emulator: { write(data: string, callback?: () => void): void }
+      emulatorWrites: Promise<void>
+      responseWrites: Promise<void>
+      drainTerminalProtocol(): Promise<void>
+      closeEmulator(): void
+    }
+    internal.closing = true
+    terminal.throwWrite = true
+    terminal.emitData('\x1b[6n')
+    await internal.emulatorWrites
+    await internal.responseWrites
+    expect(session.status()).toEqual({ kind: 'running' })
+
+    internal.emulator.write = () => { throw new Error('late emulator failure') }
+    terminal.emitData('late output')
+    await internal.emulatorWrites
+    expect(session.status()).toEqual({ kind: 'running' })
+
+    const first = Promise.withResolvers<undefined>()
+    internal.emulatorWrites = first.promise
+    const draining = internal.drainTerminalProtocol()
+    internal.emulatorWrites = Promise.resolve()
+    first.resolve(undefined)
+    await draining
+    internal.closeEmulator()
+    internal.closeEmulator()
+    terminal.emitData('after emulator close')
+    expect(session.status()).toEqual({ kind: 'running' })
+  })
+
+  it('合并等待解析的后续终端输出', async () => {
+    const terminal = new FakeTerminal()
+    const session = new LocalPtySession(terminal, config())
+    const writes: Array<{ data: string; done: () => void }> = []
+    const internal = session as unknown as {
+      emulator: { write(data: string, callback?: () => void): void }
+      emulatorWrites: Promise<void>
+      closeEmulator(): void
+    }
+    internal.emulator.write = (data, callback) => {
+      writes.push({ data, done: callback ?? (() => {}) })
+    }
+
+    terminal.emitData('first')
+    terminal.emitData('second')
+    terminal.emitData('third')
+    await Promise.resolve()
+    expect(writes.map(write => write.data)).toEqual(['first'])
+
+    writes[0]!.done()
+    await Promise.resolve()
+    expect(writes.map(write => write.data)).toEqual(['first', 'secondthird'])
+    writes[1]!.done()
+    await internal.emulatorWrites
+    internal.closeEmulator()
+  })
+
   it('lets queued terminal output run before the first post-write readiness poll', async () => {
     vi.useFakeTimers()
     const terminal = new FakeTerminal()
@@ -995,6 +1299,7 @@ describe('LocalPtySession readiness and output', () => {
     await Promise.resolve()
     await Promise.resolve()
     inspection.resolve({ processGroupId: 456, inputWaiting: false })
+    await vi.advanceTimersByTimeAsync(0)
     await stalePoll
     await vi.advanceTimersByTimeAsync(10)
 
