@@ -113,14 +113,13 @@ export function WorkspaceChip({ buttonRef, label, mode, menuOpen = false, onClic
 }
 
 /**
- * The soft blue backdrop ellipse (figma 313:14109). Rendered by the hero
- * owner (ConversationRoot), not HeroShell, so it can center on the input
- * card; the owner's className supplies all positioning.
- * @param props.className - positioning class from the owner.
- * @returns the blurred-ellipse svg element.
+ * 空态输入区后的低透明度业务色背景椭圆。它由 Hero 的 owner（ConversationRoot）
+ * 而非 HeroShell 渲染，使其能够以输入卡片为中心；定位完全由 owner 的 className 提供。
+ * @param props.className - owner 提供的定位 className。
+ * @returns 模糊背景椭圆 SVG 元素。
  */
 export function HeroGlow({ className }: { className?: string | undefined }) {
-  // Stable filter id so multiple hero mounts do not collide in the DOM.
+  // 稳定的 filter id 可避免多个 Hero 同时挂载时在 DOM 中冲突。
   const glowFilterId = `empty-glow-${useId().replace(/:/g, '')}`
   return (
     <svg className={className} viewBox="0 0 1051 468" fill="none" aria-hidden="true">
@@ -140,7 +139,7 @@ export function HeroGlow({ className }: { className?: string | undefined }) {
         </filter>
       </defs>
       <g filter={`url(#${glowFilterId})`}>
-        <ellipse cx="525.5" cy="234" rx="425.5" ry="134" fill="#6187D8" fillOpacity="0.08" />
+        <ellipse cx="525.5" cy="234" rx="425.5" ry="134" fill="var(--dsw-alias-state-business-primary)" fillOpacity="0.08" />
       </g>
     </svg>
   )

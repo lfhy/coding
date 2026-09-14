@@ -5,6 +5,8 @@
 - button "1 subagent":
   - text: 1 subagent
   - img
+- button "New session":
+  - img
 - button "Session log":
   - text: Session log
   - img

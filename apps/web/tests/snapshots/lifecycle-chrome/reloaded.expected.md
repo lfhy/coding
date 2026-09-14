@@ -3,6 +3,8 @@
     - button "Reply with the single word" [disabled]
   - img
   - text: Standard mode
+  - button "New session":
+    - img
   - button "Session log":
     - text: Session log
     - img
