@@ -74,7 +74,7 @@ UI 渲染约定精确且不携带位置信息。`terminal_send` 只为前台发�
 
 本地后端先识别受控 bash 启动时发出的私有 OSC prompt marker，并且只有在最近一个 marker 后的可打印尾部与受控 `PS1` 完全相等时才声明 prompt 就绪；除此之外，它还运行 3 个有界 fallback 层级。在 data callback 之间保留该尾部，可以适配 marker 与 prompt 被分开交付的情况；如果回显的输入或输出跟在延迟到达的先前 prompt 之后，要求尾部完全相等会拒绝该 prompt，使其无法完成当前 send。marker 在输出到达模型前被移除，使两个平台上的普通 shell 命令都无需固定等待静默阈值。尚未发布的 startup 不会把零输出静默视为就绪；timeout 会拒绝 spawn。若调用方取消在 startup 期间胜出，后端会关闭私有会话并原样抛出 `AbortSignal.reason`；尚不可观察的前台 PGID 不会再用查找错误覆盖取消原因。所有时间参数都是经校验的配置字段：`pollIntervalMs`、`exactProbeAfterMs`、`idleSilenceMs`、`handoffGraceMs` 和 `timeoutMs`。
 
-在 Linux 上，检查器从 `/proc/<shellPid>/stat` 读取 shell 的终端前台 PGID，枚举该进程组中的每个进程与线程，并检查它们当前的 syscall。Tier 1 只有观察到 stdin 等待才返回正结果：直接 `read(0)`、获准读取且含 fd 0 的 `select`/`pselect6` 或 `poll`/`ppoll` 参数，或者含 fd 0 的 epoll interest list。终端输入前就已存在的等待并不代表写入后就绪：必须先观察到同一 PGID 脱离该等待，之后再次进入等待才能使该次 send 完成；前台 PGID 发生变化则构成新的证据。无法读取的进程内存和未识别的 syscall 都是 miss，绝不作为正向猜测。架构表只包含对应 Linux UAPI 定义的 syscall number；不支持的架构跳过 Tier 1。
+在 Linux 上，检查器从 `/proc/<shellPid>/stat` 读取 shell 的终端前台 PGID 和控制终端设备号，枚举该进程组中的每个进程与线程，并检查它们当前的 syscall。Tier 1 只有观察到 stdin 等待才返回正结果：直接 `read(0)`、获准读取且含 fd 0 的 `select`/`pselect6` 或 `poll`/`ppoll` 参数，或者含 fd 0 的 epoll interest list。等待线程的 fd 0 必须标识该控制终端；`pipe:[…]` 读取器属于 miss，`/dev/tty` 则标识其进程的终端设备。终端输入前就已存在的等待并不代表写入后就绪：必须先观察到同一 PGID 脱离该等待，之后再次进入等待才能使该次 send 完成；前台 PGID 发生变化则构成新的证据。无法读取的进程内存和未识别的 syscall 都是 miss，绝不作为正向猜测。探针允许受支持的运行时架构，并匹配每一种受支持的内核 ABI，因此用户态模拟不会隐藏等待。
 
 macOS 没有精确 syscall 层。任何前台进程组输出静默都会返回 `inferred_idle`，包括 Python 和 `gdb`；从 `ps` 推导的终端 PGID 只用于发送信号，不作为「只有 shell 才能 idle」的证明。纯进程检查逻辑可注入，并在 Linux 上经过单元测试，同时由 macOS CI job 驱动真实 PTY 和进程表路径。
 
