@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, readFileSync, readlinkSync, rmSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -76,6 +76,43 @@ describe.skipIf(!bwrapUsable)('sandbox-local: real bwrap confinement', () => {
     const { result } = runConfined(sandbox, 'ls / > /dev/null && echo dev-ok', { mode: 'read-only', workspaceRoot: workdir })
     expect(result.status).toBe(0)
     expect(result.stdout).toBe('dev-ok\n')
+  })
+
+  it.each(['read-only', 'workspace-write'] as const)(
+    '%s runs in a private PID namespace and blocks writes through procfs root magic links',
+    async (mode) => {
+      const workdir = await tempDir(homedir())
+      const outside = await tempDir(homedir())
+      const target = join(outside, 'escaped.txt')
+      const sandbox = await provider()
+      // 比较 PID namespace 身份而不是 PID 数字：私有 namespace 内会重新使用
+      // 数字 PID，而 `/proc/1/root` 写入在共享 namespace 也可能因权限失败；
+      // namespace 身份差异才是 `--unshare-pid` 是否生效的直接证据。
+      const hostPidNamespace = readlinkSync('/proc/self/ns/pid')
+      const visibility = runConfined(sandbox, 'readlink /proc/self/ns/pid', { mode, workspaceRoot: workdir })
+      expect(visibility.result.status).toBe(0)
+      expect(visibility.result.stdout.trim()).not.toBe('')
+      expect(visibility.result.stdout.trim()).not.toBe(hostPidNamespace)
+
+      const escape = runConfined(
+        sandbox,
+        `printf escaped > /proc/1/root${target}`,
+        { mode, workspaceRoot: workdir },
+      )
+      expect(escape.result.status).not.toBe(0)
+      expect(existsSync(target)).toBe(false)
+    },
+  )
+
+  it('keeps descendants observable and controllable inside the private PID namespace', async () => {
+    const workdir = await tempDir(homedir())
+    const sandbox = await provider()
+    const { result } = runConfined(
+      sandbox,
+      'sleep 30 & child=$!; kill -0 "$child" && kill "$child"; wait "$child"; status=$?; test "$status" -ge 128',
+      { mode: 'read-only', workspaceRoot: workdir },
+    )
+    expect(result.status).toBe(0)
   })
 
   it('workspace-write lands a write inside the workspace root and still denies one beside it', async () => {
