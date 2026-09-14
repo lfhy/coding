@@ -12,13 +12,11 @@ import { fileURLToPath } from 'node:url'
 import type { Win32DialogWorkerData } from './win32-dialog-worker.ts'
 
 /**
- * Spawn the dialog child process. Built consumers launch the bundled CJS
- * entry next to this module under plain node; unbuilt (source) consumers
- * bootstrap tsx first, mirroring the dsh CLI's source launch. The dialog is
- * the child's first window, so Windows activates it without a foreground
- * call.
- * @param data - the child payload (dialog title).
- * @returns the spawned child process.
+ * spawn 对话框子进程。构建产物在该模块旁以普通 node 启动打包的 CJS
+ * 入口；未构建的源码消费者先引导 tsx。子进程通过 `runFolderDialog` 在
+ * `Show` 前合成 Alt 按键以前台方式打开对话框，供后台宿主 spawn 的场景使用。
+ * @param data - 子进程载荷（对话框标题）。
+ * @returns 已启动的子进程。
  */
 export function spawnDialogWorker(data: Win32DialogWorkerData): ReturnType<typeof spawn> {
   const env = { ...process.env, DSH_DIALOG_TITLE: data.title }

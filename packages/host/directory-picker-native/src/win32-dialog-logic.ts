@@ -79,6 +79,14 @@ export interface Win32DialogBindings {
    * @returns the calling thread's native id.
    */
   currentThreadId(): number
+  /**
+   * 让即将由 `Show` 创建的对话框可以取得前台。后台宿主启动的 worker
+   * 不具备前台权限，因此通过 `keybd_event` 合成一次 Alt 按下和抬起，
+   * 将该进程标记为最近的输入所有者。必须紧邻 `Show` 之前调用。
+   * 已具备前台权限的进程中该按键无影响；当时获得焦点的窗口仍可能短暂
+   * 高亮菜单栏。
+   */
+  pressAltForForeground(): void
 }
 
 /**
@@ -117,6 +125,7 @@ export function runFolderDialog(
       check(dialog.setOptions(FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_NOCHANGEDIR), 'SetOptions')
       check(dialog.setTitle(title), 'SetTitle')
       onShowing(bindings.currentThreadId())
+      bindings.pressAltForForeground()
       const shown = dialog.show()
       if (shown === HRESULT_CANCELLED) return null
       check(shown, 'Show')

@@ -1,12 +1,10 @@
 /**
- * Child-process entry for the Win32 folder dialog: blocks THIS process
- * inside the modal `Show` so the host event loop stays live, reporting over
- * the IPC channel. Spawned as a child process (not a worker thread) so the
- * dialog is the process's first window and Windows activates it without a
- * manual foreground call. Protocol: `{kind:'showing',threadId}` right
- * before the blocking call (the driver's abort lever needs the native
- * thread id), then exactly one of `{kind:'done',path}` or
- * `{kind:'error',message}`.
+ * Win32 文件夹对话框的子进程入口：该进程阻塞在模态 `Show` 中并通过 IPC
+ * 上报结果，宿主事件循环仍保持可用。子进程隔离原生故障；后台宿主启动时
+ * 该进程不具备前台权限，因此 `runFolderDialog` 在 `Show` 紧前方合成 Alt
+ * 按键。协议在阻塞调用前发送 `{kind:'showing',threadId}`（驱动需要原生
+ * 线程 id 才能响应中止），随后恰好发送 `{kind:'done',path}` 或
+ * `{kind:'error',message}` 之一。
  */
 
 import { loadWin32DialogBindings } from './win32-dialog-bindings.ts'
