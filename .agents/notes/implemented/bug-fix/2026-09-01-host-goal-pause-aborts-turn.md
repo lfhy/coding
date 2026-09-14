@@ -12,6 +12,8 @@ Clicking "pause goal" in the Web UI moved the goal to `paused` and disarmed auto
 
 The goal round driver now reads the `change` on every `goal/changed` event. When `operation === 'pause'`, the driver aborts the live turn with `agent.cancel({ kind: 'user' }, { keepInbox: true })` unless the pause was initiated by the agent's own turn. The Web button runs outside any agent initiator boundary, while a model's `update_goal pause` runs with the agent as the current initiator; the driver distinguishes them with `ctx.agents.currentInitiator() !== agent`.
 
+The idle checkpoint also fences its automatic pause to the exact `goalId` and `revision` captured by the cancelled attempt. A host pause followed by an immediate resume therefore cannot let the old aborted turn pause the newly resumed revision.
+
 `keepInbox` preserves pending work. A queued goal round already fails the existing pre-step reservation check once the goal is disarmed, so it cannot run after the pause.
 
 ## Alternatives considered
@@ -22,4 +24,4 @@ The goal round driver now reads the `change` on every `goal/changed` event. When
 
 ## Consequences
 
-A Web "pause goal" now aborts the running turn, so the model cannot keep acting or resume the just-paused goal in that turn. Model-initiated pauses are unchanged. The change is confined to the round driver and its tests; the goal domain, tool authority, and durable formats are unchanged.
+A Web "pause goal" now aborts the running turn, so the model cannot keep acting or resume the just-paused goal in that turn; an immediate resume is protected from the old idle callback by the revision fence. Model-initiated pauses are unchanged. The change is confined to the round driver and its tests; the goal domain, tool authority, and durable formats are unchanged.

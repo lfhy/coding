@@ -262,8 +262,12 @@ export function apply(ctx: Context): void {
         state.competingQueued = false
         const attempt = state.attempt
         const goal = currentGoal(state)
-        if ((attempt?.phase === 'queued' || attempt?.phase === 'claimed' || attempt?.cancelled)
-          && goal?.phase === 'active' && goal.activation === 'armed') {
+        // 暂停只绑定到被丢弃尝试的精确引用。resume 会递增 revision，因此宿主
+        // 暂停后若在中止轮次收敛到 idle 前立即恢复，旧回调不能再次暂停新目标。
+        if (attempt !== undefined
+          && (attempt.phase === 'queued' || attempt.phase === 'claimed' || attempt.cancelled)
+          && goal !== undefined && goal.phase === 'active' && goal.activation === 'armed'
+          && attempt.goalId === goal.id && attempt.revision === goal.revision) {
           state.attempt = undefined
           try {
             ctx.goals.pause(agent, goalRef(goal))

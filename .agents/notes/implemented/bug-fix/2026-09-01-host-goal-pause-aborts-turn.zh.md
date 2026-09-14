@@ -12,6 +12,8 @@ Status: implemented
 
 goal round driver 现在会读取每个 `goal/changed` 事件里的 `change`。当 `operation === 'pause'` 时，driver 用 `agent.cancel({ kind: 'user' }, { keepInbox: true })` 中止当前轮次，除非这次暂停是由 agent 自己的轮次发起的。Web 按钮运行在任何 agent initiator 边界之外，而模型调用 `update_goal pause` 时当前 initiator 就是该 agent；driver 用 `ctx.agents.currentInitiator() !== agent` 来区分两者。
 
+idle 检查点还会把自动暂停绑定到被取消尝试所捕获的精确 `goalId` 与 `revision`。因此宿主暂停后立即恢复时，旧的中止轮次不能暂停刚恢复的新 revision。
+
 `keepInbox` 会保留待处理工作。一旦 goal 被 disarmed，已排队的 goal round 就会在既有的 pre-step reservation 校验里失败，因此暂停后不会再运行。
 
 ## 考虑过的替代方案
@@ -22,4 +24,4 @@ goal round driver 现在会读取每个 `goal/changed` 事件里的 `change`。�
 
 ## 后果
 
-现在 Web 的「暂停目标」会中止正在运行的轮次，模型无法继续行动或在同一轮次里恢复刚被暂停的 goal。模型发起的暂停行为不变。改动局限于 round driver 及其测试；goal 领域、工具授权与持久化格式都不变。
+现在 Web 的「暂停目标」会中止正在运行的轮次，模型无法继续行动或在同一轮次里恢复刚被暂停的 goal；立即恢复也受到 revision fence 保护，不会被旧的 idle 回调再次暂停。模型发起的暂停行为不变。改动局限于 round driver 及其测试；goal 领域、工具授权与持久化格式都不变。

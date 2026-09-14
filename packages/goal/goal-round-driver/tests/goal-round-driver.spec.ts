@@ -332,6 +332,54 @@ describe('same-session goal driving', () => {
     expect(test.adapter.requests).toHaveLength(1)
   })
 
+  it('keeps a resumed goal running when the pause-turn has not yet converged', async () => {
+    const test = await harness(['hang', textResponse('resumed round')])
+    test.ctx.goals.create(test.agent, { objective: 'pause then resume', maxGoalRounds: 2 })
+    await waitForRequests(test.adapter, 1)
+
+    const current = test.ctx.goals.get(test.agent)
+    if (current === undefined) throw new Error('missing goal before pause')
+    const paused = test.ctx.goals.pause(test.agent, { id: current.id, revision: current.revision })
+    // 在中止轮次收敛到 idle 前恢复；idle 处理器的 revision fence 不能再次暂停
+    // 这个刚恢复的目标。
+    test.ctx.goals.resume(test.agent, { id: paused.id, revision: paused.revision })
+
+    const goal = await waitForGoal(test.ctx, test.agent, goal => goal?.phase === 'blocked')
+
+    expect(goal).toMatchObject({ phase: 'blocked', roundsStarted: 2 })
+    expect(goal?.blockedReason?.code).toBe('round-limit')
+    expect(test.adapter.requests).toHaveLength(2)
+  })
+
+  it('lets a model-initiated pause finish its own turn', async () => {
+    const holder: { ctx?: Context; agent?: Agent } = {}
+    const test = await harness([
+      () => {
+        if (holder.ctx !== undefined && holder.agent !== undefined) {
+          const goal = holder.ctx.goals.get(holder.agent)
+          if (goal !== undefined) {
+            holder.ctx.goals.pause(holder.agent, { id: goal.id, revision: goal.revision })
+          }
+        }
+        return textResponse('paused myself')
+      },
+    ])
+    holder.ctx = test.ctx
+    holder.agent = test.agent
+
+    test.ctx.goals.create(test.agent, { objective: 'pause myself', maxGoalRounds: 2 })
+
+    const goal = await waitForGoal(test.ctx, test.agent, goal => goal?.phase === 'paused')
+    await test.agent.whenIdle()
+
+    expect(goal).toMatchObject({ phase: 'paused', roundsStarted: 1 })
+    expect(test.adapter.requests).toHaveLength(1)
+    const turnEndKinds = test.agent.session.events.flatMap(event =>
+      event.type === 'turn/end' ? [event.data.reason.kind] : [])
+    expect(turnEndKinds).toContain('completed')
+    expect(turnEndKinds).not.toContain('aborted')
+  })
+
   it('lets already-queued human work finish before reserving the next round', async () => {
     const test = await harness([textResponse('human answer'), textResponse('goal answer')])
     test.ctx.goals.create(test.agent, { objective: 'continue after the human', maxGoalRounds: 1 })
