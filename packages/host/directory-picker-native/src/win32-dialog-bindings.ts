@@ -25,22 +25,22 @@ interface Koffi {
   register(fn: (...args: unknown[]) => unknown, type: unknown): unknown
   unregister(callback: unknown): void
   sizeof(type: string): number
-  view(ref: unknown, len: number): ArrayBuffer
 }
 
 /**
- * Read a NUL-terminated UTF-16 string at a native address. koffi's
- * `_Out_ void **` out-params surface a raw address, and
- * `koffi.decode(addr, 'str16')` would dereference it as a pointer — crash
- * on real Windows — so view the memory directly instead.
+ * 读取有效的 NUL 结尾 UTF-16 分配，无需创建外部缓冲区。通用
+ * `koffi.decode(..., 'str16')` 需要指针变量，因此缓冲区保存字符串地址，
+ * 而非字符串字节。
+ * @param koffi - 已加载的 koffi 绑定。
+ * @param address - `_Out_ void **` 参数返回的字符串地址。
+ * @param pointerSize - 进程指针宽度（`koffi.sizeof('void *')`）。
+ * @returns 解码后的 UTF-16 路径。
  */
-function readUtf16(koffi: Koffi, address: unknown): string {
-  const bytes = Buffer.from(koffi.view(address, 32768))
-  let end = 0
-  // UTF-16LE 的 NUL 由两个零字节组成。单个零低字节可能是有效的 BMP
-  // 码元（例如开 = U+5F00），不能因此提前结束扫描。
-  while (end + 1 < bytes.length && !(bytes[end] === 0 && bytes[end + 1] === 0)) end += 2
-  return bytes.toString('utf16le', 0, end)
+function readUtf16(koffi: Koffi, address: unknown, pointerSize: number): string {
+  const pointer = Buffer.alloc(8)
+  // koffi 3 将 `_Out_ void **` 的原生地址表示为 BigInt。
+  pointer.writeBigUInt64LE(BigInt(address as bigint | number))
+  return koffi.decode(pointer.subarray(0, pointerSize), 'str16') as string
 }
 
 const COINIT_APARTMENTTHREADED = 0x2
@@ -158,7 +158,7 @@ export async function loadWin32DialogBindings(): Promise<Win32DialogBindings> {
             const nameOut: unknown[] = [null]
             const gotName = method(item, SLOT_GET_DISPLAY_NAME, protoGetDisplayName)(SIGDN_FILESYSPATH, nameOut)
             if (gotName < 0) return { hr: gotName }
-            const path = readUtf16(koffi, nameOut[0])
+            const path = readUtf16(koffi, nameOut[0], pointerSize)
             coTaskMemFree(nameOut[0])
             return { hr: gotName, path }
           } finally {
