@@ -102,6 +102,8 @@ This server-qualified shape is the de-facto standard among multi-server agent cl
 4. No `presentCall`/`presentResult` — UI consumers use the provider-neutral generic-card fallback.
 5. Tools are transparent in the system prompt — no "[via MCP]" annotation beyond the name itself.
 
+Each synchronization rejects a repeated non-empty continuation cursor before requesting another page and leaves the previous generation registered. Empty pages cannot establish progress through tool-name uniqueness, so cursor history also detects cycles spanning several pages. Cursor history belongs to one synchronization; a later update may reuse the same cursors. The bridge tests cover cycle rejection, retained callable tools, strict startup failure, and notification recovery. This detects repeated cursors but does not bound a server that continually returns distinct cursors.
+
 ### Public name normalization
 
 MCP allows tool names up to 128 characters including `.`; the DeepSeek function-name contract allows `[A-Za-z0-9_-]` and at most 64. Public names are normalized deterministically: invalid characters become `_`, and when replacement or truncation changed the name, a 12-hex-char SHA-256 hash of the `(serverName, rawName)` identity is appended so distinct MCP identities can never collapse into the same public name:

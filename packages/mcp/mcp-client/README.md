@@ -57,6 +57,7 @@ Every MCP tool has two names: the raw MCP name (sent on the wire in `tools/call`
 - Two servers publishing the same raw name (e.g. `search`) coexist under their namespaces.
 - A duplicate `serverName` across live instances fails the later plugin instance at load.
 - A server listing the same tool name twice is rejected as an invalid tool list.
+- A repeated non-empty `tools/list` continuation cursor rejects that synchronization immediately, including cycles through empty pages; the previous tool set stays active and a later update can still succeed.
 - A foreign registration squatting on this server's namespace rolls back the whole generation (never a partial set), with a loud error.
 
 ## Behavior
