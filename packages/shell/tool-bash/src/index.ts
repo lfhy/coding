@@ -212,20 +212,16 @@ export function apply(ctx: Context, config: Config = {}): void {
   if (defaultMode !== undefined && sandboxPolicy === undefined) {
     throw new Error('tool-bash: the mounted bash executor confines but ctx.sandboxPolicy is missing')
   }
-  /** Resolve the complete standing policy for this call when a confining executor is mounted. */
+  /** 在挂载受限执行器时解析本次调用的完整常驻策略。 */
   const resolveSandboxPolicy = (exec: ToolExecution): SandboxExecutionPolicy | undefined =>
     sandboxPolicy?.resolve(exec.agent === undefined ? {} : { session: exec.agent.session })
 
   /**
-   * Resolve a sandbox-escalation request through `ctx.approval` BEFORE
-   * anything executes, delegating the shared fail-closed sequence (strict
-   * widening, channel resolution, outcome mapping) to
-   * {@link approveEscalation}. This tool contributes only the composition
-   * guard (the fields are unadvertised without a sandboxing executor, yet
-   * schema validation checks advertised keys only, so an unadvertised
-   * `sandbox_permissions` still reaches execute) and the approval
-   * ingredients. The shared policy resolver is required whenever the executor
-   * advertises confinement, so a split composition fails at tool-plugin load.
+   * 在任何执行前解析沙箱升权请求，把同档幂等处理、严格拓宽检查、通道解析与结果映射
+   * 委托给 {@link approveEscalation}。本工具只提供组合守卫和审批原料：无沙箱执行器时
+   * 不公开字段，但 schema 只校验已公开键，因此注入的 `sandbox_permissions` 仍可能
+   * 到达执行阶段。只要执行器声明限制能力就必须存在共享策略解析器，使割裂组合在
+   * 工具插件加载时直接失败。
    */
   const approveBashEscalation = (
     mode: string,

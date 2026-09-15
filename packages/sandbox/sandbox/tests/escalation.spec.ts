@@ -1,9 +1,8 @@
 /**
- * Tests for the shared escalation vocabulary and choreography: the strictly-
- * wider ladder, the argument-pairing validation, the model-facing markers, and
- * {@link approveEscalation}'s ordered fail-closed sequence. Both enforcing tool
- * families (`dsh-tool-bash`, `dsh-tool-fs`) delegate here, so the ordering and
- * verbatim texts are pinned once, next to the vocabulary that owns them.
+ * 共享升权词汇与流程测试：严格拓宽阶梯、同档幂等处理、参数配对校验、模型可见标记，
+ * 以及 {@link approveEscalation} 的有序 fail-closed 序列。两个执行工具家族
+ * （`dsh-tool-bash`、`dsh-tool-fs`）都委托到这里，因此顺序与逐字文案只在词汇归属处
+ * 固定一次。
  */
 
 import { describe, expect, it } from 'vitest'
@@ -81,7 +80,19 @@ describe('approveEscalation', () => {
     expect(seen[0]?.reason).toBe('escalate sandbox to workspace-write: the user asked to write in the workspace')
   })
 
-  it('a non-widening request fails closed with its own text and never asks', async () => {
+  it('an already-active advertised target is idempotent and never asks', async () => {
+    const seen: unknown[] = []
+    const spy = ingredients({ approver: approver('allowed-once', r => seen.push(r)), agent: undefined })
+    await expect(approveEscalation(req({ effectiveMode: 'workspace-write' }), spy))
+      .resolves.toBe('workspace-write')
+    await expect(approveEscalation(req({ requestedMode: 'danger-full-access', effectiveMode: 'danger-full-access' }), {
+      ...spy,
+      approver: undefined,
+    })).resolves.toBe('danger-full-access')
+    expect(seen).toEqual([])
+  })
+
+  it('a narrowing or invalid target fails closed with its own text and never asks', async () => {
     const seen: unknown[] = []
     const spy = ingredients({ approver: approver('allowed-once', r => seen.push(r)) })
     await expect(approveEscalation(req({ requestedMode: 'read-only' }), spy))

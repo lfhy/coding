@@ -1,7 +1,6 @@
 /**
- * Permission preference row: the default preset for subsequently created
- * sessions. Current-session switches remain on the composer `/permission`
- * control.
+ * 权限偏好行：设置后续新建会话的默认预设。当前会话仍由输入区的 `/permission`
+ * 控件切换。
  */
 
 import { useEffect, useState } from 'react'
@@ -12,31 +11,31 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PermissionSettingsState } from './settings-store.ts'
 import type { PermissionSettingsKey } from './locales.ts'
-import { FULL_ACCESS_PRESET } from './presentation.ts'
+import { displayPermissionPreset, FULL_ACCESS_PRESET } from './presentation.ts'
 import css from './PermissionRow.module.css'
 
-/** Registration-side business face for the host-backed preference. */
+/** 注册侧提供的 host 持久偏好业务接口。 */
 export interface PermissionRowInjected {
   hooks: {
-    /** Permission settings snapshot bound by the renderer as usePermission. */
+    /** 由渲染器绑定为 usePermission 的权限设置快照。 */
     permission: SnapshotStore<PermissionSettingsState>
   }
-  /** Load the descriptor when the row first renders. */
+  /** 首次渲染该行时加载描述符。 */
   load: () => Promise<void>
-  /** Persist one advertised preset. */
+  /** 持久化一个已公开预设。 */
   select: (preset: string) => Promise<void>
 }
 
-/** Full component props. */
+/** 完整组件 props。 */
 export type PermissionRowProps =
   PropsRuntime<'settings.general.item'>
   & PropsLocale<'settings.permission'>
   & InjectFace<PermissionRowInjected>
 
 /**
- * Render the new-session Permission default selector.
- * @param props - composed slot props.
- * @returns the row, or null when the host does not expose permission settings.
+ * 渲染新会话的权限默认值选择器。
+ * @param props - 组合后的 slot props。
+ * @returns 设置行；host 未公开权限设置时返回 null。
  */
 export function PermissionRow({ load, select, usePermission, t }: PermissionRowProps) {
   const state = usePermission(snapshot => snapshot)
@@ -58,8 +57,9 @@ export function PermissionRow({ load, select, usePermission, t }: PermissionRowP
   if (state.status === 'unavailable') return null
   const selected = state.options.find(option => option.id === state.currentValue)
   const busy = state.status === 'loading' || state.status === 'saving' || confirmingFullAccess
-  const label = selected?.label
-    ?? (busy ? t('loading') : t('unavailable'))
+  const label = selected === undefined
+    ? (busy ? t('loading') : t('unavailable'))
+    : displayPermissionPreset(selected.id, selected.label, t)
   const description: string = state.error ?? t('description')
 
   return (
@@ -72,7 +72,10 @@ export function PermissionRow({ load, select, usePermission, t }: PermissionRowP
         <Menu
           open={open}
           onClose={() => { setOpen(false) }}
-          items={state.options.map(option => ({ id: option.id, label: option.label }))}
+          items={state.options.map(option => ({
+            id: option.id,
+            label: displayPermissionPreset(option.id, option.label, t),
+          }))}
           selectedId={state.currentValue}
           onSelect={(id) => {
             setOpen(false)
@@ -106,6 +109,7 @@ export function PermissionRow({ load, select, usePermission, t }: PermissionRowP
         title={t('confirm.title')}
         description={t('confirm.description')}
         acknowledgeLabel={t('confirm.acknowledge')}
+        closeLabel={t('confirm.close')}
         cancelLabel={t('confirm.cancel')}
         confirmLabel={t('confirm.enable')}
         acknowledged={acknowledged}

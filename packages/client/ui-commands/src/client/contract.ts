@@ -1,27 +1,28 @@
 /**
- * Frozen contract of the client command surface. Types only. The
- * CommandUiRuntime (`ctx.commandUi`) implements this face; business packages
- * consume `register` alone.
+ * 客户端命令界面的冻结约定，仅含类型。CommandUiRuntime（`ctx.commandUi`）实现该接口；
+ * 业务包只消费注册能力。
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ClientSessionContext } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 
-/** Copy for an option that must be acknowledged before onSelect can run. */
+/** 选项在执行 onSelect 前必须确认时所需的完整文案。 */
 export interface SelectConfirmation {
   readonly title: string
   readonly description: string
   readonly acknowledgeLabel: string
+  /** 右上角关闭按钮的无障碍名称；省略时由原语使用英文回退。 */
+  readonly closeLabel?: string
   readonly cancelLabel: string
   readonly confirmLabel: string
 }
 
-/** One option row of a popupSelect shell. */
+/** popupSelect 外壳中的一行选项。 */
 export interface SelectOption {
   readonly id: string
   readonly label: string
   readonly detail?: string
   readonly active?: boolean
-  /** Optional in-page risk gate owned by the shared popup shell. */
+  /** 由共享 popup 外壳持有的可选页面内风险门控。 */
   readonly confirmation?: SelectConfirmation
 }
 

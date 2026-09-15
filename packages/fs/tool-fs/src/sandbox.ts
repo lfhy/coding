@@ -50,11 +50,10 @@ export class FsSandboxController {
   }
 
   /**
-   * The escalation schema fields for a mutating tool's `parameters`. Call it
-   * only under a confining backend (guard on {@link escalationModes}); the
-   * enum pins the closed target vocabulary, the strict-wider check happens per
-   * call at execution.
-   * @returns the two escalation parameter specs.
+   * 变更工具 `parameters` 使用的升权 schema 字段。仅在受限后端下调用，并以
+   * {@link escalationModes} 守卫；枚举固定封闭目标词汇，同档幂等与严格拓宽判断在
+   * 每次执行时完成。
+   * @returns 两个升权参数定义。
    */
   schemaFields(): EscalationSchemaFields {
     return {
@@ -73,16 +72,13 @@ export class FsSandboxController {
   }
 
   /**
-   * The policy to stamp onto this mutation: an approved escalation grant (a
-   * strictly wider retry resolved through `ctx.approval` before anything
-   * executes), else the session's standing mode. The calling session's cwd is
-   * always carried as the workspace root. Validates the escalation argument
-   * pairing first.
-   * @param toolName - the mutating tool's name, for the approval audit trail.
-   * @param args - the call's escalation arguments.
-   * @param exec - the tool-execution context (agent, callId, signal).
-   * @returns the policy to pass to the mutation, or undefined for an
-   *   unsandboxed backend.
+   * 解析本次变更携带的策略：已生效的同档目标沿用常驻模式且跳过审批，严格更宽的目标
+   * 在执行前经 `ctx.approval` 解析，其余调用使用会话常驻模式。调用会话 cwd 始终作为
+   * 工作区根传递；升权参数会先做配对校验。
+   * @param toolName - 变更工具名，用于审批审计记录。
+   * @param args - 本次调用的升权参数。
+   * @param exec - 工具执行上下文（agent、callId、signal）。
+   * @returns 传给变更操作的策略；后端未启用沙箱时返回 undefined。
    */
   async resolvePolicy(toolName: string, args: FsEscalationArgs, exec: ToolExecution): Promise<SandboxExecutionPolicy | undefined> {
     validateEscalationArgs(args.sandbox_permissions, args.justification)

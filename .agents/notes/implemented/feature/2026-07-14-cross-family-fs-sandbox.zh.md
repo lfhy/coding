@@ -41,9 +41,9 @@ Status: implemented
 
 ### 工具对等——一个拒绝标记、一条升级流程
 
-`dsh-tool-fs` 把当前会话解析成完整策略，并传给每次变更，同时将 `FS_SANDBOX_DENIED` 映射为模型已从 bash 认识的标记：`[sandbox: file access denied under <mode> mode]`。当 `ctx.fs.sandboxMode` 在注册时报告一个受限模式，`write` 与 `edit` 宣告相同的 `sandbox_permissions` + `justification` 字段，向模型说明同样的同一轮次重试方式，并在执行前处理同样的 `ctx.approval` 请求——四种结果及其逐字的 fail-closed 文案沿用自[沙箱 Agent Note](2026-07-06-sandbox.md) § 升级（执行时根据调用的生效模式检查是否严格加宽；授权只改变当前调用的模式，并保留其会话根目录；不产生任何新会话事件）。
+`dsh-tool-fs` 把当前会话解析成完整策略，并传给每次变更，同时将 `FS_SANDBOX_DENIED` 映射为模型已从 bash 认识的标记：`[sandbox: file access denied under <mode> mode]`。当 `ctx.fs.sandboxMode` 在注册时报告一个受限模式，`write` 与 `edit` 宣告相同的 `sandbox_permissions` + `justification` 字段，向模型说明同样的同一轮次重试方式，并采用与 bash 相同的执行期比较。schema 公开的目标若已等于本次调用的生效模式，就作为幂等请求跳过 `ctx.approval`；严格更宽的目标会在执行前解析审批请求；更窄或非法的目标不会提示用户，直接失败。授权只改变当前调用的模式，保留其会话根目录且不写入会话事件，继续遵循[沙箱 Agent Note](2026-07-06-sandbox.md) § 升权确定的作用域。
 
-共享部分住在 `dsh-sandbox`，它拥有模式类型：`WIDER_MODES`、升级目标枚举、参数配对校验、拒绝/提示标记构造器，以及 `approveEscalation`——有序的 fail-closed 编排。`approveEscalation` 接收一个最小的结构式 approver（`EscalationApprover`，对 agent 与 call-id 类型泛型化），而非审批服务类型，所以 `dsh-sandbox` 不获得对 approval 或 agent 包的依赖：每个工具把自己的 `ctx.approval`、agent、call id 与工具名作为原料传入。`dsh-tool-bash` 与 `dsh-tool-fs` 都使用它们；跨文件重复检测门禁确保单一来源不走样。
+共享部分住在 `dsh-sandbox`，它拥有模式类型：`WIDER_MODES`、升权目标枚举、参数配对校验、拒绝／提示标记构造器，以及 `approveEscalation`——同档幂等处理与有序的 fail-closed 编排。`approveEscalation` 接收一个最小的结构式 approver（`EscalationApprover`，对 agent 与 call-id 类型泛型化），而非审批服务类型，所以 `dsh-sandbox` 不获得对 approval 或 agent 包的依赖：每个工具把自己的 `ctx.approval`、agent、call id 与工具名作为原料传入。`dsh-tool-bash` 与 `dsh-tool-fs` 都使用它们；跨文件重复检测门禁确保单一来源不走样。
 
 [`examples/acp-agent`](../../../../examples/acp-agent/cordis.yml) 组合加载 `dsh-sandbox-policy` 与 `dsh-fs-sandbox`，把 `mode`/`workspaceRoot` 配置移到策略条目，并去掉在受限模式下禁用整个 fs 栈的旧门控；`fs-observation-policy`（read-before-edit）正交地叠加其上。系统提示仍然不陈述沙箱模式——标记会在真正重要的那一刻教会模型边界，遵循沙箱 Agent Note 所述的实时证据原则。
 
@@ -77,7 +77,7 @@ Status: implemented
 
 - 在 `read-only` 下，`write`/`edit` 返回 `[sandbox: file access denied under read-only mode]` 标记，磁盘不受触动；`read`/`listDir` 与 `dsh-fs-local` 行为一致。
 - 在 `workspace-write` 下，变更落在工作区根与临时目录下，其外被拒；包含矩阵——`..` 穿越、指向外部的绝对路径、一个既有的、指向外部的工作区内符号链接目录、在这样一个符号链接下新建的文件，以及根路径的等价别名形式——在真实磁盘上拒绝每一种逃逸，同时允许文件系统认定为同一目录的路径。
-- 一个被拒的 fs 变更，携带 `sandbox_permissions` + `justification` 重试一次，会经组合的审批链提示；一次授权让恰好那一次调用在更宽的模式下运行且写入落盘；rejected/cancelled/unavailable 各自产生其逐字的 fail-closed 文案且不做任何变更。
+- 一个被拒的 fs 变更，携带 `sandbox_permissions` + `justification` 重试一次，会在目标更宽时经组合的审批链提示；一次授权让恰好那一次调用在更宽的模式下运行且写入落盘。已是本次调用生效模式的目标无需审批即可继续，更窄目标及 rejected/cancelled/unavailable 审批结果都不会产生任何变更。
 - 一次 `permission` 预设切换同时管辖两个家族：会话切换模式后，下一次 bash 调用与下一次 fs 变更都从同一个 `sandbox/mode` 折叠遵循新模式。
 - cwd 根目录不同的并发会话通过同一组服务实例携带不同策略；两个家族都不会缓存某个会话的根目录供下一次调用使用。
 - 一次无 per-call 盖章的直连 `ctx.fs.writeText` 会被围栏于部署默认值。
@@ -93,6 +93,6 @@ Status: implemented
 
 ## 测试
 
-- 单元：`dsh-sandbox` 钉住升级阶梯、标记构造器、参数配对校验，以及 `approveEscalation` 的有序 fail-closed 序列（非加宽、无 approval、无 agent、各结果），外加 `writableRoots`/`canonicalPath`。`dsh-sandbox-policy` 钉住部署回退、会话模式/根目录解析、显式模式优先级、折叠/setter、加载期模式拒绝，以及 HMR（热模块替换）安全。`dsh-fs-sandbox` 在真实文件系统上钉住按策略执行的围栏与包含矩阵（内部、临时目录、绝对路径-外部、`..`、指向外部的符号链接目录、其下的新建文件、路径等于根、文件系统根、以分隔符结尾的根、等价别名形式），外加 per-call 覆盖与 HMR 安全。`dsh-tool-fs` 钉住宣告门控、完整策略解析、拒绝标记映射，以及完整的升级矩阵（授权、拒绝、无服务、无 agent、配对、非受限守卫）。`dsh-tool-bash`、`dsh-bash-sandbox` 与 `dsh-permission-presets` 使用同一套策略工具集。
+- 单元：`dsh-sandbox` 钉住升权阶梯、标记构造器、参数配对校验，以及 `approveEscalation` 的同档幂等处理和有序 fail-closed 序列（降档、无 approval、无 agent、各结果），外加 `writableRoots`/`canonicalPath`。`dsh-sandbox-policy` 钉住部署回退、会话模式／根目录解析、显式模式优先级、折叠／setter、加载期模式拒绝，以及 HMR（热模块替换）安全。`dsh-fs-sandbox` 在真实文件系统上钉住按策略执行的围栏与包含矩阵（内部、临时目录、绝对路径外部、`..`、指向外部的符号链接目录、其下的新建文件、路径等于根、文件系统根、以分隔符结尾的根、等价别名形式），外加 per-call 覆盖与 HMR 安全。`dsh-tool-fs` 钉住宣告门控、完整策略解析、拒绝标记映射，以及完整的升权矩阵（同档目标、授权、拒绝、无服务、无 agent、配对、非受限守卫）。`dsh-tool-bash`、`dsh-bash-sandbox` 与 `dsh-permission-presets` 使用同一套策略工具集。
 - 无密钥 e2e：一个真实 Cordis 上下文创建两个 agent，其会话的 cwd 根目录各不相同；系统并发运行正式发布的 bash 与 fs 工具，再通过外部可观察结果验证各自在所属项目中的写入成功，而两次跨项目写入都被拒绝。
 - 快照：acp-agent 示例组合 `dsh-sandbox-policy` + `dsh-fs-sandbox`；被钉住的 header 携带 fs 升级字段与 `sandbox/mode` 事件名，一次性重录。

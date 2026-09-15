@@ -1,14 +1,14 @@
-/** `conversation` namespace dictionaries. */
+/** `conversation` 命名空间词典。 */
 
-/** Dictionary namespace owned by this plugin. */
+/** 本插件拥有的词典命名空间。 */
 export const NS = 'conversation'
 
-// The claimed /plan hint and the plan-mode textarea placeholder share one
-// string: both describe the same next action.
+// 已认领的 /plan 提示与计划模式文本框 placeholder 共用同一文案，因为两者描述同一个
+// 后续动作。
 const PLAN_NEXT_ACTION_ZH = '描述你的任务以生成计划'
 const PLAN_NEXT_ACTION_EN = 'describe your task to generate plan'
 
-/** Simplified Chinese dictionary (the key-set source of truth). */
+/** 简体中文词典，也是键集合真源。 */
 export const zh = {
   'view.chat': '对话',
   'hint.plan': PLAN_NEXT_ACTION_ZH,
@@ -66,11 +66,16 @@ export const zh = {
   'settings.enter.description': '仅在智能体运行时生效；Cmd/Ctrl+Enter 使用另一行为',
   'settings.enter.queue': '排队发送',
   'settings.enter.steer': '插话发送',
-  'access.confirm.title': '确认启用 Full access？',
-  'access.confirm.description': '启用 Full access 后，agent 将减少确认步骤，并且可以直接执行更多操作，包括敏感操作、文件修改或外部命令。仅建议在你信任当前任务时使用。',
+  'access.preset.readOnly': '只读',
+  'access.preset.workspaceWrite': '工作区写入',
+  'access.preset.fullAccess': '完全访问',
+  'access.preset.custom': '自定义',
+  'access.confirm.title': '确认启用完全访问？',
+  'access.confirm.description': '启用完全访问后，智能体将减少确认步骤，并且可以直接执行更多操作，包括敏感操作、文件修改或外部命令。仅建议在你信任当前任务时使用。',
   'access.confirm.acknowledge': '我已了解风险，并愿意继续',
+  'access.confirm.close': '关闭',
   'access.confirm.cancel': '取消',
-  'access.confirm.enable': '启用 Full access',
+  'access.confirm.enable': '启用完全访问',
   'hero.greeting.morning': '早上好呀，新的一天开始啦',
   'hero.greeting.noon': '中午好呀，要不要先休息一下',
   'hero.greeting.afternoon': '下午好呀，接下来交给我吧',
@@ -189,7 +194,7 @@ export const zh = {
 /** The conversation namespace key union. */
 export type ConversationKey = keyof typeof zh
 
-/** English dictionary, checked complete against the zh key set. */
+/** 英文词典，按中文键集合检查完整性。 */
 export const en = {
   'view.chat': 'Chat',
   'hint.plan': PLAN_NEXT_ACTION_EN,
@@ -247,9 +252,14 @@ export const en = {
   'settings.enter.description': 'Busy only; Cmd/Ctrl+Enter uses the other behavior',
   'settings.enter.queue': 'Queue',
   'settings.enter.steer': 'Steer',
+  'access.preset.readOnly': 'Read Only',
+  'access.preset.workspaceWrite': 'Workspace Write',
+  'access.preset.fullAccess': 'Full access',
+  'access.preset.custom': 'Custom',
   'access.confirm.title': 'Enable Full access?',
   'access.confirm.description': 'Full access reduces confirmation steps and lets the agent perform more actions directly, including sensitive operations, file changes, or external commands. Only use it when you trust the current task.',
   'access.confirm.acknowledge': 'I understand the risks and want to continue',
+  'access.confirm.close': 'Close',
   'access.confirm.cancel': 'Cancel',
   'access.confirm.enable': 'Enable Full access',
   'hero.greeting.morning': 'Good morning, a new day is starting',

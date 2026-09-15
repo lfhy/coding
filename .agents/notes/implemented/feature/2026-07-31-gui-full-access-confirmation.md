@@ -10,13 +10,13 @@ Switching the web client to `danger-full-access` was a single click on a permiss
 
 ## Decision
 
-**Every permission picker gates `danger-full-access` behind the shared in-page `RiskConfirmation` dialog whose enabling action stays disabled until an explicit acknowledgement checkbox is checked; the preset renders under the product label `Full access`; every dismissal path submits nothing.**
+**Every permission picker gates `danger-full-access` behind the shared in-page `RiskConfirmation` dialog whose enabling action stays disabled until an explicit acknowledgement checkbox is checked; the preset renders under the locale's product label (`完全访问` in Chinese, `Full access` in English); every dismissal path submits nothing.**
 
 - `RiskConfirmation` (ui-primitives) is a controlled Modal composition: title, description, acknowledgement checkbox, cancel, and a confirm button disabled until `acknowledged`. It stays an in-page dialog — the Modal portals to this document's body and never opens a native or separate browser window that could land on another display. `Modal` gains a `contentClassName` seat so the warning body scrolls inside constrained mobile/landscape viewports while the action row stays fixed.
 - The composer chip (`PermissionSelect`, ui-conversation) intercepts a Full-access pick before the `/permission` submit: `confirmation`/`acknowledged` component state opens the dialog, confirm submits `/permission danger-full-access` through the same injected `command` path as every other pick, and cancel/Escape/close/mask leave the current preset untouched with the checkbox reset. The confirmation revokes itself when the session locks (`locked`/value-absent effect) and resets across task switches (`key={sessionId}` remount). Copy rides the standard `conversation` locale seat as `access.confirm.*` keys.
 - The `/permission` popup (ui-permission over the ui-commands shell) gates through data, not a second dialog implementation: `SelectOption` grows an optional `confirmation` payload, the popup controller owns the `confirming`/`acknowledged` state transitions, and `PopupSelectView` swaps the picker card for the same `RiskConfirmation` while a gated option is pending.
 - The General-settings Permission row uses the same controlled `RiskConfirmation` before persisting Full access as the default for later sessions. Its warning names that future-session lifetime; cancel, Escape, close, and mask dismissal leave the stored default untouched.
-- `Full access` intentionally overrides the kebab-to-title display transform in every picker; command and Settings writes keep the machine name on the wire, and each warning body remains locale-aware in Chinese and English.
+- All three built-in preset values render from each surface's locale dictionary: Chinese uses `只读`, `工作区写入`, and `完全访问`; English retains `Read Only`, `Workspace Write`, and `Full access`. An explicit nonstandard host label remains authoritative, unknown kebab-case names retain the title-case fallback, command and Settings writes keep machine names on the wire, and warning copy remains locale-aware.
 
 ## Alternatives considered
 

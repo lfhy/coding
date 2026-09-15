@@ -1,17 +1,12 @@
 /**
- * The escalation vocabulary and choreography shared by every sandbox-enforcing
- * tool family (`@deepseek-ai/dsh-tool-bash`, `@deepseek-ai/dsh-tool-fs`): the
- * strictly-wider ladder, the argument-pairing validation, the model-facing
- * denial/hint markers, and {@link approveEscalation} — the ordered fail-closed
- * sequence that resolves a `sandbox_permissions` request through a
- * user-approval channel BEFORE anything executes. One home keeps the two
- * families' approval ordering and verbatim error texts from drifting apart.
+ * 所有沙箱工具家族（`@deepseek-ai/dsh-tool-bash`、`@deepseek-ai/dsh-tool-fs`）
+ * 共用的升权词汇与流程：严格拓宽阶梯、参数配对校验、模型可见的拒绝／提示标记，
+ * 以及 {@link approveEscalation}。后者会在执行前处理重复目标或经用户审批通道解析
+ * `sandbox_permissions` 请求；单一归属可防止两个家族的审批顺序和错误文案漂移。
  *
- * The channel is a minimal STRUCTURAL function shape ({@link EscalationAsk}),
- * not the approval service type: the tool layer — which owns the agent, the
- * call id, and the tool name — closes over `ctx.approval.request(...)` and
- * hands the closure down, so this package never depends on the approval or
- * agent packages.
+ * 通道采用最小结构函数形状（{@link EscalationApprover}），而非审批服务类型：工具层
+ * 拥有 agent、call id 与工具名，由它闭包 `ctx.approval.request(...)` 后传入，因此本包
+ * 无需依赖 approval 或 agent 包。
  *
  * @module dsh-sandbox/escalation
  */
@@ -31,12 +26,10 @@ export const WIDER_MODES: Record<string, readonly SandboxMode[]> = {
 }
 
 /**
- * The closed escalation-target vocabulary — every mode a call could ever
- * escalate TO (`read-only` is the floor; nothing escalates to it). Advertised
- * whenever the mounted capability confines: cutting the enum down to the modes
- * wider than the composition's DEFAULT would strand a session whose effective
- * mode sits below it (a `danger-full-access` default would advertise nothing
- * while a narrower-switched session stays confined with no lever).
+ * 封闭的升权目标词汇：调用可能升至的所有模式（`read-only` 是底档，不会成为目标）。
+ * 只要已挂载能力实施限制就完整公开；若按组合默认值裁剪枚举，生效模式更窄的会话会
+ * 失去升权入口。schema 是注册表全局数据，而生效模式按调用确定，因此执行期会把已
+ * 生效的同档目标视为幂等请求，只对真正更宽的目标发起审批。
  */
 export const ESCALATION_TARGETS: readonly SandboxMode[] = ['workspace-write', 'danger-full-access']
 
@@ -141,24 +134,22 @@ export interface EscalationRequest {
 }
 
 /**
- * Resolve a sandbox-escalation request BEFORE anything executes: check strict
- * widening against the call's effective mode, then resolve the approval
- * channel, then map every outcome — the ordered fail-closed sequence both
- * enforcing families share. Returns the granted mode to stamp onto exactly
- * this call; throws the distinct verbatim text for every other path (a
- * non-widening request, a missing approval service, an agent-less execution,
- * a rejection, a cancellation, an unanswerable ask) — the tool registry turns
- * the throw into the call's isError result, and nothing has run. A
- * non-widening request never prompts a human.
- * @param request - the escalation to judge (see {@link EscalationRequest}).
- * @param approval - the approval ingredients the tool holds (see {@link EscalationApproval}).
- * @returns the granted mode, consumed by the one call that asked.
+ * 在执行前解析沙箱升权请求。若 schema 公开的目标已经等于调用的生效模式，则返回该
+ * 模式且不请求审批；否则先检查目标是否严格拓宽，再解析审批通道并映射所有结果。
+ * 更窄或非法的请求、缺少审批服务、无 agent、拒绝、取消和无法应答都会以各自文案
+ * 抛出，工具注册表会将其转成 `isError`，且操作尚未执行。
+ * @param request - 待判断的升权请求，见 {@link EscalationRequest}。
+ * @param approval - 工具持有的审批原料，见 {@link EscalationApproval}。
+ * @returns 仅供本次调用使用的目标模式。
  */
 export async function approveEscalation<A, C>(request: EscalationRequest, approval: EscalationApproval<A, C>): Promise<SandboxMode> {
   const { requestedMode: mode, effectiveMode, justification, subject } = request
-  // Strict widening is an EXECUTION check against the call's effective mode —
-  // deliberately not a schema constraint (the enum is the closed target
-  // vocabulary; the effective mode is per-call truth).
+  // schema 无法按会话裁剪；模型重复提交当前已生效的公开目标时，不应制造一次虚假的
+  // 升权失败或审批。未知值即使碰巧等于损坏的外部状态，也不能通过这个幂等分支。
+  if (mode === effectiveMode && ESCALATION_TARGETS.includes(mode)) {
+    return effectiveMode
+  }
+  // 真正的拓宽仍以逐调用生效模式为准，不能只依据注册时的组合默认值。
   if (!(WIDER_MODES[effectiveMode] ?? []).includes(mode as SandboxMode)) {
     throw new Error(`sandbox escalation to "${mode}" is not strictly wider than this call's current "${effectiveMode}" mode`)
   }

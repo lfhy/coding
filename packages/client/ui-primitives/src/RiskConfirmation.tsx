@@ -1,7 +1,4 @@
-/**
- * Controlled risk acknowledgement dialog shared by product surfaces that
- * must gate a sensitive action behind an explicit checkbox.
- */
+/** 供敏感操作界面共用的受控风险确认框，必须显式勾选后才能继续。 */
 import { Button } from './Button.tsx'
 import { IconWarningOutline16 } from './icons/index.tsx'
 import { Modal } from './Modal.tsx'
@@ -12,6 +9,7 @@ export interface RiskConfirmationProps {
   title: string
   description: string
   acknowledgeLabel: string
+  closeLabel?: string
   cancelLabel: string
   confirmLabel: string
   acknowledged: boolean
@@ -21,15 +19,13 @@ export interface RiskConfirmationProps {
   onConfirm: () => void
 }
 
-/**
- * Render one in-page confirmation whose primary action is unavailable until
- * the caller-controlled acknowledgement is checked.
- */
+/** 渲染页面内确认框；调用方控制的确认项勾选前，主要动作保持不可用。 */
 export function RiskConfirmation({
   open,
   title,
   description,
   acknowledgeLabel,
+  closeLabel = 'Close',
   cancelLabel,
   confirmLabel,
   acknowledged,
@@ -43,6 +39,7 @@ export function RiskConfirmation({
       open={open}
       onClose={onCancel}
       title={title}
+      closeLabel={closeLabel}
       className={css.confirmation ?? ''}
       contentClassName={css.confirmationContent ?? ''}
       footer={(

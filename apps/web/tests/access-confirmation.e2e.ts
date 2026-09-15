@@ -1,7 +1,6 @@
-// Web e2e scenario: every visible permission picker gates Full access behind
-// the same locale-aware, in-page risk confirmation. Zero model calls: the
-// scenario boots the shipped Web composition and exercises the real
-// permission projection, client command path, HTTP RPC, and pushed update.
+// Web e2e 场景：每个可见权限选择器都通过同一套本地化页面内风险确认保护完全访问。
+// 场景不调用模型，而是启动正式 Web 组合并经过真实权限投影、客户端命令路径、
+// HTTP RPC 与推送更新。
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import type { Browser, Page } from 'playwright'
@@ -25,14 +24,12 @@ describe('web e2e: Full access confirmation', () => {
 
   beforeAll(async () => {
     scaffold = await launchWebScaffold({})
-    // CI uses Playwright's pinned browser. A developer may point this one
-    // scenario at an installed Chromium when the matching browser download
-    // is temporarily unavailable.
+    // CI 使用 Playwright 固定的浏览器；匹配版本暂时不可用时，开发者可让此场景单独
+    // 指向已安装的 Chromium。
     const executablePath = process.env.DSH_PLAYWRIGHT_EXECUTABLE_PATH
     browser = await chromium.launch(executablePath === undefined ? {} : { executablePath })
-    // Keep the Chinese surface via {@link ZH_BROWSER_LOCALE}: the golden pins
-    // the actual registered dictionary rather than a test-local translation
-    // callback.
+    // 通过 {@link ZH_BROWSER_LOCALE} 固定中文界面，让快照钉住真实注册词典而非测试
+    // 局部翻译回调。
     page = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
     tripwire = watchConsole(page)
     await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
@@ -50,17 +47,16 @@ describe('web e2e: Full access confirmation', () => {
     const access = page.locator('button[aria-label^="访问模式"]').first()
     await access.waitFor({ timeout: 10_000 })
 
-    expect(await access.getAttribute('aria-label')).toBe('访问模式，当前：Workspace Write')
+    expect(await access.getAttribute('aria-label')).toBe('访问模式，当前：工作区写入')
 
     await access.click()
-    await page.getByRole('menuitem', { name: 'Full access' }).click()
-    const dialog = page.getByRole('dialog', { name: '确认启用 Full access？' })
+    await page.getByRole('menuitem', { name: '完全访问' }).click()
+    const dialog = page.getByRole('dialog', { name: '确认启用完全访问？' })
     await dialog.waitFor({ timeout: 10_000 })
-    const enable = dialog.getByRole('button', { name: '启用 Full access' })
+    const enable = dialog.getByRole('button', { name: '启用完全访问' })
     expect(await enable.isDisabled()).toBe(true)
 
-    // The modal is in this page's body (not a native/new window) and escapes
-    // the sticky composer's stacking context.
+    // 模态框位于当前页面 body 中而非原生／新窗口，并脱离粘性输入区的层叠上下文。
     expect(await dialog.evaluate(node => node.parentElement?.parentElement === document.body)).toBe(true)
     const snapshot = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
@@ -69,7 +65,7 @@ describe('web e2e: Full access confirmation', () => {
     expect(await enable.isEnabled()).toBe(true)
     await enable.click()
     await expect.poll(() => access.getAttribute('aria-label'), { timeout: 10_000 })
-      .toBe('访问模式，当前：Full access')
+      .toBe('访问模式，当前：完全访问')
     expect(await dialog.count()).toBe(0)
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)

@@ -1,12 +1,9 @@
 /**
- * ui-permission browser half on a real cordis Context with fake command/
- * sessions faces: the plugin hangs the /permission popup decoration on the
- * host command; options flatten the session's permissions projection with
- * the current value active and `custom` excluded; availability follows the
- * projection key's presence; a pick submits the /permission line through
- * Session.command and surfaces rejection/unmatched as thrown errors; fiber
- * disposal removes the contribution (HMR safety). The same plugin registers
- * its Settings row and invalidates that row on host settings changes.
+ * 在真实 Cordis Context 和伪 command/session 接口上测试 ui-permission 浏览器端：插件把
+ * `/permission` popup 装饰挂到 host 命令；选项展平会话权限投影、激活当前值并排除
+ * `custom`；可用性跟随投影键；选择经 Session.command 提交命令行，拒绝或未命中会抛错；
+ * fiber dispose 会移除贡献以保证 HMR 安全。同一插件还注册 Settings 行，并在 host 设置
+ * 变化时使该行失效。
  */
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
@@ -20,7 +17,7 @@ import {
   PermissionRow, type PermissionRowInjected,
 } from '../src/client/PermissionRow.tsx'
 import { apply, inject } from '../src/client/index.ts'
-import { accessEn } from '../src/client/locales.ts'
+import { accessEn, accessZh } from '../src/client/locales.ts'
 
 const sid = (k: string): SessionId => k as SessionId
 
@@ -33,11 +30,11 @@ const SELECT: PermissionSelect = {
   currentValue: 'workspace-write',
 }
 
-async function bench() {
+async function bench(activeLocale: 'en' | 'zh' = 'en') {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry)
   const locale = new LocaleRuntime(ctx)
-  locale.setLocale('en')
+  locale.setLocale(activeLocale)
   ctx.provide('locale', locale)
   // The plugin injects `remote`; forwarded events reach it through the same
   // `$dispatch` handoff the connection sink makes.
@@ -134,6 +131,7 @@ describe('ui-permission browser plugin', () => {
       title: 'Enable Full access?',
       description: accessEn['confirm.description'],
       acknowledgeLabel: 'I understand the risks and want to continue',
+      closeLabel: 'Close',
       cancelLabel: 'Cancel',
       confirmLabel: 'Enable Full access',
     })
@@ -143,6 +141,23 @@ describe('ui-permission browser plugin', () => {
     // A projection that vanished between availability and open throws.
     expect(() => c.ui.options({ sessionId: sid('ghost') }, new AbortController().signal))
       .toThrow(/not available on this host/)
+  })
+
+  it('localizes built-in preset labels for the Chinese surface', async () => {
+    const b = await bench('zh')
+    const c = b.decoration()!
+    const proj = { sessionId: sid('s1') }
+    b.values.set(sid('s1'), SELECT)
+    const options = await c.ui.options(proj, new AbortController().signal)
+    expect(options.map(option => option.label)).toEqual(['只读', '工作区写入', '完全访问'])
+    expect(options.find(option => option.id === 'danger-full-access')?.confirmation).toEqual({
+      title: '确认启用完全访问？',
+      description: accessZh['confirm.description'],
+      acknowledgeLabel: '我已了解风险，并愿意继续',
+      closeLabel: '关闭',
+      cancelLabel: '取消',
+      confirmLabel: '启用完全访问',
+    })
   })
 
   it('a pick submits the /permission line; rejection and unmatched throw', async () => {

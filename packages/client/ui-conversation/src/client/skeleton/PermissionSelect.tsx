@@ -9,9 +9,8 @@ import css from './PermissionSelect.module.css'
 
 const FULL_ACCESS = 'danger-full-access'
 
-/* Shield glyphs (design set 1556): check = read-only, pencil = workspace
-   write, exclamation = full access. currentColor so the trigger and menu
-   rows tint them with their own text color. */
+/* 盾牌图标来自设计集 1556：勾选代表只读，铅笔代表工作区写入，感叹号代表完全访问。
+   使用 currentColor，让触发器与菜单行按各自文字色着色。 */
 
 const shieldOutline = 'M8.20554 0.899994L14.7901 3.36857V7.01026C14.7901 12 11.0466 14.2103 8.20554 15.3C5.36446 14.2103 1.62012 12 1.62012 7.01026V3.36857L8.20554 0.899994Z'
 
@@ -40,25 +39,41 @@ const permissionGlyphs = {
   ),
 } as Record<string, ReactNode>
 
-/** Glyph for a permission option value; host-configured names outside the design set get none. */
+/** 返回权限机器值对应的图标；设计集以外的 host 自定义值不显示图标。 */
 function permissionGlyph(value: string): ReactNode | undefined {
   return permissionGlyphs[value]
 }
 
-/**
- * Display transform: kebab-case machine names render as title-case labels
- * (`workspace-write` → `Workspace Write`); non-kebab host-configured names
- * pass through. Full access intentionally overrides the machine-name
- * transform so both permission surfaces use the product label `Full access`;
- * the warning body remains locale-aware.
- */
+type BuiltinPresetLabelKey =
+  | 'access.preset.readOnly'
+  | 'access.preset.workspaceWrite'
+  | 'access.preset.fullAccess'
+  | 'access.preset.custom'
+
+/** 内置权限预设的本地化键与英文回退；string 索引保留未知 host 值的回退路径。 */
+const BUILTIN_PRESET_LABELS: Readonly<Record<string, {
+  fallback: string
+  key: BuiltinPresetLabelKey
+}>> = {
+  'read-only': { fallback: 'Read Only', key: 'access.preset.readOnly' },
+  'workspace-write': { fallback: 'Workspace Write', key: 'access.preset.workspaceWrite' },
+  [FULL_ACCESS]: { fallback: 'Full access', key: 'access.preset.fullAccess' },
+  'custom': { fallback: 'Custom', key: 'access.preset.custom' },
+}
+
+/** 把未知的 kebab-case 机器名转换成可读标题；显式展示名原样保留。 */
 function displayName(name: string): string {
   if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(name)) return name
   return name.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
 }
 
-function optionLabel(option: PermissionSelectValue['options'][number]): string {
-  return option.value === FULL_ACCESS ? 'Full access' : displayName(option.name)
+/** 内置机器值使用 locale；host 显式提供的自定义名称保持原样。 */
+function optionLabel(option: PermissionSelectValue['options'][number], t: ComposerBarProps['t']): string {
+  const builtin = BUILTIN_PRESET_LABELS[option.value]
+  if (builtin !== undefined && (option.name === option.value || option.name === builtin.fallback)) {
+    return t(builtin.key)
+  }
+  return displayName(option.name)
 }
 
 export interface PermissionSelectProps {
@@ -86,13 +101,14 @@ export function PermissionSelect({ value, locked, command, t }: PermissionSelect
 
   const currentValue = pick ?? value.currentValue
   const current = value.options.find(option => option.value === currentValue)
+  const currentLabel = optionLabel(current ?? { value: currentValue, name: currentValue }, t)
   const busy = pick !== null || confirmation !== null
 
   const items: MenuEntry[] = value.options
     .filter(o => o.value !== 'custom')
     .map((option) => {
       const icon = permissionGlyph(option.value)
-      return { id: option.value, label: optionLabel(option), ...icon === undefined ? {} : { icon } }
+      return { id: option.value, label: optionLabel(option, t), ...icon === undefined ? {} : { icon } }
     })
 
   const submit = (id: string): void => {
@@ -138,7 +154,7 @@ export function PermissionSelect({ value, locked, command, t }: PermissionSelect
           <button
             type="button"
             className={css.trigger}
-            aria-label={t('input.accessMode', { name: current === undefined ? displayName(currentValue) : optionLabel(current) })}
+            aria-label={t('input.accessMode', { name: currentLabel })}
             title={current?.description}
             disabled={locked || busy}
             onClick={() => { setOpen(!open) }}
@@ -146,8 +162,8 @@ export function PermissionSelect({ value, locked, command, t }: PermissionSelect
             {permissionGlyph(currentValue) !== undefined && (
               <span className={css.triggerIcon} aria-hidden>{permissionGlyph(currentValue)}</span>
             )}
-            <span className={css.triggerLabel}>{current === undefined ? displayName(currentValue) : optionLabel(current)}</span>
-            {/* Same glyph + open rotation as the sibling ModelSelect trigger. */}
+            <span className={css.triggerLabel}>{currentLabel}</span>
+            {/* 与相邻 ModelSelect 触发器共用同款图标和展开旋转。 */}
             <span className={clsx(css.chevron, open && css.chevronOpen)} aria-hidden>
               <IconChevronDownOutline14 />
             </span>
@@ -159,6 +175,7 @@ export function PermissionSelect({ value, locked, command, t }: PermissionSelect
         title={t('access.confirm.title')}
         description={t('access.confirm.description')}
         acknowledgeLabel={t('access.confirm.acknowledge')}
+        closeLabel={t('access.confirm.close')}
         cancelLabel={t('access.confirm.cancel')}
         confirmLabel={t('access.confirm.enable')}
         acknowledged={acknowledged}
