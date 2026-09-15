@@ -3,9 +3,10 @@ import type { ReactNode, RefObject } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
-  Button, IconCheckOutline16, IconCloseOutline16, IconCodeOutline16,
-  IconFolderClose16, IconFolderOpenOutline16, IconProjectAddOutline16,
-  IconNewChatOutline16, IconSearchOutline16, Input, Menu, Modal, type MenuEntry,
+  Button, IconCloseOutline16, IconCodeOutline16, IconFolderClose16,
+  IconDataOutline16, IconFolderOpenOutline16, IconProjectAddOutline16,
+  IconNewChatOutline16, IconSearchOutline16, IconSettingsOutline16, Input,
+  Menu, Modal, type MenuEntry,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   WorkspaceId, WorkspaceListState, WorkspaceView,
@@ -328,9 +329,9 @@ type HostKeyConfirmation = {
 }
 
 const remoteSteps = [
-  { id: 'config', label: 'picker.remote.step.config', hint: 'picker.remote.step.config.hint' },
-  { id: 'progress', label: 'picker.remote.step.progress', hint: 'picker.remote.step.progress.hint' },
-  { id: 'directory', label: 'picker.remote.step.directory', hint: 'picker.remote.step.directory.hint' },
+  { id: 'config', label: 'picker.remote.step.config', icon: IconSettingsOutline16 },
+  { id: 'progress', label: 'picker.remote.step.progress', icon: IconDataOutline16 },
+  { id: 'directory', label: 'picker.remote.step.directory', icon: IconFolderOpenOutline16 },
 ] as const
 
 const remoteProgressPhases: readonly RemoteSshProgress['phase'][] = [
@@ -716,11 +717,6 @@ export function RemoteSshWizard({ open, onClose, t, createWorkspace, onPick }: R
 
   const currentStepIndex = remoteSteps.findIndex(item => item.id === step)
   const progressIndex = remoteProgressPhases.indexOf(progress.phase)
-  const completedStep = (item: WizardStep): boolean => {
-    if (item === 'config') return currentStepIndex > 0
-    if (item === 'progress') return connection !== undefined && currentStepIndex > 1
-    return false
-  }
 
   const { title, description } = remoteStepCopy(t, step)
 
@@ -736,17 +732,11 @@ export function RemoteSshWizard({ open, onClose, t, createWorkspace, onPick }: R
                 className={clsx(
                   remoteCss.step,
                   index === currentStepIndex && remoteCss.stepActive,
-                  completedStep(item.id) && remoteCss.stepDone,
                 )}
                 {...index === currentStepIndex ? { 'aria-current': 'step' as const } : {}}
               >
-                <span className={remoteCss.stepNumber}>
-                  {completedStep(item.id) ? <IconCheckOutline16 size={14} /> : index + 1}
-                </span>
-                <span className={remoteCss.stepText}>
-                  <span className={remoteCss.stepTitle}>{t(item.label)}</span>
-                  <span className={remoteCss.stepHint}>{t(item.hint)}</span>
-                </span>
+                <item.icon className={remoteCss.stepIcon} size={16} />
+                <span className={remoteCss.stepTitle}>{t(item.label)}</span>
               </li>
             ))}
           </ol>

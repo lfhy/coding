@@ -1,3 +1,9 @@
+/* Remote-SSH 向导复用设置面板（SettingsRoot.module.css）的容器语言：
+   800px 宽、layer-2 单表面、lv3 阴影、24px 圆角；左侧 188px 步骤栏与设置
+   导航栏同节奏（22px 顶部内边距、18px 标题间距、4px 条目间距、40px 行高、
+   12px 圆角选中填充），无副标题、无分割线；内容列的标题块、24px 内边距
+   与仅内容区滚动的几何也取自设置面板。 */
+
 .dialog {
   box-sizing: border-box;
   width: min(800px, calc(100vw - 48px));
@@ -21,6 +27,7 @@
   min-height: 0;
 }
 
+/* 步骤栏：与设置导航栏相同的 188px / pad(22,12,0) / gap 18 节奏，透明底。 */
 .steps {
   display: flex;
   flex-direction: column;
@@ -28,7 +35,6 @@
   min-width: 0;
   padding: 22px 12px 0;
   box-sizing: border-box;
-  border-right: 1px solid var(--dsw-alias-border-l1);
   background: transparent;
 }
 
@@ -49,71 +55,39 @@
   list-style: none;
 }
 
+/* 步骤行：与设置导航格相同的 40px 行高、pad(9,16,9,12)、r12、gap 8。 */
 .step {
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
+  display: flex;
   align-items: center;
   gap: 8px;
-  width: 100%;
-  min-height: 40px;
+  height: 40px;
   box-sizing: border-box;
-  padding: 0 12px;
-  border: 0;
+  padding: 9px 16px 9px 12px;
   border-radius: 12px;
-  background: transparent;
-  color: var(--dsw-alias-label-secondary);
-  text-align: left;
-}
-
-.stepActive {
-  background: var(--dsw-specific-sidebar-nav-item-active);
   color: var(--dsw-alias-label-primary);
-}
-
-.stepDone {
-  color: var(--dsw-alias-label-primary);
-}
-
-.stepNumber {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  box-sizing: border-box;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 50%;
-  font-size: 12px;
-  line-height: 18px;
-}
-
-.stepActive .stepNumber {
-  border-color: var(--dsw-alias-brand-primary);
-  background: var(--dsw-alias-brand-primary);
-  color: var(--dsw-alias-label-primary-foreground);
-}
-
-.stepDone .stepNumber {
-  border-color: var(--dsw-alias-brand-primary);
-}
-
-.stepText {
-  min-width: 0;
-}
-
-.stepTitle {
-  display: block;
   font-size: 14px;
   line-height: 22px;
   font-weight: 400;
 }
 
-.stepHint {
-  display: block;
-  margin-top: 0;
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--dsw-alias-label-tertiary);
+.step:hover {
+  background: var(--dsw-specific-sidebar-nav-item-hover);
+}
+
+.stepActive {
+  background: var(--dsw-specific-sidebar-nav-item-active);
+}
+
+.stepIcon {
+  flex: none;
+}
+
+.stepTitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .content {
@@ -124,11 +98,12 @@
   flex-direction: column;
 }
 
+/* 内容头部：设置面板 54px 头部行高与关闭钮几何。 */
 .header {
   flex: none;
   min-width: 0;
   margin: 0;
-  padding: 22px 54px 0 24px;
+  padding: 22px 54px 8px 24px;
 }
 
 .close {
@@ -174,6 +149,7 @@
   color: var(--dsw-alias-label-secondary);
 }
 
+/* 内容主体：设置面板 options 区的 24px 内边距，仅此区域滚动。 */
 .body {
   display: flex;
   min-width: 0;
@@ -182,7 +158,7 @@
   flex-direction: column;
   gap: 16px;
   overflow-y: auto;
-  padding: 24px 24px 0;
+  padding: 16px 24px 24px;
 }
 
 .form {
@@ -383,8 +359,7 @@ fieldset.field {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-top: 20px;
-  padding: 0 24px 24px;
+  padding: 12px 24px 20px;
 }
 
 .footerActions {
@@ -414,7 +389,6 @@ fieldset.field {
     gap: 0;
     overflow-x: auto;
     padding: 12px;
-    border-right: 0;
     border-bottom: 1px solid var(--dsw-alias-border-l1);
   }
 
@@ -433,18 +407,8 @@ fieldset.field {
 
   .step {
     min-width: 132px;
-    grid-template-columns: 24px minmax(0, 1fr);
     min-height: 42px;
     padding: 6px 8px;
-  }
-
-  .stepNumber {
-    width: 24px;
-    height: 24px;
-  }
-
-  .stepHint {
-    display: none;
   }
 
   .header {
