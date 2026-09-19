@@ -11,7 +11,7 @@ The documentation rules live in [docs/AGENTS.md](../../../docs/AGENTS.md). This 
 
 - [docs/AGENTS.md](../../../docs/AGENTS.md) — hierarchy, tutorial/reference forms, taxonomy, budgets, and slop checklist.
 - [.agents/notes/README.md](../../notes/README.md) — when a decision earns an Agent Note, how to file it, and what goes inside one (the header block, per-lifecycle skeleton, and Alternatives-considered mandate, gated by `verify-agent-note-format`); [docs/postmortem/README.md](../../../docs/postmortem/README.md) — when an incident earns a postmortem.
-- [docs/i18n/README.md](../../../docs/i18n/README.md) — the bilingual pairing rules; editing either side of a pair obligates the counterpart in the same change.
+- [docs/i18n/README.md](../../../docs/i18n/README.md) — the Chinese-canonical workflow and compatibility rules for legacy bilingual triplets.
 - Root [AGENTS.md](../../../AGENTS.md) — the standing orders whose budget discipline this skill protects.
 - [Archived Agent Notes](../../notes/archived/AGENTS.md) — frozen historical snapshots excluded from editorial maintenance and evolving documentation gates.
 
@@ -27,7 +27,7 @@ Apply the standard's authoring order to every human-facing document in scope. Do
 
 Then check constraints that make placement expensive or wrong:
 
-- Paired docs (`pnpm run verify-translation-pairing --list`) cost a zh counterpart update and a `--write` re-record on every edit — prefer an unpaired home for content that will churn.
+- Ordinary authored docs use one Chinese `.md`. When touching a legacy pair, collapse it to the Chinese canonical unless a generator, site mapping, or explicit user request still requires the pair; a retained pair still costs a counterpart update and `--write` re-record.
 - Generated catalogs are never hand-edited; if the fact belongs there, change the generator's source.
 - Before renaming or moving any doc, grep for inbound references: `verify-md-links` catches Markdown link targets AND `#fragment` anchors onto Markdown files (heading slugs and explicit `<a id>`), and `verify-doc-refs` catches `docs/*.md` citations in TypeScript comments; anchors cited from TypeScript strings still need a manual grep when their output never reaches gate-scanned Markdown.
 - A move is atomic: remove from the old home, add to the new home, and fix every inbound link in the same change.
@@ -53,4 +53,4 @@ Apply the ordered relocate-condense-raise policy in [docs/AGENTS.md](../../../do
 
 ## Validation and PR hygiene
 
-Follow the root [verification rule](../../../AGENTS.md#git-与-agent-工作) and always run `git diff --check`. Instruction-only prose does not require `lint` or `doc-sync`. A paired document requires `pnpm run verify-translation-pairing --write <pair>` and its scoped check; an Agent Note also requires `pnpm run verify-agent-note-classification` and `pnpm run verify-agent-note-format`. Run `doc-sync` only when a changed documentation source, generator, generated catalog, or website projection can affect corpus-wide documentation output; run `lint` only when code or lint configuration changed. Do not run broad gates in parallel when they build or consume shared artifacts. The PR body should list checks actually run and any deliberate gap.
+Follow the root [verification rule](../../../AGENTS.md#git-与-agent-工作) and always run `git diff --check`. Instruction-only prose does not require `lint` or `doc-sync`. A standalone Chinese document needs no translation-pair write; only a deliberately retained legacy pair requires `pnpm run verify-translation-pairing --write <pair>` and its scoped check. An Agent Note also requires `pnpm run verify-agent-note-classification` and `pnpm run verify-agent-note-format`. Run `doc-sync` only when a changed documentation source, generator, generated catalog, or website projection can affect corpus-wide documentation output; run `lint` only when code or lint configuration changed. Do not run broad gates in parallel when they build or consume shared artifacts. The PR body should list checks actually run and any deliberate gap.

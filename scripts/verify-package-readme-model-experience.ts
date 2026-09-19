@@ -16,6 +16,9 @@ const MODEL_VIEW_HEADING = '#### What the model sees'
 const TOKEN_EFFECT_HEADING = '#### Token effect'
 const KV_CACHE_EFFECT_HEADING = '#### KV Cache effect'
 const FIELD_HEADINGS = [MODEL_VIEW_HEADING, TOKEN_EFFECT_HEADING, KV_CACHE_EFFECT_HEADING] as const
+const CHINESE_HEADING = '## 模型体验'
+const CHINESE_LIMITATIONS_HEADING = '## 已知限制与延后工作'
+const CHINESE_FIELD_HEADINGS = ['#### 模型看到的内容', '#### Token 影响', '#### KV 缓存影响'] as const
 
 type SentenceKind = 'none' | 'indirect'
 
@@ -80,6 +83,7 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/client/ui-reference': { kind: 'indirect', reason: 'Browser-side reference selection delegates file guidance and session snapshot preparation to Host-owned providers.' },
   'packages/client/ui-commands': { kind: 'indirect', reason: 'The dispatch paths trigger the host command.execute RPC; each command handler\'s host package owns any model-visible effect.' },
   'packages/client/ui-model-selection': { kind: 'indirect', reason: 'Selection routes session.selectModel; the Host snapshots the selection at the next prompt-assembly boundary and owns the model-visible effect.' },
+  'packages/client/ui-open-in-app': { kind: 'none', reason: 'Browser-side workspace opening and file navigation; registers nothing model-facing.' },
   'packages/client/ui-goal': { kind: 'indirect', reason: 'The strip verbs route goal.* mutations; the host GoalService owns the model-visible goal/change context message.' },
   'packages/extensions/ui-cordis': { kind: 'indirect', reason: 'The definition card drives the host dynamic run/stop verbs that the model\'s cordis_run/cordis_stop tools also reach; the runner owns any model-visible effect.' },
   'packages/client/ui-permission-presets': { kind: 'indirect', reason: 'The picker submits the host /permission command; the knob events it appends own the model-visible effect through the sandbox/approval consumers.' },
@@ -110,6 +114,7 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/host/directory-picker-native': { kind: 'none', reason: 'The GUI-host picking backend registers nothing model-facing.' },
   'packages/host/webserver': { kind: 'none', reason: 'The HTTP carrier bridges browser and API handler and registers nothing model-facing.' },
   'packages/host/frontend-static': { kind: 'none', reason: 'The SPA dist server answers browser asset requests and registers nothing model-facing.' },
+  'packages/host/open-in-app': { kind: 'none', reason: 'Host application launch and workspace file-list routes register nothing model-facing.' },
   'packages/host/plugin-inventory': { kind: 'none', reason: 'Host-side read-only Loader projection; registers nothing model-facing.' },
   'packages/bundle/base': { kind: 'indirect', reason: 'The bundle is a patch-list carrier; each inserted row\'s package owns its model-facing behavior.' },
   'packages/bundle/headless': { kind: 'none', reason: 'The one-shot runner submits the task as an ordinary user message; prompts and tools belong to the composed base and headless bundles.' },
@@ -297,8 +302,14 @@ for (const packageJson of packageJsons) {
   const headings = markdownHeadingLines(text)
   const h2Headings = headings.filter(heading => heading.depth === 2)
   const modelExperienceHeadings = headings.filter(heading => heading.text
-    .trim().replaceAll(/\s+/g, ' ').toLowerCase() === 'model experience')
-  const modelHeadings = modelExperienceHeadings.filter(heading => heading.depth === 2 && heading.raw === HEADING)
+    .trim().replaceAll(/\s+/g, ' ').toLowerCase() === 'model experience'
+    || heading.text.trim() === '模型体验')
+  const usesChineseHeadings = modelExperienceHeadings.some(heading => heading.text.trim() === '模型体验')
+  const expectedHeading = usesChineseHeadings ? CHINESE_HEADING : HEADING
+  const expectedLimitationsHeading = usesChineseHeadings ? CHINESE_LIMITATIONS_HEADING : LIMITATIONS_HEADING
+  const fieldHeadings = usesChineseHeadings ? CHINESE_FIELD_HEADINGS : FIELD_HEADINGS
+  const expectedKvCacheHeading = fieldHeadings[2]
+  const modelHeadings = modelExperienceHeadings.filter(heading => heading.depth === 2 && heading.raw === expectedHeading)
   if (NO_MODEL_EXPERIENCE_SECTION[pkg] !== undefined) {
     if (modelExperienceHeadings.length !== 0) {
       for (const heading of modelExperienceHeadings) {
@@ -309,35 +320,35 @@ for (const packageJson of packageJsons) {
     }
     continue
   }
-  const nonCanonicalModelHeading = modelExperienceHeadings.find(heading => heading.depth !== 2 || heading.raw !== HEADING)
+  const nonCanonicalModelHeading = modelExperienceHeadings.find(heading => heading.depth !== 2 || heading.raw !== expectedHeading)
   if (nonCanonicalModelHeading !== undefined) {
-    failures.push({ path: readme, message: `line ${nonCanonicalModelHeading.index}: non-canonical Model Experience heading ${JSON.stringify(nonCanonicalModelHeading.raw)}; use exactly ${JSON.stringify(HEADING)}` })
+    failures.push({ path: readme, message: `line ${nonCanonicalModelHeading.index}: non-canonical Model Experience heading ${JSON.stringify(nonCanonicalModelHeading.raw)}; use exactly ${JSON.stringify(expectedHeading)}` })
     continue
   }
   const modelHeading = modelHeadings.at(0)
   if (modelHeading === undefined) {
     failures.push({
       path: readme,
-      message: `missing ${HEADING}`,
+      message: `missing ${expectedHeading}`,
     })
     continue
   }
   if (modelHeadings.length !== 1) {
-    failures.push({ path: readme, message: `contains ${modelHeadings.length} copies of ${HEADING}` })
+    failures.push({ path: readme, message: `contains ${modelHeadings.length} copies of ${expectedHeading}` })
     continue
   }
   const modelH2Index = h2Headings.indexOf(modelHeading)
-  const limitationsH2Index = h2Headings.findIndex(heading => heading.depth === 2 && heading.raw === LIMITATIONS_HEADING)
+  const limitationsH2Index = h2Headings.findIndex(heading => heading.depth === 2 && heading.raw === expectedLimitationsHeading)
   if (limitationsH2Index >= 0) {
     if (modelH2Index !== h2Headings.length - 2 || limitationsH2Index !== h2Headings.length - 1) {
       failures.push({
         path: readme,
-        message: `${HEADING} and ${LIMITATIONS_HEADING} must be the final two H2 sections, in that order`,
+        message: `${expectedHeading} and ${expectedLimitationsHeading} must be the final two H2 sections, in that order`,
       })
       continue
     }
   } else if (modelH2Index !== h2Headings.length - 1) {
-    failures.push({ path: readme, message: `${HEADING} must be the final H2 when ${LIMITATIONS_HEADING} is absent` })
+    failures.push({ path: readme, message: `${expectedHeading} must be the final H2 when ${expectedLimitationsHeading} is absent` })
     continue
   }
 
@@ -351,21 +362,25 @@ for (const packageJson of packageJsons) {
   const content = section.filter(line => line.raw.trim().length > 0)
   const sentenceContract = SENTENCE_MODEL_EXPERIENCE[pkg]
   if (sentenceContract !== undefined) {
-    const pattern = sentenceContract.kind === 'none' ? /^None, as .+\.$/ : /^Indirectly, through .+\.$/
+    const pattern = usesChineseHeadings
+      ? sentenceContract.kind === 'none' ? /^无，因为.+。$/ : /^间接地，通过.+。$/
+      : sentenceContract.kind === 'none' ? /^None, as .+\.$/ : /^Indirectly, through .+\.$/
     const rawContent = rawSection.filter(line => line.trim().length > 0)
     const sentence = content[0]
     const kvCacheHeading = content[1]
     const kvCacheEffect = content[2]
     if (content.length !== 3 || rawContent.length !== 3 || !pattern.test(sentence?.raw ?? '')) {
-      const prefix = sentenceContract.kind === 'none' ? 'None, as ' : 'Indirectly, through '
-      failures.push({ path: readme, message: `must contain exactly one sentence beginning ${JSON.stringify(prefix)} and ending with a period, followed by ${KV_CACHE_EFFECT_HEADING} and one non-empty paragraph` })
+      const prefix = usesChineseHeadings
+        ? sentenceContract.kind === 'none' ? '无，因为' : '间接地，通过'
+        : sentenceContract.kind === 'none' ? 'None, as ' : 'Indirectly, through '
+      failures.push({ path: readme, message: `must contain exactly one sentence beginning ${JSON.stringify(prefix)}, followed by ${expectedKvCacheHeading} and one non-empty paragraph` })
       continue
     }
-    if (kvCacheHeading?.raw !== KV_CACHE_EFFECT_HEADING
+    if (kvCacheHeading?.raw !== expectedKvCacheHeading
       || kvCacheEffect === undefined
       || /^#{1,6} /.test(kvCacheEffect.raw)
       || kvCacheEffect.raw.trim().length === 0) {
-      failures.push({ path: readme, message: `line ${kvCacheHeading?.index ?? sentence?.index ?? modelHeading.index}: short Model Experience form requires exact ${KV_CACHE_EFFECT_HEADING} and one non-empty paragraph` })
+      failures.push({ path: readme, message: `line ${kvCacheHeading?.index ?? sentence?.index ?? modelHeading.index}: short Model Experience form requires exact ${expectedKvCacheHeading} and one non-empty paragraph` })
       continue
     }
     if (sentence === undefined
@@ -381,7 +396,8 @@ for (const packageJson of packageJsons) {
     continue
   }
 
-  const shortSentence = content.find(line => line.raw === 'None.' || /^None, as |^Indirectly, through /.test(line.raw))
+  const shortSentence = content.find(line => line.raw === 'None.'
+    || /^None, as |^Indirectly, through |^无，因为|^间接地，通过/.test(line.raw))
   if (shortSentence !== undefined) {
     failures.push({ path: readme, message: `line ${shortSentence.index}: short Model Experience form requires an audited entry in SENTENCE_MODEL_EXPERIENCE` })
     continue
@@ -418,8 +434,8 @@ for (const packageJson of packageJsons) {
     const fieldStarts = entries
       .map((line, index) => ({ line, index }))
       .filter(entry => /^#### \S/.test(entry.line.raw))
-    if (fieldStarts.length !== FIELD_HEADINGS.length || fieldStarts[0]?.index !== 1) {
-      failures.push({ path: readme, message: `line ${heading.index}: model-context entry requires exactly three ordered H4 fields: ${FIELD_HEADINGS.join(', ')}` })
+    if (fieldStarts.length !== fieldHeadings.length || fieldStarts[0]?.index !== 1) {
+      failures.push({ path: readme, message: `line ${heading.index}: model-context entry requires exactly three ordered H4 fields: ${fieldHeadings.join(', ')}` })
       entryError = true
       break
     }
@@ -432,11 +448,11 @@ for (const packageJson of packageJsons) {
     }
     const parsedFields: ParsedField[] = []
     const verbatimFragments = new Set<string>()
-    for (let fieldIndex = 0; fieldIndex < FIELD_HEADINGS.length; fieldIndex += 1) {
+    for (let fieldIndex = 0; fieldIndex < fieldHeadings.length; fieldIndex += 1) {
       const fieldStart = fieldStarts[fieldIndex] as { line: Line; index: number }
-      const expectedHeading = FIELD_HEADINGS[fieldIndex] as string
-      if (fieldStart.line.raw !== expectedHeading) {
-        failures.push({ path: readme, message: `line ${fieldStart.line.index}: expected exact field heading ${JSON.stringify(expectedHeading)}, found ${JSON.stringify(fieldStart.line.raw)}` })
+      const expectedFieldHeading = fieldHeadings[fieldIndex] as string
+      if (fieldStart.line.raw !== expectedFieldHeading) {
+        failures.push({ path: readme, message: `line ${fieldStart.line.index}: expected exact field heading ${JSON.stringify(expectedFieldHeading)}, found ${JSON.stringify(fieldStart.line.raw)}` })
         entryError = true
         break
       }
@@ -444,18 +460,18 @@ for (const packageJson of packageJsons) {
       const fieldEntries = entries.slice(fieldStart.index, fieldEnd)
       const value = fieldEntries[1]
       if (value === undefined || /^#{1,6} /.test(value.raw) || value.raw.trim().length === 0) {
-        failures.push({ path: readme, message: `line ${fieldStart.line.index}: ${expectedHeading} requires one non-empty paragraph` })
+        failures.push({ path: readme, message: `line ${fieldStart.line.index}: ${expectedFieldHeading} requires one non-empty paragraph` })
         entryError = true
         break
       }
       if (value.index !== fieldStart.line.index + 2) {
-        failures.push({ path: readme, message: `line ${fieldStart.line.index}: ${expectedHeading} and its paragraph require one blank line between them` })
+        failures.push({ path: readme, message: `line ${fieldStart.line.index}: ${expectedFieldHeading} and its paragraph require one blank line between them` })
         entryError = true
         break
       }
       const unexpected = fieldEntries.slice(2).find(line => !/^##### \S/.test(line.raw))
       if (unexpected !== undefined) {
-        failures.push({ path: readme, message: `line ${unexpected.index}: content after ${expectedHeading} paragraph must be a titled H5 plus \`markdown\` fence owned by that field` })
+        failures.push({ path: readme, message: `line ${unexpected.index}: content after ${expectedFieldHeading} paragraph must be a titled H5 plus \`markdown\` fence owned by that field` })
         entryError = true
         break
       }
@@ -508,7 +524,7 @@ for (const packageJson of packageJsons) {
   const promptWithoutVerbatim = modelContextEntries.find(entry => isDirectSystemPromptEntry(entry.title)
     && entry.modelViewVerbatimBlocks === 0)
   if (promptWithoutVerbatim !== undefined) {
-    failures.push({ path: readme, message: `line ${promptWithoutVerbatim.heading.index}: system-prompt entry must contain a titled H5 plus verbatim \`markdown\` block under ${MODEL_VIEW_HEADING}` })
+    failures.push({ path: readme, message: `line ${promptWithoutVerbatim.heading.index}: system-prompt entry must contain a titled H5 plus verbatim \`markdown\` block under ${fieldHeadings[0]}` })
     continue
   }
   const hasConcreteLiteral = modelContextEntries.some(entry => entry.verbatimBlocks > 0

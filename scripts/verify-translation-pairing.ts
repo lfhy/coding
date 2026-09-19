@@ -1,13 +1,9 @@
 /**
- * Enforce complete English/Chinese pairs, matching structure, and recorded git
- * blob hashes for every in-scope document. The manifest contains only explicit
- * exclusions, which may have neither a counterpart nor a sidecar.
- * `--list` reports state; `--write <pairs...>` records the named confirmed
- * pairs (`--write --all` records every complete pair); `--cached <pairs...>`
- * checks exact index bytes for hooks. A check or write named with pair paths
- * touches only those pairs, so update iteration does not pay for a corpus
- * scan. Translation quality remains a review responsibility.
- * See `docs/i18n/README.md` for the owning contract.
+ * 校验仍存在的历史中英配对：三件套完整、结构一致且 Git blob hash 与记录匹配。
+ * 普通中文 `.md` 不进入发现范围；语料检查只从 `.zh.md` 或 `.i18n.yaml`
+ * 反查 owner。`--list` 报告 legacy pair 状态，`--write` 只重录显式确认的配对，
+ * `--cached` 供 hook 校验 index 中的精确字节。语义翻译质量仍由评审负责。
+ * 所属约定见 `docs/i18n/README.md`。
  */
 
 import { existsSync, globSync, readFileSync, writeFileSync } from 'node:fs'
@@ -61,11 +57,11 @@ function repositoryFileExists(file: string): boolean {
   return readRepositoryFile(file) !== undefined
 }
 
-/** Discover source Markdown and pairing sidecars before applying the corpus predicate. */
+/** 只发现历史配对产物；无后缀 owner 由产物路径推导并按需读取。 */
 const SCOPE_PATTERNS = [
-  '**/*.md',
+  '**/*.zh.md',
   '**/*.i18n.yaml',
-  '.agents/notes/**/*.md',
+  '.agents/notes/**/*.zh.md',
   '.agents/notes/**/*.i18n.yaml',
 ]
 
@@ -110,7 +106,12 @@ if (request.scope === 'pairs') {
 }
 const translations = [...files].filter(f => f.endsWith('.zh.md')).sort()
 const metas = [...files].filter(f => f.endsWith('.i18n.yaml')).sort()
-const sources = [...files].filter(f => f.endsWith('.md') && !f.endsWith('.zh.md')).sort()
+
+// 任一历史产物都锚定一对文档；完整删除 `.zh.md` 与 sidecar 后，留下的
+// 中文 canonical 不再进入本门禁。
+const pairAnchors = new Set<string>()
+for (const zh of translations) pairAnchors.add(zh.replace(/\.zh\.md$/, '.md'))
+for (const meta of metas) pairAnchors.add(meta.replace(/\.i18n\.yaml$/, '.md'))
 
 if (request.scope === 'pairs') {
   const rejected = request.anchors.filter(anchor => !isTranslationScopeFile(anchor) || isExcluded(anchor))
@@ -129,21 +130,18 @@ if (request.scope === 'pairs') {
   }
 }
 
-// --write: (re)record both hashes for the requested complete pairs, creating
-// missing records. A named pair that cannot be recorded (missing counterpart)
-// fails loud; corpus scope (--all) skips pairless sources as before.
+// `--write` 只处理显式点名或已被历史产物锚定的配对。普通中文单文档
+// 即使处于全仓范围，也不会在 `--all` 中获得新 sidecar。
 if (writeMode) {
   let written = 0
-  for (const source of sources) {
+  const writeAnchors = request.scope === 'pairs' ? new Set(request.anchors) : pairAnchors
+  for (const source of [...writeAnchors].sort()) {
     if (isExcluded(source)) continue
     const paths = translationPairPaths(source)
     const { zh, meta } = paths
     if (!repositoryFileExists(source) || !repositoryFileExists(zh)) {
-      if (request.scope === 'pairs') {
-        console.error(`verify-translation-pairing: cannot record ${source}: missing ${repositoryFileExists(source) ? zh : source}`)
-        process.exit(2)
-      }
-      continue
+      console.error(`verify-translation-pairing: cannot record ${source}: missing ${repositoryFileExists(source) ? zh : source}`)
+      process.exit(2)
     }
     const sourceContent = readRepositoryFile(source)
     const zhContent = readRepositoryFile(zh)
@@ -167,23 +165,8 @@ if (writeMode) {
 const errors: string[] = []
 const state = new Map<string, 'ok' | 'out-of-sync' | 'missing'>()
 
-// 1. Every discovered, non-excluded source merges bilingual.
-for (const source of sources) {
-  if (isExcluded(source)) continue
-  const { zh } = translationPairPaths(source)
-  if (!repositoryFileExists(zh)) {
-    errors.push(`${source}: in-scope documentation must merge bilingual (docs/i18n/README.md); add the counterpart and record the pair`)
-    state.set(source, 'missing')
-  }
-}
-
-// 2. Every pair that exists at all is complete and consistent. Anchor on the
-// union of .zh.md files and .i18n.yaml records so a half-deleted pair is
-// caught from either remnant.
-const pairAnchors = new Set<string>()
-for (const zh of translations) pairAnchors.add(zh.replace(/\.zh\.md$/, '.md'))
-for (const meta of metas) pairAnchors.add(meta.replace(/\.i18n\.yaml$/, '.md'))
-
+// 任何仍有历史产物的配对都必须完整且一致；残留 `.zh.md` 或 sidecar
+// 都足以发现一次不完整迁移。
 for (const source of [...pairAnchors].sort()) {
   const paths = translationPairPaths(source)
   const { zh, meta } = paths
@@ -196,11 +179,13 @@ for (const source of [...pairAnchors].sort()) {
   if (isExcluded(source)) {
     if (have.zh) errors.push(`${zh}: ${source} is excluded from pairing (generated or bilingual-by-construction); this translation must not exist`)
     if (have.meta) errors.push(`${meta}: ${source} is excluded from pairing; this consistency record must not exist`)
+    state.set(source, 'out-of-sync')
     continue
   }
   const missing = Object.entries(have).filter(([, ok]) => !ok).map(([k]) => (k === 'source' ? source : k === 'zh' ? zh : meta))
   if (missing.length > 0) {
     errors.push(`${source}: incomplete pair — missing ${missing.join(', ')} (pairs merge whole: both languages plus the .i18n.yaml record)`)
+    state.set(source, 'missing')
     continue
   }
 
@@ -270,11 +255,6 @@ for (const source of [...pairAnchors].sort()) {
   if (!state.has(source)) state.set(source, 'ok')
 }
 
-// Complete the state map for --list: any in-scope, non-excluded document with no pair is missing.
-for (const source of sources) {
-  if (!isExcluded(source) && !state.has(source)) state.set(source, 'missing')
-}
-
 if (listMode) {
   const order = { 'out-of-sync': 0, missing: 1, ok: 2 } as const
   const rows = [...state.entries()].sort((a, b) => order[a[1]] - order[b[1]] || a[0].localeCompare(b[0]))
@@ -283,17 +263,17 @@ if (listMode) {
   }
   const counts = { 'ok': 0, 'out-of-sync': 0, 'missing': 0 }
   for (const status of state.values()) counts[status]++
-  console.log(`verify-translation-pairing: ${counts.ok} ok, ${counts['out-of-sync']} out-of-sync, ${counts.missing} missing (of ${state.size} in scope)`)
+  console.log(`verify-translation-pairing: ${counts.ok} ok, ${counts['out-of-sync']} out-of-sync, ${counts.missing} missing (of ${state.size} legacy pair(s))`)
   process.exit(0)
 }
 
 if (errors.length === 0) {
   console.log(request.scope === 'pairs'
     ? `verify-translation-pairing: ${pairAnchors.size} named ${indexMode ? 'staged ' : ''}pair(s) consistent; the corpus-wide check still runs in doc-sync.`
-    : `verify-translation-pairing: ${pairAnchors.size} pair(s) checked across all in-scope documentation, all consistent.`)
+    : `verify-translation-pairing: ${pairAnchors.size} legacy pair(s) checked, all consistent; standalone Chinese Markdown is outside this gate.`)
   process.exit(0)
 }
 
-console.error('verify-translation-pairing: bilingual pairing rules violated (see docs/i18n/README.md):')
+console.error('verify-translation-pairing: legacy bilingual pairing rules violated (see docs/i18n/README.md):')
 for (const message of errors) console.error(`  ${message}`)
 process.exit(1)

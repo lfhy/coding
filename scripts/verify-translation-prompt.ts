@@ -27,11 +27,14 @@ try {
   const examplePaths = [
     ['README.md', 'README.zh.md'],
     ['docs/development.md', 'docs/development.zh.md'],
-    ['docs/i18n/README.md', 'docs/i18n/README.zh.md'],
+    [
+      'scripts/fixtures/translation-prompt/legacy-pairing-policy.md',
+      'scripts/fixtures/translation-prompt/legacy-pairing-policy.zh.md',
+    ],
     ['docs/i18n/translation-rules.md', 'docs/i18n/translation-rules.zh.md'],
     [
-      '.agents/notes/implemented/process/2026-07-02-bilingual-docs-and-pairing-gate.md',
-      '.agents/notes/implemented/process/2026-07-02-bilingual-docs-and-pairing-gate.zh.md',
+      'scripts/fixtures/translation-prompt/legacy-bilingual-docs-note.md',
+      'scripts/fixtures/translation-prompt/legacy-bilingual-docs-note.zh.md',
     ],
   ] as const
   const examples: TranslationExample[] = examplePaths.map(([english, chinese]) => ({

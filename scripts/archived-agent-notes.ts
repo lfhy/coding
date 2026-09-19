@@ -1,4 +1,4 @@
-/** Pure archive-format, triplet, and immutable-manifest helpers. */
+/** 归档格式、中文单文件／历史三件套与不可变 manifest 的纯辅助函数。 */
 
 import { createHash } from 'node:crypto'
 import { basename } from 'node:path'
@@ -94,7 +94,12 @@ function pairMeta(content: string): Map<string, string> | undefined {
   return entries
 }
 
-function validateHeader(path: string, content: Buffer, sourceBase: string, chinese: boolean): string[] {
+function validateHeader(
+  path: string,
+  content: Buffer,
+  sourceBase: string,
+  shape: 'single' | 'english' | 'chinese',
+): string[] {
   const errors: string[] = []
   const lines = content.toString('utf8').split('\n')
   if (!/^# Agent Note: \S/.test(lines[0] ?? '')) errors.push(`${path}: line 1 must be \`# Agent Note: <title>\``)
@@ -107,14 +112,18 @@ function validateHeader(path: string, content: Buffer, sourceBase: string, chine
     errors.push(`${path}: archive date ${archived} predates the note filename`)
   }
   if (lines[4] !== '') errors.push(`${path}: line 5 must be blank`)
-  const switcher = chinese
-    ? `[English](${sourceBase}.md) | 中文`
-    : `English | [中文](${sourceBase}.zh.md)`
-  if (lines[5] !== switcher) errors.push(`${path}: line 6 must be ${JSON.stringify(switcher)}`)
+  if (shape !== 'single') {
+    const switcher = shape === 'chinese'
+      ? `[English](${sourceBase}.md) | 中文`
+      : `English | [中文](${sourceBase}.zh.md)`
+    if (lines[5] !== switcher) errors.push(`${path}: line 6 must be ${JSON.stringify(switcher)}`)
+  } else if (/^(?:English \| \[中文\]|\[English\])/.test(lines[5] ?? '')) {
+    errors.push(`${path}: a single-file archive must not carry a language switcher`)
+  }
   return errors
 }
 
-/** Validate the closed kind tree, implemented/archive headers, and complete bilingual triplets. */
+/** 校验封闭类别树、归档头部，以及中文单文件或完整历史三件套。 */
 export function validateArchiveArtifacts(artifacts: ReadonlyMap<string, Buffer>): string[] {
   const errors: string[] = []
   const triplets = new Map<string, Triplet>()
@@ -141,6 +150,11 @@ export function validateArchiveArtifacts(artifacts: ReadonlyMap<string, Buffer>)
     const zhPath = `${key}.zh.md`
     const metaPath = `${key}.i18n.yaml`
     const { source, zh, meta } = triplet
+    const hasLegacyArtifact = zh !== undefined || meta !== undefined
+    if (!hasLegacyArtifact && source !== undefined) {
+      errors.push(...validateHeader(sourcePath, source, basename(key), 'single'))
+      continue
+    }
     const missing = [
       source === undefined ? sourcePath : undefined,
       zh === undefined ? zhPath : undefined,
@@ -151,8 +165,8 @@ export function validateArchiveArtifacts(artifacts: ReadonlyMap<string, Buffer>)
       continue
     }
     const sourceBase = basename(key)
-    errors.push(...validateHeader(sourcePath, source, sourceBase, false))
-    errors.push(...validateHeader(zhPath, zh, sourceBase, true))
+    errors.push(...validateHeader(sourcePath, source, sourceBase, 'english'))
+    errors.push(...validateHeader(zhPath, zh, sourceBase, 'chinese'))
     const sourceDate = /^Archived: (\d{4}-\d{2}-\d{2})$/m.exec(source.toString('utf8'))?.[1]
     const zhDate = /^Archived: (\d{4}-\d{2}-\d{2})$/m.exec(zh.toString('utf8'))?.[1]
     if (sourceDate !== undefined && zhDate !== undefined && sourceDate !== zhDate) {

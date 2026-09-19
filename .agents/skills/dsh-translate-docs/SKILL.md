@@ -1,6 +1,6 @@
 ---
 name: dsh-translate-docs
-description: Manually run the extended DeepSeek Harness bilingual-document workflow, including generated briefings, delegated prose translation, whole-document translation, and scoped pairing verification.
+description: Manually translate a DeepSeek Harness document when the user explicitly requests translation, including legacy-pair briefings, delegated prose translation, whole-document translation, and scoped pairing verification.
 disable-model-invocation: true
 user-invocable: true
 ---
@@ -9,19 +9,19 @@ user-invocable: true
 
 ## Invocation boundary
 
-Run this extended workflow only when the user explicitly invokes `dsh-translate-docs` by name. Never select or load it for ordinary documentation work, from another skill, or from an inferred translation need; routine translation follows the one-shot, one-pass rule in [docs/AGENTS.md](../../../docs/AGENTS.md).
+Run this extended workflow only when the user explicitly invokes `dsh-translate-docs` by name. Never select or load it for ordinary documentation work, from another skill, or from an inferred translation need; ordinary docs edit one Chinese canonical under [docs/AGENTS.md](../../../docs/AGENTS.md).
 
 ## What this skill is
 
-**This skill is guidance, not a translation memory.** It is the workflow map for keeping `foo.md ↔ foo.zh.md` pairs consistent and natural in both languages. Both languages carry equal authority — a change is authored in either one, and that side is the source for that update. You are the translator: the rules below say what must hold, not how to phrase any particular sentence — phrasing judgment is yours, terminology is not.
+**This skill is guidance, not a translation memory.** It handles an existing `foo.md ↔ foo.zh.md` legacy pair or an explicitly requested new translation. A retained pair gives both languages equal authority. The rules below state what must hold; phrasing judgment is yours, terminology is not.
 
 ## Triage by change type — this decides everything else
 
 - **Update** (pair exists, one side edited): follow [the update path](#the-update-path-briefing-driven). It is briefing-driven and deliberately cheap: no guidance-corpus reading, no git archaeology, smallest counterpart edit. Never re-translate a whole document to apply an update — a minimal update preserves the reviewed phrasing of everything that didn't change; a re-translation throws that review away.
-- **New pair** (no counterpart yet): follow [the whole-document path](#the-whole-document-path-new-pairs).
-- **Deleted or renamed doc**: delete or rename the counterpart and the `.i18n.yaml` alongside it — the gate reports an incomplete pair otherwise.
+- **Explicit new translation** (the user requested an English counterpart or a new pair): follow [the whole-document path](#the-whole-document-path-explicit-new-pairs). Never infer this from an ordinary doc edit.
+- **Deleted, renamed, or migrated doc**: keep all three legacy artifacts together, or migrate the Chinese text to the unsuffixed canonical and delete `.zh.md` plus `.i18n.yaml` together.
 
-Frozen Agent Notes under `.agents/notes/archived/` are not translation work. Their complete triplets are sealed by the archive verifier; never update, re-record, or repair either side after archival.
+Frozen Agent Notes under `.agents/notes/archived/` are not translation work. A single Chinese canonical or complete legacy triplet is sealed by the archive verifier; never update, re-record, or repair archived content.
 
 ## The update path (briefing-driven)
 
@@ -33,13 +33,13 @@ The briefing-driven path matches guidance-corpus quality at a fraction of the co
 4. **Smallest edit that covers the diff.** Preserve the reviewed phrasing of everything the diff does not touch, then verify the changed hunks clause by clause against the source: nothing added, nothing dropped, terminology per the inline rows, code spans verbatim.
 5. **Record and verify, scoped**: `pnpm run verify-translation-pairing --write <pair>` then `pnpm run verify-translation-pairing <pair>`. `--write` names exactly the pairs you confirmed — it refuses to run bare so a bulk re-record is always an explicit `--all`. The corpus-wide check still runs in `doc-sync`/CI; do not run it per-update.
 
-## The whole-document path (new pairs)
+## The whole-document path (explicit new pairs)
 
 When translations need to be written from scratch, the orchestrating agent does not translate: spawn a subagent to do the translation work. The translator reads the sources of truth below first, then translates the whole file into the other language — section by section for long documents, keeping each section's structure locked to the source as you go rather than fixing structure at the end.
 
 ### Sources of truth (read, don't re-summarize)
 
-- **[docs/i18n/README.md](../../../docs/i18n/README.md)** — the pairing contract: the three-file pair (`foo.md`, `foo.zh.md`, `foo.i18n.yaml`), the consistency record's both-side blob hashes, the language-switcher lines, scope, and exclusions.
+- **[docs/i18n/README.md](../../../docs/i18n/README.md)** — the Chinese-canonical default and compatibility contract for an explicitly retained three-file pair.
 - **[docs/i18n/translation-rules.md](../../../docs/i18n/translation-rules.md)** — how to translate: faithfulness, structure preservation, terminology discipline, typography (MUST/SHOULD levels).
 - **[docs/i18n/terminology.md](../../../docs/i18n/terminology.md)** — the terminology table, binding in both directions. Load it BEFORE translating, not when a term feels uncertain; the terms you don't notice are the ones that drift.
 - **[docs/i18n/translation-prompt.md](../../../docs/i18n/translation-prompt.md)** — the automated pipeline's calibrated machine-consumed template. Agents using this skill do not render it; the terminology table is the only repository file the automated renderer injects, while this skill and `translation-rules.md` remain binding for agent-authored translations.
@@ -57,15 +57,15 @@ When translations need to be written from scratch, the orchestrating agent does 
 
 ## Find the work
 
-- `pnpm run verify-translation-pairing --list` prints every in-scope document as missing / out-of-sync / ok. Missing and out-of-sync rows are contract violations; the normal check rejects them.
+- `pnpm run verify-translation-pairing --list` prints existing legacy pairs as missing / out-of-sync / ok. `missing` means a pair artifact is incomplete, not that a standalone Chinese `.md` needs a translation.
 - `pnpm run gen-translation-brief` with no arguments prints the briefing for every out-of-sync pair.
-- In a PR that edits paired docs, the work list is the diff itself: every changed side of a pair needs its counterpart updated and the pair re-recorded in the same PR, and the gate goes red if you forget.
+- In a PR that deliberately retains a pair, every changed side needs its counterpart updated and the pair re-recorded. An ordinary migration instead deletes both legacy artifacts after moving the Chinese text into the canonical file.
 
 ## Finish the pair
 
-1. Switcher: `[English](foo.md) | 中文` immediately after the Chinese file's H1, `English | [中文](foo.zh.md)` after the English file's H1 — add both if this is a new pair, except that a generator-owned English source stays byte-identical to generator output and omits its switcher while the Chinese counterpart still links back.
+1. Switcher: `[English](foo.md) | 中文` immediately after the Chinese file's H1, `English | [中文](foo.zh.md)` after the English file's H1. Add both only for an explicitly requested new pair; a generator-owned English source stays byte-identical and omits its switcher.
 2. Record consistency: `pnpm run verify-translation-pairing --write <pair>` recomputes and records both sides' full blob hashes in `foo.i18n.yaml`. The yaml diff in your PR is the reviewable statement "I confirmed these two say the same thing" — only run it after you actually have.
-3. No manifest entry is needed for an ordinary document: every in-scope source requires a pair. Change [scripts/translation-pairing.manifest.json](../../../scripts/translation-pairing.manifest.json) only when the owning policy documents a genuine generated, instructional, or bilingual-by-construction exclusion.
+3. No manifest entry is needed for a standalone Chinese document. Change [scripts/translation-pairing.manifest.json](../../../scripts/translation-pairing.manifest.json) only when a path must be forbidden from carrying legacy pair artifacts.
 4. Before the PR: the touched pairs are green under the scoped check; `pnpm run doc-sync` (which includes the corpus-wide pairing check plus `verify-md-wrap`/`verify-md-links`) runs once at PR level per [dsh-pre-push-checks](../dsh-pre-push-checks/SKILL.md), not inside each translation task.
 5. Keep the PR reviewable: state which pairs are new versus minimally updated and list 「待定术语」 prominently.
 
