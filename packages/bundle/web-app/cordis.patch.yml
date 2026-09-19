@@ -70,6 +70,17 @@
     - id: session-log-download
       name: '@deepseek-ai/dsh-session-log-export'
 
+    # 本地工作区显示应用打开入口；Remote-SSH／SSH Host 切到内置文件页。
+    - id: open-in-app
+      name: '@deepseek-ai/dsh-host-open-in-app'
+      config:
+        probeTimeoutMs: 10000
+        iconTimeoutMs: 10000
+        launchWatchMs: 1000
+
+    - id: ui-open-in-app
+      name: '@deepseek-ai/dsh-client-ui-open-in-app'
+
     - id: workspace
       name: '@deepseek-ai/dsh-workspace'
 

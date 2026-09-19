@@ -130,6 +130,7 @@ describe('RemoteTerminalHandle marker ownership', () => {
           await releaseRead.promise
           return openReadResponse()
         case '/v1/terminals/write':
+        case '/v1/terminals/resize':
         case '/v1/terminals/foreground':
         case '/v1/terminals/signal':
           ordinaryCalls++
@@ -154,6 +155,9 @@ describe('RemoteTerminalHandle marker ownership', () => {
     await expect(terminal.write('echo should-not-reach-old-agent\n')).rejects.toMatchObject({
       code: 'REMOTE_WORKSPACE_TARGET_INVALID',
     })
+    await expect(terminal.resize(100, 30)).rejects.toMatchObject({
+      code: 'REMOTE_WORKSPACE_TARGET_INVALID',
+    })
     await expect(terminal.inspectForeground()).rejects.toMatchObject({
       code: 'REMOTE_WORKSPACE_TARGET_INVALID',
     })
@@ -164,6 +168,7 @@ describe('RemoteTerminalHandle marker ownership', () => {
 
     releaseRead.resolve(undefined)
     await expect(terminalFailure).resolves.toMatchObject({ code: 'REMOTE_WORKSPACE_TARGET_INVALID' })
+    await expect(terminal.resize(100, 30)).rejects.toThrow('has exited')
     await terminal.terminate()
 
     expect(terminations).toHaveLength(1)
@@ -269,6 +274,112 @@ describe('RemoteTerminalHandle start idempotency', () => {
 
     expect(starts).toHaveLength(1)
     expect(terminations).toHaveLength(0)
+  })
+})
+
+describe('RemoteTerminalHandle resize', () => {
+  it('validates dimensions, forwards accepted sizes, and preserves remote rejection', async () => {
+    const root = await marker()
+    const readStarted = Promise.withResolvers<undefined>()
+    const releaseRead = Promise.withResolvers<undefined>()
+    const resizeRequests: BridgeRequest[] = []
+    let terminated = false
+    await bridge(async (request) => {
+      switch (request.path) {
+        case '/v1/terminals/start':
+          return { id: 'r'.repeat(32), pid: 8770 }
+        case '/v1/terminals/read':
+          readStarted.resolve(undefined)
+          await releaseRead.promise
+          return terminated ? { ...openReadResponse(), closed: true, exitCode: 0 } : openReadResponse()
+        case '/v1/terminals/resize':
+          resizeRequests.push(request)
+          if (request.body.cols === 99) throw new Error('resize rejected')
+          return { accepted: true }
+        case '/v1/terminals/terminate':
+          terminated = true
+          releaseRead.resolve(undefined)
+          return { accepted: true }
+        default:
+          throw new Error(`unexpected bridge path: ${request.path}`)
+      }
+    })
+    const target = await remoteWorkspacePath('.', root)
+    if (target === undefined) throw new Error('remote marker was not discovered')
+    const terminal = await spawnRemoteTerminal(target, {
+      argv: ['sh'], cwd: root, rows: 24, cols: 80, graceMs: 50,
+    })
+    terminal.output.on('error', () => {})
+    await readStarted.promise
+
+    await expect(terminal.resize(100, 30)).resolves.toBeUndefined()
+    expect(resizeRequests[0]?.body).toMatchObject({
+      root: '/srv/project', id: 'r'.repeat(32), cols: 100, rows: 30,
+    })
+    for (const [cols, rows] of [[1, 24], [80, 0], [1_001, 24], [80, 1_001], [80.5, 24]] as const) {
+      await expect(terminal.resize(cols, rows)).rejects.toThrow('terminal size requires integer cols')
+    }
+    expect(resizeRequests).toHaveLength(1)
+    await expect(terminal.resize(99, 30)).rejects.toMatchObject({ code: 'REMOTE_BRIDGE_REJECTED' })
+    expect(resizeRequests).toHaveLength(2)
+
+    await terminal.terminate()
+    await expect(terminal.done).resolves.toEqual({ exitCode: 0, signal: null })
+    await expect(terminal.resize(80, 24)).rejects.toThrow('has exited')
+  })
+
+  it('aborts and drains an in-flight resize before termination settles', async () => {
+    const root = await marker()
+    const readStarted = Promise.withResolvers<undefined>()
+    const releaseFirstRead = Promise.withResolvers<undefined>()
+    const resizeStarted = Promise.withResolvers<undefined>()
+    const releaseResize = Promise.withResolvers<undefined>()
+    const terminated = Promise.withResolvers<BridgeRequest>()
+    let reads = 0
+    await bridge(async (request) => {
+      switch (request.path) {
+        case '/v1/terminals/start':
+          return { id: 's'.repeat(32), pid: 8771 }
+        case '/v1/terminals/read':
+          reads++
+          if (reads === 1) {
+            readStarted.resolve(undefined)
+            await releaseFirstRead.promise
+            return openReadResponse()
+          }
+          return { ...openReadResponse(), closed: true, exitCode: 0 }
+        case '/v1/terminals/resize':
+          resizeStarted.resolve(undefined)
+          await releaseResize.promise
+          return { accepted: true }
+        case '/v1/terminals/terminate':
+          terminated.resolve(request)
+          return { accepted: true }
+        default:
+          throw new Error(`unexpected bridge path: ${request.path}`)
+      }
+    })
+    const target = await remoteWorkspacePath('.', root)
+    if (target === undefined) throw new Error('remote marker was not discovered')
+    const terminal = await spawnRemoteTerminal(target, {
+      argv: ['sh'], cwd: root, rows: 24, cols: 80, graceMs: 50,
+    })
+    terminal.output.on('error', () => {})
+    await readStarted.promise
+    let resizeSettled = false
+    const resizing = terminal.resize(120, 40).finally(() => { resizeSettled = true })
+    void resizing.catch(() => {})
+    await resizeStarted.promise
+
+    const closing = terminal.terminate()
+    const termination = await before(terminated.promise, 1_000, 'terminate did not reach the remote agent')
+    expect(termination.body).toMatchObject({ root: '/srv/project', id: 's'.repeat(32) })
+    await closing
+    expect(resizeSettled).toBe(true)
+    await expect(resizing).rejects.toMatchObject({ code: 'REMOTE_BRIDGE_ABORTED' })
+
+    releaseFirstRead.resolve(undefined)
+    releaseResize.resolve(undefined)
   })
 })
 

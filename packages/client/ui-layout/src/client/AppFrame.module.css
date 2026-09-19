@@ -1,28 +1,22 @@
 .frame {
-  position: relative; /* anchors the drag handles, which straddle column borders */
+  position: relative;
   display: grid;
-  grid-template-rows: 100%;
   height: 100%;
   overflow: hidden;
   background: var(--dsw-alias-bg-base);
-  /* Collapse/expand animates the tracks on the deepsuite sider curve
-     (--ds-ease-in-out / --ds-transition-duration-slow, ui-theme base.css). */
-  transition: grid-template-columns var(--ds-transition-duration-slow) var(--ds-ease-in-out);
+  transition:
+    grid-template-columns var(--ds-transition-duration-slow) var(--ds-ease-in-out),
+    grid-template-rows var(--ds-transition-duration-slow) var(--ds-ease-in-out);
 }
 
-/* Dragging writes widths at pointer cadence; easing them would detach the
-   column from the handle. */
+/* 拖拽期间轨道必须紧跟指针，不能经过缓动。 */
 .frame[data-dragging] {
   transition: none;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .frame {
-    transition: none;
-  }
-}
-
 .sidebarCol {
+  grid-column: 1;
+  grid-row: 1 / 3;
   min-width: 0;
   overflow: hidden;
   background: var(--dsw-specific-sidebar-fill);
@@ -30,81 +24,126 @@
 }
 
 .centerCol {
+  grid-column: 2;
+  grid-row: 1;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
-.detailsCol {
+.detailsCol,
+.workbenchCol {
+  grid-column: 3;
+  grid-row: 1;
   min-width: 0;
+  min-height: 0;
   overflow: hidden;
   border-left: 1px solid var(--dsw-alias-border-l2);
 }
 
-/* The details subtree stays mounted at zero width, so its border must not paint
-   a 1px seam. The collapsed sidebar instead retains a bordered compact rail. */
-.frame[data-details-collapsed] .detailsCol {
-  border-left: none;
+.workbenchCol,
+.bottomCol {
+  background: var(--dsw-alias-bg-base);
 }
 
-/* Drag handles are frame children (columns clip overflow): an 8px hit strip
-   centered on the column border via inline left, above column content. Details
-   adds a visible 12x32 pill at vertical center; sidebar keeps only the hit strip. */
+.bottomCol {
+  grid-column: 2 / 4;
+  grid-row: 2;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+
+/* 视觉关闭不卸载子树，但必须退出命中测试和可访问树。 */
+.centerCol[data-hidden],
+.detailsCol[data-hidden],
+.workbenchCol[data-hidden],
+.bottomCol[data-hidden] {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .handle {
   position: absolute;
+  z-index: 2;
+  box-sizing: border-box;
+  border: 0;
+  outline: none;
+  background: transparent;
+  touch-action: none;
+  user-select: none;
+  transition:
+    left var(--ds-transition-duration-slow) var(--ds-ease-in-out),
+    top var(--ds-transition-duration-slow) var(--ds-ease-in-out);
+}
+
+.handle[data-orientation='vertical'] {
   top: 0;
-  bottom: 0;
   width: 8px;
   margin-left: -4px;
   cursor: col-resize;
-  z-index: 2;
-  touch-action: none;
-  /* Rides the same curve as the tracks so the pill stays on the moving
-     border during collapse/expand; paused while dragging (frame rule). */
-  transition: left var(--ds-transition-duration-slow) var(--ds-ease-in-out);
+}
+
+.handle[data-orientation='horizontal'] {
+  right: 0;
+  height: 8px;
+  margin-top: -4px;
+  cursor: row-resize;
 }
 
 .frame[data-dragging] .handle {
   transition: none;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .handle {
-    transition: none;
-  }
+.handle:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--dsw-alias-border-l3);
 }
 
-.handle[data-side='details']::after {
+/* 右栏和底栏边界提供小型悬停标记；导航栏边界保持不可见命中条带。 */
+.handle[data-side='details']::after,
+.handle[data-side='workbench']::after,
+.handle[data-side='bottom']::after {
   content: '';
   position: absolute;
   top: 50%;
   left: 50%;
-  transform: translate(-50%, -50%);
-  width: 12px;
-  height: 32px;
-  border-radius: 10px;
   box-sizing: border-box;
-  background: var(--dsw-alias-button-floating-fill);
   border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
-  /* Hover affordance: the details pill hides until the pointer is over its
-     column, the strip itself, or a drag. */
+  border-radius: 10px;
+  background: var(--dsw-alias-button-floating-fill);
   opacity: 0;
+  transform: translate(-50%, -50%);
   transition:
     opacity var(--ds-transition-duration-slow) var(--ds-ease-in-out),
     background var(--ds-transition-duration-slow) var(--ds-ease-in-out);
 }
 
-.detailsCol:hover ~ .handle[data-side='details']::after,
-.handle[data-side='details']:hover::after,
-.handle[data-side='details'][data-dragging='true']::after {
+.handle[data-side='details']::after,
+.handle[data-side='workbench']::after {
+  width: 12px;
+  height: 32px;
+}
+
+.handle[data-side='bottom']::after {
+  width: 32px;
+  height: 12px;
+}
+
+.handle:hover::after,
+.handle:focus-visible::after,
+.handle[data-dragging='true']::after {
   opacity: 1;
 }
 
 .handle[data-side='details']:hover::after,
-.handle[data-side='details'][data-dragging='true']::after {
-  background: var(--dsw-alias-button-floating-hover);
+.handle[data-side='workbench']:hover::after,
+.handle[data-side='bottom']:hover::after,
+.handle[data-dragging='true']::after {
   border-color: var(--dsw-alias-border-l3);
+  background: var(--dsw-alias-button-floating-hover);
 }
 
 .overlayLayer {
@@ -116,4 +155,12 @@
 
 .overlayLayer > * {
   pointer-events: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .frame,
+  .handle,
+  .handle::after {
+    transition: none;
+  }
 }

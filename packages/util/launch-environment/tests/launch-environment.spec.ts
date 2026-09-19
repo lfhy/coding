@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import {
-  createLaunchEnvironmentSnapshot, DSH_LAUNCH_ENVIRONMENT_KEY, launchEnvironmentOf,
+  createLaunchEnvironmentSnapshot, DSH_LAUNCH_ENVIRONMENT_KEY, launchedThroughSsh, launchEnvironmentOf,
 } from '../src/index.ts'
 
 const layered = createLaunchEnvironmentSnapshot([
@@ -65,5 +65,23 @@ describe('launchEnvironmentOf', () => {
     } finally {
       vi.unstubAllEnvs()
     }
+  })
+})
+
+describe('launchedThroughSsh', () => {
+  it.each(['SSH_CONNECTION', 'SSH_TTY'])('accepts non-empty inherited %s', (name) => {
+    const snapshot = createLaunchEnvironmentSnapshot([
+      { source: 'process', values: { [name]: 'present' } },
+    ])
+    expect(launchedThroughSsh(snapshot)).toBe(true)
+  })
+
+  it('ignores empty and file-materialized markers', () => {
+    const snapshot = createLaunchEnvironmentSnapshot([
+      { source: 'process', values: { SSH_CONNECTION: '', SSH_TTY: '' } },
+      { source: 'project-env', values: { SSH_CONNECTION: 'stale' } },
+      { source: 'user-env', values: { SSH_TTY: 'stale' } },
+    ])
+    expect(launchedThroughSsh(snapshot)).toBe(false)
   })
 })

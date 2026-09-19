@@ -177,6 +177,11 @@ describe('LocalSubprocessRuntime', () => {
     }
     await expect(ctx.subprocess.spawnTerminal({ ...base, argv: [] })).rejects.toThrow('must contain a program')
     await expect(ctx.subprocess.spawnTerminal({ ...base, argv: [''] })).rejects.toThrow('must contain a program')
+    await expect(ctx.subprocess.spawnTerminal({ ...base, cols: 1 })).rejects.toThrow('integer cols')
+    await expect(ctx.subprocess.spawnTerminal({ ...base, rows: 0 })).rejects.toThrow('integer cols')
+    await expect(ctx.subprocess.spawnTerminal({ ...base, cols: 1_001 })).rejects.toThrow('integer cols')
+    await expect(ctx.subprocess.spawnTerminal({ ...base, rows: 1_001 })).rejects.toThrow('integer cols')
+    await expect(ctx.subprocess.spawnTerminal({ ...base, cols: 80.5 })).rejects.toThrow('integer cols')
     await expect(ctx.subprocess.spawnTerminal({ ...base, signal: AbortSignal.abort('stop') })).rejects.toBe('stop')
     await fiber.dispose()
   })
@@ -190,6 +195,7 @@ describe('LocalSubprocessRuntime', () => {
       output: new PassThrough(),
       done: Promise.resolve({ exitCode: 0, signal: null }),
       write: async () => {},
+      resize: async () => {},
       inspectForeground: async () => undefined,
       signalForeground: async () => 1,
       terminate,
@@ -214,6 +220,7 @@ describe('LocalSubprocessRuntime', () => {
       output: new PassThrough(),
       done: Promise.resolve({ exitCode: 0, signal: null }),
       write: async () => {},
+      resize: async () => {},
       inspectForeground: async () => undefined,
       signalForeground: async () => 1,
       terminate: vi.fn(async () => { throw firstFailure }),
@@ -261,6 +268,7 @@ describe('LocalSubprocessRuntime', () => {
       output: new PassThrough(),
       done: Promise.resolve({ exitCode: 0, signal: null }),
       write: async () => {},
+      resize: async () => {},
       inspectForeground: async () => undefined,
       signalForeground: async () => 1,
       terminate: vi.fn(async () => { throw failure }),

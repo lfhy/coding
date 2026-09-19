@@ -67,6 +67,13 @@ func (backend *unixTerminalBackend) Write(data []byte) (int, error) {
 	return backend.file.Write(data)
 }
 
+func (backend *unixTerminalBackend) Resize(cols, rows int) error {
+	if err := validateTerminalSize(cols, rows); err != nil {
+		return err
+	}
+	return pty.Setsize(backend.file, &pty.Winsize{Rows: uint16(rows), Cols: uint16(cols)})
+}
+
 func (backend *unixTerminalBackend) Close() error {
 	var err error
 	backend.closeOnce.Do(func() { err = backend.file.Close() })

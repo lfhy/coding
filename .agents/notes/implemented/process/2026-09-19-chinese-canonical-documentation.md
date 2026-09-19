@@ -20,6 +20,8 @@ Agent Note 格式门禁同时接受两种 canonical：历史英文 `.md` 继续�
 
 可与功能实现解耦的文档编写、迁移和大段编辑优先委派为独立子任务。主任务负责给出事实边界、禁止触碰的产品 i18n 范围和验收命令，再核对结果；不再让翻译和配对维护阻塞功能实现。
 
+按 `git ls-files` 遍历仓库内容的机械工具必须跳过工作树中已删除的 tracked 文件。单文档迁移会在提交前留下合法的 `.zh.md`／`.i18n.yaml` 删除项；同步或重写工具不能因为索引仍列出这些路径而在读取阶段失败。
+
 ## 验证
 
 `verify-translation-pairing` 证明所有仍存在的 legacy pair 完整且一致；`verify-agent-note-classification` 与 `verify-agent-note-format` 证明中文单文件 Agent Note 进入正确目录并满足中文骨架；`verify-md-links` 证明删除 `.zh.md` 后没有悬空链接；`verify-doc-budgets` 和 `git diff --check` 继续约束文档规模与补丁卫生。产品 locale 测试不因本流程变更而删除或放宽。

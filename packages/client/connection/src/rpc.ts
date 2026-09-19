@@ -2,6 +2,11 @@
 
 import type { RpcResult } from '@deepseek-ai/dsh-host-apiproxy/api'
 
+/** Host 信任检查只读取的跨运行时请求头形状。 */
+export interface ConnectionTrustRequest {
+  readonly headers: Headers | Readonly<Record<string, string | string[] | undefined>>
+}
+
 /** Trust fence applied before a Host RPC channel reaches its handler. */
 export type ConnectionRpcAuthority = 'trusted-host' | 'loopback'
 
@@ -54,6 +59,12 @@ export interface HostConnectionRpc {
 
 /** Host `ctx.connection` shape consumed by transport-independent adapters. */
 export interface HostConnectionHandle {
+  /**
+   * 对本机原生能力执行回环与同源检查。
+   * @param request - Node HTTP 或 Fetch 请求头。
+   * @returns 不可信请求的 HTTP 状态；通过时返回 undefined。
+   */
+  requestRejection(request: ConnectionTrustRequest): 403 | undefined
   /** Generic RPC channel registry. */
   readonly rpc: HostConnectionRpc
 }

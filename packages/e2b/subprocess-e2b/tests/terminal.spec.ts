@@ -85,6 +85,7 @@ class FakeTerminalSandbox {
   readonly commands: string[] = []
   readonly commandOptions: CommandOptions[] = []
   readonly inputs: Array<{ pid: number; data: Buffer }> = []
+  readonly resizes: Array<{ pid: number; cols: number; rows: number }> = []
   readonly removed: string[] = []
   readonly directories: string[] = []
   readonly writes = new Map<string, string>()
@@ -97,9 +98,11 @@ class FakeTerminalSandbox {
   createError: unknown
   writeError: unknown
   sendError: unknown
+  resizeError: unknown
   commandFailure: unknown
   makeDirRequest: ((signal: AbortSignal | undefined) => Promise<void>) | undefined
   sendInputRequest: ((signal: AbortSignal | undefined) => Promise<void>) | undefined
+  resizeRequest: ((signal: AbortSignal | undefined) => Promise<void>) | undefined
   foregroundRequest: ((signal: AbortSignal | undefined) => Promise<void>) | undefined
   signalRequest: ((signal: AbortSignal | undefined) => Promise<void>) | undefined
   sessionGroupsFailure: unknown
@@ -222,6 +225,17 @@ class FakeTerminalSandbox {
           }
         }
       },
+      resize: async (
+        pid: number,
+        size: { cols: number; rows: number },
+        options?: { signal?: AbortSignal },
+      ): Promise<void> => {
+        options?.signal?.throwIfAborted()
+        await this.resizeRequest?.(options?.signal)
+        options?.signal?.throwIfAborted()
+        if (this.resizeError !== undefined) throw this.resizeError
+        this.resizes.push({ pid, ...size })
+      },
     },
   } as unknown as Sandbox
 }
@@ -310,6 +324,13 @@ describe('E2B terminal allocation', () => {
 
     await terminal.write('echo ok\r')
     expect(fake.inputs.at(-1)?.data.toString()).toBe('echo ok\r')
+    await terminal.resize(120, 40)
+    expect(fake.resizes).toEqual([{ pid: 123, cols: 120, rows: 40 }])
+    fake.resizeError = new Error('resize failed')
+    await expect(terminal.resize(100, 30)).rejects.toThrow('resize failed')
+    fake.resizeError = undefined
+    await expect(terminal.resize(1, 40)).rejects.toThrow('terminal size requires integer cols')
+    await expect(terminal.resize(120, 1_001)).rejects.toThrow('terminal size requires integer cols')
     await expect(terminal.inspectForeground()).resolves.toEqual({ processGroupId: 456, inputWaiting: false })
     await expect(terminal.signalForeground('SIGINT')).resolves.toBe(456)
     expect(fake.commands).toContain('kill -INT -- -456')
@@ -339,6 +360,28 @@ describe('E2B terminal allocation', () => {
     expect(fake.inputs.at(-1)?.data.toString()).toBe('still live\r')
     await terminal.terminate()
     await expect(terminal.done).resolves.toEqual({ exitCode: null, signal: 'SIGTERM' })
+  })
+
+  it.each([
+    [1.5, 24],
+    [1, 24],
+    [1_001, 24],
+    [80, 1.5],
+    [80, 0],
+    [80, 1_001],
+  ])('rejects an invalid dynamic size %s x %s', async (cols, rows) => {
+    const fake = new FakeTerminalSandbox()
+    const terminal = await testSpawn(runtime(fake), spec(), `/runtime/invalid-resize-${String(cols)}-${String(rows)}`)
+    await expect(terminal.resize(cols, rows)).rejects.toThrow('terminal size requires integer cols')
+    expect(fake.resizes).toEqual([])
+    await terminal.terminate()
+  })
+
+  it('rejects an invalid initial size before allocating a sandbox', async () => {
+    const fake = new FakeTerminalSandbox()
+    await expect(testSpawn(runtime(fake), spec({ cols: 1 }), '/runtime/invalid-initial-size'))
+      .rejects.toThrow('terminal size requires integer cols')
+    expect(fake.createOptions).toBeUndefined()
   })
 
   it('publishes the PTY handle before honoring allocation cancellation', async () => {
@@ -537,9 +580,11 @@ describe('E2B terminal lifecycle', () => {
     const fake = new FakeTerminalSandbox()
     const terminal = await testSpawn(runtime(fake), spec(), '/runtime/in-flight-operations')
     const writeStarted = Promise.withResolvers<AbortSignal>()
+    const resizeStarted = Promise.withResolvers<AbortSignal>()
     const inspectStarted = Promise.withResolvers<AbortSignal>()
     const signalStarted = Promise.withResolvers<AbortSignal>()
     fake.sendInputRequest = holdRequestUntilAbort(writeStarted)
+    fake.resizeRequest = holdRequestUntilAbort(resizeStarted)
     let foregroundRequests = 0
     fake.foregroundRequest = async (signal) => {
       foregroundRequests += 1
@@ -551,13 +596,15 @@ describe('E2B terminal lifecycle', () => {
       signalCompleted = true
     }
     const write = terminal.write('late input')
+    const resize = terminal.resize(100, 30)
     const inspect = terminal.inspectForeground()
-    await Promise.all([writeStarted.promise, inspectStarted.promise])
+    await Promise.all([writeStarted.promise, resizeStarted.promise, inspectStarted.promise])
     const signal = terminal.signalForeground('SIGINT')
     await signalStarted.promise
 
     const terminating = terminal.terminate()
     await expect(write).rejects.toThrow('terminal is terminating')
+    await expect(resize).rejects.toThrow('terminal is terminating')
     await expect(inspect).rejects.toThrow('terminal is terminating')
     await expect(signal).rejects.toThrow('terminal is terminating')
     await terminating
@@ -565,6 +612,7 @@ describe('E2B terminal lifecycle', () => {
     expect(fake.inputs).toHaveLength(1)
     const commandCount = fake.commands.length
     await expect(terminal.write('after termination')).rejects.toThrow('terminal is terminating')
+    await expect(terminal.resize(100, 30)).rejects.toThrow('terminal is terminating')
     await expect(terminal.inspectForeground()).rejects.toThrow('terminal is terminating')
     await expect(terminal.signalForeground('SIGINT')).rejects.toThrow('terminal is terminating')
     expect(fake.commands).toHaveLength(commandCount)
@@ -580,6 +628,7 @@ describe('E2B terminal lifecycle', () => {
     await expect(terminal.done).resolves.toEqual({ exitCode: 7, signal: null })
     await ended
     await expect(terminal.write('late')).rejects.toThrow('exited')
+    await expect(terminal.resize(100, 30)).rejects.toThrow('exited')
     fake.foregroundFailure = commandError(1)
     await expect(terminal.inspectForeground()).resolves.toBeUndefined()
     await expect(terminal.signalForeground('SIGINT')).rejects.toThrow('cannot resolve foreground process group')

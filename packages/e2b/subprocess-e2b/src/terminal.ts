@@ -27,6 +27,19 @@ import {
 } from './environment.ts'
 import { asError, commandOpts, delay, signalOpts, signalRemoteGroups } from './remote.ts'
 
+const MIN_TERMINAL_COLS = 2
+const MIN_TERMINAL_ROWS = 1
+const MAX_TERMINAL_COLS = 1_000
+const MAX_TERMINAL_ROWS = 1_000
+
+/** 校验 E2B PTY 分配与动态调整共用的尺寸边界。 */
+function validateTerminalSize(cols: number, rows: number): void {
+  if (!Number.isSafeInteger(cols) || cols < MIN_TERMINAL_COLS || cols > MAX_TERMINAL_COLS
+    || !Number.isSafeInteger(rows) || rows < MIN_TERMINAL_ROWS || rows > MAX_TERMINAL_ROWS) {
+    throw new RangeError('terminal size requires integer cols within 2..1000 and rows within 1..1000')
+  }
+}
+
 const TERMINAL_RUNNER_SOURCE = [
   '#!/bin/bash',
   'set -euo pipefail',
@@ -311,6 +324,19 @@ export class E2BTerminalHandle implements SubprocessTerminalHandle {
   }
 
   /** @inheritdoc */
+  resize(cols: number, rows: number): Promise<void> {
+    try {
+      validateTerminalSize(cols, rows)
+    } catch (error: unknown) {
+      return Promise.reject(asError(error))
+    }
+    return this.trackOperation(async (signal) => {
+      if (this.topLevelExited) throw new Error('terminal process has exited')
+      await this.sandbox.pty.resize(this.pid, { cols, rows }, { signal })
+    })
+  }
+
+  /** @inheritdoc */
   inspectForeground(): Promise<SubprocessTerminalForeground | undefined> {
     return this.trackOperation(signal => this.inspectForegroundOnce(signal))
   }
@@ -461,6 +487,7 @@ export async function spawnE2BTerminal(
   stateDir: string,
   pollMs: number,
 ): Promise<E2BTerminalHandle> {
+  validateTerminalSize(spec.cols, spec.rows)
   const sandbox = await runtime.getSandbox()
   spec.signal?.throwIfAborted()
   const paths: TerminalPaths = {

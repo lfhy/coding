@@ -20,6 +20,7 @@ import type {
   ConnectionRpcHandlerOptions,
   HostConnectionHandle,
   HostConnectionRpc,
+  ConnectionTrustRequest,
 } from './rpc.ts'
 
 const INVALID_REQUEST_RPC_ID = RpcId('invalid-request')
@@ -50,6 +51,11 @@ export class HostConnectionService extends Service implements HostConnectionHand
    */
   constructor(ctx: Context, private readonly trustedHosts: readonly string[]) {
     super(ctx, 'connection')
+  }
+
+  /** @inheritdoc */
+  requestRejection(request: ConnectionTrustRequest): 403 | undefined {
+    return isTrustedApiRequest(request, []) ? undefined : 403
   }
 
   /** Generic channel registry scoped to the Context reading this service. */

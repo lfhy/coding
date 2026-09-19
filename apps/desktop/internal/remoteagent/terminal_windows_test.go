@@ -78,7 +78,7 @@ func TestWindowsTerminalBackendRunsConPTY(t *testing.T) {
 		t.Skip("ComSpec is unavailable")
 	}
 	backend, err := startTerminalBackend(t.TempDir(), TerminalStartRequest{
-		Argv: []string{command, "/D", "/Q", "/C", "echo conpty-ready"},
+		Argv: []string{command, "/D", "/Q"},
 		Rows: 24, Cols: 80,
 	})
 	if errors.Is(err, ErrTerminalUnavailable) {
@@ -96,9 +96,18 @@ func TestWindowsTerminalBackendRunsConPTY(t *testing.T) {
 		data, _ := io.ReadAll(backend)
 		output <- data
 	}()
+	if err := backend.Resize(100, 30); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeTerminalAll(backend, []byte("echo conpty-ready\r\nexit\r\n")); err != nil {
+		t.Fatal(err)
+	}
 	exit := backend.Wait()
 	if err := backend.Close(); err != nil {
 		t.Fatal(err)
+	}
+	if err := backend.Resize(80, 24); !errors.Is(err, ErrTerminalClosed) {
+		t.Fatalf("resize after close = %v", err)
 	}
 	if exit.exitCode == nil || *exit.exitCode != 0 {
 		t.Fatalf("ConPTY exit = %#v", exit)

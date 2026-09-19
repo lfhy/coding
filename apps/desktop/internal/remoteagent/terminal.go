@@ -62,6 +62,7 @@ type terminalBackend interface {
 	io.ReadWriteCloser
 	PID() int
 	Wait() terminalExit
+	Resize(cols, rows int) error
 	Foreground() (int, error)
 	SignalForeground(signal string) (int, error)
 	Terminate() error
@@ -136,12 +137,14 @@ type terminalSession struct {
 	exited           bool
 	exit             terminalExit
 	closed           bool
+	stopping         bool
 	inputFailed      bool
 	notify           chan struct{}
 	processDone      chan struct{}
 	readerDone       chan struct{}
 	closedDone       chan struct{}
 	input            chan []byte
+	backendMu        sync.Mutex
 
 	terminateOnce sync.Once
 	terminateDone chan struct{}
@@ -277,6 +280,18 @@ func (sessions *TerminalSessions) Write(request TerminalWriteRequest) error {
 		return fail(413, "terminal-input-too-large", "terminal input exceeds the byte limit")
 	}
 	return session.write(data)
+}
+
+// Resize 复核终端 owner、验证尺寸，并把变更提交给同一个 PTY 后端。
+func (sessions *TerminalSessions) Resize(request TerminalResizeRequest) error {
+	session, err := sessions.sessionForRoot(request.ID, request.Root)
+	if err != nil {
+		return err
+	}
+	if err := validateTerminalSize(request.Cols, request.Rows); err != nil {
+		return err
+	}
+	return session.resize(request.Cols, request.Rows)
 }
 
 // Foreground 返回控制终端当前公布的前台进程组。
@@ -570,10 +585,10 @@ func (session *terminalSession) waitLoop() {
 	select {
 	case <-session.readerDone:
 	case <-time.After(terminalDrainTimeout):
-		_ = session.backend.Close()
+		_ = session.closeBackend()
 		<-session.readerDone
 	}
-	_ = session.backend.Close()
+	_ = session.closeBackend()
 	session.mu.Lock()
 	if !session.closed {
 		session.closed = true
@@ -659,7 +674,7 @@ func (session *terminalSession) responseAfterLocked(after uint64) TerminalReadRe
 
 func (session *terminalSession) write(data []byte) error {
 	session.mu.Lock()
-	if session.closed || session.exited || session.inputFailed {
+	if session.closed || session.exited || session.stopping || session.inputFailed {
 		session.mu.Unlock()
 		return ErrTerminalClosed
 	}
@@ -674,13 +689,37 @@ func (session *terminalSession) write(data []byte) error {
 	}
 }
 
-func (session *terminalSession) foreground() (TerminalForegroundResponse, error) {
+// beginBackendOperation 把终端控制调用与 terminate/Close 串行化。终止先设置
+// stopping，再等待已经进入此临界区的调用，故新 resize 不会落到失效句柄上。
+func (session *terminalSession) beginBackendOperation() error {
+	session.backendMu.Lock()
 	session.mu.Lock()
-	closed := session.closed || session.exited
+	unavailable := session.closed || session.exited || session.stopping
 	session.mu.Unlock()
-	if closed {
+	if unavailable {
+		session.backendMu.Unlock()
+		return ErrTerminalClosed
+	}
+	return nil
+}
+
+func (session *terminalSession) endBackendOperation() {
+	session.backendMu.Unlock()
+}
+
+func (session *terminalSession) resize(cols, rows int) error {
+	if err := session.beginBackendOperation(); err != nil {
+		return err
+	}
+	defer session.endBackendOperation()
+	return session.backend.Resize(cols, rows)
+}
+
+func (session *terminalSession) foreground() (TerminalForegroundResponse, error) {
+	if err := session.beginBackendOperation(); err != nil {
 		return TerminalForegroundResponse{}, ErrTerminalClosed
 	}
+	defer session.endBackendOperation()
 	group, err := session.backend.Foreground()
 	if err != nil {
 		return TerminalForegroundResponse{}, err
@@ -689,13 +728,17 @@ func (session *terminalSession) foreground() (TerminalForegroundResponse, error)
 }
 
 func (session *terminalSession) signalForeground(signal string) (int, error) {
-	session.mu.Lock()
-	closed := session.closed || session.exited
-	session.mu.Unlock()
-	if closed {
+	if err := session.beginBackendOperation(); err != nil {
 		return 0, ErrTerminalClosed
 	}
+	defer session.endBackendOperation()
 	return session.backend.SignalForeground(signal)
+}
+
+func (session *terminalSession) closeBackend() error {
+	session.backendMu.Lock()
+	defer session.backendMu.Unlock()
+	return session.backend.Close()
 }
 
 func (session *terminalSession) terminate(ctx context.Context) error {
@@ -713,15 +756,21 @@ func (session *terminalSession) terminate(ctx context.Context) error {
 
 func (session *terminalSession) startTermination() {
 	session.terminateOnce.Do(func() {
+		session.mu.Lock()
+		session.stopping = true
+		session.wakeLocked()
+		session.mu.Unlock()
 		go func() {
+			session.backendMu.Lock()
 			err := session.backend.Terminate()
+			session.backendMu.Unlock()
 			if err == nil {
 				select {
 				case <-session.closedDone:
 				case <-time.After(session.grace + terminalDrainTimeout):
 					// 终止后顶层进程未报告退出时，关闭 PTY 主端解除 read/write
 					// 阻塞；后台 Wait 仍负责记录最终退出事实。
-					_ = session.backend.Close()
+					_ = session.closeBackend()
 				}
 			}
 			if err == nil {
@@ -741,6 +790,12 @@ func (session *terminalSession) startTermination() {
 // forceTerminate 在关闭截止时间到达时立即升级为树级强杀，并关闭 PTY 主端以
 // 解除可能阻塞的 reader；waitLoop 仍是唯一记录并回收顶层子进程的一方。
 func (session *terminalSession) forceTerminate() {
+	session.mu.Lock()
+	session.stopping = true
+	session.wakeLocked()
+	session.mu.Unlock()
+	session.backendMu.Lock()
+	defer session.backendMu.Unlock()
 	_ = session.backend.ForceTerminate()
 	_ = session.backend.Close()
 }
@@ -783,8 +838,8 @@ func validateTerminalStart(request TerminalStartRequest) error {
 			return errors.New("remote terminal: argv exceeds the byte limit")
 		}
 	}
-	if request.Rows < 1 || request.Rows > maxTerminalRows || request.Cols < 1 || request.Cols > maxTerminalCols {
-		return fmt.Errorf("remote terminal: rows and cols must be within 1..%d", maxTerminalRows)
+	if err := validateTerminalSize(request.Cols, request.Rows); err != nil {
+		return err
 	}
 	if request.GraceMs < 0 || request.GraceMs > maxTerminalGrace.Milliseconds() {
 		return fmt.Errorf("remote terminal: graceMs must be within 0..%d", maxTerminalGrace.Milliseconds())
@@ -801,6 +856,17 @@ func validateTerminalStart(request TerminalStartRequest) error {
 		if environmentBytes > maxTerminalEnvironmentBytes {
 			return errors.New("remote terminal: environment exceeds the byte limit")
 		}
+	}
+	return nil
+}
+
+func validateTerminalSize(cols, rows int) error {
+	if cols < 2 || cols > maxTerminalCols || rows < 1 || rows > maxTerminalRows {
+		return fmt.Errorf(
+			"remote terminal: cols must be within 2..%d and rows within 1..%d",
+			maxTerminalCols,
+			maxTerminalRows,
+		)
 	}
 	return nil
 }

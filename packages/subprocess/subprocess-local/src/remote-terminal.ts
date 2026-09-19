@@ -13,6 +13,7 @@ import type {
 } from '@deepseek-ai/dsh-subprocess'
 import { callRemoteWorkspaceBridge, RemoteWorkspaceError, verifyRemoteWorkspaceTarget } from '@deepseek-ai/dsh-subprocess'
 import { deadline } from '@deepseek-ai/dsh-timeout'
+import { validateTerminalSize } from './terminal-size.ts'
 
 const TERMINAL_READ_WAIT_MS = 25_000
 const TERMINAL_READ_CHUNK_MAX = 64 * 1024
@@ -245,8 +246,15 @@ export class RemoteTerminalHandle implements SubprocessTerminalHandle {
     return operation
   }
 
+  /** 终止在封住新操作后等待所有已进入普通 RPC 的调用结算。 */
+  private async drainOperations(): Promise<void> {
+    while (this.operations.size > 0) {
+      await Promise.allSettled([...this.operations])
+    }
+  }
+
   /**
-   * 普通读写与前台控制必须复验当前 marker，并受句柄关闭和单次 RPC 上限约束。
+   * 普通读写、resize 与前台控制必须复验当前 marker，并受句柄关闭和单次 RPC 上限约束。
    * 清理路径不调用此方法，因为它在 marker 失效时需要使用已发布 owner 收回 PTY。
    */
   private async normalOperation<T>(request: (target: RemoteWorkspaceTarget, signal: AbortSignal) => Promise<T>): Promise<T> {
@@ -325,6 +333,22 @@ export class RemoteTerminalHandle implements SubprocessTerminalHandle {
     await this.track(operation)
   }
 
+  resize(cols: number, rows: number): Promise<void> {
+    if (this.isUnavailable()) return Promise.reject(new Error('remote terminal process has exited'))
+    const operation = Promise.resolve().then(() => {
+      validateTerminalSize(cols, rows)
+      return this.normalOperation((target, signal) => callRemoteWorkspaceBridge(
+        target,
+        '/v1/terminals/resize',
+        'POST',
+        { id: this.id, cols, rows },
+        parseAccepted,
+        signal,
+      ))
+    })
+    return this.track(operation)
+  }
+
   async inspectForeground(): Promise<SubprocessTerminalForeground | undefined> {
     if (this.isUnavailable()) return undefined
     try {
@@ -360,8 +384,8 @@ export class RemoteTerminalHandle implements SubprocessTerminalHandle {
     if (this.cleanup !== undefined) return this.cleanup
     this.stopping = true
     this.pollAbort.abort()
-    // 不等待普通 RPC：它们都接收这个信号，且即使底层传输没有按时结算，也不能
-    // 阻塞对已发布 PTY 的终止请求。
+    // 不先等待普通 RPC：它们都接收这个信号，故对已发布 PTY 的终止请求可立即
+    // 发出；终止请求完成后仍会排空这些调用，确保 terminate 结算时没有遗留操作。
     this.operationAbort.abort('remote terminal termination requested')
     const cleanup = this.closeRemote()
     this.cleanup = cleanup
@@ -385,7 +409,7 @@ export class RemoteTerminalHandle implements SubprocessTerminalHandle {
 
   /**
    * 返回当前 marker 身份；marker 已失效时仅退回到启动时的 owner，以便清理
-   * 已发布的远端 PTY。普通读写和前台控制绝不能调用此回退。
+   * 已发布的远端 PTY。普通控制操作绝不能调用此回退。
    */
   private async targetForCleanup(signal?: AbortSignal): Promise<{ target: RemoteWorkspaceTarget; retiredCleanup: boolean }> {
     try {
@@ -396,36 +420,40 @@ export class RemoteTerminalHandle implements SubprocessTerminalHandle {
   }
 
   private async closeRemote(): Promise<void> {
-    using terminate = deadline(undefined, TERMINAL_OPERATION_TIMEOUT_MS, TERMINAL_OPERATION_TIMEOUT)
-    const { target, retiredCleanup } = await this.targetForCleanup(terminate.signal)
     try {
-      await callRemoteWorkspaceBridge(
-        target, '/v1/terminals/terminate', 'POST', { id: this.id }, parseAccepted,
-        terminate.signal, true, terminate.signal, retiredCleanup,
-      )
-    } catch (error: unknown) {
-      // marker 复验通过后才发生的重绑同样必须能收回已发布 PTY；仅重试
-      // owner 的终止 route，不允许把 read/write/foreground 回退到旧世界。
-      if (retiredCleanup || !isStaleMarkerRejection(error)) throw error
-      await callRemoteWorkspaceBridge(
-        this.ownerTarget, '/v1/terminals/terminate', 'POST', { id: this.id }, parseAccepted,
-        terminate.signal, true, terminate.signal, true,
-      )
+      using terminate = deadline(undefined, TERMINAL_OPERATION_TIMEOUT_MS, TERMINAL_OPERATION_TIMEOUT)
+      const { target, retiredCleanup } = await this.targetForCleanup(terminate.signal)
+      try {
+        await callRemoteWorkspaceBridge(
+          target, '/v1/terminals/terminate', 'POST', { id: this.id }, parseAccepted,
+          terminate.signal, true, terminate.signal, retiredCleanup,
+        )
+      } catch (error: unknown) {
+        // marker 复验通过后才发生的重绑同样必须能收回已发布 PTY；仅重试
+        // owner 的终止 route，不允许把普通控制操作回退到旧世界。
+        if (retiredCleanup || !isStaleMarkerRejection(error)) throw error
+        await callRemoteWorkspaceBridge(
+          this.ownerTarget, '/v1/terminals/terminate', 'POST', { id: this.id }, parseAccepted,
+          terminate.signal, true, terminate.signal, true,
+        )
+      }
+      // terminate 已等待 PTY 收敛。marker 失效已使输出失败时，不再用旧连接读取
+      // 终态字节；否则仍必须复验当前 marker 后才读取最终 cursor 和退出事实。
+      if (this.isClosed()) return
+      try {
+        using finalRead = deadline(undefined, TERMINAL_OPERATION_TIMEOUT_MS, TERMINAL_OPERATION_TIMEOUT)
+        const finalTarget = await verifyRemoteWorkspaceTarget(this.target, finalRead.signal)
+        const final = await callRemoteWorkspaceBridge(finalTarget, '/v1/terminals/read', 'POST', {
+          id: this.id, after: this.cursor, waitMs: 1,
+        }, parseRead, finalRead.signal, true, finalRead.signal)
+        this.consume(final)
+      } catch (error: unknown) {
+        if (!this.isClosed()) this.fail(error)
+      }
+      if (!this.isClosed()) this.finish({ exitCode: null, signal: null })
+    } finally {
+      await this.drainOperations()
     }
-    // terminate 已等待 PTY 收敛。marker 失效已使输出失败时，不再用旧连接读取
-    // 终态字节；否则仍必须复验当前 marker 后才读取最终 cursor 和退出事实。
-    if (this.isClosed()) return
-    try {
-      using finalRead = deadline(undefined, TERMINAL_OPERATION_TIMEOUT_MS, TERMINAL_OPERATION_TIMEOUT)
-      const finalTarget = await verifyRemoteWorkspaceTarget(this.target, finalRead.signal)
-      const final = await callRemoteWorkspaceBridge(finalTarget, '/v1/terminals/read', 'POST', {
-        id: this.id, after: this.cursor, waitMs: 1,
-      }, parseRead, finalRead.signal, true, finalRead.signal)
-      this.consume(final)
-    } catch (error: unknown) {
-      if (!this.isClosed()) this.fail(error)
-    }
-    if (!this.isClosed()) this.finish({ exitCode: null, signal: null })
   }
 }
 

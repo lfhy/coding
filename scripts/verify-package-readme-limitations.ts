@@ -1,33 +1,23 @@
 /**
- * Doc-sync gate for the canonical package-README limitations section. It scans
- * package manifests, rejects missing or variant sections, and requires one
- * top-level bullet; audited packages in {@link NO_LIMITATIONS} must omit it.
- * See the [limitations Agent Note](../.agents/notes/implemented/process/2026-07-10-readme-known-limitations-gate.md).
+ * 包 README 已知限制章节的 doc-sync 门禁。它接受当前中文 canonical 与历史
+ * 英文标题，拒绝缺失或其它变体，并要求至少一个顶层条目；经审计的无内容包
+ * 必须列入 {@link NO_LIMITATIONS} 且省略章节。
  */
 
 import { existsSync, globSync, readFileSync } from 'node:fs'
 import { resolve, sep } from 'node:path'
 import { markdownHeadingLines, markdownProseLines } from './markdown.ts'
+import {
+  CANONICAL_LIMITATIONS_DESCRIPTION,
+  isCanonicalLimitationsHeading,
+  isLimitationsLike,
+} from './package-readme-limitations.ts'
 
 const root = resolve(import.meta.dirname, '..')
 
-/** The one canonical section heading, required verbatim as an h2. */
-const CANONICAL = '## Known Limitations and Deferred Work'
-
-/** Packages audited as having no limitations section, keyed by repo-relative directory. */
+/** 经审计可省略限制章节的包，以仓库相对目录为键。 */
 const NO_LIMITATIONS: Readonly<Record<string, string>> = {
   'packages/util/brand': 'Type-only nominal-branding primitive with no runtime behavior or deferred work.',
-}
-
-/** A heading that reads as a limitations section — canonical or drifted. */
-function isLimitationsLike(headingText: string): boolean {
-  return (
-    /\blimitations?\b/i.test(headingText)
-    || /deferred work/i.test(headingText)
-    || /what is not here/i.test(headingText)
-    || /^deferred\b/i.test(headingText)
-    || /^non-goals?\b/i.test(headingText)
-  )
 }
 
 const packageJsons = globSync('packages/*/*/package.json', { cwd: root }).map(path => path.split(sep).join('/')).sort()
@@ -46,7 +36,7 @@ for (const [entry, reason] of Object.entries(NO_LIMITATIONS)) {
 for (const pkg of scannedPackages) {
   const readme = `${pkg}/README.md`
   if (!existsSync(resolve(root, readme))) {
-    failures.push(`${readme}: package manifest has no sibling README with the \`${CANONICAL}\` section`)
+    failures.push(`${readme}: package manifest has no sibling README with ${CANONICAL_LIMITATIONS_DESCRIPTION}`)
     continue
   }
   const source = readFileSync(resolve(root, readme), 'utf8')
@@ -63,15 +53,15 @@ for (const pkg of scannedPackages) {
 
   const heading = limitations.at(0)
   if (heading === undefined) {
-    failures.push(`${readme}: missing the \`${CANONICAL}\` section (a package with genuinely nothing to declare joins NO_LIMITATIONS in scripts/verify-package-readme-limitations.ts instead)`)
+    failures.push(`${readme}: missing ${CANONICAL_LIMITATIONS_DESCRIPTION} (a package with genuinely nothing to declare joins NO_LIMITATIONS in scripts/verify-package-readme-limitations.ts instead)`)
     continue
   }
   if (limitations.length > 1) {
-    failures.push(`${readme}: ${limitations.length} limitations-like headings (lines ${limitations.map(line => line.index).join(', ')}) — keep exactly one \`${CANONICAL}\` section`)
+    failures.push(`${readme}: ${limitations.length} limitations-like headings (lines ${limitations.map(line => line.index).join(', ')}) — keep exactly one canonical section`)
     continue
   }
-  if (heading.depth !== 2 || heading.raw.trimEnd() !== CANONICAL) {
-    failures.push(`${readme}:${heading.index}: non-canonical heading ${JSON.stringify(heading.raw)} — use \`${CANONICAL}\``)
+  if (!isCanonicalLimitationsHeading(heading.raw, heading.depth)) {
+    failures.push(`${readme}:${heading.index}: non-canonical heading ${JSON.stringify(heading.raw)} — use ${CANONICAL_LIMITATIONS_DESCRIPTION}`)
     continue
   }
   const headingAt = lines.findIndex(line => line.index === heading.index)
@@ -80,7 +70,7 @@ for (const pkg of scannedPackages) {
   const end = body.findIndex(line => headingLines.has(line.index))
   const section = end === -1 ? body : body.slice(0, end)
   if (!section.some(line => /^- /.test(line.raw))) {
-    failures.push(`${readme}:${heading.index}: the \`${CANONICAL}\` section has no top-level \`- \` bullet — state the limitations, or whitelist the package if there are genuinely none`)
+    failures.push(`${readme}:${heading.index}: the limitations section has no top-level \`- \` bullet — state the limitations, or whitelist the package if there are genuinely none`)
   }
 }
 

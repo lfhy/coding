@@ -1,43 +1,42 @@
 # @deepseek-ai/dsh-subprocess-e2b
 
-English | [中文](README.zh.md)
 
-E2B implementation of the [`@deepseek-ai/dsh-subprocess`](../../subprocess/subprocess/README.md) seam. Load [`@deepseek-ai/dsh-e2b`](../e2b/README.md) first, then this service in place of `dsh-subprocess-local`. Existing Bash, PTY, and LSP consumers then execute in the shared remote sandbox without E2B-specific capability packages.
+[`@deepseek-ai/dsh-subprocess`](../../subprocess/subprocess/README.md) seam 的 E2B 实现。先加载 [`@deepseek-ai/dsh-e2b`](../e2b/README.md)，再用本服务取代 `dsh-subprocess-local`。现有的 Bash、PTY 和 LSP 消费方随后会在共享远程沙箱中执行，无需 E2B 专用的能力包。
 
-## Configuration
+## 配置
 
-| Key | Default | Meaning |
+| 键 | 默认值 | 含义 |
 | --- | --- | --- |
-| `pollMs` | `20` | Remote status/liveness poll cadence in milliseconds; each tick is one control-plane request, so a larger value trades exit-observation latency for fewer requests. |
+| `pollMs` | `20` | 远程状态／存活轮询间隔（毫秒）；每个 tick 是一次控制面请求，调大该值以牺牲退出观察延迟换取更少的请求。 |
 
-## Behavior
+## 行为
 
-- **Asynchronous remote start** — the synchronous seam returns a handle immediately while `Sandbox.commands.run(..., { background: true })` starts remotely. `pid` is `-1` until the wrapper publishes and the adapter validates its process-group id; stdin and ordinary observation wait for that publication. An owned startup signal aborts environment and private-state preparation before allocation; once allocation begins, cancellation waits for a provisional SDK handle it can clean.
-- **Execution-world coordinates** — `cwd` and private `runtimeRoot` come from the shared owner; executable lookup verifies absolute paths or resolves a bare name against the sandbox PATH plus explicit overrides, and rejects relative paths containing separators like every subprocess provider.
-- **Linux process groups** — a quoted wrapper starts each argv under `exec setsid --wait` and records its actual process-group id plus private status files beneath `ctx.e2b.runtimeRoot/processes`. The handle waits for that file instead of treating the SDK command PID as its published identity. Termination signals the negative recorded id with `SIGTERM`, waits the caller's `graceMs`, then escalates to `SIGKILL` and the SDK kill fallback; TERM delivery or probe failures also force that escalation. Process-table probes treat groups containing only zombie or dead entries as quiescent. Force cleanup succeeds only after a bounded probe finds the group empty; otherwise `waitForExit()` exposes a retryable failure, while proven quiescence makes later termination a no-op. Publication and monitoring failures apply the same cleanup transaction before rejecting. Service disposal rejects new starts, terminates and joins every retained process group, then awaits SDK settlement and private cleanup before the sandbox owner disposes.
-- **Environment boundary** — one trusted control-shell probe resolves the sandbox user's login home from its passwd entry and transports the sandbox environment as base64 ASCII for one strict UTF-8 decode; the wrapper then removes ambient `DSH_*` and credential-shaped (`*KEY*`, `*SECRET*`, `*TOKEN*`) names and restores every valid `spec.env` entry as an explicit caller opt-in. Empty names, `=`, and NUL framing violations reject before launch. Subsequent E2B command and PTY login shells receive a fresh randomized root-level `HOME` plus empty overrides for every scrubbed ambient name before user profiles can run; the requested argv receives the serialized environment afterward without changing the sandbox user's umask. Host ambient variables never enter the sandbox implicitly. Private environment files are removed after consumption, and failed command or terminal setup removes its private state before rejecting.
-- **Stdio projection** — the remote wrapper branches raw bytes into optional bounded spill files, frames each live chunk as newline-delimited base64 ASCII, and the host incrementally restores bytes across arbitrary SDK callback boundaries. Pipe mode writes those bytes to host Node streams; inherit mode writes them to the harness process streams; collect mode retains a bounded host tail with offset reads. The wrapper publishes the direct command status before waiting for inherited writers. For collect or inherit output, the adapter disconnects an incomplete SDK stream after `graceMs`, withholds its partial spill, and returns that status while retaining the remote group for `waitForExit()` and termination. Natural raw-pipe completion instead awaits lossless transport and preserves backpressure; explicit termination destroys the host pipes and releases blocked output before remote cleanup. Batch and streaming stdin use the SDK handle.
-- **Terminal sessions** — `spawnTerminal()` uses E2B's byte PTY API, installs the exact argv and scrubbed environment through private mode-`0600` files, reports the foreground process group, sends real signals, and tears down every live group in the remote terminal session through one retryable awaited `terminate()`; termination rejects new handle operations, aborts and joins in-flight writes, inspections, and signals, and treats zombie-only groups as quiescent. A private random output boundary discards the E2B bootstrap shell's prompt and echoed runner command while preserving every requested-process byte, including its first prompt. Terminal output is pushed to the handle's stream without awaiting host backpressure: a flowing consumer (the PTY backend attaches one at construction) folds bytes into its own bounded state, while a paused consumer buffers in host memory. PTY allocation is awaited through handle publication before cancellation is observed, so owned rollback can clean the published handle. Setup and teardown own the private state transaction, abort pending setup during service disposal, and fence publication; sandbox disposal or timeout bounds a setup rollback that also fails. Prompt detection, scrollback, readiness, and owner policy remain in `dsh-terminal-bash`.
-- **Sandbox disappearance** — `SandboxNotFoundError` during process or terminal liveness, termination, rollback, or disconnect proves the remote execution world cannot retain work, so cleanup treats it as quiescent; unrelated failures remain observable.
+- **异步远程启动**：同步 seam 会立即返回一个句柄，同时由 `Sandbox.commands.run(..., { background: true })` 在远程启动进程。包装层发布进程组 ID 并由适配器完成验证之前，`pid` 为 `-1`；stdin 和常规观察会等待该发布。自有启动信号会在分配前中止环境和私有状态准备；分配开始后，取消会等待可清理的临时 SDK 句柄。
+- **执行世界坐标**：`cwd` 和私有 `runtimeRoot` 来自共享所有者；可执行文件查找会验证绝对路径，或根据沙箱 PATH 加显式覆盖来解析裸名称，并与所有 subprocess 提供方一致地拒绝含分隔符的相对路径。
+- **Linux 进程组**：带引号保护的包装层会在 `exec setsid --wait` 下启动每组 argv，并在 `ctx.e2b.runtimeRoot/processes` 下记录实际进程组 ID 和私有状态文件。句柄会等待该文件，而不会把 SDK 命令 PID 当作已发布的身份。终止操作以记录的负数 ID 发送 `SIGTERM`，等待调用方的 `graceMs`，再升级到 `SIGKILL` 和 SDK kill 回退；TERM 信号发送或探测失败也会强制触发该升级。进程表探测会把仅含僵尸或已死亡条目的进程组视为完全停稳。强制清理只有在有界探测发现进程组为空后才算成功；否则 `waitForExit()` 会公开可重试的失败，而已证明的完全停稳会让后续终止操作不再执行任何动作。发布失败与监控失败都会在拒绝前执行同一清理事务。服务 dispose（资源释放）会拒绝新的启动请求、终止并等待每个保留进程组退出，再等待 SDK 结算和私有清理完成，之后沙箱所有者才会释放沙箱。
+- **环境边界**：一次受信任的控制 shell 探测会从 passwd 条目解析沙箱用户的登录主目录，以 base64 ASCII 传输沙箱环境，再进行一次严格 UTF-8 解码；随后包装层移除环境中的 `DSH_*` 和形似凭据的名称（`*KEY*`、`*SECRET*`、`*TOKEN*`），并把每个有效的 `spec.env` 条目恢复为调用方显式选择。空名称、`=` 和违反 NUL 分帧规则的条目会在启动前被拒绝。在用户 profile 脚本运行前，此后的 E2B 命令 shell 与 PTY 登录 shell 会获得位于根目录下、全新随机生成的 `HOME`，并为每个被清理的环境变量名设置空值覆盖；之后，请求的 argv 会在不改变沙箱用户 umask 的前提下接收序列化环境。宿主环境变量绝不会隐式进入沙箱。私有环境文件在使用后会被删除；命令或终端设置失败时，会先删除其私有状态再拒绝。
+- **stdio 投影**：远程包装层先把原始字节分流到可选的有界 spill 文件，再把每个实时分片编码为换行分隔的 base64 ASCII 帧；宿主会跨任意 SDK 回调边界增量恢复字节。pipe 模式把这些字节写入宿主 Node 流；inherit 模式把字节写入 harness 进程流；collect 模式保留有界的宿主尾部，并支持基于偏移量读取。包装层会在等待继承管道的写入方之前发布直接命令状态。对于 collect 或 inherit 输出，超过 `graceMs` 后，适配器会断开未完成的 SDK 流，不公开其中不完整的 spill，并返回该状态，同时保留远程进程组供 `waitForExit()` 和终止操作使用。原始 pipe 自然完成时，会等待无损传输完成并保留背压；显式终止则会销毁宿主 pipe，并在远程清理前释放受阻的输出写入。批量 stdin 和流式 stdin 都使用 SDK 句柄。
+- **终端会话**：`spawnTerminal()` 使用 E2B 的字节 PTY API，以 mode 为 `0600` 的私有文件传入原样 argv 与清理后的环境，报告前台进程组，发送真实信号，并把通过统一 2..1000 列、1..1000 行校验的动态尺寸交给 `sandbox.pty.resize`。resize 与写入、检查和信号共用句柄操作跟踪；终止会拒绝新操作，中止并等待所有在途操作结算，再通过一项可重试且须等待的 `terminate()` 清理远程终端会话中仍存活的每个进程组，并把仅含僵尸进程的进程组视为已经完全停稳。私有随机输出边界会丢弃 E2B 引导 shell 的提示符和回显的 runner 命令，同时保留请求进程的每个字节，包括其第一个提示符。终端输出推入句柄流时不等待宿主背压：流动的消费方（PTY 后端在构造时就挂上一个）把字节折叠进自身的有界状态，而暂停的消费方会在宿主内存中缓冲。在句柄发布前会一直等待 PTY 分配完成，之后才观察取消，以便由承担清理责任的回滚清理已发布句柄。setup 与 teardown 负责私有状态事务，在服务 dispose 期间中止待处理的 setup 并阻止发布；若 setup 回滚也失败，则由沙箱 dispose 或超时约束其存活时间。提示符检测、scrollback、就绪状态与所有者策略仍归 `dsh-terminal-bash` 所有。
+- **沙箱消失**：在进程或终端的存活探测、终止、回滚或断开连接期间出现 `SandboxNotFoundError`，证明远程执行环境无法保留工作，因此清理会将其视为完全停稳；其他故障仍可观察。
 
-The default E2B base image supplies the runtime and Bash/GNU utilities this adapter invokes: `node`, `bash`, `setsid`, `ps`, `awk`, `tr`, `env`, `base64`, `chmod`, `tee`, `head`, `rm`, `kill`, `id`, and `getent`.
+E2B 默认基础镜像提供该适配器调用的运行时和 Bash/GNU 工具：`node`、`bash`、`setsid`、`ps`、`awk`、`tr`、`env`、`base64`、`chmod`、`tee`、`head`、`rm`、`kill`、`id` 和 `getent`。
 
-## Model Experience
+## 模型体验
 
-Indirectly, through Consumers such as the Bash executor behind `dsh-tool-bash`, which render remote output, exit facts, background deltas, and spill paths.
+间接地，通过 `dsh-tool-bash` 背后的 Bash 执行器等 Consumer 影响模型；这些 Consumer 会渲染远程输出、退出事实、后台增量和 spill 路径。
 
-#### KV Cache effect
+#### KV 缓存影响
 
-No direct invalidation; the named consumers own any request-prefix changes.
+不会直接失效；请求前缀变更由具名消费方负责。
 
-## Known Limitations and Deferred Work
+## 已知限制与延后工作
 
-- **The SDK still retains complete command output in host memory** — E2B `CommandHandle.stdout` and `.stderr` accumulate the base64 transport even when this adapter exposes bounded raw-byte tails, so the subprocess seam's normal host-memory bound is not achieved and transport retention is larger than the source stream.
-- **Synchronous-PID consumers are unsupported** — `pid` remains `-1` during remote startup; consumers that require a positive PID immediately, including the ACP child backend, cannot use this provider unchanged.
-- **Private state lives for the sandbox lifetime** — process directories and valid spill files remain under `.dsh-e2b` until the owner deletes the sandbox; this POC supplies no in-sandbox sweep.
-- **Control state shares the sandbox user's UID** — E2B runs every command as the same default user, so `0700`/`0600` modes cannot isolate `.dsh-e2b` control files from concurrently running sandbox processes. A background process could rewrite `pid`/`exit-code` or read a not-yet-consumed `environment` file. The adapter validates published values and refuses group ids whose negative form is unsafe to signal (`<= 1`), but real isolation needs an E2B per-command user or an out-of-band control channel.
-- **Numeric process identities are not reuse-fenced** — E2B exposes numeric PID/PGID PTY input, signalling, and cleanup operations but no atomic identity-bound alternative. The adapter minimizes host round trips and live coverage exercises the reproducible stale-interrupt overlap; replacement is deferred until E2B adds an identity primitive or a failure demonstrates a narrower protocol.
-- **The initial environment probe inherits sandbox defaults** — E2B merges command overrides with default environment entries, so the probe cannot blank unknown credential-shaped names before enumerating them. A same-UID untrusted process already in the sandbox could inspect that short-lived control shell; this POC therefore does not support secrets in sandbox-default environment variables and requires an E2B replacement-environment primitive to close the gap.
-- **E2B exposes no signal fact** — an adapter-requested `SIGTERM` or `SIGKILL` is reported only when no wrapper-published direct exit code wins; every unrequested SDK exit remains an exit code, including values equal to `128 + signal`.
-- **Exact terminal stdin-wait inspection is unavailable** — E2B exposes the foreground process group but not the syscall evidence needed to prove it is waiting on fd 0, so the generic PTY backend falls back to controlled prompt markers and bounded silence.
-- **Linux utility and E2B transport semantics are assumed** — there is no Windows, escaped-session recovery, or network-partition fidelity layer.
+- **SDK 仍会在宿主内存中保留完整命令输出**：即使本适配器公开的是有界原始字节尾部，E2B `CommandHandle.stdout` 和 `.stderr` 仍会累积 base64 传输内容，因此无法达到进程管理 seam 通常提供的宿主内存边界，而且传输保留量大于源数据流。
+- **不支持需要同步 PID 的消费方**：远程启动期间，`pid` 保持为 `-1`；包括 ACP（Agent Client Protocol）子进程后端在内，要求立即获得正 PID 的消费方无法原样使用本提供方。
+- **私有状态随沙箱生命周期存在**：进程目录和有效的 spill 文件会留在 `.dsh-e2b` 下，直到所有者删除沙箱；本 POC 不提供沙箱内清理。
+- **控制状态与沙箱用户同 UID**：E2B 以同一默认用户运行每条命令，因此 `0700`/`0600` 权限无法把 `.dsh-e2b` 控制文件与并发运行的沙箱进程隔离开。后台进程可以改写 `pid`/`exit-code`，或读取尚未被消费的 `environment` 文件。适配器会验证已发布的值，并拒绝取负后不安全的进程组 ID（`<= 1`），但真正的隔离需要 E2B 提供按命令用户或带外控制通道。
+- **数值进程身份没有复用围栏**：E2B 公开基于数值 PID/PGID 的 PTY 输入、信号发送和清理操作，却没有与身份原子绑定的替代方案。适配器会尽量减少宿主往返，真实环境测试会覆盖可复现的陈旧中断重叠；在 E2B 新增身份原语，或实际故障证明需要更窄的协议之前，替代方案会继续延后。
+- **初始环境探测会继承沙箱默认值**：E2B 会把命令覆盖与默认环境条目合并，因此探测无法在枚举未知且形似凭据的名称之前将它们置空。一个已在沙箱内运行的同 UID 不可信进程可以检查该短时存在的控制 shell；因此，该 POC 不支持把 secret 放入沙箱默认环境变量，需要 E2B 的替换环境原语才能弥合该缺口。
+- **E2B 不公开信号事实**：适配器请求的 `SIGTERM` 或 `SIGKILL` 只有在包装层发布的直接退出码没有胜出时才报告为信号；其他未请求的 SDK 退出始终保留为退出码，包括等于 `128 + signal` 的值。
+- **无法精确检查终端 stdin 等待状态**：E2B 会公开前台进程组，但不提供证明其正在等待 fd 0 所需的 syscall 证据，因此通用 PTY 后端会回退到受控提示符标记与有界静默机制。
+- **依赖 Linux 工具与 E2B 传输语义**：没有 Windows、逃逸会话恢复或网络分区的保真层。

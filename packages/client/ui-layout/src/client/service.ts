@@ -1,68 +1,74 @@
 /**
- * LayoutController: the cross-plugin panel-action face behind ctx.layout.
- * Panel geometry itself lives in the root entry's layout store (stores.ts);
- * the current-session selection lives with the runtime sessions service, and
- * the per-session active view dissolved into ui-conversation's session store
- * (its only consumer). What remains here is the contract other plugins'
- * apply worlds reach for panel transitions (sidebar toggle from ui-sidebar,
- * details open/close from ui-conversation) — writes stay inside the store's
- * declared action set, delivered as the registration's bound actions.
+ * `ctx.layout` 的跨插件视图动作。布局几何由 root entry 的 store 持有，服务只
+ * 转发其他插件需要触发的导航栏、详情栏和工作台状态转换。
  */
 import type { BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
 import type { createLayoutStore } from './stores.ts'
 
-/** The layout store's bound action set (framework-baked, draft params peeled). */
+/** 框架从布局 store 绑定出的 action 集合。 */
 export type PanelActions = BoundActions<ReturnType<typeof createLayoutStore>>
 
-/**
- * The outward layout face (`ctx.layout`): the panel transitions other
- * plugins may trigger — and exactly what a test fake must supply. The
- * attachPanels wiring hook stays on the concrete class (root-entry assembly
- * only).
- */
+/** `ctx.layout` 的公开动作。 */
 export interface ILayout {
-  /** Toggle the sidebar panel (closed ⟷ contract default width). */
+  /** 切换导航栏展开状态。 */
   toggleSidebar(): void
-  /** Open the details panel (no-op when already open). */
+  /** 打开详情栏；已打开时保持当前宽度。 */
   openDetails(): void
-  /** Close the details panel. */
+  /** 关闭详情栏。 */
   closeDetails(): void
+  /** 打开工作台并关闭详情栏。 */
+  openWorkbench(): void
+  /** 关闭工作台。 */
+  closeWorkbench(): void
+  /** 切换工作台；打开时同时关闭详情栏。 */
+  toggleWorkbench(): void
 }
 
-/** Cross-plugin panel-action face (ctx.layout). */
+/** `ctx.layout` 的具体实现。 */
 export class LayoutController implements ILayout {
   #panels: PanelActions | undefined
 
   /**
-   * Adopt the root entry's bound store actions. Called from the root
-   * registration's inject hook (a sanctioned assembly side effect), so the
-   * face is live from the entry's first render; on entry re-register the
-   * fresh actions overwrite the stale set.
-   * @param actions - bound actions of the entry's layout store instance.
+   * 接管 root entry 当前实例的绑定 actions；重新注册时新实例会替换旧引用。
+   * @param actions - root 布局 store 的绑定 actions。
+   * @returns 无返回值。
    */
   attachPanels(actions: PanelActions): void {
     this.#panels = actions
   }
 
-  /** Toggle the sidebar panel (closed ⟷ contract default width). */
+  /** 切换导航栏展开状态。 */
   toggleSidebar(): void {
     this.#require().toggleSidebar()
   }
 
-  /** Open the details panel (no-op when already open). */
+  /** 打开详情栏。 */
   openDetails(): void {
     this.#require().openDetails()
   }
 
-  /** Close the details panel. */
+  /** 关闭详情栏。 */
   closeDetails(): void {
     this.#require().closeDetails()
   }
 
+  /** 打开工作台并关闭详情栏。 */
+  openWorkbench(): void {
+    this.#require().openWorkbench()
+  }
+
+  /** 关闭工作台。 */
+  closeWorkbench(): void {
+    this.#require().closeWorkbench()
+  }
+
+  /** 切换工作台；打开时同时关闭详情栏。 */
+  toggleWorkbench(): void {
+    this.#require().toggleWorkbench()
+  }
+
   #require(): PanelActions {
-    // Callers are UI gestures, which cannot fire before the root entry
-    // rendered (the inject hook runs in its first render) — reaching this
-    // unwired is a boot-order bug, not a race to tolerate.
+    // UI 手势只能在 root entry 首次渲染并接线后触发；未接线表示启动顺序错误。
     if (this.#panels === undefined) throw new Error('layout: panel actions not wired (root entry not mounted)')
     return this.#panels
   }

@@ -34,6 +34,7 @@ import type { ProcessInspector } from './process-inspector.ts'
 import { RemoteSubprocessHandle, resolveRemoteExecutable } from './remote-process.ts'
 import { RemoteTerminalHandle, spawnRemoteTerminal } from './remote-terminal.ts'
 import { LocalTerminalHandle } from './terminal.ts'
+import { validateTerminalSize } from './terminal-size.ts'
 
 /**
  * Local subprocess service: detached process trees, Node-shaped stdio
@@ -184,6 +185,7 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
     if (file === undefined || file.length === 0) {
       throw new Error('subprocess-local: terminal argv must contain a program')
     }
+    validateTerminalSize(spec.cols, spec.rows)
     spec.signal?.throwIfAborted()
     const remoteTarget = spec.remoteTarget === undefined
       ? await remoteWorkspacePath('.', spec.cwd, spec.signal)

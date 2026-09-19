@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
@@ -94,6 +95,39 @@ func TestTerminalRoutesAllocatePTYDeliverBytesAndTerminate(t *testing.T) {
 	if started.ID == "" || started.PID <= 0 {
 		t.Fatalf("terminal start = %#v", started)
 	}
+	resizeResponse := agentJSONRequest(t, server, "/v1/terminals/resize", TerminalResizeRequest{
+		Root: root, ID: started.ID, Cols: 100, Rows: 30,
+	})
+	if resizeResponse.Code != http.StatusOK || resizeResponse.Body.String() != "{\"accepted\":true}\n" {
+		t.Fatalf("terminal resize = %d %s", resizeResponse.Code, resizeResponse.Body.String())
+	}
+	for _, size := range []TerminalResizeRequest{
+		{Root: root, ID: started.ID, Cols: 1, Rows: 24},
+		{Root: root, ID: started.ID, Cols: 80, Rows: 0},
+		{Root: root, ID: started.ID, Cols: maxTerminalCols + 1, Rows: 24},
+		{Root: root, ID: started.ID, Cols: 80, Rows: maxTerminalRows + 1},
+	} {
+		invalid := agentJSONRequest(t, server, "/v1/terminals/resize", size)
+		if invalid.Code != http.StatusBadRequest || responseErrorCode(t, invalid) != "invalid-terminal-request" {
+			t.Fatalf("invalid terminal resize %#v = %d %s", size, invalid.Code, invalid.Body.String())
+		}
+	}
+	unknownField := agentRequest(server, http.MethodPost, "/v1/terminals/resize", fmt.Sprintf(
+		`{"root":%q,"id":%q,"cols":80,"rows":24,"unknown":true}`,
+		root,
+		started.ID,
+	))
+	if unknownField.Code != http.StatusBadRequest || responseErrorCode(t, unknownField) != "invalid-json" {
+		t.Fatalf("terminal resize unknown field = %d %s", unknownField.Code, unknownField.Body.String())
+	}
+	fractional := agentRequest(server, http.MethodPost, "/v1/terminals/resize", fmt.Sprintf(
+		`{"root":%q,"id":%q,"cols":80.5,"rows":24}`,
+		root,
+		started.ID,
+	))
+	if fractional.Code != http.StatusBadRequest || responseErrorCode(t, fractional) != "invalid-json" {
+		t.Fatalf("fractional terminal resize = %d %s", fractional.Code, fractional.Body.String())
+	}
 
 	first := readTerminalRoute(t, server, root, started.ID, 0)
 	if !strings.Contains(terminalOutputText(t, first), "ready") {
@@ -112,6 +146,12 @@ func TestTerminalRoutesAllocatePTYDeliverBytesAndTerminate(t *testing.T) {
 	if !second.Closed || second.ExitCode == nil || *second.ExitCode != 0 {
 		t.Fatalf("terminal close = %#v", second)
 	}
+	lateResize := agentJSONRequest(t, server, "/v1/terminals/resize", TerminalResizeRequest{
+		Root: root, ID: started.ID, Cols: 80, Rows: 24,
+	})
+	if lateResize.Code != http.StatusConflict || responseErrorCode(t, lateResize) != "terminal-closed" {
+		t.Fatalf("late terminal resize = %d %s", lateResize.Code, lateResize.Body.String())
+	}
 	terminated := agentJSONRequest(t, server, "/v1/terminals/terminate", TerminalTerminateRequest{Root: root, ID: started.ID})
 	if terminated.Code != http.StatusOK || terminated.Body.String() != "{\"accepted\":true}\n" {
 		t.Fatalf("idempotent terminal terminate = %d %s", terminated.Code, terminated.Body.String())
@@ -123,6 +163,9 @@ func TestTerminalRoutesAllocatePTYDeliverBytesAndTerminate(t *testing.T) {
 	}
 	if response := agentRequest(server, http.MethodGet, "/v1/terminals/start", ""); response.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("GET terminal start status = %d, want %d", response.Code, http.StatusMethodNotAllowed)
+	}
+	if response := agentRequest(server, http.MethodGet, "/v1/terminals/resize", ""); response.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("GET terminal resize status = %d, want %d", response.Code, http.StatusMethodNotAllowed)
 	}
 }
 
@@ -296,6 +339,7 @@ func TestTerminalRoutesRejectCrossRootControl(t *testing.T) {
 	}{
 		{"/v1/terminals/read", TerminalReadRequest{Root: foreignRoot, ID: started.ID, WaitMs: 1}},
 		{"/v1/terminals/write", TerminalWriteRequest{Root: foreignRoot, ID: started.ID, DataBase64: base64.StdEncoding.EncodeToString([]byte("ignored"))}},
+		{"/v1/terminals/resize", TerminalResizeRequest{Root: foreignRoot, ID: started.ID, Cols: 100, Rows: 30}},
 		{"/v1/terminals/foreground", TerminalForegroundRequest{Root: foreignRoot, ID: started.ID}},
 		{"/v1/terminals/signal", TerminalSignalRequest{Root: foreignRoot, ID: started.ID, Signal: "SIGINT"}},
 		{"/v1/terminals/terminate", TerminalTerminateRequest{Root: foreignRoot, ID: started.ID}},
@@ -339,6 +383,7 @@ func TestTerminalRoutesKeepLaunchOwnerAfterRootAliasChanges(t *testing.T) {
 		body any
 	}{
 		{"/v1/terminals/read", TerminalReadRequest{Root: realRoot, ID: started.ID, WaitMs: 1}},
+		{"/v1/terminals/resize", TerminalResizeRequest{Root: realRoot, ID: started.ID, Cols: 100, Rows: 30}},
 		{"/v1/terminals/terminate", TerminalTerminateRequest{Root: realRoot, ID: started.ID}},
 	} {
 		got := agentJSONRequest(t, server, request.path, request.body)
@@ -459,6 +504,123 @@ func TestTerminalTerminateWaitsForConfiguredGrace(t *testing.T) {
 	}
 }
 
+func TestTerminalTerminateDrainsInFlightResize(t *testing.T) {
+	sessions := NewTerminalSessions(TerminalSessionsOptions{})
+	t.Cleanup(func() { sessions.Close(context.Background()) })
+	backend := &resizeRaceTerminalBackend{
+		resizeStarted: make(chan struct{}),
+		releaseResize: make(chan struct{}),
+		terminated:    make(chan struct{}),
+		waitDone:      make(chan struct{}),
+	}
+	sessions.startBackend = func(_ string, _ TerminalStartRequest) (terminalBackend, error) {
+		return backend, nil
+	}
+	root := t.TempDir()
+	started, err := sessions.Start(TerminalStartRequest{
+		Root: root, Path: root, Argv: []string{"resize-race-terminal"}, Rows: 24, Cols: 80,
+		StartNonce: strings.Repeat("0", 32),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resizeResult := make(chan error, 1)
+	go func() {
+		resizeResult <- sessions.Resize(TerminalResizeRequest{Root: root, ID: started.ID, Cols: 100, Rows: 30})
+	}()
+	select {
+	case <-backend.resizeStarted:
+	case <-time.After(time.Second):
+		t.Fatal("resize did not enter the PTY backend")
+	}
+
+	terminateResult := make(chan error, 1)
+	go func() {
+		terminateResult <- sessions.Terminate(context.Background(), TerminalTerminateRequest{Root: root, ID: started.ID})
+	}()
+	session := sessions.session(started.ID)
+	if session == nil {
+		t.Fatal("terminal session was not registered")
+	}
+	deadline := time.After(time.Second)
+	for {
+		session.mu.Lock()
+		stopping := session.stopping
+		session.mu.Unlock()
+		if stopping {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("termination did not close admission for terminal operations")
+		case <-time.After(time.Millisecond):
+		}
+	}
+	select {
+	case <-backend.terminated:
+		t.Fatal("terminate reached the PTY before the in-flight resize drained")
+	default:
+	}
+	lateResize := make(chan error, 1)
+	go func() {
+		lateResize <- sessions.Resize(TerminalResizeRequest{Root: root, ID: started.ID, Cols: 120, Rows: 40})
+	}()
+
+	close(backend.releaseResize)
+	if err := <-resizeResult; err != nil {
+		t.Fatalf("in-flight resize = %v", err)
+	}
+	select {
+	case <-backend.terminated:
+	case <-time.After(time.Second):
+		t.Fatal("terminate did not reach the PTY after resize drained")
+	}
+	if err := <-lateResize; !errors.Is(err, ErrTerminalClosed) {
+		t.Fatalf("resize admitted after termination started: %v", err)
+	}
+	if err := <-terminateResult; err != nil {
+		t.Fatalf("terminal terminate = %v", err)
+	}
+}
+
+type resizeRaceTerminalBackend struct {
+	resizeStarted chan struct{}
+	releaseResize chan struct{}
+	terminated    chan struct{}
+	waitDone      chan struct{}
+
+	resizeOnce    sync.Once
+	terminateOnce sync.Once
+}
+
+func (backend *resizeRaceTerminalBackend) Read([]byte) (int, error) {
+	return 0, errors.New("resize race reader closed")
+}
+func (backend *resizeRaceTerminalBackend) Write(data []byte) (int, error) { return len(data), nil }
+func (backend *resizeRaceTerminalBackend) Close() error                   { return nil }
+func (backend *resizeRaceTerminalBackend) PID() int                       { return 1 }
+func (backend *resizeRaceTerminalBackend) Wait() terminalExit {
+	<-backend.waitDone
+	code := 0
+	return terminalExit{exitCode: &code}
+}
+func (backend *resizeRaceTerminalBackend) Resize(int, int) error {
+	backend.resizeOnce.Do(func() { close(backend.resizeStarted) })
+	<-backend.releaseResize
+	return nil
+}
+func (backend *resizeRaceTerminalBackend) Foreground() (int, error)             { return 1, nil }
+func (backend *resizeRaceTerminalBackend) SignalForeground(string) (int, error) { return 1, nil }
+func (backend *resizeRaceTerminalBackend) Terminate() error {
+	backend.terminateOnce.Do(func() {
+		close(backend.terminated)
+		close(backend.waitDone)
+	})
+	return nil
+}
+func (backend *resizeRaceTerminalBackend) ForceTerminate() error { return backend.Terminate() }
+
 type blockingTerminalBackend struct {
 	closed chan struct{}
 	once   sync.Once
@@ -474,6 +636,7 @@ func (backend *blockingTerminalBackend) Close() error {
 }
 func (backend *blockingTerminalBackend) PID() int                             { return 1 }
 func (backend *blockingTerminalBackend) Wait() terminalExit                   { return terminalExit{} }
+func (backend *blockingTerminalBackend) Resize(int, int) error                { return nil }
 func (backend *blockingTerminalBackend) Foreground() (int, error)             { return 1, nil }
 func (backend *blockingTerminalBackend) SignalForeground(string) (int, error) { return 1, nil }
 func (backend *blockingTerminalBackend) Terminate() error                     { return nil }
@@ -499,6 +662,7 @@ func (backend *unpublishedTerminalBackend) Wait() terminalExit {
 	<-backend.waited
 	return terminalExit{}
 }
+func (backend *unpublishedTerminalBackend) Resize(int, int) error                { return nil }
 func (backend *unpublishedTerminalBackend) Foreground() (int, error)             { return 1, nil }
 func (backend *unpublishedTerminalBackend) SignalForeground(string) (int, error) { return 1, nil }
 func (backend *unpublishedTerminalBackend) Terminate() error                     { return backend.ForceTerminate() }

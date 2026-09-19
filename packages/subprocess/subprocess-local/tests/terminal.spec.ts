@@ -10,6 +10,7 @@ import type { SubprocessTerminalSignal } from '@deepseek-ai/dsh-subprocess'
 class FakePty {
   pid = 123
   readonly writes: string[] = []
+  readonly sizes: Array<[number, number]> = []
   readonly kills: string[] = []
   autoExitOnKill = true
   throwKill = false
@@ -36,6 +37,8 @@ class FakePty {
   }
 
   write(data: string): void { this.writes.push(data) }
+
+  resize(cols: number, rows: number): void { this.sizes.push([cols, rows]) }
 
   kill(signal?: string): void {
     if (this.throwKill) throw new Error('process raced')
@@ -184,7 +187,9 @@ describe('LocalTerminalHandle', () => {
 
     pty.emitData('hello €')
     await handle.write('input\r')
+    await handle.resize(100, 30)
     expect(pty.writes).toEqual(['input\r'])
+    expect(pty.sizes).toEqual([[100, 30]])
     expect(await handle.inspectForeground()).toEqual({ processGroupId: 456, inputWaiting: true })
     expect(inspector.stdinChecks).toEqual([[456, 123]])
     expect(await handle.signalForeground('SIGINT')).toBe(456)
@@ -193,8 +198,42 @@ describe('LocalTerminalHandle', () => {
     pty.emitExit(7, 9)
     pty.emitExit(0)
     expect(await handle.done).toEqual({ exitCode: null, signal: 'SIGKILL' })
+    await expect(handle.resize(80, 24)).rejects.toThrow('has exited')
     await handle.terminate()
     expect(Buffer.concat(chunks).toString('utf8')).toBe('hello €')
+  })
+
+  it('strictly validates resize dimensions before touching node-pty', async () => {
+    const pty = new FakePty()
+    const handle = makeHandle(pty, new FakeInspector(), 10)
+    const invalid: Array<[number, number]> = [
+      [1, 24],
+      [80, 0],
+      [1_001, 24],
+      [80, 1_001],
+      [80.5, 24],
+      [80, Number.NaN],
+      [Number.MAX_SAFE_INTEGER + 1, 24],
+    ]
+
+    for (const [cols, rows] of invalid) {
+      await expect(handle.resize(cols, rows)).rejects.toThrow('terminal size requires integer cols')
+    }
+    expect(pty.sizes).toEqual([])
+    pty.emitExit()
+    await handle.terminate()
+  })
+
+  it('fails resize closed as soon as termination starts', async () => {
+    const pty = new FakePty()
+    pty.autoExitOnKill = false
+    const handle = makeHandle(pty, new FakeInspector(), 10)
+
+    const closing = handle.terminate()
+    await expect(handle.resize(100, 30)).rejects.toThrow('has exited')
+    expect(pty.sizes).toEqual([])
+    pty.emitExit()
+    await closing
   })
 
   it('rejects unsafe foreground signals and writes after exit', async () => {

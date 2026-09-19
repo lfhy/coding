@@ -12,8 +12,8 @@ Web 客户端的工作区打开能力最初来自外部 `@dsh-plugins/open-anywh
 
 工作区打开是一个由两个第一方包组成的功能：
 
-- [`dsh-host-open-in-app`](../../../../packages/host/open-in-app/README.md)拥有应用发现、图标、目标分类、启动和 provider 文件列表路由。
-- [`dsh-client-ui-open-in-app`](../../../../packages/client/ui-open-in-app/README.md)拥有会话页头入口、持久化应用选择和 utility 自持的内置文件管理面板。
+- [`dsh-host-open-in-app`](../../../../packages/host/open-in-app/README.md)拥有应用发现、图标、目标分类、启动、live Session 文件协议和 Agent execution world 用户终端。
+- [`dsh-client-ui-open-in-app`](../../../../packages/client/ui-open-in-app/README.md)拥有会话页头入口、持久化应用选择、文件标签／预览／文件树和 xterm 底栏。
 
 Web bundle 同时挂载两包。路由常量与 JSON 载荷类型唯一的浏览器安全归属是 `@deepseek-ai/dsh-host-open-in-app/shared`；动态 Client bundle 只可内联这一子路径。
 
@@ -23,13 +23,15 @@ Web bundle 同时挂载两包。路由常量与 JSON 载荷类型唯一的浏览
 
 open 路由会在启动前立刻重复分类。Client 探测后才变成 marker 的路径返回 `action: files`，绝不进入应用适配器。marker 失败必须 fail-closed；把不可读 marker 当作本地目录会向 Finder 或 Explorer 暴露它的实现目录。
 
-### 一个跨平台文件管理面板
+### 固定的跨平台工作台
 
-Client 在会话页头右侧注册紧凑的工作区入口，位置紧邻 Session log。Remote-SSH 目标点击后直接打开该 utility 自己拥有和渲染的文件管理面板；面板状态与目录导航不扩展到会话页面 owner，也不成为全局导航目标。浏览器与桌面界面共用这一响应式实现。
+Client 在会话页头右侧注册紧凑入口，位置紧邻 Session log。本地工作区显示应用图标与下拉菜单组成的分体按钮；Remote-SSH 或 SSH Host 目标打开由 `ui-layout` 持有固定几何的 Session 工作台。本功能不注册 `conversation.view`，也不使用文件 conversation tab、临时浮层或模态框。
 
-文件路由经 `ctx.fs` 解析工作区根，不拼接浏览器路径字符串。每个请求 segment 都通过列出当前 provider target、精确选取 provider 返回的同名目录、检查 containment，再从该子 target 继续。浏览器保存的是名称链而非 Windows／POSIX 语法。因此 Windows 桌面可浏览 POSIX 远端，POSIX 桌面也可通过同一契约浏览 Windows 远端。Provider target key、marker 身份、bridge 地址与凭据都不会跨 wire。
+宽屏主内容保留左侧对话，工作台中间是可关闭、可激活的文件标签及 Markdown、代码、普通文本和图片预览，右侧是可筛选、按展开懒加载的文件树，底部是真实 xterm。工作台右上角提供最大化、终端底栏和文件侧栏按钮；关闭工作台、最大化和底栏由 layout owner 回调控制，文件侧栏保持功能内部 viewing state。768px 参考视口隐藏文件大小并把文件树固定为 260px；375px 手机视口把文件树覆盖到预览区，关闭侧栏后回到标签与预览。
 
-文件管理面板只读，每层最多列出 2,000 个直接子项。面包屑导航、刷新、加载、失败、键盘焦点、长名称截断与窄屏布局属于已交付 UI 契约。文件预览和 mutation 需要独立的归属与授权决策。
+文件请求以当前 live Session 的 id 绑定根目录，只把 provider 返回的 segment 链传回 Host。Host 从 `Session.header.cwd` 经 `ctx.fs` 解析根，每个 segment 都必须精确匹配上一层 provider 条目，并在进入或读取前再次检查 containment；浏览器不提交根目录，也不构造 Windows、POSIX 或 UNC 路径。Provider target key、marker 身份、bridge 地址与凭据不会跨 wire。每层最多列出 2,000 个直接子项；预览在配置上限内完整返回，严格 UTF-8 文本按 Markdown／代码／普通文本分类，支持的图片返回校验后 MIME 与 base64，其余内容返回不携带原始字节的 unsupported。
+
+终端底栏使用 `@xterm/xterm` 与 fit addon，首次显示后在视觉收起和工作台关闭期间保持连接。Host 的 loopback trust 栅栏先拒绝不可信 upgrade，再要求 Session 与 live Agent 对应，并从 `agent.ctx` 取得 `subprocess` provider；终端因此运行在 Agent execution world，而不是无条件使用 Host provider。xterm 尺寸通过封闭 resize 帧进入 `SubprocessTerminalHandle.resize()`，覆盖本地 POSIX、本地 Windows、Remote-SSH Unix PTY 与 Remote-SSH Windows ConPTY。组件或连接真正结束时，Host 终止该 WebSocket 独占的 PTY 并等待清理。
 
 ### 已验证的本地应用
 
@@ -45,9 +47,9 @@ Client 在会话页头右侧注册紧凑的工作区入口，位置紧邻 Sessio
 
 ### 路由安全与 UI 生命周期
 
-每条路由都会先执行 composition connection 服务的 Host/Origin 栅栏与浏览器认证。POST body 要求精确 JSON 媒体类型、64 KiB 上限、封闭字段集和运行时校验。文件路由只暴露展示路径与直接子项元数据。
+每条 HTTP 路由和 WebSocket upgrade 都先调用 composition connection 服务的 `requestRejection()`。该接口固定执行 loopback Host 与浏览器同源检查，不因部署的 `trustedHosts` 放宽；这是 DNS rebinding／跨站可达性边界，不是假称存在用户认证。POST body 要求精确 JSON 媒体类型、64 KiB 上限、封闭字段集和运行时校验。文件协议只暴露展示路径、普通元数据和封闭预览内容。
 
-Client 使用标准 slot 系统、locale 服务、CSS Modules、设计 token 与 snapshot store。目标请求按 `cwd` 合并并缓存到页面结束；本地应用选择持久化在 `dsh.open-in-app.choice`。页头 entry 及其自持面板都会随插件 fiber 消失。
+Client 使用标准 slot 系统、locale 服务、CSS Modules、设计 token 与 snapshot store。目标请求按 `cwd` 合并并缓存到页面结束；本地应用选择持久化在 `dsh.open-in-app.choice`。文件标签归 Session scope store，树展开、筛选与侧栏可见性归组件本地状态。布局把工作台、底栏和对话保留在固定 React 树位置，因此视觉隐藏不等于终端卸载；插件 fiber 或 Session scope 释放才撤销 entry 和连接。
 
 ## 曾考虑的替代方案
 
@@ -55,7 +57,7 @@ Client 使用标准 slot 系统、locale 服务、CSS Modules、设计 token 与
 
 **在浏览器中构造远端路径。** 拒绝，因为 Host 与远端可能使用不同路径语法，浏览器拼接也无法保持 provider target 身份或 symlink containment。按 provider 返回名称遍历会把这些决策保留在 `ctx.fs`。
 
-**把文件管理做成常驻会话页面或独立右侧 Sidebar。** 不采用。该能力只在用户从页头打开远端工作区时需要；把它提升为全局页面或 pane 会引入无关的导航、持久化和 owner 契约。由入口 utility 自持临时面板能把状态与生命周期限制在功能内部。
+**把文件管理做成 conversation 页面或独立右侧 Sidebar。** 不采用。页面方案会把工作区工具混入会话导航，独立 Sidebar 又会复制布局和持久化契约。固定工作台 slot 让 layout 只拥有组合几何和显隐，功能包拥有文件与终端业务状态。
 
 **所有操作都使用 Typert Remote。** 拒绝，因为应用图标是二进制响应，而目标、启动和列表载荷是 JSON。让一个经认证的原始路由 owner 承担完整功能可避免双传输，同时仍在每个 JSON 边界校验。
 
@@ -65,6 +67,6 @@ Client 使用标准 slot 系统、locale 服务、CSS Modules、设计 token 与
 
 ## 后果
 
-只要至少一个可命名应用解析成功，本地工作区就在 macOS、Windows、Linux 上得到与主线一致的页头控件。Remote-SSH 与 SSH Host 工作区得到紧邻 Session log 的内置文件入口，而不是缺失或不安全的本地操作。文件管理面板使用与模型工具相同的 `ctx.fs` 执行世界，因此桌面 Remote-SSH 会抵达 Go agent，无需移动 Host 控制平面。
+只要至少一个可命名应用解析成功，本地工作区就在 macOS、Windows、Linux 上得到与主线一致的页头分体按钮。Remote-SSH 与 SSH Host 工作区得到紧邻 Session log 的固定工作台入口，而不是缺失或不安全的本地操作。文件协议使用 Session 的 `ctx.fs` 世界，终端使用 live Agent 的 subprocess 世界，因此桌面 Remote-SSH 会抵达 Go agent，Windows 与 POSIX 终端也共用一份浏览器协议，无需移动 Host 控制平面。
 
-接受的成本是文件管理面板第一版只读、每目录 2,000 项上限、页面生命周期目标缓存，以及编译期应用 catalog。Resolver 与图标测试固定三个本地平台；路由测试固定认证、Remote-SSH fail-closed 分流、provider containment、启动刷新与 HMR 释放；Client 测试固定目标切换、面板导航、响应式语义与 wire 校验。
+接受的成本是文件工作台只读、每目录 2,000 项上限、预览采用完整有界读取、终端以 WebSocket 连接为生命周期、页面生命周期目标缓存，以及编译期应用 catalog。Resolver 与图标覆盖固定三个本地平台；Host 契约固定 loopback trust、live Session／Agent 绑定、provider containment、预览分类、封闭帧、各执行世界 resize 与 PTY 清理；Client 契约固定目标切换、文件标签／树／预览、xterm 保留式显隐和 375px／768px 响应式语义。

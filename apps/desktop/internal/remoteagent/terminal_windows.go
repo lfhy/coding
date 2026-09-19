@@ -201,6 +201,24 @@ func (backend *windowsTerminalBackend) Write(data []byte) (int, error) {
 	return backend.input.Write(data)
 }
 
+func (backend *windowsTerminalBackend) Resize(cols, rows int) error {
+	if err := validateTerminalSize(cols, rows); err != nil {
+		return err
+	}
+	backend.mu.Lock()
+	defer backend.mu.Unlock()
+	if backend.pseudoConsole == 0 {
+		return ErrTerminalClosed
+	}
+	if err := windows.ResizePseudoConsole(
+		backend.pseudoConsole,
+		windows.Coord{X: int16(cols), Y: int16(rows)},
+	); err != nil {
+		return fmt.Errorf("remote terminal: resize ConPTY: %w", err)
+	}
+	return nil
+}
+
 // Close 先关闭 host 侧输出 pipe，再异步释放 ConPTY。Windows 11 24H2 前的
 // ClosePseudoConsole 可能无限等待 client 断开；输出 pipe 已关闭且 Job 已强杀
 // 树后，后台释放不会阻塞 HTTP session 的回收路径。

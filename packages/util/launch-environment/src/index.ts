@@ -116,6 +116,19 @@ export function launchEnvironmentOf(ctx: Context): LaunchEnvironmentSnapshot {
     ?? createLaunchEnvironmentSnapshot([{ source: 'process', values: process.env as Record<string, string> }])
 }
 
+/**
+ * 仅根据进程启动时继承的非空 `SSH_CONNECTION` 或 `SSH_TTY` 判断是否经 SSH 启动。
+ * 项目目录与用户目录中的 `.env` 值不能伪造 SSH 会话。
+ * @param environment - 启动器创建的分层环境快照。
+ * @returns 继承的进程层携带任一 SSH 标记时为 true。
+ */
+export function launchedThroughSsh(environment: LaunchEnvironmentSnapshot): boolean {
+  return ['SSH_CONNECTION', 'SSH_TTY'].some((name) => {
+    const value = environment.getFrom(name, ['process'])?.value
+    return value !== undefined && value !== ''
+  })
+}
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     /** Launcher-owned snapshot of this run's environment; absent in compositions the product CLI did not boot. */

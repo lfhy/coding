@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
-  CENTER_MIN, clampWidth, computeColumns,
+  CENTER_MIN, clampWidth, computeColumns, computeWorkbenchBottom, computeWorkbenchColumns,
   DETAILS_DEFAULT, DETAILS_MIN, SIDEBAR_COLLAPSED, SIDEBAR_DEFAULT, SIDEBAR_MIN,
+  WORKBENCH_BOTTOM_DEFAULT, WORKBENCH_BOTTOM_MAX, WORKBENCH_BOTTOM_MIN,
+  WORKBENCH_DEFAULT, WORKBENCH_MAX, WORKBENCH_MIN, WORKBENCH_TOP_MIN,
 } from '@deepseek-ai/dsh-client-ui-layout/src/client/columns.ts'
 
-// Numeric preference form (0 = closed); helpers keep the scenario names readable.
+// 数字偏好中 0 表示关闭；辅助函数让场景名称保持易读。
 const open = (width: number) => width
 const closed = (_width: number) => 0
 
@@ -35,7 +37,7 @@ describe('computeColumns', () => {
   })
 
   it('step 2: details shrinks first, center pinned at min', () => {
-    // 280 + 360 + 640 = 1280 > 1250; details concedes to 1250-280-640 = 330.
+    // 280 + 360 + 640 = 1280 > 1250；详情栏让步到 1250-280-640 = 330。
     const cols = computeColumns(1250, open(SIDEBAR_DEFAULT), open(DETAILS_DEFAULT))
     expect(cols).toEqual({ sidebar: 280, center: CENTER_MIN, details: 330 })
   })
@@ -48,13 +50,13 @@ describe('computeColumns', () => {
   })
 
   it('step 3: details auto-closes when its min still starves center — sidebar holds its preference', () => {
-    // 280 + 300 + 640 = 1220 > 1210 → details 0; sidebar untouched: center = 1210-280 = 930.
+    // 280 + 300 + 640 = 1220 > 1210；详情栏关闭，导航栏不变，对话区为 930。
     const cols = computeColumns(1210, open(SIDEBAR_DEFAULT), open(DETAILS_DEFAULT))
     expect(cols).toEqual({ sidebar: 280, center: 930, details: 0 })
   })
 
   it('the sidebar never concedes: center absorbs the deficit below CENTER_MIN', () => {
-    // 700 < 280+640: sidebar keeps 280, center takes 420 < CENTER_MIN.
+    // 700 < 280+640；导航栏保留 280，对话区承担缺口后为 420。
     const cols = computeColumns(700, open(SIDEBAR_DEFAULT), closed(DETAILS_DEFAULT))
     expect(cols).toEqual({ sidebar: SIDEBAR_DEFAULT, center: 420, details: 0 })
   })
@@ -88,8 +90,67 @@ describe('computeColumns', () => {
 
 describe('computeColumns — degenerate viewports', () => {
   it('sidebar closed and viewport below CENTER_MIN: details auto-closes, center takes the rest', () => {
-    // Reaches step 3's auto-close with the compact rail sidebar.
+    // 紧凑 rail 下同样进入详情栏自动关闭分支。
     expect(computeColumns(500, closed(300), open(DETAILS_DEFAULT)))
       .toEqual({ sidebar: SIDEBAR_COLLAPSED, center: 500 - SIDEBAR_COLLAPSED, details: 0 })
+  })
+})
+
+describe('computeWorkbenchColumns', () => {
+  it('keeps the default workbench usable beside conversation at 1110px', () => {
+    expect(computeWorkbenchColumns(1110, SIDEBAR_DEFAULT, WORKBENCH_DEFAULT, false)).toEqual({
+      sidebar: 280,
+      conversation: 400,
+      workbench: 430,
+    })
+  })
+
+  it('clamps preferences and protects the conversation while room remains', () => {
+    expect(computeWorkbenchColumns(1920, 0, 1, false)).toEqual({
+      sidebar: SIDEBAR_COLLAPSED,
+      conversation: 1920 - SIDEBAR_COLLAPSED - WORKBENCH_MIN,
+      workbench: WORKBENCH_MIN,
+    })
+    expect(computeWorkbenchColumns(4000, SIDEBAR_DEFAULT, 9999, false).workbench).toBe(WORKBENCH_MAX)
+    expect(computeWorkbenchColumns(1000, SIDEBAR_DEFAULT, WORKBENCH_DEFAULT, false)).toEqual({
+      sidebar: SIDEBAR_DEFAULT,
+      conversation: 400,
+      workbench: 320,
+    })
+  })
+
+  it('holds the workbench minimum before letting conversation absorb a deficit', () => {
+    expect(computeWorkbenchColumns(900, SIDEBAR_DEFAULT, WORKBENCH_DEFAULT, false)).toEqual({
+      sidebar: SIDEBAR_DEFAULT,
+      conversation: 320,
+      workbench: WORKBENCH_MIN,
+    })
+    expect(computeWorkbenchColumns(200, SIDEBAR_DEFAULT, WORKBENCH_DEFAULT, false)).toEqual({
+      sidebar: SIDEBAR_DEFAULT,
+      conversation: 0,
+      workbench: 0,
+    })
+  })
+
+  it('fullscreen gives every non-sidebar pixel to the workbench', () => {
+    expect(computeWorkbenchColumns(980, 0, WORKBENCH_DEFAULT, true)).toEqual({
+      sidebar: SIDEBAR_COLLAPSED,
+      conversation: 0,
+      workbench: 980 - SIDEBAR_COLLAPSED,
+    })
+  })
+})
+
+describe('computeWorkbenchBottom', () => {
+  it('returns zero while hidden and the preferred height while it fits', () => {
+    expect(computeWorkbenchBottom(1080, WORKBENCH_BOTTOM_DEFAULT, false)).toBe(0)
+    expect(computeWorkbenchBottom(1080, WORKBENCH_BOTTOM_DEFAULT, true)).toBe(WORKBENCH_BOTTOM_DEFAULT)
+  })
+
+  it('clamps preferences and yields to a short upper workspace', () => {
+    expect(computeWorkbenchBottom(1080, 1, true)).toBe(WORKBENCH_BOTTOM_MIN)
+    expect(computeWorkbenchBottom(1080, 9999, true)).toBe(WORKBENCH_BOTTOM_MAX)
+    expect(computeWorkbenchBottom(300, WORKBENCH_BOTTOM_DEFAULT, true)).toBe(300 - WORKBENCH_TOP_MIN)
+    expect(computeWorkbenchBottom(100, WORKBENCH_BOTTOM_DEFAULT, true)).toBe(0)
   })
 })

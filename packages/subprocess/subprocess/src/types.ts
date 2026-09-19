@@ -256,6 +256,14 @@ export interface SubprocessTerminalHandle {
    */
   write(data: string): Promise<void>
   /**
+   * 调整终端尺寸并通知前台应用。提供方必须拒绝非安全整数、`cols` 不在
+   * 2..1000 或 `rows` 不在 1..1000 的请求；终端退出或开始终止后同样拒绝。
+   * @param cols - 终端列数。
+   * @param rows - 终端行数。
+   * @returns 尺寸已提交给底层 PTY 后结算。
+   */
+  resize(cols: number, rows: number): Promise<void>
+  /**
    * 检查当前前台控制身份。
    * @returns 该身份及其输入等待事实；无法解析时返回 undefined。
    */
@@ -267,9 +275,10 @@ export interface SubprocessTerminalHandle {
    */
   signalForeground(signal: SubprocessTerminalSignal): Promise<number>
   /**
-   * Idempotently terminate every terminal-session member the provider can still observe and await quiescence.
-   * After settlement, no write, inspection, or signal call remains in flight.
-   * Providers document substrate-specific observability limits.
+   * 幂等终止提供方仍可观察的全部终端会话成员，并等待会话停稳。结算后不再有
+   * write、resize、inspection 或 signal 调用处于执行中；各提供方记录其执行
+   * 基底特有的可观察范围。
+   * @returns 终端会话达到提供方可证明的停稳状态后结算。
    */
   terminate(): Promise<void>
 }

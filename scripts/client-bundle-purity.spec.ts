@@ -93,6 +93,11 @@ describe('client bundle purity gate', () => {
     expect(() => resolveId('@deepseek-ai/dsh-client-web')).toThrow(/purity/)
   })
 
+  it('inlines only the browser-safe open-in-app wire subpath', () => {
+    expect(resolveId('@deepseek-ai/dsh-host-open-in-app/shared')).toBeNull()
+    expect(() => resolveId('@deepseek-ai/dsh-host-open-in-app')).toThrow(/purity/)
+  })
+
   it('throws on cross-plugin value imports — bare plugin names and /client subpaths alike', () => {
     expect(() => resolveId('@deepseek-ai/dsh-client-connection')).toThrow(/purity/)
     expect(() => resolveId('@deepseek-ai/dsh-client-runtime')).toThrow(/purity/)

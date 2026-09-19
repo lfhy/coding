@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-native-command",
-  "description": "Zero-dependency no-shell execFile runner for host-native OS integrations: utf8 stdio capture, abort propagation, Windows hide",
+  "description": "No-shell host-native command runner and cross-platform path opener with cancellation, Windows handoff, and WSL translation",
   "version": "0.1.0-rc.8",
   "publishConfig": {
     "access": "public"

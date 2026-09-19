@@ -55,6 +55,14 @@ type TerminalWriteRequest struct {
 	DataBase64 string `json:"dataBase64"`
 }
 
+// TerminalResizeRequest 是 POST /v1/terminals/resize 的封闭 JSON 请求体。
+type TerminalResizeRequest struct {
+	Root string `json:"root,omitempty"`
+	ID   string `json:"id"`
+	Cols int    `json:"cols"`
+	Rows int    `json:"rows"`
+}
+
 // TerminalForegroundRequest 是 POST /v1/terminals/foreground 的 JSON 请求体。
 type TerminalForegroundRequest struct {
 	Root string `json:"root,omitempty"`

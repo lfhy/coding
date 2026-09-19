@@ -223,6 +223,8 @@ describe('connection node half', () => {
     expect(routes[0]).toMatchObject({ kind: 'prefix', path: API_PATH })
 
     const connection = ctx.get('connection') as HostConnectionHandle
+    expect(connection.requestRejection(fakeRequest({ host: '127.0.0.1:3080' }))).toBeUndefined()
+    expect(connection.requestRejection(fakeRequest({ host: 'harness.example' }))).toBe(403)
     const calls: unknown[] = []
     const remove = connection.rpc.handle('/rpc', async (endpoint, payload) => {
       calls.push({ endpoint, payload })

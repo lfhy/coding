@@ -11,6 +11,7 @@ import type {
   SubprocessTerminalSignal,
 } from '@deepseek-ai/dsh-subprocess'
 import type { ProcessIdentity, ProcessInspector } from './process-inspector.ts'
+import { validateTerminalSize } from './terminal-size.ts'
 
 function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
@@ -25,12 +26,10 @@ function signalName(number: number | undefined): NodeJS.Signals | null {
 }
 
 /**
- * A local terminal whose process-session ownership stays below the PTY backend.
- * The seam's terminate() promise — no write, inspection, or signal in flight
- * after settlement — holds here without operation tracking only because every
- * handle call completes synchronously under the hood (node-pty write, ps-based
- * inspection). A first genuinely asynchronous step in any handle call must add
- * the tracking a remote provider needs.
+ * 本地终端把进程会话所有权保留在 PTY 后端之下。`terminate()` 结算后没有
+ * write、resize、inspection 或 signal 仍在执行；这里无需异步操作追踪，因为
+ * node-pty 写入、resize 与进程检查都在调用栈内同步完成。任何句柄操作一旦加入
+ * 真正的异步步骤，就必须像远端提供方一样显式追踪并排空。
  */
 export class LocalTerminalHandle implements SubprocessTerminalHandle {
   readonly pid: number
@@ -42,15 +41,16 @@ export class LocalTerminalHandle implements SubprocessTerminalHandle {
   private readonly exitDisposable: IDisposable
   private cleanup: Promise<void> | undefined
   private exited = false
+  private stopping = false
   private trackedDescendants: ProcessIdentity[] = []
-  /** The spawned shell's start identity; scans stop adopting members once the root pid no longer carries it. */
+  /** 启动 shell 的精确身份；根 pid 不再携带该身份后，扫描不再接纳新成员。 */
   private readonly rootIdentity: ProcessIdentity | undefined
 
   /**
-   * @param terminal - allocated node-pty process.
-   * @param inspector - platform process/session operations.
-   * @param graceMs - TERM-to-KILL and exit-wait grace.
-   * @param platform - host platform; defaults to the running platform, injectable for deterministic tests.
+   * @param terminal - 已分配的 node-pty 进程。
+   * @param inspector - 平台进程与会话操作。
+   * @param graceMs - TERM 到 KILL 以及退出等待的宽限毫秒数。
+   * @param platform - 宿主平台；默认使用当前平台，测试可显式注入。
    */
   constructor(
     private readonly terminal: IPty,
@@ -73,16 +73,28 @@ export class LocalTerminalHandle implements SubprocessTerminalHandle {
     })
   }
 
-  // node-pty writes synchronously; the seam returns a promise for remote transports.
-  // oxlint-disable-next-line typescript/require-await -- Preserve promise rejection semantics at the async provider contract.
+  /** 终端退出或进入终止流程后，所有普通控制操作都必须失败关闭。 */
+  private isUnavailable(): boolean { return this.exited || this.stopping }
+
+  // node-pty 同步写入；seam 为远端传输保留 Promise 形状。
+  // oxlint-disable-next-line typescript/require-await -- 保留异步提供方契约的拒绝语义。
   async write(data: string): Promise<void> {
-    if (this.exited) throw new Error('terminal process has exited')
+    if (this.isUnavailable()) throw new Error('terminal process has exited')
     this.terminal.write(data)
   }
 
-  // Local inspection is synchronous; the seam returns a promise for remote transports.
-  // oxlint-disable-next-line typescript/require-await -- Preserve promise rejection semantics at the async provider contract.
+  // node-pty 同步 resize；seam 为远端传输保留 Promise 形状。
+  // oxlint-disable-next-line typescript/require-await -- 保留异步提供方契约的拒绝语义。
+  async resize(cols: number, rows: number): Promise<void> {
+    if (this.isUnavailable()) throw new Error('terminal process has exited')
+    validateTerminalSize(cols, rows)
+    this.terminal.resize(cols, rows)
+  }
+
+  // 本地检查同步完成；seam 为远端传输保留 Promise 形状。
+  // oxlint-disable-next-line typescript/require-await -- 保留异步提供方契约的拒绝语义。
   async inspectForeground(): Promise<SubprocessTerminalForeground | undefined> {
+    if (this.isUnavailable()) return undefined
     this.descendants()
     const processGroupId = this.inspector.foregroundPgid(this.pid)
     if (processGroupId === undefined) return undefined
@@ -93,7 +105,9 @@ export class LocalTerminalHandle implements SubprocessTerminalHandle {
   }
 
   async signalForeground(signal: SubprocessTerminalSignal): Promise<number> {
+    if (this.isUnavailable()) throw new Error('terminal process has exited')
     const foreground = await this.inspectForeground()
+    if (this.isUnavailable()) throw new Error('terminal process has exited')
     if (foreground === undefined) {
       throw new Error(`cannot resolve foreground process group for terminal ${this.pid}`)
     }
@@ -102,10 +116,9 @@ export class LocalTerminalHandle implements SubprocessTerminalHandle {
     }
     if (this.platform === 'win32') {
       if (signal === 'SIGINT') {
-        // Windows has no process-group signalling: a `\x03` input write is the
-        // Ctrl-C delivery path conhost turns into a console-wide CTRL_C event
-        // for attached processes. node-pty's signal kills throw on Windows, so
-        // no signal ever reaches the inspector.
+        // Windows 没有进程组信号；conhost 会把 `\x03` 输入转成附属进程共享的
+        // CTRL_C 事件。node-pty 的 signal kill 在 Windows 会抛错，因此这里不调用
+        // inspector 的信号路径。
         this.terminal.write('\x03')
         return foreground.processGroupId
       }
@@ -119,6 +132,7 @@ export class LocalTerminalHandle implements SubprocessTerminalHandle {
 
   terminate(): Promise<void> {
     if (this.cleanup !== undefined) return this.cleanup
+    this.stopping = true
     const cleanup = this.closeOnce()
     this.cleanup = cleanup
     void cleanup.catch(() => { this.cleanup = undefined })
@@ -126,10 +140,11 @@ export class LocalTerminalHandle implements SubprocessTerminalHandle {
   }
 
   /**
-   * Force-terminate the observable session synchronously during Node's exit
-   * event. This does not claim quiescence and does not replace terminate().
+   * 在 Node `exit` 事件中同步强杀仍可观察的会话。该路径不声称已经完全停稳，
+   * 也不替代须等待的 {@link terminate}。
    */
   terminateForHostExit(): void {
+    this.stopping = true
     this.forceStopDescendants()
     this.forceStopShell()
     this.forceStopDescendants()

@@ -1,5 +1,5 @@
 ---
-description: "Host 工作区打开路由：在 macOS、Windows、Linux 上提供已验证的本地应用启动器，并经 provider 浏览本地、SSH Host 与 Remote-SSH 工作区文件。"
+description: "Host 工作区协议：提供跨平台本地应用启动、Session 绑定文件预览，以及本地和 Remote-SSH 用户终端。"
 kind: "package-reference"
 ---
 
@@ -7,14 +7,15 @@ kind: "package-reference"
 
 ## 概述
 
-本包决定人类如何打开一个工作区。普通本地工作区可以在已验证的编辑器、Git GUI、终端或文件管理器中启动。Remote-SSH marker、损坏的 marker 或经 SSH 启动的 Host 都会 fail-closed 到 Client utility 自持的内置文件管理面板，绝不交给本地应用。同一文件列表路由经 `ctx.fs` 处理本地与远端根；Remote-SSH 文件系统 provider 会把调用转发给通过认证的桌面 Go agent。
+本包决定人类如何打开和浏览一个工作区。普通本地工作区可以在已验证的编辑器、Git GUI、终端或文件管理器中启动。Remote-SSH marker、损坏的 marker 或经 SSH 启动的 Host 都会 fail-closed 到固定工作台，绝不交给本地应用。文件列表和预览绑定 live Session，并经 `ctx.fs` 进入其文件执行世界；用户终端绑定同一 Session 的 live Agent，从 `agent.ctx` 取得 `subprocess` provider，因此本地 POSIX、本地 Windows 与 Remote-SSH 都在 Agent execution world 内运行。
 
 ## 目录
 
 - [使用本包](#use-this-package)
 - [路由与安全](#routes-and-security)
 - [应用解析](#application-resolution)
-- [工作区文件](#workspace-file-management)
+- [工作区文件](#workspace-files)
+- [用户终端](#browser-terminal)
 - [模型体验](#model-experience)
 - [已知限制与延后工作](#已知限制与延后工作)
 
@@ -38,11 +39,12 @@ kind: "package-reference"
 | `probeTimeoutMs` | 应用发现命令的逐命令期限，包括 Windows 注册表读取。 |
 | `iconTimeoutMs` | macOS 与 Windows 图标提取命令的逐命令期限。 |
 | `launchWatchMs` | 早期失败窗口；关闭时仍存活的启动器视为已启动，且不会被终止。 |
+| `previewMaxBytes` | 单个预览允许读取的完整文件字节数；默认 2 MiB，最大 32 MiB。 |
 
 <a id="routes-and-security"></a>
 ## 路由与安全
 
-每条路由都会先执行 composition connection 服务的 Host/Origin 栅栏与浏览器认证。POST 路由要求精确的 `application/json` essence，把 body 限制在 64 KiB，拒绝多余或畸形字段，且不会返回继承凭据或 provider target key。
+每条 HTTP 路由和 WebSocket upgrade 都先调用 composition connection 服务的 `requestRejection()`。该接口只接受 loopback Host，并在浏览器提供来源标记时要求同源；`trustedHosts` 不会扩大这组宿主原生能力，拒绝发生在读取载荷、查找 Session 或分配 PTY 之前。它是 DNS rebinding／跨站可达性栅栏，不是用户认证。POST 路由还要求精确的 `application/json` essence，把 body 限制在 64 KiB，拒绝多余或畸形字段，且不会返回继承凭据或 provider target key。
 
 | 路由 | 契约 |
 |---|---|
@@ -50,7 +52,9 @@ kind: "package-reference"
 | `POST /open-in-app/target` | 把绝对 `cwd` 分类为 `local` 或 `files`；本地响应包含已安装 id。 |
 | `GET /open-in-app/icon/<id>` | 返回缓存的 PNG/SVG 应用图标，或 404。 |
 | `POST /open-in-app/open` | 启动已验证的本地应用；目标已变成远端时返回 `action: files`。 |
-| `POST /open-in-app/files` | 在工作区根内经 provider 列出一层目录。 |
+| `POST /open-in-app/files` | 用 `{ sessionId, segments }` 在 Session 工作区内列出一层目录。 |
+| `POST /open-in-app/read` | 用 `{ sessionId, segments }` 返回有界文本、图片或 unsupported 预览。 |
+| `WS /open-in-app/terminal` | 用唯一的 `sessionId`、`cols`、`rows` query 启动连接独占用户终端。 |
 
 target 与 open 路由会在读取应用可用性前检查 Remote-SSH marker。有效 marker、无效 marker 或继承的 SSH 启动都不能进入本地启动分支。该顺序保证 Windows marker 目录不会交给 Explorer，POSIX marker 也不会交给 Finder。
 
@@ -65,16 +69,23 @@ target 与 open 路由会在读取应用可用性前检查 Remote-SSH marker。�
 
 应用 argv 进程使用清理过凭据的 subprocess 环境并 detached 启动。Windows GUI 默认保持可见，只有显式适配器隐藏 CLI helper。可执行文件缺失时只刷新该 catalog 条目并重试一次。macOS bundle、Windows 可执行文件与 Linux desktop 图标按需提取并缓存。
 
-<a id="workspace-file-management"></a>
+<a id="workspace-files"></a>
 ## 工作区文件
 
-文件路由先经 `ctx.fs` 解析一次根，然后逐段列出当前 provider target，并按 provider 返回的子项名称精确选择。它绝不把浏览器字符串拼成 OS 路径。这样既能保持 symlink containment，也支持所有 Host／远端平台组合，包括 Windows 到 POSIX、POSIX 到 Windows 的 Remote-SSH。
+文件路由先用 `sessionId` 查找当前 live Session，再只从其 `header.cwd` 解析根；客户端除了 Session id 只能提交 provider 返回的 `segments`，不能提供根目录或展示路径。每个路径段只能精确匹配 `ctx.fs.listDir` 返回的子项，并在进入下一层或读取文件前用 `ctx.fs.contains` 复核 containment；浏览器字符串从不拼成 OS 路径。因此同一协议覆盖本地、SSH Host、Remote-SSH marker、Windows 盘符与 UNC 展示路径。
 
-只有目录 target 可以推进名称链。响应包含展示路径与普通 entry 元数据，不包含 `FsTargetKey`、marker 身份、bridge URL 或 token。单层最多 2,000 项，超出时返回 `truncated: true`。
+只有目录 target 可以推进名称链，预览的最后一段必须仍是普通文件。列表响应包含 `displayPath`、普通 entry 元数据和 `truncated`，单层最多 2,000 项。预览在 `previewMaxBytes` 内完整读取：Markdown、代码和其他严格 UTF-8 文本返回 `kind: text`；支持的图片返回 `kind: image`、MIME 与 base64；含 NUL、无效 UTF-8 或超限文件返回 `kind: unsupported`，不返回原始内容。超限响应以 `truncated: true` 明确区分。
+
+<a id="browser-terminal"></a>
+## 用户终端
+
+终端 upgrade 只接受一次 `sessionId`、`cols` 和 `rows`，并要求该身份同时拥有相互对应的 live Session 与 live Agent。进程从 `agent.ctx.get('subprocess')` 取得执行 provider，在 `Session.header.cwd` 所在执行世界中启动，不回退到无法证明同一执行世界的 Host provider。Shell 按 `zsh`、`bash`、`fish`、`pwsh`、`powershell`、`cmd` 顺序探测；POSIX Shell 使用 `-i`，PowerShell 使用 `-NoLogo`，`cmd` 不附加 POSIX 参数。
+
+server-to-client 帧封闭为 `ready`、`output`、`exit`、`error`，client-to-server 帧封闭为 `input`、`resize`、`close`。输入、消息和终端尺寸都有固定上限；二进制、额外字段和越界值会关闭连接。合法 resize 会调用统一的 `SubprocessTerminalHandle.resize()`：本地 `node-pty` 覆盖 POSIX 与 Windows，本地 Remote-SSH provider 把请求交给 Go agent 的 Unix PTY 或 Windows ConPTY，其他 provider 由 seam 的同一方法承担。每条 WebSocket 独占一个 PTY，显式 `close`、网络断开、Session 工作台 slot 卸载或插件释放都会调用 `terminate()` 并等待完整会话清理；仅把已挂载底栏视觉收起不会关闭 socket。
 
 ## 进一步探索
 
-- [Client 包](../../client/ui-open-in-app/README.md)——页头分流与 utility 自持的文件管理面板。
+- [Client 包](../../client/ui-open-in-app/README.md)——页头分流、固定文件工作台与 xterm 底栏。
 - [文件系统子系统](../../../docs/subsystems/filesystem.md)——provider target 身份与 Remote-SSH 路由。
 - [原生命令工具](../../util/native-command/README.md)——免 Shell 命令与平台路径打开。
 - [功能决策](../../../.agents/notes/implemented/feature/2026-08-25-promote-open-anywhere-plugin.md)——包归属与替代方案。
@@ -93,6 +104,7 @@ target 与 open 路由会在读取应用可用性前检查 Remote-SSH marker。�
 - **应用 catalog 在构建期固定。** 自定义 handler 需要独立的设置与命令校验契约。
 - **macOS 发现只检查已知应用根。** 改名或移出这些根的 bundle 不会被找到。
 - **图标保真度取决于平台标准 API。** Windows 提取为 32 px；Linux 跟随 hicolor/pixmaps 而非当前主题。
-- **文件路由只读且不分页。** 最多列出 2,000 个直接子项；文件读取与 mutation 不属于本包。
+- **文件协议只读且不分页。** 最多列出 2,000 个直接子项；超限预览不提供局部内容，文件 mutation 不属于本包。
+- **终端不跨连接保留。** 收起底栏或视觉关闭工作台会保留当前连接，但 Session scope 卸载、浏览器网络断开或插件释放会终止进程；跨连接恢复、共享和后台保留需要独立的 Session 终端控制器。
 
-**运行时 invariant：** companion 只保留包归属，不增加关系。真实 Loader/WebServer 测试覆盖五条认证路由及其释放；resolver 测试固定 Windows、macOS、Linux 的发现与启动行为。
+**运行时 invariant：** companion 只保留包归属，不增加关系。真实 Loader/WebServer 测试覆盖认证路由、upgrade 注册及释放；聚焦测试固定 Session containment、预览上限、封闭帧、Shell 参数和 PTY 清理。

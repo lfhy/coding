@@ -1,41 +1,41 @@
 // @vitest-environment jsdom
 /**
- * AppFrame interaction spec under the four-share props form: real layout
- * store instance (createLayoutStore().create() — the test-sanctioned engine
- * path), a recording renderSlot stub, and a render-prop SessionProvider stub
- * (the real one is framework-wired to the renderer host; its own behavior is
- * ui-renderer's spec territory). Drag sequences (pointer capture + rAF flush),
- * concession response to viewport change, and details staying mounted at
- * zero width are the preserved behavior assertions. jsdom has no layout
- * engine, so the frame width comes from a mocked getBoundingClientRect and
- * resizes are driven through the ResizeObserver stub.
+ * AppFrame 使用真实布局 store 和记录型 renderSlot。jsdom 没有布局引擎，
+ * 测试通过 getBoundingClientRect 与 ResizeObserver stub 驱动宽高变化。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import { AppFrame } from '@deepseek-ai/dsh-client-ui-layout/src/client/AppFrame.tsx'
 import type { AppFrameProps } from '@deepseek-ai/dsh-client-ui-layout/src/client/AppFrame.tsx'
-import { SIDEBAR_COLLAPSED } from '@deepseek-ai/dsh-client-ui-layout/src/client/columns.ts'
+import {
+  DETAILS_MAX,
+  DETAILS_MIN,
+  SIDEBAR_COLLAPSED,
+  SIDEBAR_MAX,
+  SIDEBAR_MIN,
+  WORKBENCH_BOTTOM_MAX,
+  WORKBENCH_BOTTOM_MIN,
+  WORKBENCH_DEFAULT,
+  WORKBENCH_MAX,
+  WORKBENCH_MIN,
+} from '@deepseek-ai/dsh-client-ui-layout/src/client/columns.ts'
 import { createLayoutStore } from '@deepseek-ai/dsh-client-ui-layout/src/client/stores.ts'
 import type {
   SessionId, SessionListState, WorkspaceListState,
 } from '@deepseek-ai/dsh-client-runtime/client'
 
-// Session selection controls for the SessionProvider and useSessions stubs.
+// SessionProvider 与 useSessions stub 共用的会话选择状态。
 const selectedSession = { current: 's-test' as SessionId | undefined }
 const selectedSessionBlank = { current: false }
 const baselinesReady = { current: true }
 
-// Render-prop contract stub fed through the standard seat prop (the renderer
-// injects the real one in production): session mode runs children(id), empty
-// mode runs the empty branch — the frame must work against exactly this
-// shape. Typed as the seat's own component type so the branded sessionId
-// parameter stays contract-checked.
+// 生产环境由 renderer 注入；这里保留同一 render-prop 类型以校验 branded id。
 const SessionProviderStub: AppFrameProps['SessionProvider'] = ({ children, empty }) =>
   selectedSession.current === undefined ? <>{empty?.() ?? null}</> : <>{children(selectedSession.current)}</>
 
 
-/** Observer stub: captures the callback so tests can fire resizes manually. */
+/** 捕获回调的 ResizeObserver stub，测试可显式触发尺寸变化。 */
 let fireResize: (() => void) | null = null
 class ResizeObserverStub {
   #cb: ResizeObserverCallback
@@ -46,14 +46,16 @@ class ResizeObserverStub {
 }
 
 let frameWidth = 1920
+let frameHeight = 1080
 
-/** Test-local selector hook over a framework-neutral store instance. */
+/** 测试专用 selector hook，直接订阅框架无关的 store 实例。 */
 function hookOf<T>(inst: { subscribe: (fn: () => void) => () => void; getSnapshot: () => T }) {
   return function useSelector<S>(sel: (s: T) => S): S { return sel(useSyncExternalStore(inst.subscribe, inst.getSnapshot)) }
 }
 
 function mountFrame() {
-  window.innerWidth = frameWidth // first-render viewport source before the observer fires
+  window.innerWidth = frameWidth
+  window.innerHeight = frameHeight
   const instance = createLayoutStore().create()
   const slotCalls: { key: string; props: unknown }[] = []
   const renderSlot = ((key: string, owner: object) => {
@@ -61,6 +63,8 @@ function mountFrame() {
     if (key === 'sidebar') return <div data-testid="sidebar-content" />
     if (key === 'conversation') return <div data-testid="center-content" />
     if (key === 'details') return <div data-testid="details-content" />
+    if (key === 'workbench') return <div data-testid="workbench-content" />
+    if (key === 'workbench.bottom') return <div data-testid="bottom-content" />
     if (key === 'conversation.empty') return <div data-testid="empty-content" />
     return <div data-testid="other-content" />
   }) as AppFrameProps['renderSlot']
@@ -92,7 +96,14 @@ function mountFrame() {
   )
   const utils = render(element())
   const frame = utils.container.firstElementChild as HTMLElement
-  return { instance, frame, slotCalls, rerenderFrame: () => { utils.rerender(element()) }, ...utils }
+  return {
+    instance,
+    frame,
+    slotCalls,
+    rerenderFrame: () => { utils.rerender(element()) },
+    ownerFor: (key: string) => slotCalls.filter(call => call.key === key).at(-1)?.props,
+    ...utils,
+  }
 }
 
 function tracks(frame: HTMLElement): number[] {
@@ -101,10 +112,24 @@ function tracks(frame: HTMLElement): number[] {
   return [Number(m[1]), Number(m[2])]
 }
 
-function drag(handle: Element, fromX: number, toX: number): void {
-  const down = new PointerEvent('pointerdown', { pointerId: 1, clientX: fromX, bubbles: true })
-  const move = new PointerEvent('pointermove', { pointerId: 1, clientX: toX, bubbles: true })
-  const up = new PointerEvent('pointerup', { pointerId: 1, clientX: toX, bubbles: true })
+function rows(frame: HTMLElement): number {
+  const match = /^minmax\(0, 1fr\) (\d+)px$/.exec(frame.style.gridTemplateRows)
+  if (match === null) throw new Error(`unexpected rows: ${frame.style.gridTemplateRows}`)
+  return Number(match[1])
+}
+
+function handleFor(frame: HTMLElement, side: string): HTMLElement {
+  const handle = frame.querySelector<HTMLElement>(`[data-side="${side}"]`)
+  if (handle === null) throw new Error(`missing ${side} handle`)
+  return handle
+}
+
+function drag(handle: Element, from: number, to: number, orientation: 'vertical' | 'horizontal' = 'vertical'): void {
+  const coordinates = orientation === 'vertical' ? { clientX: from } : { clientY: from }
+  const movedCoordinates = orientation === 'vertical' ? { clientX: to } : { clientY: to }
+  const down = new PointerEvent('pointerdown', { pointerId: 1, ...coordinates, bubbles: true })
+  const move = new PointerEvent('pointermove', { pointerId: 1, ...movedCoordinates, bubbles: true })
+  const up = new PointerEvent('pointerup', { pointerId: 1, ...movedCoordinates, bubbles: true })
   act(() => { handle.dispatchEvent(down) })
   act(() => { handle.dispatchEvent(move); vi.advanceTimersByTime(20) })
   act(() => { handle.dispatchEvent(up) })
@@ -112,6 +137,7 @@ function drag(handle: Element, fromX: number, toX: number): void {
 
 beforeEach(() => {
   frameWidth = 1920
+  frameHeight = 1080
   selectedSession.current = 's-test' as SessionId
   selectedSessionBlank.current = false
   baselinesReady.current = true
@@ -120,14 +146,18 @@ beforeEach(() => {
   vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => setTimeout(() => { cb(0) }, 16) as unknown as number)
   vi.stubGlobal('cancelAnimationFrame', (h: number) => { clearTimeout(h) })
   window.innerWidth = frameWidth
+  window.innerHeight = frameHeight
   Element.prototype.getBoundingClientRect = function () {
-    return { width: frameWidth, height: 1080, top: 0, left: 0, right: frameWidth, bottom: 1080, x: 0, y: 0, toJSON: () => ({}) }
+    return {
+      width: frameWidth, height: frameHeight, top: 0, left: 0,
+      right: frameWidth, bottom: frameHeight, x: 0, y: 0, toJSON: () => ({}),
+    }
   }
-  // jsdom lacks pointer capture: emulate per-element so hasPointerCapture gates pass.
-  const captured = new WeakSet<Element>()
-  Element.prototype.setPointerCapture = function () { captured.add(this) }
+  // jsdom 不实现 pointer capture；按元素记录真实 pointer id。
+  const captured = new WeakMap<Element, number>()
+  Element.prototype.setPointerCapture = function (id: number) { captured.set(this, id) }
   Element.prototype.releasePointerCapture = function () { captured.delete(this) }
-  Element.prototype.hasPointerCapture = function () { return captured.has(this) }
+  Element.prototype.hasPointerCapture = function (id: number) { return captured.get(this) === id }
 })
 
 afterEach(() => {
@@ -142,21 +172,30 @@ describe('AppFrame', () => {
     expect(tracks(frame)).toEqual([280, 0])
   })
 
-  it('renders the session pair with empty owner shares (sessionId is framework-standard)', () => {
+  it('keeps every session surface mounted with the expected owner shares', () => {
     const { slotCalls, getByTestId } = mountFrame()
     expect(getByTestId('center-content')).toBeTruthy()
     expect(getByTestId('details-content')).toBeTruthy()
+    expect(getByTestId('workbench-content')).toBeTruthy()
+    expect(getByTestId('bottom-content')).toBeTruthy()
     const keys = slotCalls.map(c => c.key)
     expect(keys).toContain('conversation')
     expect(keys).toContain('details')
+    expect(keys).toContain('workbench')
+    expect(keys).toContain('workbench.bottom')
     expect(keys).not.toContain('conversation.empty')
     expect(slotCalls.find(c => c.key === 'conversation')!.props).toEqual({})
     expect(slotCalls.find(c => c.key === 'details')!.props).toEqual({})
+    expect(slotCalls.find(c => c.key === 'workbench')!.props).toMatchObject({
+      shown: false,
+      fullscreen: false,
+      bottomOpen: false,
+    })
+    expect(slotCalls.find(c => c.key === 'workbench.bottom')!.props).toEqual({ shown: false })
   })
 
   it('keeps the conversation slot mounted while no session is current', () => {
-    // No current session: the session-maybe conversation shell owns the New
-    // Session view itself — the center column renders it unconditionally.
+    // 没有当前 Session 时，session-maybe 对话壳自行拥有新建会话视图。
     selectedSession.current = undefined
     const { slotCalls, getByTestId } = mountFrame()
     expect(getByTestId('center-content')).toBeTruthy()
@@ -164,8 +203,7 @@ describe('AppFrame', () => {
   })
 
   it('renders both column occupants before baselines settle (no loading gate)', () => {
-    // No loading gate: a bare loading status reads worse than the shell's own
-    // pending rendering — both occupants mount from first paint.
+    // 外壳不增加 loading gate；两个占用者从首帧起保持挂载。
     baselinesReady.current = false
     const { slotCalls } = mountFrame()
     expect(slotCalls.map(c => c.key)).toContain('conversation')
@@ -235,12 +273,12 @@ describe('AppFrame', () => {
   })
 
   it('drag base is the rendered (concession-clamped) width, not the preference', () => {
-    frameWidth = 1250 // step-2 squeeze: details renders 330 while preference is 360
+    frameWidth = 1250 // 第二级让步把实际详情栏压到 330，偏好仍为 360。
     const { frame, instance } = mountFrame()
     act(() => { instance.actions.openDetails() })
     expect(tracks(frame)).toEqual([280, 330])
     const handles = frame.querySelectorAll('[class*="handle"]')
-    drag(handles[1]!, 920, 930) // shrink by 10 from the rendered width
+    drag(handles[1]!, 920, 930) // 从实际宽度缩小 10px。
     expect(instance.getSnapshot().details).toBe(320)
   })
 
@@ -284,6 +322,136 @@ describe('AppFrame', () => {
   })
 })
 
+describe('AppFrame — fixed workbench', () => {
+  it('opens beside conversation, closes details, and publishes its control owner', () => {
+    const { frame, instance, ownerFor, getByTestId } = mountFrame()
+    act(() => {
+      instance.actions.openDetails()
+      instance.actions.openWorkbench()
+    })
+
+    expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 1020])
+    expect(rows(frame)).toBe(0)
+    expect(frame.hasAttribute('data-workbench-shown')).toBe(true)
+    expect(getByTestId('details-content').parentElement?.hasAttribute('inert')).toBe(true)
+    expect(getByTestId('workbench-content').parentElement?.hasAttribute('inert')).toBe(false)
+    const owner = ownerFor('workbench') as {
+      shown: boolean
+      fullscreen: boolean
+      bottomOpen: boolean
+      close: () => void
+      toggleFullscreen: () => void
+      toggleBottom: () => void
+    }
+    expect(owner).toMatchObject({
+      shown: true,
+      fullscreen: false,
+      bottomOpen: false,
+    })
+    expect(owner.close).toBeTypeOf('function')
+    expect(owner.toggleFullscreen).toBeTypeOf('function')
+    expect(owner.toggleBottom).toBeTypeOf('function')
+  })
+
+  it('fits the default split at a 1110px viewport', () => {
+    frameWidth = 1110
+    const { frame, instance } = mountFrame()
+    act(() => { instance.actions.openWorkbench() })
+    expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 654])
+  })
+
+  it('owner callbacks toggle bottom, fullscreen, and close without unmounting surfaces', () => {
+    const { frame, instance, ownerFor, getByTestId } = mountFrame()
+    act(() => { instance.actions.openWorkbench() })
+    const owner = ownerFor('workbench') as {
+      close: () => void
+      toggleFullscreen: () => void
+      toggleBottom: () => void
+    }
+
+    act(() => { owner.toggleBottom() })
+    expect(rows(frame)).toBe(260)
+    expect(frame.hasAttribute('data-bottom-open')).toBe(true)
+    expect(ownerFor('workbench.bottom')).toEqual({ shown: true })
+    expect(getByTestId('bottom-content').parentElement?.hasAttribute('inert')).toBe(false)
+
+    act(() => { owner.toggleFullscreen() })
+    expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 1864])
+    expect(frame.hasAttribute('data-workbench-fullscreen')).toBe(true)
+    expect(getByTestId('center-content').parentElement?.hasAttribute('inert')).toBe(true)
+    expect(frame.querySelector('[data-side="workbench"]')).toBeNull()
+
+    act(() => { owner.close() })
+    expect(tracks(frame)).toEqual([280, 0])
+    expect(rows(frame)).toBe(0)
+    expect(getByTestId('workbench-content').parentElement?.hasAttribute('inert')).toBe(true)
+    expect(getByTestId('bottom-content').parentElement?.hasAttribute('inert')).toBe(true)
+  })
+
+  it('narrow view collapses navigation and gives the main content to workbench', () => {
+    frameWidth = 980
+    const { frame, instance, ownerFor, getByTestId } = mountFrame()
+    act(() => { instance.actions.openWorkbench() })
+    expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 980 - SIDEBAR_COLLAPSED])
+    expect(frame.hasAttribute('data-sidebar-collapsed')).toBe(true)
+    expect(frame.hasAttribute('data-workbench-fullscreen')).toBe(true)
+    expect(getByTestId('center-content').parentElement?.hasAttribute('inert')).toBe(true)
+    expect(ownerFor('workbench')).toMatchObject({ shown: true, fullscreen: true })
+    expect(frame.querySelector('[data-side="sidebar"]')).toBeNull()
+    expect(frame.querySelector('[data-side="workbench"]')).toBeNull()
+
+    act(() => { instance.actions.toggleSidebar() })
+    expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 980 - SIDEBAR_COLLAPSED])
+  })
+
+  it('drags workbench width and bottom height from their rendered bases', () => {
+    const { frame, instance } = mountFrame()
+    act(() => { instance.actions.openWorkbench() })
+    drag(handleFor(frame, 'workbench'), 1500, 1440)
+    expect(instance.getSnapshot().workbenchWidth).toBe(1080)
+    expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 1080])
+
+    act(() => { instance.actions.toggleWorkbenchBottom() })
+    drag(handleFor(frame, 'bottom'), 820, 760, 'horizontal')
+    expect(instance.getSnapshot().workbenchBottomHeight).toBe(320)
+    expect(rows(frame)).toBe(320)
+  })
+
+  it('uses a concession-shrunk workbench width as the drag base', () => {
+    frameWidth = 1110
+    const { frame, instance } = mountFrame()
+    act(() => {
+      instance.actions.setWorkbench(500)
+      instance.actions.openWorkbench()
+    })
+    expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 500])
+    drag(handleFor(frame, 'workbench'), 680, 690)
+    expect(instance.getSnapshot().workbenchWidth).toBe(490)
+  })
+
+  it('bottom yields to short heights and restores its preference after resize', () => {
+    frameHeight = 300
+    const { frame, instance } = mountFrame()
+    act(() => {
+      instance.actions.openWorkbench()
+      instance.actions.toggleWorkbenchBottom()
+    })
+    expect(rows(frame)).toBe(60)
+    frameHeight = 1080
+    act(() => { fireResize?.(); vi.advanceTimersByTime(20) })
+    expect(rows(frame)).toBe(260)
+  })
+
+  it('keeps an open workbench across Session switches while details retains its old close rule', () => {
+    const { frame, instance, rerenderFrame } = mountFrame()
+    act(() => { instance.actions.openWorkbench() })
+    selectedSession.current = 's-next' as SessionId
+    act(() => { rerenderFrame() })
+    expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 1020])
+    expect(instance.getSnapshot().workbenchOpen).toBe(true)
+  })
+})
+
 describe('AppFrame — narrow-viewport auto-collapse', () => {
   it('mounts collapsed below the breakpoint with no sidebar handle', () => {
     frameWidth = 980
@@ -308,12 +476,12 @@ describe('AppFrame — narrow-viewport auto-collapse', () => {
   it('a wide-closed preference re-expands at the contract default while narrow', () => {
     frameWidth = 1920
     const { frame, instance } = mountFrame()
-    act(() => { instance.actions.toggleSidebar() }) // close while wide: preference 0
+    act(() => { instance.actions.toggleSidebar() }) // 宽屏关闭后偏好为 0。
     frameWidth = 980
     act(() => { fireResize?.(); vi.advanceTimersByTime(20) })
     act(() => { instance.actions.toggleSidebar() })
     expect(tracks(frame)).toEqual([280, 0])
-    expect(instance.getSnapshot().sidebar).toBe(0) // preference untouched
+    expect(instance.getSnapshot().sidebar).toBe(0) // 窄屏临时展开不改写偏好。
   })
 
   it('shrinking across the breakpoint auto-collapses; re-widening restores the drag width', () => {
@@ -329,11 +497,105 @@ describe('AppFrame — narrow-viewport auto-collapse', () => {
 })
 
 describe('AppFrame — guard branches', () => {
+  it('exposes keyboard-operable separators for vertical and horizontal resizing', () => {
+    const { frame, instance } = mountFrame()
+    const sidebar = handleFor(frame, 'sidebar')
+    expect(sidebar.getAttribute('role')).toBe('separator')
+    expect(sidebar.getAttribute('aria-orientation')).toBe('vertical')
+    expect(sidebar.getAttribute('aria-valuemin')).toBe(String(SIDEBAR_MIN))
+    expect(sidebar.getAttribute('aria-valuemax')).toBe(String(SIDEBAR_MAX))
+
+    act(() => { sidebar.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })) })
+    expect(instance.getSnapshot().sidebar).toBe(296)
+    act(() => { sidebar.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true })) })
+    expect(instance.getSnapshot().sidebar).toBe(SIDEBAR_MIN)
+    act(() => { sidebar.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true })) })
+    expect(instance.getSnapshot().sidebar).toBe(SIDEBAR_MAX)
+    act(() => { sidebar.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) })
+    expect(instance.getSnapshot().sidebar).toBe(SIDEBAR_MAX)
+
+    act(() => {
+      instance.actions.openWorkbench()
+      instance.actions.toggleWorkbenchBottom()
+    })
+    const workbench = handleFor(frame, 'workbench')
+    act(() => { workbench.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })) })
+    expect(instance.getSnapshot().workbenchWidth).toBe(WORKBENCH_DEFAULT + 16)
+    act(() => { workbench.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true })) })
+    expect(instance.getSnapshot().workbenchWidth).toBe(WORKBENCH_MIN)
+    act(() => { workbench.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true })) })
+    expect(instance.getSnapshot().workbenchWidth).toBe(WORKBENCH_MAX)
+
+    const bottom = handleFor(frame, 'bottom')
+    expect(bottom.getAttribute('aria-orientation')).toBe('horizontal')
+    act(() => { bottom.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true })) })
+    expect(instance.getSnapshot().workbenchBottomHeight).toBe(276)
+    act(() => { bottom.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })) })
+    expect(instance.getSnapshot().workbenchBottomHeight).toBe(260)
+    act(() => { bottom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true })) })
+    expect(instance.getSnapshot().workbenchBottomHeight).toBe(WORKBENCH_BOTTOM_MIN)
+    act(() => { bottom.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true })) })
+    expect(instance.getSnapshot().workbenchBottomHeight).toBe(WORKBENCH_BOTTOM_MAX)
+
+    act(() => { instance.actions.openDetails() })
+    const details = handleFor(frame, 'details')
+    act(() => { details.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })) })
+    expect(instance.getSnapshot().details).toBe(376)
+    act(() => { details.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true })) })
+    expect(instance.getSnapshot().details).toBe(DETAILS_MIN)
+    act(() => { details.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true })) })
+    expect(instance.getSnapshot().details).toBe(DETAILS_MAX)
+  })
+
+  it('ignores secondary and concurrent pointer starts', () => {
+    const { frame, instance } = mountFrame()
+    const handle = handleFor(frame, 'sidebar')
+    act(() => {
+      handle.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 1, button: 2, clientX: 280, bubbles: true }))
+      handle.dispatchEvent(new PointerEvent('pointermove', { pointerId: 1, clientX: 340, bubbles: true }))
+      vi.advanceTimersByTime(20)
+    })
+    expect(instance.getSnapshot().sidebar).toBe(280)
+
+    act(() => {
+      handle.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 1, button: 0, clientX: 280, bubbles: true }))
+      handle.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 2, button: 0, clientX: 300, bubbles: true }))
+      handle.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 2, bubbles: true }))
+      handle.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 1, bubbles: true }))
+    })
+    expect(instance.getSnapshot().sidebar).toBe(280)
+    expect(frame.hasAttribute('data-dragging')).toBe(false)
+  })
+
+  it('lost pointer capture and window blur cancel pending drag frames', () => {
+    const { frame, instance } = mountFrame()
+    const handle = handleFor(frame, 'sidebar')
+    act(() => {
+      handle.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 1, clientX: 280, bubbles: true }))
+      handle.dispatchEvent(new PointerEvent('pointermove', { pointerId: 1, clientX: 350, bubbles: true }))
+      handle.releasePointerCapture(1)
+      handle.dispatchEvent(new PointerEvent('lostpointercapture', { pointerId: 1, bubbles: true }))
+      vi.advanceTimersByTime(20)
+    })
+    expect(instance.getSnapshot().sidebar).toBe(280)
+
+    act(() => {
+      handle.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 2, clientX: 280, bubbles: true }))
+    })
+    act(() => {
+      handle.dispatchEvent(new PointerEvent('pointermove', { pointerId: 2, clientX: 360, bubbles: true }))
+      window.dispatchEvent(new Event('blur'))
+      vi.advanceTimersByTime(20)
+    })
+    expect(instance.getSnapshot().sidebar).toBe(280)
+    expect(frame.hasAttribute('data-dragging')).toBe(false)
+  })
+
   it('pointer moves without capture are ignored (no width write)', () => {
     const { frame, instance } = mountFrame()
     const handle = frame.querySelectorAll('[class*="handle"]')[0]!
     const before = instance.getSnapshot().sidebar
-    // Move + up without a preceding pointerdown: hasPointerCapture is false.
+    // 没有 pointerdown 的 move 与 up 必须被忽略。
     act(() => {
       handle.dispatchEvent(new PointerEvent('pointermove', { pointerId: 9, clientX: 500, bubbles: true }))
       vi.advanceTimersByTime(20)
@@ -347,8 +609,7 @@ describe('AppFrame — guard branches', () => {
     const handle = frame.querySelectorAll('[class*="handle"]')[0]!
     act(() => { handle.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 1, clientX: 280, bubbles: true })) })
     act(() => {
-      // Two moves before the frame flushes: the second must ride the pending
-      // rAF (frame.current ??= guard), and the flush sees the latest x.
+      // 同一帧内的第二次移动复用待处理 rAF，flush 使用最新坐标。
       handle.dispatchEvent(new PointerEvent('pointermove', { pointerId: 1, clientX: 320, bubbles: true }))
       handle.dispatchEvent(new PointerEvent('pointermove', { pointerId: 1, clientX: 340, bubbles: true }))
       vi.advanceTimersByTime(20)
@@ -363,7 +624,7 @@ describe('AppFrame — guard branches', () => {
     act(() => { handle.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 1, clientX: 280, bubbles: true })) })
     act(() => {
       handle.dispatchEvent(new PointerEvent('pointermove', { pointerId: 1, clientX: 360, bubbles: true }))
-      // No timer advance: the rAF is still pending when pointerup arrives.
+      // 不推进计时器，让 pointerup 在 rAF 仍待处理时到达。
       handle.dispatchEvent(new PointerEvent('pointerup', { pointerId: 1, clientX: 360, bubbles: true }))
     })
     expect(instance.getSnapshot().sidebar).toBe(360)
@@ -373,7 +634,17 @@ describe('AppFrame — guard branches', () => {
     const { frame } = mountFrame()
     frameWidth = 0
     act(() => { fireResize?.(); vi.advanceTimersByTime(20) })
-    // Track template still reflects the last non-zero viewport.
+    // 轨道继续使用最后一次非零视口尺寸。
+    expect(tracks(frame)).toEqual([280, 0])
+  })
+
+  it('zero-height and unchanged resize reports preserve the current geometry', () => {
+    const { frame } = mountFrame()
+    frameHeight = 0
+    act(() => { fireResize?.(); vi.advanceTimersByTime(20) })
+    expect(rows(frame)).toBe(0)
+    frameHeight = 1080
+    act(() => { fireResize?.(); vi.advanceTimersByTime(20) })
     expect(tracks(frame)).toEqual([280, 0])
   })
 })
@@ -382,9 +653,9 @@ describe('AppFrame — unmount with an in-flight resize frame', () => {
   it('cancels the pending rAF on unmount (no post-unmount setState)', () => {
     const { unmount } = mountFrame()
     frameWidth = 800
-    act(() => { fireResize?.() }) // rAF scheduled, NOT flushed
+    act(() => { fireResize?.() }) // rAF 已排队但尚未 flush。
     unmount()
-    // Flushing after unmount must be a no-op (the frame was cancelled).
+    // 卸载后的 flush 应为空操作，因为待处理帧已经取消。
     expect(() => { vi.advanceTimersByTime(20) }).not.toThrow()
   })
 
@@ -394,5 +665,19 @@ describe('AppFrame — unmount with an in-flight resize frame', () => {
     frameWidth = 1250
     act(() => { fireResize?.(); fireResize?.(); vi.advanceTimersByTime(20) })
     expect(tracks(frame)).toEqual([280, 330])
+  })
+
+  it('releases an active pointer and pending drag frame during unmount', () => {
+    const { frame, unmount } = mountFrame()
+    const handle = handleFor(frame, 'sidebar')
+    act(() => {
+      handle.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 1, clientX: 280, bubbles: true }))
+    })
+    act(() => {
+      handle.dispatchEvent(new PointerEvent('pointermove', { pointerId: 1, clientX: 360, bubbles: true }))
+      unmount()
+      vi.advanceTimersByTime(20)
+    })
+    expect(frame.isConnected).toBe(false)
   })
 })

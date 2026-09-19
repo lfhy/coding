@@ -1,11 +1,6 @@
 /**
- * Layout plugin, browser half: one register() call contributes AppFrame into
- * the runtime's built-in 'root' slot and, in the same breath, declares the
- * four child slots (declaration = exclusive render authority), seats the
- * layout store (panel geometry), and wires the panel-action service face.
- * ctx.layout is the cross-plugin panel-action contract; navigation state lives
- * with the runtime sessions service. A second effect seats the theme
- * presenter, which projects ctx.theme snapshots onto document.body.
+ * 布局插件的浏览器入口。一次 root 注册同时声明子 slot、创建布局 store，
+ * 并将绑定 actions 接到 `ctx.layout`；独立 effect 负责主题 DOM 投影。
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
@@ -15,103 +10,79 @@ import { createLayoutStore } from './stores.ts'
 import { LayoutController } from './service.ts'
 import { ThemePresenter } from './theme-presenter.ts'
 
-// Contract exports only (export-convergence rule: cross-package consumers
-// keep a symbol exported; test-only/package-internal symbols live off /src).
-// ILayout: the ctx.layout face consumers and test fakes type against.
-// OwnerShare contracts below are the render-side halves registrants compose
-// against; the frame components and the store factory are package-internal.
 export { LayoutController } from './service.ts'
 export type { ILayout } from './service.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
-    /** The outward face only; the concrete service stays inside this plugin. */
+    /** 客户端布局的跨插件动作。 */
     layout: import('./service.ts').ILayout
   }
 }
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
-    // The 'root' entry itself is the runtime's built-in slot (declared
-    // there); these four are the frame's children, declared by the same
-    // register() call that contributes AppFrame. Session owners never pass
-    // sessionId: the framework injects it as a standard prop.
-    /**
-     * The whole left column. OCCUPIED by ui-sidebar's SidebarRoot, which
-     * declares the workspace and settings seats inside it — registering here
-     * replaces the navigation column outright rather than adding to it, and
-     * the seats it declares disappear with it. To add something to the
-     * sidebar, register into one of those inner seats instead.
-     *
-     * The occupant receives the frame's live column state (collapsed, width)
-     * and is expected to render the compact control rail while collapsed.
-     */
+    /** 整个左侧导航栏；占用者负责展开态和紧凑 rail。 */
     'sidebar': { kind: 'single'; scope: 'root'; owner: SidebarOwnerProps }
-    /**
-     * The whole center column, across both the no-session hero and a live
-     * conversation. OCCUPIED by ui-conversation's ConversationRoot, which
-     * declares the session body, composer, and input seats inside it —
-     * registering here replaces the entire conversation surface (and removes
-     * every seat it declares) rather than adding to it.
-     *
-     * Current-session-optional: the occupant owns both states without
-     * changing its React identity, so it keeps its own state across a session
-     * switch. It receives no owner props; session facts arrive through the
-     * framework hooks of the `session-maybe` scope.
-     */
+    /** 对话主区域；无当前会话时仍保持同一个 `session-maybe` entry。 */
     'conversation': { kind: 'single'; scope: 'session-maybe'; owner: ConvOwnerProps }
-    /**
-     * The right details column, shown when the layout opens it. OCCUPIED by
-     * ui-conversation's DetailsPanel, which declares the tool-details seat
-     * inside it — registering here replaces the column and takes that seat
-     * with it. Absent an occupant the column renders nothing.
-     *
-     * No owner props: the framework injects the session id and hooks for the
-     * `session` scope, and `ctx.layout` owns whether the column is open.
-     */
+    /** 既有会话详情栏；工作台打开时保持挂载但不参与布局。 */
     'details': { kind: 'single'; scope: 'session'; owner: DetailsOwnerProps }
     /**
-     * Frame-wide floating layer, above every column and outside their scroll
-     * containers. Deliberately generic and unowned by any feature: a badge, a
-     * toast stack or a status pill all belong here, and entries order among
-     * themselves. The layer itself is click-through — entries opt back into
-     * pointer events — so an occupant never blocks the app underneath.
-     *
-     * This is the additive seat for a frame-wide surface of your own: a fresh
-     * `id` is added beside the shipped entries instead of replacing them.
+     * 会话级固定工作台右栏。占用者绘制文件预览和自身工具栏，通过 owner
+     * 回调控制关闭、全屏和底栏；关闭时 entry 保持挂载。
      */
+    'workbench': { kind: 'single'; scope: 'session'; owner: WorkbenchOwnerProps }
+    /** 会话级工作台底栏；在视觉关闭时保持挂载。 */
+    'workbench.bottom': { kind: 'single'; scope: 'session'; owner: WorkbenchBottomOwnerProps }
+    /** 全框架浮层；容器透传指针事件，由各 entry 自行恢复。 */
     'shell.overlay': { kind: 'list'; scope: 'root' }
   }
 }
 
-// OwnerShare contracts — the render-side share the slot owner supplies at
-// renderSlot. Registrants IMPORT these and compose their full component props
-// through the four-share intersection (PropsRuntime & PropsRenderSlots &
-// PropsStore & I). Conversation business state and actions arrive through
-// framework-standard hooks and each registrant's inject face, not owner props.
-
-/** Sidebar owner share: live column state from the frame's concession solve. */
+/** 导航栏 owner share。 */
 export interface SidebarOwnerProps {
-  /** True when the sidebar is closed (the column renders the compact control rail). */
+  /** 是否显示紧凑 rail。 */
   collapsed: boolean
-  /** Rendered column width in px (SIDEBAR_COLLAPSED when collapsed). */
+  /** 实际渲染宽度。 */
   width: number
 }
 
-/** Conversation owner share: business state and actions belong to the registrant. */
+/** 对话区域没有额外 owner 数据。 */
 export interface ConvOwnerProps {}
 
-/** Details owner share: empty — sessionId arrives as a framework-standard prop. */
+/** 详情栏没有额外 owner 数据；会话 id 由框架提供。 */
 export interface DetailsOwnerProps {}
 
-/** Required services (cordis fiber inject — the loader passes all module exports as an object plugin). */
+/** 工作台右栏 owner share。 */
+export interface WorkbenchOwnerProps {
+  /** 当前会话的工作台是否可见。 */
+  shown: boolean
+  /** 是否实际占据全部主内容；窄屏会自动进入该呈现。 */
+  fullscreen: boolean
+  /** 底栏是否实际可见。 */
+  bottomOpen: boolean
+  /** 关闭工作台。 */
+  close: () => void
+  /** 切换用户选择的全屏偏好。 */
+  toggleFullscreen: () => void
+  /** 切换底栏。 */
+  toggleBottom: () => void
+}
+
+/** 工作台底栏 owner share。 */
+export interface WorkbenchBottomOwnerProps {
+  /** 底栏是否实际可见。 */
+  shown: boolean
+}
+
+/** Cordis fiber 所需服务。 */
 export const inject = ['slots', 'theme']
 
 /**
- * Client plugin body: provide ctx.layout, then one register() call — AppFrame
- * into 'root' with the four child-slot declarations, the layout store seat,
- * and the inject hook that hands the store's bound actions to the service.
- * @param ctx - client root context.
+ * 注册 AppFrame、`ctx.layout` 和主题呈现器。
+ * @param ctx - 客户端根 Context。
+ * @returns 无返回值；生命周期由 `ctx.effect` 管理。
  */
 export function apply(ctx: ClientContext): void {
   const layout = new LayoutController()
@@ -123,13 +94,11 @@ export function apply(ctx: ClientContext): void {
         'sidebar': { kind: 'single', scope: 'root' },
         'conversation': { kind: 'single', scope: 'session-maybe' },
         'details': { kind: 'single', scope: 'session' },
+        'workbench': { kind: 'single', scope: 'session' },
+        'workbench.bottom': { kind: 'single', scope: 'session' },
         'shell.overlay': { kind: 'list', scope: 'root' },
       },
-      // Exclusive store: the factory itself — the framework instantiates per
-      // entry and delivers useStore/actions to AppFrame as standard props.
       store: createLayoutStore,
-      // The hook's only side effect connects the root store to ctx.layout;
-      // conversation business actions belong to their registrants.
       inject: (actions: PanelActions) => {
         layout.attachPanels(actions)
         return {}
@@ -137,13 +106,10 @@ export function apply(ctx: ClientContext): void {
     }, AppFrame)
     return () => {
       disposeRegistration()
-      // provide()'s disposer settles asynchronously; teardown is synchronous fire-and-forget.
       void disposeService()
     }
   }, 'ui-layout: service + root registration')
 
-  // Theme presentation: pure DOM writes from resolved snapshots — initial
-  // state through the getter once, then event-driven only; no React path.
   ctx.effect(() => {
     const presenter = new ThemePresenter()
     presenter.apply(ctx.theme.getTheme())

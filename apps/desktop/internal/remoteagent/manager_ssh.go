@@ -513,6 +513,7 @@ func isAgentRoute(method, requestPath string) bool {
 		"/v1/terminals/start":      http.MethodPost,
 		"/v1/terminals/read":       http.MethodPost,
 		"/v1/terminals/write":      http.MethodPost,
+		"/v1/terminals/resize":     http.MethodPost,
 		"/v1/terminals/foreground": http.MethodPost,
 		"/v1/terminals/signal":     http.MethodPost,
 		"/v1/terminals/terminate":  http.MethodPost,

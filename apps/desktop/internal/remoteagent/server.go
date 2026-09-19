@@ -194,6 +194,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/v1/terminals/start", s.handleTerminalStart)
 	mux.HandleFunc("/v1/terminals/read", s.handleTerminalRead)
 	mux.HandleFunc("/v1/terminals/write", s.handleTerminalWrite)
+	mux.HandleFunc("/v1/terminals/resize", s.handleTerminalResize)
 	mux.HandleFunc("/v1/terminals/foreground", s.handleTerminalForeground)
 	mux.HandleFunc("/v1/terminals/signal", s.handleTerminalSignal)
 	mux.HandleFunc("/v1/terminals/terminate", s.handleTerminalTerminate)
@@ -221,7 +222,7 @@ func allowedAgentRoute(method, path string) bool {
 	switch path {
 	case "/v1/health":
 		return method == http.MethodGet
-	case "/v1/resolve", "/v1/stat", "/v1/directories", "/v1/read_file", "/v1/read_bytes", "/v1/update_file", "/v1/edit_file", "/v1/exec", "/v1/search", "/v1/code/start", "/v1/code/next", "/v1/code/reply", "/v1/code/cancel", "/v1/terminals/start", "/v1/terminals/read", "/v1/terminals/write", "/v1/terminals/foreground", "/v1/terminals/signal", "/v1/terminals/terminate", "/v1/processes/resolve", "/v1/processes/start", "/v1/processes/read", "/v1/processes/write", "/v1/processes/wait", "/v1/processes/kill", "/v1/shutdown":
+	case "/v1/resolve", "/v1/stat", "/v1/directories", "/v1/read_file", "/v1/read_bytes", "/v1/update_file", "/v1/edit_file", "/v1/exec", "/v1/search", "/v1/code/start", "/v1/code/next", "/v1/code/reply", "/v1/code/cancel", "/v1/terminals/start", "/v1/terminals/read", "/v1/terminals/write", "/v1/terminals/resize", "/v1/terminals/foreground", "/v1/terminals/signal", "/v1/terminals/terminate", "/v1/processes/resolve", "/v1/processes/start", "/v1/processes/read", "/v1/processes/write", "/v1/processes/wait", "/v1/processes/kill", "/v1/shutdown":
 		return method == http.MethodPost
 	default:
 		return false
@@ -533,6 +534,18 @@ func (s *Server) handleTerminalWrite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.terminals.Write(request); err != nil {
+		writeTerminalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"accepted": true})
+}
+
+func (s *Server) handleTerminalResize(w http.ResponseWriter, r *http.Request) {
+	var request TerminalResizeRequest
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	if err := s.terminals.Resize(request); err != nil {
 		writeTerminalError(w, err)
 		return
 	}
