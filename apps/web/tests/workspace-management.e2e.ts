@@ -308,6 +308,9 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
       { timeout: 10_000 },
     ).toBe(0)
 
+    // 上面的重新注册走了 New Session 流程，所以当前会话就是它新建的空白会话；
+    // 空白会话没有行，reload 必须保留这条已存储的选择，而不是把它丢掉。
+    const currentBeforeReload = await page.evaluate(() => localStorage.getItem('dsh.sessions.current'))
     const warningStart = tripwire.warnings.length
     await page.reload({ waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
@@ -315,9 +318,15 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
     await expect.poll(() => page.getByText('Ungrouped', { exact: true }).count(), { timeout: 15_000 })
       .toBeGreaterThanOrEqual(1)
     await expect.poll(
-      () => page.locator('[role="treeitem"][aria-selected="true"]').count(),
+      () => page.evaluate(() => localStorage.getItem('dsh.sessions.current')),
+      { timeout: 15_000 },
+    ).toBe(currentBeforeReload)
+    // 保留下来的那个会话仍有自己的行，而当前的空白会话不带任何选中行。
+    await expect.poll(
+      () => page.getByRole('treeitem', { name: /^Use the read tool twice/ }).count(),
       { timeout: 15_000 },
     ).toBe(1)
+    expect(await page.locator('[role="treeitem"][aria-selected="true"]').count()).toBe(0)
     expect(scaffold.ctx.workspaceRegistry.get(workspace.id)).toBeUndefined()
     expect(await readFile(join(scaffold.workspaceCwd, 'workspace', 'a.txt'), 'utf8')).toBe('alpha\n')
     await stat(logLocation.path)

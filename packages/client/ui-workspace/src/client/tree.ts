@@ -1,7 +1,6 @@
 /**
- * Derives the workspace browser tree from Host Workspace order and membership.
- * Unassigned Sessions trail under Ungrouped; only the selected blank Session
- * remains visible.
+ * 从 Host 的 Workspace 顺序与成员关系派生侧边栏会话树：不属于任何 Workspace
+ * 的会话排在 Ungrouped 之下；尚未开跑的空白会话不出现为任何行。
  */
 import {
   indexSubagentDescendants, type PendingInteractionStatus, type SessionId, type SessionListState,
@@ -18,10 +17,8 @@ export const UNGROUPED_LABEL = 'Ungrouped'
 /** One top-level session row in a group or the flat list. */
 export interface SessionNode {
   id: SessionId
-  /** Stored display title; the renderer substitutes the localized New Session label for blank rows. */
+  /** 存储的展示标题。 */
   title: string
-  /** The provisional blank session (renderer shows the localized New Session title). */
-  blank: boolean
   /** The runtime Session list reports an interaction awaiting this user. */
   pendingInteraction?: PendingInteractionStatus
   running: boolean
@@ -110,24 +107,14 @@ function byRecency(a: SessionSummary, b: SessionSummary): number {
 }
 
 /**
- * Ordinary sessions are visible; among blank sessions, only the current one
- * is visible. Subagent children use their parent header catalog; archived
- * sessions are visible nowhere, while their accounting slots remain so
- * unarchiving restores position.
+ * 已开跑的普通会话可见：空白会话（还没有任何 turn）从不进入列表，归档会话
+ * 处处不可见但保留台账位置，取消归档后回到原顺序；subagent 派生会话由父会话
+ * 的表头目录呈现。
  */
-function sessionVisible(session: SessionSummary, current: SessionId | undefined, archived: ReadonlySet<SessionId>): boolean {
+function sessionVisible(session: SessionSummary, archived: ReadonlySet<SessionId>): boolean {
   return session.origin !== 'subagent'
     && !archived.has(session.id)
-    && (!session.blank || session.id === current)
-}
-
-/**
- * A blank session is the selected Workspace's provisional New Session row;
- * its canonical title never enters search (blank rows are query-excluded)
- * and the renderer localizes its display label.
- */
-function sessionTitle(session: SessionSummary): string {
-  return session.blank ? 'New Session' : session.displayTitle
+    && !session.blank
 }
 
 /** Build one group without projecting session lineage into presentation. */
@@ -166,10 +153,9 @@ function orderedUngrouped(members: readonly SessionSummary[], stored: readonly s
 }
 
 /**
- * Group Sessions by Host Workspace: one group per entity in stable Host
- * order, with members resolved from sessionIds in their stored order. Sessions
- * outside every Workspace trail in the browser-local Ungrouped order, which
- * falls back to recency before that order is initialized.
+ * 按 Host Workspace 分组：每个实体一组，保持 Host 顺序，成员按 `sessionIds`
+ * 的存储顺序取自列表；不属于任何 Workspace 的会话排在浏览器本地的 Ungrouped
+ * 顺序下，该顺序初始化之前回退到最近更新优先。
  */
 function groupByWorkspace(
   list: SessionListState,
@@ -183,9 +169,9 @@ function groupByWorkspace(
     const members: SessionSummary[] = []
     for (const id of workspace.sessionIds) {
       const summary = list.byId[id]
-      if (summary === undefined) continue // account may lead the list pull; the row appears when the summary lands
+      if (summary === undefined) continue // 台账可能先于列表拉取到达；摘要落地后该行才会出现
       accounted.add(id)
-      if (!sessionVisible(summary, list.current, archived)) continue
+      if (!sessionVisible(summary, archived)) continue
       members.push(summary)
     }
     groups.push(buildGroup(
@@ -196,7 +182,7 @@ function groupByWorkspace(
   const stray = list.ids
     .map(id => list.byId[id])
     .filter((s): s is SessionSummary =>
-      s !== undefined && !accounted.has(s.id) && sessionVisible(s, list.current, archived))
+      s !== undefined && !accounted.has(s.id) && sessionVisible(s, archived))
   if (stray.length > 0) {
     groups.push(buildGroup(
       UNGROUPED_KEY,
@@ -217,8 +203,7 @@ function sessionNode(
 ): SessionNode {
   return {
     id: s.id,
-    title: sessionTitle(s),
-    blank: s.blank,
+    title: s.displayTitle,
     running: s.running,
     runningSubagentCount: descendants.get(s.id)?.runningCount ?? 0,
     completed: s.completed === true,
@@ -228,18 +213,15 @@ function sessionNode(
 }
 
 /**
- * Derive the workspace browser groups with every session as a top-level row.
+ * 派生侧边栏的工作区分组：每个会话都是一行顶层条目。
  *
- * Every group shows; sessions populate under expanded groups in the selected
- * local order. Blank sessions are excluded except for the selected
- * provisional New Session row; archived sessions are excluded everywhere.
- * Content search lives outside this derivation
- * (see {@link deriveSearchResults}).
- * @param list - sessions list snapshot (`current` feeds containsCurrent).
- * @param workspaces - real workspaces in stable Host order.
- * @param archivedSessionIds - registry-global archive set.
- * @param view - local expansion arrays.
- * @returns group sections in render order.
+ * 每个分组都会出现；会话在展开的分组下按选定的本地顺序排列，空白会话与归档
+ * 会话一律排除。内容搜索不在这里派生（见 {@link deriveSearchResults}）。
+ * @param list - 会话列表快照（`current` 供 `containsCurrent` 使用）。
+ * @param workspaces - 按 Host 顺序排列的真实工作区。
+ * @param archivedSessionIds - 注册表全局归档集合。
+ * @param view - 本地的展开状态。
+ * @returns 按渲染顺序排列的分组。
  */
 export function deriveGroups(
   list: SessionListState,
@@ -273,13 +255,12 @@ export function deriveGroups(
 }
 
 /**
- * Derive the flat session list ("In one list" mode): every session — fork
- * children included — as a top-level row, strictly newest-first. No grouping,
- * no parent/child adjacency. Content search lives outside this derivation
- * (see {@link deriveSearchResults}).
- * @param list - sessions list snapshot.
- * @param archivedSessionIds - registry-global archive set.
- * @returns flat rows in render order.
+ * 派生单列表模式的会话列表：每个会话（含 fork 子会话）都是顶层行，严格按最新
+ * 在前排列，不做分组，也不体现父子相邻；空白会话与归档会话不出现。内容搜索
+ * 不在这里派生（见 {@link deriveSearchResults}）。
+ * @param list - 会话列表快照。
+ * @param archivedSessionIds - 注册表全局归档集合。
+ * @returns 按渲染顺序排列的行。
  */
 export function deriveFlat(
   list: SessionListState,
@@ -290,7 +271,7 @@ export function deriveFlat(
   const rows: SessionSummary[] = []
   for (const id of list.ids) {
     const s = list.byId[id]
-    if (s === undefined || !sessionVisible(s, list.current, archived)) continue
+    if (s === undefined || !sessionVisible(s, archived)) continue
     rows.push(s)
   }
   rows.sort(byRecency)
@@ -307,16 +288,16 @@ export interface RelativeTime {
 }
 
 /**
- * Merge immediate title/Workspace substring matches with ranked Host content
- * matches. Local rows lead newest-first, content-only rows retain backend
- * order, and duplicate sessions receive the backend snippet in place.
- * @param list - session metadata authority.
- * @param workspaces - Workspace membership and display labels.
- * @param query - caller text; surrounding whitespace is ignored.
- * @param archivedSessionIds - registry-global archive set (members never match).
- * @param content - ranked Host content-search page.
- * @param limit - protocol-owned maximum merged row count.
- * @returns bounded deduplicated flat rows and a refine-query hint bit.
+ * 合并即时生效的标题／工作区子串匹配与 Host 排序后的内容匹配：本地行按最新
+ * 在前领先，仅有内容命中的行保持后端顺序，重复会话就地把后端摘要片段补上。
+ * 空白会话与归档会话不参与匹配。
+ * @param list - 会话元数据权威。
+ * @param workspaces - 工作区归属关系与展示标签。
+ * @param query - 调用方文本；首尾空白被忽略。
+ * @param archivedSessionIds - 注册表全局归档集合（成员永不匹配）。
+ * @param content - Host 排序后的内容搜索页。
+ * @param limit - 协议规定的合并行数上限。
+ * @returns 有界去重的单列表行，以及「需要收窄查询」提示位。
  */
 export function deriveSearchResults(
   list: SessionListState,
@@ -347,11 +328,10 @@ export function deriveSearchResults(
   const local: SessionSummary[] = []
   for (const id of list.ids) {
     const summary = list.byId[id]
-    // Blank placeholders never match a query (their canonical title displays
-    // localized, so matching it would tie search to one language).
-    if (summary === undefined || summary.blank || !sessionVisible(summary, list.current, archived)) continue
+    // 空白会话不进列表，也不参与匹配；它们没有可供搜索的内容。
+    if (summary === undefined || !sessionVisible(summary, archived)) continue
     if (
-      sessionTitle(summary).toLowerCase().includes(q)
+      summary.displayTitle.toLowerCase().includes(q)
       || labelOf(summary).toLowerCase().includes(q)
     ) {
       local.push(summary)
@@ -369,7 +349,7 @@ export function deriveSearchResults(
   for (const summary of local) include(summary)
   for (const item of content.items) {
     const summary = list.byId[item.sessionId]
-    if (summary !== undefined && !summary.blank && sessionVisible(summary, list.current, archived)) include(summary)
+    if (summary !== undefined && sessionVisible(summary, archived)) include(summary)
   }
 
   return {
@@ -377,7 +357,7 @@ export function deriveSearchResults(
       const match = contentBySession.get(summary.id)
       return {
         id: summary.id,
-        title: sessionTitle(summary),
+        title: summary.displayTitle,
         workspace: labelOf(summary),
         running: summary.running,
         runningSubagentCount: descendants.get(summary.id)?.runningCount ?? 0,

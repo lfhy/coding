@@ -16,7 +16,6 @@
   - treeitem "workspace" [expanded]:
     - img
     - text: workspace
-  - treeitem "New Session" [selected]
 - button "Settings":
   - img
   - text: Settings

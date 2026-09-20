@@ -1,121 +1,119 @@
-# Agent Note: Workspace UI Complete Product Flow
+# Agent Note: Workspace UI 完整产品动线
 
 Status: implemented
 
-English | [中文](2026-07-25-workspace-ui-product-flow.zh.md)
+## 问题
 
-## Problem
+[Domain KV storage 与 Workspace entity](../../proposed/architecture/2026-07-24-domain-kv-storage-and-workspace.md)定义了 Workspace 的持久实体、路径规范和有序 Session 账本，但没有定义 Host 接线、历史数据初始化或 GUI 动线。GUI 同时呈现 Workspace 和 Session；用户进入 New Session 后必须能够立即输入，即使此时还没有 Host Session，甚至没有 Host Workspace。
 
-[Domain KV Storage and the Workspace Entity](../../proposed/architecture/2026-07-24-domain-kv-storage-and-workspace.md) defines the persistent Workspace entity, path conventions, and ordered Session ledger, but not the Host wiring, historical-data initialization, or GUI flow. The GUI presents both Workspaces and Sessions; users must be able to type immediately after entering New Session, even when no Host Session or Host Workspace exists yet.
+待创建 Workspace、待创建 Session、输入保留与 Host 实体发布必须具有明确所有者，并在 RPC completion 与 Host frame 以任意顺序到达时保持同一页面身份。若零态提前创建 Host Session，则无输入的页面状态会进入 Host 生命周期。历史 Session 又只有轻量 `SessionHeader.cwd` 可用于归组，初始化不能读取事件正文。
 
-Pending Workspaces, pending Sessions, retained input, and Host entity publication need clear owners and must preserve the same page identity when RPC completions and Host frames arrive in either order. Eagerly creating a Host Session for the zero state would bring a page with no input into the Host lifecycle. Historical Sessions also expose only the lightweight `SessionHeader.cwd` for grouping; initialization cannot read event bodies.
+## 决策
 
-## Decision
+### Host 与持久数据
 
-### Host and persistent data
+Host 在 Workspace entity 上提供以下 GUI 接线：
 
-The Host provides the following GUI wiring on the Workspace entity:
-
-| RPC | Behavior |
+| RPC | 行为 |
 | --- | --- |
-| `workspace.list` | Returns persistent Workspaces in order and filters out Session ids that fail header validation |
-| `workspace.create({ path })` | Adopts an existing directory by canonical path; basename-derived display titles may repeat |
-| `workspace.insertBefore({ workspaceId, beforeWorkspaceId? })` | Moves one Workspace within durable registry order and returns the complete committed order |
-| `workspace.delete({ workspaceId })` | Removes the Workspace registration while retaining its directory and session logs; its Sessions become Ungrouped |
-| `session.create({ workspaceId, sessionId? })` | Resolves cwd from the Workspace, idempotently creates a Session with an optional preallocated id, and attaches it |
-| `session.create({ cwd })` | Remains available to non-Workspace callers and creates an Ungrouped Session |
+| `workspace.list` | 返回持久有序的 Workspace，并过滤未通过 header 校验的 Session id |
+| `workspace.create({ path })` | 按 canonical path 收编已有目录；由 basename 派生的显示名可以重复 |
+| `workspace.insertBefore({ workspaceId, beforeWorkspaceId? })` | 在持久注册表顺序内移动一个 Workspace，并返回完整的已提交顺序 |
+| `workspace.delete({ workspaceId })` | 移除 Workspace 注册记录，同时保留目录和会话日志；相关 Session 进入 Ungrouped |
+| `session.create({ workspaceId, sessionId? })` | 从 Workspace 解析 cwd，以可选预分配 id 幂等创建 Session 并 attach |
+| `session.create({ cwd })` | 保留给非 Workspace 调用方，创建 Ungrouped Session |
 
-The Host stream pushes Workspace and Session deltas, including `host/workspace-removed`, and the Client refreshes the `workspace.list` and `session.list` baselines separately after reconnecting. Registration-deletion ownership and safety are defined in the [Workspace registration deletion Agent Note](2026-07-27-workspace-registration-deletion.md).
+Host 流推送 Workspace 与 Session 增量，包括 `host/workspace-removed`；Client 重连后分别刷新 `workspace.list` 与 `session.list` 基线。删除注册记录的所有权与安全边界由 [Workspace 注册记录删除 Agent Note](2026-07-27-workspace-registration-deletion.md)定义。
 
-A Workspace's `sessionIds` is an ordered candidate index. A membership projection requires both that an id appear in the index and that the corresponding canonicalized `SessionHeader.cwd` equal the Workspace path; SessionHeader does not gain a `workspaceId`. A Session whose cwd matches but whose id is absent from the index remains Ungrouped, while an indexed id is filtered out if its header is missing, its cwd is invalid, or its cwd does not match. Two Workspace indexes claiming the same Session is corrupt state and fails loudly.
+Workspace 的 `sessionIds` 是有序候选索引。成员投影同时要求 id 位于索引且对应 `SessionHeader.cwd` canonical 后等于 Workspace path；SessionHeader 不增加 `workspaceId`。cwd 匹配但未入索引的 Session 保持 Ungrouped，索引命中但 header 缺失、cwd 无效或 cwd 不匹配的 id 被过滤。同一 Session 被两个 Workspace 索引占用属于损坏状态并明确报错。
 
-The Workspace domain uses a durable marker to distinguish “never initialized” from “initialized but empty.” When the marker is absent, the Registry calls only `SessionPersistence.list()` to read header metadata; it calls neither `load` nor `inspect`, reads no history, and parses no event bodies. Valid cwd values are grouped by canonical path, and both Sessions within each group and the Workspace groups themselves are initialized in descending header `createdAt` order. Bootstrap is reentrant and writes the marker last; after the marker is written, new Sessions created without `workspaceId` are no longer adopted automatically.
+Workspace domain 以 durable marker 区分「从未初始化」和「已初始化但为空」。marker 未设置时，注册表只调用 `SessionPersistence.list()` 读取 header 元数据，既不调用 `load` 或 `inspect`，也不读取历史数据或解析事件正文；有效 cwd 按 canonical path 分组，组内 Session 与 Workspace 组均按 header `createdAt` 降序初始化。Bootstrap 可重入，最后才写 marker；marker 写入后，绕过 `workspaceId` 的新 Session 不再被自动收编。
 
-### Client object model
+### Client 对象模型
 
-`Session` and `Workspace` are frontend objects from the page Intent stage onward.
+`Session` 与 `Workspace` 从页面 Intent 阶段开始就是前端对象。
 
-- A frontend Session preallocates a SessionId when created and owns its Intent target and `pendingPrompt`; it remains the same Session object after Host `session.create` succeeds.
-- Before materialization, a frontend Workspace has no WorkspaceId and owns its create input, phase, and error; after Host `workspace.create` succeeds, the same Workspace object adopts the returned view.
-- `SessionManager` and `WorkspaceManager` own object indexes and merge Host baselines and deltas; the objects are the sole source of state for both Intents and Host views.
-- `SessionRuntime` provides Session objects, real selection, scope, and list projections; `WorkspaceRuntime` depends on `SessionRuntime` and owns the default Workspace, cross-object New Session flow, and Workspace materialization.
+- 前端 Session 创建时预分配 SessionId，并在对象内持有 Intent target 与 `pendingPrompt`；Host `session.create` 成功后仍是同一个 Session 对象。
+- 前端 Workspace 在 materialize 前没有 WorkspaceId，并在对象内持有 create input、phase 与 error；Host `workspace.create` 成功后同一个 Workspace 对象 adopt 返回的 view。
+- `SessionManager` 与 `WorkspaceManager` 负责对象索引、Host 基线和增量合并；对象是 Intent 与 Host view 的唯一状态源。
+- `SessionRuntime` 提供 Session 对象、真实 selection、scope 与列表投影；`WorkspaceRuntime` 依赖 `SessionRuntime`，负责默认 Workspace、跨对象 New Session 动线和 Workspace materialize。
 
-A page has at most one frontend Session Intent and one accompanying Workspace Intent that exists only in the zero-Workspace state. Intents exist only on the current page and disappear on refresh; real Session selection can be restored persistently. Selecting a real Session or starting another Session Intent revokes the old Intent's eligibility for automatic sending, but does not roll back a Session already published by the Host or any accepted message.
+页面至多有一个前端 Session Intent 和一个仅在零 Workspace 状态下配套的 Workspace Intent。Intent 只存在于当前页面，刷新后消失；真实 Session selection 可以持久恢复。选择真实 Session 或启动另一个 Session Intent 会放弃旧 Intent 的自动发送资格，但已经由 Host 发布的 Session 和已经接受的消息不会回滚。
 
-The Session owns the first input and drives one internal pipeline: when necessary, it attaches to a Workspace with its preallocated id, then sends `pendingPrompt`. Both attach and send failures return to the same Session. Workspace creation phase and error belong only to the Workspace object; the Session does not simulate the Workspace lifecycle.
+Session 自己持有首条输入并驱动一条内部流水线：必要时以预分配 id attach 到 Workspace，然后发送 `pendingPrompt`。attach 与 send 的失败都落回同一 Session。Workspace 创建 phase/error 只属于 Workspace 对象，Session 不模拟 Workspace 生命周期。
 
-### User flow
+### 用户动线
 
-On initial entry, the application waits until both the Workspace and Session baselines are ready. It restores a real Session selection that remains valid; otherwise, it enters New Session and selects the most recent Workspace exactly once. The most recent Workspace is determined by the maximum `updatedAt` of its member Sessions, falling back to `createdAt` for an empty Workspace. This derived value chooses only the default target: it does not alter the Host Workspace order or trigger another selection after later hydration.
+应用首次进入时等待 Workspace 与 Session 两份基线 ready。仍有效的真实 Session selection 被恢复；否则进入 New Session，并固定选择一次最近 Workspace。最近 Workspace 取其成员 Session 的最大 `updatedAt`，空 Workspace 回退到 `createdAt`；该派生只决定默认目标，不改变 Host Workspace 顺序，也不会在后续 hydration 时二次改选。
 
-When no Workspace exists, the page creates a frontend Workspace object named `workspace` and a frontend Session that targets it. Neither writes to the Host, and the composer always accepts input; the first send materializes the Workspace, attaches the Session, and sends the message in that order.
+完全没有 Workspace 时，页面创建默认名为 `workspace` 的前端 Workspace 对象和指向它的前端 Session。两者不写 Host，composer 始终可输入；首次发送才依次 materialize Workspace、attach Session、发送消息。
 
-Top-level New Session, the plus button on a Workspace row, and the Workspace picker all invoke the same New Session action. An explicit Workspace id becomes the target directly; when none is specified, the action uses the current Session's Workspace, then the most recent Workspace, and enters the blank New Session page when no real Workspace exists. The Workspace picker's one Add workspace action ([one-route Note](../simplification/2026-07-31-one-route-to-add-a-workspace.md); it was a pair of Use-an-existing-folder and create-by-name actions when this was decided) immediately creates a real Workspace when the user confirms a directory, then retargets the frontend Session to it; an explicitly created empty Workspace remains even if the user sends no message.
+顶部 New Session、Workspace 行内加号和 Workspace picker 最终都调用同一 New Session 动作：显式 Workspace id 直接成为目标，未指定时先使用当前 Session 所属 Workspace，再使用最近 Workspace；没有真实 Workspace 时进入空白 New Session 页面。Workspace picker 的单一 Add workspace 动作（见[单一路径 Note](../simplification/2026-07-31-one-route-to-add-a-workspace.md)；本决策做出时是 Use an existing folder 与按名称创建两个动作）会在用户确认目录时立即创建真实 Workspace，再将前端 Session 的目标改为该 Workspace；即使用户不发送消息，显式创建的空 Workspace 也保留。
 
-A new Workspace takes its display name from the directory it was created in. Distinct canonical paths may share the same basename-derived title ([identity decision](../bug-fix/2026-07-31-same-basename-workspace-adoption.md)); the explicit rename operation retains its duplicate-title check. Moving Sessions across Workspaces, manual adoption from Ungrouped, and separate display-name and directory-name inputs remain outside this flow.
+新建 Workspace 的显示名取自其所在目录。不同 canonical path 可以拥有相同的 basename 派生显示名（见[身份决策](../bug-fix/2026-07-31-same-basename-workspace-adoption.md)）；显式的重命名操作仍保留显示名重名检查。跨 Workspace 移动 Session、从 Ungrouped 手动收编以及分别输入显示名和目录名仍不在此动线范围内。
 
-### First send and recovery
+### 首次发送与恢复
 
-A frontend Session's `pendingPrompt` retains its original text until the Host accepts the message. The first send advances through Workspace materialization, Session attachment, and prompt sending in order:
+前端 Session 的 `pendingPrompt` 在 Host 接受消息前始终保留原文。首次发送按 Workspace materialize、Session attach、提示词发送顺序推进：
 
-1. If Workspace creation fails, the Workspace Intent retains its input and error, and the Session continues to target that object.
-2. If Session creation fails before publication, the Session Intent returns to an editable state and retries with the same preallocated SessionId.
-3. `workspace-attach-failed` proves that the Session has been published; the same Session object enters the real list and retains the prompt, and subsequent retries attach it.
-4. If the prompt fails, the Session retains it and retries only send without recreating the Workspace or Session.
-5. If the page switches to another Intent while a Session is being created, the old Session does not send automatically even if it is subsequently published; it retains its original prompt and visible error.
+1. Workspace 创建失败时，Workspace Intent 保留输入与错误，Session 仍指向该对象。
+2. Session 创建在发布前失败时，Session Intent 回到可编辑状态，以同一预分配 SessionId 重试。
+3. `workspace-attach-failed` 证明 Session 已发布；同一 Session 对象进入真实列表并保留提示词，后续重试 attach。
+4. 提示词发送失败时，Session 保留提示词并只重试发送，不重复创建 Workspace 或 Session。
+5. Session 创建期间若页面切换到另一个 Intent，旧 Session 即使随后发布也不自动发送；它保留原提示词和可见错误。
 
-Lost RPC responses, Host frames arriving before completions, and completions arriving before Host frames all converge through the preallocated SessionId and object identity. The Manager performs ordered upserts of Host views and prioritizes preserving the original object identity during local materialization, rather than creating a temporary second row with the same id.
+RPC 响应丢失、Host frame 先于 completion 和 completion 先于 Host frame 都通过预分配 SessionId 与对象身份收敛。Manager 对 Host view 做有序 upsert，本地 materialize 时优先保留原对象身份，不生成同 id 的临时第二行。
 
-### Sidebar and ordering
+### Sidebar 与排序
 
-Workspace groups follow the persistent order returned by the Host. Bootstrap determines the historical order once, explicitly created Workspaces are placed first, and `workspace.insertBefore` durably applies user drag order. Session activity does not move Workspace groups.
+Workspace 组使用 Host 返回的持久顺序。Bootstrap 一次性确定历史顺序，显式创建的新 Workspace 放在首位，`workspace.insertBefore` 则持久应用用户拖拽顺序；Session 活跃不会移动 Workspace 组。
 
-The Host account remains the manual `Workspace.sessionIds` order: a newly attached Session is placed first and activity does not mutate it. The grouped browser can instead select a browser-local recent-update view that promotes a Session when its `updatedAt` advances and remains manually editable. Five Sessions are visible per open Workspace until the user transiently expands the remainder. The durable Workspace reorder and browser-local Session order are defined in [Workspace Sidebar Order and Folding](2026-08-11-workspace-sidebar-order-and-folding.md).
+Host 记账保持手动的 `Workspace.sessionIds` 顺序：新 attach 的 Session 放在首位，活动不会改动该顺序。分组浏览器可以改选浏览器本地的最近更新视图；当 Session 的 `updatedAt` 增大时该视图会把它移到首位，同时仍允许手动调整。每个打开的 Workspace 默认显示五条 Session，用户可临时展开其余条目。持久 Workspace 重排序和浏览器本地 Session 顺序见 [Workspace 侧边栏顺序与折叠](2026-08-11-workspace-sidebar-order-and-folding.md)。
 
-The current blank Session appears as a “New session” row without a count, time label, or row menu; other blank Sessions remain hidden and eligible for per-Workspace reuse. Search excludes blank rows.
+空白 Session 不作为行出现在侧边栏会话树里，分组与单列表都不显示：开始一次 New Session 不会在该 Workspace 之下新增一条被选中的行，该分组仍把自己标记为包含当前 Session。空白 Session 仍可由对应 Workspace 复用，并继续被搜索排除。
 
-Real Sessions that cannot be assigned to any Workspace appear under Ungrouped. Host `session-added` and `workspace-changed` events may arrive in either order; list merging does not depend on frame order.
+无法归入任何 Workspace 的真实 Session 进入 Ungrouped。Host `session-added` 与 `workspace-changed` 可以任意顺序到达，列表合并不依赖 frame 顺序。
 
-Deleting a Workspace registration removes its group without deleting or closing any Session. Its accounted Sessions immediately join Ungrouped, including the current Session; a reload reconstructs the same result from the independent Workspace and Session baselines.
+删除 Workspace 注册记录会移除其分组，但不会删除或关闭任何 Session。已记账的 Session（包括当前 Session）会立即进入 Ungrouped；刷新后，独立的 Workspace 与 Session 基线会重建出相同结果。
 
-### React and slot boundaries
+### React 与 slot 边界
 
-React components only consume `useSessions`, `useWorkspaces`, and session-scoped hooks; they do not own entity lifecycles. The Zustand store retains only layout, the current view, composer text for ordinary real Sessions, and other purely presentational state. Session and Workspace Intents, materialization phases, errors, and retained prompts reside in the React-free runtime object layer.
+React 组件只消费 `useSessions`、`useWorkspaces` 与 session-scoped 钩子，不拥有实体生命周期。Zustand store 只保留布局、当前 view、普通真实 Session 的 composer 文本和其他纯呈现状态；Session/Workspace Intent、materialize phase、错误和保留的提示词位于 React-free 运行时对象层。
 
-The Sidebar and conversation empty hero receive standardized actions through slots: `startSession`, `updateSessionPrompt`, `sendSession`, `open`, and `toggleSidebar`. The Workspace picker reuses the same component and the `createWorkspace` action; its owner supplies only popover state, an anchor, and a selection callback. The presentation layer does not send `host/workspace-changed` directly; Host events originate only from Host mutations and the stream adapter.
+Sidebar 与 conversation empty hero 通过 slot 获得标准化动作：`startSession`、`updateSessionPrompt`、`sendSession`、`open` 与 `toggleSidebar`。Workspace picker 复用同一组件与 `createWorkspace` 动作；owner 只提供 popover 开关、锚点和选中回调。呈现层不直接发送 `host/workspace-changed`，Host 事件只由 Host mutation 与流适配器产生。
 
-## Alternatives considered
+## 曾考虑的替代方案
 
-**Store separate page records for pending Workspaces and Sessions.** This approach must replace identities after materialization and hand off input, errors, focus, and sidebar rows; Intent state owned by the objects preserves identity continuity.
+**为待创建 Workspace 与 Session 保存独立页面记录。** 该方案在 materialize 后需要替换身份并转交输入、错误、焦点和 sidebar 行；对象自身的 Intent 状态可以保持身份连续。
 
-**Let the presentation layer or root Zustand store orchestrate object lifecycles.** This approach duplicates Manager and Service responsibilities and brings domain state back into React. Runtime services provide standardized actions, while slots inject only the narrow interfaces required by presentation.
+**由呈现层或 root Zustand store 编排对象生命周期。** 该方案会重复 Manager 与服务的职责，并把领域状态带回 React。标准化动作由运行时服务提供，slot 只注入呈现所需的窄接口。
 
-**Immediately create a Host Session or Host persistence intent in the zero state.** A page with no input would enter the Host lifecycle and change refresh semantics; before the first send, the frontend Session retains only a page-local Intent.
+**零态立即创建 Host Session 或 Host 持久化 Intent。** 未输入页面会进入 Host 生命周期，并改变刷新语义；前端 Session 在首次发送前只保留 page-local Intent。
 
-**Delay an explicit Create Workspace until the first send.** After confirmation, the sidebar would still show no real empty Workspace, conflating “create a Workspace” with “prepare a Session”; only the zero-Workspace Intent generated automatically by the system delays materialization.
+**显式 Create Workspace 延迟到首次发送。** 用户确认后 sidebar 仍看不到真实空 Workspace，「创建 Workspace」与「准备 Session」语义混合；只有系统自动产生的零 Workspace Intent 延迟 materialize。
 
-**Continuously derive Workspaces dynamically from cwd.** This cannot represent empty Workspaces, stable display names, or explicit ordering, and would automatically adopt non-Workspace callers; cwd is used only for one historical bootstrap and bidirectional membership validation.
+**持续按 cwd 动态派生 Workspace。** 该方案无法表达空 Workspace、稳定显示名和显式顺序，也会自动收编非 Workspace 调用方；cwd 只用于一次历史 bootstrap 与成员双向校验。
 
-**Have the Client batch-reorder by time after the Session list arrives.** The initial screen would first show the Host order and then jump as a whole, and reconnecting could change positions again; the Host's persistent ledger owns ordering, while the Client merges only individual updates.
+**Client 在 Session list 到达后按时间批量重排。** 首屏会先展示 Host 顺序再整体跳动，重连也可能改变位置；排序由 Host 持久账本拥有，Client 只合并单项更新。
 
-**Add workspaceId to SessionHeader.** This would create two persistent ownership fields alongside the Workspace index and require double writes; the header retains the Session's own cwd fact, while the Workspace index owns explicit membership.
+**在 SessionHeader 增加 workspaceId。** 它会与 Workspace 索引形成两个持久归属字段并要求双写；header 保留 Session 自身 cwd 事实，Workspace 索引负责显式归属。
 
-## Verification
+## 测试
 
-- The zero state with no Workspace writes nothing to the Host and accepts input; explicit Create Workspace immediately creates and displays an empty Workspace.
-- Frontend Sessions and Workspaces preserve object identity across materialization; input, errors, focus, and sidebar projections always originate from the object layer.
-- The first send advances through Workspace, Session, and prompt in order; successful stages are not rolled back, input is not lost before the prompt is accepted, and creation retries use the same SessionId.
-- Workspace list performs one reentrant bootstrap using only headers; an initialized empty registry does not initialize again after restart, and membership reads validate both the index and canonical cwd.
-- The initial default target is determined exactly once after both baselines are ready; Workspace groups are not reordered by hydration or Session activity, and explicit Workspace drag order survives reconnect.
-- The current blank Session can appear as a single New Session row without exposing other reusable blanks or a Session count.
-- The UI and Host admit distinct same-basename directories as separate Workspaces, while the explicit rename operation rejects duplicate titles; cwd-only Sessions, Sessions with invalid historical cwd values, and unattached Sessions remain Ungrouped.
-- Confirmed Workspace deletion removes only the registration, retains the current Session, directory, files, and session log, and survives reload; package tests pin unary/frame/baseline races and failure rollback.
-- Keyless runnable snapshots cover the zero state, explicit creation, and the first send; package-level tests cover bootstrap, membership validation, ordering, idempotency, failure recovery, and arbitrary frame order.
+- 完全无 Workspace 的零态不写 Host 且允许输入；显式 Create Workspace 立即创建并显示空 Workspace。
+- 前端 Session 与 Workspace 在 materialize 前后保持对象身份，输入、错误、焦点和 sidebar 投影始终来自对象层。
+- 首发按 Workspace、Session、提示词顺序推进，各成功阶段不回滚，输入在提示词被接受前不丢失，创建重试使用同一 SessionId。
+- Workspace list 只读取 header 完成一次可重入 bootstrap；已初始化的空注册表重启不重复初始化，成员读取同时校验索引与 canonical cwd。
+- 初始默认目标只在两份基线 ready 后确定一次；Workspace 组不因 hydration 或 Session 活跃重排，显式 Workspace 拖拽顺序在重连后仍然保持。
+- 空白 Session 在两种呈现方式下都不提供侧边栏行，也不计入 Session 数量；该 Workspace 分组仍标记当前 Session 的归属，其他可复用空白会话保持隐藏。
+- UI 与 Host 会将 canonical path 不同但 basename 相同的目录接纳为独立 Workspace，而显式的重命名操作会拒绝重复显示名；cwd-only Session、无效历史 cwd 和未 attach Session 保持 Ungrouped。
+- 经确认的 Workspace 删除只移除注册记录，保留当前 Session、目录、文件和会话日志，并在刷新后保持该状态；包级测试固定一元响应／帧／基线竞态和失败回滚行为。
+- keyless runnable 快照覆盖零态、显式创建和首次发送；包级测试覆盖 bootstrap、成员校验、排序、幂等、失败恢复及任意 frame 顺序。
 
-## Consequences
+## 后果
 
-- SessionHeader does not record last-active time, so historical bootstrap can initialize the Host manual order only by `createdAt`; the browser's optional recent-update view begins from Session summaries after hydration.
-- Historical Sessions with a missing cwd, an invalid directory, or a failed realpath remain Ungrouped; this iteration has no manual-adoption entry point.
-- Refreshing the page discards unmaterialized Workspace and Session Intents and input not yet accepted by the Host; this is the page-local contract.
-- Explicit Create Workspace writes to disk immediately, so leaving without sending still leaves an empty Workspace.
-- Before its first event, a Host Session retains the existing lazy-persistence semantics; frontend Intents do not change empty-Session behavior after a Host restart.
+- SessionHeader 不记录最后活跃时间，历史 bootstrap 只能按 `createdAt` 初始化 Host 手动顺序；浏览器可选的最近更新视图在 hydration 后从 Session 摘要开始建立。
+- 历史 cwd 缺失、目录无效或 realpath 失败的 Session 留在 Ungrouped；本期没有手动收编入口。
+- 页面刷新会丢弃未 materialize 的 Workspace/Session Intent 和尚未被 Host 接受的输入，这是 page-local 约定。
+- 显式 Create Workspace 立即落盘，用户不发送就离开也会留下空 Workspace。
+- Host Session 在首个事件前仍遵循现有懒持久化语义；前端 Intent 不改变 Host 重启后的空 Session 行为。

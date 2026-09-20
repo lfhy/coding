@@ -68,7 +68,7 @@ describe('deriveGroups', () => {
     ])
   })
 
-  it('shows only the current blank session in its Workspace count and tree', () => {
+  it('keeps blank sessions out of the tree and its counts', () => {
     const currentBlank = { ...summary('current-blank', 5), blank: true }
     const staleBlank = { ...summary('stale-blank', 4), blank: true }
     const real = summary('shown', 3)
@@ -79,15 +79,12 @@ describe('deriveGroups', () => {
     const groups = deriveGroups(
       sessions, [workspace('first', ['shown', 'current-blank', 'stale-blank'])], noArchive, view(['first']),
     )
-    expect(groups[0]!.sessions.map(session => session.id)).toEqual([real.id, currentBlank.id])
-    const blankNode = groups[0]!.sessions.find(session => session.id === currentBlank.id)!
-    // The stored placeholder title stays canonical; the renderer swaps in
-    // the localized New Session label via the blank flag.
-    expect(blankNode.title).toBe('New Session')
-    expect(blankNode.blank).toBe(true)
-    expect(groups[0]!.sessions.find(session => session.id === real.id)!.blank).toBe(false)
-    expect(groups[0]!.sessionCount).toBe(2)
-    // A non-current blank stray never surfaces an Ungrouped bucket either.
+    // 还没有开跑的新会话不出现在任何行里，因此按「新会话」不会生成条目。
+    expect(groups[0]!.sessions.map(session => session.id)).toEqual([real.id])
+    expect(groups[0]!.sessionCount).toBe(1)
+    // 归属仍由分组高亮表达，而不是靠一条选中的占位行。
+    expect(groups[0]!.containsCurrent).toBe(true)
+    // 游离的空白会话同样不会带出 Ungrouped 分组。
     const strayGroups = deriveGroups(list({ ...summary('stray', 2), blank: true }), [workspace('first', [])], noArchive, view())
     expect(strayGroups.map(group => group.key)).toEqual(['first'])
   })
@@ -231,17 +228,14 @@ describe('deriveFlat', () => {
     expect(deriveFlat(partial, noArchive).map(row => row.id)).toEqual([sid('present')])
   })
 
-  it('shows only the current blank session and excludes blanks from search', () => {
+  it('keeps blank sessions out of the flat list', () => {
     const currentBlank = { ...summary('current-blank', 9), blank: true }
     const staleBlank = { ...summary('stale-blank', 8), blank: true }
     const sessions = {
       ...list(summary('real', 1), currentBlank, staleBlank),
       current: currentBlank.id,
     }
-    const rows = deriveFlat(sessions, noArchive)
-    expect(rows.map(row => row.id)).toEqual([currentBlank.id, sid('real')])
-    expect(rows.map(row => row.title)).toEqual(['New Session', 'real'])
-    expect(rows.map(row => row.blank)).toEqual([true, false])
+    expect(deriveFlat(sessions, noArchive).map(row => row.id)).toEqual([sid('real')])
   })
 
   it('hides archived sessions in flat mode', () => {
@@ -340,8 +334,7 @@ describe('deriveSearchResults', () => {
       ...list(currentBlank, staleBlank),
       current: currentBlank.id,
     }
-    // Blank placeholders never match — not their localized-display title, not
-    // their id, and not even a backend content hit naming them.
+    // 空白会话既不进列表，也不参与标题匹配；后端按内容命中的那一条同样丢弃。
     const result = deriveSearchResults(
       sessions,
       [workspace('first', ['opaque-current', 'new session stale'])],

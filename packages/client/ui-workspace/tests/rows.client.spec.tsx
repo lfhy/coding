@@ -59,7 +59,7 @@ function fireDrag(row: HTMLElement, kind: 'dragOver' | 'drop', clientY: number):
 describe('workspace browser rows', () => {
   it('omits only an empty leading status slot in the hierarchy-free flat list', () => {
     const idle: SessionNode = {
-      id: sid('flat'), title: 'Flat Session', blank: false, running: false,
+      id: sid('flat'), title: 'Flat Session', running: false,
       runningSubagentCount: 0, completed: false, updatedAt: 0,
     }
     const view = render(<SessionNodeItem node={idle} currentId={undefined} now={0} onOpen={vi.fn()}
@@ -130,7 +130,7 @@ describe('workspace browser rows', () => {
 
   it('renders and opens a selected running Session row', () => {
     const node: SessionNode = {
-      id: sid('session'), title: 'Session', blank: false, running: true,
+      id: sid('session'), title: 'Session', running: true,
       runningSubagentCount: 0, completed: false, updatedAt: 0,
     }
     const onOpen = vi.fn()
@@ -151,7 +151,7 @@ describe('workspace browser rows', () => {
     const renderRow = (over: Partial<SessionNode>) => render(
       <SessionNodeItem
         node={{
-          id: sid('s1'), title: 'One', blank: false, running: false,
+          id: sid('s1'), title: 'One', running: false,
           runningSubagentCount: 0, completed: false, updatedAt: 0, ...over,
         }}
         currentId={undefined} now={0} onOpen={vi.fn()}
@@ -183,7 +183,7 @@ describe('workspace browser rows', () => {
     vi.useFakeTimers()
     try {
       const node: SessionNode = {
-        id: sid('owner'), title: 'Delegating', blank: false, running: false,
+        id: sid('owner'), title: 'Delegating', running: false,
         runningSubagentCount: 2, completed: false, updatedAt: 0,
       }
       render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()}
@@ -205,7 +205,7 @@ describe('workspace browser rows', () => {
     vi.useFakeTimers()
     try {
       const node: SessionNode = {
-        id: sid('owner'), title: 'Delegating', blank: false, running: true,
+        id: sid('owner'), title: 'Delegating', running: true,
         runningSubagentCount: 1, completed: false, updatedAt: 0,
       }
       render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()}
@@ -226,7 +226,7 @@ describe('workspace browser rows', () => {
 
   it('keeps child activity as a secondary status while user attention is primary', () => {
     const node: SessionNode = {
-      id: sid('owner'), title: 'Needs input', blank: false, pendingInteraction: 'question',
+      id: sid('owner'), title: 'Needs input', pendingInteraction: 'question',
       running: false, runningSubagentCount: 1, completed: false, updatedAt: 0,
     }
     render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()}
@@ -369,38 +369,13 @@ describe('workspace browser rows', () => {
     expect(screen.queryByRole('button', { name: /工作区/ })).toBeNull()
   })
 
-  it('blank New Session rows carry no menu, no time label, and no hover-card time', () => {
-    vi.useFakeTimers()
-    try {
-      const node: SessionNode = {
-        id: sid('s-blank'), title: 'ignored', blank: true, running: false,
-        runningSubagentCount: 0, completed: false, updatedAt: 0,
-      }
-      render(<SessionNodeItem node={node} currentId={node.id} now={0} onOpen={vi.fn()}
-        onRename={vi.fn()} onFork={vi.fn()} onArchive={vi.fn()} t={t} />)
-      // The placeholder has no content yet: no row verbs, no "now" stamp.
-      expect(screen.queryByRole('button', { name: /会话.*的操作/ })).toBeNull()
-      expect(screen.queryByText('刚刚')).toBeNull()
-      // The hover card keeps title + status but drops the timestamp line.
-      const wrapper = screen.getByRole('treeitem').parentElement as HTMLElement
-      fireEvent.pointerEnter(wrapper)
-      act(() => { vi.advanceTimersByTime(500) })
-      expect(screen.getAllByText('新会话').length).toBeGreaterThanOrEqual(2)
-      expect(screen.getByText('空闲')).toBeTruthy()
-      expect(screen.queryByText('刚刚')).toBeNull()
-      expect(screen.getByText('空闲').closest('[role="button"]')).toBeNull()
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
   it('session row menu opens without opening the session and dispatches rename, fork, and archive', () => {
     const onOpen = vi.fn()
     const onRename = vi.fn()
     const onFork = vi.fn()
     const onArchive = vi.fn()
     const node: SessionNode = {
-      id: sid('s1'), title: 'One', blank: false, running: false,
+      id: sid('s1'), title: 'One', running: false,
       runningSubagentCount: 0, completed: false, updatedAt: 0,
     }
     render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={onOpen}
@@ -434,7 +409,7 @@ describe('workspace browser rows', () => {
     vi.useFakeTimers()
     try {
       const node: SessionNode = {
-        id: sid('s1'), title: 'Hovered', blank: false, running: true,
+        id: sid('s1'), title: 'Hovered', running: true,
         runningSubagentCount: 0, completed: false, updatedAt: 0,
       }
       render(<SessionNodeItem node={node} currentId={undefined} now={60_000} onOpen={vi.fn()}
@@ -465,7 +440,7 @@ describe('workspace browser rows', () => {
     vi.useFakeTimers()
     try {
       const node: SessionNode = {
-        id: sid(pendingInteraction), title: 'Needs input', blank: false,
+        id: sid(pendingInteraction), title: 'Needs input',
         pendingInteraction, running: true, runningSubagentCount: 0, completed: false, updatedAt: 0,
       }
       const view = render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()}
@@ -492,7 +467,7 @@ describe('workspace browser rows', () => {
     vi.useFakeTimers()
     try {
       const node: SessionNode = {
-        id: sid('s1'), title: 'Quiet', blank: false, running: false,
+        id: sid('s1'), title: 'Quiet', running: false,
         runningSubagentCount: 0, completed: false, updatedAt: 0,
       }
       render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()}
@@ -510,7 +485,7 @@ describe('workspace browser rows', () => {
     vi.useFakeTimers()
     try {
       const node: SessionNode = {
-        id: sid('s1'), title: 'Done', blank: false, running: false,
+        id: sid('s1'), title: 'Done', running: false,
         runningSubagentCount: 0, completed: true, updatedAt: 0,
       }
       render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()}
@@ -526,7 +501,7 @@ describe('workspace browser rows', () => {
 
   it('draggable row wires start/end and gates hover/drop on an active same-group drag', () => {
     const node: SessionNode = {
-      id: sid('s1'), title: 'Drag me', blank: false, running: false,
+      id: sid('s1'), title: 'Drag me', running: false,
       runningSubagentCount: 0, completed: false, updatedAt: 0,
     }
     const inactive = dragProps()
