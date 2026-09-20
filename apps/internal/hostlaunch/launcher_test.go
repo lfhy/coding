@@ -377,3 +377,59 @@ func TestNewRejectsInvalidEnvironment(t *testing.T) {
 		t.Fatal("expected invalid environment key to be rejected")
 	}
 }
+
+// stubGuiLoginShellPath 用固定探测结果替换 GUI 登录 shell 探测，并在测试结束后恢复。
+func stubGuiLoginShellPath(t *testing.T, path string) {
+	t.Helper()
+	previous := guiLoginShellPath
+	guiLoginShellPath = func() string { return path }
+	t.Cleanup(func() { guiLoginShellPath = previous })
+}
+
+// childEnvironmentValues 把启动环境折算成 key→value 映射，便于断言单个变量。
+func childEnvironmentValues(launcher *Launcher) map[string]string {
+	values := make(map[string]string)
+	for _, entry := range launcher.childEnvironment() {
+		key, value, _ := strings.Cut(entry, "=")
+		values[key] = value
+	}
+	return values
+}
+
+func TestChildEnvironmentUsesGuiLoginShellPath(t *testing.T) {
+	stubGuiLoginShellPath(t, "/login-shell/bin:/usr/bin")
+	t.Setenv("PATH", "/usr/bin:/bin")
+	launcher, err := New(Options{Home: t.TempDir(), CWD: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := childEnvironmentValues(launcher)["PATH"]; got != "/login-shell/bin:/usr/bin" {
+		t.Fatalf("PATH = %q, want the login shell PATH", got)
+	}
+}
+
+func TestChildEnvironmentKeepsExplicitPathOverGuiLoginShellPath(t *testing.T) {
+	stubGuiLoginShellPath(t, "/login-shell/bin")
+	launcher, err := New(Options{
+		Home: t.TempDir(), CWD: t.TempDir(),
+		Environment: map[string]string{"PATH": "/caller/bin"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := childEnvironmentValues(launcher)["PATH"]; got != "/caller/bin" {
+		t.Fatalf("PATH = %q, want the explicit caller PATH", got)
+	}
+}
+
+func TestChildEnvironmentKeepsInheritedPathWithoutGuiLoginShellPath(t *testing.T) {
+	stubGuiLoginShellPath(t, "")
+	t.Setenv("PATH", "/usr/bin:/bin")
+	launcher, err := New(Options{Home: t.TempDir(), CWD: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := childEnvironmentValues(launcher)["PATH"]; got != "/usr/bin:/bin" {
+		t.Fatalf("PATH = %q, want the inherited PATH", got)
+	}
+}

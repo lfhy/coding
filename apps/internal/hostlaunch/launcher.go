@@ -36,6 +36,10 @@ type Launcher struct {
 // AppVersion 是发行启动器编译进来的产品版本；开发构建使用 dev 连接当前源码 Host。
 var AppVersion = "dev"
 
+// guiLoginShellPath 返回 GUI 启动时用来替换继承 PATH 的登录 shell 路径，空字符串表示
+// 保留继承环境。每个进程只探测一次；测试替换该变量以注入固定路径。
+var guiLoginShellPath = sync.OnceValue(resolveGuiLoginShellPath)
+
 // New 填充平台默认值并校验由调用方附加的 Host 环境。
 func New(options Options) (*Launcher, error) {
 	seenEnvironmentKeys := make(map[string]string, len(options.Environment))
@@ -314,6 +318,12 @@ func (l *Launcher) childEnvironment() []string {
 		if found {
 			values[environmentKey(key)] = variable{key: key, value: value}
 		}
+	}
+	// macOS GUI 启动继承的 launchd PATH 只有系统目录，模型执行的命令会找不到
+	// Homebrew、nvm、Go 等用户目录，因此 GUI 启动时改用登录 shell 的 PATH；调用方
+	// 通过 Options.Environment 显式传入的 PATH 仍然优先。
+	if path := guiLoginShellPath(); path != "" {
+		values[environmentKey("PATH")] = variable{key: "PATH", value: path}
 	}
 	for key, value := range l.options.Environment {
 		values[environmentKey(key)] = variable{key: key, value: value}
