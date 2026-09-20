@@ -288,38 +288,11 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
     await details.getByRole('button', { name: 'Close details' }).click()
   }, 60_000)
 
-  it.skipIf(MODE === 'record')('downloads through the Session Header and /export with one dialog', async () => {
+  it.skipIf(MODE === 'record')('exports the Session log through /export without a Header control', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-navigation-export'))
     await ensureSeedOpen(page)
-    const exportButton = page.getByRole('button', { name: 'Session log' })
-    expect(await exportButton.isDisabled()).toBe(false)
-    const header = exportButton.locator('xpath=ancestor::header[1]')
-    const [buttonBox, headerBox] = await Promise.all([
-      exportButton.boundingBox(), header.boundingBox(),
-    ])
-    if (buttonBox === null || headerBox === null) {
-      throw new Error('Session Header export geometry is unavailable')
-    }
-    expect(headerBox.x + headerBox.width - (buttonBox.x + buttonBox.width)).toBeLessThanOrEqual(32)
-    const responsePromise = page.waitForResponse(response =>
-      response.request().method() === 'HEAD'
-      && new URL(response.url()).pathname === '/api/session.export', { timeout: 30_000 })
-    const downloadPromise = page.waitForEvent('download', { timeout: 30_000 })
-    await exportButton.click()
-    const response = await responsePromise
-    expect(response.status()).toBe(200)
-    const download = await downloadPromise
-    expect(download.suggestedFilename()).toMatch(/^dsh-session-.+\.zip$/)
-    const dialog = page.getByRole('dialog', { name: 'Session download started' })
-    await dialog.waitFor({ timeout: 30_000 })
-    // The real host streamed the ZIP; its root entry is the persisted log
-    // text verbatim (the assembled seam: real route, real persistence read).
-    const files = unzipSync(await readFile(await download.path()))
-    expect(Object.keys(files)).toEqual(['session.jsonl'])
-    const content = strFromU8(files['session.jsonl'] as Uint8Array)
-    expect(content.split('\n')[0]).toContain(SEED_ID)
-    expect(content).toContain('FIRST_DONE')
-    await dialog.getByText('Close', { exact: true }).click()
+    // 页头不再提供导出控件：导出只能由 `/export` 命令触发。
+    expect(await page.getByRole('button', { name: 'Session log' }).count()).toBe(0)
 
     const observer = await newEnglishPage(browser)
     const observerTripwire = watchConsole(observer)
@@ -347,23 +320,33 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
 
     try {
       const input = page.locator('textarea').first()
-      const slashDownloadPromise = page.waitForEvent('download', { timeout: 30_000 })
+      const responsePromise = page.waitForResponse(response =>
+        response.request().method() === 'HEAD'
+        && new URL(response.url()).pathname === '/api/session.export', { timeout: 30_000 })
+      const downloadPromise = page.waitForEvent('download', { timeout: 30_000 })
       await input.fill('/export')
       await page.getByRole('option', { name: /export/u }).waitFor({ timeout: 10_000 })
       await input.press('Enter')
-      const slashDownload = await slashDownloadPromise
-      expect(slashDownload.suggestedFilename()).toBe(download.suggestedFilename())
-      const slashFiles = unzipSync(await readFile(await slashDownload.path()))
-      const slashContent = strFromU8(slashFiles['session.jsonl'] as Uint8Array)
-      const slashEvents = parseSessionLog(slashContent)
-      const exportRun = slashEvents.findLast(event => event.type === 'command/run' && event.data.name === 'export')
+      const response = await responsePromise
+      expect(response.status()).toBe(200)
+      const download = await downloadPromise
+      expect(download.suggestedFilename()).toMatch(/^dsh-session-.+\.zip$/)
+      // The real host streamed the ZIP; its root entry is the persisted log
+      // text verbatim (the assembled seam: real route, real persistence read).
+      const files = unzipSync(await readFile(await download.path()))
+      expect(Object.keys(files)).toEqual(['session.jsonl'])
+      const content = strFromU8(files['session.jsonl'] as Uint8Array)
+      expect(content.split('\n')[0]).toContain(SEED_ID)
+      expect(content).toContain('FIRST_DONE')
+      const events = parseSessionLog(content)
+      const exportRun = events.findLast(event => event.type === 'command/run' && event.data.name === 'export')
       if (exportRun?.type !== 'command/run') throw new Error('slash ZIP has no export command/run')
-      const exportDone = slashEvents.find(event =>
+      const exportDone = events.find(event =>
         event.type === 'command/done' && event.data.commandId === exportRun.data.commandId)
       expect(exportDone?.type).toBe('command/done')
-      await page.getByRole('dialog', { name: 'Session download started' }).waitFor({ timeout: 30_000 })
-      await page.getByRole('dialog', { name: 'Session download started' })
-        .getByText('Close', { exact: true }).click()
+      const dialog = page.getByRole('dialog', { name: 'Session download started' })
+      await dialog.waitFor({ timeout: 30_000 })
+      await dialog.getByText('Close', { exact: true }).click()
       await observer.getByText('Session log download requested.', { exact: true }).waitFor({ timeout: 30_000 })
       expect(observerDownloads).toBe(0)
       expect(await observer.getByRole('dialog', { name: 'Session download started' }).count()).toBe(0)

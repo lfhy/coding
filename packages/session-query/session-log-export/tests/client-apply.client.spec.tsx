@@ -4,7 +4,7 @@ import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
-import { SessionLogDownloadHeaderAction } from '../src/client/HeaderAction.tsx'
+import { SessionLogDownloadContribution } from '../src/client/Contribution.tsx'
 import { apply, inject } from '../src/client/index.ts'
 
 const SID = 'session-export-apply' as SessionId
@@ -40,10 +40,10 @@ describe('session-log-download browser plugin', () => {
     expect(b.ctx.sessionLogDownload).toBeDefined()
     expect(b.slots.entries('conversation.session.header.actions')).toHaveLength(0)
     const entry = b.slots.entries('conversation.session.header.utilities')[0]
-    expect(entry?.component).toBe(SessionLogDownloadHeaderAction)
+    expect(entry?.component).toBe(SessionLogDownloadContribution)
     expect(entry?.options).toMatchObject({ id: 'session-log-download' })
     const injected = (entry?.inject as unknown as () => import('../src/client/Dialog.tsx').SessionLogDownloadDialogInjected)()
-    await injected.request(SID)
+    await b.ctx.sessionLogDownload.download(SID)
     expect(b.ctx.sessionLogDownload.store.getSnapshot().bySession[SID]?.status).toBe('error')
     injected.dismiss(SID)
     expect(b.ctx.sessionLogDownload.store.getSnapshot().bySession[SID]?.open).toBe(false)
@@ -79,7 +79,7 @@ describe('session-log-download browser plugin', () => {
     expect(b.slots.entries('conversation.session.header.utilities')).toHaveLength(0)
     const redeclare = declare(b.slots)
     await Promise.resolve()
-    expect(b.slots.entries('conversation.session.header.utilities')[0]?.component).toBe(SessionLogDownloadHeaderAction)
+    expect(b.slots.entries('conversation.session.header.utilities')[0]?.component).toBe(SessionLogDownloadContribution)
     redeclare()
     await b.fiber.dispose()
   })

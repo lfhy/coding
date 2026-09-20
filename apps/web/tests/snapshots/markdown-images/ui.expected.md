@@ -1,9 +1,6 @@
 - banner:
   - navigation "Session hierarchy":
     - button "Markdown image policy" [disabled]
-  - button "Session log":
-    - text: Session log
-    - img
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"

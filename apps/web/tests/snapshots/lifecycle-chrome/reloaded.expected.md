@@ -5,9 +5,6 @@
   - text: Standard mode
   - button "New session":
     - img
-  - button "Session log":
-    - text: Session log
-    - img
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
