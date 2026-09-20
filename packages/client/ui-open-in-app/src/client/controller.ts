@@ -21,6 +21,19 @@ import {
 
 type Fetch = (input: string | URL, init?: RequestInit) => Promise<Response>
 
+/** 内置文件工作台在打开方式选择中的 id；它不会作为应用 id 提交给 Host。 */
+export const WORKBENCH_CHOICE_ID = 'workbench'
+
+/**
+ * 把已记忆的打开方式解析为当前可用条目。
+ * @param choice - 持久化的应用 id；空字符串表示尚未选择。
+ * @param apps - 当前 target 中词典认识的应用 id。
+ * @returns 仍存在的应用 id；未选择或应用已消失时返回内置文件工作台 id。
+ */
+export function resolveOpenChoice(choice: string, apps: readonly string[]): string {
+  return apps.includes(choice) ? choice : WORKBENCH_CHOICE_ID
+}
+
 /** 一个工作区在浏览器中的打开方式。 */
 export type WorkspaceOpenTarget =
   | { readonly kind: 'loading' }
@@ -128,13 +141,13 @@ function requiredRoute(value: string, name: string): string {
 }
 
 /**
- * 持有页面级目标缓存、持久化应用选择，以及 Host 请求载体。每个 cwd 只探测
+ * 持有页面级目标缓存、持久化打开方式，以及 Host 请求载体。每个 cwd 只探测
  * 一次；组件只提交 Session id 与 Host 返回的 segments。
  */
 export class OpenInAppController {
   /** cwd 到打开方式的映射；不存在表示尚未请求。 */
   readonly targets: SnapshotStore<WorkspaceOpenTargets> = createSnapshotStore<WorkspaceOpenTargets>({})
-  /** 跨会话与浏览器重启保存的上次本地应用选择。 */
+  /** 跨会话与浏览器重启保存的上次打开方式；应用 id 与工作台 id 共用该字段。 */
   readonly choice: SnapshotStore<string> = createSnapshotStore<string>('', {
     persist: { name: 'dsh.open-in-app.choice' },
   })
@@ -167,8 +180,8 @@ export class OpenInAppController {
   }
 
   /**
-   * 记住用户选择的本地应用，供其它 Session 的分体按钮复用。
-   * @param appId - 当前 target catalog 中的应用 id。
+   * 记住用户选择的打开方式，供其它 Session 的分体按钮复用。
+   * @param appId - catalog 应用 id，或内置文件工作台的 {@link WORKBENCH_CHOICE_ID}。
    */
   choose(appId: string): void {
     this.choice.set(appId)

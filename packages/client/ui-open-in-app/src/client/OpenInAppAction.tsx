@@ -11,7 +11,11 @@ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-cli
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { OpenInAppOpenResult } from '@deepseek-ai/dsh-host-open-in-app/shared'
 import { NS, type OpenInAppKey } from './locales.ts'
-import type { WorkspaceOpenTargets } from './controller.ts'
+import {
+  WORKBENCH_CHOICE_ID,
+  resolveOpenChoice,
+  type WorkspaceOpenTargets,
+} from './controller.ts'
 import css from './OpenInAppAction.module.css'
 
 /** 注入会话头部工作区打开控件的浏览器操作与状态。 */
@@ -118,8 +122,9 @@ function AppIcon({ id, url, size }: { id: string; url: string; size: number }): 
 const BUSY_DRESS_DELAY_MS = 250
 
 /**
- * 会话头部的工作区打开入口：本地工作区显示应用分体按钮，Remote-SSH 或
- * SSH Host 显示内置工作台按钮。Host 未确认目标前不渲染，避免错误地把远端
+ * 会话头部的工作区打开入口：本地工作区显示分体按钮，主按钮打开内置文件
+ * 工作台，菜单可在内置工作台与 Host 已验证的应用之间切换；Remote-SSH 或
+ * SSH Host 只显示内置工作台按钮。Host 未确认目标前不渲染，避免错误地把远端
  * 路径交给本机应用。
  * @param props - Session runtime、目标 controller、工作台动作和本地化文案。
  * @returns 当前工作区可用的入口；无 cwd 或目标不可用时返回 null。
@@ -172,12 +177,15 @@ export function OpenInAppAction(props: OpenInAppActionProps): React.JSX.Element 
   const apps = target.apps
     .map(id => ({ id, labelKey: APP_LABEL_KEY[id] }))
     .filter((entry): entry is { id: string; labelKey: OpenInAppKey } => entry.labelKey !== undefined)
-  const currentEntry = apps.find(entry => entry.id === choice) ?? apps[0]
-  if (currentEntry === undefined) return null
-
-  const current = currentEntry.id
-  const currentLabel = t(currentEntry.labelKey)
-  const title = phase === 'error' ? t('open.error') : t('open.title', { app: currentLabel })
+  const current = resolveOpenChoice(choice, apps.map(entry => entry.id))
+  const currentApp = apps.find(entry => entry.id === current)
+  const appLabel = currentApp === undefined ? undefined : t(currentApp.labelKey)
+  const title = phase === 'error'
+    ? t('open.error')
+    : appLabel === undefined ? t('workbench.open.title') : t('open.title', { app: appLabel })
+  const mainTooltip = phase === 'error'
+    ? t('open.error')
+    : appLabel === undefined ? t('workbench.open.tooltip') : t('open.tooltip')
 
   const launch = (appId: string): void => {
     if (inFlight.current) return
@@ -199,11 +207,14 @@ export function OpenInAppAction(props: OpenInAppActionProps): React.JSX.Element 
     })
   }
 
-  const items: MenuItem[] = apps.map(entry => ({
-    id: entry.id,
-    label: t(entry.labelKey),
-    icon: <AppIcon id={entry.id} url={props.iconUrl(entry.id)} size={18} />,
-  }))
+  const items: MenuItem[] = [
+    { id: WORKBENCH_CHOICE_ID, label: t('workbench.label'), icon: <IconFolderOpenOutline16 size={18} /> },
+    ...apps.map(entry => ({
+      id: entry.id,
+      label: t(entry.labelKey),
+      icon: <AppIcon id={entry.id} url={props.iconUrl(entry.id)} size={18} />,
+    })),
+  ]
 
   return (
     <Menu
@@ -217,20 +228,29 @@ export function OpenInAppAction(props: OpenInAppActionProps): React.JSX.Element 
         setOpen(false)
         if (inFlight.current) return
         props.choose(id)
+        if (id === WORKBENCH_CHOICE_ID) {
+          props.openWorkbench()
+          return
+        }
         launch(id)
       }}
       anchor={(
         <div className={css.split}>
-          <Tooltip label={phase === 'error' ? t('open.error') : t('open.tooltip')} side="bottom">
+          <Tooltip label={mainTooltip} side="bottom">
             <button
               type="button"
               className={css.main}
               data-state={phase}
               disabled={phase === 'busy'}
               aria-label={title}
-              onClick={() => { launch(current) }}
+              onClick={() => {
+                if (currentApp === undefined) props.openWorkbench()
+                else launch(currentApp.id)
+              }}
             >
-              <AppIcon id={current} url={props.iconUrl(current)} size={16} />
+              {currentApp === undefined
+                ? <IconFolderOpenOutline16 size={16} />
+                : <AppIcon id={currentApp.id} url={props.iconUrl(currentApp.id)} size={16} />}
             </button>
           </Tooltip>
           <button

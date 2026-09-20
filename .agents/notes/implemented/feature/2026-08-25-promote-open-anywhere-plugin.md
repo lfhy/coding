@@ -13,7 +13,7 @@ Web 客户端的工作区打开能力最初来自外部 `@dsh-plugins/open-anywh
 工作区打开是一个由两个第一方包组成的功能：
 
 - [`dsh-host-open-in-app`](../../../../packages/host/open-in-app/README.md)拥有应用发现、图标、目标分类、启动、live Session 文件协议和 Agent execution world 用户终端。
-- [`dsh-client-ui-open-in-app`](../../../../packages/client/ui-open-in-app/README.md)拥有会话页头入口、持久化应用选择、文件标签／预览／文件树和 xterm 底栏。
+- [`dsh-client-ui-open-in-app`](../../../../packages/client/ui-open-in-app/README.md)拥有会话页头入口、持久化打开方式选择、文件标签／预览／文件树和 xterm 底栏。
 
 Web bundle 同时挂载两包。路由常量与 JSON 载荷类型唯一的浏览器安全归属是 `@deepseek-ai/dsh-host-open-in-app/shared`；动态 Client bundle 只可内联这一子路径。
 
@@ -25,7 +25,9 @@ open 路由会在启动前立刻重复分类。Client 探测后才变成 marker 
 
 ### 固定的跨平台工作台
 
-Client 在会话页头右侧注册紧凑入口，位置紧邻 Session log。本地工作区显示应用图标与下拉菜单组成的分体按钮；Remote-SSH 或 SSH Host 目标打开由 `ui-layout` 持有固定几何的 Session 工作台。本功能不注册 `conversation.view`，也不使用文件 conversation tab、临时浮层或模态框。
+Client 在会话页头右侧注册紧凑入口，位置紧邻 Session log。本地工作区显示主按钮与下拉菜单组成的分体按钮：主按钮默认打开内置文件工作台，菜单先列出内置页面，再列出已验证应用；Remote-SSH 或 SSH Host 目标只显示工作台按钮。两种入口都打开由 `ui-layout` 持有固定几何的 Session 工作台。本功能不注册 `conversation.view`，也不使用文件 conversation tab、临时浮层或模态框。
+
+打开方式选择持久化在 `dsh.open-in-app.choice`，字段同时承载应用 id 与内置页面 id。应用启动因此是用户在下拉菜单中的显式选择，而不需要在本机应用与内置页面之间添加配置项；记录的应用从 catalog 消失时，主按钮回到内置文件工作台。
 
 宽屏主内容保留左侧对话，工作台中间是可关闭、可激活的文件标签及 Markdown、代码、普通文本和图片预览，右侧是可筛选、按展开懒加载的文件树，底部是真实 xterm。工作台右上角提供最大化、终端底栏和文件侧栏按钮；关闭工作台、最大化和底栏由 layout owner 回调控制，文件侧栏保持功能内部 viewing state。768px 参考视口隐藏文件大小并把文件树固定为 260px；375px 手机视口把文件树覆盖到预览区，关闭侧栏后回到标签与预览。
 
@@ -35,7 +37,7 @@ Client 在会话页头右侧注册紧凑入口，位置紧邻 Session log。本�
 
 ### 已验证的本地应用
 
-一趟惰性解析产出 catalog id 到已验证启动器的映射。点击直接使用该映射；spawn `ENOENT` 只刷新失效条目并重试一次。编译期 catalog 是维护过的白名单，因为操作系统注册信息无法证明任意应用能接收工作区目录，也无法给出它所需的 argv 协议。
+一趟惰性解析产出 catalog id 到已验证启动器的映射。用户在菜单中选中应用后，该 id 直接使用这份映射；spawn `ENOENT` 只刷新失效条目并重试一次。编译期 catalog 是维护过的白名单，因为操作系统注册信息无法证明任意应用能接收工作区目录，也无法给出它所需的 argv 协议。
 
 - macOS 检查已知 `.app` 根并跟随 `xcode-select -p`。
 - Windows 批量读取 `App Paths` 与 Uninstall 注册表，验证已知路径与版本化 JetBrains 目录，处理 GitHub Desktop 自带 CLI，并经 `ctx.subprocess.resolveExecutable()` 解析 PATH/PATHEXT。
@@ -49,7 +51,7 @@ Client 在会话页头右侧注册紧凑入口，位置紧邻 Session log。本�
 
 每条 HTTP 路由和 WebSocket upgrade 都先调用 composition connection 服务的 `requestRejection()`。该接口固定执行 loopback Host 与浏览器同源检查，不因部署的 `trustedHosts` 放宽；这是 DNS rebinding／跨站可达性边界，不是假称存在用户认证。POST body 要求精确 JSON 媒体类型、64 KiB 上限、封闭字段集和运行时校验。文件协议只暴露展示路径、普通元数据和封闭预览内容。
 
-Client 使用标准 slot 系统、locale 服务、CSS Modules、设计 token 与 snapshot store。目标请求按 `cwd` 合并并缓存到页面结束；本地应用选择持久化在 `dsh.open-in-app.choice`。文件标签归 Session scope store，树展开、筛选与侧栏可见性归组件本地状态。布局把工作台、底栏和对话保留在固定 React 树位置，因此视觉隐藏不等于终端卸载；插件 fiber 或 Session scope 释放才撤销 entry 和连接。
+Client 使用标准 slot 系统、locale 服务、CSS Modules、设计 token 与 snapshot store。目标请求按 `cwd` 合并并缓存到页面结束；打开方式选择（应用 id 或内置页面 id）持久化在 `dsh.open-in-app.choice`。文件标签归 Session scope store，树展开、筛选与侧栏可见性归组件本地状态。布局把工作台、底栏和对话保留在固定 React 树位置，因此视觉隐藏不等于终端卸载；插件 fiber 或 Session scope 释放才撤销 entry 和连接。
 
 ## 曾考虑的替代方案
 
@@ -63,10 +65,14 @@ Client 使用标准 slot 系统、locale 服务、CSS Modules、设计 token 与
 
 **扩展 `host.openPath`。** 拒绝，因为该操作只为一个路径选择 OS 默认应用。本功能拥有应用选择、可用性、图标身份、失效启动器恢复与内置文件 fallback。
 
+**为默认打开方式新增设置项。** 拒绝，因为菜单本身就是一次性显式选择：常看内置页面时不需要配置，偶尔启动外部应用时展开菜单即可。为单个页头按钮引入设置命名空间、迁移与设置面板文案，会把一次局部选择变成需要长期维护的用户可配置面。
+
+**主按钮永远是内置文件工作台，不记忆应用。** 拒绝，因为它回退既有的一次点击路径：以外部应用为主的工作流每次都要展开菜单，而现有的记忆字段已经能表达这个选择。
+
 **枚举或配置任意已安装应用。** 不作为默认权威。OS catalog 无法证明工作区打开语义，任意命令还需要设置归属和命令校验。维护过的 preset 保持显式；custom handler 暂缓。
 
 ## 后果
 
-只要至少一个可命名应用解析成功，本地工作区就在 macOS、Windows、Linux 上得到与主线一致的页头分体按钮。Remote-SSH 与 SSH Host 工作区得到紧邻 Session log 的固定工作台入口，而不是缺失或不安全的本地操作。文件协议使用 Session 的 `ctx.fs` 世界，终端使用 live Agent 的 subprocess 世界，因此桌面 Remote-SSH 会抵达 Go agent，Windows 与 POSIX 终端也共用一份浏览器协议，无需移动 Host 控制平面。
+无论 Host 是否解析出可命名应用，本地工作区都在 macOS、Windows、Linux 上得到页头分体按钮：主按钮打开内置文件工作台，菜单列出当前可用的已验证应用。Remote-SSH 与 SSH Host 工作区得到紧邻 Session log 的固定工作台入口，而不是缺失或不安全的本地操作。文件协议使用 Session 的 `ctx.fs` 世界，终端使用 live Agent 的 subprocess 世界，因此桌面 Remote-SSH 会抵达 Go agent，Windows 与 POSIX 终端也共用一份浏览器协议，无需移动 Host 控制平面。
 
 接受的成本是文件工作台只读、每目录 2,000 项上限、预览采用完整有界读取、终端以 WebSocket 连接为生命周期、页面生命周期目标缓存，以及编译期应用 catalog。Resolver 与图标覆盖固定三个本地平台；Host 契约固定 loopback trust、live Session／Agent 绑定、provider containment、预览分类、封闭帧、各执行世界 resize 与 PTY 清理；Client 契约固定目标切换、文件标签／树／预览、xterm 保留式显隐和 375px／768px 响应式语义。

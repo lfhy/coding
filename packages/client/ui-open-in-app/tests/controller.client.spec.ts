@@ -2,7 +2,11 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import { OpenInAppController } from '../src/client/controller.ts'
+import {
+  OpenInAppController,
+  WORKBENCH_CHOICE_ID,
+  resolveOpenChoice,
+} from '../src/client/controller.ts'
 import type { OpenInAppRoutes } from '../src/client/wire.ts'
 
 afterEach(() => {
@@ -227,5 +231,15 @@ describe('OpenInAppController terminal URL and shared routes', () => {
     await expect(controller.listFiles(SESSION, [])).rejects.toThrow('files route')
     await expect(controller.readFile(SESSION, [])).rejects.toThrow('file read route')
     expect(() => controller.terminalUrl(SESSION)).toThrow('terminal route')
+  })
+})
+
+describe('open choice resolution', () => {
+  it('keeps a live app and falls back to the built-in file page otherwise', () => {
+    expect(resolveOpenChoice('cursor', ['finder', 'cursor'])).toBe('cursor')
+    expect(resolveOpenChoice(WORKBENCH_CHOICE_ID, ['finder'])).toBe(WORKBENCH_CHOICE_ID)
+    expect(resolveOpenChoice('', ['finder'])).toBe(WORKBENCH_CHOICE_ID)
+    expect(resolveOpenChoice('vscode', ['finder'])).toBe(WORKBENCH_CHOICE_ID)
+    expect(resolveOpenChoice('', [])).toBe(WORKBENCH_CHOICE_ID)
   })
 })

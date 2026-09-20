@@ -4,7 +4,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createSnapshotStore, type SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { WorkspaceOpenTarget, WorkspaceOpenTargets } from '../src/client/controller.ts'
+import {
+  WORKBENCH_CHOICE_ID,
+  type WorkspaceOpenTarget,
+  type WorkspaceOpenTargets,
+} from '../src/client/controller.ts'
 import { OpenInAppAction, type OpenInAppActionProps } from '../src/client/OpenInAppAction.tsx'
 import { zh } from '../src/client/locales.ts'
 
@@ -84,11 +88,20 @@ describe('OpenInAppAction target routing', () => {
       { cwd: '', target: { kind: 'local', apps: ['finder'] } as const },
       { cwd: '/w', target: { kind: 'loading' } as const },
       { cwd: '/w', target: { kind: 'unavailable' } as const },
-      { cwd: '/w', target: { kind: 'local', apps: [] } as const },
-      { cwd: '/w', target: { kind: 'local', apps: ['unknown-app'] } as const },
     ]) {
       const { container } = render(<OpenInAppAction {...bench(over).props} />)
       expect(container.innerHTML).toBe('')
+      cleanup()
+    }
+  })
+
+  it('opens the built-in file page by default, even without a known app', () => {
+    for (const apps of [['finder', 'cursor'], [], ['unknown-app']]) {
+      const b = bench({ cwd: '/w', target: { kind: 'local', apps } })
+      render(<OpenInAppAction {...b.props} />)
+      fireEvent.click(screen.getByRole('button', { name: zh['workbench.open.title'] }))
+      expect(b.openWorkbench).toHaveBeenCalledExactlyOnceWith()
+      expect(b.launch).not.toHaveBeenCalled()
       cleanup()
     }
   })
@@ -101,20 +114,21 @@ describe('OpenInAppAction target routing', () => {
     expect(b.launch).not.toHaveBeenCalled()
   })
 
-  it('uses the remembered local app and falls back when that app disappeared', () => {
+  it('uses the remembered local app, falling back to the built-in file page', () => {
     const target = { kind: 'local' as const, apps: ['finder', 'cursor'] }
     render(<OpenInAppAction {...bench({ cwd: '/w', target, choice: 'cursor' }).props} />)
     expect(screen.getByRole('button', { name: zh['open.title'].replace('{app}', 'Cursor') })).toBeDefined()
     cleanup()
-    render(<OpenInAppAction {...bench({ cwd: '/w', target, choice: 'vscode' }).props} />)
-    expect(screen.getByRole('button', {
-      name: zh['open.title'].replace('{app}', zh['app.finder']),
-    })).toBeDefined()
+    for (const choice of ['', 'vscode', WORKBENCH_CHOICE_ID]) {
+      render(<OpenInAppAction {...bench({ cwd: '/w', target, choice }).props} />)
+      expect(screen.getByRole('button', { name: zh['workbench.open.title'] })).toBeDefined()
+      cleanup()
+    }
   })
 
   it('replaces a failed Host icon with the generic glyph', () => {
     const { container } = render(<OpenInAppAction {...bench({
-      cwd: '/w', target: { kind: 'local', apps: ['cursor'] },
+      cwd: '/w', target: { kind: 'local', apps: ['cursor'] }, choice: 'cursor',
     }).props} />)
     const image = container.querySelector('img')
     expect(image).not.toBeNull()
@@ -130,6 +144,7 @@ describe('OpenInAppAction local launching', () => {
     const b = bench({
       cwd: '/w',
       target: { kind: 'local', apps: ['finder'] },
+      choice: 'finder',
       launch: () => new Promise((r) => { resolve = r }),
     })
     render(<OpenInAppAction {...b.props} />)
@@ -146,6 +161,7 @@ describe('OpenInAppAction local launching', () => {
     const b = bench({
       cwd: '/w',
       target: { kind: 'local', apps: ['finder'] },
+      choice: 'finder',
       launch: async () => 'files',
     })
     render(<OpenInAppAction {...b.props} />)
@@ -159,6 +175,7 @@ describe('OpenInAppAction local launching', () => {
     const b = bench({
       cwd: '/w',
       target: { kind: 'local', apps: ['finder'] },
+      choice: 'finder',
       launch: () => new Promise((_resolve, rejectPromise) => { reject = rejectPromise }),
     })
     render(<OpenInAppAction {...b.props} />)
@@ -189,6 +206,20 @@ describe('OpenInAppAction local launching', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: zh['app.finder'] }))
     expect(b.choose).toHaveBeenCalledTimes(1)
     resolve('launched')
+  })
+
+  it('returns to the built-in file page from the menu', () => {
+    const b = bench({
+      cwd: '/w',
+      target: { kind: 'local', apps: ['finder', 'cursor'] },
+      choice: 'cursor',
+    })
+    render(<OpenInAppAction {...b.props} />)
+    fireEvent.click(screen.getByRole('button', { name: zh['menu.toggle'] }))
+    fireEvent.click(screen.getByRole('menuitem', { name: zh['workbench.label'] }))
+    expect(b.choose).toHaveBeenCalledExactlyOnceWith(WORKBENCH_CHOICE_ID)
+    expect(b.openWorkbench).toHaveBeenCalledExactlyOnceWith()
+    expect(b.launch).not.toHaveBeenCalled()
   })
 
   it('closes the application menu on Escape', async () => {
