@@ -30,7 +30,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     /** 既有会话详情栏；工作台打开时保持挂载但不参与布局。 */
     'details': { kind: 'single'; scope: 'session'; owner: DetailsOwnerProps }
     /**
-     * 会话级固定工作台右栏。占用者绘制文件预览；页头入口在外侧控制打开、全屏和底栏；关闭时 entry 保持挂载。
+     * 会话级固定工作台右栏。占用者绘制文件预览与顶栏视图控制；页头入口在会话层打开工作台；关闭时 entry 保持挂载。
      */
     'workbench': { kind: 'single'; scope: 'session'; owner: WorkbenchOwnerProps }
     /** 会话级工作台底栏；在视觉关闭时保持挂载。 */

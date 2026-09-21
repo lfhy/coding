@@ -13,6 +13,8 @@ import {
   IconFolderClose16,
   IconFolderOpen16,
   IconFolderOpenOutline16,
+  IconFullscreenOutline16,
+  IconPanelLeftOutline16,
   IconRefreshOutline16,
   IconSearchOutline16,
   MarkdownText,
@@ -35,12 +37,16 @@ import type {
 import css from './WorkspaceWorkbench.module.css'
 
 /**
- * 文件工作台注入的 Host 读取能力。文件树 loading/error/ready 状态由
- * Session store 持有，跨会话页面切换与工作台关闭保持不变。
+ * 文件工作台注入的 Host 读取能力和当前 Session 的布局控制。文件树
+ * loading/error/ready 状态由 Session store 持有，跨会话页面切换与工作台关闭
+ * 保持不变；视图控制随工作台顶栏渲染，因此最大化或页头被隐藏时仍可操作。
  */
 export interface WorkspaceWorkbenchInjected {
   listFiles: (segments: readonly string[], signal?: AbortSignal) => Promise<WorkspaceFilesPayload>
   readFile: (segments: readonly string[], signal?: AbortSignal) => Promise<WorkspaceFilePayload>
+  closeWorkbench: () => void
+  toggleWorkbenchFullscreen: () => void
+  toggleWorkbenchBottom: () => void
 }
 
 /** 工作台 slot、viewing store、Host 读取和词典组成的 props。 */
@@ -335,12 +341,17 @@ function FilePreview({ tab, visible, readFile, t }: {
 }
 
 /**
- * 固定工作台内容：文件标签和预览居中，懒加载文件树位于右侧。
- * @param props - 布局状态、Session viewing store 与 Host 文件能力。
+ * 固定工作台内容：文件标签与预览居中，懒加载文件树位于右侧。顶栏右侧常驻
+ * 最大化、终端底栏、文件侧栏和关闭控制，因此工作台最大化或窄屏隐藏整个
+ * 会话页头时这些动作依然可达。
+ * @param props - 布局状态、Session viewing store、布局动作与 Host 文件能力。
  * @returns 保持挂载、可独立隐藏文件侧栏的工作台。
  */
 export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.Element {
-  const { shown, fullscreen, actions, readFile, listFiles, t } = props
+  const {
+    shown, fullscreen, bottomOpen, actions, readFile, listFiles,
+    closeWorkbench, toggleWorkbenchFullscreen, toggleWorkbenchBottom, t,
+  } = props
   const { tabs, activeId, filesOpen, filesQuery, filesExpanded, filesLevels } = props.useStore(state => state)
   const expanded = useMemo(() => new Set(filesExpanded), [filesExpanded])
   const requests = useRef(new Map<string, AbortController>())
@@ -424,6 +435,31 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
               </div>
             )
           })}
+        </div>
+        <div className={css.viewControls}>
+          <ToolbarButton
+            label={fullscreen ? t('workbench.fullscreen.exit') : t('workbench.fullscreen.enter')}
+            pressed={fullscreen}
+            onClick={toggleWorkbenchFullscreen}
+            icon={<IconFullscreenOutline16 size={14} />}
+          />
+          <ToolbarButton
+            label={bottomOpen ? t('workbench.bottom.hide') : t('workbench.bottom.show')}
+            pressed={bottomOpen}
+            onClick={toggleWorkbenchBottom}
+            icon={<IconPanelLeftOutline16 size={14} className={css.bottomPanelIcon} />}
+          />
+          <ToolbarButton
+            label={filesOpen ? t('workbench.files.hide') : t('workbench.files.show')}
+            pressed={filesOpen}
+            onClick={actions.toggleFiles}
+            icon={<IconPanelLeftOutline16 size={14} className={css.rightPanelIcon} />}
+          />
+          <ToolbarButton
+            label={t('workbench.close')}
+            onClick={closeWorkbench}
+            icon={<IconCloseOutline16 size={14} />}
+          />
         </div>
       </header>
       <div className={clsx(css.body, !filesOpen && css.filesClosed)}>

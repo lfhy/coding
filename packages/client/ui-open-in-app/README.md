@@ -7,7 +7,7 @@ kind: "package-reference"
 
 ## 概述
 
-本包拥有工作区打开能力的浏览器半边。会话页头紧邻 Session log 提供紧凑入口：本地工作区显示分体按钮，主按钮打开内置文件工作台，菜单可在内置工作台与本地应用之间切换；Remote-SSH 工作区或经 SSH 启动的 Host 只显示固定工作台按钮。工作台打开后，其最大化、终端底栏、文件侧栏和关闭按钮出现在入口旁边。宽屏主内容从左到右是对话、文件标签与预览、可筛选的懒加载文件树，真实 xterm 终端位于横跨主内容的底栏。
+本包拥有工作区打开能力的浏览器半边。会话页头紧邻 Session log 提供紧凑入口：本地工作区显示分体按钮，主按钮打开内置文件工作台，菜单可在内置工作台与本地应用之间切换；Remote-SSH 工作区或经 SSH 启动的 Host 只显示固定工作台按钮。工作台打开后，入口只保留固定按钮，其最大化、终端底栏、文件侧栏和关闭控制常驻工作台顶栏。宽屏主内容从左到右是对话、文件标签与预览、可筛选的懒加载文件树，真实 xterm 终端位于横跨主内容的底栏。
 
 ## 使用本包
 
@@ -17,7 +17,7 @@ kind: "package-reference"
 
 本地工作区的主按钮默认打开内置文件工作台，下拉菜单先列出内置页面，再列出 Host 已验证且 locale 词典认识的应用，选中项保存在 `dsh.open-in-app.choice`。选择应用后主按钮改为在 macOS、Windows 或 Linux 上启动它；选择内置页面，或记录的应用已经从 catalog 消失时，主按钮回到内置文件工作台。启动请求若发现执行世界已切换为远端，Client 会改为打开工作台，不会把远端路径交给本机应用。
 
-Remote-SSH 与 SSH Host 入口直接为当前 Session 调用 `ctx.layout.openWorkbench(sessionId)`。本包不注册 `conversation.view`，也不增加文件 conversation tab；入口始终进入固定工作台。工作台顶栏只承载文件标签；页头入口右侧依次提供最大化、终端底栏、文件侧栏和关闭按钮。文件侧栏默认打开，用户可以独立切换文件侧栏与终端底栏。
+Remote-SSH 与 SSH Host 入口直接为当前 Session 调用 `ctx.layout.openWorkbench(sessionId)`。本包不注册 `conversation.view`，也不增加文件 conversation tab；入口始终进入固定工作台。工作台顶栏左侧承载文件标签，右侧常驻视图控制：依次为最大化、终端底栏、文件侧栏和关闭，因此工作台最大化或窄屏隐藏会话页头时这些动作依然可达。文件侧栏默认打开，用户可以独立切换文件侧栏与终端底栏。
 
 文件树只把当前 Session id 与 Host 返回的 provider segment 数组回传给 list/read 路由，不提交工作区根，也不拼接 Windows、POSIX 或 UNC 路径。工作台视觉关闭时不请求目录；首次显示后才读取根目录，避免隐藏 entry 在 Session 尚未就绪时留下错误状态。目录按文件夹优先排序，展开时才读取下一层；筛选只作用于已加载层，点击文件会打开或激活中间标签。Markdown 使用共享 `MarkdownText`，代码和普通文本保留换行，图片使用 Host 校验后的 MIME 与 base64 内容，其它类型显示明确的 unsupported 状态。
 

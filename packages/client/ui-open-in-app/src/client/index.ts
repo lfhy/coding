@@ -45,9 +45,6 @@ export function apply(ctx: ClientContext): void {
       choose: (appId) => { controller.choose(appId) },
       iconUrl: appId => `${OPEN_IN_APP_ICON_PREFIX}/${appId}`,
       openWorkbench: () => { ctx.layout.openWorkbench(sessionId) },
-      closeWorkbench: () => { ctx.layout.closeWorkbench(sessionId) },
-      toggleWorkbenchFullscreen: () => { ctx.layout.toggleWorkbenchFullscreen(sessionId) },
-      toggleWorkbenchBottom: () => { ctx.layout.toggleWorkbenchBottom(sessionId) },
     }),
   }, OpenInAppAction))
 
@@ -58,6 +55,9 @@ export function apply(ctx: ClientContext): void {
     inject: (sessionId: SessionId): WorkspaceWorkbenchInjected => ({
       listFiles: (segments, signal) => controller.listFiles(sessionId, segments, signal),
       readFile: (segments, signal) => controller.readFile(sessionId, segments, signal),
+      closeWorkbench: () => { ctx.layout.closeWorkbench(sessionId) },
+      toggleWorkbenchFullscreen: () => { ctx.layout.toggleWorkbenchFullscreen(sessionId) },
+      toggleWorkbenchBottom: () => { ctx.layout.toggleWorkbenchBottom(sessionId) },
     }),
   }, WorkspaceWorkbench))
 

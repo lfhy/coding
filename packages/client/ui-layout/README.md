@@ -23,7 +23,7 @@ kind: "package-reference"
 | `workbench.bottom` | `session` | `shown` |
 | `shell.overlay` | `root` | 无 owner 数据的有序 list |
 
-`ctx.layout` 提供全局的 `toggleSidebar()`、`openDetails()`、`closeDetails()`，以及接收 `SessionId` 的 `openWorkbench()`、`closeWorkbench()`、`toggleWorkbench()`、`toggleWorkbenchFullscreen()` 和 `toggleWorkbenchBottom()`。`workbench(sessionId)` 返回会话页头可订阅的工作台显隐投影。打开工作台会关闭详情栏；打开详情栏会暂时覆盖工作台，关闭详情栏后恢复该 Session 的工作台状态。关闭工作台不会改写宽度与底栏偏好。
+`ctx.layout` 提供全局的 `toggleSidebar()`、`openDetails()`、`closeDetails()`，以及接收 `SessionId` 的 `openWorkbench()`、`closeWorkbench()`、`toggleWorkbench()`、`toggleWorkbenchFullscreen()` 和 `toggleWorkbenchBottom()`。`workbench(sessionId)` 返回会话页头入口与工作台顶栏可订阅的工作台显隐投影。打开工作台会关闭详情栏；打开详情栏会暂时覆盖工作台，关闭详情栏后恢复该 Session 的工作台状态。关闭工作台不会改写宽度与底栏偏好。
 
 ## 布局行为
 

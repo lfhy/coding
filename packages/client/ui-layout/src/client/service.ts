@@ -1,6 +1,6 @@
 /**
  * `ctx.layout` 的跨插件视图动作。布局几何仍由 root entry 的 store 持有；服务
- * 只转发布局动作，并向会话页头提供由 AppFrame 投影的工作台可见状态。
+ * 只转发布局动作，并向会话页头与工作台顶栏提供由 AppFrame 投影的工作台可见状态。
  */
 import {
   createSnapshotStore,
@@ -14,7 +14,7 @@ import type { createLayoutStore } from './stores.ts'
 /** 框架从布局 store 绑定出的 action 集合。 */
 export type PanelActions = BoundActions<ReturnType<typeof createLayoutStore>>
 
-/** 会话页头显示工作台控制所需的布局投影。 */
+/** 会话页头入口与工作台顶栏视图控制共用的工作台显隐投影。 */
 export interface WorkbenchLayoutSnapshot {
   open: boolean
   fullscreen: boolean
@@ -79,7 +79,7 @@ export class LayoutController implements ILayout {
   /**
    * 由 AppFrame 发送一个 Session 的已解析工作台状态。
    * @param sessionId - 当前渲染的 Session。
-   * @param next - 只包含页头控制需要的状态。
+   * @param next - 只包含页头入口与视图控制需要的状态。
    * @returns 无返回值。
    */
   publishWorkbench(sessionId: SessionId, next: WorkbenchLayoutSnapshot): void {

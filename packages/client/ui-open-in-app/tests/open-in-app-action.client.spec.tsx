@@ -28,9 +28,6 @@ interface Bench {
   launch: ReturnType<typeof vi.fn>
   choose: ReturnType<typeof vi.fn>
   openWorkbench: ReturnType<typeof vi.fn>
-  closeWorkbench: ReturnType<typeof vi.fn>
-  toggleWorkbenchFullscreen: ReturnType<typeof vi.fn>
-  toggleWorkbenchBottom: ReturnType<typeof vi.fn>
   files: ReturnType<ReturnType<typeof createWorkbenchStore>['create']>
 }
 
@@ -69,9 +66,6 @@ function bench(over: {
   const launch = vi.fn(over.launch ?? (async () => 'launched' as const))
   const choose = vi.fn()
   const openWorkbench = vi.fn()
-  const closeWorkbench = vi.fn()
-  const toggleWorkbenchFullscreen = vi.fn()
-  const toggleWorkbenchBottom = vi.fn()
   function useSessions<T>(select: (snapshot: SessionListState) => T): T {
     return select(state)
   }
@@ -87,9 +81,6 @@ function bench(over: {
     launch,
     choose,
     openWorkbench,
-    closeWorkbench,
-    toggleWorkbenchFullscreen,
-    toggleWorkbenchBottom,
     iconUrl: (appId: string) => `/open-in-app/icon/${appId}`,
     t,
   } as unknown as OpenInAppActionProps
@@ -99,9 +90,6 @@ function bench(over: {
     launch,
     choose,
     openWorkbench,
-    closeWorkbench,
-    toggleWorkbenchFullscreen,
-    toggleWorkbenchBottom,
     files,
   }
 }
@@ -138,30 +126,24 @@ describe('OpenInAppAction target routing', () => {
     }
   })
 
-  it('shows outer workbench controls only while the workbench is open', () => {
-    const b = bench({ cwd: '/w', target: { kind: 'files', apps: [] } })
-    render(<OpenInAppAction {...b.props} />)
-    expect(screen.queryByRole('button', { name: zh['workbench.fullscreen.enter'] })).toBeNull()
-    expect(screen.queryByRole('button', { name: zh['workbench.bottom.show'] })).toBeNull()
-    expect(screen.queryByRole('button', { name: zh['workbench.close'] })).toBeNull()
-  })
-
-  it('puts live workbench view controls beside the open action', () => {
-    const b = bench({
-      cwd: '/w',
-      target: { kind: 'files', apps: [] },
-      workbench: { open: true, fullscreen: true, bottomOpen: true },
-      filesOpen: false,
-    })
-    render(<OpenInAppAction {...b.props} />)
-    fireEvent.click(screen.getByRole('button', { name: zh['workbench.fullscreen.exit'] }))
-    fireEvent.click(screen.getByRole('button', { name: zh['workbench.bottom.hide'] }))
-    fireEvent.click(screen.getByRole('button', { name: zh['workbench.files.show'] }))
-    fireEvent.click(screen.getByRole('button', { name: zh['workbench.close'] }))
-    expect(b.toggleWorkbenchFullscreen).toHaveBeenCalledOnce()
-    expect(b.toggleWorkbenchBottom).toHaveBeenCalledOnce()
-    expect(b.files.getSnapshot().filesOpen).toBe(true)
-    expect(b.closeWorkbench).toHaveBeenCalledOnce()
+  it('leaves the workbench view controls to the workbench top bar', () => {
+    for (const workbench of [
+      { open: false, fullscreen: false, bottomOpen: false },
+      { open: true, fullscreen: true, bottomOpen: true },
+    ]) {
+      const b = bench({ cwd: '/w', target: { kind: 'files', apps: [] }, workbench })
+      render(<OpenInAppAction {...b.props} />)
+      const entry = screen.getByRole('button', { name: zh['workbench.open.title'] })
+      expect(entry.getAttribute('aria-pressed')).toBe(workbench.open ? 'true' : null)
+      for (const label of [
+        zh['workbench.fullscreen.enter'], zh['workbench.fullscreen.exit'],
+        zh['workbench.bottom.show'], zh['workbench.bottom.hide'],
+        zh['workbench.files.show'], zh['workbench.files.hide'], zh['workbench.close'],
+      ]) {
+        expect(screen.queryByRole('button', { name: label })).toBeNull()
+      }
+      cleanup()
+    }
   })
 
   it('opens the workbench for a Remote-SSH target without launching an app', () => {

@@ -26,6 +26,9 @@ async function bench(): Promise<{
   ctx: Context
   fiber: ReturnType<Context['plugin']>
   openWorkbench: ReturnType<typeof vi.fn>
+  closeWorkbench: ReturnType<typeof vi.fn>
+  toggleWorkbenchFullscreen: ReturnType<typeof vi.fn>
+  toggleWorkbenchBottom: ReturnType<typeof vi.fn>
 }> {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
@@ -40,16 +43,19 @@ async function bench(): Promise<{
   } as never, () => null)
   ctx.provide('locale', new LocaleRuntime(ctx))
   const openWorkbench = vi.fn()
+  const closeWorkbench = vi.fn()
+  const toggleWorkbenchFullscreen = vi.fn()
+  const toggleWorkbenchBottom = vi.fn()
   const workbench = createSnapshotStore({ open: false, fullscreen: false, bottomOpen: false })
   ctx.provide('layout', {
     toggleSidebar: vi.fn(), openDetails: vi.fn(), closeDetails: vi.fn(),
-    openWorkbench, closeWorkbench: vi.fn(), toggleWorkbench: vi.fn(),
-    toggleWorkbenchFullscreen: vi.fn(), toggleWorkbenchBottom: vi.fn(),
+    openWorkbench, closeWorkbench, toggleWorkbench: vi.fn(),
+    toggleWorkbenchFullscreen, toggleWorkbenchBottom,
     workbench: vi.fn(() => workbench),
   })
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
-  return { ctx, fiber, openWorkbench }
+  return { ctx, fiber, openWorkbench, closeWorkbench, toggleWorkbenchFullscreen, toggleWorkbenchBottom }
 }
 
 describe('open-in-app browser half', () => {
@@ -96,7 +102,9 @@ describe('open-in-app browser half', () => {
     })
     vi.stubGlobal('fetch', fetcher)
     vi.stubGlobal('location', { origin: 'http://dsh.example' })
-    const { ctx, fiber, openWorkbench } = await bench()
+    const {
+      ctx, fiber, openWorkbench, closeWorkbench, toggleWorkbenchFullscreen, toggleWorkbenchBottom,
+    } = await bench()
     const action = ctx.slots.entries('conversation.session.header.utilities')[0]
     const actionFace = (action?.inject as unknown as (id: SessionId) => OpenInAppActionInjected)(SESSION)
     await actionFace.load('/w')
@@ -118,6 +126,12 @@ describe('open-in-app browser half', () => {
     await expect(workbenchFace.readFile(['README.md'])).resolves.toEqual({
       path: '/w/README.md', content: { kind: 'markdown', text: '# Readme' },
     })
+    workbenchFace.closeWorkbench()
+    workbenchFace.toggleWorkbenchFullscreen()
+    workbenchFace.toggleWorkbenchBottom()
+    expect(closeWorkbench).toHaveBeenCalledWith(SESSION)
+    expect(toggleWorkbenchFullscreen).toHaveBeenCalledWith(SESSION)
+    expect(toggleWorkbenchBottom).toHaveBeenCalledWith(SESSION)
 
     const bottom = ctx.slots.entries('workbench.bottom')[0]
     const terminalFace = (bottom?.inject as unknown as (id: SessionId) => TerminalPanelInjected)(SESSION)

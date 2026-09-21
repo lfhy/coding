@@ -1830,8 +1830,8 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     key: 'workbench',
     kind: 'single',
     scope: 'session',
-    summary: '会话级固定工作台右栏。占用者绘制文件预览；页头入口在外侧控制打开、全屏和底栏；关闭时 entry 保持挂载。',
-    doc: '会话级固定工作台右栏。占用者绘制文件预览；页头入口在外侧控制打开、全屏和底栏；关闭时 entry 保持挂载。',
+    summary: '会话级固定工作台右栏。占用者绘制文件预览与顶栏视图控制；页头入口在会话层打开工作台；关闭时 entry 保持挂载。',
+    doc: '会话级固定工作台右栏。占用者绘制文件预览与顶栏视图控制；页头入口在会话层打开工作台；关闭时 entry 保持挂载。',
     registerOptions: [],
     ownerProps: [
       '/** 工作台右栏 owner share。 */\nexport interface WorkbenchOwnerProps {\n  /** 当前会话的工作台是否可见。 */\n  shown: boolean\n  /** 是否实际占据全部主内容；窄屏会自动进入该呈现。 */\n  fullscreen: boolean\n  /** 底栏是否实际可见。 */\n  bottomOpen: boolean\n}',

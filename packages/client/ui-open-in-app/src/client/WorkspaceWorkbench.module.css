@@ -16,9 +16,10 @@
   display: none;
 }
 
+/* 顶栏右侧常驻视图控制；它随工作台本身可见，因此单独占列而不随会话页头渲染。 */
 .topbar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 6px;
   min-width: 0;
@@ -129,6 +130,26 @@
   flex: none;
   border-radius: 7px;
   cursor: pointer;
+}
+
+/* 视图控制沿用工具按钮的悬停与按下状态，但盒与字形比预览、文件树的按钮更小。 */
+.viewControls {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.viewControls .toolButton {
+  width: 26px;
+  height: 26px;
+}
+
+.bottomPanelIcon {
+  transform: rotate(-90deg);
+}
+
+.rightPanelIcon {
+  transform: rotate(180deg);
 }
 
 .body {
@@ -462,9 +483,18 @@ div.treeRow {
 
 @media (max-width: 480px) {
   .topbar {
-    grid-template-columns: minmax(64px, 1fr);
+    grid-template-columns: minmax(64px, 1fr) auto;
     gap: 2px;
     padding: 0 4px;
+  }
+
+  .viewControls {
+    gap: 0;
+  }
+
+  .viewControls .toolButton {
+    width: 24px;
+    height: 24px;
   }
 
   .toolButton {
