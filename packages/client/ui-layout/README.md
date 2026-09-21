@@ -7,7 +7,7 @@ kind: "package-reference"
 
 ## 概述
 
-本包拥有浏览器根布局、瞬时面板几何和 `ctx.layout`。AppFrame 保留导航栏、对话区和既有详情栏，并声明独立的会话级 `workbench` 与 `workbench.bottom` slot。工作台打开时，导航固定收成 56px rail，主内容上方形成左侧对话与右侧固定工作台；工作台占用者再把自己的区域拆成中间预览和右侧文件树。包内主题呈现器把 `ctx.theme` 的已解析快照投影到 document；功能插件只负责填充 slot，不直接操作根网格。
+本包拥有浏览器根布局、瞬时面板几何和 `ctx.layout`。AppFrame 保留导航栏、对话区和既有详情栏，并声明独立的会话级 `workbench` 与 `workbench.bottom` slot。宽屏工作台遵循导航栏自己的展开偏好，主内容上方形成左侧对话与右侧固定工作台；工作台占用者再把自己的区域拆成中间预览和右侧文件树。包内主题呈现器把 `ctx.theme` 的已解析快照投影到 document；功能插件只负责填充 slot，不直接操作根网格。
 
 <a id="use-this-package"></a>
 ## 使用本包
@@ -23,17 +23,17 @@ kind: "package-reference"
 | `workbench.bottom` | `session` | `shown` |
 | `shell.overlay` | `root` | 无 owner 数据的有序 list |
 
-`ctx.layout` 提供 `toggleSidebar()`、`openDetails()`、`closeDetails()`、`openWorkbench()`、`closeWorkbench()` 和 `toggleWorkbench()`。打开工作台会关闭详情栏；打开详情栏也会退出工作台，确保右侧只有一个布局 owner。关闭工作台不会改写工作台宽度与底栏偏好。
+`ctx.layout` 提供全局的 `toggleSidebar()`、`openDetails()`、`closeDetails()`，以及接收 `SessionId` 的 `openWorkbench()`、`closeWorkbench()`、`toggleWorkbench()`、`toggleWorkbenchFullscreen()` 和 `toggleWorkbenchBottom()`。`workbench(sessionId)` 返回会话页头可订阅的工作台显隐投影。打开工作台会关闭详情栏；打开详情栏会暂时覆盖工作台，关闭详情栏后恢复该 Session 的工作台状态。关闭工作台不会改写宽度与底栏偏好。
 
 ## 布局行为
 
-宽屏工作台由 56px 导航 rail、左侧对话和右侧工作台组成。在 1110px 视口下，求解器保留 400px 对话并把 654px 交给工作台；工作台宽度偏好可在 300--2400px 间拖拽，空间不足时先收缩到 300px，再由对话承担剩余让步。低于 1024px 时工作台自动采用全屏呈现：对话继续保持挂载但进入 `inert`，工作台占据 rail 之外的全部主内容；显式最大化使用同一路径。
+宽屏工作台由用户选择宽度的导航栏、左侧对话和右侧工作台组成。在默认 280px 导航栏和 1110px 视口下，求解器保留 400px 对话并把 430px 交给工作台；工作台宽度偏好可在 300--2400px 间拖拽，空间不足时先收缩到 300px，再由对话承担剩余让步。低于 1024px 时导航自动收成 56px rail，工作台采用全屏呈现：对话继续保持挂载但进入 `inert`，工作台占据 rail 之外的全部主内容；显式最大化使用同一路径。
 
-工作台底栏横跨对话与工作台，不覆盖导航 rail，默认高度 260px，拖拽范围为 160--480px。视口过矮时实际高度会向上方工作区让步，尺寸偏好保持不变。工作台、底栏、详情和对话始终保留固定 React 树位置；视觉关闭通过零尺寸、`visibility`、`aria-hidden` 和 `inert` 实现，因此收起底栏或关闭工作台不会仅因布局切换而卸载已激活的终端占用者。
+工作台底栏横跨对话与工作台，不覆盖导航栏，默认高度 260px，拖拽范围为 160--480px。视口过矮时实际高度会向上方工作区让步，尺寸偏好保持不变。工作台、底栏、详情和对话始终保留固定 React 树位置；视觉关闭通过零尺寸、`visibility`、`aria-hidden` 和 `inert` 实现，因此收起底栏或关闭工作台不会仅因布局切换而卸载已激活的终端占用者。
 
 每个尺寸分隔条使用 pointer capture，并把高频移动合并到 animation frame。pointer cancel、capture 丢失、窗口失焦和卸载都会取消待处理帧并结束拖拽。分隔条暴露 `separator` 角色、方向和值域，可用方向键、Home 和 End 调整；轨道动效遵守 `prefers-reduced-motion`。
 
-详情栏沿用既有让步链：先缩到下限，再在对话区空间不足时自动隐藏。切换到另一个非空 Session 仍只关闭详情栏；打开的工作台保持打开，并由 `session` scope 重新绑定到新 Session。布局只负责 1024px 的主内容接管；工作台占用者在 768px 参考宽度收窄文件树，在 375px 手机宽度把文件树改成覆盖预览的单面板呈现。
+详情栏沿用既有让步链：先缩到下限，再在对话区空间不足时自动隐藏。切换到另一个非空 Session 会关闭详情栏，并按目标 Session 自己的状态决定是否显示工作台；切回原 Session 会恢复其打开状态、最大化、宽度、底栏开关和底栏高度。布局只负责 1024px 的主内容接管；工作台占用者在 768px 参考宽度收窄文件树，在 375px 手机宽度把文件树改成覆盖预览的单面板呈现。
 
 ## 主题呈现
 

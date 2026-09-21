@@ -6,8 +6,11 @@ import { stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { apply as themeApply, inject as themeInject, ThemeRuntime } from '@deepseek-ai/dsh-client-ui-theme/client'
 import { apply, inject, LayoutController } from '@deepseek-ai/dsh-client-ui-layout/client'
+import type { AppFrameInjected } from '@deepseek-ai/dsh-client-ui-layout/src/client/AppFrame.tsx'
+import type { PanelActions } from '@deepseek-ai/dsh-client-ui-layout/src/client/service.ts'
 import { apply as nodeApply } from '@deepseek-ai/dsh-client-ui-layout'
 import * as invariant from '@deepseek-ai/dsh-client-ui-layout/invariant'
 
@@ -48,7 +51,7 @@ describe('ui-layout client apply', () => {
     expect(slots.spec('shell.overlay')).toEqual({ kind: 'list', scope: 'root' })
   })
 
-  it('injects no business face and attaches the layout actions', async () => {
+  it('injects the AppFrame projection callbacks and attaches the layout actions', async () => {
     const { ctx, slots } = await bench()
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
@@ -57,12 +60,16 @@ describe('ui-layout client apply', () => {
       toggleSidebar: vi.fn(), setNarrow: vi.fn(), openDetails: vi.fn(), closeDetails: vi.fn(),
       openWorkbench: vi.fn(), closeWorkbench: vi.fn(), toggleWorkbench: vi.fn(),
       toggleWorkbenchFullscreen: vi.fn(), toggleWorkbenchBottom: vi.fn(),
-    }
-    const injected = (slots.entries('root')[0]!.inject as (actions: never) => object)(actions as never)
-    expect(injected).toEqual({})
+      retainWorkbenchSessions: vi.fn(),
+    } satisfies PanelActions
+    const injected = (slots.entries('root')[0]!.inject as unknown as (
+      actions: PanelActions,
+    ) => AppFrameInjected)(actions)
+    expect(typeof injected.publishWorkbench).toBe('function')
+    expect(typeof injected.retainWorkbenchViews).toBe('function')
     const layout = ctx.get('layout') as LayoutController
     layout.toggleSidebar()
-    layout.openWorkbench()
+    layout.openWorkbench('layout-session' as SessionId)
     expect(actions.toggleSidebar).toHaveBeenCalledOnce()
     expect(actions.openWorkbench).toHaveBeenCalledOnce()
   })

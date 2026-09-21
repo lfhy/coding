@@ -1,13 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   IconChevronDownOutline14,
+  IconCloseOutline16,
   IconFolderOpenOutline16,
+  IconFullscreenOutline16,
+  IconPanelLeftOutline16,
   Menu,
   Tooltip,
   type MenuItem,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
-import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { InjectFace, PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
+import type { WorkbenchLayoutSnapshot } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { OpenInAppOpenResult } from '@deepseek-ai/dsh-host-open-in-app/shared'
 import { NS, type OpenInAppKey } from './locales.ts'
@@ -16,24 +20,30 @@ import {
   resolveOpenChoice,
   type WorkspaceOpenTargets,
 } from './controller.ts'
+import type { createWorkbenchStore } from './store.ts'
 import css from './OpenInAppAction.module.css'
 
-/** 注入会话头部工作区打开控件的浏览器操作与状态。 */
+/** 注入会话头部工作区打开控件和布局动作的浏览器操作。 */
 export interface OpenInAppActionInjected {
   hooks: {
     openInAppTargets: ObservableSnapshot<WorkspaceOpenTargets>
     openInAppChoice: ObservableSnapshot<string>
+    workbenchLayout: ObservableSnapshot<WorkbenchLayoutSnapshot>
   }
   load: (path: string) => Promise<void>
   launch: (appId: string, path: string) => Promise<OpenInAppOpenResult['action']>
   choose: (appId: string) => void
   iconUrl: (appId: string) => string
   openWorkbench: () => void
+  closeWorkbench: () => void
+  toggleWorkbenchFullscreen: () => void
+  toggleWorkbenchBottom: () => void
 }
 
-/** 会话头部工作区打开控件的完整 props。 */
+/** 会话页头工作区打开控件和当前 Session 的布局控制。 */
 export type OpenInAppActionProps =
   PropsRuntime<'conversation.session.header.utilities'>
+  & PropsStore<ReturnType<typeof createWorkbenchStore>>
   & PropsLocale<typeof NS>
   & InjectFace<OpenInAppActionInjected>
 
@@ -135,11 +145,16 @@ export function OpenInAppAction(props: OpenInAppActionProps): React.JSX.Element 
     useSessions,
     useOpenInAppTargets,
     useOpenInAppChoice,
+    useWorkbenchLayout,
+    useStore,
+    actions,
     t,
   } = props
   const cwd = useSessions(state => state.byId[sessionId]?.cwd)
   const target = useOpenInAppTargets(targets => cwd === undefined ? undefined : targets[cwd])
   const choice = useOpenInAppChoice(id => id)
+  const workbench = useWorkbenchLayout(state => state)
+  const filesOpen = useStore(state => state.filesOpen)
   const [open, setOpen] = useState(false)
   const [phase, setPhase] = useState<'idle' | 'busy' | 'error'>('idle')
   const inFlight = useRef(false)
@@ -159,18 +174,102 @@ export function OpenInAppAction(props: OpenInAppActionProps): React.JSX.Element 
   if (cwd === undefined || cwd === '' || target === undefined
     || target.kind === 'loading' || target.kind === 'unavailable') return null
 
-  if (target.kind === 'files') {
-    return (
-      <Tooltip label={t('workbench.open.tooltip')} side="bottom">
+  const controls = workbench.open ? (
+    <div className={css.workbenchControls}>
+      <Tooltip label={workbench.fullscreen
+        ? t('workbench.fullscreen.exit')
+        : t('workbench.fullscreen.enter')} side="bottom">
         <button
           type="button"
-          className={css.filesButton}
-          aria-label={t('workbench.open.title')}
-          onClick={() => { props.openWorkbench() }}
+          className={css.controlButton}
+          title={workbench.fullscreen
+            ? t('workbench.fullscreen.exit')
+            : t('workbench.fullscreen.enter')}
+          aria-label={workbench.fullscreen
+            ? t('workbench.fullscreen.exit')
+            : t('workbench.fullscreen.enter')}
+          aria-pressed={workbench.fullscreen}
+          onClick={props.toggleWorkbenchFullscreen}
         >
-          <IconFolderOpenOutline16 size={16} />
+          <IconFullscreenOutline16 />
         </button>
       </Tooltip>
+      <Tooltip label={workbench.bottomOpen
+        ? t('workbench.bottom.hide')
+        : t('workbench.bottom.show')} side="bottom">
+        <button
+          type="button"
+          className={css.controlButton}
+          title={workbench.bottomOpen ? t('workbench.bottom.hide') : t('workbench.bottom.show')}
+          aria-label={workbench.bottomOpen ? t('workbench.bottom.hide') : t('workbench.bottom.show')}
+          aria-pressed={workbench.bottomOpen}
+          onClick={props.toggleWorkbenchBottom}
+        >
+          <IconPanelLeftOutline16 className={css.bottomPanelIcon} />
+        </button>
+      </Tooltip>
+      <Tooltip label={filesOpen
+        ? t('workbench.files.hide')
+        : t('workbench.files.show')} side="bottom">
+        <button
+          type="button"
+          className={css.controlButton}
+          title={filesOpen ? t('workbench.files.hide') : t('workbench.files.show')}
+          aria-label={filesOpen ? t('workbench.files.hide') : t('workbench.files.show')}
+          aria-pressed={filesOpen}
+          onClick={actions.toggleFiles}
+        >
+          <IconPanelLeftOutline16 className={css.rightPanelIcon} />
+        </button>
+      </Tooltip>
+      <Tooltip label={t('workbench.close')} side="bottom">
+        <button
+          type="button"
+          className={css.controlButton}
+          title={t('workbench.close')}
+          aria-label={t('workbench.close')}
+          onClick={props.closeWorkbench}
+        >
+          <IconCloseOutline16 />
+        </button>
+      </Tooltip>
+    </div>
+  ) : null
+
+  if (workbench.open) {
+    return (
+      <div className={css.entry}>
+        <Tooltip label={t('workbench.open.tooltip')} side="bottom">
+          <button
+            type="button"
+            className={css.filesButton}
+            aria-label={t('workbench.open.title')}
+            aria-pressed
+            onClick={() => { props.openWorkbench() }}
+          >
+            <IconFolderOpenOutline16 size={16} />
+          </button>
+        </Tooltip>
+        {controls}
+      </div>
+    )
+  }
+
+  if (target.kind === 'files') {
+    return (
+      <div className={css.entry}>
+        <Tooltip label={t('workbench.open.tooltip')} side="bottom">
+          <button
+            type="button"
+            className={css.filesButton}
+            aria-label={t('workbench.open.title')}
+            onClick={() => { props.openWorkbench() }}
+          >
+            <IconFolderOpenOutline16 size={16} />
+          </button>
+        </Tooltip>
+        {controls}
+      </div>
     )
   }
 
@@ -217,55 +316,58 @@ export function OpenInAppAction(props: OpenInAppActionProps): React.JSX.Element 
   ]
 
   return (
-    <Menu
-      open={open}
-      align="end"
-      dense
-      onClose={() => { setOpen(false) }}
-      items={items}
-      selectedId={current}
-      onSelect={(id) => {
-        setOpen(false)
-        if (inFlight.current) return
-        props.choose(id)
-        if (id === WORKBENCH_CHOICE_ID) {
-          props.openWorkbench()
-          return
-        }
-        launch(id)
-      }}
-      anchor={(
-        <div className={css.split}>
-          <Tooltip label={mainTooltip} side="bottom">
+    <div className={css.entry}>
+      <Menu
+        open={open}
+        align="end"
+        dense
+        onClose={() => { setOpen(false) }}
+        items={items}
+        selectedId={current}
+        onSelect={(id) => {
+          setOpen(false)
+          if (inFlight.current) return
+          props.choose(id)
+          if (id === WORKBENCH_CHOICE_ID) {
+            props.openWorkbench()
+            return
+          }
+          launch(id)
+        }}
+        anchor={(
+          <div className={css.split}>
+            <Tooltip label={mainTooltip} side="bottom">
+              <button
+                type="button"
+                className={css.main}
+                data-state={phase}
+                disabled={phase === 'busy'}
+                aria-label={title}
+                onClick={() => {
+                  if (currentApp === undefined) props.openWorkbench()
+                  else launch(currentApp.id)
+                }}
+              >
+                {currentApp === undefined
+                  ? <IconFolderOpenOutline16 size={16} />
+                  : <AppIcon id={currentApp.id} url={props.iconUrl(currentApp.id)} size={16} />}
+              </button>
+            </Tooltip>
             <button
               type="button"
-              className={css.main}
-              data-state={phase}
-              disabled={phase === 'busy'}
-              aria-label={title}
-              onClick={() => {
-                if (currentApp === undefined) props.openWorkbench()
-                else launch(currentApp.id)
-              }}
+              className={css.chevron}
+              aria-expanded={open}
+              aria-haspopup="menu"
+              title={t('menu.toggle')}
+              aria-label={t('menu.toggle')}
+              onClick={() => { setOpen(value => !value) }}
             >
-              {currentApp === undefined
-                ? <IconFolderOpenOutline16 size={16} />
-                : <AppIcon id={currentApp.id} url={props.iconUrl(currentApp.id)} size={16} />}
+              <IconChevronDownOutline14 size={11} />
             </button>
-          </Tooltip>
-          <button
-            type="button"
-            className={css.chevron}
-            aria-expanded={open}
-            aria-haspopup="menu"
-            title={t('menu.toggle')}
-            aria-label={t('menu.toggle')}
-            onClick={() => { setOpen(value => !value) }}
-          >
-            <IconChevronDownOutline14 size={11} />
-          </button>
-        </div>
-      )}
-    />
+          </div>
+        )}
+      />
+      {controls}
+    </div>
   )
 }

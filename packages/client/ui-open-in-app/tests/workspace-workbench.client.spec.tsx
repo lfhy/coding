@@ -75,24 +75,30 @@ describe('workspace workbench helpers', () => {
 })
 
 describe('WorkspaceWorkbench shell', () => {
-  it('keeps close and all three view controls reachable in the empty state', async () => {
+  it('waits for the workbench to be shown before reading the workspace root', async () => {
+    const b = bench({ shown: false })
+    const mounted = render(<WorkspaceWorkbench {...b.props} />)
+    expect(b.listFiles).not.toHaveBeenCalled()
+    mounted.rerender(<WorkspaceWorkbench {...b.props} shown />)
+    await waitFor(() => {
+      expect(b.listFiles).toHaveBeenCalledExactlyOnceWith([], expect.any(AbortSignal))
+    })
+  })
+
+  it('toggles the file sidebar through the session store and keeps it across visibility changes', async () => {
     const b = bench()
     const mounted = render(<WorkspaceWorkbench {...b.props} />)
     await screen.findByText(zh['files.empty'])
-    expect(screen.getByText(zh['workbench.empty.detail'])).toBeDefined()
+    b.instance.actions.toggleFiles()
+    await waitFor(() => { expect(mounted.container.querySelector('aside')?.hidden).toBe(true) })
+    mounted.rerender(<WorkspaceWorkbench {...b.props} shown={false} />)
+    b.instance.actions.setFilesQuery('kept')
+    b.instance.actions.toggleFiles()
+    expect(b.instance.getSnapshot()).toMatchObject({ filesOpen: true, filesQuery: 'kept' })
+    mounted.rerender(<WorkspaceWorkbench {...b.props} shown />)
+    expect(mounted.container.querySelector('aside')?.hidden).toBe(false)
 
-    fireEvent.click(screen.getAllByRole('button', { name: zh['workbench.close'] })[0] as HTMLElement)
-    fireEvent.click(screen.getByRole('button', { name: zh['workbench.fullscreen.enter'] }))
-    fireEvent.click(screen.getByRole('button', { name: zh['workbench.bottom.show'] }))
-    fireEvent.click(screen.getByRole('button', { name: zh['workbench.files.hide'] }))
-    expect(b.close).toHaveBeenCalledOnce()
-    expect(b.toggleFullscreen).toHaveBeenCalledOnce()
-    expect(b.toggleBottom).toHaveBeenCalledOnce()
-    expect(screen.getByRole('button', { name: zh['workbench.files.show'] })).toBeDefined()
     expect(b.listFiles).toHaveBeenCalledExactlyOnceWith([], expect.any(AbortSignal))
-
-    mounted.rerender(<WorkspaceWorkbench {...b.props} shown={false} fullscreen bottomOpen />)
-    expect(mounted.container.querySelector('section')?.hidden).toBe(true)
   })
 
   it('lazily expands provider segments, filters files, refreshes, and opens a tab', async () => {

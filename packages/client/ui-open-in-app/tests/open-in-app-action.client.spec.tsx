@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createSnapshotStore, type SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
-import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
   WORKBENCH_CHOICE_ID,
@@ -11,6 +11,7 @@ import {
 } from '../src/client/controller.ts'
 import { OpenInAppAction, type OpenInAppActionProps } from '../src/client/OpenInAppAction.tsx'
 import { zh } from '../src/client/locales.ts'
+import { createWorkbenchStore } from '../src/client/store.ts'
 
 afterEach(() => {
   cleanup()
@@ -27,12 +28,18 @@ interface Bench {
   launch: ReturnType<typeof vi.fn>
   choose: ReturnType<typeof vi.fn>
   openWorkbench: ReturnType<typeof vi.fn>
+  closeWorkbench: ReturnType<typeof vi.fn>
+  toggleWorkbenchFullscreen: ReturnType<typeof vi.fn>
+  toggleWorkbenchBottom: ReturnType<typeof vi.fn>
+  files: ReturnType<ReturnType<typeof createWorkbenchStore>['create']>
 }
 
 function bench(over: {
   target?: WorkspaceOpenTarget
   choice?: string
   cwd?: string
+  workbench?: Partial<{ open: boolean; fullscreen: boolean; bottomOpen: boolean }>
+  filesOpen?: boolean
   launch?: (appId: string, path: string) => Promise<'launched' | 'files'>
 } = {}): Bench {
   const cwd = over.cwd
@@ -49,29 +56,54 @@ function bench(over: {
     cwd === undefined || over.target === undefined ? {} : { [cwd]: over.target },
   )
   const choice = createSnapshotStore<string>(over.choice ?? '')
+  const workbenchState = {
+    open: false,
+    fullscreen: false,
+    bottomOpen: false,
+    ...over.workbench,
+  }
+  const workbench = createSnapshotStore(workbenchState)
+  const files = createWorkbenchStore().create()
+  if (over.filesOpen === false) files.actions.toggleFiles()
   const load = vi.fn(async () => {})
   const launch = vi.fn(over.launch ?? (async () => 'launched' as const))
   const choose = vi.fn()
   const openWorkbench = vi.fn()
+  const closeWorkbench = vi.fn()
+  const toggleWorkbenchFullscreen = vi.fn()
+  const toggleWorkbenchBottom = vi.fn()
   function useSessions<T>(select: (snapshot: SessionListState) => T): T {
     return select(state)
-  }
-  function useSelector<T, R>(source: { getSnapshot(): T }): (select: (value: T) => R) => R {
-    return select => select(source.getSnapshot())
   }
   const props = {
     sessionId: SESSION,
     useSessions,
-    useOpenInAppTargets: useSelector(targets),
-    useOpenInAppChoice: useSelector(choice),
+    useOpenInAppTargets: bindSnapshotSelector(targets),
+    useOpenInAppChoice: bindSnapshotSelector(choice),
+    useWorkbenchLayout: bindSnapshotSelector(workbench),
+    useStore: bindSnapshotSelector(files.store),
+    actions: files.actions,
     load,
     launch,
     choose,
     openWorkbench,
+    closeWorkbench,
+    toggleWorkbenchFullscreen,
+    toggleWorkbenchBottom,
     iconUrl: (appId: string) => `/open-in-app/icon/${appId}`,
     t,
   } as unknown as OpenInAppActionProps
-  return { props, load, launch, choose, openWorkbench }
+  return {
+    props,
+    load,
+    launch,
+    choose,
+    openWorkbench,
+    closeWorkbench,
+    toggleWorkbenchFullscreen,
+    toggleWorkbenchBottom,
+    files,
+  }
 }
 
 describe('OpenInAppAction target routing', () => {
@@ -104,6 +136,32 @@ describe('OpenInAppAction target routing', () => {
       expect(b.launch).not.toHaveBeenCalled()
       cleanup()
     }
+  })
+
+  it('shows outer workbench controls only while the workbench is open', () => {
+    const b = bench({ cwd: '/w', target: { kind: 'files', apps: [] } })
+    render(<OpenInAppAction {...b.props} />)
+    expect(screen.queryByRole('button', { name: zh['workbench.fullscreen.enter'] })).toBeNull()
+    expect(screen.queryByRole('button', { name: zh['workbench.bottom.show'] })).toBeNull()
+    expect(screen.queryByRole('button', { name: zh['workbench.close'] })).toBeNull()
+  })
+
+  it('puts live workbench view controls beside the open action', () => {
+    const b = bench({
+      cwd: '/w',
+      target: { kind: 'files', apps: [] },
+      workbench: { open: true, fullscreen: true, bottomOpen: true },
+      filesOpen: false,
+    })
+    render(<OpenInAppAction {...b.props} />)
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.fullscreen.exit'] }))
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.bottom.hide'] }))
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.files.show'] }))
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.close'] }))
+    expect(b.toggleWorkbenchFullscreen).toHaveBeenCalledOnce()
+    expect(b.toggleWorkbenchBottom).toHaveBeenCalledOnce()
+    expect(b.files.getSnapshot().filesOpen).toBe(true)
+    expect(b.closeWorkbench).toHaveBeenCalledOnce()
   })
 
   it('opens the workbench for a Remote-SSH target without launching an app', () => {

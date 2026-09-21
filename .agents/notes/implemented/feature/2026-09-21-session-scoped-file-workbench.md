@@ -1,0 +1,31 @@
+# Agent Note: 会话级文件工作台布局与独立视图状态
+
+Status: implemented
+
+## 问题
+
+文件工作台最初把布局状态放在 root 布局 store 的全局字段中：任意 Session 打开工作台都改写同一个 `workbenchOpen` 等布尔值与尺寸，会话页头入口无法知道当前 Session 的真实状态；文件侧栏、文件树展开、筛选和目录缓存是组件本地 state，切换会话即丢失。工作台打开时还强制收起左侧导航栏，使用户无法继续切换会话。终端底栏加载期间 xterm 的覆盖 viewport 使用 `cursor: default`，用户看到的是普通箭头而不是文本插入位置。
+
+## 决策
+
+布局 store 只保留导航栏与详情栏的全局偏好；工作台打开、最大化、宽度、底栏开关和底栏高度改为 `Record<SessionId, WorkbenchState>`，由 AppFrame 按当前 Session 读写。会话离开 Session 列表时同步释放其布局状态。`ctx.layout` 的工作台动作按 Session id 定位，并通过 `workbench(sessionId)` 返回 AppFrame 投影的 snapshot source，供会话页头订阅。
+
+AppFrame 不再因工作台打开而收起导航栏；导航栏只服从自身偏好和窄屏断点。详情栏仍是全局右侧栏：打开详情栏时它暂时覆盖当前工作台，保留该 Session 的工作台偏好，关闭详情栏后恢复。窄屏（<1024px）导航仍自动收成 56px rail，工作台采用全屏呈现。
+
+`dsh-client-ui-open-in-app` 把页头 entry 与工作台 entry 绑定到同一个 Session scope store：文件标签、当前文件、文件侧栏显隐、筛选、展开目录键和已加载目录都由该 store 持有。页头入口旁边显示最大化、终端底栏、文件侧栏和关闭按钮；文件树根目录在工作台首次显示后才请求，隐藏 entry 不再留下会话未就绪时的读取错误。终端底栏的 xterm viewport 使用文本光标，显示后立即聚焦。
+
+## 曾考虑的替代方案
+
+**继续用全局工作台布尔值并按当前会话切换。** 拒绝，因为它无法同时保留两个会话的打开状态与几何，页头也无法可靠渲染当前会话的控制态。
+
+**把工作台状态放进 `sessions.provide`。** 不采用。工作台几何是布局域事实，root 布局 store 已经拥有拖拽、让步和会话清理生命周期；`ctx.layout` 只补一个按 Session 读取的投影源。
+
+**让页头自行读取布局 entry。** 拒绝。跨插件读取 root entry 的内部 store 会扩大 `ui-layout` 的公开面；snapshot source 把页头需要的三项显隐事实收在 `ctx.layout` 服务契约内。
+
+**文件树继续使用组件本地 state。** 拒绝，因为 session scope entry 在切换会话时重新挂载，目录缓存、展开与筛选会丢失，用户回到会话必须重新走一遍懒加载。
+
+## 后果
+
+切换会话后，每个 Session 恢复自己的工作台打开状态、最大化、宽度、底栏开关与底栏高度；文件工作台恢复自己的标签、侧栏、筛选、展开目录和已加载目录。左侧导航在工作台打开时保持可用，用户可以继续切换会话。关闭工作台仍保留该 Session 的尺寸偏好；关闭详情栏会恢复被覆盖的工作台。
+
+代价是布局 store 增加按 Session 清理职责，页头 entry 与工作台 entry 共用一个 store handle，且文件树目录缓存随 Session 存活。覆盖验证见 `ui-layout` 的 AppFrame／store／service 测试和 `ui-open-in-app` 的页头、工作台与终端测试；终端加载期光标由 CSS 直接约束。

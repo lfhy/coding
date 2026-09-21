@@ -25,6 +25,7 @@ export const inject = ['slots', 'locale', 'layout']
  */
 export function apply(ctx: ClientContext): void {
   const controller = new OpenInAppController()
+  const workbench = createWorkbenchStore()
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'open-in-app: dictionaries')
 
   ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
@@ -32,23 +33,28 @@ export function apply(ctx: ClientContext): void {
     id: 'open-in-app',
     order: -10,
     locale: NS,
-    inject: (): OpenInAppActionInjected => ({
+    store: workbench,
+    inject: (sessionId: SessionId): OpenInAppActionInjected => ({
       hooks: {
         openInAppTargets: controller.targets,
         openInAppChoice: controller.choice,
+        workbenchLayout: ctx.layout.workbench(sessionId),
       },
       load: path => controller.load(path),
       launch: (appId, path) => controller.launch(appId, path),
       choose: (appId) => { controller.choose(appId) },
       iconUrl: appId => `${OPEN_IN_APP_ICON_PREFIX}/${appId}`,
-      openWorkbench: () => { ctx.layout.openWorkbench() },
+      openWorkbench: () => { ctx.layout.openWorkbench(sessionId) },
+      closeWorkbench: () => { ctx.layout.closeWorkbench(sessionId) },
+      toggleWorkbenchFullscreen: () => { ctx.layout.toggleWorkbenchFullscreen(sessionId) },
+      toggleWorkbenchBottom: () => { ctx.layout.toggleWorkbenchBottom(sessionId) },
     }),
   }, OpenInAppAction))
 
   ctx.slots.inject('workbench', () => ctx.slots.register({
     name: 'workbench',
     locale: NS,
-    store: createWorkbenchStore,
+    store: workbench,
     inject: (sessionId: SessionId): WorkspaceWorkbenchInjected => ({
       listFiles: (segments, signal) => controller.listFiles(sessionId, segments, signal),
       readFile: (segments, signal) => controller.readFile(sessionId, segments, signal),

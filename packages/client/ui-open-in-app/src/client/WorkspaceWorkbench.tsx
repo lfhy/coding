@@ -13,8 +13,6 @@ import {
   IconFolderClose16,
   IconFolderOpen16,
   IconFolderOpenOutline16,
-  IconFullscreenOutline16,
-  IconPanelLeftOutline16,
   IconRefreshOutline16,
   IconSearchOutline16,
   MarkdownText,
@@ -36,7 +34,10 @@ import type {
 } from './wire.ts'
 import css from './WorkspaceWorkbench.module.css'
 
-/** 文件工作台注入的 Host 读取能力。 */
+/**
+ * 文件工作台注入的 Host 读取能力。文件树 loading/error/ready 状态由
+ * Session store 持有，跨会话页面切换与工作台关闭保持不变。
+ */
 export interface WorkspaceWorkbenchInjected {
   listFiles: (segments: readonly string[], signal?: AbortSignal) => Promise<WorkspaceFilesPayload>
   readFile: (segments: readonly string[], signal?: AbortSignal) => Promise<WorkspaceFilePayload>
@@ -206,59 +207,17 @@ function TreeLevel({
   )
 }
 
-function FileTree({ shown, listFiles, onOpen, t }: {
+function FileTree({ shown, onOpen, query, expanded, levels, setQuery, toggle, load, t }: {
   shown: boolean
-  listFiles: WorkspaceWorkbenchInjected['listFiles']
   onOpen: (entry: WorkspaceFileEntry) => void
+  query: string
+  expanded: ReadonlySet<string>
+  levels: Levels
+  setQuery: (query: string) => void
+  toggle: (entry: WorkspaceFileEntry) => void
+  load: (segments: readonly string[]) => void
   t: WorkspaceWorkbenchProps['t']
 }): React.JSX.Element {
-  const [query, setQuery] = useState('')
-  const [levels, setLevels] = useState<Levels>({})
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
-  const requests = useRef(new Map<string, AbortController>())
-
-  const load = useCallback((pathSegments: readonly string[]): void => {
-    const key = tabIdForSegments(pathSegments)
-    requests.current.get(key)?.abort()
-    const request = new AbortController()
-    requests.current.set(key, request)
-    setLevels(current => ({
-      ...current,
-      [key]: { phase: 'loading', segments: pathSegments, listing: current[key]?.listing },
-    }))
-    void listFiles(pathSegments, request.signal).then((listing) => {
-      if (request.signal.aborted) return
-      setLevels(current => ({ ...current, [key]: { phase: 'ready', segments: pathSegments, listing } }))
-    }, () => {
-      if (request.signal.aborted) return
-      setLevels(current => ({
-        ...current,
-        [key]: { phase: 'error', segments: pathSegments, listing: current[key]?.listing },
-      }))
-    }).finally(() => {
-      if (requests.current.get(key) === request) requests.current.delete(key)
-    })
-  }, [listFiles])
-
-  useEffect(() => {
-    load([])
-    return () => {
-      for (const request of requests.current.values()) request.abort()
-      requests.current.clear()
-    }
-  }, [load])
-
-  const toggle = (entry: WorkspaceFileEntry): void => {
-    const key = tabIdForSegments(entry.segments)
-    const opening = !expanded.has(key)
-    setExpanded((current) => {
-      const next = new Set(current)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      return next
-    })
-    if (opening && levels[key]?.phase !== 'ready') load(entry.segments)
-  }
   const root = levels[tabIdForSegments([])]?.listing
   const normalizedQuery = query.trim().toLocaleLowerCase()
 
@@ -381,9 +340,50 @@ function FilePreview({ tab, visible, readFile, t }: {
  * @returns 保持挂载、可独立隐藏文件侧栏的工作台。
  */
 export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.Element {
-  const { shown, fullscreen, bottomOpen, close, toggleFullscreen, toggleBottom, actions, readFile, listFiles, t } = props
-  const { tabs, activeId } = props.useStore(state => state)
-  const [filesOpen, setFilesOpen] = useState(true)
+  const { shown, fullscreen, actions, readFile, listFiles, t } = props
+  const { tabs, activeId, filesOpen, filesQuery, filesExpanded, filesLevels } = props.useStore(state => state)
+  const expanded = useMemo(() => new Set(filesExpanded), [filesExpanded])
+  const requests = useRef(new Map<string, AbortController>())
+  const rootKey = tabIdForSegments([])
+  const rootRequested = useRef(filesLevels[rootKey] !== undefined)
+  const load = useCallback((pathSegments: readonly string[]): void => {
+    const key = tabIdForSegments(pathSegments)
+    requests.current.get(key)?.abort()
+    const request = new AbortController()
+    requests.current.set(key, request)
+    actions.setFilesLevel(pathSegments, 'loading')
+    void listFiles(pathSegments, request.signal).then((listing) => {
+      if (request.signal.aborted) return
+      actions.setFilesListing(pathSegments, listing)
+    }, () => {
+      if (request.signal.aborted) return
+      actions.setFilesLevel(pathSegments, 'error')
+    }).finally(() => {
+      if (requests.current.get(key) === request) requests.current.delete(key)
+    })
+  }, [actions, listFiles])
+
+  useEffect(() => {
+    if (shown && filesLevels[rootKey] === undefined && !rootRequested.current) {
+      rootRequested.current = true
+      load([])
+    }
+  }, [filesLevels, load, rootKey, shown])
+
+  useEffect(() => {
+    return () => {
+      for (const request of requests.current.values()) request.abort()
+      requests.current.clear()
+    }
+  }, [])
+
+  const toggle = useCallback((entry: WorkspaceFileEntry): void => {
+    const key = tabIdForSegments(entry.segments)
+    const opening = !expanded.has(key)
+    actions.toggleFilesExpanded(key)
+    if (opening && filesLevels[key]?.phase !== 'ready') load(entry.segments)
+  }, [actions, expanded, filesLevels, load])
+
   const active = useMemo(() => tabs.find(tab => tab.id === activeId), [activeId, tabs])
 
   return (
@@ -394,7 +394,6 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
       data-fullscreen={fullscreen || undefined}
     >
       <header className={css.topbar}>
-        <ToolbarButton label={t('workbench.close')} onClick={close} icon={<IconCloseOutline16 />} />
         <div className={css.tabs} role="tablist" aria-label={t('tabs.label')}>
           {tabs.map((tab, index) => {
             const selected = tab.id === activeId
@@ -426,26 +425,6 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
             )
           })}
         </div>
-        <div className={css.viewControls}>
-          <ToolbarButton
-            label={fullscreen ? t('workbench.fullscreen.exit') : t('workbench.fullscreen.enter')}
-            pressed={fullscreen}
-            onClick={toggleFullscreen}
-            icon={<IconFullscreenOutline16 />}
-          />
-          <ToolbarButton
-            label={bottomOpen ? t('workbench.bottom.hide') : t('workbench.bottom.show')}
-            pressed={bottomOpen}
-            onClick={toggleBottom}
-            icon={<IconPanelLeftOutline16 className={css.bottomPanelIcon} />}
-          />
-          <ToolbarButton
-            label={filesOpen ? t('workbench.files.hide') : t('workbench.files.show')}
-            pressed={filesOpen}
-            onClick={() => { setFilesOpen(value => !value) }}
-            icon={<IconPanelLeftOutline16 className={css.rightPanelIcon} />}
-          />
-        </div>
       </header>
       <div className={clsx(css.body, !filesOpen && css.filesClosed)}>
         <main className={css.previewStack}>
@@ -459,14 +438,18 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
               <IconFolderOpenOutline16 size={36} />
               <strong>{t('workbench.empty.title')}</strong>
               <span>{t('workbench.empty.detail')}</span>
-              <button type="button" className={css.inlineAction} onClick={close}>{t('workbench.close')}</button>
             </div>
           )}
         </main>
         <FileTree
           shown={filesOpen}
-          listFiles={listFiles}
           onOpen={(entry) => { actions.openFile({ name: entry.name, segments: entry.segments }) }}
+          query={filesQuery}
+          setQuery={actions.setFilesQuery}
+          expanded={expanded}
+          levels={filesLevels}
+          toggle={toggle}
+          load={load}
           t={t}
         />
       </div>

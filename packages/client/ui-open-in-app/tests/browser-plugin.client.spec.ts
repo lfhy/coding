@@ -2,7 +2,7 @@
 
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
+import { createSnapshotStore, SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -40,9 +40,12 @@ async function bench(): Promise<{
   } as never, () => null)
   ctx.provide('locale', new LocaleRuntime(ctx))
   const openWorkbench = vi.fn()
+  const workbench = createSnapshotStore({ open: false, fullscreen: false, bottomOpen: false })
   ctx.provide('layout', {
     toggleSidebar: vi.fn(), openDetails: vi.fn(), closeDetails: vi.fn(),
     openWorkbench, closeWorkbench: vi.fn(), toggleWorkbench: vi.fn(),
+    toggleWorkbenchFullscreen: vi.fn(), toggleWorkbenchBottom: vi.fn(),
+    workbench: vi.fn(() => workbench),
   })
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
@@ -62,6 +65,7 @@ describe('open-in-app browser half', () => {
     expect(action?.component).toBe(OpenInAppAction)
     expect(action?.options).toMatchObject({ id: 'open-in-app', order: -10 })
     expect(workbench?.component).toBe(WorkspaceWorkbench)
+    expect(action?.store).toBe(workbench?.store)
     expect(bottom?.component).toBe(RetainedTerminalPanel)
     expect(ctx.slots.entries('conversation.view')).toEqual([])
 
@@ -94,7 +98,7 @@ describe('open-in-app browser half', () => {
     vi.stubGlobal('location', { origin: 'http://dsh.example' })
     const { ctx, fiber, openWorkbench } = await bench()
     const action = ctx.slots.entries('conversation.session.header.utilities')[0]
-    const actionFace = (action?.inject as unknown as () => OpenInAppActionInjected)()
+    const actionFace = (action?.inject as unknown as (id: SessionId) => OpenInAppActionInjected)(SESSION)
     await actionFace.load('/w')
     expect(actionFace.hooks.openInAppTargets.getSnapshot()['/w'])
       .toEqual({ kind: 'local', apps: ['finder', 'cursor'] })
@@ -104,6 +108,7 @@ describe('open-in-app browser half', () => {
     await expect(actionFace.launch('cursor', '/w')).resolves.toBe('launched')
     actionFace.openWorkbench()
     expect(openWorkbench).toHaveBeenCalledOnce()
+    expect(openWorkbench).toHaveBeenCalledWith(SESSION)
 
     const workbench = ctx.slots.entries('workbench')[0]
     const workbenchFace = (workbench?.inject as unknown as (id: SessionId) => WorkspaceWorkbenchInjected)(SESSION)

@@ -18,7 +18,7 @@
 
 .topbar {
   display: grid;
-  grid-template-columns: 36px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
   gap: 6px;
   min-width: 0;
@@ -129,20 +129,6 @@
   flex: none;
   border-radius: 7px;
   cursor: pointer;
-}
-
-.viewControls {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.bottomPanelIcon {
-  transform: rotate(-90deg);
-}
-
-.rightPanelIcon {
-  transform: rotate(180deg);
 }
 
 .body {
@@ -476,13 +462,9 @@ div.treeRow {
 
 @media (max-width: 480px) {
   .topbar {
-    grid-template-columns: 32px minmax(64px, 1fr) auto;
+    grid-template-columns: minmax(64px, 1fr);
     gap: 2px;
     padding: 0 4px;
-  }
-
-  .viewControls {
-    gap: 0;
   }
 
   .toolButton {

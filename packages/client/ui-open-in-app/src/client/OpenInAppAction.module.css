@@ -82,6 +82,59 @@
   flex: none;
 }
 
+.entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.workbenchControls {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.controlButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: var(--dsw-alias-label-secondary);
+  background: transparent;
+  cursor: pointer;
+}
+
+.controlButton:hover:not(:disabled),
+.controlButton:focus-visible,
+.controlButton[aria-pressed='true'] {
+  outline: none;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.controlButton:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--dsw-alias-state-business-primary);
+}
+
+.controlButton:disabled {
+  color: var(--dsw-alias-label-dimmed);
+  cursor: default;
+  background: transparent;
+}
+
+.bottomPanelIcon {
+  transform: rotate(-90deg);
+}
+
+.rightPanelIcon {
+  transform: rotate(180deg);
+}
+
 img.icon {
   display: block;
   object-fit: contain;

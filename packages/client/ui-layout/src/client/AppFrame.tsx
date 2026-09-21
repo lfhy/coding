@@ -3,9 +3,11 @@
  * 工作台底栏横跨两个主内容列。所有 slot 始终在固定树位置渲染，视觉关闭只
  * 改变网格尺寸、可见性和 inert 状态，不销毁占用者。
  */
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, KeyboardEvent, PointerEvent, ReactNode } from 'react'
-import type { PropsRenderSlots, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
+import type { InjectFace, PropsRenderSlots, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { WorkbenchLayoutSnapshot } from './service.ts'
 import {
   computeColumns,
   computeWorkbenchBottom,
@@ -16,8 +18,10 @@ import {
   SIDEBAR_DEFAULT,
   SIDEBAR_MAX,
   SIDEBAR_MIN,
+  WORKBENCH_BOTTOM_DEFAULT,
   WORKBENCH_BOTTOM_MAX,
   WORKBENCH_BOTTOM_MIN,
+  WORKBENCH_DEFAULT,
   WORKBENCH_MAX,
   WORKBENCH_MIN,
   WORKBENCH_TOP_MIN,
@@ -25,11 +29,20 @@ import {
 import type { createLayoutStore } from './stores.ts'
 import css from './AppFrame.module.css'
 
+/** AppFrame 向布局服务回报会话级工作台投影的注入面。 */
+export interface AppFrameInjected {
+  /** 发布当前 Session 的工作台状态。 */
+  publishWorkbench: (sessionId: SessionId, state: WorkbenchLayoutSnapshot) => void
+  /** 清理已离开会话列表的工作台投影。 */
+  retainWorkbenchViews: (sessionIds: readonly SessionId[]) => void
+}
+
 /** AppFrame 的框架派生 props。 */
 export type AppFrameProps =
   & PropsRuntime<'root'>
   & PropsRenderSlots<'sidebar' | 'conversation' | 'details' | 'workbench' | 'workbench.bottom' | 'shell.overlay'>
   & PropsStore<ReturnType<typeof createLayoutStore>>
+  & InjectFace<AppFrameInjected>
 
 const SIDEBAR_ID = 'dsh-layout-sidebar'
 const DETAILS_ID = 'dsh-layout-details'
@@ -234,13 +247,36 @@ function DragHandle(props: DragHandleProps) {
   )
 }
 
+/** 单个 Session 的默认工作台状态。 */
+const WORKBENCH_FALLBACK = {
+  open: false,
+  fullscreen: false,
+  width: WORKBENCH_DEFAULT,
+  bottomOpen: false,
+  bottomHeight: WORKBENCH_BOTTOM_DEFAULT,
+}
+
 /** 固定工作台布局壳。 */
-export function AppFrame({ useStore, useSessions, actions, renderSlot }: AppFrameProps) {
-  const panels = useStore(state => state)
+export function AppFrame({
+  useStore,
+  useSessions,
+  actions,
+  renderSlot,
+  publishWorkbench,
+  retainWorkbenchViews,
+}: AppFrameProps) {
+  const rootPanels = useStore(state => state)
   const activeSession = useSessions((state) => {
     const current = state.current
     return current !== undefined && state.byId[current]?.blank === false ? current : undefined
   })
+  const liveSessionIds = useSessions(state => state.ids.filter(
+    sessionId => state.byId[sessionId]?.blank === false,
+  ))
+  const panels = useMemo(() => {
+    const current = activeSession === undefined ? undefined : rootPanels.workbench[activeSession]
+    return current ?? WORKBENCH_FALLBACK
+  }, [activeSession, rootPanels.workbench])
   const frameRef = useRef<HTMLDivElement | null>(null)
   const [viewport, setViewport] = useState(() => ({ width: window.innerWidth, height: window.innerHeight }))
 
@@ -250,6 +286,12 @@ export function AppFrame({ useStore, useSessions, actions, renderSlot }: AppFram
     if (lastSession.current !== undefined && lastSession.current !== activeSession) actions.closeDetails()
     lastSession.current = activeSession
   }, [actions, activeSession])
+
+  // 工作台布局与 Session 生命周期绑定；离开会话列表时同步释放瞬时状态与页头投影。
+  useEffect(() => {
+    actions.retainWorkbenchSessions(liveSessionIds)
+    retainWorkbenchViews(liveSessionIds)
+  }, [actions, liveSessionIds, retainWorkbenchViews])
 
   useLayoutEffect(() => {
     const element = frameRef.current
@@ -280,36 +322,45 @@ export function AppFrame({ useStore, useSessions, actions, renderSlot }: AppFram
   const narrow = viewport.width < SIDEBAR_AUTO_COLLAPSE
   useEffect(() => { actions.setNarrow(narrow) }, [actions, narrow])
 
-  const workbenchShown = activeSession !== undefined && panels.workbenchOpen
-  const workbenchFullscreen = workbenchShown && (panels.workbenchFullscreen || narrow)
-  // 工作台打开时收起导航，让左侧直接成为对话区，并把主要宽度留给预览和文件树。
-  const sidebarCollapsed = workbenchShown ? true : narrow ? !panels.narrowExpanded : panels.sidebar === 0
+  const workbenchShown = activeSession !== undefined && panels.open && rootPanels.details === 0
+  const workbenchFullscreen = workbenchShown && (panels.fullscreen || narrow)
+  // 导航栏只服从自身开关和响应式断点；工作台不隐式抢占会话导航。
+  const sidebarCollapsed = narrow ? !rootPanels.narrowExpanded : rootPanels.sidebar === 0
   const sidebarPreference = sidebarCollapsed
     ? 0
-    : panels.sidebar === 0 ? SIDEBAR_DEFAULT : panels.sidebar
+    : rootPanels.sidebar === 0 ? SIDEBAR_DEFAULT : rootPanels.sidebar
 
   const detailsColumns = computeColumns(
     viewport.width,
     sidebarPreference,
-    activeSession === undefined || workbenchShown ? 0 : panels.details,
+    activeSession === undefined || workbenchShown ? 0 : rootPanels.details,
   )
   const workbenchColumns = computeWorkbenchColumns(
     viewport.width,
     sidebarPreference,
-    panels.workbenchWidth,
+    panels.width,
     workbenchFullscreen,
   )
   const sidebarWidth = workbenchShown ? workbenchColumns.sidebar : detailsColumns.sidebar
   const detailsWidth = workbenchShown ? 0 : detailsColumns.details
   const workbenchWidth = workbenchShown ? workbenchColumns.workbench : 0
   const rightWidth = detailsWidth + workbenchWidth
-  const bottomRequested = workbenchShown && panels.workbenchBottomOpen
+  const bottomRequested = workbenchShown && panels.bottomOpen
   const bottomHeight = computeWorkbenchBottom(
     viewport.height,
-    panels.workbenchBottomHeight,
+    panels.bottomHeight,
     bottomRequested,
   )
   const bottomShown = bottomRequested && bottomHeight > 0
+
+  useEffect(() => {
+    if (activeSession === undefined) return
+    publishWorkbench(activeSession, {
+      open: workbenchShown,
+      fullscreen: workbenchShown && panels.fullscreen,
+      bottomOpen: bottomRequested,
+    })
+  }, [activeSession, bottomRequested, panels.fullscreen, publishWorkbench, workbenchShown])
 
   const geometry = useRef({ sidebarWidth, detailsWidth, workbenchWidth, bottomHeight })
   geometry.current = { sidebarWidth, detailsWidth, workbenchWidth, bottomHeight }
@@ -325,13 +376,26 @@ export function AppFrame({ useStore, useSessions, actions, renderSlot }: AppFram
   const onBottomStart = useCallback(() => { bottomBase.current = geometry.current.bottomHeight; setDragging(true) }, [])
   const onSidebarDrag = useCallback((delta: number) => { actions.setSidebar(sidebarBase.current + delta) }, [actions])
   const onDetailsDrag = useCallback((delta: number) => { actions.setDetails(detailsBase.current - delta) }, [actions])
-  const onWorkbenchDrag = useCallback((delta: number) => { actions.setWorkbench(workbenchBase.current - delta) }, [actions])
-  const onBottomDrag = useCallback((delta: number) => { actions.setWorkbenchBottom(bottomBase.current - delta) }, [actions])
+  const onWorkbenchDrag = useCallback((delta: number) => {
+    if (activeSession !== undefined) actions.setWorkbench(activeSession, workbenchBase.current - delta)
+  }, [actions, activeSession])
+  const onBottomDrag = useCallback((delta: number) => {
+    if (activeSession !== undefined) actions.setWorkbenchBottom(activeSession, bottomBase.current - delta)
+  }, [actions, activeSession])
   const nudgeSidebar = useCallback((delta: number) => { actions.setSidebar(geometry.current.sidebarWidth + delta) }, [actions])
   const nudgeDetails = useCallback((delta: number) => { actions.setDetails(geometry.current.detailsWidth - delta) }, [actions])
-  const nudgeWorkbench = useCallback((delta: number) => { actions.setWorkbench(geometry.current.workbenchWidth - delta) }, [actions])
-  const nudgeBottom = useCallback((delta: number) => { actions.setWorkbenchBottom(geometry.current.bottomHeight - delta) }, [actions])
-
+  const nudgeWorkbench = useCallback((delta: number) => {
+    if (activeSession !== undefined) actions.setWorkbench(activeSession, geometry.current.workbenchWidth + delta)
+  }, [actions, activeSession])
+  const nudgeBottom = useCallback((delta: number) => {
+    if (activeSession !== undefined) actions.setWorkbenchBottom(activeSession, geometry.current.bottomHeight - delta)
+  }, [actions, activeSession])
+  const setWorkbench = useCallback((value: number) => {
+    if (activeSession !== undefined) actions.setWorkbench(activeSession, value)
+  }, [actions, activeSession])
+  const setWorkbenchBottom = useCallback((value: number) => {
+    if (activeSession !== undefined) actions.setWorkbenchBottom(activeSession, value)
+  }, [actions, activeSession])
   return (
     <div
       ref={frameRef}
@@ -361,9 +425,6 @@ export function AppFrame({ useStore, useSessions, actions, renderSlot }: AppFram
           shown: workbenchShown,
           fullscreen: workbenchFullscreen,
           bottomOpen: bottomShown,
-          close: actions.closeWorkbench,
-          toggleFullscreen: actions.toggleWorkbenchFullscreen,
-          toggleBottom: actions.toggleWorkbenchBottom,
         })}
       </WorkbenchColumn>
       <WorkbenchBottom hidden={!bottomShown}>
@@ -418,7 +479,7 @@ export function AppFrame({ useStore, useSessions, actions, renderSlot }: AppFram
           onStart={onWorkbenchStart}
           onDrag={onWorkbenchDrag}
           onNudge={nudgeWorkbench}
-          onSet={actions.setWorkbench}
+          onSet={setWorkbench}
           onEnd={onDragEnd}
         />
       )}
@@ -438,7 +499,7 @@ export function AppFrame({ useStore, useSessions, actions, renderSlot }: AppFram
           onStart={onBottomStart}
           onDrag={onBottomDrag}
           onNudge={nudgeBottom}
-          onSet={actions.setWorkbenchBottom}
+          onSet={setWorkbenchBottom}
           onEnd={onDragEnd}
         />
       )}

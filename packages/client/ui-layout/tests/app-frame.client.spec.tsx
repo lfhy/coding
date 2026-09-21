@@ -16,7 +16,6 @@ import {
   SIDEBAR_MIN,
   WORKBENCH_BOTTOM_MAX,
   WORKBENCH_BOTTOM_MIN,
-  WORKBENCH_DEFAULT,
   WORKBENCH_MAX,
   WORKBENCH_MIN,
 } from '@deepseek-ai/dsh-client-ui-layout/src/client/columns.ts'
@@ -56,7 +55,10 @@ function hookOf<T>(inst: { subscribe: (fn: () => void) => () => void; getSnapsho
 function mountFrame() {
   window.innerWidth = frameWidth
   window.innerHeight = frameHeight
-  const instance = createLayoutStore().create()
+  const rawInstance = createLayoutStore().create()
+  const instance = rawInstance
+  const publishWorkbench = vi.fn()
+  const retainWorkbenchViews = vi.fn()
   const slotCalls: { key: string; props: unknown }[] = []
   const renderSlot = ((key: string, owner: object) => {
     slotCalls.push({ key, props: owner })
@@ -70,11 +72,20 @@ function mountFrame() {
   }) as AppFrameProps['renderSlot']
   const useSessions = ((sel: (s: SessionListState) => unknown) => {
     const current = selectedSession.current
+    const ids = current === undefined
+      ? []
+      : Array.from(new Set(['s-test' as SessionId, 's-next' as SessionId, current]))
     const sessionState = {
-      ids: current === undefined ? [] : [current],
+      ids,
       byId: current === undefined
         ? {}
-        : { [current]: { id: current, displayTitle: 'Test', running: false, blank: selectedSessionBlank.current, updatedAt: 1 } },
+        : Object.fromEntries(ids.map(sessionId => [sessionId, {
+          id: sessionId,
+          displayTitle: 'Test',
+          running: false,
+          blank: sessionId === current ? selectedSessionBlank.current : false,
+          updatedAt: 1,
+        }])),
       current,
       phase: 'ready',
     } as SessionListState
@@ -86,12 +97,14 @@ function mountFrame() {
   }
   const element = () => (
     <AppFrame
-      useStore={hookOf(instance)}
-      actions={instance.actions}
+      useStore={hookOf(rawInstance)}
+      actions={rawInstance.actions}
       renderSlot={renderSlot}
       useSessions={useSessions}
       useWorkspaces={((sel: (s: WorkspaceListState) => unknown) => sel(workspaceState)) as never}
       SessionProvider={SessionProviderStub}
+      publishWorkbench={publishWorkbench}
+      retainWorkbenchViews={retainWorkbenchViews}
     />
   )
   const utils = render(element())
@@ -100,6 +113,7 @@ function mountFrame() {
     instance,
     frame,
     slotCalls,
+    publishWorkbench,
     rerenderFrame: () => { utils.rerender(element()) },
     ownerFor: (key: string) => slotCalls.filter(call => call.key === key).at(-1)?.props,
     ...utils,
@@ -323,75 +337,57 @@ describe('AppFrame', () => {
 })
 
 describe('AppFrame — fixed workbench', () => {
-  it('opens beside conversation, closes details, and publishes its control owner', () => {
-    const { frame, instance, ownerFor, getByTestId } = mountFrame()
+  it('opens beside the conversation without collapsing navigation', () => {
+    const { frame, instance, ownerFor, getByTestId, publishWorkbench } = mountFrame()
     act(() => {
       instance.actions.openDetails()
-      instance.actions.openWorkbench()
+      instance.actions.openWorkbench('s-test' as SessionId)
     })
 
-    expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 1020])
+    expect(tracks(frame)).toEqual([280, 1020])
     expect(rows(frame)).toBe(0)
     expect(frame.hasAttribute('data-workbench-shown')).toBe(true)
     expect(getByTestId('details-content').parentElement?.hasAttribute('inert')).toBe(true)
     expect(getByTestId('workbench-content').parentElement?.hasAttribute('inert')).toBe(false)
-    const owner = ownerFor('workbench') as {
-      shown: boolean
-      fullscreen: boolean
-      bottomOpen: boolean
-      close: () => void
-      toggleFullscreen: () => void
-      toggleBottom: () => void
-    }
-    expect(owner).toMatchObject({
-      shown: true,
-      fullscreen: false,
-      bottomOpen: false,
+    expect(ownerFor('workbench')).toMatchObject({ shown: true, fullscreen: false, bottomOpen: false })
+    expect(publishWorkbench).toHaveBeenLastCalledWith('s-test', {
+      open: true, fullscreen: false, bottomOpen: false,
     })
-    expect(owner.close).toBeTypeOf('function')
-    expect(owner.toggleFullscreen).toBeTypeOf('function')
-    expect(owner.toggleBottom).toBeTypeOf('function')
   })
 
-  it('fits the default split at a 1110px viewport', () => {
+  it('fits the default split at a 1110px viewport while keeping the sidebar', () => {
     frameWidth = 1110
     const { frame, instance } = mountFrame()
-    act(() => { instance.actions.openWorkbench() })
-    expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 654])
+    act(() => { instance.actions.openWorkbench('s-test' as SessionId) })
+    expect(tracks(frame)).toEqual([280, 430])
   })
 
-  it('owner callbacks toggle bottom, fullscreen, and close without unmounting surfaces', () => {
+  it('responds to the external workbench controls through per-session layout state', () => {
     const { frame, instance, ownerFor, getByTestId } = mountFrame()
-    act(() => { instance.actions.openWorkbench() })
-    const owner = ownerFor('workbench') as {
-      close: () => void
-      toggleFullscreen: () => void
-      toggleBottom: () => void
-    }
+    act(() => { instance.actions.openWorkbench('s-test' as SessionId) })
 
-    act(() => { owner.toggleBottom() })
+    act(() => { instance.actions.toggleWorkbenchBottom('s-test' as SessionId) })
     expect(rows(frame)).toBe(260)
     expect(frame.hasAttribute('data-bottom-open')).toBe(true)
     expect(ownerFor('workbench.bottom')).toEqual({ shown: true })
     expect(getByTestId('bottom-content').parentElement?.hasAttribute('inert')).toBe(false)
 
-    act(() => { owner.toggleFullscreen() })
-    expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 1864])
+    act(() => { instance.actions.toggleWorkbenchFullscreen('s-test' as SessionId) })
+    expect(tracks(frame)).toEqual([280, 1640])
     expect(frame.hasAttribute('data-workbench-fullscreen')).toBe(true)
     expect(getByTestId('center-content').parentElement?.hasAttribute('inert')).toBe(true)
     expect(frame.querySelector('[data-side="workbench"]')).toBeNull()
 
-    act(() => { owner.close() })
+    act(() => { instance.actions.closeWorkbench('s-test' as SessionId) })
     expect(tracks(frame)).toEqual([280, 0])
     expect(rows(frame)).toBe(0)
     expect(getByTestId('workbench-content').parentElement?.hasAttribute('inert')).toBe(true)
-    expect(getByTestId('bottom-content').parentElement?.hasAttribute('inert')).toBe(true)
   })
 
   it('narrow view collapses navigation and gives the main content to workbench', () => {
     frameWidth = 980
     const { frame, instance, ownerFor, getByTestId } = mountFrame()
-    act(() => { instance.actions.openWorkbench() })
+    act(() => { instance.actions.openWorkbench('s-test' as SessionId) })
     expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 980 - SIDEBAR_COLLAPSED])
     expect(frame.hasAttribute('data-sidebar-collapsed')).toBe(true)
     expect(frame.hasAttribute('data-workbench-fullscreen')).toBe(true)
@@ -399,21 +395,18 @@ describe('AppFrame — fixed workbench', () => {
     expect(ownerFor('workbench')).toMatchObject({ shown: true, fullscreen: true })
     expect(frame.querySelector('[data-side="sidebar"]')).toBeNull()
     expect(frame.querySelector('[data-side="workbench"]')).toBeNull()
-
-    act(() => { instance.actions.toggleSidebar() })
-    expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 980 - SIDEBAR_COLLAPSED])
   })
 
   it('drags workbench width and bottom height from their rendered bases', () => {
     const { frame, instance } = mountFrame()
-    act(() => { instance.actions.openWorkbench() })
+    act(() => { instance.actions.openWorkbench('s-test' as SessionId) })
     drag(handleFor(frame, 'workbench'), 1500, 1440)
-    expect(instance.getSnapshot().workbenchWidth).toBe(1080)
-    expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 1080])
+    expect(instance.getSnapshot().workbench['s-test' as SessionId]?.width).toBe(1080)
+    expect(tracks(frame)).toEqual([280, 1080])
 
-    act(() => { instance.actions.toggleWorkbenchBottom() })
+    act(() => { instance.actions.toggleWorkbenchBottom('s-test' as SessionId) })
     drag(handleFor(frame, 'bottom'), 820, 760, 'horizontal')
-    expect(instance.getSnapshot().workbenchBottomHeight).toBe(320)
+    expect(instance.getSnapshot().workbench['s-test' as SessionId]?.bottomHeight).toBe(320)
     expect(rows(frame)).toBe(320)
   })
 
@@ -421,20 +414,20 @@ describe('AppFrame — fixed workbench', () => {
     frameWidth = 1110
     const { frame, instance } = mountFrame()
     act(() => {
-      instance.actions.setWorkbench(500)
-      instance.actions.openWorkbench()
+      instance.actions.setWorkbench('s-test' as SessionId, 500)
+      instance.actions.openWorkbench('s-test' as SessionId)
     })
-    expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 500])
-    drag(handleFor(frame, 'workbench'), 680, 690)
-    expect(instance.getSnapshot().workbenchWidth).toBe(490)
+    expect(tracks(frame)).toEqual([280, 430])
+    drag(handleFor(frame, 'workbench'), 610, 620)
+    expect(instance.getSnapshot().workbench['s-test' as SessionId]?.width).toBe(420)
   })
 
   it('bottom yields to short heights and restores its preference after resize', () => {
     frameHeight = 300
     const { frame, instance } = mountFrame()
     act(() => {
-      instance.actions.openWorkbench()
-      instance.actions.toggleWorkbenchBottom()
+      instance.actions.openWorkbench('s-test' as SessionId)
+      instance.actions.toggleWorkbenchBottom('s-test' as SessionId)
     })
     expect(rows(frame)).toBe(60)
     frameHeight = 1080
@@ -442,13 +435,16 @@ describe('AppFrame — fixed workbench', () => {
     expect(rows(frame)).toBe(260)
   })
 
-  it('keeps an open workbench across Session switches while details retains its old close rule', () => {
+  it('restores each session workbench independently after switching sessions', () => {
     const { frame, instance, rerenderFrame } = mountFrame()
-    act(() => { instance.actions.openWorkbench() })
+    act(() => { instance.actions.openWorkbench('s-test' as SessionId) })
     selectedSession.current = 's-next' as SessionId
     act(() => { rerenderFrame() })
-    expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 1020])
-    expect(instance.getSnapshot().workbenchOpen).toBe(true)
+    expect(tracks(frame)).toEqual([280, 0])
+
+    selectedSession.current = 's-test' as SessionId
+    act(() => { rerenderFrame() })
+    expect(tracks(frame)).toEqual([280, 1020])
   })
 })
 
@@ -515,27 +511,27 @@ describe('AppFrame — guard branches', () => {
     expect(instance.getSnapshot().sidebar).toBe(SIDEBAR_MAX)
 
     act(() => {
-      instance.actions.openWorkbench()
-      instance.actions.toggleWorkbenchBottom()
+      instance.actions.openWorkbench('s-test' as SessionId)
+      instance.actions.toggleWorkbenchBottom('s-test' as SessionId)
     })
     const workbench = handleFor(frame, 'workbench')
     act(() => { workbench.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })) })
-    expect(instance.getSnapshot().workbenchWidth).toBe(WORKBENCH_DEFAULT + 16)
+    expect(instance.getSnapshot().workbench['s-test' as SessionId]?.width).toBe(1004)
     act(() => { workbench.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true })) })
-    expect(instance.getSnapshot().workbenchWidth).toBe(WORKBENCH_MIN)
+    expect(instance.getSnapshot().workbench['s-test' as SessionId]?.width).toBe(WORKBENCH_MIN)
     act(() => { workbench.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true })) })
-    expect(instance.getSnapshot().workbenchWidth).toBe(WORKBENCH_MAX)
+    expect(instance.getSnapshot().workbench['s-test' as SessionId]?.width).toBe(WORKBENCH_MAX)
 
     const bottom = handleFor(frame, 'bottom')
     expect(bottom.getAttribute('aria-orientation')).toBe('horizontal')
     act(() => { bottom.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true })) })
-    expect(instance.getSnapshot().workbenchBottomHeight).toBe(276)
+    expect(instance.getSnapshot().workbench['s-test' as SessionId]?.bottomHeight).toBe(276)
     act(() => { bottom.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })) })
-    expect(instance.getSnapshot().workbenchBottomHeight).toBe(260)
+    expect(instance.getSnapshot().workbench['s-test' as SessionId]?.bottomHeight).toBe(260)
     act(() => { bottom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true })) })
-    expect(instance.getSnapshot().workbenchBottomHeight).toBe(WORKBENCH_BOTTOM_MIN)
+    expect(instance.getSnapshot().workbench['s-test' as SessionId]?.bottomHeight).toBe(WORKBENCH_BOTTOM_MIN)
     act(() => { bottom.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true })) })
-    expect(instance.getSnapshot().workbenchBottomHeight).toBe(WORKBENCH_BOTTOM_MAX)
+    expect(instance.getSnapshot().workbench['s-test' as SessionId]?.bottomHeight).toBe(WORKBENCH_BOTTOM_MAX)
 
     act(() => { instance.actions.openDetails() })
     const details = handleFor(frame, 'details')

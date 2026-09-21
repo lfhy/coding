@@ -4,6 +4,7 @@
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
+import type { AppFrameInjected } from './AppFrame.tsx'
 import type { PanelActions } from './service.ts'
 import { AppFrame } from './AppFrame.tsx'
 import { createLayoutStore } from './stores.ts'
@@ -11,7 +12,7 @@ import { LayoutController } from './service.ts'
 import { ThemePresenter } from './theme-presenter.ts'
 
 export { LayoutController } from './service.ts'
-export type { ILayout } from './service.ts'
+export type { ILayout, WorkbenchLayoutSnapshot } from './service.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -29,8 +30,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     /** 既有会话详情栏；工作台打开时保持挂载但不参与布局。 */
     'details': { kind: 'single'; scope: 'session'; owner: DetailsOwnerProps }
     /**
-     * 会话级固定工作台右栏。占用者绘制文件预览和自身工具栏，通过 owner
-     * 回调控制关闭、全屏和底栏；关闭时 entry 保持挂载。
+     * 会话级固定工作台右栏。占用者绘制文件预览；页头入口在外侧控制打开、全屏和底栏；关闭时 entry 保持挂载。
      */
     'workbench': { kind: 'single'; scope: 'session'; owner: WorkbenchOwnerProps }
     /** 会话级工作台底栏；在视觉关闭时保持挂载。 */
@@ -62,12 +62,6 @@ export interface WorkbenchOwnerProps {
   fullscreen: boolean
   /** 底栏是否实际可见。 */
   bottomOpen: boolean
-  /** 关闭工作台。 */
-  close: () => void
-  /** 切换用户选择的全屏偏好。 */
-  toggleFullscreen: () => void
-  /** 切换底栏。 */
-  toggleBottom: () => void
 }
 
 /** 工作台底栏 owner share。 */
@@ -99,9 +93,12 @@ export function apply(ctx: ClientContext): void {
         'shell.overlay': { kind: 'list', scope: 'root' },
       },
       store: createLayoutStore,
-      inject: (actions: PanelActions) => {
+      inject: (actions: PanelActions): AppFrameInjected => {
         layout.attachPanels(actions)
-        return {}
+        return {
+          publishWorkbench: (sessionId, state) => { layout.publishWorkbench(sessionId, state) },
+          retainWorkbenchViews: (sessionIds) => { layout.retainWorkbenchViews(sessionIds) },
+        }
       },
     }, AppFrame)
     return () => {

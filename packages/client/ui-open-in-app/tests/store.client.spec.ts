@@ -31,6 +31,50 @@ describe('file workbench store', () => {
     expect(instance.store.getSnapshot().activeId).toBe(tabIdForSegments(third.segments))
     instance.actions.closeFile('missing')
     instance.actions.closeFile(tabIdForSegments(third.segments))
-    expect(instance.store.getSnapshot()).toEqual({ tabs: [], activeId: null })
+    expect(instance.store.getSnapshot()).toEqual({
+      tabs: [],
+      activeId: null,
+      filesOpen: true,
+      filesQuery: '',
+      filesExpanded: [],
+      filesLevels: {},
+    })
+  })
+
+  it('keeps file viewing state in the session store', () => {
+    const instance = createWorkbenchStore().create()
+    instance.actions.toggleFiles()
+    instance.actions.setFilesQuery('readme')
+    instance.actions.toggleFilesExpanded('root')
+    instance.actions.setFilesLevel(['src'], 'loading')
+    instance.actions.setFilesListing(['src'], {
+      path: '/w/src',
+      entries: [{ name: 'main.ts', type: 'file', size: 1, segments: ['src', 'main.ts'] }],
+      truncated: false,
+    })
+    expect(instance.store.getSnapshot()).toMatchObject({
+      filesOpen: false,
+      filesQuery: 'readme',
+      filesExpanded: ['root'],
+      filesLevels: {
+        [tabIdForSegments(['src'])]: {
+          phase: 'ready',
+          segments: ['src'],
+          listing: { path: '/w/src' },
+        },
+      },
+    })
+
+    instance.actions.toggleFiles()
+    instance.actions.setFilesLevel(['src'], 'error')
+    expect(instance.store.getSnapshot()).toMatchObject({
+      filesOpen: true,
+      filesLevels: {
+        [tabIdForSegments(['src'])]: {
+          phase: 'error',
+          listing: { path: '/w/src' },
+        },
+      },
+    })
   })
 })

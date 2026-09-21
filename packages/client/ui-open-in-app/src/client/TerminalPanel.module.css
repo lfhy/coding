@@ -124,7 +124,7 @@
   inset: 0;
   overflow-y: scroll;
   background: var(--dsw-alias-bg-base);
-  cursor: default;
+  cursor: text;
 }
 
 .screen :global(.xterm .xterm-screen) {
