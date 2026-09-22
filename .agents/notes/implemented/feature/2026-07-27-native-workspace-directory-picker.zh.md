@@ -29,7 +29,7 @@ Status: implemented
 
 平台适配器不经 shell 打开对话框——POSIX 上 spawn 原生工具，Windows 上进行进程内 COM 交互：
 
-- macOS：`osascript` 和系统文件夹选择器。
+- macOS：`osascript` 通过 JXA 桥驱动进程内 `NSOpenPanel` 文件夹选择器（[macOS 面板 Note](../bug-fix/2026-09-22-macos-picker-in-process-panel.md)）。
 - Windows：koffi `IFileOpenDialog` 子进程，使用宿主接受的最佳线程 DPI 感知（可用时为 per-monitor-v2；不支持 PMv2 的主机级联到 per-monitor 或 system-aware）（见[进程内对话框 Note](2026-08-02-win32-in-process-folder-dialog.md)）；该层无回退——失败原样上报（见[PowerShell 链删除](../simplification/2026-08-04-drop-windows-powershell-picker-fallback.md)）。
 - Linux：使用 `zenity`；Zenity 不可用时回退到 `kdialog`。
 

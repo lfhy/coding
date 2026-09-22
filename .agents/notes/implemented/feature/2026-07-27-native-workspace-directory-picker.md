@@ -29,7 +29,7 @@ The native dialog RPC is accepted only from a loopback socket with same-origin b
 
 Platform adapters open the dialog without a shell — spawned native tools on POSIX, an in-process COM conversation on Windows:
 
-- macOS: `osascript` and the system folder chooser.
+- macOS: `osascript` driving an in-process `NSOpenPanel` folder chooser ([macOS panel note](../bug-fix/2026-09-22-macos-picker-in-process-panel.md)).
 - Windows: the koffi `IFileOpenDialog` child process with the best thread DPI awareness the host accepts (per-monitor-v2 when available; PMv2-less hosts cascade to per-monitor or system-aware) ([in-process dialog note](2026-08-02-win32-in-process-folder-dialog.md)); the tier has no fallback — failures surface as-is ([PowerShell chain removal](../simplification/2026-08-04-drop-windows-powershell-picker-fallback.md)).
 - Linux: `zenity`, with `kdialog` as a fallback when Zenity is unavailable.
 

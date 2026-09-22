@@ -1,7 +1,7 @@
 /**
- * Native picker tier selection and the execFile adapter: the Win32 dialog
- * primary (failures surface as-is, no fallback tier), the abort rule, and
- * the POSIX command tiers (osascript, Zenity → KDialog).
+ * 原生选择器的层级选择与 execFile 适配器：Win32 对话框为主层级（失败直接上报，没有回退
+ * 层级）、中止规则，以及 POSIX 命令层级（macOS 的 osascript 面板脚本、Linux Zenity →
+ * KDialog）。
  */
 
 type ExecFileCallback = (
@@ -33,12 +33,17 @@ const signal = () => new AbortController().signal
 const noDialog = async (): Promise<string | null> => { throw new Error('dialog unavailable') }
 
 describe('native directory picker', () => {
-  it('uses the macOS folder chooser and maps user cancellation to null', async () => {
+  it('drives the macOS panel through the osascript JXA script', async () => {
     const run = vi.fn<DirectoryPickerRunner>(async () => ({ stdout: '/Users/test/project/\n', stderr: '' }))
     await expect(pickNativeDirectory(signal(), { platform: 'darwin', run })).resolves.toBe('/Users/test/project/')
-    expect(run).toHaveBeenCalledWith('osascript', expect.arrayContaining(['POSIX path of selectedFolder']), expect.any(AbortSignal))
+    expect(run).toHaveBeenCalledWith(
+      'osascript',
+      ['-l', 'JavaScript', '-e', expect.stringContaining('NSOpenPanel')],
+      expect.any(AbortSignal),
+    )
 
-    run.mockRejectedValueOnce(failure(1, 'execution error: User canceled. (-128)'))
+    // 取消时脚本返回空串，stdout 只剩一个换行，由 outputPath 折叠为 null。
+    run.mockResolvedValueOnce({ stdout: '\n', stderr: '' })
     await expect(pickNativeDirectory(signal(), { platform: 'darwin', run })).resolves.toBeNull()
 
     run.mockRejectedValueOnce(failure(2, 'permission denied'))
@@ -48,11 +53,11 @@ describe('native directory picker', () => {
   it.each([
     ['a primitive error', 'failed'],
     ['an invalid code type', { code: true }],
-    ['a missing stderr property', { code: 1 }],
-    ['a non-string stderr property', { code: 1, stderr: 42 }],
-  ])('does not mistake %s for macOS cancellation', async (_label, reason) => {
+    ['a non-string stderr property', { code: 2, stderr: 42 }],
+    ['a malformed error without stderr', { code: 2 }],
+  ])('surfaces %s from a POSIX command as-is', async (_label, reason) => {
     const run = vi.fn<DirectoryPickerRunner>(async () => { throw reason })
-    await expect(pickNativeDirectory(signal(), { platform: 'darwin', run })).rejects.toBe(reason)
+    await expect(pickNativeDirectory(signal(), { platform: 'linux', run })).rejects.toBe(reason)
   })
 
   it('uses the Win32 dialog and never spawns a command when it answers', async () => {
