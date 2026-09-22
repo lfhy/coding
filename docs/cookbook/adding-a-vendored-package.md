@@ -6,7 +6,7 @@
 
 ```
 vendor/<dir>/
- package.json # from upstream; set "private": true, rescope the name, keep exports/type
+  package.json     # from upstream; set "private": true, rescope the name, keep exports/type
  tsconfig.json # extends../../tsconfig.base.json (see configuration below)
  src/ # the upstream src/ verbatim
  README.md LICENSE # if upstream ships them
