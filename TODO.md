@@ -27,10 +27,7 @@ Status: done.
 
 - [x] Record the product name and delivery decisions in this file.
 - [x] Update paired root README files with Coding identity and client platform matrix.
-- [x] Add the proposed architecture Agent Note for the shared Host and Go-client decision.
 - [x] Add user-facing desktop and terminal installation guides (`docs/user/guide/install.md` bilingual pair).
-
-Acceptance: the product name, supported platforms, compatibility boundary, and implementation ownership are visible in the root README and Agent Note; bilingual and Agent Note checks pass.
 
 ## Phase 1: shared Host lifecycle
 

@@ -1,6 +1,6 @@
 # Vendored 包改名
 
-Cordis 框架及其基础库以源码形式 vendored 在 [`vendor/`](../vendor/README.md) 下，并以 `@deepseek-ai` scope 发布：每个 harness 包都把框架声明为 peer dependency，发布 harness 就会连带发布这一层，用上游名发布等于在 registry 上占用别人的名字。本页是名字映射表；决策与影响见 [改名 Agent Note](../.agents/notes/implemented/process/2026-08-10-vendor-package-rescope.md)，上游 commit 见 [`vendor/README.md`](../vendor/README.md)。
+Cordis 框架及其基础库以源码形式 vendored 在 [`vendor/`](../vendor/README.md) 下，并以 `@deepseek-ai` scope 发布：每个 harness 包都把框架声明为 peer dependency，发布 harness 就会连带发布这一层，用上游名发布等于在 registry 上占用别人的名字。本页是名字映射表；决策与影响，上游 commit 见 [`vendor/README.md`](../vendor/README.md)。
 
 ## 名字映射
 
@@ -26,7 +26,7 @@ Cordis 框架及其基础库以源码形式 vendored 在 [`vendor/`](../vendor/R
 - **`cordis.yml` 配置文件家族**，包括 `*.cordis.yml`、`*.cordis.snapshot.yml`、`cordis.patch.yml`。
 - **名字里带这个词的 harness 包**，例如 `@deepseek-ai/dsh-tool-cordis`。
 - **上游运行时标识符**，例如 Schemastery 的 `Symbol.for('schemastery')` 及其 `vendor:` 元数据字段。
-- **`docs/` 之外的散文。** `vendor/*/README.md`、各包 README 与 Agent Note 保留写作当时的名字；那里的裸 `cordis` 也可能是 Python SDK 的选项名或某个 agent-preset 的 id。`docs/` 之内，散文与所有 Markdown 围栏都跟着改。
+- **`docs/` 之外的散文。** `vendor/*/README.`docs/` 之内，散文与所有 Markdown 围栏都跟着改。
 
 ## 你的代码要改什么
 
@@ -42,10 +42,10 @@ Cordis 框架及其基础库以源码形式 vendored 在 [`vendor/`](../vendor/R
 上面这份映射由 [`scripts/rescope-vendor.ts`](../scripts/rescope-vendor.ts) 承载并执行改名，任何引用都不靠手改：
 
 ```sh
-pnpm run rescope-vendor            # report what would change
-pnpm run rescope-vendor --apply    # rewrite every reference
-pnpm run rescope-vendor:check      # assert the post-state; runs in the hygiene gate
-pnpm run rescope-vendor --apply --reverse   # return to the upstream names
+pnpm run rescope-vendor # report what would change
+pnpm run rescope-vendor --apply # rewrite every reference
+pnpm run rescope-vendor:check # assert the post-state; runs in the hygiene gate
+pnpm run rescope-vendor --apply --reverse # return to the upstream names
 ```
 
 上游 sync 之后重跑它（[流程](../vendor/README.md)），并接上它打印的重生成：`pnpm install` 重生成 lockfile、`pnpm run gen-third-party-notices`。

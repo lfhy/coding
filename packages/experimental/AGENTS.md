@@ -1,6 +1,6 @@
 # AGENTS.md — Experimental packages
 
-These rules supplement the [package rules](../AGENTS.md). The [experimental Agent Teams package decision](../../.agents/notes/implemented/architecture/2026-08-18-experimental-agent-teams-packages.md) owns the rationale.
+These rules supplement the [package rules](../AGENTS.md).
 
 - A package belongs here only when its complete public contract is experimental or internal-only. An experimental option inside a release package stays with its owning product role.
 - Every package here uses the `@deepseek-ai/dsh-experimental-*` npm prefix, sets `private: true`, and omits `publishConfig`; the workspace constraints gate enforces these declarations and the dsh release family excludes this directory.

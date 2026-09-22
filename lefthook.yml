@@ -24,6 +24,12 @@ pre-commit:
     - name: whitespace (staged)
       run: git diff --cached --check
 
+    # 与第三方声明同样的策略：宁可重写也不拒绝。代码地图的两个生成文件由 manifest、
+    # README 首段和 Cordis 配置推出，改了输入而忘了重跑就会腐烂，因此在这里直接重写并暂存。
+    - name: code map (staged)
+      glob: '{packages/*/*/package.json,packages/*/*/README.md,packages/bundle/*/cordis*.yml,apps/*/cordis*.yml,apps/cli/config/**/agent.cordis.yml,examples/*/cordis.yml,scripts/gen-code-map.ts}'
+      run: node_modules/.bin/tsx scripts/gen-code-map.ts && git add docs/map/packages.md docs/map/wiring.md
+
     - name: vendor manifest guard
       run: scripts/check-vendor-manifest.sh
 

@@ -70,7 +70,7 @@ A README outlives every PR; state the mechanism as current fact.
 
 **Fixed:** "Colors come from the alias tokens; an undefined token renders the fallbacks."
 
-Both live facts survive — the current mechanism and the standing failure behavior — restated in the present. The bug's biography belongs to the PR and its Agent Note.
+Both live facts survive — the current mechanism and the standing failure behavior — restated in the present.
 
 ### Removal narration
 
@@ -94,7 +94,7 @@ The regression pin survives as a present-tense counterfactual that names the gua
 
 **Fixed:** "Batch rendering is synchronous." (The deferral lives in `TODO(widget-batch):` at the call site.)
 
-"This cut" / "v1" / "today" go stale the moment they merge. A historical stage name inside an Agent Note's change-story section ("the first cut shipped X") is current-state-safe; the indexical form never is.
+"This cut" / "v1" / "today" go stale the moment they merge.
 
 ## Review choreography
 
@@ -102,7 +102,7 @@ The regression pin survives as a present-tense counterfactual that names the gua
 
 **Leaked:** "Rejected in review: caching the resolved spec. We keep resolution per-call."
 
-**Fixed (in an Agent Note's Alternatives considered):** "**Caching the resolved spec.** Rejected: the spec depends on per-call cwd, so a cache keyed by request would serve stale roots."
+** Rejected: the spec depends on per-call cwd, so a cache keyed by request would serve stale roots."
 
 The alternatives-considered genre is the sanctioned home; the reviewer and the round are not part of the rationale.
 
@@ -182,7 +182,7 @@ Working-language fragments and session separators are transcription residue. The
 
 **Keep:** "The cap applies to the complete rendered value, wrappers included (issue #1470 owns the follow-up)."
 
-An unaided pass deleted this, reasoning that issue citations belong in Agent Notes. Wrong direction: issues resolve at HEAD from any surface, and "#N owns the follow-up" is the sanctioned home for deferred work in a README. What Agent Notes and postmortems additionally sanction is citing *merged PRs* as evidence.
+Wrong direction: issues resolve at HEAD from any surface, and "#N owns the follow-up" is the sanctioned home for deferred work in a README.
 
 ### Dead name-drops are not "naming the owner"
 

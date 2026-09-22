@@ -1,0 +1,262 @@
+/**
+ * 生成 `docs/map/packages.md`（包清单）与 `docs/map/wiring.md`（Cordis 装配表）。
+ *
+ * 只读取 `package.json`、包 README 的首段和仓库内的 Cordis 配置，不构建 ts.Program，
+ * 因此可以在 pre-commit 里重跑。手写的 `docs/map/hot.md`、`docs/map/invariants.md`
+ * 与入口 `docs/map.md` 不由本脚本维护。
+ */
+
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { globSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { loadCordisYaml } from './cordis-yaml.ts'
+
+const root = resolve(import.meta.dirname, '..')
+const OUT_PACKAGES = 'docs/map/packages.md'
+const OUT_WIRING = 'docs/map/wiring.md'
+
+/** 一行职责说明的最大字符数；超出时在句读处截断。 */
+const PURPOSE_LIMIT = 72
+
+interface PackageRow {
+  dir: string
+  name: string
+  purpose: string
+  /** 源码入口：node 半与可选 client 半各一个，供直接跳读源码。 */
+  entries: string[]
+  tests: number
+  client: boolean
+  bundle: boolean
+}
+
+interface WireRow {
+  id: string
+  plugin: string
+  disabled: boolean
+}
+
+/**
+ * 读取包 README 的首段作为职责说明：跳过 frontmatter、H1 和结构性行，取第一段正文。
+ * @param readme - 包 README 的完整文本。
+ * @returns 截断后的单行职责说明；README 没有正文段落时返回空串。
+ */
+function readPurpose(readme: string): string {
+  let text = readme
+  if (text.startsWith('---\n')) {
+    const end = text.indexOf('\n---\n', 3)
+    if (end !== -1) text = text.slice(end + 5)
+  }
+  for (const raw of text.split('\n').slice(1)) {
+    const line = raw.trim()
+    if (line === '' || /^[#>|`]/.test(line) || line.startsWith('- ') || line.startsWith('![')) continue
+    // 链接在包 README 里是相对的，搬到本页会失效，因此只保留链接文字。
+    const sentence = (line.split('。')[0] ?? line)
+      .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+      .replace(/\s{2,}/g, ' ')
+    const escaped = sentence.replace(/\|/g, '\\|')
+    if (escaped.length <= PURPOSE_LIMIT) return escaped
+    const head = escaped.slice(0, PURPOSE_LIMIT)
+    const boundary = Math.max(head.lastIndexOf('，'), head.lastIndexOf('；'), head.lastIndexOf('（'))
+    return `${boundary > PURPOSE_LIMIT / 2 ? head.slice(0, boundary) : head}…`
+  }
+  return ''
+}
+
+/**
+ * 汇总一个包的清单行。入口按存在的源码入口判定，测试数按 `tests/` 下的 spec 文件计。
+ * @param dir - 仓库相对的包目录，例如 `packages/core/agent-loop`。
+ * @returns 该包的清单行。
+ */
+function readPackage(dir: string): PackageRow {
+  const manifest = JSON.parse(readFileSync(resolve(root, dir, 'package.json'), 'utf8')) as {
+    name: string
+    exports?: Record<string, unknown>
+    dsh?: Record<string, unknown>
+  }
+  const readmePath = resolve(root, dir, 'README.md')
+  const testsDir = resolve(root, dir, 'tests')
+  const tests = existsSync(testsDir)
+    ? readdirSync(testsDir, { recursive: true }).filter(name => /\.spec\.(?:ts|tsx)$/.test(String(name))).length
+    : 0
+  const entries = ['src/index.ts', 'src/client/index.ts']
+    .filter(entry => existsSync(resolve(root, dir, entry)))
+  return {
+    dir,
+    name: manifest.name,
+    purpose: existsSync(readmePath) ? readPurpose(readFileSync(readmePath, 'utf8')) : '',
+    entries,
+    tests,
+    client: manifest.exports?.['./client'] !== undefined,
+    bundle: manifest.dsh?.bundle !== undefined || manifest.dsh?.profile !== undefined,
+  }
+}
+
+/** 收集 `packages/<group>/<pkg>` 下所有 workspace 包，按目录排序。 */
+function readPackages(): PackageRow[] {
+  return globSync('packages/*/*/package.json', { cwd: root })
+    .map(path => dirname(path).split('\\').join('/'))
+    .sort()
+    .map(readPackage)
+}
+
+/**
+ * 从一棵已解析的 Cordis 配置树里收集行：任何同时带 `id` 与 `name` 的映射都是一行，
+ * `insert` 列表里的行同样计入。Loader 的其余节点不产生行。
+ * @param node - 已解析的 YAML 节点。
+ * @param rows - 收集结果，按出现顺序追加。
+ */
+function collectRows(node: unknown, rows: WireRow[]): void {
+  if (Array.isArray(node)) {
+    for (const item of node) collectRows(item, rows)
+    return
+  }
+  if (typeof node !== 'object' || node === null) return
+  const record = node as Record<string, unknown>
+  if (typeof record.id === 'string' && typeof record.name === 'string') {
+    rows.push({ id: record.id, plugin: record.name, disabled: record.disabled === true })
+  }
+  for (const value of Object.values(record)) collectRows(value, rows)
+}
+
+/** 装配事实的来源：profile/bundle patch 层、应用配置、agent preset 与可运行示例。 */
+const WIRING_PATTERNS = [
+  'packages/bundle/*/cordis*.yml',
+  'packages/bundle/*/cordis*.yaml',
+  'apps/*/cordis*.yml',
+  'apps/cli/config/**/agent.cordis.yml',
+  'examples/*/cordis.yml',
+]
+
+/**
+ * 收集装配配置及其插件行。测试 fixture、快照与构建产物不是装配事实，因此不在范围内。
+ * @returns 按文件路径排序的 `[仓库相对路径, 行列表]`。
+ */
+function readWiring(): [string, WireRow[]][] {
+  const files = [...new Set(WIRING_PATTERNS.flatMap(pattern => globSync(pattern, { cwd: root })))]
+    .map(path => path.split('\\').join('/'))
+    .filter(path => !path.endsWith('.i18n.yaml'))
+    .sort()
+  return files.map((file) => {
+    const rows: WireRow[] = []
+    collectRows(loadCordisYaml(readFileSync(resolve(root, file), 'utf8')), rows)
+    return [file, rows]
+  })
+}
+
+/** 渲染包清单：按 group 分节，一行一个包。 */
+function renderPackages(packages: PackageRow[]): string {
+  const lines = [
+    '<!-- Generated by scripts/gen-code-map.ts — do not edit by hand.',
+    '     Run `pnpm run gen-code-map` to regenerate. -->',
+    '',
+    '# 包清单',
+    '',
+    `workspace 共 ${packages.length} 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 ` +
+      '`tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。',
+    '',
+    '模型可见工具的名称与 schema 见 [tool-catalog.md](../tool-catalog.md)，插件可配置项见 [config-catalog.md](../config-catalog.md)，依赖边见 [module-graph.md](../module-graph.md)。',
+    '',
+  ]
+  const groups = new Map<string, PackageRow[]>()
+  for (const row of packages) {
+    const group = row.dir.split('/')[1] ?? 'packages'
+    groups.set(group, [...(groups.get(group) ?? []), row])
+  }
+  for (const [group, rows] of groups) {
+    lines.push(`## packages/${group}`, '')
+    for (const row of rows) {
+      const marks = [row.client ? 'client' : '', row.bundle ? 'bundle' : ''].filter(Boolean).join(' ')
+      const suffix = [
+        marks === '' ? '' : ` [${marks}]`,
+        row.entries.length === 0 ? '' : ` 入口 \`${row.entries.join('`、`')}\``,
+        row.tests === 0 ? '' : `（tests ${String(row.tests)}）`,
+      ].join('')
+      lines.push(`- \`${row.dir}\` — ${row.purpose === '' ? '（README 缺首段）' : row.purpose}${suffix}`)
+    }
+    lines.push('')
+  }
+  return `${lines.join('\n').trimEnd()}\n`
+}
+
+/** 渲染装配表：一个配置文件一节，一行一个插件行。 */
+function renderWiring(wiring: [string, WireRow[]][]): string {
+  const lines = [
+    '<!-- Generated by scripts/gen-code-map.ts — do not edit by hand.',
+    '     Run `pnpm run gen-code-map` to regenerate. -->',
+    '',
+    '# Cordis 装配表',
+    '',
+    '仓库里每个 Cordis 配置的行 id 与插件包。profile/bundle 的 patch 层按顺序叠加，后一层的同 id 行覆盖前一层；`dsh --profile web --dump-config` 打印实际生效的插件树。',
+    '',
+  ]
+  for (const [file, rows] of wiring) {
+    lines.push(`## \`${file}\``, '')
+    if (rows.length === 0) {
+      lines.push('（没有插件行）', '')
+      continue
+    }
+    for (const row of rows) {
+      lines.push(`- \`${row.id}\` → \`${row.plugin}\`${row.disabled ? '（disabled）' : ''}`)
+    }
+    lines.push('')
+  }
+  return `${lines.join('\n').trimEnd()}\n`
+}
+
+/** 写入一个产物，返回是否发生了变化。 */
+function write(path: string, content: string): boolean {
+  const target = resolve(root, path)
+  let previous: string | undefined
+  try {
+    previous = readFileSync(target, 'utf8')
+  } catch {
+    // 首次生成：没有旧内容可比较。
+  }
+  if (previous === content) return false
+  mkdirSync(dirname(target), { recursive: true })
+  writeFileSync(target, content)
+  return true
+}
+
+/** 计算两个产物的内容；导入本模块的测试用它断言输出，不写文件。 */
+export function renderCodeMap(): [string, string][] {
+  return [
+    [OUT_PACKAGES, renderPackages(readPackages())],
+    [OUT_WIRING, renderWiring(readWiring())],
+  ]
+}
+
+/**
+ * CLI 入口：默认重写两个产物，`--check` 在产物过期时失败。
+ * @returns 无返回值；通过进程状态和标准输出报告结果。
+ */
+export function main(): void {
+  const outputs = renderCodeMap()
+  if (process.argv.includes('--check')) {
+    const stale = outputs.filter(([path, content]) => {
+      try {
+        return readFileSync(resolve(root, path), 'utf8') !== content
+      } catch {
+        return true
+      }
+    })
+    if (stale.length === 0) {
+      console.log(`gen-code-map: ${String(outputs.length)} generated map file(s) are up to date.`)
+      return
+    }
+    console.error(`gen-code-map: stale — ${stale.map(([path]) => path).join(', ')}. Run \`pnpm run gen-code-map\`.`)
+    process.exitCode = 1
+    return
+  }
+  const written = outputs.filter(([path, content]) => write(path, content)).map(([path]) => path)
+  console.log(
+    written.length === 0
+      ? `gen-code-map: ${String(outputs.length)} map file(s) already current.`
+      : `gen-code-map: wrote ${written.join(', ')}.`,
+  )
+}
+
+// 作为脚本运行时才写文件；测试导入本模块只读取渲染结果。
+if (process.argv[1] !== undefined && import.meta.filename === resolve(process.argv[1])) {
+  main()
+}

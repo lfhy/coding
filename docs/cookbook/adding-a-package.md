@@ -6,16 +6,16 @@
 
 ```
 packages/<group>/<pkg>/
-  package.json     # copy from packages/core/tools, adjust name/description/deps
-  tsconfig.json    # extends ../../../tsconfig.base.json, rootDir src,
-                   # outDir lib/types, references: ../../../vendor/cosmokit,
-                   # ../../../vendor/cordis (+ ../../../vendor/schemastery if
-                   # you use Config, + ../../<group>/<dep> for each dsh dep)
-  src/index.ts     # service default export or plugin (name/inject/apply/Config)
-  README.md        # service API, events, extension points, design notes,
-                   # + Model Experience context blocks or the short form
-                   # + the "Known Limitations and Deferred Work" section
-                   # (or one sentence saying there are none)
+ package.json # copy from packages/core/tools, adjust name/description/deps
+ tsconfig.json # extends../../../tsconfig.base.json, rootDir src,
+ # outDir lib/types, references:../../../vendor/cosmokit,
+ #../../../vendor/cordis (+../../../vendor/schemastery if
+ # you use Config, +../../<group>/<dep> for each dsh dep)
+ src/index.ts # service default export or plugin (name/inject/apply/Config)
+ README.md # service API, events, extension points, design notes,
+ # + Model Experience context blocks or the short form
+ # + the "Known Limitations and Deferred Work" section
+ # (or one sentence saying there are none)
 ```
 
 当已有分组与包的角色匹配时，选择该分组（`core`、`llm`、`bash`、`compact`、`subagent`、`todo`、`session-persistence`、`ui`、`util` 或 `support`）。允许新建分组，但分组只是纯容器：没有 `package.json`，没有源文件，包仍然恰好位于其下一层。
@@ -70,7 +70,7 @@ package.json 不变式（由 `pnpm run constraints` / `scripts/check-workspace-c
 
 ## 4. 编写包 README
 
-将包特有的服务 API、配置、事件、扩展点和设计说明放在前面。limitations 部分记录持久的消费方缺口和本包拥有的非显而易见的维护者约束；日常清理事项留在源码 TODO 或 Agent Note 中。间接的 Model Experience 语句可以点名暴露本包贡献的消费方，但不重述该消费方的实现。包 README 以如下规范序列结尾：
+将包特有的服务 API、配置、事件、扩展点和设计说明放在前面。间接的 Model Experience 语句可以点名暴露本包贡献的消费方，但不重述该消费方的实现。包 README 以如下规范序列结尾：
 
 ````markdown
 ## Model Experience
@@ -102,12 +102,12 @@ Append-only, prefix-stable, replacing, or independent behavior, including the ex
 
 根据实现填写 Model Experience。每个直接、条件、上限、生命周期或辅助的模型上下文条目使用一个 H3，包含上述三个有序 H4 字段，每个字段下有一个正文段落。引用包拥有的稳定文本：系统提示词放在引出它的字段下，用带标题的 H5 加 `markdown` 围栏表示，通常归入 `What the model sees`；其他短文本以命名占位符内联，其他长文本使用相同的嵌套形式。仅概述数据依赖或提供方拥有的文本。工具 schema 条目链接到生成的[工具目录](../tool-catalog.md)中对应的锚定章节，仅说明该处缺失的差异。当作用域可以隐藏 prompt 或 schema 其中之一而不影响另一个时，将二者分开。填写 `KV Cache effect` 时，应区分仅追加增长、稳定重复的前缀、替换既有请求 token 和独立模型请求，并列出会使缓存复用失效、且由本包拥有的变化。“不使缓存失效”仅表示本包保留了已有的可复用前缀；缓存是否可用以及何时淘汰不属于本包约定。[行文标准](../../.agents/skills/dsh-prose-standard/SKILL.md)约束完整性与归属；章节结构由评审把关。
 
-没有上下文效果或仅有消费方拥有路径的包写一句 `None, as ...` 或 `Indirectly, through ...`，随后添加 `KV Cache effect` H4 和一个非空正文段落；与模型无关的通用包用一句话说明模型看不到它的原因。两种情况都不要展开为对另一个包工作的描述。Known Limitations 一节独立维护。[Model Experience Agent Note](../../.agents/notes/implemented/process/2026-07-12-package-model-experience-contract.md) 记录了设计动机。
+没有上下文效果或仅有消费方拥有路径的包写一句 `None, as...` 或 `Indirectly, through...`，随后添加 `KV Cache effect` H4 和一个非空正文段落；与模型无关的通用包用一句话说明模型看不到它的原因。两种情况都不要展开为对另一个包工作的描述。Known Limitations 一节独立维护。 记录了设计动机。
 
 ## 5. 验证
 
 ```sh
-pnpm install        # registers the workspace
+pnpm install # registers the workspace
 pnpm run constraints && pnpm run typecheck && pnpm run lint
 pnpm run build && pnpm run hygiene
 ```

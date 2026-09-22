@@ -10,13 +10,12 @@ The documentation rules live in [docs/AGENTS.md](../../../docs/AGENTS.md). This 
 ## Sources of truth (read, don't re-summarize)
 
 - [docs/AGENTS.md](../../../docs/AGENTS.md) — hierarchy, tutorial/reference forms, taxonomy, budgets, and slop checklist.
-- [.agents/notes/README.md](../../notes/README.md) — when a decision earns an Agent Note, how to file it, and what goes inside one (the header block, per-lifecycle skeleton, and Alternatives-considered mandate, gated by `verify-agent-note-format`); [docs/postmortem/README.md](../../../docs/postmortem/README.md) — when an incident earns a postmortem.
-- Root [AGENTS.md](../../../AGENTS.md) — the standing orders whose budget discipline this skill protects.
-- [Archived Agent Notes](../../notes/archived/AGENTS.md) — frozen historical snapshots excluded from editorial maintenance and evolving documentation gates.
+- [](../../notes/README.md](../../../docs/postmortem/README.md) — when an incident earns a postmortem.
+- Root [AGENTS.md](../../../AGENTS.md) — the standing orders whose budget discipline this skill protects../../notes/archived/AGENTS.md) — frozen historical snapshots excluded from editorial maintenance and evolving documentation gates.
 
 ## Review structure before prose
 
-Apply the standard's authoring order to every human-facing document in scope. Do not apply this structural pass to Agent Notes. Classify a postmortem as a reference scoped to one incident; preserve its required chronological evidence without treating chronology as a teaching sequence.
+Apply the standard's authoring order to every human-facing document in scope.Classify a postmortem as a reference scoped to one incident; preserve its required chronological evidence without treating chronology as a teaching sequence.
 
 1. Locate the document in the repository and navigation trees. State its own subject and identify its direct children.
 2. Set the permitted level of detail. Keep full detail about the document's subject, summarize direct children by purpose, responsibility, and high-level behavior, and move deeper explanations to their owning descendants with links. Treat test infrastructure as descendant-owned unless it is the document's subject.
@@ -39,10 +38,10 @@ After the structural pass, hunt the standard's slop checklist with the cheapest 
 2. Hunt reasoning-transcript leakage — narrated history, dead design-session citations, review choreography, control-flow narration, test walkthroughs — with [dsh-trim-cot-leakage](../dsh-trim-cot-leakage/SKILL.md), which defines the taxonomy, recall batteries, and rules for what to keep or delete. Preserve only a non-obvious contract or durable rationale; the same rationale repeated beside sibling methods keeps one home.
 3. Hunt duplication by grepping distinctive phrases. Keep one home and replace other copies with links.
 4. Replace hand-written catalogs, test/status inventories, and JSDoc restatements with the authoritative tree, script, or generated reference.
-5. In `implemented/` Agent Notes, remove migration plans, acceptance-task checklists, and future-tense spec language. Keep concise verification contracts that identify the behaviors and tiers pinning the shipped decision, plus named coverage gaps.
-6. If removing prose changes a promised behavior rather than its explanation, use a proposed Agent Note first (follow [dsh-find-simplifications](../dsh-find-simplifications/SKILL.md)).
+5.Keep concise verification contracts that identify the behaviors and tiers pinning the shipped decision, plus named coverage gaps.
+6../dsh-find-simplifications/SKILL.md)).
 
-Exclude `.agents/notes/archived/` from corpus audits and edits. Active prose may repair, redirect, or delete an inbound link, but never follow an archive-wide cleanup into the frozen target.
+Exclude `` from corpus audits and edits.Active prose may repair, redirect, or delete an inbound link, but never follow an archive-wide cleanup into the frozen target.
 
 Keep every load-bearing rule, preferably as one to three lines plus a link to its rationale. Cut stories, duplicates, status notes, and the path used to derive the rule. Do not create a new explanation merely to relocate disposable reasoning.
 

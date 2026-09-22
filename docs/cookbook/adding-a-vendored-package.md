@@ -1,29 +1,29 @@
 # 实操手册：添加一个 vendored 包
 
-当 harness 需要引入另一个上游 Cordis 包（如 `@cordisjs/plugin-http`）时，应将其作为固定版本的源码 **vendor** 到 `vendor/` 下，而非作为 NPM 依赖添加——原因见[vendoring 决策](../../.agents/notes/implemented/process/2026-06-11-vendor-cordis-as-source.md)。[vendor/README.md](../../vendor/README.md) 介绍如何*更新*已有的 vendored 包；本指南是添加**新** vendored 包的逐文件清单。（已对照现有 vendored 集合验证；如有偏差，请在此修正。）
+当 harness 需要引入另一个上游 Cordis 包（如 `@cordisjs/plugin-http`）时，应将其作为固定版本的源码 **vendor** 到 `vendor/` 下，而非作为 NPM 依赖添加。[vendor/README.md](../../vendor/README.md) 介绍如何*更新*已有的 vendored 包；本指南是添加**新** vendored 包的逐文件清单。（已对照现有 vendored 集合验证；如有偏差，请在此修正。）
 
 ## 1. 复制源码
 
 ```
 vendor/<dir>/
-  package.json     # from upstream; set "private": true, rescope the name, keep exports/type
-  tsconfig.json    # extends ../../tsconfig.base.json (see configuration below)
-  src/             # the upstream src/ verbatim
-  README.md LICENSE # if upstream ships them
+ package.json # from upstream; set "private": true, rescope the name, keep exports/type
+ tsconfig.json # extends../../tsconfig.base.json (see configuration below)
+ src/ # the upstream src/ verbatim
+ README.md LICENSE # if upstream ships them
 ```
 
 `tsconfig.json` 与其他 vendored 包保持一致：`rootDir: src`、`outDir: lib/types`、上游代码所需的严格性放宽项，以及对所导入的每个其他 vendored 包的 `references` 条目：
 
 ```jsonc
 {
-  "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "rootDir": "src", "outDir": "lib/types",
-    "noUncheckedIndexedAccess": false, "exactOptionalPropertyTypes": false,
-    "noImplicitOverride": false, "noUnusedLocals": false, "noUnusedParameters": false
-  },
-  "include": ["src"],
-  "references": [{ "path": "../cordis" }, { "path": "../cosmokit" }]
+ "extends": "../../tsconfig.base.json",
+ "compilerOptions": {
+ "rootDir": "src", "outDir": "lib/types",
+ "noUncheckedIndexedAccess": false, "exactOptionalPropertyTypes": false,
+ "noImplicitOverride": false, "noUnusedLocals": false, "noUnusedParameters": false
+ },
+ "include": ["src"],
+ "references": [{ "path": "../cordis" }, { "path": "../cosmokit" }]
 }
 ```
 
@@ -49,7 +49,7 @@ vendored TypeScript 源码中的本地相对导入/导出在复制后使用显�
 ## 4. 验证
 
 ```sh
-pnpm install        # registers the workspace
+pnpm install # registers the workspace
 pnpm run typecheck
 pnpm run build && pnpm run constraints
 ```

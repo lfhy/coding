@@ -22,26 +22,26 @@ Query `PullRequest.stack` and `stackEntry.position` for at least one PR in each 
 ```sh
 gh api graphql -F owner=<owner> -F name=<repo> -F number=<pr> -f query='
 query($owner: String!, $name: String!, $number: Int!) {
-  repository(owner: $owner, name: $name) {
-    pullRequest(number: $number) {
-      number
-      author { login }
-      baseRefName
-      headRefName
-      stackEntry { position }
-      stack {
-        number
-        baseRefName
-        size
-        entries(first: 100) {
-          nodes {
-            position
-            pullRequest { number author { login } baseRefName headRefName state isDraft }
-          }
-        }
-      }
-    }
-  }
+ repository(owner: $owner, name: $name) {
+ pullRequest(number: $number) {
+ number
+ author { login }
+ baseRefName
+ headRefName
+ stackEntry { position }
+ stack {
+ number
+ baseRefName
+ size
+ entries(first: 100) {
+ nodes {
+ position
+ pullRequest { number author { login } baseRefName headRefName state isDraft }
+ }
+ }
+ }
+ }
+ }
 }'
 ```
 
@@ -57,7 +57,7 @@ When any dependent PR is not yet in that official stack:
 2. If all authors match, link the chain automatically in bottom-to-top order:
 
 ```sh
-gh stack link --base <trunk> <bottom-pr> <next-pr> ... <top-pr>
+gh stack link --base <trunk> <bottom-pr> <next-pr>... <top-pr>
 ```
 
 3. If authors differ or any author is unavailable, ask the user whether to link before changing GitHub state.
@@ -70,7 +70,7 @@ Never dissolve, reorder, or rebuild an existing stack automatically; `gh stack l
 Do not rewrite branches merely because a refresh mechanism exists. When the live merge state or repository rules require an updated trunk, choose either allowed history:
 
 - **Native cascading rebase:** check out the remote stack with `gh stack checkout <pr-or-stack>` when it is not tracked locally, then run `gh stack sync`. The command may rebase and lease-protected force-push every active layer before local validation. Immediately inspect the rewritten scope, run the relevant checks for every affected layer, and do not merge or claim readiness until they pass. If sync detects a rebase conflict, use `gh stack rebase`, resolve and validate it, then publish with `gh stack push`. If checkout or sync reports divergent local and remote stack compositions, cancel and ask rather than deleting or recreating the remote stack automatically.
-- **Incremental merge-forward:** merge the trunk into the bottom affected branch, then propagate each updated parent into its child in bottom-to-top order and push normally. If the base advances during an in-progress merge, preserve that checkpoint before merging the newer tip as specified by the [incremental-retargeting note](../../notes/implemented/process/2026-07-26-incremental-pr-base-retargeting.md).
+- **Incremental merge-forward:** merge the trunk into the bottom affected branch, then propagate each updated parent into its child in bottom-to-top order and push normally. If the base advances during an in-progress merge, preserve that checkpoint before merging the newer tip.
 
 Any history rewrite is allowed after review, but it invalidates commit-OID assumptions. Re-fetch exact heads and re-audit unresolved review threads, approvals, mergeability, and checks after the push. Never use raw `--force` or overwrite a concurrently advanced remote head.
 

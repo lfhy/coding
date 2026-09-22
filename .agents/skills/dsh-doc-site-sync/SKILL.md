@@ -7,7 +7,7 @@ description: Use when publishing, updating, moving, or removing DeepSeek Harness
 
 Keep repository Markdown as the only editable content source. Treat the website as a tested projection: [website/docs.ts](../../../website/docs.ts) selects public pages, [scripts/project-doc-site.ts](../../../scripts/project-doc-site.ts) rewrites them into the disposable `website/.generated/` tree, and VitePress builds that tree.
 
-Repository docs use one Chinese `foo.md` per page; never create locale directories or a bilingual triplet. Every page projects through `mirroredPages()` into the single `root` locale, and the site has no `/en/` route tree.
+Repository docs use one Chinese `foo.md` per page; never create locale directories or a bilingual triplet. Every page projects through `mirroredPages` into the single `root` locale, and the site has no `/en/` route tree.
 
 ## Read the owning contracts
 
@@ -30,7 +30,7 @@ Never edit or commit `website/.generated/`, `website/.cache/`, or `website/.dist
 
 Set every `DocsPage` field deliberately:
 
-- `source`: repository-relative canonical Markdown path. Every page goes through `mirroredPages()`.
+- `source`: repository-relative canonical Markdown path. Every page goes through `mirroredPages`.
 - `route`: public VitePress path including the `.md` suffix.
 - `label`: sidebar label, not necessarily the document H1.
 - `sidebar`: reuse `zh-guide`, `zh-develop`, or `zh-reference` unless the information architecture genuinely needs another collection.
@@ -38,7 +38,7 @@ Set every `DocsPage` field deliberately:
 - `order`: stable order within the section.
 - `sourceAliases`: optional additional repository paths that should resolve to this page when links are projected. It does not create another public route.
 
-Use `mirroredPages()` for every page; it projects one Chinese source into the single `root` locale. Keep the manifest an explicit public allowlist. Do not publish RFCs, postmortems, testing guides, `AGENTS.md`, or maintainer workflows merely because they exist under `docs/`; add internal material only when the user explicitly expands what the site publishes.
+Use `mirroredPages` for every page; it projects one Chinese source into the single `root` locale. Keep the manifest an explicit public allowlist. Do not publish RFCs, postmortems, testing guides, `AGENTS.md`, or maintainer workflows merely because they exist under `docs/`; add internal material only when the user explicitly expands what the site publishes.
 
 ## Preserve link behavior
 

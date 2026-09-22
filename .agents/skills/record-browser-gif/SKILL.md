@@ -38,7 +38,7 @@ A GIF for a specific pull request demonstrates that pull request's tree, so stag
 3. When a production default opens a native operating-system surface that headless automation cannot drive, select an official browser-operable production backend through the application's normal configuration. State the override in the provenance; a fixture, mock transport, or test-only hook is not an acceptable substitute.
 4. Choose three to six states that tell one story, such as typed, running, settled, and detail. Prefer semantic state changes over continuous capture; omit loading churn that does not help the viewer.
 5. Keep one viewport and crop for every frame, and name frames lexically: `00-initial.png`, `01-typed.png`, and so on.
-6. Store frames under the repository's gitignored `.playwright-mcp/` directory — browser-tool screenshots can only be written under the tool's allowed roots, and relative filenames resolve against the repository root. Create the frame subdirectory first (`mkdir -p .playwright-mcp/gif-frames-<label>`); writing into a missing directory fails with ENOENT at capture time.
+6. Store frames under the repository's gitignored `.playwright-mcp/` directory — browser-tool screenshots can only be written under the tool's allowed roots, and relative filenames resolve against the repository root. Create the frame subdirectory first (`mkdir -p.playwright-mcp/gif-frames-<label>`); writing into a missing directory fails with ENOENT at capture time.
 7. Before each screenshot, wait for a concrete UI condition such as a unique label, enabled control, changed document title, or completed response. Require the locator to resolve exactly one element; for Playwright accessible-name locators, use `exact: true` when equality is intended because descendant text or a prompt echo can otherwise create a false match. Do not use a fixed delay as proof that the application reached the state.
 8. Make completion predicates match an exact-text element — for example, an element whose trimmed text equals the expected reply — never a substring check such as `body.textContent.includes(...)`, which the echo of the user's own prompt also satisfies.
 9. When the claim involves a tool call, rejection, or recovery, include a detail or trajectory frame that shows the tool identity, status or stable error code, and the downstream result. A chat-only outcome does not prove why the tool path behaved that way.
@@ -57,12 +57,12 @@ Export `GIF_SKILL_DIR` as this skill's absolute directory on its own line before
 ```sh
 export GIF_SKILL_DIR=/absolute/path/to/this/skill
 python3 "$GIF_SKILL_DIR/scripts/encode_gif.py" \
-  /absolute/path/to/frames \
-  /absolute/path/to/demo.gif \
-  --durations 1.5,1.5,1.5,3.5 \
-  --fps 10 \
-  --max-width 1200 \
-  --colors 128
+ /absolute/path/to/frames \
+ /absolute/path/to/demo.gif \
+ --durations 1.5,1.5,1.5,3.5 \
+ --fps 10 \
+ --max-width 1200 \
+ --colors 128
 ```
 
 One duration applies to every frame; otherwise provide one comma-separated positive duration per frame, holding the final settled state longest. The encoder rejects fewer than two frames, mismatched dimensions or durations, invalid limits, accidental overwrite, unexpected duration, and output above `--max-bytes`.
