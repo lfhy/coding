@@ -101,11 +101,15 @@
     - id: session-stats
       name: '@deepseek-ai/dsh-session-stats'
 
-    # Resolve bind host, SSH launch, and display once at boot, then mount the
-    # matching dual-face directory picker. Mount -native or -browse directly in
-    # an overlay to pin the interaction.
+    # 页面内目录对话框是默认交互：宿主始终是桌面壳或终端的后台子进程，系统面板在
+    # 这种进程里无法取得交互（macOS 上会等到 AppleEvent 超时）。需要系统面板的组合
+    # 用覆盖层把本行换成 -native；-auto 仍在，但它在 darwin/win32 上同样解析到该系统
+    # 面板，见 packages/host/directory-picker-native/README.md 的限制一节。
     - id: directory-picker
-      name: '@deepseek-ai/dsh-host-directory-picker-auto'
+      name: '@deepseek-ai/dsh-host-directory-picker-browse'
+
+    - id: ui-directory-picker-browse
+      name: '@deepseek-ai/dsh-client-ui-directory-picker-browse'
 
     # Read-only projection of current Loader entries for trusted client RPCs.
     - id: plugin-inventory

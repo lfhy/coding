@@ -10,7 +10,7 @@ macOS 层级此前通过 `osascript` 请求 AppleScript 的 `choose folder` 对�
 
 ## Decision
 
-darwin 分支改为执行 `osascript -l JavaScript`，由 JXA 脚本在进程内构造 `NSOpenPanel`：允许选择目录、关闭文件与多选、沿用 `Select Workspace Directory` 提示文本，采用 `accessory` 激活策略并调用 `activateIgnoringOtherApps`，最后阻塞在 `runModal`。面板因此走会话中普通的 AppKit 呈现路径，能够上屏并接受输入；探针显示它以上浮层级出现在屏幕上，而 AppleScript 形式始终不可见。脚本返回所选路径；`runModal` 的返回值只要不是 `NSModalResponseOK` 就返回空串，由 `outputPath` 折叠为 `null` 取消。
+darwin 分支改为执行 `osascript -l JavaScript`，由 JXA 脚本在进程内构造 `NSOpenPanel`：允许选择目录、关闭文件与多选、沿用 `Select Workspace Directory` 提示文本，采用 `accessory` 激活策略并调用 `activateIgnoringOtherApps`，最后阻塞在 `runModal`。面板因此走会话中普通的 AppKit 呈现路径，能够上屏；探针显示它以上浮层级出现在屏幕上，而 AppleScript 形式始终不可见。但面板在桌面壳宿主里仍拿不到交互：请求进程无法激活拥有它的应用，操作者看到的是一个点不动的文件夹对话框。随包发布的 web 组合因此改挂页面内 browse 对话框（[页面内对话框 Note](../feature/2026-09-22-in-page-directory-dialog.md)），本层级只在覆盖层里选择。脚本返回所选路径；`runModal` 的返回值只要不是 `NSModalResponseOK` 就返回空串，由 `outputPath` 折叠为 `null` 取消。
 
 该层级仍为单层且没有回退：JXA 或 osascript 的失败按进程自身的退出码与 stderr 上报，调用方的中止仍然会终止进程。
 
