@@ -19,12 +19,14 @@ export interface WorkbenchLayoutSnapshot {
   open: boolean
   fullscreen: boolean
   bottomOpen: boolean
+  filesOpen: boolean
 }
 
 const CLOSED_WORKBENCH: WorkbenchLayoutSnapshot = {
   open: false,
   fullscreen: false,
   bottomOpen: false,
+  filesOpen: false,
 }
 
 /** `ctx.layout` 的公开动作。 */
@@ -45,8 +47,10 @@ export interface ILayout {
   toggleWorkbench(sessionId: SessionId): void
   /** 切换指定 Session 的工作台最大化偏好。 */
   toggleWorkbenchFullscreen(sessionId: SessionId): void
-  /** 切换指定 Session 的终端底栏。 */
+  /** 切换指定 Session 的终端底栏；工作台未打开时先打开工作台再显示该面板。 */
   toggleWorkbenchBottom(sessionId: SessionId): void
+  /** 切换指定 Session 的工作台文件侧栏；工作台未打开时先打开工作台再显示该面板。 */
+  toggleWorkbenchFiles(sessionId: SessionId): void
 }
 
 /** `ctx.layout` 的具体实现。 */
@@ -86,7 +90,8 @@ export class LayoutController implements ILayout {
     const current = this.#views.getSnapshot()[sessionId]
     if (current?.open === next.open
       && current.fullscreen === next.fullscreen
-      && current.bottomOpen === next.bottomOpen) return
+      && current.bottomOpen === next.bottomOpen
+      && current.filesOpen === next.filesOpen) return
     this.#views.set({ ...this.#views.getSnapshot(), [sessionId]: next })
   }
 
@@ -146,9 +151,14 @@ export class LayoutController implements ILayout {
     this.#require().toggleWorkbenchFullscreen(sessionId)
   }
 
-  /** 切换指定 Session 的终端底栏。 */
+  /** 切换指定 Session 的终端底栏；工作台未打开时先打开工作台再显示该面板。 */
   toggleWorkbenchBottom(sessionId: SessionId): void {
     this.#require().toggleWorkbenchBottom(sessionId)
+  }
+
+  /** 切换指定 Session 的工作台文件侧栏；工作台未打开时先打开工作台再显示该面板。 */
+  toggleWorkbenchFiles(sessionId: SessionId): void {
+    this.#require().toggleWorkbenchFiles(sessionId)
   }
 
   #require(): PanelActions {

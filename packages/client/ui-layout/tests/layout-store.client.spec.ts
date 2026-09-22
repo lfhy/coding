@@ -104,10 +104,9 @@ describe('createLayoutStore', () => {
     })
   })
 
-  it('workbench presentation toggles only while open and close preserves size and bottom preference', () => {
+  it('workbench presentation toggles only while open and close preserves size and panel preferences', () => {
     const { store, actions } = createLayoutStore().create()
     actions.toggleWorkbenchFullscreen(SESSION)
-    actions.toggleWorkbenchBottom(SESSION)
     expect(store.getSnapshot().workbench).toEqual({})
 
     actions.openWorkbench(SESSION)
@@ -123,7 +122,32 @@ describe('createLayoutStore', () => {
       width: 500,
       bottomOpen: true,
       bottomHeight: 320,
+      filesOpen: true,
     })
+  })
+
+  it('panel toggles open a closed workbench and otherwise flip that panel', () => {
+    const { store, actions } = createLayoutStore().create()
+    actions.openDetails()
+
+    // 关闭态下两个面板切换都先打开工作台、关闭详情栏，并让目标面板可见。
+    actions.toggleWorkbenchFiles(SESSION)
+    expect(store.getSnapshot()).toMatchObject({
+      details: 0,
+      workbench: { [SESSION]: { open: true, fullscreen: false, bottomOpen: false, filesOpen: true } },
+    })
+    actions.toggleWorkbenchFiles(SESSION)
+    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: true, filesOpen: false })
+
+    actions.closeWorkbench(SESSION)
+    actions.openDetails()
+    actions.toggleWorkbenchBottom(SESSION)
+    expect(store.getSnapshot()).toMatchObject({
+      details: 0,
+      workbench: { [SESSION]: { open: true, fullscreen: false, bottomOpen: true, filesOpen: false } },
+    })
+    actions.toggleWorkbenchBottom(SESSION)
+    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: true, bottomOpen: false })
   })
 
   it('toggleWorkbench covers open and close while retaining bottom preference', () => {

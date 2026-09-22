@@ -34,7 +34,6 @@ describe('file workbench store', () => {
     expect(instance.store.getSnapshot()).toEqual({
       tabs: [],
       activeId: null,
-      filesOpen: true,
       filesQuery: '',
       filesExpanded: [],
       filesLevels: {},
@@ -43,7 +42,6 @@ describe('file workbench store', () => {
 
   it('keeps file viewing state in the session store', () => {
     const instance = createWorkbenchStore().create()
-    instance.actions.toggleFiles()
     instance.actions.setFilesQuery('readme')
     instance.actions.toggleFilesExpanded('root')
     instance.actions.setFilesLevel(['src'], 'loading')
@@ -53,7 +51,6 @@ describe('file workbench store', () => {
       truncated: false,
     })
     expect(instance.store.getSnapshot()).toMatchObject({
-      filesOpen: false,
       filesQuery: 'readme',
       filesExpanded: ['root'],
       filesLevels: {
@@ -65,10 +62,8 @@ describe('file workbench store', () => {
       },
     })
 
-    instance.actions.toggleFiles()
     instance.actions.setFilesLevel(['src'], 'error')
     expect(instance.store.getSnapshot()).toMatchObject({
-      filesOpen: true,
       filesLevels: {
         [tabIdForSegments(['src'])]: {
           phase: 'error',

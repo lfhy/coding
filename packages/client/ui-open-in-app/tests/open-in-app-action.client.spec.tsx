@@ -35,8 +35,7 @@ function bench(over: {
   target?: WorkspaceOpenTarget
   choice?: string
   cwd?: string
-  workbench?: Partial<{ open: boolean; fullscreen: boolean; bottomOpen: boolean }>
-  filesOpen?: boolean
+  workbench?: Partial<{ open: boolean; fullscreen: boolean; bottomOpen: boolean; filesOpen: boolean }>
   launch?: (appId: string, path: string) => Promise<'launched' | 'files'>
 } = {}): Bench {
   const cwd = over.cwd
@@ -61,7 +60,6 @@ function bench(over: {
   }
   const workbench = createSnapshotStore(workbenchState)
   const files = createWorkbenchStore().create()
-  if (over.filesOpen === false) files.actions.toggleFiles()
   const load = vi.fn(async () => {})
   const launch = vi.fn(over.launch ?? (async () => 'launched' as const))
   const choose = vi.fn()
@@ -136,8 +134,6 @@ describe('OpenInAppAction target routing', () => {
       const entry = screen.getByRole('button', { name: zh['workbench.open.title'] })
       expect(entry.getAttribute('aria-pressed')).toBe(workbench.open ? 'true' : null)
       for (const label of [
-        zh['workbench.fullscreen.enter'], zh['workbench.fullscreen.exit'],
-        zh['workbench.bottom.show'], zh['workbench.bottom.hide'],
         zh['workbench.files.show'], zh['workbench.files.hide'], zh['workbench.close'],
       ]) {
         expect(screen.queryByRole('button', { name: label })).toBeNull()

@@ -66,8 +66,19 @@ describe('SidebarRoot.module.css', () => {
 
   it('gives shell rail controls the same base anchor for their shared translation', () => {
     expect(declarations('.collapsed .logoRow')?.get('justify-content')).toBe('flex-start')
+    expect(declarations('.collapsed .logoRow')?.get('flex-direction')).toBe('column')
+    expect(declarations('.collapsed .logoRow')?.get('align-items')).toBe('flex-start')
     expect(declarations('.collapsed .newSession')?.get('align-self')).toBe('flex-start')
     expect(declarations('.collapsed .newSession')?.get('width')).toBe('36px')
+  })
+
+  it('lays the brand-row actions out horizontally wide and stacked in the rail', () => {
+    expect(declarations('.brandActions')?.get('gap')).toBe('4px')
+    expect(declarations('.brandActions')?.get('flex-direction')).toBe('row')
+    expect(declarations('.brandActions')?.get('height')).toBe('28px')
+    expect(declarations('.collapsed .brandActions')?.get('flex-direction')).toBe('column')
+    expect(declarations('.collapsed .brandActions')?.get('align-items')).toBe('center')
+    expect(declarations('.collapsed .brandActions')?.get('width')).toBe('36px')
   })
 
   it('keeps the slotted brand row at the full artwork height', () => {

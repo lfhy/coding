@@ -254,6 +254,7 @@ const WORKBENCH_FALLBACK = {
   width: WORKBENCH_DEFAULT,
   bottomOpen: false,
   bottomHeight: WORKBENCH_BOTTOM_DEFAULT,
+  filesOpen: true,
 }
 
 /** 固定工作台布局壳。 */
@@ -359,8 +360,9 @@ export function AppFrame({
       open: workbenchShown,
       fullscreen: workbenchShown && panels.fullscreen,
       bottomOpen: bottomRequested,
+      filesOpen: workbenchShown && panels.filesOpen,
     })
-  }, [activeSession, bottomRequested, panels.fullscreen, publishWorkbench, workbenchShown])
+  }, [activeSession, bottomRequested, panels.filesOpen, panels.fullscreen, publishWorkbench, workbenchShown])
 
   const geometry = useRef({ sidebarWidth, detailsWidth, workbenchWidth, bottomHeight })
   geometry.current = { sidebarWidth, detailsWidth, workbenchWidth, bottomHeight }
@@ -425,6 +427,7 @@ export function AppFrame({
           shown: workbenchShown,
           fullscreen: workbenchFullscreen,
           bottomOpen: bottomShown,
+          filesOpen: panels.filesOpen,
         })}
       </WorkbenchColumn>
       <WorkbenchBottom hidden={!bottomShown}>

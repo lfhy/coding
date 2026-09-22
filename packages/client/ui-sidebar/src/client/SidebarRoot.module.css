@@ -97,11 +97,31 @@
   overflow: hidden;
 }
 
+.brandActions {
+  flex: none;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+}
+
 .collapsed .logoRow {
-  height: 36px;
+  flex-direction: column;
+  align-items: flex-start;
+  height: auto;
   padding: 0;
   margin-bottom: 12px;
   justify-content: flex-start;
+}
+
+/* 收起 rail 中动作纵向堆叠在收起按钮上方，每个图标仍是 36×36 控件盒并居中于 56px 宽度。 */
+.collapsed .brandActions {
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: 36px;
+  height: auto;
 }
 
 /* 品牌行兼作新建会话快捷入口，仅以指针样式表明可点击，不添加悬停底色。 */

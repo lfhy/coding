@@ -20,7 +20,6 @@ export interface WorkbenchFileLevel {
 type WorkbenchState = {
   tabs: WorkbenchFileTab[]
   activeId: string | null
-  filesOpen: boolean
   filesQuery: string
   filesExpanded: readonly string[]
   filesLevels: Readonly<Record<string, WorkbenchFileLevel | undefined>>
@@ -35,7 +34,6 @@ type WorkbenchActions = {
   openFile: (draft: WorkbenchState, file: OpenFileInput) => void
   activateFile: (draft: WorkbenchState, id: string) => void
   closeFile: (draft: WorkbenchState, id: string) => void
-  toggleFiles: (draft: WorkbenchState) => void
   setFilesQuery: (draft: WorkbenchState, query: string) => void
   toggleFilesExpanded: (draft: WorkbenchState, key: string) => void
   setFilesLevel: (draft: WorkbenchState, segments: readonly string[], phase: 'loading' | 'error') => void
@@ -72,7 +70,6 @@ export function createWorkbenchStore(): EngineStoreHandle<WorkbenchState, Workbe
     init: (): WorkbenchState => ({
       tabs: [],
       activeId: null,
-      filesOpen: true,
       filesQuery: '',
       filesExpanded: [],
       filesLevels: {},
@@ -95,7 +92,6 @@ export function createWorkbenchStore(): EngineStoreHandle<WorkbenchState, Workbe
         if (draft.activeId !== id) return
         draft.activeId = draft.tabs[index]?.id ?? draft.tabs[index - 1]?.id ?? null
       },
-      toggleFiles: (draft) => { draft.filesOpen = !draft.filesOpen },
       setFilesQuery: (draft, query) => { draft.filesQuery = query },
       toggleFilesExpanded: (draft, key) => {
         const next = new Set(draft.filesExpanded)

@@ -28,6 +28,7 @@ export type WorkbenchState = {
   width: number
   bottomOpen: boolean
   bottomHeight: number
+  filesOpen: boolean
 }
 
 /** 布局偏好；0 宽度只用于既有 sidebar/details 的关闭语义。 */
@@ -46,6 +47,7 @@ function workbench(draft: LayoutState, sessionId: SessionId): WorkbenchState {
     width: WORKBENCH_DEFAULT,
     bottomOpen: false,
     bottomHeight: WORKBENCH_BOTTOM_DEFAULT,
+    filesOpen: true,
   }
 }
 
@@ -64,11 +66,12 @@ type LayoutActions = {
   toggleWorkbench: (draft: LayoutState, sessionId: SessionId) => void
   toggleWorkbenchFullscreen: (draft: LayoutState, sessionId: SessionId) => void
   toggleWorkbenchBottom: (draft: LayoutState, sessionId: SessionId) => void
+  toggleWorkbenchFiles: (draft: LayoutState, sessionId: SessionId) => void
   retainWorkbenchSessions: (draft: LayoutState, sessionIds: readonly SessionId[]) => void
 }
 
 /**
- * 创建布局 store。工作台状态按 Session 隔离；工作台打开会关闭详情栏，而详情栏仅暂时覆盖当前工作台，保留其 Session 偏好。关闭工作台时保留本 Session 的宽度和底栏偏好，重新打开可恢复用户几何。
+ * 创建布局 store。工作台状态按 Session 隔离；工作台打开会关闭详情栏，而详情栏仅暂时覆盖当前工作台，保留其 Session 偏好。关闭工作台时保留本 Session 的宽度、底栏和文件侧栏偏好，重新打开可恢复用户几何。
  * @returns 包含定义、身份和实例工厂的 store handle。
  */
 export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutActions> {
@@ -128,9 +131,28 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
         const state = d.workbench[sessionId]
         if (state?.open) state.fullscreen = !state.fullscreen
       },
+      // 关闭态的面板切换先打开工作台并关闭详情栏，让常驻入口一次点击就显示目标面板。
       toggleWorkbenchBottom: (d, sessionId: SessionId) => {
-        const state = d.workbench[sessionId]
-        if (state?.open) state.bottomOpen = !state.bottomOpen
+        const state = workbench(d, sessionId)
+        if (state.open) {
+          state.bottomOpen = !state.bottomOpen
+        } else {
+          d.details = 0
+          state.open = true
+          state.fullscreen = false
+          state.bottomOpen = true
+        }
+      },
+      toggleWorkbenchFiles: (d, sessionId: SessionId) => {
+        const state = workbench(d, sessionId)
+        if (state.open) {
+          state.filesOpen = !state.filesOpen
+        } else {
+          d.details = 0
+          state.open = true
+          state.fullscreen = false
+          state.filesOpen = true
+        }
       },
       retainWorkbenchSessions: (d, sessionIds: readonly SessionId[]) => {
         const retained = new Set(sessionIds)

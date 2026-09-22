@@ -5,22 +5,38 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import { OPEN_IN_APP_ICON_PREFIX } from '@deepseek-ai/dsh-host-open-in-app/shared'
 import { OpenInAppController } from './controller.ts'
 import { OpenInAppAction, type OpenInAppActionInjected } from './OpenInAppAction.tsx'
 import { WorkspaceWorkbench, type WorkspaceWorkbenchInjected } from './WorkspaceWorkbench.tsx'
+import { WorkbenchPanelToggles, type WorkbenchPanelTogglesInjected } from './WorkbenchPanelToggles.tsx'
 import { RetainedTerminalPanel } from './RetainedTerminalPanel.tsx'
 import type { TerminalPanelInjected } from './TerminalPanel.tsx'
 import { createWorkbenchStore } from './store.ts'
 import { en, NS, zh } from './locales.ts'
 
 export type { OpenInAppActionInjected, OpenInAppActionProps } from './OpenInAppAction.tsx'
+export type { WorkbenchPanelTogglesInjected, WorkbenchPanelTogglesProps } from './WorkbenchPanelToggles.tsx'
 
-/** locale、slot 与布局控制需要的服务。 */
-export const inject = ['slots', 'locale', 'layout']
+/** locale、slot、工作台布局控制和当前会话需要的服务。 */
+export const inject = ['slots', 'locale', 'layout', 'sessions']
 
 /**
- * 注册会话页头入口、文件工作台和保留式底栏终端。
+ * 读取可以操作工作台的当前会话：没有当前会话或它仍是空白会话时返回 undefined，
+ * 与 AppFrame 判定工作台可见性的口径一致。
+ * @param ctx - Client 根上下文。
+ * @returns 可操作工作台的会话 id，或 undefined。
+ */
+function activeSessionId(ctx: ClientContext): SessionId | undefined {
+  const state = ctx.sessions.list.getSnapshot()
+  const current = state.current
+  return current !== undefined && state.byId[current]?.blank === false ? current : undefined
+}
+
+/**
+ * 注册会话页头入口、文件工作台、保留式底栏终端，以及侧边栏品牌行里的常驻
+ * 面板开关。
  * @param ctx - Client 根上下文。
  */
 export function apply(ctx: ClientContext): void {
@@ -57,9 +73,26 @@ export function apply(ctx: ClientContext): void {
       readFile: (segments, signal) => controller.readFile(sessionId, segments, signal),
       closeWorkbench: () => { ctx.layout.closeWorkbench(sessionId) },
       toggleWorkbenchFullscreen: () => { ctx.layout.toggleWorkbenchFullscreen(sessionId) },
-      toggleWorkbenchBottom: () => { ctx.layout.toggleWorkbenchBottom(sessionId) },
     }),
   }, WorkspaceWorkbench))
+
+  ctx.slots.inject('sidebar.brand.action', () => ctx.slots.register({
+    name: 'sidebar.brand.action',
+    id: 'workbench-panels',
+    order: 20,
+    locale: NS,
+    inject: (): WorkbenchPanelTogglesInjected => ({
+      workbenchSource: sessionId => ctx.layout.workbench(sessionId),
+      toggleFiles: () => {
+        const sessionId = activeSessionId(ctx)
+        if (sessionId !== undefined) ctx.layout.toggleWorkbenchFiles(sessionId)
+      },
+      toggleBottom: () => {
+        const sessionId = activeSessionId(ctx)
+        if (sessionId !== undefined) ctx.layout.toggleWorkbenchBottom(sessionId)
+      },
+    }),
+  }, WorkbenchPanelToggles))
 
   ctx.slots.inject('workbench.bottom', () => ctx.slots.register({
     name: 'workbench.bottom',

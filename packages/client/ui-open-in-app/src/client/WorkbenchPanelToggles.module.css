@@ -1,0 +1,48 @@
+/* 品牌行内的常驻面板开关：盒形与配色沿用侧边栏图标按钮（28px 圆形，rail 中
+   36px），按下态表示对应面板当前可见。 */
+
+.root {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.button {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.button:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.button[aria-pressed='true'] {
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* rail 与侧边栏收起按钮共用 36px 控件盒和主文字色。 */
+.root[data-rail] .button {
+  width: 36px;
+  height: 36px;
+  color: var(--dsw-alias-label-primary);
+}
+
+/* 侧栏图标默认朝左：文件侧栏用右向，底栏向下。 */
+.rightPanelIcon {
+  transform: rotate(180deg);
+}
+
+.bottomPanelIcon {
+  transform: rotate(-90deg);
+}

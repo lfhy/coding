@@ -204,6 +204,7 @@ describe('AppFrame', () => {
       shown: false,
       fullscreen: false,
       bottomOpen: false,
+      filesOpen: true,
     })
     expect(slotCalls.find(c => c.key === 'workbench.bottom')!.props).toEqual({ shown: false })
   })
@@ -349,9 +350,9 @@ describe('AppFrame — fixed workbench', () => {
     expect(frame.hasAttribute('data-workbench-shown')).toBe(true)
     expect(getByTestId('details-content').parentElement?.hasAttribute('inert')).toBe(true)
     expect(getByTestId('workbench-content').parentElement?.hasAttribute('inert')).toBe(false)
-    expect(ownerFor('workbench')).toMatchObject({ shown: true, fullscreen: false, bottomOpen: false })
+    expect(ownerFor('workbench')).toMatchObject({ shown: true, fullscreen: false, bottomOpen: false, filesOpen: true })
     expect(publishWorkbench).toHaveBeenLastCalledWith('s-test', {
-      open: true, fullscreen: false, bottomOpen: false,
+      open: true, fullscreen: false, bottomOpen: false, filesOpen: true,
     })
   })
 
@@ -382,6 +383,37 @@ describe('AppFrame — fixed workbench', () => {
     expect(tracks(frame)).toEqual([280, 0])
     expect(rows(frame)).toBe(0)
     expect(getByTestId('workbench-content').parentElement?.hasAttribute('inert')).toBe(true)
+  })
+
+  it('persistent panel toggles open the workbench first and project the files preference', () => {
+    const { frame, instance, ownerFor, publishWorkbench } = mountFrame()
+
+    act(() => { instance.actions.toggleWorkbenchFiles('s-test' as SessionId) })
+    expect(tracks(frame)).toEqual([280, 1020])
+    expect(instance.getSnapshot().details).toBe(0)
+    expect(ownerFor('workbench')).toMatchObject({ shown: true, bottomOpen: false, filesOpen: true })
+    expect(publishWorkbench).toHaveBeenLastCalledWith('s-test', {
+      open: true, fullscreen: false, bottomOpen: false, filesOpen: true,
+    })
+
+    act(() => { instance.actions.toggleWorkbenchFiles('s-test' as SessionId) })
+    expect(ownerFor('workbench')).toMatchObject({ shown: true, filesOpen: false })
+    expect(publishWorkbench).toHaveBeenLastCalledWith('s-test', {
+      open: true, fullscreen: false, bottomOpen: false, filesOpen: false,
+    })
+  })
+
+  it('terminal toggle opens the workbench from the closed state', () => {
+    const { frame, instance, publishWorkbench } = mountFrame()
+    act(() => { instance.actions.openDetails() })
+    expect(tracks(frame)).toEqual([280, 360])
+
+    act(() => { instance.actions.toggleWorkbenchBottom('s-test' as SessionId) })
+    expect(tracks(frame)).toEqual([280, 1020])
+    expect(rows(frame)).toBe(260)
+    expect(publishWorkbench).toHaveBeenLastCalledWith('s-test', {
+      open: true, fullscreen: false, bottomOpen: true, filesOpen: true,
+    })
   })
 
   it('narrow view collapses navigation and gives the main content to workbench', () => {

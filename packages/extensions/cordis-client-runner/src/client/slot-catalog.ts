@@ -1583,6 +1583,51 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     source: 'packages/client/ui-layout/src/client/index.ts:27',
   },
   {
+    key: 'sidebar.brand.action',
+    kind: 'list',
+    scope: 'root',
+    summary: '品牌行内的可选常驻动作，渲染在收起按钮之前。宽侧栏中它们与收起按钮同排，是一个 横向图标行；收起的 56px rail 中则纵向排列，排在收起按钮上方。注册者按列表条目注册 （每个条目自带 `id` 与可选 `order`），进入 `sidebar.brand.action` 的条目在所有侧边栏 宽度下都可见，因此工作台关闭时也能作为入口。组件收到 `wide`：为 `false` 时必须提供 适合 36×36 控件盒的纯图标呈现。没有注册者时该洞渲染为空，不占位。',
+    doc: '品牌行内的可选常驻动作，渲染在收起按钮之前。宽侧栏中它们与收起按钮同排，是一个\n横向图标行；收起的 56px rail 中则纵向排列，排在收起按钮上方。注册者按列表条目注册\n（每个条目自带 `id` 与可选 `order`），进入 `sidebar.brand.action` 的条目在所有侧边栏\n宽度下都可见，因此工作台关闭时也能作为入口。组件收到 `wide`：为 `false` 时必须提供\n适合 36×36 控件盒的纯图标呈现。没有注册者时该洞渲染为空，不占位。',
+    registerOptions: [
+      {
+        name: 'id',
+        requirement: 'required',
+        type: 'string',
+        doc: 'Your cell key. Use an id of your own: a fresh id is added beside the shipped entries, while reusing a shipped id puts you in THAT cell and replaces it. Owners that filter by id address you by it.',
+      },
+      {
+        name: 'order',
+        requirement: 'optional',
+        type: 'number',
+        doc: 'Position among the entries, ascending (default 0).',
+      },
+      {
+        name: 'label',
+        requirement: 'optional',
+        type: 'string | (() => string)',
+        doc: 'Display text where the owner projects one (nav rows, tabs). A thunk is re-read on every projection, so localized text follows the active locale without re-registering.',
+      },
+    ],
+    ownerProps: [
+      '/**\n * 品牌行常驻动作的 owner share。占用者常驻可见（含收起 rail），因此每个动作都要在\n * `wide` 与 rail 两种形态下可用。\n */\nexport interface SidebarBrandActionOwnerProps {\n  /** 侧边栏是否渲染宽内容（false = 56px rail）。 */\n  wide: boolean\n}',
+    ],
+    ownerPropsReferences: [],
+    standardProps: [
+      'useSessions: SnapshotSelectorHook<SessionListState>',
+      'useWorkspaces: SnapshotSelectorHook<import(\'./workspaces/service.ts\').WorkspaceListState>',
+    ],
+    keyDomain: '',
+    hookContext: '',
+    slotInject: '',
+    declaredBy: 'an entry in \'sidebar\' (client-ui-sidebar), so it exists while that entry is mounted',
+    occupants: [
+      'client-ui-open-in-app WorkbenchPanelToggles id \'workbench-panels\'',
+    ],
+    replaceRisk: 'none',
+    example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.brand.action\', () => ctx.slots.register(\n      { name: \'sidebar.brand.action\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
+    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:29',
+  },
+  {
     key: 'sidebar.brand.name',
     kind: 'single',
     scope: 'root',
@@ -1651,7 +1696,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.footer.action\', () => ctx.slots.register(\n      { name: \'sidebar.footer.action\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:39',
+    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:47',
   },
   {
     key: 'sidebar.settings',
@@ -1677,7 +1722,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.settings\', () => ctx.slots.register(\n      { name: \'sidebar.settings\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:34',
+    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:42',
   },
   {
     key: 'sidebar.workspaces',
@@ -1703,7 +1748,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.workspaces\', () => ctx.slots.register(\n      { name: \'sidebar.workspaces\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:28',
+    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:36',
   },
   {
     key: 'sidebar.workspaces.directoryFlow',
@@ -1834,7 +1879,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     doc: '会话级固定工作台右栏。占用者绘制文件预览与顶栏视图控制；页头入口在会话层打开工作台；关闭时 entry 保持挂载。',
     registerOptions: [],
     ownerProps: [
-      '/** 工作台右栏 owner share。 */\nexport interface WorkbenchOwnerProps {\n  /** 当前会话的工作台是否可见。 */\n  shown: boolean\n  /** 是否实际占据全部主内容；窄屏会自动进入该呈现。 */\n  fullscreen: boolean\n  /** 底栏是否实际可见。 */\n  bottomOpen: boolean\n}',
+      '/** 工作台右栏 owner share。 */\nexport interface WorkbenchOwnerProps {\n  /** 当前会话的工作台是否可见。 */\n  shown: boolean\n  /** 是否实际占据全部主内容；窄屏会自动进入该呈现。 */\n  fullscreen: boolean\n  /** 底栏是否实际可见。 */\n  bottomOpen: boolean\n  /** 工作台内文件侧栏是否可见。 */\n  filesOpen: boolean\n}',
     ],
     ownerPropsReferences: [],
     standardProps: [

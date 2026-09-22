@@ -23,6 +23,7 @@ function fakePanels(): PanelActions {
     toggleWorkbench: vi.fn(),
     toggleWorkbenchFullscreen: vi.fn(),
     toggleWorkbenchBottom: vi.fn(),
+    toggleWorkbenchFiles: vi.fn(),
     retainWorkbenchSessions: vi.fn(),
   }
 }
@@ -41,6 +42,7 @@ describe('LayoutController', () => {
     service.toggleWorkbench(SESSION)
     service.toggleWorkbenchFullscreen(SESSION)
     service.toggleWorkbenchBottom(SESSION)
+    service.toggleWorkbenchFiles(SESSION)
 
     expect(panels.toggleSidebar).toHaveBeenCalledTimes(1)
     expect(panels.openDetails).toHaveBeenCalledTimes(1)
@@ -50,6 +52,7 @@ describe('LayoutController', () => {
     expect(panels.toggleWorkbench).toHaveBeenCalledTimes(1)
     expect(panels.toggleWorkbenchFullscreen).toHaveBeenCalledWith(SESSION)
     expect(panels.toggleWorkbenchBottom).toHaveBeenCalledWith(SESSION)
+    expect(panels.toggleWorkbenchFiles).toHaveBeenCalledWith(SESSION)
     expect(panels.setSidebar).not.toHaveBeenCalled()
     expect(panels.setDetails).not.toHaveBeenCalled()
     expect(panels.setWorkbench).not.toHaveBeenCalled()
@@ -64,6 +67,7 @@ describe('LayoutController', () => {
     expect(() => { service.openWorkbench(SESSION) }).toThrow(/panel actions not wired/)
     expect(() => { service.closeWorkbench(SESSION) }).toThrow(/panel actions not wired/)
     expect(() => { service.toggleWorkbench(SESSION) }).toThrow(/panel actions not wired/)
+    expect(() => { service.toggleWorkbenchFiles(SESSION) }).toThrow(/panel actions not wired/)
   })
 
   it('publishes stable per-session workbench snapshots for header controls', () => {
@@ -71,10 +75,16 @@ describe('LayoutController', () => {
     const source = service.workbench(SESSION)
     const listener = vi.fn()
     const unsubscribe = source.subscribe(listener)
-    expect(source.getSnapshot()).toEqual({ open: false, fullscreen: false, bottomOpen: false })
-    service.publishWorkbench(SESSION, { open: true, fullscreen: false, bottomOpen: true })
-    expect(source.getSnapshot()).toEqual({ open: true, fullscreen: false, bottomOpen: true })
+    expect(source.getSnapshot()).toEqual({ open: false, fullscreen: false, bottomOpen: false, filesOpen: false })
+    service.publishWorkbench(SESSION, { open: true, fullscreen: false, bottomOpen: true, filesOpen: false })
+    expect(source.getSnapshot()).toEqual({ open: true, fullscreen: false, bottomOpen: true, filesOpen: false })
     expect(listener).toHaveBeenCalledOnce()
+    // 只有 filesOpen 变化也必须重新发布；值完全相同时保持静默。
+    service.publishWorkbench(SESSION, { open: true, fullscreen: false, bottomOpen: true, filesOpen: true })
+    expect(source.getSnapshot().filesOpen).toBe(true)
+    expect(listener).toHaveBeenCalledTimes(2)
+    service.publishWorkbench(SESSION, { open: true, fullscreen: false, bottomOpen: true, filesOpen: true })
+    expect(listener).toHaveBeenCalledTimes(2)
     unsubscribe()
   })
 

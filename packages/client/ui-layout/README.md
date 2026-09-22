@@ -19,11 +19,11 @@ kind: "package-reference"
 | `sidebar` | `root` | `collapsed`、实际 `width` |
 | `conversation` | `session-maybe` | 空 owner share |
 | `details` | `session` | 空 owner share |
-| `workbench` | `session` | 可见、全屏、底栏状态和控制回调 |
+| `workbench` | `session` | 可见、全屏、底栏与文件侧栏状态和控制回调 |
 | `workbench.bottom` | `session` | `shown` |
 | `shell.overlay` | `root` | 无 owner 数据的有序 list |
 
-`ctx.layout` 提供全局的 `toggleSidebar()`、`openDetails()`、`closeDetails()`，以及接收 `SessionId` 的 `openWorkbench()`、`closeWorkbench()`、`toggleWorkbench()`、`toggleWorkbenchFullscreen()` 和 `toggleWorkbenchBottom()`。`workbench(sessionId)` 返回会话页头入口与工作台顶栏可订阅的工作台显隐投影。打开工作台会关闭详情栏；打开详情栏会暂时覆盖工作台，关闭详情栏后恢复该 Session 的工作台状态。关闭工作台不会改写宽度与底栏偏好。
+`ctx.layout` 提供全局的 `toggleSidebar()`、`openDetails()`、`closeDetails()`，以及接收 `SessionId` 的 `openWorkbench()`、`closeWorkbench()`、`toggleWorkbench()`、`toggleWorkbenchFullscreen()`、`toggleWorkbenchBottom()` 和 `toggleWorkbenchFiles()`。`workbench(sessionId)` 返回会话页头入口、工作台顶栏与侧边栏品牌行开关可订阅的工作台显隐投影。打开工作台会关闭详情栏；打开详情栏会暂时覆盖工作台，关闭详情栏后恢复该 Session 的工作台状态。工作台未打开时 `toggleWorkbenchBottom()` 与 `toggleWorkbenchFiles()` 会先打开工作台并让对应面板可见。关闭工作台不会改写宽度、底栏与文件侧栏偏好。
 
 ## 布局行为
 
@@ -33,7 +33,7 @@ kind: "package-reference"
 
 每个尺寸分隔条使用 pointer capture，并把高频移动合并到 animation frame。pointer cancel、capture 丢失、窗口失焦和卸载都会取消待处理帧并结束拖拽。分隔条暴露 `separator` 角色、方向和值域，可用方向键、Home 和 End 调整；轨道动效遵守 `prefers-reduced-motion`。
 
-详情栏沿用既有让步链：先缩到下限，再在对话区空间不足时自动隐藏。切换到另一个非空 Session 会关闭详情栏，并按目标 Session 自己的状态决定是否显示工作台；切回原 Session 会恢复其打开状态、最大化、宽度、底栏开关和底栏高度。布局只负责 1024px 的主内容接管；工作台占用者在 768px 参考宽度收窄文件树，在 375px 手机宽度把文件树改成覆盖预览的单面板呈现。
+详情栏沿用既有让步链：先缩到下限，再在对话区空间不足时自动隐藏。切换到另一个非空 Session 会关闭详情栏，并按目标 Session 自己的状态决定是否显示工作台；切回原 Session 会恢复其打开状态、最大化、宽度、底栏开关、文件侧栏开关和底栏高度。布局只负责 1024px 的主内容接管；工作台占用者在 768px 参考宽度收窄文件树，在 375px 手机宽度把文件树改成覆盖预览的单面板呈现。
 
 ## 主题呈现
 

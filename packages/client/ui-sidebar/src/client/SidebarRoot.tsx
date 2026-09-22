@@ -143,6 +143,10 @@ export function SidebarRoot({
             </span>
           </button>
         )}
+        {/* 常驻动作在品牌按钮之后、收起按钮之前渲染：宽侧栏是横向图标行，收起 rail 中纵向排列。 */}
+        <div className={css.brandActions}>
+          {renderSlot('sidebar.brand.action', { wide })}
+        </div>
         <Tooltip label={collapsed ? t('toggle.open') : t('toggle.collapse')} delayMs={500}>
           <button
             type="button"

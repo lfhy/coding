@@ -7,7 +7,7 @@ import { SidebarRoot } from './SidebarRoot.tsx'
 import { en, zh, type SidebarKey } from './locales.ts'
 
 export type {
-  SidebarBrandNameOwnerProps, SidebarFooterActionOwnerProps,
+  SidebarBrandActionOwnerProps, SidebarBrandNameOwnerProps, SidebarFooterActionOwnerProps,
   SidebarRootComponentProps, SidebarRootInjected, SidebarSectionOwnerProps, SidebarSettingsOwnerProps,
 } from './contract/slots.ts'
 export type { SidebarKey } from './locales.ts'
@@ -44,6 +44,8 @@ export function apply(ctx: ClientContext): void {
       // ui-settings 注册底部触发器和设置面板。
       children: {
         'sidebar.brand.name': { kind: 'single', scope: 'root' },
+        // 品牌行常驻动作由 ui-open-in-app 注册：宽侧栏与收起 rail 都渲染，与收起按钮同排。
+        'sidebar.brand.action': { kind: 'list', scope: 'root' },
         'sidebar.workspaces': { kind: 'single', scope: 'root' },
         'sidebar.settings': { kind: 'single', scope: 'root' },
         'sidebar.footer.action': { kind: 'list', scope: 'root' },

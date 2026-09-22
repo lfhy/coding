@@ -20,6 +20,14 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      */
     'sidebar.brand.name': { kind: 'single'; scope: 'root'; owner: SidebarBrandNameOwnerProps }
     /**
+     * 品牌行内的可选常驻动作，渲染在收起按钮之前。宽侧栏中它们与收起按钮同排，是一个
+     * 横向图标行；收起的 56px rail 中则纵向排列，排在收起按钮上方。注册者按列表条目注册
+     * （每个条目自带 `id` 与可选 `order`），进入 `sidebar.brand.action` 的条目在所有侧边栏
+     * 宽度下都可见，因此工作台关闭时也能作为入口。组件收到 `wide`：为 `false` 时必须提供
+     * 适合 36×36 控件盒的纯图标呈现。没有注册者时该洞渲染为空，不占位。
+     */
+    'sidebar.brand.action': { kind: 'list'; scope: 'root'; owner: SidebarBrandActionOwnerProps }
+    /**
      * The workspace/session browsing region: section header, search, the
      * grouped/flat session list, and every workspace dialog. Declared by this
      * package's 'sidebar' entry (declaring is claiming); ui-workspace
@@ -44,6 +52,15 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 export interface SidebarBrandNameOwnerProps {
   /** 标记字段：占用者自行持有内容和宽度。 */
   children?: never
+}
+
+/**
+ * 品牌行常驻动作的 owner share。占用者常驻可见（含收起 rail），因此每个动作都要在
+ * `wide` 与 rail 两种形态下可用。
+ */
+export interface SidebarBrandActionOwnerProps {
+  /** 侧边栏是否渲染宽内容（false = 56px rail）。 */
+  wide: boolean
 }
 
 /**
@@ -97,6 +114,7 @@ export type SidebarRootComponentProps =
   PropsRuntime<'sidebar'>
   & PropsRenderSlots<
     | 'sidebar.brand.name'
+    | 'sidebar.brand.action'
     | 'sidebar.workspaces'
     | 'sidebar.settings'
     | 'sidebar.footer.action'
