@@ -31,7 +31,7 @@ export interface ChipRender {
 
 /**
  * One plain-text reference range (the plain-text-reference decision;
- * see .agents/notes/implemented/architecture/2026-07-25-web-input-machine-and-slash-pipeline.md):
+ * see ):
  * a `/name` or `@name` token
  * whose name is on the trigger's lexicon. Pure derivation — editing the text
  * out of match shape simply drops the range next scan.

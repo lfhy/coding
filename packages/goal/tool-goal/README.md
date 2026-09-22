@@ -1,6 +1,6 @@
 # @deepseek-ai/dsh-tool-goal
 
-[`ctx.goals`](../goal/README.md) 的面向模型控制 API：`get_goal`、`create_goal` 和 `update_goal`。[goal 工具 Agent Note](../../../.agents/notes/implemented/feature/2026-07-19-model-facing-goal-tools.md) 负责权限拆分与 Codex 风格用户体验。
+[`ctx.goals`](../goal/README.md) 的面向模型控制 API：`get_goal`、`create_goal` 和 `update_goal`。goal 工具 设计记录 负责权限拆分与 Codex 风格用户体验。
 
 ## 工具
 

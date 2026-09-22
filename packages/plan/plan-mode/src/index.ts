@@ -5,21 +5,17 @@
  * `/plan off` command lets a user leave directly. Sandbox mode and approval
  * policy enforce restrictions independently and do not read or write plan
  * state.
- *
  * The state in force is folded from the session log (`plan/mode`, last one
  * wins), so resume and fork restore it without a live mirror. User selections
  * remain pending until the next accepted in-turn pre-step. The service includes
  * the selected state in the proposed step assembly, then appends `plan/mode`
  * from `agent/pre-step` only when the step is accepted. Same-step request
  * retries reuse their assembly.
- *
  * The exit tool remains registered while plan mode is inactive, so entering
  * or leaving plan mode changes only the prompt section, not the request tool
  * catalog.
- *
- * Agent Note:
- * - .agents/notes/implemented/simplification/2026-07-22-plan-specific-collaboration-state.md
- *
+ * design record:
+ * -
  * @module @deepseek-ai/dsh-plan-mode
  */
 
@@ -100,7 +96,6 @@ function firstHeading(plan: string): string | undefined {
 /**
  * Validate deployment-owned plan guidance. Missing, blank, non-string, or
  * unknown fields fail at plugin load rather than being ignored.
- *
  * @param config Raw plugin config.
  * @returns A detached validated config.
  */
@@ -122,7 +117,6 @@ export function resolveConfig(config: PlanModeConfig): PlanModeConfig {
 /**
  * Whether plan mode is active after the first `end` events. The last
  * `plan/mode` wins; a prefix with none is inactive.
- *
  * @param events The session log or any prefix of it.
  * @param end Fold `events[0, end)`; defaults to the whole log.
  * @returns Whether plan mode is active.
@@ -416,7 +410,6 @@ export class PlanModeController extends Service {
   /**
    * Read the logged plan state and any selected state awaiting the next
    * accepted in-turn pre-step.
-   *
    * @param agent The agent to read.
    * @returns Current logged state plus a pending selection, when present.
    */
@@ -434,7 +427,6 @@ export class PlanModeController extends Service {
    * further in-turn pre-step runs. During an open turn the selection remains
    * pending until the next accepted in-turn pre-step. Repeated selection of
    * the current or already-pending state is a no-op.
-   *
    * @param agent The agent to switch.
    * @param active Whether plan mode should be active.
    * @returns what happened: `committed` (logged now), `queued` (awaiting the

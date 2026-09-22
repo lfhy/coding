@@ -1,10 +1,8 @@
 # The dsh-web-app bundle patch: the browser surface over the dsh-base layer.
 # Applied after dsh-base's insert; rows here override base rows by id, with
 # the profile's own cordis.patch.yml and any --patch overlays still to come.
-#
 # A patch replaces the targeted row's whole `config`, so each row below
 # restates every key it owns.
-#
 # The web-startup plugin injects `cmdlineArgs` and provides `webStartup` as an
 # ordinary Cordis service. Rows configured from flags inject that service, so
 # Loader resolves their expressions only after it exists. The web runtime then
@@ -312,12 +310,10 @@
       name: '@deepseek-ai/dsh-client-ui-trajectory'
 
 # ── the agent plane moves behind agent presets ─────────────────────────────
-#
 # Every row below composes what ONE agent contributes to the host registries:
 # its tools, its prompt sections, its delegation backends. The base keeps them
 # for the TUI, which is single-session and composes its agent process-wide; the
 # Web surface disables them here and lets each session mount a preset instead.
-#
 # Disabling rather than deleting is deliberate: the base is shared, and a row
 # absent from a surface overlay would silently reappear the day someone reorders
 # the composition.
@@ -391,7 +387,7 @@
 # process-wide, so preset ownership would make the meter a function of which
 # presets happen to be mounted rather than a per-session fact. Same criterion as
 # `tasks` and `goals`; the reasoning has one home in
-# `.agents/notes/implemented/architecture/2026-08-10-host-plane-ownership-after-presets.md`.
+# ``.
 
 - id: compaction-basic
   disabled: true
@@ -449,7 +445,6 @@
 # read-only (its entries carry `system` trust); `$DSH_HOME/.agent-presets` is
 # where a person — or an agent — authors their own, and carries the same trust
 # as shell access because a preset IS a composition.
-#
 # Only the SHIPPED root is an assembly fact: it sits beside the installed app's
 # own config, so `apps/cli`'s `composeProfile` resolves and patches it in — the
 # same treatment `distIndex` gets on the webserver row. The writable root is

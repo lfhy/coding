@@ -6,7 +6,6 @@
  * exits are reported, not errored — the model decides how to react; only
  * infrastructure failures (spawn errors, aborts) surface as isError
  * results.
- *
  * @module @deepseek-ai/dsh-tool-pwsh/render
  */
 
@@ -14,7 +13,7 @@ import type { ShellProcessRead, ShellSandboxInfo, CollectedOutput } from '@deeps
 import type { SandboxMode } from '@deepseek-ai/dsh-sandbox'
 import { escalationHintMarker, sandboxDenialMarker } from '@deepseek-ai/dsh-sandbox'
 
-/* jscpd:ignore-start -- deliberate twin of dsh-tool-bash/render.ts (Agent Note). */
+/* jscpd:ignore-start -- deliberate twin of dsh-tool-bash/render.ts (design record). */
 
 /** Append the truncation notice (with the full-output spill path) to a stream's text. */
 function streamText(output: CollectedOutput): string {

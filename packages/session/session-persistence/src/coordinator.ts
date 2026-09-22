@@ -120,7 +120,6 @@ export interface StoredSuffix {
  * backend implements these (over files, rows, an object store, …); the
  * coordinator supplies everything else (buffering, serialization, cursors,
  * adoption, crash repair sequencing, dispose quiescence).
- *
  * @typeParam TornMarker - the backend's opaque torn-tail repair token (see
  * {@link StoredPrefix}). The coordinator treats it as fully opaque.
  */
@@ -577,12 +576,10 @@ function adoptStoredEvents(events: SessionEvent[], id: SessionId): SessionEvent[
  * constructs one (`new PersistenceCoordinator(ctx, this)`), implements
  * {@link PersistenceBackend}, and delegates its write/read service methods to
  * the matching coordinator methods.
- *
  * All per-id operations are serialized (a per-id promise chain) so concurrent
  * flushes / a flush racing a load never interleave storage writes. The
  * constructor installs the write-path listeners, per-session retirement, and
  * the backend dispose effect.
- *
  * @typeParam TornMarker - the backend's opaque torn-tail repair token.
  */
 export class PersistenceCoordinator<TornMarker = unknown> {
@@ -687,7 +684,7 @@ export class PersistenceCoordinator<TornMarker = unknown> {
     // deliberately read-side only: an append-time refusal would stall a live
     // session's durability mid-flight, which costs more than a loud refusal at
     // the log's next load (trade-off owned by the session-log-version-mechanism
-    // Agent Note).
+    // design record).
     assertSupportedEvents(events, id)
     if (events.length === 0) return
     this.preparations.assertWritable(id)
@@ -1223,7 +1220,6 @@ export class PersistenceCoordinator<TornMarker = unknown> {
 
   /**
    * On session/created: sync the backend's in-memory state to a live Session.
-   *
    * Cases, by whether this backend tracks the id and whether an artifact exists:
    *   1. Already tracked → no-op (or claim ownerless state if the seed matches,
    *      or reclaim a truly-abandoned id, else reject as a collision).

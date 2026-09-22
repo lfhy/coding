@@ -803,7 +803,6 @@ const EVENT_API_METHODS = new Set(['on', 'once', 'emit', 'parallel', 'serial', '
 
 /**
  * Collect event dispatch/listener relations from real cross-file receiver types.
- *
  * TODO: the program is seeded from the host aggregate alone (ts-project.ts
  * documents why: one program cannot hold both faces' Context merges), so a
  * Client package enters only when a host file imports it. Client-face
@@ -1437,7 +1436,7 @@ function renderIndex(docs: GraphDoc[]): string {
     ...generatedHeader('Documentation Graph Index'),
     'These diagrams show relationships that the generated catalogs do not. Use them to find package relationships, capability seams, event flow, model-facing tools, app composition, and runtime lifecycle paths. Exact signatures and type definitions still live in the [subsystem pages](subsystems/core.md) (types + the generated Cordis API regions) and [tool-catalog.md](tool-catalog.md).',
     '',
-    'The process decision behind this index is recorded in [the documentation graph Agent Note](../.agents/notes/archived/process/2026-07-03-documentation-graph-atlas.md).',
+    'The process decision behind this index is recorded in the documentation graph design record.',
     '',
     '| Graph | Mode |',
     '| --- | --- |',

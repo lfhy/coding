@@ -1,7 +1,6 @@
 /**
  * Workspace package invariant checks for package-manager-independent quality
  * gates.
- *
  * Run: `tsx scripts/check-workspace-constraints.ts`.
  */
 
@@ -281,13 +280,12 @@ function checkWorkspace({ dir, manifest }: WorkspaceManifest): string[] {
     // Release members state that they are publishable: npm refuses a private
     // package, and the repository field is how a consumer finds the source of
     // the package it installed.
-    //
     // Access is per release sequence, not per scope: the vendored framework and
     // the Landlock packages publish publicly because outside consumers install
     // them, while the dsh family stays restricted until its own sequence goes
     // public. A mixed scope is why no publish path passes `--access` — one flag
     // cannot serve both, so each packed manifest decides
-    // ([rationale](../.agents/notes/implemented/process/2026-08-13-public-vendor-and-native-sequences.md)).
+    // (rationale).
     if (manifest.private === true) {
       errors.push(`${label}: release member must not set "private": true`)
     }
@@ -446,7 +444,6 @@ export function checkExperimentalDependencyIsolation(manifests: readonly Workspa
 
 /**
  * Require the `workspace:` protocol for every reference to a workspace member.
- *
  * A hand-written range says nothing about the version the workspace actually
  * carries, and `pnpm pack` leaves it alone: `^0.0.1` published from version
  * `0.0.2` names a version that does not exist. The protocol makes pack

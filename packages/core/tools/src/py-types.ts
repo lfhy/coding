@@ -4,7 +4,6 @@
  * {@link ./ts-types.ts | ts-types.ts}; the two files are two projections of the same registry
  * store, keyed by the loaded {@link @deepseek-ai/dsh-code-runtime#CodeRuntime.language | code
  * runtime's language}.
- *
  * Under `mode: 'code'` the native tool schemas are omitted from the request, so this generated
  * SDK is the model's ONLY source for each tool's argument names, required fields, types,
  * descriptions, and canonical output shapes; under `mode: 'both'` the native schemas ship
@@ -28,26 +27,22 @@ const IDENTIFIER = /^[\p{XID_Start}_]\p{XID_Continue}*$/u
 /**
  * Whether a name can be emitted as a bare Python identifier rather than
  * routed to the subscript/`dict[str, Any]` path.
- *
  * Python identifiers are not ASCII: `路径` is as legal a field name as `path`,
  * and rejecting it would degrade the whole enclosing object, dropping every
  * field's name, requiredness, and type — information whose only source under
  * `mode: 'code'` is this generated text.
- *
  * NFKC stability is a second and separate condition, because CPython
  * normalizes identifiers at compile time while JSON keys are compared as
  * written: `ﬁeld` would be declared and reachable as `field`, so the SDK would
  * advertise a key under a spelling the harness never accepts, and two keys
  * that normalize together would collapse into one declaration. Those names
  * take the subscript path, which carries their exact bytes.
- *
  * `IDENTIFIER` matches `str.isidentifier()` (measured on Node 22.23.1 vs
  * CPython 3.9.6 tables): the equivalence holds inside the two versions' shared
  * tables, and the skew characters below are exactly where that pair diverges.
  * The predicate as a whole is deliberately stricter than `isidentifier()`,
  * which does not test NFKC stability: `'ﬁeld'.isidentifier()` is True and
  * this returns false.
- *
  * Both conditions are evaluated against the ENGINE's Unicode tables, and the
  * two sides are versioned independently — `\p{XID_Start}`/`\p{XID_Continue}`
  * follow the running engine (Node 22.23.1 reports Unicode 17.0) while CPython
@@ -68,7 +63,6 @@ const IDENTIFIER = /^[\p{XID_Start}_]\p{XID_Continue}*$/u
  * subscript/`dict[str, Any]` path: less readable, still correct. The NFKC
  * condition reduces to the same skew, since normalization stability guarantees
  * an assigned character's normalization never changes afterwards.
- *
  * This predicate is not the only reader of engine tables. {@link camelCase}
  * reads them at three further points — its split set, its head test, and its
  * `toUpperCase()` case mapping — and this predicate's verdict gates none of
@@ -86,8 +80,7 @@ const IDENTIFIER = /^[\p{XID_Start}_]\p{XID_Continue}*$/u
  * non-printable character U+A7DC`. Closing the exposure therefore covers all
  * four read points, not this predicate alone; it needs the target interpreter's
  * version, which the backend reporting `language: 'python'` owns; the
- * language-dispatch Agent Note records the deferral.
- *
+ * language-dispatch design record records the deferral.
  * The `ts-types` sibling keeps its own ASCII rule rather than sharing this
  * one: ECMAScript identifiers are a different set (`$`) and are never
  * normalized, so one predicate cannot be correct for both. ZWJ/ZWNJ are not
@@ -166,7 +159,6 @@ interface RenderState {
  * `mode: 'code'`, the model's only declaration of the tools. The rest are
  * legal but invisible; escaping them with the same rule keeps the emitted text
  * readable and the treatment uniform.
- *
  * The boundary is the category, not per-code-point addressability: `\xNN`
  * addresses U+0000 to U+00FF, so one escape form covers `Cc` exactly. The
  * invisible `Cf` formatting characters pass through by design — of them only
@@ -192,7 +184,6 @@ const UNPRINTABLE = /[\u0000-\u0008\u000e-\u001f\u007f-\u009f]/g
  * its own form, since `\xNN` stops at U+00FF. The `u` flag is what makes this
  * the LONE ones: in Unicode mode a well-formed pair is a single astral code
  * point outside D800 to DFFF, so an emoji in a description survives untouched.
- *
  * This is the NUL case from {@link UNPRINTABLE}, not the invisible-character
  * case. Python source must be UTF-8-encodable and a lone surrogate is not, so
  * `compile()` raises `UnicodeEncodeError: surrogates not allowed` for one
@@ -213,7 +204,6 @@ const LONE_SURROGATE = /[\ud800-\udfff]/gu
  * `"""` docstring or a bare `#   ` line in the SDK. Only ECMAScript whitespace
  * folds, so a description of whitespace plus one surviving control character is
  * NOT absent: it collapses to that character's visible escape.
- *
  * Control characters left over after the whitespace collapse are rendered as
  * their `\xNN` escapes (see {@link UNPRINTABLE}) and unpaired surrogates as
  * their `\uNNNN` escapes (see {@link LONE_SURROGATE}); the escape's own backslash is
@@ -254,7 +244,6 @@ function docLines(description: unknown, indent: number): string[] {
  * `XID_Continue` splits even when it is a letter, so a name whose NFKC folding
  * would leave the identifier set is not carried through — the split set is the
  * grammar's, not an ASCII approximation of it.
- *
  * The result is NFKC-normalized: these names are generated, never matched
  * against a JSON key, so normalizing is free here and keeps what CPython
  * compiles identical to what is emitted — unlike {@link isBareIdentifier},
@@ -263,7 +252,6 @@ function docLines(description: unknown, indent: number): string[] {
  * a combining-mark head composes there (`U+0301` gives `Tooĺ`, U+013A), so
  * normalizing only the un-prefixed part would emit a name CPython compiles to
  * a different symbol. The second call is idempotent on the un-prefixed arm.
- *
  * The split set, the head test, and `toUpperCase()` all read the engine's
  * Unicode tables, so this function carries the same version skew
  * {@link isBareIdentifier} documents, by paths independent of it: a class name
@@ -297,7 +285,6 @@ const MAX_CLASS_NAME_BASE = 120
  * few brackets an annotation can add around the chain, all of which count
  * toward the same limit. Per emission site, counting brackets open at the
  * chain's innermost point:
- *
  * - Return annotation, `async def f(self, args: X) -> chain:` — 180 `list[`
  *   plus an innermost `Literal[`. The parameter list's `(` closed at the `)`
  *   before the `->`, so it is NOT open here: 181.
@@ -316,7 +303,6 @@ const MAX_CLASS_NAME_BASE = 120
  *   the 181 site. `defineTool` compiles an object root, so the annotation is a
  *   bare TypedDict class name or a one-bracket `dict[str, Any]` when that
  *   object degrades — never a chain.
- *
  * A CPython grammar limit, not a deployment choice, so it is fixed rather than
  * configurable. The sibling `ts-types` renderer needs no counterpart: nothing
  * in the TypeScript grammar bounds nesting, and its SDK block is never type-
@@ -372,7 +358,6 @@ function allocateClassName(base: string, state: RenderState): string {
  * object-chain would otherwise carry an ever-growing ConsString down the tree
  * and re-materialize it (via `.length`/`.slice`) at every level — Θ(depth²).
  * The bounded base plus the collision counter still yields unique names.
- *
  * The join is NFKC-normalized because both sides are separately normalized yet
  * their concatenation need not be: a base ending in a Hangul L jamo or LV
  * syllable composes with a following V or T jamo head (`가` + `ᆨ` gives `각`),
@@ -392,7 +377,6 @@ function childClassName(base: string, segment: string): string {
  * JSON-quoted strings, bare numbers). `null` cannot reach here: the `null`
  * type renders directly as `None`, and the unified validator rejects a null
  * `const`/`enum` entry on every other scalar type.
- *
  * A beyond-safe-range integral number takes `BigInt` digits rather than
  * `String`: Python integers are arbitrary-precision, so the emitted digits ARE
  * the value the model programs against, and `String` can give a different
@@ -409,7 +393,6 @@ function childClassName(base: string, segment: string): string {
  * and where it is not, `BigInt` is the exact one. The TS flavor needs no
  * counterpart at all: its literal is re-read by a JS parser back into the same
  * double.
- *
  * `JSON.stringify` is also what keeps this path's output parseable, and it is
  * the only thing that does. It covers both classes of hazard: the two kinds of
  * code point CPython refuses anywhere in source — NUL among the C0 controls,
@@ -420,7 +403,6 @@ function childClassName(base: string, segment: string): string {
  * ending it before its terminator. The `description` path carries
  * {@link UNPRINTABLE} and {@link LONE_SURROGATE} because nothing quotes it,
  * and folds newlines in {@link describe}.
- *
  * That leans on a coincidence worth naming: every escape `JSON.stringify` can
  * emit (`\"`, `\\`, `\b`, `\f`, `\n`, `\r`, `\t`, `\uXXXX`) is also a Python
  * escape denoting the same character, so the emitted `Literal[...]` both
@@ -599,7 +581,6 @@ function renderType(schema: unknown, className: string, state: RenderState): str
         frame.kind = 'oneOf'
         // A union renders as `A | B` — no brackets of its own, so the branches
         // inherit the enclosing depth unchanged.
-        //
         // Union LENGTH is deliberately uncapped, unlike list nesting. The two
         // limits are different in kind: >200 open brackets is a SyntaxError
         // from the tokenizer, so the text is not Python; a long `A | B | …`

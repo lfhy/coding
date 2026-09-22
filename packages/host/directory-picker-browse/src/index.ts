@@ -5,7 +5,7 @@
  * the per-OS adaptation). Nothing renders on the host display, so this backend
  * serves remote clients the dialog backend cannot. Policy decisions (hidden
  * entries flagged but returned, symlinks followed, whole-filesystem scope) are
- * recorded in the directory-picker seam Agent Note.
+ * recorded in the directory-picker seam design record.
  * @module @deepseek-ai/dsh-host-directory-picker-browse
  */
 

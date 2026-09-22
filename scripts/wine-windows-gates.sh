@@ -3,15 +3,12 @@
 # win-x64 Node.js under Wine — the same script the pull-request `windows` job
 # in ci.yml executes and the optional local gate `pnpm run check:windows-wine`
 # wraps. Owning rationale and fidelity limits:
-# .agents/notes/implemented/process/2026-08-08-native-windows-pull-request-ci.md
-#
 # The working tree is never mutated: tracked plus untracked-unignored files
 # are snapshotted into a scratch directory, the Wine-specific pnpm overrides
 # (hoisted layout, win32-x64 platform packages) are appended to the SNAPSHOT's
 # pnpm-workspace.yaml, and the install and gates run there against the shared
 # pnpm store. The Wine prefix and the checksum-verified Windows Node zip
 # persist in .cache/wine-windows/ so reruns skip provisioning.
-#
 # Environment: DSH_WINE_NODE_MAJOR (default $PRIMARY_NODE_VERSION, then 24)
 # picks the Windows Node line; DSH_WINE_GATE_CACHE_DIR relocates the cache;
 # DSH_WINE_GATE_KEEP=1 preserves the scratch tree for inspection.

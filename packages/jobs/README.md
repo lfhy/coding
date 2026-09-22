@@ -8,6 +8,6 @@
 | [`jobs-local/`](jobs-local/README.md) | 实现进程本地任务注册表 | 注册到 `ctx.jobs` |
 | [`tool-jobs/`](tool-jobs/README.md) | 向模型公开任务控制和完成通知 | 注册到 `ctx.tools` |
 
-参见[后台任务运行时](../../.agents/notes/implemented/architecture/2026-06-20-generic-long-running-tool-runtime.md)和[任务注册表](../../.agents/notes/implemented/architecture/2026-07-26-job-registry-seam.md)决策。
+参见后台任务运行时和任务注册表决策。
 
-子系统参考文档——id 方案、所有者隔离约定、快照——见 [docs/subsystems/jobs.md](../../docs/subsystems/jobs.md)；设计见[后台任务运行时](../../.agents/notes/implemented/architecture/2026-06-20-generic-long-running-tool-runtime.md)与[任务注册表约定](../../.agents/notes/implemented/architecture/2026-07-26-job-registry-seam.md)两篇 Agent Note。
+子系统参考文档——id 方案、所有者隔离约定、快照——见 [docs/subsystems/jobs.md](../../docs/subsystems/jobs.md)；设计见后台任务运行时与任务注册表约定两篇 设计记录。

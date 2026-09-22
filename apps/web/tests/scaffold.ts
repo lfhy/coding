@@ -1,5 +1,5 @@
-// Shared scaffold for the keyless browser e2e lane (Agent Note:
-// .agents/notes/implemented/testing/2026-07-24-web-gui-browser-e2e-lane.md).
+// Shared scaffold for the keyless browser e2e lane (design record:
+// ).
 // Boots the REAL web composition — the dsh-base and dsh-web-app bundle
 // patches over the empty profile root through the vendored Loader (the same
 // layer stack the profile boot composes), patched the
@@ -10,7 +10,6 @@
 // harvests fixtures from live session memory), refresh (keyless replay that
 // rewrites goldens). A first-run option keeps the real adapter mounted while
 // masking its credential, without making a model call.
-//
 // Composition divergences from `dsh web`, all deliberate, all via include
 // patches after the shipped bundle layers, over the SAME tree (never a
 // second yml): temp persistenceRoot; host-level skill roots confined to the
@@ -680,7 +679,7 @@ function rawSessionLog(session: Session): string {
 /**
  * Record-mode fixture write-back: harvest the live session, scrub request
  * headers to {{system}}/{{tools}} (TODO(web-header-pin): the web lane pins no
- * header class — a deliberate deviation logged in the Agent Note's deferred
+ * header class — a deliberate deviation logged in the design record's deferred
  * work), tokenize the run-local session id, cwd, and browser RPC id
  * ({{sessionId}}/{{cwd}}/{{rpcId}}, the committed fixture convention —
  * re-records then diff only on real content), and write the fixture.
@@ -819,7 +818,6 @@ async function persistSeedSession(
  * Normalize an aria snapshot: uuid, cwd, workspace-basename, duration,
  * decode-throughput, and path-sensitive compaction estimates collapse to
  * stable tokens.
- *
  * Throughput needs a token for the same reason durations do, and no fixture
  * can supply one: the figure divides a replayed step's output tokens by the
  * wall time the local run took to stream them, so it moves between two runs

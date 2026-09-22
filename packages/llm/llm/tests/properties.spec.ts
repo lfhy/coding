@@ -1,6 +1,5 @@
 /**
- * Property-based tests for the BlockAssembler (the property-testing Agent Note).
- *
+ * Property-based tests for the BlockAssembler (the property-testing design record).
  * The assembler is protocol-shaped: arbitrary interleavings of block-start,
  * deltas, block-end, usage, and finish — valid and malformed (duplicate
  * indices, stragglers after block-end, missing block-start, delta-only). The

@@ -5,7 +5,7 @@
  * pnpm patch list. License and repository metadata come from the installed
  * store, so the tree must be installed. `--check` verifies the committed
  * artifact. Tier policy and ownership live in
- * `.agents/notes/implemented/process/2026-07-30-generated-third-party-notices.md`.
+ * ``.
  */
 
 import { existsSync, globSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -249,7 +249,6 @@ export function claudeDistributionFromManifest(
  * long names (a peer-suffixed name past the length limit becomes
  * `<prefix>_<hash>`), so a content scan falls back over the whole store when
  * the prefix misses.
- *
  * @param virtual - the `.pnpm` virtual store directory to scan.
  * @param name - the external package name, exactly as `node_modules` spells it.
  * @returns the parsed manifest, or `undefined` when neither the prefix match

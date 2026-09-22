@@ -51,4 +51,4 @@
 ## 已知限制与暂缓事项
 
 - **无调用方授权**：这是上下文范围内的可信基础设施；未来的模型工具或 UI 必须限制调用方可检查的会话。
-- **无注册表或面向模型工具**：尚未提供提取器和搜索提供方注册表、递归遍历所引用的源事件的能力，以及面向模型的工具。[跟踪决策](../../../.agents/notes/implemented/feature/2026-07-13-session-query-tracing.md) 负责关系语义；SQLite 归属和 tokenizer 决策位于[已实现搜索记录](../../../.agents/notes/implemented/feature/2026-07-10-sqlite-session-query-provider.md)。
+- **无注册表或面向模型工具**：尚未提供提取器和搜索提供方注册表、递归遍历所引用的源事件的能力，以及面向模型的工具。跟踪决策 负责关系语义；SQLite 归属和 tokenizer 决策位于已实现搜索记录。

@@ -1,6 +1,6 @@
 # 计划模式
 
-计划模式是 [dsh-plan-mode](../../packages/plan/plan-mode) 拥有的、记录到日志的逐 agent（智能体）协作状态（`ctx.planMode`，`PlanModeController`）：激活期间，每个模型请求都会包含一段部署持有的指引。计划模式是**软性指引**。[沙箱模式](sandbox.md)与[审批策略](approval.md)分别强制限制；两者都不读写计划状态，因此部署需要分别配置它们。该包是可选项，agent loop（智能体循环）不依赖它。它贡献 `plan:policy` 提示词段落，并注册 `exit_plan_mode` 工具和 `/plan` 命令。[设计说明](../../.agents/notes/implemented/simplification/2026-07-22-plan-specific-collaboration-state.md)负责决策依据；[包 README](../../packages/plan/plan-mode/README.md)负责模型体验与限制细节。
+计划模式是 [dsh-plan-mode](../../packages/plan/plan-mode) 拥有的、记录到日志的逐 agent（智能体）协作状态（`ctx.planMode`，`PlanModeController`）：激活期间，每个模型请求都会包含一段部署持有的指引。计划模式是**软性指引**。[沙箱模式](sandbox.md)与[审批策略](approval.md)分别强制限制；两者都不读写计划状态，因此部署需要分别配置它们。该包是可选项，agent loop（智能体循环）不依赖它。它贡献 `plan:policy` 提示词段落，并注册 `exit_plan_mode` 工具和 `/plan` 命令。设计说明负责决策依据；[包 README](../../packages/plan/plan-mode/README.md)负责模型体验与限制细节。
 
 源码：[`packages/plan/plan-mode/src/index.ts`](../../packages/plan/plan-mode/src/index.ts)
 
@@ -54,7 +54,6 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 /**
  * Read the logged plan state and any selected state awaiting the next
  * accepted in-turn pre-step.
- *
  * @param agent The agent to read.
  * @returns Current logged state plus a pending selection, when present.
  */
@@ -68,7 +67,6 @@ get(agent: Agent): { active: boolean; pending?: boolean }
  * further in-turn pre-step runs. During an open turn the selection remains
  * pending until the next accepted in-turn pre-step. Repeated selection of
  * the current or already-pending state is a no-op.
- *
  * @param agent The agent to switch.
  * @param active Whether plan mode should be active.
  * @returns what happened: `committed` (logged now), `queued` (awaiting the
@@ -81,5 +79,5 @@ set(agent: Agent, active: boolean): 'committed' | 'queued' | 'cancelled' | 'noop
 
 Types: [Agent](core.md)
 
-Source: [`packages/plan/plan-mode/src/index.ts:188`](../../packages/plan/plan-mode/src/index.ts)
+Source: [`packages/plan/plan-mode/src/index.ts:182`](../../packages/plan/plan-mode/src/index.ts)
 <!-- END GENERATED cordis-surface -->

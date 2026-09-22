@@ -1524,7 +1524,7 @@ export interface PlanModeConfig {
 }
 ```
 
-Source: [`packages/plan/plan-mode/src/index.ts:71`](../packages/plan/plan-mode/src/index.ts)
+Source: [`packages/plan/plan-mode/src/index.ts:67`](../packages/plan/plan-mode/src/index.ts)
 
 <a id="deepseek-aidsh-pwsh-local"></a>
 
@@ -1557,7 +1557,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/shell/pwsh-local/src/index.ts:59`](../packages/shell/pwsh-local/src/index.ts)
+Source: [`packages/shell/pwsh-local/src/index.ts:57`](../packages/shell/pwsh-local/src/index.ts)
 
 <a id="deepseek-aidsh-pwsh-sandbox"></a>
 
@@ -1696,7 +1696,7 @@ export interface JsonRpcConfig {
 
 Depends on: `Readable` (`node:stream`) · `Writable` (`node:stream`)
 
-Source: [`packages/sdk/server/src/index.ts:25`](../packages/sdk/server/src/index.ts)
+Source: [`packages/sdk/server/src/index.ts:24`](../packages/sdk/server/src/index.ts)
 
 <a id="deepseek-aidsh-session-persistence-jsonl"></a>
 
@@ -1897,7 +1897,7 @@ export enum SessionTelemetryMode {
 
 Depends on: `BatchLogRecordProcessorOptions` (`@opentelemetry/sdk-logs`) · `OTLPExporterNodeConfigBase` (`@opentelemetry/otlp-exporter-base`)
 
-Source: [`packages/session/session-telemetry-otel/src/index.ts:91`](../packages/session/session-telemetry-otel/src/index.ts)
+Source: [`packages/session/session-telemetry-otel/src/index.ts:89`](../packages/session/session-telemetry-otel/src/index.ts)
 
 <a id="deepseek-aidsh-session-title"></a>
 
@@ -2676,7 +2676,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/shell/tool-pwsh/src/index.ts:52`](../packages/shell/tool-pwsh/src/index.ts)
+Source: [`packages/shell/tool-pwsh/src/index.ts:50`](../packages/shell/tool-pwsh/src/index.ts)
 
 <a id="deepseek-aidsh-tool-pwsh-persistent"></a>
 
@@ -2981,7 +2981,7 @@ export interface Config {
 export type ToolPresentationMode = 'native' | 'code' | 'both'
 ```
 
-Source: [`packages/core/tools/src/index.ts:654`](../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:653`](../packages/core/tools/src/index.ts)
 
 <a id="deepseek-aidsh-typert-loader"></a>
 
@@ -3291,7 +3291,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 
 ## Seam packages (not directly loadable)
 
-Abstract service classes — a deployment loads a concrete implementation package instead ([capability seams](../.agents/notes/implemented/architecture/2026-06-13-capability-seams.md)).
+Abstract service classes — a deployment loads a concrete implementation package instead (capability seams).
 
 - `@deepseek-ai/dsh-attachment` — abstract `AttachmentStore` ([`packages/attachment/attachment/src/index.ts`](../packages/attachment/attachment/src/index.ts))
 - `@deepseek-ai/dsh-code-runtime` — abstract `CodeRuntime` ([`packages/code-runtime/code-runtime/src/index.ts`](../packages/code-runtime/code-runtime/src/index.ts))

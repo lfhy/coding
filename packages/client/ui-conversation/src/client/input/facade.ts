@@ -296,7 +296,7 @@ export class SessionInputShell implements SessionInput {
   /**
    * Hot plain-text reference lexicon source for the decoration scan
    * (the plain-text-reference decision;
-   * see .agents/notes/implemented/architecture/2026-07-25-web-input-machine-and-slash-pipeline.md):
+   * see ):
    * delegates to the controller's aggregated store. Stable
    * identity per shell; without a pipeline the snapshot is the empty Map and
    * subscribers never fire.

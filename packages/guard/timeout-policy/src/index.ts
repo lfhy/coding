@@ -2,12 +2,10 @@
  * Cooperative tool-call timeout enforcer. A tool declares `timeoutMs` and
  * promises to honor `exec.signal`; this wrapper arms that deadline and maps its
  * own expiry to `TOOL_TIMEOUT` without racing or abandoning the tool promise.
- *
  * FIXME: settle the intended `@deepseek-ai/dsh-timeout-guard` rename before the
  * first tagged release — suggestion only, aligning the name with its `guard/`
  * home; decide at resolution time
- * ([regrouping Agent Note](../../../../.agents/notes/implemented/architecture/2026-07-29-package-regrouping.md)).
- *
+ * (regrouping design record).
  * @module @deepseek-ai/dsh-tool-call-timeout-policy
  */
 
@@ -34,7 +32,6 @@ export const inject = ['tools']
  * The structured result substituted when this plugin's deadline wins. `content`
  * is the model-facing message; `error.code` is the same {@link TOOL_TIMEOUT}
  * this plugin owns, so a retry/sandbox plugin (and replay) can route on it.
- *
  * @param timeoutMs - the elapsed budget, rendered into the model-facing message.
  * @returns the `isError` {@link ToolExecutionResult} with a `TOOL_TIMEOUT` error.
  */

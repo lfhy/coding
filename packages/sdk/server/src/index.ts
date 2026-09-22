@@ -1,11 +1,10 @@
 /**
  * SDK-facing JSON-RPC plugin over stdio. An external `cordis.yml` decides
- * whether to load it; see the single-executable Agent Note and package README.
+ * whether to load it; see the single-executable design record and package README.
  * Stdout is reserved for protocol frames, so the tree must not load a stdout logger.
  * This plugin answers `shutdown`, disposes the complete root runtime, and exits 0; the app bin
  * owns EOF and signal exits. Keep named plugin exports with no default export so
  * Loader `unwrapExports` preserves `name`, `inject`, `Config`, and `apply`.
- *
  * @module @deepseek-ai/dsh-sdk-jsonrpc-server
  */
 

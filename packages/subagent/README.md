@@ -18,6 +18,6 @@
 
 Codex 与 Claude Code 包是彼此独立的可选 Profile Bundle。使用 `dsh plugin --profile <name> add @deepseek-ai/dsh-subagent-codex @deepseek-ai/dsh-subagent-claude-code` 安装其中一个或两个包，再重启该 Profile；每个包只注册自己的休眠 Host provider。要授予工具，请复制一份完整 Agent Preset，删除各对应工具行的 `disabled`，再启动新 Session。移除其中一个包后，下一次 Profile 启动只会撤回对应 provider 及其私有运行时闭包。
 
-参见有关[能力家族](../../.agents/notes/implemented/feature/2026-06-21-subagent-capability-seam.md)、[可继续执行的子级](../../.agents/notes/implemented/feature/2026-07-21-continuable-background-subagents.md)和[控制工具](../../.agents/notes/implemented/simplification/2026-07-26-merge-subagent-control-service.md)的决策。
+参见有关能力家族、可继续执行的子级和控制工具的决策。
 
-子系统参考——启动请求、结果、实时运行、提供方约定、可续跑后台子 agent——见 [docs/subsystems/subagent.md](../../docs/subsystems/subagent.md)；设计依据见 [subagent 能力 seam](../../.agents/notes/implemented/feature/2026-06-21-subagent-capability-seam.md)、[可续跑后台 subagent](../../.agents/notes/implemented/feature/2026-07-21-continuable-background-subagents.md)与[合并 subagent 控制服务](../../.agents/notes/implemented/simplification/2026-07-26-merge-subagent-control-service.md) Agent Note。
+子系统参考——启动请求、结果、实时运行、提供方约定、可续跑后台子 agent——见 [docs/subsystems/subagent.md](../../docs/subsystems/subagent.md)；设计依据见 subagent 能力 seam、可续跑后台 subagent与合并 subagent 控制服务 设计记录。

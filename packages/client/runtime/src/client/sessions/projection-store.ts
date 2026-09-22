@@ -18,7 +18,7 @@ import { Notifier } from './notifier.ts'
 // dsh-session chain would drag the host `Context.sessions` merge into the
 // client program (one program must not hold both sides). No second
 // client-side "views" table (rejected in the Alternatives of
-// .agents/notes/proposed/architecture/2026-07-27-session-projection-and-command-log.md).
+// ).
 export type { SessionProjectionMap } from '@deepseek-ai/dsh-session-projection/types'
 
 /**

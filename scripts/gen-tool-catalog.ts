@@ -3,7 +3,7 @@
  * plugin. Runtime registration is the source of truth for computed schemas;
  * the manifest is checked against every on-disk `tool-*` package. `--check`
  * verifies the committed artifact. Rationale and ownership live in
- * `.agents/notes/implemented/process/2026-07-02-tool-schema-catalog.md`.
+ * ``.
  */
 
 import { globSync, readFileSync, writeFileSync } from 'node:fs'
@@ -211,7 +211,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
     toolsConfig: { mode: 'code' },
     async mount() {},
     note:
-      'Owned by the tool registry as a reserved transport outside filterable capability layers under `mode: code` / `mode: both` (see the Code Mode Agent Note). Under `code` it is the registry\'s only wire contribution; the other visible capabilities are declared in a generated SDK section in the loaded runtime\'s language, and a program calls them through bindings scheduled under the native concurrency contract (submission-ordered starts and policy; concurrency-safe bodies overlap up to `maxParallelSubCalls`) that re-enter the complete guarded tool pipeline and link each nested execution to this outer result.',
+      'Owned by the tool registry as a reserved transport outside filterable capability layers under `mode: code` / `mode: both` (see the Code Mode design record). Under `code` it is the registry\'s only wire contribution; the other visible capabilities are declared in a generated SDK section in the loaded runtime\'s language, and a program calls them through bindings scheduled under the native concurrency contract (submission-ordered starts and policy; concurrency-safe bodies overlap up to `maxParallelSubCalls`) that re-enter the complete guarded tool pipeline and link each nested execution to this outer result.',
   },
   {
     pkg: '@deepseek-ai/dsh-plan-mode',
@@ -269,7 +269,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
       await ctx.plugin(ToolCordis)
     },
     note:
-      'Not in any shipped tree (a deliberate opt-in — dynamic package code reaches the real runtime, see .agents/notes/implemented/feature/2026-07-08-self-referential-cordis-toolset.md). The toolset injects `ctx.dynamicCordisRunner` from `@deepseek-ai/dsh-cordis-host-runner`, which owns the definition registry and the vm sandbox; a composition missing it never activates the tools. A running package may register ADDITIONAL model-visible tools until it is stopped, undefined, or DSH restarts; a full changed request header logs those tool-set changes.',
+      'Not in any shipped tree (a deliberate opt-in — dynamic package code reaches the real runtime, see ). The toolset injects `ctx.dynamicCordisRunner` from `@deepseek-ai/dsh-cordis-host-runner`, which owns the definition registry and the vm sandbox; a composition missing it never activates the tools. A running package may register ADDITIONAL model-visible tools until it is stopped, undefined, or DSH restarts; a full changed request header logs those tool-set changes.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-bash-persistent',
@@ -630,7 +630,6 @@ export type ToolCatalog = CatalogPackage[]
  * "a new tool cannot be silently undocumented" guarantee: an unlisted package
  * fails the generator (and the freshness gate) until it is added to
  * {@link TOOL_PACKAGES}. Exported for a direct negative test.
- *
  * `scanRoot` defaults to the repo root; a test may point it at a fixture tree.
  */
 export function assertManifestComplete(packages: ToolPackage[] = TOOL_PACKAGES, scanRoot: string = root): void {
@@ -647,7 +646,6 @@ export function assertManifestComplete(packages: ToolPackage[] = TOOL_PACKAGES, 
 
 /**
  * Assert one manifest entry actually registered a tool.
- *
  * A tool package that boots without registering anything is a broken boot, not
  * an empty catalog section. The usual cause is an `inject` the entry's `mount`
  * does not satisfy: cordis leaves the plugin PENDING, every step here still
@@ -746,7 +744,7 @@ export function render(catalog: ToolCatalog): string {
     '',
     'Every model-facing tool a shipped plugin contributes to `ctx.tools`: the `name`, `description`, and JSON-Schema `parameters` the model receives via the system-prompt assembly. It complements the [subsystem pages](subsystems/core.md) (the types plus each page\'s generated Cordis API region) — this page is the *tools* the agent is offered.',
     '',
-    'This file is GENERATED and verified fresh by `pnpm run verify-tool-catalog` — do not edit it by hand. Unlike the cordis catalog (a pure source-AST pass), this generator BOOTS each tool plugin on a real context and reads `ctx.tools.schemas()`, because a tool schema is not statically knowable (runtime-spread enums, concatenated descriptions, config-driven names, raw-JSON-Schema MCP tools). A completeness guard globs `packages/*/tool-*` and fails if any package is missing from the generator\'s boot manifest, so a new tool cannot be silently undocumented. See [the tool-schema-catalog Agent Note](../.agents/notes/implemented/process/2026-07-02-tool-schema-catalog.md).',
+    'This file is GENERATED and verified fresh by `pnpm run verify-tool-catalog` — do not edit it by hand. Unlike the cordis catalog (a pure source-AST pass), this generator BOOTS each tool plugin on a real context and reads `ctx.tools.schemas()`, because a tool schema is not statically knowable (runtime-spread enums, concatenated descriptions, config-driven names, raw-JSON-Schema MCP tools). A completeness guard globs `packages/*/tool-*` and fails if any package is missing from the generator\'s boot manifest, so a new tool cannot be silently undocumented. See the tool-schema-catalog design record.',
     '',
     'Scope: shipped product tools under `packages/*/tool-*`, each booted with its DEFAULT config, except where a Config field is REQUIRED with no default — there the generator must choose, and the per-package note records which branch this page shows. The registered tool NAME can be a load-time config (e.g. `tool-subagent`\'s `toolName`), so a deployment may expose a package under a different or additional name — a per-package note records those shipped aliases where they exist. The `examples/` demo tools (e.g. `echo`) are excluded, matching the cordis catalog\'s packages-only scope.',
     '',

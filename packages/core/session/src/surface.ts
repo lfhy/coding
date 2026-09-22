@@ -1,10 +1,8 @@
 /**
  * Surface layer on top of the session event log: an ordered view of events
  * that produce LLM messages. The append-only log remains the source of truth.
- *
  * Browser-safe: web clients consume this subpath export, so it must stay free
  * of `node:` imports (they break the vite bundle).
- *
  * @module @deepseek-ai/dsh-session/surface
  */
 
@@ -40,7 +38,6 @@ export function isSurfaceEvent(event: SessionEvent): event is SurfaceEvent {
 /**
  * Narrow an event to an append-origin surface event: one that entered the
  * surface at its own log position and was never itself a replacement copy.
- *
  * The model-visible surface deliberately shadows replaced ranges, so it is the
  * wrong source for a human transcript — a landed replacement would erase
  * conversation the user already saw. Append-origin events are that transcript's
@@ -92,7 +89,6 @@ export function deriveEventMessage(event: SessionEvent): Message | null {
     // if reintroduced, must be driven by the event `meta` map and a dedicated
     // renderer, keeping this projection a verbatim pass-through. See the
     // deferred design note in
-    // ../../../../.agents/notes/implemented/simplification/2026-07-20-unwrap-injected-content-envelopes.md
     case 'user/message': {
       return event.data
     }

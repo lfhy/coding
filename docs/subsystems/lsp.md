@@ -1,6 +1,6 @@
 # LSP 导航
 
-LSP seam 是一个[能力 seam](../../.agents/notes/implemented/architecture/2026-07-15-lsp-capability-seam.md)：它在单一 `ctx.lsp` 服务上公开语义代码导航，并拆分到多个包：Service Definition（[dsh-lsp](../../packages/lsp/lsp)，`ctx.lsp` + 提供方注册表）、通用 Service Provider（[dsh-lsp-stdio](../../packages/lsp/lsp-stdio)，经过配置的 stdio 语言服务器宿主）和 Consumer（[dsh-tool-lsp](../../packages/lsp/tool-lsp)，即 `lsp` 工具 schema）。LSP 是**一项可选能力**，不属于 agent loop（智能体循环）主干，因此其词汇定义在此而非 [core.md](core.md) 中。更换提供方不会改变模型请求导航的方式。
+LSP seam 是一个能力 seam：它在单一 `ctx.lsp` 服务上公开语义代码导航，并拆分到多个包：Service Definition（[dsh-lsp](../../packages/lsp/lsp)，`ctx.lsp` + 提供方注册表）、通用 Service Provider（[dsh-lsp-stdio](../../packages/lsp/lsp-stdio)，经过配置的 stdio 语言服务器宿主）和 Consumer（[dsh-tool-lsp](../../packages/lsp/tool-lsp)，即 `lsp` 工具 schema）。LSP 是**一项可选能力**，不属于 agent loop（智能体循环）主干，因此其词汇定义在此而非 [core.md](core.md) 中。更换提供方不会改变模型请求导航的方式。
 
 源文件：[`packages/lsp/lsp/src/types.ts`](../../packages/lsp/lsp/src/types.ts)
 
@@ -98,7 +98,6 @@ interface LspHover {
  * The closed result union. Navigation operations (`goToDefinition`, `findReferences`,
  * `goToImplementation`) normalize to `locations`; `hover` normalizes to content or `null`.
  * Consumers `switch` on `kind` to exhaustiveness so a new arm breaks compilation until handled.
- *
  * The `locations` variant carries `resolvedWorkspaceUri`: the provider's canonical `file:` URI for
  * the request's workspace root. A caller that relativizes location URIs MUST use this, not parse the
  * request's possibly symlinked process path with host-platform rules; the execution platform may

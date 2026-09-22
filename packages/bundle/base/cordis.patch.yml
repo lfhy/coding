@@ -2,13 +2,11 @@
 # ONE insert over the empty profile root. Later bundle patches and the user's
 # profile cordis.patch.yml address these rows by id, with the last write
 # winning per row.
-#
 # A patch replaces the targeted row's whole `config` rather than merging into
 # it, so a row whose value differs by mode does NOT live here: it belongs to
 # each mode bundle, keeping any single row down to one bundle layer plus the
 # user's. Mode-specific rows appear below only with shared plugin identity and
 # neutral defaults; each mode bundle restates its complete configuration.
-#
 # Row order carries no load semantics (activation is service-availability
 # driven); the grouping is for readers.
 
@@ -130,7 +128,7 @@
     # explicitly opts into FULL or FEEDBACK_ONLY reporting; uploading mirrors
     # session-log records onto OTLP/HTTP logs with no session-telemetry/record redaction
     # rule, so exports are the raw captured copy. The deployment stance, env
-    # seams, and follow-ups are pinned in the default-off Agent Note.
+    # seams, and follow-ups are pinned in the default-off design record.
     # DSH_TELEMETRY_OTLP_URL overrides the production endpoint. A non-empty
     # DSH_TELEMETRY_DISABLED — any value, including '0'/'false' — opts the
     # process out (the launchers patch the row disabled; config cannot disable
@@ -320,7 +318,7 @@
     # Fork stays one-shot: a continuable child's `report` tool and prompt
     # section precede the inherited history a fork exists to reuse; one-shot
     # fork children install neither, keeping the parent's request prefix.
-    # See .agents/notes/implemented/architecture/2026-08-10-fork-children-stay-one-shot.md.
+    # See
     - id: tool-subagent-fork
       name: '@deepseek-ai/dsh-tool-subagent'
       config:

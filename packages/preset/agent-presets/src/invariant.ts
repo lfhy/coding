@@ -24,7 +24,6 @@ export const inject = ['invariants']
 /**
  * Assert that no installed preset composition reaches the root service realm,
  * and that a deployment configuring a roster composes every agent from it.
- *
  * `mountPreset` proves the first once, when the subtree settles. A row that
  * publishes later — from a timer, or an asynchronous continuation after its
  * plugin returned — would escape that one-shot audit, so re-check every live
@@ -47,9 +46,8 @@ const install: InvariantInstaller = (ctx, fail) => {
   // `skill` against the empty global layer, so the model receives nothing.
   // `composedPreset()` is the roster's own answer to "did this agent join",
   // read from the live scope chain — see the [Agent
-  // Note](../../../../.agents/notes/implemented/architecture/2026-08-10-host-plane-ownership-after-presets.md)
+  // Note]()
   // for why the warning beside it is advisory while this one fails.
-  //
   // Two conditions, each load-bearing. `context.agent` is what makes this an
   // AGENT assembly: a scope-only assembly — a cold read resolving presenters
   // in a standing key, a diagnostic — is not an agent and must not be judged

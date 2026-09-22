@@ -3,7 +3,6 @@
  * no runtime code. Sources (ui-commands / ui-skill / ui-reference) and the
  * conversation input layer import from here; changes require main-thread
  * arbitration.
- *
  * Providers receive a {@link ClientSessionContext} projection per call —
  * never a Cordis context or the mutable Session. RPC and service access go
  * through the provider plugin's own root context captured at registration.
@@ -107,7 +106,7 @@ export interface SubmitOutcome {
  * Unified pick return. `undefined` = miss → default sink; `'handled'` = the
  * source dealt with it internally (e.g. opened its popup shell). The `text`
  * arm is the plain-text reference path (decision recorded in
- * .agents/notes/implemented/architecture/2026-07-25-web-input-machine-and-slash-pipeline.md):
+ * ):
  * the token span is
  * replaced with literal text — no occurrence identity, no placeholder; any
  * chip visual is derived downstream by scanning the draft against the
@@ -165,7 +164,6 @@ export interface ReferenceCodec {
 /**
  * One trigger source. Every callback receives the session's
  * ClientSessionContext projection; sources keep no copy across calls.
- *
  * Space/enter adjudication rides the optional match hooks: implementing one
  * IS the participation claim — the pipeline polls each implementing source
  * with the leading token; the first non-undefined answer wins (registration

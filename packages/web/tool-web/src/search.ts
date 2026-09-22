@@ -32,7 +32,6 @@ interface WebSearchArgs {
  * non-empty, contains only non-blank strings, and fits the deployment's
  * query-count bound. Exact duplicate strings are collapsed after the bound
  * check. Throws a plain `Error` otherwise.
- *
  * @param args - the schema-validated `web_search` arguments.
  * @param maxQueries - the deployment's upper bound on queries in one call.
  * @returns the accepted queries in their first-occurrence order.
@@ -65,7 +64,6 @@ function sourceLabel(url: string, title: string | undefined): string {
 
 /**
  * Format a search result as one model-facing text block.
- *
  * @param result - the seam's search outcome.
  * @returns the provider answer (when any), a markdown source list with snippet
  *   and date metadata (or `No results found.`), a refine-the-query note when
@@ -96,7 +94,6 @@ export function formatSearchOutput(result: WebSearchResult): string {
 
 /**
  * Pending-call presentation: a search card titled by the query list.
- *
  * @param args - the raw tool arguments; only the query text feeds the view.
  * @returns the generic card view (`kind: 'search'`) shown while the call runs.
  */
@@ -111,7 +108,7 @@ export function presentSearchCall(args: WebSearchArgs): GenericCallView {
  * opaquely (as `JsonValue`) on the tool result and persisted with the session
  * log, so `presentResult` reproduces the search card on replay. This projection
  * is the only faithful route to the per-source fields, which the lossy render
- * text cannot carry (the owning rationale is the web-result-card Agent Note).
+ * text cannot carry (the owning rationale is the web-result-card design record).
  */
 export interface WebSearchMeta {
   /** The faithful structured sources, in result order. */
@@ -126,7 +123,6 @@ export interface WebSearchMeta {
  * Project one seam source into a plain object that omits every absent optional
  * field. Shared by the canonical `execute` result and its replayable
  * presentation meta so both carry byte-identical source shapes.
- *
  * @param source - one source from the `ctx.web` search outcome.
  * @returns `{ url }` plus each present optional field.
  */
@@ -147,7 +143,6 @@ function projectSource(source: WebSearchSource): {
 /**
  * Project a validated `web_search` output value into its replayable
  * presentation meta ({@link WebSearchMeta} as opaque JSON).
- *
  * @param value - the canonical `web_search` output value (the seam's result shape).
  * @returns the structured sources, the truncation flag, and the answer when present.
  */
@@ -173,7 +168,6 @@ function isWebSource(value: unknown): value is WebSource {
  * Narrow opaque live or replayed result metadata to a {@link WebSearchMeta}.
  * Malformed metadata returns `undefined` so presentation can fall back to the
  * generic card instead of throwing during replay.
- *
  * @param meta - result metadata.
  * @returns the validated search meta, or `undefined` for absent or malformed data.
  */
@@ -194,8 +188,7 @@ export function searchMetaFromResult(meta: unknown): WebSearchMeta | undefined {
  * Completed-call presentation: a `web` search card carrying the faithful
  * structured sources from `meta`. It sets no `content` copy — a UI without the
  * `web` capability falls back to the raw `tool/result` content, which is the
- * same text (see the web-result-card Agent Note).
- *
+ * same text (see the web-result-card design record).
  * @param args - the raw tool arguments; the queries become the result-state
  *   title so a window-truncated replay that dropped the call head still has one.
  * @param result - the final model-facing tool result; `meta` carries the sources.
@@ -222,7 +215,6 @@ export function presentSearchResult(args: WebSearchArgs, result: ToolResult): We
  * into one normalized result capped at `maxResults`. A failed search aborts
  * its siblings, and this function waits for every search to settle before
  * rethrowing the first failure.
- *
  * @param ctx - context whose `web` service performs the searches.
  * @param queries - validated non-empty queries.
  * @param maxResults - the deployment's source cap for the combined result.
@@ -295,7 +287,6 @@ function mergeSearchResults(
 
 /**
  * Register the `web_search` tool and its system-prompt guidance.
- *
  * @param ctx - context whose `tools` and `systemPrompt` registries receive the
  *   registrations; both are effect-scoped and unregister on plugin dispose.
  * @param maxResults - the deployment's source cap, sent as every seam

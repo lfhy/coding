@@ -63,7 +63,7 @@
 
 ### 应用归因（`attribution.ts`）
 
-每个产品适配器都会在提供方 HTTP 请求上发送应用身份。`attributionHeaders(identity?)` 构建标准 `User-Agent`，默认为公开 `APP_IDENTITY`；白标部署可以替换它，但不能抑制它。适配器会直接验证 wire 标头，或通过自身库 hook 验证。详见 [归因 Agent Note](../../../.agents/notes/implemented/architecture/2026-06-21-mandatory-app-attribution-headers.md)。
+每个产品适配器都会在提供方 HTTP 请求上发送应用身份。`attributionHeaders(identity?)` 构建标准 `User-Agent`，默认为公开 `APP_IDENTITY`；白标部署可以替换它，但不能抑制它。适配器会直接验证 wire 标头，或通过自身库 hook 验证。详见 归因 设计记录。
 
 ### API 密钥校验（`api-key.ts`）
 
@@ -83,7 +83,7 @@
 
 ### 真实适配器
 
-两个适配器使用不同内部机制实现 `LlmAdapter`：[`@deepseek-ai/dsh-llm-deepseek`](../llm-deepseek) 针对 `deepseek-official` 路由使用直接 fetch 加 `eventsource-parser` SSE（Server-Sent Events）分帧，[`@deepseek-ai/dsh-llm-pi-ai`](../llm-pi-ai) 则通过 `@earendil-works/pi-ai` 动态解析已配置提供方／模型对。两者都遵循 `types.ts` 中的 `StreamChunk` 约定：usage 先于 finish，工具参数保持原始字符串。适配器实现在内部可以抛出异常或发出失败 finish；`LlmRuntime` 会将两者都暴露为终止失败 finish。适配器理由见[双 LLM 适配器](../../../.agents/notes/implemented/architecture/2026-06-13-twin-llm-adapters.md)，服务边界见[终止失败决策](../../../.agents/notes/implemented/architecture/2026-07-29-terminal-llm-stream-failures.md)。
+两个适配器使用不同内部机制实现 `LlmAdapter`：[`@deepseek-ai/dsh-llm-deepseek`](../llm-deepseek) 针对 `deepseek-official` 路由使用直接 fetch 加 `eventsource-parser` SSE（Server-Sent Events）分帧，[`@deepseek-ai/dsh-llm-pi-ai`](../llm-pi-ai) 则通过 `@earendil-works/pi-ai` 动态解析已配置提供方／模型对。两者都遵循 `types.ts` 中的 `StreamChunk` 约定：usage 先于 finish，工具参数保持原始字符串。适配器实现在内部可以抛出异常或发出失败 finish；`LlmRuntime` 会将两者都暴露为终止失败 finish。适配器理由见双 LLM 适配器，服务边界见终止失败决策。
 
 ## 模型体验
 
@@ -96,8 +96,8 @@
 ## 已知限制与暂缓事项
 
 - **本服务不执行重试、缓存或速率限制**：提供方注册会存储重试策略，但 `llm/stream` 仍是单次尝试调用包装层。agent loop 会将已验证模型请求失败单独提供给 `agent/request-error`，其默认行为是保留原始失败；`@deepseek-ai/dsh-llm-retry` 是共享示例主干加载的可选执行器。
-- **`GenerateOptions` 采样只包含 `temperature`／`maxTokens`／`stop`**：没有 `tool_choice`、`top_p` 或 penalty 字段；有产生方落地时词汇才会增长（见 [已删除惰性旋钮](../../../.agents/notes/archived/simplification/2026-07-04-drop-inert-request-knobs.md)）。
-- **只有出现实际产生方后，相应变体才会加入**：`prefill`、逐工具 `strict`、内容块 `cache` 提示和 `agent` 消息来源变体，都因当前没有产生方而被移除（见 [Agent Note](../../../.agents/notes/archived/simplification/2026-07-04-prune-producerless-vocabulary-variants.md)）。
+- **`GenerateOptions` 采样只包含 `temperature`／`maxTokens`／`stop`**：没有 `tool_choice`、`top_p` 或 penalty 字段；有产生方落地时词汇才会增长（见 已删除惰性旋钮）。
+- **只有出现实际产生方后，相应变体才会加入**：`prefill`、逐工具 `strict`、内容块 `cache` 提示和 `agent` 消息来源变体，都因当前没有产生方而被移除（见 设计记录）。
 - **`BlockAssembler` 只处理核心块类型**：如果插件添加块类型的流从未由 `block-end` 关闭，`blocks()` 会抛出异常。
 - **`APP_IDENTITY.url` 指向一个尚不存在的仓库**：该公开主页必须在发布前可访问。
 - **`GenerateOptions.sessionId` 是本地声明的品牌类型**：导入 dsh-session 的 `SessionId` 会产生循环；未来拥有 id 的包可以消除该权宜之计。

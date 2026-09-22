@@ -36,7 +36,6 @@ export function SessionId(id: string): SessionId {
  * version — write sites and the load-time check all read it.
  * While the harness is unreleased it is pinned at `0`: no compatibility is
  * implied, incompatible logs are rejected, and no migration is provided.
- *
  * The version is a single monotonic integer with no major/minor split. Whether
  * a bump is needed is decided by what the WRITER emits, never by what a newer
  * reader can accept: bump exactly when an older runtime could no longer handle
@@ -50,8 +49,8 @@ export function SessionId(id: string): SessionId {
  * in doubt, bump: a near-identity upgrade step is almost free, a missed bump
  * makes older runtimes read new logs wrong silently. The full mechanism
  * (upgrade-step chain, in-memory view conversion, migrate-on-continue) is
- * recorded in the session-log-version-mechanism Agent Note
- * (`.agents/notes/implemented/architecture/2026-08-10-session-log-version-mechanism.md`).
+ * recorded in the session-log-version-mechanism design record
+ * (``).
  */
 export const SESSION_FORMAT_VERSION = 0
 
@@ -179,7 +178,6 @@ export type TurnEndReason = TurnEndReasonMap[keyof TurnEndReasonMap]
 /**
  * One entry in an agent's todo list — the unit of the `todo/write`
  * {@link SessionEventMap} event's whole-list snapshot.
- *
  * Deliberately minimal: a human-readable `content` line and a three-state
  * `status`. No id, priority, or `activeForm` — the list is replaced wholesale
  * on every write (last-write-wins), so entries need no stable identity. The
@@ -317,15 +315,12 @@ export interface SessionEventMap {
    * produced none of them. This log-only event is the durable projection of
    * {@link Session.firstLiveSeq}. Its payload is empty — position and `time`
    * carry the meaning.
-   *
    * Locate the LAST one in stored history. A seed already ending in one is not
    * re-marked, so reopening an untouched session does not grow its log per
    * pickup and the event need not be at the current `firstLiveSeq`.
-   *
    * `Session`'s constructor is the only legitimate writer. The invariant
    * companion deliberately constrains nothing here, so a plugin appending one
    * would silently classify every live bracket before it as seed history.
-   *
    * An owner of a standalone open/close bracket (`compaction/start` …
    * `compaction/end`) reads it because seed history and live work are otherwise
    * byte-identical: an unmatched opening marker before this event belongs to
@@ -354,7 +349,6 @@ export type SurfaceEventType =
  * `surfaceOp` is guaranteed present (mandatory), narrowed from a
  * surface-eligible {@link SessionEvent} by checking both `type` and
  * `surfaceOp` at runtime.
- *
  * Use the `isSurfaceEvent` type guard (in `surface.ts`) to narrow a
  * `SessionEvent` to this type.
  */
@@ -363,7 +357,6 @@ export type SurfaceEvent = SessionEvent<SurfaceEventType> & { surfaceOp: Surface
 /**
  * How a session event entered the ordered surface. Only valid on
  * {@link SurfaceEventType} events.
- *
  * - `'append'`: added to the tail — normal path for user/assistant/tool
  *   messages.
  * - `{ op: 'replace', start, end }`: replaces surface nodes from `start`
@@ -394,10 +387,8 @@ export interface SurfaceIntent {
 
 /**
  * One immutable entry in the session log.
- *
  * A proper discriminated union over `type` (not independent `type`/`data`
  * unions), so `switch (event.type)` narrows `event.data` without casts.
- *
  * The {@link sourceEventSeqs} and {@link surfaceOp} fields are conditional:
  * they only exist on {@link SurfaceEventType} variants (`user/message`,
  * `assistant/message`, `tool/result`).

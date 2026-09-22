@@ -1,10 +1,9 @@
 /**
  * Pack one release family's whole publish set into a single directory, in
  * publish order, and record that order for the publish step.
- *
  * The pack step is the release boundary: it runs without credentials, produces
  * every tarball from one commit, and hands the publish step exactly those bytes
- * ([rationale](../../.agents/notes/implemented/process/2026-08-10-npm-release-sequences.md)).
+ * (rationale).
  */
 
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'

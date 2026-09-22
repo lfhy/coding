@@ -14,7 +14,7 @@ packages:
   # plugins through real package `exports`→lib by walking up to examples/node_modules.
   # Members for DEPENDENCY RESOLUTION only — NOT build targets: tsdown's explicit
   # globs (vendor/*, packages/*/*) exclude them. See examples/AGENTS.md and the archived
-  # run-ci-examples-from-built-lib Agent Note.
+  # run-ci-examples-from-built-lib design record.
   - examples
   # Deploy root of the single-exe build: a pure dependency manifest whose
   # closure is what the exe bundles and what the Python runtime distributes.

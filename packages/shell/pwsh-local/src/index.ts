@@ -4,12 +4,10 @@
  * process spawned through `ctx.subprocess`; the executor owns command
  * defaulting, deadlines and cause classification, the model-friendly terminal
  * environment, and the model-facing stdout/stderr merge for background reads.
- *
  * The command string is passed as ONE argv element to `-Command`: PowerShell
  * itself parses the text, and no intermediate shell exists, so there is no
  * shell-quoting layer to escape (the `bash -c` string domain has no
  * equivalent here). Native Win32 paths (`C:\...`) pass through unchanged.
- *
  * @module @deepseek-ai/dsh-pwsh-local
  */
 
@@ -26,7 +24,7 @@ import { clampTimeout, deadline, MAX_TIMER_DELAY_MS, timeoutOf } from '@deepseek
 /* jscpd:ignore-end */
 import { resolvePwshPath } from './resolve.ts'
 
-/* jscpd:ignore-start -- deliberate call-for-call mirror of dsh-bash-local (Agent Note: pwsh-tool-and-executor). */
+/* jscpd:ignore-start -- deliberate call-for-call mirror of dsh-bash-local (design record: pwsh-tool-and-executor). */
 /**
  * Model-friendly environment overrides for PowerShell: disable colors and
  * pagers that would garble tool output. `TERM=dumb` is a POSIX concept and is

@@ -246,7 +246,7 @@ export function jsonSchemaToTs(schema: unknown, indent = 0): string {
   }
 }
 
-/** The fixed model-facing usage contract rendered above the declarations (see the Code Mode Agent Note's "What the model sees"). */
+/** The fixed model-facing usage contract rendered above the declarations (see the Code Mode design record's "What the model sees"). */
 const SDK_INSTRUCTIONS = `## Writing code for run_code
 
 \`run_code\` takes two required arguments: \`code\` — the body of an async TypeScript function (erasable syntax only — no \`enum\` or namespaces; type annotations are advisory, the code runs type-stripped) — and \`description\`, a short summary of what the program does. Inside the program:

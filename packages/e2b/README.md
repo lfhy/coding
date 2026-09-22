@@ -10,4 +10,4 @@
 
 现有的 [`dsh-bash-local`](../shell/bash-local/README.md)、[`dsh-terminal-bash`](../terminal/terminal-bash/README.md) 和 [`dsh-lsp-stdio`](../lsp/lsp-stdio/README.md) 无需 E2B 专用 fork。它们把执行环境中的所有操作委托给 `ctx.fs` 和 `ctx.subprocess`，因此挂载这两个 E2B 适配器后，它们所有涉及可变状态的工作都发生在同一个沙箱内。
 
-该边界不会迁移 harness 进程、Cordis 对象、模型调用、agent（智能体）／会话状态、会话持久化、skill（技能）、更高层协议状态或 E2B SDK 缓冲。[可移植执行世界决策](../../.agents/notes/implemented/architecture/2026-07-28-portable-execution-world-consumers.md)同时界定通用组合和此 POC 边界。
+该边界不会迁移 harness 进程、Cordis 对象、模型调用、agent（智能体）／会话状态、会话持久化、skill（技能）、更高层协议状态或 E2B SDK 缓冲。可移植执行世界决策同时界定通用组合和此 POC 边界。

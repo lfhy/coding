@@ -2,7 +2,6 @@
  * Agent presets: each session composes its model-facing plugin set from one
  * preset `cordis.yml`, mounted ONCE per preset under a standing scope and
  * joined by every agent that names it.
- *
  * The standing mount is what makes a preset one composition rather than one
  * per session: its plugin instances, tool registrations, prompt sections, and
  * projection units exist exactly once, keyed per session inside the plugins
@@ -12,7 +11,6 @@
  * that agent's views and the mount's listeners receive that agent's events —
  * and a host reader with no agent at all (a cold transcript read) resolves
  * the same standing registrations by preset id.
- *
  * This package owns the preset vocabulary, filesystem discovery, and the
  * guarded standing mount. It does not decide when an agent is created — the
  * agent factory's `setup(agentCtx)` hook is the one supported call site,
@@ -74,7 +72,6 @@ declare module '@deepseek-ai/cordis' {
 
 /**
  * Registry over the deployment's agent presets.
- *
  * Discovery is unmemoized: `list()` and `resolve()` re-read the roots on every
  * call so a preset authored while the process runs is visible immediately,
  * and a preset deleted underneath a picker disappears from the next read.
@@ -95,7 +92,6 @@ export class AgentPresets extends Service {
   /**
    * The roots discovery and authoring actually scan: every configured root in
    * order, then the harness-home user root unless `includeUserRoot` is false.
-   *
    * Derived once, because a root set that changed between `list()` and the
    * `copy()` acting on its answer would author into a directory the caller
    * never saw. Appending rather than prepending keeps an earlier configured
@@ -157,8 +153,7 @@ export class AgentPresets extends Service {
     // below, and the ACP, SDK-server, and headless entry points all create one.
     // The invariant companion is the check that fails loud, at assembly. Why an
     // unjoined agent matters at all has one home: the [Agent
-    // Note](../../../../.agents/notes/implemented/architecture/2026-08-10-host-plane-ownership-after-presets.md).
-    //
+    // Note]().
     // Known false positive: a session created bare and bound later by
     // `recompose` is warned about once, before its first bind. No shipped flow
     // does that today — the Web surface mounts in `setup` and children join
@@ -183,7 +178,6 @@ export class AgentPresets extends Service {
 
   /**
    * The preset id mounted when a caller names none.
-   *
    * Read per call rather than cached: the settings document is hot-reloaded, so
    * changing the default takes effect on the next session created and leaves
    * every running session on the preset it was composed from.
@@ -202,7 +196,6 @@ export class AgentPresets extends Service {
 
   /**
    * Resolve one preset by id.
-   *
    * A broken preset resolves — deleting one, reading one, and reporting one
    * all need the row — and the mounting paths refuse it AFTER resolution
    * through {@link resolveMountable}.
@@ -263,7 +256,6 @@ export class AgentPresets extends Service {
    * Compose one agent from a preset: ensure the preset's standing mount, then
    * parent the agent's scope key to it so the mount's registrations and
    * listeners cover this agent.
-   *
    * Call from the agent factory's `setup(agentCtx)`; a rejection there rolls
    * the agent creation back, so a broken preset never yields a half-composed
    * session.
@@ -289,7 +281,6 @@ export class AgentPresets extends Service {
 
   /**
    * Join one agent to the SAME standing composition another already runs on.
-   *
    * This is how a child agent inherits its parent's capabilities. It is a bind,
    * not a mount: the parent's generation is already composed, so the child gets
    * that exact instance — the same plugin objects, the same tool registrations,
@@ -298,13 +289,11 @@ export class AgentPresets extends Service {
    * started would hand the child a DIFFERENT generation than the one its
    * parent's history was produced under (and a preset deleted since would fail
    * the child outright while its parent keeps running).
-   *
    * Synchronous, and with no composition failure mode of its own — it reads no
    * roster, mounts nothing, and touches no file — which is what lets a child
    * creation window use it: the two in-process subagent drivers compose their
    * children inside a synchronous `setup`. It still rejects a caller error, as
    * the `@throws` below record.
-   *
    * A parent that joined no preset — a rosterless deployment — yields no join
    * and no error: there, the model-facing rows sit in the host composition and
    * the child already sees them through the global layer.
@@ -326,7 +315,6 @@ export class AgentPresets extends Service {
 
   /**
    * The preset one live agent runs on.
-   *
    * Read from the live scope chain rather than from the session, so it answers
    * for an agent whose session has not recorded a preset yet — a child agent
    * whose durable header is being built from its parent's composition.
@@ -364,7 +352,6 @@ export class AgentPresets extends Service {
 
   /**
    * Create a locally authored preset by copying an existing one whole.
-   *
    * Copy is the only authoring write. Composition text never crosses this
    * seam: the source is named by id and its directory is copied as it stands,
    * so the copy is exactly as loadable as its source and authoring grants no
@@ -417,12 +404,10 @@ export class AgentPresets extends Service {
 
   /**
    * One agent's instance of a service its preset mounted.
-   *
    * A preset publishes services behind `isolate` realms, which are invisible
    * outside the group that declares them — including to the host. This is how a
    * caller holding the agent reads one anyway: a request that is ABOUT a
    * session but arrives from outside it, which is every browser RPC.
-   *
    * Read addressing only. A host row that `inject`s a service cannot use this,
    * because injection resolves before any session exists and has no agent to
    * key by; such a service belongs on the host plane instead.
@@ -436,12 +421,10 @@ export class AgentPresets extends Service {
 
   /**
    * Re-link one agent to a different preset's standing composition.
-   *
    * Only valid while the agent has produced nothing: swapping tools mid
    * conversation would leave logged tool calls the new composition cannot
    * make. The CALLER owns that check — this method does not read session
    * history.
-   *
    * The swap is a parent re-link, not an unmount: standing mounts are shared
    * and permanent, so the old composition stays for its other agents and the
    * new one is ensured BEFORE the link moves. An unknown or unusable preset
@@ -473,7 +456,6 @@ export class AgentPresets extends Service {
 
   /**
    * The standing scope key of one preset, for a host reader with no agent.
-   *
    * A cold transcript read resolves tool presenters against the composition
    * the session recorded, and the standing mount makes that possible without
    * resuming anything: ensuring the mount composes plugins but starts no

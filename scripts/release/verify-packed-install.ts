@@ -1,7 +1,6 @@
 /**
  * Install packed tarballs into a throwaway consumer outside the repository and
  * drive the installed executable with plain Node.
- *
  * Every tarball the installed tree needs comes from `--from`, so the only
  * registry traffic is for external dependencies. That matters beyond hermetic
  * verification: the harness packages declare the vendored framework as a peer,
@@ -9,8 +8,7 @@
  * on the registry already carrying versions that match — one pull request may
  * bump both families before either publishes — so a dsh verification passes the
  * vendored family's pack output too, while publishing only its own
- * ([rationale](../../.agents/notes/implemented/process/2026-08-10-npm-release-sequences.md)).
- *
+ * (rationale).
  * What this proves is that `files` selected a complete payload and that the
  * published dependency ranges resolve. A workspace link or a stale `lib/` in the
  * checkout cannot stand in for a missing file here.
@@ -45,7 +43,6 @@ function consumerEnvironment(consumerRoot: string): NodeJS.ProcessEnv {
 
 /**
  * Every packed tarball in the given directories, as `file:` dependency entries.
- *
  * The directories are read by their contents rather than a pack order file: a
  * directory here can hold tarballs packed only to satisfy a cross-sequence
  * dependency, which no release order describes.

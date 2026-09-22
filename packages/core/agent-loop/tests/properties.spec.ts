@@ -1,9 +1,8 @@
 /**
  * Property-based tests for the agent loop's inbox/turn scheduling (the
- * property-testing Agent Note). Deterministic by construction: schedules are driven
+ * property-testing design record). Deterministic by construction: schedules are driven
  * through the `agent/status` settle signal (no wall-clock sleeps), so a flake
  * is a finding, not timing noise.
- *
  * Invariants: every sent message appears exactly once in the log (none lost);
  * turn numbers strictly increase; status transitions follow
  * idle→running→idle, while teardown is a registry lifecycle.

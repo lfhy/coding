@@ -101,7 +101,7 @@ turn/end
 
 一个 **seam** 是一项可替换能力，包含三种角色：声明接口的 **Service Definition**、实现它的 **Service Provider**，以及使用它的 **Consumer**（通常是面向模型的工具）。一个包可以合并承担多个角色，但单一角色本身不是 seam；添加一项能力意味着把三者一并设计（[能力图](capability-seams.md)）。
 
-seam 正是替换一个提供方就能改变整个产品的原因。文件系统与进程提供方共享同一个执行世界，因此把二者指向同一远程执行环境，就会把 Bash、PTY 和 LSP 一并搬过去，无需提供方专用 fork。Remote-SSH marker 就是这种执行环境，而不是沙箱；沙箱策略仍由独立提供方负责。桌面端的 marker 实现会把这些能力发送给 Go agent，同时让 Host 控制平面留在本地（[决策](../.agents/notes/implemented/feature/2026-08-31-desktop-remote-ssh-go-execution-world.md)）。[subagent 提供方](subsystems/subagent.md)在同一个接口之后同样千差万别，从新建一个子 agent，到把一个轮次委派给另一个产品。
+seam 正是替换一个提供方就能改变整个产品的原因。文件系统与进程提供方共享同一个执行世界，因此把二者指向同一远程执行环境，就会把 Bash、PTY 和 LSP 一并搬过去，无需提供方专用 fork。Remote-SSH marker 就是这种执行环境，而不是沙箱；沙箱策略仍由独立提供方负责。桌面端的 marker 实现会把这些能力发送给 Go agent，同时让 Host 控制平面留在本地（决策）。[subagent 提供方](subsystems/subagent.md)在同一个接口之后同样千差万别，从新建一个子 agent，到把一个轮次委派给另一个产品。
 
 [实验性 Agent Teams](subsystems/agent-team.md) 是 `ctx.agentTeams` 上的私有显式启用协作 seam，在可继续 subagent 之上提供持久 roster、任务板和 mailbox。
 

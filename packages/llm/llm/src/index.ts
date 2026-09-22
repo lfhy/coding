@@ -2,7 +2,6 @@
  * LLM service: adapter registry with a waterfall-interceptable streaming call
  * API. Exports the `LlmRuntime` default, the abstract `LlmAdapter` for
  * provider backends, and `BlockAssembler` for chunk assembly.
- *
  * @module @deepseek-ai/dsh-llm
  */
 
@@ -56,7 +55,7 @@ declare module '@deepseek-ai/cordis' {
      * @param options - the full request. A LOOP-built request carries the
      *   process-local {@link markAgentLoopRequest} identity and arrives deep-frozen
      *   (mutation throws): its content is a pure function of the session log (the
-     *   reconstructability Agent Note), so listeners read it, never rewrite it.
+     *   reconstructability design record), so listeners read it, never rewrite it.
      *   Hand-built calls do not carry that marker; their messages already obey
      *   the immutable creation contract.
      * @mode waterfall
@@ -118,14 +117,12 @@ export class LlmError extends HarnessError {
 
 /**
  * Accept one supplied credential, or refuse it as unusable.
- *
  * A stored key arrives from the credentials seam, a `.env` line, or a shell
  * export, all of which pick up surrounding whitespace, so trimming is silent.
  * Anything else fails here rather than inside `fetch`, whose ByteString
  * refusal names a UTF-16 code point instead of the setting to change. The key
  * never enters the message: `ref` names where to fix it, and echoing any part
  * of a secret into a log or a UI is the failure this diagnosis avoids.
- *
  * Lives beside {@link LlmError} rather than in `./api-key.ts` so the predicate
  * module stays dependency-free; both adapters share this one diagnosis instead
  * of keeping near-identical local copies.
@@ -247,7 +244,6 @@ export interface AdapterRegistrationHandle {
    * one synchronous section, so no request can observe a gap. An empty array
    * is legal here (a settings section that emptied holds zero routes while
    * staying registered), unlike an empty initial registration.
-   *
    * Throws `LlmError` with code `REGISTRATION_DISPOSED` once the registration
    * has been released: its routes are gone and its disposer has already run,
    * so anything registered afterwards would have no owner left to release it.
@@ -270,7 +266,6 @@ export interface DirectoryRegistrationHandle {
    * current entries untouched — and the swap is one synchronous section, so no
    * reader observes a gap. An empty array is legal here, unlike an empty
    * initial registration.
-   *
    * Throws `LlmError` with code `REGISTRATION_DISPOSED` once the registration
    * has been disposed.
    */

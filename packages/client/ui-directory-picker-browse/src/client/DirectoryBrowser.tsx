@@ -115,7 +115,7 @@ function displayCrumbs(listing: DirectoryListing, homeLabel: string): DirectoryE
  * home directory whose own name contains a backslash would misread.
  * TODO: replace with a host-stamped `separator` field on the wire
  * DirectoryListing so the platform fact travels verbatim (the trade-off is
- * recorded in the directory-picker capability seam Agent Note).
+ * recorded in the directory-picker capability seam design record).
  */
 function separatorOf(listing: DirectoryListing): '\\' | '/' {
   return listing.home.includes('\\') ? '\\' : '/'
@@ -384,7 +384,6 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
    * landing — the upgrade must never orphan the selection it exists to
    * anchor. Until whichever commit comes first, the previous view keeps
    * rendering: a landing swaps the panes, it never blanks them.
-   *
    * Two callers, one landing shape. A submitted path (Enter, a crumb) closes
    * the editor on arrival, announces its failure, and takes the wait bound —
    * it is answering a gesture, so it may not hang on a stalled parent. The

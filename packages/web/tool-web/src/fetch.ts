@@ -81,7 +81,6 @@ turndown.addRule('tableRowWithoutSpanExpansion', {
  * Throws a plain `Error` otherwise. No timeout parameter — the tool-call budget
  * is deployment policy declared via `fetchTimeoutMs` config and enforced by
  * `@deepseek-ai/dsh-tool-call-timeout-policy`, not a model argument.
- *
  * @param args - the schema-validated `web_fetch` arguments.
  * @returns the arguments as the seam's request fields.
  */
@@ -131,7 +130,6 @@ function findRawTextEnd(lowerHtml: string, name: string, from: number): number {
  * raw-text bodies, respects quoted `>` characters, and only accepts a closing
  * tag for the current element; malformed input therefore over-counts rather
  * than hiding nesting.
- *
  * @param html - the decoded HTML body.
  * @returns whether the body crosses {@link MAX_CONVERSION_DEPTH}.
  */
@@ -213,7 +211,6 @@ interface RenderedBody {
 
 /**
  * Render a fetched body to model-facing markdown text.
- *
  * @param body - the decoded body; `html` is converted via turndown, `text`
  *   passes through verbatim.
  * @param maxInputChars - maximum source characters processed synchronously.
@@ -265,7 +262,6 @@ interface RenderedFetch {
  * `truncated`, so the card never disagrees with the text the model saw. The cap
  * limits the source prefix processed synchronously, then applies again where the
  * complete output — header, rendered body, and footer — is known.
- *
  * Package-internal: the only callers are {@link formatFetchOutput} and
  * {@link fetchMetaFromValue}, both reached through the tool registry, which
  * deep-freezes the result value before calling `output.render` and
@@ -274,7 +270,6 @@ interface RenderedFetch {
  * once, not twice, on that same frozen value. Keeping it unexported means no
  * caller can mutate a cached input or the returned {@link RenderedFetch}, so the
  * memo needs no defensive copy.
- *
  * @param result - the seam's fetch outcome.
  * @param maxOutputChars - cap on the complete returned string; a cut body gets
  *   the same fetch-something-narrower notice as provider-side truncation.
@@ -302,7 +297,6 @@ const renderCache = new WeakMap<WebFetchResult, Map<number, RenderedFetch>>()
 /**
  * The uncached conversion behind {@link renderFetchOutput}. Separated so the
  * memo wraps exactly one call site and the conversion logic stays pure.
- *
  * @param result - the seam's fetch outcome.
  * @param maxOutputChars - cap on the complete returned string.
  * @returns the bounded text and effective truncation.
@@ -320,7 +314,6 @@ function computeFetchOutput(result: WebFetchResult, maxOutputChars: number): Ren
 
 /**
  * Format a fetch result as one model-facing text block, bounded as a whole.
- *
  * @param result - the seam's fetch outcome.
  * @param maxOutputChars - cap on the complete returned string.
  * @returns the complete text from {@link renderFetchOutput}.
@@ -331,7 +324,6 @@ export function formatFetchOutput(result: WebFetchResult, maxOutputChars: number
 
 /**
  * Pending-call presentation: a fetch card titled by the URL.
- *
  * @param args - the raw tool arguments; only `url` feeds the view.
  * @returns the generic card view (`kind: 'fetch'`) shown while the call runs.
  */
@@ -348,7 +340,7 @@ export function presentFetchCall(args: { url: string }): GenericCallView {
  * not duplicated here. `truncated` is the effective truncation the render text
  * reflects, which a client cannot recompute (it does not know the deployment's
  * `fetchMaxOutputChars`); this is why fetch meta is carried, not derived from the
- * header line (see the web-result-card Agent Note).
+ * header line (see the web-result-card design record).
  */
 export interface WebFetchMeta {
   /** The final URL after allowed redirects. */
@@ -365,7 +357,6 @@ export interface WebFetchMeta {
  * truncation the model-facing text reflects (via {@link renderFetchOutput}), not
  * the provider-only `WebFetchResult.truncated`, so the fetch card never disagrees
  * with the returned text.
- *
  * @param value - the canonical `web_fetch` output value (the seam's result shape).
  * @param maxOutputChars - the deployment's output cap, the same one
  *   {@link formatFetchOutput} applies to the render text.
@@ -379,7 +370,6 @@ export function fetchMetaFromValue(value: WebFetchResult, maxOutputChars: number
  * Narrow opaque live or replayed result metadata to a {@link WebFetchMeta}.
  * Malformed metadata returns `undefined` so presentation can fall back to the
  * generic card instead of throwing during replay.
- *
  * @param meta - result metadata.
  * @returns the validated fetch meta, or `undefined` for absent or malformed data.
  */
@@ -394,8 +384,7 @@ export function fetchMetaFromResult(meta: unknown): WebFetchMeta | undefined {
  * Completed-call presentation: a `web` fetch card carrying the retrieval summary
  * from `meta`. It sets no `content` copy — a UI without the `web` capability
  * falls back to the raw `tool/result` content, the already-markdown body (see the
- * web-result-card Agent Note).
- *
+ * web-result-card design record).
  * @param args - the raw tool arguments; `url` becomes the result-state title so a
  *   window-truncated replay that dropped the call head still has one.
  * @param result - the final model-facing tool result; `meta` carries the summary.
@@ -418,7 +407,6 @@ export function presentFetchResult(args: { url: string }, result: ToolResult): W
 
 /**
  * Register the `web_fetch` tool and its system-prompt guidance.
- *
  * @param ctx - context whose `tools` and `systemPrompt` registries receive the
  *   registrations; both are effect-scoped and unregister on plugin dispose.
  * @param timeoutMs - the cooperative tool-call budget (ms) attached as the tool's

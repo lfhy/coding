@@ -1,6 +1,6 @@
 # @deepseek-ai/dsh-storage-json
 
-[存储中心](../storage/README.md)的 JSON 后端：配置根目录下每个单元使用一个人类可读的 `<unit>.json` 文件，注册为后端 `json`。设计见[领域 KV 存储 Agent Note](../../../.agents/notes/proposed/architecture/2026-07-24-domain-kv-storage-and-workspace.zh.md)。
+[存储中心](../storage/README.md)的 JSON 后端：配置根目录下每个单元使用一个人类可读的 `<unit>.json` 文件，注册为后端 `json`。设计见领域 KV 存储 设计记录。
 
 ## 模型
 
@@ -32,5 +32,5 @@
 
 ## 已知限制与暂缓事项
 
-- Windows 持久性依赖 libuv 的 `rename()`（调用 `MoveFileExW` 并启用替换），没有显式 write-through 标志；追加日志分面落地时，计划把会话日志后端更严格的 Win32 write-through 发布辅助函数下移到此处（见 Agent Note 的迁移章节）。
-- 没有跨进程写锁：两个进程写入同一根目录时，可能交错执行整文件替换（最后写入者胜出）。当前消费方采用单一宿主进程部署；多进程方案按 Agent Note 的范围外事项表暂缓。
+- Windows 持久性依赖 libuv 的 `rename()`（调用 `MoveFileExW` 并启用替换），没有显式 write-through 标志；追加日志分面落地时，计划把会话日志后端更严格的 Win32 write-through 发布辅助函数下移到此处（见 设计记录 的迁移章节）。
+- 没有跨进程写锁：两个进程写入同一根目录时，可能交错执行整文件替换（最后写入者胜出）。当前消费方采用单一宿主进程部署；多进程方案按 设计记录 的范围外事项表暂缓。

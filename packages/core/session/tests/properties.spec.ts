@@ -1,6 +1,5 @@
 /**
- * Property-based tests for the Session event log (the property-testing Agent Note).
- *
+ * Property-based tests for the Session event log (the property-testing design record).
  * Generates arbitrary event logs and asserts the derivation invariants the
  * agent loop and replay depend on: deriveMessages is deterministic and
  * replay-from-seed reproduces it; seq is strictly monotonic; non-message

@@ -43,12 +43,12 @@ export type Config = LocalConfig
  * Registers as `ctx.shell` in place of the local pwsh executor and requires a
  * `ctx.sandbox` provider plus `ctx.sandboxPolicy`; the tool layer carries the
  * sandbox denial rendering and escalation surface (see the
- * pwsh-tool-and-executor Agent Note). Tool calls pass the calling session's
+ * pwsh-tool-and-executor design record). Tool calls pass the calling session's
  * resolved policy; direct calls fall back to deployment policy.
  * `result.sandbox` reports the mode, enforcement, and denial facts the tool
  * renders.
  */
-/* jscpd:ignore-start -- deliberate call-for-call mirror of bash-sandbox's executor (pwsh-tool-and-executor Agent Note) */
+/* jscpd:ignore-start -- deliberate call-for-call mirror of bash-sandbox's executor (pwsh-tool-and-executor design record) */
 export class SandboxPwshExecutor extends PwshLocalExecutor {
   static override inject = ['subprocess', 'sandbox', 'sandboxPolicy']
 

@@ -154,7 +154,6 @@ export function InputBar({
   // keeps ordinary typing and programmatic draft updates from reading layout;
   // the helper then repairs only measured overflow before paint while
   // preserving native editing state. See
-  // .agents/notes/implemented/bug-fix/2026-08-13-safari-textarea-soft-wrap-reflow.md.
   useLayoutEffect(() => {
     const nativeShrink = safariNativeShrinkRef.current
     safariNativeShrinkRef.current = false
@@ -163,7 +162,6 @@ export function InputBar({
   // Scroll the draft scrollport the minimum that brings `caret` into view — the
   // browser's own behavior for typing, performed for the paths where it does
   // not act.
-  //
   // The mirror is the caret's ruler: it renders the same draft at the same
   // metrics and the same wrap width in the same stack (that is what makes it
   // the height authority), so a Range collapsed at the caret's index reports

@@ -1,8 +1,7 @@
 /**
  * Bump one release family's version and commit it, so the published version is
  * readable from the repository rather than derived inside CI
- * ([rationale](../../.agents/notes/implemented/process/2026-08-10-npm-release-sequences.md)).
- *
+ * (rationale).
  * The dsh family shares one version across its publishable members, private
  * package manifests, and the workspace root:
  * `major`, `minor`, `patch`, or an explicit `x.y.z` (including a prerelease such
@@ -10,7 +9,6 @@
  * every release advances and publishes the complete family so the next release
  * never reuses an unchanged member's existing version from a different
  * repository state.
- *
  * The version lands in the manifests, the lockfile follows, and a human creates
  * the tag after the commit merges. CI never writes to the repository.
  */
@@ -97,7 +95,6 @@ function prereleaseOf(version: string): string | undefined {
 
 /**
  * Order two versions by semver precedence.
- *
  * Git's version sort cannot stand in for this: `--sort=v:refname` places
  * `4.0.1-rc.1` above `4.0.1`, while semver gives a prerelease lower precedence
  * than the release it precedes. Prerelease identifiers compare field by field,
@@ -155,12 +152,10 @@ function nextSharedVersion(current: string, request: string): string {
 
 /**
  * The version a vendored package publishes next.
- *
  * The baseline is the higher of the manifest version and the last tagged
  * version: a vendor re-sync restores upstream's version, which is lower than
  * the release version this repository already reserved, and incrementing that
  * would reuse an existing version.
- *
  * A prerelease does not consume its own release numbers. Publishing
  * `4.0.1-rc.1` leaves `4.0.1` free, so the next stable version is `4.0.1`
  * rather than `4.0.2`, and a second prerelease keeps those numbers too.

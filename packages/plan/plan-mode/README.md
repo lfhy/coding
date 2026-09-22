@@ -35,7 +35,7 @@ Web 客户端使用该插件提供的 `/plan` 命令；其他入口可以直接�
 
 `section` 必填且非空。出现未知键时，插件会加载失败。该包不接受任意命名的 mode、工具过滤器、沙箱设置或批准策略。
 
-设计：[plan 专用协作状态](../../../.agents/notes/implemented/simplification/2026-07-22-plan-specific-collaboration-state.md)。
+设计：plan 专用协作状态。
 
 ## 模型体验
 

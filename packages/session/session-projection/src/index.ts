@@ -8,12 +8,10 @@
  * carriers consume the snapshot read face and the change feed. Neither side
  * knows the other
  * (capability-seam three-way split). Design authority: the session-projection
- * RFC (.agents/notes/proposed/architecture/2026-07-27-session-projection-and-command-log.md).
- *
+ * RFC ().
  * Whole-value event rule (load-bearing): a state-carrying log event MUST
  * carry the complete post-change state, never a bare delta — it keeps every
  * unit's transition trivially cheap and every served value self-describing.
- *
  * @module @deepseek-ai/dsh-session-projection
  */
 
@@ -137,7 +135,6 @@ interface UnitCell {
 /**
  * One live registration: the unit plus its per-session cells (dropped whole
  * once the last registrant releases it).
- *
  * `refs` exists because one unit definition already serves every session — the
  * cells are keyed by `Session` — while the registrants are now per-session:
  * an agent preset mounts the same tool package once per agent, so N sessions

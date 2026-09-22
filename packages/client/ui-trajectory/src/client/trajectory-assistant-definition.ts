@@ -10,7 +10,7 @@ import {
 import { trajectoryNode } from './trajectory-definition-common.ts'
 
 /* jscpd:ignore-start -- Target-owned Definitions intentionally keep their event
- * state machines independent; see ../../../../../.agents/notes/implemented/
+ * state machines independent; see
  * architecture/2026-08-09-client-conversation-node-assembly.md. */
 interface UsageValue {
   readonly inputTokens: number
@@ -398,7 +398,6 @@ const trajectoryTurnEndDefinition: ConversationNodeDefinition<TurnEndState> = {
 
 /**
  * Register the Trajectory Assistant lifecycle.
- *
  * @param ctx - Plugin context receiving the Definitions.
  */
 export function registerTrajectoryAssistantDefinition(ctx: Context): void {

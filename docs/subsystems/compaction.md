@@ -1,17 +1,17 @@
 # 压缩（compaction）
 
-压缩 seam 是一个[能力 seam](../../.agents/notes/implemented/architecture/2026-06-13-capability-seams.md)，与 bash 一样分为 Service Definition（[dsh-compaction](../../packages/compaction/compaction)，`ctx.compaction`）、Service Provider（例如 [dsh-compaction-basic](../../packages/compaction/compaction-basic) 后端）和面向用户的 Consumer（[dsh-command-compact](../../packages/compaction/command-compact)）。压缩是**一项可选能力**，不属于 agent loop（智能体循环）主干，因此其词汇定义在此而非 [core.md](core.md) 中。基于 tokenizer 或模板的后端是实现同一接口的兄弟包。与 bash 不同，该接口必然依赖 `dsh-session` 和 `dsh-llm`：其动词作用于 agent 所有的 `Session`，而其持久摘要事件使用 `ContentBlock` 词汇（见[压缩能力 seam Agent Note](../../.agents/notes/implemented/feature/2026-06-18-compaction-capability-seam.md)）。
+压缩 seam 是一个能力 seam，与 bash 一样分为 Service Definition（[dsh-compaction](../../packages/compaction/compaction)，`ctx.compaction`）、Service Provider（例如 [dsh-compaction-basic](../../packages/compaction/compaction-basic) 后端）和面向用户的 Consumer（[dsh-command-compact](../../packages/compaction/command-compact)）。压缩是**一项可选能力**，不属于 agent loop（智能体循环）主干，因此其词汇定义在此而非 [core.md](core.md) 中。基于 tokenizer 或模板的后端是实现同一接口的兄弟包。与 bash 不同，该接口必然依赖 `dsh-session` 和 `dsh-llm`：其动词作用于 agent 所有的 `Session`，而其持久摘要事件使用 `ContentBlock` 词汇（见压缩能力 seam 设计记录）。
 
 源码：[`packages/compaction/compaction/src/types.ts`](../../packages/compaction/compaction/src/types.ts)
 
 ## `compaction/*` 会话事件
 
-压缩通过声明合并为 [`SessionEventMap`](session.md) 扩展三种事件类型。三者都**仅写入日志**——它们记录锁、摘要、选中范围、被遮蔽事件 seq、token 数以及模型调用，绝不进入 surface。这里有意不扩展 `SurfaceEventType`（只有产生消息的事件才到达模型），因此摘要本身承载在另一条带有 `surfaceOp: { op: 'replace', start, end }` 的 `user/message` 上——这是摘要压缩执行的唯一 surface 变更。[Agent Note](../../.agents/notes/implemented/feature/2026-06-18-compaction-capability-seam.md) 负责复用 `user/message` 的决策依据。
+压缩通过声明合并为 [`SessionEventMap`](session.md) 扩展三种事件类型。三者都**仅写入日志**——它们记录锁、摘要、选中范围、被遮蔽事件 seq、token 数以及模型调用，绝不进入 surface。这里有意不扩展 `SurfaceEventType`（只有产生消息的事件才到达模型），因此摘要本身承载在另一条带有 `surfaceOp: { op: 'replace', start, end }` 的 `user/message` 上——这是摘要压缩执行的唯一 surface 变更。设计记录 负责复用 `user/message` 的决策依据。
 
 | 事件 | 载荷 | 作用 |
 |---|---|---|
 | `compaction/start` | `{ turn }` | 获取日志记录的锁；数字标识尚未结束的自动轮次，`null` 标识独立手动尝试 |
-| `compaction/summary` | `{ summary, rawOutput?, llmStreamCall?, shadowedRange, shadowedSeqs, shadowedTokenCount, provider, model, maxTokens?, usage? }` | 安全摘要投影、可选的完整提供方输出与 usage、生成结果时恰好通过此上下文的 `ctx.llm.stream()` 发起一次调用所带的 `llmStreamCall: true` 标记（此时必须提供完整的 `rawOutput`）、被遮蔽的 surface 边界对（`start`/`end` seq——位置跨度，而非数值区间）、按 surface 顺序排列的被遮蔽 seq、估算 token 数，以及摘要调用的 envelope（`provider`、`model`，若有生成上限则还包括该上限）——写入日志后，该一次性请求可由日志 + 代码重建（见可重建性 Agent Note）；未带标记的 `rawOutput` 并不能判定调用路径 |
+| `compaction/summary` | `{ summary, rawOutput?, llmStreamCall?, shadowedRange, shadowedSeqs, shadowedTokenCount, provider, model, maxTokens?, usage? }` | 安全摘要投影、可选的完整提供方输出与 usage、生成结果时恰好通过此上下文的 `ctx.llm.stream()` 发起一次调用所带的 `llmStreamCall: true` 标记（此时必须提供完整的 `rawOutput`）、被遮蔽的 surface 边界对（`start`/`end` seq——位置跨度，而非数值区间）、按 surface 顺序排列的被遮蔽 seq、估算 token 数，以及摘要调用的 envelope（`provider`、`model`，若有生成上限则还包括该上限）——写入日志后，该一次性请求可由日志 + 代码重建（见可重建性 设计记录）；未带标记的 `rawOutput` 并不能判定调用路径 |
 | `compaction/end` | `{ turn, error? }` | 使用相同的数字或 `null` 归属值释放锁（`error` 记录失败尝试） |
 
 锁括住**整个**操作：先追加 `compaction/start`，然后执行摘要生成、写入 `compaction/summary` 记录与 `user/message` 替换，最后才追加 `compaction/end`。最后释放锁意味着操作中途崩溃会表现为可检测的遗留锁（有 `compaction/start` 而无匹配的 `compaction/end`），而非一个虚假声称压缩已完成的 `compaction/end`。
@@ -136,7 +136,6 @@ Abstract compaction service. Implementations own trigger policy, retention, and 
  * force a useful balanced reduction even below the normal threshold. Return
  * `null` when no safe range can be compacted. A single oversized retained
  * unit or request envelope cannot be repaired through surface compaction.
- *
  * @param agent - agent context owning the session surface and routing options.
  * @param trigger - normal pressure or provider-confirmed context overflow.
  * @param signal - cancellation signal; model-backed implementations must forward it.
@@ -154,7 +153,6 @@ abstract compactIfNeeded( agent: CompactionAgentContext, trigger: CompactionTrig
  * durability checkpoint and idle-task settlement. Context injected while the
  * summary runs may sit between the marker pair; only the selected span must
  * remain stable.
- *
  * @param agent - idle agent whose durable history should be compacted.
  * @param signal - cancellation scoped to this compaction request.
  * @param sourceCommandId - initiating command identity for a manual compaction.
@@ -177,7 +175,6 @@ abstract compactNow( agent: ManualCompactAgentContext, signal: AbortSignal, sour
  * the transaction's `CompactionId`.
  * Use {@link toolPairingBalancedBefore} and {@link toolPairingBalancedAfter}
  * for the edge checks.
- *
  * @param start - first surface seq, inclusive.
  * @param end - last surface seq, inclusive.
  * @param agent - context whose session is mutated and whose routing options guide summarization.

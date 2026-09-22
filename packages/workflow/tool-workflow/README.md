@@ -16,7 +16,7 @@
 
 ## 渲染意图
 
-渲染意图预先确定（见[渲染意图 Agent Note](../../../.agents/notes/implemented/architecture/2026-07-02-tool-render-intent-union.md)）：使用一个 `generic` 卡片，标题为 `workflow: <meta.name>`，直接从 `args.meta.name` 读取（呈现是参数的纯函数，不要求引擎解析）；脚本文本作为 `rawInput` 携带。结果继续使用 generic 卡片。
+渲染意图预先确定（见渲染意图 设计记录）：使用一个 `generic` 卡片，标题为 `workflow: <meta.name>`，直接从 `args.meta.name` 读取（呈现是参数的纯函数，不要求引擎解析）；脚本文本作为 `rawInput` 携带。结果继续使用 generic 卡片。
 
 ## 配置
 

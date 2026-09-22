@@ -88,7 +88,7 @@ server-to-client 帧封闭为 `ready`、`output`、`exit`、`error`，client-to-
 - [Client 包](../../client/ui-open-in-app/README.md)——页头分流、固定文件工作台与 xterm 底栏。
 - [文件系统子系统](../../../docs/subsystems/filesystem.md)——provider target 身份与 Remote-SSH 路由。
 - [原生命令工具](../../util/native-command/README.md)——免 Shell 命令与平台路径打开。
-- [功能决策](../../../.agents/notes/implemented/feature/2026-08-25-promote-open-anywhere-plugin.md)——包归属与替代方案。
+- 功能决策——包归属与替代方案。
 
 <a id="model-experience"></a>
 ## 模型体验

@@ -1,6 +1,6 @@
 # @deepseek-ai/dsh-experimental-agent-team
 
-隐式 Root Agent Teams 领域。`ctx.agentTeams` 在 Lead Session 日志中维护扁平的 Lead／teammate roster、持久 peer mailbox 与共享任务 DAG。[Agent Teams Agent Note](../../../.agents/notes/implemented/feature/2026-08-05-agent-teams.md)负责协作和隔离决策；[Team 子系统目录](../../../docs/subsystems/agent-team.md)记录持久数据的字面形态与服务 API。
+隐式 Root Agent Teams 领域。`ctx.agentTeams` 在 Lead Session 日志中维护扁平的 Lead／teammate roster、持久 peer mailbox 与共享任务 DAG。Agent Teams 设计记录负责协作和隔离决策；[Team 子系统目录](../../../docs/subsystems/agent-team.md)记录持久数据的字面形态与服务 API。
 
 ## 配置
 

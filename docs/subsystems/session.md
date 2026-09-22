@@ -106,15 +106,12 @@ interface SessionEventMap {
    * produced none of them. This log-only event is the durable projection of
    * {@link Session.firstLiveSeq}. Its payload is empty — position and `time`
    * carry the meaning.
-   *
    * Locate the LAST one in stored history. A seed already ending in one is not
    * re-marked, so reopening an untouched session does not grow its log per
    * pickup and the event need not be at the current `firstLiveSeq`.
-   *
    * `Session`'s constructor is the only legitimate writer. The invariant
    * companion deliberately constrains nothing here, so a plugin appending one
    * would silently classify every live bracket before it as seed history.
-   *
    * An owner of a standalone open/close bracket (`compaction/start` …
    * `compaction/end`) reads it because seed history and live work are otherwise
    * byte-identical: an unmatched opening marker before this event belongs to
@@ -130,13 +127,12 @@ interface SessionEventMap {
 
 ### `TodoItem`：一条待办项
 
-这是 `todo/write` 事件全量列表快照中的单元。它有意保持精简：一行 `content` 加一个三态 `status`（没有 id、优先级或 `activeForm`）；列表在每次写入时整体替换，因此条目无需稳定标识。见 [todo_write Agent Note](../../.agents/notes/implemented/feature/2026-06-29-todo-write-tool.md)。
+这是 `todo/write` 事件全量列表快照中的单元。它有意保持精简：一行 `content` 加一个三态 `status`（没有 id、优先级或 `activeForm`）；列表在每次写入时整体替换，因此条目无需稳定标识。见 todo_write 设计记录。
 
 ```ts type-equiv
 /**
  * One entry in an agent's todo list — the unit of the `todo/write`
  * {@link SessionEventMap} event's whole-list snapshot.
- *
  * Deliberately minimal: a human-readable `content` line and a three-state
  * `status`. No id, priority, or `activeForm` — the list is replaced wholesale
  * on every write (last-write-wins), so entries need no stable identity. The
@@ -155,7 +151,7 @@ interface TodoItem {
 
 ### 请求头事件：`request/header`
 
-请求信封（即 `EpochHeader`：调用配置 + 适配器所提供默认值的标记 + 渲染后的系统提示词 + 已组装的工具 schema）会作为会话状态写入日志，因此每个对话请求都是日志的纯函数（见可重建性 Agent Note）。带有 reason `'initial'` 或 `'resume'` 的完整 `request/header` 快照记录每个 agent loop 实例的边界；之后请求发生变化时，系统会以 reason `'change'` 记录另一份完整快照。`foldRequestHeader(events)` 通过选择最新快照重建请求头。该事件不是 `SurfaceEventType`，不产生 LLM 消息。
+请求信封（即 `EpochHeader`：调用配置 + 适配器所提供默认值的标记 + 渲染后的系统提示词 + 已组装的工具 schema）会作为会话状态写入日志，因此每个对话请求都是日志的纯函数（见可重建性 设计记录）。带有 reason `'initial'` 或 `'resume'` 的完整 `request/header` 快照记录每个 agent loop 实例的边界；之后请求发生变化时，系统会以 reason `'change'` 记录另一份完整快照。`foldRequestHeader(events)` 通过选择最新快照重建请求头。该事件不是 `SurfaceEventType`，不产生 LLM 消息。
 
 ```ts type-equiv
 /**
@@ -200,10 +196,8 @@ interface RequestContext {
 ```ts type-equiv
 /**
  * One immutable entry in the session log.
- *
  * A proper discriminated union over `type` (not independent `type`/`data`
  * unions), so `switch (event.type)` narrows `event.data` without casts.
- *
  * The {@link sourceEventSeqs} and {@link surfaceOp} fields are conditional:
  * they only exist on {@link SurfaceEventType} variants (`user/message`,
  * `assistant/message`, `tool/result`).
@@ -252,7 +246,7 @@ type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 ## Surface 类型
 
-三种产生消息的类型（`SurfaceEventType`：`user/message`、`assistant/message`、`tool/result`）携带 surface 元数据，用来声明它们如何加入有序的派生 surface。见 [session surface Agent Note](../../.agents/notes/implemented/architecture/2026-06-18-session-surface.md)。
+三种产生消息的类型（`SurfaceEventType`：`user/message`、`assistant/message`、`tool/result`）携带 surface 元数据，用来声明它们如何加入有序的派生 surface。见 session surface 设计记录。
 
 ### `SurfaceEventType`：事件类型中产生消息的子集
 
@@ -274,7 +268,6 @@ type SurfaceEventType =
 /**
  * How a session event entered the ordered surface. Only valid on
  * {@link SurfaceEventType} events.
- *
  * - `'append'`: added to the tail — normal path for user/assistant/tool
  *   messages.
  * - `{ op: 'replace', start, end }`: replaces surface nodes from `start`
@@ -365,7 +358,6 @@ interface SurfaceFoldResult {
 ```ts public-api
 /**
  * An event-sourced session: an append-only log of {@link SessionEvent}s.
- *
  * Plain class (not a Service) — create live instances via
  * `ctx.sessions.create()` and detached instances via {@link create}.
  * Seeding with an existing event log replays/forks a session.
@@ -395,14 +387,12 @@ declare class Session {
    * boundary: a resumed session's constructor seed is its full stored log,
    * while its header keeps the original fork value — this field is the
    * in-process construction fact.
-   *
    * Not persisted itself: a seeded session projects it into the log as the
    * `session/end-seed` event, which is what a consumer reading STORED history
    * reads. Locate the LAST such event, not necessarily one at this seq — a
    * seed already ending in one is not re-marked, so reopening an untouched
    * session leaves that event at a smaller seq than `firstLiveSeq`. Prefer
    * this field in-process: it is exact before the marker reaches storage.
-   *
    * When this lifecycle appends the marker, it occupies this seq before the
    * store attaches and therefore does not publish either. Otherwise this seq
    * holds an ordinary published write.
@@ -443,7 +433,6 @@ declare class Session {
    * the log, the append is committed: observer failures are logged and
    * contained per listener, so they do not change the return value or prevent
    * later listeners from observing the same accepted event.
-   *
    * @param type - The event type (key of {@link SessionEventMap}).
    * @param data - The event payload; must be JSON-serializable.
    * @param opts - Surface metadata: `surfaceOp` controls how the event enters
@@ -499,7 +488,6 @@ declare class Session {
    * turn boundary) is correctly absent, and a compaction `replace` deletes the
    * shadowed nodes from the derivation. The projection rules are
    * {@link deriveEventMessage}, folded per node.
-   *
    * CACHED: each surface node is projected exactly once, when first seen — a
    * call costs O(new nodes), and a surface rewrite (a `replace`;
    * {@link SessionSurface.replaceGeneration}) rebuilds. The returned array is
@@ -582,7 +570,7 @@ interface TurnEndReasonMap {
 
 一个轮次包围一次模型循环执行，而不是整个会话日志。AgentLoop 只会在轮次内进入 pre-step 批次时记录注入的 `user/message` 事件；插件所属的纯日志事件仍可出现在 `turn/end` 与下一个 `turn/start` 之间，占用事件 seq 但不递增轮次编号。持久化会将每个连续且已接受的事件纳入有界持久化批次，而崩溃修复只关闭确实仍处于开放状态的尾部轮次。需要即时持久性屏障的生产方会显式等待 `ctx.sessions.flush(session)`。
 
-可选的 `dsh-session/invariant` 配套插件会强制核心拥有的关系：轮次与步骤编号、执行事件封闭，以及同一步骤内的工具调用／结果配对。可合并扩展事件的关系由声明它的插件拥有，因此核心不会仅因没有开放轮次就拒绝未知事件。见[独立事件决策](../../.agents/notes/implemented/simplification/2026-07-28-remove-synthetic-log-only-turns.md)。
+可选的 `dsh-session/invariant` 配套插件会强制核心拥有的关系：轮次与步骤编号、执行事件封闭，以及同一步骤内的工具调用／结果配对。可合并扩展事件的关系由声明它的插件拥有，因此核心不会仅因没有开放轮次就拒绝未知事件。见独立事件决策。
 
 ## 种子结束边界：`session/end-seed`
 
@@ -600,7 +588,7 @@ interface TurnEndReasonMap {
 
 如果同一个插件事件族中的多条事件要组装成一个 Web Client Conversation Node，该事件族中的每条 start、update、result、resource 或 interruption 事件都必须携带或独立推导出同一个稳定业务 id。此要求只约束需要关联的 Node 事件族，并不要求每条 Session 事件都有业务 id；Client 因此无须根据相邻关系猜测归属，也无须扫描历史。参见 [Conversation Node 实操手册](../cookbook/adding-a-conversation-node.md)。
 
-钩子桥接层的 `hook/invoked` / `hook/result` 对（来自 `@deepseek-ai/dsh-hook-protocol`）通过 `handlerId` 关联。`UserPromptSubmit`、`PreToolUse`、`PostToolUse` 与 `Stop` 在 loop 已打开的轮次内触发，因此其 `hook/*` 记录天然位于轮次之内。`SessionStart` 不生成 `hook/*` 记录，因为它在轮次 1 之前运行；其上下文会在 inbox 中保持待处理，直到唤醒交付打开一个轮次（见[钩子桥接 Agent Note](../../.agents/notes/implemented/feature/2026-06-30-hook-bridges.md)）。
+钩子桥接层的 `hook/invoked` / `hook/result` 对（来自 `@deepseek-ai/dsh-hook-protocol`）通过 `handlerId` 关联。`UserPromptSubmit`、`PreToolUse`、`PostToolUse` 与 `Stop` 在 loop 已打开的轮次内触发，因此其 `hook/*` 记录天然位于轮次之内。`SessionStart` 不生成 `hook/*` 记录，因为它在轮次 1 之前运行；其上下文会在 inbox 中保持待处理，直到唤醒交付打开一个轮次（见钩子桥接 设计记录）。
 
 ## 持久性约定
 

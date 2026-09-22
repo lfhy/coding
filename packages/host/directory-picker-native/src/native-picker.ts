@@ -35,7 +35,6 @@ function rethrowIfAborted(signal: AbortSignal, error: unknown): void {
 
 /**
  * macOS 目录面板的 JXA 脚本。
- *
  * AppleScript 的 `choose folder` 由无 bundle 的 osascript 进程呈现面板，宿主由桌面壳或
  * 后台进程启动时该面板只会被创建而不上屏，调用方要等到 AppleEvent 超时（-1712）才拿到
  * 错误。脚本改为在进程内构造 `NSOpenPanel`、显式激活应用后再 `runModal`，面板才会出现在
@@ -79,7 +78,7 @@ export async function pickNativeDirectory(
     // per-monitor-v2 DPI and abort support. koffi is a packaged dependency
     // whose availability the install guarantees, so there is no fallback
     // tier: any failure surfaces as-is (no PowerShell fallback tier; see
-    // .agents/notes/implemented/simplification/2026-08-04-drop-windows-powershell-picker-fallback.md).
+    // ).
     const pickDialog = internals.pickWin32Dialog ?? pickWin32Directory
     return await pickDialog(signal)
   }

@@ -1,9 +1,8 @@
 /**
  * Run local and CI quality gates with bounded in-process scheduling.
- *
  * Package scripts own public aggregate names; this runner owns their validated
  * dependency graphs, scheduler environment, and process diagnostics.
- * @see ../.agents/notes/implemented/process/2026-07-06-parallel-pre-push-gates.md
+ * @see
  */
 import { spawn } from 'node:child_process'
 import { availableParallelism } from 'node:os'
@@ -487,7 +486,6 @@ function lintGate(options: { needs?: string[] } = {}): Gate {
 // compiler- and subprocess-bound fixtures pay a multiple of their runtime
 // under v8 instrumentation while contributing nothing the thresholds need
 // (membership rules in scripts/coverage-exempt.ts).
-//
 // DSH_COVERAGE_MAX_WORKERS is the ordinary lane's worker budget, so the two
 // parallel gates split it instead of each claiming it whole. When
 // DSH_COVERAGE_PARTITIONS is set, its single-worker processes replace the

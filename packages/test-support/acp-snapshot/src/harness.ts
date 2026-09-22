@@ -2,7 +2,6 @@
  * Shared subprocess harness for ACP snapshot suites. A library module driven by
  * the suite factory in ./suite.ts (and directly by harness-level specs); each
  * example's `*.snapshot.ts` names its own agent-under-test paths.
- *
  * It boots the REAL agent bin subprocess via the cordis Loader (so the
  * export-shape bug class stays guarded — see docs/postmortem/0001), drives it
  * over real ACP JSON-RPC stdio with a deterministic input script, tees raw
@@ -10,9 +9,7 @@
  * and — in record mode — harvests the persisted session JSONL after a graceful
  * shutdown flush. The pure normalizers in ./normalize.ts turn the captured
  * stdout frames and the session-log events into stable, snapshot-able text.
- *
- * See .agents/notes/implemented/testing/2026-06-19-acp-snapshot-tests.md.
- *
+ * See
  * @module @deepseek-ai/dsh-acp-snapshot/harness
  */
 
@@ -42,7 +39,6 @@ const WAIT_POLL_INTERVAL_MS = 10
  * harness interprets these in order. `newSession` captures the server-issued
  * (random) session id into a `{{sessionId}}` variable that later steps
  * reference, since a committed file cannot know the id in advance.
- *
  * `promptAndCancel` starts a prompt without awaiting completion, waits for a
  * readiness condition, then cancels and awaits completion. Its optional
  * `waitForFile` observes a cwd-relative marker; otherwise it waits for the
@@ -219,7 +215,6 @@ export function snapshotSpillRoot(
  * Run a scenario end-to-end against a freshly-spawned subprocess. Owns the
  * child and its generated dirs; always tears them down. Returns the captured stdout
  * and (record mode) the harvested session-log path.
- *
  * @param input The scenario's input script (steps + optional permission answers).
  * @param opts The agent to boot, the mode, and the fixture wiring.
  * @returns The captured stdout/stderr, session id, generated cwd, and harvested logs.
@@ -572,7 +567,6 @@ async function waitForPersistedTurnEnd(
 
 /**
  * Wait until the Nth harvested child Session closes a model work turn.
- *
  * Harvest order matches `session.1.jsonl`, `session.2.jsonl`, and so on. A
  * continuable child appends its descriptor after any inherited history and
  * before accepting its first prompt, so only a later request header proves its
@@ -741,7 +735,6 @@ function latestOpenTurn(content: string): number | undefined {
  * Harvest EVERY persisted `.jsonl` session log under a sessions root, parse each
  * header line, and return them ordered primary-first: the top-level session (no
  * `parentSession`) leads, then each subagent child by ascending `createdAt`.
- *
  * Snapshot configs select the JSONL backend's raw mode, which lays sessions
  * out as `<root>/<project>/<session-id>/session.jsonl`. Recursive collection
  * catches the primary and every child session. Returns `[]` if no log was

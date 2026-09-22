@@ -1,10 +1,9 @@
 /**
  * Verify a release family's version baseline, and — when publishing — that the
  * run comes from the family's tag and its members are publishable.
- *
  * Publication happens only from GitHub Actions, so the tag and publishability
  * checks are gates on the workflow, not advisory local warnings
- * ([rationale](../../.agents/notes/implemented/process/2026-08-10-npm-release-sequences.md)).
+ * (rationale).
  */
 
 import { parseArgs } from 'node:util'
@@ -14,7 +13,6 @@ import { releaseFamily, type PublishPlan, type ReleaseFamily, type ReleaseMember
 /**
  * Print the publish order the release will follow, and the peer declarations it
  * leaves unordered.
- *
  * The order is the release's own plan: an interrupted publication leaves exactly
  * a prefix of it, so reading it is how anyone judges what a partial run left on
  * the registry, and printing it on every pull request is what makes a change to

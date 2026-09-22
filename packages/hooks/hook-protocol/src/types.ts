@@ -43,7 +43,7 @@ declare module '@deepseek-ai/dsh-session/types' {
 /**
  * The bridge that ran a hook — the CC bridge stamps `'claude-code'`, the Codex
  * bridge `'codex'`. A native plugin at the interception points is not a bridge
- * and writes no `hook/*` invocation/result records (see the interception extension-points Agent Note).
+ * and writes no `hook/*` invocation/result records (see the interception extension-points design record).
  */
 export type HookDialect = 'claude-code' | 'codex'
 
@@ -130,7 +130,7 @@ export interface HookOutput {
   systemMessage?: string
   /**
    * A tool-input rewrite a hook requested (CC `updatedInput`). PARSED but NOT
-   * honored — input rewrite is deferred (see the interception extension-points Agent Note); a
+   * honored — input rewrite is deferred (see the interception extension-points design record); a
    * bridge logs + warns when this is present.
    */
   updatedInput?: Record<string, unknown>

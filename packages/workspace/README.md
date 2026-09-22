@@ -8,4 +8,4 @@
 
 [workspace 包参考](workspace/README.md)负责生命周期、持久化和删除语义。
 
-子系统参考——实体、realpath 规范、注册/解析——见 [docs/subsystems/workspace.md](../../docs/subsystems/workspace.md)；存储设计见 [domain KV 存储 Agent Note](../../.agents/notes/proposed/architecture/2026-07-24-domain-kv-storage-and-workspace.md)。
+子系统参考——实体、realpath 规范、注册/解析——见 [docs/subsystems/workspace.md](../../docs/subsystems/workspace.md)；存储设计见 domain KV 存储 设计记录。

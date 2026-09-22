@@ -2,7 +2,7 @@
  * Advisory per-agent repeat-call detector. It enriches post-execute decisions
  * with logged model context without vetoing or rewriting calls. Configuration
  * and chain semantics live in the package README; rationale lives in the
- * repeat-tool-reminder Agent Note.
+ * repeat-tool-reminder design record.
  * @module @deepseek-ai/dsh-repeat-tool-reminder
  */
 

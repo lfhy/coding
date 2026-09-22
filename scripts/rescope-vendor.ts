@@ -3,9 +3,8 @@
  * that rescope with `--reverse`. Every harness package declares `cordis` as a
  * peer dependency, so publication carries this framework layer too; publishing
  * it under the upstream names would squat them on the registry
- * ([rationale](../.agents/notes/implemented/process/2026-08-10-vendor-package-rescope.md),
+ * (rationale,
  * [name mapping](../docs/rescope.md)).
- *
  * The generic pass rewrites ONLY delimited, complete package-name tokens:
  * `'old'` / `"old"` / `` `old` `` / `'old/subpath'`, plus a YAML `name: old`
  * scalar. A match needs a quote (or `name: `) immediately left and the matching
@@ -16,12 +15,10 @@
  * Markdown follows the rename inside every fence, and in `docs/` prose too:
  * a tutorial that teaches an unresolvable name is wrong, while prose elsewhere
  * records what was true when it was written.
- *
  * Sites the token rule cannot express (dot-notation access, unquoted object
  * keys, regex literals, the vendored-manifest table) are listed in
  * {@link EXACT_EDITS} with an exact hit count, so an upstream change to one of
  * them fails loudly instead of being silently skipped.
- *
  * Usage: `pnpm run rescope-vendor [--apply|--check] [--reverse]`. Without a
  * mode it reports what would change. `--check` asserts the post-state: no
  * residue, every exact edit landed, every postcondition holds, and a second
@@ -516,7 +513,6 @@ function rewriteLine(line: string, file: string, all: readonly Pattern[]): strin
 
 /**
  * Rewrite a file's eligible lines.
- *
  * Markdown splits in two. Every fence is code a reader copies or a
  * configuration they mount, so every fence follows the rename regardless of its
  * info string. Prose follows it only under `docs/`, where a sentence quoting
@@ -564,7 +560,6 @@ export type ExactEditState = 'pending' | 'applied' | 'invalid'
 
 /**
  * Classify one exact edit against its target text.
- *
  * An insertion keeps its anchor (`replace` contains `find`) and a deletion
  * keeps its remainder (`find` contains `replace`), so neither can be judged by
  * the source form alone: the surviving side counts the target form instead.

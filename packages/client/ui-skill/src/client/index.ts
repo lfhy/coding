@@ -4,7 +4,7 @@
  * projection's sessionId (sessions are always agent-backed; the host
  * resolves cwd from the session header). A pick lands the literal `/name `
  * text and the prompt ships the same literal (plain-text-reference decision;
- * see .agents/notes/implemented/architecture/2026-07-25-web-input-machine-and-slash-pipeline.md);
+ * see );
  * determinism
  * lives host-side — the pre-step boundary (`dsh-tool-skill`) recognizes a
  * leading `/name` naming a user-invocable skill and injects the rendered
@@ -13,7 +13,6 @@
  * root-context connection captured at registration — the source never reads
  * services off a per-call argument. Draft chip visuals derive from
  * the lexicon scan; this source implements no reference codec.
- *
  * Catalog fetches are cached per session (the small twin of the ui-commands
  * directory): the per-keystroke candidates re-poll filters a settled
  * snapshot locally, so one session costs one RPC. The scope-birth warm hook
@@ -25,7 +24,6 @@
  * not kill the prewarm other consumers will hit, so it carries its own
  * abort (fired only on invalidation/teardown) while a candidates caller
  * with an aborted signal just returns early.
- *
  * This browser half also owns the `skill` keyed toolview: a replay-stable
  * accent row derived only from each logged call/result slice.
  */

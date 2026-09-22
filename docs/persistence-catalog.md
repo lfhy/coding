@@ -5,7 +5,7 @@
 
 Every event type that can appear in a session's durable event log: the complete persisted `SessionEvent` envelope and each member of the merge-extensible `SessionEventMap` — the owning vocabulary in `@deepseek-ai/dsh-session` plus every plugin declaration merge into `@deepseek-ai/dsh-session/types` in this repo — with source JSDoc, full payload declaration, surface badge, and declaration site. It complements [session.md](subsystems/session.md) (surface ordering and the `deriveMessages()` projection), [persistence.md](subsystems/persistence.md) (how the log is made durable), and the generated region of [session.md](subsystems/session.md#cordis-surface) (the live bus wiring — a log event is NOT a cordis event; it reaches listeners via the single `session/event` emit).
 
-This file is GENERATED from source (`scripts/gen-persistence-catalog.ts`) and verified fresh by `pnpm run verify-persistence-catalog` — do not edit it by hand. Declaration blocks retain the source declaration and nested property JSDoc, removing only the indentation imposed by a containing interface/module, and use a `ts persistence-catalog` fence (declarations reference types from their owning modules). Type names in a payload link to the page that documents them. See [the persistence-log-catalog Agent Note](../.agents/notes/archived/process/2026-07-04-persistence-log-catalog.md).
+This file is GENERATED from source (`scripts/gen-persistence-catalog.ts`) and verified fresh by `pnpm run verify-persistence-catalog` — do not edit it by hand. Declaration blocks retain the source declaration and nested property JSDoc, removing only the indentation imposed by a containing interface/module, and use a `ts persistence-catalog` fence (declarations reference types from their owning modules). Type names in a payload link to the page that documents them. See the persistence-log-catalog design record.
 
 The envelope declarations below compose each event's `type`, monotonic `seq`, epoch-ms `time`, `data`, the optional `ignorable` unknown-type skip marker, and the conditional `surfaceOp`/`sourceEventSeqs` fields. **surface** marks a `SurfaceEventType` member: it produces an LLM message and declares how it joins the surface list. **log-only** marks everything else: a durable, replayable record with no derived-history contribution. Every payload is JSON-serializable (enforced at `Session.append`), and the whole format is pinned at `SESSION_FORMAT_VERSION = 0` — pre-release, no compatibility implied ([the version stance](subsystems/persistence.md)). Scope: the packages in this repo; a downstream plugin can merge further event types, which are outside this catalog by construction.
 
@@ -28,7 +28,6 @@ export type SurfaceEventType =
 /**
  * How a session event entered the ordered surface. Only valid on
  * {@link SurfaceEventType} events.
- *
  * - `'append'`: added to the tail — normal path for user/assistant/tool
  *   messages.
  * - `{ op: 'replace', start, end }`: replaces surface nodes from `start`
@@ -44,10 +43,8 @@ export type SurfaceOp =
 
 /**
  * One immutable entry in the session log.
- *
  * A proper discriminated union over `type` (not independent `type`/`data`
  * unions), so `switch (event.type)` narrows `event.data` without casts.
- *
  * The {@link sourceEventSeqs} and {@link surfaceOp} fields are conditional:
  * they only exist on {@link SurfaceEventType} variants (`user/message`,
  * `assistant/message`, `tool/result`).
@@ -90,7 +87,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }[T]
 ```
 
-Sources: [`packages/core/session/src/types.ts:340`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:347`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:376`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:408`](../packages/core/session/src/types.ts)
+Sources: [`packages/core/session/src/types.ts:335`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:342`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:369`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:399`](../packages/core/session/src/types.ts)
 
 ## Events
 
@@ -215,7 +212,7 @@ Source: [`packages/interaction/user-approval/src/index.ts:67`](../packages/inter
 
 Types: [StreamChunk](subsystems/llm-streaming.md)
 
-Source: [`packages/core/session/src/types.ts:266`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:264`](../packages/core/session/src/types.ts)
 
 <a id="assistantmessage--surface"></a>
 
@@ -237,7 +234,7 @@ Source: [`packages/core/session/src/types.ts:266`](../packages/core/session/src/
 
 Types: [TokenUsage](subsystems/llm-streaming.md)
 
-Source: [`packages/core/session/src/types.ts:277`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:275`](../packages/core/session/src/types.ts)
 
 ### `command/*`
 
@@ -366,7 +363,7 @@ Source: [`packages/compaction/compaction/src/types.ts:23`](../packages/compactio
    * The model that wrote the summary — the summarize call's envelope,
    * reported by the backend that made the call, logged so the one-shot
    * request is reconstructable from log + code and "which model wrote
-   * this summary" has a durable answer (the reconstructability Agent Note).
+   * this summary" has a durable answer (the reconstructability design record).
    */
   model: string
   /** The generation cap the summarize call sent, when one applied. */
@@ -531,7 +528,7 @@ Source: [`packages/interaction/permission-presets/src/index.ts:50`](../packages/
 'plan/mode': { active: boolean }
 ```
 
-Source: [`packages/plan/plan-mode/src/index.ts:54`](../packages/plan/plan-mode/src/index.ts)
+Source: [`packages/plan/plan-mode/src/index.ts:50`](../packages/plan/plan-mode/src/index.ts)
 
 ### `request/*`
 
@@ -547,7 +544,7 @@ Source: [`packages/plan/plan-mode/src/index.ts:54`](../packages/plan/plan-mode/s
 'request/context': RequestContext
 ```
 
-Source: [`packages/core/session/src/types.ts:313`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:311`](../packages/core/session/src/types.ts)
 
 <a id="requestheader--log-only"></a>
 
@@ -561,7 +558,7 @@ Source: [`packages/core/session/src/types.ts:313`](../packages/core/session/src/
 'request/header': { header: EpochHeader; reason: RequestHeaderReason }
 ```
 
-Source: [`packages/core/session/src/types.ts:308`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:306`](../packages/core/session/src/types.ts)
 
 ### `sandbox/*`
 
@@ -617,15 +614,12 @@ Source: [`packages/schedule/schedule/src/types.ts:219`](../packages/schedule/sch
  * produced none of them. This log-only event is the durable projection of
  * {@link Session.firstLiveSeq}. Its payload is empty — position and `time`
  * carry the meaning.
- *
  * Locate the LAST one in stored history. A seed already ending in one is not
  * re-marked, so reopening an untouched session does not grow its log per
  * pickup and the event need not be at the current `firstLiveSeq`.
- *
  * `Session`'s constructor is the only legitimate writer. The invariant
  * companion deliberately constrains nothing here, so a plugin appending one
  * would silently classify every live bracket before it as seed history.
- *
  * An owner of a standalone open/close bracket (`compaction/start` …
  * `compaction/end`) reads it because seed history and live work are otherwise
  * byte-identical: an unmatched opening marker before this event belongs to
@@ -636,7 +630,7 @@ Source: [`packages/schedule/schedule/src/types.ts:219`](../packages/schedule/sch
 'session/end-seed': Record<string, never>
 ```
 
-Source: [`packages/core/session/src/types.ts:336`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:331`](../packages/core/session/src/types.ts)
 
 <a id="sessiontitle--log-only"></a>
 
@@ -678,7 +672,7 @@ Source: [`packages/session/session-title-llm/src/index.ts:43`](../packages/sessi
 'step/end': { turn: number; step: number }
 ```
 
-Source: [`packages/core/session/src/types.ts:256`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:254`](../packages/core/session/src/types.ts)
 
 <a id="stepstart--log-only"></a>
 
@@ -689,7 +683,7 @@ Source: [`packages/core/session/src/types.ts:256`](../packages/core/session/src/
 'step/start': { turn: number; step: number }
 ```
 
-Source: [`packages/core/session/src/types.ts:254`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:252`](../packages/core/session/src/types.ts)
 
 ### `subagent/*`
 
@@ -782,7 +776,7 @@ Source: [`packages/experimental/agent-team/src/types.ts:208`](../packages/experi
 
 Types: [TodoItem](subsystems/session.md)
 
-Source: [`packages/core/session/src/types.ts:303`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:301`](../packages/core/session/src/types.ts)
 
 ### `tool/*`
 
@@ -801,7 +795,7 @@ Source: [`packages/core/session/src/types.ts:303`](../packages/core/session/src/
 
 Types: [CallId](subsystems/core.md)
 
-Source: [`packages/core/session/src/types.ts:283`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:281`](../packages/core/session/src/types.ts)
 
 <a id="toolcode-dispatch--log-only"></a>
 
@@ -876,7 +870,7 @@ Source: [`packages/core/tools/src/types.ts:40`](../packages/core/tools/src/types
 }
 ```
 
-Source: [`packages/core/session/src/types.ts:295`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:293`](../packages/core/session/src/types.ts)
 
 ### `tool-workflow/*`
 
@@ -956,7 +950,7 @@ Source: [`packages/workflow/tool-workflow/src/types.ts:47`](../packages/workflow
 
 Types: [TurnEndReason](subsystems/session.md)
 
-Source: [`packages/core/session/src/types.ts:252`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:250`](../packages/core/session/src/types.ts)
 
 <a id="turnstart--log-only"></a>
 
@@ -972,7 +966,7 @@ Source: [`packages/core/session/src/types.ts:252`](../packages/core/session/src/
 'turn/start': { turn: number }
 ```
 
-Source: [`packages/core/session/src/types.ts:243`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:241`](../packages/core/session/src/types.ts)
 
 ### `user/*`
 
@@ -991,7 +985,7 @@ Source: [`packages/core/session/src/types.ts:243`](../packages/core/session/src/
 'user/message': UserMessage
 ```
 
-Source: [`packages/core/session/src/types.ts:264`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:262`](../packages/core/session/src/types.ts)
 
 ### `web/*`
 

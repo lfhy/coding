@@ -25,7 +25,7 @@ await ctx.plugin(ToolFs)                                  // this package — re
 | `readMaxBytes` | `51200` | 一次 `read` 调用所选行的字节上限；溢出时以「已达上限」footer 结束窗口。 |
 | `readStreamMinSize` | `10485760` | 大于等于该大小或大小未知的文件采用流式读取，而不是整体加载到内存。 |
 
-## 工具（schema 见[文件系统工具 schema Agent Note](../../../.agents/notes/implemented/feature/2026-06-17-filesystem-tool-schemas.md)）
+## 工具（schema 见文件系统工具 schema 设计记录）
 
 | 工具 | 参数 | 行为 |
 |---|---|---|
@@ -40,7 +40,7 @@ await ctx.plugin(ToolFs)                                  // this package — re
 
 ## 工具就是执行器；策略是事件门禁
 
-工具**不**注入策略服务，也不检查任何缓存。每个工具通过 `ctx.fs.resolve(path, { cwd, signal })` 解析路径；它会传入调用 agent（智能体）的会话 cwd（`exec.agent.session.header.cwd`），使相对路径以会话工作区为基准解析并与 `dsh-tool-bash` 一致，同时把工具取消转发到解析过程（见[每会话 cwd Agent Note](../../../.agents/notes/implemented/architecture/2026-07-02-fs-per-session-cwd.md)）。随后执行：
+工具**不**注入策略服务，也不检查任何缓存。每个工具通过 `ctx.fs.resolve(path, { cwd, signal })` 解析路径；它会传入调用 agent（智能体）的会话 cwd（`exec.agent.session.header.cwd`），使相对路径以会话工作区为基准解析并与 `dsh-tool-bash` 一致，同时把工具取消转发到解析过程（见每会话 cwd 设计记录）。随后执行：
 
 - **read**：一次 `ctx.fs.stat`（用于类型、大小路由和版本），随后调用 `readText`/`streamText`，构建行窗口，再发出 `fs/observed`，使用普通 `ctx.emit`。（1 次 stat。）
 - **read_image**：在任何 I/O 之前校验参数、扩展名、附件可用性、部署接受的媒体类型和图像路由；随后一次 `ctx.fs.stat`（目标缺失时与 `read` 一样记录 `absent` 观察）、以 `imageLimits.maxImageBytes` 与 `imageLimits.maxMessageImageBytes` 中较小者为上限的有界 `ctx.fs.readBytes`（结果是携带一张图像的一条消息）、`attachments.saveImage`（内容寻址，因此在 `tool/result` 事件追加时图像块引用的对象已持久提交），最后发出 `fs/observed`。（1 次 stat。）
@@ -55,7 +55,7 @@ await ctx.plugin(ToolFs)                                  // this package — re
 
 `fs/observed` 在 read/read_image/write/edit 已经成功之后，通过普通 `ctx.emit` 发出。监听器的约定是同步且只有副作用的记录器（`@deepseek-ai/dsh-fs-observation-policy` 使用 `WeakMap.set`）；工具不保护这次发出，因此监听器抛出会作为工具的 `isError` 结果出现。异步或可能失败的观察不属于该事件。
 
-`read` 允许并发调度，因为它唯一会改变状态的操作是同步记录版本。稍后的 `write` 或 `edit` 会在目标锁内重新检查版本，因此即使记录器发生竞态，系统也会安全地拒绝操作；两个变更工具仍保持互斥。见[并行工具调用 Agent Note](../../../.agents/notes/implemented/feature/2026-07-10-parallel-tool-call-execution.md)。
+`read` 允许并发调度，因为它唯一会改变状态的操作是同步记录版本。稍后的 `write` 或 `edit` 会在目标锁内重新检查版本，因此即使记录器发生竞态，系统也会安全地拒绝操作；两个变更工具仍保持互斥。见并行工具调用 设计记录。
 
 包根目录只导出 Cordis 插件约定（`name`、`inject`、`Config` 和 `apply`）。读取渲染（行窗口与输出格式化）位于 `src/read-render.ts`（不依赖 Cordis，单独进行单元测试）；`src/read.ts`/`read-image.ts`/`write.ts`/`edit.ts` 是工具执行器，`src/index.ts` 负责组合。
 

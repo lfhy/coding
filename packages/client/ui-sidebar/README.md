@@ -1,6 +1,6 @@
 # @deepseek-ai/dsh-client-ui-sidebar
 
-侧边栏外壳插件：负责品牌行、New Session 操作、布局持有的折叠控件、可感知滚动的区域 seat，以及固定在底部的 Settings seat。[ui-workspace](../ui-workspace/README.md) 持有渲染到 `sidebar.workspaces` 的 Workspace 与 Session 浏览器；本包既不派生其中的行，也不持有其视图偏好。折叠到布局拥有的 56px 轨道仍属于本地呈现行为。约定：[slot 系统标准](../../../.agents/notes/implemented/architecture/2026-07-22-slot-type-chain-implementation.md)。
+侧边栏外壳插件：负责品牌行、New Session 操作、布局持有的折叠控件、可感知滚动的区域 seat，以及固定在底部的 Settings seat。[ui-workspace](../ui-workspace/README.md) 持有渲染到 `sidebar.workspaces` 的 Workspace 与 Session 浏览器；本包既不派生其中的行，也不持有其视图偏好。折叠到布局拥有的 56px 轨道仍属于本地呈现行为。约定：slot 系统标准。
 
 品牌行在宽侧栏渲染 `sidebar.brand.name`，并在名称与收起控件之间渲染 `sidebar.brand.action` 这个 list slot：宽侧栏是横向图标行，56px rail 中排列在收起控件上方。注册者会收到 `wide`，且该 seat 在两种形态下都可见，因此必须提供纯图标 36px 控件。收起 rail 始终渲染布局面板图标，因此该控件始终是明确的侧边栏展开入口。部署包可以替换展开状态的名称，而无须替换 New Session 控件或 rail 几何；声明感知的 `slots.inject()` 让这种包无论先于还是后于侧边栏激活都能生效。
 

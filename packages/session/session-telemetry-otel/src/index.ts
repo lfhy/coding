@@ -1,6 +1,5 @@
 /**
  * OpenTelemetry Service Provider for the DeepSeek Harness telemetry capability.
- *
  * Composes the OTel JS SDK as-is — a `LoggerProvider` with a
  * `BatchLogRecordProcessor` and an OTLP/HTTP log exporter — and maps each
  * record handed over by the capture coordinator onto `logger.emit()`. After that call,
@@ -8,7 +7,6 @@
  * verbatim through the `exporter`/`processor` passthroughs. This package owns
  * capture mode and an outer shutdown deadline: the SDK's export timeout does
  * not bound its preceding `forceFlush()` wait.
- *
  * @module @deepseek-ai/dsh-session-telemetry-otel
  */
 
@@ -269,7 +267,7 @@ export class OpenTelemetrySessionBackend extends SessionTelemetryBackend {
   // concurrent flushes, whose undocumented interactions with shutdown's
   // internal drain (concurrent-flush guard, provider-level flush timeout)
   // silently drop tail records. Rationale and the revival trigger: the
-  // revival Agent Note.
+  // revival design record.
 
   /**
    * Ask the SDK to drain and quiesce, but reject after the backend-owned

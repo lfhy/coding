@@ -1,12 +1,12 @@
 # 代码运行时
 
-代码执行 seam 是一个[能力 seam](../../.agents/notes/implemented/architecture/2026-06-13-capability-seams.md)：其 Service Definition（[dsh-code-runtime](../../packages/code-runtime/code-runtime)，`ctx.codeRuntime`）使用宿主提供的异步绑定运行一段模型编写的程序，并报告其打印内容与返回值。代码执行是**一项可选能力**，不属于 agent loop（智能体循环）主干，因此其词汇定义在此而非 [core.md](core.md) 中。各后端的执行基底与源语言不同，这两项均为服务上的只读描述符；worker-thread Service Provider 与工具注册表 Consumer 的约定见 [Code Mode 基础设计](../../.agents/notes/implemented/feature/2026-06-15-code-mode.md) 和[类型化返回约定](../../.agents/notes/implemented/feature/2026-07-20-code-mode-typed-tool-returns.md)。
+代码执行 seam 是一个能力 seam：其 Service Definition（[dsh-code-runtime](../../packages/code-runtime/code-runtime)，`ctx.codeRuntime`）使用宿主提供的异步绑定运行一段模型编写的程序，并报告其打印内容与返回值。代码执行是**一项可选能力**，不属于 agent loop（智能体循环）主干，因此其词汇定义在此而非 [core.md](core.md) 中。各后端的执行基底与源语言不同，这两项均为服务上的只读描述符；worker-thread Service Provider 与工具注册表 Consumer 的约定见 Code Mode 基础设计 和类型化返回约定。
 
 源码：[`packages/code-runtime/code-runtime/src/types.ts`](../../packages/code-runtime/code-runtime/src/types.ts)
 
 ## 运行：请求进，结果出
 
-`CodeRunRequest` 携带**运行时要处理的一切内容**。按照「包边界处显式优于隐式」的规则，默认值（时间预算、输出上限）来自实现的已校验配置，绝不是 `run()` 内部隐藏的 `??`。可选的 `cwd` 是调用方拥有的 Workspace 执行世界坐标，不是程序全局变量；桌面 worker 会在它指向当前 Remote-SSH marker 时选择全新的受限 Goja 子进程，而 binding 调用仍留在本地 Host（[决策](../../.agents/notes/implemented/feature/2026-08-31-desktop-remote-ssh-go-execution-world.md)）：
+`CodeRunRequest` 携带**运行时要处理的一切内容**。按照「包边界处显式优于隐式」的规则，默认值（时间预算、输出上限）来自实现的已校验配置，绝不是 `run()` 内部隐藏的 `??`。可选的 `cwd` 是调用方拥有的 Workspace 执行世界坐标，不是程序全局变量；桌面 worker 会在它指向当前 Remote-SSH marker 时选择全新的受限 Goja 子进程，而 binding 调用仍留在本地 Host（决策）：
 
 ```ts type-equiv
 /**
@@ -144,7 +144,6 @@ type CodeBindingFunction = (args: unknown) => Promise<CodeJsonValue>
  * Why a run failed. The kinds are orthogonal outcomes reported independently
  * (per docs/defensive-patterns.md): a budget expiry is not an exception, an
  * abort is not a timeout, and a substrate death is neither.
- *
  * - `'exception'` — the program threw or failed to parse/transform.
  * - `'timeout'` — an implementation-owned budget expired; the message says which.
  * - `'abort'` — {@link CodeRunRequest.signal} fired.

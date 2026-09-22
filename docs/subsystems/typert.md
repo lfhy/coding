@@ -1,6 +1,6 @@
 # Typert 远程调用
 
-以下类型由生成的 Remote 产物、Host Gateway 与消费方 API assembly 共用。[Typert Gateway Agent Note](../../.agents/notes/implemented/architecture/2026-08-02-typert-remote-method-calls.md) 负责架构与传输决策；本页记录 [`dsh-typert-protocol`](../../packages/typert/protocol/src/types.ts) 和 [`dsh-api-gateway`](../../packages/api/gateway/src/types.ts) 中公共约定的字面定义。
+以下类型由生成的 Remote 产物、Host Gateway 与消费方 API assembly 共用。Typert Gateway 设计记录 负责架构与传输决策；本页记录 [`dsh-typert-protocol`](../../packages/typert/protocol/src/types.ts) 和 [`dsh-api-gateway`](../../packages/api/gateway/src/types.ts) 中公共约定的字面定义。
 
 ## Lookup 与上下文声明
 
@@ -212,7 +212,6 @@ interface TypertClientRemote extends TypertRemoteNamespaceMap {
    * Hand one decoded forwarded frame to the subscription table. The carrier
    * owning the Host frame sink calls this; a consumer subscribes with
    * {@link TypertClientRemote.$on} and never calls it.
-   *
    * `event` is a plain string because this is the wire boundary: the name is
    * whatever the Host assembly's allowlist selected, and one nobody subscribed
    * to is dropped silently.

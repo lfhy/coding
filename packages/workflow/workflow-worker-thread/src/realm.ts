@@ -4,7 +4,7 @@
  * values that JSON cannot preserve but trusts model-written workflow scripts: getters and proxy traps may
  * run, and the vm is not a security boundary. The worker provides host-loop isolation and
  * forced termination, not hostile-value containment. See
- * .agents/notes/implemented/feature/2026-07-05-dynamic-workflows.md for the isolation rationale.
+ *  for the isolation rationale.
  * @module @deepseek-ai/dsh-workflow-worker-thread/realm
  */
 
@@ -56,7 +56,6 @@ function hasPlainPrototype(value: object): boolean {
  * returned unchanged; nested `undefined` and values JSON cannot represent losslessly fail
  * with the offending path. Property accessors run normally, and a throwing read is wrapped
  * with its rendered failure.
- *
  * @param value - the realm value to materialize.
  * @param root - the path label for the root value (error messages).
  * @returns the host-realm copy (plain objects/arrays/scalars only).

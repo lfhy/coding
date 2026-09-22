@@ -3,7 +3,7 @@
  * compact and replace a history range with one summary node by subclassing
  * {@link CompactionEngine}. This interface necessarily depends on session and LLM
  * vocabulary; the rationale is in the
- * [compaction Agent Note](../../../../.agents/notes/implemented/feature/2026-06-18-compaction-capability-seam.md).
+ * compaction design record.
  * @module @deepseek-ai/dsh-compaction
  */
 
@@ -104,7 +104,6 @@ export abstract class CompactionEngine extends Service {
    * force a useful balanced reduction even below the normal threshold. Return
    * `null` when no safe range can be compacted. A single oversized retained
    * unit or request envelope cannot be repaired through surface compaction.
-   *
    * @param agent - agent context owning the session surface and routing options.
    * @param trigger - normal pressure or provider-confirmed context overflow.
    * @param signal - cancellation signal; model-backed implementations must forward it.
@@ -126,7 +125,6 @@ export abstract class CompactionEngine extends Service {
    * durability checkpoint and idle-task settlement. Context injected while the
    * summary runs may sit between the marker pair; only the selected span must
    * remain stable.
-   *
    * @param agent - idle agent whose durable history should be compacted.
    * @param signal - cancellation scoped to this compaction request.
    * @param sourceCommandId - initiating command identity for a manual compaction.
@@ -153,7 +151,6 @@ export abstract class CompactionEngine extends Service {
    * the transaction's `CompactionId`.
    * Use {@link toolPairingBalancedBefore} and {@link toolPairingBalancedAfter}
    * for the edge checks.
-   *
    * @param start - first surface seq, inclusive.
    * @param end - last surface seq, inclusive.
    * @param agent - context whose session is mutated and whose routing options guide summarization.

@@ -1,6 +1,6 @@
 # @deepseek-ai/dsh-session-projection-cache
 
-持久投影缓存（`ctx.sessionProjectionCache`）：把每个已注册投影单元的状态持久化为检查点，基于域数据形态（domain data form）每会话一条记录（`session_projcache` 域——出厂 JSON 后端将其落在配置的存储根目录下、`workspace.json` 旁边）。设计权威：[session-projection RFC](../../../.agents/notes/proposed/architecture/2026-07-27-session-projection-and-command-log.md)（persisted projection cache 一节）。
+持久投影缓存（`ctx.sessionProjectionCache`）：把每个已注册投影单元的状态持久化为检查点，基于域数据形态（domain data form）每会话一条记录（`session_projcache` 域——出厂 JSON 后端将其落在配置的存储根目录下、`workspace.json` 旁边）。设计权威：session-projection RFC（persisted projection cache 一节）。
 
 一条存储行 `(key → {ver, seq, val})` 是折叠捷径，绝不是权威：可能陈旧（`seq` 精确说明陈旧到哪），但绝不会错。实现据此承诺：
 

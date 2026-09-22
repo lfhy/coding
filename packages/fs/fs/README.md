@@ -2,7 +2,7 @@
 
 **`FileSystem`**（`ctx.fs`）定义同一个执行世界中的存储原语，包括解析路径、公开规范化进程路径与文件 URI、检查包含关系、完整或流式读取文本、有界读取原始字节、检查／列出元数据、原子写入和应用字面量编辑，但不规定实现方式。两个变更操作都**可选** 接收版本防护，因此 `ctx.fs` 本身就是完整且不受约束的存储 seam。本包还拥有由工具分派、政策插件监听的 `fs/*` 政策事件词汇。
 
-本包拥有四层文件系统栈中的 Service Definition 和提供方约定层；该拆分使每个关注点可以独立演进和替换（见[能力 seam Agent Note](../../../.agents/notes/implemented/architecture/2026-06-13-capability-seams.md)、[文件系统能力 seam Agent Note](../../../.agents/notes/implemented/architecture/2026-06-17-filesystem-capability-seam.md)、[拆分文件系统 seam Agent Note](../../../.agents/notes/implemented/simplification/2026-06-26-fsspec-style-fs-seam.md)和[文件上下文事件门禁 Agent Note](../../../.agents/notes/implemented/architecture/2026-06-26-file-context-as-event-gate.md)）：
+本包拥有四层文件系统栈中的 Service Definition 和提供方约定层；该拆分使每个关注点可以独立演进和替换（见能力 seam 设计记录、文件系统能力 seam 设计记录、拆分文件系统 seam 设计记录和文件上下文事件门禁 设计记录）：
 
 | 层 | 包 | 角色 |
 |---|---|---|
@@ -46,7 +46,7 @@
 
 ## 词汇
 
-`FsTargetKey` / `FsVersion` 是带品牌的不透明 id（见[品牌 id Agent Note](../../../.agents/notes/implemented/architecture/2026-06-20-branded-ids.md)）；消费方不得解析 `targetKey` 或解释 `version`，只有 `displayPath` 用于模型/UI 输出。`FsObservation` 区分 `{ kind: 'present', version }` 与 `{ kind: 'absent' }`，使策略无需执行 I/O 即可分辨未见目标和确认缺失。`FsWriteIntent` 是显式的防护写入意图（`createIfAbsent` 创建缺失目标，并以 `FS_NOT_OBSERVED` 拒绝现有目标；`replaceIfVersion` 只在观察版本上替换，否则为 `FS_STALE_VERSION`）；从 `writeText` 中省略该值就是第三种无条件状态。`FsPathInfo` 是可报告 `symlink` 的不跟随链接元数据形态，区别于目标级 `FsInfo`。失败会抛出 `FsError`（继承 `HarnessError`；见[结构化错误分类 Agent Note](../../../.agents/notes/implemented/architecture/2026-06-11-structured-error-taxonomy.md)），并携带稳定的 `FsErrorCode`（`FS_NOT_FOUND`、`FS_NOT_DIRECTORY`、`FS_NOT_TEXT`、`FS_NOT_REGULAR_FILE`、`FS_TOO_LARGE`、`FS_PERMISSION_DENIED`、`FS_IO_ERROR`、`FS_STALE_VERSION`、`FS_NOT_OBSERVED`、`FS_AMBIGUOUS_EDIT`、`FS_EDIT_NOT_FOUND`、`FS_ABORTED`）；工具注册表公开 `{ name, code }`，并将其附在 `isError` 结果上。完整约定见 `src/types.ts`。
+`FsTargetKey` / `FsVersion` 是带品牌的不透明 id（见品牌 id 设计记录）；消费方不得解析 `targetKey` 或解释 `version`，只有 `displayPath` 用于模型/UI 输出。`FsObservation` 区分 `{ kind: 'present', version }` 与 `{ kind: 'absent' }`，使策略无需执行 I/O 即可分辨未见目标和确认缺失。`FsWriteIntent` 是显式的防护写入意图（`createIfAbsent` 创建缺失目标，并以 `FS_NOT_OBSERVED` 拒绝现有目标；`replaceIfVersion` 只在观察版本上替换，否则为 `FS_STALE_VERSION`）；从 `writeText` 中省略该值就是第三种无条件状态。`FsPathInfo` 是可报告 `symlink` 的不跟随链接元数据形态，区别于目标级 `FsInfo`。失败会抛出 `FsError`（继承 `HarnessError`；见结构化错误分类 设计记录），并携带稳定的 `FsErrorCode`（`FS_NOT_FOUND`、`FS_NOT_DIRECTORY`、`FS_NOT_TEXT`、`FS_NOT_REGULAR_FILE`、`FS_TOO_LARGE`、`FS_PERMISSION_DENIED`、`FS_IO_ERROR`、`FS_STALE_VERSION`、`FS_NOT_OBSERVED`、`FS_AMBIGUOUS_EDIT`、`FS_EDIT_NOT_FOUND`、`FS_ABORTED`）；工具注册表公开 `{ name, code }`，并将其附在 `isError` 结果上。完整约定见 `src/types.ts`。
 
 ## 模型体验
 
@@ -58,7 +58,7 @@
 
 ## 已知限制与延期工作
 
-- **变更操作约定只支持文本**：文本读取和两个变更操作都以 `FS_NOT_TEXT` 拒绝二进制/非 UTF-8 内容；`readBytes` 是唯一的原始字节原语，二进制安全的变更操作仍是[工具 schema Agent Note](../../../.agents/notes/implemented/feature/2026-06-17-filesystem-tool-schemas.md)有意延期的工作。
-- **只有十二个原语**：没有删除、重命名/移动、复制或监视；`listDir` 只支持一层，递归、glob、分页和搜索不在范围内，见[目录列出 Agent Note](../../../.agents/notes/archived/architecture/2026-07-03-filesystem-directory-listing-seam.md)。
+- **变更操作约定只支持文本**：文本读取和两个变更操作都以 `FS_NOT_TEXT` 拒绝二进制/非 UTF-8 内容；`readBytes` 是唯一的原始字节原语，二进制安全的变更操作仍是工具 schema 设计记录有意延期的工作。
+- **只有十二个原语**：没有删除、重命名/移动、复制或监视；`listDir` 只支持一层，递归、glob、分页和搜索不在范围内，见目录列出 设计记录。
 - **没有 I/O deadline**：该 seam 不启动超时；取消只是每个原语上尽力而为的可选 `AbortSignal`（见有意采用的 [fs 能力族立场](../README.md)）。
 - **先解析后操作使远程后端每次工具调用需要两次往返**：折叠或缓存解析由这种后端自行决定。

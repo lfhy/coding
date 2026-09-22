@@ -325,7 +325,7 @@ describe('bash tool', () => {
   })
 
   // Type and required-key violations are rejected by the harness
-  // (defineTool validates against the ParameterSchemaSpec — the arg-validation Agent Note) before execute.
+  // (defineTool validates against the ParameterSchemaSpec — the arg-validation design record) before execute.
   it.each([
     [{}, /missing required property "command"/],
     [{ command: 42, description: 'd' }, /"command" must be a string/],
@@ -1077,7 +1077,7 @@ describe('the model-facing bash tool builds its request from named args only (no
    * model input into the post-scrub `env` merge or per-run capture budget — NOT
    * to defend a trust boundary
    * (the credential scrub in dsh-bash-local is the security control; see the
-   * bash-stdin-env Agent Note). Foreground `run()` returns a canned result; `start()`
+   * bash-stdin-env design record). Foreground `run()` returns a canned result; `start()`
    * hands back an already-settled fake handle so the task registration completes.
    */
   class RecordingBashExecutor extends ShellExecutor {

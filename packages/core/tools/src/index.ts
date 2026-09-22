@@ -257,11 +257,10 @@ export interface ToolDefinition extends ToolSchema {
    * Pure synchronous classifier for overlap with sibling tool calls. Only
    * `true` opts in; omission, exceptions, non-`true` returns, and invalid
    * `defineTool` arguments are exclusive. This metadata is never model-visible.
-   *
    * Opted-in executions must not mutate parent-owned state. Shared state must
    * tolerate concurrent dispatch; recorder races are permitted only when they
    * commute or fail closed. See the
-   * [parallel-tool-call Agent Note](../../../../.agents/notes/implemented/feature/2026-07-10-parallel-tool-call-execution.md)
+   * parallel-tool-call design record
    * for the full contract.
    * @param args - parsed arguments; `defineTool` validates before calling.
    * @returns Whether this call may join a parallel group.
@@ -839,7 +838,6 @@ export class ToolRuntime extends Service {
   /**
    * The prompt statement of the `code` executor collapse, registered wherever
    * {@link sdkSection} is and rendering empty outside an effective `code`.
-   *
    * Every tool contributes its own guidance section naming its tool, none of
    * them qualify how that tool is reached, and they all render before the SDK
    * (orders 100-199 against {@link SDK_SECTION_ORDER}). Without this the model
@@ -848,7 +846,6 @@ export class ToolRuntime extends Service {
    * `UNKNOWN_TOOL` for a tool the prompt just declared, and concludes the
    * deployment is inconsistent. {@link COLLAPSE_SECTION_ORDER} places the rule
    * before that guidance rather than after it.
-   *
    * `both` renders empty: native calls do execute there, so the rule is false.
    * @returns the section registration.
    */
@@ -865,7 +862,6 @@ export class ToolRuntime extends Service {
   /**
    * The generated-SDK prompt section, registered globally by a code-mode
    * deployment and per scope by {@link presentAs}.
-   *
    * The body regenerates from the CALLING scope, and renders empty for an
    * agent presenting natively — an agent that opted out under a code-mode
    * deployment still sees the global registration, and an empty section is
@@ -912,7 +908,6 @@ export class ToolRuntime extends Service {
 
   /**
    * The reserved `run_code` transport, built on first need.
-   *
    * It never enters the global layer: per-agent restrictions must not remove
    * it, and a scoped registration must not shadow it. The visibility resolver
    * appends it after resolving the filterable global/scoped capability layers,
@@ -936,7 +931,6 @@ export class ToolRuntime extends Service {
    * Present the calling scope's tools in `mode` instead of the deployment
    * default. Nearest scope on the chain wins, so a preset's standing
    * declaration covers every agent joined under it.
-   *
    * Scoped only, and one declaration per scope: this is how an agent preset
    * composes Code Mode agents beside native ones in the same process, and a
    * process-global override would be the `mode` config field instead.
@@ -1007,14 +1001,13 @@ export class ToolRuntime extends Service {
    * behind it — hostage to a code runtime existing even under `mode:
    * 'native'` (the loop's optional-backend idiom, same as
    * `sessionPersistence`).
-   *
    * Assembly and `run_code` execution read separately, so the language is not
    * bound to a request. Harmless while one published backend exists — both
    * reads return the same flavor — but a reload that swapped in a second
    * language between them would hand a program written against one SDK to the
    * other. Binding it is deferred until a second backend ships (the first
    * point it is testable); rationale in the
-   * [language-dispatch note](../../../../.agents/notes/implemented/feature/2026-07-31-code-mode-language-dispatch.md).
+   * language-dispatch note.
    */
   private requireCodeRuntime(mode: ToolPresentationMode): CodeRuntime {
     const runtime = this.ctx.get('codeRuntime')
@@ -1133,14 +1126,12 @@ export class ToolRuntime extends Service {
    * scope's own registrations and the reserved presentation transport; the
    * other sets retain the pre-restriction facts needed by restriction and
    * prompt-order validation.
-   *
    * A restriction filters what a scope inherits — the global layer and every
    * ancestor layer on its chain — and never what its OWN layer registers.
    * That exemption is what a per-child capability filter has to keep intact:
    * the delegation runtime registers a child's reporting and structured-output
    * tools into the child's own layer, and a filter naming the capabilities the
    * child may use must not strip the machinery it answers through.
-   *
    * Reading the exempt set as "the global layer" instead of "not mine" held
    * only while every model-facing tool sat in the host composition. Once
    * presets moved them onto the agent plane they became an ANCESTOR
@@ -1311,7 +1302,6 @@ export class ToolRuntime extends Service {
    * `parent` token set) bypass the collapse. One home for the
    * security-relevant predicate, shared by {@link resolveExecution} and
    * {@link createExecution} so the two can never drift apart.
-   *
    * Resolved through {@link modeFor}, NOT `defaultMode`: an agent given `code`
    * by an agent preset under a native deployment is the composition
    * `dsh-agent-tool-presentation` exists for, and reading the deployment default would

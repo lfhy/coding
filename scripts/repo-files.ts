@@ -21,9 +21,9 @@ export interface ReferenceViolation {
   ref: string
 }
 
-/** Whether a repository path is frozen Agent Note history, not evolving source prose. */
+/** Whether a repository path is frozen design record history, not evolving source prose. */
 export function isArchivedAgentNotePath(path: string): boolean {
-  return path.replaceAll('\\', '/').startsWith('.agents/notes/archived/')
+  return path.replaceAll('\\', '/').startsWith('')
 }
 
 /**

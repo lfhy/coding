@@ -98,7 +98,7 @@ interface ShellExecSpec {
 }
 ```
 
-`stdin` 和 `env` 是受信任的进程内插件输入，不由 `dsh-tool-bash` 暴露。本地执行器会先清除环境中的凭据，再合并调用方显式提供的 env。见 [bash-stdin-env Agent Note](../../.agents/notes/implemented/architecture/2026-06-30-bash-stdin-env-trusted-plugin-api.md)。
+`stdin` 和 `env` 是受信任的进程内插件输入，不由 `dsh-tool-bash` 暴露。本地执行器会先清除环境中的凭据，再合并调用方显式提供的 env。见 bash-stdin-env 设计记录。
 
 `stdoutMaxBytes` 同样仅供受信任插件使用。它让前台消费方能在有界解析预算内请求完整 stdout，而不会改变 stderr、后台任务或面向模型的 bash 工具的常规输出上限。
 
@@ -118,7 +118,7 @@ interface ShellRunResult {
    * short. Mutually exclusive with {@link aborted}: one fused deadline drives
    * both the timeout and the caller's cancellation, so a timeout and an abort
    * racing before process close report the single first-abort cause, not both
-   * (see the [timeout-library Agent Note](../../../../.agents/notes/implemented/architecture/2026-07-06-timeout-deadline-library.md)).
+ * (see the timeout-library design record).
    */
   timedOut: boolean
   /**
@@ -162,7 +162,7 @@ interface ShellSandboxInfo {
 }
 ```
 
-当受限模式没有可用后端时，`ctx.sandbox` 提供方会抛出、执行器会传播由[沙箱 seam](sandbox.md)所有的 `SANDBOX_UNAVAILABLE` 错误码。选定的 runner 拒绝其 profile 时会触达同一个故障关闭的前台错误；已结束的后台任务则记录 `runnerFailed`。模型会在结果中收到拒绝/runner 事实，仅当拒绝标记指出生效模式时才得知该模式，并可通过 `sandbox_permissions` 加 `justification` 请求一次性、严格更宽松的重试；执行任何操作前，`ctx.approval` 必须批准该次确切调用。完整的策略与切换设计见[沙箱 Agent Note](../../.agents/notes/implemented/feature/2026-07-06-sandbox.md)。
+当受限模式没有可用后端时，`ctx.sandbox` 提供方会抛出、执行器会传播由[沙箱 seam](sandbox.md)所有的 `SANDBOX_UNAVAILABLE` 错误码。选定的 runner 拒绝其 profile 时会触达同一个故障关闭的前台错误；已结束的后台任务则记录 `runnerFailed`。模型会在结果中收到拒绝/runner 事实，仅当拒绝标记指出生效模式时才得知该模式，并可通过 `sandbox_permissions` 加 `justification` 请求一次性、严格更宽松的重试；执行任何操作前，`ctx.approval` 必须批准该次确切调用。完整的策略与切换设计见沙箱 设计记录。
 
 ## 后台进程：`ShellProcess`
 

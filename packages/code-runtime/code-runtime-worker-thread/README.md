@@ -1,6 +1,6 @@
 # @deepseek-ai/dsh-code-runtime-worker-thread
 
-这是 [`@deepseek-ai/dsh-code-runtime`](../code-runtime/README.md) seam 的 worker 线程实现。对于普通 Workspace，`WorkerThreadCodeRuntime` 会在每次运行中使用一个全新的 Node `worker_threads.Worker`，输入 TypeScript，由宿主侧剥离类型，通过消息端口桥接 binding，输出 `{ value, logs, error? }`。当 `CodeRunRequest.cwd` 解析为存活的 Remote-SSH marker 时，它会改为驱动远程 Go agent 的一个全新受限 re-exec 子进程；该子进程使用 esbuild/Goja 转换并执行程序，同时在本地 Node Host 上执行每个 binding。**这是隔离措施，而非安全边界**：其信任立场有意与 bash 等价（参见 [Code Mode Agent Note](../../../.agents/notes/implemented/feature/2026-06-15-code-mode.md) 的 Trust posture 章节），但提供本地 worker 有、bash 没有的隔离：独立 isolate、空环境、堆上限与强制终止。
+这是 [`@deepseek-ai/dsh-code-runtime`](../code-runtime/README.md) seam 的 worker 线程实现。对于普通 Workspace，`WorkerThreadCodeRuntime` 会在每次运行中使用一个全新的 Node `worker_threads.Worker`，输入 TypeScript，由宿主侧剥离类型，通过消息端口桥接 binding，输出 `{ value, logs, error? }`。当 `CodeRunRequest.cwd` 解析为存活的 Remote-SSH marker 时，它会改为驱动远程 Go agent 的一个全新受限 re-exec 子进程；该子进程使用 esbuild/Goja 转换并执行程序，同时在本地 Node Host 上执行每个 binding。**这是隔离措施，而非安全边界**：其信任立场有意与 bash 等价（参见 Code Mode 设计记录 的 Trust posture 章节），但提供本地 worker 有、bash 没有的隔离：独立 isolate、空环境、堆上限与强制终止。
 
 ## 配置
 

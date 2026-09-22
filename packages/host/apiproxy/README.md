@@ -18,7 +18,7 @@ Settings 分节中的 `reasoningEffort` 在 agent-default-model 插件配置中�
 
 协议消息组成一个四象限可辨识联合：发起方 × 请求／响应，与物理通道解耦。四种消息分别是 `ClientRequest`（POST `/api/<method>` 的请求体）、`ServerResponse`（该 POST 的响应体）、`ServerRequest`（SSE（Server-Sent Events）帧）和 `ClientResponse`（POST `/api/respond` 的请求体）。响应始终回显对应请求的 `rpcId`，绝不签发新值。方法的参数与返回值结构只存在于领域接口签名（`SessionsApi`、`HostApi`、`EventsApi`）中；`RpcMethodMap` 注册方法，其他所有位置均通过 `RequestPayload<K>`／`ResponseValue<K>` 派生。Zod schema 以 `satisfies z.ZodType<Wire<T>>` 锚定类型，并分两层解析：先解析信封，再解析业务载荷，随后按方法分发。业务错误由 `RpcResult` 的错误分支承载（`RpcErrorDetailsMap` 封闭错误码集合）；HTTP 状态只表达载体层结果。每个 `/api` POST 都必须声明 `application/json` 媒体类型——否则在分发前即以 415 拒绝，因此跨站「简单请求」（浏览器不经 CORS 预检就会发出）永远无法盲目执行有副作用的方法。
 
-分层与协议决策记录在 [GUI 分层与 RPC 协议 RFC](../../../.agents/notes/implemented/architecture/2026-07-19-gui-layering-and-rpc-protocol.md) 中；浏览器侧消费架构记录在 [Web 客户端架构 RFC](../../../.agents/notes/implemented/architecture/2026-07-19-gui-web-client-architecture.md) 中。
+分层与协议决策记录在 GUI 分层与 RPC 协议 RFC 中；浏览器侧消费架构记录在 Web 客户端架构 RFC 中。
 
 首个回答认领待处理请求之前，系统会对照该请求校验问题响应。多选题的回答项可以同时携带 `selected` 中的请求选项标签与非空 `custom` 文本；单选题的回答项必须二选一。标签重复、标签未知、id 不匹配、批次不完整以及自定义文本为空都会以 `bad-response` 拒绝。
 
@@ -30,7 +30,7 @@ Settings 分节中的 `reasoningEffort` 在 agent-default-model 插件配置中�
 
 会话标题与其他所有领域一样搭乘这对通用投影机制——历史尾页的 `projections` 块外加 `title` 键下的 `session/projection` 帧。标题不会加入 `session.list`；冷会话在其中仍只有元数据，直到打开或恢复操作附加其日志。`session.rename` 接受用户显式标题（冷会话先恢复），委托给 `ctx.sessionTitle.rename`——被接受的 `session/title` 事件将标题钉住、不再被自动生成覆盖——并返回规范化后的标题及其事件 seq，让 client 在推送帧到达前就结算自己的 `title` 投影格；规范化后为空的标题返回 `title-invalid`。
 
-`session.fork` 将可选事件锚点映射到该锚点处或其后的首个 `turn/end`，使消息操作可包含该消息所在的完整轮次。锚点省略或超过末尾时，选择最后一个已完成轮次；若锚点已在日志中，而其所在轮次仍开放，则返回 `fork-unavailable`，不会向较早位置裁剪。发布后的子会话会先继承源会话的种子历史、cwd、日志中最新的 `ModelSelection` 及谱系，再加入源 Workspace。如果附加到 Workspace 失败，`workspace-attach-failed` 会携带已发布的子会话 id，供客户端对账。[SessionStore fork 决策](../../../.agents/notes/implemented/feature/2026-06-30-session-store-fork-api.md)记录了为何锚点要映射到该 `turn/end`。
+`session.fork` 将可选事件锚点映射到该锚点处或其后的首个 `turn/end`，使消息操作可包含该消息所在的完整轮次。锚点省略或超过末尾时，选择最后一个已完成轮次；若锚点已在日志中，而其所在轮次仍开放，则返回 `fork-unavailable`，不会向较早位置裁剪。发布后的子会话会先继承源会话的种子历史、cwd、日志中最新的 `ModelSelection` 及谱系，再加入源 Workspace。如果附加到 Workspace 失败，`workspace-attach-failed` 会携带已发布的子会话 id，供客户端对账。SessionStore fork 决策记录了为何锚点要映射到该 `turn/end`。
 
 会话模型选择属于会话领域约定。`session.models` 将当前 `ModelSelection` 与按提供方分组的建议性模型、精确模型的推理元数据和逐提供方查询失败记录分开返回。该选择可能不在这些分组中，也绝不会作为合成行注入；客户端可以提示用户作出另一项选择，而无需把目录变成路由白名单。`session.selectModel` 校验由适配器持有的可选推理强度，并指定下次组装提示词时使用的完整选择。目录成员关系不构成校验：适配器可以解析未列出的模型，而不可用的提供方或不受支持的推理强度会返回 `model-unavailable`。`session.models` 还会报告 `routable`，即当前是否有适配器为所选提供方提供服务。该值刻意不从分组推导，因为适配器可以服务未公布的模型。`session.prompt` 会依据同一事实，在开启轮次之前以 `model-unavailable` 拒绝；客户端禁用 composer 只是提示性设计，这个方法始终可被调用。
 
@@ -72,10 +72,10 @@ Workspace 列表与 Session 列表是相互独立的重连基线。`workspace.cr
 
 ## 已知限制与暂缓事项
 
-- **转发的 Remote 事件寄居在这套 legacy 帧联合里**：`host/remote-event` 住在 `HostFrame` 中，是为了让投递路径复用现有宿主流、不必新开第三条下行通道，因此读起来像是本包拥有 Remote 事件契约。并非如此：名单归 `dsh-api-remotes`，消费端动词是 `ctx.remote.$on`。将来宿主流整体搬离本包时，该帧随之搬走，消费端契约不受影响（[原委](../../../.agents/notes/implemented/architecture/2026-08-10-remote-event-delivery.md)）。
+- **转发的 Remote 事件寄居在这套 legacy 帧联合里**：`host/remote-event` 住在 `HostFrame` 中，是为了让投递路径复用现有宿主流、不必新开第三条下行通道，因此读起来像是本包拥有 Remote 事件契约。并非如此：名单归 `dsh-api-remotes`，消费端动词是 `ctx.remote.$on`。将来宿主流整体搬离本包时，该帧随之搬走，消费端契约不受影响（原委）。
 - **待处理交互状态位于宿主侧**：wire 使用 POST `/api/respond` 加 `RpcReceipt`；`src/api-proxy.ts` 中的表只处理问题，不包含审批条目。
 - **预留 seam 不进入 `RpcMethodMap`**：`prompt.mode: 'inject'`、`job.list` 和描述字段 `hostInstanceId` 都是已记录的预留项；模型发现使用 `llm.models`。未知方法会在信封解析时直接失败，而不会返回「尚未实现」错误码。
 - **没有协议版本字段**：客户端与宿主一同发布；只有出现独立发布的客户端后，`host.describe` 才会增加版本协商字段。
 - **搜索失败会包含提供方诊断信息**：网关是单用户本地服务。将其暴露给多名用户的载体必须用可安全公开的诊断信息替代内部搜索细节。
 - **Linux 原生选择器依赖桌面工具**：在 `native` 能力下，Zenity 和 KDialog 均未安装时，`host.pickDirectory` 会给出包含解决建议的错误提示；组合层面的回退是 browse 后端（见 [native 后端 README](../directory-picker-native/README.md)）。
-- **冷列表提示只向“保持可见、排序偏旧”降级**：projection cache miss 或陈旧的 `lastPromptAt` 会回退到 `createdAt`，除非符合资格的小工件提供精确折叠，因此最近工作过的大 Session 可能在下一个 checkpoint 前排得偏低。大于 `coldBlankProbeMaxBytes` 的空白工件，或来自不提供 `locate()` 的后端的空白工件会保持可见。该阈值在 `readFrom()` 前检查，而非由 persistence 强制，因此工件并发增长可能增加一次探测的读取成本，但不会改变空白状态的安全方向。[有界空白验证决策](../../../.agents/notes/implemented/bug-fix/2026-08-13-bounded-cold-blank-verification.md)规定了这个安全方向；权威且精确的最近时间索引仍属于[最后活动索引提案](../../../.agents/notes/proposed/architecture/2026-07-29-durable-last-activity-index.md)的范围。
+- **冷列表提示只向“保持可见、排序偏旧”降级**：projection cache miss 或陈旧的 `lastPromptAt` 会回退到 `createdAt`，除非符合资格的小工件提供精确折叠，因此最近工作过的大 Session 可能在下一个 checkpoint 前排得偏低。大于 `coldBlankProbeMaxBytes` 的空白工件，或来自不提供 `locate()` 的后端的空白工件会保持可见。该阈值在 `readFrom()` 前检查，而非由 persistence 强制，因此工件并发增长可能增加一次探测的读取成本，但不会改变空白状态的安全方向。有界空白验证决策规定了这个安全方向；权威且精确的最近时间索引仍属于最后活动索引提案的范围。

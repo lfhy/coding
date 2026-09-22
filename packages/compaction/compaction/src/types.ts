@@ -3,7 +3,7 @@
  * Those declaration-merged events record the lock and summary inputs without entering the surface, so they are not
  * surface events; a separate replacement `user/message` carries the summary.
  * Backend packages own configuration and retention policy; see
- * `.agents/notes/implemented/feature/2026-06-18-compaction-capability-seam.md`.
+ * ``.
  * @module @deepseek-ai/dsh-compaction/types
  */
 
@@ -43,7 +43,7 @@ declare module '@deepseek-ai/dsh-session/types' {
        * The model that wrote the summary — the summarize call's envelope,
        * reported by the backend that made the call, logged so the one-shot
        * request is reconstructable from log + code and "which model wrote
-       * this summary" has a durable answer (the reconstructability Agent Note).
+       * this summary" has a durable answer (the reconstructability design record).
        */
       model: string
       /** The generation cap the summarize call sent, when one applied. */

@@ -10,7 +10,7 @@
 - **没有 Codex 插件 env 注入，也没有配置时 placeholder 替换**（命令仍会接收执行器环境，并通过其 shell 运行）。
 - **没有工具前审批或改写路径**：hook 可以阻塞，但桥接不会预审批或替换工具输入。
 
-原生 Cordis 插件可以完成此桥接的所有工作，并且功能更强；该桥接只是已映射 Codex 子集的兼容路径（见 [拦截扩展点 Agent Note](../../../.agents/notes/implemented/feature/2026-06-30-interception-extension-points.md)）。
+原生 Cordis 插件可以完成此桥接的所有工作，并且功能更强；该桥接只是已映射 Codex 子集的兼容路径（见 拦截扩展点 设计记录）。
 
 ## 配置
 

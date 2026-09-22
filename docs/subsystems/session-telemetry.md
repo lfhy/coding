@@ -1,6 +1,6 @@
 # 遥测（telemetry）
 
-对外的会话上报拆分为一项[能力 seam](../capability-seams.md)：Service Definition 与捕获协调器（[dsh-session-telemetry](../../packages/session/session-telemetry)，`ctx.sessionTelemetry`）拥有捕获点、固定分片投影、`session-telemetry/record` 脱敏 waterfall（瀑布式事件）、handoff 游标与最小后端约定；部署方加载的 Service Provider（[dsh-session-telemetry-otel](../../packages/session/session-telemetry-otel)）则是原样配置的 OpenTelemetry JS SDK 日志流水线。它是一项可选能力，不属于 agent loop（智能体循环）主干，这里也没有任何内容会进入模型请求。边界公理（harness 的职责止于 `emit()`；批处理、重试、排队与丢失策略都属于上报 SDK）连同被否决的替代方案，均已在[复活 Agent Note](../../.agents/notes/implemented/feature/2026-07-23-session-telemetry-otel-revival.md)中定案；捕获点、游标与投影的约定见 [Service Definition README](../../packages/session/session-telemetry/README.md)。
+对外的会话上报拆分为一项[能力 seam](../capability-seams.md)：Service Definition 与捕获协调器（[dsh-session-telemetry](../../packages/session/session-telemetry)，`ctx.sessionTelemetry`）拥有捕获点、固定分片投影、`session-telemetry/record` 脱敏 waterfall（瀑布式事件）、handoff 游标与最小后端约定；部署方加载的 Service Provider（[dsh-session-telemetry-otel](../../packages/session/session-telemetry-otel)）则是原样配置的 OpenTelemetry JS SDK 日志流水线。它是一项可选能力，不属于 agent loop（智能体循环）主干，这里也没有任何内容会进入模型请求。边界公理（harness 的职责止于 `emit()`；批处理、重试、排队与丢失策略都属于上报 SDK）连同被否决的替代方案，均已在复活 设计记录中定案；捕获点、游标与投影的约定见 [Service Definition README](../../packages/session/session-telemetry/README.md)。
 
 源码：[`packages/session/session-telemetry/src/index.ts`](../../packages/session/session-telemetry/src/index.ts)
 
@@ -97,7 +97,7 @@ interface SessionTelemetrySink {
    * export timing: a backend that does implement it owns the interaction
    * between its concurrent flushes and {@link shutdown}'s drain (the OTel
    * backend leaves it unimplemented for exactly that hazard — see the
-   * revival Agent Note).
+ * revival design record).
    */
   flush?(): void
   /**
@@ -154,7 +154,7 @@ flush?(): void
 abstract shutdown(): Promise<void>
 ```
 
-Source: [`packages/session/session-telemetry/src/index.ts:148`](../../packages/session/session-telemetry/src/index.ts)
+Source: [`packages/session/session-telemetry/src/index.ts:145`](../../packages/session/session-telemetry/src/index.ts)
 
 <a id="session-telemetry-events"></a>
 
@@ -188,5 +188,5 @@ Transform one outbound record before it reaches the backend. This waterfall is t
 'session-telemetry/record'(record: SessionTelemetryRecord, next: () => SessionTelemetryRecord): SessionTelemetryRecord
 ```
 
-Source: [`packages/session/session-telemetry/src/index.ts:43`](../../packages/session/session-telemetry/src/index.ts)
+Source: [`packages/session/session-telemetry/src/index.ts:40`](../../packages/session/session-telemetry/src/index.ts)
 <!-- END GENERATED cordis-surface -->

@@ -24,7 +24,7 @@
 - `enter(session)` 执行冲突检查，在不通知的情况下发布，并返回一个绑定到该条目的幂等脱离函数。允许并发准备相同 id，但只有一个条目能够成功进入；陈旧的脱离函数无法移除其替代项。
 - `announce(session)` 发出唯一一次创建边，并拒绝重复或重入通知。该次分发期间请求的脱离操作会延后，之后再发出成对的释放边；未通知的条目不会发出任何生命周期边。
 
-`dsh-agent-loop` 使用这一拆分，以保证循环的最终刷新先于会话脱离；详见[所有权 Agent Note](../../../.agents/notes/implemented/architecture/2026-06-18-agent-lifecycle-and-ownership-contracts.md)。
+`dsh-agent-loop` 使用这一拆分，以保证循环的最终刷新先于会话脱离；详见所有权 设计记录。
 
 ### 实时服务事件
 
@@ -58,7 +58,7 @@
 
 ### 请求头重建（`request-header.ts`）
 
-`request/header` 记录非历史请求封装的完整规范快照，其原因为 `initial`、`resume` 或 `change`。其可选 `adapterDefaults` 映射会标记由精确模型解析填入的生效 `reasoningEffort` 或 `maxTokens` 值，使下一次请求提议能够将它们与显式对话设置区分开。`foldRequestHeader()` 选择最新快照；旧版增量事件和已移除的 `fallback` 原因会被拒绝。详见[可重建请求 Agent Note](../../../.agents/notes/implemented/architecture/2026-07-05-reconstructable-requests.md)。
+`request/header` 记录非历史请求封装的完整规范快照，其原因为 `initial`、`resume` 或 `change`。其可选 `adapterDefaults` 映射会标记由精确模型解析填入的生效 `reasoningEffort` 或 `maxTokens` 值，使下一次请求提议能够将它们与显式对话设置区分开。`foldRequestHeader()` 选择最新快照；旧版增量事件和已移除的 `fallback` 原因会被拒绝。详见可重建请求 设计记录。
 
 `user/message` 会直接存储完整的 `UserMessage`，其中包括收件箱路由或进入步骤前创建的标识。无论它是直接人类提示词、合成注入，还是已进入的 Goal Round，都会原样呈现其 `content`；带类型的 `source` 是区分三者的唯一通道，并携带各领域专有的持久事实。`assistant/message` 和 `tool/result` 也会存储完整的消息值。轮次执行仍由 `turn/start` 与 `turn/end` 包围；`agent.inject()` 会把输入排队，直到后续某次 pre-step 领取它，并在 enter 决策中返回它。
 
@@ -78,7 +78,7 @@
 
 - `sourceEventSeqs?: number[]`：被引用为来源的较早事件 seq（例如 `assistant/message` 引用的 `assistant/chunk` seq，或压缩替换条目引用的已遮蔽条目）。对于 `assistant/message`，存在的 `[]` 表示已知提供方流为空；省略则表示旧版或外部事件没有记录源流。其他 surface 事件若有此字段，则要求非空列表。
 - `surfaceOp?: SurfaceOp`：事件进入 surface 的方式。非 surface 事件（边界、分片、用量、错误）不含该字段。
-- `ignorable?: true`：标记读取器在不认识事件类型时可以安全跳过该事件；缺失表示必需，不认识的事件类型会使会话重建被拒绝（[机制](../../../.agents/notes/implemented/architecture/2026-08-10-session-log-version-mechanism.md)）。
+- `ignorable?: true`：标记读取器在不认识事件类型时可以安全跳过该事件；缺失表示必需，不认识的事件类型会使会话重建被拒绝（机制）。
 
 ### 元数据类型（`types.ts`）
 
@@ -137,6 +137,6 @@
 ## 已知限制与暂缓事项
 
 - **会话分支／树结构**（pi 风格条目树）：除非需要超越基于边界的 `fork()` 能力，否则暂缓。
-- **`fork()` 仅在实时会话的稳定边界处切分**：所选前缀结束时不得有开放轮次，且源会话必须位于存储中；[fork API](../../../.agents/notes/implemented/feature/2026-06-30-session-store-fork-api.md) 不支持对已持久化但未加载的会话进行 fork。
-- **`SESSION_FORMAT_VERSION` 固定为 `0`**：预发布阶段不承诺广泛兼容性；`Session` 只接受当前 seed 形状，后端拒绝其他任何版本并说明方向（更新的版本提示"由更新的 harness 写入，请升级"；更旧的版本说明尚无升级路径）。不认识的事件类型同样被拒绝，除非信封带 `ignorable` 标记；版本机制见 [session-log 版本机制 Agent Note](../../../.agents/notes/implemented/architecture/2026-08-10-session-log-version-mechanism.md)。范围受限的存储导入升级应由持久化边界负责（[政策](../../../AGENTS.md)、[消息标识机制引入前的消息恢复](../../../.agents/notes/implemented/bug-fix/2026-07-28-load-pre-identity-session-messages.md)）。
+- **`fork()` 仅在实时会话的稳定边界处切分**：所选前缀结束时不得有开放轮次，且源会话必须位于存储中；fork API 不支持对已持久化但未加载的会话进行 fork。
+- **`SESSION_FORMAT_VERSION` 固定为 `0`**：预发布阶段不承诺广泛兼容性；`Session` 只接受当前 seed 形状，后端拒绝其他任何版本并说明方向（更新的版本提示"由更新的 harness 写入，请升级"；更旧的版本说明尚无升级路径）。不认识的事件类型同样被拒绝，除非信封带 `ignorable` 标记；版本机制见 session-log 版本机制 设计记录。范围受限的存储导入升级应由持久化边界负责（[政策](../../../AGENTS.md)、消息标识机制引入前的消息恢复）。
 - **`TurnEndReasonMap` 不含 ACP（Agent Client Protocol）命名的 `refusal`／`max_turn_requests` 变体**：受生产方约束；只有当适配器或循环首次产生这些变体时才加入。

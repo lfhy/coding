@@ -88,7 +88,7 @@ function throwUnknown(value: unknown): never {
   throw value
 }
 
-describe('the session-persistence Agent Note: AgentLoop factory create/resume', () => {
+describe('the session-persistence design record: AgentLoop factory create/resume', () => {
   it('resumes a pre-react-loop session including pre-identity message events', async () => {
     const sessionId = SessionId('pre-identity-resume')
     const first = await persistentHarness(new MockAdapter([]))

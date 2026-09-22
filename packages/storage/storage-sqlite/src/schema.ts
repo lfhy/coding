@@ -31,7 +31,7 @@ export type JournalMode = 'wal' | 'delete' | 'truncate' | 'persist'
 /* jscpd:ignore-start -- deliberately mirrors the session-persistence-sqlite /
    session-query-sqlite open sequence; this group is the third user, and the
    shared medium helper is deferred to the log-facet migration so the session
-   packages stay untouched this phase (see the domain KV storage Agent Note's
+   packages stay untouched this phase (see the domain KV storage design record's
    reuse audit). */
 /**
  * Exclusively create a missing database file with owner-only permissions.

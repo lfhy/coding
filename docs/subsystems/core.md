@@ -34,7 +34,6 @@
  * service API; provider unload stops and drains every live handle it made.
  * `dispose()` stops the loop, awaits its exit, unregisters the agent, removes
  * its session from the store, and finally unwinds its scoped world.
- *
  * `ctx.agents.get(id)` still returns a bare {@link Agent} — the handle is
  * exposed only to the consumer owner that created it; the structural provider
  * reaches the same teardown internally. Config-created agents (the loop's own
@@ -108,7 +107,7 @@ interface Agent {
    * turn and runs when the aborted activity converges to idle; a `disposed`
    * cancel leaves it parked. A wake submitted while already idle always opens
    * its turn boundary, even when its message is cleared before the driver
-   * claims ([cancel-convergence wake latch](../../../../.agents/notes/implemented/bug-fix/2026-08-07-cancel-convergence-wake-latch.md)).
+ * claims (cancel-convergence wake latch).
    * @param message - identified content and the source that supplied it.
    * @param target - the preferred next-turn or next-step inbox boundary.
    * @param wakeup - whether delivery may wake the driver.
@@ -154,7 +153,7 @@ interface Agent {
 type AgentStatus = 'idle' | 'running'
 ```
 
-`running` 描述整个驱动器的排空区间，可能跨越连续的排队轮次；它不能证明某个轮次仍然打开。dispose 会把 agent 从注册表移除并发出 `agent/disposed`；它不是一个终态 status 值。`followup()` 不返回句柄：其 `MessageId` 标识的是持久的 inbox 插入、认领与丢弃事实，而非之后的助手输出或轮次结束。`whenIdle()` 观察的是整个 agent，因此只有当调用方明确拥有从回执到空闲的这段区间时，才能把它称为一次 run（[决策](../../.agents/notes/implemented/architecture/2026-07-30-followup-enqueue-and-owned-runs.md)）。
+`running` 描述整个驱动器的排空区间，可能跨越连续的排队轮次；它不能证明某个轮次仍然打开。dispose 会把 agent 从注册表移除并发出 `agent/disposed`；它不是一个终态 status 值。`followup()` 不返回句柄：其 `MessageId` 标识的是持久的 inbox 插入、认领与丢弃事实，而非之后的助手输出或轮次结束。`whenIdle()` 观察的是整个 agent，因此只有当调用方明确拥有从回执到空闲的这段区间时，才能把它称为一次 run（决策）。
 
 ```ts type-equiv
 /** Merge-extensible agent creation options. Persona belongs to system-prompt sections. */
@@ -210,7 +209,7 @@ cause 是由 TypeScript 强制约束的同进程输入。活跃的取消持有�
 
 ## 发起 Agent
 
-`ctx.agents` 携带的进程本地 initiator 就是上面的确切 `Agent`，不是单独的 frame 或复制的标识。环境中存在该值既不能证明存活，也不代表授权；[initiator 作用域决策](../../.agents/notes/implemented/architecture/2026-07-15-agent-initiator-scope.md)定义其生命周期和作用域规则。
+`ctx.agents` 携带的进程本地 initiator 就是上面的确切 `Agent`，不是单独的 frame 或复制的标识。环境中存在该值既不能证明存活，也不代表授权；initiator 作用域决策定义其生命周期和作用域规则。
 
 ## 拦截决策
 
@@ -389,9 +388,7 @@ Source: [`packages/core/agent-loop/src/index.ts:296`](../../packages/core/agent-
 
 ### `ctx.agentPresets` — `AgentPresets`
 
-Registry over the deployment's agent presets.
-
-Discovery is unmemoized: `list()` and `resolve()` re-read the roots on every call so a preset authored while the process runs is visible immediately, and a preset deleted underneath a picker disappears from the next read.
+Registry over the deployment's agent presets. Discovery is unmemoized: `list()` and `resolve()` re-read the roots on every call so a preset authored while the process runs is visible immediately, and a preset deleted underneath a picker disappears from the next read.
 
 ```ts cordis-catalog
 /**
@@ -402,7 +399,6 @@ async list(): Promise<AgentPreset[]>
 
 /**
  * Resolve one preset by id.
- *
  * A broken preset resolves — deleting one, reading one, and reporting one
  * all need the row — and the mounting paths refuse it AFTER resolution
  * through {@link resolveMountable}.
@@ -416,7 +412,6 @@ async resolve(id?: string): Promise<AgentPreset>
  * Compose one agent from a preset: ensure the preset's standing mount, then
  * parent the agent's scope key to it so the mount's registrations and
  * listeners cover this agent.
- *
  * Call from the agent factory's `setup(agentCtx)`; a rejection there rolls
  * the agent creation back, so a broken preset never yields a half-composed
  * session.
@@ -429,7 +424,6 @@ async mount(agentCtx: Context, id?: string): Promise<AgentPreset>
 
 /**
  * Join one agent to the SAME standing composition another already runs on.
- *
  * This is how a child agent inherits its parent's capabilities. It is a bind,
  * not a mount: the parent's generation is already composed, so the child gets
  * that exact instance — the same plugin objects, the same tool registrations,
@@ -438,13 +432,11 @@ async mount(agentCtx: Context, id?: string): Promise<AgentPreset>
  * started would hand the child a DIFFERENT generation than the one its
  * parent's history was produced under (and a preset deleted since would fail
  * the child outright while its parent keeps running).
- *
  * Synchronous, and with no composition failure mode of its own — it reads no
  * roster, mounts nothing, and touches no file — which is what lets a child
  * creation window use it: the two in-process subagent drivers compose their
  * children inside a synchronous `setup`. It still rejects a caller error, as
  * the `@throws` below record.
- *
  * A parent that joined no preset — a rosterless deployment — yields no join
  * and no error: there, the model-facing rows sit in the host composition and
  * the child already sees them through the global layer.
@@ -457,7 +449,6 @@ composeFrom(agentCtx: Context, parentCtx: Context): string | undefined
 
 /**
  * The preset one live agent runs on.
- *
  * Read from the live scope chain rather than from the session, so it answers
  * for an agent whose session has not recorded a preset yet — a child agent
  * whose durable header is being built from its parent's composition.
@@ -476,7 +467,6 @@ async read(id: string): Promise<string>
 
 /**
  * Create a locally authored preset by copying an existing one whole.
- *
  * Copy is the only authoring write. Composition text never crosses this
  * seam: the source is named by id and its directory is copied as it stands,
  * so the copy is exactly as loadable as its source and authoring grants no
@@ -500,12 +490,10 @@ async remove(id: string): Promise<void>
 
 /**
  * One agent's instance of a service its preset mounted.
- *
  * A preset publishes services behind `isolate` realms, which are invisible
  * outside the group that declares them — including to the host. This is how a
  * caller holding the agent reads one anyway: a request that is ABOUT a
  * session but arrives from outside it, which is every browser RPC.
- *
  * Read addressing only. A host row that `inject`s a service cannot use this,
  * because injection resolves before any session exists and has no agent to
  * key by; such a service belongs on the host plane instead.
@@ -517,12 +505,10 @@ serviceFor<K extends string & keyof Context>(agent: { ctx: Context }, name: K): 
 
 /**
  * Re-link one agent to a different preset's standing composition.
- *
  * Only valid while the agent has produced nothing: swapping tools mid
  * conversation would leave logged tool calls the new composition cannot
  * make. The CALLER owns that check — this method does not read session
  * history.
- *
  * The swap is a parent re-link, not an unmount: standing mounts are shared
  * and permanent, so the old composition stays for its other agents and the
  * new one is ensured BEFORE the link moves. An unknown or unusable preset
@@ -540,7 +526,6 @@ async recompose(agentCtx: Context, id: string): Promise<AgentPreset>
 
 /**
  * The standing scope key of one preset, for a host reader with no agent.
- *
  * A cold transcript read resolves tool presenters against the composition
  * the session recorded, and the standing mount makes that possible without
  * resuming anything: ensuring the mount composes plugins but starts no
@@ -554,7 +539,7 @@ async standingKeyFor(id?: string): Promise<ScopeKey>
 
 Types: [ScopeKey](scope.md)
 
-Source: [`packages/preset/agent-presets/src/index.ts:82`](../../packages/preset/agent-presets/src/index.ts)
+Source: [`packages/preset/agent-presets/src/index.ts:79`](../../packages/preset/agent-presets/src/index.ts)
 
 <a id="ctxagents--agentregistry"></a>
 
@@ -754,7 +739,7 @@ A fully configured agent and live session were published. Setup is composition-o
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/agent/src/runtime-types.ts:159`](../../packages/core/agent/src/runtime-types.ts)
+Source: [`packages/core/agent/src/runtime-types.ts:158`](../../packages/core/agent/src/runtime-types.ts)
 
 <a id="agentdisposed--emit"></a>
 
@@ -776,7 +761,7 @@ An agent left the registry; AgentLoop emits this after driver quiescence and sco
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/agent/src/runtime-types.ts:168`](../../packages/core/agent/src/runtime-types.ts)
+Source: [`packages/core/agent/src/runtime-types.ts:167`](../../packages/core/agent/src/runtime-types.ts)
 
 <a id="agenterror--emit"></a>
 
@@ -800,7 +785,7 @@ A step or turn errored. The machine reports a failure here even when the error h
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/agent/src/runtime-types.ts:290`](../../packages/core/agent/src/runtime-types.ts)
+Source: [`packages/core/agent/src/runtime-types.ts:289`](../../packages/core/agent/src/runtime-types.ts)
 
 <a id="agentinboxclaimed--emit"></a>
 
@@ -824,7 +809,7 @@ One message left the inbox inside its open turn. If the proposed step is rejecte
 
 Types: [Scoped](scope.md) · [UserMessage](session.md)
 
-Source: [`packages/core/agent/src/runtime-types.ts:197`](../../packages/core/agent/src/runtime-types.ts)
+Source: [`packages/core/agent/src/runtime-types.ts:196`](../../packages/core/agent/src/runtime-types.ts)
 
 <a id="agentinboxdiscarded--emit"></a>
 
@@ -845,7 +830,7 @@ One message was discarded from the live inbox.
 
 Types: [Scoped](scope.md) · [UserMessage](session.md)
 
-Source: [`packages/core/agent/src/runtime-types.ts:205`](../../packages/core/agent/src/runtime-types.ts)
+Source: [`packages/core/agent/src/runtime-types.ts:204`](../../packages/core/agent/src/runtime-types.ts)
 
 <a id="agentinboxinserted--emit"></a>
 
@@ -866,7 +851,7 @@ One message entered the live inbox.
 
 Types: [Scoped](scope.md) · [UserMessage](session.md)
 
-Source: [`packages/core/agent/src/runtime-types.ts:186`](../../packages/core/agent/src/runtime-types.ts)
+Source: [`packages/core/agent/src/runtime-types.ts:185`](../../packages/core/agent/src/runtime-types.ts)
 
 <a id="agentpre-step--waterfall"></a>
 
@@ -891,7 +876,7 @@ Reject a proposed step or replace the messages that enter it. Calling `next()` p
 
 Types: [Scoped](scope.md) · [UserMessage](session.md)
 
-Source: [`packages/core/agent/src/runtime-types.ts:231`](../../packages/core/agent/src/runtime-types.ts)
+Source: [`packages/core/agent/src/runtime-types.ts:230`](../../packages/core/agent/src/runtime-types.ts)
 
 <a id="agentrequest--waterfall"></a>
 
@@ -917,7 +902,7 @@ Replace the frozen call configuration. `await next()` yields the config the mach
 
 Types: [LlmCallConfig](llm-streaming.md) · [Scoped](scope.md)
 
-Source: [`packages/core/agent/src/runtime-types.ts:244`](../../packages/core/agent/src/runtime-types.ts)
+Source: [`packages/core/agent/src/runtime-types.ts:243`](../../packages/core/agent/src/runtime-types.ts)
 
 <a id="agentrequest-error--waterfall"></a>
 
@@ -946,7 +931,7 @@ Handle one failed model-request attempt before the loop retries or closes its st
 
 Types: [LlmFailure](llm-streaming.md) · [ResolvedRetryPolicy](llm-streaming.md) · [Scoped](scope.md)
 
-Source: [`packages/core/agent/src/runtime-types.ts:260`](../../packages/core/agent/src/runtime-types.ts)
+Source: [`packages/core/agent/src/runtime-types.ts:259`](../../packages/core/agent/src/runtime-types.ts)
 
 <a id="agentsession-start--emit"></a>
 
@@ -970,7 +955,7 @@ The session lifecycle began, once before the first turn. Use `agent.inject()` to
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/agent/src/runtime-types.ts:217`](../../packages/core/agent/src/runtime-types.ts)
+Source: [`packages/core/agent/src/runtime-types.ts:216`](../../packages/core/agent/src/runtime-types.ts)
 
 <a id="agentstatus--emit"></a>
 
@@ -993,7 +978,7 @@ Agent status changed (`idle` ⇄ `running`). A waking delivery enters `running` 
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/agent/src/runtime-types.ts:178`](../../packages/core/agent/src/runtime-types.ts)
+Source: [`packages/core/agent/src/runtime-types.ts:177`](../../packages/core/agent/src/runtime-types.ts)
 
 <a id="agentturn-stopping--serial"></a>
 
@@ -1024,7 +1009,7 @@ The turn is about to close: the model owes no response (no live tool calls, no f
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/agent/src/runtime-types.ts:278`](../../packages/core/agent/src/runtime-types.ts)
+Source: [`packages/core/agent/src/runtime-types.ts:277`](../../packages/core/agent/src/runtime-types.ts)
 
 <a id="agent-loop-events"></a>
 

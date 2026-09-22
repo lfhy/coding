@@ -3,7 +3,6 @@
  * Windows compositions where a PowerShell executor (e.g.
  * `@deepseek-ai/dsh-pwsh-local`) backs `ctx.shell`; the tool contract is
  * PowerShell-dialect: native `C:\...` paths and `$env:NAME` variables.
- *
  * Behavior mirrors `dsh-tool-bash` call-for-call: foreground and
  * `run_in_background` execution (background handles register with the
  * generic `ctx.jobs` runtime), the managed `DSH_*` environment through the
@@ -15,7 +14,6 @@
  * presentation mirrors the bash tool's too: a completed foreground call is
  * a terminal card with the parsed exit-status pill, using the shared
  * exit-status parse from `@deepseek-ai/dsh-shell`.
- *
  * @module @deepseek-ai/dsh-tool-pwsh
  */
 
@@ -83,7 +81,7 @@ interface PwshForegroundResult {
   sandbox?: { mode: string; denied: boolean; enforcement?: string; runnerFailed?: boolean }
 }
 
-/* jscpd:ignore-start -- minimal mirror of dsh-tool-bash's validation and execute plumbing (Agent Note). */
+/* jscpd:ignore-start -- minimal mirror of dsh-tool-bash's validation and execute plumbing (design record). */
 function validatePwshArgs(args: PwshToolArgs): void {
   if (args.command.trim().length === 0) {
     throw new Error('invalid command: expected a non-empty string')
@@ -120,7 +118,7 @@ function pwshDescription(backgroundEnabled: boolean, escalationModes: readonly S
   // shipped composition pairing tool-pwsh with a confining executor is
   // win32-only; a future POSIX pwsh-sandbox composition must gate both
   // sentences on the platform instead (tracked in the pwsh-tool-and-executor
-  // Agent Note).
+  // design record).
   return base + ' Under the Windows sandbox, read-only pwsh runs in PowerShell ConstrainedLanguage mode, while '
     + 'workspace-write stays in FullLanguage unless host policy says otherwise. In read-only, prefer cmdlets and core types (`[string]`, `[datetime]`, `[regex]`, `[guid]`); '
     + '.NET static calls (`[System.IO.*]::`, `[math]::`), `Add-Type`, COM objects, and reflection fail '
@@ -171,7 +169,7 @@ function canonicalPwshResult(result: ShellRunResult): PwshForegroundResult {
     timedOut: result.timedOut,
     aborted: result.aborted,
     timeoutMs: result.timeoutMs,
-    /* jscpd:ignore-start -- the canonical projection and background-handle shape mirror dsh-tool-bash's by design (Agent Note). */
+    /* jscpd:ignore-start -- the canonical projection and background-handle shape mirror dsh-tool-bash's by design (design record). */
     stdout: output(result.stdout),
     stderr: output(result.stderr),
     ...result.sandbox !== undefined ? {
@@ -192,7 +190,7 @@ const BACKGROUND_OUTPUT_PROPERTIES = {
 } as const
 /* jscpd:ignore-end */
 
-/* jscpd:ignore-start -- deliberate mirror of dsh-tool-bash's apply() preamble (pwsh-tool-and-executor Agent Note). */
+/* jscpd:ignore-start -- deliberate mirror of dsh-tool-bash's apply() preamble (pwsh-tool-and-executor design record). */
 export function apply(ctx: Context, config: Config = {}): void {
   const backgroundEnabled = config.enableRunInBackground ?? true
   const defaultMode = ctx.shell.sandboxMode
@@ -206,7 +204,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   const resolveSandboxPolicy = (exec: ToolExecution): SandboxExecutionPolicy | undefined =>
     sandboxPolicy?.resolve(exec.agent === undefined ? {} : { session: exec.agent.session })
 
-  /* jscpd:ignore-start -- deliberate mirror of dsh-tool-bash's escalation resolver (pwsh-tool-and-executor Agent Note). */
+  /* jscpd:ignore-start -- deliberate mirror of dsh-tool-bash's escalation resolver (pwsh-tool-and-executor design record). */
   /**
    * Resolve a sandbox-escalation request through `ctx.approval` BEFORE
    * anything executes, delegating the shared fail-closed sequence (strict
@@ -252,7 +250,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   ctx.tools.register(defineTool({
     name: 'pwsh',
     description: pwshDescription(backgroundEnabled, escalationModes),
-    /* jscpd:ignore-start -- deliberate mirror of dsh-tool-bash's parameter surface (pwsh-tool-and-executor Agent Note). */
+    /* jscpd:ignore-start -- deliberate mirror of dsh-tool-bash's parameter surface (pwsh-tool-and-executor design record). */
     parameters: {
       command: { type: 'string', required: true, description: 'The PowerShell command to execute.' },
       description: {
@@ -283,7 +281,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     output: {
       // The foreground result wire shape mirrors dsh-tool-bash's by contract —
       // consumers of one must accept the other (see the pwsh-tool-and-executor
-      // Agent Note).
+      // design record).
       /* jscpd:ignore-start -- deliberate result-schema symmetry with dsh-tool-bash. */
       schema: {
         oneOf: [
@@ -344,7 +342,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           : renderPwshResult(value as RenderablePwshResult, escalationModes),
       }],
     },
-    /* jscpd:ignore-start -- the execute path mirrors dsh-tool-bash's by design (see the pwsh-tool-and-executor Agent Note). */
+    /* jscpd:ignore-start -- the execute path mirrors dsh-tool-bash's by design (see the pwsh-tool-and-executor design record). */
     async execute(args: PwshToolArgs, exec) {
       validatePwshArgs(args)
       // Description is display metadata; workdir defaults to the caller's session.
@@ -406,7 +404,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       return canonicalPwshResult(result)
     },
     /* jscpd:ignore-end */
-    /* jscpd:ignore-start -- the background call card mirrors presentBashCall's by design (Agent Note). */
+    /* jscpd:ignore-start -- the background call card mirrors presentBashCall's by design (design record). */
     presentCall: (args: PwshToolArgs): TerminalCallView | GenericCallView => {
       // Background acknowledgements carry no terminal exit status; the generic
       // card mirrors the bash tool's background presentation.
@@ -427,7 +425,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       }
     },
     /* jscpd:ignore-end */
-    /* jscpd:ignore-start -- the completed-result presentation mirrors presentBashResult's by design (Agent Note). */
+    /* jscpd:ignore-start -- the completed-result presentation mirrors presentBashResult's by design (design record). */
     presentResult: (args: unknown, result: ToolResult): ToolResultView | undefined => {
       const block = result.content.length === 1 ? result.content[0] : undefined
       if (block === undefined || block.type !== 'text') return undefined

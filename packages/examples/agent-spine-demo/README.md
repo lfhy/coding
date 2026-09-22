@@ -47,7 +47,7 @@
 - **非本地 skill 提供方**：组合包交付 skill 注册表、本地文件系统提供方和 `skill` 工具；部署可以把嵌入式目录或远程目录等其他提供方作为同级插件添加。
 - **入口与各应用基础设施**：无头、ACP（Agent Client Protocol）和 JSON-RPC 应用包负责传输、stdout 与重新加载选择。`timer` 保留在主干中，因为它是共有组件且不写 stdout。
 
-这里在组合层应用 [Service Definition／Service Provider／Consumer 的职责分离](../../../.agents/notes/implemented/architecture/2026-06-13-capability-seams.md)：组合包拥有共享主干，叶节点拥有后端，应用包拥有入口。
+这里在组合层应用 Service Definition／Service Provider／Consumer 的职责分离：组合包拥有共享主干，叶节点拥有后端，应用包拥有入口。
 
 ## 配置
 
