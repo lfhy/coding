@@ -1,30 +1,28 @@
-# Agent Note: Mechanical quality gates over prose guidelines
+# Agent Note: 以机械质量门禁取代行文约定
 
 Status: implemented
 
-English | [中文](2026-06-11-quality-gates.zh.md)
+本记录中的钩子/CI 对称设计已由[快速本地 Git 钩子](2026-07-22-fast-local-git-hooks.md)取代；CI 仍是执行完整检查的路径。
 
-The hook/CI symmetry in this record is superseded by [Fast local Git hooks](2026-07-22-fast-local-git-hooks.md); CI remains the exhaustive enforcement path.
+## 问题
 
-## Problem
+本代码库主要由 coding agent（智能体）开发。相比行文约定，agent 遵守强制门禁的可靠性远高得多；而当劳动由 agent 承担时，「工作量大」不构成成本论据。早期证据：未通过类型检查的测试被提交（vitest 不做类型检查），仅在评审中才被发现。
 
-This codebase is developed primarily by coding agents. Agents follow enforced gates far more reliably than prose conventions, and "a lot of work" is not a cost argument when agents do the labor. Early evidence: tests that didn't typecheck shipped (vitest doesn't typecheck) and were only caught by a review.
+## 决策
 
-## Decision
+每条可机械检查的 AGENTS.md 承诺都有一个以非零状态退出的命令。CI 执行完整集合，而 Git 钩子将延迟预算留给可低成本发现的本地缺陷：
 
-Every mechanically checkable AGENTS.md promise gets a command that exits non-zero. CI invokes the exhaustive set, while Git hooks reserve their latency budget for cheap local defects:
+- 最严格的 TypeScript 配置（`noUncheckedIndexedAccess`、`exactOptionalPropertyTypes` 等）；示例、测试和脚本通过根目录的 no-emit `tsconfig.json` 在 CI 中进行类型检查，而包/vendor 代码保持在各自 project-reference 边界之后。
+- [Oxlint](2026-07-29-oxlint-linter.md) 配合类型感知的 TypeScript 规则以及 @stylistic 和 SonarJS 兼容插件，强制执行统一代码风格和文件内重复逻辑检查；vendor 代码排除在外。
+- jscpd 检测包的生产 TypeScript 代码与仓库脚本中的跨文件克隆；窄范围的源码区间例外用于记录有意为之的并行实现。
+- `packages/*/*/src` 下按文件 100% 覆盖率（v8）；不可达的防御性守卫使用 `/* v8 ignore */ ` 并注明理由，而非删除。
+- knip（死代码/依赖）、publint（包的正确性）、workspace 约束（workspace 规则：private、cordis peer+dev、统一版本、ESM），以及对构建出的包声明文件进行 NodeNext 消费方类型检查。
+- lefthook pre-commit 执行不加载项目的 Oxlint 验证，并应用带[一次有界重试](2026-08-09-oxlint-only-fix-workflow.md)的安全修复，拒绝已暂存的空白问题并检查 vendor manifest（元数据清单）；pre-push 运行增量类型检查。CI 在 Node 22.19/24/26 上运行完整矩阵，并对 Headless、TUI、ACP（Agent Client Protocol）、JSON-RPC、工作流和代码运行时入口路径执行已构建应用的冒烟测试。
 
-- Max-strict TypeScript (`noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, …); examples, tests, and scripts typecheck in CI via the root no-emit `tsconfig.json` while package/vendor code stays behind its own project-reference boundary.
-- [Oxlint](2026-07-29-oxlint-linter.md) with type-aware TypeScript rules plus the @stylistic and SonarJS compatibility plugins, enforcing the house style and file-local duplicated-logic checks; vendored code excluded.
-- jscpd detects cross-file clones in package production TypeScript and repository scripts; narrow source-range exceptions document deliberately parallel implementations.
-- Per-file 100% coverage on `packages/*/*/src` (v8); unreachable defensive guards carry `/* v8 ignore */ ` with stated reasons instead of deletion.
-- knip (dead code/deps), publint (package correctness), workspace constraints (workspace rules: private, cordis peer+dev, uniform version, ESM), and a NodeNext consumer typecheck for built package declarations.
-- lefthook pre-commit applies project-free Oxlint validation and [safe fixes with a bounded retry](2026-08-09-oxlint-only-fix-workflow.md), rejects staged whitespace, and checks the vendor manifest; pre-push runs incremental typecheck. CI runs the full matrix on node 22.19/24/26 plus built application smokes for the Headless, TUI, ACP, JSON-RPC, workflow, and code-runtime entry paths.
+## 后果
 
-## Consequences
-
-- Conventions survive agent turnover; cheap commit/push defects fail locally and exhaustive violations fail in CI.
-- The gates themselves are code to maintain; config changes are reviewed like any change.
-- 100%-coverage pressure can produce assertion-free tests — mutation testing is the planned counterweight (see [the mutation-testing proposal](../../proposed/testing/2026-06-11-mutation-testing.md)).
+- 约定不会因 agent 更替而失效；可低成本发现的 commit/push 缺陷会在本地触发失败，其余违规会在 CI 的完整检查中触发失败。
+- 门禁本身也是需要维护的代码；配置变更与其他变更一样需要评审。
+- 100% 覆盖率的压力可能催生无断言的测试——变异测试是计划中的对策（见[变异测试提案](../../proposed/testing/2026-06-11-mutation-testing.md)）。
 
 <!-- agent-note-format: alternatives-not-recorded (pre-format Agent Note) -->

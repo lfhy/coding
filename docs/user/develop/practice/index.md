@@ -1,20 +1,18 @@
-# Three-role capability design
+# 能力的三种角色设计
 
-English | [中文](index.zh.md)
+本文分为两部分：先参考三种角色能力模式的概念，再通过高级教程构建一项能力。请先完成[基础插件路径](../basic/)和[服务教程](../framework/service.md)。
 
-This page has two parts: a concept reference for the three-role capability pattern, followed by an advanced tutorial that builds one capability. Complete the [basic plugin path](../basic/) and [services tutorial](../framework/service.md) first.
+## 概念参考
 
-## Concept reference
+当一项能力足够通用，需要支持可替换的提供方时（例如 Bash 执行），harness 会区分三种角色：**Service Definition**、**Service Provider** 和 **Consumer**。角色需要独立演进或替换时，将它们放入不同包；否则一个包可以承担多个角色。完整能力构成其 seam。任何单一角色都不是 seam。
 
-When a capability is general enough to need replaceable providers, such as Bash execution, Harness separates three roles: a **Service Definition**, a **Service Provider**, and a **Consumer**. Put the roles in separate packages when they need to evolve or be replaced independently; a package may otherwise own more than one role. The complete capability is its seam. No individual role is a seam.
+## 以 Bash 为例
 
-## Bash example
+以 Bash 执行能力为例：
 
-The Bash execution capability consists of:
-
-- **Service Definition** (`dsh-shell`) — defines the Cordis service and Bash request and result types
-- **Service Provider** (`dsh-bash-local`) — executes commands on the local machine
-- **Consumer** (`dsh-tool-bash`) — exposes the capability as a model-callable tool
+- **Service Definition** (`dsh-shell`)：定义 Cordis 服务以及 Bash 请求和结果类型
+- **Service Provider** (`dsh-bash-local`)：在本地计算机上执行命令
+- **Consumer** (`dsh-tool-bash`)：将该能力公开为模型可调用的工具
 
 ```
 ┌─────────────┐     ┌──────────────────┐     ┌──────────────┐
@@ -26,11 +24,11 @@ The Bash execution capability consists of:
                     inject: ['shell']
 ```
 
-## Benefits of the split
+## 拆分的好处
 
-### Replace providers
+### 提供方可替换
 
-One Service Definition can have multiple providers selected through `cordis.yml`:
+同一个 Service Definition 可以有多个提供方，可通过 `cordis.yml` 选择：
 
 ```yaml
 # Local execution
@@ -39,25 +37,25 @@ One Service Definition can have multiple providers selected through `cordis.yml`
 # Replace this row with another package that provides the same service.
 ```
 
-The Service Definition and tool remain unchanged while the provider changes.
+更换提供方时，Service Definition 和工具均保持不变。
 
-### Evolve independently
+### 独立演进
 
-- The Service Definition changes rarely after callers depend on its contract.
-- Service Providers can improve performance and security independently.
-- Consumers can change how they present the capability to the model.
+- 调用方开始依赖 Service Definition 的约定后，Service Definition 很少改动。
+- Service Provider 可以独立优化性能和安全性。
+- Consumer 可以调整能力向模型呈现的方式。
 
-### Decouple dependencies
+### 依赖解耦
 
-- The Service Provider depends on the Service Definition.
-- The Consumer depends on the Service Definition.
-- The Service Provider and Consumer **do not depend on each other**.
+- Service Provider 依赖 Service Definition。
+- Consumer 依赖 Service Definition。
+- Service Provider 和 Consumer **互不依赖**。
 
-The [capability-seam reference](../../../capability-seams.md) owns the current built-in families and package links.
+当前内置系列及其包链接由[能力 seam 参考](../../../capability-seams.md)负责。
 
-## Tutorial: develop a three-role capability
+## 教程：开发三种角色的能力
 
-### Step 1: write the Service Definition
+### 第一步：编写 Service Definition
 
 ```ts ignore-check
 // packages/my-cap/my-cap/src/index.ts
@@ -87,7 +85,7 @@ export interface MyCapResult {
 }
 ```
 
-### Step 2: write a Service Provider
+### 第二步：编写 Service Provider
 
 ```ts ignore-check
 // packages/my-cap/my-cap-local/src/index.ts
@@ -108,7 +106,7 @@ export function apply(ctx: Context) {
 }
 ```
 
-### Step 3: write a consumer
+### 第三步：编写消费方
 
 ```ts ignore-check
 // packages/my-cap/tool-my-cap/src/index.ts
@@ -137,19 +135,19 @@ export function apply(ctx: Context) {
 }
 ```
 
-### Compose them in cordis.yml
+### 在 cordis.yml 中组合
 
 ```yaml
 - name: '@deepseek-ai/dsh-my-cap-local'
 - name: '@deepseek-ai/dsh-tool-my-cap'
 ```
 
-## Design points
+## 设计要点
 
-- **Do not split preemptively** — use separate packages only when the roles need to evolve independently. A simple tool plugin does not.
-- **The Service Definition owns Request/Result types** — Service Providers and Consumers depend only on the Service Definition package.
-- **Explicit > implicit** — resolve defaults in an explicit `resolve(request): Spec` step rather than hiding `?? default` expressions inside `run()`.
+- **不要预防性拆分**：只有角色需要独立演进时，才使用不同包。简单的工具插件无需拆分。
+- **Service Definition 拥有 Request/Result 类型**：Service Provider 和 Consumer 只依赖 Service Definition 包。
+- **显式优于隐式**：实现应通过显式的 `resolve(request): Spec` 步骤处理默认值，而不是在 `run()` 中隐藏 `?? default`。
 
-## Next steps
+## 下一步
 
-- [LLM adapter](./llm-adapter.md) — implement an LLM provider
+- [LLM（大语言模型）适配器](./llm-adapter.md)：实现一个 LLM 提供方

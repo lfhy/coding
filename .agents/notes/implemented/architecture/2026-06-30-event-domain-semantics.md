@@ -1,39 +1,37 @@
-# Agent Note: Event-domain semantics — session is the fact log, agent is the live event channel
+# Agent Note: 事件域语义——会话是事实日志，agent 是实时事件通道
 
 Status: implemented
 
-English | [中文](2026-06-30-event-domain-semantics.zh.md)
+## 问题
 
-## Problem
+harness 通过 Cordis 事件分类体系扩展 agent loop（智能体循环）（见[微内核事件分类体系 Agent Note](2026-06-11-microkernel-event-taxonomy.md)）。随着该分类体系的增长，三个事件域之间的界限变得模糊：
 
-The harness extends the agent loop through a Cordis event taxonomy (see [the microkernel event-taxonomy Agent Note](2026-06-11-microkernel-event-taxonomy.md)). As that taxonomy grew, the line between the three event domains blurred:
+- `session/*` 承载持久的、事件溯源的日志（`SessionEventMap`）。
+- `agent/*` 承载运行时实时信号，向插件传递 `Agent` 句柄。
+- `tools/*` 承载工具注册表与执行流水线。
 
-- `session/*` carries the durable, event-sourced log (`SessionEventMap`).
-- `agent/*` carries live runtime signals that hand a plugin the `Agent` handle.
-- `tools/*` carries the tool registry and execution pipeline.
+两个问题促使我们固定语义。第一，若干轮次/步骤边界同时作为持久的 `SessionEvent`（`turn/start`、`turn/end`、`step/start`、`step/end`）和镜像的 `agent/*` emit（`agent/turn-start`、`agent/turn-end`、`agent/step-start`、`agent/step-end`）存在。消费方对同一事实有两个真源，每次生命周期变更都必须同时更新两处。第二，钩子子系统需要一个连贯且有文档的订阅表面——插件作者（以及基于其上构建的 Claude Code / Codex 钩子桥接）必须在不阅读循环代码的情况下知道应该监听会话事件还是 agent 事件，以及原因。
 
-Two problems motivated pinning the semantics down. First, several turn/step boundaries existed BOTH as a durable `SessionEvent` (`turn/start`, `turn/end`, `step/start`, `step/end`) AND as a mirrored `agent/*` emit (`agent/turn-start`, `agent/turn-end`, `agent/step-start`, `agent/step-end`). A consumer had two sources of truth for the same fact, and every lifecycle change had to update both. Second, the Hooks subsystem needs ONE coherent, documented surface to subscribe to — a plugin author (and the Claude Code / Codex hook bridges built on top) must know, without reading the loop, whether to listen on a session event or an agent event, and why.
+这套词汇是拦截决策、持久的 `hook/*` 日志，以及 Claude Code 和 Codex 桥接的基础。
 
-This vocabulary is the foundation for interception decisions, the durable `hook/*` log, and the Claude Code and Codex bridges.
+## 决策
 
-## Decision
+**三个域，各司其职，以一条边界规则统一。**
 
-**Three domains, one job each, with a single boundary rule.**
+- **`session/*`——持久的、可回放的事实日志。** 拥有 `SessionEventMap`；每条记录仅含 JSON（无活对象）。每次追加触发一次 `session/event` emit，加上 `session/flush` 并行持久性检查点。它同时也是实时 transcript（文本记录）源：想渲染或响应已发生事件的消费方在此订阅，因此实时渲染与回放投影共享同一路径。
+- **`agent/*`——运行时实时表面。** 始终携带活的 `Agent`。拦截 waterfall（瀑布式事件）（`agent/pre-step`、`agent/request`、`agent/request-error`）负责变换、拒绝或恢复；awaited `agent/turn-stopping` 观察停止边界；瞬态 emit 报告生命周期、状态、inbox 的插入、领取和丢弃，以及错误。轮次和步骤边界不在此处——它们是持久的会话事件，从 `session/event` 读取；token 流（`assistant/chunk`）和轮次中途以 `user/message` 呈现的 steering（中途引导）同理。
+- **`tools/*`——工具注册表与执行流水线。**
 
-- **`session/*` — the durable, replayable FACT log.** Owns `SessionEventMap`; every entry is JSON-only (no live objects). One `session/event` emit per append, plus the `session/flush` parallel durability checkpoint. It is also the live transcript feed: a consumer that wants to render or react to what happened subscribes here, so live rendering and replay projections share one path.
-- **`agent/*` — the LIVE runtime surface.** Always carries the live `Agent`. Interception waterfalls (`agent/pre-step`, `agent/request`, `agent/request-error`) transform, reject, or recover; awaited `agent/turn-stopping` observes the stop boundary; transient emits report lifecycle, status, inbox insertion/claim/discard, and errors. Turn and step BOUNDARIES are NOT here — they are durable session events read off `session/event`, as are the token stream (`assistant/chunk`) and mid-turn steering (a `user/message`).
-- **`tools/*` — the tool registry and execution pipeline.**
+**边界规则：** 持久的、可回放的事实是 `SessionEvent`；实时拦截或瞬态/活对象信号是 `agent`/`tools` Cordis 事件。轮次或步骤边界是持久事实，因此存在于会话日志中并从 `session/event` 源读取——不会被镜像为 `agent/*` emit。
 
-**The boundary rule:** a durable, replayable fact is a `SessionEvent`; a live interception or a transient/live-object signal is an `agent`/`tools` Cordis event. A turn or step boundary is a durable fact, so it lives in the session log and is read off the `session/event` feed — it is NOT mirrored as an `agent/*` emit.
+**将规则应用于边界镜像：** 全部四个边界镜像——`agent/turn-start`、`agent/turn-end`、`agent/step-start`、`agent/step-end`——被**移除**。没有生产消费方需要在边界处获取活的 `Agent`：ACP（Agent Client Protocol）桥接将其进行中的提示词与精确对应的 `session/event` `turn/start`/`turn/end` 事件对关联，其他 transcript 消费方同样从持久流派生边界。见[移除边界镜像事件 Agent Note](../simplification/2026-06-20-remove-agent-boundary-mirror-events.md)，该决策由它负责。移除 emit 也简化了循环的 `closeStep`/`closeTurn`（各只需一次 append，无需配对 emit）。
 
-**Applying the rule to the boundary twins:** all four boundary mirrors — `agent/turn-start`, `agent/turn-end`, `agent/step-start`, `agent/step-end` — are **REMOVED**. No production consumer needs the live `Agent` at a boundary: the ACP bridge correlates its in-flight prompt with the exact `session/event` `turn/start`/`turn/end` pair, and other transcript consumers likewise derive boundaries from the durable stream. See [the remove-boundary-mirror-events Agent Note](../simplification/2026-06-20-remove-agent-boundary-mirror-events.md), which owns that decision. Removing the emits also simplifies the loop's `closeStep`/`closeTurn` (one append each, no paired emit).
+## 后果
 
-## Consequences
-
-- The loop no longer emits any boundary mirror; `closeStep` appends `step/end` only and `closeTurn` appends `turn/end` only. `Session.append` owns post-commit observer containment, so a throwing boundary observer cannot change the turn outcome or starve later consumers; an acceptance or internal validation failure still escapes before the boundary enters the log.
-- Tests that observed boundaries via the removed emits now observe the durable `turn/start`/`turn/end`/`step/start`/`step/end` session events — the behavior they pin (boundary ordering, step counting) is unchanged; only the feed they read moved to the canonical one. The tests that exercised a *throwing turn-boundary emit listener* were deleted, because that code path no longer exists (there is no emit to throw from). Per [AGENTS.md "tests document behavior, not golden truth"](../../../../AGENTS.md), the behavior and its test moved (or died) together.
-- The loop marks the step open (`stepOpen = true`) only after `append('step/start')` returns. Internal dispatch validation runs before the log push and may reject without opening a step; post-commit `session/event` observer failures are contained inside `Session.append`. The marker therefore represents exactly the committed boundary that owes a later `step/end`.
-- The full realization of this is [the simplification Agent Note "Stop mirroring durable boundaries as agent events"](../simplification/2026-06-20-remove-agent-boundary-mirror-events.md): all four boundary mirrors are removed and every consumer reads boundaries off `session/event`. `agent/steering` (not a boundary mirror) stayed outside that Agent Note's scope and was removed by its own follow-up, [Remove the `agent/steering` mirror emit](../../archived/simplification/2026-07-04-remove-agent-steering-mirror.md) — it mirrored the durable mid-turn steering `user/message`.
-- The generated cordis event surface (the `docs/subsystems/` pages) no longer lists the mirror events.
+- 循环不再 emit 任何边界镜像；`closeStep` 仅追加 `step/end`，`closeTurn` 仅追加 `turn/end`。`Session.append` 负责 post-commit observer 隔离，因此抛出异常的边界 observer 无法改变轮次结果或饿死后续消费方；事件接纳失败或内部校验失败仍会在边界进入日志之前向外抛出。
+- 之前通过已移除 emit 观察边界的测试，现在观察持久的 `turn/start`/`turn/end`/`step/start`/`step/end` 会话事件——它们所锁定的行为（边界顺序、步骤计数）不变；只是读取的源移到了规范源。那些测试*抛出异常的轮次边界 emit 监听器*的用例被删除，因为该代码路径不再存在（没有 emit 可供抛出）。按照 [AGENTS.md「测试记录行为，而非黄金真相」](../../../../AGENTS.md)，行为与其测试一同迁移（或一同消亡）。
+- 循环仅在 `append('step/start')` 返回后才标记步骤已打开（`stepOpen = true`）。内部分发校验在日志推入之前运行，可能在不打开步骤的情况下拒绝；post-commit `session/event` observer 的失败被隔离在 `Session.append` 内部。因此该标记精确表示已提交的、欠一个后续 `step/end` 的边界。
+- 完整实现见[简化 Agent Note「停止将持久边界镜像为 agent 事件」](../simplification/2026-06-20-remove-agent-boundary-mirror-events.md)：全部四个边界镜像被移除，所有消费方从 `session/event` 读取边界。`agent/steering`（不是边界镜像）不在该 Agent Note 范围内，由其后续 Agent Note [移除 `agent/steering` 镜像 emit](../../archived/simplification/2026-07-04-remove-agent-steering-mirror.md) 单独移除——它镜像的是持久的中途 steering `user/message`。
+- 生成的 Cordis 事件表面（`docs/subsystems/` 各页）不再列出镜像事件。
 
 <!-- agent-note-format: alternatives-not-recorded (pre-format Agent Note) -->

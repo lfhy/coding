@@ -1,14 +1,12 @@
-# Session References
+# 会话引用
 
-English | [中文](session-reference.zh.md)
+由 Host 支撑的文件发现，以及结构化的跨会话引用请求与准备后的消息上下文。[文件引用约定](../../packages/context/file-reference)负责仅含路径的补全记录与语法；[会话引用约定](../../packages/context/session-reference)定义规范 URI、当前表层投影、标签安全的 JSON 与字节保留、稳定错误和不可信的模型提示词。宿主适配器使用这些类型，而不会把各自 UI 的提及语法传入 agent（智能体）核心。
 
-Host-backed file discovery plus structured cross-session reference requests and prepared message contexts. The [file-reference contract](../../packages/context/file-reference) owns path-only completion records and grammar; the [session-reference contract](../../packages/context/session-reference) defines canonical URIs, current-surface projection, tag-safe JSON and byte retention, stable errors, and the untrusted model prompt. Host adapters use these types instead of passing their UI mention syntax into the agent core.
+来源：[`packages/context/file-reference/src/types.ts`](../../packages/context/file-reference/src/types.ts) · [`packages/context/session-reference/src/types.ts`](../../packages/context/session-reference/src/types.ts)
 
-Sources: [`packages/context/file-reference/src/types.ts`](../../packages/context/file-reference/src/types.ts) · [`packages/context/session-reference/src/types.ts`](../../packages/context/session-reference/src/types.ts)
+## 文件候选项
 
-## File candidates
-
-`FileReferenceCandidate` is the path-only discovery result. The addressed agent supplies the working-directory scope; providers decide ranking and namespace access without reading file contents.
+`FileReferenceCandidate` 是仅含路径的发现结果。被寻址的 agent 提供工作目录范围；提供方负责排序和命名空间访问，但不会读取文件内容。
 
 ```ts type-equiv
 /** One path-only completion candidate inside the target session cwd. */
@@ -20,9 +18,9 @@ interface FileReferenceCandidate {
 }
 ```
 
-## Inputs and candidates
+## 输入与候选项
 
-`SessionReferenceInput` is the host-independent selection. The id is authoritative; the label is display metadata carried into the snapshot.
+`SessionReferenceInput` 是与宿主无关的选择。id 具有权威性；label 是随快照携带的显示元数据。
 
 ```ts type-equiv
 /** One source session selected by a host. */
@@ -34,7 +32,7 @@ interface SessionReferenceInput {
 }
 ```
 
-`SessionReferenceCandidate` is host-facing discovery output. Its label uses the latest session title when present, while filtering still searches only session id and cwd and never transcript text.
+`SessionReferenceCandidate` 是面向宿主的发现输出。存在最新会话标题时，它的 label 使用该标题；筛选仍只搜索 session id 和 cwd，绝不搜索 transcript（文本记录）。
 
 ```ts type-equiv
 /** One host-facing candidate from exact session metadata. */
@@ -50,7 +48,7 @@ interface SessionReferenceCandidate {
 }
 ```
 
-The `sessionReferenceResolver/candidates` Remote method serves the same discovery to browser consumers and attaches each candidate's canonical prompt mention.
+`sessionReferenceResolver/candidates` Remote 方法向浏览器消费方提供同一发现能力，并为每个候选附上规范提示词 mention。
 
 ```ts type-equiv
 /** One discovery candidate carrying its canonical prompt mention. */
@@ -60,9 +58,9 @@ interface SessionReferenceMentionCandidate extends SessionReferenceCandidate {
 }
 ```
 
-## Prepared messages
+## 准备后的消息
 
-Preparation preserves readable current-message content and returns at most one aggregated context.
+准备过程保留可读的当前消息内容，并最多返回一个聚合上下文。
 
 ```ts type-equiv
 /** Direct message content and optional referenced-session context. */
@@ -74,9 +72,9 @@ interface PreparedReferencedMessage {
 }
 ```
 
-## Errors
+## 错误
 
-`SessionReferenceError.code` separates invalid configuration or input, self-reference, count limits, source-read failure, budget failure, and cancellation. Host protocols map these codes to their own error envelopes without inspecting prompt bytes.
+`SessionReferenceError.code` 区分无效配置或输入、自引用、数量限制、源读取失败、预算失败和取消。宿主协议会把这些 code 映射到各自的错误封装，无需检查提示词字节。
 
 ```ts type-equiv
 /** Stable failure codes exposed to host adapters. */
@@ -96,7 +94,7 @@ type SessionReferenceErrorCode =
 
 ## Cordis API
 
-Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — this section is byte-identical in both language sides of the page. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
+Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog`; regenerate with `pnpm run gen-cordis-catalog`) — this section is byte-identical in both language sides of the page. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
 <a id="ctxfilereferences--filereferenceservice-abstract-seam"></a>
 

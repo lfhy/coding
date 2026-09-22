@@ -1,55 +1,53 @@
 # @deepseek-ai/dsh-subagent-spawn-in-process
 
-English | [中文](README.zh.md)
+spawn 提供方会在当前进程中创建一个全新的子 `Agent`。子 agent（智能体）有自己的会话，看不到父 agent 的对话历史，并复用宿主的 agent 工厂及 LLM（大语言模型）/工具服务。
 
-The spawn provider creates a fresh child `Agent` in the current process. The child has its own session, sees no parent conversation history, and reuses the host's agent factory and LLM/tool services.
+## 行为
 
-## Behavior
+`start(request)` 不传入 seed，直接委托给 [`startInProcessRun`](../subagent-in-process-driver/README.md)，并在子 agent 发布后才返回。子 agent 获得父 agent 的工作目录/会话谱系，并默认继承父 agent 模型（除非覆盖），但以空对话开始运行。
 
-`start(request)` delegates to [`startInProcessRun`](../subagent-in-process-driver/README.md) with no seed and awaits publication before returning. The child receives parent working-directory/session lineage and inherits the parent model unless overridden, but starts with an empty conversation.
+共享驱动器负责深度检查、persona 与工具过滤器设置、结构化输出、通过必需的信号执行取消、单次执行、结果读取和完全停稳后的 dispose（资源释放）。启动遭拒不会留下已发布的子 agent；启动调用兑现后卸载提供方，也不会撤销由持有方拥有的运行。
 
-The shared driver owns depth checking, persona and tool-filter setup, structured output, required-signal cancellation, one-shot execution, result reading, and quiescent disposal. A startup rejection leaves no published child; provider unload after fulfillment does not revoke the holder-owned run.
+## 能力
 
-## Capabilities
+spawn 声明 `{ outputSchema: true, depthLimit: true, toolFilter: true, persona: true }`，因为它控制子 agent 的创建窗口，能够强制执行全部四项功能。
 
-Spawn advertises `{ outputSchema: true, depthLimit: true, toolFilter: true, persona: true }` because it controls the child's creation window and can enforce all four features.
+## 配置
 
-## Config
-
-| Key | Meaning |
+| 键 | 含义 |
 |---|---|
-| `providerName` | Registry name on `ctx.subagents` (default `spawn`). |
+| `providerName` | `ctx.subagents` 上的注册表名称（默认 `spawn`）。 |
 
-## Model Experience
+## 模型体验
 
-### Child-agent request
+### 子 agent 请求
 
-#### What the model sees
+#### 模型看到的内容
 
-The fresh child receives the standalone task content verbatim, inherits the parent model and workspace by default, and sees the global prompt with any configured child-scoped persona shadow. A tool filter removes global wire schemas, executable lookup, and Code Mode SDK bindings for that child but leaves independently registered guidance. It receives zero parent conversation messages; the filter is visibility/composition, not an authority grant inherited from the parent.
+全新的子 agent 逐字接收独立任务内容，默认继承父 agent 的模型和工作区，并看到带有已配置子 agent 作用域 persona 遮蔽的全局提示词。工具过滤器会为该子 agent 移除全局协议 schema、可执行工具查找和 Code Mode SDK 绑定，但保留独立注册的指导内容。它不接收任何父 agent 对话消息；过滤控制的是可见性与组合，并非从父 agent 继承的权限授予。
 
-#### Token effect
+#### Token 影响
 
-The child pays for a new independent context and history; no parent-history tokens are duplicated. Persona changes this child's repeated prompt cost, while filtering changes its schema or generated SDK cost.
+子 agent 会为全新的独立上下文和历史消耗 token；不会复制父 agent 历史的 token。persona 会改变该子 agent 反复使用的提示词成本，过滤则会改变其 schema 或生成 SDK 的成本。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-Independent of the parent request cache. Child history grows append-only, while persona, tool-filter, generated-SDK, provider, or model changes establish a different child prefix.
+与父 agent 请求缓存相互独立。子 agent 历史仅追加；persona、工具过滤、生成 SDK、提供方或模型变化会建立不同的子 agent 前缀。
 
-### Parent tool result, indirectly
+### 父 agent 工具结果（间接）
 
-#### What the model sees
+#### 模型看到的内容
 
-Through `dsh-tool-subagent`, the parent receives only the child's final output or stop-reason error.
+通过 `dsh-tool-subagent`，父 agent 只接收子 agent 的最终输出或结束原因错误。
 
-#### Token effect
+#### Token 影响
 
-Parent input grows by one data-dependent result retained until compaction.
+父 agent 输入会增加一个取决于数据的结果，并保留到压缩（compaction）为止。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-Append-only; newly visible content follows the reusable request prefix and does not invalidate existing KV-cache entries.
+仅追加；新增可见内容位于可复用请求前缀之后，不会使现有 KV Cache 条目失效。
 
-## Known Limitations and Deferred Work
+## 已知限制与暂缓事项
 
-- **Fresh means no parent transcript** — the child inherits cwd, lineage, model, and explicitly configured persona/tool restrictions, but none of the parent's conversation; use the fork provider when completed-turn context is required.
+- **全新表示不含父 agent transcript（文本记录）**：子 agent 会继承 cwd、谱系、模型及显式配置的 persona/工具限制，但不继承父 agent 的任何对话；需要已完成轮次上下文时，请使用 fork 提供方。

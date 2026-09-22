@@ -1,34 +1,32 @@
 # @deepseek-ai/dsh-pwsh-sandbox
 
-English | [中文](README.zh.md)
+沙盒消费型的 [`ctx.shell` 执行器 seam](../shell/) 的 PowerShell 实现：每条命令以 `pwsh -NoLogo -NoProfile -NonInteractive -Command <command>` 运行，**经 `ctx.sandbox` 隔离**，选定模式、强制完整性、拒绝事实都盖在每次结算的结果上。它是 [`@deepseek-ai/dsh-bash-sandbox`](../bash-sandbox/) 的 pwsh 孪生，按 [pwsh 执行器与工具决策](../../../.agents/notes/implemented/feature/2026-08-01-pwsh-tool-and-executor.md) 逐调用镜像——隔离实体本身是平台无关的：Windows 上沙盒 seam 解析到 ACL 受限令牌 runner 链（[`@deepseek-ai/dsh-sandbox-windows-acl`](../../sandbox/sandbox-windows-acl/)），Linux/macOS 上解析到 bwrap/Landlock/Seatbelt。
 
-Sandbox-consuming PowerShell implementation of the [`ctx.shell` executor seam](../shell/): every command runs as `pwsh -NoLogo -NoProfile -NonInteractive -Command <command>` **confined through `ctx.sandbox`**, with the selected mode, enforcement, and denial facts stamped on each settled result. The pwsh twin of [`@deepseek-ai/dsh-bash-sandbox`](../bash-sandbox/), a call-for-call mirror per the [pwsh executor and tool decision](../../../.agents/notes/implemented/feature/2026-08-01-pwsh-tool-and-executor.md) — the confinement substance is platform-neutral: on Windows the sandbox seam resolves to the ACL restricted-token runner chain ([`@deepseek-ai/dsh-sandbox-windows-acl`](../../sandbox/sandbox-windows-acl/)), on Linux/macOS to bwrap/Landlock/Seatbelt.
+执行器继承 [`@deepseek-ai/dsh-pwsh-local`](../pwsh-local/) 的进程机制，并消费其 argv 级 seam（`argv()` / `runArgv()` / `startArgv()` / `onProcessDone()`）把精确的 pwsh 调用经 provider 包装。沙盒策略（模式 + 工作区根目录）不是本包的配置：每次调用由 `ctx.sandboxPolicy` 随行（工具层传调用会话解析后的策略；直接调用回退到部署策略）。
 
-The executor inherits [`@deepseek-ai/dsh-pwsh-local`](../pwsh-local/)'s process mechanics and consumes its argv-level seam (`argv()` / `runArgv()` / `startArgv()` / `onProcessDone()`) to wrap the exact pwsh invocation through the provider. The sandbox policy (mode + workspace root) is NOT this package's config: it rides each call from `ctx.sandboxPolicy` (tool calls pass the calling session's resolved policy; direct calls fall back to deployment policy).
+## 行为
 
-## Behavior
+- `danger-full-access`：命令经本地执行器原样运行；结果携带 `sandbox: { mode, denied: false }`。
+- 受限模式（`read-only`、`workspace-write`）：pwsh argv 由 `ctx.sandbox.confine()` 包装；runner 启动失败按 fail-closed 抛 `SANDBOX_UNAVAILABLE`（前台抛错、后台记 `runnerFailed` 事实），其他 provider rejection 保持本地执行器不声明阶段的失败提示，被拒绝的写按所选后端的 `denialSignatures` 分类为 `sandbox.denied`。
 
-- `danger-full-access`: commands run through the local executor unchanged; results carry `sandbox: { mode, denied: false }`.
-- Confined modes (`read-only`, `workspace-write`): the pwsh argv is wrapped by `ctx.sandbox.confine()`; runner-launch refusal fails closed with `SANDBOX_UNAVAILABLE` (foreground throw, background `runnerFailed` fact), other provider rejections keep the local executor's stage-neutral failure note, and a denied write classifies against the selected backend's `denialSignatures` into `sandbox.denied`.
+## 模型体验
 
-## Model Experience
+### 隔离生效，拒绝以命令失败呈现
 
-### Confinement works, denial surfaces as command failure
+#### 模型看到什么
 
-#### What the model sees
+受限命令自身的 stderr（Windows ACL runner 下如 `Access to the path '...' is denied.`）；工具层把分类后的拒绝转成标准权限拒绝面，与 bash 工具完全一致。
 
-The confined command's own stderr (e.g. `Access to the path '...' is denied.` under the Windows ACL runner); the tool layer converts classified denials into the standard permission-denied surface exactly as it does for the bash tool.
+#### Token 影响
 
-#### Token effect
+除命令 stderr 与工具层标准拒绝面外，无额外模型可见文本。
 
-No model-visible text beyond the command's stderr and the tool layer's standard denial surface.
+#### KV Cache 影响
 
-#### KV Cache effect
+无直接影响；拒绝呈现面属于工具层。
 
-None directly; the denial surface belongs to the tool layer.
+## 已知限制与后续工作
 
-## Known Limitations and Deferred Work
-
-- **Reads are unrestricted** on Windows (the ACL runner restricts writes only); the read boundary is documented in `@deepseek-ai/dsh-sandbox-windows-acl`.
-- **Windows workspace-write temp authority is private** per live session/workspace pair; agentless calls receive a fresh private directory per invocation. The ambient temp root is never granted, and the runner rewrites TMP/TEMP to the private directory before spawning.
-- **Windows read-only grants no explicit writable root but remains partial** because the restricted token must retain Everyone. Objects whose DACL grants Everyone write access — including compatible opens of the NUL device — remain ambient authority; PowerShell's `> $null` redirection still works without opening NUL.
+- **Windows 上读不受限**（ACL runner 只限写）；读边界文档在 `@deepseek-ai/dsh-sandbox-windows-acl`。
+- **Windows workspace-write 的临时权限按每个活跃的会话/工作区对私有**；无 agent（智能体）的调用每次都获得一个新的私有目录。环境临时根目录绝不会被授权，runner 会在 spawn 前将 TMP/TEMP 重写为该私有目录。
+- **Windows read-only 不授予任何显式可写根目录，但仍为部分强制执行**，因为受限令牌必须保留 Everyone。DACL 向 Everyone 授予写访问的对象——包括以兼容方式打开的 NUL 设备——仍构成环境权限来源；PowerShell 的 `> $null` 重定向仍可工作，且不会打开 NUL。

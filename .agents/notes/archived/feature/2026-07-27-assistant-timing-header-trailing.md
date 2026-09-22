@@ -3,24 +3,22 @@
 Status: implemented
 Archived: 2026-08-04
 
-English | [中文](2026-07-27-assistant-timing-header-trailing.zh.md)
-
 ## Problem
 
-The TUI assistant message opened with a single header line joining the `Assistant` label and the step-timing string (`Assistant · Model wait 0.0s · Completed …`). Placing the timing before the body pushed the durations away from the answer they describe and, once completed, buried the reply's first line under a metadata line the reader scans past.
+TUI 的助手消息此前以一行开头，把 `Assistant` 标签和步骤计时串拼在一起（`Assistant · Model wait 0.0s · Completed …`）。计时放在正文之前，使耗时数据远离它所描述的回答；一旦完成，回复的首行还被读者会略过的元数据行压在下面。
 
 ## Decision
 
-**Split the label from the timing; render the timing as the message's trailing line.**
+**把标签与计时拆开；计时作为消息的末行渲染。**
 
-`AssistantMessageComponent` (packages/ui/tui/src/index.ts) now emits the bold `Assistant` label as the first line and appends the dim timing string (already assembled by `StreamingAssistantComponent.rebuild()` as `header`, including the `· Completed …` suffix when settled) as the last child, after reasoning and text. The timing content, bucket-hiding, and completion-time behavior are unchanged — only its position moved from the top to the bottom of the message.
+`AssistantMessageComponent`（packages/ui/tui/src/index.ts）现在把加粗的 `Assistant` 标签作为首行，并把暗色的计时串（仍由 `StreamingAssistantComponent.rebuild()` 组装为 `header`，settled 时含 `· Completed …` 后缀）作为最后一个子节点，追加在 reasoning 与正文之后。计时内容、隐藏零值桶以及完成时间的行为均不变——仅位置从消息顶部移到底部。
 
 ## Alternatives considered
 
-**Move the whole header line (label included) to the end.** Rejected: the `Assistant` label orients the reader to who is speaking and belongs at the top like the `You` label; only the timing metadata benefits from trailing placement.
+**把整行表头（含标签）都移到末尾。** 否决：`Assistant` 标签让读者知道是谁在说话，应与 `You` 标签一样置顶；只有计时这类元数据才受益于置底。
 
-**Keep the timing inline but below the label as a second top line.** Rejected: that still separates the durations from the completed answer and keeps two metadata lines between the prompt and the reply.
+**计时仍内联，但作为标签下方的第二行置顶。** 否决：这仍把耗时数据与完成的回答分离，并在提示与回复之间保留两行元数据。
 
 ## Consequences
 
-Each assistant message reads label → reasoning → answer → timing, so completed timing sits next to the reply it measures. The keyless TUI snapshot suite was refreshed to pin the new layout across every fixture; four `tui.spec.ts` assertions that matched the old inline `Assistant · Model wait …` string now assert the label and timing separately, since the two no longer render contiguously.
+每条助手消息按 标签 → reasoning → 回答 → 计时 阅读，完成计时紧挨它所度量的回复。无密钥的 TUI 快照套件已刷新，在每个 fixture 中固定新布局；`tui.spec.ts` 中四处原先匹配旧内联串 `Assistant · Model wait …` 的断言，现改为分别断言标签与计时，因为两者不再连续渲染。

@@ -23,7 +23,7 @@ Always exclude `vendor/` from discovery, review, and edits, even when the reques
 
 Also exclude `.agents/notes/archived/` from prose review and edits. Archived Agent Notes are frozen snapshots; inspect an exact target only to understand a historical inbound citation, never to modernize its prose or outbound links.
 
-Treat generated catalogs, snapshots, and fixtures as derivative. Edit the owning source or scenario first, then regenerate the artifact. When a generator extracts a summary from owner prose, make the extracted sentence complete for that surface. Ordinary docs edit the standalone Chinese canonical directly. When a legacy pair is deliberately retained, either language may be the authored side; update the counterpart minimally and re-record the pair under the [compatibility contract](../../../docs/i18n/README.md).
+Treat generated catalogs, snapshots, and fixtures as derivative. Edit the owning source or scenario first, then regenerate the artifact. When a generator extracts a summary from owner prose, make the extracted sentence complete for that surface. Ordinary docs edit the standalone Chinese canonical directly.
 
 ## Preserve the complete proposition
 

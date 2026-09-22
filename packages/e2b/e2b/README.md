@@ -1,10 +1,8 @@
 # @deepseek-ai/dsh-e2b
 
-English | [中文](README.zh.md)
+一个 E2B 沙箱的共享生命周期所有者。文件系统与进程管理适配器注入 `ctx.e2b`，等待其唯一的 SDK 句柄，因此处于同一个远程 Linux 工作树与进程环境中。本包固定使用 `e2b@2.29.1`；可选组合见[包族索引](../README.md)。
 
-Shared lifecycle owner for one E2B sandbox. The filesystem and subprocess adapters inject `ctx.e2b`, await its single SDK handle, and therefore inhabit the same remote Linux working tree and process world. The package pins `e2b@2.29.1`; the [family map](../README.md) lists the opt-in composition.
-
-## Configuration
+## 配置
 
 ```yaml
 - id: e2b
@@ -20,25 +18,25 @@ Shared lifecycle owner for one E2B sandbox. The filesystem and subprocess adapte
   name: '@deepseek-ai/dsh-fs-e2b'
 ```
 
-`apiKey` is optional and otherwise reads `E2B_API_KEY`; the key configures the host SDK connection and is never installed in the sandbox. `cwd` defaults to `/home/user/workspace` and must be an absolute POSIX path. `timeoutMs` defaults to five minutes and controls the sandbox lifetime; expiry deletes the sandbox.
+`apiKey` 可省略；省略时读取 `E2B_API_KEY`。该密钥只配置宿主 SDK 连接，绝不会安装进沙箱。`cwd` 默认为 `/home/user/workspace`，并且必须是绝对 POSIX 路径。`timeoutMs` 默认为 5 分钟并控制沙箱生命周期；超时会删除沙箱。
 
-## Lifecycle and ownership
+## 生命周期与所有权
 
-Construction starts one sandbox creation. Before resolving `getSandbox()`, the service creates `cwd` and the private `cwd/.dsh-e2b` adapter-state directory, verifies that the reserved path is a real directory rather than a symlink or another file type, then sets it to mode `0700`. Each adapter-internal E2B command shell receives a fresh randomized root-level `HOME`, so the SDK's fixed login shell does not resolve profile files from the mutable user home before the control command.
+构造阶段会启动一次沙箱创建。服务在 `getSandbox()` 成功返回前，会创建 `cwd` 和私有的 `cwd/.dsh-e2b` 适配器状态目录，验证该预留路径是真实目录而非符号链接或其他文件类型，再把该目录的 mode 设为 `0700`。每个适配器内部的 E2B 命令 shell 都会获得一个位于根目录下、全新随机生成的 `HOME`，因此 SDK 固定使用的登录 shell 不会在控制命令之前解析可变用户主目录中的配置文件。
 
-Disposal first prevents new handle acquisition, then awaits setup and deletes the sandbox. A `SandboxNotFoundError` means expiry or another owner already deleted it and is accepted as quiescence. Initial directory setup failure makes one deletion attempt; the configured E2B timeout bounds a second failure. Provider plugins must load after this owner and dispose before it.
+资源释放会先阻止继续获取新句柄，再等待初始化完成，然后删除沙箱。`SandboxNotFoundError` 表示沙箱已因超时或被另一个所有者删除，因此可视为完全停稳。初始目录设置失败时会尝试删除一次；若该尝试也失败，则由已配置的 E2B 超时约束沙箱的存活时间。提供方插件必须在该所有者之后加载，并在其之前 dispose（资源释放）。
 
-## Model Experience
+## 模型体验
 
-None, as this shared runtime owner registers no model-visible context; provider adapters and their consumers own any rendered effects.
+无。本共享运行时所有者不注册模型可见上下文；提供方适配器及其消费方拥有所有渲染效果。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-No direct invalidation; this package does not contribute request tokens.
+不会直接失效；本包不会贡献请求 token。
 
-## Known Limitations and Deferred Work
+## 已知限制与延后工作
 
-- **This is not a whole-harness runtime** — Cordis services, agent/session state, session logs, LLM requests, skills, and SDK-side buffers stay in the host process.
-- **Sandbox state is ephemeral** — disposal and timeout delete the sandbox; reconnect, pause/leave retention, templates, volumes, and snapshots are outside this POC.
-- **No deployment platform is configured** — network policy, host-workspace synchronization, and sandbox discovery are outside this POC.
-- **`cwd` is a resolution convention, not containment** — adapters and commands can address other sandbox paths; E2B network access retains the base image's policy.
+- **这不是完整的 harness 运行时**：Cordis 服务、agent（智能体）／会话状态、会话日志、LLM（大语言模型）请求、skill（技能）和 SDK 侧缓冲仍留在宿主进程中。
+- **沙箱状态是短暂的**：资源释放和超时都会删除沙箱；重新连接、pause/leave 保留、模板、卷和快照均不在本 POC 范围内。
+- **没有配置部署平台**：网络策略、宿主工作区同步和沙箱发现均不在本 POC 范围内。
+- **`cwd` 是解析约定，而不是包含边界**：适配器和命令可以访问沙箱中的其他路径；E2B 网络访问也继续采用基础镜像的策略。

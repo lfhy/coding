@@ -1,19 +1,17 @@
 # `@deepseek-ai/dsh-host-frontend-static`
 
-English | [中文](README.zh.md)
+Web 壳的 SPA dist 服务器：一个函数插件（配置为 `{distIndex}`），占据 [webserver](../webserver/README.md) 的唯一回退席位，并按壳层锁定的语义服务已构建的前端目录——越出 dist 根目录的遍历返回 403，任何未命中项都以 HTTP 200 回退到 `index.html`（SPA 路由），未知扩展名按 `application/octet-stream` 提供，GET／HEAD 之外的方法在没有匹配的具名路由时返回 405。每个 index 响应都会经过 webserver 已注册的 index 转换器（`applyIndexTaps`），启动 manifest（元数据清单）就是经这条路径送达页面的。`distIndex` 是组合应用的组装事实：[`dsh-web-app`](../../bundle/web-app/README.md) 通过前端包的 exports 解析它并挂载本插件；部署绝不硬编码它。
 
-SPA dist server for the Web shell: a function plugin (config `{distIndex}`) that claims the [webserver](../webserver/README.md)'s single fallback seat and serves the built frontend directory with the shell's locked semantics — traversal outside the dist root is 403, any miss falls back to `index.html` with HTTP 200 (SPA routing), unknown extensions ship as `application/octet-stream`, and non-GET/HEAD without a matching named route is 405. Every index response runs through the webserver's registered index taps (`applyIndexTaps`), which is how the boot manifest reaches the page. `distIndex` is an assembly fact of the composing application: [`dsh-web-app`](../../bundle/web-app/README.md) resolves it through the frontend package's exports and mounts this plugin; a deployment never hardcodes it.
+回退席位只有单一所有者（第二次占据会抛错），并受 effect 作用域约束：dispose（资源释放）插件的 fiber 会释放席位，此后无人占据的 webserver 回答 404。
 
-The fallback seat is single-owner (a second claim throws) and effect-scoped: disposing the plugin's fiber releases the seat, after which the unclaimed webserver answers 404.
+## 模型体验
 
-## Model Experience
+无。该包只服务浏览器资产；其中没有任何内容会进入模型请求。
 
-None, as the package serves browser assets; nothing here reaches a model request.
+#### KV Cache 影响
 
-#### KV Cache effect
+无；该包既不组装也不发送提供方请求。
 
-None; this package neither assembles nor sends a provider request.
+## 已知限制与延期工作
 
-## Known Limitations and Deferred Work
-
-- **The starter MIME table is minimal** — it covers the Vite-emitted asset set plus the shipped PWA manifest; other extensions fall back to `application/octet-stream` until an asset class actually ships.
+- **初始 MIME 表很精简**：它覆盖 Vite 输出的资产集合及实际交付的 PWA manifest；其他扩展名在相应资产类别实际发布前都会回退到 `application/octet-stream`。

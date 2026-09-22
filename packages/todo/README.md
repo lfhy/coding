@@ -1,13 +1,11 @@
-# todo/ — todo / planning capability family
+# todo/：todo／规划能力家族
 
-English | [中文](README.zh.md)
+面向模型的 todo 能力。它是单一**产品**包，因为一个 agent（智能体）会话拥有该列表；不存在可替换的提供方约定。
 
-The model-facing todo capability. It is a single **product** package because one agent session owns the list; there is no replaceable provider contract.
-
-| Package | Role | ctx key |
+| 包 | 职责 | ctx 键 |
 |---|---|---|
-| [`tool-todo/`](tool-todo/README.md) | Stores and exposes the session's todo list. | (registers on `ctx.tools`) |
+| [`tool-todo/`](tool-todo/README.md) | 存储并公开会话的 todo 列表。 | （注册到 `ctx.tools`） |
 
-The child README owns the tool, persistence, and rendering contract.
+子级 README 负责工具、持久化和渲染约定。
 
-The event payload is documented on [docs/subsystems/session.md](../../docs/subsystems/session.md).
+事件载荷记录在 [docs/subsystems/session.md](../../docs/subsystems/session.md)。

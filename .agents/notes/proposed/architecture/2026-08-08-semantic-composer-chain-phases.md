@@ -1,46 +1,44 @@
-# Agent Note: Semantic phases for composer-chain election
+# Agent Note: composer 链选举的语义阶段
 
 Status: proposed
 
-English | [中文](2026-08-08-semantic-composer-chain-phases.zh.md)
+## 问题
 
-## Problem
+浏览器的 `conversation.composer` 链先按一个全局数值 `priority` 对所有候选项排序，再选出第一个返回匹配项的选择器。问题采用默认优先级 `0`，审批采用 `1`，一次性或父级不可用时使用的只读 subagent composer 采用 `-10`。因此，选中一次性 subagent 历史记录后，即使其下方有等待应答的问题或审批，界面仍可能显示只读说明。
 
-The browser's `conversation.composer` chain orders every candidate by one global numeric `priority`, then elects the first selector returning a match. Question uses the default priority `0`, approval uses `1`, and the one-shot or unavailable-parent read-only subagent composer uses `-10`. A selected one-shot history can therefore show the read-only explanation while an answerable question or approval is pending underneath it.
+该缺陷并非某个数值有误。当前链用同一个标量作出两项不同的决策：候选项究竟用于解决现有交互，还是用于限制发起新工作；以及如何确定同一语义类别内各候选项的局部优先顺序。任何数值修复都会保留这种隐式耦合，让后续注册方可以再次引入同一缺陷。
 
-The defect is not one incorrect number. The chain currently uses the same scalar for two different decisions: whether a candidate resolves an existing interaction or restricts starting new work, and the local preference between candidates of the same semantic kind. Any numeric repair preserves that hidden coupling and lets a later registrant recreate the bug.
+## 提案
 
-## Proposal
+链声明可以定义由所属领域拥有的有序阶段元组。`conversation.composer` 声明 `['interaction', 'restriction']`；该分阶段链上的每项注册都必须指名一个阶段，其数值 `priority` 只在该阶段内排序。`SlotCore` 依次按声明的阶段索引、局部优先级和稳定注册顺序排序。如果分阶段链的注册项省略阶段，或指名声明外的阶段，注册会立即失败。未分阶段的链继续沿用当前的数值排序行为。
 
-A chain declaration may define an ordered tuple of domain-owned phases. `conversation.composer` declares `['interaction', 'restriction']`; every registration on that phased chain must name one phase, and its numeric `priority` orders entries only within that phase. `SlotCore` sorts by declared phase index, then local priority, then stable registration order. Registration fails immediately when a phased chain entry omits its phase or names one outside the declaration. Unphased chains retain their current numeric behavior.
+问题与审批注册到 `interaction`，并保留问题先于审批的现有阶段内顺序。`SubagentReadOnlyComposer` 以普通局部优先级注册到 `restriction`。领域规则定义明确：交互用于使 Host 上已经存在且仍有效的等待完成；限制则阻止用户通过普通 composer 发起工作。完成现有等待并非向一次性子级发送新的后续消息，因此交互阶段排在前面。等待完成后，链会重新选举，只读限制会再次出现。
 
-Question and approval register in `interaction`, retaining their current within-phase order of question before approval. `SubagentReadOnlyComposer` registers in `restriction` with an ordinary local priority. The domain rule is precise: an interaction resolves a live Host wait that already exists; a restriction prevents the user from initiating work through the ordinary composer. Resolving an existing wait is not a new follow-up to the one-shot child, so the interaction phase goes first. Once the wait resolves, the chain re-elects and the read-only restriction becomes visible again.
+阶段词汇归声明该 slot 的领域所有，而不属于全局 slot 框架。`SlotMap` 携带确切的阶段元组，用于编译期注册；运行时 `SlotSpec` 重复该元组，作为排序依据。其他链不会获得任何 composer 术语，也无需迁移，除非它们主动声明阶段。
 
-The phase vocabulary belongs to the declaring slot, not to the slot framework globally. `SlotMap` carries the exact phase tuple for compile-time registration, and the runtime `SlotSpec` repeats that tuple as the sorting authority. Other chains acquire no composer terminology and need no migration unless they deliberately declare phases.
+本提案扩展 [Web subagent 对话](../../implemented/feature/2026-07-27-web-subagent-conversations.md)、[Web 权限与审批](../../implemented/feature/2026-07-23-web-permission-and-approval.md)和[计划审阅呈现](../../implemented/feature/2026-07-30-plan-review-presentation-intent.md)约定，但不取代其中任何一项。[运行时所有权子级守卫](../../implemented/bug-fix/2026-08-01-ask-user-delegated-caller-guard.md)仍然是防止子级新建自己负责的人类等待的权威机制。本提案落地时，不应归档任何活跃 Agent Note。
 
-This proposal extends the [Web subagent conversation](../../implemented/feature/2026-07-27-web-subagent-conversations.md), [Web permission and approval](../../implemented/feature/2026-07-23-web-permission-and-approval.md), and [plan-review presentation](../../implemented/feature/2026-07-30-plan-review-presentation-intent.md) contracts; it supersedes none of them. The [runtime-owned child guard](../../implemented/bug-fix/2026-08-01-ask-user-delegated-caller-guard.md) remains the authority that prevents new child-owned human waits. No active Agent Note should be archived when this proposal lands.
+## 备选方案
 
-## Alternatives considered
+**把只读项的优先级移到问题和审批之后。** 这是最小的战术修复，但它仍以未记载的数值间距编码语义支配关系，并迫使下一种 composer 类型在同一个全局尺度上猜测自身位置。
 
-**Move the read-only priority after question and approval.** This is the smallest tactical fix, but it leaves semantic dominance encoded as undocumented number spacing and makes the next composer kind guess at the same global scale.
+**当 `interactions` 非空时，让只读选择器拒绝匹配。** 这可以修复当前这一对组件，但会迫使限制插件理解每个可操作领域，并在各选择器中重复选举策略。每新增一种交互类型，都需要修改与其无关的限制项。
 
-**Make the read-only selector decline whenever `interactions` is non-empty.** This fixes the current pair but makes a restriction plugin understand every actionable domain and duplicates election policy across selectors. A new interaction kind would require edits in unrelated restrictions.
+**只依赖运行时子级守卫。** 该守卫可以修复新的模型调用，但无法定义浏览器对已有待处理等待、滚动升级中的版本重叠或审批等其他交互类型的排序。运行时权限与呈现选举是两项独立的不变量。
 
-**Rely only on the runtime child guard.** The guard fixes new model calls but cannot define browser ordering for already-pending waits, rolling-version overlap, or other interaction kinds such as approval. Runtime authority and presentation election are separate invariants.
+**把所有匹配的接管界面渲染成一个栈。** composer 只有一个操作席位。同时堆叠问题、审批和只读界面，会使键盘焦点与回答所有权含混不清，而不是选出一个当前操作。
 
-**Render all matching takeovers as a stack.** The composer has one action seat. Stacking question, approval, and read-only surfaces makes keyboard focus and answer ownership ambiguous instead of selecting one current action.
+## 验收标准
 
-## Acceptance criteria
+- `SlotCore` 测试证明阶段顺序优先于任意局部优先级；局部优先级和稳定注册顺序在阶段内仍然有效；未知或缺失的阶段会明确失败；未分阶段的链保持不变。
+- Composer 测试覆盖问题加只读项、审批加只读项、问题加审批加只读项、解决后回到只读项，以及所有选择器均拒绝匹配时回退到 InputBar。问题在 `interaction` 内仍排在审批之前。
+- dispose（资源释放）、HMR（热模块替换）重新注册和重新连接回放均不能留下陈旧的当选阶段；选举仍是当前所有者 props 与当前注册项的纯函数。
+- 一项无密钥组装 Web 快照固定已寻址的 one-shot 对话及其待处理交互：交互界面胜出，解决该交互后，只读界面再次出现。
+- slot、conversation、question、permission 和 subagent 的 README／JSDoc 约定共同描述阶段所有权以及交互先于限制的规则。
+- 该变更不修改任何模型可见的工具定义、系统提示词章节、请求路由或会话事件。因此，浏览器选举既不产生 token 开销，也不会使 KV Cache 失效；测试会比较仅在客户端发生状态转换前后的模型请求 header。
 
-- `SlotCore` tests prove phase order dominates arbitrary local priorities, local priority and stable registration order still work within a phase, unknown or omitted phases fail loud, and unphased chains are unchanged.
-- Composer tests cover question plus read-only, approval plus read-only, question plus approval plus read-only, resolution back to read-only, and the all-declined InputBar fallback. Question remains ahead of approval within `interaction`.
-- Disposal, HMR re-registration, and reconnect replay cannot leave a stale elected phase; election remains a pure function of the current owner props and current registrations.
-- A keyless assembled Web snapshot pins a one-shot addressed conversation with a pending interaction, the interaction surface winning, its resolution, and the read-only surface returning afterward.
-- Slot, conversation, question, permission, and subagent README/JSDoc contracts describe phase ownership and the interaction-before-restriction rule together.
-- The change modifies no model-visible tool definition, system-prompt section, request routing, or session event. Browser election therefore has no token cost and no KV-cache invalidation; tests compare the model request header before and after the client-only transition.
+## 风险
 
-## Risks
+阶段名称可能沦为含混的设计替代品。因此，每个分阶段 slot 都要拥有一条简短的排序规则，并拒绝无法说明自身归属哪一侧的注册项。未来如有必须优先于回答操作的硬性安全界面，不应将其误标为 `restriction`；它需要一个显式排在更前的阶段，或位于该 composer 链以外的边界。
 
-Phase names can become a vague substitute for design. Each phased slot therefore owns a short ordering rule and rejects entries that cannot state which side they belong to. A future hard safety surface that must preempt answering should not be mislabeled `restriction`; it needs an explicit earlier phase or a boundary outside this composer chain.
-
-The generic slot types and stored-entry shape gain one conditional field, so an incomplete migration could compile in one face yet fail at runtime. The exact tuple is repeated in the runtime declaration specifically to make that drift mechanically rejectable. Concurrent questions and approvals remain a single-surface policy; this proposal preserves their current order rather than solving multi-interaction queueing.
+通用 slot 类型与已存储条目形态会增加一个条件字段，因此迁移不完整时，代码可能在一个 face 中通过编译，却在运行时失败。之所以在运行时声明中重复确切元组，正是为了让系统能以机械方式拒绝这种漂移。并发问题与审批仍采用单界面策略；本提案保留其当前顺序，不解决多交互排队问题。

@@ -1,28 +1,26 @@
-# Agent Note: User-message IconActions under the bubble
+# Agent Note: 用户消息气泡下方的 IconActions
 
 Status: implemented
 Archived: 2026-07-27
 
-English | [中文](2026-07-27-user-message-icon-actions.zh.md)
+## 问题
 
-## Problem
+聊天用户气泡下方没有操作栏。Harness 设计稿（figma `User_Bubble/message_container`）在气泡下方右对齐展示三个 IconActions——复制、在新对话中分支、编辑——与产品其他位置使用的操作栏模式一致。
 
-The chat user bubble had no under-bubble action chrome. The Harness design (figma `User_Bubble/message_container`) shows three IconActions — copy, branch in new chat, and edit — right-aligned under the bubble, matching the product action-bar pattern used elsewhere.
+## 决策
 
-## Decision
+仅当 `kind: 'user'` 时，`MessageItem` 拥有这些操作。布局为纵向列（`align-items: flex-end`，间距 6px）：先是气泡，再是高度 28px 的操作行；行内间距 10px，圆形图标按钮尺寸为 28px（`IconCopyOutline16`、`IconBranchOutline16`、`IconEditOutline16`）。Tooltip 承载中文标签。操作默认保持可见；`@media (hover: hover)` 下在悬停或 focus-within 前隐藏，以便触摸／`hover: none` 设备仍能发现控件（仅靠 opacity 仍会命中测试）。
 
-`MessageItem` owns the actions for `kind: 'user'` only. Layout is a column (`align-items: flex-end`, 6px gap): bubble, then a 28px action row with 10px gaps and 28px circular icon buttons (`IconCopyOutline16`, `IconBranchOutline16`, `IconEditOutline16`). Tooltips carry Chinese labels. Actions stay visible by default; `@media (hover: hover)` hides them until the row is hovered or focus-within, so touch / `hover: none` devices keep discoverable controls (opacity alone still hit-tests).
+复制将气泡内拼接后的文本块写入剪贴板（`navigator.clipboard.writeText`，并以 `execCommand` 作为回退）。分支与编辑目前仅有外观、尚无处理函数——它们预留设计席位，但不发明会话 fork 或编辑重提交流程。
 
-Copy writes the bubble's joined text blocks to the clipboard (`navigator.clipboard.writeText`, with an `execCommand` fallback). Branch and edit are present chrome with no handlers yet — they reserve the design seats without inventing session-fork or edit-resubmit behavior.
+steering（中途引导）气泡保持仅徽章形态，不展示这些操作。
 
-Steering bubbles keep the badge-only form and do not show these actions.
+## 考虑过的替代方案
 
-## Alternatives considered
+**现在就把分支／编辑接到真实的会话 fork 与草稿编辑。**本次变更不予采纳：这些产品流程尚未定稿；交付无行为按钮符合请求范围，也避免半成品的变更路径。
 
-**Wire branch/edit to real session fork and draft-edit now.** Rejected for this change: those product flows are not specified; shipping inert buttons matches the requested scope and avoids half-built mutation paths.
+**在悬停外始终以 `opacity: 0` 隐藏。**因触摸不予采纳：若无 `@media (hover: hover)`，空闲 opacity 看起来空白但仍会命中测试。具备悬停能力的指针保留淡入；其他设备保持操作可见。
 
-**Always hide with `opacity: 0` outside hover.** Rejected for touch: without `@media (hover: hover)`, idle opacity still hit-tests while looking empty. Hover-capable pointers keep the fade; others keep the actions visible.
+## 后果
 
-## Consequences
-
-User messages expose copy immediately; branch/edit remain clickable stubs until a later decision owns their behavior. Tests pin the three buttons, copy payload, and steering exclusion.
+用户消息立即可用复制；分支／编辑仍为可点击的占位，直至后续决策明确其行为。测试钉死三个按钮、复制载荷，以及对 steering 的排除。

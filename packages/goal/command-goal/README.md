@@ -1,29 +1,27 @@
 # @deepseek-ai/dsh-command-goal
 
-English | [中文](README.zh.md)
+面向用户的 `/goal` 控制，基于 [`ctx.goals`](../goal/README.md) 实现。该插件通过 [`ctx.commands`](../../interaction/commands/README.md) 注册一个全局命令，因此每个已组合的命令适配器都能发现并执行它，无需模型轮次。[用户 goal 命令 Agent Note](../../../.agents/notes/implemented/feature/2026-07-19-human-goal-command.md) 负责用户体验与组合决策。
 
-Human-facing `/goal` control over [`ctx.goals`](../goal/README.md). The plugin registers one global command through [`ctx.commands`](../../interaction/commands/README.md), so every composed command adapter discovers and executes it without a model turn. The [human goal-command Agent Note](../../../.agents/notes/implemented/feature/2026-07-19-human-goal-command.md) owns the UX and composition decisions.
+## 命令约定
 
-## Command contract
-
-| Input | Result |
+| 输入 | 结果 |
 |---|---|
-| `/goal` | Show the current objective, durable phase, round count/cap, process-local activation, and valid next commands; a blocked goal also shows its policy code and explanation, while no goal shows usage. |
-| `/goal <objective>` | Create and arm a goal, or replace a completed goal with a fresh identity. An unfinished goal is never replaced without an explicit clear. |
-| `/goal edit <objective>` | Edit the current objective without changing its phase or activation. Editing a completed goal creates a fresh active goal. |
-| `/goal pause` | Pause an active goal and disarm continuation. |
-| `/goal resume` | Resume a stopped goal or rearm an active goal after session resume/fork, subject to its remaining round cap. |
-| `/goal clear` | Clear the current pointer while retaining its durable history and tombstone. |
+| `/goal` | 显示当前目标、持久 phase、Round 计数／上限、进程本地续行启用状态与有效的下一步命令；被阻塞的 goal 还会显示策略代码和说明，没有 goal 时则显示用法。 |
+| `/goal <objective>` | 创建 goal 并启用续行，或用全新身份替换已完成 goal。未完成 goal 绝不会在没有显式 clear 的情况下被替换。 |
+| `/goal edit <objective>` | 编辑当前目标，不改变其 phase 或续行启用状态。编辑已完成 goal 会创建新的 active goal。 |
+| `/goal pause` | 暂停 active goal，并停用续行。 |
+| `/goal resume` | 恢复已停止 goal，或在会话 resume／fork 后为 active goal 重新启用续行；仍受剩余 Round 上限约束。 |
+| `/goal clear` | 清除当前指针，同时保留其持久历史和 tombstone。 |
 
-Control words are case-insensitive only when they occupy the complete input. Every other non-empty suffix is an objective, so `/goal pause after verification` creates that literal objective. The goal domain trims and validates objectives. Because the generic command plane has no modal editor or confirmation primitive, `edit` takes its replacement inline and an unfinished replacement returns a direct error instructing the user to edit or clear.
+只有控制词占据完整输入时才不区分大小写。其他任何非空后缀都属于目标，因此 `/goal pause after verification` 会创建该字面目标。goal 领域会去除目标首尾空白并进行验证。由于通用命令平面没有模态编辑器或确认原语，`edit` 会内联接收替换内容；若试图替换未完成的 goal，则直接返回错误，提示用户执行 edit 或 clear。
 
-The command declares `input.images`, so composer image attachments may accompany an invocation. Attachments only accompany an objective: on a successful create or edit the producer submits one user followup carrying the admitted image blocks plus the fixed text `Reference images for the goal objective.`, so later goal rounds read them from ordinary session history without the goal domain storing attachment state. Every other sub-command, and any refused create or edit, returns a direct error and submits nothing, so the dispatching composer keeps the images.
+该命令声明了 `input.images`，因此 composer 图片附件可以随调用一起提交。附件只随目标本身：create 或 edit 成功时，生产方提交一条用户 followup 消息，内容为已准入的图片块加固定文本 `Reference images for the goal objective.`，后续 Goal Round 从普通会话历史中读取它们，goal 领域不存储附件状态。其他任何子命令、以及被拒绝的 create 或 edit，都直接返回错误且不提交任何消息，分发方 composer 保留图片。
 
-Expected domain rejections become stable direct command errors without exposing branded ids or revisions. Unexpected implementation failures still reject dispatch so adapters can report them as command failures. Generic command text and output remain live UI state; `dsh-goal` persists every accepted mutation through its own durable `goal/change` event.
+可预期的领域拒绝会变成稳定的直接命令错误，不公开带品牌类型的 id 或 revision。意外实现失败仍会 reject 分发，使适配器能将其报告为命令失败。通用命令文本和输出仍属于实时 UI 状态；`dsh-goal` 通过自有的持久 `goal/change` 事件记录每项已接受变更。
 
-## Composition
+## 组合
 
-The producer injects `commands` and `goals`. A custom app mounts their owners plus this plugin; automatic continuation remains an independent choice:
+生产方注入 `commands` 和 `goals`。自定义应用会挂载它们的所有者与此插件；自动续行仍是独立选择：
 
 ```yaml
 - id: commands
@@ -34,27 +32,27 @@ The producer injects `commands` and `goals`. A custom app mounts their owners pl
   name: '@deepseek-ai/dsh-command-goal'
 ```
 
-The shipped `dsh` base enables the persisted-goal stack and this command; the Web client provides its interactive adapter. The ACP automation app enables the domain and model tools without a command adapter; `goals: false` removes that stack. The UI-less `agent-spine-demo` requires an explicit `goals: {}` so headless one-shot callers do not silently change from one physical turn to a multi-round operation.
+随附 `dsh` 基础配置启用持久 goal 栈和此命令；Web 客户端提供其交互适配器。ACP（Agent Client Protocol）自动化应用启用领域与模型工具，但不挂载命令适配器；`goals: false` 会移除该栈。无 UI 的 `agent-spine-demo` 必须显式配置 `goals: {}`，避免无头单次调用方在不知情时从一个物理轮次变为包含多个 Round 的操作。
 
-## Model Experience
+## 模型体验
 
-### Human `/goal` control
+### 用户 `/goal` 控制
 
-#### What the model sees
+#### 模型看到的内容
 
-The slash input, mutation, and direct status/error output are absent from model requests. The goal domain records the mutation as `goal/change`; an enabled same-session driver may expose the resulting state in a later continuation prompt. Presentation text is never logged. When a create or edit carries image attachments, the model sees one ordinary user message: the image blocks followed by the text `Reference images for the goal objective.`; it precedes the next goal round in session history.
+斜杠输入、变更以及直接状态／错误输出不会进入模型请求。goal 领域把变更记录为 `goal/change`；已启用的同会话驱动器可以在后续继续执行提示词中暴露结果状态。呈现文本绝不会记录到日志中。当 create 或 edit 携带图片附件时，模型会看到一条普通用户消息：图片块后跟文本 `Reference images for the goal objective.`，在会话历史中位于下一个 Goal Round 之前。
 
-#### Token effect
+#### Token 影响
 
-Reading status, mutating a goal, or receiving a direct command error adds no model tokens. An enabled same-session driver may add later goal-round prompts. An objective's image attachments add one user message billed like any image prompt.
+读取状态、变更 goal 或收到直接命令错误不会增加模型 token。已启用的同会话驱动器可能增加后续 Goal Round 提示词。目标携带的图片附件会增加一条用户消息，其计费与任何图片提示词相同。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-Command discovery, mutations, and direct output do not affect the cache. Later continuation prompts follow the driver's ordinary request history.
+命令发现、变更与直接输出不会影响缓存。后续继续执行提示词遵循驱动器的普通请求历史。
 
-## Known Limitations and Deferred Work
+## 已知限制与暂缓事项
 
-- **Plain-text interaction only** — the generic command registry has no modal edit form or replacement-confirmation callback; inline edit and explicit clear keep destructive intent deterministic across adapters.
-- **No per-command round-cap argument** — `defaultMaxGoalRounds` remains deployment config, while a direct human request may ask the model to edit `max_goal_rounds` through the separately authorized goal tool.
-- **No continuous status widget** — bare `/goal` is the portable observation API; adapter-specific badges and reconnectable command output remain future UI work.
-- **Web command adapter only in the shipped apps** — headless, ACP automation, and JSON-RPC adapters do not consume `ctx.commands`. Ordinary prompts can still authorize model-facing goal tools when those are composed.
+- **仅纯文本交互**：通用命令注册表没有模态编辑表单或替换确认回调；内联 edit 与显式 clear 能在不同适配器中保持明确且一致的破坏性意图。
+- **没有逐命令 Round 上限参数**：`defaultMaxGoalRounds` 仍是部署配置；用户直接请求时，可以要求模型通过另行授权的 goal 工具编辑 `max_goal_rounds`。
+- **没有持续状态组件**：裸 `/goal` 是可移植的观察接口；适配器专用徽标和重连后可恢复的命令输出仍属于未来 UI 工作。
+- **随附应用中只有 Web 命令适配器使用此命令**：无头、ACP 自动化和 JSON-RPC 适配器不消费 `ctx.commands`。如果组合中包含面向模型的 goal 工具，普通提示词仍能授权它们。

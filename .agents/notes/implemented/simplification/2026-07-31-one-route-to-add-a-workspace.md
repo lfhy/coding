@@ -1,57 +1,55 @@
-# Agent Note: One route to add a local-directory Workspace
+# Agent Note: 添加本地目录 Workspace 的唯一路径
 
 Status: implemented
 
-English | [中文](2026-07-31-one-route-to-add-a-workspace.zh.md)
+## 问题
 
-## Problem
+两处 Workspace 表层——侧边栏区头的 `+` 与会话主视觉区的 chip——都提供了两条获得 Workspace 的路径：**打开本地文件夹…** 拉起组合的目录流程，**新建工作区** 接收一个名称并创建 `<workspaceRoot>/<name>`。两者重叠：浏览占用者自带 **新建文件夹** 能力，因此「选一个目录」本就覆盖了「建一个目录」。两个入口意味着同一结果有两套词汇、一个自带重名规则的名称对话框，以及一个操作者既看不到也选不了的创建位置。
 
-Both Workspace surfaces — the sidebar region header's `+` and the conversation hero's chip — offered two ways to get a Workspace: **Open local folder…**, which raised the composed directory flow, and **Create a new workspace**, which took a name and created `<workspaceRoot>/<name>`. The two overlapped: the browse occupant carries its own **New folder** affordance, so picking a directory already covered creating one. Two entries meant two vocabularies for one outcome, a name dialog with its own duplicate-name rule, and a create target the operator could neither see nor choose.
+删掉较弱的那个入口后，侧边栏区头只剩一个动作，于是引出了本决策一并裁定的展示问题：只有一行的浮层应该长什么样。
 
-Removing the weaker entry leaves the sidebar header with exactly one action, which raised the presentation question this decision also settles: what a popover with a single row should look like.
+## 决策
 
-## Decision
+添加本地目录 Workspace 只有一条路径：通过组合的目录流程选一个宿主机目录，新建的或已存在的都可以。入口是 `menu.addWorkspace`（「添加工作区…」/ "Add workspace…"）；按名称创建的对话框及其 `create.*`／`menu.createWorkspace`／`workspace.new` 文案全部删除。标签命名的是结果而非机制，因为它现在是通往该本地结果的唯一一扇门——找「新建」的用户必须能找到它。仅桌面端可用的[Remote-SSH 工具网关](../feature/2026-08-30-desktop-remote-ssh-tool-gateway.md)则是为所选远程目录准备的独立路径。
 
-Adding a local-directory Workspace has one route: pick a host directory through the composed directory flow, new or existing. `menu.addWorkspace` ("添加工作区…" / "Add workspace…") is the entry; the create-by-name dialog and its `create.*` / `menu.createWorkspace` / `workspace.new` strings are gone. The label names the outcome, not the mechanism, because it is now the only door to that local outcome — a user looking for "新建" must find it. The desktop-only [Remote-SSH tool gateway](../feature/2026-08-30-desktop-remote-ssh-tool-gateway.md) is a separate route for a selected remote directory.
+**菜单的存在是为了在多个目标之间消歧。** 在仅添加的侧边栏表层，添加动作是唯一目标，因此锚点手势*就是*该动作：直接拉起目录流程，不渲染只有一行的浮层。Hero 是更完整的开始菜单：它在已注册 Workspace 之外保留打开文件夹、远程连接与无项目操作，因此 Workspace 列表为空也不会自动拉起目录流程。[本地、远程与无项目入口决策](../feature/2026-08-25-workspace-picker-local-remote-and-no-project-entry.md)拥有这些 Hero 操作。
 
-**A menu exists to disambiguate between targets.** On the add-only sidebar surface, the add action is the only target, so the anchor gesture *is* that action: the directory flow opens directly and no one-row popover renders. The Hero is a broader start menu: it retains registered Workspaces alongside the folder, remote, and no-project actions, so an empty Workspace list never opens the directory flow automatically. The [local, remote, and no-project entry decision](../feature/2026-08-25-workspace-picker-local-remote-and-no-project-entry.md) owns those Hero actions.
+由该规则派生出两条边界，它们同属这个决定：
 
-Two boundaries fall out of that rule and are part of it:
+- **列表为空只有在基线落地后才算最终结果。** `phase` 仍为 `pending` 时，Hero 保留菜单与加载状态，而不是跳进一个即将到达的 Workspace 会使其变得多余的流程。基线落地后，其余开始操作仍让菜单保持有用。仅添加表层不列任何东西，因此从不等待。
+- **目录流程的洞没有占用者时，就没有可添加的本地目录。** 此时侧边栏区头干脆不渲染按钮，而不是留下一个点了没反应的按钮。Hero 会省去打开文件夹操作，但仍保留已注册 Workspace、仅桌面端可用的 Remote-SSH 操作与无项目创建；没有目录流程占用者不会撤走这些独立路径。
 
-- **An empty list is only final once the baseline lands.** While `phase` is `pending` the Hero keeps its menu and loading status instead of jumping into a flow that the arriving Workspaces would have made unnecessary. Once the baseline lands, its other start actions still keep the menu useful. The add-only surface lists nothing and never waits.
-- **An unoccupied directory-flow hole leaves no local directory to add with.** The sidebar header then renders no button at all rather than a dead one. The Hero omits its folder action but keeps any registered Workspaces, the desktop-only Remote-SSH action, and no-project creation; an absent directory-flow occupant cannot withdraw those independent paths.
+仅添加的直接拉起路径同样遵守其菜单项声明的 busy 规则：某次选取仍在接纳中（`flowBusy`）时，侧边栏锚点手势会被拦截，效果与禁用该菜单项完全相同，从而避免迟到的结果与第二个流程发生竞态。
 
-The add-only direct-open path carries the busy rule its menu entry states: while a pick is still being adopted (`flowBusy`), the sidebar anchor gesture is held exactly as the entry is disabled, so a late outcome cannot race a second flow.
+`WorkspaceCreateFlow` 现更名为 `WorkspacePickFlow`，其 `createOnly` prop 更名为 `addOnly`；注入的 `createWorkspace` 从 `{ name } | { path }` 收窄为 `{ path }`。
 
-`WorkspaceCreateFlow` is now `WorkspacePickFlow` and its `createOnly` prop is `addOnly`; the injected `createWorkspace` narrows from `{ name } | { path }` to `{ path }`.
+## Wire 与 CLI（命令行界面）表层
 
-## Wire and CLI surface
+`workspace.create` 只接受 `{ path }`；wire schema 与 `WorkspaceApi` 没有 `name` 成员。网关没有 `workspaceRoot` 配置；客户端约定只通过 `WorkspaceCreateInput`、`WorkspaceRuntime.create` 与 `intentName` 提供按路径接纳，`dsh web` 没有 `--workspace-root` flag。`workspace-name-conflict` 仍保留在 wire 上，作为 `workspace.rename` 的标题重名错误。
 
-`workspace.create` accepts only `{ path }`; the wire schema and `WorkspaceApi` have no `name` member. The gateway has no `workspaceRoot` config, the client contract exposes only path adoption through `WorkspaceCreateInput`, `WorkspaceRuntime.create`, and `intentName`, and `dsh web` has no `--workspace-root` flag. `workspace-name-conflict` remains on the wire as `workspace.rename`'s duplicate-title error.
+## 测试
 
-## Testing
+`connectFreshWorkspace`——所有 web e2e 场景启动时都会走的辅助函数——会预先备好 `<root>/workspace`，再经对话框的路径编辑器接纳它，因此产出的会话 cwd 与按名称创建时完全一致，场景 golden 保持有效。选择预先备好而不是在对话框内新建，是为了让该辅助函数在一个场景可能发生的多次连接之间保持幂等（第二次创建同一个文件夹会失败，而创建对话框会在失败时把流程停在原地）。在选择器内新建文件夹——同一本地目录路径的另一半——由 `workspace-management.e2e.ts` 覆盖，它承担针对性覆盖：在对话框自己创建的文件夹上添加两个 workspace、接纳 basename 相同的不同目录并保持彼此独立、在另一个目录上复用已删除的标题、以及浏览对话框的 aria golden。
 
-`connectFreshWorkspace` — the helper every web e2e scenario boots through — stages `<root>/workspace` and adopts it through the dialog's path editor, so the produced session cwd stays identical to what create-by-name produced and scenario goldens stay valid. Staging rather than creating in-dialog keeps the helper idempotent across the repeated connects a scenario may make (a second create of the same folder fails, and the create dialog holds the flow open on that failure). Creating a folder from inside the chooser — the other half of the same local-directory route — is covered by `workspace-management.e2e.ts`, which owns the focused coverage: two workspaces added on folders the dialog creates, distinct same-basename directories adopted independently, a deleted title reused on a different directory, and the browser-dialog aria golden.
+`smoke-real.e2e.ts` 是唯一启动未打补丁的出厂配置树的场景，其中 `-auto` 行会按宿主机解析；它现在通过 `--config` overlay 钉死 `-browse`，使开发机的显示环境无法决定选择器是否可被驱动。
 
-`smoke-real.e2e.ts` is the one scenario booting the unpatched shipped tree, where the `-auto` row resolves per host; it now pins `-browse` through a `--config` overlay so the developer's display environment cannot decide whether the picker is drivable at all.
+## 考虑过的替代方案
 
-## Alternatives considered
+**保留 `打开本地文件夹…` 作为标签。** 否决：合并后该入口既能打开也能创建，用机制命名会恰好对那些入口被我们删掉的用户隐藏创建这一半。反方理由——「本地」二字有效区分了浏览器所在机器与 harness 所在机器——在下一步就由对话框自身的标题和面包屑回答了。
 
-**Keep `Open local folder…` as the label.** Rejected: after the merge the entry both opens and creates, and naming it after the mechanism hides the creation half from exactly the users whose entry we removed. The counter-argument — "本地" usefully disambiguates the browser's machine from the harness's — is answered one step later by the dialog's own title and breadcrumbs.
+**保留双入口菜单，让 `新建工作区` 也打开同一个流程。** 否决：同一动作两个标签正是本次改动所消除的混淆，而不是它的缩小版。
 
-**Keep the two-entry menu and make `Create a new workspace` open the same flow.** Rejected: two labels for one action is the confusion this change removes, not a smaller version of it.
+**为了与 Hero 保持一致，在仅添加侧边栏保留只有一行的浮层。** 否决：不提供选择的浮层是一次浪费的点击，读起来像半成品。Hero 是完整的开始菜单；侧边栏聚焦于本地动作，不需要模仿它。
 
-**Keep a one-row popover on the add-only sidebar for consistency with the Hero.** Rejected: a popover that offers no choice is a wasted click and reads as unfinished. The Hero is a complete start menu; the sidebar's focused local action does not need to imitate it.
+**为将来可能新增的侧边栏入口（克隆仓库、远程目录）保留空菜单壳。** 否决，依据「require a current owner and need」：后来出现的 Remote-SSH 操作属于桌面端 Hero，而不是仅添加的侧边栏；等一个本地侧边栏操作到来时再恢复菜单，仍比现在就发一个空壳的改动更小。
 
-**Keep an empty add-only sidebar menu for future actions (clone a repo, remote directory).** Rejected under "require a current owner and need": the later Remote-SSH action belongs in the desktop Hero rather than the add-only sidebar, so restoring a sidebar menu when a local action arrives remains a smaller change than shipping an empty frame now.
+**在同一改动中删除 wire 的按名称创建分支。** 否决，因为 UI 决定不依赖后端与 CLI 删除，后两者各自的约定和测试构成一项可独立评审的改动。
 
-**Delete the wire's create-by-name branch in the same change.** Rejected because the UI decision did not depend on the backend and CLI deletion, whose separate contracts and tests formed an independently reviewable change.
+**在 e2e scaffold 中经 host 注册 workspace，而不驱动对话框。** 否决：那会让全部 15 个场景与选择器解耦，整条 lane 将无法证明幸存的这条路径能走到可用的 composer。现在每个场景都会走真实对话框来接纳自己的目录；只有「新建文件夹」那一半集中在一个场景里，因为处处重复只会让共享辅助函数失去幂等性，却换不来额外信号。
 
-**Register the workspace through the host in the e2e scaffold instead of driving the dialog.** Rejected: it would have decoupled all 15 scenarios from the picker, so nothing in the lane would prove the surviving route reaches a live composer. Every scenario now walks the real dialog to adopt its directory; only the create-a-folder half is concentrated in one scenario, because repeating it everywhere makes the shared helper non-idempotent for no extra signal.
+## 后果
 
-## Consequences
-
-- The UI creates Workspace folders only under a directory the operator chooses. No server-controlled configuration constrains that location; a deployment that needs such a constraint must add it deliberately.
-- The picker's configured reach defines the host filesystem available to the remaining route; there is no separate configured parent.
-- A composition that mounts `ui-workspace` without a directory-picker package cannot add a local-directory Workspace and omits the button. The desktop-only Remote-SSH route remains independent.
-- The Hero chip announces `aria-haspopup="menu"` truthfully because it always opens the complete start menu. The direct local-folder action remains confined to the add-only sidebar button, which makes no popup claim.
+- UI 只在操作者选择的目录下创建 Workspace 文件夹。没有服务端控制的配置约束其位置；需要该约束的部署必须明确加入该约束。
+- picker 配置的可达范围决定剩余路径可用的宿主机文件系统；不存在另一个配置好的父目录。
+- 挂载 `ui-workspace` 但没有 directory-picker 包的组合无法添加本地目录 Workspace，也不渲染按钮。仅桌面端可用的 Remote-SSH 路径仍保持独立。
+- Hero chip 声明 `aria-haspopup="menu"` 是如实的，因为它始终打开完整的开始菜单。直接打开本地文件夹仍限定在仅添加的侧边栏按钮中，该按钮不作任何 popup 声明。

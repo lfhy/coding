@@ -1,55 +1,53 @@
 # @deepseek-ai/dsh-session-title
 
-English | [中文](README.zh.md)
+由日志支持的会话标题，提供即时确定性回退与一个可选异步提供方。每次已接受的修订都是仅写入日志的 `session/title` 事件；`foldSessionTitle()` 与 `ctx.sessionTitle.get()` 会选择最新事件，并返回其事件 seq 和时间戳。
 
-Log-backed session titles with an immediate deterministic fallback and one optional asynchronous provider. Every accepted revision is a log-only `session/title` event; `foldSessionTitle()` and `ctx.sessionTitle.get()` select the latest event and return its event seq and timestamp.
+只有用户 `user/message` 事件中的文本块符合条件。第一条符合条件的提示词会安排回退，从其开头若干词生成标题，并受所配置 UTF-8 字节上限约束。系统会规范化空白、移除终端控制序列，且截断绝不会切断码点。空提示词和非文本提示词会等待后续符合条件的输入。
 
-Only text blocks from human `user/message` events are eligible. The first eligible prompt schedules a fallback from its first words within the configured UTF-8 byte limit. Whitespace is normalized, terminal control sequences are removed, and truncation never splits a code point. Empty and non-text prompts wait for later eligible input.
+## 服务：`SessionTitleService`（ctx 键：`sessionTitle`）
 
-## Service: `SessionTitleService` (ctx key: `sessionTitle`)
+- `get(session)` 从活跃或回放日志折叠最新已接受标题。
+- `refresh(session, signal?)` 在需要时物化回退，然后显式运行已注册提供方，处理当前符合条件的消息。提供方错误或调用方取消都会导致返回的 Promise 被拒绝；取消不会回滚已接受的回退事件。
+- `rename(session, title)` 同步接受用户显式标题：规范化文本、取代在途自动工作，并追加一条 `user` 来源的 `session/title` 事件。用户来源的最新标题会钉住该会话——后续用户消息不再安排自动修订；显式 `refresh` 仍是有意的解钉手段。
+- `register(provider)` 安装唯一可选提供方，并返回可等待的 Cordis effect disposer。第二次注册会立即抛出；对提供方执行 dispose（资源释放）会中止待处理和活跃调用，等待其结算，之后才允许注册另一个提供方。
 
-- `get(session)` folds the latest accepted title from a live or replayed log.
-- `refresh(session, signal?)` materializes the fallback when needed, then explicitly runs the registered provider over the current eligible messages. Provider errors and caller cancellation reject; cancellation does not roll back an already accepted fallback event.
-- `rename(session, title)` accepts an explicit user title synchronously: it normalizes the text, supersedes in-flight automatic work, and appends a `session/title` event with the `user` source. A user-sourced latest title pins the session — later user messages schedule no automatic revision; an explicit `refresh` remains the deliberate unpin.
-- `register(provider)` installs the sole optional provider and returns its awaitable Cordis effect disposer. A second registration throws immediately; disposal aborts pending and active calls, waits for their settlement, and only then permits another provider to register.
+自动工作绝不会延迟主 agent（智能体）响应。只有当带标记、由循环构建的请求，其确切路由与当前已记录的 `request/header` 匹配时，提供方才会启动；即使请求头未变而无需新快照，也适用此规则。延迟完成会直接通过 `Session` 追加一个独立的纯日志事件，而不打开轮次。持久化会立即观察到该事件，并在常规生命周期检查点完成刷写；标题发布本身不会强制刷写。自动失败会发出警告并保留最新标题。新的全消息修订、提供方 dispose、会话 dispose 和显式刷新都会中止旧工作，陈旧的完成结果无法追加。并发显式刷新会在提供方工作之前预留修订号；重叠的自动／显式回退请求共享一个会话本地正在进行的追加操作。服务与内置模型提供方各自追加自己的字面事件类型，因此不需要通用标题写入标记、类型断言或结算队列。服务拆卸会取消排队工作，并在卸载完成前等待不响应取消的调用结算完成。
 
-Automatic work never delays the main agent response. A provider starts only after a marked loop-built request's exact route matches the current logged `request/header`, including when the unchanged header needs no new snapshot. Its late completion appends a standalone log-only event directly through `Session` without opening a turn. Persistence observes that event eagerly and drains on ordinary lifecycle checkpoints; title publication itself does not force a flush. Automatic failures warn and retain the latest title. New all-message revisions, provider disposal, session disposal, and explicit refresh abort older work, and a stale completion cannot append. Concurrent explicit refreshes reserve their revision before provider work, while overlapping automatic and explicit fallback requests share one session-local in-flight append. The service and bundled model provider each append their own literal event type, so no generic title-write marker, cast, or settlement queue is needed. Service teardown cancels queued work and drains calls that ignore cancellation before unloading completes.
+fork 出的会话会原样继承种子中的标题事件。首消息节奏不会自动为子会话重新生成标题；全消息节奏可以在子会话收到后续用户提示词后追加新修订。
 
-Forks inherit title events in their seed unchanged. The first-prompt cadence does not automatically retitle a child; the all-messages cadence may append a new revision after the child receives a later human prompt.
+## 配置
 
-## Configuration
+所有上限都是必填项；该库不提供默认值。
 
-All limits are required; the library supplies no defaults.
-
-| Key | Contract |
+| 键 | 约定 |
 |---|---|
-| `fallbackMaxWords` | Positive maximum whitespace-delimited words in the deterministic fallback. |
-| `fallbackMaxBytes` | Positive maximum UTF-8 bytes in the fallback; must not exceed `maxTitleBytes`. |
-| `maxTitleBytes` | Positive maximum UTF-8 bytes accepted from any source. |
+| `fallbackMaxWords` | 确定性回退中以空白分隔的最大正整数词数。 |
+| `fallbackMaxBytes` | 回退允许的最大正整数 UTF-8 字节数；不得超过 `maxTitleBytes`。 |
+| `maxTitleBytes` | 接受任何来源标题的最大正整数 UTF-8 字节数。 |
 
-## Provider contract
+## 提供方约定
 
-A provider supplies a branded stable id, automatic mode (`first-prompt` or `all-prompts`), and `generate(request)`. The request carries the live session, all eligible messages through one fixed revision, the current logged main-request route when available, and cancellation. The result identifies a non-empty title, unique ordered source-message seqs from that request, and the optional provider/model route used to generate it. The service normalizes and validates the result before it becomes durable.
+提供方会提供带品牌类型的稳定 id、自动模式（`first-prompt` 或 `all-prompts`）和 `generate(request)`。请求携带活跃会话、截至一次固定修订的所有符合条件消息、可用时当前已记录的主请求路由，以及取消信号。结果包含非空标题、该请求中互不重复且有序的来源消息 seq，以及生成该标题时使用的可选提供方／模型路由。服务会在结果持久保存前进行规范化和验证。
 
-See the [session-title data structures](../../../docs/subsystems/session-title.md) and [implemented decision](../../../.agents/notes/implemented/feature/2026-07-21-log-backed-session-titles.md).
+参见[会话标题数据结构](../../../docs/subsystems/session-title.md)与[已实现决策](../../../.agents/notes/implemented/feature/2026-07-21-log-backed-session-titles.md)。
 
-## Model Experience
+## 模型体验
 
-### Session title state
+### 会话标题状态
 
-#### What the model sees
+#### 模型看到的内容
 
-Nothing. `session/title` is log-only and never enters the session surface, `deriveMessages()`, system prompt, tool schemas, or request prefix.
+无。`session/title` 只写入日志，绝不会进入会话接口、`deriveMessages()`、系统提示词、工具 schema 或请求前缀。
 
-#### Token effect
+#### Token 影响
 
-The fallback and accepted provider revisions add zero tokens to the main agent request. An optional provider's separate auxiliary request is documented by that provider package.
+回退与已接受的提供方修订不会向主 agent 请求增加 token。可选提供方的独立辅助请求由对应提供方包的文档说明。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-None for the main request; title events do not change its reconstructed content or cache key.
+不影响主请求；标题事件不会改变重建内容或缓存键。
 
-## Known Limitations and Deferred Work
+## 已知限制与暂缓事项
 
-- Title deletion (unpinning back to automatic titles without an explicit `refresh`), search, and list indexing are outside this service.
-- The provider registry deliberately accepts at most one implementation, so a deployment cannot compose competing title strategies without writing one provider that owns their precedence.
+- 删除标题（不经显式 `refresh` 就解钉回自动标题）、搜索和列表索引不属于此服务。
+- 提供方注册表有意最多接受一个实现，因此部署若要组合相互竞争的标题策略，必须编写一个自行负责优先级的提供方。

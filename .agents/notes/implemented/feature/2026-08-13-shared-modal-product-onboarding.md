@@ -1,33 +1,31 @@
-# Agent Note: Shared-modal product onboarding
+# Agent Note: 共用弹窗的产品引导
 
 Status: implemented
 
-English | [中文](2026-08-13-shared-modal-product-onboarding.zh.md)
+## 问题
 
-## Problem
+首次使用引导混用了两种交互：产品背景说明占满整个视口，凭据提示则先把用户带进「设置」，之后才能输入密钥。一个很短的有序流程因此像两个互不相关的界面，引导 UI 的归属也分散在多个包中。产品仍需要在提供方配置之前显示版本化的测试阶段声明，但恢复它不能增加第二个独立浮层，也不能改变 Host 的设置与凭据边界。
 
-First-run onboarding mixed two interaction models: a viewport takeover for product context and a credential prompt that redirected users into Settings before they could enter a key. That made a short, ordered flow feel like two unrelated surfaces and left onboarding UI ownership split across packages. The product still needs a versioned testing-stage notice before provider setup, but restoring it must not add a second independent overlay or change the Host settings and credential boundaries.
+## 决策
 
-## Decision
+**由同一个既有 client Cordis 插件持有两个已发布步骤。** `ui-settings-models` 在 `settings.onboarding` 中以顺序 `-100` 注册 `welcome-notice`，以顺序 `0` 注册 `deepseek-official`。外壳仍然只挂载第一个未完成条目，因此两个弹窗不会堆叠。不新增 client 包或插件配置行。
 
-**One existing client Cordis plugin owns both shipped steps.** `ui-settings-models` registers `welcome-notice` at order `-100` and `deepseek-official` at order `0` in `settings.onboarding`. The shell continues to mount only the first incomplete entry, so the dialogs cannot stack. No additional client package or plugin row is introduced.
+**两个步骤共用同一个弹窗组件。** `OnboardingModal` 包装既有 ui-primitives `Modal`，提供统一的标题和内容布局，并只在可见期间持有 `#root` 的 inert 状态。Escape 和遮罩点击不会静默完成强制引导；每个步骤只暴露自己的明确操作。步骤仍在加载私有事实时返回 `null`，因此不会绘制或阻塞界面。
 
-**Both steps share one modal component.** `OnboardingModal` wraps the existing ui-primitives `Modal`, supplies the common title and content geometry, and owns `#root` inert for exactly the visible lifetime. Escape and mask clicks do not silently complete mandatory onboarding; each step exposes only its explicit actions. A step still loading private facts returns `null`, so it paints and blocks nothing.
+**欢迎声明复用既有持久化字段。** 完整文案与版本由 `onboarding-copy.ts` 持有。回环客户端通过既有 settings API 比较和写入 `ui-onboarding.welcomeNoticeVersion`，且只有点击「继续」才确认当前版本。远程客户端继续使用既有的进程内回退，因为该 settings namespace 仅限回环访问。不改变 Host schema、API Proxy 允许列表或持久化实现。
 
-**The welcome notice reuses the existing durable field.** Its exact copy and version live in `onboarding-copy.ts`. Loopback clients compare and write `ui-onboarding.welcomeNoticeVersion` through the existing settings API, and only Continue acknowledges the current version. Remote clients retain the existing process-local fallback because the settings namespace is loopback-only. No Host schema, API-proxy allowlist, or persistence implementation changes.
+**凭据弹窗复用既有编辑器与写入边界。** Models 联接仍负责判断是否已有任意可用提供方。当 DeepSeek 官方引用可写但缺失时，`ProviderEditor` 以仅凭据模式渲染在共用弹窗中。它校验密钥并调用既有 `credentials.set`，不会修改提供方设置。「保存并继续」会等待写入与就绪状态刷新；「稍后配置」只完成协调器当前这一轮。
 
-**The credential dialog reuses the existing editor and write boundary.** The Models join still decides whether any provider is usable. When the official DeepSeek reference is writable and missing, `ProviderEditor` renders in credential-only mode inside the shared modal. It validates the key and calls the existing `credentials.set`; it does not mutate provider settings. Save and continue waits for the write and refreshed readiness, while Configure later completes only the current coordinator pass.
+## 曾考虑的替代方案
 
-## Alternatives considered
+**让声明与凭据步骤分别成为 client 插件。** 不采用：产品要求只使用一个 client Cordis 插件，且两个界面共享文案、顺序、弹窗框架与失效刷新归属。
 
-**Separate client plugins for the notice and credential steps.** Rejected because the product asks for one client Cordis plugin and the two surfaces share copy, ordering, modal chrome, and invalidation ownership.
+**把确认或凭据逻辑移入新的 Host API。** 不采用：两个既有后端契约已经能表达所需状态与写入；新增 endpoint 只会扩大范围，不会增加用户能力。
 
-**Move acknowledgement or credential logic into a new Host API.** Rejected because both backend contracts already express the required state and writes. A new endpoint would widen scope without changing user capability.
+**继续从凭据步骤跳转到 Models。** 不采用：首次使用唯一必填的是密钥，既有编辑器可以安全暴露这项写入，无需再把用户送进第二个对话框。
 
-**Keep the credential step as navigation into Models.** Rejected because the key is the only required first-run field, and the existing editor can expose that write safely without sending the user through a second dialog.
+**保留此前占满视口的展示层。** 不采用：本次需要的是叠加在当前应用上的两个弹窗，既有 ui-primitives modal 已提供合适的 portal、遮罩与无障碍契约。
 
-**Keep the former full-viewport stage.** Rejected because the requested onboarding is a pair of dialogs over the current app, and the common ui-primitives modal already provides the appropriate portal, mask, and accessibility contract.
+## 后果
 
-## Consequences
-
-A fresh loopback profile sees the specified internal-testing notice, then an inline DeepSeek key dialog only when no provider is usable. Acknowledgement remains versioned in `settings.yaml`, secrets remain write-only in `.credentials.yaml`, and already-ready or unsupported deployments render no onboarding chrome while readiness loads. The Models package now owns product-onboarding presentation as well as provider configuration; its README and browser coverage make that broader responsibility explicit. This decision restores a concise testing-stage notice after the historical [full-viewport beta notice removal](../simplification/2026-08-13-remove-first-run-beta-notice.md) without restoring that notice's telemetry copy or takeover layout.
+新的回环 profile 会先看到指定的内测声明；仅当没有任何可用提供方时，之后才会出现行内 DeepSeek 密钥弹窗。确认仍按版本写入 `settings.yaml`，secret 仍以只写方式存入 `.credentials.yaml`，已就绪或无法修复的部署在加载判定期间不会渲染任何引导框架。Models 包现在同时持有产品引导展示与提供方配置；README 和浏览器覆盖明确记录了这项扩展后的职责。本决策在历史上的[全屏内测声明移除](../simplification/2026-08-13-remove-first-run-beta-notice.md)之后恢复简洁的测试阶段声明，但不会恢复那份声明中的遥测文案或接管式布局。

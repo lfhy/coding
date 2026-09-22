@@ -1,36 +1,34 @@
-# Agent Note: opening a produced file from the web UI
+# Agent Note: 从 web UI 打开产出的文件
 
 Status: implemented
 
-English | [中文](2026-07-31-web-workspace-file-links.zh.md)
+> 范围：完成的轮次以其产出文件收尾的那一行、读得出是链接的文件路径链接，以及 Host 打开器对浏览器可渲染文档优先选用默认浏览器。经决定不在范围内：以 HTTP 提供工作区文件，以及为不在 Host 机器上的客户端提供预览。
 
-> Scope: the produced-files row a finished turn ends with, the file-path link that reads as one, and the Host opener preferring the default browser for documents a browser renders. Not in scope, by decision: serving workspace files over HTTP, and previews for a client that is not on the Host machine.
+## 问题
 
-## Problem
+一个产出了文件的 web 会话，没有办法看到那个文件。agent（智能体）写出了 `deepseek-homepage.html` 并如实告知，而用户唯一的办法是把 `/private/tmp/dsh-client-hotplug.ygPvsm/workspaces/plugin-hotplug/deepseek-homepage.html` 这样的绝对路径复制进终端。
 
-A web session that produced a file had no way to look at it. The agent wrote `deepseek-homepage.html`, said so, and the user's only recourse was to copy an absolute path like `/private/tmp/dsh-client-hotplug.ygPvsm/workspaces/plugin-hotplug/deepseek-homepage.html` into a terminal.
+这背后是两个不同的缺陷。transcript（文本记录）从不说明一个轮次产出了什么：`ToolCallView.locations`——文件工具早已填好的跟随文件词汇——在客户端没有任何消费方，因此读者对产出的唯一交代，就是收尾消息恰好拼出来的那点内容。而已经存在的那个交互是隐形的：`ToolRow` 早已把改写行或读取行的路径渲染成一个接到 `host.openPath` 的真按钮，但它的样式与周围正文一模一样、只有悬停才有下划线，于是没人发现。所报告的「做完了打不开」，是一个可发现性失败叠在一项本就可用的能力之上。
 
-Two distinct defects sat behind that. The transcript never said what a turn had produced: `ToolCallView.locations` — the follow-along vocabulary the file tools already populate — had no consumer in the client, so a reader's only account of the output was whatever the closing message happened to spell. And the affordance that did exist was invisible: `ToolRow` already renders a mutation or read row's path as a real button wired to `host.openPath`, but styled exactly like the surrounding prose and underlined only on hover, so nobody found it. The reported "I can't open what it made" was a discoverability failure sitting on top of a working capability.
+## 决策
 
-## Decision
+**完成的一轮以它产出的文件收尾。** 该行是独立插件 `@deepseek-ai/dsh-client-ui-deliverables`，注册进 chat 视图在收尾消息正文与其 IconActions 之间渲染的 `conversation.chat.turnTail` 空位——ui-conversation 拥有空位与 owner 通货（节点、收尾 seq、`openFile`），插件拥有全部策略。`producedForClosing` 从改写工具自身的跟随文件 `locations` 中读出路径——diff 卡片，或 `kind` 为 `edit` 的 generic 卡片（即 `str_replace_editor` 的 insert 所呈现的形状）——因此无论收尾消息是否点名，这一轮的产出都会被列出；新的改写工具靠声明自己做了什么加入，而不是靠被加进某张名单。read、删除与失败的调用不贡献任何条目；同一路径在一轮内按首见顺序只出现一次；累积在 turn 边界重置，因此一轮若先改写文件、随后没有正文内容就结束，不会溢进下一轮的行里。单行 lane 会测量 chip 和本地化剩余计数，再显示能放下的最大前缀（至多六个）及 `+ N 个文件`。cordis.yml 中的一行即可把该交互面组合进来或去掉；未注册的空位什么也不渲染。
 
-**A finished turn ends with the files it produced.** The row is its own plugin, `@deepseek-ai/dsh-client-ui-deliverables`, registered into the `conversation.chat.turnTail` hole the chat view renders between a closing message's body and its IconActions — ui-conversation owns the hole and the owner currency (nodes, closing seq, `openFile`), the plugin owns every policy. `producedForClosing` reads the paths off the mutation tools' own follow-along `locations` — a diff card, or a generic card whose `kind` is `edit` (the shape `str_replace_editor`'s insert presents) — so a turn's output is listed whether or not the closing message named it, and a new mutation tool joins by declaring what it does rather than by being added to a list. Reads, deletes, and failed calls contribute nothing; a path appears once per turn in first-seen order; accumulation resets on the turn boundary, so a turn that mutates and then ends without content text cannot spill into the next turn's row. The single-line lane measures its chips and localized remainder, then shows the largest prefix that fits (up to six) plus `+ N files`. One cordis.yml line composes the surface in or out; the unregistered hole renders nothing.
+**路径链接读得出是链接。** 静止状态下就带下划线，而不只在悬停时。这是本次改动中更小的那一半，却是修复中更大的那一半。
 
-**The path link reads as a link.** Underlined at rest, not only on hover. This is the smaller half of the diff and the larger half of the fix.
+**打开仍然是 Host 的职责，并且优先选用默认浏览器。** `host.openPath` 把路径交给操作系统，得到的是真实浏览器里的一份 `file://` 文档：页面能力完整，且够不到 `/api`——因为 `file://` 文档与它并不同源。在所报告的那份产物上实测：`localStorage` 可用、主题切换生效、tabs 可切换，而对 API 的 `fetch` 失败。对浏览器能渲染的文档——`.html`、`.htm`、`.xhtml`、`.svg`——平台能够确定默认浏览器时，打开器解析的是默认**浏览器**而非该类型的默认应用，因为把 `.html` 绑给编辑器的开发者，否则点开一个产出的页面得到的会是源码。macOS 读取 LaunchServices 的 `https` 处理程序，桌面 Linux 读取 `$BROWSER`；无法确定浏览器时，两者都会回退到默认应用。Windows 使用其注册的文件关联，WSL 则先转换路径，再使用同一 Windows 交接。存在隐藏文件时，**在文件夹中显示**会把 `.` 经由同一 owner `openFile` 传递；它只在 loopback 页面的当前 `host.describe.canOpenPath` 允许原生打开时出现。其他部署会省略它；桌面探测误报时可配置 `nativeOpen: false`。
 
-**Opening stays the Host's job, and prefers the default browser.** `host.openPath` hands the path to the operating system, which yields a `file://` document in a real browser: full page capabilities, and no reachability into `/api`, because a `file://` document is not same-origin with it. Measured on the reported artifact: `localStorage` works, the theme toggle flips, the tabs switch, and `fetch` to the API fails. For documents a browser renders — `.html`, `.htm`, `.xhtml`, `.svg` — the opener resolves the default *browser* rather than the type's default application when the platform can name one, because a developer who binds `.html` to an editor would otherwise click a produced page and get source code. macOS reads the LaunchServices `https` handler and desktop Linux reads `$BROWSER`; either falls back to the default application when no browser can be named. Windows uses its registered association, and WSL first translates the path before using that same Windows handoff. When files are hidden, **Show in folder** passes `.` through the same owner `openFile`; it appears only for a loopback page whose current `host.describe.canOpenPath` permits native opening. Other deployments omit it, with `nativeOpen: false` available when desktop detection would be a false positive.
+**以 HTTP 提供工作区文件不在范围内，非本机客户端亦然。** 由 harness 自己提供文件——与 `/api` 同源、置于 `CSP: sandbox` 之后、或交给一个以自身端口给所服务文档独立源的第二监听器——随产品范围一并否决：不为「浏览器不在 Host 机器上」的场景提供预览，因此 Host 打开器完整回答受支持的场景，而那套 HTTP 机制只会回答不受支持的那个。
 
-**Serving workspace files over HTTP is out of scope, and so are non-local clients.** Serving files from the harness itself — same-origin with `/api`, behind `CSP: sandbox`, or from a second listener whose own port gives served documents their own origin — was rejected with the product scope: previews for a browser that is not on the Host machine are not supported, so the Host opener answers the supported case completely and the HTTP machinery would answer only the unsupported one.
+## 考虑过的替代方案
 
-## Alternatives considered
+- **由 harness 提供 `/f/<sessionId>/<segments…>`**——已经实现并可用，包含双 `realpath` 路径约束、浏览器信任 fence、流式读取，以及一个以自身端口给所服务文档独立源的监听器。它是唯一能把预览呈现给另一台机器上客户端的设计，而那恰恰是被判出范围的场景。因此退役，而不是因为它失败了；它的代价是一个带自身生命周期的第二 socket、一个注入页面的端口，以及一份跨两个包共享的 URL 形状约定。
+- **同源 HTTP 提供且不加隔离**——经实测不安全，记录在此以免有人重试：与 `/api` 并排提供的文档把 `settings.describe` 打到 `200` 并拿到完整数据，把 `session.list` 打到包含所有会话 transcript 的 35 KB，而这个页面根本不必由 agent 撰写（一条 read 行就让 clone 下来的仓库里任何文件变得可打开）。
+- **在那套同源提供之上加 `Content-Security-Policy: sandbox`**——它以剥夺文档的源来堵住这个洞，而这经实测会破坏本功能存在的意义所在的那类页面：所报告的产物在加载时抛 `SecurityError`，又因为未捕获异常会中止其 `<script>` 的其余部分，该行之后声明的所有监听器——主题切换、移动端菜单、模型 tabs——统统不会绑定。报告者工作区里四份产物有两份在它之下是死页面，而且它们渲染得完美无缺，所以这种破坏是看不见的。
+- **把路径在助手的收尾消息里链接化**——这是用户开口要的形状（「在结尾附上链接」），但它让渲染取决于模型是否把路径拼写得可识别。工具调用已经把 `locations` 作为结构化事实携带，产出文件行消费的正是它。
+- **让文件 chip 横向滚动**——这样会把每个文件都留在 DOM 中，却使隐藏的尾部难以发现，在 transcript 内增加一层横向手势，也无法精确说明视口外还有什么。经过测量的一行和稳定的剩余计数既保留回答的纵向节奏，也明确呈现省略量。
+- **桌面端外壳中的内嵌 WebView**——可得到的最强隔离，因为那时预览跑在产品自己拥有的容器里，而不是用户的浏览器里。它属于桌面端外壳自身的设计，而非本交互面，记录在此作为未来预览能力应走的方向。
 
-- **Serving `/f/<sessionId>/<segments…>` from the harness** — built and working, including confinement by dual `realpath`, the browser-trust fence, streamed reads, and a separate listener whose port gave served documents their own origin. It is the only design that shows a preview to a client on another machine, which is exactly the case ruled out of scope. Retired for that reason, not because it failed; its cost was a second socket with its own lifecycle, a port published into the page, and a URL-shape contract shared across two packages.
-- **Same-origin HTTP serving without isolation** — measurably unsafe, and recorded so nobody retries it: a document served beside `/api` drove `settings.describe` to a `200` with full data and `session.list` to 35 KB of every session's transcript, from a page that need not be agent-authored at all (a read row makes every file in a cloned repository openable).
-- **`Content-Security-Policy: sandbox` over that same-origin serving** — closes the hole by taking the document's origin away, which measurably breaks the pages this feature exists to show: the reported artifact throws `SecurityError` on load, and because an uncaught exception aborts the rest of its `<script>`, every listener declared after that line — theme toggle, mobile menu, model tabs — never binds. Two of the four artifacts in the reporting user's workspace were dead pages under it, and they still rendered perfectly, so the breakage was invisible.
-- **Linkifying paths in the assistant's closing message** — the shape a user asks for ("put the link at the end"), but it makes rendering depend on the model spelling a path recognizably. The tool calls already carry `locations` as structured fact, so the produced-files row consumes that instead.
-- **Horizontal chip scrolling** — keeps every file in the DOM but makes the hidden tail undiscoverable, adds a nested horizontal gesture to the transcript, and provides no exact account of what is out of view. One measured line with a stable remainder preserves the answer's vertical rhythm and keeps the omission explicit.
-- **An embedded WebView in the desktop shell** — the strongest isolation available, since the preview then runs in a container the product owns rather than in the user's browser. It belongs to the desktop shell's own design, not to this surface, and is recorded here as the direction a future preview capability should take.
+## 后果
 
-## Consequences
-
-Every existing file affordance changed at once: write, edit, read, and the generic single-file card all reach `openFile`, so the link fix and browser preference apply without per-row changes. The assembled Web test covers overflow geometry and a one-click Host handoff without launching a native application. A produced `file://` document cannot `fetch` its own siblings (while `<script src>`, `<img>`, and CSS `@import` work), the one capability HTTP serving had that this does not. Remote clients keep the chips but omit the folder action; the full path remains in each chip's `title`. Markdown still opens in the platform's `.md` application; in-product rendering is separate work.
+现有的每一处文件交互都同时改变了：write、edit、read 与通用单文件卡片都汇到 `openFile`，因此链接修复与浏览器优先策略无需逐行改动。组装层 Web 测试覆盖溢出几何和单次点击的 Host 交接，且不会启动原生应用。产出的 `file://` 文档无法 `fetch` 同级文件（但 `<script src>`、`<img>` 和 CSS `@import` 可用），这是 HTTP 提供曾有、而此处没有的能力。远程客户端保留 chip，但省略文件夹操作；每个 chip 的 `title` 仍保留完整路径。Markdown 仍由平台的 `.md` 应用打开；产品内渲染属于另一项工作。

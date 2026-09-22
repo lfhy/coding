@@ -1,37 +1,35 @@
-# Agent Note: Use node:timers/promises for hand-rolled cancellable sleeps
+# Agent Note: 用 node:timers/promises 替代手写的可取消休眠
 
-Status: rejected — implementation (PR #679) falsified the parity premise: vitest's fake clock does not intercept `node:timers/promises`, so the swap costs deterministic fast tests for ~10 deleted lines
+Status: rejected — 实现（PR #679）证伪了行为等价前提：vitest 的假时钟不拦截 `node:timers/promises`，这次替换用确定性的快速测试换来约 10 行删除，得不偿失
 
-English | [中文](2026-07-26-builtin-timer-promises-for-hand-rolled-sleeps.zh.md)
+## 问题
 
-## Problem
+三个包手写了用 promise 包装的定时器，而 `node:timers/promises` 内置模块早已提供同等能力；其他包（`dsh-llm-mock-server` 的 `pause()`、`dsh-lsp-stdio`、`dsh-acp-snapshot`）已经在使用该内置模块，因此这些手写副本同时也是一处一致性缺口：
 
-Three packages hand-roll promise-wrapped timers that the `node:timers/promises` builtin already provides, while other packages (`dsh-llm-mock-server` `pause()`, `dsh-lsp-stdio`, `dsh-acp-snapshot`) already use the builtin — so the hand-rolled copies are also a consistency gap:
+- `packages/llm/llm-retry/src/index.ts` 的 `cancellableDelay()`（约 14 行）：`new Promise` + `setTimeout` + 手动添加和移除中止监听器，定时器触发时 resolve 为 `true`、被中止时 resolve 为 `false`，仅在退避等待处消费一次。
+- `packages/workflow/workflow-worker-thread/src/host.ts` 的 `sleep()`（约 7 行）：promise 包装、已 unref 的 `setTimeout`，用作 dispose（资源释放）宽限的时间上界。
+- `packages/terminal/terminal-bash/src/session.ts` 的 `delay()`（约 4 行）：朴素的 promise 包装 `setTimeout`，用于轮询与拆卸等待。
 
-- `packages/llm/llm-retry/src/index.ts` `cancellableDelay()` (~14 lines): `new Promise` + `setTimeout` + manual abort-listener add/remove, resolving `true` on elapse and `false` on abort, consumed once for the backoff wait.
-- `packages/workflow/workflow-worker-thread/src/host.ts` `sleep()` (~7 lines): promise-wrapped unref'd `setTimeout` used as the dispose-grace bound.
-- `packages/terminal/terminal-bash/src/session.ts` `delay()` (~4 lines): bare promise-wrapped `setTimeout` used in polling/teardown waits.
+## 提案
 
-## Proposal
+用 `import { setTimeout } from 'node:timers/promises'` 替换这三处实现：
 
-Replace all three with `import { setTimeout } from 'node:timers/promises'`:
+- llm-retry：`try { await setTimeout(delayMs, undefined, { signal }); /* retry */ } catch { /* abort → fail */ }`。传入 signal 后，该 promise 只会因中止错误而拒绝，已提前中止的 signal 则立即拒绝；行为完全一致，包括中止时清除定时器。按仓库的空 catch 规则，这个空 `catch` 注明其吞下的是 abort 拒绝。
+- workflow-worker-thread：`setTimeout(ms, undefined, { ref: false })`，语义完全等价，包括不会让事件循环保持存活。
+- terminal-bash：`import { setTimeout as delay } from 'node:timers/promises'`，签名完全相同，调用点无需改动。
 
-- llm-retry: `try { await setTimeout(delayMs, undefined, { signal }); /* retry */ } catch { /* abort → fail */ }` — with a signal, the promise rejects only with the abort error, and a pre-aborted signal rejects immediately; behavior is identical, including timer clearing on abort. The empty `catch` names the abort rejection per the repo's empty-catch rule.
-- workflow-worker-thread: `setTimeout(ms, undefined, { ref: false })` — exact semantics including not holding the event loop open.
-- terminal-bash: `import { setTimeout as delay } from 'node:timers/promises'` — identical signature, call sites unchanged.
+没有专属测试固定这些辅助函数本身；各包的行为测试套件继续通过。
 
-No dedicated tests pin the helpers themselves; the packages' behavior suites keep passing.
+## 曾考虑的替代方案
 
-## Alternatives considered
+- **`p-timeout`/`p-defer` 一类的包。** 不予采纳：内置模块恰好精确覆盖这些调用点；为一行 await 引入外部包是负收益。
+- **维持现状。** 不予采纳，但理由较弱：成本确实很小，但仓库其他地方已经在用这一内置惯用法，而同一内置能力存在两个手写变体，就会招来第三个。
 
-- **`p-timeout`/`p-defer` style packages.** Rejected: the builtin covers both call sites exactly; an external package for a one-line await is negative-net.
-- **Leave them.** Rejected only weakly — the cost is small, but the repo already uses the builtin idiom elsewhere, and two hand-rolled variants of a builtin invite a third.
+## 验收标准
 
-## Acceptance criteria
+- 这三个包都不再各自定义 promise 包装的 `setTimeout` 辅助函数，而是都从 `node:timers/promises` 导入。
+- `llm-retry`、`workflow-worker-thread` 与 `terminal-bash` 的测试套件原样通过（行为等价）。
 
-- None of the three packages defines a promise-wrapped `setTimeout` helper; all import from `node:timers/promises`.
-- The `llm-retry`, `workflow-worker-thread`, and `terminal-bash` test suites pass unchanged (behavioral parity).
+## 风险
 
-## Risks
-
-Essentially none: no model-visible output, no platform concerns, no new dependency. The llm-retry rewrite changes a boolean-returning helper into try/catch control flow — a local readability judgment the implementing PR makes.
+基本没有风险：不涉及模型可见的输出，没有平台顾虑，也不新增依赖。llm-retry 的改写把一个返回布尔值的辅助函数变成 try/catch 控制流，这是一项局部可读性判断，由实施 PR（Pull Request）裁量。

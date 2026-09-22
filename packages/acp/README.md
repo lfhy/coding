@@ -1,11 +1,9 @@
-# acp/ — Agent Client Protocol automation
+# acp/：Agent Client Protocol 自动化
 
-English | [中文](README.zh.md)
+ACP（Agent Client Protocol）组通过该协议将 harness 中的 agent（智能体）公开给程序化客户端。它是互操作传输层，不是展示或人机交互层；配对的进程外 subagent *客户端*在 [`subagent/subagent-acp`](../subagent/subagent-acp/README.md)，因为它实现的是 subagent 提供方接口。
 
-The ACP group exposes harness agents to programmatic clients over the Agent Client Protocol. It is an interoperability transport, not a presentation or human-interaction layer; the matching out-of-process subagent *client* lives in [`subagent/subagent-acp`](../subagent/subagent-acp/README.md) because it implements the subagent provider interface.
-
-| Package | Role |
+| 包 | 职责 |
 |---|---|
-| [`acp/`](acp/README.md) | Automation-only ACP server. |
+| [`acp/`](acp/README.md) | 仅面向自动化的 ACP 服务器。 |
 
-The server contract is documented in [`acp/README.md`](acp/README.md).
+服务器约定见 [`acp/README.md`](acp/README.md)。

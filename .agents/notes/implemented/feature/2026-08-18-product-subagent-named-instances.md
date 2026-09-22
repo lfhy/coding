@@ -1,48 +1,46 @@
-# Agent Note: Product subagent named instances
+# Agent Note: 产品 subagent 命名实例
 
 Status: implemented
 
-English | [中文](2026-08-18-product-subagent-named-instances.zh.md)
+## 问题
 
-## Problem
+Profile 可以用多个配置项挂载同一个 Cordis 插件包，但 Codex 与 Claude Code 产品提供方此前会把每个配置项都注册到一个固定产品名称下。因此，第二个配置项会在其独立权限模式、环境或进程释放设置可用前因名称重复而失败。根据这些设置隐式派生名称会建立第二套身份规则，而在工具调用期间选择提供方会让模型输入决定部署权限。
 
-A Profile can mount one Cordis plugin package in multiple rows, but the Codex and Claude Code product providers previously registered every row under one fixed product name. A second row therefore failed as a duplicate before its distinct permission mode, environment, or process-release settings could become usable. Deriving an implicit name from those settings would create a second identity rule, while choosing a provider during a tool call would let model input select deployment authority.
+现有 subagent 注册表已经拥有提供方名称唯一性、可逆注册、生命周期事件和由持有方拥有的已发布运行。现有 `dsh-tool-subagent` 配置也已经把一个提供方名称绑定到一个模型可见工具名称。产品提供方只需公开缺失的 Profile 所有身份，无需增加另一套注册表或选择协议。
 
-The existing subagent registry already owns unique provider names, reversible registration, lifecycle events, and holder-owned published runs. The existing `dsh-tool-subagent` configuration already binds one provider name to one model-visible tool name. Product providers need to expose the missing Profile-owned identity without adding another registry or selection protocol.
+## 决策
 
-## Decision
+每个产品提供方 Config 都拥有非空的 `providerName`；默认值仍分别为 `codex` 与 `claude-code`。插件配置项加载时会固定解析后的名称，并把它作为 Provider 对象的 `name`；注册、查找、生命周期事件、运行日志和 HMR（热模块替换）移除因此使用同一个值。每个已挂载配置项保留自己的 `permissionMode`、`env`、`disposeGraceMs` 和运行资源。
 
-Each product provider Config owns a non-empty `providerName`; the defaults remain `codex` and `claude-code`. The resolved name is fixed when the plugin row loads and becomes the Provider object's `name`; registration, lookup, lifecycle events, run logs, and HMR removal therefore use the same value. Each mounted row retains its own `permissionMode`, `env`, `disposeGraceMs`, and run resources.
+当每个配置项使用不同的 `providerName` 时，Profile 可以挂载多个 Codex 或 Claude Code 配置项。每个 `dsh-tool-subagent` 配置项继续用已有的 `provider` 字段绑定这个准确名称，并公开独立配置的 `toolName`。工具调用不携带提供方选择器、别名或权限输入。重复提供方名称沿用现有 `DUPLICATE_PROVIDER` 路径失败，而且不会替换第一个注册项。
 
-Profiles may mount multiple Codex or Claude Code rows when every row uses a distinct `providerName`. Each `dsh-tool-subagent` row continues to bind its existing `provider` field to that exact name and exposes an independently configured `toolName`. Tool calls carry no provider selector, alias, or permission input. A duplicate provider name fails through the existing `DUPLICATE_PROVIDER` path and leaves the first registration intact.
+移除一个提供方配置项会阻止新的启动，并且只移除绑定到该名称的工具。该实例已经发布的运行仍由其持有方拥有，并会独立结算或 dispose（资源释放）。兄弟实例继续保持注册，并保留各自的环境、原生权限模式、取消控制器、产品进程和清理宽限期。
 
-Removing one provider row blocks new starts and removes only tools bound to that name. Runs already published by the removed instance remain owned by their holders and settle or dispose independently. Sibling instances remain registered and keep their own environment, native permission mode, cancellation controller, product process, and cleanup grace.
+### 所有权与生命周期
 
-### Ownership and lifecycle
-
-| Fact or operation | Owner | Result |
+| 事实或操作 | 责任方 | 结果 |
 | --- | --- | --- |
-| Provider instance name | Product Provider Config | One immutable registry name per mounted row, with the existing default when omitted |
-| Name uniqueness and lifecycle events | `ctx.subagents` | Duplicate registration fails; disposal removes only the matching name |
-| Model-visible tool name and binding | `dsh-tool-subagent` Config | One static tool resolves one configured provider name |
-| Permission, environment, and process cleanup | One Provider instance | Concurrent runs and sibling instances do not share deployment configuration or run resources |
+| 提供方实例名称 | 产品提供方 Config | 每个已挂载配置项拥有一个不可变注册名称；省略时使用现有默认值 |
+| 名称唯一性与生命周期事件 | `ctx.subagents` | 重复注册失败；资源释放只移除匹配名称 |
+| 模型可见工具名称与绑定 | `dsh-tool-subagent` Config | 一个静态工具解析一个已配置的提供方名称 |
+| 权限、环境与进程清理 | 一个提供方实例 | 并发运行与兄弟实例不共享部署配置或运行资源 |
 
-## Verification
+## 验证
 
-Both product packages pin their default and custom names, empty-name rejection, duplicate rollback, actual-name diagnostics, two concurrent instances with different permission modes, environments, and cleanup grace, cancellation isolation, and removal of one instance while its published run remains valid. The official product loopback tests run two named instances in one Host against separate model fixtures and prove independent unload and process-tree quiescence. Public Loader compositions mount two rows and two distinct tools for each product without starting either product, while keyless ACP snapshots pin the four-tool combined roster and the absence of a dynamic provider parameter.
+两个产品包测试都会固定默认与自定义名称、空名称拒绝、重复注册回滚、实际名称诊断、使用不同权限模式、环境与清理宽限期的两个并发实例、取消隔离，以及移除一个实例后其已发布运行仍然有效。官方产品回环测试会在同一个 Host 中针对独立模型 fixture（测试前置数据）运行两个命名实例，并证明独立卸载与进程树完全停稳。公共 Loader 组合会为每个产品挂载两个配置项与两个不同工具，而且不启动任一产品；无密钥 ACP 快照固定最终四工具组合，并证明没有动态提供方参数。
 
-## Alternatives considered
+## 考虑过的替代方案
 
-**Derive names from the product or permission mode.** An implicit suffix would make identity change when deployment settings change and could still collide across equivalent rows. The Profile supplies the identity explicitly.
+**根据产品或权限模式派生名称。** 隐式后缀会让部署设置变化同时改变身份，而且等价配置项之间仍可能冲突。Profile 会显式提供身份。
 
-**Let a tool call choose the provider.** That would make model input select a permission and environment instance. Separate tool rows keep authorization and exposure static in configuration.
+**让工具调用选择提供方。** 这会让模型输入选择权限与环境实例。独立工具配置项会让授权与公开范围保持静态配置。
 
-**Create a product-instance catalog or alias registry.** The existing subagent registry already owns names, uniqueness, lookup, events, and disposal. Another directory would duplicate state without a distinct consumer.
+**建立产品实例目录或别名注册表。** 现有 subagent 注册表已经拥有名称、唯一性、查找、事件和资源释放。另一套目录没有独立消费方，只会复制状态。
 
-**Automatically rename duplicate rows.** Silent suffixing would make tool bindings and lifecycle diagnostics depend on load order. Duplicate names continue to fail loudly.
+**自动重命名重复配置项。** 静默添加后缀会让工具绑定与生命周期诊断依赖加载顺序。重复名称继续快速失败。
 
-## Consequences
+## 结果
 
-A Profile can expose several Codex and Claude Code tools backed by separate native permission modes and environments while existing configurations continue to resolve `codex` and `claude-code`. Provider and tool names remain independent configuration facts, so changing one requires updating the binding that refers to it.
+Profile 可以公开多个由不同原生权限模式与环境支持的 Codex 与 Claude Code 工具，而现有配置仍会解析为 `codex` 与 `claude-code`。提供方名称与工具名称继续是彼此独立的配置事实，因此修改其中一项时必须同时更新引用它的绑定。
 
-The design adds no runtime renaming, model-visible selector, generated tool name, persistent instance directory, shared process pool, or compatibility alias. Correct multi-instance configurations require unique provider names and unique tool names; duplicate tool-name waiting remains a separate limitation.
+本设计不增加运行时改名、模型可见选择器、自动生成的工具名称、持久实例目录、共享进程池或兼容别名。正确的多实例配置要求提供方名称与工具名称都保持唯一；重复工具名称的等待问题仍是独立限制。

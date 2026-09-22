@@ -1,19 +1,17 @@
 # @deepseek-ai/dsh-host-directory-picker
 
-English | [中文](README.zh.md)
+web GUI 宿主的工作区目录选择是一项能力 seam。抽象的 `DirectoryPicker` 服务（`ctx.directoryPicker`）是其 Service Definition。该服务只提供一个方法：`capability()`，它返回一个可辨识联合类型，说明操作者如何选择目录。后端之间的用户交互不同，不只是实现不同：`{ kind: 'native', pick(signal) }` 在宿主屏幕上打开一个原生 OS 选择器（[`-native`](../directory-picker-native/README.md)）；`{ kind: 'browse', list(path?), createDirectory(path, name) }` 提供应用内浏览器使用的列举与创建操作，也能服务于无法访问 OS 对话框的远程客户端（[`-browse`](../directory-picker-browse/README.md)）。消费方按 `capability().kind` 分支；联合类型由可合并扩展的 `DirectoryPickerCapabilities` 映射派生，新后端通过声明合并在其中加入自己的变体。遇到未知 kind 时，消费方会隐藏目录选择入口，而不是失败。能力对象在服务生命周期内必须保持稳定。每个后端包还提供 browser 入口，在 ui-workspace 的 directory-flow slot 中注册匹配的交互，因此一项组合配置会同时选择宿主能力与 client 流程。需要在运行时选择交互的组合挂载 [`-auto`](../directory-picker-auto/README.md)，它在启动时检查一次宿主情况，并挂载匹配的后端行。随包发布的 web 组合直接挂载 `-browse`（页面内对话框），所有载体因此拿到同一套交互；在覆盖层里组合 `-native` 是为“操作者就坐在宿主屏幕前”的场景固定系统面板。
 
-The web GUI host's workspace-directory picker is a capability seam. The abstract `DirectoryPicker` service (`ctx.directoryPicker`) is its Service Definition. Its only method, `capability()`, returns a discriminated union describing how an operator selects a directory. Backends differ in user interaction, not just implementation: `{ kind: 'native', pick(signal) }` opens one native OS chooser on the host display ([`-native`](../directory-picker-native/README.md)); `{ kind: 'browse', list(path?), createDirectory(path, name) }` provides listing and creation operations for an in-app browser, which works for remote clients that cannot reach an OS chooser ([`-browse`](../directory-picker-browse/README.md)). Consumers switch on `capability().kind`; the union derives from the merge-extensible `DirectoryPickerCapabilities` map, and a new backend adds its variant there through declaration merging. For an unknown kind, consumers hide directory picking rather than fail. The capability object must be stable for the service lifetime. Each backend package also has a browser entrypoint that registers the matching interaction in ui-workspace's directory-flow slots, so one composition row selects both the host capability and the client flow. A composition that should choose at runtime mounts [`-auto`](../directory-picker-auto/README.md), which inspects the host once at boot and mounts the matching backend row. The shipped web composition mounts `-browse`, so every carrier gets the in-page dialog; composing `-native` in an overlay is the pin for a host whose operator sits at its own display.
+浏览原语失败时会抛出带类型的 `DirectoryPickerError`（`directory-unreadable`／`directory-exists`／`directory-create-failed`，各自携带出错对象的 `path`），消费网关将其 1:1 映射为协议错误码。`DirectoryEntry` 行携带宿主判定的 `hidden` 标志（POSIX 点前缀约定），展示策略留在客户端；`DirectoryListing.crumbs` 是从文件系统根开始的祖先链，每个 crumb 都是跳转目标。设计依据、与 `ctx.fs` 的切分、策略裁决见 [目录选择能力 seam Agent Note](../../../.agents/notes/implemented/architecture/2026-07-28-directory-picker-capability-seam.md)。
 
-Browse primitives fail with the typed `DirectoryPickerError` (`directory-unreadable` / `directory-exists` / `directory-create-failed`, each carrying the subject `path`), which the consuming gateway maps 1:1 onto wire error codes. `DirectoryEntry` rows carry a host-owned `hidden` flag (POSIX dot convention) so display policy stays client-side; `DirectoryListing.crumbs` is the ancestor chain from the filesystem root, every crumb a jump target. Design rationale, the `ctx.fs` separation, and the policy decisions live in [the directory-picker capability seam Agent Note](../../../.agents/notes/implemented/architecture/2026-07-28-directory-picker-capability-seam.md).
+## 模型体验
 
-## Model Experience
+无。该 seam 服务于 GUI 宿主的目录选择；这里没有任何内容进入模型请求。
 
-None, as the seam serves the GUI host's directory selection; nothing here reaches a model request.
+#### KV Cache 影响
 
-#### KV Cache effect
+无；该包既不组装也不发送提供方请求。
 
-None; this package neither assembles nor sends a provider request.
+## 已知限制与暂缓事项
 
-## Known Limitations and Deferred Work
-
-- **No multi-root support** — the browse contract exposes one ancestry chain per listing; per-deployment root scoping (and Windows drive-root enumeration above a drive) waits for a consumer that needs it, per the DirectoryPicker Agent Note.
+- **不支持多根目录**——浏览约定每次列举只公开一条祖先链；按部署限定可浏览根（以及在盘符根的上一级枚举 Windows 各盘符根目录）等到出现需要它的消费方再做，见 DirectoryPicker Agent Note。

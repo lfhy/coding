@@ -1,31 +1,29 @@
-# Agent Note: One selection rule keeps subagent output past an empty terminal message
+# Agent Note: 用同一条选取规则在空终止消息后保留子代理输出
 
 Status: implemented
 
-English | [中文](2026-08-10-subagent-empty-terminal-message-output.zh.md)
+## 问题
 
-## Problem
+当 `max-tokens` 步骤只组装了工具调用块时，agent loop（智能体循环）会追加一条空内容的 `assistant/message`，因为 `BlockAssembler.blocks()` 会丢弃被截断的工具调用；这条消息仅记录 usage。三个消费方独立选取子 agent 的输出，并把这条 usage 记录当成输出。进程内驱动的 `readResult` 与 continuable Activation 的 `subagent/end` capture 不加过滤地选取最后一条 `assistant/message`，SDK 后端的观察器则让任何 `assistant/message` 优先于累积的文本。在被 max-tokens 截断的多步轮次中，最后那条空消息导致 `SubagentResult.output`、工具结果、遥测与 `subagent/end.lastAssistantMessage` 都漏掉真实的部分回答。进程内驱动也没有流式文本兜底，因此被取消的子 agent 若其唯一文本只存在于 `assistant/chunk` 事件中，也会报告 `[]`。
 
-The agent loop appends an empty-content `assistant/message` when a `max-tokens` step assembled only tool-call blocks because `BlockAssembler.blocks()` drops truncated tool calls; the message records usage only. Three consumers selected the child's output independently and treated that usage record as output. The in-process driver's `readResult` and the continuable Activation's `subagent/end` capture selected the last `assistant/message` without filtering, while the SDK backend's observer let any `assistant/message` take precedence over accumulated text. In a multi-step turn cut off at max-tokens, the final empty message caused the real partial answer to be omitted from `SubagentResult.output`, the tool result, telemetry, and `subagent/end.lastAssistantMessage`. The in-process driver also lacked a streamed-text fallback, so a cancelled child whose only text existed in `assistant/chunk` events reported `[]`.
+## 决策
 
-## Decision
+`dsh-subagent` 在 `src/assistant-output.ts` 中拥有唯一的规范选取规则：选取最后一条非空 assistant 消息；没有时选取累积的 `text-delta` 流；忽略空内容消息。增量的 `AssistantOutputFold` 通过 `push(event)` 处理会话事件传输，通过 `pushText(text)` 处理仅分片传输，并通过 `collect()` 完成选取。`finalAssistantOutput(events)` 把规则应用于完整的事件后缀，供进程内 `readResult` 与 Activation capture 使用。SDK 后端折叠通知事件；ACP 后端不暴露完整的 assistant 消息，而是折叠原始分片文本。`SubagentResult.output` 定义结果约定，`subagent/end.lastAssistantMessage` 使用同一规则。子 agent 不产生这两种输出中的任何一种时，一次性与 continuable 运行的生命周期字段都会缺省，而不是空数组。`max-tokens` 或 `aborted` 结果保留实际的终止原因。
 
-`dsh-subagent` owns one canonical selection rule in `src/assistant-output.ts`: select the last non-empty assistant message; without one, select the accumulated `text-delta` stream; ignore empty-content messages. The incremental `AssistantOutputFold` implements the rule through `push(event)` for session-event transports, `pushText(text)` for chunk-only transports, and `collect()` for selection. `finalAssistantOutput(events)` applies it to a complete event suffix for the in-process `readResult` and Activation capture. The SDK backend folds notification events; the ACP backend exposes no complete assistant messages and folds raw chunk text. `SubagentResult.output` defines the result contract, and `subagent/end.lastAssistantMessage` uses the same rule. When a child produces neither form of output, the lifecycle field is absent rather than an empty array for both one-shot and continuable runs. A `max-tokens` or `aborted` result retains its actual stop reason.
+前台委派工具使用同一选取规则。非 `completed` 的结果仍是 `isError` 工具结果，但其消息会在终止原因标题之后呈现由[非交互权限决策](../feature/2026-08-15-product-subagent-noninteractive-permissions.md)负责的可选安全提供方诊断，再附上子 agent 的部分文本。父模型会同时收到失败、独立的基础设施说明与已有 assistant 输出，而且不会把它们混为一体。
 
-The foreground delegation tool uses the same selection. A non-`completed` result remains an `isError` tool result, but its message presents the optional safe Provider diagnostic owned by the [non-interactive permissions decision](../feature/2026-08-15-product-subagent-noninteractive-permissions.md) after the stop-reason headline and appends the child's partial text afterward. The parent model receives the failure, separate infrastructure detail, and available assistant output without conflating them.
+## 验证
 
-## Verification
+无密钥 SDK 后端测试使用 `FAKE_EMPTY_MESSAGE` 发出一条仅记录 usage 的终止消息。`subagent-max-tokens-partial` ACP 快照记录一个子 agent：它流式输出文本与一次工具调用，结束于仅含工具调用的 max-tokens 步骤，持久化日志中含一条空的 usage 消息，并通过父侧的错误工具结果返回部分文本。单元覆盖检查空终止消息、取消、消息顺序、不含文本的非空消息，以及排除工具结果内容。
 
-The keyless SDK backend test uses `FAKE_EMPTY_MESSAGE` to emit a usage-only terminal message. The `subagent-max-tokens-partial` ACP snapshot records a child that streams text and a tool call, ends at a tool-only max-tokens step with an empty usage message in its durable log, and returns the partial text through the parent's errored tool result. Unit coverage checks empty terminal messages, cancellation, message ordering, textless non-empty messages, and exclusion of tool-result content.
+## 考虑过的替代方案
 
-## Alternatives considered
+**各消费方就地修复、不抽共享辅助函数。** 之所以否决：三处独立选取已发生分歧，而同一次运行的观察方必须对其输出达成一致。
 
-**Fix each consumer in place without a shared helper.** Rejected: three independent selections had diverged, while observers of one run must agree on its output.
+**让 loop 不再追加空消息。** 之所以否决：这条消息记录 usage，并在持久化日志中保留该步骤（"model-visible ⟺ logged"）；为处理输出选取而改动会话事件，会影响所有 replay 与 projection 消费方。
 
-**Stop the loop from appending the empty message.** Rejected: the message records usage and preserves the step in the durable log ("model-visible ⟺ logged"); changing session events to address output selection would affect every replay and projection consumer.
+**把空内容消息视为错误。** 之所以否决：流式文本才是子代理真实的部分回答，且终止原因已经告诉消费方轮次被截断。
 
-**Treat empty-content messages as an error.** Rejected: the streamed text is the child's real partial answer, and the stop reason already tells the consumer the turn was cut short.
+## 后果
 
-## Consequences
-
-Multi-step children cut off at max-tokens report their earlier text; cancelled in-process children retain text streamed before the abort; one-shot and continuable `subagent/end` events agree with `SubagentResult.output`. A message whose content is non-empty but textless, such as reasoning-only content, is selected instead of streamed text because the rule tests content length rather than text presence. A non-empty message is also selected instead of text streamed after it: a child cancelled while streaming a later step reports its earlier complete message, while the stop reason records the truncation.
+被 max-tokens 截断的多步子 agent 会报告其更早的文本；被取消的进程内子 agent 保留中止前已流式的文本；一次性与 continuable 的 `subagent/end` 事件同 `SubagentResult.output` 一致。内容非空但不含文本的消息（例如仅含 reasoning 的内容）仍然优先于流式文本，因为规则检查内容长度，而不是文本是否存在。非空消息同样优先于其后才流式出的文本：子 agent 在流式输出后续步骤时被取消，报告的是更早那条完整消息，终止原因则记录该截断。

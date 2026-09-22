@@ -1,14 +1,12 @@
-# code-runtime/ — code-execution capability family
+# code-runtime/ — 代码执行能力家族
 
-English | [中文](README.zh.md)
+代码执行能力 seam（参见[能力 seam](../../.agents/notes/implemented/architecture/2026-06-13-capability-seams.md)）：运行时 Service Definition，用于对宿主提供的异步绑定执行模型编写的程序，并捕获它打印和返回的内容；可替换的提供方；以及工具注册表的 [Code Mode](../core/tools/README.md) Consumer（`tools: { mode: code }`，即 `run_code` 工具和按所加载运行时 `language` 生成的 SDK）。设计见 [Code Mode Agent Note](../../.agents/notes/implemented/feature/2026-06-15-code-mode.md)。这些全是**产品**包。
 
-The code-execution capability seam (see [capability seams](../../.agents/notes/implemented/architecture/2026-06-13-capability-seams.md)): a runtime Service Definition for executing one model-written program against host-provided async bindings, capturing what it printed and returned; replaceable providers; and the tool registry's [Code Mode](../core/tools/README.md) Consumer (`tools: { mode: code }` — the `run_code` tool and the SDK generated in the loaded runtime's `language`). Design is in the [Code Mode Agent Note](../../.agents/notes/implemented/feature/2026-06-15-code-mode.md). **Product** packages.
-
-| Package | Role | ctx key |
+| 包 | 职责 | ctx key |
 |---|---|---|
-| [`code-runtime/`](code-runtime/README.md) | Service Definition and shared vocabulary | `ctx.codeRuntime` |
-| [`code-runtime-worker/`](code-runtime-worker-thread/README.md) | Worker-thread backend | registers `ctx.codeRuntime` |
+| [`code-runtime/`](code-runtime/README.md) | Service Definition 与共享词汇 | `ctx.codeRuntime` |
+| [`code-runtime-worker/`](code-runtime-worker-thread/README.md) | Worker 线程后端 | 注册 `ctx.codeRuntime` |
 
-Providers register the service without changing its Consumer. `WorkerThreadCodeRuntime` chooses its local worker or a fresh constrained Goja child of the desktop Remote-SSH agent from the caller's `cwd`; tool bindings still execute through the local Host. The child READMEs own language, isolation, and execution-budget details.
+提供方在不改变 Consumer 的情况下注册该服务。`WorkerThreadCodeRuntime` 会根据调用方的 `cwd` 选择本地 worker 或桌面 Remote-SSH agent 的全新受限 Goja 子进程；工具 binding 仍经本地 Host 执行。子 README 负责语言、隔离和执行预算细节。
 
-The subsystem reference — run requests/results, binding namespaces, the failure taxonomy — is [docs/subsystems/code-runtime.md](../../docs/subsystems/code-runtime.md).
+子系统参考——运行请求/结果、绑定命名空间、失败分类体系——见 [docs/subsystems/code-runtime.md](../../docs/subsystems/code-runtime.md)。

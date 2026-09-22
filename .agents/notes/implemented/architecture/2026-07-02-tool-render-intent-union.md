@@ -1,24 +1,22 @@
-# Agent Note: Tagged render-intent union for tool-call presentation
+# Agent Note: 用于工具调用展示的带标签 render-intent 联合类型
 
 Status: implemented
 
-English | [中文](2026-07-02-tool-render-intent-union.zh.md)
+> render-intent 联合类型对 UI 传输层仍然有效；其 ACP（Agent Client Protocol）映射已被 [ACP 作为仅面向自动化的协议](../simplification/2026-07-23-acp-automation-only-protocol.md)取代。
 
-> The render-intent union remains current for UI transports; its ACP mapping is superseded by [ACP as an automation-only protocol](../simplification/2026-07-23-acp-automation-only-protocol.md).
+## 问题
 
-## Problem
+工具通过 `ToolDefinition` 上的两个回调 `presentCall`/`presentResult` 声明其调用在 UI（编辑器的工具调用卡片）中如何渲染，返回 `ToolCallPresentation` / `ToolResultPresentation`，并带有一个可选的 `ToolTerminal` 子结构。这些类型在增量演进中变成了一个**可选字段的集合**：调用侧有 `title`、`kind`、`rawInput`、`content`、`locations`、`terminal`；结果侧有 `title`、`content`、`terminal`；`ToolTerminal` 上有 `cwd`/`output`/`exitCode`/`signal`。职责划分模糊不清：
 
-A tool declares how its calls render in a UI (an editor's tool-call card) through two callbacks, `presentCall`/`presentResult` on `ToolDefinition`, returning `ToolCallPresentation` / `ToolResultPresentation` with an optional `ToolTerminal` sub-shape. These grew incrementally into a **bag of optional fields**: `title`, `kind`, `rawInput`, `content`, `locations`, `terminal` on the call; `title`, `content`, `terminal` on the result; `cwd`/`output`/`exitCode`/`signal` on `ToolTerminal`. The split of responsibility is muddy:
+- 调用侧和结果侧的 `terminal` 字段重叠，bridge 需要将每次调用的 `content` 块、`terminal` 块和 `rawInput` 用临时条件逻辑拼接在一起。
+- 哪些组合是*合法的*没有文档说明：一个设置了 `content` 的 `terminal` 调用意味着「卡片上方的描述」；一个设置了 `terminal` 的 generic 调用毫无意义但类型上可表达。类型允许无意义的状态存在。
+- 无法表达编辑器最需要的文件工具能力：**diff 卡片**（`{path, oldText, newText}`，Zed 将其渲染为内联 diff / 新文件预览）。`ToolCallPresentation.content` 使用的是 *LLM（大语言模型）* 的 `ContentBlock[]` 词汇（text/image），工具根本无法请求 diff 展示。
 
-- The call-side and result-side `terminal` fields overlap, and the bridge reconciles a `content` block AND a `terminal` block AND `rawInput` per call, stitching them together with ad-hoc conditionals.
-- Which combinations are *valid* is unwritten: a `terminal` call that also sets `content` means "description above the card"; a generic call that sets `terminal` is meaningless but representable. The type permits nonsense.
-- There is no way to express the one file-tool affordance an editor most wants — a **diff card** (`{path, oldText, newText}`, which Zed renders as an inline diff / new-file preview). `ToolCallPresentation.content` is the *LLM* `ContentBlock[]` vocabulary (text/image), so a tool literally cannot ask for a diff.
+一个早先被否决的折叠工具自有呈现提案把富渲染推迟到它能够「在至少有两个真实工具和两个真实消费方验证词汇之后，以带标签 render-intent 联合类型的形式回归」之时。该条件已由多个生产者族，加上 TUI 与宿主/客户端运行时（Web）这些消费方满足。
 
-An earlier rejected collapse-tool-owned-presentation proposal deferred rich rendering until it could "return later as a tagged render-intent union after there are at least two real tools and two real consumers to validate the vocabulary." That bar is met by multiple producer families plus the TUI and host/client-runtime (Web) consumers.
+## 决策
 
-## Decision
-
-Replace the optional-field bag with a **`card`-tagged discriminated union**. A tool declares one render intent per call/result; the bridge switches on the tag.
+用一个**以 `card` 为标签的可辨识联合类型**替代可选字段集合。工具为每次调用/结果声明一个渲染意图；bridge 根据标签分发。
 
 ```ts ignore-check
 type FileLocation = { path: string; line?: number }
@@ -36,47 +34,47 @@ interface GenericResultView { card: 'generic'; title?: string; content?: Content
 interface TerminalResultView { card: 'terminal'; title?: string; output?: string; exitCode?: number; signal?: string }
 ```
 
-`card` is **required** on every variant — a real discriminant, not an optional default. The bridge does `switch (view.card) { case 'generic': … case 'terminal': … case 'diff': … default: assertNever(view) }`. The union is **closed** (per the [switch-exhaustiveness convention](../../../../AGENTS.md)): a fourth render intent (a table, a chart) needs new bridge code to render it anyway, so a plugin-added variant that the bridge silently drops would be worse than a compile error. Adding a variant breaks compilation at the bridge switch — exactly the signal we want.
+`card` 在每个变体上都是**必填**的——真正的判别字段，而非可选默认值。bridge 执行 `switch (view.card) { case 'generic': … case 'terminal': … case 'diff': … default: assertNever(view) }`。该联合类型是**封闭的**（遵循 [switch 穷举约定](../../../../AGENTS.md)）：第四种渲染意图（表格、图表）无论如何需要新的 bridge 代码来渲染，因此一个由插件添加但被 bridge 静默丢弃的变体，比编译错误更糟糕。新增变体会在 bridge 的 switch 处中断编译——这正是我们想要的信号。
 
-### Why a tagged union beats the field-bag
+### 为什么带标签联合类型优于字段集合
 
-- **Invalid states become unrepresentable.** A generic card cannot carry terminal output; a terminal card cannot carry a diff. The old bag permitted all of these.
-- **Consumers switch instead of stitching.** One arm per card kind produces exactly the view that card needs, rather than reconciling five optional fields whose interactions are undocumented.
-- **`diff` is a first-class intent.** `dsh-tool-fs` write/edit declare `card:'diff'` with `{path, oldText, newText}`, allowing capable UIs to render an inline change without tool-name special cases.
+- **无效状态变得不可表达。** generic 卡片不能携带终端输出；terminal 卡片不能携带 diff。旧的字段集合允许所有这些组合。
+- **消费方分发而非拼接。** 每种卡片一个分支，精确产出该卡片所需的视图，而非调和五个交互关系未文档化的可选字段。
+- **`diff` 成为一等意图。** `dsh-tool-fs` 的 write/edit 声明带 `{path, oldText, newText}` 的 `card:'diff'`，让有能力的 UI 无需针对工具名做特殊处理即可渲染行内变更。
 
-### Producer mapping
+### 生产者映射
 
-- `dsh-tool-fs` read → `generic` (`kind:'read'`, a follow-along `location`); write → `diff` (`oldText:null`); edit → `diff` (`oldText:old_string || null`, `newText:new_string ?? ''`). This mirrors `claude-agent-acp`'s `toolInfoFromToolUse` Read/Write/Edit arms field-for-field.
-- `dsh-tool-bash` foreground → `terminal` call + `terminal` result; `run_in_background` → `generic`. The generic `job_*` controls own their own generic cards.
-- `dsh-tool-todo` → `generic`.
+- `dsh-tool-fs` read → `generic`（`kind:'read'`，附带一个 follow-along `location`）；write → `diff`（`oldText:null`）；edit → `diff`（`oldText:old_string || null`，`newText:new_string ?? ''`）。这与 `claude-agent-acp` 的 `toolInfoFromToolUse` 中 Read/Write/Edit 各分支逐字段对应。
+- `dsh-tool-bash` 前台运行 → `terminal` 调用 + `terminal` 结果；`run_in_background` → `generic`。通用 `job_*` 控制工具拥有各自的 generic 卡片。
+- `dsh-tool-todo` → `generic`。
 
-### Terminal fallback ownership
+### 终端回退的归属
 
-`TerminalResultView` carries only `output`/`exitCode`/`signal`. A UI without the terminal capability needs a fenced ` ```console ` text fallback; that derivation moves to the **bridge** (it wraps `output` in a fenced block on the no-capability path), rather than the tool double-encoding it. This keeps the bash tool's result a single structured shape and preserves the existing capability-gated behavior byte-for-byte.
+`TerminalResultView` 只携带 `output`/`exitCode`/`signal`。不具备终端能力的 UI 需要一个围栏 ` ```console ` 文本回退；该推导移至 **bridge**（在无能力路径上将 `output` 包裹在围栏代码块中），而非由工具双重编码。这使 bash 工具的结果保持单一结构化形状，并逐字节保留既有的能力门控行为。
 
-The terminal intent is display-only. The harness still executes the command through its bash service, preserving sandboxing, environment scrubbing, job ownership, and per-session cwd; a UI projects the completed call and never becomes a second execution backend.
+terminal 意图只用于展示。harness 仍通过自身的 bash 服务执行命令，从而保留沙箱、环境清理、任务归属和每会话 cwd；UI 只呈现已完成的调用，绝不会成为第二个执行后端。
 
-### Purity preserved
+### 纯函数性保持不变
 
-`presentCall`/`presentResult` remain pure functions of `args` (+ the result for `presentResult`) — they run on live streaming AND session-log replay, so they must be replay-deterministic. Every view is derived from args alone: write's diff is new-file style (`oldText:null`) because the tool has no old content at call time; edit's diff is `old_string`→`new_string`.
+`presentCall`/`presentResult` 仍然是 `args`（`presentResult` 还有 result）的纯函数——它们在实时流式输出和会话日志回放中都会运行，因此必须具备回放确定性。每个 view 仅从 args 推导：write 的 diff 是新文件风格（`oldText:null`），因为工具在调用时没有旧内容；edit 的 diff 是 `old_string`→`new_string`。
 
-## Alternatives considered
+## 曾考虑的替代方案
 
-- **Delete tool-owned presentation entirely** — the rejected collapse proposal this note supersedes; its own verdict deferred to exactly this union once two real tools and two real consumers existed, and that bar is now met.
-- **Let a UI execute terminal intents** — rejected because it would bypass the harness's bash policy and ownership contracts and fork command execution across backends. A terminal card describes harness-owned execution; it never authorizes client-side execution.
-- **A merge-extensible union** (the `ContentBlockMap` pattern) — rejected: a new render intent needs new bridge code to render it anyway, so a plugin-added variant the bridge silently drops would be worse than the compile error the closed union raises at the bridge's `assertNever` switch.
-- **Keeping the optional-field bag** — the status quo the Problem dissects: invalid states representable, undocumented field interactions, and no way to ask for a diff card at all.
+- **完全删除工具自有的展示**：即本 Agent Note 所取代的那个被否决的 collapse 提案；其自身的结论正是推迟到两个真实工具和两个真实消费方存在后再做此联合类型，该条件现已满足。
+- **让 UI 执行 terminal 意图**：否决。这样会绕过 harness 的 bash 策略与归属约定，并把命令执行分裂到不同后端。terminal 卡片描述的是 harness 拥有的执行，绝不授权客户端侧执行。
+- **可合并扩展的联合类型**（`ContentBlockMap` 模式）：否决。新的渲染意图无论如何需要新的 bridge 代码来渲染，因此一个被 bridge 静默丢弃的插件添加变体，比封闭联合类型在 bridge 的 `assertNever` switch 处引发的编译错误更糟糕。
+- **保留可选字段集合**：即「问题」一节所剖析的现状：无效状态可表达、字段交互无文档、且完全无法请求 diff 卡片。
 
-## Consequences
+## 后果
 
-A new render intent is a compile-breaking change at the bridge switch — deliberately: rendering code must exist before a card kind does. Invalid card/field combinations are now unrepresentable, and the bash fallback derivation lives in the bridge, so a tool returns one structured shape. The bar for a fourth card (a table, a chart) is writing its bridge arm in the same change.
+新的渲染意图会在 bridge 的 switch 处引发编译中断——这是有意为之：渲染代码必须先于卡片种类存在。无效的卡片/字段组合现已不可表达，bash 回退推导归 bridge 所有，工具只返回一个结构化形状。第四种卡片（表格、图表）的门槛是在同一个变更中编写其 bridge 分支。
 
-## Non-goals
+## 非目标
 
-- **Live incremental `terminal_output_delta` streaming** and **command classification** — the terminal-rendering Agent Note's own deferred follow-ups, untouched here.
+- **实时增量 `terminal_output_delta` 流式输出**与**命令分类**：终端渲染 Agent Note 自身推迟的后续工作，本 Agent Note 不涉及。
 
-## Related
+## 相关
 
-- Supersedes the deferral in the earlier rejected collapse-tool-owned-presentation proposal (rejected — "wait for two real tools and two real consumers, then a tagged render-intent union"). That bar is now met; this is that union.
-- Extended by [Result-time applied-hunk diffs](../../archived/architecture/2026-07-02-result-time-applied-hunk-diffs.md) (archived), which added a persisted `meta` channel — the value/presentation split and the persisted `presentationMeta` channel are now owned by [the canonical tool output contract](2026-07-20-canonical-tool-output-contract.md) so write/edit emit a result-time `DiffResultView` — the applied change (a contextual hunk with context lines / one per `replace_all` site, or a whole-file diff for a create) — on top of this union's call-time diff card.
-- Folds `ToolTerminal` into the tagged `terminal` views used by current UI transports.
+- 取代早先被否决的折叠工具自有呈现提案（已否决——「等两个真实工具和两个真实消费方，然后做带标签 render-intent 联合类型」）中的推迟决定。该条件现已满足；本 Agent Note 即为那个联合类型。
+- 被[结果时已应用 hunk 差异](../../archived/architecture/2026-07-02-result-time-applied-hunk-diffs.md)（已归档）扩展：后者添加了一个持久化的 `meta` 通道，使 write/edit 在结果时输出 `DiffResultView`（应用后的变更：带上下文行的 contextual hunk / 每个 `replace_all` 位点一个，或创建时的整文件 diff）——值/呈现拆分与持久化的 `presentationMeta` 通道现由[规范工具输出约定](2026-07-20-canonical-tool-output-contract.md)拥有。
+- 将 `ToolTerminal` 折入当前 UI 传输层使用的带标签 `terminal` 视图。

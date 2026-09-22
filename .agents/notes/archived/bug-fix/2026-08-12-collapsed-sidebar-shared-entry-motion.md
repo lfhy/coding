@@ -1,33 +1,31 @@
-# Agent Note: Collapsed sidebar upper controls share one entry motion
+# Agent Note: 收起侧栏的上方控件共用同一进入动画
 
 Status: implemented
 Archived: 2026-08-12
 
-English | [中文](2026-08-12-collapsed-sidebar-shared-entry-motion.zh.md)
-
 ## Problem
 
-The collapsed sidebar rail renders four upper controls owned by two packages: the shell owns the toggle and New Session, while the workspace region owns add and search. Their opacity timing matched, but their geometry did not. Right-aligned controls moved with the narrowing column while left-aligned controls stayed fixed, so add appeared slower than search even under the same fade.
+收起侧栏轨道的四个上方控件由两个包渲染：外壳持有侧栏切换与新建会话，Workspace 区域持有添加和搜索。它们的透明度时序相同，但几何行为不同。右对齐控件会随栏变窄而移动，左对齐控件则保持不动，因此添加即使使用相同淡入，视觉上仍比搜索慢。
 
-The bottom settings control has a different role. It is pinned to the rail foot and must not join the upper controls' horizontal entry.
+底部设置控件承担不同角色。它固定在轨道页脚，不能参与上方控件的横向进入。
 
 ## Decision
 
-At the rail settle point, the four upper 36px controls start from one left-anchored layout and share one `150ms` animation from `translateX(49px)` to their final 10px inset. The shell applies the translation to its toggle and New Session seats and once to the workspace region, so add and search inherit the same path without nested transforms. Opacity uses the same animation timeline.
+轨道落位时，四个 36px 上方控件从同一个左对齐布局开始，共用一段 `150ms` 动画，从 `translateX(49px)` 移动到最终 10px 内边距。外壳把位移分别应用于侧栏切换、新建会话，并只对 Workspace 区域应用一次，因此添加与搜索会继承同一路径，不产生嵌套变换。透明度使用同一条动画时间线。
 
-The settings seat uses a separate opacity-only keyframe with the same duration and easing. A page that starts collapsed renders the rail without an entry animation, and reduced-motion mode disables both keyframes.
+设置控件使用时长与缓动相同、但只改变透明度的独立关键帧。页面初始即为收起状态时不会播放进入动画；减少动态效果模式会禁用两段关键帧。
 
 ## Alternatives considered
 
-**Keep every rail control fixed at its final inset.** This removes the mismatch, but it also removes the requested horizontal entry from the four upper controls.
+**把每个轨道控件固定在最终内边距。** 这能消除不一致，但也会移除四个上方控件所需的横向进入效果。
 
-**Animate each workspace button independently.** This would duplicate shell timing inside `ui-workspace` and could apply both a region and child transform. Translating the registered region once keeps animation ownership in the sidebar shell.
+**分别为每个 Workspace 按钮添加动画。** 这会在 `ui-workspace` 中重复外壳时序，还可能同时应用区域与子控件变换。只移动一次已注册区域，可以让动画继续由侧栏外壳持有。
 
-**Translate the settings control with the upper controls.** Rejected because settings is a bottom-pinned foot action, not part of the upper control sequence.
+**让设置控件随上方控件一起移动。** 不予采纳，因为设置是固定在底部的页脚操作，不属于上方控件序列。
 
 ## Consequences
 
-- Toggle, New Session, add, and search follow the same horizontal coordinates throughout collapse.
-- Settings fades at its final horizontal coordinate.
-- Static collapsed renders retain their final geometry without startup motion.
-- Style tests pin the shared animation assignments, translation distance, base anchors, and settings exception.
+- 侧栏切换、新建会话、添加与搜索在整个收起过程中使用相同横坐标。
+- 设置在最终横坐标上淡入。
+- 静态收起渲染保持最终几何，不播放启动动画。
+- 样式测试固定共用动画分配、位移距离、基础锚点与设置例外。

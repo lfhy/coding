@@ -1,99 +1,97 @@
-# Agent Note: Same-session goal-round driver
+# Agent Note: 同会话 Goal Round 驱动器
 
 Status: implemented
 
-English | [中文](2026-07-19-same-session-goal-round-driver.zh.md)
+## 问题
 
-## Problem
+目标领域可以保留目标，模型可见工具也可以变更其生命周期，但两者都不应决定下一个模型轮次何时开始。继续执行驱动器必须把活跃目标状态桥接到普通 agent loop（智能体循环），同时不能向 `dsh-agent-loop` 添加目标专用分支、创建第二段对话，也不能把每个人类轮次都视为自主迭代。
 
-The goal domain can retain an objective and the model-facing tools can mutate its lifecycle, but neither should decide when another model turn begins. A continuation driver must bridge active goal state to the ordinary agent loop without adding goal-specific branches to `dsh-agent-loop`, inventing a second conversation, or treating every human turn as an autonomous iteration.
+这层连接还承担并发与持久性义务。人类输入、取消、目标编辑、持久化失败、会话重启、插件卸载以及下游提示词策略都可能与待处理的继续执行发生竞争。简单的 `goal/changed -> agent.followup()` 监听器可能接纳陈旧工作、与人类提示词同时运行、超出上限消耗资源，或在回放后未经新授权自行重启。
 
-That bridge has concurrency and durability obligations. Human input, cancellation, a goal edit, persistence failure, session restart, plugin unload, and a downstream prompt policy can all race a pending continuation. A naive `goal/changed -> agent.followup()` listener can admit obsolete work, run alongside a human prompt, spend beyond the cap, or restart from replay without new authority.
+## 决策
 
-## Decision
+位于 `packages/goal/goal-round-driver/` 的 `@deepseek-ai/dsh-goal-round-driver` 是构建在 `ctx.goals`、公共 `Agent` 接口和持久会话事件之上的策略插件。它不导入具体 agent-loop 实现。它以每个实时 `Agent` 的确切对象身份为单位维护进程内调度状态，并且最多预留一个自动 Goal Round。
 
-`@deepseek-ai/dsh-goal-round-driver` in `packages/goal/goal-round-driver/` is a policy plugin over `ctx.goals`, the public `Agent` interface, and durable session events. It imports no concrete agent-loop implementation. For each exact live `Agent`, it owns process-local scheduling state and may reserve at most one automatic round.
+层次关系为目标（Goal）→ Goal Round → 轮次（Turn）→ 步骤（Step）。Goal Round 是外层继续执行策略的一次迭代；它会成为一个归属于目标的会话轮次，而该轮次可以包含任意数量的普通模型或工具步骤。同一会话中的人类轮次不是 Goal Round，也绝不会增加 `roundsStarted`。
 
-The hierarchy is Goal → Goal Round → Turn → Step. A goal round is the outer continuation policy iteration; it becomes one goal-sourced session turn, and that turn can contain any number of ordinary model/tool steps. Human turns in the same session are not goal rounds and never increment `roundsStarted`.
+该插件没有配置项。`maxGoalRounds` 由 `dsh-goal` 解析并持久化；「相同阻塞条件」的门槛由 `dsh-tool-goal` 解析并写入提示词。若驱动器重复声明这些可调值，一个策略就会出现多个所有者。
 
-The plugin has no configuration. `maxGoalRounds` is resolved and persisted by `dsh-goal`, and the same-condition blocking threshold is resolved and prompted by `dsh-tool-goal`. Repeating those tunables in the driver would create multiple owners for one policy.
+### 预留与接纳
 
-### Reservation and admission
+当 agent 空闲、没有竞争中的排队工作，且当前目标为 `active` 加 `armed` 时，驱动器会先将待处理的目标变更持久化到检查点，并在等待完成后重新校验所有条件。若 `roundsStarted` 已等于 `maxGoalRounds`，它会记录代码为 `round-limit` 的 `blocked`；否则，它会先预留精确身份 `{ goalId, revision, round: roundsStarted + 1 }` 和完整渲染提示词，再以 `GoalMessageSource` 调用 `Agent.followup()`。提示词用 JSON 引号编码目标描述，使多行或类似标签的文本在熟悉框架中仍是无歧义的数据值。
 
-When an agent is idle, has no competing queued work, and its current goal is `active` plus `armed`, the driver checkpoints pending goal mutations and rechecks every predicate after the await. If `roundsStarted` already equals `maxGoalRounds`, it records `blocked` with code `round-limit`. Otherwise it reserves the exact identity `{ goalId, revision, round: roundsStarted + 1 }` and the complete rendered prompt before calling `Agent.followup()` with `GoalMessageSource`. The prompt JSON-quotes the objective so multiline or tag-like text remains an unambiguous data value inside the familiar frame.
+`agent/pre-step` waterfall（瀑布式事件）是进入栅栏。Round 编号为正数的目标来源只有在完全匹配驱动器待处理的身份和内容、实时目标仍具有相同 id 与修订号、激活态仍为 armed，并且该 Round 仍是下一个编号时才会进入。插件在委托下游监听器前检查一次，在下游返回后再检查一次。第二次检查防止异步监听器编辑或暂停目标后，旧提示词仍会进入。
 
-The `agent/pre-step` waterfall is the entry fence. A positive goal source enters only when it exactly matches the driver's pending identity and content, the live goal still has that id and revision, activation remains armed, and the round is still the next number. The plugin checks once before delegating and again after downstream listeners return. This second check prevents an async listener from editing or pausing the goal while still entering the old prompt.
+只有最终产生的 `user/message` 才是已进入的 Goal Round，并推进目标折叠。陈旧预留会关闭一个被阻塞的零步骤轮次；驱动器会把它标记为陈旧，不计入 Round 数。若下游策略拒绝并非由陈旧状态导致，目标会进入 blocked，而不会绕过该策略自动重试。
 
-Only the resulting `user/message` is an entered round and advances the goal fold. A stale reservation closes a blocked no-step turn; the driver marks it stale and does not charge the round. A downstream policy rejection that is not caused by staleness blocks the goal rather than retrying around policy.
+### 人类工作与修订竞争
 
-### Human work and revision races
+预留的 `MessageId` 会区分驱动器自己的完整记录与其他所有提示词。预留之前已经排队的普通工作会阻止调度；自动提示词待处理时进入的普通工作会使该预留陈旧，因此混合的已领取批次会拒绝自动提案。Goal Round 进入后到达的普通工作会保留在队列中，成为下一个独立轮次；只有 agent 再次空闲后才重新考虑继续执行。
 
-The reserved `MessageId` distinguishes the driver's complete record from every other prompt. Ordinary work already queued before a reservation prevents scheduling. Ordinary work queued while an automatic prompt is pending makes that reservation stale, so a mixed claimed batch rejects the automatic proposal. Ordinary work arriving after the goal round entered remains queued for its own next turn; continuation is reconsidered only when the agent later becomes idle.
+目标在 Round 内发生变更时会推进持久修订号。旧修订的结算不得覆盖该变更。驱动器会丢弃旧尝试的结果、读取新投影，并且只在新修订仍为 active 与 armed 时继续。因此，模型记录的完成、暂停、阻塞和编辑相对于物理轮次稍后的关闭原因具有最终权威。
 
-A goal mutation during a round advances its durable revision. Settlement of the older revision cannot overwrite that mutation. The driver discards the old attempt outcome, reads the new projection, and continues only if the new revision is still active and armed. This makes model-recorded completion, pause, block, and edit authoritative over the physical turn's later close reason.
+### 结算
 
-### Settlement
+驱动器按下表分类一个已经关闭、归属于目标的轮次：
 
-The driver classifies one closed goal-owned turn as follows:
-
-| Turn result | Action |
+| 轮次结果 | 动作 |
 |---|---|
-| durable `completed` | continue while active/armed and under cap |
-| cancellation of a reserved/admitted goal round, or its `aborted` result | pause and disarm |
-| `error` with code `RATE_LIMIT` or `QUOTA` | block with code `usage-limited` |
-| other `error` | block with code `turn-error` |
-| `max-tokens` | block with code `max-tokens` |
-| failed durability checkpoint | disarm without changing durable phase |
-| `disposed` or `interrupted` | disarm |
-| plugin-added unknown result | block for inspection |
+| 持久化的 `completed` | 目标仍 active/armed 且未到上限时继续 |
+| 取消已预留/接纳的 Goal Round，或该 Round 产生 `aborted` 结果 | 暂停并解除激活 |
+| 代码为 `RATE_LIMIT` 或 `QUOTA` 的 `error` | 以 `usage-limited` 代码阻塞 |
+| 其他 `error` | 以 `turn-error` 代码阻塞 |
+| `max-tokens` | 以 `max-tokens` 代码阻塞 |
+| 持久化检查点失败 | 解除激活，但不改变持久化阶段 |
+| `disposed` 或 `interrupted` | 解除激活 |
+| 插件新增的未知结果 | 阻塞并等待检查 |
 
-No abnormal outcome requests an automatic retry. A later human prompt can ask to continue in any language; the model reads the stopped goal and uses the goal tool's resume action, which records a new revision and arms continuation.
+异常结果都不会请求自动重试。之后的人类提示词可以用任何语言要求继续；模型读取已停止目标并调用目标工具的 resume 动作，记录新修订并重新激活继续执行。
 
-### Durability and cancellation contract
+### 持久性与取消约定
 
-Every `goal/changed` notification creates a checkpoint obligation. The driver awaits `ctx.sessions.flush(session)` before reserving work, then checks for a newer mutation, agent lifecycle change, or competing prompt. Turn-end flush failure is reported by the existing `agent/error` notification after `turn/end`; the driver finds that exact closed turn even when a concurrent one-shot injection appended a later turn, associates the failure with the exact attempt, and disarms before the next idle decision.
+每次 `goal/changed` 通知都会产生一个检查点义务。驱动器在预留工作前等待 `ctx.sessions.flush(session)`，随后检查是否出现了更新的变更、agent 生命周期变化或竞争提示词。轮次结束时的 flush 失败会在 `turn/end` 之后通过现有 `agent/error` 通知报告；即使并发的一次性注入已追加后续轮次，驱动器仍会找到对应的同一个已关闭轮次，把失败关联到对应的同一次尝试，并在下一次空闲决策前解除激活。
 
-Broad cancellation clears pending inbox work and aborts the active loop phase. The goal driver follows the reserved message through inbox claim/discard events and the durable aborted turn ending. Because a turn now opens before its initial claim, cancellation can close a claimed no-step attempt; the driver marks that attempt cancelled and lets the following idle edge pause the goal, just as it does for an admitted attempt. Cancellation with no matching goal attempt only removes process-local activation. If the pause mutation throws, the driver falls back to disarming rather than allowing cancelled automatic work to restart.
+广义取消会清除待处理的收件箱工作，并中止活跃的循环阶段。目标驱动器通过收件箱领取／丢弃事件和持久化的 aborted 轮次结束事件来跟踪预留消息。由于轮次现在会在首次领取前打开，取消可以关闭已领取的零步骤尝试；驱动器会把该尝试标记为已取消，并让随后的空闲边沿暂停目标，与已接纳尝试的处理方式相同。没有匹配目标尝试的取消只会移除进程内激活态。若暂停变更抛错，驱动器会回退到解除激活，避免已取消的自动工作重新启动。
 
-`Agent.cancel()` remains the only public broad cancellation verb. Custom `Agent` implementations that claim the interface must honor the inbox, turn-ending, status, and quiescence ordering if consumers depend on it.
+`Agent.cancel()` 仍是唯一的公共广义取消动词。若消费方依赖这些顺序，实现该接口的自定义 `Agent` 必须遵守收件箱、轮次结束、状态与完全停稳的顺序。
 
-### Process lifecycle
+### 进程生命周期
 
-`GoalService.disarm(agent)` removes only process-local activation. It writes no session event, changes no revision, and emits no goal mutation. The driver calls it while loading over existing agents, on durability uncertainty, and before teardown; a later `resume` is the durable activation edge visible to the model.
+`GoalService.disarm(agent)` 只移除进程内激活态。它不写会话事件、不改变修订号，也不发出目标变更。驱动器在加载现有 agent、持久性存在不确定性以及卸载前调用该方法；之后的 `resume` 才是模型可见的持久激活边沿。
 
-The driver's event listeners and quiescent close are nested in one ordered Cordis effect. Cordis unloads sibling effects concurrently, so separate listener and cleanup registrations could remove the prompt fence while an async disposer was still draining. The composite effect first closes admission, disarms goals, cancels an admitted attempt, and awaits both agent and driver quiescence; only then does it unregister its listeners.
+驱动器的事件监听器和完全停稳后关闭的流程嵌套在同一个有序 Cordis effect 中。Cordis 会并发卸载同级 effect；若监听器和清理分别注册，异步 disposer 仍在排空时提示词栅栏就可能已被移除。组合 effect 会先关闭接纳、解除目标激活、取消已接纳尝试，并等待 agent 与驱动器都完全停稳；之后才注销监听器。
 
-An inbox acceptance can win the microtask race immediately before plugin unload begins. In that case the turn and even its first request may start and the round remains durably charged; once unload starts, cancellation aborts it, no following round is scheduled, and the goal remains active but disarmed. Pretending that already-observed admission never happened would corrupt replay accounting.
+紧邻插件开始卸载前，收件箱接纳可能赢得微任务竞争。在这种情况下，轮次甚至首个请求都可能已经开始，且该 Round 仍会持久化计入额度；卸载一旦开始，取消就会中止它，不会再调度后续回合，目标保持 active 但 disarmed。若假装已经观测到的接纳从未发生，就会破坏回放计数。
 
-## Testing
+## 测试
 
-The unit suite uses the real agent loop and session service with only the model scripted. It covers exact sequential admission and cap enforcement, load/resume inertness, every outcome classification, rate limiting, request errors, max tokens, downstream prompt veto, pre-admission and in-flight cancellation, unrelated-human cancellation, failed-pause fallback, human-input ordering, queued and downstream revision races, forged goal attribution, failed mutation and turn checkpoints including a later one-shot injection, scheduler and custom-agent failures, session-start reset, exact lifecycle retirement, and queued/running plugin teardown. The new driver source has per-file 100% statement, branch, function, and line coverage.
+单元测试使用真实 agent loop 与会话服务，只对模型编写脚本。覆盖内容包括精确连续接纳和上限执行、加载与恢复的惰性、所有结果分类、限流、请求错误、最大 token、下游提示词否决、接纳前与执行中取消、无关人类工作取消、暂停失败回退、人类输入排序、排队时与下游修订竞争、伪造目标来源、变更与轮次检查点失败（包括后续一次性注入）、调度器与自定义 agent 失败、会话启动重置、精确生命周期退出，以及排队中和运行中的插件卸载。新驱动器源码达到逐文件 100% 语句、分支、函数和行覆盖率。
 
-A keyless ACP snapshot mounts the shipped automation app with the real goal domain, goal tools, goal driver, agent loop, persistence, and replay adapter through `cordis.yml`. One human-originated turn creates and inspects a two-round goal, the first automatic turn stops normally, and ACP cancellation of a deliberately stalled second round records a durable pause. The normalized wire transcript and external JSONL assertions prove one session, round sources `1, 2`, the lifecycle mutation, and exact replay accounting without using `echo-agent` as an application surrogate.
+无密钥 ACP（Agent Client Protocol）快照通过 `cordis.yml` 挂载已发布的自动化应用，以及真实目标领域、目标工具、目标驱动器、agent loop、持久化和回放适配器。一个源自人类的轮次创建并检查一个包含两个 Round 的目标；第一个自动轮次正常停止，ACP 随后取消刻意停滞的第二个 Round 并记录持久暂停。规范化的协议层 transcript（文本记录）和外部 JSONL 断言证明只有一个会话、Round 来源依次为 `1, 2`、生命周期变更与回放计数精确，并且没有把 `echo-agent` 当作应用替身。
 
-The core cancellation test proves notification order and containment: observers run only for effective cancellation, can queue replacement work before the inbox clear, cannot veto later observers by throwing, and an idle call emits nothing.
+核心取消测试固定通知顺序与隔离：只有有效取消才会通知；观察者可以在清空收件箱前排入替代工作；抛错不能阻止后续观察者；空闲调用不会发出事件。
 
-## Alternatives considered
+## 考虑过的替代方案
 
-- **Add a goal loop inside `dsh-agent-loop`** — rejected because the public queue, prompt, session, cancellation, and status contracts are sufficient, and a concrete-loop branch would privilege one policy.
-- **Use `agent/turn-continuation` to make every round another step** — rejected because a goal round is an outer policy iteration and must have its own durable user prompt, turn boundary, round count, and failure settlement.
-- **Persist a pending reservation** — rejected because a crash cannot prove that queued process memory had reached admission; only the durable `user/message` consumes the round.
-- **Retry provider or persistence errors automatically** — rejected because retry policy spends resources and needs explicit authority; stopped phases plus later human resume are simpler and observable.
-- **Fork conversation history or spawn a fresh agent for every round** — rejected for this package because the goal is explicitly same-session work. Fresh-agent Ralph execution remains a separate workflow plugin built from subagent and workflow primitives.
-- **Reuse every session turn as the round counter** — rejected because human clarification and unrelated work share the session but not the automatic-work budget.
+- **在 `dsh-agent-loop` 内添加目标循环**——不予采纳，因为公共队列、提示词、会话、取消和状态约定已经足够，具体循环分支还会赋予某种策略特权。
+- **使用 `agent/turn-continuation` 把每个 Round 变成另一个步骤**——不予采纳，因为 Goal Round 是外层策略迭代，必须拥有自己的持久用户提示词、轮次边界、Round 计数和失败结算。
+- **持久化待处理预留**——不予采纳，因为崩溃无法证明进程内队列已经达到接纳点；只有持久 `user/message` 才计入 Round。
+- **自动重试提供方或持久化错误**——不予采纳，因为重试会消耗资源，需要显式授权；停止阶段与之后的人类恢复更简单，也可观察。
+- **每个 Round 都 fork 对话历史或生成新 agent**——本包不采用，因为此目标明确属于同会话工作。新 agent 的 Ralph 执行仍是基于 subagent 与工作流原语的独立工作流插件。
+- **把每个会话轮次当作 Round 计数**——不予采纳，因为人类澄清和无关工作共享会话，但不共享自动工作预算。
 
-## Consequences
+## 后果
 
-- Goal continuation remains a removable plugin and the concrete loop gains only a generic observe-before-cancel notification.
-- Replay can reconstruct every admitted round from its exact goal source and prompt; rejected reservations cannot create phantom budget use.
-- Human messages and lifecycle mutations win documented races without corrupting the revision or counter.
-- Resume and fork remain inert until semantic human intent causes the model to record a resume mutation.
-- Conservative failure mapping can require manual continuation after transient failures, but it never hides an automatic retry.
+- 目标继续执行仍是可移除插件，具体循环只新增一个通用的「取消前观察」通知。
+- 回放可以从精确目标来源和提示词重建每个已接纳 Round；被拒绝的预留不会产生虚假的预算消耗。
+- 人类消息和生命周期变更可以在有文档约束的竞争中胜出，而不破坏修订号或计数器。
+- 恢复和 fork 会一直保持惰性，直到人类的语义意图促使模型记录 resume 变更。
+- 保守的失败映射可能要求在暂时性错误后手动继续，但绝不会隐藏自动重试。
 
-## Known limitations and deferred work
+## 已知限制与暂缓事项
 
-- Completion evidence and semantic blocker equivalence remain model judgments. An independent evaluator, completion certificate, or verifier-driven stop policy is deferred to a separate policy plugin.
-- This package does not provide Ralph-style fresh-agent attempts, context reset, cross-round evaluator feedback, or workflow-level parallelism; those belong to the separate Ralph workflow tool.
-- Cordis unload begins asynchronously. An already accepted inbox item may enter one charged round and start one request before teardown cancellation takes effect; the closing drain prevents every subsequent round.
-- `maxGoalRounds` is only an admitted-round limit. Token, currency, wall-clock, and provider-usage budgets require independent policy.
-- A custom `Agent` implementation must produce the documented session events, status edges, cancel notification, and quiescence semantics; structural TypeScript compatibility alone cannot verify runtime ordering.
+- 完成证据和阻塞条件的语义等价性仍由模型判断。独立评估器、完成证书或由验证器驱动的停止策略延期到独立策略插件。
+- 本包不提供 Ralph 风格的新 agent 尝试、上下文重置、跨 Round 评估反馈或工作流级并行；它们属于独立的 Ralph 工作流工具。
+- Cordis 卸载异步开始。已经被收件箱接受的条目可能先进入一个计入额度的 Round 并启动一个请求，之后卸载取消才生效；关闭排空会阻止所有后续 Round。
+- `maxGoalRounds` 只是已接纳 Round 的上限。token、费用、挂钟时间和提供方使用预算需要独立策略。
+- 自定义 `Agent` 实现必须产生文档规定的会话事件、状态边沿、取消通知和完全停稳语义；仅凭 TypeScript 结构兼容无法验证运行时顺序。

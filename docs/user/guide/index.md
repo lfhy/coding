@@ -1,36 +1,34 @@
-# Use the Web UI
+# 使用 Web UI
 
-English | [中文](index.zh.md)
+请先按照[根目录 README](../../../README.md#run) 中的说明启动 Web UI；命令会打印其访问地址。本指南从服务器已经运行的状态开始。`dsh` 进程会把启动时所在的目录作为默认文件系统位置；全新的 Web UI 不会选中任何 Workspace。
 
-Start the Web UI through the [root README](../../../README.md#run); the command prints its URL. This guide begins after that server is running. The `dsh` process uses its invoking directory as the default filesystem location; a fresh Web UI starts without a selected Workspace.
+## 配置模型
 
-## Configure a model
+打开**设置 → 模型**，输入 [DeepSeek API 密钥](https://platform.deepseek.com/)并保存。模型路由会立即可用，不需要重启服务器。
 
-Open **Settings → Models**, enter a [DeepSeek API key](https://platform.deepseek.com/), and save it. The model route becomes usable immediately without restarting the server.
+[模型配置指南](./providers.md)介绍其他提供方和自定义 OpenAI 兼容端点。
 
-The [model configuration guide](./providers.md) covers other providers and custom OpenAI-compatible endpoints.
+## 选择开始方式
 
-## Choose how to start
+点击**选择工作区**即可搜索已列出的 Workspace。若要在本地项目中工作，可选择已有 Workspace，或选择**打开文件夹**并选取项目目录。Session 打开后，编辑器即可使用。
 
-Click **Choose workspace** to search the listed Workspaces. To work locally, select an existing Workspace or choose **Open folder** and select the project directory. The composer becomes available after that Session opens.
+选择**不在项目中工作**会在 Host 默认工作目录创建 Session，但不会注册 Workspace。只有没有当前 Session 时，编辑器才不可用。
 
-Choose **Work without a project** to create a Session at the Host's default working directory without registering a Workspace. The composer is unavailable only while there is no current Session.
+在 Coding 桌面端中，选择**连接 Remote-SSH**，即可输入 SSH 主机、使用密码或私钥认证、确认未知主机密钥并选择远程目录。凭据只保留在当前对话框／连接中，不会保存；应用重启后需要重新执行连接流程。普通浏览器界面不能发起 SSH 连接。
 
-In the Coding desktop app, choose **Connect Remote-SSH** to enter an SSH host, authenticate with a password or private key, confirm an unknown host key, and select a remote directory. Credentials stay in the current dialog/connection and are not saved; after restarting the app, run the connection flow again. The ordinary browser UI cannot start an SSH connection.
+Remote-SSH 会通过紧凑的 Go agent 在所选目录中运行语义文件系统操作、`glob`／`grep`、前台和后台 Bash、持久终端／PTY、LSP 与 Code Mode。目标侧不需要 Node；本地 Host 仍负责工具审批和持久 Session 日志。在拥有同执行世界的远程沙箱 Provider 出现前，远程 Bash 需要使用**完全访问**（`danger-full-access`）。Code Mode 会经 esbuild 转换 TypeScript，并在 Goja 中运行，因此它拥有声明的工具 binding，但没有 Node 内建模块、`process`、`require` 或 Host 环境。过期 marker 或已断开的连接会失败，而不会在本机运行操作。
 
-Remote-SSH runs semantic filesystem operations, `glob`/`grep`, foreground and background Bash, persistent terminals/PTYs, LSP, and Code Mode in the selected directory through a compact Go agent. The target does not need Node; the local Host still owns tool approval and durable Session logging. Remote Bash requires **Full access** (`danger-full-access`) until a same-world remote sandbox provider exists. Code Mode transforms TypeScript with esbuild and runs it in Goja, so it has declared tool bindings but not Node built-ins, `process`, `require`, or the Host environment. A stale marker or lost connection fails rather than running the operation on the local machine.
+## 运行任务
 
-## Run a task
-
-Start a session and send:
+启动一个会话并发送：
 
 > Summarize this repository and identify its main packages.
 
-The agent can read and edit workspace files, run commands, delegate work, and maintain a plan. The Web UI asks before operations that require approval under the active permission policy.
+Agent（智能体）可以读取和编辑工作区文件、运行命令、委派工作并维护计划。如果根据当前权限策略，某项操作需要审批，Web UI 会先询问你。
 
-## Continue
+## 继续使用
 
-- [Configure models](./providers.md)
-- [Use the Python SDK](./python-sdk.md)
-- [Use other CLI modes](../../../apps/cli/README.md)
-- [Develop a plugin](../develop/basic/)
+- [配置模型](./providers.md)
+- [使用 Python SDK](./python-sdk.md)
+- [使用其他 CLI 模式](../../../apps/cli/README.md)
+- [开发插件](../develop/basic/)

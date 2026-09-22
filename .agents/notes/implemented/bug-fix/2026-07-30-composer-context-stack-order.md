@@ -1,33 +1,31 @@
-# Agent Note: Composer context stack order
+# Agent Note: Composer 上下文堆栈顺序
 
 Status: implemented
 
-English | [中文](2026-07-30-composer-context-stack-order.zh.md)
+## 问题
 
-## Problem
+Goal、Todo 与 Queue 独立注册到同一个 `conversation.input.dock` 列表，但各自的注册顺序与间距规则没有编码组合矩阵。因此，渲染器将 Todo 放在 Queue 和 Goal 之前，而 Queue 与 Goal 都带有用于 composer 边界的负外边距。三者同时出现时，Queue 与 Goal 相接，Goal 与 composer 相接，颠倒了设计层级。
 
-Goal, Todo, and Queue contribute independently to the same `conversation.input.dock` list, but their registration order and spacing rules did not encode the composition matrix. The renderer therefore placed Todo before Queue and Goal, while both Queue and Goal carried negative margins intended for the composer boundary. When all three were present, Queue joined to Goal and Goal joined to the composer, reversing the design's hierarchy.
+## 决策
 
-## Decision
+[Todo 优先的对齐决策](2026-08-02-todo-first-composer-context-order.md)规定当前的升序排列。本记录保留围绕该顺序的堆栈约定：数值间隔使未来条目可以声明预期位置，不必依赖插件激活顺序；composer bar 位于列表之后。
 
-The [Todo-first alignment decision](2026-08-02-todo-first-composer-context-order.md) owns the current ascending order. This note retains the stack contract around that order: numeric gaps leave room for future entries to declare their intended position without relying on plugin activation order, and the composer bar follows the list.
+`ConversationRoot` 负责独立上下文卡片之间的 6px 间距。Goal 是一张独立的 752×36px 卡片，折叠后的 Todo 是一张独立的 752×44px 卡片。Queue 是末端 dock 条目：其 776px 包装层包含相同的 752px 面板列，并减去共享间距与具名的 5px 布局重叠量，因此后渲染的 composer 卡片只覆盖 Queue 边缘。空条目渲染为 null，不占用间距。
 
-`ConversationRoot` owns the 6px space between independent context cards. Goal is a standalone 752×36px card and collapsed Todo is a standalone 752×44px card. Queue is the terminal dock entry: its 776px wrapper contains the same 752px panel column and subtracts the shared gap plus a named 5px layout overlap, so the later composer card paints over only the queue edge. Empty entries render null and consume no gap.
+顺序与重叠是两项独立约定。注册顺序定义语义层级，stack 上的 CSS 变量定义共享几何。系统不能仅因 Queue 是最后一个可见条目，就推断它可以与 composer 重叠，因为没有 Queue 时，Goal 或 Todo 可能成为最后一个可见上下文卡片，而它们必须与 composer 保持间隔。
 
-The order and overlap are separate contracts. Registration order establishes semantic hierarchy; CSS variables on the stack establish shared geometry. Queue does not infer that it may overlap merely from being the last visible entry, because Goal or Todo can be the last visible context card when no queue exists and must remain separated from the composer.
+## 验证
 
-## Verification
+注册测试固定了三个顺序值。无密钥 Queue 浏览器场景同时渲染 Todo、Goal 和 Queue，固定它们的无障碍顺序，并检查其可见卡片边缘；分别针对 Goal 与 Queue 的场景覆盖各自的独立状态。
 
-Registration tests pin all three order values. The keyless Queue browser scenario renders Todo, Goal, and Queue together, pins their accessibility order, and checks their visible card edges; focused Goal and Queue scenarios cover their independent states.
+## 考虑过的替代方案
 
-## Alternatives considered
+**Goal 和 Queue 分别保留独立的负外边距。** 不予采纳，因为受影响的相邻项会随 slot 顺序变化；除非语义顺序也固定，否则局部外边距无法表达允许哪一种关系。
 
-**Keep independent negative margins on Goal and Queue.** Rejected because the affected neighbor changes with slot order; a local margin cannot express which relationship is allowed unless the semantic order is also fixed.
+**在 `ConversationRoot` 中分别渲染每个已知 dock id。** 不予采纳，因为这会把可扩展的列表 slot 变成硬编码的组件清单，并迫使 owner 在每新增一个注册方时随之修改。
 
-**Render each known dock id separately in `ConversationRoot`.** Rejected because it turns an extensible list slot into a hardcoded component inventory and forces the owner to change for every new registrant.
+**让最后一个 dock 条目与 composer 相接。** 不予采纳，因为 Goal 和 Todo 是独立卡片；Goal 或 Todo 缺席时的组合不得改变剩余卡片的界面语义。
 
-**Tuck whichever dock entry is last.** Rejected because Goal and Todo are standalone cards. Their absence matrix must not change the surface semantics of whichever card remains.
+## 后果
 
-## Consequences
-
-The visual hierarchy is stable for every presence combination, and Queue is the only context surface joined to the composer. New input-dock plugins must choose an order relative to Todo `0`, Goal `10`, and Queue `20`; an entry after Queue also requires an explicit decision about which surface owns the composer boundary.
+所有存在组合下的视觉层级都保持稳定，Queue 是唯一与 composer 相接的上下文界面。新的 input-dock 插件必须相对于 Todo `0`、Goal `10` 与 Queue `20` 选择顺序；若条目位于 Queue 之后，还必须明确决定由哪个界面负责 composer 边界。

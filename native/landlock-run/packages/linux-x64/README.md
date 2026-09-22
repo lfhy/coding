@@ -1,9 +1,7 @@
 # @deepseek-ai/node-addon-landlock-run-linux-x64
 
-English | [中文](README.zh.md)
+面向 linux-x64 的预构建 `bin/landlock-run` Landlock 启动器：一个由 [`@deepseek-ai/node-addon-landlock-run`](https://www.npmjs.com/package/@deepseek-ai/node-addon-landlock-run) 包所附的 C 源码原生编译而成的静态 musl 二进制文件（不使用交叉工具链）。npm 的 `os`/`cpu` 字段在安装时选择此包；入口包将其定位到文件路径。该包不包含 JavaScript，也绝不会被导入。
 
-Prebuilt `bin/landlock-run` Landlock launcher for linux-x64 — a static musl binary compiled natively (no cross toolchain) from the C source shipped in [`@deepseek-ai/node-addon-landlock-run`](https://www.npmjs.com/package/@deepseek-ai/node-addon-landlock-run). npm's `os`/`cpu` fields select this package at install time; the entry package resolves it to a file path — it ships no JavaScript and is never imported.
+该二进制文件被 git 忽略，并通过 `files` 列表进入本地 npm tarball；如果文件缺失或 ELF 架构错误，`prepack` 门禁会拒绝打包，`verify-packed-install.mjs` 会按字节核验已安装二进制文件与其本地 workspace 构建一致。静态 musl 链接使同一个二进制文件同时适用于 glibc 和 musl 发行版，因此名称中没有 libc 后缀。
 
-The binary is git-ignored and enters a local npm tarball through the `files` list; the `prepack` gate refuses to pack when it is missing or has the wrong ELF architecture, and `verify-packed-install.mjs` byte-pins the installed binary against its local workspace build. Static musl linking means one binary for glibc and musl distros alike — hence no libc suffix in the name.
-
-Sibling: `@deepseek-ai/node-addon-landlock-run-linux-arm64`.
+同级包：`@deepseek-ai/node-addon-landlock-run-linux-arm64`。

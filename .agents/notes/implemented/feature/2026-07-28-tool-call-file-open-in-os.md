@@ -1,31 +1,29 @@
-# Agent Note: Tool-call file open in OS
+# Agent Note: 在工具调用中用系统应用打开文件
 
 Status: implemented
 
-English | [中文](2026-07-28-tool-call-file-open-in-os.zh.md)
+## 问题
 
-## Problem
+聊天工具行把整行摘要当作点击目标，点击后打开右侧 details 面板，并带有整行悬停背景。对文件系统工具而言，有用的动作是用操作系统默认应用打开所涉文件，而不是在侧栏里查看原始工具载荷。
 
-Chat tool rows treated the whole summary line as a click target that opened the right-hand details panel, with a hover background on the row. For filesystem tools the useful action is opening the mentioned file in the operating system's default application, not inspecting the raw tool payload in a sidebar.
+## 决策
 
-## Decision
+文件工具的路径摘要（`read`／`write`／`edit` 参数中的 `path` 或 `file_path`）渲染为静止状态下即带下划线的链接，并使用 pointer 光标。点击路径会经 `WorkspaceRuntime.openPath` 调用 `host.openPath`，相对路径以会话 cwd 为基准解析。带文件链接的行关闭参数展开（左侧图标不可点）；工具行（含 bash 与 todo 注册）去掉整行点击、整行悬停底色，以及点击打开 details 的手势。details 面板及其 inject 面仍保留供程序化选择；工具行不再驱动它们。
 
-File-tool path summaries (`read` / `write` / `edit` args carrying `path` or `file_path`) render as links underlined at rest with a pointer cursor. Clicking the path calls `host.openPath` through `WorkspaceRuntime.openPath`, resolving relative paths against the session cwd. File-link rows disable args expand (leading icon is inert); whole-row click, row hover fill, and the click-to-open-details gesture are removed from tool rows (including bash and todo registrations). The details panel and its inject surface remain for programmatic selection; rows no longer drive them.
+`host.openPath` 是特权一元 RPC，仅接受来自回环地址且同源的浏览器请求（与 `host.pickDirectory` 相同的载体守卫）。平台适配器不经 shell 打开：macOS 为 `open`，Windows 为 PowerShell `Invoke-Item`，桌面 Linux 为 `xdg-open`；浏览器可渲染的文档会在 macOS 与桌面 Linux 上优先使用指定的默认浏览器。尽管 Node 将 WSL 报告为 `linux`，WSL 仍是一种独立的宿主形态：适配器根据其环境或 Microsoft 内核 release 识别它，用 `wslpath -w` 转换 Linux 路径，并将所得 Windows/UNC 路径交给同一 PowerShell 交接。打开器的平台信息和命令运行器可在测试中注入。仅含 URL 的 read 参数（`web_fetch`）不是文件链接。
 
-`host.openPath` is a privileged unary RPC accepted only from loopback, same-origin browser requests (same carrier guard as `host.pickDirectory`). Platform adapters open without a shell: `open` on macOS, PowerShell `Invoke-Item` on Windows, and `xdg-open` on desktop Linux; browser-renderable documents prefer the named default browser on macOS and desktop Linux. WSL is a separate host shape despite Node reporting `linux`: the adapter recognizes its environment or Microsoft kernel release, translates the Linux path with `wslpath -w`, and passes the resulting Windows/UNC path to the same PowerShell handoff. The opener's platform facts and command runner are injectable for tests. URL-only read args (`web_fetch`) are not file links.
+## 考虑过的替代方案
 
-## Alternatives considered
+- 保留整行点击打开 details，另加文件入口 — 否决；产品要求用文件链接替换整行手势。
+- 在应用内预览文件 — 否决；要求是操作系统默认应用。
+- 将 WSL 当作桌面 Linux — 否决；WSL 进程报告 `linux`，但 Linux 桌面文件关联并非必有，而其常规用户桌面和浏览器位于 Windows 上。
+- 复用 `host.pickDirectory` 的超时豁免 — 不必要；打开路径的交接在常规一元截止时间内即可完成。
 
-- Keep row-click details and add a separate file affordance — rejected; the product ask replaces the row gesture with the file link.
-- Open files inside an in-app preview — rejected; the ask is the OS default application.
-- Treat WSL as desktop Linux — rejected; a WSL process reports `linux`, but a Linux desktop association is optional while its ordinary operator desktop and browser live on Windows.
-- Reuse `host.pickDirectory`'s timeout exemption — unnecessary; path open hand-off completes quickly under the normal unary deadline.
+## 后果
 
-## Consequences
+点击工具行中的文件路径会在宿主上打开该路径。非文件工具行只是不可交互的摘要（行内已有的展开开关仍保留）。远程或非回环客户端无法调用 `host.openPath`。Host 或操作系统拒绝由聊天视图拥有：它展示抛出的原因，并对同一路径提供重试（[打开失败](../bug-fix/2026-08-18-tool-row-file-open-failure.md)）。
 
-Clicking a file path in a tool row opens that path on the host. Non-file tool rows are inert summaries (expand toggles remain where the row already supported them). Remote or non-loopback clients cannot invoke `host.openPath`. A Host or OS refusal is owned by the chat view: it shows the thrown reason and retries the same path ([file-open failure](../bug-fix/2026-08-18-tool-row-file-open-failure.md)).
+## 风险
 
-## Risks
-
-- Desktop Linux hosts without `xdg-open`, and WSL hosts without working Windows interop (`wslpath` plus `powershell.exe`), fail the RPC; the chat view shows that Host error and offers retry.
-- Relative paths without a session cwd are forwarded verbatim and may fail on the host.
+- 没有 `xdg-open` 的桌面 Linux 宿主，以及 Windows 互操作（`wslpath` 加 `powershell.exe`）不可用的 WSL 宿主，会使 RPC 失败；聊天视图展示该 Host 错误并提供重试。
+- 没有会话 cwd 时相对路径会原样转发，可能在宿主侧失败。

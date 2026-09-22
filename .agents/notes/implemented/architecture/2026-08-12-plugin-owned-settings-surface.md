@@ -1,61 +1,59 @@
-# Agent Note: Plugin-owned settings surface
+# Agent Note: 由插件自己拥有的设置表层
 
 Status: implemented
 
-English | [中文](2026-08-12-plugin-owned-settings-surface.zh.md)
-
 ## Problem
 
-A plugin that registered a settings namespace could not reach the browser configuration page, and both gates that stopped it lived in this repository.
+注册了 settings 命名空间的插件到不了浏览器配置页，而拦住它的两道门都在本仓库里。
 
-`packages/host/apiproxy` held two hardcoded namespace lists. `settings.describe` filtered its answer through them and every write checked them first, so a namespace outside them answered `settings-not-exposed` even when its owner had registered it. Adding a plugin to the configuration page therefore meant editing a package the plugin author does not own.
+`packages/host/apiproxy` 持有两份硬编码的命名空间清单。`settings.describe` 用它们过滤答复，每次写入也先对照它们，因此清单之外的命名空间即便其拥有方已注册，也只会得到 `settings-not-exposed`。于是把一个插件加进配置页，意味着要改一个插件作者并不拥有的包。
 
-The plugin configuration section rendered an unordered list of whatever cards were registered into `settings.plugin.item`. A card carried an opaque `id`, never the namespace it edited, so the section could not tell which served namespaces already had a home. That left every question about "who renders this namespace" unanswerable from the ledger the section could see.
+插件配置分区渲染的是注册进 `settings.plugin.item` 的卡片列表，无序。卡片携带的是不透明的 `id`，从不是它所编辑的命名空间，因此分区无从判断哪些被服务的命名空间已经有了归属。凡是"这个命名空间由谁渲染"的问题，都无法从分区看得见的账本里得到答案。
 
-Together the two meant a user-authored plugin was configurable only by hand-editing `settings.yaml`. The [web plugin configuration note](../feature/2026-08-10-web-plugin-configuration.md) recorded the allowlist as deliberate, and the [config-plane boundaries note](2026-07-30-config-plane-boundaries.md) tied web-configurability to membership in the configurable-provider directory. Both conclusions blocked exactly the plugin authors the general seam was built for.
+两者相加，用户自己写的插件就只能靠手改 `settings.yaml` 来配置。[web 插件配置 note](../feature/2026-08-10-web-plugin-configuration.md) 把白名单记为刻意为之，[配置面边界 note](2026-07-30-config-plane-boundaries.md) 则把「可在 Web 上配置」绑定到可配置提供方目录的成员资格。这两条结论恰恰挡住了那个通用 seam 本来要服务的插件作者。
 
 ## Decision
 
-**Registering is exposing.** The api-proxy serves every namespace `ctx.settings.describe()` returns and gates no write. `WEB_SETTINGS_NAMESPACES`, `PRODUCT_SETTINGS_NAMESPACES`, the union with `ctx.llm.listConfigurableProviders()`, and the `settings-not-exposed` error code are gone. A name no registration answers — unknown, or malformed and therefore unable to address one — folds into the seam's own `settings-rejected`, so the proxy contributes no boundary and no vocabulary of its own.
+**注册即暴露。** api-proxy 服务 `ctx.settings.describe()` 返回的每一个命名空间，写入不设门禁。`WEB_SETTINGS_NAMESPACES`、`PRODUCT_SETTINGS_NAMESPACES`、与 `ctx.llm.listConfigurableProviders()` 的并集，以及 `settings-not-exposed` 错误码，全部删除。没有任何注册应答的名字——未知的，或格式非法因而根本无法寻址到注册的——都折叠为 seam 自己的 `settings-rejected`，于是代理既不贡献边界，也不贡献自己的词汇。
 
-**The settings seam is untouched.** Which client may read a namespace, and which page renders it, are facts about consumers; a Service Definition that carried either would let one Consumer dictate its contract. `SettingsRegisterOptions` gains nothing.
+**settings seam 不动。** 哪个客户端可以读某个命名空间、哪个页面渲染它，都是关于 Consumer 的事实；Service Definition 只要携带其中之一，就等于让一个 Consumer 决定它的契约。`SettingsRegisterOptions` 一个字段都没加。
 
-**`settings.plugin.item` is keyed on the settings namespace.** The slot moved from `list` to `keyed`, the key being the namespace the card edits, following the `tool.call.toolview` precedent where each tool plugin registers its renderer under the tool name. A card declares `key`, not `id`/`order`. The slot is declared by the Plugins section's `configurable` tab, which owns the card list.
+**`settings.plugin.item` 以 settings 命名空间为键。** 该 slot 从 `list` 改为 `keyed`，键就是卡片所编辑的命名空间，沿用 `tool.call.toolview` 的先例——每个工具插件把自己的渲染器注册在工具名这个键上。卡片声明 `key`，不再声明 `id`/`order`。该 slot 由「插件」分区的 `configurable` 标签页声明，卡片列表归它所有。
 
-**The tab drives dispatch from the served namespaces.** It derives the current served set from `ctx.settingsScope.describe()` and follows that shared settings mirror, while its own listener follows the card slot ledger. It dispatches one key per served namespace. What renders is the intersection of two ledgers — namespaces a live Host plugin registered, and cards registered under those keys — computed in the tab's controller from the slot ledger (`ctx.slots.entries`, `ctx.slots.subscribe`) and the mirror answer. The later [settings describe mirror decision](2026-08-17-settings-describe-mirror.md) owns the browser-wide read and invalidation lifecycle.
+**标签页以被服务的命名空间驱动派发。** 它从 `ctx.settingsScope.describe()` 派生当前被服务的集合并跟随该共享 settings 镜像，自身的监听器只跟随卡片 slot 账本；随后为每个被服务的命名空间派发一个键。渲染出来的是两份账本的交集——存活 Host 插件注册的命名空间，以及注册在这些键上的卡片——由标签页的 controller 从 slot 账本（`ctx.slots.entries`、`ctx.slots.subscribe`）与镜像应答算出。后续的 [settings describe 镜像决策](2026-08-17-settings-describe-mirror.md)持有浏览器全局的读取与失效生命周期。
 
-Keying makes absence the signal, and that is what removes the bookkeeping the previous shape needed. A namespace another surface owns (`ui-theme`, `permission`, `llm-*`, `agent-presets`) has no card under its key, so it renders nothing without declaring anything anywhere. A card whose namespace this deployment does not serve is never dispatched, which also fixes the old empty-state defect: the tab counted registered cards, including ones rendering nothing, so a deployment exposing none showed an empty list instead of its empty line.
+以命名空间为键，让「缺席」本身成为信号，而这正是它消掉旧形态所需簿记的原因。归别的界面所有的命名空间（`ui-theme`、`permission`、`llm-*`、`agent-presets`）在其键上没有卡片，于是什么都不渲染，且无需在任何地方声明任何东西。命名空间未被本部署服务的卡片根本不会被派发，这同时修掉了旧的空态缺陷：标签页数的是已注册卡片，其中包含那些什么都不渲染的，因此一个都不暴露的部署看到的是空列表，而不是它那行空态文案。
 
-**Nothing renders a form it was not given.** The tab supplies no fallback card. A plugin's browser half owns its card completely — chrome, controls, and copy — which is what the slot's `fallback` option would have replaced with a schema-reverse-rendered form.
+**不渲染任何未被交给它的表单。** 标签页不提供兜底卡片。插件的浏览器半侧完整拥有自己的卡片——外观、控件与文案——而这正是 slot 的 `fallback` 选项会用一份 schema 反向渲染的表单取代掉的东西。
 
-## What the allowlist protected
+## 白名单实际护住了什么
 
-The gate did keep one thing off the wire, and this note states it plainly because the decision has to survive the accurate version: a registered namespace the list did not name never had its resolved, `base`, or `user` values reach the browser at all. The plugin inventory page is not a substitute — `PluginInventoryEntry` carries `entryId`, `moduleName`, `enabled`, and `fiberPhase`, and its "configuration" row renders an enabled/disabled tag, never a stored value.
+这道门确实挡住了一样东西，本 note 如实写出，因为这个决策必须在准确版本下也站得住：不在名单上的已注册命名空间，其 resolved、`base` 与 `user` 值根本不会抵达浏览器。插件清单页不能替代它——`PluginInventoryEntry` 携带的是 `entryId`、`moduleName`、`enabled` 与 `fiberPhase`，它那一行「configuration」渲染的是启用／停用标签，从不是任何已存值。
 
-What the gate was not is the boundary its position suggested. Every `settings.*` method sits in `PRIVILEGED_METHODS` (`packages/client/connection`), so a non-loopback or cross-origin request is refused with 403 before reaching this code; `role('secret')` fields are structurally stripped from every layer of every response; and the document the plane edits is the user's own `settings.yaml`, which the same settings page offers to open. The writes it did not block were also the consequential ones: `permission` (which can widen the approval preset) and `agent-presets` (which decides what a session mounts) were both already served.
+这道门不是的，是它所处位置暗示的那种边界。每个 `settings.*` 方法都在 `PRIVILEGED_METHODS` 里（`packages/client/connection`），非回环或跨源请求在到达这段代码之前就以 403 被拒；`role('secret')` 字段在每种响应的每一层都被结构性剥离；而这个面所编辑的文档，本就是用户自己的 `settings.yaml`，同一个设置页还提供了打开它的入口。它没有挡住的写入，恰恰是有分量的那些：`permission`（能放宽审批预设）与 `agent-presets`（决定一个会话挂载什么）本来就已被服务。
 
-So the exposure this change actually adds, in this repository, is one namespace: `agent-default-model`, whose two fields name a provider and a model and which no browser half renders. A future namespace whose values genuinely must not cross the wire is answered per field by `role('secret')` — finer than a namespace switch, and already enforced.
+因此本次改动在本仓库实际新增的暴露面是一个命名空间：`agent-default-model`——它的两个字段指明一个提供方与一个模型，且没有任何浏览器半侧渲染它。将来若某个命名空间的值确实不该跨越协议，由 `role('secret')` 逐字段作答：比整命名空间开关更精细，而且已经在执行。
 
 ## Alternatives considered
 
-**A declaration on `settings.register()`** (`client: { surface: 'plugin-config' | 'custom', title, description }`), which the removed `WEB_SETTINGS_NAMESPACES` comment named as the intended direction. It keeps registration from crossing the transport by default and lets a plugin author self-serve in one line. Rejected because `surface` is browser-page vocabulary and `title`/`description` are presentation: a Service Definition carrying them is a seam shaped by one Consumer. Its fail-closed property is also worth less than it reads — see what the allowlist protected, above.
+**在 `settings.register()` 上加声明**（`client: { surface: 'plugin-config' | 'custom', title, description }`），这也是被删掉的 `WEB_SETTINGS_NAMESPACES` 注释所点名的既定方向。它让注册默认不跨越传输边界，并让插件作者一行代码自助。否决的原因是 `surface` 是浏览器页面的词汇，而 `title`/`description` 属于呈现：Service Definition 一旦携带它们，就成了被单个 Consumer 塑形的 seam。它那条 fail-closed 性质的价值也不如读起来那么高——见上文「白名单实际护住了什么」。
 
-**A separate exposure catalog**, a registry of its own that plugins join beside their settings registration, generalizing `ctx.llm.registerConfigurableProviders()`. Rejected because it makes one fact require two registrations that can drift: registering a namespace and forgetting the catalog entry produces a section nothing can edit, with no gate able to see the mistake.
+**另设一份暴露目录**，插件在注册 settings 之外再加入这份自有注册表，即把 `ctx.llm.registerConfigurableProviders()` 一般化。否决的原因是它把一件事实拆成两处可能脱节的注册：注册了命名空间却忘了目录条目，产出的是一个谁都编辑不了的分节，而没有任何门禁看得见这个错误。
 
-**A deny-list `Config` field on the api-proxy**, so a deployment could withhold a namespace. Rejected for having no consumer: every currently registered namespace is one a user may edit, and a genuinely sensitive field is answered per-field by `role('secret')`, which is the finer instrument. A namespace-wide switch invented ahead of its first use is the speculative option the package rules forbid.
+**给 api-proxy 加一个 deny-list `Config` 字段**，让部署方能扣下某个命名空间。因为没有消费者而否决：当前每一个已注册的命名空间都是用户可以编辑的，而真正敏感的字段由 `role('secret')` 逐字段作答，那是更精细的工具。在第一个用例出现之前就发明出来的整命名空间开关，正是包规则所禁止的投机选项。
 
-**A schema-driven generic card as the slot's `fallback`**, so a plugin with no browser half still got a form from `schema.toJSON()` (schemastery already carries `description`, `role`, `min`/`max`/`step` and serializes them). Rejected because client plugins load at runtime from mounted Loader entries, so a plugin author can ship a real card, and a reverse-rendered form was already judged worse than a hand-written one for the Models page. The `fallback` option remains available without a contract change if that judgment changes.
+**把 schema 驱动的通用卡片作为该 slot 的 `fallback`**，让没有浏览器半侧的插件也能从 `schema.toJSON()` 得到一份表单（schemastery 本就携带 `description`、`role`、`min`/`max`/`step` 并将其序列化）。否决的原因是客户端插件按已挂载的 Loader entries 在运行时加载，插件作者完全可以交付一张真正的卡片；而反向渲染的表单在模型页那次已被判定不如手写。若这个判断日后改变，`fallback` 选项无需改动契约即可启用。
 
-**A client-side claim registry**, where each surface owning a namespace declares it so a generic card knows what is already covered. Rejected with the generic card: keyed dispatch already makes an unclaimed key render nothing, so the registry would restate what the slot ledger says.
+**客户端认领注册表**，让每个拥有某命名空间的界面声明它，好让通用卡片知道哪些已经有人管。与通用卡片一并否决：keyed 派发本就让无人认领的键什么都不渲染，这份注册表只会把 slot 账本已经说过的话再说一遍。
 
-**Keeping the list slot and adding a namespace field to its options.** Rejected because the section would still enumerate entries rather than namespaces, keeping the empty-state defect and leaving a card for an uncomposed plugin to suppress itself.
+**保留 list slot，只给它的 options 加一个命名空间字段。** 否决的原因是分区枚举的仍是 entry 而非命名空间，空态缺陷照旧，未组装插件的卡片也仍需自我抑制。
 
 ## Consequences
 
-A plugin distributed outside this repository is configurable from the settings page with no change here: it registers its namespace on the Host and its card under that key in the browser, and the section pairs the two. Cards now appear in card registration order rather than by hand-assigned `order`. That is stable for the cards this package registers, which install from one generator, and **not** stable across plugins: apply order between packages is unconstrained (`packages/client/AGENTS.md`), so several external cards can still reorder between boots. Ordering them needs an explicit key the section can sort on, which the keyed registration does not carry today.
+在本仓库之外分发的插件无需改动这里即可从设置页配置：它在 Host 上注册自己的命名空间、在浏览器里把卡片注册在该键上，由分区把两者配对。卡片现在按卡片注册顺序出现，而不再依赖手工指定的 `order`。对本包注册的这几张卡它是稳定的——它们从同一个 generator 安装；对**跨插件**的卡片它并不稳定：包与包之间的 apply 顺序是无约束的（`packages/client/AGENTS.md`），因此多个外部卡片仍可能在不同次启动之间重排。要为它们定序，需要一个 section 可排序的显式键，而 keyed 注册今天并不携带。
 
-Deferred, and larger than this change: the redactor returns a `role('secret')` reachable only through a union, intersection, or transform verbatim (its own `TODO(settings-wire-redaction)`), and `schema.toJSON()` carries a secret's default. That gap predates this change, but serving every registered namespace widens its blast radius from schemas audited in this repository to any third-party schema, so the wire should refuse a namespace it cannot prove it can redact. Also deferred: an assembled-composition test of the headline capability — an overlay-mounted fixture plugin whose Host half registers a namespace and whose `dsh.client` half registers a card, asserted end-to-end. The current coverage proves each half separately; the shipped cards' unchanged output cannot prove the new path.
+以下延后，且都大于本次改动：脱敏器对只能经由 union、intersection 或 transform 抵达的 `role('secret')` 原样返回（其自身的 `TODO(settings-wire-redaction)`），而 `schema.toJSON()` 会携带 secret 的默认值。该缺口早于本次改动，但服务每一个已注册命名空间，把它的影响面从本仓库内经审计的 schema 扩大到任意第三方 schema，因此协议应当拒绝服务它无法证明可安全脱敏的命名空间。同样延后的还有：对本次头号能力的组装态测试——用 overlay 挂载一个 fixture 插件（Host 半注册命名空间、`dsh.client` 半注册卡片）并在端到端断言。当前覆盖分别证明了两个半侧；已发卡片输出未变这一点，证明不了新路径。
 
-The section and its cards add no `settings.describe` reads: both derive from the browser-wide mirror. Its invalidation is imprecise in one direction: the wire announces document commits and connection resets, not registrations, so a namespace registered after the mirror's current answer joins on the next commit or reconnect.
+分区与其中的卡片都不再新增 `settings.describe` 读取：两者都从浏览器全局的镜像派生。它的失效通知在一个方向上不精确：协议通告的是文档提交与连接重置，而非注册行为，因此在镜像当前应答之后才被注册的命名空间，要等下一次提交或重连才会加入。
 
-Two frictions remain for an author outside this repository, both recorded in the section's README. The browser half must be a `dsh.client` package built in the client module system's lazy-CJS factory format, and the `clientBundle` preset that emits it lives in `packages/client/tsdown.client.ts` rather than a published package. The bundle-purity gate forbids importing this package's card chrome or staged-form model as values, so such a card reimplements staging and revision fencing. Sharing them would mean either publishing the preset or declaring a child slot inside the card so the section supplies the chrome; neither is built.
+对仓库之外的作者仍留有两处摩擦，均记在该分区的 README 里。浏览器半侧必须是按客户端模块系统的 lazy-CJS factory 格式构建的 `dsh.client` 包，而产出它的 `clientBundle` 预设位于 `packages/client/tsdown.client.ts`，并非已发布的包。bundle 纯净度门禁禁止以值的形式导入本包的卡片外观与暂存表单模型，因此这样的卡片要重新实现暂存与 revision 设栅。要共享它们，要么发布该预设，要么在卡片内部声明一层子 slot 让分区提供外观；两者都尚未构建。

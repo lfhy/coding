@@ -1,58 +1,56 @@
 # @deepseek-ai/dsh-tool-ask-user
 
-English | [中文](README.zh.md)
+模型侧 `ask_user_question` 工具，基于 `ctx.userQuestions` 实现。当模型需要确认、选择结果或缺失的信息才能继续时，它可以借此向用户提出简明问题。
 
-Model-facing `ask_user_question` tool over `ctx.userQuestions`. It lets the model ask the human a concise question when it needs confirmation, a choice, or missing information before continuing.
+## 工具
 
-## Tool
+`ask_user_question` 接受以下参数：
 
-`ask_user_question` accepts:
+- `questions`：必填的非空问题对象数组。
+- `id`：每个问题必填的稳定 id，会原样包含在回答中。
+- `question`：每个问题必填的问题文本。
+- `header`：可选的简短标题。
+- `options`：可选选项，包含 `label` 和 `description`。如需推荐某个选项，请将其置于首位，并在该标签末尾追加 `(Recommended)`。
+- `multi_select`：该问题是否可以返回多个选中的选项。
 
-- `questions` — required non-empty array of question objects.
-- `id` — required stable id on each question, echoed in the answer.
-- `question` — required question text for each question.
-- `header` — optional short heading.
-- `options` — optional choices with `label` and `description`. If recommending a choice, put it first and append `(Recommended)` to that label.
-- `multi_select` — whether that question may return more than one selected option.
+工具调用 `ctx.userQuestions.ask()`，并返回规范的 `{ answers: [{ id, selected, custom? }] }`。`selected` 包含选项标签；`custom` 携带自由填写的回答，对于多选题会补充 `selected`，对于单选题则会覆盖它。Native 渲染器会保留紧凑的 JSON 文本形式 `{ "answers": [{ "id": "...", "selected": ["..."], "custom": "..." }] }`。
 
-The tool calls `ctx.userQuestions.ask()` and returns canonical `{ answers: [{ id, selected, custom? }] }`. `selected` contains option labels; `custom` carries a free-form answer, supplementing `selected` for a multi-select question and overriding it for a single-select question. The Native renderer preserves the compact JSON text shape `{ "answers": [{ "id": "...", "selected": ["..."], "custom": "..." }] }`.
+## 职责
 
-## Role
+此包是用户交互 seam 的Consumer 包。它不渲染 UI，也不了解输入的收集方式；它只将模型参数转换为 `AskUserQuestionRequest`，并把用户回答返回给 agent loop（智能体循环）。
 
-This is the Consumer package for the user-questions seam. It does not render UI and does not know how input is collected; it only translates model arguments into `AskUserQuestionRequest` and returns the human answer to the agent loop.
+## 模型体验
 
-## Model Experience
+### 工具 schema
 
-### Tool schema
+#### 模型看到的内容
 
-#### What the model sees
+模型会看到生成的 [`ask_user_question` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-ask-user)，其中包含问题 id、提示语、标题、选项和多选标志。
 
-The model sees the generated [`ask_user_question` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-ask-user), including question ids, prompts, headings, options, and multi-select flags.
+#### Token 影响
 
-#### Token effect
+工具可见时，每个请求都会产生固定的 schema token 开销。
 
-Fixed schema cost on every request where the tool is visible.
+#### KV Cache 影响
 
-#### KV Cache effect
+只要定义和可见性保持不变，前缀即可稳定复用。插件生命周期变化或作用域限制可能会使从此 schema 起的缓存复用失效。
 
-Prefix-stable while the definition and visibility are unchanged. Plugin lifecycle or scoped restrictions may invalidate reuse from this schema.
+### 工具调用历史与结果
 
-### Tool-call history and result
+#### 模型看到的内容
 
-#### What the model sees
+模型提出的完整问题保留在 assistant 工具调用参数中。用户回答后，下一步会看到精确采用 `{"answers":[{"id":"<id>","selected":["<label>"],"custom":"<text>"}]}` 形式的紧凑 JSON；不使用 `custom` 时会省略该字段，`selected` 可以包含零个、一个或多个标签。调用等待期间的 UI 交互不属于模型上下文。
 
-The model's full questions remain in the assistant tool-call arguments. After the human answers, the next step sees compact JSON in the exact shape `{"answers":[{"id":"<id>","selected":["<label>"],"custom":"<text>"}]}`; `custom` is omitted when unused and `selected` can contain zero, one, or several labels. UI interaction while the call is pending is not model context.
+#### Token 影响
 
-#### Token effect
+参数和回答 JSON 是依数据而定的保留 token；等待用户时不会产生 token 开销。
 
-Arguments and answer JSON are data-dependent retained tokens; there is no token cost while waiting for the human.
+#### KV Cache 影响
 
-#### KV Cache effect
+仅追加；新可见内容位于可复用请求前缀之后，不会使现有 KV Cache 条目失效。
 
-Append-only; newly visible content follows the reusable request prefix and does not invalidate existing KV-cache entries.
+## 已知限制与暂缓事项
 
-## Known Limitations and Deferred Work
-
-- **A pending question blocks the tool call until the human answers** — the tool declares no `timeout-policy` budget; cancellation rides the turn's `exec.signal` only.
-- **Runtime-owned subagents cannot ask the user** — `ask_user_question` rejects a live child owned by another agent with `DELEGATED_CALLER`; the child must include the unresolved question or decision in its final result. Durable lineage does not decide this boundary, so a lineage-bearing session resumed as a runtime root may ask normally.
-- **Native answers render as JSON text** — the canonical value remains structured, but the model-facing result uses compact JSON rather than a richer content-block vocabulary.
+- **待处理问题会阻塞工具调用，直至用户作答**：该工具未声明 `timeout-policy` 预算；取消仅沿用当前轮次的 `exec.signal`。
+- **运行时中归属于其他 agent 的 subagent 不能向用户提问**：`ask_user_question` 会以 `DELEGATED_CALLER` 拒绝归属于另一个 agent 的存活子级；该子级必须在最终结果中包含尚未解决的问题或决策。持久谱系不能决定这一边界，因此带有谱系的会话恢复为运行时根后可以正常提问。
+- **Native 回答渲染为 JSON 文本**：规范值仍为结构化数据，但模型侧结果使用紧凑 JSON，而非更丰富的内容块词汇。

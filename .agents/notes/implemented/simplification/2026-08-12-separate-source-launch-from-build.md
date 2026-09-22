@@ -1,38 +1,36 @@
-# Agent Note: Separate source launch from repository build
+# Agent Note: 将源码启动与仓库构建分离
 
 Status: implemented
 
-English | [中文](2026-08-12-separate-source-launch-from-build.zh.md)
+## 问题
 
-## Problem
+TypeScript 源码启动器无需在每次调用前完成整个仓库的构建。Web 界面则需要已构建的前端与 Client plugin 产物。由同一个包脚本同时负责这两项操作，会让重复启动 TUI、无头模式和 Web 时都承担全仓库构建延迟，也会掩盖浏览器产物何时刷新。
 
-The TypeScript source launcher does not need a complete repository build for every invocation. The Web surface does need built frontend and client-plugin artifacts. Making one package script own both operations adds repository-wide build latency to repeated TUI, headless, and Web startup and obscures when browser artifacts are refreshed.
+经由 tsx 加载的源码模块与经由已构建组合包加载的浏览器模块具有不同的新鲜度表现。将两条命令分离后，需要明确产物生成的责任，并准确说明产物缺失与过期时的失败模式。
 
-Source modules reached through tsx and browser modules reached through built bundles have different freshness behavior. Separating their commands requires explicit ownership of artifact production and an accurate failure model for missing and stale output.
+## 决策
 
-## Decision
+根目录的 `dsh` 脚本只运行 `node --import tsx/esm apps/cli/src/bin.ts`。`pnpm run build` 仍是生成包与前端产物的独立操作。源码用户在首次进行类生产启动前运行构建，并在前端或 Client plugin 产物需要刷新时再次运行。
 
-The root `dsh` script only runs `node --import tsx/esm apps/cli/src/bin.ts`. `pnpm run build` remains the separate operation that generates package and frontend artifacts. Source users run the build before the first production-like launch and whenever frontend or client-plugin artifacts need refreshing.
+Typert Host 产物缺失时，profile 启动会因不含构建指引的模块解析错误而失败。这些 Host 产物存在后，如果前端或 Client plugin 产物缺失，启动会失败，诊断信息会指示用户运行 `pnpm run build`。启动器不会验证产物是否为最新：已有的陈旧前端或 Client plugin 组合包仍会被接受，并可能继续运行旧版浏览器代码，直至下次构建。各包的 Node 半侧至少构建过一次后，`pnpm run dev:web` 只重建声明了 `dsh.client` 的包；它会保持 Client plugin 组合包为最新状态并启用其热重载路径，但不会重建前端 shell。
 
-Missing Typert host artifacts fail profile boot through module-resolution errors without a build instruction. Once those host artifacts exist, missing frontend and client-plugin artifacts fail at startup with diagnostics that direct the user to `pnpm run build`. The launcher does not validate artifact freshness: existing stale frontend or client-plugin bundles are accepted and can run older browser code until the next build. After package Node halves have been built once, `pnpm run dev:web` rebuilds only packages that declare `dsh.client`; it keeps client-plugin bundles current and activates their hot-reload path, but does not rebuild the frontend shell.
+本决策仅规定构建调度。[tsx ESM 源码启动决策](../architecture/2026-07-29-dsh-source-launch-tsx-esm.md)规定 TypeScript 转换与 workspace 解析，[源码运行决策](2026-08-10-source-run-without-managed-installer.md)规定以仓库脚本作为受支持的检出入口，[个人配置决策](../feature/2026-07-20-dsh-cli-personal-config.md)规定机器级配置层。
 
-This decision owns build scheduling only. The [tsx ESM source-launch decision](../architecture/2026-07-29-dsh-source-launch-tsx-esm.md) owns TypeScript transformation and workspace resolution, the [source-run decision](2026-08-10-source-run-without-managed-installer.md) owns repository scripts as the supported checkout entry points, and the [personal-config decision](../feature/2026-07-20-dsh-cli-personal-config.md) owns the machine-level configuration layer.
+## 考虑过的备选方案
 
-## Alternatives considered
+**每次源码启动前都执行构建。**这样可提供最强的默认新鲜度保证，但即使相关产物已经是最新状态，每次调用仍要承担全仓库产物生成的开销。
 
-**Build before every source launch.** This provides the strongest default freshness guarantee, but charges every invocation for repository-wide artifact generation even when the relevant outputs are already current.
+**仅在产物缺失时执行构建。**这样可避免部分启动开销，但无法发现过期产物，还会让构建行为变成由当前文件系统内容决定的隐式策略。
 
-**Build only when an artifact is missing.** This avoids some startup work but leaves stale output undetected while making build behavior implicit and dependent on the current filesystem contents.
+**由 `pnpm dsh` 启动 Web 产物 watcher。**这样可保持 Client plugin 组合包为最新状态，却会让一次性启动器负责另一个长时间运行的进程。显式的 `pnpm run dev:web` 命令已经负责这套开发生命周期。
 
-**Start the Web artifact watcher from `pnpm dsh`.** This keeps client-plugin bundles current but changes a one-shot launcher into an owner of another long-lived process. The explicit `pnpm run dev:web` command already owns that development lifecycle.
+## 影响
 
-## Consequences
+- 重复的源码启动无需等待完整的仓库构建，构建输出也不会与 CLI 输出混在一起。
+- 源码用户负责产物新鲜度。产物缺失会阻止启动，但只有前端与 Client plugin 产物缺失的错误会指示用户运行 `pnpm run build`；已有的过期前端与 Client plugin 组合包可能静默提供旧版浏览器代码。
+- TUI、Web 与无头模式选择、参数转发、环境继承，以及 tsx ESM 启动方式保持不变。
+- 根目录上手指南与 CLI 参考将构建和启动列为独立命令，并说明过期产物行为。
 
-- Repeated source launches do not wait for a complete repository build, and build output is not mixed with CLI output.
-- Source users own artifact freshness. Missing artifacts stop startup, but only frontend and client-plugin failures direct users to `pnpm run build`; existing stale frontend and client-plugin bundles can silently serve older browser code.
-- TUI, Web, and headless selection, argument forwarding, environment inheritance, and the tsx ESM launch vector remain unchanged.
-- The root onboarding and CLI reference show build and launch as separate commands and document the stale-artifact behavior.
+## 验证
 
-## Verification
-
-`apps/cli/tests/source-launch.compat.spec.ts` pins the exact root package command and exercises the production source-launch vector. `packages/bundle/web-app/tests/web-app.spec.ts` and `packages/client/modules/tests/node-half.client.spec.ts` pin the missing-artifact diagnostics.
+`apps/cli/tests/source-launch.compat.spec.ts` 固定根目录包命令的准确内容，并执行生产源码启动方式。`packages/bundle/web-app/tests/web-app.spec.ts` 与 `packages/client/modules/tests/node-half.client.spec.ts` 固定产物缺失诊断。

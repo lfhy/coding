@@ -1,14 +1,12 @@
-# Human Commands
+# 用户命令
 
-English | [中文](commands.zh.md)
+[`dsh-commands`](../../packages/interaction/commands) 提供的用户命令注册表服务。交互式适配器用它发现插件拥有的命令，并针对确切的 agent（智能体）直接执行这些命令，而不创建模型消息。[命令 Agent Note](../../.agents/notes/implemented/feature/2026-07-19-plugin-command-registration.md) 负责分发与生命周期的决策依据；[包 README](../../packages/interaction/commands/README.md) 负责组合方式与限制。
 
-The human-command registry service from [`dsh-commands`](../../packages/interaction/commands). Interactive adapters use it to discover and directly execute plugin-owned commands for an exact agent without creating a model message. The [command Agent Note](../../.agents/notes/implemented/feature/2026-07-19-plugin-command-registration.md) owns dispatch and lifecycle rationale; the [package README](../../packages/interaction/commands/README.md) owns composition and limitations.
+来源：[`packages/interaction/commands/src/index.ts`](../../packages/interaction/commands/src/index.ts)
 
-Source: [`packages/interaction/commands/src/index.ts`](../../packages/interaction/commands/src/index.ts)
+## 输入元数据
 
-## Input metadata
-
-The service exposes one optional unstructured-input descriptor: a hint plus an image-acceptance flag. Command availability follows plugin composition: every adapter consuming the registry sees every effective definition.
+该服务公开一个可选的非结构化输入描述符：提示文本加图片接受标志。命令的可用性由插件组合决定：每个消费注册表的适配器都会看到全部生效定义。
 
 ```ts type-equiv
 /** Immutable metadata for a command's optional unstructured input. */
@@ -26,9 +24,9 @@ interface CommandInputDescriptor {
 }
 ```
 
-## Definition
+## 定义
 
-`CommandDefinition` is the plugin-authored registration. The registry validates and freezes a detached effective definition.
+`CommandDefinition` 是由插件编写的注册定义。注册表会验证并冻结一份与原始注册对象脱离的生效定义。
 
 ```ts type-equiv
 /** Plugin-owned command registration. */
@@ -50,9 +48,9 @@ interface CommandDefinition {
 }
 ```
 
-## Invocation and result
+## 调用与结果
 
-The adapter owns cancellation and passes the exact target agent. `rawInput` begins immediately after the parsed name and retains the adapter-delivered separator and suffix. Results are direct UI outcomes, not tool results or session events.
+取消由适配器负责，适配器会传入确切的目标 agent。`rawInput` 紧接在解析后的名称之后，并保留适配器传入的分隔符与后缀。结果会直接呈现给 UI，而不是工具结果或会话事件。
 
 ```ts type-equiv
 /** Invocation passed to one registered command handler. */
@@ -88,11 +86,11 @@ type CommandResult =
   | { readonly kind: 'error'; readonly text: string }
 ```
 
-`sourceEventSeq` is optional and success-only. When present, it names an earlier non-command event in the receiving session log; `command/done` persists the same reference so a client can combine the command lifecycle with that domain projection without parsing `text` or relying on adjacent rows.
+`sourceEventSeq` 是可选字段，且只用于成功结果。存在时，它指向接收会话日志中更早的一条非命令事件；`command/done` 会持久化同一引用，让客户端能够将命令生命周期与该领域投影合并，而无须解析 `text` 或依赖相邻行。
 
-## Discovery and parsing views
+## 发现与解析视图
 
-Adapters receive handler-free immutable descriptors after scope resolution. `parseCommand()` returns `ParsedCommand` before registry resolution; syntax-valid input can still name an unavailable command.
+作用域解析后，适配器会获得不含处理器的不可变描述符。`parseCommand()` 在注册表解析前返回 `ParsedCommand`；语法有效的输入仍可能指向不可用的命令。
 
 ```ts type-equiv
 /** Handler-free immutable command view returned to UI adapters. */
@@ -122,7 +120,7 @@ interface ParsedCommand {
 
 ## Cordis API
 
-Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — this section is byte-identical in both language sides of the page. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
+Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog`; regenerate with `pnpm run gen-cordis-catalog`) — this section is byte-identical in both language sides of the page. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
 <a id="ctxcommands--commandruntime"></a>
 

@@ -1,29 +1,27 @@
-# Agent Note: Trim unreachable ACP bridge surface — the branding knobs and the kind-sniffing fallback
+# Agent Note: 裁剪不可达的 ACP 桥接层表面——品牌配置项与 kind 嗅探回退
 
 Status: implemented
 Archived: 2026-07-26
 
-English | [中文](2026-07-04-trim-acp-bridge-unreachable-surface.zh.md)
+> 握手标识简化仍然有效。通用卡片回退已随 [ACP 转为仅面向自动化](2026-07-23-acp-automation-only-protocol.md)一并移除；UI 传输层保留提供方无关的展示契约。
 
-> The handshake-identity simplification remains current. The generic-card fallback was removed when [ACP became automation-only](2026-07-23-acp-automation-only-protocol.md); UI transports retain the provider-neutral presentation contract.
+## 问题
 
-## Problem
+`dsh-acp` 有两处对外表面在任何已交付的配置中都不可达：
 
-Two pieces of `dsh-acp` surface were unreachable from any shipped configuration:
+1. **`AcpConfig.agentName` / `agentVersion`**（`packages/acp/acp/src/index.ts`）。已发布应用包只向 bridge 传递其 agent 的提供方/模型目标（`packages/examples/acp-demo/src/index.ts`），因此没有任何叶子 `cordis.yml`——唯一的生产配置表面——能够设置这些配置项；只有直接挂载 bridge 才能设置它们，而这种做法只存在于一个单元测试中。每份快照预期输出——包括钩子矩阵场景——都固定 schema 默认值（`deepseek-harness-acp` / `0.0.1`）。这对配置项还带有一个尚未解决的 `TODO(double-default)`：字面量存在两次（schema `.default(...)` 加 `??` 后备值），TODO 要求为它们选择一个归属。
+2. **`toolKindFor` 名称启发式**（同一文件）在通用回退路径中对 `bash*`/`read*`/`write`/`edit*` 工具名做了特殊处理。自[render-intent 联合类型](../architecture/2026-07-02-tool-render-intent-union.md)以来，这些分支匹配到的每个第一方工具都自带 `presentCall` 并携带其 kind，而没有 presenter 的生产工具（`subagent`、`subagent_fork`）本来就落入 `other`。这些分支只有在工具拒绝自行呈现调用时才在生产中可达：`presentCall` 抛出异常（容错回退），或模型参数未通过工具 schema 导致 `defineTool` 的 `presentCall` 包装层返回 `undefined`（例如 `bash` 调用缺少必需的 `description`）。而桥接层自身的模块文档明确声明了该启发式所违反的设计规则："桥接层绝不对工具名做特殊处理"。
 
-1. **`AcpConfig.agentName` / `agentVersion`** (`packages/acp/acp/src/index.ts`). The shipped app package hands the bridge only its agent target (`packages/examples/acp-demo/src/index.ts`), so no leaf `cordis.yml` — the only production config surface — could set the knobs at all; they were settable solely by direct-mounting the bridge, which only a unit test did. Every snapshot expected output — the hook-matrix scenarios included — pins the schema defaults (`deepseek-harness-acp` / `0.0.1`). The pair also carried a live `TODO(double-default)`: the literals existed twice (schema `.default(...)` plus `??` fallbacks), with the TODO asking to pick one home.
-2. **The `toolKindFor` name heuristic** (same file) special-cased `bash*`/`read*`/`write`/`edit*` tool names in the generic-fallback path. Since the [render-intent union](../architecture/2026-07-02-tool-render-intent-union.md), every first-party tool those arms matched ships its own `presentCall` carrying its kind, and the presenter-less production tools (`subagent`, `subagent_fork`) fell through to `other` anyway. The arms were production-reachable only when a tool declined to present its own call — a `presentCall` that THROWS (the containment fallback), or model arguments that fail the tool's schema so `defineTool`'s `presentCall` wrapper returns `undefined` (e.g. a `bash` call missing the required `description`) — and the bridge's own module doc states the design rule the heuristic violated: "the bridge never special-cases tool names".
+## 决策
 
-## Decision
+在初始化时硬编码现有的握手标识 `{ name: 'deepseek-harness-acp', version: '0.0.1' }`，移除不可达的配置字段与重复默认值。最初的实现还在两个 presenter 回退处将 `toolKindFor` 替换为中性的 `'other'`；ACP 不再投影工具卡片，因此该回退已完全离开传输层。初始化测试和快照固定握手标识。
 
-Hardcode the existing handshake identity `{ name: 'deepseek-harness-acp', version: '0.0.1' }` at initialization and remove the unreachable config fields and duplicate defaults. The original implementation also replaced `toolKindFor` with neutral `'other'` at both presenter fallbacks; ACP no longer projects tool cards, so that fallback has left the transport entirely. Initialize tests and snapshots pin the handshake.
+## 曾考虑的替代方案
 
-## Alternatives considered
+### 为什么不保留？
 
-### Why not keep them?
+品牌配置可以在 app 包将其暴露给部署环境时再回来。从未知工具名推断呈现方式违反了 render-intent 契约；中性回退卡片还能为格式错误的调用和损坏的 presenter 保留原始输入。
 
-Branding can return when the app package exposes it to deployments. Inferring presentation from unknown tool names violates the render-intent contract; neutral fallback cards also preserve raw input for malformed calls and broken presenters.
+## 后果
 
-## Consequences
-
-The bridge exposes no branding knobs. UI transports own generic presentation fallback without tool-name inference, while ACP carries no tool-card surface.
+桥接层不暴露品牌配置项。UI 传输层拥有不做工具名推断的通用展示回退，而 ACP 不承载任何工具卡片表面。

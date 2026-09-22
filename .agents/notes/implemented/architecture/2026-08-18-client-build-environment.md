@@ -1,37 +1,35 @@
-# Agent Note: Build-time public environment variables for client business code
+# Agent Note: Client 业务代码使用构建期公开环境变量
 
 Status: implemented
 
-English | [中文](2026-08-18-client-build-environment.zh.md)
-
 ## Problem
 
-Browser business packages need deployment builds to select static behavior, but the Web client has two artifact paths that do not contain one another: Vite builds the static shell, while the shared tsdown preset builds dynamically loaded plugins. Replacing an environment expression in only one path would give the same business expression different results depending on its package type.
+浏览器业务包需要按部署构建选择静态行为，但 Web client 有两条互不包含的产物路径：Vite 构建静态壳，共享 tsdown preset 构建运行时加载的动态插件。只在一条路径替换环境变量会使相同业务表达式因所在包类型不同而产生不同结果。
 
-Browsers have no Node `process`, and embedding the build process's complete environment object would expose values unrelated to the frontend. Runtime configuration also does not accurately represent a build variant because this choice must remain fixed after an artifact is published.
+浏览器没有 Node `process`，而把构建进程的完整环境对象放入产物会泄露与前端无关的值。运行时配置也不能准确表达构建变体，因为产物发布后不应再改变这类选择。
 
 ## Decision
 
-`DSH_CLIENT_*` is the build-time namespace for values that may be exposed to browser business code. Business code may use a static property read such as `process.env.DSH_CLIENT_NAME` to select behavior. Values come only from the build process environment, not from Vite `.env*` files. Set values are inlined as strings, and unset values evaluate to `undefined`.
+`DSH_CLIENT_*` 是可公开给浏览器业务代码的构建期命名空间。业务代码可用静态点访问 `process.env.DSH_CLIENT_NAME` 选择行为；值只取自构建进程环境，不读取 Vite `.env*` 文件。设置的值在构建时内联为字符串，未设置的值为 `undefined`。
 
-The Vite config and the shared tsdown preset for dynamic client bundles use one define generator. The generator creates exact substitutions only for `DSH_CLIENT_*` and reduces all remaining `process.env` reads to an empty object. The browser receives no global `process`, dynamic-key lookup, or environment enumeration capability.
+Vite 配置与动态 client bundle 的共享 tsdown preset 使用同一 define 生成器。生成器只为 `DSH_CLIENT_*` 创建精确替换，并把其余 `process.env` 读取收敛到空对象；浏览器不获得全局 `process`、动态键读取或环境枚举能力。
 
-The `DSH_CLIENT_*` prefix itself declares that a value is public. Credentials, paths, and other Host- or CI-only values must not use it.
+`DSH_CLIENT_*` 的名称本身表示公开性。凭据、路径和其他仅供 Host 或 CI 使用的值不得使用该前缀。
 
-The root build wrapper supplies one exact public environment to both bundlers. It derives `DSH_CLIENT_COMMIT_HASH` as the seven-character prefix of the source Git HEAD for every complete build; an explicit value supports build environments without repository metadata. `pnpm run build` otherwise inherits the caller's `DSH_CLIENT_*` values, while `pnpm run build:official` selects the repository's official artifact profile without shell-specific environment syntax and sets `DSH_CLIENT_BUILD_PROFILE=official` for deployment-specific business registrations. A successful complete build writes the exact public environment and a digest covering the Vite output and every dynamic client bundle. Partial build commands do not replace that record.
+根构建包装脚本向两个 bundler 提供同一份精确的公开环境。每次完整构建都会把源码 Git HEAD 的七位前缀派生为 `DSH_CLIENT_COMMIT_HASH`；没有仓库元数据的构建环境可显式提供该值。除此之外，`pnpm run build` 继承调用方的 `DSH_CLIENT_*` 值，`pnpm run build:official` 则不依赖特定 shell 的环境变量语法，直接选择仓库的官方产物 profile，并设置 `DSH_CLIENT_BUILD_PROFILE=official` 供部署专属业务注册使用。完整构建成功后会写入精确的公开环境，以及覆盖 Vite 输出和所有动态 client bundle 的摘要；局部构建命令不会替换该记录。
 
 ## Alternatives considered
 
-**Replace values only in Vite.** A dynamic plugin's `lib/client.js` is loaded as an independent script and never enters Vite's module graph, so the expression would remain in a browser that has no `process`.
+**只在 Vite 中替换。** 动态插件的 `lib/client.js` 作为独立脚本由浏览器加载，不进入 Vite 模块图，表达式会残留到无 `process` 的浏览器。
 
-**Expose every `DSH_*` value.** Host, test, and CI variables already use that prefix and may contain credentials or local paths. The narrower `DSH_CLIENT_*` prefix makes exposure intent auditable.
+**公开全部 `DSH_*`。** 仓库中的 Host、测试和 CI 变量使用该前缀，其中可能包含凭据或本地路径；更窄的 `DSH_CLIENT_*` 让公开意图可审计。
 
-**Provide a complete `process.env` object in the browser.** This would permit build-environment enumeration and turn a Node compatibility shim into a runtime API. Exact static substitutions are sufficient for build choices.
+**在浏览器提供完整 `process.env` 对象。** 这会允许枚举构建环境并把 Node 兼容垫片变成运行时 API；静态精确替换足以承载构建选择。
 
-**Standardize on `import.meta.env`.** Dynamic plugins are emitted as independent CommonJS factories and cannot retain `import.meta`. Business code would still need two interfaces depending on the artifact path.
+**统一改用 `import.meta.env`。** 动态插件输出为独立 CJS factory，不能保留 `import.meta`；业务代码仍会因产物路径不同而使用两套接口。
 
 ## Consequences
 
-The Vite static shell and shared tsdown dynamic bundles receive the same string for a given `DSH_CLIENT_*` build-process variable. An unset static property read evaluates to `undefined`; non-`DSH_CLIENT_*` values cannot enter browser artifacts through this mechanism, and business code cannot enumerate the build process environment. Every complete build carries its short source revision as public display metadata. CI build gates select the official profile without exposing its public values to source tests or unrelated workflow steps. npm packing and built Web tests verify the recorded environment and current artifact digest, so a default build followed by an official pack request, a partial rebuild, or modified output fails before consumption.
+Vite 静态壳和共享 tsdown 动态 bundle 对同一 `DSH_CLIENT_*` 构建进程变量产生相同字符串值。未设置的静态点访问得到 `undefined`，非 `DSH_CLIENT_*` 值不会通过该机制进入浏览器产物，业务代码也无法枚举构建进程环境。每次完整构建都携带可公开展示的短源码 revision。CI 构建门禁选择官方 profile，而不把其中的公开值暴露给源码测试或无关 workflow 步骤。npm 打包与 built Web 测试会校验记录中的环境及当前产物摘要，因此默认构建后请求官方打包、局部重建或修改输出都会在消费产物前失败。
 
-Every `DSH_CLIENT_*` value referenced by business code becomes public artifact content, so a misnamed value can disclose information. Build choices are fixed when the artifact is generated; a setting that must change after deployment requires a validated, transported, and documented runtime configuration mechanism.
+任何被业务代码引用的 `DSH_CLIENT_*` 值都会成为公开产物内容，命名错误可能泄露信息。构建选择在产物生成时固定；需要部署后变化的设置必须使用拥有校验、传输和文档的运行时配置机制。

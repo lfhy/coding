@@ -1,51 +1,49 @@
-# Agent Note: Native workspace directory picker
+# Agent Note: 原生工作区目录选择器
 
 Status: implemented
 
-English | [中文](2026-07-27-native-workspace-directory-picker.zh.md)
+## 问题
 
-## Problem
+桌面端 GUI 在添加现有工作区时要求用户输入绝对路径。相比使用操作系统原生选择器选取目录，这种操作速度更慢，也更容易出错。GUI 由本地 Web 载体提供，因此打开原生对话框也会形成一条特权边界，普通远程请求不得越过这条边界。
 
-The desktop GUI asks users to type an absolute path when they add an existing workspace. This is slower and more error-prone than choosing a directory with the operating system's native picker. The GUI is delivered through the local Web carrier, so opening a native dialog also creates a privileged boundary that ordinary remote requests must not cross.
+## 决策
 
-## Decision
+新增一个用于选择单个文件夹的 `host.pickDirectory` RPC，并通过 `WorkspaceRuntime` 暴露该 RPC。工作区菜单提供平铺操作 **添加工作区…**（本决策做出时是两个操作：**打开本地文件夹…** 与一个按名称创建的入口，后者已被[单一路径 Note](../simplification/2026-07-31-one-route-to-add-a-workspace.md)删除）。选定文件夹后，系统复用现有的 `workspace.create({ path })` 流程，选中返回的工作区，并启动一个空白会话。
 
-Add a single-folder `host.pickDirectory` RPC and expose it through `WorkspaceRuntime`. The workspace menu presents the flat **Add workspace...** action (two actions when this was decided — **Open local folder...** beside a create-by-name entry the [one-route Note](../simplification/2026-07-31-one-route-to-add-a-workspace.md) later removed). Selecting a folder reuses the existing `workspace.create({ path })` flow, selects the returned workspace, and starts a blank session.
+工作区管理器必须在选择回调运行前插入或更新返回的工作区。因此，新纳入的目录会立即显示其 basename。再次打开已注册的路径时，则保留该工作区现有的标题。
 
-The workspace manager must upsert the returned workspace before the selection callback runs. A newly adopted directory therefore renders its basename immediately. Reopening an already registered path preserves its existing workspace title.
+## 交互约定
 
-## Interaction contract
+- 在 macOS、Windows 和 Linux 上，选择器一次只允许选择一个目录。
+- 取消系统对话框不会显示提示，并返回 `null`。
+- 路径重复时，选中现有工作区。
+- 即使派生显示名与另一个 Workspace 相同，不同 canonical path 也会被收编为独立 Workspace（见[身份决策](../bug-fix/2026-07-31-same-basename-workspace-adoption.md)）。
+- 选择器的其他故障会显示简洁且可重试的错误提示。
+- 本决策当时未触碰的按名称创建流程现已删除；选择目录现在是添加本地目录 Workspace 的完整路径（见[单一路径 Note](../simplification/2026-07-31-one-route-to-add-a-workspace.md)）。仅桌面端可用的[Remote-SSH 工具网关](2026-08-30-desktop-remote-ssh-tool-gateway.md)则独立打开所选远程目录。
 
-- The picker accepts one directory on macOS, Windows, and Linux.
-- Cancelling the system dialog is silent and returns `null`.
-- A duplicate path selects the existing workspace.
-- A different canonical path adopts a separate Workspace even when its derived title matches another Workspace ([identity decision](../bug-fix/2026-07-31-same-basename-workspace-adoption.md)).
-- Other picker failures show a compact retryable error.
-- The create-by-name flow this decision left untouched is gone; picking a directory is now the whole local-directory route for adding a Workspace ([one-route Note](../simplification/2026-07-31-one-route-to-add-a-workspace.md)). The desktop-only [Remote-SSH tool gateway](2026-08-30-desktop-remote-ssh-tool-gateway.md) independently opens a selected remote directory.
+## 宿主边界
 
-## Host boundary
+只有来自回环套接字、且携带同源浏览器元数据的请求才能调用原生对话框 RPC。该 RPC 不使用默认的 30 秒请求超时，因为系统对话框可能无限期保持打开；调用方中止或连接中止仍会传递至平台进程。
 
-The native dialog RPC is accepted only from a loopback socket with same-origin browser metadata. The RPC does not use the default 30-second request timeout because a system dialog may remain open indefinitely; caller and connection aborts still propagate to the platform process.
+平台适配器不经 shell 打开对话框——POSIX 上 spawn 原生工具，Windows 上进行进程内 COM 交互：
 
-Platform adapters open the dialog without a shell — spawned native tools on POSIX, an in-process COM conversation on Windows:
+- macOS：`osascript` 通过 JXA 桥驱动进程内 `NSOpenPanel` 文件夹选择器（[macOS 面板 Note](../bug-fix/2026-09-22-macos-picker-in-process-panel.md)）。
+- Windows：koffi `IFileOpenDialog` 子进程，使用宿主接受的最佳线程 DPI 感知（可用时为 per-monitor-v2；不支持 PMv2 的主机级联到 per-monitor 或 system-aware）（见[进程内对话框 Note](2026-08-02-win32-in-process-folder-dialog.md)）；该层无回退——失败原样上报（见[PowerShell 链删除](../simplification/2026-08-04-drop-windows-powershell-picker-fallback.md)）。
+- Linux：使用 `zenity`；Zenity 不可用时回退到 `kdialog`。
 
-- macOS: `osascript` driving an in-process `NSOpenPanel` folder chooser ([macOS panel note](../bug-fix/2026-09-22-macos-picker-in-process-panel.md)).
-- Windows: the koffi `IFileOpenDialog` child process with the best thread DPI awareness the host accepts (per-monitor-v2 when available; PMv2-less hosts cascade to per-monitor or system-aware) ([in-process dialog note](2026-08-02-win32-in-process-folder-dialog.md)); the tier has no fallback — failures surface as-is ([PowerShell chain removal](../simplification/2026-08-04-drop-windows-powershell-picker-fallback.md)).
-- Linux: `zenity`, with `kdialog` as a fallback when Zenity is unavailable.
+## 考虑过的替代方案
 
-## Alternatives considered
+- 自定义目录浏览器会重复实现操作系统的行为和权限逻辑，而且应属于 Web 实现，而非本次仅面向桌面端的变更。
+- 继续使用手动路径字段会保留当前容易出错的交互方式。
+- 为一个本地原生对话框添加身份认证基础设施，会使变更范围超出其威胁模型；对当前载体而言，回环与同源检查已经足够。
 
-- A custom directory browser duplicates operating-system behavior and permissions, and belongs to the Web implementation rather than this desktop-only change.
-- Reusing the manual path field keeps the current error-prone interaction.
-- Adding authentication infrastructure for one local native dialog would expand the change beyond its threat model; loopback and same-origin checks are sufficient for this carrier.
+## 后果
 
-## Consequences
+当前 GUI 可以在 macOS、Windows 和 Linux 上通过原生选择器打开一个本地文件夹。取消操作不会改变任何状态，故障仍可重试；重复路径的处理具有幂等性，basename 相同的不同路径则可作为独立 Workspace 共存。选中的工作区及其显示名称会在启动新的空白会话前完成刷新。该选择器是获得本地目录 Workspace 的唯一路径（见[单一路径 Note](../simplification/2026-07-31-one-route-to-add-a-workspace.md)）：操作者要么选一个已有目录，要么在选择器内新建一个。仅桌面端可用的[Remote-SSH 工具网关](2026-08-30-desktop-remote-ssh-tool-gateway.md)仍是远程目录的独立路径。
 
-The current GUI opens one local folder through a native picker on macOS, Windows, and Linux. Cancelling changes no state, failures remain retryable, duplicate paths are idempotent, and distinct same-basename paths coexist as separate Workspaces. The selected workspace and its displayed name refresh before a new blank session starts. This picker is the only local-directory route to a Workspace ([one-route Note](../simplification/2026-07-31-one-route-to-add-a-workspace.md)): the operator picks an existing directory, or creates one inside the chooser. The desktop-only [Remote-SSH tool gateway](2026-08-30-desktop-remote-ssh-tool-gateway.md) remains a separate route for remote directories.
+新增的宿主、运行时、组件和 GUI 测试覆盖原生边界、请求信任校验、取消与故障处理、已有路径复用、同 basename 路径收编和可见名称即时更新。该特权 RPC 仍仅面向本地桌面载体；远程 Web 目录浏览器不属于本次决策范围。
 
-The added host, runtime, component, and GUI tests cover the native boundary, request trust checks, cancellation and failure handling, existing-path reuse, same-basename adoption, and the immediate visible-name update. The privileged RPC remains specific to the local desktop carrier; a remote Web directory browser is outside this decision.
+## 风险
 
-## Risks
-
-- Linux desktop environments may provide neither supported picker. The GUI reports that limitation instead of falling back to a typed path.
-- Browser metadata varies outside the supported local carrier. The endpoint intentionally rejects requests that cannot prove the required local same-origin context.
+- Linux 桌面环境可能不提供任何一种受支持的选择器。GUI 会报告这项限制，而不会回退到要求用户输入路径。
+- 在受支持的本地载体之外，浏览器元数据可能有所不同。对于无法证明其满足所需本地同源上下文的请求，该端点会按设计拒绝。

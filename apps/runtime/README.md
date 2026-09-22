@@ -1,5 +1,3 @@
 # Coding Host Runtime
 
-English | [中文](README.zh.md)
-
-This deploy-only manifest defines the Node Host closure shipped by Coding clients. It is not an end-user package; [`scripts/build-coding-runtime.ts`](../../scripts/build-coding-runtime.ts) builds the CLI and Web artifacts, deploys a symlink-free closure, and emits both the pre-expanded `Coding.app/Contents/Resources/runtime` payload for macOS and the SEA archive used by the Linux terminal launcher.
+这份仅用于部署的 manifest 定义了 Coding 客户端随附的 Node Host 闭包。它不是面向最终用户的包；[`scripts/build-coding-runtime.ts`](../../scripts/build-coding-runtime.ts) 会构建 CLI 和 Web 产物，部署不含符号链接的闭包，并生成 macOS 的预展开 `Coding.app/Contents/Resources/runtime` 载荷以及 Linux 终端启动器使用的 SEA archive。

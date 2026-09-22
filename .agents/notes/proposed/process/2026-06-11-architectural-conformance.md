@@ -1,36 +1,34 @@
-# Agent Note: Architectural conformance — dependency rules and the adapter kit
+# Agent Note: 架构一致性——依赖规则与适配器套件
 
 Status: proposed
 
-English | [中文](2026-06-11-architectural-conformance.zh.md)
+## 问题
 
-## Problem
+目前有两项架构保证仅存在于行文中：（1）没有任何组件依赖具体的 agent loop（智能体循环）包（[微内核承诺](../../implemented/architecture/2026-06-11-microkernel-event-taxonomy.md)）；（2）每个 LlmAdapter 都正确遵循分片协议。二者都应由机制强制执行（[质量门禁原则](../../implemented/process/2026-06-11-quality-gates.md)）。
 
-Two architectural guarantees currently live only in prose: (1) nothing depends on the concrete loop package ([the microkernel promise](../../implemented/architecture/2026-06-11-microkernel-event-taxonomy.md)), and (2) every LlmAdapter speaks the chunk protocol correctly. Both should be mechanical ([the quality-gates principle](../../implemented/process/2026-06-11-quality-gates.md)).
+## 提案
 
-## Proposal
+**dependency-cruiser** 配合以下规则：
 
-**dependency-cruiser** with rules:
+- `packages/*`（除 agent-loop 自身的测试和 examples/ 外）禁止导入 `@deepseek-ai/dsh-agent-loop`。
+- 禁止跨包深层导入（`@deepseek-ai/dsh-*/src/...` 路径）——只允许使用公开入口点。
+- packages/ 内禁止出现循环依赖。
+- `vendor/*` 禁止从 `packages/*` 导入。
+- 分层：dsh-llm 不导入其他 dsh 包；dsh-session 仅导入 dsh-llm；以此类推（packages/README.md 中的依赖表，强制执行）。
 
-- `packages/*` (except agent-loop's own tests and examples/) must not import `@deepseek-ai/dsh-agent-loop`.
-- No cross-package deep imports (`@deepseek-ai/dsh-*/src/...` paths) — public entry points only.
-- No import cycles anywhere in packages/.
-- `vendor/*` must not import from `packages/*`.
-- Layering: dsh-llm imports nothing from other dsh packages; dsh-session only dsh-llm; etc. (the dependency table in packages/README.md, enforced).
+**适配器一致性套件**位于 dsh-llm（`@deepseek-ai/dsh-llm/conformance`）：一个以适配器工厂为参数的可复用 vitest 套件，用于断言分片协议约定，包括每个块内的索引单调递增、某个索引出现 `block-end` 后不再接收增量、恰好出现一个 `finish`、用量至多出现一次、每个 `tool-call-delta` 都携带调用 id，并且及时响应 abort。当前先对 mock 运行；DeepSeek V4 适配器从第一天起继承该套件。还可以选择提供开发模式下的 `strictAdapter()` 包装层，在调试标志开启时于运行时强制执行相同规则（与 [开发模式不变式](../../implemented/architecture/2026-06-11-dev-invariants-over-deep-readonly.md) 配对）。
 
-**Adapter conformance kit** in dsh-llm (`@deepseek-ai/dsh-llm/conformance`): a reusable vitest suite parameterized by an adapter factory, asserting the chunk-protocol contract — index monotonicity per block, no deltas after `block-end` for an index, exactly one `finish`, usage at most once, every `tool-call-delta` carries the call id, abort honored promptly. Run it against the mocks now; the DeepSeek V4 adapter inherits it on day one. Optionally a dev-mode `strictAdapter()` wrapper enforcing the same at runtime behind a debug flag (pairs with [the dev-mode invariants](../../implemented/architecture/2026-06-11-dev-invariants-over-deep-readonly.md)).
+## 计划
 
-## Plan
+先落地 dependency-cruiser 配置与 CI 步骤（约一小时工作量，换来永久保证）；一致性套件随其首个消费方测试（针对 MockAdapter）一起落地，并作为 V4 适配器阶段的前置条件。
 
-dependency-cruiser config + CI step first (an hour of work, permanent guarantee); the conformance kit lands with its first consumer test against MockAdapter, and is a prerequisite for the V4 adapter phase.
+## 验收标准
 
-## Acceptance criteria
+- dependency-cruiser 在 CI 中运行上述规则族；违规导入导致构建失败。
+- 一致性套件对 mock 适配器和两个正式适配器运行，新适配器包通过调用该套件并传入自己的工厂即可继承测试。
 
-- dependency-cruiser runs in CI with the rule families above; a violating import fails the build.
-- The conformance kit runs against the mock adapter and both shipping adapters, and a new adapter package inherits the suite by invoking it with its factory.
+## 风险
 
-## Risks
-
-Dep-cruiser rule maintenance as packages are added — keep rules pattern-based (`dsh-*`) rather than enumerated.
+随着包的增加，dep-cruiser 规则需要维护——规则应基于模式（`dsh-*`）而非逐一枚举。
 
 <!-- agent-note-format: alternatives-not-recorded (pre-format Agent Note) -->

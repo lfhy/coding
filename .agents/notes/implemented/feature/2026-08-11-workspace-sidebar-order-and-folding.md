@@ -1,56 +1,54 @@
-# Agent Note: Workspace Sidebar Order and Folding
+# Agent Note: Workspace 侧边栏顺序与折叠
 
 Status: implemented
 
-English | [中文](2026-08-11-workspace-sidebar-order-and-folding.zh.md)
+## 问题
 
-## Problem
+Session 很多的 Workspace 会占满整个侧边栏，把其他 Workspace 挤出可见范围。紧凑列表需要有界的默认高度，同时仍要提供到达每条 Session 的明确入口。侧边栏还需要面向活动时间的顺序，但 `WorkspaceView.sessionIds` 是持久的手动记账，不能被 Session 活动改写。
 
-A Workspace with many Sessions can consume the entire sidebar and push other Workspaces out of reach. A compact list needs a bounded default while preserving an explicit route to every Session. The sidebar also needs an activity-oriented order, but `WorkspaceView.sessionIds` is the durable manual account and must not be rewritten by Session activity.
+Workspace 分组本身没有用户可控的持久顺序。浏览器原生拖拽还会把列表外松手判为拒绝，并把行弹回原位，即使应用仍持有有效插入标记。Workspace 展开后，若只按组头命中，两个分组之间的视觉边界也不再等于任一组头的中点。
 
-Workspace groups themselves had no user-controlled durable order. Browser-native drag additionally rejects a drop released outside the list and animates the row back even when the application still has a valid insertion marker. Expanded Workspace sections make header-only hit testing ambiguous because the visual boundary between two groups does not match either header's midpoint.
+## 决策
 
-## Decision
+### Workspace 顺序
 
-### Workspace order
+Workspace 注册表持有持久 `workspaceIds` 顺序，并提供采用 DOM `insertBefore` 语义的 `insertBefore(id, beforeId?)`。Host RPC `workspace.insertBefore` 返回完整的已提交顺序；单纯顺序变更通过 `host/workspace-order-changed` 推送同一份完整顺序。未知来源或锚点 id 以 `workspace-not-found` 拒绝；以自身为锚点或移动到当前位置不会写入。
 
-The Workspace registry owns a durable `workspaceIds` order and exposes `insertBefore(id, beforeId?)` with DOM `insertBefore` semantics. The Host RPC `workspace.insertBefore` returns the complete committed order, and a pure order mutation emits `host/workspace-order-changed` with the same complete order. Unknown source or anchor ids reject as `workspace-not-found`; self-anchored and already-positioned moves do not write.
+客户端对 Workspace 拖拽进行乐观安装。请求代次与帧代次保证只有最新一元回声可以替换本地顺序，且更新的 Host 帧优先于旧响应；最新请求被拒时会恢复最近一份由 Host 基线、帧或当前一元回声确认的完整顺序。每次成功的列表基线都会恢复 Host 顺序，因此重连会接纳其他位置提交的持久变更。
 
-The client installs a Workspace drag optimistically. Request and frame generations ensure that only the latest unary echo can replace local order and that a newer Host frame outranks an older response; a latest rejected request restores the last complete order accepted from a Host baseline, frame, or current unary echo. Every successful list baseline restores Host order so reconnects adopt durable changes made elsewhere.
+### Session 折叠与视图顺序
 
-### Session folding and view order
+每个 Workspace 持久化一项浏览器本地打开状态：关闭表示零条 Session 行，打开表示最多五条。存在更多 Session 时，**展开其余**只在当前挂载期间显示剩余项；关闭整个 Workspace 会清除此临时展开，因此重新打开时恢复为五条。只有在用户尚未为该 Workspace 存储明确状态时，当前 Session 所在分组才会自动打开。从 Workspace 行创建 Session 时会在启动 Session 前打开目标分组，使状态传播完成后新行保持可见。就绪的 Workspace 基线发生变化后，浏览器会移除基线中不存在 id 的展开状态、顺序和已观察时间戳记录，同时保留 Ungrouped 和单列表记账。
 
-Each Workspace persists one browser-local open state: closed means zero Session rows and open means up to five. When more Sessions exist, **Show more** reveals the remainder only for the current mount; closing the whole Workspace clears this transient expansion, so reopening returns to five. The current Session's group opens automatically only when the user has not already stored an explicit state for that Workspace. Creating a Session from a Workspace row opens the target group before starting the Session, keeping the new row visible when state propagation completes. After a ready Workspace baseline changes, the browser removes expansion, order, and observed-timestamp records for ids absent from that baseline while retaining the Ungrouped and flat-list accounts.
+组合视图菜单在分组和单列表呈现中都提供**手动排序**和**最近更新**，每个记账各自持有一份浏览器本地持久顺序。真实 Workspace 从 `WorkspaceView.sessionIds` 初始化；Ungrouped 和跨 Workspace 的单列表从最近更新时间顺序初始化，且没有 Host Session 记账。进入最近更新时会执行一次完整的时间排序；后续 user prompt 或 steer 会将对应 Session 置顶一次，拖拽仍可编辑所得顺序。返回手动排序会保留当前顺序，只停用后续活动置顶。真实 Workspace 在手动模式下的拖拽还会写入 Host Session 记账，而 Ungrouped 和单列表的拖拽与活动置顶保留在浏览器本地。单列表没有父级层次，因此不显示空的左侧状态槽；存在可见状态时仍保留该槽。
 
-The combined view menu offers **Manual** and **Last updated** in grouped and flat presentation, with one browser-local persisted order per account. A real Workspace initializes from `WorkspaceView.sessionIds`; Ungrouped and the cross-Workspace flat list initialize from recency and have no Host Session account. Entering Last updated performs one complete recency sort; a later user prompt or steer promotes that Session once, and dragging may edit the resulting order. Returning to Manual preserves the current order and only disables later activity promotion. Manual-mode drags for a real Workspace also write the Host Session account, while Ungrouped and flat-list drags and activity promotion remain browser-local. Flat rows omit an empty leading status slot because they have no parent hierarchy, while a visible status retains its slot.
+### 拖拽与紧凑界面
 
-### Drag and compact chrome
+Workspace 命中测试使用完整渲染分组区段，包括可见 Session 行。前一分组的下半部与后一分组的上半部共享同一条插入边界，指示器是一条带有相连右向尖角且不影响布局的绝对定位横线。树主体覆盖层会在滚动裁切区外以相同的负偏移绘制第一条边界，因此左侧尖角保持可见，列表位置也不会改变。Workspace 或 Session 拖拽期间，文档级 `dragover` 与 `drop` 处理器会接受原生操作；若在 Workspace 列表外松手，`dragend` 会提交最后一个有效标记。
 
-Workspace hit testing uses the complete rendered group section, including visible Session rows. One insertion boundary is shared by the preceding group's lower half and the following group's upper half, and the indicator is an absolutely positioned line with a joined right-facing chevron that does not affect layout. A tree-body overlay draws the first boundary at the same negative offset outside the scrolling clip, so the leading chevron remains visible without moving the list. During a Workspace or Session drag, document-level `dragover` and `drop` handlers accept the native operation; if release occurs outside the Workspace list, `dragend` commits the last valid marker.
+搜索在折叠时是区头操作，展开后占据标题与尾部操作的空间。查询经清除首尾空白后为空时，点击外部会收起搜索；非空查询则会保留；轨道搜索手势仍在进行期间，外部点击监听器保持未挂载（[轨道搜索自我收起](../bug-fix/2026-08-18-rail-search-outside-click-self-dismissal.md)）。紧凑的 Workspace 与 Session 行、24px 底部渐隐以及取消每个 Workspace 的 Session 数量共同节省纵向空间，同时保留导航入口。
 
-Search is a header action while collapsed and expands across the title and trailing actions. An outside click collapses a query that is empty after trimming but retains a non-empty query; while the rail search gesture is still in flight the outside-click listener stays unmounted ([rail-search self-dismissal](../bug-fix/2026-08-18-rail-search-outside-click-self-dismissal.md)). Compact Workspace and Session rows, a 24px bottom fade, and the absence of per-Workspace Session counts preserve vertical space without removing navigation affordances.
+## 考虑过的替代方案
 
-## Alternatives considered
+**把每次活动置顶写入 `Workspace.sessionIds`。** 浏览器呈现偏好会在用户每次提交提示词时覆盖共享的 Host 记账。
 
-**Write every activity promotion into `Workspace.sessionIds`.** A browser presentation preference would overwrite the shared Host account whenever a user submits a prompt.
+**为手动排序和最近更新分别保留独立顺序。** 切换模式会用另一份顺序中的旧位置替换可见列表，而选择手动排序只表示后续活动不再移动条目。
 
-**Keep independent Manual and Last updated orders.** Switching modes would replace the visible list with stale positions from the other order, even though choosing Manual only means that later activity stops moving rows.
+**打开 Workspace 时始终显示全部 Session。** 大型 Workspace 仍会挤占其他分组；只记忆整个分组的打开状态无法限制其高度。
 
-**Always show every Session in an open Workspace.** One large Workspace would continue to crowd out the rest, and remembering only the whole-group open state would not bound its height.
+**持久化展开剩余状态。** 很久以后重新打开 Workspace 时，它可能意外占满侧边栏。只有零条或五条状态属于稳定导航偏好；显示剩余项只是一次本地查看。
 
-**Persist the expanded-remainder state.** A Workspace reopened much later could unexpectedly occupy the full sidebar. Only the zero-or-five state represents a stable navigation preference; revealing the remainder is a local inspection.
+**使用数字下标或只按组头命中拖拽。** 拖拽期间行发生变化会使下标漂移；Workspace 展开时，组头中点与可见边界不一致。锚点 id 与完整区段几何在两种情况下都保持稳定。
 
-**Use numeric drop indices or header-only hit testing.** Indices drift when rows change during a drag, while header midpoints disagree with the visible boundary when a Workspace is expanded. Anchor ids and full-section geometry remain stable under both conditions.
+**让浏览器拒绝列表外松手。** 应用会提交最后一个有效标记，而浏览器同时播放拒绝动画，形成相互矛盾的反馈。
 
-**Let the browser reject an outside release.** The application would commit the last valid marker while the browser displays a rejected-drop animation, presenting contradictory feedback.
+## 后果
 
-## Consequences
+- Workspace 顺序通过 Host 持久并共享；分组方式、打开状态、每个记账的 Session 视图顺序和查询状态仍是浏览器本地呈现偏好。Ungrouped 和单列表支持相同的拖拽与置顶规则，但因没有单一 Workspace 记账，其顺序只保存在浏览器本地。
+- 最近更新模式会在进入时执行完整时间排序，随后保持手动调整，直到 user prompt 或 steer 推进某条 Session 并将其置顶。返回手动排序会保留所有当前位置。
+- 未执行明确的**展开其余**手势时，打开 Workspace 最多显示五条 Session；关闭分组只重置这项临时手势。
+- Host Session 记账继续采用[会话列表浏览与 Workspace 手动排序](2026-07-25-session-list-browsing-and-manual-order.md)确立的手动顺序含义。
 
-- Workspace order is durable and shared through the Host, while grouping, open state, per-account Session view order, and query state remain browser-local presentation preferences. Ungrouped and the flat list support the same drag and promotion rules, but their orders are browser-local because neither has one Workspace account.
-- Last updated performs a complete recency sort on entry, then preserves manual adjustments until a user prompt or steer advances one Session and moves it to the front. Returning to Manual preserves every current position.
-- Opening a Workspace never shows more than five Sessions without an explicit **Show more** gesture, and closing it resets only that transient gesture.
-- The Host Session account retains the manual-order meaning established by [Session List Browsing and Manual Workspace Order](2026-07-25-session-list-browsing-and-manual-order.md).
+## 测试
 
-## Testing
-
-Domain and Host tests cover durable Workspace moves, no-op and invalid anchors, restart recovery, full-order RPC responses, order frames, and one Workspace snapshot per Host-stream baseline. Runtime tests cover optimistic order, frame/response precedence, overlapping rejection rollback to Host-confirmed order, reconnect baselines, and New Session target priority. UI tests cover five-row folding, transient expansion reset, pruning persisted state after Workspace removal, order-preserving mode switches, one-time recent-update promotion, browser-local Ungrouped and flat-list drag persistence, hierarchy-free flat-row leading spacing, selected view indicators, expanded-section Workspace hit testing, an unclipped first insertion boundary, outside-list Workspace and Session drops, search collapse rules, and compact CSS dimensions.
+领域与 Host 测试覆盖持久 Workspace 移动、无操作与无效锚点、重启恢复、完整顺序 RPC 响应、顺序帧以及每条 Host stream 基线只读取一份 Workspace 快照。运行时测试覆盖乐观顺序、帧／响应优先级、重叠拒绝后恢复 Host 已确认顺序、重连基线以及 New Session 目标优先级。UI 测试覆盖五行折叠、临时展开重置、Workspace 移除后清理持久状态、保持顺序的模式切换、一次性最近更新置顶、浏览器本地 Ungrouped 与单列表拖拽持久化、无层级单列表行左侧间距、当前视图标记、展开区段的 Workspace 命中、未裁切的第一条插入边界、列表外 Workspace 与 Session 松手、搜索收起规则和紧凑 CSS 尺寸。

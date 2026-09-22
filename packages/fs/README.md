@@ -1,23 +1,21 @@
-# fs/ - filesystem capability family
+# fs/：文件系统能力族
 
-English | [中文](README.zh.md)
+文件系统栈包括：提供方约定（执行世界路径、有界文本 I/O 与带可选版本防护的原子变更）、本地实现、政策门禁插件（已观察状态、编辑前读取、版本防护的写入/编辑）、面向模型的文件工具与执行器，以及由本地 ripgrep 或 Remote-SSH Go agent 支持的发现工具。全部都是**产品**包。
 
-The filesystem stack: a provider contract (execution-world paths, bounded text IO, and atomic mutation with an optional version guard), a local implementation, a policy gate plugin (observed-state + read-before-edit + version-guarded write/edit), the model-facing file tools + executor, and discovery tools backed by local ripgrep or the Remote-SSH Go agent. All **product** packages.
-
-| Package | Role | ctx key |
+| 包 | 角色 | ctx 键 |
 |---|---|---|
-| `fs/` | Service Definition: canonical process paths/file URIs/containment, text IO, and atomic mutation primitives; owns the `fs/*` policy events | `ctx.fs` |
-| `fs-local/` | Local-filesystem `FileSystem` implementation | (registers `ctx.fs`) |
-| [`e2b/fs-e2b`](../e2b/fs-e2b/README.md) | E2B-backed `FileSystem` implementation sharing the remote runtime owned by `ctx.e2b` | (registers `ctx.fs`) |
-| `fs-sandbox/` | Sandbox-enforcing `FileSystem`: extends `fs-local` and fences write/edit by the per-call mode + workspace root policy (read-only denies, workspace-write contains to the session workspace + temp roots), reads pass through | (registers `ctx.fs`) |
-| `fs-observation-policy/` | Policy gate plugin: observed-state + read-before-edit + version-guarded write/edit, via the `fs/*` event gate | (no service — `fs/*` listeners) |
-| `tool-fs/` | Model-facing `read`/`write`/`edit` tools AND the executor (reads via `ctx.fs`, owns read windowing, dispatches `fs/*`); preserves filesystem semantics for session-cwd-relative paths and advertises sandbox escalation fields when the mounted `ctx.fs` confines | (registers on `ctx.tools`) |
-| `tool-fs-search/` | Model-facing `glob`/`grep` discovery tools backed by packaged `@vscode/ripgrep` through `ctx.subprocess` locally, or the root-confined Remote-SSH Go agent route for marker workspaces; NOT `ctx.fs` provider methods | (registers on `ctx.tools`) |
+| `fs/` | Service Definition：规范化进程路径、文件 URI 与包含关系、文本 I/O 和原子变更原语；拥有 `fs/*` 政策事件 | `ctx.fs` |
+| `fs-local/` | 本地文件系统 `FileSystem` 实现 | （注册 `ctx.fs`） |
+| [`e2b/fs-e2b`](../e2b/fs-e2b/README.md) | 以 E2B 为后端的 `FileSystem` 实现，共享由 `ctx.e2b` 拥有的远程运行时 | （注册 `ctx.fs`） |
+| `fs-sandbox/` | 强制沙箱的 `FileSystem`：扩展 `fs-local`，并按每次调用的模式与工作区根政策约束写入/编辑（只读模式拒绝，工作区写入模式限制在会话工作区与临时根目录内）；读取直接通过 | （注册 `ctx.fs`） |
+| `fs-observation-policy/` | 政策门禁插件：通过 `fs/*` 事件门禁提供已观察状态、编辑前读取和版本防护的写入/编辑 | （无服务，仅有 `fs/*` 监听器） |
+| `tool-fs/` | 面向模型的 `read`/`write`/`edit` 工具以及执行器（通过 `ctx.fs` 读取，拥有读取窗口逻辑，分派 `fs/*`）；为会话 cwd 相对路径保留文件系统语义，并在已挂载的 `ctx.fs` 实施约束时声明沙箱升级字段 | （注册到 `ctx.tools`） |
+| `tool-fs-search/` | 面向模型的 `glob`/`grep` 发现工具：本地由经 `ctx.subprocess` 运行的打包 `@vscode/ripgrep` 支持，marker Workspace 则使用受根目录约束的 Remote-SSH Go agent route；不使用 `ctx.fs` 提供方方法 | （注册到 `ctx.tools`） |
 
-The Service Definition lives at `fs/fs/`. A sandboxed, remote, or project-scoped filesystem backend can replace `fs-local` without touching the Service Definition, policy gate, or model-facing tool schemas: `fs-sandbox` provides an in-process path fence over the shared sandbox mode ([decision](../../.agents/notes/implemented/feature/2026-07-14-cross-family-fs-sandbox.md)), while `fs-e2b` places file state in the remote execution world shared with the E2B subprocess provider ([decision](../../.agents/notes/implemented/architecture/2026-07-28-portable-execution-world-consumers.md)). The policy (`fs-observation-policy/`) is a plugin that participates only through the `fs/*` event gate, not a service the tool injects — so dropping it gracefully loses the policy and leaves the unconstrained bare provider rather than breaking the tool. A deployment that loads `tool-fs/` is expected to also load it. The mode fence and the read-before-edit gate are orthogonal and compose. Discovery (`tool-fs-search/`) deliberately does NOT extend the provider contract: local search is the packaged `@vscode/ripgrep` process workflow, while a Remote-SSH marker selects its Go agent's bounded native route, so filesystem backends stay free of a universal search contract. The tools register unconditionally, and results are follow-up-readable when the search workdir and the `read` root are the same execution-world workspace.
+Service Definition 位于 `fs/fs/`。沙箱化、远程或限定项目作用域的文件系统后端可以替换 `fs-local`，而无需更改 Service Definition、政策门禁或面向模型的工具 schema：`fs-sandbox` 基于共享沙箱模式提供进程内路径围栏（[决策](../../.agents/notes/implemented/feature/2026-07-14-cross-family-fs-sandbox.md)），而 `fs-e2b` 则把文件状态置于与 E2B 子进程提供方共享的远程执行世界中（[决策](../../.agents/notes/implemented/architecture/2026-07-28-portable-execution-world-consumers.md)）。政策（`fs-observation-policy/`）是一个只通过 `fs/*` 事件门禁参与的插件，不是工具注入的服务；因此移除它会平稳失去政策，留下不受约束的裸提供方，而不会破坏工具。加载 `tool-fs/` 的部署也应加载该插件。模式围栏与编辑前读取门禁彼此正交，可以组合。发现（`tool-fs-search/`）有意不扩展提供方约定：本地搜索是打包 `@vscode/ripgrep` 的进程工作流，Remote-SSH marker 则选择其 Go agent 的有界原生 route，因此文件系统后端无需承担通用搜索约定。工具会无条件注册；当搜索工作目录与 `read` 根目录处于同一执行世界工作区时，结果可继续读取。
 
-## No timeouts on file IO
+## 文件 I/O 不设超时
 
-`read`/`write`/`edit` take **no** `timeoutMs` and the provider contract arms no deadline: file IO here runs untimed because a deadline would kill work the OS will still finish — see [the filesystem subsystem page](../../docs/subsystems/filesystem.md). Cancellation still propagates through the tool-execution signal for best-effort abort at syscall boundaries.
+`read`/`write`/`edit` **不** 接受 `timeoutMs`，提供方约定也不设置 deadline：这里的文件 I/O 不计时运行，因为 deadline 只会杀掉操作系统仍会完成的工作——参见[文件系统子系统页面](../../docs/subsystems/filesystem.md)。取消仍通过工具执行信号传播，在系统调用边界尽力中止。
 
-The subsystem reference — targets, outcomes, guards, policy events, the error taxonomy, and why file IO takes no timeout — is [docs/subsystems/filesystem.md](../../docs/subsystems/filesystem.md); the sandbox fence in the [cross-family fs sandbox Agent Note](../../.agents/notes/implemented/feature/2026-07-14-cross-family-fs-sandbox.md).
+子系统参考——目标、结果、防护、策略事件、错误分类体系，以及文件 IO 为何不设超时——见 [docs/subsystems/filesystem.md](../../docs/subsystems/filesystem.md)；沙箱围栏见[跨家族 fs 沙箱 Agent Note](../../.agents/notes/implemented/feature/2026-07-14-cross-family-fs-sandbox.md)。

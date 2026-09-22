@@ -1,25 +1,23 @@
 # @deepseek-ai/dsh-client-ui-plan
 
-English | [中文](README.zh.md)
+Plan mode 状态徽章，纯浏览器 surface 插件。浏览器侧占用会话声明的 `conversation.input.plan` 单实例 seat（位于 access 模式控件右侧）；node 侧是空 apply（roster 行）。plan 行为本身——`/plan` 命令、边界或空闲即时提交的 `plan/mode` 状态、`plan` 投影单元与 policy 段——归 [`@deepseek-ai/dsh-plan-mode`](../../plan/plan-mode/README.md) 所有，由 host roster 独立组合。
 
-Plan-mode status chip, a pure browser surface plugin. The browser half occupies the conversation-declared `conversation.input.plan` single seat (to the right of the access-mode control); the node half is an empty apply (the roster row). Plan behavior itself — the `/plan` command, the boundary-or-idle-committed `plan/mode` state, the `plan` projection unit, and the policy section — is owned by [`@deepseek-ai/dsh-plan-mode`](../../plan/plan-mode/README.md), composed independently on the host roster.
+plan mode 经 `/plan` 命令路径进入：用户可以从 composer 的 `+` Command 菜单选择 Plan，也可以输入 `/plan`，而本包不渲染未激活态 plan 控件。当 host 计算的 `plan` 投影有效目标为 plan mode 时（`pending ? !active : active`——折叠的 host 值而非客户端乐观态，帧到达即自动纠正），座位渲染 warn 色的 "Plan ×" 状态按钮，该按钮经 `command.execute` 执行 `/plan off`；否则座位保持为空——未组合 plan-mode 的 host（或尚无会话的 Draft）不显示任何内容。plan mode 为有效目标期间，composer 文本框的 placeholder 切换为 plan 任务提示——"describe your task to generate plan"（中文「描述你的任务以生成计划」），经 ui-conversation 的 `conversation` locale 命名空间（`placeholder.plan` / `hint.plan` 键）本地化，并与已认领 `/plan` 命令的提示逐字共用同一份文案（由 composer 从同一投影渲染；owner 提供的 placeholder 优先）。
 
-Plan mode is entered through the `/plan` command path: users can choose Plan from the composer's `+` Command menu or type `/plan`, while this package renders no inactive plan control. While the host-computed `plan` projection's effective target is plan mode (`pending ? !active : active` — a folded host value, not client optimism, so an arriving frame corrects the chip either way), the seat renders the warn-colored "Plan ×" status button, which executes `/plan off` through `command.execute`; otherwise the seat stays empty — a host without plan-mode (or a Draft with no session) shows nothing. While plan mode is the effective target, the composer textarea's placeholder switches to the plan-task hint — "describe your task to generate plan", localized through ui-conversation's `conversation` locale namespace (the `placeholder.plan` / `hint.plan` keys) and shared verbatim with the claimed `/plan` command hint (rendered by the composer from the same projection; owner-supplied placeholders win).
+chip 携带无障碍描述 "Plan mode on, press to turn off"。准入失败（`matched: false`、业务错误、传输故障）以内联错误呈现，chip 保持显示直至投影确认退出。
 
-The chip carries the accessible description "Plan mode on, press to turn off". Admission failures (`matched: false`, business errors, transport faults) surface as an inline error and the chip stays until the projection confirms the exit.
+模型通过稳定的 `exit_plan_mode` 工具退出 plan mode；其 plan 评审走已组合的 Web question 通道。
 
-The model exits plan mode through the stable `exit_plan_mode` tool; its plan review uses the composed Web question channel.
+## 模型体验
 
-## Model Experience
+间接地，通过 chip 派发的 `/plan off` 命令行：`@deepseek-ai/dsh-plan-mode` 拥有该命令行驱动的模型可见 policy 段、退出工具 schema 与已记录状态，本包只渲染投影并发送用户同样可以手敲的内容。
 
-Indirectly, through the `/plan off` command line the chip dispatches: `@deepseek-ai/dsh-plan-mode` owns the model-visible policy section, the exit-tool schema, and the logged state that line drives, while this package only renders the projection and sends what a user could equally type.
+#### KV Cache 影响
 
-#### KV Cache effect
+进入或离开 plan mode 会改变活跃的 `plan:policy` 系统提示词段，因此改变请求前缀；chip 本身不添加任何提示词内容。
 
-Entering or leaving plan mode changes the active `plan:policy` system-prompt section and therefore the request prefix; the chip itself adds no prompt content.
+## 已知局限与延后工作
 
-## Known Limitations and Deferred Work
-
-- **Plan mode is guidance, not an execution sandbox** — deployments that require enforced read-only planning must compose the independent sandbox and approval policies.
-- **The chip belongs to the default composer** — a pending whole-composer interaction such as plan review temporarily replaces the InputBar and its chip.
-- **No inactive plan control** — entry uses the shared Command source; a session with the capability but inactive mode shows no plan affordance in the tool row.
+- **Plan mode 是引导而非执行沙箱**：需要强制只读规划的部署必须组合独立的沙箱与审批策略。
+- **chip 属于默认编辑器**：待处理的整编辑器交互（如 plan 评审）会临时取代 InputBar 及其 chip。
+- **无未激活态 plan 控件**——入口使用共享 Command source；有能力但 mode 未激活的会话在工具行不显示 plan 入口。

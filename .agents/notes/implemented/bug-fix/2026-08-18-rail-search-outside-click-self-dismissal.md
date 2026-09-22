@@ -1,27 +1,25 @@
-# Agent Note: Rail search keeps its expansion when the opening click reaches document
+# Agent Note: 轨道搜索在展开点击到达 document 时保持展开
 
 Status: implemented
 
-English | [中文](2026-08-18-rail-search-outside-click-self-dismissal.zh.md)
+## 问题
 
-## Problem
+收起侧边栏的轨道搜索按钮会置位轨道手势标志（`searchOnExpand`）、展开搜索控件（`searchExpanded`）并请求侧边栏展开——设计意图是列滑开后让用户直接落在已聚焦的搜索输入框里。但在真实浏览器中这个手势从未完成：侧边栏展开了，搜索框却保持关闭且未聚焦。
 
-The collapsed sidebar's rail search button arms the rail gesture (`searchOnExpand`), expands the search affordance (`searchExpanded`), and requests sidebar expansion — designed to land the user in a focused search input once the column slides open. In a real browser the gesture never completed: the sidebar expanded but the search box stayed closed and unfocused.
+发起手势的那次点击摧毁了它自己的效果。React 在冒泡中途派发轨道按钮的处理器；状态翻转渲染出宽态头部，并在同一次派发期间把 WorkspaceBrowser 的"点击外部收起搜索"监听器挂到 `document` 上。随后这次点击继续冒泡到达 `document`，其 target 是已卸载的轨道按钮——位于 `searchRoot` 之外——于是刚挂上的监听器立刻收起了它正要打开的搜索。包级测试没有抓到这个问题，因为 `fireEvent.click` 在按钮上触发时，不会像真实浏览器事件那样继续冒泡穿过派发期间新挂载的监听器。
 
-The initiating click destroys its own effect. React dispatches the rail button's handler mid-bubble; the state flip renders the wide header and mounts the WorkspaceBrowser's outside-click dismissal listener on `document` during that same dispatch. The click then keeps bubbling and reaches `document` with the now-unmounted rail button as its target — outside `searchRoot` — so the freshly mounted listener immediately collapses the search it was opening. The package test missed this because `fireEvent.click` on the button does not re-bubble through listeners mounted during dispatch the way a real browser event does.
+## 决策
 
-## Decision
+轨道手势进行期间不挂载"点击外部收起"监听器：其 effect 在 `searchOnExpand` 置位期间提前返回，而 `searchOnExpand` 本就精确终止于手势落定之时（列滑动结束、焦点落入输入框）。落定之后，外部点击照旧收起搜索。一个回归测试重放真实浏览器的顺序——轨道点击、宽态翻转、同一次点击到达 `document`——要求搜索在此过程中保持展开，并在下一次真正的外部点击时收起。
 
-The outside-click dismissal listener does not mount while the rail gesture is in flight: its effect returns early while `searchOnExpand` is set, and `searchOnExpand` already ends exactly when the gesture settles (focus lands in the input after the column slide). After settle, outside clicks dismiss the search as before. A regression test replays the real-browser order — rail click, wide flip, then the same click arriving at `document` — and requires the search to stay expanded through it and to dismiss on the next genuine outside click.
+## 备选方案
 
-## Alternatives considered
+**在轨道按钮的点击上阻止冒泡。** 在发起方抑制冒泡会让轨道按钮耦合到一个它看不见的监听器，而且其他每条展开路径——未来的键盘快捷键、另一个轨道入口——都会重新引入此缺陷。收起由监听器负责，守卫就应由监听器承载。
 
-**Stop propagation on the rail button's click.** Suppressing bubbling at the initiator couples the rail button to a listener it cannot see, and every other expansion path — a future keyboard shortcut, another rail entry — would reintroduce the bug. The listener owns dismissal, so the listener carries the guard.
+**将监听器挂载延迟一帧或一个定时器。** 裸延迟编码的是症状（点击来得"太早"）而非成因（手势正在进行）。`searchOnExpand` 已经是带有正确终点的显式进行中状态；帧边界两者都不是。
 
-**Defer listener attachment by a frame or timeout.** A raw delay encodes the symptom (the click arrives "too early") instead of the cause (a gesture is in flight). `searchOnExpand` is already the explicit in-flight state with the correct end point; a frame boundary is neither.
+**改在 `pointerdown` 上收起而非 `click`。** 发起手势的 `pointerdown` 先于监听器挂载，因而不会自我收起。被否决是因为它改变了所有交互的收起语义——拖拽或按下后滑走会触发收起，而如今完成的点击才会——只为修复一个局限于单个手势的问题。
 
-**Dismiss on `pointerdown` instead of `click`.** The initiating gesture's `pointerdown` precedes the listener mount, so it cannot self-dismiss. Rejected because it changes dismissal semantics for every interaction — a drag or a press-and-slide-away would dismiss where a completed click today does not — to fix a problem scoped to one gesture.
+## 影响
 
-## Consequences
-
-The rail search gesture works end to end in the assembled application, pinned by an `apps/web` real-browser scenario: a real click travels through the collapsed rail, the wide flip, and the document-level bubble, and the search stays expanded with focus landing in the input. During the in-flight window (~300 ms column slide) an outside click does not dismiss the search; that window ends the moment focus lands. The package-level regression test additionally pins the guard's timing at the unit level.
+轨道搜索手势在组装后的应用中端到端可用，由 `apps/web` 的真实浏览器场景钉住：真实点击穿过收起轨道、宽态翻转与 document 级冒泡，搜索保持展开且焦点落入输入框。在手势进行窗口内（约 300 ms 列滑动）外部点击不会收起搜索；该窗口在焦点落定的瞬间结束。包级回归测试另外钉住了单元层面的守卫时序。

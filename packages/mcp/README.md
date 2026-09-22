@@ -1,9 +1,7 @@
-# MCP — Model Context Protocol
+# MCP — 模型上下文协议
 
-English | [中文](README.zh.md)
+将 harness 与 MCP 生态系统桥接的包。
 
-Packages bridging the harness to the MCP ecosystem.
-
-| Package | Role |
+| 包 | 职责 |
 |---|---|
-| [`mcp-client/`](mcp-client/README.md) | MCP client bridge that registers external server tools on `ctx.tools` |
+| [`mcp-client/`](mcp-client/README.md) | MCP 客户端桥接，将外部服务器工具注册到 `ctx.tools` |

@@ -1,27 +1,25 @@
-# Agent Note: Drop the user-message edit stub
+# Agent Note: 移除 user 消息的编辑存根
 
 Status: implemented
 
-English | [中文](2026-07-31-drop-user-message-edit-stub.zh.md)
+## 问题
 
-## Problem
+user 气泡的 IconActions 行在复制和分支旁边还有一个编辑按钮，但其背后什么都没有：该控件没有点击处理、没有 client 侧变更，也没有 host 侧重新发送已编辑消息的操作。用户找到它时，看到的是一个产品无法兑现的可供性。
 
-The user bubble's IconActions row carried an edit button beside copy and branch. Nothing backed it: the control had no click handler, no client mutation, and no host operation for resending an edited message. A user who found it saw an affordance the product cannot honor.
+## 决策
 
-## Decision
+`MessageIconActions` 只渲染时钟／复制／分支，其 `edit` prop 随按钮一并删除；`MessageItem` 不再传入该 prop。现在 user 气泡与 assistant chrome 只在时钟位置上不同。包 README 在 Known Limitations 中记录这项缺失的能力，web 的 message-actions 预期输出固定了不含该控件的动作行。
 
-`MessageIconActions` renders clock / copy / branch only, and its `edit` prop is gone with the button; `MessageItem` no longer passes it. The user bubble and the assistant chrome now differ only by clock side. The package README records the missing capability under Known Limitations, and the web message-actions golden pins the row without the control.
+公共 locale 保留通用的 `edit` 词条：它是共享词汇，而非本组件的文案。
 
-The common locale keeps its generic `edit` term, which is shared vocabulary rather than this component's copy.
+重新引入该控件时要与能力一起落地：既需要编辑已定稿 user 消息的 client 变更，也需要 host 侧决定这条编辑后的消息对已经消费过它的轮次意味着什么。
 
-Reintroduce the control together with the capability: a client mutation that edits a settled user message and the host behavior that decides what the edited message does to the turn that already consumed it.
+## 曾考虑的替代方案
 
-## Alternatives considered
+**把按钮置灰并加提示。** 一个可见但无效的控件仍在宣告可以编辑，解释成本相同；直接移除才是诚实的状态。
 
-**Disable the button with a tooltip.** A visible-but-dead control still advertises editing and costs the same explaining; removal is the honest state.
+**接到队列编辑器上。** 队列编辑的是尚未发送的消息。已定稿的 user 消息已经进入 transcript（文本记录）和模型上下文，复用该编辑器会让同一个动作悄悄变成另一件事。
 
-**Wire it to the queue editor.** The queue edits a message that has not been sent. A settled user message is already in the transcript and in the model's context, so reusing that editor would silently mean something else.
+## 后果
 
-## Consequences
-
-Web offers no way to correct a sent message; branching from the message is the nearest available gesture. Reintroduction is a UI-only change once the mutation exists, since the row composes its actions from props.
+Web 没有任何途径修正已发送的消息；从该消息分支是最接近的现有手势。由于动作行的内容完全由 props 组合而来，client 变更就绪后重新引入只是一次纯 UI 改动。

@@ -1,18 +1,16 @@
 # @deepseek-ai/node-addon-landlock-run
 
-English | [中文](README.zh.md)
+一个 [Landlock](https://landlock.io/)「先限制自身、再执行」启动器，用于在 Linux 上限制子进程。它以按平台预构建的 npm 包以及一个轻量 JS 入口包的形式发布；入口包负责解析二进制文件并遵循其 CLI（命令行界面）约定。该启动器面向需要让不可信命令在文件系统允许清单约束下运行、同时保持自身不受限制的 agent harness（智能体框架）和其他宿主。
 
-A [Landlock](https://landlock.io/) self-restrict-then-exec launcher for confining subprocesses on Linux, distributed as prebuilt per-platform npm packages plus a thin JS entry package that resolves the binary and speaks its CLI contract. Built for agent harnesses and other hosts that need to run untrusted commands under a filesystem allow-list without confining themselves.
+该工具是 **`landlock-run`**：一个「先限制自身、再执行」的 [Landlock](https://landlock.io/) 启动器（基于原始内核 UAPI 编写，约 300 行 C11，并与 musl 静态链接）。它在自身上安装 Landlock 规则集，再 `exec` 被包装的命令；该规则集会跨 `execve` 继承，因此命令及其产生的每个进程都在限制下运行，调用进程仍不受限制。它采用失败闭合：如果内核无法强制执行，则不运行命令并直接退出。
 
-The tool is **`landlock-run`** — a self-restrict-then-exec [Landlock](https://landlock.io/) launcher (~300 lines of C11 over the raw kernel UAPI, statically linked against musl). It installs a Landlock ruleset on itself and `exec`s the wrapped command; the ruleset is inherited across `execve`, so the command and every process it spawns run confined while the invoking process stays unrestricted. Fail-closed: if the kernel cannot enforce, it exits without running the command.
-
-## Install
+## 安装
 
 ```sh
 npm install @deepseek-ai/node-addon-landlock-run
 ```
 
-Published packages use an entry package plus platform optional packages:
+已发布包由一个入口包和可选平台包组成：
 
 ```text
 @deepseek-ai/node-addon-landlock-run
@@ -20,9 +18,9 @@ Published packages use an entry package plus platform optional packages:
 @deepseek-ai/node-addon-landlock-run-linux-arm64
 ```
 
-npm's `os`/`cpu` fields make installers fetch only the matching platform package. There is no install-time build fallback on purpose: on a host without a platform package the resolved path never exists, the probe reports `unusable`, and the consumer falls closed.
+npm 的 `os`/`cpu` 字段使安装器只拉取匹配的平台包。系统有意不提供安装时构建回退：在没有对应平台包的宿主上，解析后的路径绝不存在，探测会报告 `unusable`，消费方以失败闭合方式处理。
 
-## Usage
+## 用法
 
 ```js
 import { grantArgs, launcherPath, probe } from '@deepseek-ai/node-addon-landlock-run';
@@ -34,20 +32,20 @@ if (probe(launcher) !== 'unusable') {
 }
 ```
 
-The public API is intentionally small:
+公开 API 有意保持精简：
 
-- `launcherPath()`: absolute path of this host's launcher (existence deliberately unchecked — the probe is the availability signal).
-- `probe(launcher?, { timeoutMs? })`: functional enforcement probe — `'full' | 'partial' | 'unusable'`.
-- `grantArgs({ readOnly?, readWrite? })`: the launcher's grant argv; everything not granted is denied.
-- `LAUNCHER_BIN` and `LAUNCHER_FAILURE_EXIT` (125): contract constants. A successfully exec'd child may also return 125, so consumers need the fatal diagnostic as well as the status to attribute launcher failure.
+- `launcherPath()`：当前宿主启动器的绝对路径（有意不检查是否存在；探测结果才是可用性信号）。
+- `probe(launcher?, { timeoutMs? })`：功能性强制执行探测，返回 `'full' | 'partial' | 'unusable'`。
+- `grantArgs({ readOnly?, readWrite? })`：启动器的授权 argv；未授予的一切都被拒绝。
+- `LAUNCHER_BIN` 和 `LAUNCHER_FAILURE_EXIT`（125）：约定常量。成功完成 exec 的子进程也可能返回 125，因此消费方必须同时看到致命诊断和该状态，才能将结果归因为启动器失败。
 
-The full binary contract (argv grammar, exit codes, report lines) is pinned in [docs/cli-contract.md](docs/cli-contract.md).
+完整的二进制约定（argv 语法、退出码、报告行）锁定在 [docs/cli-contract.md](docs/cli-contract.md) 中。
 
-## Support
+## 支持范围
 
-linux-x64 and linux-arm64, kernel with Landlock enabled (5.13+; ABI level determines `full` vs `partial` enforcement — see [docs/support-matrix.md](docs/support-matrix.md)). Other platforms deliberately have no package: consumers run different confinement backends there.
+支持 linux-x64 和 linux-arm64，且内核已启用 Landlock（5.13+；ABI 级别决定强制执行为 `full` 还是 `partial`，详见 [docs/support-matrix.md](docs/support-matrix.md)）。其他平台有意不提供对应包：消费方会在这些平台上运行其他限制后端。
 
-## Development
+## 开发
 
 ```sh
 corepack enable
@@ -57,4 +55,4 @@ pnpm build:native    # this Linux architecture's binaries (apt-get install musl-
 pnpm test
 ```
 
-Binaries are git-ignored and built natively for the current architecture. This fork has no native CI or release flow; use the [local packaging notes](docs/release.md) to rehearse a matching platform tarball.
+二进制文件被 git 忽略，并且只为当前架构原生构建。本 fork 没有原生 CI 或发布流程；通过[本地打包说明](docs/release.md)演练匹配平台的 tarball。

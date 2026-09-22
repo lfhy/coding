@@ -1,12 +1,10 @@
-# 7. Into the harness
+# 7. 进入 harness
 
-English | [中文](07-into-the-harness.zh.md)
+本章会向 harness 的 `tools` 服务注册一个可由模型调用的工具，通过 harness 工具流水线执行它，并观察结果事件。整个示例无需密钥，也不会调用模型。
 
-This chapter registers a model-callable tool with the harness's `tools` service, executes it through the harness tool pipeline, and observes the result event. It remains keyless and does not call a model.
+## 工具插件
 
-## A tool plugin
-
-Create `greet-tool.ts` in `tmp/cordis-tutorial`:
+创建 `greet-tool.ts`，将它放在 `tmp/cordis-tutorial` 中：
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
@@ -46,11 +44,11 @@ export function apply(ctx: Context) {
 }
 ```
 
-Every pattern here is from the earlier chapters: `inject: ['tools']` ([chapter 3](03-services.md)) holds the plugin until the tool registry exists; `ctx.tools.register(...)` attaches the registration disposer to the plugin ([chapter 2](02-lifecycle-and-effects.md)), so unloading unregisters the tool. `defineTool` converts the `parameters` spec to the JSON Schema shown to the model, infers the type of `args`, and validates model-supplied arguments before `execute` runs. The tool returns the canonical value declared by `output.schema`; `output.render` separately produces the Native and durable result content.
+这里的每个模式都来自前几章：`inject: ['tools']`（[第 3 章](03-services.md)）会让插件等待工具注册表就绪；`ctx.tools.register(...)` 会把注册 disposer 附着到插件（[第 2 章](02-lifecycle-and-effects.md)），因此卸载时会注销工具。`defineTool` 将 `parameters` 规约转换为向模型展示的 JSON Schema，推导 `args` 的类型，并在 `execute` 运行前校验模型提供的参数。工具返回由 `output.schema` 声明的规范值；`output.render` 则作为 Native renderer（原生渲染器），另行生成可持久化的结果内容。
 
-## An observer plugin
+## 观察插件
 
-Create `tool-logger.ts` — a separate plugin that watches every tool call in the app through the harness's `tools/result` event:
+创建 `tool-logger.ts`。这是一个独立插件，通过 harness 的 `tools/result` 事件观察应用中的每次工具调用：
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
@@ -69,9 +67,9 @@ export function apply(ctx: Context) {
 }
 ```
 
-The `import type {} from '@deepseek-ai/dsh-tools'` line pulls in the package's declaration merges so `'tools/result'` and its payload are typed — the same move as chapter 4's `stats.ts` import, at package scale.
+`import type {} from '@deepseek-ai/dsh-tools'` 行会引入该包的声明合并，使 `'tools/result'` 及其 payload 具有类型。这与第 4 章导入 `stats.ts` 的做法相同，只是扩展到了包级别。
 
-## Compose and run
+## 组合并运行
 
 ```yaml
 - name: '@deepseek-ai/dsh-system-prompt'
@@ -80,7 +78,7 @@ The `import type {} from '@deepseek-ai/dsh-tools'` line pulls in the package's d
 - name: './greet-tool.ts'
 ```
 
-`@deepseek-ai/dsh-tools` injects the `systemPrompt` service because tools contribute schemas to the system prompt, so the composition lists its provider too. Without it, the tools plugin remains PENDING as described in [chapter 6](06-composition-and-hmr.md).
+`@deepseek-ai/dsh-tools` 会注入 `systemPrompt` 服务，因为工具需要向系统提示词贡献 schema，所以组合中也要列出该服务的提供方。缺少提供方时，工具插件会像[第 6 章](06-composition-and-hmr.md)所述那样保持 PENDING。
 
 ```sh
 node --import tsx ../../vendor/cordis/bin.js
@@ -91,17 +89,17 @@ node --import tsx ../../vendor/cordis/bin.js
 tool replied: [{"type":"text","text":"Hello, Cordis!"}]
 ```
 
-The logger fired first: `tools/result` is emitted as part of result materialization, before `execute`'s promise resolves to the caller. Neither of your plugins knows the other exists — the registry service and the event connect them.
+logger 会先触发：`tools/result` 在结果物化过程中发出，发生在 `execute` 向调用方返回的 promise 兑现之前。两个插件都不知道另一个插件存在，它们由注册表服务和事件连接。
 
-## From here to a full agent
+## 从这里走向完整 agent（智能体）
 
-A real agent is this composition plus more plugins: an LLM adapter, the agent loop, persistence, an entry point. Compare [examples/headless-agent/cordis.yml](../../examples/headless-agent/cordis.yml) — you can read every entry in it now. Add your `greet-tool.ts` to a copy of that file.
+真实 agent 就是这套组合再加上更多插件：LLM（大语言模型）适配器、agent loop（智能体循环）、持久化和运行入口。对照 [examples/headless-agent/cordis.yml](../../examples/headless-agent/cordis.yml)，你现在已经可以读懂其中每个配置项。将 `greet-tool.ts` 加入该文件的副本即可。
 
-Where to go next:
+后续可以阅读：
 
-- [Build a tool](../user/develop/basic/tool.md) — more of `defineTool`, including presentation and richer schemas.
-- [Three-layer capability design](../user/develop/practice/index.md) — how the harness structures replaceable capabilities.
-- The generated `cordis-surface` regions on the [subsystem pages](../subsystems/core.md) — everything you can inject and listen to, each on its owning page.
-- [Architecture](../architecture.md) — the system map these plugins live in.
+- [构建工具](../user/develop/basic/tool.md)：深入了解 `defineTool`，包括呈现和更丰富的 schema。
+- [三层能力设计](../user/develop/practice/index.md)：harness 如何组织可替换能力。
+- [子系统页面](../subsystems/core.md)上生成的 `cordis-surface` 区块：可以注入和监听的所有内容，各在其所属页面上。
+- [架构](../architecture.md)：这些插件所处的系统地图。
 
 [![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)

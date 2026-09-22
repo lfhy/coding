@@ -1,12 +1,10 @@
-# 1. Your first plugin
+# 1. 编写第一个插件
 
-English | [中文](01-first-plugin.zh.md)
+在本教程使用的 loader 配置中，Cordis 插件模块通过命名导出提供 `apply` 函数。Cordis 加载模块时，会用一个 **上下文** 调用 `apply`；该上下文就是 `ctx` 对象，插件通过它注册自己贡献的所有内容。
 
-In the loader configuration used here, a Cordis plugin module named-exports an `apply` function. When Cordis loads it, it calls `apply` with a **context** — the `ctx` object through which the plugin registers everything it contributes.
+## 编写插件
 
-## Write the plugin
-
-In your `tmp/cordis-tutorial` directory (see [setup](index.md#setup)), create `hello.ts`:
+在 `tmp/cordis-tutorial` 目录中（参见[环境设置](index.md#setup)）创建 `hello.ts`：
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
@@ -18,41 +16,41 @@ export function apply(ctx: Context) {
 }
 ```
 
-The `name` export is optional display metadata; it labels the plugin in diagnostics.
+`name` 导出项是可选的显示元数据；它用于在诊断信息中标识插件。
 
-## Compose the app
+## 组合应用
 
-This tutorial's launcher assembles the application from configuration. Create `cordis.yml`:
+本教程的启动器通过配置组装应用。创建 `cordis.yml`：
 
 ```yaml
 - name: './hello.ts'
 ```
 
-The file is a list of plugin entries. `name` is a module specifier — a relative path or an npm package name — and the loader mounts every entry. Entries start concurrently, so list position guarantees nothing about which plugin loads first; ordering comes from service dependencies (`inject`, [chapter 3](03-services.md)), not from position in the file.
+该文件是一组 Cordis 配置项的列表。`name` 是模块指定符，可以是相对路径或 NPM 包名；loader 会挂载每个配置项。各项会并发启动，因此它们在列表中的位置不保证插件的加载先后；顺序由服务依赖（`inject`，参见[第 3 章](03-services.md)）决定，而非文件中的位置。
 
-## Run it
+## 运行
 
 ```sh
 node --import tsx ../../vendor/cordis/bin.js
 ```
 
-Expected output:
+预期输出：
 
 ```
 hello from my first plugin
 ```
 
-The process exits on its own once nothing is left running. What happened:
+当没有任何内容继续运行时，进程会自行退出。具体过程如下：
 
-1. The launcher created a root `Context` and mounted the **Loader** plugin.
-2. The Loader read `cordis.yml`, resolved `./hello.ts`, and mounted it as a child plugin.
-3. Cordis called your `apply(ctx)`.
+1. 启动器创建根 `Context`，并挂载 **Loader** 插件。
+2. Loader 读取 `cordis.yml`，解析 `./hello.ts`，然后将其作为子插件挂载。
+3. Cordis 调用你的 `apply(ctx)`。
 
-There is no framework bootstrap code in your file: a plugin describes what it contributes, and `cordis.yml` composes the application. The [`dsh` base](../../packages/bundle/base/cordis.patch.yml), for example, is a longer plugin composition that deployment overlays patch.
+你的文件中没有框架启动代码：插件描述自己的贡献，`cordis.yml` 则组合应用。例如，[`dsh` base](../../packages/bundle/base/cordis.patch.yml) 就是一份更长的插件组合，由部署 overlay 对它进行修补。
 
-## The two other plugin shapes
+## 其他两种插件形态
 
-A function is the most common form, but Cordis accepts three:
+函数是最常见的形式，但 Cordis 接受三种形式：
 
 ```ts
 import { Service, type Context } from '@deepseek-ai/cordis'
@@ -74,11 +72,11 @@ export class MyService extends Service {
 }
 ```
 
-Use the function form until you need to expose a service; [chapter 3](03-services.md) covers when the class form earns its place.
+在你需要公开服务之前，请一直使用函数形态；[第 3 章](03-services.md)介绍了何时应当使用类形态。
 
-## Try breaking it
+## 尝试制造错误
 
-Make `apply` throw:
+让 `apply` 抛出异常：
 
 ```ts ignore-check
 export function apply(ctx: Context) {
@@ -86,10 +84,10 @@ export function apply(ctx: Context) {
 }
 ```
 
-Run again: the process dies with your error. A plugin that fails to load is a loud failure, not a skipped entry.
+再次运行：进程会因该错误而终止。插件加载失败会明确报错，不会仅跳过该配置项。
 
-One caveat worth knowing early: a config entry whose module cannot be **resolved** — a typo'd path or package name — is reported through the Cordis logger service instead of crashing the process, and at boot that report can be lost before a console exporter is watching. If a freshly added entry seems to do nothing, check the spelling first.
+还需要尽早了解一个例外：如果某个配置项的模块无法被 **解析**，例如路径或包名拼写错误，Cordis 会通过 logger 服务报告错误，而不会使进程崩溃。在启动阶段，这条报告可能在 console 导出器开始观察之前丢失。如果新增配置项似乎没有任何效果，请先检查拼写。
 
-Next: [Lifecycle and effects](02-lifecycle-and-effects.md) — what happens when a plugin unloads.
+下一章：[生命周期与 effect](02-lifecycle-and-effects.md)：插件卸载时会发生什么。
 
 [![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)

@@ -1,32 +1,30 @@
 # @deepseek-ai/dsh-fs-e2b
 
-English | [中文](README.zh.md)
+[`@deepseek-ai/dsh-fs`](../../fs/fs/README.md) 提供方约定的 E2B 实现。它没有配置：先加载 [`@deepseek-ai/dsh-e2b`](../e2b/README.md)，再用本服务取代 `dsh-fs-local`。该提供方使用所有者的远程 cwd 和 SDK 句柄，因此文件工具观察到的环境与 E2B 后端 Bash 进程相同。
 
-E2B implementation of the [`@deepseek-ai/dsh-fs`](../../fs/fs/README.md) provider contract. It has no config: load [`@deepseek-ai/dsh-e2b`](../e2b/README.md) first, then this service in place of `dsh-fs-local`. The provider uses the owner's remote cwd and SDK handle, so file tools observe the same world as E2B-backed Bash processes.
+## 行为
 
-## Behavior
+- **远程身份与元数据**：相对路径以调用方 cwd 或 `ctx.e2b.cwd` 为基准，按照 POSIX 路径解析；GNU `realpath -mz` 提供规范化目标身份，且不要求最终文件存在；ASCII/base64 加严格 NUL 分帧会在已解码的 SDK 传输中保留含换行符和多字节字符的路径。`stat`、不跟随链接的 `lstat` 和稳定的单层目录列表会把 E2B 元数据投影到文件系统 seam；目录列表会复用已返回的元数据，并依次解析符号链接条目。版本是 E2B 元数据与每次写入设置的扩展属性所组成的不透明哈希。
+- **执行环境路径**：规范化目标公开绝对 POSIX 进程路径、百分号编码的 `file:` URI，以及由提供方负责的包含关系检查，因此通用子进程消费方无需解析 E2B 目标 ID，也不会套用宿主路径规则。
+- **UTF-8 读取**：完整读取和流式读取会保持跨分片解码的连续性、拒绝无效 UTF-8，并使用 seam 的 8192 字节 NUL 样本检测二进制内容。面向模型的工具仍负责选择大小和行窗口。
+- **有界原始字节读取**：`readBytes` 在任何内容传输之前先按 stat 大小短路，然后流式读取远程对象，并在第一个超过 `maxBytes` 的分片处取消流（`FS_TOO_LARGE`），因此静态超限文件和 stat 后增长的文件都不会被完整缓冲进宿主内存。所钉版本 SDK 的空文件怪癖（content-length 为 0 时 stream 格式返回 `''`）产生空结果。
+- **原子变更**：写入会创建随机的同级暂存目录，在上传内容前将其 mode 改为 `0700`，并保留现有文件的 POSIX mode。替换操作通过 E2B 的同一文件系统原子重命名发布。带防护的 `createIfAbsent` 改用远程 `ln -T` 发布，即使目标位置出现目录，也能使提交具备原子且不替换的语义；系统会把提交前从暂存文件读取的元数据投影到目标路径，以生成返回的版本，因此任何一类提交点之后都不会再进行可能失败的元数据请求。E2B 会创建缺失的父目录。字面量编辑匹配时会规范化为 LF，存储时恢复占主导的 CRLF，并在宿主进程内按规范化目标串行执行变更。
+- **失败与取消**：E2B 的未找到、权限、中止及其他控制器故障会映射到现有 `FsError` 词汇。取消在更早的 SDK 请求边界上采用尽力而为语义，并在发布前立即检查。信号不会传入 rename 或防护链接提交，因此取消无法中断原子发布，也不会把已提交的写入报告为失败。
 
-- **Remote identity and metadata** — relative paths resolve as POSIX paths against the caller cwd or `ctx.e2b.cwd`; GNU `realpath -mz` supplies canonical target identity without requiring the final file to exist, and ASCII/base64 plus strict NUL framing preserves newline and multibyte paths across the decoded SDK transport. `stat`, no-follow `lstat`, and stable one-level directory listings project E2B metadata into the filesystem seam; listings reuse returned metadata and resolve symbolic-link entries sequentially. Versions are opaque hashes of E2B metadata plus a per-write extended attribute.
-- **Execution-world paths** — canonical targets expose absolute POSIX process paths, percent-encoded `file:` URIs, and provider-owned containment checks, so generic subprocess consumers never parse E2B target ids or apply host path rules.
-- **UTF-8 reads** — whole reads and streamed reads preserve cross-chunk decoding, reject invalid UTF-8, and use the seam's 8192-byte NUL sample for binary detection. The model-facing tool still owns size selection and line windowing.
-- **Bounded raw-byte reads** — `readBytes` short-circuits on the stat size before any content transfer, then streams the remote object and cancels the stream at the first chunk past `maxBytes` (`FS_TOO_LARGE`), so neither an at-rest oversized file nor a post-stat grower is buffered whole in host memory. The empty-file quirk of the pinned SDK (content-length 0 returns `''` in stream format) yields an empty result.
-- **Atomic mutations** — writes create a random sibling staging directory, change it to mode `0700` before uploading content, and preserve an existing file's POSIX mode. Replacements publish through E2B's same-filesystem atomic rename. A guarded `createIfAbsent` publishes with remote `ln -T` instead, making the commit atomically no-replace even when a directory appears at the destination; metadata read from the staged file before that commit is projected to the target path for the returned version, so no fallible metadata request follows either commit point. E2B creates missing parent directories. Literal edits LF-normalize for matching, restore dominant CRLF storage, and serialize mutations per canonical target within the host process.
-- **Failures and cancellation** — E2B not-found, permission, abort, and other controller failures map to the existing `FsError` vocabulary. Cancellation is best-effort at earlier SDK request boundaries and checked immediately before publication. The signal is not forwarded into the rename or guarded-link commit, so cancellation cannot interrupt atomic publication or turn a committed write into a reported failure.
+该提供方不会复制、挂载或协调宿主工作区。把宿主路径用作 `cwd`，只会在远程创建一个拼写相同的目录。
 
-The provider does not copy, mount, or reconcile the host workspace. Giving it a host path as `cwd` creates a remote directory with the same spelling only.
+## 模型体验
 
-## Model Experience
+通过 [`dsh-tool-fs`](../../fs/tool-fs/README.md) 间接影响模型；该工具会渲染远程 UTF-8 内容、目录结果、变更确认和提供方错误，而 E2B 身份及传输保持内部实现。
 
-Indirectly, through [`dsh-tool-fs`](../../fs/tool-fs/README.md), which renders remote UTF-8 content, directory results, mutation acknowledgements, and provider errors while E2B identity and transport remain internal.
+#### KV Cache 影响
 
-#### KV Cache effect
+不会直接失效；请求前缀变更由具名消费方负责。
 
-No direct invalidation; the named consumer owns any request-prefix changes.
+## 已知限制与延后工作
 
-## Known Limitations and Deferred Work
-
-- **No host synchronization** — an empty E2B cwd stays empty until a tool, command, or external process populates it; local files are neither uploaded nor reflected back.
-- **Mutation coordination is host-process-local** — `createIfAbsent` preserves a remote creator racing publication, but another harness connection or command can still race replacement; version guards detect only metadata changes represented by E2B.
-- **Reads reopen canonical targets by path** — a concurrent remote path replacement between resolution and stream opening is not fenced by a stable file handle; no observed product defect justifies a provider-specific bounded-read protocol in this POC.
-- **Whole-file mutation costs remain** — overwrite diffs and literal edits read complete files into host memory, and every operation incurs E2B controller latency.
-- **The POC targets E2B's default Linux image** — it relies on GNU `realpath`/`base64`/`chmod`, same-filesystem rename, streaming reads, and metadata extended attributes; custom templates are outside this POC.
+- **不提供宿主同步**：空的 E2B cwd 会一直为空，直到工具、命令或外部进程填充它；本地文件既不会上传，也不会同步回本地。
+- **变更协调仅限宿主进程内**：`createIfAbsent` 会保留与发布发生竞态的远程创建者所写入的文件，但另一个 harness 连接或命令仍可能与替换操作发生竞态；版本防护只能检测 E2B 元数据所体现的变更。
+- **读取会按路径重新打开规范化目标**：在解析与打开流之间若并发替换远程路径，该操作没有稳定文件句柄提供围栏；在该 POC 中，没有已观察到的产品缺陷能够证明提供方专用的有界读取协议值得引入。
+- **仍需承担完整文件变更成本**：覆盖差异和字面量编辑会把完整文件读入宿主内存，每项操作也都会产生 E2B 控制器延迟。
+- **该 POC 面向 E2B 默认 Linux 镜像**：它依赖 GNU `realpath`／`base64`／`chmod`、同一文件系统内的 rename、流式读取和元数据扩展属性；自定义模板不在该 POC 范围内。

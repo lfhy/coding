@@ -1,104 +1,102 @@
-# Agent Note: persistent PTY sessions
+# Agent Note: 持久化 PTY 会话
 
 Status: implemented
 
-English | [中文](2026-07-16-persistent-pty-sessions.zh.md)
+## 问题
 
-## Problem
+harness 可以运行前台与后台命令、编辑文件和委派工作，但无法跨工具调用延续一次交互式终端对话。每次 `bash` 前台运行都会启动一个新 shell，因此 shell 内的 cwd、导出变量、虚拟环境激活状态、函数、job control 状态和交互式子进程都会随本次调用结束。
 
-The harness can run foreground and background commands, edit files, and delegate work, but it cannot continue an interactive terminal conversation across tool calls. Each `bash` foreground run starts a fresh shell, so shell-local cwd, exported variables, virtual-environment activation, functions, job-control state, and interactive child processes end with that call.
+这个缺口排除了状态驻留在终端而不是文件中的工作流，例如单步调试 `gdb`、在 Python 或 Node REPL 中探索、驱动 `ed` 这类行式编辑器，或者中断前台命令后回到原 shell。通用的 [`ctx.jobs`](../../../../packages/jobs/README.md) 运行时可以保留后台操作句柄和输出，但不提供交互式 stdin 或终端语义。
 
-That gap excludes workflows whose state lives in a terminal rather than a file: stepping through `gdb`, exploring in a Python or Node REPL, driving a line-oriented editor such as `ed`, or returning to a shell after interrupting its foreground command. The generic [`ctx.jobs`](../../../../packages/jobs/README.md) runtime retains background-operation handles and output, but it does not provide interactive stdin or terminal semantics.
+现有 `bash`、`read`、`write` 和 `edit` 工具仍是有界、可审计操作的可靠默认选项。PTY 是对确实需要终端状态的工作的补充能力，不说明这些工具有缺陷，更不意味着要移除它们。
 
-The existing `bash`, `read`, `write`, and `edit` tools remain the reliable default for bounded, auditable operations. A PTY is an additional capability for work that genuinely requires terminal state, not evidence that those tools are defective or candidates for removal.
+## 决策
 
-## Decision
+可选的 `packages/terminal/` 能力家族提供由 agent（智能体）拥有、持久化且面向行式交互的 PTY 会话。它遵循仓库的 [能力模式](../../implemented/architecture/2026-06-13-capability-seams.md)，与现有命令和文件系统工具并存，并且不修改 `agent-loop`。
 
-The optional `packages/terminal/` capability family exposes agent-owned, persistent, line-oriented PTY sessions. It follows the repository's [capability pattern](../../implemented/architecture/2026-06-13-capability-seams.md), coexists with the existing command and filesystem tools, and does not change `agent-loop`.
+当前实现在 Linux 和 macOS 上支持交互式 shell 与行式 REPL。全屏终端应用、按键序列、BEL 触发的控制流、进程丢失后的会话恢复以及跨 agent 共享会话都明确推迟。
 
-The implementation supports interactive shells and line-oriented REPLs on Linux and macOS. Full-screen terminal applications, keystroke sequences, BEL-triggered control flow, session restoration after process loss, and cross-agent session sharing are explicitly deferred.
+### 包拓扑
 
-### Package topology
-
-| Package | Role | ctx key |
+| 包 | 角色 | ctx key |
 |---|---|---|
-| `dsh-terminal` | `TerminalSessionService`, branded `TerminalSessionId`, backend registry, owner-scoped session contract, and result types | `ctx.terminals` |
-| `dsh-terminal-bash` | Persistent-shell backend over `ctx.subprocess.spawnTerminal()`: readiness, bounded terminal buffers, sandbox resolution, and owner-aware session lifecycle | registers a backend on `ctx.terminals` |
-| `dsh-tool-terminal` | Six model-facing tools, task-runtime integration for background sends, guidance, and UI render intents | registers on `ctx.tools` |
+| `dsh-terminal` | `TerminalSessionService`、branded `TerminalSessionId`、后端注册表、按 owner 隔离的会话约定和结果类型 | `ctx.terminals` |
+| `dsh-terminal-bash` | 基于 `ctx.subprocess.spawnTerminal()` 的持久 shell 后端：就绪状态、有界终端缓冲、沙箱解析和感知 owner 的会话生命周期 | 在 `ctx.terminals` 上注册后端 |
+| `dsh-tool-terminal` | 6 个面向模型的工具、后台发送的 task 运行时集成、使用指引和 UI 渲染意图 | 注册到 `ctx.tools` |
 
-Readiness remains PTY-backend behavior, not a second public contract. The terminal-process provider supplies only substrate facts such as the foreground process group and whether it can prove that group is waiting on input; `dsh-terminal-bash` combines those facts with prompt and silence evidence into the common send result.
+就绪判定仍属于 PTY 后端行为，不是第二条公共约定。终端进程提供方只提供基底事实，例如前台进程组，以及能否证明该组正在等待输入；`dsh-terminal-bash` 将这些事实与提示符和静默证据组合成统一的发送结果。
 
-### Agent ownership and identity
+### agent 所有权与身份
 
-`TerminalSessionService` stores live sessions process-locally, but every session is owned by the exact `Agent` passed through the tool execution context. The service mints an opaque `TerminalSessionId`; an optional model-chosen `name` is display metadata and is unique only within that owner. Every operation targets `sessionId`, and `list`/`read`/`signal`/`kill` reject callers other than the owner.
+`TerminalSessionService` 在进程内保存活会话，但每个会话都由工具执行上下文传入的确切 `Agent` 拥有。服务铸造不透明的 `TerminalSessionId`；模型可选填的 `name` 只是显示元数据，仅在该 owner 内唯一。所有操作都以 `sessionId` 为目标，`list`/`read`/`signal`/`kill` 会拒绝 owner 之外的调用方。
 
-There are no plugin-load auto-start sessions. `terminal_open` creates a session only during an agent tool call, when ownership and the owning event-sourced session are known. A future declarative startup feature must compose through unpublished agent setup rather than create shared global terminals.
+实现不提供插件加载期 auto-start 会话。`terminal_open` 只在 agent 工具调用期间创建会话，此时所有权和所属的事件溯源会话都已确定。未来的声明式启动功能必须通过尚未发布的 agent setup 组合，而不能创建全局共享终端。
 
-Agent-scope disposal closes registrations first, then awaits quiescent teardown of every owned PTY. Unpublished backend setup is a tracked lifecycle operation: owner or service disposal aborts its service-owned signal, waits for backend settlement and rollback, and only then returns. Caller cancellation retains its exact `AbortSignal.reason` even when the backend rejects or returns a session whose rollback close fails; that cleanup failure remains tracked for later owner or service disposal instead of replacing the caller reason. A lifecycle-triggered rollback close failure rejects both the spawn and the disposing lifecycle, while `TerminalBackendCleanupError` lets a backend preserve its own failed startup cleanup for the disposing lifecycle without replacing a caller cancellation. When caller cancellation settles before disposal, the cleanup failure remains tracked owner activity until later owner or service disposal consumes and reports it, so sandbox-mode policy cannot mistake failed cleanup for quiescence. Backend or tool-plugin reload does not orphan sessions: ownership lives in `TerminalSessionService` until the agent ends, following the same service-owned-record pattern as [`ctx.jobs`](../../../../packages/jobs/jobs/README.md). The service reserves the session synchronously for one active send before returning its operation, including before a background job id becomes visible; a second send fails with `SEND_ACTIVE`, so output and cancellation cannot cross operation ownership.
+agent scope dispose（资源释放）时先撤销注册，再等待全部所属 PTY 完全停稳。未发布的后端 setup 同样是受追踪的生命周期操作：owner 或服务 dispose 会中止服务自有的 signal，等待后端结算与回滚完成后才返回。即使后端 reject，或返回的会话在回滚 close 时失败，调用方取消仍会原样保留其 `AbortSignal.reason`；该清理失败不会替换调用方原因，而会继续受追踪，留待后续 owner 或服务 dispose 处理。由 lifecycle dispose 触发的回滚 close 失败会使 spawn 与该 lifecycle dispose 都 reject，而 `TerminalBackendCleanupError` 让后端在不替换调用方取消的前提下，为该 lifecycle dispose 保留自身的启动清理失败。若调用方取消在 dispose 开始前已经结算，该清理失败会继续作为受追踪的 owner activity 保留，直到后续 owner 或服务 dispose 消费并报告它，因此沙箱模式策略不会把清理失败误判为完全停稳。后端或工具插件 reload 不会遗留会话：所有权持续存放在 `TerminalSessionService` 中，直到 agent 结束，与 [`ctx.jobs`](../../../../packages/jobs/jobs/README.md) 的服务持有记录模式一致。服务会先同步把会话预留给一次活跃发送，再返回该操作；后台发送同样会在 job id 对外可见前完成预留。第二次发送会以 `SEND_ACTIVE` 失败，因此输出与取消无法跨越操作所有权。
 
-### Security and process boundary
+### 安全与进程边界
 
-A registered `shell` backend constrains how a terminal starts; it does not constrain commands typed after startup. `dsh-terminal-bash` therefore applies two protections before spawning:
+注册的 `shell` 后端只约束终端如何启动，不约束启动后输入的命令。因此 `dsh-terminal-bash` 在 spawn 前应用两层保护：
 
-- It supplies only terminal-specific environment overrides; the mounted subprocess provider applies the shared credential-shaped-name scrub before merging them.
-- It requires the shared `ctx.sandboxPolicy`. At spawn, the backend resolves the owner's effective session mode over the deployment default; `danger-full-access` starts the shell directly, while confined modes require a same-world `ctx.sandbox` provider and wrap the shell argv once. That mode and workspace root remain the process boundary for the PTY lifetime. A write that would change the effective `sandbox/mode` is rejected before commit while the owner has any open PTY or unpublished spawn, with an instruction to wait for creation to settle and close those sessions first; same-effective-mode writes remain valid. The pending reservation spans backend setup through publication, so there is no race in which a wider terminal appears after a downgrade. `danger-full-access` is the existing explicit unconfined choice rather than a PTY-specific bypass.
+- 它只提供终端专用的环境覆盖；挂载的子进程提供方先清除名称形似凭据的环境变量，再合并这些覆盖。
+- 它要求共享的 `ctx.sandboxPolicy`。后端在 spawn 时，以部署默认值为底折叠 owner 的有效会话模式；`danger-full-access` 会直接启动 shell，受限模式则要求同一执行世界中存在 `ctx.sandbox` 提供方，并只包装一次 shell argv。该模式与 workspace root 在 PTY 的整个生命周期中充当进程边界。只要 owner 有任何已打开的 PTY 或尚未发布的 spawn，任何会改变生效 `sandbox/mode` 的写入都会在提交前被拒绝，并提示先等待创建操作结算，再关闭这些会话；不会改变生效模式的写入仍然有效。这项进行中的预留从后端 setup 持续到发布完成，因此不存在降级后又出现权限更宽的终端这一竞态。`danger-full-access` 是现有的显式无约束选择，不另设 PTY 私有 bypass。
 
-Sandboxing confines local process effects but does not make arbitrary shell input safe: network calls and other external side effects remain governed by deployment policy. Tool descriptions state that PTY sessions are less auditable than one-shot tools and should be used only when persistence or interactive stdin is necessary.
+沙箱限制本地进程副作用，但不会让任意 shell 输入自动安全：网络调用和其他外部副作用仍由部署策略治理。工具描述会说明 PTY 会话比一次性工具更难审计，只应在确实需要持久状态或交互式 stdin 时使用。
 
-The local subprocess terminal primitive uses only public `node-pty` capabilities: child PID, `data` and `exit` notifications, `write`, and `kill`. It does not assume access to the native master fd or call `waitpid` from TypeScript. Platform process inspectors below that primitive derive foreground process groups and parent/child identity from `/proc` on Linux and `ps` on macOS. The [portable execution-world decision](../architecture/2026-07-28-portable-execution-world-consumers.md) owns this process/consumer split.
+本地子进程终端原语只使用 `node-pty` 的公开能力：子进程 PID、`data` 与 `exit` 通知、`write` 和 `kill`。它不假设能访问原生 master fd，也不从 TypeScript 调用 `waitpid`。该原语下的平台进程检查器在 Linux 上通过 `/proc`、在 macOS 上通过 `ps` 推导前台进程组和父子进程身份。[可移植执行环境决策](../architecture/2026-07-28-portable-execution-world-consumers.md)负责定义这种进程／消费方拆分。
 
-### Six model-facing tools
+### 6 个面向模型的工具
 
-| Tool | Purpose | Result |
+| 工具 | 用途 | 结果 |
 |---|---|---|
-| `terminal_open` | Create an owner-scoped session from a registered backend type | `{ sessionId, name, type, motd }` |
-| `terminal_send` | Send text, optionally submit Enter, and wait for readiness or register a background job | bounded viewport plus wait and session status; background also returns `jobId` |
-| `terminal_read` | Read a bounded page from retained scrollback | `{ text, totalLines, lineBegin, lineEnd, truncated }` |
-| `terminal_signal` | Send one allowed signal to the current foreground process group | `{ delivered, targetPgid }` |
-| `terminal_close` | Close one session and await process-tree quiescence | `{ killed }` |
-| `terminal_list` | List the caller's live sessions | owner-scoped session summaries |
+| `terminal_open` | 从已注册的后端类型创建按 owner 隔离的会话 | `{ sessionId, name, type, motd }` |
+| `terminal_send` | 发送文本、可选提交 Enter，并等待就绪或注册一个后台任务 | 有界 viewport、等待状态和会话状态；后台模式还返回 `jobId` |
+| `terminal_read` | 从保留的 scrollback 读取一个有界页 | `{ text, totalLines, lineBegin, lineEnd, truncated }` |
+| `terminal_signal` | 向当前前台进程组发送一种允许的信号 | `{ delivered, targetPgid }` |
+| `terminal_close` | 关闭一个会话并等待进程树完全停稳 | `{ killed }` |
+| `terminal_list` | 列出调用方的活会话 | 按 owner 隔离的会话摘要 |
 
-The UI render contract is exact and location-free. `terminal_send` uses terminal call/result cards only for foreground sends; its background form is generic `execute`. `terminal_open`, `terminal_read`, `terminal_signal`, `terminal_close`, and `terminal_list` use generic `execute`, `read`, `execute`, `delete`, and `read` cards respectively. No PTY tool emits `locations`.
+UI 渲染约定精确且不携带位置信息。`terminal_send` 只为前台发送使用 terminal 调用卡片和结果卡片；后台形式使用通用 `execute` 卡片。`terminal_open`、`terminal_read`、`terminal_signal`、`terminal_close` 和 `terminal_list` 分别使用通用 `execute`、`read`、`execute`、`delete` 和 `read` 卡片。所有 PTY 工具都不发出 `locations`。
 
-`terminal_send({ sessionId, text, submit?, run_in_background? })` treats `text` as UTF-8 bytes and resolves `submit` to `true` in the tool implementation. When `submit` is true it writes the platform Enter sequence after the text; when false it writes only the text, allowing control characters and REPL fragments without hidden content heuristics. Cancellation marks queued input before signaling the real foreground group, so input cannot execute if an asynchronous pre-write inspection settles afterward. The canceled send retains its reservation until asynchronous foreground signalling settles, so a successor cannot become that signal's target. `enableRunInBackground` defaults to true; false removes `run_in_background` from the schema and rejects the same undeclared argument if a caller forces it through execution.
+`terminal_send({ sessionId, text, submit?, run_in_background? })` 将 `text` 视为 UTF-8 字节，并由工具实现在解析阶段把 `submit` 默认成 `true`。`submit` 为 true 时先写入文本，再写入平台 Enter 序列；为 false 时只写文本，使控制字符和 REPL 片段无需隐藏的内容启发式即可发送。取消会在向真实前台进程组发送信号前将排队输入标记为已取消，因此即使异步的写入前检查随后才结算，该输入也无法执行。被取消的发送会保留其预留，直至异步前台信号发送结算，因此后续发送不会成为该信号的目标。`enableRunInBackground` 默认为 true；设为 false 时，schema 中会移除 `run_in_background`，调用方即使强行把这个未声明参数传入执行流程，也会被拒绝。
 
-Foreground sends return a bounded rendered delta and two independent facts: `waitReason` (`stdin_read | inferred_idle | timeout | session_exit`) and `sessionStatus` (`running` or `exited` with exit code or signal). `session_exit` refers to the PTY's top-level shell process, not an arbitrary foreground command whose status the shell consumes. A timeout never implies process exit. `dsh-tool-terminal.maxResultBytes` defaults to 262144, rejects values below 64 so creation acknowledgements retain registry-issued ids, and caps each single-text UTF-8 result after normalized tool or pipeline errors, wait, session, pagination, truncation, generic task-status wrappers, policy denials or short-circuits, and post-execute replacements or blocks; the terminal definitions' last-mile `finalizeContent` callback leaves deliberately structured multi-block policy content unchanged. The renderer reserves suffix space and preserves code-point boundaries instead of treating the backend payload cap as the final model bound.
+前台发送返回有界的渲染增量和两个独立事实：`waitReason`（`stdin_read | inferred_idle | timeout | session_exit`）与 `sessionStatus`（`running`，或携带退出码或信号的 `exited`）。`session_exit` 指 PTY 顶层 shell 进程退出，不指由 shell 消费状态的任意前台命令。timeout 从不意味着进程已经退出。`dsh-tool-terminal.maxResultBytes` 默认为 262144；低于 64 的值会被拒绝，以确保创建确认保留注册表签发的 id；每个单文本 UTF-8 结果在加入规范化的工具或流水线错误、等待、会话、分页、截断、通用 task 状态包装、策略拒绝或短路以及 post-execute 替换或阻断后，仍受该值限制；终端定义自有的末端 `finalizeContent` callback 会原样保留策略刻意返回的结构化多块内容。渲染器会为后缀预留空间并保持代码点边界，而不会把后端载荷上限当作面向模型结果的最终上限。
 
-With `run_in_background: true`, `dsh-tool-terminal` registers the in-flight send on `ctx.jobs` and returns immediately with `jobId`. The producer places `maxResultBytes` on the task snapshot so `job_output`, terminal kill status, and completion notices enforce the same complete-result cap after generic metadata. `job_output(wait: true)` waits, reads incremental output, and records the final result; `job_kill` resolves the current foreground PGID and delivers a real `SIGINT`, including when the application has disabled terminal `ISIG`, and escalates only through the PTY backend's owned teardown path. If the task surface is absent, background mode fails before writing input. No PTY-specific `sleep` tool or general wake-up API is added.
+当 `run_in_background: true` 时，`dsh-tool-terminal` 在 `ctx.jobs` 上注册进行中的发送，并立即返回 `jobId`。生产方把 `maxResultBytes` 写入 task 快照，使 `job_output`、kill 返回的终态状态和完成通知在加上通用元数据后，仍对完整结果执行同一上限。`job_output(wait: true)` 负责等待、读取增量输出并记录最终结果；`job_kill` 会解析当前前台 PGID 并发送真正的 `SIGINT`，即使应用已禁用终端 `ISIG` 也同样如此，且后续升级仍只通过 PTY 后端拥有的 teardown 路径进行。若 task 对外接口不存在，后台模式必须在写入输入前失败。设计不新增 PTY 专用的 `sleep` 工具或通用唤醒 API。
 
-`terminal_read` pages backward from the newest retained line. The backend enforces both line and UTF-8 byte caps on retained scrollback and the returned page payload, so one oversized line cannot bypass the backend bound; the tool then caps the fully rendered page including pagination and truncation metadata. `truncated` distinguishes retention loss from an ordinary viewport delta.
+`terminal_read` 从最新保留行向后分页。后端同时对保留的 scrollback 和返回页载荷执行行数与 UTF-8 字节上限，因此单个超长行无法绕过后端上限；工具随后再限制包含分页与截断元数据的完整渲染页。`truncated` 用于区分保留数据丢失与普通 viewport 增量。
 
-`terminal_signal` accepts the closed set `SIGINT | SIGTERM | SIGKILL | SIGTSTP | SIGHUP`. The backend resolves the terminal foreground process group at execution time. `SIGKILL` is rejected when that group is the top-level shell, directing the caller to `terminal_close`; a failed group lookup fails the operation instead of signaling a guessed PID.
+`terminal_signal` 接受闭合集 `SIGINT | SIGTERM | SIGKILL | SIGTSTP | SIGHUP`。后端在执行时解析终端前台进程组。当目标组是顶层 shell 时拒绝 `SIGKILL`，并指引调用方使用 `terminal_close`；进程组解析失败时操作直接失败，而不是向猜测的 PID 发送信号。
 
-### Local readiness detection
+### 本地就绪检测
 
-The local backend first recognizes a private OSC prompt marker emitted by its controlled bash startup, then requires the printable tail after the latest marker to exactly equal the controlled `PS1` before declaring prompt readiness and runs three bounded fallback tiers. Carrying that tail across data callbacks covers delivery where the marker and prompt arrive separately; requiring the exact tail rejects a delayed earlier prompt once echoed input or output follows it, so it cannot settle the current send. The marker is removed before output reaches the model and avoids a fixed silence delay for ordinary shell commands on both platforms. Unpublished startup does not accept zero-output silence as readiness; timeout rejects the spawn. If caller cancellation wins during startup, the backend closes the private session and propagates the exact `AbortSignal.reason`; a foreground PGID that is not observable yet cannot replace cancellation with a lookup error. All timings are validated config fields: `pollIntervalMs`, `exactProbeAfterMs`, `idleSilenceMs`, `handoffGraceMs`, and `timeoutMs`.
+本地后端先识别受控 bash 启动时发出的私有 OSC prompt marker，并且只有在最近一个 marker 后的可打印尾部与受控 `PS1` 完全相等时才声明 prompt 就绪；除此之外，它还运行 3 个有界 fallback 层级。在 data callback 之间保留该尾部，可以适配 marker 与 prompt 被分开交付的情况；如果回显的输入或输出跟在延迟到达的先前 prompt 之后，要求尾部完全相等会拒绝该 prompt，使其无法完成当前 send。marker 在输出到达模型前被移除，使两个平台上的普通 shell 命令都无需固定等待静默阈值。尚未发布的 startup 不会把零输出静默视为就绪；timeout 会拒绝 spawn。若调用方取消在 startup 期间胜出，后端会关闭私有会话并原样抛出 `AbortSignal.reason`；尚不可观察的前台 PGID 不会再用查找错误覆盖取消原因。所有时间参数都是经校验的配置字段：`pollIntervalMs`、`exactProbeAfterMs`、`idleSilenceMs`、`handoffGraceMs` 和 `timeoutMs`。
 
-On Linux, the inspector reads the shell's terminal foreground PGID and controlling-terminal device from `/proc/<shellPid>/stat`, enumerates every process and thread in that process group, and probes their current syscalls. A positive Tier 1 result requires an observed stdin wait: direct `read(0)`, a permitted read of a `select`/`pselect6` or `poll`/`ppoll` argument containing fd 0, or an epoll interest list containing fd 0. The waiting thread's fd 0 must identify that controlling terminal; `pipe:[…]` readers are misses and `/dev/tty` identifies its process's terminal device. A wait already present before terminal input is not post-write readiness: the same PGID must be observed outside that wait before re-entering it, while a changed foreground PGID is new evidence. Unreadable process memory and unrecognized syscalls are misses, never positive guesses. The probe admits supported runtime architectures and matches every supported kernel ABI, so user-mode emulation cannot hide a wait.
+在 Linux 上，检查器从 `/proc/<shellPid>/stat` 读取 shell 的终端前台 PGID 和控制终端设备号，枚举该进程组中的每个进程与线程，并检查它们当前的 syscall。Tier 1 只有观察到 stdin 等待才返回正结果：直接 `read(0)`、获准读取且含 fd 0 的 `select`/`pselect6` 或 `poll`/`ppoll` 参数，或者含 fd 0 的 epoll interest list。等待线程的 fd 0 必须标识该控制终端；`pipe:[…]` 读取器属于 miss，`/dev/tty` 则标识其进程的终端设备。终端输入前就已存在的等待并不代表写入后就绪：必须先观察到同一 PGID 脱离该等待，之后再次进入等待才能使该次 send 完成；前台 PGID 发生变化则构成新的证据。无法读取的进程内存和未识别的 syscall 都是 miss，绝不作为正向猜测。探针允许受支持的运行时架构，并匹配每一种受支持的内核 ABI，因此用户态模拟不会隐藏等待。
 
-On macOS there is no exact syscall tier. Output silence returns `inferred_idle` for any foreground process group, including Python and `gdb`; `ps`-derived terminal PGID is used for signaling, not as proof that only the shell can be idle. Pure process-inspector logic is injectable and unit-tested on Linux, while a macOS CI job exercises the real PTY and process-table path.
+macOS 没有精确 syscall 层。任何前台进程组输出静默都会返回 `inferred_idle`，包括 Python 和 `gdb`；从 `ps` 推导的终端 PGID 只用于发送信号，不作为「只有 shell 才能 idle」的证明。纯进程检查逻辑可注入，并在 Linux 上经过单元测试，同时由 macOS CI job 驱动真实 PTY 和进程表路径。
 
-Tier 2 returns `inferred_idle` after `idleSilenceMs` without output. A sleeping or network-blocked command can therefore look ready. When a prompt marker was already seen, Tier 2 waits a further `handoffGraceMs` so a bash foreground handoff that lands on the silence boundary still settles as the exact `stdin_read` attribution instead of the weaker inference; the grace is a deployment-owned config field validated to cover at least one `pollIntervalMs`, because a grace shorter than the poll period cannot contain a single readiness poll and so cannot change any outcome. It bounds only sends that saw a marker, so its cost is the interactive return latency of that one case rather than every send. Tier 3 returns `timeout` after `timeoutMs` so a foreground tool call cannot hold the agent indefinitely. The result preserves the distinction; callers may wait through `ctx.jobs`, signal the foreground group, or inspect from another session.
+Tier 2 在持续 `idleSilenceMs` 没有输出后返回 `inferred_idle`，因此 sleep 或网络阻塞的命令可能看似 ready。如果此前已经见过 prompt marker，Tier 2 会再等待 `handoffGraceMs`，使恰好落在静默边界上的 bash 前台交接仍然以精确的 `stdin_read` 归因结束，而不是退到较弱的推断；该宽限是由部署方拥有的配置字段，并被校验为至少覆盖一个 `pollIntervalMs`——短于轮询周期的宽限装不下一次就绪轮询，因此不可能改变任何结果。它只约束见过 marker 的 send，代价是这一种情况的交互返回延迟，而不是每一次 send。Tier 3 在 `timeoutMs` 后返回 `timeout`，避免前台工具调用无限占住 agent。结果保留这些区别；调用方可以通过 `ctx.jobs` 等待、向前台组发信号，或从另一个会话排查。
 
-Once a send settles under any tier, `TerminalSendOperation.append` stops accepting output, so later child output no longer reaches that settled operation; it still reaches the scrollback, and any send that is active when it arrives. A test that waits for a marker on the operation it started must therefore set `idleSilenceMs` and `timeoutMs` above the child's own startup latency; interpreter startup on a loaded macOS runner otherwise ends the send before the marker is printed.
+一次 send 在任一层级 settle 之后，`TerminalSendOperation.append` 就不再接受输出，此后子进程的输出不会再进入那个已 settle 的 operation；它仍然会进入 scrollback，以及此时恰好处于活跃状态的任何 send。因此，等待自己所启动的 operation 上出现标记的测试，必须把 `idleSilenceMs` 与 `timeoutMs` 设得高于子进程自身的启动耗时；否则在负载较高的 macOS runner 上，解释器启动会在标记打印之前就结束这次 send。
 
-`node-pty` data notifications feed one terminal parser. Parser carry state handles control sequences and a trailing carriage return split across callbacks, so a divided CRLF produces one newline rather than a pagination-changing blank line. The implementation normalizes line-oriented output, but it does not promise correct interaction with a full-screen application.
+`node-pty` data 通知进入同一个终端 parser。parser 的 carry state 会处理跨 callback 的控制序列和位于 callback 末尾的回车；因此，即使 CRLF 被拆开，也只会生成一个换行，而不会产生改变分页的空行。实现会规范化行式输出，但不承诺正确操作全屏应用。
 
-### Model-visible output and durability
+### 模型可见输出与持久性
 
-The existing durable `tool/call` and `tool/result` events are the source of truth for text sent by the model and rendered output returned to it. `terminal_open` returns its MOTD through the logged tool result; foreground `send`/`read`/`list`/`signal`/`close` results are logged the same way. The PTY packages do not duplicate raw byte streams into custom session events.
+现有持久化 `tool/call` 与 `tool/result` 事件是模型发送文本和返回给模型的渲染输出的真源。`terminal_open` 通过已记录的工具结果返回 MOTD；前台 `send`/`read`/`list`/`signal`/`close` 结果走同一路径记录。PTY 包不会把原始字节流重复写入自定义会话事件。
 
-Background sends use the existing task completion notice and `job_output` result path, so any output that reaches a later model request is likewise durable. Raw terminal bytes remain bounded process-local state and are neither persisted nor restorable. A future opt-in transcript sink would need its own retention, credential, and privacy contract.
+后台发送复用现有后台任务完成通知和 `job_output` 结果路径，因此进入后续模型请求的任何输出同样持久化。原始终端字节只作为有界的进程内状态存在，既不持久化也不可恢复。未来的 opt-in transcript（文本记录）sink 必须拥有独立的保留、凭证和隐私约定。
 
-### Process-tree teardown
+### 进程树 teardown
 
-The subprocess terminal handle owns the top-level terminal process and its session. On close it snapshots transitive descendants by parent PID in children-first order, sends `SIGTERM`, waits, rescans for children forked during shutdown, sends `SIGKILL` to the union, and verifies every non-zombie descendant left the process table before stopping the top-level process. A matching Linux zombie has no executable work and therefore counts as quiescent. Every captured PID includes process-start identity so reuse cannot redirect escalation.
+子进程终端句柄拥有顶层终端进程及其会话。关闭时，它按父 PID 以子进程优先顺序捕获传递后代、发送 `SIGTERM` 并等待，然后重新扫描关停期间 fork 出的子进程，向二者并集发送 `SIGKILL`，并在停止顶层进程前验证每个非僵尸后代都已离开进程表。身份匹配的 Linux 僵尸进程已无可执行工作，因此视为完全停稳。每个捕获的 PID 都包含进程启动身份，避免 PID 复用把升级信号发给无关进程。
 
-Teardown reports top-level exit and survivor cleanup independently. The PTY session does not claim success merely because the shell exited: it calls `SubprocessTerminalHandle.terminate()` and awaits whole-session quiescence, propagating a cleanup failure that names survivors. A failed close is not cached forever: the registry and local session clear the fence only when it still names that failed attempt, so a later explicit or lifecycle close retries without disturbing a newer concurrent attempt. Service disposal still clears its backend, reservation, and owner-detacher registries when a close fails.
+teardown 独立报告顶层进程退出与存活进程清理。PTY 会话不会只因 shell 退出就声称成功：它会调用 `SubprocessTerminalHandle.terminate()` 并等待整个会话完全停稳，若清理失败则向外传播并列出存活者。失败的 close 不会永久缓存：注册表与本地会话各自仅在关闭围栏仍指向该次失败尝试时才将其清除，因此后续的显式 close 或生命周期 close 会重试，且不会干扰较新的并发尝试。即使某个 close 失败，服务 dispose 仍会清空其后端、预留与 owner detacher 注册表。
 
-### Composition and rollout
+### 组合与推行
 
-The example composition remains opt-in and safe by default:
+示例组合保持 opt-in，并采用安全默认值：
 
 ```yaml
 plugins:
@@ -126,56 +124,56 @@ plugins:
       maxResultBytes: 262144
 ```
 
-The package ships concise tool guidance explaining persistent state, owner isolation, uncertain idle results, cleanup, and the preference for existing one-shot tools when interaction is unnecessary. It does not mount PTY in the base shipped examples: PTY is opt-in through the dedicated composition, while ACP and headless snapshot overlays exercise it. Within an enabled `dsh-tool-terminal` instance, the six tools and `run_in_background` are enabled by default; deployments may disable only the background argument with config.
+包提供简洁的工具指引，说明持久状态、owner 隔离、不确定的 idle 结果、清理，以及无需交互时优先使用现有一次性工具。已发布的基础示例不挂载 PTY：PTY 仅通过专用组合 opt-in，而 ACP（Agent Client Protocol）与 headless 快照 overlay 会对其进行验证。`dsh-tool-terminal` 实例一旦启用，6 个工具和 `run_in_background` 就会默认启用；部署可通过配置仅禁用后台参数。
 
-### Deferred work
+### 推迟的工作
 
-- Full-screen TUI support, named key sequences, BEL interruption, terminal resize tools, and alternate-screen snapshots require a separately proven model-facing contract.
-- Declarative per-agent startup requires an agent-setup composition point; plugin-load global sessions remain prohibited.
-- Session restoration across harness-process loss requires an out-of-process owner and a versioned protocol.
-- Network-egress policy and rollback of external side effects are broader than PTY and remain separate security work.
-- Windows/ConPTY sessions run through the subprocess-local Windows inspector (Toolhelp32 identities, pseudo foreground groups, taskkill teardown) and the `pty-local` pwsh dialect; see the [pwsh persistent tool note](../architecture/2026-08-11-pwsh-persistent-pty.md).
+- 全屏 TUI 支持、命名按键序列、BEL 中断、终端 resize 工具和 alternate-screen 快照需要另行验证面向模型的约定。
+- 声明式 per-agent 启动需要 agent-setup 组合点；仍然禁止插件加载期全局会话。
+- harness 进程丢失后的会话恢复需要进程外 owner 和版本化协议。
+- 网络出口策略与外部副作用回滚超出 PTY 范围，继续作为独立安全工作。
+- Windows/ConPTY 会话经由 subprocess-local 的 Windows inspector（Toolhelp32 身份、伪前台进程组、taskkill 拆卸）与 `pty-local` 的 pwsh 方言运行；见 [pwsh 持久工具 note](../architecture/2026-08-11-pwsh-persistent-pty.md)。
 
-## Alternatives considered
+## 备选方案
 
-**Replace `bash`, filesystem tools, or task tools with PTY.** Rejected. One-shot tools retain stronger validation, approval, sandbox, output-bound, and replay contracts. PTY is reserved for interactive state.
+**用 PTY 替换 `bash`、文件系统工具或 task 工具。**拒绝。一次性工具拥有更强的校验、审批、沙箱、输出上限和回放约定。PTY 只服务交互式状态。
 
-**Add persistent mode to `bash`.** Rejected. Returning on readiness rather than process exit, retaining a process tree across calls, and exposing interactive stdin create a different ownership and failure contract.
+**给 `bash` 增加持久模式。**拒绝。按就绪而不是进程退出返回、跨调用保留进程树、暴露交互式 stdin 会形成不同的所有权和失败约定。
 
-**Require native master-fd access from `node-pty`.** Rejected. Its public API exposes no master fd. The local subprocess terminal adapter derives foreground groups and descendants from supported OS process metadata and treats unreadable metadata as a detector miss.
+**要求从 `node-pty` 获取原生 master fd。**拒绝。它的公共 API 不暴露 master fd。本地子进程终端适配器改为从受支持的 OS 进程元数据推导前台组与子孙进程，并把不可读元数据视为 detector miss。
 
-**Signal every member of the root PID's POSIX session.** Rejected. `node-pty` may expose a helper PID whose session belongs to the launcher, so SID-wide teardown can signal unrelated harness or desktop processes. A PID-identity-fenced descendant tree is narrower and safe by construction.
+**向根 PID 所属 POSIX 会话的全部成员发送信号。**拒绝。`node-pty` 可能暴露属于启动器会话的 helper PID，因此按 SID 清理可能向无关的 harness 或桌面进程发送信号。带 PID 启动身份校验的子孙进程树范围更窄，其安全边界由结构保证。
 
-**Publish `TerminalIdleDetector` as a replaceable registry.** Rejected. Substrate-specific foreground facts come from the mounted terminal-process primitive, while prompt/silence readiness remains one private policy in `dsh-terminal-bash`. The filesystem/subprocess execution-world replacement is the necessary extension point.
+**发布可替换注册表 `TerminalIdleDetector`。**拒绝。基底专用的前台事实来自挂载的终端进程原语，提示符／静默就绪判定则仍是 `dsh-terminal-bash` 内部的一项私有策略。替换文件系统／子进程执行环境就是所需扩展点。
 
-**Add a PTY-specific `sleep` tool.** Rejected. `ctx.jobs` already owns bounded waiting, cancellation, completion notices, and model-facing collection. A second general wake mechanism would cross the agent-loop boundary and duplicate that contract.
+**新增 PTY 专用 `sleep` 工具。**拒绝。`ctx.jobs` 已经拥有有界等待、取消、完成通知和面向模型的收集。第二套通用唤醒机制会跨越 agent loop（智能体循环）边界并重复该约定。
 
-**Include TUI sequences and BEL handling.** Rejected. The source prototype treats those paths as timing-sensitive and still records unresolved alternate-screen and interaction failures. Line-oriented PTY use proves the core value without making those unverified behaviors foundational.
+**包含 TUI sequence 与 BEL 处理。**拒绝。源 prototype 将这些路径视为 timing-sensitive，且仍记录未解决的 alternate-screen 和交互失败。行式 PTY 已能证明核心价值，无需把未经验证的行为放进基础层。
 
-**Use an out-of-process daemon immediately.** Rejected for the initial in-process capability because current long-lived entry points already keep a Cordis context alive. A daemon becomes justified by cross-process restoration or multi-client attachment, both deferred here.
+**立即采用进程外 daemon。**初始的进程内能力不采用，因为当前长驻的运行入口已能维持 Cordis 上下文。跨进程恢复或多客户端附加会让 daemon 变得合理，但两者都已推迟。
 
-## Verification
+## 验证
 
-- Per-file coverage pins owner fencing, concurrent reservations, cancellation during pre-write inspection, unpublished-spawn cancellation and awaited teardown, sandbox-mode change rejection, retriable lifecycle cleanup, readiness tiers, rejection of pre-write stdin waits and delayed earlier prompts, the configured handoff grace holding the idle fallback past one poll and its rejection below `pollIntervalMs`, sanitizer carry state, complete UTF-8 bounds, task integration, schemas, and exact render intents.
-- Subprocess process fixtures cover non-leader and non-main-thread stdin waits, zombie quiescence, unreadable process state, supported syscall tables, unsupported architectures, and false-positive rejection; macOS inspector logic is injected into the same unit suite.
-- Real `node-pty` and PTY-consumer tests jointly exercise shell state, shared sandbox policy, environment scrubbing, raw-mode foreground `SIGINT`, a TERM-ignoring descendant, and immediate post-disposal quiescence on supported hosts.
-- A Loader-driven `cordis.yml` test mounts the real three-package composition. ACP and headless snapshots pin the six schemas, bounded results, and errors through opt-in overlays; TUI snapshots pin terminal and generic card presentation.
-- Package contracts, the architecture map, subsystem pages, generated catalogs, and the website API describe the same shipped surface.
+- 逐文件覆盖测试锁定了 owner 隔离、并发预留、写入前检查期间的取消、未发布 spawn 的取消与等待式 teardown、沙箱模式变更拒绝、可重试的生命周期清理、就绪层级、对写入前 stdin 等待与延迟到达的先前 prompt 的拒绝、配置化交接宽限把 idle fallback 顶过一次轮询以及低于 `pollIntervalMs` 时的拒绝、sanitizer carry state、完整 UTF-8 结果上限、task 集成、schema 和精确 render intent。
+- 子进程 fixture（测试前置数据）覆盖非 leader 与非主线程的 stdin 等待、僵尸进程完全停稳、不可读进程状态、受支持的 syscall 表、不支持的架构和误报拒绝；同一单元测试套件通过注入覆盖 macOS 检查器逻辑。
+- 真实 `node-pty` 与 PTY 消费方测试共同在受支持宿主上覆盖 shell 状态、共享沙箱策略、环境清洗、raw mode 前台 `SIGINT`、忽略 `SIGTERM` 的后代进程，以及 dispose 返回后立即完全停稳。
+- Loader 驱动的 `cordis.yml` 测试挂载真实三包组合。ACP 与 headless 快照通过 opt-in overlay 固定 6 个 schema、有界结果和错误；TUI 快照固定 terminal 与 generic 卡片展示。
+- 包约定、架构图、子系统页面、生成目录和 website API 描述同一个已发布接口。
 
-## Consequences
+## 后果
 
-**Persistent terminal state is available without weakening one-shot tools.** Shell and REPL state can survive tool calls, while `bash`, `read`, `write`, and `edit` retain their narrower validation, approval, and replay contracts.
+**无需削弱一次性工具即可获得持久终端状态。**Shell 与 REPL 状态可以跨工具调用保留，而 `bash`、`read`、`write` 和 `edit` 继续拥有更窄的校验、审批与回放约定。
 
-**Idle below Linux Tier 1 is heuristic.** Output silence cannot distinguish a prompt from sleep or network I/O. The typed result preserves uncertainty, and bounded timeout plus task waiting and signaling keep control with the model.
+**Linux Tier 1 之外的 idle 都是启发式结果。**输出静默无法区分 prompt、sleep 和网络 I/O。类型化结果保留不确定性，有界 timeout、task 等待与信号让模型仍能掌握控制权。
 
-**The exact-versus-inferred boundary is a latency trade, not a solvable race.** Attribution depends on whether the kernel publishes the foreground handoff before or after the silence bound elapses, so any fixed grace is a scheduling bet. `handoffGraceMs` puts that bet in deployment configuration: raising it buys exact `stdin_read` attribution on a slow or loaded host at the cost of interactive return latency after a prompt marker, and lowering it does the reverse. Tests that must not depend on the winner assert child-produced output from the next send, using a token absent from echoed input, rather than the attribution.
+**精确归因与推断归因的边界是延迟取舍，不是可消除的竞态。**归因取决于内核在静默上限到达之前还是之后发布前台交接，因此任何固定宽限都是一次调度上的赌注。`handoffGraceMs` 把这个赌注交给部署配置：调大它可以在慢速或高负载主机上换到精确的 `stdin_read` 归因，代价是见过 prompt marker 之后的交互返回延迟；调小则相反。不应依赖胜负结果的测试使用不会出现在输入回显中的 token，断言下一次 send 中由子进程产生的输出，而不是断言归因路径。
 
-**Persistent state can drift from the model's belief.** The model may forget its cwd or active REPL. Session summaries and retained output help recovery, but no prompt can make state persistence deterministic.
+**持久状态可能偏离模型认知。**模型可能忘记 cwd 或活跃 REPL。会话摘要和保留输出有助恢复，但任何提示词都无法让状态持久化变成确定行为。
 
-**A daemonized descendant can leave the local provider's captured tree.** A process that reparents before teardown is no longer discoverable from the `node-pty` root. The local terminal primitive accepts that cleanup gap instead of risking SID-wide signals to unrelated processes.
+**daemonized 后代进程可能离开本地提供方捕获的进程树。**在 teardown 前 reparent 的进程无法再从 `node-pty` 根进程发现。本地终端原语接受这个清理缺口，不冒险按 SID 向无关进程发送信号。
 
-**A shell can cause external side effects.** Session sandboxing and environment scrubbing reduce local exposure but do not undo pushes, API calls, or messages. Deployments that cannot tolerate those effects must omit PTY or add network policy.
+**Shell 可以造成外部副作用。**会话沙箱和环境清洗降低本地暴露，但无法撤销 push、API 调用或消息发送。无法容忍这些副作用的部署必须省略 PTY 或增加网络策略。
 
-**Process loss destroys terminal state.** In-process sessions do not survive a harness crash or restart, and raw scrollback is not durable. Important work must be committed to files or another durable system.
+**进程丢失会销毁终端状态。**进程内会话无法跨 harness crash 或 restart 存活，原始 scrollback 也不持久化。重要工作必须提交到文件或其他持久系统。
 
-**`node-pty` is a native dependency of `dsh-subprocess-local`.** Installation, supported Node versions, prebuild availability, and platform behavior require built-artifact smokes on every supported OS.
+**`node-pty` 是 `dsh-subprocess-local` 的原生依赖。**安装、支持的 Node 版本、prebuild 可用性和平台行为都需要在每个支持 OS 上运行构建产物冒烟测试。

@@ -1,25 +1,23 @@
-# Agent Note: Loader interpolates the entry `disabled` field
+# Agent Note：Loader 插值条目 `disabled` 字段
 
 Status: implemented
 
-English | [中文](2026-08-11-loader-entry-disabled-interpolation.zh.md)
+## 问题
 
-## Problem
+Windows 平台层（当时是 base patch 旁独立的 `windows.cordis.patch.yml`，现已折入 base 行——见「决策」）在 win32 上禁用 `tool-bash`，但 shipped 预设各自挂载了一行 `tool-bash`。预设行最后组合，同名行在 Windows 上重新启用了该工具——会话同时拥有 `tool-bash`（PowerShell 后端）与 `tool-pwsh`，且是静默的，因为没有 spec pin 组合后的预设层。条目元数据没有条件机制：`!!js` 只在插件 `config` 下插值，[postmortem 0002](../../../../docs/postmortem/0002-js-expression-disabled-filesystem-tools.md) 记录了 `disabled: !!js ...` 保持真值表达式对象、在所有平台上禁用该行的事故。
 
-The Windows platform layer (then a separate `windows.cordis.patch.yml` beside the base patch, since folded into the base rows — see Decision) disabled `tool-bash` on win32, but the shipped presets each mount a `tool-bash` row. Preset rows compose last, so the same-id row re-enabled the tool on Windows — the session had both `tool-bash` (PowerShell-backed) and `tool-pwsh`, silently, because no spec pinned the composed preset layer. Entry metadata had no conditional mechanism: `!!js` interpolates only under plugin `config`, and [postmortem 0002](../../../../docs/postmortem/0002-js-expression-disabled-filesystem-tools.md) documents that `disabled: !!js ...` stays a truthy expression object, disabling the row everywhere.
+## 决策
 
-## Decision
+Loader 插值条目 `disabled` 字段（`vendor/loader/src/config/entry.ts`）：`!!js` 表达式在每次挂载决策时基于 loader 上下文求值。`disabled` 是唯一被插值的元数据字段；`id`、`name`、`group`、`inject` 保持静态。原始节点保留在 options 中，写回保持 `!!js` 形式。shipped 预设（standard、code、cordis）自己声明 shell 工具行并按平台门控——`tool-bash` 携带 `disabled: !!js process.platform === 'win32'`，其孪生行 `tool-pwsh` 以取反的表达式——因此预设层每台宿主恰好暴露一个 shell 工具；web-app overlay 禁用两个工具的 host 行，由每个会话的预设决定。`verify-cordis-config` 现在只允许 `disabled` 中的表达式。
 
-The Loader interpolates the entry `disabled` field (`vendor/loader/src/config/entry.ts`): a `!!js` expression evaluates against the loader context at every mount decision. `disabled` is the only interpolated metadata field; `id`, `name`, `group`, and `inject` stay static. The raw node stays in the options, so write-back keeps the `!!js` form. The shipped presets (standard, code, cordis) declare the shell tool rows themselves and gate them by platform — `tool-bash` with `disabled: !!js process.platform === 'win32'` and its `tool-pwsh` twin with the inverted expression — so the preset layer exposes exactly one shell tool per host; the web-app overlay disables the host rows of both tools, letting each session's preset decide. `verify-cordis-config` now allows expressions in `disabled` only.
+该机制补全了平台层折叠：base bundle 的 `cordis.patch.yml` 在自身行上按平台门控两个 shell 栈——`bash-sandbox`/`tool-bash` 携带 `disabled: !!js process.platform === 'win32'`，它们的孪生行 `pwsh-sandbox`/`tool-pwsh` 以取反的表达式仅在 win32 挂载。启动器的独立 Windows 平台层（`windows.cordis.patch.yml` 以及 `apps/cli/src/windows-shell.ts` 及其注入到 boot、live 重组合、config dump 的逻辑）被删除——该层只因条目元数据是静态的而存在，`disabled` 可插值后条件就落在它所治理的行上。
 
-The mechanism completes the platform-layer fold: the base bundle's `cordis.patch.yml` gates both shell stacks on its own rows — `bash-sandbox`/`tool-bash` carry `disabled: !!js process.platform === 'win32'`, and their twins `pwsh-sandbox`/`tool-pwsh` mount only on win32 with the inverted expression. The launcher's separate Windows platform layer (`windows.cordis.patch.yml` plus `apps/cli/src/windows-shell.ts` and its injection into boot, live recomposition, and config dumps) is deleted — the layer existed only because entry metadata was static, and with `disabled` interpolated the condition lives on the row it governs.
+## 备选方案
 
-## Alternatives considered
+**行上的声明式 `platform` 字段。** 静态且可被门禁检查，但它是 `!!js` 之外的第二种组合机制，且平台只是今天的条件。
 
-**A declarative `platform` field on the row.** Static and gate-checkable, but a second composition mechanism beside `!!js`, and platform is only today's condition.
+**预设级平台 overlay。** 被否：条件应当属于它所治理的行——同一原则把启动器独立的 Windows 平台层折入 base 行。
 
-**Preset-level platform overlays.** Rejected: the condition belongs on the row it governs — the same principle folds the launcher's separate Windows platform layer into the base rows.
+## 后果
 
-## Consequences
-
-A row can gate itself on platform or environment; a bad expression fails loud at boot. Every other metadata field remains literal and the gate keeps rejecting expressions there — the postmortem-0002 hazard is closed for `disabled` by evaluation, not prohibition. The Windows shell swap moved from a launcher-injected patch layer to the base bundle's own rows: win32 mounts the confined pwsh stack, POSIX carries the pwsh rows disabled, and one shared patch file serves both rosters — the [Windows pwsh default](../feature/2026-08-01-windows-pwsh-default.md) note's layer mechanism is superseded. The shell TOOL rows follow the same one-plane rule as every other preset-declared row: the web-app overlay disables the host `tool-bash`/`tool-pwsh` rows and the presets declare both with inverted platform gates, so a preset can drop or replace the shell tool per session on either host. The `minimal` preset's missing win32 PTY stack is a preset-metadata follow-up.
+行可以按平台或环境门控自身；错误的表达式在启动时响亮失败。其余元数据字段保持字面值，门禁继续拒绝那里的表达式——`disabled` 上的 postmortem-0002 隐患以「求值」而非「禁止」关闭。Windows shell 栈的切换从启动器注入的 patch 层移到 base bundle 自身的行上：win32 挂载受限 pwsh 栈，POSIX 携带被禁用的 pwsh 行，同一份 patch 文件服务两种阵容——[Windows 默认 pwsh](../feature/2026-08-01-windows-pwsh-default.md) note 的层机制已被取代。shell 工具行遵循与其他预设声明行相同的 one-plane 规则：web-app overlay 禁用 host 面的 `tool-bash`/`tool-pwsh` 行，预设以互逆的平台门控声明两者，因此任一宿主的每个会话都可以按预设丢弃或替换 shell 工具。`minimal` 预设缺失的 win32 PTY 栈是预设元数据的后续工作。

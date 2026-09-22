@@ -1,35 +1,33 @@
 # @deepseek-ai/dsh-client-ui-slots
 
-English | [中文](README.zh.md)
+Slot 注册表纯核心、slot 终端设计：SlotMap 声明合并、SlotCore 上唯一的 `register` 组合 API、四 share 组件 props 类型家族、store seat 类型家族，以及 renderer 安装约定。只使用 React 类型；该包不依赖 React，也不依赖 Cordis。
 
-Slot registry pure core, slot terminal design: SlotMap declaration merging, the single `register` composition API on SlotCore, the four-share component-props type family, the store-seat type family, and the renderer installation contract. React types only at runtime — the package is React-free and cordis-free.
+一次 `register({ name, children?, store?, inject?, ...kind }, Component)` 调用会向已声明 slot 贡献一个组件，同时声明子 slot（声明 = 渲染授权 = 运行时规范，三者共用一张表）、store seat 以及注册方的业务表层。组件会在调用点依据 `ComposedProps` 接受类型检查；该类型是四个 share 的交集，每个 share 都从各自的唯一真源派生：
 
-One `register({ name, children?, store?, inject?, ...kind }, Component)` call contributes a component into a declared slot and, in the same breath, declares child slots (declaration = render authorization = runtime spec, one table), a store seat, and the registrant's business face. The component is checked at the call site against `ComposedProps` — the intersection of four shares, each derived from its single source of truth:
-
-| share | type | source |
+| share | 类型 | 来源 |
 |---|---|---|
-| runtime | `PropsRuntime<K>` | SlotMap entry: `owner` (parent's renderSlot call site) + session standard kit + global seat |
-| child render | `PropsRenderSlots<S>` | the register call's `children` key set (statically narrowed `renderSlot`) |
-| store | `PropsStore<H>` | the declared handle: `useStore` selector hook + draft-stripped `actions` |
-| business | `I` | inferred from the `inject` factory's return |
+| 运行时 | `PropsRuntime<K>` | SlotMap 条目：`owner`（父级 renderSlot 调用点）+ 会话标准工具包 + 全局 seat |
+| child render | `PropsRenderSlots<S>` | register 调用的 `children` key 集合（静态缩窄的 `renderSlot`） |
+| store | `PropsStore<H>` | 已声明 handle：`useStore` selector 钩子 + 移除 draft 的 `actions` |
+| business | `I` | 从 `inject` factory 返回值推断 |
 
-Chain-kind slots invert keyed routing — entries self-nominate instead of the dispatch site picking an `entryKey`: each registration carries a pure `ChainSelect` selector (plus optional ascending `priority`, ties in registration order), the first non-null return elects its entry and becomes the component's `matched` prop, and all-null falls to the owner's `renderSlotChain` fallback (`ChainRenderOpts`).
+chain-kind slot 会反转键控路由：条目自行提名，而不是由分发点选择 `entryKey`。每次注册都携带一个纯 `ChainSelect` selector（另有可选的升序 `priority`，相同值按注册顺序处理）；第一个非 null 返回值选中其条目，并成为组件的 `matched` prop；全部返回 null 时则使用 owner 的 `renderSlotChain` fallback（`ChainRenderOpts`）。
 
-The standard-kit interfaces (`SessionStandardProps`, `GlobalStandardProps`) are declared empty here and merged by the runtime package (same declare-merge pattern as SlotMap keys). The renderer binds the runtime's session and workspace observable sources into selector hooks. Inject factory parameters derive from the declaration (`InjectParams`): session slots get `sessionId`, a declared store appends baked `actions`, nothing else — data access lives in the apply closure's ctx.
+标准工具包接口（`SessionStandardProps`、`GlobalStandardProps`）在这里声明为空，由运行时包合并（与 SlotMap key 相同的 declare-merge 模式）。renderer 会把运行时会话和 Workspace observable source 绑定为 selector 钩子。Inject factory 参数从声明派生（`InjectParams`）：会话 slot 获得 `sessionId`；声明 store 时追加 baked `actions`；没有其他参数，数据访问位于 apply 闭包的 ctx 中。
 
-The store family (`defineStore` spec in / `StoreHandle<T, A>` out) types the store seat: `init` infers the state schema, `actions` is the complete draft-transform write set, `BakedActions` strips the draft parameter into the callbacks components and inject factories receive. The `defineStore` value implementation lives in the runtime package (the engine's home) and satisfies the `DefineStore` contract exported here. Engine products and the renderer host contract carry bare snapshot sources (`getSnapshot`/`subscribe`), never React hooks — hook binding belongs to the render machinery; only the props-contract hook type (`SnapshotSelectorHook`) lives here.
+store 家族（输入 `defineStore` 规范／输出 `StoreHandle<T, A>`）为 store seat 建模：`init` 推断状态 schema；`actions` 是完整的 draft-transform 写入集合；`BakedActions` 移除 draft 参数，成为组件和 inject factory 收到的回调。`defineStore` 值实现位于运行时包（引擎所属位置），并满足这里导出的 `DefineStore` 约定。引擎产物与 renderer host 约定携带裸快照 source（`getSnapshot`／`subscribe`），绝不携带 React 钩子；钩子绑定属于渲染机制，只有 props 约定钩子类型（`SnapshotSelectorHook`）位于这里。
 
-`SlotCore` seeds the a-priori `'root'` slot at construction and enforces load-time validation (undeclared-slot registration, duplicate child declaration, one shared handle under two scopes, a chain registration without `select` — all throw at register). An entry's disposer collapses its declared child slots recursively: ledger rows, contributions, and store mounts die on one lifecycle axis. Each key also carries a declaration epoch that advances only on declaration and collapse; the runtime uses it for [`ctx.slots.inject`](../runtime/README.md#slot-declaration-injection), independently from ordinary entry versions. `renderer.ts` carries the installation contract (`SlotRenderer`, `SlotRendererHost`) plus `StaleAuthorizationError`/`SlotOwnershipError`; ui-renderer owns both the implementation and its plugin-lifecycle installation.
+`SlotCore` 在构造时预置 `'root'` slot，并强制执行加载时验证（注册未声明 slot、重复声明子项、在两个 scope 下使用同一个共享 handle、chain 注册缺少 `select`，这些情况都在 register 时抛出）。条目的 disposer 会递归移除其声明的子 slot：账本行、贡献和 store 挂载都会随同一生命周期结束而移除。每个 key 还携带一个 declaration epoch（声明代次），它只在声明与移除时递增；运行时将其用于 [`ctx.slots.inject`](../runtime/README.md#slot-declaration-injection)，且与普通条目版本相互独立。`renderer.ts` 携带安装约定（`SlotRenderer`、`SlotRendererHost`）以及 `StaleAuthorizationError`／`SlotOwnershipError`；ui-renderer 同时持有实现及其插件生命周期安装。
 
-## Model Experience
+## 模型体验
 
-None, as the slot registry is browser-side UI plumbing; nothing here reaches a model request.
+无。slot 注册表属于浏览器侧 UI 接线；这里没有任何内容进入模型请求。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-None; this package neither assembles nor sends a provider request.
+无；该包既不组装也不发送提供方请求。
 
-## Known Limitations and Deferred Work
+## 已知限制与暂缓事项
 
-- **`isLive` scans all records linearly** — fine at UI-plugin registration counts (tens); revisit with an entry→record backref if ledgers ever grow hot.
-- **The `__renders` phantom anchor is visible on `PropsRenderSlots`** — the same accepted noise as the type-chain design's `__accepts`: generic method signatures compare loosely across key unions, so the contravariant marker is what enforces "component key set ⊆ children declaration".
+- **`isLive` 会线性扫描所有记录**：在 UI 插件的注册规模（数十项）下没有问题；如果账本变得频繁访问，再使用条目→记录反向引用改进。
+- **`__renders` 幻象锚点在 `PropsRenderSlots` 上可见**：这是与类型链设计的 `__accepts` 相同且已接受的噪声；泛型方法签名在 key 联合之间比较宽松，因此必须依靠逆变标记强制执行「组件 key 集合 ⊆ children 声明」。

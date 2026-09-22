@@ -1,52 +1,50 @@
-# Agent Note: Serial cross-platform CI reference
+# Agent Note: 跨平台串行 CI 参考流程
 
 Status: implemented
 
-English | [中文](2026-07-21-serial-cross-platform-ci-reference.zh.md)
+## 问题
 
-## Problem
+拉取请求工作流将必需检查合并到专用的 Linux 和 Windows 作业中。这些作业仍不应成为唯一的完整性判定基准：如果其门禁清单或依赖图存在缺陷，即使必需聚合结果保持绿灯，也可能漏掉部分工作。
 
-The pull-request workflow consolidates required checks into dedicated Linux and Windows jobs. Those jobs still should not be the only completeness oracle: a defect in their gate inventory or dependency graph could omit work while the required aggregate stays green.
+将非 Windows 作业的 1 分钟目标和 Windows 作业的 3 分钟目标写成作业超时，会引入另一种失败模式。托管运行器的启动时间和性能会波动，因此即使门禁本身正确，也可能在到达目标时间边界时被取消，来不及输出有用的诊断信息。性能目标需要根据 GitHub 时间戳衡量，而正确性验证需要给门禁留足完成时间。
 
-Encoding the one-minute non-Windows target and three-minute Windows target as job timeouts creates a separate failure mode. Hosted-runner startup and performance vary, so a correct gate can be cancelled at the target boundary before it emits useful diagnostics. The performance objective needs measurement against GitHub timestamps, while correctness needs enough time to finish.
+评审人还需要直接回答一个更简单的问题：在每个选定的托管操作系统上，如果仓库完整的主 Node CI 聚合流程不使用矩阵选择、分片变量或并发门禁，运行结果会怎样？
 
-Reviewers also need a direct answer to a simpler question: what happens when the repository's complete primary Node CI aggregate runs without matrix selection, shard variables, or concurrent gates on each selected hosted operating system?
+真实内核沙箱验证需要特定的托管操作系统和架构，但不会产生拉取请求的合并裁决。在每个拉取请求上重复运行这个包含四个作业的矩阵会消耗 Linux、arm64 Linux 和 macOS 容量，却既不能满足分支保护，也无法参与另一工作流中的必需聚合结果。
 
-Real-kernel sandbox proofs require specific hosted operating systems and architectures but do not provide a pull-request merge verdict. Repeating that four-job matrix for every pull request consumes Linux, arm64 Linux, and macOS capacity without satisfying branch protection or contributing to the required aggregate in another workflow.
+## 决策
 
-## Decision
+[CI](../../../../.github/workflows/ci.yml) 为拉取请求事件与 master 推送事件赋予互补的职责。拉取请求在 GitHub 标准托管容量上运行合并后的 Linux 和由 Wine 承载的 Windows 作业，以及 Node 兼容性与 Python 约定；一个独立的原生 Windows 作业会报告完整的 Windows 清单，但不参与必需聚合流程。向 `master` 推送时，当前启用的参考作业是公司自有 `vm-backup` 池上的 `serial / linux (self-hosted standby)` 和 `dsh-win-ci` 池上的 `serial / windows (self-hosted standby)`——这些热备演练持续验证[故障切换手册](2026-07-26-ci-failover-runbook.md)所描述的切换目标。不存在标准托管的 `serial / linux` 定义；标准托管的 `serial / macos` 仍处于禁用状态，并由 `TODO(hosted-serial-ci)` 标记，直到其可移植容量恢复。当前 `serial / windows` 定义是公司自有 `dsh-win-ci` 池的 standby。各自独立的作业定义有意显式保留简短的代码检出、运行时设置和依赖锁定的安装步骤，而不是用矩阵或可复用工作流隐藏操作系统差异。`workflow_dispatch` 仅用于运行器基准测试。
 
-[CI](../../../../.github/workflows/ci.yml) gives pull-request and master-push events complementary responsibilities. Pull requests run consolidated Linux and Wine-hosted Windows jobs plus the Node compatibility and Python contracts on standard GitHub-hosted capacity; an independent native Windows job reports the complete Windows inventory without participating in the required aggregate. On a push to `master`, the active references are `serial / linux (self-hosted standby)` on the in-house `vm-backup` pool and `serial / windows (self-hosted standby)` on the in-house `dsh-win-ci` pool — the hot-standby drills that continuously re-prove the failover targets described in the [failover runbook](2026-07-26-ci-failover-runbook.md). There is no standard-hosted `serial / linux` definition; the standard-hosted `serial / macos` remains disabled under `TODO(hosted-serial-ci)` until its portable capacity can be restored. The current `serial / windows` definition is the in-house `dsh-win-ci` standby. The separate job definitions intentionally keep their short checkout, runtime setup, and immutable install sequences visible instead of hiding operating systems behind a matrix or reusable workflow. `workflow_dispatch` is reserved for runner benchmarks.
+每个参考作业均在不设置任何分片选择器的情况下运行 `pnpm run check:ci`。`DSH_GATE_CONCURRENCY=1` 使顶层聚合每次只执行一个已经就绪的门禁；覆盖率、快照回放、built-bin 冒烟测试和发布验证的 worker 数量也设为 1。各参考作业可以彼此并行，但每台主机上的仓库门禁都串行运行且完整执行。Linux 在回放快照前安装 bubblewrap，Windows 则在安装采用符号链接的工作区前启用开发人员模式。
 
-Each reference job runs `pnpm run check:ci` without any shard selector. `DSH_GATE_CONCURRENCY=1` makes the top-level aggregate execute one ready gate at a time; coverage, snapshot replay, built-bin smoke, and publication validation also receive worker counts of one. The reference jobs may run beside one another, but each host's repository gates are serial and complete. Linux installs bubblewrap before replaying snapshots, and Windows enables Developer Mode before installing the symlinked workspace.
+该完整聚合流程仍明确划分平台归属。`terminal-bash` 支持 Linux 与 macOS，因此其单元测试和逐文件覆盖率约定由 POSIX 平台负责，而不会在 Windows 上加载一个明确拒绝 `win32` 的后端；Windows 仍会执行所有可移植包。可移植 fixture（测试前置数据）通过 `node:path` 派生原生路径，使用与生产代码相同的原生 realpath 实现比较规范化后的路径标识，并采用所有宿主机均允许的文件名。ACP（Agent Client Protocol）快照运行还会把生成的 cwd 分别通过 realpath 的 JavaScript 实现与原生实现得到的两种表示一并传给规范化器；规范化器按长度从长到短替换这些别名，避免 Windows 的短路径与长路径表示差异导致共享 fixture 反复变化。
 
-Platform ownership remains explicit inside that complete aggregate. `terminal-bash` supports Linux and macOS and therefore owns its unit and per-file coverage contract on POSIX rather than loading a backend that rejects `win32`; the Windows run still executes every portable package. Portable fixtures derive native paths through `node:path`, compare canonical identities with the same native realpath implementation as production, and use filenames legal on every host. ACP snapshot runs also pass both JavaScript and native realpath spellings of their generated cwd to the normalizer, which replaces aliases longest-first so Windows short and long paths cannot churn shared fixtures.
+macOS 参考流程使用 fork 进程运行常规 Vitest 项目。macOS arm64 上的 Node 24 曾在工作线程中执行 CJS 词法分析器时异常终止；进程边界能够隔离这一外部运行时故障，且无需从聚合流程中删除任何测试，而 Linux 与 Windows 仍使用开销更低的线程池。仓库自身引入的竞态均在相应的观测边界修复：开发构建产物的轮询逻辑每次发布重新扫描结果前，都会先暂存候选表、候选图和候选监视基线映射；构建产物缺失后会一直保持脏状态，直到成功计算内容哈希。PTY 就绪检测会在轮询检查前台进程组归属期间保留提示符候选项；常规静默时限也涵盖从交互式子进程继承而来的标记。真实 PTY fixture 会在运行时拼接同步标记，使就绪等待逻辑不会把交互式 shell 的输入回显误判为子进程已就绪。实时链接场景下的包管理器 e2e 会保留由工作流预先准备的 Corepack 主目录、pnpm 元数据缓存和 store 缓存，同时隔离其他包管理器的可变缓存，因此不会在安装前丢弃可复用的包管理器状态。
 
-The macOS reference runs the ordinary Vitest project in forked processes. Node 24 on macOS arm64 has aborted in its CJS lexer from a worker thread; the process boundary contains that external runtime failure without removing any test from the aggregate, while Linux and Windows retain the lower-overhead thread pool. Repository-owned races are fixed at their observation boundaries: dev bundle polling stages each candidate table, graph, and watch-baseline map before publishing a rescan, and a missing bundle remains dirty until a successful content hash. PTY readiness retains a prompt candidate while polling checks foreground ownership; the ordinary silence bound covers inherited markers from interactive children. Real PTY fixtures assemble synchronization tokens at runtime so the interactive shell's input echo cannot satisfy a child-readiness wait. The live-link package-manager e2e preserves the workflow-prepared Corepack home and pnpm metadata/store caches while isolating the other managers' mutable caches, so it does not discard reusable package-manager state before the install.
+独立的 [Sandbox](https://github.com/deepseek-ai/deepseek-harness/blob/master/.github/workflows/sandbox.yml) 工作流属于同一职责划分中的参考侧。其 bwrap、Landlock x64/arm64 与 Seatbelt 真实内核矩阵只在向 `master` 推送后运行。这四个作业仅用于诊断：它们既不是分支保护的必需项，也不会跨工作流计入 `all checks passed`。拉取请求 CI 仍通过常规的单元测试与覆盖率清单检查沙箱源码；宿主内核与 packed-install 验证在合并后报告结果。
 
-The standalone [Sandbox](https://github.com/deepseek-ai/deepseek-harness/blob/master/.github/workflows/sandbox.yml) workflow belongs to the reference side of the same split. Its bwrap, Landlock x64/arm64, and Seatbelt real-kernel matrix runs only after a push to `master`. Those four jobs are diagnostic: they are not branch-protection requirements and do not feed `all checks passed` across workflow files. Pull-request CI still checks sandbox source through its ordinary unit and coverage inventory; the host-kernel and packed-install proofs report after merge.
+master 分支的参考作业仅用于诊断，不参与拉取请求所要求的 `all checks passed` 结果。CI 与 Sandbox 工作流把跨平台参考流程保留在 master 推送上。系统根据已完成托管作业的时间戳评估性能，并将其报告为测量结果，而不是写成 `timeout-minutes` 值。
 
-Master reference jobs are diagnostic and do not participate in the pull request's required `all checks passed` result. The CI and Sandbox workflows keep their cross-platform references on master pushes. Performance is evaluated from completed hosted-job timestamps and reported as a measurement; it is not encoded as a `timeout-minutes` value.
+当前启用的参考流程运行在公司自有 `vm-backup`（`serial / linux`）与 `dsh-win-ci`（`serial / windows`）自托管池上；唯一剩余的禁用托管参考作业（`serial-macos`）使用 `macos-latest`，且不存在标准托管的 `serial / linux` 标签。拉取请求必需的 Windows 作业在 `ubuntu-latest` 上通过 Wine 运行，而独立的拉取请求原生作业在正常运行下使用托管的 `dsh-windows-2025-16core` 运行器，故障切换时使用自托管 `[self-hosted, dsh-win-ci, windows]` 池（参见[故障切换手册](2026-07-26-ci-failover-runbook.md)），依据[双 Windows 决策](2026-08-08-native-windows-pull-request-ci.md)不参与必需聚合流程。依据[必需 CI 决策](2026-07-23-portable-required-pull-request-ci.md)，拉取请求必需作业使用可移植的标准容量。更高核心数的托管运行器仍仅用于手动基准测试，因为正确性路径必须无需仓库外部的运行器配置即可运行。
 
-The active serial references run on the self-hosted `vm-backup` (`serial / linux`) and `dsh-win-ci` (`serial / windows`) pools; the one remaining disabled hosted serial reference (`serial-macos`) uses `macos-latest`, and there is no standard-hosted `serial / linux` label. The required pull-request Windows job runs under Wine on `ubuntu-latest`, while the independent pull-request native job uses the hosted `dsh-windows-2025-16core` runner under normal operation and the self-hosted `[self-hosted, dsh-win-ci, windows]` pool under failover (see the [failover runbook](2026-07-26-ci-failover-runbook.md)), and is absent from the required aggregate under the [dual Windows decision](2026-08-08-native-windows-pull-request-ci.md). Required pull-request jobs use portable standard capacity under the [required-CI decision](2026-07-23-portable-required-pull-request-ci.md). Higher-core hosted runners remain manual benchmarks because a correctness path must remain runnable without repository-external runner configuration.
+## 曾考虑的替代方案
 
-## Alternatives considered
+- **将每个超时值设为相应延迟目标**：不予采纳，因为调度波动会中止原本正确的执行，并使诊断回归所需的证据无法产生。
+- **仅信任并发执行的主门禁清单**：不予采纳，因为调度逻辑与校验逻辑共享实现假设；串行聚合流程是一项独立的完整性检查。
+- **在每个拉取请求上运行串行参考作业**：不予采纳，因为这些作业会重复完整的跨平台聚合流程，并为每项改动增加 macOS 工作；必需作业已经执行阻塞性的 Linux 和由 Wine 承载的 Windows 约定，而独立原生作业提供完整的 Windows 结果。
+- **在每个拉取请求上运行真实内核 Sandbox 矩阵**：不予采纳，因为它的四个状态不参与分支保护，而重复安装、Landlock 构建以及为保持平台一致而运行的 macOS 单元测试会消耗运行器容量，却不会改变合并裁决。master 上的运行保留平台与已安装 launcher 的信号。
+- **使用一个操作系统矩阵**：不予采纳，因为三个具名作业无需另一套选择机制，就能让参考流程的构成清晰可见。
+- **在大型运行器上运行串行参考流程**：不予采纳，因为当组织自有运行器池无法分配作业时，必需 CI 及其独立参考流程都必须仍可运行。
 
-- **Set each timeout equal to its latency target** - rejected because scheduling variance would cancel correct work and suppress the evidence needed to diagnose a regression.
-- **Trust only the concurrent primary inventory** - rejected because scheduling and validation share implementation assumptions; a serial aggregate is an independent completeness check.
-- **Run the serial references on every pull request** - rejected because they duplicate complete cross-platform aggregates and add macOS work to every change; the required jobs already execute the blocking Linux and Wine-hosted Windows contracts, and the independent native job supplies the complete Windows result.
-- **Run the real-kernel Sandbox matrix on every pull request** - rejected because its four statuses do not participate in branch protection, while repeated installs, Landlock builds, and macOS unit parity consume runner capacity without changing the merge verdict. The master run retains the platform and installed-launcher signal.
-- **Use one operating-system matrix** - rejected because three named jobs make the reference surface visible without another selection mechanism.
-- **Run the serial reference on larger runners** - rejected because both required CI and its independent reference must remain runnable when organization-owned pools cannot allocate jobs.
+## 后果
 
-## Consequences
+工作流包含重复的设置步骤，master 参考运行也可能比优化后的拉取请求路径耗时长得多。这些重复是有意保留的：评审人无需解析矩阵或并发调度器，就能直接检查每种操作系统执行的完整命令。
 
-The workflow contains duplicated setup steps and a master reference run can take much longer than the optimized pull-request path. That duplication is deliberate: reviewers can inspect each operating system's complete command without resolving a matrix or concurrent scheduler.
+参考流程可能暴露某些平台上的故障，而优化后的阻塞门禁集合尚未声明支持这些平台，Windows 尤其如此。这类失败反映了当前的跨平台行为，不应成为削弱或静默跳过该聚合流程的理由。
 
-The reference may expose platform failures that the optimized blocking set does not yet claim to support, especially on Windows. Such a failure is evidence about current cross-platform behavior rather than a reason to weaken or silently skip the aggregate.
+仅在真实宿主内核或打包后的 Landlock 安装中可见的沙箱回归，可能在 master 上的运行报告前已经合并。我们接受这个合并后检测窗口，以换取从每个拉取请求中移除四个非阻塞作业；默认分支仍保留完整信号。
 
-A sandbox regression visible only to a real host kernel or the packed Landlock install can merge before the master run reports it. That post-merge detection window is accepted in exchange for removing four non-blocking jobs from every pull request; the default branch retains the complete signal.
+明确的 `terminal-bash` 归属边界意味着 Windows 不会声称覆盖一个无法加载的后端，而 macOS 采用 fork 的单元测试工作进程会增加进程启动开销。这些代价换来的是：支持范围内的每个方面都有能够如实反映对应平台行为的判据，原生运行时异常终止不会抹掉其余单元测试结果，各项对时序敏感的观测逻辑也都会以调用方有机会修改状态前已建立的状态作为起点。
 
-The explicit `terminal-bash` ownership boundary means Windows does not claim coverage for a backend it cannot load, and forked macOS unit workers cost more process startup time. In return, every supported surface has an honest platform oracle, a native runtime abort cannot erase the rest of the unit result, and timing-sensitive observers start from state established before callers can mutate it.
-
-Removing strict duration timeouts means a latency regression is observed rather than automatically cancelled. Hosted measurements must therefore accompany performance changes, while the completed logs retain the information needed to optimize the slow lane.
+移除严格的时长超时后，系统会观测到延迟回归，而不是在发生回归时自动取消运行。因此，性能改动必须附带托管环境测量结果，已完成的日志则保留优化最慢通道所需的信息。

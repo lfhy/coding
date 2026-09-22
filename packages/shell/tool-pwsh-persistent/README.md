@@ -1,55 +1,53 @@
 # @deepseek-ai/dsh-tool-pwsh-persistent
 
-English | [中文](README.zh.md)
+模型侧 `pwsh(command)`，由一个 owner 作用域的 `ctx.terminals` shell 支撑。本包拥有工具契约与 shell 复用；部署方选择 terminal backend（配置 `shellDialect: pwsh` 的 `terminal-bash` 实例）与沙箱策略。它是 `tool-bash-persistent` 的 Windows 对应物：相同的持久状态契约，PowerShell 方言。
 
-Model-facing `pwsh(command)` backed by one owner-scoped `ctx.terminals` shell. The package owns the tool contract and shell reuse; deployments select the terminal backend (a `terminal-bash` instance configured with `shellDialect: pwsh`) and sandbox policy. It is the Windows counterpart of `tool-bash-persistent`: same persistent-state contract, PowerShell dialect.
+## 配置
 
-## Config
-
-| Key | Default | Meaning |
+| 键 | 默认值 | 含义 |
 |---|---:|---|
-| `backendType` | `shell` | Registered terminal backend used for each Agent shell. |
-| `timeoutMs` | `300000` | Wall-clock limit for one command; timeout closes the shell. |
-| `maxOutputChars` | `16000` | Maximum retained command-output characters; fixed diagnostics are added afterward. |
-| `description` | Persistent-shell description | Model-facing environment contract. |
+| `backendType` | `shell` | 每个 Agent shell 使用的已注册 terminal backend。 |
+| `timeoutMs` | `300000` | 单条命令的墙钟上限；超时关闭 shell。 |
+| `maxOutputChars` | `16000` | 保留的命令输出字符上限；固定诊断文本在其后追加。 |
+| `description` | 持久 shell 描述 | 模型可见的环境契约。 |
 
-## Model Experience
+## 模型体验
 
-### Tool schema
+### 工具 schema
 
-#### What the model sees
+#### 模型看到什么
 
-The generated [`pwsh` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-pwsh-persistent), including the configured `description`. The plugin contributes no standalone system-prompt section; the deployment owns persona and environment guidance.
+生成的 [`pwsh` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-pwsh-persistent)，含配置的 `description`。本插件不贡献独立的 system-prompt 段落；persona 与环境指引由部署方负责。
 
-#### Token effect
+#### Token 影响
 
-Fixed schema cost while `pwsh` is visible.
+`pwsh` 可见期间每个请求有固定的 schema 成本。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-Prefix-stable while the configured description and schema remain unchanged.
+配置的 description 与 schema 不变时前缀稳定。
 
-### Tool results
+### 工具结果
 
-#### What the model sees
+#### 模型看到什么
 
-Commands share one shell per Agent, so cwd, `$env:` variables, functions, and background jobs persist across calls. Results exclude private completion markers, the shell prompt, and the echoed input line (PSReadLine renders submitted input back into the stream; the marker-anchored extraction and the wrapper-source strip remove it). A nonzero wrapped command appends `[exit code: N]` — the exact native exit code when the command ran a native program, `1` for a terminating PowerShell error. A shell that exits before reporting that status instead appends `[shell exited: code N]`, `[shell killed by signal: SIG]`, or `[shell exited]` when the backend supplies neither (Windows forced termination reports exit 1 without a signal), then resets and tells the model that the next call starts fresh. Long output keeps the earliest retained prefix plus a clipping notice; if the terminal has already dropped that prefix, the result says so explicitly. Timeout returns bounded partial output, closes the uncertain shell, and reports the reset.
+命令共享每个 Agent 的一个 shell，因此 cwd、`$env:` 变量、函数和后台任务跨调用保留。结果排除私有完成标记、shell 提示符与回显的输入行（PSReadLine 会把提交的输入渲染回输出流；marker 锚定提取与包装器原文剥离将其移除）。非零包装命令追加 `[exit code: N]` —— 命令运行原生程序时是精确的原生退出码，PowerShell 终止性错误为 `1`。shell 在报告状态前退出的，改为追加 `[shell exited: code N]`、`[shell killed by signal: SIG]` 或 `[shell exited]`（backend 两者都没有时；Windows 强杀按无 signal 的 exit 1 报告），然后重置并告知模型下一次调用从全新 shell 开始。长输出保留最早的前缀并附裁剪提示；若 PTY 已丢弃该前缀，结果会明确说明。超时返回有界的部分输出、关闭不确定的 shell 并报告重置。
 
-#### Token effect
+#### Token 影响
 
-Data-dependent. `maxOutputChars` bounds retained command output; fixed clipping, lost-prefix, status, timeout, and reset diagnostics can extend the result.
+数据相关。`maxOutputChars` 限制保留的命令输出；固定裁剪、前缀丢失、状态、超时与重置诊断可能扩展结果。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-Append-only tool results follow the reusable request prefix.
+追加式工具结果跟随可复用的请求前缀。
 
-## Known Limitations and Deferred Work
+## 已知限制与延后工作
 
-- The tool requires an owning Agent and a real terminal backend with a pwsh dialect (Windows ConPTY or a POSIX pwsh).
-- **Input echo is unavoidable**: PowerShell's PSReadLine renders submitted input back into the terminal stream, and there is no `stty -echo` equivalent. The marker-anchored extraction excludes the echo in complete results; the wrapper-source strip covers fallback paths, but a wrapper that wraps across the terminal width may leave a partial echo in partial-output results, bounded by `maxOutputChars`.
-- Raw ESC characters inside model commands are unsupported: PSReadLine consumes them before execution. The wrapper escapes the control bytes it needs (`[char]27`-built OSC markers, backtick escapes for the body).
-- A model redefinition of the `prompt` function removes the readiness marker; the shell then settles on the silence tier instead of the marker fast path.
-- There is no interactive stdin during a command: a foreground command that reads input blocks until the readiness timeout, which resets the shell.
-- SIGTSTP/SIGHUP are unavailable on Windows (backend-rejected); SIGINT is delivered as a console-wide Ctrl-C input write, which at a prompt cancels the pending line instead of signalling a process.
-- Under the Windows ACL sandbox's read-only mode, pwsh starts in ConstrainedLanguage, which may deny the bootstrap's `[Console]::` encoding pin and prompt marker. Commands can still settle through the printable prompt and silence tier, but non-ASCII output may follow the host code page.
-- The BEL-terminated OSC marker remains a readiness signal only; a BEL event channel to the model stays deferred, aligned with the current implementation.
+- 工具需要拥有 Agent 与一个真实支持 pwsh 方言的 terminal backend（Windows ConPTY 或 POSIX 上的 pwsh）。
+- **输入回显不可避免**：PowerShell 的 PSReadLine 会把提交的输入渲染回终端流，且没有 `stty -echo` 的对应物。完整结果中 marker 锚定提取排除回显；包装器原文剥离覆盖回退路径，但跨越终端宽度的包装器折行可能在部分输出结果中残留片段回显，受 `maxOutputChars` 约束。
+- 模型命令中的裸 ESC 字符不受支持：PSReadLine 会在执行前吞掉它们。包装器转义它需要的控制字节（`[char]27` 构造的 OSC 标记、body 的反引号转义）。
+- 模型重定义 `prompt` 函数会移除就绪标记；shell 随后退化为静默档而非 marker 快路径。
+- 命令执行期间没有交互 stdin：读取输入的前台命令会阻塞到就绪超时，随后重置 shell。
+- SIGTSTP/SIGHUP 在 Windows 不可用（backend 拒绝）；SIGINT 以控制台级 Ctrl-C 输入写入投递，在提示符处取消当前行而非向进程发信号。
+- 在 Windows ACL 沙箱的只读模式下，pwsh 以 ConstrainedLanguage 启动，可能拒绝引导代码通过 `[Console]::` 固定编码并写入 prompt marker。命令仍可通过可打印提示符和静默档结算，但非 ASCII 输出可能沿用宿主代码页。
+- BEL 终结的 OSC 标记仍只是就绪信号；面向模型的 BEL 事件通道保持延后，与当前实现对齐。

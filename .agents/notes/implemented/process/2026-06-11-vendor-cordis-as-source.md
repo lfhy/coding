@@ -1,28 +1,26 @@
-# Agent Note: Vendor Cordis as source, not npm dependencies
+# Agent Note: 将 Cordis 以源码形式收录，而非作为 NPM 依赖
 
 Status: implemented
 
-English | [中文](2026-06-11-vendor-cordis-as-source.zh.md)
+## 问题
 
-## Problem
+DeepSeek Harness 构建于 Cordis 框架之上。本仓库启动时，Cordis core 处于 4.0.0-rc.6（一个候选发布版本）；harness 依赖框架内部实现（fiber 生命周期、dispose（资源释放）、waterfall（瀑布式事件）分发），其确切行为直接关系到 agent loop（智能体循环）的正确性保证。
 
-DeepSeek Harness is built on the Cordis framework. Cordis core was at 4.0.0-rc.6 (a release candidate) when this repo started; the harness depends on framework internals (fiber lifecycle, effect disposal, waterfall dispatch) whose exact behavior matters to the agent loop's correctness guarantees.
+## 决策
 
-## Decision
+将所需的 Cordis 包（core、loader、include、group、timer、hmr、logger-console）与 cordiverse 基础库（cosmokit、schemastery）以源码形式复制到 `vendor/`，扁平化放置，保留其原始 npm 包名以实现透明的 workspace 解析。`pnpm-workspace.yaml` 设置 `linkWorkspacePackages: true`，所以只要上游 semver 范围匹配，无论以源码执行还是以构建产物执行，依赖都会解析到这些固定版本的 workspace。真正的第三方依赖（js-yaml、chokidar、@standard-schema/spec 等）仍从 npm 获取。
 
-Copy the needed Cordis packages (core, loader, include, group, timer, hmr, logger-console) and the cordiverse foundation libraries (cosmokit, schemastery) into `vendor/` as source, flattened, keeping their original npm names so workspace resolution is transparent. `pnpm-workspace.yaml` sets `linkWorkspacePackages: true`, so matching upstream semver ranges resolve these pinned workspaces in both source and built-artifact execution. Truly third-party dependencies (js-yaml, chokidar, @standard-schema/spec, …) stay on npm.
+`vendor/README.md` 是 manifest（元数据清单）：记录每个包的上游仓库和 commit SHA，以及一份详尽的本地修改日志。pre-commit 守卫（`scripts/check-vendor-manifest.sh`）会拒绝未在同一次提交中更新 manifest 的 vendor 源码变更。
 
-`vendor/README.md` is the manifest: upstream repo + commit SHA per package and an exhaustive local-modification log. A pre-commit guard (`scripts/check-vendor-manifest.sh`) rejects vendored-source changes that don't update the manifest in the same commit.
+## 曾考虑的替代方案
 
-## Alternatives considered
+- **依赖 npm 包**：否决。core 处于候选发布阶段，harness 依赖框架内部实现（fiber 生命周期、dispose、waterfall 分发），agent loop 的正确性保证取决于这些行为的确切表现；上游 RC 版本升级可能在没有本地修复路径的情况下破坏它们。
+- **递归收录所有传递依赖**：否决。真正的第三方依赖（js-yaml、chokidar、@standard-schema/spec 等）仍从 npm 获取；只有内部实现对我们有影响的框架层才需要自行持有。
 
-- **Depend on the npm packages** — rejected: core was at a release candidate, and the harness leans on framework internals (fiber lifecycle, effect disposal, waterfall dispatch) whose exact behavior the agent loop's correctness guarantees depend on; an upstream RC bump could break them without a local fix path.
-- **Vendor everything transitively** — rejected: truly third-party dependencies (js-yaml, chokidar, @standard-schema/spec, …) stay on npm; only the framework layer whose internals matter is owned.
+## 后果
 
-## Consequences
-
-- The harness fully owns its framework layer: auditable, patchable, pinned — an RC upstream can't break us, and we can fix framework bugs in-tree.
-- Built packages execute the same vendored Cordis generation as source tests; removing workspace linking would silently substitute npm copies behind unchanged package names.
-- Upstream sync is manual (documented procedure in the manifest). The modification log keeps the diff surface known.
-- Vendored packages keep upstream code style; lint/strictness gates exclude them (their tsconfigs relax our newer compiler flags locally).
-- One local patch exists from day one: hmr's locale-YAML imports removed (the runtime YAML import hook isn't vendored).
+- harness 完全持有其框架层：可审计、可打补丁、版本锁定。上游 RC 无法导致本项目故障，框架 bug 可以在仓库内直接修复。
+- 构建后的包与源码测试执行的是同一版收录的 Cordis；移除 workspace 链接后，构建后的包会在包名不变的情况下静默改用 npm 副本。
+- 上游同步是手动操作（流程记录在 manifest 中）。修改日志使 diff 范围始终可知。
+- 收录的包保留上游代码风格；lint 与严格性门禁将其排除（它们的 tsconfig 在本地放宽了我们较新的编译器选项）。
+- 从第一天起就有一个本地补丁：移除了 hmr 的 locale-YAML 导入（运行时 YAML 导入钩子未被收录）。

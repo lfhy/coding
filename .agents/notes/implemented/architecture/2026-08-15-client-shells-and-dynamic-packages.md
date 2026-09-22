@@ -1,86 +1,84 @@
-# Agent Note: Client shell layering and dynamic package boundaries
+# Agent Note: 客户端壳分层与动态包边界
 
 Status: implemented
 
-English | [中文](2026-08-15-client-shells-and-dynamic-packages.zh.md)
-
-> The [client plugin loading model](2026-07-23-client-plugin-loading-model.md) owns module arrival, Cordis lifecycle, and HMR. This note owns package placement, build faces, shared module requests, and npm dependency declarations; those decisions supersede the older package taxonomy and import-edge rules in the loading note.
+> [Client 插件装载模型](2026-07-23-client-plugin-loading-model.md)负责模块到达、Cordis 生命周期和 HMR。本 Note 负责包归属、构建 face、共享模块请求及 npm 依赖声明；这些决定取代装载 Note 中较早的包分类和 import 边规则。
 
 ## Problem
 
-Client npm dependency sections describe installation and development relationships, but they do not reliably describe bundle contents. Treating `dependencies`, `peerDependencies`, or `devDependencies` as implicit bundler instructions can inline a shared React or workspace identity, or leave a built library carrying unresolved child imports without the host that is meant to assemble them.
+Client npm 依赖区段描述安装和开发关系，但不能可靠描述 bundle 内容。把 `dependencies`、`peerDependencies` 或 `devDependencies` 当作隐式 bundler 指令，可能内联本应共享的 React 或 workspace 身份，也可能让构建后的库携带未解析子 import，却没有交给预期的宿主组装。
 
-The browser application also contains distinct roles: the HTML/Vite compilation entry, the framework-free Cordis startup kernel, static assembly libraries, and Loader-governed plugins. Early execution from HTML is an arrival policy, not a package kind. Runtime and modules need to arrive before the Vite main module while retaining ordinary `lib/client.js` artifacts and dynamic graph rows.
+浏览器应用还包含不同角色：HTML/Vite 编译入口、不依赖框架的 Cordis 启动内核、静态装配库，以及由 Loader 治理的插件。HTML 提前执行属于到达策略，不定义包类别。Runtime 和 modules 需要先于 Vite 主模块到达，同时继续使用普通 `lib/client.js` 产物和动态图 row。
 
-Shared UI libraries still expose synchronous TypeScript and React values to many consumers. Until those values move behind services or slots, making the libraries formal dynamic entries would preserve the value coupling while obscuring which module identity the shell must share.
+共享 UI 库仍向大量消费者暴露同步 TypeScript 与 React 实体。在这些实体进入 service 或 slot 前，形式上把库改为动态 entry 只会保留实体耦合，并模糊外壳必须共享的模块身份。
 
 ## Decision
 
-### Layers and build forms
+### 分层与构建形态
 
-| Layer | Members | Responsibility | Build and load form |
+| 层 | 成员 | 职责 | 构建与加载形态 |
 | --- | --- | --- | --- |
-| Web compilation shell | `apps/web` | Owns `index.html`, Vite configuration, dist chunks, and static assets | Assembles final browser output from built package exports |
-| Startup kernel | `packages/client/web` | Owns the plain-DOM boot page, module-system wiring, Cordis settlement, and renderer handoff | `staticLinked` `lib/index.js`; no `dsh.client` row |
-| Static assembly libraries | Cordis, `ui-primitives`, `ui-slots` | Supply shared module identities and direct value APIs | ESM `lib/index.js`, merged and chunked by Vite; not Loader entries |
-| Module bootstrap | `packages/client/modules` | Supplies the client module table and its Cordis wrapper | Dynamic package with one ordinary `lib/client.js`; the host delivers its factory early |
-| Dynamic client packages | runtime, `ui-renderer`, theme, and feature plugins | Participate through Cordis services, slots, and effects | Declare `dsh.client`, emit self-registering `lib/client.js`, and remain host-graph entries |
+| Web 编译壳 | `apps/web` | 拥有 `index.html`、Vite 配置、dist chunk 和静态资源 | 从已构建 package export 组装最终浏览器产物 |
+| 启动内核 | `packages/client/web` | 拥有纯 DOM 启动页、模块系统接线、Cordis settle 和 renderer handoff | `staticLinked` `lib/index.js`；无 `dsh.client` row |
+| 静态装配库 | Cordis、`ui-primitives`、`ui-slots` | 提供共享模块身份和直接实体 API | ESM `lib/index.js`，由 Vite 合并拆分；不是 Loader entry |
+| 模块自举包 | `packages/client/modules` | 提供 client 模块表及其 Cordis wrapper | 带一个普通 `lib/client.js` 的动态包；host 提前送达其 factory |
+| 动态 client 包 | runtime、`ui-renderer`、主题和功能插件 | 通过 Cordis service、slot 和 effect 参与应用 | 声明 `dsh.client`，产出自注册 `lib/client.js`，并保留 host graph entry |
 
-`packages/client/web` keeps Cordis as matching peer and development dependencies and uses modules and static UI packages as development compilation inputs. `apps/web` consumes built package exports rather than aliases into workspace source.
+`packages/client/web` 把 Cordis 保持为 matching peer 与开发依赖，并把 modules 和静态 UI 包作为开发期编译输入。`apps/web` 消费已构建 package export，不通过 alias 读取 workspace 源码。
 
-The `staticLinked` preset leaves every bare specifier as an external import in `lib/index.js` and emits relative CSS assets beside it. The Vite host resolves and deduplicates those imports and decides final chunk boundaries. A static library therefore does not copy the host's bundling policy into its own artifact.
+`staticLinked` 预设让 `lib/index.js` 中每个 bare specifier 保持 external import，并在旁边输出相对 CSS 资产。Vite 宿主负责解析和去重这些 import，并决定最终 chunk 边界。静态库不会把宿主打包策略复制进自身产物。
 
-### Shared module requests
+### 共享模块请求
 
-Dynamic browser bundles implicitly externalize the common baseline: `PLATFORM_MODULES` names shell-seeded React, Cordis, and static UI identities, while `PRELOADED_CLIENT_EXTERNALS` names runtime's parser-preloaded dynamic identity. A package uses `dsh.client.external` only for an exact non-baseline value request. Type-only imports are erased and create no request; permitted third-party implementation libraries remain private bundle contents.
+动态浏览器 bundle 会隐式 external 统一基座：`PLATFORM_MODULES` 命名由外壳播种的 React、Cordis 和静态 UI 身份，`PRELOADED_CLIENT_EXTERNALS` 命名由 HTML parser 预载的 runtime 动态身份。包只在精确请求基座外实体时使用 `dsh.client.external`。纯类型 import 会被擦除，不产生请求；允许的第三方实现库保留为 bundle 私有内容。
 
-A request has exactly two suppliers:
+请求只有两种提供方：
 
-1. The dynamic package row it names; a trailing `/client` aliases that package row.
-2. An exact key in the shell's static module table.
+1. 请求所命名的 dynamic package row；末尾 `/client` 会别名到该 package row。
+2. 外壳静态模块表中的精确 key。
 
-There is no general `dsh.client.provide` alias mechanism. Dynamic rows and static keys exhaust the real suppliers, while Cordis service provision remains independent. Graph composition rejects malformed or missing requests, self-requests, and synchronous request cycles, and orders dynamic suppliers before their consumers. `ClientModuleSystem.import()` and `prefetch()` recursively register those dynamic supplier factories before the consumer can materialize, so network timing cannot violate the synchronous request graph.
+不存在通用 `dsh.client.provide` 别名机制。动态 row 和静态 key 已穷尽实际提供方，Cordis service provide 与此相互独立。图组合会拒绝畸形或缺失请求、自请求和同步请求环，并把动态提供方排在消费者之前。`ClientModuleSystem.import()` 与 `prefetch()` 会在消费者能够物化前递归登记这些动态提供方的 factory，因此网络时序无法破坏同步请求图。
 
-### Parser preloading and React handoff
+### Parser 预载与 React 移交
 
-The modules Node half injects the startup protocol into the served HTML in this order:
+Modules Node 半按以下顺序向实际返回的 HTML 注入启动协议：
 
-1. Install `window.__ModuleLoader__` in queue mode with `pendingQueue`, `load()`, and `create()`.
-2. Execute the modules graph row's ordinary `lib/client.js` as a blocking classic script.
-3. Execute runtime's ordinary `lib/client.js` the same way.
-4. Assign `window.__DSH_BOOT__`.
-5. Execute the Vite main module.
+1. 以 queue 模式安装 `window.__ModuleLoader__`，包含 `pendingQueue`、`load()` 与 `create()`。
+2. 以阻塞式 classic script 执行 modules graph row 的普通 `lib/client.js`。
+3. 以相同方式执行 runtime 的普通 `lib/client.js`。
+4. 赋值 `window.__DSH_BOOT__`。
+5. 执行 Vite 主模块。
 
-Both early scripts only register factories. The startup kernel passes the raw graph and shell seeds to `__ModuleLoader__.create()`. The facade removes the modules registration, materializes it with a `require` function that rejects every external, and invokes its `createClientModuleSystem` export. The modules bundle parses the graph, constructs `ClientModuleSystem`, caches its own exports as the modules row, and retains the system in a module closure. Construction switches the same facade to live mode before draining runtime's pending factory. The modules client face consequently has a zero-runtime-external bootstrap requirement.
+两个提前执行的脚本都只注册 factory。启动内核把原始图与外壳 seed 传给 `__ModuleLoader__.create()`。Facade 移除 modules registration，用拒绝全部 external 的 `require` 函数将其物化，再调用其 `createClientModuleSystem` 导出。Modules bundle 解析图、构造 `ClientModuleSystem`、把自身 exports 缓存为 modules row，并在模块闭包中保留该系统。构造过程先把同一 facade 切换到 live 模式，再排空 runtime 的 pending factory。因此 modules client face 必须满足零 runtime external 的自举要求。
 
-After the `immediately` tier has registered its factories, the kernel creates all Loader entries, awaits Cordis quiescence, and requires every fiber to be ACTIVE. It then calls `ctx.uiRenderer.mount(container)`. The dynamic `ui-renderer` package owns React, slot rendering, hydration of the existing boot DOM, and the React root lifecycle; the startup kernel and failure page remain React-free.
+`immediately` 层级完成 factory 注册后，内核创建全部 Loader entry，等待 Cordis 静止，并要求每个 fiber 都进入 ACTIVE。随后调用 `ctx.uiRenderer.mount(container)`。动态 `ui-renderer` 包拥有 React、slot 渲染、已有启动 DOM 的 hydrate 和 React root 生命周期；启动内核与失败页保持 React-free。
 
-### Dependency declarations
+### 依赖声明
 
-Every client package keeps Cordis in matching `peerDependencies` and `devDependencies`. A dynamic package that imports, re-exports, augments, or names an internal dynamic package in `dsh.client.inject` keeps that package as matching peer and development dependencies. Static client inputs and React modules are development-only inputs for a dynamic package because the shell supplies their runtime identities.
+每个 client 包都把 Cordis 保持为 matching `peerDependencies` 和 `devDependencies`。动态包若 import、re-export、augment 内部动态包，或在 `dsh.client.inject` 中命名它，就把该包保持为 matching peer 与开发依赖。静态 client 输入和 React 模块对动态包只是开发依赖，因为外壳提供其运行期身份。
 
-Ordinary installed libraries remain `dependencies`: a dynamic build may bundle a private implementation, while a `staticLinked` library retains its bare import for the final host. Each build face decides externality independently from npm sections. Published file lists cover every runtime entry, relative asset, and declaration file reached by the artifact.
+普通安装库仍放在 `dependencies`：动态构建可以内联私有实现，而 `staticLinked` 库会保留 bare import 交给最终宿主。各构建 face 独立决定 external，不由 npm 区段推导。发布文件列表覆盖产物实际可达的每个运行期入口、相对资产和声明文件。
 
-`verify-client-packages` enforces these classifications, dependency sections, build forms, parser-preload alignment, shared-module requests, and module-graph acyclicity. The repository publint pass enforces publication closure. The verifier's `--fix` mode repairs only unambiguous manifest drift.
+`verify-client-packages` 会检查这些分类、依赖区段、构建形态、parser preload 对齐、共享模块请求和模块图无环性。仓库 publint pass 负责检查发布闭包。该验证器的 `--fix` 模式只修复无歧义的 manifest 漂移。
 
 ## Alternatives considered
 
-**Convert every client package into a dynamic plugin immediately.** `ui-primitives` and `ui-slots` still provide synchronous values without independent service or slot lifecycles; a manifest declaration alone would not remove those imports.
+**立即把所有 client 包改为动态插件。** `ui-primitives` 与 `ui-slots` 仍提供同步实体，且没有独立 service 或 slot 生命周期；只加 manifest 声明不会移除这些 import。
 
-**Generate a separate `client-static.js` for modules or runtime.** Both packages remain dynamic graph rows and Cordis plugins; only their factory arrival is early. A second artifact would encode host policy in a filename and create two runtime products from one source.
+**为 modules 或 runtime 生成单独的 `client-static.js`。** 两个包仍是动态图 row 和 Cordis 插件，只有 factory 提前到达。第二份产物会把宿主策略编码进文件名，并让同一源码产生两个运行期产品。
 
-**Compile all shared modules into the Vite entry.** This would remove deployment composition and plugin-level replacement from business plugins, including the renderer and theme.
+**把全部共享模块编进 Vite entry。** 这会让业务插件失去部署组合与插件级替换能力，包括 renderer 和主题。
 
-**Retain a general module-provider declaration.** Package rows and exact static keys already name all suppliers; aliases would add another ownership protocol without a third supply source.
+**保留通用模块 provider 声明。** Package row 和精确静态 key 已命名全部提供方；别名会增加另一套归属协议，却没有第三种供给来源。
 
-**Hardcode preload URLs in `apps/web/index.html`.** URLs and `rev` values belong to the host's current graph. Rewriting the served HTML keeps the queue, bundle URLs, and manifest on one graph revision.
+**在 `apps/web/index.html` 中硬编码预载 URL。** URL 与 `rev` 属于 host 当前 graph。改写实际返回的 HTML 才能让 queue、bundle URL 和 manifest 使用同一 graph revision。
 
 ## Consequences
 
-Bundle contents stay stable when an npm dependency moves between peer and development sections, because each build face declares externality directly. Static libraries remain host-assembled, while dynamic packages retain uniform artifacts and lifecycle governance.
+Npm 依赖在 peer 与开发区段间移动时，bundle 内容保持稳定，因为每个构建 face 都直接声明 external。静态库继续由宿主装配，动态包则保留统一产物与生命周期治理。
 
-The startup protocol depends on the modules and runtime package ids, and modules must remain self-contained at runtime. A missing bootstrap registration fails before Cordis starts; later plugin import, apply, and service-wait failures remain visible through the boot page's ACTIVE scan.
+启动协议依赖 modules 和 runtime 的 package id，modules 还必须保持运行期自包含。缺少 bootstrap registration 会在 Cordis 启动前失败；后续插件 import、apply 与 service 等待失败仍由启动页的 ACTIVE 扫描呈现。
 
-The shell consumes built `lib/` products, so source and browser artifacts can drift until the relevant build or watcher runs. Typechecking source alone does not prove the served application uses the same code.
+外壳消费已构建 `lib/` 产品，因此在相关 build 或 watcher 运行前，源码与浏览器产物可能漂移。仅源码 typecheck 通过不能证明实际服务的应用使用同一份代码。
 
-The two static UI libraries remain deliberate exceptions. Converting either one to a dynamic package requires moving all value consumers to services or slots and removing its identity from the static seed in the same change.
+两个静态 UI 库仍是明确例外。把其中任一项转换为动态包时，必须在同一变更中把全部实体消费者迁移到 service 或 slot，并从静态 seed 删除对应身份。

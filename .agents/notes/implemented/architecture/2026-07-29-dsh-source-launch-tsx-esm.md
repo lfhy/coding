@@ -1,38 +1,36 @@
-# Agent Note: dsh source launch through the tsx ESM hook
+# Agent Note: dsh 通过 tsx ESM 钩子源码启动
 
 Status: implemented
 
-English | [中文](2026-07-29-dsh-source-launch-tsx-esm.zh.md)
+> 取代[原生 TypeScript 源码启动](../../archived/architecture/2026-07-28-dsh-native-typescript-source-launch.md)：Node 移除了该决策所依赖的能力。
 
-> Supersedes [native TypeScript source launch](../../archived/architecture/2026-07-28-dsh-native-typescript-source-launch.md): Node removed the capability that decision was built on.
+## 问题
 
-## Problem
+[已归档的原生源码启动决策](../../archived/architecture/2026-07-28-dsh-native-typescript-source-launch.md)让 `apps/cli/src/bin.ts` 在 `node --experimental-transform-types` 下运行，配合一个只做解析的 paths loader，由 Node 负责 TypeScript 转换。Node 26.0.0 移除了 `--experimental-transform-types`（进程以 `bad option` 拒绝该 flag），只保留 strip 模式，而 strip 模式无法接受这个源码图必需的语法：vendor Cordis 中的参数属性（`constructor(private ctx: Context)`）、`vendor/hmr` 中的 `@Inject` 装饰器，以及遍布 `vendor/` 与 `packages/workflow` 的运行时 enum/namespace。仓库的 engines 范围（`^22.19.0 || >=24.0.0`）包含 Node 26，因此原生启动链在其上完全无法启动——且没有任何 CI 任务执行过真实启动向量，这一不兼容悄然发布。
 
-The [archived native source-launch decision](../../archived/architecture/2026-07-28-dsh-native-typescript-source-launch.md) ran `apps/cli/src/bin.ts` under `node --experimental-transform-types` with a resolve-only paths loader, so Node owned TypeScript transformation. Node 26.0.0 removed `--experimental-transform-types` (the process rejects the flag with `bad option`), keeping only strip mode, and strip mode rejects syntax this source graph requires: vendored Cordis parameter properties (`constructor(private ctx: Context)`), the `@Inject` decorators in `vendor/hmr`, and runtime enums/namespaces throughout `vendor/` and `packages/workflow`. The repository's engines range (`^22.19.0 || >=24.0.0`) includes Node 26, so the native launch chain could not start at all there — and no CI job executed the real launch vector, so the incompatibility shipped silently.
+启动延迟同样是问题：off-thread 的 `module.register()` 钩子工作线程把每次解析都跨线程序列化（TUI 启动期间约 440ms 的 `makeSyncRequest` 等待），而完整的 tsx 默认形态（`--import tsx`）会因其 CJS 钩子放大解析开销而多花约 0.4s。
 
-Startup latency also mattered: the off-thread `module.register()` hooks worker serialized every resolution across threads (~440ms of `makeSyncRequest` wait during TUI boot), and the full tsx default (`--import tsx`) pays ~0.4s in its CJS hook's resolution amplification.
+## 决策
 
-## Decision
+`dsh` 的 TUI、Web 与无头源码启动运行 `node --import tsx/esm`：由 tsx 的 ESM-only 钩子同时负责 TypeScript 转换与 tsconfig `paths` 投影。根目录的 `dsh` 脚本直接从仓库根目录使用同一启动方式；产物生成是独立操作，由[源码启动与构建分离决策](../simplification/2026-08-12-separate-source-launch-from-build.md)规定。CJS 钩子保持关闭，因为 CLI（命令行界面）源码图是纯 ESM；实测运行时启动至 TUI banner 耗时约 0.7s，对比完整 tsx 默认形态约 1.1s、已移除的原生链约 0.75s。
 
-The `dsh` TUI, Web, and headless source launches run `node --import tsx/esm`: tsx's ESM-only hook owns both TypeScript transformation and tsconfig `paths` projection. The root `dsh` script uses that vector directly from the repository root; artifact generation is a separate operation under the [source-launch/build separation decision](../simplification/2026-08-12-separate-source-launch-from-build.md). The CJS hook stays off because the CLI source graph is ESM-only; measured runtime launch to the TUI banner is ~0.7s versus ~1.1s under the full tsx default and ~0.75s under the removed native chain.
+`scripts/tspath-loader.ts` 与 `apps/cli/src/tsconfig-paths-loader.ts` 已删除。随之消失的还有该 loader「仅为已声明运行时依赖映射 workspace import」的运行时规则——tsx 无条件应用 `paths` 映射。声明完整性现在仅由静态门禁保障：配置的裸插件走 `verify-cordis-config`，manifest（元数据清单）走 workspace constraints。（该运行时规则确实发现过真实缺陷：`dsh-plan-mode` 与 `dsh-tool-jobs` 导入 `@deepseek-ai/dsh-llm` 却只声明在 devDependencies；后已修复。）
 
-`scripts/tspath-loader.ts` and `apps/cli/src/tsconfig-paths-loader.ts` are deleted. With them went the loader's runtime rule of mapping a workspace import only for declared runtime dependencies — tsx applies the `paths` map unconditionally. Declaration completeness now rests on the static gates alone: `verify-cordis-config` for configured bare plugins, and workspace constraints for manifests. (That runtime rule found real bugs: `dsh-plan-mode` and `dsh-tool-jobs` imported `@deepseek-ai/dsh-llm` while declaring it only in devDependencies; since fixed.)
+node-compat CI 矩阵（Node 22.19 与 26）新增 `dsh-source-launch-smoke`（`apps/cli/tests/source-launch.compat.spec.ts`）：以精确的生产运行时启动向量做 keyless 管道 stdio 启动，断言进程会因 TTY 拒绝而以非零状态退出。未来 Node 对模块钩子或 TypeScript 处理的任何改动都会让该门禁变红，而不是破坏开发者的 `pnpm dsh`。
 
-The node-compat CI matrix (Node 22.19 and 26) gains `dsh-source-launch-smoke` (`apps/cli/tests/source-launch.compat.spec.ts`): a keyless piped-stdio launch of the exact production runtime vector asserting the non-zero-exit TTY refusal. Any future Node change to module hooks or TypeScript handling turns this gate red instead of breaking developers' `pnpm dsh`.
+## 备选方案
 
-## Alternatives considered
+**在 Node ≤25 保留原生链并按版本分叉。** 拒绝：两套转换语义（amaro 与 esbuild）在边缘语法上会分歧，启动器要加版本探测，node-compat 矩阵要覆盖两条路径——为一个已经变动过的 experimental flag 付出沉重维护。而且 amaro 也不支持 `vendor/hmr` 使用的 `@Inject` 装饰器，原生路径本来就无法启动随附的默认 TUI 配置。
 
-**Keep the native chain on Node ≤25 and branch by version.** Rejected: two transformation semantics (amaro versus esbuild) diverge on edge syntax, the launcher grows version probing, and the node-compat matrix must cover both paths — heavy maintenance for an experimental flag that already changed under us. amaro also rejects the `@Inject` decorators `vendor/hmr` uses, so the native path could not boot the shipped default TUI config anyway.
+**把源码图改成 erasable-only 以适配 Node 26 strip 模式。** 拒绝：参数属性与值 namespace 遍布 vendor 的 Cordis/cosmokit/loader/schemastery；改写是无界 churn，且每次 vendor sync 都要重做。
 
-**Make the source graph erasable-only so Node 26 strip mode accepts it.** Rejected: parameter properties and value namespaces pervade vendored Cordis/cosmokit/loader/schemastery; rewriting them is unbounded churn re-applied on every vendor sync.
+**仓库自有的同线程 loader（`module.registerHooks()` + esbuild 或 `@swc/core` 转换）。** 暂拒：原型实测约 0.45s（esbuild 路径未端到端验证；SWC 在 `vendor/hmr` 的装饰器 + namespace 合并上两种装饰器模式都会崩），但这意味着要自行负责转换正确性，以及实现 tsx 已经提供的解析钩子。仅当约 0.3s 的差距成为真实成本时再重新考虑；性能分析证据在 PR 讨论中。
 
-**A repo-owned in-thread loader (`module.registerHooks()` + esbuild or `@swc/core` transform).** Rejected for now: prototypes measured ~0.45s (esbuild path untested end-to-end; SWC breaks on `vendor/hmr`'s decorator + namespace merge in both decorator modes), but it means owning transform correctness and a resolve hook that tsx already provides. Revisit only if the ~0.3s gap becomes a real cost; the profiling evidence lives in the PR discussion.
+**Node 26 运行构建产物 `lib/`，24 保留原生。** 拒绝：在最新 Node 版本线上失去零构建开发循环，且混淆源码面与产物面。
 
-**Run built `lib/` for Node 26 and keep native for 24.** Rejected: loses the zero-build development loop on the newest Node line and mixes source and artifact planes.
+## 结果
 
-## Consequences
-
-- One launch vector across the whole engines range, including future Node lines that change native TypeScript support; the smoke gate enforces it per matrix line.
-- TypeScript transformation is delegated to tsx/esbuild again, reversing the prior note's goal of proving Node-native transformation; that goal is unreachable while vendored sources use non-erasable syntax and Node ships no transform mode.
-- The runtime declared-dependency enforcement in source launches is gone; undeclared workspace imports now surface only through static gates or built-mode resolution failures.
-- Runtime launch improves ~0.4s over the full tsx default; ACP keeps `--import tsx` because its graph was not audited for CJS-hook dependence and its launch latency is not on the interactive path.
+- 整个 engines 范围（包括未来改变原生 TypeScript 支持的 Node 版本线）只有一个启动向量；冒烟门禁按矩阵行强制执行。
+- TypeScript 转换重新委托给 tsx/esbuild，逆转了前一篇 Agent Note「证明 Node 原生转换可用」的目标；在 vendor 源码使用不可擦除语法且 Node 不再提供 transform 模式的情况下，该目标不可达。
+- 源码启动中的运行时依赖声明强制不复存在；未声明的 workspace import 现在只能通过静态门禁或构建模式的解析失败暴露。
+- 运行时启动相比完整 tsx 默认形态快约 0.4s；ACP（Agent Client Protocol）保留 `--import tsx`，因为它的依赖图尚未就 CJS 钩子依赖性做审计，且其启动延迟不在交互路径上。

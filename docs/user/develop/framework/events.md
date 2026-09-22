@@ -1,12 +1,10 @@
-# Event system
+# 事件系统
 
-English | [中文](events.zh.md)
+事件是 Cordis 插件间通信的核心机制。Harness 大量使用事件来实现松耦合的扩展点。
 
-Events are the core communication mechanism between Cordis plugins. Harness uses them extensively for loosely coupled extension points.
+## 基本用法
 
-## Basic use
-
-### Listen for an event
+### 监听事件
 
 ```ts ignore-check
 ctx.on('event-name', (payload) => {
@@ -14,19 +12,19 @@ ctx.on('event-name', (payload) => {
 })
 ```
 
-### Emit an event
+### 触发事件
 
 ```ts ignore-check
 ctx.emit('event-name', payload)
 ```
 
-## Event modes
+## 事件模式
 
-Cordis provides several event modes for different interaction contracts.
+Cordis 提供多种事件模式，适用于不同的交互契约：
 
-### emit — broadcast
+### emit — 广播
 
-Every listener runs synchronously and return values are ignored:
+所有监听器同步执行，返回值会被忽略：
 
 ```ts ignore-check
 // Emit
@@ -38,9 +36,9 @@ ctx.on('my-plugin/ready', ({ id }) => {
 })
 ```
 
-### bail — short circuit
+### bail — 短路
 
-Listeners run in order; the first result other than `null`, `false`, or `undefined` becomes the final result:
+监听器按顺序运行，第一个不是 `null`、`false` 或 `undefined` 的返回值会成为最终结果：
 
 ```ts ignore-check
 // Dispatch
@@ -53,17 +51,17 @@ ctx.on('some-check', (input) => {
 })
 ```
 
-### serial — ordered execution
+### serial — 顺序执行
 
-Listeners run in registration order and asynchronous results are awaited. The first result other than `null`, `false`, or `undefined` stops further execution:
+监听器按注册顺序依次执行，并等待异步结果；第一个不是 `null`、`false` 或 `undefined` 的返回值会终止后续执行：
 
 ```ts ignore-check
 await ctx.serial('setup-phase', context)
 ```
 
-### waterfall — pipeline
+### waterfall（瀑布式事件）— 流水线
 
-Each listener may wrap the downstream result to form a processing chain. A listener **must call `next()` to delegate downstream**; omitting the call short-circuits the pipeline:
+每个监听器可以包装下游返回值，形成处理链。**必须调用 `next()` 传递给下游**，不调用即会短路流水线：
 
 ```ts ignore-check
 // Dispatch
@@ -77,12 +75,12 @@ ctx.on('my-plugin/transform', async (_input, next) => {
 ```
 
 ::: warning
-A waterfall listener **must call `next()`**. Omitting it short-circuits the pipeline by design, enabling interception and gateway behavior.
+waterfall 监听器**必须调用 `next()`**。不调用 `next` 会短路整个流水线，这是故意为之的设计——用于实现拦截/网关逻辑。
 :::
 
-## Typed events
+## 类型安全的事件
 
-Harness uses TypeScript declaration merging for type-safe events:
+Harness 使用 TypeScript 声明合并来为事件提供类型安全：
 
 ```ts
 import '@deepseek-ai/cordis'
@@ -99,15 +97,15 @@ declare module '@deepseek-ai/cordis' {
 // are now inferred correctly.
 ```
 
-## Cordis events and session records
+## Cordis 事件与会话记录
 
-Harness Cordis events use `namespace/action` names, including `agent/step`, `agent/request`, `agent/request-error`, `tools/result`, and `session/event`. The generated `cordis-surface` regions on the [subsystem pages](../../../subsystems/core.md) record complete signatures and modes.
+Harness 的 Cordis 事件遵循 `namespace/action` 命名，例如 `agent/step`、`agent/request`、`agent/request-error`、`tools/result` 和 `session/event`。完整签名与触发模式见[子系统页面](../../../subsystems/core.md)上生成的 `cordis-surface` 区块。
 
-`turn/*`, `step/*`, `tool/call`, `tool/result`, and `compaction/*` are durable session-event types, not same-named Cordis events. To observe them, listen to `session/event` and inspect `event.type`.
+`turn/*`、`step/*`、`tool/call`、`tool/result` 和 `compaction/*` 是持久化的会话事件类型，不是同名 Cordis 事件。需要观察它们时，监听 `session/event` 并检查 `event.type`。
 
-## Event listeners are effects
+## 事件监听器也是效果
 
-A listener registered with `ctx.on()` is removed automatically when its plugin unloads:
+通过 `ctx.on()` 注册的监听器会在插件卸载时自动移除：
 
 ```ts ignore-check
 export function apply(ctx: Context) {
@@ -116,9 +114,9 @@ export function apply(ctx: Context) {
 }
 ```
 
-## Example: logging plugin
+## 示例：日志插件
 
-This plugin logs tool calls and results:
+这个插件记录工具调用和工具结果：
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
@@ -137,7 +135,7 @@ export function apply(ctx: Context) {
 }
 ```
 
-## Next steps
+## 下一步
 
-- [Capability layering](../practice/) — understand events within capability interfaces
-- [LLM adapters](../practice/llm-adapter.md) — implement a complete LLM backend
+- [能力分层](../practice/) — 了解能力接口中的事件
+- [LLM（大语言模型）适配器](../practice/llm-adapter.md) — 实现一个完整的 LLM 后端

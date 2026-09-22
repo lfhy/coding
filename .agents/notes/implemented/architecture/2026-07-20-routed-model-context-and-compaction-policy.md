@@ -1,57 +1,55 @@
-# Agent Note: Routed model context and compaction policy
+# Agent Note: 路由模型上下文与压缩策略
 
 Status: implemented
 
-English | [中文](2026-07-20-routed-model-context-and-compaction-policy.zh.md)
+## 问题
 
-## Problem
+当一个进程把请求路由到不同容量的模型时，压缩（compaction）不能安全地应用同一个全局上下文窗口。相同模型 id 也可能存在于多个提供方下，适配器还可能接受不在建议目录中的动态 id。错误容量要么让压缩触发过晚并造成原本可避免的溢出，要么让压缩触发过早并丢弃有用上下文。
 
-Compaction cannot safely apply one global context window when a process routes requests to models with different capacities. The same model id can also exist under multiple providers, and an adapter may accept dynamic ids absent from its advisory catalog. A wrong capacity either compacts too late and triggers avoidable overflow or compacts too early and discards useful context.
+两个直观的配置归属方都无法独立解决问题。Compact-basic 是可选插件，不知道适配器接受哪些模型。LLM（大语言模型）适配器拥有模型路由，但不能依赖可选压缩插件，也不应吸收消费方专用的阈值、保留、摘要器与重试策略。该设计既需要权威容量事实和可选的逐目标压缩策略，又不能建立第二套模型注册表。
 
-Neither obvious configuration owner is sufficient. Compact-basic is optional and does not know which models an adapter accepts. LLM adapters own model routing but must not depend on an optional compaction plugin or absorb consumer-specific threshold, retention, summarizer, and retry policy. The design needs an authoritative capacity fact and optional per-target compaction policy without creating a second model registry.
+## 决策
 
-## Decision
+### 适配器拥有精确路由容量
 
-### Adapters own exact-route capacity
+`LlmAdapter.resolveModel(provider, model, signal?)` 返回一条精确路由的聚合元数据，其中可选的 `LlmModelContext` 位于 `context` 字段下。`LlmRuntime.resolveModelInfo()` 选择已注册的路由所属方，验证 `contextWindow` 为正整数，并返回与适配器内部状态分离的元数据。该查询独立于 `listModels()`：不在目录中的动态模型也可以拥有容量元数据，而缺少 `context` 只表示适配器无法描述容量。
 
-`LlmAdapter.resolveModel(provider, model, signal?)` returns aggregate metadata for one exact route, with optional `LlmModelContext` under its `context` field. `LlmRuntime.resolveModelInfo()` selects the registered route owner, validates a positive integer `contextWindow`, and returns detached metadata. The query is independent of `listModels()`: an unlisted dynamic model may have capacity metadata, and an absent `context` means only that the adapter cannot describe capacity.
+手写 DeepSeek 适配器允许每个已配置模型提供可选 `contextWindow`，并支持适配器级 `defaultContextWindow`。精确模型容量优先；未提供容量的模型项与未列出的透传 id 会继承适配器默认值，若默认值也不存在则省略 `context`。两个内置模型项都公开精确的 256,000 token 容量。pi-ai 适配器从同一个目录描述符解析容量，该描述符也用于权威解析请求模型。
 
-The hand-rolled DeepSeek adapter accepts optional `contextWindow` on each configured model plus an adapter-wide `defaultContextWindow`. Exact model capacity wins; an entry without capacity and an unlisted pass-through id inherit the adapter default, or omit `context` when it is absent. The two built-in model entries each publish an exact 256,000-token capacity. The pi-ai adapter resolves capacity from the same catalog descriptor that authoritatively resolves the request model.
+### Token 计量保持模型无关
 
-### Token measurement remains model-agnostic
+`dsh-token-meter` 没有配置，也没有模型 profile。它拥有一个固定回放折叠，并返回绝对估算 token 压力，以及按位置排列的表层节点 token 估值。移除全局容量后，未加载 compaction-basic 时仍可复用计量，同时避免让回放核算变成另一套模型注册表。
 
-`dsh-token-meter` has no configuration and no model profiles. It owns one fixed replay fold and returns absolute estimated token pressure plus positional surface prices. Removing global capacity keeps measurement reusable when compaction-basic is absent and prevents replay accounting from becoming another model registry.
+### Compact-basic 解析目标规格
 
-### Compact-basic resolves a target spec
+Compact-basic 拥有消费方策略。顶层字段定义默认值；`modelPolicies` 包含以精确 `{ provider, model }` 组合为键的部分覆盖。重复目标、未知字段或无效字段都会让插件加载失败。`thresholdRatio` 默认为 `0.8`，保留策略默认为 `retainRatio: 0.16`；调用方也可以改用绝对 `retainTokens`，但两种保留形式互斥。完成继承后，如果保留比例不小于阈值比例，插件也会加载失败，因为任何模型容量都无法让该策略有效。
 
-Compact-basic owns consumer policy. Top-level fields define defaults; `modelPolicies` contains partial overrides keyed by the exact `{ provider, model }` pair. Duplicate targets and unknown or invalid fields fail plugin load. `thresholdRatio` defaults to `0.8`, and retention defaults to `retainRatio: 0.16`; callers may use an absolute `retainTokens` instead, but the two retention forms are mutually exclusive. After inheritance, a ratio retention that is not below its threshold ratio also fails plugin load because no model capacity can make that policy valid.
+对于主动压力检查，compaction-basic 读取最新持久请求路由，解析其适配器容量与精确目标策略，再把比例缩放为 `ResolvedCompactSpec`。每次检查都会重新解析，因此同一会话切换提供方或模型后，容量与策略会立即变化。若绝对保留预算不小于缩放后的阈值，系统会在目标容量首次允许比较两者时失败。
 
-For proactive pressure, compaction-basic reads the latest durable request route, resolves its adapter capacity and exact-target policy, and scales ratios into a `ResolvedCompactSpec`. It performs this resolution on every check, so a provider or model switch in one session changes capacity and policy immediately. An absolute retained budget that is not below the scaled threshold fails when the target capacity first makes that comparison possible.
+同一精确目标覆盖还可以选择摘要提供方/模型、摘要输出上限、收敛重试次数与溢出重试上限。这些都属于压缩问题，不会进入任何 LLM 提供方。
 
-The same exact-target override can select summarization provider/model, summarization output cap, convergence retries, and overflow retry cap. These are compaction concerns and never enter an LLM provider.
+### 目标专用压力错误仍保留可选组合
 
-### Target-specific pressure failures preserve optional composition
+缺少容量元数据的适配器仍是有效 LLM 路由。手动主动压力检查会返回目标专用配置错误；自动监听器按精确路由只警告一次，并继续保留完整历史。当已解析容量暴露出无效的绝对保留预算时，系统也按路由抑制重复警告；其他运行故障仍会各自对外可见。提供方已经确认的规范化溢出不需要容量元数据：它绕过主动阈值与普通保留预算，尝试一次最大且平衡的缩减，并在替换无法证明进展时保留原始提供方错误。
 
-An adapter that lacks capacity metadata remains a valid LLM route. Manual proactive pressure fails with a target-specific configuration error; the automatic listener warns once per exact route and continues with full history. The same per-route suppression applies when resolved capacity exposes an invalid absolute retention budget, while unrelated operational failures remain independently visible. Canonical provider-confirmed overflow does not need capacity metadata: it bypasses the proactive threshold and normal retention budget, attempts one maximal balanced reduction, and preserves the original provider error unless replacement proves progress.
+## 测试
 
-## Testing
+服务测试覆盖与适配器内部状态分离的上下文元数据、无效适配器输出、目录独立性与默认缺失行为。适配器测试覆盖 DeepSeek 的精确容量、默认容量、未列出模型解析及无效容量，以及 pi-ai 的精确描述符解析。压缩测试覆盖比例缩放、精确提供方/模型覆盖、加载期拒绝无效合并比例、运行时校验绝对预算、相同模型 id 的提供方切换、目标专用警告抑制与不依赖容量的溢出恢复。Loader fixture（测试前置数据）会拒绝已经移除的 token-meter 容量设置，示例则在适配器上配置容量。
 
-Service tests cover detached context metadata, invalid adapter output, catalog independence, and default absence. Adapter tests cover DeepSeek exact/default/unlisted resolution, invalid capacities, and pi-ai exact descriptor resolution. Compact tests cover ratio scaling, exact provider/model overrides, load-time rejection of invalid merged ratios, runtime absolute-budget validation, same-model-id provider switches, target-specific warning suppression, and capacity-independent overflow recovery. Loader fixtures reject the removed token-meter capacity setting, and examples configure capacity on adapters.
+## 考虑过的替代方案
 
-## Alternatives considered
+- **把容量与所有策略都放进 compaction-basic**——不予采纳，因为 compaction-basic 会复制适配器的模型知识，未列出的动态模型需要并行注册，而且未安装压缩时容量也会消失。
+- **把压缩策略放进各个 LLM 适配器**——不予采纳，因为适配器必须独立于可选消费方，而摘要与重试策略也不是提供方事实。
+- **让 `listModels()` 成为权威来源**——不予采纳，因为发现能力只是建议信息，一些适配器有意接受动态 id。正确性元数据不能把选择器成员关系变成路由白名单。
+- **给 token-meter 增加逐模型折叠**——不予采纳，因为回放算法可以共享，变化的只有容量与消费方策略。多个折叠会重复状态，却不会改善估算。
+- **建立独立模型上下文注册表**——不予采纳，因为适配器已经拥有权威路由解析。第二套注册表会引入生命周期顺序、重复键与漂移问题，却没有独立后端。
 
-- **Put capacity and all policies in compaction-basic** — rejected because compaction-basic would duplicate adapter model knowledge, dynamic unlisted models would require parallel registration, and capacity would disappear when compaction is not installed.
-- **Put compaction policy in each LLM adapter** — rejected because adapters must remain independent of optional consumers, while summarization and retry policy are not provider facts.
-- **Make `listModels()` authoritative** — rejected because discovery is advisory and some adapters intentionally accept dynamic ids. Correctness metadata must not turn selector membership into a routing whitelist.
-- **Add per-model folds to token-meter** — rejected because the replay algorithm is shared; only the capacity and consumer policy change. Multiple folds would duplicate state without improving estimation.
-- **Create a standalone model-context registry** — rejected because the adapter already owns authoritative route resolution. A second registry would introduce lifecycle ordering, duplicate-key, and drift problems without an independent backend.
+## 后果
 
-## Consequences
+- 容量在提供方约定上拥有唯一权威归属方，而压缩策略留在可选消费插件中。
+- 同一个 compaction-basic 实例无需查询发现元数据，就能安全处理不同窗口、提供方切换，以及不同提供方下的相同模型 id。
+- 仅 LLM 与仅 meter 的组合仍然有效；加载 compaction-basic 不会让适配器产生反向依赖。
+- DeepSeek 部署可以设置精确的逐模型容量，也可以让未提供容量的模型项与未列出的透传 id 使用 `defaultContextWindow`。
+- 比例默认值会随模型自然缩放，同时仍可按精确目标使用绝对保留值，以满足部署专用行为。
 
-- Capacity has one authoritative owner at the provider contract, while compaction policy stays in the optional consuming plugin.
-- The same compaction-basic instance safely handles different windows, provider switches, and identical model ids under different providers without consulting discovery metadata.
-- LLM-only and meter-only compositions remain valid; loading compaction-basic adds no reverse dependency from adapters.
-- DeepSeek deployments may set exact per-model capacities, or use `defaultContextWindow` for entries without capacity and unlisted pass-through ids.
-- Ratio defaults scale naturally across models, while exact-target absolute retention remains available for deployment-specific behavior.
-
-This note supersedes the global-capacity and no-model-policy parts of the [replay token meter service Agent Note](2026-07-15-replay-token-meter-service.md). Its single-fold measurement decision remains unchanged.
+本记录取代[回放式 token 计量服务 Agent Note](2026-07-15-replay-token-meter-service.md) 中的全局容量与无模型策略部分，单折叠计量决策保持不变。

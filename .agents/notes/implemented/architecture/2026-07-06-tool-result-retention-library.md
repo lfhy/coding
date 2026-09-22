@@ -1,25 +1,23 @@
-# Agent Note: Tool result retention library
+# Agent Note: 工具结果保留库
 
 Status: implemented
 
-English | [中文](2026-07-06-tool-result-retention-library.zh.md)
+## 问题
 
-## Problem
+多个面向模型的工具已经限制其返回的上下文量，但每个工具都拥有不同的局部机制和词汇：bash 保留尾部并提供 spill 文件；web search 限制来源列表；web fetch 限制正文内容；`glob`／`grep` 发现工具需要在行内提供第一页，同时为完整结果集保留精确的省略元数据。单一的 `truncate(text)` 辅助函数无法覆盖这些情况：条目型工具需要条目计数，并在原语之外分组；文本型工具则需要字节预算和 UTF-8 安全的首尾裁切。
 
-Several model-facing tools already bound the amount of context they return, but each one owns a different local mechanism and vocabulary: bash keeps a tail plus spill files, web search caps source lists, web fetch caps body content, and `glob` / `grep` discovery needs an inline first page while keeping exact omission metadata for the full result set. A single `truncate(text)` helper cannot cover those cases: item tools need item counts and grouping outside the primitive, while text tools need byte budgets and UTF-8-safe head/tail cuts.
+这些工具需要共享的抽象是**保留**，而不是通用集合。调用方向一个有界对象输入条目或文本分片，稍后取得保留内容与精确的省略元数据。工具专用代码仍负责业务语义：文件分组、行号、退出码、提供方错误状态、spill 文件和面向模型的说明。公共库只负责一个机械问题：「保留了什么，又省略了什么？」
 
-The shared abstraction the tools need is **retention**, not generic collection. A caller feeds items or text chunks into a bounded object and later receives the retained content plus exact omission metadata. Tool-specific code still owns business semantics: file grouping, line numbering, exit codes, provider error states, spill files, and model-facing prose. The common library owns only the mechanical question "what did we keep, and what did we omit?"
+## 决策
 
-## Decision
+`@deepseek-ai/dsh-output-retention` 位于 `packages/util/` 下，与 `dsh-brand` 和 `dsh-timeout` 同级，负责有界的模型可见输出。它是一组纯类与函数构成的库，**不是** Cordis 服务或插件：不接收 `ctx`、不注册任何内容、不持有跨调用状态，也不发出事件。各工具包需要限制输出时直接导入它。
 
-`@deepseek-ai/dsh-output-retention` lives under `packages/util/` (peer to `dsh-brand` and `dsh-timeout`) and owns bounded model-facing output. It is a library of pure classes and functions, **not** a Cordis service or plugin: it takes no `ctx`, registers nothing, holds no cross-call state, and emits no events. Tool packages import it directly when they need bounded output.
+该库包含两个相互独立的 retainer：
 
-The library has two independent retainers:
+- `ItemRetainer<T>` 处理有序逻辑单元，例如路径、grep 匹配项或搜索来源。v1 只支持 `head` 保留，同时维持 retainer 形态，以便未来加入其他保留策略。
+- `TextRetainer` 处理面向字节的文本流，例如 bash stdout／stderr 或 web 响应正文。它支持 `head`、`tail` 和 `headTail` 保留，并在 `finish()` 时维持 UTF-8 边界。
 
-- `ItemRetainer<T>` handles ordered logical units such as paths, grep matches, or search sources. It supports `head` retention only in v1, while keeping the retainer shape open to additional retention strategies later.
-- `TextRetainer` handles byte-oriented text streams such as bash stdout/stderr or web response bodies. It supports `head`, `tail`, and `headTail` retention while preserving UTF-8 boundaries at `finish()`.
-
-Both retainers return a small `PushDecision` after each `push()` so callers can tell whether that unit/chunk was fully retained and whether the accumulated result is now truncated. Omission counts are exact because callers keep feeding every observed item/chunk.
+两个 retainer 都会返回一个小型 `PushDecision`；每次调用 `push()` 后，调用方都能得知该单元／分片是否完整保留，以及累积结果此时是否已被截断。因为调用方会继续输入每一个已观察到的条目／分片，所以省略计数是精确的。
 
 ```ts ignore-check
 /**
@@ -62,9 +60,9 @@ interface RetainedText {
 }
 ```
 
-### Strategies
+### 策略
 
-Item retention supports a head window. Text retention supports head, tail, and headTail byte windows.
+条目保留支持头部窗口。文本保留支持头部、尾部与首尾字节窗口。
 
 ```ts ignore-check
 type ItemRetentionStrategy =
@@ -93,25 +91,25 @@ type TextRetentionStrategy =
     }
 ```
 
-### Tool mapping
+### 工具映射
 
-`read` is intentionally outside the v1 retention library. Its `read-render` helper owns a file-specific pagination contract: `offset` / `limit`, line numbers, `totalLines`, offset-out-of-range errors, per-line preview truncation, and a selected-output byte cap that can stop scanning mid-window. That is a line-window renderer, not a generic retention primitive. It may share future neutral notice helpers, but it should not pass its already-selected window through `ItemRetainer`.
+`read` 被有意排除在 v1 保留库之外。它的 `read-render` 辅助函数拥有文件专用的分页约定：`offset`／`limit`、行号、`totalLines`、offset 越界错误、逐行预览截断，以及能够在窗口中途停止扫描的所选输出字节上限。这是行窗口渲染器，不是通用保留原语。它未来可以共享中性的提示辅助函数，但不应把已经选定的窗口再传入 `ItemRetainer`。
 
-`FsGlobEntry` and `FlatGrepMatch` below are the intended discovery-tool item shapes, not existing retention-library exports. `FsGlobEntry` is one backend-derived path, and `FlatGrepMatch` is one ungrouped grep match before the backend groups retained matches by file.
+下文的 `FsGlobEntry` 与 `FlatGrepMatch` 是预期由发现工具使用的条目形态，不是现有保留库的导出。`FsGlobEntry` 是一个由后端派生的路径；`FlatGrepMatch` 是后端将保留匹配项按文件分组之前的一条未分组 grep 匹配。
 
-`glob` uses `ItemRetainer<FsGlobEntry>` with `{ kind: 'head', maxItems: globMaxResults }` after collecting the full sorted path list. The tool keeps the retained first page inline and may save the full list through the spill seam. Path mapping, skipped candidates, and `incomplete` stay outside the retainer.
+`glob` 收集完整的排序路径列表后，使用 `ItemRetainer<FsGlobEntry>`，并将其配置为 `{ kind: 'head', maxItems: globMaxResults }`。工具在行内保留第一页，并可以通过 spill seam 保存完整列表。路径映射、跳过的候选项与 `incomplete` 均位于 retainer 之外。
 
-`grep` uses `ItemRetainer<FlatGrepMatch>` with `{ kind: 'head', maxItems: grepMaxMatches }` before grouping. The executor parses ripgrep output, maps paths, applies per-line preview truncation, and pushes flat matches. After `finish()`, the tool groups retained matches by file and can save the full match list through the spill seam when the inline result is capped. Grouping is not part of the retainer because the cap is total matches, not files; per-match preview truncation and `incomplete` are also separate from result-level retention.
+`grep` 在分组前使用 `ItemRetainer<FlatGrepMatch>`，并将其配置为 `{ kind: 'head', maxItems: grepMaxMatches }`。执行器解析 ripgrep 输出、映射路径、应用逐行预览截断，并输入扁平匹配项。调用 `finish()` 后，工具按文件对保留的匹配项分组；如果行内结果达到上限，还可以通过 spill seam 保存完整匹配列表。分组不属于 retainer，因为上限针对匹配总数，而不是文件数；逐匹配项的预览截断和 `incomplete` 也与结果级保留相互独立。
 
-`bash` can use `TextRetainer` with `tail` or `headTail` and reads to process completion. The bash executor still owns spill files, exit status, signal, timeout, and background-job behavior; the retention helper only replaces ad hoc in-memory head/tail accounting where that behavior is desired. Long-running job ownership remains orthogonal to the [generic long-running tool runtime](2026-06-20-generic-long-running-tool-runtime.md).
+`bash` 可以使用 `TextRetainer`，配置为 `tail` 或 `headTail`，并读取至进程结束。bash 执行器仍负责 spill 文件、退出状态、信号、超时与后台任务行为；保留辅助函数只在需要该行为时替换临时实现的内存首尾核算。长时间运行任务的所有权与[通用长时间运行工具的运行时](2026-06-20-generic-long-running-tool-runtime.md)相互独立。
 
-`web_fetch` can use `TextRetainer` with `head` or `headTail`, or keep provider-owned body caps when the provider must read and decode internally. Either way, the fetch result's `truncated` remains a provider/tool fact, and the library only supplies retained text and omission metadata.
+`web_fetch` 可以使用 `TextRetainer`，配置为 `head` 或 `headTail`；如果提供方必须在内部读取和解码，也可以保留由提供方负责的正文上限。无论采用哪种方式，fetch 结果中的 `truncated` 仍是提供方／工具事实，该库只提供保留文本与省略元数据。
 
-`web_search` can use `ItemRetainer<WebSearchSource>` with `head`. Current providers often return an array, so this is post-hoc but still standardizes notices.
+`web_search` 可以使用 `ItemRetainer<WebSearchSource>`，配置为 `head`。当前提供方通常返回数组，所以这属于事后处理，但仍能统一提示信息。
 
-### Notices
+### 提示
 
-The library exposes a neutral notice shape and a tiny formatter hook, but tools provide the user-facing words. A grep footer says "Narrow the pattern, path, or include"; a web fetch footer says "Fetch a more specific URL or section"; bash may point to a spill file. The retainer cannot know those recovery actions.
+该库公开一个中性的提示结构和一个小型格式化钩子，但面向用户的措辞由工具提供。grep 页脚会提示「缩小 pattern、path 或 include」；web fetch 页脚会提示「获取更具体的 URL 或章节」；bash 则可以指向 spill 文件。retainer 无法得知这些恢复操作。
 
 ```ts ignore-check
 interface RetentionNotice {
@@ -130,28 +128,28 @@ const formatGrepNotice = (notice: RetentionNotice): string =>
   )
 ```
 
-The formatter hook is deliberately small: a tool turns a `RetentionNotice` into its own footer text. The helper may standardize omission wording, but it does not own recovery guidance.
+格式化钩子刻意保持精简：工具把 `RetentionNotice` 转换为自己的页脚文本。辅助函数可以统一省略措辞，但不负责恢复指引。
 
-`truncated` means the retainer omitted otherwise-available content because of a budget. It does not mean the upstream was incomplete. Tools keep separate fields for permission failures, skipped binary files, provider partial failures, unreadable candidates, invalid UTF-8, and any other "could not inspect" condition.
+`truncated` 表示 retainer 因预算省略了原本可用的内容，不表示上游结果不完整。工具会为权限失败、跳过的二进制文件、提供方局部失败、不可读候选项、无效 UTF-8，以及其他任何「无法检查」状况保留独立字段。
 
-## Consequences
+## 影响
 
-**What shipped.** `@deepseek-ai/dsh-output-retention` exports `ItemRetainer`, `TextRetainer`, the result types (`RetainedItems`, `RetainedText`), the strategy types (`ItemRetentionStrategy`, `TextRetentionStrategy`), `Omitted`, `PushDecision`, `RetentionNotice`, and the neutral notice helpers `describeOmitted` / `formatRetentionNotice` — with no dependency on Cordis or any tool package. Unit tests cover item-head retention with exact omission counts, text-head retention, text-tail retention, head-tail byte retention, zero budgets, UTF-8 boundary handling (2-, 3-, and 4-byte codepoints and invalid lead bytes at each cut), and unknown omission wording.
+**已交付内容。** `@deepseek-ai/dsh-output-retention` 导出 `ItemRetainer`、`TextRetainer`、结果类型（`RetainedItems`、`RetainedText`）、策略类型（`ItemRetentionStrategy`、`TextRetentionStrategy`）、`Omitted`、`PushDecision`、`RetentionNotice`，以及中性的提示辅助函数 `describeOmitted`／`formatRetentionNotice`，且不依赖 Cordis 或任何工具包。单元测试覆盖具有精确省略计数的条目头部保留、文本头部保留、文本尾部保留、首尾字节保留、零预算、UTF-8 边界处理（2、3、4 字节码位，以及每个裁切位置上的无效起始字节）和未知省略量的措辞。
 
-**What is documented but not yet migrated.** `glob`, `grep`, `bash`, `web_fetch`, and `web_search` have their mappings documented in the [package README](../../../../packages/util/output-retention/README.md), but not every tool has been migrated onto the library in this change; migration is deliberately separate follow-up work. `read` is documented as intentionally out of scope: its `read-render` line-window contract (`offset`/`limit`, `totalLines`, offset-range errors, per-line preview truncation, a byte cap over the selected window) is not generic retention, and one `Omitted` count cannot represent both sides of a line window.
+**已记录但尚未迁移的内容。** `glob`、`grep`、`bash`、`web_fetch` 与 `web_search` 的映射已记录在[包 README](../../../../packages/util/output-retention/README.md) 中，但本次改动并未把每个工具都迁移到该库；迁移工作刻意留作独立的后续任务。`read` 被明确记录为不在范围内：其 `read-render` 行窗口约定（`offset`／`limit`、`totalLines`、offset 范围错误、逐行预览截断，以及针对所选窗口的字节上限）不属于通用保留，而一个 `Omitted` 计数也无法同时表达行窗口两侧。
 
-**Boundaries the library holds.** `truncated` means the retainer omitted otherwise-available content because of a budget; it never means the upstream was incomplete. Tool-specific states — `incomplete`, permission failures, provider partial failures, binary skips, bash spill-path recovery, invalid UTF-8 — stay in tool-domain fields, outside the retainer. When a future change migrates a tool, that package's README and tests must prove the model-facing result text is unchanged except for deliberate notice wording.
+**该库维持的边界。** `truncated` 表示 retainer 因预算省略了原本可用的内容，绝不表示上游不完整。工具专用状态，包括 `incomplete`、权限失败、提供方局部失败、跳过二进制文件、bash spill 路径恢复和无效 UTF-8，均留在工具领域字段中、位于 retainer 之外。未来改动迁移某项工具时，该包的 README 与测试必须证明，除了有意改变的提示措辞外，模型可见的结果文本没有变化。
 
-**Tradeoffs accepted.** The v1 API deliberately supports only item `head` retention and text `head` / `tail` / `headTail`; windows, grouped budgets, sort-aware caps, and upstream-stop control wait until a second consumer proves the need. Text retention counts bytes for process/body safety, leaving character- and line-level preview budgets as separate tool-owned concerns.
+**接受的取舍。** v1 接口刻意只支持条目的 `head` 保留，以及文本的 `head`／`tail`／`headTail` 保留；窗口、分组预算、感知排序的上限和上游停止控制，要等第二个消费方证明需求后再引入。文本保留按字节计数，以保障进程／正文安全；字符级和行级预览预算继续由具体工具负责。
 
-## Alternatives considered
+## 考虑过的替代方案
 
-**Post-hoc `truncate(text)` only.** Rejected: it matches Codex's history/tool-output truncation use case but loses item counts, grouping boundaries, UTF-8-safe byte windows, and exact omission metadata.
+**只进行事后 `truncate(text)`。** 不予采纳：它适合 Codex 的历史／工具输出截断场景，却会丢失条目计数、分组边界、UTF-8 安全的字节窗口与精确省略元数据。
 
-**One generic `Collector<T>` with pluggable callbacks.** Rejected for v1: it hides the two important resource modes. Logical item retention counts items; text retention counts bytes and preserves UTF-8 boundaries. Separate `ItemRetainer` and `TextRetainer` names make that difference explicit while keeping the API small.
+**使用一个带可插拔回调的通用 `Collector<T>`。** v1 不予采纳，因为它会掩盖两种重要的资源模式。逻辑条目保留按条目计数；文本保留按字节计数并维持 UTF-8 边界。独立的 `ItemRetainer` 与 `TextRetainer` 名称明确表达这种差异，同时保持 API 精简。
 
-**Put `read` windowing behind `ItemRetainer`.** Rejected for v1: `read` is the only current window consumer, and its semantics are file pagination rather than generic retention. A single `Omitted` count cannot represent both sides of a line window, and `read` also carries `totalLines`, offset-range errors, per-line preview truncation, and a byte cap over selected output. Keeping `read-render` tool-owned avoids growing the shared library around one special case.
+**把 `read` 窗口交给 `ItemRetainer`。** v1 不予采纳：`read` 是当前唯一的窗口消费方，其语义属于文件分页，而不是通用保留。一个 `Omitted` 计数无法表示行窗口两侧，而且 `read` 还携带 `totalLines`、offset 范围错误、逐行预览截断和针对所选输出的字节上限。让 `read-render` 由工具所有，可以避免共享库围绕一项特例膨胀。
 
-**Make truncation part of `ToolExecutionResult`.** Rejected: the tool registry would have to understand tool-specific recovery guidance, grouping, line numbering, exit status, and provider semantics. Retention is a library used by a tool's Native renderer; the model-facing projection remains tool-owned while the [canonical value](2026-07-20-canonical-tool-output-contract.md) may retain the complete acquired result.
+**让截断成为 `ToolExecutionResult` 的一部分。** 不予采纳：工具注册表将不得不理解工具专用的恢复指引、分组、行号、退出状态和提供方语义。保留是由工具的 Native renderer（原生渲染器）使用的库；模型可见投影继续由工具所有，而[规范值](2026-07-20-canonical-tool-output-contract.md)可以保留完整的已采集结果。
 
-**Expose limits in every model-facing tool schema.** Rejected as the default: Claude Code's grep exposes `head_limit` / `offset`, but this harness keeps routine budgets as deployment config unless the model genuinely needs pagination control. A future read-like continuation field can be added per tool; it does not belong in the shared retention primitive.
+**在每个面向模型的工具 schema 中公开上限。** 不作为默认方案：Claude Code 的 grep 公开 `head_limit`／`offset`，但本 harness 会把常规预算保留为部署配置，除非模型确实需要控制分页。未来可以为具体工具增加类似 read 的续传字段；它不属于共享保留原语。

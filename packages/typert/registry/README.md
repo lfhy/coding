@@ -1,33 +1,31 @@
 # @deepseek-ai/dsh-typert-registry
 
-English | [中文](README.zh.md)
+生成的 Typert 产物所用的运行时注册表。每个注册项包含某个包在一个 face 上的业务反射信息，以及可选的运行时 Zod schema；`ctx.typert` 会以原子方式同时注册两者，并在发起调用的 Cordis fiber 释放时一并移除它们。TypeScript 分析和代码生成由 [`dsh-typert-generator`](../generator/README.md) 负责。
 
-Runtime registry for generated Typert artifacts. A contribution carries one package face's business reflection and optional live Zod schemas; `ctx.typert` registers both atomically and withdraws them with the calling Cordis fiber. TypeScript analysis and code generation live in [`dsh-typert-generator`](../generator/README.md).
+包反射信息以 `<package>#<face>` 为键。schema 以 `<package>#<name>` 为键，并保留生成方的 Zod 实例。系统按需在消费方边界计算 JSON Schema。
 
-Package reflection is keyed by `<package>#<face>`. Schemas are keyed by `<package>#<name>` and retain the producer's Zod instance. JSON Schema is computed on demand at the consumer edge.
+## 公开 API
 
-## Public API
+- `TypertRegistry` 是默认插件，并提供 `ctx.typert`。
+- `ctx.typert.lookups.register()` 注册由业务包拥有的协议声明和默认解析器；`configure()` 注册由宿主组合拥有且可异步执行的解析器。两者的生命周期相互独立：配置可以先于提供方注册，卸载配置会恢复默认策略。
+- `ctx.typert.contexts.registerHost()` 和 `configureHost()` 对具作用域的上下文身份采用同样的所有权划分；`registerClient()` 提供对应的客户端上下文绑定器。
+- `register(contribution)` 会在提交任何内容之前拒绝格式错误的标识，以及重复的包与 face 组合键或 schema 键，随后返回 Cordis effect 提供的同一资源释放函数。
+- `get(key)`、`resolve(key)` 和 `list(filter?)` 查询当前有效的 schema。`resolve()` 能区分格式错误的键、未注册的包，以及已注册但未以该名称提供 schema 的包。
+- `getPackage(packageName, face?)` 和 `listPackages(filter?)` 查询生成的服务、事件和对象反射信息；默认 face 为 `host`。
+- `toJSONSchema(key, params?)` 使用 `z.toJSONSchema()` 投影当前有效的 schema，且不缓存结果。
+- `typertKey()` 和 `typertPackageKey()` 构造两种稳定的标识形式。
 
-- `TypertRegistry` is the default plugin and provides `ctx.typert`.
-- `ctx.typert.lookups.register()` registers the wire declaration and default resolver owned by the business package; `configure()` registers a resolver owned by Host composition that may run asynchronously. Their lifetimes are independent: configuration may precede the provider, and unloading the configuration restores the default policy.
-- `ctx.typert.contexts.registerHost()` and `configureHost()` apply the same ownership split to scoped Context identity; `registerClient()` supplies the corresponding Client Context binder.
-- `register(contribution)` rejects malformed identities and duplicate package-face or schema keys before committing anything, then returns the exact Cordis effect disposer.
-- `get(key)`, `resolve(key)`, and `list(filter?)` query live schemas. `resolve()` distinguishes a malformed key, an absent package, and a package that contributes no schema under that name.
-- `getPackage(packageName, face?)` and `listPackages(filter?)` query generated service, event, and object reflection; the default face is `host`.
-- `toJSONSchema(key, params?)` projects a live schema with `z.toJSONSchema()` without caching the result.
-- `typertKey()` and `typertPackageKey()` compose the two stable identity forms.
+`@deepseek-ai/dsh-typert-registry/types` 子路径包含注册项和记录的纯类型约定。[`dsh-typert-loader`](../loader/README.md) 会在 Loader 组合中发现并注册生成的宿主侧产物；其他组合所有者可以直接调用 `ctx.typert.register()`。
 
-The `@deepseek-ai/dsh-typert-registry/types` subpath contains the pure contribution and record contracts. [`dsh-typert-loader`](../loader/README.md) discovers and registers generated host artifacts in Loader compositions; direct `ctx.typert.register()` supports other composition owners.
+## 模型体验
 
-## Model Experience
+无。注册表不会提供提示词、工具或会话事件；所有模型可见投影均由 `cordis_inspect` 等消费方负责。
 
-None, as the registry contributes no prompt, tool, or session event; consumers such as `cordis_inspect` own any model-visible projection.
+#### KV Cache 影响
 
-#### KV Cache effect
+无直接影响。将反射信息放入请求的消费方负责由此产生的前缀变化。
 
-No direct effect. A consumer that places reflection in a request owns the resulting prefix change.
+## 已知限制与暂缓事项
 
-## Known Limitations and Deferred Work
-
-- The registry stores generated reflection but does not merge host and client graphs or resolve TypeScript references. Those are analyzer and emitter concerns.
-- Schema keys omit the face because host and client run in separate contexts. Registering same-named schemas from both faces into one context is rejected as a duplicate.
+- 注册表存储生成的反射信息，但不会合并宿主侧与客户端侧的图，也不会解析 TypeScript 引用；这些由分析器和产物输出器负责。
+- schema 键不包含 face，因为宿主侧和客户端侧在不同的上下文中运行。若在同一上下文中注册来自两个 face 的同名 schema，系统会将其作为重复项拒绝。

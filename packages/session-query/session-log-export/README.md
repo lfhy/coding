@@ -1,49 +1,47 @@
 # @deepseek-ai/dsh-session-log-export
 
-English | [中文](README.zh.md)
+Web Session 日志下载控制，使用 `dsh-host-apiproxy` 拥有的 Host 流式 ZIP 端点。Host 半包注册 `/export`；浏览器半包持有该命令的下载控制器和结果弹窗，Session Header 不再提供导出控件。ZIP 生成、原始 JSONL/zstd 读取、子 Session、附件、背压和 HTTP 错误语义仍由 [ApiProxy 下载实现](../../host/apiproxy/README.md)负责。
 
-Web Session-log download control over the host-streamed ZIP endpoint owned by `dsh-host-apiproxy`. The Host half registers `/export`; the browser half owns the download controller and the result modal for that command, and the Session Header exposes no export control. ZIP generation, raw JSONL/zstd reads, descendants, attachments, backpressure, and HTTP error semantics remain owned by the [ApiProxy download implementation](../../host/apiproxy/README.md).
+## 命令约定
 
-## Command contract
-
-| Input | Result |
+| 输入 | 结果 |
 |---|---|
-| `/export` | Record a human-command lifecycle; the submitting browser receives the local execution acknowledgment and downloads `GET /api/session.export?sessionId=<id>&includeDescendants=true`. |
-| `/export <path>` | Return an error. Browser downloads choose their destination through the browser's ordinary download behavior. |
+| `/export` | 记录一组用户命令生命周期；提交命令的浏览器收到本地执行确认后，下载 `GET /api/session.export?sessionId=<id>&includeDescendants=true`。 |
+| `/export <path>` | 返回错误。浏览器下载通过浏览器的普通下载行为选择目标位置。 |
 
-The command is mounted only by the Web bundle. The local `command/executed` acknowledgment triggers the download only after a successful `/export` result in the browser that submitted it; other tabs still render the durable command row without repeating the browser side effect. The download issues a `HEAD` preflight, then hands the GET URL to the browser download manager without buffering the ZIP in JavaScript; the controller owns in-flight collapsing, cancellation of the preflight on plugin disposal, preparation-error handling, browser save behavior, and the shared Modal.
+该命令只由 Web bundle 挂载。只有 `/export` 返回成功时，本地 `command/executed` 确认才会在提交命令的浏览器中触发下载；其他标签页仍会渲染持久命令行，但不会重复执行浏览器副作用。下载先发出 `HEAD` 预检，再把 GET URL 交给浏览器下载管理器，JavaScript 不会缓冲 ZIP；控制器持有并发折叠、插件释放时取消预检、准备阶段错误处理、浏览器保存行为和共用的 Modal。
 
-The Host download endpoint flushes a live root Session before `readRaw`, so a slash-triggered ZIP includes the `command/run` and `command/done` pair whose acknowledgment started the download. Cold persisted Sessions require no flush.
+Host 下载端点会在 `readRaw` 前 flush 活动的根 Session，因此斜杠命令触发的 ZIP 会包含启动下载的 `command/run` 与 `command/done` 事件对。冷持久化 Session 不需要 flush。
 
-The modal reports preparation, download start, or failure. Closing it does not cancel an in-flight download and does not reopen it when that operation later settles. One Session admits one active download at a time; repeated gestures share that operation.
+弹窗报告准备中、开始下载或失败。关闭弹窗不会取消正在进行的下载；该操作随后完成时也不会重新打开弹窗。每个 Session 同时只允许一项下载，重复操作会共用该任务。
 
-## Composition
+## 组合
 
 ```yaml
 - id: session-log-download
   name: '@deepseek-ai/dsh-session-log-export'
 ```
 
-The Web bundle mounts the package beside `dsh-host-apiproxy`, `dsh-commands`, `dsh-client-ui-commands`, and `dsh-client-ui-conversation`. The package contributes only its result modal to the right-aligned `conversation.session.header.utilities` list, so the header renders no export control beside the title-adjacent mode, Subagent, and Task entries in `conversation.session.header.actions`.
+Web bundle 将本包与 `dsh-host-apiproxy`、`dsh-commands`、`dsh-client-ui-commands` 和 `dsh-client-ui-conversation` 一起挂载。本包只把结果弹窗贡献到最右侧的 `conversation.session.header.utilities` 列表，页头因此不会在标题旁 `conversation.session.header.actions` 的模式、Subagent 和 Task 配置项之外渲染导出控件。
 
-## Model Experience
+## 模型体验
 
-### Human `/export` control
+### 用户 `/export` 控制
 
-#### What the model sees
+#### 模型看到什么
 
-Nothing. `/export` stays on the human-command plane, and the ZIP download does not enter model history.
+无。`/export` 留在用户命令平面，ZIP 下载不会进入模型历史。
 
-#### Token effect
+#### Token 影响
 
-Zero. The command creates no model turn.
+为零。该命令不创建模型轮次。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-None. The log-only command lifecycle and browser download do not change the derived request prefix.
+无。仅日志命令生命周期和浏览器下载不会改变派生请求前缀。
 
-## Known Limitations and Deferred Work
+## 已知限制与暂缓事项
 
-- The download endpoint requires a persistence backend with a per-Session raw artifact. The shipped JSONL backend supports plaintext and zstd artifacts; SQLite export is not included in this change.
-- This is a browser download, not a Host-path writer. The browser chooses the local destination; no Host path or native folder action is returned.
-- The preflight reports failures found before ZIP streaming starts. A descendant or attachment failure after the browser accepts the GET is reported by the browser download manager, not by the modal.
+- 下载端点要求持久化后端具有逐 Session 原始工件。随附 JSONL 后端支持明文和 zstd 工件；本次改动不包含 SQLite 导出。
+- 这是浏览器下载，不是 Host 路径写入。目标位置由浏览器选择，不会返回 Host 路径或原生文件夹操作。
+- 预检只报告 ZIP 开始流式传输前发现的失败。浏览器接受 GET 后发生的子 Session 或附件读取失败由浏览器下载管理器报告，不通过弹窗报告。

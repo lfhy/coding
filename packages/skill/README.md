@@ -1,16 +1,14 @@
-# skill/ — skill capability family
+# skill/：skill（技能）能力家族
 
-English | [中文](README.zh.md)
+本家族发现可复用的 agent（智能体）指令，并通过与提供方无关的目录和 loader 将其公开给模型。
 
-This family discovers reusable agent instructions and exposes them to the model through a provider-neutral catalog and loader.
-
-| Package | Role | ctx key |
+| 包 | 职责 | ctx 键 |
 |---|---|---|
-| [`skill/`](skill/README.md) | Defines skill provider registration and lookup | `ctx.skills` |
-| [`skill-badge/`](skill-badge/README.md) | Contributes the optional bundled dsh badge skill | registers on `ctx.skills` |
-| [`skill-filesystem/`](skill-filesystem/README.md) | Discovers skills from local filesystems | registers on `ctx.skills` |
-| [`tool-skill/`](tool-skill/README.md) | Publishes the skill catalog and model-facing loader | registers on `ctx.tools` |
+| [`skill/`](skill/README.md) | 定义 skill 提供方注册和查找 | `ctx.skills` |
+| [`skill-badge/`](skill-badge/README.md) | 贡献可选的内置 dsh 徽章 skill | 注册到 `ctx.skills` |
+| [`skill-filesystem/`](skill-filesystem/README.md) | 从本地文件系统发现 skill | 注册到 `ctx.skills` |
+| [`tool-skill/`](tool-skill/README.md) | 发布 skill 目录和面向模型的 loader | 注册到 `ctx.tools` |
 
-This capability remains outside the core control spine and can use local, embedded, or remote providers without changing the model-facing contract.
+该能力位于核心控制主干之外，可以使用本地、嵌入式或远程提供方，而无需更改面向模型的约定。
 
-The subsystem reference — discovery priority, catalog snapshots, the `skill` loader — is [docs/subsystems/skills.md](../../docs/subsystems/skills.md).
+子系统参考——发现优先级、目录快照、`skill` 加载器——见 [docs/subsystems/skills.md](../../docs/subsystems/skills.md)。

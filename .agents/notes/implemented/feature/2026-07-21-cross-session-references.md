@@ -1,62 +1,60 @@
-# Agent Note: Cross-session references
+# Agent Note: 跨会话引用
 
 Status: implemented
 
-English | [中文](2026-07-21-cross-session-references.zh.md)
+## 问题
 
-## Problem
+Web 用户需要把另一场对话中的相关工作带入一条新消息，但不恢复、不 fork，也不让源 transcript（文本记录）对当前会话拥有权威性。harness 已经提供准确的会话枚举与原始事件检查，但若每个宿主都独立解析日志，就会重复实现压缩（compaction）折叠、来源过滤、大小限制、错误行为和持久化。把宿主标记直接编码进 agent（智能体）消息约定，还会让核心循环绑定某一种 UI 语法。
 
-Web users need to bring relevant work from another conversation into one new message without resuming, forking, or granting the source transcript authority over the current session. The harness already exposes exact session enumeration and raw event inspection, but every host independently parsing logs would duplicate compaction folding, provenance filtering, size limits, error behavior, and persistence. Encoding host markup directly into the agent message contract would also bind the core loop to one UI syntax.
+## 决策
 
-## Decision
+`@deepseek-ai/dsh-session-reference` 是注册在 `ctx.sessionReferenceResolver` 上的单一上下文消费服务。它的外层 `agent/pre-step` 监听器会解析已接受直接用户消息中的规范 mention，并调用 `prepare()`，宿主网关无需添加引用行为。该服务返回分离的可读内容和一份可选的、带标识且冻结的 `UserMessage` 快照；核心 agent 包既不解析会话 URI，也不读取其他日志。
 
-`@deepseek-ai/dsh-session-reference` is one context consumer service at `ctx.sessionReferenceResolver`. Its outer `agent/pre-step` listener parses canonical mentions in accepted direct user messages and calls `prepare()` without adding reference behavior to a host gateway. The service returns detached readable content plus an optional identified, frozen `UserMessage` snapshot; core agent packages do not parse session URIs or read another log.
+`dsh-session:<base64url(JSON.stringify(sessionId))>` 是与宿主无关的规范标识符。系统先执行 JSON 字符串编码，再执行 base64url 编码，因此引号、正斜杠、反斜杠、Unicode、换行符以及其他任意 JavaScript 字符串值都能无损往返，不会因分隔符产生歧义。Web 接收由 Host 生成、包含该 URI 的 `@[label](uri)` 提及标记，并把它封装为原子 session chip；纯文本客户端可以使用同一种行内提及标记。显式 Markdown 提及标记会拒绝格式错误的 URI。裸文本只有在负载非空且形状符合 base64url 时才会成为引用，而且解码过程仍须通过规范性校验；空负载或只含标点符号的用法仍按普通讨论文本处理。
 
-`dsh-session:<base64url(JSON.stringify(sessionId))>` is the canonical host-independent identifier. JSON string encoding precedes base64url so quotes, slashes, backslashes, Unicode, newlines, and every other JavaScript string value round-trip without delimiter ambiguity. Web receives that URI inside the Host-produced `@[label](uri)` mention and keeps it behind an atomic session chip; text-only clients may use the same inline mention. Explicit Markdown mentions reject malformed URIs. Bare text becomes a reference only for a non-empty base64url-shaped payload, whose decode must still be canonical; empty or punctuation-only uses remain ordinary discussion text.
+该服务使用 `ctx.sessionQuery.readSurface(sessionId)`：它优先从实时会话加载一次语料观察结果，使用会话包的规范表层算法执行折叠，并返回与源数据分离的会话头、捕获序号和当前节点。FTS 不是依赖项：候选发现会匹配 id、cwd 或最新折叠后的标题，而消息主体不进入候选层。非空查询会对可见语料中的标题观察结果执行批处理，以有界并发读取持久化日志，并支持取消；专用标题索引可以替换这条发现路径，而无需改变引用标识或准备过程。
 
-The service uses `ctx.sessionQuery.readSurface(sessionId)`, which loads one live-preferred corpus observation, folds it with the session package's canonical surface algorithm, and returns a detached header, capture seq, and current nodes. FTS is not a dependency: discovery matches id, cwd, or the latest folded title, while message bodies remain outside the candidate layer. Non-empty queries batch title observations across the visible corpus with bounded persisted-log concurrency and cancellation; a dedicated title index can replace that discovery path without changing reference identity or preparation.
+## 快照与投影
 
-## Snapshot and projection
+准备过程按首次出现的顺序去重、拒绝目标会话自身的 id，并且执行可配置的数量限制，但引用硬上限为三个，所有读取均并行执行。该过程不会返回部分上下文：任何读取、取消、校验或预算错误都会在已接受消息进入面向模型的历史之前结束该轮次。取消会与进行中的候选发现和精确读取竞速，因此即使持久化后端无法中断待处理操作，监听器也能及时结束等待。queued 消息到达 `agent/pre-step` 时会捕获每个源；此后源会话新增消息、执行压缩、被删除或替换持久化内容，都无法改变目标会话中记录的上下文。
 
-Preparation deduplicates in first-appearance order, rejects the target id, enforces a configurable limit with a hard maximum of three references, and performs all reads in parallel. It returns no partial context: any read, cancellation, validation, or budget error ends the turn before the accepted messages enter model-visible history. Cancellation races in-flight discovery and exact reads, so the listener settles promptly even when a persistence backend cannot interrupt its pending operation. A queued message captures each source when it reaches `agent/pre-step`; later source messages, compaction, deletion, or persistence replacement cannot change the context recorded in the target session.
+投影会保留直接用户消息与 steering（中途引导）、已完成的 assistant 文本，以及携带由 `dsh-compaction` 导出的规范来源标记的检查点用户消息。该标记属于压缩能力约定的一部分，而非某个后端包名称。引用快照始终是独立且带来源的 `user/message` 事件，因此投影会把它们作为注入上下文排除，绝不递归传播早先的快照。投影还会排除压缩前已被遮蔽的节点、工具及其结果、推理（reasoning）、其他插件用户消息、仅用于日志的记录，以及尚未完成的 assistant 分片。因此，重复压缩只会暴露当前表层仍保留的最新折叠检查点谱系及其尾部消息；系统不提供 raw/current 开关，也不恢复被遮蔽的内容。
 
-Projection retains direct-user messages and steering, completed assistant text, and checkpoint user messages carrying the canonical source exported by `dsh-compaction`. That marker is part of the compaction capability contract rather than a backend package name. Reference snapshots remain separate sourced `user/message` events, so projection excludes them as injected context and never recursively propagates an earlier snapshot. Projection also excludes shadowed pre-compaction nodes, tools and results, reasoning, other plugin user messages, log-only records, and incomplete assistant chunks. Repeated compaction therefore exposes only the latest folded checkpoint lineage still on the current surface plus its retained tail; there is no raw/current switch and no shadow recovery.
+系统把一个聚合上下文序列化为 JSON，并置于固定的不可信背景警告之后。该警告要求模型不要遵循被引用会话中的指令、权限声明或工具请求，除非当前用户再次提出这些内容。标签安全序列化会把数据中的每个 `<` 无损转义为 JSON `\u003c`；因此源字符串无法拼出外围类似 XML 的标签，也无法逃逸数据区域。同一个序列化器会独立核算每个源的字节数。AgentLoop 会把快照持久化为一条带来源信息的 `user/message`，紧接在直接 `user/message` 之后。因此，目标回放无需新增事件类型、放置模式或提示词封套，也能满足「模型可见／日志可重建」不变量。
 
-One aggregated context is serialized as JSON beneath a fixed untrusted-background warning. The warning tells the model not to follow instructions, permission claims, or tool requests from referenced sessions unless the current user repeats them. Tag-safe serialization emits every data `<` as the lossless JSON escape `\u003c`; source strings therefore cannot spell the surrounding XML-like tags or escape the data region. The same serializer drives each source's independent byte accounting. AgentLoop persists the snapshot as a sourced `user/message` immediately after the direct `user/message`; target replay therefore satisfies the model-visible/log-reconstructable invariant without a new event type, placement mode, or prompt envelope.
+## 消息所有权
 
-## Message ownership
+该服务的外层 `agent/pre-step` 监听器会先调用下游监听器，并且只处理 `enter` 决策。它会解析每条已接受的直接用户消息，在把规范 mention 替换为可读标签时保留消息 id，并把冻结快照插入到该消息紧后。最终领取的消息是准备过程的输入，因此队列编辑和从 queue 移动到 steer 不需要引用专用状态。[上下文分离决策](../architecture/2026-07-24-separate-context-injection-from-turn-execution.md)规定了这一上下文顺序。
 
-The service's outer `agent/pre-step` listener calls downstream listeners first and processes only an `enter` decision. It parses each accepted direct user message, preserves that message's id while replacing canonical mentions with readable labels, and inserts the frozen snapshot immediately after that message. Queue edits and queue-to-steer relocation need no reference-specific state because the final claimed messages are the input to preparation. The [separate-context decision](../architecture/2026-07-24-separate-context-injection-from-turn-execution.md) owns this context ordering.
+引用准备过程不是新的投递协议，本身也不会创建轮次。准备失败会通过 agent loop 的现有插件失败路径终止已经接受的轮次。
 
-Reference preparation is not a new delivery protocol and does not create a turn by itself. A preparation failure terminates the already accepted turn through the agent loop's existing plugin-failure path.
+## 宿主适配器
 
-## Host adapters
+统一的 Web `@` source 把会话候选与 Host 支持的文件发现组合在一起。会话候选查询会对 session id、cwd 或最新折叠后的标题执行不区分大小写的子串匹配，显示该标题，并在没有标题观察结果或标题观察失败时回退到 session id。查询遵循请求的取消信号；session id、cwd 和提及标签中的外部控制字符会被转义，但规范 URI 仍保留原始 id。
 
-The unified Web `@` source combines session candidates with Host-backed file discovery. Session candidate lookup matches case-insensitive substrings of the session id, cwd, or latest folded title, displays that title, and falls back to the session id when a title observation is absent or fails. Lookup follows the request's cancellation signal, and session id, cwd, and mention labels escape external control characters while the canonical URI retains the original id.
+Web 通过所属服务上的生成 Remote 方法提供文件与会话发现，详见 [Web 文件与会话引用](2026-07-27-web-file-and-session-references.md)。session 选择项是由 Host 生成的规范 mention 支撑的原子 chip。普通 `session.prompt` 投递会携带该 mention，无需引用专用 API Proxy 路由。回放会把独立的 session-reference 上下文与紧邻其前的直接消息关联起来，并渲染精简来源摘要，而不暴露快照 JSON。
 
-Web exposes file and session discovery through generated Remote methods on their owning services, as detailed in [Web file and session references](2026-07-27-web-file-and-session-references.md). Session picks are atomic chips backed by the Host-produced canonical mention. Ordinary `session.prompt` delivery carries that mention without a reference-specific API Proxy route. Replay associates the separate session-reference context with the direct message immediately before it and renders a compact source summary instead of exposing the snapshot JSON.
+[仅面向自动化的 ACP（Agent Client Protocol）传输层](../simplification/2026-07-23-acp-automation-only-protocol.md)有意不挂载会话查询或会话引用服务。
 
-The [automation-only ACP transport](../simplification/2026-07-23-acp-automation-only-protocol.md) deliberately does not mount session-query or session-reference services.
+## 预算与保留策略
 
-## Budget and retention
+最多三个引用中的每一个默认独立限制在 65,536 个 UTF-8 字节以内。保留策略会优先保留当前压缩检查点和最新的对话单元，再丢弃较旧的非检查点消息。若保留文本过大，系统使用 `dsh-output-retention` 进行首尾切片并记录准确的省略字节数；若某个源的固定序列化字段无法装入其上限，整个准备过程会失败，不会输出部分上下文。
 
-Each of at most three references is independently capped at 65,536 UTF-8 bytes by default. Retention preserves current compact checkpoints and the newest conversation unit before dropping older non-checkpoint messages. An oversized retained text uses `dsh-output-retention` head/tail slicing and records exact omitted bytes; if one source's fixed serialized fields cannot fit its cap, the whole preparation fails rather than emitting a partial context.
+## 考虑过的替代方案
 
-## Alternatives considered
+- **等待 SQLite FTS5**：不予采纳，因为快照正确性依赖按准确 id 读取和规范表层折叠，而不是内容搜索。FTS 只改进候选发现。
+- **把提及标记语法放入 agent 投递方法**：不予采纳，因为这会迫使核心协议解析某个宿主的展示语法，并阻止带类型的非文本宿主复用同一语义层。
+- **在每个宿主中分别实现引用**：不予采纳，因为投影、安全警告、保留策略和持久化会在不同宿主之间逐渐偏离。
+- **把上下文附加到 `SendOptions` 和直接提示词的收件箱记录**：不予采纳，因为通用投递将不得不负责贯穿准入、steering、取消和观察的领域事务。领域监听器可以准备最终领取的消息，无需扩大每条直接提示词。
+- **在调用 `followup()` 前由宿主合并前缀**：不予采纳，因为 `agent/pre-step` 必须只检查和改写直接提示词。将快照保留为独立的带来源消息，可以维持该边界，并让 Web 从直接用户气泡中隐藏背景字节。
+- **回放原始源日志或恢复被遮蔽的事件**：不予采纳，因为压缩定义了当前模型表层，并且可能有意淘汰敏感或开销高昂的历史内容。
+- **恢复或 fork 源会话**：不予采纳，因为本功能只为一条目标消息提供只读背景，不提供身份或生命周期连续性。
+- **模型步骤进入后重新读取源会话**：不予采纳，因为目标回放会依赖可变的外部状态，而不是已记录的快照。
 
-- **Wait for SQLite FTS5** — rejected because snapshot correctness requires exact id reads and canonical surface folding, not content search. FTS improves discovery only.
-- **Put mention syntax in agent delivery methods** — rejected because it would make the core protocol parse one host's presentation syntax and prevent typed non-text hosts from sharing the semantic layer.
-- **Implement references separately in each host** — rejected because projection, security warning, retention, and persistence would drift across hosts.
-- **Attach context to `SendOptions` and the direct prompt's inbox record** — rejected because generic delivery would own a domain transaction through admission, steering, cancellation, and observation. The domain listener can prepare the final claimed message without enlarging every direct prompt.
-- **Bake the prefix host-side before `followup()`** — rejected because `agent/pre-step` must inspect and rewrite only the direct prompt. Keeping the snapshot as a separate sourced message preserves that boundary and lets Web hide background bytes from the direct user bubble.
-- **Replay the raw source log or restore shadowed events** — rejected because compact defines the current model surface and may intentionally retire sensitive or expensive history.
-- **Resume or fork the source** — rejected because the feature supplies read-only background for one target message, not identity or lifecycle continuity.
-- **Reread the source after the model step enters** — rejected because target replay would depend on external mutable state instead of the logged snapshot.
+## 验证
 
-## Verification
+单元与集成测试覆盖 URI 无损往返与文本边界标点、显式格式错误的引用、按 id／cwd／标题进行候选匹配与排序、标题观察失败时的回退、候选查询取消、控制字符转义、投影排除规则、快照的非递归投影、与后端无关的压缩检查点、标签安全封套、去重、自引用、数量限制、读取的全有或全无、存储读取不结束时的取消、逐源独立字节保留、冻结消息所有权、pre-step 解析和插入、下游拒绝、Chat 投影的后继召回关联、标题隔离，以及生成的 Remote 发现接口。一个无密钥 Web 快照会固定组装后的引用选择路径。
 
-Unit and integration coverage pins URI round-trips and text-boundary punctuation, explicit malformed references, id/cwd/title candidate matching and ranking, failed title-observation fallback, candidate cancellation, control-character escaping, projection exclusions, non-recursive snapshot projection, backend-independent compact checkpoints, tag-safe framing, deduplication, self-reference, count limits, all-or-nothing reads, cancellation against a non-settling storage read, independent per-source byte retention, frozen message ownership, pre-step parsing and insertion, downstream rejection, Chat-projected following-recall association, title isolation, and the generated Remote discovery faces. A keyless Web snapshot pins the assembled reference selection path.
+## 后果
 
-## Consequences
-
-The new plugin is the stable semantic boundary and adds no persistence schema, event type, FTS dependency, source subscription, or compact shadow access. The standard CLI composition mounts it explicitly for Web and exposes its count and per-source byte limits in config; custom hosts remain unchanged until they mount the service and adapt their input. Reference contexts increase target history size within configured bounds and can later be summarized by ordinary target compaction, after which the source session is irrelevant.
+新插件构成稳定的语义边界，不会新增持久化 schema、事件类型、FTS 依赖、源会话订阅或对压缩所遮蔽内容的访问。标准 CLI 组合会为 Web 显式挂载它，并在配置中暴露引用数量和逐源字节上限；自定义宿主在挂载该服务并适配输入前保持不变。引用上下文会在配置的界限内增大目标历史，随后可由目标会话的普通压缩进行摘要；完成压缩后，源会话便不再相关。

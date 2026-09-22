@@ -1,25 +1,23 @@
-# Agent Note: Session search tools are not a shipped default
+# Agent Note: 会话搜索工具不是交付默认项
 
 Status: implemented
 
-English | [中文](2026-08-02-session-search-not-shipped-default.zh.md)
+## 问题
 
-## Problem
+[交付清单决策](2026-07-31-even-out-shipped-tool-rosters.md)把 `tool-session-query` 设为共享 [`cordis.patch.yml`](../../../../packages/bundle/base/cordis.patch.yml) 的默认行，于是交付的 TUI 与 Web surface 把这五个会话搜索工具（`session_search`、`session_event_search`、`session_trace`、`session_event_trace`、`session_event_read`）呈现给了模型。这与[面向模型的会话查询工具决策](2026-07-24-model-facing-session-query-tools.md)相抵触，该决策持需显式启用的立场，包 README 将其记录为「shipped host compositions do not mount it by default」。这项默认设置还交付了一个提示词段，向模型讲授一套既往工作搜索工作流，而没有任何用户要求过。
 
-The [shipped-roster decision](2026-07-31-even-out-shipped-tool-rosters.md) made `tool-session-query` a default row of the shared [`cordis.patch.yml`](../../../../packages/bundle/base/cordis.patch.yml), so the shipped TUI and Web surfaces put the five session-search tools (`session_search`, `session_event_search`, `session_trace`, `session_event_trace`, `session_event_read`) in front of the model. That contradicted the [model-facing session-query-tools decision](2026-07-24-model-facing-session-query-tools.md), whose opt-in stance the package README recorded as "shipped host compositions do not mount it by default". The default also shipped a prompt section teaching a prior-work search workflow that no user had asked for.
+## 决策
 
-## Decision
+交付的 TUI、Web 与无头 surface 均不挂载 `@deepseek-ai/dsh-tool-session-query`，交付的 agent preset 也都不包含它。该消费方仍保持 opt-in，与面向模型的会话查询工具决策所述完全一致：ACP（Agent Client Protocol）示例的 [`session-query.cordis.yml`](../../../../examples/acp-agent/session-query.cordis.yml) 及其快照对侧文件仍是挂载参考，自定义组合也可以连同超时与 spill 策略一起挂载该包。
 
-The shipped TUI, Web, and headless surfaces do not mount `@deepseek-ai/dsh-tool-session-query`, and no shipped agent preset carries it. The consumer stays opt-in exactly as the model-facing-session-query-tools note describes: the ACP example's [`session-query.cordis.yml`](../../../../examples/acp-agent/session-query.cordis.yml) and its snapshot counterpart remain the mounted reference, and a custom composition can mount the package with the timeout and spill policies.
+`ctx.sessionQuery` 服务本身保持挂载。`session-query-sqlite` 仍是 base 的一行，TUI 的 `session-reference` 消费它来实现 `/resume`；其全文索引默认关闭（`openAt: never`，见[内容搜索 opt-in 决策](../architecture/2026-08-13-session-content-search-opt-in.md)），Web overlay 保留内存索引取值，供启用内容搜索的部署使用。被移除的只有面向模型的消费方。
 
-The `ctx.sessionQuery` service itself stays mounted. `session-query-sqlite` remains a base row — the TUI's `session-reference` consumes it for `/resume` — with its full-text index off by default (`openAt: never`; the [content-search opt-in decision](../architecture/2026-08-13-session-content-search-opt-in.md)), and the Web overlay keeps its in-memory values for deployments that enable content search. Only the model-facing consumer is removed.
+## 曾考虑的替代方案
 
-## Alternatives considered
+- **把 `session-query-sqlite` 索引也一并移除**——否决，因为 `/resume` 和 Web 内容搜索框直接消费 `ctx.sessionQuery`；它们是宿主功能，不是模型工具，移除提供方会破坏它们。
+- **保留该行，但在每个 overlay 中禁用它**——否决，因为一条被禁用的 base 行仍会交付依赖，而且一行就能轻易重新启用；已记录的 opt-in 立场要求消费方不出现在交付的 surface 上，以 ACP 示例作为挂载参考。
+- **只在 TUI 上挂载**——否决，因为共享 base 是所有 surface 共用的一组行；surface 专属挂载会重新引入交付清单决策所消除的清单分裂。
 
-- **Remove the `session-query-sqlite` index too** — rejected because `/resume` and the Web content-search box consume `ctx.sessionQuery` directly; those are host features, not model tools, and dropping the provider would break them.
-- **Keep the row but disable it in each overlay** — rejected because a disabled base row still ships the dependency and invites a one-line re-enable; the recorded opt-in stance wants the consumer absent from shipped surfaces, with the ACP example as the mount reference.
-- **Mount it on the TUI only** — rejected because the shared base is one row set for every surface; a surface-specific mount would reintroduce the roster split the shipped-roster decision removed.
+## 后果
 
-## Consequences
-
-Both surfaces return to the same twenty unconditional tools (plus `glob`/`grep` under ripgrep), and the five session-search schemas and their prompt section leave the default request. The shipped-composition tests on both surfaces pin the smaller catalog, so re-adding session search as a default touches the same tests. Users who want session search mount the consumer from a personal overlay or the ACP example, adding the dependency where they do.
+两个 surface 都回到同样的二十个无条件工具（ripgrep 可用时再加上 `glob`/`grep`），五个会话搜索 schema 及其提示词段也一并退出默认请求。两个 surface 上的交付组合测试都固定这份更小的目录，因此把会话搜索重新作为默认加回会触及同样的测试。想要会话搜索的用户从个人 overlay 或 ACP 示例挂载该消费方，并在挂载处添加依赖。

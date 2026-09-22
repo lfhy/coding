@@ -1,23 +1,21 @@
-# Agent Note: SEA runtime directory keyed by content hash
+# Agent Note: SEA 运行时目录按内容哈希命名
 
 Status: implemented
 
-English | [中文](2026-08-22-sea-runtime-directory-by-content-hash.zh.md)
-
 ## Problem
 
-The Linux Coding SEA bootstrapper materializes the Host closure under `$DSH_HOME/runtime/<version>` and treated a matching product version plus archive SHA-256 as a hit. Native launchers still publish `host.json` and `DSH_APP_VERSION` from the product version, so that label remains the live compatibility key. The on-disk directory, however, is only a cache of archive bytes. A later product version that ships the same closure would otherwise unpack the archive again even when the Host files had not changed.
+Linux 的 Coding SEA 引导器把 Host 闭包物化到 `$DSH_HOME/runtime/<version>`，并把匹配的产品版本与归档 SHA-256 视为命中。原生启动器仍用产品版本发布 `host.json` 和 `DSH_APP_VERSION`，因此该标签仍是在线兼容性键。磁盘目录却只是归档字节的缓存。后续产品版本若携带同一闭包，若不改进命中规则仍会再次解压，即使 Host 文件未变。
 
 ## Decision
 
-`scripts/sea/bootstrap.cjs` names the Linux materialized directory `$DSH_HOME/runtime/<sha256>`. A hit requires only that the marker's `sha256` match the embedded archive and that `node_modules/@deepseek-ai/dsh/lib/bin.js` exist. The product version remains in the marker and still owns `DSH_APP_VERSION` plus Host readiness records. After the current Host owns `host.json`, cleanup deletes every runtime sibling whose name is not the current archive hash. `scripts/build-coding-runtime.ts` fails before deploy when the complete build did not emit `apps/cli/lib/bin.js`, and fails after deploy when the staged closure omits `node_modules/@deepseek-ai/dsh/lib/bin.js`; the host tsdown workspace entry includes `lib/types/bin.js` so the built bin ships in the closure. The macOS desktop bundle instead ships the same pre-expanded closure as described in [the app-bundle runtime decision](2026-08-25-desktop-host-closure-in-app-bundle.md).
+`scripts/sea/bootstrap.cjs` 把 Linux 物化目录命名为 `$DSH_HOME/runtime/<sha256>`。命中只要求 marker 的 `sha256` 与内嵌归档一致，且 `node_modules/@deepseek-ai/dsh/lib/bin.js` 存在。产品版本仍写在 marker 中，并继续拥有 `DSH_APP_VERSION` 和 Host 就绪记录。当前 Host 拥有 `host.json` 后，清理会删除名称不是当前归档哈希的所有运行时兄弟目录。`scripts/build-coding-runtime.ts` 在完整构建未产出 `apps/cli/lib/bin.js` 时于 deploy 前失败，在暂存闭包缺少 `node_modules/@deepseek-ai/dsh/lib/bin.js` 时于 deploy 后失败；host tsdown workspace 入口包含 `lib/types/bin.js`，因此构建出的 bin 会随闭包发布。macOS 桌面包则按[应用包运行时决策](2026-08-25-desktop-host-closure-in-app-bundle.md)携带同一份预展开闭包。
 
 ## Alternatives considered
 
-**Keep the versioned directory and ignore version in the hit check.** Rejected because two product versions that share bytes would still occupy two directories until one Host started and cleaned the other.
+**保留按版本命名的目录，只在命中检查中忽略版本。** 拒绝，因为共享字节的两个产品版本仍会占用两个目录，直到其中一个 Host 启动并清理另一个。
 
-**Load modules from SEA assets without unpacking.** Rejected because native sidecars and ordinary Node module resolution still need files on disk.
+**不落盘，直接从 SEA 资源加载模块。** 拒绝，因为原生侧车和普通 Node 模块解析仍需要磁盘文件。
 
 ## Consequences
 
-A later Linux product version that ships the same archive bytes starts from the existing runtime directory. A different archive hash still unpacks once into a new directory. Host discovery continues to compare product versions, so a live Host from another product version remains incompatible even when both would share a cache directory after a restart. The macOS desktop path does not create this cache.
+后续 Linux 产品版本若携带相同归档字节，会从已有运行时目录启动。不同的归档哈希仍会解压一次到新目录。Host 发现继续比较产品版本，因此另一个产品版本的在线 Host 即使重启后会共享缓存目录，当前仍视为不兼容。macOS 桌面路径不会创建这份缓存。

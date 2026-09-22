@@ -1,32 +1,30 @@
-# Agent Note: inline-code file mentions open the file they name
+# Agent Note: 行内代码文件提及可打开其命名的文件
 
 Status: implemented
 
-English | [中文](2026-08-07-web-inline-file-mentions.zh.md)
+> 范围：引导最终回复以行内代码点名主要输出文件，再把这些 token 链接到本轮变更的文件。不在范围内：识别普通正文中的路径、链接成功修改位置中不存在的文件，以及流式或轮次中途消息里的提及。
 
-> Scope: guiding final responses to name primary output files as inline code, then linking those tokens to files the turn changed. Not in scope: recognizing paths in plain prose, linking files absent from successful mutation locations, and mentions in streaming or mid-turn messages.
+## 问题
 
-## Problem
+产物行列出了一轮的输出，但收尾消息通常也会在正文里*点名*文件——以行内代码形式，如 `` `deepseek-homepage.html` ``——而这个提及是死文本。读者的视线先落在句子上；可点击的交互却在下面一行。模型并不知道这种精确的行内代码写法会启用 Web 文件打开器，因此能否产生有用引用取决于模型习惯。
 
-The produced-files row lists a turn's output, but the closing message usually also *names* the file in prose — as inline code, like `` `deepseek-homepage.html` `` — and that mention was inert text. The reader's eye lands on the sentence first; the affordance sat one row below it. The model was not told that this exact inline-code spelling activates the Web file opener, so producing the useful reference depended on habit.
+## 决定
 
-## Decision
+**正文提及只在与产出文件对得上时才成为链接。**[产物行的决定](2026-07-31-web-workspace-file-links.md)否决过「把收尾消息链接化」，理由是渲染不能依赖模型把路径写得可识别；这一点不变。产物行仍是权威的、不依赖正文的记录。本特性只是给同一份 `locations` 词表增加第二个消费者：`producedFileMentions` 按精确路径解析行内代码 token，或当 token 恰好是且仅是一条产出路径的 basename 时解析。两条路径共享的 basename 保持死文本而不猜测，命名了本轮没写过的文件的 token 同样保持死文本——提及链接永远不会 404。
 
-**A prose mention links only when it matches a produced file.** The [produced-files decision](2026-07-31-web-workspace-file-links.md) rejected linkifying the closing message because rendering must not depend on the model spelling a path recognizably; that holds. The row remains the authoritative, prose-independent account. This feature adds a second consumer of the same `locations` vocabulary: `producedFileMentions` resolves an inline-code token by exact path, or by being exactly the basename of exactly one produced path. A basename two paths share stays inert rather than guessing, and a token naming nothing the turn wrote stays inert — a mention link can never 404.
+**渲染器不持有词表，提供方是 deliverables 插件。**`MarkdownText` 接受可选的 `MarkdownFileMentions` 解析器，对行内代码 token 询问它——URL 提升优先于解析器，且绝不在锚点内部（按钮不能嵌套在链接里）。什么算文件名的决定藏在 ui-conversation 经 `ctx.get` 触达的可选 `chatFileMentions` 服务背后：ui-deliverables 在其 turn-tail chain 注册项旁提供该服务，因此 cordis.yml 中的一行同时把产物行和正文链接组合进来或去掉，ui-primitives 不引入任何会话概念。提及只作用于已定稿的渲染——流式缓存不能固化可能过期的 handler，而且词表在轮次收尾前并不最终。消费方按收尾 seq 而非不断增长的 transcript（文本记录）记忆化解析器，因此已定稿消息的缓存解析在流式追加中得以保留。
 
-**The renderer owns no vocabulary, and the provider is the deliverables plugin.** `MarkdownText` takes an optional `MarkdownFileMentions` resolver and consults it for inline-code tokens — after URL promotion, which wins, and never inside an anchor, where a button cannot nest. What names a file is decided behind the optional `chatFileMentions` service ui-conversation reaches via `ctx.get`: ui-deliverables provides it beside its turn-tail chain entry, so one cordis.yml line composes the row and the prose links in or out together, and ui-primitives gains no session concepts. Mentions apply to settled renders only — the streaming cache must not bake in handlers that could go stale, and the vocabulary is not final until the turn closes. The consumer memoizes the resolver on the closing seq rather than the growing transcript, so a settled message's cached parse survives stream appends.
+**提供方也拥有其所接受语法的模型指引。**ui-deliverables 的 Node 侧注册静态段落 `ui:deliverable-file-references`，要求模型在最终回复中点名来自成功创建或修改调用的主要文件，并将这些文件以及正文中提到的其他本轮变更文件写成 Markdown 行内代码：使用文件工具采用的精确路径，或仅在 basename 能唯一指代本轮文件时使用 basename。该指引刻意不涉及无关的本地路径格式。正式提供的组合中只有 Web patch 加载 ui-deliverables，因此提示词只存在于渲染器存在的地方；移除该包会同时移除两者。模型遗漏提及时，文件行仍承担正确性兜底；匹配词表仍拒绝成功修改记录之外的所有文件。
 
-**The provider also owns the model guidance for its accepted syntax.** The ui-deliverables Node half registers a static `ui:deliverable-file-references` section that asks the model to mention primary files from successful creation or modification calls in its final response and to write those and any other changed-file references as Markdown inline code, using the exact file-tool path or a basename only when it is unique within the Turn. The guidance deliberately says nothing about unrelated local-path formats. The shipped Web patch is the only composition that loads ui-deliverables, so the guidance exists exactly where the renderer exists; removing the package removes both. The row remains the correctness path when the model omits a mention, and the matching vocabulary still rejects anything not recorded by a successful mutation.
+## 考虑过的替代方案
 
-## Alternatives considered
+- **对全部正文跑路径形状的正则**——会把随口提到的 `package.json` 和从未写过的示例都链接上；每个误报都会带来一次点击，结果要么什么也没打开，要么打开了错误文件。词表方案不可能产生死链。
+- **链接后缀匹配（子目录列表里把 `out/index.html` 写作 `index.html`）**——暂缓；精确路径加唯一 basename 已覆盖观察到的收尾消息形态，之后放宽匹配器不会破坏这道 seam。
+- **在 ui-primitives 里对传入的路径列表做解析**——把匹配策略放进通用渲染器，其他消费方会被动继承。解析器约定让策略留在持有者手里。
+- **经由 turn-tail chain 传递词表**——chain 是消息下方的渲染派发；提及要装饰的是消息内部的 markdown，只有抵达 MarkdownText 的数据才做得到。可选服务就是那条数据通路，它的缺席即关闭态。
+- **在 dsh-web-app 中注册指引**——会让应用组合包描述某个功能特有的渲染语法，也允许渲染器与提示词分别组合或产生漂移。该功能包现有的 Node 侧让 cordis.yml 中的一项可以共同持有两者。
+- **增加一次轮次结束后的模型调用来识别输出**——即使最终回复已经拥有所需的文件工具历史，仍会增加延迟和一次生成。一个静态提示词段落可以留在可复用前缀中，并要求现有的最终生成输出渲染器接受的写法。
 
-- **Path-shaped regex over all prose** — links `package.json` mentioned abstractly and examples that were never written; every false positive is a click that opens nothing or the wrong file. The vocabulary approach cannot produce a dead link.
-- **Linking suffix matches (`out/index.html` mentioned as `index.html` in a subdirectory listing)** — deferred; exact path and unique basename cover the observed closing-message shapes, and a wider matcher can loosen later without breaking the seam.
-- **Resolving in ui-primitives against a passed path list** — puts matching policy in the generic renderer, where other consumers would inherit it unasked. The resolver contract keeps policy with the owner.
-- **Threading the vocabulary through the turn-tail chain** — the chain is a render dispatch below the message; mentions decorate markdown inside it, which only data reaching MarkdownText can do. The optional service is that data path, and its absence is the off state.
-- **Registering the guidance in dsh-web-app** — makes the app bundle describe a feature-specific rendering syntax and allows the renderer and its prompt to drift or be composed independently. The feature package's existing Node half gives one cordis.yml row joint ownership.
-- **Adding a post-turn model step to identify the output** — adds latency and another generation even though the final response already has the necessary file-tool history. One static prompt paragraph stays in the reusable prefix and asks the existing final generation to emit the accepted spelling.
+## 后果
 
-## Consequences
-
-The mention and the row are two affordances for one fact (full path as `title` on both); the mention itself wears the markdown sheet's anchor language — link-blue at rest, hover underline — because an at-rest underline collides with monospace descenders inside the code chip. The prompt section is constant for the package mount and therefore remains cacheable across Turns. The keyless shipped-Web composition snapshot pins the exact model-visible paragraph, while `apps/web/tests/produced-file-mentions.e2e.ts` pins the assembled rendering with a built write-turn seed: unique basename links, ambiguous and unknown tokens stay inert. Files created indirectly by terminal commands remain outside the vocabulary, even when the model names them. Mentions in mid-turn narration stay inert even for files the turn later produces, because the vocabulary attaches to the closing message only. The window-prepend edge — a window that starts mid-turn later gaining earlier same-turn writes — leaves a mention unlinked until remount, never wrongly linked.
+提及与产物行是同一事实的两个交互面（两者都以完整路径作 `title`）；提及本身采用 markdown 样式表的锚点语言——静止为链接蓝、悬停出下划线——因为静止下划线在 code 胶囊里会压住等宽字的下伸部。提示词段落在本包加载期间保持不变，因此可跨 Turn 复用缓存。无密钥的正式 Web 组合快照钉住模型可见段落的精确文本，`apps/web/tests/produced-file-mentions.e2e.ts` 则用构造的写入轮次 seed 钉住组装后的渲染行为：唯一 basename 成链，歧义与未知 token 保持死文本。终端命令间接创建的文件即使被模型点名，仍不在词表中。轮次中途叙述里的提及即使命名了本轮后来产出的文件也保持死文本，因为词表只挂在收尾消息上。窗口前插的边界——从轮次中途开始的窗口后来补入了同轮更早的写入——只会让提及在重挂载前暂不成链，绝不会错链。

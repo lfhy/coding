@@ -1,14 +1,12 @@
-# util/ — low-level shared utilities
+# util/：底层共享工具
 
-English | [中文](README.zh.md)
+这些零依赖包提供由多个能力家族共享的小型原语。业务语义仍归各个消费这些原语的能力所有。
 
-These zero-dependency packages provide small primitives shared by multiple capability families. Business semantics remain with each consuming capability.
-
-| Package | Role |
+| 包 | 职责 |
 |---|---|
-| [`brand/`](brand/README.md) | Provides nominally branded types |
-| [`paths/`](home-paths/README.md) | Resolves the Harness data root and shared paths |
-| [`timeout/`](timeout/README.md) | Provides deadline and timeout classification primitives |
-| [`retention/`](output-retention/README.md) | Bounds retained text and item collections |
-| [`atomic-write/`](atomic-write/README.md) | Replaces files atomically |
-| [`native-command/`](native-command/README.md) | Runs host-native commands without a shell |
+| [`brand/`](brand/README.md) | 提供带名义品牌的类型 |
+| [`paths/`](home-paths/README.md) | 解析 Harness 数据根目录和共享路径 |
+| [`timeout/`](timeout/README.md) | 提供截止时间和超时分类原语 |
+| [`retention/`](output-retention/README.md) | 限制保留文本和项集合的大小 |
+| [`atomic-write/`](atomic-write/README.md) | 以原子方式替换文件 |
+| [`native-command/`](native-command/README.md) | 不经 shell 运行宿主原生命令 |

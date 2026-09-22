@@ -1,87 +1,85 @@
-# Agent Note: Evidence-based larger hosted runners
+# Agent Note: 基于实证选用 GitHub 托管大型运行器
 
 Status: implemented
 
-English | [中文](2026-07-22-evidence-based-larger-hosted-runners.zh.md)
+## 问题
 
-## Problem
+高度分片的 CI 拓扑通过把主 Node 工作分散到 40 个 Linux 作业、把 Windows 工作分散到 9 个作业来达到延迟目标。大多数门禁本身的耗时短于代码检出、运行器设置、缓存恢复和依赖安装这些准备阶段，因此反复执行多轮设置既增加成本，也带来延迟波动。一次托管运行中最慢的 Linux 作业用时 49 秒，而一个 Windows lint 分片却耗时 231 秒，其中仅代码检出、缓存恢复和安装就占了 158 秒。
 
-The shard-heavy CI topology met its latency targets by spreading primary Node work across 40 Linux jobs and Windows work across nine jobs. Most gates were shorter than checkout, runner setup, cache restore, and dependency installation, so repeated setup waves created both cost and latency variance. One hosted run finished its slowest Linux job in 49 seconds yet took 231 seconds for a Windows lint shard whose checkout, cache restore, and install alone consumed 158 seconds.
+大型运行器可以让 CI 只承担一次设置开销，再由仓库调度器在内部并行执行，但无法仅凭核心数选出有实际价值的规格。关键通道基准测试的性能提升不呈单调变化，完整仓库聚合流程暴露出的瓶颈也不同于单独运行类型检查或网站构建时的瓶颈。
 
-Larger runners make it possible to pay setup once and parallelize inside the repository scheduler, but the useful size cannot be selected from core counts alone. Critical-lane benchmarks did not scale monotonically, and a whole-repository aggregate exposed different bottlenecks from isolated typecheck or site builds.
+## 决策
 
-## Decision
+企业保留仅限本仓库使用的 Ubuntu 和 Windows x64 大型运行器池。普通拉取请求在 16 核 Ubuntu 24.04 池上运行 3 个 Linux 主作业，并在 16 核 Windows 2025 池上运行独立的原生 Windows 信号。必需的 Wine 信号仍位于标准托管 Linux。公网 IP 已禁用；工作流并发仍设有边界，因为自动扩缩容上限既不会分配闲置机器，也不意味着仓库工作可以无限扩展。
 
-The enterprise keeps repo-restricted x64 larger-runner pools for Ubuntu and Windows. Ordinary pull requests run the three primary Linux jobs on the 16-core Ubuntu 24.04 pool and the independent native Windows signal on the 16-core Windows 2025 pool. The required Wine signal remains on standard hosted Linux. Public IPs are disabled, and workflow concurrency remains bounded because an autoscaling ceiling neither allocates idle machines nor makes repository work scale without limit.
+必需主路径依赖这些企业级运行器池。GitHub 标准托管作业保留 Node 22.19、Node 26 和 Python SDK 兼容性约定，而[可移植恢复边界](2026-07-23-portable-required-pull-request-ci.md)与[串行参考流程](2026-07-21-serial-cross-platform-ci-reference.md)则在 `master` 上通过自托管热备池持续提供完整聚合流程证据（不存在托管的 Linux 串行参考）。`suite=larger-runner-benchmark` 比较已预配规格上相互独立的关键通道，`suite=consolidated-runner-benchmark` 则比较完整聚合流程。每项基准测试都会先报告实测的处理器和内存容量，再运行仓库工作。
 
-The required primary path depends on those enterprise pools. Standard GitHub-hosted jobs retain the Node 22.19, Node 26, and Python SDK compatibility contracts, while the [portable recovery boundary](2026-07-23-portable-required-pull-request-ci.md) and [serial reference](2026-07-21-serial-cross-platform-ci-reference.md) keep complete-aggregate evidence available on `master` through the self-hosted standby pools (no Linux hosted serial reference remains). `suite=larger-runner-benchmark` compares isolated critical lanes across provisioned sizes, and `suite=consolidated-runner-benchmark` compares whole aggregates. Each benchmark reports its observed processor and memory capacity before running repository work.
+原有的门禁级和粗粒度主流程分片 job 已从工作流中移除。面向工作流的静态、lint、覆盖率、快照和场景选择器也已移除，因此未使用的诊断路径无法继续维系第二套 CI 架构。插桩覆盖率可以在[既有 job 内使用进程本地分区](2026-08-18-in-job-partitioned-coverage.md)；该协调器既不选择工作流 job，也不在 runner 之间传输报告。
 
-The former gate-level and coarse primary shard jobs are absent from the workflow. Their workflow-facing static, lint, coverage, snapshot, and scenario selectors are also absent, so an unused diagnostic path cannot preserve a second CI architecture. Instrumented coverage may use [process-local partitions inside its existing job](2026-08-18-in-job-partitioned-coverage.md); that coordinator neither selects workflow jobs nor transfers reports between runners.
+Linux 主流程使用 3 个相互独立的 16 核 job。覆盖率单独运行，并按显式进程上限在该 job 内划分插桩工作；静态调度器负责不消费生成输出的源码和文档门禁。第 3 个 job 负责唯一一次 Linux 构建，随后让 lint、Node 24 运行时兼容性、依赖构建产物的快照、文档类型检查和所有产物消费方基于该目录树启动。这种[消费方独立构建](2026-07-30-independent-ci-consumer-build.md)使 3 个 job 都能立即请求 runner，而无需重复编译或传输仅供本次运行使用的产物。生成的 NodeNext 消费方目录不会纳入 Oxlint 的文件发现范围，因为这些进程重叠执行时，产物检查会删除这些目录。pnpm store 会得到恢复，但缓存上传不会进入拉取请求关键路径；Oxlint 没有由仓库管理的结果缓存。性能报告采用每个 job 从 `startedAt` 到 `completedAt` 的区间；runner 排队延迟是容量证据，而非仓库执行时间。
 
-Linux primary work uses three independent 16-core jobs. Coverage runs alone and partitions its instrumented work inside that job with an explicit process bound; the static scheduler owns source and documentation gates that do not consume emitted output. The third job owns the single Linux build, then starts lint, Node 24 runtime compatibility, build-backed snapshots, documentation typechecking, and all artifact consumers against that tree. This [independent consumer build](2026-07-30-independent-ci-consumer-build.md) lets all three jobs request runners immediately without duplicating compilation or transferring a run-scoped artifact. Generated NodeNext consumer directories are excluded from Oxlint discovery because the artifact check removes them while these processes overlap. The pnpm store is restored without putting cache uploads on the pull-request critical path; Oxlint has no repository-managed result cache. Performance reports use each job's `startedAt` to `completedAt` interval; runner queue delay is capacity evidence, not repository execution time.
+门禁依赖关系保持显式。覆盖率消费源码，不等待构建。文档类型检查以消费方通道的完整 project-reference 输出为输入。快照回放和发布消费方等待生成的输出，而 Node 版本兼容性作业会验证对运行时敏感的源码加载，且不重复主源码项目图的类型检查。PTY 和子进程套件继续使用自身有界的内部并发，不继承运行器的核心数。
 
-The gate dependencies remain explicit. Coverage consumes source and does not wait for build. Documentation typechecking consumes the consumer lane's complete project-reference output. Snapshot replay and publication consumers wait for emitted output, while Node-version compatibility jobs exercise runtime-sensitive source loading without repeating the primary source-graph typecheck. PTY and subprocess suites keep their bounded inner concurrency rather than inheriting the runner's core count.
+产物边界保持显式。`scripts/publint-all.ts` 对内存中的发布视图调用 publint 支持的 API；该视图由每个 manifest（元数据清单）声明的文件和 npm 强制要求的元数据组成，从而避免为每个包启动一次包管理器 pack 进程。`scripts/verify-built-package-invariants.mjs` 将已声明的 `lib/` 文件暂存到真实包下，并通过普通 Node 和 Cordis Loader 规范化导入其已编译的自身引用；发布约定只要遗漏一个运行时分片，检查仍会失败。
 
-The artifact boundary remains explicit. `scripts/publint-all.ts` calls publint's supported API against an in-memory publication view formed from each manifest's declared files plus npm's mandatory metadata, avoiding one package-manager pack process per package. `scripts/verify-built-package-invariants.mjs` stages the declared `lib/` files below the real package and imports its compiled self-reference through plain Node and Cordis Loader normalization; a runtime chunk omitted from the publication contract still fails.
+[拉取请求双 Windows 拓扑](2026-08-08-native-windows-pull-request-ci.md)把必需的构建与生产网站判定保留在标准托管 Linux 上的 Wine 中。独立且不阻断的 16 核原生作业通过一次 Windows 设置共同执行工作区构建、生产网站验证、受支持源码覆盖率与完整的可移植性清单。重复的静态检查、文档、包、构建产物、lint 与快照检查由 Linux 提供阻断性判定，原生聚合流程则保留这些观测性检查。
 
-The [dual Windows pull-request topology](2026-08-08-native-windows-pull-request-ci.md) keeps the required build and production-site verdict under Wine on standard hosted Linux. A separate non-blocking 16-core native job shares one Windows setup across workspace build, production-site validation, supported-source coverage, and the complete portability inventory. Linux owns the blocking verdict for duplicate static, documentation, package, built-artifact, lint, and snapshot checks; the native aggregate keeps those checks observational.
+一次分支头精确的全规格基准测试在修正构建尽早启动逻辑前，对每种 Linux 池都运行了完整且未分片的主 Node 聚合流程：
 
-An exact-head all-size benchmark ran the complete unsharded primary Node aggregate on every Linux pool before the eager-build correction:
-
-| Complete Linux primary | 4 cores | 8 cores | 16 cores | 32 cores | 64 cores | 96 cores |
+| Linux 完整主流程 | 4 核 | 8 核 | 16 核 | 32 核 | 64 核 | 96 核 |
 |---|---:|---:|---:|---:|---:|---:|
-| Active time | 243 s | 144 s | 103 s | 87 s | 62 s | 65 s |
+| 活动耗时 | 243 秒 | 144 秒 | 103 秒 | 87 秒 | 62 秒 | 65 秒 |
 
-The 96-core trace spent 39.14 seconds in repository gates. Typecheck occupied 25.71 seconds, then a scheduler dependency delayed the 2.13-second build and 11.29-second snapshot replay until it finished. The same run already proved build and typecheck independently, and the former CPU lane ran them concurrently. Removing that dependency makes lint at 33.30 seconds the measured critical gate while preserving dependencies only for consumers of build output. The 64-core trace exposed the same idle chain: typecheck, build, and snapshot consumed 44.85 seconds in sequence while its independent lint and documentation builds finished in 36.83 and 36.15 seconds. More cores therefore become useful only after the repository scheduler can feed them.
+96 核运行轨迹中的仓库门禁耗时 39.14 秒。类型检查占用 25.71 秒，随后一项调度器依赖使耗时 2.13 秒的构建和耗时 11.29 秒的快照回放都要等到类型检查结束后才启动。同一次运行已经分别证明构建和类型检查可以独立执行，原 CPU 通道也曾让二者并发运行。移除这项依赖后，耗时 33.30 秒的 lint 成为实测关键门禁，而只有构建输出的消费方仍保留依赖关系。64 核运行轨迹暴露了相同的空闲链：类型检查、构建和快照依次执行，共耗时 44.85 秒，而相互独立的 lint 和文档构建分别在 36.83 秒和 36.15 秒内完成。因此，只有仓库调度器能够为更多核心持续提供工作时，增加核心数才有价值。
 
-The same benchmark measured the required Windows build surfaces across every provisioned size:
+同一项基准测试还测量了每种已预配规格上的 Windows 必需构建项：
 
-| Windows blocking builds | 4 cores | 8 cores | 16 cores | 32 cores | 64 cores | 96 cores |
+| Windows 阻塞性构建 | 4 核 | 8 核 | 16 核 | 32 核 | 64 核 | 96 核 |
 |---|---:|---:|---:|---:|---:|---:|
-| Active time | 152 s | 104 s | 104 s | 92 s | 103 s | 110 s |
+| 活动耗时 | 152 秒 | 104 秒 | 104 秒 | 92 秒 | 103 秒 | 110 秒 |
 
-Repository work gains little above 16 Windows cores. The native lane keeps blocking build, production-site validation, and coverage together with the observational portability inventory in one 16-core job; a 32-core comparison improved its aggregate gate time by only 1.47 seconds and failed inside Node's CJS lexer. The required Wine job remains separate because it owns critical-path status rather than native-runner scaling.
+Windows 仓库工作在超过 16 核后收益很小。原生通道把阻断性的构建、生产网站验证与覆盖率和观测性可移植清单保留在同一个 16 核 job 内；32 核对比仅将其聚合门禁耗时缩短 1.47 秒，且在 Node CJS lexer 内失败。必需的 Wine job 保持独立，因为它负责关键路径状态，而非原生运行器扩缩。
 
-The larger client package graph makes cache mechanics and scheduler pressure part of the measured workload. In one exact-head candidate run, Linux spent 39 seconds in repository gates but 69 seconds in the complete job, while Windows spent 117 seconds in repository gates and 228 seconds in the complete job. The Windows pnpm cache downloaded its 154 MB archive in about two seconds but spent 27 seconds extracting it, followed by a 23-second install and a 14-second post-job save. A cacheless all-size trace completed the same 32-core Windows install in 27 seconds. A future larger-runner rollout therefore needs complete-job measurements rather than gate-only timing.
+客户端包依赖图增大后，缓存机制和调度器压力也成为实测工作负载的一部分。在一次分支头精确的候选运行中，Linux 的仓库门禁耗时 39 秒，完整作业耗时 69 秒；Windows 的仓库门禁耗时 117 秒，完整作业耗时 228 秒。Windows pnpm 缓存的 154 MB 归档下载耗时约 2 秒，但解压耗时 27 秒，随后安装耗时 23 秒，作业结束后的保存又耗时 14 秒。一次无缓存的全规格运行轨迹在 27 秒内完成了同一台 32 核 Windows 运行器上的安装。因此，未来若要启用大型运行器，需要测量完整作业，而不能只测门禁耗时。
 
-Host setup remains part of any comparison. A standard Node 26 job once spent 36 of its 67 seconds in `Set up job`, while `actions/setup-node` spent 46.56 seconds printing cached Windows environment details after finding Node in the hosted toolcache. A Linux candidate also spent 18 seconds registering a 50 KB Bubblewrap package because the hosted image scanned 202,507 package-database files. [`scripts/prepare-ci-bubblewrap.sh`](../../../../scripts/prepare-ci-bubblewrap.sh) instead verifies and extracts the pinned payload into the ephemeral runner directory, runs a functional confinement probe, and overlaps that preparation with dependency installation.
+任何比较都必须计入主机设置。一个标准 Node 26 作业曾在总共 67 秒的耗时中，把 36 秒用在 `Set up job` 上；`actions/setup-node` 从托管 toolcache 找到 Node 后，仍花费 46.56 秒输出缓存的 Windows 环境详情。一个 Linux 候选作业还在注册 50 KB 的 Bubblewrap 包时耗时 18 秒，因为托管映像扫描了 202,507 个包数据库文件。[`scripts/prepare-ci-bubblewrap.sh`](../../../../scripts/prepare-ci-bubblewrap.sh) 改为验证固定版本的 payload 并将其解压到临时运行器目录，执行功能性隔离探针，并让这项准备工作与依赖安装重叠执行。
 
-Inner and outer worker limits are separate controls. An exact-head 32-worker ESLint experiment slowed lint to 52.28 seconds and coverage to 42.71 seconds, where an adapter idle-timeout test failed. A later 8-gate trace reduced coverage to 35.17 seconds but delayed the production-site build until the aggregate reached 41.06 seconds. Core count therefore does not justify copying an equally large worker limit.
+内层与外层工作线程上限是相互独立的控制机制。一次分支头精确、使用 32 个工作线程的 ESLint 实验使 lint 耗时增至 52.28 秒、覆盖率耗时增至 42.71 秒；同一次运行中，一项适配器空闲超时测试失败。后来一次同时运行 8 项门禁的运行轨迹将覆盖率耗时降至 35.17 秒，但生产网站构建被延后，直到聚合流程耗时达到 41.06 秒时才完成。因此，不能仅凭核心数照搬同等规模的工作线程上限。
 
-The process-bound coverage project contains exactly five suite files. Thirty-two forks crashed Node 24's CJS lexer twice, and a later 16-fork run reproduced the worker loss and invalid coverage result. The single Vitest invocation therefore uses threads for the broad inventory and reserves forks for suites that exercise process-global state, `process` APIs, or timing-sensitive process I/O. That narrow fork inventory includes the local bash process-plumbing suite and the pi-ai adapter suite because aggregate contention changed timing observations in both. These failures make deterministic coverage, not advertised cores, the upper bound on worker selection.
+进程约束的覆盖率项目恰好包含 5 个套件文件。32 个 fork 曾两次导致 Node 24 的 CJS 词法分析器崩溃，后来一次使用 16 个 fork 的运行又复现了工作进程丢失和无效的覆盖率结果。因此，单次 Vitest 调用会对大范围测试清单使用线程，只为涉及进程全局状态、`process` API 或对时间敏感的进程 I/O 的套件保留 fork。这份有限的 fork 清单包括本地 bash 进程通路套件和 pi-ai 适配器套件，因为聚合争用改变了二者的时序观测结果。这些故障表明，选择工作线程数量时，上限取决于覆盖率结果能否保持确定性，而非标称核心数。
 
-The self-hosted serial Linux and Windows standby references and the disabled `serial-macos` job exist. Pull requests use the enterprise required path plus standard-hosted compatibility jobs, while other larger-runner sizes run only by manual dispatch.
+自托管的 Linux 与 Windows 串行热备参考，以及被禁用的 `serial-macos` 任务仍然存在。拉取请求使用企业级运行器必需路径和标准托管兼容性作业，其他大型运行器规格仅通过手动触发运行。
 
-The self-hosted serial Linux reference runs on the in-house self-hosted pool (`vm-backup` label: a 64-core VM with six always-on systemd-managed runner instances) on every `master` push. It is a hot-standby drill, not a required check: each run re-proves that the persistent VM can execute the complete unsharded aggregate. The actual switch is pre-wired: the three required Linux jobs resolve their pool through the writer-manageable `DSH_CI_FAILOVER_LINUX` repository variable, so an outage response is setting one variable and re-running — no merge, which would be deadlocked behind the failing checks themselves ([runbook](2026-07-26-ci-failover-runbook.md)). The standby lane is push-triggered, so it always executes the base branch's workflow definition. Under failover, however, `pull_request` jobs do reach these runners with the PR merge ref's own workflow definition — the trust boundary is repository membership (the repository is private with forking disabled, and the selectors exclude Dependabot), as the [failover runbook](2026-07-26-ci-failover-runbook.md) records.
+自托管的串行 Linux 参考在每次 `master` 推送时运行于公司自有的自托管池（`vm-backup` 标签：一台 64 核虚拟机，运行 6 个常驻的 systemd 管理运行器实例）。它是热备演练而非必需检查：每次运行都重新证明这台持久化虚拟机能够执行完整的未分片聚合流程。实际切换机制已预先布线：三个必需 Linux 作业通过写入权限持有者可管理的仓库变量 `DSH_CI_FAILOVER_LINUX` 解析运行器池，因此故障响应就是设置一个变量并重跑——无需合并（合并本身会被正在失败的检查阻塞，形成死锁）（[切换手册](2026-07-26-ci-failover-runbook.md)）。该热备通道由 push 触发，执行的始终是基础分支自身的工作流定义。但需要注意：故障切换期间，`pull_request` 作业确实会带着 PR merge 引用自带的工作流定义到达这些运行器——信任边界是仓库成员资格（仓库为私有且禁用 fork，选择器排除 Dependabot），详见[故障切换手册](2026-07-26-ci-failover-runbook.md)的记录。
 
-## Alternatives considered
+## 曾考虑的替代方案
 
-**Keep the three coarse primary Linux lanes.** The core, CPU, and production-site jobs met the latency targets, but they paid three setup waves and left primary Node work sharded after larger runners were available. The all-size trace showed that one unnecessary dependency, not a lack of host capacity, kept the single-box aggregate above one minute.
+**保留 3 个粗粒度 Linux 主流程通道。** 核心、CPU 和生产网站作业均达到延迟目标，但它们需要 3 轮设置，而且在大型运行器已经可用后仍对主 Node 工作进行分片。全规格运行轨迹表明，让单机聚合流程超过 1 分钟的是一项不必要的依赖，而非主机容量不足。
 
-**Keep the former gate-level shard topology as a manual reference.** A dormant second topology kept hundreds of workflow lines, selector modules, and scenario-partition behavior alive. The all-size and serial suites provide timing and completeness controls without preserving production code that no required job exercises.
+**将原有的门禁级分片拓扑保留为手动参考。** 一套闲置的第二拓扑会让数百行工作流、选择器模块和场景分区行为继续存活。全规格和串行套件无需保留任何必需作业都不执行的生产代码，也能提供计时与完整性对照。
 
-**Return to package-manager packing in each publication validator.** Rejected because it repeats a package-manager subprocess for every package. The manifest-derived publication view and staged compiled self-reference preserve the published-file contract with one in-process inventory.
+**在每个发布校验器中恢复使用包管理器打包。** 不予采用，因为这会为每个包重复启动一个包管理器子进程。根据 manifest 构建的发布视图和已暂存的编译后自身引用，只需一份进程内清单即可保留发布文件约定。
 
-**Build before coverage or typecheck on every Node version.** Rejected because coverage is source-only and compiler analysis is not runtime-specific. Build-backed consumers still wait for emitted output, and compatibility jobs exercise the runtime-sensitive paths on every advertised Node line.
+**在每个 Node 版本上先构建，再运行覆盖率或类型检查。** 不予采用，因为覆盖率只消费源码，编译器分析也不依赖运行时。依赖构建产物的消费方仍等待生成的输出，兼容性作业则在每个已声明支持的 Node 版本上验证对运行时敏感的路径。
 
-**Use the 64-core pool for the complete primary aggregate.** Its sampled active time was three seconds lower than the 96-core result because hosted setup was nine seconds faster, but its repository gates were 5.72 seconds slower. The benchmark suite retains both pools because a sustained image or pricing change can reverse the comparison.
+**使用 64 核池运行完整主聚合流程。** 由于托管设置快了 9 秒，其采样活动耗时比 96 核结果少 3 秒，但仓库门禁慢了 5.72 秒。基准测试套件保留两种规格，因为映像或定价的持续变化可能反转比较结果。
 
-**Keep build behind typecheck.** This orders independent compiler invocations and turns snapshot replay into a three-stage critical chain. Build output has its own success dependency, so only snapshot and publication consumers wait for it.
+**让构建继续等待类型检查。** 此方案会给相互独立的编译器调用排定先后顺序，并把快照回放变成 3 阶段关键链。构建输出本身有独立的成功依赖关系，因此只有快照和发布消费方需要等待它。
 
-**Publish the static job's build to post-build consumers.** A run-scoped artifact preserves one exact build, but the workflow can only consume it by waiting for the entire static job and then requesting another runner. The [independent consumer build](2026-07-30-independent-ci-consumer-build.md) assigns the single Linux build to its actual consumers instead.
+**将静态作业的构建发布给构建后消费方。** 仅供本次运行使用的产物能保留同一份构建结果，但工作流要消费它，只能先等待整个静态作业完成，再请求另一台运行器。[消费方独立构建](2026-07-30-independent-ci-consumer-build.md)则转而让实际消费方负责唯一一次 Linux 构建。
 
-**Keep the complete required path on standard GitHub-hosted capacity.** This avoids repository-external runner configuration, but exact-head standard-runner runs remain materially slower and can spend longer queued behind shared capacity. Standard-hosted compatibility jobs preserve portable evidence, while the self-hosted serial standby preserves complete-aggregate evidence, without making that slower topology the ordinary primary path.
+**将完整必需路径保留在 GitHub 标准托管容量上。** 此方案可以避免依赖仓库外部的运行器配置，但标准运行器上的分支头精确运行仍明显更慢，也可能因共享容量而排队更久。标准托管兼容性作业保留可移植证据，自托管串行热备则保留完整聚合流程证据，无需让这套较慢的拓扑成为普通主路径。
 
-**Keep blocking and observational native Windows checks in separate jobs.** This would preserve their distinction at the workflow level but pay Windows setup twice. `run-gates` preserves the same blocking versus observational result inside one job.
+**把阻断性与观测性原生 Windows 检查放在不同 job。** 此方案会在工作流层面保留二者的区别，却要承担两次 Windows 设置开销。`run-gates` 在一个 job 内保留了相同的阻断与观测结果。
 
-**Install Bubblewrap through the system package manager.** This uses the host's package database and can dominate the job even when the payload is tiny. Pinned extraction plus a confinement probe preserves the runtime contract without mutating the hosted image.
+**通过系统包管理器安装 Bubblewrap。** 此方案会使用主机的包数据库，即使包内容很小，也可能主导整个作业耗时。固定版本的解压方式配合隔离探针，无需修改托管映像即可保留运行时约定。
 
-## Consequences
+## 后果
 
-The primary topology pays one setup wave per 16-core lane and retains no workflow-level shard jobs or selectors. Process-local coverage partitions share that one setup and workspace. Every ordinary pull request consumes paid enterprise Linux and Windows minutes; manual benchmarks add other sizes only when remeasurement is useful.
+主拓扑中的每个 16 核通道只承担 1 轮设置开销，且不保留工作流级分片 job 或选择器。进程本地 coverage 分区共享这 1 轮设置与同一个工作区。每个普通拉取请求都会消耗付费的企业级 Linux 和 Windows runner 分钟数；只有在重新测量有价值时，手动基准测试才会加入其他规格。
 
-GitHub rounds each larger-runner execution up to a whole minute, so complete-job measurement exposes both billed time and workflow complexity. Splitting Linux repeats setup twice, but the consumer lane owns the only built tree and coverage, static gates, and post-build consumers enter runner allocation independently. Native Windows keeps its blocking and observational inventory in one setup, while Wine remains separate to preserve the required critical path.
+GitHub 会把每次大型运行器执行向上取整到整分钟计费，因此完整作业测量能同时呈现计费时长与工作流复杂度。拆分 Linux 会重复两轮设置，但消费方通道拥有唯一一份已构建目录树，且覆盖率、静态门禁与构建后消费方分别进入运行器分配。原生 Windows 让阻断性与观测性清单共享一次设置，Wine 则保持独立以保留必需关键路径。
 
-Performance targets are observations, not cancellation deadlines or correctness requirements. Manual all-size and serial suites remain available when image, dependency, scheduler, or pricing changes need remeasurement.
+性能目标是观测结果，而非取消截止时间或正确性要求。当映像、依赖、调度器或定价发生变化而需要重新测量时，仍可使用手动全规格和串行套件。
 
-Missing or renamed enterprise labels leave required primary jobs queued. Standard-hosted compatibility jobs and `master` references still report useful evidence, but they do not substitute for the required aggregate; runner assignment is therefore an operational dependency that repository CI cannot repair.
+企业级运行器标签缺失或改名时，必需主作业会持续排队。标准托管兼容性作业与 `master` 参考流程仍会报告有用证据，但不能替代必需聚合流程；因此，运行器分配是一项仓库 CI 无法修复的运维依赖。

@@ -1,12 +1,10 @@
-# experimental/ — private experimental packages
+# experimental/：私有实验性包
 
-English | [中文](README.zh.md)
+本组包含使用仓库真实运行时、但不进入正式发布的原型与内部专用 Cordis 插件。组内包均为私有包，不承诺稳定性或支持，但仍须满足与发布包相同的工程、安全、文档、生命周期、测试和快照要求。
 
-This group contains prototypes and internal-only Cordis plugins that use the repository's real runtime without joining an official release. Its packages are private, carry no stability or support promise, and retain the same engineering, security, documentation, lifecycle, testing, and snapshot requirements as release packages.
-
-| Package | Role | ctx key |
+| 包 | 职责 | ctx key |
 |---|---|---|
-| `agent-team/` | Implicit-root Agent Teams roster, durable peer mailbox, shared task DAG, and runtime coordination | `ctx.agentTeams` |
-| `tool-agent-team/` | Scoped model-facing Agent Teams tools and collaboration guidance | — |
+| `agent-team/` | 隐式 root Agent Teams roster、持久 peer mailbox、共享任务 DAG 与运行时协调 | `ctx.agentTeams` |
+| `tool-agent-team/` | 按 Agent 作用域提供的 Agent Teams 模型工具与协作指引 | — |
 
-The [subtree rules](AGENTS.md) define dependency isolation, release exclusion, and promotion.
+[子树规则](AGENTS.md)规定依赖隔离、发布排除与 promotion。

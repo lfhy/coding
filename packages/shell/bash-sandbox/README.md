@@ -1,30 +1,28 @@
 # @deepseek-ai/dsh-bash-sandbox
 
-English | [中文](README.zh.md)
+这是使用沙箱能力的 [`@deepseek-ai/dsh-shell`](../shell/) 执行器 seam 的 Service Provider。加载它时，应**用它替代** `@deepseek-ai/dsh-bash-local`，并同时加载 [`ctx.sandbox`](../../sandbox/sandbox/) 提供方（例如 [`@deepseek-ai/dsh-sandbox-local`](../../sandbox/sandbox-local/)）及 [`ctx.sandboxPolicy`](../../sandbox/sandbox-policy/)；默认模式和工作区根目录由后者负责，并与受沙箱约束的文件系统共享这些设置。无需使用替代工具插件；`dsh-tool-bash` 会检测执行器的 `sandboxMode` 能力并添加升权字段。
 
-Sandbox-consuming Service Provider for the [`@deepseek-ai/dsh-shell`](../shell/) executor seam. Load it **instead of** `@deepseek-ai/dsh-bash-local`, together with a [`ctx.sandbox`](../../sandbox/sandbox/) provider (e.g. [`@deepseek-ai/dsh-sandbox-local`](../../sandbox/sandbox-local/)) and a [`ctx.sandboxPolicy`](../../sandbox/sandbox-policy/) (which owns the default mode + workspace root, shared with the sandboxed filesystem) — no alternate tool plugin is needed; `dsh-tool-bash` detects the executor's `sandboxMode` capability and adds the escalation fields.
+包根目录导出默认与具名的 `SandboxBashExecutor` 插件及其 `Config`；结果分类 helper 保留在内部。
 
-The package root exports the default and named `SandboxBashExecutor` plugin plus its `Config`; result-classification helpers stay internal.
+每条命令的限制方式都是：把本执行器即将 spawn 的精确 `['bash', '-c', command]` argv 交给提供方，并直接 spawn 返回的 argv。使用随附的原生 runner 时，内层 Bash 保留 shell 语义，并且只在 runner 建立约束后才求值 `BASH_ENV`。由哪种平台 runner 执行限制，以及是否有 runner 可用，属于提供方职责；若无可用 runner，则按失败关闭原则拒绝执行并返回结构化 `SANDBOX_UNAVAILABLE` 错误，绝不能静默地无约束运行。本包只负责 bash 侧。
 
-Every command is confined by handing the provider the exact `['bash', '-c', command]` argv this executor is about to spawn and spawning the returned argv directly. With the shipped native runners, the inner Bash retains shell semantics and evaluates `BASH_ENV` only after the runner establishes confinement. WHICH platform runner confines it — and whether one is usable at all (fail closed with a structured `SANDBOX_UNAVAILABLE` error, never a silent unconfined run) — is the provider's concern; this package owns the bash side only.
-
-| Mode | File effects |
+| 模式 | 文件影响 |
 |---|---|
-| `read-only` (default) | No writes anywhere (of `/dev`, only the `/dev/null` node is writable, so `>/dev/null` keeps working) |
-| `workspace-write` | Writes only under `workspaceRoot` + `/tmp` (ephemeral under bwrap, the host `/tmp` under Landlock, `/private/tmp` plus the per-user temp dir under Seatbelt) |
-| `danger-full-access` | No confinement; the provider is never consulted. Foreground results carry `sandbox: { mode, denied: false }`; background process handles carry no sandbox facts. |
+| `read-only`（默认） | 任何位置都不可写（在 `/dev` 中只有 `/dev/null` 节点可写，因此 `>/dev/null` 仍可正常工作） |
+| `workspace-write` | 只能写入 `workspaceRoot` + `/tmp`（在 bwrap 下为临时目录，在 Landlock 下为宿主 `/tmp`，在 Seatbelt 下为 `/private/tmp` 加每用户临时目录） |
+| `danger-full-access` | 不作限制；绝不咨询提供方。前台结果携带 `sandbox: { mode, denied: false }`；后台进程句柄不携带沙箱事实。 |
 
-For a Remote-SSH marker cwd, `danger-full-access` foreground and background calls run through the target Go agent. `read-only` and `workspace-write` fail before consulting the local sandbox provider because its kernel runner cannot confine a process on another machine. The remote agent still confines the workdir to the directory selected for the marker, scrubs ambient credential-shaped and `DSH_*` variables, and requires `bash` on the target.
+对于 Remote-SSH marker cwd，`danger-full-access` 的前台和后台调用都会通过目标 Go agent 运行。`read-only` 和 `workspace-write` 会在咨询本地沙箱提供方之前失败，因为其内核 runner 无法约束另一台机器上的进程。远程 agent 仍会把工作目录约束到该 marker 所选目录，清除环境中形似凭据的变量及 `DSH_*` 变量，并要求目标上存在 `bash`。
 
-Semantics:
+语义：
 
-- **Denials are result facts.** A failed run whose stderr carries the selected backend's own denial dialect — the signatures the provider stamps on every wrap (EROFS text under bwrap, EACCES under Landlock, EPERM under Seatbelt) — is reported as `ShellRunResult.sandbox.denied: true` (conservative classification, read from the collected stderr tail); every CONFINED run also carries the mode it executed under (`result.sandbox.mode`) and the provider's enforcement completeness (`result.sandbox.enforcement`: `full`, or `partial` on an older Landlock ABI).
-- **The runner path or syscall must match.** Before a process starts, a rejection is attributed to the runner only when the caller-owned workdir is independently usable and Node reports `ENOENT` or `EACCES` with either an `error.path` equal to provider argv[0] or, when `error.path` is absent, an exact `syscall: 'spawn <runner>'`. A present path also requires `syscall: 'spawn'` or the exact `spawn <runner>`. This covers a missing runner, a non-executable runner, or an executable script whose shebang interpreter is unavailable. A bare `syscall: 'spawn'` without an exact error path, any other code, an invalid or unusable workdir, a resource failure, an unrelated syscall, or an unstructured rejection retains the local executor's stage-neutral provider-failure semantics. Foreground execution throws `SANDBOX_UNAVAILABLE` with the original runner detail, while asynchronous background settlement stamps `runnerFailed: true` and `denied: false`. If a `SubprocessRuntime` synchronously throws the same runner-identifying `ENOENT`/`EACCES` shape, background start throws `SANDBOX_UNAVAILABLE`; other synchronous errors propagate unchanged. After a process starts, a rule's optional exit-code check and a remaining fatal stderr line must both match after exact informational-line exclusions. A match takes priority over denial; foreground execution throws `SANDBOX_UNAVAILABLE` with the matched fatal line, while a settled background process stamps `process.sandbox.runnerFailed`, which the bash producer renders through generic `job_output`. Confined background handles retain their mode/enforcement facts and release per-process accounting in either path.
-- **Deployment fallback, per-call policy.** [`ctx.sandboxPolicy`](../../sandbox/sandbox-policy/) resolves a complete `SandboxExecutionPolicy` for every tool call: the calling session supplies its mode override and immutable cwd root, while deployment config supplies the fallbacks for agentless calls. An approved escalation changes only that policy's mode; its session root stays attached. `resolve()` carries the policy onto the spec, so overlapping commands from different projects run, classify, and report under their own roots and modes. The capability fact `ctx.shell.sandboxMode` reports the configured default so the tool layer advertises escalation only when this executor is mounted; the static bash tool description separately owns denial and escalation guidance.
-- **File effects only.** Network and process visibility are deliberately not restricted — the mode vocabulary does not pretend to cover what the backend does not enforce.
-- Process mechanics (spawn, process-group kills, output collection/spill, background handles, credential scrub) are inherited from [`dsh-bash-local`](../bash-local/); runner selection lives in [`dsh-sandbox-local`](../../sandbox/sandbox-local/).
+- **拒绝是结果事实。** 如果一次失败运行的 stderr 包含所选后端自身的拒绝方言，即提供方在每次包装时加上的特征（bwrap 下的 EROFS 文本、Landlock 下的 EACCES、Seatbelt 下的 EPERM），则结果报告 `ShellRunResult.sandbox.denied: true`（从已收集的 stderr 尾部进行保守分类）。每次受限制运行还会携带执行时模式（`result.sandbox.mode`）与提供方强制执行完整性（`result.sandbox.enforcement`：`full`，或在较旧 Landlock ABI 上为 `partial`）。
+- **Runner 路径或 syscall 必须匹配。** 进程启动前，调用方拥有的 workdir 必须经独立验证可用，Node 必须报告 `ENOENT` 或 `EACCES`，并且错误必须符合以下一种形态：`error.path` 等于提供方返回的 `argv[0]`，同时 `syscall` 为 `'spawn'` 或精确的 `'spawn <runner>'`；或者 `error.path` 不存在，同时 `syscall` 为精确的 `'spawn <runner>'`。这样可以识别缺失的 runner、不可执行的 runner，或 shebang 解释器不可用的可执行脚本。没有精确错误路径的裸 `syscall: 'spawn'`、任何其他错误码、无效或不可用的 workdir、资源失败、无关 syscall 或无结构拒绝仍保留本地执行器不声明阶段的 provider-failure 语义。前台执行会抛出 `SANDBOX_UNAVAILABLE` 并附带原始 runner 错误详情，异步后台结算则会标记 `runnerFailed: true` 和 `denied: false`。如果 `SubprocessRuntime` 同步抛出同样能指明 runner 的 `ENOENT`／`EACCES` 形态，后台启动会抛出 `SANDBOX_UNAVAILABLE`；其他同步错误原样传播。进程启动后，先按整行精确匹配排除信息性行，随后规则的可选退出码检查和余下 stderr 中的一行致命诊断必须同时匹配。匹配结果优先于拒绝；前台执行会抛出 `SANDBOX_UNAVAILABLE` 并附带匹配到的致命行，已结算的后台进程则会标记 `process.sandbox.runnerFailed`，Bash 结果生成方通过通用 `job_output` 渲染它。无论走哪条路径，受限制的后台句柄都会保留自身的模式／强制执行事实，并释放每进程计数。
+- **部署回退，每次调用策略。** [`ctx.sandboxPolicy`](../../sandbox/sandbox-policy/) 为每次工具调用解析完整的 `SandboxExecutionPolicy`：调用会话提供自身的模式覆盖与不可变 cwd 根目录，部署配置则为无 agent（智能体）调用提供回退。已批准的升权只更改该策略的模式，会话根目录仍然附着其上。`resolve()` 把策略带入 spec，因此来自不同项目的重叠命令会在各自的根目录与模式下运行、分类和报告。能力事实 `ctx.shell.sandboxMode` 报告已配置的默认值，因此工具层只在装载该执行器时才公布升权；静态 bash 工具描述则单独负责拒绝与升权引导。
+- **只限制文件影响。** 设计上不限制网络与进程可见性：模式词汇不会声称覆盖后端未强制执行的范围。
+- 进程机制（spawn、进程组终止、输出收集／spill、后台句柄、凭证清理）继承自 [`dsh-bash-local`](../bash-local/)；runner 选择位于 [`dsh-sandbox-local`](../../sandbox/sandbox-local/)。
 
-Deny-only at the seam: a denial is a reported fact, and this executor never negotiates permissions itself — the approval question lives in the tool layer (`dsh-tool-bash`), which drives the override this package honors.
+该 seam 只报告拒绝：拒绝是一项结果事实，本执行器绝不自行协商权限。批准问题位于工具层（`dsh-tool-bash`），由它设置本包所遵守的模式覆盖值。
 
 ```yaml
 - id: sandbox
@@ -38,54 +36,54 @@ Deny-only at the seam: a denial is a reported fact, and this executor never nego
   name: '@deepseek-ai/dsh-bash-sandbox'
 ```
 
-## Model Experience
+## 模型体验
 
-### Bash tool schema, indirectly
+### 间接的 Bash 工具 schema
 
-#### What the model sees
+#### 模型看到的内容
 
-The generated [`dsh-tool-bash` schemas](../../../docs/tool-catalog.md#deepseek-aidsh-tool-bash) are the baseline. By advertising a confining `sandboxMode`, this backend augments `bash` with `sandbox_permissions` using enum `workspace-write` | `danger-full-access` and with `justification`. The policy owner separately contributes the current capability-neutral `sandbox:policy` context.
+基线是生成的 [`dsh-tool-bash` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-bash)。通过公布表明启用隔离的 `sandboxMode` 能力，此后端会为 `bash` 增加 `sandbox_permissions`，其 enum 为 `workspace-write` | `danger-full-access`，并增加 `justification`。策略归属方会另行贡献当前且不区分具体能力的 `sandbox:policy` 上下文。
 
-#### Token effect
+#### Token 影响
 
-Small fixed schema increment on requests where `bash` is visible, plus the current-policy clause owned by `dsh-sandbox-policy`.
+在 `bash` 可见的请求上，schema 固定增加少量内容，另有一条由 `dsh-sandbox-policy` 负责的当前策略子句。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-A standing-policy change appends a complete owner-rendered context snapshot after retained history, preserving the existing system/history prefix byte-for-byte. Changing executor capabilities alters the `bash` schema.
+常驻策略变化会在保留的历史之后追加一份由归属方渲染的完整上下文快照，并使既有 system/history 前缀保持逐字节不变。更改执行器能力会改变 `bash` schema。
 
-### Bash tool result, indirectly
+### 间接的 Bash 工具结果
 
-#### What the model sees
+#### 模型看到的内容
 
-After ordinary bounded output, a denied call appends exactly `[sandbox: file access denied under <mode> mode]`. When escalation is available it next appends `[sandbox: escalation available — retry this exact command once with sandbox_permissions (the narrowest wider mode that suffices) + justification; the approval prompt asks the user]`. A settled background runner failure instead appends `[sandbox: the sandbox runner itself failed under <mode> mode — the command did not run; this is a sandbox problem, not a command failure]`.
+在普通有界输出之后，被拒绝的调用会精确追加 `[sandbox: file access denied under <mode> mode]`。当升权可用时，接下来精确追加 `[sandbox: escalation available — retry this exact command once with sandbox_permissions (the narrowest wider mode that suffices) + justification; the approval prompt asks the user]`。已结算的后台 runner 失败则追加 `[sandbox: the sandbox runner itself failed under <mode> mode — the command did not run; this is a sandbox problem, not a command failure]`。
 
-#### Token effect
+#### Token 影响
 
-Zero additional tokens on an unremarkable allowed run beyond ordinary output. Denial or failure adds the quoted conditional marker, retained until compaction.
+除普通输出外，正常允许的运行不会增加 token。拒绝或失败会增加上述有条件标记，并保留到上下文压缩（context compaction）。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-Append-only; newly visible content follows the reusable request prefix and does not invalidate existing KV-cache entries.
+仅追加；新可见内容位于可复用请求前缀之后，不会使现有 KV Cache 条目失效。
 
-### Bash tool error, indirectly
+### 间接的 Bash 工具错误
 
-#### What the model sees
+#### 模型看到的内容
 
-If no runner can enforce a confined mode, the foreground call propagates the [`SANDBOX_UNAVAILABLE` error owned by `dsh-sandbox`](../../sandbox/sandbox/README.md#confinement-error-indirectly). A runner-attributable spawn failure supplies the original spawn error as detail; a rejection without `ENOENT`/`EACCES` path or syscall evidence that names argv[0] remains an ordinary command-start error. A settled runner failure supplies the matched fatal stderr line and preserves the original stderr collection. When present, the appended `Runner failure: <detail>` is the authoritative diagnosis; the preceding backend-install text is the generic `SANDBOX_UNAVAILABLE` prefix.
+如果没有 runner 能强制执行受限模式，前台调用会传播 [`SANDBOX_UNAVAILABLE` 错误](../../sandbox/sandbox/README.md#confinement-error-indirectly)；该错误由 `dsh-sandbox` 定义。判定为 runner 失败的 spawn 错误会以原始 spawn 错误作为详细信息；如果拒绝没有通过 `ENOENT`／`EACCES` 的 `path` 或 `syscall` 证据指明 `argv[0]`，它仍是普通的命令启动错误。已结算的 runner 失败则以匹配到的致命 stderr 行作为详细信息，并保留原始 stderr 收集结果。如果追加了 `Runner failure: <detail>`，它就是权威诊断；前面的后端安装文本只是通用的 `SANDBOX_UNAVAILABLE` 前缀。
 
-#### Token effect
+#### Token 影响
 
-Conditional error text is visible for that call and retained in history until compaction.
+该次调用会在相应条件下显示错误文本，该文本会保留在历史记录中直到上下文压缩。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-Append-only; newly visible content follows the reusable request prefix and does not invalidate existing KV-cache entries.
+仅追加；新可见内容位于可复用请求前缀之后，不会使现有 KV Cache 条目失效。
 
-## Known Limitations and Deferred Work
+## 已知限制与暂缓事项
 
-- **Confinement covers file effects only** — network access and process visibility are unchanged, so the modes are not a general-purpose security sandbox.
-- **Denials are inferred from failed-command stderr** — backend signatures make the inference portable, but a matching application error can be classified as a denial and a denial omitted from the retained tail can be missed.
-- **An asynchronously observed background runner failure has no immediate error channel** — it is recorded on the settled process and surfaces when the caller reads the generic task with `job_output`; a synchronous `SubprocessRuntime` throw that names the runner path instead fails `start()` immediately.
-- **`danger-full-access` deliberately bypasses `ctx.sandbox`** — it is an explicit unconfined mode, not a wider sandbox profile.
-- **Remote-SSH has no confined Shell mode** — `workspace-write` remains available for semantic remote filesystem mutations, but remote Bash cannot use it until a real remote sandbox provider exists.
+- **限制只覆盖文件影响**：网络访问与进程可见性不变，因此这些模式不是通用安全沙箱。
+- **拒绝从失败命令的 stderr 推断**：后端特征使该推断可跨平台使用，但包含相同后端特征的应用错误可能被分类为拒绝，也可能遗漏未出现在保留尾部中的拒绝。
+- **异步观测到的后台 runner 失败没有即时错误通道**：它记录在已结算进程上，并在调用方使用 `job_output` 读取通用任务时呈现；`SubprocessRuntime` 同步抛出的错误包含 runner 路径时，则会使 `start()` 立即失败。
+- **`danger-full-access` 有意绕过 `ctx.sandbox`**：它是显式无约束模式，不是更宽的沙箱 profile。
+- **Remote-SSH 没有受约束 Shell 模式**：`workspace-write` 仍可用于语义远程文件系统变更，但在真正的远程沙箱提供方出现前，远程 Bash 不能使用该模式。

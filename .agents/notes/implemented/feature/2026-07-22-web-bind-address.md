@@ -1,29 +1,27 @@
-# Agent Note: Explicit web bind address
+# Agent Note: 显式指定 Web 绑定地址
 
 Status: implemented
 
-English | [中文](2026-07-22-web-bind-address.zh.md)
+## 问题
 
-## Problem
+即便浏览器与服务器运行在同一台机器上，`dsh web` 也会绑定所有网络接口。因此，本地使用会在操作者未明确选择的情况下暴露一个未经身份验证的开发服务器；另一方面，远程容器和局域网浏览器场景仍需要一种受支持的方式来接受非环回连接。
 
-`dsh web` binds every network interface even when its browser runs on the same machine. Local use therefore exposes an unauthenticated development server without an explicit operator choice, while remote-container and LAN-browser use still needs a supported way to accept non-loopback connections.
+HTTP 承载层还把绑定地址隐藏在 `startWebServer()` 内部，导致其他壳层无法在包边界明确表达自己的网络策略。
 
-The HTTP carrier also hides the bind address inside `startWebServer()`, so alternate shells cannot state their own network policy at the package boundary.
+## 决策
 
-## Decision
+`dsh web` 默认绑定 `127.0.0.1`。CLI（命令行界面）接受 `--host 0.0.0.0` 作为显式启用的全接口模式，并拒绝其他取值，使网络模式保持为一份规模小、经过审慎限定的约定。全接口模式仍然输出本机环回 URL，并在可用时输出第一个外部 IPv4 URL。
 
-`dsh web` binds `127.0.0.1` by default. The CLI accepts `--host 0.0.0.0` as the explicit all-interface mode and rejects other values so its network modes remain a small, deliberate contract. All-interface mode keeps printing the loopback URL and, when available, the first external IPv4 URL.
+`WebServerOptions.host` 为必填项。HTTP 承载层将该值直接传给 `node:http`，不提供回退值，因此每个壳层负责制定自己的绑定策略。以编程方式使用承载层的消费方可以直接选择其他主机名或地址。
 
-`WebServerOptions.host` is required. The HTTP carrier passes that value to `node:http` without supplying a fallback, leaving each shell responsible for its bind policy. Programmatic carrier consumers may select another hostname or address directly.
+## 曾考虑的替代方案
 
-## Alternatives considered
+**保留以 `0.0.0.0` 作为默认值。** 不予采纳，因为普通的同机使用不需要在全网范围内可达，也不应隐式获得这种可达性。
 
-**Keep `0.0.0.0` as the default.** Rejected because ordinary same-machine use does not need network-wide reachability and should not acquire it implicitly.
+**使用布尔型暴露标志。** 不予采纳，因为 `--host 0.0.0.0` 直接说明最终的套接字行为，并与底层服务器选项一致，无需再引入第二套术语。
 
-**Use a boolean exposure flag.** Rejected because `--host 0.0.0.0` names the resulting socket behavior directly and matches the underlying server option without introducing a second term.
+**在 `startWebServer()` 内设置默认值。** 不予采纳，因为承载层可能由多种壳层调用，没有依据替它们选择部署策略。要求传入 `host`，可使每次装配调用都明确作出这一选择。
 
-**Default inside `startWebServer()`.** Rejected because the carrier has multiple possible shells and no basis for choosing their deployment policy. Requiring `host` makes the choice visible at every assembly call.
+## 后果
 
-## Consequences
-
-Local `dsh web` starts remain reachable at `http://127.0.0.1:3080`; a browser on another machine must opt in with `dsh web --host 0.0.0.0`. The CLI does not yet expose custom interface addresses or IPv6 modes, while programmatic carrier consumers retain that flexibility. Server tests pin both loopback and all-interface forwarding into the Node listen boundary, and the web smoke continues to exercise the default CLI path.
+`dsh web` 的本地启动仍可通过 `http://127.0.0.1:3080` 访问；其他机器上的浏览器必须使用 `dsh web --host 0.0.0.0` 显式启用。CLI 尚未开放自定义接口地址或 IPv6 模式，而以编程方式使用承载层的消费方仍保留这种灵活性。服务器测试将环回模式和全接口模式向 Node 监听边界的传递固定为约定，Web 冒烟测试继续覆盖默认 CLI 路径。

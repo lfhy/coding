@@ -1,110 +1,108 @@
-# Agent Note: Queued manual compaction with one durable lock
+# Agent Note: 使用单一持久锁实现排队手动压缩
 
 Status: implemented
 
-English | [中文](2026-07-30-queued-manual-compaction.zh.md)
+## 问题
 
-## Problem
+自动压缩（compaction）可以保护上下文窗口，但交互用户还需要一种确定性方法，在压力策略触发前压缩累积的历史。把 `/compact` 作为提示词文本发送会消耗一个模型轮次，还会让会话模型重新解释一项直接控制操作。在某个 UI 内实现该功能，则会重复命令发现、生命周期日志记录、取消与后端策略。
 
-Automatic compaction protects the context window, but an interactive user also needs a deterministic way to condense accumulated history before pressure policy fires. Sending `/compact` as prompt text would spend a model turn and let the conversation model reinterpret a direct control action. Implementing it inside one UI would duplicate command discovery, lifecycle logging, cancellation, and backend policy.
+面向用户的命令在轮次之间到达，并且必须异步生成摘要。在等待期间获接纳的提示词必须保留普通身份、FIFO 位置与唤醒行为，但不得从即将被压缩替换的历史派生请求。单独检查状态并不足够，因为另一调用方可能在该检查与压缩操作认领空闲阶段之间唤醒驱动器。
 
-The human command arrives between turns and must summarize asynchronously. A prompt accepted during that wait must keep its ordinary identity, FIFO position, and wakeup behavior, but it must not derive a request from history that compaction is about to replace. A separate status check is insufficient because another caller can wake the driver between that check and the compaction operation claiming the idle phase.
+手动、压力、溢出和显式范围入口点还需要共享同一项互斥事实。仅使用进程本地标志无法解释一份崩溃恢复后的日志，而先摘要再记录的事务在开销较大的等待期间不会留下持久证据。反过来，把标记对视为排他容器又会禁止有效的空闲注入，尽管注入按定义不会唤醒，并且会在轮次之间立即执行。
 
-Compaction also needs one mutual-exclusion fact shared by manual, pressure, overflow, and explicit-range entry points. A process-local flag alone cannot explain a crash-recovered log, while a summarize-first transaction leaves no durable evidence during the expensive interval. Conversely, treating marker pairs as exclusive containers would forbid valid idle injection even though injection is explicitly non-waking and immediate between turns.
+本 Agent Note 扩展[压缩能力 seam](2026-06-18-compaction-capability-seam.md)、[会话 end-seed 边界](../architecture/2026-07-30-session-end-seed-log-boundary.md)和[移除纯日志事件的合成轮次](../simplification/2026-07-28-remove-synthetic-log-only-turns.md)。三者均保持活动状态，并拥有各自更广泛的决策；重叠仅是部分的。
 
-This note extends the [compaction capability seam](2026-06-18-compaction-capability-seam.md), the [session end-seed boundary](../architecture/2026-07-30-session-end-seed-log-boundary.md), and the [removal of synthetic log-only turns](../simplification/2026-07-28-remove-synthetic-log-only-turns.md). Each remains active and owns its broader decision; the overlap is partial only.
+## 决策
 
-## Decision
+### `/compact` 是基于后端无关 seam 的命令
 
-### `/compact` is a command over a backend-independent seam
+`@deepseek-ai/dsh-command-compact` 通过 `ctx.commands` 注册一个无参数、面向用户的命令。它调用第三个抽象 `CompactionEngine` 操作 `compactNow(agent, signal)`，并把封闭的 `ManualCompactionError` 分类体系（`busy | changed | summary | commit | persistence`）映射为直接 UI 结果。`command/run` 和 `command/done` 保留命令生命周期，同时不进入模型历史，也不消耗模型循环轮次。
 
-`@deepseek-ai/dsh-command-compact` registers one argument-free human command through `ctx.commands`. It calls the third abstract `CompactionEngine` operation, `compactNow(agent, signal)`, and maps the closed `ManualCompactionError` taxonomy (`busy | changed | summary | commit | persistence`) to direct UI results. `command/run` and `command/done` preserve the command lifecycle without entering model history or consuming a model-loop turn.
+命令插件会独立跟踪每个实际处理器 promise，不依赖命令执行器的中止感知等待。其复合生命周期 effect 先注销 `/compact`，再异步等待所有已开始的处理器结算，因此根级 teardown 只有在后端的闭合与 flush 工作结算后才会完全停稳。
 
-The command plugin tracks each real handler promise independently of the command executor's abort-aware wait. Its composite lifecycle effect unregisters `/compact` before asynchronously draining handlers that already started, so root teardown reaches quiescence only after backend close and flush work settles.
+该 seam 的 `ManualCompactAgentContext` 只在压缩已需使用的会话与路由事实之上增加 `runMaintenance()`。保留、平衡、摘要、标记排序、替换与持久性仍由后端负责。
 
-The seam's `ManualCompactAgentContext` adds only `runMaintenance()` to the session and routing facts compaction already needs. Retention, balancing, summarization, marker ordering, replacement, and durability remain backend responsibilities.
+### 同步认领空闲维护阶段
 
-### Idle maintenance is synchronously claimed
+`Agent.runMaintenance(task)` 只能从空闲阶段启动，并会在调用任务前认领该 phase。会唤醒的发送会在 idle 时立即启动循环，因此先认领 phase 的操作会拥有该边界。
 
-`Agent.runMaintenance(task)` starts only from the idle phase and claims that phase before invoking the task. A waking send starts the loop immediately when idle, so whichever operation claims the phase first owns the boundary.
+维护阶段不会创建第二个队列。之后发送的项保留其 `MessageId`、位置、FIFO 顺序与唤醒信息。会唤醒的输入会保持排队，直至维护任务结算，再启动既有驱动器路径；`inject()` 仍然不会唤醒驱动器。
 
-Maintenance does not create a second queue. Later sends keep their `MessageId`, placement, FIFO order, and wakeup facts. Waking input remains queued until maintenance settles, then starts the existing driver path; `inject()` remains non-waking.
+`whenIdle()` 会把维护任务及其结算后释放的所有唤醒工作视为尚未完成的活动。取消会中止 agent（智能体）自有的维护信号，生命周期 teardown 则会在 dispose（资源释放）完成前排空同一个活动边界。
 
-`whenIdle()` treats maintenance and any waking work released behind it as unfinished activity. Cancellation aborts the agent-owned maintenance signal, and lifecycle teardown drains the same activity boundary before disposal completes.
+### 一个参数化事务拥有每一对标记
 
-### One parameterized transaction owns every bracket
+`dsh-compaction-basic` 只有一个区域事务，由标记归属值（`number | null`）、稳定性规则（整个会话表层或所选区段）与可选 flush 参数化。它按同一顺序执行：
 
-`dsh-compaction-basic` has one region transaction parameterized by bracket owner (`number | null`), stability rule (whole surface or selected span), and an optional flush. It performs one ordering:
+1. 验证所选位置范围，并检查持久日志尾部；
+2. 拒绝活动的未匹配压缩标记；
+3. 同步追加 `compaction/start`；
+4. 准备并等待摘要；
+5. 重新验证所需稳定性；
+6. 追加 `compaction/summary` 与替换用的 `user/message`；
+7. 恰好尝试一次 `compaction/end`；
+8. 当手动调用方要求持久性时执行 flush。
 
-1. validate the selected positional range and inspect the durable tail;
-2. reject a live unmatched compaction marker;
-3. append `compaction/start` synchronously;
-4. prepare and await summarization;
-5. revalidate the required stability;
-6. append `compaction/summary` and the replacement `user/message`;
-7. make exactly one `compaction/end` attempt;
-8. flush when the manual caller requested durability.
+自动和显式区域工作使用从未闭合轮次恢复的数字归属值，并要求整个会话表层保持稳定。手动工作会先预留接纳，在进入事务前选择有效范围；选择结果为 `null` 时不写入任何内容。其标记对使用 `turn: null`，只要求所选区段保持稳定，并在 `finally` 中释放接纳预留前 flush 每次成功闭合的尝试。
 
-Automatic and explicit-region work use the numeric owner recovered from the open turn and require whole-surface stability. Manual work reserves admission first, selects a useful range before the transaction, and writes nothing when selection returns `null`. Its bracket uses `turn: null`, requires only selected-span stability, and flushes every successfully closed attempt before releasing admission in `finally`.
+因此，`compaction/start` 是唯一的压缩锁。不存在 `WeakSet`、包装层 mutex、locked／unlocked 方法拆分，也不存在事务外部重复的活动状态检查。
 
-`compaction/start` is therefore the only compaction lock. There is no `WeakSet`, wrapper mutex, locked/unlocked method split, or redundant activity check around the transaction.
+### 先记录标记有意不同于调研过的实现
 
-### Bracket-first deliberately differs from the surveyed implementations
+Codex 将手动压缩建模为占用其活动轮次槽位的 `CompactionTask`，自动压缩则以内联方式运行。Pi 使用压缩 abort controller 是否存在作为 mutex，并仅在成功后追加压缩。Claude Code 的自动和手动路径共享同一个压缩例程，但会在摘要流结束后才构造边界。
 
-Codex models manual compaction as a `CompactionTask` occupying its active-turn slot while automatic compaction runs inline. Pi uses the existence of a compaction abort controller as its mutex and appends compaction only after success. Claude Code shares one compaction routine between automatic and manual paths but constructs its boundary after summary streaming.
+DSH 有意在调用摘要器前记录 `compaction/start`。缓慢或崩溃的尝试因此可观察，自动与手动路径共享同一个持久锁，之后的写入方也不会把正在生成的摘要误判为未锁定会话。这是对先摘要行为的主动偏离，而不是偶然的事件顺序差异。
 
-DSH deliberately records `compaction/start` before calling the summarizer. A slow or crashed attempt is observable, automatic and manual paths share the same durable lock, and a later writer cannot mistake an in-flight summary for an unlocked session. This is a conscious divergence from summarize-first behavior, not an accidental event-order difference.
+### 标记是时间点，而不是事件容器
 
-### Markers are time points, not an event container
+`compaction/start` 和 `compaction/end` 表示获取与释放锁。它们不声称排他拥有二者 seq 之间的每个事件。手动摘要等待期间，空闲的 `inject()` 可以追加 `user/message`，因此该不相关事件可能位于标记区间内。
 
-`compaction/start` and `compaction/end` mean lock acquisition and release. They do not claim exclusive ownership of every event between their seqs. An idle `inject()` may append a `user/message` while a manual summary is pending, so that unrelated event can sit inside the marker interval.
+手动稳定性只检查所选区段：它必须仍然存在、连续、有序、计价相同且保持平衡。其外部的仅追加上下文不会使摘要陈旧。位置替换会把检查点放在旧 span 的表层位置，并使注入上下文在派生模型历史中位于其后，即使注入的日志 seq 早于后续摘要和替换事件。
 
-Manual stability checks only the selected span: it must remain present, contiguous, ordered, equally priced, and balanced. Append-only context outside it does not stale the summary. Positional replacement places the checkpoint at the old span's surface position and leaves injected context after it in derived model history, even though the injection's log seq precedes the later summary and replacement events.
+失败的 `changed` 或 `summary` 尝试会保持对话表层不变，但日志并非没有变化：其中会包含 `compaction/start` 和 `compaction/end { error }`。面向用户的文本会明确说明这一区别。
 
-Failed `changed` or `summary` attempts leave the conversation surface unchanged, but the log is not unchanged: it contains `compaction/start` and `compaction/end { error }`. User-facing text states that distinction.
+### End-seed 区分活动与陈旧的未匹配标记
 
-### End-seed distinguishes live and stale orphans
+尾部扫描会分别查找当前轮次、未匹配的 compaction start 与最新 `session/end-seed`。位于最新 end-seed 之后的未匹配 start 是活动锁，会阻塞每个压缩入口点。位于较新 end-seed 之前的未匹配 start 属于更早的会话生命周期，已经陈旧，因此不会卡住恢复或 fork 后的会话。
 
-Tail scanning finds the current turn, unmatched compaction start, and newest `session/end-seed` independently. An unmatched start after the newest end-seed is live and blocks every compaction entry point. An unmatched start before a later end-seed belongs to an earlier session lifecycle and is stale, so it does not wedge the resumed or forked session.
+压缩不变量在 seed 回放期间使用同一项转换逻辑：`session/end-seed` 会清除未闭合的历史追踪状态。此场景不要求构造函数实时发布该边界；回放才是承重路径。
 
-The compaction invariant uses the same transition logic during seed replay: `session/end-seed` clears an open historical trace. The boundary need not publish live from the constructor for this case; replay is the load-bearing path.
+客户端请求投影会在 `session/end-seed` 时刻将未匹配的压缩请求以中断状态结束，并清除其活动索引。因此，后续 `compaction/start` 会创建一个独立请求，而不是让该遗留的未匹配请求永久保持运行状态或将其覆盖。
 
-The client request projection closes an unmatched compaction request as interrupted at the `session/end-seed` time and clears its active index. A later `compaction/start` therefore creates an independent request instead of leaving or overwriting a permanently running orphan.
+事务追加 start 后，每次后续失败都会进行一次闭合尝试。闭合失败会有意留下可见且具有阻塞作用的未匹配 start，并且不尝试 flush。已闭合的手动尝试即使报告预期失败也会 flush。完成必需的闭合与 flush 清理后，取消仍保留原始原因优先级。
 
-Once a transaction has appended its start, every later failure makes one closing attempt. A failed close leaves the unmatched start deliberately visible and blocking, and no flush is attempted. A closed manual attempt is flushed even when it reports an expected failure. Cancellation retains exact-reason precedence after required close and flush cleanup.
+### 参考实现边界
 
-### Reference implementation boundaries
+一个未合并的参考实现为命令、预留、测试与快照结构提供了参考。它的进程本地 `WeakSet` 锁与 locked／unlocked 方法拆分经过评估后未被采用，因为持久标记对是唯一可达的锁。
 
-An unmerged reference implementation informed the command, reservation, tests, and snapshot shape. Its process-local `WeakSet` lock and locked/unlocked method splits were considered and not adopted because the durable bracket is the single reachable lock.
+该参考实现还包含客户端侧替换锚点机制，用于保留 transcript（文本记录）位置。按日志顺序排列的 transcript 投影已经从事件顺序消费压缩，并且不会查询可变表层位置，因此这些锚点经过评估后未被采用。
 
-That reference also carried client-side replacement-anchor machinery to preserve transcript placement. The log-ordered transcript projection already consumes compaction from event order and does not consult mutable surface positions, so those anchors were considered and not adopted.
+## 曾考虑的替代方案
 
-## Alternatives considered
+**在启动维护任务前检查 `agent.status`。** 不予采用，因为检查与 phase 认领会成为两个独立操作；会唤醒的发送可能在二者之间启动驱动器。
 
-**Check `agent.status` before starting maintenance.** Rejected because the check and phase claim would be separate operations; a waking send could start the driver between them.
+**把命令本身加入队列。** 不予采用，因为 `/compact` 是直接控制而非模型输入；先获接纳的提示词必须保留优先权，不能围绕第二个命令队列重新排序。
 
-**Queue the command itself.** Rejected because `/compact` is direct control, not model input, and a prompt already accepted first must retain right of way rather than being reordered around a second command queue.
+**在追加 `compaction/start` 前生成摘要。** 不予采用，因为开销较大的进行中操作将不可见，也不会参与自动压缩共享的锁。
 
-**Summarize before appending `compaction/start`.** Rejected because the expensive in-flight operation would be invisible and would not participate in the lock shared by automatic compaction.
+**同时使用持久标记与进程本地 mutex。** 不予采用，因为两套权威机制在回放后可能产生分歧，还会要求用包装层分支处理标记对已经表达的状态。
 
-**Use both a durable marker and a process-local mutex.** Rejected because two authorities can disagree after replay and require wrapper branches for states the bracket already expresses.
+**与唤醒提示词一起阻塞注入。** 不予采用，因为按约定，空闲注入是不会唤醒的持久上下文；延迟注入会使插件排序依赖某个 UI 命令。
 
-**Hold injection with waking prompts.** Rejected because idle injection is non-waking durable context by contract; delaying it would make plugin ordering depend on a UI command.
+**要求标记区间只包含压缩事件。** 不予采用，因为标记表示锁的时间点。`compaction/summary` 会精确指明所选区间与被遮蔽 seq；排他性不会增加正确性，只会拒绝有效注入。
 
-**Require the marker interval to contain only compaction events.** Rejected because markers represent lock time points. `compaction/summary` names the selected range and shadowed seqs exactly; exclusivity would add no correctness and would reject valid injection.
+**把每个未匹配标记都永久视为 busy。** 不予采用，因为崩溃恢复或 fork 后的会话会永久卡住。`session/end-seed` 是区分陈旧历史与当前进程活动尝试的显式生命周期证据。
 
-**Treat every unmatched marker as permanently busy.** Rejected because a crash-recovered or forked session would remain wedged. `session/end-seed` is the explicit lifecycle evidence that distinguishes stale history from a live process-local attempt.
+## 验证
 
-## Verification
+agent loop（智能体循环）测试覆盖同一 tick 内的优先权、保留 ID 与 FIFO 生命周期、会唤醒和静默的排队工作、幂等释放、`whenIdle()`、取消与 teardown。压缩测试覆盖独立与数字形式的不变量 owner、end-seed 回放、活动与陈旧未匹配标记、listener 重入、所选区段漂移、commit 与闭合失败、flush 顺序、原始取消原因、raw output 与 usage 保留，以及自动／手动互斥。
 
-Agent-loop tests cover same-tick right of way, preserved IDs and FIFO lifecycle, waking and quiet queued work, idempotent release, `whenIdle()`, cancellation, and teardown. Compact tests cover standalone and numbered invariant ownership, end-seed replay, live versus stale orphans, re-entrant listeners, selected-span drift, commit and close failures, flush ordering, exact cancellation causes, raw output and usage preservation, and automatic/manual mutual exclusion.
+命令包固定注册行为、Loader 组合、参数拒绝、精确的成功／失败文本、取消、不进入模型历史的保证，以及 dispose 在中止使执行器停止等待处理器后，仍会跨越相互独立的闭合与 flush 边界等待该处理器结算。客户端运行时投影测试固定 end-seed 中断，以及随后一次独立尝试的完成。`queued-manual-compact` 终端快照通过已组装 TUI 驱动真实按键：`/help` 可发现该命令；被暂停的摘要会接纳一个排队提示词和即时注入；`turn: null` 标记与 flush 先于排队提示词轮次；命令生命周期保持纯日志；派生顺序固定为检查点 → 注入 → 排队提示词。
 
-The command package pins registration, Loader composition, argument rejection, exact success/failure text, cancellation, absence from model history, and disposal waiting across separate close and flush boundaries after an abort stops the executor from awaiting the handler. The client runtime projection test pins end-seed interruption followed by an independent completed attempt. The `queued-manual-compact` terminal snapshot drives real keystrokes through the assembled TUI: `/help` discovers the command, a held summary admits a queued prompt and immediate injection, `turn: null` markers and the flush precede the queued prompt turn, command lifecycle stays log-only, and the derived order is checkpoint → injection → queued prompt.
+## 后果
 
-## Consequences
+交互用户无需消耗会话模型轮次即可压缩有效历史。在命令前获接纳的提示词胜出；命令期间提交的提示词会以原有队列身份等待。手动压缩会消耗会话 seq，但不消耗轮次编号。
 
-Interactive users can compact useful history without spending a conversation-model turn. A prompt accepted before the command wins; one submitted during the command waits with its original queue identity. Manual compaction consumes session seqs but no turn number.
+日志通过同一对标记暴露缓慢、失败、崩溃与成功的尝试。边界前的陈旧未匹配标记不会再卡住新的生命周期，而当前未匹配 start 仍是严格的 busy 信号。标记区间可以包含不相关事件，因此消费方使用 `compaction/summary` 记录的 seq 与相对顺序，而不假定存在连续且仅含压缩事件的切片。
 
-The log exposes slow, failed, crashed, and successful attempts through the same bracket. A stale pre-boundary orphan no longer wedges a new lifecycle, while a current unmatched start remains a hard busy signal. Marker intervals may contain unrelated events, so consumers use the seqs recorded in `compaction/summary` and relative ordering rather than assuming a contiguous compaction-only slice.
-
-The shared transaction keeps one ordering and one lock across every entry point. Failure reporting is precise about whether only the log changed, the surface may have partially changed, or the in-memory commit could not be persisted.
+共享事务让每个入口点保持同一种顺序并使用同一把锁。失败报告会精确区分只有日志发生变化、会话表层可能已部分改变，以及内存提交无法持久化这三种情况。

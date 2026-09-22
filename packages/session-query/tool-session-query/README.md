@@ -1,76 +1,74 @@
 # @deepseek-ai/dsh-tool-session-query
 
-English | [中文](README.zh.md)
+位于 `ctx.sessionQuery` 之上、经工作区授权的模型工具。该 opt-in 包只依赖统一接口，并注册 `session_search`、`session_event_search`、`session_trace`、`session_event_trace` 和 `session_event_read`；已发布的宿主组合默认不挂载它。
 
-Workspace-authorized model tools over `ctx.sessionQuery`. The opt-in package depends only on the unified interface and registers `session_search`, `session_event_search`, `session_trace`, `session_event_trace`, and `session_event_read`; shipped host compositions do not mount it by default.
+## 配置
 
-## Configuration
-
-| Key | Default | Meaning |
+| 键 | 默认值 | 含义 |
 |---|---:|---|
-| `maxSearchResults` | `100` | Maximum authorized non-self hits collected across internal provider pages |
-| `searchTimeoutMs` | `30000` | Cooperative deadline attached to both full-text search tools |
+| `maxSearchResults` | `100` | 在内部提供方分页中收集的最大已授权非自身命中数 |
+| `searchTimeoutMs` | `30000` | 附加到两个全文搜索工具的协作式截止时间 |
 
-The caller comes exclusively from `ToolExecution.exec.agent`. Cross-session access requires exact equality between the target and caller session `cwd` values; a caller without `cwd` can inspect only itself. Search never exposes provider cursors, offsets, page sizes, or a model-controlled limit. Because one search consumes generation-bound provider cursors internally, both search tools execute exclusively with sibling tool calls; the three exact trace/read tools opt into parallel execution. Every exact executor passes its unchanged execution signal through authorization and the service trace/read, so cancellation waits for cooperative persistence cleanup and retains the signal's exact reason. Timestamps at the tool boundary require an explicit `Z` or numeric offset and become inclusive epoch-millisecond filters.
+调用方只能来自 `ToolExecution.exec.agent`。跨会话访问要求目标和调用方会话的 `cwd` 值严格相等；没有 `cwd` 的调用方只能检查自己。搜索绝不公开提供方游标、偏移、分页大小或模型可控上限。由于一次搜索会在内部消费与世代绑定的提供方游标，两个搜索工具都与同级工具调用排他执行；三个精确跟踪/读取工具选择并行执行。每个精确执行器都将未更改的执行信号传递给授权和服务跟踪/读取，因此取消会等待协作式持久化清理，并保留信号的精确原因。工具边界上的时间戳要求显式 `Z` 或数字偏移，并转换为包含端点的 epoch 毫秒过滤器。
 
-`session_search` always omits the caller session. Requested parent ids are deduplicated and checked against caller-workspace authority before FTS; only authorized ids reach the provider, while missing and cross-workspace guesses behave identically and the root marker remains independently ORed. A current-session `session_event_search` stops immediately before the step that invoked it, so the active assistant output and logged tool call cannot match themselves. Direct targets are authorized before trace, event, or title reads. Lineage output replaces unauthorized ancestor and descendant boundaries with markers that contain no hidden session id.
+`session_search` 始终省略调用方会话。请求的父 id 会被去重，并在 FTS 前根据调用方工作区权限检查；只有已授权 id 会到达提供方，而缺失猜测和跨工作区猜测的行为完全相同，root 标记仍独立使用 OR。当前会话中的 `session_event_search` 会在调用它的步骤之前立即停止，因此当前 assistant 输出和已记录工具调用无法匹配自身。直接目标在跟踪、事件或标题读取前完成授权。血缘输出会用不含隐藏会话 id 的标记替换未授权祖先和后代边界。
 
-Every trusted `ctx.sessionQuery` call crosses one model-boundary sanitizer. Caller cancellation is checked first and preserved exactly. Available corpus and provider diagnostics, including safely inspectable nested causes, are logged internally on a best-effort basis; unprintable failures use a fixed log placeholder. Diagnostic formatting and error classification are independently guarded, so an unprintable cause cannot escape or prevent a safely classified outer error, while unsafe classification or logging falls back to the fixed `SESSION_QUERY_TOOL_FAILED` code and message. Local argument-validation and authorization errors retain their precise tool-owned messages.
+每个可信 `ctx.sessionQuery` 调用都会经过一个模型边界净化器。首先检查调用方取消，并精确保留。可获取的语料库诊断信息和提供方诊断信息（包括可安全检查的嵌套原因）会尽力记录到内部日志；不可打印的失败使用固定日志占位符。诊断格式化和错误分类各自独立受保护，因此不可打印的原因无法逃逸，也无法阻止已安全分类的外层错误；不安全的分类或日志记录则回退到固定 `SESSION_QUERY_TOOL_FAILED` 代码和消息。本地参数验证和授权错误保留精确的工具自有消息。
 
-The package deliberately performs no byte or character truncation and does not import a spill backend. Deployments that need bounded inline output mount `@deepseek-ai/dsh-spill-policy`, which can replace the rendered text after execution while retaining the complete result.
+该包刻意不执行字节或字符截断，也不导入 spill 后端。需要限制内联输出的部署应挂载 `@deepseek-ai/dsh-spill-policy`，它可在执行后替换已渲染文本，同时保留完整结果。
 
-## Model Experience
+## 模型体验
 
-### System prompt
+### 系统提示词
 
-#### What the model sees
+#### 模型看到的内容
 
-The model receives one fixed prior-history guidance section.
+模型会收到一个固定的既往历史指引章节。
 
-##### Prior-history guidance
+##### 既往历史指引
 
 ```markdown
 Use session_search to find relevant work from prior sessions, or session_event_search to search earlier events in one session. Search results are cursor-free and workspace-scoped. Follow a useful hit with session_trace, session_event_trace, or session_event_read when you need lineage, relationships, or exact data.
 ```
 
-#### Token effect
+#### Token 影响
 
-One fixed concise section is present on each request while the plugin is mounted.
+插件挂载期间，每次请求都存在一个固定精简章节。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-Prefix-stable while the plugin and guidance text are unchanged.
+插件和指引文本不变时，前缀稳定。
 
-### Tool schemas
+### 工具 schema
 
-#### What the model sees
+#### 模型看到的内容
 
-The model sees the generated [`session_search`, `session_event_search`, `session_trace`, `session_event_trace`, and `session_event_read` schemas](../../../docs/tool-catalog.md#deepseek-aidsh-tool-session-query). Search filters add fixed schema tokens, while cursors, workspace paths, output pagination, and model-controlled result limits remain absent.
+模型会看到生成的 [`session_search`、`session_event_search`、`session_trace`、`session_event_trace` 和 `session_event_read` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-session-query)。搜索过滤器会增加固定 schema token，而游标、工作区路径、输出分页和模型可控结果上限仍不存在。
 
-#### Token effect
+#### Token 影响
 
-Five fixed read-only schemas are sent on each request while visible.
+可见期间，每次请求都会发送 5 个固定只读 schema。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-Prefix-stable while tool visibility and definitions are unchanged.
+工具可见性和定义不变时，前缀稳定。
 
-### Tool results
+### 工具结果
 
-#### What the model sees
+#### 模型看到的内容
 
-Each successful call emits one plain-text block. Search results include titles and best-match excerpts; traces include all authorized relationships; event reads include unabridged target JSON. The generic spill policy may replace oversized inline text with its preview, opaque locator, and retrieval hint.
+每次成功调用都会发出一个纯文本块。搜索结果包含标题和最佳匹配摘录；跟踪包含全部已授权关系；事件读取包含未经删节的目标 JSON。通用 spill 策略可以将过大的内联文本替换为预览、不透明定位信息和取回指引。
 
-#### Token effect
+#### Token 影响
 
-Results are data-dependent and remain in logged tool history until compaction; `maxSearchResults` bounds search-hit count.
+结果取决于数据，并保留在已记录工具历史中直到压缩（compaction）；`maxSearchResults` 限制搜索命中数。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-Append-only result text follows the reusable request prefix and does not invalidate earlier cache entries.
+仅追加的结果文本位于可重用请求前缀之后，不会使较早的缓存条目失效。
 
-## Known Limitations and Deferred Work
+## 已知限制与暂缓事项
 
-- Search returns at most the deployment cap and asks the model to narrow its query when more matches exist; it offers no continuation token.
-- Workspace identity is conservative exact-string `cwd` equality, so symlink-equivalent paths do not share authority.
-- Custom compositions without the generic spill policy accept complete trace and event payloads inline.
+- 搜索最多返回部署上限，匹配更多时会请模型缩小查询；不提供延续 token。
+- 工作区身份使用保守的字符串精确 `cwd` 相等性，因此符号链接等价的路径不共享权限。
+- 未挂载通用 spill 策略的自定义组合会以内联方式接收完整跟踪和事件载荷。

@@ -1,64 +1,62 @@
-# Agent Note: Background subagent tasks
+# Agent Note: 后台 subagent 任务
 
 Status: implemented
 
-English | [中文](2026-07-08-background-subagent-tasks.zh.md)
+## 问题
 
-## Problem
+[subagent seam](2026-06-21-subagent-capability-seam.md) 会返回 `SubagentRun`，但原先面向模型的工具会同步收集每一次运行。因此，各自独立的慢速委派要么一直占用父调用，要么按串行方式运行。
 
-The [subagent seam](2026-06-21-subagent-capability-seam.md) returns a `SubagentRun`, but the model-facing tool originally collected every run synchronously. Independent, slow delegations therefore held the parent call open or ran serially.
+subagent 需要与其他长时间运行的工具相同的启动、收集、列出、停止、归属、通知和清理行为，但不应采用进程流语义。子会话仍是详细记录；父级只需最终答案或安全失败说明，以及任务状态。后台子级的存活时间还会超过启动它的工具调用，因此必须明确其取消和拥有者资源释放约定。
 
-Subagents need the same start, collect, list, stop, ownership, notification, and cleanup behavior as other long-running tools without adopting process-stream semantics. The child session remains the detailed trace; the parent needs the final answer or safe failure detail plus job status. A background child also outlives its starting tool call, so its cancellation and owner-disposal contracts must be explicit.
+## 决策
 
-## Decision
+每个 `dsh-tool-subagent` 实例都可以公开 `run_in_background`，由 `enableRunInBackground` 控制，且默认启用。禁用该功能的实例不包含此参数，并会在执行时拒绝强制传入的后台参数。提供方选择仍属于部署配置，因此一个实例仍然只为一个提供方注册一个名称可区分的工具。
 
-Each `dsh-tool-subagent` instance may expose `run_in_background`, controlled by `enableRunInBackground` and enabled by default. A disabled instance omits the parameter and rejects a forced background argument at execution. Provider selection remains deployment configuration, so one instance still registers one distinctly named tool for one provider.
+后台 subagent 使用[通用后台任务运行时](../architecture/2026-06-20-generic-long-running-tool-runtime.md)。`job_output`、`job_list` 和 `job_kill` 负责收集、列出、取消、完成通知和提示词引导；系统不提供 subagent 专用的配套工具。
 
-Background subagents use the [generic background job runtime](../architecture/2026-06-20-generic-long-running-tool-runtime.md). Collection, listing, cancellation, completion notices, and prompt guidance come from `job_output`, `job_list`, and `job_kill`; there are no subagent-specific companion tools.
+前台调用保留其同步约定：等待提供方启动和 `run.result`；仅当状态为 `completed` 时返回最终文本；将其他终止原因映射为出错的工具结果，并在存在时附上由[非交互权限决策](2026-08-15-product-subagent-noninteractive-permissions.md)描述的可选安全诊断；而且始终在返回前释放该运行。
 
-Foreground calls retain their synchronous contract: await provider startup and `run.result`, return final text only for `completed`, map other terminal reasons to an errored tool result with the optional safe diagnostic described by the [non-interactive permissions decision](2026-08-15-product-subagent-noninteractive-permissions.md), and always dispose the run before returning.
+对于后台调用，工具会验证父级，并在调用 `ctx.jobs.start()` 前拒绝已中止的执行信号。任务运行时会在调用生产者启动器前，预检控制 API 和拥有者清理。该启动器创建独立的 `AbortController` 并启动 `ctx.subagents.start()`；返回 id 之后，工具调用的信号不再拥有该子级。
 
-For a background call, the tool validates the parent and refuses an already-aborted execution signal before calling `ctx.jobs.start()`. The job runtime preflights the control API and owner cleanup before invoking the producer starter. That starter creates an independent `AbortController` and begins `ctx.subagents.start()`; after the id is returned, the tool-call signal no longer owns the child.
+任务注册按以下方式映射 subagent seam：
 
-The task registration maps the subagent seam as follows:
+- `kind` 为 `subagent`，`label` 为模型提供的描述，`owner` 为父 agent（智能体）。
+- `cancel(reason?)` 中止任务自有的控制器。同一个信号同时覆盖尚未完成的提供方启动和已发布 run 的剩余工作。
+- `done` 等待提供方启动、子级结果和 `run.dispose()`。已完成的运行返回最终文本，已中止的运行变为 `killed`，其他停止原因变为 `failed`，并在存在时携带提供方诊断。启动、结果和资源释放失败会转换为失败结果，而不是被拒绝的任务 Promise。
+- `readOutput` 不存在。任务存活期间，`job_output` 只返回状态；结算后，它以幂等方式返回最终输出。中间的子级活动仍保留在子会话中。
 
-- `kind` is `subagent`, `label` is the model-supplied description, and `owner` is the parent agent.
-- `cancel(reason?)` aborts the task-owned controller. The same signal covers pending provider startup and the published run's remaining work.
-- `done` awaits provider startup, the child result, and `run.dispose()`. Completed runs return final text, aborted runs become `killed`, and other stop reasons become `failed` with the Provider diagnostic when present. Startup, result, and disposal failures become failed outcomes rather than rejected task promises.
-- `readOutput` is absent. While live, `job_output` returns status only; after settlement, it returns final output idempotently. Intermediate child activity remains in the child session.
+## 生命周期
 
-## Lifecycle
+后台 subagent 归属于其父 agent，不会在拥有者关闭后持久存续。任务运行时将清理附加到对应拥有者的确切作用域。agent 资源释放会取消任务，并在 `AgentHandle.dispose()` 完成前等待启动回滚或子级资源释放，避免泄漏子 agent 和会话。
 
-A background subagent belongs to its parent agent and is not durable across owner closure. The job runtime attaches cleanup to the exact owner's scope. Agent disposal cancels the task and awaits startup rollback or child disposal before `AgentHandle.dispose()` resolves, preventing leaked child agents and sessions.
+完成通知会发送给启动时捕获的确切拥有者。如果拥有者清理过程已经释放了注入目标，该通知将被丢弃；生命周期保证是清理，而不是通知。
 
-Completion notices target the exact owner captured at start. If owner teardown has already disposed the injection target, the notice is dropped; cleanup, not notification, is the lifecycle guarantee.
+## 模型引导
 
-## Model guidance
+通用任务提示词教会模型一套共享的做法：保留 id；继续独立工作，而不是忙等轮询；在回答前收集相关任务；终止无关工作。subagent schema 只补充说明：后台模式返回 job id，且 `job_output` 用于收集结果。无论模型是否遵循提示词，授权和拥有者清理都会强制执行运行时边界。
 
-The generic task prompt teaches the shared habit: retain ids, continue independent work instead of busy-polling, collect relevant tasks before answering, and kill irrelevant work. The subagent schema adds only that background mode returns a job id and that `job_output` collects the result. Authorization and owner cleanup enforce the runtime boundary independently of prompt compliance.
+## 备选方案
 
-## Alternatives considered
+### subagent 专用的等待、输出和停止工具
 
-### Subagent-specific wait, output, and stop tools
+能力专用工具会重复任务协议，再教一套收集与停止习惯，并增加多个提供方实例的复杂度。通用运行时在不改变工具「每个实例对应一个提供方」形态的前提下，提供了所需行为。
 
-Capability-specific tools would duplicate the task protocol, teach another collect-and-stop habit, and complicate multiple provider instances. The generic runtime provides the required behavior without changing the tool's one-provider-per-instance shape.
+### 在拥有者关闭后存续
 
-### Survival after owner closure
+该方案需要持久化的任务状态、子会话恢复、延迟结果交付通道，以及对被遗弃拥有者的处理策略。以拥有者为作用域的清理为进程内工作界定了明确生命周期。持久作业需要单独设计。
 
-Survival requires persistent task state, child-session recovery, a late-result delivery channel, and policy for abandoned owners. Owner-scoped cleanup gives process-local work a clear lifetime. Durable jobs require a separate design.
+### 隔离客户端不做拥有者检查
 
-### No owner checks for isolated clients
+agent 和日志可能以会话为作用域，但任务注册表和可预测 id 属于运行时全局范围。因此，通用拥有者防线同样适用于 subagent 和所有其他生产者。
 
-Agents and logs may be session-scoped, but the job registry and predictable ids are runtime-global. The generic owner fence therefore applies to subagents like every other producer.
+### 增量子 transcript 输出
 
-### Incremental child transcript output
+将子级历史以流式方式写入父级，会模糊日志边界，并使提供方行为分化。此工具只公开最终输出；更丰富的观察应由会话或 UI 工具承担。
 
-Streaming child history into the parent would blur the log boundary and make provider behavior diverge. This tool exposes final output only; richer observation belongs to session or UI tooling.
+## 测试
 
-## Testing
+单元测试覆盖固定了停止原因映射、在报告前释放资源、启动与结果失败、对预中止的拒绝、从启动调用信号分离、在提供方发布前后取消、通过真实任务工具收集、无控制器的预检防线、运行时缺失失败，以及每实例 schema 开关。快照覆盖固定了面向模型的 schema。
 
-Unit coverage pins stop-reason mapping, dispose-before-report behavior, startup and result failures, pre-aborted refusal, detachment from the starting call's signal, cancellation before and after provider publication, collection through the real task tools, the no-controller preflight fence, missing-runtime failure, and per-instance schema gating. Snapshot coverage pins the model-facing schemas.
+## 影响
 
-## Consequences
-
-The parent can fan out slow delegations and collect them through the same task controls used by bash. Child work no longer occupies the starting tool call, but it can consume resources until collected, killed, or owner-disposed. Prompt guidance encourages collection; owner cleanup provides the hard lifetime boundary. Deployments that require synchronous delegation can disable background mode per tool instance.
+父级可以并行分派慢速委派任务，并通过与 bash 共用的任务控制来收集结果。子级工作不再占用启动它的工具调用，但在收集、终止或拥有者释放之前可以继续消耗资源。提示词引导鼓励收集；拥有者清理则提供硬性生命周期边界。需要同步委派的部署可以按工具实例禁用后台模式。

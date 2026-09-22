@@ -1,31 +1,29 @@
-# Agent Note: Keep Agent Notes discoverable without a generated index
+# Agent Note: 无需生成索引即可发现 Agent Note
 
 Status: implemented
 
-English | [中文](2026-07-19-remove-generated-agent-note-index.zh.md)
+## 问题
 
-## Problem
+提交到仓库的 Agent Note 索引，会重复记录每个文件的生命周期／类别路径、文件名日期和 H1 已经编码的事实。任何分支只要添加、移动或重命名彼此无关的 Agent Note，都会重写同一个生成文件，因此该产物会成为可预见的合并冲突热点。
 
-A committed Agent Note index duplicates facts already encoded by each file's lifecycle/class path, filename date, and H1. Every branch that adds, moves, or renames an otherwise unrelated Agent Note rewrites the same generated file, making that artifact a predictable merge hotspot.
+与浏览生命周期／类别目录树或搜索仓库相比，这份集中式时间顺序清单提供的发现价值有限；但其生成器、渲染器、命令和新鲜度检查仍然构成维护负担。
 
-The centralized chronological list adds little discovery value beyond browsing the lifecycle/class tree or searching the repository, while its generator, renderer, command, and freshness check remain maintenance burden.
+## 决策
 
-## Decision
+按生命周期／类别组织的文件系统目录树就是 Agent Note 清单。[README.md](../../README.md) 继续作为人工维护的入口和约定，普通的目录树浏览与仓库搜索负责内容发现。
 
-The lifecycle/class filesystem tree is the Agent Note inventory. [README.md](../../README.md) remains the curated entry point and contract, while ordinary tree navigation and repository search provide discovery.
+`scripts/agent-note-tree.ts` 持有封闭的生命周期／类别集合与结构遍历器。`verify-agent-note-classification` 校验该目录树，并拒绝旧目录和根目录中的 `INDEX.md`，但不会渲染集中式清单或检查其新鲜度。
 
-`scripts/agent-note-tree.ts` owns the closed lifecycle/class sets and structural walker. `verify-agent-note-classification` validates that tree and rejects the legacy homes and a root `INDEX.md`; it does not render or freshness-check a centralized list.
+## 备选方案
 
-## Alternatives considered
+**保留提交到仓库的生成索引，并通过重新生成解决冲突。** 重新生成能让冲突解决过程机械化，但无法阻止无关分支修改同一产物，也不会减少由此产生的评审噪音。
 
-**Keep the committed generated index and resolve conflicts by regenerating it.** Regeneration makes conflict resolution mechanical but does not prevent unrelated branches from modifying the same artifact or reduce the review noise it creates.
+**提供不提交到仓库的按需索引命令。** 这可以避免已提交文件的冲突，但仍需维护渲染器和命令，而目录树浏览与仓库搜索已经覆盖该发现路径。
 
-**Offer an uncommitted on-demand index command.** It avoids committed conflicts but preserves a renderer and command for a discovery path already served by tree navigation and repository search.
+**恢复人工维护的索引。** 它同样会造成共享文件争用，还会重新引入生成机制已经避免的完整性和排序错误。
 
-**Restore a hand-maintained index.** It has the same shared-file contention and adds completeness/order mistakes that generation avoided.
+## 影响
 
-## Consequences
-
-- Adding, moving, or renaming an Agent Note no longer changes a corpus-wide generated file.
-- The classification gate performs less work and the documentation gate topology gains no process or stage.
-- Readers give up a single chronological page and use the lifecycle/class tree or repository search instead.
+- 添加、移动或重命名 Agent Note 时，不再改动覆盖整个语料库的生成文件。
+- 分类门禁执行的工作更少，文档门禁拓扑也无需增加进程或阶段。
+- 读者不再获得单一的时间顺序页面，改用生命周期／类别目录树或仓库搜索。

@@ -1,23 +1,21 @@
-# Python contributor workflows
+# Python 贡献者工作流
 
-English | [中文](development.zh.md)
+根据所需的贡献者成果选择工作流：构建运行时产物、验证 SDK、从源码运行或构建分发包。包行为分别见 [SDK 参考](sdk/README.md) 和[运行时载体参考](sdk-runtime/README.md)。
 
-Follow the workflow for the contributor outcome you need: build runtime artifacts, validate the SDK, run against source, or build distributions. Package behavior belongs in the [SDK reference](sdk/README.md) and [runtime carrier reference](sdk-runtime/README.md).
+## 构建运行时产物
 
-## Build runtime artifacts
-
-Platform executables are build artifacts and are not checked into git. Run the build from the repository root:
+各平台可执行文件是构建产物，不检入 git。请在仓库根目录运行构建：
 
 ```sh
 pnpm install
 pnpm exec tsx scripts/build-exe-for-python-sdk.ts
 ```
 
-Use `--skip-build` when the required `lib/` artifacts already exist, or `--targets=node24-linux-x64,node24-linux-arm64,node24-macos-arm64` to select platforms. Products land in `dist-exe/` and the script syncs the selected carriers into `python/sdk-runtime/`. macOS builds also sync the matching spawn helper required by `node-pty`.
+所需 `lib/` 产物已存在时使用 `--skip-build`；如需选择平台，请使用 `--targets=node24-linux-x64,node24-linux-arm64,node24-macos-arm64`。产物写入 `dist-exe/`，脚本会将所选载体同步到 `python/sdk-runtime/`。macOS 构建还会同步 `node-pty` 所需的配套 spawn 辅助程序。
 
-## Validate the SDK
+## 验证 SDK
 
-Keep the virtual environment outside `python/`, install the test group, and run the Python suite:
+请将虚拟环境放在 `python/` 之外，安装测试组，然后运行 Python 测试套件：
 
 ```sh
 export UV_PROJECT_ENVIRONMENT="$PWD/tmp/py-sdk-venv"
@@ -25,18 +23,18 @@ uv sync --project python/sdk --group test
 uv run --project python/sdk pytest
 ```
 
-`python/sdk/tests/test_bundled_runtime.py` exercises available bundled carriers and skips a carrier when its artifact has not been built. For repository-wide test policy, see [Testing](../docs/testing.md).
+`python/sdk/tests/test_bundled_runtime.py` 会运行可用的内置载体；某个载体的产物尚未构建时，会跳过该载体。仓库级测试政策见 [测试](../docs/testing.md)。
 
-That suite drives fake runtime peers. `scripts/smoke-python-runtime.py` drives the real packaged runtime instead, and the required `python-runtime` CI job runs every scenario against a freshly built executable:
+该套件面向的是伪造的运行时对端。`scripts/smoke-python-runtime.py` 面向真实的打包运行时；必需的 `python-runtime` CI 任务会用新构建的可执行文件运行全部场景：
 
 ```sh
 uv run --project python/sdk python scripts/smoke-python-runtime.py \
   --scenario sdk-minimal --exe dist-exe/dsh-jsonrpc-agent-pkg-macos-arm64
 ```
 
-Two scenarios compare committed expected output under `scripts/snapshots/python-sdk-single-exe/`. `minimal/model-visible.json` pins the checked-in minimal composition's assembled system prompts, advertised tool schemas, and model-visible messages, so a plugin that contributes an unintended system section or user message fails the job; it drops the dynamic runtime-context snapshot, which the same composition emits on macOS and not on Linux ([#2488](https://github.com/deepseek-harness/deepseek-harness/issues/2488)). `advanced/` pins the SDK result and the persisted session logs. Rerun the owning scenario with `--update-snapshots` and review that diff before committing it.
+其中两个场景会比对 `scripts/snapshots/python-sdk-single-exe/` 下已提交的期望输出。`minimal/model-visible.json` 固定了签入的极简组合所组装的系统提示词、对外公布的工具 schema 以及模型可见消息，因此插件一旦贡献出计划外的系统分段或 user 消息，该任务即失败；它会丢弃动态运行时上下文快照——同一组合在 macOS 上会发出它，在 Linux 上不会（[#2488](https://github.com/deepseek-harness/deepseek-harness/issues/2488)）。`advanced/` 固定 SDK 结果与持久化的会话日志。重新运行对应场景时加上 `--update-snapshots`，并在提交前审阅该差异。
 
-An interactive smoke test needs `DEEPSEEK_API_KEY` in the environment or repository-root `.env`:
+交互式冒烟测试需要环境变量或仓库根目录 `.env` 中存在 `DEEPSEEK_API_KEY`：
 
 ```python
 from deepseek_harness import DeepSeekHarness
@@ -45,20 +43,20 @@ with DeepSeekHarness() as harness:
     print(harness.run("say hi").final_response)
 ```
 
-## Run against Node source
+## 针对 Node 源码运行
 
-Repository contributors can select either development carrier:
+仓库贡献者可以选择以下任一开发载体：
 
-- Set `DSH_RUNTIME_MODE=node` to use the built Node carrier on system Node `>=22.19`. The build script refreshes this carrier, but distributions never include or auto-select it.
-- Set `launch_args_override=("./node_modules/.bin/tsx", "packages/examples/jsonrpc-demo/src/bin.ts")` with the repository root as `cwd` to run unbuilt TypeScript source. Supply `cordis=...` when the default configuration is not suitable.
+- 设置 `DSH_RUNTIME_MODE=node`，在系统 Node `>=22.19` 上使用已构建的 Node 载体。构建脚本会刷新该载体，但分发物绝不会包含或自动选择它。
+- 将仓库根目录设为 `cwd`，并设置 `launch_args_override=("./node_modules/.bin/tsx", "packages/examples/jsonrpc-demo/src/bin.ts")`，以运行未构建的 TypeScript 源码。默认配置不合适时，请提供 `cordis=...`。
 
-See `python/sdk/tests/manual_sdk_agent_smoke.py` for a complete source-mode invocation.
+完整的源码模式调用见 `python/sdk/tests/manual_sdk_agent_smoke.py`。
 
-## Build distributions
+## 构建分发包
 
-The root `package.json` version is authoritative for both Python distributions. The staging script injects that version into both wheels and pins the SDK to the same `deepseek-harness-runtime-bin` version.
+根目录 `package.json` 的版本是两个 Python 分发包的权威版本。暂存脚本会将该版本注入两个 wheel 包，并将 SDK 固定到同版本的 `deepseek-harness-runtime-bin`。
 
-Build the pure SDK wheel once and one runtime wheel on each native platform:
+纯 SDK wheel 包只需构建一次；每个原生平台分别构建一个运行时 wheel 包：
 
 ```sh
 version="$(python - <<'PY'
@@ -75,8 +73,8 @@ pip install \
   "dist-python/deepseek_harness_runtime_bin-$version-py3-none-macosx_14_0_arm64.whl"
 ```
 
-The runtime distribution is wheel-only. This fork does not publish or validate Python wheels in CI. Build a wheel for its native target locally and install the matching SDK and runtime wheels in a clean virtual environment before using them. The current builder supports Linux x64, Linux arm64, and macOS 14 or newer on arm64; a later distribution decision may revise those targets and add an opt-in workflow.
+运行时分发包仅提供 wheel 包。本 fork 不在 CI 中发布或验证 Python wheel 包。先在目标平台本地构建 wheel 包，再将匹配的 SDK 与运行时 wheel 包安装到干净的虚拟环境中后使用。当前构建器支持 Linux x64、Linux arm64 和 macOS 14 或更高版本的 arm64；后续分发决策可以调整这些目标并加入 opt-in 工作流。
 
-## Validate a local wheel
+## 验证本地 wheel 包
 
-This fork has no Python release or publishing workflow. Verify a candidate by installing the matching wheel pair in a clean virtual environment and exercising the SDK path you intend to distribute. Do not upload packages, configure publishing credentials, or treat `python-v*` tags as release triggers until the package namespace, supported platforms, signing model, and distribution owner are chosen.
+本 fork 没有 Python 发布或上传工作流。验证候选包时，将匹配的 wheel 包安装到干净的虚拟环境，并运行准备分发的 SDK 路径。在选定包命名空间、支持平台、签名方式和分发责任前，不要上传包、配置发布凭据，或将 `python-v*` 标签视为发布触发条件。

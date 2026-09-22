@@ -1,26 +1,24 @@
-# Agent Note: Sidebar resize without a visible pill
+# Agent Note: 侧边栏缩放不显示胶囊
 
 Status: implemented
 Archived: 2026-08-07
 
-English | [中文](2026-07-30-sidebar-resize-without-visible-pill.zh.md)
+## 问题
 
-## Problem
+AppFrame 在两个栏位边界都显示相同的浮动胶囊。左侧胶囊在主导航旁增加了不必要的视觉负担，但侧边栏的缩放交互仍有用。
 
-The AppFrame exposed identical floating pills on both column borders. The left pill added unnecessary visual weight beside primary navigation, but the sidebar's resize interaction remains useful.
+## 决策
 
-## Decision
+AppFrame 保留侧边栏宽 8px 的缩放命中条带、`col-resize` 光标、指针捕获、动画帧节流和宽度更新，但不再生成侧边栏手柄的胶囊形伪元素。详情栏边界同时保留命中条带和浮动胶囊。
 
-AppFrame keeps the sidebar's 8px resize hit strip, `col-resize` cursor, pointer capture, animation-frame throttling, and width updates, but does not generate the sidebar handle's pill pseudo-element. The details boundary retains both its hit strip and floating pill.
+布局组件测试继续固定侧边栏拖动行为，以及两个手柄随面板折叠时的生命周期。一个无密钥浏览器场景读取实际交付组合所生成的伪元素，并拖动不可见的侧边栏边界，证明该交互仍然有效。
 
-The layout component test continues to pin sidebar dragging and both handles' collapse lifecycle. A keyless browser scenario reads the generated pseudo-elements from the shipped composition and drags the invisible sidebar boundary to prove the interaction remains live.
+## 曾考虑的替代方案
 
-## Alternatives considered
+**随胶囊一并移除侧边栏拖动交互。** 不予采纳，因为本次要求只改视觉表现；移除正常工作的几何控制会不必要地缩减交互方式。
 
-**Remove the sidebar drag interaction with the pill.** Rejected because the requested change is visual; removing a working geometry control would unnecessarily narrow the interaction.
+**保留胶囊，但降低其视觉强调。** 更小或对比度更低的胶囊仍会在侧边栏边界留下一个不需要的物体。
 
-**Keep the pill but reduce its emphasis.** A smaller or lower-contrast pill still leaves an unwanted object on the sidebar boundary.
+## 后果
 
-## Consequences
-
-The sidebar boundary is visually quiet while pointer resizing remains available from the boundary and retains the resize cursor. Unlike the details control, that interaction has no visible pill.
+侧边栏边界在视觉上保持简洁，同时仍可在边界处通过指针调整宽度，并保留缩放光标。与详情栏控件不同，该交互没有可见胶囊。

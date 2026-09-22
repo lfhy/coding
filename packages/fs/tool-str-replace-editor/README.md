@@ -1,52 +1,50 @@
 # @deepseek-ai/dsh-tool-str-replace-editor
 
-English | [中文](README.zh.md)
+基于 `ctx.fs`、面向模型的独立 `str_replace_editor`。它可与持久 Bash、一次性 Bash、沙箱 Bash 或其他终端接口组合。
 
-Standalone model-facing `str_replace_editor` over `ctx.fs`. It can be composed with persistent Bash, one-shot Bash, sandboxed Bash, or another terminal surface.
+## 配置
 
-## Config
-
-| Key | Default | Meaning |
+| 键 | 默认值 | 含义 |
 |---|---:|---|
-| `maxOutputChars` | `16000` | Prefix characters retained for file and directory views. |
-| `description` | Editor command guide | Model-facing tool description. |
+| `maxOutputChars` | `16000` | 文件和目录查看结果保留的前缀字符数。 |
+| `description` | 编辑器命令指南 | 面向模型的工具描述。 |
 
-## Tool
+## 工具
 
-The schema provides `view`, `create`, `str_replace`, and `insert` over absolute paths. File views use one-based line numbers and preserve content tabs, so displayed text remains valid literal replacement input; directory views omit hidden, dependency, and Python-cache entries and descend two levels. A metadata miss from `view`, `str_replace`, or `insert` records confirmed absence before returning `FS_NOT_FOUND`, so a later `create` can recover an externally deleted path through the mounted policy's guarded-create flow; absence never authorizes `str_replace` or `insert`. Replacement requires one unique literal match and reports errors only in the public `old_str` vocabulary. Insert follows the selected zero-based insertion boundary without adding an implicit trailing newline. Mutations preserve tabs outside the requested edit.
+schema 提供针对绝对路径的 `view`、`create`、`str_replace` 与 `insert`。文件查看使用从 1 开始的行号，并保留内容中的制表符，因此显示的文本仍可作为有效的字面量替换输入；目录查看忽略隐藏、依赖与 Python 缓存条目并下探两层。`view`、`str_replace` 或 `insert` 发生元数据未命中时，工具会在返回 `FS_NOT_FOUND` 前记录确认缺失，因此后续 `create` 可以通过已挂载策略的防护创建流程恢复外部删除的路径；缺失状态绝不会授权 `str_replace` 或 `insert`。替换要求字面量唯一匹配，错误只使用公开的 `old_str` 词汇。插入遵循所选的零基插入边界，不会隐式补尾换行。修改操作会保留请求编辑范围之外的制表符。
 
-## Model Experience
+## 模型体验
 
-### Tool schema
+### 工具 schema
 
-#### What the model sees
+#### 模型看到的内容
 
-The generated [`str_replace_editor` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-str-replace-editor), including the configured `description`. The plugin contributes no standalone system-prompt section.
+生成的 [`str_replace_editor` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-str-replace-editor)，其中包含配置的 `description`。本插件不贡献独立系统提示词段。
 
-#### Token effect
+#### Token 影响
 
-Fixed schema cost while `str_replace_editor` is visible.
+`str_replace_editor` 可见时产生固定的 schema 成本。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-Prefix-stable while the configured description and schema remain unchanged.
+配置的描述与 schema 不变时前缀稳定。
 
-### Tool results
+### 工具结果
 
-#### What the model sees
+#### 模型看到的内容
 
-Views return numbered text or a shallow directory listing. Calls expose file locations, and create/replace calls expose diff cards to presentation surfaces. Mutations return concise confirmations. Long views keep their prefix and append a clipping notice.
+查看操作返回带行号文本或浅层目录列表。调用会提供文件位置，创建/替换调用还会向展示层提供 diff 卡片。修改操作返回简洁确认。长查看结果保留前缀并追加截断提示。
 
-#### Token effect
+#### Token 影响
 
-Data-dependent and bounded by `maxOutputChars` plus the fixed clipping notice.
+随数据变化，并受 `maxOutputChars` 与固定截断提示约束。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-Append-only tool results follow the reusable request prefix.
+工具结果以追加方式位于可复用请求前缀之后。
 
-## Known Limitations and Deferred Work
+## 已知限制与暂缓事项
 
-- Operations target UTF-8 text; binary files are unsupported.
-- `str_replace` intentionally rejects zero or multiple matches and has no `replace_all` argument.
-- Every mutation goes through `fs/write-intent` or `fs/edit-intent`, resolves the current session sandbox policy, and delegates enforcement to the mounted filesystem and policy plugins.
+- 操作面向 UTF-8 文本，不支持二进制文件。
+- `str_replace` 刻意拒绝零匹配或多匹配，且没有 `replace_all` 参数。
+- 每个修改操作都会经过 `fs/write-intent` 或 `fs/edit-intent`，解析当前会话的沙箱策略，并交由挂载的文件系统与策略插件实施约束。

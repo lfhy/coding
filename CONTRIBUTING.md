@@ -1,23 +1,21 @@
-# Contributing
+# 贡献
 
-English | [中文](CONTRIBUTING.zh.md)
+感谢你愿意为 DeepSeek Harness 作出贡献！
 
-Thank you for your interest in contributing to DeepSeek Harness!
+我们深信开源社区的力量，这份信念从项目最初就塑造着 DeepSeek Harness。
 
-We deeply believe in the power of open source communities, and that belief has shaped this project from the very beginning.
+DeepSeek Harness 仍处于早期阶段，并在积极开发中。很抱歉，我们目前无法接受外部 PR（Pull Request）。不过，贡献代码远非帮助本仓库建设的唯一途径。你还可以通过许多其他方式参与进来：
 
-DeepSeek Harness is still at an early stage and under active development. We are sorry that we cannot accept external pull requests at the moment. However, contributing code to this repository is far from the only way to help. There are many other ways to get involved:
+- 在 GitHub Discussions 中发现并报告问题或 bug：
+  - 为你希望引起团队关注的讨论投票。我们的团队规模很小，可能无法回复每个帖子，但我们会持续关注，并在分配资源时将这些讨论纳入考虑。
+- 为生态系统作出贡献：
+  - 创建令你感兴趣的插件，并分享给其他人：
+    - 为你的 GitHub 项目添加 `dsh-plugin` 话题，让其他人更容易找到你的插件。
+  - 撰写有关 DeepSeek Harness 的博客文章和操作指南。
+  - 回答问题并帮助其他社区成员。
 
-- Identify and report issues or bugs in GitHub Discussions:
-  - Upvote discussions that you would like to bring to the team's attention. We are a very small team and may not be able to reply to every post, but we monitor them and consider them when allocating resources.
-- Contribute to the ecosystem:
-  - Create a plugin that excites you and share it with others:
-    - Associate your GitHub project with the `dsh-plugin` topic to help others discover your plugin.
-  - Write blog posts and how-to guides about DeepSeek Harness.
-  - Answer questions and help other members of the community.
+DeepSeek Harness 的设计支持深度定制。我们并不认为官方仓库中的包天然就比社区开发的包更重要。你可以将本仓库看作一种理念、一份官方示例以及一处灵感来源，而不是我们要求社区遵循的方向。
 
-DeepSeek Harness is designed to be deeply customizable. We do not believe that packages in the official repository are inherently more important than packages created by the community. You may consider this repository an idea, an official showcase, and a source of inspiration, but not a mandate from us.
+我们已经看到社区中涌现出令人期待的项目，也希望生态系统继续沿着自己的方向发展。
 
-We have already seen exciting projects emerge from the community, and we hope to see the ecosystem continue to grow in its own directions.
-
-Into the unknown.
+探索未至之境。

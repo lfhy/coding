@@ -1,35 +1,33 @@
-# Agent Note: Discover package inventories instead of maintaining static lists
+# Agent Note: 通过发现机制获取包清单，而非维护静态列表
 
 Status: proposed
 
-English | [中文](2026-06-20-discover-package-inventory.zh.md)
+## 问题
 
-## Problem
+包与门禁清单在 TypeScript project references、包文档、CI 描述和 Knip 覆盖项中反复出现。大多数只是重述包布局、manifest（元数据清单）数据或聚合命令内容。因此每新增一个包都会产生本可避免的同步点。
 
-Package and gate inventories are repeated across TypeScript project references, package docs, CI prose, and Knip overrides. Most restate package layout, manifest data, or aggregate command contents. Each new package therefore creates avoidable synchronization points.
+[包层级结构](../../archived/architecture/2026-06-20-package-hierarchy.md)已经手动消除了其中若干：`scripts/publint-all.ts` 现在从 `packages/<group>/<pkg>` 布局推导列表，两份 `tsconfig` 的 `paths` 映射也合并为一个 `@deepseek-ai/dsh-*` 通配符。剩下的是无法用 glob 消除的清单，主要是聚合配置（`tsconfig.host.json`、`tsconfig.client.json`）中的项目引用（`references`）——TypeScript 要求它们是显式数组（没有通配符形式）。
 
-The [package hierarchy](../../archived/architecture/2026-06-20-package-hierarchy.md) already removed several of these by hand: `scripts/publint-all.ts` now derives its list from the `packages/<group>/<pkg>` layout, and the two `tsconfig` `paths` maps collapsed to one `@deepseek-ai/dsh-*` wildcard. What remains is the inventory that cannot be globbed away — chiefly the aggregate configs' (`tsconfig.host.json`, `tsconfig.client.json`) project `references`, which TypeScript requires as explicit arrays (no wildcard form).
+当静态列表编码的是策略时，它们是合理的；当它们只是重复 `package.json`、workspace glob 或包层级结构中已有的 manifest 数据或布局事实时，就是不必要的摩擦。
 
-Static lists are appropriate when they encode policy; they are needless friction when they duplicate manifest data or layout facts that already exist in `package.json`, workspace globs, or the package hierarchy.
+## 提案
 
-## Proposal
+让剩余的包与门禁清单可被发现。唯一真源，即 `packages/<group>/<pkg>` 层级结构加上包 manifest，应当驱动聚合配置的 `references`、模块图以及任何全量包列表，并配合一个生成加校验步骤（沿用现有的 `gen-module-graph` / `gen-cordis-catalog` 模式：生成器写出产物，`--check` 模式在 `hygiene` / `doc-sync`（文档同步门禁）中发现已提交副本陈旧时失败）。模块图生成已经在读取包 manifest。`doc-sync` 应当成为定义并打印其子门禁的唯一命令，文档链接到该命令，而非重述第二份列表。
 
-Make the remaining package/gate inventories discoverable. A single canonical source — the `packages/<group>/<pkg>` hierarchy plus package manifests — should drive the aggregates' `references`, the module graph, and any other full-package list, with a generate-and-verify step (the existing `gen-module-graph` / `gen-cordis-catalog` pattern: a generator writes the artifact, a `--check` mode in `hygiene`/`doc-sync` fails on a stale committed copy). Module graph generation already reads package manifests. `doc-sync` should be the one command that defines and prints its sub-gates, with docs linking to that command rather than restating a second list.
+层级结构不需要编码关于包的所有事实，但应当编码宽泛的维护策略：core/product 包、集成包、能力 seam 包与 support/test/example 包不应在脚本能区分它们之前先要求一份手工维护的例外列表。
 
-The hierarchy does not need to encode every fact about a package, but it should encode the broad maintenance policy: core/product packages, integrations, capability seams, and support/test/example packages should not all require a hand-maintained exception list before scripts can tell them apart.
+有一项已编目的内容根本不需要生成器：将 e2e 入口 glob 折入 Knip 的默认配置段，即可直接删除逐包的重复声明。
 
-One cataloged item needs no generator at all: folding the e2e entry glob into knip's default stanza deletes the per-package restatements outright.
+## 验收标准
 
-## Acceptance criteria
+- 聚合配置的项目引用（`references`）由层级结构生成（生成器输出它们；`--check` 门禁在提交副本陈旧时报错），而非手工维护。
+- 新增一个包时，不需要为任何门禁编辑静态包列表。
+- 文档描述真源，而非重复生成的清单。
+- CI 调用聚合命令，由这些命令自行管理其子门禁列表。
+- `knip.json` 仅在编码真实信息（额外入口文件、被忽略的依赖）时才携带逐包覆盖项，绝不重述默认配置段。
 
-- Aggregate-config project `references` are generated from the hierarchy (a generator emits them; a `--check` gate fails when the committed copy is stale), rather than hand-maintained.
-- Adding a package does not require editing a static package list for any gate.
-- Docs describe the source of truth rather than repeating generated inventories.
-- CI invokes the aggregate commands and lets those commands own their sub-gate lists.
-- `knip.json` carries a per-package override only where it encodes real information (an extra entry file, an ignored dependency), never a restatement of the default stanza.
+## 风险
 
-## Risks
-
-Discovery scripts can become too clever. The implementation should stay boring: read manifests, filter on explicit fields, print the resolved list, and fail loud. The payoff is removing manual inventory drift, not inventing a build system.
+发现脚本可能变得过于精巧。实现应当保持朴素：读取 manifest、按显式字段过滤、打印解析后的列表，并在出错时明确失败。收益在于消除手工清单的漂移，而非发明一套构建系统。
 
 <!-- agent-note-format: alternatives-not-recorded (pre-format Agent Note) -->

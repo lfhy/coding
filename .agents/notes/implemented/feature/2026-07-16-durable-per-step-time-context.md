@@ -1,34 +1,32 @@
-# Agent Note: Durable per-step time context
+# Agent Note: 持久的逐步骤时间上下文
 
 Status: implemented
 
-English | [中文](2026-07-16-durable-per-step-time-context.zh.md)
+## 问题
 
-## Problem
+仅存在于请求中的时钟可以告诉模型当前时间，但在系统提示词中替换这个值会移除先前对时间敏感的推理所依据的证据。在包含多个步骤的轮次中，请求需要保留先前步骤使用的读数。系统必须能在重启后重建请求，自动压缩（compaction）也必须将模型实际收到的同一份时间上下文纳入考量。
 
-A request-only clock can tell the model the current time, but replacing that value in the system prompt removes the evidence behind earlier time-sensitive reasoning. Multi-step turns need requests to retain the readings used by preceding steps. The request must remain reconstructable after restart, and automatic compaction must account for the same timing context the model receives.
+进程本地刷新缓存会使显示时间依赖于无法在恢复后保留的状态。来自浏览器的自然语言也需要归属于请求的时区：服务端进程时区无法推断用户所在地，而可变的会话或连接默认值会让旅行或并发标签页重新解释另一条提示词。
 
-A process-local refresh cache makes displayed time depend on state that cannot survive resume. Browser-originated natural language also needs a request-owned zone: a server process zone cannot infer the user's locality, while a mutable Session or connection default lets travel or concurrent tabs reinterpret another prompt.
+## 决策
 
-## Decision
+`@deepseek-ai/dsh-time-context` 是位于 `packages/context/time-context/`、需要显式启用的函数插件。默认组合不启用其披露内容与 token 成本；Schedule Web overlay 会挂载它，使模型能够按附加到当前请求的浏览器时区解释未明确限定时区的日期和时间。
 
-`@deepseek-ai/dsh-time-context` is an opt-in function plugin in `packages/context/time-context/`. Default compositions leave its disclosure and token cost disabled; the Schedule Web overlay mounts it so the model can interpret otherwise-unqualified dates and times in the browser zone attached to the current request.
+该插件会前置一个 `agent/pre-step` 监听器，并先行委托下游。当下游决策进入步骤且需要生成读数时，插件会把该决策的最终消息与开放轮次中已有的持久用户消息合并，从确切的 user-rpc 来源派生浏览器时区来源信息，并向该决策追加一条读数。决策被拒绝、监听器失败或信号已经中止时，不会记录任何内容。在当前批次之后被认领的 steering（中途引导）仍归属于普通的下一步骤，并在该步骤进入时获得新读数。
 
-The plugin prepends an `agent/pre-step` listener and delegates first. When the downstream decision enters and a reading is due, it combines that decision's final messages with durable user messages already in the open turn, derives browser-zone provenance from exact `user-rpc` sources, and appends one reading to the decision. Rejection, listener failure, or an already-aborted signal records nothing. Steering claimed after the current batch keeps ordinary next-step ownership and receives a fresh reading when that step enters.
+每条 Web 提示词都会采样浏览器的 IANA 时区。Host 校验并规范化该值，再将其绑定到确切的持久用户消息来源。开放轮次中唯一一个时区可解析请求；多个时区会产生排序后的 `mixed` 结果；没有时区则为 `unavailable`。解析成功的请求会告诉模型，把未限定时区的日期和时间解释为该时区。来源信息混杂或不可用时，模型会收到要求用户澄清的指令。
 
-Each Web prompt samples the browser's IANA zone. The Host validates and canonicalizes it before binding it to the exact durable user-message source. One unique zone in the open turn resolves the request; multiple zones produce a sorted `mixed` result; no zone is `unavailable`. A resolved request tells the model to interpret unqualified dates and times in that zone. Mixed or unavailable provenance tells it to ask the user to clarify.
+这种与消息绑定的来源信息不会复制到 `SessionHeader`、连接默认值或 Schedule 状态。Time-context 只负责模型指导。接受本地日历字段的工具仍必须自行定义显式边界；因此 Schedule 要求 `time_zone`，而不是导入该插件的读数（[决策](../simplification/2026-08-09-explicit-schedule-time-zone.md)）。
 
-This message-bound provenance is not copied to `SessionHeader`, a connection default, or Schedule state. Time-context owns model guidance only. A tool accepting local calendar fields must still make its own explicit boundary; Schedule therefore requires `time_zone` rather than importing this plugin's reading ([decision](../simplification/2026-08-09-explicit-schedule-time-zone.md)).
+解析后的浏览器时区也用于格式化读数中的时间戳。请求来源信息混杂或不可用时，使用配置的 `timeZone` 回退值；如果省略该配置，则使用插件加载时解析一次的 Node 进程时区，同时仍保留要求澄清的策略。每个回退值都经 `Intl.DateTimeFormat` 校验。
 
-The resolved browser zone also formats the reading's timestamp. Mixed or unavailable requests use the configured `timeZone` fallback, or the Node process zone resolved once at plugin load when config is omitted, while retaining the clarify policy. Every fallback is validated through `Intl.DateTimeFormat`.
+每个读数都使用确切的快照来源 `{ kind: 'plugin', plugin: 'time-context', form: 'snapshot', sections: [{ name: 'time-context', text: <same text> }] }`。不变式配套模块会校验快照形状，从原始 user-rpc 消息重新派生当前轮次的浏览器来源信息，并校验渲染的时间戳时区与经过时长基线。
 
-Each reading uses the exact snapshot source `{ kind: 'plugin', plugin: 'time-context', form: 'snapshot', sections: [{ name: 'time-context', text: <same text> }] }`. The invariant companion checks the snapshot shape, re-derives current-turn browser provenance from the original user-rpc messages, and validates the rendered timestamp zone and elapsed baseline.
+可选配置 `refreshIntervalMs` 必须是非负安全整数。省略或设为 `0` 时，每个符合条件且已进入的步骤都会注入。设为正数时，插件会扫描原始会话事件，查找最新的插件读数；不存在读数、挂钟时间倒退或事件已达到相应时长时执行注入。事件时间戳在压缩和恢复后仍是判断依据，无需进程本地缓存。Schedule Web overlay 会省略该间隔，使每个请求步骤都获得当前浏览器时区指导。
 
-The optional `refreshIntervalMs` config is a non-negative safe integer. Omission or `0` injects on every eligible entered step. A positive value scans raw Session events for the latest plugin reading and injects when none exists, wall time moved backward, or the event is old enough. The event timestamp governs after compaction and resume without a process-local cache. The Schedule Web overlay omits the interval so every request step gets current browser guidance.
+### 文本与时长基线
 
-### Text and elapsed baselines
-
-A resolved first-step reading is:
+已解析的第一步读数为：
 
 ```text
 Time sampled while preparing turn <turn>, step 1: <timestamp-in-browser-zone>
@@ -36,39 +34,39 @@ Browser time zone for this request: <iana-zone>. Interpret otherwise-unqualified
 Elapsed since the preceding model-visible message: <duration-or-unavailable>.
 ```
 
-Mixed and unavailable variants replace the second line with an instruction to ask for clarification. The baseline is the latest durable preceding user, assistant, or tool-result message. The prompt proposed for this step has not been appended yet; a new Session can therefore report `unavailable`.
+混杂和不可用的变体会把第二行替换为要求澄清的指令。基线是最新一条在其之前持久化的用户、助手或工具结果消息。为该步骤拟议的提示词尚未追加，因此新会话可能报告 `unavailable`。
 
-A later-step reading changes the first line's step number and ends with:
+后续步骤读数会改变第一行的步骤号，并以下行结束：
 
 ```text
 Elapsed since the preceding step context: <duration-or-unavailable>.
 ```
 
-That baseline is the preceding time-context event in the open turn. Missing baselines report `unavailable`; duration formatting uses compact whole-second units and clamps backward wall-clock movement to zero.
+其基线是开放轮次中的前一个 time-context 事件。缺少基线时报告 `unavailable`；时长采用紧凑的整秒单位，并在挂钟时间倒退时限制为零。
 
-### Durability and reconstruction
+### 持久性与重建
 
-An entered step appends its returned messages followed by the time reading after `step/start`, before request derivation. A later preparation failure can leave the reading in history because it records entry, not successful transmission. Each reading remains a normal surface node until compaction shadows it. A positive interval can let a later request reuse existing history without adding a fresh reading.
+已进入的步骤会在 `step/start` 之后、请求派生之前，先追加其返回消息，再追加时间读数。后续准备失败时，读数可能留在历史中，因为它记录的是步骤进入，而不是成功传输。每个读数都作为普通表层节点保留，直至压缩将其遮蔽。正数间隔可以让后续请求复用现有历史，而不添加新读数。
 
-The plugin contributes nothing to system-prompt assembly or `request/header`. Request reconstruction obtains the complete durable surface prefix at each `step/start`, so historical requests recover the exact time and browser policy the model saw.
+插件不向系统提示词组装或 `request/header` 贡献任何内容。请求重建会在每个 `step/start` 取得完整的持久表层前缀，因此历史请求可以还原模型看到的确切时间与浏览器策略。
 
-## Alternatives considered
+## 已考虑的替代方案
 
-- **Replace a dynamic system-prompt value** — rejected because replacement erases prior readings and changes reconstructed historical requests.
-- **Persist a Session default zone** — rejected because the browser fact belongs to one prompt; travel and concurrent tabs must not mutate shared meaning or spread zone state through Session, fork, and persistence contracts.
-- **Copy the browser zone into a second context authority** — rejected because the original user-rpc source already owns it and the invariant can re-derive policy directly.
-- **Let Schedule consume the reading implicitly** — rejected because prose context is not a stable typed default and would couple an absolute-time parser to AgentLoop history. The model instead passes an explicit offset or zone.
-- **Use only the process zone** — rejected because deployment locality cannot infer a remote user's zone. It remains a display fallback when request provenance is absent or mixed.
-- **Expose time only through a tool** — rejected because ordinary temporal reasoning would require an avoidable round trip and would not ensure a reading before each step.
-- **Mount time-context by default** — rejected because disclosure, freshness, and history cost remain composition policy.
+- **替换动态系统提示词值**：不予采纳，因为替换会抹去先前读数，并改变重建后的历史请求。
+- **持久化会话默认时区**：不予采纳，因为浏览器事实只属于一条提示词；旅行与并发标签页不得修改共享含义，也不得把时区状态扩散到会话、fork 与持久化约定中。
+- **把浏览器时区复制到第二个上下文权威**：不予采纳，因为原始 user-rpc 来源已经拥有该值，不变式可以直接重新派生策略。
+- **让 Schedule 隐式消费读数**：不予采纳，因为自然语言上下文不是稳定的类型化默认值，而且这会把绝对时间解析器耦合到 AgentLoop 历史。模型会改为传入显式偏移量或时区。
+- **只使用进程时区**：不予采纳，因为部署所在地无法推断远程用户的时区。请求来源信息缺失或混杂时，它仍可作为显示回退值。
+- **只通过工具提供时间**：不予采纳，因为普通时间推理会产生本可避免的往返，也无法确保每个步骤之前都有读数。
+- **默认挂载 time-context**：不予采纳，因为披露内容、新鲜度与历史成本仍属于组合策略。
 
-## Verification
+## 验证
 
-Unit and real-loop tests pin timestamp formatting, unique/mixed/missing browser derivation, fallback display, both elapsed baselines, interval boundaries, cross-turn and resumed scheduling, backward-clock behavior, steering ownership, cancellation, exact snapshot validation, and request reconstruction. Host/client tests pin browser sampling plus validation and canonicalization at prompt entry. The keyless assembled Schedule Web scenario sends a real browser prompt, observes the same zone in the model request, and verifies that the model supplies it explicitly to `schedule_create`.
+单元测试和真实 agent loop（智能体循环）测试固定时间戳格式化、唯一／混杂／缺失浏览器时区的派生、回退显示、两种经过时长基线、间隔边界、跨轮次与恢复后的调度、挂钟倒退行为、steering 归属、取消、精确快照校验和请求重建。Host/client 测试固定浏览器采样，以及提示词进入时的校验与规范化。无密钥的组装 Schedule Web 场景发送一条真实浏览器提示词，在模型请求中观察到同一时区，并验证模型把该时区显式传给 `schedule_create`。
 
-## Consequences
+## 后果
 
-- Browser-zone meaning is request-local and durable without changing Session, fork, JSONL, or SQLite schemas.
-- The model receives the requested browser-local assumption on each Schedule Web request step; mixed or missing provenance asks instead of guessing.
-- Tools remain explicit: context helps the model choose fields but does not become a hidden package-seam default.
-- Timing context remains append-only until compaction; a positive interval reduces history growth but can omit fresh browser guidance on later requests.
+- 浏览器时区含义归属于请求并可持久重建，无需更改会话、fork、JSONL 或 SQLite schema。
+- 模型在每个 Schedule Web 请求步骤中都会收到所请求的浏览器本地假设；来源信息混杂或缺失时会询问，而不是猜测。
+- 工具仍保持显式边界：上下文帮助模型选择字段，但不会成为包 seam 上隐藏的默认值。
+- 时间上下文仅追加并保留到压缩为止；正数间隔会减少历史增长，但也可能使后续请求缺少新的浏览器时区指导。

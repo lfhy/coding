@@ -1,39 +1,37 @@
-# Agent Note: The minimal preset owns the complete RL agent composition
+# Agent Note: minimal preset 拥有完整的 RL agent 组合
 
 Status: implemented
 
-English | [中文](2026-08-10-minimal-preset-owns-rl-composition.zh.md)
+## 问题
 
-## Problem
+随附 Web 配置同时由两个位置定义与 Claude SWE 兼容的 RL agent（智能体）：进程级 `core-web.cordis.yml` patch，以及逐会话的 `minimal` preset。[agent preset](../architecture/2026-08-03-per-session-agent-presets.md) 成为 agent 组合边界后，preset 中带作用域的 `deployment:persona` 会用陈旧的 coding-agent 文本遮蔽 overlay 修正过的全局 persona。overlay 测试没有挂载 preset，而 preset 测试启动时没有 overlay，因此两者都没有覆盖用户实际选择的组合。
 
-The shipped Web configuration offered two owners for the Claude SWE-compatible RL agent: a process-wide `core-web.cordis.yml` patch and the per-session `minimal` preset. Once [agent presets](../architecture/2026-08-03-per-session-agent-presets.md) became the agent-composition boundary, the preset's scoped `deployment:persona` shadowed the overlay's corrected global persona with stale coding-agent text. The overlay test mounted no preset, while the preset test booted without the overlay, so neither exercised the composition users selected.
+这种拆分还掩盖了其他偏差。preset 挂载了一次性 Bash，而不是 RL harness 使用的[持久 Bash](../feature/2026-07-29-persistent-bash-str-replace-editor.md)，并且遗漏了 RL 压缩（compaction）策略。保留两个所有者，会使今后每次修改提示词、工具或策略时都必须验证二者的交叉组合。
 
-The split also hid other drift. The preset mounted one-shot Bash rather than the [persistent Bash](../feature/2026-07-29-persistent-bash-str-replace-editor.md) used by the RL harness and omitted the RL compaction policy. Keeping both owners makes every future prompt, tool, and policy change a cross-product.
+## 决策
 
-## Decision
+随附的 Web `minimal` preset 是 RL agent 组合在 Web 中的唯一所有者。它声明 entry 本地的 PTY 注册表与本地后端、带 RL 环境描述且超时为 300 秒的持久 `bash`，以及 `str_replace_editor`。工具呈现仍由部署选择。后续的[裸双工具运行时决策](../feature/2026-08-11-minimal-profiles-bare-two-tool-runtime.md)取代了本记录最初的压缩与文件系统提供方选择：当前 preset 挂载 entry 本地的 `fs-local` 提供方，不挂载压缩后端。编辑器不接受 `requireAbsolutePath` 设置，因为要求绝对路径是它的无条件约定。
 
-The shipped Web `minimal` preset is the sole Web owner of the RL agent composition. It declares an entry-local PTY registry and local backend, persistent `bash` with the RL environment description and 300-second timeout, and `str_replace_editor`. Tool presentation remains a deployment choice. The later [bare two-tool runtime decision](../feature/2026-08-11-minimal-profiles-bare-two-tool-runtime.md) supersedes this note's original compaction and filesystem-provider choices: the current preset mounts an entry-local `fs-local` provider and no compaction backend. The editor accepts no `requireAbsolutePath` setting because absolute paths are its unconditional contract.
+preset persona 恰好是 `You are a helpful software engineer assistant.`，它设置 `complete: true`，并为其 agent 作用域抑制 runtime context。complete `PromptSection` 参与常规组装，因此工具、变量和协作式监听器仍会解析；`system-prompt/assemble` waterfall（瀑布式事件）结束后，提示词注册表会将该段落的独立副本恢复为唯一的系统提示词段落，并丢弃每个动态上下文贡献。存在多个有效 complete 段时，组装会被拒绝。这些最终注册表约束可防止 harness 身份、Web 定位、工具引导、组装监听器、沙箱策略、批准策略、委派或其他动态上下文提供方添加模型输入。
 
-The preset persona is exactly `You are a helpful software engineer assistant.`, sets `complete: true`, and suppresses runtime context for its agent scope. A complete `PromptSection` participates in ordinary assembly so tools, variables, and cooperative listeners still resolve; after the `system-prompt/assemble` waterfall, the prompt registry restores a detached copy of that section as the sole system-prompt section and discards every dynamic context contribution. Multiple effective complete sections reject assembly. These final registry constraints prevent harness identity, Web orientation, tool guidance, an assembly listener, sandbox policy, approval policy, delegation, or another dynamic context provider from adding model input.
+进程级 `core-web.cordis.yml` patch 不再存在。浏览器 UI、workspace 附加、持久化、子进程、沙箱、权限、模型路由及其他跨会话服务仍由宿主持有。选择 `minimal` 会改变一个 agent 面向模型的组合，并且仅为该 agent 遮蔽宿主文件系统提供方，不会改变 Web 进程中的其他会话。
 
-The process-wide `core-web.cordis.yml` patch is absent. Browser UI, workspace attachment, persistence, subprocess, sandbox, permission, model routing, and other cross-session services remain host-owned. Selecting `minimal` changes one agent's model-facing composition and shadows the host filesystem provider only for that agent, without changing other sessions in the Web process.
+## 验证
 
-## Verification
+系统提示词与 persona 包测试证明了 complete 段最终约束与 runtime-context 抑制，包括 waterfall 修改与重复项拒绝。交付 preset 组合测试在默认原生呈现下断言精确的提示词、Bash 描述、要求绝对路径的编辑器 schema 和双工具目录。无密钥 Web 回放通过 `minimal` agent 发送一个真实请求，同时注册全局身份、Web 定位文本、动态策略上下文和一个测试段落；它断言不存在 runtime-context 快照、entry 本地文件系统是裸后端且压缩不存在，随后执行两次持久 Bash 调用，证明环境与 cwd 状态能够保留，并通过绝对路径执行编辑器。
 
-System-prompt and persona package tests prove final complete-section and runtime-context suppression, including waterfall mutation and duplicate rejection. The shipped-preset composition test asserts the exact prompt, Bash description, absolute editor schema, and two-tool catalog under the default native presentation. The keyless Web replay sends a real request through a `minimal` agent while global identity, Web-orientation text, dynamic policy contexts, and a test section are registered, asserts that no runtime-context snapshot exists, the entry-local filesystem is bare, and compaction is absent, then executes two persistent Bash calls to prove environment and cwd state survive and executes the editor through an absolute path.
+独立的 [`minimal.cordis.yml`](../../../../examples/jsonrpc-agent/minimal.cordis.yml) 是内置 JSON-RPC 运行时的完整双工具组合。[裸双工具运行时决策](../feature/2026-08-11-minimal-profiles-bare-two-tool-runtime.md)说明其启动方式专属的环境配置、裸文件系统和无压缩选择。其无密钥 SDK 回放会断言组装后的系统提示词与双工具目录，跨调用执行持久 Bash，并使用编辑器；Python SDK 教程提供可运行的入口。
 
-The standalone [`minimal.cordis.yml`](../../../../examples/jsonrpc-agent/minimal.cordis.yml) is the complete two-tool composition for the bundled JSON-RPC runtime. The [bare two-tool runtime decision](../feature/2026-08-11-minimal-profiles-bare-two-tool-runtime.md) owns its launch-specific environment configuration, bare filesystem, and absence of compaction. Its keyless SDK replay asserts the assembled system prompt and two-tool catalog, executes persistent Bash across calls, and exercises the editor; the Python SDK tutorial provides the runnable entry point.
+## 考虑过的替代方案
 
-## Alternatives considered
+**将 `core-web.cordis.yml` 保留为兼容 patch。** 被拒绝，因为进程 patch 与会话 preset 是同一 agent 约定的两个独立所有者；优先级会使任意一方都能静默撤销另一方的配置。
 
-**Keep `core-web.cordis.yml` as a compatibility patch.** Rejected because a process patch and a session preset are two independent owners for one agent contract; precedence makes either one capable of silently undoing the other.
+**在 preset 中禁用每个已知的提示词贡献方。** 被拒绝，因为宿主行属于整个进程，新的贡献方也会重新开放提示词。由组装提示词的注册表实施最终 complete 段约束，才能表达这项否定保证。
 
-**Disable every known prompt contributor in the preset.** Rejected because host rows are process-wide and new contributors would reopen the prompt. A final complete-section constraint expresses the negative guarantee at the registry that assembles the prompt.
+**仅使用前置 waterfall 监听器筛选段落。** 被拒绝，因为另一个前置包装层可以在该监听器外执行，并在筛选后追加内容。在整个 waterfall 结束后实施约束，才能稳定拥有最终决定权。
 
-**Filter sections only with a prepended waterfall listener.** Rejected because another prepended wrapper can run outside it and append after the filter. Enforcement after the complete waterfall has stable final authority.
+**在 Web 宿主上挂载 PTY 服务。** 被拒绝，因为只有 minimal agent 消费这些服务。entry 本地的 `pty` realm 与唯一消费方具有相同的生命周期和作用域，无需由 preset 发布进程级全局服务。
 
-**Mount PTY services on the Web host.** Rejected because only the minimal agent consumes them. An entry-local `pty` realm gives the services the same lifetime and scope as their sole consumer without publishing a process-global service from a preset.
+## 后果
 
-## Consequences
-
-The Web RL prompt is fixed rather than environment-overridable; the standalone JSON-RPC prompt is deployment-selected. The Web preset and standalone JSON-RPC example state the same two-tool contract for their respective launch paths. The model sees only persistent `bash` and `str_replace_editor`; shell state is per agent and disappears with that agent. The Web preset pays for its own PTY and bare filesystem service instances, while other presets pay nothing for them. The local persistent-shell backend requires the supported POSIX terminal substrate, so this preset does not support Windows agents.
+Web RL 提示词固定不变，不能通过环境覆盖；独立 JSON-RPC 提示词由部署选择。Web preset 与独立 JSON-RPC 示例分别在各自的启动路径声明相同的双工具约定。模型只看到持久 `bash` 与 `str_replace_editor`；shell 状态按 agent 隔离，并随该 agent 一并消失。Web preset 为自身的 PTY 与裸文件系统服务实例承担开销，其他 preset 无需承担。持久 shell 的本地后端需要受支持的 POSIX 终端基础环境，因此该 preset 不支持 Windows agent。

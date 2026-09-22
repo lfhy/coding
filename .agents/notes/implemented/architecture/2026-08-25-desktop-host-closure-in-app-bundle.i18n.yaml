@@ -1,6 +1,0 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-25-desktop-host-closure-in-app-bundle.md
-2026-08-25-desktop-host-closure-in-app-bundle.md: bc9fe588dafe9f0770e5a14ed0fb240384bd4bd6
-2026-08-25-desktop-host-closure-in-app-bundle.zh.md: 4a1cf1958d023f989175b7c4de9bf79c80af139b

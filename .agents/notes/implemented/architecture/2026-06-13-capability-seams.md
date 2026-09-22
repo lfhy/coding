@@ -1,38 +1,36 @@
-# Agent Note: Capability seams — Service Definition / Service Provider / Consumer roles
+# Agent Note: 能力 seam——Service Definition / Service Provider / Consumer 角色
 
 Status: implemented
 
-English | [中文](2026-06-13-capability-seams.zh.md)
+## 问题
 
-## Problem
+harness 具有可替换的能力：当前是 bash 执行，未来会有沙箱化／远程执行器和替代模型提供方。一项能力涉及三个关注点，它们以不同速率、因不同原因变化：*约定*（这项能力是什么）、*实现*（它如何运行）、*消费方 API*（模型和其他插件面向什么编程）。将三者捆绑在一个包中会耦合这些变化速率——把本地执行器换成沙箱化执行器时，模型看到的工具 schema 也会被搅动，尽管面向模型的约定从未改变。
 
-The harness has swappable capabilities — bash execution today, sandboxed/remote executors and alternative model providers tomorrow. A capability has three concerns that change at different rates and for different reasons: the *contract* (what the capability is), the *implementation* (how it runs), and the *consumer API* (what the model and other plugins program against). Bundling them in one package couples those rates of change — swapping a local executor for a sandboxed one would churn the tool schemas the model sees, even though the model-facing contract never changed.
+这与「谁在运行时提供、谁需要一项能力」是不同的问题，后者 Cordis 已通过服务 + `inject` 解决（提供方注册 `ctx.shell`；消费方声明 `inject: ['bash']`，其 fiber 挂起直到服务存在）。该机制是必要的，但不决定包的边界；本 Agent Note 决定的是包的边界。
 
-This is distinct from "who provides vs. needs a capability at runtime", which Cordis already answers with services + `inject` (a provider registers `ctx.shell`; a consumer declares `inject: ['bash']` and its fiber pends until the service exists). That mechanism is necessary but doesn't dictate package boundaries; this Agent Note does.
+## 决策
 
-## Decision
+一项可替换的能力包含**三个角色**：
 
-A swappable capability has **three roles**:
+1. **Service Definition**——拥有 `ctx.<key>` 的 Cordis `Service` 和词汇类型，仅依赖约定所需的词汇（例如 `dsh-shell`：`ShellExecutor`、`ShellRunResult`、`ShellProcess`）。Service Definition 可以是抽象类，也可以是具体的注册表服务；绝不是 TypeScript `interface`。
+2. **Service Provider**——提供或注册实现的插件（例如 `dsh-bash-local`：子进程、进程组 kill、spill 文件截断）。沙箱化和远程 Service Provider 是依据同一 Service Definition 实现或注册的兄弟包。
+3. **Consumer**——模型和插件编程所面向的内容（例如 `dsh-tool-bash`：`bash` schema，后台句柄注册到通用任务运行时）。Consumer 注入服务键，从不导入 Service Provider 特有的类型。
 
-1. **Service Definition** — the Cordis `Service` and vocabulary types owning `ctx.<key>` and depending only on the vocabulary the contract needs (e.g. `dsh-shell`: `ShellExecutor`, `ShellRunResult`, `ShellProcess`). A definition may be an abstract class or a concrete registry service; it is never a TypeScript `interface`.
-2. **Service Provider** — a plugin that supplies or registers an implementation (e.g. `dsh-bash-local`: subprocesses, process-group kills, spill-file truncation). Sandboxed and remote providers are sibling packages implementing or registering against the same Service Definition.
-3. **Consumer** — what the model and plugins program against (e.g. `dsh-tool-bash`: the `bash` schema, with background handles registered into the generic job runtime). Consumers inject the service key and never import provider-specific types.
+角色名使用标题式大小写：**Service Definition**、**Service Provider** 和 **Consumer**。泛指的 `provider` 和 `consumer` 仍使用小写。
 
-The role names use title case: **Service Definition**, **Service Provider**, and **Consumer**. Generic uses of `provider` and `consumer` remain lowercase.
+Service Provider 与 Consumer 由此独立演进：沙箱化执行器替换 `dsh-bash-local` 时无需触碰任何工具 schema。
 
-Service Providers and Consumers then evolve independently: a sandboxed executor replaces `dsh-bash-local` without touching a tool schema.
+当角色独立演进时，通常使用不同的包；但当各角色确实属于同一个关注点时，并非必须拆分：LLM（大语言模型） seam 将 Service Definition 和 Consumer 合并为 `dsh-llm`（Consumer 是 agent loop（智能体循环）本身，而非可替换的 schema 接口），适配器作为 Service Provider 包。不要预防性地拆分——如果一项能力只有一种可设想的 Service Provider 和一个 Consumer，就保持为一个包，直到出现第二个。
 
-Roles normally use separate packages when they evolve independently, but the split is not mandatory when the roles are genuinely one concern: the LLM seam folds Service Definition and Consumer into `dsh-llm` (the Consumer is the loop itself, not a swappable schema surface) with adapters as Service Provider packages. Don't split preemptively — a capability with one conceivable provider and one Consumer stays one package until a second appears.
+## 术语：seam 指三者组合，而非接口
 
-## Terminology: "seam" names the trio, not the interface
+一个 **seam** 是完整的能力——三个角色合在一起：**Service Definition**（拥有 `ctx.<key>` 和词汇的 Cordis `Service`）、一个或多个 **Service Provider**，以及一个或多个 **Consumer**。`packages/shell` 是规范范例——`dsh-shell` / `dsh-bash-local`+`dsh-bash-sandbox` / `dsh-tool-bash`。一个包可以承担多个角色，但单个角色本身不是 seam。「seam」一词严格保留给这种完整能力；命名其中一个组成部分时，应使用其角色、类、服务、约定或扩展点。[术语表](../../../../docs/glossary.md#capability-seam)是规范条目。
 
-A **seam** is the whole capability — the three roles together: a **Service Definition** (the Cordis `Service` that owns `ctx.<key>` and the vocabulary), one or more **Service Providers**, and one or more **Consumers**. `packages/shell` is the canonical example — `dsh-shell` / `dsh-bash-local`+`dsh-bash-sandbox` / `dsh-tool-bash`. A package may own multiple roles, but one role alone is not the seam. The term "seam" is reserved for this complete capability; name a constituent by its role, class, service, contract, or extension point. The [glossary](../../../../docs/glossary.md#capability-seam) is the canonical entry.
+## 曾考虑的替代方案
 
-## Alternatives considered
+- **始终合并各角色**：否决。因为它会重新耦合独立变化的 Service Definition、Service Provider 和 Consumer。
+- **`@cordisjs/plugin-capability`**：这是完全不同的维度。它是一个权限／能力*安全*服务（具名权限加继承，通过 `ctx.capability.test` 针对会话检测这些权限），是延后的权限／沙箱工作（`tools/pre-execute` deny/ask 门）的候选方案，不是替换实现的机制。混淆这两个「能力」概念正是本 Agent Note 所指出的陷阱。
 
-- **Always combine the roles** — rejected because it recouples independently changing Service Definitions, providers, and Consumers.
-- **`@cordisjs/plugin-capability`** — a different axis entirely: it is a permission/capability-*security* service (named permissions with inheritance, tested against a session via `ctx.capability.test`), a candidate for the deferred permissions/sandbox work on the `tools/pre-execute` deny/ask gate, NOT a mechanism for swapping implementations. Confusing the two ("capability") is the trap this Agent Note names.
+## 后果
 
-## Consequences
-
-Separating roles adds packages and boilerplate (`package.json`, `tsconfig`, README, and injection wiring). In return, Service Providers and Consumers ship and version independently, and a new backend never risks the model-facing contract. [AGENTS.md](../../../../AGENTS.md) and [architecture.md](../../../../docs/architecture.md) carry the rule; the bash trio is the reference template. This Agent Note records why independently changing roles normally split while genuinely shared concerns may remain folded.
+分离角色会增加包和样板代码（`package.json`、`tsconfig`、README 和注入接线）。换来的是：Service Provider 与 Consumer 独立发布和版本管理，新后端永远不会波及面向模型的约定。[AGENTS.md](../../../../AGENTS.md) 和 [architecture.md](../../../../docs/architecture.md) 载有这项规则；bash 三件套是参考模板。本 Agent Note 记录为什么独立变化的角色通常需要拆分，而确实共享的关注点可以保持合并。

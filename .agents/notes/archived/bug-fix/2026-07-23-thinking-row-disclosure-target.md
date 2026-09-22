@@ -1,30 +1,28 @@
-# Agent Note: Thinking rows use one disclosure target
+# Agent Note: thinking 行使用单一展开目标
 
 Status: implemented
 Archived: 2026-07-26
 
-English | [中文](2026-07-23-thinking-row-disclosure-target.zh.md)
+## 问题
 
-## Problem
+折叠的推理（reasoning）条目在同一视觉行中呈现 `Think` 和单行推理摘要，但仅图标可展开会让两个可见标签都无法交互。若让所有工具行均可通过标题展开，又会破坏通用工具行的契约：整行负责打开详情，只有前导控件负责展开参数。
 
-A collapsed reasoning entry presents `Think` and its one-line reasoning summary as one visual row, but an icon-only disclosure control leaves both visible labels inert. Applying title expansion to every tool row would instead break the generic tool-row contract, where the row opens details and only the leading control expands arguments.
+## 决策
 
-## Decision
+`ToolRow` 提供显式启用的 `expandOnRowClick` 策略。`ThinkRow` 启用该策略，让标题和推理摘要组成单一且无障碍的展开目标；鼠标点击、Enter 和 Space 都切换同一个组件本地展开状态。未启用该策略的工具行仍由整行完成详情选择，由前导控件展开参数。
 
-`ToolRow` exposes the opt-in `expandOnRowClick` policy. `ThinkRow` enables it so the title and reasoning summary form one accessible disclosure target; pointer clicks, Enter, and Space toggle the same component-local expanded state. Tool rows that do not opt in retain row-to-details selection and leading-control argument expansion.
+## 验证
 
-## Verification
+组件测试固定两个 Think 点击目标以及未改变的通用工具行交接行为。无密钥浏览器 fixture（测试前置数据）加载真实的侧边栏与会话 bundle，打开包含推理内容的既定会话，点击摘要与标题，并检查展开状态和展开后的正文。
 
-The component spec pins both Think click targets and the unchanged generic tool-row handoff. The keyless browser fixture loads the real sidebar and conversation bundles, opens an authored reasoning session, clicks the summary and title, and checks the disclosure state and expanded body.
+## 考虑过的替代方案
 
-## Alternatives considered
+**让每个工具行都可通过标题展开。** 通用工具行将整行点击用于详情选择，共享这一行为会混淆两个控件。
 
-**Expand every tool row from its title.** Generic tool rows use row clicks for details selection, so sharing this behavior would conflate two controls.
+**保留仅图标展开。** 最小的点击目标仍与描述隐藏内容的标签脱节。
 
-**Keep icon-only disclosure.** The smallest hit target remains disconnected from the labels that describe the hidden content.
+**把标题和摘要分别渲染为按钮。** 两个控件共享一个展开状态，会增加重复的焦点停靠点并产生含糊语义。
 
-**Render separate title and summary buttons.** Two controls for one expanded state add duplicate focus stops and ambiguous semantics.
+## 后果
 
-## Consequences
-
-Thinking rows gain a larger pointer target and keyboard disclosure semantics without changing other tool interactions. The generic row component carries one optional policy because disclosure ownership differs between reasoning and tool calls.
+thinking 行获得更大的鼠标点击目标和键盘展开语义，同时不改变其他工具交互。通用行组件承担一个可选策略，因为推理与工具调用的展开所有权不同。

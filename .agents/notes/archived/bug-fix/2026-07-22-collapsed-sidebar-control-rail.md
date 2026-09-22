@@ -1,30 +1,28 @@
-# Agent Note: A collapsed sidebar retains its control rail
+# Agent Note: 侧边栏折叠后保留控制栏
 
 Status: implemented
 Archived: 2026-07-26
 
-English | [中文](2026-07-22-collapsed-sidebar-control-rail.zh.md)
+## 问题
 
-## Problem
+侧边栏关闭操作会持久化宽度偏好 `0`，布局再将该偏好映射为宽度为零的网格轨道。侧边栏唯一的开关与设置入口都位于这个被裁切的轨道内，因此关闭侧边栏会移除所有可见的恢复控件。页面重新加载时仍会读取关闭偏好，从而再次陷入无法恢复的状态。
 
-The sidebar close action persisted a zero width preference, and the layout mapped that preference to a zero-width grid track. The only sidebar toggle and the settings entry both lived inside that clipped track, so closing the sidebar removed every visible recovery control. Reloading preserved the closed preference and reproduced the lockout.
+## 决策
 
-## Decision
+布局将关闭的侧边栏（持久化宽度为 `0`）映射为固定的 `SIDEBAR_COLLAPSED` 宽度 56px：在侧边栏两侧各 16px 的水平内边距之间放置一列 24px 的图标控件。侧边栏轨道在求解器中是定宽的——无论展开还是折叠都不向视口压力让步（只有 details 会收缩、继而自动关闭）；控制栏保留右侧边框，已存储的展开宽度保持不变。
 
-The layout maps a closed sidebar (persisted width `0`) to the fixed `SIDEBAR_COLLAPSED` width of 56px: a 24px icon column between the sidebar's 16px horizontal paddings. The sidebar track is fixed-width in the solver — open or collapsed it never concedes to viewport pressure (only details shrinks, then auto-closes) — and the rail retains its right border while the stored expanded width remains untouched.
+`AppFrame` 根据持久化的宽度偏好标记侧边栏是否折叠，而不是根据求解后的轨道宽度来判断；折叠时移除尺寸调整手柄，并在渲染点把 `collapsed` 作为 owner props 传给侧边栏插槽。折叠与展开带动画：frame 对 `grid-template-columns`（以及余下手柄的 `left`）应用 deepsuite 侧栏曲线过渡——`--ds-ease-in-out` 配 `--ds-transition-duration-slow`，两个变量由 ui-theme 的 base 表提供；拖拽期间和 `prefers-reduced-motion` 下过渡暂停。
 
-`AppFrame` marks the sidebar collapsed from the persisted width preference rather than from the resolved track width, removes the resize handle while collapsed, and passes `collapsed` to the sidebar slot as owner props from the render site. Collapse and expand animate: the frame transitions `grid-template-columns` (and the remaining handle its `left`) on the deepsuite sider curve — `--ds-ease-in-out` over `--ds-transition-duration-slow`, both supplied by ui-theme's base sheet; transitions pause during drags and under `prefers-reduced-motion`.
+`SidebarRoot` 读取 owner 的 `collapsed` 属性，过渡是滑动 + 交叉淡变：展开内容以内联样式冻结在原宽度、150ms 原地淡出，滑动中的网格列裁切它——滑动途中不发生任何重排。settle 时宽态专属内容（品牌标识、文字标签、输入框、会话树）卸载——随之退订会话列表并离开渲染树与可访问性树——控件行落位到控制栏（打开开关、新建会话、新建工作区、搜索，自上而下与展开态各行顺序一致），随滑动结束淡入。每个控制栏控件保持与展开态对应控件一致的行为（搜索图标展开侧边栏并在滑动结束后聚焦搜索框）并带 tooltip；开关静止时显示鲸鱼标，悬停切换为面板图标。搜索关键词由根组件持有，折叠往返后保留。
 
-`SidebarRoot` reads the owner `collapsed` prop and transitions as a slide + crossfade: the expanded content freezes at its width (inline style) and fades out in place over 150ms while the sliding grid column clips it — nothing reflows mid-slide. At settle the wide-only content (brand, labels, input, session tree) unmounts — dropping the sessions subscription and leaving the rendered and accessibility trees — and the control rows snap to the rail (open toggle, new session, new workspace, search, the same top-down order as their expanded rows) fading in as the slide ends. Each rail control keeps its expanded counterpart's behavior (the search icon expands the sidebar and focuses the search box after the slide), carries a tooltip, and the toggle rests as the whale mark with the panel icon on hover. The search query lives with the root and survives the round trip.
+## 曾考虑的替代方案
 
-## Alternatives considered
+- **在中心列上方渲染展开按钮**：不予采纳，因为这只能恢复开关，无法保留常驻设置区域，同时还会让侧边栏 UI 由两个包（package）分别持有。
+- **保留宽度为零的网格轨道，让控制栏溢出显示**：不予采纳，因为控制栏会与中心列重叠，还会使命中测试和响应式几何关系脱离网格布局。
+- **保持完整侧边栏树挂载，并通过裁切将其隐藏**：不予采纳，因为隐藏控件仍留在语义树中，而且会继续订阅和渲染，尽管折叠状态下只需要两个控件。
 
-- **Render an expand button over the center column** — rejected because it recovers only the toggle, not the persistent settings area, and splits sidebar chrome across two package owners.
-- **Keep a zero-width grid track and let the rail overflow it** — rejected because the rail would overlap the center column and leave hit testing and responsive geometry disconnected from the grid.
-- **Keep the complete sidebar tree mounted and hide it with clipping** — rejected because hidden controls remain in the semantic tree and continue subscribing and rendering even though only two controls belong in the collapsed state.
+## 后果
 
-## Consequences
-
-- A collapsed sidebar reserves 56px instead of yielding the entire width to the center column. Expanding restores the persisted width and drag behavior.
-- The settings entry remains visible but retains its existing placeholder behavior; this change does not introduce an account or settings screen.
-- Layout solver tests pin the compact width, sidebar component tests pin the visible controls, and the keyless real-bundle web smoke test pins collapse and recovery through the assembled client.
+- 折叠的侧边栏占用 56px，而不是把全部宽度让给中心列。展开时恢复持久化宽度与拖动行为。
+- 设置入口持续可见，但保留既有占位行为；本次改动不提供账户或设置页面。
+- 布局求解器测试固定紧凑宽度，侧边栏组件测试固定可见控件，基于真实构建产物的无密钥 Web 冒烟测试则通过组装后的客户端固定折叠与恢复行为。

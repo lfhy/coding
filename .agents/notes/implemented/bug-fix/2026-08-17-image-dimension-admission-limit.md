@@ -1,30 +1,28 @@
-# Agent Note: Per-side image dimension admission limit
+# Agent Note: 图片单边尺寸准入上限
 
 Status: implemented
 
-English | [中文](2026-08-17-image-dimension-admission-limit.zh.md)
-
 ## Problem
 
-`read_image` durably committed an image and appended its block to session history before any dimension check beyond byte count and total pixels. Deployed model routes reject a request with HTTP 400 when it carries many images and any of them has a side above 2000px. An admitted image rides every later request of its session, so one oversized read poisoned the durable history: the next model request failed, and so did every retry, permanently killing the session. The same gap applied to every other image producer (host uploads, MCP tool images) because admission had no per-side bound at all.
+`read_image` 在字节数与总像素之外没有任何尺寸检查，就把图片持久提交并追加进会话历史。已部署的模型路由在请求携带多张图片且其中任何一张单边超过 2000px 时会以 HTTP 400 拒绝整个请求。已接纳的图片会随该会话之后的每次请求发送，因此一次超限读取就毒化了持久历史：下一次模型请求失败，之后的每次重试同样失败，会话被永久杀死。其他图片来源（宿主上传、MCP 工具图片）存在同样的缺口，因为准入完全没有单边上限。
 
 ## Decision
 
-`ImageAttachmentLimits` carries `maxImageDimension`, enforced during the admission full decode (`detectImage`) as `IMAGE_DIMENSION_TOO_LARGE`, so every producer that commits through the attachment service refuses an oversized image before anything reaches durable history. `LocalAttachmentStore` exposes it as the `maxImageDimension` config field with default `DEFAULT_MAX_IMAGE_DIMENSION = 2000`, the strictest per-side bound deployed routes enforce; deployments with laxer routes raise it from cordis.yml. `read_image` maps `IMAGE_DIMENSION_TOO_LARGE` and `IMAGE_TOO_MANY_PIXELS` to model-facing errors that name the resolved path and the limit and tell the model to downscale and retry — the turn continues as a recoverable tool error. The Web composer surfaces `IMAGE_DIMENSION_TOO_LARGE` with dedicated copy naming the limit. The `read-image-dimension` snapshot scenario replays the refusal keylessly through the assembled app: a 2001x1 workspace fixture, a recoverable tool error, and a completed turn.
+`ImageAttachmentLimits` 增加 `maxImageDimension`，在准入完整解码（`detectImage`）中以 `IMAGE_DIMENSION_TOO_LARGE` 强制执行，因此所有经附件服务提交的来源都会在任何内容进入持久历史之前拒绝超限图片。`LocalAttachmentStore` 将其暴露为 `maxImageDimension` 配置项，默认值 `DEFAULT_MAX_IMAGE_DIMENSION = 2000`，即已部署路由强制执行的最严格单边上限；路由更宽松的部署可在 cordis.yml 中调高。`read_image` 把 `IMAGE_DIMENSION_TOO_LARGE` 与 `IMAGE_TOO_MANY_PIXELS` 映射为面向模型的错误，指明解析后的路径与上限并提示缩图重试，本轮以可恢复的工具错误继续。Web 输入框对 `IMAGE_DIMENSION_TOO_LARGE` 给出指明上限的专用文案。`read-image-dimension` 快照场景通过组装后的应用无 key 回放这次拒绝：2001x1 的工作区 fixture、一条可恢复的工具错误、一个正常完成的轮次。
 
 ## Alternatives considered
 
-- **Downscale at admission instead of refusing.** Resampling changes the stored bytes away from what the caller supplied, adds a resampling-quality policy, and hides the limit from the model. Refusal keeps admission a pure gate; the model or user can downscale with full knowledge. Worth revisiting only if refusals prove frequent in practice.
-- **Enforce at the provider adapter per route.** Too late: by the time a request is assembled the image is already durable history, so every route and every retry re-fails. Admission is the last point where a provider-rejected image can be kept out.
-- **Repair already-poisoned sessions** (drop or replace the oversized block on later requests). Out of scope for this fix; admission prevents new poisonings, and history rewriting needs its own design against the model-visible ⟺ logged invariant.
+- **准入时缩图而非拒绝。** 重采样会让存储字节偏离调用方提供的内容，引入重采样质量策略，还会对模型隐藏上限。拒绝让准入保持为纯粹的门禁；模型或用户可以在知情的前提下自行缩图。只有当拒绝在实践中频繁出现时才值得重新考虑。
+- **在 provider 适配器按路由强制执行。** 为时已晚：组装请求时图片已是持久历史，每条路由、每次重试都会再次失败。准入是把必然被上游拒绝的图片挡在外面的最后一道关口。
+- **修复已被毒化的会话**（在之后的请求中丢弃或替换超限图片块）。不在本次修复范围内；准入阻止新的毒化，而重写历史需要针对「模型可见 ⟺ 已记录」不变量单独设计。
 
 ## Related
 
-- [Minimal read_image tool](../feature/2026-08-10-minimal-read-image-tool.md) — the tool whose admission gap this closes.
-- [Web image intake and limits alignment](../feature/2026-08-12-web-image-intake-and-limits-alignment.md) — the composer-side surfacing of the same `ImageAttachmentLimits`.
+- [最小 read_image 工具](../feature/2026-08-10-minimal-read-image-tool.md)，本次修复补上的正是该工具的准入缺口。
+- [Web 图片摄入与限制对齐](../feature/2026-08-12-web-image-intake-and-limits-alignment.md)，同一组 `ImageAttachmentLimits` 在输入框侧的呈现。
 
 ## Consequences
 
-- One oversized `read_image` can no longer break a session; the model sees an actionable error and the turn completes.
-- Images with a side above 2000px are refused even in compositions whose routes would accept them on small requests; such deployments must raise `maxImageDimension` explicitly.
-- Sessions that already carry an oversized image remain broken; this change does not repair existing history.
+- 一次超限的 `read_image` 不再能弄坏会话；模型看到可操作的错误，轮次正常完成。
+- 单边超过 2000px 的图片即使在其路由本可接受（小请求）的组合中也会被拒绝；这类部署必须显式调高 `maxImageDimension`。
+- 已经携带超限图片的会话仍然是坏的；本次改动不修复既有历史。

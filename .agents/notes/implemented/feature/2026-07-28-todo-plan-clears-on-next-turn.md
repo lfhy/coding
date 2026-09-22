@@ -1,31 +1,29 @@
-# Agent Note: Todo plan strip clears on the next turn
+# Agent Note: 下一轮次开始时清空 todo 计划条
 
 Status: implemented
 
-English | [中文](2026-07-28-todo-plan-clears-on-next-turn.zh.md)
+## 问题
 
-## Problem
+`todo_write` 在会话日志中存储完整列表快照，交互式宿主把最新列表渲染为计划条（web TodoPanel 经 `todos` 投影，TUI Plan 面板）。一个轮次结束后，该条仍留在下一用户轮次的屏幕上——上一任务已完成或已放弃的清单。读者把计划条理解为「本轮次正在做什么」，因此跨轮次的陈旧列表是错误的产品生命周期。[web todo 展示](2026-07-23-web-todo-display.md)与 [`todo_write` 工具](2026-06-29-todo-write-tool.md) Agent Note 仍拥有事件溯源与两个渲染面；它们把常驻计划描述为持续整段会话直至下一次写入。
 
-`todo_write` stores whole-list snapshots on the session log, and interactive hosts render the latest list as a plan strip (web TodoPanel via the `todos` projection, TUI Plan panel). After a turn finished, that strip stayed on screen into the next user turn — a completed or abandoned checklist from the previous task. Readers treat the strip as "what this turn is doing," so a stale list across the turn boundary is the wrong product lifetime. The [web todo display](2026-07-23-web-todo-display.md) and [`todo_write` tool](2026-06-29-todo-write-tool.md) notes still own event-sourcing and the two render surfaces; they described the standing plan as lasting for the whole session until the next write.
+## 决策
 
-## Decision
+常驻计划是其后没有更晚 `turn/start` 的最近一次 `todo/write`。`turn/end` 保留列表可见，以便用户阅读回答时仍能看到刚完成的清单；下一次 `turn/start` 将其清空，直至模型再次写入。
 
-The standing plan is the latest `todo/write` that is not followed by a later `turn/start`. `turn/end` keeps the list visible so the finished checklist remains while the user reads the answer; the next `turn/start` clears it until the model writes again.
+### 宿主投影（web）
 
-### Host projection (web)
+`dsh-tool-todo` 的 `todos` 投影单元折叠该规则：`apply` 从每个 `todo/write` 取完整列表，并在每个 `turn/start` 返回 `null`（`stateVersion` 2）。载体（`dsh-host-apiproxy`）在历史记录尾部的 `projections` 块中提供该值，并以 `session/projection` 帧推送；web dock 经 `useProjection('todos')` 读取。无密钥 fixture（测试前置数据）镜像同一折叠，供组装后的快照使用。
 
-`dsh-tool-todo`'s `todos` projection unit folds the rule: `apply` takes the whole list from each `todo/write` and returns `null` on each `turn/start` (`stateVersion` 2). Carriers (`dsh-host-apiproxy`) serve that value on the history tail `projections` block and push `session/projection` frames; the web dock reads it through `useProjection('todos')`. The keyless fixture mirrors the same fold for assembled snapshots.
+### TUI 实时路径
 
-### TUI live path
+原 TUI 的 `renderEvent` 分支曾在 `turn/start` 清空本地计划面板、在 `todo/write` 替换之，其重建路径在回放前重置面板，使冷恢复收敛到同一规则；该包其后已被移除（[移除 TUI 包](../simplification/2026-08-04-remove-tui-package.md)）。
 
-The former TUI's `renderEvent` switch cleared its local plan panel on `turn/start` and replaced it on `todo/write`, with its rebuild path resetting the panel before replay so cold resume converged on the same rule; that package has since been removed ([remove TUI package](../simplification/2026-08-04-remove-tui-package.md)).
+## 考虑过的替代方案
 
-## Alternatives considered
+- **在 `turn/end` 清空**——用户仍在阅读刚完成的回答时就隐藏清单；此时计划条的职责是已完成计划，而非空 dock。
+- **仅在全部项为 `completed` 时清空**——会让放弃或部分完成的计划跨轮次残留；计划条仍会显示另一任务的工作。
+- **在轮次开始时追加空的 `todo/write`**——为 UI 生命周期规则改写日志，并捏造模型从未写出的写入。
 
-- **Clear on `turn/end`** — hides the checklist while the user is still reading the just-finished answer; the strip's job at that moment is the completed plan, not an empty dock.
-- **Clear only when every item is `completed`** — leaves abandoned or partial plans across turns; the strip would still show another task's work.
-- **Append an empty `todo/write` on turn start** — mutates the log for a UI lifetime rule and invents a write the model never authored.
+## 后果
 
-## Consequences
-
-The host projection and the TUI panel share one lifetime rule; reopening a session restores a plan only when no later turn has started. Partial supersession of the session-long standing-plan wording in [web todo display](2026-07-23-web-todo-display.md) and [`todo_write` tool](2026-06-29-todo-write-tool.md): event-sourcing, last-write-wins replacement, and the two render surfaces stay there; this note owns turn-boundary clearance. Coverage: tool-todo projection specs for turn/start clear + turn/end keep, fixture push-frame clearance for the assembled web snapshot, plus the TUI snapshot that starts the next turn and pins the strip gone.
+宿主投影与 TUI 面板共用同一生命周期规则；重新打开会话仅在其后没有更晚轮次开始时恢复计划。部分取代 [web todo 展示](2026-07-23-web-todo-display.md)与 [`todo_write` 工具](2026-06-29-todo-write-tool.md)中「会话级常驻计划」的表述：事件溯源、last-write-wins 替换与两个渲染面仍归那些 Agent Note；本 Agent Note 拥有轮次边界清空。覆盖：tool-todo 投影对 turn/start 清空与 turn/end 保留的规格测试、供组装 web 快照的 fixture 推送帧清空，以及启动下一轮次并固定计划条已消失这一结果的 TUI 快照。

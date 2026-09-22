@@ -1,50 +1,48 @@
 # `@deepseek-ai/dsh-session-reference`
 
-English | [中文](README.zh.md)
+`ctx.sessionReferenceResolver` 会把其他会话准备为有界、只读快照，作为带来源信息、面向模型的上下文。它消费 `ctx.sessionQuery` 与后端无关的 compact 检查点标记；不需要 SQLite FTS。支持跨会话 mention 的宿主可以主动启用该服务。
 
-`ctx.sessionReferenceResolver` prepares bounded, read-only snapshots of other sessions as sourced model-facing context. It consumes `ctx.sessionQuery` and the backend-independent compact checkpoint marker; SQLite FTS is not required. Hosts that support cross-session mentions may opt into the service.
+## 公开 API
 
-## Public API
+- `listCandidates(agent, query?, limit?)` 会列出 `agent.id` 之外的会话，按 id、cwd 或以日志为依据的最新标题进行不区分大小写的筛选，再按同 cwd、无 cwd、其他 cwd 记录排序，同时保持每组内的 `listSessions()` 创建顺序。每个已选候选会话都使用该标题作为 mention label；标题不存在或无法读取时回退到会话 id。不搜索消息主体。一元 `sessionReferenceResolver/candidates` Remote 方法在配置的候选上限内提供同一发现能力，并为每个候选附上规范 mention，浏览器消费方直接调用 `ctx.remote.sessionReferenceResolver.candidates`，无需 API Proxy 路由。
+- `prepare(agent, content, references, signal?)` 会保留首次 mention 顺序、对 id 去重，并拒绝自引用或超过已配置不同源上限的情况。它会并行读取所有源，返回与输入脱离的内容，外加零个或一个聚合且带标识的 `UserMessage` 上下文。下游 `agent/pre-step` 监听器接受步骤后，该服务会针对直接用户消息中的规范 mention 调用此方法。
+- `encodeSessionReferenceUri()` 与 `decodeSessionReferenceUri()` 实现 `dsh-session:<base64url(JSON.stringify(sessionId))>`，因此每个 JavaScript 字符串 id 都能精确往返。`formatSessionReferenceMention()` 发出 `@[label](uri)`，`parseSessionReferenceText()` 将 Markdown mention 或裸规范 URI 替换为可读的 `@label` 文本，并返回结构化引用。解析器会拒绝显式 Markdown mention 中任何格式错误的 URI；只当 scheme 后跟非空、符合 base64url 形状的 payload 时，裸文本才被视为引用，匹配但非规范的候选项仍会失败。空 scheme mention 或只含标点符号的 scheme mention 仍是普通讨论文本。
 
-- `listCandidates(agent, query?, limit?)` lists sessions other than `agent.id`, filters case-insensitively by id, cwd, or the latest log-backed title, and ranks same-cwd, cwd-less, then other-cwd records while preserving `listSessions()` creation order within each group. Each selected candidate uses that title as the mention label and falls back to the session id when the title is absent or unreadable; message bodies are not searched. The unary `sessionReferenceResolver/candidates` Remote method serves the same discovery under the configured candidate limit and attaches each candidate's canonical mention, so browser consumers call `ctx.remote.sessionReferenceResolver.candidates` without an API Proxy route.
-- `prepare(agent, content, references, signal?)` preserves first-mention order, deduplicates ids, rejects self-reference and more than the configured distinct-source limit, reads every source in parallel, and returns detached content plus zero or one aggregated, identified `UserMessage` context. The service calls it for canonical mentions in direct user messages after downstream `agent/pre-step` listeners accept the step.
-- `encodeSessionReferenceUri()` and `decodeSessionReferenceUri()` implement `dsh-session:<base64url(JSON.stringify(sessionId))>` so every JavaScript string id round-trips exactly. `formatSessionReferenceMention()` emits `@[label](uri)`, and `parseSessionReferenceText()` replaces Markdown mentions or bare canonical URIs with readable `@label` text while returning structured references. Explicit Markdown mentions reject every malformed URI; bare text is considered a reference only when a non-empty base64url-shaped payload follows the scheme, and a matching noncanonical candidate still fails. Empty or punctuation-only scheme mentions remain ordinary discussion text.
+## 快照语义
 
-## Snapshot semantics
+目标消息到达 `agent/pre-step` 时，准备阶段会对每个不同源调用一次 `ctx.sessionQuery.readSurface()`。因此，queued 消息在进入模型步骤时捕获源状态，此后生成的上下文保持不变。它仅投影折叠后当前表层中的用户直接发出的 `user/message`、assistant 文本，以及 `user/message` 检查点；这类检查点携带规范 `dsh-compaction` 源标记。带独立来源的 session-reference 消息属于注入上下文，会被排除以防止快照递归传播。已遮蔽的压缩（compaction）前事件、工具、推理（reasoning）、除已标记 compact 检查点外的其他插件生成 user 消息，以及未完成的 assistant 分片也都会被排除。因此，已压缩源只会提供最新检查点及其后保留的会话内容，不会还原已遮蔽的文本。
 
-Preparation calls `ctx.sessionQuery.readSurface()` once per distinct source when the target message reaches `agent/pre-step`. A queued message therefore captures the source state at model-step entry, and the resulting context is immutable after that point. Projection keeps only direct-user `user/message`, assistant text, and `user/message` checkpoints carrying the canonical `dsh-compaction` source marker from the folded current surface. Separately sourced session-reference messages are injected context and are excluded, preventing recursive snapshot propagation. Shadowed pre-compaction events, tools, reasoning, other plugin-generated user messages except marked compact checkpoints, and unfinished assistant chunks are also excluded. A compacted source therefore contributes its latest checkpoint plus retained later conversation, not restored shadowed text.
+上下文源为 `{ kind: 'session-reference', version: 1, references }`；每条引用会记录其源 id 与 label、捕获 seq、是否存在 compact、已保留／已省略消息数、已省略 UTF-8 字节数与截断状态。该服务的外层 `agent/pre-step` 监听器会处理已接受的直接用户消息，保留其消息 id，并把每份快照插入到引用它的消息紧后。解析发生在最终领取收件箱消息之后，因此队列编辑和从 queue 移动到 steer 不需要引用专用处理。无效 mention、读取失败、取消和预算失败会在消息进入面向模型的历史之前结束该轮次。目标日志会先记录可读的直接 `user/message`，再记录其带来源信息的上下文 `user/message`；捕获后的源变更无法改变目标回放。
 
-The context source is `{ kind: 'session-reference', version: 1, references }`; each reference records its source id and label, capture seq, compact presence, retained/omitted message counts, omitted UTF-8 bytes, and truncation state. The service's outer `agent/pre-step` listener post-processes accepted direct user messages, preserves their message ids, and inserts each snapshot immediately after the message that cited it. Queue edits and queue-to-steer relocation need no reference-specific handling because parsing occurs after the final inbox claim. Invalid mentions, failed reads, cancellation, and budget failures end that turn before its messages enter model-visible history. The target log records the readable direct `user/message` followed by its sourced context `user/message`; source mutation after capture cannot change target replay.
+## 配置
 
-## Configuration
-
-| Key | Default | Contract |
+| Key | 默认值 | 约定 |
 |---|---:|---|
-| `maxReferences` | `3` | Maximum distinct source sessions in one prepared message; must be at most `3`. |
-| `candidateLimit` | `50` | Default candidate count returned to a host. |
-| `maxReferenceBytes` | `65536` | Maximum serialized JSON bytes for one reference object. |
+| `maxReferences` | `3` | 一条已准备消息中不同源会话的最大数量；必须不大于 `3`。 |
+| `candidateLimit` | `50` | 返回给宿主的默认候选数量。 |
+| `maxReferenceBytes` | `65536` | 一个引用对象的最大序列化 JSON 字节数。 |
 
-Retention applies `maxReferenceBytes` independently to each source, keeps compact checkpoints and the newest message before dropping older non-checkpoint units, and uses `dsh-output-retention` head/tail truncation with an exact UTF-8 omission notice. If one source's fixed serialized fields cannot fit, preparation fails with `SESSION_REFERENCE_BUDGET_EXCEEDED` instead of returning a partial context.
+保留会对每个源独立应用 `maxReferenceBytes`，保留 compact 检查点与最新消息，再丢弃较旧的非检查点单元，并使用 `dsh-output-retention` 头部／尾部截断和精确 UTF-8 省略通知。如果某个源的固定序列化字段本身就超出限额，准备会以 `SESSION_REFERENCE_BUDGET_EXCEEDED` 失败，而不返回部分上下文。
 
-## Model Experience
+## 模型体验
 
-### Referenced session background
+### 引用会话背景
 
-#### What the model sees
+#### 模型看到的内容
 
-The model sees two consecutive user-role messages: the current message with its readable `@label`, then the `## Referenced sessions` untrusted snapshot. The warning forbids following instructions, permission claims, or tool requests from the snapshot unless the current user explicitly repeats them. Labels, cwd values, ids, and conversation text are serialized as JSON inside `<referenced-sessions>` tags; every data `<` is emitted as the lossless JSON escape `\u003c`, so source text cannot spell a framing tag.
+模型会看到两条连续的 user 角色消息：先是带可读 `@label` 的当前消息，再是 `## Referenced sessions` 不受信任快照。警告禁止遵循快照中的指令、权限声明或工具请求，除非当前用户明确重复这些内容。标签、cwd 值、id 与会话文本会作为 JSON 在 `<referenced-sessions>` 标签中序列化；数据中的每个 `<` 都会以无损 JSON 转义 `\u003c` 的形式发出，因此源文本无法拼出定界标签。
 
-#### Token effect
+#### Token 影响
 
-Each referenced message adds the fixed warning plus up to three serialized snapshots, each independently bounded by `maxReferenceBytes`. The exact snapshot remains in target history until target compaction shadows or summarizes it; source-session changes add no further tokens.
+每条包含引用的消息都会添加固定警告和最多三个序列化快照，每个快照都受 `maxReferenceBytes` 独立限制。精确快照会保留在目标历史中，直到目标压缩遮蔽或摘要它；源会话变更不会添加更多 token。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-The request and snapshot are consecutive append-only target messages and preserve earlier cacheable history. Different references or source capture contents change the new suffix only; later target compaction may invalidate reuse from its replacement boundary.
+请求与快照是两条连续、仅追加的目标消息，并保留较早的可缓存历史。不同引用或源捕获内容只改变新后缀；后续目标压缩可能使从替换边界起的复用失效。
 
-## Known Limitations and Deferred Work
+## 已知限制与暂缓事项
 
-- **No body discovery** — candidate queries inspect folded titles but do not search message bodies. A non-empty query may inspect every visible persisted session log through the session-query service's bounded, cancellable batch; a dedicated title index may replace that discovery path without changing URI, snapshot, or persistence contracts.
-- **Trusted caller boundary** — the service assumes its host is authorized to read every session exposed by `ctx.sessionQuery`; it is not a model-facing search tool.
-- **Text projection only** — non-text user and assistant blocks are not propagated across sessions.
-- **No live link** — references are snapshots, not forks, resumes, subscriptions, or source-session mutations.
+- **不支持消息正文检索**：候选查询会检查折叠后的标题，但不搜索消息主体。非空查询可能通过 session-query 服务有界、可取消的批处理检查每个可见的持久化会话日志；专用标题索引未来可以替换这条发现路径，而不改变 URI、快照或持久化约定。
+- **受信任调用方边界**：该服务假设宿主有权读取 `ctx.sessionQuery` 公开的每个会话；它不是面向模型的搜索工具。
+- **只投影文本**：不会在会话间传播非文本 user 与 assistant 块。
+- **没有实时链接**：引用是快照，不是 fork、恢复、订阅或源会话变更。

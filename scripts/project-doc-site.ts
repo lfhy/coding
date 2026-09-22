@@ -1,8 +1,8 @@
 /**
- * Build-time projection from canonical repository Markdown into VitePress.
+ * 把仓库定稿 Markdown 投影为 VitePress 源树的构建期适配器。
  *
- * The generated tree is disposable: sources stay in their owning `docs/`
- * tier, while this adapter rewrites cross-source links for the public site.
+ * 生成树是即弃的：内容留在所属 `docs/` 层级，本适配器只为公开站点
+ * 改写跨源链接。站点单语言中文，`foo.md` 即中文定稿。
  */
 
 import {
@@ -166,25 +166,18 @@ function routeTarget(fromRoute: string, toRoute: string, suffix: string): string
   return `${target.startsWith('.') ? target : `./${target}`}${suffix}`
 }
 
-function sourceMap(pages: DocsPage[]): Map<string, Map<DocsLocale, DocsPage>> {
-  const map = new Map<string, Map<DocsLocale, DocsPage>>()
+function sourceMap(pages: DocsPage[]): Map<string, DocsPage> {
+  const map = new Map<string, DocsPage>()
   for (const page of pages) {
     for (const source of [page.source, ...(page.sourceAliases ?? [])]) {
-      const localized = map.get(source) ?? new Map<DocsLocale, DocsPage>()
-      if (localized.has(page.locale)) {
-        throw new Error(`project-doc-site: duplicate source or alias ${JSON.stringify(source)} for locale ${JSON.stringify(page.locale)}.`)
+      const holder = map.get(source)
+      if (holder !== undefined && holder !== page) {
+        throw new Error(`project-doc-site: duplicate source or alias ${JSON.stringify(source)}.`)
       }
-      localized.set(page.locale, page)
-      map.set(source, localized)
+      map.set(source, page)
     }
   }
   return map
-}
-
-function counterpartSource(source: string): string {
-  return source.endsWith('.zh.md')
-    ? source.replace(/\.zh\.md$/, '.md')
-    : source.replace(/\.md$/, '.zh.md')
 }
 
 function resolveRepositoryTarget(sourceAbs: string, rawPath: string, repoRoot: string): { absPath: string; line?: number } {
@@ -244,11 +237,7 @@ export function rewriteMarkdown(source: string, options: RewriteMarkdownOptions)
     if (path === '') return
     const { absPath, line } = resolveRepositoryTarget(sourceAbs, path, options.repoRoot)
     const targetPath = repoPath(absPath, options.repoRoot)
-    const isLanguageSwitcher = targetPath === counterpartSource(options.sourcePath)
-    const targetLocale: DocsLocale = isLanguageSwitcher
-      ? options.locale === 'root' ? 'en' : 'root'
-      : options.locale
-    const page = published.get(targetPath)?.get(targetLocale)
+    const page = published.get(targetPath)
     const nextUrl = page !== undefined
       ? routeTarget(options.route, page.route, suffix)
       : node.type === 'image' && options.placeImage !== undefined
@@ -302,28 +291,26 @@ export function addProjectionFrontmatter(markdown: string, page: Pick<DocsPage, 
   return `---\n${fields}\n---\n\n${markdown}`
 }
 
-/** The switcher line a canonical page carries so its GitHub reader can reach the other language. */
+/** 定稿页为 GitHub 读者携带的双语切换行；单语言站点不再投影它。 */
 const LANGUAGE_SWITCHER = /^(?:English \| \[中文\]\([^)]*\)|\[English\]\([^)]*\) \| 中文)$/
 
-/** The repository badge a canonical page carries for its GitHub reader. */
+/** 定稿页为 GitHub 读者携带的仓库徽章。 */
 const REPOSITORY_BADGE = /^\[!\[[^\]]*\]\(https:\/\/img\.shields\.io\/[^)]*\)\]\([^)]*\)$/
 
 /**
- * Drop the lines that address a canonical page's GitHub reader.
+ * 删除面向定稿页 GitHub 读者的行。
  *
- * The site carries a locale switcher in its navigation bar and links the
- * repository from every page, so projecting these lines would repeat both — the
- * switcher as the first element under each heading.
+ * 站点是单语言中文，没有语言切换入口；切换行指向已不存在的对侧文件，
+ * 仓库徽章则与每页页脚的仓库链接重复。
  *
- * @param markdown Rewritten canonical Markdown content.
- * @returns The content without the switcher line or the repository badge.
+ * @param markdown 已改写链接的定稿 Markdown 内容。
+ * @returns 不含切换行与仓库徽章的内容。
  */
 function withoutRepositoryChrome(markdown: string): string {
   const lines = markdown.split('\n')
   const switcher = lines.findIndex(line => LANGUAGE_SWITCHER.test(line))
-  // Only the switcher introducing the page qualifies; further down the same
-  // text is prose or a sample rather than the page's own header.
-  if (switcher !== -1 && switcher < 8) {
+  // 只有引入页面的切换行才算数；再往下的同一文本是正文或示例，不是页面自身的头部。
+  if (switcher !== -1) {
     lines.splice(switcher, lines[switcher + 1] === '' ? 2 : 1)
   }
   const badge = lines.findLastIndex(line => REPOSITORY_BADGE.test(line))
@@ -334,21 +321,21 @@ function withoutRepositoryChrome(markdown: string): string {
 }
 
 /**
- * Select the Markdown rendered for one published page.
+ * 选择一页发布页实际渲染的 Markdown。
  *
- * @param markdown Rewritten canonical Markdown content.
- * @param page Publication manifest entry for the content.
- * @returns Full Markdown for ordinary pages or frontmatter-only Markdown for a locale home page.
+ * @param markdown 已改写链接的定稿 Markdown 内容。
+ * @param page 该内容的发布清单条目。
+ * @returns 普通页面返回完整 Markdown；站点首页这类 `sidebar: null` 的重定向页只返回 frontmatter。
  */
 export function projectedPageContent(markdown: string, page: DocsPage): string {
   if (page.sidebar !== null) return withoutRepositoryChrome(markdown)
   if (!markdown.startsWith('---\n')) {
-    throw new Error(`project-doc-site: locale home source ${JSON.stringify(page.source)} must start with YAML frontmatter.`)
+    throw new Error(`project-doc-site: redirect home source ${JSON.stringify(page.source)} must start with YAML frontmatter.`)
   }
   const closingDelimiter = '\n---\n'
   const closing = markdown.indexOf(closingDelimiter, 4)
   if (closing === -1) {
-    throw new Error(`project-doc-site: locale home source ${JSON.stringify(page.source)} has unclosed YAML frontmatter.`)
+    throw new Error(`project-doc-site: redirect home source ${JSON.stringify(page.source)} has unclosed YAML frontmatter.`)
   }
   return markdown.slice(0, closing + closingDelimiter.length)
 }
@@ -453,9 +440,8 @@ export function projectDocs(): void {
             + ' which is not a regular file inside the repository.',
           )
         }
-        // Beside the page that references it, under its own basename: each
-        // locale's route tree gets its own copy, so one relative URL is correct
-        // from both.
+        // Beside the page that references it, under its own basename: the
+        // relative URL stays correct from the one route tree that serves it.
         const name = basename(real)
         const target = resolve(dirname(output), name)
         claim(target, real)

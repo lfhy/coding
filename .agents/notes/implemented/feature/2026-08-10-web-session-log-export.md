@@ -1,30 +1,28 @@
-# Agent Note: Web session-log export as a host-streamed ZIP download
+# Agent Note: Web 会话日志导出——宿主流式 ZIP 下载
 
-Status: implemented
+状态：implemented
 
-English | [中文](2026-08-10-web-session-log-export.zh.md)
+## 问题
 
-## Problem
+Trajectory 视图没有任何方式把调试工件交到人手里：原始会话日志存放在磁盘与宿主侧，客户端历史面只提供折叠后的投影（而非原始事件），而带子代理的会话横跨多个相互独立的会话日志。bug 报告需要整棵会话树的完整原始日志，并且形态要能在被转发后仍然可用。
 
-The Trajectory view had no way to hand a debugging artifact to a human: the raw session log lived on disk and in the host, the client history face served folded projections (not raw entries), and a session with subagents spans many independent session logs. A bug report needs the complete raw log of the whole tree, in a shape that survives being emailed around.
+## 决策
 
-## Decision
+- **导出是宿主侧的下载面，不是 RPC**：`GET /api/session.export?sessionId=…&includeDescendants=true` 流式返回一个 ZIP 附件。每个文件都是会话**存储工件的逐字原文**：持久化服务新增的 `readRaw` 读取后端自己的持久化字节（jsonl 后端解码其物理 zstd 帧，或直接返回明文）——绝非从解析后事件重建，因此 chunk 打包、键序、换行全部逐字节保留——放在其原始基础文件名下（根为 `session.jsonl`，子代理为 `subagents/<id>/session.jsonl`）。压缩在宿主侧使用 fflate 流式 `Zip`/`ZipDeflate` API 和已验证的 `sessionExportCompressionLevel` 0–9（默认 6），使部署可以在 CPU／延迟与归档大小之间取舍；每个条目按有界分块边产出边压缩，响应随生成分块写出，宿主从不把整个归档放进单个缓冲区（除预载的根外，最多同时持有一条后代的工件文本）。到达 64 KiB 响应字节高水位后，生产会等待 Consumer pull 恢复容量；fflate 的同步回调最多只会在该队列界限外再增加一次有界输入 push。不写清单——每个文件都与持久化工件逐字节一致，并通过自身 header 行自描述。
+- **错误词汇是 HTTP 原生的**：服务缺失 → 500，后端不提供每会话原始工件 → 501，根会话缺失 → 404（三者都在任何字节流出前判定），后代缺少存储工件 → 流失败（fail-loud，绝不静默少导出）。请求中止会保持取消语义而不会改写成 500；请求取消与响应 Consumer 取消汇合到生产者 signal，该 signal 会传到血缘、持久化与附件读取，并终止活跃压缩器。载体（`toFetchHandler`）已对 `/api` 应用信任围栏；GET 分支与既有 SSE GET 路由并列，由 `ApiProxy.downloads.sessionLog`（host-only、无 wire 信封、不在 `IApiClient` 上）实现。
+- **UI 只负责下载**：浏览器 Consumer 可以先发出不读取 body 的 `HEAD` 预检以取得准备阶段错误，再把 GET 端点交给浏览器原生下载管理器，因此 JavaScript 不会缓冲 ZIP。早先迭代发布的 `session.log` RPC 已删除——下载端点是它唯一的消费者，仓库规则是不留无当前所有者的公共接口。客户端 bundle 不包含任何归档实现。
+- 浏览器 Consumer 是 [Web 导出命令与弹窗决策](2026-08-11-web-export-command-and-dialog.md)定义的 `/export` 命令；Session Header 不再渲染导出控件（[移除记录](../simplification/2026-09-20-session-header-export-control-removal.md)）。
 
-- **The export is a host-only download, not an RPC**: `GET /api/session.export?sessionId=…&includeDescendants=true` streams one ZIP attachment. Every file is a session's **stored artifact text verbatim**: `readRaw` on the persistence service reads the backend's own durable bytes (the JSONL backend decodes its physical zstd frames, or returns plaintext) — never a reconstruction from parsed events, so packed-chunk rows, key order, and line breaks survive byte-for-byte — under its original base name (`session.jsonl` at the root, `subagents/<id>/session.jsonl` for descendants). Compression runs on the host with fflate's streaming `Zip`/`ZipDeflate` API at validated `sessionExportCompressionLevel` 0–9 (default 6), letting deployments trade CPU and latency against archive size; each entry is deflated in bounded chunks as it is produced, so the response is chunked as it is generated and the host never holds the whole archive in one buffer (at most one descendant's artifact text beyond the preloaded root). At the 64 KiB response byte high-water mark, production waits for consumer pull to restore capacity; fflate's synchronous callback can add at most one bounded input push beyond that queue bound. No manifest is written — every file is byte-identical to the durable artifact and self-describing through its own header line.
-- **Error vocabulary is HTTP-native**: missing services → 500, a backend without per-session raw artifacts → 501, missing root session → 404 (all decided before any byte streams), and a descendant without a stored artifact → the stream errors (fail-loud, never silent under-export). Request abort remains cancellation instead of being rewritten as 500; request and response-consumer cancellation converge on the producer signal, which reaches lineage, persistence, and attachment reads and terminates the active compressor. The carrier (`toFetchHandler`) already applies the `/api` trust fence; the GET branch sits beside the existing SSE GET routes, and `ApiProxy.downloads.sessionLog` (host-only, no wire envelope, absent from `IApiClient`) implements it.
-- **The UI just downloads**: browser consumers may issue a bodyless `HEAD` preflight for preparation errors, then hand the GET endpoint to the browser's native download manager, so JavaScript never buffers the ZIP. The `session.log` RPC that an earlier iteration shipped was removed — the download endpoint is its only consumer, and the repo rule is no public interface without a current owner. The client bundle carries no archive implementation.
-- The browser consumer is the `/export` command defined by the [Web export command and dialog decision](2026-08-11-web-export-command-and-dialog.md); the Session Header renders no export control ([removal note](../simplification/2026-09-20-session-header-export-control-removal.md)).
+## 考虑过的替代方案
 
-## Alternatives considered
+- **`session.log` 数据 RPC + 客户端打包**——先发布，后与用户共同否决：浏览器要拉取完整原始 JSON（约为最终 zip 的 10 倍）并在主线程压缩；对实际使用中 23 MB 级别的会话，宿主流式严格更优。迁移时把该 RPC 一并删除，而不是留作无消费者的公共接口。
+- **用信封行把多会话编码进单一 JSONL**——与用户共同否决：把多个会话混进一个 JSONL 会失去干净的按文件边界；ZIP 让每个会话保持一个规范文件。
+- **jszip**——更重（约 100 kB），依赖图还会拉入 readable-stream 的浏览器映射；fflate 专为此而生且体积小。
+- **将 fflate 浏览器入口 vendoring 进仓库**——仓库的 vendoring 流程面向 cordis 级别的固定源码；resolveId 别名在保持维护中的依赖的同时无需复制代码（宿主侧 fflate 根本不需要别名）。
 
-- **`session.log` data RPC + client-side zip** — shipped first, rejected with the user: the browser pulls the full raw JSON (≈10× the final zip size) and compresses on the main thread; for the 23 MB sessions in real use the host-side stream is strictly better. The RPC was deleted with the migration rather than left as a dead public surface.
-- **Single JSONL with envelope lines for multiple sessions** — rejected with the user: mixing sessions in one JSONL loses clean per-file boundaries; a ZIP keeps one canonical file per session.
-- **jszip** — heavier (~100 kB) and its dependency graph pulls readable-stream browser mappings; fflate is purpose-built and small.
-- **Vendoring fflate's browser entry** — the repo vendoring procedure targets cordis-scale pinned sources; a resolveId alias keeps the maintained dependency without shipping a copy (and host-side fflate needs no alias at all).
+## 后果
 
-## Consequences
-
-- Export fidelity: immediately before reading each live root or descendant, the exporter crosses the authoritative `SessionStore.flush` durability barrier; every exported file is byte-identical to that resulting durable artifact. A live session may append again after its read, so the archive is a per-session read-boundary snapshot rather than one atomic tree snapshot. The archive name is `dsh-session-<sanitized-id>.zip` and archive paths sanitize ids before they can shape entries.
-- `supportsRawArtifacts` explicitly separates backend capability from session absence: unsupported backends such as SQLite report `false` and the concrete `readRaw` default rejects, while the JSONL override reports `true`, owns physical decoding, and reserves `undefined` for an absent artifact. `ApiProxy.downloads.sessionLog` adds one host-only member to the contract plus a host-side query schema and a GET branch in the fetch handler — no RPC map row, envelope schema, or client `IApiClient` surface.
-- Fixture mode (no host) answers 404 for the export, which the browser reports as a failed download.
-- Deferred: transcript.md and a report/feedback bundle remain future work; the byte-faithful, manifest-free shape keeps the v2 bundle extension cheap.
+- 导出保真度：读取每个实时根会话或后代前，导出器会通过权威的 `SessionStore.flush` 持久性屏障；每个导出文件都与由此得到的持久化工件逐字节一致。实时会话可能在自身读取后再次追加，因此归档是按会话读取边界形成的快照，而不是整棵树的原子快照。压缩包名为 `dsh-session-<sanitized-id>.zip`，归档路径在塑造条目前会先净化会话 id。
+- `supportsRawArtifacts` 明确区分后端能力与会话缺失：SQLite 等不支持的后端报告 `false`，具体 `readRaw` 默认会拒绝；JSONL 覆写则报告 `true`、自持物理解码，并只用 `undefined` 表示工件缺失。`ApiProxy.downloads.sessionLog` 为契约新增一个 host-only 成员，外加宿主侧 query schema，并在 fetch handler 加一个 GET 分支——没有 RPC map 行、信封 schema 或客户端 `IApiClient` 面。
+- fixture 模式（无宿主）对导出应答 404，浏览器会将其报告为下载失败。
+- 暂缓：transcript.md 以及 report/feedback 打包留待后续；逐字节忠实、无清单的形态让 v2 的打包扩展保持廉价。

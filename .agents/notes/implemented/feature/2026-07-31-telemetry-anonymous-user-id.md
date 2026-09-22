@@ -1,43 +1,41 @@
-# Agent Note: SessionTelemetryBackend anonymous user id ($DSH_HOME/.anonymous-user-id) and the OTel Resource user.id
+# Agent Note: 遥测匿名用户 id（$DSH_HOME/.anonymous-user-id）与 OTel Resource 的 user.id
 
 Status: implemented
 
-English | [中文](2026-07-31-telemetry-anonymous-user-id.zh.md)
+## 问题
 
-## Problem
+session telemetry 已默认挂载（[默认挂载 Note](2026-07-31-web-telemetry-default-mount.md)），但 OTel Resource 只有 `service.name`/`service.version`，没有任何用户级标识——接收端无法按用户聚合、无法数活跃用户。此前唯一相关口径是一条未实现的「hostname/本机 IP 哈希派生 user.id」裁定。需要给 OTel 回流一个语义干净的匿名用户身份。
 
-Session telemetry is mounted by default ([default-mount Note](2026-07-31-web-telemetry-default-mount.md)), but the OTel Resource carried only `service.name`/`service.version` — no user-level identity at all, so the collector could neither aggregate per user nor count active users. The only prior ruling on point was an unimplemented one to derive a user id by hashing the hostname/local IP. The OTel feed needed an anonymous user identity with clean semantics.
+## 决策
 
-## Decision
+`getOrCreateAnonymousUserId()` 返回 `$DSH_HOME/.anonymous-user-id`（`resolveDshHome` 解析，`$DSH_HOME` > `~/.dsh`）中的裸 UUID 行，首用生成随机 UUID v4 并落盘；后端构造时把它作为 Resource 的 `user.id`（OTel semconv 标准用户属性）随每批导出携带一次。原始实现位于 `session-telemetry-otel`，因为当时不存在第二个真实消费方。`/feedback` 后来成为该消费方，因此[共享 id 决策](../architecture/2026-08-07-shared-feedback-telemetry-user-id.md)将所有权移交给 `@deepseek-ai/dsh-anonymous-user-id`，但不改变本 Note 记录的存储、匿名、并发与丢失语义。[直连 DeepSeek 请求身份](2026-08-11-deepseek-request-user-id-header.md)是同一 id 的第三个消费方。
 
-`getOrCreateAnonymousUserId()` returns the bare UUID line in `$DSH_HOME/.anonymous-user-id` (resolved by `resolveDshHome`, `$DSH_HOME` > `~/.dsh`), minting and persisting a random UUID v4 on first use; the backend constructor carries it as the Resource's `user.id` (the OTel semconv user attribute), once per export batch. The original implementation lived inside `session-telemetry-otel` because no second real consumer existed. `/feedback` later became that consumer, so [the shared-id decision](../architecture/2026-08-07-shared-feedback-telemetry-user-id.md) moves ownership to `@deepseek-ai/dsh-anonymous-user-id` without changing the storage, anonymity, concurrency, or loss semantics recorded here. [Direct DeepSeek request identity](2026-08-11-deepseek-request-user-id-header.md) is a third consumer of the same id.
-
-| Ruling | Value | Rationale |
+| 裁定 | 取值 | 理由 |
 |---|---|---|
-| Id source | Random UUID v4, never derived from the hostname, network address, or git remote | A derived id is reversible, making "anonymous" a fiction |
-| Storage form | `.anonymous-user-id`, a bare UUID line plus newline, no JSON wrapper | Identity is a standalone fact, not something filed under one telemetry feed's file name/format |
-| IO form | Synchronous IO + a process-lifetime memo keyed by resolved file path | `OpenTelemetrySessionBackend`'s constructor is synchronous (async would reshape plugin loading); one disk touch per process, and mid-run file deletion never affects the running process |
-| Concurrent first launch | Settled by an exclusive-create (`wx`) write; the loser rereads the winner's id | Covers common concurrency (a reread landing in the winner's microsecond create-to-write window can still yield one id per process for that run, converging on the persisted value next launch — a telemetry-grade consequence, accepted) |
-| Loss semantics | File deleted → next launch mints a fresh id; loss is accepted | An anonymous identity has no recovery value; recoverability demands derivation material, which conflicts with anonymity |
-| Write failure | Best-effort: return the in-memory id | SessionTelemetryBackend is never blocked by a read-only home |
-| Report position | Resource attribute, not per-record attributes | Once per batch suffices for Resource-dimension aggregation; per-record injection would touch the seam contract and grow the wire |
-| semconv dependency | `@opentelemetry/semantic-conventions` is not imported | One string constant does not justify a dependency |
-| Home | `@deepseek-ai/dsh-anonymous-user-id`, shared by the OTel backend, `/feedback`, and direct DeepSeek requests | Consumers share one storage contract without depending on an exporter backend |
-| Separate switch | None | Any consumer can create the identity; `DSH_TELEMETRY_DISABLED` stops telemetry reporting but does not disable feedback acknowledgement or the DeepSeek request header |
+| id 来源 | 随机 UUID v4，绝不从 hostname/网络地址/git remote 派生 | 派生 id 可反查，「匿名」名不副实 |
+| 存储形态 | `.anonymous-user-id` 裸 UUID 行 + 换行，无 JSON 包装 | 身份是独立事实，不挂在某条遥测链路的文件命名/格式下 |
+| 读写形态 | 同步 IO + 进程内按解析后文件路径 memo | `OpenTelemetrySessionBackend` 构造函数是同步的（async 迫使插件装载改形）；一进程一次盘 IO，运行中删文件不影响本进程 |
+| 并发首启 | `wx` 独占写裁决，落败方重读胜者 id | 覆盖常见并发（重读撞进胜者建档-写入微秒窗仍可能导致该次运行中每个进程各持一个 id，下次启动收敛到落盘值——遥测级后果，接受） |
+| 丢失语义 | 文件被删 → 下次启动换新 id，接受丢失 | 匿名身份无恢复价值；可恢复性要求派生材料，与匿名冲突 |
+| 写失败 | best-effort 返回内存 id | 遥测绝不因 home 只读被阻塞 |
+| 上报位置 | Resource 属性，非逐条 attributes | 每批一次即够接收端按 Resource 维度聚合；逐条注入要动 seam 约定且涨 wire 体积 |
+| semconv 依赖 | 不引 `@opentelemetry/semantic-conventions` 包 | 一个字符串常量不值一个依赖 |
+| 落点 | `@deepseek-ai/dsh-anonymous-user-id`，由 OTel 后端、`/feedback` 与直连 DeepSeek 请求共享 | 消费方共用同一存储契约，且不依赖导出后端 |
+| 单独开关 | 无 | 任一消费方都可创建该身份；`DSH_TELEMETRY_DISABLED` 会停止遥测上报，但不会禁用反馈确认或 DeepSeek 请求头 |
 
-## Alternatives considered
+## 考虑过的替代方案
 
-| Rejected | One-line reason |
+| 被拒 | 一句话理由 |
 |---|---|
-| Hostname/IP-hash-derived id (the prior ruling) | Reversible means not anonymous; the random UUID is semantically clean — the user ruled to supersede |
-| user.id on every record's attributes (Claude Code's shape) | Touches the session-telemetry seam contract or injects per record, growing the wire; once per batch on the Resource already aggregates |
-| A shared package before `/feedback` needed the id (the first cut) | At that time the only real consumer was the OTel backend; extraction became justified only when direct feedback needed the same correlation id |
-| AppCLIEntry reading the id and injecting via config patch | Every surface entry needs wiring; a runtime fact inside deployment config conflates the two |
-| Housing it in `@deepseek-ai/dsh-home-paths` | paths is pure path computation with zero IO; a persisting identity capability would pollute the package boundary |
+| hostname/IP 哈希派生 id（此前口径） | 可反查即非匿名；随机 UUID 语义干净，用户已裁定取代此前口径 |
+| user.id 放每条 record 的 attributes（Claude Code 形态） | 要动 session-telemetry seam 约定或逐条注入，wire 体积涨；Resource 每批一次已满足聚合 |
+| 在 `/feedback` 需要该 id 之前抽取共享包（初版实现） | 当时唯一的真实消费方是 OTel 后端；只有直接反馈需要同一个关联 id 后，抽取才具备依据 |
+| AppCLIEntry 读好 id 经 config patch 注入 | 每个 surface 入口都要接线；config 里传运行时事实与部署配置混淆 |
+| 挂进 `@deepseek-ai/dsh-home-paths` | paths 是纯路径计算零 IO；带持久化的身份能力会污染包边界 |
 
-## Consequences
+## 后果
 
-- One `$DSH_HOME` is one stable user in the OTel feed; separate homes are separate users by construction, with no cross-home linking mechanism.
-- The OTel feed, `/feedback`, and direct DeepSeek requests share `.anonymous-user-id`.
-- Deleting `.anonymous-user-id` resets the identity (effective next launch); on an unwritable home each process holds its own in-memory id until the home becomes writable.
-- The [default-mount Note](2026-07-31-web-telemetry-default-mount.md)'s identity follow-up is closed for the anonymous-user-id part by this decision; hostname/surface dimensions, the redaction rule, and the usage-metrics track remain open.
+- 一个 `$DSH_HOME` 在 OTel 回流中是一个稳定用户；不同 home 在构造上就是不同用户，无跨 home 关联机制。
+- OTel 回流、`/feedback` 与直连 DeepSeek 请求共享 `.anonymous-user-id`。
+- 删除 `.anonymous-user-id` 即重置身份（下次启动生效）；home 不可写时每进程各自持有一个内存 id 直至恢复可写。
+- [默认挂载 Note](2026-07-31-web-telemetry-default-mount.md) 的身份 follow-up 中「匿名用户 id」项由本决定关闭；hostname/surface 维度与脱敏规则、usage-metrics track 仍是待办。

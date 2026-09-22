@@ -1,45 +1,43 @@
-# Agent Note: Status-driven disclosure for workflow runs
+# Agent Note: 工作流运行的状态驱动 disclosure
 
 Status: implemented
 
-English | [中文](2026-08-11-workflow-run-status-driven-disclosure.zh.md)
+## 问题
 
-## Problem
+持久工作流 Chat 节点会在同一位置从运行前缀更新为终态记录。renderer 必须提示新工作、异常结果和正常完成，同时不能在普通更新中反复覆盖用户回收对话空间的选择。
 
-A durable workflow Chat node updates in place from its running prefix to a terminal record. The renderer must draw attention to new work, abnormal outcomes, and normal completion without repeatedly overriding a user's decision to reclaim conversation space.
+renderer 已经从工作流 Conversation Node 收到全部持久生命周期事实。因此，disclosure 选择属于已挂载的展示层，但它的生命周期还必须在外层运行隐藏时保留嵌套 Phase 选择，并避免移除仍含键盘焦点的内容。
 
-The renderer already receives every durable lifecycle fact from the workflow Conversation Node. Disclosure choice therefore belongs to the mounted presentation, but its lifecycle must also preserve nested phase choices when the outer run is hidden and avoid removing content that still contains keyboard focus.
+## 决策
 
-## Decision
+`WorkflowRunPanel` 持有一项运行 disclosure 本地状态，以及一张按现有 phase key 索引的 Phase 状态表。全部成员都已完成时，Phase 为干净状态；任一成员失败、已取消或已中断时为异常状态；其余情况为运行状态。运行自身或任一 Phase 异常时，运行处于异常状态；运行自身或任一 Phase 正在运行时，运行处于运行状态；只有运行与全部 Phase 都正常完成时才处于干净状态。挂载时，运行和异常层级默认展开，干净层级默认折叠。
 
-`WorkflowRunPanel` owns one local disclosure state for the run and a map keyed by the existing phase key. A phase is clean when every member completed, abnormal when any member failed, was cancelled, or was interrupted, and running otherwise. The run is abnormal when its own status or any phase is abnormal, running when its own status or any phase is running, and clean only when the run and every phase completed normally. A mount opens running and abnormal levels and closes clean levels.
+每个层级记录当前模式、仅追加成员数、开合选择和待执行的干净折叠。Phase 从干净状态进入新活动时，该 Phase 与外层运行自动展开一次；连续运行或异常区间内的普通更新保留用户选择，首次进入异常状态时自动展开一次，进入干净状态时自动折叠一次。若新增成员及其正常完成在同一次渲染中送达，Phase 会保持干净但成员数改变；该变化会折叠已打开的 Phase 复盘，并在运行仍处于活动状态时自动展开外层运行一次，而无需增加 activity epoch 或持久字段。自动动作完成后，鼠标、Enter 和 Space 控制该层级，直到出现下一项约定边沿。
 
-Each level records its current mode, append-only member count, open choice, and any pending clean close. Ordinary updates within a running or abnormal interval preserve the user's choice. A phase transition from clean to activity opens that phase and the outer run once, the first transition into abnormal opens once, and a transition into clean closes once. A member-count change while a phase remains clean represents a complete activity cycle delivered in one render: it closes an open phase review and, while the run remains active, opens the outer run once without adding an activity epoch or durable field. After an automatic action, mouse, Enter, and Space control the level until another defined edge occurs.
+外层 disclosure 隐藏子内容时，Phase 状态仍留在 `WorkflowRunPanel`，因此关闭并重新打开运行会恢复各 Phase 选择。Phase 被移除时，其表项同时清理；renderer remount 会从当前持久事实重建每个层级，而不恢复更早选择。
 
-Phase state remains in `WorkflowRunPanel` while the outer disclosure hides its children, so closing and reopening the run restores each phase choice. Removing a phase deletes its entry; a renderer remount reconstructs every level from current durable facts rather than restoring an earlier choice.
+正常完成会在折叠前检查焦点是否位于内容内。仍含焦点的内容保持挂载并立即显示完成状态，焦点离开后再折叠。可导航成员的按钮持有焦点并变为终态时，`MemberRow` 会把同一个按钮以 `aria-disabled` 形式保留到 blur；之后的终态复盘渲染普通不可交互行。这样既保留当前 DOM 目标，也不允许终态导航，并且无需增加焦点管理器。
 
-Normal completion checks whether focus is inside the content before closing. Focused content remains mounted with current completed status and closes after focus leaves. When a navigable member becomes terminal while its button holds focus, `MemberRow` keeps the same button mounted as `aria-disabled` until blur; later terminal review renders the ordinary non-interactive row. This preserves the active DOM target without allowing terminal navigation or adding a focus manager.
+renderer 不增加 Session 事件、store、设置、确认状态、计时器、自动滚动、持久活动身份或 `DisclosureRow` API。它不改变工作流状态派生、Phase 分组、成员顺序、导航准入、文案或视觉 token。
 
-The renderer adds no Session events, store, setting, acknowledgement, timer, automatic scrolling, persistent activity identity, or `DisclosureRow` API. It does not change workflow status derivation, phase grouping, member order, navigation eligibility, copy, or visual tokens.
+## 验证
 
-## Verification
+组件测试驱动同一个 keyed 运行及其 Phase，覆盖初始运行控件、鼠标和键盘选择、普通运行更新、外层隐藏与恢复、Phase 完成、运行完成、干净复盘、同 key 新活动、同次渲染送达的完整干净周期、每种异常状态、首次异常升级、后续异常更新、零成员完成、成员持焦点时完成、兄弟 Phase 独立以及 renderer remount。测试还确认延后焦点路径结算后，终态导航仍不存在。
 
-Component tests drive one keyed run and its phases through initial running controls, mouse and keyboard choices, ordinary running updates, outer hide and restore, phase completion, run completion, clean review, same-key renewed activity, a fully batched clean cycle, every abnormal status, first-abnormal escalation, later abnormal updates, zero-member completion, focused-member completion, sibling independence, and renderer remount. They also verify terminal navigation remains absent after the deferred focus path settles.
+shipped Web 回放经过真实工作流、worker、Session 日志、浏览器插件图和子级导航。它折叠并重新打开实时运行与 Phase 控件，记录实时折叠标题的状态摘要和 ARIA 状态，验证正常结算会折叠两个层级，确认终态复盘不能导航成员，并记录刷新后从历史重建的折叠记录。
 
-The shipped Web replay exercises the real workflow, worker, Session log, browser plugin graph, and child navigation. It collapses and reopens live run and phase controls, records the live collapsed status summary and ARIA state, verifies normal settlement folds both levels, confirms terminal review cannot navigate the member, and records the folded history reconstructed after reload.
+## 曾考虑的替代方案
 
-## Alternatives considered
+**把每个运行中或异常层级强制展开为静态行。** 拒绝，因为需注意状态将无法收起，也不会提供真实的鼠标、键盘和 ARIA disclosure 语义。
 
-**Force every running or abnormal level open as a static row.** Rejected because it makes the attention state impossible to dismiss and removes truthful mouse, keyboard, and ARIA disclosure semantics.
+**保留一项从首次渲染初始化的手动状态。** 拒绝，因为后续活动、异常升级和正常完成无法执行各自的一次性自动动作。
 
-**Keep one manual state initialized from the first render.** Rejected because later activity, abnormal escalation, and normal completion cannot perform their one-time automatic actions.
+**让每个 Phase 在自身 disclosure 内容中持有状态。** 拒绝，因为隐藏外层运行会卸载这些内容，并在同一条已挂载工作流记录中丢失独立的 Phase 选择。
 
-**Let each phase own state inside its disclosure content.** Rejected because hiding the outer run unmounts that content and discards independent phase choices during the same mounted workflow record.
+**持久化展开、确认或 activity epoch。** 拒绝，因为当前工作流事实与仅追加成员数已经提供全部所需边沿。持久化会增加第二个持久归属方以及本展示选择不需要的同步语义。
 
-**Persist expansion, acknowledgement, or an activity epoch.** Rejected because current workflow facts and the append-only member count provide every required edge. Persistence adds a second durable owner and synchronization semantics that this presentation choice does not need.
+## 后果
 
-## Consequences
+工作流记录会提示生命周期变化，同时在所有状态下都允许用户收起。正常完成会回收空间，当前焦点保持安全，嵌套 Phase 选择在外层隐藏期间保留；同一份持久记录在刷新或历史回放时会重建确定性的初始状态。
 
-Workflow records call attention to lifecycle changes while remaining dismissible in every status. Normal completion reclaims space, current focus remains safe, nested phase choices survive outer hiding, and the same durable record reconstructs a deterministic initial state on refresh or history replay.
-
-The local lifecycle deliberately resets on renderer remount and cannot remember a choice across refresh, devices, or users. Adding that behavior requires a separate persistence and stale-choice decision rather than extending this presentation state implicitly.
+这项本地生命周期会在 renderer remount 时重置，无法跨刷新、设备或用户记住选择。若要增加该行为，需要单独决定持久化与陈旧选择语义，而不能隐式扩展这项展示状态。

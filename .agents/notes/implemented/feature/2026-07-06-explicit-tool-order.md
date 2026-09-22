@@ -1,51 +1,49 @@
-# Agent Note: Explicit model-facing tool order
+# Agent Note: 显式的模型侧工具顺序
 
 Status: implemented
 
-English | [中文](2026-07-06-explicit-tool-order.zh.md)
+## 问题
 
-## Problem
+模型侧的工具顺序此前跟随插件注册顺序，而注册顺序取决于相互独立的插件的并发模块加载。这种竞态在 CI 和快照录制中产生了不同的请求头。由于顺序影响请求字节、缓存和持久化的请求头，因此需要一个显式的确定性策略。
 
-Model-facing tool order followed plugin registration order, which depends on concurrent module loading for otherwise independent plugins. That race produced different request headers in CI and snapshot recordings. Because order affects request bytes, caching, and the durable header, it needs an explicit deterministic policy.
+## 决策
 
-## Decision
+系统提示词组装逻辑负责权威定义模型侧工具顺序，正如它已经负责权威定义 section 顺序一样。`dsh-system-prompt` 上的 `toolOrder?: string[]` 是可选的显式策略：
 
-The system-prompt assembly owns the canonical model-facing tool order, exactly where it already owns section order. `toolOrder?: string[]` on `dsh-system-prompt` is the optional explicit policy:
+- 列表中已注册的工具按列表位置排列。
+- 列表中的名称没有对应的已注册工具，属于配置错误。形状错误（缺少 rest 条目或名称重复）在服务构造器中快速失败；未注册的名称则会导致每次 `assemble()` 调用被拒绝——这是已注册工具集存在并可供检查的最早时刻（工具插件在服务构造之后才注册），也是唯一的通用时刻（注册随时可能变化；Cordis 没有「所有插件已加载」事件）。在已交付的 agent loop（智能体循环）下，第一个轮次在发出任何模型请求之前就会失败——确切的影响范围见下文「后果」。
+- 已注册但不在列表中的工具，插入到 `'<unlisted-tools>'` rest 条目（`TOOL_ORDER_REST`）的位置，与其他未列出的工具按名称字典序排列。
+- 任何已收集的工具不得使用 `TOOL_ORDER_REST` 作为其 `ToolSchema.name`；组装逻辑在排序之前就会拒绝这个保留名称。
+- 列表必须恰好包含一个 rest 条目，且不得有重复名称。
+- 当 `toolOrder` 未设置时，权威顺序为纯字典序（code-unit 比较，与 locale 无关），因此无需配置即可保证确定性。
 
-- A listed tool that is registered takes its listed position.
-- A listed name with no registered tool is a configuration error. Shape errors (rest entry missing or duplicate names) fail from the service constructor; an unregistered name rejects every `assemble()` — the earliest moment the registered tool set exists to check against (tool plugins register after the service constructs), and the only universal one (registrations can change at any time; cordis has no "all plugins loaded" event). Under the shipped loop the first turn fails before any model request — see the consequences below for the exact blast radius.
-- A registered tool absent from the list is inserted at the `'<unlisted-tools>'` rest entry (`TOOL_ORDER_REST`), in lexicographic name order among the other unlisted tools.
-- No collected tool may use `TOOL_ORDER_REST` as its `ToolSchema.name`; the assembly rejects that reserved name before ordering.
-- The list must contain the rest entry exactly once and no duplicate names.
-- When `toolOrder` is unset, the canonical order is plain lexicographic name order (code-unit comparison, locale-independent), so determinism requires no configuration.
+`assemble()` 在 `system-prompt/assemble` waterfall（瀑布式事件）之前将提供方工具归一为权威顺序，从源头消除注册顺序的差异。waterfall 从这个确定性列表开始；不变的顺序随后流入请求头、冻结的请求和重建检查，无需 loop 特有的排序逻辑。
 
-`assemble()` canonicalizes provider tools before the `system-prompt/assemble` waterfall, removing registration-order variance at its source. The waterfall starts from this deterministic list; unchanged order then flows into the request header, frozen request, and reconstruction checks without loop-specific ordering logic.
+范围刻意收窄：本 Agent Note 修复的是注册顺序竞态，而非插件行为。`system-prompt/assemble` 的监听器仍然可以添加、移除或重排工具——正如它可以在 section 排序之后编辑 section——并对自身输出的确定性负责；waterfall 约定已经要求监听器是确定性的（可重建性不变式会捕获在构建与回放之间行为不一致的监听器）。
 
-Scope is deliberately narrow: this fixes the REGISTRATION-ORDER race, not plugin behavior. A `system-prompt/assemble` listener may still add, remove, or rearrange tools — same as it may edit sections after their sort — and owns the determinism of what it emits; the waterfall contract already demands deterministic listeners (the reconstructability invariant would catch a listener that diverges between build and replay).
+配置传递沿用 `persona` 的先例，`toolOrder` 与之并列：TUI、Headless 和 ACP 应用配置接受该键，并通过 `dsh-agent-spine-demo`（其 schema 是各所有者 schema 的交集）转发给 `SystemPrompt` 子服务。有一个 schemastery 细节至关重要：schemastery 数组默认为 `[]`，但省略的 `toolOrder` 必须保持 ABSENT（= 字典序），而不是变成一个显式配置的空列表（无效——缺少 rest 条目），因此链路上每个 schema 都将默认值强制为 `undefined`。
 
-Config plumbing follows the `persona` precedent, and `toolOrder` sits beside it: the TUI, Headless, and ACP app configs accept the key and forward it through `dsh-agent-spine-demo` (whose schema is the intersection of the owners' schemas) to the `SystemPrompt` child. One schemastery footnote is load-bearing: a schemastery array defaults to `[]`, but an omitted `toolOrder` must stay ABSENT (= lexicographic) rather than become an explicitly-configured empty list (invalid — it lacks the rest entry), so every schema on the chain forces the default to `undefined`.
+## 曾考虑的替代方案
 
-## Alternatives considered
+- **注册顺序（现状）**：并发导入竞态，依赖宿主环境（上述 CI 抖动），评审中不可见。
+- **插件依赖图的线性化**：该关系是偏序的，独立的工具插件不可比较；抖动发生时偏序已完全满足。
+- **每个插件在其工具贡献上标注 `weight`**：将顺序分散到各插件中，仍需一个无人拥有的全局编号约定（section 的 `order` 分段已经展示了这种协调成本需要手工承担）。
+- **在 `ToolRuntime.schemas()` 中排序（注册表层）**：同样确定，但注册表是一个成员存储，被组装之外的多方消费；排序是提示词组合的关注点，而组装逻辑已经拥有 section 的组合策略。
+- **在 `LlmRuntime` 上加配置 + `orderTools()` 方法，由 loop 在记录 header 前调用**：可行，但仅为在远处应用一个策略就增加了一个公开服务方法和一处 loop 改动；每个未来的请求组合者都必须记得调用。在列表诞生处进行规范化使得无序列表不可表示，且零新增接口。
+- **在 `llm.stream()` 内部规范化**：在 header 事件已记录之后才运行（抖动仍然存在），且需要重建深度冻结的请求封装对象，静默地解除了重建不变式。
+- **穷举列表（无 rest 条目）**：每个新加载的工具插件都会导致启动失败；强制的 rest 条目使未列出的工具保持确定性，且其位置是显式的。
+- **启动时校验（由 `dsh-app-boot` 在 `loader.await()` 之后调用 `SystemPrompt.assertToolOrderSatisfied()`）**：能将错误配置变为启动时死亡而非首轮失败，但代价是一个公开服务方法加上通用启动胶水对单个服务的结构耦合，且无法替代组装时检查（嵌入式调用者从不运行 app boot；注册在 boot 之后仍会变化）。也没有现成事件可以承载该检查：Cordis v4 没有 ready 类事件，`loader/entry-init`/`internal/status` 在加载中途触发（与工具注册存在竞态——正是本 Agent Note 要消除的熵源），而 agent 生命周期事件不会早于组装。经权衡，选择只在 `assemble()` 设置一个校验点，值得为此接受失败时刻较晚的代价。
 
-- **Registration order (the status quo)** — a concurrent-import race, host-dependent (the CI flake above), invisible in review.
-- **A linearization of the plugin dependency graph** — the relation is partial and independent tool plugins are incomparable; the flake happened with the partial order fully satisfied.
-- **Per-plugin `weight` on each tool contribution** — scatters the order across plugins yet still needs a global numbering convention nobody owns (the section `order` bands show that coordination cost being paid by hand).
-- **Sorting in `ToolRuntime.schemas()` (the registry layer)** — equally deterministic, but the registry is a membership store consumed by more than the assembly; ordering is a prompt-composition concern, and the assembly already owns the composition policy for sections.
-- **A `LlmRuntime` config + `orderTools()` method the loop calls before logging the header** — works, but adds a public service method and a loop edit solely to apply a policy at a distance; every future request composer must remember the call. Canonicalizing where the list is born makes an unordered list unrepresentable, with zero new API.
-- **Normalizing inside `llm.stream()`** — runs after the header event is logged (the flake survives) and rebuilds the deep-frozen envelope, silently disarming the reconstruction invariant.
-- **An exhaustive list (no rest entry)** — every newly loaded tool plugin would break boot; the mandatory rest entry keeps unlisted tools deterministic and their position explicit.
-- **A boot-time validation pass (a `SystemPrompt.assertToolOrderSatisfied()` called by `dsh-app-boot` after `loader.await()`)** — would turn the misconfiguration into a startup death instead of a first-turn failure, but costs a public service method plus a structural coupling from the generic boot glue to one service, and cannot replace the assembly-time check anyway (embedded callers never run app boot; registrations change after boot). No existing event can host the check either: cordis v4 has no ready-like event, `loader/entry-init`/`internal/status` fire mid-load (racy against tool registration, the very entropy this Agent Note kills), and the agent lifecycle events are no earlier than the assembly. One enforcement point at `assemble()` was judged worth the later failure moment.
+## 后果
 
-## Consequences
+- 每个由注册表构建的组装在任何宿主上都以确定性工具顺序开始；在没有专家监听器刻意改变的情况下，每个 `request/header` 事件和模型请求都继承该顺序。CI 与本地之间的注册顺序翻转从结构上被消除，默认为字典序。
+- 初始 `PromptAssembly.tools` 是权威的，因此 waterfall 监听器从模型侧顺序开始；提供方注册顺序在该协作扩展点之前无处可观测。
+- 快照套件中唯一锁定请求头的 fixture（测试前置数据）为 `text-turn`，其携带新的权威工具顺序；按照锁定请求头的设计，其他 ACP 快照仍将大段 header 替换为 `{{system}}`/`{{tools}}`。
+- 步骤之间的纯工具重排与其他 header 变更一样记录：一份原因是 `'change'` 的完整 `request/header` 快照。稳定的权威顺序会防止注册时序在普通路径上制造这类变化。
+- `toolOrder` 键沿 app → `agent-core` → `SystemPrompt` 的转发链传递，因此部署时将其放在 app 配置中 `persona` 旁边即可；`dsh-llm` 和 agent loop 无需改动。
+- `toolOrder` 中拼错或未加载的工具名称在提示词组装时使轮次失败，而非启动时：loop 在轮次内部组装（`turn/start` 之后、`step/start` 之前），因此该拒绝会进入轮次的外层 catch——轮次以携带该消息的 `error` 原因完整结束，`agent/error` 也携带该消息，不打开步骤，不记录 `request/header`，不向适配器发出请求，agent 回到空闲状态。每个轮次都以相同方式失败，直到配置被修正；进程本身保持运行（符合仓库规则：显式配置引用不得被静默忽略——校验点设在组装阶段，因为不存在更早的通用时刻）。
+- 工具提供方返回保留的 rest 条目名称时，其提示词组装失败形态与未知的已列名称相同。这防止哨兵值变成一个歧义的真实工具，并保持「从不丢弃工具」的排序约定。
 
-- Every registry-built assembly starts with a deterministic tool order on every host; absent an expert listener that deliberately changes it, every `request/header` event and model request inherits that order. The CI-vs-local registration-order flip is structurally gone, and the default is lexicographic.
-- The initial `PromptAssembly.tools` is canonical, so waterfall listeners start from the model-facing order; provider registration order is observable nowhere before that cooperative extension point.
-- The snapshot suite's single pinned request-header fixture (`text-turn`) carries the new canonical tool order; every other ACP snapshot keeps the header bulk scrubbed as `{{system}}`/`{{tools}}`, per the pinned-header design.
-- A pure tool reordering between steps is logged like any other header change: a full `request/header` snapshot with reason `'change'`. Stable canonical order prevents registration timing from creating such changes in the ordinary path.
-- The `toolOrder` key rides the app → `agent-core` → `SystemPrompt` forwarding chain, so deployments set it next to `persona` in the app config; `dsh-llm` and the agent loop are untouched.
-- A misspelled or unloaded tool name in `toolOrder` fails the turn at prompt assembly, not the boot: the loop assembles inside the turn (after `turn/start`, before `step/start`), so the rejection reaches the turn's outer catch — the turn closes balanced with an `error` reason carrying the message, `agent/error` mirrors it, no step opens, no `request/header` is logged, no request reaches the adapter, and the agent returns to idle. Every turn fails identically until the config is fixed; the process itself stays up (matching the repo rule that explicit config references must not be silently ignored — the enforcement point is the assembly because no earlier universal moment exists).
-- A tool provider that returns the reserved rest-entry name has the same prompt-assembly failure shape as an unknown listed name. This keeps the sentinel from becoming an ambiguous real tool and preserves the "never drops a tool" ordering contract.
+## 测试
 
-## Testing
-
-System-prompt tests cover lexicographic default order, listed/rest placement, provider-order independence, shared names, invalid lists, unknown or reserved names, the canonical pre-waterfall list, and the rule that listener-added tools are not re-sorted. Loop tests pin identical logged and dispatched order across registration permutations, forwarding through agent-core and both apps, deep-frozen requests, and balanced turn failure with no step, header, or adapter call for an unknown configured name. Snapshot replay keeps the full canonical list only in the pinned `text-turn` header; other fixtures continue to use `{{tools}}`.
+系统提示词测试覆盖：字典序默认顺序、列表/rest 位置、提供方顺序无关性、共享名称、无效列表、未知或保留名称、waterfall 前的权威列表，以及监听器添加的工具不被重新排序的规则。Loop 测试锁定：在不同注册顺序下，已记录与已分发的顺序一致、配置通过 agent-core 和两个 app 转发、请求经过深度冻结，以及在配置了未知名称时的平衡轮次失败（无步骤、无 header、无适配器调用）。快照回放仅在固定的 `text-turn` header 中保留完整的权威列表；其他 fixture 继续使用 `{{tools}}`。

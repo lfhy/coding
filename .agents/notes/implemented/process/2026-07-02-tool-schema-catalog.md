@@ -1,55 +1,53 @@
-# Agent Note: Generated tool-schema catalog (boot-and-harvest)
+# Agent Note: 生成的工具 schema 目录（启动并采集）
 
 Status: implemented
 
-English | [中文](2026-07-02-tool-schema-catalog.zh.md)
+## 问题
 
-## Problem
+仓库此前没有一份统一的参考文档来记录实际暴露给模型的工具名称、描述与 JSON Schema。源码声明分散各处且在运行时组合，而既有的 Cordis 参考和子系统页面覆盖的是接线与词汇，而非工具。
 
-The repository had no single reference for the names, descriptions, and JSON Schemas actually exposed to the model. Source declarations are scattered and runtime-composed, while the existing Cordis reference and subsystem pages cover wiring and vocabulary rather than tools.
+## 决策
 
-## Decision
+目录通过**启动每个工具插件并读取其已注册 schema** 来生成，而不是解析源码。`scripts/gen-tool-catalog.ts` 在全新的 Cordis `Context` 上挂载每个已发布工具包；该上下文还提供 `SystemPrompt`、`ToolRuntime` 以及插件 `apply` 所读取的注入服务。生成器调用 `ctx.tools.schemas()`——也就是发送给模型的确切 `ToolSchema[]`——随后 dispose（资源释放）上下文，并为每个包渲染一个 `## <package>` 章节，每个工具附带一个 ` ```json ` `parameters` 块。它与 `gen-cordis-catalog` / `gen-module-graph` 的 CLI 形状一致：默认 `--write` 重新生成；提交副本陈旧时 `--check` 失败；输出具有确定性（按清单排序，工具按名称排序）。`verify-tool-catalog`（即 `--check`）在 `doc-sync` 内运行，因此相关文档变更和 CI 会执行同一项新鲜度检查。
 
-Generate the catalog by **booting each tool plugin and reading its registered schemas**, not by parsing source. `scripts/gen-tool-catalog.ts` mounts each shipped tool package on a fresh cordis `Context` (with `SystemPrompt` + `ToolRuntime` and the injected services the plugin's `apply` reads), calls `ctx.tools.schemas()` — exactly the `ToolSchema[]` the model is sent — disposes the context, and renders one `## <package>` section per package with a ` ```json ` `parameters` block per tool. It mirrors the `gen-cordis-catalog` / `gen-module-graph` CLI shape: default `--write` regenerates, `--check` fails if the committed copy is stale, output is deterministic (manifest-ordered, tools sorted by name). `verify-tool-catalog` (the `--check`) runs inside `doc-sync`, so relevant documentation changes and CI exercise the same freshness check.
+### 为何启动而非解析（核心要点）
 
-### Why boot, not parse (the crux)
+Cordis 目录是纯 TypeScript AST 遍历，因为每个事件/服务名都是字符串字面量，可以往返映射到静态声明——AST 即全部事实。**工具 schema 在静态层面不可知**，因此同样的技术会产出一份说谎的文档：
 
-The cordis catalog is a pure TypeScript-AST pass because every event/service name is a string literal that round-trips to a static declaration — the AST is the whole truth. **Tool schemas are not statically knowable**, so the same technique would produce a doc that lies:
+- `tool-todo` 写了 `enum: [...STATUSES]`——对一个运行时 `const` 的展开。AST 看到的是展开表达式，而非 `["pending","in_progress","completed"]`。
+- 每段描述都通过字符串**拼接**构建（`'…' + '…'`）。AST 看到的是拼接节点，而非模型实际读到的最终文本。
+- `tool-subagent` 的工具名是 `config.toolName ?? 'subagent'`——加载时选定，并非字面量。
+- MCP 插件可以通过 `ctx.tools.register()` 直接注册**原始 JSON Schema**，完全不经过 `defineTool`，因此结构化枚举 `defineTool(` 调用点会遗漏。
 
-- `tool-todo` writes `enum: [...STATUSES]` — a spread of a runtime `const`. The AST sees the spread expression, not `["pending","in_progress","completed"]`.
-- Every description is built by string **concatenation** (`'…' + '…'`). The AST sees concatenation nodes, not the final prose the model reads.
-- `tool-subagent`'s tool name is `config.toolName ?? 'subagent'` — chosen at load, not a literal.
-- An MCP plugin can register **raw JSON Schema** directly via `ctx.tools.register()` without `defineTool` at all, so enumerating `defineTool(` call sites structurally under-counts.
+唯一准确的真源，是插件加载后注册表实际持有的 schema。启动插件是把[测试策略](../../../../docs/testing.md)中「验证现实，而非自我报告」的准则应用到文档生成器：读取已发布产物，而非重新推导一份。
 
-The only faithful source of truth is the schema the registry actually holds after the plugin loads. Booting is the [testing-policy discipline](../../../../docs/testing.md) "verify the world, not the self-report" applied to a doc generator: read the shipped artifact, not a re-derivation of it.
+### 恢复「不会静默遗漏」的保证
 
-### Restoring "nothing silently omitted"
+启动有一项 AST 遍历不存在的代价：没有源码声明集合可供枚举，新工具包可能被遗忘。一个**完整性守卫**恢复了这项保证——`assertManifestComplete` 对 `packages/` 下所有 `tool-*` 包进行 glob，若有任何一个不在生成器的启动 manifest 中则直接报错。新工具包在注册之前会导致生成器失败，进而导致 `doc-sync` 失败。这与 Cordis 生成器通过枚举源码免费获得的结构性属性相同，只是为基于启动的生成器重新实现了一遍。
 
-Booting has a cost the AST pass did not: there is no source declaration set to enumerate, so a new tool package could simply be forgotten. A **completeness guard** restores the guarantee — `assertManifestComplete` globs every `tool-*` package under `packages/` and hard-errors if any is absent from the generator's boot manifest. A new tool package fails the generator, and therefore `doc-sync`, until it is registered. This is the same structural property the cordis generator gets for free from enumerating source, re-created for a boot-based generator.
+### 手动维护的启动 manifest 是无法省去的策略
 
-### A hand-maintained boot manifest is the irreducible policy
+文件系统负责发现工具包清单，完整性守卫负责拒绝遗漏。`TOOL_PACKAGES` 仍然为每个包持有一份显式的启动配方，因为所需的 Service Provider 和配置属于策略，不是能从目录布局或注入名称安全推断的事实。
 
-The filesystem discovers the tool-package inventory and the completeness guard rejects omissions. `TOOL_PACKAGES` still owns an explicit boot recipe for each package because required Service Providers and config are policy, not facts that can be inferred safely from layout or injection names.
+### 范围
 
-### Scope
+`packages/*/tool-*` 下已发布的产品工具包，每个都使用默认配置启动，包括 `dsh-tool-bash`（`bash`）、`dsh-tool-jobs`（`job_output`、`job_list`、`job_kill`）和 `dsh-tool-subagent`（`subagent`）。仅供示例使用的工具不在范围内。
 
-Shipped product tool packages under `packages/*/tool-*`, each booted with its default config, including `dsh-tool-bash` (`bash`), `dsh-tool-jobs` (`job_output`, `job_list`, `job_kill`), and `dsh-tool-subagent` (`subagent`). Example-only tools are excluded.
+目录的单位是包，而非经过配置的每个工具实例。每个包以默认配置启动一次；加载时的别名（如 `subagent_fork`）会注明，但不枚举所有部署配置组合。部署清单覆盖的是一个独立且无界的范围。
 
-The catalog unit is a package, not every configured tool instance. Each package boots once with default config; load-time aliases such as `subagent_fork` are noted without enumerating every deployment permutation. A deployment inventory is a separate, unbounded surface.
+### 使用普通 `json` 围栏
 
-### A plain `json` fence
+schema 块使用 ` ```json `，而非自定义的 `ts` 系围栏。`doc-typecheck` 只提取 `ts*` 围栏，因此 JSON 块对它不可见——无需 `BlockKind` 接线（不同于 Cordis 目录的 `ts cordis-catalog` 围栏，后者需要加入白名单以避免裸签名片段被编译）。
 
-Schema blocks use ` ```json `, not a bespoke `ts`-family fence. `doc-typecheck` only extracts `ts*` fences, so a JSON block is invisible to it — no `BlockKind` wiring is needed (unlike the cordis catalog's `ts cordis-catalog` fence, which had to be allowlisted so a bare signature fragment isn't compiled).
+## 曾考虑的替代方案
 
-## Alternatives considered
+- **纯 TypeScript AST 遍历，如 Cordis 目录**：工具 schema 在静态层面不可知（见上文核心要点）：运行时展开、字符串拼接、配置选定的名称，以及原始 `ctx.tools.register()` 注册，都会让 AST 推导出的文档说谎。
+- **从各包的 inject 推断启动配方**：属于[发现包清单提案](../../proposed/process/2026-06-20-discover-package-inventory.md)所警告的「过度聪明」路径；配方保持为手写策略，清单由文件系统发现并由完整性守卫把关。
+- **为 schema 块使用自定义 `ts` 系围栏**：不必要。普通 ` ```json ` 围栏对 `doc-typecheck` 不可见，无需 `BlockKind` 白名单。
 
-- **A pure TypeScript-AST pass, like the cordis catalog** — tool schemas are not statically knowable (the crux above): runtime spreads, string concatenation, config-chosen names, and raw `ctx.tools.register()` registrations all make an AST-derived doc lie.
-- **Inferring each package's boot recipe from its injects** — the "too clever" path [the discover-package-inventory proposal](../../proposed/process/2026-06-20-discover-package-inventory.md) warns against; the recipe stays hand-written policy while the inventory is discovered and completeness-guarded.
-- **A bespoke `ts`-family fence for schema blocks** — unnecessary: a plain ` ```json ` fence is invisible to `doc-typecheck`, so no `BlockKind` allowlisting is needed.
+## 后果
 
-## Consequences
-
-- The catalog cannot drift: a tool schema change the committed file doesn't reflect fails `verify-tool-catalog` in `doc-sync` and CI. A new `tool-*` package not added to the manifest fails the completeness guard outright.
-- Tool description prose has a single home — the `defineTool` `description` at the source — and the generated entry is only as good as it, the same forcing function the cordis catalog applies to event JSDoc.
-- The generator imports and executes workspace packages (the first repo script to do so; the others only read text). It runs under `tsx` via the root `tsconfig` `paths` map, the same unbuilt-source path the demos and tests use, so it needs no build step.
-- A new capability seam behind a future tool means a new manifest recipe entry (which seams to mount). This is the deliberate hand-written cost called out above; it changes only when a tool package is added.
+- 目录不会发生漂移：提交文件未反映的工具 schema 变化会使 `doc-sync` 和 CI 中的 `verify-tool-catalog` 失败。新增的 `tool-*` 包若未加入 manifest，会直接使完整性守卫失败。
+- 工具描述文本有唯一归属——源码中 `defineTool` 的 `description`——生成的条目质量取决于它，与 Cordis 目录对事件 JSDoc 施加的强制力相同。
+- 生成器导入并执行工作区包（这是仓库中第一个这样做的脚本；其他脚本只读文本）。它通过根 `tsconfig` 的 `paths` 映射在 `tsx` 下运行，使用与演示和测试相同的未构建源码路径，因此不需要构建步骤。
+- 未来某个工具背后新增一个能力 seam，意味着 manifest 中需要新增一条配方条目（声明要挂载哪些 seam）。这正是上文指出的有意为之的手写成本；仅在新增工具包时才需变更。

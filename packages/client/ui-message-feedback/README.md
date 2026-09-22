@@ -1,25 +1,23 @@
 # @deepseek-ai/dsh-client-ui-message-feedback
 
-English | [中文](README.zh.md)
+单条消息反馈插件的浏览器侧：一对 Like/Dislike 按钮加一个可选备注，作为 `conversation.chat.assistant-actions` 条带的 `feedback` 条目（order 10）贡献。该条带由 `ui-conversation` 声明，渲染在已定稿助手消息的 IconActions 行内、复制与分支之间，因此控件沿用该行的样式与 hover 行为。备注编辑器本身不在这一行里：它是一个 `role="dialog"` 的浮层，portal 到 `document.body` 并锚定在其触发按钮下方，因此无论编辑器是否打开该行都保持单行，面板也不会被会话列裁掉。评分或列表加载失败在行内展示；备注保存失败在浮层内展示，且面板保持打开以便修正草稿。只有已定稿的消息能到达这个 slot——被中断冻结的部分输出不带 `messageId`，因此也没有反馈控件。该操作栏每个 Turn 渲染一次，位于持有该 Turn IconActions 行的收尾助手消息上：多步骤 Turn 中较早的步骤产出的是工具行而非可评分正文，因此即使 Host 会接受它们作为目标，界面上也不出现控件。
 
-Per-message feedback plugin, browser half: a Like/Dislike pair plus an optional note, contributed as the `feedback` entry (order 10) of the `conversation.chat.assistant-actions` strip. The strip is declared by `ui-conversation` and rendered inside the finalized assistant message's IconActions row, between copy and branch, so the controls inherit that row's chrome and hover behavior. The note editor itself does not sit in that row: it is a `role="dialog"` popover portaled to `document.body` and anchored under its trigger, so the row keeps its single line whether the editor is open or closed and the panel is not clipped by the conversation column. A rating or list-load failure shows inline in the row; a note-save failure shows inside the popover, which stays open so the draft can be corrected. Only finalized messages reach the slot — an interruption-frozen partial carries no `messageId` and therefore no feedback controls. The strip renders once per turn, on the closing assistant message that owns the turn's IconActions row: earlier steps of a multi-step turn produce tool rows rather than a rateable body, so they present no controls even though the Host would accept them as targets.
+每个 Session 一个 `MessageFeedbackController`，支撑该 Session 内所有消息的控件，因此一次 `messageFeedback.list` 读取即可填充整段对话。该读取延迟到首次 hover 或 focus 才发起，而不是在挂载时触发，因为可见历史中每条已结束的消息都会挂载一次控件。
 
-One `MessageFeedbackController` per Session backs every message control in that Session, so a single `messageFeedback.list` read seeds the whole transcript. The read is deferred to the first hover or focus rather than fired on mount, because the controls mount once per settled message in the visible history.
+变更通过 `ctx.remote.messageFeedback` 提交，按条目的 compare-and-set 由 Host 负责。每次 `put` 和 `delete` 都携带本 controller 最后观察到的 `version`；`version-conflict` 响应会带回权威条目，因此竞争失败时直接用该响应对账，无需重新拉取整个 Session。变更按 Session 串行，排队中的操作总是与已提交的版本比较。再次点击已记录的评分会撤回反馈；切换到另一侧会保留已有备注。
 
-Mutations go through `ctx.remote.messageFeedback`; the Host owns per-item compare-and-set. Every `put` and `delete` carries the `version` this controller last observed, and a `version-conflict` reply carries the authoritative item, so a lost race reconciles from the reply itself instead of refetching the Session. Mutations serialize per Session, so a queued operation always compares against the committed version. Re-clicking the recorded rating retracts the feedback; switching sides carries the existing note forward.
+`/client` 导出插件本体（`apply`/`inject`）、`MessageFeedbackActions` 组件、`MessageFeedbackController` 类以及注入面类型。
 
-The `/client` exports are the plugin body (`apply`/`inject`), the `MessageFeedbackActions` component, the `MessageFeedbackController` class, and the injected face types.
+## 模型体验
 
-## Model Experience
+无。反馈是 sidecar，不进入 append-only 的 Session 日志、模型上下文或遥测；任何评分与备注对模型都不可见。
 
-None, as feedback is a sidecar that never enters the append-only Session log, the model context, or telemetry; no rating or note is ever visible to the model.
+#### KV Cache 影响
 
-#### KV Cache effect
+无；任何反馈变更都不触碰历史尾部。
 
-None; no feedback mutation touches the history tail.
+## 已知限制与暂缓事项
 
-## Known Limitations and Deferred Work
-
-- **Note size is a Host policy** — the deployment configures `maxNoteBytes` (8192 in the Web bundle) and the Host rejects an oversized note with `note-too-large`. The editor does not pre-check the limit, so an oversized note fails on save rather than while typing.
-- **No cross-tab push** — a second tab's rating becomes visible on reconnect or on the next conflict reply, not immediately; the sidecar publishes no live frames.
-- **Chat view only** — the trajectory and waterfall views render no feedback controls even though their assistant nodes now carry the same `messageId`.
+- **备注大小是 Host 策略** —— 部署方配置 `maxNoteBytes`（Web bundle 中为 8192），超长备注由 Host 以 `note-too-large` 拒绝。编辑器不预先校验该上限，因此超长备注在保存时才失败，而不是在输入过程中。
+- **无跨标签页推送** —— 另一个标签页的评分要等到重连或下一次冲突响应才可见，不会立即出现；该 sidecar 不发布实时帧。
+- **仅限对话视图** —— trajectory 与 waterfall 视图不渲染反馈控件，尽管它们的助手节点现在也带有相同的 `messageId`。

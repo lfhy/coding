@@ -1,32 +1,30 @@
-# Agent Note: Direct build entrypoint detection
+# Agent Note: 构建脚本的直接入口判断
 
 Status: implemented
 
-English | [中文](2026-08-24-direct-build-entrypoint.zh.md)
+## 问题
 
-## Problem
+`scripts/build-coding-runtime.ts` 通过 `node --import tsx/esm` 启动 `scripts/build.ts`。运行时 deploy 复制 `lib/` 产物前，构建必须生成最新 Client bundle；否则桌面端安装包会含有源码中存在、Host 中却缺失的改动。
 
-`scripts/build-coding-runtime.ts` launches `scripts/build.ts` through `node --import tsx/esm`. The build must emit fresh client bundles before the runtime deploy copies `lib/` artifacts; otherwise a desktop installation can contain source changes that are absent from the packaged Host.
+在本地会使用到的每个 Node 运行时里，`import.meta.main` 都不能可靠地表示这个 TypeScript 启动形式的入口。其值为假时，子进程会成功退出而不执行构建，运行时打包随即复制已有 Client 产物并报告安装成功。
 
-`import.meta.main` is not a reliable entrypoint signal for that TypeScript launch form on every Node runtime used locally. A false value lets the child exit successfully without running the build, so runtime packaging copies pre-existing client artifacts and reports a successful install.
+## 决策
 
-## Decision
+`scripts/build.ts` 将 `import.meta.url` 与经 `pathToFileURL(resolve(...))` 转换的 `process.argv[1]` 比较。仅当两个 URL 相同时执行构建。这直接使用 Node 的调用路径，并让测试和辅助调用继续能够安全导入该模块。
 
-`scripts/build.ts` compares `import.meta.url` with `process.argv[1]` converted through `pathToFileURL(resolve(...))`. The script runs its build only when those URLs match. This uses Node's invocation path directly and preserves import safety for tests and helper callers.
+`scripts/build.spec.ts` 固定直接执行、导入其他路径和缺失调用路径三种情况。桌面运行时构建因此会在 SEA archive 收到文件前重新生成侧边栏 bundle。
 
-`scripts/build.spec.ts` pins direct execution, importing another path, and an absent invocation path. The desktop runtime build therefore rebuilds the sidebar bundle before the SEA archive receives it.
-
-The [content-addressed SEA runtime directory](../architecture/2026-08-22-sea-runtime-directory-by-content-hash.md) owns cache selection after the archive is built; this note owns the direct build invocation that produces that archive.
+[按内容哈希划分的 SEA 运行时目录](../architecture/2026-08-22-sea-runtime-directory-by-content-hash.md) 管理 archive 构建完成后的缓存选择；本记录管理生成该 archive 的直接构建调用。
 
 
-## Alternatives considered
+## 考虑过的替代方案
 
-**Keep `import.meta.main`.** It is concise, but an unavailable signal lets a production build succeed without producing current artifacts.
+**保留 `import.meta.main`。** 写法简短，但不可用的信号会让生产构建在没有生成当前产物时仍然成功。
 
-**Rely on the supported Node version range.** The range remains useful, but version selection must not turn a build into a successful no-op when a local environment falls outside it.
+**仅依赖受支持的 Node 版本范围。** 版本范围仍有价值，但本地环境落在范围外时，版本选择不能把构建变成成功的空操作。
 
-**Build the sidebar package separately before every desktop install.** This would duplicate the repository build sequence and leave other client packages vulnerable to the same stale-artifact path.
+**每次桌面端安装前单独构建侧边栏包。** 这会重复仓库构建顺序，并让其他 Client 包仍暴露在同一条陈旧产物路径上。
 
-## Consequences
+## 后果
 
-The build entrypoint has one explicit ESM check and one focused test. `make install` continues to use the complete client build, and a packaged Host reflects the source tree rather than an older `lib/` directory.
+构建入口保留一个明确的 ESM 判断和一条聚焦测试。`make install` 仍使用完整 Client 构建，打包后的 Host 反映源码树，而非旧的 `lib/` 目录。

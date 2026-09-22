@@ -1,40 +1,39 @@
-# Agent Note: Default session-telemetry mount (OTel reporting) in the dsh web composition
+# Agent Note: dsh web 组合默认挂载会话遥测（OTel 上报）
 
 Status: implemented
 
-English | [中文](2026-07-31-web-telemetry-default-mount.zh.md)
+## 问题
 
-## Problem
+遥测 seam 与 OTel 后端（[revival Note](2026-07-23-session-telemetry-otel-revival.md)）自完成以来从未接入任何部署组合：没有 roster 行、没有开关、没有节奏口径，内部部署对用户会话的可观测性为零。需要一个部署决策：哪些 surface 上报、报到哪、什么节奏、怎么关、CI 怎么隔离。
 
-The telemetry seam and OTel backend ([revival Note](2026-07-23-session-telemetry-otel-revival.md)) had never been wired into any deployment composition since completion: no roster row, no switch, no cadence ruling, and zero observability over user sessions for the internal deployment. A deployment decision was needed: which surfaces report, to where, on what cadence, how to opt out, and how CI stays isolated.
+## 决策
 
-## Decision
+共享 dsh 基础组合包（`packages/bundle/base/cordis.patch.yml`）挂载带有内置生产 endpoint 的 `session-telemetry-otel` 配置行，使每个 profile 都具有一致的遥测能力。[默认关闭决策](2026-08-10-telemetry-default-off.md)让该配置行保持 `DISABLED` 模式，除非部署方显式选择 `FULL` 或 `FEEDBACK_ONLY`；仅配置 endpoint 不构成上报授权。Web 与 headless 在 SIGINT/SIGTERM 时使用[有界、可升级的进程关闭控制器](../bug-fix/2026-08-03-cli-signal-shutdown-escalation.md)，在启动器 5 秒上限到期前，先给已启用的后端 3 秒关闭截止时间完成排空。
 
-The shared dsh base bundle (`packages/bundle/base/cordis.patch.yml`) mounts the `session-telemetry-otel` row with a baked-in production endpoint, so every profile has one consistent telemetry capability. The [default-off decision](2026-08-10-telemetry-default-off.md) keeps that row in `DISABLED` mode unless a deployment explicitly selects `FULL` or `FEEDBACK_ONLY`; the endpoint alone does not authorize reporting. Web and headless use the [bounded, escalating process-shutdown controller](../bug-fix/2026-08-03-cli-signal-shutdown-escalation.md) on SIGINT/SIGTERM, giving an enabled backend's three-second shutdown deadline time to drain before the five-second launcher bound.
-
-| Ruling | Value | Rationale |
+| 决策项 | 取值 | 理由 |
 |---|---|---|
-| Mount surface | `packages/bundle/base/cordis.patch.yml` | One capability row for every profile that loads the shared base |
-| Sharing mode | `DSH_TELEMETRY_MODE`, default `DISABLED`; explicit `FULL` or `FEEDBACK_ONLY` opts in | A fresh profile makes no telemetry network request, while internal deployments retain both upload policies |
-| Endpoint | `DSH_TELEMETRY_OTLP_URL`, default `https://harness-telemetry.deepseeksvc.com/v1/logs` | Internal collector; the env override serves local/dev runs |
-| Hard opt-out | any non-empty `DSH_TELEMETRY_DISABLED` (including `0`/`false`) disables the row | The launcher patch takes effect before load-time transport validation and overrides every configured mode |
-| Cadence | `processor.scheduledDelayMillis: 10000` (10s/batch) in uploading modes | Streaming while the session runs, never exit-time-only; a crash loses at most the last unexported interval |
-| Exit-drain bound | `exporter.timeoutMillis: 1000` + `maxExportBatchSize: 2048` (== maxQueueSize) + `exportTimeoutMillis: 1500` + `shutdownTimeoutMillis: 3000` | Ordinary unreachable-collector failure releases in ~1s: timeoutMillis is the per-attempt socket timeout and retry deadline, while one queue-sized batch avoids sequential drain multiplication. The DSH-owned 3s outer bound covers the SDK's preceding unbounded `forceFlush()` wait when the transport Promise never obtains a socket. |
-| Compression | `compression: gzip` | Event bodies carry full content; cross-datacenter bandwidth |
-| CI isolation | top-level `env: DSH_TELEMETRY_DISABLED: '1'` in GitHub workflows | Defense in depth keeps test sessions local even when a job explicitly selects an uploading mode |
+| 挂载面 | `packages/bundle/base/cordis.patch.yml` | 每个加载共享基础组合包的 profile 都使用同一个能力配置行 |
+| 共享模式 | `DSH_TELEMETRY_MODE`，默认 `DISABLED`；显式设置 `FULL` 或 `FEEDBACK_ONLY` 即启用 | 新 profile 不发出遥测网络请求，内部部署仍可使用两种上传策略 |
+| endpoint | `DSH_TELEMETRY_OTLP_URL`，缺省 `https://harness-telemetry.deepseeksvc.com/v1/logs` | 内部 collector；env 覆盖供本地/联调 |
+| 硬性退出 | `DSH_TELEMETRY_DISABLED` 非空（含 `0`/`false`）即禁用该配置行 | 启动器 patch 在加载期传输校验之前生效，并覆盖所有已配置模式 |
+| 上报节奏 | 上传模式中为 `processor.scheduledDelayMillis: 10000`（10s/批） | 在会话运行期间流式上报，而非仅在退出时上报；崩溃至多丢失最后一个尚未导出间隔内的数据 |
+| 退出 drain 上界 | `exporter.timeoutMillis: 1000` + `maxExportBatchSize: 2048`（与 maxQueueSize 相等） + `exportTimeoutMillis: 1500` + `shutdownTimeoutMillis: 3000` | collector 不可达的常规故障会在约 1s 内放行：timeoutMillis 是单次 socket 超时与重试 deadline，使用与队列等大的单批可避免依次排空导致耗时倍增。由 DSH 管理的 3s 外层上限覆盖 SDK 先执行的无界 `forceFlush()` 等待，即传输 Promise 始终无法取得 socket 的情况。 |
+| 压缩 | `compression: gzip` | 事件 body 含全文，跨机房带宽 |
+| CI 隔离 | GitHub 工作流顶层 `env: DSH_TELEMETRY_DISABLED: '1'` | 即使 CI 任务显式选择上传模式，纵深防御也会让测试会话留在本地 |
 
-The base bundle test pins the shipped `DISABLED` mode expression, the backend suite pins that omitted mode constructs no transport, and the real Loader composition suite explicitly selects each uploading mode when it verifies OTLP delivery.
 
-## Alternatives considered
+基础组合包测试固定交付的 `DISABLED` 模式表达式，后端测试套件固定省略模式时不构造传输，真实 Loader 组合测试则在验证 OTLP 投递时显式选择每种上传模式。
 
-**No default mount; deployments add the row themselves.** Rejected because the mounted `DISABLED` mode retains a local feedback warning and gives all profiles one patch target without authorizing any upload.
+## 考虑过的替代方案
 
-**A config field instead of an env patch for the switch.** Infeasible: cordis rows have no config-level disable semantic, and `exporter.url` validation fails loud at plugin construction, so the switch must take effect before the Loader — AppCLIEntry's patch layer is the only seat.
+**默认不挂载，部署方自行添加配置行。** 不采用：挂载的 `DISABLED` 模式会保留本地反馈警告，并为所有 profile 提供同一个 patch 目标，同时不授权任何上传。
 
-**A `Promise.race` timeout backstop around exit.** Originally deferred because the SDK parameters appeared to bound the backend's drain to ~1.5-3s (typically <100ms), with measured SIGINT-to-exit of 110ms-1.1s. A Linux sandbox reproduction later proved that `BatchLogRecordProcessor.shutdown()` can wait forever in `exporter.forceFlush()` before reaching its `exportTimeoutMillis`-bounded completion Promise. The [CLI shutdown fix](../bug-fix/2026-08-03-cli-signal-shutdown-escalation.md) therefore adds both a three-second backend bound for that specific gap and a five-second process-level bound plus repeated-signal escape for the whole plugin tree.
+**开关做成 config 字段而非 env patch。** 不可行：cordis 行没有 config 层的 disable 语义，且 `exporter.url` 校验在插件构造期 fail-loud，开关必须在 Loader 之前生效——AppCLIEntry patch 层是唯一落点。
 
-## Consequences
+**退出时 `Promise.race` 兜底超时。** 最初暂缓，是因为 SDK 参数看似已经将后端排空耗时限制在约 1.5-3s（通常 <100ms），实测 SIGINT 到退出耗时 110ms-1.1s。后来在 Linux 沙箱中复现并证明，`BatchLogRecordProcessor.shutdown()` 可能在 `exporter.forceFlush()` 中永久等待，无法进入受 `exportTimeoutMillis` 限制的完成 Promise。因此，[CLI 关闭修复](../bug-fix/2026-08-03-cli-signal-shutdown-escalation.md) 既为这一特定缺口增加 3 秒后端上限，也为整棵插件树增加 5 秒进程级上限和重复信号退出途径。
 
-- A developer running `dsh web` without telemetry configuration makes no telemetry network request. An internal deployment sets `DSH_TELEMETRY_MODE` and may point `DSH_TELEMETRY_OTLP_URL` at another collector.
-- **No redaction rule is mounted**: explicitly enabled exports are the raw captured copy (full user/assistant message text, tool arguments and results, the system prompt, the local `session.cwd` path). Crossing a trust boundary requires `session-telemetry/record` rules first — the redaction rule, remaining identity Resource attributes, and usage metrics remain separate deployment work. The anonymous user id ships through the [anonymous-user-id Note](2026-07-31-telemetry-anonymous-user-id.md).
-- Test rigs remain local by default; explicit uploading-mode tests provide their own collector and mode.
+## 后果
+
+- 开发者运行没有遥测配置的 `dsh web` 时，不会发出遥测网络请求。内部部署需设置 `DSH_TELEMETRY_MODE`，并可让 `DSH_TELEMETRY_OTLP_URL` 指向其他 collector。
+- **没有挂载任何脱敏规则**：显式启用的导出即原始捕获副本（用户/助手消息全文、工具参数与工具结果、系统提示词、`session.cwd` 本地路径）。跨信任边界前必须先挂载 `session-telemetry/record` 规则；脱敏规则、其余身份 Resource 属性和使用情况指标仍是独立的部署工作。匿名 user id 由[匿名 user id Note](2026-07-31-telemetry-anonymous-user-id.md)交付。
+- 测试载具默认将数据留在本地；显式启用上传模式的测试提供自己的 collector 和模式。

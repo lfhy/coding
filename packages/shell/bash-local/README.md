@@ -1,12 +1,10 @@
 # @deepseek-ai/dsh-bash-local
 
-English | [中文](README.zh.md)
+`@deepseek-ai/dsh-shell` 执行器 seam 的本地 Service Provider，构建在 [`@deepseek-ai/dsh-subprocess`](../../subprocess/subprocess/README.md) 服务之上：`LocalBashExecutor` 每次调用都通过 `ctx.subprocess` 把 `bash -c <command>` 作为受管进程组 spawn，并负责所有 Bash 层职责（命令默认值补全与上限、超时与取消分类、适合模型的终端环境，以及后台读取时面向模型的 stdout/stderr 合并）。以 spill 文件兜底的有界输出、凭据清除、kill 升级和 dispose（资源释放）等进程组机制则由 subprocess 服务负责。
 
-Local Service Provider for the `@deepseek-ai/dsh-shell` executor seam over the [`@deepseek-ai/dsh-subprocess`](../../subprocess/subprocess/README.md) service: `LocalBashExecutor` spawns `bash -c <command>` per call as a managed process group through `ctx.subprocess`, and owns everything bash-shaped — command defaulting and caps, timeout/cancel classification, the model-friendly terminal environment, and the model-facing stdout/stderr merge for background reads. Group mechanics (bounded spill-backed output, credential scrub, kill escalation, disposal) are the subprocess service's.
+包根目录导出默认与具名的 `LocalBashExecutor` 插件及其 `Config`。
 
-The package root exports the default and named `LocalBashExecutor` plugin plus its `Config`.
-
-## Config
+## 配置
 
 ```yaml
 - id: bash
@@ -20,30 +18,30 @@ The package root exports the default and named `LocalBashExecutor` plugin plus i
     graceMs: 3000              # kill escalation and post-exit pipe-drain grace
 ```
 
-## Behavior
+## 行为
 
-- **Spawn per call, no shell state** — every call is a fresh non-login `bash -c` with no rc files.
-- **The composition entry is a layer, not the last word** — when a settings provider is composed, this executor registers the capability's [`bash` namespace](../shell/README.md) with the entry above as its base, so a user section in `settings.yaml` layers over it and the next command runs with the new budgets. Values the schema cannot judge (positive and finite, the `graceMs` timer bound) are refused at the write, leaving the running executor on its last good section; without a provider, or after one detaches, the composition entry is what runs.
-- **Configured budgets over managed groups** — `resolve()` fills `workdir`/`timeoutMs`/`stdoutMaxBytes` from config, derives a Remote-SSH target when the workdir is under a current marker, and every spawn hands the service explicit byte caps, spill cap, and `graceMs`. The grace must be positive, finite, and no greater than [`MAX_TIMER_DELAY_MS`](../../util/timeout/README.md), so Node can represent it with one timer. Process-group kills, post-exit pipe draining, tail retention, and bounded spill files are [`dsh-subprocess-local`](../../subprocess/subprocess-local/README.md) mechanics. A foreground `ShellExecRequest.stdoutMaxBytes` can raise stdout's capture budget for one trusted caller; stderr and background runs still use `maxOutputBytes`.
-- **Timeout and cancel classification** — `run()` fuses its config-clamped timeout with the caller's signal through one deadline; only the executor's own timeout reports `timedOut`, an upstream cancel reports `aborted`, and a self-signaled command reports neither ([timeout-library Agent Note](../../../.agents/notes/implemented/architecture/2026-07-06-timeout-deadline-library.md)).
-- **Model-friendly terminal env** — `NO_COLOR=1 TERM=dumb PAGER=cat GIT_PAGER=cat` prevents pagers and ANSI color from garbling results. These values merge as ordinary env under the service's credential scrub and `DSH_*` channel rules; an explicit caller entry still wins. See the [stdin/env Agent Note](../../../.agents/notes/implemented/architecture/2026-06-30-bash-stdin-env-trusted-plugin-api.md) and [managed environment Agent Note](../../../.agents/notes/implemented/feature/2026-07-10-agent-session-identity-and-log-location.md).
-- **Background processes** — `start()` returns a live `ShellProcess` handle immediately with no timeout, and `readOutput()` merges offset-based stdout/stderr reads into one consuming delta, placing stderr under a `[stderr]` marker when present. A running process belongs to the subprocess service, survives executor reloads, and is killed and joined on service disposal. Job ids, ownership, polling, and notices belong to the generic [`ctx.jobs` runtime](../../jobs/jobs/README.md), which the tool layer registers the handle with.
-- **Desktop Remote-SSH execution world** — a current marker causes both foreground and background `bash -c` work to use the target Go agent through `ctx.subprocess`; the Host keeps request classification, approval, job registration, and model-visible rendering. The marker, bridge, or agent failing rejects the operation rather than running the command on the local Host.
+- **每次调用都 spawn，不保留 shell 状态**：每次调用都启动新的非登录 `bash -c`，且不读取 rc 文件。
+- **组装条目是一层，而不是最终值**：当组装中存在 settings 提供方时，本执行器以上面的条目为 base 注册该能力的 [`bash` 命名空间](../shell/README.md)，因此 `settings.yaml` 中的用户段会叠加其上，下一条命令即按新预算运行。schema 无法判定的值（正有限、`graceMs` 的定时器上界）会在写入时被拒绝，运行中的执行器保持它最后一份可用的段；没有提供方、或提供方脱离之后，运行的就是组装条目。
+- **在受管进程组之上应用配置预算**：`resolve()` 从配置补全 `workdir`／`timeoutMs`／`stdoutMaxBytes`，当工作目录处于当前 marker 下时派生 Remote-SSH target，每次 spawn 都向服务传入显式的字节上限、spill 上限与 `graceMs`。该宽限期须为正有限值，且不得大于 [`MAX_TIMER_DELAY_MS`](../../util/timeout/README.md)，这样 Node 就能用一个定时器表示它。进程组终止、退出后管道排空、尾部保留与有界 spill 文件是 [`dsh-subprocess-local`](../../subprocess/subprocess-local/README.md) 的机制。前台 `ShellExecRequest.stdoutMaxBytes` 可为某个受信任调用方提高单次 stdout 捕获预算；stderr 和后台运行仍使用 `maxOutputBytes`。
+- **超时与取消分类**：`run()` 通过同一个 deadline 把经配置钳位的超时与调用方的信号融合；只有执行器自身的超时报告 `timedOut`，上游取消报告 `aborted`，自身因信号终止的命令两者皆不报告（见[超时库 Agent Note](../../../.agents/notes/implemented/architecture/2026-07-06-timeout-deadline-library.md)）。
+- **适合模型的终端环境**：`NO_COLOR=1 TERM=dumb PAGER=cat GIT_PAGER=cat` 防止分页器与 ANSI 颜色破坏结果。这些值作为普通 env 合并，遵循服务的凭据清除与 `DSH_*` 通道规则；调用方的显式条目依旧优先。详见 [stdin/env Agent Note](../../../.agents/notes/implemented/architecture/2026-06-30-bash-stdin-env-trusted-plugin-api.md) 与 [受管环境 Agent Note](../../../.agents/notes/implemented/feature/2026-07-10-agent-session-identity-and-log-location.md)。
+- **后台进程**：`start()` 会立即返回活动的 `ShellProcess` 句柄且不应用超时；`readOutput()` 把基于偏移量的 stdout/stderr 读取合并为一条消费式增量，并在存在 stderr 时将其置于 `[stderr]` 标记下。运行中的进程属于 subprocess 服务，可在执行器重载后存活，并在服务 dispose 时被终止且等待退出。job id、所有权、轮询和通知属于通用 [`ctx.jobs` 运行时](../../jobs/jobs/README.md)，工具层会在其中注册该句柄。
+- **桌面 Remote-SSH 执行世界**：当前 marker 会使前台和后台的 `bash -c` 工作都通过 `ctx.subprocess` 使用目标 Go agent；Host 保留请求分类、审批、任务注册与面向模型的渲染。marker、bridge 或 agent 失败时，操作会被拒绝，绝不会在本地 Host 上运行命令。
 
-## Model Experience
+## 模型体验
 
-Indirectly, through `dsh-tool-bash`, which renders this executor's bounded stdout/stderr tails, background-process deltas, spill-file paths, and infrastructure failures.
+通过 `dsh-tool-bash` 间接影响；该工具会渲染此执行器有界的 stdout/stderr 尾部、后台进程增量、spill 文件路径与基础设施失败。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-No direct invalidation; the named consumer owns any request-prefix changes.
+不会直接导致 KV Cache 失效；请求前缀变更由具名消费方负责。
 
-## Known Limitations and Deferred Work
+## 已知限制与暂缓事项
 
-- **Unconfined by itself** — this executor always runs commands with the harness process's authority; deployments needing confinement compose [`dsh-bash-sandbox`](../bash-sandbox/README.md), while per-call allow/deny/ask policy belongs on `tools/pre-execute`.
-- **No persistent shell or PTY** — every call starts a fresh non-login `bash -c`; cwd-only persistence and interactive terminal sessions remain deferred until a real workflow requires them.
-- **POSIX-only** — the `bash` binary is hardcoded, and the underlying service's group semantics are POSIX; Windows is unsupported.
-- **A background provider-failure note is single-delivery** — `SubprocessHandle.done` can reject before or after target execution begins, so the executor appends the stage-neutral `subprocess failed before reporting an outcome: …` to exactly one `readOutput()` delta alongside any unread stderr; a reader that discards that delta cannot recover it.
-- **Remote Bash needs an unconfined mode when sandboxing is mounted** — the local sandbox provider cannot confine a remote process, so `dsh-bash-sandbox` admits Remote-SSH calls only with `danger-full-access`.
+- **自身不提供隔离**：此执行器始终以 harness 进程的权限运行命令；需要隔离的部署可以组合 [`dsh-bash-sandbox`](../bash-sandbox/README.md)，每次调用的 allow/deny/ask 策略则属于 `tools/pre-execute`。
+- **没有持久 shell 或 PTY**：每次调用都启动新的非登录 `bash -c`；仅持久化 cwd 与交互式终端会话均继续暂缓，直到真实工作流需要它们。
+- **仅支持 POSIX**：`bash` 二进制已硬编码，底层服务的进程组语义也是 POSIX 的；不支持 Windows。
+- **后台 provider failure 提示只交付一次**：`SubprocessHandle.done` 可能在 target 开始执行前或后 reject，因此执行器会把不声明阶段的 `subprocess failed before reporting an outcome: …` 与未读 stderr 一起追加到恰好一个 `readOutput()` 增量；丢弃了该增量的读取方无法再恢复它。
+- **挂载沙箱时远程 Bash 需要非受限模式**：本地沙箱提供方无法约束远程进程，因此 `dsh-bash-sandbox` 只会以 `danger-full-access` 接纳 Remote-SSH 调用。
 
-Scrub-heuristic and spill-retention caveats live with [`dsh-subprocess-local`](../../subprocess/subprocess-local/README.md), which owns those mechanics.
+凭据清除启发式规则与 spill 保留的注意事项随 [`dsh-subprocess-local`](../../subprocess/subprocess-local/README.md) 记录；这些机制归它所有。

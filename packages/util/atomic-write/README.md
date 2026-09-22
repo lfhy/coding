@@ -1,10 +1,8 @@
 # dsh-atomic-write
 
-English | [中文](README.zh.md)
+零依赖的原子文件替换，供绝不允许在磁盘上留下不完整、被符号链接劫持或权限过宽内容的文件型存储共用：用户设置文档（`dsh-settings-file`）与凭据存储（`dsh-credentials-local`）。
 
-Zero-dependency atomic file replacement shared by file-backed stores that must never leave partial, symlink-hijacked, or wider-than-intended content on disk — the user-settings document (`dsh-settings-file`) and the credentials store (`dsh-credentials-local`).
-
-## Surface
+## 接口面
 
 ```ts
 import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
@@ -20,26 +18,26 @@ await withFileLock('/home/u/.dsh/settings.yaml', async () => {
 })
 ```
 
-`writeFileAtomic` commits one already-rendered string. The contract, in the order failures would exploit it:
+`writeFileAtomic` 提交一份已经渲染好的字符串。约定按故障利用它的先后顺序列出：
 
-- **Exclusive-create temp** (`wx`, random suffix): the open refuses to follow a symlink planted at a guessable temp path.
-- **The fresh inode carries `mode` through the rename**: replacing a wider-permission file narrows it without a chmod race. `mode` is required so the permission decision stays visible at every call site (subject to the process umask, like every fresh inode).
-- **`rename` replaces a symlinked target itself**, never writing through to its referent.
-- **Same-directory sibling** keeps the rename on one filesystem, so the swap stays atomic.
-- Parent directories are created; on any failure the temp is removed and the failure rethrown; readers observe either the old or the new complete content.
+- **独占创建临时文件**（`wx` + 随机后缀）：open 拒绝跟随预先埋在可猜测临时路径上的符号链接。
+- **全新 inode 携带 `mode` 走完 rename**：替换权限过宽的旧文件时直接收窄，不存在 chmod 竞态。`mode` 为必填，让权限决策始终可见于每个调用点（与所有新建 inode 一样受进程 umask 影响）。
+- **`rename` 替换的是符号链接目标本身**，绝不写穿到其指向的文件。
+- **同目录兄弟文件**保证 rename 落在同一文件系统上，交换保持原子。
+- 自动创建父目录；任何失败都会移除临时文件并重新抛出该失败；读取方只会观察到旧内容或完整的新内容。
 
-`withFileLock` serializes the writers of one file across processes, for the read-render-commit cycles a bare atomic commit cannot make safe on its own. The lock is a `wx`-created `<filename>.lock` sibling, so readers never contend; waiters back off exponentially and fail with a timeout rather than block forever. `EEXIST` identifies contention directly; `EPERM` does so only when a fresh `lstat` confirms that the lock path exists, covering Windows exclusive-create behavior without hiding an unrelated permission failure. A contender never removes the existing lock: age cannot distinguish a crashed owner from a paused live writer.
+`withFileLock` 跨进程串行化同一文件的写入方，服务于单靠原子提交无法保证安全的读-渲染-提交循环。锁是以 `wx` 创建的同目录 `<filename>.lock`，因此读取方从不参与竞争；等待方按指数退避，超时即失败而非无限阻塞。`EEXIST` 直接表示竞争；只有一次新的 `lstat` 确认锁路径存在时，`EPERM` 才表示竞争，从而兼容 Windows 的独占创建行为，又不掩盖无关的权限故障。竞争者绝不移除现有锁：锁龄无法区分已经崩溃的所有者与被暂停但仍存活的写入方。
 
-## Model Experience
+## 模型体验
 
-None, as this is a pure filesystem primitive; nothing here reaches a model request.
+无：本包是纯文件系统原语，此处没有任何内容会到达模型请求。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-None; nothing here enters a request prefix.
+无；此处没有任何内容会进入请求前缀。
 
-## Known Limitations and Deferred Work
+## 已知限制与暂缓事项
 
-- **Atomic, not durable** — no `fsync` of the file or its directory, so after a crash the rename may be observed unwound. The file-backed stores here re-read and republish on boot, keeping durability the caller's policy.
-- **String content only** — no `Buffer` or stream form until a consumer needs one.
-- **Orphaned locks require operator recovery** — a process that exits while holding the lock can leave the sibling behind. Later writers time out without deleting it; an operator removes it only after verifying that no writer still owns it. File age alone is not safe evidence of abandonment.
+- **原子但不保证持久**——不对文件或其所在目录做 `fsync`，因此崩溃后可能观察到 rename 被回退。此处的文件型存储在启动时重新读取并重新发布，把持久性留作调用方的策略。
+- **仅支持字符串内容**——在有消费方需要之前，不提供 `Buffer` 或流式形态。
+- **遗留锁需要操作者恢复**——进程持锁退出时可能留下同级锁文件。后续写入方超时也不会删除它；操作者只有在确认没有写入方仍拥有该锁后才会移除。文件存续时间本身不能安全证明它已无人持有。

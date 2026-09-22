@@ -1,33 +1,31 @@
-# Agent Note: Workspace picker offers local, remote, and no-project starts
+# Agent Note: 工作区选择器提供本地、远程与无项目入口
 
 Status: implemented
 
-English | [中文](2026-08-25-workspace-picker-local-remote-and-no-project-entry.zh.md)
+## 问题
 
-## Problem
+Hero Workspace 选择器把选择已注册本地 Workspace 作为开始输入的唯一持久路径。想添加文件夹、打开已经可达的 Host，或在 Host 默认目录中工作的用户，要么得发现另一条入口，要么无法从同一个主要控件开始。
 
-The Hero Workspace picker made selecting a registered local Workspace the only durable way to start typing. A user who wanted to add a folder, open an already reachable Host, or work at the Host default directory had to discover a separate route or could not start from the same primary control.
+## 决策
 
-## Decision
+`WorkspacePicker` 渲染可搜索的已注册 Workspace 列表，并保留三项固定 Hero 操作。**打开文件夹**只委托给既有目录流 slot，因此同一个原生或应用内选择器仍拥有本地路径选择。**连接 Remote-SSH**由[有界桌面工具网关决策](2026-08-30-desktop-remote-ssh-tool-gateway.md)拥有；该决策取代本记录原有的地址导航分支，但不改变三项操作布局。
 
-`WorkspacePicker` renders a searchable list of registered Workspaces and keeps three pinned Hero actions. **Open folder** delegates only to the existing directory-flow slot, so the same native or in-app picker still owns local path selection. **Connect Remote-SSH** is owned by the [bounded desktop tool-gateway decision](2026-08-30-desktop-remote-ssh-tool-gateway.md), which supersedes this record's original address-navigation arm without changing the three-action layout.
+空态 Hero 不保留固定产品标题或预览状态徽标。它在品牌标记旁显示按本地时间时段选择的本地化问候，并在下一行先渲染 agent preset 控件，再渲染工作区 chip。工作区 chip 是紧凑的无边框透明触发器；悬停和展开状态使用共享交互填充，不另造输入面。
 
-The empty Hero has no fixed product headline or preview-status badge. It renders the brand mark beside a localized greeting selected from the local time period, then places the agent-preset control before the workspace chip. The workspace chip is a compact borderless transparent trigger; hover and expanded states use shared interactive fills rather than a separate input surface.
+**不在项目中工作**调用 `IWorkspaces.startSessionWithoutWorkspace()`。`WorkspaceRuntime` 经由 `SessionRuntime.createUnscoped()` 创建 `session.create({})`，并打开返回的、可在列表中寻址的 Session。Host 提供其正常的默认 cwd；缺少 `workspaceId` 会使该 Session 不写入任何 Workspace 账目。这个 Session 存在后，即使 Hero chip 显示无项目状态，常驻编辑器仍可编辑。
 
-**Work without a project** calls `IWorkspaces.startSessionWithoutWorkspace()`. `WorkspaceRuntime` creates `session.create({})` through `SessionRuntime.createUnscoped()` and opens the returned, list-addressable Session. The Host supplies its normal default cwd; the absent `workspaceId` keeps that Session out of every Workspace account. Once that Session exists, the resident composer is editable even though its Hero chip reports the no-project state.
+侧边栏的仅添加按钮仍只用于本地文件夹。它不暴露远程导航，也不创建未分组 Session，因为它是添加 Workspace 的快捷操作，而不是 Hero 的完整开始菜单。[无 Session 编辑器入口](2026-08-07-workspace-picker-composer-entry.md)、[添加 Workspace 的唯一路径](../simplification/2026-07-31-one-route-to-add-a-workspace.md)、[Workspace 产品流程](2026-07-25-workspace-ui-product-flow.md)、[目录选择器能力 seam](../architecture/2026-07-28-directory-picker-capability-seam.md)和[目录选择器自适应默认值](2026-07-29-directory-picker-adaptive-default.md)仍各自保留其所有权规则。
 
-The sidebar's add-only button remains local-folder-only. It neither exposes remote navigation nor creates ungrouped Sessions, because it is a shortcut for adding a Workspace rather than the Hero's complete start menu. The [no-session composer entry](2026-08-07-workspace-picker-composer-entry.md), [one route to add a Workspace](../simplification/2026-07-31-one-route-to-add-a-workspace.md), [Workspace product flow](2026-07-25-workspace-ui-product-flow.md), [directory-picker capability seam](../architecture/2026-07-28-directory-picker-capability-seam.md), and [adaptive directory-picker default](2026-07-29-directory-picker-adaptive-default.md) retain their respective ownership rules.
+## 考虑过的替代方案
 
-## Alternatives considered
+- **把地址导航作为远程操作。** 已由[桌面 Remote-SSH 决策](2026-08-30-desktop-remote-ssh-tool-gateway.md)取代；该记录拥有当前传输、凭据、Workspace marker 和失败边界。
+- **继续锁定无 Workspace 视图。** 未采用：使用 Host 默认 cwd 的 Session 已是具体且安全的工作上下文；在它存在后仍禁止输入，会把注册记录与工作目录混为一谈。
+- **把所有开始操作放进侧边栏。** 未采用：侧边栏控件既有含义是接纳本地 Workspace，向其中加入页面导航或 Session 创建会弱化这一聚焦操作。
 
-- **Use address navigation as the remote action.** Superseded by the [desktop Remote-SSH decision](2026-08-30-desktop-remote-ssh-tool-gateway.md), which records the current transport, credential, Workspace-marker, and failure boundaries.
-- **Keep a no-Workspace view locked.** Rejected: a Session with the Host default cwd is already a concrete, safe working context; withholding input after it exists conflates registration with a working directory.
-- **Put every start action in the sidebar.** Rejected: the sidebar control's established meaning is local Workspace adoption, and adding page navigation or Session creation there would weaken that focused action.
+## 后果
 
-## Consequences
+主要选择器呈现三种开始路径，同时不降低本地目录选择的可组合性。仅桌面端可用的远程路径会创建有界 Remote-SSH Workspace；普通浏览器部署会报告该能力不可用。无项目 Session 以未分组状态可见，并在 Host 默认 cwd 中运行；它不是没有文件系统或持久化的模式。
 
-The primary picker presents all three start paths without making local directory selection less composable. The desktop-only remote path creates a bounded Remote-SSH Workspace; ordinary browser deployments report that the capability is unavailable. No-project Sessions are visible as ungrouped and run at the Host default cwd; they are not a filesystem-less or persistence-free mode.
+## 验证
 
-## Verification
-
-Component tests cover search, the three Hero actions, Remote-SSH capability absence, and no-project creation failure. Conversation tests pin the four greeting periods and their boundary refresh; Hero ARIA goldens pin the agent-preset-before-workspace order. Runtime tests pin the unscoped `session.create({})` call and immediate selection; the Remote-SSH record owns its bridge, validation, and lifecycle evidence.
+组件测试覆盖搜索、三项 Hero 操作、Remote-SSH 能力缺失和无项目创建失败。会话测试固定四个问候时段及其边界刷新；Hero ARIA golden 固定 agent preset 位于工作区之前的顺序。运行时测试固定未分组的 `session.create({})` 调用及其即时选中；Remote-SSH 记录拥有 bridge、校验和生命周期证据。

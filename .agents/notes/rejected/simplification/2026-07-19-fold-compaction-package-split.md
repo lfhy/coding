@@ -1,37 +1,35 @@
-# Agent Note: Fold the single compaction backend into its service package
+# Agent Note: 将唯一的压缩后端并入服务包
 
-Status: rejected — More compaction backends are planned, so the Service Definition and basic provider packages remain separate.
+Status: rejected — 计划增加更多压缩后端，因此 Service Definition 包与 basic 提供方包继续分离。
 
-English | [中文](2026-07-19-fold-compaction-package-split.zh.md)
+## 问题
 
-## Problem
+压缩（compaction）目前拆分在两个包中：`@deepseek-ai/dsh-compaction` 拥有一个含两个方法的抽象服务和共享类型，`@deepseek-ai/dsh-compaction-basic` 拥有唯一的完整提供方。交付配置只加载 basic 包，除了该提供方外，没有生产包独立消费 Service Definition 包。
 
-Compaction is split between `@deepseek-ai/dsh-compaction`, which owns an abstract two-method service and shared types, and `@deepseek-ai/dsh-compaction-basic`, which owns the only complete provider. Shipped configurations load only the basic package, and no production package independently consumes the Service Definition package except that provider.
+该拆分增加了一份包 manifest（元数据清单）、README、项目边界、依赖边、抽象转发类、生成目录项和组合接线，却没有实际的后端替换用例。[能力 seam 决策](../../implemented/architecture/2026-06-13-capability-seams.md)要求接口、实现和消费方都必须真实存在，而不能预先拆分；[压缩决策](../../implemented/feature/2026-06-18-compaction-capability-seam.md)也记录了独立消费方的实现仍被推迟。
 
-The split adds a package manifest, README, project boundary, dependency edge, abstract forwarding class, generated catalog entries, and composition wiring without demonstrating backend substitution. The [capability-seam decision](../../implemented/architecture/2026-06-13-capability-seams.md) requires a real interface, implementation, and consumer rather than a preemptive split; the [compaction decision](../../implemented/feature/2026-06-18-compaction-capability-seam.md) records that its independent consumer was deferred.
+## 提案
 
-## Proposal
+把 basic 实现移入 `@deepseek-ai/dsh-compaction`，并删除 `@deepseek-ai/dsh-compaction-basic`。`ctx.compaction`、`CompactionResult`、共享 transcript（文本记录）和工具配对辅助方法、现有配置以及具体压缩算法都由一个包负责。
 
-Move the basic implementation into `@deepseek-ai/dsh-compaction` and remove `@deepseek-ai/dsh-compaction-basic`. Keep `ctx.compaction`, `CompactionResult`, the shared transcript and tool-pairing helpers, the existing configuration, and the concrete compaction algorithm in one package.
+保留 `summarize()` 作为受保护的自定义钩子。部署专用的摘要器可以通过继承或拦截现有 LLM（大语言模型）调用完成定制，无需第二个能力包。只有在第二个完整后端与独立消费方确实需要替换实现时，才重新引入独立的 Service Definition 包。
 
-Preserve `summarize()` as a protected customization hook. A deployment-specific summarizer can subclass or intercept the existing LLM call without requiring a second capability package. Reintroduce a separate Service Definition package only when a second complete backend and an independent Consumer need substitution.
+如果本提案获准，应同步修订已实现的压缩决策与[可回忆压缩提案](../../proposed/feature/2026-07-06-recallable-compaction.md)，使包所有权只有一处持久说明。
 
-Amend the implemented compaction decision and the [recallable-compaction proposal](../../proposed/feature/2026-07-06-recallable-compaction.md) if this proposal is accepted so package ownership has one durable description.
+## 备选方案
 
-## Alternatives considered
+**为可能出现的远程或回忆后端保留拆分。** 一种可能的未来实现不足以支撑当前包边界。回忆功能会增加压缩结果的消费方，但不一定增加另一种实现；远程摘要器也可以使用受保护钩子。
 
-**Keep the split because a remote or recall backend may arrive.** A possible future implementation does not justify the current package boundary. Recall adds a consumer of compaction results, not necessarily another implementation, and a remote summarizer can use the protected hook.
+**将提供方包名用于 Service Definition 包。** 如果保留 `compaction-basic` 作为最终名称，产品服务会看起来像一个可选后端。`compact` 已经是 `ctx.compaction` 使用的稳定服务标识，更适合作为单包所有者。
 
-**Move the provider package name onto the Service Definition package.** Keeping `compaction-basic` as the surviving name would make the product service appear to be one optional backend. `compact` is the stable service identity already used by `ctx.compaction` and is the clearer single-package owner.
+## 验收标准
 
-## Acceptance criteria
+- 删除 `@deepseek-ai/dsh-compaction-basic` 及其工作区和包元数据。
+- `@deepseek-ai/dsh-compaction` 拥有当前配置、插件类、算法、类型、事件和共享辅助方法。
+- 现有部署可以使用等效配置加载保留的包，模型可见行为等效。
+- 自动压缩和手动压缩保留取消、锁、token 用量、工具配对、持久事件、引用的来源事件 seq、重试收敛和 transcript 渲染行为。
+- loader 组合、单元、失控轮次、取消、快照和真实模型压缩测试全部通过；生成目录与模块图保持最新。
 
-- `@deepseek-ai/dsh-compaction-basic` and its workspace/package metadata are removed.
-- `@deepseek-ai/dsh-compaction` owns the current configuration, plugin class, algorithm, types, events, and shared helpers.
-- Existing deployments can load the surviving package with equivalent configuration and model-visible behavior.
-- Automatic and manual compaction preserve cancellation, locking, token accounting, tool pairing, durable events, cited source-event seqs, retry convergence, and transcript rendering.
-- Loader composition, unit, runaway-turn, cancellation, snapshot, and real-model compaction tests pass; generated catalogs and module graphs are current.
+## 风险
 
-## Risks
-
-This is an intentional pre-release package-name contraction. Embedders loading `@deepseek-ai/dsh-compaction-basic` must switch packages, and future backend substitution would require extracting a boundary again. The cost is acceptable only while one complete implementation exists; acceptance should be revisited if a second backend lands first.
+这是一项有意实施的预发布包名收缩。加载 `@deepseek-ai/dsh-compaction-basic` 的嵌入方必须切换包，未来的后端替换也需要重新提取边界。只有在仍然只有一个完整实现时，这项代价才可接受；如果第二个后端先行落地，应重新评估是否接纳本提案。

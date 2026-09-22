@@ -1,22 +1,20 @@
 # @deepseek-ai/dsh-skill-badge
 
-English | [中文](README.zh.md)
+可选的内置 skill（技能）提供方，向 `ctx.skills` 贡献 `dsh-badge`。该 skill 提供官方「powered by dsh」Markdown 片段和随包分发的 PNG，供无法可靠导入远程图片的系统使用。
 
-Optional bundled skill provider that contributes `dsh-badge` to `ctx.skills`. The skill supplies the official “powered by dsh” Markdown snippets and the packaged PNG for systems that cannot import a remote image reliably.
+挂载该插件即可启用提供方。它没有配置。随附的 CLI（命令行界面）组合以 `disabled: true` 包含该插件；用户必须显式启用其 `skill-badge` 配置行，该 skill 才会进入目录。
 
-Mount the plugin to enable the provider. It has no configuration. The shipped CLI composition includes the plugin as `disabled: true`; users must explicitly enable its `skill-badge` row before the skill enters a catalog.
+该提供方将随包分发的 `assets/` 目录作为 skill 资源基底公开。`dsh-badge.png` 是尺寸为 726×120 的源图资源，消费方以 121×20 的尺寸渲染。
 
-The provider exposes its packaged `assets/` directory as the skill resource base. `dsh-badge.png` is the 726×120 source asset, and consumers render it at 121×20.
+## 模型体验
 
-## Model Experience
+通过 `@deepseek-ai/dsh-tool-skill` 间接影响模型；该包会渲染目录条目和所选 skill 的正文。
 
-Indirectly, through `@deepseek-ai/dsh-tool-skill`, which renders the catalog entry and selected skill body.
+#### KV Cache 影响
 
-#### KV Cache effect
+该插件默认禁用，不会改变任何请求。启用后，其目录条目和任何已加载正文都会在各自插入点改变提供方的 KV 前缀。
 
-Disabled by default, the plugin changes no request. When enabled, its catalog entry and any loaded body change the provider KV prefix at their insertion points.
+## 已知限制与暂缓事项
 
-## Known Limitations and Deferred Work
-
-- The provider contributes one fixed skill and has no runtime customization.
-- Remote Markdown uses Shields.io; use the packaged PNG when the target cannot fetch remote images reliably.
+- 该提供方只贡献一个固定 skill，不提供运行时自定义。
+- 远程 Markdown 使用 Shields.io；当目标环境无法可靠获取远程图片时，请使用随包分发的 PNG。

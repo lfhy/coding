@@ -1,44 +1,42 @@
-# Agent Note: Address pending queue occurrences for edit and removal
+# Agent Note: 为待处理队列项提供编辑与移除操作
 
 Status: implemented
 Archived: 2026-07-31
 
-English | [中文](2026-07-29-addressable-queue-operations.zh.md)
+## 问题
 
-## Problem
+Web 队列能够渲染待处理消息，但无法编辑或删除其中某一行。`MessageId` 不足以充当寻址标识，因为调用方可以多次将同一条不可变消息加入队列。浏览器还会根据轮次和状态事件推断队列项已退役，因此当行操作与驱动器认领发生竞态时，系统无法给出权威结果。
 
-The Web queue rendered pending messages but could not edit or delete one row. `MessageId` was insufficient as an address because callers may enqueue the same immutable message more than once. The browser also inferred queue retirement from turn and status events, so a row operation racing with driver claim had no authoritative outcome.
+## 决策
 
-## Decision
+**每次获准进入 FIFO 的项都有独立标识。** AgentLoop 会铸造不透明的 `InboxItemId`，并发布一个 `InboxItem`，其中包含该 id、已有标识的 `UserMessage`，以及接受时确定的 `queued | steering` 放置方式。复用同一个 `MessageId` 会创建不同的 inbox 标识。注入绕过 FIFO，因此不会获得 inbox 标识。
 
-**Each accepted FIFO occurrence has its own identity.** AgentLoop mints an opaque `InboxItemId` and publishes an `InboxItem` containing that id, the identified `UserMessage`, and its acceptance-time `queued | steering` placement. Reusing one `MessageId` creates distinct inbox identities. Injection bypasses the FIFOs and receives no inbox identity.
+**变更边界止于驱动器认领。** `Agent.updateInbox(id, action)` 会同步搜索待处理的 queued FIFO。编辑会替换已冻结的内容，同时保留 `InboxItemId`、`MessageId`、来源、唤醒策略和位置。移除会发出该次入队项的终态 discard。steering（中途引导）项和已被驱动器认领的项会返回 `not-found`，因此队列操作绝不会改写活动轮次输入或持久历史。
 
-**Mutation ends at driver claim.** `Agent.updateInbox(id, action)` synchronously searches the pending queued FIFO. Edit replaces frozen content while preserving `InboxItemId`, `MessageId`, source, wake policy, and position. Remove emits the occurrence’s terminal discard. Steering and driver-claimed occurrences return `not-found`, so queue operations never rewrite active-turn input or durable history.
+**实时账本是权威状态。** `agent/inbox/enqueue`、`update`、`dequeue` 和 `discard` 共同维护 queued 入队项的 Host 镜像。同步可重入的 update 或终态事件可能先于外层 enqueue 监听器到达镜像；镜像会在当前分发期间保留这一尚不可见的结果，并在处理 enqueue 时把它合并进去，因此监听器注册顺序不会导致系统发布陈旧内容或不存在的行。协议发送完整的 `session/queue` 快照，而非增量猜测。重连会发送当前基线，每次 queued 变更或终态事件都会整体替换它。客户端不会进行乐观编辑，也绝不根据持久轮次事件或状态变化退役队列行。
 
-**The live ledger is authoritative.** `agent/inbox/enqueue`, `update`, `dequeue`, and `discard` maintain a Host mirror of queued occurrences. A synchronously re-entrant update or terminal event may reach the mirror before its outer enqueue listener; the mirror retains that unseen outcome for the current dispatch and folds it into the enqueue, so listener registration order cannot publish stale content or a ghost row. The wire sends complete `session/queue` snapshots rather than incremental guesses. Reconnect sends the current baseline, and every queued mutation or terminal event replaces it. The client applies no optimistic edit and never retires a row from durable turn events or status changes.
+**Queue 寻址要求 Agent 存活。** `session.updateQueue` 只查询已挂载的 Agent 注册表，绝不恢复冷会话：`InboxItemId` 属于进程本地标识，无法在重启或资源释放后继续指向工作。Agent 缺失和单次入队项已被驱动器认领这两种情况都返回 `queue-item-not-found`。
 
-**Queue addresses require a live Agent.** `session.updateQueue` queries only the mounted Agent registry and never resumes a cold session: an `InboxItemId` is process-local and cannot name work after restart or disposal. A missing Agent and a driver-claimed occurrence both return `queue-item-not-found`.
+**Web 操作只面向 Queue。** Host 从 `session/queue` 中排除待处理 steering；steering 消费后仍沿用既有的持久 transcript（文本记录）路径。QueueDock 在队列为空时隐藏，只有一个待处理项时直接渲染该行，存在两个或更多待处理项时则默认收起为可展开或收起完整列表的 `"<n> 条排队消息"` 表头。表头暴露 `aria-expanded` 和 `aria-controls`；展开后的列表以 180px 为高度上限，并可滚动。存在进行中的编辑或变更时，列表行会保持可见；队列清空后，下一次出现队列时会恢复默认收起状态。可见行暴露编辑和删除操作，不提供立即发送控件。UI 从运行时 `SessionFace` 契约派生队列行与变更类型，而不是导入连接插件，因此插件仍通过服务和快照协作。仅当所有内容块都是文本时才提供编辑功能；编辑器不能静默丢弃非文本块。编辑中的行只展示保存和取消操作，对应的键盘操作分别是 Enter 和 Escape。删除会移除对应的精确入队项。
 
-**Web actions address Queue only.** The Host excludes pending steering from `session/queue`; steering retains its existing durable transcript path after consumption. QueueDock hides while empty, renders one pending occurrence directly, and defaults two or more occurrences to a collapsed `"<n> 条排队消息"` header that expands or collapses the complete list. The header exposes `aria-expanded` and `aria-controls`; the expanded list scrolls within a 180px height bound. An active edit or mutation keeps its rows visible, and emptying the queue restores the collapsed default for the next queue. Visible rows expose edit and delete, but no send-now control. The UI derives queue row and mutation types from the runtime `SessionFace` contract rather than importing the connection plugin, so plugin cooperation continues through services and snapshots. Edit is available only when all content blocks are text; the editor cannot silently drop non-text blocks. An editing row exposes only save and cancel, with Enter and Escape as their keyboard equivalents. Delete removes the exact occurrence.
+## 考虑过的替代方案
 
-## Alternatives considered
+**通过 `MessageId` 寻址行。** 不予采纳，因为同一条不可变消息可以重复发送；按消息标识编辑或删除会无法确定应操作哪一次入队。
 
-**Address rows by `MessageId`.** Rejected because one immutable message may be sent repeatedly; editing or deleting by message identity would affect an ambiguous occurrence.
+**在浏览器中进行乐观变更。** 不予采纳，因为驱动器认领或另一个客户端可能先于 Host 操作完成。等待权威快照可以显式呈现所有权边界，并让 `queue-item-not-found` 报告真实竞态。
 
-**Apply optimistic browser mutations.** Rejected because driver claim and another client can win before the Host action. Waiting for the authoritative snapshot makes the ownership boundary visible and lets `queue-item-not-found` report a real race.
+**将待处理 steering 纳入队列变更协议。** 不予采纳，因为 QueueDock 没有 steering 交互，而编辑或删除活动轮次输入会把此功能扩展到当前消费方之外。应由专用 steering 交互负责该投递契约。
 
-**Include pending steering in the queue mutation protocol.** Rejected because QueueDock has no steering interaction, and editing or deleting active-turn input would widen this feature beyond its current consumer. A dedicated steering interaction owns that delivery contract.
+**暴露仅协议层的前移操作。** 不予采纳，因为当前没有产品交互会重新排序 Queue。公开一个没有当前消费方的操作，会为了推测性用途引入排序语义和测试。
 
-**Expose a protocol-only promotion operation.** Rejected because no product interaction reorders Queue. A public operation without a current consumer would add ordering semantics and tests for speculative use.
+**为队列操作恢复冷 Agent。** 不予采纳，因为持久会话标识不会保留进程本地的 inbox 寻址凭据。恢复只能在创建无关的实时状态后得到 `not-found`。
 
-**Resume a cold Agent for a queue operation.** Rejected because durable session identity does not preserve the process-local inbox capability. Resuming can only produce `not-found` after creating unrelated live state.
+## 验证
 
-## Verification
+AgentLoop 契约测试会在编辑和移除精确 queued 入队项时阻塞提示词接纳，拒绝对 steering 入队项的变更，并验证所得独立轮次及终态生命周期事件。Host schema 与代理测试覆盖仅含 queued 项的权威快照、同步可重入变更顺序、重连、拒绝冷 Agent、类型化 not-found 错误和 RPC 传输。客户端运行时和 QueueDock 测试覆盖非乐观投影、单行呈现、多行默认收起、交互期间强制保持可见、清空后重置、展开、仅文本编辑、保存与取消入口、移除、退役竞态，以及禁用混合内容编辑。无密钥浏览器场景会先捕获默认收起的表头，再展开队列，并通过构建后的 Web 组合和真实 HTTP／SSE 协议操作其公开的编辑和删除。
 
-AgentLoop contract tests hold prompt admission while editing and removing exact queued occurrences, reject mutations of steering occurrences, and verify the resulting independent turn and terminal lifecycle events. Host schema and proxy tests cover queued-only authoritative snapshots, synchronous re-entrant mutation order, reconnect, cold-Agent rejection, typed not-found errors, and the RPC transport. Client runtime and QueueDock tests cover non-optimistic projection, single-row presentation, default multi-row collapse, interaction-forced visibility, reset after emptying, expansion, text-only editing, save and cancel affordances, removal, retirement races, and disabled mixed-content editing. Keyless browser scenarios capture the default collapsed header before expanding the queue and driving its exposed edit and delete actions through the built Web composition and real HTTP/SSE wire.
+## 后果
 
-## Consequences
+queued 工作获得精确的行操作，但不会因此成为持久会话历史。单次入队标识是进程本地的实时寻址凭据，会在认领、取消、dispose 或重启时消失；重连只能恢复仍由活跃 Agent 持有的 queued 项。编辑会排除混合内容，直至编辑器能够保留每个块；待处理 steering 则不属于此操作接口。
 
-Queued work gains precise row operations without becoming durable session history. Occurrence identity is a live process-local capability and disappears at claim, cancellation, disposal, or restart; reconnect recovers only queued items still held by the live Agent. Editing excludes mixed content until an editor can preserve every block, while pending steering remains outside this operation surface.
-
-The protocol now carries full queue snapshots on each change. Queues are expected to remain short, so deterministic recovery and multi-client convergence are preferred over an incremental mutation protocol.
+现在，协议会在每次变更时携带完整队列快照。队列预期保持较短，因此系统优先选择确定性恢复和多客户端收敛，而非增量变更协议。

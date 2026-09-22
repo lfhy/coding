@@ -1,29 +1,27 @@
-# Agent Note: Request-error retry action
+# Agent Note: 请求错误重试动作
 
 Status: implemented
 
-English | [中文](2026-07-27-request-error-retry-action.zh.md)
+## 问题
 
-## Problem
+模型请求恢复由 `agent/request-error` 内部决定，却通过 `Agent.retry()` 传达。这个公开命令只在一个狭窄的 waterfall（瀑布式事件）窗口内和空闲时有效，在其他运行状态下会被拒绝，并要求 `ReactLoopAgent` 在 waterfall 结果旁保留一个可变的重试窗口。恢复插件是仅有的生产调用方，因此更宽泛的活跃 agent（智能体）能力暴露了与其策略决策无关的状态与行为。
 
-Model-request recovery was decided inside `agent/request-error` but communicated through `Agent.retry()`. That public command was valid during one narrow waterfall window and while idle, rejected other running states, and required `ReactLoopAgent` to retain a mutable retry window beside the waterfall result. The recovery plugins were the only production callers, so the wider live-agent capability exposed states and behavior unrelated to their policy decision.
+## 决策
 
-## Decision
+`agent/request-error` 返回 `RequestErrorAction`，其中负责处理的动作是 `{ kind: 'retry' }`；默认的 `undefined` 会让失败轮次保持终态。不拥有该失败的监听器调用 `next()`。拥有该失败的监听器执行所有需要等待的修复，然后直接返回重试动作而不继续委托。
 
-`agent/request-error` returns `RequestErrorAction`, whose handling action is `{ kind: 'retry' }`; the default `undefined` keeps the failed turn terminal. A listener that does not own the failure calls `next()`. A listener that owns it performs any awaited repair and returns the retry action without delegating.
+waterfall 结算后，循环读取该动作，关闭失败轮次，并从持久历史开启一个重试轮次。循环在使用该动作时会再次检查轮次信号，因此即使监听器随后返回重试动作，恢复期间发生的取消或 dispose（资源释放）仍会阻止重试。抛出异常的恢复不会产生动作。
 
-The loop reads the action after the waterfall settles, closes the failed turn, and opens one retry turn from durable history. It rechecks the turn signal when consuming the action, so cancellation or disposal during recovery prevents the retry even if a listener returns it afterward. A thrown recovery never produces an action.
+`Agent` 与 `ReactLoopAgent` 均不暴露 `retry()` 方法。普通新工作通过 `followup()`、`steer()` 和 `inject()` 进入；只有已处理的模型请求失败才能开启没有提示词的重试轮次。
 
-`Agent` and `ReactLoopAgent` expose no `retry()` method. Ordinary new work enters through `followup()`, `steer()`, and `inject()`; only a handled model-request failure can open a promptless retry turn.
+## 曾考虑的替代方案
 
-## Alternatives considered
+**保留 `Agent.retry()` 作为恢复命令。** 运行时防护检查可以将该命令限制在请求错误窗口内，但接口仍会暴露一个没有生产消费方的空闲无提示词再运行操作，循环也仍需通过可变的旁路状态取回已由 waterfall 承载的决策。
 
-**Keep `Agent.retry()` as the recovery command.** Runtime guards can restrict the command to the request-error window, but the interface still advertises an idle resummon operation with no production consumer and the loop still needs mutable side-channel state to recover a decision already owned by the waterfall.
+**返回显式终态动作。** `undefined` 已经表示 waterfall 未处理时的默认值，并可直接通过 `next()` 组合。再添加一个 `{ kind: 'fail' }` 值不会提供不同的行为或归属信息。
 
-**Return an explicit terminal action.** `undefined` already represents the waterfall's unhandled default and composes directly through `next()`. A second `{ kind: 'fail' }` value would add no distinct behavior or ownership information.
+## 后果
 
-## Consequences
+恢复归属、异步修复和重试决策共用一条类型化返回路径。活跃 agent 接口与具体循环不再具有空闲无提示词再运行能力和重试窗口状态。调用方如果不提交后续提示词，就无法重启任意失败的非请求工作；瞬时策略与上下文溢出策略则保留编号重试轮次、从持久历史重建、有限的策略私有预算和取消优先级。
 
-Recovery ownership, asynchronous repair, and the retry decision share one typed return path. The live-agent interface and concrete loop lose the idle resummon capability and retry-window state. Callers cannot restart arbitrary failed non-request work without submitting a later prompt, while transient and context-overflow policies retain numbered retry turns, durable-history reconstruction, finite private budgets, and cancellation precedence.
-
-Focused agent-loop tests pin retry chaining, terminal fallthrough, recovery failure, and cancellation races. The llm-retry and compaction-basic suites pin their policy-owned action returns, and the ACP, goal-round-driver, and plan-mode integrations pin successor-turn adoption.
+聚焦的 agent-loop 测试固定了重试链、未处理失败保持终态、恢复失败和取消竞态。llm-retry 与 compaction-basic 测试套件固定其策略自有的动作返回，而 ACP（Agent Client Protocol）、goal-round-driver 和 plan-mode 集成测试固定后继轮次承接。

@@ -1,51 +1,49 @@
-# Agent Note: Synchronous cleanup of managed subprocesses on host exit
+# Agent Note: 宿主退出时同步清理受管子进程
 
 Status: implemented
 
-English | [中文](2026-08-11-synchronous-subprocess-exit-cleanup.zh.md)
-
 ## Problem
 
-The local subprocess provider owns ordinary detached process trees and terminal sessions, but it previously reached them only through asynchronous Cordis disposal. A fatal launcher may call `process.exit()` before that disposal finishes: the [fail-loud release](2026-07-31-fail-loud-releases-the-terminal.md) waits at most two seconds, while a local process can have a longer termination grace. Once Node enters its synchronous exit phase, pending promises and escalation timers do not continue, so a TERM-resistant child can outlive the host and keep CPU, memory, or ports. Some ACP, JSON-RPC, and SDK entry points also have no root release callback.
+本地 subprocess provider拥有普通 detached进程树和 terminal session，但此前只能通过异步 Cordis dispose触及它们。致命 launcher可能在 dispose完成前调用 `process.exit()`：[fail-loud release](2026-07-31-fail-loud-releases-the-terminal.md)最多等待两秒，而本地进程可以拥有更长的终止宽限期。Node进入同步退出阶段后，待处理的 Promise与升级 timer不会继续执行，因此忽略 TERM的子进程可能比宿主存活更久，继续占用 CPU、内存或端口。部分 ACP、JSON-RPC和 SDK入口也没有 root release回调。
 
-The public subprocess seam correctly promises awaited quiescence during normal disposal. The defect is a separate final host-exit path below that seam, not a reason to weaken the normal lifecycle or duplicate process ownership in every launcher.
+公共 subprocess seam在正常 dispose期间承诺等待完全停稳，这项承诺是正确的。缺陷属于 seam之下另一条最终宿主退出路径，不应削弱正常生命周期，也不应让每个 launcher重复保存进程所有权。
 
 ## Decision
 
-`LocalSubprocessRuntime` installs one synchronous Node `exit` listener in its Cordis effect. The same effect removes the listener only after normal disposal settles. Ordinary and terminal handles remain in the service's existing live sets while asynchronous cleanup is pending, so a shorter outer exit bound still sees and force-terminates them. If awaited disposal reports a cleanup failure, the service invokes the same synchronous final operations before clearing the sets and removing the listener.
+`LocalSubprocessRuntime`在自身 Cordis effect中安装一个同步 Node `exit` listener。只有正常 dispose结算后，同一 effect才移除该 listener。异步清理仍在等待时，普通和 terminal handle继续保留在服务已有的存活集合中，因此更短的外层退出上限仍能看到并强制终止它们。等待中的 dispose报告清理失败时，服务会在清空集合并移除 listener前调用同一组同步最终操作。
 
-The listener uses local-only final operations that are absent from the public `SubprocessHandle` and `SubprocessTerminalHandle` interfaces:
+该 listener使用本地实现私有的最终操作；公共 `SubprocessHandle`和 `SubprocessTerminalHandle`接口不包含这些操作：
 
-- An ordinary handle immediately sends SIGKILL to its detached POSIX process group or runs synchronous `taskkill /PID <pid> /T /F` on Windows.
-- A terminal handle synchronously signals every captured and currently observable descendant with SIGKILL, kills the PTY root, then rescans once for members that became observable during that boundary.
-- The service contains each target's failure and continues with the remaining handles. The callback creates no promise or timer, writes no diagnostic, and does not change the original exit code or error.
+- 普通 handle立即向 detached POSIX进程组发送 SIGKILL，或在 Windows同步运行 `taskkill /PID <pid> /T /F`。
+- Terminal handle同步向全部已捕获及当前可观察的后代发送 SIGKILL，终止 PTY root，然后再扫描一次并终止在该边界期间变得可观察的成员。
+- 服务分别包含每个目标的失败并继续处理其余 handle。回调不会创建 Promise或 timer，不写诊断，也不改变原始退出码或错误。
 
-Normal disposal remains the [subprocess seam's](../architecture/2026-07-26-subprocess-seam.md) terminate-and-join path: ordinary trees receive TERM, the configured grace, then KILL, and every ordinary or terminal cleanup is awaited to quiescence. The synchronous path requests final termination but does not publish a completion result or claim the OS tree is already gone when the callback returns. Remote providers retain their own sandbox ownership and do not inherit a local Node listener.
+正常 dispose继续使用[subprocess seam](../architecture/2026-07-26-subprocess-seam.md)的先终止再等待退出路径：普通进程树先接收 TERM，经过配置的宽限期后再接收 KILL，并等待每个普通或 terminal清理达到完全停稳。同步路径只请求最终终止，不发布完成结果，也不声称回调返回时 OS进程树已经消失。远程 provider继续由其 sandbox独立拥有，不继承本地 Node listener。
 
-| Host path | Local provider action | Completion evidence |
+| 宿主路径 | 本地 provider动作 | 完成证据 |
 | --- | --- | --- |
-| Normal Cordis disposal | Cooperative termination, bounded escalation, and awaited ordinary/terminal cleanup | Every owned handle reaches quiescence before disposal settles |
-| `process.exit()`, default uncaught exception, or default unhandled rejection | Synchronous final signals against the service's current live sets | External observation after the host exits |
-| Default termination for an unhandled `SIGTERM`, `SIGINT`, or `SIGHUP`; `SIGKILL`; fatal OOM; `process.abort()`; native crash; or power loss | No in-process action can run | External supervisor, container, or OS ownership is required unless the application installs a signal handler that performs disposal or calls `process.exit()` |
+| 正常 Cordis dispose | 协作式终止、有界升级，并等待普通／terminal清理 | dispose结算前，每个自有 handle均达到完全停稳 |
+| `process.exit()`、默认未捕获异常或默认未处理 rejection | 对服务当前存活集合发送同步最终信号 | 宿主退出后的外部观察 |
+| 未安装 handler 时由 `SIGTERM`、`SIGINT` 或 `SIGHUP` 默认终止；`SIGKILL`；fatal OOM；`process.abort()`；native crash；或断电 | 进程内操作无法运行 | 必须由外部 supervisor、容器或 OS 所有权负责；应用安装执行 dispose 或调用 `process.exit()` 的信号 handler 时除外 |
 
 ## Verification
 
-A parent test starts an isolated TypeScript host through the repository source launcher, waits until exact root and descendant process identities are observable, then allows the host to take each fatal path. Direct exit, default uncaught exception, and default unhandled rejection cover ordinary TERM-resistant trees; direct exit also covers a real terminal root and descendant. The parent asserts the original host exit category and waits for every recorded process to disappear, while failure cleanup targets only recorded identities or the recorded Windows tree.
+父测试通过仓库 source launcher启动隔离的 TypeScript宿主，等待精确 root与后代进程身份可观察后，再允许宿主进入各条致命路径。直接退出、默认未捕获异常和默认未处理 rejection覆盖忽略 TERM的普通进程树；直接退出还覆盖真实 terminal root与后代。父测试断言原始宿主退出类别，并等待所有已记录进程消失；失败清理只针对已记录身份或已记录的 Windows进程树。
 
-Unit evidence pins synchronous POSIX group and Windows taskkill delivery, terminal scans before and after the PTY root kill, repeated finalization, per-target failure containment, normal TERM-to-KILL disposal, live-set retention during pending disposal, and listener removal after disposal.
+单元证据固定同步 POSIX进程组与 Windows taskkill投递、PTY root终止前后的 terminal扫描、重复最终清理、逐目标失败包含、正常 TERM到 KILL dispose、dispose等待期间保留存活集合，以及 dispose后移除 listener。
 
 ## Alternatives considered
 
-**Rely only on launcher release callbacks.** Rejected because not every entry point supplies one, and a bounded release can still end before the subprocess provider's grace and timers complete.
+**只依赖 launcher release回调。** 拒绝，因为不是每个入口都会提供该回调，而且有界 release仍可能在 subprocess provider的宽限期与 timer完成前结束。
 
-**Call the existing asynchronous `terminate()` methods from the `exit` listener.** Rejected because Node does not await exit listeners; promises, timers, output draining, and quiescence polling cannot finish after the callback returns.
+**在 `exit` listener中调用现有异步 `terminate()`。** 拒绝，因为 Node不会等待 exit listener；回调返回后，Promise、timer、输出排空与停稳轮询都无法完成。
 
-**Add a public raw `forceKill()` operation to subprocess handles.** Rejected because consumers need one cooperative termination contract. Immediate final termination is an implementation responsibility used only by the local service's host-exit owner.
+**向公共 subprocess handle增加 raw `forceKill()`操作。** 拒绝，因为消费方只需要一项协作式终止约定。立即最终终止属于实现职责，只由本地服务的宿主退出 owner使用。
 
-**Delegate every failure mode to an external supervisor.** Rejected as the only solution because Node exposes a reliable synchronous callback for several common fatal paths and the provider already owns the exact targets. External ownership remains necessary when JavaScript cannot run.
+**把所有故障模式交给外部 supervisor。** 不接受将其作为唯一方案，因为 Node为几条常见致命路径提供可靠的同步回调，而 provider已经拥有精确目标。JavaScript无法运行时仍必须依赖外部所有权。
 
 ## Consequences
 
-Each active local subprocess service contributes one process-global exit listener, removed with the service effect. Fatal exit gives up grace, output draining, and an in-process quiescence proof in exchange for issuing the strongest available local termination before the host disappears. Normal disposal keeps those guarantees and costs unchanged.
+每个有效的本地 subprocess service都会贡献一个进程全局 exit listener，并随服务 effect移除。致命退出放弃宽限、输出排空与进程内停稳证明，以换取宿主消失前发出本地可用的最强终止操作。正常 dispose的保证与成本保持不变。
 
-The listener cannot cover failures that do not execute JavaScript, and it cannot discover a terminal descendant that escaped before the provider ever observed it; that separate ownership gap remains tracked by Issue #1726.
+listener无法覆盖不执行 JavaScript的故障，也无法发现 provider首次观察前已经逃逸的 terminal后代；该独立所有权缺口仍由 Issue #1726跟踪。

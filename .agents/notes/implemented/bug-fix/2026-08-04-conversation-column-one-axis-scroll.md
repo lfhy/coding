@@ -1,37 +1,35 @@
-# Agent Note: The conversation column scrolls on one axis
+# Agent Note: 会话列只在一个轴上滚动
 
 Status: implemented
 
-English | [中文](2026-08-04-conversation-column-one-axis-scroll.zh.md)
+## 问题
 
-## Problem
+当中间列被拉窄——无论是拖窗口还是拖侧边栏——hero 态的整条会话列下方就会出现一条横向滚动条。溢出的元素是 hero 的装饰性背景椭圆：`.heroGlow` 的宽度取 hero 盒子的 `1051/776`，好让它的模糊在 userSpace 中随输入卡片一同缩放；这也意味着只要列比它窄，它就会伸出列外。
 
-Narrowing the center column — by the window or by the sidebar drag — put a horizontal scrollbar under the whole conversation column on the hero. The bleeding element is the hero's decorative backdrop ellipse: `.heroGlow` is sized `1051/776` of the hero box so its blur scales in userSpace with the input card, which means it reaches past the column whenever the column is narrower than the glow.
+这处外溢是设计使然，保持不变。真正让它对用户可见的是它所处的滚动容器。`[data-conversation-scroll]` 只声明了 `overflow-y: auto`，另一个轴留在初始值 `visible`；而一个在某一轴上滚动的盒子，会把另一轴的 `visible` 计算为 `auto`。于是每一条比该椭圆窄的列都真的给出了一段横向滚动范围——在笔记本实际会产生的几档宽度上，实测为 24–95px。
 
-That bleed is by construction and stays. What made it user-visible is the scroll container it sits in. `[data-conversation-scroll]` declared `overflow-y: auto` and left the other axis at its initial `visible`, and a box that scrolls in one axis computes `visible` to `auto` in the other. Every column narrower than the glow therefore offered a real horizontal scroll range — measured at 24–95px across the widths a laptop actually produces.
+## 决策
 
-## Decision
+`.scrollBody` 声明 `overflow-x: hidden`。这条列明确声明自己是单轴滚动容器，而不是把第二个轴交给推导。
 
-`.scrollBody` declares `overflow-x: hidden`. The column states that it is a one-axis scroller instead of leaving the second axis to be derived.
+裁剪行为不变。`overflow-y: auto` 早已使该盒子成为在两个轴上都裁剪的滚动容器，因此这条声明收回的只是滚动条和用户手势；椭圆保留它的外溢、模糊半径和同样的绘制范围，列也保留纵向滚动。输入区那条链路上没有任何东西移动。
 
-Clipping does not change. `overflow-y: auto` had already made the box a scroll container that clips both axes, so the declaration withdraws only the scrollbar and the user gesture; the glow keeps its bleed, its blur radius, and the same painted extent, and the column keeps its vertical scroll. Nothing in the composer chain moves.
+## 曾考虑的替代方案
 
-## Alternatives considered
+**把椭圆缩到列内。** 否决。椭圆的宽度正是让它 `stdDeviation="50"` 的模糊随输入卡片缩放的依据（figma 313:14109）；约束宽度会使列越窄模糊越紧，等于为修一条滚动条而制造一处视觉回归。
 
-**Size the glow to fit the column.** Rejected. The glow's width is what scales its `stdDeviation="50"` blur with the input card (figma 313:14109); constraining it would make the blur tighten as the column narrows, which is a visual regression to fix a scrollbar.
+**给椭圆套一层裁剪盒。** 否决。这层盒子唯一的职责是抵消列本就会裁剪的溢出，而推导出的 `overflow-x: auto` 仍然留在原处，等着下一个外溢的元素——transcript（文本记录）里这样的候选者不少。
 
-**Wrap the glow in a clipping box.** Rejected. It adds a box whose only job is to undo an overflow the column already clips, and it leaves the derived `overflow-x: auto` in place for the next element that bleeds — the transcript is full of candidates.
+**依赖外框的 `.centerCol { overflow: hidden }`。** 它帮不上忙。那处裁剪在滚动容器之外，只能在列边界处遮住椭圆探出的部分，而里面的容器照样可以滚过去够到它。用户报告的那条滚动条属于内层容器。
 
-**Rely on the frame's `.centerCol { overflow: hidden }`.** It cannot help. That clip is outside the scroll container, so it hides the glow's overhang at the column border while the container inside it still scrolls to reach it. The reported bar was that container's.
+**在测试里断言 `scrollWidth === clientWidth`。** 作为判据被否决，因为它区分不出两种状态：`hidden` 裁剪外溢，而不是把它重排掉，所以修复前后读到的滚动范围一样。唯一有差别的是拒绝用户手势，这正是该场景所测量的。
 
-**Assert `scrollWidth === clientWidth` in the test.** Rejected as the signal, because it does not distinguish the states: `hidden` clips the bleed rather than reflowing it away, so the scroll range reads the same on both sides of the fix. Only refusing a user gesture differs, which is what the scenario measures.
+## 测试
 
-## Testing
+[apps/web/tests/conversation-column-overflow.e2e.ts](../../../../apps/web/tests/conversation-column-overflow.e2e.ts) 扫过一组把椭圆宽度夹在中间的视口宽度，在每一档上于列上触发横向滚轮事件并读取 `scrollLeft`。提交的 golden 逐档记录该关系；最宽的一档是椭圆根本不外溢的对照。
 
-[apps/web/tests/conversation-column-overflow.e2e.ts](../../../../apps/web/tests/conversation-column-overflow.e2e.ts) sweeps viewport widths bracketing the glow and, at each stop, wheels horizontally over the column and reads `scrollLeft`. The committed golden records the relation per stop; the widest stop is the control where the glow does not bleed at all.
+两道防线保证该场景不流于形式。空断言防线断言窄档上椭圆确实仍伸出列外，使这项主张不可能因为症状出于无关原因消失而通过。变异对照则在页面内把 `overflow-x: auto` 强制改回，证明同一手势在同一时序下能把列带到正向滚动边界。测试直接测量该边界，因为稳定的滚动条槽可能让部分外溢处于滚动原点的负向。没有这项对照，`scrollLeft` 读到 0 同样可以解释为滚轮事件根本没送达。
 
-Two guards keep the scenario honest. The vacuity guard asserts the glow still reaches past the column at the narrow stops, so the claim cannot pass by the symptom having disappeared for an unrelated reason. The mutation control forces `overflow-x: auto` back on in the page and shows the same gesture, at the same timing, carrying the column to its positive scroll boundary; the test measures that boundary directly because a stable scrollbar gutter can leave some overflow on the negative side of the scroll origin. Without the control, a `scrollLeft` of 0 could equally mean the wheel never arrived.
+## 后果
 
-## Consequences
-
-The conversation column no longer offers a horizontal scrollbar at any width, and decorative bleed in the composer chain is now clipped rather than exposed as scroll range. The cost is that genuinely wide content under this column is clipped instead of reachable by scrolling: any such surface owns its own scroller, as the markdown code block and the trajectory table already do.
+会话列在任何宽度下都不再给出横向滚动条，输入区链路上的装饰性外溢从暴露为滚动范围改为被裁剪。代价是这条列下真正过宽的内容会被裁掉而非可滚动够到：这类界面各自拥有自己的滚动容器，markdown 代码块和轨迹表格已经如此。

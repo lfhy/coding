@@ -1,16 +1,14 @@
-# context/ — request-context extensions
+# context/ — 请求上下文扩展
 
-English | [中文](README.zh.md)
+在不定义工具的情况下添加模型可见的请求上下文的产品插件。`agent-instructions` 包含在默认 `dsh-agent-spine-demo` 组合包中，可通过组合包配置禁用；`time-context`、`tmux-context`、`session-reference`、`file-reference` 和 `file-reference-local` 需主动启用。
 
-Product plugins that add model-visible request context without defining a tool. `agent-instructions` is included by the default `dsh-agent-spine-demo` bundle and can be disabled through bundle config; `time-context`, `tmux-context`, `session-reference`, `file-reference`, and `file-reference-local` are opt-in.
-
-| Package | Role | ctx key |
+| 包 | 职责 | ctx key |
 |---|---|---|
-| [`session-reference/`](session-reference/README.md) | Bounded snapshots of other sessions | `ctx.sessionReferenceResolver` |
-| [`file-reference/`](file-reference/README.md) | File-reference discovery seam and `@file` grammar | `ctx.fileReferences` |
-| [`file-reference-local/`](file-reference-local/README.md) | Local-filesystem file-reference provider | — |
-| [`time-context/`](time-context/README.md) | Current-time and elapsed-time context | — |
-| [`tmux-context/`](tmux-context/README.md) | tmux location context | — |
-| [`agent-instructions/`](agent-instructions/README.md) | Workspace-instruction context | — |
+| [`session-reference/`](session-reference/README.md) | 其他会话的有界快照 | `ctx.sessionReferenceResolver` |
+| [`file-reference/`](file-reference/README.md) | 文件引用发现 seam 与 `@file` 语法 | `ctx.fileReferences` |
+| [`file-reference-local/`](file-reference-local/README.md) | 本地文件系统文件引用提供方 | — |
+| [`time-context/`](time-context/README.md) | 当前时间与耗时上下文 | — |
+| [`tmux-context/`](tmux-context/README.md) | tmux 位置上下文 | — |
+| [`agent-instructions/`](agent-instructions/README.md) | 工作区指令上下文 | — |
 
-Session references are documented in [docs/subsystems/session-reference.md](../../docs/subsystems/session-reference.md); the [`agent-instructions` decision record](../../.agents/notes/implemented/feature/2026-06-24-workspace-context.md) owns its per-agent/session isolation and lifecycle split.
+会话引用见 [docs/subsystems/session-reference.md](../../docs/subsystems/session-reference.md)；[`agent-instructions` 决策记录](../../.agents/notes/implemented/feature/2026-06-24-workspace-context.md)规定了其按 agent（智能体）/会话隔离与生命周期拆分。

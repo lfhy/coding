@@ -1,35 +1,33 @@
-# Agent Note: The job registry is a capability seam (`dsh-jobs` / `dsh-jobs-local`)
+# Agent Note: 任务注册表是一个能力 seam（`dsh-jobs` / `dsh-jobs-local`）
 
 Status: implemented
 
-English | [中文](2026-07-26-job-registry-seam.zh.md)
+## 问题
 
-## Problem
+[后台任务运行时](2026-06-20-generic-long-running-tool-runtime.md)交付时把 `JobRegistry` 做成了单个具体包：`@deepseek-ai/dsh-jobs` 既拥有每个生产方和控制器面向编程的 `ctx.jobs` 约定，也拥有进程内 Service Provider（内存存储、结算簿记、所有者清理 effect、拆除）。这种捆绑重新耦合了仓库[能力 seam 规则](2026-06-13-capability-seams.md)本要分离的两种变化速率：一旦替换注册表的存储或生命周期后端，被搅动的就是同一个包，而生产方（`dsh-tool-bash`、`dsh-tool-terminal`、`dsh-tool-subagent`）、控制器（`dsh-tool-jobs`）和 `JobKindMap` 扩展方正是从这个包导入类型与 `ctx.jobs` API。harness 中其余每项可替换能力——bash、pty、fs、skill（技能）、subagent、web、会话持久化——都已具备 Service Definition / Service Provider / Consumer 三分；任务注册表曾是仅剩的 `core` 模式例外，仅由一条 `TODO(job-service-backend)` 注释把守。
 
-The [background-job runtime](2026-06-20-generic-long-running-tool-runtime.md) shipped `JobRegistry` as one concrete package: `@deepseek-ai/dsh-jobs` owned both the `ctx.jobs` contract every producer and controller programs against and the process-local provider (the in-memory store, settlement bookkeeping, owner-cleanup effects, teardown). That bundling recouples the two rates of change the repository's [capability-seam rule](2026-06-13-capability-seams.md) separates: swapping the registry's storage or lifecycle backend would churn the same package whose types and `ctx.jobs` API producers (`dsh-tool-bash`, `dsh-tool-terminal`, `dsh-tool-subagent`), the controller (`dsh-tool-jobs`), and `JobKindMap` extenders import. Every other swappable capability in the harness — bash, pty, fs, skill, subagent, web, session persistence — already carries the Service Definition / Service Provider / Consumer split; the job registry was the remaining `core`-mode exception, guarded only by a `TODO(job-service-backend)` comment.
+## 决策
 
-## Decision
+`jobs/` 如今是一个 bash 三件套形态的三包能力家族：
 
-`jobs/` is now a three-package capability family in the bash-trio shape:
+- **`@deepseek-ai/dsh-jobs`（Service Definition）**——抽象的 `JobRegistry extends Service`，拥有 `ctx.jobs`、九个方法的约定（`start`、`list`、`get`、`read`、`kill`、`wait`、`onJobDone`、`onJobsChanged`、`attachController`）、全部词汇类型（`JobId`、`JobKindMap`、`JobStart`、`JobHooks`、`JobOutcome`、`JobSnapshot`、`JobRead`、`JobDoneListener`），以及快照不变式配套插件。类级 JSDoc 陈述了每个 Service Provider 都必须兑现的语义：注册的存续期长于生产方与控制器的 fiber，有所有者的访问以会话为界，结算遵循首次结果优先且监听器错误被隔离，并且当没有任何已附加的任务控制器服务于 spec 的所有者时 `start` 拒绝启动工作（控制器与监听器按 scope 分层，因此一个进程级注册表能逐所有者地回答这两个问题）。
+- **`@deepseek-ai/dsh-jobs-local`（Service Provider）**——`LocalJobRegistry`，即进程内注册表：内存存储、按 kind 划分的 id 计数器、等待方簿记、`TASK_WAIT_TIMEOUT` deadline 代码、所有者清理 effect、强制失败的拆除，以及默认值为 10 且可配置的准入策略。准入从同一组记录中按确切 owner 派生 `running` 加 `stopping` 容量，并为无 owner 任务使用一个共享桶；它不新增公开计数或第二个状态 owner。`dsh-timeout` 依赖与由 Schemastery 管理的 Service Provider 配置都位于此包；Service Definition 包不含任何提供方依赖。
+- **`@deepseek-ai/dsh-tool-jobs`（Consumer）**——保持不变；它注入 `'jobs'`，从不导入提供方类型。
 
-- **`@deepseek-ai/dsh-jobs` (Service Definition)** — the abstract `JobRegistry extends Service` owning `ctx.jobs`, the nine-method contract (`start`, `list`, `get`, `read`, `kill`, `wait`, `onJobDone`, `onJobsChanged`, `attachController`), all vocabulary types (`JobId`, `JobKindMap`, `JobStart`, `JobHooks`, `JobOutcome`, `JobSnapshot`, `JobRead`, `JobDoneListener`), and the snapshot invariant companion. The class-level JSDoc states the semantics every Service Provider owes: registrations outlive producer and controller fibers, owned access is session-fenced, settlement is first-wins with contained listeners, and `start` refuses work while no attached job controller serves the spec's owner (controllers and listeners are scope-layered, so one process-wide registry answers both questions per owner).
-- **`@deepseek-ai/dsh-jobs-local` (Service Provider)** — `LocalJobRegistry`, the process-local registry: the in-memory store, per-kind id counters, waiter bookkeeping, `TASK_WAIT_TIMEOUT` deadline code, owner-cleanup effects, force-fail teardown, and the default-10 configurable admission policy. Admission derives `running` plus `stopping` capacity from the same records per exact owner, with one unowned bucket; it adds no public count or second state owner. The `dsh-timeout` dependency and Schemastery-owned provider config live here; the Service Definition package has no provider dependencies.
-- **`@deepseek-ai/dsh-tool-jobs` (Consumer)** — unchanged; it injects `'jobs'` and never imports provider types.
+各组合在原先加载 `dsh-jobs` 的位置改为加载 `dsh-jobs-local`：CLI（命令行界面）的 cordis.yml 配置项、`agent-spine-demo`、各测试 harness，以及工具目录生成器的启动流程。生产方的配置错误诊断信息（「background jobs unavailable: load …」）点名 `dsh-jobs`——即声明缺失的 `ctx.jobs` 服务的 Service Definition 包；Service Definition 包自身的 API（其 README 与直接挂载防线）会指向各 Service Provider，因此当另一个后端日后成为推荐默认时，生产方的消息依旧正确。生产方、`JobKindMap` 声明合并和控制器仍然只导入 `@deepseek-ai/dsh-jobs`。
 
-Compositions load `dsh-jobs-local` where they previously loaded `dsh-jobs` (the CLI cordis.yml row, `agent-spine-demo`, test harnesses, the tool-catalog generator boot). Producer misconfiguration diagnostics ("background jobs unavailable: load …") name `dsh-jobs` — the Service Definition package that declares the absent `ctx.jobs` service — and the Service Definition package's own APIs (its README and the direct-mount fence) point at Service Providers, so the producer message stays correct when another backend becomes the recommended default. Producers, `JobKindMap` declaration merges, and the controller keep importing `@deepseek-ai/dsh-jobs` only.
+该 seam 保持进程内约定语义不变：`JobStart.run()` 仍然传入回调和确切的 `Agent` 对象，因此持久化或跨进程后端在能满足此 Service Definition 之前仍有设计工作要做（身份、重启、所有权、观察）。这次拆分把该项未来工作移出了每个 Consumer 的依赖图；它并不预先设计后端。
 
-The seam keeps the in-process contract semantics unchanged: `JobStart.run()` still passes callbacks and exact `Agent` objects, so a durable or cross-process backend still has design work to do before it can satisfy this Service Definition (identity, restart, ownership, observation). The split moves that future work out of every Consumer's dependency graph; it does not pre-design the backend.
+## 曾考虑的替代方案
 
-## Alternatives considered
+**在第二个后端出现之前保持具体服务（维持现状）。**这正是运行时 Agent Note 当初的立场：在第二个 Service Provider 出现前抽取 Service Definition，可能固化错误的边界。该方案落选，因为这条边界已不再是臆测：九个服务方法及其语义自引入以来在每一次生产方集成中都保持稳定，它们正是 `dsh-tool-jobs` 与各生产方已经面向编程的那套接口，而且仓库约定默认将可替换能力拆成三个包。剩余风险（持久化后端可能需要变更约定）不因这次拆分而改变：无论拆分与否，这类变更都会落在 Service Definition 包里；而若维持现状，它们今天还会连带搅动每个 Consumer 的提供方依赖。
 
-**Keep the concrete service until a second backend exists (status quo).** This was the original runtime note's position: extracting a Service Definition before a second provider risks freezing the wrong boundary. It lost because the boundary is no longer speculative — the nine service methods and their semantics have been stable across every producer integration since introduction, they are exactly the API `dsh-tool-jobs` and the producers already program against, and the repository convention treats swappable capabilities as three packages by default. The residual risk (a durable backend needing contract changes) is unchanged by the split: those changes would land in the Service Definition package either way, and today they would also churn every Consumer's provider dependency.
+**在单个包内仅抽取 Service Definition（在具体类旁导出一个抽象类）。**否决，因为它在运作层面并未分离任何东西：Consumer 依然依赖携带 Service Provider 及其依赖项的那个包，而替换后端若不把本地 Service Provider 纳入自身依赖图，就仍然无法发布。在这里，包边界才是独立演进的单位。
 
-**Service-Definition-only extraction inside one package (export an abstract class beside the concrete one).** Rejected because it separates nothing operationally: Consumers still depend on the package that carries the provider and its dependencies, and a replacement backend still cannot ship without the local one in its graph. The package boundary is the unit of independent evolution here.
+**拆出 `types.ts` 但让服务保持具体。**基于同样的理由否决：类型并不是完整能力，`ctx.jobs` Service Definition 及其方法约定才是。生产方需要的是服务键和语义，而不只是类型形状。
 
-**Splitting `types.ts` out but leaving the service concrete.** Rejected for the same reason — the types are not the complete capability; the `ctx.jobs` Service Definition and its method contract are. Producers need the service key and semantics, not just the shapes.
+## 后果
 
-## Consequences
+换来的是：任务注册表如今与全仓库通行的 seam 形态一致；持久化、远程或带插桩的注册表将是一个实现九个抽象方法的同级 Service Provider，这样的注册表落地时，任何生产方、控制器或 `JobKindMap` 扩展方都无需改动。Service Definition 的 README 陈述约定；生命周期簿记方面的事实归 Service Provider 的 README 所有。注册表行为测试套件（所有者清理、结算、等待、拆除）随 `dsh-jobs-local` 存放；Service Definition 包保留一个桩子类（stub subclass）测试，固定 `ctx.jobs` 下的注册行为与单一服务的重复注册行为，外加基于探针的不变式测试套件。
 
-Bought: the job registry now matches the repository-wide seam shape; a durable, remote, or instrumented registry is a sibling Service Provider implementing nine abstract methods, and no producer, controller, or `JobKindMap` extender changes when one lands. The Service Definition README states the contract; the provider README owns the lifecycle bookkeeping facts. The registry behavior suite (owner cleanup, settlement, waits, teardown) lives with `dsh-jobs-local`; the Service Definition package keeps a stub-subclass test pinning registration under `ctx.jobs` and single-service duplication behavior, plus the probe-based invariant suite.
-
-Cost: one more package (manifest, tsconfig, README, invariant companion), and compositions must name the Service Provider package. `abstract` erases at runtime and this package name used to be the mountable registry, so the Service Definition constructor fails loudly when mounted directly — a stale composition row gets "load a Service Provider such as @deepseek-ai/dsh-jobs-local" at load time instead of a half-registered `ctx.jobs` failing far from the misconfiguration.
+代价是：多出一个包，即多一份 manifest（元数据清单）、tsconfig、README 与不变式配套插件；同时各组合必须点名 Service Provider 包。`abstract` 在运行时会被擦除，而这个包名过去正是可挂载的具体注册表，因此直接挂载 Service Definition 时，其构造函数会明确报错——一条陈旧的组合配置行会在加载时得到「load a Service Provider such as @deepseek-ai/dsh-jobs-local」，而不是一个未完整注册的 `ctx.jobs` 在远离错误配置处才失败。

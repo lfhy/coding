@@ -1,43 +1,41 @@
-# Agent Note: Run CI examples from built lib
+# Agent Note: 在 CI 中从构建后的 lib 运行示例
 
 Status: implemented
 Archived: 2026-07-27
 
-English | [中文](2026-07-17-run-ci-examples-from-built-lib.zh.md)
+## 问题
 
-## Problem
+CI 通过 `node --import tsx` 和根 tsconfig 的 `paths` 映射启动示例与加载 Cordis 配置的测试项目。这种方式既增加了 TypeScript 转换开销，也改变了包解析行为：import 会解析到 workspace 源码，而不是经包的 `exports` 进入构建后的 `lib/`。
 
-CI boots examples and Cordis-backed test projects through `node --import tsx` and the root tsconfig `paths` map. This adds TypeScript transformation cost and changes package resolution: imports resolve to workspace source instead of following package `exports` into built `lib/`.
+因此，这些测试没有覆盖已安装消费方实际运行的代码和解析路径。即使包的构建导出图不完整或解析结果不同，CI 仍可能通过。
 
-These runs therefore do not test the same code or resolution behavior as an installed consumer. A package can pass CI while its built export graph is incomplete or resolves differently.
+## 决策
 
-## Decision
+执行机制包含两种模式。`src` 是本地开发的默认模式并使用 tsx；`lib` 是严格的 CI 模式，通过 plain Node 启动构建后的 bin，不加载 tsx，也不使用 tsconfig 路径映射。
 
-Execution has two modes. `src` is the default local-development mode and uses tsx; `lib` is the strict CI mode and starts built bins with plain Node, without tsx or tsconfig path mapping.
+- CI 中启动示例或签入仓库的 `cordis.yml` 的子进程使用 `lib` 模式。
+- 仅实现 ACP 或 MCP 对端、且不加载 Cordis 的 TypeScript fixture（测试前置数据）直接由 Node 运行。只有显式验证源码路径的回归测试可以保留 `src` 模式。
 
-- CI subprocesses that boot an example or a checked-in `cordis.yml` use `lib` mode.
-- TypeScript fixtures that only implement an ACP or MCP peer and do not load Cordis run directly with Node. An explicit source-path regression may remain in `src` mode.
+### 解析拓扑
 
-### Resolution topology
+每个测试 Cordis 配置都必须能从配置文件所在目录向上解析裸模块。
 
-Every test Cordis config must resolve its bare modules by walking upward from the config directory.
+- `examples/` 作为一个 pnpm workspace 成员，提供统一的 `examples/node_modules` 解析根目录。
+- 所有签入仓库的测试 Cordis 配置，包括快照配置和包内测试 fixture，都放在对应的 `examples/<agent>/` 目录树下。归属 `packages/<group>/<package>/` 的配置映射到 `examples/<agent>/tests/fixtures/<group>/<package>/cordis.yml`；测试驱动和断言仍留在包内。
+- 示例 Cordis 配置中引用的每个包都同时登记在 `examples/package.json` 和根 `tsconfig.json` 的 references 中，分别支持 `lib` 与 `src` 解析。
 
-- `examples/` is one pnpm workspace member and provides the shared `examples/node_modules` resolution root.
-- Every checked-in test Cordis config, including snapshot configs and package-owned fixtures, lives under its corresponding `examples/<agent>/` tree. A config owned by `packages/<group>/<package>/` maps to `examples/<agent>/tests/fixtures/<group>/<package>/cordis.yml`; the test driver and assertions remain package-local.
-- Every package named by an example Cordis config is declared in both `examples/package.json` for `lib` resolution and the root `tsconfig.json` references for `src` mode.
+### 启动策略
 
-### Launch policy
+共享 Loader 测试 harness 通过 `DSH_EXAMPLE_MODE` 选择 `src` 或 `lib`。CI 先构建再选择 `lib`；未设置模式时保留快速的本地源码开发回路。
 
-The shared Loader test harness selects `src` or `lib` from `DSH_EXAMPLE_MODE`. CI builds first and selects `lib`; an unset mode keeps the fast local source loop.
+## 曾考虑的替代方案
 
-## Alternatives considered
+- **CI 继续使用 tsx**：不予采纳，因为它会保留转换开销和仅适用于源码的解析行为。
+- **所有环境只使用 lib**：不予采纳，因为本地开发每次运行前都必须构建。双模式避免把这项成本带入开发回路。
+- **每个测试单独构造 `node_modules`**：不予采纳，因为它会重复消费方脚手架。以 `examples/` 作为 workspace 根，可让每个 Cordis 配置通过同一条真实且显式声明的路径解析模块。
 
-- **Keep CI on tsx** — rejected because it preserves transformation overhead and source-only resolution behavior.
-- **Use lib everywhere** — rejected because local development would require a build before every run. Dual mode keeps that cost out of the development loop.
-- **Build a private `node_modules` tree per test** — rejected because it duplicates consumer scaffolding. The `examples/` workspace root gives every Cordis config one real and declared resolution path.
+## 后果
 
-## Consequences
-
-- CI validates built package exports without tsx changing module resolution; local development retains the no-build source loop.
-- CI must build before these tests, and manual `lib` runs can observe stale local artifacts.
-- Cordis config dependencies are not visible to normal TypeScript import analysis, so `examples/package.json` and the root tsconfig references must stay synchronized with the configs.
+- CI 可以验证构建后的包导出，不再受 tsx 模块解析影响；本地开发仍保留免构建的源码回路。
+- CI 必须先构建再运行这些测试；手动执行 `lib` 模式时可能读取陈旧的本地产物。
+- 常规 TypeScript import 分析无法识别 Cordis 配置依赖，因此 `examples/package.json`、根 tsconfig references 与配置文件必须保持同步。

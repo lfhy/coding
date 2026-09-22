@@ -1,6 +1,0 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-22-macos-picker-in-process-panel.md
-2026-09-22-macos-picker-in-process-panel.md: ce1fef1f546294f24d9c6c378a2c126deb7a8735
-2026-09-22-macos-picker-in-process-panel.zh.md: 9c5b27536824eb33b5f0a6e3e7544ba8d7224879

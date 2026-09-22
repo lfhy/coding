@@ -1,27 +1,25 @@
-# Agent Note: Web slash-command fuzzy discovery
+# Agent Note: Web 斜杠命令模糊发现
 
 Status: implemented
 
-English | [中文](2026-08-04-web-slash-command-fuzzy-discovery.zh.md)
+## 问题
 
-## Problem
+Web 命令菜单要求按命令名前缀匹配，因此用户只记得关键字母却不记得其准确位置时，就无法发现命令。扩大菜单的匹配范围可使命令更易发现，但命令执行仍必须保持精确匹配和确定性：近似输入行绝不能执行相近命令。
 
-The web command menu required a command-name prefix, so discovery failed when a user remembered the significant letters but not their exact positions. Broadening menu matching could make discovery easier, but command execution must remain exact and deterministic: an approximate line must never execute a nearby command.
+## 决策
 
-## Decision
+`/` 命令 source 将键入的查询作为不区分大小写的有序子序列，与命令名进行模糊匹配。精确前缀构成排名最高的一类匹配。在每类匹配中，对齐分数越高越优先：分隔符边界和相邻字符会提高分数，前导字符和间隔会降低分数；分数相同则保持 host 目录和 client contribution 的顺序。位置过滤仍会在排名前从行内菜单中移除接收参数的命令。
 
-The `/` command source fuzzy-matches the typed query against command names as a case-insensitive ordered subsequence. Exact prefixes form the highest ranking class. Within each class, the strongest alignment score rewards separator boundaries and adjacent characters while penalizing leading characters and gaps; equal scores retain the host-directory and client-contribution order. Position filtering still removes argument-taking commands from inline menus before ranking.
+评分器对每个候选项使用动态规划，时间复杂度为 `O(query length × name length)`，空间复杂度为 `O(name length)`。候选项评分只在客户端进行且只检查命令名；命令描述不影响匹配。菜单选择仍派发所选的精确名称，而空格键和 Enter 键的判定逻辑仍要求命令 token 精确匹配。
 
-The scorer uses dynamic programming in `O(query length × name length)` time and `O(name length)` memory per candidate. Candidate scoring stays client-side and examines names only; descriptions do not affect matching. Menu selection still dispatches the selected exact name, while space and Enter adjudication continue to require an exact command token.
+## 考虑过的替代方案
 
-## Alternatives considered
+**保留仅前缀匹配。** 否决，因为本功能要解决的用户无法准确回忆前缀的问题依然存在：`/cpt` 无法发现 `/compact`。
 
-**Keep prefix-only matching.** Rejected because it preserves the recall failure that motivates the feature; `/cpt` cannot discover `/compact`.
+**匹配无序字符或描述。** 否决，因为无序匹配难以预测，而描述匹配可能展示命令，但命令的可见名称无法解释其排名。
 
-**Match unordered characters or descriptions.** Rejected because unordered matches are difficult to predict, while description matches can surface commands whose visible names do not explain why they ranked.
+**使用通用模糊搜索依赖。** 否决，因为该界面只需对小型命令目录使用一种受限的子序列规则；可配置搜索索引会增加 bundle 体积，并引入产品未使用的排名行为。
 
-**Use a general fuzzy-search dependency.** Rejected because this surface needs one constrained subsequence rule over a small command catalog; a configurable search index would add bundle weight and ranking behavior not used by the product.
+## 后果
 
-## Consequences
-
-Users can discover a command from remembered in-order letters, and ranking remains stable across identical catalogs. The score is deliberately heuristic: a separator-aligned match can outrank a match with a shorter raw span. Package tests pin each ranking factor and stable ties, while the assembled Web replay snapshot pins `/cpt` resolving to `/compact`. Exact execution semantics are unchanged.
+用户可以凭按顺序记得的字母发现命令；只要目录相同，排名就保持稳定。评分刻意采用启发式规则：与分隔符对齐的匹配可能排在原始跨度更短的匹配之前。包测试固定各项排名因素以及同分时的稳定顺序，组装后的 Web 回放快照固定 `/cpt` 解析为 `/compact` 的行为。精确执行语义保持不变。

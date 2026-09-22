@@ -1,37 +1,35 @@
-# Agent Note: Browser GIFs preserve one evidence chain
+# Agent Note: 浏览器 GIF 保留单一证据链
 
 Status: implemented
 
-English | [中文](2026-08-08-browser-gif-evidence-chain.zh.md)
+## 问题
 
-## Problem
+浏览器演示的分镜可以由每张都真实的截图组成，却无法证明这些截图来自同一次真实执行。复用应用全局状态可能引入旧设置或旧会话；录制自动化可能误将不同模型运行的画面合并；聊天 transcript（文本记录）可能显示降级处理成功，却没有揭示触发降级的工具拒绝。按无障碍名称进行模糊匹配，还可能误把提示词回显或后代文本当成预期结果。
 
-A browser-demo storyboard can contain individually truthful screenshots without proving one truthful execution. Reusing global application state can admit old settings or sessions, capture automation can accidentally combine frames from separate model runs, and a chat transcript can show a successful fallback without exposing the tool rejection that caused it. Fuzzy accessible-name matching can also accept prompt echoes or descendant text instead of the intended result.
+无头模式下的生产环境录制还有两道边界。产品默认配置可能打开自动化无法操控的原生操作系统界面，而用 mock 或测试钩子替换该界面，就意味着 GIF 不再展示生产路径。发布之后，git 推送成功也不能证明私有仓库中的 GIF 可以获取，或 GitHub 能将 PR（Pull Request）的 Markdown 识别为图片。
 
-Headless production recording has two further boundaries. A product default may open a native operating-system surface that automation cannot drive, while replacing that surface with a mock or test hook would mean the GIF no longer shows the production path. After publication, a successful git push does not prove that a private-repository GIF is fetchable or that GitHub recognizes the pull-request Markdown as an image.
+## 决策
 
-## Decision
+[`record-browser-gif`](../../../skills/record-browser-gif/SKILL.md) 工作流将一套分镜作为同一次执行的完整证据，并固定到精确的 PR head。构建之前，工作流要求 worktree 干净并记录其 commit SHA。每次运行都使用全新的 `DSH_HOME`、`DSH_AGENTS_HOME`、工作区、会话和隔离浏览器状态，所有发布帧均来自同一个服务器及同一次由模型驱动的场景执行。无法创建全新浏览器上下文时，应在导航之前清除该 origin 的 cookie 和站点存储。只有用户提出要求或确有必要时才能使用用户已有的浏览器状态；必须在 GIF 旁说明使用了该状态，并不得以此证明客户端状态全新。录制失败时，丢弃该次运行并从全新的状态根目录重新执行，不与另一次运行合并。
 
-The [`record-browser-gif`](../../../skills/record-browser-gif/SKILL.md) workflow treats one storyboard as one evidence chain pinned to an exact pull-request head. Before building, it requires a clean worktree and records that commit SHA. Each run uses fresh `DSH_HOME`, `DSH_AGENTS_HOME`, workspace, session, and isolated browser state, and every published frame comes from the same server and model-backed scenario run. When a fresh browser context is unavailable, the exact origin's cookies and site storage are cleared before navigation. Existing user browser state is used only when requested or required, is stated next to the GIF, and does not substantiate fresh client state. A failed capture run is discarded and repeated from fresh roots rather than combined with another run.
+浏览器自动化会等待唯一且精确的语义状态。如果需要证明工具调用、拒绝或恢复，分镜就必须包含详情帧或轨迹帧：标明工具、显示其状态或稳定错误码，并展示后续结果。最终编码出的 GIF 始终是验证对象；如果查看器无法播放动画，应从该 GIF 中解码出代表性帧，而不能将源截图视为等效证据。
 
-Browser automation waits for unique, exact semantic states. When the claim concerns a tool call, rejection, or recovery, the storyboard includes a detail or trajectory frame that identifies the tool, shows its status or stable error code, and shows the downstream result. The final encoded GIF remains the verification subject; when a viewer cannot animate it, representative frames are decoded from that GIF instead of treating source screenshots as equivalent evidence.
+仍应优先使用已有的浏览器控制工作流。如果该工作流不可用，录制程序应在隔离的无头浏览器中使用仓库已声明的 Playwright 依赖，而不是安装其他驱动或打开用户的浏览器。只有通过正常应用配置选用官方且可由浏览器操作的生产后端，才能替换原生生产界面，并且必须在 GIF 旁注明这一覆盖。fixture（测试前置数据）、mock 传输层、合成事件和测试专用钩子均不能支撑真实生产实现的主张。
 
-The available browser-control workflow remains preferred. When it is unavailable, the recorder uses the repository-declared Playwright dependency in an isolated headless browser rather than installing another driver or opening the user's browser. A native production surface may be replaced only through normal application configuration with an official browser-operable production backend, and that override is stated next to the GIF. Fixtures, mock transports, synthetic events, and test-only hooks do not substantiate a real-production claim.
+发布环节会再次验证边界。资产分支只包含媒体文件，暂存和发布的字节必须与已验证产物一致；对于私有仓库中的资产，应通过经身份验证的 API 或原始内容请求，检查其路径、字节大小、校验和、响应状态和媒体类型。这只能证明仓库成员的评审访问路径；[文档站点图片决策](2026-08-06-doc-site-carries-its-images.md)解释了公共站点为何不能依赖私有的原始内容 URL。修改 PR 正文之前，必须再次确认在线 head 仍与录制时的 head 相同。编辑后还要再次检查在线 head，且它必须保持为该记录值；GitHub 的 Markdown 渲染器则须单独生成预期图片。
 
-Publication verifies the boundary again. The assets branch contains media only, the staged and published bytes match the verified artifact, and a private-repository asset is checked through authenticated API or raw requests for its path, byte size, checksum, response status, and media type. This proves the repository-member review path only; the [documentation-site image decision](2026-08-06-doc-site-carries-its-images.md) owns why a public site cannot depend on a private raw URL. Immediately before the pull-request body changes, the live head must still equal the recorded head. After the edit, the live head is checked again and must remain at that recorded value; GitHub's Markdown renderer separately must produce the expected image.
+## 曾考虑的替代方案
 
-## Alternatives considered
+**只要可见状态看起来等价，就允许使用不同运行的画面。**视觉相似不能证明各画面共享同一状态、具有因果顺序或来自同一次场景执行。重新录制需要再执行一次真实模型轮次，但能维持整套分镜所表达的主张。
 
-**Allow frames from separate runs when their visible states look equivalent.** Visual similarity does not establish shared state, causal order, or one scenario execution. Re-recording costs another real round but preserves the claim the storyboard makes.
+**将聊天 transcript 视为工具恢复的充分证据。**最终答案能证明任务已经完成，却可能隐藏调用了哪个工具、失败是否为结构化失败，以及模型是否从该失败中恢复。轨迹帧或详情帧可以直接承载这些事实。
 
-**Use the chat transcript as sufficient proof of tool recovery.** A final answer proves that the task completed, but it can hide which tool ran, whether the failure was structured, and whether the model recovered from that failure. A trajectory or detail frame carries those facts directly.
+**使用 fixture 或测试钩子替换无法访问的原生 UI。**这种做法通过改变被观察的产品路径来简化自动化。通过正常配置选用官方生产后端，既能保持受测实现真实，也能明确表述所采用的较窄运行模式。
 
-**Replace inaccessible native UI with a fixture or test hook.** That makes automation easier by changing the product path under observation. Selecting an official production backend through normal configuration keeps the exercised implementation real and makes the narrower mode explicit.
+**相信资产分支推送成功，或依赖匿名请求。**推送只能证明 git 接受了相应字节，而私有仓库会有意拒绝未经身份验证的原始内容请求。经身份验证的字节校验与 GitHub Markdown 渲染验证，覆盖了评审者实际使用的两道发布边界。
 
-**Trust a successful assets-branch push or an anonymous fetch.** A push proves only that git accepted bytes, while private repositories intentionally reject unauthenticated raw requests. Authenticated byte verification plus GitHub Markdown rendering tests the two publication boundaries that reviewers use.
+## 后果
 
-## Consequences
+GUI 证据现在能证明一次具有因果关系的执行，而不会把不同执行中的可信画面当作同一次执行的证据；评审者既可以检查结构化的工具失败，也可以检查最终完成的结果。在 PR 正文被视为完成之前，发布验证可以发现陈旧的 PR head、损坏或位置错误的媒体文件，以及无效的图片 Markdown。
 
-GUI evidence now establishes one causal execution rather than a collage of plausible states, and reviewers can inspect both a structured tool failure and the completed result. Publication detects stale pull-request heads, corrupted or misplaced media, and invalid image Markdown before the body is treated as finished.
-
-The workflow spends additional scratch state, may repeat a real model round after a capture failure, and usually adds a detail frame plus authenticated publication checks. Headless recordings can use fewer production backends than an interactive desktop, and every selected backend is stated next to the GIF.
+该工作流会占用额外的临时状态；录制失败后，可能需要再运行一次由真实模型驱动的场景；通常还会增加一张详情帧和经身份验证的发布检查。相比交互式桌面，无头录制可使用的生产后端更少；每个所选后端都会在 GIF 旁说明。

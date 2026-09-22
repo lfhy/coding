@@ -1,8 +1,6 @@
 # @deepseek-ai/dsh-fs-observation-policy
 
-English | [中文](README.zh.md)
-
-The **fs-observation-policy plugin**: it records observed presence or absence and adds read-before-edit plus guarded write/edit on top of the `ctx.fs` provider contract ([`@deepseek-ai/dsh-fs`](../fs)) — through the `fs/*` event gate, **NOT** through a method service. This plugin registers **no** `ctx.fsPolicy` service and has no public `read`/`write`/`edit`/`resolve` methods. It is the policy third of the filesystem stack: not a swappable seam, but the policy that does not belong on the `FileSystem` provider base class.
+**fs-observation-policy 插件**：它记录观测到的存在或缺失状态，并在 `ctx.fs` 提供方约定（[`@deepseek-ai/dsh-fs`](../fs)）之上增加编辑前读取和带防护的写入/编辑；它通过 `fs/*` 事件门禁参与，**不是**通过方法服务。该插件**不**注册 `ctx.fsPolicy` 服务，也没有公开的 `read`/`write`/`edit`/`resolve` 方法。它是文件系统栈的政策层：不是可替换 seam，而是不应位于 `FileSystem` 提供方基类上的政策。
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
@@ -18,56 +16,56 @@ declare const ctx: Context
 await ctx.plugin(FsPolicy)
 ```
 
-## The four-layer split
+## 四层拆分
 
-| Layer | Package | Role |
+| 层 | 包 | 角色 |
 |---|---|---|
-| tool / executor | `@deepseek-ai/dsh-tool-fs` | model-facing schemas + read windowing + text rendering; reads/writes/edits via `ctx.fs`, dispatches the `fs/*` events |
-| policy | `@deepseek-ai/dsh-fs-observation-policy` (this) | observed-state + read-before-edit + version-guarded write/edit, contributed through the `fs/*` event gate (no service) |
-| provider contract | `@deepseek-ai/dsh-fs` | `ctx.fs`: text IO + atomic mutation primitives (optional version guard); owns the `fs/*` event vocabulary |
-| provider | `@deepseek-ai/dsh-fs-local` | local implementation of `ctx.fs` |
+| 工具/执行器 | `@deepseek-ai/dsh-tool-fs` | 面向模型的 schema、读取窗口和文本渲染；通过 `ctx.fs` 读取/写入/编辑，并分派 `fs/*` 事件 |
+| 策略 | `@deepseek-ai/dsh-fs-observation-policy`（本包） | 通过 `fs/*` 事件门禁提供已观察状态、编辑前读取和版本防护的写入/编辑（无服务） |
+| 提供方约定 | `@deepseek-ai/dsh-fs` | `ctx.fs`：文本 I/O 与原子变更原语（可选版本防护）；拥有 `fs/*` 事件词汇 |
+| 提供方 | `@deepseek-ai/dsh-fs-local` | `ctx.fs` 的本地实现 |
 
-## How the gate participates
+## 门禁的参与方式
 
-Three `fs/*` events (declared by `@deepseek-ai/dsh-fs`, dispatched by `@deepseek-ai/dsh-tool-fs`):
+三个 `fs/*` 事件（由 `@deepseek-ai/dsh-fs` 声明，`@deepseek-ai/dsh-tool-fs` 分派）：
 
-| Event | This plugin's listener |
+| 事件 | 本插件的监听器 |
 |---|---|
-| `fs/write-intent` | Unseen or observed absent → `{ kind: 'createIfAbsent' }`; observed present → `{ kind: 'replaceIfVersion', version: vObserved }`. Single-slot decision; does NOT call `next()`. |
-| `fs/edit-intent` | Unseen → `FS_NOT_OBSERVED`; observed absent → `FS_NOT_FOUND`; observed present → `{ version: vObserved }` as the CAS basis. Single-slot decision; does NOT call `next()`. |
-| `fs/observed` | Records `{ kind: 'present', version }` or `{ kind: 'absent' }` for this owner+target. Synchronous, side-effect-only `WeakMap.set`. |
+| `fs/write-intent` | 未见或已观测为缺失 → `{ kind: 'createIfAbsent' }`；已观测为存在 → `{ kind: 'replaceIfVersion', version: vObserved }`。单 slot 决策；不调用 `next()`。 |
+| `fs/edit-intent` | 未见 → `FS_NOT_OBSERVED`；已观测为缺失 → `FS_NOT_FOUND`；已观测为存在 → 返回 `{ version: vObserved }` 作为 CAS 基础。单 slot 决策；不调用 `next()`。 |
+| `fs/observed` | 为该所有者与目标记录 `{ kind: 'present', version }` 或 `{ kind: 'absent' }`。同步、只有副作用的 `WeakMap.set`。 |
 
-## Observed state is the prior-observation record; freshness is provider CAS
+## 已观察状态是先前观察记录；新鲜度由提供方 CAS 保证
 
-Observed state is a weak owner-to-target map with three logical states: unseen, confirmed absent, or present at a version. A successful file read or mutation records presence; a metadata miss from `read` or the `str_replace_editor` `view`, `str_replace`, or `insert` command records absence before returning `FS_NOT_FOUND`. The plugin performs no filesystem I/O: it converts that state into a provider guard. Presence supplies the observed version, while absence lets only a `createIfAbsent` write proceed; edit has no version basis and returns `FS_NOT_FOUND`. A windowed read observes the whole file version, so a later targeted edit is allowed only while that file remains unchanged. State is discarded on plugin disposal and is not persisted across sessions.
+观测状态是一张以所有者为弱键、记录各目标的映射表，具有三种逻辑状态：未见、确认缺失、存在于某个版本。成功读取文件或变更会记录存在；`read` 的元数据未命中，或 `str_replace_editor` 的 `view`、`str_replace`、`insert` 命令发生元数据未命中时，都会在返回 `FS_NOT_FOUND` 前记录缺失。插件不执行文件系统 I/O：它把该状态转换为提供方防护。存在状态提供观测到的版本；缺失状态只允许 `createIfAbsent` 写入继续，edit 因没有版本基准而返回 `FS_NOT_FOUND`。窗口读取会观察整个文件的版本，因此只有文件保持不变时才允许后续的定向编辑。插件 dispose（资源释放）时会丢弃状态，并且不会跨会话持久化。
 
-## Single-slot, first-wins
+## 单 slot、先到者胜
 
-The `fs/write-intent`/`fs/edit-intent` slots hold exactly one decider — this plugin fully decides and does not call `next()`. The slot is first-wins by registration order; this plugin owning it is the default-deployment convention, not an event-enforced invariant (a decider registered before / `prepend`ed would win instead). This is not a composable authorization chain — layered permission/audit/sandbox interception belongs on `tools/execute`.
+`fs/write-intent`/`fs/edit-intent` slot 只容纳一个决策器；本插件会完整决策，不调用 `next()`。slot 按注册顺序先到者胜；由本插件拥有 slot 只是默认部署约定，不是事件强制的不变式（更早注册或通过 `prepend` 注册的决策器会胜出）。这不是可组合的授权链；分层权限/审计/沙箱拦截属于 `tools/execute`。
 
-## No method coupling
+## 不与方法耦合
 
-Because the plugin influences the world only through events, removing it does not break `@deepseek-ai/dsh-tool-fs` at a service-injection boundary: the tool falls through to the bare `ctx.fs` provider (unconditional write/edit, no observed-state). Loading it back layers the policy on. That graceful add/remove is the whole point of the event gate over a mandatory method service.
+由于插件只通过事件影响外部世界，移除它不会在服务注入边界破坏 `@deepseek-ai/dsh-tool-fs`：工具会直接落到裸 `ctx.fs` 提供方（无条件写入/编辑，无已观察状态）。重新加载插件后，策略会重新生效。相比必需的方法服务，这种可平稳增删的性质正是事件门禁的全部目的。
 
-## Model Experience
+## 模型体验
 
-### Filesystem tool outcome
+### 文件系统工具结果
 
-#### What the model sees
+#### 模型看到的内容
 
-This plugin adds no prompt or schema. It rejects an edit without a prior observation with code `FS_NOT_OBSERVED` and exact message `edit requires reading "<path>" first`; editing a target just observed absent returns `FS_NOT_FOUND`. Guarded mutations whose positive observation is stale propagate the provider-owned `FS_STALE_VERSION` error. [`dsh-tool-fs`](../tool-fs/README.md) owns the model-facing error wrapper, which appends the recovery instruction to `FS_STALE_VERSION` (`— re-read the file, then retry`) and `FS_NOT_OBSERVED` (`— read the file, then retry`) messages while preserving the code. Following the stale remedy on an externally deleted target now records absence: the next guarded write may recreate it with `createIfAbsent`, while the provider atomically preserves any concurrent creator.
+该插件不添加提示词或 schema。没有先前观测时，它会以代码 `FS_NOT_OBSERVED` 和精确消息 `edit requires reading "<path>" first` 拒绝编辑；编辑刚被观测为缺失的目标会返回 `FS_NOT_FOUND`。正向观测陈旧时，带防护的变更会传播由提供方拥有的 `FS_STALE_VERSION` 错误。[`dsh-tool-fs`](../tool-fs/README.md) 拥有面向模型的错误包装，会为 `FS_STALE_VERSION` 消息追加恢复指令（`— re-read the file, then retry`）、为 `FS_NOT_OBSERVED` 消息追加恢复指令（`— read the file, then retry`），同时保留错误码。外部删除目标后，遵循陈旧恢复指令会记录缺失：下一次带防护的写入可以通过 `createIfAbsent` 重新创建该目标，而提供方会以原子方式保留任何并发创建者写入的文件。
 
-#### Token effect
+#### Token 影响
 
-Zero tokens on allowed operations beyond the ordinary tool result. A denial adds the small retained error result and avoids any success payload.
+允许的操作除了普通工具结果外不增加 token。拒绝会添加少量保留的错误结果，并避免产生成功 payload。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-Append-only; newly visible content follows the reusable request prefix and does not invalidate existing KV-cache entries.
+仅追加；新增可见内容位于可复用请求前缀之后，不会使现有 KV Cache 条目失效。
 
-## Known Limitations and Deferred Work
+## 已知限制与暂缓事项
 
-- **Observed state does not survive a session resume** — persistence of the `WeakMap` record is deferred, so a resumed session must re-read files before guarded writes/edits.
-- **Actors without an agent session can never satisfy the policy** — their edits throw `FS_NOT_OBSERVED` and their writes always resolve `createIfAbsent`, so a non-agent caller cannot overwrite an existing file through the gate.
-- **Direct `ctx.fs` reads emit no `fs/observed`** — a file read outside the `read` tool stays unobserved, and a later guarded edit rejects with `FS_NOT_OBSERVED` until the tool reads it.
-- **Authorization is version freshness, not view completeness** — any windowed read authorizes a full-file overwrite of an unchanged file, deliberately weaker than a full-view rule ([seam-split Agent Note](../../../.agents/notes/implemented/simplification/2026-06-26-fsspec-style-fs-seam.md)).
+- **已观察状态无法在会话恢复后保留**：`WeakMap` 记录的持久化工作延期处理，因此恢复的会话必须重新读取文件，才能执行防护写入/编辑。
+- **没有 agent（智能体）会话的参与者绝无法满足策略**：它们的编辑会抛出 `FS_NOT_OBSERVED`，写入总会解析为 `createIfAbsent`，因此非 agent 调用方无法通过门禁覆盖现有文件。
+- **直接 `ctx.fs` 读取不会发出 `fs/observed`**：在 `read` 工具之外读取的文件仍未观察；后续防护编辑会以 `FS_NOT_OBSERVED` 拒绝，直到工具读取该文件。
+- **授权依据是版本新鲜度，而非视图完整性**：任何窗口读取都会授权对未变文件执行全文件覆盖，这有意弱于完整视图规则（见 [seam 拆分 Agent Note](../../../.agents/notes/implemented/simplification/2026-06-26-fsspec-style-fs-seam.md)）。

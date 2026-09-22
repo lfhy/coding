@@ -1,44 +1,42 @@
-# Agent Note: Bounded fixed-rate Schedule
+# Agent Note: 有界固定速率 Schedule
 
 Status: implemented
 
-English | [中文](2026-08-09-bounded-fixed-rate-schedule.zh.md)
+## 问题
 
-## Problem
+用户需要简单的重复提醒，但[持久、仅限 Session 内的提醒](../feature/2026-08-05-durable-web-schedule.md)最初采用的周期层把固定间隔和日历表达式当成一个通用子系统。它增加了 Cron 语言与求值器、时区敏感的发生时点搜索、tzdata 回放规则、跨记录的 300 秒准入门控、持久化的门控证据、延迟交付字段，以及门控耗尽状态。即使所请求的行为只是“每 N 秒重复一次”，这些机制仍会扩大持久协议与 live owner。
 
-Users need simple repeating reminders, but the initial recurrence layer of [durable Session-local reminders](../feature/2026-08-05-durable-web-schedule.md) treated fixed intervals and calendar expressions as one general subsystem. It added a Cron language and evaluator, time-zone-sensitive occurrence search, tzdata replay rules, a cross-record 300-second admission gate, persisted gate evidence, deferred-delivery fields, and gate-exhaustion states. Those mechanisms enlarged the durable protocol and live owner even when the requested behavior was only “repeat every N seconds.”
+cold 或 busy Session 也无法有效回放每个错过的间隔。这样做会产生模型轮次积压，其规模取决于停机时长；如果改为按交付时间移动下一个目标，则会使固定速率发生漂移。
 
-A cold or busy Session also cannot usefully replay every missed interval. Doing so would create a model-turn backlog whose size depends on downtime, while shifting the next target to delivery time would make the fixed rate drift.
+## 决策
 
-## Decision
+保留的周期 selector 只有 `every_seconds`，其值必须是至少为 300 的安全整数。创建时会把第一个目标存为创建时刻加上一个间隔。每次 dispatch 都会存储记录 id 和一个由墙钟确定的 `acceptedAt`；纯整数运算会选出不晚于该决策时点、与创建锚点对齐的最新发生时点，并直接推进到其后的第一个对齐目标。系统不会枚举、持久化或回放错过的发生时点。
 
-The retained recurring selector is only `every_seconds`, a safe integer of at least 300. Creation stores the first target at creation time plus the interval. Each dispatch stores the record id and one wall-clock `acceptedAt`; pure integer arithmetic selects the latest creation-anchor-aligned occurrence at or before that decision and advances directly to the first aligned target after it. No missed occurrences are enumerated, persisted, or replayed.
+没有一次性提醒到期时，所有不同的逾期 Every 记录都会按目标时间和创建顺序参与同一个 follow-up 批次。每条记录恰好贡献一个最新发生时点，该批次中的每个 dispatch 都使用相同的决策时点。已到期的一次性提醒仍然优先，因此已经承诺的单次提醒不会被隐藏在周期批次中。
 
-When no one-shot is due, every distinct overdue Every record participates in one follow-up batch in target and creation order. Each contributes exactly one latest occurrence, and every dispatch in that batch uses the same decision time. Due one-shots retain priority so an already-promised single reminder is not hidden inside a recurrence batch.
+至少 5 分钟是每条 Every 规则自身的属性，而不是全局门控。系统不存在 `lastRecurringAcceptedAt`、`deliveryNotBefore`、冷却、配额、门控耗尽状态或通用周期记录抽象。如果运算无法表示下一个采用四位年份的 UTC 目标，最后一次 dispatch 会终结该记录。
 
-The five-minute minimum is a property of each Every rule rather than a global gate. There is no `lastRecurringAcceptedAt`, `deliveryNotBefore`, cooldown, quota, gate-exhaustion state, or generic recurring-record abstraction. If arithmetic cannot represent the next four-digit-year UTC target, the final dispatch terminates that record.
+日历表达式与 Cron 表达式，以及相应的求值器依赖、parser、canonicalizer、时区搜索、频率证明、持久记录和 dispatch variant、测试、快照与第三方声明条目均已移除。严格的版本 1 decoder 会拒绝预发布阶段的旧 Cron 记录，而不是迁移它们或通过兼容性残留接受它们。
 
-Calendar and Cron expressions, their evaluator dependency, parser, canonicalizer, zone search, frequency proof, durable record and dispatch variants, tests, snapshots, and third-party notice entry are removed. Old pre-release Cron records are rejected by the strict version-1 decoder rather than migrated or accepted through compatibility residue.
+## 已考虑的替代方案
 
-## Alternatives considered
+**保留全局周期准入门控。** 共享门控可以约束模型轮次总数，却会使无关提醒彼此延迟，并需要持久的跨记录历史。批处理已经会把当前所有逾期固定速率记录合并成一个模型请求，而每条规则自身的最小间隔会约束唤醒频率。
 
-**Retain the global recurring gate.** A shared gate bounds total model turns but makes unrelated reminders delay one another and requires durable cross-record history. Batching already turns every currently overdue fixed-rate record into one model request, while the per-rule minimum bounds wake frequency.
+**回放每个错过的发生时点。** 这样可以保留每个名义事件，却会在停机后产生无界积压，并不符合提醒的使用习惯。只追赶最新一次可以传达当前到期工作，而不会假装 Session 一直处于 live 状态。
 
-**Replay every missed occurrence.** This preserves each nominal event but creates unbounded backlog after downtime and is poor reminder behavior. Latest-only catch-up communicates current due work without pretending the Session was live.
+**从 dispatch 时刻开始推进。** 这种运算更简单，却会把固定速率变成发生漂移的延时循环。保留下一个与锚点对齐的目标，才能维持用户设置的间隔。
 
-**Advance from dispatch time.** This is simpler arithmetic but changes a fixed rate into a drifting delay loop. Retaining the next anchor-aligned target preserves the user's interval.
+**把 Cron 保留为可选分支。** 即使隔离在 selector 之后，Cron 仍需要日历语法、依赖、时区与夏令时策略、回放校验和庞大的测试范围。固定间隔可以提供实用的周期场景，而无需扩散这些复杂性。
 
-**Keep Cron as an optional branch.** Even isolated behind a selector, Cron retains a calendar grammar, dependency, time-zone and daylight-saving policy, replay validation, and large test surface. Fixed intervals deliver the useful recurring case without spreading that complexity.
+**每个轮次只 dispatch 一条 Every 记录。** 这会串行处理无关的逾期工作，使后续多个轮次只能处理这组记录。一个批次既能保留彼此独立的提醒，又能约束模型请求数量。
 
-**Dispatch only one Every record per turn.** This serializes unrelated overdue work and lets a large set monopolize later turns. One batch preserves distinct reminders while bounding model requests.
+## 验证
 
-## Verification
+严格 decoder 与不变式测试会拒绝不受支持的规则和 dispatch 形状。领域测试与属性测试证明最小频率校验、创建锚点运算、只选择最新一次、推进和范围耗尽。运行时测试证明一次性提醒优先、所有逾期 Every 记录共享一个批次、每条记录只有一个发生时点、固定顺序，以及不会立即循环处理积压。组装 Web 快照证明，一个包含 2 条逾期记录的批次会产生一条普通 assistant 响应，以及两个使用相同时点的持久转换，并且不存在 Schedule UI sidecar。源代码、依赖与生成目录审计会拒绝 Cron 和全局门控残留。
 
-Strict decoder and invariant tests reject unsupported rule and dispatch shapes. Domain and property tests prove minimum-frequency validation, creation-anchor arithmetic, latest-only selection, advancement, and range exhaustion. Runtime tests prove one-shot priority, one shared batch for all overdue Every records, one occurrence per record, fixed ordering, and no immediate backlog loop. The assembled Web snapshot proves a two-record overdue batch becomes one ordinary assistant response with two same-time durable transitions and no Schedule UI sidecar. Source, dependency, and generated-catalog audits reject Cron and global-gate residue.
+## 后果
 
-## Consequences
-
-- The durable rule union is After, At, and Every; the tool selector union is `after_seconds`, `at`, and `every_seconds`.
-- Reopening a long-cold Session produces current reminder work, not a historical turn storm.
-- Multiple overdue Every records share one model request without sharing schedule state or delaying one another.
-- Calendar-based recurrence requires a future product boundary rather than dormant compatibility code.
+- 持久规则 union 包含 After、At 与 Every；工具 selector union 包含 `after_seconds`、`at` 与 `every_seconds`。
+- 重新打开长期 cold 的 Session 时只会产生当前提醒工作，不会集中触发大量历史轮次。
+- 多条逾期 Every 记录共享一个模型请求，但不共享调度状态，也不会彼此延迟。
+- 基于日历的周期性需要未来的产品边界，而不是休眠兼容代码。

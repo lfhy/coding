@@ -1,87 +1,85 @@
-# Agent Note: Product subagents expose bounded structured failure facts
+# Agent Note: 产品 subagent 公开有界结构化失败事实
 
 Status: implemented
 
-English | [中文](2026-08-18-product-subagent-failure-facts.zh.md)
-
 ## Problem
 
-The [Claude Code and Codex product providers](2026-08-04-claude-code-and-codex-subagent-backends.md) receive structured product failures, but a published run historically flattened most of them to the shared `error` stop reason. Product logs retained detail that the foreground parent and a [one-shot background Job](2026-08-12-product-subagent-one-shot-background-tasks.md) could not use to distinguish a product limit, an execution failure, or an early process exit.
+[Claude Code 与 Codex 产品提供方](2026-08-04-claude-code-and-codex-subagent-backends.md)会收到结构化产品失败，但已发布运行以往会把其中大多数压成共享的 `error` 终止原因。产品日志保留了细节，前台父 agent 与[一次性后台 Job](2026-08-12-product-subagent-one-shot-background-tasks.md)却无法据此区分产品限制、执行失败或进程提前退出。
 
-Copying SDK error text, app-server payloads, or stderr into the result would expose task text, paths, environment values, credentials, or product internals. Adding shared error fields would also make the provider-neutral [subagent seam](2026-06-21-subagent-capability-seam.md) own product version vocabularies that change independently.
+若把 SDK 错误文本、app-server payload 或 stderr 复制进结果，就会暴露任务文本、路径、环境值、凭证或产品内部信息。若增加共享错误字段，又会让提供方无关的 [subagent seam](2026-06-21-subagent-capability-seam.md)拥有彼此独立变化的产品版本词汇。
 
 ## Decision
 
-Each product Provider owns the mapping from its pinned official error union, current operation, and managed process outcome to one fixed safe diagnostic line. `SubagentResult` remains unchanged: consumers receive the existing bounded `diagnostic` string and do not parse its product-private fields.
+每个产品提供方分别拥有从锁定版本官方错误联合、当前操作和受管进程结果到一行固定安全诊断的映射。`SubagentResult` 保持不变：消费方仍接收现有的有界 `diagnostic` 字符串，而且不解析其中由产品私有的字段。
 
-### Safe diagnostic
+### 安全诊断
 
-The structured line has this fixed order:
+结构化行采用以下固定顺序：
 
 ```text
 Product subagent failure (product: <product>; stage: <stage>; category: <category>; HTTP status: <status>; exit code: <code>; signal: <signal>)
 ```
 
-The Provider omits unavailable optional fields. Exit code and signal are independent facts and are each retained when observed. A contributing permission decision from the [non-interactive permissions decision](2026-08-15-product-subagent-noninteractive-permissions.md) follows the structured line; the latest safe permission fact remains operation-local. The shared result boundary limits the complete text to 4096 UTF-8 bytes.
+提供方会省略不可用的可选字段。退出码与信号是相互独立的事实，只要已观测到就分别保留。来自[非交互权限决策](2026-08-15-product-subagent-noninteractive-permissions.md)且参与失败的权限决定会跟在结构化行之后；最新的安全权限事实仍只属于当前操作。共享结果边界会把完整文本限制在 4096 个 UTF-8 字节以内。
 
-Successful results and local cancellation expose no failure fact. Raw product errors, stderr, tool input, paths, environment values, credentials, and protocol payloads never enter the diagnostic. Startup and cleanup rejections use the same safe line in their Error message. Original failures remain on internal cause chains; Provider Host logs and forwarded stderr remain product-local observation only.
+成功结果与本地取消都不公开失败事实。原始产品错误、stderr、工具输入、路径、环境值、凭证和协议 payload 绝不会进入诊断。启动与清理拒绝会在 Error 消息中使用同一安全行。原始失败保留在内部 cause 链中；提供方 Host 日志与转发的 stderr 也只作为产品本地观测。
 
-### Claude Code facts
+### Claude Code 事实
 
-Agent SDK 0.3.220 defines four error subtypes: `error_during_execution`, `error_max_turns`, `error_max_budget_usd`, and `error_max_structured_output_retries`. The Claude Code Provider preserves each exact subtype as the category while keeping the shared stop reason `error`. An error-marked or blank success uses `invalid-success`, a missing result uses `missing-result`, a process exit before an SDK terminal result uses `process-exit`, and an unrecognized value or exception uses `unknown` without copying the value.
+Agent SDK 0.3.220 定义四种错误子类型：`error_during_execution`、`error_max_turns`、`error_max_budget_usd` 和 `error_max_structured_output_retries`。Claude Code 提供方会把每种准确子类型保留为类别，同时维持共享终止原因 `error`。标记为错误或内容空白的成功消息使用 `invalid-success`，缺失结果使用 `missing-result`，SDK 给出终态结果前发生的进程退出使用 `process-exit`，无法识别的值或异常使用 `unknown`，且不会复制原值。
 
-| Stage | Owned operation | Observable failure |
+| 阶段 | 归属操作 | 可观察失败 |
 | --- | --- | --- |
-| `query-start` | SDK query construction, native platform-payload startup, and unpublished rollback | `start()` rejects with fixed safe facts and any process outcome observed before rollback |
-| `query-run` | Published SDK message iteration and strict terminal-result validation | The run resolves as `error` with the exact known subtype or a fixed result category |
-| `process` | Managed CLI exits before the SDK supplies a terminal result | The run resolves as `error` with `process-exit` and the available exit code and signal |
-| `teardown` | Query close and managed process-tree release | `dispose()` rejects independently with fixed safe facts after cleanup still reaches its final exit wait |
+| `query-start` | SDK query 构造、原生平台载荷启动与未发布回滚 | `start()` 以固定安全事实和回滚前已观测到的进程结果拒绝 |
+| `query-run` | 已发布 SDK 消息迭代与严格终态结果校验 | 运行以 `error` 兑现，并携带准确已知子类型或固定结果类别 |
+| `process` | SDK 提供终态结果之前受管 CLI 已退出 | 运行以 `error` 兑现，并携带 `process-exit` 以及可用的退出码和信号 |
+| `teardown` | Query 关闭与受管进程树释放 | `dispose()` 独立拒绝并携带固定安全事实，同时清理仍会完成最终退出等待 |
 
-### Codex facts
+### Codex 事实
 
-Codex app-server 0.147.0 defines eleven string categories and five object variants. The Provider preserves `contextWindowExceeded`, `sessionBudgetExceeded`, `usageLimitExceeded`, `serverOverloaded`, `cyberPolicy`, `internalServerError`, `unauthorized`, `badRequest`, `threadRollbackFailed`, `sandboxError`, and `other`. It also preserves `httpConnectionFailed`, `responseStreamConnectionFailed`, `responseStreamDisconnected`, `responseTooManyFailedAttempts`, and `activeTurnNotSteerable`; the four connection/stream variants retain numeric `httpStatusCode`, while the active-turn variant does not expose `turnKind`. Unknown strings, objects with another variant set, malformed values, and unclassified exceptions use `unknown`.
+Codex app-server 0.147.0 定义十一种字符串类别与五种对象 variant。提供方会保留 `contextWindowExceeded`、`sessionBudgetExceeded`、`usageLimitExceeded`、`serverOverloaded`、`cyberPolicy`、`internalServerError`、`unauthorized`、`badRequest`、`threadRollbackFailed`、`sandboxError` 和 `other`。它还会保留 `httpConnectionFailed`、`responseStreamConnectionFailed`、`responseStreamDisconnected`、`responseTooManyFailedAttempts` 与 `activeTurnNotSteerable`；四种连接／stream variant 会保留数值 `httpStatusCode`，而 active-turn variant 不公开 `turnKind`。未知字符串、同时含其他 variant 的对象、格式错误值与未分类异常统一使用 `unknown`。
 
-| Stage | Owned operation | Observable failure |
+| 阶段 | 归属操作 | 可观察失败 |
 | --- | --- | --- |
-| `initialize` | App-server spawn and initialize/initialized handshake | `start()` rejects with fixed safe facts and any process outcome already observed |
-| `thread-start` | Ephemeral `thread/start` request and response validation | `start()` rejects with the thread stage and any available process outcome |
-| `turn-start` | Published `turn/start` request, provisional ids, and early frames | The run resolves as `error` with a safe unknown fallback when no structured category exists |
-| `turn` | Terminal notification, final-answer selection, and error-info mapping | The complete category and optional HTTP status reach the non-completed result |
-| `process` | Managed app-server exits before another terminal path settles | The run resolves as `error` with `process-exit` and any available code and signal |
-| `teardown` | Wire close and process-tree release | `dispose()` rejects independently; startup rollback aggregation exposes both startup and teardown lines |
+| `initialize` | App-server spawn 与 initialize/initialized 握手 | `start()` 以固定安全事实和已经观测到的进程结果拒绝 |
+| `thread-start` | 临时 `thread/start` 请求与响应校验 | `start()` 以线程阶段和可用进程结果拒绝 |
+| `turn-start` | 已发布 `turn/start` 请求、暂定 id 与早到 frame | 没有结构化类别时，运行以 `error` 和安全 unknown 回退兑现 |
+| `turn` | 终态通知、最终答案选择与 error-info 映射 | 完整类别与可选 HTTP status 进入非完成结果 |
+| `process` | 受管 app-server 在另一终态路径结算前退出 | 运行以 `error` 兑现，并携带 `process-exit` 以及可用的退出码与信号 |
+| `teardown` | Wire 关闭与进程树释放 | `dispose()` 独立拒绝；启动回滚聚合会同时公开启动与 teardown 两行 |
 
-`contextWindowExceeded` remains `max-tokens`; every other known or unknown Codex category remains `error`, and `cyberPolicy` does not become `refusal`.
+`contextWindowExceeded` 仍是 `max-tokens`；其他所有已知或未知 Codex 类别仍是 `error`，`cyberPolicy` 不会变成 `refusal`。
 
-### Ownership and lifecycle
+### 所有权与生命周期
 
-| Fact or resource | Owner | Consumer behavior |
+| 事实或资源 | Owner | 消费方行为 |
 | --- | --- | --- |
-| Product error category | Pinned official SDK or app-server version | The Provider maps only the declared structured union and uses `unknown` outside it |
-| Current failure stage | Product Provider operation | Derived at the failure site; never persisted or used as a recovery state |
-| Exit code and signal | `dsh-subprocess` process handle | The Provider displays observed values without inferring missing ones |
-| Diagnostic bytes and delivery | `dsh-subagent`, foreground tool, and Job runtime | The same bounded text is presented separately from assistant output in both scheduling modes |
-| Raw product failure | Product runtime, internal cause chain, and Host observation | It remains internal and never becomes model-visible result text |
+| 产品错误类别 | 锁定版本的官方 SDK 或 app-server | 提供方只映射已声明的结构化联合，并对联合外值使用 `unknown` |
+| 当前失败阶段 | 产品提供方操作 | 只在失败点派生；绝不持久化，也不作为恢复状态 |
+| 退出码与信号 | `dsh-subprocess` 进程句柄 | 提供方展示已观测值，不推测缺失值 |
+| 诊断字节与送达 | `dsh-subagent`、前台工具与 Job 运行时 | 两种调度模式都把同一份有界文本与 assistant 输出分开呈现 |
+| 原始产品失败 | 产品运行时、内部 cause 链与 Host 观测 | 只保留在内部，绝不成为模型可见的结果文本 |
 
 ## Verification
 
-Claude Code package tests pin all four SDK subtypes, invalid success, missing result, unknown values and exceptions, all four stages, independent exit code and signal fields, permission-fact ordering, sanitization, successful-result and cancellation omission, concurrent-run isolation, and cleanup completion. Codex package tests pin all sixteen error-info variants, HTTP status presence and absence, all six stages, unknown fallback, stop-reason preservation, permission ordering, sanitization, cancellation, concurrency, and cleanup aggregation. The real SDK/CLI fixture produces an actual Claude `error_max_turns`; the real app-server fixture produces an actual Codex `internalServerError`; both fixtures cover process/protocol failure and whole-tree quiescence. The keyless ACP snapshot records each product's exact diagnostic in foreground error output, a background completion notice, and `job_output`.
+Claude Code 包测试固定四种 SDK 子类型、无效成功、缺失结果、未知值与异常、四个阶段、相互独立的退出码与信号字段、权限事实顺序、脱敏、成功结果与取消时省略诊断、并发运行隔离和清理完成。Codex 包测试固定全部十六种 error-info variant、HTTP status 存在与缺失、六个阶段、unknown 回退、终止原因保持不变、权限顺序、脱敏、取消、并发与清理聚合。真实 SDK/CLI fixture 会产生真实的 Claude `error_max_turns`，真实 app-server fixture 会产生真实的 Codex `internalServerError`；两个 fixture 都覆盖进程／协议失败与整棵进程树完全停稳。无密钥 ACP snapshot 会在前台错误输出、后台完成通知和 `job_output` 中记录两个产品各自的准确诊断。
 
 ## Alternatives considered
 
-**Return raw SDK errors, app-server payloads, or stderr.** These values can contain commands, paths, workspace content, environment values, credentials, or upstream prose. A fixed allowlisted mapping preserves actionable facts without expanding the model-visible trust boundary.
+**返回原始 SDK 错误、app-server payload 或 stderr。** 这些值可能包含命令、路径、工作区内容、环境值、凭证或上游文本。固定白名单映射可以保留可操作事实，同时不扩大模型可见的信任边界。
 
-**Add a shared product-error enum or structured result fields.** Claude Code and Codex version their error unions independently. A shared enum would duplicate those authorities and force unrelated Providers and consumers to track product releases.
+**增加共享产品错误 enum 或结构化结果字段。** Claude Code 与 Codex 各自独立版本化错误联合。共享 enum 会复制这些权威，并迫使无关提供方和消费方跟随产品版本。
 
-**Parse generic stderr and exception messages.** Free-form text is neither stable nor safe. Only pinned structured product fields and the managed process outcome qualify as diagnostic input.
+**解析通用 stderr 与异常消息。** 自由文本既不稳定也不安全。只有锁定版本产品提供的结构化字段和受管进程结果可以成为诊断输入。
 
-**Persist stages or add a recovery controller.** The stage is derived from the current call site only when a failure is reported. Persistence, retries, resume, and remediation need separate ownership and user contracts.
+**持久化阶段或增加恢复控制器。** 阶段只在报告失败时从当前调用点派生。持久化、重试、resume 与修复需要独立的所有权和用户约定。
 
-**Map product limits to new shared stop reasons.** Claude Code turn and budget limits are not token-window exhaustion, and an error category does not establish refusal semantics. Existing stop reasons remain unchanged.
+**把产品限制映射为新的共享终止原因。** Claude Code 的轮次和预算限制并不表示 token 窗口耗尽，错误类别也不能证明拒绝语义。既有终止原因保持不变。
 
 ## Consequences
 
-The parent can distinguish important Claude Code limits and Codex budget, usage, service, policy, request, connection, stream, rollback, sandbox, and active-turn failures without receiving raw product text. Foreground and background scheduling preserve the same fact because both consume one `SubagentResult`.
+父 agent 可以区分重要的 Claude Code 限制，以及 Codex 预算、用量、服务、策略、请求、连接、stream、回滚、sandbox 和 active-turn 失败，而不会收到原始产品文本。前台与后台调度会保留同一事实，因为二者都消费同一个 `SubagentResult`。
 
-The diagnostic is display text rather than a new public protocol. Callers may present it but must not branch on its punctuation or product-private category names. A pinned product-version upgrade must update the Provider mapping and evidence when its official error union changes.
+诊断只是展示文本，不是新的公开协议。调用方可以呈现它，但不得根据其标点或产品私有类别名称进行分支。锁定产品版本升级并改变官方错误联合时，必须同步更新提供方映射与证据。
 
-This decision adds no product session persistence, retry policy, recovery state, stderr classifier, authentication or configuration taxonomy, progress stream, or human interaction path.
+本决策不增加产品会话持久化、重试策略、恢复状态、stderr 分类器、身份验证或配置分类体系、进度流或人工交互路径。

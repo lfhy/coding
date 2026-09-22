@@ -1,17 +1,15 @@
-# Agent Note: Use one surface manager per session
+# Agent Note: 每个会话只使用一个表层管理器
 
 Status: implemented
 Archived: 2026-07-26
 
-English | [中文](2026-07-19-use-one-session-surface-manager.zh.md)
+## 问题
 
-## Problem
+`Session` 曾针对同一份仅追加事件日志维护两个 `SurfaceManager` 实例。一个实例负责校验种子事件和追加候选事件，另一个延迟创建的实例则独立折叠已提交事件，供 `session.surface`、派生消息、压缩（compaction）和工作区上下文使用。一旦读取公共表层，之后的每个事件都会推进两份重复的节点状态与替换代数状态，却没有形成独立真源或失败边界。
 
-`Session` maintained two `SurfaceManager` instances over the same append-only event log. One validated seed and append candidates, while a second lazy instance independently folded committed events for `session.surface`, derived messages, compaction, and workspace context. Once the public surface had been read, every later event advanced duplicate node and replacement-generation state without creating a separate authority or failure boundary.
+## 决策
 
-## Decision
-
-Each `Session` owns one eagerly constructed `SurfaceManager`. Seed and append acceptance call `validateNext()` on that manager before committing an event, and `session.surface` returns the same object through this readonly contract:
+每个 `Session` 主动创建并只持有一个 `SurfaceManager`。种子事件与追加事件的接纳流程在提交事件之前调用该管理器的 `validateNext()`，`session.surface` 则通过以下只读契约返回同一个对象：
 
 ```ts
 export interface SessionSurface {
@@ -20,19 +18,19 @@ export interface SessionSurface {
 }
 ```
 
-Candidate validation remains atomic. `validateNext()` may synchronize committed log entries, but it only plans the uncommitted candidate. The candidate enters manager state after `log.push()` and the next delta synchronization, so surface validation failures and pre-commit `internal/dispatch` vetoes leave no phantom node or replacement generation.
+候选事件校验仍保持原子性。`validateNext()` 可以同步已提交的日志事件，但对尚未提交的候选事件只制定变更计划。候选事件在 `log.push()` 之后、下一次增量同步时才进入管理器状态，因此表层校验失败或提交前 `internal/dispatch` 否决都不会留下虚假节点或替换代数。
 
-`foldSurface()` remains the detached full-log replay function for offline validation and reconstruction. It uses the same transitions and agrees with the live manager for every committed prefix without sharing mutable state.
+`foldSurface()` 仍是离线校验与重建使用的分离式完整日志回放函数。它使用相同的状态转换，并且对每个已提交前缀都与活跃管理器一致，但不共享可变状态。
 
-## Alternatives considered
+## 备选方案
 
-**Keep acceptance and projection state separate.** Separate instances appeared to isolate public reads from validation, but callers already receive borrowed surface state and the declared readonly contract prevents ordinary mutation. Duplicating the manager was not a runtime trust boundary.
+**继续分离接纳状态与投影视图。** 两个独立实例看似能够隔离公共读取和校验，但调用方取得的本来就是借用的表层状态，声明的只读契约会阻止普通修改。复制管理器并不能构成运行时信任边界。
 
-**Recompute the public surface from the full log on every access.** This removed duplicate cached state but gave up incremental derivation and made repeated request construction scale with complete session history.
+**每次读取都根据完整日志重新计算公共表层。** 该方案能消除重复缓存状态，但会放弃增量派生，使每次请求构造都随完整会话历史增长。
 
-## Consequences
+## 影响
 
-- Acceptance, `session.surface`, derived messages, compaction, and workspace context observe one incremental state.
-- `Session.surface` exposes no validation method, while its object identity and borrowed readonly node array remain stable.
-- A hostile cast can still corrupt borrowed state; JavaScript callers that deliberately bypass the readonly contract remain outside the supported same-process boundary.
-- Surface, seed, dispatch-veto, request-reconstruction, compaction, and workspace-context tests exercise the shared manager and detached replay paths.
+- 接纳流程、`session.surface`、派生消息、压缩和工作区上下文观察同一份增量状态。
+- `Session.surface` 不暴露校验方法，同时保持对象标识和借用的只读节点数组稳定。
+- 恶意类型断言仍可破坏借用状态；刻意绕过只读契约的 JavaScript 调用方不属于受支持的同进程边界。
+- 表层、种子、调度否决、请求重建、压缩和工作区上下文测试覆盖共享管理器与分离回放路径。

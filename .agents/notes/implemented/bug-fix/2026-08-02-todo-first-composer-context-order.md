@@ -1,33 +1,31 @@
-# Agent Note: Todo-first composer context order
+# Agent Note: Todo 优先的 composer 上下文顺序
 
 Status: implemented
 
-English | [中文](2026-08-02-todo-first-composer-context-order.zh.md)
+## 问题
 
-## Problem
+composer 上下文堆栈将 Goal 渲染在 Todo 之前，但 Harness 设计稿把当前任务计划排在进行中的目标和待处理 Queue 之前。Todo 还把 Queue 包装层的 776px 宽度用作自身的可见卡片宽度，而 Goal 和 Queue 面板则渲染在共享的 752px 卡片列上。结果既颠倒了预期的信息层级，也让 Todo 比相邻两个面板更宽。
 
-The composer context stack rendered Goal before Todo even though the Harness design orders the current task plan before its ongoing goal and pending Queue. Todo also used the Queue wrapper's 776px width as its visible card width, while Goal and the Queue panel rendered on the shared 752px card column. The result inverted the intended information hierarchy and left Todo wider than both adjacent panels.
+## 决策
 
-## Decision
+`conversation.input.dock` 列表采用统一的产品顺序，升序依次为 Todo `0`、Goal `10`、Queue `20`，随后是位于列表外的 composer bar。注册顺序仍是语义真源；渲染器不会硬编码已知组件 id，也不会使用 CSS 修正它们的顺序。
 
-The `conversation.input.dock` list uses one ascending product order: Todo at `0`, Goal at `10`, and Queue at `20`, followed by the composer bar outside the list. Registration order remains the semantic source of truth; the renderer does not hardcode known component ids or repair their order with CSS.
+Todo、Goal 与可见的 Queue 面板共用 800px composer 宽度上限内的 752px 卡片列。Queue 保留 776px 包装层，并在两侧各留 12px 透明内缩，因为该包装层负责与 composer 重叠。Todo 是独立卡片，而非包装层，因此其响应式宽度和最大宽度都会直接扣除两层内缩。Goal 使用相同的响应式卡片列，并将内层横条的宽度上限设为 752px，从而在低于桌面宽度上限时也保持边缘对齐。
 
-Todo, Goal, and the visible Queue panel share the 752px card column inside the 800px composer cap. Queue retains a 776px wrapper with 12px transparent inset on each side because that wrapper owns the composer overlap. Todo is a standalone card rather than a wrapper, so its responsive width and maximum width subtract both inset layers directly. Goal uses the same responsive column and caps its inner bar at 752px, preserving matching edges below the desktop cap.
+[composer 堆栈约定](2026-07-30-composer-context-stack-order.md)继续规定卡片间距，以及仅限 Queue 与 composer 重叠。本决策只取代该记录中 Goal 优先的顺序。
 
-The [composer stack contract](2026-07-30-composer-context-stack-order.md) continues to own inter-card spacing and Queue's exclusive overlap with the composer. This decision supersedes only that note's Goal-first order.
+## 验证
 
-## Verification
+Todo 与 Goal 的注册测试分别固定顺序 `0` 和 `10`；Queue 仍固定为 `20`。无密钥 Queue 浏览器场景同时渲染三个面板，记录 Todo–Goal–Queue 的无障碍顺序，并在 1680px 桌面基线和低于宽度上限的 640px 视口下比较其可见边界框，随后再执行 Queue 变更。
 
-Todo and Goal registration tests pin orders `0` and `10`; Queue remains pinned at `20`. The keyless Queue browser scenario renders all three panels concurrently, records their Todo–Goal–Queue accessibility order, and compares their visible bounding boxes at the 1680px desktop baseline and a 640px sub-cap viewport before exercising Queue mutations.
+## 考虑过的替代方案
 
-## Alternatives considered
+**在 `ConversationRoot` 内重新排列已知面板。** 不予采纳，因为 `conversation.input.dock` 是可扩展的有序列表；硬编码的组件清单会使插件激活顺序与渲染顺序不一致。
 
-**Reorder the known panels inside `ConversationRoot`.** Rejected because `conversation.input.dock` is an extensible ordered list; a hardcoded component inventory would make plugin activation order and rendered order disagree.
+**使用 CSS `order` 移动 Todo 的视觉位置。** 不予采纳，因为无障碍顺序和键盘顺序必须与视觉层级一致，而 slot 账本已经负责语义顺序。
 
-**Use CSS `order` to move Todo visually.** Rejected because accessibility and keyboard order must match the visual hierarchy, and the slot ledger already owns semantic order.
+**让 Todo 保持 Queue 包装层的宽度。** 不予采纳，因为 Queue 包装层的透明内缩是其与 composer 重叠所需的布局基础设施，不属于可见面板列。
 
-**Keep Todo at the Queue wrapper width.** Rejected because the Queue wrapper's transparent inset is layout infrastructure for its composer overlap, not part of the visible panel column.
+## 后果
 
-## Consequences
-
-The standing task plan appears before the ongoing goal, pending Queue work remains closest to the composer, and all three visible cards share one horizontal edge. Future input-dock plugins choose an explicit position relative to Todo `0`, Goal `10`, and Queue `20`; only Queue owns the terminal wrapper overlap.
+当前有效的任务计划显示在进行中的目标之前，待处理 Queue 工作仍最靠近 composer，三张可见卡片共用相同的横向边缘。未来的 input-dock 插件必须相对于 Todo `0`、Goal `10` 和 Queue `20` 选择明确位置；仅 Queue 负责末端包装层与 composer 的重叠。

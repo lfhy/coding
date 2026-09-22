@@ -1,12 +1,10 @@
-# 3. Services
+# 3. 服务
 
-English | [中文](03-services.zh.md)
+**服务**是一个插件提供、其他插件通过 `ctx` 消费的具名能力。在 harness 中，`ctx.tools`、`ctx.llm` 和 `ctx.agents` 都是服务。消费方只指定 `'tools'` 之类的能力，而不导入其提供方，因此配置可以选择提供方，无需修改消费方。
 
-A **service** is a named capability one plugin provides and other plugins consume through `ctx`. In the harness, `ctx.tools`, `ctx.llm`, and `ctx.agents` are services. A consumer names the capability, such as `'tools'`, rather than importing its provider, so configuration can select a provider without changing the consumer.
+## 提供服务
 
-## Provide a service
-
-Create `greeter.ts` in `tmp/cordis-tutorial`:
+创建 `greeter.ts`，将它放在 `tmp/cordis-tutorial` 中：
 
 ```ts
 import { Service, type Context } from '@deepseek-ai/cordis'
@@ -34,16 +32,16 @@ export function apply(ctx: Context) {
 }
 ```
 
-Two pieces work together:
+两部分协同工作：
 
-- **Runtime**: `super(ctx, 'greeter')` registers the instance under the name `greeter`. From then on, any plugin can reach it as `ctx.greeter`. The registration is an effect — unloading the provider removes the service.
-- **Compile time**: the `declare module '@deepseek-ai/cordis'` block is TypeScript declaration merging. It adds `greeter` to the `Context` interface so `ctx.greeter` typechecks everywhere. It generates no code; without it the service still works at runtime, but consumers lose type safety.
+- **运行时**：`super(ctx, 'greeter')` 以名称 `greeter` 注册该实例。此后，任何插件都可以通过 `ctx.greeter` 访问它。注册属于 effect，卸载提供方时会移除该服务。
+- **编译时**：`declare module '@deepseek-ai/cordis'` 块使用 TypeScript 声明合并，把 `greeter` 加入 `Context` 接口，使 `ctx.greeter` 在各处都能通过类型检查。它不会生成代码；没有该声明时，服务在运行时仍能工作，但消费方会失去类型安全。
 
-A `Service` subclass is itself a plugin (the class form from chapter 1), so `ctx.plugin(GreeterService)` mounts it like any other.
+`Service` 子类本身就是插件（第 1 章介绍的类形态），因此 `ctx.plugin(GreeterService)` 会像挂载其他插件一样挂载它。
 
-## Consume a service with `inject`
+## 使用 `inject` 消费服务
 
-Create `consumer.ts`:
+创建 `consumer.ts`：
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
@@ -56,9 +54,9 @@ export function apply(ctx: Context) {
 }
 ```
 
-`inject` lists the services this plugin requires. Cordis holds the plugin in PENDING until every listed service exists, so inside `apply`, `ctx.greeter` is guaranteed ready. Load order in `cordis.yml` does not matter — dependencies, not file order, decide when plugins start.
+`inject` 列出该插件需要的服务。Cordis 会让插件保持 PENDING，直到列出的每项服务都存在，因此在 `apply` 内可以保证 `ctx.greeter` 已经就绪。`cordis.yml` 中的加载顺序无关紧要：决定插件何时启动的是依赖关系，而不是文件顺序。
 
-Compose and run:
+组合并运行：
 
 ```yaml
 - name: './greeter.ts'
@@ -69,17 +67,17 @@ Compose and run:
 Hello, world!
 ```
 
-Swap the two lines in `cordis.yml` and rerun: same output. Try removing `./greeter.ts` entirely: the consumer stays PENDING and prints nothing — no crash, no partial run. A PENDING fiber does not keep Node's event loop alive either, so a composition with nothing else running exits 0 silently. [Chapter 6](06-composition-and-hmr.md) shows how to diagnose that state.
+交换 `cordis.yml` 中两行的顺序后重新运行，输出仍然相同。尝试彻底移除 `./greeter.ts`：消费方会保持 PENDING，不输出任何内容，既不崩溃，也不会只运行一部分。处于 PENDING 的 fiber 也不会让 Node 的事件循环保持活跃，因此如果组合中没有其他运行项，进程会静默地以状态码 0 退出。[第 6 章](06-composition-and-hmr.md)介绍如何诊断这种状态。
 
-## Dependencies are tracked after load
+## 加载后仍会跟踪依赖关系
 
-`inject` is not a one-shot boot check. If a required service disappears while the app runs — its provider was unloaded or hot-replaced — every dependent plugin is unloaded too, and loads again when the service returns. Combined with effects ([chapter 2](02-lifecycle-and-effects.md)), this prevents a running consumer from retaining a reference to an unavailable service: its own registrations are unwound when the dependency disappears.
+`inject` 并非一次性的启动检查。如果应用运行期间所需服务消失，例如提供方被卸载或热替换，每个依赖插件也会随之卸载，并在服务恢复后再次加载。结合 effect（[第 2 章](02-lifecycle-and-effects.md)），这能防止运行中的消费方保留对不可用服务的引用：依赖消失时，它自己的注册也会撤销。
 
-This is also why service replacement works in config: unload the `dsh-bash-local` entry, mount a different `shell` provider, and every plugin injecting `'shell'` cleanly restarts against the new implementation.
+这也是配置中可以替换服务的原因：卸载 Cordis 配置项 `dsh-bash-local`，挂载另一个 `shell` 提供方，所有注入 `'shell'` 的插件都会重新启动并使用新实现。
 
-## Optional dependencies
+## 可选依赖
 
-`inject` is for hard requirements. For a capability the plugin can live without, skip `inject` and probe at the use site:
+`inject` 用于硬性依赖。如果某项功能缺失时插件仍可运行，请跳过 `inject`，并在使用处探测：
 
 ```ts ignore-check
 export function apply(ctx: Context) {
@@ -89,10 +87,10 @@ export function apply(ctx: Context) {
 }
 ```
 
-## Naming
+## 命名
 
-Service names live in one flat namespace per application. Prefix or namespace your own services distinctively (the harness claims plain names like `tools` and `llm`); the generated `cordis-surface` regions on the [subsystem pages](../subsystems/core.md) list every name the harness registers.
+每个应用中的服务名称共用一个扁平命名空间。请为自有服务添加有辨识度的前缀或命名空间（harness 已占用 `tools` 和 `llm` 等普通名称）；[子系统页面](../subsystems/core.md)上生成的 `cordis-surface` 区块列出 harness 注册的每个名称。
 
-Next: [Events](04-events.md) — communication without a shared service.
+下一章：[事件](04-events.md)：无需共享服务即可通信。
 
 [![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)

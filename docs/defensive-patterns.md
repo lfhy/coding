@@ -1,33 +1,31 @@
-# Defensive patterns
+# 防御性模式
 
-English | [中文](defensive-patterns.zh.md)
+来之不易的缺陷类别规则：下面每条模式都是本项目实际发布或差点发布的一类缺陷，以防止其复发的规则形式陈述。在编写生命周期、并发、子进程或清理代码之前请先阅读本文。测试层面的对应规则（真实入口路径、验证实际结果、资源归属）见 [testing.md](testing.md)。
 
-Hard-won bug-class rules: each pattern below is a class of defect that actually shipped or nearly shipped here, stated as the rule that prevents its recurrence. Read this before writing lifecycle, concurrency, subprocess, or teardown code. Test-tier counterparts (real entry path, world-verification, resource ownership) are in [testing.md](testing.md).
+## 正交结果独立上报
 
-## Report orthogonal outcomes independently
+一个结果可以同时具有多种性质：进程可能已经超时，却仍以退出码 0 结束，因为它捕获了终止信号。每个独立事实（`timedOut`、`signal`、`exitCode`）都应单独上报；切勿把一个标志的上报嵌套在另一个标志的分支中，否则调用方可能把提前终止的运行误判为正常成功。
 
-A result can be several things at once — a process can time out AND exit 0 because it trapped the signal. Surface each independent fact (`timedOut`, `signal`, `exitCode`) on its own; never nest one flag's report inside another's branch, or a caller reads a cut-short run as a clean success.
+## 公共约定两侧都要遵守
 
-## Honor public contracts on BOTH sides
+当一个实现收到同一结果的多种表示时，应在通过公共 API 返回前将其规范化。`LlmAdapter.stream()` 的实现可以抛出异常或发出 `finish {kind:'error'|'aborted'}`，但 `LlmRuntime.stream()` 只会通过终止型 finish 分片暴露模型请求失败；middleware 缺陷与消费方缺陷仍会以异常形式抛出。这使消费方不必猜测捕获的异常究竟来自提供方、包装层、分片日志记录还是自身组装逻辑。请在类型定义处记录规范化后的约定；通过真实消费方覆盖每种来源形式。
 
-When an implementation receives several representations of one outcome, normalize them before returning through the public API. `LlmAdapter.stream()` implementations may throw or emit `finish {kind:'error'|'aborted'}`, but `LlmRuntime.stream()` exposes model-request failures only as terminal finish chunks; middleware and consumer defects remain thrown. This keeps consumers from guessing whether a caught exception came from the provider, a wrapper, chunk logging, or their own assembly. Document the normalized contract where the type is defined; exercise every source form through the real consumer.
+## 异步状态不是同步状态
 
-## Async state is not synchronous state
+`agent.followup()` 没有逐消息的完成状态或结果；后台任务的完成与轮次边界存在竞争；`reader.close()` 在 EOF 和 dispose（资源释放）两种情况下都会触发。切勿把 `agent/status` 或 `whenIdle()` 当作某次 `followup()` 的结果：多条已排队的后续消息、steering（中途引导）和注入工作可能共用同一个 `running` 区间，而取消或资源释放可能丢弃尚未启动的项。真正拥有一次运行的自动化调用方必须显式定义其区间——例如从消息的持久 inbox 回执到整个 agent（智能体）下一次进入 `idle`——并将选取的任何输出描述为整个区间的输出，而不是把因果关系归于该消息。这条守则是双向的：如果等待的转换永远不会发生，等待就会挂起，因此应显式处理「无需等待」的分支。
 
-`agent.followup()` has no per-message completion or result; a background job's completion races turn boundaries; `reader.close()` fires for both EOF and disposal. Never treat `agent/status` or `whenIdle()` as the result of one follow-up: several queued follow-ups, steering, and injected work may share one `running` interval, while cancellation or disposal can discard unstarted items. An automation caller that truly owns a run must define its interval explicitly—for example, from its message's durable inbox receipt through the next whole-agent `idle`—and describe any selected output as interval-wide rather than causally attributed to that message. The guard cuts both ways: if the awaited transition can never occur, the wait hangs, so handle the "nothing to wait for" branch explicitly.
+## dispose 必须达到完全停稳，而不仅仅是请求停止
 
-## Dispose must reach quiescence, not just request it
+如果清理流程只发出终止或中止信号便返回，而不等待工作真正停止，就会留下孤儿进程。清理逻辑应采用异步流程，并等待子进程退出（发出终止信号后等待 `done`）；还应在终止进程前关闭监听器注册表和通知注册表，使迟到的完成事件保持静默。
 
-A teardown that issues kills/aborts but returns before the work stops leaves orphans. Make cleanup async and await the children's exit (kill → await `done`), and close listener/notification registries BEFORE killing so late completions stay silent.
+## 在分发器中隔离回调异常
 
-## Contain callback exceptions in the dispatcher
+用户提供的监听器如果抛出异常，不得导致它所在的 promise 被 reject，也不得饿死排在它后面的监听器。请用 try/catch 包裹分发循环并记录日志；一个行为不当的订阅者绝不能破坏核心生命周期。
 
-A user-supplied listener that throws must not reject the promise it runs inside or starve the listeners after it. Wrap the dispatch loop in try/catch and log; one bad subscriber never breaks core lifecycle.
+## 绝不将环境变量或可预测路径暴露给不可信输出
 
-## Never hand untrusted output the ambient environment or predictable paths
+启动的命令应使用经过清理的环境变量，移除名称匹配 `*KEY*`、`*SECRET*`、`*TOKEN*` 或 `*PASSWORD*` 的项，防止 harness 凭证通过命令输出、`env` 或 spill 文件泄漏。临时文件和 spill 文件应放在权限为 0700 的私有目录中，使用随机文件名，并以独占且仅所有者可访问的方式打开（`'wx'`、`0o600`）；可预测且全局可读的路径会引发符号链接竞态和信息泄露。
 
-Spawned commands get a scrubbed env (drop `*KEY*`/`*SECRET*`/`*TOKEN*`/`*PASSWORD*`) so harness credentials cannot leak into output, `env`, or spill files. Temp/spill files use a private (0700) dir, random names, and exclusive owner-only opens (`'wx'`, `0o600`) — predictable world-readable paths invite symlink races and disclosure.
+## 用 unlink 删除链接形态的路径
 
-## Unlink link-shaped paths
-
-A path that may be a symlink or Windows junction is removed with `lstatSync().isSymbolicLink()` then `unlinkSync`: unlink deletes only the link and refuses a real directory, so it never follows the link into its target. Windows `rmSync(link)` throws `ERR_FS_EISDIR` on a junction; recursive deletion may descend through one into its target. Reserve recursive `rmSync` for known real directories.
+可能是符号链接或 Windows junction 的路径，应先用 `lstatSync().isSymbolicLink()` 判断，再用 `unlinkSync` 删除：unlink 只删除链接本身并拒绝真实目录，因此绝不会跟随链接进入其目标。Windows 上对 junction 调用 `rmSync(link)` 会抛 `ERR_FS_EISDIR`；递归删除可能穿过 junction 进入其目标。真实目录才使用带 `recursive` 的 `rmSync`。

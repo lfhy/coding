@@ -1,31 +1,29 @@
 # dsh-agent-tool-presentation
 
-English | [中文](README.zh.md)
+[agent preset](../../preset/agent-presets/README.md) 用来声明「模型看到的工具是哪一种形态」的那一行：`native`（全部 schema）、`code`（只有 `run_code` 加一份生成的 TypeScript SDK）或 `both`。
 
-The row an [agent preset](../../preset/agent-presets/README.md) carries to say which form of its tools the model sees: `native` (every schema), `code` (only `run_code` plus a generated TypeScript SDK), or `both`.
+## 为什么是一行插件，而不是把注册表搬下来
 
-## Why a row rather than a registry
+工具注册表搬不进 preset。它的消费者全在宿主平面——[`dsh-agent-loop`](../agent-loop/README.md) 读它的调度器，[`dsh-apiproxy`](../../host/apiproxy/README.md) 读它的 presenter 来渲染工具卡，每个工具插件都往里注册——而一个服务只有在**所有**消费者一起下沉时才能下沉。
 
-The tool registry cannot move into a preset. Its consumers are all host-plane — [`dsh-agent-loop`](../agent-loop/README.md) reads its scheduler, [`dsh-apiproxy`](../../host/apiproxy/README.md) reads its presenters to render tool cards, and every tool plugin registers into it — and a service only moves down when all of its consumers move with it.
+preset 能拥有的是这份注册表的**呈现方式**。`ctx.tools.presentAs()` 只为正在挂载的那个 agent 声明，于是一个 Code Mode 会话可以和多个 native 会话同进程并存，各自看到各自的清单。[`dsh-tools`](../tools/README.md) 那一行上的 `mode` 仍然是默认值，供未作声明的 agent 使用。
 
-What a preset can own is the **presentation** of that registry. `ctx.tools.presentAs()` declares it for the mounting agent alone, so a Code Mode session runs beside native ones in one process, each seeing its own catalog. The deployment's `mode` on the [`dsh-tools`](../tools/README.md) row remains the default that agents declaring nothing get.
+## 它做什么
 
-## What it does
+`native` 立即生效。code 类模式则等待 `ctx.codeRuntime`——这是一个宿主平面服务（[`dsh-code-runtime-worker-thread`](../../code-runtime/code-runtime-worker-thread/README.md)）：若某个 preset 在未组装运行时的部署上选择 Code Mode，本行就停在 pending，`dsh-agent-presets` 会指名此 id 拒绝挂载。另一种做法——先乐观应用——会把失败推迟到该会话的第一次请求，那时操作者对 preset 和组装都已无从下手。
 
-`native` applies immediately. A code mode instead waits for `ctx.codeRuntime`, which is a host-plane service ([`dsh-code-runtime-worker-thread`](../../code-runtime/code-runtime-worker-thread/README.md)): a preset selecting Code Mode against a deployment composing no runtime then holds this row pending, and `dsh-agent-presets` refuses the mount naming this id. The alternative — applying optimistically — moves the failure to the session's first request, where the operator can act on neither the preset nor the composition.
+`mode` 是必填而非有默认值：不带这一行的 preset 本来就会拿到部署默认值，省略它等于这一行白组装了。
 
-`mode` is required rather than defaulted, because a preset without this row already gets the deployment default; an omitted value would mean the row was composed for nothing.
+一个 agent 只声明一次呈现方式。同一份组装里的第二次声明会被拒绝而不是合并：对「模型看到哪种形态」给出两个答案是矛盾，不是覆盖。
 
-One agent declares one presentation. A second declaration in the same composition is refused rather than merged: two answers to "which form does the model see" is a contradiction, not an override.
+## 模型体验
 
-## Model Experience
-
-Indirectly, through the projection it selects in `dsh-tools`: `code` presents `run_code` plus a generated SDK section and the rule that only `run_code` may be called directly, `native` presents every tool schema. The selection also decides what may EXECUTE: under `code` the registry resolves a model-direct call naming any other tool to `UNKNOWN_TOOL`, so this row is what keeps the announced surface and the callable surface the same for every agent it covers ([executor-collapse note](../../../.agents/notes/implemented/bug-fix/2026-08-07-code-mode-executor-collapse.md)).
+间接生效，取决于它在 `dsh-tools` 中选择的投影：`code` 呈现 `run_code`、一份生成的 SDK 段，以及「只有 `run_code` 可被直接调用」这条规则，`native` 呈现每个工具的 schema。该选择同时决定了**什么可以执行**：在 `code` 下，注册表会把模型直呼其他任何工具名解析为 `UNKNOWN_TOOL`，因此这一行正是让「通告面」与「可调用面」对每个被它覆盖的 agent 保持一致的东西（[执行器塌缩 note](../../../.agents/notes/implemented/bug-fix/2026-08-07-code-mode-executor-collapse.md)）。
 
 #### KV Cache effect
 
-No direct invalidation; the presentation is fixed when the agent is composed, so its request prefix is stable for the session's life.
+没有直接的失效影响；呈现方式在 agent 组装时即固定，因此其请求前缀在该会话的整个生命周期内保持稳定。
 
-## Known Limitations and Deferred Work
+## 已知限制与暂缓事项
 
-- **The runtime stays host-plane** — a preset can select Code Mode but cannot supply the TypeScript runtime it needs; a deployment that composes none can compose no code-mode preset.
+- **运行时仍在宿主平面** —— preset 可以选择 Code Mode，却无法自带它所需的 TypeScript 运行时；未组装运行时的部署也就无法组装任何 code 模式的 preset。

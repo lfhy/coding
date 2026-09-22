@@ -1,38 +1,36 @@
-# Agent Note: Full-session stats-strip figures through a sessionStats projection
+# Agent Note: 通过 sessionStats 投影提供全会话统计条数字
 
 Status: implemented
 
-English | [中文](2026-08-12-full-session-turn-step-counts.zh.md)
+## 问题
 
-## Problem
+Web 聊天统计条的每个非 token 数字都折算自 `StatsLine` 已加载的会话窗口（`deriveStats` 遍历 `chat.legacy.nodes`）：「N 轮 · M 步」计数、LLM 与工具墙钟时间、TTFT／吞吐平均值。历史按每页 50 条消息分页，因此每点一次「加载更早」窗口变大、所有数字随之增长——7 轮 · 44 步在翻一页后变成 10 轮 · 89 步，LLM 时长同样攀升。产品预期是与客户端加载了多少历史无关的全会话数字。同一统计条里的 token 账目早已采用正确架构：持久的 `tokenUsage` 投影。
 
-The web chat stats strip folded `StatsLine`'s loaded conversation window (`deriveStats` over `chat.legacy.nodes`) for every non-token figure: the "N turns · M steps" counter, the LLM and tool wall times, and the TTFT/throughput averages. History is paged 50 messages at a time, so each 加载更早 (Load earlier) click grew the window and every figure with it — 7 turns · 44 steps became 10 turns · 89 steps after one page, and the LLM duration climbed the same way. The product expectation is whole-session figures independent of how much history a client has loaded. Token accounting in the same strip already had the correct architecture: the durable `tokenUsage` projection.
+## 决定
 
-## Decision
+新的函数插件 `@deepseek-ai/dsh-session-stats` 在 `ctx.sessionProjections` 上注册 `sessionStats` 投影单元，作为 web-app bundle 行挂载。值携带统计条完整的非 token 数字集——`{ turns, steps, llmMs, toolMs, ttftMs, ttftSteps, decodeMs, decodeTokens }`，字段名与窗口折叠一一对应以便整体互换。`steps` 统计 `step/end` 事件，`turns` 统计含至少一条该事件的不同 turn（turn 号单调递增，一个 `lastTurn` 槽即可）；`llmMs` 累加 `step/start` → `assistant/message`；TTFT 记录每步首个非空 delta chunk（在步内 `llm/retry` 后保留，与窗口 `resetForRetry` 对齐）；解码时长覆盖首 token → 已组装消息、仅统计上报 usage 的步；`toolMs` 按 callId 配对 `tool/call` → `tool/result`，未解决的调用在 `turn/end` 时丢弃。首 token 谓词 `isTokenDelta` 移入 `@deepseek-ai/dsh-llm/message`（与其判别的 `StreamChunk` 类型同处），Host 折叠与客户端计时索引共用同一实现；client-runtime 转发导出。投递完全复用现有投影缝——history 尾页块、`session/projection` 推送帧、列表行——apiproxy、wire schema 与客户端运行时零改动。`StatsLine` 读取 `useProjection('sessionStats')`，键为 undefined（未组合该单元的装配）时整体回退到窗口折叠。客户端 connection fixture 按其「镜像每个已组合键」的既有纪律以 `sessionStatsOf` 平行实现该折叠。
 
-A new function plugin `@deepseek-ai/dsh-session-stats` registers a `sessionStats` projection unit on `ctx.sessionProjections`, mounted as a web-app bundle row. The value carries the strip's whole non-token figure set — `{ turns, steps, llmMs, toolMs, ttftMs, ttftSteps, decodeMs, decodeTokens }`, field names mirroring the window fold so the two swap wholesale. `steps` counts `step/end` events and `turns` counts distinct turns carrying at least one (turn numbers are monotonic, so one `lastTurn` slot suffices); `llmMs` sums `step/start` → `assistant/message`; TTFT records the first non-empty delta chunk per step (surviving in-step `llm/retry`, the window `resetForRetry` parity); decode spans first token → assembled message on usage-reporting steps; `toolMs` pairs `tool/call` → `tool/result` by callId with unresolved calls dropped at `turn/end`. The first-token predicate `isTokenDelta` moved to `@deepseek-ai/dsh-llm/message` (beside the `StreamChunk` type it discriminates) so the host fold and the client timing index share one implementation; client-runtime re-exports it. Delivery is entirely the existing projection seam — history tail-page block, `session/projection` push frames, list rows — with zero changes to apiproxy, wire schemas, or the client runtime. `StatsLine` reads `useProjection('sessionStats')` and falls back to the window fold when the key is undefined (an assembly without the unit). The client connection fixture mirrors the fold as `sessionStatsOf` under its existing every-composed-key discipline.
+计数事件选 `step/end` 而非 `assistant/message`，源于评审直觉方案（按消息计数）时发现的两个正确性问题：
 
-`step/end` — not `assistant/message` — is the counted event, for two correctness reasons found while reviewing the obvious message-counting design:
+1. max-tokens 步会追加一条仅为承载 usage 而存在的空内容 `assistant/message`，它从不进入 surface；按消息计数会把 transcript 上看不到的步计进去。
+2. 被取消的步在消息组装前就中止（完全没有 `assistant/message`），但客户端会合成可见的 interrupted assistant 节点；按消息计数会悄悄丢掉常见的取消步。
 
-1. A max-tokens step appends an empty-content `assistant/message` that exists only to host usage and never reaches the surface; counting messages would count a step the transcript does not show.
-2. A cancelled step aborts before its message assembles (no `assistant/message` at all), yet the client synthesizes a visible interrupted assistant node; counting messages would silently drop common cancelled steps.
+`step/end` 对每个进入的步在循环的 `finally` 中恰好追加一次，因此完成、失败、取消、max-tokens 的步都恰好落一条——且计数在步结算时推进，与窗口折算推进的时机相同，直播期行为不发生变化。
 
-`step/end` is appended exactly once per entered step, in the loop's `finally`, so completed, failed, cancelled, and max-tokens steps all land one — and the counter advances at step settlement, the same moment the window fold advanced, so live behavior does not shift.
+## 备选方案
 
-## Alternatives considered
+**统计 `assistant/message` 事件。** 因上述两个正确性缺陷否决（多计 usage 宿主消息、少计被取消的步）。
 
-**Count `assistant/message` events.** Rejected for the two correctness defects above (overcounts usage-host messages, undercounts cancelled steps).
+**统计 `step/start` 事件。** 覆盖等价（它先于每条 `step/end`），但计数会在步开始而非结算时推进——一个没有收益的可见直播期行为变化；`step/end` 的 `finally` 位置给出同等完整性。
 
-**Count `step/start` events.** Equivalent coverage (it precedes every `step/end`), but the counter would advance when a step begins instead of when it settles — a visible live-behavior change with no benefit; `step/end`'s `finally` placement gives the same completeness.
+**把单元注册进 `core/agent-loop`（事件生产方）。** 循环是产品主干；把 UI 读模型放进去会给每个装配加上 session-projection 依赖，违反「用插件而非改循环」与「默认组合不带可选项」。
 
-**Register the unit in `core/agent-loop` (the event producer).** The loop is the product spine; a UI read model there adds a session-projection dependency to every assembly, against "plugins, not loop changes" and "keep opt-ins out of shipped defaults".
+**把单元注册进 `token-meter`（折叠同批事件的现有单元）。** 轮/步计数不是 token 度量；每个投影键都住在拥有其领域的包里。
 
-**Register the unit in `token-meter` (an existing fold over the same events).** Turn/step counting is not token measurement; every projection key lives in the package owning its domain.
+**在客户端折叠全量日志。** 客户端按设计只持有分页窗口；投影 RFC 的「不在客户端折叠」规则正是为了让数字在分页、压缩与冷读之间存活。
 
-**Fold the full log client-side.** The client holds only the paged window by design; the projection RFC's no-client-folding rule exists exactly so figures survive paging, compaction, and cold reads.
+**墙钟时间、TTFT 与吞吐保持窗口口径，解读为「屏幕上有什么」。** 否决：同样的分页问题一样落在 LLM 时长上，且全量计数与窗口时间混在一条统计条里读起来是一套自相矛盾的数字。投影携带完整集合，窗口折叠降级为无单元时的回退。
 
-**Keep wall times, TTFT, and throughput window-scoped, reading them as "what is on screen".** Rejected: the same paging complaint applies to the LLM duration, and a strip mixing whole-log counts with window-scoped times reads as one inconsistent figure set. The projection carries the whole set, with the window fold demoted to the no-unit fallback.
+## 后果
 
-## Consequences
-
-The strip shows whole-log figures from the first tail page; paging leaves every group fixed. Defined edge differences from the old window semantics are documented in the package README: a step that produced no visible output (failed before content) still counts, a step interrupted by a crash counts once recovery closes it with a synthetic `step/end` on reload (`interruptedTurnClosers`), a cancelled step is counted but contributes no wall time (no message assembled), and a max-tokens usage-host message contributes model time the surface does not show. Every web tail page and list row carries one more small key, and the unit's internal state changes on step boundaries and first-token chunks, so the change feed emits a few value-identical frames per step; TUI and headless assemblies serve no `sessionStats` key and any consumer falls back to window folding. Two e2e probes that had parsed the strip as a loaded-window measure (`chat-scroll-contract`, `complex-history.perf`) now count mounted flow rows / turn-tail footers instead. The `stats-paged-history` web scenario seeds a 28-turn log cold and pins that the whole strip reads full totals on a partial tail page and does not move across Load earlier.
+统计条从第一个尾页起就显示全日志数字；翻页不再改变任何分组。与旧窗口语义的已定义边缘差异记录在包 README 中：未产生可见输出的步（在内容之前失败）仍计入；被崩溃打断的步在重新加载、恢复为其补写合成 `step/end` 后计入（`interruptedTurnClosers`）；被取消的步计数但不计时（没有组装出消息）；max-tokens 的 usage 宿主消息贡献 surface 上看不到的模型时间。每个 web 尾页与列表行多携带一个小键，且单元内部状态在步边界与首 token chunk 处变化，变更流每步会多发几帧值相同的推送；TUI 与 headless 装配不提供 `sessionStats` 键，其消费者回退窗口折叠。两个曾把统计条当作已加载窗口探针解析的 e2e（`chat-scroll-contract`、`complex-history.perf`）改为统计已挂载的消息流行／turn-tail 页脚。`stats-paged-history` web 场景冷种一份 28 轮日志，钉住整条统计条在不完整尾页上即读出全量数字、且「加载更早」前后不变。

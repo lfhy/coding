@@ -1,22 +1,20 @@
 # @deepseek-ai/dsh-host-directory-picker-native
 
-English | [中文](README.zh.md)
+[目录选择 seam](../directory-picker/README.md) 的**原生 OS 选择器后端**：`NativeDirectoryPicker` 以 `native` 能力注册 `ctx.directoryPicker`，其 `pick(signal)` 每次调用打开一个原生选择器并解析出所选绝对路径（取消时为 `null`）。平台工具不经 shell 调用：macOS 使用 `osascript`——通过 JXA 桥在进程内构造 `NSOpenPanel`，因为后台宿主进程请求时 AppleScript 的 `choose folder` 面板只会被创建而不上屏（调用方只能等到 AppleEvent 超时 `-1712`）——Linux 使用 Zenity 并以 KDialog 回退；调用方的中止信号会终止原生进程。Windows 在 spawn 的子进程中打开现代 `IFileOpenDialog`——由 koffi 在子进程主线程上驱动的 COM 会话，采用宿主接受的最佳线程 DPI 感知（优先 per-monitor-v2），中止时向对话框线程投递 `WM_CLOSE`。在 `Show` 之前，子进程立即通过 `keybd_event` 合成一次 Alt 按键，让对话框即使由后台宿主进程 spawn 也能激活为前台窗口。只有操作者坐在宿主屏幕前时才可用——远程部署应组合 [`-browse`](../directory-picker-browse/README.md)。命令边界（`DirectoryPickerRunner`）与平台事实可注入。共享的免 shell 子进程运行器位于 [`dsh-native-command`](../../util/native-command/README.md)。
 
-The **native-OS-chooser backend** of the [directory-picker seam](../directory-picker/README.md): `NativeDirectoryPicker` registers `ctx.directoryPicker` with the `native` capability, whose `pick(signal)` opens one native chooser per call and resolves the chosen absolute path (`null` on cancel). Platform tools run without a shell: `osascript` on macOS — driving an in-process `NSOpenPanel` through its JXA bridge, since an AppleScript `choose folder` panel is created without ever reaching a display for a background host process (the caller only waits out the AppleEvent timeout, `-1712`) — and Zenity with a KDialog fallback on Linux; the caller's abort terminates the native process. Windows opens the modern `IFileOpenDialog` in a spawned child process — a koffi-driven COM conversation on the child's main thread with the best thread DPI awareness the host accepts (per-monitor-v2 first), aborted by posting `WM_CLOSE` to the dialog thread. Immediately before `Show`, the child synthesizes one Alt press through `keybd_event`, allowing the dialog to activate as the foreground window when a background host process spawned the child. Only viable when the operator sits at the host's display — remote deployments compose [`-browse`](../directory-picker-browse/README.md) instead. The command boundary (`DirectoryPickerRunner`) and platform facts are injectable. The shared no-shell subprocess runner lives in [`dsh-native-command`](../../util/native-command/README.md).
+**双面包**：浏览器端（`./client`）向 [ui-workspace](../../client/ui-workspace/README.md) 的两个目录流 slot 注册一个无渲染的流程占用者——每次 `open` 请求驱动 `host.pickDirectory`，并通过 slot 的属主交互约定上报唯一结果（所选路径／取消／失败）。两个目录流程声明必须同时处于有效状态，任一贡献才会安装。因此一行 cordis.yml 同时组合原生交互的两侧；客户端不包含任何按能力类型进行的分支，挂载第二个流程包会在加载期失败（slot 的 kind 为 `single`）。
 
-**Dual-face package**: the browser half (`./client`) registers a renderless flow occupant into [ui-workspace's](../../client/ui-workspace/README.md) two directory-flow holes — each `open` request drives `host.pickDirectory` and reports the one outcome (picked path / cancel / failure) through the hole's owner conversation. Both directory-flow declarations must be live before either contribution installs. One cordis.yml row therefore composes both sides of the native interaction; the client carries no capability-kind branching, and mounting a second flow package fails at load (the holes are `single` kind).
+## 模型体验
 
-## Model Experience
+无。该后端服务于 GUI 宿主的目录选择；这里没有任何内容进入模型请求。
 
-None, as the backend serves the GUI host's directory selection; nothing here reaches a model request.
+#### KV Cache 影响
 
-#### KV Cache effect
+无；该包既不组装也不发送提供方请求。
 
-None; this package neither assembles nor sends a provider request.
+## 已知限制与延期工作
 
-## Known Limitations and Deferred Work
-
-- **Linux requires desktop tooling** — with neither Zenity nor KDialog installed, `pick` rejects with an actionable error; it does not fall back to a typed-path prompt (the browse backend is that fallback at the composition level).
-- **Windows has no mechanism fallback** — the child-process picker through packaged koffi is the only native tier, so a COM refusal or dialog crash surfaces the failure. The browse backend remains the fallback at the composition level.
-- **Windows foreground grant relies on injected input** — the child synthesizes an Alt press before `Show` so the dialog can take the foreground from a background host; where synthesized input is suppressed (secure desktops, restricted remote sessions, an elevated foreground window), the dialog may still open behind other windows.
-- **The macOS panel can present without taking interaction** — the in-process `NSOpenPanel` reaches the screen from a background host process, but the requesting process cannot activate the application that owns it, so the operator can be unable to click the panel. The shipped web composition therefore mounts the in-page [`-browse`](../directory-picker-browse/README.md) dialog, and this tier stays an explicit overlay choice.
+- **Linux 依赖桌面工具**——Zenity 与 KDialog 均未安装时，`pick` 以包含解决建议的错误拒绝；它不会回退为手输路径提示（组合层面的回退是 browse 后端）。
+- **Windows 没有机制级回退**——通过打包依赖 koffi 运行的子进程选择器是唯一原生层级，因此 COM 拒绝或对话框崩溃会直接上报失败。组合层面的回退仍是 browse 后端。
+- **Windows 前台授权依赖注入的输入**——子进程在 `Show` 之前合成一次 Alt 按键，对话框才能从后台宿主取得前台；在合成输入被抑制的环境（安全桌面、受限远程会话、提权前台窗口）中，对话框仍可能在其他窗口后面打开。
+- **macOS 面板可能出现却拿不到交互**——进程内 `NSOpenPanel` 能从后台宿主进程上屏，但请求进程无法激活拥有它的应用，操作者可能点不动该面板。因此随包发布的 web 组合改挂页面内 [`-browse`](../directory-picker-browse/README.md) 对话框，本层级只在覆盖层里显式选择。

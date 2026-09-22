@@ -1,27 +1,25 @@
-# Agent Note: Isolate pnpm setup per GitHub Actions runner
+# Agent Note: 按 GitHub Actions runner 隔离 pnpm 设置
 
 Status: implemented
 
-English | [中文](2026-07-29-pnpm-setup-runner-isolation.zh.md)
+## 问题
 
-## Problem
+`pnpm/action-setup@v4` 的安装目标目录默认为 `~/setup-pnpm`，并会在设置期间替换该目录。自托管 CI 故障切换在同一个 VM 用户下运行六个 GitHub Actions runner 服务，因此并发作业会共用同一目标目录。在复现运行中，三个作业在 73 毫秒内进入 pnpm 设置；其中一个设置过程删除了另一个进程的当前工作目录，导致两个作业在 Node 的 `uv_cwd` 初始化阶段失败。换到另一台 runner 重试后通过，说明该故障取决于时序，并非仓库测试回归。
 
-`pnpm/action-setup@v4` defaults its install destination to `~/setup-pnpm` and replaces that directory during setup. The self-hosted CI failover runs six GitHub Actions runner services under one VM user, so concurrent jobs shared the same destination. In the reproducing run, three jobs entered pnpm setup within 73 milliseconds; one setup removed another process's current working directory and two jobs failed in Node's `uv_cwd` initialization. A retry on another runner passed, making the failure timing-dependent rather than a repository-test regression.
+## 决策
 
-## Decision
+[主 CI 工作流](../../../../.github/workflows/ci.yml)中的每个 `pnpm/action-setup` 步骤都设置 `dest: ${{ runner.temp }}/setup-pnpm`。每个 runner 服务独占自己的临时目录，因此一个设置过程无法替换另一个 runner 的安装目录。持久 store 的复用仍由 `PNPM_CONFIG_STORE_DIR` 独立处理，遵循 [pnpm 配置决策](../process/2026-07-26-pnpm-action-setup-for-symmetric-ci-caching.md)。
 
-Every `pnpm/action-setup` step in [the primary CI workflow](../../../../.github/workflows/ci.yml) sets `dest: ${{ runner.temp }}/setup-pnpm`. Each runner service owns its temporary directory, so one setup cannot replace another runner's install directory. Persistent store reuse remains separate through `PNPM_CONFIG_STORE_DIR`, as established by the [pnpm provisioning decision](../process/2026-07-26-pnpm-action-setup-for-symmetric-ci-caching.md).
+[工作流回归测试](../../../../scripts/ci-workflow.spec.ts)会找出 `ci.yml` 中的每个 `pnpm/action-setup` 步骤，并拒绝缺少 runner 专属目标目录的步骤。这可确保后续新增的作业也处于同一隔离边界内。
 
-[The workflow regression test](../../../../scripts/ci-workflow.spec.ts) discovers every `pnpm/action-setup` step in `ci.yml` and rejects one without the runner-private destination. This keeps newly added jobs inside the same isolation boundary.
+## 曾考虑的替代方案
 
-## Alternatives considered
+**串行执行故障切换作业。** 否决：这会牺牲由六个 runner 组成的池所具备的预期并行能力，并把 action 内部的目录冲突变成原本相互独立作业之间的队列等待。
 
-**Serialize failover jobs.** Rejected because it discards the six-runner pool's intended parallelism and turns an action-local directory collision into queueing across otherwise independent jobs.
+**为每个 runner 服务分配独立的 Unix 用户。** 这同样能够隔离 `HOME`，但会把该不变量转移到外部 VM 配置中，并使刻意共享的持久 pnpm store 的所有权变得复杂。工作流已经获得 runner 专属临时目录。
 
-**Assign a separate Unix user to every runner service.** This would also separate `HOME`, but it moves the invariant into external VM provisioning and complicates ownership of the deliberately shared persistent pnpm store. The workflow already receives a runner-private temporary directory.
+**重试失败的设置步骤。** 否决：重试只能降低观测到的冲突发生率；另一个并发设置过程仍可能再次删除同一个共享目录。
 
-**Retry failed setup steps.** Rejected because retries only reduce the observed collision rate; another concurrent setup can remove the same shared directory again.
+## 后果
 
-## Consequences
-
-pnpm's executable installation is ephemeral and isolated per runner, while package downloads still use the configured persistent or cached store. Hosted jobs use the same explicit destination without changing cache policy. The workflow carries three extra configuration lines per setup step, and the regression test must be updated only if pnpm provisioning intentionally moves to a different isolation mechanism.
+pnpm 可执行文件采用临时安装，并按 runner 隔离；包下载仍使用已配置的持久或缓存 store。托管作业使用相同的显式目标目录，不改变缓存政策。工作流中的每个设置步骤因此增加三行配置；只有在 pnpm 配置有意改用另一种隔离机制时，才需要更新回归测试。

@@ -1,8 +1,6 @@
 # @deepseek-ai/dsh-tool-fs-search
 
-English | [中文](README.zh.md)
-
-The **model-facing filesystem discovery tools**—`glob`, `grep`—use a packaged ripgrep binary for ordinary local workspaces, not `ctx.fs` provider methods or a system `rg` install. Ordinary Node deployments resolve the platform binary from `@vscode/ripgrep`; a pkg single-file runtime resolves the executable's co-located `-rg` sidecar and falls back to the dependency binary when that sidecar is absent. Registration is unconditional because both carriers package ripgrep, so there is no load-time availability probe. A local call spawns the resolved binary through the `ctx.subprocess` seam with a fixed argv vector (`--no-config` prepended so a host `RIPGREP_CONFIG_PATH` cannot inject a `--pre` preprocessor into the unconfined spawn; model-controlled values are plain argv elements — no shell layer exists, so no quoting applies), parses the raw `rg` output, and returns a workdir-relative canonical value. A Remote-SSH marker call instead uses the selected Go agent's root-confined native search route; it never runs local `rg` against the marker alias. The package injects `tools`, `systemPrompt`, and `subprocess`—deliberately **not** `fs`; `ctx.spillStore` is read opportunistically with `ctx.get()` because formatted-result spill is optional.
+**面向模型的文件系统发现工具**（`glob`、`grep`）在普通本地 Workspace 中使用打包的 ripgrep 二进制，而不是 `ctx.fs` 提供方方法或系统 `rg` 安装。普通 Node 部署从 `@vscode/ripgrep` 解析平台二进制；pkg 单文件运行时解析与可执行程序共置的 `-rg` 伴随文件，伴随文件缺失时回退到依赖中的二进制。两种载体均打包 ripgrep，因此注册是无条件的，没有加载期可用性探针。本地调用都通过 `ctx.subprocess` seam 以固定 argv 向量 spawn 解析出的二进制（前缀 `--no-config`，使宿主的 `RIPGREP_CONFIG_PATH` 无法向不受约束的 spawn 注入 `--pre` 预处理器；模型控制的值是普通 argv 元素——不存在 shell 层，因此不涉及 shell 引号处理），解析原始 `rg` 输出，并返回相对于工作目录的规范值。Remote-SSH marker 调用则使用所选 Go agent 受根目录约束的原生搜索 route；它绝不会针对 marker 别名在本机运行 `rg`。本包注入 `tools`、`systemPrompt` 和 `subprocess`，有意**不**注入 `fs`；格式化结果 spill 为可选功能，因此机会性读取 `ctx.spillStore`，调用方式为 `ctx.get()`。
 
 ```ts ignore-check
 // A deployment chooses how over-cap glob pages are selected.
@@ -12,125 +10,125 @@ await ctx.plugin(ToolFsSearch, { sampleOverCapGlobResults: false })
 await ctx.plugin(LocalSpillStore)                           // @deepseek-ai/dsh-spill-local
 ```
 
-Why spawn-backed: local workspace discovery is naturally a process-backed `rg` workflow, and putting search on `ctx.fs` would force every filesystem backend to grow a search API. The subprocess seam owns local spawn execution, process-tree termination, environment scrubbing, and bounded output capture; this package owns schemas, argument validation, argv construction, parsing, retention, formatted-result spill, and timeout declaration. For a Remote-SSH marker, the Go agent owns native traversal, glob/regex matching, VCS exclusion, and its root/response limits while this package keeps the same model-facing schema and retained-result behavior. The tools never expose a background job — the call returns only after its local `rg` or remote search completes, is aborted, or fails.
+采用 spawn 支持的原因：本地工作区发现天然是由进程支持的 `rg` 工作流；如果把搜索放到 `ctx.fs` 上，就会迫使每个文件系统后端扩展搜索 API。subprocess seam 负责本地 spawn 执行、进程树终止、环境清理和有界输出捕获；本包负责 schema、参数校验、argv 构造、解析、保留、格式化结果 spill 和超时声明。对于 Remote-SSH marker，Go agent 负责原生遍历、glob／正则匹配、VCS 排除及其根目录／响应上限，本包仍保留相同的面向模型 schema 和结果保留行为。工具绝不暴露后台任务——只有在本地 `rg` 或远程搜索完成、被中止或失败后，调用才会返回。
 
-## Deployment requirement: no host rg, one execution-world workdir/filesystem
+## 部署要求：无需宿主 rg，但工作目录与文件系统处于同一执行世界
 
-Node deployments receive the `@vscode/ripgrep` platform package on supported macOS, Linux, and Windows x64/arm64 targets. Python SDK Linux and macOS wheels copy the target-native binary beside the single-file runtime as `<runtime>-rg`; `deepseek_harness_runtime.bundled_runtime_path()` rejects an incomplete wheel before launch. No local carrier requires a host `rg` install. Returned paths are displayed relative to the resolved workdir (the calling agent's session cwd when present, else `process.cwd()`) and are follow-up-readable with `read` only when that workdir and the filesystem root are the same workspace. A desktop Remote-SSH marker runs both tools on the selected Go agent root, which needs neither `rg` nor Node and returns a truncation failure rather than a partial search result. Other remote or virtual filesystem providers still need an execution-world search implementation.
+Node 部署在受支持的 macOS、Linux 与 Windows x64/arm64 目标上获得 `@vscode/ripgrep` 平台包。Python SDK 的 Linux 与 macOS wheel 将目标原生二进制复制到单文件运行时旁，命名为 `<runtime>-rg`；`deepseek_harness_runtime.bundled_runtime_path()` 会在启动前拒绝不完整的 wheel。本地载体不要求宿主安装 `rg`。返回路径会相对于解析后的工作目录显示（调用方 agent（智能体）有会话 cwd 时使用该 cwd，否则使用 `process.cwd()`）；只有该工作目录与文件系统根目录是同一工作区时，才能用 `read` 继续读取。桌面 Remote-SSH marker 会在所选 Go agent 根目录上运行两个工具，不需要 `rg` 或 Node；结果被截断时会失败，不会返回部分搜索结果。其他远程或虚拟文件系统 Provider 仍需要执行世界内的搜索实现。
 
-## Config
+## 配置
 
-`sampleOverCapGlobResults` is required and has no fallback; deployments choose the over-cap ordering contract explicitly. The remaining keys are optional search caps with the defaults below.
+`sampleOverCapGlobResults` 是必填项且没有回退值；部署必须显式选择超过上限时的排序约定。其余配置键是可选的搜索上限，默认值如下。
 
-| Key | Default | Meaning |
+| 配置键 | 默认值 | 含义 |
 |---|---|---|
-| `sampleOverCapGlobResults` | none (required) | `true` samples an over-cap `glob` page across top-level entries; `false` keeps the modification-time-ordered head. When formatted spill succeeds, both modes preserve the complete sorted list in that artifact. |
-| `globMaxResults` | `100` | Max paths one `glob` call shows inline (matches Claude Code's `GlobTool` limit). A result within the cap remains complete and modification-time ordered. |
-| `grepMaxMatches` | `250` | Max flat matches one `grep` call retains inline (matches Claude Code's `GrepTool` `head_limit`); later matches go to the formatted spill artifact. |
-| `grepMaxLineBytes` | `2000` | Byte cap per matched-line preview; the cut preserves UTF-8 boundaries and is marked `(line truncated)`. |
-| `rawOutputMaxBytes` | `20000000` | Max complete local `rg` stdout or remote-agent search response a search will accept (matches Claude Code's ripgrep raw buffer); a larger result fails with `SEARCH_RAW_OUTPUT_OVERFLOW`. |
-| `timeoutMs` | `30000` | Cooperative tool-call budget attached to both tool definitions, enforced by `@deepseek-ai/dsh-tool-call-timeout-policy` through `exec.signal`; the subprocess seam's terminate escalation is the hard kill. |
-| `graceMs` | `3000` | Positive terminate-escalation grace the subprocess seam grants past `timeoutMs` before the search fails as `SEARCH_ABORTED`; it cannot exceed [`MAX_TIMER_DELAY_MS`](../../util/timeout/README.md). |
-| `stderrMaxBytes` | `65536` | Diagnostic-tail budget for `rg` stderr, captured through the subprocess seam's collect disposition; a lossy read keeps only the tail (marked `[stderr truncated]`). |
+| `sampleOverCapGlobResults` | 无（必填） | `true` 会在顶层条目之间对超过上限的 `glob` 页面采样；`false` 保留按修改时间排序的前部。格式化 spill 成功时，两种模式都会在该产物中保留完整排序列表。 |
+| `globMaxResults` | `100` | 一次 `glob` 调用内联展示的最大路径数（与 Claude Code 的 `GlobTool` 上限相同）。未超过上限的结果保持完整，并按修改时间排序。 |
+| `grepMaxMatches` | `250` | 一次 `grep` 调用内联保留的最大平铺匹配数（与 Claude Code 的 `GrepTool` `head_limit` 相同）；后续匹配写入格式化 spill 产物。 |
+| `grepMaxLineBytes` | `2000` | 每条匹配行预览的字节上限；截断会保留 UTF-8 边界，并标记为 `(line truncated)`。 |
+| `rawOutputMaxBytes` | `20000000` | 搜索可接受的完整本地 `rg` stdout 或远程 agent 搜索响应上限（与 Claude Code 的 ripgrep 原始 buffer 相同）；更大的结果以 `SEARCH_RAW_OUTPUT_OVERFLOW` 失败。 |
+| `timeoutMs` | `30000` | 附加到两个工具定义上的协作式工具调用预算，由 `@deepseek-ai/dsh-tool-call-timeout-policy` 通过 `exec.signal` 强制执行；subprocess seam 的终止升级提供硬终止。 |
+| `graceMs` | `3000` | subprocess seam 在 `timeoutMs` 之外授予的终止升级宽限期须为正值；超过后搜索以 `SEARCH_ABORTED` 失败；该宽限期不得大于 [`MAX_TIMER_DELAY_MS`](../../util/timeout/README.md)。 |
+| `stderrMaxBytes` | `65536` | `rg` stderr 的诊断尾部预算，经 subprocess seam 的 collect 形态捕获；lossy 读取只保留尾部（标记 `[stderr truncated]`）。 |
 
-## Tools
+## 工具
 
-The command forms below describe the local `rg` implementation. A Remote-SSH marker preserves the same tool arguments and returned path/match shapes through the Go agent's native glob/regular-expression implementation; it does not depend on a remote `rg` process.
+下列命令形式描述本地 `rg` 实现。Remote-SSH marker 会通过 Go agent 的原生 glob／正则实现保留相同的工具参数及返回路径／匹配形状；它不依赖远端 `rg` 进程。
 
-| Tool | Arguments | Behavior |
+| 工具 | 参数 | 行为 |
 |---|---|---|
-| `glob` | `pattern`, `path?` | `rg --files --glob <pattern> --sort=modified --no-ignore --hidden` plus VCS metadata excludes (`.git`, `.svn`, `.hg`, `.bzr`, `.jj`, `.sl`). `path` is an optional **directory** search root; omitted means the resolved workdir. Returns one FILE path per line; `rg --files` never emits directory entries. The pattern keeps ripgrep semantics: without a `/` it matches the basename at any depth, so `*` matches the whole tree. Complete results stay modification-time ordered; over-cap presentation follows `sampleOverCapGlobResults`. |
-| `grep` | `pattern`, `path?`, `include?` | Line-oriented `rg --json` parse (no colon-splitting ambiguity). `pattern` is a ripgrep regex; `path` is an optional **file or directory** target; `include` is ONE positive glob filter — a comma-separated list or a negated (`!…`) value is rejected up front (brace alternation like `*.{ts,tsx}` is fine). Returns matches grouped by file as `Line N: <preview>`. |
+| `glob` | `pattern`、`path?` | 运行 `rg --files --glob <pattern> --sort=modified --no-ignore --hidden`，并排除 VCS 元数据（`.git`、`.svn`、`.hg`、`.bzr`、`.jj`、`.sl`）。`path` 是可选的**目录**搜索根；省略时使用解析后的工作目录。每行返回一个**文件**路径；`rg --files` 从不输出目录条目。pattern 保留 ripgrep 语义：不含 `/` 时匹配任意深度的基名，因此 `*` 匹配整棵树。完整结果保持按修改时间排序；超过上限时的呈现方式遵循 `sampleOverCapGlobResults`。 |
+| `grep` | `pattern`、`path?`、`include?` | 按行解析 `rg --json`，避免按冒号拆分的歧义。`pattern` 是 ripgrep 正则表达式；`path` 是可选的**文件或目录**目标；`include` 是一个正向 glob 过滤器，前置拒绝逗号分隔列表或否定值（`!…`），但允许 `*.{ts,tsx}` 等花括号交替。返回按文件分组、形如 `Line N: <preview>` 的匹配。 |
 
-Routine budgets stay out of the model-facing schema (no `head_limit`/`offset`/`case_insensitive`/output modes): a model that needs surrounding context reads the matched file with `read`; one that needs later results follows the returned spill locator's retrieval hint.
+常规预算不进入面向模型的 schema（没有 `head_limit`/`offset`/`case_insensitive`/输出模式）：模型需要周边上下文时，用 `read` 读取匹配文件；需要后续结果时，遵循返回的 spill locator 检索提示。
 
-## Two budgets, two artifacts
+## 两类预算、两类产物
 
-Raw `rg` stdout and stderr are internal transport details. Each search requests collect-mode budgets from the subprocess seam — complete stdout within `rawOutputMaxBytes` and a `stderrMaxBytes` diagnostic tail — with no spill files on either stream (the tool never reads a raw spill path). If the seam still reports a lossy stdout read, the search fails with `SEARCH_RAW_OUTPUT_OVERFLOW` and tells the model to narrow the query; a lossy stderr read only marks the diagnostic excerpt `[stderr truncated]`. A successful `glob` keeps the displayed search root and every acquired path in `{ root, paths }`; when sampling is enabled, `root` lets the Native renderer group an explicit relative or absolute search path by entries beneath that root rather than by its workdir prefix. `grep` keeps every acquired `{ path, lineNumber, line }` in `{ matches }`. Inline item and per-line preview caps apply only in the Native renderer. For a direct surface call with more logical results than the inline cap, post-policy best-effort saves the complete formatted preview through `ctx.spillStore.saveText()` and replaces only presentation with the configured page plus locator. Nested Code dispatches skip that spill because their full canonical value does not enter model context. Missing/failed spill keeps the inline page and reports that the complete result could not be saved—never an `isError`.
+原始 `rg` stdout 与 stderr 是内部传输细节。每次搜索从 subprocess seam 请求 collect 模式预算——`rawOutputMaxBytes` 内的完整 stdout 与 `stderrMaxBytes` 的诊断尾部——两条流都不产生 spill 文件（工具从不读取原始 spill 路径）。如果 seam 仍报告 lossy stdout 读取，搜索会以 `SEARCH_RAW_OUTPUT_OVERFLOW` 失败，并要求模型缩小查询；lossy stderr 读取只把诊断摘录标记为 `[stderr truncated]`。成功的 `glob` 在 `{ root, paths }` 中保留所显示的搜索根及所有已取得路径；启用采样时，借助 `root`，Native 渲染器能以显式的相对或绝对搜索路径为根，按该根下的条目分组，而不是按其工作目录前缀分组。`grep` 保留所有已取得的 `{ path, lineNumber, line }`，并将其存入 `{ matches }`。内联条目和每行预览上限只应用于 Native 渲染器。直接接口调用的逻辑结果超过内联上限时，后置策略会尽力通过 `ctx.spillStore.saveText()` 保存完整格式化预览，并只把呈现替换为配置指定的页面与 locator。嵌套 Code 分派会跳过 spill，因为其完整规范值不会进入模型上下文。spill 缺失/失败时保留内联页面，并报告完整结果无法保存，绝不会成为 `isError`。
 
-## Errors
+## 错误
 
-Search failures carry the package-owned `SearchError` (a `HarnessError` subclass), surfaced as `{ name, code }` on `isError` results: `SEARCH_INVALID_PATTERN` (the local ripgrep or remote Go agent rejected a regex, glob, or include filter), `SEARCH_FAILED` (a failed `rg` launch, inaccessible target, signal kill, malformed local output, or another remote bridge/agent failure), `SEARCH_RAW_OUTPUT_OVERFLOW` (raw output over `rawOutputMaxBytes`, or still lossy after the requested stdout capture budget), and `SEARCH_ABORTED` (cooperative tool timeout or caller cancellation). Local ripgrep exit semantics are tool-owned: exit 0 is success with results, exit 1 is a successful empty search (`No files found` / `No matches found`), and only other exits are failures. Model argument mistakes (blank pattern, a list-valued `include`) stay ordinary tool argument errors.
+搜索失败会携带由本包定义的 `SearchError`（`HarnessError` 子类），并以 `{ name, code }` 的形式呈现在 `isError` 结果上：`SEARCH_INVALID_PATTERN`（本地 ripgrep 或远端 Go agent 拒绝正则、glob 或 include 过滤器）、`SEARCH_FAILED`（`rg` 启动失败、目标不可访问、信号终止、本地输出格式错误，或其他远端 bridge／agent 失败）、`SEARCH_RAW_OUTPUT_OVERFLOW`（原始输出超过 `rawOutputMaxBytes`，或在请求 stdout 捕获预算后仍 lossy）和 `SEARCH_ABORTED`（协作式工具超时或调用方取消）。本地 ripgrep 的退出语义由工具负责处理：退出 0 表示成功且有结果，退出 1 表示成功的空搜索（`No files found` / `No matches found`），只有其他退出值表示失败。模型参数错误（空白 pattern、列表值 `include`）仍是普通工具参数错误。
 
-## Model Experience
+## 模型体验
 
-### System prompt
+### 系统提示词
 
-#### What the model sees
+#### 模型看到的内容
 
-Every request in this plugin's registration scope contains the independently registered glob and grep guidance below. Agent-scoped tool restrictions can hide either schema without removing its prompt section.
+该插件注册作用域内的每个请求都包含下方独立注册的 glob 与 grep 指导。agent 作用域的工具限制可以隐藏任一 schema，而不移除其提示词段。
 
-##### Glob guidance with `sampleOverCapGlobResults: true`
+##### 启用 `sampleOverCapGlobResults: true` 时的 Glob 指导
 
 ```markdown
 Use the glob tool — not shell find — to discover files by path pattern. A pattern with no "/" matches basenames at any depth, so "*" matches every file in the tree rather than its top level. Results are files only, never directories, and include hidden and ignored files: a result that fits comes back in modification-time order, while a larger one is sampled across top-level entries, so it spans the tree instead of one subtree.
 ```
 
-##### Glob guidance with `sampleOverCapGlobResults: false`
+##### 启用 `sampleOverCapGlobResults: false` 时的 Glob 指导
 
 ```markdown
 Use the glob tool — not shell find — to discover files by path pattern. A pattern with no "/" matches basenames at any depth, so "*" matches every file in the tree rather than its top level. Results are files only, never directories, and include hidden and ignored files: a result that fits comes back in modification-time order, while a larger one keeps the modification-time-ordered head.
 ```
 
-##### Grep guidance
+##### Grep 指导
 
 ```markdown
 Use the grep tool — not shell grep or rg — to search file contents. Use read on a matched file when you need surrounding context.
 ```
 
-#### Token effect
+#### Token 影响
 
-Fixed guidance cost per request while the tools are registered; the required sampling choice selects one glob variant.
+工具注册期间每个请求有固定的指导成本；必填的采样选择决定采用哪一个 glob 变体。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-Prefix-stable while the plugin scope, sampling choice, and guidance text are unchanged. Activation, disposal, or changing the choice may invalidate reuse from this prompt section.
+插件作用域、采样选择与指导文本不变时前缀稳定。激活、dispose（资源释放）或改变选择可能使该提示词段的复用失效。
 
-### Tool schemas
+### 工具 schema
 
-#### What the model sees
+#### 模型看到的内容
 
-The glob description states the configured over-cap ordering. The generated [`glob` and `grep` schemas](../../../docs/tool-catalog.md#deepseek-aidsh-tool-fs-search) use `sampleOverCapGlobResults: true`; the tools are registered unconditionally.
+glob 描述声明了配置的超过上限排序方式。生成的 [`glob` 和 `grep` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-fs-search) 使用 `sampleOverCapGlobResults: true`；工具无条件注册。
 
-#### Token effect
+#### Token 影响
 
-Fixed schema cost on every request where the tools are visible.
+工具可见时每个请求有固定的 schema 成本。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-Prefix-stable while tool visibility and definitions are unchanged. Registration lifecycle or scoped restrictions may invalidate reuse from the first changed schema token.
+工具可见性与定义不变时前缀稳定。注册生命周期或作用域限制可能从第一个改变的 schema token 起使复用失效。
 
-### Results and spill notices
+### 结果与 spill 提示
 
-#### What the model sees
+#### 模型看到的内容
 
-`glob` returns one path per line; `grep` groups `Line <line>: <preview>` matches beneath each path. Empty searches return `No files found` or `No matches found`. A capped result ends with its omission count plus the spill locator and backend retrieval hint, or says the complete result could not be saved. With `sampleOverCapGlobResults: true`, an over-cap `glob` page takes paths round-robin across entries immediately beneath the actual search root, and the footer states the sampled basis and how many top-level entries it reached; when it cannot reach them all, the footer tells the model to narrow `path`. With `false`, the page is the modification-time-ordered head and keeps the plain capped-result footer. A result that fits inline is untouched, and a flat sampled result also keeps the plain footer because its sample equals the modification-time head. The spill artifact always holds the complete list in modification-time order.
+`glob` 每行返回一个路径；`grep` 在每个路径下分组展示 `Line <line>: <preview>` 匹配。空搜索返回 `No files found` 或 `No matches found`。达到上限的结果以省略计数结尾，并附 spill locator 与后端检索提示，或说明完整结果无法保存。启用 `sampleOverCapGlobResults: true` 时，超过上限的 `glob` 页面按实际搜索根正下方的条目轮转取路径，页脚说明采样依据及其覆盖的顶层条目数；无法覆盖全部条目时，页脚提示模型收窄 `path`。`false` 时页面是按修改时间排序的前部，并保留普通的上限结果页脚。未超过上限的结果原样呈现；扁平采样的结果也保留普通页脚，因为其采样等于按修改时间排序的前部。spill 产物始终持有按修改时间排序的完整列表。
 
-#### Token effect
+#### Token 影响
 
-Inline paths and matches are bounded by `globMaxResults`, `grepMaxMatches`, and `grepMaxLineBytes`; the call and retained result remain in history until compaction.
+内联路径与匹配受 `globMaxResults`、`grepMaxMatches` 与 `grepMaxLineBytes` 约束；调用及其保留结果在压缩（compaction）前留在历史中。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-Append-only; newly visible content follows the reusable request prefix and does not invalidate existing KV-cache entries.
+仅追加；新可见内容跟在可复用请求前缀之后，不会使既有 KV Cache 条目失效。
 
-### Tool errors
+### 工具错误
 
-#### What the model sees
+#### 模型看到的内容
 
-Failures are normalized as `Error: <message>` with structured `SEARCH_INVALID_PATTERN`, `SEARCH_FAILED`, `SEARCH_RAW_OUTPUT_OVERFLOW`, or `SEARCH_ABORTED` metadata for callers.
+失败被规范化为 `Error: <message>`，并携带结构化 `SEARCH_INVALID_PATTERN`、`SEARCH_FAILED`、`SEARCH_RAW_OUTPUT_OVERFLOW` 或 `SEARCH_ABORTED` 元数据供调用方使用。
 
-#### Token effect
+#### Token 影响
 
-Only a failing call adds these retained tokens.
+只有失败的调用会增加这些保留 token。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-Append-only; newly visible content follows the reusable request prefix and does not invalidate existing KV-cache entries.
+仅追加；新可见内容跟在可复用请求前缀之后，不会使既有 KV Cache 条目失效。
 
-## Known Limitations and Deferred Work
+## 已知限制与暂缓事项
 
-- **Search and file access have no shared-workspace proof** — returned paths are follow-up-readable only when the workdir and filesystem root denote the same workspace; the package performs no runtime cross-service validation.
-- **The packaged binary is fixed at dependency version** — Node deployments use the version selected by `@vscode/ripgrep`; Python single-file runtimes copy that target-native version into the required `-rg` sidecar. An unsupported platform or a corrupted installation fails with `SEARCH_FAILED`, while the Python runtime package rejects a missing sidecar before launch. Remote or virtual filesystems need a co-located workspace or another search consumer.
-- **The schemas expose one bounded page** — offset pagination, case-mode switches, alternate output modes, and provider-backed discovery remain outside this package; capped complete output requires a spill backend.
-- **Sampling, when enabled, groups by first path segment beneath the search root only** — an over-cap `glob` page balances across those top-level entries, so a result concentrated deeper (one busy directory inside an otherwise even tree) is still shown unevenly below that level; recursive balancing is deferred.
+- **搜索与文件访问没有共享工作区证明**——只有当工作目录与文件系统根目录指向同一工作区时，返回路径才可继续读取；本包不执行运行时跨服务校验。
+- **打包二进制固定在依赖版本上**——Node 部署使用 `@vscode/ripgrep` 选择的版本；Python 单文件运行时将对应目标的原生版本复制为必需的 `-rg` 伴随文件。不支持的平台或损坏的安装会以 `SEARCH_FAILED` 使调用失败，Python 运行时包则会在启动前拒绝缺少伴随文件的安装。远程或虚拟文件系统需要共置的工作区或另一个搜索消费方。
+- **schema 只暴露一个有界页面**——偏移分页、大小写开关、替代输出模式与提供方支撑的发现仍不在本包范围内；达到上限的完整输出需要 spill 后端。
+- **启用采样时仅按搜索根正下方的第一段路径分组**——超过上限的 `glob` 页面在这些顶层条目之间平衡，因此集中在更深处的结果（一棵均匀树里某个繁忙目录）在该层级之下仍会呈现不均；递归平衡被延期。

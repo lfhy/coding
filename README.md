@@ -1,42 +1,40 @@
 # Coding
 
-English | [中文](README.zh.md)
+Coding 是构建在 [DeepSeek AI](https://deepseek.com) 开发的 DeepSeek Harness（`dsh`）运行时之上的个人 AI 编程客户端。产品名、应用名和 Linux 命令均为 `Coding` / `coding`；内部 `@deepseek-ai/dsh` 包、插件、协议标识和 `$DSH_HOME` 数据保持与 DeepSeek Harness 运行时兼容。
 
-Coding is a personal AI coding client built on the DeepSeek Harness (`dsh`) runtime developed by [DeepSeek AI](https://deepseek.com). The product name, application name, and Linux command are `Coding` and `coding`; internal `@deepseek-ai/dsh` packages, plugins, protocol identifiers, and `$DSH_HOME` data remain compatible with the DeepSeek Harness runtime.
+它采用**一切皆插件**的架构，并由 [Cordis](https://github.com/cordiverse/cordis) 驱动，其设计参见论文 [_A Programming Paradigm for Spatiotemporal Composability_](https://github.com/cordiverse/paper)。
 
-It uses an architecture where **everything is a plugin**, and is powered by [Cordis](https://github.com/cordiverse/cordis), whose design is described in [_A Programming Paradigm for Spatiotemporal Composability_](https://github.com/cordiverse/paper).
+## 开发者预览
 
-## Developer preview
+Coding 目前处于 _开发者预览_ 阶段，正在快速迭代。**未来将出现破坏兼容性的变更。**
 
-Coding is currently in _developer preview_ and is iterating rapidly. **THERE WILL BE COMPATIBILITY-BREAKING CHANGES.**
+## 客户端
 
-## Clients
-
-| Platform | Client | Status |
+| 平台 | 客户端 | 状态 |
 | --- | --- | --- |
-| macOS arm64 | Native Coding GUI backed by the local Node Host | Planned |
-| Windows amd64 | Native Coding GUI backed by the local Node Host | Planned |
-| Linux amd64 | Interactive `coding` terminal UI backed by the local Node Host | Planned |
+| macOS arm64 | 由本地 Node Host 驱动的 Coding 原生 GUI | 计划中 |
+| Windows amd64 | 由本地 Node Host 驱动的 Coding 原生 GUI | 计划中 |
+| Linux amd64 | 由本地 Node Host 驱动的交互式 `coding` 终端 UI | 计划中 |
 
-The desktop GUI reuses the existing Web interface in a native WebView. The terminal UI and GUI share sessions, settings, and credentials through `$DSH_HOME` (normally `~/.dsh`) and attach to one local Host when possible. Release artifacts will include the Host runtime, so end users will not need a separate Node installation.
+桌面 GUI 会在原生 WebView 中复用现有 Web 界面。终端 UI 和 GUI 通过 `$DSH_HOME`（通常为 `~/.dsh`）共享会话、设置和凭据，并在可用时连接同一个本地 Host。发布产物会包含 Host 运行时，最终用户无需单独安装 Node。
 
-The native desktop window starts maximized. Double-clicking the empty top window area toggles maximization, and sidebar controls keep clear of the macOS traffic-light safe area.
+原生桌面窗口启动时默认最大化。双击顶部空白窗口区域可切换最大化状态，侧边栏控件会避开 macOS 交通灯安全区。
 
-## Run
+## 运行
 
-### Run the current runtime from `npm`
+### 通过 `npm` 运行当前运行时
 
-Install `Node.js`, then run:
+安装 `Node.js`，然后运行：
 
 ```sh
 npx @deepseek-ai/dsh web
 ```
 
-The current runtime command starts the Web UI at `http://127.0.0.1:3080` by default and opens it in the default browser for a local launch. An SSH launch only prints the host URL because the SSH client or editor owns the local forwarded address. Pass `--no-open` to run the server without opening a browser. See [Web UI guide](docs/user/guide/index.md).
+当前运行时命令默认会在 `http://127.0.0.1:3080` 启动 Web UI，本机启动时还会用默认浏览器打开页面。通过 SSH 启动时只打印宿主机 URL，因为本地转发地址由 SSH 客户端或编辑器持有。传入 `--no-open` 可仅运行服务器而不打开浏览器。详见 [Web UI 指南](docs/user/guide/index.md)。
 
-### Run from source
+### 从源码运行
 
-To run from a repository checkout:
+如需从仓库源码运行：
 
 ```sh
 git clone https://github.com/deepseek-ai/deepseek-harness.git coding
@@ -46,26 +44,43 @@ pnpm run build
 pnpm dsh web
 ```
 
-`pnpm run build` prepares the repository artifacts. `pnpm dsh web` uses those built artifacts without rebuilding. The staged native Coding desktop and terminal launchers are tracked in [TODO.md](TODO.md).
+`pnpm run build` 会准备仓库产物。`pnpm dsh web` 会直接使用这些已构建产物，不会重新构建。原生 Coding 桌面端与终端启动器的实施记录见 [TODO.md](TODO.md)。
 
-## Community and support
+## 社区与支持
 
-- Feel free to submit feedback or bug reports through [GitHub Discussions](https://github.com/deepseek-ai/deepseek-harness/discussions).
-- Add the [`dsh-plugin`](https://github.com/topics/dsh-plugin) topic to your plugin repository for discoverability.
-- Join <a href="https://discord.gg/Ycq5dCaS4">DeepSeek Harness Discord community</a>.
+- 欢迎通过 [GitHub Discussions](https://github.com/deepseek-ai/deepseek-harness/discussions) 提交反馈或 bug 报告。
+- 为你的插件仓库添加 [`dsh-plugin`](https://github.com/topics/dsh-plugin) 话题，便于被发现。
+- 欢迎加入 DeepSeek Harness 企微群：扫码添加企微小助手并填写入群问卷，完成后小助手会邀请你入群。
 
-## Contributing
+<table>
+  <thead>
+    <tr>
+      <th align="center">企微小助手</th>
+      <th align="center">入群问卷</th>
+      <th align="center">微信公众号</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td align="center"><img src="https://cdn.deepseek.com/harness/readme/community-wecom-assistant.png" alt="DeepSeek Harness 企微小助手二维码" width="180" height="180"></td>
+      <td align="center"><a href="https://trtgsjkv6r.feishu.cn/share/base/form/shrcnIt5twSVdLGD52KJBckGCgg"><img src="https://cdn.deepseek.com/harness/readme/community-wecom-survey.png" alt="DeepSeek Harness 入群问卷二维码" width="180" height="180"></a></td>
+      <td align="center"><img src="https://cdn.deepseek.com/harness/readme/community-wechat-official-account.png" alt="DeepSeek Harness 团队微信公众号二维码" width="180" height="180"></td>
+    </tr>
+  </tbody>
+</table>
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+## 参与贡献
 
-## Development
+参见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
-Start with the [development guide](docs/development.md) and [architecture documentation](docs/architecture.md).
+## 开发
 
-For agents, follow [AGENTS.md](AGENTS.md).
+请先阅读[开发指南](docs/development.md)与[架构文档](docs/architecture.md)。
 
-## License
+面向 agent：请遵循 [AGENTS.md](AGENTS.md)。
+
+## 许可证
 
 [MIT](LICENSE)
 
-Third-party dependencies and their licenses are disclosed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+第三方依赖及其许可证见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

@@ -1,36 +1,34 @@
-# Agent Note: Fast local Git hooks
+# Agent Note: 快速本地 Git 钩子
 
 Status: implemented
 
-English | [中文](2026-07-22-fast-local-git-hooks.zh.md)
+## 问题
 
-## Problem
+agent（智能体）已经会运行能够覆盖自身改动的测试和检查，而提交、推送与 CI 可能分别重复其中范围越来越广的子集。因此，全量 pre-push 套件会拖慢每次推送，放大与当前改动无关的本地偶发失败，而且 CI 紧接着再次运行完整矩阵时不会提供新信号。
 
-An agent already runs the tests and checks that exercise its change, while commit, push, and CI can each repeat increasingly broad subsets of the same work. A full pre-push suite therefore delays every publication, amplifies unrelated local flakes, and gives no new signal when CI immediately runs the exhaustive matrix again.
+快速钩子仍需在工作离开本机之前拦下检查成本低且把握高的缺陷。暂存文件格式问题、空白错误、vendor 源码元数据缺失与仓库类型错误符合这条边界；单元测试套件、快照、文档检查、构建与包的 `hygiene` 检查则随改动范围而异，不符合这条边界。
 
-Fast hooks still need to reject cheap, high-confidence defects before work leaves the machine. Staged formatting, whitespace errors, missing vendored-source metadata, and repository type errors fit that boundary; unit suites, snapshots, documentation checks, builds, and package hygiene vary with the changed surface and do not.
+## 决策
 
-## Decision
+[lefthook.yml](../../../../lefthook.yml) 将两个钩子都保留为有界的本地检查点。Pre-commit 按顺序运行：不加载项目的 [Oxlint](2026-07-29-oxlint-linter.md) 配置验证改动过的 JavaScript 和 TypeScript 文件，应用带[一次有界重试](2026-08-09-oxlint-only-fix-workflow.md)的安全修复，并重新暂存这些文件；`git diff --cached --check` 拒绝暂存 diff 中的空白错误，vendor manifest（元数据清单）守卫检查 vendor 源码元数据。Pre-push 运行 `pnpm run typecheck`；该命令会先准备好生成的 Host Typert 约定，再运行 Client 增量类型检查。
 
-[lefthook.yml](../../../../lefthook.yml) keeps both hooks as bounded local checkpoints. Pre-commit runs sequentially: a project-free [Oxlint](2026-07-29-oxlint-linter.md) profile validates changed JavaScript and TypeScript, applies safe fixes with a [bounded retry](2026-08-09-oxlint-only-fix-workflow.md), and re-stages them; `git diff --cached --check` rejects staged whitespace errors, and the vendor manifest guard checks vendored-source metadata. Pre-push runs `pnpm run typecheck`, which prepares the generated Host Typert contracts before the Client incremental typecheck.
+Pre-commit 不运行类型分析、测试、快照、文档检查、构建、`hygiene` 或门禁调度器。Pre-push 只增加仓库类型检查所需的 Host 约定构建。可选运行的 `check:all` 包脚本独立于这些钩子，从 [scripts/run-gates.ts](../../../../scripts/run-gates.ts) 中选择 `check-all` 调度器清单；它是贡献者命令，而非对 agent 的指令。
 
-Pre-commit does not run type analysis, tests, snapshots, documentation checks, builds, hygiene, or the gate scheduler. Pre-push adds only the Host contract build required by repository typecheck. The opt-in `check:all` package script selects the `check-all` scheduler inventory in [scripts/run-gates.ts](../../../../scripts/run-gates.ts) independently of the hooks; it is a contributor command, not an agent instruction.
+agent 检查待推送的 diff，并仅运行一次能够覆盖其行为的最小范围测试和检查。CI 负责全量覆盖率门禁、构建产物检查与平台矩阵。只有在明确要求、诊断 CI，或涉及全仓库的改动无法由范围更窄的证据得到可信验证时，才完整运行一遍本地检查矩阵。
 
-Agents inspect the outgoing diff and run the narrowest tests and checks that cover its behavior once. CI owns exhaustive coverage, built-artifact checks, and the platform matrix. A complete local rehearsal is reserved for an explicit request, CI diagnosis, or a repository-wide change that cannot be validated credibly by narrower evidence.
+## 取代关系
 
-## Supersedes
+本决策取代[并行 pre-push 门禁](2026-07-06-parallel-pre-push-gates.md)中涉及本地钩子的部分，以及[以机械质量门禁代替文字规范](2026-06-11-quality-gates.md)中关于钩子与 CI 对称性的部分。上述记录中关于 CI 调度器、包门禁与机械化强制执行的决策继续有效。
 
-This decision supersedes the local-hook portion of [Parallel pre-push gates](2026-07-06-parallel-pre-push-gates.md) and the hook/CI symmetry in [Mechanical quality gates over prose guidelines](2026-06-11-quality-gates.md). Their CI scheduler, package-gate, and mechanical-enforcement decisions remain in force.
+## 考虑过的替代方案
 
-## Alternatives considered
+- **保留全量 pre-push 套件并优化其调度器**——能够最早提供全面信号，但仍会重复 agent 已选取的证据和 CI，且无关失败仍会阻塞推送。
+- **完全移除 pre-push**——推送成本最低，但会失去 TypeScript 在多个提交之后提供的快速跨文件保证。
+- **在 pre-commit 中保留类型检查**——更早捕获类型错误，但每次中间提交都要承担开销，而不是只在推送时运行一次；暂存文件 lint 已经覆盖提交本身的语法与风格边界。
+- **将暂存文件 lint 设为仅检查模式**——避免钩子修改文件，但贡献者有意保留自动修复工作流；Oxlint 的一次有界重试和 Lefthook 的 `stage_fixed` 会保留该工作流，无需单独的格式化器，也无需重复执行 `git add`。
 
-- **Keep the full pre-push suite and optimize its scheduler** — preserves the earliest exhaustive signal but still repeats agent-selected evidence and CI, while unrelated failures continue blocking publication.
-- **Remove pre-push entirely** — makes pushes cheapest but loses the fast cross-file guarantee that TypeScript provides after several commits.
-- **Keep typecheck in pre-commit** — catches type errors earlier but charges every intermediate commit instead of one push; staged lint already covers the commit-local syntax and style boundary.
-- **Make staged lint check-only** — avoids hook-side mutation, but contributors intentionally retain the auto-fix workflow; Oxlint's bounded retry and Lefthook's `stage_fixed` preserve it without a separate formatter or duplicate `git add`.
+## 结果
 
-## Consequences
+普通提交的关键路径是不加载项目的暂存文件 Oxlint 修复与验证，缓存已预热时推送的关键路径是经过准备的增量类型检查。贡献者仍可选择用一条命令完整演练，且不会扩展钩子关键路径或 agent 必须运行的验证集合。钩子耗时只作为开发观察数据和 PR（Pull Request）证据记录，不设置会受主机负载与缓存状态影响的计时测试。
 
-Normal commits take the project-free staged Oxlint fix-and-validate critical path, and warm pushes take the prepared incremental typecheck critical path. Contributors retain a one-command opt-in rehearsal without widening the hook critical paths or the agent-required validation set. Hook latency is observed in development and PR evidence rather than enforced by a timing test whose result would depend on host load and cache state.
-
-Local publication no longer proves the exhaustive repository matrix. Agents must select relevant behavioral evidence, reviewers must evaluate whether that selection matches the diff, and CI supplies the comprehensive signal once per pushed revision.
+从本地推送成功不再能证明仓库完整矩阵已通过。agent 必须选择相关的行为证据，评审人必须判断该选择是否与 diff 相符，CI 则对每个推送版本提供一次全面信号。

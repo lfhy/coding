@@ -1,34 +1,32 @@
-# Agent Note: Dependabot version updates with a 30-day cooldown
+# Agent Note: Dependabot 版本更新采用 30 天冷却期
 
 Status: implemented
 
-English | [中文](2026-07-27-dependabot-version-updates.zh.md)
+## 问题
 
-## Problem
+来自包注册表的依赖与 GitHub Actions 依赖都需要定期更新机制。每个新版本一经发布便立即采用，会增加受到遭入侵的版本和早期回归影响的风险；但完全依靠手动更新，又会导致依赖版本差距持续扩大。以源码形式纳入仓库的 Cordis 不能当作注册表依赖处理，而共用一份锁文件的工作区必须通过同一棵包树更新。
 
-Maintained registry and GitHub Actions dependencies need a regular update path. Adopting every release immediately increases exposure to compromised releases and early regressions, while leaving updates entirely manual lets dependency drift accumulate. Vendored Cordis sources cannot be treated like registry dependencies, and workspaces sharing one lockfile must be updated through the same package tree.
+## 决策
 
-## Decision
+默认分支包含 [`.github/dependabot.yml`](https://github.com/deepseek-ai/deepseek-harness/blob/master/.github/dependabot.yml)，其中为包含 `native/landlock-run` 的根 pnpm 工作区、`python/sdk` uv 项目和 GitHub Actions 配置了每周一次的版本更新检查。每个更新项都将 `cooldown.default-days` 设为 `30`，因此某个版本只有在发布至少 30 天后才符合更新条件，并会在下一次每周检查时生成更新提案。[仓库内 Landlock 发布决策](2026-08-06-in-repository-landlock-release.md)负责共享工作区边界。
 
-The default branch carries [`.github/dependabot.yml`](https://github.com/deepseek-ai/deepseek-harness/blob/master/.github/dependabot.yml) with weekly version-update checks for the root pnpm workspace, including `native/landlock-run`, the `python/sdk` uv project, and GitHub Actions. Every entry sets `cooldown.default-days` to `30`, so a version release becomes eligible only after it is at least 30 days old and is proposed on the next weekly check. The [in-repository Landlock release decision](2026-08-06-in-repository-landlock-release.md) owns the shared-workspace boundary.
+根 pnpm 工作区的版本更新扫描排除 `vendor/**`，其中的源码和 manifest（元数据清单）只能通过 [vendoring 流程](../../../../vendor/README.md)变更。GitHub 仅将 `exclude-paths` 用于版本更新；如果安全更新 PR（Pull Request）涉及随源码纳入仓库的 manifest，则改由 vendoring 流程处理，以替代自动生成的 PR，而不会将其原样合并。Dependabot PR 会获得仓库的 `kind/dependency` 类型标签和 `area/infra` 区域标签，运行常规 PR 检查，并且仍须由维护者评审；该自动化不会合并这些 PR。
 
-The root pnpm version-update scan excludes `vendor/**`, whose source and manifests move only through the [vendoring procedure](../../../../vendor/README.md). GitHub applies `exclude-paths` only to version updates; a security pull request that touches a vendored manifest is replaced through the vendoring procedure instead of being merged as generated. Dependabot pull requests receive the repository's `kind/dependency` kind and `area/infra` area labels, run the normal pull-request checks, and remain subject to maintainer review; this automation does not merge them.
+仓库设置已启用依赖项漏洞警报和 Dependabot 安全更新。GitHub 不会对这些安全更新应用版本更新冷却期，因此安全修复仍可立即进入更新流程。如果依赖解析还选中了其他刚发布的传递依赖，pnpm 安全更新 PR 仍可能无法通过仓库的锁文件发布时长校验；此类 PR 应等待隔离期结束或缩小更新范围，不得因此放宽政策。仓库为协调刚发布版本而设置的例外，不会纳入 Dependabot 的冷却期排除项：自动版本更新统一等待 30 天；经过明确评审的手动更新仍可遵循相应的发布流程。
 
-Repository settings enable dependency vulnerability alerts and Dependabot security updates. GitHub does not apply version-update cooldowns to those security updates, so security fixes remain eligible immediately. A generated pnpm security pull request can still fail the repository's lockfile release-age verification when dependency resolution selects unrelated fresh transitive versions; that pull request waits or is narrowed instead of weakening the policy. The repository's coordinated fresh-release exceptions are not copied into Dependabot's cooldown exclusions: automated version updates use the uniform 30-day wait, while an explicitly reviewed manual update can still follow its owning release procedure.
+pnpm 更新项让统一工作区继续使用已固定的 pnpm 11，不会仅为了自动化而降级版本。当前 Dependabot 更新器会安装根 `packageManager` 指定的版本，并读取根锁文件的 `9.0` 格式；由提供方运行的更新任务仍作为集成检查。
 
-The pnpm entry keeps the unified workspace on its pinned pnpm 11 instead of introducing an automation-only downgrade. The current Dependabot updater installs the version requested by the root `packageManager` and reads the root lockfile format `9.0`; the provider-run update job remains the integration check.
+## 考虑过的替代方案
 
-## Alternatives considered
+- **立即进行版本更新。** 不采用，因为这会取消所要求的版本发布后隔离期，使项目在每个上游版本的发布初期就采用该版本。
+- **CI 通过后自动合并。** 不采用，因为依赖变更可能改变运行时、构建和发布行为；是否接受更新仍须经过常规评审决策。
+- **为 native 配置独立的 npm 扫描。** 不采用，因为 Landlock manifest 属于根工作区和根锁文件；拆分更新会重建一个包管理器已不存在的归属边界。根扫描仅排除随源码纳入的 manifest。
+- **Renovate 或定期运行的 agent（智能体）。** 二者都能为发布已满一定时长的版本提出更新，但所要求的服务是 Dependabot，而且仓库 CI 已将其 PR 视为不可信的依赖来源。
+- **为需协调的刚发布版本设置冷却期豁免。** 自动化路径不采用，因为此类版本需要明确的同步决策或模型目录决策，不能由通用更新提案代替。
 
-- **Immediate version updates.** Rejected because they remove the requested release-age quarantine and make the project an early consumer of every upstream release.
-- **Automatic merging after CI.** Rejected because dependency changes can alter runtime, build, and release behavior; the normal review decision remains part of accepting an update.
-- **A separate native npm scan.** Rejected because the Landlock manifests belong to the root workspace and lockfile; splitting their update would recreate an ownership boundary the package manager no longer has. The root scan excludes only vendored manifests.
-- **Renovate or a scheduled agent.** Both can propose aged updates, but Dependabot is the requested service and the repository's CI already recognizes its pull requests as an untrusted dependency source.
-- **Cooldown exemptions for coordinated fresh releases.** Rejected for the automated path because those releases require an explicit synchronization or model-catalog decision rather than a generic update proposal.
+## 后果
 
-## Consequences
-
-- Routine dependency updates arrive in small reviewable pull requests after the quarantine instead of requiring periodic manual discovery.
-- A release normally appears between 30 and 36 days after publication because eligibility is evaluated weekly.
-- Dependabot does not delay security proposals; repository checks can still block unrelated fresh transitives, and review preserves the vendoring boundary.
-- Maintainers still decide whether to merge each update and diagnose any provider limitation reported by the pnpm 11 update job.
+- 隔离期结束后，常规依赖更新会以规模较小、便于评审的 PR 形式到达，无需维护者定期手动发现更新。
+- 由于每周评估一次更新资格，相应更新 PR 通常会在版本发布后 30 至 36 天出现。
+- Dependabot 不会延迟安全更新提案；仓库检查仍可阻止无关的刚发布传递依赖，评审流程也会维持 vendoring 边界。
+- 维护者仍负责决定是否合并每项更新，并诊断 pnpm 11 更新任务报告的任何提供方限制。

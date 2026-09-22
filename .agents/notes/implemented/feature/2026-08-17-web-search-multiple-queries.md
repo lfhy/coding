@@ -1,37 +1,35 @@
-# Agent Note: web_search accepts multiple queries in one call
+# Agent Note: web_search 支持一次传入多个查询
 
 Status: implemented
 
-English | [中文](2026-08-17-web-search-multiple-queries.zh.md)
+## 问题
 
-## Problem
+面向模型的 `web_search` 工具原来只接受单个 `query`。在同时把内部搜索后端以 MCP 方式暴露的部署中，模型更倾向于使用 MCP 搜索工具，因为它能一次传入多个关键词；模型也常常在调用原生 `web_search` 后觉得结果不够，再补一次 MCP 搜索。
 
-The model-facing `web_search` tool accepted only one `query`. In deployments where an internal search backend was also exposed as MCP, models preferred the MCP search tool because it could take multiple keywords in one call, and they often followed a native `web_search` with a second MCP search when the first result felt insufficient.
+## 决定
 
-## Decision
+`web_search` 接受一个必填的 `queries` 字符串数组。单元素数组执行一次搜索。`searchMaxQueries` 限制数组大小与提供方请求扇出，默认值为 4，并出现在系统提示词指引与工具描述中。校验会在任何提供方调用开始前拒绝超限数组，随后移除完全相同的重复字符串，并保留它们首次出现的位置。
 
-`web_search` accepts one required `queries` string array. A one-item array performs a single search. `searchMaxQueries` bounds the array and provider fan-out, defaults to four, and appears in the system-prompt guidance and tool descriptions. Validation rejects an oversized array before any provider call starts, then exact duplicate strings are removed while preserving their first position.
+当 `queries` 包含多个不同条目时，`dsh-tool-web` 会通过 `ctx.web.search` 并发执行这些搜索，用来源查询标注提供方答案，并按 URL 对来源去重。它从每个查询取得同一排名的一条来源后再推进至下一排名，然后把组合列表限制在 `searchMaxResults` 上限内；这样，一个查询排名较低的来源不会挤掉后续查询的所有来源。任何搜索失败时，工具会中止其余搜索，等待所有已启动搜索结算，丢弃成功结果，并返回首次失败。单元素数组直接返回提供方结果，不添加多查询格式。
 
-When `queries` has multiple distinct entries, `dsh-tool-web` runs them concurrently through `ctx.web.search`, labels provider answers with their originating query, and deduplicates sources by URL. It takes one source at each rank from every query before advancing to the next rank, then caps the combined list to `searchMaxResults`; this prevents one query's lower-ranked sources from displacing every source from later queries. If any search fails, the tool aborts its siblings, waits for every started search to settle, discards successful results, and returns the first failure. A one-item array returns the provider's result without multi-query formatting.
+多查询编排放在工具消费方，而不是 web seam 或提供方，因为 `WebSearchProvider.search` 仍是单查询契约，seam 也保持提供方无关。
 
-The multi-query orchestration lives in the tool consumer, not in the web seam or providers, because `WebSearchProvider.search` remains a single-query contract and the seam stays provider-neutral.
+## 备选方案
 
-## Alternatives considered
+**依赖现有的并行工具调用能力。** 不采用：模型看到的仍然是单查询 schema，必须自行决定发起多次 `web_search` 调用，这正是把它推向 MCP 接口的摩擦点。
 
-**Rely on the existing parallel tool-call support.** Rejected: the model still sees a one-query schema and must decide to emit multiple `web_search` calls, which is exactly the friction that pushed it toward the MCP interface.
+**同时接受 `query` 与 `queries`。** 不采用：两个可选字段会让模型在等价表示之间选择，并把必填且二选一的规则移入说明文本与运行时校验。一个必填数组用更少的无效状态同时表示一次与多次搜索。
 
-**Accept both `query` and `queries`.** Rejected: two optional fields make the model choose between equivalent representations and move the required exactly-one rule into prose and runtime validation. One required array represents both one and many searches with fewer invalid states.
+**给 `WebSearchRequest` 增加多查询请求类型。** 不采用：提供方都是单查询后端，而且修改共享 seam 会迫使每个提供方实现只有模型侧消费方才需要的功能。
 
-**Add a multi-query request type to `WebSearchRequest`.** Rejected: providers are single-query backends, and changing the shared seam would force every provider to implement a feature only the model-facing consumer needs.
+**接受无上限的 `queries` 数组。** 不采用：一次模型操作可以启动任意数量的提供方请求，并拼接任意数量的提供方答案。由部署拥有的上限既让模型 schema 聚焦搜索输入，也能控制成本与输出增长。
 
-**Accept an unbounded `queries` array.** Rejected: one model action could start an arbitrary number of provider requests and concatenate an arbitrary number of provider answers. A deployment-owned bound keeps the model schema focused on search input while controlling cost and output growth.
+**给 `WebSearchRequest` 增加原生搜索总预算。** 不采用：通用 seam 若要计算提供方内部的搜索单位，要么泄漏某个提供方的机制，要么接受其他提供方无法强制执行的上限。部署会把消费方自有的 `searchMaxQueries` 上限与提供方自有的 `maxUses` 等控制项结合使用。
 
-**Add an overall native-search budget to `WebSearchRequest`.** Rejected: the generic seam cannot count provider-internal search units without leaking one provider's mechanism or accepting a limit that other providers cannot enforce. Deployments combine the consumer-owned `searchMaxQueries` bound with provider-owned controls such as `maxUses`.
+## 结果
 
-## Consequences
+模型在每次原生 `web_search` 调用中都传入一个必填的 `queries` 数组，并可在不转向 MCP 搜索的情况下批量执行多个不同搜索。默认查询上限 4 与 Codex `web.run` 面向模型的批量大小一致，同时限制并发提供方调用；部署可以独立于来源上限选择另一个正整数。完全相同的重复字符串会占用输入数组上限，但只会触发一次提供方调用。组合来源仍受 `searchMaxResults` 限制，并通过轮询合并保留每个查询的结果排名。多查询结果中的提供方答案会以 `### <query>` 标题标注，便于模型区分答案来自哪个搜索。
 
-Models pass one required `queries` array for every native `web_search` call and can batch several distinct searches without switching to MCP search. The default query cap of four matches Codex `web.run`'s model-facing batch size while bounding concurrent provider calls; deployments can choose another positive integer independently of the source cap. Exact duplicate strings consume the input-array bound but cause only one provider call. Combined sources remain bounded by `searchMaxResults` and preserve each query's result ranking through round-robin merge. Provider answers in a multi-query result are prefixed with `### <query>` headings so the model can tell which answer came from which search.
+多查询失败采用全有或全无语义：如果另一个查询失败，成功的提供方结果也会被丢弃；在同批取消达到静默状态前，调用不会返回。`searchMaxQueries` 与提供方自有的控制项可以独立配置，并共同构成搜索预算。提供方可以在一次 `ctx.web.search` 调用内执行多次原生搜索，因此拥有自身 `maxUses` 的模型型提供方最多可以执行 `searchMaxQueries × maxUses` 次原生搜索；`searchMaxResults` 只限制返回给调用方的组合来源。提供方中立的 seam 有意不定义原生搜索总计数器。
 
-Multi-query failure is all-or-nothing: a successful provider result is discarded if another query fails, and the call does not return until sibling cancellation reaches quiescence. `searchMaxQueries` and provider-owned controls are independently configurable and together form the search budget. A provider may perform several native searches inside one `ctx.web.search` call, so a model-backed provider with its own `maxUses` can permit up to `searchMaxQueries × maxUses` native searches; `searchMaxResults` bounds only the combined sources returned to the caller. The provider-neutral seam deliberately does not define an overall native-search counter.
-
-The real Web composition snapshot issues one `queries` call through the DeepSeek search provider, observes two auxiliary provider requests, and pins the round-robin combined result, durable metadata, and joined search-card title. Package tests separately prove overlap before the first provider promise settles, query-cap rejection before provider dispatch, exact-query and source deduplication, uneven result exhaustion, truncation, caller cancellation propagation, and batch quiescence after failure.
+真实 Web 组合快照通过 DeepSeek 搜索提供方发起一次 `queries` 调用，观察两次辅助提供方请求，并固定轮询组合结果、持久化元数据和拼接后的搜索卡片标题。包测试另行证明：第一个提供方 promise 结算前已经发起重叠调用；查询上限会在提供方分发前拒绝请求；完全相同查询与来源都会去重；不等长结果能够耗尽；截断、调用方取消传播以及失败后的批次静默状态保持正确。

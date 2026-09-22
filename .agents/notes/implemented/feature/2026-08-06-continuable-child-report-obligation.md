@@ -1,60 +1,58 @@
-# Agent Note: The continuable child return channel is an obligation
+# Agent Note: 可继续 child 的返回通道是一项义务
 
 Status: implemented
 
-English | [中文](2026-08-06-continuable-child-report-obligation.zh.md)
+## 问题
 
-## Problem
+可继续后台 child 拥有自己的 Session，因此它写在那里的任何内容都不会到达启动它的 agent。[report 工具](2026-07-30-continuable-subagent-report-tool.md)为该 child 提供了一条返回通道，却把它呈现为若干选项之一：schema 里写着「可调用零次或多次」，child 的提示词中没有任何地方要求它调用该工具，而已采纳的默认调度（`quiet`）会把报告加入已停驻 parent 的下一次请求，却不唤醒它。
 
-A continuable background child owns its own Session, so nothing it writes there reaches the agent that started it. [The report tool](2026-07-30-continuable-subagent-report-tool.md) gave that child a return channel and then presented it as one option among several: the schema said "call this zero or more times", nothing in the child's prompt asked it to call the tool at all, and the accepted default scheduling (`quiet`) added the report to a parked parent's next request without waking it.
+这些选择单独看都站得住脚。合在一起，它们让这条返回通道无法作为委派契约使用。一个完成工作、把答案写进自己 transcript（文本记录）随后停止的 child，会让 parent 一无所获；而确实上报了的 child，面对的是一个已经停驻、要等到别的事件把它唤醒才会读到报告的 parent。外部反馈中的 parent 忙轮询 `list_agents`、反复向已结算 child 发送消息、以及放弃 `subagent` 改用 `workflow`，都可归结为同一处缺失的保证。
 
-Each of those choices is defensible alone. Together they made the return channel unusable as a delegation contract. A child that finished its work, wrote its answer into its own transcript, and stopped left the parent with nothing; a child that did report reached a parent that had already parked and would not read the report until something unrelated woke it. External reports of parents busy-polling `list_agents`, re-sending messages to settled children, and abandoning `subagent` for `workflow` all reduce to the same missing guarantee.
+## 决策
 
-## Decision
+返回通道是 child 收到的一条指令，而不是它需要自行发现的能力。report 包会向每个可继续进程内 child 安装两项作用域局部注册，并由同一个 disposer 撤销两者：
 
-The return channel is an instruction the child receives, not a capability it may discover. The report package installs two scope-local registrations into every continuable in-process child, and one disposer revokes both:
+- `report` 工具，其描述现在说明 child 要在结束前调用一次并给出自足的最终结果，并在部分进展会改变 parent 下一步动作时提前调用；
+- 一个 order 为 117 的 `tool:report` 系统提示词 section，用 child 自己的语气承载同一条义务，使从不细读工具描述的 child 仍能收到它。
 
-- the `report` tool, whose description now states that the child calls it once before finishing with a self-contained final result, and earlier for progress that changes what the parent should do next;
-- a `tool:report` system-prompt section at order 117 carrying the same obligation in the child's own voice, so a child that never reads tool descriptions closely still receives it.
+`reportDelivery` 的默认值为 `next-step`。一条被接受的报告会唤醒停驻的 parent driver，或加入运行中 parent 最近的 step 边界，与发现会改变 parent 下一步动作时上报的指令一致。对于宁可让报告无人阅读也要避免模型工作量放大的部署，`quiet` 依旧可用。[报告与结算顺序决策](../bug-fix/2026-08-17-subagent-report-settlement-ordering.md)负责调度理由。
 
-`reportDelivery` defaults to `next-step`. An accepted report wakes a parked parent driver or joins a running parent's nearest step boundary, matching the instruction to report findings that change the parent's next action. `quiet` remains available for deployments that prefer unread reports over model-work amplification. The [report/settlement ordering decision](../bug-fix/2026-08-17-subagent-report-settlement-ordering.md) owns the scheduling rationale.
+### 为什么 section 与描述同时存在
 
-### Why the section and the description both exist
+两者针对不同的失效模式。工具描述是在模型已经在考虑 `report` 时被读到的；提示词 section 是在它判断自己是否已经完成时被读到的。这条义务必须同时出现在两处，因为本次修复的失效——child 直接停下——发生在第二处。
 
-They address different failure modes. The tool description is read when the model is already considering `report`; the prompt section is read when it is deciding whether it is finished. The obligation belongs at both points because the failure this fixes — a child that simply stops — happens at the second one.
+该 section 注册在 child 自己的作用域上，与[child 组合](../../../../packages/subagent/subagent/src/child-agent.ts)为遮蔽式 persona 已经使用的机制相同，因此 parent 与所有同级都看不到该工具与该指引。工具注册失败时，`installReportTool` 会回滚该 section；它返回的 disposer 会先尝试撤销两项注册，再抛出清理失败。
 
-The section is registered on the child's own scope, the same mechanism [child composition](../../../../packages/subagent/subagent/src/child-agent.ts) already uses for a shadowing persona, so the parent and every sibling see neither the tool nor the guidance. `installReportTool` rolls the section back if tool registration fails, and its returned disposer attempts both revocations before surfacing cleanup failures.
+### 是指令，不是强制
 
-### Instruction, not enforcement
+没有任何东西会拒绝一个从不上报的 child。没有任何运行时路径会检查是否发送过报告，`report` 仍接受一个轮次中调用零次或多次。本次改动是面向模型的措辞加上一个调度默认值；服务权限、确认与恢复契约都保持不变。
 
-Nothing rejects a child that never reports. No runtime path inspects whether a report was sent, and `report` still accepts zero or many calls per turn. The change is model-facing wording plus a scheduling default; the service authority, acknowledgement, and recovery contracts are unchanged.
+这条边界是刻意划定的：提示词文本只能到达仍在运行自身循环的 child。被错误、token 上限、取消或拆卸终止的 child 根本没有机会遵守，因此运行时会自己记录结算这件事，而不是信任这条指令（见[由管理器负责的结算投递](2026-08-06-manager-owned-subagent-settlement-delivery.md)）。
 
-That boundary is deliberate: prompt text can only reach a child that is still running its own loop. A child stopped by an error, a token ceiling, cancellation, or teardown never gets the chance to comply, which is why the runtime keeps its own account of settlement rather than trusting this instruction ([manager-owned settlement delivery](2026-08-06-manager-owned-subagent-settlement-delivery.md)).
+### 快照覆盖
 
-### Snapshot coverage
+整体组装的 ACP `subagent-report` 场景演练随附的默认行为：child 在 parent 处于 maintenance 时上报，稍后的结算通知排在其后，而恢复的 parent 会先领取 next-step 报告、再领取 next-turn 结算。由于该 child 的作用域组合出类别 pin 无法描述的提示词，快照 harness 提供 `pinsChildSystemPrompts`，它与 `pinsChildToolSchemas` 完全对称：把一个 child fixture 的提示词移入 `system-prompt.<n>.expected.md`，其余请求 header 字段仍归类别 pin 所有，要求 sidecar 恰好在声明时存在，并拒绝与该类别 pin 完全相同的 sidecar，使冗余副本无法悄悄漂移。
 
-The assembled ACP `subagent-report` scenario exercises the shipped default: the child reports while the parent is in maintenance, the later settlement notice queues behind it, and the resumed parent claims the next-step report before next-turn settlement. Because the child's scope composes a prompt the class pin cannot describe, the snapshot harness has `pinsChildSystemPrompts`, the exact counterpart of `pinsChildToolSchemas`: it moves one child fixture's prompt into `system-prompt.<n>.expected.md`, leaves every other request-header field to the class pin, requires the sidecar exactly when declared, and rejects a sidecar identical to that class pin so a redundant copy cannot drift.
+## 备选方案
 
-## Alternatives considered
+**保留 `quiet` 作为默认值，只依赖提示词。** 这曾是随附的立场，而它本身什么也没有解决：一条 parent 从不阅读的报告，与一条从未发送的报告无法区分。[report 工具 Agent Note](2026-07-30-continuable-subagent-report-tool.md)对「始终唤醒」的否决，前提是 parent 还有别的理由去查看自己的上下文；已停驻的后台协调者并没有。轮次放大才是真正的代价，而它现在是 `quiet` 仍然保留的理由，而不是它作为默认值的理由。
 
-**Keep `quiet` as the default and rely on the prompt alone.** This was the shipped position, and it supersedes nothing on its own: a report the parent never reads is indistinguishable from a report never sent. The [report-tool note's](2026-07-30-continuable-subagent-report-tool.md) rejection of always-waking assumed the parent had another reason to look at its context; a parked background coordinator does not. Turn amplification is the real cost, and it is now the reason `quiet` still exists rather than the reason it is the default.
+**让 child 按调用选择投递模式。** 与最初的否决相同：模型将掌握调度压力，行为也会随调用而非随部署变化。
 
-**Let the child choose the delivery mode per call.** Unchanged from the original rejection: the model would own scheduler pressure, and behavior would vary per call rather than per deployment.
+**只把义务写在工具描述里。** 描述是在从多个工具中选择时被读到的。本次改动针对的 child 并不在选择工具，它认为自己已经做完了。提示词指引才是能触及该判断的界面。
 
-**Put the obligation only in the tool description.** A description is read while choosing among tools. The child this change targets is not choosing a tool; it believes it is done. Prompt guidance is the surface that reaches that decision.
+**在结算时拒绝沉默的 child，以此强制该义务。** 没有什么可以拒绝：当结算可被观察时 child 的循环已经结束，让它的拆卸失败只会毁掉工作而不会送达结果。由运行时无条件投递终止事实才是这一情形的答案，而它属于继续执行管理器，不属于本包。
 
-**Enforce the obligation at settlement by rejecting a silent child.** There is nothing to reject: by the time settlement is observable the child's loop is over, and failing its teardown would destroy work rather than deliver it. Delivering the terminal facts unconditionally from the runtime is the answer to that case, and it belongs to the continuation manager, not to this package.
+## 后果
 
-## Consequences
+- 加载本包后，每个可继续进程内 child 的每次请求都会多出一个提示词 section 和一段更长的 `report` 描述；其他任何 Agent 的请求都不变。
+- 默认部署会为每条被接受的报告唤醒 parent 一次。频繁上报的嵌套树会消耗额外的 parent 请求，而一起等待的报告会共享一个 step；`quiet` 是有文档记载的退路。
+- `installReportTool` 需要 child 作用域中的 `ctx.systemPrompt`，因此本包在 `inject` 中声明 `systemPrompt`，从而在加载时失败，而不是等到下一次 child 物化时。
+- 单元覆盖固定了新默认值、两处关键指令措辞、该 section 相对 parent 与同级均仅限 child 的作用域，以及两项注册在安装回滚或撤销时的清理。
+- 三个带可继续 child 的整体组装 ACP 场景通过新的 sidecar 逐字固定完整的 child 提示词；今后任何对 child 作用域 section 的改动都会让这些场景失败，而不是悄悄通过。
 
-- Every continuable in-process child with this package loaded carries one extra prompt section and a longer `report` description in every request; no other Agent's request changes.
-- The default deployment wakes the parent once per accepted report. A nested tree that reports frequently consumes extra parent requests, while reports waiting together share one step; `quiet` is the documented escape.
-- `installReportTool` requires `ctx.systemPrompt` in the child scope, so the package declares `systemPrompt` in `inject` and fails at load rather than at the next child materialization.
-- Unit coverage pins the new default, two load-bearing instruction phrases, the section's child-only scope against both the parent and a sibling, and rollback or revocation of both registrations.
-- Three assembled ACP scenarios with continuable children pin the complete instruction text through the new sidecar; a future change to any child-scoped section fails those scenarios instead of passing silently.
+### 已接受的风险
 
-### Accepted risks
+默认 next-step 投递会在深层树中放大模型工作量。部署通过 `reportDelivery` 掌握该取舍；一起等待的报告会共享一个 step，且每条被接受的报告至多产生一次唤醒。
 
-Next-step delivery by default amplifies model work in deep trees. The deployment owns that through `reportDelivery`; reports waiting together share one step, and one accepted report causes at most one wake.
-
-A child can still finish without reporting, and this change cannot detect it. Only the runtime's own [settlement account](2026-08-06-manager-owned-subagent-settlement-delivery.md) closes that case.
+child 仍可能不上报就结束，本次改动无法检测这一点。只有运行时自己的[结算记账](2026-08-06-manager-owned-subagent-settlement-delivery.md)才能补上这一情形。

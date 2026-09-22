@@ -2,32 +2,30 @@
 
 Status: implemented
 
-English | [中文](2026-08-19-deepseek-reasoning-passback-every-turn.zh.md)
-
 ## Problem
 
-`dsh-llm-deepseek` replayed `reasoning_content` in history only on assistant turns that also carried tool calls. DeepSeek's thinking-mode guide requires the field there and ignores it elsewhere, so withholding it on plain turns bought input tokens back with nothing observable lost against `api.deepseek.com`.
+`dsh-llm-deepseek` 只在同时携带工具调用的 assistant 轮次上，才把 `reasoning_content` 回放进历史。DeepSeek 思考模式文档在这类轮次上要求该字段，在其他轮次上会忽略它，因此在普通轮次上不回传能省下输入 token，对 `api.deepseek.com` 而言没有任何可观测的损失。
 
-That endpoint is not the only one this adapter serves. `Config.baseURL` points it at any OpenAI-compatible endpoint, including a gateway that re-encodes a DeepSeek chat-completions conversation for another vendor. Such a gateway has no wire slot for the upstream thinking signature and recovers it by hashing the replayed chain of thought. A turn the model answered without calling a tool therefore reached the gateway with no reasoning text at all, the signature lookup found nothing, and the reconstructed conversation diverged from the recorded one. Agent runs call tools on most turns, so the loss appeared only at plain-answer turns and looked intermittent.
+但该端点不是这个适配器唯一服务的对象。`Config.baseURL` 可以把它指向任何 OpenAI 兼容端点，包括把 DeepSeek chat-completions 对话重新编码转发给其他厂商的网关。这类网关在协议上没有承载上游思考签名的字段，只能对回放的思维链取哈希来恢复它。于是模型未调用工具就作答的轮次到达网关时完全不带推理文本，签名查找落空，重建出的对话与记录中的对话产生分叉。Agent 运行的大多数轮次都会调用工具，所以这个损失只在纯作答轮次上出现，表现为偶发。
 
 ## Decision
 
-`serializeAssistant` emits `reasoning_content` for every assistant turn whose content carried reasoning, independent of tool calls. An absent reasoning block still emits no field, so a non-thinking turn is unchanged.
+`serializeAssistant` 对每个内容携带推理的 assistant 轮次都发出 `reasoning_content`，与是否有工具调用无关。没有推理块时仍然不发出该字段，因此非思考轮次的行为不变。
 
-The replayed text is byte-exact with what the provider streamed: `translate.ts` accumulates the whole `reasoning_content` channel of one response into a single reasoning block, so the join in `serializeAssistant` concatenates one member and a hash taken over the replay matches a hash taken over the original delivery.
+回放文本与提供方流式下发的内容逐字一致：`translate.ts` 会把一次响应的整个 `reasoning_content` 通道累积进单个推理块，因此 `serializeAssistant` 中的拼接只连接一个成员，对回放取的哈希与对原始下发取的哈希相同。
 
 ## Alternatives considered
 
-- **A `Config` switch selecting the passback policy.** The two endpoint behaviors are real, but the field is inert where it is unneeded, so the switch only ever buys back one turn's chain of thought in input tokens — against a wrong setting that silently makes a session unreconstructable, with no error at either end to attribute it to. A knob whose wrong position fails silently is worse than the tokens.
-- **Deciding from `baseURL`.** Whether an endpoint forwards to another vendor is not readable from its host: an internal endpoint may proxy DeepSeek directly and a public one may forward. The adapter would be guessing at a deployment it cannot see through.
-- **Carrying the signature durably instead, as `dsh-llm-pi-ai` does.** That adapter persists `thinkingSignature` per block in its replay state because its providers put the signature on the wire. DeepSeek chat-completions exposes none, so this adapter has nothing to persist and the replayed text is the only channel.
+- **用 `Config` 开关选择回传策略。** 两种端点行为都真实存在，但该字段在不需要它的地方是惰性的，所以这个开关最多只换回一个轮次的思维链输入 token —— 代价却是一旦设置错误，会话就会静默地无法重建，两端都不会报错来归因。一个设错就静默失败的旋钮，比那点 token 更糟。
+- **根据 `baseURL` 判断。** 一个端点是否会转发给其他厂商，无法从它的主机名读出：内部端点可能直连代理 DeepSeek，公网端点也可能转发。适配器只能对自己看不透的部署方式做猜测。
+- **改为持久化签名，如 `dsh-llm-pi-ai` 的做法。** 该适配器在 replay state 中按块持久化 `thinkingSignature`，因为它的提供方会把签名放在协议里。DeepSeek chat-completions 不暴露签名，所以这个适配器没有可持久化的东西，回放文本是唯一通道。
 
 ## Consequences
 
-Every reasoned tool-call-free turn now costs its chain of thought in input tokens on later requests. The added text sits at that turn's position and is identical on every subsequent request, so the assembled prefix stays stable and only the first request spanning the change loses cache reuse from that point.
+每个含推理且不带工具调用的轮次，如今都会在后续请求中按其思维链计入输入 token。新增文本位于该轮次所在位置，且在此后每次请求中都相同，因此组装出的前缀保持稳定，只有跨越此次变更的第一个请求会从该位置起失去缓存复用。
 
-`WireAssistantMessage.reasoning_content` documents both endpoint behaviors, and the package README states the passback rule in the Wire-format notes and the Model Experience token and cache sections.
+`WireAssistantMessage.reasoning_content` 记录了两种端点行为，包 README 在协议格式说明以及 Model Experience 的 token 与缓存小节中陈述了该回传规则。
 
 ## Testing
 
-`tests/serialize.spec.ts` pins all three assistant shapes: reasoning beside text with no tool call, reasoning beside a tool call, and a reasoning-only turn whose content stays `""`. Turns carrying no reasoning keep emitting no field, which the content-less and tool-call-only cases cover.
+`tests/serialize.spec.ts` 固定了三种 assistant 形态：推理与文本并存且无工具调用、推理与工具调用并存、以及内容保持为 `""` 的纯推理轮次。不携带推理的轮次仍不发出该字段，由无内容与仅工具调用两种用例覆盖。

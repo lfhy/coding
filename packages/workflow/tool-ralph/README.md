@@ -1,93 +1,91 @@
 # @deepseek-ai/dsh-tool-ralph
 
-English | [中文](README.zh.md)
+面向模型的 `ralph` 工具运行固定的前台工作流，把一个不可变目标依次交给多个全新子 agent（智能体）。它展示如何把专用编排策略实现为基于 [`ctx.workflowEngine`](../workflow/README.md) 和 [`ctx.subagents`](../../subagent/subagent/README.md) 的普通插件：不会向 `agent-loop` 添加 Ralph 模式或全新 agent loop（智能体循环），同会话的[目标领域](../../goal/goal/README.md)也保持独立。策略和暂缓事项由 [Ralph Agent Note（agent 决策记录）](../../../.agents/notes/implemented/feature/2026-07-19-fresh-agent-ralph-workflow-tool.md)负责。
 
-The model-facing `ralph` tool runs a fixed foreground workflow that gives one immutable objective to a sequence of fresh child agents. It demonstrates a specialized orchestration policy as an ordinary plugin over [`ctx.workflowEngine`](../workflow/README.md) and [`ctx.subagents`](../../subagent/subagent/README.md): no Ralph mode or fresh-agent loop is added to `agent-loop`, and the same-session [goal domain](../../goal/goal/README.md) remains independent. The [Ralph Agent Note](../../../.agents/notes/implemented/feature/2026-07-19-fresh-agent-ralph-workflow-tool.md) owns the policy and deferred work.
+## 契约
 
-## Contract
+`ralph({ objective, maxRounds? })` 会等待整个运行完成。部署配置中的 `maxRounds` 既是默认值，也是调用覆盖值的上限。每个 Ralph Round 通过 `subagentProvider` 启动一个子 agent；该提供方必须存在、支持结构化输出，并报告 `inheritsParentContext: false`。已配置的提供方以 `WorkflowStartRequest.subagentProvider` 传递，使固定脚本无法检查或更改路由，普通的模型编写 `workflow` 工具也不会因此获得提供方选择器。解析后的 Round 上限还会作为 `WorkflowStartRequest.maxTotalAgents` 传递，使固定循环与引擎的子 agent 总数后备上限协同；Ralph 上限超过引擎部署上限时，引擎会在发布运行前拒绝。
 
-`ralph({ objective, maxRounds? })` waits for the entire run. The deployment config's `maxRounds` is both the default and a ceiling on a call override. Every Ralph round starts one child through `subagentProvider`; that provider must exist, support structured output, and report `inheritsParentContext: false`. The configured provider is carried as `WorkflowStartRequest.subagentProvider`, so the fixed script cannot inspect or change routing and the ordinary model-written `workflow` tool gains no provider selector. The resolved round cap is also carried as `WorkflowStartRequest.maxTotalAgents`, coordinating the fixed loop with the engine's total-child backstop; the engine rejects a Ralph cap above its deployment ceiling before publishing a run.
+每个子 agent 只接收不可变目标、当前 Ralph Round 及其上限、一条「共享工作区是权威状态」指令，以及上一个结构化交接内容。工作区是长期记忆；不会把父级对话或先前子 agent 会话作为初始内容。报告包含 `status: continue | complete | blocked`、非空摘要、证据、后续步骤和阻塞文本。固定工作流内部及消费方边界都会校验特定状态的语义和序列化后的 `maxHandoffChars` 上限。无效、缺失或过大的报告会使工作流失败，而不会被截断或误认为上限耗尽。
 
-Each child receives only the immutable objective, its current Ralph round and cap, a shared-workspace-as-authority instruction, and the previous structured handoff. The workspace is long-term memory; parent conversation and prior child sessions are not seeded. Reports have `status: continue | complete | blocked`, a non-empty summary, evidence, next steps, and blocker text. Status-specific semantics and the serialized `maxHandoffChars` ceiling are validated inside the fixed workflow and again at the consumer boundary. Invalid, missing, or oversized reports fail the workflow instead of being truncated or mistaken for cap exhaustion.
+成功的终态工具结果为 `complete`、`blocked` 或 `budget-limited`，并包含最后一份有界报告和已启动的 Round 数量。规范包络为 `{ runId, agentsStarted, result }`；Native 渲染器中的完成与阻塞标签会明确说明结果由 worker 报告，而非独立认证。`maxResultChars` 只限制包含截断标记的渲染文本，不会改变规范值中经过校验的报告或跨 Round 交接内容。
 
-The successful terminal tool result is `complete`, `blocked`, or `budget-limited`, with the last bounded report and number of rounds started. The canonical envelope is `{ runId, agentsStarted, result }`; completion and blocker labels in its Native renderer explicitly say that a worker reported the outcome, not independent certification. `maxResultChars` bounds only that rendered text including its truncation marker, without altering the validated report in the canonical value or the cross-round handoff.
+普通子 agent 失败会产生错误，其中标明失败的 Round；如果已有上一次成功交接，也会保留它。Ralph 不会重试该 Round。致命的提供方启动、传输、worker 或工作流失败仍是工作流错误，并可能在固定脚本返回交接内容前结算。取消同样属于错误；局部输出绝不会视为成功。
 
-An ordinary child failure produces an error naming the failed round and retaining the last successful handoff when one exists. Ralph does not retry that round. Fatal provider-start, transport, worker, or workflow failures remain workflow errors and may settle before the fixed script can return a handoff. Cancellation is also an error; partial output is never success.
+## 生命周期与取消
 
-## Lifecycle and cancellation
+调用方 agent 是每个全新子 agent 的父级，因此会保留 cwd 和谱系，但不会复制其对话。`exec.signal` 进入工作流引擎，同时也桥接到 `run.cancel()`，以便不依赖具体实现。工具等待 `run.result` 并调用 `run.dispose()`，后一个调用位于 `finally` 中，因此取消的父级步骤会等到引擎完成有界终止且子 agent 完全停稳后才返回。
 
-The caller's agent is the parent of every fresh child, preserving cwd and lineage without copying its conversation. `exec.signal` enters the workflow engine and is also bridged to `run.cancel()` for implementation independence. The tool awaits `run.result` and calls `run.dispose()` in `finally`, so a cancelled parent step waits for the engine's bounded termination and child quiescence before returning.
+## 渲染意图
 
-## Render intent
+待处理调用使用 `generic` 卡片，标题为 `ralph`；不可变目标作为其 `rawInput`。结果继续使用 generic 卡片。两个呈现函数都只依赖工具参数和已结算的工具包络。
 
-The pending call is a `generic` card titled `ralph`; the immutable objective is its `rawInput`. The result keeps the generic card. Both presentation functions depend only on tool arguments and the settled tool envelope.
+## 配置
 
-## Config
-
-| Key | Default | Meaning |
+| 键 | 默认值 | 含义 |
 |---|---|---|
-| `subagentProvider` | `spawn` | Fresh structured-output provider used for every round. |
-| `maxRounds` | `256` | Default and deployment ceiling for one Ralph run. |
-| `maxHandoffChars` | `16384` | Maximum serialized characters in one round report. |
-| `maxResultChars` | `16384` | Maximum characters in the complete successful parent result. |
+| `subagentProvider` | `spawn` | 每个 Round 使用的全新结构化输出提供方。 |
+| `maxRounds` | `256` | 一次 Ralph 运行的默认值和部署上限。 |
+| `maxHandoffChars` | `16384` | 一份 Round 报告序列化后的最大字符数。 |
+| `maxResultChars` | `16384` | 返回给父级的完整成功结果最大字符数。 |
 
-All config values are normalized and validated when the plugin applies, including direct application outside Loader schema normalization. Provider capabilities are resolved immediately before each call because provider registration can change under plugin lifecycle and HMR.
+插件应用时会规范化并校验所有配置值，也包括绕过 Loader schema 规范化而直接应用的情况。每次调用前都会立即解析提供方能力，因为提供方注册可能随插件生命周期和热模块替换（HMR）变化。
 
-## Model Experience
+## 模型体验
 
-### System prompt
+### 系统提示词
 
-#### What the model sees
+#### 模型看到的内容
 
-Every parent request in this plugin's registration scope receives the fixed routing guidance below.
+在该插件的注册作用域内，每个父级请求都会收到下方的固定路由指导。
 
-##### Ralph guidance
+##### Ralph 指导
 
 ```markdown
 Use the ralph tool ONLY when the direct human explicitly asks for a Ralph loop or fresh-agent iterative execution. Each Ralph round starts a fresh child with no conversation seed and uses the shared workspace as durable memory. Completion and blockers are worker reports, not independent evaluation. Use same-session goal tools for ordinary long-running objectives, and plain subagents or workflowEngine for bounded delegation and fan-out.
 ```
 
-#### Token effect
+#### Token 影响
 
-Small fixed guidance cost per request while the plugin is active.
+插件启用期间，每个请求都会产生少量固定的指导 token 开销。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-Prefix-stable while the plugin scope and guidance text are unchanged. Activation or disposal may invalidate reuse from this prompt section.
+只要插件作用域和指导文本不变，前缀就保持稳定。启用或 dispose（资源释放）可能会使从该提示词段起的缓存复用失效。
 
-### Tool schema
+### 工具 schema
 
-#### What the model sees
+#### 模型看到的内容
 
-The generated [`ralph` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-ralph) exposes one required `objective` string and one optional `maxRounds` number. Provider choice, handoff size, report schema, workflow script, and orchestration behavior are deployment-owned and absent from the call schema.
+已生成的 [`ralph` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-ralph)公开一个必填 `objective` 字符串和一个可选 `maxRounds` 数字。提供方选择、交接大小、报告 schema、工作流脚本和编排行为均由部署侧控制，不在调用 schema 中。
 
-#### Token effect
+#### Token 影响
 
-Small fixed schema cost on each request where the tool is visible.
+工具可见时，每个请求都会产生少量固定的 schema token 开销。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-Prefix-stable while the definition and visibility are unchanged.
+只要定义和可见性不变，前缀就保持稳定。
 
-### Child requests and parent result
+### 子 agent 请求与父级结果
 
-#### What the model sees
+#### 模型看到的内容
 
-Each child sees the standalone fixed round prompt plus the structured-output capture contract. The parent sees only the original call and one terminal result containing a worker-reported status, round count, and pretty-printed final report; intermediate child messages and reports do not enter the parent conversation. A failed ordinary child instead yields an error with its round number and, after round one, the last successful handoff.
+每个子 agent 都会看到独立的固定 Round 提示词和结构化输出捕获契约。父级只看到原始调用和一个终态结果，其中包含 worker 报告的状态、Round 数量及经过美化打印的最终报告；中间子 agent 消息和报告不会进入父级对话。普通子 agent 失败时会改为产生错误，其中包含对应 Round 编号；从第二个 Round 起，还会包含上一次成功交接。
 
-#### Token effect
+#### Token 影响
 
-Every round pays for a fresh child context. `maxHandoffChars` bounds cross-round state and `maxResultChars` independently bounds the complete successful parent text; child work remains outside the parent context.
+每个 Round 都会支付全新子 agent 上下文的成本。`maxHandoffChars` 限制跨 Round 状态，`maxResultChars` 独立限制完整的父级成功文本；子 agent 工作留在父级上下文之外。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-Each fresh child has an independent request cache. The parent result appends after the reusable request prefix.
+每个全新子 agent 都有独立的请求缓存。父级结果追加在可复用请求前缀之后。
 
-## Known Limitations and Deferred Work
+## 已知限制与暂缓事项
 
-- **Completion is worker self-declaration** — there is no independent evaluator or verifier deciding whether the objective is actually complete; evaluator policy and evaluator-driven continuation are deferred.
-- **Foreground only** — there is no job id, background collection, process-resume checkpoint, scheduler, or wall-clock start policy.
-- **The workspace is the only cross-round long-term memory** — one bounded report is the explicit handoff, and uncommitted conversational reasoning disappears with each child.
-- **One round is one fresh child** — there is no within-round fan-out, model/provider switching, fork context, or model-call-selected provider.
-- **Ordinary child failure is terminal for the run** — the fixed script reports the failed round and last successful handoff but does not retry; fatal workflow infrastructure failures can end before that state is returned.
-- **Only round count bounds aggregate effort** — token, price, and elapsed-time budgets are deferred.
+- **完成由 worker 自行声明**：没有独立的评估器或验证器判断目标是否实际完成；评估器策略及评估器驱动的延续均暂缓处理。
+- **仅支持前台**：没有 job id、后台收集、进程恢复检查点、调度器或基于挂钟时间的启动策略。
+- **工作区是唯一的跨 Round 长期记忆**：一份有界报告作为显式交接内容，每个子 agent 结束后，未提交的对话推理都会消失。
+- **一个 Round 对应一个全新子 agent**：Round 内没有扇出、模型/提供方切换、fork 上下文或由模型调用选择的提供方。
+- **普通子 agent 失败会终止运行**：固定脚本报告失败的 Round 和上一次成功交接，但不会重试；致命的工作流基础设施失败可能在该状态返回前结束。
+- **聚合工作量仅受 Round 数量限制**：token、价格和耗时预算均暂缓处理。

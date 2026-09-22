@@ -1,31 +1,29 @@
-# Agent Note: Web `/export` shares the streamed Session ZIP download
+# Agent Note: Web `/export` 共用流式 Session ZIP 下载
 
 Status: implemented
 
-English | [中文](2026-08-11-web-export-command-and-dialog.zh.md)
-
 ## Problem
 
-Session export needs a stable Session-level visible action and an equivalent slash-command path. A second backend reader or Host-path writer would duplicate the download implementation and introduce platform-specific file-permission and path-reveal problems.
+Session 导出需要一个稳定的 Session 级外显入口，以及语义等价的斜杠命令路径。第二套后端读取器或 Host 路径写入器会重复下载实现，并引入平台相关的文件权限和路径公开问题。
 
 ## Decision
 
-`@deepseek-ai/dsh-session-log-export` registers a Web-only `/export` human command and provides the browser `ctx.sessionLogDownload` controller. The command records an ordinary `command/run` and `command/done`; after `command.execute` returns a successful result, `dsh-client-ui-commands` emits a local acknowledgment that asks this browser's controller to download ApiProxy's existing `GET /api/session.export` ZIP. Other clients render the broadcast command nodes without repeating the browser side effect. The Session Header renders no export control ([removal note](../simplification/2026-09-20-session-header-export-control-removal.md)), so the browser side effect has a single entry: the command submitted in this browser. The download uses a `HEAD` preflight for preparation errors, then hands the GET URL to the browser download manager so JavaScript never buffers the ZIP; the controller owns the in-flight state and the Modal that reports the outcome.
+`@deepseek-ai/dsh-session-log-export` 注册 Web 专用的 `/export` 用户命令，并提供浏览器 `ctx.sessionLogDownload` 控制器。该命令记录普通的 `command/run` 和 `command/done`；`command.execute` 返回成功结果后，`dsh-client-ui-commands` 会发布本地确认，请求当前浏览器的控制器下载 ApiProxy 现有的 `GET /api/session.export` ZIP。其他客户端会渲染广播的命令节点，但不会重复执行浏览器副作用。Session Header 不再渲染导出控件（[移除记录](../simplification/2026-09-20-session-header-export-control-removal.md)），浏览器副作用因此只有提交命令这一个入口。下载通过 `HEAD` 预检获得准备阶段错误，再把 GET URL 交给浏览器下载管理器，因此 JavaScript 不会缓冲 ZIP；进行中状态与结果 Modal 由控制器持有。
 
-The contribution occupies the right-aligned `conversation.session.header.utilities` list only to mount the shared Modal (that seat is this package's only Session-scoped mount point), and renders no visible header control. The title-adjacent `conversation.session.header.actions` list continues to own mode, Subagent, and Task entries, so mounting Session export does not reorder or move them. The export contribution does not observe Session history. A per-Session controller collapses concurrent gestures, aborts active preflights when its plugin disposes, ignores late requests after disposal, and preserves a user's closed state when the request later completes.
+贡献项占用最右侧的 `conversation.session.header.utilities` 列表只为挂载共享 Modal（该座位是本包唯一的会话级挂载点），不渲染任何可见的页头控件。标题旁的 `conversation.session.header.actions` 列表继续承载模式、Subagent 和 Task 配置项，挂载 Session export 不会改变它们的顺序或位置。导出贡献不观察 Session 历史。逐 Session 控制器会折叠并发操作，在插件释放时取消活动预检，忽略释放后的迟到请求，并在请求后来完成时保留用户已经关闭弹窗的状态。
 
-The ZIP endpoint and persistence `readRaw` capability remain owned by `dsh-host-apiproxy` and the persistence package. The endpoint flushes a live root Session before reading its artifact, so the local acknowledgment cannot race ahead of durable command lifecycle rows. This package does not serialize Session events, write Host files, deliver Host paths, or implement SQLite fallback.
+ZIP 端点与持久化 `readRaw` 能力仍由 `dsh-host-apiproxy` 和持久化包拥有。端点会在读取工件前 flush 活动的根 Session，因此本地确认不会早于持久命令生命周期行。本包不序列化 Session 事件、不写 Host 文件、不交付 Host 路径，也不实现 SQLite 回退。
 
-The package is an ordinary Client aggregate project. Its single `tsconfig.json` compiles the Node loader entries and browser contribution together; Host-side tests still exercise the command and invariant through their source entries.
+本包是普通的 Client 聚合项目。单一 `tsconfig.json` 会一起编译 Node loader 入口与浏览器贡献；Host 侧测试仍通过源码入口验证命令与 invariant。
 
 ## Alternatives considered
 
-**Put the visible action in Trajectory.** Rejected because export is a Session-level operation and must remain discoverable without opening a diagnostic view.
+**把外显入口放进 Trajectory。** 不采用，因为导出是 Session 级操作，用户不应先打开诊断视图才能发现它。
 
-**Write a Host-side JSONL file from `/export`.** Rejected because it would diverge from the descendant-and-attachment ZIP, require Windows ACL handling, and return a Host path that may be meaningless to a remote browser.
+**让 `/export` 写入 Host 侧 JSONL 文件。** 不采用，因为这会偏离包含子 Session 与附件的 ZIP，需要处理 Windows ACL，并返回对远程浏览器可能没有意义的 Host 路径。
 
-**Keep both Header and Trajectory buttons.** Rejected because two visible controls for the same Session operation create duplicate ownership and inconsistent placement.
+**同时保留 Header 与 Trajectory 按钮。** 不采用，因为两个外显控件执行同一项 Session 操作，会形成重复归属和不一致的位置。
 
 ## Consequences
 
-`/export` downloads the ZIP and shows the Modal's feedback. An executed command remains visible in the durable transcript without creating a model turn. The preflight reports failures found before streaming starts; failures while the browser consumes the GET remain browser-download failures. Deployments whose persistence backend has no raw per-Session artifact receive the endpoint's existing failure; SQLite support remains separate work. Command availability before a Session's first turn is separate work.
+`/export` 下载该 ZIP 并显示 Modal 的反馈。已执行命令保留在持久文本记录中，且不创建模型轮次。预检会报告流式传输开始前发现的失败；浏览器消费 GET 时发生的失败仍属于浏览器下载失败。持久化后端没有逐 Session 原始工件时，用户会收到端点现有的失败；SQLite 支持保留为独立工作。Session 首轮前的命令可用性属于独立工作。

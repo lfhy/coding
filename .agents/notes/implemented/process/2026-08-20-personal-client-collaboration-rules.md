@@ -1,31 +1,29 @@
-# Agent Note: Personal client collaboration rules
+# Agent Note: 个人客户端协作规则
 
 Status: implemented
 
-English | [中文](2026-08-20-personal-client-collaboration-rules.zh.md)
+## 问题
 
-## Problem
+本 fork 主要通过 agent 协作维护。任务完成后不提交会让可用状态依赖未跟踪的工作树，而源码中混用英文和中文注释会使本地维护语言不一致。为不可能影响其输入的指令或说明运行全仓文档和 lint 命令，会耗时构建无关产物，并可能与并发生成器争用。若逐字套用参考客户端的 Go 规则，会为显而易见的 TypeScript、Python 或 C 代码添加重复注释。
 
-The fork is maintained primarily through agent-assisted work. Leaving finished task changes uncommitted makes the usable state depend on an untracked working tree, while mixed English and Chinese source comments make the local maintenance language inconsistent. Running repository-wide documentation and lint commands for instructions or prose that cannot affect their inputs also spends time building unrelated artifacts and can contend with a concurrent generator. Copying the reference client's Go rule literally would add comments that restate self-evident TypeScript, Python, or C code.
+## 决策
 
-## Decision
+项目自有源码随代码新写或修改的注释和 JSDoc 使用简体中文。它们说明非显然行为、失败、所有权、时序、安全限制或模块定位；改动区域内的既有注释也遵循同一规则。Vendored、第三方、生成代码、许可证、协议字面量和用户可见文本保持已有语言。
 
-Project-owned source comments and JSDoc written or changed with code use Simplified Chinese. They document non-obvious behavior, failure, ownership, timing, security limits, or module orientation; existing comments in the changed code area follow the same rule. Vendored, third-party, generated, license, protocol-literal, and user-visible text keeps its existing language.
+相关验证通过后，除非用户明确要求不提交，agent 创建一条简洁的中文 Git commit。它只暂存当前任务文件，绝不吸收工作树中无关的脏改动。检查被外部状态或已确认的无关时序失败阻塞时，交付说明记录该情况，同时仍以针对性检查覆盖修改行为。
 
-After relevant verification passes, an agent creates one concise Chinese Git commit unless the user explicitly requests no commit. It stages only files belonging to the current task and never absorbs unrelated dirty worktree changes. A check blocked by external state or a confirmed unrelated timing failure is recorded in the handoff, while focused checks still cover the changed behavior.
+验证按改动路径选择。指令和未配对说明只需审阅与 `git diff --check`；双语文档补充 scoped pair 检查，Agent Note 补充分级和格式检查。只有代码、配置、生成器、生成产物或网站输入变更时，才运行 `lint`、`doc-sync` 和构建。共享构建产物的命令串行执行。
 
-Verification follows the changed paths. Instructions and unpaired prose need review plus `git diff --check`; paired documents add scoped pairing checks, and Agent Notes add their classification and format checks. `lint`, `doc-sync`, and builds run only when their code, configuration, generator, generated-output, or website inputs changed. Commands that share build artifacts run serially.
+## 曾考虑的替代方案
 
-## Alternatives considered
+**要求每个函数上方都有中文注释。** 不予采用，因为这会为直接明了的代码制造复述，削弱真正有用的注释。
 
-**Require a Chinese comment above every function.** Rejected because it would create restatements around straightforward code and weaken the useful comments.
+**Client 包保留英文注释。** 不予采用，因为 Client 代码属于项目自有代码，应与 fork 其余部分使用同一维护语言。
 
-**Keep English comments in Client packages.** Rejected because Client code is project-owned and should follow the same maintenance language as the rest of the fork.
+**继续手动提交。** 不予采用，因为已完成并验证的工作容易遗失，或与后续任务混在一起。
 
-**Leave commits manual.** Rejected because completed, verified work would remain easy to lose or mix with a later task.
+**每次说明变更都运行完整文档与 lint 门禁。** 不予采用，因为指令和孤立说明无法改变目录、网站输出或 TypeScript lint 结果；并发的大型门禁还会争用共享产物。
 
-**Run full documentation and lint gates for every prose change.** Rejected because instructions and isolated prose cannot change catalogs, site output, or TypeScript lint results; broad concurrent gates also contend for shared artifacts.
+## 后果
 
-## Consequences
-
-The root and Client instructions share one comment-language rule without changing the language of public protocol data or third-party code. Each completed task leaves an isolated commit unless the user chooses a different handoff, and verification gaps remain visible rather than being hidden by the commit. Pure instruction and prose changes avoid unrelated repository-wide work while preserving the checks that validate their own files.
+根目录和 Client 子树共享同一注释语言规则，同时不改变公开协议数据或第三方代码的语言。除非用户选择不同的交付方式，每个完成任务都会留下独立提交；验证缺口继续明确记录，不会被提交掩盖。纯指令和说明改动不再运行无关的全仓工作，同时保留验证自身文件的检查。

@@ -1,18 +1,18 @@
 ---
 name: dsh-doc-site-sync
-description: Use when publishing, updating, moving, or removing DeepSeek Harness documentation website pages; editing website/docs.ts mappings or navigation; diagnosing a page missing from the VitePress site; fixing projected documentation links; or running the docs:dev, docs:check, and doc-sync workflow after website-content changes.
+description: Use when publishing, updating, moving, or removing DeepSeek Harness documentation website pages; editing website/docs.ts mappings or navigation; diagnosing a page missing from the VitePress site; fixing projected documentation links; or running the docs:dev and docs:check workflow after website-content changes.
 ---
 
 # Synchronizing the DeepSeek Harness Documentation Site
 
 Keep repository Markdown as the only editable content source. Treat the website as a tested projection: [website/docs.ts](../../../website/docs.ts) selects public pages, [scripts/project-doc-site.ts](../../../scripts/project-doc-site.ts) rewrites them into the disposable `website/.generated/` tree, and VitePress builds that tree.
 
-Repository docs default to one Chinese `foo.md`; do not create locale directories or a bilingual triplet for a new page. A standalone Chinese source projects through `mirroredPages()` when both existing route trees must remain available. Legacy triplets may continue to use `pairedPages()`: `foo.zh.md` projects to the root route and `foo.md` to `/en/` until that page receives an explicit site migration.
+Repository docs use one Chinese `foo.md` per page; never create locale directories or a bilingual triplet. Every page projects through `mirroredPages()` into the single `root` locale, and the site has no `/en/` route tree.
 
 ## Read the owning contracts
 
 - Read [docs/AGENTS.md](../../../docs/AGENTS.md) and use [dsh-doc-standards](../dsh-doc-standards/SKILL.md) when deciding where content belongs or changing product documentation prose.
-- Follow the Chinese-canonical rule in [docs/AGENTS.md](../../../docs/AGENTS.md#writing-rules). For a deliberately retained legacy pair, follow the [compatibility contract](../../../docs/i18n/README.md); never invoke the extended translation skill automatically.
+- Follow the Chinese single-file rule in [docs/AGENTS.md](../../../docs/AGENTS.md#writing-rules).
 - Read the current `DocsPage` type and entries in [website/docs.ts](../../../website/docs.ts) before changing the manifest; do not rely on a remembered field set.
 - Read [website/.vitepress/config.ts](../../../website/.vitepress/config.ts) before adding a new section, sidebar collection, locale, or top-level navigation item.
 
@@ -24,21 +24,21 @@ Repository docs default to one Chinese `foo.md`; do not create locale directorie
 - **Publish a generated catalog:** map the generated `docs/` file, but change its generator or source metadata rather than editing the catalog by hand.
 - **Change site structure:** update the manifest for ordinary pages; update VitePress configuration only when the existing sidebar, section, or locale model cannot express the change.
 
-Never edit or commit `website/.generated/`, `website/.cache/`, or `website/.dist/`. Except for `website/AGENTS.md`, never add Markdown under `website/`; locale and route directories such as `website/zh-CN/`, `website/en/`, and `website/api/` are invalid source layouts. Keep generated catalogs under `docs/`, freshness-gate them there, and publish them through the manifest.
+Never edit or commit `website/.generated/`, `website/.cache/`, or `website/.dist/`. Except for `website/AGENTS.md`, never add Markdown under `website/`; locale and route directories such as `website/zh-CN/`, `website/en/`, and `website/api/` are invalid source layouts. Keep generated catalogs under `docs/`, regenerate them with their owning generator, and publish them through the manifest.
 
 ## Add or update a manifest entry
 
 Set every `DocsPage` field deliberately:
 
-- `source`: repository-relative canonical Markdown path. Use `mirroredPages()` for one Chinese source served through both current locale route trees. For a deliberately retained complete legacy pair, pass its unsuffixed path through `pairedPages()` so it derives the `.zh.md` source and aliases.
+- `source`: repository-relative canonical Markdown path. Every page goes through `mirroredPages()`.
 - `route`: public VitePress path including the `.md` suffix.
 - `label`: sidebar label, not necessarily the document H1.
-- `sidebar`: reuse `zh-guide`, `zh-develop`, or `en-docs` unless the information architecture genuinely needs another collection.
+- `sidebar`: reuse `zh-guide`, `zh-develop`, or `zh-reference` unless the information architecture genuinely needs another collection.
 - `section`: reuse an existing section when possible. If adding one, also place it in `sectionOrder` in the VitePress config.
 - `order`: stable order within the section.
 - `sourceAliases`: optional additional repository paths that should resolve to this page when links are projected. It does not create another public route.
 
-Use `mirroredPages()` as the normal mapping for a standalone Chinese source in both route trees. Convert it to `pairedPages()` only when the user explicitly requests and supplies a maintained English counterpart. Keep the manifest an explicit public allowlist. Do not publish RFCs, postmortems, testing guides, `AGENTS.md`, or maintainer workflows merely because they exist under `docs/`; add internal material only when the user explicitly expands what the site publishes.
+Use `mirroredPages()` for every page; it projects one Chinese source into the single `root` locale. Keep the manifest an explicit public allowlist. Do not publish RFCs, postmortems, testing guides, `AGENTS.md`, or maintainer workflows merely because they exist under `docs/`; add internal material only when the user explicitly expands what the site publishes.
 
 ## Preserve link behavior
 
@@ -69,12 +69,12 @@ Run the focused website gate before treating the mapping as valid:
 pnpm docs:check
 ```
 
-If Markdown link checks pass but the site build reports a missing fragment, follow the `verify-doc-site-fragments` source and target paths. Preserve the English GitHub id with an explicit alias in authored Markdown or in the owning generator.
+If the site build reports a missing fragment, follow the source and target paths it prints. Preserve the upstream anchor id with an explicit alias in authored Markdown or in the owning generator.
 
 Before committing a documentation-site change, run:
 
 ```sh
-pnpm run doc-sync
+pnpm docs:check
 pnpm run lint
 git diff --check
 ```

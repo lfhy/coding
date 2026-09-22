@@ -1,27 +1,25 @@
-# Agent Note: The chat flow surfaces a max-tokens turn end
+# Agent Note: 聊天流展示 max-tokens 结束的轮次
 
 Status: implemented
 
-English | [中文](2026-08-12-max-tokens-turn-end-notice.zh.md)
-
 ## Problem
 
-The agent loop records `max-tokens` as its own `turn/end` reason, but no user surface consumed it. In the Web chat flow only `reason.kind === 'error'` built a conversation node, and the unknown-surface fallback claims append-surface events only, so a turn the provider cut at its output cap ended with no visible sign: the truncated answer read as a normal completion, and the user had no way to tell why the run stopped (issue #1522).
+agent loop 已把 `max-tokens` 记录为独立的 `turn/end` 原因，但没有任何用户表面消费它。Web 聊天流中只有 `reason.kind === 'error'` 会生成会话节点，unknown-surface 兜底又只接管 append-surface 事件，于是被提供方在输出上限处截断的轮次没有任何可见迹象：被截断的回答看起来和正常完成一样，用户无从得知运行为何停止（issue #1522）。
 
 ## Decision
 
-A `turn-max-tokens` conversation node Definition matches `turn/end` with `reason.kind === 'max-tokens'` and materializes a persistent chat row at the turn position: a warning StateDot, a localized title, and guidance that the truncated output is preserved and sending "continue" resumes in a new turn. The node derives from the durable session event alone, so refresh, restore, and history replay rebuild it identically. It shows no token numbers: the event carries none, and the notice must not fabricate budget data the provider did not report.
+新增 `turn-max-tokens` 会话节点 Definition，匹配 `reason.kind === 'max-tokens'` 的 `turn/end`，在该轮位置生成一条持久聊天行：warning 状态的 StateDot、本地化标题，以及说明已截断输出会保留、发送“继续”可在新一轮接着输出的指引。节点只从持久会话事件推导，因此刷新、恢复和历史回放会重建出完全一致的结果。提示不显示任何 token 数字：事件本身不携带数量，提示也不得伪造提供方未报告的预算数据。
 
-The renderer registers under the keyed `conversation.chat.node` seat like every chat row, and the legacy chat-snapshot contribution includes the node. The fixture history gained a max-tokens sample turn (72; the image and todo turns shifted to 73 and 74), and an assembled keyless snapshot pins the dot state, title, and hint, so a regression that routes max-tokens through the error presentation or silences it again changes a golden.
+渲染器与其他聊天行一样注册在按 kind 分发的 `conversation.chat.node` 槽位下，legacy chat-snapshot 投影也包含该节点。fixture 历史新增了一个 max-tokens 样本轮（72，图片轮和 todo 轮顺移为 73、74），并有一条 assembled keyless snapshot 钉住圆点状态、标题和指引文案，把 max-tokens 路由回错误样式或再次静默的回归都会改动 golden。
 
 ## Alternatives considered
 
-**Extending `turn-error` with a max-tokens arm** — rejected: the acceptance for issue #1522 requires that max-tokens not read as a provider error; a shared node kind couples the two presentations, and the two reasons carry different data (an error payload versus nothing).
+**在 `turn-error` 上加一个 max-tokens 分支** — 否决：issue #1522 的验收要求 max-tokens 不得呈现为普通 provider error；共用节点会耦合两种呈现，且两种原因携带的数据不同（一个有错误负载，一个没有）。
 
-**A turn-tail marker instead of a flow row** — rejected: the tail renders closing chrome for a finished turn and its actions collapse on later turns, while the truncation notice must stay at the turn that was cut and remain visible in history without interaction.
+**用 turn-tail 标记代替独立聊天行** — 否决：turn-tail 渲染的是完成轮次的收尾信息，其操作会在后续轮次折叠，而截断提示必须停留在被截断的那一轮，并且在历史中无需交互即可看到。
 
-**A continue or retry action button on the notice** — deferred: resuming has open semantics (new turn versus same-turn splice, old-output retention rules) that issue #1522 explicitly leaves out of scope; guidance text carries the safe next step without committing to an action contract.
+**在提示上放继续或重试按钮** — 暂缓：恢复输出的语义尚未确定（新开一轮还是同轮续写、旧输出保留规则），issue #1522 明确把它排除在范围外；指引文字已给出安全的下一步，不必先固定一个操作契约。
 
 ## Consequences
 
-Max-tokens turn ends are visible, localized, and distinct from both errors and normal completion across live streaming, reload, and replay. The fixture renumbering cost two comment updates in dependent snapshots, and anything pinning fixture turn numbers must count from the new layout. Surfaces other than the Web chat flow (ACP and SDK consumers) keep mapping the reason through their own presentations and are unchanged.
+max-tokens 结束在实时流、刷新和回放中都可见、已本地化，并与错误和正常完成明确区分。fixture 重编号需要更新两处依赖 snapshot 的注释，之后钉 fixture 轮次号的改动要按新布局计数。Web 聊天流之外的表面（ACP 和 SDK 消费方）仍按各自的呈现映射该原因，本次不变。

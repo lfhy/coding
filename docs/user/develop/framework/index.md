@@ -1,12 +1,10 @@
-# Plugins and lifecycle
+# 插件与生命周期
 
-English | [中文](index.zh.md)
+本页介绍 Cordis 插件模型和生命周期状态机。
 
-This page describes the Cordis plugin model and lifecycle state machine.
+## Fiber 状态机
 
-## Fiber state machine
-
-Every loaded plugin owns a **Fiber** scope with the following states:
+每个被加载的插件都拥有一个 **Fiber** 作用域，其状态如下：
 
 ```
 PENDING → LOADING → ACTIVE
@@ -14,18 +12,18 @@ PENDING → LOADING → ACTIVE
 ACTIVE → UNLOADING → DISPOSED
 ```
 
-| State | Meaning |
+| 状态 | 含义 |
 |------|------|
-| PENDING | Declared, but required dependencies are not ready |
-| LOADING | Dependencies are ready and `apply` is running |
-| ACTIVE | The plugin is running |
-| FAILED | `apply` threw an error |
-| UNLOADING | The plugin is unloading and disposing resources |
-| DISPOSED | The plugin is fully unloaded |
+| PENDING | 已声明，但所需依赖未就绪 |
+| LOADING | 依赖就绪，正在执行 `apply` |
+| ACTIVE | 插件运行中 |
+| FAILED | `apply` 抛出异常 |
+| UNLOADING | 插件正在卸载并释放资源 |
+| DISPOSED | 已完全卸载 |
 
-## Dependency-driven loading
+## 依赖驱动的加载
 
-A plugin with `inject` waits for every required service before loading:
+声明了 `inject` 的插件会等待所有必需服务就绪：
 
 ```ts ignore-check
 export const inject = ['tools', 'llm']
@@ -35,11 +33,11 @@ export function apply(ctx: Context) {
 }
 ```
 
-If a required service disappears, for example during provider replacement, the plugin unloads automatically (ACTIVE → DISPOSED) and loads again when the service returns.
+如果依赖的服务消失（例如提供方被替换时），插件会被自动卸载（ACTIVE → DISPOSED），待服务恢复后重新加载。
 
-## Automatic cleanup
+## 自动清理机制
 
-Every registration made through `ctx` is undone when the plugin unloads:
+通过 `ctx` 做的任何注册，在插件卸载时都会自动撤销：
 
 ```ts ignore-check
 export function apply(ctx: Context) {
@@ -54,17 +52,17 @@ export function apply(ctx: Context) {
 }
 ```
 
-The framework tracks and disposes all of these operations:
-- `ctx.on(event, handler)` — event listener
-- `ctx.tools.register(tool)` — tool registration
-- `ctx.llm.registerAdapter(names, adapter)` — LLM adapter registration
-- `ctx.effect(() => cleanup)` — custom resource
+以下操作都会被自动追踪和清理：
+- `ctx.on(event, handler)` — 事件监听
+- `ctx.tools.register(tool)` — 工具注册
+- `ctx.llm.registerAdapter(names, adapter)` — LLM（大语言模型）适配器注册
+- `ctx.effect(() => cleanup)` — 自定义资源
 
-During unload, disposer invocation starts in reverse registration order, but multiple async disposers run concurrently and have no serial completion guarantee. Put order-dependent cleanup in one disposer returned from a single `ctx.effect()` and await its steps serially there.
+插件卸载时，处置器按注册顺序的逆序开始调用，但多个异步处置器会并发执行，不保证逐个完成。存在顺序依赖的清理步骤必须放进同一个 `ctx.effect()` 返回的处置器中，由该处置器负责串行等待。
 
-## Nested contexts
+## 嵌套上下文
 
-`ctx.plugin()` creates a child Fiber that inherits the parent context but has an independent lifecycle:
+`ctx.plugin()` 创建子 Fiber，它继承父上下文但有独立的生命周期：
 
 ```ts ignore-check
 export function apply(ctx: Context) {
@@ -75,9 +73,9 @@ export function apply(ctx: Context) {
 }
 ```
 
-## Dispose semantics
+## dispose（资源释放）语义
 
-To stop a plugin instance early:
+当你需要提前终止一个插件实例：
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
@@ -91,22 +89,22 @@ const fiber = ctx.plugin(myPlugin)
 await fiber.dispose()
 ```
 
-`dispose` guarantees:
-1. All registrations owned by the plugin are removed.
-2. Child plugins are recursively unloaded.
-3. The returned promise resolves after all asynchronous cleanup finishes.
+`dispose` 保证：
+1. 该插件拥有的所有注册均被移除
+2. 它的子插件也被递归卸载
+3. 返回的 Promise 会在所有异步清理完成后兑现
 
-## Hot replacement (HMR)
+## HMR（热模块替换）
 
-With `@deepseek-ai/cordis-plugin-hmr` loaded from `cordis.yml`, editing a plugin source file triggers:
+通过 `cordis.yml` 加载 `@deepseek-ai/cordis-plugin-hmr` 后，修改插件源文件会触发：
 
-1. Unload the old plugin and clean up its registrations.
-2. Load the new code.
-3. Run the new `apply`.
+1. 卸载旧插件（清理所有注册）
+2. 重新加载新代码
+3. 执行新的 `apply`
 
-Because plugin registrations clean themselves up, hot replacement does not retain registrations from the old instance.
+因为插件注册会被自动清理，所以热替换不会保留旧实例的注册。
 
-## Example lifecycle
+## 生命周期示例
 
 ```ts ignore-check
 export function apply(ctx: Context) {
@@ -119,19 +117,19 @@ export function apply(ctx: Context) {
 }
 ```
 
-Loading prints:
+加载时输出：
 ```
 plugin loading
 effect registered
 ```
 
-Unloading prints:
+卸载时输出：
 ```
 effect cleaned up
 ```
 
-## Next steps
+## 下一步
 
-- [Services and dependencies](./service.md) — expose a capability to other plugins
-- [Event system](./events.md) — communicate between plugins
-- [Cordis tutorial](../../../cordis-tutorial/index.md) — the same lifecycle, services, and events built step by step against the Cordis runtime
+- [服务与依赖](./service.md) — 让插件向其他插件提供能力
+- [事件系统](./events.md) — 在插件之间通信
+- [Cordis 框架教程](../../../cordis-tutorial/index.md) — 在 Cordis 运行时上逐步搭出同一套生命周期、服务与事件

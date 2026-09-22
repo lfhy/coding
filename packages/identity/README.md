@@ -1,9 +1,7 @@
-# identity/ — shared identity
+# identity/ — 共享身份
 
-English | [中文](README.zh.md)
+跨产品领域共享的身份值。这些值不表示经过身份验证的账户。
 
-Identity values shared across product domains. These values do not represent an authenticated account.
-
-| Package | Role | ctx key |
+| 包 | 职责 | ctx key |
 |---|---|---|
-| [`anonymous-user-id/`](anonymous-user-id/README.md) | Persists one anonymous Harness-home correlation id for telemetry, feedback, and DeepSeek requests | — |
+| [`anonymous-user-id/`](anonymous-user-id/README.md) | 为遥测、反馈和 DeepSeek 请求持久化一个限定于 Harness home 的匿名关联 id | — |

@@ -1,35 +1,33 @@
-# Agent Note: Independent CI consumer build
+# Agent Note: CI 消费方独立构建
 
 Status: implemented
 
-English | [中文](2026-07-30-independent-ci-consumer-build.zh.md)
+## 问题
 
-## Problem
+[大型运行器拓扑](2026-07-22-evidence-based-larger-hosted-runners.md)将静态门禁清单和构建后消费方清单分配给不同作业，但二者共用的构建由静态作业负责。静态作业要等所有静态门禁完成后才上传生成的目录树，消费方作业则在恢复该目录树前声明了作业级依赖。基于编译输出的快照与发布校验确实需要完整构建，但不依赖运行时依赖闭包检查、文档生成、模块图验证或 Knip。
 
-The [larger-runner topology](2026-07-22-evidence-based-larger-hosted-runners.md) gave the static and built-consumer inventories separate jobs, but the static job owned their shared build. It uploaded the emitted tree only after every static gate completed, and the consumer job declared a job-level dependency before restoring that tree. Compiled-output snapshots and publication checks genuinely require a complete build; they do not require runtime-closure checks, documentation generation, module-graph verification, or Knip.
+这项过宽的依赖使运行器可用性成为必需关键链的一环。一次故障切换运行中，静态作业等待运行器 8 分 1 秒，随后运行 1 分 41 秒；直到此时，消费方作业才能进入同一个共享池，它又等待 10 分 34 秒，随后运行 1 分 58 秒。复用静态作业的构建省去了部分仓库工作，却让两次原本相互独立的运行器分配串行发生。
 
-That wider dependency made runner availability part of the required critical chain. In one failover run, static waited 8 minutes 1 second for a runner and ran for 1 minute 41 seconds; only then could consumers enter the same shared pool, where they waited another 10 minutes 34 seconds before running for 1 minute 58 seconds. Reusing the static build saved repository work but serialized two independent runner allocations.
+## 决策
 
-## Decision
+3 个必需 Linux 作业分别进入运行器分配。覆盖率仍只消费源码。静态作业负责无需消费生成输出的源码检查与文档检查。消费方作业负责唯一一次 Linux 构建，以及文档类型检查、基于编译输出的快照、发布校验、NodeNext 检查和 built-bin 冒烟测试。
 
-The three required Linux jobs enter runner allocation independently. Coverage remains source-only. Static owns source and documentation checks that do not consume emitted output. The consumer job owns the single Linux build together with documentation typechecking, compiled-output snapshots, publication checks, NodeNext checks, and built-bin smokes.
+消费方内部的门禁图保留实际依赖关系。构建和只消费源码的 Node 兼容性检查率先启动；publint 等待构建完成，已构建包不变式检查会验证该发布视图，所有编译输出消费方都等待这项验证完成。因此，示例和 Web 快照仍会在普通 Node 下验证当前 `lib/` 输出；同时，没有任何 GitHub 作业需要等待无关作业或传输已构建目录树产物。
 
-The consumer's internal gate graph preserves the real dependency. Build and source-only Node compatibility start first; publint waits for build, built-package invariants validate that publication view, and every compiled-output consumer waits for that validation. Example and Web snapshots therefore continue to exercise current `lib/` output under plain Node, while no GitHub job waits for an unrelated job or transfers a built-tree artifact.
+Windows 与串行参考聚合流程仍各自负责自身构建。本变更仅涉及拉取请求的必需 Linux 拓扑；`all checks passed` 仍聚合同一批具名作业，任一依赖未成功时都会失败。
 
-Windows and serial reference aggregates retain their own build ownership. The change is confined to the required pull-request Linux topology; `all checks passed` still aggregates the same named jobs and fails for any unsuccessful dependency.
+## 曾考虑的替代方案
 
-## Alternatives considered
+**继续发布静态作业的构建。** 此方案只需构建一次，却无法表达实际的步骤级依赖：GitHub 会让消费方等到整个静态作业结束后才可请求运行器。故障切换池饱和时，再次排队的延迟超过了省下的构建时间。
 
-**Keep publishing the static job's build.** This preserves one build but cannot express the actual step-level dependency: GitHub makes the consumer wait for the whole static job before it can request a runner. The saved build time is smaller than the repeated queue delay during failover saturation.
+**在两个作业中分别独立构建。** 在静态作业中保留构建、同时移除作业依赖，可以恢复并行分配，但每个拉取请求都会对同一目录树编译两次。将文档类型检查和构建职责移给消费方，则仍只需构建一次。
 
-**Build independently in both jobs.** Removing the job dependency while leaving build in static would restore parallel allocation, but every pull request would compile the same tree twice. Moving documentation typechecking and build ownership to the consumer preserves one build.
+**新增专用构建作业。** 职责单一的生产方能让依赖名称与实际关系相符，但会在消费方之前新增第 4 个需要设置和分配运行器的阶段。所有需要持续使用生成输出的任务都已由消费方作业负责，因此单独增设生产方也没有第二个相互独立的消费方。
 
-**Add a dedicated build job.** A narrow producer would make the dependency name accurate, but it would add a fourth setup and runner-allocation stage before consumers. The consumer already owns every long-lived use of emitted output, so a separate producer has no second independent consumer.
+**仅在故障切换期间合并静态作业与消费方作业。** 单个长作业可以避免第二次分配，但带条件分支的作业清单与结果聚合会形成第二套 CI 拓扑。独立作业能让托管池与故障切换池使用同一作业图。
 
-**Combine static and consumers only during failover.** One long job would avoid the second allocation, but conditional job inventories and result aggregation would create a second CI topology. Independent jobs preserve the same graph on hosted and failover pools.
+## 后果
 
-## Consequences
+静态作业与消费方作业的排队延迟会相互重叠，不再累加。消费方的活动耗时包含构建；静态作业则变短，产物上传、下载、压缩和解压步骤全部消失。Linux 构建总次数仍为 1 次。
 
-Static and consumer queue delays overlap instead of accumulating. The consumer's active time includes the build, while the static job becomes shorter and artifact upload, download, compression, and extraction disappear. Total Linux build count remains one.
-
-A static failure no longer prevents the consumer inventory from producing its own evidence; the final verdict still fails. Build and documentation-typecheck failures appear under `node 24 / snapshots and artifacts` rather than `node 24 / static`, matching the job that owns their output dependency.
+静态作业失败不再阻止消费方清单生成自身证据；最终判定仍会失败。构建与文档类型检查失败会归入 `node 24 / snapshots and artifacts` 而非 `node 24 / static`，这一归类与输出依赖的实际归属一致。

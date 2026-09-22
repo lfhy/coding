@@ -1,61 +1,59 @@
-# Agent Note: Search render intent — grep and glob emit a structured search card
+# Agent Note: 搜索渲染意图——grep 与 glob 产出结构化搜索卡片
 
 Status: implemented
 
-English | [中文](2026-07-30-search-render-card.zh.md)
+## 问题
 
-## Problem
+`grep` 与 `glob` 返回结构化的 canonical 值——`grep` 是扁平的 `{ matches: [{ path, lineNumber, line }] }`，`glob` 是 `{ paths: string[] }`——但每个 UI 只见过它们面向模型的渲染文本：`grep` 把匹配按文件头分组、每行 `Line N:`，`glob` 打印换行连接的路径列表，两者在内联上限（`grepMaxMatches`，默认 250；`globMaxResults`，默认 100）把后续结果落到 spill 文件时都追加一个 spill 脚注。想把搜索结果渲染成可展开的按文件匹配组、或可选择的路径列表的 Web 前端，只能去重新解析那段文本。两个工具都已声明调用时的[渲染意图](../architecture/2026-07-02-tool-render-intent-union.md)（`GenericCallView`，`kind: 'search'`），但没有结果阶段视图，所以已完成的调用回退到渲染原始文本的 generic 卡片。
 
-`grep` and `glob` return structured canonical values — `grep` a flat `{ matches: [{ path, lineNumber, line }] }`, `glob` a `{ paths: string[] }` — but every UI only ever saw their model-facing render text: `grep` groups its matches under file headers with `Line N:` rows, `glob` prints a newline-joined path list, and both append a spill footer when the inline cap (`grepMaxMatches`, default 250; `globMaxResults`, default 100) drops later results to a spill file. A web frontend that wants to render a search result as an expandable per-file group of matches, or as a selectable path list, had to re-parse that text. Both tools already declared a call-time [render intent](../architecture/2026-07-02-tool-render-intent-union.md) (`GenericCallView`, `kind: 'search'`) but no result-time view, so the completed call fell back to the generic card that renders the raw text.
+结构化 canonical 值不通过协议传输：只有面向模型的渲染文本、以及当工具声明了 `output.presentationMeta` 时的一份 JSON 元数据，会经 `tool/result` 事件到达客户端（[canonical-output 约定](../architecture/2026-07-20-canonical-tool-output-contract.md)）。因此携带结构化数据的结果时视图必须把数据投影进 `presentationMeta`，再在 `presentResult` 里读回——与 `write`/`edit` 的 diff 卡片走同一条路。
 
-The structured canonical value does not cross the wire: only the model-facing render text and, when a tool declares `output.presentationMeta`, a JSON metadata payload reach the client, threaded through the `tool/result` event ([canonical-output contract](../architecture/2026-07-20-canonical-tool-output-contract.md)). A result-time view carrying structured data therefore has to project that data into `presentationMeta` and read it back in `presentResult` — the same path `write`/`edit` use for their diff cards.
+## 决定
 
-## Decision
+`packages/core/tools/src/presentation.ts` 把 `card: 'search'` 作为 `SearchResultView` 加入 `ToolResultView` 联合，这是一个以 `shape` 判别的视图，表达两个工具的形状：`SearchMatchesResultView`（`shape: 'matches'`）以 `files: { path, matches: { lineNumber, line }[] }[]` 承载 `grep` 按文件分组的匹配，`SearchPathsResultView`（`shape: 'paths'`）承载 `glob` 的扁平 `paths: string[]`。两者都带 `truncated: boolean` 与 `total: number`。
 
-`packages/core/tools/src/presentation.ts` adds `card: 'search'` to the `ToolResultView` union as `SearchResultView`, a `shape`-discriminated view that expresses both tools' shapes: `SearchMatchesResultView` (`shape: 'matches'`) carries `grep`'s matches grouped by file as `files: { path, matches: { lineNumber, line }[] }[]`, and `SearchPathsResultView` (`shape: 'paths'`) carries `glob`'s flat `paths: string[]`. Both carry `truncated: boolean` and `total: number`.
+判别子是 `shape` 而非 `kind`，是刻意为之：同一个 presentation 模块已经给 `GenericCallView` 一个 `kind: ToolCallKind` 字段，其取值恰好包含 `'search'`（图标类别）。持有 `ToolCallView | ToolResultView` 的桥接层会看到两个含义不同的 `kind` 字段；结果变体用 `shape` 把两者分开。
 
-The discriminant is `shape`, not `kind`, deliberately: the same presentation module already gives `GenericCallView` a `kind: ToolCallKind` field whose values include `'search'` (the icon category). A bridge holding a `ToolCallView | ToolResultView` would see two `kind` fields with two meanings; `shape` for the result variant keeps the two apart.
+用一个带两种形状的视图而非两张卡片，因为两个工具是同一个视觉对象——一个搜索结果——Web 消费方先在一个 `card` 值上分支，再在 `shape` 上分支决定行布局。判别式 `shape` 让每个变体的字段保持非可选（matches 视图总有 `files`，paths 视图总有 `paths`），而不是一个所有形状相关字段都可选的单一接口。
 
-One view with two shapes rather than two cards, because both tools are the same visual object — a search result — and a web consumer switches on one `card` value, then on `shape` for the row layout. The discriminated `shape` keeps each variant's fields non-optional (a matches view always has `files`, a paths view always has `paths`) instead of a single interface where every shape-specific field is optional.
+该视图**不**携带结果文本。把面向模型的 `result.content` 附到视图上不会产生效果——消费方的回退路径本就读取原始 `tool/result` 内容——却会把整段搜索文本又序列化进持久化视图一遍。视图只承载结构化形状；无 search 卡片的 UI 回退到原始结果内容。
 
-The view carries **no** result text. Attaching the model-facing `result.content` would be a no-op — consumer fallbacks already read the raw `tool/result` content — and would serialize the whole search text a second time into the persisted view. The view is the structured shape only; a UI without a search card falls back to the raw result content.
+卡片标签只在结果时存在。搜索调用保持为 `GenericCallView`（`kind: 'search'`）：pending 状态没有匹配或路径可展示，所以 `SearchCallView` 能携带的东西不会比 generic 标题更多。这是与 terminal 卡片的不对称之处——terminal 的调用视图携带执行前就存在的命令、cwd、description；搜索的结构化内容只在 `execute` 之后才存在。
 
-The card tag is result-time only. A search call stays a `GenericCallView` (`kind: 'search'`): the pending state has no matches or paths to show, so there is nothing a `SearchCallView` would carry that the generic title does not. This is the asymmetry with the terminal card, whose call view carries the command, cwd, and description that exist before execution; a search's structured content exists only after `execute`.
+`packages/fs/tool-fs-search/src/presentation.ts` 拥有投影与收窄。`grepSearchMeta`/`globSearchMeta` 把 canonical 值投影为每个工具声明为 `output.presentationMeta` 的 `SearchMeta` 载荷；`presentGrepResult`/`presentGlobResult` 经 `searchViewFromMeta` 把 `result.meta` 读回。它们消费与面向模型渲染相同的已保留结果——`search-core.ts` 里的 `retainGrepMatches`/`retainGlobPaths` 只跑一次内联上限与每行预览预算，渲染与投影都取这份产出——所以文本与卡片对哪些结果幸存永不分歧，也没有第二次保留计算。`total` 是搜索找到的全部结果（截断前）；`truncated` 在上限丢弃了结果时置位。这是截断诚实点：模型看到的是被截断的内联结果加一个 spill 脚注，所以卡片不能把保留页当作完整结果——UI 读 `truncated`/`total` 显示截断指示，而非宣称模型从未有过的完整性。
 
-`packages/fs/tool-fs-search/src/presentation.ts` owns the projection and the narrowing. `grepSearchMeta`/`globSearchMeta` project the canonical value into a `SearchMeta` payload each tool declares as `output.presentationMeta`; `presentGrepResult`/`presentGlobResult` read `result.meta` back through `searchViewFromMeta`. They consume the SAME retained result the model-facing render consumes — `retainGrepMatches`/`retainGlobPaths` in `search-core.ts` run the inline cap and per-line preview budget ONCE, and both the render and the projection take that outcome — so text and card never disagree about which results survived, and there is no second retention pass. `total` is every result the search found (before capping); `truncated` is set when the cap dropped results. This is the truncation-honesty point: the model saw a capped inline result plus a spill footer, so the card must not present the retained page as the complete result — a UI reads `truncated`/`total` to show a capped indicator rather than claiming completeness the model never had.
+**meta 有自己的字节预算。** 内联上限约束的是条目数，但一次宽泛搜索保留下来的匹配（数百条长行）仍可序列化到数百 KB，而 `meta` 会随会话日志持久化并在每次请求时重发。部署的最终输出预算（`dsh-spill-policy` 的 `maxInlineBytes`）只缩减结果的 `content`——`PostToolDecision` 没有 `meta` 通道——所以投影自己负责把 `meta` 约束住。`capMetaBytes` 丢弃末尾的文件组／路径，直到序列化 meta 装进 `searchMetaMaxBytes`（配置，默认 64 KiB），并把结果标记 `truncated`。单个大到自身都装不下的条目会被保留：不变量是可丢弃处一律有界，绝不产出隐藏了真实结果的空卡片。
 
-**The meta has its own byte budget.** The inline cap bounds the item COUNT, but the retained matches of a broad search (hundreds of long lines) can still serialize to hundreds of kilobytes, and `meta` is persisted with the session log and re-sent on every request. A deployment's final output budget (`dsh-spill-policy`, `maxInlineBytes`) only shrinks a result's `content` — `PostToolDecision` has no `meta` channel — so the projection owns keeping `meta` bounded. `capMetaBytes` drops trailing file groups / paths until the serialized meta fits `searchMetaMaxBytes` (config, default 64 KiB) and marks the result `truncated`. A single item too large to fit on its own is kept: the invariant is a bounded payload wherever droppable, never an empty card that hides a real result.
+`searchViewFromMeta` 防御性地收窄不透明的 `meta`，对任何畸形或缺失载荷返回 `undefined`，使在较旧或手工编辑的回放日志上运行的 presenter 回退到 generic 卡片而非抛错。它确实接受零结果载荷（`files: []` / `paths: []`）为合法的空卡片——这是对作为参照的 `diffsFromMeta` 的刻意偏离（后者拒绝空 `diffs`），因为零匹配的 grep 是 UI 展示为「no matches」的合法结果，而非缺失的投影。`presentResult` 对失败结果、对缺失 meta（嵌套 `run_code` 分发不计算 `presentationMeta`）、以及对另一工具的 meta 形状（每个 presenter 收窄到自己的 `shape`）返回 `undefined`。
 
-`searchViewFromMeta` narrows the opaque `meta` defensively and returns `undefined` on any malformed or absent payload, so a presenter run on an older or hand-edited replayed log falls back to the generic card instead of throwing. It DOES accept a zero-result payload (`files: []` / `paths: []`) as a valid empty card — this is a deliberate departure from the mirrored `diffsFromMeta`, which rejects empty `diffs`, because a zero-match grep is a legitimate result a UI shows as "no matches", not an absent projection. `presentResult` returns `undefined` for a failed result, for absent meta (a nested `run_code` dispatch computes no `presentationMeta`), and for the other tool's meta shape (each presenter narrows to its own `shape`).
+`SearchMeta` 的成员形状是对象字面量 `type` 别名，而非视图暴露的 `SearchFileMatches`/`SearchLineMatch` 接口，因为只有 type 别名可赋给 `presentationMeta` 返回的 `JsonValue` 索引签名；两者结构等价，所以投影值仍读回为 `SearchResultView`。
 
-The `SearchMeta` member shapes are object-literal `type` aliases, not the `SearchFileMatches`/`SearchLineMatch` interfaces the view exposes, because only a type alias is assignable to the `JsonValue` index signature `presentationMeta` returns; the two are structurally identical, so the projected value still reads back as a `SearchResultView`.
+没有专用 `search` 分支的消费方会回退到同一个 generic body，并从原始结果中读取面向模型的文本。因为搜索视图不带自己的 `content`，而 grep/glob 此前返回的是 generic 卡片，所以该回退与引入 search 卡片之前的路径逐字节一致。渲染结构化 `files`/`paths` 形状的前端独立于这个后端约定及其两个生产者。
 
-A consumer without a dedicated `search` arm falls back to the same generic body and reads the model-facing text from the raw result. Because the search view carries no `content` of its own and grep/glob previously returned a generic card, that fallback stays byte-identical to the pre-search-card path. The frontend that renders the structured `files`/`paths` shape is independent of this backend contract and its two producers.
+## 考虑过的备选
 
-## Alternatives considered
+**一个扁平的 `SearchResultView` 接口，带可选 `files?` 与 `paths?`。** 否决：它让两个形状相关字段在每个值上都可选，并允许畸形视图同时带两者或都不带。`shape` 判别式让每个变体的字段保持必需，并让消费方穷尽分支。
 
-**A single flat `SearchResultView` interface with optional `files?` and `paths?`.** Rejected: it makes both shape-specific fields optional on every value and lets a malformed view carry both or neither. The `shape` discriminant keeps each variant's fields required and lets a consumer switch exhaustively.
+**复用 `kind` 作形状判别子。** 否决：同一模块里调用视图上的 `kind` 已经表示 `ToolCallKind`（图标类别，取值含 `'search'`）。结果视图上再有一个含义不同的 `kind`，对任何同时持有两者的桥接层都会冲突。
 
-**Reuse `kind` as the shape discriminant.** Rejected: `kind` already means `ToolCallKind` (the icon category, whose values include `'search'`) on the call view in the same module. A second `kind` with a different meaning on the result view collides for any bridge holding both.
+**把面向模型的文本作为视图的 `content` 附上。** 否决：对每个当前消费方是 no-op，且把整段搜索文本第二次序列化进持久化视图。视图是结构化形状；文本回退读原始结果内容。
 
-**Attach the model-facing text as the view's `content`.** Rejected: a no-op for every current consumer and a second serialization of the whole search text into the persisted view. The view is the structured shape; text fallback reads the raw result content.
+**在 `PostToolDecision` 上加 meta 通道，让 `dsh-spill-policy` 像约束 `content` 那样约束 `meta`。** 此处否决：它为一个工具的载荷改动核心工具决策约定与 spill-policy 插件。投影按配置的字节上限约束自己的 `meta` 是自包含的，且保持 seam 不变。
 
-**A meta channel on `PostToolDecision` so `dsh-spill-policy` bounds `meta` like it bounds `content`.** Rejected here: it changes the core tool decision contract and the spill-policy plugin for one tool's payload. The projection bounding its own `meta` at a config byte cap is self-contained and keeps the seam unchanged.
+**镜像 terminal 卡片双侧对称的调用时 `SearchCallView`。** 否决：搜索调用在 `execute` 前没有匹配或路径，视图只会携带 `GenericCallView` 已有的标题。
 
-**A call-time `SearchCallView` mirroring the terminal card's both-sides symmetry.** Rejected: a search call has no matches or paths before `execute`, so the view would carry only the title the `GenericCallView` already carries.
+## 后果
 
-## Consequences
+`grep` 与 `glob` 现在在每次非嵌套的成功调用上计算 `presentationMeta`，这是对已保留匹配或路径的一次有界投影——与 render 消费的是同一份保留产出，所以没有第二次保留计算，传输中也没有双份搜索文本。序列化 meta 受 `searchMetaMaxBytes` 约束，所以宽泛搜索不再把无界的结构化副本持久化进会话日志。
 
-`grep` and `glob` now compute `presentationMeta` on every non-nested successful call, a bounded projection over the already-retained matches or paths — the same retention outcome the render consumes, so there is no second retention pass and no doubled search text on the wire. The serialized meta is bounded by `searchMetaMaxBytes`, so a broad search no longer persists an unbounded structured copy into the session log.
+无 search 卡片的 UI 渲染原始 `tool/result` 内容，所以不会导致任何消费方出现回归。渲染结构化形状的消费方读 `truncated`/`total` 与按文件分组；因为视图只携带保留的、字节有界的页，想要完整结果的 UI 跟随面向模型文本里的 spill 定位符，与模型的做法完全一致。
 
-A UI without a search card renders the raw `tool/result` content, so no consumer regresses. A consumer that renders the structured shape reads `truncated`/`total` and the per-file groups; because the view carries only the retained, byte-bounded page, a UI wanting the complete result follows the spill locator in the model-facing text, exactly as the model does.
+## 测试
 
-## Testing
+`packages/fs/tool-fs-search/tests/presentation.spec.ts` 钉住纯层：`groupMatchesByFile` 的首见文件顺序；`grepSearchMeta`/`globSearchMeta` 在共享保留产出上的投影，`total` 报告截断前计数、`truncated` 被带过；保留过程施加的每行预览预算；序列化 meta 字节上限丢弃末尾组／路径同时保留单个超大条目；以及 `searchViewFromMeta` 对两种良好形状、零结果空卡片、以及每种畸形情形（非对象／数组 meta、缺失或误型的 `truncated`/`total`、未知 `shape`、畸形 `files` 条目、非字符串 `paths`）的收窄。`packages/fs/tool-fs-search/tests/tools.spec.ts` 钉住经真实工具注册表的接线：被截断的 `grep`/`glob` execute 在 `result.meta` 上产出 `SearchMeta`，`presentResult` 构建搜索视图（无 `content`），嵌套 `run_code` 分发不计算 meta 故 `presentResult` 回退，失败或跨形状或畸形结果回退到 generic 卡片。搜索包 `src` 上保持 per-file 100% 覆盖。
 
-`packages/fs/tool-fs-search/tests/presentation.spec.ts` pins the pure layer: `groupMatchesByFile`'s first-seen file order; `grepSearchMeta`/`globSearchMeta` projection over a shared retention outcome with `total` reporting the pre-cap count and `truncated` carried through; the per-line preview budget the retention pass applied; the serialized-meta byte cap dropping trailing groups/paths while keeping a single oversized item; and `searchViewFromMeta`'s narrowing of both good shapes, the zero-result empty card, and every malformed case (non-object/array meta, missing or mistyped `truncated`/`total`, unknown `shape`, malformed `files` entries, non-string `paths`). `packages/fs/tool-fs-search/tests/tools.spec.ts` pins the wiring through the real tool registry: a capped `grep`/`glob` execute produces the `SearchMeta` on `result.meta` and `presentResult` builds the search view (no `content`), a nested `run_code` dispatch computes no meta so `presentResult` falls back, and a failed or cross-shape or malformed result falls back to the generic card. Per-file 100% coverage holds over the search package `src`.
+## 相关
 
-## Related
-
-- [Tagged render-intent union for tool-call presentation](../architecture/2026-07-02-tool-render-intent-union.md) — the `card`-tagged vocabulary this extends with the `search` result tag.
-- [Canonical tool output contract](../architecture/2026-07-20-canonical-tool-output-contract.md) — the value/render/`presentationMeta` split this projection rides; the structured value stays execution-local, the card rides `meta`.
-- [Web terminal card](2026-07-28-web-terminal-card.md) — the precedent this mirrors on the backend: a tool projects its result into `presentationMeta` and a `presentResult` view; the search card's web consumer is the analogous follow-up.
+- [工具调用呈现的带标签渲染意图联合](../architecture/2026-07-02-tool-render-intent-union.md)——本变更用 `search` 结果标签扩展的 `card` 标签词汇。
+- [Canonical 工具输出约定](../architecture/2026-07-20-canonical-tool-output-contract.md)——本投影所依托的 value/render/`presentationMeta` 划分；结构化值留在执行本地，卡片通过 `meta` 传递。
+- [Web terminal 卡片](2026-07-28-web-terminal-card.md)——本变更在后端所仿照的先例：工具把结果投影进 `presentationMeta` 与一个 `presentResult` 视图；搜索卡片的 Web 消费方是与之类比的后续。

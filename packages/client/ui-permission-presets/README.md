@@ -1,21 +1,19 @@
 # @deepseek-ai/dsh-client-ui-permission-presets
 
-English | [中文](README.zh.md)
+面向两种不同生命周期的浏览器权限界面。「通用」设置行读取显式暴露的 `permission` Settings 描述符，从 host 的动态 `defaultPreset` enum 中推导选项，并携带描述符的 revision 写入一条 `settings.mutate` 路径操作。它的 observable 经 slot 系统的 `hooks` 格传递，因此 React 钩子由渲染器绑定；推送的失效通知会重新获取描述符。这个值仅在后续会话创建时生效；改变它不会切换当前会话。内置预设值使用 locale 标签：中文显示“只读／工作区写入／完全访问”，英文显示 `Read Only`／`Workspace Write`／`Full access`；host 显式配置的标签保持不变。选择完全访问时必须先显式确认风险，该行随后才会写入。
 
-Permission browser surfaces for two different lifetimes. The General-settings row reads the explicitly exposed `permission` Settings descriptor, derives its options from the host's dynamic `defaultPreset` enum, and writes one `settings.mutate` path operation with the descriptor revision. Its observable rides the slot system's `hooks` compartment, so the renderer owns React hook binding; a push invalidation refetches the descriptor. This value applies only when a later session is created; changing it does not switch the current session. Built-in preset values use locale labels (`只读` / `工作区写入` / `完全访问` in Chinese; `Read Only` / `Workspace Write` / `Full access` in English), while explicit host labels remain unchanged. Choosing Full access requires an explicit risk acknowledgement before the row writes it.
+当前会话界面仍是挂在 host `/permission` 命令上的 popupSelect **装饰**（`ctx.commandUi.decorate`）。装饰不是第二条命令——host 命令保留斜杠菜单行、带参路径（`/permission <preset>` 直接切换）与持久生命周期记账；装饰只把裸调用替换为选择框：一张扁平且本地化的预设列表，当前值标记为 active，选中即提交 `/permission <preset>` 命令行，只有未知 kebab-case 名称才回退为 Title Case。选项与 active 标记读取会话的 `permissions` 投影（与 composer chip 渲染的同一份 host 计算 select），因此两个当前会话界面共享同一读源与同一写路径，推送的投影帧是两者共同跟随的唯一确认。装饰恰在投影 key 存在时可用；无权限组合既不显示选择框，也不显示 Settings 行。
 
-The current-session surface remains a popupSelect DECORATION hung on the host `/permission` command (`ctx.commandUi.decorate`). A decoration is not a second command — the host command keeps its slash-menu row, the argued path (`/permission <preset>` switches directly), and the durable lifecycle logging; the decoration replaces only the bare invocation with the picker: one flat localized preset list with the current value marked active, where a pick submits the `/permission <preset>` command line and unknown kebab-case names alone fall back to title case. Options and the active mark read the session's `permissions` projection (the same host-computed select the composer chip renders), so both current-session surfaces share one read source and one write path, and the pushed projection frame is the single confirmation both follow. The decoration is available exactly while the projection key is present; a permission-less composition shows neither picker nor Settings row.
+`/client` 导出面为插件本体（`apply`／`inject`）。
 
-The `/client` exports are the plugin body (`apply`/`inject`).
+## 模型体验
 
-## Model Experience
+通过两个界面写入的权限事实间接影响：Settings 行使未来会话带着全量值旋钮事件（`permission/preset`、`sandbox/mode`、`approval/policy`）启动，而 `/permission` 选择框切换当前会话时会追加相同的事实；这些事件决定后续工具调用解析到的沙箱模式与审批策略，选择框交互本身不添加任何提示词内容。
 
-Indirectly, through the permission facts written by its two surfaces: the Settings row causes a future session to start with whole-value knob events (`permission/preset`, `sandbox/mode`, `approval/policy`), while the `/permission` picker appends the same facts when it switches the current session; those events select the sandbox mode and approval policy later tool calls resolve, and picker interaction adds no prompt content.
+#### KV Cache 影响
 
-#### KV Cache effect
+无直接失效；请求前缀的变化由旋钮消费方自行承担。
 
-No direct invalidation; the knob consumers own any request-prefix changes.
+## 已知限制与暂缓事项
 
-## Known Limitations and Deferred Work
-
-- **The Settings row is Web-only** — non-Web clients may still switch the current session through `/permission`, but do not receive this browser contribution.
+- **Settings 行仅在 Web 中可用**：非 Web 客户端仍可通过 `/permission` 切换当前会话，但不会获得这项浏览器贡献。

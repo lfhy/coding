@@ -1,61 +1,59 @@
-# Agent Note: ACP as an automation-only protocol
+# Agent Note: ACP 作为仅面向自动化的协议
 
 Status: implemented
 
-English | [中文](2026-07-23-acp-automation-only-protocol.zh.md)
+## 问题
 
-## Problem
+ACP（Agent Client Protocol）桥接层已经变成第二套交互式产品 UI。它将持久事件转换为编辑器卡片、终端元数据、diff、计划、标题、推理（reasoning）、命令、模式、模型和权限选择器、会话导航以及面向人类的询问。这些职责与 TUI 和 Web 客户端重复，同时将自动化传输层与 UI 服务、持久化查询、展示策略和编辑器特定约定耦合在一起。
 
-The ACP bridge had become a second interactive product UI. It translated durable events into editor cards, terminal metadata, diffs, plans, titles, reasoning, commands, modes, model and permission pickers, session navigation, and human elicitation. Those responsibilities duplicated the TUI and the Web client while coupling an automation transport to UI services, persistence queries, presentation policy, and editor-specific conventions.
+ACP 仍有一个有用的职责：另一个 agent（智能体）或自动化控制器可以启动 harness 进程、创建隔离会话、发送文本或范围狭窄的受支持内联图片、接收已提交的文本／图片回答、取消工作并回答权限请求。跨进程 ACP subagent 后端依赖这个标准协议边界。
 
-ACP still has one useful role: another agent or automated controller can start a harness process, create an isolated session, send text or a narrowly supported inline image, receive the committed text/image answer, cancel work, and answer a permission request. The out-of-process ACP subagent backend depends on that standard protocol boundary.
+快照套件使移除工作更复杂。大多数 ACP 场景测试的是组装后的 agent 后端，而不是 ACP 展示层；如果随编辑器桥接层一起删除整个套件，就会丢失大量无密钥行为测试。
 
-The snapshot suite complicates removal. Most ACP scenarios exercise the assembled agent backend rather than ACP presentation, so deleting the suite with the editor bridge would discard broad keyless behavioral coverage.
+## 决策
 
-## Decision
+`@deepseek-ai/dsh-acp` 是位于 [`packages/acp/acp`](../../../../packages/acp/acp/README.md) 下、独立于 `ui` 包组的自动化传输层。其公开协议特意保持精简：版本协商、全新会话（每个会话最多允许一个进行中的提示词）、已提交的助手文本／图片更新、按会话取消、并发会话，以及由连接负责的资源清理。提示词按协议顺序保留文本与受支持光栅图片，资源链接则展平为方括号文本引用；桥接层会拒绝附加目录、MCP 服务器、音频、嵌入资源、格式错误或空提示词、未知会话和重叠提示词。
 
-`@deepseek-ai/dsh-acp` is an automation transport under [`packages/acp/acp`](../../../../packages/acp/acp/README.md), outside the `ui` package group. Its public protocol is intentionally small: version negotiation, fresh sessions with one in-flight prompt each, committed assistant text/image updates, per-session cancellation, concurrent sessions, and connection-owned teardown. Prompts preserve text and supported raster images in wire order, while resource links flatten to bracketed textual references; the bridge rejects additional directories, MCP servers, audio, embedded resources, malformed or empty prompts, unknown sessions, and overlapping prompts.
+图片能力必须真实，而不能只看结构：只有持久附件存储存在，且配置的确切提供方／模型解析后明确支持图片输入时，`initialize` 才会公布该能力。每个图片提示词都会重新检查会话的最新确切路由、严格解码全部块，并在发布用户事件前把完整批次委托给 `AttachmentStore.saveImages()`。取消会在任何异步工作前预留并中止准入槽位，使提示词在已经启动的写入停稳后才结算，而且绝不发布迟到消息；提示词进入 Agent inbox 前既不会取消，也不会等待无关的 Agent 工作。已经完成的内容寻址写入可能保持不可达，因为对去重存储执行破坏性回滚并不正确。可由调用方修正的图片策略失败会映射为无效参数，路由查询、存储损坏和持久化失败则仍属于内部故障。
 
-Image capability is truthful rather than structural: `initialize` advertises it only when a durable attachment store exists and the configured exact provider/model resolves with explicit image input. Each image prompt rechecks the session's latest exact route, strictly decodes every block, and delegates the complete batch to `AttachmentStore.saveImages()` before publishing the user event. Cancellation reserves and aborts the admission slot before any asynchronous work, waits for already-started writes to quiesce before the prompt settles, and never publishes a late message; before the prompt enters the Agent inbox it neither cancels nor waits for unrelated Agent work. A completed content-addressed write may remain unreachable because destructive rollback is not valid for a deduplicated store. Caller-correctable image-policy failures map to invalid parameters, while route lookup, storage corruption, and persistence failures remain internal faults.
+桥接层只发出已提交的 `assistant/message` 文本与图片。每个会话使用一条 Promise 链，在异步重新读取并校验助手图片引用、将其转换为 ACP base64 交付时保持块与消息顺序；对象缺失或损坏会使提示词交付失败，而不是变成占位符。推理、原始分片、工具活动、待办事项、计划、标题、重试标记、终端元数据、diff、位置和资源链接仍保留在持久会话日志或 UI 专用传输层中。它不提供会话加载、列出与删除、命令、模式、配置选择器、模型切换、plan 评审或面向人类的询问。
 
-The bridge emits only committed `assistant/message` text and images. A per-session promise chain preserves block and message order while assistant image references are asynchronously re-read and integrity-verified for ACP base64 delivery; a missing or corrupt object fails prompt delivery instead of becoming a placeholder. Reasoning, raw chunks, tool activity, todos, plans, titles, retry markers, terminal metadata, diffs, locations, and resource links remain in the durable session log or in UI-specific transports. It does not provide session load/list/delete, commands, modes, configuration selectors, model switching, plan review, or human elicitation.
+保留一次性 `session/request_permission`。它是为桥接层拥有的 agent 提供的机器策略通道，而不是面向人类的审批 UI：应答者只接受桥接层当前会话映射中登记的同一 agent 对象；不属于桥接层当前 agent 的请求或未关联具体调用的请求会继续委派；RPC 失败则映射为故障时默认拒绝的 `unavailable` 结果。客户端可选择允许一次、拒绝一次或取消，桥接层绝不会将该响应转换为持久授权。询问策略仍归审批 seam 及其生产者所有；[`dsh-subagent-acp`](../../../../packages/subagent/subagent-acp/README.md) 会以程序化方式使用该通道。
 
-One-shot `session/request_permission` remains. It is a machine policy channel for bridge-owned agents, not a human approval UI: the answerer accepts only an exact agent object in the bridge's live session map, delegates foreign or call-less requests, and maps failed RPCs to the fail-closed unavailable outcome. The client chooses allow once, reject once, or cancel, and the bridge never turns that response into a durable grant. Asking policy stays in the approval seam and its producers; [`dsh-subagent-acp`](../../../../packages/subagent/subagent-acp/README.md) uses this channel programmatically.
+应用组装包含 agent 主干、持久化、检查点策略和 ACP 传输层。它不会为 ACP 挂载命令、会话查询、会话引用、plan mode、权限选择器或用户交互服务。
 
-The app composition contains the agent spine, persistence, checkpoint policy, and ACP transport. It does not mount command, session-query, session-reference, plan-mode, permission-picker, or user-questions services for ACP.
+传输层调用 agent、会话和审批的接口服务，而不依赖具体的 agent loop（智能体循环）。工具执行仍留在 harness 内；ACP 绝不会把 shell 执行委派给编辑器。stdout 只承载分帧 JSON-RPC，因此 app 不挂载 stdout logger，桥接层也不会 monkey-patch 进程输出。
 
-The transport programs interface-level agent, session, and approval services rather than the concrete agent loop. Tool execution stays inside the harness; ACP never delegates shell execution to an editor. stdout carries framed JSON-RPC only, so the app mounts no stdout logger and the bridge does not monkey-patch process output.
+断开连接与插件 dispose（资源释放）共享同一个经记忆化的完全停稳边界。传输关闭无论成功还是失败，都会取消提示词准入和 agent、排空有序输出、将待处理提示词以已取消状态结算、dispose 每个由桥接层拥有的 agent，并等待循环和会话清理完成。创建流程如果在与关闭的竞态中落败，就会 dispose 其尚未发布的 handle。
 
-Disconnect and plugin disposal share one memoized quiescence boundary. Both successful and failed transport closure cancel prompt admission and agents, drain ordered output, settle pending prompts as cancelled, dispose every bridge-owned agent, and await loop and session cleanup. A create that loses the close race disposes its unpublished handle.
+## 快照边界
 
-## Snapshot boundary
+ACP 快照套件仍会启动组装后的 ACP 示例，并保留用于锁定后端行为的场景。从该套件移出的只有通过已删除的 UI 方法驱动的场景；由于 ACP 不再加载会话，语义检查点恢复通过 headless `stream-json` 示例执行。
 
-The ACP snapshot suite still boots the assembled ACP example and retains scenarios that pin backend behavior. Only scenarios driven through deleted UI methods leave the suite; semantic-checkpoint recovery runs through the headless `stream-json` example because ACP no longer loads sessions.
+协议与生命周期测试会锁定停止原因编解码器、版本协商、真实图片能力、新会话创建、有序文本／图片准入、资源链接展平、写入前校验全部成员、持久事件中不含内联 base64、拒绝空提示词或不受支持的提示词、基于同一 agent 对象的权限归属、多会话隔离、在有序输出后结算提示词、经过校验的助手图片交付、准入期间取消且不产生迟到 followup 或取消无关 Agent 工作、排除进入 inbox 前的无关失败、传输关闭失败、ACP 专属重载清理，以及拆卸完全停稳。组装后的无密钥快照通过可运行 ACP 示例发送一张真实内联 PNG，并在会话日志中只固定其持久引用。构建产物冒烟测试与真实 stdio 冒烟测试会拒绝混入 stdout 的额外输出。`session/new` 中在真实 stdio 关闭竞态中落败的分支仍豁免覆盖率要求，因为内存传输层无法复现这一顺序；该分支会 dispose 尚未发布的 handle，而周边 dispose 测试会锁定无遗留资源不变式。
 
-Protocol and lifecycle tests pin stop-reason codecs, version negotiation, truthful image capability, fresh-session creation, ordered text/image admission, resource-link flattening, all-member validation before writes, absence of inline base64 in durable events, rejection of empty or unsupported prompts, exact-agent permission ownership, multi-session isolation, prompt settlement after ordered output, verified assistant-image delivery, cancellation during admission without a late followup or cancellation of unrelated Agent work, exclusion of unrelated pre-inbox failures, failed transport closure, ACP-only reload cleanup, and teardown quiescence. An assembled keyless snapshot sends a real inline PNG through the runnable ACP example and pins only its durable reference in the session log. Built and real-stdio smokes reject stray stdout. The `session/new` branch that loses a real stdio close race remains coverage-exempt because the in-memory transport cannot reproduce that ordering; it disposes the unpublished handle, while the surrounding disposal tests pin the no-orphan invariant.
+## 考虑过的替代方案
 
-## Alternatives considered
+**在 Web 达到同等能力前，继续将 ACP 作为编辑器 UI。** 不予采用，因为这会留下两套需要演进的交互约定，并使编辑器约定继续存在于自动化边界中。
 
-**Keep ACP as an editor UI until Web reaches parity.** Rejected because it leaves two interactive contracts to evolve and keeps editor conventions in the automation boundary.
+**通过严格的服务边界保留早期编辑器桥接层。** 不予采用，尽管该桥接层正确使用了接口服务、工具自有的 render intent、审批与用户交互应答者、harness 自有执行，以及保持 stdout 纯净的组装。其终端卡片是经过能力门控、仅用于展示的 Zed `_meta` 投影，并提供文本回退，而非使用 ACP `terminal/create`，因此 shell 执行从未离开 harness。该投影从稳定的逐调用 id 派生每个展示用终端 id，以避免冲突；由于纯结果展示器接收的是内容块，而不是结构化退出信息，它会从渲染后的状态标记中恢复退出码或信号。标记往返测试和显式的无能力 `console` 回退测试锁定了这两项约定。这些边界保持一致，却无法让编辑器卡片、会话导航、配置选择器和面向人类的询问成为自动化协议应有的职责。
 
-**Keep the earlier editor bridge behind disciplined service boundaries.** Rejected even though that bridge correctly used interface services, tool-owned render intents, approval and user-questions answerers, harness-owned execution, and a stdout-pure composition. Its terminal cards were capability-gated, display-only Zed `_meta` projections with a text fallback rather than ACP `terminal/create`, so shell execution never left the harness. The projection derived each display terminal id from the stable per-call id to prevent collisions and recovered exit code or signal from the rendered status markers because the pure result presenter received content blocks rather than a structured exit; marker round-trip tests and an explicit no-capability `console` fallback test pinned both contracts. Those boundaries were coherent but could not make editor cards, session navigation, configuration pickers, and human elicitation belong in an automation protocol.
+**用私有 subagent RPC 替换 ACP。** 不予采用，因为 ACP 已经提供类型化、可互操作的进程协议，并由跨进程 subagent 后端使用。
 
-**Replace ACP with a private subagent RPC.** Rejected because ACP already supplies a typed, interoperable process protocol and is used by the out-of-process subagent backend.
+**随其他交互功能一起移除机器权限请求。** 不予采用，因为自动化父 agent 必须回答子 agent 的一次性策略决策；这是 agent 之间的控制流，而不是展示层。
 
-**Remove machine permission requests with the other interaction features.** Rejected because an automated parent must answer a child agent's one-shot policy decision; this is control flow between agents, not presentation.
+**删除 ACP 快照套件，或在本次变更中迁移每个场景。** 不予采用，因为大多数场景测试后端且仍有价值，而完整的 harness 迁移是一项独立的测试变更。只有通过已删除的 UI 方法驱动的场景才离开该套件。
 
-**Delete the ACP snapshot suite or migrate every scenario in this change.** Rejected because most scenarios test the backend and remain valuable, while a full harness migration is an independent testing change. Only scenarios whose driver was a deleted UI method leave this suite.
+**只要 ACP SDK 具有图片块就公布图片支持。** 不予采用，因为协议词汇不能证明当前部署可以持久化字节，也不能证明配置的确切路由接受视觉输入。初始化时能力未知即为 false；提示词准入会重新检查实时路由。
 
-**Advertise image support whenever the ACP SDK has an image block.** Rejected because protocol vocabulary does not prove this deployment can persist bytes or that the configured exact route accepts visual input. Unknown capability is false at initialization; prompt admission rechecks the live route.
+**把内联图片和助手图片展平为标记，或把 ACP base64 持久化进会话事件。** 不予采用，因为标记会静默丢失模型／用户意图，base64 则会让持久日志变成二进制存储。ACP 在传输边界把自身协议块与现有持久 `ImageBlock` 引用相互转换。
 
-**Flatten inline and assistant images to markers or persist ACP base64 in session events.** Rejected because markers silently lose model/user intent and base64 makes durable logs the binary store. ACP translates between its wire block and the existing durable `ImageBlock` reference at the transport boundary.
+**为 ACP、MCP 和 Web 创建通用 RichContent 服务。** 不予采用，因为核心 `ContentBlock` 与附件 seam 已经拥有共享契约。每个入口只保留协议解析、能力证明与生命周期编排；共享批次限制和图片校验留在 `AttachmentStore.saveImages()` 中。
 
-**Create a generic RichContent service for ACP, MCP, and Web.** Rejected because core `ContentBlock` plus the attachment seam already own the shared contract. Each front door keeps only protocol parsing, capability proof, and lifecycle orchestration; shared batch limits and image validation stay in `AttachmentStore.saveImages()`.
+## 结果
 
-## Consequences
+ACP 具有适合 agent 与自动化的精简约定，而 TUI 和 Web 拥有面向人类的交互与展示。该包注入的服务、依赖、协议分支和生命周期状态更少，也不再将自身定位为通用编辑器入口。
 
-ACP has a narrow contract suitable for agents and automation, while TUI and Web own human interaction and presentation. The package has fewer injected services, dependencies, protocol branches, and lifecycle states, and it no longer claims compatibility as a general editor entry point.
+自动化客户端收到完整的已提交文本／图片，而不是 token 增量或结构化工具 UI。当它们需要推理、工具跟踪信息、标题或更丰富的状态时，需要查看持久日志或其他 API。只支持全新会话也意味着，需要浏览持久会话或恢复会话的调用方必须使用 host API，而不是 ACP。
 
-Automation clients receive complete committed text/images rather than token deltas or structured tool UI. They inspect durable logs or another API when they need reasoning, tool traces, titles, or richer state. Fresh-session-only operation also means callers that need durable browsing or resume use a host API rather than ACP.
-
-Backend snapshot coverage therefore remains transport-coupled to ACP even though that transport is incidental to the behavior under test.
+因此，后端快照测试仍与 ACP 传输层耦合，尽管对于受测行为而言，该传输层只是附带因素。

@@ -1,41 +1,39 @@
-# Agent Note: Interactive side sessions and merge-back
+# Agent Note: 交互式侧会话与合并回写
 
 Status: proposed
 
-English | [中文](2026-07-08-interactive-side-sessions.zh.md)
+## 问题
 
-## Problem
+用户可能希望在不改变当前会话主上下文的前提下，探索一个来自活跃会话的问题。现有原语无法提供这种产品形态：[会话存储 fork](../../implemented/feature/2026-06-30-session-store-fork-api.md) 创建的是一个未绑定的会话，而 [fork subagent](../../implemented/feature/2026-06-21-subagent-capability-seam.md) 是模型驱动的任务，其 transcript（文本记录）会折叠为一条工具结果。两者都不能给用户一个独立的对话，也都不能在父会话中同时记录结论和产生该结论的侧会话。
 
-A user may want to explore a question from a live session without changing its main context. Existing primitives do not expose that product shape: [session-store fork](../../implemented/feature/2026-06-30-session-store-fork-api.md) creates an unattached session, while [fork subagents](../../implemented/feature/2026-06-21-subagent-capability-seam.md) are model-driven tasks whose transcript collapses into one tool result. Neither gives the user a separate conversation, and neither records a conclusion in the parent together with the side session that produced it.
+## 提案
 
-## Proposal
+**侧会话（side session）**是一个普通的活跃会话，从源会话的最后一个已完成轮次 fork 而来，绑定到自己的 agent（智能体），定位为只读顾问，并能**合并回写**一条精简笔记。
 
-A **side session** is an ordinary live session forked at the source's last completed turn, attached to its own agent, framed as a read-only advisor, and able to **merge back** one condensed note.
+- **Fork 并绑定：**以父会话的平衡已完成轮次前缀创建子会话，并在其元数据中标记 `parentSession` 与 `seedLength`。这组合了 `ctx.agents.create({ seed, meta })`；不新增核心服务或会话存储方法。
+- **顾问定位：**创建后注入一条插件来源的 `context/message`，告知子会话只做解释，不执行变更或继续任务。保持系统提示词逐字节一致，可在继承的历史上保留提供方的前缀缓存。
+- **合并回写：**向子会话请求一条有长度上限的 handback，然后向父会话注入一条插件来源的 `context/message`。父会话的下一次请求在日志所记录的位置看到该消息，保持回放与[请求可重建性](../../implemented/architecture/2026-07-05-reconstructable-requests.md)，无需新增会话事件。
+- **呈现：**调用方式、会话切换与 handback 渲染属于首个客户端拥有的界面。本 Agent Note 仅规定与界面无关的机制。
 
-- **Fork and attach:** create the child with the parent's balanced completed-turn prefix and stamp `parentSession` and `seedLength` in its metadata. This composes `ctx.agents.create({ seed, meta })`; it adds no core service or session-store method.
-- **Advisor framing:** inject one plugin-sourced `context/message` after creation that tells the child to explain without mutating or continuing the task. Keeping the system prompt byte-identical preserves the provider prefix cache over inherited history.
-- **Merge-back:** ask the child for a length-capped handback, then inject one plugin-sourced `context/message` into the parent. The next parent request sees it at its logged position, preserving replay and [request reconstructability](../../implemented/architecture/2026-07-05-reconstructable-requests.md) without a new session event.
-- **Presentation:** invocation, session switching, and handback rendering belong to the first client UI. This Agent Note specifies only the client-independent mechanics.
+回退产品化、会话树视图、面向模型的侧会话工具，以及 `forkName`/`mergedInto` 元数据均不在本 Agent Note 范围内。一次真实适配器 spike 已验证了源日志隔离、继承上下文、多轮子会话交互，以及合并回写在父会话下一轮次中的可见性。
 
-Rewind productization, session-tree views, a model-facing side-session tool, and `forkName`/`mergedInto` metadata are out of scope. A live-adapter spike validated source-log isolation, inherited context, a multi-turn child exchange, and merge-back visibility in the parent's next turn.
+## 曾考虑的替代方案
 
-## Alternatives considered
+- **使用 subagent seam：**否决。侧会话是用户驱动的、客户端可见的，且可能存活超过父会话的一个轮次；subagent 是模型驱动的运行，返回一条工具结果。
+- **修改子会话的系统提示词：**默认否决，因为任何字节变化都会从第零个 token 起使前缀缓存失效。部署方仍可选择这种更强的隔离方式。
+- **新增 `sidechat/*` 事件：**延后。已标注来源的 `context/message` 已经持久记录内容、生产方和回放输入；只有当某个界面需要差异化渲染时，专用事件才有正当理由。
+- **现在就绑定一个协议接口：**否决。当前 UI 由客户端拥有。实时呈现最终必须从持久消息派生，以使回放渲染出相同的记录。
 
-- **Use the subagent seam:** rejected because side sessions are user-driven, client-visible, and may outlive a parent turn; subagents are model-driven runs returning one tool result.
-- **Change the child system prompt:** rejected by default because any byte change invalidates the prefix cache from token zero. Deployments may still prefer that stronger separation.
-- **Add `sidechat/*` events:** deferred because a sourced `context/message` already records the content, producer, and replay input durably. A dedicated event is justified only by a client that needs distinct rendering.
-- **Bind a protocol API now:** rejected because current UIs are client-owned. Live presentation must eventually derive from the durable message so replay renders the same record.
+## 验收标准
 
-## Acceptance criteria
+- Fork 不改变源会话，创建的子会话具有平衡的已完成轮次前缀、`parentSession`、`seedLength`，以及逐字节一致的系统提示词。
+- 顾问定位在子会话追加历史的头部恰好添加一条插件来源的 `context/message`，而非修改其系统提示词。
+- 合并回写恰好添加一条有长度上限的 `context/message`，来源为 `plugin: sidechat`；父会话的下一次请求与回放在相同位置看到它。
+- 父会话与子会话并发运行，日志和流之间无串扰。
+- 单元测试覆盖 fork/attach 与合并回写；快照覆盖随首个绑定界面一起落地。
 
-- Forking leaves the source untouched and creates a child with the balanced completed-turn prefix, `parentSession`, `seedLength`, and a byte-identical system prompt.
-- Advisor framing adds exactly one plugin-sourced `context/message` at the head of the child's appended history, rather than changing its system prompt.
-- Merge-back adds exactly one length-capped `context/message` with source `plugin: sidechat`; the next parent request and replay see it at the same position.
-- Parent and child run concurrently without log or stream cross-talk.
-- Unit tests cover fork/attach and merge-back; snapshot coverage lands with the first bound UI.
+## 风险
 
-## Risks
-
-- Read-only behavior is advisory until a `tools/pre-execute` deny gate enforces it; [the interception point](../../implemented/feature/2026-06-30-interception-extension-points.md) can add that gate without changing these mechanics.
-- A compacted source forks its compacted view, so a bound UI should disclose that the child inherits summaries rather than replaced turns.
-- Repeated handbacks consume parent context. The per-merge length cap bounds each note; later consolidation belongs to compaction.
+- 只读行为在 `tools/pre-execute` 拒绝门禁强制执行之前仅为建议性质；[拦截点](../../implemented/feature/2026-06-30-interception-extension-points.md)可在不改变本机制的前提下添加该门禁。
+- 经过压缩（compaction）的源会话 fork 出的是其压缩视图，因此绑定的界面应当告知用户子会话继承的是摘要而非被替换的轮次。
+- 反复的 handback 会消耗父会话上下文。每次合并的长度上限约束了单条笔记的大小；后续的合并整理属于上下文压缩的职责。

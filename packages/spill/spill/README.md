@@ -1,42 +1,40 @@
 # @deepseek-ai/dsh-spill
 
-English | [中文](README.zh.md)
+**`SpillStore`**（`ctx.spillStore`）定义 spill 后端做什么，即持久化某个工具过大的文本，并返回面向模型的定位信息与取回指引；它不规定如何实现。
 
-The **`SpillStore`** (`ctx.spillStore`) defines WHAT a spill backend does — persist a tool's oversized text and return a model-facing locator plus retrieval guidance — without saying HOW.
+该包是 spill 能力的三个组成部分之一。拆分后，各项关注点可独立演进和替换：
 
-This package is one third of the spill capability, split so each concern evolves (and swaps) independently:
-
-| Package | Role |
+| 包 | 职责 |
 |---|---|
-| `@deepseek-ai/dsh-spill` (this) | Service Definition: abstract service + vocabulary types |
-| `@deepseek-ai/dsh-spill-local` | Service Provider: private session-scoped files on the host filesystem |
-| `@deepseek-ai/dsh-spill-policy` | Consumer: the tool-result policy that spills oversized final results |
+| `@deepseek-ai/dsh-spill`（本包） | Service Definition：抽象服务与词汇类型 |
+| `@deepseek-ai/dsh-spill-local` | Service Provider：位于宿主文件系统中的私有会话级文件 |
+| `@deepseek-ai/dsh-spill-policy` | Consumer：对过大最终结果执行 spill 的工具结果策略 |
 
-The split mirrors the shell/fs seams. A future remote or virtual backend (e.g. a `spill://…` URI, a database key, or a backend-specific retrieval tool) implements this Service Definition without touching the policy plugin.
+这种拆分方式与 shell/fs seam 相同。未来的远程或虚拟后端（例如 `spill://…` URI、数据库键或后端专用取回工具）可实现此 Service Definition，无需修改策略插件。
 
-## Service API (`ctx.spillStore`)
+## 服务 API（`ctx.spillStore`）
 
-| Member | Semantics |
+| 成员 | 语义 |
 |---|---|
-| `saveText(input)` | Persist `input.content` verbatim; resolves with a `SpillRef` (opaque locator, exact bytes written, and retrieval hint). **Rejects on a real storage failure** (permissions, ENOSPC, backend unavailable) — the caller decides how to degrade. |
+| `saveText(input)` | 逐字保存 `input.content`；成功时返回 `SpillRef`（不透明定位信息、写入的精确字节数和取回指引）。**发生真实存储故障时，调用会以拒绝状态结束**（权限、ENOSPC、后端不可用）；由调用方决定如何降级。 |
 
-Storage is grouped by the request's `owner` session as a save-time namespace; the backend chooses its own private representation and may derive names from — never trust as a path — the caller's `suggestedName`. The seam owns storage only: NO retention policy (that is [`@deepseek-ai/dsh-output-retention`](../../util/output-retention)), NO tool-result replacement (that is `@deepseek-ai/dsh-spill-policy`), NO retrieval/search API (the backend's `retrievalHint` tells the model what to do with the locator).
+存储操作以请求的 `owner` 会话作为保存时命名空间进行分组；后端自行选择私有表示，并可以从调用方的 `suggestedName` 派生名称，但绝不能将其当作可信路径。该 seam 只负责存储：不提供保留策略（由 [`@deepseek-ai/dsh-output-retention`](../../util/output-retention) 负责），不替换工具结果（由 `@deepseek-ai/dsh-spill-policy` 负责），也不提供取回/搜索 API（后端的 `retrievalHint` 会告诉模型如何使用定位信息）。
 
-## Vocabulary
+## 词汇
 
-`SaveTextSpill` (owner, source, suggestedName, content) is the request; `SpillRef` (locator, bytes, retrievalHint) is the result. `SpillLocator` is [branded](../../util/brand) and rendered to the model as an opaque string — a local path for `dsh-spill-local`, but a future backend may return a URI, key, or command token without changing policy/tool consumers. `SpillOwner.sessionId` is the save-time storage namespace: forked sessions inherit existing locators from the seeded log without copying or re-owning them, and new spills after the fork use the child session id. `SpillSource` records the producing `toolName`, `callId`, and `label` for backend naming and inspection, not access control. See `src/types.ts` for the full contracts.
+`SaveTextSpill`（owner、source、suggestedName、content）是请求；`SpillRef`（locator、bytes、retrievalHint）是结果。`SpillLocator` 是[带品牌类型](../../util/brand)的值，并以不透明字符串的形式呈现给模型；对 `dsh-spill-local` 而言它是本地路径，但未来的后端可以返回 URI、键或命令 token，无需修改策略／工具消费方。`SpillOwner.sessionId` 是保存时存储命名空间：fork 后的会话会从种子日志继承现有定位信息，无需复制或更改其归属；fork 后新产生的 spill 使用子会话 id。`SpillSource` 记录产生该 spill 的 `toolName`、`callId` 和 `label`，供后端命名和检查使用，不用于访问控制。完整约定见 `src/types.ts`。
 
-See the [tool output spill Agent Note](../../../.agents/notes/implemented/architecture/2026-07-08-tool-output-spill-files.md) for the design rationale, including why creation belongs to the runtime spill seam rather than the model-facing `write` tool.
+设计原理见[工具输出 spill Agent Note](../../../.agents/notes/implemented/architecture/2026-07-08-tool-output-spill-files.md)，其中说明了为什么创建操作应由运行时 spill seam 而非面向模型的 `write` 工具承担。
 
-## Model Experience
+## 模型体验
 
-Indirectly, through spill consumers that render a backend locator and retrieval guidance.
+通过渲染后端定位信息和取回指引的 spill 消费方间接影响模型。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-No direct invalidation; the named consumer owns any request-prefix changes.
+不会直接导致 KV Cache 失效；请求前缀变更由上述消费方负责。
 
-## Known Limitations and Deferred Work
+## 已知限制与暂缓事项
 
-- **The seam has no retrieval or deletion API** — consumers can only render the backend's locator and guidance; lifecycle and access semantics remain backend-specific.
-- **Storage is not access control** — `SpillOwner` namespaces writes but does not authorize reads of a locator; each backend and retrieval consumer must enforce its own boundary.
+- **该 seam 没有取回或删除 API**：消费方只能渲染后端的定位信息与指引；生命周期和访问语义仍由后端自行决定。
+- **存储不等于访问控制**：`SpillOwner` 会区分写入命名空间，但不会授予通过定位信息读取内容的权限；每个后端和取回消费方都必须自行强制执行访问边界。

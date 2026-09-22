@@ -1,25 +1,23 @@
-# Agent Note: Unlink stale profile fallback links instead of rmSync
+# Agent Note: 用 unlink 删除过期的 profile 回退链接而非 rmSync
 
 Status: implemented
 
-English | [中文](2026-08-12-unlink-stale-profile-fallback-links.zh.md)
+## 问题
 
-## Problem
+`healProfilesModuleFallback` 在安装位置迁移时会把 `$DSH_HOME/profiles/node_modules` 中的条目重新指向新目标，而 Windows 主机上这些条目是 junction。`ensureSymlink` 原先用 `rmSync(link)` 删除过期条目，但 Node 在删除时把 junction 当作目录处理：不带 `recursive` 的 `rmSync` 会抛 `ERR_FS_EISDIR`，于是从迁移后的安装或第二个 worktree 启动时，每次都会在应用引导前崩溃。`replaces a wrong symlink` 单元测试在 Windows 上正好在该删除调用处复现了这一崩溃。
 
-`healProfilesModuleFallback` re-points `$DSH_HOME/profiles/node_modules` entries when an installation moves, and Windows hosts keep those entries as junctions. `ensureSymlink` deleted a stale entry with `rmSync(link)`, but Node treats a junction as a directory for removal: without `recursive`, `rmSync` throws `ERR_FS_EISDIR`, so every launch from a moved installation or a second worktree crashed before booting. The `replaces a wrong symlink` unit test reproduces that crash on Windows at the exact removal call.
+## 决策
 
-## Decision
+`ensureSymlink` 改用 `unlinkSync(link)` 删除过期链接。`unlink` 在所有平台上都只删除重解析点或符号链接本身、绝不进入目标目录，从而保住该函数“真实目录永远不会被删除”的大声失败保证。[profile-plugin-bundles 决策](../architecture/2026-08-05-profile-plugin-bundles.md)继续拥有回退目录的双锚点解析；本 note 只拥有“用哪个删除原语”这一决定。
 
-`ensureSymlink` removes a stale link with `unlinkSync(link)`. `unlink` deletes the reparse point or symlink itself on every platform and never descends into the target, which preserves the function's fail-loud guarantee that a real directory is never deleted. The [profile-plugin-bundles decision](../architecture/2026-08-05-profile-plugin-bundles.md) keeps owning the fallback's two-anchor resolution; this note owns only the removal primitive.
+## 考虑过的替代方案
 
-## Alternatives considered
+**`rmSync(link, { recursive: true })`。** Node 24 上它只删 junction、不跟随目标，但 `recursive` 会在 `lstat` 守卫与删除之间链接被替换成真实目录时静默删除该目录，削弱守卫存在所依据的大声失败契约。
 
-**`rmSync(link, { recursive: true })`.** On Node 24 this deletes the junction without following its target, but `recursive` would silently delete a real directory that replaced the link between the `lstat` guard and the removal, weakening the fail-loud contract that motivates the guard.
+**`rmdirSync(link)`。** Windows 上同样能删 junction，但它读起来像“删目录”，而 `unlinkSync` 才是仓库现有的 junction 清理惯例。
 
-**`rmdirSync(link)`.** Removes a junction on Windows as well, but it reads as directory removal for a link, and `unlinkSync` is the repository's existing junction-cleanup idiom.
+**无条件删除并重建所有条目。** 正确，但每次启动都翻动未变化的链接，并扩大并发修复的竞态窗口。
 
-**Delete and recreate every entry unconditionally.** Correct but churns unchanged links on every launch and widens the concurrent-heal race window.
+## 后果
 
-## Consequences
-
-Windows launches heal moved or second-checkout installations instead of crashing with `ERR_FS_EISDIR`; POSIX behavior is unchanged because `unlinkSync` also unlinks plain symlinks. The existing `replaces a wrong symlink` test now passes on Windows where it previously reproduced the crash. Two concurrent healers deleting the same stale link still surface the second deletion as `ENOENT`, unchanged from the previous `rmSync` implementation.
+Windows 启动现在可以修复迁移后的安装或第二个 checkout，而不是以 `ERR_FS_EISDIR` 崩溃；POSIX 行为不变，因为 `unlinkSync` 同样能 unlink 普通符号链接。现有的 `replaces a wrong symlink` 测试在 Windows 上从复现崩溃变为通过。两个并发 healer 删除同一过期链接时，第二次删除仍会以 `ENOENT` 浮现，与原先的 `rmSync` 实现一致。

@@ -1,30 +1,28 @@
 # @deepseek-ai/dsh-plan-mode
 
-English | [中文](README.zh.md)
+按 agent（智能体）分别记录到日志的 plan 协作状态，提供由部署方配置的引导内容、用于直接进入的 `/plan [message]` 命令、用于直接退出的 `/plan off` 命令，以及经用户评审的 `exit_plan_mode` 退出方式。Plan mode 是软引导；沙箱模式和批准策略各自强制执行限制，且不读写 plan 状态。
 
-Logged, per-agent plan collaboration state with deployment-owned guidance, direct `/plan [message]` entry and `/plan off` exit commands, and the reviewed `exit_plan_mode` exit. Plan mode is soft guidance; sandbox mode and approval policy enforce restrictions independently and do not read or write plan state.
+## 持久状态
 
-## Durable state
+`plan/mode`（`{ active: boolean }`）是一个仅存在于日志中、每次以完整值替换的 `SessionEventMap` 成员。`foldPlanMode(events)` 返回最后记录的值，如果没有则返回 `false`，因此恢复、fork 和压缩（compaction）都能直接从会话日志恢复 plan 状态。UI 通过 `session/event` 观察已提交的切换。
 
-`plan/mode` (`{ active: boolean }`) is a log-only, whole-value-replace `SessionEventMap` member. `foldPlanMode(events)` returns the last logged value or `false`, so resume, fork, and compaction recover plan state directly from the session log. UIs observe committed flips through `session/event`.
+`ctx.planMode.set(agent, active)` 会在 agent 空闲时立即追加独立的 `plan/mode` 事件，因为下一个提示词之前不会运行轮内 pre-step。agent 运行时，该方法会保留待生效选择，直到下一个被接受的轮内 pre-step。返回值区分 `committed`、`queued`、表示反转的 `cancelled` 和 `noop`。`get(agent)` 返回 `{ active, pending? }`，将用于组装当前步骤的日志状态与用户的轮中选择分开。初始与续步 pre-step 都会应用待生效选择；同一步骤的请求恢复重试会复用已冻结的 assembly，并将该选择保留到下一个被接受的轮内 pre-step。当最后记录的请求头描述了另一状态时，用户选择的变更会贡献一条插件来源的 `user/message` 通知（两条提交路径皆然）。
 
-`ctx.planMode.set(agent, active)` appends the standalone `plan/mode` event immediately when the agent is idle, because no in-turn pre-step runs before the next prompt. While the agent is running, it holds a pending selection for the next accepted in-turn pre-step. It returns which happened (`committed`/`queued`), a `cancelled` reversal, or a `noop`. `get(agent)` returns `{ active, pending? }`, separating the logged state used to assemble the current step from a user's mid-turn selection. Initial and continuation pre-steps both apply pending selections; a same-step request-recovery retry reuses its frozen assembly and leaves the selection pending for the next pre-step. A changed user selection contributes one plugin-sourced `user/message` notice when the last logged request header described the other state (both commit paths).
+## 模型与人类交互
 
-## Model and human interactions
+激活时，`plan:policy` 会渲染已配置的 `section`。插件始终注册 `exit_plan_mode`，使工具 schema 在转换期间保持稳定；其 execute 路径只接受已激活的 plan mode，且只有通过 `ctx.userQuestions` 获得用户明确批准后才退出。
 
-While active, `plan:policy` renders the configured `section`. The plugin always registers `exit_plan_mode`, keeping tool schemas stable across the transition; its execute path accepts only active plan mode and leaves it only after an exact user approval through `ctx.userQuestions`.
+评审问题声明 `plan-review` 呈现意图，并指名 `Approve` 为表示批准的标签，因此有能力的 UI 会把计划呈现为一次决定而非通用问题；两种情况下该工具读到的回答完全相同。放弃审阅——用户关闭请求，转而发言——会如实报告给模型，要求它留在 plan mode 中等待那条消息；其余每一种评审失败都保留 seam 自身的消息。
 
-The review question declares the `plan-review` presentation intent, naming `Approve` as the label that approves it, so a capable UI presents the plan as a decision instead of a generic question; the answer the tool reads is the same either way. A dismissed review — the user closing the request to speak instead — is reported to the model as such, telling it to stay in plan mode and wait for the message; every other review failure keeps the seam's own message.
+组合 `ctx.commands` 时，该包会注册 `/plan [message]`，并将参数恰好为 `off` 的情况保留给直接退出。不带参数的 `/plan` 会启用 plan mode；任何其他非空参数都会先启用 plan mode，再通过 `agent.steer()` 提交，因此它会在 plan 引导下成为下一步骤的常规已记录用户消息。`/plan off` 会选择停用状态，不发送模型输入；它还可以在启用 plan mode 的待处理选择由轮内 pre-step 追加之前将其取消。该命令声明了 `input.images`：composer 图片附件会随被 steer 的消息一起提交，位于文本块之前。不带参数的 `/plan` 若附有图片，会 steer 一条只含图片的用户消息；`/plan off` 若附有图片，会在任何模式变更前直接返回错误，composer 保留图片。
 
-When `ctx.commands` is composed, the package registers `/plan [message]` and reserves the exact argument `off` for direct exit. Bare `/plan` selects plan mode; any other non-empty argument selects it first and is then submitted through `agent.steer()`, so it becomes the next step's ordinary logged user message under plan guidance. `/plan off` selects inactive without sending model input; it also cancels a pending entry before plan mode reaches a request. The command declares `input.images`: composer image attachments ride the steered message ahead of its text block. Bare `/plan` with images steers an image-only user message, while `/plan off` with images returns a direct error before any mode change so the composer keeps them.
+Web 客户端使用该插件提供的 `/plan` 命令；其他入口可以直接驱动同一服务，无需定义第二套 mode 词汇。
 
-The Web client consumes the plugin-owned `/plan` command; other entry points may drive the same service directly without defining a second mode vocabulary.
+## 会话投影
 
-## Session projection
+当组合挂载 `ctx.sessionProjections`（[`@deepseek-ai/dsh-session-projection`](../../session/session-projection/README.md)）时，本包会在一个注入的子插件中注册 `plan` 投影单元。名为 `plan` 且携带已记录 `args` 的 `command/run` 记录会开始一个候选目标（`off` → 未激活，其余 → 激活）；与它配对的 `command/done` 保留成功选择并丢弃错误选择；`plan/mode` 提交已记录状态并清除已保留的选择。其他任何事件都返回同一个状态引用。`view` 推导 `{ active, pending }`，其中 `pending` 仅在未结算或已成功的选择与已记录状态不同时为 true。该值仍完全由日志回放得出，因此 host 重启、其他标签页和冷读都能仅凭日志恢复它，被拒绝的带图 `/plan off` 也不会留下待退出状态。key 由 `src/types.ts` 通过声明合并加入 `SessionProjectionMap`：host 消费方经 `./types` 获取，client 聚合经 `./client` 获取。框架负责驱动该单元，载体通过历史尾页和 `session/projection` 推送帧提供其值。未挂载注册表的组合不受影响。
 
-When the composition mounts `ctx.sessionProjections` ([`@deepseek-ai/dsh-session-projection`](../../session/session-projection/README.md)), this package registers the `plan` projection unit under an injected child. A `command/run` record named `plan` with recorded `args` starts a candidate target (`off` → inactive, anything else → active); its paired `command/done` retains a successful selection and drops an error; `plan/mode` commits the logged state and clears the retained selection. Every other event returns the same state reference. `view` derives `{ active, pending }`, where `pending` is true only while an unsettled or successful selection differs from the logged state. This remains a pure replay quantity, so host restarts, other tabs, and cold reads recover it from the log alone, and a rejected `/plan off` with images cannot leave a pending exit. The key merges into `SessionProjectionMap` from `src/types.ts` (served to host consumers via `./types` and client aggregates via `./client`); the framework drives the unit and carriers serve the value on the history tail page and the `session/projection` push frame. Compositions without the registry are unaffected.
-
-## Configuration
+## 配置
 
 ```yaml
 - id: plan-mode
@@ -35,64 +33,64 @@ When the composition mounts `ctx.sessionProjections` ([`@deepseek-ai/dsh-session
       plan through exit_plan_mode.
 ```
 
-`section` is required and non-empty. Unknown keys fail at load. The package does not accept arbitrary named modes, tool filters, sandbox settings, or approval policy.
+`section` 必填且非空。出现未知键时，插件会加载失败。该包不接受任意命名的 mode、工具过滤器、沙箱设置或批准策略。
 
-Design: [plan-specific collaboration state](../../../.agents/notes/implemented/simplification/2026-07-22-plan-specific-collaboration-state.md).
+设计：[plan 专用协作状态](../../../.agents/notes/implemented/simplification/2026-07-22-plan-specific-collaboration-state.md)。
 
-## Model Experience
+## 模型体验
 
-### Plan policy system prompt
+### Plan 策略系统提示词
 
-#### What the model sees
+#### 模型所见内容
 
-While plan mode is active, the model sees the deployment's exact `section` text at prompt order 50; inactive mode contributes no text.
+Plan mode 激活时，模型会在提示词顺序 50 处看到部署方提供的原样 `section` 文本；未激活 mode 不贡献文本。
 
-##### Configuration example
+##### 配置示例
 
 ```markdown
 You are in plan mode. Explore and design before presenting the complete plan through exit_plan_mode.
 ```
 
-#### Token effect
+#### Token 影响
 
-Inactive mode adds no tokens; active mode adds the configured section to every request.
+未激活 mode 不增加 token；mode 激活时，每个请求都会加入已配置的段落。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-The section is stable within plan mode, but entering or leaving changes the system prompt from order 50 onward.
+该段在 plan mode 内稳定，但进入或退出会从顺序 50 开始改变系统提示词。
 
-### Human command
+### 人类命令
 
-#### What the model sees
+#### 模型所见内容
 
-`/plan`, `/plan off`, and their terminal results stay outside model history. A non-empty suffix other than the exact `off` argument becomes one user message through `agent.steer()` after plan mode is selected: any admitted image attachments as leading image blocks, then the trimmed text block. Bare `/plan` with admitted images steers one user message containing only those image blocks. An active `/plan off` selection contributes the standard logged user-switch notice only when the last request header described plan mode; cancelling a pending entry contributes none because no request observed it.
+`/plan`、`/plan off` 及其终端结果留在模型历史之外。除恰好为 `off` 以外的非空后缀会在选择 plan mode 后，通过 `agent.steer()` 成为一条用户消息：任何已准入的图片附件作为前置图片块，之后是已去除首尾空白的文本块。不带参数的 `/plan` 若带有已准入图片，会 steer 一条只含这些图片块的用户消息。plan mode 已激活时，选择 `/plan off` 只会在最后一个请求头描述了 plan mode 的情况下追加标准的已记录用户切换通知；取消待生效进入不会贡献通知，因为没有请求观测到它。
 
-#### Token effect
+#### Token 影响
 
-The optional message costs the same history tokens as submitting that content separately. Bare `/plan` without images and `/plan off` add none; bare `/plan` with images has the normal image-prompt cost. A narrated active exit adds the small retained switch notice.
+可选消息的历史 token 成本与单独提交该内容相同。不带图片和参数的 `/plan` 与 `/plan off` 不增加 token；不带参数但带图的 `/plan` 产生常规图片提示词成本。一次带有切换通知的已激活状态退出会追加一条简短且会保留的通知。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-The user block is append-only conversation growth. Entering or leaving plan mode changes the earlier policy section; a narrated exit notice is appended after the reusable request prefix.
+用户块是仅追加的对话增长。进入或退出 plan mode 会改变更早的策略段；退出转换的记录通知会追加在可复用请求前缀之后。
 
-### Exit tool schema and review exchange
+### 退出工具 schema 与评审交互
 
-#### What the model sees
+#### 模型所见内容
 
-The [`exit_plan_mode` schema](../../../docs/tool-catalog.md#deepseek-aidsh-plan-mode) remains available in both states; execution outside plan mode fails, while an approved in-mode review returns the canonical `{ approved: true }` value and renders the existing confirmation text. Rejection remains a failed call carrying review feedback, and a dismissed review a failed call naming the user's takeover.
+[`exit_plan_mode` schema](../../../docs/tool-catalog.md#deepseek-aidsh-plan-mode) 在两种状态下均可用；在 plan mode 外执行会失败，而 plan mode 内经批准的评审会返回规范的 `{ approved: true }` 值，并渲染既有的确认文本。拒绝仍是携带评审反馈的失败调用，放弃审阅则是一次指明用户接手的失败调用。
 
-#### Token effect
+#### Token 影响
 
-The stable schema is paid according to ToolRuntime mode, and each plan argument and review result remains in conversation history.
+稳定 schema 的成本取决于 ToolRuntime mode，每次传入的 plan 参数和评审结果都会保留在对话历史中。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-Mode transitions do not change the tool catalog; plan arguments and review results extend the conversation normally.
+mode 转换不改变工具目录；plan 参数与评审结果按常规方式扩展对话。
 
-## Known Limitations and Deferred Work
+## 已知限制与暂缓事项
 
-- Plan mode guides rather than enforces; deployments that need enforced restrictions must configure sandbox and approval controls independently.
-- A selection made after the turn's final accepted pre-step is lost if the process exits before another accepted in-turn pre-step, so the UI must reapply it.
-- Forked agents inherit logged plan state, while newly spawned agents begin inactive; there is no creation-time plan option.
-- A live child owned by another agent cannot open the `exit_plan_mode` review. The failed call tells the child to include the unresolved decision in its final result; durable fork lineage alone does not prevent a session resumed as a runtime root from opening the review.
-- Only the Web UI has a specialized `plan-review` renderer; another interaction provider may present the same request through its generic option flow.
+- Plan mode 只进行引导，而不强制执行；需要强制限制的部署必须分别配置沙箱与批准控制。
+- 如果进程在另一个被接受的轮内 pre-step 之前退出，某轮最后一个被接受的 pre-step 之后作出的选择会丢失，因此 UI 必须重新应用它。
+- Fork 的 agent 会继承已记录的 plan 状态，新 spawn 的 agent 则从未激活状态开始；不存在创建时 plan 选项。
+- 由另一个 agent 所有的存活子级无法打开 `exit_plan_mode` 审阅。该调用失败时会提示子级在最终结果中包含尚未解决的决策；仅有持久化 fork 谱系并不会阻止恢复为运行时根的会话打开该审阅。
+- 只有 Web UI 具备专用的 `plan-review` 渲染器；其他交互提供方可以通过通用选项流程呈现同一请求。

@@ -1,23 +1,21 @@
-# Agent Note: Unlink fixture junctions before recursive deletion
+# Agent Note: 递归删除前先解链 fixture junction
 
 Status: implemented
 
-English | [中文](2026-08-12-unlink-fixture-junctions-before-delete.zh.md)
+## 问题
 
-## Problem
+install-lefthook 与 translation-pairing 的 fixture 把仓库真实的 `scripts/`、`node_modules` 和 tsx 包目录用 junction 链进 fixture 树，让 installer 探测能穿透解析。Windows 的递归删除可能把 junction（MOUNT_POINT 重解析点）当作目录并跟随进其目标；Git 的 `worktree remove` 正是这样删掉了仓库被跟踪的 `scripts/` 和 tsx 包（事故的插桩把删除定位到这一步）。因此，信任删除器的 fixture 清理删掉的是仓库自己的源码，而不是 fixture。
 
-The install-lefthook and translation-pairing fixtures junction the repository's real `scripts/`, `node_modules`, and tsx package directories into fixture trees so installer probes resolve through them. Windows recursive deletion can treat a junction (a MOUNT_POINT reparse point) as a directory and follow it into its target; Git's `worktree remove` did exactly that and deleted the repository's tracked `scripts/` and tsx package (the incident's instrumentation pinned the deletion to that step). A fixture cleanup that trusts its deleter therefore deletes the repository's own sources instead of the fixture.
+## 决策
 
-## Decision
+`scripts/test-fixture-cleanup.ts` 拥有 junction 安全的 fixture 拆除：`unlinkFixtureLinks` 先遍历并解链所有重解析点，`removeFixtureSafely` 再删除已无链接的树（带 Windows 异步句柄重试）。所有受影响的 `afterEach` 和 `worktree remove` 前的钩子都调用它。通用规则记录在 `docs/defensive-patterns.md`：链接形态的路径用 unlink 删除，递归 `rmSync` 只留给确知为真实目录的路径。
 
-`scripts/test-fixture-cleanup.ts` owns junction-safe fixture teardown: `unlinkFixtureLinks` walks a tree and unlinks every reparse point before `removeFixtureSafely` removes the now link-free tree (with Windows async-handle retries). Every affected `afterEach` and the pre-`worktree remove` hook call it. The general rule lives in `docs/defensive-patterns.md`: remove link-shaped paths with unlink, reserve recursive `rmSync` for known real directories.
+## 考虑过的替代方案
 
-## Alternatives considered
+**只信任递归删除。** 否决：特定删除器是否跟随 junction 随工具和版本而异，而 `git worktree remove` 这一条路径已经摧毁过被跟踪文件；任何清理都不该拿仓库去赌这个行为。
 
-**Trust recursive deletion alone.** Rejected: whether a given deleter follows junctions is tool- and version-dependent, and one path through `git worktree remove` already destroyed tracked files; no cleanup may bet the repository on that behavior.
+**复制而不是 junction 真实目录。** 否决：fixture 的意义就是用真实内容探测真实 installer 路径，复制品会失去被测边界。
 
-**Copy instead of junctioning the real directories.** Rejected: the fixtures exist to probe the real installer paths through their real contents, so copies would stop exercising the boundary under test.
+## 后果
 
-## Consequences
-
-Fixture teardown can no longer reach repository sources through junctions. The extra walk is one lstat/unlink pass over small fixture trees. The data-destroying defect now has its durable why beside the defensive-patterns rule, and the helper is the shared teardown path for future junction fixtures.
+fixture 拆除不再能穿过 junction 触及仓库源码。额外开销只是对小型 fixture 树的一趟 lstat/unlink。这个摧毁数据的缺陷现在在 defensive-patterns 规则旁有了持久化的原因，helper 也是未来所有 junction fixture 共享的拆除路径。

@@ -1,68 +1,70 @@
-# DeepSeek Harness Architecture
+# DeepSeek Harness 架构
 
-English | [中文](architecture.zh.md)
+改动 `packages/` 下的任何内容之前，请先阅读本文。本文假定你已了解 Cordis；如果尚未了解，请先阅读[入门](cordis-primer.md)或[教程](cordis-tutorial/index.md)。
 
-Read this before changing anything under `packages/`. It assumes you know Cordis; if you do not, start with the [primer](cordis-primer.md) or the [tutorial](cordis-tutorial/index.md).
-
-We recommend using an agent to explore the codebase and understand its architecture.
+建议使用 agent（智能体）探索代码库并理解其架构。
 
 ## Cordis
 
-[Cordis](cordis-primer.md) is the framework under dsh: plugins contribute services, typed events, and reversible effects to a shared context. Every part of the product is a plugin, including the model adapter, the tool registry, the session log, and the agent loop itself, so every part is replaceable from configuration.
+[Cordis](cordis-primer.md) 是 dsh 底层的框架：插件向共享上下文贡献服务、类型化事件和可逆的副作用。产品的每一部分都是插件，包括模型适配器、工具注册表、会话日志，以及 agent loop（智能体循环）本身，因此每一部分都可以从配置替换。
 
-There is no privileged core to patch: you extend dsh by mounting a plugin beside the others, and registrations are effects that unwind when their plugin unloads.
+不存在需要打补丁的特权内核：扩展 dsh 的方式是把插件挂载到其他插件旁边，而各项注册都是副作用，会在其插件卸载时撤销。
 
-## Profiles and bundles
+## Profile 与组合包
 
-A running `dsh` is a plugin tree composed at boot from ordered layers.
+运行中的 `dsh` 是一棵插件树，由启动时按序叠加的各层组合而成。
 
-A **profile** is a named composition stored in the Harness home. It lists the bundles it stacks, holds any out-of-tree plugins it installs, and keeps the user's own `cordis.patch.yml`. `web` and `headless` ship as templates.
+**profile** 是存放在 Harness home 中的具名组装。它列出自己叠放的组合包，存放自己安装的树外插件，并保存用户自己的 `cordis.patch.yml`。`web` 和 `headless` 作为模板随发行版交付。
 
-A **bundle** is a distribution format for Cordis config rows and the code they mount, so whatever it inserts stays patchable by the layers above it.
+**组合包**是 Cordis 配置项及其挂载代码的分发格式，因此它插入的内容始终可被其上各层 patch。
 
-Each declares itself in its own `package.json` under a `dsh` field: `dsh.profile` lists a profile's bundles, and `dsh.bundle` points at a bundle's patch file.
+两者都在各自的 `package.json` 中通过 `dsh` 字段声明自己：`dsh.profile` 列出一个 profile 的组合包，`dsh.bundle` 指向一个组合包的 patch 文件。
 
-[`dsh-base`](../packages/bundle/base/README.md) is the first layer of every profile: model adapters, tools, persistence, sandbox and approval policy, settings, credentials, telemetry. [`dsh-web-app`](../packages/bundle/web-app/README.md) adds the browser application; [`dsh-headless`](../packages/bundle/headless/README.md) adds a one-shot runner with no server at all.
+[`dsh-base`](../packages/bundle/base/README.md) 是每个 profile 的第一层：模型适配器、工具、持久化、沙箱与审批策略、设置、凭据、遥测。[`dsh-web-app`](../packages/bundle/web-app/README.md) 增加浏览器应用；[`dsh-headless`](../packages/bundle/headless/README.md) 增加一次性运行器，且完全不带服务器。
 
-Layers apply to an empty entry list in this order: each bundle in the profile's listed order, then the profile's `cordis.patch.yml`, then the home-level one, then any `--patch` overlay. A patch targets a row by id and replaces its whole config, or inserts new rows.
+各层按此顺序应用在空条目列表之上：先按 profile 列出的顺序应用每个组合包，然后是 profile 的 `cordis.patch.yml`，然后是 home 级的那份，最后是任意 `--patch` overlay。一条 patch 按 id 定位某个条目并替换其整个 config，或插入新条目。
 
-To see the tree your machine actually boots:
+要查看你的机器实际启动的配置树：
 
 ```sh
 dsh --profile web --dump-config
 ```
 
-Any row it prints can be replaced by a patch of your own.
+它打印出的任何条目，都可以由你自己的 patch 替换。
 
-Composition mechanics are in [app-boot](../packages/boot/app-boot/README.md#profiles); config fields are in the generated [config catalog](config-catalog.md).
+组装机制见 [app-boot](../packages/boot/app-boot/README.md#profiles)；配置字段见生成的[配置目录](config-catalog.md)。
 
-## Core packages
+## 核心包
 
-Here are some core packages that contribute to the Cordis tree.
+以下是向 Cordis 树贡献内容的部分核心包。
 
-| Package | Owns | `ctx` key |
+| 包 | 职责 | `ctx` 键 |
 |---|---|---|
-| [`core/session`](subsystems/session.md) | The append-only `SessionEvent` log and in-memory store | `ctx.sessions` |
-| [`core/system-prompt`](subsystems/system-prompt.md) | Prompt-section and tool-schema assembly | `ctx.systemPrompt` |
-| [`core/tools`](subsystems/tools.md) | The scoped tool registry and guarded execution pipeline | `ctx.tools` |
-| [`core/agent`](subsystems/core.md) | The `Agent` interface, live registry, and `agent/*` events | `ctx.agents` |
-| [`core/agent-loop`](subsystems/core.md) | The default driver implementing that interface | `ctx.agentLoop` |
-| [`core/scope`](subsystems/scope.md) | The per-agent scoped-registration primitive | library, no key |
-| [`llm/llm`](subsystems/llm-streaming.md) | Message and stream vocabulary plus the adapter seam | `ctx.llm` |
+| [`core/session`](subsystems/session.md) | 仅追加的 `SessionEvent` 日志和内存存储 | `ctx.sessions` |
+| [`core/system-prompt`](subsystems/system-prompt.md) | 提示词片段与工具 schema 的组装 | `ctx.systemPrompt` |
+| [`core/tools`](subsystems/tools.md) | 作用域化的工具注册表和带把关的执行流水线 | `ctx.tools` |
+| [`core/agent`](subsystems/core.md) | `Agent` 接口、活跃 agent 注册表和 `agent/*` 事件 | `ctx.agents` |
+| [`core/agent-loop`](subsystems/core.md) | 实现该接口的默认驱动器 | `ctx.agentLoop` |
+| [`core/scope`](subsystems/scope.md) | 按 agent 划分作用域的注册原语 | 库，无 ctx 键 |
+| [`llm/llm`](subsystems/llm-streaming.md) | 消息与流式词汇表，以及适配器 seam | `ctx.llm` |
 
-## Events
+<a id="events"></a>
 
-Events are the extension points, and picking the right domain is the first decision in most changes.
+## 事件
 
-- **Session events** are durable facts appended to the log and broadcast through `session/event`. Use one when the fact must survive a reload.
-- **Agent events** (`agent/*`) carry a live `Agent`: inbox, step, status, request, validation, continuation. Use one to observe or intercept work in flight.
-- **Capability events** attach policy and adapters to a seam (`fs/*`, `tools/*`, `telemetry/*`) without importing the loop.
+事件就是扩展点，而选对事件域是大多数改动的第一个决定。
 
-The [event map](event-producer-consumer.md) lists every event's producers and consumers.
+- **会话事件**是追加到日志并通过 `session/event` 广播的持久事实。当某个事实必须在重新加载后仍然存在时，使用它。
+- **Agent 事件**（`agent/*`）携带活跃 `Agent`：inbox、步骤、状态、请求、验证、续跑。要观察或拦截进行中的工作时，使用它。
+- **能力事件**无需导入循环即可向某个 seam（`fs/*`、`tools/*`、`telemetry/*`）附加策略和适配器。
 
-## Turn flow
+[事件映射](event-producer-consumer.md)列出每个事件的生产方与消费方。
 
-A **step** is one model request plus the tools it calls. A **turn** is zero or more steps: it opens before its first input is claimed and closes once nothing is owed.
+<a id="turn-flow"></a>
+
+## 轮次流程
+
+一个**步骤**是一次模型请求加上它调用的工具。一个**轮次**包含零个或多个步骤：它在领取首条输入之前打开，并在不再欠下任何工作时关闭。
 
 ```text
 turn/start
@@ -81,51 +83,51 @@ turn/start
 turn/end
 ```
 
-`turn/*`, `step/*`, `user/message`, `assistant/*`, and `tool/*` are durable session events; the rest are live extension points across three domains. `agent/pre-step`, `agent/request`, `llm/stream`, and the three `tools/*` events are waterfalls, whose listeners must call `next()` to delegate; `agent/turn-stopping` is serial and has no `next()`.
+`turn/*`、`step/*`、`user/message`、`assistant/*` 和 `tool/*` 是持久会话事件；其余是分属三个事件域的实时扩展点。`agent/pre-step`、`agent/request`、`llm/stream` 和三个 `tools/*` 事件是 waterfall（瀑布式事件），其监听器必须调用 `next()` 才能委托下去；`agent/turn-stopping` 是 serial 事件，没有 `next()`。
 
-Input reaches the driver through one inbox. Some messages wake it immediately; injected context waits in the inbox until another message does.
+输入通过同一个 inbox 到达驱动器。有些消息会立即唤醒它；注入的上下文会留在 inbox 中，直到另一条消息将其唤醒。
 
-`agent/pre-step` decides what the model sees. Listeners may rewrite the claimed messages or reject them outright; a rejected or empty first claim still closes a durable turn that spent no step, so the log records the attempt. Each step reads the prompt sections and tool schemas that plugins registered.
+`agent/pre-step` 决定模型看到什么。监听器可以改写已领取的消息，也可以直接拒绝它们；首次领取被拒绝或被改写为空时，仍会关闭一个不含步骤的持久轮次，因此日志会记录这次尝试。每个步骤读取插件注册的提示词片段和工具 schema。
 
-Details: the [sequence diagram](agent-lifecycle.md), the [tool pipeline](tool-execution-pipeline.md), and [cancellation and error recovery](subsystems/core.md#the-agent-handle).
+详情见[时序图](agent-lifecycle.md)、[工具流水线](tool-execution-pipeline.md)和[取消与错误恢复](subsystems/core.md#the-agent-handle)。
 
-## Session log
+## 会话日志
 
-The session log is the source of the context the model sees. `deriveMessages()` projects model history from it, and raw `assistant/chunk` events preserve replay and UI fidelity. Fork, resume, transcripts, telemetry, and persistence all derive from this stream.
+会话日志是模型所见上下文的来源。`deriveMessages()` 从中投影出模型历史，原始 `assistant/chunk` 事件则保证回放和 UI 保真。fork、恢复、transcript（文本记录）、遥测和持久化都派生自该事件流。
 
-**Model-visible means logged.** Anything that reaches a model request must be reconstructable from the log, and a runtime invariant asserts it. This is why a new model-visible input requires a new session event: extend `SessionEventMap` and render from the log.
+**模型可见即已记录。** 抵达模型请求的一切都必须能从日志重建，并由一项运行时不变量断言这一点。因此，新增一项模型可见输入就需要新增一个会话事件：扩展 `SessionEventMap` 并从日志渲染。
 
-## Capability seams
+## 能力 seam
 
-A **seam** is a swappable capability with three roles: a **Service Definition** declaring the interface, a **Service Provider** implementing it, and a **Consumer** using it, commonly a model-facing tool. A package may combine roles, but one role alone is not a seam; adding a capability means designing all three ([capability graph](capability-seams.md)).
+一个 **seam** 是一项可替换能力，包含三种角色：声明接口的 **Service Definition**、实现它的 **Service Provider**，以及使用它的 **Consumer**（通常是面向模型的工具）。一个包可以合并承担多个角色，但单一角色本身不是 seam；添加一项能力意味着把三者一并设计（[能力图](capability-seams.md)）。
 
-Seams are why one provider swap changes the whole product. Filesystem and subprocess providers share one execution world, so targeting both at the same remote execution environment moves Bash, PTY, and LSP with no provider forks. A Remote-SSH marker is such an execution environment, not a sandbox; sandbox policy remains a separate provider. The desktop's marker realization sends those capabilities to a Go agent while leaving the Host control plane local ([decision](../.agents/notes/implemented/feature/2026-08-31-desktop-remote-ssh-go-execution-world.md)). [Subagent providers](subsystems/subagent.md) vary just as widely behind one interface, from a fresh child agent to a delegated turn in another product.
+seam 正是替换一个提供方就能改变整个产品的原因。文件系统与进程提供方共享同一个执行世界，因此把二者指向同一远程执行环境，就会把 Bash、PTY 和 LSP 一并搬过去，无需提供方专用 fork。Remote-SSH marker 就是这种执行环境，而不是沙箱；沙箱策略仍由独立提供方负责。桌面端的 marker 实现会把这些能力发送给 Go agent，同时让 Host 控制平面留在本地（[决策](../.agents/notes/implemented/feature/2026-08-31-desktop-remote-ssh-go-execution-world.md)）。[subagent 提供方](subsystems/subagent.md)在同一个接口之后同样千差万别，从新建一个子 agent，到把一个轮次委派给另一个产品。
 
-[Experimental Agent Teams](subsystems/agent-team.md) is a private opt-in coordination seam on `ctx.agentTeams`, with a durable roster, task board, and mailbox layered over continuable subagents.
+[实验性 Agent Teams](subsystems/agent-team.md) 是 `ctx.agentTeams` 上的私有显式启用协作 seam，在可继续 subagent 之上提供持久 roster、任务板和 mailbox。
 
-## Where new behavior goes
+## 新行为的归属位置
 
-New behavior attaches to a documented extension point. Changing the loop itself updates this map.
+新行为附加到已有文档记录的扩展点。改动循环本身时，本映射随之更新。
 
-| Goal | Mechanism |
+| 目标 | 机制 |
 |---|---|
-| Add a model provider | register its adapter on `ctx.llm` |
-| Add a model-facing capability | register on `ctx.tools`; its schema joins prompt assembly |
-| Give one session a different capability set | compose an agent preset; a service row there needs an `isolate` realm |
-| Add shell execution | register a `ctx.shell` backend; the local one spawns through `ctx.subprocess` |
-| Add persistent terminal execution | register a `ctx.terminals` backend plus `dsh-tool-terminal` |
-| Add a human command | register on `ctx.commands`; it dispatches without a model turn |
-| Add background work | register on `ctx.jobs`; `job_*` tools collect or stop it |
-| Add filesystem access or policy | register a `ctx.fs` provider or listen to `fs/*` events |
-| Confine spawned processes | use a `ctx.sandbox` backend; consumers wrap argv before spawning |
-| Intercept a request, tool, or turn | use its `agent/*` or `tools/*` event; `agent/turn-stopping` stops a turn |
-| Add model-facing context | call `agent.inject()`; it lands in the next admitted request |
-| Add UI or editor integration | drive `ctx.agents` and render from `session/event` |
-| Add a Web Client Chat node | register a `ConversationNodeDefinition` + keyed renderer |
-| Add durable session state | extend `SessionEventMap`; render and replay from the log |
-| Generate session titles | register the sole `ctx.sessionTitle` provider |
-| Manage a same-session objective | use `ctx.goals`; continue through `agent/*` |
-| Fork a live session | `ctx.sessions.fork(source, boundary?, childSessionId?)` |
-| Scope a registration to one agent | use that agent's `agent.ctx` |
+| 添加模型提供方 | 在 `ctx.llm` 上注册其适配器 |
+| 添加面向模型的能力 | 在 `ctx.tools` 上注册；其 schema 加入提示词组装 |
+| 让某个会话拥有不同的能力集合 | 组装一个 agent preset；其中的服务行需要 `isolate` realm |
+| 添加 shell 执行 | 注册 `ctx.shell` 后端；本地后端通过 `ctx.subprocess` spawn 进程 |
+| 添加持久化终端执行 | 注册 `ctx.terminals` 后端和 `dsh-tool-terminal` |
+| 添加用户命令 | 在 `ctx.commands` 上注册；它无需模型轮次即可分派 |
+| 添加后台工作 | 在 `ctx.jobs` 上注册；`job_*` 工具负责收集或停止 |
+| 添加文件系统访问或策略 | 注册 `ctx.fs` 提供方，或监听 `fs/*` 事件 |
+| 限制所启动的进程 | 使用 `ctx.sandbox` 后端；消费方在启动进程前包装 argv |
+| 拦截请求、工具或轮次 | 使用相应的 `agent/*` 或 `tools/*` 事件；`agent/turn-stopping` 会停止轮次 |
+| 添加模型可见上下文 | 调用 `agent.inject()`；它会落到下一次获准的请求中 |
+| 添加 UI 或编辑器集成 | 驱动 `ctx.agents` 并从 `session/event` 渲染 |
+| 添加 Web Client Chat 节点 | 注册 `ConversationNodeDefinition` + keyed renderer |
+| 添加持久会话状态 | 扩展 `SessionEventMap`；从日志渲染和回放 |
+| 生成会话标题 | 注册唯一的 `ctx.sessionTitle` 提供方 |
+| 管理同会话目标 | 使用 `ctx.goals`；通过 `agent/*` 续跑 |
+| fork 活跃会话 | `ctx.sessions.fork(source, boundary?, childSessionId?)` |
+| 将注册项限定到单个 agent | 使用该 agent 的 `agent.ctx` |
 
-The [extension cookbook](cookbook/extension-cookbook.md) maps features to capabilities and indexes the step-by-step guides for [packages](cookbook/adding-a-package.md), [tools](cookbook/adding-a-tool.md), [LLM adapters](cookbook/adding-an-llm-adapter.md), [Chat nodes](cookbook/adding-a-conversation-node.md), and [settings cards](cookbook/adding-a-settings-card.md).
+[扩展实操手册](cookbook/extension-cookbook.md)将功能映射到能力，并索引[包](cookbook/adding-a-package.md)、[工具](cookbook/adding-a-tool.md)、[LLM（大语言模型）适配器](cookbook/adding-an-llm-adapter.md)、[Chat 节点](cookbook/adding-a-conversation-node.md)和[设置卡片](cookbook/adding-a-settings-card.md)的分步指南。

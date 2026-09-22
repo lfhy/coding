@@ -1,31 +1,29 @@
-# Agent Note: Resolved theme color metadata
+# Agent Note: 基于解析后主题的颜色元数据
 
 Status: implemented
 
-English | [中文](2026-08-06-resolved-theme-color-metadata.zh.md)
+## 问题
 
-## Problem
+Web 客户端可以独立于操作系统偏好解析主题，因此 manifest（元数据清单）中单一的 `theme_color` 值或带媒体条件的静态元数据可能与显式选择的 Light 或 Dark 不一致。此时，无论是已安装页面还是普通页面，其周围的浏览器界面都未必与应用界面一致，尽管布局呈现器已经拥有解析后的 document 调色板。
 
-The web client can resolve its theme independently of the operating-system preference, so a single manifest `theme_color` or media-qualified static metadata can disagree with an explicit Light or Dark selection. Browser chrome around an installed or ordinary page then need not match the app surface even though the layout presenter already owns the resolved document palette.
+## 决策
 
-## Decision
+ui-layout 的 `ThemePresenter` 拥有一个 `<meta name="theme-color">`，与根元素上的 `color-scheme`、深色调色板属性和内联 token 写入并列。在应用解析后快照的调色板与 token 覆盖值之后，呈现器读取 body 计算样式中的 `background-color`，写入该元数据元素，再将该节点插入 document head。后续快照会更新同一节点，资源释放时则移除它。
 
-The ui-layout `ThemePresenter` owns one `<meta name="theme-color">` alongside its root `color-scheme`, dark-palette attribute, and inline token writes. After applying a resolved snapshot's palette and token overrides, the presenter reads the body's computed `background-color` into the metadata element and inserts that single node into the document head. Subsequent snapshots update the same node, and disposal removes it.
+渲染后的 body 背景仍是颜色真源。PWA manifest 不包含静态 `theme_color` 或 `background_color`，`ThemeDefinition` 也不新增可能与 token 调色板偏离的第二个颜色字段。这样一来，注册主题的基础背景 token 也能通过页面界面使用的同一条应用路径作用于浏览器界面。
 
-The rendered body background remains the color authority. The PWA manifest carries no static `theme_color` or `background_color`, and `ThemeDefinition` gains no second color field that could drift from the token palette. This also lets a registered theme's base-background token reach browser UI through the same application path as its page surface.
+## 验证
 
-## Verification
+呈现器的单元测试约定覆盖浅色和深色模式下的计算颜色、节点复用及资源释放。ui-layout 组合测试覆盖初始插入、事件驱动的复用和 fiber 清理。Web 浏览器设置场景通过实际交付的组合依次驱动 Light、Dark、System、操作系统偏好变化和重新加载，并断言页面始终只有一个元数据元素，其内容等于计算后的 body 背景且控制台无错误。这项元数据变更不会出现在渲染后的无障碍树输出中，因此场景现有的预期输出保持不变。
 
-The presenter unit contract covers light and dark computed colors, node reuse, and disposal. The ui-layout composition test covers initial insertion, event-driven reuse, and fiber cleanup. The Web browser settings scenario drives Light, Dark, System, operating-system changes, and reload through the shipped composition, asserting one metadata element whose content equals the computed body background with no console errors. The metadata change has no rendered accessibility-tree output, so the existing scenario golden remains unchanged.
+## 曾考虑的替代方案
 
-## Alternatives considered
+**在 manifest 中设置 `theme_color`。** manifest 只能提供一个适用于整个应用的值，因此任一内置调色板都可能与之不一致；manifest 有意省略该字段。
 
-**Set `theme_color` in the manifest.** A manifest provides one app-wide value, so either built-in palette can disagree with it; the manifest deliberately omits the field.
+**用 `prefers-color-scheme` 媒体查询声明浅色和深色元数据。** 媒体查询跟随操作系统，而非应用内显式选择，因此无法表示解析后的偏好。
 
-**Declare light and dark metadata with `prefers-color-scheme` media queries.** Media queries follow the operating system, not an explicit in-app selection, and therefore cannot represent the resolved preference.
+**为每个 `ThemeDefinition` 添加 `themeColor` 字段。** 单独的值可让自定义主题独立选择浏览器界面配色，但会复制基础背景色，并允许页面与周围的浏览器界面发生偏离。如果受支持的主题需要这种有意差异，可以再引入独立字段。
 
-**Add a `themeColor` field to every `ThemeDefinition`.** A separate value gives custom themes an independent browser-chrome choice, but duplicates the base-background color and permits the page and surrounding UI to drift. A distinct field can be introduced if a supported theme needs that intentional difference.
+## 后果
 
-## Consequences
-
-Supporting browsers update surrounding UI after the client applies its initial resolved snapshot and after every theme change; browsers without `theme-color` support ignore the metadata. Because the value comes from computed presentation, the client must keep a concrete body background. The presenter creates and removes its own node, while unrelated head metadata remains untouched.
+支持该元数据的浏览器会在客户端应用初始解析后快照及之后每次主题变化时更新周围界面；不支持 `theme-color` 的浏览器会忽略这项元数据。由于该值来自计算后的呈现结果，客户端必须确保 body 始终有明确的背景色。呈现器会创建并移除自己的节点，head 中无关的元数据则保持不变。

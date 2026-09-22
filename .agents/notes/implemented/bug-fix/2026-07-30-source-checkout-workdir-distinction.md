@@ -1,33 +1,31 @@
-# Agent Note: Source checkout paths do not define working directories
+# Agent Note: 源码 checkout 路径不定义工作目录
 
 Status: implemented
 
-English | [中文](2026-07-30-source-checkout-workdir-distinction.zh.md)
+## 问题
 
-## Problem
+`harness:source` 提示词段遵循[源码位置决策](../../archived/feature/2026-07-21-dsh-system-prompt-source-path.md)，但原有措辞把 checkout 称为「你自己的源代码」，却没有区分该路径与会话 workspace。在 persona 不声明 `{{cwd}}` 的普通 TUI 配置中，这可能是系统提示词开头附近唯一固定的绝对路径。因此，DeepSeek V4 可能会直接用 harness checkout 回答「what's the workdir?」，而不是确定会话的当前工作目录。
 
-The `harness:source` prompt section follows the [source-location decision](../../archived/feature/2026-07-21-dsh-system-prompt-source-path.md), but its original wording called the checkout “your own source code” without distinguishing that path from the session workspace. In a normal TUI configuration that does not state `{{cwd}}` in its persona, this may be the only fixed absolute path near the start of the system prompt. DeepSeek V4 could therefore answer “what's the workdir?” with the harness checkout instead of determining the session's current working directory.
+直接断言 checkout 不是工作目录同样不准确。`dsh meta` 会有意让源码 checkout 同时充当这两个值。
 
-A blanket statement that the checkout is not the working directory would also be false. `dsh meta` intentionally makes the source checkout both values.
+## 决策
 
-## Decision
+该提示词段将路径标识为「DeepSeek Harness implementation checkout」。它说明 checkout 位置与当前工作目录是两个可能不同的值，禁止从 checkout 路径推断工作目录，指示模型使用 `pwd`，并限定该 checkout 只用于检查或扩展 DSH 自身。
 
-The section identifies the path as the “DeepSeek Harness implementation checkout.” It says that the checkout location and current working directory are separate values that may differ, forbids inferring the working directory from the checkout path, directs the model to use `pwd`, and limits the checkout's purpose to inspecting or extending DSH itself.
+路径推导方式、全局 `harness:source` 所有权和 `-99` 顺序均保持不变。将两者描述为概念上独立、而不是始终不相等，使这条指令在普通项目会话和 `dsh meta` 中都准确。
 
-The path derivation, global `harness:source` ownership, and `-99` ordering remain unchanged. Describing the values as conceptually separate rather than always unequal keeps the instruction accurate in both ordinary project sessions and `dsh meta`.
+## 验证
 
-## Verification
+`dsh-app-boot` 单元测试固定了完整文本及其顺序。CLI（命令行界面）无密钥 PTY 冒烟测试检查组装后的请求 header。TUI 的 `source-checkout-workdir` 快照把该提示词段挂载为 `/opt/dsh-source`，通过录制的 DeepSeek V4 turn 提问「what's the workdir?」，并要求回放 transcript（文本记录）运行 `pwd`，报告生成的 workspace 而不是 checkout。
 
-The `dsh-app-boot` unit test pins the exact text and its ordering. The CLI keyless PTY smoke inspects the assembled request header. The TUI `source-checkout-workdir` snapshot mounts the section with `/opt/dsh-source`, asks “what's the workdir?” through a recorded DeepSeek V4 turn, and requires the replayed transcript to run `pwd` and report the generated workspace rather than the checkout.
+## 考虑过的替代方案
 
-## Alternatives considered
+**声明 checkout 永远不是工作目录。**拒绝：`dsh meta` 会有意让它们指向同一路径。
 
-**Say that the checkout is never the working directory.** Rejected because `dsh meta` deliberately makes them the same path.
+**把当前工作目录写入全局源码提示词段。**拒绝：源码提示词段由 launcher 全局持有，而工作目录属于各个会话；将两者合并会与 agent loop（智能体循环）对 `cwd` 的所有权重复，还会让稳定的源码事实随 agent 变化。
 
-**Put the current working directory in the global source section.** Rejected because the source section is launcher-global while the working directory belongs to each session; combining them would duplicate the loop's `cwd` ownership and make a stable source fact vary per agent.
+**从提示词中删除源码路径。**拒绝：launcher 从无关项目启动时，自引用 DSH 工具仍需要可靠的 checkout 位置。
 
-**Remove the source path from the prompt.** Rejected because self-referential DSH tools still need a reliable checkout location when the launcher starts from an unrelated project.
+## 后果
 
-## Consequences
-
-The prompt is longer and a direct working-directory question may spend one inexpensive `pwd` tool call. In exchange, the model no longer treats the harness implementation path as an implicit task workspace, while meta mode remains truthful when both values coincide.
+提示词会变长，直接询问工作目录时可能多花一次廉价的 `pwd` 工具调用。作为交换，模型不再把 harness 实现路径当作隐含的任务 workspace；当 meta 模式使两个值重合时，提示词仍然准确。

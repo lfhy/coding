@@ -1,45 +1,43 @@
-# Agent Note: Continuable delegation is background-first
+# Agent Note: 可继续委派采用后台优先
 
 Status: implemented
 
-English | [中文](2026-08-11-background-first-continuable-delegation.zh.md)
+## 问题
 
-## Problem
+可继续 child 已经具备持久化 id、独立轮次、后续消息以及由管理器负责的结算通知。如果把省略的 `run_in_background` 视为前台，模型就必须在每次调用时重复写出 `true`，才能得到这套生命周期。这样也会掩盖真正有用的调度判断：只有当 parent 的下一步动作需要 child 结果时，parent 才应等待。
 
-A continuable child already has a durable id, independent turns, follow-up messaging, and a manager-owned settlement notice. Treating an omitted `run_in_background` as foreground makes that lifecycle depend on the model restating `true` on every call. It also obscures the useful scheduling test: the parent should wait only when its next action requires the child's result.
+child 作用域的 `report` 提示词要求发送自包含的最终报告，而[由管理器负责的结算投递](2026-08-06-manager-owned-subagent-settlement-delivery.md)会独立发送本次运行的结束结果与收尾消息。已完成的 child 因而可能先用最终报告唤醒 parent，再用结算通知唤醒一次。后台优先调度会保留两次投递：由 child 编写的交接仍是强制提示词指引，由管理器生成的通知则不依赖模型是否遵循指令，覆盖每种终止路径。
 
-The child-scoped `report` prompt requires a self-contained final report, while [manager-owned settlement delivery](2026-08-06-manager-owned-subagent-settlement-delivery.md) independently sends the run outcome and closing message. A completed child can therefore wake its parent with a final report and again with settlement. Background-first scheduling must preserve both deliveries: the child-authored handoff remains mandatory guidance, while the manager-authored notice covers every terminal path regardless of model compliance.
+## 决策
 
-## Decision
+`tool-subagent` 根据选定的生命周期策略解析省略的 `run_in_background`。`backgroundMode: continuable` 会把省略解析为后台并立即返回持久化 child id；显式传入 `false` 会选择前台并等待结果。`backgroundMode: one-shot` 保留前台默认行为，因为它的后台输出仍需通过 Task 收集。`enableRunInBackground: false` 仍会省略该参数、拒绝强制传入的 `true` 并在前台运行。系统不增加第二个默认选择配置。
 
-`tool-subagent` resolves an omitted `run_in_background` from the selected lifecycle policy. `backgroundMode: continuable` resolves omission to background and returns the durable child id immediately; explicit `false` selects foreground and waits for the result. `backgroundMode: one-shot` keeps its foreground default because background output still requires Task collection. `enableRunInBackground: false` continues to omit the parameter, reject forced `true`, and run in the foreground. No second default-selection config is added.
+面向模型的文本按位置划分职责：
 
-The model-facing text divides responsibility by location:
+- 工具描述说明调用行为、持久化 id、运行时结算通知、通过 `send_message` 继续对话，以及显式前台覆盖；
+- `run_in_background` 参数说明具体生命周期的默认值以及何时覆盖；
+- `tool:<toolName>` 系统提示词 section 会告诉模型同时启动相互独立的委派、在它们运行时继续有用工作，并且仅当下一步动作依赖结果时选择前台。只有当该工具在组装作用域中仍可见时才会渲染这个 section，因此子级工具限制会同时移除 schema 与对应指引。
 
-- the tool description states the call behavior, durable id, runtime settlement notice, follow-up through `send_message`, and the explicit foreground override;
-- the `run_in_background` parameter states the lifecycle-specific default and when to override it;
-- a `tool:<toolName>` system-prompt section tells the model to start independent delegations together, continue useful work while they run, and choose foreground only when the next action depends on the result. The section renders only when that tool remains visible in the assembly scope, so a child tool restriction removes the schema and its guidance together.
+[可继续 child 上报义务](2026-08-06-continuable-child-report-obligation.md)保持不变：child 提示词要求发送一份自包含的最终报告，并在发现会改变 parent 下一步动作的信息时提前报告。由管理器负责的结算仍然无条件执行，不检查报告是否已经到达。这两条消息可能重复最终内容，但作者和用途不同：`report` 是 child 的显式交接，结算则记录本次运行如何结束，并在 child 无法配合时保留终止输出。`reportDelivery` 仍是部署调度策略，默认值为 `next-step`，通过 parent inbox 保持报告先于结算的顺序。
 
-The [continuable child report obligation](2026-08-06-continuable-child-report-obligation.md) remains unchanged: the child prompt requires one self-contained final report and earlier reports for findings that change the parent's next action. Manager-owned settlement remains unconditional and does not inspect whether a report arrived. The two messages may repeat final content, but they retain distinct authors and purposes: `report` is the child's explicit handoff, while settlement records how the run ended and preserves terminal output when the child cannot cooperate. `reportDelivery` remains deployment scheduling policy with `next-step` as its default, preserving report-before-settlement order through the parent inbox.
+无密钥 headless `subagent-settlement` 场景省略 `run_in_background`，收到立即返回的 child id；尽管 fixture（测试前置数据）有意不调用 `report`，它仍通过管理器生成的结算通知到达 parent 最终答案。包测试另行固定了显式 `false` 的前台语义、parent 调度文本以及 child 的强制报告提示词。
 
-The keyless headless `subagent-settlement` scenario omits `run_in_background`, receives the immediate child id, and reaches the final parent answer through the manager-authored settlement notice even though its fixture deliberately does not call `report`. Package tests separately pin explicit `false` as foreground, the parent scheduling text, and the child's mandatory-report prompt.
+## 考虑过的替代方案
 
-## Alternatives considered
+**把字段替换为 `run_in_foreground`。** 反转布尔值会让常见情形以肯定形式表达，却会为同一项调度选择创造第二套词汇，并迫使所有现有调用方与面向提供方的 transcript（文本记录）一起改变。保留 `run_in_background` 可以维持单一字段，并把前台作为显式例外。
 
-**Replace the field with `run_in_foreground`.** Reversing the boolean makes the common case read positively, but creates a second vocabulary for the same scheduling choice and forces every existing caller and provider-facing transcript to change. Keeping `run_in_background` preserves one field and makes foreground the explicit exception.
+**增加可配置的后台默认值。** 独立默认值可能与 `backgroundMode`、schema 措辞和已安装提示词不一致。生命周期策略已经区分可继续 Activation 与一次性 Task，而这个区别正好决定了后台完成是否会自动投递。
 
-**Add a configurable background default.** A separate default can disagree with `backgroundMode`, the schema wording, and the installed prompt. The lifecycle policy already distinguishes a continuable activation from a one-shot Task, which is the distinction that determines whether background completion is delivered automatically.
+**只修改提示词。** 如果运行时解析不变，提示词偏好仍会让省略参数的调用进入前台。模型必须能够依赖公布的默认值，而不是在每次工具调用中完美复述它。
 
-**Change only the prompt.** Prompt preference without runtime resolution still turns an omitted argument into foreground. The model must be able to rely on the advertised default rather than reproduce it perfectly on every tool call.
+**最终报告到达后抑制结算通知。** 条件结算会重新引入每次 Activation 的记账，并且当 child 先报告进度、随后失败时丢掉无条件运行时保证。即使生成的消息与最终报告重叠，结算仍然无条件执行。
 
-**Suppress settlement after a final report arrives.** Conditional settlement reintroduces per-Activation bookkeeping and loses the unconditional runtime guarantee when a child reports progress and then fails. Settlement remains unconditional even when the resulting message overlaps a final report.
+**只用 `report` 发送结算前的进度。** 这样可以消除重复的最终内容，但也会从 child 提示词中移除由 child 编写的显式交接。最终报告义务保持不变，运行时结算则继续作为它的独立后备和终止记录。
 
-**Use `report` only for progress before settlement.** This removes duplicate final content but also removes the explicit child-authored handoff from the child prompt. The final-report obligation remains, and runtime settlement remains its independent fallback and terminal record.
+## 后果
 
-## Consequences
-
-- An ordinary continuable call is non-blocking without spelling `run_in_background: true`; serialized delegation is an explicit `false` choice.
-- Independent subagent calls in one assistant message overlap under the tool loop's concurrency-safe dispatch, while dependent foreground calls can still be issued one at a time.
-- Parent guidance, tool schema, runtime resolution, and settlement delivery state the same default.
-- A compliant child reports one self-contained final result and may report important findings earlier. Every Activation also produces an unconditional settlement notice, so a completed run may deliver overlapping final content twice.
-- One-shot background Jobs and disabled-background tool instances retain their existing behavior.
+- 普通可继续调用无需写出 `run_in_background: true` 即为非阻塞；串行委派需要显式选择 `false`。
+- 同一条 assistant 消息中的独立 subagent 调用会在工具循环的并发安全分发下重叠执行；有依赖的前台调用仍可逐个发出。
+- parent 指引、工具 schema、运行时解析和结算投递陈述同一个默认值。
+- 遵循指令的 child 会发送一份自包含的最终结果，也可以更早报告重要发现。每次 Activation 还会产生无条件结算通知，因此已完成的运行可能两次投递相互重叠的最终内容。
+- 一次性后台 Task 与禁用后台的工具实例保留现有行为。

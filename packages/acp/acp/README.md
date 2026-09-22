@@ -1,81 +1,79 @@
 # @deepseek-ai/dsh-acp
 
-English | [中文](README.zh.md)
+通过 JSON-RPC stdio 提供的仅面向自动化的 [ACP（Agent Client Protocol）](https://agentclientprotocol.com) 服务器。程序化客户端可以创建新 harness agent（智能体）、发送文本／图片提示词、收集已提交的 assistant 文本／图片、按策略响应一次性权限请求并取消工作。仓库中的主要客户端是 [`dsh-subagent-acp`](../../subagent/subagent-acp/README.md)。
 
-Automation-only [Agent Client Protocol](https://agentclientprotocol.com) server over JSON-RPC stdio. Programmatic clients create fresh harness agents, send text/image prompts, collect committed assistant text/images, resolve one-shot permission requests by policy, and cancel work. The primary in-repository client is [`dsh-subagent-acp`](../../subagent/subagent-acp/README.md).
+此包是传输适配器，而非 UI 集成或能力 seam。它不公开编辑器导航、transcript（文本记录）回放、命令、模式、配置选择器、信息征集、推理（reasoning）、计划、标题或工具展示。交互式渲染与向用户提问属于 Web 宿主和客户端模块。
 
-This package is a transport adapter, not a UI integration or a capability seam. It does not expose editor navigation, transcript replay, commands, modes, configuration pickers, elicitation, reasoning, plans, titles, or tool presentation. Interactive rendering and human questions belong to the Web host and client modules.
+## 插件
 
-## Plugin
+`apply(ctx, config)` 在 stdin/stdout 上打开 `AgentSideConnection` 并驱动 `ctx.agents`。Stdout 专用于协议帧。
 
-`apply(ctx, config)` opens an `AgentSideConnection` on stdin/stdout and drives `ctx.agents`. Stdout is reserved for protocol frames.
-
-| Config | Default | Meaning |
+| 配置 | 默认值 | 含义 |
 |---|---|---|
-| `provider` | — | Initial provider route for every created agent. |
-| `model` | — | Initial model for every created agent. |
+| `provider` | 无 | 每个已创建 agent 的初始提供方路由。 |
+| `model` | 无 | 每个已创建 agent 的初始模型。 |
 
-Both fields are optional so another agent/request listener may supply the target. The runnable ACP composition requires both.
+两个字段都是可选的，以便由另一个 agent/request 监听器提供目标。可运行的 ACP 组合同时要求两者。
 
-## Protocol contract
+## 协议约定
 
-| Method | Behavior |
+| 方法 | 行为 |
 |---|---|
-| `initialize` | Negotiates the supported version. Image prompts are advertised only when a durable attachment store is mounted and the configured exact provider/model resolves with explicit image input; audio and embedded context stay false. No session, editor, terminal, filesystem, or MCP capability is advertised. |
-| `authenticate` | No-op because the server advertises no authentication methods. |
-| `session/new` | Creates a fresh agent with an absolute primary `cwd`; empty `additionalDirectories` and `mcpServers` are accepted, non-empty values reject. |
-| `session/prompt` | Preserves ordered text and supported inline image blocks, renders resource links as bracketed textual references, and rejects audio, embedded resources, malformed/empty input, or an image when capability was not advertised. It validates the whole image batch and rechecks the session's latest exact route before any save, commits every image before the user event, permits one in-flight request per session, and waits for admission plus, once queued, whole-Agent idle and ordered output delivery. Normal quiescence reports `end_turn`; explicit ACP cancellation, disposal, or a prompt whose admission was discarded (a turnless slot) reports `cancelled`. |
-| `session/cancel` | Marks and aborts any in-progress admission without cancelling or waiting for unrelated Agent work; once this prompt has entered the Agent inbox, it cancels the addressed Agent and waits for the owned interval to quiesce. No late user message is published and the prompt settles as `cancelled`. With no in-flight prompt it cancels autonomous work; unknown ids are no-ops. |
-| `session/update` | Emits one `agent_message_chunk` per non-empty text or image block in a committed `assistant/message`, preserving order. Images are re-read and integrity-verified before inline base64 delivery. Raw deltas and non-message events are omitted. |
-| `session/request_permission` | Offers one-shot allow/reject choices for bridge-owned approval requests carrying a tool call id. Clients may answer automatically. |
+| `initialize` | 协商受支持的版本。只有挂载持久附件存储，且配置的确切提供方／模型解析后明确支持图片输入时，才公布图片提示词能力；音频与嵌入上下文保持 false。不公布会话、编辑器、终端、文件系统或 MCP 能力。 |
+| `authenticate` | 空操作，因为服务器不公布身份验证方法。 |
+| `session/new` | 以绝对路径作为主 `cwd` 创建新 agent；接受空的 `additionalDirectories` 和 `mcpServers`，拒绝非空值。 |
+| `session/prompt` | 保留文本与受支持内联图片块的顺序，将资源链接渲染为带方括号的文本引用，并拒绝音频、嵌入资源、格式错误／空输入，或在未公布能力时提交图片。它会先校验完整图片批次并重新检查会话的最新确切路由，再保存任一成员；在用户事件前提交全部图片；每个会话只允许一个正在处理的请求，并等待准入，以及消息入队后的整个 Agent 空闲和有序输出交付全部停稳。正常完全停稳时报告 `end_turn`；显式 ACP 取消、资源释放，或准入被丢弃的提示词（无轮次槽位）时报告 `cancelled`。 |
+| `session/cancel` | 标记并中止正在进行的准入，但不会取消或等待同一 Agent 上无关的既有工作；该提示词进入 Agent inbox 后，才会取消指定的 Agent 并等待自有区间停稳。不发布迟到的用户消息，提示词以 `cancelled` 结算。没有进行中的提示词时会取消自主工作；未知 id 为空操作。 |
+| `session/update` | 为已提交 `assistant/message` 中的每个非空文本或图片块发出一个 `agent_message_chunk`，并保留顺序。图片在以内联 base64 交付前会重新读取并校验完整性。省略原始增量和非消息事件。 |
+| `session/request_permission` | 为携带工具调用 id、由桥接层拥有的批准请求提供一次性允许／拒绝选项。客户端可以自动回答。 |
 
-One connection may own several sessions. The bridge keys records by branded session id and checks exact agent identity before routing events or permission requests. Each session has an independent prompt slot, workspace, cancellation path, and disposer.
+一个连接可以拥有多个会话。桥接层以带品牌的会话 id 作为记录键，并在路由事件或权限请求前检查 agent 是否为同一对象。每个会话都有独立的提示词槽位、工作区、取消路径和资源释放器。
 
-Committed-message output intentionally trades token-by-token latency for a clean automation result. Uncommitted provider chunks and retry attempts cannot leak partial text or images; reasoning and tool activity remain in the session log for observability through other interfaces. Per-session delivery is serialized because attachment reads are asynchronous, and a missing or corrupt committed image fails the prompt response instead of emitting a placeholder.
+已提交消息输出有意牺牲逐 token 输出的低延迟，以换取干净的自动化结果。未提交的提供方分片和重试尝试无法泄漏部分文本或图片；推理与工具活动仍保留在会话日志中，以便其他界面观测。由于附件读取是异步的，每个会话会串行交付内容；已提交图片缺失或损坏时，提示词响应会失败，而不会发出占位符。
 
-## Lifecycle
+## 生命周期
 
-Client disconnect and Cordis disposal share one memoized teardown. The bridge first rejects new sessions and prompts, cancels and quiesces prompt admission, agent activity, and ordered output delivery, then drains continuable descendants only below this connection's exact owned Agents before disposing those handles in parallel and awaiting every result before reporting any failure. Other frontends sharing the Context retain their continuable forests and admission. An ACP-only plugin reload therefore leaves no orphan agent.
+客户端断开与 Cordis 释放共用同一个记忆化清理流程。桥接层先拒绝新会话和提示词，取消并等待提示词准入、agent 活动和有序输出交付全部停稳，然后只 drain 此连接确切拥有的 Agent 之下的可继续后代，再并行释放这些 handle，并等待全部结果结算后才报告失败。其他共享该上下文的前端会保留其可继续森林和准入。因此，仅 ACP 的插件重载不会遗留 agent。
 
-ACP requires each prompt response to carry a `stopReason`, but the bridge does not claim a prompt-specific turn outcome. The operation interval starts when the prompt enters the Agent inbox and ends after admission, whole-Agent idle, and ordered output delivery all quiesce; failures from unrelated Agent work before that inbox receipt are not attributed to the prompt. Committed assistant messages stream across the owned interval, and steering or injected work may contribute before idle. Settlement precedence is explicit cancellation, output-delivery failure, interval-wide Agent failure, then the correlated turn ending. Token-limit endings settle as `end_turn`; a correlated model error rejects only at the same quiescence boundary.
+ACP 要求每个提示词响应都携带 `stopReason`，但桥接层不声称它表示提示词专属的轮次结果。操作区间从提示词进入 Agent inbox 开始，在准入、整个 Agent 空闲和有序输出交付全部停稳后结束；inbox 接收前无关 Agent 工作的失败不会归因给该提示词。已提交的 assistant 消息会在自有区间内流式输出，Agent 进入空闲状态前发生的 steering（中途引导）或注入工作也可能参与其中。结算优先级依次为显式取消、输出交付失败、区间内 Agent 失败、关联轮次结束。因 token 上限而结束时以 `end_turn` 结算；关联模型错误也只会在同一个完全停稳边界拒绝提示词。
 
-## Running
+## 运行
 
-`pnpm --dir /path/to/deepseek-harness run demo:acp` boots the repository's automation server composition. A parent harness can spawn it through [`@deepseek-ai/dsh-subagent-acp`](../../subagent/subagent-acp/README.md); other ACP clients need only the core methods above.
+`pnpm --dir /path/to/deepseek-harness run demo:acp` 启动仓库的自动化服务器组合。父 harness 可以通过 [`@deepseek-ai/dsh-subagent-acp`](../../subagent/subagent-acp/README.md) spawn 它；其他 ACP 客户端只需上述核心方法。
 
-## Model Experience
+## 模型体验
 
-### Prompt text and images
+### 提示词文本与图片
 
-#### What the model sees
+#### 模型看到的内容
 
-`session/prompt` preserves text/image order in one user message; adjacent text is concatenated, and a resource link appears as a bracketed `[resource_link name=… uri=…]` reference the model may open with its own tools. Inline image base64 is discarded after batch admission, so the durable message contains only verified attachment references. Protocol metadata, client capabilities, permission choices, and session ids never enter the model request.
+`session/prompt` 会在一条用户消息中保留文本／图片顺序；相邻文本会拼接，资源链接则表示为带方括号的 `[resource_link name=… uri=…]` 引用，模型可以使用自身工具打开它。内联图片 base64 在批量准入后即被丢弃，因此持久消息只包含经过校验的附件引用。协议元数据、客户端能力、权限选择和会话 id 绝不进入模型请求。
 
-#### Token effect
+#### Token 影响
 
-Prompt tokens and image charges are data-dependent and remain in that session's history until compaction. Concurrent ACP sessions retain independent contexts.
+提示词 token 与图片费用取决于数据，并保留在该会话的历史中直到上下文压缩（context compaction）。并发 ACP 会话保留独立上下文。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-Append-only; the new user message follows the reusable request prefix and does not invalidate prior cache entries.
+仅追加；新用户消息位于可复用请求前缀之后，不会使先前缓存条目失效。
 
-### Permission decisions
+### 权限决策
 
-#### What the model sees
+#### 模型看到的内容
 
-Nothing directly. The owning tool records its allowed, rejected, cancelled, or unavailable outcome through the normal tool-result path.
+不会直接看到任何内容。所属工具通过常规工具结果路径记录其结果：允许、拒绝、取消或不可用。
 
-#### Token effect
+#### Token 影响
 
-Only the owning tool result contributes tokens.
+只有所属工具的结果会贡献 token。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-Append-only through the owning tool result.
+仅通过所属工具的结果追加。
 
-## Known Limitations and Deferred Work
+## 已知限制与暂缓事项
 
-- **Fresh sessions only** — load, list, resume, delete, and fork are unsupported.
-- **Raster images and one workspace only** — image prompts require a durable store plus an exact route that declares image input; only PNG, JPEG, WebP, and GIF are accepted. Audio, embedded resources, non-empty additional directories, and MCP servers reject; resource links flatten to textual references rather than fetched content.
-- **Committed answers only** — live progress, reasoning, tool activity, plans, titles, and usage stay off the wire.
-- **Connection-owned lifetime** — one connection releases all of its sessions; per-session close is not implemented.
+- **仅新会话**：不支持加载、列出、恢复、删除和 fork。
+- **仅光栅图片和一个 workspace**：图片提示词要求持久存储以及明确声明支持图片输入的确切路由；只接受 PNG、JPEG、WebP 和 GIF。音频、嵌入资源、非空附加目录和 MCP 服务器都会被拒绝；资源链接只会展平为文本引用，不会获取其内容。
+- **仅已提交答案**：实时进度、推理、工具活动、计划、标题和用量不会通过协议传输。
+- **由连接管理的生命周期**：一个连接会释放其所有会话；尚未实现单个会话关闭功能。

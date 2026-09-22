@@ -1,25 +1,23 @@
-# Agent Note: Read the Win32 picker path without a fixed-size unmanaged view
+# Agent Note: 不用固定长度的非托管视图读取 Win32 选择器路径
 
 Status: implemented
 
-English | [中文](2026-08-31-win32-picker-path-string-read.zh.md)
-
 ## Problem
 
-The Win32 picker decodes a NUL-terminated UTF-16 string allocated by `IShellItem::GetDisplayName` and releases it through `CoTaskMemFree`. A fixed-length external ArrayBuffer adds a runtime requirement and manual terminator scanning without providing the allocation size.
+Win32 选择器需要解码 `IShellItem::GetDisplayName` 分配的 NUL 结尾 UTF-16 字符串，并通过 `CoTaskMemFree` 释放它。固定长度的外部 ArrayBuffer 增加了运行时要求和手工终止符扫描，却不能提供实际分配大小。
 
 ## Decision
 
-`readUtf16` stores the native address in a pointer-width buffer and passes it to generic `koffi.decode(buffer, 'str16')`. Generic decoding expects a pointer variable, not the string address directly. The slice follows `koffi.sizeof('void *')`; Koffi 3 represents native addresses as BigInt. The allocation remains valid and NUL-terminated during decoding. Successful conversion leaves the original address available for `CoTaskMemFree`; if decoding throws, the string is not freed.
+`readUtf16` 将原生地址存入指针宽度的缓冲区，再交给通用 `koffi.decode(buffer, 'str16')`。通用解码需要指针变量，而非直接传入字符串地址。切片长度取自 `koffi.sizeof('void *')`；Koffi 3 用 BigInt 表示原生地址。解码期间分配保持有效且以 NUL 结尾。转换成功后，原始地址仍可交给 `CoTaskMemFree`；若解码抛错，字符串不会被释放。
 
 ## Alternatives considered
 
-**External view and manual scan.** This requires external-buffer support and duplicates Koffi's string conversion. Neither a fixed view nor growing chunks establish the native allocation size.
+**外部视图加手工扫描。** 这要求运行时支持外部缓冲区，并重复实现 Koffi 的字符串转换。固定视图和递增分块都无法确定原生分配大小。
 
-**String-typed out-param.** `_Out_ str16 *` returns text but discards the pointer needed for explicit COM release. Built-in `str16!` disposal uses the CRT allocator rather than the COM allocator.
+**字符串类型出参。** `_Out_ str16 *` 返回文本，却丢失显式 COM 释放所需的指针。内置 `str16!` 使用 CRT 分配器释放，而非 COM 分配器。
 
-**Custom disposable type.** A Koffi disposable can call `CoTaskMemFree`, but explicit conversion keeps the address and release at one call site without registering a native type.
+**自定义可释放类型。** Koffi 可释放类型可以调用 `CoTaskMemFree`，但显式转换无需注册原生类型，就能将地址和释放保留在同一调用点。
 
 ## Consequences
 
-Real-Koffi tests exercise the production result-path conversion over live UTF-16 buffers, including U+5F00, surrogate pairs, NUL termination and strings exceeding 32 KiB. Separate four- and eight-byte BigInt cases verify pointer preservation and release of the original address. Test-owned buffers stay live through the synchronous read; pointer bytes are checked before native dereferencing.
+真实 Koffi 测试使用存活的 UTF-16 缓冲区执行生产结果路径转换，涵盖 U+5F00、代理对、NUL 终止和超过 32 KiB 的字符串。独立的四字节与八字节 BigInt 用例验证指针保持完整，并释放原始地址。测试持有的缓冲区在同步读取期间保持存活；原生解引用之前会检查指针字节。

@@ -1,71 +1,71 @@
 # dsh-credentials-local
 
-English | [中文](README.zh.md)
+文件型[凭据](../credentials/README.md)提供方：四层来源，一套明确的优先级。
 
-File-backed [credentials](../credentials/README.md) provider: four layers, one honest precedence.
-
-| Layer | Source id | Writable | Wins |
+| 层 | 来源 id | 可写 | 优先 |
 |---|---|---|---|
-| Inherited process environment | `env` | no | always |
-| `$DSH_HOME/.credentials.yaml` document | `file` | yes (`set`/`unset`) | over both `.env` layers |
-| `<invocation cwd>/.env` | `project-env` | not here | over the user `.env` |
-| `$DSH_HOME/.env` | `user-env` | not here | otherwise |
+| 继承的进程环境 | `env` | 否 | 始终优先 |
+| `$DSH_HOME/.credentials.yaml` 文档 | `file` | 是（`set`/`unset`） | 高于两个 `.env` 层 |
+| `<invocation cwd>/.env` | `project-env` | 不在此处 | 高于用户 `.env` |
+| `$DSH_HOME/.env` | `user-env` | 不在此处 | 其余情况 |
 
-The launching environment wins because a per-run override (`DEEPSEEK_API_KEY=… dsh`, a CI secret, a container `-e`) is operator intent for this run — and because it cannot be edited from inside, it must be *visibly* read-only: `describe()` reports `source: 'env', writable: false`, and `set`/`unset` reject instead of writing a change the reader would never see.
+启动环境优先，因为按次覆盖（`DEEPSEEK_API_KEY=… dsh`、CI 机密、容器 `-e`）代表本次运行的操作者意图——而它无法从进程内部修改，就必须*可见地*只读：`describe()` 报告 `source: 'env', writable: false`，`set`/`unset` 直接拒绝，而不是写下一个读取方永远看不到的变更。
 
-Everything below it loses to the managed store, so a key written by the Models page takes effect immediately even when an older key sits in a `.env`. Those two layers still resolve when nothing is stored, and `describe()` names them `project-env` or `user-env` with `writable: true` — storing a key replaces them as the effective source.
+它之下的所有来源优先级都低于受管存储，因此 Models 页写入的密钥会立即生效，即使某个 `.env` 里还留着更旧的密钥。没有存储任何东西时这两层仍会参与解析，`describe()` 会把来源报告为 `project-env` 或 `user-env` 且 `writable: true`——存入一个密钥就会取代它们成为生效来源。
 
-Under the product CLI, resolution reads the launcher's frozen [environment snapshot](../../util/launch-environment/README.md) rather than `process.env`: only the snapshot can say whether a value came from the launching shell or from a file. A composition the product CLI did not boot has the inherited environment as its only layer, which keeps embedders on the semantics they already had.
+在产品 CLI（命令行界面）下，解析读取的是启动器冻结的[环境快照](../../util/launch-environment/README.md)而不是 `process.env`：只有快照才说得清某个值来自启动 shell 还是来自某个文件。并非由产品 CLI 启动的组合只有继承环境这一层，这让嵌入方保持它们原有的语义。
 
-## Config
+## 配置
 
-| Field | Default | Meaning |
+| 字段 | 默认值 | 含义 |
 |---|---|---|
-| `path` | `<harness home>/.credentials.yaml` | Credentials document location. |
-| `dshHome` | `$DSH_HOME` or `~/.dsh` | Harness home used when `path` is omitted. |
-| `watch` | `true` | Hot-publish external edits. |
-| `debounceMs` | `100` | Watcher write-settle window. |
+| `path` | `<harness home>/.credentials.yaml` | 凭据文档位置。 |
+| `dshHome` | `$DSH_HOME` 或 `~/.dsh` | `path` 缺省时使用的 harness home。 |
+| `watch` | `true` | 热发布外部编辑。 |
+| `debounceMs` | `100` | watcher 写入稳定窗口。 |
 
-## The document
+## 文档本身
 
-A YAML mapping of credential reference to value, and nothing else:
+一个从凭据引用到值的 YAML mapping，除此之外别无他物：
 
 ```yaml
 DEEPSEEK_API_KEY: sk-…
 OPENAI_API_KEY: sk-…
 ```
 
-The document holds credentials only, so every deviation is a rejection rather than a skipped entry — a silently ignored key would read as "the secret I stored has no effect". A non-mapping root, a key that is not a POSIX identifier, a non-string value, an empty string, a duplicate key, and malformed YAML all fail: loud at boot, and warn-and-keep-the-last-good-snapshot on a live reload. There is no `version` field and no wrapper level; the format is the mapping.
+该文档只存放凭据，因此任何偏离都是拒绝，而不是跳过某个条目——被静默忽略的键读起来就是「我存进去的密钥没有生效」。非 mapping 的根、非 POSIX 标识符的键、非字符串值、空字符串、重复键以及格式错误的 YAML 全部失败：启动时明确报错，运行期热重载则告警并保留最后可用快照。没有 `version` 字段，也没有包装层；格式就是这个 mapping。
 
-Writes patch the parsed document rather than rebuilding it, so comments and the formatting of every untouched entry survive. A comment directly above an entry is that entry's annotation and is removed with it. Every write first re-reads the document under the cross-process writer lock of [`dsh-atomic-write`](../../util/atomic-write/README.md) and publishes anything it had not observed, then commits atomically with mode `0600` under an owner-only (`0700`) directory — so a concurrent writer or an external edit inside the watcher's debounce window is folded in rather than overwritten. An on-disk document that no longer parses fails the write instead of overwriting content the provider could not understand.
+写入是对已解析文档打补丁而不是重建，因此注释与所有未触及条目的排版都会保留。直接位于某条目上方的注释属于该条目的注解，会随它一起删除。每次写入都先在 [`dsh-atomic-write`](../../util/atomic-write/README.md) 的跨进程写锁下重读文档、把此前未观察到的一切发布出去，再在仅属主可访问（`0700`）的目录下以 `0600` 权限原子提交——因此并发写入者、或落在 watcher 防抖窗口内的外部编辑会被并入，而不是被覆盖。磁盘上已经无法解析的文档会让写入失败，而不是覆盖提供方读不懂的内容。
 
-Any string value round-trips, multi-line values included, so no entry is unwritable for want of a quoting style. An empty stored value is absent, per the seam rule — which is why an empty string in the document is rejected outright: `unset` removes a key, it does not blank it.
+任何字符串值都能往返，包括多行值，因此不会再有条目因为缺少可用引号样式而不可写。空的存储值等于不存在（seam 规则）——这也正是文档中的空字符串被直接拒绝的原因：`unset` 删除键，而不是把它置空。
 
-## Permissions
+## 权限
 
-The provider creates the directory `0700` and creates or atomically replaces the document `0600`. It holds what it *reads* to that same bound: on POSIX a document carrying any group or other permission bit fails before its contents are parsed — at boot and on every reload — and the error names the `chmod 600` repair. Windows has no mode to inspect, so the check is skipped there rather than faked.
+提供方以 `0700` 创建目录，以 `0600` 创建或原子替换文档。它对*读取*同样守住这条界线：在 POSIX 上，只要文档带有任何 group 或 other 权限位，就会在解析其内容之前失败——启动时与每次 reload 都检查——并在错误里给出 `chmod 600` 的修复命令。Windows 没有可检查的 mode，因此在那里跳过该检查而不是伪造它。
 
-## Hot reload
+## 热重载
 
-External edits publish `credentials/updated` per changed reference after the snapshot is replaced **wholesale** — an entry deleted on disk never lingers in memory. Before Chokidar opens the target, the provider realpaths its deepest existing ancestor and restores any missing suffix; file access and diagnostics retain the configured path, while Windows cannot mix an 8.3 alias with long-form libuv events. The provider's own writes are recognized by content and publish exactly their one commit event. An unreadable or invalid document at runtime keeps the last good snapshot and warns; an absent file is an empty store; an unreadable or invalid file at boot fails loud.
+外部编辑在快照**整体替换**后按变更引用逐个发布 `credentials/updated`——磁盘上删掉的条目绝不在内存滞留。在 Chokidar 打开目标之前，提供方会对层级最深的现有祖先路径执行 realpath 解析，再拼回缺失的后缀；文件访问和诊断仍使用配置路径，从而避免 Windows 混用 8.3 别名与 libuv 的长格式事件路径。提供方自己的写入按内容识别，只发布属于该次提交的一个事件。运行期文档不可读或无效时保留最后可用快照并告警；文件不存在即空存储；启动时不可读或无效则明确报错。
 
-## Security boundary
+<a id="security-boundary"></a>
 
-The document is `0600` under a `0700` directory, which stops other OS users — **not** the model. Tool processes (bash, the filesystem tools) run as the same user, and the shipped `workspace-write` file policy confines mutations rather than reads, so they can read this file exactly like any other file the user owns; no sandbox mode singles it out. What the harness does hold to is narrower: it never hands the model a resolved path to the document, and never loads it into the process environment — unlike `$DSH_HOME/.env`, which is the user's ordinary environment layer (see [app-boot's Harness-home layers](../../boot/app-boot/README.md#profiles)) — so reaching the value takes a deliberate read of a path the agent was not given.
+## 安全边界
 
-That is discretion, not a boundary. A deployment that must keep provider keys away from its own agent cannot get there with file permissions; an OS-keychain provider — a store the model's processes cannot read at all — is the deferred answer and belongs beside this provider as a sibling package.
+文档在 `0700` 目录下以 `0600` 权限存放，这挡得住其他 OS 用户，**挡不住**模型。工具进程（bash、文件系统工具）以同一用户身份运行，而已交付的 `workspace-write` 文件策略限制的是修改而非读取，因此它们读这个文件与读该用户拥有的任何其他文件毫无二致；也没有任何沙箱模式会把它单独挑出来。harness 真正守住的更窄：它绝不把该文档的解析后路径交给模型，也绝不把它载入进程环境——这与用户的普通环境层 `$DSH_HOME/.env` 不同（见 [app-boot 的 Harness home 各层](../../boot/app-boot/README.md#profiles)）——因此要拿到这个值，需要刻意去读一条并未交给 agent（智能体）的路径。
 
-## Model Experience
+这是审慎，不是边界。必须让提供方密钥远离自身 agent 的部署无法靠文件权限做到；OS 钥匙串提供方——一种模型运行所在进程根本无法读取的存储——才是延后的答案，它应当作为平级包与本提供方并列。
 
-Indirectly, through the consuming LLM adapters: stored values authorize their provider requests, and the adapter owns every model-visible surface.
+## 模型体验
 
-#### KV Cache effect
+经由消费它的 LLM（大语言模型）适配器间接生效：存储的值为适配器向提供方发出的请求授权，所有模型可见内容均由适配器负责。
 
-No direct invalidation; credentials never enter a request prefix.
+#### KV Cache 影响
 
-## Known Limitations and Deferred Work
+无直接失效；凭据绝不进入请求前缀。
 
-- **Same-reference concurrent writes are last-write-wins** — the writer lock and the read-modify-write keep concurrent writers from dropping each other's entries, but two writers editing one reference still resolve to the later write; there is no revision check.
-- **A same-UID process can read the document** — see [Security boundary](#security-boundary): the file-effect sandbox modes do not deny reads, and an OS-keychain provider is deferred.
-- **Environment changes are invisible** — the snapshot is frozen at launch, so a variable exported after startup reaches neither resolution nor `describe`; changing an environment-sourced credential takes a restart.
-- **Atomic, not crash-durable** — inherited from `dsh-atomic-write`; the store re-reads on boot.
+## 已知限制与暂缓事项
+
+- **同一引用的并发写入是后写胜出**——写锁加读-改-写让并发写入者不会丢掉彼此的条目，但两个写入者编辑同一个引用时仍以较后的写入为准；没有修订检查。
+- **同 UID 进程可以读取该文档**——见[安全边界](#security-boundary)：文件效果沙箱模式不会拒绝读取，OS 钥匙串提供方仍是延后项。
+- **环境变化不可见**：快照在启动时冻结，因此启动之后 export 的变量既不会进入解析，也不会进入 `describe`；要更换来自环境的凭据需要重启。
+- **原子但不具备崩溃持久性**——继承自 `dsh-atomic-write`；存储在启动时重新读取。

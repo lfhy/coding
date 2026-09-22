@@ -1,26 +1,24 @@
-# Agent Note: A shared timeout/deadline primitive, with hard-kill left to each capability
+# Agent Note: 共享的超时/截止时间原语，硬终止留给各能力自行实现
 
 Status: implemented
 
-English | [中文](2026-07-06-timeout-deadline-library.zh.md)
+## 问题
 
-## Problem
+超时处理在各个承载工具的能力之间逐渐分化，而且这种分化并非表面的：同一套逻辑被以三种方式重新实现，各自带有微妙的正确性负担。
 
-Timeout handling was drifting apart across the tool-bearing capabilities, and the divergence was not superficial — it was the same logic re-implemented three ways, each with its own subtle correctness burden.
+- **bash**（当时位于 bash-local 实现的 `run.ts`）在进程管道内部有一套完整、正确的超时实现：一个经配置钳位的 `timeoutMs`，两个独立触发器（用于超时的 `killTimer` 和用于上游取消的 `onAbort` 监听器），各自调用同一个 `kill()` 闭包对进程组执行 SIGTERM→宽限期→SIGKILL 升级，以及两个正交的结果布尔值（`timedOut`、`aborted`）独立锁存。经此次整合之后，这套管道——今天位于 [packages/subprocess/subprocess-local/src/spawn.ts](../../../../packages/subprocess/subprocess-local/src/spawn.ts)——只响应中止；[packages/shell/bash-local/src/index.ts](../../../../packages/shell/bash-local/src/index.ts) 拥有融合的 deadline 以及 `timedOut`/`aborted` 分类。
+- **web_fetch**（[packages/web/web-fetch-http/src/provider.ts](../../../../packages/web/web-fetch-http/src/provider.ts)）有一套正确但*手写*的超时：构造一个 `AbortController`，连接 `setTimeout(() => controller.abort(new WebError(…, 'WEB_FETCH_TIMEOUT')))`，手动添加和移除上游信号监听器，在 `finally` 中清除定时器，并在 `translateAbortOrNetwork` 辅助函数中从 `signal.reason` 恢复超时原因（因为 reader 只抛出裸 `AbortError`）。
+- **web_search**（[packages/web/tool-web/src/search.ts](../../../../packages/web/tool-web/src/search.ts)）**完全没有超时**：`WebSearchRequest`（[packages/web/web/src/types.ts](../../../../packages/web/web/src/types.ts)）不携带 `timeoutMs` 字段，各提供方的 `search()` 只转发 `exec.signal`。（web_search 在本次设计中保持无超时——见「后果」。）
 
-- **bash** (then in the bash-local implementation's `run.ts`) had a full, correct timeout inside the process plumbing: a config-clamped `timeoutMs`, two independent triggers — a `killTimer` for the timeout and an `onAbort` listener for upstream cancellation — each calling one `kill()` closure that escalates SIGTERM→grace→SIGKILL on the process group, and two orthogonal outcome booleans (`timedOut`, `aborted`) latched independently. After this consolidation, the plumbing — today [packages/subprocess/subprocess-local/src/spawn.ts](../../../../packages/subprocess/subprocess-local/src/spawn.ts) — only reacts to aborts; [packages/shell/bash-local/src/index.ts](../../../../packages/shell/bash-local/src/index.ts) owns the fused deadline and the `timedOut`/`aborted` classification.
-- **web_fetch** ([packages/web/web-fetch-http/src/provider.ts](../../../../packages/web/web-fetch-http/src/provider.ts)) had a correct but *hand-rolled* timeout: it constructed an `AbortController`, wired `setTimeout(() => controller.abort(new WebError(…, 'WEB_FETCH_TIMEOUT')))`, manually added and removed the upstream-signal listener, cleared the timer in a `finally`, and recovered the timeout reason from `signal.reason` in a `translateAbortOrNetwork` helper because the reader surfaces a bare `AbortError`.
-- **web_search** ([packages/web/tool-web/src/search.ts](../../../../packages/web/tool-web/src/search.ts)) had **no timeout at all**: `WebSearchRequest` ([packages/web/web/src/types.ts](../../../../packages/web/web/src/types.ts)) carries no `timeoutMs` field, and each provider's `search()` only forwards `exec.signal`. (web_search stays untimed here — see Consequences.)
+每个新的外部进程或网络工具都要重新推导同样四件事：钳位请求值、启动定时器、将超时与上游取消融合、在出口处区分「超时」与「已取消」。而融合与原因恢复恰恰是最容易出微妙错误的部分（web_fetch 的 `signal.reason` 处理就是证据）。与此同时，各能力执行的*终止*操作不可归约地不同：bash 杀死一个 OS 进程组（工作运行在子进程中，在本运行时之外，只能通过信号触达），而 web 中止一个进程内的 `fetch`（undici 拆除 socket）。不存在一个能停止所有能力工作的单一机制。
 
-Each new external-process or network tool re-derived the same four things — clamp the requested value, start a timer, fuse the timeout with upstream cancellation, and distinguish "timed out" from "cancelled" on the way out — and the fusion and reason-recovery are exactly the parts that are easy to get subtly wrong (web_fetch's `signal.reason` dance is evidence). At the same time, the *termination* each performs is irreducibly different: bash kills an OS process group (work runs in a child process, outside this runtime, reachable only by signal), while web aborts an in-process `fetch` (undici tears down the socket). There is no single mechanism that can stop all of them.
+## 决策
 
-## Decision
+`@deepseek-ai/dsh-timeout` 位于 `packages/util/`（与 `dsh-brand` 同级），负责超时的*计时与分类*这一半；*终止*那一半——硬终止——留在各能力的实现中。它是一个纯函数库，**不是** Cordis 服务或插件：不接收 `ctx`、不注册任何东西、不持有跨调用状态、不发射事件。这里刻意不设中央「超时服务」，因为那样的服务必须知道如何停止每个能力的工作——而这正是微内核要排除在共享层之外的知识，也是 Codex 将 `ExecExpiration` 限定于 exec 族所示范的原则。
 
-`@deepseek-ai/dsh-timeout` lives under `packages/util/` (peer to `dsh-brand`) and owns the *timing and classification* half of timeout; the *termination* half — the hard kill — stays in each capability's implementation. It is a library of pure functions, **not** a cordis service or plugin: it takes no `ctx`, registers nothing, holds no cross-call state, and emits no events. There is deliberately no central "timeout service" that would have to know how to stop every capability's work — that knowledge is exactly what a microkernel keeps out of shared layers, and what Codex's exec-only `ExecExpiration` scope demonstrates.
+### 库的对外接口
 
-### The library API
-
-Four functions, one watchdog interface, and one reason type:
+四个函数、一个 watchdog 接口加一个 reason 类型：
 
 ```ts ignore-check
 /** The internal reason attached to a timeout abort, so consumers can classify it after the fact. */
@@ -72,45 +70,45 @@ export function idleWatchdog(
 export function timeoutOf(x: AbortSignal | { reason?: unknown }, code?: string): TimeoutReason | undefined
 ```
 
-`deadline` fuses an upstream signal with a one-shot timer through `AbortSignal.any`, adds a typed `TimeoutReason`, and exposes disposable timer cleanup. Non-positive timeouts are an internal no-timeout sentinel for backend-owned background work; external hints pass through `clampTimeout` and must be positive and finite. Without a timer or upstream signal, the function returns a never-aborting signal with the same disposal shape. `idleWatchdog` instead requires a positive finite interval, keeps one stable fused signal for the entire stream, and arms its timer only while one iterator `next()` is outstanding; resolution disarms it, later demand rearms it, and `pulse()` rearms that same outstanding demand after out-of-band transport activity. A pulse outside outstanding demand or after disposal is a no-op; concurrent demand fails, and disposal clears the active arm. Providers translate timeout reasons into seam-specific results. `timeoutOf(signal, code)` scopes classification so an outer nested deadline is treated as upstream cancellation rather than the inner capability's timeout.
+`deadline` 通过 `AbortSignal.any` 将上游信号与一次性定时器融合，附加一个类型化的 `TimeoutReason`，并暴露可 dispose（资源释放）的定时器清理。非正数超时是内部的「无超时」哨兵，用于后端拥有的后台任务；外部提示经过 `clampTimeout`，必须为正有限值。既无定时器也无上游信号时，函数返回一个永不中止的信号，具有相同的 disposal 形状。`idleWatchdog` 则要求正有限的间隔，在整个流期间保持一个稳定的融合信号，并且只在一个迭代器 `next()` 尚未结算时启动定时器；结算会解除定时器，后续 demand 会重新启动，带外传输活动发生后，`pulse()` 则会为同一个尚未结算的 demand 重新启动定时器。若没有尚未结算的 demand，或已经 dispose，pulse 不执行任何操作；并发 demand 会失败，dispose 会清除当前 arm。提供方将超时原因转译为 seam 特定的结果。`timeoutOf(signal, code)` 限定分类范围，使外层嵌套的 deadline 被视为上游取消而非内层能力自身的超时。
 
-### The division of labor
+### 职责划分
 
-| Concern | Owner |
+| 关注点 | 负责方 |
 |---|---|
-| Validate request hint and clamp default/max | `dsh-timeout` (`clampTimeout`) — pure arithmetic plus the shared positive-finite request contract |
-| Arm one-shot timer, abort on deadline, carry reason, fuse with upstream cancel | `dsh-timeout` (`deadline`) |
-| Arm and rearm only around outstanding iterator demand, including out-of-band activity | `dsh-timeout` (`idleWatchdog`) |
-| Clear the timer | `dsh-timeout` (`[Symbol.dispose]` on either primitive) |
-| Classify the first abort reason after abort | `dsh-timeout` (`timeoutOf`) |
-| **Actually terminate the work** | the capability's implementation |
-| The default/max *values* | the capability's config |
-| The timeout `code` string | the capability (`WEB_FETCH_TIMEOUT` ≠ `BASH_TIMEOUT`) |
+| 校验请求提示并钳位默认值/最大值 | `dsh-timeout`（`clampTimeout`）：纯算术加共享的正有限请求约定 |
+| 启动一次性定时器、到期中止、携带 reason、与上游取消融合 | `dsh-timeout`（`deadline`） |
+| 仅围绕未结算的迭代器 demand 启动和重启，带外活动也会触发重启 | `dsh-timeout`（`idleWatchdog`） |
+| 清除定时器 | `dsh-timeout`（任一原语的 `[Symbol.dispose]`） |
+| 中止后对首个 abort reason 进行分类 | `dsh-timeout`（`timeoutOf`） |
+| **实际终止工作** | 各能力的实现 |
+| 默认值/最大值*数值* | 各能力的配置 |
+| 超时 `code` 字符串 | 各能力（`WEB_FETCH_TIMEOUT` ≠ `BASH_TIMEOUT`） |
 
-The signal only *notifies*; termination is always the listener's job, and the listener differs by capability. bash writes its own `addEventListener('abort', kill)` because the OS process lives outside this runtime and nothing else will kill it; web hands `d.signal` to `fetch` and undici tears down the socket. This is why file read/write/edit take **no** `timeoutMs`: a local syscall is best-effort-abortable at most, a timeout could not force `fsync`/`rename` to stop, and adding one would be an implicit default that violates explicit-over-implicit. Both reference agents leave file I/O untimed for the same reason.
+信号只*通知*；终止始终是监听方的职责，而监听方因能力而异。bash 自行编写 `addEventListener('abort', kill)`，因为 OS 进程存在于本运行时之外，没有别的东西会杀死它；web 将 `d.signal` 交给 `fetch`，由 undici 拆除 socket。这也是文件读/写/编辑**不接受** `timeoutMs` 的原因：本地系统调用最多只能尽力中止，超时无法强制 `fsync`/`rename` 停止，添加超时将是一个违反「显式优于隐式」的隐式默认值。两个参考 agent（智能体）出于同样的原因对文件 I/O 不设超时。
 
-### How each capability consumes it
+### 各能力如何消费该库
 
-- **web_fetch** — the tool stays validate-and-forward; the provider's hand-rolled controller + `setTimeout` + manual listener + `finally` + `signal.reason` recovery is replaced by provider-owned `deadline`/`timeoutOf`. A pre-aborted upstream signal still throws `WEB_ABORTED` up front; otherwise `fetch` runs against the fused `d.signal`, and `translateAbortOrNetwork` classifies a thrown error by the signal (`timeoutOf` → `WEB_FETCH_TIMEOUT`, else aborted → `WEB_ABORTED`, else network → `WEB_PROVIDER_ERROR`). The public error-code contract is unchanged, and `TimeoutReason` never crosses the web seam as the public error.
-- **bash** — `resolve()` clamps the request into an explicit spec. Foreground `run()` creates the deadline and passes its signal to process execution, whose existing abort listener performs the process-group kill. The executor classifies the first abort as timeout or cancellation. Background starts remain timeout-free and forward only upstream cancellation.
-- **LLM adapters** — `dsh-llm-deepseek` and `dsh-llm-pi-ai` wrap actual transport iteration with `idleWatchdog`. The five-minute configured interval covers only outstanding provider demand, not time the downstream consumer spends between chunks. The direct DeepSeek adapter also pulses that outstanding demand when its SSE parser observes a comment, without yielding the comment as a `StreamChunk` or writing it to the session log. The pi-ai SDK does not expose comment activity to its adapter, so that path can rearm only when the SDK yields. The stable signal reaches `fetch` or the SDK for the whole call, so timeout closes the underlying request and maps to `TIMEOUT`, while an earlier caller abort maps to `ABORTED`.
+- **web_fetch**：工具层保持校验并转发；提供方手写的 controller + `setTimeout` + 手动监听器 + `finally` + `signal.reason` 恢复被替换为提供方自有的 `deadline`/`timeoutOf`。已预先中止的上游信号仍然立即抛出 `WEB_ABORTED`；否则 `fetch` 使用融合后的 `d.signal` 运行，`translateAbortOrNetwork` 根据信号分类抛出的错误（`timeoutOf` → `WEB_FETCH_TIMEOUT`，否则已中止 → `WEB_ABORTED`，否则网络错误 → `WEB_PROVIDER_ERROR`）。公开的错误码约定不变，`TimeoutReason` 永远不会作为公开错误跨越 web seam。
+- **bash**：`resolve()` 将请求钳位为显式规格。前台 `run()` 创建 deadline 并将其信号传给进程执行，后者既有的 abort 监听器执行进程组 kill。执行器将首个 abort 分类为超时或取消。后台启动保持无超时，仅转发上游取消。
+- **LLM（大语言模型）适配器**：`dsh-llm-deepseek` 和 `dsh-llm-pi-ai` 用 `idleWatchdog` 包装实际的传输迭代。配置的五分钟间隔只覆盖尚未结算的提供方 demand，不包括下游消费方在分片之间花费的时间。DeepSeek 直连适配器还会在其 SSE（Server-Sent Events）解析器观察到注释时，对该项尚未结算的 demand 调用 `pulse()`；该注释既不会作为 `StreamChunk` 产出，也不会写入会话日志。pi-ai SDK 不会向其适配器暴露注释活动，因此该路径只能在 SDK 产出值时重新启动定时器。稳定信号在整个调用期间传给 `fetch` 或 SDK，因此超时会关闭底层请求并映射为 `TIMEOUT`，而更早的调用方中止映射为 `ABORTED`。
 
-## Consequences
+## 后果
 
-- `runBash`'s outcome no longer independently latches `timedOut` and `aborted`; a timeout and a user abort racing before process close now report a single first-abort cause instead of both being true. The uniform SIGTERM→grace→SIGKILL kill is unchanged, and the Service Definition type `ShellRunResult` keeps both booleans (now mutually exclusive), so `dsh-tool-bash`'s result rendering is untouched.
-- `SpawnSpec.timeoutMs` and `SpawnOutcome.timedOut`/`aborted` were removed rather than kept as always-zero/always-false vestiges: with `runBash` owning no timer and the executor owning classification, they were read nowhere. An always-0 field read by nothing is dead weight under the per-file coverage gate.
-- web_fetch shed its bespoke controller/timer/listener/reason-recovery; the classifier now keys off the deadline signal (`timeoutOf` + `aborted`) rather than the thrown error's shape, which is robust across both the request-phase reject-with-reason and the read-phase bare-`AbortError`.
-- `AbortSignal.any` and `using`/`Symbol.dispose` enter the repo for the first time here (Node ≥ 24 baseline, already met).
-- Model streams now share one rearmable timer contract without turning a sliding idle interval into a total-call deadline or charging consumer think time. Adapters that can observe out-of-band transport activity may pulse an outstanding demand; suppressed activity remains invisible to the watchdog. The primitive still only notifies; adapter tests prove their transports observe its stable signal and terminate.
+- `runBash` 的结果不再独立锁存 `timedOut` 和 `aborted`；超时与用户中止在进程关闭前竞争时，现在报告单一的首个 abort 原因，而非两者同时为 true。统一的 SIGTERM→宽限期→SIGKILL 终止路径不变，Service Definition 类型 `ShellRunResult` 保留两个布尔值（现在互斥），因此 `dsh-tool-bash` 的结果渲染不受影响。
+- `SpawnSpec.timeoutMs` 和 `SpawnOutcome.timedOut`/`aborted` 被移除，而非作为始终为零/始终为 false 的残余保留：由于 `runBash` 不再拥有定时器且执行器负责分类，这些字段无处被读取。一个始终为 0 且无处读取的字段在逐文件覆盖率门禁下属于死代码。
+- web_fetch 去除了其定制的 controller/timer/listener/reason-recovery；分类器现在基于 deadline 信号（`timeoutOf` + `aborted`）而非抛出错误的形状来判断，这在请求阶段的 reject-with-reason 和读取阶段的裸 `AbortError` 两种情况下都是健壮的。
+- `AbortSignal.any` 和 `using`/`Symbol.dispose` 在此首次进入本仓库（Node ≥ 24 基线，已满足）。
+- 模型流现在共享一个可重启的定时器约定，不会把滑动的空闲间隔变成总调用截止时间，也不会计入消费方思考时间。能够观察到带外传输活动的适配器可以对尚未结算的 demand 调用 `pulse()`；被屏蔽的活动对 watchdog 仍不可见。该原语仍然只做通知；适配器测试证明其传输观察到稳定信号并终止。
 
-Out of scope, named to mark the boundary: `web_search` can gain an optional model-facing `timeout_ms` once its tool-schema/snapshot coverage is planned; the ripgrep-backed fs discovery tools ([packaged ripgrep search](2026-08-01-packaged-ripgrep-search.md)) consume the same provider-owned deadline shape through `dsh-tool-call-timeout-policy` and `exec.signal`; a `tools/execute` waterfall middleware could arm a default deadline for every tool call by driving `exec.signal` — that would be a plugin that *consumes* this library and still only notifies, the hard kill remaining each capability's job.
+以下内容不在本次范围内，列出以标明边界：`web_search` 可以在其工具 schema 和快照覆盖规划完成后获得可选的面向模型的 `timeout_ms`；基于 ripgrep 的文件系统发现工具（[打包的 ripgrep 搜索](2026-08-01-packaged-ripgrep-search.md)）通过 `dsh-tool-call-timeout-policy` 和 `exec.signal` 消费同样的提供方自有 deadline 形状；`tools/execute` waterfall（瀑布式事件）中间件可以通过驱动 `exec.signal` 为每次工具调用设置默认 deadline——那将是一个*消费*本库的插件，仍然只做通知，硬终止仍是各能力自己的事。
 
-## Alternatives considered
+## 曾考虑的替代方案
 
-**A unified timeout *plugin* / `ctx.timeout` service.** Rejected on microkernel grounds. A service that could stop any tool's work would have to understand every capability's termination mechanism (process-group SIGKILL, socket teardown, syscall-boundary checks) — the "kernel knows too much" the architecture forbids. Codex's `ExecExpiration` is scoped to the exec family precisely because the kill it drives (`killpg`) is process-family-specific; MCP and model-stream keep their own. There is no coherent middle layer that owns termination for everything, so the shared piece can only be the pure timing/classification half — a library, not a service.
+**统一的超时*插件* / `ctx.timeout` 服务。** 基于微内核原则否决。一个能停止任何工具工作的服务必须理解每个能力的终止机制（进程组 SIGKILL、socket 拆除、系统调用边界检查），这正是架构所禁止的「内核知道太多」。Codex 的 `ExecExpiration` 被限定于 exec 族，正是因为它驱动的 kill（`killpg`）是进程族特有的；MCP 和模型流各自保有自己的。不存在一个连贯的中间层能为所有东西拥有终止权，因此共享部分只能是纯计时/分类那一半——一个库，而非服务。
 
-**Per-tool ad-hoc timeout, no shared code (the prior status quo, and Claude Code's choice).** Rejected because it was already producing divergence and duplicated correctness burden: web_fetch hand-rolled the exact controller/reason logic that future network/process-backed tools would each have to re-derive, and the fusion + `signal.reason` recovery are the error-prone parts. Claude Code tolerates full duplication; this repo has a single shared abort channel (`exec.signal` on every `execute`) that makes a small shared primitive strictly cleaner, so the cost/benefit differs.
+**每个工具各自实现超时，不共享代码（先前的现状，也是 Claude Code 的选择）。** 否决，因为它已经在产生分化和重复的正确性负担：web_fetch 手写了与未来网络/进程类工具各自需要重新推导的完全相同的 controller/reason 逻辑，而融合 + `signal.reason` 恢复正是容易出错的部分。Claude Code 容忍完全重复；本仓库有一个统一的共享 abort 通道（每次 `execute` 上的 `exec.signal`），使得采用一个小型共享原语明显更简洁，因此成本/收益不同。
 
-**A `withTimeout(promise, ms)` wrapper instead of a signal factory.** Rejected because racing a promise against a timer resolves the *tool-call* promise on deadline without stopping the underlying work — the child process or fetch socket leaks on. Handing out a signal and requiring the capability to listen is what forces a real termination path to exist. This mirrors the "dispose must reach quiescence, not just request it" defensive rule.
+**用 `withTimeout(promise, ms)` 包装器代替信号工厂。** 否决，因为让 promise 与定时器竞争只是在截止时间到达时 resolve *工具调用*的 promise，而不会停止底层工作——子进程或 fetch socket 会泄漏。分发信号并要求能力监听，才能强制一条真实的终止路径存在。这与「dispose 必须达到完全停稳，而非仅仅请求它」的防御性规则一致。
 
-**Keep separate bash timeout and cancellation triggers.** Rejected because one deadline signal removes the bespoke timer and standardizes classification. Racing causes report whichever abort arrived first, while the existing SIGTERM-to-SIGKILL termination path remains unchanged.
+**保留 bash 独立的超时和取消触发器。** 否决，因为一个 deadline 信号移除了定制定时器并标准化了分类。发生竞争时，报告先到达的那个 abort 作为原因，而既有的 SIGTERM→SIGKILL 终止路径保持不变。

@@ -1,46 +1,44 @@
-# Agent Note: Web search source card scrolls instead of collapsing
+# Agent Note: Web search 来源卡片改为滚动而非折叠
 
 Status: implemented
 
-English | [中文](2026-08-03-web-search-source-scroll.zh.md)
+## 问题
 
-## Problem
+`web_search` 结果卡片（`WebBlock`，`packages/client/ui-primitives/src/WebBlock.tsx`）此前用首尾折叠渲染它的来源列表：超过 `maxSources` 数量（详情面板为 16，聊天行经由 `CHAT_WEB_MAX_SOURCES` 为 8）时，它画出前 `ceil(max/2)` 条来源、一个 `… 其余 N 条来源` 展开按钮，再画出末尾 `max - ceil(max/2)` 条，仿照 `TerminalBlock` 的输出上限机制。用户阅读该卡片时看到 `来源列表已截断`，会以为前端丢弃了它正持有的来源。
 
-The `web_search` result card (`WebBlock`, `packages/client/ui-primitives/src/WebBlock.tsx`) rendered its source list with a head/tail collapse: past a `maxSources` count (16 in the details panel, 8 in the chat row via `CHAT_WEB_MAX_SOURCES`) it drew the first `ceil(max/2)` sources, an `… 其余 N 条来源` expand button, then the last `max - ceil(max/2)`, mirroring `TerminalBlock`'s output cap. A user reading the card saw `来源列表已截断` and assumed the frontend had dropped sources it was holding.
+其实并没有。seam（`capSources`，`packages/web/web/src/index.ts`）把每个提供方结果裁剪到工具的 `searchMaxResults` 上限（默认 8）；多查询调用随后对组合来源去重、交错并限制在同一个上限内。最终的有界列表同时喂给面向模型的 render 文本与卡片的 `presentationMeta`，因此卡片持有的来源绝不会多于工具返回的来源。这个折叠隐藏的正是用户本有权完整查看的来源——并且在默认上限为 8、面板上限为 16 时，它几乎从不触发，只留下 `truncated` 提示，却无从展开任何内容。
 
-It had not. The seam (`capSources`, `packages/web/web/src/index.ts`) cuts each provider result to the tool's `searchMaxResults` bound (default 8); a multi-query call then deduplicates, interleaves, and caps the combined sources at the same bound. The final capped list feeds both the model-facing render text and the card's `presentationMeta`, so the card never holds more sources than the tool returned. The collapse was hiding sources the user was entitled to see in full — and, with the default bound at 8 and the panel cap at 16, it almost never even triggered, leaving only the `truncated` note with no way to reveal anything.
+## 决策
 
-## Decision
+`WebBlock` 的 search 分支把它收到的每一条来源都渲染进单个 `<ol className={css.sources}>`，不做首尾切片、不设展开按钮、也不带 `maxSources` prop。`.sources`（`WebBlock.module.css`）获得一个固定的 `max-height` 与 `overflow-y: auto`，因此长于卡片高度的列表在原地滚动，而非撑大卡片或隐藏行。该高度是卡片几何形状的一个设计常量，因此放在 CSS 里，而非插件配置字段。
 
-`WebBlock`'s search arm renders every source it receives in one `<ol className={css.sources}>`, with no head/tail slicing, no expand button, and no `maxSources` prop. `.sources` (`WebBlock.module.css`) gets a fixed `max-height` and `overflow-y: auto`, so a list longer than the card height scrolls in place rather than growing the card or hiding rows. The height is a design constant of the card geometry, so it lives in CSS, not a plugin config field.
+模型侧仍受 `searchMaxResults` 限制：seam 限制每个提供方结果，多查询消费方限制组合列表，`truncated` 标志及其 `来源列表已截断` 指示保留。卡片完整且可滚动地画出最终工具来源列表，而非折叠其中段。
 
-The model side remains capped at `searchMaxResults`: the seam caps each provider result, the multi-query consumer caps a combined list, and the `truncated` flag and its `来源列表已截断` indicator stay. The card draws the final tool source list in full and scrollable, instead of collapsing its middle.
+只要工具下游没有单独改写结果 content，这份列表就是模型读到的那份。挂载了 `dsh-spill-policy` 的部署会对超限结果打破这一对应：`tools/post-execute` 把面向模型的 `content` 替换为预览加 spill 定位符，而 `presentationMeta` 原样保留，因此卡片仍画出全部来源，模型读到的却是一段有界摘录。所以卡片的约定是它收到的 view，不是模型的上下文。
 
-That list is the one the model reads as long as nothing downstream of the tool rewrites the result content alone. A deployment mounting `dsh-spill-policy` breaks that correspondence for an oversized result: `tools/post-execute` replaces the model-facing `content` with a preview plus a spill locator and leaves `presentationMeta` whole, so the card still draws every source while the model reads a bounded excerpt. The card's contract is therefore the view it receives, not the model's context.
+`CHAT_WEB_MAX_SOURCES` 与该 primitive 的 `DEFAULT_WEB_MAX_SOURCES` 被移除：有了滚动，聊天行与详情面板展示同一份完整列表，仅以各自的容器高度区分。`<li value={ordinal}>` 仍钉住每条来源从 1 起算的引用序号；没有了折叠造成的间断，这些序号如今就是连续的。
 
-`CHAT_WEB_MAX_SOURCES` and the primitive's `DEFAULT_WEB_MAX_SOURCES` are removed: with scroll, the chat row and the details panel show the same full list, differentiated only by their container height. `<li value={ordinal}>` still pins each source's 1-based citation index; without the collapse gap the ordinals are now simply contiguous.
+把列表变成滚动容器，也把它的 `padding-left` 从间距变成了正确性约束。滚动容器裁掉 inline-start 方向的溢出且无从滚回，而 `::marker` 右对齐到内容边缘，因此宽于 padding 的序号会静默丢掉前导数字——在列表原本的 20px 下，两位数序号被画成 `0.` 与 `1.`，而本该是 `10.` 与 `11.`。`searchMaxResults` 是无上界的正整数，因此该 padding 以 `em` 计量——相对列表自身的字体，也就是序号所继承的那个——装得下三位数序号（`999. ` 在应用字体栈下量得 2.35em），并保留一位数情形原有的间隙。
 
-Making the list a scroll container also makes its `padding-left` a correctness constraint, not spacing. A scroll container clips inline-start overflow and offers no way to scroll it back, and `::marker` is right-aligned to the content edge, so a marker wider than the padding silently loses its leading digits — at the list's 20px the two-digit markers rendered as `0.` and `1.` where `10.` and `11.` belonged. `searchMaxResults` is an unbounded positive integer, so the padding is sized in `em` against the list's own font — the one a marker inherits — to hold a three-digit marker (`999. ` measures 2.35em in the app font stack) and keeps the gap the one-digit case already had.
+## 考虑过的替代方案
 
-## Alternatives considered
+**提高 `searchMaxResults`（或让它无上限），使更多来源同时抵达模型与卡片。** 被用户否决：它改变了模型侧行为（每个请求的上下文纳入更多来源、更多 token），并拉大模型读到的内容与卡片画出的内容之间的差距。
 
-**Raise `searchMaxResults` (or make it unbounded) so more sources reach both the model and the card.** Rejected by the user: it changes model-side behavior (more sources into every request's context, more tokens) and widens the gap between what the model reads and what the card draws.
+**保留首尾折叠，仅对展开区域加滚动。** 否决：一个关注点上两套重叠机制。一旦整份列表始终渲染，折叠的算术、展开/折叠状态与那个按钮都是累赘；仅靠滚动即可约束高度。
 
-**Keep the head/tail collapse and add scroll only to the expanded region.** Rejected: two overlapping mechanisms for one concern. Once the whole list is always rendered, the collapse arithmetic, the expand/collapse state, and the button are dead weight; scroll alone bounds the height.
+**把滚动高度做成插件配置字段。** 否决：该高度约束的是卡片在屏幕上的几何形状，而非部署策略，因此它属于 `WebBlock.module.css`，与 [Web result 卡片前端笔记](2026-07-30-web-result-card-frontend.md) 已作为本卡片几何固定在那里的圆角、表面与外边距并列。
 
-**Make the scroll height a plugin config field.** Rejected: the height bounds the card's on-screen geometry, not a deployment policy, so it belongs in `WebBlock.module.css` alongside the radius, surface, and margin that [the web result card frontend note](2026-07-30-web-result-card-frontend.md) already fixes there as this card's geometry.
+## 后果
 
-## Consequences
+工具返回的每一条来源始终存在于 DOM 中，因此 view 携带的来源没有一条被藏在交互之后。无论来源数量多少，卡片高度都受限；高于容器的列表在原地滚动。代价是滚动提示依赖平台的滚动条渲染：overlay 滚动条系统（macOS 默认）在指针离开时不显示常驻滚动条，因此受高度限制的列表依靠 `来源列表已截断` 提示加上被裁切的最后一行来表明还有更多内容。`WebSearchBlockProps`/`WebFetchBlockProps` 失去 `maxSources` prop，primitive 失去 `DEFAULT_WEB_MAX_SOURCES`，因此未来任何调用方都从构造上渲染完整列表，而不是靠传入一个很大的上限值。
 
-Every source the tool returned is always in the DOM, so no source the view carries is hidden behind an interaction. The card's height is bounded regardless of source count, and a list taller than the container scrolls in place. The cost is that the scroll affordance depends on the platform's scrollbar rendering: an overlay-scrollbar system (macOS default) shows no persistent bar when the pointer is away, so a capped list relies on the `来源列表已截断` note plus a clipped last row to signal there is more. `WebSearchBlockProps`/`WebFetchBlockProps` lose their `maxSources` prop and the primitive loses `DEFAULT_WEB_MAX_SOURCES`, so any future caller renders the full list by construction rather than by passing a large cap.
+## 测试
 
-## Testing
+`packages/client/ui-primitives/tests/web-block.client.spec.tsx` 删去折叠相关用例（首尾切片、点击展开、折叠尾部编号、展开器不计入编号、仅首部、默认上限），并新增：一张含 30 条来源的卡片渲染出全部 30 个 `<li>`，无 `[aria-expanded]`、无 `<button>`，每个 `<ol>` 子元素都是一条来源 `<li>`，且 `<li value>` 从 1 到 N 连续编号。`packages/client/ui-tool/tests/web-card.client.spec.tsx` 删去 `CHAT_WEB_MAX_SOURCES` 上限断言；WebRow 展开测试仍断言卡片展示每一个来源字段。`packages/web/tool-web` 独立固定单查询与多查询的模型侧上限。
 
-`packages/client/ui-primitives/tests/web-block.client.spec.tsx` drops the collapse cases (head/tail slice, expand-on-click, collapsed-tail numbering, expander-out-of-numbering, head-alone, default cap) and adds: a 30-source card renders all 30 `<li>` with no `[aria-expanded]` and no `<button>`, every `<ol>` child is a source `<li>`, and `<li value>` numbers 1..N contiguously. `packages/client/ui-tool/tests/web-card.client.spec.tsx` drops the `CHAT_WEB_MAX_SOURCES` cap assertion; the WebRow expansion test still asserts the card shows every source field. `packages/web/tool-web` independently pins the single- and multi-query model-side caps.
+jsdom 不解析 CSS Modules 布局，对任何元素都报 `scrollHeight === clientHeight`，因此它根本无从见证这次滚动。几何改由组装态浏览器钉住，位于 `apps/web/tests/web-search-round.e2e.ts`：其确定性 search double 为两个查询分别返回 6 条结果，每条带标题、引用摘录与日期。真实组合会观察两次提供方请求，并固定工具的轮询组合上限——出厂 `searchMaxResults` 保留代表两个查询的 8 条来源，面向模型的 render 文本不含被丢弃的 4 条 URL，并含 `(Showing the first 8 sources. Refine the query for more.)`，`meta.truncated` 为 true。随后位于 aria golden 之后的一个用例展开 `web_search` 行，对卡片的 `<ol>` 断言：8 个 `<li>`、卡片内任何位置都没有 `<button>`、`来源列表已截断` 指示可见，以及计算样式 `max-height: 320px` 与 `overflow-y: auto`，滚动主体高于容器。再后一个用例在列表自身继承的字体下量出 `999. ` 序号的宽度，要求计算后的 `padding-left` 不小于该宽度，从而把滚动容器无从滚回的那段序号空间钉在最宽序号上，而非钉在某一份 fixture（测试前置数据）的来源条数上。回放是对 fixture 中 `assistant/chunk` 条目的位置游标，而 search double 是提供方经 `fetch` 抵达的另一个本地端点。
 
-jsdom resolves no CSS Modules layout, so it reports `scrollHeight === clientHeight` for every element and cannot witness the scroll at all. The geometry is pinned in the assembled browser instead, by `apps/web/tests/web-search-round.e2e.ts`: its deterministic search double returns 6 results for each of two queries, each with a title, a citation snippet, and a date. The real composition observes both provider requests and pins the tool's round-robin combined cap — the shipped `searchMaxResults` keeps 8 sources representing both queries, the model-visible render text omits the 4 dropped URLs and includes `(Showing the first 8 sources. Refine the query for more.)`, and `meta.truncated` is true. A case after the aria golden then expands the `web_search` row and asserts on the card's `<ol>`: 8 `<li>`, no `<button>` anywhere in the card, the `来源列表已截断` indicator visible, and computed `max-height: 320px` with `overflow-y: auto` over a taller scroll body. A further case measures a `999. ` marker in the list's own inherited font and requires the computed `padding-left` to be at least that wide, so the marker room the scroll container cannot clip back is pinned against the widest marker rather than against one fixture's source count. Replay is a positional cursor over the fixture's `assistant/chunk` entries and the search double is a separate local endpoint the provider reaches by `fetch`.
+## 相关文档
 
-## Related
-
-- [Web result card](2026-07-30-web-result-card.md) — the `card: 'web'` render-intent arm and `presentationMeta` route this card consumes; the source of the final capped list.
-- [Web result card frontend](2026-07-30-web-result-card-frontend.md) — owns `WebBlock`, the single `web-card-model` derivation, and the render sites that draw the card; this note replaces the source-list collapse it specified, and its other decisions (one component for both kinds, the http(s) link allowlist, the single derivation, the resident posture) stand.
+- [Web result card](2026-07-30-web-result-card.md) —— 本卡片消费的 `card: 'web'` 渲染意图分支与 `presentationMeta` 路由；最终有界列表的来源。
+- [Web result 卡片前端](2026-07-30-web-result-card-frontend.md) —— `WebBlock`、唯一的 `web-card-model` 派生，以及绘制该卡片的各渲染点由它拥有；本笔记替换掉它所规定的来源列表折叠，它的其余决策（一个组件绘制两种 kind、http(s) 链接 allowlist、单一派生、常驻姿态）依然成立。

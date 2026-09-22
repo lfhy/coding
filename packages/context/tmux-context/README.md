@@ -1,10 +1,8 @@
 # @deepseek-ai/dsh-tmux-context
 
-English | [中文](README.zh.md)
+可选启用的持久上下文，记录本 agent（智能体）进程所在的 tmux session、window、pane，以及该 window 的 pane 树布局。在准备模型请求时每轮采样一次；随附 Web／无头组合不包含它。决策记录见：[tmux-context Agent Note](../../../.agents/notes/implemented/feature/2026-07-27-tmux-location-context.md)。
 
-Opt-in durable context naming the tmux session, window, and pane this agent process runs in, plus the window's pane-tree layout. It is sampled once per turn during model-request preparation and is not part of the shipped Web/headless composition. Decision record: [the tmux-context Agent Note](../../../.agents/notes/implemented/feature/2026-07-27-tmux-location-context.md).
-
-## Config
+## 配置
 
 ```yaml
 - id: tmux-context
@@ -13,11 +11,11 @@ Opt-in durable context naming the tmux session, window, and pane this agent proc
     refreshIntervalMs: 60000 # optional; omit or set to 0 to inject on every changed turn
 ```
 
-`refreshIntervalMs` must be a non-negative safe integer. Omission or `0` injects whenever the tmux state changed since the last injection. A positive value additionally suppresses injections that fall within that many milliseconds of the latest one.
+`refreshIntervalMs` 必须是非负安全整数。省略或 `0` 表示只要 tmux 状态自上次注入以来发生变化就注入。正值会额外抑制距最近一次注入不足该毫秒数的注入。
 
-## How it reads tmux
+## 如何读取 tmux
 
-The plugin prepends an `agent/pre-step` listener that runs only on the first step of each turn. When due, it runs one read-only command through the `ctx.shell` executor service:
+插件前置注册一个 `agent/pre-step` 监听器，仅在每轮的第一个步骤运行。当需要注入时，它通过 `ctx.shell` 执行器服务运行一条只读命令：
 
 ```sh
 [ -n "$TMUX_PANE" ] || exit 1
@@ -27,23 +25,23 @@ pane_tty=$(tmux display-message -t "$TMUX_PANE" -p '#{pane_tty}') || exit 1
 exec tmux display-message -t "$TMUX_PANE" -p '<format>'
 ```
 
-`$TMUX_PANE` alone is insufficient: a terminal launched from a tmux shell (a VS Code integrated terminal, a desktop launcher) **inherits** `$TMUX` and `$TMUX_PANE` from that ancestor, so the variables are present even though the process does not live in that pane. The command therefore also compares the pane's `#{pane_tty}` against this process's own controlling terminal (`ps -o tty=` for its pid): a genuine pane owns this process's tty, while an inherited environment names some other pane's tty. Running through `ctx.shell` applies the deployment's sandbox and policy; the plugin owns no subprocess code. When `ctx.shell` is absent, the process is not in a real tmux pane (`$TMUX_PANE` unset, or the tty does not match ⇒ nonzero exit), or the reading is malformed, the attempt is a no-op, never an error. The location is optional, so an executor rejection — a policy refusal from `resolve()` or an infrastructure failure from `run()` — is contained and logged as a warning rather than failing the turn.
+仅凭 `$TMUX_PANE` 并不足够：从 tmux shell 启动的终端（VS Code 集成终端、桌面启动器）会从该祖先进程**继承** `$TMUX` 与 `$TMUX_PANE`，因此即使进程并不位于那个 pane 中，这些变量依然存在。为此该命令还会把 pane 的 `#{pane_tty}` 与本进程自己的控制终端（对其 pid 执行 `ps -o tty=`）作比较：真正的 pane 拥有本进程的 tty，而继承而来的环境指向的是另一个 pane 的 tty。通过 `ctx.shell` 运行会应用部署方的沙箱与策略；插件不拥有任何子进程代码。当 `ctx.shell` 缺失、进程不在真实的 tmux pane 内（`$TMUX_PANE` 未设置，或 tty 不匹配 ⇒ 非零退出）或读取结果格式非法时，本次尝试为空操作，绝不报错。由于位置信息是可选的，执行器的拒绝——`resolve()` 的策略拒绝或 `run()` 的基础设施故障——会被兜住并记录为警告，而不会使该轮失败。
 
-State is pulled on every eligible turn — a moved, renamed, or re-laid-out pane is picked up without any tmux hook or background process. The plugin re-injects only when the rendered tmux state differs from its last injection, so an unchanged location adds nothing.
+状态在每个符合条件的轮次拉取——pane 被移动、改名或重新布局都会被感知，无需任何 tmux hook 或后台进程。插件仅在渲染出的 tmux 状态与上次注入不同时才重新注入，因此位置不变时不会新增任何内容。
 
-## Timing semantics
+## 时序语义
 
-The plugin prepends an `agent/pre-step` listener. When an injection is due and the downstream decision enters the proposed step, it prepends one sourced `UserMessage` to the returned batch. AgentLoop records that context after `step/start` with source `{ kind: 'plugin', plugin: 'tmux-context' }`. Change suppression and interval scheduling scan the raw durable session events for the latest injection of this source, so the schedule survives compaction and resumed processes without process-local cache state; sessions schedule independently. A downstream pre-step listener that rejects or fails prevents the reading from being recorded.
+该插件会前置一个 `agent/pre-step` 监听器。需要注入且下游决策进入拟议步骤时，它会向返回的批次前置添加一条带来源的 `UserMessage`。AgentLoop 会在 `step/start` 之后记录该上下文，其来源为 `{ kind: 'plugin', plugin: 'tmux-context' }`。变化抑制与间隔调度会扫描原始持久会话事件中该来源的最近一次注入，因此调度可跨压缩（compaction）与恢复的进程存续，无需进程内缓存状态；各会话独立调度。下游在步骤前运行的监听器拒绝或失败时，该读数不会被记录。
 
-## Model Experience
+## 模型体验
 
-### Preparation-time tmux location
+### 准备期 tmux 位置
 
-#### What the model sees
+#### 模型看到的内容
 
-On each turn whose tmux state changed, one source-tagged context message with the three lines below. `<window-layout>` is tmux's compact pane-tree description; pane and window pixel sizes are intentionally excluded, and the contents of sibling panes are never captured.
+在 tmux 状态发生变化的每一轮，注入一条带来源标记、含以下三行的上下文消息。`<window-layout>` 是 tmux 紧凑的 pane 树描述；pane 与 window 的像素尺寸有意省略，相邻 pane 的内容从不采集。
 
-##### Changed-turn reading
+##### 变化轮次读数
 
 ```markdown
 tmux location (turn <turn>):
@@ -51,18 +49,18 @@ session <session>, window <index> "<name>", pane <index> <pane-id>
 window active=<0|1>, pane active=<0|1>, layout <window-layout>
 ```
 
-#### Token effect
+#### Token 影响
 
-Each two-line reading accumulates until compaction shadows it. Unchanged locations and interval suppression add nothing.
+每条两行读数会累积，直到压缩将其遮蔽。位置未变化以及间隔抑制不会新增内容。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-Append-only; newly visible content follows the reusable request prefix and does not invalidate existing KV-cache entries.
+仅追加；新增可见内容位于可复用的请求前缀之后，不会使已有 KV Cache 条目失效。
 
-## Known Limitations and Deferred Work
+## 已知限制与后续工作
 
-- **First step only** — a pane moved or resized mid-turn is reflected on the next turn, not between steps.
-- **Own location only** — the plugin never captures the visible text of sibling panes.
-- **Layout, not size** — pane/window pixel dimensions are omitted; only the layout tree and active flags are reported.
-- **Tab-delimited fields** — a tmux window name containing the literal two-character sequence `\t` would mis-split the reading and be skipped as malformed; ordinary names are unaffected.
-- **tty-based pane detection** — the process is considered "in tmux" only when its controlling terminal matches `$TMUX_PANE`'s `#{pane_tty}`. This deliberately excludes terminals that inherited `$TMUX`/`$TMUX_PANE` from a tmux ancestor (e.g. a VS Code integrated terminal). `ps -o tty=` is POSIX; the check is a no-op wherever it or `#{pane_tty}` is unavailable.
+- **仅第一个步骤**——轮次中途移动或缩放的 pane 会在下一轮反映，而非在步骤之间。
+- **仅自身位置**——插件从不采集相邻 pane 的可见文本。
+- **只有布局，没有尺寸**——省略 pane/window 像素尺寸；仅报告布局树与活动标志。
+- **制表符分隔字段**——若 tmux window 名称包含字面两字符序列 `\t`，会使读数分割错误并作为非法读数跳过；常规名称不受影响。
+- **基于 tty 的 pane 判定**——只有当进程的控制终端与 `$TMUX_PANE` 的 `#{pane_tty}` 一致时，才视为「位于 tmux 中」。这会有意排除从 tmux 祖先进程继承 `$TMUX`／`$TMUX_PANE` 的终端（如 VS Code 集成终端）。`ps -o tty=` 属于 POSIX；在其或 `#{pane_tty}` 不可用的环境中，该检查即为空操作。

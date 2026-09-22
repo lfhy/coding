@@ -69,18 +69,11 @@ describe('gate graph validation', () => {
     'ci-windows-observational',
     'node-compat',
     'check-all',
-    'doc-sync',
   ] as const)('constructs and executes preflight for a valid non-empty %s graph', async (mode) => {
     const subject = withPnpmEntrypoint(() => gatesForMode(mode))
     const execute = vi.fn(async (item: Gate) => resultFor(item))
 
     await expect(runGates(subject, subject.length, execute)).resolves.toHaveLength(subject.length)
-  })
-
-  it('keeps the public repository link policy in the documentation gate', () => {
-    const ids = withPnpmEntrypoint(() => gatesForMode('doc-sync').map(subject => subject.id))
-
-    expect(ids).toContain('public-repository-links')
   })
 
   it.each(['ci-primary', 'ci-static', 'check-all'] as const)(
@@ -104,7 +97,7 @@ describe('gate graph validation', () => {
   it('keeps native Windows coverage blocking while retaining the observational inventory', () => {
     const complete = withPnpmEntrypoint(() => gatesForMode('ci-windows-complete'))
     const observational = withPnpmEntrypoint(() => gatesForMode('ci-windows-observational'))
-      .filter(gate => gate.id !== 'build' && gate.id !== 'docs-site-build')
+      .filter(gate => gate.id !== 'build')
     const byId = new Map(complete.map(subject => [subject.id, subject]))
 
     expect(byId.get('coverage')?.allowFailure).not.toBe(true)
@@ -263,7 +256,6 @@ describe('Typert contract preparation', () => {
     for (const [id, script] of [
       ['typecheck', 'typecheck:contracts-ready'],
       ['lint', 'lint:contracts-ready'],
-      ['doc-typecheck', 'doc-typecheck:contracts-ready'],
     ] as const) {
       expect(subject.find(item => item.id === id)).toMatchObject({
         displayCommand: `pnpm run ${script}`,
@@ -274,7 +266,6 @@ describe('Typert contract preparation', () => {
     expect(subject.find(item => item.id === 'build')?.needs).toEqual([
       'typecheck',
       'lint',
-      'doc-typecheck',
     ])
   })
 
@@ -285,17 +276,6 @@ describe('Typert contract preparation', () => {
       displayCommand: 'pnpm run check:ci:lint:contracts-ready',
       args: ['/private/pnpm.cjs', 'run', 'check:ci:lint:contracts-ready'],
     })
-    expect(subject.find(item => item.id === 'doc-typecheck')).toMatchObject({
-      displayCommand: 'pnpm run doc-typecheck:contracts-ready',
-      args: ['/private/pnpm.cjs', 'run', 'doc-typecheck:contracts-ready'],
-    })
-  })
-
-  it('keeps standalone doc sync responsible for preparation', () => {
-    const docTypecheck = withPnpmEntrypoint(() =>
-      gatesForMode('doc-sync').find(item => item.id === 'doc-typecheck'))
-
-    expect(docTypecheck?.displayCommand).toBe('pnpm run doc-typecheck')
   })
 })
 
@@ -321,14 +301,13 @@ describe('Node 24 lane ownership', () => {
     const subject = withPnpmEntrypoint(() => gatesForMode('ci-static'))
 
     expect(subject.map(item => item.id)).not.toContain('build')
-    expect(subject.map(item => item.id)).not.toContain('doc-typecheck')
   })
 
   it('owns the build and orders its artifact consumers', () => {
     const subject = withPnpmEntrypoint(() => gatesForMode('ci-consumers'))
 
     expect(defaultConcurrency('ci-consumers', subject.length, 4)).toEqual({
-      workers: 10,
+      workers: 9,
       source: 'ci-consumers gate count',
     })
     expect(subject.map(item => item.id)).toEqual([
@@ -339,7 +318,6 @@ describe('Node 24 lane ownership', () => {
       'lint-and-duplication',
       'snapshot',
       'web-snapshot',
-      'doc-typecheck',
       'node-next-types',
       'built-bin-smoke',
     ])
@@ -355,16 +333,12 @@ describe('Node 24 lane ownership', () => {
     for (const id of [
       'snapshot',
       'web-snapshot',
-      'doc-typecheck',
       'node-next-types',
       'built-bin-smoke',
     ]) {
       expect(subject.find(item => item.id === id)?.needs).toEqual(['built-package-invariants'])
     }
     expect(subject.find(item => item.id === 'snapshot')?.env).toEqual({ DSH_EXAMPLE_MODE: 'lib' })
-    expect(subject.find(item => item.id === 'doc-typecheck')?.env).toEqual({
-      DSH_DOC_TYPECHECK_USE_BUILD_OUTPUT: '1',
-    })
     expect(subject.find(item => item.id === 'built-bin-smoke')?.args).toEqual(
       expect.arrayContaining([
         'packages/subagent/subagent-codex/tests/loader-composition.e2e.ts',

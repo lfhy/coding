@@ -1,61 +1,59 @@
-# Agent Note: After-call compaction pressure and context-overflow recovery
+# Agent Note: 调用后压缩压力与上下文溢出恢复
 
 Status: implemented
 
-English | [中文](2026-07-10-after-call-compaction-pressure-and-overflow-recovery.zh.md)
+## 问题
 
-## Problem
+`agent/pre-step` 运行在最终请求路由之前，也早于 assistant 输出、工具结果、缓冲上下文与 steering（中途引导）的产生。即使它接收已装配提示词与会话前缀，压力视图仍是临时的，因为 `agent/request` 还可以改变路由或调用配置，工具 schema 也没有与这些输入一同冻结。增加字段无法让调用前状态描述已完成调用，还会把通用扩展点与压缩（compaction）耦合。
 
-`agent/pre-step` runs before final request routing and before assistant output, tool results, buffered context, and steering exist. Even with the assembled prompt and session prefix, its pressure view is provisional because `agent/request` can still change routing or call configuration and tool schemas are not frozen with those inputs. Adding fields cannot make pre-call state describe a completed call and couples the generic extension point to compaction.
+成功调用也不是唯一的压力信号。提供方可能在返回 usage 之前就因上下文窗口超限拒绝请求，一些成功调用也不提供 usage。因此，系统需要可回放的调用后压力，以及一条狭窄的失败恢复路径；当压缩无法证明取得有效进展时，必须保留原始提供方错误。
 
-Successful calls are not the only pressure signal. A provider can reject a request for exceeding its context window before it returns usage, and some successful calls omit usage. The system therefore needs replayable post-call pressure plus a narrow failure-recovery path that preserves the provider error whenever compaction cannot prove useful progress.
+## 决策
 
-## Decision
+### 成功压力在下一个 pre-step 边界运行
 
-### Successful pressure runs at the next pre-step boundary
+`agent/pre-step` 接收独占的已领取消息批次与 `{ turn, step, signal }`，并返回最终 reject/enter 决策。它不携带压缩专用的提示词或前缀字段。
 
-`agent/pre-step` receives the exclusive claimed message batch plus `{ turn, step, signal }` and returns the final reject/enter decision. It carries no compaction-only prompt or prefix fields.
+Compact-basic 会在每个拟议请求之前包装 `agent/pre-step`。在续步边界，前一条 assistant 输出、所有已分发或合成的工具结果、工具后上下文与 steering 都已经持久化，因此压力策略能看到完整的成功调用状态，同时不会拆开 assistant 工具调用与其结果。初始边界上的无 header 会话尚无已完成路由请求，因此不执行压力工作。Compact-basic 会在内部处理操作性失败、发出警告并继续委托，不会 reject 拟议步骤。
 
-Compact-basic wraps `agent/pre-step` before each proposed request. At a continuation boundary the preceding assistant output, every dispatched or synthetic tool result, post-tool context, and steering are already durable, so pressure policy sees the complete successful-call state without splitting an assistant tool call from its result. At the initial boundary a headerless session has no completed routed request and produces no pressure work. Compact-basic contains operational failures, warns, and delegates without rejecting the proposed step.
+`dsh-compaction-basic` 从持久请求头读取精确的最新实际路由模型，只用它确认已经存在已完成的路由，随后让单例 `ctx.tokenMeter` 计量规范日志信封与当前表层。自动压力不会回退到 `AgentOptions.model`。没有请求头的会话尚无已完成路由请求可供判断，因此不执行工作；任意持久记录的非空模型名都使用同一个估算器。操作性的计量或摘要失败会发出警告，并从最新持久表层继续：任何替换发生前使用完整历史；若剪枝已经落盘，则使用已剪枝表层。
 
-`dsh-compaction-basic` reads the exact latest routed model from the durable request header only to establish that a completed route exists, then asks the singleton `ctx.tokenMeter` to measure the canonical logged envelope and current surface. It does not fall back to `AgentOptions.model` for automatic pressure. A headerless session has no completed routed request to assess and produces no work; any durable non-empty model name uses the same estimator. Operational measurement or summarization failures warn and continue from the latest durable surface: full history before any replacement, or the pruned surface if pruning already landed.
+### 请求恢复只覆盖最终模型边界
 
-### Request recovery is limited to the final model boundary
+`agent/request-error` 表示来自最终适配器边界的终止失败。适配器选择、分发、iterator 构造与迭代抛出会在 agent loop（智能体循环）消费前成为终止 `error` 或 `aborted` finish；适配器直接发出的终止 finish 进入同一路径。提示词装配、请求 middleware、请求日志、结果处理、工具、step 监听器与清理仍属于普通失败。[LLM（大语言模型）流的终止失败](2026-07-29-terminal-llm-stream-failures.md)规定这一规范化边界。
 
-`agent/request-error` represents terminal failures from the final adapter boundary. Adapter selection, dispatch, iterator construction, and iteration throws become terminal `error` or `aborted` finishes before the agent loop consumes them; adapter-emitted terminal finishes enter the same path. Prompt assembly, request middleware, request logging, result processing, tools, step listeners, and cleanup remain ordinary failures. [Terminal LLM stream failures](2026-07-29-terminal-llm-stream-failures.md) owns this normalization boundary.
+恢复运行前，失败 step 已经关闭。负责处理的监听器修复持久状态、返回 `{ kind: 'retry' }`，并停止 waterfall（瀑布式事件）委托。循环随后关闭失败 turn，并从持久日志开启一个重试 turn，中间不发布空闲通知。重试策略与尝试计数由插件自己拥有；compaction-basic 在链路到达终态 `agent/settled` 时清除对应 agent 的溢出计数。两个 DeepSeek 适配器都把识别出的提供方上下文限制错误规范化为 `CONTEXT_WINDOW_EXCEEDED`。[重试动作决策](../simplification/2026-07-27-request-error-retry-action.md)规定这一返回边界。
 
-The failed step closes before recovery runs. A handling listener repairs durable state, returns `{ kind: 'retry' }`, and stops waterfall delegation. The loop then closes the failed turn and opens one retry turn from the durable log without an intervening idle notification. Retry policy and attempt counts remain plugin-owned; compaction-basic clears its per-agent overflow count when the chain reaches terminal `agent/settled`. Both DeepSeek adapters normalize recognized provider context-limit failures to `CONTEXT_WINDOW_EXCEEDED`. The [retry-action decision](../simplification/2026-07-27-request-error-retry-action.md) owns the return boundary.
+如果取消发生在 assistant 工具调用已经持久化之后、所有调用完成分发之前，循环会为每个尚未分发的调用记录一对合成的 `tool/call` 与 aborted `tool/result`，随后进入正常中止路径。因此，表层不会仅因取消赢得竞态而留下孤立的持久工具调用。
 
-If cancellation lands after assistant tool calls are durable but before all calls dispatch, the loop records a synthetic `tool/call` and aborted `tool/result` pair for every undispatched call before following the normal abort path. The surface therefore never retains orphaned durable tool calls merely because cancellation won the race.
+### CompactionEngine 暴露意图，而不拥有 token 核算
 
-### CompactionEngine exposes intent, not token accounting
+`CompactionEngine.compactIfNeeded(agent, trigger, signal)` 接收 `trigger: 'pressure' | 'context-overflow'`。接口不增加估算方法或 token 类型；`ctx.tokenMeter` 继续作为可复用的核算所有者。
 
-`CompactionEngine.compactIfNeeded(agent, trigger, signal)` accepts `trigger: 'pressure' | 'context-overflow'`. The interface gains no estimation methods or token types; `ctx.tokenMeter` remains the reusable accounting owner.
+对于 `pressure`，compaction-basic 先解析持久提供方/模型目标对应适配器所维护的容量与精确目标策略，再把得到的阈值与保留尾部预算应用到一次统一的 `ctx.tokenMeter.measure()` 结果。未达到压力阈值时直接返回，不执行剪枝。压力达到条件后，可选的 `ctx.toolResultPruner` 会改写当前表层中过大的工具结果，compaction-basic 再通过同一个 meter 重新计量；若压力已降至安全水平则跳过模型调用，否则从已剪枝表层选择范围并生成摘要。范围定价、引用的源事件计量、被遮蔽 token 数与非缩小摘要拒绝也由同一个单例 meter 完成。通用默认值保持为阈值比例 `0.8`、保留历史比例 `0.16`、摘要提供方/模型 `''`、`maxTokens: 8192`、`compactionRetries: 1` 与 `auto: true`；可选 `modelPolicies` 项可以按精确提供方/模型组合覆盖这些值。
 
-For `pressure`, compaction-basic resolves the durable provider/model target's adapter-owned capacity and exact-target policy, then applies the resulting threshold and retained-tail budgets to one unified `ctx.tokenMeter.measure()` result. Below pressure it returns without pruning. Once pressure qualifies, optional `ctx.toolResultPruner` rewrites oversized current results and compaction-basic remeasures through the same meter; safe pressure skips the model call, while remaining pressure selects and summarizes from the pruned surface. The same singleton meter owns range pricing, cited source-event accounting, shadowed token counts, and non-shrinking-summary rejection. Common defaults remain threshold ratio `0.8`, retained-history ratio `0.16`, summarization provider/model `''`, `maxTokens: 8192`, `compactionRetries: 1`, and `auto: true`; optional `modelPolicies` entries override them for an exact provider/model pair.
+对于规范化溢出，compaction-basic 不要求容量元数据，并绕过标量压力与普通保留 token 预算。它先执行剪枝，再在保留最新不可分割单元的同时选择最大的工具配对平衡头部范围；存在范围时，才在同一 signal 下尝试一次缩小摘要压缩。自动监听器先对 `session.surface.replaceGeneration` 建立快照，剪枝或摘要让 generation 增加时就返回 `{ kind: 'retry' }`。即使剪枝先落盘而后续摘要工作抛错，这条规则仍然成立；取消依然优先。后端若只返回结果但没有替换表层，不能授权重试；只有剪枝取得进展时，即使没有 `CompactionResult` 也可以授权重试。
 
-For canonical overflow, compaction-basic requires no capacity metadata and bypasses scalar pressure and the normal retained-token budget. It prunes first, then chooses the maximal tool-balanced head range while leaving the newest indivisible unit and attempts one shrinking summary compaction under the same signal when a range exists. The automatic listener snapshots `session.surface.replaceGeneration` and returns `{ kind: 'retry' }` whenever pruning or summarization increases it. This remains true when pruning lands before later summary work throws; cancellation still wins. A backend returning a result without replacement cannot authorize retry, while pruning-only progress can authorize a retry without a `CompactionResult`.
+`maxOverflowRetries` 可选且默认为 `1`；`0` 只禁用溢出恢复，不会禁用压力检查。`auto: false` 不注册任何自动监听器。非规范化错误、尝试耗尽、已经中止的 signal、缺失路由模型、没有安全范围、generation 未变化，以及在任何替换之前恢复抛错，都会委托给下一个监听器。若没有后续恢复，循环报告原始提供方错误对象与代码。generation 增加后的恢复抛错会基于持久进展授权重试；即使恢复工作并发完成，取消或 dispose（资源释放）仍具有最终优先级。
 
-`maxOverflowRetries` is optional and defaults to `1`; `0` disables overflow recovery without disabling pressure. `auto: false` registers neither automatic listener. Noncanonical errors, exhausted attempts, an already-aborted signal, a missing routed model, no safe range, no generation change, and recovery throws before any replacement all delegate to the next listener. With no later recovery, the loop reports the original provider error object and code. A recovery throw after generation advances authorizes retry from durable progress; cancellation or disposal remains authoritative even if recovery work completes concurrently.
+默认摘要器依次解析显式配置、最近记录的路由与 agent options。因为直接 `llm/stream` 中间件可以重新路由该辅助调用，`compaction/summary.{provider, model}` 记录分发后观察到的可变 `GenerateOptions` 最终目标，而不是 waterfall 之前的候选值。
 
-The default summarizer resolves explicit configuration, then the latest logged route, then agent options. Because direct `llm/stream` middleware may reroute that auxiliary call, `compaction/summary.{provider, model}` records the final mutable `GenerateOptions` target observed after dispatch rather than the pre-waterfall candidate.
+## 测试
 
-## Testing
+单元测试覆盖最终适配器规范化边界、已关闭 turn 的重试编号与重置、取消与 dispose、step 边界顺序、已路由信封压力、压力门控剪枝、剪枝独立解除压力、从已剪枝输入生成摘要、平衡溢出缩减、后续失败前已落盘的剪枝进展、generation 证明、上限、委托与辅助调用路由。真实循环测试覆盖抛出式和带内溢出在经剪枝或摘要压缩后重建重试请求的过程。
 
-Unit tests cover the final-adapter normalization boundary, closed-turn retry numbering and reset, cancellation and disposal, step-boundary ordering, routed-envelope pressure, pressure-gated pruning, pruning-only relief, pruned-input summarization, balanced overflow reduction, durable prune progress before later failure, generation proof, caps, delegation, and auxiliary-call routing. Real-loop tests cover thrown and in-band overflow through pruning or summary compaction to a reconstructed retry request.
+## 考虑过的替代方案
 
-## Alternatives considered
+- **向 pre-step 增加压缩专用字段**——不予采纳，因为规范持久会话与 token meter 已拥有计量输入；通用生命周期不需要携带第二份信封。
+- **重试相同编号的 step**——不予采纳，因为恢复会在失败边界之后追加持久事件。新 step 保持平衡嵌套与可重建性。
+- **只要 `compactIfNeeded` 返回结果就重试**——不予采纳，因为自定义后端可能报告成功却没有改变模型可见状态。`replaceGeneration` 才是权威证明。
+- **让 compaction-basic 解析提供方措辞**——不予采纳，因为分类属于适配器，而且必须同时覆盖抛出式与带内交付。
+- **没有持久路由时回退到 `AgentOptions.model`**——不予采纳，因为自动策略必须描述已完成且已记录的请求。没有请求头的压力检查与恢复会原样委托。
 
-- **Add compaction-only fields to pre-step** — rejected because the canonical durable session and token meter already own the measurement input; the generic lifecycle need not carry a second envelope.
-- **Retry the same numbered step** — rejected because recovery appends durable events after the failed boundary. A new step preserves balanced nesting and reconstructability.
-- **Retry whenever `compactIfNeeded` returns a result** — rejected because a custom backend can report success without changing model-visible state. `replaceGeneration` is the authoritative proof.
-- **Let compaction-basic parse provider wording** — rejected because classification belongs at adapters and must cover both thrown and in-band delivery.
-- **Fall back to `AgentOptions.model` when no durable route exists** — rejected because automatic policy must describe a completed logged request. Headerless pressure and recovery delegate unchanged.
+## 后果
 
-## Consequences
+下一个 pre-step 的压力检查描述前一个已完成的路由请求，包括持久工具结果与新领取输入。可选的无模型剪枝会在选择摘要前移除可预测的工具输出体积，也能独立产生足以重试的进展。当成功 usage 锚点不存在时，规范化溢出提供兜底路径。恢复有明确上限、以取消为准，并保持单调：只有模型可见的表层 generation 变化后才重试。
 
-The next pre-step pressure check describes the preceding completed routed request, including durable tool results and newly claimed input. Optional model-free pruning removes predictable tool-output bulk before summary selection and can independently create retry-worthy progress. Canonical overflow supplies the backstop when no successful usage anchor exists. Recovery is bounded, cancellation-owned, and monotonic: it retries only after a visible surface generation change.
+代价是在共享 pre-step waterfall 中执行压力工作，并需要适配器持续维护溢出分类。提供方措辞与启发式字符密度仍是维护风险。表层压缩依然无法修复仅信封本身就超出窗口的情况，也不能拆分不可分割的非工具节点，或修复不可剪枝的剩余部分仍然过大的工具单元。若可移除的文本工具结果是主要体积，可选剪枝器仍可修复原本不可分割的工具配对。
 
-The cost is pressure work in the shared pre-step waterfall and adapter-maintained overflow classification. Provider wording and heuristic character density remain maintenance risks. Surface compaction still cannot repair an envelope that alone exceeds the window, split an indivisible non-tool node, or repair a tool unit whose non-prunable remainder remains oversized. The optional pruner can repair an otherwise indivisible tool pair when removable text-bearing tool-result content is the bulk.
-
-The [claimed pre-step lifecycle](2026-07-31-claimed-pre-step-inbox-lifecycle.md) supersedes this note's former post-step trigger. The service split, standalone token meter, balanced range contract, log-recorded lock, summary replacement, and sole `summarize()` subclass hook remain unchanged.
+[已领取 pre-step 生命周期](2026-07-31-claimed-pre-step-inbox-lifecycle.md)取代了本记录原先的 post-step 触发方式。服务拆分、独立 token meter、平衡范围约定、日志中记录的锁、摘要替换与唯一 `summarize()` 子类 hook 均保持不变。

@@ -1,41 +1,39 @@
-# Agent Note: HMR's initial scan deadlocked a failing boot into a silent exit 13
+# Agent Note：HMR 初始扫描使失败的启动死锁为静默的 exit 13
 
-Status: implemented
+状态：已实现
 
-English | [中文](2026-08-03-hmr-initial-scan-boot-deadlock.zh.md)
+## 问题
 
-## Problem
+当 `dsh` 启动时配置树校验失败，进程以 13 退出（未结算的顶层 await），不输出任何诊断，并把 TUI 的终端状态残留在 shell 上——这正是 [fail-loud release](2026-07-31-fail-loud-releases-the-terminal.md) 修复过的症状，在[事务化配置重载](2026-07-20-config-hot-reload-resilience.md)之后经由另一条机制重新出现。
 
-A `dsh` launch whose config-tree failed validation exited 13 (unsettled top-level await) with no diagnostic at all, and left the TUI's terminal state stranded on the shell — the exact symptom the [fail-loud release](2026-07-31-fail-loud-releases-the-terminal.md) fixed, reintroduced through a different mechanism after the [transactional config reload](2026-07-20-config-hot-reload-resilience.md).
+两个缺陷叠加：
 
-Two defects compounded:
+1. **并发的 Include apply 破坏事务化的 group update。** HMR 主 watcher 的 chokidar 初始扫描会把每个已存在的文件重新宣告为 `add`。其中配置文件的 `add` 在 Include 的首次 apply 尚未结束时触发了 `Include.refresh()`（内容去重键 `this.content` 只在 apply 完成后才提交）。同一 group 上两个并发的 `EntryGroup.update` 会在相同条目上交错执行 create 与回滚，导致 Include fiber 永远无法结算：`loader.create` 挂起，`boot()` 既不 resolve 也不 reject，事件循环排空后 Node 以 13 退出。
+2. **仅序列化 apply 会让失败回滚死锁。** 将 Include 的变更排入队列后，首次 apply 失败时的回滚会释放每个已挂载条目——包括 `hmr`，而它的拆卸会等待自身的 refresh 任务排空。扫描触发的 refresh 任务正排在 Include 队列中、位于正在回滚的那次 apply 之后：回滚等 HMR，HMR 等 refresh，refresh 等 apply。
 
-1. **Concurrent Include applies corrupt the transactional group update.** The HMR main watcher's chokidar initial scan re-announces every existing file as `add`. Its `add` for the config file triggered `Include.refresh()` while the Include's initial apply was still in flight (`this.content`, the changed-content dedup key, commits only after apply). Two concurrent `EntryGroup.update` calls on one group interleave create and rollback on the same entries, and the Include fiber never settles — `loader.create` hangs, `boot()` neither resolves nor rejects, and Node exits 13 once the loop drains.
-2. **Serialized applies alone deadlock the failure rollback.** With Include mutations queued, a failing initial apply rolls back by disposing every mounted entry — including `hmr`, whose teardown drains its refresh tasks. The scan-triggered refresh task sits in the Include queue behind the very apply whose rollback is disposing HMR: rollback waits on HMR, HMR waits on the refresh, the refresh waits on the apply.
+## 决定
 
-## Decision
+两处修复都落在 vendored 包中（记录于 `vendor/README.md`）：
 
-Both halves are fixed in the vendored packages (logged in `vendor/README.md`):
+- `include/src/index.ts` 将每次子树变更——首次 apply、refresh、`internal/update` 补丁重应用——汇入每个 Include 一条的 promise 队列。group 的事务化 `update` 不可重入，因此序列化是正确性要求，而不是吞吐取舍。`refresh()` 也在队列内读取文件，使其内容变更判断与前一任务提交后的状态比较。
+- `hmr/src/index.ts` 给主 watcher 传入 `ignoreInitial: true`。初始扫描只会重新宣告启动刚刚消费过的文件；抑制它同时消除了启动期 refresh 和对已加载模块的多余 `add` 事件。`registerConfig()` 保留自己 `ignoreInitial: false` 的 watcher，因为注册时已存在的个人配置必须恰好应用一次。
 
-- `include/src/index.ts` funnels every child-tree mutation — initial apply, refresh, and `internal/update` patch re-application — through one per-Include promise queue. The group's transactional `update` is not reentrant, so serialization is a correctness requirement, not a throughput choice. `refresh()` also reads inside the queue so its changed-content check compares against the predecessor's committed state.
-- `hmr/src/index.ts` passes `ignoreInitial: true` to the main watcher. The initial scan only re-announces files boot has just consumed; suppressing it removes both the boot-time refresh and the spurious `add` events for already-loaded modules. `registerConfig()` keeps its own `ignoreInitial: false` watcher because a personal config present at registration must apply exactly once.
+两者齐备后，失败的启动走上预期路径：唯一一次 apply 失败，回滚并 dispose（资源释放）整棵树（执行 TUI 自身的 shutdown、恢复终端），`loader.create` reject，`boot()` 重新抛出带标签的诊断并以 1 退出。
 
-With both in place a failing boot follows the intended path: the single apply fails, the rollback disposes the tree (running the TUI's own shutdown, restoring the terminal), `loader.create` rejects, and `boot()` rethrows the labelled diagnostic with exit 1.
+## 曾考虑的替代方案
 
-## Alternatives considered
+**只加 `ignoreInitial: true`。** 消除了触发条件，但保留了破坏本身：任何真正并发的 refresh（配置编辑与缓慢的 apply 竞争）仍会交错两次 group update 并使 fiber 悬置。
 
-**Only `ignoreInitial: true`.** Removes the trigger but leaves the corruption: any genuinely concurrent refresh (a config edit racing a slow apply) still interleaves two group updates and strands the fiber.
+**只做序列化。** 把破坏转化为上述回滚死锁；进程仍然静默地以 13 退出。
 
-**Only serialization.** Converts the corruption into the rollback deadlock described above; the process still exits 13 silently.
+**在 HMR 拆卸时取消排队中的 refresh。** 需要在 `refreshConfig` 的任务循环和 Include 队列中铺设取消机制，而 `ignoreInitial` 已把该场景从每次启动中移除；在真实触发条件出现之前不值得引入这套机构。
 
-**Cancel queued refreshes on HMR teardown.** Requires cancellation plumbing through `refreshConfig`'s task loop and the Include queue for a case `ignoreInitial` already removes from every boot; not worth the machinery until a real trigger remains.
+## 后果
 
-## Consequences
+落在 watcher 启动扫描窗口内的配置文件编辑，现在由下一个 `change` 事件而非扫描本身拾取；稳态的重载行为不变。
 
-A config file edit landing inside the watcher's startup scan window is now picked up by the next `change` event rather than the scan itself; steady-state reload behavior is unchanged.
+仍留有一个潜在缺口：在一次*失败的*首次 apply 期间进行的配置编辑，仍可能排入一个被回滚的 HMR 拆卸所等待的 refresh——同样的死锁形态，但触发窗口缩小到一次失败启动的人力尺度。若它真的发生，修复方向是在 HMR 拆卸时取消 refresh 任务。
 
-One latent gap remains: a config edit made during a *failing* initial apply can still queue a refresh that the rollback's HMR teardown waits on — the same deadlock shape with a human-scale trigger window of one failing boot. If that ever bites, the fix is refresh-job cancellation at HMR teardown.
+## 测试
 
-## Testing
-
-The `dsh` invalid-provider PTY case in `apps/cli/tests/tui-keyless-smoke.e2e.ts` pins the end-to-end contract: exit 1, the labelled `dsh: plugin tree failed to load:` diagnostic naming `$.providers`, and the bracketed-paste reset proving the tree was disposed. Before this fix the same case observed exit 13 with no diagnostic. Reload behavior stays covered by `packages/boot/app-boot/tests/config-reload.spec.ts` and `packages/boot/app-boot/tests/hmr-config.spec.ts`.
+`apps/cli/tests/tui-keyless-smoke.e2e.ts` 中 `dsh` 无效 provider 的 PTY 用例钉住了端到端约定：以 1 退出、带标签的 `dsh: plugin tree failed to load:` 诊断指明 `$.providers`、以及证明整棵树已被释放的 bracketed-paste 复位序列。此修复之前，同一用例观察到的是无诊断的 exit 13。重载行为仍由 `packages/boot/app-boot/tests/config-reload.spec.ts` 与 `packages/boot/app-boot/tests/hmr-config.spec.ts` 覆盖。

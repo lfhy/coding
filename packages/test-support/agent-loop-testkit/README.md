@@ -1,10 +1,8 @@
 # `@deepseek-ai/dsh-agent-loop-testkit`
 
-English | [中文](README.zh.md)
+为运行具体 `AgentLoop` 的测试共享挂载先决依赖。`mountAgentLoopTestDependencies(ctx, options?)` 按依赖顺序安装 LLM（大语言模型）、会话、系统提示词、工具和 agent（智能体）服务，然后在 agent loop 挂载前返回。
 
-Shared prerequisite mounting for tests that exercise the concrete `AgentLoop`. `mountAgentLoopTestDependencies(ctx, options?)` installs the LLM, session, system-prompt, tool, and agent services in dependency order, then returns before the loop is mounted.
-
-The caller registers adapters and optional plugins, mounts `AgentLoop` with the configuration under test, and disposes its own Context. System-prompt and tool-registry configuration can be forwarded through `options`; the helper does not provide test defaults beyond those owned by the services. A plugin-load failure rejects the helper call, while services activated earlier in the sequence remain owned by the caller's Context.
+调用方注册适配器和可选插件，使用待测配置挂载 `AgentLoop`，并 dispose（资源释放）自己的 Context。系统提示词和工具注册表配置可通过 `options` 转发；该辅助函数不提供超出服务自有默认值的测试默认值。插件加载失败会使辅助函数调用被拒绝，而顺序中较早激活的服务仍归调用方的 Context 所有。
 
 ```ts
 import { Context } from '@deepseek-ai/cordis'
@@ -18,16 +16,16 @@ await mountAgentLoopTestDependencies(ctx)
 await ctx.plugin(AgentLoop, { agents: [] })
 ```
 
-Tests of injection failures, partial topology, service load order, or service teardown mount their dependencies directly instead of using this helper.
+针对注入失败、部分拓扑、服务加载顺序或服务清理的测试会直接挂载其依赖，而不使用此辅助函数。
 
-## Model Experience
+## 模型体验
 
-None, as this test-only composition helper neither drives nor modifies model requests.
+无。该测试专用组合辅助工具既不驱动也不修改模型请求。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-None; this package neither assembles nor sends a provider request.
+无；该包既不组装也不发送提供方请求。
 
-## Known Limitations and Deferred Work
+## 已知限制与暂缓事项
 
-- **Only the mandatory prerequisite spine is shared** — adapters, optional plugins, `AgentLoop`, agents, and Context teardown remain caller-owned so scenario-specific ordering stays visible.
+- **只共享必需的先决主干**：适配器、可选插件、`AgentLoop`、agent 和 Context 清理仍由调用方负责，以使特定场景的挂载顺序清晰可见。

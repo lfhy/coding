@@ -1,32 +1,30 @@
-# Agent Note: Session content search ships opt-in through openAt never
+# Agent Note: 会话内容搜索通过 openAt never 以 opt-in 方式交付
 
 Status: implemented
 
-English | [中文](2026-08-13-session-content-search-opt-in.zh.md)
+## 问题
 
-## Problem
+交付的 bundle 之前以启用状态挂载 SQLite 会话查询提供方的全文索引（`openAt: first-search`），因此每个默认部署都携带一个派生 FTS 索引，Web 侧边栏提供内容搜索。一个部署是否需要该索引——它的 node:sqlite 导入、每次搜索的来源对账和派生存储——是部署自身的选择，产品默认不携带它交付；面向模型的搜索工具此前已经是 opt-in 且未挂载（见[非默认交付决策](../feature/2026-08-02-session-search-not-shipped-default.md)）。
 
-The shipped bundles mounted the SQLite session-query provider with the full-text index live (`openAt: first-search`), so every default deployment carried a derived FTS index and the Web sidebar offered content search. Whether a deployment wants that index — its node:sqlite import, per-search source reconciliation, and derived storage — is a deployment choice, and the product default is to ship without it; the model-facing search tools were already opt-in and unmounted (the [not-shipped-default decision](../feature/2026-08-02-session-search-not-shipped-default.md)).
+通过卸载插件行来关闭该能力不可行。`ApiProxyService` 将 `sessionQuery` 声明为必需注入，没有该提供方时整个宿主 API 网关保持未加载，Web GUI 无法启动。会话日志导出通过 `ctx.sessionQuery.traceSession` 追踪子代理后代，子代理分叉也通过同一血缘追踪解析其 Workspace——两者都需要可选服务守卫加一个替代血缘来源，改动面大约扩大三倍，同时使精确读取在所有地方消失。
 
-Turning the capability off by unmounting the plugin row is not viable. `ApiProxyService` declares `sessionQuery` as a required injection, so without the provider the whole host API gateway stays unloaded and the Web GUI never boots. Session-log export traces subagent descendants through `ctx.sessionQuery.traceSession`, and a subagent fork resolves its Workspace through the same lineage trace — both would need optional-service guards plus a replacement lineage source, roughly tripling the change surface while losing exact reads everywhere.
+## 决策
 
-## Decision
+内容搜索在提供方处强制关闭。`openAt: 'never'` 是 `@deepseek-ai/dsh-session-query-sqlite` 的第三个打开阶段：`searchSessions` 和 `searchEvents` 在任何请求规范化之前就以类型化的 `SESSION_QUERY_SEARCH_DISABLED` 代码失败，node:sqlite 绝不会被导入或打开，也不运行任何来源观察或对账。`ctx.sessionQuery` 上继承的全部精确读取、过滤和跟踪保持可用，因此会话导出、分叉的 Workspace 继承和标题读取不受影响。
 
-Content search is enforced off at the provider. `openAt: 'never'` is a third opening phase on `@deepseek-ai/dsh-session-query-sqlite`: `searchSessions` and `searchEvents` fail with the typed `SESSION_QUERY_SEARCH_DISABLED` code before any request normalization, node:sqlite is never imported or opened, and no source observation or reconciliation runs. Every inherited `ctx.sessionQuery` exact read, filter, and trace keeps working, so session export, fork Workspace inheritance, and title reads are unaffected.
+`SESSION_QUERY_SEARCH_DISABLED` 加入封闭的 `SessionQueryErrorCode` 分类，`tool-session-query` 的服务边界将它映射为模型安全消息 `session search is disabled in this deployment`。
 
-`SESSION_QUERY_SEARCH_DISABLED` joins the closed `SessionQueryErrorCode` taxonomy, and the `tool-session-query` service boundary maps it to the model-safe message `session search is disabled in this deployment`.
+base bundle 在 `session-query-sqlite` 行上设置 `openAt: never`，web bundle 的重述保持该值；启用内容搜索只需在后续 patch 层用一行覆盖 `openAt`（`first-search` 或 `startup`），通常同时配一个持久 `path`。宿主 `session.search` 端点沿现有错误路径报告提供方失败，Web 侧边栏保持其既有降级：本地标题/工作区匹配加内容搜索不可用提示。CLI 兼容性测试固定交付的 `openAt: never` 行，而 Web e2e 脚手架保持内容搜索启用——其种子会话场景通过内容搜索导航，这些运行也是 opt-in 路径的装配级覆盖。
 
-The base bundle sets `openAt: never` on the `session-query-sqlite` row and the web bundle's restatement keeps it; enabling content search is a one-line `openAt` override (`first-search` or `startup`) in a later patch layer, typically with a durable `path`. The host `session.search` endpoint reports the provider failure through its existing error path, and the Web sidebar keeps its designed degradation: local title/workspace matching plus the content-search-unavailable notice. The CLI compat spec pins the shipped `openAt: never` rows, while the web e2e scaffold keeps content search enabled — its seeded-session scenarios navigate by content search, and those runs are the assembled coverage for the opt-in path.
+## 曾考虑的替代方案
 
-## Alternatives considered
+- **卸载插件行**（在 base patch 中 `disabled: true`）——否决：api-gateway 的必需 `sessionQuery` 注入会使整个宿主 API 保持未加载，而把该注入改为可选需要守卫加上会话导出与分叉解析中的 header 遍历血缘回退。
+- **在消费方处关闭**（宿主 `session.search` 端点或侧边栏）——否决：强制应由做出决定的操作执行；opt-in 的模型工具或任何其他消费方仍会触达索引。
+- **在 `openAt` 旁增加独立布尔开关**——否决：打开阶段已经拥有"SQLite 何时启动"这一轴；`never` 延伸同一根轴，而不是增加一个可能与之矛盾的第二个旋钮。
 
-- **Unmount the plugin row** (`disabled: true` in the base patch): rejected — the api-gateway's required `sessionQuery` injection keeps the whole host API unloaded, and making that injection optional forces guards plus a header-walk lineage fallback in session export and fork resolution.
-- **Disable at the consumers** (the host `session.search` endpoint or the sidebar): rejected — enforcement belongs to the operation that makes the decision; opt-in model tools or any other consumer would still reach the index.
-- **A separate boolean beside `openAt`**: rejected — the opening phase already owns when SQLite starts; `never` extends the same axis instead of adding a second knob that can contradict it.
+## 结果
 
-## Consequences
-
-- Default deployments run no derived index: no node:sqlite import or experimental-SQLite startup warning, no reconciliation work, no derived database on disk. Sidebar search matches session titles and workspace names only.
-- Search failures under the default are typed and stable rather than incidental, so callers distinguish a deployment choice from an index fault (`SESSION_QUERY_INDEX_FAILED`).
-- Re-enabling content search is per-deployment configuration, not a code change, and restores the full FTS behavior unchanged.
-- Compositions that mount the search tools without overriding `openAt` get the model-safe disabled message on every search call; enabling the tools implies enabling the index.
+- 默认部署不运行任何派生索引：没有 node:sqlite 导入或实验性 SQLite 启动警告，没有对账工作，磁盘上没有派生数据库。侧边栏搜索只匹配会话标题和工作区名称。
+- 默认状态下的搜索失败是类型化且稳定的，调用方可以把部署选择与索引故障（`SESSION_QUERY_INDEX_FAILED`）区分开。
+- 重新启用内容搜索是逐部署配置而非代码改动，并原样恢复完整的 FTS 行为。
+- 挂载搜索工具但未覆盖 `openAt` 的组合，每次搜索调用都会得到模型安全的已禁用消息；启用工具意味着同时启用索引。

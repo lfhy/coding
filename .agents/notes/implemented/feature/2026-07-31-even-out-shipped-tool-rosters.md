@@ -1,69 +1,67 @@
-# Agent Note: Even out the shipped tool rosters
+# Agent Note: 拉平交付的工具清单
 
 Status: implemented
 
-English | [中文](2026-07-31-even-out-shipped-tool-rosters.zh.md)
+## 问题
 
-## Problem
+两个交付的 `dsh` surface 提供着不同的工具，而没有任何记录说明为什么。会话检查点、工具结果裁剪、goal 工具和 Ralph 在 `tui.cordis.yml`；`tool-todo` 以及后来的 web 搜索在 `web.cordis.yml`。两个 surface 都没有会话搜索、字符串替换编辑器和重复工具守卫，尽管这三者都已成包存在，且没有一个是 surface 专属的。
 
-The two shipped `dsh` surfaces offered different tools for no recorded reason. Session checkpoints, tool-result pruning, the goal tools, and Ralph were in `tui.cordis.yml`; `tool-todo` and, later, web search were in `web.cordis.yml`. Neither surface offered session search, a string-replacement editor, or a repeat-tool guard, though all three exist as packages and none is surface-specific.
+结果是一处没人做过决定的用户可见差异：同一个模型、同一个请求，在终端上能定目标而在浏览器里不能，在浏览器里能搜网页而在终端上不能。
 
-The result was a user-visible difference nobody had decided: the same model, asked the same thing, could set a goal on the terminal but not in the browser, and could search the web in the browser but not on the terminal.
+## 决策
 
-## Decision
+那些并非 surface 专属的行移入 [`base.cordis.yml`](../../../../packages/bundle/base/cordis.patch.yml)，另有三行加入：`tool-session-query`、`tool-str-replace-editor` 和 `repeat-tool-reminder`。Web 搜索也一并移入；其[部署决策](2026-07-31-web-default-search.md)负责安全边界，共享 base 则负责与 surface 无关的挂载。两个 surface 组装同一份清单，其中 `glob` 和 `grep` 是固定成员，因为 `dsh-tool-fs-search` 直接 spawn [打包的 ripgrep 二进制](../architecture/2026-08-01-packaged-ripgrep-search.md)。之后有两项决策收窄这份清单：[session-search 决策](2026-08-02-session-search-not-shipped-default.md)让 `tool-session-query` 保持需显式启用，[单一编辑器决策](../simplification/2026-08-10-default-presets-single-editor.md)让通用 preset 不提供 `tool-str-replace-editor`，但在 `minimal` 中保留它。
 
-The rows that are not surface-specific move into [`base.cordis.yml`](../../../../packages/bundle/base/cordis.patch.yml), and three more join them: `tool-session-query`, `tool-str-replace-editor`, and `repeat-tool-reminder`. Web search moves there too; its [deployment decision](2026-07-31-web-default-search.md) owns the security boundary while the shared base owns its surface-neutral mount. Both surfaces assemble the same roster, including fixed `glob` and `grep` members because `dsh-tool-fs-search` spawns the [packaged ripgrep binary](../architecture/2026-08-01-packaged-ripgrep-search.md). Two later decisions narrow that roster: the [session-search decision](2026-08-02-session-search-not-shipped-default.md) keeps `tool-session-query` opt-in, and the [single-editor decision](../simplification/2026-08-10-default-presets-single-editor.md) keeps `tool-str-replace-editor` out of the general-purpose presets while retaining it in `minimal`.
+有两行仍是 surface 专属。`tmux-context` 只在 TUI，因为浏览器 surface 没有终端复用器可描述。`session-reference` 只在 TUI，因为它以 launcher 的进程本地路径驱动共享的 session-query 索引，而浏览器侧边栏会在自己的首次搜索里重建该索引。
 
-Two rows stay surface-specific. `tmux-context` is TUI-only because a browser surface has no terminal multiplexer to describe. `session-reference` is TUI-only because it drives the shared session-query index from the launcher's process-local path, and the browser sidebar reconciles that index on its own first search.
+**本次工具清单决策当时只做加法。** 落地时两个 surface 均未移除任何工具行，目录对比只发现了新增，别无其他。后续的 session-search 与单一编辑器决策分别负责对应的默认清单例外。共享执行器、沙箱组合与访问默认值独立归属[workspace-write 默认值决策](2026-07-31-workspace-write-surface-default.md)。
 
-**This roster decision added only at the time.** No tool row was removed from either surface when it landed, and a catalog comparison found additions and nothing else. The later session-search and single-editor decisions own their respective default-roster exceptions. The shared executors, sandbox composition, and access default are owned independently by the [workspace-write default decision](2026-07-31-workspace-write-surface-default.md).
+### 什么保持不挂，以及为什么
 
-### What stays unmounted, and why
+有三项能力基于其自身包所记录的证据保持在外,列在这里是为了让「我们忘了」和「我们决定不要」保持可区分。
 
-Three capabilities stay out on the evidence their own packages record, and are listed here so "we forgot" and "we decided against" stay distinguishable.
+**`dsh-tool-cordis`** 让模型写一段 JavaScript 并挂成临时插件。它的 README 写明了这个界限:「The sandbox is containment for honest code, not a security boundary — host-realm helpers on the sandbox global are reachable, so mount code can reach Node」([Known limitations](../../../../packages/extensions/tool-cordis/README.md))。`node:vm` 的 realm 就在 harness 进程内,而 `dsh-sandbox-local` 只约束它 spawn 出去的 argv,因此在 Web surface 上,沙箱与批准接缝是被绕过而非被执行。
 
-**`dsh-tool-cordis`** lets the model write JavaScript and mount it as a temporary plugin. Its README states the limit: "The sandbox is containment for honest code, not a security boundary — host-realm helpers on the sandbox global are reachable, so mount code can reach Node" ([Known limitations](../../../../packages/extensions/tool-cordis/README.md)). The `node:vm` realm lives inside the harness process while `dsh-sandbox-local` confines only the argv it spawns, so on the Web surface both the sandbox and the approval seam are bypassed rather than enforced.
+**`dsh-web-fetch-http`** 保持不挂，`dsh-tool-web` 保持 `fetch: false`。该提供方会把连接限制在已验证的公开 IP 目的地址，但 `dsh-tool-web` 没有 web 专用权限策略，执行时也不会请求 `ctx.approval`（见 [README](../../../../packages/web/tool-web/README.md)）。因此，交付的权限 preset 不会从沙箱文件访问无提示地扩大到模型选择的公开网络请求。
 
-**`dsh-web-fetch-http`** stays unmounted and `dsh-tool-web` keeps `fetch: false`. The provider restricts connections to validated public IP destinations, but `dsh-tool-web` has no web-specific permission policy and executes without asking `ctx.approval` ([README](../../../../packages/web/tool-web/README.md)). The shipped permission presets therefore do not silently broaden from sandboxed file access to model-selected public network requests.
+不挂载它收窄的是接触面而非可达性：`bash` 是挂着的,`curl` 照样能拿到同一个页面——一次真实运行确认了这点。这个缺席买到的是去掉一个无需 shell、以参数成形的请求原语,以及随之而来的那条意外路径:一次「帮我总结这个页面」悄悄打到环回地址。真要收住出站流量的部署需要的是网络层管控。
 
-Withholding it narrows the surface without removing the reach: `bash` is mounted, so `curl` gets the same page, as a live run confirmed. What the absence buys is the removal of an argument-shaped request primitive that needs no shell — and with it the accidental path where a summarization request quietly reaches loopback. A deployment that must contain outbound traffic needs a network-level control.
+**LSP 三件套**留在外面是运维原因而非安全原因:`command` 在插件加载时从 `PATH` 解析,因此缺少语言服务器会让整次启动失败,而不只是失去一个工具。等到「缺失」退化为「跳过注册」之后,它就可以挂了。
 
-**The LSP trio** stays out for an operational reason rather than a security one: `command` resolves from `PATH` at plugin load, so a missing language server fails the whole boot rather than one tool. It becomes mountable once absence degrades to a skipped registration.
+### MCP 是依赖,不是配置行
 
-### MCP is a dependency, not a row
+`@deepseek-ai/dsh-mcp-client` 成为本 CLI（命令行界面）的运行时依赖,但在任何交付配置里都没有对应的行。该插件每个实例只挂载一台服务器,且 `command` 是必填,因此一个默认值必须点名一台第三方服务器,并在每次启动时把它作为子进程 spawn——不经 `ctx.shell`,因而也在 Web surface 所组合的沙箱策略之外。
 
-`@deepseek-ai/dsh-mcp-client` becomes a runtime dependency of the CLI without a row in any shipped config. The plugin mounts exactly one server per instance and `command` is required, so a default would have to name a third-party server and spawn it as a child process on every launch — outside `ctx.shell`, and therefore outside the sandbox policy the Web surface composes.
+真正能让 MCP 成为默认的那一层,恰恰是本仓库尚未拥有的:一个读取用户服务器清单、按条目逐台挂载客户端的桥接,形态与 [`dsh-hooks-claude-code`](../../../../packages/hooks/hooks-claude-code/README.md) 读取 Claude Code 的 `hooks.json` 完全相同。交付这个依赖意味着已安装的 `dsh` 今天就能从 `$DSH_HOME/config.yaml` 挂载服务器;CLI README 里给了那段 YAML。
 
-The layer that would make MCP a default is the one this repository does not have yet: a bridge that reads a user's server list and mounts one client per entry, the same shape [`dsh-hooks-claude-code`](../../../../packages/hooks/hooks-claude-code/README.md) already has for a Claude Code `hooks.json`. Shipping the dependency means an installed `dsh` can mount servers from `$DSH_HOME/config.yaml` today; the CLI README carries the YAML.
+## 测试
 
-## Testing
+`apps/cli/tests/shipped-composition.e2e.ts` 曾在伪终端中通过真实 Loader 启动交付树，并从会话日志持久化的 `request/header` 中读出工具名，因此断言的是模型实际收到的目录。它传入的 `--config` overlay `composition-keyless-tail.cordis.yml` 只用于测试隔离：一个无网络适配器，以及落在工作区内的会话产物。
 
-`apps/cli/tests/shipped-composition.e2e.ts` booted the shipped tree through the real Loader in a pseudo-terminal and read the tool names out of the `request/header` the session log persisted, so the assertion was the catalog the model was actually sent. Its `--config` overlay, `composition-keyless-tail.cordis.yml`, provided test isolation only: a network-free adapter and workspace-local session artifacts.
+该尾部还曾插入 `composition-settled.ts`，用于在终端字节流上宣告 Loader 激活已 settle。TUI 在自己的 fiber 一启动就渲染，因此在 banner 处敲下的提示词可能在工具行与持久化仍在激活时就抵达循环，从而组装出不完整的目录；把冒烟的首个提示词 gate 在该标记上，正是断言得以确定的原因。
 
-That tail also inserted `composition-settled.ts`, which announced settled Loader activation on the terminal stream. The TUI rendered as soon as its own fiber started, so a prompt typed at the banner could reach the loop while tool rows and persistence were still activating and assemble a partial catalog; gating the smoke's first prompt on that marker made the assertion deterministic.
+同一份冒烟还根据同一份产物固定 TUI 的执行姿态。那些沙箱 schema 与初始权限断言归[workspace-write 默认值决策](2026-07-31-workspace-write-surface-default.md)所有，独立于本工具清单决策。
 
-The same smoke also pins the TUI execution posture from the same artifact. Those sandbox-schema and initial-permission assertions belong to the [workspace-write default decision](2026-07-31-workspace-write-surface-default.md), independently of this roster.
+[`apps/web/tests/shipped-composition.e2e.ts`](../../../../apps/web/tests/shipped-composition.e2e.ts) 在构建产物 lane 中覆盖 Web surface,断言它的工具目录、它的访问默认值未被触碰,以及 `workspace-write` 的可写根包含临时目录——一个会让沙箱测试说谎的陷阱,当工作区落在 `/tmp` 下时([`roots.ts`](../../../../packages/sandbox/sandbox/src/roots.ts))。
 
-[`apps/web/tests/shipped-composition.e2e.ts`](../../../../apps/web/tests/shipped-composition.e2e.ts) covers the Web surface in the built lane, asserting its catalog, that its access default is untouched, and that `workspace-write`'s writable roots include the temp directories — a trap that makes sandbox tests lie when the workspace sits under `/tmp` ([`roots.ts`](../../../../packages/sandbox/sandbox/src/roots.ts)).
+`glob` 与 `grep` 被作为固定成员断言，而不是一对宿主依赖：`dsh-tool-fs-search` spawn 打包的 ripgrep 二进制并无条件注册两个工具，因此这一对始终在场。
 
-`glob` and `grep` are asserted as fixed members rather than a host-dependent pair: `dsh-tool-fs-search` spawns the packaged ripgrep binary and registers both tools unconditionally, so the pair is always present.
+除入库测试外,两个 surface 都以 plain Node 从构建产物 `apps/cli/lib/bin.js` 出发、用真实密钥驱动过。每一个已挂载的工具都执行成功,包括 `ralph` 与 `web_search`;模型从未触达 `cordis_*` 或 `mcp_*`,被要求做 LSP 跳转时退化到 `grep`,被要求开持久终端时用了后台 `bash` 任务。
 
-Beyond the committed tests, both surfaces were driven against a real key from the built `apps/cli/lib/bin.js` under plain Node. Every mounted tool executed successfully, including `ralph` and `web_search`; the model never reached `cordis_*` or `mcp_*`, fell back to `grep` when asked for LSP navigation, and used a background `bash` task when asked for a persistent terminal.
+## 曾考虑的替代方案
 
-## Alternatives considered
+**把共享的行复制进两份 overlay,而不是提升到 base。** 基于「一处归属」原则否决:新增行里有三行会存在两份,而这些副本没有任何理由发生分歧,下一次改工具清单还得记着改两处。
 
-**Duplicate the shared rows into both overlays instead of promoting them.** Rejected on the one-home rule: three of the new rows would exist twice with no reason for the copies to diverge, and the next roster change would have to remember both.
+**在同一次改动里给 TUI 加沙箱。** 不予采纳，因为这是一个不属于工具清单改动的独立决定：TUI 挂的是不受限执行器，替换它们会改变一个既有 surface 做什么，而非它提供什么。这个决定需要自己的证据——尤其因为 TUI 没有 `approval/request` 的应答方，升权请求在那里会 fail-closed，而不是弹出提示。
 
-**Sandbox the TUI in the same change.** Rejected as a separate decision that does not belong in a roster change: the TUI mounts unrestricted executors, and replacing them alters what an existing surface does rather than what it offers. That decision needs its own evidence — not least because the TUI has no `approval/request` answerer, so an escalation there fails closed instead of prompting.
+**开启 Code Mode。** 它的信任立场按设计与 bash 同级,工具调用要过与 bash 相同的 `tools/pre-execute` 闸门,所以它与上面那些模型写码工具不是同一个判断。在这里仍被否决:`both` 会改变两个 surface 上每一个模型可见请求,而 `code` 是把线路替换而非加一个——两者都是呈现方式的决定,不是工具清单的决定。
 
-**Enable Code Mode.** Its trust posture is bash-equivalent by design and its tool calls pass the same `tools/pre-execute` gate as bash, so it is not the same call as the model-code tools above. Rejected here anyway: `both` changes every model-visible request on both surfaces, and `code` replaces the wire rather than adding to it — either is a presentation decision, not a roster one.
+**默认挂一台 MCP 服务器。**否决，因为交付默认值必须点名一台，而任何选择都会在每个用户的机器上、在沙箱之外 spawn 一个第三方子进程。改为交付依赖。
 
-**Mount an MCP server by default.** Rejected because a shipped default would have to name one, and any choice spawns a third-party child process on every user's machine outside the sandbox. The dependency ships instead.
+## 后果
 
-## Consequences
+同一个模型在两个 surface 上拿到同样的工具,那处没有记录理由的差异消失了。测试会精确断言二十个无条件提供的名称，并把 `glob` 与 `grep` 作为固定成员钉在两侧，因此日后只改一个 surface 都会让检查失败而不是悄悄发出去；[session-search-not-shipped-default 决策](2026-08-02-session-search-not-shipped-default.md)正是这样一次后来的改动，两个测试也随之移动。
 
-The same model gets the same tools on both surfaces, and the difference that existed for no recorded reason is gone. The tests assert the twenty unconditional names exactly and pin `glob` and `grep` as fixed members on both sides, so a later change that alters only one surface fails a check instead of shipping quietly; the [session-search-not-shipped-default decision](2026-08-02-session-search-not-shipped-default.md) is exactly such a later change, and both tests moved with it.
+`apps/cli` 增加了五个 workspace 依赖:四个是交付树当时挂载的,外加 `dsh-mcp-client`——它并不被挂载,存在的意义是让已安装的 `dsh` 能挂。四个保留了下来——[session-search-not-shipped-default 决策](2026-08-02-session-search-not-shipped-default.md)把 `@deepseek-ai/dsh-tool-session-query` 连同它的行一起移除了。
 
-`apps/cli` gained five workspace dependencies: four the shipped tree mounted, plus `dsh-mcp-client`, which it does not mount and which exists so an installed `dsh` can. Four remain — the [session-search-not-shipped-default decision](2026-08-02-session-search-not-shipped-default.md) removed `@deepseek-ai/dsh-tool-session-query` along with its row.
-
-Execution policy stays independent of the roster. The [shared workspace-write decision](2026-07-31-workspace-write-surface-default.md) owns both surfaces' sandboxed executors and default permission; changing that policy does not add or remove a tool.
+执行策略独立于工具清单。[共享 workspace-write 决策](2026-07-31-workspace-write-surface-default.md)拥有两个 surface 的沙箱执行器与默认权限；更改该策略不会增加或移除工具。

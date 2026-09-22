@@ -1,36 +1,34 @@
-# Agent Note: The banner sweeps in; the subtitle line is gone
+# Agent Note: 横幅整体扫入；副标题行移除
 
 Status: implemented
 Archived: 2026-07-26
 
-English | [中文](2026-07-21-tui-banner-sweep.zh.md)
-
-> **Superseded** by the [no-banner Agent Note](2026-07-21-tui-no-banner.md): the banner itself was removed, taking the sweep with it.
+> **已被取代**：由[移除启动横幅 Agent Note](2026-07-21-tui-no-banner.md)取代：横幅本身已移除，扫入动画随之移除。
 
 ## Problem
 
-The [startup-slogans Agent Note](2026-07-20-tui-startup-slogans.md) replaced the instructional welcome line with a random slogan bank revealed by a per-character typewriter. In use the quotes read as weird — random flavor text in a tool's header — and the animation was slow (40 ms/char over a full sentence) while animating only one line of a four-line banner. This note supersedes that decision's slogan half; the removal of the configured demo welcome and the animation-lifecycle groundwork stand.
+[启动 slogan Agent Note](2026-07-20-tui-startup-slogans.md) 用随机 slogan 库加逐字打字机动画取代了说明书式的欢迎行。实际使用中这些引语显得怪异——工具头部出现随机的风味文案——而且动画很慢（每字符 40 ms，扫完一整句），却只动画四行横幅中的一行。本 note 取代该决定中 slogan 的那一半；移除示例配置中欢迎语的决定与动画生命周期的基础设施保持不变。
 
 ## Decision
 
-- The slogan bank, `pickStartupSlogan`, and the typewriter reveal are deleted. When `welcome` is unset the banner simply has **no subtitle line** — title and model/session detail only. The `welcome` config remains for deployments and fixtures that want a fixed subtitle, rendered frame-deterministically with no animation.
-- The startup animation is now the **whole banner**: `HeaderComponent` gains a `revealWidth` clip, and the header box wipes in left-to-right over ~24 frames at 15 ms (~360 ms total, ~60 fps), started after `ui.start()` succeeds and cleared through the same `detachListeners` path the typewriter used. `stopBannerReveal` also resets the clip so a disposed-mid-sweep header re-renders whole.
-- The PTY smoke's boot marker changes from the typewriter cursor (`▌`) to the banner's top-right corner (`╮`), which only renders once the sweep completes.
+- 删除 slogan 库、`pickStartupSlogan` 和打字机动画。`welcome` 未设置时横幅直接**没有副标题行**——只有标题和模型/会话详情。`welcome` 配置保留给想要固定副标题的部署与 fixture，无动画、逐帧确定地渲染。
+- 启动动画现在作用于**整个横幅**：`HeaderComponent` 增加 `revealWidth` 裁剪，头部盒子以约 24 帧、每帧 15 ms（总计约 360 ms、约 60 fps）从左到右扫入，在 `ui.start()` 成功后启动，经打字机动画用过的同一条 `detachListeners` 路径清除。`stopBannerReveal` 同时重置裁剪，因此扫入中途被 dispose 的头部会重新完整渲染。
+- PTY 冒烟测试的启动标记从打字机光标（`▌`）改为横幅右上角（`╮`），它只在扫入完成后才渲染。
 
 ## Alternatives considered
 
-**Keep the animation as-is and only change the copy.** Rejected: any fixed or rotating phrase re-read on every boot decays into wallpaper; the user's judgment was that the quotes themselves, not just their content, were wrong for the surface.
+**保留动画原样、只改文案。** 否决：任何每次启动都被重读的固定或轮换语句都会退化成墙纸；用户的判断是引语本身——而不只是内容——对这个表面来说就是错的。
 
-**Animate per banner line (top-down) instead of a left-right sweep.** Rejected: with only four lines the animation would have four visible steps — closer to a flicker than a reveal; the horizontal sweep uses the full terminal width for a smooth motion at the same total duration.
+**按横幅行逐行（自上而下）动画而非左右扫入。** 否决：只有四行时动画只有四个可见步骤——更像闪烁而不是展开；水平扫入用满终端宽度，在相同总时长内动作更平滑。
 
-**Character-level clipping via `revealWidth` on styled text.** Adopted with `truncateToWidth` from pi-tui, the same ANSI-aware clipper the header already uses for width overflow, so the sweep cannot tear escape sequences.
+**用 `revealWidth` 对带样式文本做字符级裁剪。** 采用 pi-tui 的 `truncateToWidth`——头部处理宽度溢出时已在使用的同一个 ANSI 感知裁剪器——因此扫入不可能撕裂转义序列。
 
 ## Consequences
 
-- Boot output with `welcome` unset is again animation-dependent but no longer random: every boot sweeps the same banner. Configured welcomes (all snapshot/scripted fixtures, the Code Mode overlay) stay frame-deterministic and unchanged.
-- The `STARTUP_SLOGANS`/`pickStartupSlogan` exports are gone; no consumer outside the deleted tests referenced them.
-- The default banner is one line shorter (no subtitle), so PTY assertions anchored on banner geometry use the corner glyph rather than any subtitle text.
+- `welcome` 未设置时启动输出再次依赖动画但不再随机：每次启动扫入同一幅横幅。配置了欢迎语的场景（全部快照/脚本化 fixture、Code Mode overlay）保持逐帧确定且不变。
+- `STARTUP_SLOGANS`/`pickStartupSlogan` 导出移除；除被删除的测试外没有消费者引用它们。
+- 默认横幅少一行（无副标题），因此锚定横幅几何的 PTY 断言使用角落字形而非任何副标题文本。
 
 ## Testing
 
-`packages/ui/tui/tests/tui.spec.ts` pins: the sweep completes to a full banner (both corners + title) and produced at least one clipped mid-sweep frame; a configured welcome renders verbatim with no clipped frames; the unset-welcome banner has no subtitle; and dispose clears the sweep's own interval handle. The PTY smoke boots on the `╮` completion marker across the tui-demo bin, the dsh CLI, and the personal-overlay scenarios. Verified live in tmux.
+`packages/ui/tui/tests/tui.spec.ts` 固定：扫入完成为完整横幅（两个角 + 标题）且产生了至少一个裁剪的中途帧；配置的欢迎语原文渲染且无裁剪帧；未设置欢迎语的横幅没有副标题；dispose 清除扫入自己的定时器句柄。PTY 冒烟测试在 tui-demo bin、dsh CLI 和个人 overlay 场景中以 `╮` 完成标记启动。已在 tmux 中实机验证。

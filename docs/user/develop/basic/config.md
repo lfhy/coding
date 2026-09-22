@@ -1,12 +1,10 @@
-# Plugin configuration
+# 插件配置
 
-English | [中文](config.zh.md)
+让你的插件接受用户在 `cordis.yml` 中传入的配置。
 
-Accept configuration supplied through `cordis.yml`.
+## 定义 Config 类型
 
-## Define the Config type
-
-Export a `Config` type and a same-named Schemastery schema. Put defaults directly on the schema fields:
+在插件中导出一个 `Config` 类型和同名的 Schemastery schema；默认值直接写在 schema 中：
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
@@ -31,7 +29,7 @@ export function apply(ctx: Context, config: Config) {
 }
 ```
 
-Add the configuration to the inserted local plugin row in `scratch-plugin/cordis.yml`:
+在 `scratch-plugin/cordis.yml` 新插入的本地插件行中添加配置：
 
 ```yaml
 - insert:
@@ -42,11 +40,11 @@ Add the configuration to the inserted local plugin row in `scratch-plugin/cordis
         maxRetries: 5
 ```
 
-When loading the plugin, Cordis uses the exported schema to validate configuration and fill defaults. Do not export a plain object as `Config`; it does not implement the Standard Schema interface required by Cordis.
+插件加载时，Cordis 会通过导出的 schema 校验配置，并填充未提供字段的默认值。不要导出普通对象作为 `Config`，因为它不满足 Cordis 要求的 Standard Schema 接口。
 
-## Schema validation
+## Schema 校验
 
-Use Schemastery to express stricter validation:
+对于需要严格校验的场景，使用 Schemastery 定义 schema：
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
@@ -71,13 +69,13 @@ export function apply(ctx: Context, config: Config) {
 }
 ```
 
-The schema runs while the plugin loads. Invalid configuration fails the load with an actionable error.
+Schema 在插件加载时执行校验。如果配置不合法，插件会加载失败并给出明确错误信息。
 
-## Design principles
+## 设计原则
 
-### Do not hardcode tunable values
+### 无硬编码可调参数
 
-Harness requires **anything that two deployments may want to set differently to be a configuration field**.
+Harness 的约定：**凡是不同部署可能需要采用不同值的参数，都必须定义为配置字段**。
 
 ```ts
 // Wrong: hardcoded timeout.
@@ -89,18 +87,18 @@ export interface Config {
 }
 ```
 
-The test is whether `cordis.yml` can change the value without a code edit.
+检验标准：能否在 `cordis.yml` 中改变这个值，而不需要修改代码？
 
-### Fail loudly on invalid configuration
+### 配置错误要响亮
 
-Express self-contained constraints in the schema so invalid configuration fails while the plugin loads. References to services or registered resources require dependency injection; the [services tutorial](../framework/service.md) introduces that contract.
+在 schema 中表达自身完备的约束，使无效配置在插件加载时失败。对服务或已注册资源的引用需要依赖注入；[服务教程](../framework/service.md) 会介绍这项约定。
 
-## Work with HMR
+## 配合 HMR
 
-A configuration edit hot-replaces the plugin: the framework unloads the old instance and loads a new one. Because registrations are effects and clean themselves up, replacement does not retain the old instance's registrations.
+配置变更会触发插件热替换：修改 `cordis.yml` 中某个插件的 `config` 后，框架会卸载旧实例并加载新实例。由于注册都属于 effect 并会自动清理，替换后不会保留旧实例的注册。
 
-## Next steps
+## 下一步
 
-- [Package and install a plugin](./publish.md) — ship the plugin as an installable package
-- [Plugins and lifecycle](../framework/) — understand the full plugin lifecycle
-- [Services and dependencies](../framework/service.md) — provide a service to other plugins
+- [打包与安装插件](./publish.md) — 把插件以可安装包的形式交付
+- [插件与生命周期](../framework/) — 深入了解插件的完整生命周期
+- [服务与依赖](../framework/service.md) — 让你的插件对外提供服务

@@ -33,7 +33,6 @@ export type Mode =
   | 'ci-windows-observational'
   | 'node-compat'
   | 'check-all'
-  | 'doc-sync'
 
 type GateResultStatus = 'passed' | 'failed' | 'skipped'
 type GateState = 'pending' | 'running' | GateResultStatus
@@ -123,11 +122,9 @@ function parseMode(raw: string | undefined): Mode {
     case 'ci-windows-observational':
     case 'node-compat':
     case 'check-all':
-    case 'doc-sync':
-      return raw
     default:
       throw new Error(
-        `run-gates: expected mode ci-primary | ci-linux-primary | ci-static | ci-lint-contracts-ready | ci-coverage | ci-snapshot | ci-artifacts | ci-consumers | ci-windows-blocking | ci-windows-complete | ci-windows-observational | node-compat | check-all | doc-sync, got ${JSON.stringify(raw)}.`,
+        `run-gates: expected mode ci-primary | ci-linux-primary | ci-static | ci-lint-contracts-ready | ci-coverage | ci-snapshot | ci-artifacts | ci-consumers | ci-windows-blocking | ci-windows-complete | ci-windows-observational | node-compat | check-all, got ${JSON.stringify(raw)}.`,
       )
   }
 }
@@ -145,9 +142,9 @@ export function defaultConcurrency(
   available = availableParallelism(),
 ): ConcurrencyDefault {
   if (selectedMode === 'ci-consumers') return { workers: total, source: 'ci-consumers gate count' }
-  // Local modes cap workers: several doc gates each build a full ts.Program,
-  // so an uncapped default on a large host trades wall clock for memory blowups.
-  const localCap = selectedMode === 'check-all' || selectedMode === 'doc-sync'
+  // 本地聚合并发受限：check-all 里多个 gate 会各自构建完整 ts.Program，
+  // 在大型主机上不设上限会用内存换墙钟时间。
+  const localCap = selectedMode === 'check-all'
   const modeLimit = localCap ? Math.min(4, available) : available
   return {
     workers: Math.min(total, modeLimit),
@@ -249,15 +246,8 @@ export function gatesForMode(selected: Mode): Gate[] {
         pnpmScript('build', 'build'),
         pnpmScript('build:web', 'build:web'),
         ...hygieneLeafGates({ artifactNeeds: ['build'] }),
-        ...docSyncLeafGates({
-          docTypecheckNeeds: ['build'],
-          docTypecheckEnv: { DSH_DOC_TYPECHECK_USE_BUILD_OUTPUT: '1' },
-          docTypecheckScript: 'doc-typecheck:contracts-ready',
-        }),
         pnpmScript('module-graph', 'verify-module-graph', { label: 'module graph' }),
       ]
-    case 'doc-sync':
-      return docSyncLeafGates()
   }
 }
 
@@ -285,16 +275,11 @@ function ciPrimaryGates(): Gate[] {
     ...coverageGates(),
     ...nodeCompatSmokeGates(),
     snapshotGate(),
-    ...docSyncLeafGates({
-      docTypecheckNeeds: ['typert-contracts'],
-      docTypecheckScript: 'doc-typecheck:contracts-ready',
-    }),
     pnpmScript('module-graph', 'verify-module-graph', { label: 'module graph' }),
     pnpmScript('knip', 'knip'),
-    // The prepared typecheck and build both drive Client tsc, while build also
-    // repeats the Host contract pass. Wait for all three consumers so build
-    // neither races tsbuildinfo nor replaces declarations while they are read.
-    ciBuildGate('build', { needs: ['typecheck', 'lint', 'doc-typecheck'] }),
+    // 预备好的 typecheck 与 build 都会驱动 Client tsc，build 还会重复 Host 契约检查。
+    // 等两个消费方都结束，build 才不会与 tsbuildinfo 竞争或在声明被读取时替换它们。
+    ciBuildGate('build', { needs: ['typecheck', 'lint'] }),
     pnpmScript('publint', 'publint', { needs: ['build'] }),
     pnpmScript('node-next-types', 'verify-node-next-types', {
       label: 'node-next types',
@@ -377,17 +362,6 @@ function ciStaticGates(options: { ownsBuild: boolean }): Gate[] {
   return [
     ...ciSharedStaticGates(),
     ...options.ownsBuild ? [ciBuildGate()] : [],
-    ...docSyncLeafGates({
-      includeDocTypecheck: options.ownsBuild,
-      ...options.ownsBuild
-        ? {
-          docTypecheckNeeds: ['build'],
-          docTypecheckEnv: { DSH_DOC_TYPECHECK_USE_BUILD_OUTPUT: '1' },
-          docTypecheckScript: 'doc-typecheck:contracts-ready',
-        }
-        : {},
-      docsBuildScript: 'docs:build:mpa',
-    }),
     pnpmScript('module-graph', 'verify-module-graph', { label: 'module graph' }),
     pnpmScript('knip', 'knip'),
   ]
@@ -423,10 +397,6 @@ function ciConsumerGates(): Gate[] {
     }),
     snapshotGate(validatedBuild),
     webSnapshotGate(validatedBuild),
-    pnpmScript('doc-typecheck', 'doc-typecheck:contracts-ready', {
-      needs: validatedBuild,
-      env: { DSH_DOC_TYPECHECK_USE_BUILD_OUTPUT: '1' },
-    }),
     pnpmScript('node-next-types', 'verify-node-next-types', {
       label: 'node-next types',
       needs: validatedBuild,
@@ -461,7 +431,6 @@ function webSnapshotGate(needs: string[]): Gate {
 function ciWindowsBlockingGates(): Gate[] {
   return [
     ciBuildGate('windows-build', { label: 'build' }),
-    pnpmScript('windows-site', 'docs:build', { label: 'production site' }),
   ]
 }
 
@@ -471,9 +440,7 @@ function ciWindowsCompleteGates(): Gate[] {
     : gate)
   const coverageAfter = coverage.map(gate => gate.id)
   const observational = ciWindowsObservationalGates()
-    // The required production site replaces the observational MPA build; both
-    // VitePress modes write the same output directory and cannot overlap.
-    .filter(gate => gate.id !== 'build' && gate.id !== 'docs-site-build')
+    .filter(gate => gate.id !== 'build')
     .map(gate => ({
       ...gate,
       allowFailure: true,
@@ -481,7 +448,6 @@ function ciWindowsCompleteGates(): Gate[] {
     }))
   return [
     ciBuildGate(),
-    pnpmScript('windows-site', 'docs:build', { label: 'production site' }),
     ...coverage,
     ...observational,
   ]
@@ -632,53 +598,6 @@ function hygieneLeafGates(options: { artifactNeeds?: string[] } = {}): Gate[] {
       label: 'optional dependency imports',
     }),
     pnpmScript('client-packages', 'verify-client-packages', { label: 'client packages' }),
-  ]
-}
-
-function docSyncLeafGates(options: {
-  includeDocTypecheck?: boolean
-  docTypecheckNeeds?: string[]
-  docTypecheckEnv?: Record<string, string | undefined>
-  docTypecheckScript?: 'doc-typecheck' | 'doc-typecheck:contracts-ready'
-  docsBuildScript?: 'docs:build' | 'docs:build:mpa'
-} = {}): Gate[] {
-  const docTypecheckOptions: Partial<Gate> = {}
-  if (options.docTypecheckNeeds !== undefined) docTypecheckOptions.needs = options.docTypecheckNeeds
-  if (options.docTypecheckEnv !== undefined) docTypecheckOptions.env = options.docTypecheckEnv
-  return [
-    ...options.includeDocTypecheck === false
-      ? []
-      : [pnpmScript('doc-typecheck', options.docTypecheckScript ?? 'doc-typecheck', docTypecheckOptions)],
-    pnpmScript('cordis-catalog', 'verify-cordis-catalog', { label: 'cordis catalog' }),
-    pnpmScript('client-catalog', 'verify-client-catalog', { label: 'client catalog' }),
-    pnpmScript('export-jsdoc', 'verify-export-jsdoc', { label: 'export jsdoc' }),
-    pnpmScript('tool-catalog', 'verify-tool-catalog', { label: 'tool catalog' }),
-    pnpmScript('config-catalog', 'verify-config-catalog', { label: 'config catalog' }),
-    pnpmScript('persistence-catalog', 'verify-persistence-catalog', { label: 'persistence catalog' }),
-    pnpmScript('doc-graphs', 'verify-doc-graphs', { label: 'doc graphs' }),
-    pnpmScript('scoped-events', 'verify-scoped-events', { label: 'scoped events' }),
-    pnpmScript('markdown-wrap', 'verify-md-wrap', { label: 'markdown wrap' }),
-    pnpmScript('markdown-links', 'verify-md-links', { label: 'markdown links' }),
-    pnpmScript('public-repository-links', 'verify-public-repository-links', { label: 'public repository links' }),
-    pnpmScript('doc-refs', 'verify-doc-refs', { label: 'doc refs' }),
-    pnpmScript('package-paths', 'verify-package-paths', { label: 'package paths' }),
-    pnpmScript('config-source-ownership', 'verify-config-source-ownership', { label: 'config source ownership' }),
-    pnpmScript('package-readme-model-experience', 'verify-package-readme-model-experience', { label: 'package README model experience' }),
-    pnpmScript('mermaid', 'verify-mermaid'),
-    pnpmScript('agent-note-classification', 'verify-agent-note-classification', { label: 'agent note classification' }),
-    pnpmScript('agent-note-format', 'verify-agent-note-format', { label: 'agent note format' }),
-    pnpmScript('archived-agent-notes', 'verify-archived-agent-notes', { label: 'archived agent notes' }),
-    pnpmScript('type-equivalence', 'verify-type-equiv', { label: 'type equivalence' }),
-    pnpmScript('skill-invocation-metadata', 'verify-skill-invocation-metadata', { label: 'skill invocation metadata' }),
-    pnpmScript('translation-prompt', 'verify-translation-prompt', { label: 'translation prompt' }),
-    pnpmScript('translation-pairing', 'verify-translation-pairing', { label: 'translation pairing' }),
-    pnpmScript('doc-budgets', 'verify-doc-budgets', { label: 'doc budgets' }),
-    pnpmExec('docs-site-projection', ['vitest', 'run', 'scripts/project-doc-site.spec.ts', 'scripts/verify-doc-site-fragments.spec.ts'], {
-      label: 'documentation site checks',
-    }),
-    // Keep the VitePress build itself in one gate because projection rewrites website/.generated.
-    pnpmScript('docs-site-build', options.docsBuildScript ?? 'docs:build', { label: 'documentation build' }),
-    pnpmScript('package-readme-limitations', 'verify-package-readme-limitations', { label: 'package README limitations' }),
   ]
 }
 

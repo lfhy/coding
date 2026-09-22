@@ -1,24 +1,22 @@
-# Agent Note: Web file and session references
+# Agent Note: Web 文件与会话引用
 
 Status: implemented
 
-English | [中文](2026-07-27-web-file-and-session-references.zh.md)
+## 问题
 
-## Problem
+Web 输入框已有可复用的斜杠命令／引用触发流水线，但它的 `@` source 只是不会产生实际作用的 subagent 标签文本。Web 需要由宿主提供工作区路径发现和结构化跨会话快照，同时避免在浏览器中扫描宿主文件系统或把会话身份绑定到显示标签。
 
-The Web composer had a reusable slash/reference trigger pipeline, but its `@` source was inert subagent-label text. Web needed Host-backed workspace-path discovery and structured cross-session snapshots without scanning the Host filesystem in the browser or binding session identity to a display label.
+## 决策
 
-## Decision
+Web 通过 `@deepseek-ai/dsh-client-ui-reference` 暴露一个合并的 `@file` 与 `@session` 菜单。每次处理未加引号的查询时，它会并发启动两项 Remote 发现调用，以确定性顺序把文件排在会话之前，并使用注册在 locale 字典中的标签；不可选择的文件与会话分组标题会区分两个连续的候选分组，且不会进入键盘选择索引。该 source 在加载和已结算状态下都会隐藏原始组标题，因为可见分组由这些分组标题拥有。尚未闭合的带引号 token 只搜索文件。任一候选领域都可以独立失败，不会隐藏另一领域成功返回的行。
 
-Web exposes one combined `@file` and `@session` menu through `@deepseek-ai/dsh-client-ui-reference`. For each unquoted query it starts both Remote discovery calls concurrently and deterministically orders files before sessions with locale-registered labels; non-selectable file and session section headings distinguish the two contiguous candidate sections without entering the keyboard-selection index. The source suppresses its raw group title through loading and settled states because those section headings own the visible grouping. An open quoted token searches files only. Either candidate domain may fail independently without hiding successful rows from the other.
+文件功能遵循由三个包构成的 seam：`@deepseek-ai/dsh-file-reference` 拥有 `ctx.fileReferences`、共享 `@path` token 语法、候选形状和稳定的模型指引；`@deepseek-ai/dsh-file-reference-local` 拥有每个 agent（智能体）有界的宿主文件系统索引、失效处理和作用域内的提示词安装；`dsh-client-ui-reference` 消费生成的 Remote 命名空间与共享语法。选择文件会创建带文件图标与文件名的原子输入框引用，其序列化形式仍只是路径提示词文本。目录保持为带文件夹图标的可编辑路径文本，并在尾部斜杠后重新触发补全。
 
-The file capability follows the three-package seam: `@deepseek-ai/dsh-file-reference` owns `ctx.fileReferences`, the shared `@path` token grammar, candidate shape, and stable model guidance; `@deepseek-ai/dsh-file-reference-local` owns bounded per-agent Host-filesystem indexes, invalidation, and scoped prompt installation; `dsh-client-ui-reference` consumes the generated Remote namespaces and shared grammar. A file pick is an atomic composer reference with a file glyph and filename; its serialized form remains path-only prompt text. A directory stays editable path text with a folder glyph and retriggers completion below its trailing slash.
+选择会话会创建一个结构化输入框引用。可见形式使用聊天气泡图标与业务色会话标题，不使用胶囊容器；剪贴板和模型形式则是宿主生成的规范 `@[label](dsh-session:…)` mention。完整的 `@label` 展示文本会保留在透明 textarea 中，同尺寸 backdrop 会为这段范围着色，并把开头的 marker 替换为对应领域图标。因此宽度、换行、选择区与光标位置都由原生字形度量决定，不会截断。occurrence 范围会保留引用身份以供序列化；在边界按 Backspace 或 Delete 会整段删除引用，在范围内部编辑则会把剩余字符转为普通文本。普通 `session.prompt` 投递会原样携带规范 mention。session-reference 服务会在 `agent/pre-step` 解析已接受的直接用户消息，捕获每个源，在保留直接消息 id 的同时把规范 mention 替换为可读文本，并把冻结快照插入到该消息紧后。召回上下文行使用同一个聊天图标，其他上下文保留文档图标。API Proxy 不包含引用专用路由、依赖或错误码。
 
-A session pick is a structured composer reference. Its visible form uses a chat-bubble glyph and business-color session title without a capsule, while its clipboard and model form is the canonical `@[label](dsh-session:…)` mention produced by the Host. The complete `@label` display text remains in the transparent textarea, and the same-size backdrop colors that range and replaces its leading marker with the domain glyph. Native glyph metrics therefore determine width, wrapping, selection, and caret placement without truncation. The occurrence range retains reference identity for serialization; Backspace or Delete at its boundary removes it whole, and editing inside it turns the remaining characters into ordinary text. Ordinary `session.prompt` delivery carries the canonical mention unchanged. The session-reference service parses accepted direct user messages at `agent/pre-step`, captures every source, replaces the canonical mention with readable text while preserving the direct message id, and inserts the frozen snapshot immediately after that message. The recalled-context row uses the same chat glyph while other context keeps the document glyph. The API Proxy contains no reference-specific route, dependency, or error code.
+输入状态机在默认 sink 报告宿主已接受前，会保留普通草稿文本和原子引用。它写入会话 store 的镜像会持久化每个 occurrence 的规范剪贴板投影，因此在 occurrence 表缺失的情况下重新挂载时，仍会保留可解析的引用，而不是仅供显示的标签。序列化或提示词传输失败后，同一草稿会回到可编辑状态。接受后，引用准备属于 agent 轮次；格式错误的 mention、源读取失败、取消或预算失败会终止该轮次。已记录的提示词仍是回放权威。聊天界面按照持久的直接消息后接召回行顺序渲染，并且只从紧随其后的带来源召回中关联准确的会话标签，因此既能保留多词标题，也能让连续引用彼此独立。它会把识别到的文件与会话 mention 装饰成图标加文字的引用，把包括无扩展名 basename 在内的未加引号 `@path` token 视为文件，将句末标点留在引用范围之外，并把快照 JSON 保留在默认收起的召回行中。
 
-The input machine keeps ordinary draft text and atomic references until the default sink reports Host acceptance. Its session-store mirror persists each occurrence's canonical clipboard projection, so remounting without the occurrence table retains a parseable reference instead of a display-only label. Serialization or prompt transport failure returns the same draft to editing. After acceptance, reference preparation belongs to the agent turn; a malformed mention, failed source read, cancellation, or budget failure terminates that turn. The logged prompt remains the replay authority. The chat renders the durable direct-message-then-recall order and associates exact session labels only from the immediately following sourced recall, which preserves multi-word titles and keeps consecutive references independent. It decorates recognized file and session mentions as icon-and-text references, treats unquoted `@path` tokens including extensionless basenames as files, leaves sentence punctuation outside the reference range, and keeps snapshot JSON behind the collapsed recall row.
-
-## Reference transaction
+## 引用事务
 
 ```text
 type @ → parallel file/session Remote calls → pick folder text or atomic file/session reference
@@ -26,24 +24,24 @@ type @ → parallel file/session Remote calls → pick folder text or atomic fil
        → agent/pre-step parses mentions → capture sources → readable prompt + context
 ```
 
-File lookup is advisory and cancellable; selection itself performs no read. Session preparation is all-or-nothing for one accepted model step. A queued message captures each source when the message is claimed, so queue edits and queue-to-steer relocation use the same path without gateway coordination.
+文件查询仅供参考且可取消；选择操作本身不会读取文件。会话准备针对一个已接受的模型步骤保持全有或全无。queued 消息被领取时会捕获每个源，因此队列编辑和从 queue 移动到 steer 使用同一路径，无需网关协调。
 
-## Alternatives considered
+## 备选方案
 
-**Implement file discovery and grammar inside the Web client.** Rejected because browser-side code cannot safely access the Host workspace, while duplicating grammar, ranking, bounds, and invalidation would drift from the Host provider.
+**在 Web 客户端内部实现文件发现与语法。** 不予采纳，因为浏览器侧代码无法安全访问宿主工作区，而且重复的语法、排序、边界和失效处理会与宿主提供方产生偏差。
 
-**Scan files through ordinary filesystem-tool RPCs.** Rejected because recursive fuzzy discovery is editor latency work, not a model-facing exact filesystem operation, and would couple the menu to tool policy and provider round trips.
+**通过普通文件系统工具 RPC 扫描文件。** 不予采纳，因为递归模糊发现属于编辑器低延迟工作，而不是面向模型的精确文件系统操作；该方案还会把菜单与工具策略及提供方往返绑定。
 
-**Eagerly attach selected file contents.** Rejected because selection would spend context before relevance is known and bypass the logged, auditable `read` call/result sequence.
+**选择文件时立即附加其内容。** 不予采纳，因为该方案会在尚未确定相关性时消耗上下文，并绕过可从日志重建、可审计的 `read` 调用／结果序列。
 
-**Represent sessions as plain `@label` text.** Rejected because labels are neither stable nor unique and cannot identify the source snapshot. Canonical Host-produced mentions preserve opaque session identity while keeping a readable display.
+**用普通 `@label` 文本表示会话。** 不予采纳，因为标签既不稳定也不唯一，无法标识源快照。宿主生成的规范提及标记既能保留不透明会话身份，也能保持显示内容易读。
 
-**Clear the composer before prompt admission settles.** Rejected because a transport or admission failure would lose the only editable copy of the request and visually claim acceptance that never occurred.
+**提示词准入结算前清空输入框。** 不予采纳，因为传输或准入失败会丢失请求唯一可编辑的副本，并在视觉上错误表示一个从未成功的接受操作。
 
-## Verification
+## 验证
 
-Package tests pin shared file grammar and ranking, cache invalidation and lifecycle cleanup, parallel Web lookup, quoted paths, independent candidate failure, cancellation, source-title suppression through pending and ready states, grouped headings that do not alter option indexes, file/directory continuation, structured file and session references, complete inline labels, domain glyphs, disabled-layer ownership, canonical draft persistence across remount, adjacent-reference and adjacent-text projection, extensionless file and sentence-punctuation rendering, codec round-trip, generated Remote type inference, direct-before-recall pre-step preparation, downstream rejection, and following-recall association for multi-word and consecutive labels. The keyless assembled Web snapshot renders the available reference sections without the raw source title, selects a file, then selects a session reference through the real client composition, and replays a multi-word session label in direct-before-recall order.
+包（package）测试固定共享文件语法和排序、缓存失效及生命周期清理、Web 并行查询、带引号的路径、候选项独立失败、取消、在 pending 与 ready 状态下隐藏 source 标题、不改变候选项索引的分组标题、文件／目录继续补全、结构化文件与会话引用、完整行内标签、领域图标、禁用状态下的层级归属、跨重新挂载的规范草稿持久化、相邻引用及相邻文本条件下的引用投影、无扩展名文件与句末标点渲染、codec 无损往返、生成的 Remote 类型推断、pre-step 中直接消息先于召回的准备、下游拒绝，以及多词与连续标签的后继召回关联。无密钥的装配 Web 快照会在不显示原始 source 标题的情况下渲染可用的引用分组，通过真实客户端组合依次选择文件和会话引用，并按直接消息先于召回的顺序回放多词会话标签。
 
-## Consequences
+## 后果
 
-Web now uses the shared `@file` discovery seam and structured session-reference identity, while Host services remain the authority for filesystem and session access. File and session discovery are unary Remote contracts on the owning services, so generated client types replace handwritten RPC interfaces and browser bundles remain free of Node APIs. Candidate lookup failures remain quiet menu degradation. Reference preparation failures occur after prompt acceptance and end the agent turn. File references cost only path text plus stable conditional guidance, whereas session references retain the bounded snapshot cost and trust framing owned by `dsh-session-reference`.
+Web 现在使用共享的 `@file` 发现 seam 和结构化会话引用身份，宿主服务仍然是文件系统与会话访问的权威来源。文件和会话发现都是所属服务上的一元 Remote 契约，因此生成的客户端类型会替代手写 RPC 接口，浏览器 bundle 中也不包含 Node API。候选查询失败仍会让菜单静默降级。引用准备失败发生在提示词已接受之后，并会结束 agent 轮次。文件引用只产生路径文本和稳定的条件式指引成本，而会话引用仍保留 `dsh-session-reference` 所拥有的有界快照开销与信任限定文本。

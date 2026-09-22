@@ -1,27 +1,25 @@
-# Agent Note: Host-initiated goal pause aborts the live turn
+# Agent Note: 宿主发起的 goal 暂停中止当前轮次
 
 Status: implemented
 
-English | [中文](2026-09-01-host-goal-pause-aborts-turn.zh.md)
+## 问题
 
-## Problem
+在 Web UI 点击「暂停目标」会把 goal 改成 `paused` 并解除自动续跑的武装（disarmed），但已经在跑的模型轮次不会停止。模型还能继续行动，并在同一个轮次里调用 `update_goal resume`，立刻撤销这次暂停，因此人工暂停对 goal 执行没有真正的控制力。
 
-Clicking "pause goal" in the Web UI moved the goal to `paused` and disarmed automatic continuation, but the model turn already running kept going. The model could keep acting and call `update_goal resume` inside that same turn, immediately undoing the pause, so a manual pause had no real control over goal execution.
+## 决策
 
-## Decision
+goal round driver 现在会读取每个 `goal/changed` 事件里的 `change`。当 `operation === 'pause'` 时，driver 用 `agent.cancel({ kind: 'user' }, { keepInbox: true })` 中止当前轮次，除非这次暂停是由 agent 自己的轮次发起的。Web 按钮运行在任何 agent initiator 边界之外，而模型调用 `update_goal pause` 时当前 initiator 就是该 agent；driver 用 `ctx.agents.currentInitiator() !== agent` 来区分两者。
 
-The goal round driver now reads the `change` on every `goal/changed` event. When `operation === 'pause'`, the driver aborts the live turn with `agent.cancel({ kind: 'user' }, { keepInbox: true })` unless the pause was initiated by the agent's own turn. The Web button runs outside any agent initiator boundary, while a model's `update_goal pause` runs with the agent as the current initiator; the driver distinguishes them with `ctx.agents.currentInitiator() !== agent`.
+idle 检查点还会把自动暂停绑定到被取消尝试所捕获的精确 `goalId` 与 `revision`。因此宿主暂停后立即恢复时，旧的中止轮次不能暂停刚恢复的新 revision。
 
-The idle checkpoint also fences its automatic pause to the exact `goalId` and `revision` captured by the cancelled attempt. A host pause followed by an immediate resume therefore cannot let the old aborted turn pause the newly resumed revision.
+`keepInbox` 会保留待处理工作。一旦 goal 被 disarmed，已排队的 goal round 就会在既有的 pre-step reservation 校验里失败，因此暂停后不会再运行。
 
-`keepInbox` preserves pending work. A queued goal round already fails the existing pre-step reservation check once the goal is disarmed, so it cannot run after the pause.
+## 考虑过的替代方案
 
-## Alternatives considered
+**对每次暂停都中止轮次，包括模型自己发起的。** 否决：响应人类直接请求而暂停的模型应当完成本轮并给出回复；在工具调用中途中止只会截断这层确认，却换不来更多控制力。
 
-**Cancel on every pause, including the model's own.** Rejected: a model that pauses in response to a direct human request should finish its turn and report; aborting mid-tool-call cuts off that acknowledgment without adding control.
+**把中止逻辑放进 goal 服务的 `pause`。** 否决：`pause` 是宿主与模型共用的唯一入口，服务里同样需要这个 initiator 判断。把控制处理留在 round driver，可以让 goal 服务保持为持久状态与事件的拥有者。
 
-**Put the cancellation in the goal service's `pause`.** Rejected: `pause` is one shared entry point for host and model callers, so the service would still need the same initiator test. Keeping control handling in the round driver leaves the goal service a durable state and event owner.
+## 后果
 
-## Consequences
-
-A Web "pause goal" now aborts the running turn, so the model cannot keep acting or resume the just-paused goal in that turn; an immediate resume is protected from the old idle callback by the revision fence. Model-initiated pauses are unchanged. The change is confined to the round driver and its tests; the goal domain, tool authority, and durable formats are unchanged.
+现在 Web 的「暂停目标」会中止正在运行的轮次，模型无法继续行动或在同一轮次里恢复刚被暂停的 goal；立即恢复也受到 revision fence 保护，不会被旧的 idle 回调再次暂停。模型发起的暂停行为不变。改动局限于 round driver 及其测试；goal 领域、工具授权与持久化格式都不变。

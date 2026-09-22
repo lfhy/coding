@@ -1,45 +1,43 @@
 # `@deepseek-ai/dsh-file-reference-local`
 
-English | [中文](README.zh.md)
+`ctx.fileReferences` 的本地文件系统实现。它为每个 agent（智能体）维护一个有界的 `WorkspaceFileSearch`，以该会话的 `cwd` 为根目录；缺少该值时回退到宿主进程的 cwd。查询包含 `/` 时，索引会对直接列出的目录项排序；否则会对有界递归索引进行模糊排序。索引永远不会跟随目录符号链接。
 
-Local-filesystem implementation of `ctx.fileReferences`. It maintains one bounded `WorkspaceFileSearch` per agent, rooted at that session's `cwd` and falling back to the host process cwd. The index ranks direct directory listings for queries containing `/`, otherwise fuzzy-ranks a bounded recursive index; it never follows directory symlinks.
+工具结果事件会使指定 agent 的可复用索引失效，使后续补全能够反映工作区中可能发生的变更。agent 的 dispose（资源释放）会释放该索引及其作用域内的提示词贡献；插件 dispose 会等待所有提示词 fiber，并释放全部缓存的搜索器。
 
-Tool-result events invalidate the addressed agent's reusable index so later completion observes likely workspace mutations. Agent disposal releases that index and its scoped prompt contribution; plugin disposal awaits every prompt fiber and releases all cached searches.
+## 配置
 
-## Configuration
-
-| Key | Default | Contract |
+| 配置键 | 默认值 | 契约 |
 |---|---:|---|
-| `maxResults` | `20` | Maximum ranked candidates returned for one query. |
-| `maxEntries` | `10000` | Maximum files and directories indexed per agent workspace. |
-| `excludedDirectories` | `[".git", "node_modules"]` | Directory basenames omitted from traversal and candidates. |
+| `maxResults` | `20` | 单次查询返回的候选项最大数量。 |
+| `maxEntries` | `10000` | 每个 agent 工作区建立索引的文件和目录最大数量。 |
+| `excludedDirectories` | `[".git", "node_modules"]` | 遍历和候选项中排除的目录基名。 |
 
-Every numeric value must be a positive safe integer. Excluded names must be non-empty basenames without `/` or `\`.
+所有数值都必须是正的安全整数。排除名称必须是非空基名，且不能包含 `/` 或 `\`。
 
-## Model Experience
+## 模型体验
 
-### File-reference guidance when `read` is available
+### `read` 可用时的文件引用指引
 
-#### What the model sees
+#### 模型看到什么
 
-When the addressed agent has an effective `read` tool, the provider contributes this stable system-prompt section:
+当指定 agent 有实际生效的 `read` 工具时，提供方会贡献以下稳定的系统提示词段：
 
-##### File-reference instruction
+##### 文件引用指令
 
 ```markdown
 Paths prefixed with @ are files explicitly referenced by the user. Use the read tool when their contents are needed; do not claim to have inspected a file before reading it.
 ```
 
-#### Token effect
+#### Token 影响
 
-Conditional and fixed: the one sentence is present while `read` is visible to the addressed agent; candidate lookup itself adds no tokens, and a selected path contributes only its ordinary user-message characters.
+该影响有条件且固定：只要 `read` 对指定 agent 可见，这一句就会存在；候选查询本身不增加 token，所选路径只会贡献普通用户消息中的对应字符。
 
-#### KV Cache effect
+#### KV 缓存影响
 
-The stable sentence joins the system-prompt prefix. Mounting or removing this provider, or changing whether `read` is visible, changes that prefix; queries, candidates, and index invalidations do not.
+该稳定句子会加入系统提示词前缀。挂载或移除此提供方，或者改变 `read` 是否可见，都会改变该前缀；查询、候选项和索引失效不会改变前缀。
 
-## Known Limitations and Deferred Work
+## 已知限制与暂缓事项
 
-- **Host-local namespace** — the provider scans the Harness host filesystem, so remote or virtual `read` implementations require a provider whose namespace matches the tool.
-- **Bounded advisory index** — very large workspaces may omit paths after `maxEntries`, and excluded or unreadable directories do not appear.
-- **No ignore-file semantics** — `.gitignore` and other project ignore files do not influence discovery; only configured directory basenames are excluded.
+- **宿主本地命名空间**：提供方扫描 Harness 宿主的文件系统，因此远程或虚拟 `read` 实现需要使用命名空间与该工具一致的提供方。
+- **有界的提示性索引**：超大型工作区可能省略 `maxEntries` 之后的路径；被排除或无法读取的目录不会出现。
+- **没有忽略文件语义**：`.gitignore` 和其他项目忽略文件不会影响发现；系统只排除已配置的目录基名。

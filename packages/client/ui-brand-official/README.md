@@ -1,20 +1,18 @@
 # @deepseek-ai/dsh-client-ui-brand-official
 
-English | [中文](README.zh.md)
+仅当 `DSH_CLIENT_BUILD_PROFILE` 为 `official` 时，本包才使用 Coding 的字标与图标填充 `sidebar.brand.name` 和 `conversation.hero.brand.mark`。其他构建仍会加载插件，但不注册 occupant，因此显示 shell fallback。
 
-This package fills `sidebar.brand.name` and `conversation.hero.brand.mark` with Coding's wordmark and image mark only when `DSH_CLIENT_BUILD_PROFILE` is `official`. Other builds load the plugin but register no occupants, leaving the shell fallbacks visible.
+两个占位者通过嵌套的 `slots.inject()` 作为一组声明感知注册安装。因此无论该包的条目先于还是后于侧边栏和会话声明方激活，它都能工作；任一声明折叠时会撤回全部占位者，HMR 期间不会留下混合品牌。它不保留运行时状态。node 半边是空的 Loader seat；浏览器标题仍属于本包之外的构建环境事项。
 
-The two occupants install as one declaration-aware registration set through nested `slots.inject()` calls. The package therefore works whether its row activates before or after the sidebar and conversation declarers, withdraws all occupants when either declaration collapses, and leaves no partial brand mix during HMR. It retains no runtime state. The node half is an empty Loader seat, and the browser title remains a build-environment concern outside this package.
+## 模型体验
 
-## Model Experience
+无，因为本包只贡献浏览器呈现；这里没有任何内容进入模型请求。
 
-None, as the package contributes browser presentation only; nothing here reaches a model request.
+#### KV Cache 影响
 
-#### KV Cache effect
+无；本包既不组装也不发送 provider 请求。
 
-None; this package neither assembles nor sends a provider request.
+## 已知限制与暂缓事项
 
-## Known Limitations and Deferred Work
-
-- **The package supplies one occupant set** — alternative presentation belongs in another Cordis package occupying the same slots.
-- **The browser title is independent** — `DSH_CLIENT_TITLE` selects title text at build time rather than through a UI slot.
+- **本包只提供一组 occupant** —— 其他呈现应由占用相同 slot 的另一个 Cordis 包提供。
+- **浏览器标题相互独立** —— `DSH_CLIENT_TITLE` 在构建期选择标题文字，而不经过 UI slot。

@@ -1,32 +1,30 @@
-# Agent Note: Code Mode live dispatch lifecycle and native-contract parallelism
+# Agent Note: Code Mode 的实时分发生命周期，以及复用原生约定的并行执行
 
 Status: implemented
 
-English | [中文](2026-07-26-code-mode-live-parallel-dispatch.zh.md)
+> 范围：`tool/code-dispatch-start` 事件、Web chat 中每个子调用的运行状态，以及桥接层调度器对原生并发约定的复用。构建在[宿主侧基础](2026-07-26-code-dispatch-ui-foundation.md)与 [chat 子调用行](2026-07-26-code-mode-chat-subcall-rows.md)之上；原生约定本身归[并行工具调用 Agent Note](2026-07-10-parallel-tool-call-execution.md) 所有。
 
-> Scope: the `tool/code-dispatch-start` event, per-sub-call running state in the web chat, and the bridge's scheduler reusing the native concurrency contract. Builds on the [host foundation](2026-07-26-code-dispatch-ui-foundation.md) and [chat sub-call rows](2026-07-26-code-mode-chat-subcall-rows.md); the native contract itself is owned by the [parallel tool-call note](2026-07-10-parallel-tool-call-execution.md).
+## 问题
 
-## Problem
+宿主侧基础与 chat 子调用行交付之后仍留有两个缺口。子调用行过去只在每次分发*结算*后才出现：某次分发运行期间，UI 对它毫无展示，于是一个慢的子调用看上去就像父调用卡住了。而桥接层过去把每一次绑定调用都串行化（「即使 `Promise.all` 也一次只执行一个」），这是工具尚未携带并发元数据时留下的占位实现：如今 `isConcurrencySafe` 已经存在，agent loop（智能体循环）调度器早已在有界并发池中运行原生兄弟调用，而一个等待三个独立读取的 Code Mode 程序，付出的延迟却是原生路径的 3 倍。
 
-Two gaps remained after the host foundation and chat sub-call rows shipped. Sub-call rows appeared only when each dispatch *settled* — while one ran, the UI showed nothing for it, so a slow sub-call read as a stalled parent. And the bridge serialized every binding call ("even `Promise.all` executes one at a time"), a placeholder from before tools carried concurrency metadata: `isConcurrencySafe` now exists, the loop scheduler already runs native siblings in bounded pools, and a Code Mode program awaiting three independent reads paid 3× the latency the native path would.
+## 决策
 
-## Decision
+**一对生命周期事件，一份调度约定，与原生共用。**
 
-**One lifecycle pair, one scheduling contract, shared with native.**
+- **事件对**：`tool/code-dispatch-start`（父/子 id、名称、规范化参数）在调度器真正启动某个调用时才追加，而非在提交时，因此因 run 结算而被放弃的排队调用不会留下任何日志。既有的 `tool/code-dispatch` 结算该事件对（`subCallId` 相同）；每个已启动的调用恰好结算一次（中止也会作为 `isError` 结果经由流水线结算）。计时即这两个事件的 `time` 字段。两个事件仍仅用于日志；模型上下文不受影响；格式保持 v0。
+- **桥接层调度器**：已提交的调用在启动那一刻经 `registry.executionMode` 分类（与 loop 所用完全相同、故障时默认判为不安全的 `isConcurrencySafe` 约定），并严格按提交顺序启动。所有有序阶段——start 事件追加、`prepare`（pre-execute/守卫）、队首 `finalize`/`finish` 提交（post-execute + 上下文延迟提交 + settle 事件追加）——由单通道驱动器独占执行，因此有序策略阶段彼此绝不重叠，只有 around-dispatch/工具体阶段并发运行，与原生 loop 的时序完全一致（`fillPool` 先 await `startCall` 再 `commitReady`）。连续被分类为可并行的调用可以重叠执行，上限为 `maxParallelSubCalls`（`Config` 字段，Loader schema 校验之外直接构造时也重新校验，默认值 10，即 loop 调度器自身的默认值；设为 `1` 即恢复串行分发）；独占调用则先排空池、独自运行，且其屏障保持到自身提交（含 post-execute）完成为止，与原生独占分组一致。run 结算时会中止仍在运行的分发，并放弃已排队未启动的分发（绑定调用被拒绝，不产生事件），随后排空到完全停稳——包括程序返回时已在途的提交——之后外层结果才结束该轮次。
+- **客户端侧**：运行时的 `ToolCallTree` 把 start 事件存为 `RunningToolCall` 子级，并通过父级递归的 `subCalls` 投影出来（行组件从该形状推导出运行指示环，与原生运行中的调用处理完全一致）。其结算事件会原位替换私有索引中的条目，即使并行完成也保持启动顺序不变，并把 start 事件的 `time` 作为 `callTime`（时长来源）带入。未观察到对应 start 的结算事件（窗口切在事件对中间，或日志录制于 start 事件引入之前）会直接追加，因此旧日志仍能照常渲染。
+- **SDK 提示词**：面向模型的「调用按顺序执行」一句替换为真实约定（相互独立的安全调用可以在 `Promise.all` 下重叠执行；相互依赖的工作以 `await` 顺序衔接）；这是模型可见的变更，每一份 Code Mode 快照都已重新录制。
 
-- **Event pair**: `tool/code-dispatch-start` (parent/sub ids, name, normalized args) is appended when the scheduler actually starts a call — not at submission, so a queued call abandoned by run settlement logs nothing. The existing `tool/code-dispatch` settles the pair (same `subCallId`); every started call settles exactly once (aborts settle as `isError` outcomes through the pipeline). Timing = the two events' `time` fields. Both stay log-only; model context is untouched; format stays v0.
-- **Bridge scheduler**: submitted calls are classified at start time via `registry.executionMode` (the SAME fail-closed `isConcurrencySafe` contract the loop uses) and start strictly in submission order. One single-lane driver owns every ORDERED stage — the start append, `prepare` (pre-execute/guards), the head-of-line `finalize`/`finish` commit (post-execute + context deferral + settle append) — so ordered policy stages never overlap each other and only the around-dispatch/body stage runs concurrently, exactly the native loop's sequencing (`fillPool` awaits `startCall` then `commitReady`). Consecutive parallel-classified calls overlap up to `maxParallelSubCalls` (a `Config` field validated by the Loader schema AND re-validated at direct construction, default 10 — the loop scheduler's own default; `1` restores serial dispatch); an exclusive call drains the pool, runs alone, and holds its barrier until its COMMIT completes (post-execute included), like a native exclusive group. Run settlement aborts in-flight dispatches and abandons queued-unstarted ones (binding rejection, no events), then drains to quiescence — including a commit already mid-flight when the program returned — before the outer result closes the turn.
-- **Client**: Runtime's `ToolCallTree` stores a start event as a `RunningToolCall` child and projects it through the parent's recursive `subCalls` (rows derive the running ring from that shape, exactly as for native in-flight calls). Its settle replaces the private-index entry in place, preserving start order under parallel completion and carrying the start's `time` as `callTime` (duration source). A settle with no observed start (window cut mid-pair, or a pre-start-event log) appends directly, so old logs keep rendering.
-- **SDK prompt**: the model-facing "calls execute sequentially" sentence is replaced with the true contract (independent safe calls may overlap under `Promise.all`; dependent work sequences with `await`) — a model-visible change, re-recorded across every code-mode snapshot.
+## 曾考虑的替代方案
 
-## Alternatives considered
+**不加限制的并行（让 `Promise.all` 重叠一切）。** 否决：写操作可能产生竞态；原生调度器之所以存在，正是因为安全性声明归工具所有，而不归调用方。原生与 Code Mode 使用同一套并发词汇，是已敲定的要求。
 
-**Unrestricted parallelism (let `Promise.all` overlap everything).** Rejected: writes could race; the native scheduler exists precisely because the tool, not the caller, owns the safety claim. One concurrency vocabulary across native and Code Mode was the settled requirement.
+**在提交时而非入池时发出 start 事件。** 否决：提交即发 start 会把排了队却从未运行的调用显示成「运行中」，还得强行引入第三种「已放弃」终态事件才能使日志自洽。入池才发 start 保住了*已启动 ⇔ 恰好结算一次*这一不变式，且不需要第三种事件。
 
-**Emit the start event at submission instead of pool entry.** Rejected: a submission-time start would show queued-but-never-run calls as "running" and would force a third "abandoned" terminal event to reconcile the log. Start-at-entry keeps the invariant *started ⇔ settles exactly once* and needs no third event.
+**直接复用 loop 调度器的实现。** 否决：loop 调度的是一个已完整解析的批次，并按模型顺序提交结果；桥接层调度的则是一条开放式的提交流，其结果返回给程序，而不是进入 transcript（文本记录）。因此两者共享的只是*约定*（分类、池、屏障），而不是实现机制。
 
-**Reuse the loop scheduler's implementation directly.** Rejected: the loop schedules a fully-parsed batch with model-order result commitment; the bridge schedules an open-ended stream of submissions whose results return to the program (not the transcript), so only the *contract* (classification, pool, barriers) is shared, not the machinery.
+## 后果
 
-## Consequences
-
-Programs get native-grade latency for independent reads with no new model-side API — `Promise.all` simply works better, and prompt guidance changed accordingly. The web UI shows per-sub-call running rings live (fixture emits start/settle pairs; jsdom pins the running shape; the runtime spec pins in-place settlement, out-of-order completion, and callTime pairing). Trajectory/waterfall sub-call spans draw truthful timing from the pair. Spill bounding ([code-dispatch log spill](2026-07-26-code-dispatch-log-spill.md)) inherits the settle event as its single bounding point.
+程序不需要任何新的模型侧 API，独立读取就获得了原生级的延迟：`Promise.all` 直接变得更好用，提示词指引也随之修改。Web UI 实时显示每个子调用的运行指示环：fixture（测试前置数据）发出成对的 start/settle 事件；jsdom 锁定运行中形状；运行时测试锁定原位结算、乱序完成与 callTime 配对。trajectory/waterfall 的子调用 span 从这对事件取得如实的计时。spill 边界划定（[code-dispatch 日志 spill](2026-07-26-code-dispatch-log-spill.md)）则以结算事件作为唯一的边界点。

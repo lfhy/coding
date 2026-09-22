@@ -1,415 +1,408 @@
 /**
- * Canonical publication manifest for the documentation website.
+ * 文档网站的单语言发布清单。
  *
- * Markdown stays in its owning repository tier. This manifest maps each
- * canonical source into matching route trees for both site locales; when a
- * translation is absent, both routes intentionally project the available
- * source instead of copying Markdown.
+ * Markdown 仍留在所属的文档层级；本清单把每个中文定稿源投影到 `root`
+ * locale 的唯一路由树。仓库不再维护英文对侧，`foo.md` 即中文定稿。
  */
 
-/** Locale key used by the VitePress site. */
-export type DocsLocale = 'root' | 'en'
+/** VitePress 站点的 locale 键，单语言站点只有 `root`。 */
+export type DocsLocale = 'root'
 
-/** Sidebar collection rendered for one locale and top-level module. */
+/** 侧边栏集合，按顶层模块命名。 */
 export type DocsSidebar =
   | 'zh-guide'
   | 'zh-develop'
   | 'zh-reference'
-  | 'en-guide'
-  | 'en-develop'
-  | 'en-reference'
 
-/** A page projected into the VitePress source tree. */
+/** 投影进 VitePress 源树的一页。 */
 export interface DocsPage {
-  /** VitePress locale whose route tree owns this projection. */
+  /** 拥有该投影的 VitePress locale，恒为 `root`。 */
   locale: DocsLocale
-  /** Language of the canonical source currently projected at this route. */
+  /** 该路由投影的定稿源的语言；除生成目录外均为中文。 */
   contentLocale: 'zh-CN' | 'en-US'
-  /** Repository-relative canonical Markdown source. */
+  /** 仓库相对的中文定稿 Markdown 源。 */
   source: string
-  /** VitePress route, including the `.md` suffix. */
+  /** VitePress 路由，含 `.md` 后缀。 */
   route: string
-  /** Navigation label shown in the sidebar. */
+  /** 侧边栏中显示的导航标签。 */
   label: string
-  /** Sidebar collection that owns the page, or null for a locale home page. */
+  /** 拥有该页的侧边栏集合，站点首页为 null。 */
   sidebar: DocsSidebar | null
-  /** Section label within the sidebar. */
+  /** 侧边栏内的分组标签。 */
   section: string
-  /** Stable order within the section. */
+  /** 分组内的稳定顺序。 */
   order: number
-  /** Heading levels included in this page's VitePress outline. */
+  /** 该页 VitePress 大纲收录的标题层级。 */
   outline?: number | readonly [number, number] | 'deep' | false
-  /** Additional repository paths that resolve to this page. */
+  /** 解析到该页的额外仓库路径。 */
   sourceAliases?: string[]
 }
 
-interface MirroredPage {
-  source: string | Record<DocsLocale, string>
-  route: string
-  contentLocale: DocsPage['contentLocale'] | Record<DocsLocale, DocsPage['contentLocale']>
-  label: Record<DocsLocale, string>
-  sidebar: Record<DocsLocale, DocsSidebar | null>
-  section: Record<DocsLocale, string>
-  order: number
-  outline?: DocsPage['outline']
-  sourceAliases?: string[] | Partial<Record<DocsLocale, string[]>>
+/** 清单条目：除去固定的 locale 与默认内容语言后的页面字段。 */
+type ManifestEntry = Omit<DocsPage, 'locale' | 'contentLocale'> & {
+  /** 定稿源是英文生成目录时显式声明；缺省按中文处理。 */
+  contentLocale?: 'en-US'
 }
-
-type PairedPage = Omit<MirroredPage, 'source' | 'contentLocale' | 'sourceAliases'> & {
-  /** English side of a sibling `foo.md` / `foo.zh.md` pair. */
-  source: string
-  /** Language-neutral repository aliases, such as the directory of an index page. */
-  sourceAliases?: string[]
-}
-
-function localized<T>(value: T | Record<DocsLocale, T>, locale: DocsLocale): T {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? (value as Record<DocsLocale, T>)[locale]
-    : value
-}
-
-function mirroredPages(pages: MirroredPage[]): DocsPage[] {
-  return pages.flatMap(page => (['root', 'en'] as const).map((locale) => {
-    const aliases = page.sourceAliases === undefined
-      ? undefined
-      : Array.isArray(page.sourceAliases) ? page.sourceAliases : page.sourceAliases[locale]
-    return {
-      locale,
-      contentLocale: localized(page.contentLocale, locale),
-      source: localized(page.source, locale),
-      route: locale === 'root' ? page.route : `en/${page.route}`,
-      label: page.label[locale],
-      sidebar: page.sidebar[locale],
-      section: page.section[locale],
-      order: page.order,
-      ...(page.outline === undefined ? {} : { outline: page.outline }),
-      ...(aliases === undefined ? {} : { sourceAliases: aliases }),
-    }
-  }))
-}
-
-function pairedPages(pages: PairedPage[]): DocsPage[] {
-  return mirroredPages(pages.map((page) => {
-    const chineseSource = page.source.replace(/\.md$/, '.zh.md')
-    const sharedAliases = page.sourceAliases ?? []
-    return {
-      ...page,
-      source: { root: chineseSource, en: page.source },
-      contentLocale: { root: 'zh-CN', en: 'en-US' },
-      sourceAliases: {
-        root: [...sharedAliases, page.source],
-        en: [...sharedAliases, chineseSource],
-      },
-    }
-  }))
-}
-
-const homeAndGuide = pairedPages([
-  {
-    source: 'docs/user/index.md',
-    route: 'index.md',
-    label: { root: 'Coding', en: 'Coding' },
-    sidebar: { root: null, en: null },
-    section: { root: '首页', en: 'Home' },
-    order: 0,
-  },
-  {
-    source: 'docs/user/guide/index.md',
-    route: 'guide/quickstart.md',
-    label: { root: '使用 Web UI', en: 'Use the Web UI' },
-    sidebar: { root: 'zh-guide', en: 'en-guide' },
-    section: { root: '入门', en: 'Guide' },
-    order: 1,
-    sourceAliases: ['docs/user/guide'],
-  },
-  {
-    source: 'docs/user/guide/providers.md',
-    route: 'guide/providers.md',
-    label: { root: '配置模型', en: 'Configure models' },
-    sidebar: { root: 'zh-guide', en: 'en-guide' },
-    section: { root: '入门', en: 'Guide' },
-    order: 2,
-  },
-  {
-    source: 'docs/user/guide/python-sdk.md',
-    route: 'guide/python-sdk.md',
-    label: { root: 'Python', en: 'Python' },
-    sidebar: { root: 'zh-guide', en: 'en-guide' },
-    section: { root: 'SDK', en: 'SDK' },
-    order: 1,
-  },
-])
-
-const develop = pairedPages([
-  {
-    source: 'docs/user/develop/basic/index.md',
-    route: 'develop/basic/index.md',
-    label: { root: '第一个 Harness 插件', en: 'Your first Harness plugin' },
-    sidebar: { root: 'zh-develop', en: 'en-develop' },
-    section: { root: '基础', en: 'Basics' },
-    order: 1,
-    sourceAliases: ['docs/user/develop/basic'],
-  },
-  {
-    source: 'docs/user/develop/basic/tool.md',
-    route: 'develop/basic/tool.md',
-    label: { root: '开发一个 Tool', en: 'Build a tool' },
-    sidebar: { root: 'zh-develop', en: 'en-develop' },
-    section: { root: '基础', en: 'Basics' },
-    order: 2,
-  },
-  {
-    source: 'docs/user/develop/basic/config.md',
-    route: 'develop/basic/config.md',
-    label: { root: '插件配置', en: 'Plugin configuration' },
-    sidebar: { root: 'zh-develop', en: 'en-develop' },
-    section: { root: '基础', en: 'Basics' },
-    order: 3,
-  },
-  {
-    source: 'docs/user/develop/basic/publish.md',
-    route: 'develop/basic/publish.md',
-    label: { root: '打包与安装插件', en: 'Package and install' },
-    sidebar: { root: 'zh-develop', en: 'en-develop' },
-    section: { root: '基础', en: 'Basics' },
-    order: 4,
-  },
-  {
-    source: 'docs/user/develop/framework/index.md',
-    route: 'develop/framework/index.md',
-    label: { root: '插件与生命周期', en: 'Plugin lifecycle' },
-    sidebar: { root: 'zh-develop', en: 'en-develop' },
-    section: { root: '框架能力', en: 'Framework' },
-    order: 1,
-    sourceAliases: ['docs/user/develop/framework'],
-  },
-  {
-    source: 'docs/user/develop/framework/service.md',
-    route: 'develop/framework/service.md',
-    label: { root: '服务与依赖', en: 'Services and dependencies' },
-    sidebar: { root: 'zh-develop', en: 'en-develop' },
-    section: { root: '框架能力', en: 'Framework' },
-    order: 2,
-  },
-  {
-    source: 'docs/user/develop/framework/events.md',
-    route: 'develop/framework/events.md',
-    label: { root: '事件系统', en: 'Event system' },
-    sidebar: { root: 'zh-develop', en: 'en-develop' },
-    section: { root: '框架能力', en: 'Framework' },
-    order: 3,
-  },
-  {
-    source: 'docs/user/develop/practice/index.md',
-    route: 'develop/practice/index.md',
-    label: { root: '能力的三层拆分', en: 'Capability layering' },
-    sidebar: { root: 'zh-develop', en: 'en-develop' },
-    section: { root: '实战', en: 'Practice' },
-    order: 1,
-    sourceAliases: ['docs/user/develop/practice'],
-  },
-  {
-    source: 'docs/user/develop/practice/llm-adapter.md',
-    route: 'develop/practice/llm-adapter.md',
-    label: { root: 'LLM 适配器', en: 'LLM adapter' },
-    sidebar: { root: 'zh-develop', en: 'en-develop' },
-    section: { root: '实战', en: 'Practice' },
-    order: 2,
-  },
-])
-
-const cordisTutorial = pairedPages(([
-  ['index.md', '总览', 'Overview'],
-  ['01-first-plugin.md', '1. 第一个插件', '1. Your first plugin'],
-  ['02-lifecycle-and-effects.md', '2. 生命周期与副作用', '2. Lifecycle and effects'],
-  ['03-services.md', '3. 服务', '3. Services'],
-  ['04-events.md', '4. 事件', '4. Events'],
-  ['05-config.md', '5. 配置', '5. Configuration'],
-  ['06-composition-and-hmr.md', '6. 组合与热重载', '6. Composition and HMR'],
-  ['07-into-the-harness.md', '7. 进入 Harness', '7. Into the harness'],
-] as const).map(([file, rootLabel, enLabel], order): PairedPage => ({
-  source: `docs/cordis-tutorial/${file}`,
-  route: `develop/cordis-tutorial/${file}`,
-  label: { root: rootLabel, en: enLabel },
-  sidebar: { root: 'zh-develop', en: 'en-develop' },
-  section: { root: 'Cordis 框架教程', en: 'Cordis framework tutorial' },
-  order,
-  ...(file === 'index.md' ? { sourceAliases: ['docs/cordis-tutorial'] } : {}),
-})))
-
-const cordisPrimerReference = pairedPages([
-  {
-    source: 'docs/cordis-primer.md',
-    route: 'reference/cordis-primer.md',
-    label: { root: 'Cordis 入门', en: 'Cordis primer' },
-    sidebar: { root: 'zh-reference', en: 'en-reference' },
-    section: { root: '概念', en: 'Concepts' },
-    order: 1,
-  },
-])
 
 /**
- * Subsystem pages grouped by the concern they document, as `[Chinese section,
- * English section, pages]`. One flat list of every subsystem pushed the rest of
- * the reference sidebar below the fold.
+ * 把一条清单条目补齐为发布页面。
+ *
+ * @param entry 不带固定字段的清单条目。
+ * @returns 固定投影到 `root` locale、默认中文内容语言的页面。
+ */
+function zhPage(entry: ManifestEntry): DocsPage {
+  return { locale: 'root', contentLocale: 'zh-CN', ...entry }
+}
+
+const homeAndGuide: DocsPage[] = [
+  zhPage({
+    source: 'docs/user/index.md',
+    route: 'index.md',
+    label: 'Coding',
+    sidebar: null,
+    section: '首页',
+    order: 0,
+  }),
+  zhPage({
+    source: 'docs/user/guide/index.md',
+    route: 'guide/quickstart.md',
+    label: '使用 Web UI',
+    sidebar: 'zh-guide',
+    section: '入门',
+    order: 1,
+    sourceAliases: ['docs/user/guide'],
+  }),
+  zhPage({
+    source: 'docs/user/guide/providers.md',
+    route: 'guide/providers.md',
+    label: '配置模型',
+    sidebar: 'zh-guide',
+    section: '入门',
+    order: 2,
+  }),
+  zhPage({
+    source: 'docs/user/guide/python-sdk.md',
+    route: 'guide/python-sdk.md',
+    label: 'Python',
+    sidebar: 'zh-guide',
+    section: 'SDK',
+    order: 1,
+  }),
+]
+
+const develop: DocsPage[] = [
+  zhPage({
+    source: 'docs/user/develop/basic/index.md',
+    route: 'develop/basic/index.md',
+    label: '第一个 Harness 插件',
+    sidebar: 'zh-develop',
+    section: '基础',
+    order: 1,
+    sourceAliases: ['docs/user/develop/basic'],
+  }),
+  zhPage({
+    source: 'docs/user/develop/basic/tool.md',
+    route: 'develop/basic/tool.md',
+    label: '开发一个 Tool',
+    sidebar: 'zh-develop',
+    section: '基础',
+    order: 2,
+  }),
+  zhPage({
+    source: 'docs/user/develop/basic/config.md',
+    route: 'develop/basic/config.md',
+    label: '插件配置',
+    sidebar: 'zh-develop',
+    section: '基础',
+    order: 3,
+  }),
+  zhPage({
+    source: 'docs/user/develop/basic/publish.md',
+    route: 'develop/basic/publish.md',
+    label: '打包与安装插件',
+    sidebar: 'zh-develop',
+    section: '基础',
+    order: 4,
+  }),
+  zhPage({
+    source: 'docs/user/develop/framework/index.md',
+    route: 'develop/framework/index.md',
+    label: '插件与生命周期',
+    sidebar: 'zh-develop',
+    section: '框架能力',
+    order: 1,
+    sourceAliases: ['docs/user/develop/framework'],
+  }),
+  zhPage({
+    source: 'docs/user/develop/framework/service.md',
+    route: 'develop/framework/service.md',
+    label: '服务与依赖',
+    sidebar: 'zh-develop',
+    section: '框架能力',
+    order: 2,
+  }),
+  zhPage({
+    source: 'docs/user/develop/framework/events.md',
+    route: 'develop/framework/events.md',
+    label: '事件系统',
+    sidebar: 'zh-develop',
+    section: '框架能力',
+    order: 3,
+  }),
+  zhPage({
+    source: 'docs/user/develop/practice/index.md',
+    route: 'develop/practice/index.md',
+    label: '能力的三层拆分',
+    sidebar: 'zh-develop',
+    section: '实战',
+    order: 1,
+    sourceAliases: ['docs/user/develop/practice'],
+  }),
+  zhPage({
+    source: 'docs/user/develop/practice/llm-adapter.md',
+    route: 'develop/practice/llm-adapter.md',
+    label: 'LLM 适配器',
+    sidebar: 'zh-develop',
+    section: '实战',
+    order: 2,
+  }),
+]
+
+const cordisTutorial: DocsPage[] = ([
+  ['index.md', '总览'],
+  ['01-first-plugin.md', '1. 第一个插件'],
+  ['02-lifecycle-and-effects.md', '2. 生命周期与副作用'],
+  ['03-services.md', '3. 服务'],
+  ['04-events.md', '4. 事件'],
+  ['05-config.md', '5. 配置'],
+  ['06-composition-and-hmr.md', '6. 组合与热重载'],
+  ['07-into-the-harness.md', '7. 进入 Harness'],
+] as const).map(([file, label], order) => zhPage({
+  source: `docs/cordis-tutorial/${file}`,
+  route: `develop/cordis-tutorial/${file}`,
+  label,
+  sidebar: 'zh-develop',
+  section: 'Cordis 框架教程',
+  order,
+  ...(file === 'index.md' ? { sourceAliases: ['docs/cordis-tutorial'] } : {}),
+}))
+
+const cordisPrimerReference: DocsPage[] = [
+  zhPage({
+    source: 'docs/cordis-primer.md',
+    route: 'reference/cordis-primer.md',
+    label: 'Cordis 入门',
+    sidebar: 'zh-reference',
+    section: '概念',
+    order: 1,
+  }),
+]
+
+/**
+ * 按主题分组的子系统页面，形如 `[分组, 页面]`。单一平铺清单会把参考
+ * 侧边栏的其余分组挤出首屏。
  */
 const subsystemGroups = [
-  ['总览', 'Overview', [
-    ['README.md', '子系统', 'Subsystems'],
+  ['总览', [
+    ['README.md', '子系统'],
   ]],
-  ['内核与作用域', 'Core and scopes', [
-    ['core.md', '核心', 'Core'],
-    ['scope.md', '作用域', 'Scopes'],
-    ['invariants.md', '运行时不变式', 'Runtime invariants'],
+  ['内核与作用域', [
+    ['core.md', '核心'],
+    ['scope.md', '作用域'],
+    ['invariants.md', '运行时不变式'],
   ]],
-  ['会话与持久化', 'Sessions and persistence', [
-    ['session.md', '会话', 'Sessions'],
-    ['session-query.md', '会话查询', 'Session query'],
-    ['session-reference.md', '会话引用', 'Session references'],
-    ['session-title.md', '会话标题', 'Session titles'],
-    ['session-projection.md', '会话投影', 'Session projections'],
-    ['persistence.md', '会话持久化', 'Session persistence'],
-    ['spill.md', 'Spill 存储', 'Spill storage'],
-    ['session-telemetry.md', '遥测', 'SessionTelemetryBackend'],
+  ['会话与持久化', [
+    ['session.md', '会话'],
+    ['session-query.md', '会话查询'],
+    ['session-reference.md', '会话引用'],
+    ['session-title.md', '会话标题'],
+    ['session-projection.md', '会话投影'],
+    ['persistence.md', '会话持久化'],
+    ['spill.md', 'Spill 存储'],
+    ['session-telemetry.md', '遥测'],
   ]],
-  ['模型与上下文', 'Model and context', [
-    ['llm-streaming.md', 'LLM 流式响应', 'LLM streaming'],
-    ['token-meter.md', 'Token 计量', 'Token metering'],
-    ['system-prompt.md', '系统提示词', 'System prompts'],
-    ['compaction.md', '上下文压缩', 'Compaction'],
+  ['模型与上下文', [
+    ['llm-streaming.md', 'LLM 流式响应'],
+    ['token-meter.md', 'Token 计量'],
+    ['system-prompt.md', '系统提示词'],
+    ['compaction.md', '上下文压缩'],
   ]],
-  ['执行与工具', 'Execution and tools', [
-    ['tools.md', '工具', 'Tools'],
-    ['shell.md', 'Bash 执行', 'Bash execution'],
-    ['subprocess.md', '子进程', 'Subprocesses'],
-    ['terminal.md', 'PTY 会话', 'PTY sessions'],
-    ['jobs.md', '后台任务', 'Background jobs'],
-    ['filesystem.md', '文件系统', 'Filesystem'],
-    ['lsp.md', 'LSP 导航', 'LSP navigation'],
-    ['code-runtime.md', '代码运行时', 'Code runtime'],
-    ['web.md', 'Web 访问', 'Web access'],
-    ['skills.md', '技能', 'Skills'],
-    ['workflow.md', '工作流', 'Workflows'],
-    ['subagent.md', '子代理', 'Subagents'],
+  ['执行与工具', [
+    ['tools.md', '工具'],
+    ['shell.md', 'Bash 执行'],
+    ['subprocess.md', '子进程'],
+    ['terminal.md', 'PTY 会话'],
+    ['jobs.md', '后台任务'],
+    ['filesystem.md', '文件系统'],
+    ['lsp.md', 'LSP 导航'],
+    ['code-runtime.md', '代码运行时'],
+    ['web.md', 'Web 访问'],
+    ['skills.md', '技能'],
+    ['workflow.md', '工作流'],
+    ['subagent.md', '子代理'],
   ]],
-  ['策略与交互', 'Policy and interaction', [
-    ['approval.md', '审批', 'Approvals'],
-    ['permission-presets.md', '权限预设', 'Permission presets'],
-    ['sandbox.md', '沙箱', 'Sandboxing'],
-    ['plan.md', '计划模式', 'Plan mode'],
-    ['user-questions.md', '用户交互', 'User interaction'],
-    ['commands.md', '命令', 'Human commands'],
-    ['goal.md', '目标', 'Goals'],
-    ['schedule.md', '定时提醒', 'Scheduled reminders'],
+  ['策略与交互', [
+    ['approval.md', '审批'],
+    ['permission-presets.md', '权限预设'],
+    ['sandbox.md', '沙箱'],
+    ['plan.md', '计划模式'],
+    ['user-questions.md', '用户交互'],
+    ['commands.md', '命令'],
+    ['goal.md', '目标'],
+    ['schedule.md', '定时提醒'],
   ]],
-  ['平台与接入', 'Platform and access', [
-    ['web-server.md', 'HTTP 服务器', 'HTTP server'],
-    ['typert.md', 'Typert', 'Typert'],
-    ['client-modules.md', '客户端模块', 'Client modules'],
-    ['storage.md', '存储', 'Storage'],
-    ['workspace.md', '工作区', 'Workspaces'],
-    ['settings.md', '用户设置', 'User settings'],
-    ['credentials.md', '用户凭据', 'User credentials'],
+  ['平台与接入', [
+    ['web-server.md', 'HTTP 服务器'],
+    ['typert.md', 'Typert'],
+    ['client-modules.md', '客户端模块'],
+    ['storage.md', '存储'],
+    ['workspace.md', '工作区'],
+    ['settings.md', '用户设置'],
+    ['credentials.md', '用户凭据'],
   ]],
 ] as const
 
-const subsystemsReference = subsystemGroups.flatMap(([rootSection, enSection, files]) => pairedPages(
-  files.map(([file, rootLabel, enLabel], order): PairedPage => ({
-    source: `docs/subsystems/${file}`,
-    route: file === 'README.md' ? 'reference/subsystems/index.md' : `reference/subsystems/${file}`,
-    label: { root: rootLabel, en: enLabel },
-    sidebar: { root: 'zh-reference', en: 'en-reference' },
-    section: { root: rootSection, en: enSection },
-    order,
-    // Subsystem pages carry long third-level sections a two-level outline reaches.
-    outline: [2, 3],
-    ...(file === 'README.md' ? { sourceAliases: ['docs/subsystems'] } : {}),
-  })),
-))
+const subsystemsReference: DocsPage[] = subsystemGroups.flatMap(([section, files]) => files.map(([file, label], order) => zhPage({
+  source: `docs/subsystems/${file}`,
+  route: file === 'README.md' ? 'reference/subsystems/index.md' : `reference/subsystems/${file}`,
+  label,
+  sidebar: 'zh-reference',
+  section,
+  order,
+  // 子系统页面带有很长的三级小节，两级大纲才能覆盖。
+  outline: [2, 3],
+  ...(file === 'README.md' ? { sourceAliases: ['docs/subsystems'] } : {}),
+})))
 
-const reference = [
-  ...pairedPages(([
-    ['docs/architecture.md', 'reference/index.md', '架构', 'Architecture', 0],
-  ] as const).map(([source, route, rootLabel, enLabel, order]): PairedPage => ({
-    source,
-    route,
-    label: { root: rootLabel, en: enLabel },
-    sidebar: { root: 'zh-reference', en: 'en-reference' },
-    section: { root: '概念', en: 'Concepts' },
-    order,
-  }))),
-  ...pairedPages(([
-    ['docs/capability-seams.md', 'reference/capability-seams.md', '能力服务', 'Capability services', 2],
-    ['docs/agent-lifecycle.md', 'reference/agent-lifecycle.md', 'Agent 生命周期', 'Agent lifecycle', 3],
-    ['docs/tool-execution-pipeline.md', 'reference/tool-execution-pipeline.md', 'Tool 执行', 'Tool execution', 4],
-  ] as const).map(([source, route, rootLabel, enLabel, order]): PairedPage => ({
-    source,
-    route,
-    label: { root: rootLabel, en: enLabel },
-    sidebar: { root: 'zh-reference', en: 'en-reference' },
-    section: { root: '概念', en: 'Concepts' },
-    order,
-  }))),
-  ...pairedPages(([
-    ['docs/config-catalog.md', 'reference/config-catalog.md', '插件配置', 'Plugin configuration'],
-    ['docs/tool-catalog.md', 'reference/tool-catalog.md', 'Tool Schema', 'Tool schemas'],
-    ['docs/persistence-catalog.md', 'reference/persistence-catalog.md', '持久化事件', 'Persistence events', 'deep'],
-  ] as const).map(([source, route, rootLabel, enLabel, outline], order): PairedPage => ({
-    source,
-    route,
-    label: { root: rootLabel, en: enLabel },
-    sidebar: { root: 'zh-reference', en: 'en-reference' },
-    section: { root: '生成参考', en: 'Generated reference' },
-    order,
-    ...(outline === undefined ? {} : { outline }),
-  }))),
-  ...pairedPages(([
-    ['context.md', 'Context', 'Context'],
-    ['events.md', 'Events', 'Events'],
-    ['fiber.md', 'Fiber', 'Fiber'],
-    ['registry.md', 'Plugin Registry', 'Plugin Registry'],
-    ['service.md', 'Service', 'Service'],
-  ] as const).map(([file, rootLabel, enLabel], order): PairedPage => ({
+const reference: DocsPage[] = [
+  zhPage({
+    source: 'docs/architecture.md',
+    route: 'reference/index.md',
+    label: '架构',
+    sidebar: 'zh-reference',
+    section: '概念',
+    order: 0,
+  }),
+  zhPage({
+    source: 'docs/capability-seams.md',
+    route: 'reference/capability-seams.md',
+    label: '能力服务',
+    sidebar: 'zh-reference',
+    section: '概念',
+    order: 2,
+  }),
+  zhPage({
+    source: 'docs/agent-lifecycle.md',
+    route: 'reference/agent-lifecycle.md',
+    label: 'Agent 生命周期',
+    sidebar: 'zh-reference',
+    section: '概念',
+    order: 3,
+  }),
+  zhPage({
+    source: 'docs/tool-execution-pipeline.md',
+    route: 'reference/tool-execution-pipeline.md',
+    label: 'Tool 执行',
+    sidebar: 'zh-reference',
+    section: '概念',
+    order: 4,
+  }),
+  zhPage({
+    source: 'docs/config-catalog.md',
+    route: 'reference/config-catalog.md',
+    label: '插件配置',
+    sidebar: 'zh-reference',
+    section: '生成参考',
+    order: 0,
+  }),
+  zhPage({
+    source: 'docs/tool-catalog.md',
+    route: 'reference/tool-catalog.md',
+    label: 'Tool Schema',
+    sidebar: 'zh-reference',
+    section: '生成参考',
+    order: 1,
+  }),
+  zhPage({
+    source: 'docs/persistence-catalog.md',
+    route: 'reference/persistence-catalog.md',
+    label: '持久化事件',
+    sidebar: 'zh-reference',
+    section: '生成参考',
+    order: 2,
+    outline: 'deep',
+  }),
+  ...([
+    ['context.md', 'Context'],
+    ['events.md', 'Events'],
+    ['fiber.md', 'Fiber'],
+    ['registry.md', 'Plugin Registry'],
+    ['service.md', 'Service'],
+  ] as const).map(([file, label], order) => zhPage({
     source: `docs/cordis-api/${file}`,
     route: `reference/cordis-api/${file}`,
-    label: { root: rootLabel, en: enLabel },
-    sidebar: { root: 'zh-reference', en: 'en-reference' },
-    section: { root: 'Cordis API', en: 'Cordis Core API' },
+    label,
+    sidebar: 'zh-reference',
+    section: 'Cordis API',
     order,
-  }))),
-  ...mirroredPages(([
-    ['inherited.md', '继承接口面', 'Inherited surface'],
-  ] as const).map(([file, rootLabel, enLabel], order): MirroredPage => ({
-    source: `docs/cordis-api/${file}`,
-    route: `reference/cordis-api/${file}`,
+  })),
+  zhPage({
+    source: 'docs/cordis-api/inherited.md',
+    route: 'reference/cordis-api/inherited.md',
+    label: '继承接口面',
+    sidebar: 'zh-reference',
+    section: 'Cordis API',
+    order: 5,
     contentLocale: 'en-US',
-    label: { root: rootLabel, en: enLabel },
-    sidebar: { root: 'zh-reference', en: 'en-reference' },
-    section: { root: 'Cordis API', en: 'Cordis Core API' },
-    order: order + 5,
-  }))),
-  ...pairedPages(([
-    ['adding-a-package.md', '新增 Package', 'Adding a package'],
-    ['adding-a-tool.md', '新增 Tool', 'Adding a tool'],
-    ['adding-an-llm-adapter.md', '新增 LLM Adapter', 'Adding an LLM adapter'],
-    ['adding-a-settings-card.md', '新增设置卡片', 'Adding a settings card'],
-    ['extension-cookbook.md', '扩展模式', 'Extension patterns'],
-  ] as const).map(([file, rootLabel, enLabel], order): PairedPage => ({
-    source: `docs/cookbook/${file}`,
-    route: `reference/cookbook/${file}`,
-    label: { root: rootLabel, en: enLabel },
-    sidebar: { root: 'zh-reference', en: 'en-reference' },
-    section: { root: '开发手册', en: 'Cookbook' },
-    order,
-  }))),
-  ...pairedPages([{
+  }),
+  zhPage({
+    source: 'docs/cookbook/adding-a-package.md',
+    route: 'reference/cookbook/adding-a-package.md',
+    label: '新增 Package',
+    sidebar: 'zh-reference',
+    section: '开发手册',
+    order: 0,
+  }),
+  zhPage({
+    source: 'docs/cookbook/adding-a-tool.md',
+    route: 'reference/cookbook/adding-a-tool.md',
+    label: '新增 Tool',
+    sidebar: 'zh-reference',
+    section: '开发手册',
+    order: 1,
+  }),
+  zhPage({
+    source: 'docs/cookbook/adding-an-llm-adapter.md',
+    route: 'reference/cookbook/adding-an-llm-adapter.md',
+    label: '新增 LLM Adapter',
+    sidebar: 'zh-reference',
+    section: '开发手册',
+    order: 2,
+  }),
+  zhPage({
+    source: 'docs/cookbook/adding-a-settings-card.md',
+    route: 'reference/cookbook/adding-a-settings-card.md',
+    label: '新增设置卡片',
+    sidebar: 'zh-reference',
+    section: '开发手册',
+    order: 3,
+  }),
+  zhPage({
+    source: 'docs/cookbook/extension-cookbook.md',
+    route: 'reference/cookbook/extension-cookbook.md',
+    label: '扩展模式',
+    sidebar: 'zh-reference',
+    section: '开发手册',
+    order: 4,
+  }),
+  zhPage({
     source: 'docs/cookbook/adding-a-conversation-node.md',
     route: 'reference/cookbook/adding-a-conversation-node.md',
-    label: { root: '新增 Conversation Node', en: 'Adding a Conversation Node' },
-    sidebar: { root: 'zh-reference', en: 'en-reference' },
-    section: { root: '开发手册', en: 'Cookbook' },
+    label: '新增 Conversation Node',
+    sidebar: 'zh-reference',
+    section: '开发手册',
     order: 5,
-  }]),
+  }),
 ]
 
 /** A sidebar group, matched to pages by `label`. */
@@ -421,10 +414,10 @@ export interface DocsSection {
 }
 
 /**
- * Every sidebar group, in the order its locale renders it.
+ * 全部侧边栏分组及其渲染顺序。
  *
- * The subsystem groups collapse because together they outnumber the rest of the
- * reference sidebar; expanded, they push every other group below the fold.
+ * 子系统各分组默认折叠：它们合计的条目数超过参考侧边栏的其余分组，
+ * 全部展开时会把其他分组挤出首屏。
  */
 const sections: Record<DocsLocale, readonly DocsSection[]> = {
   root: [
@@ -439,29 +432,16 @@ const sections: Record<DocsLocale, readonly DocsSection[]> = {
     { label: '策略与交互', collapsed: true },
     { label: '平台与接入', collapsed: true },
   ],
-  en: [
-    { label: 'Guide' }, { label: 'SDK' },
-    { label: 'Basics' }, { label: 'Framework' }, { label: 'Practice' }, { label: 'Cordis framework tutorial' },
-    { label: 'Concepts' }, { label: 'Generated reference' }, { label: 'Cordis Core API' }, { label: 'Cookbook' },
-    { label: 'Overview' },
-    { label: 'Core and scopes', collapsed: true },
-    { label: 'Sessions and persistence', collapsed: true },
-    { label: 'Model and context', collapsed: true },
-    { label: 'Execution and tools', collapsed: true },
-    { label: 'Policy and interaction', collapsed: true },
-    { label: 'Platform and access', collapsed: true },
-  ],
 }
 
 /**
- * Placement and collapse behavior of one sidebar group.
+ * 读取一个侧边栏分组的位置与折叠行为。
  *
- * @param locale - Route tree whose sidebar is being built.
- * @param label - Section label carried by the pages in the group.
- * @returns The declared group, plus its zero-based position in the locale.
- * @throws When the locale declares no placement for the label. Ranking by list
- *   membership alone would sort an undeclared group silently ahead of every
- *   declared one.
+ * @param locale - 拥有该侧边栏的 locale，恒为 `root`。
+ * @param label - 分组内各页面携带的 `section` 标签。
+ * @returns 声明的分组及其在 locale 内的零基位置。
+ * @throws 当该 locale 没有为此标签声明位置时抛出。仅按列表成员排序会把
+ *   未声明的分组静默排到所有已声明分组之前。
  */
 export function sectionSpec(locale: DocsLocale, label: string): DocsSection & { index: number } {
   const declared = sections[locale]
@@ -481,15 +461,16 @@ export const docsPages: DocsPage[] = [
 ]
 
 /**
- * Pages of one sidebar collection, in the order the sidebar lists them.
+ * 读取一个侧边栏集合的页面，按侧边栏列出的顺序。
  *
- * @param locale - Route tree whose sidebar is being built.
- * @param collection - Sidebar collection to read.
- * @returns The collection's pages, ordered by section placement then by `order`.
+ * @param locale - 拥有该侧边栏的 locale，恒为 `root`。
+ * @param collection - 要读取的侧边栏集合。
+ * @returns 该集合的页面，先按分组位置、再按 `order` 排序。
  */
 export function orderedPages(locale: DocsLocale, collection: DocsSidebar): DocsPage[] {
   return docsPages
-    .filter(page => page.locale === locale && page.sidebar === collection)
+    // 单语言站点：每个页面都投影到 `root`，因此不需要按 locale 过滤。
+    .filter(page => page.sidebar === collection)
     .sort((left, right) => (
       sectionSpec(locale, left.section).index - sectionSpec(locale, right.section).index
       || left.order - right.order
@@ -507,16 +488,15 @@ export function routeLink(route: string): string {
 }
 
 /**
- * Where a top-level navigation item lands.
+ * 顶层导航项的落点。
  *
- * The target is derived rather than written down: a collection whose first page
- * is renamed or reordered would otherwise leave the navigation bar pointing at
- * a route the manifest no longer publishes.
+ * 落点是推导出来的而不是手写的：集合首页被改名或重排后，手写值会让
+ * 导航栏指向清单已不再发布的路由。
  *
- * @param locale - Route tree the navigation item belongs to.
- * @param collection - Sidebar collection the item opens.
- * @returns Site-relative link of the collection's first page.
- * @throws When the collection publishes no page.
+ * @param locale - 导航项所属的 locale，恒为 `root`。
+ * @param collection - 导航项打开的侧边栏集合。
+ * @returns 该集合第一页的站内相对链接。
+ * @throws 当该集合没有发布任何页面时抛出。
  */
 export function landingLink(locale: DocsLocale, collection: DocsSidebar): string {
   const first = orderedPages(locale, collection)[0]

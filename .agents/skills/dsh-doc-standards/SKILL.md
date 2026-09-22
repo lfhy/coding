@@ -1,6 +1,6 @@
 ---
 name: dsh-doc-standards
-description: 'Use when writing, moving, reviewing, or auditing documentation in the deepseek-harness repo — choosing hierarchy and detail, separating tutorials from references, checking tutorial progression, trimming doc slop, responding to a verify-doc-budgets failure, or requests like "improve the docs", "audit the docs", "where should this be documented", or "this doc is too long".'
+description: 'Use when writing, moving, reviewing, or auditing documentation in the deepseek-harness repo — choosing hierarchy and detail, separating tutorials from references, checking tutorial progression, trimming doc slop, or requests like "improve the docs", "audit the docs", "where should this be documented", or "this doc is too long".'
 ---
 
 # Applying the DeepSeek Harness Documentation Standard
@@ -11,7 +11,6 @@ The documentation rules live in [docs/AGENTS.md](../../../docs/AGENTS.md). This 
 
 - [docs/AGENTS.md](../../../docs/AGENTS.md) — hierarchy, tutorial/reference forms, taxonomy, budgets, and slop checklist.
 - [.agents/notes/README.md](../../notes/README.md) — when a decision earns an Agent Note, how to file it, and what goes inside one (the header block, per-lifecycle skeleton, and Alternatives-considered mandate, gated by `verify-agent-note-format`); [docs/postmortem/README.md](../../../docs/postmortem/README.md) — when an incident earns a postmortem.
-- [docs/i18n/README.md](../../../docs/i18n/README.md) — the Chinese-canonical workflow and compatibility rules for legacy bilingual triplets.
 - Root [AGENTS.md](../../../AGENTS.md) — the standing orders whose budget discipline this skill protects.
 - [Archived Agent Notes](../../notes/archived/AGENTS.md) — frozen historical snapshots excluded from editorial maintenance and evolving documentation gates.
 
@@ -27,16 +26,16 @@ Apply the standard's authoring order to every human-facing document in scope. Do
 
 Then check constraints that make placement expensive or wrong:
 
-- Ordinary authored docs use one Chinese `.md`. When touching a legacy pair, collapse it to the Chinese canonical unless a generator, site mapping, or explicit user request still requires the pair; a retained pair still costs a counterpart update and `--write` re-record.
+- Ordinary authored docs use one Chinese `.md`. There is no English counterpart, no consistency record, and no language switcher; fully generated references stay in the generator's own language.
 - Generated catalogs are never hand-edited; if the fact belongs there, change the generator's source.
-- Before renaming or moving any doc, grep for inbound references: `verify-md-links` catches Markdown link targets AND `#fragment` anchors onto Markdown files (heading slugs and explicit `<a id>`), and `verify-doc-refs` catches `docs/*.md` citations in TypeScript comments; anchors cited from TypeScript strings still need a manual grep when their output never reaches gate-scanned Markdown.
+- Before renaming or moving any doc, grep for inbound references yourself: no gate checks Markdown link targets, `#fragment` anchors, or `docs/*.md` citations in TypeScript comments. Search the old path and the old filename stem, including code comments and YAML comments.
 - A move is atomic: remove from the old home, add to the new home, and fix every inbound link in the same change.
 
 ## Audit the corpus
 
 After the structural pass, hunt the standard's slop checklist with the cheapest probes first. Verify and fetch the PR's live base, then run `pnpm --silent run change-scope --base <verified-base-ref>` to identify committed and dirty paths before applying semantic judgment. After a retarget or base merge, rerun the report and audit prose introduced by the new base.
 
-1. Measure: `pnpm run verify-doc-budgets --list`, then `git ls-files '*.md' ':(exclude)vendor/**' | xargs wc -w | sort -rn | head -30` to spot unbudgeted outliers.
+1. Measure: `git ls-files '*.md' ':(exclude)vendor/**' | xargs wc -w | sort -rn | head -30` to spot oversized documents.
 2. Hunt reasoning-transcript leakage — narrated history, dead design-session citations, review choreography, control-flow narration, test walkthroughs — with [dsh-trim-cot-leakage](../dsh-trim-cot-leakage/SKILL.md), which defines the taxonomy, recall batteries, and rules for what to keep or delete. Preserve only a non-obvious contract or durable rationale; the same rationale repeated beside sibling methods keeps one home.
 3. Hunt duplication by grepping distinctive phrases. Keep one home and replace other copies with links.
 4. Replace hand-written catalogs, test/status inventories, and JSDoc restatements with the authoritative tree, script, or generated reference.
@@ -47,10 +46,6 @@ Exclude `.agents/notes/archived/` from corpus audits and edits. Active prose may
 
 Keep every load-bearing rule, preferably as one to three lines plus a link to its rationale. Cut stories, duplicates, status notes, and the path used to derive the rule. Do not create a new explanation merely to relocate disposable reasoning.
 
-## When verify-doc-budgets goes red
-
-Apply the ordered relocate-condense-raise policy in [docs/AGENTS.md](../../../docs/AGENTS.md); this skill only supplies the workflow probes above.
-
 ## Validation and PR hygiene
 
-Follow the root [verification rule](../../../AGENTS.md#git-与-agent-工作) and always run `git diff --check`. Instruction-only prose does not require `lint` or `doc-sync`. A standalone Chinese document needs no translation-pair write; only a deliberately retained legacy pair requires `pnpm run verify-translation-pairing --write <pair>` and its scoped check. An Agent Note also requires `pnpm run verify-agent-note-classification` and `pnpm run verify-agent-note-format`. Run `doc-sync` only when a changed documentation source, generator, generated catalog, or website projection can affect corpus-wide documentation output; run `lint` only when code or lint configuration changed. Do not run broad gates in parallel when they build or consume shared artifacts. The PR body should list checks actually run and any deliberate gap.
+Follow the root [verification rule](../../../AGENTS.md#git-与-agent-工作) and always run `git diff --check`. Instruction-only prose needs no other check. When the change touches a generator or its generated reference, run that generator (`pnpm run gen-<name>`) and commit the regenerated output. Run `lint` only when code or lint configuration changed, and do not run broad gates in parallel when they build or consume shared artifacts. Report the checks actually run and any deliberate gap.

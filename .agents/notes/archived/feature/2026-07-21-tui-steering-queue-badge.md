@@ -1,40 +1,38 @@
-# Agent Note: TUI status line badges queued steering messages
+# Agent Note: TUI 状态行标示排队中的 steering 消息
 
 Status: implemented
 Archived: 2026-07-26
 
-English | [中文](2026-07-21-tui-steering-queue-badge.zh.md)
-
 ## Problem
 
-While a turn runs, an editor submission calls `agent.steer()` and joins the steering queue behind the running turn ([front-door Agent Note](2026-07-17-dedicated-full-screen-tui-front-door.md)). The running status line ended only with the `Enter sends steering, Esc cancels` hint, so pressing Enter gave no feedback that the message landed or how many were waiting to reach the model. A user steering several times could not tell the queue from a dropped keystroke.
+轮次运行期间，编辑器提交会调用 `agent.steer()`，在运行中的轮次后面加入 steering（中途引导）队列（[前门 Agent Note](2026-07-17-dedicated-full-screen-tui-front-door.md)）。运行时的状态行只以 `Enter sends steering, Esc cancels` 提示收尾，因此按下 Enter 后没有任何反馈表明消息已入队、也看不出有多少条正在等待送达模型。连续 steering 多次的用户无法把队列和被吞掉的按键区分开。
 
 ## Decision
 
-The agent's inbox is the authoritative steering queue but is not observable from the TUI, so the badge is a live count reconstructed from the public `agent/queued` and `steering/message` events rather than a projection of the queue itself.
+agent（智能体）的收件箱（inbox）才是权威的 steering 队列，但 TUI 无法观测它，因此徽标是从公开的 `agent/queued` 与 `steering/message` 事件重建出的实时计数，而非对队列本身的投影。
 
-- The running status line composes through `formatTurnStatus`, which inserts a `${queued} queued · ` badge before the `Enter sends steering, Esc cancels` hint when `queued > 0` and shows the plain hint at zero; the phase label and elapsed timing before it are the [verbose status line](2026-07-21-tui-verbose-status-line.md)'s.
-- `createTuiChat` owns a `pendingSteering` counter: `+1` on each `agent/queued` for this agent whose `info.steering` is set, `-1` (floored at zero) on each `steering/message` session event as the loop drains one, and reset to zero whenever the agent leaves `running`.
-- The count refreshes onto the live `Loader` through `setMessage`; the refresh is a no-op while idle because the loader exists only during a running turn.
-- The reset lives in the `agent/status` transition, not in `setStatus`, because `setStatus` also runs on mid-turn palette changes and must not clear a live count.
+- 运行时的状态行经 `formatTurnStatus` 组装：`queued > 0` 时在 `Enter sends steering, Esc cancels` 提示前插入 `${queued} queued · ` 徽标，为零时是纯提示文本；其前的阶段标签与耗时归[详细状态行](2026-07-21-tui-verbose-status-line.md)所有。
+- `createTuiChat` 持有一个 `pendingSteering` 计数器：每收到一个针对本 agent 且 `info.steering` 为真的 `agent/queued` 就 `+1`，agent loop（智能体循环）每排空一条时随对应的 `steering/message` 会话事件 `-1`（下限为零），agent 一旦离开 `running` 状态即重置为零。
+- 计数通过 `setMessage` 刷新到实时的 `Loader` 上；空闲时刷新是空操作，因为 loader 只在运行中的轮次期间存在。
+- 重置放在 `agent/status` 状态切换里，而非 `setStatus` 中，因为 `setStatus` 在轮次中途的颜色方案变化时也会运行，绝不能清掉一个实时计数。
 
 ## Alternatives considered
 
-**Derive the count from the session log alone** (enqueued minus drained, recomputed on replay). Rejected: a cancellation clears the inbox without logging a drain, so the log cannot distinguish a drained message from a discarded one; the reset-on-non-running anchor is simpler and self-correcting each turn.
+**仅从会话日志推导计数**（入队数减去排空数，回放时重算）。否决：取消会清空 inbox 而不记录排空，因此日志无法区分一条消息是被排空还是被丢弃；「离开运行态即重置」这个锚点更简单，且每轮自我校正。
 
-**Reset inside `setStatus`.** Rejected: `setStatus` re-runs on `applyColorScheme` mid-turn, which would wrongly zero a live count; the status transition is the only place a turn actually ends.
+**在 `setStatus` 内重置。** 否决：`setStatus` 会在轮次中途的 `applyColorScheme` 时重新运行，会错误地把实时计数清零；状态切换才是轮次真正结束的唯一位置。
 
-**Drop the decrement clamp.** Rejected: loop-authored steering (e.g. continuation reasons) logs `steering/message` with no matching user-queued increment, which would drive the count negative; the zero floor keeps the badge a lower bound rather than a lie.
+**去掉递减的下限钳制。** 否决：agent loop 自行产生的 steering（如 continuation 续跑原因）会记录 `steering/message`，却没有对应的用户入队递增，这会把计数压到负数；零下限让徽标成为下界，而非谎报。
 
-**Make the wording or a threshold configurable.** Rejected: the no-hardcoded-tunables rule targets deployment-varying behavior, not brand copy; the `welcome`/hint strings are already fixed presentation.
+**把措辞或某个阈值做成配置。** 否决：「插件里不许硬编码可调参数」规则针对的是随部署变化的行为，不是品牌文案；`welcome`/提示字符串本就是固定的展示文案。
 
 ## Consequences
 
-- The badge is best-effort live UI state, not a logged surface: it is rebuilt from events and reset each turn, never persisted, so a resumed running turn starts its badge from zero.
-- A cancellation mid-queue clears the badge cleanly through the non-running reset, and a drain past zero is a no-op — neither can strand a stale count.
-- A loop continuation that keeps the agent `running` while re-enqueuing undrained late steering can transiently over-count until the next idle reset; the badge is advisory, so the window is acceptable.
-- `packages/ui/tui/src/index.ts` stays at 100 % per-file coverage.
+- 徽标是尽力而为的实时 UI 状态，不写入日志：它由事件重建、每轮重置、从不持久化，因此恢复（resume）出的运行中轮次徽标从零开始。
+- 队列中途取消会经由「离开运行态即重置」干净地清掉徽标，排空到零以下则是空操作——两者都不会残留一个陈旧计数。
+- 如果 agent loop 续跑时让 agent 保持 `running`、同时把未排空的迟到 steering 重新入队，则可能短暂多计，直到下一次空闲重置；徽标只作参考，因此这个窗口可以接受。
+- `packages/ui/tui/src/index.ts` 保持 100% 的单文件覆盖率。
 
 ## Testing
 
-`packages/ui/tui/tests/tui.spec.ts` drives the running status frame through the real `createTuiChat`: the plain hint at zero, a foreign-agent queue ignored, the increment to `2 queued`, a non-steering queue left untouched, the decrement as each message drains, the clamp on a drain past zero, and the reset when the turn ends. Verified live in tmux — the badge showed `3 queued` after three `agent.steer()` calls, then `1 queued` as two drained.
+`packages/ui/tui/tests/tui.spec.ts` 通过真实的 `createTuiChat` 驱动运行时状态帧：为零时的纯提示、忽略他方 agent 的入队、递增到 `2 queued`、非 steering 的入队保持不变、每条消息排空时的递减、排空到零以下时的钳制、以及轮次结束时的重置。已在 tmux 中实机验证——三次 `agent.steer()` 调用后徽标显示 `3 queued`，随后两条排空时显示 `1 queued`。

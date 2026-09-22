@@ -20,8 +20,8 @@ import {
 const root = resolve(import.meta.dirname, '..')
 
 describe('THIRD_PARTY_NOTICES.md', () => {
-  // Freshness lives here rather than in its own doc-sync gate: this spec file
-  // already runs in the test lane, so the check costs no extra CI process.
+  // 新鲜度检查放在这里而不是单独的门禁：这个 spec 已经在测试通道里运行，
+  // 该检查因此不额外增加 CI 进程。
   // Pre-commit regenerates the file whenever a manifest is staged, so reaching
   // this assertion means the notices were committed without that hook.
   it('matches what the generator produces from the current manifests', () => {

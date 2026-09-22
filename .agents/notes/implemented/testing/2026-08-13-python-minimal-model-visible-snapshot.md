@@ -1,33 +1,31 @@
-# Agent Note: Python minimal-composition model-visible snapshot
+# Agent Note：Python 极简组合的模型可见快照
 
 Status: implemented
 
-English | [中文](2026-08-13-python-minimal-model-visible-snapshot.zh.md)
+## 问题
 
-## Problem
+Python 通道从未比对极简组合实际展示给模型的内容。动态运行时上下文以 user 消息进入历史，因此 mock 模型"system 角色消息等于部署 persona"的断言看不见它；而进阶可执行文件快照会把每个请求头中已组装的系统提示词换成占位符、把每个工具 schema 换成其名称。于是 sandbox-policy 的运行时上下文消息一直搭车留在签入的[极简组合](../../../../examples/jsonrpc-agent/minimal.cordis.yml)里，而 `python-runtime` 始终是绿的；任何新增系统分段、工具或其他上下文消息的插件都能照此蒙混过关。
 
-The Python lane never compared what the minimal composition actually shows the model. Dynamic runtime context reaches history as a user message, so the mock model's assertion that system-role messages equal the deployment persona could not see it, and the advanced executable snapshot replaces each request header's assembled system prompt with a token and each tool schema with its name. The sandbox-policy runtime-context message therefore rode along in the checked-in [minimal composition](../../../../examples/jsonrpc-agent/minimal.cordis.yml) while `python-runtime` stayed green, and any plugin that adds a system section, a tool, or another context message could do the same.
+## 决策
 
-## Decision
+[打包运行时冒烟测试](../../../../scripts/smoke-python-runtime.py)的 `sdk-minimal` 场景会录制 `scripts/snapshots/python-sdk-single-exe/minimal/model-visible.json`：对该回合的每个模型请求，逐字记录对外公布的工具 schema 与消息列表。system 与 user 消息保留全文，仅将场景的临时目录替换为占位符；assistant 与 tool 消息只保留调用标识，因为它们的 PTY 与文件系统文本在期望输出需要重放的各平台上并不相同。
 
-The `sdk-minimal` scenario in [the packaged-runtime smoke](../../../../scripts/smoke-python-runtime.py) records `scripts/snapshots/python-sdk-single-exe/minimal/model-visible.json`: for every model request of the turn, the advertised tool schemas verbatim and the message list. System and user messages keep their full text with the scenario's temporary directory tokenized; assistant and tool messages keep only call identity, because their PTY and filesystem text differs across the platforms the expected output replays on.
+有一条模型可见消息被排除在外：agent loop 的动态运行时上下文快照。同一组合在 macOS 上会发出它，在必需车道所用的 Linux 上不会，因此任何单一期望输出都无法承载它。该差异本身就是缺陷（[#2488](https://github.com/deepseek-harness/deepseek-harness/issues/2488)）——这份期望输出覆盖其余全部模型可见消息，而不是等它先被修复。
 
-One model-visible message is excluded: the agent loop's dynamic runtime-context snapshot. The same composition emits it on macOS and not on Linux, which the required lane runs, so no single expected output can carry it. That difference is a defect in its own right ([#2488](https://github.com/deepseek-harness/deepseek-harness/issues/2488)) — this expected output covers every other model-visible message rather than waiting for it.
+mock 模型不再断言极简场景的工具与系统提示词——该面由快照拥有，并给出完整差异而非首个不匹配项。快照比对以目录与文件集合为参数，因此 `minimal` 与 `advanced` 两份期望输出共用一套实现，且 `--update-snapshots` 接受 `sdk-minimal`。
 
-The mock model no longer asserts the minimal scenario's tools and system prompts — the snapshot owns that surface and reports a complete diff instead of the first mismatch. Snapshot comparison takes its directory and file set as arguments, so the `minimal` and `advanced` expected outputs use one implementation, and `--update-snapshots` accepts `sdk-minimal`.
+## 曾考虑的替代方案
 
-## Alternatives considered
+**像进阶场景那样对极简会话日志做快照。** 极简回合驱动真实 PTY 与编辑器，持久化的工具结果带有平台相关文本。期望输出会因与模型可见组装无关的原因变红；而把这些文本归一化掉之后，日志所承载的内容也就所剩无几。
 
-**Snapshot the minimal session log, like the advanced scenario.** The minimal turn drives a real PTY and editor, so persisted tool results carry platform-dependent text. The expected output would go red for reasons unrelated to model-visible assembly, and normalizing that text away leaves the log carrying little the model-visible file does not.
+**扩展 mock 模型中的内联断言。** 每新增一项模型可见贡献都要再手写一条期望，且失败只会指出一处不匹配而非整个面。工具描述还会从组合复制进脚本，形成重复。
 
-**Extend the mock model's inline assertions.** Every new model-visible contribution would need another hand-written expectation, and a failure names one mismatch rather than the whole surface. Tool descriptions would also be duplicated from the composition into the script.
+**依赖 TypeScript SDK 快照。** 其 `persistent-tools` 场景固定了同一组合的系统提示词、工具 schema 与运行时上下文，但走的是重放的模型响应与 source 或 `lib` 运行时，且位于另一个必需任务中。它无法体现已部署可执行文件的闭包为 Python 调用方组装出什么。
 
-**Rely on the TypeScript SDK snapshot.** Its `persistent-tools` scenario pins the same composition's system prompt, tool schemas, and runtime context, but through replayed model responses and a source or `lib` runtime, in a different required job. It cannot show what the deployed executable's closure assembles for a Python caller.
+## 后果
 
-## Consequences
+极简组合模型可见面的改动——系统分段、工具、工具描述或新增的 user 消息——现在会让 `python-runtime` 带着精确差异失败；要让它落地，就必须重新运行 `--scenario sdk-minimal --update-snapshots` 并审阅该差异。极简组合的工具描述由此成为经过审阅的期望输出。
 
-A change to the minimal composition's model-visible surface — a system section, a tool, a tool description, or an added user message — now fails `python-runtime` with the exact diff, and landing it means rerunning `--scenario sdk-minimal --update-snapshots` and reviewing that diff. The minimal composition's tool descriptions become reviewed expected output.
+assistant 与 tool 消息文本不再参与比对，运行时上下文快照则完全不参与比对。持久 shell 状态、编辑器输出与最终响应仍由该场景自身的断言拥有；被排除的那条消息由 [#2488](https://github.com/deepseek-harness/deepseek-harness/issues/2488) 负责，直到其平台差异得到解决。
 
-Assistant and tool message text is no longer compared, and the runtime-context snapshot is not compared at all. The scenario's own assertions continue to own persistent-shell state, editor output, and the final response; [#2488](https://github.com/deepseek-harness/deepseek-harness/issues/2488) owns the excluded message until its platform difference is resolved.
-
-[AGENTS.md](../../../../AGENTS.md) and [the testing policy](../../../../docs/testing.md) now name both SDKs as independent projections of the agent loop, session lifecycle, and `SessionEventMap`, so a change to any of those carries updating both expected outputs rather than only the one a contributor happens to run.
+[AGENTS.md](../../../../AGENTS.md) 与[测试政策](../../../../docs/testing.md)现已点明两个 SDK 都是 agent loop、会话生命周期与 `SessionEventMap` 的独立投影，因此改动其中任何一项都要连带更新两侧的期望输出，而不只是贡献者恰好会运行的那一侧。

@@ -1,30 +1,28 @@
-# Agent Note: Zombie Host launch locks are reclaimed at startup
+# Agent Note: 僵尸 Host 启动锁在启动时被回收
 
 Status: implemented
 
-English | [中文](2026-08-22-zombie-host-launch-lock-reclaim.zh.md)
+## 问题
 
-## Problem
+桌面壳经 `hostlaunch.Ensure` 启动，先取 `~/.dsh/host.lock` 再做发现或拉起。该锁的存活语义只有 `O_EXCL` 创建加关闭时删除：上一次 Coding 或 coding-host 异常退出（崩溃、`kill`、注销）后，锁文件残留并带着已死的属主 PID。之后每次桌面启动都要耗满 30 秒锁超时反复轮询一个无人会释放的文件——启动页全程停在"正在准备 Coding"，超时后才报锁超时错误。
 
-The desktop shell boots through `hostlaunch.Ensure`, which takes `~/.dsh/host.lock` before discovery or start. The lock's only liveness story was `O_EXCL` creation plus a close-time remove. When a previous Coding or coding-host died hard (crash, `kill`, logout), the lock file stayed behind with a dead owner PID. Every later desktop launch then spent the full 30-second lock timeout re-polling a file nobody would ever release — the splash page stayed on "正在准备 Coding" the whole time, and only then surfaced a lock-timeout error.
+`discover` 早已把死 PID 的 `host.json` 视为缺失；启动锁没有对应的防护。
 
-`discover` already treats a dead-PID `host.json` as missing; the launch lock had no equivalent guard.
+## 决策
 
-## Decision
+`acquireLock` 现在读取既有锁文件首行作为属主 PID，调用已有的 `processAlive`。属主已死的锁被删除并立即重试获取，崩溃重启的启动由此收回自己的残留锁，而不是等待。存活属主仍按完整超时持有锁；内容缺失或无法解析的锁走原超时路径（无法证明它被遗弃）。
 
-`acquireLock` now reads the first line of an existing lock file as the owner PID and calls the existing `processAlive` helper. A lock whose recorded owner is dead is removed and acquisition retries immediately, so a crash-restart boot reclaims its own leftover lock instead of waiting. A live owner still holds the lock for the full timeout, and a lock with missing or unparseable content is left to the timeout path (we cannot prove it abandoned).
+回收方式与桌面单实例 socket 的既有做法同源：检测到残留文件、删除、重试。
 
-The reclaim uses the same primitive the desktop already trusts for single-instance sockets: stale file detected, removed, retried.
+## 备选方案
 
-## Alternatives considered
+- **改用 flock。** 建议锁在进程死亡时自动释放，但 Windows 孪生实现需要另一套原语，当前跨进程方案刻意共用文件式锁。
+- **按锁文件 mtime 过期。** Host 慢启动可能合法超过任何固定时长；属主存活检测在 PID 可读时是精确的。
 
-- **Flock instead of an exclusive-create lock file.** Advisory locks release on process death automatically, but the Windows twin would need a different primitive and the current cross-process story deliberately shares one file-based scheme.
-- **Lock file mtime expiry.** A long host start can legitimately exceed any fixed staleness window; owner liveness is exact where the PID is readable.
+## 影响
 
-## Consequences
+崩溃重启的启动在一个轮询间隔内进入发现阶段，而不是 30 秒。锁文件现在写入换行结尾的 PID 行，`readLockOwner` 防御式解析。手工编辑或损坏的锁内容不会比之前更慢——回退到原有超时行为。
 
-Crash-restart boots reach discovery within one poll interval instead of 30 seconds. A lock file is now written with a trailing newline-terminated PID line, which `readLockOwner` parses defensively. Hand-edited or corrupted lock content never blocks faster than before — it falls back to the previous timeout behavior.
+## 测试
 
-## Testing
-
-`apps/internal/hostlaunch/lock_zombie_test.go` writes a dead-owner lock and asserts `acquireLock` reclaims it with the current PID. The package suite (`go test ./...`) covers lock contention and Host attach paths.
+`apps/internal/hostlaunch/lock_zombie_test.go` 写入死属主锁并断言 `acquireLock` 以当前 PID 回收。包测试套件（`go test ./...`）覆盖锁竞争与 Host 附着路径。

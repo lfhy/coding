@@ -1,34 +1,32 @@
-# Agent Note: Web preview product badge
+# Agent Note: Web 预览版产品徽标
 
 Status: implemented
 Archived: 2026-08-31
 
-English | [中文](2026-08-05-web-preview-product-badge.zh.md)
+## 问题
 
-## Problem
+Web 空状态没有标明产品处于预览版阶段。用户可以在未看到产品尚未正式发布的情况下进入主会话界面；若改用部署设置，则会把面向整个产品的生命周期决策误表述为操作者的选择。
 
-The Web empty state does not identify the product as a preview. Users can enter the main session surface without seeing that the product is pre-release, while a deployment setting would misrepresent a product-wide lifecycle decision as an operator choice.
+## 决策
 
-## Decision
+空状态主视觉区始终在标题下方渲染本地化的 `Preview` / `预览版` 徽标。它没有配置开关：预览状态是所有部署共同的一项产品身份，而不是随部署变化的可调参数。
 
-The empty hero always renders a localized `Preview` / `预览版` badge beneath the headline. It has no configuration switch: preview status is one product identity shared by every deployment, not a deployment-varying tunable.
+徽标沿用 business-tertiary 背景，使两套主题都保留产品蓝的视觉语境；文字则使用主题的 primary label token。这一组合让普通 12px 文字在浅色与暗色主题下都有足够的对比度。business-primary 前景色仅留给较大字号文本或非文本强调元素，因为它在该背景上达不到要求的对比度。
 
-The badge keeps the business-tertiary background so both themes retain the product-blue context, and uses the theme's primary label token for text. That pairing gives ordinary 12px text sufficient contrast in both light and dark themes; the business-primary foreground is reserved for larger or non-text accents because it does not reach the required contrast on this background.
+首个 tagged release 取消仓库的预发布立场时，或归属产品方明确决定预览阶段结束时，产品会移除该徽标。这一改动会同时移除徽标及其 locale key，而不是增加运行时开关。
 
-The badge leaves the product when the first tagged release removes the repository's pre-release stance, or when the owning product decision declares the preview phase complete. That change removes the badge and its locale key together rather than adding a runtime toggle.
+## 曾考虑的替代方案
 
-## Alternatives considered
+**让预览状态可配置。** 不予采纳：同一个预发布产品的两套部署不得展示不同的生命周期身份，配置字段还会把产品发布状态变成一项不受支持的操作者选择。
 
-**Make preview status configurable.** Rejected because two deployments of the same pre-release product must not present different lifecycle identities, and a configuration field would turn product release state into an unsupported operator choice.
+**在 business-tertiary 背景上使用 business-primary 文字。** 不予采纳：由此产生的浅色与暗色主题对比度低于徽标 12px 文字所要求的 4.5:1。
 
-**Use business-primary text on the business-tertiary background.** Rejected because the resulting light- and dark-theme contrast is below the 4.5:1 requirement for the badge's 12px text.
+**在无障碍树中隐藏徽标。** 不予采纳：预览状态是产品信息而非装饰，因此无障碍标题会包含徽标文字。
 
-**Hide the badge from the accessibility tree.** Rejected because preview status is product information rather than decoration; the accessible headline therefore includes the badge text.
+## 后果
 
-## Consequences
+每个新会话都会在视觉与无障碍输出中呈现相同的本地化预览版身份。移除预览状态是一项显式的产品发布改动；徽标保留业务蓝色调背景，同时采用可读的中性色文字，而不是全蓝色处理方案。
 
-Every new session exposes the same localized preview identity in visual and accessibility output. Removing preview status is an explicit product-release edit, and the badge favors readable neutral text over an all-blue treatment while retaining the business-tinted background.
+## 测试
 
-## Testing
-
-The conversation component test covers both localized badge values, and the Web lifecycle snapshots pin the English badge in the assembled empty hero.
+会话组件测试覆盖两个本地化徽标值，Web 生命周期快照则固定组装后空状态主视觉区中的英文徽标。

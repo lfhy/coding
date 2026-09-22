@@ -1,13 +1,11 @@
-# Agent Note: TUI diff card dropped the duplicated file path
+# Agent Note: TUI diff 卡片重复打印文件路径
 
 Status: implemented
 Archived: 2026-07-31
 
-English | [中文](2026-07-27-tui-diff-card-redundant-path-header.zh.md)
-
 ## Problem
 
-The `edit` and `write` tool cards printed the target path twice. Each tool's `presentCall`/`presentResult` returns a diff card whose title is `Edit <path>`/`Write <path>` and whose single `FileDiff` carries the same `path`. The TUI's `diffLines` unconditionally rendered `palette.bold(diff.path)` as a per-file header, so a one-file edit rendered:
+`edit` 与 `write` 工具卡片会把目标路径打印两次。两者的 `presentCall`/`presentResult` 返回的 diff 卡片，标题为 `Edit <path>`/`Write <path>`，而其唯一的 `FileDiff` 又携带相同的 `path`。TUI 的 `diffLines` 无条件地将 `palette.bold(diff.path)` 渲染为每文件的表头，因此单文件编辑会渲染成：
 
 ```
 ✓ Edit src/foo.ts
@@ -16,23 +14,23 @@ src/foo.ts
 + new
 ```
 
-The existing snapshot fixture hid the bug: it titled the edit card `Edit renderer` (no path) and gave the result two diffs, so the title never matched a diff path and the header never looked redundant.
+既有的快照 fixture 掩盖了这个问题：它把编辑卡片标题设为 `Edit renderer`（不含路径），并让结果包含两个 diff，于是标题从未与某个 diff 路径匹配，表头也就不显得冗余。
 
 ## Decision
 
-`diffLines` takes a `showPath` flag; `ToolCardComponent.renderBody` suppresses the per-file header for a diff card when there is exactly one diff and the effective card title (`resultView?.title ?? callView.title`) already contains that diff's path. Multi-file diff cards keep every per-file header. An empty or blank diff path collapses under the same `String.includes` check, which is the intended noise removal.
+`diffLines` 新增 `showPath` 参数；当一个 diff 卡片只有一个 diff、且生效标题（`resultView?.title ?? callView.title`）已包含该 diff 的路径时，`ToolCardComponent.renderBody` 抑制每文件表头。多文件 diff 卡片保留全部每文件表头。空白或空路径同样落入这条 `String.includes` 判定之下，这正是有意去除的噪声。
 
-The suppression lives in the TUI renderer, not in each tool's presenter, because the redundancy is a presentation concern shared by every current and future single-file diff card; the tools keep emitting the path in both the title and the diff so non-TUI consumers still get it.
+抑制逻辑放在 TUI 渲染层，而非各工具的 present 方法中，因为这种冗余是所有当前及未来单文件 diff 卡片共有的展示问题；工具仍在标题和 diff 中同时给出路径，从而非 TUI 消费方依旧能拿到它。
 
 ## Alternatives considered
 
-- Drop the path from the `edit`/`write` card titles. Rejected: the title is the scannable summary line; removing the path weakens it, and it would have to be repeated per tool.
-- Always drop the per-file header. Rejected: multi-file result diffs (and any future multi-file diff card) genuinely need per-file headers.
+- 从 `edit`/`write` 卡片标题中去掉路径。已否决：标题是可快速扫读的摘要行，去掉路径会削弱它，而且需要在每个工具里重复处理。
+- 一律去掉每文件表头。已否决：多文件结果 diff（以及未来任何多文件 diff 卡片）确实需要每文件表头。
 
 ## Consequences
 
-The heuristic is a substring match, so a title that happens to contain a single diff's path suppresses the header even if the match is incidental; for the real producers the title is exactly `Verb <path>`, so this is correct in practice. The snapshot `edit` fixture now mirrors production: one diff whose path the title names, proving the header is dropped, while multi-file header retention is covered by the `tui.spec.ts` `edit` fixture (`a.txt`/`b.txt` under an `Edit files` title).
+该启发式是子串匹配，因此若标题恰好包含某个单一 diff 的路径，即便是偶然匹配也会抑制表头；对真实的产出方而言标题恰为 `Verb <path>`，故在实践中是正确的。快照 `edit` fixture 现在与生产一致：单个 diff，其路径正是标题所命名，从而证明表头被去除；而多文件表头保留由 `tui.spec.ts` 的 `edit` fixture（`Edit files` 标题下的 `a.txt`/`b.txt`）覆盖。
 
 ## Testing
 
-`tui.spec.ts` adds a focused case asserting the path appears exactly once for a single-diff card titled `Edit src/only.ts`. The `advanced-cards-*` keyless snapshots re-recorded to show the title line immediately followed by the diff body with no repeated path header.
+`tui.spec.ts` 新增一个聚焦用例，断言标题为 `Edit src/only.ts` 的单 diff 卡片中路径恰好出现一次。`advanced-cards-*` 无密钥快照已重新录制，展示标题行紧接 diff 正文、不再有重复的路径表头。

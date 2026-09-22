@@ -1,6 +1,0 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-07-14-cross-family-fs-sandbox.md
-2026-07-14-cross-family-fs-sandbox.md: 3f6427950b83c2a2e7fc44374c45f170c9c3e801
-2026-07-14-cross-family-fs-sandbox.zh.md: 3bbe7c1e45921d7e52b66325cc75c4458512c36c

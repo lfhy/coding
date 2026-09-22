@@ -1,31 +1,29 @@
-# Agent Note: GUI Full access risk confirmation
+# Agent Note: GUI Full access 风险确认
 
 Status: implemented
 
-English | [中文](2026-07-31-gui-full-access-confirmation.zh.md)
+## 问题
 
-## Problem
+在 Web 客户端的权限选择器中切换到 `danger-full-access` 只需一次点击，且预设以 Title Case 机器名 `Danger Full Access` 展示。Full access 会减少确认步骤，允许 agent（智能体）执行敏感操作、修改文件或运行外部命令，误点即在毫无刻意确认环节的情况下启用了最危险的预设。
 
-Switching the web client to `danger-full-access` was a single click on a permission picker, with the preset shown as the title-cased machine name `Danger Full Access`. Full access reduces confirmation steps and lets the agent run sensitive operations, modify files, or execute external commands, so an accidental pick armed the most dangerous preset with no deliberate acknowledgement step.
+## 决策
 
-## Decision
+**每个权限选择器都把 `danger-full-access` 关进共享的页面内 `RiskConfirmation` 对话框：启用按钮在用户勾选明确的风险确认复选框前保持禁用；预设采用当前 locale 的产品标签（中文为“完全访问”，英文为 `Full access`）；所有取消路径都不作任何提交。**
 
-**Every permission picker gates `danger-full-access` behind the shared in-page `RiskConfirmation` dialog whose enabling action stays disabled until an explicit acknowledgement checkbox is checked; the preset renders under the locale's product label (`完全访问` in Chinese, `Full access` in English); every dismissal path submits nothing.**
+- `RiskConfirmation`（ui-primitives）是受控的 Modal 组合：标题、说明、确认复选框、取消，以及 `acknowledged` 勾选前禁用的确认按钮。它始终是页面内对话框——Modal portal 到本文档 body，绝不打开可能落在另一块显示器上的原生或独立浏览器窗口。`Modal` 新增 `contentClassName` slot，令警示正文在受限的移动端／横屏视口内滚动，动作行保持固定。
+- composer chip（ui-conversation 的 `PermissionSelect`）在 `/permission` 提交前拦截 Full-access 选择：`confirmation`/`acknowledged` 组件状态打开对话框，确认后经与其他选择完全相同的注入 `command` 通道提交 `/permission danger-full-access`；取消、Escape、关闭与遮罩点击均保持当前预设不变并重置复选框。会话锁定时确认自行撤销（`locked`／值缺席 effect），切换任务时随 `key={sessionId}` 重挂载而重置。文案经标准 `conversation` locale slot 以 `access.confirm.*` 键供给。
+- `/permission` popup（ui-permission 构建于 ui-commands 外壳之上）以数据而非第二套对话框实现完成把关：`SelectOption` 新增可选的 `confirmation` 载荷，popup 控制器拥有 `confirming`/`acknowledged` 状态迁移，`PopupSelectView` 在门控选项未决期间把选择卡换成同一个 `RiskConfirmation`。
+- 「通用」设置中的「权限」行在把 Full access 持久化为后续会话的默认值前，也使用同一个受控 `RiskConfirmation`。警示会明确说明该设置只影响后续会话；取消、Escape、关闭与点击遮罩均不会改动已存默认值。
+- 三个内置预设值都从各界面的 locale 词典渲染：中文使用“只读”“工作区写入”“完全访问”，英文保持 `Read Only`、`Workspace Write`、`Full access`。host 显式提供的非标准标签仍有最高优先级，未知 kebab-case 名称继续回退为 Title Case；命令与 Settings 写入在 wire 上保留机器名，警示文案保持中英文 locale 感知。
 
-- `RiskConfirmation` (ui-primitives) is a controlled Modal composition: title, description, acknowledgement checkbox, cancel, and a confirm button disabled until `acknowledged`. It stays an in-page dialog — the Modal portals to this document's body and never opens a native or separate browser window that could land on another display. `Modal` gains a `contentClassName` seat so the warning body scrolls inside constrained mobile/landscape viewports while the action row stays fixed.
-- The composer chip (`PermissionSelect`, ui-conversation) intercepts a Full-access pick before the `/permission` submit: `confirmation`/`acknowledged` component state opens the dialog, confirm submits `/permission danger-full-access` through the same injected `command` path as every other pick, and cancel/Escape/close/mask leave the current preset untouched with the checkbox reset. The confirmation revokes itself when the session locks (`locked`/value-absent effect) and resets across task switches (`key={sessionId}` remount). Copy rides the standard `conversation` locale seat as `access.confirm.*` keys.
-- The `/permission` popup (ui-permission over the ui-commands shell) gates through data, not a second dialog implementation: `SelectOption` grows an optional `confirmation` payload, the popup controller owns the `confirming`/`acknowledged` state transitions, and `PopupSelectView` swaps the picker card for the same `RiskConfirmation` while a gated option is pending.
-- The General-settings Permission row uses the same controlled `RiskConfirmation` before persisting Full access as the default for later sessions. Its warning names that future-session lifetime; cancel, Escape, close, and mask dismissal leave the stored default untouched.
-- All three built-in preset values render from each surface's locale dictionary: Chinese uses `只读`, `工作区写入`, and `完全访问`; English retains `Read Only`, `Workspace Write`, and `Full access`. An explicit nonstandard host label remains authoritative, unknown kebab-case names retain the title-case fallback, command and Settings writes keep machine names on the wire, and warning copy remains locale-aware.
+## 考虑过的替代方案
 
-## Alternatives considered
+**原生／操作系统或独立窗口确认。** 已拒：对话框必须留在当前 WebUI 窗口内；第二个窗口可能出现在另一块显示器上，使决策脱离其守护的页面状态。
 
-**A native/OS or separate-window confirmation.** Rejected: the dialog must stay inside the current WebUI window; a second window can appear on another display and detaches the decision from the page state it guards.
+**每个界面的安全文案共享一个 locale namespace。**不予采用：ui-permission bundle 与 ui-conversation 可独立加载，而 Settings 警示说明的是另一种只影响后续会话的生效周期。每个 bundle 各自拥有文案，ui-permission 也将 popup 与 Settings 词典分开，而非跨 bundle 边界 import。
 
-**One shared locale namespace for every surface's safety copy.** Rejected: the ui-permission bundle and ui-conversation load independently, while the Settings warning names a different future-session lifetime. Each bundle owns its copy, and ui-permission keeps the popup and Settings dictionaries separate rather than importing across bundle boundaries.
+**在 host／权限后端把关。** 设计上即出界：本变更只涉浏览器客户端确认流；后端权限语义、默认值与更安全预设的一键行为均不变。
 
-**Gating in the host/permission backend.** Out of scope by design: the change is browser-client confirmation flow only; backend permission semantics, defaults, and the safer presets' one-click behavior are unchanged.
+## 后果
 
-## Consequences
-
-Every visible GUI path into Full access requires a deliberate, informed acknowledgement, at the cost of one extra dialog step for users who genuinely want the preset. New pickers reuse the shared dialog through their owning state machine or attach a `confirmation` payload to the popup path. Acceptance: the composer flow's gated cases in `input-bar.spec.tsx`, the popup gate in `popup-view.spec.tsx` and `popup.spec.ts`, the default-setting gate in `permission-row.spec.tsx`, the Modal/RiskConfirmation contract in `atoms.spec.tsx`, and the assembled Web replays.
+进入 Full access 的每条可见 GUI 路径现在都要求刻意且知情的确认，代价是真想启用该预设的用户多一步对话框。新的选择器通过各自拥有的状态机复用共享对话框，或在 popup 路径挂 `confirmation` 载荷。验收：`input-bar.spec.tsx` 中编辑器流的门控用例、`popup-view.spec.tsx` 与 `popup.spec.ts` 的 popup 门、`permission-row.spec.tsx` 的默认设置门控、`atoms.spec.tsx` 的 Modal/RiskConfirmation 约定，以及组装态 Web 回放。

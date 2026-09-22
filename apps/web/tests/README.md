@@ -1,46 +1,35 @@
-# apps/web browser e2e
+# apps/web 浏览器 e2e
 
-English | [中文](README.zh.md)
+这些测试在进程内启动真实的 web 组合，并用真实 Chromium 通过真实 HTTP 驱动它。该 lane
+的运行机制——模式、fixture、golden，以及与 `dsh web` 之间刻意保留的组合差异——记录在
+[`scaffold.ts`](scaffold.ts) 和
+[浏览器 e2e Agent Note](../../../.agents/notes/implemented/testing/2026-07-24-web-gui-browser-e2e-lane.md)中。
 
-These tests boot the real web composition in-process and drive it with a real
-Chromium over real HTTP. The lane's mechanics — modes, fixtures, goldens, and
-the deliberate composition divergences from `dsh web` — are documented in
-[`scaffold.ts`](scaffold.ts) and the
-[browser e2e Agent Note](../../../.agents/notes/implemented/testing/2026-07-24-web-gui-browser-e2e-lane.md).
+## 这些是 Host 面的测试
 
-## These are Host-face tests
+它们在根 `tsconfig.host.json` 中做类型检查，而不在 Client aggregate 中，因为它们直接读取
+Host 服务：`ctx.apiProxy`、Host 侧 `SessionStore`、`ctx.sessionProjectionCache`。运行时驱动
+浏览器并不使一个文件成为 Client 程序的一部分——两个 face 在相同的键上以不同服务合并 cordis
+`Context`，因此单个程序无法同时看见两者。把这些文件挪进 Client aggregate 会让每一处
+Host 服务访问都无法编译。
 
-They type-check in the root `tsconfig.host.json`, not in the Client aggregate,
-because they read Host services directly: `ctx.apiProxy`, the Host
-`SessionStore`, `ctx.sessionProjectionCache`. Driving a browser at runtime does
-not make a file part of the Client program — the two faces merge cordis
-`Context` under the same keys with different services, so one program cannot see
-both. Moving these files into the Client aggregate makes every Host-service
-access fail to compile.
+## 不要在此 import `@deepseek-ai/dsh-client-*`
 
-## Do not import `@deepseek-ai/dsh-client-*` here
+import 一个 Client 包——无论值还是类型——都会把它整个 TypeScript 工程、以及它引用的每个工程
+拉进 **Host 构建图**。这已经坑过本 lane 一次：四个 Client 消费方包引用了 `api/remotes` 的
+Client face，而该 face 必须等 Host tsdown 生成 `@deepseek-ai/dsh-goal/remote` 之后才能编译，
+于是 Host 构建阶段变成在等一个由它自己产出的产物。
 
-Importing a Client package — a value or a type — pulls its whole TypeScript
-project, and every project it references, into the **Host build graph**. That has
-bitten this lane once already: four Client consumer packages reference
-`api/remotes`' Client face, which cannot compile until Host tsdown has generated
-`@deepseek-ai/dsh-goal/remote`, so the Host build phase ended up waiting on an
-artifact it produces itself.
+当某个场景需要 Client 持有的常量或纯函数时，改为在此处镜像一份，并紧挨着一条注释掉的
+import 点明源模块。这样漂移会表现为选择器未命中或镜像值过期——是响亮的失败，绝不会是静默
+通过。`scaffold.ts` 按此规则镜像欢迎声明的 namespace、确认字段、版本和被断言的中文文案。
 
-When a scenario needs a Client-owned constant or pure function, mirror it here
-instead, next to the commented-out import that names the source module. A drift
-then surfaces as a missed selector or a stale mirrored value — a loud failure,
-never a silent pass. `scaffold.ts` follows this rule for the welcome-notice
-namespace, acknowledgement field, version, and asserted Chinese copy.
+有两类 Client import 是长期成立的。`assembled-boot.ts` 驱动 shell 本身，因此它从
+`@deepseek-ai/dsh-client-web` import `AppWebEntry`、从
+`@deepseek-ai/dsh-client-modules/client` import boot manifest 类型：启动真实 shell 正是该
+harness 的用途，且这两个包本来就在 Host 图中。另外，chat 场景从
+`@deepseek-ai/dsh-client-runtime/client` import `conversationContextKey`，因为
+`client/runtime` 经未拆分的 `directory-picker` 包可达，且不会再牵入别的东西。这种可达性是
+偶然而非保证——一旦它离开该图，就像其余情形那样镜像该 helper。
 
-Two kinds of Client import stand. `assembled-boot.ts` drives the shell itself, so
-it imports `AppWebEntry` from `@deepseek-ai/dsh-client-web` and the boot-manifest
-type from `@deepseek-ai/dsh-client-modules/client`: booting the real shell is what
-that harness is for, and both packages are already in the Host graph. Separately,
-the chat scenarios import `conversationContextKey` from
-`@deepseek-ai/dsh-client-runtime/client` because `client/runtime` is reachable
-through the unsplit `directory-picker` packages and pulls nothing further in.
-That reachability is incidental, not a guarantee — if it ever leaves the graph,
-mirror the helper like the rest.
-
-Nothing mechanically enforces this rule; keep it in review.
+没有任何机制强制这条规则；靠 review 守住它。

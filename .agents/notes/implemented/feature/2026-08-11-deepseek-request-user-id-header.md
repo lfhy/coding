@@ -1,44 +1,42 @@
-# Agent Note: DeepSeek request user and session identity headers
+# Agent Note: DeepSeek 请求用户与会话身份头部
 
 Status: implemented
 
-English | [中文](2026-08-11-deepseek-request-user-id-header.zh.md)
+## 问题
 
-## Problem
+当调用方提供 `GenerateOptions.sessionId` 时，直连 DeepSeek 请求已携带 `x-deepseek-harness-session-id`，让提供方侧支持与诊断可以关联同一对话中的多个轮次。但请求缺少跨会话的稳定身份，而 harness 已为遥测与反馈持久化匿名用户 id。另行生成 id 会破坏关联；把它放进提供方无关的归属辅助函数，则会让每个 HTTP 适配器都发送稳定的逐用户标识。
 
-Direct DeepSeek requests already carried `x-deepseek-harness-session-id` when the caller supplied `GenerateOptions.sessionId`, which lets provider-side support and diagnostics correlate turns within one conversation. They lacked a stable identity across sessions even though the harness already persists an anonymous user id for telemetry and feedback. A separate id would break correlation, while putting it in the provider-neutral attribution helper would send a stable per-user identifier through every HTTP adapter.
+用户 id 是传输元数据，不是模型输入。它不得进入请求体、提示词、token 计量、KV cache 身份或会话日志。发送目标是适配器解析后的 `baseURL`，既可能是 DeepSeek 自身，也可能是配置的网关，因此必须明确隐私边界。
 
-The user id is transport metadata, not model input. It must not enter the request body, prompt, token accounting, KV-cache identity, or session log. The destination is the adapter's resolved `baseURL`, which can be DeepSeek itself or a configured gateway, so the privacy boundary must be explicit.
+## 决策
 
-## Decision
+`dsh-llm-deepseek` 在凭据解析成功后发出的每个提供方请求上发送 `x-deepseek-harness-user-id`。该值来自 `@deepseek-ai/dsh-anonymous-user-id`，因此与同一 `$DSH_HOME` 的 OpenTelemetry Resource `user.id` 及 `/feedback` 确认一致。适配器继续仅在存在 `GenerateOptions.sessionId` 时发送 `x-deepseek-harness-session-id`；普通 agent、标题生成与压缩请求由 agent loop 提供当前持久化 `Session.id`。
 
-`dsh-llm-deepseek` sends `x-deepseek-harness-user-id` on every provider request sent after successful credential resolution. The value comes from `@deepseek-ai/dsh-anonymous-user-id` and therefore matches the OpenTelemetry Resource `user.id` and `/feedback` acknowledgement for the same `$DSH_HOME`. The adapter continues to send `x-deepseek-harness-session-id` only when `GenerateOptions.sessionId` is present; the agent loop supplies the current durable `Session.id` for ordinary agent, title-generation, and compaction requests.
+插件在凭据解析成功后惰性获取用户 id，并在该插件实例内缓存。缺少凭据不会创建 `.anonymous-user-id`；即使设置了 `DSH_TELEMETRY_DISABLED`，首个已授权的提供方请求仍可能创建它。直连适配器构造函数接收 `resolveUserId` 依赖，使线路行为可在单元测试中保持确定性。
 
-The plugin resolves the user id lazily after credentials succeed and memoizes it for that plugin instance. A missing credential therefore does not create `.anonymous-user-id`, while the first authorized provider request can create it even when `DSH_TELEMETRY_DISABLED` is set. The direct adapter constructor accepts a `resolveUserId` dependency so wire behavior remains deterministic in unit tests.
+两个头部都是发送到解析后 `baseURL` 的模型不可见 HTTP 元数据。它们不在 JSON 请求体中，也不会成为模型可见输入或会话事件。配置的网关会收到它们。遥测共享只控制遥测导出，不会禁用提供方请求身份。
 
-Both headers are model-hidden HTTP metadata sent to the resolved `baseURL`. They are absent from the JSON request body and do not become model-visible inputs or session events. A configured gateway receives them. SessionTelemetryBackend sharing controls only telemetry export and does not disable provider request identity.
+## 验证
 
-## Verification
+- mock 提供方断言已授权请求携带 `getOrCreateAnonymousUserId()` 返回的同一用户 id，并在未提供会话 id 时省略会话头部。
+- 会话身份线路测试断言两个头部都存在，并原样保留传入的会话 id。
+- 直连适配器测试断言每条 stream 仅解析一次用户 id，keyless 配置测试则证明凭据失败不会创建 `.anonymous-user-id`。
+- 真实 Loader 组合测试断言组装后的插件使用共享 user-id 包，而非测试专用值。
+- 无需修改 keyless snapshot，因为这些头部不是模型可见或用户可见的 transcript 内容。
 
-- The mock provider asserts that an authorized request carries the same user id returned by `getOrCreateAnonymousUserId()` and omits the session header when no session id is supplied.
-- The session-identity wire test asserts both headers and preserves the exact supplied session id.
-- A direct-adapter test asserts that user-id resolution happens once per stream, while the keyless configuration test proves a credential failure does not create `.anonymous-user-id`.
-- The real Loader composition test asserts that the assembled plugin uses the shared user-id package rather than a test-only value.
-- No keyless snapshot changes because the headers are not model-visible or user-visible transcript content.
+## 考虑过的替代方案
 
-## Alternatives considered
-
-| Rejected | Reason |
+| 已否决 | 原因 |
 |---|---|
-| Add the id to generic `attributionHeaders()` | That helper is provider-neutral and static; a per-user value there would reach unrelated providers and violate its app-identity privacy contract |
-| Configure a fixed custom header in `cordis.yml` | Deployment configuration cannot derive the current session id and would expose a stable identity as mutable config instead of using its owning runtime contract |
-| Mint a DeepSeek-specific user id | Provider requests could not correlate with telemetry and feedback for the same harness home |
-| Disable the header with telemetry sharing | Provider request identity and telemetry export have different recipients and purposes; one switch would hide the actual privacy boundary |
-| Put the id in OpenAI-compatible `user` or `metadata` request fields | Body fields can affect provider schema, logging, caching, tokenization, or model-visible reconstruction; HTTP metadata preserves the intended boundary |
+| 把 id 加进通用 `attributionHeaders()` | 该辅助函数是提供方无关且静态的；加入逐用户值会把它发送给无关提供方，并违反其应用身份隐私契约 |
+| 在 `cordis.yml` 中配置固定自定义头部 | 部署配置无法推导当前会话 id，且会把稳定身份暴露为可变配置，而不是使用其所属运行时契约 |
+| 生成 DeepSeek 专用用户 id | 提供方请求将无法与同一 harness home 的遥测和反馈关联 |
+| 随遥测共享关闭该头部 | 提供方请求身份与遥测导出的接收方和目的不同；共用开关会掩盖真实隐私边界 |
+| 把 id 放进 OpenAI 兼容的 `user` 或 `metadata` 请求字段 | body 字段可能影响提供方 schema、日志、缓存、token 化或模型可见重建；HTTP 元数据可保留预期边界 |
 
-## Consequences
+## 后果
 
-- DeepSeek support can correlate requests across sessions by one anonymous harness-home id and within a conversation by the durable session id.
-- The first authorized DeepSeek request may create `$DSH_HOME/.anonymous-user-id` independently of telemetry export.
-- Custom DeepSeek gateways receive the stable user id and any available session id, so operators must treat the configured `baseURL` as an identity recipient.
-- The request body, prompt, token count, KV-cache identity, and session log remain unchanged.
+- DeepSeek 支持可以通过一个匿名 harness-home id 跨会话关联请求，并通过持久化 session id 关联同一对话。
+- 首个已授权 DeepSeek 请求可独立于遥测导出创建 `$DSH_HOME/.anonymous-user-id`。
+- 自定义 DeepSeek 网关会收到稳定用户 id 与可用的会话 id，因此运维方必须将配置的 `baseURL` 视为身份接收方。
+- 请求体、提示词、token 数、KV cache 身份和会话日志保持不变。

@@ -1,49 +1,47 @@
-# Agent Note: Remove the stdio and Echo agents
+# Agent Note: 移除 stdio 和 Echo agent
 
 Status: implemented
 
-English | [中文](2026-07-20-remove-stdio-and-echo-agents.zh.md)
+## 问题
 
-## Problem
+DeepSeek Harness 在 TUI 和 Headless coding agent 之外，还提供了两个重复的产品 agent（智能体）。面向行的 stdio agent 使用混合的提示符/输出协议，同时重复实现终端交互与非交互执行。Echo 则以无需联网的 mock 模型加一个教学工具重复实现 Headless，把测试 fixture（测试前置数据）变成面向用户的 agent 和默认快速上手路径。
 
-DeepSeek Harness exposed two redundant product agents beside the TUI and Headless coding agents. The line-oriented stdio agent duplicated terminal interaction and non-interactive execution with a mixed prompt/output protocol. Echo duplicated Headless as a network-free mock model plus one teaching tool, making a test fixture into a user-facing agent and the default quick-start path.
+两个 agent 的配套实现都不止叶节点配置。stdio 拥有 UI 插件、app 包（package）、SDK 接口、REPL 叶节点、提示符协议和 Loader 测试。Echo 拥有可运行命令、mock 适配器、工具、CI 演示门禁、图谱条目、教学引用和共享测试 fixture。保留其中任何产品路径，都会间接保留这个重复的 agent。
 
-Both agents carried support surfaces beyond their leaf configurations. Stdio owned a UI plugin, app package, SDK interface, REPL leaf, prompt protocol, and Loader tests. Echo owned a runnable command, mock adapter, tool, CI demo gate, graph entry, teaching references, and a shared test fixture. Keeping any of those product paths would preserve the redundant agent indirectly.
+标准输入输出仍是 ACP、JSON-RPC、MCP 和子进程的协议边界。确定性模型适配器也仍可用于测试。这些机制不足以成为保留面向行或仅使用 mock 的产品 agent 的理由。
 
-Standard input and output remain protocol boundaries for ACP, JSON-RPC, MCP, and child processes. Deterministic model adapters also remain valid inside tests. Those mechanisms do not justify a line-oriented or mock-only product agent.
+## 决策
 
-## Decision
+彻底移除 stdio 和 Echo agent，不提供兼容包、模式、命令或别名。删除 stdio UI 包与 app 包、`examples/repl-agent`、`examples/echo-agent`、`demo:repl`、`demo:echo`、各自的专属测试，以及相关的 manifest（元数据清单）、门禁、图谱和文档条目。
 
-The stdio and Echo agents are removed without compatibility packages, modes, commands, or aliases. The stdio UI and app packages, `examples/repl-agent`, `examples/echo-agent`, `demo:repl`, `demo:echo`, their dedicated tests, and supporting manifests, gates, graphs, and documentation entries are deleted.
+保留的应用角色均有明确归属：
 
-The remaining application roles are explicit:
+- `@deepseek-ai/dsh-tui` 负责终端交互式执行。它会在 Loader 启动前拒绝非 TTY 流；`apps/cli/config/base.cordis.yml` 与 `tui.cordis.yml` overlay 拥有完整 coding 组装，PTY 与终端快照覆盖则位于 `apps/cli/tests/`。
+- [`dsh --profile headless`](../../../../apps/cli/README.md) 负责非交互式执行。其 `headless` profile 是产品组装；`examples/headless-agent` 负责回放快照、通用真实 agent 测试套件和未导出的无密钥 Loader driver。
+- [`@deepseek-ai/dsh-acp-demo`](../../../../packages/examples/acp-demo/README.md) 和 `@deepseek-ai/dsh-sdk-jsonrpc-server` 负责各自的分帧协议集成。
 
-- `@deepseek-ai/dsh-tui` owns terminal-interactive execution. It rejects non-TTY streams before Loader boot; `apps/cli/config/base.cordis.yml` plus the `tui.cordis.yml` overlay own the complete coding composition, with PTY plus terminal-snapshot coverage in `apps/cli/tests/`.
-- [`dsh --profile headless`](../../../../apps/cli/README.md) owns non-interactive execution. Its `headless` profile is the product composition; `examples/headless-agent` owns replay snapshots, generic real-agent suites, and an unexported keyless Loader driver.
-- [`@deepseek-ai/dsh-acp-demo`](../../../../packages/examples/acp-demo/README.md) and `@deepseek-ai/dsh-sdk-jsonrpc-server` own their framed protocol integrations.
+承载 `stdio` 运行接口选项的 SDK 项目模型已由 [SDK 项目工具链移除决策](2026-08-11-remove-sdk-project-toolchain.md)删除。仓库中的演示文档要求 DeepSeek API key，并优先引导到当前可运行的产品。
 
-The SDK project model that carried the `stdio` run-interface option is deleted by the [SDK project toolchain removal](2026-08-11-remove-sdk-project-toolchain.md). Repository-facing demo documentation requires a DeepSeek API key and leads with a current runnable product.
+无密钥验证由测试负责。Headless Loader 冒烟测试使用 fixture 适配器验证真实工具往返；`dsh` built-bin 测试套件固定已发布的一次性入口和输出；产品 Headless 快照固定持久化；Headless PTY 关闭 e2e 固定信号升级。各包专属的 Loader 测试则将确定性适配器放在对应场景旁。其中任何一项都不会作为可运行的 mock agent 对外暴露。
 
-Keyless validation is test-owned. The Headless Loader smoke uses a fixture adapter to exercise a real tool round trip, the `dsh` built-bin suite pins the published one-shot entry and output, the product Headless snapshot pins persistence, and the Headless PTY shutdown e2e pins signal escalation. Package-specific Loader tests keep deterministic adapters beside their scenarios. None is exposed as a runnable mock agent.
+## 验证
 
-## Verification
+TUI 与 Headless 的 Loader 覆盖以源码和构建产物两种模式运行真实 app 包。由 PTY 驱动的子进程覆盖仅用于 TUI 生命周期；其他入口冒烟测试使用单次管道协议。Headless 验证任务/结果约定和工具调用约定。生成图谱与仓库搜索会拒绝陈旧的包、命令、叶节点、SDK 接口、`createStdioChat` 和 `StdioRuntime` 引用。
 
-TUI and Headless Loader coverage run the real app packages in source and built modes. PTY-driven subprocess coverage is reserved for the TUI lifecycle; other entry-point smokes use the one-shot pipe protocol. Headless proves its task/result and tool-call contracts. Generated graphs and repository searches reject stale package, command, leaf, SDK-interface, `createStdioChat`, and `StdioRuntime` references.
+构建后的 `dsh` 可执行文件会在 Loader 启动前拒绝通过管道启动 TUI，并指向 `dsh --profile headless`；`apps/cli/tests/built-bin.e2e.ts` 在普通 Node 下固定产品的一次性入口，包括输出和无效参数。`examples/headless-agent/tests/headless.snapshot.ts` 固定产品持久化，`apps/cli/tests/headless-shutdown.e2e.ts` 则负责有界信号升级。headless 示例仅供测试的 JSONL driver 保留组装后的规范事件快照，而不会创建第二套 CLI（命令行界面）约定。Code Mode 由程序化 TUI 快照与 ACP overlay demo 覆盖。时间上下文集成通过显式的 Headless 测试组装执行两个有序轮次，而更细粒度的耗时行为由时间上下文的包级测试负责。
 
-The built `dsh` bin rejects a piped TUI launch before Loader boot and points at `dsh --profile headless`; `apps/cli/tests/built-bin.e2e.ts` pins the product one-shot entry under plain Node, including output and invalid arguments. `examples/headless-agent/tests/headless.snapshot.ts` pins product persistence, while `apps/cli/tests/headless-shutdown.e2e.ts` owns bounded signal escalation. The headless example's test-only JSONL driver preserves assembled canonical-event snapshots without creating a second CLI contract. Code Mode has programmatic TUI snapshots and an ACP overlay demo. Time-context integration uses the explicit Headless test composition for two ordered turns, while its package tests own finer elapsed-time behavior.
+## 曾考虑的替代方案
 
-## Alternatives considered
+- **仅为 pipe 保留面向行 agent**：不予采纳，因为 Headless 已提供有界任务约定、格式纯净的 stdout、持久完成边界和进程退出状态。
+- **将 readline helper 作为包保留、折叠或提升**：不予采纳，因为它只有一个 app 消费方，并不存在可独立替换的约定。将它折叠进 stdio app 虽然移除了没有正当理由的支撑包边界，却仍保留了重复产品；将来要重新引入这个包，独立的面向行 UI 必须先有真正的第二个消费方。
+- **保留 Echo 作为无密钥快速上手路径**：不予采纳，因为首次产品体验应使用真实模型和受支持的 coding agent，而不是带专用工具的脚本化适配器。
+- **只为 CI 演示命令保留 Echo**：不予采纳，因为由测试持有的 Headless fixture 可以覆盖相同的 Loader 和构建产物边界，无需保留 mock 产品叶节点。
+- **移除所有 stdio 或 mock 机制**：不予采纳，因为分帧协议、进程 I/O 和确定性测试适配器是独立基础设施，并不是被移除的 agent。
 
-- **Keep the line agent only for pipes** — rejected because Headless has a bounded task contract, format-pure stdout, durable completion, and process exit status.
-- **Keep, fold, or promote the readline helper as a package** — rejected because it had one app consumer and no independently swappable contract. Folding it into the stdio app removed an unjustified support-package boundary but still retained the redundant product; a future standalone line UI needs a real second consumer before reintroducing that package.
-- **Keep Echo as the keyless quick start** — rejected because the first product experience should exercise the real model and supported coding agent, not a scripted adapter with a bespoke tool.
-- **Keep Echo only as a CI demo command** — rejected because test-owned Headless fixtures cover the same Loader and built-artifact boundaries without preserving a mock product leaf.
-- **Remove every stdio or mock mechanism** — rejected because framed protocols, process I/O, and deterministic test adapters are independent infrastructure, not the removed agents.
+## 后果
 
-## Consequences
-
-- Interactive and non-interactive product execution each have one owner and one runnable coding leaf.
-- The repository has no keyless user-facing agent demo; local agent demos require `DEEPSEEK_API_KEY`.
-- CI retains keyless real-entry coverage through test fixtures rather than a product command.
-- Existing stdio-agent configurations and Echo commands fail instead of being translated.
-- Piped multi-turn interaction in one process and the readline provider for non-TTY `ask_user_question` are intentionally gone; resume covers durable multi-turn work, and a non-TTY composition must supply its own interaction provider.
+- 交互式与非交互式产品执行分别只有一个归属方和一个可运行的 coding 叶节点。
+- 仓库没有面向用户的无密钥 agent 演示；本地 agent 演示需要 `DEEPSEEK_API_KEY`。
+- CI 通过测试 fixture 保留针对真实入口的无密钥覆盖，而不是依赖产品命令。
+- 既有 stdio agent 配置和 Echo 命令会直接失败，不会被转换。
+- 有意移除了单进程内基于管道的多轮交互，以及面向非 TTY `ask_user_question` 的 readline 提供方；恢复会话可以满足持久多轮工作，非 TTY 组装则必须自行提供交互提供方。

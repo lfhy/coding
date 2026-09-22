@@ -1,30 +1,28 @@
-# Agent Note: TUI generic-card Markdown rendering
+# Agent Note: TUI 通用卡片的 Markdown 渲染
 
 Status: implemented
 Archived: 2026-08-04
 
-English | [中文](2026-07-23-tui-generic-card-markdown.zh.md)
-
 ## Problem
 
-Tool presenters can put Markdown in generic-card content, including fenced `console` output used for background-task acknowledgements and execution errors. Rendering that content as plain text exposes the fence markers and diverges from assistant and user content in the same transcript.
+工具展示器可以在通用卡片（generic card）内容中写入 Markdown，其中包括用于后台任务确认和执行错误的围栏 `console` 输出。把这些内容按纯文本渲染会暴露围栏标记，并与同一 transcript（文本记录）中的助手内容和用户内容显示不一致。
 
 ## Decision
 
-The TUI renders generic-card result content with its shared Markdown theme before applying the card's head-and-tail line limit. Terminal and diff cards retain their specialized plain-text renderers, and generic-card raw input remains literal because it represents tool arguments rather than presenter-authored prose.
+TUI 先用共享的 Markdown 主题渲染通用卡片的结果内容，再应用卡片的头尾行数限制。终端卡片和 diff 卡片保留各自专门的纯文本渲染器；通用卡片的原始输入仍按字面显示，因为它代表的是工具参数，而非展示器撰写的行文。
 
-The shared theme hides fence syntax, retains the optional language label, and colors the fenced body as code. Rendering precedes truncation so collapsed-card line counts and boundaries describe the visible terminal rows rather than Markdown source rows.
+共享主题隐藏围栏语法，保留可选的语言标签，并将围栏正文按代码配色。渲染先于截断执行，因此收起状态卡片的行数和边界描述的是可见的终端行，而非 Markdown 源文本行。
 
 ## Alternatives considered
 
-**Strip fences in the Bash presenter.** This would fix one producer while leaving generic-card Markdown from other tools unrendered and would make the presenter depend on TUI behavior.
+**在 Bash 展示器中剥除围栏。**这只修复一个生产方，其他工具产生的通用卡片 Markdown 仍不会被渲染，还会让展示器依赖 TUI 的行为。
 
-**Render every tool card as Markdown.** Terminal output and diffs have dedicated formatting and may contain Markdown punctuation that must remain literal.
+**把每种工具卡片都按 Markdown 渲染。**终端输出和 diff 有专门的格式，且可能包含必须保持字面显示的 Markdown 标点。
 
-**Apply the collapsed-card limit before Markdown rendering.** Source-line truncation can split a fenced block and makes the visible line count differ from the count used by the card.
+**在 Markdown 渲染之前应用收起状态卡片的行数限制。**按源文本行截断可能从中间截断围栏块，还会让可见行数与卡片使用的行数不一致。
 
 ## Consequences
 
-Generic tool cards use the same Markdown vocabulary and sanitization path as conversation content. Markdown punctuation in a generic card is interpreted rather than always displayed literally; tools that require literal terminal output use the terminal card intent.
+通用工具卡片与对话内容使用同一套 Markdown 词汇和净化路径。通用卡片中的 Markdown 标点会被解释，而不再总是按字面显示；需要字面终端输出的工具使用终端卡片这一渲染意图。
 
-The focused TUI test pins hidden fences, retained language labels, and body text. The keyless terminal-state snapshot covers the behavior through an assembled TUI transcript.
+聚焦的 TUI 测试固定了隐藏的围栏、保留的语言标签和正文文本。无密钥的终端状态快照通过组装后的 TUI transcript 覆盖该行为。

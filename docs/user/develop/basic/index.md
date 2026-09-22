@@ -1,20 +1,18 @@
-# Your first plugin
+# 第一个插件
 
-English | [中文](index.zh.md)
+本教程会创建一个最小的 Harness 插件，并将其加载到 Web UI 中。请从已完成[从源码运行路径](../../../../README.md#run-from-source)的仓库检出开始。
 
-This tutorial creates a minimal Harness plugin and loads it into the Web UI. Start from a repository checkout that has completed the [run-from-source path](../../../../README.md#run-from-source).
+## 创建本地项目
 
-## Create a local project
-
-From the repository root, create a scratch project for the tutorial:
+在仓库根目录创建本教程使用的临时项目：
 
 ```sh
 mkdir -p scratch-plugin/src
 ```
 
-## What is a plugin?
+## 插件是什么
 
-In Harness, a plugin is a TypeScript module that exports an `apply` function. The framework calls `apply` when loading the plugin and passes a `ctx` context object through which the plugin registers capabilities:
+在 Harness 中，插件是一个导出 `apply` 函数的 TypeScript 模块。框架在加载时调用 `apply`，传入一个 `ctx`（上下文对象），你通过 `ctx` 注册能力：
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
@@ -26,11 +24,11 @@ export function apply(ctx: Context) {
 }
 ```
 
-That is the complete configuration.
+这就是完整配置。
 
-## Create the plugin file
+## 创建插件文件
 
-Create `scratch-plugin/src/my-plugin.ts`:
+创建 `scratch-plugin/src/my-plugin.ts`：
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
@@ -43,9 +41,9 @@ export function apply(ctx: Context) {
 }
 ```
 
-## Register it in cordis.yml
+## 注册到 cordis.yml
 
-Run `pwd` from the repository root, then create `scratch-plugin/cordis.yml` as a Web overlay that inserts the local plugin. Replace `/absolute/path/to/deepseek-harness` below with the printed path:
+在仓库根目录运行 `pwd`，然后创建 `scratch-plugin/cordis.yml`，作为插入本地插件的 Web 覆盖层。请将下文的 `/absolute/path/to/deepseek-harness` 替换为命令打印的路径：
 
 ```yaml
 - insert:
@@ -53,21 +51,21 @@ Run `pwd` from the repository root, then create `scratch-plugin/cordis.yml` as a
       name: '/absolute/path/to/deepseek-harness/scratch-plugin/src/my-plugin.ts'
 ```
 
-The plugin path must be absolute. A patch file contributes configuration but does not change the profile directory from which the loader resolves module paths.
+插件路径必须是绝对路径。patch 文件只贡献配置，不会改变 loader 解析模块路径时使用的 profile 目录。
 
-Start the Web UI with that overlay:
+使用该覆盖层启动 Web UI：
 
 ```sh
 pnpm dsh web --patch ./scratch-plugin/cordis.yml
 ```
 
-Open `http://127.0.0.1:3080`. The terminal prints `[hello-plugin] plugin loaded!` during startup.
+打开 `http://127.0.0.1:3080`。启动期间，终端会打印 `[hello-plugin] plugin loaded!`。
 
-## Automatic cleanup
+## 自动清理
 
-Anything registered through `ctx`—event listeners, tools, or timers—is cleaned up when the plugin unloads. You do not need to call removeListener or clearInterval manually.
+通过 `ctx` 注册的任何东西——事件监听、工具、定时器——在插件卸载时都会被自动清理。你不需要手动 removeListener 或 clearInterval。
 
-For a resource that needs explicit cleanup, such as a network connection, use `ctx.effect()` to provide its disposer:
+如果你有需要手动清理的资源（比如一个网络连接），用 `ctx.effect()` 告诉框架怎么清理：
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
@@ -84,9 +82,9 @@ export function apply(ctx: Context) {
 }
 ```
 
-## Declare dependencies
+## 声明依赖
 
-If the plugin consumes another service such as `tools` or `llm`, declare it in `inject`:
+如果你的插件需要使用其他服务（如 `tools`、`llm`），需要声明 `inject`：
 
 ```ts ignore-check
 import type { Context } from '@deepseek-ai/cordis'
@@ -100,13 +98,13 @@ export function apply(ctx: Context) {
 }
 ```
 
-The framework waits for every required service before loading the plugin.
+框架会确保依赖的服务就绪后才加载你的插件。
 
-## Three plugin forms
+## 插件的三种形态
 
-In addition to a function module, a plugin can use object or class form.
+除了函数形式，插件还支持对象形式和类形式：
 
-### Object form
+### 对象形式
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
@@ -120,7 +118,7 @@ export default {
 }
 ```
 
-### Class form
+### 类形式
 
 ```ts
 import { Service, type Context } from '@deepseek-ai/cordis'
@@ -135,10 +133,10 @@ export default class MyService extends Service {
 }
 ```
 
-Function form is sufficient in most cases. Use class form when the plugin provides a service to other plugins; see [services and dependencies](../framework/service.md).
+大多数情况下，函数形式足够了。当插件需要向其他插件提供服务时，可使用类形式（见 [服务与依赖](../framework/service.md)）。
 
-## Next steps
+## 下一步
 
-- [Build a tool](./tool.md) — learn the tool definition DSL
-- [Plugin configuration](./config.md) — accept user configuration
-- [Cordis tutorial](../../../cordis-tutorial/index.md) — the plugin framework underneath, built from a scratch directory with no API key
+- [开发一个工具](./tool.md) — 了解工具定义 DSL
+- [插件配置](./config.md) — 让插件接受用户配置
+- [Cordis 框架教程](../../../cordis-tutorial/index.md) — 底层的插件框架，在临时目录中动手构建，无需 API 密钥

@@ -1,55 +1,53 @@
-# Agent Note: Bounded background job admission
+# Agent Note: 有界后台任务准入
 
 Status: implemented
 
-English | [中文](2026-08-11-bounded-background-job-admission.zh.md)
+## 问题
 
-## Problem
+模型可以在不同工具调用和后续回合中启动后台 Bash、PowerShell、PTY 操作与一次性 subagent。agent loop 的 `maxParallelToolCalls` 只限制单个步骤中尚未返回的调用；每个后台生产方会立即返回 job id，因此反复启动会让仍存活的进程或子工作无限增长。
 
-A model can start background Bash, PowerShell, PTY operations, and one-shot subagents in separate tool calls and later turns. The agent loop's `maxParallelToolCalls` limits only calls still executing inside one step; each background producer returns a job id immediately, so repeated starts can grow live processes or child work without bound.
+进程内任务注册表已经拥有确切任务 owner 与权威生命周期状态，但终止历史和实时记录保存在一起，且没有准入策略。在请求取消时立即释放容量也不正确：处于 `stopping` 的生产方仍可能拥有进程、PTY 或子任务，直到 `JobHooks.done` 结算。
 
-The process-local job registry already owns the exact job owner and the authoritative lifecycle state, but it retained terminal history beside live records and had no admission policy. Releasing capacity when cancellation was requested would also be incorrect: a `stopping` producer may still own its process, PTY, or child until `JobHooks.done` settles.
+## 决策
 
-## Decision
+`LocalJobRegistry` 拥有 `maxConcurrentJobsPerOwner` 配置字段。它只接受正的安全整数，默认值为 `10`，并通过 Service Provider 的 Cordis schema、typed `agent-spine-demo` 组合包与 ACP 应用配置提供。组合包只传输该值；其含义归进程内 Service Provider 所有。
 
-`LocalJobRegistry` owns a `maxConcurrentJobsPerOwner` configuration field. It accepts positive safe integers, defaults to `10`, and is available through the provider's Cordis schema, the typed `agent-spine-demo` bundle, and the ACP app configuration. The bundle transports the value; the process-local provider owns its meaning.
+[通用任务运行时决策](../architecture/2026-06-20-generic-long-running-tool-runtime.md)拥有共享 Task 生命周期与控制 API；本记录只拥有进程内准入策略。
 
-The [generic job runtime decision](../architecture/2026-06-20-generic-long-running-tool-runtime.md) owns the shared Task lifecycle and control API; this note owns the process-local admission policy.
+`start()` 在现有任务控制器、任务字段与存活 owner 检查之后、`JobStart.run()` 之前执行准入。它从注册表当前记录派生活动数量，而不保存另一份计数：
 
-`start()` performs admission after the existing task-controller, task-field, and live-owner checks and before `JobStart.run()`. It derives the active count from the registry's current records instead of storing another counter:
-
-| Record | Occupies capacity | Release fact |
+| 记录 | 占用容量 | 释放事实 |
 |---|---:|---|
-| `running` | yes | producer `done` settles |
-| `stopping` | yes | producer `done` settles |
-| `completed`, `killed`, or `failed` | no | already terminal |
+| `running` | 是 | 生产方 `done` 结算 |
+| `stopping` | 是 | 生产方 `done` 结算 |
+| `completed`、`killed` 或 `failed` | 否 | 已经终止 |
 
-Owned tasks are bucketed by exact `Agent` object identity, matching owner cleanup. Replacement agents that reuse a session id receive an independent bucket. Jobs without an owner share one service-level bucket, so omitting ownership is not an unlimited bypass.
+有 owner 的任务按确切 `Agent` 对象身份分桶，与 owner 清理保持一致。复用同一会话 id 的替代 agent 获得独立桶。无 owner 的任务共享一个服务级桶，因此省略 owner 不会成为无界旁路。
 
-When the bucket is full, `start()` throws before producer execution and task-id allocation. The diagnostic includes the current limit and tells the model to use `job_kill`, wait until the task finishes stopping, and retry. Rejection creates no execution resource, queue entry, reservation, or public job record; a later successful start receives the next ordinary per-kind id.
+桶已满时，`start()` 会在生产方执行和 job id 分配前抛出异常。诊断包含当前上限，并告诉模型使用 `job_kill`、等待任务完全停稳后再重试。拒绝不会创建执行资源、排队项、预留或公开任务记录；后续成功启动仍会取得按 kind 正常递增的下一个 id。
 
-Owner and service disposal keep their existing order: request cancellation, retain `stopping` occupancy while producers release resources, await settlement, then remove records. The admission policy therefore follows the same lifecycle fact used by reads, notices, and cleanup rather than treating a cancellation request as resource release.
+owner 与服务释放保留现有顺序：请求取消，在生产方释放资源期间继续让 `stopping` 占位，等待结算，然后移除记录。因此，准入策略遵循读取、通知与清理共同使用的同一生命周期事实，而不会把取消请求误当成资源释放。
 
-Continuable background subagents remain outside this budget. They own durable child sessions and live Activations rather than Task records, so limiting them requires a separate result and lifecycle contract. This decision also adds no Task snapshot, session-log, wire, persistence, process-wide CPU or memory budget, queue, priority, preemption, or automatic oldest-task termination.
+可继续后台 subagent 仍不纳入此预算。它们拥有持久 child session 与实时 Activation，而不是 Task 记录；限制它们需要独立的用户结果与生命周期约定。本决策也不会新增 Task 快照、会话日志、wire、持久化、进程级 CPU 或内存预算、队列、优先级、抢占或自动终止最旧任务。
 
-## Verification
+## 验证
 
-The task-provider suite covers the default and explicit limits, producer-before rejection, unchanged id counters, `stopping` occupancy, every terminal release state, exact-owner isolation, same-session replacement objects, the shared unowned bucket, invalid configuration, owner cleanup, and service teardown. Spine and ACP composition tests pin typed forwarding. A keyless ACP replay boots the real Loader composition with a limit of one, starts one real background Bash process, observes the second start's actionable error, stops the first task by its returned id, and verifies that the rejected producer's marker file was never created.
+任务 Service Provider 测试覆盖默认与显式上限、生产方执行前拒绝、id 计数器不变、`stopping` 占位、每种终态释放、确切 owner 隔离、同会话替代对象、共享无 owner 桶、非法配置、owner 清理和服务拆除。spine 与 ACP 组合测试固定 typed 转发。一条 keyless ACP 回放以 1 为上限启动真实 Loader 组合，启动一个真实后台 Bash 进程，观察第二次启动返回可操作错误，按返回的 job id 停止第一个任务，并验证被拒绝生产方的标记文件从未生成。
 
-## Alternatives considered
+## 曾考虑的替代方案
 
-**Rely on `maxParallelToolCalls`.** Rejected because a background tool call releases its step slot as soon as it returns a job id; the setting cannot bound work that remains live across later steps and turns.
+**依赖 `maxParallelToolCalls`。**否决，因为后台工具调用一返回 job id 就会释放其步骤槽位；该设置无法限制在后续步骤和回合中继续存活的工作。
 
-**Release capacity when `job_kill` succeeds.** Rejected because successful cancellation only changes the task to `stopping`. The producer may still hold the resource until `done` settles, so admitting a replacement immediately would exceed the configured live-resource bound.
+**在 `job_kill` 成功时释放容量。**否决，因为取消成功只会把任务改为 `stopping`。生产方在 `done` 结算前仍可能持有资源，立即准入替代任务会突破已配置的实时资源上限。
 
-**Use one global process bucket.** Rejected because one busy agent would deny unrelated sessions, while unowned host work still needs an explicit bounded bucket. Exact owner identity already defines the cleanup lifecycle and supplies the correct partition.
+**使用一个全局进程桶。**否决，因为一个繁忙 agent 会拒绝无关会话，而无 owner 的宿主工作仍需要一个明确的有界桶。确切 owner 身份已经定义清理生命周期，并提供正确分区。
 
-**Queue, preempt, or terminate the oldest task.** Rejected because each policy adds ordering, ownership, and cancellation behavior beyond the requested fail-closed limit. An explicit rejection lets the model decide which work is no longer needed through the existing `job_kill` control.
+**排队、抢占或终止最旧任务。**否决，因为每种策略都会增加超出 fail-closed 上限要求的顺序、所有权和取消行为。显式拒绝让模型通过现有 `job_kill` 控制自行决定哪些工作不再需要。
 
-**Maintain a mutable active-count map.** Rejected because the registry already holds the authoritative records and statuses. A second count would require rollback and settlement synchronization while providing no user result that a direct derivation lacks.
+**维护一张可变活动计数表。**否决，因为注册表已经保存权威记录与状态。第二份计数需要回滚和结算同步，却无法提供直接派生所缺少的用户结果。
 
-## Consequences
+## 后果
 
-One exact owner cannot keep creating Task-backed live resources indefinitely, and unrelated owners retain independent allowances. A slow stop keeps a bucket full until `done` settles, which is deliberate: the configured number bounds work that may still own resources, not cancellation requests. A producer whose `cancel` returns but whose `done` never settles holds one slot for the rest of the service lifetime and can stall teardown because the registry cannot safely infer resource release.
+单个确切 owner 无法再无限创建由 Task 承载的实时资源，无关 owner 则保留独立额度。缓慢停止会让桶保持满载直到 `done` 结算，这是有意行为：配置值限制的是仍可能拥有资源的工作，而不是取消请求。如果生产方的 `cancel` 返回后始终不结算 `done`，它会在服务剩余生命周期内持续占用一个名额并阻塞销毁，因为注册表无法安全推断资源已经释放。
 
-Admission scans the process-local registry on each start. The cost grows with retained Task history, accepted in exchange for one state authority and a default limit small enough to bound the common live set. Terminal history remains available to existing reads and listings without consuming capacity.
+每次启动都会扫描进程内注册表。成本随保留的 Task 历史增长；为了保持单一状态权威，并利用足以约束常见实时集合的较小默认值，接受这一代价。终止历史仍可供现有读取与列表使用，但不消耗容量。

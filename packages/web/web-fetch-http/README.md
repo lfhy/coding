@@ -1,51 +1,49 @@
 # @deepseek-ai/dsh-web-fetch-http
 
-English | [中文](README.zh.md)
+一个匿名公共 HTTP(S) `WebFetchProvider`，用于 harness [web 能力 seam](../web/README.md)（`ctx.web`）。它获取具体 URL，返回状态码和长度受限的解码内容。
 
-An anonymous public HTTP(S) `WebFetchProvider` for the harness [web capability seam](../web/README.md) (`ctx.web`). It retrieves a concrete URL and returns a status code plus bounded decoded content.
+这是一个**实现**包：它向 `ctx.web` 注册提供方，不拥有该键，也不注册面向模型的工具。它是函数／命名空间插件（`inject: ['web']`）。
 
-This is an **implementation** package: it registers a provider into `ctx.web`, it does not own the key and it does not register a model-facing tool. It is a function/namespace plugin (`inject: ['web']`).
+## 职责拆分
 
-## Responsibility split
+提供方拥有**安全资源获取**：URL 验证、公开地址解析与连接固定、HTTP 传输、重定向策略、资源兜底超时、中止传播、字节上限、charset 解码、内容类型分类与二进制拒绝。`@deepseek-ai/dsh-tool-web` 拥有**呈现**（HTML→markdown、截断格式）。非 2xx HTTP 响应是*结果*（状态码 + 解码主体），不是错误；`WebError` 只用于无法安全获取或表示资源的失败。
 
-The provider owns **safe resource retrieval**: URL validation, public-address resolution and connection pinning, HTTP transport, redirect policy, a resource-backstop timeout, abort propagation, byte caps, charset decoding, content-type classification, and binary rejection. `@deepseek-ai/dsh-tool-web` owns **presentation** (HTML→markdown, truncation formatting). A non-2xx HTTP response is a *result* (status code + decoded body), not an error; `WebError` is reserved for failures to safely retrieve or represent the resource.
+提供方的 `timeoutMs` 是直接 `ctx.web.fetch()` 调用方和配置有误的部署所用的资源兜底，不是面向模型的工具调用预算。[`dsh-tool-call-timeout-policy`](../../guard/timeout-policy/README.md) 拥有 `web_fetch` 工具调用预算，并让 `exec.signal` 在超时时触发，以强制执行该预算。
 
-The provider's `timeoutMs` is a resource backstop for direct `ctx.web.fetch()` callers and misconfigured deployments, not the model-facing tool-call budget. [`dsh-tool-call-timeout-policy`](../../guard/timeout-policy/README.md) owns the `web_fetch` tool-call budget by arming `exec.signal`.
+已交付的 web 工具部署会把提供方兜底设为高于工具预算，因此模型调用通常返回 `TOOL_TIMEOUT`。如果外层截止期限先于提供方的兜底超时触发，提供方会报告 `WEB_ABORTED`，外层策略再将其替换为 `TOOL_TIMEOUT`。因此，`WEB_FETCH_TIMEOUT` 表明直接服务调用方的提供方预算已经耗尽。
 
-A shipping web-tool deployment sets the provider backstop above the tool budget, so model calls normally return `TOOL_TIMEOUT`. If the outer deadline reaches the provider first, the provider reports `WEB_ABORTED` and the outer policy replaces it with `TOOL_TIMEOUT`. `WEB_FETCH_TIMEOUT` therefore identifies a direct service caller whose provider budget elapsed.
+## 传输卫生
 
-## Transport hygiene
+- 只接受 `http:` 和 `https:` URL；拒绝 URL 中的凭据（`WEB_BLOCKED_URL`）以及过长／格式错误的 URL（`WEB_INVALID_URL`）。
+- 每个 hostname 只解析一次；如果完整解析结果中任一 IPv4 或 IPv6 目的地址不是公开单播地址，则以 `WEB_BLOCKED_URL` 拒绝；连接只使用这一组已验证地址。对于 IPv6 结果，它通过 `ipv4only.arpa` 发现当前 DNS64 前缀，并拒绝转换到非公开 IPv4 的 NAT64 地址。该策略会阻断 loopback、私有、link-local、运营商级 NAT、多播、保留、过渡、转换和映射到私有 IPv4 的 IPv6 地址，且不会对目标 hostname 进行第二次解析。
+- 强制执行 URL 最大长度、响应字节上限（`WEB_FETCH_TOO_LARGE`）、解码主体字符上限、超时（`WEB_FETCH_TIMEOUT`）和重定向跳数上限。
+- 把调用方的中止信号（`WEB_ABORTED`）传播到网络请求与流式读取。
+- 只跟随**同源**重定向；每个跟随的跳转都会再次执行公开地址解析与连接固定，跨源重定向则以 `WEB_REDIRECT_BLOCKED` 失败并要求发起新的工具调用（沿用 Claude Code 的 WebFetch 模式）。
+- 发送显式的产品 `User-Agent`，绝不伪装成浏览器。
+- 不受支持的内容类型（例如二进制）以 `WEB_UNSUPPORTED_CONTENT_TYPE` 拒绝。
 
-- Accepts only `http:` and `https:` URLs; rejects credentials in URLs (`WEB_BLOCKED_URL`) and over-long/malformed URLs (`WEB_INVALID_URL`).
-- Resolves each hostname once, rejects the complete answer set if any IPv4 or IPv6 destination is not public unicast (`WEB_BLOCKED_URL`), and pins the connection to that validated set. For IPv6 answers it discovers the active DNS64 prefix through `ipv4only.arpa` and rejects NAT64 translations to non-public IPv4. This blocks loopback, private, link-local, carrier-grade NAT, multicast, reserved, transition, translation, and private IPv4-mapped IPv6 destinations without resolving the target hostname twice.
-- Enforces a max URL length, response byte cap (`WEB_FETCH_TOO_LARGE`), decoded body character cap, timeout (`WEB_FETCH_TIMEOUT`), and redirect hop cap.
-- Propagates the caller's abort signal (`WEB_ABORTED`) into the network request and the streaming read.
-- Follows only **same-origin** redirects; each followed hop repeats public-address resolution and pinning, while a cross-origin redirect fails with `WEB_REDIRECT_BLOCKED` and requires a fresh tool call (the model of Claude Code's WebFetch).
-- Sends an explicit product `User-Agent`, never a browser disguise.
-- Rejects unsupported (e.g. binary) content types with `WEB_UNSUPPORTED_CONTENT_TYPE`.
+## 配置
 
-## Config
-
-| Key | Default | Meaning |
+| 配置键 | 默认值 | 含义 |
 |---|---|---|
-| `maxUrlLength` | `2048` | Maximum accepted request URL length. |
-| `maxResponseBytes` | `5_000_000` | Maximum response body size in bytes. |
-| `maxBodyChars` | `100_000` | Maximum decoded body length in characters. |
-| `timeoutMs` | `30_000` | Fetch timeout within Node's timer range — a resource backstop for direct `ctx.web.fetch()` callers, not the model-facing tool-call budget (that is `dsh-tool-call-timeout-policy`). |
-| `maxRedirects` | `5` | Maximum same-origin redirect hops (`0` follows none). |
-| `userAgent` | `deepseek-harness/…` | `User-Agent` header. |
+| `maxUrlLength` | `2048` | 接受的请求 URL 最大长度。 |
+| `maxResponseBytes` | `5_000_000` | 响应主体最大字节数。 |
+| `maxBodyChars` | `100_000` | 解码主体最大字符数。 |
+| `timeoutMs` | `30_000` | Node 定时器范围内的抓取超时：直接 `ctx.web.fetch()` 调用方的资源兜底，而非面向模型的工具调用预算（后者属于 `dsh-tool-call-timeout-policy`）。 |
+| `maxRedirects` | `5` | 同源重定向最大跳数（`0` 表示完全不跟随）。 |
+| `userAgent` | `deepseek-harness/…` | `User-Agent` 标头。 |
 
-The numeric limits are validated at plugin construction: every cap except `maxRedirects` must be a positive finite number, and `maxRedirects` must be a non-negative integer. An invalid value throws rather than silently constructing a provider with nonsensical limits.
+数值限制会在插件构造时验证：除 `maxRedirects` 外，每个上限都必须是正的有限数；`maxRedirects` 必须是非负整数。无效值会抛出异常，不会静默构造限制荒谬的提供方。
 
-## Model Experience
+## 模型体验
 
-Indirectly, through [`dsh-tool-web`](../tool-web/README.md), which places this provider's `maxBodyChars`-bounded decoded text or markdown-shaped HTML under its fetch-result wrapper and retains provider failures while redirects, headers, and transport mechanics remain hidden.
+通过 [`dsh-tool-web`](../tool-web/README.md) 间接影响；该工具把此提供方经 `maxBodyChars` 限制的解码文本或由 HTML 转换得到的 markdown 置于抓取结果包装层中，并保留提供方失败；重定向、标头与传输机制保持隐藏。
 
-#### KV Cache effect
+#### KV Cache 影响
 
-No direct invalidation; the named consumer owns any request-prefix changes.
+不会直接导致 KV Cache 失效；请求前缀变更由上述消费方负责。
 
-## Known Limitations and Deferred Work
+## 已知限制与暂缓事项
 
-- **Only textual content decodes** — html/xhtml and `text/*`-plus-JSON/XML families; a missing `Content-Type` or any binary type throws `WEB_UNSUPPORTED_CONTENT_TYPE`, and text-extractable PDF decoding is named deferred work.
-- **Charset comes only from the `Content-Type` header** (UTF-8 default) — an HTML `<meta charset>` declaration is ignored, and a declared-but-unrecognized charset label throws rather than falling back.
+- **只解码文本内容**：包括 html/xhtml 与 `text/*` 加 JSON/XML 家族；缺少 `Content-Type` 或任何二进制类型都会抛出 `WEB_UNSUPPORTED_CONTENT_TYPE`，可提取文本的 PDF 解码属于明确的暂缓工作。
+- **charset 只来自 `Content-Type` 标头**（默认为 UTF-8）：HTML `<meta charset>` 声明会被忽略；声明但无法识别的 charset 标签会抛出异常，而非回退。

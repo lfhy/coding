@@ -1,14 +1,12 @@
-# Subprocess
+# 子进程
 
-English | [中文](subprocess.zh.md)
+子进程 seam 分为 Service Definition（[dsh-subprocess](../../packages/subprocess/subprocess)，`ctx.subprocess`）与 Service Provider（[dsh-subprocess-local](../../packages/subprocess/subprocess-local)）；它的 Consumer 是其他能力 seam 与进程外后端：[bash 执行器家族](shell.md)使用收集模式的批量输出，LSP 使用原始协议管道，PTY 后端使用终端原语，ACP（Agent Client Protocol）subagent 后端则使用通过管道传输的 ndjson，并让 stderr 采用 inherit。该 seam 拥有受管的 `DSH_*` 环境命名空间、共享的凭据清除（`scrubbedParentEnv`）与 `CollectedOutput` 形状；[dsh-shell](../../packages/shell/shell) 重导出这套词汇，使 bash 消费方保持单一导入入口。
 
-The subprocess seam is split across a Service Definition ([dsh-subprocess](../../packages/subprocess/subprocess), `ctx.subprocess`) and Service Provider ([dsh-subprocess-local](../../packages/subprocess/subprocess-local)); its Consumers are other capability seams and out-of-process backends: the [bash executor family](shell.md) uses collected batch output, LSP uses raw protocol pipes, the PTY backend uses the terminal primitive, and the ACP subagent backend uses piped ndjson plus inherited stderr. This seam owns the managed `DSH_*` environment namespace, the shared credential scrub (`scrubbedParentEnv`), and the `CollectedOutput` shape; [dsh-shell](../../packages/shell/shell) re-exports the vocabulary so bash consumers keep one import root.
+源码：[`packages/subprocess/subprocess/src/types.ts`](../../packages/subprocess/subprocess/src/types.ts)、[`packages/subprocess/subprocess/src/index.ts`](../../packages/subprocess/subprocess/src/index.ts) 与 [`packages/subprocess/subprocess/src/remote-workspace.ts`](../../packages/subprocess/subprocess/src/remote-workspace.ts)
 
-Source: [`packages/subprocess/subprocess/src/types.ts`](../../packages/subprocess/subprocess/src/types.ts), [`packages/subprocess/subprocess/src/index.ts`](../../packages/subprocess/subprocess/src/index.ts), and [`packages/subprocess/subprocess/src/remote-workspace.ts`](../../packages/subprocess/subprocess/src/remote-workspace.ts)
+## 可执行文件查找
 
-## Executable lookup
-
-One provider's spawn working directories, executable paths, ordinary processes, and terminal sessions inhabit the same path and process namespace as the mounted filesystem provider. `resolveExecutable(command, env?, signal?, remoteTarget?)` verifies absolute executable paths or resolves bare names through the provider's scrubbed `PATH` plus deliberate overrides. A caller that already has a verified Remote-SSH target supplies it on lookup and `SubprocessSpawnSpec`; the provider revalidates that marker identity before selecting the target rather than treating a local marker alias as a process directory. The remote root is a request-time execution coordinate and path constraint, not an OS sandbox; it does not defend against a target-side concurrent replacement of a checked symlink or ancestor.
+一个提供方的 spawn 工作目录、可执行文件路径、普通进程与终端会话，和挂载的文件系统提供方处于同一路径与进程命名空间。`resolveExecutable(command, env?, signal?, remoteTarget?)` 验证绝对可执行文件路径，或通过提供方清理后的 `PATH` 加有意覆盖来解析裸名称。调用方已有已验证的 Remote-SSH target 时，会在查找和 `SubprocessSpawnSpec` 中传入它；提供方会在选择该 target 前重新验证 marker 身份，不会把本地 marker 别名当作进程目录。远程根目录只是请求解析时的执行坐标和路径约束，不是 OS 沙箱；它不能防御目标侧并发替换已检查的符号链接或祖先目录。
 
 ```ts type-equiv
 /** 已验证 marker 的当前身份；connectionId 不是凭据。 */
@@ -32,9 +30,9 @@ interface RemoteWorkspaceTarget extends RemoteWorkspace {
 }
 ```
 
-## Managed environment namespace and captured output
+## 受管环境命名空间与捕获的输出
 
-`DSH_*` variables are Harness-owned child-process facts; implementations discard ambient `DSH_*` names before the caller's explicit `env` merges, so a current fact arrives only as a deliberate string entry, while an explicit `undefined` tombstone removes an ordinary ambient value. Each collected stream reports its truncation and spill-recovery state through `CollectedOutput`.
+`DSH_*` 变量是归 Harness 所有的子进程事实；实现会在合并调用方显式 `env` 之前丢弃环境中已有的 `DSH_*` 名称，因此当前事实只会以有意提供的字符串条目形式到达，而显式的 `undefined` tombstone 会删除普通环境中已有的值。每条被收集的流都通过 `CollectedOutput` 报告自身的截断与 spill 恢复状态。
 
 ```ts type-equiv
 /** One environment key inside the managed {@link DSH_ENV_PREFIX} namespace. */
@@ -58,9 +56,9 @@ interface CollectedOutput {
 }
 ```
 
-## Node-shaped stdio dispositions
+## Node 风格的 stdio 处置方式（disposition）
 
-Each stream's disposition is explicit, chosen per consumer: raw pipes for protocol framing (LSP JSON-RPC, ACP ndjson), inherit for pass-through diagnostics, and collect mode for bounded batch output — with the spill file optional, so a diagnostic tail (a language server's stderr) buffers without leaving files behind.
+每条流的处置方式都显式给出，由各消费方自行选择：原始管道用于协议分帧（LSP JSON-RPC、ACP ndjson），inherit 用于直通的诊断输出，收集模式用于有界的批量输出；其中 spill 文件是可选的，因此诊断尾部（语言服务器的 stderr）可以只在内存中缓冲，不留下任何文件。
 
 ```ts type-equiv
 /**
@@ -108,9 +106,9 @@ interface SubprocessStdio {
 }
 ```
 
-## The fully-explicit spawn spec
+## 完全显式的 spawn spec
 
-The seam applies no defaults: every disposition, limit, and directory is explicit on the spec, so the caller's own config — not a hidden subprocess-service default — decides them. `argv` is never shell-interpreted.
+该 seam 不应用任何默认值：每项处置方式、限制与目录都在 spec 上显式给出，因此由调用方自己的配置决定它们，而不是由某个隐藏的子进程服务默认值决定。`argv` 绝不经过 shell 解释。
 
 ```ts type-equiv
 /**
@@ -158,9 +156,9 @@ interface SubprocessSpawnSpec {
 }
 ```
 
-## Handles: streams, readers, and tree-scoped termination
+## 句柄：流、读取器与以进程树为范围的终止
 
-A spawn returns a live handle immediately. Collect-mode readers take whole-stream byte offsets and never consume, so independent readers cannot steal one another's deltas; piped streams belong to the caller. Termination is tree-scoped: POSIX providers may use detached process groups, while Windows providers use their native managed-tree lifecycle. `terminate()` — the only termination verb — starts the seam's TERM→grace→KILL cleanup, and `waitForExit()` observes the whole tree — enough for a consumer to build its own teardown ladder (the ACP backend's stdin-EOF-first `disposeAcpChild` is the template). Providers document platform control semantics and timing. When an active execution-world transport fails before it proves exit, `done` and `waitForExit()` reject rather than inventing exit facts.
+spawn 会立即返回一个活动句柄。收集模式的读取器接受全流字节偏移量且从不消费，因此独立的读取器不会抢走彼此的增量；管道化的流归调用方所有。终止以进程树为范围：POSIX 提供方可使用 detached 进程组，Windows 提供方则使用原生的受管树生命周期。`terminate()`（唯一的终止动词）启动该 seam 的 TERM→宽限→KILL 清理流程，`waitForExit()` 观察整棵进程树。这足以让消费方构建自己的分级清理流程；ACP 后端的 `disposeAcpChild` 会先关闭 stdin，让子进程收到 EOF，是仓库内的参考实现。各提供方会记录平台控制语义与时序。活动执行世界的传输在证明退出前失败时，`done` 与 `waitForExit()` 会 reject，绝不伪造退出事实。
 
 ```ts type-equiv
 /**
@@ -246,9 +244,9 @@ interface SubprocessCollectedOutputs {
 ```
 
 
-## Outcomes carry exit facts only
+## 结果只承载退出事实
 
-`done` reports Node's close-event vocabulary and no cause classification — the service kills on abort but never decides why (the caller reads the deadline signal it owns, e.g. the bash executor's `timedOut`/`aborted` split). Collected output stays readable through `handle.collected` after settlement, so batch and streaming callers share one access path.
+`done` 报告 Node close 事件的词汇，不携带原因分类：服务会在中止时终止进程，但绝不判定原因（调用方读取归自己所有的 deadline 信号，例如 bash 执行器的 `timedOut`/`aborted` 拆分）。收集到的输出在结算后仍可经 `handle.collected` 读取，因此批量与流式调用方共用一条访问路径。
 
 ```ts type-equiv
 /**
@@ -266,15 +264,15 @@ interface SubprocessOutcome {
 }
 ```
 
-## Terminal-process primitive
+## 终端进程原语
 
-`spawnTerminal(spec)` is the non-pipe process primitive. The provider allocates the controlling terminal and owns UTF-8 text transport, foreground-control-identity inspection and terminal-specific control, and one awaited termination operation that reaches quiescence for every session member it can still observe. On POSIX the identity is a foreground process group; a Windows provider may publish a provider-defined compatibility identity. The PTY backend remains responsible for prompt detection, readiness inference, scrollback, sandbox policy, and persistent-session ownership; ordinary `spawn()` cannot reconstruct controlling-terminal semantics.
+`spawnTerminal(spec)` 是非管道进程原语。提供方分配控制终端，并负责 UTF-8 文本传输、前台控制身份检查与终端特定控制，以及一项须等待的终止操作；该操作会使提供方仍可观察到的每个会话成员完全停稳。在 POSIX 上，该身份是前台进程组；Windows 提供方可以发布自身定义的兼容身份。PTY 后端仍负责提示符检测、就绪推断、scrollback、沙箱策略和持久会话所有权；普通 `spawn()` 无法重建控制终端语义。
 
-The terminal spec fully specifies argv, cwd, environment overrides, dimensions, cleanup grace, and optional allocation cancellation. Its handle exposes `pid`, ordered output, `done`, `write`, `inspectForeground`, `signalForeground`, and awaited `terminate`; the exact public shapes are generated into the [`ctx.subprocess` service catalog](#ctxsubprocess--subprocessruntime-abstract-seam).
+终端 spec 完全指定 argv、cwd、环境覆盖、尺寸、清理宽限期与可选的分配取消。其句柄公开 `pid`、有序输出、`done`、`write`、`inspectForeground`、`signalForeground` 和须等待的 `terminate`；确切的公共形状生成到 [`ctx.subprocess` 服务目录](#ctxsubprocess--subprocessruntime-abstract-seam)中。
 
-## Service behavior
+## 服务行为
 
-The abstract [`SubprocessRuntime`](../../packages/subprocess/subprocess/src/index.ts) Service Definition specifies execution-world coordinates, executable lookup, ordinary `spawn`, and `spawnTerminal`. [`LocalSubprocessRuntime`](../../packages/subprocess/subprocess-local/src/index.ts) provides local calls with detached process trees, per-disposition wiring, credential scrubbing, `node-pty`, platform process inspection, and terminate-and-join disposal; it forwards a verified Remote-SSH marker target to its Go agent. See [`dsh-subprocess`](../../packages/subprocess/subprocess/README.md) for the Service Definition contract and [`dsh-subprocess-local`](../../packages/subprocess/subprocess-local/README.md) for provider-specific mechanics and limits.
+抽象的 [`SubprocessRuntime`](../../packages/subprocess/subprocess/src/index.ts) Service Definition 规定执行世界坐标、可执行文件查找、普通 `spawn` 与 `spawnTerminal`。[`LocalSubprocessRuntime`](../../packages/subprocess/subprocess-local/src/index.ts) 用 detached 进程树、按处置方式接线、凭据清除、`node-pty`、平台进程检查，以及先终止再等待退出的资源释放处理本地调用；它会把已验证的 Remote-SSH marker target 转发给 Go agent。Service Definition 约定见 [`dsh-subprocess`](../../packages/subprocess/subprocess/README.md)，提供方特有的机制与限制见 [`dsh-subprocess-local`](../../packages/subprocess/subprocess-local/README.md)。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -282,7 +280,7 @@ The abstract [`SubprocessRuntime`](../../packages/subprocess/subprocess/src/inde
 
 ## Cordis API
 
-Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — this section is byte-identical in both language sides of the page. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
+Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog`; regenerate with `pnpm run gen-cordis-catalog`) — this section is byte-identical in both language sides of the page. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
 <a id="ctxe2b--e2bruntime"></a>
 

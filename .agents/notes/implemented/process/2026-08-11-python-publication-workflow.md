@@ -1,51 +1,49 @@
-# Agent Note: Python public publication workflow
+# Agent Note: Python 公开发布工作流
 
 Status: implemented
 
-English | [中文](2026-08-11-python-publication-workflow.zh.md)
+## 问题
 
-## Problem
+Python SDK 由一个平台无关的客户端 wheel 包和三个原生运行时 wheel 包组成，它们必须使用同一版本，并作为一组可安装。public PyPI 上传会立即公开包元数据和文件，无法替换已上传的同名文件；如果精确版本的运行时依赖尚未到达，还会产生暂时不可用的 SDK。私有仓库需要在不向外发布任何产物的情况下，执行完整的原生构建与验证流程。
 
-The Python SDK comprises one platform-independent client wheel and three native runtime wheels that must carry one version and become installable as a set. Public PyPI uploads expose package metadata and files immediately, cannot replace an uploaded filename, and create a temporarily unusable SDK if its exact runtime dependency has not arrived. The private repository needs to exercise the complete native build and validation sequence without publishing any artifact externally.
+## 决策
 
-## Decision
+GitHub 的 `Release (Python)` 工作流为带有 `python-release-dry-run` 标签的拉取请求和设置 `publish=false` 的手动运行提供无凭据验证。两条路径都会为全部三个平台调用原生 wheel 包构建器，在 Python 3.10 和 3.14 上安装 Linux 发行集合，下载所得四份产物，验证其精确文件名和包元数据，执行 PyPI 默认单文件大小限制，记录 SHA-256 哈希，并保留一份汇总候选发行版。这些作业只有仓库读取权限，没有注册表凭据或 OIDC 权限，拉取请求事件无法进入任何发布作业。
 
-The `Release (Python)` GitHub workflow exposes credential-free validation to pull requests labeled `python-release-dry-run` and to manual runs with `publish=false`. Both paths call the native wheel builder for all three platforms, install the Linux release set on Python 3.10 and 3.14, download the four resulting artifacts, verify their exact filenames and package metadata, enforce PyPI's default per-file size limit, record SHA-256 hashes, and retain one aggregate release candidate. These jobs have only repository read permission and no registry credential or OIDC permission, and pull request events cannot enter either publication job.
+设置 `publish=true` 时，运行必须在私有自动化仓库使用 `python-v<repository-version>` 标签，将该仓库的 `github.repository` 与其仓库级 `PYPI_PUBLISHER_REPOSITORY` 变量匹配，找到 `PUBLIC_PYPI_RELEASE_ENABLED=true`，并分别获得 GitHub `pypi-runtime` 和 `pypi` 环境对运行时与 SDK 发布的批准。只读公开镜像提供包元数据 URL，但不运行发布 Actions。只有两个发布作业获得 `id-token: write`；PyPI Trusted Publishing 会把私有仓库身份换成短期项目凭据，因此仓库不保存 PyPI token。
 
-A run with `publish=true` must use the `python-v<repository-version>` tag in the private automation repository, match that repository's `github.repository` to its repository-scoped `PYPI_PUBLISHER_REPOSITORY` variable, find `PUBLIC_PYPI_RELEASE_ENABLED=true`, and receive approval from the `pypi-runtime` and `pypi` GitHub environments for runtime and SDK publication, respectively. The read-only public mirror supplies the package metadata URLs but does not run release Actions. Only the two publication jobs receive `id-token: write`; PyPI Trusted Publishing exchanges the private repository identity for short-lived project credentials, so the repository stores no PyPI token.
+发布过程使用同一次工作流运行中生成并检查过的汇总产物。每个发布作业都会在选择上传文件前验证保留的 `SHA256SUMS`。一个运行时作业先上传全部三个平台 wheel 包，再由依赖它的作业上传 SDK wheel 包，因为 PyPI 上传不是原子操作，而 SDK 会把运行时分发包固定到完全相同的版本。两个作业都不会检出源码，也不会重新构建 wheel 包。将它们拆开后，GitHub 的失败作业重试可以在 SDK 上传失败时继续执行，而不会尝试替换不可变的运行时文件。
 
-Publication consumes the aggregate artifact produced and checked in the same workflow run. Each publication job verifies the retained `SHA256SUMS` before selecting its upload set. A runtime job uploads all three platform wheels before a dependent job uploads the SDK wheel because PyPI uploads are not atomic and the SDK pins the runtime distribution at the exact same version. Neither job checks out source or rebuilds a wheel. Separating them lets GitHub's failed-job retry resume an SDK failure without attempting to replace immutable runtime files.
+两个发布 action 都会禁用公开 attestation。action 仍使用 Trusted Publishing 进行身份认证，同时不上传会披露私有发布仓库而非公开源码镜像的 provenance。
 
-Both publication actions disable public attestations. The action still uses Trusted Publishing for authentication, while omitting provenance that would disclose the private publisher repository instead of the public source mirror.
+仓库版本可以是稳定版，也可以使用受支持的预发布写法。标签保留仓库写法，wheel 包文件名、元数据、依赖版本固定和产物查找则使用规范化的 PEP 440 写法。
 
-Repository versions may be stable or use the supported prerelease spellings. Tags retain the repository spelling, while wheel filenames, metadata, dependency pins, and artifact lookup use the normalized PEP 440 spelling.
+运行时包的 `platforms.json` 是原生 wheel 包标签和可执行文件名的事实来源。仓库发行构建器与隔离 Hatch 构建钩子会分别校验并加载该文件。GitHub Actions 与 GitLab CI 对运行时可执行文件及其必需的 spawn helper 调用同一个仓库自有的 macOS 部署目标检查，因此 wheel 包中的每个 Mach-O 文件都必须符合声明的平台标签。
 
-The runtime package's `platforms.json` is the source of truth for native wheel tags and executable names. The repository release builder and the isolated Hatch build hook validate and load that file independently. GitHub Actions and GitLab CI call one repository-owned macOS deployment-target check for both the runtime executable and its required spawn helper, so every Mach-O file in the wheel must fit the declared platform tag.
+两个 Python 构建系统依赖都固定使用 Hatchling 1.30.1。下一个可用的 Hatchling 版本会生成 Core Metadata 2.5，而固定使用的 Twine 6.2.0 校验器会拒绝该版本；精确固定构建器后，本地、GitHub 与 GitLab 的输出会保持一致，直到校验工具链支持该元数据版本。
 
-Both Python build-system requirements pin Hatchling 1.30.1. The next available Hatchling release emits Core Metadata 2.5, which the pinned Twine 6.2.0 validator rejects; keeping the builder exact makes local, GitHub, and GitLab output agree until the validation toolchain supports that metadata version.
+## 考虑过的替代方案
 
-## Alternatives considered
+**使用 TestPyPI 演练。** TestPyPI 是公开索引，上传会在仓库开放前暴露包名、元数据和 wheel 包内容。无凭据的汇总产物与既有私有 GitLab 包注册表可以覆盖验证和上传协议演练，而不会造成这种披露。
 
-**TestPyPI rehearsal.** TestPyPI is a public index, so uploading there would expose package names, metadata, and wheel contents before the repository opens. The credential-free aggregate artifact and the existing private GitLab package registry cover validation and upload-protocol rehearsal without that disclosure.
+**使用长期 PyPI API token。** 保存的 token 会让无关工作流步骤接触可复用的密钥，并需要人工轮换。Trusted Publishing 把凭据限制到已登记的仓库、工作流和环境，并且只为每个受保护的发布作业生成凭据。
 
-**A long-lived PyPI API token.** A stored token gives unrelated workflow steps a reusable secret and needs manual rotation. Trusted Publishing limits the credential to the registered repository, workflow, and environment and mints it only for each protected publication job.
+**在发布作业中重新构建。** 第二次构建可能与通过原生冒烟测试的候选产物不同。发布过程下载并使用同一批已保留文件，且不检出任何源码。
 
-**Building again inside the publication job.** A second build can differ from the candidate that passed native smoke tests. Publication downloads the same retained bytes and checks no source out.
+**先上传 SDK，再上传运行时载体。** 如果后续上传失败，SDK 会先公开，而其精确依赖仍不可用。运行时优先的顺序使部分失败不会产生指向缺失文件的可安装客户端。
 
-**Uploading the SDK before its runtime carriers.** The SDK would become visible while its exact dependency remained unavailable if a later upload failed. Runtime-first ordering leaves partial failures without an installable client that points at missing files.
+**从公开镜像发布。** 公开镜像是只读源码投影，不运行发布 Actions。将 PyPI Publisher 绑定到该镜像后，没有工作负载能够提供已登记的 OIDC 身份。
 
-**Publishing from the public mirror.** The public mirror is a read-only source projection and does not run release Actions. Binding the PyPI publisher to it would leave no workload capable of presenting the registered OIDC identity.
+**发布公开 attestation。** action 默认行为会让 Trusted Publisher 仓库身份可公开验证。该 provenance 标识私有自动化仓库而非包的公开源码镜像，因此发布作业将其禁用。
 
-**Publishing public attestations.** The default action behavior makes the Trusted Publisher repository identity publicly verifiable. That provenance identifies the private automation repository rather than the package's public source mirror, so the publication jobs disable it.
+## 后果
 
-## Consequences
+完整候选发行版与公开发布都从私有自动化仓库运行。选择 `publish=true` 后，只有发布仓库变量、发布开关和标签都能标识一次有意的公开发布，工作流才会进入受保护的发布作业，否则会提前失败。镜像代码不会复制这些私有仓库设置，因此只读公开镜像无法满足授权检查。
 
-The complete release candidate and the public release both run from the private automation repository. Selecting `publish=true` fails before the protected publication jobs unless the publisher-repository variable, release switch, and tag identify an intentional public release. Mirroring code does not copy those private repository settings, so the read-only public mirror cannot satisfy the authorization checks.
+私有自动化仓库 owner 和仓库名、工作流文件名以及每个作业的环境（运行时使用 `pypi-runtime`，SDK 使用 `pypi`）都是 Trusted Publisher 身份的一部分。源码仓库转移、工作流改名或环境改名后，必须更新受影响的 PyPI Publisher；仓库身份变化时还必须更新发布仓库变量。只读公开镜像发生变化时，需要修改的是包元数据 URL，而不是发布身份。
 
-The private automation repository owner and name, workflow filename, and each job's environment (`pypi-runtime` for runtime and `pypi` for SDK) are part of the Trusted Publisher identity. A source-repository transfer, workflow rename, or environment rename requires updating the affected PyPI publishers and the publisher-repository variable when the repository identity changes. Changing the read-only public mirror changes package metadata URLs instead, not the publishing identity.
+两个分发项目之间的 PyPI 发布仍然不是原子操作。运行时优先的顺序会缩小可见的失败状态；独立的发布作业和校验和验证则让失败的 SDK 上传能够从经过检查的精确文件继续执行，并且绝不替换已上传的同名文件。
 
-PyPI publication remains non-atomic across the two distribution projects. Runtime-first ordering narrows the visible failure mode, while separate publication jobs and checksum verification let a failed SDK upload resume with the exact checked bytes; an uploaded filename is never replaced.
+禁用公开 attestation 会放弃上传身份的公开密码学 provenance。Trusted Publishing 仍会认证每次上传，而保留的汇总产物会在私有发布工作流内部保存经过检查的 wheel 包哈希。
 
-Disabling public attestations gives up public cryptographic provenance for the upload identity. Trusted Publishing still authenticates each upload, and the retained aggregate artifact keeps the checked wheel hashes inside the private release workflow.
-
-Upgrading Hatchling now requires validating the emitted Core Metadata version with the release pipeline's pinned Twine version before changing both package build requirements together.
+升级 Hatchling 时，必须先使用发布流水线固定的 Twine 版本验证其生成的 Core Metadata 版本，再同时修改两个包的构建依赖。

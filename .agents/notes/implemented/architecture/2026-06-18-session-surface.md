@@ -1,25 +1,23 @@
-# Agent Note: Session surface — an ordered projection over the event log
+# Agent Note: 会话 surface：事件日志上的有序投影
 
 Status: implemented
 
-English | [中文](2026-06-18-session-surface.zh.md)
+## 问题
 
-## Problem
+事件日志是权威数据源，但历史操纵此前没有持久化的共享机制。如果没有这样的机制，上下文压缩（context compaction）等插件会通过顺序敏感的监听器改写派生请求，却不记录每次替换使用了哪些事件。每次新增历史操纵时，还必须修改 `deriveMessages()`。
 
-The event log is authoritative, but history manipulation had no durable shared mechanism. Without one, plugins such as compaction would rewrite derived requests through order-sensitive listeners without recording which events each replacement used. Every new history manipulation would also require changes to `deriveMessages()`.
+## 决策
 
-## Decision
+新增一个 **surface**：事件 seq 的派生并缓存的有序投影（即产出 LLM（大语言模型）消息的事件子集），通过事件日志中的 `surfaceOp` 标记维护。
 
-Add a **surface** — a derived, cached order of event sequences (the subset of events that produce LLM messages) — maintained by `surfaceOp` markers in the event log.
+### `SessionEvent` 新增两个顶层字段
 
-### Two new top-level fields on `SessionEvent`
+每个 `SessionEvent` 获得两个可选字段（结构性元数据，与 `seq`/`time` 同级）：
 
-Every `SessionEvent` gains two optional fields (structural metadata, like `seq`/`time`):
+- **`sourceEventSeqs?: number[]`**：被引用为数据来源的早期事件 seq 编号（例如构成 `assistant/message` 的各 `assistant/chunk` 的 seq，或被压缩标记遮蔽的 surface 节点）。出现的 `[]` 只在 `assistant/message` 上有效，表示已知为空的提供方流；旧格式或外部事件缺少该字段时，没有记录这条消息由哪些早期事件产生。其他 surface 事件一旦出现此字段，就必须是非空列表。如果没有这些引用的 seq，回放就无法验证 replace-range 操作是否列出了它移除的每个事件。
+- **`surfaceOp?: SurfaceOp`**：该事件如何进入 surface。非 surface 事件不携带此字段。
 
-- **`sourceEventSeqs?: number[]`** — seq numbers of earlier events cited as sources (e.g., the `assistant/chunk` seqs that built an `assistant/message`, or the surface nodes shadowed by a compaction marker). A present `[]` is valid only on `assistant/message` and records a known empty provider stream; when the field is absent, a legacy or foreign event does not record which earlier events produced the message. Other surface events require a non-empty list when the field is present. Without these cited seqs, replay cannot validate that a replace-range operation names every event it removed.
-- **`surfaceOp?: SurfaceOp`** — how this event entered the surface. Absent for non-surface events.
-
-### SurfaceOp: two operations
+### SurfaceOp：两种操作
 
 ```ts
 export type SurfaceOp =
@@ -27,47 +25,47 @@ export type SurfaceOp =
   | { op: 'replace'; start: number; end: number }  // shadow [start, end] inclusive
 ```
 
-1. **Append** — add the new event seq to the tail. Used by `user/message`, `assistant/message`, `tool/result`, `context/message`. The loop passes `surfaceOp: 'append'` on all such appends and records `sourceEventSeqs` where applicable: every successful `assistant/message` records its complete `assistant/chunk` source set, including `[]`, while `tool/result` records its `tool/call` source.
+1. **Append**：在尾部追加新事件的 seq。`user/message`、`assistant/message`、`tool/result`、`context/message` 使用此操作。agent loop（智能体循环）在所有此类追加上传入 `surfaceOp: 'append'`，并在适用时记录 `sourceEventSeqs`：每个成功的 `assistant/message` 都记录完整的 `assistant/chunk` 来源集合（包括 `[]`），而 `tool/result` 记录其 `tool/call` 来源。
 
-2. **Replace** — remove entries from `start` through `end` (both inclusive) and insert the new event seq in their place. Both `start` and `end` must be present in the current surface; `start === end` replaces one entry. The event's `sourceEventSeqs` must contain every shadowed surface seq. The shadowed events remain in the log but are no longer on the surface.
+2. **Replace**：移除从 `start` 到 `end`（两端包含）的条目，并在其位置插入新事件的 seq。`start` 和 `end` 都必须存在于当前 surface；`start === end` 表示替换单个条目。该事件的 `sourceEventSeqs` 必须包含所有被遮蔽的 surface seq。被遮蔽的事件仍留在日志中，但不再出现在 surface 上。
 
-### SurfaceManager: delta-based, not full rebuild
+### SurfaceManager：基于增量，而非全量重建
 
-A `Session` owns one `SurfaceManager` that maintains an ordered `number[]` of event seqs. The manager validates each seed or append candidate without applying it before commit, then processes only committed events since its previous synchronization rather than rescanning the entire log. `Session.surface` exposes the same manager through the readonly `SessionSurface` contract, so acceptance, derived history, compaction, and workspace context share one incremental state. Replace locates its inclusive endpoints by array position and splices the replacement seq into that range; no second manager, link objects, or seq-to-node map duplicates the order.
+一个 `Session` 拥有一个 `SurfaceManager`，后者维护事件 seq 的有序 `number[]`。管理器会在提交前校验每个种子或追加候选项而不应用它，然后只处理上次同步之后已经提交的事件，而不重新扫描整个日志。`Session.surface` 通过只读的 `SessionSurface` 约定暴露同一个管理器，因此接纳、派生历史、压缩与工作区上下文共享同一份增量状态。Replace 按数组位置定位两个端点（均包含在范围内），并把替换 seq splice 到该范围；不会用第二个管理器、链接对象或 seq 到节点的 map 来重复表达顺序。
 
-Delta processing is O(1) when no new events and O(new events) when new events arrive.
+无新事件时增量处理为 O(1)，有新事件到达时为 O(新事件数)。
 
-`deriveMessages()` uses the surface when surface markers exist, falling back to the existing linear scan for sessions without markers (backward compatibility).
+`deriveMessages()` 在存在 surface 标记时使用 surface，对没有标记的会话回退到既有的线性扫描（向后兼容）。
 
-### Persistence
+### 持久化
 
-The new fields are serialized as top-level JSON properties. The JSONL backend requires zero changes — `JSON.stringify`/`JSON.parse` preserve everything transparently. The SQLite backend's `events` table carries two nullable TEXT columns (`source_event_seqs`, `surface_op`). The on-disk `SCHEMA_VERSION` is bumped to reflect the column set, and — per the pre-release bump-and-reject policy — a database written by any other build is REJECTED on open rather than migrated (there is no persisted user data to upgrade). The session format `version` is pinned at `SESSION_FORMAT_VERSION = 0` (the "unstable / pre-release" stance): the optional surface fields are absorbed without bumping it.
+新字段作为顶层 JSON 属性序列化。JSONL 后端无需任何改动：`JSON.stringify`/`JSON.parse` 透明地保留一切。SQLite 后端的 `events` 表新增两个可空 TEXT 列（`source_event_seqs`、`surface_op`）。磁盘上的 `SCHEMA_VERSION` 递增以反映列集变化，并且按照预发布的 bump-and-reject 策略，由其他构建写入的数据库在打开时被拒绝而非迁移（没有需要升级的持久化用户数据）。会话格式 `version` 固定为 `SESSION_FORMAT_VERSION = 0`（「不稳定/预发布」立场）：可选的 surface 字段被吸收而不递增版本号。
 
-### Crash recovery
+### 崩溃恢复
 
-The `repair.ts` module synthesizes `tool/result` closers for orphaned tool calls after a crash. These closers carry `surfaceOp: 'append'` and `sourceEventSeqs` pointing to the orphaned `tool/call` event, so the rehydrated surface is valid.
+`repair.ts` 模块在崩溃后为孤立的工具调用合成 `tool/result` 闭合事件。这些闭合事件携带 `surfaceOp: 'append'` 和指向孤立 `tool/call` 事件的 `sourceEventSeqs`，确保重建的 surface 有效。
 
-### Invariants
+### 不变式
 
-`Session` validates `sourceEventSeqs` and `surfaceOp` at the always-on seed/append boundary: only `assistant/message` may use an empty source-event list; references are unique, earlier, and known; replacement endpoints exist in surface order; and `sourceEventSeqs` covers every shadowed node. These are single-record acceptance and storage-projection rules, not optional invariant-service contributions.
+`Session` 在始终启用的 seed/append 边界校验 `sourceEventSeqs` 与 `surfaceOp`：只有 `assistant/message` 可以使用空的源事件列表；引用必须唯一、更早且已知；替换端点必须存在于 surface 顺序中；`sourceEventSeqs` 必须覆盖每个被遮蔽的节点。这些是单记录接纳与存储投影规则，不是由可选的不变式服务提供的规则。
 
-Every surface-eligible event must carry `surfaceOp` or it would disappear from derived history. Typed `append` overloads enforce this for literal event types; runtime checks in `append` and the seed constructor cover widened unions and loaded logs. Invalid seeds are rejected rather than upgraded under the pre-release format policy.
+每个可进入 surface 的事件都必须携带 `surfaceOp`，否则它将从派生历史中消失。类型化的 `append` 重载对字面事件类型强制执行此规则；`append` 和种子构造函数中的运行时检查覆盖宽化联合类型和加载的日志。按照预发布格式策略，无效的种子被拒绝而非升级。
 
-## Alternatives considered
+## 曾考虑的替代方案
 
-- **Per-plugin `agent/request` wrapping** (the pre-surface pattern for history manipulation) — listener-ordering fragility, no durable record of what was changed, and every new manipulation forces another change to core `deriveMessages()`.
-- **Half-open `[start, endExclusive)` replace ranges** — rejected: endpoints are named by surface event seqs, and single-entry replacement (`start === end`) reads naturally with inclusive semantics.
-- **Linked node objects plus a seq map** — rejected: production did not read predecessor links, the only successor use was the next array position, and replacement already required linear `indexOf` lookup. A single seq array preserves the same asymptotic behavior with one representation to validate.
-- **Full rebuild behind a dirty flag** instead of delta processing — O(N²) over a session's lifetime: every single-event append would rescan all prior events.
+- **逐插件的 `agent/request` 包装**（surface 之前的历史操纵模式）：监听器排序脆弱、无法持久记录改动内容，且每种新操纵都迫使核心 `deriveMessages()` 再次修改。
+- **半开区间 `[start, endExclusive)` 的 replace 范围**：否决。端点由 surface 事件 seq 命名，单条目替换（`start === end`）在闭区间语义下读起来更自然。
+- **链接节点对象加 seq map**：否决。生产代码不读取前驱链接，唯一的后继用途就是数组中的下一个位置，而替换本来就需要线性 `indexOf` 查找。单个 seq 数组在保留相同渐进复杂度的同时，只留下一个需要校验的表示。
+- **脏标记后全量重建**替代增量处理：在会话生命周期内为 O(N²)，每次单事件追加都要重新扫描所有先前事件。
 
-## Consequences
+## 后果
 
-- **`packages/core/session`**: `surface.ts` (`SurfaceManager`) maintains one ordered seq array for candidate acceptance and live projection; `SessionSurface` is its readonly public view. `SurfaceOp`/`SurfaceIntent` and the top-level session-event fields record how entries join it. `append()` requires a `SurfaceIntent` for surface events, `deriveMessages()` walks the surface as the sole derivation path, and `repair.ts` emits surface-aware closers. The seed constructor rejects a surface-eligible seed event missing its `surfaceOp` marker (see § Invariants).
-- **`packages/core/agent-loop`**: All surface-capable appends pass surface opts. Each `assistant/message` cites its chunk seqs; each `tool/result` cites its `tool/call` seq.
-- **`packages/session/session-persistence-sqlite`**: Two new nullable TEXT columns (`source_event_seqs`, `surface_op`) on the `events` table; `SCHEMA_VERSION` bumped (bump-and-reject, no migration).
-- **`packages/session/session-persistence-jsonl`**: No changes required.
-- **`packages/session/session-persistence`**: Abstract interface unchanged.
+- **`packages/core/session`**：`surface.ts`（`SurfaceManager`）维护一个用于候选接纳和实时投影的有序 seq 数组；`SessionSurface` 是其只读公共视图。`SurfaceOp`/`SurfaceIntent` 与顶层会话事件字段记录条目如何加入它。`append()` 要求 surface 事件携带 `SurfaceIntent`，`deriveMessages()` 以遍历 surface 作为唯一派生路径，`repair.ts` 则发出 surface 感知的闭合事件。种子构造函数拒绝缺少 `surfaceOp` 标记的可进入 surface 的种子事件（见「不变式」一节）。
+- **`packages/core/agent-loop`**：所有涉及 surface 事件的追加操作都传入 surface 选项。每个 `assistant/message` 都引用产生它的分片 seq；每个 `tool/result` 都引用它的 `tool/call` seq。
+- **`packages/session/session-persistence-sqlite`**：`events` 表新增两个可空 TEXT 列（`source_event_seqs`、`surface_op`）；`SCHEMA_VERSION` 递增（bump-and-reject，无迁移）。
+- **`packages/session/session-persistence-jsonl`**：无需改动。
+- **`packages/session/session-persistence`**：抽象接口不变。
 
-The surface is the foundation history manipulation ships on — dsh-compaction's compaction rides it. A compaction or tool-result-pruner plugin appends one of the existing message-producing event types (a `user/message` carrying the summary, say) with `surfaceOp: { op: 'replace', start, end }` and `sourceEventSeqs` covering the shadowed entries — the new event takes the range's place on the surface while the plugin's own trace events (e.g. `compaction/start`, `compaction/end`) stay off it. Replay preserves the decision deterministically.
+surface 是历史操纵赖以落地的基础——dsh-compaction 的压缩就搭载于其上。压缩或 tool-result-pruner 插件追加一个既有的消息产出事件类型（例如一条携带摘要的 `user/message`），附带 `surfaceOp: { op: 'replace', start, end }` 和覆盖被遮蔽条目的 `sourceEventSeqs`——新事件在 surface 上取代该范围的位置，而插件自身的 trace 事件（如 `compaction/start`、`compaction/end`）不进入 surface。回放以确定性方式保留该决策。
 
-A `tool/result` replacement may rewrite exactly one current `tool/result` and must preserve every data field except `content`. Session acceptance enforces this rule together with positional range and cited source-event validation, independent of optional diagnostic plugins.
+一次 `tool/result` 替换只能改写当前的一个 `tool/result`，并且必须保留除 `content` 以外的每个数据字段。Session 接纳会与位置范围和引用的源事件校验一起强制这条规则，不依赖可选的诊断插件。

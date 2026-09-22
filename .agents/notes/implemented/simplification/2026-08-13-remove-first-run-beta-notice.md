@@ -1,25 +1,23 @@
-# Agent Note: Remove the first-run beta notice
+# Agent Note: 移除首次启动内测声明
 
 Status: implemented
 
-English | [中文](2026-08-13-remove-first-run-beta-notice.zh.md)
+## 问题
 
-## Problem
+GUI 每次首启都会先显示占满视口的内测声明：内部测试的定位表述，加上通过 `DSH_TELEMETRY_MODE` 开启 Session Log 上传的说明。会话遥测在 mode 未设置时已解析为 `DISABLED`（[遥测默认关闭](../feature/2026-08-10-telemetry-default-off.md)），因此引导流程中关于遥测的全部内容就是一段教用户如何开启的提示，而内部测试的定位表述本身也不应出现在发布版本里。
 
-Every GUI first launch opened with a full-viewport internal-test statement (内测声明): internal-beta framing plus instructions for enabling Session Log upload through `DSH_TELEMETRY_MODE`. Session telemetry already resolves to `DISABLED` when its mode is unset ([telemetry default-off](../feature/2026-08-10-telemetry-default-off.md)), so the only onboarding content about telemetry was a prompt explaining how to turn it on, and the internal-test framing itself must not ship in a release build.
+## 决策
 
-## Decision
+本决策当时把首启声明从组装后的产品中整体移除，而不是改写。`ui-settings-general` 不再注册任何 `settings.onboarding` 步骤；声明组件、确认 store、文案所有者文件和 locale 键均被删除，Host 则保留 `ui-onboarding` namespace，使既有设置文档继续有效。后续的[共用弹窗产品引导](../feature/2026-08-13-shared-modal-product-onboarding.md)在 `ui-settings-models` 中恢复了一份新的简洁测试阶段声明，复用该字段与后端契约，但不会恢复已移除的接管式布局或遥测说明。遥测的开启仍是显式的部署环境变量选择，记录在 [CLI reference README](../../../../apps/cli/reference/README.md) 中；恢复后的声明不涉及如何开启遥测。
 
-This decision removed the first-run notice from the assembled product rather than rewording it. `ui-settings-general` seated no `settings.onboarding` step; the notice component, acknowledgement store, copy owner, and locale keys were deleted, while the Host kept the `ui-onboarding` namespace so stored documents remained valid. The later [shared-modal product onboarding](../feature/2026-08-13-shared-modal-product-onboarding.md) restores a new concise testing-stage notice in `ui-settings-models`, reusing that field and backend contract without restoring the removed takeover layout or telemetry instructions. Telemetry opt-in remains an explicit deployment environment choice documented in the [CLI reference README](../../../../apps/cli/reference/README.md); the restored notice says nothing about enabling it.
+## 曾考虑的替代方案
 
-## Alternatives considered
+**保留声明，只删除其中的遥测段落。** 不予采用：发布版本不应呈现的正是内部测试的定位表述本身，而一个没有实质内容的强制首启插页只剩下打扰。
 
-**Keep the notice and only drop its telemetry paragraph.** Rejected: the internal-test framing is what a release must not present, and a mandatory first-run interstitial with no material statement left is pure friction.
+**改为询问上传同意（版本化的同意步骤）。** 本次发布不予采用：首启询问是否开启上传仍然是一个遥测提示。未来的同意流程可以通过保持不变的 `settings.onboarding` seam 注册，并使用新的版本化字段做重新确认。
 
-**Ask for upload consent instead (a versioned consent step).** Rejected for this release: a first-run question about enabling upload is still a telemetry prompt. A future consent flow can register through the unchanged `settings.onboarding` seam and use a fresh versioned field for re-acknowledgement.
+**连 `ui-onboarding` namespace 一起注销。** 不予采用：既有设置文档已经包含该分节，而设置 seam 会用已注册的 namespace 校验存储文档；保留注册就能让这些文档继续有效，且没有额外成本。
 
-**Deregister the `ui-onboarding` namespace as well.** Rejected: existing settings documents already carry the section, and the settings seam validates stored documents against registered namespaces; keeping the registration keeps those documents valid at no cost.
+## 后果
 
-## Consequences
-
-This removal eliminated the full-viewport notice and its telemetry copy. The later restoration is intentionally a different presentation and copy revision: a shared modal precedes the inline credential dialog, the remote scenario again covers process-local acknowledgement, and the existing `welcomeNoticeVersion` field records the new copy version. The historical telemetry prompt remains absent.
+这次移除消除了占满视口的声明及其遥测文案。后续恢复有意采用不同的展示与文案版本：共用弹窗先于行内凭据弹窗出现，远程场景重新覆盖进程内确认，既有 `welcomeNoticeVersion` 字段记录新的文案版本。历史上的遥测提示仍未恢复。

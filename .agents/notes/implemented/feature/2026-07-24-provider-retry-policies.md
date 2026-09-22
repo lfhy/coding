@@ -1,18 +1,16 @@
-# Agent Note: Per-provider request retry policies
+# Agent Note: 逐提供方请求重试策略
 
 Status: implemented
 
-English | [中文](2026-07-24-provider-retry-policies.zh.md)
+## 问题
 
-## Problem
+同一进程可能把模型请求路由到可靠性和成本约束各不相同的提供方。单一的瞬态错误分类器与有限重试预算无法表达这种部署需求：大多数提供方只需有界恢复，但其中一个提供方必须持续重试每次模型请求失败，直到请求成功或调用方取消。
 
-One process may route model requests to providers with different reliability and cost constraints. A single transient classifier and finite retry budget cannot express a deployment that wants bounded recovery for most providers but requires one provider to keep retrying every model-request failure until the request succeeds or the caller cancels it.
+提供方策略必须跟随实际失败的请求，包括 `agent/request` 选择的路由，而不能跟随 agent（智能体）的初始选项。无界策略也不能把 JavaScript `Infinity` 存入持久会话事件；提供方错误文本与丢弃的部分输出都不得进入下一次模型请求。
 
-Provider policy must follow the request that actually failed, including a route selected by `agent/request`, rather than the agent's initial options. Unbounded policy also cannot store JavaScript `Infinity` in the durable session event, and neither provider error text nor discarded partial output may enter the next model request.
+## 决策
 
-## Decision
-
-Each concrete adapter accepts an optional `retryPolicy` inside its provider configuration, validates and resolves it, and exposes that resolved route policy through `providerRetryPolicy()`. Omission selects the shared core normal default of five retries for every composition, including Web, headless, and custom profiles. The effective policy remains route-owned registration state rather than a retry-executor setting. Layered settings may retain normal-only `maxRetries` or `retryableCodes` after changing `mode` to `always`; the resolver ignores those inactive fields while still rejecting unknown keys, and the registered always policy omits them. When a call enters its final adapter boundary, `ctx.llm` binds the serving registration's immutable policy to that call; the agent loop passes it to closed-step recovery even if the route is disposed or replaced while the request is in flight. `@deepseek-ai/dsh-llm-retry` combines that call-local policy with the failed step's durable provider identity. A call that never reaches a final adapter has no serving policy and delegates.
+每个具体适配器都在其提供方配置中接受可选的 `retryPolicy`，对它进行校验与解析，并通过 `providerRetryPolicy()` 公开解析后的路由策略。省略配置时，Web、headless 与自定义 profile 等所有组合都使用核心共享的 normal 模式五次重试默认值。有效策略仍然是路由拥有的注册状态，而不是重试执行器设置。分层 settings 在把 `mode` 改为 `always` 后可能保留仅属于 normal 的 `maxRetries` 或 `retryableCodes`；解析器会忽略这些未启用字段，同时仍拒绝未知键，注册后的 always 策略也不包含它们。当调用进入最终适配器边界时，`ctx.llm` 会把实际提供服务的注册项所持不可变策略绑定到该调用；即使路由在请求进行期间被 dispose（资源释放）或替换，agent loop（智能体循环）仍会把该策略传给已关闭步骤恢复。`@deepseek-ai/dsh-llm-retry` 会把绑定到该调用的策略与失败步骤的持久化提供方标识结合起来。未到达最终适配器的调用没有实际提供服务的策略，因而会委托后续处理。
 
 ```yaml
 providers:
@@ -34,38 +32,38 @@ providers:
         jitterRatio: 0.2
 ```
 
-The listener reads the provider from the durable `request/header` in force when the failed step closed, excluding later recovery mutations, but never re-resolves policy from the mutable provider registry. It derives a canonical key from every field of the resolved serving policy, sorting `retryableCodes` because eligibility uses set membership, and continues retry history only for the same provider and key. Replacing a route with different limits, code membership, or backoff therefore starts a new count and initial delay even when the mode is unchanged. Normal mode retains the bounded transient behavior: it retries configured codes up to `maxRetries` and otherwise delegates.
+监听器从失败步骤关闭时生效的持久化 `request/header` 读取提供方，后续恢复产生的改动不参与选择，但绝不会从可变的提供方注册表重新解析策略。它会根据已解析的实际服务策略的所有字段生成规范键；由于是否可重试是按集合成员关系判断的，生成时会对 `retryableCodes` 排序。重试历史只会对同一提供方和同一规范键延续。因此，即使模式未变，只要路由替换后的次数上限、错误代码成员或退避不同，重试计数与初始延迟都会重新开始。normal 模式保留有界瞬态错误处理行为：它重试配置的错误代码，次数不超过 `maxRetries`；其他情况委托后续处理。
 
-Always mode asks downstream recovery first so a specialized policy such as context-overflow compaction can make progress. A downstream retry wins. A downstream failure decision or thrown recovery error falls back to an unbounded retry of the same provider request; the thrown error is logged. The retry listener owns and drains delegated recovery before cancellation or plugin disposal can finish, then applies the abort instead of a late downstream decision. Success, turn cancellation, and plugin disposal are the only termination paths.
+always 模式先请求下游恢复，使上下文溢出压缩（compaction）之类的专用策略有机会取得进展。下游若决定重试，则以该决定为准。下游若决定失败或恢复过程抛出错误，则回退为无界重试同一提供方请求；抛出的错误会写入日志。重试监听器会持有并排空已委托的恢复，轮次取消或插件 dispose 只能在其结束后完成；随后监听器会执行相应的中止操作，而不会采用迟到的下游决定。成功、轮次取消和插件 dispose 是仅有的终止路径。
 
-Both modes use exponential local delays from `initialDelayMs` to `maxDelayMs`. `jitterRatio` multiplies each target by a uniform sample in `[1 - jitterRatio, 1 + jitterRatio]`, then applies the cap. A positive provider `Retry-After` within the cap remains exact and unjittered. An over-cap provider delay makes normal mode delegate; always mode retains its guarantee by using the configured local backoff.
+两种模式的本地延迟都按指数增长，从 `initialDelayMs` 增至 `maxDelayMs`。`jitterRatio` 用 `[1 - jitterRatio, 1 + jitterRatio]` 区间内的均匀随机样本乘以每次目标值，再应用上限。提供方给出的正数 `Retry-After` 若未超过上限，则保持精确且不加抖动。若提供方延迟超过上限，normal 模式会委托后续处理；always 模式则改用配置的本地退避，以维持无限重试保证。
 
-Each scheduled retry appends a non-surface `llm/retry` event with the failed provider, policy mode, canonical resolved-policy key, provider-policy retry number, delay, and failure facts. Normal events carry finite `maxRetries`; always events omit it, and UIs render the limit as `∞`. The event and failed `assistant/chunk` records do not contribute surface messages, so the next request contains the same derived context as the failed request unless another recovery policy deliberately changes the surface.
+每次安排重试都会追加一条不进入表层的 `llm/retry` 事件，其中包含失败的提供方、策略模式、已解析策略的规范键、提供方策略内的重试编号、延迟和失败事实。normal 事件包含有限的 `maxRetries`；always 事件省略该字段，UI 将上限渲染为 `∞`。该事件与失败的 `assistant/chunk` 记录都不会生成表层消息，因此除非其他恢复策略有意改变表层，否则下一次请求包含的派生上下文与失败请求相同。
 
-## Alternatives considered
+## 曾考虑的替代方案
 
-**One retry-executor-level `always` switch** — rejected because it cannot isolate the unbounded cost and latency risk to the provider that needs it and can silently apply after runtime rerouting. Provider route policies remain authoritative, and the effective policy is captured only after routing selects a registration.
+**重试执行器级的单一 `always` 开关**：不予采纳，因为它无法把无界成本与延迟风险限制在确有需要的提供方，还可能在运行时重新路由后悄然生效。提供方路由策略仍然权威，而且只有在路由选定注册后才捕获有效策略。
 
-**A separate exact-provider list on `dsh-llm-retry`** — rejected because it duplicates provider route names outside their owning adapter configuration and lets provider registration drift from recovery policy.
+**在 `dsh-llm-retry` 上维护单独的指定提供方列表**：不予采纳，因为它会在所属适配器配置之外重复提供方路由名称，并让提供方注册与恢复策略发生偏差。
 
-**A very large finite retry count** — rejected because it eventually violates the requested keep-retrying contract and serializes an arbitrary operational limit as if it were meaningful.
+**设置很大的有限重试次数**：不予采纳，因为它最终仍会违反持续重试的约定，并把任意选取的运维上限序列化成看似有意义的数值。
 
-**Adapter-specific omission defaults** — rejected because a shared budget would have to be repeated by every adapter family and every future adapter, making equivalent model routes behave differently depending on their implementation.
+**按适配器设置不同的省略默认值**：不予采纳，因为共享预算必须在每种适配器族以及未来的每个适配器中重复配置，同等模型路由也会因实现不同而表现不同。
 
-**An LLM deployment-level default** — rejected because it introduces another configuration layer only to make Web differ from other compositions. The product default is uniform, while provider settings retain the existing per-route override.
+**LLM 部署级默认值**：不予采纳，因为这只为区分 Web 与其他组合增加了一层配置。产品默认值保持统一，提供方 settings 则保留既有的逐路由覆盖能力。
 
-**Stamp five retries into profiles when the Web UI writes them** — rejected because existing profiles, settings written outside that UI, and non-Web compositions would retain the old value.
+**在 Web UI 写入 profile 时把五次重试写死进去**：不予采纳，因为现有 profile、从该 UI 之外写入的 settings 以及非 Web 组合仍会保留旧值。
 
-**Provider-SDK retries** — rejected because hidden attempts multiply agent-level budgets, cannot use the closed-step durability boundary, and may splice or discard streamed output without a reconstructable retry record.
+**使用提供方 SDK 重试**：不予采纳，因为隐藏尝试会叠加 agent 层预算，无法利用已关闭步骤的持久性边界，还可能在没有可重建重试记录的情况下拼接或丢弃流式输出。
 
-**Put the error into model context** — rejected because a transport or provider diagnostic is operational state, not conversation content. It can expose sensitive provider details and changes the retried request instead of repeating the failed request.
+**把错误放入模型上下文**：不予采纳，因为传输或提供方诊断信息属于运维状态，而非对话内容。它可能暴露敏感的提供方细节，并会改变重试请求，无法重复原本失败的请求。
 
-## Verification
+## 验证
 
-Adapter tests validate nested policies at provider load, prove explicit profile policies reach registration, prove omission resolves to five retries, and retain the serving policy across in-flight route replacement. LLM service tests prove adapter policies are captured and omission uses the shared five-retry behavior. Resolver tests prove always mode ignores retained normal-only fields but returns a pure always policy. Unit tests select policies from the failed request's serving registration, separate provider and changed-policy histories, exercise always mode beyond the normal budget, pin jitter and delay caps, prove downstream recovery ordering, prove cancellation and disposal drain delegated recovery before reaching quiescence, and prove both abort active backoff waits. Request-level coverage compares the complete messages of failed and retried attempts and rejects both provider error text and discarded partial output. A keyless headless `stream-json` snapshot runs failure, retry, and success through the assembled app, pins the complete `llm/retry` record, and rejects any model-message change between attempts. The shipped Web composition snapshot pins omitted DeepSeek and pi-ai policies at five retries, then proves settings can write `{ mode: 'always', maxRetries: 5 }` and obtain a pure always policy. JSONL and SQLite tests round-trip an always event without `Infinity`; invariant tests bind provider identity to the request header, validate failure and mode-specific timer bounds, and bind retry numbers to provider-policy keys; TUI tests render finite and infinite limits.
+适配器测试会在提供方加载时校验嵌套策略，证明显式 profile 策略抵达注册流程，证明省略配置会解析为五次重试，并证明请求进行期间替换路由后仍会保留实际提供服务的策略。LLM 服务测试会证明适配器策略被捕获，且省略配置使用共享的五次重试行为。解析器测试会证明 always 模式忽略残留的 normal 专属字段，但返回纯 always 策略。单元测试根据失败请求实际使用的注册项选择策略、分离不同提供方和策略变更后的重试历史、验证 always 模式可越过 normal 预算、固定抖动和延迟上限、证明下游恢复顺序、证明取消与 dispose 会先排空已委托的恢复再达到完全停稳，并证明二者都会停止正在进行的退避等待。请求级覆盖会比较失败尝试与重试尝试的完整消息，并排除提供方错误文本和丢弃的部分输出。一个无密钥 headless `stream-json` 快照会通过组装后的应用执行失败、重试与成功流程，固定完整的 `llm/retry` 记录，并拒绝各次尝试之间出现任何模型消息变化。随附的 Web 组合快照会把省略配置的 DeepSeek 与 pi-ai 策略固定为五次重试，再证明 settings 可以写入 `{ mode: 'always', maxRetries: 5 }` 并得到纯 always 策略。JSONL 与 SQLite 测试会往返读写不含 `Infinity` 的 always 事件；不变式测试会将提供方标识绑定到请求头、校验失败事实和各模式的计时器边界，并将重试编号绑定到提供方策略键；TUI 测试会渲染有限和无限上限。
 
-## Consequences
+## 后果
 
-Normal mode remains a finite default, while an explicit always policy can spend unbounded requests and time on permanent authentication, quota, invalid-request, protocol, or context failures. Operators must pair always mode with a cancellable caller and provider-specific cost controls. Any model route using omission defaults may spend up to three more requests and their backoff time than under the former two-retry default, in exchange for recovering from longer transient outages. Retry state stays observable and durable without becoming model-visible, and serving-registration capture prevents adapter lifecycle changes from retroactively changing an in-flight request's recovery contract.
+normal 模式仍是有限的默认策略；显式的 always 策略可能在永久性的身份验证、配额、无效请求、协议或上下文错误上耗费无限次请求和无限时间。运维方必须为 always 模式配备可取消的调用方和针对提供方的成本控制。任何使用省略默认值的模型路由相比原先的两次重试默认值，最多会多花费三次请求及其退避时间，以此换取从更长短暂故障中恢复的能力。重试状态保持可观察且会持久化，但不会对模型可见；捕获实际提供服务的注册项，也能防止适配器生命周期变化反过来改变进行中请求的恢复约定。
 
-This decision extends the closed-step recovery, single visible adapter attempt, structured failure, and durable status design in [bounded recovery for transient LLM request failures](../architecture/2026-06-21-bounded-llm-request-recovery.md).
+本决策扩展了[瞬态 LLM（大语言模型）请求失败的有界恢复](../architecture/2026-06-21-bounded-llm-request-recovery.md)中确定的已关闭步骤恢复、单次可见适配器尝试、结构化失败与持久化状态设计。

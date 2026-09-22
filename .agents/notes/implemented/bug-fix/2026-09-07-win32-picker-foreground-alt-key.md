@@ -1,23 +1,21 @@
-# Agent Note: Foreground activation for the Win32 picker via a synthesized Alt press
+# Agent Note: 通过合成的 Alt 按键让 Win32 选择器获得前台激活
 
 Status: implemented
 
-English | [中文](2026-09-07-win32-picker-foreground-alt-key.zh.md)
-
 ## Problem
 
-The native Win32 folder dialog runs in a child process. When a background host starts that process, Windows can open its first window behind the foreground application, leaving the directory picker invisible to the operator.
+原生 Win32 文件夹对话框运行在子进程中。后台宿主启动该进程时，Windows 可能将其首个窗口打开在前台应用之后，使操作者看不到目录选择器。
 
 ## Decision
 
-`runFolderDialog` calls `pressAltForForeground` between the `showing` notice and the blocking `Show`. The koffi bindings synthesize one Alt press with `keybd_event` (`VK_MENU`, down then up). Windows treats the child as a recent input owner, allowing `Show` to activate the dialog as foreground. The call runs for every Windows picker invocation; it is inert when the child already has foreground rights, though the focused window can briefly highlight its menu bar.
+`runFolderDialog` 在 `showing` 通知与阻塞式 `Show` 之间调用 `pressAltForForeground`。koffi 绑定以 `keybd_event` 合成一次 Alt 按键（`VK_MENU`，先按下后抬起）。Windows 将子进程认作最近的输入所有者，使 `Show` 可以将对话框激活到前台。每次 Windows 选择器调用都会执行该操作；子进程已具备前台权限时它没有实质作用，但焦点窗口的菜单栏可能会短暂高亮。
 
 ## Alternatives considered
 
-**A browser-originated foreground grant.** A custom protocol or `AllowSetForegroundWindow` would require the foreground browser to participate and adds cross-process or registry state to a local picker interaction.
+**由浏览器发起前台授权。** 自定义协议或 `AllowSetForegroundWindow` 都要求前台浏览器参与，并会为本地选择器交互增加跨进程或注册表状态。
 
-**AttachThreadInput.** Attaching the dialog thread to the focused thread depends on another process's thread and integrity level, so it does not provide a dependable picker contract.
+**AttachThreadInput。** 将对话框线程附着到焦点线程依赖另一个进程的线程与完整性级别，因此无法形成可靠的选择器契约。
 
 ## Consequences
 
-The picker retains one spawned-child design and uses two extra user32 calls immediately before `Show`. The bindings and sequencing tests pin the Alt down/up pair and its order after the abort notice. Secure desktops, restricted Remote-SSH sessions, and an elevated foreground window can suppress injected input; the native picker may then still open behind other windows, as recorded in the package README. The browse backend remains the composition-level fallback for environments where a host-local dialog is unsuitable.
+选择器保留单一 spawn 子进程设计，并在 `Show` 紧前方增加两次 user32 调用。bindings 与时序测试固定 Alt 按下/抬起序列及其位于中止通知之后的顺序。安全桌面、受限 Remote-SSH 会话和已提权的前台窗口可能抑制注入的输入；此时原生选择器仍可能在其他窗口后面打开，包 README 已记录该限制。对于不适合宿主本地对话框的环境，browse 后端仍是组合层面的回退。

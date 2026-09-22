@@ -1,45 +1,43 @@
-# Agent Note: npm access per release sequence: the vendored framework and the native packages publish publicly
+# Agent Note: 按发布序列区分 npm access:vendored 框架与 native 包公开发布
 
 Status: implemented
 
-English | [中文](2026-08-13-public-vendor-and-native-sequences.zh.md)
-
 ## Problem
 
-The [three release sequences](2026-08-10-npm-release-sequences.md) shipped with `publishConfig.access: restricted`, so every package published to the `@deepseek-ai` scope was visible only inside the organization. Five rehearsal publications ran that way, through `dsh@0.0.1-rc.5`, `vendor *-rc.4`, and `landlock-run@0.0.1`.
+[三条发布序列](2026-08-10-npm-release-sequences.md)交付时带的是 `publishConfig.access: restricted`,因此发到 `@deepseek-ai` scope 的每个包只在组织内可见。五次排练发布都是这样跑的:`dsh@0.0.1-rc.5`、vendor 的 `*-rc.4`、`landlock-run@0.0.1`。
 
-A restricted dependency is what actually blocks a public consumer. Every harness package declares the vendored framework as a `peerDependency`, and `dsh-sandbox-local` declares the Landlock entry as a `dependency`. A public package that requires a restricted one cannot be installed by anyone outside the organization, so those two sequences have to be public before the dsh family can be — and while the dsh family is still restricted, they are the only two whose artifacts an outside consumer would need to resolve.
+真正卡住公开消费者的是**受限的依赖**。每个 harness 包都把 vendored 框架声明成 `peerDependency`,`dsh-sandbox-local` 把 Landlock 入口声明成 `dependency`。一个公开包若要求一个受限包,组织外的人根本装不上;所以这两条序列必须先公开,dsh 族才可能公开 —— 而在 dsh 族仍受限期间,它们也正是外部消费者唯一需要解析到的两条。
 
 ## Decision
 
-Access is a property of each release sequence, not of the scope:
+access 是每条发布序列的属性,不是整个 scope 的属性:
 
-| Sequence | Members | `publishConfig.access` |
+| 序列 | 成员 | `publishConfig.access` |
 |---|---|---|
-| vendored framework | the nine `vendor/*` packages | `public` |
-| native | the three `native/landlock-run/packages/*` packages | `public` |
-| dsh | `packages/*/*` + `apps/*` (221 members) | `restricted` |
+| vendored 框架 | `vendor/*` 九包 | `public` |
+| native | `native/landlock-run/packages/*` 三包 | `public` |
+| dsh | `packages/*/*` + `apps/*`(221 个成员) | `restricted` |
 
-`check-workspace-constraints.ts` holds every manifest to its own sequence's level, which is what stops the scope from drifting: a new `vendor/*` package left at `restricted`, or a dsh member flipped to `public`, fails the workspace constraints.
+`check-workspace-constraints.ts` 按各自序列的级别校验每个 manifest,这是阻止 scope 漂移的那道闸:新增的 `vendor/*` 包留在 `restricted`、或某个 dsh 成员被改成 `public`,都会让 workspace 约束失败。
 
-**No publish path passes `--access`.** A single flag cannot serve sequences that disagree, and a flag overrides the manifest that owns the fact — so `publish.ts` passes none, and the native workflow continues to pass none. Each packed manifest decides.
+**没有任何发布路径传 `--access`。** 一个选项无法服务级别互不相同的序列,而且选项会覆盖真正拥有这个事实的 manifest —— 所以 `publish.ts` 不传,native 的 workflow 也照旧不传,由各 packed manifest 决定。
 
-Harness consumers reference the Landlock entry as `workspace:^` rather than `workspace:*`, so a published harness package accepts the entry's patch and minor releases instead of pinning one exact version. The entry keeps `workspace:*` for its two platform packages, where the binary must match the entry version exactly.
+harness 消费方引用 Landlock 入口改用 `workspace:^` 而非 `workspace:*`,于是发布出去的 harness 包接受该入口的 patch 与 minor 版本,而不是钉死一个精确版本。入口对它那两个平台包仍保持 `workspace:*` —— 那里二进制必须与入口版本完全一致。
 
-Access is a property of the package, not of a version: the twelve packages already published as restricted — `landlock-run@0.0.1` and the vendored `*-rc.*` versions — become world-readable at their next publication.
+access 是包的属性、不是版本的属性:已经以 restricted 发布的这十二个包(`landlock-run@0.0.1` 与 vendored 的 `*-rc.*`)会在**下一次发布**时变为全网可读。
 
 ## Alternatives considered
 
-**Flip the whole scope public at once.** Rejected for now: it would make the next dsh release public as a side effect of a manifest change rather than a deliberate release decision. Opening the two dependency sequences first is the order that keeps every published package installable at each step, and it is the precondition for opening dsh whenever that is decided.
+**一次性把整个 scope 改成 public。** 暂不采用:那会让下一次 dsh 发布因为一次 manifest 改动而顺带变成公开,而不是出自一个刻意的发布决定。先公开这两条依赖序列,是能让每一步的已发布包都保持可安装的顺序,也是将来决定公开 dsh 时的前置条件。
 
-**Keep everything restricted and grant a read-only team instead.** `npm access grant read-only <org:team> <package>` is per-package with no scope wildcard, so covering the set means one grant per package plus a standing reconciliation job for every package added afterwards. It also only reaches organization members, which does not serve an installable public artifact.
+**全部保持受限,改为授予一个只读 team。** `npm access grant read-only <org:team> <包>` 是逐包的、没有 scope 通配,覆盖全集意味着每个包一次 grant,外加一个为后续新增包长期补齐的对账任务。它也只能覆盖组织成员,无法服务一个可安装的公开产物。
 
-**Publish public from the publish path instead of the manifests.** Impossible for a mixed scope — one `--access` flag cannot express two levels — and it would override the manifest that the workspace constraint already checks.
+**在发布路径而不是 manifest 里指定公开。** 混合 scope 下不可能 —— 一个 `--access` 选项表达不了两种级别 —— 而且它会覆盖 workspace 约束正在校验的那个 manifest。
 
 ## Consequences
 
-- **The twelve packages are public from their next publication onward, and that is not cleanly reversible.** Returning to a restricted scope requires a paid plan plus per-package `npm access set status=private`, and anything already downloaded or mirrored stays out.
-- **`@deepseek-ai/dsh` is still not installable from outside the organization.** Its manifests stay `restricted`; what changed is that its published dependencies no longer would be, so opening it later is a version decision rather than a dependency problem.
-- **What ships from the two public sequences is now world-readable, so their payload policy carries more weight.** `vendor/cordis` publishes `src` deliberately, because its export map declares `./src/*`; the Landlock entry publishes `src/main.c` as a documented audit surface.
-- **The private-packages plan is no longer required for these two sequences.** The `402 Payment Required` failure that blocked the first native publication cannot recur for a public package.
-- **An unauthenticated `npm view` becomes a usable check for the public sequences.** While every package was restricted, a machine without credentials received `E404` for a package that existed, which is indistinguishable from an absent version.
+- **这十二个包从下一次发布起就是公开的,而且不能干净地回退。** 回到受限 scope 需要付费套餐加逐包 `npm access set status=private`,且已经被下载或镜像的内容收不回来。
+- **`@deepseek-ai/dsh` 仍然装不了(组织外)。** 它的 manifest 保持 `restricted`;变化的是它已发布的依赖不再受限,所以将来公开它是一个版本决定,而不再是依赖问题。
+- **两条公开序列交付的内容成为全网可读,它们的 payload 策略分量因此变重。** `vendor/cordis` 有意发布 `src`,因为其导出映射声明了 `./src/*`;Landlock 入口按既有约定发布 `src/main.c` 作为审计面。
+- **这两条序列不再需要私有包套餐。** 阻塞过首次 native 发布的 `402 Payment Required` 失败形态对公开包不会再出现。
+- **对公开序列,无凭据的 `npm view` 成为一个可用的检查手段。** 在所有包都受限的时期,没有凭据的机器对一个确实存在的包会收到 `E404`,与「版本不存在」无法区分。

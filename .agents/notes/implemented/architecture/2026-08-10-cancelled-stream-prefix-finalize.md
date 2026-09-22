@@ -1,39 +1,37 @@
-# Agent Note: Cancelled streams finalize their delivered prefix
+# Agent Note: 被取消的流定稿其已送达前缀
 
 Status: implemented
 
-English | [中文](2026-08-10-cancelled-stream-prefix-finalize.zh.md)
-
 ## Problem
 
-A cancelled stream can leave `assistant/chunk` events that clients continue rendering while `deriveMessages()` excludes them because no `assistant/message` records the delivered prefix. A follow-up such as "expand on your second point" then lacks text the user read, and a fork at the cancelled turn inherits the same gap.
+被取消的流可能留下客户端继续渲染的 `assistant/chunk` 事件，但如果没有 `assistant/message` 记录已送达前缀，`deriveMessages()` 就会排除这部分内容。后续的「第二点展开讲讲」之类追问会缺少用户已读到的文本，在该轮次上创建的分支也会继承这个缺口。
 
-The model history must contain assistant content that remains visible to the user after cancellation.
+模型历史必须包含取消后仍对用户可见的 assistant 内容。
 
 ## Decision
 
-`ReactLoopAgent.step()` catches cancellation while consuming a model stream, when its `BlockAssembler`, logged chunk seqs, and provider route identify the delivered prefix. It appends that prefix as the step's `assistant/message` with `interrupted: true`, `surfaceOp: 'append'`, and `sourceEventSeqs` containing exactly the logged chunks. The append precedes `step/end` and the aborted `turn/end`.
+`ReactLoopAgent.step()` 在消费模型流期间捕捉取消，此时 `BlockAssembler`、已记录的分片 seq 和提供方路由可以确定已送达前缀。循环把该前缀追加为 step 的 `assistant/message`，并设置 `interrupted: true`、`surfaceOp: 'append'` 以及恰好包含已记录分片的 `sourceEventSeqs`。该追加先于 `step/end` 和记录 aborted 的 `turn/end`。
 
-`BlockAssembler.interruptedBlocks()` returns closed and open `text` and `reasoning` blocks with non-whitespace content in stream order. It omits tool calls because interruption precedes dispatch and no real result exists; it also omits empty blocks and open unknown block types. An empty result appends no assistant message. Provider `error` and `aborted` finishes leave the stream-consumption scope before `agent/request-error`, so provider failures and cancellation during recovery commit no content from the failed request.
+`BlockAssembler.interruptedBlocks()` 按流顺序返回内容非空白的已闭合和未闭合 `text` 与 `reasoning` 块。打断先于分派，没有真实工具结果，因此它会省略工具调用，也会省略空块和未闭合的未知块类型。返回结果为空时不追加 assistant 消息。提供方的 `error` 和 `aborted` finish 会在 `agent/request-error` 前离开流消费范围，因此提供方故障和恢复期间的取消都不会提交失败请求的内容。
 
-Chat and Trajectory Conversation Definitions read `interrupted` from the durable message. Chat renders the Stopped marker, while Trajectory keeps the provider request in the error lifecycle after `step/end` and retains the durable result seq and provenance. Cancellation during tool execution follows the tool scheduler contract because the assistant message has already committed: started calls produce real results, and undispatched calls receive `ABORTED_BEFORE_DISPATCH` results.
+Chat 和 Trajectory Conversation Definition 从持久消息读取 `interrupted`。Chat 渲染 Stopped 标记，Trajectory 则在 `step/end` 后把提供方请求保持在 error 生命周期，并保留持久结果 seq 和提供方信息。工具执行期间的取消遵循工具调度器约定，因为 assistant 消息已提交：已启动的调用生成真实结果，未分派的调用获得 `ABORTED_BEFORE_DISPATCH` 结果。
 
 ## Alternatives considered
 
-**Always discard the prefix.** This avoids a new durable marker but makes every cancel-then-follow-up and fork omit assistant content that remains visible to the user.
+**始终丢弃前缀。** 这能避免新增持久标记，但每次取消后的追问和分支都会缺少仍对用户可见的 assistant 内容。
 
-**Assemble the prefix from chunks during projection.** `deriveMessages()` and client Conversation Definitions would each need interruption assembly rules, and the log would have no authoritative assistant message for the prefix. This also expands model history beyond the three `SurfaceEventType` events.
+**在投影时从分片组装前缀。** `deriveMessages()` 和客户端 Conversation Definition 都需要实现打断组装规则，日志中也没有该前缀的权威 assistant 消息。这还会让模型历史超出三类 `SurfaceEventType` 事件。
 
-**Retain complete tool calls with synthetic aborted results.** These calls never dispatched, so synthetic results would claim an execution outcome that did not occur and add content the user did not receive as a tool result.
+**保留完整工具调用并合成 aborted 结果。** 这些调用从未分派，合成结果会声称一个并未发生的执行结果，还会增加用户未收到的工具结果内容。
 
-**Append a model-visible interruption message such as `[interrupted by user]`.** This can tell the model that the prefix is incomplete, but it requires a separate source type, projection rule, UI treatment, and localized wording. The durable aborted `turn/end` preserves the fact needed for that later decision.
+**追加 `[interrupted by user]` 之类模型可见的打断消息。** 这可以告诉模型前缀并不完整，但需要独立的来源类型、投影规则、UI 处理和本地化文案。持久的 aborted `turn/end` 保留了该后续决策所需的事实。
 
 ## Consequences
 
-Post-cancel follow-ups and forks include the delivered prefix. The ACP bridge drains ordered assistant output before settling the prompt, so the final `agent_message_chunk` update precedes the cancelled stop reason.
+取消后的追问和分支会包含已送达前缀。ACP 桥会在结算 prompt 前排空按序传送的 assistant 输出，因此最后一条 `agent_message_chunk` 更新先于 cancelled stop reason。
 
-Terminal provider errors still discard their streamed prefix. That asymmetry remains because an error turn ends without the user's cancellation decision and requires its own retention policy.
+终局提供方错误仍会丢弃已流出前缀。该不对称保留，因为 error 轮次的结束不来自用户的取消决定，需要独立的保留策略。
 
 ## Testing
 
-`packages/core/agent-loop/tests/cancel.spec.ts` covers content, cited seqs, event order, next-request parity, reasoning-only output, tool-call omission, recovery cancellation, and the empty-prefix case. `packages/llm/llm/tests/assembler.spec.ts` covers `interruptedBlocks()`. `packages/client/ui-conversation/tests/conversation-node-definitions.client.spec.ts` and `packages/client/ui-trajectory/tests/conversation-definitions.client.spec.ts` cover both client projections. The keyless `cancel` ACP snapshot and `goal-round-driver` goal snapshot cover assembled applications.
+`packages/core/agent-loop/tests/cancel.spec.ts` 覆盖内容、引用的 seq、事件顺序、下一请求的一致性、仅 reasoning 的输出、工具调用省略、恢复期间的取消和空前缀情形。`packages/llm/llm/tests/assembler.spec.ts` 覆盖 `interruptedBlocks()`。`packages/client/ui-conversation/tests/conversation-node-definitions.client.spec.ts` 和 `packages/client/ui-trajectory/tests/conversation-definitions.client.spec.ts` 覆盖两种客户端投影。keyless 的 `cancel` ACP 快照和 `goal-round-driver` goal 快照覆盖完整应用。

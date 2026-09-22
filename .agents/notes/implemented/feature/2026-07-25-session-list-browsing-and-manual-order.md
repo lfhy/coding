@@ -1,60 +1,58 @@
-# Agent Note: Session List Browsing and Manual Workspace Order
+# Agent Note: Session 列表浏览与 Workspace 手动排序
 
 Status: implemented
 
-English | [中文](2026-07-25-session-list-browsing-and-manual-order.zh.md)
+## 问题
 
-## Problem
+[Workspace UI 完整产品流](2026-07-25-workspace-ui-product-flow.md)交付了分组 session 列表的首个形态，并把 Rename、拖拽排序等操作明确划出当期范围。设计稿（figma 239-10458 及关联画面）随后补齐了这些交互：列表要能切换成不分组的平铺视图、session 行悬停要出详情卡与操作菜单、workspace 要能改名、组内 session 要能手动排序。
 
-[Workspace UI Complete Product Flow](2026-07-25-workspace-ui-product-flow.md) shipped the first form of the grouped session list and explicitly scoped out operations such as Rename and drag ordering. The design file (figma 239-10458 and its companion screens) has since filled in those interactions: the list must switch to an ungrouped flat view, session rows need a hover detail card and an action menu, workspaces need renaming, and sessions need manual ordering inside their group.
+两条既有机制挡在前面。其一，host 在每条 `session/event` 上把活跃 session 持久化地提到 workspace 账本最前（活动置顶），任何手动排序都会被下一次活动打乱——两种排序权威不可调和。其二，浏览区域被劈在两个包里：ui-sidebar 拥有列表、搜索和组头行，而 ui-workspace 只借一个 picker slot 放弹层；每加一个 workspace 域的对话框都要跨包接线，归属越来越拧。
 
-Two existing mechanisms stood in the way. First, the host durably promoted the active session to the front of its workspace account on every `session/event` (activity pinning), so any manual order would be scrambled by the next activity — two ordering authorities cannot coexist. Second, the browsing area was split across two packages: ui-sidebar owned the list, search, and header rows while ui-workspace only borrowed a picker slot for its popover; every new workspace-domain dialog required cross-package wiring, and ownership grew more twisted with each one.
+## 决策
 
-## Decision
+### 平铺行与浏览态
 
-### Flat rows and viewing state
+group-by 菜单提供 WorkSpace / In one list 两种模式。WorkSpace 模式按 `WorkspaceView.sessionIds` 的手动序在各组内展示同级 session 行；In one list 把所有 session 合并后严格按 `updatedAt` 新→旧排序。两种模式都不把 `parentId` 投影成列表层级，fork 谱系只保留为 session 数据；完整 fork 行为由 [Web session fork 操作](2026-07-27-web-session-fork-actions.md)定义。模式选择持久化在浏览器（`dsh.workspace.view`），刷新后仍保持。[Workspace 侧边栏顺序与折叠](2026-08-11-workspace-sidebar-order-and-folding.md)随后加入浏览器本地的最近更新视图，而未改变 Host 记账的手动顺序权威。
 
-The group-by menu offers two modes, WorkSpace / In one list. WorkSpace mode renders peer session rows within each group in the manual order from `WorkspaceView.sessionIds`; In one list combines every session and sorts them strictly newest-first by `updatedAt`. Neither mode projects `parentId` into a list hierarchy; fork lineage remains session data only. [Web session fork actions](2026-07-27-web-session-fork-actions.md) define the complete fork behavior. The mode choice persists in the browser (`dsh.workspace.view`) across reloads. [Workspace Sidebar Order and Folding](2026-08-11-workspace-sidebar-order-and-folding.md) later added a browser-local recent-update view without changing the Host account's manual-order authority.
+### 行交互
 
-### Row interactions
-
-- Session rows show a detail card after a 500ms hover dwell (full title / relative time / status line; the status line has only running/idle until the wire grows a status field). The card and the row menu are mutually exclusive: no card while a menu is open or a drag is in flight.
-- Session-row … menu: Rename / Fork session / Delete session; Rename and Fork are wired, while Delete remains visual-only. The workspace-header … menu's Rename / Delete workspace actions are both wired. Menus close when the pointer leaves them.
-- Supporting primitives: `Menu` gains label entries, danger rows, and `closeOnPointerLeave`; a new `HoverCard` (portaled placement, open delay, disabled guard).
+- session 行悬停 500ms 出详情卡（完整标题、相对时间、状态行；在 wire 增加 status 字段前，状态行只有 running/idle 两态）。卡片与行菜单互斥：菜单开启或拖拽进行中不出卡。
+- session 行 … 菜单：Rename / Fork session / Delete session，其中 Rename 与 Fork 已接线，Delete 仍为纯视觉；workspace 组头 … 菜单的 Rename / Delete workspace 均已接线。菜单鼠标移出即关。
+- 支撑件：`Menu` 新增 label 条目、danger 行、`closeOnPointerLeave`；新增 `HoverCard`（portal 定位、开启延时、disabled 守卫）。
 
 ### workspace.rename
 
-`workspace.rename({ workspaceId, title })`: the title is trimmed and must be non-blank; both the same-title no-op and the duplicate check evaluate inside the Host's serialized workspace-operation chain (shared with path adoption and deletion, so concurrent workspace operations cannot interleave a duplicate or an out-of-order fake success), and a conflict returns `workspace-name-conflict`. Path adoption may derive a title already present because canonical path, not title, owns identity ([decision](../bug-fix/2026-07-31-same-basename-workspace-adoption.md)). Durability goes through `setTitle`'s mutate path, and the `domain/changed` listener broadcasts the `host/workspace-changed` frame automatically. The UI is a standard modal with a client-side duplicate pre-check.
+`workspace.rename({ workspaceId, title })`：title trim 后非空；同名 no-op 与重名查重都在 Host 的 Workspace 操作串行链内求值（与按路径收编和删除共链，并发的 Workspace 操作不能穿插出重名或乱序假成功），冲突返回 `workspace-name-conflict`。按路径收编可以派生出已有 title，因为拥有身份的是 canonical path，而不是 title（见[身份决策](../bug-fix/2026-07-31-same-basename-workspace-adoption.md)）。落盘经 `setTitle` 的 mutate 通道，`domain/changed` 监听自动广播 `host/workspace-changed` 帧。UI 为标准 Modal，client 侧另做重名预检。
 
-### Manual order: insertSessionBefore replaces activity pinning
+### 手动排序：insertSessionBefore 取代活动置顶
 
-The `session/event` → `touchSession` activity-pinning chain is deleted wholesale; the workspace account order is now manually owned — new sessions prepend at attach, and explicit reordering goes through `workspace.insertSessionBefore({ workspaceId, sessionId, beforeSessionId? })` (DOM insertBefore semantics: with an anchor it inserts before it, omitted appends to the end). The entity throws a typed `WorkspaceMoveInvalidError` only for unaccounted session/anchor ids; the handler maps exactly that to the business code `workspace-move-invalid`, while storage failures stay internal.
+`session/event` → `touchSession` 活动置顶链整体删除；workspace 账本顺序现完全由手动排序决定——新 session attach 时前插，显式重排走 `workspace.insertSessionBefore({ workspaceId, sessionId, beforeSessionId? })`（DOM insertBefore 语义：给定锚点时插在锚点前，省略则追加到末尾）。实体只对不在账的 session/锚抛类型化的 `WorkspaceMoveInvalidError`，handler 仅把它映射为业务码 `workspace-move-invalid`，存储故障保持 internal。
 
-The UI is HTML5 drag on session rows inside a group (workspace grouping only, outside search; fork children and their source sessions are ordered independently). Order authority stays entirely host-side: drop only sends the RPC, the client performs zero local reordering, and the view refreshes from the response upsert and the changed frame; a failed move changes nothing. The client's upsert rejects snapshots older (`updatedAt`) than the installed projection so a late unary response cannot roll back a newer frame.
+UI 为组内 session 行的 HTML5 拖拽（仅 workspace 分组、非搜索态；fork 子会话及其源会话各自独立排序）。顺序权威完全在 host：drop 只发 RPC，client 零本地重排，视图靠响应体 upsert 与 changed 帧刷新；失败即无事发生。client 的 upsert 拒绝比已装载投影更旧（`updatedAt`）的快照，防迟到的一元响应回滚较新的帧。
 
-### Shell/region split
+### 壳/区域切分
 
-ui-sidebar shrinks to the column-geometry shell: brand row, fold state machine, New Session, Settings, and one `sidebar.workspaces` hole; the shell↔region contract is two facts, `{ wide, expandSidebar }`. ui-workspace fully owns the browsing region (section header, search, grouped tree and flat list, every workspace dialog, drag) plus its groupBy store; the rail-state search/add-workspace icons belong to the region too and request shell expansion via `expandSidebar()`. The picker splits into the core `WorkspacePickFlow` (composed directly inside the region; named `WorkspaceCreateFlow` until the [one-route Note](../simplification/2026-07-31-one-route-to-add-a-workspace.md)) and the thin `WorkspacePicker` wrapper (still filling ui-conversation's hero slot); the old `sidebar.workspace` picker slot and its declaration-aware deferral are deleted with it.
+ui-sidebar 缩为列几何壳：品牌行、折叠状态机、New Session、Settings，以及一个 `sidebar.workspaces` 洞；壳与区域的约定只有两个事实 `{ wide, expandSidebar }`。ui-workspace 全权拥有浏览区域（section header、搜索、分组树与平铺、全部 workspace 对话框、拖拽）及其 groupBy store；rail 态的搜索、添加工作区图标也归区域，经 `expandSidebar()` 请求壳展开。picker 拆为核心件 `WorkspacePickFlow`（区域内直接组件组合；在[单一路径 Note](../simplification/2026-07-31-one-route-to-add-a-workspace.md)之前名为 `WorkspaceCreateFlow`）与薄包装层 `WorkspacePicker`（继续填 ui-conversation 的 hero slot）；原 `sidebar.workspace` picker slot 与声明感知延迟注册随之删除。
 
-## Alternatives considered
+## 考虑过的替代方案
 
-**Keep activity pinning; treat drag as a transient adjustment** — the manual order would be scrambled by the next session activity, making it a fiction; two coexisting ordering authorities cannot be explained to the user. A middle ground — freeze pinning per workspace after the first drag — adds a state tier with murkier semantics; deleting outright is cleaner.
+**保留活动置顶、拖拽仅作临时调整**——手动序在下一次 session 活动即被打乱，形同虚设；两种排序权威并存无法向用户解释。也考虑过「拖过一次即冻结该 workspace 的活动置顶」的折中，状态多一档、语义更难讲，直接删除更干净。
 
-**Numeric index in the reorder payload** — `{ index }` drifts during the drag window: after the host prepends a new session (e.g. Intent materialization) the same index points at a different row. Anchor-style insertBefore is naturally immune to prepends and filtered projections.
+**排序报文用数字下标**——`{ index }` 在拖拽窗口期会漂移：host 前插新 session（如 Intent 材料化）后同一下标指向别的行。锚点式 insertBefore 对前插与过滤投影天然免疫。
 
-**Optimistic reordering on drop** — client-first reordering needs failure rollback, one more entangled state in the object layer; local/LAN round-trips are millisecond-scale, so waiting for the host response is imperceptible. With a single order authority (trust the host completely), the frontend never invents an order.
+**drop 后乐观重排**——client 先行重排需失败回滚，对象层多一块纠缠态；本地、局域网往返毫秒级，等 host 响应的简单方案肉眼无感。顺序权威单一化（完全信 host）后，前端永不发明顺序。
 
-**Keep the rename dialog in ui-sidebar (smallest change)** — that is the problem itself: workspace-domain dialogs scattered in a borrowed slot, with each addition (the Delete confirmation is coming) repeating the cross-package wiring. Moving only the rename modal would repeat that wiring on the next dialog; the whole browsing region goes to ui-workspace and the shell stays geometry-only.
+**rename 对话框留在 ui-sidebar（最小改动）**——正是问题本身：workspace 域的对话框散落在借来的坑里，每加一个（Delete 确认框将至）都重演跨包接线。只挪 rename Modal 会在下一个对话框上重演这份接线；整个浏览区域归 ui-workspace，壳只留几何。
 
-**Nest sessions by fork lineage in WorkSpace mode** — nesting makes the current child visible only while its ancestors are expanded and limits in-group manual ordering to root nodes; `parentId` is lineage data, not a list-navigation structure. Flattening all sessions into peer rows lets each row be opened, searched, and ordered independently; In one list still disables drag because it has no workspace persistence carrier.
+**WorkSpace 模式按 fork 谱系嵌套 session**——嵌套会让当前子会话依赖祖先展开态才能可见，也让组内手动序只能移动根节点；`parentId` 是 lineage 数据，不是列表导航结构。所有 session 拍平成同级行后，每行都可独立打开、搜索与排序；In one list 仍因没有 workspace 持久化载体而禁用拖拽。
 
-## Consequences
+## 后果
 
-- Manual order is the sole authority over the Host workspace account: activity never mutates `WorkspaceView.sessionIds`. A later browser-local recent-update view may promote active rows without changing that account; its separate semantics are defined in [Workspace Sidebar Order and Folding](2026-08-11-workspace-sidebar-order-and-folding.md).
-- The two-fact shell/region contract funnels every future workspace-domain feature (Delete confirmation, cross-group moves, Ungrouped adoption) into the single ui-workspace package; ui-sidebar no longer evolves with session-list features.
-- Flat mode supports neither reordering nor a create-in-workspace entry point (switching back to grouped view is required) — an accepted scope reduction.
-- Wiring session Delete and growing the wire status enum remain future iterations.
+- 手动序是 Host workspace 账本的唯一顺序权威：活动绝不改动 `WorkspaceView.sessionIds`。后续加入的浏览器本地最近更新视图可以把活跃行提到最前，但不会改变该账本；其独立语义见 [Workspace 侧边栏顺序与折叠](2026-08-11-workspace-sidebar-order-and-folding.md)。
+- 壳/区域两事实约定把 workspace 域的后续功能（Delete 确认、跨组移动、Ungrouped 收编）全部收进 ui-workspace 单包；ui-sidebar 不再随 session 列表功能演进。
+- 平铺模式不支持重排，也没有在指定 workspace 中创建 session 的入口（需切回分组视图），是拍板接受的范围收窄。
+- session Delete 的功能接线与扩展 wire 状态枚举，留待后续迭代。
 
-## Testing
+## 测试
 
-Package-level suites cover the derivations (deriveGroups/deriveFlat), peer session rows, both apply registrations and passthroughs, host entity move semantics, and the rename/insertSessionBefore RPC implementations with their fixture stubs; the `apps/web` keyless snapshots regress the assembled application and pin that a fork does not introduce session expansion controls.
+包级用例覆盖派生（deriveGroups/deriveFlat）、同级 session 行、两处 apply 注册与透传、host 实体移位语义、rename/insertSessionBefore 的 RPC 实现与 fixture（测试前置数据）桩；`apps/web` keyless 快照回归覆盖装配后的应用，并钉住 fork 后没有 session 展开控件。

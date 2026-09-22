@@ -1,71 +1,69 @@
 # dsh-client-ui-agent-preset
 
-English | [中文](README.zh.md)
+agent preset 的各个表层：General 设置中的一行，用于选择新建会话据以组装的 [preset](../../preset/agent-presets/README.md)；新建会话界面上的一枚 chip，用于选择**下一个会话**的 preset；会话标题旁的一个只读标签；以及一个设置页分区，用于管理名单——复制、删除、默认值，以及通往 preset 自身文件的入口。
 
-The agent-preset surfaces: a General-settings row choosing which [preset](../../preset/agent-presets/README.md) new sessions are composed from, a chip on the new-session screen choosing the next session's, a read-only label in the session header, and a settings section that manages the roster — copy, delete, default, and the way into a preset's own files.
+## 为什么它是"新建会话"的偏好设置
 
-## Why it is a new-session preference
+会话的 preset 在创建时即固定——宿主拒绝以不同 preset 接管已存在的会话，因为该会话的历史是在最初那份 preset 的工具下产生的。因此本行不可能是实时切换，它也如实说明了这一点：更改只对此后开启的会话生效，而运行中的会话保持它们开始时的组装。
 
-A session's preset is fixed when the session is created — the host refuses to adopt an existing session under a different one, because that session's history was produced under the first preset's tools. So this row cannot be a live switch, and it says so: changing it applies to sessions started afterwards while running sessions keep the composition they began with.
+## 新建会话 chip
 
-## The new-session chip
+第二个表层，位于新建会话界面上、工作区选择器旁边。它落在这里而非 composer，是因为这里才是选择仍然成立的地方：一个大部分时间处于禁用状态的控件，属于它仍然可用的那个界面。
 
-A second surface, beside the workspace picker on the new-session screen. It sits there rather than in the composer because that is where the choice is still open: a control that spends most of its life disabled belongs on the screen where it still works.
+chip 以部署默认值打开，其选择是**暂存**的——该界面先于它要应用到的会话存在。暂存值会在某个会话成为当前会话且仍为空白时抵达该会话；这既覆盖工作区连接新建的会话，也覆盖它复用的那个空白会话，而搭 `sessions.create` 的便车会漏掉后者。暂存值一经使用即被清空，因此下一个新会话重新以默认值打开——与它旁边的工作区选择器完全一致。
 
-The chip opens on the deployment default and its pick is *staged* — the screen precedes the session it would apply to. The stage reaches a session when one becomes current and is still blank, which covers both the session the workspace connect created and the blank one it reused; riding along on `sessions.create` would miss the second. It is spent on first use, so the next new session opens on the default again, exactly like the workspace picker beside it.
+已经开始的会话会被直接拒绝而非排队：宿主返回 `agent-preset-locked`，暂存值随之丢弃，而不是去等一个永远不会接受它的会话。
 
-A session that has started is refused rather than queued: the host answers `agent-preset-locked`, and the stage is dropped instead of waiting for a session that will never accept it.
+## 会话标题旁的标签
 
-## The session-header label
+第三个表层，位于会话标题旁：**本会话**所运行的 preset，作为静态装饰呈现。在那里放一个控件，等于承诺一次宿主会断然拒绝的切换。它从会话自身的摘要读取 preset，并在 General 行所读的同一份名单上解析显示名称。转发的 owner 事件 `agent-preset/selected` 会在每个标签页中把已经提交的空会话切换折进这份共享摘要；发起方标签页可能已经采用 RPC 回执，而合并是幂等的。
 
-A third surface, beside the session title: the preset THIS session runs, as static chrome. A control there would promise a switch the host refuses outright. It reads the preset from the session's own summary and resolves the display name against the same roster the General row reads. Forwarded `agent-preset/selected` owner events fold committed blank-session switches into that shared summary in every tab; the initiating tab may already have applied the RPC echo, and the merge is idempotent.
+## 它读什么、写什么
 
-## What it reads and writes
+选项与当前默认值都来自同一次 `agentPreset.list` 调用。名单本身已经报告了"未显式选择的会话会得到哪个 id"，因此本行无需对 settings schema 做内省；写入目标是 `agent-presets` settings 命名空间的 `default` 字段，也正是宿主在创建时解析的那个字段。
 
-Options and the current default both come from one `agentPreset.list` call. The roster already reports which id a session with no explicit choice gets, so the row needs no settings-schema introspection; the write targets the `agent-presets` settings namespace's `default` field, which is what the host resolves at creation.
+本地创作的 preset 的权限恰好等于它所引用的插件，因此列表会标注 `user` 行，而不是把每个 preset 都呈现为随附且已审核的。
 
-A locally authored preset is exactly as privileged as the plugins it names, so the list marks `user` rows rather than presenting every preset as shipped and vetted.
+preset 文件提供一套未国际化的 `name` 与 `description`，Web 将其用于所有 `user` 行和未知的 `system` 行。对于四个随附 id（`standard`、`code`、`minimal` 与 `cordis`），只有名单将该行标记为 `system` 时，Web 才会从当前 locale 解析这两个字段；同名的 `user` preset 仍使用其文件元数据。
 
-Preset files publish one unlocalized `name` and `description`, which Web uses for every `user` row and unknown `system` row. For the four shipped ids (`standard`, `code`, `minimal`, and `cordis`), Web resolves both fields from its active locale only when the roster marks the row `system`; an identically named `user` preset keeps its file metadata.
+本行在自身命名空间的 `settings/changed` 以及 `connection/reset` 时重新读取：名单是一个活动目录，默认值是一项设置，外部编辑与重新连接都可能改变它。
 
-The row re-reads on `settings/changed` for its own namespace and on `connection/reset`: the roster is a live directory and the default is a settings field, so an external edit or a reconnect can both move it.
+## 管理分区
 
-## The management section
+第四个表层，独立的设置页（`settings.section`，id 为 `agent-presets`，排在「模型」之后——选模型是日常操作，而组装 agent 是它背后那件塑造部署形态的事）：名单以卡片呈现，复制对话框是创建 preset 的唯一入口，随附组装则在只读查看器中展示。
 
-A fourth surface, its own settings page (`settings.section` id `agent-presets`, ordered after Models — choosing a model is routine, composing an agent is the deployment-shaping act behind it): the roster as cards, a copy dialog as the only way a preset is created, and a read-only viewer over the shipped compositions.
+浏览器不再编辑任何组装文本。在网页文本域里编 YAML 是弱功能（无补全、无高亮、无 diff），因此新 preset 是宿主端对既有 preset 的一次复制——对话框只收集一个 id（它将成为目录名，所以必须当场取好、事后无法更改）与一个可选显示名，跨越传输层的只有 `{ from, id, name? }`。其余一切——描述、组装、skills——都在 preset 自己的文件里编辑，而本页的另一职责正是把用户送到那些文件面前：复制以打开新目录作为收尾，每张自定义卡片也保有一个位置操作。宿主没有桌面打开器时（名单上的 `hasDocument: false`；远程与容器部署），同样的操作改为把目录以文本显示在卡片上，而不是提供一个点了没反应的按钮。
 
-The browser edits no composition text. Editing YAML in a web textarea was a weak surface (no completion, no highlighting, no diff), so a new preset is a host-side copy of an existing one — the dialog collects an id (it becomes the directory name, which is why it must be named up front and cannot change later) and an optional display name, and `{ from, id, name? }` is all that crosses the wire. Everything else — description, composition, skills — is edited in the preset's own files, and the page's other job is getting the user TO those files: the copy completes by opening the new directory, and every custom row keeps a location action. Where the host has no desktop opener (`hasDocument: false` on the roster; remote and container deployments), the same actions answer the directory as text on the row instead of offering a button that would spawn into nothing.
+preset 自行发布描述，长度不限，而网格让每一行卡片等高——因此不加约束的描述会决定整份名单的高度。卡片把描述截断为四行，其余内容由 tooltip 承载，且仅在文本确实被裁切时才挂载。截断由 CSS 完成，因此无论卡片显示多少，完整描述始终留在无障碍树中。
 
-A preset publishes its own description, of any length, and the grid sizes every card row alike — so an unbounded description would set the height of the whole roster. Cards clamp it to four lines and offer the rest in a tooltip, attached only while the text is actually cut off. The clamp is CSS, so the whole description stays in the accessibility tree whatever the card shows.
+随附 preset 在只读查看器中打开。它是副本据以出发的已知良好组装，因此能读到它正是意义所在；它不提供位置也不提供删除——它的安装目录会被升级覆盖，不归用户管理。开篇引导语承担了从前创建按钮所暗示的信息：复制一份既有预设改成自己的，或用「创造模式」让 Agent 帮你创建。
 
-A shipped preset opens in the read-only viewer. It is the known-good composition a copy starts from, so reading it is the point; it offers no location and no delete — its install is overwritten by upgrades and is not the user's to manage. The intro carries the guidance a create button used to imply: duplicate an existing preset and make it yours, or let the agent draft one in Creator mode.
+复制旁边是对话式入口：名单携带自指的 `cordis` preset 时，一张虚线添加卡（模型页的同款样式）会暂存它并开启新会话——分区经外壳的 owner-prop `close` 关闭设置面板，新会话 chip 自己的应用器负责组装工作区流程产出的空白会话。seat 会防止晚到的名单加载回退显示：暂存选择优先，其次是当前会话已携带的组装，最后才是部署默认值。
 
-Beside copying sits the conversational entry: when the roster carries the self-referential `cordis` preset, a dashed add-card (the Models page's affordance) stages it and starts a new session — the section closes the settings panel through the shell's owner-prop `close` and the new-session chip's own applier composes the blank session the workspace flow produces. The seat keeps a late roster load from regressing the display: staged pick first, then the composition the current session already carries, then the deployment default.
+对话框复刻宿主自身的约束规则（`[a-z0-9][a-z0-9-]*`），并拒绝已被占用的名称——复制从不覆写。这两项检查只是便利：宿主会重新校验，失败时对话框报告的正是宿主的答复。
 
-The dialog mirrors the host's own containment rule (`[a-z0-9][a-z0-9-]*`) and refuses a name already in use — a copy never overwrites. Both checks are conveniences: the host re-applies them and its answer is what the dialog reports on failure.
+删除会移除整个 preset 目录。已据其组装的会话继续运行——组装在会话创建时挂载一次，此后没有任何东西会重新读取该文件。
 
-Deleting removes the preset directory. Sessions already composed from it keep running — a composition is mounted once at session creation and nothing re-reads the file.
+名单行携带 `broken`（宿主的形状检查发现组装缺失或不可加载）时渲染为标记卡片：红色边框、「加载失败」徽记（discovery 观察到的事实，而非断言文件已损坏——常见起因是用户刚编辑或删除了组装文件）、原样展示的原因、卡片主体禁用——它不能成为默认——复制也禁用，因为损坏 preset 的副本只是又一个损坏的 preset。损坏的自定义行保留位置与删除动作：文件正是修复它的地方，而删除正是清掉幽灵目录（组装文件被手动删除、目录仍占着 id）的方式；损坏的内置行连查看器也不提供——没有可读的组装可展示。两个选择器（通用设置行与新会话 chip）则完全不列出损坏的 preset：它们选的是下一个会话的组装，列出无法组装的选项只会把失败推迟到会话启动。
 
-A roster row carrying `broken` (the host's shape check found the composition missing or unloadable) renders as a marked card: red border, a "Failed to load" badge (what discovery observed, not a claim that the files are damaged — the usual cause is a composition the user just edited or deleted), the reason verbatim, the body disabled — it cannot become the default — and duplication disabled, since a copy of a broken preset is another broken preset. A broken custom row keeps its location and delete actions, because the files are where it gets fixed and deleting is how a ghost directory (composition deleted by hand, directory still blocking the id) is cleared; a broken shipped row withholds the viewer too — there is no readable composition to show. The two pickers (the General row and the new-session chip) drop broken presets entirely: they choose the NEXT session's composition, and offering one that cannot compose would only defer the failure to the session start.
+设置默认值写入的是 `agent-presets` settings 命名空间，宿主需将其暴露给配置客户端（[`dsh-apiproxy`](../../host/apiproxy/README.md) 维护一份显式白名单——不在其中的命名空间会让选择器动一下然后悄悄忘记）。
 
-Setting the default writes the `agent-presets` settings namespace, which the host exposes to configuration clients ([`dsh-apiproxy`](../../host/apiproxy/README.md) keeps an explicit allowlist — a namespace outside it makes a picker move and then silently forget).
+`agentPreset.read`、`copy`、`openDocument` 与 `remove` 被固定在环回地址（见 [`dsh-client-connection`](../connection/README.md)）：组装指明了一个会话所运行的插件，因此读取它是侦察，其余几个则管理名单并驱动宿主桌面。`agentPreset.list` 不在其中——它携带 id、信任级别与两个不含路径的能力标志，而局域网客户端的选择器需要它。
 
-`agentPreset.read`, `copy`, `openDocument`, and `remove` are loopback-pinned ([`dsh-client-connection`](../connection/README.md)): a composition names the plugins a session runs, so reading one is reconnaissance, and the rest manage the roster and drive the host desktop. `agentPreset.list` is not — it carries ids, trust, and the two path-free capability flags, and a LAN client's picker needs it.
+## 何时不显示这些表层
 
-## When the surfaces are absent
+未组装任何 preset 的部署返回空名单，本行、chip、标签与分区都不渲染任何内容——此时每个会话共用宿主组装，也就无从选择或管理。未配置可写根目录的部署返回 `authorable: false`，分区随之退化为只读浏览：随附组装仍可在查看器中打开，但每个复制操作都被禁用并以原因作提示，而不是给出一个创建必然失败的对话框。
 
-A deployment that composes no presets answers with an empty roster, and the row, the chip, the label, and the section all render nothing — every session then shares the host composition, and there is nothing to choose between or manage. A deployment that configures no writable root answers `authorable: false`, and the section stays a read-only browser: the shipped compositions still open in the viewer, but every copy action is disabled with the reason as its tooltip rather than offering a dialog whose create always fails.
-
-## Model Experience
+## 模型体验
 
 Indirectly, through the preset a later session is composed from; [`dsh-agent-presets`](../../preset/agent-presets/README.md) owns what that composition puts in front of the model.
 
 #### KV Cache effect
 
-No direct invalidation. Changing the default never touches a running session's prefix; a session created afterwards establishes its own prefix from its own composition.
+没有直接的失效影响。更改默认值绝不触及运行中会话的前缀；此后创建的会话依据它自己的组装建立自己的前缀。
 
-## Known Limitations and Deferred Work
+## 已知限制与暂缓事项
 
-- **A preset without metadata is listed by id** — display text is optional, and a copy given no name deliberately falls back to its directory name rather than presenting itself identically to its source.
-- **A revealed path is display text, not a link** — where the host has no desktop opener the row shows the directory to copy by hand; the browser cannot open a host filesystem location itself.
-- **Composition edits are invisible to the page** — the files are edited outside the browser and nothing on the wire announces a file change, so the roster re-reads on its own actions, `settings/changed`, and `connection/reset`, not on every disk edit.
+- **没有元数据的 preset 按 id 列出** —— 展示文本是可选的，未取名的副本刻意回退到目录名，而不是与其来源呈现得一模一样。
+- **展示的路径是文本，不是链接** —— 宿主没有桌面打开器时，卡片显示目录供手工复制；浏览器自身无法打开宿主文件系统上的位置。
+- **组装编辑对页面不可见** —— 文件在浏览器之外编辑，传输层不广播文件变动，因此名单只在自身操作、`settings/changed` 与 `connection/reset` 时重读，而非每次磁盘编辑。

@@ -1,39 +1,37 @@
-# Agent Note: Remove the TUI package
+# Agent Note: 移除 TUI 包
 
 Status: implemented
 
-English | [中文](2026-08-04-remove-tui-package.zh.md)
+## 问题
 
-## Problem
+移除隐式的 `dsh` 终端应用后，`@deepseek-ai/dsh-tui` 不再拥有任何已交付的组合。该包仍包含终端渲染器、交互式命令与问答适配器、扩展浮层、快照 fixture（测试前置数据）、已打补丁的 `pi-tui` 依赖，以及仍将 TUI 宣称为受支持应用接口的 SDK 脚手架。保留这整套能力意味着继续维护一个产品规模的前端，而其唯一剩余消费方就是项目生成器本身。
 
-Removing the implicit `dsh` terminal application left `@deepseek-ai/dsh-tui` without a shipped composition. The package still carried a terminal renderer, interactive command and question adapters, extension overlays, snapshot fixtures, a patched `pi-tui` dependency, and SDK scaffolding that advertised TUI as a supported application interface. Keeping that surface required maintaining a product-sized frontend whose only remaining consumer was the project generator itself.
+该包还会使仓库所支持的应用清单产生误导。当前可运行产品使用 Web、ACP（Agent Client Protocol）、JSON-RPC 或一次性 CLI（命令行界面）入口，SDK 却仍提供终端选项，而没有任何示例或产品命令会实际使用它。
 
-The package also made the repository's supported application inventory misleading. Current runnable products use Web, ACP, JSON-RPC, or one-shot CLI entry points, while the SDK continued to offer a terminal choice that no example or product command exercised.
+## 决策
 
-## Decision
+删除 `packages/ui/tui` 包，不提供兼容包或别名。其源码、包测试、终端快照、依赖声明、已打补丁的 `pi-tui` 产物、workspace 引用、生成的服务目录条目和文档会一并移除。通用宿主能力与 agent loop（智能体循环）能力保持不变。
 
-The `packages/ui/tui` package is deleted without a compatibility package or alias. Its source, package tests, terminal snapshots, dependency declarations, patched `pi-tui` artifact, workspace references, generated service catalog entry, and documentation are removed together. Generic host and agent-loop capabilities remain unchanged.
+作为 TUI 包最后消费方的 SDK 项目工具链已由[工具链移除决策](2026-08-11-remove-sdk-project-toolchain.md)删除。宿主应用仍可直接挂载提供方无关的 `dsh-user-questions`、`dsh-commands` 和呈现服务。
 
-The SDK project toolchain that remained as the TUI package's final consumer is deleted by the [toolchain removal decision](2026-08-11-remove-sdk-project-toolchain.md). Host applications may still mount the provider-neutral `dsh-user-questions`, `dsh-commands`, and presentation services directly.
+本决策取代[显式配置 `dsh` 入口决策](../../archived/simplification/2026-08-03-explicit-config-dsh-entrypoint.md)中保留可复用包的决定，也使已归档 TUI 实现记录不再适用于当前状态。这些历史记录继续保持冻结，但不再作为受支持包或应用清单的依据。
 
-This decision supersedes the reusable-package retention in [the explicit-config `dsh` entrypoint decision](../../archived/simplification/2026-08-03-explicit-config-dsh-entrypoint.md) and the current applicability of the archived TUI implementation notes. Their historical records remain frozen, but they are not authority for the supported package or application inventory.
+本记录汇总了因移除该包而无法继续保持现行有效、现已删除的仅涉及该包的记录。终端 UI 曾在长对话期间保持会话身份可见、移除重复模型标签、为消息附加耗时与阶段状态、在提示词旁显示 workspace 与分支上下文，并保守地解析完整 XML 包装层，以生成人类可读的回退输出。这些选择改善了一个终端前端，但在没有部署的情况下，并不足以证明应保留它。未来的 XML 回退仍必须使用真正的解析器而非正则表达式。
 
-This note consolidates the deleted package-only records that could not remain current after removal. The terminal UI had kept session identity visible during long conversations, removed duplicate model labels, attached elapsed timing and phase status to messages, showed workspace and branch context beside the prompt, and conservatively parsed complete XML wrappers for human-readable fallback output. Those choices improved one terminal frontend but do not justify retaining it without a deployment. A future XML fallback must still use a real parser rather than regular expressions.
+## 验证
 
-## Verification
+仓库搜索结果与生成的服务目录中不再包含 TUI 包、依赖补丁、服务键或包链接。常规源码构建、类型检查、lint、hygiene、文档门禁以及其余组装快照测试套件均可在没有已删除 workspace 的情况下运行。
 
-Repository searches and generated catalogs contain no TUI package, dependency patch, service key, or package link. The ordinary source build, typecheck, lint, hygiene, documentation gates, and remaining assembled snapshot suites run without the deleted workspace.
+## 考虑过的替代方案
 
-## Alternatives considered
+**保留未交付的包。** 不予采纳，因为这会保留维护成本，并继续将一个没有真实组合证明其生命周期的、不受支持的终端前端呈现为可复用的产品界面。
 
-**Keep the package unshipped.** Rejected because it preserves the maintenance cost and continues to present an unsupported terminal frontend as reusable product surface without a real composition proving its lifecycle.
+**为外部消费方保留 SDK 选项。** 不予采纳，因为生成器会成为该包在仓库内唯一的消费方，并会搭建一个仓库不再进行端到端验收的应用。预发布兼容性立场不要求保留该选项。
 
-**Keep the SDK option for external consumers.** Rejected because the generator would be the package's only in-repository consumer and would scaffold an application the repository no longer accepts end to end. The pre-release compatibility stance does not require preserving that option.
+**将包移入 examples 或 experimental 组。** 不予采纳，因为移动代码无法提供当前产品需求、受维护的部署或组装验收。未来的终端前端应以其实际宿主和交互需求为起点，而不是默认继承此实现。
 
-**Move the package to an examples or experimental group.** Rejected because moving code does not provide a current product need, a maintained deployment, or assembled acceptance. A future terminal frontend should start from its actual host and interaction requirements rather than inherit this implementation by default.
+## 后果
 
-## Consequences
+DeepSeek Harness 不再提供终端 UI 包。现有 import 和依赖该包的 `cordis.yml` 条目会直接失败，不会得到兼容转换。Web 仍是已交付的交互界面；ACP、JSON-RPC 与一次性 CLI 仍是 Web 之外的入口。
 
-DeepSeek Harness has no terminal UI package. Existing imports and `cordis.yml` rows that depend on the package fail instead of being translated. Web remains the shipped interactive surface; ACP, JSON-RPC, and one-shot CLI remain the non-Web entry points.
-
-The provider-neutral command, user-questions, approval, tool-presentation, PTY, and session-projection capabilities remain available to other hosts. Reintroducing a terminal frontend requires a named product or deployment, an explicit package boundary, a concrete interaction provider, and assembled lifecycle and transcript acceptance for that frontend.
+提供方无关的命令、用户交互、审批、工具呈现、PTY 与会话投影能力仍可供其他宿主使用。重新引入终端前端时，必须为其提供具名产品或部署、显式包边界、具体交互提供方，以及组装后的生命周期与 transcript（文本记录）验收。

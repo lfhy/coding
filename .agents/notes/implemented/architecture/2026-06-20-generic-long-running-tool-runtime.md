@@ -1,138 +1,136 @@
-# Agent Note: The background job runtime (`ctx.jobs`) and generic task control tools
+# Agent Note: 后台任务运行时（`ctx.jobs`）与通用任务控制工具
 
 Status: implemented
 
-English | [中文](2026-06-20-generic-long-running-tool-runtime.zh.md)
+## 问题
 
-## Problem
+后台 bash 原本兼有两项职责：bash 执行器既运行进程，又管理 job id、所有权、增量读取、取消、完成监听器和面向模型的控制工具。新增后台 subagent 需要相同的生命周期与交互约定。如果每种长时间运行能力都独立实现该约定，就会重复隔离、清理、通知和提示词行为，还会让模型为每种生产方学习不同的收集与停止协议。
 
-Background bash originally combined two responsibilities: the bash executor ran processes and also managed job ids, ownership, incremental reads, cancellation, completion listeners, and model-facing control tools. Adding background subagents required the same lifecycle and interaction contract. Implementing that contract independently for every long-running capability would duplicate isolation, cleanup, notification, and prompt behavior while teaching the model a different collect-and-stop protocol for each producer.
+任务注册表、控制工具与完成通知共同构成一项 harness 能力。bash 和 subagent 只提供执行专属的钩子，不拥有通用任务行为。
 
-The job registry, control tools, and completion notices form one harness capability. Bash and subagents should supply execution-specific hooks without owning generic task behavior.
+## 决策
 
-## Decision
+`jobs/` 包组拥有后台任务语义：
 
-The `jobs/` package group owns background-job semantics:
+- `@deepseek-ai/dsh-jobs` 将运行中的工作注册为 `ctx.jobs`，并拥有 job id、授权、快照、读取、取消、等待、完成监听器与清理。
+- `@deepseek-ai/dsh-tool-jobs` 暴露 `job_output`、`job_list` 和 `job_kill`，注入完成通知，并提供后台任务的系统提示词指导。
 
-- `@deepseek-ai/dsh-jobs` registers running work as `ctx.jobs` and owns job ids, authorization, snapshots, reads, cancellation, waiting, completion listeners, and cleanup.
-- `@deepseek-ai/dsh-tool-jobs` exposes `job_output`, `job_list`, and `job_kill`, injects completion notices, and supplies the background-job system-prompt guidance.
+长时间运行工具是生产方。`dsh-tool-bash` 将 `ShellProcess` 适配为增量输出与进程取消；`dsh-tool-subagent` 将子运行适配为最终输出与子运行释放。bash 与 subagent 能力 seam 保持独立，不依赖会话或任务注册表。
 
-Long-running tools are producers. `dsh-tool-bash` adapts a `ShellProcess` into incremental output and process cancellation; `dsh-tool-subagent` adapts a child run into final output and child disposal. The bash and subagent capability seams remain independent of sessions and the job registry.
+`JobRegistry` 是 `@deepseek-ai/dsh-jobs` 中的 Service Definition；进程内 Service Provider 是 `@deepseek-ai/dsh-jobs-local` 中的 `LocalJobRegistry`（该拆分记录在[任务注册表约定 Agent Note](2026-07-26-job-registry-seam.md)中）。
 
-`JobRegistry` is the Service Definition in `@deepseek-ai/dsh-jobs`; the process-local provider is `LocalJobRegistry` in `@deepseek-ai/dsh-jobs-local` (the [task-registry contract Agent Note](2026-07-26-job-registry-seam.md) records that split).
+## 运行时约定
 
-## Runtime contract
+字面类型见[任务子系统页面](../../../../docs/subsystems/jobs.md)。生产方调用 `ctx.jobs.start()`，传入 kind、label、可选的所属 `Agent`、可选的正数 `outputLimitBytes` 与一个 `run()` 函数。运行时会在调用 `run()` 前完成所有可能失败的预检工作，并且只调用一次。`run()` 返回钩子后，注册过程不会再执行可能失败的步骤而直接提交；生产方无法启动没有可收集 job id 的工作。
 
-The literal types live on the [tasks subsystem page](../../../../docs/subsystems/jobs.md). A producer calls `ctx.jobs.start()` with a kind, label, optional owning `Agent`, optional positive `outputLimitBytes`, and a `run()` function. The runtime completes all failable preflight work before calling `run()` and invokes it once. After `run()` returns hooks, registration commits without another failable step; a producer cannot start work that lacks a collectable job id.
+进程内 Service Provider 还拥有有界准入，其理由记录在[有界后台任务准入决策](../bug-fix/2026-08-11-bounded-background-job-admission.md)中。它的 `maxConcurrentJobsPerOwner` 配置必须是正的安全整数，默认值为 `10`；`start()` 从 `running` 与 `stopping` 记录派生每个确切 `Agent` 对象的活动数量，而全部无 owner 任务共享一个服务级桶。容量拒绝发生在 `run()` 与 id 分配之前，处于 stopping 的任务只有在生产方 `done` 结算时才释放名额。Service Provider 不排队或抢占任务，也不保留第二份可变计数。
 
-The process-local provider also owns bounded admission, whose rationale is recorded in the [bounded background job admission decision](../bug-fix/2026-08-11-bounded-background-job-admission.md). Its positive-safe-integer `maxConcurrentJobsPerOwner` config defaults to `10`; `start()` derives each exact `Agent` object's active count from `running` and `stopping` records, while every unowned task shares one service bucket. Capacity rejection occurs before `run()` and id allocation, and producer `done` settlement is the only event that releases a stopping task's place. The provider does not queue, preempt, or retain a second mutable count.
+`outputLimitBytes` 是生产方拥有的呈现策略，而非注册表缓冲区。注册表校验该值，并将其原样投影到 `JobSnapshot`；通用任务控制器添加自身的状态或通知元数据后，再将该上限应用于完整的面向模型输出。省略该值时保持现有控制器行为，因此运行时不会向无关的生产方类别施加隐式默认值。
 
-`outputLimitBytes` is producer-owned presentation policy, not a registry buffer. The registry validates and projects it unchanged into `JobSnapshot`; generic control APIs apply the cap to complete model-facing output after adding their own status or notice metadata. Omitting it preserves the existing controller behavior, so the runtime does not impose a hidden default on unrelated producer families.
+面向模型的生产方会在规范成功值中暴露已提交的 id，通常为 `{ kind: 'background', jobId }`；Native 渲染仍可保留便于人类阅读的行文。预先被中止的后台调用会失败，而不是返回空操作，因为不存在可履行所承诺句柄的任务。一旦注册过程发布 id，取消就归任务自身的控制器与任务运行时所有：随后取消生产工具调用不得终止已发布的任务。`job_kill`、所有者资源释放和服务拆除会请求取消；前台执行仍与调用的 `exec.signal` 耦合。
 
-A model-facing producer exposes that committed id in its canonical success value, normally `{ kind: 'background', jobId }`; Native rendering may keep human-readable prose. A pre-aborted background call fails rather than returning a no-op because no task exists to satisfy the promised handle. Once registration publishes the id, cancellation belongs to the task's own controller and the job runtime: later cancellation of the producing tool call must not kill the published task. `job_kill`, owner disposal, and service teardown request cancellation; foreground execution remains coupled to the call's `exec.signal`.
+生产方钩子定义三项职责：
 
-The producer hooks define three responsibilities:
+- `cancel(reason?)` 同步请求终止，具备幂等性，并且必须使 `done` 完成。
+- `done` 从不拒绝，并且仅在生产方释放任务资源后完成。
+- 可选的 `readOutput()` 返回下一个消费式输出增量。省略该钩子即声明这是最终输出任务，其终止结果来自 `JobOutcome.output`。
 
-- `cancel(reason?)` synchronously requests termination, is idempotent, and must cause `done` to settle.
-- `done` never rejects and settles only after the producer has released the task's resources.
-- Optional `readOutput()` returns the next consuming output delta. Omitting it declares a final-output task whose terminal result comes from `JobOutcome.output`.
+状态包括 `running`、`stopping`、`completed`、`killed` 和 `failed`。退出码或停止原因等生产方专属信息放在 `detail` 中，注册表不解释这些信息。任务 kind 构成可合并扩展的字符串联合；job id 带品牌，并按 `<kind>-N` 生成，每个 kind 各有一个计数器。
 
-Statuses are `running`, `stopping`, `completed`, `killed`, and `failed`. Producer-specific information such as an exit code or stop reason belongs in `detail`; the registry does not interpret it. Task kinds form a merge-extensible string union, and job ids are branded and generated as `<kind>-N`, with a counter per kind.
+运行时为 `done` 附加一个 continuation，记录第一个终止结果、使等待方完成等待，并逐个调用完成监听器，同时隔离每个监听器的错误。首次结果优先的结算在资源销毁期间至关重要：如果 `cancel` 抛出，运行时会强制将记录标为失败，并警告工作可能遗留，而不是永远等待一个可能永不完成的 promise。后续生产方结果不能覆盖该诊断，也不能重复通知。`cancel` 返回后如果最终未使 `done` 完成，仍会阻塞资源销毁，因为运行时无法区分这种情况与缓慢但有效的停止。
 
-The runtime attaches one continuation to `done`, records the first terminal outcome, resolves waiters, and invokes completion listeners with per-listener error containment. First-wins settlement matters during teardown: if `cancel` throws, the runtime force-fails the record and warns that work may be orphaned rather than waiting forever for a promise that may never settle. A later producer outcome cannot overwrite that diagnosis or notify twice. A `cancel` that returns without eventually settling `done` still blocks teardown because the runtime cannot distinguish it from a slow, valid stop.
+任务注册不是生产方工具 fiber 的 effect。因此，重新加载工具或控制器插件不会终止由 agent（智能体）和后端拥有的工作。任务服务自身释放时会取消所有尚未终止的任务，并等待遵守约定的生产方。
 
-Task registrations are not effects of the producer tool fiber. Reloading a tool or controller plugin therefore does not kill work owned by an agent and backend. The task service's own disposal cancels all live tasks and awaits contract-compliant producers.
+## 授权与所有者生命周期
 
-## Authorization and owner lifecycle
+job id 在运行时全局可见且可预测，因此注册表会授权每次访问。`get`、`read`、`wait` 和 `kill` 接受调用方 `Agent`；`list` 仅返回该调用方可见的任务。有所有者的任务仅允许对应的确切会话访问。无所有者任务向非 agent 调用方开放，并随任务服务一起终止。
 
-Job ids are runtime-global and predictable, so every access is authorized by the registry. `get`, `read`, `wait`, and `kill` accept the calling `Agent`; `list` returns only tasks visible to that caller. An owned task is accessible only to the exact owning session. Unowned tasks are open to non-agent callers and die with the task service.
+快照存储所有者的品牌化 `SessionId` 以供授权，生命周期操作则保留确切的存活 `Agent` 实例。这两种身份用途不同：会话相等性授予访问权，精确对象身份决定清理和完成通知的接收方。复用 agent 或会话 id，不能将旧作用域的清理或通知重定向到替代实例。
 
-The snapshot stores the owner's branded `SessionId` for authorization, while lifecycle operations retain the exact live `Agent` instance. These identities serve different purposes: session equality grants access, but exact object identity selects cleanup and completion delivery. Reusing an agent or session id cannot redirect an old scope's cleanup or notices to a replacement.
+某个所有者的第一个任务会向 `owner.ctx` 附加一个异步 effect。agent 作用域释放时会取消该所有者尚未终止的任务、等待其终止记录，并移除其快照。该 effect 可跨生产方重载存续，并加入 agent 现有的完全停稳边界。任务服务保留 effect disposer，使服务重载可以在全局资源销毁后，从仍然存活的 agent 作用域中分离回调。
 
-The first task for an owner attaches one asynchronous effect to `owner.ctx`. Agent-scope disposal cancels that owner's live tasks, awaits their terminal records, and removes their snapshots. This effect survives producer reloads and joins the agent's existing quiescence boundary. The task service retains the effect disposer so service reload can detach callbacks from still-live agent scopes after global teardown.
+对于遵守约定的生产方，`AgentHandle.dispose()` 只在所属后台工作停止后完成。需要比 agent 存活更久的工作必须以无所有者方式启动；要跨运行时重启存续，则需另行设计持久任务。
 
-For contract-compliant producers, `AgentHandle.dispose()` resolves only after owned background work has stopped. Work intended to outlive an agent must be started unowned; survival across runtime restarts requires a separate durable-job design.
+## 服务 API
 
-## Service API
+`JobRegistry` 提供：
 
-`JobRegistry` provides:
+- `start(spec)`：经过预检与 Service Provider 准入的原子注册。
+- `get(id, caller?)` 和 `list(caller?)`：非消费式快照。
+- `read(id, caller?)`：消费式流增量或幂等的最终结果。
+- `kill(id, caller?, reason?)`：取消。
+- `wait(id, timeoutMs, caller?, signal?)`：有界的终止等待。
+- `onJobDone(listener)`：effect 作用域内的观察，具有精确所有者投递和监听器隔离。
+- `attachController(name)`：任务控制器可用性防线。
 
-- `start(spec)` for preflighted, provider-admitted, atomic registration.
-- `get(id, caller?)` and `list(caller?)` for non-consuming snapshots.
-- `read(id, caller?)` for a consuming stream delta or an idempotent final result.
-- `kill(id, caller?, reason?)` for cancellation.
-- `wait(id, timeoutMs, caller?, signal?)` for bounded terminal waiting.
-- `onJobDone(listener)` for effect-scoped observation with exact-owner delivery and listener containment.
-- `attachController(name)` for the task-controller availability fence.
+`wait` 在任务完成时返回终止快照，在等待超时时返回当前快照。中止一次等待只取消该次等待。如果结算已经将终止投递分配给该等待方，终止快照仍然优先。等待方在中止时同步注销，因此同一 tick 内发生结算时，不会代表一个实际未收到任何内容的读取方压制完成通知。
 
-`wait` returns the terminal snapshot when the task settles or the live snapshot when its timeout expires. Aborting a wait cancels only that wait. If settlement has already assigned terminal delivery to the waiter, the terminal snapshot still wins. Waiters unregister synchronously on abort so a same-tick settlement cannot suppress a completion notice on behalf of a reader that receives nothing.
+如果生产方加载时没有任何任务控制器，调用方就能启动无法收集或停止的工作。因此，`dsh-tool-jobs` 在其整个生命周期内调用 `attachController()`；没有附加控制器时，`start()` 会在生产方开始执行前失败。该检查发生在启动时而非插件加载时，因为兄弟插件可能并发激活。自定义的非模型控制器可以自行附加，无需让注册表了解工具名称。
 
-A producer loaded without any controller would let callers start work they cannot collect or stop. `dsh-tool-jobs` therefore calls `attachController()` for its lifetime, and `start()` fails before producer execution when no controller is attached. This check occurs at start rather than plugin load because sibling plugins may activate concurrently. Custom non-model controllers can attach themselves without teaching the registry tool names.
+## 面向模型的控制 API
 
-## Model-facing control API
+`dsh-tool-jobs` 注册三个与 kind 无关的工具，并使用通用 UI 卡片：
 
-`dsh-tool-jobs` registers three kind-independent tools with generic UI cards:
+- `job_output(job_id, wait?, timeout_ms?)` 读取输出，并始终追加 `[status: ...]`。流式任务只返回上次读取以来的输出；最终输出任务在结算后返回结果。除非指定 `wait: true`，否则读取不会阻塞；等待超时由插件配置提供默认值并限定上限。等待超时会报告仍在运行的状态，不会停止任务。
+- `job_list()` 将调用方可见的任务返回为 `<id> [<kind>] <status> — <label>`，没有任务时返回 `(no background jobs)`。
+- `job_kill(job_id, reason?)` 立即请求取消。可选的已记录原因会转发给生产方。终止任务报告现有状态；生产方的取消操作若抛出，调用便会失败，任务保持运行。
 
-- `job_output(job_id, wait?, timeout_ms?)` reads output and always appends `[status: ...]`. Stream tasks return only output since the previous read; final-output tasks return their result after settlement. Reads are non-blocking unless `wait: true`, whose timeout is defaulted and capped by plugin config. A wait timeout reports the still-running status and does not stop the task.
-- `job_list()` returns caller-visible tasks as `<id> [<kind>] <status> — <label>`, or `(no background jobs)`.
-- `job_kill(job_id, reason?)` requests cancellation immediately. The optional logged reason is forwarded to the producer. Terminal tasks report their existing status; a throwing producer cancel fails the call and leaves the task running.
+流式读取共享一个任务作用域内的消费游标，因为所属模型是预期读取方。UI 或多个独立读取方需要单独的非消费式观察 API；共享该游标会让读取方彼此消费对方的输出。
 
-Stream reads share one task-scoped consuming cursor because the owning model is the intended reader. A UI or multiple independent readers need a separate non-consuming observation API; sharing this cursor would let readers consume one another's output.
+系统提示词要求模型保留 job id、在后台工作运行时继续处理独立工作而非忙轮询或重复启动同一任务、在给出最终答案前收集相关任务，并终止不再重要的工作。完成时，系统会向确切所有者的会话交付一条已记录的消息：繁忙的所有者走注入，空闲的所有者会被唤醒，其有界策略由[空闲所有者唤醒决策](../feature/2026-08-11-background-job-completion-wakes-an-idle-owner.md)负责。
 
-The system prompt tells the model to retain job ids, continue independent work instead of busy-polling or duplicating a running task, collect relevant tasks before its final answer, and kill work that no longer matters. Completion delivers a logged message to the exact owner's session. A busy owner is injected; an idle owner is woken, under the bounded policy the [idle-owner wake decision](../feature/2026-08-11-background-job-completion-wakes-an-idle-owner.md) owns.
+当读取或等待交付终止任务、尚在等待的等待方在结算时认领了投递，或模型显式终止任务时，运行时将终止任务标为 `reported`。已报告的任务不会注入冗余的完成通知。监听器失败会独立记录，不会阻止后续监听器，也不会被等待方或资源销毁过程等待。当快照携带 `outputLimitBytes` 时，`dsh-tool-jobs` 会保持 UTF-8 边界，并复用生产方已有的截断标记，而不会重复添加。读取会为状态后缀预留空间并保留输出尾部；完成通知会先为稳定的 `background job <id>` 前缀与 `job_output` 指令预留空间，再截断可变的 kind、label、status、detail，乃至截断标记本身，因此 PTY 的最小上限仍能标识需要收集的任务。任务控制器在策略有机会拒绝或短路分发之前，于最先执行的 pre-execute 监听器中解析调用方可见的生产方上限；随后通过任务定义最后一道的 `finalizeContent` 回调应用该上限，使规范化的工具错误、外层流水线失败与单文本策略结果都无法绕过该边界；经特意结构化的多块策略结果仍由策略拥有其形状与大小。
 
-The runtime marks a terminal task `reported` when a read or wait delivers it, when a live waiter has claimed delivery at settlement, or when the model explicitly kills it. Reported tasks do not inject redundant completion notices. Listener failures are logged independently, do not stop later listeners, and are not awaited by waiters or teardown. When a snapshot carries `outputLimitBytes`, `dsh-tool-jobs` preserves UTF-8 boundaries and reuses an existing producer truncation marker rather than duplicating it. Reads reserve status suffixes and retain the output tail; completion notices reserve the stable `background job <id>` prefix and `job_output` instruction before truncating variable kind, label, status, detail, or the truncation marker itself, so the minimum PTY cap still identifies the task to collect. The job controller resolves the caller-visible producer cap in a prepended pre-execute listener before policy can deny or short-circuit dispatch, then applies it through the task definitions' last-mile `finalizeContent` callback so normalized tool errors, outer pipeline failures, and single-text policy results cannot escape the bound; deliberately structured multi-block policy results retain policy ownership of their shape and size.
+## 生产方显式启用
 
-## Producer opt-in
+每个生产方通过带默认值的配置，自行决定其 schema 是否暴露 `run_in_background`。`dsh-tool-bash`、`dsh-tool-terminal` 和每个 `dsh-tool-subagent` 实例都使用 `enableRunInBackground`，默认值为 true。禁用的实例会省略该参数；由于通用参数校验器允许未声明的键，它还会在执行时拒绝强制传入的后台参数。省略 schema 用于声明能力不可用；执行检查负责强制该约束。
 
-Each producer owns whether its schema exposes `run_in_background` through defaulted config. `dsh-tool-bash`, `dsh-tool-terminal`, and each `dsh-tool-subagent` instance use `enableRunInBackground`, defaulting to true. A disabled instance omits the parameter and also rejects a forced background argument at execution because the generic argument validator permits undeclared keys. Schema omission advertises the capability; the execution check enforces it.
+`ctx.jobs` 不改写生产方 schema。bundle 只转发其所拥有的生产方的配置。如果后台调用在没有附加控制器的情况下到达 `start()`，运行时防线会在执行前使其失败。
 
-`ctx.jobs` does not rewrite producer schemas. A bundle forwards configuration only for producers it owns. If a background call reaches `start()` without an attached controller, the runtime fence fails before execution.
+## 生产方集成
 
-## Producer integrations
+bash seam 暴露 `resolve`、`run` 和 `start`。`start(spec)` 返回一个 `ShellProcess`，提供增量读取、取消、退出事实以及不拒绝的完全停稳 promise。本地执行器只为自身释放时能终止并等待进程而保留活动进程的句柄。前台调用方继续直接使用 `resolve` 和 `run`。
 
-The bash seam exposes `resolve`, `run`, and `start`. `start(spec)` returns a `ShellProcess` with incremental reads, cancellation, exit facts, and a non-rejecting quiescence promise. The local executor retains live handles only so its own disposal can kill and join processes. Foreground callers continue to use `resolve` and `run` directly.
+对于后台 bash，`dsh-tool-bash` 将调用方 agent 注册为所有者。其钩子将 `kill()` 映射为取消，将 `done` 映射为 completed 或 killed 的 `JobOutcome`，并将 `readOutput()` 映射为进程的有界增量输出，以及 spill 与沙箱通知。通用任务工具拥有 id、状态行、列表、等待和完成通知。
 
-For background bash, `dsh-tool-bash` registers the calling agent as owner. Its hooks map `kill()` to cancellation, `done` to a completed or killed `JobOutcome`, and `readOutput()` to the process's bounded incremental output plus spill and sandbox notices. Generic task tools own ids, status lines, listing, waiting, and completion notices.
+对于后台 subagent，`dsh-tool-subagent` 创建由任务拥有的 `AbortController`，并在任务 starter 内启动提供方。无论提供方发布前后，取消都会中止同一个 signal。`done` 同时等待子运行结果和子运行释放，将已完成输出映射为最终结果，将中止映射为 `killed`，并将其他停止原因或基础设施失败映射为 `failed`。中间子历史保留在子会话中，不通过 `readOutput()` 暴露。
 
-For background subagents, `dsh-tool-subagent` creates a task-owned `AbortController` and begins provider startup inside the task starter. Cancellation aborts the same signal before or after provider publication. `done` awaits both the child result and child disposal, maps completed output to a final result, maps abort to `killed`, and maps other stop reasons or infrastructure failures to `failed`. Intermediate child history remains in the child session and is not exposed through `readOutput()`.
+## 备选方案
 
-## Alternatives considered
+### 按能力划分控制工具
 
-### Per-capability control tools
+为 bash 与 subagent 分别提供输出/停止工具，会重复 id、隔离、清理、通知和指导，并增加模型的 schema 与协议负担。统一运行时将执行专属行为保留在生产方中，而无需复制任务生命周期。
 
-Separate bash and subagent output/stop tools duplicate ids, isolation, cleanup, notification, and guidance while increasing the model's schema and protocol burden. One runtime keeps execution-specific behavior in producers without cloning the task lifecycle.
+### 立即抽象任务运行时后端
 
-### An immediate abstract task-runtime backend
+当前 `JobStart.run()` 约定传入进程内回调与确切的 `Agent` 对象。持久化后端会改变身份、重启、所有权与观察语义，因此在引入之时注册表保持为单一具体服务，而非固化错误的边界。[任务注册表约定 Agent Note](2026-07-26-job-registry-seam.md)后来在不改变这些进程内语义的前提下，将约定与进程内实现分离。
 
-The current `JobStart.run()` contract passes in-process callbacks and exact `Agent` objects. A durable backend changes identity, restart, ownership, and observation semantics, so at introduction time the registry stayed one concrete service rather than freezing the wrong boundary. The [task-registry contract Agent Note](2026-07-26-job-registry-seam.md) later separated the contract from the process-local implementation without changing these in-process semantics.
+### 由消费方负责授权或清理事件
 
-### Consumer-owned authorization or cleanup events
+由消费方负责检查，会使每个新接口的隔离实现不一致或遗漏。广播清理事件会迫使每个监听器过滤所有 agent，且不提供注册 disposer。集中授权加一个所有者作用域内的 effect，为每个消费方提供相同防线，以及可等待、可移除的生命周期钩子。
 
-Consumer-owned checks invite inconsistent or missing isolation on each new controller. A broadcast cleanup event makes every listener filter every agent and provides no registration disposer. Central authorization plus one owner-scoped effect gives every consumer the same fence and an awaited, removable lifecycle hook.
+### 阻塞输出或单独的等待工具
 
-### Blocking output or a separate wait tool
+默认阻塞会在后台工作运行时串行化父任务。只等待而不读取会增加一次不返回有用信息的模型调用和 schema。`job_output(wait: true)` 显式表达阻塞，并将其与结果交付合并。
 
-Blocking by default would serialize the parent while background work runs. Waiting without reading would add another model call and schema without returning useful information. `job_output(wait: true)` makes blocking explicit and combines it with result delivery.
+等待使用共享的 deadline 原语，而不使用通用工具超时策略。等待超时是一次成功的观察，会返回 `[status: running]`；通用策略会将它替换为超时错误。任务返回 job id 后，没有任何工具调用超时会控制任务生命周期。
 
-The wait uses the shared deadline primitives but not the generic tool-timeout policy. A wait timeout is a successful observation that returns `[status: running]`; the generic policy would replace it with a timeout error. No tool-call timeout controls task lifetime after a job id has been returned.
+### 由运行时拥有输出接收端
 
-### Runtime-owned output sinks
+推送式接收端可以集中缓冲，但 bash 已经在执行器 seam 后拥有有界缓冲、截断与 spill 文件。拉取格式化增量能够保留这一所有权。拥有存储的持久化后端可能足以支持重新审视生产方接口。
 
-A push sink would centralize buffering, but bash already owns bounded buffers, truncation, and spill files behind its executor seam. Pulling formatted deltas preserves that ownership. A durable backend that owns storage may justify revisiting the producer interface.
+### 随机 id、提升或生命周期会话事件
 
-### Random ids, promotion, or lifecycle session events
+授权而非不可猜测性才是访问边界，并且 id 不用于派生文件系统路径；顺序生成的品牌化 id 可保持 transcript（文本记录）易读。将前台任务提升为后台任务需要 SDK 并未规定的用户交互约定。启动、读取和通知已作为工具与上下文事件记录，因此专用任务会话事件会重复面向模型的事实。
 
-Authorization, not unguessability, is the access boundary, and ids do not derive filesystem paths; sequential branded ids keep transcripts readable. Foreground-to-background promotion requires a user interaction contract the SDK does not prescribe. Starts, reads, and notices are already logged as tool and context events, so dedicated task session events would duplicate model-visible facts.
+## 测试
 
-## Testing
+单元覆盖固定预检原子性、按 kind 分配的 id、按确切 owner 与无 owner 桶执行的准入、`stopping` 占位、终态释放、输出上限的校验与投影、完整结果的 UTF-8 字节上限、流式与最终读取、等待超时与中止竞态、取消、首次结果优先的结算、监听器隔离、通知压制、所有者隔离、陈旧的所有者实例、所有者清理、服务资源销毁和无控制器防线。生产方测试覆盖 bash 进程映射、subagent 启动取消、终止映射与释放。快照覆盖固定控制工具 schema、提示词指导，以及一条组合完整的 ACP 路径：配置上限会拒绝第二个真实后台 Bash 任务，并给出 `job_kill` 恢复动作。
 
-Unit coverage pins preflight atomicity, per-kind ids, per-exact-owner and unowned-bucket admission, `stopping` occupancy, terminal release, output-limit validation and projection, complete UTF-8 result bounds, stream and final reads, wait timeout and abort races, cancellation, first-wins settlement, listener containment, notice suppression, owner isolation, stale owner instances, owner cleanup, service teardown, and the no-controller fence. Producer tests cover bash process mapping, subagent startup cancellation, terminal mapping, and disposal. Snapshot coverage pins the control-tool schemas, prompt guidance, and an assembled ACP path where the configured limit rejects a second real background Bash task with a `job_kill` recovery action.
+## 后果
 
-## Consequences
+bash 命令与 subagent 共享一套 id 词汇、列表、通知格式、提示词习惯和控制工具。新的长时间运行生产方只需实现执行钩子，而不必再实现一套注册表与工具族。[工具实操手册](../../../../docs/cookbook/adding-a-tool.md)将生产方指向本约定。
 
-Bash commands and subagents share one id vocabulary, listing, notice format, prompt habit, and set of control tools. New long-running producers implement execution hooks instead of another registry and tool family. The [tool cookbook](../../../../docs/cookbook/adding-a-tool.md) points producers to this contract.
+单个确切 owner 无法再无限增加进程内由 Task 承载的工作，另一个 owner 也不会消耗它的额度。取消请求会继续占用容量，直到生产方真正释放资源，因此用新工作替换缓慢停止的任务不会突破已配置的实时资源预算。
 
-One exact owner cannot grow process-local Task-backed work without bound, and another owner does not consume its allowance. A cancellation request keeps capacity occupied until the producer actually releases its resource, so replacing slow-stopping work cannot exceed the configured live-resource budget.
-
-Owned background bash now stops with its agent instead of surviving it. Background processes have no executor timeout; callers must kill irrelevant work or rely on owner/service disposal. Stream reads support one consuming reader, and a producer that returns from `cancel` without settling `done` can still stall teardown. Durable jobs, independent observation cursors, and foreground promotion remain separate designs.
+有所属后台 bash 会随其 agent 一起停止，不再比 agent 存活更久。后台进程没有执行器超时；调用方必须终止无关工作，或依赖所有者/服务释放。流式读取只支持一个消费方；生产方的 `cancel` 返回后如果未使 `done` 完成，仍可能阻塞资源销毁。持久任务、独立观察游标和前台提升仍属于单独设计。

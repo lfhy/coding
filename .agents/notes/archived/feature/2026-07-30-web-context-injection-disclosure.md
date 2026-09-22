@@ -1,34 +1,32 @@
-# Agent Note: Web context injection disclosure
+# Agent Note: Web 上下文注入展开项
 
 Status: implemented
 Archived: 2026-08-07
 
-English | [中文](2026-07-30-web-context-injection-disclosure.zh.md)
+## 问题
 
-## Problem
+Web 会话原本通过通用 `JsonBlock` 渲染每条已记录的非用户消息。这种呈现使用文本三角符号、紧凑的标签字体、有边框的 JSON 面板和另一套间距，因此上下文注入与产品设计中的 Tool calls 展开项不一致。修改通用原语的样式还会影响未知事件和附件的兜底呈现。
 
-The Web conversation rendered every logged non-user message through the generic `JsonBlock`. That presentation used a textual triangle, compact label typography, a bordered JSON panel, and unrelated spacing, so context injection did not match the Tool calls disclosure shown in the product design. Restyling the generic primitive would also change unknown events and attachment fallbacks.
+## 决策
 
-## Decision
+`MessageItem` 将上下文节点路由至 `ContextInjectionRow`。该行初始折叠，标题为 `上下文注入`，使用现有的浏览图标，并使整个 24px 标题栏成为可通过指针和键盘操作的展开目标。其展开主体从标题栏下方 4px 处开始，与共用的 22px 内容缩进对齐，并渲染设计规定的 141px 滚动区；滚动区采用 8px 圆角、代码块背景、11/16 代码文本且无边框。
 
-`MessageItem` routes context nodes to `ContextInjectionRow`. The row starts collapsed, names the presentation `上下文注入`, uses the existing browse glyph, and exposes the whole 24px header as one pointer and keyboard disclosure target. Its expanded body begins 4px below the header at the shared 22px content indent and renders the design's 141px scrollport with 8px radius, code-block background, 11/16 code text, and no border.
+`ContextInjectionRow` 将已记录的 `content` 和 `source` 序列化为一个内联 JSON 值，在模型可见内容旁保留来源信息。显示内容继续受现有的 20,000 字符截断策略约束。该变更不修改任何会话事件、运行时折叠逻辑或上下文生成插件。
 
-`ContextInjectionRow` serializes both logged `content` and `source` into one inline JSON value, preserving provenance alongside model-visible material. The display remains bounded by the existing 20,000-character truncation policy. It changes no session event, runtime fold, or context-producing plugin.
+包内部的 `DisclosureRow` 负责上下文行和 `ToolRow` 共用的标题栏几何、图标至折叠箭头的过渡、受控打开状态，以及 Enter／Space 操作。`ToolRow` 仍是工具状态、摘要、文件链接和展开后工具主体的语义 owner。所有上下文来源共用同一套呈现；上下文不会进入键控 toolview slot，也不会获得上下文专用 slot。
 
-The package-internal `DisclosureRow` owns the header geometry, icon-to-chevron transition, controlled open state, and Enter/Space behavior shared by context and `ToolRow`. `ToolRow` remains the semantic owner of tool state, summaries, file links, and expanded tool bodies. Context does not enter the keyed toolview slot and gains no context-specific slot while all context sources share one presentation.
+## 验证
 
-## Verification
+会话组件测试固定验证初始折叠状态、浏览图标、整行的指针与键盘切换、内联 JSON 形状、截断，以及通用未知事件渲染保持不变。无密钥的组装后 Web 历史场景通过真实 Agent API 注入上下文，在 ARIA 预期输出中记录折叠行，并在 Chromium 中测量设计规定的图标、标题栏、缩进、间隙、滚动区、内边距、圆角、字体排版、颜色和溢出行为。
 
-Conversation component tests pin the collapsed default, browse glyph, whole-row pointer and keyboard toggles, inline JSON shape, truncation, and unchanged generic unknown-event rendering. The keyless assembled-Web history scenario injects context through the real Agent API, records the collapsed row in its ARIA golden, and measures the design's icon, header, indent, gap, scrollport, padding, radius, typography, color, and overflow in Chromium.
+## 考虑过的替代方案
 
-## Alternatives considered
+**全局重新设置 `JsonBlock` 样式。** 之所以否决：未知 surface 事件和其他内容块使用该原语作为独立的通用兜底呈现，全局视觉变更会把无关的呈现耦合起来。
 
-**Restyle `JsonBlock` globally.** Unknown surface events and miscellaneous content blocks use that primitive for a separate generic fallback, so a global visual change would couple unrelated presentations.
+**将上下文渲染为 read 工具。** 之所以否决：直接复用 `ToolRow` 会为已记录的非用户消息添加错误的工具语义、状态和键控分发。
 
-**Render context as a read tool.** Reusing `ToolRow` directly would add false tool semantics, state and keyed dispatch to a logged non-user message.
+**新增键控 context-view slot。** 之所以否决：当前所有上下文来源都使用相同的标题和来源信息主体，注册 seam 暂无消费方。如果将来出现由不同来源拥有的呈现，仍可在不更改该行的情况下添加此 seam。
 
-**Add a keyed context-view slot.** Every current context source uses the same title and provenance body. A registration seam has no present consumer and can be added without changing the row if distinct source-owned presentations emerge.
+## 后果
 
-## Consequences
-
-Context injection matches the Tool calls visual language without changing its durable meaning. The shared disclosure header prevents the two rows from drifting, while the dedicated context body and generic `JsonBlock` remain independently evolvable. The fixed-height body trades automatic expansion for a stable transcript rhythm and requires scrolling to inspect long injected instructions.
+上下文注入与 Tool calls 采用一致的视觉语言，同时不改变其持久保存的语义。共用的展开项标题栏可以防止这两种行逐渐偏离，而专用的上下文主体与通用 `JsonBlock` 仍可独立演进。固定高度的主体以无法随内容自动增高为代价，为 transcript（文本记录）维持稳定的排版节奏；查看较长的注入指令时必须滚动。

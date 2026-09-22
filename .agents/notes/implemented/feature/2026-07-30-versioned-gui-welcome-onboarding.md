@@ -1,33 +1,31 @@
-# Agent Note: Versioned GUI welcome onboarding
+# Agent Note: 版本化 GUI 欢迎引导
 
 Status: implemented
 
-English | [中文](2026-07-30-versioned-gui-welcome-onboarding.zh.md)
+## 问题
 
-## Problem
+GUI 的凭据引导从 DeepSeek 专用的就绪状态检查开始，但内部测试通知适用于每位用户，即使凭据已经配置，也必须先于提供方设置显示。若把两者作为独立浮层处理，多个对话框可能同时出现；仅存于进程内的关闭标记既无法区分通知已完成确认还是窗口在确认前已关闭，也无法在文案有意修订后重新显示一次通知。
 
-The GUI's credential onboarding begins with a DeepSeek-specific readiness check, but the internal-test notice applies to every user and must precede provider setup even when a credential is already configured. Treating both as independent overlays permits simultaneous dialogs, while a process-local dismissal cannot distinguish a completed notice from a window closed before acknowledgement or intentionally present revised copy once.
+## 决策
 
-## Decision
+**设置外壳协调有序步骤。** `settings.onboarding` 仍是根作用域 list，但 `ui-settings` 会把其中各条目的 id 和顺序投影到一个协调器中，并且只挂载第一个未完成的步骤。当前注册方会收到 `complete()` 和 `openSection(id)`；所有权转移前，不会挂载后续步骤。`ui-settings-models` 现在以顺序 `-100` 注册恢复后的欢迎声明，以顺序 `0` 注册 DeepSeek 条件式凭据步骤；两者当前的共用展示由[共用弹窗引导决策](2026-08-13-shared-modal-product-onboarding.md)持有。
 
-**The Settings shell coordinates ordered steps.** `settings.onboarding` remains a root-scoped list, but `ui-settings` projects its entry ids and order into one coordinator and mounts only the first incomplete step. The active registrant receives `complete()` and `openSection(id)`; no later step mounts until ownership transfers. `ui-settings-models` now registers the restored welcome notice at order `-100` and the conditional DeepSeek credential step at order `0`; their current shared presentation is owned by the [shared-modal onboarding decision](2026-08-13-shared-modal-product-onboarding.md).
+**产品欢迎步骤按版本管理并归功能插件所有。** 该声明曾由[移除首次启动内测声明](../simplification/2026-08-13-remove-first-run-beta-notice.md)历史决策移除，现在以新的测试阶段文案恢复在 `ui-settings-models` 中。`ui-settings-general` 仍不注册任何引导步骤；持有当前两个步骤的插件也持有文案、store 和共用弹窗。
 
-**The product welcome step is versioned and feature-owned.** The notice was historically removed by the [first-run beta notice removal](../simplification/2026-08-13-remove-first-run-beta-notice.md) and is now restored in `ui-settings-models` with new testing-stage copy. `ui-settings-general` still seats no onboarding step; the plugin that owns both current steps also owns the copy, store, and shared modal.
+**持久化的 `ui-onboarding` 分节持有确认状态。** 宿主端在 user-settings seam 中注册它，存入当前 `$DSH_HOME/settings.yaml`；当前欢迎 store 通过既有公开 settings API 读写其中的 `welcomeNoticeVersion`。connection 插件通过 `ctx.connection.isLoopback` 统一发布当前页面是否使用 loopback authority；hostname 判定留在 connection 包内，其他客户端插件只消费服务状态，而不导入其实现。API Proxy 在可配置提供方 namespace 之外，通过封闭的允许列表暴露这一个产品 namespace，同时不会把它的变更视为模型目录失效事件。
 
-**The durable `ui-onboarding` section owns acknowledgement.** The Host half registers it in the user-settings seam under the active `$DSH_HOME/settings.yaml`; the current welcome store reads and writes `welcomeNoticeVersion` through the existing public settings API. The connection plugin publishes whether the current page uses a loopback authority as `ctx.connection.isLoopback`; hostname classification remains internal to the connection package, and other client plugins consume the service state instead of importing its implementation. The API proxy exposes this one product namespace through a closed allowlist beside configurable-provider namespaces, without treating its changes as model-catalog invalidations.
+**可见引导使用同一个弹窗契约。** 当前两个步骤都通过 body portal 的同一个 `OnboardingModal` 渲染，且只在弹窗可见期间把下层应用根节点设为 inert。步骤加载私有事实时，外壳不渲染任何包装。明确操作会移交协调器所有权；Escape 和点击遮罩都不会确认或跳过步骤。
 
-**Visible onboarding uses one shared modal contract.** Both current steps render through the same body-portaled `OnboardingModal`, and the underlying app root stays inert only while a dialog is visible. The shell renders no wrapper while a step loads its private facts. Explicit actions transfer coordinator ownership; Escape and mask clicks do not acknowledge or skip a step.
+## 曾考虑的替代方案
 
-## Alternatives considered
+**浏览器本地存储**：不予采用，因为确认状态会跟随某个浏览器 profile，而不是 `$DSH_HOME`；全新的 Harness profile 可能错误继承此前的确认状态，外部 profile 编辑也没有权威更新流。因此，非 loopback 的回退保持为进程内状态，而不是浏览器 profile 状态。
 
-**Browser local storage** — rejected because acknowledgement would follow one browser profile rather than `$DSH_HOME`; a fresh Harness profile could incorrectly inherit a prior acknowledgement, and external profile edits would have no authoritative update stream. Non-loopback fallback therefore remains process-local rather than browser-profile-local.
+**在 `ui-settings-general` 中再增加一个独立模态窗口**：不予采用，因为欢迎通知和凭据就绪状态同时为真时，list 注册方仍会堆叠。声明并渲染该 list 的外壳应当持有有序所有权。
 
-**A second independent modal in `ui-settings-general`** — rejected because list registrants would still stack whenever welcome and credential readiness were both true. Ordered ownership belongs to the shell that declares and renders the list.
+**在渲染或窗口关闭时持久化**：不予采用，因为看见通知不等于确认，窗口关闭事件也无法可靠送达。只有显式提交「继续」才能阻止通知在下次启动时再次显示。
 
-**Persisting on render or window close** — rejected because observation is not acknowledgement and close delivery is unreliable. Only the explicit Continue commit may suppress the next launch.
+**通用的公开设置暴露标志**：不予采用，因为一个产品 namespace 不足以证明应当扩大每个 settings 注册方的公开配置面。该 API Proxy 保留显式的封闭允许列表。
 
-**A generic public settings-exposure flag** — rejected because one product namespace does not justify widening every settings registrant's public configuration surface. The gateway keeps an explicit closed allowlist.
+## 后果
 
-## Consequences
-
-A fresh profile sees the current testing-stage notice, then the conditional DeepSeek key dialog when no provider is usable. Focused store and React tests pin exact-version acknowledgement, coordinator ordering, conditional transfer, shared modal behavior, and HMR cleanup. The real Chromium scenario boots the shipped Web composition with an isolated harness home, verifies both dialogs, writes the key through the existing credential boundary, and checks that no secret reaches the DOM, ARIA, or browser console.
+全新 profile 会先看到当前测试阶段声明；当没有任何可用提供方时，再看到条件式 DeepSeek 密钥弹窗。定向 store 与 React 测试固定精确版本确认、协调器顺序、条件式移交、共用弹窗行为与 HMR 清理。真实 Chromium 场景会在隔离的 harness 家目录下启动已发布 Web 组合，验证两个弹窗，通过既有凭据边界写入密钥，并检查 secret 未进入 DOM、ARIA 或浏览器控制台。

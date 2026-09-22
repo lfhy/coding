@@ -1,34 +1,32 @@
 # @deepseek-ai/dsh-jobs-local
 
-English | [中文](README.zh.md)
+[`@deepseek-ai/dsh-jobs`](../jobs/README.md) 注册表约定的进程本地实现：`LocalJobRegistry` 把每条记录保存在内存中，按 kind 签发 `<kind>-N` id，并且只交出全新快照，从不交出实时状态。作为插件加载后即注册为 `ctx.jobs`。
 
-Process-local implementation of the [`@deepseek-ai/dsh-jobs`](../jobs/README.md) registry contract: `LocalJobRegistry` keeps every record in memory, issues per-kind `<kind>-N` ids, and hands out fresh snapshots, never live state. Load it as a plugin and it registers as `ctx.jobs`.
+## 准入
 
-## Admission
+`maxConcurrentJobsPerOwner` 必须是正的安全整数，默认值为 `10`。调用生产方之前，`start()` 会统计确切 owner 的 `running` 与 `stopping` 记录；所有无 owner 任务共享另一个独立的服务级桶。终止历史不占用容量，处于 `stopping` 的任务只有在生产方 `done` 结算后才释放名额。
 
-`maxConcurrentJobsPerOwner` is a positive safe integer and defaults to `10`. Before invoking a producer, `start()` counts the exact owner's `running` and `stopping` records; all unowned jobs share one separate service bucket. Terminal history does not occupy capacity, and only producer `done` settlement releases a stopping job's place.
+达到容量时，`start()` 会在生产方执行和 id 分配前失败；错误会给出上限，并告诉模型使用 `job_kill`、等待任务完全停稳后再重试。注册表不会排队或抢占任务，也不会维护第二份可变计数。
 
-At capacity, `start()` fails before producer execution and id allocation with an error that names the limit and tells the model to use `job_kill`, wait for the job to finish stopping, and retry. The registry does not queue, preempt, or maintain a second mutable counter.
+## 生命周期
 
-## Lifecycle
+任务属于其所有者和后端，而不是生产方工具 fiber，因此重载生产方或控制器不会停止任务。某个所有者的第一个任务会把一个会被等待的 effect 附加到对应 `Agent` 对象的 scope 上。所有者的 dispose（资源释放）会取消该对象的任务，等待生产方完全停稳，并移除其快照；复用的 agent（智能体）id 或会话 id 无法重定向旧的清理操作。
 
-Jobs belong to their owner and backend, not the producer tool fiber, so producer and controller reloads do not stop them. The first job for an owner attaches one awaited effect to the exact `Agent` scope. Owner disposal cancels that object's jobs, awaits producer quiescence, and removes their snapshots; reused agent or session ids cannot redirect an old cleanup.
+服务 dispose 会关闭监听器、取消所有存活任务、等待其记录完成，并从仍存活的所有者 scope 中分离 effect。如果销毁期间的取消操作抛出异常，服务会强制将记录标为失败，并警告工作可能成为孤立工作，而不会死锁。取消操作已返回但 `done` 始终未结算时，系统无法将其与缓慢停止区分开，销毁过程可能因此停滞。
 
-Service disposal closes listeners, cancels all live jobs, awaits their records, and detaches effects from surviving owner scopes. If teardown cancellation throws, the service force-fails the record and warns that work may be orphaned instead of deadlocking. A cancellation that returns but never settles `done` remains indistinguishable from a slow stop and can stall teardown.
+结算遵循首次结算优先原则：最早出现的终止结果（生产方结算、作为 `failed` 隔离处理的 `done` 拒绝，或销毁时的强制失败）只记录一次，随后释放等待方，再只通知监听器一次；各监听器的故障会单独隔离。挂起的等待会在监听器运行前把任务标记为已报告，因此完成报告方不会重复发出通知；销毁时的取消出于同样的理由也会标记：面向正在被销毁的所有者的通知不会有人读到。完成是一次结算最后才宣布的事情，排在记录提交与可见集变更发布之后，因为报告方可能同步开启一个模型轮次，而该结算的其他所有观察者都必须已经看到已结算的记录。
 
-Settlement is first-wins: the earliest terminal outcome — producer settlement, a rejected `done` contained as `failed`, or a teardown force-failure — records once, releases waiters, and notifies listeners once with per-listener containment. Pending waits mark the job reported before listeners run so completion reporters do not duplicate notices, and a teardown cancel marks it for the same reason: nothing will read a notice addressed to an owner being destroyed. Completion is the last thing a settlement announces, after the record is committed and the visible-set change is published, because a reporter may open a model turn synchronously and every other observer must already have seen the settled record.
+控制器与监听器按注册方所在的 scope 分层，形状与 tools 注册表一致：一次注册归档到其注册上下文的 scope，一次读取则把全局层与所有者的 scope 链求并集。因此一个进程级注册表能逐所有者地回答逐所有者的问题——对自身组合未附加任何控制器的所有者，无论其他组合附加了多少，`start()` 都会拒绝并抛出 `background jobs unavailable: no job controller serves this agent (load @deepseek-ai/dsh-tool-jobs in its composition)`；一次结算也只会抵达其所有者所属组合注册的监听器。
 
-Controllers and listeners are layered by the scope that registered them, in the tools-registry shape: a registration files into its registering context's scope, and a read unions the global layer with the owner's scope chain. One process-wide registry therefore answers per-owner questions per owner — `start()` refuses `background jobs unavailable: no job controller serves this agent (load @deepseek-ai/dsh-tool-jobs in its composition)` for an owner whose own composition attaches none, however many other compositions attach theirs, and a settlement reaches only the listeners its owner's composition registered.
+## 模型体验
 
-## Model Experience
+通过生产方插件和 [`dsh-tool-jobs`](../tool-jobs/README.md) 间接影响；它们会呈现 job id、输出、状态、取消和完成通知。
 
-Indirectly, through producer plugins and [`dsh-tool-jobs`](../tool-jobs/README.md), which render job ids, output, status, cancellation, and completion notices.
+#### KV Cache 影响
 
-#### KV Cache effect
+不会直接导致 KV Cache 失效；请求前缀变更由上述消费方负责。
 
-No direct invalidation; the named consumer owns any request-prefix changes.
+## 已知限制与暂缓事项
 
-## Known Limitations and Deferred Work
-
-- **Jobs are process-local** — records die with the harness process; durable or cross-restart execution needs a separate backend implementing the seam.
-- **A silently ineffective cancel can stall teardown and hold capacity** — if `cancel` returns without settling `done`, the registry cannot distinguish it from a slow stop; the job keeps one bucket slot for the rest of the service lifetime, and only an explicit throw can be force-failed safely.
+- **任务只存在于进程本地**：记录会随 harness 进程终止而消失；持久或跨重启执行需要一个单独实现该 seam 的后端。
+- **静默无效的取消可能使销毁过程停滞并持续占用容量**：如果 `cancel` 返回后始终未结算 `done`，注册表就无法将其与缓慢停止区分开；该任务会在服务剩余生命周期内持续占用一个桶名额，只有显式抛出异常才能安全地强制标为失败。

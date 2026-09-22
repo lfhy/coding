@@ -1,28 +1,26 @@
-# Agent Note: demo:web builds the client plugin bundles
+# Agent Note: demo:web 构建客户端插件的打包产物
 
 Status: implemented
 Archived: 2026-07-26
 
-English | [中文](2026-07-23-demo-web-builds-client-bundles.zh.md)
-
 ## Problem
 
-`dsh web` serves each web-client plugin's bundle from `GET /plugins/<id>/client.js`, resolving the path from the package's `exports["./client"]` (`lib/client.js`). Those bundles are produced only by the root `pnpm run build` (`tsc -b` then the per-package `tsdown.client.ts` configs); the Vite `build:web` step builds the frontend shell alone. `demo:web` and the README's Web UI instructions ran only `build:web`, so on a checkout without a prior full build every plugin bundle 404s, the client loader marks every plugin failed, and the boot screen shows "Failed to load plugins". The frontend shell built fine, hiding the missing artifact behind a runtime browser failure.
+`dsh web` 通过 `GET /plugins/<id>/client.js` 提供每个 web 客户端插件的打包产物，其路径由包的 `exports["./client"]`（`lib/client.js`）解析得到。这些打包产物只由根目录的 `pnpm run build`（先 `tsc -b`，再执行各包的 `tsdown.client.ts` 配置）生成；Vite 的 `build:web` 步骤只构建前端外壳。`demo:web` 与 README 的 Web UI 说明只运行了 `build:web`，因此在未预先完整构建的检出上，每个插件的打包产物都返回 404，客户端 loader 将所有插件标记为失败，启动界面显示 "Failed to load plugins"。前端外壳能正常构建，把缺失的产物掩藏在浏览器运行时的失败背后。
 
 ## Decision
 
-`demo:web` runs `npm run build` before `npm run build:web`, so the plugin `lib/client.js` bundles exist before `dsh web` serves them. The README's Web UI section runs `pnpm run build && pnpm run build:web` for the installed `~/.dsh/source` checkout, which the installer never builds.
+`demo:web` 在 `npm run build:web` 之前先运行 `npm run build`，使插件的 `lib/client.js` 打包产物在 `dsh web` 提供它们之前已经存在。README 的 Web UI 小节针对已安装的 `~/.dsh/source` 检出运行 `pnpm run build && pnpm run build:web`，因为安装器从不构建它。
 
 ## Verification
 
-After the full build, all eight `/plugins/<id>/client.js` endpoints return 200 and a headless Chromium load of `http://127.0.0.1:3080` renders the shell with no "Failed to load plugins" state.
+完整构建后，全部八个 `/plugins/<id>/client.js` 端点均返回 200，无头 Chromium 加载 `http://127.0.0.1:3080` 能渲染出外壳，不再出现 "Failed to load plugins" 状态。
 
 ## Alternatives considered
 
-**Build the bundles inside `dsh web` at startup.** The app runs from source via tsx and owns no build step; folding an artifact build into the server boot crosses the source/artifact separation and slows every launch.
+**在 `dsh web` 启动时构建打包产物。** 该应用通过 tsx 从源码运行，本身没有构建步骤；把产物构建塞进服务器启动流程会越过源码与产物的分离，并拖慢每次启动。
 
-**Widen the tsdown root config to emit client bundles from `pnpm run build:web`.** `build:web` is the Vite frontend build; the client bundles are a separate tsdown pass over `lib/types`. Merging the two conflates the shell build with the package build and still leaves the root `build` as the only producer.
+**扩大 tsdown 根配置，使 `pnpm run build:web` 也产出客户端打包产物。** `build:web` 是 Vite 前端构建；客户端打包产物是对 `lib/types` 的另一趟独立 tsdown 处理。把两者合并会混淆外壳构建与包构建，而且根目录的 `build` 仍是唯一的产出者。
 
 ## Consequences
 
-`demo:web` now pays the full `tsc -b && tsdown` cost on every invocation instead of only the Vite build. That is the price of a runnable web demo from a clean tree; a caller who already built can invoke `dsh web` directly.
+`demo:web` 现在每次调用都要付出完整的 `tsc -b && tsdown` 代价，而不再只是 Vite 构建。这是从干净的代码树运行 web 演示所要付出的代价；已经完成构建的调用方可以直接调用 `dsh web`。
