@@ -383,7 +383,7 @@ export interface ChatLocationNodeIndex {
   getStep(turn: number, step: number): readonly string[]
 }
 
-/** Compatibility projection backing StatsLine and the legacy top-level snapshot fields. */
+/** 概览卡窗口回退及旧顶层快照字段共用的兼容投影。 */
 export interface LegacyConversationSlice {
   readonly nodes: readonly ConversationNode[]
   readonly turnTimings: ReadonlyMap<number, { readonly startTime: number; readonly endTime?: number }>

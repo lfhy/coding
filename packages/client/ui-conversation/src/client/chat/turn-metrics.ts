@@ -1,4 +1,4 @@
-// Latency/throughput folds shared by the settled turn footer and StatsLine.
+// 已结算轮次页脚和会话概览共用延迟／吞吐折算。
 
 import type { AssistantMessageNode, ConversationNode } from '@deepseek-ai/dsh-client-runtime/client'
 

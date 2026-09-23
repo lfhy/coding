@@ -1,6 +1,5 @@
-// Settled-node identity prevents stream-delta updates from rerendering this row.
-// Mounted on 'conversation.composer.dock' so it sticks with the composer in the
-// active conversation scrollport (see ConversationRoot data-conversation-scroll).
+// 会话概览与上下文圆环复用这里的窗口回退和格式化函数。
+// 旧内联行仍保留独立组件测试，但默认装配不再挂载它。
 
 import { Fragment, memo, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'

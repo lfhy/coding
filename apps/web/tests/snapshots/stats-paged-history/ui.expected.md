@@ -1,6 +1,14 @@
 - banner:
   - navigation "Session hierarchy":
     - button "{{workspace}}" [disabled]
+  - button "New session":
+    - img
+  - button "Collapse session overview" [expanded]:
+    - img
+  - button "Open file workbench":
+    - img
+  - button "Choose an app to open in":
+    - img
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
@@ -351,4 +359,22 @@
   - text: DeepSeek-V4-Flash
   - img
 - button "Send message" [disabled]
-- text: 28 turns · 28 steps LLM {{duration}}
+- region "Session overview":
+  - heading "Session overview" [level=2]
+  - button "Collapse session overview"
+  - heading "Collaboration" [level=3]
+  - img
+  - term: Subagents
+  - definition:
+    - strong: "0"
+  - img
+  - term: Background tasks
+  - definition:
+    - strong: "0"
+  - heading "Run statistics" [level=3]
+  - term: Turns
+  - definition: "28"
+  - term: Steps
+  - definition: "28"
+  - term: LLM time
+  - definition: {{duration}}

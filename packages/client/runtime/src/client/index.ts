@@ -37,7 +37,7 @@ export type {
 export type { ConversationRuntime } from './sessions/conversation-assembler.ts'
 export type { RootOwnerProps } from './slots.ts'
 export { SessionCreateError, SessionRuntime, scopeOf, workspaceTitleOf } from './sessions/service.ts'
-export { indexSubagentDescendants } from './sessions/subagent-lineage.ts'
+export { indexSubagentDescendants, summarizeVisibleSubagents } from './sessions/subagent-lineage.ts'
 export type { SubagentDescendantSummary } from './sessions/subagent-lineage.ts'
 // The provide channel is shared with the client test runtime (one
 // materialization/projection implementation; no test-side mirror to drift).

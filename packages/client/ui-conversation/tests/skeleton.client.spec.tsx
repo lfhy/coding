@@ -165,6 +165,8 @@ function mount(
           views={views}
           open={open}
           startSession={vi.fn()}
+          overviewExpanded
+          toggleOverview={vi.fn()}
           t={t}
         />
       )

@@ -18,12 +18,12 @@ import { newEnglishPage, saveFailureShot } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/stats-paged-history', import.meta.url))
 const UI_EXPECTED = fileURLToPath(new URL('./snapshots/stats-paged-history/ui.expected.md', import.meta.url))
+const OVERVIEW_EXPECTED = fileURLToPath(new URL('./snapshots/stats-paged-history/overview.expected.md', import.meta.url))
 const MODE = webSnapshotMode()
 const SEED_ID = 'stats-paged-history-web-e2e'
 
 /** Turn count: 2 surface messages per turn, so 28 turns overflow one 50-message page. */
 const TURNS = 28
-const FULL_COUNTS = `${TURNS} turns · ${TURNS} steps`
 
 /**
  * Generate the seed: TURNS closed single-step turns of one short user prompt
@@ -85,6 +85,13 @@ describe('web e2e: whole-session stats survive history paging', () => {
     tripwire = watchConsole(page)
     await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+    const groupRow = page.locator('[role="treeitem"]').first()
+    await groupRow.waitFor({ timeout: 15_000 })
+    await groupRow.click()
+    const sessionRow = page.locator('[role="treeitem"]').nth(1)
+    await sessionRow.waitFor({ timeout: 10_000 })
+    await sessionRow.click()
+    await page.getByText(`r${TURNS}`, { exact: true }).waitFor({ timeout: 15_000 })
   }, 120_000)
 
   afterAll(async () => {
@@ -94,30 +101,25 @@ describe('web e2e: whole-session stats survive history paging', () => {
 
   it('renders full-session counts on the partial tail page and keeps them across load-older', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-stats-paged'))
-    const groupRow = page.locator('[role="treeitem"]').first()
-    await groupRow.waitFor({ timeout: 15_000 })
-    await groupRow.click()
-    const sessionRow = page.locator('[role="treeitem"]').nth(1)
-    await sessionRow.waitFor({ timeout: 10_000 })
-    await sessionRow.click()
-    // Settled barrier: the newest recorded reply renders from the tail page.
-    await expect.poll(() => page.getByText(`r${TURNS}`, { exact: true }).count(), { timeout: 15_000 }).toBe(1)
+    // Settled barrier is established in setup so the card and paging cases can run separately.
     // The tail page is partial (56 messages > one 50-message page): the first
-    // turns are NOT loaded, yet the strip already reports the whole log —
+    // turns are NOT loaded, yet the overview already reports the whole log —
     // the sessionStats projection, not the window fold.
     expect(await page.getByText('m1', { exact: true }).count()).toBe(0)
-    await expect.poll(() => page.getByText(FULL_COUNTS, { exact: false }).count(), { timeout: 10_000 }).toBe(1)
-    const strip = page.getByText(FULL_COUNTS, { exact: false }).locator('..')
-    const stripBeforePaging = await strip.textContent()
+    const card = page.getByRole('region', { name: 'Session overview' })
+    await expect.poll(() => card.getByText('Turns').locator('..').textContent(), { timeout: 10_000 }).toBe(`Turns${TURNS}`)
+    expect(await card.getByText('Steps').locator('..').textContent()).toBe(`Steps${TURNS}`)
+    const beforePaging = await card.textContent()
+    expect(await page.locator('[data-composer-seat]').getByText(`${TURNS} turns`, { exact: false }).count()).toBe(0)
 
-    // 加载更早: prepending the older page must not move ANY strip figure —
+    // 加载更早: prepending the older page must not move ANY overview figure —
     // counts, wall times, or token groups.
     await page.getByRole('button', { name: 'Load earlier' }).click()
     await expect.poll(() => page.getByText('m1', { exact: true }).count(), { timeout: 10_000 }).toBe(1)
-    expect(await strip.textContent()).toBe(stripBeforePaging)
+    expect(await card.textContent()).toBe(beforePaging)
     // With the whole log loaded, the window mounts one turn-tail footer per
     // settled turn — the loaded-window probe the scroll/perf lanes count now
-    // that the strip is whole-log-scoped.
+    // that the overview is whole-log-scoped.
     expect(await page.locator('[data-chat-flow-key^="9:turn-tail"]').count()).toBe(TURNS)
   }, 60_000)
 
@@ -128,9 +130,67 @@ describe('web e2e: whole-session stats survive history paging', () => {
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
   })
 
+  it('shows whole-session figures inside the conversation and folds when space narrows', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-session-overview'))
+    const card = page.getByRole('region', { name: 'Session overview' })
+    await card.waitFor()
+    expect(await page.getByRole('button', { name: 'Collapse session overview' }).first().getAttribute('aria-expanded')).toBe('true')
+    expect(await card.getByText('Turns').locator('..').textContent()).toBe('Turns28')
+    expect(await card.getByText('Steps').locator('..').textContent()).toBe('Steps28')
+    expect(await card.getByText('Subagents').locator('..').textContent()).toBe('Subagents0')
+    expect(await card.getByText('Background tasks').locator('..').textContent()).toBe('Background tasks0')
+    const body = await page.locator('[data-conversation-scroll]').boundingBox()
+    const cardBox = await card.boundingBox()
+    expect(body).not.toBeNull()
+    expect(cardBox).not.toBeNull()
+    expect(cardBox!.x).toBeGreaterThan(body!.x + body!.width / 2)
+    expect(cardBox!.x + cardBox!.width).toBeLessThanOrEqual(body!.x + body!.width)
+    const snapshot = await captureStableAria(page, '[aria-label="Session overview"]', scaffold.workspaceCwd)
+    await compareOrRefreshGolden(OVERVIEW_EXPECTED, snapshot, MODE)
+    if (process.env.DSH_VISUAL_CAPTURE === '1') await saveFailureShot(page, 'session-overview-desktop')
+    await page.getByRole('button', { name: 'Collapse session overview' }).first().click()
+    await expect.poll(() => card.isVisible()).toBe(false)
+    await page.getByRole('button', { name: 'Expand session overview' }).click()
+    await card.waitFor({ state: 'visible' })
+
+    await page.setViewportSize({ width: 1024, height: 768 })
+    const expand = page.getByRole('button', { name: 'Expand session overview' })
+    await expand.waitFor({ state: 'visible' })
+    await expect.poll(() => card.isVisible()).toBe(false)
+    expect(await expand.getAttribute('aria-expanded')).toBe('false')
+    if (process.env.DSH_VISUAL_CAPTURE === '1') await saveFailureShot(page, 'session-overview-1024')
+    await expand.click()
+    await card.waitFor({ state: 'visible' })
+    await card.getByRole('button', { name: 'Collapse session overview' }).click()
+    await expect.poll(() => card.isVisible()).toBe(false)
+    await page.setViewportSize({ width: 768, height: 768 })
+    await expand.waitFor({ state: 'visible' })
+    const sidebar = page.locator('#dsh-layout-sidebar')
+    await expect.poll(async () => Math.round((await sidebar.boundingBox())?.width ?? 0)).toBe(56)
+    await page.setViewportSize({ width: 375, height: 768 })
+    await expand.waitFor({ state: 'visible' })
+    await expect.poll(async () => Math.round((await sidebar.boundingBox())?.width ?? 0)).toBe(56)
+    await expect.poll(async () => Math.round((await page.locator('[data-conversation-scroll]').boundingBox())?.width ?? 0)).toBe(319)
+    if (process.env.DSH_VISUAL_CAPTURE === '1') await saveFailureShot(page, 'session-overview-375')
+    await expand.click()
+    await card.waitFor({ state: 'visible' })
+    const narrowCard = await card.boundingBox()
+    expect(narrowCard).not.toBeNull()
+    expect(narrowCard!.x).toBeGreaterThanOrEqual(56)
+    expect(narrowCard!.x + narrowCard!.width).toBeLessThanOrEqual(375)
+    if (process.env.DSH_VISUAL_CAPTURE === '1') await saveFailureShot(page, 'session-overview-375-expanded')
+    await card.getByRole('button', { name: 'Collapse session overview' }).click()
+    expect(await page.evaluate(() => document.activeElement?.id)).toBe('dsh-conversation-overview-toggle')
+    await page.setViewportSize({ width: 1680, height: 1000 })
+    await card.waitFor({ state: 'visible' })
+    await page.getByRole('button', { name: 'Open file workbench' }).click()
+    await expect.poll(() => card.isVisible()).toBe(false)
+    await expand.waitFor({ state: 'visible' })
+  }, 60_000)
+
   it('issued zero model calls and stayed clean', async () => {
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
-    await assertFixtureInventory(SNAPSHOT_DIR, ['ui.expected.md'])
+    await assertFixtureInventory(SNAPSHOT_DIR, ['ui.expected.md', 'overview.expected.md'])
   })
 })

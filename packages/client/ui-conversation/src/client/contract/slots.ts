@@ -69,14 +69,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * composer chrome.
      */
     'conversation.session': { kind: 'single'; scope: 'session' }
-    /**
-     * The strip above the session's scrollport: title, view tabs, and the
-     * action row. Taking this seat means rendering all three yourself, and it
-     * also collapses `conversation.session.header.actions` — that additive
-     * seat is declared by whoever occupies this one, so replacing the header
-     * takes every action entry down with it.
-     */
-    'conversation.session.header': { kind: 'single'; scope: 'session' }
+    /** 会话滚动区上方的标题、视图标签与动作行；替换页头会一同卸载它声明的动作 slot。 */
+    'conversation.session.header': { kind: 'single'; scope: 'session'; owner: ConversationOverviewOwnerProps }
     /**
      * One button in the session header's action row — the additive way to put
      * a per-session control beside the title without replacing the header.
@@ -151,6 +145,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * instead; this one is the whole panel.
      */
     'conversation.details.tool': { kind: 'single'; scope: 'session'; owner: DetailsToolOwnerProps }
+    /** 对话页面内的会话概览卡片；默认显隐由根会话列宽决定。 */
+    'conversation.overview': { kind: 'single'; scope: 'session'; owner: ConversationOverviewOwnerProps }
     /**
      * The composer takeover chain: entries are selector-routed replacements
      * of the default InputBar. Declared by this package's 'conversation'
@@ -196,12 +192,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      */
     'conversation.input.dock': { kind: 'list'; scope: 'session'; owner: InputZone }
     /**
-     * The band under the composer card, inside the bar's width column — the
-     * seat for an ambient readout about the conversation (the shipped stats
-     * line lives here). Same {@link InputZone} owner share as the other
-     * regions. Anything the user must click belongs in the tool row instead
-     * (`conversation.input.left` / `.right`); anything needing its own line
-     * above the card belongs in `conversation.input.dock`.
+     * 输入卡下方的可选只读信息位，与其他输入区域共享 {@link InputZone}。
+     * 可点击控件放入 `.input.left`／`.input.right`，需要独立行的内容放入 `.input.dock`。
      */
     'conversation.composer.dock': { kind: 'list'; scope: 'session'; owner: InputZone }
     /**
@@ -306,6 +298,14 @@ export interface ConversationSessionOwnerProps {
 
 /** Header actions derive their state from the standard session/global kit. */
 export interface ConversationHeaderActionOwnerProps {}
+
+/** 对话壳根据可用列宽决定卡片默认显隐，并向页头和卡片传递同一个切换动作。 */
+export interface ConversationOverviewOwnerProps {
+  /** 对话页内卡片的实际显隐状态。 */
+  overviewExpanded: boolean
+  /** 切换当前列宽下的显隐偏好。 */
+  toggleOverview: () => void
+}
 
 /**
  * The input-region slot currency: dock/left/right entries read
@@ -529,7 +529,7 @@ export interface ComposerBarOwnerProps {
   leftItems?: ReactNode
   /** input.right slot entries (tool row, before the primary button). */
   rightItems?: ReactNode
-  /** composer.dock entries (stats line), rendered under the card inside the bar's width column. */
+  /** 输入卡下方的可选 composer.dock 扩展项，与输入卡共享宽度约束。 */
   footer?: ReactNode
 }
 
@@ -627,7 +627,7 @@ export interface HeroActionsOwnerProps {
  */
 export type ConversationSlotProps =
   PropsRuntime<'conversation'> & PropsRenderSlots<
-    | 'conversation.session' | 'conversation.session.header'
+    | 'conversation.session' | 'conversation.session.header' | 'conversation.overview'
     | 'conversation.composer' | 'conversation.composer.bar'
     | 'conversation.input.overlay'
     | 'conversation.input.dock' | 'conversation.composer.dock'

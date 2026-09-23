@@ -82,6 +82,7 @@ describe('apply wiring', () => {
     // (the session-maybe 'conversation' shell carries no store by design).
     expect(conversationSession?.store).toBeDefined()
     expect(conversationHeader?.store).toBe(conversationSession?.store)
+    expect(b.slots.entries('conversation.overview')).toHaveLength(1)
     expect(details?.store).toBe(conversationSession?.store)
     expect(chatView?.store).toBe(conversationSession?.store)
     // The hero holes ride the conversation entry's children declaration (the
@@ -102,8 +103,8 @@ describe('apply wiring', () => {
     // one search row registers under both grep and glob; the web rows register
     // one component under both web tool names.
     expect(b.slots.entries('conversation.chat.node').map(entry => entry.options.key)).not.toContain('tool-call')
-    // Stats stick with the composer (not inside ChatView).
-    expect(b.slots.entries('conversation.composer.dock').map(e => e.options.id)).toEqual(['stats'])
+    // 统计只展示在对话页内的概览卡片，输入框下方不再重复。
+    expect(b.slots.entries('conversation.composer.dock')).toHaveLength(0)
     await b.runtime.dispose()
   })
 

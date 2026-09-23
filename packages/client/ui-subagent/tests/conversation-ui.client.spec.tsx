@@ -109,15 +109,15 @@ describe('SubagentCatalogAction', () => {
     }
     const view = render(<SubagentCatalogAction {...props(catalog(), {}, summaries)} />)
 
-    const trigger = screen.getByRole('button', { name: '1 个子代理，正在运行' })
+    const trigger = screen.getByRole('button', { name: '2 个子代理，正在运行' })
     expect(trigger.querySelector('[data-state="ongoing"]')).not.toBeNull()
 
     view.rerender(<SubagentCatalogAction {...props(catalog(), {}, {
       ...summaries,
       [GRANDCHILD]: { ...summaries[GRANDCHILD]!, running: false },
     })} />)
-    expect(screen.getByRole('button', { name: '3 个子代理' })
-      .querySelector('[data-state="ongoing"]')).toBeNull()
+    expect(screen.getByRole('button', { name: '1 个子代理，正在运行' })
+      .querySelector('[data-state="ongoing"]')).not.toBeNull()
   })
 
   it('does not aggregate subagents reached through an ordinary fork', () => {
@@ -132,14 +132,15 @@ describe('SubagentCatalogAction', () => {
       [forkChild]: { ...summary(forkChild, 1), parentId: fork, origin: 'subagent', running: true },
     })} />)
 
-    const trigger = screen.getByRole('button', { name: '2 个子代理' })
-    expect(trigger.querySelector('[data-state="ongoing"]')).toBeNull()
+    const trigger = screen.getByRole('button', { name: '1 个子代理，正在运行' })
+    expect(trigger.querySelector('[data-state="ongoing"]')).not.toBeNull()
+    expect(within(trigger).getByText('2 个子代理')).toBeTruthy()
   })
 
   it('renders healthy counts, stable rows, diagnostics, and catalog-addressed navigation', () => {
     const input = props(catalog())
     render(<SubagentCatalogAction {...input} />)
-    const trigger = screen.getByRole('button', { name: /2 个子代理/ })
+    const trigger = screen.getByRole('button', { name: /个子代理/ })
     fireEvent.click(trigger)
 
     expect(input.setCatalogOpen).toHaveBeenCalledWith(PARENT, true)
@@ -193,7 +194,7 @@ describe('SubagentCatalogAction', () => {
   it('supports trigger/menu keyboard traversal, Escape focus restore, and outside close', async () => {
     const input = props(catalog())
     render(<SubagentCatalogAction {...input} />)
-    const trigger = screen.getByRole('button', { name: /2 个子代理/ })
+    const trigger = screen.getByRole('button', { name: /个子代理/ })
     fireEvent.keyDown(trigger, { key: 'ArrowDown' })
     await Promise.resolve()
     expect(document.activeElement).toBe(screen.getByRole('treeitem', { name: /worker/ }))
@@ -235,7 +236,7 @@ describe('SubagentCatalogAction', () => {
       ],
     }))
     render(<SubagentCatalogAction {...input} />)
-    const trigger = screen.getByRole('button', { name: /2 个子代理/ })
+    const trigger = screen.getByRole('button', { name: /个子代理/ })
     fireEvent.keyDown(trigger, { key: 'Tab' })
     expect(screen.queryByRole('tree')).toBeNull()
     fireEvent.click(trigger)
@@ -365,7 +366,7 @@ describe('SubagentCatalogAction', () => {
       [GRANDCHILD]: grandchildCatalog,
     })
     render(<SubagentCatalogAction {...input} />)
-    fireEvent.click(screen.getByRole('button', { name: /2 个子代理/ }))
+    fireEvent.click(screen.getByRole('button', { name: /个子代理/ }))
 
     fireEvent.click(screen.getByRole('button', { name: '展开 worker 的下级子代理' }))
     expect(input.setCatalogOpen).toHaveBeenCalledWith(CHILD, true)
@@ -393,7 +394,7 @@ describe('SubagentCatalogAction', () => {
     }
     const deferred = props(catalog(), {}, summaries)
     const view = render(<SubagentCatalogAction {...deferred} />)
-    fireEvent.click(screen.getByRole('button', { name: /2 个子代理/ }))
+    fireEvent.click(screen.getByRole('button', { name: /个子代理/ }))
     fireEvent.click(screen.getByRole('button', { name: '展开 worker 的下级子代理' }))
 
     expect(deferred.setCatalogOpen).toHaveBeenCalledWith(CHILD, true)
@@ -440,7 +441,7 @@ describe('SubagentCatalogAction', () => {
       }),
     })
     render(<SubagentCatalogAction {...input} />)
-    const trigger = screen.getByRole('button', { name: /2 个子代理/ })
+    const trigger = screen.getByRole('button', { name: /个子代理/ })
     fireEvent.keyDown(trigger, { key: 'ArrowDown' })
     await Promise.resolve()
     const worker = screen.getByRole('treeitem', { name: /worker/ })
@@ -464,7 +465,7 @@ describe('SubagentCatalogAction', () => {
       }),
     })
     render(<SubagentCatalogAction {...input} />)
-    fireEvent.click(screen.getByRole('button', { name: /2 个子代理/ }))
+    fireEvent.click(screen.getByRole('button', { name: /个子代理/ }))
     fireEvent.click(screen.getByRole('button', { name: '展开 worker 的下级子代理' }))
     fireEvent.click(screen.getByRole('button', { name: '展开 indexer 的下级子代理' }))
     fireEvent.click(screen.getByRole('button', { name: '收起 worker 的下级子代理' }))
@@ -545,7 +546,7 @@ describe('SubagentCatalogAction', () => {
   it('navigates from outside the tree and tolerates a deferred focus after unmount', async () => {
     const input = props(catalog())
     const view = render(<SubagentCatalogAction {...input} />)
-    const trigger = screen.getByRole('button', { name: /2 个子代理/ })
+    const trigger = screen.getByRole('button', { name: /个子代理/ })
     fireEvent.click(trigger)
     fireEvent.keyDown(screen.getByRole('tree'), { key: 'ArrowUp' })
     expect(document.activeElement).toBe(screen.getByRole('treeitem', { name: /reviewer/ }))
@@ -564,7 +565,7 @@ describe('SubagentCatalogAction', () => {
       }),
     })
     const view = render(<SubagentCatalogAction {...populated} />)
-    fireEvent.click(screen.getByRole('button', { name: /2 个子代理/ }))
+    fireEvent.click(screen.getByRole('button', { name: /个子代理/ }))
     fireEvent.click(screen.getByRole('button', { name: '展开 worker 的下级子代理' }))
 
     const empty = props(catalog({ entries: [] }))

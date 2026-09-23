@@ -1,16 +1,18 @@
-// Resident conversation skeleton. Hero chrome, composer positioning, the
-// chain, AND the composer bar (session-maybe slot) stay mounted across
-// no-session/session transitions — the bar renders inert via owner props.
+// 常驻会话骨架在无会话与有会话之间切换时保留 Hero、编辑器定位、接管链和
+// session-maybe 输入栏；没有会话时由 owner props 锁定输入栏。
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
-import type { WorkspaceId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId, WorkspaceId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ConversationSlotProps, InputZone } from '../contract/slots.ts'
 import { HeroGlow, HeroShell, WorkspaceChip, workspaceLabel } from './EmptyHero.tsx'
 import css from './ConversationRoot.module.css'
 
-/** Full props composed from the slot contract. */
+/** 由 slot 契约组合得到的完整 props。 */
 export type ConversationRootProps = ConversationSlotProps
+
+// 748px 居中消息列与右侧 288px 卡片之间保留至少 16px，另计卡片右边距 16px。
+const OVERVIEW_MIN_COLUMN_WIDTH = 1_388
 
 export function ConversationRoot({
   sessionId, sidebarCollapsed, useSession, useSessions, useWorkspaces, useInput, useComposerBlock,
@@ -24,18 +26,43 @@ export function ConversationRoot({
   const cwd = useSessions(s => sessionId === undefined ? undefined : s.byId[sessionId]?.cwd)
   const summaryBlank = useSessions(s => sessionId === undefined ? undefined : s.byId[sessionId]?.blank)
   const workspaces = useWorkspaces(s => s)
-  // A plugin this package cannot import (ui-model-selection) says this session cannot
-  // send; its reason is already localized by whoever raised it.
+  // 本包不能导入的 ui-model-selection 等插件可限制会话发送，并提供本地化理由。
   const composerBlock = useComposerBlock(block => block)
 
   const [pickerOpen, setPickerOpen] = useState(false)
   const [pendingWorkspaceId, setPendingWorkspaceId] = useState<WorkspaceId | undefined>()
   const pickerAnchor = useRef<HTMLButtonElement>(null)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const [columnWidth, setColumnWidth] = useState(0)
+  const [overviewPreference, setOverviewPreference] = useState<{
+    sessionId: SessionId | undefined
+    compact: boolean
+    expanded: boolean
+  } | null>(null)
 
-  // Publishes the seat's live height as --dsh-composer-height on the scroll
-  // body so floating controls (ChatView back-to-bottom) clear the composer as
-  // it grows. Callback ref, not an effect; stable identity prevents observer
-  // churn while the first blank session fills the resident body outlet.
+  useLayoutEffect(() => {
+    const root = rootRef.current
+    if (root === null) return
+    const measure = () => { setColumnWidth(root.getBoundingClientRect().width || window.innerWidth) }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(root)
+    return () => { observer.disconnect() }
+  }, [])
+  const overviewCompact = columnWidth < OVERVIEW_MIN_COLUMN_WIDTH
+  const overviewExpanded = overviewPreference !== null
+    && overviewPreference.sessionId === sessionId
+    && overviewPreference.compact === overviewCompact
+    ? overviewPreference.expanded
+    : !overviewCompact
+  useEffect(() => { setOverviewPreference(null) }, [overviewCompact, sessionId])
+  const toggleOverview = () => {
+    setOverviewPreference({ sessionId, compact: overviewCompact, expanded: !overviewExpanded })
+  }
+
+  // 将编辑器座位的实时高度发布到滚动主体的 --dsh-composer-height，供 ChatView
+  // 回到底部等浮动控件避让。稳定的 callback ref 可避免首个空会话填入常驻主体时
+  // 重建 observer。
   const seatObserver = useRef<ResizeObserver | null>(null)
   const seatResizeRef = useCallback((seat: HTMLDivElement | null): void => {
     seatObserver.current?.disconnect()
@@ -55,8 +82,7 @@ export function ConversationRoot({
     workspace => workspace.workspaceId === pendingWorkspaceId,
   )
 
-  // Clear the pending pick once the session lands in it, or when the picked
-  // workspace disappears from a ready list (deleted from the sidebar).
+  // 会话进入所选工作区，或该工作区从已就绪列表中被删除时，清除待定选择。
   useEffect(() => {
     if (pendingWorkspaceId === undefined) return
     if (sessionWorkspace?.workspaceId === pendingWorkspaceId
@@ -65,15 +91,9 @@ export function ConversationRoot({
     }
   }, [pendingWorkspaceId, sessionWorkspace?.workspaceId, workspaces.phase, pendingWorkspace])
 
-  // While a session is still replaying (loading + blank) the hero/docked
-  // choice is unknowable — render the composer hidden instead of flashing
-  // the centered hero and snapping to the docked bar (or vice versa).
-  // Exemption: a session the list summary already proves blank can only
-  // land on the hero, so hiding would blank the column for the whole
-  // history round-trip (the startup auto-selection flash) for nothing.
-  // The exemption is deliberately open-state-wide, not loading-only: a
-  // summary-blank session is the hero before its open starts (`cold`) and
-  // after one fails (`error`) for the same reason — there is no history.
+  // 日志回放期间尚不能确定 Hero 或底部编辑器布局，先隐藏编辑器以免跳动。
+  // 列表摘要已确认空白的会话除外：它没有历史，cold、loading 与 error 状态都
+  // 保持 Hero，避免启动自动选择时在历史请求期间整列闪空。
   const settling = sessionId !== undefined && composerPhase === 'blank' && openState === 'loading'
     && summaryBlank !== true
   const hero = sessionId === undefined
@@ -144,8 +164,7 @@ export function ConversationRoot({
     overlay: renderSlot('conversation.input.overlay', {}),
     leftItems: zone === undefined ? null : renderSlot('conversation.input.left', zone),
     rightItems: zone === undefined ? null : renderSlot('conversation.input.right', zone),
-    // Stats band under the card, inside the bar's width column so both
-    // share one constraint (composer.dock = stats-line family).
+    // 输入栏下方的扩展 dock 仍保留座位；会话统计由页面概览卡显示。
     footer: !hero && zone !== undefined ? renderSlot('conversation.composer.dock', zone) : null,
   })
 
@@ -166,10 +185,8 @@ export function ConversationRoot({
     { fallback: composerBar, overlay: true },
   )
 
-  // Sticky wraps the whole chain output (fallback + elected overlay), not
-  // only `.composerStack`: overlay:true renders those as siblings, and sticky
-  // on the fallback alone would leave Question/Approval panels at the content
-  // end off-screen when the user is not pinned to the floor.
+  // sticky 必须包住整条接管链输出；overlay:true 将 fallback 和接管面板渲染为
+  // 兄弟节点，只固定 .composerStack 会让问题或审批面板在未滚到底时落到屏幕外。
   const composerSeat = (
     <div ref={seatResizeRef} className={css.composerSeat} data-composer-seat="">
       {composer}
@@ -177,18 +194,19 @@ export function ConversationRoot({
   )
 
   return (
-    <div className={css.root} data-phase={phase}>
+    <div ref={rootRef} className={css.root} data-phase={phase}>
       {(hero || settling) && <div className={css.windowDragStrip} data-window-drag-strip data-window-drag-region aria-hidden="true" />}
       {hero && (
         <div className={css.heroActions}>
           {renderSlot('conversation.hero.actions', { sidebarCollapsed })}
         </div>
       )}
-      {renderSlot('conversation.session.header', {})}
+      {renderSlot('conversation.session.header', { overviewExpanded, toggleOverview })}
       <div className={css.scrollBody} data-conversation-scroll="">
         {renderSlot('conversation.session', {})}
         {composerSeat}
       </div>
+      {!hero && !settling && renderSlot('conversation.overview', { overviewExpanded, toggleOverview })}
     </div>
   )
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useSyncExternalStore } from 'react'
 import clsx from 'clsx'
-import { IconNewChatOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChecklistOutline14, IconNewChatOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionId, SessionListState, SessionSummary } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
   ConversationSessionHeaderSlotProps, ConversationSessionSlotProps,
@@ -61,7 +61,7 @@ function equalBreadcrumbs(left: readonly Breadcrumb[], right: readonly Breadcrum
  */
 export function ConversationSessionHeader({
   sessionId, useSession, useSessions, useStore, actions,
-  renderSlot, views, open, startSession, t,
+  renderSlot, views, open, startSession, overviewExpanded, toggleOverview, t,
 }: ConversationSessionHeaderProps) {
   useSyncExternalStore(views.subscribe, views.version)
   const tabs = views.list()
@@ -105,6 +105,7 @@ export function ConversationSessionHeader({
                 {renderSlot('conversation.session.header.actions', {})}
               </div>
               <button
+                id="dsh-conversation-overview-toggle"
                 type="button"
                 className={css.headerNewSession}
                 aria-label={t('session.new.label')}
@@ -115,6 +116,18 @@ export function ConversationSessionHeader({
               </button>
             </div>
             <div className={css.headerUtilities}>
+              <button
+                type="button"
+                className={css.overviewToggle}
+                data-expanded={overviewExpanded || undefined}
+                aria-expanded={overviewExpanded}
+                aria-controls="dsh-conversation-overview"
+                aria-label={t(overviewExpanded ? 'overview.collapse' : 'overview.expand')}
+                title={t(overviewExpanded ? 'overview.collapse' : 'overview.expand')}
+                onClick={toggleOverview}
+              >
+                <IconChecklistOutline14 size={16} />
+              </button>
               {renderSlot('conversation.session.header.utilities', {})}
             </div>
           </div>

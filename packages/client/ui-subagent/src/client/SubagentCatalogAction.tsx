@@ -2,7 +2,7 @@ import {
   useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent,
 } from 'react'
 import {
-  indexSubagentDescendants, type SessionId, type SessionListState, type SessionProjectionMap,
+  summarizeVisibleSubagents, type SessionId, type SessionListState, type SessionProjectionMap,
   type SessionSummary, type SubagentAddress, type SubagentCatalogSnapshot,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import {
@@ -171,7 +171,6 @@ function formatExactDuration(ms: number, t: TranslateNS<typeof NS>): string {
     })
 }
 
-const NO_DESCENDANTS = { count: 0, runningCount: 0 } as const
 
 /** Render the known direct-child shape while its authoritative catalog hydrates. */
 function CatalogLoadingRows({
@@ -424,18 +423,14 @@ export function SubagentCatalogAction({
   const observedCatalogs = useRef(new Set<SessionId>())
   const setCatalogOpenRef = useRef(setCatalogOpen)
   setCatalogOpenRef.current = setCatalogOpen
-  const healthy = catalog?.entries.filter(entry => entry.kind === 'child') ?? []
   const descendants = useMemo(
-    () => indexSubagentDescendants(summaries).get(sessionId) ?? NO_DESCENDANTS,
-    [sessionId, summaries],
+    () => summarizeVisibleSubagents(summaries, sessionId, catalog),
+    [sessionId, summaries, catalog],
   )
-  // The catalog can arrive before the session-list baseline; never undercount
-  // the already-visible direct rows during that short bootstrap window.
-  const descendantCount = Math.max(healthy.length, descendants.count)
+  const descendantCount = descendants.count
   const totalCountKey = descendantCount === 1 ? 'count.total.one' : 'count.total.other'
   const runningCountKey = descendants.runningCount === 1 ? 'count.running.one' : 'count.running.other'
-  // Session summaries can announce membership before the descriptor-backed catalog catches up.
-  // Keep that entry point visible through disabled loading rows; only catalog rows are navigable.
+  // 摘要可先于目录公布成员；加载占位仍保留入口，只有目录行可导航。
   const summaryBackedLoading = descendants.count > 0
     && (catalog === undefined || (catalog.state === 'ready' && catalog.entries.length === 0))
   const presentedCatalog: SubagentCatalogSnapshot | undefined = summaryBackedLoading

@@ -248,9 +248,8 @@ const EMPTY_CONTRIBUTION: LegacyContribution = {
 
 function legacyContribution(raw: ChatConversationViewNode): LegacyContribution {
   const node = raw as ChatNode
-  // Content-free settled Assistants remain in the finalized compatibility
-  // stream so StatsLine preserves its pre-assembly step counts; hidden running
-  // attempts have no final Node to contribute.
+  // 无内容的已结算 Assistant 仍进入兼容流，让概览卡窗口回退保留步骤计数；
+  // 未完成的隐藏尝试没有最终节点可贡献。
   if (raw.visibility !== 'visible' && node.kind !== 'assistant-step') return EMPTY_CONTRIBUTION
   switch (node.kind) {
     case 'user':
@@ -319,7 +318,7 @@ function sameContribution(left: LegacyContribution | undefined, right: LegacyCon
     && sameReferences(left.nodes, right.nodes)
 }
 
-/** Incremental compatibility projection for StatsLine and legacy top-level snapshot fields. */
+/** 概览卡窗口回退及旧顶层快照字段共用的增量兼容投影。 */
 class LegacySliceBuilder {
   private readonly contributions = new Map<string, LegacyContribution>()
   private readonly finalizedContributions = new Map<string, LegacyContribution>()
