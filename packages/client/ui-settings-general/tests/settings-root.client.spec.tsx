@@ -28,7 +28,7 @@ function mount({
     { id: 'plugins', order: 30, label: 'Plugins' },
   ],
   steps = [
-    { id: 'welcome', order: -100 },
+    { id: 'first-step', order: -100 },
     { id: 'credential', order: 0 },
   ],
 }: { wide?: boolean; onboardingActive?: boolean; rows?: Row[]; steps?: Step[] } = {}) {
@@ -266,8 +266,8 @@ describe('SettingsPanel navigation', () => {
   it('mounts onboarding steps in order and transfers ownership only on completion', () => {
     const { renderSlot } = mount()
     const first = renderSlot.mock.calls.find(call => call[0] === 'settings.onboarding')
-    expect(first?.[1]).toMatchObject({ stepId: 'welcome' })
-    expect(first?.[2]).toEqual({ only: 'welcome' })
+    expect(first?.[1]).toMatchObject({ stepId: 'first-step' })
+    expect(first?.[2]).toEqual({ only: 'first-step' })
     act(() => {
       (first?.[1] as { complete: () => void }).complete()
       ;(first?.[1] as { complete: () => void }).complete()

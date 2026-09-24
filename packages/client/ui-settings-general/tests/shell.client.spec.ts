@@ -108,11 +108,11 @@ describe('ui-settings apply', () => {
     await b.ctx.plugin({ inject: [...inject], apply }).await()
     const { onboardingSteps } = injectedOf(b.slots).hooks
     b.slots.register({ name: 'settings.onboarding', id: 'credential', order: 0 } as never, () => null)
-    b.slots.register({ name: 'settings.onboarding', id: 'welcome', order: -100 } as never, () => null)
+    b.slots.register({ name: 'settings.onboarding', id: 'first-step', order: -100 } as never, () => null)
     b.slots.register({ name: 'settings.onboarding', id: 'default-order' } as never, () => null)
     const steps = onboardingSteps.getSnapshot()
     expect(steps).toEqual([
-      { id: 'welcome', order: -100 },
+      { id: 'first-step', order: -100 },
       { id: 'credential', order: 0 },
       { id: 'default-order', order: 0 },
     ])

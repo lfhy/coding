@@ -84,11 +84,8 @@ export function apply(ctx: ClientContext): void {
     schema,
     t,
   })
-  // 内测声明弹窗已按产品决定移除；DeepSeek 凭据步骤保留引导。
-  // Pushed invalidations converge every open surface without polling. The
-  // settingsScope injection makes ui-settings activate first, and remote
-  // dispatch preserves listener order; its listener therefore starts the
-  // mirror refresh before this store joins that refresh.
+  // settingsScope 依赖 ui-settings 先激活；远端按注册顺序转发更新，
+  // 因而镜像先刷新，再由此 store 读取合并结果，无需轮询。
   ctx.effect(() => {
     const refreshModels = (): void => { refreshIfLoaded(controller) }
     const disposers = [
@@ -116,7 +113,6 @@ export function apply(ctx: ClientContext): void {
     label: () => t('visionFallback'),
     inject: injected,
   }, VisionSection))
-  // 内测声明弹窗已按产品决定移除；深表歉意步骤保留凭据引导。
   ctx.slots.inject('settings.onboarding', () => ctx.slots.register({
     name: 'settings.onboarding',
     id: 'deepseek-official',

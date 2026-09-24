@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-settings-general",
-  "description": "Settings ownerless-copy and product onboarding plugin: the General section, shell trigger/header chrome content, settings dictionaries, and the versioned welcome notice",
+  "description": "Settings shell and ownerless-copy plugin: General section, trigger/header chrome, settings dictionaries, and onboarding step slots",
   "version": "0.1.0-rc.8",
   "publishConfig": {
     "access": "public"
@@ -48,7 +48,6 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@deepseek-ai/schemastery": "workspace:^",
     "clsx": "^2.0.0"
   },
   "peerDependencies": {
@@ -59,8 +58,7 @@
     "@deepseek-ai/dsh-client-ui-settings": "workspace:^",
     "@deepseek-ai/dsh-client-ui-sidebar": "workspace:^",
     "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-settings": "workspace:^"
+    "@deepseek-ai/cordis": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/dsh-api-remotes": "workspace:^",
@@ -78,8 +76,7 @@
     "@types/react": "~18.3.1",
     "@types/react-dom": "~18.3.0",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "@deepseek-ai/dsh-settings": "workspace:^"
+    "react-dom": "^18.2.0"
   },
   "files": [
     "lib/index.js",
