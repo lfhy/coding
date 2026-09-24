@@ -46,7 +46,7 @@ export interface SidebarOwnerProps {
   collapsed: boolean
   /** 实际渲染宽度。 */
   width: number
-  /** 欢迎页右上角可操作时，品牌行不再重复显示面板按钮。 */
+  /** 欢迎页右上角可操作时，品牌行只隐藏重复的工作台面板按钮。 */
   welcomeActionsVisible: boolean
 }
 

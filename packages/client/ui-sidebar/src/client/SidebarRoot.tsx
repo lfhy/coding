@@ -1,6 +1,6 @@
 /**
  * 侧边栏壳负责折叠动画、品牌行和滚动条可见性。欢迎页右上角可操作时，品牌行
- * 不重复显示面板开关；工作台遮住欢迎页时恢复 rail 操作。折叠动画冻结宽内容，
+ * 只隐藏重复的工作台面板开关，保留侧边栏自身的折叠按钮。折叠动画冻结宽内容，
  * 等淡出后再切换到 56px rail；浏览区域与页脚仍由各自 slot 占用者绘制。
  */
 import { useEffect, useRef, useState } from 'react'
@@ -23,7 +23,7 @@ const COLLAPSE_SETTLE_MS = 150
 const SCROLLBAR_LINGER_MS = 2000
 
 /**
- * 渲染侧边栏壳，欢迎页操作可见时只保留品牌与会话导航入口。
+ * 渲染侧边栏壳，欢迎页操作可见时仍保留原有的侧栏折叠按钮。
  * @param props - 布局 owner、slot、回调与本地化文案。
  * @returns 侧边栏元素树。
  */
@@ -133,24 +133,21 @@ export function SidebarRoot({
           </button>
         )}
         {!welcomeActionsVisible && (
-          <>
-            {/* 欢迎页由右上角接管这些入口；全屏工作台隐藏欢迎页时恢复 rail 操作。 */}
-            <div className={css.brandActions}>
-              {renderSlot('sidebar.brand.action', { wide })}
-            </div>
-            <Tooltip label={collapsed ? t('toggle.open') : t('toggle.collapse')} delayMs={500}>
-              <button
-                type="button"
-                className={clsx(css.iconButton, css.toggle)}
-                aria-label={collapsed ? t('toggle.open') : t('toggle.collapse')}
-                onClick={() => { toggleSidebar() }}
-              >
-                {/* 欢迎页入口不可用时保留 rail 展开图标，避免把品牌误作控制。 */}
-                <Icon name="sidebar" className={css.panelIcon} size={wide ? 16 : 18} />
-              </button>
-            </Tooltip>
-          </>
+          <div className={css.brandActions}>
+            {renderSlot('sidebar.brand.action', { wide })}
+          </div>
         )}
+        <Tooltip label={collapsed ? t('toggle.open') : t('toggle.collapse')} delayMs={500}>
+          <button
+            type="button"
+            className={clsx(css.iconButton, css.toggle)}
+            aria-label={collapsed ? t('toggle.open') : t('toggle.collapse')}
+            onClick={() => { toggleSidebar() }}
+          >
+            {/* rail 始终提供侧边栏展开入口，品牌标识不充当开关。 */}
+            <Icon name="sidebar" className={css.panelIcon} size={wide ? 16 : 18} />
+          </button>
+        </Tooltip>
       </div>
 
       {/* Expanded, the button carries its own label — tooltip only on the rail. */}

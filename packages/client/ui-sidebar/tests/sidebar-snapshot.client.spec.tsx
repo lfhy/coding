@@ -41,10 +41,10 @@ async function bench(options: { locale?: 'en' } = {}) {
 }
 
 describe('sidebar shell snapshots', () => {
-  it('renders only the brand and New Session control in the welcome sidebar header', async () => {
+  it('renders only the brand, sidebar toggle, and New Session control in the welcome header', async () => {
     const { runtime } = await bench({ locale: 'en' })
     const slot = runtime.renderSlot('sidebar', { collapsed: false, width: 300, welcomeActionsVisible: true })
-    expect(slot.view.queryByRole('button', { name: 'Collapse sidebar' })).toBeNull()
+    expect(slot.view.getByRole('button', { name: 'Collapse sidebar' })).toBeTruthy()
     expect(slot.container).toMatchSnapshot()
     await runtime.dispose()
   })

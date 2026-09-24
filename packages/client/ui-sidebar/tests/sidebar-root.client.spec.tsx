@@ -90,16 +90,22 @@ function mountShell({ collapsed = false, width = 300, welcomeActionsVisible = fa
 }
 
 describe('SidebarRoot shell', () => {
-  it('keeps brand actions off the welcome page and restores them when it is covered', () => {
+  it('retains the sidebar toggle while omitting only duplicate workbench actions on the welcome page', () => {
     const b = mountShell({ welcomeActionsVisible: true })
     expect(screen.getByTestId('custom-brand-name')).toBeTruthy()
     expect(screen.queryByTestId('brand-action-seat')).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Collapse sidebar' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }))
+    expect(b.toggleSidebar).toHaveBeenCalledOnce()
     expect(screen.getAllByRole('button', { name: 'New session' })).toHaveLength(2)
+
+    b.rerender({ collapsed: true, welcomeActionsVisible: true })
+    fireEvent.click(screen.getByRole('button', { name: 'Open sidebar' }))
+    expect(b.toggleSidebar).toHaveBeenCalledTimes(2)
+    expect(screen.queryByTestId('brand-action-seat')).toBeNull()
 
     b.rerender({ welcomeActionsVisible: false })
     expect(screen.getByTestId('brand-action-seat')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Collapse sidebar' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Open sidebar' })).toBeTruthy()
   })
 
   it('routes New Session (capsule + wordmark) and the column toggle', () => {

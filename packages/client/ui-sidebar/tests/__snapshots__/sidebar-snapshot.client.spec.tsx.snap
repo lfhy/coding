@@ -1,6 +1,6 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`sidebar shell snapshots > renders only the brand and New Session control in the welcome sidebar header 1`] = `
+exports[`sidebar shell snapshots > renders only the brand, sidebar toggle, and New Session control in the welcome header 1`] = `
 <div
   data-slot="sidebar"
   style="display: contents;"
@@ -35,6 +35,30 @@ exports[`sidebar shell snapshots > renders only the brand and New Session contro
               </span>
             </div>
           </span>
+        </span>
+      </button>
+      <button
+        aria-label="Collapse sidebar"
+        class="iconButton toggle"
+        type="button"
+      >
+        <span
+          aria-hidden="true"
+          aria-label="sidebar"
+          class="semi-icon semi-icon-sidebar panelIcon"
+          role="img"
+          style="font-size: 16px;"
+        >
+          <svg
+            aria-hidden="true"
+            data-content="e9ddaac1"
+            fill="none"
+            focusable="false"
+            height="1em"
+            viewBox="0 0 24 24"
+            width="1em"
+            xmlns="http://www.w3.org/2000/svg"
+          />
         </span>
       </button>
     </div>
