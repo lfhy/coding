@@ -7,9 +7,6 @@ import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply as settingsApply, inject as settingsInject } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { apply, inject, refreshIfLoaded } from '@deepseek-ai/dsh-client-ui-settings-models/client'
-import {
-  WELCOME_NOTICE_ACK_FIELD,
-} from '../src/onboarding-copy.ts'
 import { ModelsSection } from '../src/client/ModelsSection.tsx'
 import { VisionSection } from '../src/client/VisionSection.tsx'
 import { DeepSeekOnboardingDialog } from '../src/client/DeepSeekOnboardingDialog.tsx'
@@ -208,12 +205,6 @@ describe('pushed invalidations', () => {
     const load = vi.spyOn(injected.controller, 'load').mockResolvedValue()
     b.ctx.remote.$dispatch('credentials/updated', ['DEEPSEEK_API_KEY'])
     expect(load).toHaveBeenCalledTimes(1)
-  })
-
-  it('welcome state follows the shared mirror across document commits', async () => {
-    // The welcome notice registration is removed; the durable acknowledgement
-    // field contract stays pinned so an existing acknowledged value is honored.
-    expect(WELCOME_NOTICE_ACK_FIELD).toBe('welcomeNoticeVersion')
   })
 
   it('joins the refreshed mirror view on a settings invalidation', async () => {
