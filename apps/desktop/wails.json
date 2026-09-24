@@ -2,6 +2,5 @@
   "name": "Coding Dev",
   "outputfilename": "CodingDev",
   "frontend:dir": "frontend",
-  "frontend:dev:watcher": "pnpm --dir ../../.. run dev:web",
   "build:dir": "../../.dsh-build/desktop"
 }

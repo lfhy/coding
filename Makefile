@@ -38,10 +38,11 @@ desktop:
 
 # 使用仓库锁定的 Wails CLI 和当前源码产物启动独立的桌面开发实例。
 dev:
+	node scripts/dev-desktop.mjs --check-platform
 	pnpm run build
 	mkdir -p .dsh-build
 	cd apps/desktop && CGO_ENABLED=1 GOBIN="$(CURDIR)/.dsh-build" go install github.com/wailsapp/wails/v2/cmd/wails@$$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v2)
-	cd apps/desktop && CGO_ENABLED=1 CODING_REPO_ROOT="$(CURDIR)" exec ../../.dsh-build/wails dev -tags desktop -s -skipbindings -skipembedcreate -m -nosyncgomod
+	node scripts/dev-desktop.mjs
 
 # Linux 交互式 TUI。
 tui:
