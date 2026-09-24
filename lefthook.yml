@@ -4,6 +4,10 @@
 
 pre-commit:
   jobs:
+    # 提交前校验所有 workspace 清单与锁文件一致；只读锁文件，不重装依赖。
+    - name: frozen lockfile
+      run: pnpm install --lockfile-only --frozen-lockfile --ignore-scripts
+
     - name: lint (staged)
       glob: '*.{ts,tsx,mts,cts,mjs}'
       exclude:
