@@ -198,7 +198,7 @@ describe('AppFrame', () => {
     expect(keys).toContain('workbench')
     expect(keys).toContain('workbench.bottom')
     expect(keys).not.toContain('conversation.empty')
-    expect(slotCalls.find(c => c.key === 'conversation')!.props).toEqual({})
+    expect(slotCalls.find(c => c.key === 'conversation')!.props).toEqual({ sidebarCollapsed: false })
     expect(slotCalls.find(c => c.key === 'details')!.props).toEqual({})
     expect(slotCalls.find(c => c.key === 'workbench')!.props).toMatchObject({
       shown: false,
@@ -225,7 +225,7 @@ describe('AppFrame', () => {
     expect(slotCalls.map(c => c.key)).toContain('details')
   })
 
-  it('ignores unselected states and closes only when the Session id changes', () => {
+  it('closes details on a Session change, including a blank Session', () => {
     const { frame, instance, rerenderFrame } = mountFrame()
     expect(tracks(frame)).toEqual([280, 0])
 
@@ -241,12 +241,12 @@ describe('AppFrame', () => {
     selectedSessionBlank.current = true
     act(() => { rerenderFrame() })
     expect(tracks(frame)).toEqual([280, 0])
-    expect(instance.getSnapshot().details).toBe(360)
+    expect(instance.getSnapshot().details).toBe(0)
 
     selectedSession.current = 's-next' as SessionId
     selectedSessionBlank.current = false
     act(() => { rerenderFrame() })
-    expect(tracks(frame)).toEqual([280, 360])
+    expect(tracks(frame)).toEqual([280, 0])
 
     selectedSession.current = undefined
     act(() => { rerenderFrame() })
@@ -383,6 +383,25 @@ describe('AppFrame — fixed workbench', () => {
     expect(tracks(frame)).toEqual([280, 0])
     expect(rows(frame)).toBe(0)
     expect(getByTestId('workbench-content').parentElement?.hasAttribute('inert')).toBe(true)
+  })
+
+  it('keeps a blank Session bottom panel and sidebar state when its first message arrives', () => {
+    selectedSessionBlank.current = true
+    const { frame, instance, rerenderFrame, ownerFor, publishWorkbench } = mountFrame()
+    act(() => {
+      instance.actions.toggleSidebar()
+      instance.actions.toggleWorkbenchBottom('s-test' as SessionId)
+    })
+    expect(frame.hasAttribute('data-bottom-open')).toBe(true)
+    expect(frame.hasAttribute('data-sidebar-collapsed')).toBe(true)
+    expect(ownerFor('conversation')).toEqual({ sidebarCollapsed: true })
+    expect(publishWorkbench).toHaveBeenLastCalledWith('s-test', expect.objectContaining({ bottomOpen: true }))
+
+    selectedSessionBlank.current = false
+    act(() => { rerenderFrame() })
+    expect(frame.hasAttribute('data-bottom-open')).toBe(true)
+    expect(frame.hasAttribute('data-sidebar-collapsed')).toBe(true)
+    expect(ownerFor('conversation')).toEqual({ sidebarCollapsed: true })
   })
 
   it('persistent panel toggles open the workbench first and project the files preference', () => {

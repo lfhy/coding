@@ -5,6 +5,10 @@
   - text: Standard mode
   - button "New session":
     - img
+  - button "Open file workbench":
+    - img
+  - button "Choose an app to open in":
+    - img
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"

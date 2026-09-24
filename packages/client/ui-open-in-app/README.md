@@ -17,7 +17,9 @@ kind: "package-reference"
 
 本地工作区的主按钮默认打开内置文件工作台，下拉菜单先列出内置页面，再列出 Host 已验证且 locale 词典认识的应用，选中项保存在 `dsh.open-in-app.choice`。选择应用后主按钮改为在 macOS、Windows 或 Linux 上启动它；选择内置页面，或记录的应用已经从 catalog 消失时，主按钮回到内置文件工作台。启动请求若发现执行世界已切换为远端，Client 会改为打开工作台，不会把远端路径交给本机应用。
 
-Remote-SSH 与 SSH Host 入口直接为当前 Session 调用 `ctx.layout.openWorkbench(sessionId)`。本包不注册 `conversation.view`，也不增加文件 conversation tab；入口始终进入固定工作台。工作台顶栏左侧承载文件标签，右侧只保留最大化和关闭；文件侧栏与终端底栏的开关常驻在侧边栏品牌行（`sidebar.brand.action`），工作台未打开、最大化或窄屏隐藏会话页头时仍可操作。点击开关时若工作台未打开，会先打开工作台再显示对应面板：文件侧栏默认呈现内置文件管理，终端底栏默认呈现终端；文件侧栏默认打开，显隐按 Session 保存。没有当前会话或当前会话仍是空白会话时开关不渲染。
+Remote-SSH 与 SSH Host 入口直接为当前 Session 调用 `ctx.layout.openWorkbench(sessionId)`。本包不注册 `conversation.view`，也不增加文件 conversation tab；入口始终进入固定工作台。工作台顶栏左侧承载文件标签，右侧只保留最大化和关闭；文件侧栏与终端底栏的开关常驻在侧边栏品牌行（`sidebar.brand.action`），工作台未打开、最大化或窄屏隐藏会话页头时仍可操作。点击开关时若工作台未打开，会先打开工作台再显示对应面板：文件侧栏默认呈现内置文件管理，终端底栏默认呈现终端；文件侧栏默认打开，显隐按 Session 保存。空白会话也可使用这些开关；只有完全没有当前会话时，侧边栏品牌行不渲染面板开关。
+
+欢迎页右上角的底栏入口注册在 `conversation.hero.actions`。已有会话时直接切换其底栏；尚无会话时先连接最近工作区，若没有工作区则在 Host 用户 HOME 创建未分组会话，再打开底栏。创建失败时按钮旁显示错误并允许重试；异步创建期间用户若已切换到另一会话，入口不会抢占选择。底栏状态按 Session 保存，欢迎页发送首条消息后继续沿用。
 
 文件树只把当前 Session id 与 Host 返回的 provider segment 数组回传给 list/read 路由，不提交工作区根，也不拼接 Windows、POSIX 或 UNC 路径。工作台视觉关闭时不请求目录；首次显示后才读取根目录，避免隐藏 entry 在 Session 尚未就绪时留下错误状态。目录按文件夹优先排序，展开时才读取下一层；筛选只作用于已加载层，点击文件会打开或激活中间标签。Markdown 使用共享 `MarkdownText`，代码和普通文本保留换行，图片使用 Host 校验后的 MIME 与 base64 内容，其它类型显示明确的 unsupported 状态。
 

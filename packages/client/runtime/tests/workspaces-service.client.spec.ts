@@ -451,8 +451,20 @@ describe('WorkspaceRuntime', () => {
 
     await workspaces.startSessionWithoutWorkspace()
 
-    expect(api.callsOf('session.create')).toEqual([{}])
+    expect(api.callsOf('host.describe')).toEqual([{}])
+    expect(api.callsOf('session.create')).toEqual([{ cwd: '/h' }])
     expect(sessions.list.getSnapshot().current).toBe(sid('unscoped'))
+  })
+
+  it('does not create a HOME session when the Host cannot describe its directory', async () => {
+    const ctx = new Context()
+    const api = new FakeApiClient()
+    const sessions = new SessionRuntime(ctx, api, fakeRemote())
+    const workspaces = new WorkspaceRuntime(ctx, api, sessions)
+    api.onDescribe = () => Promise.resolve(err({ code: 'internal', message: 'offline', details: {} }))
+
+    await expect(workspaces.connectHome()).rejects.toThrow('host.describe failed: offline')
+    expect(api.callsOf('session.create')).toEqual([])
   })
 
   it('archives a session, projects the set from the response, list, and frame, and clears only the current one', async () => {

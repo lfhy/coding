@@ -13,7 +13,7 @@ import css from './ConversationRoot.module.css'
 export type ConversationRootProps = ConversationSlotProps
 
 export function ConversationRoot({
-  sessionId, useSession, useSessions, useWorkspaces, useInput, useComposerBlock,
+  sessionId, sidebarCollapsed, useSession, useSessions, useWorkspaces, useInput, useComposerBlock,
   renderSlot, renderSlotChain, selectWorkspace, t,
 }: ConversationRootProps) {
   const openState = useSession(s => s.openState)
@@ -178,6 +178,11 @@ export function ConversationRoot({
 
   return (
     <div className={css.root} data-phase={phase}>
+      {hero && (
+        <div className={css.heroActions}>
+          {renderSlot('conversation.hero.actions', { sidebarCollapsed })}
+        </div>
+      )}
       {renderSlot('conversation.session.header', {})}
       <div className={css.scrollBody} data-conversation-scroll="">
         {renderSlot('conversation.session', {})}

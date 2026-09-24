@@ -31,7 +31,7 @@ beforeEach(() => {
 
 type AppRootProps = PropsRenderSlots<'conversation' | 'details'>
 function AppRoot({ renderSlot }: AppRootProps) {
-  return <>{renderSlot('conversation', {})}</>
+  return <>{renderSlot('conversation', { sidebarCollapsed: false })}</>
 }
 
 const LAYOUT_CHILDREN = {

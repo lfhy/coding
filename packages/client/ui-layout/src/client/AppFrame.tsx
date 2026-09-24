@@ -269,11 +269,9 @@ export function AppFrame({
   const rootPanels = useStore(state => state)
   const activeSession = useSessions((state) => {
     const current = state.current
-    return current !== undefined && state.byId[current]?.blank === false ? current : undefined
+    return current !== undefined && state.byId[current] !== undefined ? current : undefined
   })
-  const liveSessionIds = useSessions(state => state.ids.filter(
-    sessionId => state.byId[sessionId]?.blank === false,
-  ))
+  const liveSessionIds = useSessions(state => state.ids)
   const panels = useMemo(() => {
     const current = activeSession === undefined ? undefined : rootPanels.workbench[activeSession]
     return current ?? WORKBENCH_FALLBACK
@@ -417,7 +415,7 @@ export function AppFrame({
         {renderSlot('sidebar', { collapsed: sidebarCollapsed, width: sidebarWidth })}
       </div>
       <ConversationColumn hidden={workbenchFullscreen}>
-        {renderSlot('conversation', {})}
+        {renderSlot('conversation', { sidebarCollapsed })}
       </ConversationColumn>
       <DetailsColumn hidden={detailsWidth === 0}>
         {renderSlot('details', {})}

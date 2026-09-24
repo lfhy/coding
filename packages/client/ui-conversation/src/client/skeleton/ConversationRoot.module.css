@@ -4,6 +4,7 @@
    a 2px active bar. */
 
 .root {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -23,6 +24,20 @@
   --dsh-composer-card-max-width: calc(var(--dsh-chat-content-width) + 32px);
   --dsh-composer-side-clearance: 16px;
   --dsh-composer-dock-inset: 8px;
+}
+
+.heroActions {
+  position: absolute;
+  top: calc(12px + var(--app-safe-area-inset-top, 0px));
+  right: 24px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 480px) {
+  .heroActions { right: 12px; }
 }
 
 .header {

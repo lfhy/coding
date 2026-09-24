@@ -1,4 +1,8 @@
 - button "New session"
+- button "Show files sidebar":
+  - img
+- button "Show terminal panel":
+  - img
 - button "Collapse sidebar":
   - img
 - button "New session":
@@ -19,6 +23,10 @@
 - button "Settings":
   - img
   - text: Settings
+- button "Collapse sidebar":
+  - img
+- button "Open bottom panel":
+  - img
 - text: {{greeting}}
 - button "Standard mode":
   - img
@@ -37,6 +45,4 @@
   - text: DeepSeek-V4-Flash
   - img
 - button "Send message" [disabled]
-- text: Details
-- button "Close details"
-- text: Click a tool row in the message flow to view its details
+- separator

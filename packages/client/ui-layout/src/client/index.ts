@@ -48,8 +48,11 @@ export interface SidebarOwnerProps {
   width: number
 }
 
-/** 对话区域没有额外 owner 数据。 */
-export interface ConvOwnerProps {}
+/** 对话区域需要知道侧边栏的实际收起状态，以呈现欢迎页入口。 */
+export interface ConvOwnerProps {
+  /** 响应式折叠后的实际状态，而非用户保存的宽度偏好。 */
+  sidebarCollapsed: boolean
+}
 
 /** 详情栏没有额外 owner 数据；会话 id 由框架提供。 */
 export interface DetailsOwnerProps {}

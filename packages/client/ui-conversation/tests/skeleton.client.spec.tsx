@@ -241,6 +241,7 @@ function mount(
   )) as ConversationRootProps['renderSlotChain']
   const props: ConversationRootProps = {
     sessionId: SID,
+    sidebarCollapsed: false,
     SessionProvider: ({ children }) => children(SID),
     useSession,
     useSessions: bindSnapshotSelector(sessions),
@@ -404,6 +405,7 @@ describe('ConversationRoot resident composer', () => {
     expect(host).not.toBeNull()
     expect(header?.getAttribute('aria-hidden')).toBe('true')
     expect(b.view.getByTestId('hero-greeting')).toBeTruthy()
+    expect(b.slotCalls).toContain('conversation.hero.actions')
     expect(b.view.queryByText('预览版')).toBeNull()
     expect(b.view.queryByTestId('view-chat')).toBeNull()
     // The same machine-backed textarea is live in the hero, and the
@@ -481,6 +483,7 @@ describe('ConversationRoot resident composer', () => {
     expect(b.chat.store.getSnapshot().draft).toBe('kept across flip')
     expect(b.view.container.querySelector('[data-conversation-scroll]')?.contains(after)).toBe(true)
     expect(b.view.queryByTestId('hero-greeting')).toBeNull()
+    expect(b.view.container.querySelector('[class*="heroActions"]')).toBeNull()
     expect(b.view.getByTestId('view-chat')).toBeTruthy()
   })
 

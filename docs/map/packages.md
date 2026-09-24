@@ -64,7 +64,7 @@ workspace 共 228 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/client/ui-settings-models` — 模型设置与产品引导插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 10）
 - `packages/client/ui-settings-plugin-inventory` — Web 设置中的只读**插件列表**标签页 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 3）
 - `packages/client/ui-settings-plugins` — **插件**设置分区及其**插件配置**标签页 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 5）
-- `packages/client/ui-sidebar` — 侧边栏外壳插件：负责品牌行、New Session 操作、布局持有的折叠控件、可感知滚动的区域 seat… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 7）
+- `packages/client/ui-sidebar` — 侧边栏外壳插件：负责品牌行、New Session 操作、布局持有的折叠控件、可感知滚动的区域 seat… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 8）
 - `packages/client/ui-skill` — skill（技能）调用 source 的浏览器端：把 `/` 触发的 `skill` source 注册进 `ctx.inputTriggers… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
 - `packages/client/ui-slots` — Slot 注册表纯核心、slot 终端设计：SlotMap 声明合并、SlotCore 上唯一的 `register` 组合 API、四 sha… 入口 `src/index.ts`（tests 4）
 - `packages/client/ui-subagent` — Web subagent 功能 owner：向 `conversation.session.header.actions` 贡献可懒加载展开的目… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）

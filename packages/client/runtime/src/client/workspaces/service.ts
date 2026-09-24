@@ -191,9 +191,19 @@ export class WorkspaceRuntime implements IWorkspaces {
     )
   }
 
-  /** 创建并选择一个不归属工作区的会话；失败交给调用方呈现。 */
+  /**
+   * 在 Host 用户 HOME 目录创建未分组会话；使用 Host 返回的路径，不猜测浏览器所在机器的 HOME。
+   * @returns 已可寻址的会话 id。
+   */
+  async connectHome(): Promise<SessionId> {
+    const response = await this.api.host.describe({})
+    if (!response.result.ok) throw new Error(`host.describe failed: ${response.result.error.message}`)
+    return await this.sessions.create({ cwd: response.result.value.home })
+  }
+
+  /** 创建并选择一个以 Host 用户 HOME 为目录的未分组会话；失败交给调用方呈现。 */
   async startSessionWithoutWorkspace(): Promise<void> {
-    const sessionId = await this.sessions.createUnscoped()
+    const sessionId = await this.connectHome()
     this.sessions.open(sessionId)
   }
 

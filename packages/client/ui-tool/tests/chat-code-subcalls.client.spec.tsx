@@ -93,7 +93,7 @@ function snapshotWith(
 /** Test-owned AppFrame role: declares and renders the resident conversation area. */
 type AppRootProps = PropsRenderSlots<'conversation' | 'details'>
 function AppRoot({ renderSlot }: AppRootProps) {
-  return <>{renderSlot('conversation', {})}</>
+  return <>{renderSlot('conversation', { sidebarCollapsed: false })}</>
 }
 
 /**

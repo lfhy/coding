@@ -574,6 +574,7 @@ describe('workspaces action face', () => {
     const registered = await ws.create({ path: '/tmp/beta' })
     expect(registered.path).toBe('/tmp/beta')
     await ws.startSessionWithoutWorkspace()
+    await expect(ws.connectHome()).resolves.toBe('session-of-home')
     await expect(ws.pickDirectory()).resolves.toBeNull()
     const renamed = await ws.rename('w1' as WorkspaceId, 'Renamed')
     expect(renamed.title).toBe('Renamed')
@@ -587,7 +588,7 @@ describe('workspaces action face', () => {
     await ws.archiveSession('s1' as SessionId)
     expect(ws.list.getSnapshot().archivedSessionIds).toEqual(['s1'])
     expect(ws.calls.map(c => c.method)).toEqual(
-      ['create', 'create', 'startSessionWithoutWorkspace', 'pickDirectory', 'rename', 'delete', 'openPath', 'insertBefore', 'insertSessionBefore', 'archiveSession'])
+      ['create', 'create', 'startSessionWithoutWorkspace', 'connectHome', 'pickDirectory', 'rename', 'delete', 'openPath', 'insertBefore', 'insertSessionBefore', 'archiveSession'])
 
     ws.stub('create', () => Promise.resolve({ workspaceId: 'ws-x', title: 'X', path: '/x', sessionIds: [] } as never))
     const startWithoutWorkspace = vi.fn(() => Promise.resolve())

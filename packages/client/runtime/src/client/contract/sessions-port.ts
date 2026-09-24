@@ -33,10 +33,10 @@ export interface SessionsPort {
   readonly list: ObservableSnapshot<SessionsPortList>
   /**
    * Create a session on the host.
-   * @param opts - target workspace.
+   * @param opts - 目标工作区或由 Host 验证的工作目录。
    * @returns the new session id.
    */
-  create(opts: { workspaceId: WorkspaceId }): Promise<SessionId>
+  create(opts: { workspaceId?: WorkspaceId; cwd?: string }): Promise<SessionId>
   /** 创建一个不归属任何工作区、使用 Host 默认目录的会话。 */
   createUnscoped(): Promise<SessionId>
   /**

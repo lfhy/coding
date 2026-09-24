@@ -70,6 +70,13 @@ export class TestWorkspaces implements IWorkspaces {
     this.stubs.get('startSession')?.(workspaceId)
   }
 
+  /** 返回测试用 HOME 会话 id；不会自行修改当前选择。 */
+  async connectHome(): Promise<SessionId> {
+    this.calls.push({ method: 'connectHome', args: [] })
+    const stub = this.stubs.get('connectHome')
+    return stub === undefined ? 'session-of-home' as SessionId : await (stub() as Promise<SessionId>)
+  }
+
   /** 创建不归属工作区的会话（记录；安装 stub 时执行其行为）。 */
   async startSessionWithoutWorkspace(): Promise<void> {
     this.calls.push({ method: 'startSessionWithoutWorkspace', args: [] })

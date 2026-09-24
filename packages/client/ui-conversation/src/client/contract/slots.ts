@@ -166,6 +166,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * reads the global workspace list.
      */
     'conversation.hero.workspace': { kind: 'single'; scope: 'root'; owner: EmptyWorkspaceOwnerProps }
+    /** 欢迎页右上角的全局面板操作；由侧边栏和工作台插件各自注册。 */
+    'conversation.hero.actions': { kind: 'list'; scope: 'root'; owner: HeroActionsOwnerProps }
     /**
      * 位于空白会话标题前的品牌图标。此 package 的 `conversation` entry
      * 声明它；shell 提供 Coding 图片后备实现。
@@ -613,6 +615,11 @@ export interface HeroBrandMarkOwnerProps {
   className?: string | undefined
 }
 
+/** 欢迎页操作读取实际侧边栏状态，避免响应式收起时显示错误动作。 */
+export interface HeroActionsOwnerProps {
+  sidebarCollapsed: boolean
+}
+
 /**
  * Full conversation-slot component props: runtime & child-render (view ring
  * + composer chain/bar + input-region + hero picker slots) & store & injected
@@ -627,6 +634,7 @@ export type ConversationSlotProps =
     | 'conversation.input.left' | 'conversation.input.right'
     | 'conversation.hero.brand.mark'
     | 'conversation.hero.workspace'
+    | 'conversation.hero.actions'
     | 'conversation.hero.agentPreset'
   >
   & InjectFace<ConversationInjected>

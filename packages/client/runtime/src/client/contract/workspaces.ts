@@ -29,7 +29,12 @@ export interface IWorkspaces {
    */
   startSession(workspaceId?: WorkspaceId): void
   /**
-   * 创建并打开一个不归属任何工作区的会话，Host 默认目录仍是其 cwd。
+   * 在 Host 用户 HOME 目录创建不归属工作区的空白会话，但不改变当前选择。
+   * @returns 已可寻址的会话 id。
+   */
+  connectHome(): Promise<SessionId>
+  /**
+   * 在 Host 用户 HOME 目录创建并打开一个不归属工作区的会话。
    * @returns 新会话在列表中可同步寻址后完成。
    */
   startSessionWithoutWorkspace(): Promise<void>

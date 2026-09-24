@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 /**
- * 侧边栏品牌行常驻面板开关：无会话或空白会话不渲染、关闭态按下态恒为 false、
+ * 侧边栏品牌行常驻面板开关：无会话不渲染、空白会话可用、关闭态按下态恒为 false、
  * 点击委托给注入的两个开关动作。
  */
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ObservableSnapshot, SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
@@ -11,7 +11,7 @@ import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-tes
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkbenchLayoutSnapshot } from '@deepseek-ai/dsh-client-ui-layout/client'
 import {
-  WorkbenchPanelToggles,
+  HeroBottomToggle, WorkbenchPanelToggles,
   type WorkbenchPanelTogglesProps,
 } from '../src/client/WorkbenchPanelToggles.tsx'
 import { zh } from '../src/client/locales.ts'
@@ -93,10 +93,11 @@ describe('WorkbenchPanelToggles visibility', () => {
     expect(container.innerHTML).toBe('')
   })
 
-  it('renders nothing while the current session is still blank', () => {
+  it('renders controls for a blank session with a live working directory', () => {
     const b = bench({ blank: true })
-    const { container } = render(<WorkbenchPanelToggles {...b.props} />)
-    expect(container.innerHTML).toBe('')
+    render(<WorkbenchPanelToggles {...b.props} />)
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.bottom.show'] }))
+    expect(b.toggleBottom).toHaveBeenCalledOnce()
   })
 })
 
@@ -154,5 +155,38 @@ describe('WorkbenchPanelToggles pressed state', () => {
     expect(screen
       .getByRole('button', { name: zh['workbench.files.show'] })
       .getAttribute('aria-pressed')).toBe('false')
+  })
+})
+
+describe('欢迎页底栏入口', () => {
+  it('无会话仍可点击；空白会话打开后状态跟随布局投影', async () => {
+    const b = bench({ current: undefined })
+    const toggleBottom = vi.fn(async () => {})
+    const props = { ...b.props, sidebarCollapsed: false, toggleBottom } as unknown as
+      React.ComponentProps<typeof HeroBottomToggle>
+    const view = render(<HeroBottomToggle {...props} />)
+    const open = view.getByRole('button', { name: '打开底栏' })
+    expect((open as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(open)
+    await waitFor(() => { expect(toggleBottom).toHaveBeenCalledOnce() })
+
+    cleanup()
+    const active = bench({ blank: true })
+    const activeProps = { ...active.props, sidebarCollapsed: true, toggleBottom } as unknown as
+      React.ComponentProps<typeof HeroBottomToggle>
+    render(<HeroBottomToggle {...activeProps} />)
+    act(() => { active.publish({ open: true, fullscreen: false, bottomOpen: true, filesOpen: true }) })
+    expect(screen.getByRole('button', { name: '关闭底栏' }).getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('创建会话失败时保持入口可重试并给出错误', async () => {
+    const b = bench({ current: undefined })
+    const toggleBottom = vi.fn(async () => { throw new Error('offline') })
+    const props = { ...b.props, sidebarCollapsed: false, toggleBottom } as unknown as
+      React.ComponentProps<typeof HeroBottomToggle>
+    const view = render(<HeroBottomToggle {...props} />)
+    fireEvent.click(view.getByRole('button', { name: '打开底栏' }))
+    expect((await view.findByRole('alert')).textContent).toContain('offline')
+    await waitFor(() => { expect((view.getByRole('button', { name: '打开底栏' }) as HTMLButtonElement).disabled).toBe(false) })
   })
 })

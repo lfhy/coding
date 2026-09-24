@@ -10,7 +10,10 @@ import { OPEN_IN_APP_ICON_PREFIX } from '@deepseek-ai/dsh-host-open-in-app/share
 import { OpenInAppController } from './controller.ts'
 import { OpenInAppAction, type OpenInAppActionInjected } from './OpenInAppAction.tsx'
 import { WorkspaceWorkbench, type WorkspaceWorkbenchInjected } from './WorkspaceWorkbench.tsx'
-import { WorkbenchPanelToggles, type WorkbenchPanelTogglesInjected } from './WorkbenchPanelToggles.tsx'
+import {
+  HeroBottomToggle, WorkbenchPanelToggles,
+  type HeroBottomToggleInjected, type WorkbenchPanelTogglesInjected,
+} from './WorkbenchPanelToggles.tsx'
 import { RetainedTerminalPanel } from './RetainedTerminalPanel.tsx'
 import type { TerminalPanelInjected } from './TerminalPanel.tsx'
 import { createWorkbenchStore } from './store.ts'
@@ -19,19 +22,18 @@ import { en, NS, zh } from './locales.ts'
 export type { OpenInAppActionInjected, OpenInAppActionProps } from './OpenInAppAction.tsx'
 export type { WorkbenchPanelTogglesInjected, WorkbenchPanelTogglesProps } from './WorkbenchPanelToggles.tsx'
 
-/** locale、slot、工作台布局控制和当前会话需要的服务。 */
-export const inject = ['slots', 'locale', 'layout', 'sessions']
+/** locale、slot、布局、会话与工作区选择需要的服务。 */
+export const inject = ['slots', 'locale', 'layout', 'sessions', 'workspaces']
 
 /**
- * 读取可以操作工作台的当前会话：没有当前会话或它仍是空白会话时返回 undefined，
- * 与 AppFrame 判定工作台可见性的口径一致。
+ * 读取可以操作工作台的当前会话：包括空白会话，只有当前会话尚不可寻址时返回 undefined。
  * @param ctx - Client 根上下文。
  * @returns 可操作工作台的会话 id，或 undefined。
  */
 function activeSessionId(ctx: ClientContext): SessionId | undefined {
   const state = ctx.sessions.list.getSnapshot()
   const current = state.current
-  return current !== undefined && state.byId[current]?.blank === false ? current : undefined
+  return current !== undefined && state.byId[current] !== undefined ? current : undefined
 }
 
 /**
@@ -93,6 +95,29 @@ export function apply(ctx: ClientContext): void {
       },
     }),
   }, WorkbenchPanelToggles))
+
+  ctx.slots.inject('conversation.hero.actions', () => ctx.slots.register({
+    name: 'conversation.hero.actions',
+    id: 'bottom-toggle',
+    order: 10,
+    locale: NS,
+    inject: (): HeroBottomToggleInjected => ({
+      workbenchSource: sessionId => ctx.layout.workbench(sessionId),
+      toggleBottom: async () => {
+        let sessionId = activeSessionId(ctx)
+        if (sessionId === undefined) {
+          const target = ctx.workspaces.list.getSnapshot().recentWorkspaceId
+          sessionId = target === undefined
+            ? await ctx.workspaces.connectHome()
+            : await ctx.workspaces.connectWorkspace(target)
+          // 异步创建期间若用户切换到另一会话，不抢占其当前视图。
+          if (ctx.sessions.list.getSnapshot().current !== undefined) return
+          ctx.sessions.open(sessionId)
+        }
+        ctx.layout.toggleWorkbenchBottom(sessionId)
+      },
+    }),
+  }, HeroBottomToggle))
 
   ctx.slots.inject('workbench.bottom', () => ctx.slots.register({
     name: 'workbench.bottom',
