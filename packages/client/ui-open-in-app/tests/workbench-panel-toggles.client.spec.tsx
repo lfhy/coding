@@ -11,7 +11,7 @@ import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-tes
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkbenchLayoutSnapshot } from '@deepseek-ai/dsh-client-ui-layout/client'
 import {
-  HeroBottomToggle, WorkbenchPanelToggles,
+  HeroPanelToggle, WorkbenchPanelToggles,
   type WorkbenchPanelTogglesProps,
 } from '../src/client/WorkbenchPanelToggles.tsx'
 import { zh } from '../src/client/locales.ts'
@@ -158,35 +158,40 @@ describe('WorkbenchPanelToggles pressed state', () => {
   })
 })
 
-describe('欢迎页底栏入口', () => {
-  it('无会话仍可点击；空白会话打开后状态跟随布局投影', async () => {
+describe('欢迎页面板入口', () => {
+  it.each(['bottom', 'files'] as const)('%s 无会话仍可点击；空白会话打开后状态跟随布局投影', async (panel) => {
     const b = bench({ current: undefined })
-    const toggleBottom = vi.fn(async () => {})
-    const props = { ...b.props, sidebarCollapsed: false, toggleBottom } as unknown as
-      React.ComponentProps<typeof HeroBottomToggle>
-    const view = render(<HeroBottomToggle {...props} />)
-    const open = view.getByRole('button', { name: '打开底栏' })
+    const togglePanel = vi.fn(async () => {})
+    const props = { ...b.props, panel, togglePanel } as unknown as
+      React.ComponentProps<typeof HeroPanelToggle>
+    const view = render(<HeroPanelToggle {...props} />)
+    const openLabel = panel === 'bottom' ? '显示终端底栏' : '显示文件侧栏'
+    const closeLabel = panel === 'bottom' ? '隐藏终端底栏' : '隐藏文件侧栏'
+    const open = view.getByRole('button', { name: openLabel })
     expect((open as HTMLButtonElement).disabled).toBe(false)
+    expect(open.getAttribute('title')).toBe(openLabel)
+    expect(open.getAttribute('aria-pressed')).toBe('false')
     fireEvent.click(open)
-    await waitFor(() => { expect(toggleBottom).toHaveBeenCalledOnce() })
+    await waitFor(() => { expect(togglePanel).toHaveBeenCalledOnce() })
 
     cleanup()
     const active = bench({ blank: true })
-    const activeProps = { ...active.props, sidebarCollapsed: true, toggleBottom } as unknown as
-      React.ComponentProps<typeof HeroBottomToggle>
-    render(<HeroBottomToggle {...activeProps} />)
-    act(() => { active.publish({ open: true, fullscreen: false, bottomOpen: true, filesOpen: true }) })
-    expect(screen.getByRole('button', { name: '关闭底栏' }).getAttribute('aria-pressed')).toBe('true')
+    const activeProps = { ...active.props, panel, togglePanel } as unknown as
+      React.ComponentProps<typeof HeroPanelToggle>
+    render(<HeroPanelToggle {...activeProps} />)
+    act(() => { active.publish({ open: true, fullscreen: false, bottomOpen: panel === 'bottom', filesOpen: panel === 'files' }) })
+    expect(screen.getByRole('button', { name: closeLabel }).getAttribute('aria-pressed')).toBe('true')
   })
 
-  it('创建会话失败时保持入口可重试并给出错误', async () => {
+  it.each(['bottom', 'files'] as const)('%s 创建会话失败时保持入口可重试并给出错误', async (panel) => {
     const b = bench({ current: undefined })
-    const toggleBottom = vi.fn(async () => { throw new Error('offline') })
-    const props = { ...b.props, sidebarCollapsed: false, toggleBottom } as unknown as
-      React.ComponentProps<typeof HeroBottomToggle>
-    const view = render(<HeroBottomToggle {...props} />)
-    fireEvent.click(view.getByRole('button', { name: '打开底栏' }))
+    const togglePanel = vi.fn(async () => { throw new Error('offline') })
+    const props = { ...b.props, panel, togglePanel } as unknown as
+      React.ComponentProps<typeof HeroPanelToggle>
+    const view = render(<HeroPanelToggle {...props} />)
+    const label = panel === 'bottom' ? '显示终端底栏' : '显示文件侧栏'
+    fireEvent.click(view.getByRole('button', { name: label }))
     expect((await view.findByRole('alert')).textContent).toContain('offline')
-    await waitFor(() => { expect((view.getByRole('button', { name: '打开底栏' }) as HTMLButtonElement).disabled).toBe(false) })
+    await waitFor(() => { expect((view.getByRole('button', { name: label }) as HTMLButtonElement).disabled).toBe(false) })
   })
 })

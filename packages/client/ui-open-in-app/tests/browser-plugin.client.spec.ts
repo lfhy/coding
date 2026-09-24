@@ -12,8 +12,8 @@ import { apply as nodeApply } from '../src/index.ts'
 import { OpenInAppAction } from '../src/client/OpenInAppAction.tsx'
 import { WorkspaceWorkbench, type WorkspaceWorkbenchInjected } from '../src/client/WorkspaceWorkbench.tsx'
 import {
-  HeroBottomToggle, WorkbenchPanelToggles,
-  type HeroBottomToggleInjected, type WorkbenchPanelTogglesInjected,
+  HeroPanelToggle, WorkbenchPanelToggles,
+  type HeroPanelToggleInjected, type WorkbenchPanelTogglesInjected,
 } from '../src/client/WorkbenchPanelToggles.tsx'
 import { RetainedTerminalPanel } from '../src/client/RetainedTerminalPanel.tsx'
 import type { TerminalPanelInjected } from '../src/client/TerminalPanel.tsx'
@@ -46,13 +46,14 @@ async function bench() {
   const toggleWorkbenchFullscreen = vi.fn()
   const toggleWorkbenchBottom = vi.fn()
   const toggleWorkbenchFiles = vi.fn()
+  const toggleHeroPanel = vi.fn()
   const workbench = createSnapshotStore({
     open: false, fullscreen: false, bottomOpen: false, filesOpen: true,
   })
   ctx.provide('layout', {
     toggleSidebar: vi.fn(), openDetails: vi.fn(), closeDetails: vi.fn(),
     openWorkbench, closeWorkbench, toggleWorkbench: vi.fn(),
-    toggleWorkbenchFullscreen, toggleWorkbenchBottom, toggleWorkbenchFiles,
+    toggleWorkbenchFullscreen, toggleWorkbenchBottom, toggleWorkbenchFiles, toggleHeroPanel,
     workbench: vi.fn(() => workbench),
   })
   // 品牌行开关在 root scope 通过全局 useSessions 选会话；activeSessionId 只读取
@@ -76,7 +77,7 @@ async function bench() {
   await fiber.await()
   return {
     ctx, fiber, openWorkbench, closeWorkbench, toggleWorkbenchFullscreen,
-    toggleWorkbenchBottom, toggleWorkbenchFiles,
+    toggleWorkbenchBottom, toggleWorkbenchFiles, toggleHeroPanel,
     sessionList: list, open, connectHome, connectWorkspace, workspaceList,
   }
 }
@@ -92,7 +93,7 @@ describe('open-in-app browser half', () => {
     const workbench = ctx.slots.entries('workbench')[0]
     const bottom = ctx.slots.entries('workbench.bottom')[0]
     const brandAction = ctx.slots.entries('sidebar.brand.action')[0]
-    const heroAction = ctx.slots.entries('conversation.hero.actions')[0]
+    const heroActions = ctx.slots.entries('conversation.hero.actions')
     expect(action?.component).toBe(OpenInAppAction)
     expect(action?.options).toMatchObject({ id: 'open-in-app', order: -10 })
     expect(workbench?.component).toBe(WorkspaceWorkbench)
@@ -102,8 +103,9 @@ describe('open-in-app browser half', () => {
 
     // 常驻的面板开关注册在侧边栏品牌行 list 槽，带 owner props 的注册者 id、词典与注入面。
     expect(brandAction?.component).toBe(WorkbenchPanelToggles)
-    expect(heroAction?.component).toBe(HeroBottomToggle)
-    expect(heroAction?.options).toMatchObject({ id: 'bottom-toggle', order: 10 })
+    expect(heroActions.map(entry => entry.component)).toEqual([HeroPanelToggle, HeroPanelToggle])
+    expect(heroActions.map(entry => [entry.options.id, entry.options.order]))
+      .toEqual([['bottom-toggle', 0], ['files-toggle', 10]])
     expect(brandAction?.options).toMatchObject({ id: 'workbench-panels', order: 20 })
     expect(brandAction?.locale).toBe(NS)
     const brandInjected = (brandAction?.inject as unknown as () => WorkbenchPanelTogglesInjected)()
@@ -189,31 +191,101 @@ describe('open-in-app browser half', () => {
     expect(toggleWorkbenchBottom).toHaveBeenCalledExactlyOnceWith(SESSION)
   })
 
-  it('opens the bottom panel on a blank Session and retains its id', async () => {
+  it('opens only the requested panel on a blank Session and retains its id', async () => {
     const b = await bench()
     b.sessionList.set({ ...b.sessionList.getSnapshot(), byId: { [SESSION]: { id: SESSION, blank: true } } } as never)
-    const action = b.ctx.slots.entries('conversation.hero.actions')[0]
-    const face = (action?.inject as unknown as () => HeroBottomToggleInjected)()
-    await face.toggleBottom()
-    expect(b.toggleWorkbenchBottom).toHaveBeenCalledExactlyOnceWith(SESSION)
+    const [bottom, files] = b.ctx.slots.entries('conversation.hero.actions')
+    const bottomFace = (bottom?.inject as unknown as () => HeroPanelToggleInjected)()
+    const filesFace = (files?.inject as unknown as () => HeroPanelToggleInjected)()
+    expect(bottomFace.panel).toBe('bottom')
+    expect(filesFace.panel).toBe('files')
+    await bottomFace.togglePanel()
+    expect(b.toggleHeroPanel).toHaveBeenCalledExactlyOnceWith(SESSION, 'bottom')
+    expect(b.toggleWorkbenchBottom).not.toHaveBeenCalled()
+    expect(b.toggleWorkbenchFiles).not.toHaveBeenCalled()
+    await filesFace.togglePanel()
+    expect(b.toggleHeroPanel).toHaveBeenLastCalledWith(SESSION, 'files')
+    expect(b.toggleHeroPanel).toHaveBeenCalledTimes(2)
+    expect(b.toggleWorkbenchFiles).not.toHaveBeenCalled()
     expect(b.connectHome).not.toHaveBeenCalled()
   })
 
-  it('connects the recent Workspace or Host HOME before opening the bottom panel', async () => {
+  it('connects the recent Workspace or Host HOME before opening either panel', async () => {
     const b = await bench()
-    const action = b.ctx.slots.entries('conversation.hero.actions')[0]
-    const face = (action?.inject as unknown as () => HeroBottomToggleInjected)()
+    const [bottom, files] = b.ctx.slots.entries('conversation.hero.actions')
+    const bottomFace = (bottom?.inject as unknown as () => HeroPanelToggleInjected)()
+    const filesFace = (files?.inject as unknown as () => HeroPanelToggleInjected)()
     b.sessionList.set({ ...b.sessionList.getSnapshot(), current: undefined })
 
-    await face.toggleBottom()
+    await bottomFace.togglePanel()
     expect(b.connectHome).toHaveBeenCalledOnce()
     expect(b.open).toHaveBeenLastCalledWith(SESSION)
-    expect(b.toggleWorkbenchBottom).toHaveBeenLastCalledWith(SESSION)
+    expect(b.toggleHeroPanel).toHaveBeenLastCalledWith(SESSION, 'bottom')
 
     b.workspaceList.set({ recentWorkspaceId: 'workspace-1' })
-    await face.toggleBottom()
+    await filesFace.togglePanel()
     expect(b.connectWorkspace).toHaveBeenCalledExactlyOnceWith('workspace-1')
     expect(b.connectHome).toHaveBeenCalledOnce()
+    expect(b.toggleHeroPanel).toHaveBeenLastCalledWith(SESSION, 'files')
+  })
+
+  it.each([
+    ['bottom', 'files'],
+    ['files', 'bottom'],
+  ] as const)('shares one HOME connection and honors the last %s → %s panel click', async (first, last) => {
+    const b = await bench()
+    b.sessionList.set({ ...b.sessionList.getSnapshot(), current: undefined })
+    let resolve!: (id: SessionId) => void
+    b.connectHome.mockImplementationOnce(() => new Promise<SessionId>((done) => { resolve = done }))
+    const faces = Object.fromEntries(b.ctx.slots.entries('conversation.hero.actions').map((entry) => {
+      const face = (entry.inject as unknown as () => HeroPanelToggleInjected)()
+      return [face.panel, face]
+    })) as Record<HeroPanelToggleInjected['panel'], HeroPanelToggleInjected>
+
+    const firstClick = faces[first].togglePanel()
+    const lastClick = faces[last].togglePanel()
+    expect(b.connectHome).toHaveBeenCalledOnce()
+    expect(b.connectWorkspace).not.toHaveBeenCalled()
+    resolve(SESSION)
+    await Promise.all([firstClick, lastClick])
+    expect(b.open).toHaveBeenCalledExactlyOnceWith(SESSION)
+    expect(b.toggleHeroPanel).toHaveBeenCalledExactlyOnceWith(SESSION, last)
+  })
+
+  it('clears a failed shared connection so either button can retry', async () => {
+    const b = await bench()
+    b.sessionList.set({ ...b.sessionList.getSnapshot(), current: undefined })
+    let reject!: (reason: Error) => void
+    b.connectHome.mockImplementationOnce(() => new Promise<SessionId>((_, fail) => { reject = fail }))
+    const [bottom, files] = b.ctx.slots.entries('conversation.hero.actions')
+    const bottomFace = (bottom?.inject as unknown as () => HeroPanelToggleInjected)()
+    const filesFace = (files?.inject as unknown as () => HeroPanelToggleInjected)()
+    const attempts = [bottomFace.togglePanel(), filesFace.togglePanel()]
+    expect(b.connectHome).toHaveBeenCalledOnce()
+    reject(new Error('offline'))
+    await expect(Promise.allSettled(attempts)).resolves.toEqual([
+      expect.objectContaining({ status: 'rejected' }),
+      expect.objectContaining({ status: 'rejected' }),
+    ])
+    await filesFace.togglePanel()
+    expect(b.connectHome).toHaveBeenCalledTimes(2)
+    expect(b.open).toHaveBeenCalledExactlyOnceWith(SESSION)
+    expect(b.toggleHeroPanel).toHaveBeenCalledExactlyOnceWith(SESSION, 'files')
+  })
+
+  it('does not take selection back if the user switches sessions while connecting', async () => {
+    const b = await bench()
+    b.sessionList.set({ ...b.sessionList.getSnapshot(), current: undefined })
+    let resolve!: (id: SessionId) => void
+    b.connectHome.mockImplementationOnce(() => new Promise<SessionId>((done) => { resolve = done }))
+    const action = b.ctx.slots.entries('conversation.hero.actions')[1]
+    const face = (action?.inject as unknown as () => HeroPanelToggleInjected)()
+    const opening = face.togglePanel()
+    b.sessionList.set({ ...b.sessionList.getSnapshot(), current: SESSION })
+    resolve(SESSION)
+    await opening
+    expect(b.open).not.toHaveBeenCalled()
+    expect(b.toggleHeroPanel).not.toHaveBeenCalled()
   })
 
   it('registers bilingual dictionaries and releases them with the fiber', async () => {

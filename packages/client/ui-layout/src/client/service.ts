@@ -51,6 +51,8 @@ export interface ILayout {
   toggleWorkbenchBottom(sessionId: SessionId): void
   /** 切换指定 Session 的工作台文件侧栏；工作台未打开时先打开工作台再显示该面板。 */
   toggleWorkbenchFiles(sessionId: SessionId): void
+  /** 欢迎页两面板入口：打开其中一个时隐藏另一面板。 */
+  toggleHeroPanel(sessionId: SessionId, panel: 'bottom' | 'files'): void
 }
 
 /** `ctx.layout` 的具体实现。 */
@@ -159,6 +161,16 @@ export class LayoutController implements ILayout {
   /** 切换指定 Session 的工作台文件侧栏；工作台未打开时先打开工作台再显示该面板。 */
   toggleWorkbenchFiles(sessionId: SessionId): void {
     this.#require().toggleWorkbenchFiles(sessionId)
+  }
+
+  /**
+   * 欢迎页专用互斥面板入口。
+   * @param sessionId - 当前会话。
+   * @param panel - 要切换的底栏或文件侧栏。
+   * @returns 无返回值。
+   */
+  toggleHeroPanel(sessionId: SessionId, panel: 'bottom' | 'files'): void {
+    this.#require().toggleHeroPanel(sessionId, panel)
   }
 
   #require(): PanelActions {

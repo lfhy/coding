@@ -717,15 +717,19 @@ func writeRemoteWorkspaceMarker(markerRoot string, marker remoteagent.RemoteWork
 	return nil
 }
 
-// desktopBindingsScript 在指定的本地 Host origin 页面安装最小 Wails 调用面。
+// desktopBindingsScript 在指定的本地 Host origin 页面安装窗口避让值与最小 Wails 调用面。
 // Wails 只会把完整 runtime 注入自身的 wails:// 页面；Host 是另一个回环 origin，
 // 因而这里不经网络把当前窗口 token 和所需 callback/event 协议注入 WebView。
 // origin 断言防止允许的任意 loopback 页面得到窗口私有 token。
-func desktopBindingsScript(token, hostOrigin string) string {
+func desktopBindingsScript(token, hostOrigin, topInset, rightInset string) string {
 	quotedToken := strconv.Quote(token)
 	quotedOrigin := strconv.Quote(hostOrigin)
+	quotedTopInset := strconv.Quote(topInset)
+	quotedRightInset := strconv.Quote(rightInset)
 	return `(() => {
   if (window.location.origin !== ` + quotedOrigin + `) return
+  document.documentElement.style.setProperty('--app-safe-area-inset-top', ` + quotedTopInset + `)
+  document.documentElement.style.setProperty('--app-safe-area-inset-right', ` + quotedRightInset + `)
   const token = ` + quotedToken + `
   if (!Object.prototype.hasOwnProperty.call(window, '__CODING_DESKTOP_BRIDGE_TOKEN')) {
     Object.defineProperty(window, '__CODING_DESKTOP_BRIDGE_TOKEN', {

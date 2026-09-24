@@ -253,6 +253,7 @@ const WORKBENCH_FALLBACK = {
   fullscreen: false,
   width: WORKBENCH_DEFAULT,
   bottomOpen: false,
+  bottomStandalone: false,
   bottomHeight: WORKBENCH_BOTTOM_DEFAULT,
   filesOpen: true,
 }
@@ -349,7 +350,8 @@ export function AppFrame({
   const detailsWidth = workbenchShown ? 0 : detailsColumns.details
   const workbenchWidth = workbenchShown ? workbenchColumns.workbench : 0
   const rightWidth = detailsWidth + workbenchWidth
-  const bottomRequested = workbenchShown && panels.bottomOpen
+  const bottomRequested = activeSession !== undefined && rootPanels.details === 0
+    && panels.bottomOpen && (workbenchShown || panels.bottomStandalone)
   const bottomHeight = computeWorkbenchBottom(
     viewport.height,
     panels.bottomHeight,

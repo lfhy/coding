@@ -60,7 +60,7 @@ describe('ui-layout client apply', () => {
       toggleSidebar: vi.fn(), setNarrow: vi.fn(), openDetails: vi.fn(), closeDetails: vi.fn(),
       openWorkbench: vi.fn(), closeWorkbench: vi.fn(), toggleWorkbench: vi.fn(),
       toggleWorkbenchFullscreen: vi.fn(), toggleWorkbenchBottom: vi.fn(),
-      toggleWorkbenchFiles: vi.fn(),
+      toggleWorkbenchFiles: vi.fn(), toggleHeroPanel: vi.fn(),
       retainWorkbenchSessions: vi.fn(),
     } satisfies PanelActions
     const injected = (slots.entries('root')[0]!.inject as unknown as (

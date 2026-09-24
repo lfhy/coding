@@ -111,7 +111,7 @@
 - **接线**：`packages/bundle/web-app/cordis.patch.yml` 的 `ui-layout` 行；`'root'` slot 本体由 `packages/client/runtime/src/client/slots.ts` 预置，禁止第二者注册 root。
 - **关键文件**：`packages/client/ui-layout/src/client/index.ts`、`packages/client/ui-layout/src/client/AppFrame.tsx`、`packages/client/ui-layout/src/client/service.ts`、`packages/client/ui-layout/src/client/stores.ts`。
 - **改这里要同步**：新增或改座位要同步 `SlotMap` 声明、`AppFrame` 的 `children` 表、`PropsRenderSlots` 键集、各占用包（`packages/client/ui-sidebar`、`packages/client/ui-open-in-app`）与 README 的 slot 表。
-- **不变量**：布局状态按 `SessionId` 隔离；工作台、底栏与详情的视觉关闭只做零尺寸加 `inert`，绝不卸载固定 React 树位置；关闭工作台不改写宽度与底栏偏好。
+- **不变量**：布局状态按 `SessionId` 隔离；欢迎页底栏独占时右列为零宽，普通工作台关闭则隐藏底栏并保留偏好；工作台、底栏与详情的视觉关闭只做零尺寸加 `inert`，绝不卸载固定 React 树位置。
 - **测试**：`pnpm exec vitest run packages/client/ui-layout/tests`
 
 ## packages/client/ui-slots
@@ -174,11 +174,11 @@
 - **拥有**：Go/Wails 桌面壳——窗口、菜单、托盘、单实例锁、Remote-SSH agent 管理与回环 bridge、Host 启动编排与打包运行时定位。纯 Go 源码，没有 `package.json`，虽在 `apps/*` 通配下但不是 pnpm workspace 包。
 - **不拥有**：Host 发现、启动与停止协议（归 `apps/internal/hostlaunch`）；Host 与 UI 业务（归 `packages/*`、`apps/web`）；打包脚本（归 `Makefile` 与 `scripts/package-macos-app.sh`）；remote-agent 构建（归 `scripts/build-remote-agent.ts`）。
 - **入口**：`apps/desktop/main.go`（`wails.Run`；`startHost` 调 `launcher.Ensure` 后整窗导航到回环 URL）。
-- **接线**：根 `package.json` 的 `build:desktop`（`cd apps/desktop && CGO_ENABLED=1 go build -tags desktop,production`）；Host 侧以 `web --coding-host` 启动，该 flag 由 `packages/bundle/web-app/src/startup.ts` 解析，`packages/bundle/web-app/src/managed-host.ts` 发 `coding-host-ready` 记录。
+- **接线**：根 `package.json` 的 `build:desktop`（`cd apps/desktop && CGO_ENABLED=1 go build -tags desktop,production`）；`make dev` 通过锁定的 Wails CLI 启动隔离的开发实例；Host 侧以 `web --coding-host` 启动，该 flag 由 `packages/bundle/web-app/src/startup.ts` 解析，`packages/bundle/web-app/src/managed-host.ts` 发 `coding-host-ready` 记录。
 - **关键文件**：`apps/desktop/main.go`、`apps/desktop/desktop_bindings.go`、`apps/desktop/remote_bridge.go`、`apps/desktop/internal/remoteagent/manager.go`、`apps/internal/hostlaunch/launcher.go`。
 - **改这里要同步**：`apps/internal/hostlaunch`（启动与就绪记录契约）；`scripts/package-macos-app.sh` 与 `Makefile`（Resources 内的 runtime、remote-agent 与 metadata.json 布局）；`packages/bundle/web-app/src/managed-host.ts`（ready 记录格式）。
-- **不变量**：Host 命令解析顺序固定（`Options.Command` → `CODING_HOST_COMMAND` → 打包的 `coding-host` → PATH `coding-host` → PATH `dsh` → 仓库源码 `node --import tsx/esm apps/cli/src/bin.ts`）；`DSH_HOME`/`DSH_CWD`/`DSH_APP_VERSION` 由 hostlaunch 独占写入；Wails binding 方法必须校验随机 bridge token，不把 loopback origin 当授权。
-- **测试**：`cd apps/desktop && CGO_ENABLED=1 go test -tags desktop,production./...`
+- **不变量**：开发版使用独立单实例锁与 `~/.dsh-dev`，不得替换安装版的 Host；Host 命令解析顺序固定（`Options.Command` → `CODING_HOST_COMMAND` → 打包的 `coding-host` → PATH `coding-host` → PATH `dsh` → 仓库源码 `node --import tsx/esm apps/cli/src/bin.ts`）；`DSH_HOME`/`DSH_CWD`/`DSH_APP_VERSION` 由 hostlaunch 独占写入；Wails binding 方法必须校验随机 bridge token，不把 loopback origin 当授权。
+- **测试**：`cd apps/desktop && CGO_ENABLED=1 go test -tags desktop,production ./...`
 
 ## packages/bundle/base
 

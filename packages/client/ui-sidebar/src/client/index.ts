@@ -5,7 +5,6 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SidebarRootInjected } from './contract/slots.ts'
 import { SidebarRoot } from './SidebarRoot.tsx'
-import { HeroSidebarToggle, type HeroSidebarToggleInjected } from './HeroSidebarToggle.tsx'
 import { en, zh, type SidebarKey } from './locales.ts'
 
 export type {
@@ -57,13 +56,4 @@ export function apply(ctx: ClientContext): void {
     'ui-sidebar: slot registration',
   )
 
-  ctx.slots.inject('conversation.hero.actions', () => ctx.slots.register({
-    name: 'conversation.hero.actions',
-    id: 'sidebar-toggle',
-    order: 0,
-    locale: NS,
-    inject: (): HeroSidebarToggleInjected => ({
-      toggleSidebar: () => { ctx.layout.toggleSidebar() },
-    }),
-  }, HeroSidebarToggle))
 }

@@ -496,8 +496,8 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     slotInject: '',
     declaredBy: 'an entry in \'conversation\' (client-ui-conversation), so it exists while that entry is mounted',
     occupants: [
-      'client-ui-open-in-app HeroBottomToggle id \'bottom-toggle\'',
-      'client-ui-sidebar HeroSidebarToggle id \'sidebar-toggle\'',
+      'client-ui-open-in-app HeroPanelToggle id \'bottom-toggle\'',
+      'client-ui-open-in-app HeroPanelToggle id \'files-toggle\'',
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.hero.actions\', () => ctx.slots.register(\n      { name: \'conversation.hero.actions\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/deepseek-ai/coding/apps/desktop/internal/remoteagent"
 	"github.com/deepseek-ai/coding/apps/internal/hostlaunch"
+	"github.com/dop251/goja"
 )
 
 func TestBridgeTokenIsRandomURLSafeSecret(t *testing.T) {
@@ -34,7 +36,7 @@ func TestBridgeTokenIsRandomURLSafeSecret(t *testing.T) {
 }
 
 func TestDesktopBindingsScriptInstallsOnlyRequiredRemoteMethods(t *testing.T) {
-	script := desktopBindingsScript("test-token", "http://127.0.0.1:43123")
+	script := desktopBindingsScript("test-token", "http://127.0.0.1:43123", "38px", "0px")
 	for _, name := range []string{
 		"__CODING_DESKTOP_BRIDGE_TOKEN", "RemoteSSHConnect", "RemoteSSHListDirectories",
 		"RemoteSSHSelectDirectory", "RemoteSSHClose", "RemoteSSHCancelConnect", "RemoteSSHRejectHostKey",
@@ -52,6 +54,50 @@ func TestDesktopBindingsScriptInstallsOnlyRequiredRemoteMethods(t *testing.T) {
 	}
 	if strings.Contains(script, "RemoteSSHNodeStatus") || strings.Contains(script, "RemoteSSHInstallNode") {
 		t.Fatal("desktop bindings script exposed an unimplemented Node operation")
+	}
+}
+
+func TestDesktopBindingsScriptRestoresHostPageInsetsAfterNavigation(t *testing.T) {
+	const hostOrigin = "http://127.0.0.1:43123"
+	tests := []struct {
+		name       string
+		pageOrigin string
+		platform   string
+		top        string
+		right      string
+	}{
+		{name: "macOS Host", pageOrigin: hostOrigin, platform: "darwin", top: "38px", right: "0px"},
+		{name: "Windows Host", pageOrigin: hostOrigin, platform: "windows", top: "0px", right: "138px"},
+		{name: "unrelated loopback", pageOrigin: "http://127.0.0.1:43124", platform: "darwin"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			vm := goja.New()
+			setup := `var window = { location: { origin: ` + strconv.Quote(test.pageOrigin) + ` } };
+var insets = {};
+var document = { documentElement: { style: { setProperty(name, value) { insets[name] = value } } } };`
+			if _, err := vm.RunString(setup); err != nil {
+				t.Fatal(err)
+			}
+			top, right := desktopWindowInsets(test.platform)
+			if _, err := vm.RunString(desktopBindingsScript("test-token", hostOrigin, top, right)); err != nil {
+				t.Fatal(err)
+			}
+			insets := vm.Get("insets").ToObject(vm)
+			gotTop := insets.Get("--app-safe-area-inset-top")
+			gotRight := insets.Get("--app-safe-area-inset-right")
+			gotToken := vm.Get("window").ToObject(vm).Get("__CODING_DESKTOP_BRIDGE_TOKEN")
+			if test.pageOrigin != hostOrigin {
+				if gotTop != nil || gotRight != nil || gotToken != nil {
+					t.Fatal("unrelated loopback page received desktop window state")
+				}
+				return
+			}
+			if gotTop.String() != test.top || gotRight.String() != test.right || gotToken.String() != "test-token" {
+				t.Fatalf("Host page insets/token = (%q, %q, %q), want (%q, %q, %q)",
+					gotTop, gotRight, gotToken, test.top, test.right, "test-token")
+			}
+		})
 	}
 }
 

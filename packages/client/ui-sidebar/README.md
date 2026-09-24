@@ -6,7 +6,7 @@
 
 New Session 会启动运行时的页面局部前端 Session Intent。运行时优先使用作用域操作明确指定的 Workspace，否则使用当前 Session 所属 Workspace，再否则使用最近活跃 Workspace；一个 Workspace 都没有时则清空选择，进入空白 New Session 页面。Workspace 专属控件与共享选择器由 ui-workspace 持有。
 
-欢迎页右上角的侧边栏按钮注册到 `conversation.hero.actions`，复用 `ctx.layout.toggleSidebar()`；名称根据实际收起状态切换。品牌行与欢迎页的侧栏图形都经 [`ui-icons`](../ui-icons/README.md) 的语义入口渲染。
+侧边栏的收起与展开由品牌行自身的按钮调用 `ctx.layout.toggleSidebar()`；欢迎页右上角留给终端底栏与文件侧栏开关。品牌行侧栏图形经 [`ui-icons`](../ui-icons/README.md) 的语义入口渲染。
 
 `SidebarRootComponentProps` 组合布局 owner share、全局 `useSessions` 和 `useWorkspaces` 钩子、已声明的品牌名称、`sidebar.brand.action` 这个 list slot、`sidebar.workspaces` 与 `sidebar.settings` 子 slot，以及注入的 `startSession` 与侧边栏切换回调。这里没有插件 store。
 

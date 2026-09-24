@@ -23,7 +23,7 @@ kind: "package-reference"
 | `workbench.bottom` | `session` | `shown` |
 | `shell.overlay` | `root` | 无 owner 数据的有序 list |
 
-`ctx.layout` 提供全局的 `toggleSidebar()`、`openDetails()`、`closeDetails()`，以及接收 `SessionId` 的 `openWorkbench()`、`closeWorkbench()`、`toggleWorkbench()`、`toggleWorkbenchFullscreen()`、`toggleWorkbenchBottom()` 和 `toggleWorkbenchFiles()`。`workbench(sessionId)` 返回会话页头入口、工作台顶栏与侧边栏品牌行开关可订阅的工作台显隐投影。打开工作台会关闭详情栏；打开详情栏会暂时覆盖工作台，关闭详情栏后恢复该 Session 的工作台状态。工作台未打开时 `toggleWorkbenchBottom()` 与 `toggleWorkbenchFiles()` 会先打开工作台并让对应面板可见。关闭工作台不会改写宽度、底栏与文件侧栏偏好。
+`ctx.layout` 提供全局的 `toggleSidebar()`、`openDetails()`、`closeDetails()`，以及接收 `SessionId` 的 `openWorkbench()`、`closeWorkbench()`、`toggleWorkbench()`、`toggleWorkbenchFullscreen()`、`toggleWorkbenchBottom()`、`toggleWorkbenchFiles()` 和欢迎页专用的 `toggleHeroPanel()`。`workbench(sessionId)` 返回会话页头入口、工作台顶栏与面板开关可订阅的显隐投影。打开工作台会关闭详情栏；打开详情栏会暂时覆盖工作台，关闭详情栏后恢复该 Session 的状态。普通面板开关在工作台未打开时会先打开工作台；欢迎页的开关打开目标面板时隐藏另一面板，底栏独占不占用右列。关闭工作台会隐藏底栏独占模式，但不会改写宽度、底栏与文件侧栏偏好。
 
 空白会话同样拥有按 Session 隔离的工作台状态。欢迎页打开底栏后发送首条消息，不会重建布局状态；侧边栏的全局收起状态也不受会话阶段影响。
 
@@ -33,7 +33,7 @@ kind: "package-reference"
 
 宽屏工作台由用户选择宽度的导航栏、左侧对话和右侧工作台组成。在默认 280px 导航栏和 1110px 视口下，求解器保留 400px 对话并把 430px 交给工作台；工作台宽度偏好可在 300--2400px 间拖拽，空间不足时先收缩到 300px，再由对话承担剩余让步。低于 1024px 时导航自动收成 56px rail，工作台采用全屏呈现：对话继续保持挂载但进入 `inert`，工作台占据 rail 之外的全部主内容；显式最大化使用同一路径。
 
-工作台底栏横跨对话与工作台，不覆盖导航栏，默认高度 260px，拖拽范围为 160--480px。视口过矮时实际高度会向上方工作区让步，尺寸偏好保持不变。工作台、底栏、详情和对话始终保留固定 React 树位置；视觉关闭通过零尺寸、`visibility`、`aria-hidden` 和 `inert` 实现，因此收起底栏或关闭工作台不会仅因布局切换而卸载已激活的终端占用者。
+工作台底栏横跨导航栏之外的主内容，默认高度 260px，拖拽范围为 160--480px。欢迎页可只显示底栏，保持对话区可用并把右列收为零宽；窄屏同样如此。视口过矮时实际高度会向上方工作区让步，尺寸偏好保持不变。工作台、底栏、详情和对话始终保留固定 React 树位置；视觉关闭通过零尺寸、`visibility`、`aria-hidden` 和 `inert` 实现，因此收起底栏或关闭工作台不会仅因布局切换而卸载已激活的终端占用者。
 
 每个尺寸分隔条使用 pointer capture，并把高频移动合并到 animation frame。pointer cancel、capture 丢失、窗口失焦和卸载都会取消待处理帧并结束拖拽。分隔条暴露 `separator` 角色、方向和值域，可用方向键、Home 和 End 调整；轨道动效遵守 `prefers-reduced-motion`。
 

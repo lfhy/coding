@@ -18,7 +18,7 @@ CLIENT := dist/coding
 INSTALL := install-cli
 endif
 
-.PHONY: all runtime remote-agent desktop tui install install-app install-cli check uninstall help
+.PHONY: all runtime remote-agent desktop dev tui install install-app install-cli check uninstall help
 
 all: $(CLIENT)
 
@@ -35,6 +35,13 @@ remote-agent:
 desktop:
 	pnpm install --frozen-lockfile --config.confirm-modules-purge=false
 	pnpm run build:desktop
+
+# 使用仓库锁定的 Wails CLI 和当前源码产物启动独立的桌面开发实例。
+dev:
+	pnpm run build
+	mkdir -p .dsh-build
+	cd apps/desktop && CGO_ENABLED=1 GOBIN="$(CURDIR)/.dsh-build" go install github.com/wailsapp/wails/v2/cmd/wails@$$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v2)
+	cd apps/desktop && CGO_ENABLED=1 CODING_REPO_ROOT="$(CURDIR)" exec ../../.dsh-build/wails dev -tags desktop -s -skipbindings -skipembedcreate -m -nosyncgomod
 
 # Linux 交互式 TUI。
 tui:
@@ -63,5 +70,5 @@ uninstall:
 	rm -f $(BINDIR)/coding
 
 help:
-	@echo "目标：runtime / desktop / tui / install（macOS 装 /Applications，Linux 装 ~/.local/bin）/ uninstall"
+	@echo "目标：dev（独立桌面开发实例）/ runtime / desktop / tui / install（macOS 装 /Applications，Linux 装 ~/.local/bin）/ uninstall"
 	@echo "签名：CODESIGN_IDENTITY=\"Apple Development: …\" make install（默认 ad-hoc）"

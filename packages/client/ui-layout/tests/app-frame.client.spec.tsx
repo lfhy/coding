@@ -442,6 +442,36 @@ describe('AppFrame — fixed workbench', () => {
     })
   })
 
+  it('Hero terminal occupies only the bottom row and keeps conversation available on narrow screens', () => {
+    frameWidth = 768
+    selectedSessionBlank.current = true
+    const { frame, instance, getByTestId, ownerFor } = mountFrame()
+    act(() => { instance.actions.toggleHeroPanel('s-test' as SessionId, 'bottom') })
+    expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 0])
+    expect(rows(frame)).toBe(260)
+    expect(getByTestId('workbench-content').parentElement?.hasAttribute('inert')).toBe(true)
+    expect(getByTestId('center-content').parentElement?.hasAttribute('inert')).toBe(false)
+    expect(ownerFor('sidebar')).toMatchObject({ welcomeActionsVisible: true })
+    expect(ownerFor('workbench.bottom')).toEqual({ shown: true })
+    act(() => { instance.actions.toggleHeroPanel('s-test' as SessionId, 'files') })
+    expect(rows(frame)).toBe(0)
+    expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 768 - SIDEBAR_COLLAPSED])
+    expect(ownerFor('workbench.bottom')).toEqual({ shown: false })
+  })
+
+  it('closing a combined workbench hides the bottom row without erasing its preference', () => {
+    const { frame, instance, ownerFor } = mountFrame()
+    act(() => {
+      instance.actions.openWorkbench('s-test' as SessionId)
+      instance.actions.toggleWorkbenchBottom('s-test' as SessionId)
+    })
+    expect(rows(frame)).toBe(260)
+    act(() => { instance.actions.closeWorkbench('s-test' as SessionId) })
+    expect(rows(frame)).toBe(0)
+    expect(ownerFor('workbench.bottom')).toEqual({ shown: false })
+    expect(instance.getSnapshot().workbench['s-test' as SessionId]?.bottomOpen).toBe(true)
+  })
+
   it('narrow view collapses navigation and gives the main content to workbench', () => {
     frameWidth = 980
     const { frame, instance, ownerFor, getByTestId } = mountFrame()

@@ -58,29 +58,32 @@ function useWorkbenchLayout(
   return useSyncExternalStore(subscribe, getSnapshot)
 }
 
-/** 欢迎页底栏按钮的状态源与打开动作。 */
-export interface HeroBottomToggleInjected {
+/** 欢迎页单个面板按钮的状态源与打开动作。 */
+export interface HeroPanelToggleInjected {
   workbenchSource: WorkbenchPanelTogglesInjected['workbenchSource']
-  toggleBottom: () => Promise<void>
+  panel: 'bottom' | 'files'
+  togglePanel: () => Promise<void>
 }
 
 /**
- * 欢迎页右上角的底栏入口；尚无 Session 时会先创建可用的空白会话。
+ * 欢迎页右上角的面板入口；尚无 Session 时会先创建可用的空白会话。
  * @param props - 当前会话、工作台状态源、打开动作与本地化文案。
- * @returns 带按下状态和失败反馈的底栏图标按钮。
+ * @returns 带按下状态和失败反馈的面板图标按钮。
  */
-export function HeroBottomToggle({ useSessions, workbenchSource, toggleBottom, t }:
-  PropsRuntime<'conversation.hero.actions'> & InjectFace<HeroBottomToggleInjected> & PropsLocale<typeof NS>) {
+export function HeroPanelToggle({ useSessions, workbenchSource, panel, togglePanel, t }:
+  PropsRuntime<'conversation.hero.actions'> & InjectFace<HeroPanelToggleInjected> & PropsLocale<typeof NS>) {
   const sessionId = useSessions(state => state.current)
   const source = useMemo(
     () => sessionId === undefined ? undefined : workbenchSource(sessionId),
     [sessionId, workbenchSource],
   )
   const workbench = useWorkbenchLayout(source)
-  const pressed = workbench.open && workbench.bottomOpen
+  const pressed = panel === 'bottom' ? workbench.bottomOpen : workbench.open && workbench.filesOpen
   const [opening, setOpening] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const label = t(opening ? 'workbench.bottom.opening' : pressed ? 'workbench.bottom.close' : 'workbench.bottom.open')
+  const label = t(panel === 'bottom'
+    ? opening ? 'workbench.bottom.opening' : pressed ? 'workbench.bottom.hide' : 'workbench.bottom.show'
+    : opening ? 'workbench.files.opening' : pressed ? 'workbench.files.hide' : 'workbench.files.show')
   return (
     <>
       <Tooltip label={label} delayMs={500}>
@@ -94,14 +97,14 @@ export function HeroBottomToggle({ useSessions, workbenchSource, toggleBottom, t
           onClick={() => {
             setOpening(true)
             setError(null)
-            void toggleBottom().catch((reason: unknown) => {
-              setError(t('workbench.bottom.failed', {
+            void togglePanel().catch((reason: unknown) => {
+              setError(t(panel === 'bottom' ? 'workbench.bottom.failed' : 'workbench.files.failed', {
                 message: reason instanceof Error ? reason.message : String(reason),
               }))
             }).finally(() => { setOpening(false) })
           }}
         >
-          <Icon name="bottom-panel" size={18} />
+          <Icon name={panel === 'bottom' ? 'bottom-panel' : 'files-panel'} size={18} />
         </button>
       </Tooltip>
       {error !== null && <span className={css.heroError} role="alert">{error}</span>}
@@ -150,7 +153,7 @@ export function WorkbenchPanelToggles(props: WorkbenchPanelTogglesProps): React.
   const workbench = useWorkbenchLayout(source)
   if (sessionId === undefined) return null
   const filesOn = workbench.open && workbench.filesOpen
-  const bottomOn = workbench.open && workbench.bottomOpen
+  const bottomOn = workbench.bottomOpen
   const iconSize = wide ? 16 : 18
   return (
     <div className={css.root} {...wide ? {} : { 'data-rail': true }}>

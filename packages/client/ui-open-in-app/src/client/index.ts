@@ -11,8 +11,8 @@ import { OpenInAppController } from './controller.ts'
 import { OpenInAppAction, type OpenInAppActionInjected } from './OpenInAppAction.tsx'
 import { WorkspaceWorkbench, type WorkspaceWorkbenchInjected } from './WorkspaceWorkbench.tsx'
 import {
-  HeroBottomToggle, WorkbenchPanelToggles,
-  type HeroBottomToggleInjected, type WorkbenchPanelTogglesInjected,
+  HeroPanelToggle, WorkbenchPanelToggles,
+  type HeroPanelToggleInjected, type WorkbenchPanelTogglesInjected,
 } from './WorkbenchPanelToggles.tsx'
 import { RetainedTerminalPanel } from './RetainedTerminalPanel.tsx'
 import type { TerminalPanelInjected } from './TerminalPanel.tsx'
@@ -96,28 +96,49 @@ export function apply(ctx: ClientContext): void {
     }),
   }, WorkbenchPanelToggles))
 
+  let connectingHeroSession: Promise<SessionId> | undefined
+  let latestHeroRequest = 0
+  const toggleHeroPanel = async (panel: HeroPanelToggleInjected['panel']): Promise<void> => {
+    const request = ++latestHeroRequest
+    let sessionId = activeSessionId(ctx)
+    if (sessionId === undefined) {
+      connectingHeroSession ??= (async () => {
+        const target = ctx.workspaces.list.getSnapshot().recentWorkspaceId
+        return target === undefined
+          ? ctx.workspaces.connectHome()
+          : ctx.workspaces.connectWorkspace(target)
+      })().finally(() => { connectingHeroSession = undefined })
+      sessionId = await connectingHeroSession
+      // 共用连接期间的旧点击不得先打开会话，否则最后一次点击会被误判为外部切换。
+      if (request !== latestHeroRequest) return
+      // 异步创建期间若用户切换到另一会话，不抢占其当前视图。
+      if (ctx.sessions.list.getSnapshot().current !== undefined) return
+      ctx.sessions.open(sessionId)
+    }
+    ctx.layout.toggleHeroPanel(sessionId, panel)
+  }
   ctx.slots.inject('conversation.hero.actions', () => ctx.slots.register({
     name: 'conversation.hero.actions',
     id: 'bottom-toggle',
+    order: 0,
+    locale: NS,
+    inject: (): HeroPanelToggleInjected => ({
+      panel: 'bottom',
+      workbenchSource: sessionId => ctx.layout.workbench(sessionId),
+      togglePanel: () => toggleHeroPanel('bottom'),
+    }),
+  }, HeroPanelToggle))
+  ctx.slots.inject('conversation.hero.actions', () => ctx.slots.register({
+    name: 'conversation.hero.actions',
+    id: 'files-toggle',
     order: 10,
     locale: NS,
-    inject: (): HeroBottomToggleInjected => ({
+    inject: (): HeroPanelToggleInjected => ({
+      panel: 'files',
       workbenchSource: sessionId => ctx.layout.workbench(sessionId),
-      toggleBottom: async () => {
-        let sessionId = activeSessionId(ctx)
-        if (sessionId === undefined) {
-          const target = ctx.workspaces.list.getSnapshot().recentWorkspaceId
-          sessionId = target === undefined
-            ? await ctx.workspaces.connectHome()
-            : await ctx.workspaces.connectWorkspace(target)
-          // 异步创建期间若用户切换到另一会话，不抢占其当前视图。
-          if (ctx.sessions.list.getSnapshot().current !== undefined) return
-          ctx.sessions.open(sessionId)
-        }
-        ctx.layout.toggleWorkbenchBottom(sessionId)
-      },
+      togglePanel: () => toggleHeroPanel('files'),
     }),
-  }, HeroBottomToggle))
+  }, HeroPanelToggle))
 
   ctx.slots.inject('workbench.bottom', () => ctx.slots.register({
     name: 'workbench.bottom',

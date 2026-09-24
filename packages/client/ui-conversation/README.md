@@ -44,7 +44,7 @@ Host 带 placement 的 `session/queue` 快照也会携带待处理 steering。Qu
 
 完成的一轮会物化一个有序的 `turn-tail` Conversation Node。它由引擎维护的 `TurnLocation` 提供收尾 Assistant 和 Turn data；renderer 在该 Node 的 IconActions 之前渲染 `conversation.chat.turnTail` chain，并派发包含 Turn、收尾 seq 和 `openFile` 的 `TurnTailOwnerProps`。本包只拥有空位；`@deepseek-ai/dsh-client-ui-deliverables` 把改写工具的 `locations` 累积到 Turn data，并拥有产物行、chip 上限和文案，因此把该插件从 cordis.yml 中组合掉即可关闭该交互面，空位以零成本渲染为空。收尾正文经由同一个开关参与其中：chat 视图向可选的 `chatFileMentions` service（ctx.get；由同一插件提供）索取收尾消息的行内代码词表，并把结果接进 MarkdownText 的 `fileMentions` seam——service 缺席时正文保持死文本。
 
-欢迎页右上角渲染根作用域的 `conversation.hero.actions` 列表 slot；布局把侧边栏实际收起状态作为 owner 数据传入，侧边栏与工作台插件各自注册图标按钮。该操作行只在 Hero 阶段出现，输入栏、Workspace picker 和滚动容器不因操作行的显示而重挂载。
+欢迎页右上角渲染根作用域的 `conversation.hero.actions` 列表 slot；工作台插件依次注册底栏和文件侧栏图标按钮。该操作行只在 Hero 阶段出现，输入栏、Workspace picker 和滚动容器不因操作行的显示而重挂载。
 
 ## 模型体验
 

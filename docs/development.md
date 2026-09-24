@@ -119,6 +119,8 @@ vendor manifest 守卫检查 `vendor/*/src` 下的改动是否连同对应的 `v
 
 根目录的[贡献者说明](../AGENTS.md#commands)概述常用命令，[`package.json`](../package.json) 与 [scripts/run-gates.ts](../scripts/run-gates.ts) 则负责当前脚本和门禁清单。请选择覆盖变更表面的最小检查集。包公开行为变更还需更新所属 README 或 JSDoc，而基于构建产物的检查需要先运行 `pnpm run build`。
 
+在 macOS 或已安装系统 WebView/CGO 依赖的平台测试原生桌面窗口，从仓库根目录执行 `make dev`。该命令先构建当前 Host、Client 和 Web 产物，再用 `apps/desktop/go.mod` 锁定的 Wails CLI 启动桌面壳，同时持续重建 Web 改动；用 Ctrl+C 停止。开发实例使用独立窗口锁与 `~/.dsh-dev`，从当前仓库启动 Host，不占用已安装客户端的窗口和 `~/.dsh` 数据。需要验证 Remote-SSH 时另运行 `make remote-agent` 生成本地 agent 产物。
+
 ### 演示
 
 从源码 checkout 运行这些演示前，请单独执行仓库构建：

@@ -5,7 +5,6 @@ import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { apply, inject } from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type { SidebarRootInjected } from '@deepseek-ai/dsh-client-ui-sidebar/client'
-import { HeroSidebarToggle } from '../src/client/HeroSidebarToggle.tsx'
 
 async function bench(declare = true) {
   const ctx = new Context()
@@ -46,8 +45,7 @@ describe('ui-sidebar apply', () => {
     expect(b.slots.spec('sidebar.footer.action')).toEqual({ kind: 'list', scope: 'root' })
     // Copy rides the standard locale seat, not the inject face.
     expect(b.slots.entries('sidebar')[0]!.locale).toBe('sidebar')
-    expect(b.slots.entries('conversation.hero.actions')[0]?.component).toBe(HeroSidebarToggle)
-    expect(b.slots.entries('conversation.hero.actions')[0]?.options.id).toBe('sidebar-toggle')
+    expect(b.slots.entries('conversation.hero.actions')).toEqual([])
     const injected = (b.slots.entries('sidebar')[0]!.inject as () => SidebarRootInjected)()
     expect(Object.keys(injected)).toEqual(['startSession', 'toggleSidebar'])
     // Both arms delegate to the runtime's shared New Session action.

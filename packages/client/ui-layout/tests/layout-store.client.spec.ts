@@ -126,7 +126,7 @@ describe('createLayoutStore', () => {
     })
   })
 
-  it('panel toggles open a closed workbench and otherwise flip that panel', () => {
+  it('resident panel toggles open a closed workbench and otherwise flip only that panel', () => {
     const { store, actions } = createLayoutStore().create()
     actions.openDetails()
 
@@ -148,6 +148,63 @@ describe('createLayoutStore', () => {
     })
     actions.toggleWorkbenchBottom(SESSION)
     expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: true, bottomOpen: false })
+
+    actions.toggleWorkbenchBottom(SESSION)
+    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: true, bottomOpen: true, filesOpen: false })
+    actions.toggleWorkbenchFiles(SESSION)
+    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: true, bottomOpen: true, filesOpen: true })
+    actions.toggleWorkbenchBottom(SESSION)
+    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: true, bottomOpen: false, filesOpen: true })
+  })
+
+  it('Hero buttons alternate exclusive panel visibility without changing the navigation', () => {
+    const { store, actions } = createLayoutStore().create()
+    actions.toggleHeroPanel(SESSION, 'bottom')
+    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: false, bottomOpen: true, bottomStandalone: true })
+    expect(store.getSnapshot().sidebar).toBe(SIDEBAR_DEFAULT)
+    actions.toggleHeroPanel(SESSION, 'files')
+    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({
+      open: true, filesOpen: true, bottomOpen: false, bottomStandalone: false,
+    })
+    actions.toggleHeroPanel(SESSION, 'bottom')
+    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: false, bottomOpen: true, bottomStandalone: true })
+    actions.toggleHeroPanel(SESSION, 'bottom')
+    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: false, bottomOpen: false, bottomStandalone: false })
+    actions.toggleHeroPanel(SESSION, 'files')
+    actions.toggleHeroPanel(SESSION, 'files')
+    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: false, bottomOpen: false })
+  })
+
+  it('regular close hides both panels even if their preferences remain enabled', () => {
+    const { store, actions } = createLayoutStore().create()
+    actions.openWorkbench(SESSION)
+    actions.toggleWorkbenchBottom(SESSION)
+    actions.closeWorkbench(SESSION)
+    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: false, bottomOpen: true, bottomStandalone: false })
+    actions.toggleHeroPanel(SESSION, 'bottom')
+    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: false, bottomOpen: true, bottomStandalone: true })
+  })
+
+  it('closing Hero files leaves an already visible bottom panel visible', () => {
+    const { store, actions } = createLayoutStore().create()
+    actions.openWorkbench(SESSION)
+    actions.toggleWorkbenchBottom(SESSION)
+    actions.toggleHeroPanel(SESSION, 'files')
+    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: false, bottomOpen: true, bottomStandalone: true })
+    actions.openDetails()
+    actions.toggleHeroPanel(SESSION, 'bottom')
+    expect(store.getSnapshot()).toMatchObject({
+      details: 0, workbench: { [SESSION]: { open: false, bottomOpen: true, bottomStandalone: true } },
+    })
+  })
+
+  it('the resident terminal control closes a Hero-only bottom panel after the first message', () => {
+    const { store, actions } = createLayoutStore().create()
+    actions.toggleHeroPanel(SESSION, 'bottom')
+    actions.toggleWorkbenchBottom(SESSION)
+    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({
+      open: false, bottomOpen: false, bottomStandalone: false,
+    })
   })
 
   it('toggleWorkbench covers open and close while retaining bottom preference', () => {

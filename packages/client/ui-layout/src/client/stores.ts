@@ -27,6 +27,8 @@ export type WorkbenchState = {
   fullscreen: boolean
   width: number
   bottomOpen: boolean
+  /** Hero 的底栏独占模式；普通工作台关闭仍应隐藏底栏。 */
+  bottomStandalone: boolean
   bottomHeight: number
   filesOpen: boolean
 }
@@ -46,6 +48,7 @@ function workbench(draft: LayoutState, sessionId: SessionId): WorkbenchState {
     fullscreen: false,
     width: WORKBENCH_DEFAULT,
     bottomOpen: false,
+    bottomStandalone: false,
     bottomHeight: WORKBENCH_BOTTOM_DEFAULT,
     filesOpen: true,
   }
@@ -67,6 +70,7 @@ type LayoutActions = {
   toggleWorkbenchFullscreen: (draft: LayoutState, sessionId: SessionId) => void
   toggleWorkbenchBottom: (draft: LayoutState, sessionId: SessionId) => void
   toggleWorkbenchFiles: (draft: LayoutState, sessionId: SessionId) => void
+  toggleHeroPanel: (draft: LayoutState, sessionId: SessionId, panel: 'bottom' | 'files') => void
   retainWorkbenchSessions: (draft: LayoutState, sessionIds: readonly SessionId[]) => void
 }
 
@@ -109,21 +113,25 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
         d.details = 0
         const state = workbench(d, sessionId)
         state.open = true
+        state.bottomStandalone = false
         state.fullscreen = false
       },
       closeWorkbench: (d, sessionId: SessionId) => {
         const state = workbench(d, sessionId)
         state.open = false
+        state.bottomStandalone = false
         state.fullscreen = false
       },
       toggleWorkbench: (d, sessionId: SessionId) => {
         const state = workbench(d, sessionId)
         if (state.open) {
           state.open = false
+          state.bottomStandalone = false
           state.fullscreen = false
         } else {
           d.details = 0
           state.open = true
+          state.bottomStandalone = false
           state.fullscreen = false
         }
       },
@@ -134,6 +142,12 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
       // 关闭态的面板切换先打开工作台并关闭详情栏，让常驻入口一次点击就显示目标面板。
       toggleWorkbenchBottom: (d, sessionId: SessionId) => {
         const state = workbench(d, sessionId)
+        if (state.bottomStandalone && state.bottomOpen) {
+          state.bottomOpen = false
+          state.bottomStandalone = false
+          return
+        }
+        state.bottomStandalone = false
         if (state.open) {
           state.bottomOpen = !state.bottomOpen
         } else {
@@ -145,6 +159,7 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
       },
       toggleWorkbenchFiles: (d, sessionId: SessionId) => {
         const state = workbench(d, sessionId)
+        state.bottomStandalone = false
         if (state.open) {
           state.filesOpen = !state.filesOpen
         } else {
@@ -152,6 +167,32 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
           state.open = true
           state.fullscreen = false
           state.filesOpen = true
+        }
+      },
+      toggleHeroPanel: (d, sessionId: SessionId, panel: 'bottom' | 'files') => {
+        const state = workbench(d, sessionId)
+        if (panel === 'bottom') {
+          if (d.details === 0 && state.bottomOpen && (state.bottomStandalone || state.open)) {
+            state.bottomOpen = false
+            state.bottomStandalone = false
+          } else {
+            d.details = 0
+            state.open = false
+            state.fullscreen = false
+            state.bottomOpen = true
+            state.bottomStandalone = true
+          }
+        } else if (d.details === 0 && state.open && state.filesOpen) {
+          state.open = false
+          state.bottomStandalone = state.bottomOpen
+          state.fullscreen = false
+        } else {
+          d.details = 0
+          state.open = true
+          state.fullscreen = false
+          state.filesOpen = true
+          state.bottomOpen = false
+          state.bottomStandalone = false
         }
       },
       retainWorkbenchSessions: (d, sessionIds: readonly SessionId[]) => {

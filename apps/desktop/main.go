@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
@@ -71,7 +72,7 @@ func main() {
 		}
 		cwd = absolute
 	}
-	lock, primary, err := instance.Acquire(os.Args[1:])
+	lock, primary, err := instance.Acquire(os.Args[1:], isDevelopmentBuild)
 	if err != nil {
 		fatal(err)
 	}
@@ -94,6 +95,10 @@ func main() {
 		fatal(err)
 	}
 	runtimeRoot := packagedRuntimeRoot()
+	hostCommand, err := desktopHostCommand()
+	if err != nil {
+		fatal(err)
+	}
 	manager, err := remoteagent.NewManager(remoteagent.ManagerOptions{
 		KnownHostsPath: filepath.Join(home, "remote-ssh", "known_hosts"),
 		AgentPathFor:   remoteAgentPathFor(runtimeRoot),
@@ -120,6 +125,7 @@ func main() {
 	launcher, err := hostlaunch.New(hostlaunch.Options{
 		Home:        home,
 		CWD:         cwd,
+		Command:     hostCommand,
 		RuntimeRoot: runtimeRoot,
 		Version:     packagedHostVersion(),
 		Environment: map[string]string{
@@ -171,7 +177,7 @@ func main() {
 	})
 
 	err = wails.Run(&options.App{
-		Title:             applicationName,
+		Title:             desktopWindowTitle(),
 		Width:             1280,
 		Height:            860,
 		WindowStartState:  options.Maximised,
@@ -180,7 +186,7 @@ func main() {
 		HideWindowOnClose: hideWindowOnClose(),
 		BackgroundColour:  &options.RGBA{R: 245, G: 245, B: 247, A: 1},
 		SingleInstanceLock: &options.SingleInstanceLock{
-			UniqueId: "com.coding.desktop",
+			UniqueId: desktopInstanceID(),
 			OnSecondInstanceLaunch: func(_ options.SecondInstanceData) {
 				app.focusPrimary()
 			},
@@ -226,13 +232,17 @@ func main() {
 			// 顶部 40px 内按下鼠标且目标非交互元素时先等待移动；移动后才向
 			// external 消息通道发送 drag。双击最大化由 macOS 原生事件监听处理，
 			// 不经随机端口 Host 页面会被拒绝的 Wails binding 消息通道。
-			wailsruntime.WindowExecJS(ctx, `(() => {
+			topInset, rightInset := desktopWindowInsets(runtime.GOOS)
+			wailsruntime.WindowExecJS(ctx, fmt.Sprintf(`(() => {
+				const setInsets = () => {
+					document.documentElement.style.setProperty('--app-safe-area-inset-top', %q)
+					document.documentElement.style.setProperty('--app-safe-area-inset-right', %q)
+				}
+				setInsets()
 				if (window.__codingWindowDrag) {
-					document.documentElement.style.setProperty('--app-safe-area-inset-top','38px')
 					return
 				}
 				window.__codingWindowDrag = true
-				document.documentElement.style.setProperty('--app-safe-area-inset-top','38px')
 				const interactive = 'button,a,input,textarea,select,label,[role="button"],[role="tab"],[role="menuitem"]'
 				const post = (message) => {
 					if (typeof window.WailsInvoke === 'function') window.WailsInvoke(message)
@@ -268,13 +278,25 @@ func main() {
 					if (event.button === 0) pendingDrag = false
 				}, true)
 				document.addEventListener('blur', () => { pendingDrag = false }, true)
-			})()`)
+			})()`, topInset, rightInset))
 		},
 		Bind: []interface{}{app},
 	})
 	app.shutdownRemote()
 	if err != nil {
 		fatal(err)
+	}
+}
+
+// desktopWindowInsets 为原生窗口控件分别预留垂直与水平空间。
+func desktopWindowInsets(platform string) (top, right string) {
+	switch platform {
+	case "darwin":
+		return "38px", "0px"
+	case "windows":
+		return "0px", "138px"
+	default:
+		return "0px", "0px"
 	}
 }
 
@@ -314,7 +336,8 @@ func (a *App) injectHostBindings() {
 		return
 	}
 	hostOrigin := endpoint.Scheme + "://" + endpoint.Host
-	script := desktopBindingsScript(a.bridgeToken, hostOrigin)
+	topInset, rightInset := desktopWindowInsets(runtime.GOOS)
+	script := desktopBindingsScript(a.bridgeToken, hostOrigin, topInset, rightInset)
 	go func(ctx context.Context) {
 		for _, delay := range []time.Duration{0, 80 * time.Millisecond, 250 * time.Millisecond, 750 * time.Millisecond, 2 * time.Second} {
 			if delay > 0 {
@@ -414,7 +437,38 @@ func desktopHome() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("coding: resolve user home: %w", err)
 	}
+	if isDevelopmentBuild {
+		return filepath.Join(home, ".dsh-dev"), nil
+	}
 	return filepath.Join(home, ".dsh"), nil
+}
+
+func desktopInstanceID() string {
+	if isDevelopmentBuild {
+		return "com.coding.desktop.dev"
+	}
+	return "com.coding.desktop"
+}
+
+func desktopWindowTitle() string {
+	if isDevelopmentBuild {
+		return "Coding Dev"
+	}
+	return applicationName
+}
+
+// desktopHostCommand 让开发壳强制使用仓库 Host，不从 PATH 或打包目录回退。
+func desktopHostCommand() ([]string, error) {
+	if !isDevelopmentBuild {
+		return nil, nil
+	}
+	root, err := findProjectRoot()
+	if err != nil {
+		return nil, err
+	}
+	return []string{
+		"node", "--import", "tsx/esm", filepath.Join(root, "apps", "cli", "src", "bin.ts"), "web", "--coding-host",
+	}, nil
 }
 
 // remoteAgentPathFor 在发行包中只读取 Resources/remote-agent；开发运行则从
@@ -472,6 +526,9 @@ func findProjectRoot() (string, error) {
 
 // packagedRuntimeRoot 定位 .app Resources 目录下的 Node 与预展开 Host 闭包；开发运行（无打包）返回空。
 func packagedRuntimeRoot() string {
+	if isDevelopmentBuild {
+		return ""
+	}
 	if _, err := os.Stat(filepath.Join("apps", "cli", "src", "bin.ts")); err == nil {
 		return ""
 	}
