@@ -21,6 +21,10 @@ Remote-SSH 与 SSH Host 入口直接为当前 Session 调用 `ctx.layout.openWor
 
 欢迎页右上角的底栏入口注册在 `conversation.hero.actions`。已有会话时直接切换其底栏；尚无会话时先连接最近工作区，若没有工作区则在 Host 用户 HOME 创建未分组会话，再打开底栏。创建失败时按钮旁显示错误并允许重试；异步创建期间用户若已切换到另一会话，入口不会抢占选择。底栏状态按 Session 保存，欢迎页发送首条消息后继续沿用。
 
+欢迎页操作行可见时，侧边栏品牌行不渲染这两个面板开关；工作台在窄屏接管对话区后，品牌行开关恢复，避免底栏只能通过整个工作台的关闭按钮退出。
+
+面板按钮使用 [`ui-icons`](../ui-icons/README.md) 的语义图标：文件侧栏使用右向侧栏图形，底栏使用终端图形，旋转与第三方图标选择不进入本包。
+
 文件树只把当前 Session id 与 Host 返回的 provider segment 数组回传给 list/read 路由，不提交工作区根，也不拼接 Windows、POSIX 或 UNC 路径。工作台视觉关闭时不请求目录；首次显示后才读取根目录，避免隐藏 entry 在 Session 尚未就绪时留下错误状态。目录按文件夹优先排序，展开时才读取下一层；筛选只作用于已加载层，点击文件会打开或激活中间标签。Markdown 使用共享 `MarkdownText`，代码和普通文本保留换行，图片使用 Host 校验后的 MIME 与 base64 内容，其它类型显示明确的 unsupported 状态。
 
 底栏使用 `@xterm/xterm` 与 `@xterm/addon-fit`，首次显示时才按当前 Session 建立 Host WebSocket。Client 发送输入和 fit 后的 resize 帧，接收 ready、output、exit 与 error 帧；连接结束后可重新建立一条终端。隐藏底栏或关闭工作台只改变固定布局可见性，不断开已激活终端。加载和连接期间 xterm viewport 保持文本光标，显示后立即获得输入焦点。组件卸载会释放 xterm、ResizeObserver 和 WebSocket；Host 随 socket 生命周期终止对应 PTY。本地 POSIX、本地 Windows 和 Remote-SSH 的实际 resize 与进程树语义由 Session Agent 的 subprocess provider 实现。

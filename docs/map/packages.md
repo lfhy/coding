@@ -3,7 +3,7 @@
 
 # 包清单
 
-workspace 共 228 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
+workspace 共 229 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
 
 模型可见工具的名称与 schema 见 [tool-catalog.md](../tool-catalog.md)，插件可配置项见 [config-catalog.md](../config-catalog.md)，依赖边见 [module-graph.md](../module-graph.md)。
 
@@ -48,6 +48,7 @@ workspace 共 228 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/client/ui-directory-picker-browse` — 应用内目录浏览界面：浏览式选取交互的浏览器半边 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
 - `packages/client/ui-directory-picker-native` — 原生目录选择界面：原生选取交互的浏览器半边 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 1）
 - `packages/client/ui-goal` — Goal 界面插件（浏览器端部分）：`GoalBar` 条带是 `conversation.input.dock` composer 上下文堆栈… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 3）
+- `packages/client/ui-icons` — 本包是浏览器客户端图标的独立组件边界 入口 `src/index.ts`（tests 1）
 - `packages/client/ui-input-trigger` — 输入触发流水线插件：光标处的 `/` 与 `@` 检测（词边界 + guard tier 规则）、分组候选菜单… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 5）
 - `packages/client/ui-jobs` — Web 后台任务特性的归属方：向 `conversation.session.header.actions` 贡献一个条目… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
 - `packages/client/ui-layout` — 本包拥有浏览器根布局、瞬时面板几何和 `ctx.layout` [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 6）

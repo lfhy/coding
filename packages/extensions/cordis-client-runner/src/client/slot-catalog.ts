@@ -1610,7 +1610,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     doc: '整个左侧导航栏；占用者负责展开态和紧凑 rail。',
     registerOptions: [],
     ownerProps: [
-      '/** 导航栏 owner share。 */\nexport interface SidebarOwnerProps {\n  /** 是否显示紧凑 rail。 */\n  collapsed: boolean\n  /** 实际渲染宽度。 */\n  width: number\n}',
+      '/** 导航栏 owner share。 */\nexport interface SidebarOwnerProps {\n  /** 是否显示紧凑 rail。 */\n  collapsed: boolean\n  /** 实际渲染宽度。 */\n  width: number\n  /** 欢迎页右上角可操作时，品牌行不再重复显示面板按钮。 */\n  welcomeActionsVisible: boolean\n}',
     ],
     ownerPropsReferences: [],
     standardProps: [

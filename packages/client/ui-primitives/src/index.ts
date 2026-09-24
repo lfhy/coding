@@ -51,4 +51,4 @@ export type { MarkdownCodeLabels, MarkdownFileMentions } from './markdown/Markdo
 export { MessageText } from './markdown/MessageText.tsx'
 export { extractMarkdownPlainText } from './markdown/plain-text.ts'
 export type { MarkdownPlainTextMode, MarkdownPlainTextOptions } from './markdown/plain-text.ts'
-export * from './icons/index.tsx'
+export * from '@deepseek-ai/dsh-client-ui-icons'

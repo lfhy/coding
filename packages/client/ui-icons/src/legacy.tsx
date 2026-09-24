@@ -1,7 +1,6 @@
 /**
- * ic_ds_* icon set for the dsh web UI. All glyphs render fill="currentColor"
- * and take {size, className}. Batch A mirrors the deepsuite icon library
- * (same figma source); batch B glyphs are harness-only figma extracts.
+ * 原有 ic_ds_* 图标集合。所有图形以 currentColor 绘制，保留各自默认尺寸；
+ * 迁入独立图标包后，旧调用方仍经 ui-primitives 的兼容导出使用同一图形。
  */
 import type { IconProps } from './props.ts'
 

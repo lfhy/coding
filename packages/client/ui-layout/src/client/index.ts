@@ -46,6 +46,8 @@ export interface SidebarOwnerProps {
   collapsed: boolean
   /** 实际渲染宽度。 */
   width: number
+  /** 欢迎页右上角可操作时，品牌行不再重复显示面板按钮。 */
+  welcomeActionsVisible: boolean
 }
 
 /** 对话区域需要知道侧边栏的实际收起状态，以呈现欢迎页入口。 */

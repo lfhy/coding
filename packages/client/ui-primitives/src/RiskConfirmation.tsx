@@ -1,6 +1,6 @@
 /** 供敏感操作界面共用的受控风险确认框，必须显式勾选后才能继续。 */
 import { Button } from './Button.tsx'
-import { IconWarningOutline16 } from './icons/index.tsx'
+import { IconWarningOutline16 } from '@deepseek-ai/dsh-client-ui-icons'
 import { Modal } from './Modal.tsx'
 import css from './RiskConfirmation.module.css'
 

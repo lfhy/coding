@@ -66,6 +66,8 @@ export function isOwnerAuthorizedRuntime(name: string): boolean {
  * Each entry documents why the store cannot answer.
  */
 const OVERRIDES: Record<string, { license?: string; repo?: string }> = {
+  // semi-icons 的发布包没有 repository/homepage 字段，源码位于 Semi Design 仓库。
+  '@douyinfe/semi-icons': { repo: 'https://github.com/DouyinFE/semi-design' },
   // Rust workspaces publishing npm bins without `license` in package.json.
   'oxlint': { license: 'MIT', repo: 'https://github.com/oxc-project/oxc' },
   'oxlint-tsgolint': { license: 'MIT', repo: 'https://github.com/oxc-project/tsgolint' },

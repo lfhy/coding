@@ -7,13 +7,7 @@
   "include": [
     "src"
   ],
-  "exclude": [
-    "**/*.legacy.*"
-  ],
   "references": [
-    {
-      "path": "../ui-icons"
-    },
     {
       "path": "../../runtime-diagnostics/invariants"
     }

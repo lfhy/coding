@@ -6,7 +6,7 @@ import type {
   ReactNode,
   UIEvent as ReactUIEvent,
 } from 'react'
-import { IconCheckOutline16, IconCopyOutline16 } from './icons/index.tsx'
+import { IconCheckOutline16, IconCopyOutline16 } from '@deepseek-ai/dsh-client-ui-icons'
 import { Menu } from './Menu.tsx'
 import type { MenuEntry } from './Menu.tsx'
 import css from './JsonTree.module.css'

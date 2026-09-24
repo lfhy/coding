@@ -212,9 +212,10 @@ describe('AppFrame', () => {
   it('keeps the conversation slot mounted while no session is current', () => {
     // 没有当前 Session 时，session-maybe 对话壳自行拥有新建会话视图。
     selectedSession.current = undefined
-    const { slotCalls, getByTestId } = mountFrame()
+    const { slotCalls, getByTestId, ownerFor } = mountFrame()
     expect(getByTestId('center-content')).toBeTruthy()
     expect(slotCalls.map(c => c.key)).toContain('conversation')
+    expect(ownerFor('sidebar')).toMatchObject({ welcomeActionsVisible: true })
   })
 
   it('renders both column occupants before baselines settle (no loading gate)', () => {
@@ -269,7 +270,9 @@ describe('AppFrame', () => {
 
   it('sidebar slot receives live concession output as owner props', () => {
     const { slotCalls } = mountFrame()
-    expect(slotCalls.find(c => c.key === 'sidebar')!.props).toEqual({ collapsed: false, width: 280 })
+    expect(slotCalls.find(c => c.key === 'sidebar')!.props).toEqual({
+      collapsed: false, width: 280, welcomeActionsVisible: false,
+    })
   })
 
   it('sidebar drag widens through rAF-batched pointer moves', () => {
@@ -311,7 +314,9 @@ describe('AppFrame', () => {
     expect(getByTestId('sidebar-content')).toBeTruthy()
     expect(frame.hasAttribute('data-sidebar-collapsed')).toBe(true)
     const lastSidebarCall = slotCalls.filter(c => c.key === 'sidebar').at(-1)!
-    expect(lastSidebarCall.props).toEqual({ collapsed: true, width: SIDEBAR_COLLAPSED })
+    expect(lastSidebarCall.props).toEqual({
+      collapsed: true, width: SIDEBAR_COLLAPSED, welcomeActionsVisible: false,
+    })
   })
 
   it('viewport shrink triggers the concession chain via ResizeObserver', () => {
@@ -394,6 +399,7 @@ describe('AppFrame — fixed workbench', () => {
     })
     expect(frame.hasAttribute('data-bottom-open')).toBe(true)
     expect(frame.hasAttribute('data-sidebar-collapsed')).toBe(true)
+    expect(ownerFor('sidebar')).toMatchObject({ welcomeActionsVisible: true })
     expect(ownerFor('conversation')).toEqual({ sidebarCollapsed: true })
     expect(publishWorkbench).toHaveBeenLastCalledWith('s-test', expect.objectContaining({ bottomOpen: true }))
 
@@ -401,6 +407,7 @@ describe('AppFrame — fixed workbench', () => {
     act(() => { rerenderFrame() })
     expect(frame.hasAttribute('data-bottom-open')).toBe(true)
     expect(frame.hasAttribute('data-sidebar-collapsed')).toBe(true)
+    expect(ownerFor('sidebar')).toMatchObject({ welcomeActionsVisible: false })
     expect(ownerFor('conversation')).toEqual({ sidebarCollapsed: true })
   })
 
@@ -500,12 +507,28 @@ describe('AppFrame — fixed workbench', () => {
 })
 
 describe('AppFrame — narrow-viewport auto-collapse', () => {
+  it('restores rail panel controls when a blank Session workbench covers the welcome page', () => {
+    frameWidth = 768
+    selectedSessionBlank.current = true
+    const { frame, instance, ownerFor } = mountFrame()
+    expect(ownerFor('sidebar')).toMatchObject({ welcomeActionsVisible: true })
+
+    act(() => { instance.actions.toggleWorkbenchBottom('s-test' as SessionId) })
+    expect(frame.hasAttribute('data-workbench-fullscreen')).toBe(true)
+    expect(ownerFor('sidebar')).toMatchObject({ welcomeActionsVisible: false })
+
+    act(() => { instance.actions.closeWorkbench('s-test' as SessionId) })
+    expect(ownerFor('sidebar')).toMatchObject({ welcomeActionsVisible: true })
+  })
+
   it('mounts collapsed below the breakpoint with no sidebar handle', () => {
     frameWidth = 980
     const { frame, slotCalls } = mountFrame()
     expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 0])
     expect(frame.hasAttribute('data-sidebar-collapsed')).toBe(true)
-    expect(slotCalls.filter(c => c.key === 'sidebar').at(-1)!.props).toEqual({ collapsed: true, width: SIDEBAR_COLLAPSED })
+    expect(slotCalls.filter(c => c.key === 'sidebar').at(-1)!.props).toEqual({
+      collapsed: true, width: SIDEBAR_COLLAPSED, welcomeActionsVisible: false,
+    })
     expect(frame.querySelectorAll('[class*="handle"]')).toHaveLength(0)
   })
 

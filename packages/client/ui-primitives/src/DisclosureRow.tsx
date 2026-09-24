@@ -1,6 +1,6 @@
 import { type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { IconChevronDownOutline14 } from './icons/index.tsx'
+import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-icons'
 import css from './DisclosureRow.module.css'
 
 /** Shared 24px disclosure chrome for compact flow rows. */

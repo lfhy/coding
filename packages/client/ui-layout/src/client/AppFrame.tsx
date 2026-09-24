@@ -271,6 +271,10 @@ export function AppFrame({
     const current = state.current
     return current !== undefined && state.byId[current] !== undefined ? current : undefined
   })
+  const welcomeSession = useSessions((state) => {
+    const current = state.current
+    return current === undefined || state.byId[current]?.blank === true
+  })
   const liveSessionIds = useSessions(state => state.ids)
   const panels = useMemo(() => {
     const current = activeSession === undefined ? undefined : rootPanels.workbench[activeSession]
@@ -323,6 +327,7 @@ export function AppFrame({
 
   const workbenchShown = activeSession !== undefined && panels.open && rootPanels.details === 0
   const workbenchFullscreen = workbenchShown && (panels.fullscreen || narrow)
+  const welcomeActionsVisible = welcomeSession && !workbenchFullscreen
   // 导航栏只服从自身开关和响应式断点；工作台不隐式抢占会话导航。
   const sidebarCollapsed = narrow ? !rootPanels.narrowExpanded : rootPanels.sidebar === 0
   const sidebarPreference = sidebarCollapsed
@@ -412,7 +417,7 @@ export function AppFrame({
       data-dragging={dragging || undefined}
     >
       <div id={SIDEBAR_ID} className={css.sidebarCol}>
-        {renderSlot('sidebar', { collapsed: sidebarCollapsed, width: sidebarWidth })}
+        {renderSlot('sidebar', { collapsed: sidebarCollapsed, width: sidebarWidth, welcomeActionsVisible })}
       </div>
       <ConversationColumn hidden={workbenchFullscreen}>
         {renderSlot('conversation', { sidebarCollapsed })}

@@ -1,10 +1,4 @@
 - button "New session"
-- button "Show files sidebar":
-  - img
-- button "Show terminal panel":
-  - img
-- button "Collapse sidebar":
-  - img
 - button "New session":
   - img
   - text: New Session
@@ -23,10 +17,8 @@
 - button "Settings":
   - img
   - text: Settings
-- button "Collapse sidebar":
-  - img
-- button "Open bottom panel":
-  - img
+- button "Collapse sidebar"
+- button "Open bottom panel"
 - text: {{greeting}}
 - button "Standard mode":
   - img

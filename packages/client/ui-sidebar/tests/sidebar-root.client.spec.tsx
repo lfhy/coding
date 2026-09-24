@@ -23,7 +23,8 @@ afterEach(() => {
 // props share; stub them as never-called functions.
 const neverHook = (() => { throw new Error('shell must not read global hooks') }) as never
 
-function mountShell({ collapsed = false, width = 300 }: { collapsed?: boolean; width?: number } = {}) {
+function mountShell({ collapsed = false, width = 300, welcomeActionsVisible = false }:
+{ collapsed?: boolean; width?: number; welcomeActionsVisible?: boolean } = {}) {
   const startSession = vi.fn()
   const toggleSidebar = vi.fn()
   let brandActionOwner: SidebarBrandActionOwnerProps | undefined
@@ -31,10 +32,11 @@ function mountShell({ collapsed = false, width = 300 }: { collapsed?: boolean; w
   let settingsOwner: SidebarSettingsOwnerProps | undefined
   let footerActionOwner: SidebarFooterActionOwnerProps | undefined
   const brandName = <span data-testid="custom-brand-name">Custom Brand</span>
-  let current = { collapsed, width }
+  let current = { collapsed, width, welcomeActionsVisible }
   const root = () => (
     <SidebarRoot
       collapsed={current.collapsed} width={current.width}
+      welcomeActionsVisible={current.welcomeActionsVisible}
       useSessions={neverHook} useWorkspaces={neverHook}
       startSession={startSession} toggleSidebar={toggleSidebar} t={t}
       renderSlot={((
@@ -88,6 +90,18 @@ function mountShell({ collapsed = false, width = 300 }: { collapsed?: boolean; w
 }
 
 describe('SidebarRoot shell', () => {
+  it('keeps brand actions off the welcome page and restores them when it is covered', () => {
+    const b = mountShell({ welcomeActionsVisible: true })
+    expect(screen.getByTestId('custom-brand-name')).toBeTruthy()
+    expect(screen.queryByTestId('brand-action-seat')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Collapse sidebar' })).toBeNull()
+    expect(screen.getAllByRole('button', { name: 'New session' })).toHaveLength(2)
+
+    b.rerender({ welcomeActionsVisible: false })
+    expect(screen.getByTestId('brand-action-seat')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Collapse sidebar' })).toBeTruthy()
+  })
+
   it('routes New Session (capsule + wordmark) and the column toggle', () => {
     const b = mountShell()
     expect(screen.getByTestId('custom-brand-name')).toBeTruthy()
@@ -109,6 +123,7 @@ describe('SidebarRoot shell', () => {
     vi.stubEnv('DSH_CLIENT_COMMIT_HASH', '0123456')
     render(<SidebarRoot
       collapsed={false} width={300}
+      welcomeActionsVisible={false}
       useSessions={neverHook} useWorkspaces={neverHook}
       startSession={vi.fn()} toggleSidebar={vi.fn()} t={t}
       renderSlot={((_key: string, _owner: unknown, options?: { fallback?: ReactNode }) =>

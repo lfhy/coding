@@ -1,4 +1,4 @@
-import type { IconProps } from './icons/props.ts'
+import type { IconProps } from '@deepseek-ai/dsh-client-ui-icons'
 
 /**
  * 渲染 Coding 的方形品牌图标。

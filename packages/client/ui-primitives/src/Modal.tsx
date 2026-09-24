@@ -7,7 +7,7 @@ import { useEffect } from 'react'
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import clsx from 'clsx'
-import { IconCloseOutline16 } from './icons/index.tsx'
+import { IconCloseOutline16 } from '@deepseek-ai/dsh-client-ui-icons'
 import css from './Modal.module.css'
 
 /**

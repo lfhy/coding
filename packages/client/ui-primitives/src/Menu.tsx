@@ -12,7 +12,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import clsx from 'clsx'
-import { IconCheckOutline16 } from './icons/index.tsx'
+import { IconCheckOutline16 } from '@deepseek-ai/dsh-client-ui-icons'
 import { usePointerGrace } from './pointer-grace.ts'
 import css from './Menu.module.css'
 

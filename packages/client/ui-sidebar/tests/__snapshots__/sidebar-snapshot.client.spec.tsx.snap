@@ -1,5 +1,94 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`sidebar shell snapshots > renders only the brand and New Session control in the welcome sidebar header 1`] = `
+<div
+  data-slot="sidebar"
+  style="display: contents;"
+>
+  <div
+    class="root quietBars"
+    style="width: 300px;"
+  >
+    <div
+      class="logoRow"
+    >
+      <button
+        aria-label="New session"
+        class="brand wide"
+        type="button"
+      >
+        <span
+          aria-hidden="true"
+          class="brandIdentity"
+        >
+          <span
+            class="brandName"
+          >
+            <div
+              data-slot="sidebar.brand.name"
+              style="display: contents;"
+            >
+              <span
+                class="fallbackBrandName"
+              >
+                Coding
+              </span>
+            </div>
+          </span>
+        </span>
+      </button>
+    </div>
+    <button
+      aria-label="New session"
+      class="newSession"
+      type="button"
+    >
+      <svg
+        data-content="c0ce4dcc"
+        fill="none"
+        height="14"
+        viewBox="0 0 16 16"
+        width="14"
+        xmlns="http://www.w3.org/2000/svg"
+      />
+      <span
+        class="newSessionLabel wide"
+      >
+        New Session
+      </span>
+    </button>
+    <div
+      class="regionArea"
+    >
+      <div
+        data-slot="sidebar.workspaces"
+        style="display: contents;"
+      />
+    </div>
+    <div
+      class="footArea"
+    >
+      <div
+        class="footerActions"
+      >
+        <div
+          data-slot="sidebar.footer.action"
+          style="display: contents;"
+        />
+      </div>
+      <div
+        class="settingsArea"
+      >
+        <div
+          data-slot="sidebar.settings"
+          style="display: contents;"
+        />
+      </div>
+    </div>
+  </div>
+</div>
+`;
+
 exports[`sidebar shell snapshots > renders the collapsed rail after the crossfade settles, in place 1`] = `
 <div
   data-slot="sidebar"
@@ -25,15 +114,24 @@ exports[`sidebar shell snapshots > renders the collapsed rail after the crossfad
         class="iconButton toggle"
         type="button"
       >
-        <svg
-          class="panelIcon"
-          data-content="35f95b0c"
-          fill="none"
-          height="18"
-          viewBox="0 0 16 16"
-          width="18"
-          xmlns="http://www.w3.org/2000/svg"
-        />
+        <span
+          aria-hidden="true"
+          aria-label="sidebar"
+          class="semi-icon semi-icon-sidebar panelIcon"
+          role="img"
+          style="font-size: 18px;"
+        >
+          <svg
+            aria-hidden="true"
+            data-content="e9ddaac1"
+            fill="none"
+            focusable="false"
+            height="1em"
+            viewBox="0 0 24 24"
+            width="1em"
+            xmlns="http://www.w3.org/2000/svg"
+          />
+        </span>
       </button>
     </div>
     <button
@@ -132,15 +230,24 @@ exports[`sidebar shell snapshots > renders the expanded column (wordmark, capsul
         class="iconButton toggle"
         type="button"
       >
-        <svg
-          class="panelIcon"
-          data-content="35f95b0c"
-          fill="none"
-          height="16"
-          viewBox="0 0 16 16"
-          width="16"
-          xmlns="http://www.w3.org/2000/svg"
-        />
+        <span
+          aria-hidden="true"
+          aria-label="sidebar"
+          class="semi-icon semi-icon-sidebar panelIcon"
+          role="img"
+          style="font-size: 16px;"
+        >
+          <svg
+            aria-hidden="true"
+            data-content="e9ddaac1"
+            fill="none"
+            focusable="false"
+            height="1em"
+            viewBox="0 0 24 24"
+            width="1em"
+            xmlns="http://www.w3.org/2000/svg"
+          />
+        </span>
       </button>
     </div>
     <button
@@ -244,15 +351,24 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
         class="iconButton toggle"
         type="button"
       >
-        <svg
-          class="panelIcon"
-          data-content="35f95b0c"
-          fill="none"
-          height="16"
-          viewBox="0 0 16 16"
-          width="16"
-          xmlns="http://www.w3.org/2000/svg"
-        />
+        <span
+          aria-hidden="true"
+          aria-label="sidebar"
+          class="semi-icon semi-icon-sidebar panelIcon"
+          role="img"
+          style="font-size: 16px;"
+        >
+          <svg
+            aria-hidden="true"
+            data-content="e9ddaac1"
+            fill="none"
+            focusable="false"
+            height="1em"
+            viewBox="0 0 24 24"
+            width="1em"
+            xmlns="http://www.w3.org/2000/svg"
+          />
+        </span>
       </button>
     </div>
     <button

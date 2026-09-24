@@ -9,7 +9,7 @@ import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkbenchLayoutSnapshot } from '@deepseek-ai/dsh-client-ui-layout/client'
-import { IconPanelLeftOutline16, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Icon, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { NS } from './locales.ts'
 import css from './WorkbenchPanelToggles.module.css'
@@ -101,7 +101,7 @@ export function HeroBottomToggle({ useSessions, workbenchSource, toggleBottom, t
             }).finally(() => { setOpening(false) })
           }}
         >
-          <IconPanelLeftOutline16 size={18} className={css.bottomPanelIcon} />
+          <Icon name="bottom-panel" size={18} />
         </button>
       </Tooltip>
       {error !== null && <span className={css.heroError} role="alert">{error}</span>}
@@ -158,13 +158,13 @@ export function WorkbenchPanelToggles(props: WorkbenchPanelTogglesProps): React.
         label={filesOn ? t('workbench.files.hide') : t('workbench.files.show')}
         pressed={filesOn}
         onClick={toggleFiles}
-        icon={<IconPanelLeftOutline16 size={iconSize} className={css.rightPanelIcon} />}
+        icon={<Icon name="files-panel" size={iconSize} />}
       />
       <PanelButton
         label={bottomOn ? t('workbench.bottom.hide') : t('workbench.bottom.show')}
         pressed={bottomOn}
         onClick={toggleBottom}
-        icon={<IconPanelLeftOutline16 size={iconSize} className={css.bottomPanelIcon} />}
+        icon={<Icon name="bottom-panel" size={iconSize} />}
       />
     </div>
   )

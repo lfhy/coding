@@ -16,7 +16,7 @@ kind: "package-reference"
 
 | Slot | Scope | Owner 数据 |
 | --- | --- | --- |
-| `sidebar` | `root` | `collapsed`、实际 `width` |
+| `sidebar` | `root` | `collapsed`、实际 `width`、欢迎页操作行是否可见 |
 | `conversation` | `session-maybe` | 空 owner share |
 | `details` | `session` | 空 owner share |
 | `workbench` | `session` | 可见、全屏、底栏与文件侧栏状态和控制回调 |
@@ -26,6 +26,8 @@ kind: "package-reference"
 `ctx.layout` 提供全局的 `toggleSidebar()`、`openDetails()`、`closeDetails()`，以及接收 `SessionId` 的 `openWorkbench()`、`closeWorkbench()`、`toggleWorkbench()`、`toggleWorkbenchFullscreen()`、`toggleWorkbenchBottom()` 和 `toggleWorkbenchFiles()`。`workbench(sessionId)` 返回会话页头入口、工作台顶栏与侧边栏品牌行开关可订阅的工作台显隐投影。打开工作台会关闭详情栏；打开详情栏会暂时覆盖工作台，关闭详情栏后恢复该 Session 的工作台状态。工作台未打开时 `toggleWorkbenchBottom()` 与 `toggleWorkbenchFiles()` 会先打开工作台并让对应面板可见。关闭工作台不会改写宽度、底栏与文件侧栏偏好。
 
 空白会话同样拥有按 Session 隔离的工作台状态。欢迎页打开底栏后发送首条消息，不会重建布局状态；侧边栏的全局收起状态也不受会话阶段影响。
+
+布局把欢迎页操作行是否可见交给侧边栏：无会话或空白会话且对话区未被全屏工作台遮住时，品牌行不重复显示面板与收起按钮；窄屏工作台接管对话区时恢复 rail 操作，保证终端底栏仍可关闭。
 
 ## 布局行为
 

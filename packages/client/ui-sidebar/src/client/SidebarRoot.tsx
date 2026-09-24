@@ -1,24 +1,12 @@
 /**
- * Sidebar shell: column geometry only. Collapse is a slide plus crossfade:
- * content freezes at its expanded width (inline style) and fades out in place
- * while the sliding column (AppFrame grid tracks) clips it — nothing reflows
- * mid-slide. At settle the wide-only content unmounts and the four upper
- * controls enter the 56px rail from the same horizontal offset (one icon each,
- * same top-down order) on one fade that ends with the slide. The bottom-pinned
- * settings control only fades. The workspace/session browsing region between
- * the New Session button and the foot is the `sidebar.workspaces` registrant's,
- * and the foot holds `sidebar.settings` plus `sidebar.footer.action`; the shell
- * hands them the wide flag (plus an expand request callback for the browser).
- *
- * The column also owns whether the scroll regions nested in it draw a
- * scrollbar at all: the shell tracks the pointer and rebinds ui-theme's
- * scrollbar indirection away while it is elsewhere, so a list the user is not
- * pointing at carries no bar.
+ * 侧边栏壳负责折叠动画、品牌行和滚动条可见性。欢迎页右上角可操作时，品牌行
+ * 不重复显示面板开关；工作台遮住欢迎页时恢复 rail 操作。折叠动画冻结宽内容，
+ * 等淡出后再切换到 56px rail；浏览区域与页脚仍由各自 slot 占用者绘制。
  */
 import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
-  IconNewChatOutline16, IconPanelLeftOutline16, Tooltip,
+  Icon, IconNewChatOutline16, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SidebarRootComponentProps } from './contract/slots.ts'
 import css from './SidebarRoot.module.css'
@@ -35,13 +23,14 @@ const COLLAPSE_SETTLE_MS = 150
 const SCROLLBAR_LINGER_MS = 2000
 
 /**
- * Render the sidebar column shell.
- * @param props - composed slot props (runtime share + injected callbacks, contract/slots.ts).
- * @returns the sidebar element tree.
+ * 渲染侧边栏壳，欢迎页操作可见时只保留品牌与会话导航入口。
+ * @param props - 布局 owner、slot、回调与本地化文案。
+ * @returns 侧边栏元素树。
  */
 export function SidebarRoot({
   collapsed,
   width,
+  welcomeActionsVisible,
   startSession,
   toggleSidebar,
   t,
@@ -143,21 +132,25 @@ export function SidebarRoot({
             </span>
           </button>
         )}
-        {/* 常驻动作在品牌按钮之后、收起按钮之前渲染：宽侧栏是横向图标行，收起 rail 中纵向排列。 */}
-        <div className={css.brandActions}>
-          {renderSlot('sidebar.brand.action', { wide })}
-        </div>
-        <Tooltip label={collapsed ? t('toggle.open') : t('toggle.collapse')} delayMs={500}>
-          <button
-            type="button"
-            className={clsx(css.iconButton, css.toggle)}
-            aria-label={collapsed ? t('toggle.open') : t('toggle.collapse')}
-            onClick={() => { toggleSidebar() }}
-          >
-            {/* 收起 rail 始终显示展开图标，避免把品牌标识误作控制。 */}
-            <IconPanelLeftOutline16 className={css.panelIcon} size={wide ? 16 : 18} />
-          </button>
-        </Tooltip>
+        {!welcomeActionsVisible && (
+          <>
+            {/* 欢迎页由右上角接管这些入口；全屏工作台隐藏欢迎页时恢复 rail 操作。 */}
+            <div className={css.brandActions}>
+              {renderSlot('sidebar.brand.action', { wide })}
+            </div>
+            <Tooltip label={collapsed ? t('toggle.open') : t('toggle.collapse')} delayMs={500}>
+              <button
+                type="button"
+                className={clsx(css.iconButton, css.toggle)}
+                aria-label={collapsed ? t('toggle.open') : t('toggle.collapse')}
+                onClick={() => { toggleSidebar() }}
+              >
+                {/* 欢迎页入口不可用时保留 rail 展开图标，避免把品牌误作控制。 */}
+                <Icon name="sidebar" className={css.panelIcon} size={wide ? 16 : 18} />
+              </button>
+            </Tooltip>
+          </>
+        )}
       </div>
 
       {/* Expanded, the button carries its own label — tooltip only on the rail. */}

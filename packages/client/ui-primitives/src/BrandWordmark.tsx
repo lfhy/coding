@@ -1,7 +1,7 @@
 // Coding 品牌字标：文本绘制，随主题 currentColor 变色，宽 74x24。
 // includeMark 保留在类型中兼容调用方；字标本身不含前置图形。
 
-import type { IconProps } from './icons/props.ts'
+import type { IconProps } from '@deepseek-ai/dsh-client-ui-icons'
 
 /** Coding 品牌字标的显示选项。 */
 export interface BrandWordmarkProps extends IconProps {
