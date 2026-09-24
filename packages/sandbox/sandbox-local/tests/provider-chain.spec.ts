@@ -1,10 +1,6 @@
 /**
- * The win32 chain's argv contract, denial dialect, and runner-failure rules,
- * exercised through the REAL LocalSandboxProvider.confine() with an injected
- * platform and runner argv prefix. Platform-independent assertions: they run
- * in every CI lane (Windows included, where sandbox-local's own POSIX-only
- * suites are excluded) — the end-to-end runner behavior lives in
- * runner.spec.ts on win32 hosts.
+ * 通过真实 LocalSandboxProvider.confine() 检查 win32 链的参数、拒绝签名和 runner 失败规则。
+ * 注入平台与 runner 前缀，使断言在所有平台运行；原生 runner 行为由 Windows 专属测试覆盖。
  */
 
 import { tmpdir } from 'node:os'
@@ -44,7 +40,7 @@ describe('windows-acl win32 chain (LocalSandboxProvider)', () => {
     expect(confined.enforcement).toBe('partial')
     expect(confined.denialSignatures).toEqual(['access is denied', 'access to the path', 'permission denied'])
     expect(confined.runnerFailureRules).toEqual([{ allowedExitCodes: [127], fatalSignatures: ['windows-acl-run: '] }])
-    // A sole candidate is selected unprobed.
+    // 单一候选 runner 无需探测即可选中。
     expect(probeWindowsAcl).not.toHaveBeenCalled()
   })
 

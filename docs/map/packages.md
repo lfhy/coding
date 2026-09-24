@@ -43,7 +43,7 @@ workspace 共 229 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/client/ui-attachment` — 对话 UI 的动态附件呈现插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 7）
 - `packages/client/ui-brand-official` — 仅当 `DSH_CLIENT_BUILD_PROFILE` 为 `official` 时… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
 - `packages/client/ui-commands` — 客户端命令 API（`ctx.commandUi`）：以会话为 key 的命令目录缓存、带 `matchSpace`／`matchEnter` … [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 5）
-- `packages/client/ui-conversation` — 会话领域：骨架（标题栏／标签页／编辑器／空状态）、聊天视图（分组步骤摘要流、流式尾部隔离与轮次状态）、编辑器 dock… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 29）
+- `packages/client/ui-conversation` — 会话领域：骨架（标题栏／标签页／编辑器／空状态）、聊天视图（分组步骤摘要流、流式尾部隔离与轮次状态）、编辑器 dock… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 30）
 - `packages/client/ui-deliverables` — 产出文件与可点击文件引用功能的属主 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
 - `packages/client/ui-directory-picker-browse` — 应用内目录浏览界面：浏览式选取交互的浏览器半边 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
 - `packages/client/ui-directory-picker-native` — 原生目录选择界面：原生选取交互的浏览器半边 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 1）
@@ -65,7 +65,7 @@ workspace 共 229 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/client/ui-settings-models` — 模型设置与产品引导插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 10）
 - `packages/client/ui-settings-plugin-inventory` — Web 设置中的只读**插件列表**标签页 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 3）
 - `packages/client/ui-settings-plugins` — **插件**设置分区及其**插件配置**标签页 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 5）
-- `packages/client/ui-sidebar` — 侧边栏外壳插件：负责品牌行、New Session 操作、布局持有的折叠控件、可感知滚动的区域 seat… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 8）
+- `packages/client/ui-sidebar` — 侧边栏外壳插件：负责品牌行、New Session 操作、布局持有的折叠控件、可感知滚动的区域 seat… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 7）
 - `packages/client/ui-skill` — skill（技能）调用 source 的浏览器端：把 `/` 触发的 `skill` source 注册进 `ctx.inputTriggers… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
 - `packages/client/ui-slots` — Slot 注册表纯核心、slot 终端设计：SlotMap 声明合并、SlotCore 上唯一的 `register` 组合 API、四 sha… 入口 `src/index.ts`（tests 4）
 - `packages/client/ui-subagent` — Web subagent 功能 owner：向 `conversation.session.header.actions` 贡献可懒加载展开的目… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
@@ -236,9 +236,9 @@ workspace 共 229 个包，按 group 分节。每行给出包目录、职责（R
 ## packages/sandbox
 
 - `packages/sandbox/sandbox` — 进程沙箱 Service Definition 入口 `src/index.ts`（tests 3）
-- `packages/sandbox/sandbox-local` — `dsh-sandbox` seam 的本地实现 入口 `src/index.ts`（tests 2）
+- `packages/sandbox/sandbox-local` — `dsh-sandbox` seam 的本地实现 入口 `src/index.ts`（tests 3）
 - `packages/sandbox/sandbox-policy` — 沙箱策略解析的唯一归属位置：部署默认 `SandboxMode` 与回退根目录，加上每个会话的持久模式覆盖和不可变工作区根目录 入口 `src/index.ts`（tests 2）
-- `packages/sandbox/sandbox-windows-acl` — 面向 harness 沙盒 seam 的 Windows 写入限制沙盒后端：一个 Node.js/koffi 实现的、对 huoyaoyuan/… 入口 `src/index.ts`（tests 14）
+- `packages/sandbox/sandbox-windows-acl` — 面向 harness 沙盒 seam 的 Windows 写入限制沙盒后端：一个 Node.js/koffi 实现的、对 huoyaoyuan/… 入口 `src/index.ts`（tests 13）
 
 ## packages/schedule
 

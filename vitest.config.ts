@@ -37,7 +37,10 @@ const windowsUnsupportedPackages = process.platform === 'win32'
 
 const windowsUnsupportedTests = process.platform === 'win32'
   ? [
-      ...windowsUnsupportedPackages.map(path => `${path}/tests/**/*.spec.ts`),
+      ...windowsUnsupportedPackages.map(path => path === 'packages/sandbox/sandbox-local'
+        // win32 provider 链测试注入平台与 runner，可在 Windows 运行；其余测试依赖 POSIX。
+        ? `${path}/tests/**/!(provider-chain).spec.ts`
+        : `${path}/tests/**/*.spec.ts`),
       'packages/subprocess/subprocess/tests/**/*.spec.ts',
       'packages/subprocess/subprocess-local/tests/local.spec.ts',
       'packages/subprocess/subprocess-local/tests/process-inspector.spec.ts',

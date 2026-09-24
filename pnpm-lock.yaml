@@ -6150,9 +6150,6 @@ importers:
       '@deepseek-ai/dsh-pwsh-local':
         specifier: workspace:^
         version: link:../../shell/pwsh-local
-      '@deepseek-ai/dsh-sandbox-local':
-        specifier: workspace:^
-        version: link:../sandbox-local
 
   packages/schedule/schedule:
     devDependencies:

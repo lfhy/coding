@@ -219,11 +219,6 @@ describe('the platform chains', () => {
     expect(probeSeatbelt).not.toHaveBeenCalled()
   })
 
-  // The win32 chain's argv contract, denial dialect, and runner-failure rules
-  // live in @deepseek-ai/dsh-sandbox-windows-acl/tests/provider-chain.spec.ts
-  // (platform-independent assertions that run in every CI lane, including
-  // Windows where this package's POSIX-only suites are excluded).
-
   it('caches the verdict for the provider lifetime: one chain walk across wraps', async () => {
     const probeBwrap = vi.fn(() => true)
     const { sandbox } = await setup({}, { platform: 'linux', probeBwrap })
