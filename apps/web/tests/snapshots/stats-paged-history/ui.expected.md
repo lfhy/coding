@@ -360,18 +360,15 @@
   - img
 - button "Send message" [disabled]
 - region "Session overview":
-  - heading "Session overview" [level=2]
   - button "Collapse session overview"
-  - heading "Collaboration" [level=3]
-  - img
+  - heading "Collaboration" [level=2]
   - term: Subagents
   - definition:
     - strong: "0"
-  - img
   - term: Background tasks
   - definition:
     - strong: "0"
-  - heading "Run statistics" [level=3]
+  - heading "Run statistics" [level=2]
   - term: Turns
   - definition: "28"
   - term: Steps

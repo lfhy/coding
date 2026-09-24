@@ -3,6 +3,14 @@
     - button "Use only Cordis tools. First" [disabled]
   - img
   - text: Standard mode
+  - button "New session":
+    - img
+  - button "Collapse session overview" [expanded]:
+    - img
+  - button "Open file workbench":
+    - img
+  - button "Choose an app to open in":
+    - img
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
@@ -98,4 +106,27 @@
   - img
 - button "0% of context used"
 - button "Send message" [disabled]
-- text: 3 turns · 7 steps LLM {{duration}} · Tool call {{duration}} Cache hit 77% Input 66.5K tok · Output 321 tok
+- region "Session overview":
+  - button "Collapse session overview"
+  - heading "Collaboration" [level=2]
+  - term: Subagents
+  - definition:
+    - strong: "0"
+  - term: Background tasks
+  - definition:
+    - strong: "0"
+  - heading "Run statistics" [level=2]
+  - term: Turns
+  - definition: "3"
+  - term: Steps
+  - definition: "7"
+  - term: LLM time
+  - definition: {{duration}}
+  - term: Tool calls
+  - definition: {{duration}}
+  - term: Cache hit
+  - definition: 77%
+  - term: Input
+  - definition: 66.5K tok
+  - term: Output
+  - definition: 321 tok

@@ -8,6 +8,14 @@
   - button "1 subagent":
     - text: 1 subagent
     - img
+  - button "New session":
+    - img
+  - button "Collapse session overview" [expanded]:
+    - img
+  - button "Open file workbench":
+    - img
+  - button "Choose an app to open in":
+    - img
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
@@ -54,4 +62,29 @@
 - 'button "Access mode, current: Custom"': Custom
 - button "6% of context used"
 - button "Send message" [disabled]
-- text: 2 turns · 2 steps LLM {{duration}} TTFT avg {{duration}} · {{throughput}} tok/s Cache hit 99% Input 15.6K tok · Output 158 tok
+- region "Session overview":
+  - button "Collapse session overview"
+  - heading "Collaboration" [level=2]
+  - term: Subagents
+  - definition:
+    - strong: "1"
+  - term: Background tasks
+  - definition:
+    - strong: "0"
+  - heading "Run statistics" [level=2]
+  - term: Turns
+  - definition: "2"
+  - term: Steps
+  - definition: "2"
+  - term: LLM time
+  - definition: {{duration}}
+  - term: Average first token
+  - definition: {{duration}}
+  - term: Generation speed
+  - definition: {{throughput}} tok/s
+  - term: Cache hit
+  - definition: 99%
+  - term: Input
+  - definition: 15.6K tok
+  - term: Output
+  - definition: 158 tok

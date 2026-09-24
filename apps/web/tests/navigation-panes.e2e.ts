@@ -52,11 +52,6 @@ async function assertBaselineSucceeded(response: Response, method: string): Prom
 }
 
 async function ensureSeedOpen(page: Page): Promise<void> {
-  const welcome = page.locator('[class*="onboardingOverlay"]')
-  if (await welcome.count() > 0) {
-    await welcome.getByRole('button').click()
-    await welcome.waitFor({ state: 'detached', timeout: 15_000 })
-  }
   const chat = page.getByRole('tab', { name: 'Chat', exact: true })
   // Search is a collapsed header action; expand it so the input is actionable.
   const searchButton = page.getByRole('button', { name: 'Search sessions' })
@@ -227,6 +222,8 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-navigation-trajectory'))
     await ensureSeedOpen(page)
     await page.getByRole('tab', { name: 'Trajectory' }).click()
+    await expect.poll(() => page.getByRole('region', { name: 'Session overview' }).count()).toBe(0)
+    expect(await page.getByRole('button', { name: 'Collapse session overview' }).count()).toBe(0)
     await page.waitForTimeout(100)
     const overlayLayout = await page.getByRole('table').evaluate((table) => {
       const host = table.closest('[data-conversation-scroll]')
@@ -286,6 +283,8 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
       .split(SEED_ID).join('{{seededId}}')
     await compareOrRefreshGolden(TRAJECTORY_EXPECTED, snapshot, MODE)
     await details.getByRole('button', { name: 'Close details' }).click()
+    await page.getByRole('tab', { name: 'Chat' }).click()
+    await page.getByRole('region', { name: 'Session overview' }).waitFor({ state: 'visible' })
   }, 60_000)
 
   it.skipIf(MODE === 'record')('exports the Session log through /export without a Header control', async () => {

@@ -1,7 +1,7 @@
 /** Published dsh web + pnpm dev:web → browser HMR, with no page reload. */
 
 import { existsSync, globSync } from 'node:fs'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { chromium } from 'playwright'
@@ -77,6 +77,8 @@ it('hot-reloads a real client-plugin source edit without refreshing the page', a
   const clientBundlePaths = globSync('packages/*/*/lib/client.js{,.map}', { cwd: REPO_ROOT })
     .map(path => join(REPO_ROOT, path))
   const originalClientBundles = await Promise.all(clientBundlePaths.map(async path => [path, await readFile(path)] as const))
+  const webDistPath = join(REPO_ROOT, 'apps/web/dist')
+  const webDistBackup = join(world, 'web-dist')
   const originalSource = await readFile(sourcePath)
   const hour = new Date().getHours()
   const greeting = hour >= 5 && hour < 11
@@ -97,8 +99,13 @@ it('hot-reloads a real client-plugin source edit without refreshing the page', a
   let watcher: SubprocessHandle | undefined
   let host: SubprocessHandle | undefined
   let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined
+  let distBackedUp = false
+  let distRestored = false
   const failures: unknown[] = []
   try {
+    // dev:web 也会重写 Vite dist；恢复它才能让后续内建产物测试继续使用原构建记录。
+    await cp(webDistPath, webDistBackup, { recursive: true })
+    distBackedUp = true
     subprocessFiber = await subprocessCtx.plugin(LocalSubprocessRuntime)
     watcher = subprocessCtx.subprocess.spawn(spawnSpec(
       ['pnpm', 'run', 'dev:web'],
@@ -142,9 +149,21 @@ it('hot-reloads a real client-plugin source edit without refreshing the page', a
       await writeFile(path, content).catch((error: unknown) => failures.push(error))
     }))
     if (host !== undefined) await stopTree(host).catch((error: unknown) => failures.push(error))
+    if (distBackedUp) {
+      try {
+        await rm(webDistPath, { recursive: true, force: true })
+        await cp(webDistBackup, webDistPath, { recursive: true })
+        readClientBuildRecord(REPO_ROOT)
+        distRestored = true
+      } catch (error) {
+        failures.push(new Error(`HMR dist restore failed; backup retained at ${webDistBackup}`, { cause: error }))
+      }
+    }
     await browser?.close().catch((error: unknown) => failures.push(error))
     await subprocessFiber?.dispose().catch((error: unknown) => failures.push(error))
-    await rm(world, { recursive: true, force: true }).catch((error: unknown) => failures.push(error))
+    if (!distBackedUp || distRestored) {
+      await rm(world, { recursive: true, force: true }).catch((error: unknown) => failures.push(error))
+    }
   }
   if (failures.length > 0) throw new AggregateError(failures, 'HMR browser test or cleanup failed')
 }, 120_000)

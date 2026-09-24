@@ -253,6 +253,12 @@
   outline-offset: 2px;
 }
 
+/* 非 Chat 视图拥有自己的右侧详情；概览与开关不覆盖该区域。 */
+.root:has(.header[data-active-view]:not([data-active-view='chat'])) .overviewToggle,
+.root:has(.header[data-active-view]:not([data-active-view='chat'])) :global([data-slot='conversation.overview']) > * {
+  display: none;
+}
+
 /* figma Tab_Group 34:11441: 35px strip, gap 36, pad-left 8, tabs bottom-aligned. */
 .tabs {
   position: relative;

@@ -3,6 +3,14 @@
     - 'button "Plan a small change: add" [disabled]'
   - img
   - text: Standard mode
+  - button "New session":
+    - img
+  - button "Collapse session overview" [expanded]:
+    - img
+  - button "Open file workbench":
+    - img
+  - button "Choose an app to open in":
+    - img
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
@@ -49,4 +57,31 @@
   - img
 - button "4% of context used"
 - button "Send message" [disabled]
-- text: 1 turns · 2 steps LLM {{duration}} · Tool call {{duration}} TTFT avg {{duration}} · {{throughput}} tok/s Cache hit 51% Input 10.2K tok · Output 346 tok
+- region "Session overview":
+  - button "Collapse session overview"
+  - heading "Collaboration" [level=2]
+  - term: Subagents
+  - definition:
+    - strong: "0"
+  - term: Background tasks
+  - definition:
+    - strong: "0"
+  - heading "Run statistics" [level=2]
+  - term: Turns
+  - definition: "1"
+  - term: Steps
+  - definition: "2"
+  - term: LLM time
+  - definition: {{duration}}
+  - term: Tool calls
+  - definition: {{duration}}
+  - term: Average first token
+  - definition: {{duration}}
+  - term: Generation speed
+  - definition: {{throughput}} tok/s
+  - term: Cache hit
+  - definition: 51%
+  - term: Input
+  - definition: 10.2K tok
+  - term: Output
+  - definition: 346 tok

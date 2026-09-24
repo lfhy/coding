@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { summarizeVisibleSubagents, type JobView } from '@deepseek-ai/dsh-client-runtime/client'
-import { IconAgentPresetOutline16, IconChecklistOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconAgentPresetOutline16, IconChecklistOutline14, IconCloseOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // 投影键由各自能力包声明，卡片只消费现有会话数据。
 import type {} from '@deepseek-ai/dsh-session-stats/client'
@@ -46,28 +46,24 @@ export function OverviewCard({
   return (
     <div className={css.root}>
       <section id="dsh-conversation-overview" className={css.card} hidden={!overviewExpanded} aria-label={t('overview.title')}>
-        <div className={css.header}>
-          <h2 className={css.title}>{t('overview.title')}</h2>
-          <button
-            type="button"
-            className={css.close}
-            aria-label={t('overview.collapse')}
-            onClick={() => {
-              toggleOverview()
-              queueMicrotask(() => { document.getElementById('dsh-conversation-overview-toggle')?.focus() })
-            }}
-          >
-            <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden>
-              <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
-          </button>
-        </div>
+        <button
+          type="button"
+          className={css.close}
+          aria-label={t('overview.collapse')}
+          title={t('overview.collapse')}
+          onClick={() => {
+            toggleOverview()
+            queueMicrotask(() => { document.getElementById('dsh-conversation-overview-toggle')?.focus() })
+          }}
+        >
+          <span aria-hidden="true"><IconCloseOutline16 size={14} /></span>
+        </button>
 
         <div className={css.group}>
-          <h3 className={css.groupTitle}>{t('overview.collaboration')}</h3>
+          <h2 className={css.groupTitle}>{t('overview.collaboration')}</h2>
           <dl className={css.counts}>
             <div className={css.countRow}>
-              <IconAgentPresetOutline16 size={18} className={css.rowIcon} />
+              <span className={css.rowIcon} aria-hidden="true"><IconAgentPresetOutline16 /></span>
               <dt>{t('overview.subagents')}</dt>
               <dd>
                 <strong>{childCount}</strong>
@@ -75,7 +71,7 @@ export function OverviewCard({
               </dd>
             </div>
             <div className={css.countRow}>
-              <IconChecklistOutline14 size={18} className={css.rowIcon} />
+              <span className={css.rowIcon} aria-hidden="true"><IconChecklistOutline14 /></span>
               <dt>{t('overview.jobs')}</dt>
               <dd>
                 <strong>{jobs.length}</strong>
@@ -86,7 +82,7 @@ export function OverviewCard({
         </div>
 
         <div className={css.group}>
-          <h3 className={css.groupTitle}>{t('overview.statistics')}</h3>
+          <h2 className={css.groupTitle}>{t('overview.statistics')}</h2>
           <dl className={css.metrics}>
             <div><dt>{t('overview.turns')}</dt><dd>{stats.turns}</dd></div>
             <div><dt>{t('overview.steps')}</dt><dd>{stats.steps}</dd></div>

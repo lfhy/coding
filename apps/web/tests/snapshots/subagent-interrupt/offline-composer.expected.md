@@ -5,6 +5,14 @@
     - button "event-sourcing researcher" [disabled]
   - img
   - text: Standard mode
+  - button "New session":
+    - img
+  - button "Collapse session overview" [expanded]:
+    - img
+  - button "Open file workbench":
+    - img
+  - button "Choose an app to open in":
+    - img
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
@@ -23,3 +31,17 @@
 - 'button "Access mode, current: Custom" [disabled]': Custom
 - button "Stop generating"
 - button "Send message" [disabled]
+- region "Session overview":
+  - button "Collapse session overview"
+  - heading "Collaboration" [level=2]
+  - term: Subagents
+  - definition:
+    - strong: "0"
+  - term: Background tasks
+  - definition:
+    - strong: "0"
+  - heading "Run statistics" [level=2]
+  - term: Turns
+  - definition: "0"
+  - term: Steps
+  - definition: "0"

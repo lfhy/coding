@@ -7,3 +7,9 @@
   - img
 - button "New session":
   - img
+- button "Collapse session overview" [expanded]:
+  - img
+- button "Open file workbench":
+  - img
+- button "Choose an app to open in":
+  - img

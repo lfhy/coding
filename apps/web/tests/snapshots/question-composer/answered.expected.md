@@ -3,6 +3,14 @@
     - button "Use the ask_user_question tool to" [disabled]
   - img
   - text: Standard mode
+  - button "New session":
+    - img
+  - button "Collapse session overview" [expanded]:
+    - img
+  - button "Open file workbench":
+    - img
+  - button "Choose an app to open in":
+    - img
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
@@ -44,4 +52,31 @@
   - img
 - button "3% of context used"
 - button "Send message" [disabled]
-- text: 1 turns · 2 steps LLM {{duration}} · Tool call {{duration}} TTFT avg {{duration}} · {{throughput}} tok/s Cache hit 95% Input 8.6K tok · Output 180 tok
+- region "Session overview":
+  - button "Collapse session overview"
+  - heading "Collaboration" [level=2]
+  - term: Subagents
+  - definition:
+    - strong: "0"
+  - term: Background tasks
+  - definition:
+    - strong: "0"
+  - heading "Run statistics" [level=2]
+  - term: Turns
+  - definition: "1"
+  - term: Steps
+  - definition: "2"
+  - term: LLM time
+  - definition: {{duration}}
+  - term: Tool calls
+  - definition: {{duration}}
+  - term: Average first token
+  - definition: {{duration}}
+  - term: Generation speed
+  - definition: {{throughput}} tok/s
+  - term: Cache hit
+  - definition: 95%
+  - term: Input
+  - definition: 8.6K tok
+  - term: Output
+  - definition: 180 tok
