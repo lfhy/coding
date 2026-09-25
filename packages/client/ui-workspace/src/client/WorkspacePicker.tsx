@@ -398,6 +398,18 @@ function remoteProgressLabel(t: WorkspacePickerProps['t'], phase: RemoteSshProgr
   }
 }
 
+/** 已完成的连接阶段使用过去时，避免转发被拒后仍显示正在运行。 */
+function remoteCompletedProgressLabel(t: WorkspacePickerProps['t'], phase: RemoteSshProgress['phase']): string {
+  switch (phase) {
+    case 'authenticating': return t('picker.remote.forwarding.authenticating')
+    case 'probing': return t('picker.remote.forwarding.probing')
+    case 'uploading': return t('picker.remote.forwarding.uploading')
+    case 'starting': return t('picker.remote.forwarding.starting')
+    case 'ready': return t('picker.remote.progress.ready')
+    case 'failed': return t('picker.remote.progress.failed')
+  }
+}
+
 /** 远程工作区向导的属性。 */
 interface RemoteSshWizardProps {
   open: boolean
@@ -426,6 +438,7 @@ export function RemoteSshWizard({ open, onClose, t, createWorkspace, onPick }: R
   const [directory, setDirectory] = useState<RemoteSshDirectoryListing | undefined>()
   const [error, setError] = useState<string | undefined>()
   const [forwardingDenied, setForwardingDenied] = useState(false)
+  const forwardingAlert = useRef<HTMLDivElement>(null)
   const [connecting, setConnecting] = useState(false)
   const [directoryLoading, setDirectoryLoading] = useState(false)
   const [selectingDirectory, setSelectingDirectory] = useState(false)
@@ -523,6 +536,10 @@ export function RemoteSshWizard({ open, onClose, t, createWorkspace, onPick }: R
       if (failed) setError(t('picker.remote.progress.failed'))
     })
   }, [bridge, open, t])
+
+  useEffect(() => {
+    if (forwardingDenied) forwardingAlert.current?.focus()
+  }, [forwardingDenied])
 
   useEffect(() => () => {
     invalidateOperations()
@@ -751,8 +768,8 @@ export function RemoteSshWizard({ open, onClose, t, createWorkspace, onPick }: R
         <section className={remoteCss.content}>
           <button type="button" className={remoteCss.close} aria-label={t('close')} disabled={selectingDirectory} onClick={dismiss}><IconCloseOutline16 size={14} /></button>
           <header className={remoteCss.header}>
-            <h2 className={remoteCss.title}>{title}</h2>
-            <p className={remoteCss.description}>{description}</p>
+            <h2 className={remoteCss.title}>{forwardingDenied ? t('picker.remote.forwarding.heading') : title}</h2>
+            <p className={remoteCss.description}>{forwardingDenied ? t('picker.remote.forwarding.summary') : description}</p>
           </header>
           <div className={remoteCss.body}>
             {step === 'config' && (
@@ -798,27 +815,36 @@ export function RemoteSshWizard({ open, onClose, t, createWorkspace, onPick }: R
                   <div className={remoteCss.fingerprint}>{hostKey.algorithm}: {hostKey.fingerprint}</div>
                 </div>
               ) : (
-                <div className={remoteCss.progressList} aria-live="polite">
+                <div className={remoteCss.progressList} aria-live={forwardingDenied ? 'off' : 'polite'}>
                   {remoteProgressPhases.slice(0, 4).map((phase, index) => (
                     <div
                       key={phase}
                       className={clsx(
                         remoteCss.progressRow,
-                        progressIndex > index && remoteCss.progressDone,
-                        progressIndex === index && remoteCss.progressCurrent,
+                        (forwardingDenied || progressIndex > index) && remoteCss.progressDone,
+                        !forwardingDenied && progressIndex === index && remoteCss.progressCurrent,
+                        forwardingDenied && remoteCss.forwardingCompleted,
                       )}
                     >
                       <span className={remoteCss.progressDot} />
-                      <span>{remoteProgressLabel(t, phase)}</span>
+                      <span>{forwardingDenied ? remoteCompletedProgressLabel(t, phase) : remoteProgressLabel(t, phase)}</span>
                     </div>
                   ))}
                   {progress.phase !== 'failed' && progress.message !== '' && <div className={remoteCss.notice}>{progress.message}</div>}
                   {forwardingDenied && (
-                    <div className={remoteCss.forwardingAlert} role="alert">
-                      <h3 className={remoteCss.forwardingTitle}>{t('picker.remote.forwarding.title')}</h3>
-                      <p>{t('picker.remote.forwarding.disconnected')}</p>
-                      <p>{t('picker.remote.forwarding.admin')}</p>
-                      <p>{t('picker.remote.forwarding.retry')}</p>
+                    <div className={clsx(remoteCss.progressRow, remoteCss.forwardingFailure)} role="alert" tabIndex={-1} ref={forwardingAlert}>
+                      <span className={remoteCss.progressDot} />
+                      <div className={remoteCss.forwardingDetail}>
+                        <h3 className={remoteCss.forwardingTitle}>{t('picker.remote.forwarding.title')}</h3>
+                        <p>{t('picker.remote.forwarding.disconnected')}</p>
+                        <ol className={remoteCss.forwardingSteps}>
+                          <li>{t('picker.remote.forwarding.check')}</li>
+                          <li>{t('picker.remote.forwarding.restrictions')}</li>
+                          <li>{t('picker.remote.forwarding.apply')}</li>
+                          <li>{t('picker.remote.forwarding.alternate')}</li>
+                        </ol>
+                        <Button variant="primary" className={remoteCss.forwardingBack} onClick={goBack}>{t('picker.remote.forwarding.back')}</Button>
+                      </div>
                     </div>
                   )}
                   {error !== undefined && <div className={remoteCss.error} role="alert">{error}</div>}
@@ -847,7 +873,7 @@ export function RemoteSshWizard({ open, onClose, t, createWorkspace, onPick }: R
             )}
           </div>
           <footer className={remoteCss.footer}>
-            {step !== 'config' && <Button variant="ghost" className={remoteCss.back} disabled={directoryLoading || selectingDirectory} onClick={goBack}>{t('picker.remote.back')}</Button>}
+            {step !== 'config' && !forwardingDenied && <Button variant="ghost" className={remoteCss.back} disabled={directoryLoading || selectingDirectory} onClick={goBack}>{t('picker.remote.back')}</Button>}
             <div className={remoteCss.footerActions}>
               {step === 'config' && <Button variant="outline" onClick={dismiss}>{t('cancel')}</Button>}
               {step === 'config' && <Button variant="primary" disabled={bridge === undefined || connecting} onClick={() => { connect() }}>{t('picker.remote.connect')}</Button>}

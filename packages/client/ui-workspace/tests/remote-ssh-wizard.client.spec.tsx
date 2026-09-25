@@ -104,8 +104,8 @@ async function openDirectory(): Promise<void> {
 
 describe('RemoteSshWizard', () => {
   it.each([
-    { translate: t, heading: 'SSH 服务器拒绝端口转发', disconnected: '远程 agent 工作区尚未连接' },
-    { translate: makeTranslate(en, commonEn), heading: 'SSH server denied port forwarding', disconnected: 'remote agent workspace is not connected' },
+    { translate: t, heading: '健康检查转发被拒绝', disconnected: '工作区尚未连接' },
+    { translate: makeTranslate(en, commonEn), heading: 'Health-check forwarding denied', disconnected: 'workspace is not connected' },
   ])('shows localized forwarding guidance without leaking the native message', async ({ translate, heading, disconnected }) => {
     const nativeMessage = 'remote refused direct-tcpip; password=transient-only'
     const desktop = installDesktop({
@@ -120,9 +120,19 @@ describe('RemoteSshWizard', () => {
     const alert = await screen.findByRole('alert')
     expect(within(alert).getByText(heading)).toBeTruthy()
     expect(alert.textContent).toContain(disconnected)
+    expect(screen.getByRole('heading', { name: translate('picker.remote.forwarding.heading') })).toBeTruthy()
+    expect(screen.getByText(translate('picker.remote.forwarding.summary'))).toBeTruthy()
+    for (const phase of ['authenticating', 'probing', 'uploading', 'starting'] as const) {
+      expect(screen.getByText(translate(`picker.remote.forwarding.${phase}`))).toBeTruthy()
+      expect(screen.queryByText(translate(`picker.remote.progress.${phase}`))).toBeNull()
+    }
     for (const setting of ['AllowTcpForwarding', 'DisableForwarding', 'PermitOpen', 'Match User/Group', '127.0.0.1']) {
       expect(alert.textContent).toContain(setting)
     }
+    expect(within(alert).getAllByRole('listitem')).toHaveLength(4)
+    expect(alert).toBe(document.activeElement)
+    expect(within(alert).getByRole('button', { name: translate('picker.remote.forwarding.back') })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: translate('picker.remote.back') })).toBeNull()
     expect(alert.textContent).not.toContain(nativeMessage)
     expect(document.body.textContent).not.toContain('transient-only')
     expect(screen.queryByRole('button', { name: translate('picker.remote.progress.continue') })).toBeNull()
@@ -136,13 +146,18 @@ describe('RemoteSshWizard', () => {
     mount()
     enterSshConfig()
     fireEvent.click(screen.getByRole('button', { name: '连接' }))
-    expect(await screen.findByText('SSH 服务器拒绝端口转发')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: '返回' }))
-    expect(screen.queryByText('SSH 服务器拒绝端口转发')).toBeNull()
+    expect(await screen.findByText('健康检查转发被拒绝')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '返回修改 SSH 配置' }))
+    expect(screen.queryByText('健康检查转发被拒绝')).toBeNull()
+    expect(screen.getByLabelText('主机')).toHaveProperty('value', 'dev.example.test')
+    expect(screen.getByLabelText('用户名')).toHaveProperty('value', 'coding')
+    expect(document.activeElement).toBe(screen.getByLabelText('主机'))
     fireEvent.click(screen.getByRole('button', { name: '连接' }))
     await waitFor(() => { expect(desktop.app.RemoteSSHConnect).toHaveBeenCalledTimes(2) })
     expect(await screen.findByText('administratively prohibited direct-tcpip')).toBeTruthy()
-    expect(screen.queryByText('SSH 服务器拒绝端口转发')).toBeNull()
+    expect(screen.queryByText('健康检查转发被拒绝')).toBeNull()
+    expect(screen.getByRole('button', { name: '返回' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: '连接并启动远程 agent' })).toBeTruthy()
   })
 
   it('does not expose an untrusted failed-progress message before the coded result arrives', async () => {
@@ -158,7 +173,7 @@ describe('RemoteSshWizard', () => {
     })
     expect(document.body.textContent).not.toContain('password=transient-only')
     pendingConnect.resolve({ kind: 'error', code: 'port-forwarding-denied', message: 'private path' })
-    expect(await screen.findByText('SSH 服务器拒绝端口转发')).toBeTruthy()
+    expect(await screen.findByText('健康检查转发被拒绝')).toBeTruthy()
     expect(document.body.textContent).not.toContain('private path')
   })
 

@@ -269,28 +269,6 @@ fieldset.field {
   line-height: 18px;
 }
 
-.forwardingAlert {
-  display: grid;
-  gap: 8px;
-  margin-top: 6px;
-  color: var(--dsw-alias-label-primary);
-  font-size: 13px;
-  line-height: 20px;
-  overflow-wrap: anywhere;
-}
-
-.forwardingAlert p {
-  margin: 0;
-}
-
-.forwardingTitle {
-  margin: 0;
-  color: var(--dsw-alias-state-error-primary);
-  font-size: 14px;
-  line-height: 22px;
-  font-weight: 500;
-}
-
 .fingerprint {
   margin-top: 8px;
   overflow-wrap: anywhere;
@@ -332,6 +310,60 @@ fieldset.field {
 
 .progressCurrent {
   color: var(--dsw-alias-label-primary);
+}
+
+.forwardingCompleted {
+  color: var(--dsw-alias-label-primary);
+}
+
+.forwardingFailure {
+  margin-top: 2px;
+  color: var(--dsw-alias-label-primary);
+  overflow-wrap: anywhere;
+}
+
+.forwardingFailure:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 4px;
+  border-radius: 8px;
+}
+
+.forwardingFailure .progressDot {
+  background: var(--dsw-alias-state-error-primary);
+}
+
+.forwardingDetail {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.forwardingDetail p {
+  margin: 0;
+}
+
+.forwardingTitle {
+  margin: 0;
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 500;
+}
+
+.forwardingSteps {
+  display: grid;
+  gap: 4px;
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+.forwardingSteps li {
+  padding-left: 2px;
+}
+
+.forwardingBack {
+  margin-top: 8px;
 }
 
 .directoryList {
