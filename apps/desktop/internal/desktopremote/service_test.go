@@ -2,14 +2,18 @@ package desktopremote
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/deepseek-ai/coding/apps/desktop/internal/remoteagent"
+	"golang.org/x/crypto/ssh"
 )
 
 type serviceManager struct {
@@ -86,6 +90,63 @@ func testService(t *testing.T, manager *serviceManager, bridge MarkerPublisher, 
 	}
 	t.Cleanup(func() { _ = service.CloseAll(context.Background()) })
 	return service
+}
+
+func TestRemoteSSHFailureOnlyCodesHealthForwardingDenial(t *testing.T) {
+	cases := []struct {
+		name     string
+		err      error
+		wantCode bool
+	}{
+		{name: "health forwarding denial", err: fmt.Errorf("connect: %w", remoteagent.ErrPortForwardingDenied), wantCode: true},
+		{name: "prohibited outside health", err: &ssh.OpenChannelError{Reason: ssh.Prohibited, Message: "open failed"}},
+		{name: "network failure", err: errors.New("network unreachable")},
+		{name: "authentication failure", err: errors.New("SSH authentication failed")},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := remoteSSHFailure(tc.err)
+			data, err := json.Marshal(result)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var envelope map[string]string
+			if err := json.Unmarshal(data, &envelope); err != nil {
+				t.Fatal(err)
+			}
+			if envelope["kind"] != "error" || envelope["message"] == "" {
+				t.Fatalf("invalid legacy error result: %s", data)
+			}
+			if tc.wantCode {
+				if envelope["code"] != "port-forwarding-denied" || !strings.Contains(envelope["message"], "SSH port forwarding denied by server policy") {
+					t.Fatalf("coded result = %s", data)
+				}
+			} else if _, ok := envelope["code"]; ok {
+				t.Fatalf("uncoded result gained a code: %s", data)
+			}
+			var oldClient struct {
+				Kind    string `json:"kind"`
+				Message string `json:"message"`
+			}
+			if err := json.Unmarshal(data, &oldClient); err != nil || oldClient.Kind != "error" || oldClient.Message == "" {
+				t.Fatalf("legacy Client cannot read result: %#v, %v", oldClient, err)
+			}
+		})
+	}
+}
+
+func TestServiceConnectPreservesForwardingDenialCode(t *testing.T) {
+	manager := &serviceManager{connect: func(context.Context, remoteagent.ConnectRequest) (remoteagent.ConnectionInfo, error) {
+		return remoteagent.ConnectionInfo{}, fmt.Errorf("check remote agent health: %w", remoteagent.ErrPortForwardingDenied)
+	}}
+	service := testService(t, manager, &serviceBridge{}, nil)
+	result, err := service.RemoteSSHConnect(RemoteSSHConnectInput{
+		AttemptID: "attempt-1", Host: "example.com", Port: 22, Username: "coding",
+		Auth: RemoteSSHAuthInput{Kind: "password", Secret: "test-only"},
+	})
+	if err != nil || result.Kind != "error" || result.Code != "port-forwarding-denied" || result.Message == "" {
+		t.Fatalf("Connect = %#v, %v", result, err)
+	}
 }
 
 func TestServiceConnectCancelFencesLateResult(t *testing.T) {

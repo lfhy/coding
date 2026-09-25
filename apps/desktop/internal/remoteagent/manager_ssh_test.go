@@ -162,6 +162,39 @@ func TestManagerRequiresReadyAndHealthVersionsToAgree(t *testing.T) {
 	}
 }
 
+func TestConnectionStateHealthClassifiesOnlyProhibitedForwarding(t *testing.T) {
+	cases := []struct {
+		name       string
+		err        error
+		wantDenied bool
+	}{
+		{name: "wrapped prohibited channel", err: fmt.Errorf("dial remote agent: %w", &ssh.OpenChannelError{Reason: ssh.Prohibited, Message: "open failed"}), wantDenied: true},
+		{name: "other channel rejection", err: &ssh.OpenChannelError{Reason: ssh.ConnectionFailed, Message: "open failed"}},
+		{name: "network failure", err: errors.New("connection refused")},
+		{name: "authentication failure", err: errors.New("SSH authentication failed")},
+		{name: "text that resembles a rejected channel", err: errors.New("ssh: rejected: administratively prohibited (open failed)")},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			state := &connectionState{http: &http.Client{Transport: errorTransport{err: tc.err}}}
+			err := state.health(context.Background())
+			if errors.Is(err, ErrPortForwardingDenied) != tc.wantDenied {
+				t.Fatalf("health error = %v, denied = %v, want %v", err, errors.Is(err, ErrPortForwardingDenied), tc.wantDenied)
+			}
+			var channelError *ssh.OpenChannelError
+			if errors.As(tc.err, &channelError) && !errors.As(err, &channelError) {
+				t.Fatalf("health error lost original channel cause: %v", err)
+			}
+		})
+	}
+}
+
+type errorTransport struct{ err error }
+
+func (transport errorTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, transport.err
+}
+
 func TestAgentRoutesAllowRemoteExecutionOnlyAsPost(t *testing.T) {
 	for _, path := range []string{
 		"/v1/search", "/v1/code/start", "/v1/code/next", "/v1/code/reply", "/v1/code/cancel",

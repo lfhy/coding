@@ -241,6 +241,24 @@ describe('getRemoteSshBridge', () => {
     })
   })
 
+  it.each(['wails', 'electron'] as const)('parses an optional forwarding-denied code from %s', async (shell) => {
+    const result = { kind: 'error', message: 'private native diagnostic', code: 'port-forwarding-denied' }
+    if (shell === 'wails') installBridge({ RemoteSSHConnect: vi.fn(async () => result) })
+    else installElectronBridge({ connect: vi.fn(async () => result) })
+    await expect(getRemoteSshBridge()!.connect(input())).resolves.toEqual(result)
+  })
+
+  it.each([
+    { kind: 'error', message: 'unknown extension', code: 'future-code' },
+    { kind: 'error', message: 'invalid code', code: '' },
+    { kind: 'error', message: 'wrong type', code: 1 },
+    { kind: 'error', message: 'unknown extra field', extra: true },
+    { kind: 'ready', connectionId: 'connection-1', code: 'port-forwarding-denied' },
+  ])('rejects an undeclared connect code or field: $message', async (result) => {
+    installBridge({ RemoteSSHConnect: vi.fn(async () => result) })
+    await expect(getRemoteSshBridge()!.connect(input())).rejects.toBeInstanceOf(RemoteSshBridgeError)
+  })
+
   it('rejects malformed cross-process results before they enter UI state', async () => {
     installBridge({
       RemoteSSHConnect: vi.fn(async () => ({ kind: 'ready', connectionId: '' })),

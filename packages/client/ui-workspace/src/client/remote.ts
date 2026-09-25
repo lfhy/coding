@@ -28,7 +28,12 @@ export interface RemoteSshConnectInput {
 export type RemoteSshConnectResult =
   | { kind: 'ready'; connectionId: string; homePath?: string | undefined }
   | { kind: 'host-key-confirmation'; confirmationId: string; fingerprint: string; algorithm: string }
-  | { kind: 'error'; message: string }
+  | {
+    kind: 'error'
+    message: string
+    /** 仅已验证的分类可驱动专属指引；旧版桌面结果可省略。 */
+    code?: 'port-forwarding-denied' | undefined
+  }
 
 /** 远程目录列举项。只允许目录进入工作区选择器。 */
 export interface RemoteSshDirectoryEntry {
@@ -181,9 +186,16 @@ function parseConnectResult(value: unknown): RemoteSshConnectResult {
         algorithm: stringField(result.algorithm),
       }
     }
-    case 'error':
-      exactFields(result, ['kind', 'message'])
-      return { kind: 'error', message: stringField(result.message) }
+    case 'error': {
+      exactFields(result, ['kind', 'message', 'code'])
+      if (result.code !== undefined && result.code !== 'port-forwarding-denied') {
+        throw new RemoteSshBridgeError('桌面端返回了未知的 Remote-SSH 错误码。')
+      }
+      return {
+        kind: 'error', message: stringField(result.message),
+        ...(result.code === undefined ? {} : { code: result.code }),
+      }
+    }
     default: throw new RemoteSshBridgeError('桌面端返回了未知的 Remote-SSH 状态。')
   }
 }

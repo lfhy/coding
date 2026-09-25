@@ -48,22 +48,22 @@ type Options struct {
 
 // Service 管理连接尝试、marker 引用和关闭顺序；由桌面壳拥有。
 type Service struct {
-	home                 string
-	ctx                  context.Context
-	cancel               context.CancelFunc
-	remoteManager        Manager
-	remoteBridge         MarkerPublisher
-	onProgress           func(ProgressEvent)
-	onCleanupError       func(error)
-	remoteConnectMu      sync.Mutex
-	remoteConnectCancel  context.CancelFunc
-	remoteConnectSeq     uint64
-	remoteConnectID      string
-	remoteCancelled      map[string]time.Time
-	remoteConnectWG      sync.WaitGroup
-	remoteMarkerMu       sync.Mutex
-	remoteMarkers        map[string]string
-	unclaimed            map[string]*unclaimedOperation
+	home                string
+	ctx                 context.Context
+	cancel              context.CancelFunc
+	remoteManager       Manager
+	remoteBridge        MarkerPublisher
+	onProgress          func(ProgressEvent)
+	onCleanupError      func(error)
+	remoteConnectMu     sync.Mutex
+	remoteConnectCancel context.CancelFunc
+	remoteConnectSeq    uint64
+	remoteConnectID     string
+	remoteCancelled     map[string]time.Time
+	remoteConnectWG     sync.WaitGroup
+	remoteMarkerMu      sync.Mutex
+	remoteMarkers       map[string]string
+	unclaimed           map[string]*unclaimedOperation
 	// 测试钩子固定选择事务解锁到外层收尾之间的竞态窗口。
 	afterUnclaimedSelect func()
 	remoteStopping       bool
@@ -155,6 +155,7 @@ type RemoteSSHConnectResult struct {
 	ConfirmationID string `json:"confirmationId,omitempty"`
 	Fingerprint    string `json:"fingerprint,omitempty"`
 	Algorithm      string `json:"algorithm,omitempty"`
+	Code           string `json:"code,omitempty"`
 	Message        string `json:"message,omitempty"`
 }
 
@@ -600,7 +601,11 @@ func remoteSSHFailure(err error) RemoteSSHConnectResult {
 	if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 		message = err.Error()
 	}
-	return RemoteSSHConnectResult{Kind: "error", Message: message}
+	result := RemoteSSHConnectResult{Kind: "error", Message: message}
+	if errors.Is(err, remoteagent.ErrPortForwardingDenied) {
+		result.Code = "port-forwarding-denied"
+	}
+	return result
 }
 
 func remoteSSHProgressPhase(stage string) (string, bool) {

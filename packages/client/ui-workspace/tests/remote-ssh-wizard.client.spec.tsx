@@ -5,7 +5,8 @@ import type { WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-client-runtime
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import type { WorkspacePickerProps } from '../src/client/contract/slots.ts'
-import { zh } from '../src/client/locales.ts'
+import { en, zh } from '../src/client/locales.ts'
+import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
 import { RemoteSshWizard } from '../src/client/WorkspacePicker.tsx'
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
@@ -61,12 +62,12 @@ function installDesktop(overrides: Partial<Record<string, unknown>> = {}) {
 
 type CreateWorkspace = (input: { path: string }) => Promise<WorkspaceView>
 
-function mount(createWorkspace?: CreateWorkspace) {
+function mount(createWorkspace?: CreateWorkspace, translate: WorkspacePickerProps['t'] = t) {
   const onClose = vi.fn()
   const onPick = vi.fn()
   const create = createWorkspace ?? vi.fn(async () => workspace())
   const wizard = (open: boolean) => (
-    <RemoteSshWizard open={open} onClose={onClose} onPick={onPick} createWorkspace={create} t={t} />
+    <RemoteSshWizard open={open} onClose={onClose} onPick={onPick} createWorkspace={create} t={translate} />
   )
   const view = render(wizard(true))
   return {
@@ -102,6 +103,65 @@ async function openDirectory(): Promise<void> {
 }
 
 describe('RemoteSshWizard', () => {
+  it.each([
+    { translate: t, heading: 'SSH 服务器拒绝端口转发', disconnected: '远程 agent 工作区尚未连接' },
+    { translate: makeTranslate(en, commonEn), heading: 'SSH server denied port forwarding', disconnected: 'remote agent workspace is not connected' },
+  ])('shows localized forwarding guidance without leaking the native message', async ({ translate, heading, disconnected }) => {
+    const nativeMessage = 'remote refused direct-tcpip; password=transient-only'
+    const desktop = installDesktop({
+      RemoteSSHConnect: vi.fn(async () => ({ kind: 'error', code: 'port-forwarding-denied', message: nativeMessage })),
+    })
+    mount(undefined, translate)
+    fireEvent.change(screen.getByLabelText(translate('picker.remote.field.host')), { target: { value: 'dev.example.test' } })
+    fireEvent.change(screen.getByLabelText(translate('picker.remote.field.username')), { target: { value: 'coding' } })
+    fireEvent.change(screen.getByLabelText(translate('picker.remote.field.password')), { target: { value: 'transient-only' } })
+    fireEvent.click(screen.getByRole('button', { name: translate('picker.remote.connect') }))
+    await waitFor(() => { expect(desktop.app.RemoteSSHConnect).toHaveBeenCalledOnce() })
+    const alert = await screen.findByRole('alert')
+    expect(within(alert).getByText(heading)).toBeTruthy()
+    expect(alert.textContent).toContain(disconnected)
+    for (const setting of ['AllowTcpForwarding', 'DisableForwarding', 'PermitOpen', 'Match User/Group', '127.0.0.1']) {
+      expect(alert.textContent).toContain(setting)
+    }
+    expect(alert.textContent).not.toContain(nativeMessage)
+    expect(document.body.textContent).not.toContain('transient-only')
+    expect(screen.queryByRole('button', { name: translate('picker.remote.progress.continue') })).toBeNull()
+  })
+
+  it('does not infer forwarding advice from unclassified SSH errors and clears it on retry', async () => {
+    const desktop = installDesktop({ RemoteSSHConnect: vi.fn()
+      .mockResolvedValueOnce({ kind: 'error', code: 'port-forwarding-denied', message: 'sensitive native detail' })
+      .mockResolvedValueOnce({ kind: 'error', message: 'administratively prohibited direct-tcpip' }),
+    })
+    mount()
+    enterSshConfig()
+    fireEvent.click(screen.getByRole('button', { name: '连接' }))
+    expect(await screen.findByText('SSH 服务器拒绝端口转发')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '返回' }))
+    expect(screen.queryByText('SSH 服务器拒绝端口转发')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '连接' }))
+    await waitFor(() => { expect(desktop.app.RemoteSSHConnect).toHaveBeenCalledTimes(2) })
+    expect(await screen.findByText('administratively prohibited direct-tcpip')).toBeTruthy()
+    expect(screen.queryByText('SSH 服务器拒绝端口转发')).toBeNull()
+  })
+
+  it('does not expose an untrusted failed-progress message before the coded result arrives', async () => {
+    const pendingConnect = deferred<unknown>()
+    const desktop = installDesktop({ RemoteSSHConnect: vi.fn(() => pendingConnect.promise) })
+    mount()
+    enterSshConfig()
+    fireEvent.click(screen.getByRole('button', { name: '连接' }))
+    await waitFor(() => { expect(desktop.app.RemoteSSHConnect).toHaveBeenCalledOnce() })
+    desktop.emit({
+      attemptId: connectAttemptId(desktop.app.RemoteSSHConnect),
+      phase: 'failed', message: 'password=transient-only; private path',
+    })
+    expect(document.body.textContent).not.toContain('password=transient-only')
+    pendingConnect.resolve({ kind: 'error', code: 'port-forwarding-denied', message: 'private path' })
+    expect(await screen.findByText('SSH 服务器拒绝端口转发')).toBeTruthy()
+    expect(document.body.textContent).not.toContain('private path')
+  })
+
   it('starts at SSH configuration, reports progress, and transfers a selected marker connection', async () => {
     const pendingConnect = deferred<unknown>()
     const desktop = installDesktop({

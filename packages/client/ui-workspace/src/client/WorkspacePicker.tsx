@@ -425,6 +425,7 @@ export function RemoteSshWizard({ open, onClose, t, createWorkspace, onPick }: R
   const [connection, setConnection] = useState<ConnectedRemote | undefined>()
   const [directory, setDirectory] = useState<RemoteSshDirectoryListing | undefined>()
   const [error, setError] = useState<string | undefined>()
+  const [forwardingDenied, setForwardingDenied] = useState(false)
   const [connecting, setConnecting] = useState(false)
   const [directoryLoading, setDirectoryLoading] = useState(false)
   const [selectingDirectory, setSelectingDirectory] = useState(false)
@@ -505,6 +506,7 @@ export function RemoteSshWizard({ open, onClose, t, createWorkspace, onPick }: R
       setConnection(undefined)
       setDirectory(undefined)
       setError(undefined)
+      setForwardingDenied(false)
       setConnecting(false)
       setDirectoryLoading(false)
       setSelectingDirectory(false)
@@ -516,10 +518,11 @@ export function RemoteSshWizard({ open, onClose, t, createWorkspace, onPick }: R
     if (!open || bridge === undefined) return
     return bridge.subscribeProgress((next) => {
       if (nativeConnectAttempt.current?.attemptId !== next.attemptId) return
-      setProgress({ phase: next.phase, message: next.message })
-      if (next.phase === 'failed' && next.message !== '') setError(next.message)
+      const failed = next.phase === 'failed'
+      setProgress({ phase: next.phase, message: failed ? t('picker.remote.progress.failed') : next.message })
+      if (failed) setError(t('picker.remote.progress.failed'))
     })
-  }, [bridge, open])
+  }, [bridge, open, t])
 
   useEffect(() => () => {
     invalidateOperations()
@@ -554,6 +557,7 @@ export function RemoteSshWizard({ open, onClose, t, createWorkspace, onPick }: R
     const currentAttempt = ++attempt.current
     connectOperation.current = currentAttempt
     setError(undefined)
+    setForwardingDenied(false)
     setHostKey(undefined)
     setConnection(undefined)
     setDirectory(undefined)
@@ -592,6 +596,7 @@ export function RemoteSshWizard({ open, onClose, t, createWorkspace, onPick }: R
           activeConnection.current = ready
           setConnection(ready)
           setSecret('')
+          setError(undefined)
           setProgress({ phase: 'ready', message: t('picker.remote.progress.ready') })
           break
         }
@@ -601,8 +606,9 @@ export function RemoteSshWizard({ open, onClose, t, createWorkspace, onPick }: R
           break
         case 'error':
           if (confirmation !== undefined) await bridge.rejectHostKey(confirmation.confirmationId).catch(() => {})
-          setProgress({ phase: 'failed', message: result.message })
-          setError(result.message)
+          setProgress({ phase: 'failed', message: t('picker.remote.progress.failed') })
+          setForwardingDenied(result.code === 'port-forwarding-denied')
+          setError(result.code === 'port-forwarding-denied' ? undefined : result.message)
           break
       }
     })().catch((reason: unknown) => {
@@ -692,6 +698,7 @@ export function RemoteSshWizard({ open, onClose, t, createWorkspace, onPick }: R
   const goBack = (): void => {
     if (directoryLoading || selectingDirectory) return
     setError(undefined)
+    setForwardingDenied(false)
     if (step === 'directory') {
       directoryRequest.current++
       setDirectoryLoading(false)
@@ -805,7 +812,16 @@ export function RemoteSshWizard({ open, onClose, t, createWorkspace, onPick }: R
                       <span>{remoteProgressLabel(t, phase)}</span>
                     </div>
                   ))}
-                  {progress.message !== '' && <div className={remoteCss.notice}>{progress.message}</div>}
+                  {progress.phase !== 'failed' && progress.message !== '' && <div className={remoteCss.notice}>{progress.message}</div>}
+                  {forwardingDenied && (
+                    <div className={remoteCss.forwardingAlert} role="alert">
+                      <h3 className={remoteCss.forwardingTitle}>{t('picker.remote.forwarding.title')}</h3>
+                      <p>{t('picker.remote.forwarding.disconnected')}</p>
+                      <p>{t('picker.remote.forwarding.admin')}</p>
+                      <p>{t('picker.remote.forwarding.retry')}</p>
+                    </div>
+                  )}
+                  {error !== undefined && <div className={remoteCss.error} role="alert">{error}</div>}
                 </div>
               )
             )}

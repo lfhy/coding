@@ -35,3 +35,4 @@ Session 行渲染运行时的实时 `pendingInteraction` 分类：审批显示**
 - **待处理的用户交互不会聚合到折叠的分组上**：折叠分组内正在等待的行不会点亮分组头指示，只有展开该分组后才可见。
 - **原生文件夹选择依赖本地 Host 载体**：在 `-native` 组合下，进程内部署或远程浏览器部署无法打开本地操作系统对话框；模态框会显示平台故障，并允许重试。可远程的选取是 `-browse` 组合的应用内流程。
 - **Remote-SSH 需要存活的桌面连接**：其 Go agent 会在所选目录上运行文件系统、进程、终端、搜索、语言服务器和 Code Mode 工作，不要求目标侧安装 Node。本地 Host 仍负责工具审批和持久 Session 日志。过期 marker 或断开的 bridge 会失败，不会把操作转向本机；桌面端重启后需要重新连接。
+- **Remote-SSH 需要目标账号获准 TCP 转发**：SSH 登录成功后，服务器仍可能拒绝 agent 健康检查所需的转发；向导会提示登录已成功但服务器拒绝 TCP 转发（`port-forwarding-denied`）。请管理员核对适用于该账号的 `AllowTcpForwarding`、`DisableForwarding`、`PermitOpen` 和 `Match` 限制，按服务器策略调整并应用配置后重试，或改用获准转发的账号；无需全局放宽转发策略。

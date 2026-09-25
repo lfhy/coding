@@ -44,6 +44,9 @@ const (
 	maxAgentVersionBytes  = 128
 )
 
+// ErrPortForwardingDenied 仅表示 agent 健康检查的 SSH direct-tcpip 通道被服务端策略拒绝。
+var ErrPortForwardingDenied = errors.New("SSH port forwarding denied by server policy")
+
 type connectionState struct {
 	info ConnectionInfo
 
@@ -399,6 +402,10 @@ func (state *connectionState) newHTTPClient() *http.Client {
 func (state *connectionState) health(ctx context.Context) error {
 	response, err := state.proxy(ctx, http.MethodGet, "/v1/health", nil)
 	if err != nil {
+		var channelError *ssh.OpenChannelError
+		if errors.As(err, &channelError) && channelError.Reason == ssh.Prohibited {
+			return fmt.Errorf("check remote agent health: %w (%w)", ErrPortForwardingDenied, err)
+		}
 		return fmt.Errorf("check remote agent health: %w", err)
 	}
 	if response.Status != http.StatusOK {

@@ -1,7 +1,6 @@
 /**
- * `workspace` namespace dictionaries: the browsing region (section header,
- * search, tree rows, dialogs) and the pick/add flow. Runtime failure
- * messages (wire error strings) pass through untranslated by policy.
+ * `workspace` 字典负责浏览区域与工作区选取流程。普通 wire 错误沿用原文；
+ * 已识别的 Remote-SSH 错误码改用不含敏感内容的本地化提示。
  */
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
@@ -65,6 +64,10 @@ export const zh = {
   'picker.remote.progress.starting': '正在启动远程 agent',
   'picker.remote.progress.ready': '远程 agent 已就绪',
   'picker.remote.progress.failed': 'Remote-SSH 连接失败',
+  'picker.remote.forwarding.title': 'SSH 服务器拒绝端口转发',
+  'picker.remote.forwarding.disconnected': 'SSH 登录已成功，但远程 agent 工作区尚未连接。',
+  'picker.remote.forwarding.admin': '请联系管理员检查当前账号的 sshd 设置：AllowTcpForwarding 是否允许 local 或 yes、DisableForwarding 是否禁止转发、PermitOpen 是否允许连接远程 agent 的 127.0.0.1 动态端口，并检查 Match User/Group 规则。仅在组织策略允许时调整当前账号的权限。',
+  'picker.remote.forwarding.retry': '应用服务器配置后返回重试；也可改用获准进行端口转发的账号。',
   'picker.remote.progress.continue': '选择远程目录',
   'picker.remote.hostKey.description': '此主机尚不在 known_hosts 中。请核对指纹后再继续；已变更的主机密钥会被拒绝。',
   'picker.remote.hostKey.reject': '拒绝',
@@ -183,6 +186,10 @@ export const en = {
   'picker.remote.progress.starting': 'Starting the remote agent',
   'picker.remote.progress.ready': 'Remote agent ready',
   'picker.remote.progress.failed': 'Remote-SSH connection failed',
+  'picker.remote.forwarding.title': 'SSH server denied port forwarding',
+  'picker.remote.forwarding.disconnected': 'SSH login succeeded, but the remote agent workspace is not connected.',
+  'picker.remote.forwarding.admin': 'Ask your administrator to check sshd for this account: whether AllowTcpForwarding permits local or yes, whether DisableForwarding blocks forwarding, whether PermitOpen allows the remote agent’s dynamic port on 127.0.0.1, and any Match User/Group rules. Adjust this account’s permissions only if organization policy allows it.',
+  'picker.remote.forwarding.retry': 'After the server configuration is applied, go back and retry; or use an account permitted to forward ports.',
   'picker.remote.progress.continue': 'Choose remote folder',
   'picker.remote.hostKey.description': 'This host is not in known_hosts. Verify its fingerprint before continuing; changed host keys are rejected.',
   'picker.remote.hostKey.reject': 'Reject',
