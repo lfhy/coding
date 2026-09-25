@@ -1,12 +1,12 @@
 # AGENTS.md — Web client stack
 
-Rules for `packages/client/*` (the browser side of the dsh web GUI) plus its build entry `apps/web`. They supplement the repo-wide [conventions](../../AGENTS.md#conventions) and the [package rules](../README.md). Before changing visible client UI, read the [客户端 UX 与界面设计规范](UI_DESIGN.md) and the [web styling reference](../../docs/web-styling.md); before touching slots, component props, stores, or plugin structure, read the (the definitive composition model) and the (loading chain, object layer, services).
+本文件适用于 `packages/client/*` 与构建入口 `apps/web`，补充仓库[通用约定](../../AGENTS.md#conventions)和[包目录规则](../README.md)。改可见 UI 前先读[客户端 UX 与界面设计规范](UI_DESIGN.md)和[样式规范](../../docs/web-styling.md)；改 slot、组件 props、store 或插件结构时，从[代码地图的 Web 启动与渲染路线](../../docs/map/hot.md#web-启动与渲染)定位归属，再读 [ui-slots](ui-slots/README.md)、[runtime](runtime/README.md)、[ui-renderer](ui-renderer/README.md) 的所属契约。
 
 Packages here are named with the directory prefix: `@deepseek-ai/dsh-client-<name>`.
 
 ## Slot and props discipline
 
-The owns the full design; these are the rules you must not violate when writing or reviewing client code:
+[ui-slots](ui-slots/README.md)持有 slot 组合契约；以下规则适用于 Client 代码的编写和评审：
 
 1. **One API**: a plugin composes UI only through `ctx.slots.register({ name, children?, store?, inject? }, Component)`. There is no separate slot-definition call, no whitelist face object, no face-minting helper. The shell alone renders `'root'`.
 2. **children = declaration + authorization**: the slots your component renders are exactly the keys of your register call's `children` object (spec values: `kind`/`scope`). Rendering a slot you didn't declare, or declaring one someone else declared, fails at load — do not work around it; the conflict is the design speaking. Slot names mirror the composition path: `<domain>.<entry>.<hole>` (e.g. `'tool.call.toolview'`).
@@ -41,7 +41,7 @@ The `/client` entrypoint of a UI plugin package is its public browser API, not a
 
 ## Layering red lines
 
-The stack has one-way knowledge, settled in the :
+三层的所有权和交接路径见[代码地图](../../docs/map/hot.md#web-启动与渲染)：
 
 1. **Data object layer** (`runtime`, React-free): `ConnectionController` → `SessionManager` → `Session` own all business state (event windows, streaming accumulation, reconnect machine), and the snapshot-store engine (zustand/immer, `defineStore`, `shallowEqual`) lives here too — store products are bare observable sources with no hook members. Zero React imports — grep-assertable.
 2. **Render machinery** (`ui-renderer`, dynamic plugin): all ctx-to-React integration — slot renderer/outlets, `SessionProvider`, and the uSES adapter. Every hook is composed here at the binding site from bare sources; production business code carries no ui-renderer value dependency.
@@ -112,7 +112,7 @@ One UI feature = one plugin package (`src/client/` browser half). A multi-domain
 
 ## Testing and coverage
 
-The GUI test structure (three tiers, lane map) is settled in the ; repo-wide policy in [docs/testing.md](../../docs/testing.md).
+GUI 测试层级与仓库测试政策见[测试指南](../../docs/testing.md)，具体测试由改动包的 `tests/` 持有。
 
 - Client source packages are inside the per-file 100% coverage gate (`pnpm run test:coverage`). Genuinely unreachable defensive arms take a `/* v8 ignore -- <reason> */` comment with a real reason, never a bare ignore.
 - Component specs render with realistic props or a driven fixture runtime and assert user-visible behavior, not class names, hook internals, or render counts.
@@ -142,9 +142,8 @@ Bringing up a new `packages/client/<name>` plugin package (ui-workspace is a com
 
 ## New component checklist
 
-1. Compose through register: add the slot to `SlotMap`, declare it in its parent entry's `children`, and register your component — see the. No other composition route exists.
+1. 只通过 `register` 组合：在 `SlotMap` 中增加 slot，在父 entry 的 `children` 中声明，再注册组件；详见 [ui-slots](ui-slots/README.md)。不存在第二种组合路径。
 2. Type the props as the four shares (`PropsRuntime` & `PropsRenderSlots` & `PropsStore` & inject face) — derive, don't hand-write. Shared/surviving state goes in a `createXXXStore` factory declared at register; component-private state stays local.
 3. Component tests feed props directly (`createXXXStore.create` for the store data; plain stubs for framework hooks) and assert behavior without render machinery.
 4. Tokens only in CSS; Chinese product copy and project-owned comments.
 5. `pnpm run test:gui` green; if the component changes visible assembled output, also run `DSH_SNAPSHOT=replay pnpm run test:web`.
-6.Non-trivial change?

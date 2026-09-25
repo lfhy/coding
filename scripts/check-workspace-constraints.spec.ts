@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import {
   checkExperimentalDependencyIsolation,
   checkExperimentalManifest,
+  checkPrivateElectronShellManifest,
   type WorkspaceManifest,
 } from './check-workspace-constraints.ts'
 
@@ -72,5 +73,28 @@ describe('experimental workspace constraints', () => {
     expect(checkExperimentalDependencyIsolation(manifests)).toEqual([
       '@deepseek-ai/dsh-python-runtime: dependencies.@deepseek-ai/dsh-experimental-prototype must not reference an experimental package',
     ])
+  })
+})
+
+describe('private Electron workspace constraints', () => {
+  const shell: WorkspaceManifest = {
+    dir: 'apps/desktop-electron',
+    manifest: { name: '@deepseek-ai/dsh-desktop-electron', private: true },
+  }
+
+  it('requires the expected identity and excludes publication metadata', () => {
+    expect(checkPrivateElectronShellManifest(shell)).toEqual([])
+    expect(checkPrivateElectronShellManifest({
+      ...shell,
+      manifest: { name: '@deepseek-ai/unrelated', private: false, publishConfig: { access: 'public' } },
+    })).toEqual([
+      '@deepseek-ai/unrelated: Electron shell must use @deepseek-ai/dsh-desktop-electron',
+      '@deepseek-ai/unrelated: Electron shell must set "private": true',
+      '@deepseek-ai/unrelated: Electron shell must omit publishConfig',
+    ])
+  })
+
+  it('does not apply the shell policy to publishable apps', () => {
+    expect(checkPrivateElectronShellManifest({ ...shell, dir: 'apps/cli' })).toEqual([])
   })
 })

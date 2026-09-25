@@ -30,6 +30,7 @@ dist/
 apps/internal/runtime/
 apps/desktop/desktop
 apps/desktop/frontend/wailsjs/
+apps/desktop-electron/lib/
 apps/tui/coding
 python/sdk-runtime/src/deepseek_harness_runtime/runtime/dsh-jsonrpc-agent-*
 python/sdk-runtime/src/deepseek_harness_runtime/runtime/node/

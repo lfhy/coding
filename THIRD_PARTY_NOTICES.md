@@ -123,11 +123,10 @@ The installed SDK 0.3.220 declares the following optional platform packages. Eac
 
 ## Development-only npm dependencies
 
-External packages **directly declared** only by repository tooling, test infrastructure, the documentation site, the demo leaves, or the native launcher's build workspace. No shipped surface names them itself. A package here may still be pulled in transitively by a runtime dependency — `pnpm-lock.yaml` is the authority on the full closure — so this tier records who declares a package, not what a build ultimately bundles.
+External packages **directly declared** only by repository tooling, test infrastructure, the demo leaves, or the native launcher's build workspace, or declared as development dependencies by other workspace packages. No shipped surface declares them as runtime dependencies. A package here may still be pulled in transitively by a runtime dependency — `pnpm-lock.yaml` is the authority on the full closure — so this tier records who declares a package, not what a build ultimately bundles.
 
 | Package | License |
 | --- | --- |
-| [`@braintree/sanitize-url`](https://github.com/braintree/sanitize-url) | MIT |
 | [`@modelcontextprotocol/server-everything`](https://github.com/modelcontextprotocol/servers) | MIT / Apache-2.0 |
 | [`@modelcontextprotocol/server-filesystem`](https://github.com/modelcontextprotocol/servers) | MIT / Apache-2.0 |
 | [`@stylistic/eslint-plugin`](https://github.com/eslint-stylistic/eslint-stylistic) | MIT |
@@ -146,10 +145,7 @@ External packages **directly declared** only by repository tooling, test infrast
 | [`@vitejs/plugin-react`](https://github.com/vitejs/vite-plugin-react) | MIT |
 | [`@vitest/coverage-v8`](https://github.com/vitest-dev/vitest) | MIT |
 | [`@yarnpkg/cli-dist`](https://github.com/yarnpkg/berry) | BSD-2-Clause |
-| [`cytoscape`](https://github.com/cytoscape/cytoscape.js) | MIT |
-| [`cytoscape-cose-bilkent`](https://github.com/cytoscape/cytoscape.js-cose-bilkent) | MIT |
-| [`dayjs`](https://github.com/iamkun/dayjs) | MIT |
-| [`debug`](https://github.com/debug-js/debug) | MIT |
+| [`electron`](https://github.com/electron/electron) | MIT |
 | [`esbuild`](https://github.com/evanw/esbuild) | MIT |
 | [`eslint-plugin-sonarjs`](https://github.com/SonarSource/SonarJS) | LGPL-3.0-only |
 | [`execa`](https://github.com/sindresorhus/execa) | MIT |
@@ -160,7 +156,6 @@ External packages **directly declared** only by repository tooling, test infrast
 | [`knip`](https://github.com/webpro-nl/knip) | ISC |
 | [`lefthook`](https://github.com/evilmartians/lefthook) | MIT |
 | [`lightningcss`](https://github.com/parcel-bundler/lightningcss) | MPL-2.0 |
-| [`mermaid`](https://github.com/mermaid-js/mermaid) | MIT |
 | [`oxlint`](https://github.com/oxc-project/oxc) | MIT |
 | [`oxlint-tsgolint`](https://github.com/oxc-project/tsgolint) | MIT |
 | [`playwright`](https://github.com/microsoft/playwright) | Apache-2.0 |
@@ -171,8 +166,6 @@ External packages **directly declared** only by repository tooling, test infrast
 | [`typescript-language-server`](https://github.com/typescript-language-server/typescript-language-server) | Apache-2.0 |
 | [`vite`](https://github.com/vitejs/vite) | MIT |
 | [`vite-tsconfig-paths`](https://github.com/aleclarson/vite-tsconfig-paths) | MIT |
-| [`vitepress`](https://github.com/vuejs/vitepress) | MIT |
-| [`vitepress-plugin-mermaid`](https://github.com/emersonbottero/vitepress-plugin-mermaid) | MIT |
 | [`vitest`](https://github.com/vitest-dev/vitest) | MIT |
 
 `eslint-plugin-sonarjs` (LGPL-3.0-only) and `lightningcss` (MPL-2.0) run only as development tooling; their code is not linked into or distributed with any DeepSeek Harness artifact.

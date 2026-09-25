@@ -2,6 +2,8 @@
 
 本文件规定文档结构、Markdown 层级和中文单文档流程。文档放置与验证使用 [dsh-doc-standards](../.agents/skills/dsh-doc-standards/SKILL.md)，内容覆盖与编辑判断使用 [dsh-prose-standard](../.agents/skills/dsh-prose-standard/SKILL.md)。
 
+本地代码定位从[代码地图](map.md)进入，再按任务阅读[常改包条目](map/hot.md)或地图中的生成包清单与装配表；[用户指南](user/index.md)保留为本地 Markdown。
+
 ## 文档结构
 
 这些规则适用于面向人的文档。[事故复盘](postmortem/README.md) 是限定到单次事故的参考文档，其时间顺序用于记录证据，而不是教学步骤。文档在目录树中的位置决定范围：完整说明自身主题，只用职责、用途和高层行为概括直属子项，更深细节链接到所属后代文档。文档类型不会扩大范围；参考文档只能穷举自身主题。测试机制、fixture 和 harness 应放在最低层的所属文档中，上层只链接。
@@ -23,7 +25,7 @@
 | [map.md](map.md)、[map/](map/) | 代码地图：任务路由、包清单与装配表（生成）、常改包条目、改动连带影响 | 决策历史与变更叙事 |
 | [postmortem/](postmortem/README.md) | 事故叙事；唯一允许 war story 的层级 | — |
 | [cookbook/](cookbook/adding-a-package.md) | 带编号验证步骤的操作指南 | 设计依据 |
-| [user/](user/index.md) | 文档站发布的产品使用指南 | 生成参考表、贡献者流程、决策历史 |
+| [user/](user/index.md) | 本地产品使用指南 | 生成参考表、贡献者流程、决策历史 |
 | 包 README | 单包契约：配置、语义、限制、扩展点和 [Model Experience](cookbook/adding-a-package.md#4-write-the-package-readme) | JSDoc 重述、生成目录重述、其他包的职责 |
 | [development.md](development.md) | 贡献者环境、日常流程和 CI 摘要 | 运行时或版本依据、会随 `package.json` 漂移的检查清单 |
 | 生成参考：子系统页内 `cordis-surface` 区域、[Cordis core API](cordis-api/context.md)、[tool-catalog](tool-catalog.md)、[config-catalog](config-catalog.md)、[persistence-catalog](persistence-catalog.md)、[module-graph.md](module-graph.md) | 由生成器与新鲜度门禁持有的穷举资料；输出语言由生成器决定 | 手工编辑生成源或生成区域 |

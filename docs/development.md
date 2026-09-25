@@ -46,7 +46,7 @@ pnpm run typecheck
 | 文件 | 角色 | 是否构成 program？ |
 |---|---|---|
 | `tsconfig.json` | solution 根：`extends` base、`files: []`、引用两个 aggregate。它是 tsserver 发现入口，也是显式执行整张 Project Reference 图时的入口；经继承的 `paths` 充当 tsx 运行 `examples/` 与 `scripts/` 时的解析配置。 | 否 |
-| `tsconfig.host.json` | Host aggregate：Host 包、示例、测试、脚本和 website，以及 `api/remotes` 的 Host 特例 project。 | 是 |
+| `tsconfig.host.json` | Host aggregate：Host 包、示例、测试、脚本，以及 `api/remotes` 的 Host 特例 project。 | 是 |
 | `tsconfig.client.json` | Client aggregate：`packages/client/*` 包及其测试、`apps/web`，以及 `api/remotes` 的 Client 特例 project。 | 是 |
 | `tsconfig.base.json` | 共享 compilerOptions 与源码 `paths` 映射。同时是各 vitest 配置让 vite-tsconfig-paths 指向的解析门面：它没有 `include`，因此其 `paths` 适用于任何 importer。 | 否 |
 | `tsconfig.base.client.json` | 浏览器编译设置（`jsx`、DOM lib、`types: []`），由 Client aggregate 和每个 `packages/client/*` 包 extends。 | 否 |
@@ -120,6 +120,8 @@ vendor manifest 守卫检查 `vendor/*/src` 下的改动是否连同对应的 `v
 根目录的[贡献者说明](../AGENTS.md#commands)概述常用命令，[`package.json`](../package.json) 与 [scripts/run-gates.ts](../scripts/run-gates.ts) 则负责当前脚本和门禁清单。请选择覆盖变更表面的最小检查集。包公开行为变更还需更新所属 README 或 JSDoc，而基于构建产物的检查需要先运行 `pnpm run build`。
 
 在 macOS 或已安装系统 WebView/CGO 依赖的 Linux 上测试原生桌面窗口，从仓库根目录执行 `make dev`；Windows 会在构建前报不支持。该命令先构建当前 Host、Client 和 Web 产物，再用 `apps/desktop/go.mod` 锁定的 Wails CLI 启动桌面壳，同时持续重建 Web 改动；Ctrl+C、终端挂断或开发窗口退出时会清理 Web watcher。开发实例使用独立窗口锁与 `~/.dsh-dev`，从当前仓库启动 Host，不占用已安装客户端的窗口和 `~/.dsh` 数据。需要验证 Remote-SSH 时另运行 `make remote-agent` 生成本地 agent 产物。
+
+macOS 上可另运行 `pnpm run dev:electron` 验证[并存的 Electron 开发原型](../apps/desktop-electron/README.md)。该命令先构建 Host、Client 和 Web，再启动 Electron；`pnpm run build:electron` 仅构建 Electron 壳。原型使用独立的 `~/.dsh-electron-dev`，不改变 Wails 的 `make dev`、`make install` 或 `pnpm run build:desktop`，也不代表 Remote-SSH、托盘、Browser Use 或生产打包已经迁移。实际操作限制与待验证行为见其 README。
 
 ### 演示
 

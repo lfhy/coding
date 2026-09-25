@@ -366,7 +366,6 @@ function dependencyRangeCandidates(root: string): Map<string, Set<string>> {
   const paths = globSync([
     'package.json',
     ...MANIFEST_GLOBS,
-    'website/package.json',
   ], { cwd: root }).map(normalizePath)
   for (const path of new Set(paths)) {
     const manifest = JSON.parse(readFileSync(resolve(root, path), 'utf8')) as Manifest

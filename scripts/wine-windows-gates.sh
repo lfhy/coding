@@ -1,17 +1,12 @@
 #!/usr/bin/env bash
-# Run the blocking Windows gates (workspace build, production site) with real
-# win-x64 Node.js under Wine — the same script the pull-request `windows` job
-# in ci.yml executes and the optional local gate `pnpm run check:windows-wine`
-# wraps. Owning rationale and fidelity limits:
-# The working tree is never mutated: tracked plus untracked-unignored files
-# are snapshotted into a scratch directory, the Wine-specific pnpm overrides
-# (hoisted layout, win32-x64 platform packages) are appended to the SNAPSHOT's
-# pnpm-workspace.yaml, and the install and gates run there against the shared
-# pnpm store. The Wine prefix and the checksum-verified Windows Node zip
-# persist in .cache/wine-windows/ so reruns skip provisioning.
-# Environment: DSH_WINE_NODE_MAJOR (default $PRIMARY_NODE_VERSION, then 24)
-# picks the Windows Node line; DSH_WINE_GATE_CACHE_DIR relocates the cache;
-# DSH_WINE_GATE_KEEP=1 preserves the scratch tree for inspection.
+# 本地 `pnpm run check:windows-wine` 使用 Wine 下真正的 win-x64 Node.js
+# 验证 Windows Node 冒烟及 Host/Client 构建。隔离方式与适用范围：
+# 不修改工作树：把已跟踪文件及未忽略的未跟踪文件复制到临时目录，仅在副本的
+# pnpm-workspace.yaml 中添加 Wine 专用的 hoisted 布局和 win32-x64 平台包；
+# 安装与构建使用共享的 pnpm store。Wine prefix 和经过校验的 Windows Node
+# zip 缓存在 .cache/wine-windows/，以便再次运行时复用。
+# DSH_WINE_NODE_MAJOR 选择 Node 主版本（默认 PRIMARY_NODE_VERSION，其次 24）；
+# DSH_WINE_GATE_CACHE_DIR 改变缓存位置；DSH_WINE_GATE_KEEP=1 保留临时目录。
 
 set -euo pipefail
 
@@ -205,9 +200,9 @@ if (( provision_failed != 0 )); then exit "$provision_failed"; fi
 node_win="$(cat "$scratch/node-win-path")"
 echo "wine-windows-gates: provisioned in $((SECONDS - start))s (wine $("$wine_bin" --version 2> /dev/null), node $(basename "$(dirname "$node_win")"))"
 
-# ---- resolve entrypoints, lay the vue link, smoke ------------------------
-# Node under Wine cannot attach stdio to pipes the caller owns (Socket open
-# EBADF at bootstrap), so every invocation routes stdio through a file.
+# ---- 检查入口并验证 Windows Node ------------------------------------------
+# Wine 下的 Node 无法将标准流连接到调用方的管道（启动时 Socket open EBADF），
+# 因此每次调用都将标准输出和错误写入文件。
 wine_node() {
   local log="$1"
   shift
@@ -219,44 +214,26 @@ wine_node() {
 cd "$scratch/tree"
 tsc_js='node_modules/typescript/bin/tsc'
 tsdown_js='node_modules/tsdown/dist/run.mjs'
-vitepress_js='node_modules/vitepress/bin/vitepress.js'
-[ -f "$vitepress_js" ] || vitepress_js='website/node_modules/vitepress/bin/vitepress.js'
-for entry in "$tsc_js" "$tsdown_js" "$vitepress_js"; do
+for entry in "$tsc_js" "$tsdown_js"; do
   [ -f "$entry" ] || { echo "wine-windows-gates: expected entrypoint missing after hoisted install: $entry" >&2; exit 1; }
 done
-# VitePress links vue into the site's node_modules at build time; Wine cannot
-# CREATE Windows symlinks (ENOTSUP) but follows pre-existing Unix ones.
-if [ -d node_modules/vue ] && [ ! -e website/node_modules/vue ]; then
-  mkdir -p website/node_modules
-  ln -s ../../node_modules/vue website/node_modules/vue
-fi
 
 wine_node "$scratch/logs/smoke.log" -p "'smoke: ' + process.platform + ' ' + process.arch + ' ' + process.version"
 cat "$scratch/logs/smoke.log"
 grep -q '^smoke: win32 x64' "$scratch/logs/smoke.log" || { echo 'wine-windows-gates: Windows Node smoke did not report win32 x64' >&2; exit 1; }
 
-# ---- the two blocking surfaces, concurrently ------------------------------
-# The build preserves the face order from package.json: compile and bundle the
-# Host face before compiling and bundling the Client face.
-# Both statuses are captured so one failure cannot hide the other's result.
+# ---- Host/Client 构建检查 -------------------------------------------------
+# 保持 package.json 中先编译并打包 Host、再编译并打包 Client 的顺序。
 build_gate() {
   wine_node "$scratch/logs/host-tsc.log" "$tsc_js" -b tsconfig.host.json --pretty false || return $?
   wine_node "$scratch/logs/host-tsdown.log" "$tsdown_js" --env.DSH_BUILD_FACE host || return $?
   wine_node "$scratch/logs/client-tsc.log" "$tsc_js" -b tsconfig.client.json --pretty false || return $?
   wine_node "$scratch/logs/client-tsdown.log" "$tsdown_js" --env.DSH_BUILD_FACE client
 }
-site_gate() {
-  cd website
-  wine_node "$scratch/logs/site.log" "../$vitepress_js" build .
-}
-
 start=$SECONDS
 build_gate & build_pid=$!
-site_gate & site_pid=$!
 build_status=0
 wait "$build_pid" || build_status=$?
-site_status=0
-wait "$site_pid" || site_status=$?
 elapsed=$((SECONDS - start))
 
 report() {
@@ -274,6 +251,4 @@ report 'build (Host tsc/tsdown, Client tsc/tsdown)' "$build_status" \
   "$scratch/logs/host-tsdown.log" \
   "$scratch/logs/client-tsc.log" \
   "$scratch/logs/client-tsdown.log"
-report 'production site (vitepress build)' "$site_status" "$scratch/logs/site.log"
-if (( build_status != 0 )); then exit "$build_status"; fi
-exit "$site_status"
+exit "$build_status"

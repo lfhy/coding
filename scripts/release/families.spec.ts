@@ -48,6 +48,16 @@ describe('release families', () => {
     expect(members.map(member => member.name)).not.toContain('@deepseek-ai/dsh-experimental-agent-team')
   })
 
+  it('excludes Electron by path even if its manifest becomes publishable', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-release-electron-'))
+    roots.push(root)
+    write(join(root, 'apps/cli/package.json'), '{"name":"@deepseek-ai/dsh","version":"0.0.1"}\n')
+    write(join(root, 'apps/desktop-electron/package.json'), '{"name":"@deepseek-ai/dsh-desktop-electron","version":"0.0.1"}\n')
+    write(join(root, 'apps/runtime/package.json'), '{"name":"coding-host-runtime","version":"0.0.1"}\n')
+
+    expect(releaseFamily('dsh').members(root).map(member => member.directory)).toEqual(['apps/cli'])
+  })
+
   it('bumps private dsh packages without adding release tags', () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-release-version-'))
     roots.push(root)

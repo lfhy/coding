@@ -2,7 +2,43 @@
 
 日常改动最常落在这些包上。每个条目回答四件事：**谁拥有它**、**它不拥有什么**、**改这里通常还要同步什么**、以及**最容易被违反的不变量**。路径与符号都经过核对；改到某个包时顺手更新它的条目，这是下一个 agent 少走弯路的地方。
 
-全部 228 个包的清单见 [packages.md](packages.md)（生成），装配关系见 [wiring.md](wiring.md)（生成）。
+包清单见 [packages.md](packages.md)（生成），装配关系见 [wiring.md](wiring.md)（生成）。下列跨包路线用于先确定文件范围；各包的配置、失败语义与扩展点仍以所属 README 为准。
+
+## Web 启动与渲染
+
+- **路线**：`apps/web/src/main.ts` 只取得 `#root` 并运行 `AppWebEntry`；`packages/client/web/src/boot.ts`/`src/platform.ts` 处理启动页、模块预载和 Loader 交接；`packages/client/modules/src/client/system.ts` 物化模块表；`packages/client/runtime/src/client/index.ts`/`slots.ts` 持有无 React 的会话、工作区和 slot 服务；`packages/client/ui-renderer/src/client/index.ts`/`app.tsx` 绑定 React 并挂载根 UI。
+- **技术与边界**：浏览器 shell 使用 Vite，功能以动态 Cordis Client 插件装配；入口不复制状态或 JSX，业务对象在 runtime，React 订阅与 slot outlet 在 renderer。详细加载契约见 [client/web](../../packages/client/web/README.md)、[modules](../../packages/client/modules/README.md) 和 [ui-renderer](../../packages/client/ui-renderer/README.md)。
+- **连带与验证**：改变动态模块或启动阶段时核对 `packages/bundle/web-app/cordis.patch.yml`、`packages/client/web/src/platform.ts` 与 browser loader 测试；改挂载/slot 时核对 `ui-renderer`、`runtime` 和消费方。定向运行 `pnpm exec vitest run packages/client/web/tests packages/client/modules/tests packages/client/ui-renderer/tests`；真实组装输出再跑 `DSH_SNAPSHOT=replay pnpm run test:web`。
+
+## 浏览器与 Host 传输
+
+- **路线**：`packages/client/connection/src/client/connection.ts` 管重连和双下行流，`src/client/web-api-client.ts` 发 `/api` 请求；Host 端 `packages/client/connection/src/index.ts`/`api-request-trust.ts` 管路由与信任栅栏，`packages/host/webserver/src/index.ts` 管 HTTP/upgrade 注册，`packages/host/apiproxy/src/api-proxy.ts` 管方法实现，`src/api/rpc.schema.ts` 管 wire 校验；`packages/api/remotes/src/client/index.ts` 是另一套 Typert Remote 入口，先于 API Proxy 认领自己的方法。
+- **技术与边界**：浏览器 unary/respond 用 HTTP POST，下行 `events.mux`/`events.host` 用 WebSocket；webserver 不实现业务，apiproxy 不注册 HTTP 路由。信任规则和方法约定分别见 [connection](../../packages/client/connection/README.md)、[apiproxy](../../packages/host/apiproxy/README.md)、[remotes](../../packages/api/remotes/README.md)。
+- **连带与验证**：协议变更同步 API schema、Client 调用、Host handler 与 keyless 回放；路由或升级变更同步信任拒绝测试，不能只验证回环成功路径。定向运行 `pnpm exec vitest run packages/client/connection/tests packages/host/apiproxy/tests packages/host/webserver/tests`，浏览器组装变化再跑 `DSH_SNAPSHOT=replay pnpm run test:web`。
+
+## 桌面壳与 Host 启动
+
+- **路线**：默认 Wails v2 入口是 `apps/desktop/main.go`，原生 binding 与 Remote-SSH bridge 在 `apps/desktop/desktop_bindings.go`、`remote_bridge.go`；其 Go 启动器在 `apps/internal/hostlaunch/launcher.go`。并存的 Electron 开发原型在 `apps/desktop-electron/src/main.ts`、`managed-host.ts`、`window.ts`，自行实现 Host 发现而不调用 Go 启动器，也不提供 Go bridge 或原生 IPC。
+- **技术与边界**：两种壳都导航至经核验的独立 Host 回环 URL；Web UI、RPC 和会话仍由共享 Client/Host 包拥有。Wails 默认、Electron 原型的能力与验收差异见[桌面壳对比](../desktop-shell-comparison.md)，原型运行限制见 [Electron README](../../apps/desktop-electron/README.md)。
+- **连带与验证**：Host 就绪记录、启动目录或所有权变化核对 `packages/bundle/web-app/src/managed-host.ts` 和两个壳；原生权限变化还要核对 Wails binding/bridge。Wails 用 `cd apps/desktop && CGO_ENABLED=1 go test -tags desktop,production ./...` 加本机启动；Electron 用 `pnpm run build:electron` 加本机 `pnpm run test:electron:smoke`，不能用静态构建代替窗口验证。
+
+## 侧栏工作区与目录选择
+
+- **路线**：`packages/client/ui-sidebar/src/client/index.ts` 声明侧栏座位；`packages/client/ui-workspace/src/client/index.ts` 占用 `sidebar.workspaces` 与 `conversation.hero.workspace` 并声明两个 `directoryFlow` 子座位；浏览器目录流程由 `packages/client/ui-directory-picker-browse/src/client/index.ts`/`flow.ts` 占用，Host 能力由 `packages/host/directory-picker-*` 提供。Session/Workspace 状态的业务所有者是 `packages/client/runtime`，不是侧栏组件。
+- **技术与边界**：UI 依 slot 声明生命周期注册；目录后端是 browse、native 或 auto 的可替换 Provider，不能在组件内按平台自行选择。目录能力契约见 [ui-workspace](../../packages/client/ui-workspace/README.md) 与 [Host directory-picker](../../packages/host/directory-picker/README.md)。
+- **连带与验证**：调整座位同步 `ui-sidebar`、`ui-workspace/src/client/contract/slots.ts`、目录占用插件与组合行；目录协议变更同步 Host Provider 和 Client flow。定向运行 `pnpm exec vitest run packages/client/ui-sidebar/tests packages/client/ui-workspace/tests packages/client/ui-directory-picker-browse/tests`，组装交互再跑 `pnpm run test:gui`。
+
+## 设置界面与凭据
+
+- **路线**：`packages/client/ui-settings/src/client/index.ts`/`settings-mirror.ts` 持有唯一的 `settings.describe` 镜像与设置 slot；`packages/client/ui-settings-general/src/client/SettingsRoot.tsx` 持有外壳；`packages/client/ui-settings-models/src/client/ModelsSection.tsx`/`ProviderEditor.tsx` 持有模型页。Host 协议在 `packages/host/apiproxy/src/api/settings.schema.ts`/`credentials.schema.ts`，持久设置和机密分别由 `packages/settings/settings-*` 与 `packages/credentials/credentials-*` 管。
+- **技术与边界**：各 UI 行从共享镜像派生作用域，机密配置只传引用，真实值归 Credentials Provider；详见 [ui-settings](../../packages/client/ui-settings/README.md)、[ui-settings-models](../../packages/client/ui-settings-models/README.md) 及所属 Provider README。
+- **连带与验证**：新 namespace 同步 schema、Host RPC、设置卡片和包 README；凭据字段不能只改表单，需验证来源及遮蔽拒绝。定向运行 `pnpm exec vitest run packages/client/ui-settings/tests packages/client/ui-settings-general/tests packages/client/ui-settings-models/tests packages/host/apiproxy/tests/api-proxy-config.spec.ts`，可见界面再跑 `pnpm run test:gui`。
+
+## 对话输入命令与视图
+
+- **路线**：`packages/client/ui-conversation/src/client/apply.ts` 声明对话座位，`input/hub.ts` 与 `skeleton/InputBar.tsx` 管每会话输入；`packages/client/ui-input-trigger/src/client/controller.ts` 管内联触发，`packages/client/ui-commands/src/client/service.ts` 管命令目录与弹层；`packages/client/ui-tool/src/client/apply.ts` 注册工具行，`packages/client/ui-trajectory/src/client/index.ts` 注册轨迹视图。
+- **技术与边界**：输入和视图通过 slot/领域注册表组合，持久事件仍由 Session/Host 拥有；工具卡片、轨迹、命令 UI 不往 runtime 增加中央事件 switch。参见 [ui-conversation](../../packages/client/ui-conversation/README.md)、[ui-commands](../../packages/client/ui-commands/README.md) 与 [ui-trajectory](../../packages/client/ui-trajectory/README.md)。
+- **连带与验证**：改变输入提交要核对 `packages/client/runtime` 的 Session 与 Host RPC；改变持久 Chat 行须更新 `ConversationNodeDefinition` 和 keyed renderer；改模型可见内容还要核对 session 事件与 snapshot。定向运行 `pnpm exec vitest run packages/client/ui-conversation/tests packages/client/ui-commands/tests packages/client/ui-input-trigger/tests packages/client/ui-tool/tests packages/client/ui-trajectory/tests`，可见输出再跑 keyless `DSH_SNAPSHOT=replay pnpm run test:web`。
 
 ## packages/core/agent
 

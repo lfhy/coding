@@ -53,11 +53,10 @@ describe('Oxlint executable contract', () => {
       ['host package source', 'packages/fs/fs-observation-policy/src', 'packages/fs/fs-observation-policy/tsconfig.json'],
       ['host package test', 'packages/fs/fs-observation-policy/tests', 'tsconfig.host.json'],
       ['client package source', 'packages/client/ui-primitives/src', 'packages/client/ui-primitives/tsconfig.json'],
-      // A test under packages/client states its face in the filename, so the
-      // probe carries the Client suffix to reach the Client aggregate.
+      // packages/client 的测试用文件名标识所属端，因此探针需要 Client 后缀，
+      // 才能落到 Client aggregate。
       ['client package test', 'packages/client/ui-trajectory/tests', 'tsconfig.client.json', '.client.ts'],
       ['example', 'examples/headless-agent/tests', 'tsconfig.host.json'],
-      ['website', 'website', 'tsconfig.host.json'],
     ] as const
     const source = `export function probePromise(): Promise<void> {
   return Promise.resolve()

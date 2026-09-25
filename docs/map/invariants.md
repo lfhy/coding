@@ -33,7 +33,6 @@
 |---|---|---|
 | 包的行为、配置或限制 | 同一变更里更新该包 README（含 Model Experience 与 Known Limitations 两节） | 评审 |
 | 文档路径或文件名 | 自己 grep 入站引用：链接目标、`#fragment` 锚点、代码注释里的 `docs/*.md` 路径 | 没有门禁兜底 |
-| `docs/` 下被文档站发布的页面 | 确认 `website/docs.ts` 的 manifest 仍指向存在的源文件 | `pnpm docs:check` |
 
 ## 提交流程
 

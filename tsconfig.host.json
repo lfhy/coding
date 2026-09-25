@@ -93,14 +93,11 @@
     "examples/*/start.ts",
     "examples/*/tests/**/*.ts",
     "packages/*/*/tests/**/*.ts",
-    "scripts/**/*.ts",
-    "website/**/*.ts",
-    "website/.vitepress/**/*.ts"
+    "scripts/**/*.ts"
   ],
-  // Under packages/client a test file names the face it covers: `*.client.*`
-  // belongs to the Client aggregate, `*.host.spec.ts` to this one. The two
-  // suffixes are mutually exclusive, so each aggregate excludes the other's
-  // and the package test glob above needs no per-file entry.
+  // packages/client 的测试文件以文件名区分所属端：`*.client.*` 归 Client aggregate，
+  // `*.host.spec.ts` 归 Host aggregate。两种后缀互斥，因此上面的包测试 glob
+  // 无需逐个列出文件；两个 aggregate 分别排除对方的测试。
   "exclude": [
     "packages/client/*/src/**",
     "packages/*/*/tests/**/*.client.ts",

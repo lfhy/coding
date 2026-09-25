@@ -44,12 +44,13 @@ function workspace(entries: Record<string, Manifest>): { manifests: Map<string, 
 describe('tierExternalDeps', () => {
   it('tiers by declaring area, not by the declaring section name', () => {
     const { manifests, names } = workspace({
-      // Root tooling and test infrastructure never ship, whichever section declares them.
+      // 根目录工具和测试基础设施不交付，声明字段不影响其分层。
       'package.json': { dependencies: { 'root-runtime-looking': '^1' }, devDependencies: { 'lint-tool': '^1' } },
       'packages/test-support/loader-smoke/package.json': { name: '@deepseek-ai/dsh-loader-smoke', dependencies: { 'smoke-helper': '^1' } },
       'packages/test-support/client-runtime/package.json': { name: '@deepseek-ai/dsh-client-test-runtime', dependencies: { 'test-lib': '^1' } },
-      'website/package.json': { devDependencies: { 'site-tool': '^1' } },
-      // A plugin package's runtime dependency ships even when no app mounts it by default.
+      'apps/web/package.json': { name: '@deepseek-ai/dsh-web-frontend', devDependencies: { vite: '^6' } },
+      'apps/desktop-electron/package.json': { name: '@deepseek-ai/dsh-desktop-electron', devDependencies: { electron: '^44' } },
+      // 插件的运行时依赖即使默认未挂载，也属于交付依赖。
       'packages/mcp/mcp-client/package.json': { name: '@deepseek-ai/dsh-mcp-client', dependencies: { 'protocol-sdk': '^1' }, devDependencies: { 'protocol-fixture-server': '^1' } },
       'apps/cli/package.json': { name: '@deepseek-ai/dsh-cli', dependencies: { 'cli-lib': '^1', '@deepseek-ai/dsh-mcp-client': 'workspace:^' } },
     })
@@ -60,7 +61,8 @@ describe('tierExternalDeps', () => {
       ['lint-tool', false],
       ['smoke-helper', false],
       ['test-lib', false],
-      ['site-tool', false],
+      ['vite', false],
+      ['electron', false],
       ['protocol-sdk', true],
       ['protocol-fixture-server', false],
       ['cli-lib', true],

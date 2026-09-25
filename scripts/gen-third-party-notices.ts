@@ -23,18 +23,14 @@ const RUNTIME_KINDS = ['dependencies', 'optionalDependencies'] as const
 const ALL_KINDS = ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies'] as const
 
 /**
- * Workspace areas that never reach a user: repository tooling and gates (the
- * root manifest), test infrastructure, the documentation site, the runnable
- * demo leaves, and the native launcher's build workspace. A runtime
- * declaration by anything outside these areas is a disclosure-relevant
- * runtime dependency because any plugin package can be mounted from a user's
- * `cordis.yml`.
+ * 不交付给用户的 workspace 区域：根目录工具、测试基础设施、可运行示例及
+ * 原生启动器的构建工作区。其他区域的运行时声明均需披露为运行时依赖，
+ * 因为用户可通过 `cordis.yml` 挂载任意插件包。
  */
 const DEV_ONLY_AREAS = [
   'package.json',
   'packages/test-support/',
   'packages/test-support/client-runtime/',
-  'website/',
   'examples/',
   'native/',
 ] as const
@@ -348,11 +344,9 @@ function normalizeRepo(raw: string | undefined): string | undefined {
 }
 
 /**
- * External npm dependencies, tiered by which workspace area declares them at
- * runtime: a package is runtime when any manifest outside `DEV_ONLY_AREAS`
- * names it in `dependencies`/`optionalDependencies`. A package declared only
- * by tooling, test infrastructure, the website, or the demo leaves — whatever
- * the declaring section is called — is development-only.
+ * 按 workspace 声明位置对外部 npm 依赖分层：只要 `DEV_ONLY_AREAS` 之外的
+ * manifest 在 `dependencies` 或 `optionalDependencies` 中声明它，就计为
+ * 运行时依赖。仅由开发区域声明的依赖始终属于开发期，与声明字段无关。
  */
 function collectNpmDeps(): ExternalDep[] {
   const { manifests, names } = loadWorkspaceManifests()
@@ -718,7 +712,7 @@ ${renderClaudeDistribution(claudeDistribution)}
 
 ## Development-only npm dependencies
 
-External packages **directly declared** only by repository tooling, test infrastructure, the documentation site, the demo leaves, or the native launcher's build workspace. No shipped surface names them itself. A package here may still be pulled in transitively by a runtime dependency — \`pnpm-lock.yaml\` is the authority on the full closure — so this tier records who declares a package, not what a build ultimately bundles.
+External packages **directly declared** only by repository tooling, test infrastructure, the demo leaves, or the native launcher's build workspace, or declared as development dependencies by other workspace packages. No shipped surface declares them as runtime dependencies. A package here may still be pulled in transitively by a runtime dependency — \`pnpm-lock.yaml\` is the authority on the full closure — so this tier records who declares a package, not what a build ultimately bundles.
 
 ${renderNpmTable(devDeps)}
 ${renderNonPermissiveNote(nonPermissiveDev)}

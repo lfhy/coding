@@ -935,12 +935,9 @@ function typeLinks(signature: string, onPage: string, linkedTypePages: Readonly<
 }
 
 /**
- * GitHub's heading-slug algorithm (lowercase; drop everything but letters,
- * numbers, spaces, hyphens; spaces become hyphens). Region headings carry
- * backticks and em-dashes, which VitePress slugifies differently, so each
- * generated heading is preceded by an explicit `<a id>` carrying this slug —
- * the historical flat-catalog anchor — making `#ctx<key>--<class>` fragments
- * resolve identically on GitHub and the published site.
+ * 按 GitHub 标题规则生成稳定锚点：保留字母、数字、空格和连字符，再将空格转为
+ * 连字符。生成标题含反引号和破折号，显式 `<a id>` 使已有
+ * `#ctx<key>--<class>` 链接在本地 Markdown 与 GitHub 阅读时继续有效。
  */
 function githubSlug(heading: string): string {
   return heading.toLowerCase().replace(/[^\p{L}\p{N} -]/gu, '').replaceAll(' ', '-')

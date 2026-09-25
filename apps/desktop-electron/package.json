@@ -1,0 +1,19 @@
+{
+  "name": "@deepseek-ai/dsh-desktop-electron",
+  "version": "0.1.0-rc.8",
+  "private": true,
+  "type": "module",
+  "main": "lib/main.js",
+  "scripts": {
+    "build": "tsdown",
+    "dev": "pnpm run build && install-electron && electron lib/main.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.0",
+    "electron": "44.0.0",
+    "playwright": "1.61.1",
+    "tsdown": "^0.22.2",
+    "typescript": "^6.0.3"
+  }
+}

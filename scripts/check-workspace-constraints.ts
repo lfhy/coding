@@ -51,8 +51,10 @@ const publishedRepositoryUrl = 'git+https://github.com/deepseek-ai/deepseek-harn
 const experimentalPackageDirectory = /^packages\/experimental\/[^/]+$/
 /** npm namespace reserved for private experimental packages. */
 const experimentalPackageNamePrefix = '@deepseek-ai/dsh-experimental-'
+/** 原型 Electron 壳只用于本地开发，不属于 npm 发布包。 */
+const privateElectronShellDirectory = 'apps/desktop-electron'
 /** Directories whose packages this repository publishes: one release member each. */
-const releaseMemberDirectory = /^(?:packages\/(?!experimental\/)[^/]+\/[^/]+|apps\/[^/]+|vendor\/[^/]+)$/
+const releaseMemberDirectory = /^(?:packages\/(?!experimental\/)[^/]+\/[^/]+|apps\/(?!desktop-electron$)[^/]+|vendor\/[^/]+)$/
 /** Private deploy manifests participate in workspace resolution but are never npm release members. */
 const deploymentManifestDirectory = /^apps\/runtime$/
 
@@ -255,8 +257,28 @@ export function checkExperimentalManifest({ dir, manifest }: WorkspaceManifest):
   return errors
 }
 
+/**
+ * 校验私有 Electron 壳的身份与发布边界，避免仅凭 private 标记误入发布流程。
+ * @param entry - workspace 清单及其路径。
+ * @returns 不符合私有壳约束的诊断。
+ */
+export function checkPrivateElectronShellManifest({ dir, manifest }: WorkspaceManifest): string[] {
+  if (dir !== privateElectronShellDirectory) return []
+  const label = manifest.name ?? dir
+  const errors: string[] = []
+  if (manifest.name !== '@deepseek-ai/dsh-desktop-electron') {
+    errors.push(`${label}: Electron shell must use @deepseek-ai/dsh-desktop-electron`)
+  }
+  if (manifest.private !== true) errors.push(`${label}: Electron shell must set "private": true`)
+  if (manifest.publishConfig !== undefined) errors.push(`${label}: Electron shell must omit publishConfig`)
+  return errors
+}
+
 function checkWorkspace({ dir, manifest }: WorkspaceManifest): string[] {
-  const errors = checkExperimentalManifest({ dir, manifest })
+  const errors = [
+    ...checkExperimentalManifest({ dir, manifest }),
+    ...checkPrivateElectronShellManifest({ dir, manifest }),
+  ]
   const label = manifest.name ?? dir
   const isLandlockPackageDir = dir.startsWith('native/landlock-run/packages/')
   const isPublicLandlockPackage = isLandlockPackageDir
@@ -314,7 +336,7 @@ function checkWorkspace({ dir, manifest }: WorkspaceManifest): string[] {
     }
   }
 
-  if (dir.startsWith('apps/') && manifest.name?.startsWith('@deepseek-ai/')) {
+  if (dir.startsWith('apps/') && dir !== privateElectronShellDirectory && manifest.name?.startsWith('@deepseek-ai/')) {
     const expectedFiles = appPackageFiles[manifest.name]
     if (expectedFiles === undefined) {
       errors.push(`${label}: app package has no publication files policy`)
