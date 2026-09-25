@@ -7,6 +7,8 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)))
+const WEB_READY_LINE = 'dev-web: initial builds complete'
+const MAX_READY_LINE_LENGTH = 512
 
 /**
  * 检查开发进程组所需的平台支持，失败时不启动 watcher 或 Wails。
@@ -28,10 +30,30 @@ export async function runDesktopDev(options) {
   assertDesktopDevPlatform()
   const watcher = spawn(options.watcherCommand, options.watcherArgs, {
     cwd: repoRoot,
-    stdio: 'inherit',
+    stdio: ['inherit', 'pipe', 'inherit'],
     detached: true,
   })
   const watcherDone = childResult(watcher)
+  const watcherReady = new Promise(resolve => {
+    let pending = ''
+    let oversized = false
+    watcher.stdout.on('data', chunk => {
+      process.stdout.write(chunk)
+      const segments = chunk.toString('utf8').split('\n')
+      for (const [index, segment] of segments.entries()) {
+        if (!oversized) {
+          if (pending.length + segment.length <= MAX_READY_LINE_LENGTH) pending += segment
+          else { pending = ''; oversized = true }
+        }
+        if (index === segments.length - 1) continue
+        if (!oversized && pending.trim() === WEB_READY_LINE) resolve()
+        pending = ''
+        oversized = false
+      }
+    })
+  })
+  let stopStartup
+  const startupStopped = new Promise(resolve => { stopStartup = resolve })
   let stopping = false
   let wails
   let wailsDone
@@ -50,6 +72,7 @@ export async function runDesktopDev(options) {
   function stop(signal) {
     if (stopping) return
     stopping = true
+    stopStartup()
     signalWatcher('SIGTERM')
     if (wails?.pid !== undefined && wails.exitCode === null && wails.signalCode === null) {
       wails.kill(signal)
@@ -66,6 +89,23 @@ export async function runDesktopDev(options) {
   process.on('SIGTERM', onTerminate)
   process.on('SIGHUP', onHangup)
   try {
+    const startup = await Promise.race([
+      watcherReady.then(() => ({ source: 'ready' })),
+      watcherDone.then(result => ({ source: 'watcher', result })),
+      startupStopped.then(() => ({ source: 'interrupted' })),
+    ])
+    if (startup.source !== 'ready' || stopping) {
+      if (startup.source === 'watcher' && !stopping) {
+        console.error(`dev-desktop: Web watcher exited before initial builds completed (${describeResult(startup.result)})`)
+      }
+      stop('SIGTERM')
+      await waitForWatcherGroup(watcher.pid, signalWatcher)
+      await watcherDone
+      if (interrupted === 'SIGINT') return 130
+      if (interrupted === 'SIGTERM') return 143
+      if (interrupted === 'SIGHUP') return 129
+      return 1
+    }
     wails = spawn(options.wailsCommand, options.wailsArgs, {
       cwd: options.cwd,
       env: options.env,

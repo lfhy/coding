@@ -1,9 +1,24 @@
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
 import type { TsdownBundle } from 'tsdown'
-import { discoverLibraryDirs, discoverPluginDirs, watchClientPlugins } from './dev-web.ts'
+import { discoverLibraryDirs, discoverPluginDirs, watchClientPlugins, watchWebShell } from './dev-web.ts'
+
+it('waits for the first Vite watch build to finish writing the shell', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-dev-web-shell-'))
+  let stage: { kill(): void } | undefined
+  try {
+    await writeFile(join(root, 'index.html'), '<div id="root"></div><script type="module" src="/entry.js"></script>\n')
+    await writeFile(join(root, 'entry.js'), 'document.title = "ready"\n')
+    stage = await watchWebShell(realpathSync(root))
+    expect(await readFile(join(root, 'dist/index.html'), 'utf8')).toContain('/assets/index-')
+  } finally {
+    stage?.kill()
+    await rm(root, { recursive: true, force: true })
+  }
+}, 20_000)
 
 it('discovers dsh.client packages with sibling roles', async () => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-dev-web-discovery-'))

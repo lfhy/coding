@@ -29,6 +29,7 @@
  * keys under each package's file config, and no package config defines it).
  */
 import { globSync, readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { execa } from 'execa'
@@ -36,6 +37,7 @@ import { build } from 'tsdown'
 import type { TsdownBundle } from 'tsdown'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
+const webRoot = join(repoRoot, 'apps/web')
 
 /** Client-face type emit feeding every tsdown lib entry in the watch set. */
 const CLIENT_TYPE_PROGRAM = 'tsconfig.client.json'
@@ -167,6 +169,56 @@ function spawnStage(stage: string, command: string, args: readonly string[], loc
   })
 }
 
+interface ViteWatchEvent {
+  code: string
+  error?: Error
+}
+
+interface ViteWatcher {
+  on(event: 'event', listener: (event: ViteWatchEvent) => void): void
+  off(event: 'event', listener: (event: ViteWatchEvent) => void): void
+  close(): Promise<void>
+}
+
+/**
+ * 从 Web workspace 解析 Vite，等待首轮 watch 构建的 END 事件后才允许桌面窗口启动。
+ * @param root - Vite 项目目录；测试可传入独立的最小项目。
+ * @param onStarted - 在首轮构建完成前登记清理句柄。
+ * @returns 持续监听的构建器，调用方负责关闭。
+ */
+export async function watchWebShell(root = webRoot, onStarted?: (stage: StageHandle) => void): Promise<StageHandle> {
+  const require = createRequire(join(webRoot, 'package.json'))
+  const vite = await import(pathToFileURL(require.resolve('vite')).href) as unknown as {
+    build: (config: object) => Promise<ViteWatcher>
+  }
+  const { build } = vite
+  const watcher = await build({
+    root,
+    configFile: root === webRoot ? join(webRoot, 'vite.config.ts') : false,
+    build: { watch: {}, emptyOutDir: false },
+  })
+  const stage = { kill: () => { void watcher.close() } }
+  onStarted?.(stage)
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const onEvent = (event: ViteWatchEvent): void => {
+        if (event.code === 'END') {
+          watcher.off('event', onEvent)
+          resolve()
+        } else if (event.code === 'ERROR') {
+          watcher.off('event', onEvent)
+          reject(event.error ?? new Error('dev-web: initial Vite build failed'))
+        }
+      }
+      watcher.on('event', onEvent)
+    })
+  } catch (error) {
+    await watcher.close()
+    throw error
+  }
+  return stage
+}
+
 /** The only capability this script needs from a live watcher process. */
 interface StageHandle {
   readonly kill: () => void
@@ -200,7 +252,11 @@ if (isMain) {
 
   // Registered before any stage starts: `stages` is read at signal time, so an
   // interrupt during tsdown's initial builds still kills whatever is running.
-  const stop = (): void => { for (const stage of stages) stage.kill() }
+  let stopping = false
+  const stop = (): void => {
+    stopping = true
+    for (const stage of stages) stage.kill()
+  }
   process.once('SIGINT', stop)
   process.once('SIGTERM', stop)
 
@@ -221,12 +277,13 @@ if (isMain) {
   // build left. Its own watch then covers later lib rewrites — those files are
   // in its module graph.
   await watchClientPlugins(repoRoot, [...pluginDirs, ...libraryDirs], pollInterval)
-  // Through the shell's own `watch` script rather than vite's API: vite is not a
-  // repository-root dependency, and more importantly the vite root is its
-  // working directory — `resolve.dedupe` resolves react from that root, so
-  // running vite from anywhere but apps/web silently switches which react copy
-  // the bundle gets.
-  spawnStage('vite build --watch', 'pnpm', ['--filter', SHELL_PACKAGE, 'run', 'watch'], false)
+  // Vite 从 Web workspace 解析，root 也固定为 apps/web，保证 dedupe 所见的
+  // React 实例不变。END 发生在首轮产物写入之后，是 Wails 启动的就绪边界。
+  await watchWebShell(webRoot, (stage) => {
+    if (stopping) stage.kill()
+    else stages.push(stage)
+  })
+  console.log('dev-web: initial builds complete')
 
   console.log(
     `dev-web: watching ${String(pluginDirs.length)} dsh.client plugin packages`
