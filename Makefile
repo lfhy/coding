@@ -40,7 +40,8 @@ desktop:
 dev:
 	node scripts/dev-desktop.mjs --check-platform
 	pnpm run build
-	mkdir -p .dsh-build
+	mkdir -p .dsh-build/desktop
+	ln -sfn ../../apps/desktop/packaging/icon.iconset/icon_512x512@2x.png .dsh-build/desktop/appicon.png
 	cd apps/desktop && CGO_ENABLED=1 GOBIN="$(CURDIR)/.dsh-build" go install github.com/wailsapp/wails/v2/cmd/wails@$$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v2)
 	node scripts/dev-desktop.mjs
 
