@@ -178,9 +178,10 @@ async function selectRemoteRoot(wizard, remoteRoot, phase, screenshot) {
 async function connectInWizard(page, ready, first, phase, screenshot) {
   phase('open wizard')
   await page.getByRole('button', { name: '选择工作区' }).first().click()
-  await page.getByText('连接 Remote-SSH', { exact: true }).first().click()
-  const wizard = page.getByRole('dialog', { name: '连接 Remote-SSH' })
+  await page.getByText('远程连接', { exact: true }).first().click()
+  const wizard = page.getByRole('dialog', { name: '远程连接' })
   await wizard.waitFor({ state: 'visible' })
+  await wizard.getByRole('radio', { name: /Agent 模式/ }).check()
   await wizard.locator('#remote-ssh-host').fill(ready.host)
   await wizard.locator('#remote-ssh-port').fill(String(ready.port))
   await wizard.locator('#remote-ssh-user').fill(ready.username)
@@ -210,8 +211,9 @@ async function connectInWizard(page, ready, first, phase, screenshot) {
 
 async function cancelWizard(page, ready) {
   await page.getByRole('button', { name: '选择工作区' }).first().click()
-  await page.getByText('连接 Remote-SSH', { exact: true }).first().click()
-  const wizard = page.getByRole('dialog', { name: '连接 Remote-SSH' })
+  await page.getByText('远程连接', { exact: true }).first().click()
+  const wizard = page.getByRole('dialog', { name: '远程连接' })
+  await wizard.getByRole('radio', { name: /Agent 模式/ }).check()
   await wizard.locator('#remote-ssh-host').fill(ready.host)
   await wizard.locator('#remote-ssh-port').fill(String(ready.port))
   await wizard.locator('#remote-ssh-user').fill(ready.username)
@@ -229,7 +231,8 @@ async function markerIn(home) {
   assert.equal(folders.length, 1, 'only the selected remote root has a marker')
   const path = join(base, targets[0], folders[0])
   const marker = JSON.parse(await readFile(join(path, markerName), 'utf8'))
-  assert.equal(marker.version, 2)
+  assert.equal(marker.version, 3)
+  assert.equal(marker.mode, 'agent')
   return { path: await realpath(path), marker }
 }
 

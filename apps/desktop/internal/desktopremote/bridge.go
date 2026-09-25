@@ -3,6 +3,7 @@ package desktopremote
 import (
 	"context"
 	"crypto/subtle"
+	"encoding/json"
 	"errors"
 	"io"
 	"mime"
@@ -14,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/deepseek-ai/coding/apps/desktop/internal/remoteagent"
 )
 
 const (
@@ -60,11 +63,12 @@ type remoteBridgeMarkerIdentity struct {
 // Bridge 仅监听本机回环地址，供本地 Node Host 转发 marker 工作区的 I/O。
 // SSH bearer token 由 manager 保留；Node 仅持有此桥接器的窗口私有 token。
 type Bridge struct {
-	token    string
-	proxy    Proxy
-	listener net.Listener
-	server   *http.Server
-	close    sync.Once
+	token      string
+	proxy      Proxy
+	connection func(string) (remoteagent.ConnectionInfo, error)
+	listener   net.Listener
+	server     *http.Server
+	close      sync.Once
 
 	// markerMu 在整个 Proxy 调用期间保持读锁。这样 marker 写入在获得写锁前
 	// 不会改变路由，而写锁释放后旧 generation 也无法再开始 dispatch。
@@ -333,6 +337,29 @@ func (b *Bridge) serveHTTP(writer http.ResponseWriter, request *http.Request) {
 		b.markerMu.RUnlock()
 		writeBridgeError(writer, http.StatusConflict, "stale-marker")
 		return
+	}
+	if b.connection != nil {
+		info, lookupErr := b.connection(connectionID)
+		if lookupErr != nil || info.Mode != remoteagent.ModeAgent && info.Mode != remoteagent.ModeBasic {
+			b.markerMu.RUnlock()
+			writeBridgeError(writer, http.StatusConflict, "stale-marker")
+			return
+		}
+		if info.Mode == remoteagent.ModeBasic {
+			if !remoteagent.IsBasicRoute(request.Method, request.URL.Path) {
+				b.markerMu.RUnlock()
+				writeBridgeError(writer, http.StatusNotImplemented, "unsupported-capability")
+				return
+			}
+			var payload struct {
+				Root string `json:"root"`
+			}
+			if json.Unmarshal(body, &payload) != nil || payload.Root != identity.remoteRoot {
+				b.markerMu.RUnlock()
+				writeBridgeError(writer, http.StatusBadRequest, "invalid-root")
+				return
+			}
+		}
 	}
 	// 普通文件 I/O 没有 provider 层 deadline；保持 Host 请求自身 context，不能
 	// 因 marker 互斥人为截断合法的大响应。PublishMarker 的可取消 admission 会让

@@ -29,10 +29,11 @@ async function remoteWorkspace(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'dsh-remote-process-start-'))
   roots.push(root)
   await writeFile(join(root, REMOTE_WORKSPACE_MARKER), JSON.stringify({
-    version: 2,
+    version: 3,
     remoteRoot: '/srv/project',
     connectionId: 'connection-1',
     generation: 1,
+    mode: 'agent',
   }))
   return root
 }

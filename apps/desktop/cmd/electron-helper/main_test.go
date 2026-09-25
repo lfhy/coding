@@ -33,8 +33,9 @@ func TestParseConfigRequiresExplicitIsolatedPaths(t *testing.T) {
 		{"arbitrary command", []string{"--home", "/tmp/home", "--cwd", "/tmp/workspace", "--repo-root", "/tmp/source", "--host-version", "dev", "--host-command", "sh"}, false},
 		{"development", []string{"--home", "/tmp/home", "--cwd", "/tmp/workspace", "--repo-root", "/tmp/source", "--host-version", "dev"}, true},
 		{"packaged", []string{"--home", "/tmp/home", "--cwd", "/tmp/workspace", "--runtime-root", "/tmp/resources", "--host-version", "1.2.3"}, true},
-		{"packaged exclusive", []string{"--home", "/tmp/home", "--cwd", "/tmp/workspace", "--runtime-root", "/tmp/resources", "--host-version", "1.2.3", "--exclusive-wails-instance"}, true},
-		{"development exclusive", []string{"--home", "/tmp/home", "--cwd", "/tmp/workspace", "--repo-root", "/tmp/source", "--host-version", "dev", "--exclusive-wails-instance"}, false},
+		{"packaged exclusive", []string{"--home", "/tmp/home", "--cwd", "/tmp/workspace", "--runtime-root", "/tmp/resources", "--host-version", "1.2.3", "--exclusive-desktop-instance"}, true},
+		{"development exclusive", []string{"--home", "/tmp/home", "--cwd", "/tmp/workspace", "--repo-root", "/tmp/source", "--host-version", "dev", "--exclusive-desktop-instance"}, false},
+		{"legacy exclusive flag", []string{"--home", "/tmp/home", "--cwd", "/tmp/workspace", "--runtime-root", "/tmp/resources", "--host-version", "1.2.3", "--exclusive-wails-instance"}, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			_, err := parseConfig(test.args)
@@ -45,7 +46,7 @@ func TestParseConfigRequiresExplicitIsolatedPaths(t *testing.T) {
 	}
 }
 
-func TestExclusiveWailsInstanceRejectsLiveOwnerBeforeHomeWrites(t *testing.T) {
+func TestExclusiveDesktopInstanceRejectsLiveOwnerBeforeHomeWrites(t *testing.T) {
 	lockDirectory, err := os.MkdirTemp("", "ci-")
 	if err != nil {
 		t.Fatal(err)
@@ -55,15 +56,15 @@ func TestExclusiveWailsInstanceRejectsLiveOwnerBeforeHomeWrites(t *testing.T) {
 	t.Setenv("LOCALAPPDATA", lockDirectory)
 	owner, primary, err := instance.Acquire(nil, false)
 	if err != nil || !primary {
-		t.Fatalf("acquire Wails lock = %v, %v", primary, err)
+		t.Fatalf("acquire installed desktop lock = %v, %v", primary, err)
 	}
 	t.Cleanup(owner.Close)
 	go owner.Serve(nil)
 	home := filepath.Join(t.TempDir(), "not-created")
-	args := []string{"--home", home, "--cwd", t.TempDir(), "--runtime-root", t.TempDir(), "--host-version", "dev", "--exclusive-wails-instance"}
+	args := []string{"--home", home, "--cwd", t.TempDir(), "--runtime-root", t.TempDir(), "--host-version", "dev", "--exclusive-desktop-instance"}
 	var stdout bytes.Buffer
 	if err := run(args, strings.NewReader(""), &stdout); err == nil {
-		t.Fatal("helper accepted active Wails owner")
+		t.Fatal("helper accepted active installed desktop owner")
 	}
 	if stdout.Len() != 0 {
 		t.Fatalf("stdout unexpectedly contains protocol data: %q", stdout.String())
@@ -73,7 +74,7 @@ func TestExclusiveWailsInstanceRejectsLiveOwnerBeforeHomeWrites(t *testing.T) {
 	}
 }
 
-func TestExclusiveWailsInstanceOwnsInstalledLock(t *testing.T) {
+func TestExclusiveDesktopInstanceOwnsInstalledLock(t *testing.T) {
 	lockDirectory, err := os.MkdirTemp("", "ci-")
 	if err != nil {
 		t.Fatal(err)
@@ -81,7 +82,7 @@ func TestExclusiveWailsInstanceOwnsInstalledLock(t *testing.T) {
 	t.Cleanup(func() { _ = os.RemoveAll(lockDirectory) })
 	t.Setenv("TMPDIR", lockDirectory)
 	t.Setenv("LOCALAPPDATA", lockDirectory)
-	lock, err := acquireExclusiveInstance(config{runtimeRoot: t.TempDir(), exclusiveWailsInstance: true})
+	lock, err := acquireExclusiveInstance(config{runtimeRoot: t.TempDir(), exclusiveDesktopInstance: true})
 	if err != nil || lock == nil {
 		t.Fatalf("helper lock = %v, %v", lock, err)
 	}
@@ -89,7 +90,7 @@ func TestExclusiveWailsInstanceOwnsInstalledLock(t *testing.T) {
 	go lock.Serve(nil)
 	_, primary, err := instance.Acquire(nil, false)
 	if err != nil || primary {
-		t.Fatalf("second Wails acquisition = %v, %v", primary, err)
+		t.Fatalf("second installed desktop acquisition = %v, %v", primary, err)
 	}
 }
 

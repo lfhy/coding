@@ -26,6 +26,7 @@ import {
   callRemoteWorkspaceBridge,
   isRemoteAbsolutePath,
   isRemotePathWithin,
+  requireRemoteWorkspaceCapability,
   remoteWorkspacePath,
   RemoteWorkspaceError,
   verifyRemoteWorkspaceTarget,
@@ -75,8 +76,8 @@ export const SEARCH_META_MAX_BYTES = 65_536
 
 /**
  * 搜索失败的稳定机器码。它归本包所有（不归 `FsErrorCode`），因为工具通过
- * 进程或远端 agent 执行搜索，而不是调用 `ctx.fs` 提供方：
- * `SEARCH_INVALID_PATTERN` 表示本地 ripgrep 或远端 agent 拒绝正则、glob 或
+ * 进程或远端搜索实现执行搜索，而不是调用 `ctx.fs` 提供方：
+ * `SEARCH_INVALID_PATTERN` 表示本地 ripgrep 或远端搜索实现拒绝正则、glob 或
  * include；`SEARCH_FAILED` 表示搜索不能运行或响应不能解析；
  * `SEARCH_RAW_OUTPUT_OVERFLOW` 表示原始输出超过 `rawOutputMaxBytes` 或在请求的
  * stdout 预算后仍被截断；`SEARCH_ABORTED` 表示协作式工具超时或调用方取消搜索。
@@ -112,7 +113,7 @@ export interface RipgrepRun {
   workdir: string
 }
 
-/** 远端 agent 对 glob/grep 的受限搜索请求。 */
+/** 远端 bridge 对 glob/grep 的受限搜索请求。 */
 export interface RemoteSearchInput {
   /** 对应工具的搜索种类。 */
   readonly kind: 'glob' | 'grep'
@@ -321,7 +322,7 @@ function remoteSearchError(toolName: string, error: unknown): SearchError {
     }
     if (error.code === 'REMOTE_BRIDGE_REJECTED' && (error.bridgeCode === 'invalid-pattern' || error.bridgeCode === 'invalid-include')) {
       const subject = error.bridgeCode === 'invalid-pattern' ? 'pattern' : 'include filter'
-      return new SearchError(`${toolName} ${subject} rejected by remote search agent`, 'SEARCH_INVALID_PATTERN', { cause: error })
+      return new SearchError(`${toolName} ${subject} rejected by remote search`, 'SEARCH_INVALID_PATTERN', { cause: error })
     }
   }
   return new SearchError(`${toolName} could not complete its remote search`, 'SEARCH_FAILED', { cause: error })
@@ -391,9 +392,9 @@ function bridgeSearchResponse(
 }
 
 /**
- * 在 marker Workspace 内由远端 Go agent 完成搜索；普通路径返回 undefined，
- * 让本地 ripgrep 路径保持原有行为。远端结果若达到 agent 的任一硬上限会失败，
- * 不把不完整列表伪装为完整的工具规范值。
+ * 在 marker Workspace 内经远端 bridge 完成搜索；basic 使用有界 SFTP 搜索，
+ * agent 使用 Go agent。普通路径返回 undefined，让本地 ripgrep 路径保持原有
+ * 行为。远端结果若达到任一硬上限会失败，不把不完整列表伪装为完整的工具规范值。
  * @param exec - 当前工具调用的执行上下文和取消信号。
  * @param toolName - 产生面向模型诊断的工具名称。
  * @param input - 已通过工具 schema 校验的搜索参数。
@@ -410,6 +411,7 @@ export async function runRemoteSearch(
   try {
     const workspace = await remoteWorkspacePath('.', cwd, exec.signal)
     if (workspace === undefined) return undefined
+    requireRemoteWorkspaceCapability(workspace, 'search')
     let target = workspace
     if (input.path !== undefined) {
       if (isRemoteAbsolutePath(input.path) && isRemotePathWithin(workspace.remoteRoot, input.path)) {

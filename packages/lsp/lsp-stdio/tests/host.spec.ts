@@ -90,10 +90,11 @@ describe('canonicalizeWorkspace', () => {
 describe('readHostSource', () => {
   it('maps a remote absolute source back through its verified local marker', async () => {
     await writeFile(join(root, REMOTE_WORKSPACE_MARKER), JSON.stringify({
-      version: 2,
+      version: 3,
       remoteRoot: '/srv/project',
       connectionId: 'connection-1',
       generation: 1,
+      mode: 'agent',
     }))
     const workspaceTarget = { targetKey: FsTargetKey('remote-workspace'), displayPath: '/srv/project' }
     const sourceTarget = { targetKey: FsTargetKey('remote-source'), displayPath: '/srv/project/src/a.ts' }
@@ -118,6 +119,7 @@ describe('readHostSource', () => {
         remotePath: '/srv/project',
         connectionId: 'connection-1',
         markerGeneration: 1,
+        mode: 'agent' as const,
       },
     }
 

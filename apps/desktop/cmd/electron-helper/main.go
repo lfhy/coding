@@ -26,7 +26,7 @@ import (
 
 type config struct {
 	home, cwd, repoRoot, runtimeRoot, hostVersion string
-	exclusiveWailsInstance                        bool
+	exclusiveDesktopInstance                      bool
 }
 
 func parseConfig(args []string) (config, error) {
@@ -38,7 +38,7 @@ func parseConfig(args []string) (config, error) {
 	flags.StringVar(&cfg.repoRoot, "repo-root", "", "repository root for development")
 	flags.StringVar(&cfg.runtimeRoot, "runtime-root", "", "packaged Resources directory")
 	flags.StringVar(&cfg.hostVersion, "host-version", "", "managed Host version")
-	flags.BoolVar(&cfg.exclusiveWailsInstance, "exclusive-wails-instance", false, "hold the installed Wails instance lock")
+	flags.BoolVar(&cfg.exclusiveDesktopInstance, "exclusive-desktop-instance", false, "hold the installed desktop instance lock")
 	if err := flags.Parse(args); err != nil || len(flags.Args()) != 0 {
 		return config{}, errors.New("invalid helper arguments")
 	}
@@ -53,14 +53,14 @@ func parseConfig(args []string) (config, error) {
 	if !filepath.IsAbs(root) {
 		return config{}, errors.New("helper runtime root must be absolute")
 	}
-	if cfg.exclusiveWailsInstance && cfg.runtimeRoot == "" {
-		return config{}, errors.New("exclusive Wails lock requires packaged runtime")
+	if cfg.exclusiveDesktopInstance && cfg.runtimeRoot == "" {
+		return config{}, errors.New("exclusive desktop lock requires packaged runtime")
 	}
 	return cfg, nil
 }
 
 func acquireExclusiveInstance(cfg config) (*instance.Listener, error) {
-	if !cfg.exclusiveWailsInstance {
+	if !cfg.exclusiveDesktopInstance {
 		return nil, nil
 	}
 	lock, primary, err := instance.Acquire(nil, false)
@@ -68,7 +68,7 @@ func acquireExclusiveInstance(cfg config) (*instance.Listener, error) {
 		return nil, err
 	}
 	if !primary {
-		return nil, errors.New("installed Wails instance already owns desktop lock")
+		return nil, errors.New("installed desktop instance already owns the shared lock")
 	}
 	return lock, nil
 }

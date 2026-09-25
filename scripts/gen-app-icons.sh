@@ -3,7 +3,6 @@
 # 用法: scripts/gen-app-icons.sh <正方形PNG源图>
 # 仅支持 macOS（依赖 sips / iconutil / swift）。
 # 产物：
-#   apps/desktop/frontend/logo.png                    启动页 logo（全出血方图，不带圆角）
 #   apps/desktop/packaging/icon.iconset/ + AppIcon.icns macOS 应用图标（squircle 圆角）
 #   apps/web/public/favicon.png / favicon.svg          Web favicon（PNG 全出血，SVG 内嵌圆角 128px）
 set -eu
@@ -99,8 +98,7 @@ done
 iconutil -c icns "$iconset" -o "$work/AppIcon.icns"
 mv -f "$work/AppIcon.icns" "$root/apps/desktop/packaging/AppIcon.icns"
 
-# 启动页与 Web favicon 保持全出血方图；界面里的圆角由 CSS 负责。
-sips -z 1024 1024 "$src" --out "$root/apps/desktop/frontend/logo.png" -s format png >/dev/null 2>&1
+# Web favicon 保持全出血方图；界面里的圆角由 CSS 负责。
 sips -z 512 512 "$src" --out "$root/apps/web/public/favicon.png" -s format png >/dev/null 2>&1
 
 node -e "
@@ -110,4 +108,4 @@ const svg = '<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"128\" height=\"12
 fs.writeFileSync('$root/apps/web/public/favicon.svg', svg)
 "
 
-echo "gen-app-icons: 已更新 AppIcon.icns、iconset、启动页 logo 与 web favicon"
+echo "gen-app-icons: 已更新 AppIcon.icns、iconset 与 web favicon"

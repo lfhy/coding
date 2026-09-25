@@ -41,7 +41,7 @@ function fixture() {
 }
 
 function connect() {
-  return { attemptId: 'attempt-1', host: 'example.com', port: 22, username: 'coding', auth: { kind: 'password', secret: 'only-in-helper' } }
+  return { attemptId: 'attempt-1', mode: 'agent', host: 'example.com', port: 22, username: 'coding', auth: { kind: 'password', secret: 'only-in-helper' } }
 }
 
 function deferred<T>() {
@@ -80,6 +80,19 @@ describe('Remote-SSH Electron 主进程 IPC', () => {
     expect(electron.ipcMain.handle).toHaveBeenCalledTimes(1)
   })
 
+  it.each(['basic', 'agent'] as const)('将 %s 连接模式原样发送，保留 Go ready.mode', async (mode) => {
+    const { event, handler, request } = fixture()
+    request.mockResolvedValueOnce({ kind: 'ready', connectionId: 'connection-1', mode: 'basic', homePath: '/home/coding' })
+    const payload = { ...connect(), mode }
+    await expect(handler(event, 'connect', payload)).resolves.toEqual({
+      kind: 'ready', connectionId: 'connection-1', mode: 'basic', homePath: '/home/coding',
+    })
+    expect(request).toHaveBeenCalledExactlyOnceWith('RemoteSSHConnect', payload, undefined)
+    const retry = { ...payload, confirmationId: 'confirmation-1', acceptHostKeyFingerprint: 'SHA256:test' }
+    await expect(handler(event, 'connect', retry)).resolves.toBeDefined()
+    expect(request).toHaveBeenLastCalledWith('RemoteSSHConnect', retry, undefined)
+  })
+
   it('跨窗口、subframe、旧 origin 以及伪装 URL 在调用 helper 前拒绝', async () => {
     const { event, handler, frame, request } = fixture()
     await expect(handler({ ...event, sender: {} } as IpcMainInvokeEvent, 'connect', connect())).rejects.toThrow('unauthorized')
@@ -100,6 +113,11 @@ describe('Remote-SSH Electron 主进程 IPC', () => {
     for (const [method, payload] of [
       ['shutdown', {}], ['invoke', { channel: 'arbitrary' }],
       ['connect', { ...connect(), secret: 'extra' }],
+      ['connect', { attemptId: 'attempt-1', host: 'example.com', port: 22, username: 'coding', auth: connect().auth }],
+      ['connect', { ...connect(), mode: '' }],
+      ['connect', { ...connect(), mode: 'legacy' }],
+      ['connect', { ...connect(), mode: null }],
+      ['connect', { ...connect(), mode: ['basic'] }],
       ['connect', { ...connect(), port: 0 }],
       ['connect', { ...connect(), host: 'example.com@127.0.0.1' }],
       ['connect', { ...connect(), auth: { kind: 'password', secret: '', extra: true } }],

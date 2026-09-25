@@ -1540,8 +1540,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   },
   {
     key: 'shell',
-    summary: 'Abstract bash execution service.',
-    description: 'Abstract bash execution service. Subclass, implement the abstract methods, and load the subclass as a plugin — it registers as `ctx.shell` (one implementation per context; loading a second throws, which is cordis\' standard duplicate-service behavior).\n\nImplementations must honor these semantics:\n\n- run rejects only for infrastructure failures. Nonzero exits, timeout kills, and abort kills resolve with a ShellRunResult.\n- start returns immediately; no timeout applies to background processes. `done` settles when the process settles and never rejects; provider rejections settle as `killed` with a stage-neutral error on stderr, appended alongside any unread provider output.\n- ShellProcess.readOutput is incremental: consecutive reads never repeat output. Lossy reads report truncation and available spill files.\n- A still-running background process is stopped and awaited when its owning composition tears down. With the subprocess seam that boundary is `ctx.subprocess` disposal, so a background process survives an executor-only reload.',
+    summary: 'Shell 执行抽象服务。子类作为插件注册到 `ctx.shell`；同一上下文重复注册会失败。',
+    description: 'Shell 执行抽象服务。子类作为插件注册到 `ctx.shell`；同一上下文重复注册会失败。\n\n实现必须遵守以下语义：\n\n- run 仅在基础设施失败时 reject；非零退出、超时与取消终止均以 ShellRunResult resolve。\n- start 立即返回，后台进程不应用执行器超时。`done` 在底层结算后 resolve 且不 reject；provider 无法报告退出结果时状态为 `failed`。 中性提示随未读 stderr 一起交付；`kill()` 只发出终止请求，不立即宣称进程已停止。\n- ShellProcess.readOutput 消费式增量读取；丢失未读输出时报告 `lossy` 和可用的 spill 文件。\n- 持有进程的 subprocess 服务释放时终止并等待运行中的后台进程。 仅重载执行器不停止它们。',
     methods: [
       {
         signature: 'abstract resolve(request: ShellExecRequest): ShellExecSpec',
@@ -3702,7 +3702,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RemoteWorkspace',
-    declaration: 'export interface RemoteWorkspace {\n    markerRoot: string;\n    remoteRoot: string;\n    connectionId: string;\n    markerGeneration: number;\n}',
+    declaration: 'export interface RemoteWorkspace {\n    markerRoot: string;\n    remoteRoot: string;\n    connectionId: string;\n    markerGeneration: number;\n    mode: RemoteWorkspaceMode;\n}',
+  },
+  {
+    name: 'RemoteWorkspaceMode',
+    declaration: 'export type RemoteWorkspaceMode = \'basic\' | \'agent\';',
   },
   {
     name: 'RemoteWorkspaceTarget',
@@ -4146,7 +4150,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ShellProcessStatus',
-    declaration: 'export type ShellProcessStatus = \'running\' | \'completed\' | \'killed\';',
+    declaration: 'export type ShellProcessStatus = \'running\' | \'completed\' | \'killed\' | \'failed\';',
   },
   {
     name: 'ShellRunResult',

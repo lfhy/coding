@@ -1,31 +1,31 @@
 /**
- * Local Service Provider for the bash capability seam over the subprocess
- * capability seam. Public commands run as `bash -c` in a managed process group spawned
- * through `ctx.subprocess`; subclasses may reuse the same mechanics with an
- * explicit argv. This executor owns command defaulting, deadlines and cause
- * classification, the model-friendly terminal environment, and the model-facing
- * stdout/stderr merge for background reads. Execution policy belongs in
- * `tools/pre-execute` or a sandboxing executor.
+ * Bash 执行器：本地及 agent 模式使用受管 subprocess；basic 模式前台通过
+ * bridge 运行一次 SSH exec，后台使用 bridge 的受管进程。命令默认值、环境与输出处理属于本模块，
+ * 执行审批属于 `tools/pre-execute` 或沙箱执行器。
  * @module @deepseek-ai/dsh-bash-local
  */
 
+import { constants } from 'node:os'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { SHELL_SETTINGS_NAMESPACE, ShellExecutor } from '@deepseek-ai/dsh-shell'
 import type { ShellExecRequest, ShellExecSpec, ShellProcess, ShellProcessRead, ShellRunResult, CollectedOutput } from '@deepseek-ai/dsh-shell'
 import {
+  callRemoteWorkspaceBridge,
+  RemoteWorkspaceError,
+  requireRemoteWorkspaceCapability,
   remoteWorkspacePathSync,
+  scrubbedParentEnv,
+  verifyRemoteWorkspaceTarget,
 } from '@deepseek-ai/dsh-subprocess'
 import type { SubprocessCollect, SubprocessHandle, SubprocessOutputReader, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { installSettingsSection } from '@deepseek-ai/dsh-settings'
 import { clampTimeout, deadline, MAX_TIMER_DELAY_MS, timeoutOf } from '@deepseek-ai/dsh-timeout'
 
 /**
- * Model-friendly environment overrides: disable colors, pagers, and
- * interactive terminal features that would garble tool output (the same set
- * Codex hardcodes; Claude Code achieves it via TERM=dumb). Bash-tool policy —
- * merged first into the spawn's explicit env, so a trusted caller's own entry
- * still wins; the subprocess service applies its credential scrub independently.
+ * 关闭颜色、分页器与交互式终端特性；显式调用方环境可以覆盖这些默认值。
+ * 本地/agent 由 subprocess 清除 ambient 凭据，basic 在请求前使用同一清除函数。
+ * basic 的显式环境经 SSH stdin 帧传输，不进入 SSH exec 命令行。
  */
 export const ENV_OVERRIDES = {
   NO_COLOR: '1',
@@ -67,6 +67,54 @@ function finalOutput(reader: SubprocessOutputReader): CollectedOutput {
     truncated: read.lossy,
     ...read.spillPath !== undefined ? { spillPath: read.spillPath } : {},
   }
+}
+
+const DIRECT_EXEC_OUTPUT_MAX_BYTES = 1 << 20
+
+/** 远端单次执行响应只有已结算退出事实才能映射为 ShellRunResult。 */
+function parseDirectExecResponse(value: unknown): {
+  exitCode: number | null
+  signal: NodeJS.Signals | null
+  timedOut: boolean
+  stdout: string
+  stderr: string
+  stdoutTruncated: boolean
+  stderrTruncated: boolean
+} {
+  const invalid = (): never => { throw new RemoteWorkspaceError('REMOTE_BRIDGE_RESPONSE_INVALID', 'remote SSH exec returned an invalid response') }
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return invalid()
+  const record = value as Record<string, unknown>
+  const required = ['exitCode', 'timedOut', 'stdout', 'stderr', 'stdoutTruncated', 'stderrTruncated']
+  if (required.some(key => !Object.hasOwn(record, key))
+    || Object.keys(record).some(key => !required.includes(key) && key !== 'signal')
+    || typeof record.timedOut !== 'boolean' || typeof record.stdout !== 'string' || typeof record.stderr !== 'string'
+    || typeof record.stdoutTruncated !== 'boolean' || typeof record.stderrTruncated !== 'boolean'
+    || Buffer.byteLength(record.stdout, 'utf8') > DIRECT_EXEC_OUTPUT_MAX_BYTES
+    || Buffer.byteLength(record.stderr, 'utf8') > DIRECT_EXEC_OUTPUT_MAX_BYTES
+    || (record.exitCode !== null && (typeof record.exitCode !== 'number' || !Number.isSafeInteger(record.exitCode) || record.exitCode < 0))) return invalid()
+  const rawSignal = record.signal
+  if (rawSignal !== undefined && typeof rawSignal !== 'string') return invalid()
+  const signal = rawSignal === undefined ? null : `SIG${rawSignal}`
+  if (signal !== null && !Object.hasOwn(constants.signals, signal)) return invalid()
+  if (!record.timedOut && (record.exitCode === null) === (signal === null)) return invalid()
+  if (record.timedOut && (record.exitCode !== null || signal !== null)) return invalid()
+  return {
+    exitCode: record.exitCode,
+    signal: signal as NodeJS.Signals | null,
+    timedOut: record.timedOut,
+    stdout: record.stdout,
+    stderr: record.stderr,
+    stdoutTruncated: record.stdoutTruncated,
+    stderrTruncated: record.stderrTruncated,
+  }
+}
+
+/** 将远端固定上限进一步收紧到调用方的字节预算，不承诺本地 spill 文件。 */
+function directOutput(text: string, truncated: boolean, maxBytes: number): CollectedOutput {
+  const bytes = Buffer.from(text, 'utf8')
+  if (bytes.length <= maxBytes) return { text, truncated }
+  const tail = bytes.subarray(bytes.length - Math.floor(maxBytes))
+  return { text: tail.toString('utf8').replace(/^\uFFFD+/u, ''), truncated: true }
 }
 
 function assertPositiveFinite(name: string, value: number): void {
@@ -216,18 +264,63 @@ export class LocalBashExecutor extends ShellExecutor {
   }
 
   async run(spec: ShellExecSpec): Promise<ShellRunResult> {
+    if (spec.remoteTarget?.mode === 'basic') return this.runBasicRemote(spec)
     return this.runArgv(spec, ['bash', '-c', spec.command])
   }
 
+  /** basic 模式仅拥有一次性 SSH exec，超时/取消后无法证明远端进程树停稳。 */
+  private async runBasicRemote(spec: ShellExecSpec): Promise<ShellRunResult> {
+    const target = spec.remoteTarget
+    if (target === undefined) {
+      throw new RemoteWorkspaceError('REMOTE_WORKSPACE_TARGET_INVALID', 'remote SSH exec requires a remote target')
+    }
+    requireRemoteWorkspaceCapability(target, 'exec')
+    // 先复核世代和模式；过期 marker 或 bridge 不可用绝不能退回本机执行。
+    const current = await verifyRemoteWorkspaceTarget(target, spec.signal)
+    // 服务端按 timeoutMs 结算；额外的传输宽限只用于避免 bridge 永久悬挂。
+    using transport = deadline(spec.signal, Math.min(MAX_TIMER_DELAY_MS, spec.timeoutMs + 5_000), 'BASH_REMOTE_TRANSPORT_TIMEOUT')
+    let response: ReturnType<typeof parseDirectExecResponse>
+    try {
+      response = await callRemoteWorkspaceBridge(current, '/v1/exec', 'POST', {
+        path: current.remotePath,
+        shell: 'bash',
+        command: spec.command,
+        timeoutMs: spec.timeoutMs,
+        ...spec.stdin === undefined ? {} : { stdin: spec.stdin },
+        env: { ...scrubbedParentEnv(), ...ENV_OVERRIDES, ...spec.env, ...spec.dshEnv },
+      }, parseDirectExecResponse, transport.signal)
+    } catch (error: unknown) {
+      if (transport.signal.aborted) {
+        throw new RemoteWorkspaceError('REMOTE_BRIDGE_ABORTED', 'remote SSH exec was cancelled or its transport timed out; remote process status is unknown')
+      }
+      throw error
+    }
+    if (response.timedOut) {
+      throw new RemoteWorkspaceError('REMOTE_BRIDGE_ABORTED', 'remote SSH exec timed out; remote process status is unknown')
+    }
+    return {
+      exitCode: response.exitCode,
+      signal: response.signal,
+      timedOut: false,
+      aborted: false,
+      timeoutMs: spec.timeoutMs,
+      stdout: directOutput(response.stdout, response.stdoutTruncated, spec.stdoutMaxBytes),
+      stderr: directOutput(response.stderr, response.stderrTruncated, this.config.maxOutputBytes),
+    }
+  }
+
   /**
-   * Run an explicit argv with the foreground lifecycle, environment, output,
-   * timeout, and cancellation semantics of this executor. Subclasses use this
-   * after replacing the public command's shell argv at an execution boundary.
-   * @param spec - resolved execution settings and caller-owned command metadata.
-   * @param argv - exact executable and arguments to hand to `ctx.subprocess`.
-   * @returns the settled foreground result with collected output and cause facts.
+   * 使用受管 subprocess 的前台生命周期运行显式 argv；basic 模式不能进入此路径。
+   * 子类在执行边界替换 argv 后也必须受此能力检查约束。
+   * @param spec - 已解析的命令与执行设置。
+   * @param argv - 交给 `ctx.subprocess` 的可执行文件与参数。
+   * @returns 带收集输出和退出原因的前台结算结果。
    */
   protected async runArgv(spec: ShellExecSpec, argv: readonly string[]): Promise<ShellRunResult> {
+    if (spec.remoteTarget?.mode === 'basic') {
+      throw new RemoteWorkspaceError('REMOTE_CAPABILITY_UNAVAILABLE', 'remote SSH basic mode supports only foreground bash exec')
+    }
+    if (spec.remoteTarget !== undefined) requireRemoteWorkspaceCapability(spec.remoteTarget, 'process')
     // One deadline combines timeout and upstream cancellation; disposal clears its timer.
     using d = deadline(spec.signal, spec.timeoutMs, 'BASH_TIMEOUT')
     const handle = this.ctx.subprocess.spawn(this.spawnSpec(spec, argv, spec.stdoutMaxBytes, d.signal))
@@ -255,9 +348,10 @@ export class LocalBashExecutor extends ShellExecutor {
    * argv。子类在执行边界替换公共命令的 shell argv 后调用此方法。
    * @param spec - 已解析的执行设置和调用方拥有的命令元数据。
    * @param argv - 交给 `ctx.subprocess` 的精确可执行文件与参数。
-   * @returns 实时后台句柄；provider rejection 以 killed 状态结算。
+   * @returns 实时后台句柄；provider rejection 以 failed 状态结算。
    */
   protected startArgv(spec: ShellExecSpec, argv: readonly string[]): ShellProcess {
+    if (spec.remoteTarget !== undefined) requireRemoteWorkspaceCapability(spec.remoteTarget, 'process')
     // 后台运行忽略 timeoutMs；调用方通过 kill() 或 spec.signal 停止它们。
     const running = this.ctx.subprocess.spawn(this.spawnSpec(spec, argv, this.config.maxOutputBytes, spec.signal))
     const collected = LocalBashExecutor.collected(running)
@@ -273,22 +367,23 @@ export class LocalBashExecutor extends ShellExecutor {
 
     let stdoutOffset = 0
     let stderrOffset = 0
+    let killRequested = false
     const proc: ShellProcess = {
       status: 'running',
       exitCode: null,
       signal: null,
       done: running.done.then((outcome) => {
         // 所有信号终止都归类为 killed，包括命令自行发出信号。
-        if (proc.status === 'running') {
-          proc.status = spec.signal?.aborted === true || outcome.signal !== null ? 'killed' : 'completed'
-        }
+        proc.status = outcome.signal !== null ? 'killed' : 'completed'
         proc.exitCode = outcome.exitCode
         proc.signal = outcome.signal
         this.onProcessDone(proc, collected.stderr.readFrom(0).text, false)
       }, (error: unknown) => {
-        // 后台 provider failure 以 killed 结算，并通过读取路径暴露。
-        proc.status = 'killed'
-        providerFailureNote = `subprocess failed before reporting an outcome: ${String(error)}`
+        // Basic SSH 的清理失败无法证明远端进程已退出；也不将桥接错误原文暴露给模型。
+        proc.status = 'failed'
+        providerFailureNote = spec.remoteTarget?.mode === 'basic'
+          ? 'subprocess failed before reporting an outcome; remote process status is unknown'
+          : `subprocess failed before reporting an outcome: ${String(error)}`
         this.onProcessDone(proc, providerFailureNote, true, error)
       }),
       readOutput: (): ShellProcessRead => {
@@ -313,8 +408,8 @@ export class LocalBashExecutor extends ShellExecutor {
         }
       },
       kill: (): boolean => {
-        if (proc.status !== 'running') return false
-        proc.status = 'killed'
+        if (proc.status !== 'running' || killRequested) return false
+        killRequested = true
         running.terminate()
         return true
       },

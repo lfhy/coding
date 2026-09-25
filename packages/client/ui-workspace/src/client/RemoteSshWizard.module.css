@@ -185,6 +185,57 @@ fieldset.field {
   color: var(--dsw-alias-label-primary);
 }
 
+.connectionModes {
+  display: grid;
+  gap: 0;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+}
+
+.connectionMode {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px 4px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  cursor: pointer;
+}
+
+.connectionMode:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.connectionMode:focus-within {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: -2px;
+}
+
+.connectionMode input {
+  flex: none;
+  margin: 4px 0 0;
+  accent-color: var(--dsw-alias-state-business-primary);
+}
+
+.connectionModeText {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.connectionModeName {
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 500;
+}
+
+.connectionModeDescription {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
 .input {
   width: 100%;
   box-sizing: border-box;
@@ -437,6 +488,7 @@ fieldset.field {
 
   .shell {
     grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
   .steps {

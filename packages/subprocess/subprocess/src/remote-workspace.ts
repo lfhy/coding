@@ -7,7 +7,8 @@
 
 import { open, realpath, stat } from 'node:fs/promises'
 import { closeSync, openSync, readSync, realpathSync, statSync } from 'node:fs'
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { homedir } from 'node:os'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { TextDecoder } from 'node:util'
 
 /** Remote-SSH 本地 marker 的固定文件名。 */
@@ -23,11 +24,15 @@ const MARKER_MAX_BYTES = 16 * 1024
 const BRIDGE_MAX_RESPONSE_BYTES = 40 * 1024 * 1024
 const REMOTE_TARGET_PREFIX = 'coding-remote-target:v1:'
 const CONNECTION_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
+const OFFICIAL_TARGET_DIRECTORY = /^[a-f0-9]{20}$/u
+const OFFICIAL_MARKER_DIRECTORY = /^([A-Za-z0-9_](?:[A-Za-z0-9_-]{0,38}[A-Za-z0-9_])?)-[a-f0-9]{20}$/u
+const OFFICIAL_MARKER_ALIAS = /^([A-Za-z0-9_](?:[A-Za-z0-9_-]{0,38}[A-Za-z0-9_])?)-([a-fA-F0-9]{20})$/u
 
 /** marker 解析或 bridge 传输失败的稳定分类。 */
 export type RemoteWorkspaceErrorCode =
   | 'REMOTE_WORKSPACE_MARKER_INVALID'
   | 'REMOTE_WORKSPACE_TARGET_INVALID'
+  | 'REMOTE_CAPABILITY_UNAVAILABLE'
   | 'REMOTE_BRIDGE_UNAVAILABLE'
   | 'REMOTE_BRIDGE_REJECTED'
   | 'REMOTE_BRIDGE_RESPONSE_INVALID'
@@ -46,6 +51,12 @@ export class RemoteWorkspaceError extends Error {
   }
 }
 
+/** marker 声明的远端连接模式；bridge 另行核验活连接的实际能力。 */
+export type RemoteWorkspaceMode = 'basic' | 'agent'
+
+/** 远端 Consumer 在派发前须按执行操作核验的能力。 */
+export type RemoteWorkspaceCapability = 'files-read' | 'files-write' | 'exec' | 'process' | 'terminal' | 'search' | 'code' | 'lsp'
+
 /** 已验证 marker 的当前身份；connectionId 不是凭据。 */
 export interface RemoteWorkspace {
   /** marker 目录的真实本地路径，用于防止伪造 targetKey 跨工作区。 */
@@ -56,6 +67,8 @@ export interface RemoteWorkspace {
   connectionId: string
   /** 与 marker 文件同轮发布的单调 generation。 */
   markerGeneration: number
+  /** 只用于 Host 展示和预检；bridge 的活连接仍独立决定实际权限。 */
+  mode: RemoteWorkspaceMode
 }
 
 /** 一个从本地 marker 路径映射出的远端路径。 */
@@ -73,10 +86,11 @@ export interface RemoteWorkspaceTarget extends RemoteWorkspace {
 }
 
 interface MarkerRecord {
-  version: 2
+  version: 2 | 3
   remoteRoot: string
   connectionId: string
   generation: number
+  mode: RemoteWorkspaceMode
 }
 
 interface BridgeConfig {
@@ -101,6 +115,29 @@ function markerInvalid(): never {
   throw new RemoteWorkspaceError('REMOTE_WORKSPACE_MARKER_INVALID', 'remote workspace marker is invalid')
 }
 
+function isRemoteWorkspaceMode(value: unknown): value is RemoteWorkspaceMode {
+  return value === 'basic' || value === 'agent'
+}
+
+/**
+ * 对 marker target 预检远端操作；没有 marker 的本地操作不得用本函数判定。
+ * bridge 仍按活连接自行授权，不能把该预检视为远端执行许可。
+ * @param target - 已识别的远端 target。
+ * @param capability - 本次操作实际需要的能力。
+ * @returns 能力可用时正常返回；基础模式请求 LSP 时抛出稳定分类错误。
+ */
+export function requireRemoteWorkspaceCapability(
+  target: Pick<RemoteWorkspace, 'mode'>,
+  capability: RemoteWorkspaceCapability,
+): void {
+  if (!isRemoteWorkspaceMode(target.mode)) {
+    throw new RemoteWorkspaceError('REMOTE_WORKSPACE_TARGET_INVALID', 'remote workspace target mode is invalid')
+  }
+  if (target.mode === 'basic' && capability === 'lsp') {
+    throw new RemoteWorkspaceError('REMOTE_CAPABILITY_UNAVAILABLE', `remote workspace capability is unavailable (${capability})`)
+  }
+}
+
 /**
  * 判断一条路径是否采用 remote agent 可接受的绝对路径形式。
  * @param value - 待校验的远端路径。
@@ -120,20 +157,124 @@ function parseMarker(value: unknown): MarkerRecord {
   const record = asRecord(value)
   if (record === undefined) return markerInvalid()
   const keys = Object.keys(record)
-  if (keys.some(key => key !== 'version' && key !== 'remoteRoot' && key !== 'connectionId' && key !== 'generation')) return markerInvalid()
+  if (keys.some(key => key !== 'version' && key !== 'remoteRoot' && key !== 'connectionId' && key !== 'generation' && key !== 'mode')) return markerInvalid()
   const generation = record.generation
-  if (record.version !== 2 || typeof record.remoteRoot !== 'string' || typeof record.connectionId !== 'string'
+  if ((record.version !== 2 && record.version !== 3) || (record.version === 2 ? 'mode' in record : !isRemoteWorkspaceMode(record.mode))
+    || typeof record.remoteRoot !== 'string' || typeof record.connectionId !== 'string'
     || typeof generation !== 'number' || !Number.isSafeInteger(generation) || generation <= 0) return markerInvalid()
   const remoteRoot = record.remoteRoot
   if (remoteRoot.length === 0 || remoteRoot.length > 4096 || remoteRoot !== remoteRoot.trim()
     || remoteRoot.includes('\0') || !isRemoteAbsolutePath(remoteRoot) || hasRemoteTraversal(remoteRoot)) return markerInvalid()
   if (!CONNECTION_ID.test(record.connectionId)) return markerInvalid()
-  return { version: 2, remoteRoot, connectionId: record.connectionId, generation }
+  return { version: record.version, remoteRoot, connectionId: record.connectionId, generation, mode: record.version === 2 ? 'agent' : record.mode as RemoteWorkspaceMode }
 }
 
 function isMissingMarker(error: unknown): boolean {
   return error instanceof Error && 'code' in error
     && (error.code === 'ENOENT' || error.code === 'ENOTDIR')
+}
+
+function configuredHome(): string {
+  const configured = process.env.DSH_HOME
+  const selected = configured === undefined || configured.trim() === '' ? join(homedir(), '.dsh') : configured
+  const expanded = selected === '~' ? homedir()
+    : selected.startsWith('~/') || selected.startsWith('~\\') ? join(homedir(), selected.slice(2)) : selected
+  return resolve(expanded)
+}
+
+function officialMarkerHome(directory: string): string | undefined {
+  const label = OFFICIAL_MARKER_DIRECTORY.exec(basename(directory))?.[1]
+  if (label === undefined || label.includes('--')) return undefined
+  const target = dirname(directory)
+  if (!OFFICIAL_TARGET_DIRECTORY.test(basename(target))) return undefined
+  const base = dirname(target)
+  return basename(base) === 'remote-workspaces' ? dirname(base) : undefined
+}
+
+function normalizedMarkerAlias(directory: string): string | undefined {
+  const match = OFFICIAL_MARKER_ALIAS.exec(basename(directory))
+  const label = match?.[1]
+  const hash = match?.[2]
+  const target = dirname(directory)
+  if (label === undefined || hash === undefined || label.includes('--') || !/^[a-fA-F0-9]{20}$/u.test(basename(target))) return undefined
+  const base = dirname(target)
+  if (basename(base) !== 'remote-workspaces') return undefined
+  return join(base, basename(target).toLowerCase(), `${label}-${hash.toLowerCase()}`)
+}
+
+async function officialAliasHome(directory: string): Promise<string | undefined> {
+  const normalized = normalizedMarkerAlias(directory)
+  if (normalized === undefined) return undefined
+  try {
+    const [alias, official] = await Promise.all([stat(directory), stat(normalized)])
+    return alias.dev === official.dev && alias.ino === official.ino ? officialMarkerHome(normalized) : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function officialAliasHomeSync(directory: string): string | undefined {
+  const normalized = normalizedMarkerAlias(directory)
+  if (normalized === undefined) return undefined
+  try {
+    const alias = statSync(directory)
+    const official = statSync(normalized)
+    return alias.dev === official.dev && alias.ino === official.ino ? officialMarkerHome(normalized) : undefined
+  } catch {
+    return undefined
+  }
+}
+
+async function isOfficialMarkerDirectory(directory: string, homes: readonly string[]): Promise<boolean> {
+  let candidateHome = officialMarkerHome(directory)
+  if (candidateHome === undefined) {
+    try {
+      candidateHome = officialMarkerHome(await realpath(directory))
+    } catch {}
+  }
+  candidateHome ??= await officialAliasHome(directory)
+  if (candidateHome === undefined) return false
+  if (homes.includes(candidateHome)) return true
+  try {
+    return homes.includes(await realpath(candidateHome))
+  } catch {
+    return false
+  }
+}
+
+function isOfficialMarkerDirectorySync(directory: string, homes: readonly string[]): boolean {
+  let candidateHome = officialMarkerHome(directory)
+  if (candidateHome === undefined) {
+    try {
+      candidateHome = officialMarkerHome(realpathSync(directory))
+    } catch {}
+  }
+  candidateHome ??= officialAliasHomeSync(directory)
+  if (candidateHome === undefined) return false
+  if (homes.includes(candidateHome)) return true
+  try {
+    return homes.includes(realpathSync(candidateHome))
+  } catch {
+    return false
+  }
+}
+
+async function markerHomes(): Promise<string[]> {
+  const home = configuredHome()
+  try {
+    return [home, await realpath(home)]
+  } catch {
+    return [home]
+  }
+}
+
+function markerHomesSync(): string[] {
+  const home = configuredHome()
+  try {
+    return [home, realpathSync(home)]
+  } catch {
+    return [home]
+  }
 }
 
 async function readMarkerText(marker: string): Promise<string> {
@@ -211,6 +352,7 @@ async function markerAt(directory: string, signal?: AbortSignal): Promise<Remote
     remoteRoot: record.remoteRoot,
     connectionId: record.connectionId,
     markerGeneration: record.generation,
+    mode: record.mode,
   }
 }
 
@@ -243,6 +385,7 @@ function markerAtSync(directory: string): RemoteWorkspace | undefined {
     remoteRoot: record.remoteRoot,
     connectionId: record.connectionId,
     markerGeneration: record.generation,
+    mode: record.mode,
   }
 }
 
@@ -324,7 +467,7 @@ export function remoteWorkspaceLocalPath(workspace: Pick<RemoteWorkspace, 'marke
  * @param path - 调用者路径，绝对路径不受 cwd 影响。
  * @param cwd - 相对路径的本地解析基准。
  * @param signal - 取消 marker I/O。
- * @returns 路径未落在 marker 内时为 undefined。
+ * @returns 路径未落在 marker 内时为 undefined；官方保留目录缺少 marker 时拒绝。
  */
 export async function remoteWorkspacePath(
   path: string,
@@ -333,6 +476,7 @@ export async function remoteWorkspacePath(
 ): Promise<RemoteWorkspacePath | undefined> {
   abortIfNeeded(signal)
   const localPath = resolve(cwd, path)
+  const homes = await markerHomes()
   for (let directory = localPath; ; directory = dirname(directory)) {
     const workspace = await markerAt(directory, signal)
     if (workspace !== undefined) {
@@ -346,6 +490,7 @@ export async function remoteWorkspacePath(
       }
       return { ...workspace, localPath, remotePath }
     }
+    if (await isOfficialMarkerDirectory(directory, homes)) return markerInvalid()
     const parent = dirname(directory)
     if (parent === directory) return undefined
   }
@@ -356,10 +501,11 @@ export async function remoteWorkspacePath(
  * 读取上限与异步路径相同，且不会建立 bridge 连接或读取 token。
  * @param path - 调用者路径，绝对路径不受 cwd 影响。
  * @param cwd - 相对路径的本地解析基准。
- * @returns 路径未落在 marker 内时为 undefined。
+ * @returns 路径未落在 marker 内时为 undefined；官方保留目录缺少 marker 时拒绝。
  */
 export function remoteWorkspacePathSync(path: string, cwd = process.cwd()): RemoteWorkspacePath | undefined {
   const localPath = resolve(cwd, path)
+  const homes = markerHomesSync()
   for (let directory = localPath; ; directory = dirname(directory)) {
     const workspace = markerAtSync(directory)
     if (workspace !== undefined) {
@@ -373,6 +519,7 @@ export function remoteWorkspacePathSync(path: string, cwd = process.cwd()): Remo
       }
       return { ...workspace, localPath, remotePath }
     }
+    if (isOfficialMarkerDirectorySync(directory, homes)) return markerInvalid()
     const parent = dirname(directory)
     if (parent === directory) return undefined
   }
@@ -385,6 +532,8 @@ export function remoteWorkspacePathSync(path: string, cwd = process.cwd()): Remo
  */
 export function remoteWorkspaceTargetKey(target: RemoteWorkspaceTarget): string {
   if (!isAbsolute(target.markerRoot) || !Number.isSafeInteger(target.markerGeneration) || target.markerGeneration <= 0
+    || !CONNECTION_ID.test(target.connectionId) || !isRemoteWorkspaceMode(target.mode)
+    || !isRemoteAbsolutePath(target.remoteRoot) || !isRemoteAbsolutePath(target.remotePath)
     || !isRemotePathWithin(target.remoteRoot, target.remotePath)) {
     throw new RemoteWorkspaceError('REMOTE_WORKSPACE_TARGET_INVALID', 'remote workspace target is invalid')
   }
@@ -394,6 +543,7 @@ export function remoteWorkspaceTargetKey(target: RemoteWorkspaceTarget): string 
     remotePath: target.remotePath,
     connectionId: target.connectionId,
     markerGeneration: target.markerGeneration,
+    mode: target.mode,
   })
   return REMOTE_TARGET_PREFIX + Buffer.from(payload, 'utf8').toString('base64url')
 }
@@ -418,11 +568,11 @@ export function parseRemoteWorkspaceTargetKey(targetKey: string): RemoteWorkspac
   }
   const record = asRecord(value)
   const markerGeneration = record?.markerGeneration
-  if (record === undefined || Object.keys(record).some(key => key !== 'markerRoot' && key !== 'remoteRoot' && key !== 'remotePath' && key !== 'connectionId' && key !== 'markerGeneration')
+  if (record === undefined || Object.keys(record).some(key => key !== 'markerRoot' && key !== 'remoteRoot' && key !== 'remotePath' && key !== 'connectionId' && key !== 'markerGeneration' && key !== 'mode')
     || typeof record.markerRoot !== 'string' || typeof record.remoteRoot !== 'string' || typeof record.remotePath !== 'string'
     || typeof record.connectionId !== 'string' || typeof markerGeneration !== 'number' || !Number.isSafeInteger(markerGeneration) || markerGeneration <= 0
     || !isAbsolute(record.markerRoot) || !isRemoteAbsolutePath(record.remoteRoot) || !isRemoteAbsolutePath(record.remotePath)
-    || !isRemotePathWithin(record.remoteRoot, record.remotePath)) {
+    || !isRemotePathWithin(record.remoteRoot, record.remotePath) || (record.mode !== undefined && !isRemoteWorkspaceMode(record.mode))) {
     throw new RemoteWorkspaceError('REMOTE_WORKSPACE_TARGET_INVALID', 'remote workspace target is invalid')
   }
   if (!CONNECTION_ID.test(record.connectionId)) {
@@ -434,6 +584,7 @@ export function parseRemoteWorkspaceTargetKey(targetKey: string): RemoteWorkspac
     remotePath: record.remotePath,
     connectionId: record.connectionId,
     markerGeneration,
+    mode: record.mode === undefined ? 'agent' : record.mode,
   }
 }
 
@@ -453,6 +604,7 @@ export async function verifyRemoteWorkspaceTarget(
     current.remoteRoot !== target.remoteRoot
     || current.connectionId !== target.connectionId
     || current.markerGeneration !== target.markerGeneration
+    || current.mode !== target.mode
     || !isRemotePathWithin(current.remoteRoot, target.remotePath)
   ) {
     throw new RemoteWorkspaceError('REMOTE_WORKSPACE_TARGET_INVALID', 'remote workspace target no longer matches its marker')

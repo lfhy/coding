@@ -174,7 +174,8 @@ export class BashTerminalBackend implements TerminalBackend {
     private readonly createSession: (
       terminal: SubprocessTerminalHandle,
       config: ResolvedConfig,
-    ) => LocalPtySession = (terminal, config) => new LocalPtySession(terminal, config),
+      basicRemote: boolean,
+    ) => LocalPtySession = (terminal, config, basicRemote) => new LocalPtySession(terminal, config, basicRemote),
   ) {
     this.type = config.backendType
   }
@@ -200,7 +201,7 @@ export class BashTerminalBackend implements TerminalBackend {
       graceMs: this.config.disposeGraceMs,
       signal: spec.signal,
     })
-    const session = this.createSession(terminal, this.config)
+    const session = this.createSession(terminal, this.config, remoteTarget?.mode === 'basic')
     try {
       await startupSession(session, this.config.shellDialect, this.config.timeoutMs, spec.signal)
       return session

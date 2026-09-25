@@ -1,16 +1,21 @@
 /**
  * Remote-SSH 的桌面桥接边界。浏览器 Host 不具备 SSH 权限；只有桌面壳注入
- * 受限桥接面后，才会暴露这些调用。Wails 依赖每窗口 token，Electron 依赖
- * preload 注入的无 token API；跨进程返回值在进入 React 前统一校验。
+ * 受限桥接面后，才会暴露这些调用。Electron 通过 preload 注入的固定 API
+ * 授权；跨进程返回值在进入 React 前统一校验。
  */
 
 /** SSH 认证输入的种类；密钥材料只随当前调用传给桌面壳。 */
 export type RemoteSshAuthKind = 'password' | 'privateKey'
 
+/** 远程执行能力由桌面端按连接模式配置，不能由 UI 从传输状态推断。 */
+export type RemoteSshMode = 'basic' | 'agent'
+
 /** 连接远程 SSH 主机所需的瞬时输入。 */
 export interface RemoteSshConnectInput {
   /** 当前 UI 连接尝试的关联标识；取消与 progress 必须精确回显它。 */
   attemptId: string
+  /** 必填；基础模式不部署 agent，Agent 模式需要服务器允许 TCP 转发。 */
+  mode: RemoteSshMode
   host: string
   port: number
   username: string
@@ -26,8 +31,8 @@ export interface RemoteSshConnectInput {
 
 /** Desktop bridge 在连接结束时给出的三个确定分支。 */
 export type RemoteSshConnectResult =
-  | { kind: 'ready'; connectionId: string; homePath?: string | undefined }
-  | { kind: 'host-key-confirmation'; confirmationId: string; fingerprint: string; algorithm: string }
+  | { kind: 'ready'; mode: RemoteSshMode; connectionId: string; homePath?: string | undefined }
+  | { kind: 'host-key-confirmation'; mode: RemoteSshMode; confirmationId: string; fingerprint: string; algorithm: string }
   | {
     kind: 'error'
     message: string
@@ -75,7 +80,7 @@ export interface RemoteSshBridge {
 /** SSH 表单错误；组件据此映射到本地化、且不回显敏感输入的文案。 */
 export class RemoteSshConfigError extends Error {
   /** @param code - 被拒绝字段的稳定分类。 */
-  constructor(readonly code: 'host' | 'port' | 'username' | 'secret') {
+  constructor(readonly code: 'mode' | 'host' | 'port' | 'username' | 'secret') {
     super(code)
     this.name = 'RemoteSshConfigError'
   }
@@ -98,6 +103,8 @@ export class RemoteSshBridgeError extends Error {
  * @throws {RemoteSshConfigError} 任一字段不满足 SSH 配置约束。
  */
 export function validateRemoteSshConfig(input: RemoteSshConnectInput): RemoteSshConnectInput {
+  const mode: unknown = input.mode
+  if (mode !== 'basic' && mode !== 'agent') throw new RemoteSshConfigError('mode')
   if (
     input.host.trim() === ''
     || input.host.includes('://')
@@ -115,30 +122,14 @@ export function validateRemoteSshConfig(input: RemoteSshConnectInput): RemoteSsh
   return input
 }
 
-type DesktopBinding = {
-  RemoteSSHConnect?: unknown
-  RemoteSSHCancelConnect?: unknown
-  RemoteSSHListDirectories?: unknown
-  RemoteSSHSelectDirectory?: unknown
-  RemoteSSHClose?: unknown
-  RemoteSSHRejectHostKey?: unknown
-}
-
-type DesktopRuntime = {
-  EventsOn?: unknown
-}
-
 type DesktopWindow = Window & {
-  __CODING_DESKTOP_BRIDGE_TOKEN?: unknown
   codingDesktop?: { remoteSSH?: unknown }
-  go?: { main?: { App?: DesktopBinding } }
-  runtime?: DesktopRuntime
 }
 
-/** 将未知 Wails 返回值收窄为记录，失败时不给调用方泄漏实现细节。 */
+/** 将未知桌面端返回值收窄为记录，失败时不给调用方泄漏实现细节。 */
 function record(value: unknown): Record<string, unknown> {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-    throw new RemoteSshBridgeError('桌面端返回了无效的 Remote-SSH 响应。')
+    throw new RemoteSshBridgeError('桌面端返回了无效的远程连接响应。')
   }
   return value as Record<string, unknown>
 }
@@ -147,14 +138,14 @@ function record(value: unknown): Record<string, unknown> {
 function exactFields(value: Record<string, unknown>, allowed: readonly string[]): void {
   const accepted = new Set(allowed)
   if (Object.keys(value).some(key => !accepted.has(key))) {
-    throw new RemoteSshBridgeError('桌面端返回了无效的 Remote-SSH 响应。')
+    throw new RemoteSshBridgeError('桌面端返回了无效的远程连接响应。')
   }
 }
 
 /** 读取必填字符串并拒绝空白值。 */
 function stringField(value: unknown): string {
   if (typeof value !== 'string' || value === '') {
-    throw new RemoteSshBridgeError('桌面端返回了无效的 Remote-SSH 响应。')
+    throw new RemoteSshBridgeError('桌面端返回了无效的远程连接响应。')
   }
   return value
 }
@@ -166,21 +157,29 @@ function optionalStringField(value: unknown): string | undefined {
 }
 
 /** 验证 Connect 的封闭联合结果。 */
-function parseConnectResult(value: unknown): RemoteSshConnectResult {
+function parseConnectResult(value: unknown, requestedMode: RemoteSshMode): RemoteSshConnectResult {
   const result = record(value)
   switch (result.kind) {
     case 'ready': {
-      exactFields(result, ['kind', 'connectionId', 'homePath'])
+      exactFields(result, ['kind', 'mode', 'connectionId', 'homePath'])
+      if ((result.mode !== 'basic' && result.mode !== 'agent') || result.mode !== requestedMode) {
+        throw new RemoteSshBridgeError('桌面端返回了无效的远程连接响应。')
+      }
       return {
         kind: 'ready',
+        mode: result.mode,
         connectionId: stringField(result.connectionId),
         homePath: optionalStringField(result.homePath),
       }
     }
     case 'host-key-confirmation': {
-      exactFields(result, ['kind', 'confirmationId', 'fingerprint', 'algorithm'])
+      exactFields(result, ['kind', 'mode', 'confirmationId', 'fingerprint', 'algorithm'])
+      if ((result.mode !== 'basic' && result.mode !== 'agent') || result.mode !== requestedMode) {
+        throw new RemoteSshBridgeError('桌面端返回了无效的远程连接响应。')
+      }
       return {
         kind: 'host-key-confirmation',
+        mode: result.mode,
         confirmationId: stringField(result.confirmationId),
         fingerprint: stringField(result.fingerprint),
         algorithm: stringField(result.algorithm),
@@ -189,14 +188,14 @@ function parseConnectResult(value: unknown): RemoteSshConnectResult {
     case 'error': {
       exactFields(result, ['kind', 'message', 'code'])
       if (result.code !== undefined && result.code !== 'port-forwarding-denied') {
-        throw new RemoteSshBridgeError('桌面端返回了未知的 Remote-SSH 错误码。')
+        throw new RemoteSshBridgeError('桌面端返回了未知的远程连接错误码。')
       }
       return {
         kind: 'error', message: stringField(result.message),
         ...(result.code === undefined ? {} : { code: result.code }),
       }
     }
-    default: throw new RemoteSshBridgeError('桌面端返回了未知的 Remote-SSH 状态。')
+    default: throw new RemoteSshBridgeError('桌面端返回了未知的远程连接状态。')
   }
 }
 
@@ -227,7 +226,7 @@ function parseDirectorySelection(value: unknown): RemoteSshDirectorySelection {
   return { markerPath: stringField(result.markerPath), remotePath: stringField(result.remotePath) }
 }
 
-/** 忽略未知 event，避免另一个 Wails 事件污染 Remote-SSH 状态。 */
+/** 忽略未知进度事件，避免无效事件污染 Remote-SSH 状态。 */
 function parseProgress(value: unknown): RemoteSshProgress | undefined {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined
   const result = value as Record<string, unknown>
@@ -254,7 +253,7 @@ async function invokeBinding<T>(invoke: () => Promise<unknown>, parse: (value: u
     return parse(await invoke())
   } catch (reason) {
     if (reason instanceof RemoteSshBridgeError) throw reason
-    throw new RemoteSshBridgeError('Remote-SSH 桌面桥接调用失败。')
+    throw new RemoteSshBridgeError('远程连接桌面桥接调用失败。')
   }
 }
 
@@ -263,14 +262,8 @@ async function invokeBindingEffect(invoke: () => Promise<unknown>): Promise<void
   try {
     await invoke()
   } catch {
-    throw new RemoteSshBridgeError('Remote-SSH 桌面桥接调用失败。')
+    throw new RemoteSshBridgeError('远程连接桌面桥接调用失败。')
   }
-}
-
-/** 返回当前窗口注入的一次性 token；没有 token 的 Web Host 永远不可调用敏感绑定。 */
-function bridgeToken(target: DesktopWindow): string | undefined {
-  const token = target.__CODING_DESKTOP_BRIDGE_TOKEN
-  return typeof token === 'string' && token !== '' ? token : undefined
 }
 
 /** 仅接纳 preload 注入的完整能力面；不从网页地址推断桌面权限。 */
@@ -297,7 +290,7 @@ function electronBridge(target: DesktopWindow): RemoteSshBridge | undefined {
   const subscribeProgress = api.subscribeProgress as (listener: (payload: unknown) => void) => unknown
 
   return {
-    connect: input => invokeBinding(() => connect(input), parseConnectResult),
+    connect: input => invokeBinding(() => connect(input), value => parseConnectResult(value, input.mode)),
     cancelConnect: attemptId => invokeBindingEffect(() => cancelConnect(attemptId)),
     listDirectories: (connectionId, path) => invokeBinding(
       () => listDirectories(connectionId, path), parseDirectoryListing,
@@ -313,73 +306,22 @@ function electronBridge(target: DesktopWindow): RemoteSshBridge | undefined {
           const progress = parseProgress(payload)
           if (progress !== undefined) listener(progress)
         })
-        if (typeof dispose !== 'function') throw new RemoteSshBridgeError('桌面端返回了无效的 Remote-SSH 响应。')
+        if (typeof dispose !== 'function') throw new RemoteSshBridgeError('桌面端返回了无效的远程连接响应。')
         return dispose as () => void
       } catch (reason) {
         if (reason instanceof RemoteSshBridgeError) throw reason
-        throw new RemoteSshBridgeError('Remote-SSH 桌面桥接调用失败。')
+        throw new RemoteSshBridgeError('远程连接桌面桥接调用失败。')
       }
     },
   }
 }
 
 /**
- * 取得桌面壳的受限 Remote-SSH 调用面。优先接受完整的 Electron preload API；
- * 否则仅在 Wails token 和绑定齐备时回退。普通 Web Host 不会降级为 HTTP URL。
+ * 取得桌面壳的受限 Remote-SSH 调用面。仅接受完整的 Electron preload API；
+ * 普通 Web Host 不会降级为 HTTP URL。
  * @returns 仅在本窗口被桌面壳授权时存在的 bridge。
  */
 export function getRemoteSshBridge(): RemoteSshBridge | undefined {
   if (typeof window === 'undefined') return undefined
-  const target = window as DesktopWindow
-  const electron = electronBridge(target)
-  if (electron !== undefined) return electron
-  const token = bridgeToken(target)
-  const app = target.go?.main?.App
-  if (
-    token === undefined
-    || app === undefined
-    || typeof app.RemoteSSHConnect !== 'function'
-    || typeof app.RemoteSSHCancelConnect !== 'function'
-    || typeof app.RemoteSSHListDirectories !== 'function'
-    || typeof app.RemoteSSHSelectDirectory !== 'function'
-    || typeof app.RemoteSSHClose !== 'function'
-    || typeof app.RemoteSSHRejectHostKey !== 'function'
-  ) return undefined
-
-  const connect = app.RemoteSSHConnect as (bridgeToken: string, input: RemoteSshConnectInput) => Promise<unknown>
-  const cancelConnect = app.RemoteSSHCancelConnect as (bridgeToken: string, attemptId: string) => Promise<unknown>
-  const listDirectories = app.RemoteSSHListDirectories as (
-    bridgeToken: string, connectionId: string, path: string,
-  ) => Promise<unknown>
-  const selectDirectory = app.RemoteSSHSelectDirectory as (
-    bridgeToken: string, connectionId: string, path: string,
-  ) => Promise<unknown>
-  const close = app.RemoteSSHClose as (bridgeToken: string, connectionId: string) => Promise<unknown>
-  const rejectHostKey = app.RemoteSSHRejectHostKey as (
-    bridgeToken: string, confirmationId: string,
-  ) => Promise<unknown>
-
-  return {
-    connect: input => invokeBinding(() => connect(token, input), parseConnectResult),
-    cancelConnect: attemptId => invokeBindingEffect(() => cancelConnect(token, attemptId)),
-    listDirectories: (connectionId, path) => invokeBinding(
-      () => listDirectories(token, connectionId, path), parseDirectoryListing,
-    ),
-    selectDirectory: (connectionId, path) => invokeBinding(
-      () => selectDirectory(token, connectionId, path), parseDirectorySelection,
-    ),
-    close: connectionId => invokeBindingEffect(() => close(token, connectionId)),
-    rejectHostKey: confirmationId => invokeBindingEffect(() => rejectHostKey(token, confirmationId)),
-    subscribeProgress: (listener) => {
-      const eventsOn = target.runtime?.EventsOn
-      if (typeof eventsOn !== 'function') return () => {}
-      const unsubscribe = (eventsOn as (
-        eventName: string, listener: (payload: unknown) => void,
-      ) => unknown)('coding:remote-ssh-progress', (payload) => {
-        const progress = parseProgress(payload)
-        if (progress !== undefined) listener(progress)
-      })
-      return typeof unsubscribe === 'function' ? unsubscribe as () => void : () => {}
-    },
-  }
+  return electronBridge(window)
 }

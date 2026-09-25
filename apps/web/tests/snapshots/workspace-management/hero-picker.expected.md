@@ -4,9 +4,9 @@
   - menuitem "Open folder":
     - img
     - text: Open folder
-  - menuitem "Connect Remote-SSH":
+  - menuitem "Remote connection":
     - img
-    - text: Connect Remote-SSH
+    - text: Remote connection
   - menuitem "Work without a project":
     - img
     - text: Work without a project

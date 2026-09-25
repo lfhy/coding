@@ -17,7 +17,7 @@ import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { SHELL_SETTINGS_NAMESPACE, ShellExecutor } from '@deepseek-ai/dsh-shell'
 import type { ShellExecRequest, ShellExecSpec, ShellProcess, ShellProcessRead, ShellRunResult, CollectedOutput } from '@deepseek-ai/dsh-shell'
-import { remoteWorkspacePathSync } from '@deepseek-ai/dsh-subprocess'
+import { RemoteWorkspaceError, remoteWorkspacePathSync, requireRemoteWorkspaceCapability } from '@deepseek-ai/dsh-subprocess'
 import type { SubprocessCollect, SubprocessHandle, SubprocessOutputReader, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { installSettingsSection } from '@deepseek-ai/dsh-settings'
 import { clampTimeout, deadline, MAX_TIMER_DELAY_MS, timeoutOf } from '@deepseek-ai/dsh-timeout'
@@ -266,6 +266,10 @@ export class PwshLocalExecutor extends ShellExecutor {
 
   /** Foreground run of an exact argv (the confining subclass re-wraps it). */
   protected async runArgv(spec: ShellExecSpec, argv: readonly string[]): Promise<ShellRunResult> {
+    if (spec.remoteTarget?.mode === 'basic') {
+      throw new RemoteWorkspaceError('REMOTE_CAPABILITY_UNAVAILABLE', 'remote SSH basic mode does not support PowerShell exec')
+    }
+    if (spec.remoteTarget !== undefined) requireRemoteWorkspaceCapability(spec.remoteTarget, 'process')
     // One deadline combines timeout and upstream cancellation; disposal clears its timer.
     using d = deadline(spec.signal, spec.timeoutMs, 'BASH_TIMEOUT')
     const handle = this.ctx.subprocess.spawn(this.spawnSpec(spec, spec.stdoutMaxBytes, d.signal, argv))
@@ -290,6 +294,10 @@ export class PwshLocalExecutor extends ShellExecutor {
 
   /** 启动精确 argv 的后台任务（隔离子类会再次包装它）。 */
   protected startArgv(spec: ShellExecSpec, argv: readonly string[]): ShellProcess {
+    if (spec.remoteTarget?.mode === 'basic') {
+      throw new RemoteWorkspaceError('REMOTE_CAPABILITY_UNAVAILABLE', 'remote SSH basic mode does not support background PowerShell processes')
+    }
+    if (spec.remoteTarget !== undefined) requireRemoteWorkspaceCapability(spec.remoteTarget, 'process')
     // 后台运行忽略 timeoutMs；调用方通过 kill() 或 spec.signal 停止它们。
     const running = this.ctx.subprocess.spawn(this.spawnSpec(spec, this.config.maxOutputBytes, spec.signal, argv))
     const collected = PwshLocalExecutor.collected(running)
@@ -305,21 +313,22 @@ export class PwshLocalExecutor extends ShellExecutor {
 
     let stdoutOffset = 0
     let stderrOffset = 0
+    let killRequested = false
     const proc: ShellProcess = {
       status: 'running',
       exitCode: null,
       signal: null,
       done: running.done.then((outcome) => {
         // 所有信号终止都归类为 killed，包括命令自行发出信号。
-        if (proc.status === 'running') {
-          proc.status = spec.signal?.aborted === true || outcome.signal !== null ? 'killed' : 'completed'
-        }
+        proc.status = outcome.signal !== null
+          || (process.platform === 'win32' && (killRequested || spec.signal?.aborted === true) && outcome.exitCode === 1)
+          ? 'killed' : 'completed'
         proc.exitCode = outcome.exitCode
         proc.signal = outcome.signal
         this.onProcessDone(proc, collected.stderr.readFrom(0).text, false)
       }, (error: unknown) => {
-        // 后台 provider failure 以 killed 结算，并通过读取路径暴露。
-        proc.status = 'killed'
+        // Provider rejection 没有终止事实，以 failed 结算并通过读取路径暴露。
+        proc.status = 'failed'
         providerFailureNote = `subprocess failed before reporting an outcome: ${String(error)}`
         this.onProcessDone(proc, providerFailureNote, true, error)
       }),
@@ -345,8 +354,8 @@ export class PwshLocalExecutor extends ShellExecutor {
         }
       },
       kill: (): boolean => {
-        if (proc.status !== 'running') return false
-        proc.status = 'killed'
+        if (proc.status !== 'running' || killRequested) return false
+        killRequested = true
         running.terminate()
         return true
       },

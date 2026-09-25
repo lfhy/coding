@@ -44,10 +44,11 @@ async function marker(): Promise<string> {
 
 async function replaceMarker(root: string, connectionId: string, generation = 1): Promise<void> {
   await writeFile(join(root, REMOTE_WORKSPACE_MARKER), JSON.stringify({
-    version: 2,
+    version: 3,
     remoteRoot: '/srv/project',
     connectionId,
     generation,
+    mode: 'agent',
   }))
 }
 

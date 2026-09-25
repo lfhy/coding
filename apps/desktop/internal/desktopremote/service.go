@@ -80,6 +80,9 @@ func NewService(options Options) (*Service, error) {
 		ctx = context.Background()
 	}
 	ctx, cancel := context.WithCancel(ctx)
+	if bridge, ok := options.Bridge.(*Bridge); ok {
+		bridge.connection = options.Manager.Connection
+	}
 	return &Service{home: options.Home, ctx: ctx, cancel: cancel, remoteManager: options.Manager, remoteBridge: options.Bridge,
 		onProgress: options.OnProgress, onCleanupError: options.OnCleanupError, remoteMarkers: make(map[string]string)}, nil
 }
@@ -132,13 +135,14 @@ const (
 
 // RemoteSSHConnectInput 是桌面 IPC 边界接收的一次性 SSH 连接输入。
 type RemoteSSHConnectInput struct {
-	AttemptID                string             `json:"attemptId"`
-	Host                     string             `json:"host"`
-	Port                     int                `json:"port"`
-	Username                 string             `json:"username"`
-	Auth                     RemoteSSHAuthInput `json:"auth"`
-	ConfirmationID           string             `json:"confirmationId,omitempty"`
-	AcceptHostKeyFingerprint string             `json:"acceptHostKeyFingerprint,omitempty"`
+	AttemptID                string                     `json:"attemptId"`
+	Mode                     remoteagent.ConnectionMode `json:"mode"`
+	Host                     string                     `json:"host"`
+	Port                     int                        `json:"port"`
+	Username                 string                     `json:"username"`
+	Auth                     RemoteSSHAuthInput         `json:"auth"`
+	ConfirmationID           string                     `json:"confirmationId,omitempty"`
+	AcceptHostKeyFingerprint string                     `json:"acceptHostKeyFingerprint,omitempty"`
 }
 
 // RemoteSSHAuthInput 只在一次调用期间持有密码或私钥。
@@ -149,14 +153,15 @@ type RemoteSSHAuthInput struct {
 
 // RemoteSSHConnectResult 是 Client 约定的封闭连接结果。
 type RemoteSSHConnectResult struct {
-	Kind           string `json:"kind"`
-	ConnectionID   string `json:"connectionId,omitempty"`
-	HomePath       string `json:"homePath,omitempty"`
-	ConfirmationID string `json:"confirmationId,omitempty"`
-	Fingerprint    string `json:"fingerprint,omitempty"`
-	Algorithm      string `json:"algorithm,omitempty"`
-	Code           string `json:"code,omitempty"`
-	Message        string `json:"message,omitempty"`
+	Kind           string                     `json:"kind"`
+	ConnectionID   string                     `json:"connectionId,omitempty"`
+	Mode           remoteagent.ConnectionMode `json:"mode,omitempty"`
+	HomePath       string                     `json:"homePath,omitempty"`
+	ConfirmationID string                     `json:"confirmationId,omitempty"`
+	Fingerprint    string                     `json:"fingerprint,omitempty"`
+	Algorithm      string                     `json:"algorithm,omitempty"`
+	Code           string                     `json:"code,omitempty"`
+	Message        string                     `json:"message,omitempty"`
 }
 
 // RemoteSSHDirectoryEntry 是目录选择器可进入的远端目录。
@@ -230,7 +235,7 @@ func (s *Service) RemoteSSHConnect(input RemoteSSHConnectInput) (RemoteSSHConnec
 				return remoteSSHFailure(errors.New("Remote-SSH connection attempt was replaced")), nil
 			}
 			return RemoteSSHConnectResult{
-				Kind: "host-key-confirmation", ConfirmationID: unknown.ConfirmationID,
+				Kind: "host-key-confirmation", Mode: input.Mode, ConfirmationID: unknown.ConfirmationID,
 				Fingerprint: unknown.Fingerprint, Algorithm: unknown.Algorithm,
 			}, nil
 		}
@@ -245,7 +250,7 @@ func (s *Service) RemoteSSHConnect(input RemoteSSHConnectInput) (RemoteSSHConnec
 		cancel()
 		return remoteSSHFailure(errors.New("Remote-SSH connection attempt was replaced")), nil
 	}
-	return RemoteSSHConnectResult{Kind: "ready", ConnectionID: info.ID, HomePath: info.RemoteHome}, nil
+	return RemoteSSHConnectResult{Kind: "ready", ConnectionID: info.ID, Mode: info.Mode, HomePath: info.RemoteHome}, nil
 }
 
 // RemoteSSHListDirectories 返回一个规范化目录的一层子目录。
@@ -417,7 +422,7 @@ func (s *Service) selectDirectory(connectionID, remotePath string, operation *un
 	// bridge，也必须带上这一轮 generation；旧快照不会被转发到旧连接。
 	var publishedFile os.FileInfo
 	generation, err := s.remoteBridge.PublishMarker(ctx, markerRoot, marker.RemoteRoot, marker.ConnectionID, previousGeneration, func(generation uint64) error {
-		marker.Version = 2
+		marker.Version = 3
 		marker.Generation = generation
 		if operation != nil {
 			return writeRemoteWorkspaceMarkerWithFile(markerRoot, marker, &publishedFile)
@@ -581,10 +586,13 @@ func (s *Service) isCurrentRemoteConnect(sequence uint64) bool {
 }
 
 func remoteSSHConnectRequest(input RemoteSSHConnectInput) (remoteagent.ConnectRequest, error) {
+	if input.Mode != remoteagent.ModeAgent && input.Mode != remoteagent.ModeBasic {
+		return remoteagent.ConnectRequest{}, errors.New("SSH connection mode is invalid")
+	}
 	if input.Port < 1 || input.Port > 65535 {
 		return remoteagent.ConnectRequest{}, errors.New("SSH port is invalid")
 	}
-	request := remoteagent.ConnectRequest{Host: input.Host, Port: input.Port, User: input.Username}
+	request := remoteagent.ConnectRequest{Mode: input.Mode, Host: input.Host, Port: input.Port, User: input.Username}
 	switch input.Auth.Kind {
 	case "password":
 		request.Auth.Password = input.Auth.Secret
@@ -776,16 +784,16 @@ func readRemoteWorkspaceMarker(markerRoot, expectedRemoteRoot string) (*remoteag
 	return &marker, nil
 }
 
-// validRemoteWorkspaceMarker 同时接受旧的 v1 文件，以便下一次官方目录选择可将
-// 它迁移为带 generation 的 v2。v1 不能通过新 bridge 的身份头校验，因此不会
-// 重新获得远端访问能力。
+// validRemoteWorkspaceMarker 接受旧 v1/v2 文件供官方选择重绑：v2 隐含 agent
+// 模式，v1 没有 generation，不能通过 bridge 的身份头恢复远端访问。
 func validRemoteWorkspaceMarker(marker remoteagent.RemoteWorkspaceMarker) bool {
-	return marker.Version == 1 && marker.Generation == 0 ||
-		marker.Version == 2 && marker.Generation > 0 && marker.Generation <= remoteWorkspaceMarkerMaxGeneration
+	return marker.Version == 1 && marker.Mode == "" && marker.Generation == 0 ||
+		marker.Version == 2 && marker.Mode == "" && marker.Generation > 0 && marker.Generation <= remoteWorkspaceMarkerMaxGeneration ||
+		marker.Version == 3 && (marker.Mode == remoteagent.ModeBasic || marker.Mode == remoteagent.ModeAgent) && marker.Generation > 0 && marker.Generation <= remoteWorkspaceMarkerMaxGeneration
 }
 
 func remoteWorkspaceMarkerGeneration(marker *remoteagent.RemoteWorkspaceMarker) uint64 {
-	if marker != nil && marker.Version == 2 {
+	if marker != nil && marker.Version >= 2 {
 		return marker.Generation
 	}
 	return 0

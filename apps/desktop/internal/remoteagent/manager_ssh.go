@@ -48,7 +48,8 @@ const (
 var ErrPortForwardingDenied = errors.New("SSH port forwarding denied by server policy")
 
 type connectionState struct {
-	info ConnectionInfo
+	info    ConnectionInfo
+	backend connectionBackend
 
 	client       *ssh.Client
 	agentSession *ssh.Session
@@ -61,10 +62,130 @@ type connectionState struct {
 	closed    bool
 	done      chan struct{}
 	closeOnce sync.Once
+	closeErr  error
+}
+
+// connectionBackend 把连接生命周期与路由收敛在一个已选定的远端实现上。
+type connectionBackend interface {
+	Proxy(context.Context, string, string, []byte) (ProxyResponse, error)
+	ResolvePath(context.Context, string) (ResolveResponse, error)
+	ListDirectories(context.Context, string) (RemoteDirectory, error)
+	Close() error
+}
+
+type agentConnectionBackend struct{ state *connectionState }
+
+func (backend *agentConnectionBackend) Proxy(ctx context.Context, method, route string, body []byte) (ProxyResponse, error) {
+	return backend.state.proxy(ctx, method, route, body)
+}
+
+func (backend *agentConnectionBackend) ResolvePath(ctx context.Context, remotePath string) (ResolveResponse, error) {
+	var response ResolveResponse
+	if err := backend.state.agentRequest(ctx, http.MethodPost, "/v1/resolve", ResolveRequest{Path: remotePath}, &response); err != nil {
+		return ResolveResponse{}, err
+	}
+	return response, nil
+}
+
+func (backend *agentConnectionBackend) ListDirectories(ctx context.Context, remotePath string) (RemoteDirectory, error) {
+	var response ListResponse
+	if err := backend.state.agentRequest(ctx, http.MethodPost, "/v1/directories", ListRequest{Path: remotePath}, &response); err != nil {
+		return RemoteDirectory{}, err
+	}
+	return RemoteDirectory{Path: response.Path, Entries: response.Entries}, nil
+}
+
+func (backend *agentConnectionBackend) Close() error { return backend.state.agentSession.Close() }
+
+type directFilesystem interface {
+	Home(context.Context) (string, error)
+	ResolvePath(context.Context, string) (ResolveResponse, error)
+	ListDirectories(context.Context, string) (RemoteDirectory, error)
+	Proxy(context.Context, string, string, []byte) (ProxyResponse, error)
+	Search(context.Context, []byte) (ProxyResponse, error)
+	Close() error
+}
+
+type directConnectionBackend struct {
+	client       *ssh.Client
+	fs           directFilesystem
+	processes    *directProcessBackend
+	terminals    *directTerminalBackend
+	codeAssetFor func(RemotePlatform) (string, error)
+	codeMu       sync.Mutex
+	code         *directCodeBackend
+	closed       bool
+}
+
+func (backend *directConnectionBackend) Proxy(ctx context.Context, method, route string, body []byte) (ProxyResponse, error) {
+	switch {
+	case route == "/v1/exec":
+		return proxyDirectExec(ctx, backend.client, body)
+	case route == "/v1/search":
+		return backend.fs.Search(ctx, body)
+	case strings.HasPrefix(route, "/v1/processes/"):
+		return backend.processes.Proxy(ctx, route, body)
+	case strings.HasPrefix(route, "/v1/terminals/"):
+		return backend.terminals.Proxy(ctx, route, body)
+	case strings.HasPrefix(route, "/v1/code/"):
+		code, err := backend.codeBackend()
+		if err != nil {
+			return directExecError(http.StatusServiceUnavailable, "code-isolate-unavailable", "local code isolate is unavailable"), nil
+		}
+		return code.Proxy(ctx, route, body)
+	default:
+		return backend.fs.Proxy(ctx, method, route, body)
+	}
+}
+
+// codeBackend 仅在首次 Code Mode 请求时检查本机 helper 的隔离入口。
+func (backend *directConnectionBackend) codeBackend() (*directCodeBackend, error) {
+	backend.codeMu.Lock()
+	defer backend.codeMu.Unlock()
+	if backend.closed {
+		return nil, ErrConnectionNotFound
+	}
+	if backend.code != nil {
+		return backend.code, nil
+	}
+	if backend.codeAssetFor == nil {
+		return nil, errors.New("local code isolate asset is not configured")
+	}
+	localPath, err := backend.codeAssetFor(RemotePlatform{OS: runtime.GOOS, Arch: runtime.GOARCH})
+	if err != nil {
+		return nil, err
+	}
+	code, err := newDirectCodeBackend([]string{localPath, "--code-isolate"})
+	if err != nil {
+		return nil, err
+	}
+	backend.code = code
+	return code, nil
+}
+
+func (backend *directConnectionBackend) ResolvePath(ctx context.Context, remotePath string) (ResolveResponse, error) {
+	return backend.fs.ResolvePath(ctx, remotePath)
+}
+
+func (backend *directConnectionBackend) ListDirectories(ctx context.Context, remotePath string) (RemoteDirectory, error) {
+	return backend.fs.ListDirectories(ctx, remotePath)
+}
+
+func (backend *directConnectionBackend) Close() error {
+	backend.codeMu.Lock()
+	backend.closed = true
+	code := backend.code
+	backend.codeMu.Unlock()
+	var codeErr error
+	if code != nil {
+		codeErr = code.Close()
+	}
+	return errors.Join(codeErr, backend.terminals.Close(), backend.processes.Close(), backend.fs.Close())
 }
 
 type pendingHostKey struct {
 	address     string
+	mode        ConnectionMode
 	key         ssh.PublicKey
 	fingerprint string
 	algorithm   string
@@ -89,6 +210,48 @@ func (m *Manager) Connect(ctx context.Context, request ConnectRequest) (Connecti
 			_ = client.Close()
 		}
 	}()
+	if request.Mode == ModeBasic {
+		emitProgress(request.OnProgress, "detecting-platform", 0, 0)
+		platform, _, err := probeRemotePlatform(ctx, client, m.options.StartupTimeout)
+		if err != nil {
+			return ConnectionInfo{}, err
+		}
+		fs, err := newDirectSFTPBackend(client)
+		if err != nil {
+			return ConnectionInfo{}, err
+		}
+		home, err := fs.Home(ctx)
+		if err != nil {
+			_ = fs.Close()
+			return ConnectionInfo{}, err
+		}
+		connectionID, err := randomID()
+		if err != nil {
+			_ = fs.Close()
+			return ConnectionInfo{}, err
+		}
+		state := &connectionState{
+			info: ConnectionInfo{ID: connectionID, Mode: ModeBasic, Platform: platform, RemoteHome: home,
+				TargetHost: targetHost, TargetPort: targetPort, TargetUser: request.User},
+			client: client, done: make(chan struct{}),
+			backend: &directConnectionBackend{
+				client: client, fs: fs,
+				processes: newDirectProcessBackend(client), terminals: newDirectTerminalBackend(client),
+				codeAssetFor: m.options.AgentPathFor,
+			},
+		}
+		m.mu.Lock()
+		if err := ctx.Err(); err != nil {
+			m.mu.Unlock()
+			state.close()
+			return ConnectionInfo{}, err
+		}
+		m.states[connectionID] = state
+		m.mu.Unlock()
+		keepClient = true
+		emitProgress(request.OnProgress, "ready", 1, 1)
+		return state.info, nil
+	}
 
 	emitProgress(request.OnProgress, "detecting-platform", 0, 0)
 	platform, home, err := probeRemotePlatform(ctx, client, m.options.StartupTimeout)
@@ -121,6 +284,7 @@ func (m *Manager) Connect(ctx context.Context, request ConnectRequest) (Connecti
 	state := &connectionState{
 		info: ConnectionInfo{
 			ID:               connectionID,
+			Mode:             ModeAgent,
 			Platform:         platform,
 			RemoteHome:       home,
 			RemoteInstallDir: installDir,
@@ -136,6 +300,7 @@ func (m *Manager) Connect(ctx context.Context, request ConnectRequest) (Connecti
 		done:         make(chan struct{}),
 	}
 	state.http = state.newHTTPClient()
+	state.backend = &agentConnectionBackend{state: state}
 	m.mu.Lock()
 	m.starting[connectionID] = state
 	m.mu.Unlock()
@@ -192,7 +357,7 @@ func (m *Manager) ConfirmHostKey(ctx context.Context, confirmationID string, req
 		m.mu.Unlock()
 		return ConnectionInfo{}, errors.New("unknown or expired SSH host-key confirmation")
 	}
-	if pending.address != address || pending.fingerprint != expectedFingerprint {
+	if pending.address != address || pending.mode != request.Mode || pending.fingerprint != expectedFingerprint {
 		m.mu.Unlock()
 		return ConnectionInfo{}, errors.New("SSH host-key confirmation does not match the current request")
 	}
@@ -254,6 +419,9 @@ func (m *Manager) CloseAll(ctx context.Context) error {
 // Proxy 只代理已知连接的 agent 相对 API 路径，永不接受远端 URL。
 func (m *Manager) Proxy(ctx context.Context, connectionID, method, requestPath string, body []byte) (ProxyResponse, error) {
 	if !isAgentRoute(method, requestPath) {
+		if state := m.state(connectionID); state != nil && state.info.Mode == ModeBasic {
+			return UnsupportedCapabilityResponse(), nil
+		}
 		return ProxyResponse{}, errors.New("unsupported remote agent route")
 	}
 	if len(body) > maxProxyRequestBytes {
@@ -263,7 +431,14 @@ func (m *Manager) Proxy(ctx context.Context, connectionID, method, requestPath s
 	if state == nil {
 		return ProxyResponse{}, ErrConnectionNotFound
 	}
-	return state.proxy(ctx, method, requestPath, body)
+	if state.info.Mode == ModeBasic && !IsBasicRoute(method, requestPath) {
+		return UnsupportedCapabilityResponse(), nil
+	}
+	if state.info.Mode == ModeBasic && basicRequiresPOSIX(requestPath) &&
+		(state.info.Platform.OS != "linux" && state.info.Platform.OS != "darwin" || runtime.GOOS == "windows") {
+		return UnsupportedCapabilityResponse(), nil
+	}
+	return state.backend.Proxy(ctx, method, requestPath, body)
 }
 
 // ResolvePath 将目录选择器输入规范化为远端绝对路径。
@@ -272,11 +447,7 @@ func (m *Manager) ResolvePath(ctx context.Context, connectionID, remotePath stri
 	if state == nil {
 		return ResolveResponse{}, ErrConnectionNotFound
 	}
-	var response ResolveResponse
-	if err := state.agentRequest(ctx, http.MethodPost, "/v1/resolve", ResolveRequest{Path: remotePath}, &response); err != nil {
-		return ResolveResponse{}, err
-	}
-	return response, nil
+	return state.backend.ResolvePath(ctx, remotePath)
 }
 
 // ListDirectories 返回远端目录的一层子项，用于选择工作区根目录。
@@ -285,11 +456,7 @@ func (m *Manager) ListDirectories(ctx context.Context, connectionID, remotePath 
 	if state == nil {
 		return RemoteDirectory{}, ErrConnectionNotFound
 	}
-	var response ListResponse
-	if err := state.agentRequest(ctx, http.MethodPost, "/v1/directories", ListRequest{Path: remotePath}, &response); err != nil {
-		return RemoteDirectory{}, err
-	}
-	return RemoteDirectory{Path: response.Path, Entries: response.Entries}, nil
+	return state.backend.ListDirectories(ctx, remotePath)
 }
 
 func (m *Manager) state(id string) *connectionState {
@@ -348,6 +515,9 @@ func (m *Manager) monitor(connectionID string, state *connectionState) {
 }
 
 func closeConnection(ctx context.Context, state *connectionState) error {
+	if state.info.Mode == ModeBasic {
+		return state.close()
+	}
 	if state.isClosed() {
 		return waitForConnectionSettlement(state)
 	}
@@ -480,17 +650,25 @@ func (state *connectionState) agentRequest(ctx context.Context, method, requestP
 	return decodeStrictJSON(response.Body, out)
 }
 
-func (state *connectionState) close() {
+func (state *connectionState) close() error {
 	state.closeOnce.Do(func() {
 		state.mu.Lock()
 		state.closed = true
 		state.mu.Unlock()
-		if transport, ok := state.http.Transport.(*http.Transport); ok {
-			transport.CloseIdleConnections()
+		if state.http != nil {
+			if transport, ok := state.http.Transport.(*http.Transport); ok {
+				transport.CloseIdleConnections()
+			}
 		}
-		_ = state.agentSession.Close()
+		if state.backend != nil {
+			state.closeErr = state.backend.Close()
+		}
 		_ = state.client.Close()
+		if state.info.Mode == ModeBasic {
+			close(state.done)
+		}
 	})
+	return state.closeErr
 }
 
 func (state *connectionState) isClosed() bool {
@@ -538,6 +716,20 @@ func isAgentRoute(method, requestPath string) bool {
 	return allowed[requestPath] == method
 }
 
+// IsBasicRoute 列举无需远端 agent 的 SFTP、SSH 和本机隔离执行能力。
+func IsBasicRoute(method, route string) bool {
+	return isAgentRoute(method, route)
+}
+
+func basicRequiresPOSIX(route string) bool {
+	return route == "/v1/exec" || strings.HasPrefix(route, "/v1/processes/") || strings.HasPrefix(route, "/v1/terminals/")
+}
+
+// UnsupportedCapabilityResponse 是 basic 模式拒绝未提供能力的稳定协议结果。
+func UnsupportedCapabilityResponse() ProxyResponse {
+	return ProxyResponse{Status: http.StatusNotImplemented, ContentType: "application/json", Body: []byte(`{"error":{"code":"unsupported-capability"}}` + "\n")}
+}
+
 func decodeAgentFailure(response ProxyResponse) error {
 	var envelope struct {
 		Error AgentError `json:"error"`
@@ -561,6 +753,9 @@ func decodeStrictJSON(data []byte, target any) error {
 }
 
 func validateConnectRequest(request ConnectRequest) error {
+	if request.Mode != ModeBasic && request.Mode != ModeAgent {
+		return errors.New("SSH connection mode is invalid")
+	}
 	if strings.TrimSpace(request.Host) == "" || len(request.Host) > maxSSHHostBytes {
 		return errors.New("SSH host is required")
 	}
@@ -606,7 +801,7 @@ func validateConnectRequest(request ConnectRequest) error {
 func (m *Manager) dial(ctx context.Context, request ConnectRequest) (string, *ssh.Client, error) {
 	host, port := normalizedSSHTarget(request.Host, request.Port)
 	address := net.JoinHostPort(host, fmt.Sprint(port))
-	callback, err := m.hostKeyCallback(address)
+	callback, err := m.hostKeyCallback(address, request.Mode)
 	if err != nil {
 		return "", nil, err
 	}
@@ -674,7 +869,7 @@ func sshAuthMethods(auth SSHAuth) ([]ssh.AuthMethod, error) {
 	return methods, nil
 }
 
-func (m *Manager) hostKeyCallback(address string) (ssh.HostKeyCallback, error) {
+func (m *Manager) hostKeyCallback(address string, mode ConnectionMode) (ssh.HostKeyCallback, error) {
 	if err := ensureKnownHosts(m.options.KnownHostsPath); err != nil {
 		return nil, err
 	}
@@ -693,7 +888,7 @@ func (m *Manager) hostKeyCallback(address string) (ssh.HostKeyCallback, error) {
 			if len(keyError.Want) > 0 {
 				return &ErrHostKeyChanged{Address: address, Fingerprint: fingerprint}
 			}
-			id, randomErr := m.rememberPendingHostKey(address, publicKey, fingerprint)
+			id, randomErr := m.rememberPendingHostKey(address, mode, publicKey, fingerprint)
 			if randomErr != nil {
 				return randomErr
 			}
@@ -707,7 +902,7 @@ func (m *Manager) hostKeyCallback(address string) (ssh.HostKeyCallback, error) {
 	}, nil
 }
 
-func (m *Manager) rememberPendingHostKey(address string, publicKey ssh.PublicKey, fingerprint string) (string, error) {
+func (m *Manager) rememberPendingHostKey(address string, mode ConnectionMode, publicKey ssh.PublicKey, fingerprint string) (string, error) {
 	now := time.Now()
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -728,7 +923,7 @@ func (m *Manager) rememberPendingHostKey(address string, publicKey ssh.PublicKey
 		return "", err
 	}
 	m.pending[id] = &pendingHostKey{
-		address: address, key: publicKey, fingerprint: fingerprint, algorithm: publicKey.Type(),
+		address: address, mode: mode, key: publicKey, fingerprint: fingerprint, algorithm: publicKey.Type(),
 		createdAt: now, expiresAt: now.Add(pendingHostKeyTTL),
 	}
 	return id, nil

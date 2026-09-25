@@ -54,7 +54,7 @@ type UnclaimedActionResult struct {
 	Kind string `json:"kind"`
 }
 
-// RemoteSSHSelectUnclaimed 为 Electron 主进程预留可撤销的 marker 选择；Wails 不使用此接口。
+// RemoteSSHSelectUnclaimed 为 Electron 主进程预留可撤销的 marker 选择。
 func (s *Service) RemoteSSHSelectUnclaimed(operationID, connectionID, remotePath string) (UnclaimedSelectionResult, error) {
 	if !validOpaqueID(operationID) || !validOpaqueID(connectionID) {
 		return UnclaimedSelectionResult{}, errors.New("invalid remote selection identity")
@@ -215,13 +215,17 @@ func (s *Service) RemoteSSHClaimSelection(operationID string) (UnclaimedActionRe
 		ctx, cancel := context.WithTimeout(s.bindingContext(), remoteSelectionTimeout)
 		defer cancel()
 		var publishedFile os.FileInfo
-		marker := remoteagent.RemoteWorkspaceMarker{RemoteRoot: operation.marker.RemoteRoot, ConnectionID: operation.connectionID}
+		info, infoErr := s.remoteManager.Connection(operation.connectionID)
+		if infoErr != nil {
+			return UnclaimedActionResult{}, infoErr
+		}
+		marker := remoteagent.RemoteWorkspaceMarker{Mode: info.Mode, RemoteRoot: operation.marker.RemoteRoot, ConnectionID: operation.connectionID}
 		generation, err := s.remoteBridge.PublishMarker(ctx, operation.marker.MarkerRoot, marker.RemoteRoot, marker.ConnectionID,
 			remoteWorkspaceMarkerGeneration(&operation.previous), func(generation uint64) error {
 				if !previousMarkerMatches(operation) {
 					return errors.New("remote workspace marker changed before claim")
 				}
-				marker.Version, marker.Generation = 2, generation
+				marker.Version, marker.Generation = 3, generation
 				return writeStagedMarker(operation, marker, &publishedFile)
 			})
 		if err != nil {
@@ -366,7 +370,7 @@ func publishedMarkerMatches(operation *unclaimedOperation) bool {
 		return false
 	}
 	marker, err := readRemoteWorkspaceMarker(operation.marker.MarkerRoot, operation.marker.RemoteRoot)
-	if err != nil || marker == nil || marker.Version != 2 || marker.Generation != operation.marker.Generation ||
+	if err != nil || marker == nil || marker.Version != 3 || marker.Generation != operation.marker.Generation ||
 		marker.ConnectionID != operation.marker.ConnectionID {
 		return false
 	}

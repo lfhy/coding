@@ -13,11 +13,11 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { PwshLocalExecutor, ENCODING_PREAMBLE, candidatePwshPaths, resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
-import { REMOTE_WORKSPACE_MARKER, SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
+import { REMOTE_WORKSPACE_MARKER, RemoteWorkspaceError, SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type { SubprocessHandle, SubprocessOutcome, SubprocessOutputReader, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import type { ShellProcess } from '@deepseek-ai/dsh-shell'
@@ -206,18 +206,34 @@ describe('spawn construction (pure, every platform)', () => {
 
     const proc = ctx.shell.start(ctx.shell.resolve({ command: 'Write-Output maybe-ran' }))
     await expect(proc.done).resolves.toBeUndefined()
-    expect(proc.status).toBe('killed')
+    expect(proc.status).toBe('failed')
     expect(proc.readOutput().delta).toBe(
       '[stderr]\ntarget stderr\nsubprocess failed before reporting an outcome: Error: provider lost the direct outcome',
     )
     expect(proc.readOutput().delta).toBe('')
   })
 
+  it('keeps a completed exit distinct from a requested kill', async () => {
+    const ctx = new Context()
+    const subprocess = new CapturingSubprocessRuntime(ctx)
+    await ctx.plugin(PwshLocalExecutor)
+    let finish!: (outcome: SubprocessOutcome) => void
+    subprocess.done = new Promise<SubprocessOutcome>((resolve) => { finish = resolve })
+    const proc = ctx.shell.start(ctx.shell.resolve({ command: 'Write-Output ok' }))
+    expect(proc.kill()).toBe(true)
+    expect(proc.kill()).toBe(false)
+    expect(proc.status).toBe('running')
+    finish({ exitCode: 0, signal: null })
+    await proc.done
+    expect(proc.status).toBe('completed')
+  })
+
   it('maps a marker workdir to the remote execution world', async () => {
     const markerRoot = mkdtempSync(join(tmpdir(), 'dsh-pwsh-remote-marker-'))
     try {
       writeFileSync(join(markerRoot, REMOTE_WORKSPACE_MARKER), JSON.stringify({
-        version: 2,
+        version: 3,
+        mode: 'agent',
         remoteRoot: '/srv/project',
         connectionId: 'connection-1',
         generation: 1,
@@ -240,6 +256,43 @@ describe('spawn construction (pure, every platform)', () => {
           connectionId: 'connection-1',
         },
       })
+    } finally {
+      rmSync(markerRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects basic PowerShell foreground, background, and wrapped argv before any subprocess spawn', async () => {
+    const markerRoot = mkdtempSync(join(tmpdir(), 'dsh-pwsh-basic-marker-'))
+    writeFileSync(join(markerRoot, REMOTE_WORKSPACE_MARKER), JSON.stringify({
+      version: 3, mode: 'basic', remoteRoot: '/srv/project', connectionId: 'connection-basic', generation: 1,
+    }))
+    class WrappedPwshExecutor extends PwshLocalExecutor {
+      runWrapped(spec: ReturnType<PwshLocalExecutor['resolve']>) {
+        return this.runArgv(spec, ['sandbox-runner', 'pwsh'])
+      }
+      startWrapped(spec: ReturnType<PwshLocalExecutor['resolve']>) {
+        return this.startArgv(spec, ['sandbox-runner', 'pwsh'])
+      }
+    }
+    try {
+      const ctx = new Context()
+      const subprocess = new CapturingSubprocessRuntime(ctx)
+      const spawn = vi.spyOn(subprocess, 'spawn')
+      await ctx.plugin(WrappedPwshExecutor, { pwshPath: '/remote-tools/pwsh' })
+      const pwsh = ctx.shell as WrappedPwshExecutor
+      const spec = pwsh.resolve({ command: 'Write-Output unavailable', workdir: markerRoot })
+      expect(spec.remoteTarget).toMatchObject({ mode: 'basic', remotePath: '/srv/project' })
+      for (const attempt of [pwsh.run(spec), pwsh.runWrapped(spec)]) {
+        await expect(attempt).rejects.toMatchObject({ name: 'RemoteWorkspaceError', code: 'REMOTE_CAPABILITY_UNAVAILABLE' })
+      }
+      for (const attempt of [() => pwsh.start(spec), () => pwsh.startWrapped(spec)]) {
+        expect(attempt).toThrow(RemoteWorkspaceError)
+        try { attempt() } catch (error) {
+          expect(error).toMatchObject({ code: 'REMOTE_CAPABILITY_UNAVAILABLE' })
+        }
+      }
+      expect(spawn).not.toHaveBeenCalled()
+      expect(subprocess.specs).toHaveLength(0)
     } finally {
       rmSync(markerRoot, { recursive: true, force: true })
     }
@@ -493,12 +546,12 @@ describe.skipIf(!hasPwsh)('PwshLocalExecutor.start (background process handles)'
     expect(['SIGTERM', 'SIGKILL']).toContain(proc.signal)
   })
 
-  it('an asynchronous creation failure settles as killed with a stage-neutral note', async () => {
+  it('an asynchronous creation failure settles as failed with a stage-neutral note', async () => {
     const { bash } = await setup()
     const proc = bash.start(bash.resolve({ command: 'Write-Output ok', workdir: '/nonexistent-dsh' }))
     // 即使进程未运行，done 也 resolve（绝不 reject）。
     await expect(proc.done).resolves.toBeUndefined()
-    expect(proc.status).toBe('killed')
+    expect(proc.status).toBe('failed')
     expect(proc.readOutput().delta).toContain('subprocess failed before reporting an outcome:')
   })
 })

@@ -6,7 +6,7 @@
 
 ## 可执行文件查找
 
-一个提供方的 spawn 工作目录、可执行文件路径、普通进程与终端会话，和挂载的文件系统提供方处于同一路径与进程命名空间。`resolveExecutable(command, env?, signal?, remoteTarget?)` 验证绝对可执行文件路径，或通过提供方清理后的 `PATH` 加有意覆盖来解析裸名称。调用方已有已验证的 Remote-SSH target 时，会在查找和 `SubprocessSpawnSpec` 中传入它；提供方会在选择该 target 前重新验证 marker 身份，不会把本地 marker 别名当作进程目录。远程根目录只是请求解析时的执行坐标和路径约束，不是 OS 沙箱；它不能防御目标侧并发替换已检查的符号链接或祖先目录。
+一个提供方的 spawn 工作目录、可执行文件路径、普通进程与终端会话，和挂载的文件系统提供方处于同一路径与进程命名空间。`resolveExecutable(command, env?, signal?, remoteTarget?)` 验证绝对可执行文件路径，或通过提供方清理后的 `PATH` 加有意覆盖来解析裸名称。调用方已有已验证的远程 target 时，会在查找和 `SubprocessSpawnSpec` 中传入它；提供方会在选择该 target 前重新验证 marker 身份，不会把本地 marker 别名当作进程目录。有效的 v3 marker 声明 `basic` 或 `agent`，v2 marker 按 `agent` 解析；Host 的模式预检不能替代 bridge 对活连接的授权。基础模式的进程查找、前后台 spawn 和 PTY 经 SSH 执行，不会在本机启动替代进程；SSH 不公开前台进程组，关闭 channel 或请求信号不能证明远端整棵进程树已停稳。远程根目录只是请求解析时的执行坐标和路径约束，不是 OS 沙箱；它不能防御目标侧并发替换已检查的符号链接或祖先目录。
 
 ```ts type-equiv
 /** 已验证 marker 的当前身份；connectionId 不是凭据。 */
@@ -19,7 +19,14 @@ interface RemoteWorkspace {
   connectionId: string
   /** 与 marker 文件同轮发布的单调 generation。 */
   markerGeneration: number
+  /** 只用于 Host 展示和预检；bridge 的活连接仍独立决定实际权限。 */
+  mode: RemoteWorkspaceMode
 }
+```
+
+```ts type-equiv
+/** marker 声明的远端连接模式；bridge 另行核验活连接的实际能力。 */
+type RemoteWorkspaceMode = 'basic' | 'agent'
 ```
 
 ```ts type-equiv
@@ -347,5 +354,5 @@ abstract spawn(spec: SubprocessSpawnSpec): SubprocessHandle
 abstract spawnTerminal(spec: SubprocessTerminalSpawnSpec): Promise<SubprocessTerminalHandle>
 ```
 
-Source: [`packages/subprocess/subprocess/src/index.ts:125`](../../packages/subprocess/subprocess/src/index.ts)
+Source: [`packages/subprocess/subprocess/src/index.ts:128`](../../packages/subprocess/subprocess/src/index.ts)
 <!-- END GENERATED cordis-surface -->

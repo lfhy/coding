@@ -202,6 +202,7 @@ export class LocalPtySession implements TerminalBackendSession {
   constructor(
     private readonly terminal: SubprocessTerminalHandle,
     private readonly config: ResolvedConfig,
+    private readonly basicRemote = false,
   ) {
     this.pid = terminal.pid
     this.emulator = new HeadlessTerminal({ cols: config.cols, rows: config.rows, scrollback: 0 })
@@ -291,9 +292,11 @@ export class LocalPtySession implements TerminalBackendSession {
       if (this.protocolWorkPending()) await this.drainTerminalProtocol()
       const emulatorWrites = this.emulatorWrites
       const responseWrites = this.responseWrites
-      foreground = await this.terminal.inspectForeground()
-      if (this.protocolStateChanged(emulatorWrites, responseWrites)) {
-        foreground = await this.inspectForegroundAfterProtocol()
+      if (!this.basicRemote) {
+        foreground = await this.terminal.inspectForeground()
+        if (this.protocolStateChanged(emulatorWrites, responseWrites)) {
+          foreground = await this.inspectForegroundAfterProtocol()
+        }
       }
     } catch (error: unknown) {
       if (this.protocolWorkPending()) await this.drainTerminalProtocol()
@@ -480,17 +483,20 @@ export class LocalPtySession implements TerminalBackendSession {
       if (this.protocolWorkPending()) await this.drainTerminalProtocol()
       const emulatorWrites = this.emulatorWrites
       const responseWrites = this.responseWrites
-      let foreground = await this.terminal.inspectForeground()
-      if (this.protocolStateChanged(emulatorWrites, responseWrites)) {
-        foreground = await this.inspectForegroundAfterProtocol()
+      let foreground: SubprocessTerminalForeground | undefined
+      if (!this.basicRemote) {
+        foreground = await this.terminal.inspectForeground()
+        if (this.protocolStateChanged(emulatorWrites, responseWrites)) {
+          foreground = await this.inspectForegroundAfterProtocol()
+        }
       }
       if (this.active !== operation || this.closing || this.interrupting === operation) return
       const idleFor = Date.now() - this.lastOutputAt
       if (this.promptSeen && foreground !== undefined && this.shellPgid === undefined) {
         this.shellPgid = foreground.processGroupId
       }
-      if (this.promptSeen && this.promptTextSeen && idleFor >= this.config.pollIntervalMs
-        && foreground?.processGroupId === this.shellPgid) {
+      if (this.promptSeen && this.promptTextSeen && foreground !== undefined && idleFor >= this.config.pollIntervalMs
+        && foreground.processGroupId === this.shellPgid) {
         this.settleActive('stdin_read')
         return
       }

@@ -263,8 +263,8 @@ async function verifyRemoteSshWizard(page, screenshot) {
   await onboarding.getByRole('button', { name: '稍后配置' }).click()
   await onboarding.waitFor({ state: 'hidden' })
   await page.getByRole('button', { name: '选择工作区' }).first().click()
-  await page.getByText('连接 Remote-SSH', { exact: true }).first().click()
-  const wizard = page.getByRole('dialog', { name: '连接 Remote-SSH' })
+  await page.getByText('远程连接', { exact: true }).first().click()
+  const wizard = page.getByRole('dialog', { name: '远程连接' })
   await wizard.waitFor({ state: 'visible' })
   assert.equal(await wizard.locator('#remote-ssh-host').isVisible(), true,
     'Electron preload must enable the Remote-SSH host form')

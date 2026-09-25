@@ -3,7 +3,9 @@
 
 子进程 seam（`ctx.subprocess`）是一个执行世界的进程部分。抽象的 `SubprocessRuntime` 公开可执行文件查找、普通受管 `spawn` 和一项终端进程原语；其词汇涵盖原始／收集式 stdio、进程与终端句柄、退出事实、进程树／会话清理，以及受管的 `DSH_*` 环境命名空间。本地实现位于 [`dsh-subprocess-local`](../subprocess-local/README.md)。
 
-包根还导出桌面 Remote-SSH 提供方共用的无凭据 marker 和已认证回环 bridge helper。这些 helper 会校验本地 marker 路径映射后位于其声明的远程根目录下，在每次请求前重新校验 marker，并只让本地 Host 环境持有 bridge token。对于已验证的 marker target，subprocess 提供方会把可执行文件查找、受管进程和 PTY 分配路由到目标上的仅回环 Go agent；Consumer 获得的是远程执行世界，而不是本地 marker 别名。marker 过期或 bridge 断开时会失败，绝不回退到本地路径或进程。
+包根还导出桌面 Remote-SSH 提供方共用的无凭据 marker 和已认证回环 bridge helper。这些 helper 会校验本地 marker 路径映射后位于其声明的远程根目录下，在每次请求前重新校验 marker，并只让本地 Host 环境持有 bridge token。官方 `$DSH_HOME/remote-workspaces/<target-hash>/<label>-<root-hash>` 目录即使缺少 marker 也抛出 `REMOTE_WORKSPACE_MARKER_INVALID`，不能当成本地工作区执行；其他无 marker 的本地目录仍可使用。marker v3 包含由 Go 活连接确定的 `basic` 或 `agent` 模式；v2 仅按 `agent` 读取，v1 不可用于 Host 执行。mode 会写入 target key 并参与每次复核，旧无 mode 的 key 只可与 agent marker 匹配；重绑后的 generation 改变也会使旧 target 失效。marker 仅供 Host 展示与预检，bridge 仍独立核验活连接权限；marker 过期、bridge 断开或能力不足时绝不回退到本地路径或进程。
+
+Consumer 对已识别的远端 target 调用 `requireRemoteWorkspaceCapability(target, capability)`：`basic` 支持 `files-read`、`files-write`、`exec`、`process`、`terminal`、`search` 和 `code`，仅 `lsp` 暂不可用；`agent` 还支持 `lsp`。基础模式请求 LSP 抛出 `REMOTE_CAPABILITY_UNAVAILABLE`，不是“没有 marker”。基础模式的文件能力经 SFTP、执行与进程终端经 SSH、Code Mode 使用本机 Goja isolate 和远端工具绑定；agent 模式则经目标上的仅回环 Go agent。Consumer 获得远程执行世界而非本地 marker 别名，bridge 继续按活连接授权。
 
 ## 约定
 

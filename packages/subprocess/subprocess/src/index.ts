@@ -25,6 +25,7 @@ export {
   isRemotePathWithin,
   parseRemoteWorkspaceTargetKey,
   readRemoteWorkspaceMarker,
+  requireRemoteWorkspaceCapability,
   remoteWorkspaceLocalPath,
   remoteWorkspacePath,
   remoteWorkspacePathSync,
@@ -34,6 +35,8 @@ export {
 export type {
   RemoteWorkspace,
   RemoteWorkspaceErrorCode,
+  RemoteWorkspaceCapability,
+  RemoteWorkspaceMode,
   RemoteWorkspacePath,
   RemoteWorkspaceTarget,
 } from './remote-workspace.ts'

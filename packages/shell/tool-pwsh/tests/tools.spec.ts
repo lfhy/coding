@@ -1039,9 +1039,14 @@ describe('processOutcome', () => {
       .toEqual({ status: 'killed', detail: 'signal: SIGTERM' })
   })
 
-  it('maps a killed process without a recorded signal (kill raced exit / spawn failure)', () => {
+  it('maps a killed process without a recorded signal (kill raced exit)', () => {
     expect(processOutcome(settled({ status: 'killed', exitCode: null })))
       .toEqual({ status: 'killed', detail: 'killed before exit' })
+  })
+
+  it('maps provider failure to failed without disclosing provider errors', () => {
+    expect(processOutcome(settled({ status: 'failed', exitCode: null })))
+      .toEqual({ status: 'failed', detail: 'process outcome unknown' })
   })
 
   it('maps a completed process to its exit code', () => {

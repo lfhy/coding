@@ -1,25 +1,42 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { CodeJsonValue } from '@deepseek-ai/dsh-code-runtime'
 import { WorkerThreadCodeRuntime } from '@deepseek-ai/dsh-code-runtime-worker-thread'
-import { REMOTE_WORKSPACE_MARKER } from '@deepseek-ai/dsh-subprocess'
+import { REMOTE_WORKSPACE_MARKER, remoteWorkspacePath, RemoteWorkspaceError } from '@deepseek-ai/dsh-subprocess'
 
 const initialBridgeURL = process.env.DSH_REMOTE_BRIDGE_URL
 const initialBridgeToken = process.env.DSH_REMOTE_BRIDGE_TOKEN
+const initialDshHome = process.env.DSH_HOME
 const roots: string[] = []
 const servers: Server[] = []
 const DROP_BRIDGE_RESPONSE = Symbol('drop bridge response')
+const workerStarts = vi.hoisted(() => vi.fn())
+
+vi.mock('node:worker_threads', async (importOriginal) => {
+  const original = await importOriginal<typeof import('node:worker_threads')>()
+  return {
+    ...original,
+    Worker: class extends original.Worker {
+      constructor(...args: ConstructorParameters<typeof original.Worker>) {
+        workerStarts()
+        super(...args)
+      }
+    },
+  }
+})
 
 afterEach(async () => {
   if (initialBridgeURL === undefined) delete process.env.DSH_REMOTE_BRIDGE_URL
   else process.env.DSH_REMOTE_BRIDGE_URL = initialBridgeURL
   if (initialBridgeToken === undefined) delete process.env.DSH_REMOTE_BRIDGE_TOKEN
   else process.env.DSH_REMOTE_BRIDGE_TOKEN = initialBridgeToken
+  if (initialDshHome === undefined) delete process.env.DSH_HOME
+  else process.env.DSH_HOME = initialDshHome
   await Promise.all(servers.splice(0).map(server => new Promise<void>((resolve) => {
     server.close(() => { resolve() })
     // 故意悬挂的长轮询在客户端中止后不能继续占用测试 HTTP 连接。
@@ -28,16 +45,29 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
 })
 
-async function marker(): Promise<string> {
+async function marker(mode: 'basic' | 'agent' = 'agent'): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'dsh-remote-code-'))
   roots.push(root)
   await writeFile(join(root, REMOTE_WORKSPACE_MARKER), JSON.stringify({
-    version: 2,
+    version: 3,
     remoteRoot: '/srv/project',
     connectionId: 'connection-1',
     generation: 1,
+    mode,
   }))
   return root
+}
+
+async function officialMarker(): Promise<{ home: string; root: string }> {
+  const home = await mkdtemp(join(tmpdir(), 'dsh-remote-code-home-'))
+  roots.push(home)
+  process.env.DSH_HOME = home
+  const root = join(home, 'remote-workspaces', 'a'.repeat(20), `project-${'b'.repeat(20)}`)
+  await mkdir(root, { recursive: true })
+  await writeFile(join(root, REMOTE_WORKSPACE_MARKER), JSON.stringify({
+    version: 3, remoteRoot: '/srv/project', connectionId: 'connection-1', generation: 1, mode: 'basic',
+  }))
+  return { home, root }
 }
 
 async function bridge(
@@ -68,6 +98,150 @@ async function bridge(
 }
 
 describe('WorkerThreadCodeRuntime Remote-SSH routing', () => {
+  it('已删除的官方 marker 拒绝 Code Mode，绝不转入本地 Node worker', async () => {
+    const { root: cwd } = await officialMarker()
+    await rm(join(cwd, REMOTE_WORKSPACE_MARKER))
+    await expect(remoteWorkspacePath('.', cwd)).rejects.toBeInstanceOf(RemoteWorkspaceError)
+    await expect(remoteWorkspacePath('.', cwd)).rejects.toMatchObject({ code: 'REMOTE_WORKSPACE_MARKER_INVALID' })
+    workerStarts.mockClear()
+    const ctx = new Context()
+    try {
+      await ctx.plugin(WorkerThreadCodeRuntime, {})
+      await expect(ctx.codeRuntime.run({ program: 'return 7', cwd, bindings: [] })).resolves.toEqual({
+        logs: [], error: { kind: 'worker-exit', message: 'remote code runtime became unavailable' },
+      })
+      expect(workerStarts).not.toHaveBeenCalled()
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('普通本地目录仍能启动 Node worker', async () => {
+    const { home } = await officialMarker()
+    const cwd = join(home, 'ordinary')
+    await mkdir(cwd)
+    workerStarts.mockClear()
+    const ctx = new Context()
+    try {
+      await ctx.plugin(WorkerThreadCodeRuntime, {})
+      await expect(ctx.codeRuntime.run({ program: 'return 7', cwd, bindings: [] })).resolves.toEqual({
+        value: 7, logs: [],
+      })
+      expect(workerStarts).toHaveBeenCalledTimes(1)
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('有效的官方 marker 经 bridge 执行，不启动 Node worker', async () => {
+    const { root: cwd } = await officialMarker()
+    const paths: string[] = []
+    await bridge((path) => {
+      paths.push(path)
+      if (path === '/v1/code/start') return { id: 'a'.repeat(32) }
+      if (path === '/v1/code/next') {
+        return { events: [{ type: 'done', sequence: 1, value: 7, logs: [] }], cursor: 1, done: true }
+      }
+      throw new Error(`unexpected route ${path}`)
+    })
+    workerStarts.mockClear()
+    const ctx = new Context()
+    try {
+      await ctx.plugin(WorkerThreadCodeRuntime, {})
+      await expect(ctx.codeRuntime.run({ program: 'return 7', cwd, bindings: [] })).resolves.toEqual({
+        value: 7, logs: [],
+      })
+      expect(paths).toEqual(['/v1/code/start', '/v1/code/next'])
+      expect(workerStarts).not.toHaveBeenCalled()
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('basic marker 经 code bridge 执行程序与 Host binding，不创建本地 Node worker', async () => {
+    const cwd = await marker('basic')
+    const paths: string[] = []
+    const replied = Promise.withResolvers<Record<string, unknown>>()
+    await bridge(async (path, body, connectionId) => {
+      paths.push(path)
+      expect(connectionId).toBe('connection-1')
+      switch (path) {
+        case '/v1/code/start':
+          expect(body.program).toBe('return await tools.echo({ value: 7 })')
+          expect(body.namespaces).toEqual([{ global: 'tools', names: ['echo'] }])
+          return { id: 'a'.repeat(32) }
+        case '/v1/code/next':
+          if (body.after === 0) {
+            return {
+              events: [{ type: 'tool_call', sequence: 1, callId: 1, global: 'tools', name: 'echo', arguments: { value: 7 } }],
+              cursor: 1,
+              done: false,
+            }
+          }
+          await replied.promise
+          return {
+            events: [{ type: 'done', sequence: 2, value: { echoed: 7 }, logs: ['basic Goja'] }],
+            cursor: 2,
+            done: true,
+          }
+        case '/v1/code/reply':
+          replied.resolve(body)
+          return { accepted: true }
+        default: throw new Error(`unexpected basic code route ${path}`)
+      }
+    })
+    workerStarts.mockClear()
+    const ctx = new Context()
+    try {
+      await ctx.plugin(WorkerThreadCodeRuntime, {})
+      await expect(ctx.codeRuntime.run({
+        program: 'return await tools.echo({ value: 7 })', cwd,
+        bindings: [{ global: 'tools', functions: { echo: async value => ({ echoed: (value as { value: number }).value }) } }],
+      })).resolves.toEqual({ value: { echoed: 7 }, logs: ['basic Goja'] })
+      expect(await replied.promise).toMatchObject({ id: 'a'.repeat(32), callId: 1, ok: true, value: { echoed: 7 } })
+      expect(paths[0]).toBe('/v1/code/start')
+      expect(paths.slice(1).sort()).toEqual(['/v1/code/next', '/v1/code/next', '/v1/code/reply'])
+      expect(workerStarts).not.toHaveBeenCalled()
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('basic marker 的已发布 code 会话由 bridge cancel 终止', async () => {
+    const cwd = await marker('basic')
+    const paths: string[] = []
+    const polling = Promise.withResolvers<undefined>()
+    await bridge(async (path, body) => {
+      paths.push(path)
+      switch (path) {
+        case '/v1/code/start': return { id: 'b'.repeat(32) }
+        case '/v1/code/next':
+          polling.resolve(undefined)
+          return await new Promise(() => {})
+        case '/v1/code/cancel':
+          expect(body.id).toBe('b'.repeat(32))
+          return { accepted: true }
+        default: throw new Error(`unexpected basic code route ${path}`)
+      }
+    })
+    workerStarts.mockClear()
+    const controller = new AbortController()
+    const ctx = new Context()
+    try {
+      await ctx.plugin(WorkerThreadCodeRuntime, {})
+      const running = ctx.codeRuntime.run({ program: 'await new Promise(() => {})', cwd, bindings: [], signal: controller.signal })
+      await polling.promise
+      controller.abort('stop basic code')
+      await expect(running).resolves.toEqual({
+        logs: [], error: { kind: 'abort', message: 'stop basic code' },
+      })
+      expect(workerStarts).not.toHaveBeenCalled()
+      expect(paths).toEqual(['/v1/code/start', '/v1/code/next', '/v1/code/cancel'])
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('runs Goja remotely while host bindings remain on the local Host', async () => {
     const cwd = await marker()
     const replied = Promise.withResolvers<Record<string, unknown>>()
@@ -772,7 +946,7 @@ describe('WorkerThreadCodeRuntime Remote-SSH routing', () => {
       if (path === '/v1/code/start') {
         expect(connectionId).toBe('connection-1')
         await writeFile(join(cwd, REMOTE_WORKSPACE_MARKER), JSON.stringify({
-          version: 2, remoteRoot: '/srv/project', connectionId: 'connection-2', generation: 2,
+          version: 3, remoteRoot: '/srv/project', connectionId: 'connection-2', generation: 2, mode: 'agent',
         }))
         return { id: 'f'.repeat(32) }
       }
@@ -798,6 +972,76 @@ describe('WorkerThreadCodeRuntime Remote-SSH routing', () => {
     }
   })
 
+  it('agent marker 重绑为 basic 后只清理旧 owner，不向 basic 连接派发 code', async () => {
+    const cwd = await marker()
+    const calls: Array<{ path: string; connectionId: string | undefined }> = []
+    await bridge(async (path, body, connectionId) => {
+      calls.push({ path, connectionId })
+      if (path === '/v1/code/start') {
+        expect(connectionId).toBe('connection-1')
+        await writeFile(join(cwd, REMOTE_WORKSPACE_MARKER), JSON.stringify({
+          version: 3, remoteRoot: '/srv/project', connectionId: 'connection-2', generation: 2, mode: 'basic',
+        }))
+        return { id: 'c'.repeat(32) }
+      }
+      if (path === '/v1/code/cancel') {
+        expect(connectionId).toBe('connection-1')
+        expect(body.id).toBe('c'.repeat(32))
+        return { accepted: true }
+      }
+      throw new Error(`stale marker dispatched ${path}`)
+    })
+    const ctx = new Context()
+    try {
+      await ctx.plugin(WorkerThreadCodeRuntime, {})
+      await expect(ctx.codeRuntime.run({ program: 'return 1', cwd, bindings: [] })).resolves.toEqual({
+        logs: [], error: { kind: 'worker-exit', message: 'remote code runtime became unavailable' },
+      })
+      expect(calls).toEqual([
+        { path: '/v1/code/start', connectionId: 'connection-1' },
+        { path: '/v1/code/cancel', connectionId: 'connection-1' },
+      ])
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('basic marker 重绑后只清理旧 owner，不向新连接派发 code', async () => {
+    const cwd = await marker('basic')
+    const calls: Array<{ path: string; connectionId: string | undefined }> = []
+    await bridge(async (path, body, connectionId) => {
+      calls.push({ path, connectionId })
+      if (path === '/v1/code/start') {
+        expect(connectionId).toBe('connection-1')
+        await writeFile(join(cwd, REMOTE_WORKSPACE_MARKER), JSON.stringify({
+          version: 3, remoteRoot: '/srv/project', connectionId: 'connection-2', generation: 2, mode: 'agent',
+        }))
+        return { id: 'd'.repeat(32) }
+      }
+      if (path === '/v1/code/cancel') {
+        expect(connectionId).toBe('connection-1')
+        expect(body.id).toBe('d'.repeat(32))
+        return { accepted: true }
+      }
+      throw new Error(`stale basic marker dispatched ${path}`)
+    })
+    workerStarts.mockClear()
+    const ctx = new Context()
+    try {
+      await ctx.plugin(WorkerThreadCodeRuntime, {})
+      await expect(ctx.codeRuntime.run({ program: 'return 1', cwd, bindings: [] })).resolves.toEqual({
+        logs: [], error: { kind: 'worker-exit', message: 'remote code runtime became unavailable' },
+      })
+      expect(calls).toEqual([
+        { path: '/v1/code/start', connectionId: 'connection-1' },
+        { path: '/v1/code/cancel', connectionId: 'connection-1' },
+      ])
+      expect(workerStarts).not.toHaveBeenCalled()
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('marker 重绑后不会发送 binding reply，并由旧 owner 清理会话', async () => {
     const cwd = await marker()
     const paths: string[] = []
@@ -811,7 +1055,7 @@ describe('WorkerThreadCodeRuntime Remote-SSH routing', () => {
           expect(connectionId).toBe('connection-1')
           expect(body.after).toBe(0)
           await writeFile(join(cwd, REMOTE_WORKSPACE_MARKER), JSON.stringify({
-            version: 2, remoteRoot: '/srv/project', connectionId: 'connection-2', generation: 2,
+            version: 3, remoteRoot: '/srv/project', connectionId: 'connection-2', generation: 2, mode: 'agent',
           }))
           return {
             events: [{ type: 'tool_call', sequence: 1, callId: 1, global: 'tools', name: 'echo', arguments: {} }],
@@ -856,7 +1100,7 @@ describe('WorkerThreadCodeRuntime Remote-SSH routing', () => {
           expect(connectionId).toBe('connection-1')
           expect(body.after).toBe(0)
           await writeFile(join(cwd, REMOTE_WORKSPACE_MARKER), JSON.stringify({
-            version: 2, remoteRoot: '/srv/project', connectionId: 'connection-2', generation: 2,
+            version: 3, remoteRoot: '/srv/project', connectionId: 'connection-2', generation: 2, mode: 'agent',
           }))
           polling.resolve(undefined)
           return await new Promise(() => {})
@@ -902,7 +1146,7 @@ describe('WorkerThreadCodeRuntime Remote-SSH routing', () => {
       const running = ctx.codeRuntime.run({ program: 'return 1', cwd, bindings: [], signal: controller.signal })
       await started.promise
       await writeFile(join(cwd, REMOTE_WORKSPACE_MARKER), JSON.stringify({
-        version: 2, remoteRoot: '/srv/project', connectionId: 'connection-2', generation: 2,
+        version: 3, remoteRoot: '/srv/project', connectionId: 'connection-2', generation: 2, mode: 'agent',
       }))
       controller.abort('start response was never confirmed')
       await expect(running).resolves.toEqual({

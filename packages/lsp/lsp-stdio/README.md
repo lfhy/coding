@@ -12,6 +12,7 @@ Namespace 插件（`name`／`inject`／`Config`／`apply`，无默认导出）�
 - 通过一条逐 Workspace、可中止的队列，串行执行每个源读取／打开／查询／关闭生命周期，因此排队调用只会在轮到自身时读取当前源；不同 Workspace 并行运行。提供方 dispose 会中止文件系统与协议工作，等待尚未进入队列的 Workspace 查找完成，随后排空每条队列与每个服务器。
 - 协议 shutdown 失败后，经由子进程 seam 终止服务器后代树（POSIX 进程组信号；Windows `taskkill /T /F`）。树终止的投递结果与所有进程组信号一样被就地吸收，不向外抛出（投递与服务器退出存在竞态）；服务器是否完全停稳，由句柄的进程树存活等待确认，而非由这次终止自身的结果确认。
 - 对每个规范 Workspace target，经由 `ctx.subprocess` 解析服务器可执行文件、cwd、进程和协议流；因此 Remote-SSH marker 会在所选远程 target 上启动配置的服务器，而不是通过本地 Node Host 启动。`initialize.processId` 为 `null`，因为另一台机器或 PID namespace 不得监视 harness 进程。
+- 远端 `basic` marker 不支持 LSP：工作区身份验证后、读取源文件或查找／启动服务器前抛出 `REMOTE_CAPABILITY_UNAVAILABLE(lsp)`；不会回退到 Host 本地语言服务器。远端 `agent` marker 使用上面的进程路径，marker 丢失或身份过期会拒绝查询。
 - 使用 `ctx.fs` 提供的规范化包含关系、文件 URI 与流式文本验证，但不发出 `fs/observed`：只有 LSP 结果对模型可见，因此查询不满足先读后写策略。
 
 ## 配置

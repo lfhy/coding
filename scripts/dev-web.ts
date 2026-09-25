@@ -181,7 +181,7 @@ interface ViteWatcher {
 }
 
 /**
- * 从 Web workspace 解析 Vite，等待首轮 watch 构建的 END 事件后才允许桌面窗口启动。
+ * 从 Web workspace 解析 Vite，等待首轮 watch 构建的 END 事件后才将 Web 产物视为就绪。
  * @param root - Vite 项目目录；测试可传入独立的最小项目。
  * @param onStarted - 在首轮构建完成前登记清理句柄。
  * @returns 持续监听的构建器，调用方负责关闭。
@@ -278,7 +278,7 @@ if (isMain) {
   // in its module graph.
   await watchClientPlugins(repoRoot, [...pluginDirs, ...libraryDirs], pollInterval)
   // Vite 从 Web workspace 解析，root 也固定为 apps/web，保证 dedupe 所见的
-  // React 实例不变。END 发生在首轮产物写入之后，是 Wails 启动的就绪边界。
+  // React 实例不变。END 发生在首轮产物写入之后，后续步骤才可使用最新 Web 产物。
   await watchWebShell(webRoot, (stage) => {
     if (stopping) stage.kill()
     else stages.push(stage)

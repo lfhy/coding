@@ -3,11 +3,28 @@ import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { FsVersion } from '@deepseek-ai/dsh-fs'
 import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
 import { REMOTE_WORKSPACE_MARKER } from '@deepseek-ai/dsh-subprocess'
+
+const localFsAccess = vi.hoisted(() => vi.fn())
+vi.mock('../src/fsio.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/fsio.ts')>()
+  const localIoNames = new Set([
+    'listDirectory', 'probe', 'probeNoFollow', 'readForEdit', 'readTextForDiff',
+    'readWholeBytes', 'readWholeText', 'resolveLocalTarget', 'streamWholeText', 'writeFileAtomic',
+  ])
+  return Object.fromEntries(Object.entries(actual).map(([name, value]) => [name,
+    localIoNames.has(name)
+      ? (...args: unknown[]) => {
+        localFsAccess(name)
+        return (value as (...input: unknown[]) => unknown)(...args)
+      }
+      : value,
+  ]))
+})
 
 const initialBridgeUrl = process.env.DSH_REMOTE_BRIDGE_URL
 const initialBridgeToken = process.env.DSH_REMOTE_BRIDGE_TOKEN
@@ -23,14 +40,15 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
 })
 
-async function workspaceMarker(remoteRoot = '/srv/project'): Promise<string> {
+async function workspaceMarker(remoteRoot = '/srv/project', mode: 'basic' | 'agent' = 'agent'): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'dsh-fs-remote-marker-'))
   roots.push(root)
   await writeFile(join(root, REMOTE_WORKSPACE_MARKER), JSON.stringify({
-    version: 2,
+    version: 3,
     remoteRoot,
     connectionId: 'connection-1',
     generation: 1,
+    mode,
   }))
   return root
 }
@@ -41,6 +59,7 @@ async function startBridge(
     body: Record<string, unknown>,
     headers: Record<string, string | string[] | undefined>,
   ) => unknown,
+  statusFor?: (path: string) => number,
 ): Promise<void> {
   const server = createServer((request, response) => {
     const chunks: Buffer[] = []
@@ -48,6 +67,7 @@ async function startBridge(
     request.on('end', () => {
       const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>
       void Promise.resolve(handler(request.url ?? '', body, request.headers)).then((payload) => {
+        response.statusCode = statusFor?.(request.url ?? '') ?? 200
         response.setHeader('Content-Type', 'application/json')
         response.end(JSON.stringify(payload))
       })
@@ -70,6 +90,158 @@ async function expectMutationStillPending(operation: Promise<unknown>): Promise<
 }
 
 describe('LocalFileSystem Remote-SSH marker routing', () => {
+  it('routes basic reads and mutations through the bridge without local filesystem I/O', async () => {
+    const root = await workspaceMarker('/srv/project', 'basic')
+    const calls: string[] = []
+    const mutations: Record<string, unknown>[] = []
+    await startBridge((path, body) => {
+      calls.push(path)
+      switch (path) {
+        case '/v1/resolve':
+          return { path: body.path, info: { path: body.path, type: 'file', version: 'v1', size: 5 } }
+        case '/v1/stat':
+          return { info: { path: body.path, type: body.noFollow ? 'symlink' : 'file', version: 'v1', size: 5 } }
+        case '/v1/read_file':
+          return { path: body.path, content: 'hello', version: 'v1' }
+        case '/v1/read_bytes':
+          return { path: body.path, contentBase64: Buffer.from('hello').toString('base64'), version: 'v1' }
+        case '/v1/directories':
+          return { path: body.path, entries: [{ name: 'source.ts', path: '/srv/project/source.ts', type: 'file', version: 'v1', size: 5 }] }
+        case '/v1/update_file':
+          mutations.push(body)
+          return { operation: 'update', version: 'v2', before: 'hello', after: body.content }
+        case '/v1/edit_file':
+          mutations.push(body)
+          return { version: 'v3', before: 'new', after: 'edited' }
+        default:
+          throw new Error(`unexpected bridge path ${path}`)
+      }
+    })
+    const ctx = new Context()
+    try {
+      await ctx.plugin(LocalFileSystem, { cwd: root })
+      const fs = ctx.fs as LocalFileSystem
+      localFsAccess.mockClear()
+      const target = await fs.resolve('source.ts')
+      expect(await fs.stat(target)).toMatchObject({ type: 'file', size: 5 })
+      expect(await fs.lstat('source.ts')).toMatchObject({ type: 'symlink' })
+      expect(await fs.readText(target)).toBe('hello')
+      const streamed: string[] = []
+      for await (const chunk of await fs.streamText(target)) streamed.push(chunk)
+      expect(streamed).toEqual(['hello'])
+      expect(await fs.readBytes(target, undefined, 5)).toEqual(Buffer.from('hello'))
+      const entries = await fs.listDir(await fs.resolve('.'))
+      expect(entries).toMatchObject([{ name: 'source.ts' }])
+      expect(await fs.readText(entries[0]!.target)).toBe('hello')
+      expect(fs.contains(await fs.resolve('.'), target)).toBe(true)
+      expect(fs.processPath(target)).toBe('/srv/project/source.ts')
+      expect(fs.fileUrl(target)).toBe('file:///srv/project/source.ts')
+      await expect(fs.writeText(target, 'new', { kind: 'replaceIfVersion', version: FsVersion('v1') }))
+        .resolves.toMatchObject({ operation: 'update', version: 'v2', before: 'hello', after: 'new' })
+      await expect(fs.editText(target, { oldString: 'new', newString: 'edited', replaceAll: false }, { version: FsVersion('v2') }))
+        .resolves.toMatchObject({ version: 'v3', before: 'new', after: 'edited' })
+      expect(calls.slice(-2)).toEqual(['/v1/update_file', '/v1/edit_file'])
+      expect(mutations).toMatchObject([
+        { path: '/srv/project/source.ts', content: 'new', expected: { kind: 'replaceIfVersion', version: 'v1' } },
+        { path: '/srv/project/source.ts', oldString: 'new', newString: 'edited', expected: { kind: 'replaceIfVersion', version: 'v2' } },
+      ])
+      expect(localFsAccess).not.toHaveBeenCalled()
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('rejects invalid basic mutation responses without falling back to local filesystem I/O', async () => {
+    const root = await workspaceMarker('/srv/project', 'basic')
+    const calls: string[] = []
+    await startBridge((path, body) => {
+      calls.push(path)
+      if (path === '/v1/resolve') return { path: body.path }
+      if (path === '/v1/update_file') return { operation: 'update', version: 'v2', before: 'old', after: 'wrong' }
+      if (path === '/v1/edit_file') return { version: 'v2', before: 'old', after: 'wrong' }
+      throw new Error(`unexpected bridge path ${path}`)
+    })
+    const ctx = new Context()
+    try {
+      await ctx.plugin(LocalFileSystem, { cwd: root })
+      const fs = ctx.fs as LocalFileSystem
+      const target = await fs.resolve('source.ts')
+      localFsAccess.mockClear()
+      await expect(fs.writeText(target, 'new')).rejects.toMatchObject({ code: 'FS_IO_ERROR' })
+      await expect(fs.editText(target, { oldString: 'old', newString: 'new', replaceAll: false }))
+        .rejects.toMatchObject({ code: 'FS_IO_ERROR' })
+      expect(calls).toEqual(['/v1/resolve', '/v1/update_file', '/v1/edit_file'])
+      expect(localFsAccess).not.toHaveBeenCalled()
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('reports unsupported SFTP mutation extensions from the bridge without a local fallback', async () => {
+    const root = await workspaceMarker('/srv/project', 'basic')
+    const calls: string[] = []
+    await startBridge((path, body) => {
+      calls.push(path)
+      if (path === '/v1/resolve') return { path: body.path }
+      if (path === '/v1/update_file') return { error: { code: 'sftp-hardlink-unsupported' } }
+      if (path === '/v1/edit_file') return { error: { code: 'sftp-posix-rename-unsupported' } }
+      throw new Error(`unexpected bridge path ${path}`)
+    }, path => path === '/v1/resolve' ? 200 : 501)
+    const ctx = new Context()
+    try {
+      await ctx.plugin(LocalFileSystem, { cwd: root })
+      const fs = ctx.fs as LocalFileSystem
+      const target = await fs.resolve('source.ts')
+      localFsAccess.mockClear()
+      await expect(fs.writeText(target, 'new', { kind: 'createIfAbsent' })).rejects.toMatchObject({
+        code: 'FS_IO_ERROR',
+        message: 'cannot write "/srv/project/source.ts": atomic create requires the SFTP hardlink extension',
+      })
+      await expect(fs.editText(target, { oldString: 'old', newString: 'new', replaceAll: false }))
+        .rejects.toMatchObject({
+          code: 'FS_IO_ERROR',
+          message: 'cannot edit "/srv/project/source.ts": atomic replacement requires the SFTP posix-rename extension',
+        })
+      expect(calls).toEqual(['/v1/resolve', '/v1/update_file', '/v1/edit_file'])
+      expect(localFsAccess).not.toHaveBeenCalled()
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('does not turn an invalid marker or detached remote target into local filesystem access', async () => {
+    const root = await workspaceMarker('/srv/project', 'basic')
+    const calls: string[] = []
+    await startBridge((path, body) => {
+      calls.push(path)
+      if (path === '/v1/resolve') return { path: body.path }
+      throw new Error(`unexpected bridge path ${path}`)
+    })
+    const ctx = new Context()
+    try {
+      await ctx.plugin(LocalFileSystem, { cwd: root })
+      const fs = ctx.fs as LocalFileSystem
+      const target = await fs.resolve('source.ts')
+      localFsAccess.mockClear()
+      await writeFile(join(root, REMOTE_WORKSPACE_MARKER), JSON.stringify({
+        version: 3,
+        remoteRoot: '/srv/project',
+        connectionId: 'connection-1',
+        generation: 1,
+      }))
+      await expect(fs.resolve('source.ts')).rejects.toMatchObject({ code: 'FS_IO_ERROR' })
+      await expect(fs.writeText(target, 'new')).rejects.toMatchObject({ code: 'FS_IO_ERROR' })
+      await rm(join(root, REMOTE_WORKSPACE_MARKER))
+      await expect(fs.readText(target)).rejects.toMatchObject({ code: 'FS_IO_ERROR' })
+      await expect(fs.editText(target, { oldString: 'old', newString: 'new', replaceAll: false }))
+        .rejects.toMatchObject({ code: 'FS_IO_ERROR' })
+      expect(calls).toEqual(['/v1/resolve'])
+      expect(localFsAccess).not.toHaveBeenCalled()
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('forwards resolve, read, write, edit, and directory listing to the selected connection', async () => {
     const root = await workspaceMarker()
     const calls: Array<{ path: string; body: Record<string, unknown> }> = []

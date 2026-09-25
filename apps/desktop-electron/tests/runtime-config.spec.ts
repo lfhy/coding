@@ -15,7 +15,7 @@ async function fixture(): Promise<RuntimeConfigOptions> {
   fixtures.push(root)
   const userHome = join(root, 'user')
   const repoRoot = join(root, 'repo')
-  const resourcesPath = join(root, 'CodingElectron.app', 'Contents', 'Resources')
+  const resourcesPath = join(root, 'dist', 'Coding.app', 'Contents', 'Resources')
   await Promise.all([
     mkdir(userHome),
     mkdir(join(repoRoot, 'dist'), { recursive: true }),
@@ -70,10 +70,10 @@ describe('Electron runtime configuration', () => {
     await expect(lstat(home)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
-  it('从 Resources 读取生产版本且不触碰 Wails Home', async () => {
+  it('从 Resources 读取生产版本且不触碰安装版 Home', async () => {
     const options = { ...await fixture(), packaged: true }
     const installedHome = join(options.userHome, '.dsh')
-    await symlink(join(options.userHome, 'missing-wails-target'), installedHome)
+    await symlink(join(options.userHome, 'missing-installed-target'), installedHome)
     const result = await resolveRuntimeConfig(options)
     expect(result).toMatchObject({
       home: installedHome, cwd: options.userHome,
@@ -83,7 +83,7 @@ describe('Electron runtime configuration', () => {
       helper: {
         executable: join(options.resourcesPath, 'coding-electron-helper'),
         args: ['--home', installedHome, '--cwd', options.userHome, '--host-version', '0.1.0-rc.8',
-          '--runtime-root', options.resourcesPath, '--exclusive-wails-instance'],
+          '--runtime-root', options.resourcesPath, '--exclusive-desktop-instance'],
         cwd: options.userHome,
       },
     })

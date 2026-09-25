@@ -10,7 +10,9 @@ import { createPackage, extractFile, getRawHeader, listPackage } from '@electron
 const execFile = promisify(execFileCallback)
 const root = resolve(import.meta.dirname, '..')
 const electronVersion = '44.0.0'
-const applicationName = 'CodingElectron.app'
+const applicationName = 'Coding.app'
+const applicationExecutable = 'Coding'
+const applicationBundleIdentifier = 'com.coding.desktop'
 const remoteArtifacts = [
   ['darwin', 'amd64', 'coding-remote-agent-darwin-amd64', /Mach-O.*x86_64/u],
   ['darwin', 'arm64', 'coding-remote-agent-darwin-arm64', /Mach-O.*arm64/u],
@@ -226,7 +228,7 @@ async function signAndVerify(app: string, run: Run): Promise<void> {
   const binaries: string[] = []
   const bundles: string[] = []
   await walk(app, binaries, bundles)
-  if (!binaries.includes(join(app, 'Contents', 'MacOS', 'CodingElectron'))) {
+  if (!binaries.includes(join(app, 'Contents', 'MacOS', applicationExecutable))) {
     throw new Error('package: no Electron Mach-O executable in assembled application')
   }
   const depth = (path: string): number => path.split(sep).length
@@ -240,7 +242,7 @@ async function signAndVerify(app: string, run: Run): Promise<void> {
 }
 
 /**
- * 只写独立的 dist/CodingElectron.app；输入未齐备时不触碰已有输出。
+ * 只写 dist/Coding.app；输入未齐备时不触碰已有输出。
  * @param paths - 构建产物和独立输出的绝对路径。
  * @param options - 本机架构及系统命令入口，可供无安装副作用的测试注入。
  * @returns 完成逐层 ad-hoc 签名和校验后的应用路径。
@@ -254,13 +256,28 @@ export async function packageElectronMacosApp(
   }
   const output = resolve(paths.output)
   const expectedOutput = join(root, 'dist', applicationName)
-  // 输出不能由调用者重定向到用户安装目录或现有 Wails 应用。
+  // 输出不能由调用者重定向到用户安装目录。
   if (output !== expectedOutput && !options.run) throw new Error(`package: output must be ${expectedOutput}`)
-  if (output === resolve('/Applications/Coding.app') || output === join(root, 'dist', 'Coding.app')) {
-    throw new Error('package: refusing to overwrite the installed or Wails application')
+  if (output === resolve('/Applications/Coding.app')) {
+    throw new Error('package: refusing to overwrite the installed application')
   }
   const move = options.move ?? rename
-  const backup = join(dirname(output), '.CodingElectron.previous.app')
+  const outputDirectory = dirname(output)
+  for (const directory of [dirname(outputDirectory), outputDirectory]) {
+    const entry = await lstat(directory).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+      throw error
+    })
+    if (entry?.isSymbolicLink()) throw new Error('package: output directory must not be a symbolic link')
+  }
+  const backup = join(outputDirectory, '.Coding.previous.app')
+  for (const path of [output, backup]) {
+    const entry = await lstat(path).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+      throw error
+    })
+    if (entry?.isSymbolicLink()) throw new Error('package: output path must not be a symbolic link')
+  }
   // 若上次在重命名间被中断，先恢复旧包；两者并存则不猜测哪个应删除。
   if (await exists(backup)) {
     if (await exists(output)) throw new Error(`package: unresolved previous application backup: ${backup}`)
@@ -268,16 +285,13 @@ export async function packageElectronMacosApp(
   }
   const run = options.run ?? runCommand
   const version = await validate(paths, run)
-  await mkdir(dirname(output), { recursive: true })
-  if ((await lstat(dirname(output))).isSymbolicLink()) {
-    throw new Error('package: output directory must not be a symbolic link')
-  }
-  const stage = join(dirname(output), `.CodingElectron.staging-${process.pid}.app`)
+  await mkdir(outputDirectory, { recursive: true })
+  const stage = join(outputDirectory, `.Coding.staging-${process.pid}.app`)
   await rm(stage, { recursive: true, force: true })
   try {
     await cp(join(paths.electron, 'Electron.app'), stage, { recursive: true, verbatimSymlinks: true })
     const contents = join(stage, 'Contents')
-    await rename(join(contents, 'MacOS', 'Electron'), join(contents, 'MacOS', 'CodingElectron'))
+    await rename(join(contents, 'MacOS', 'Electron'), join(contents, 'MacOS', applicationExecutable))
     const resources = join(contents, 'Resources')
     const appDirectory = join(stage, '.asar-source')
     const archive = join(resources, 'app.asar')
@@ -313,11 +327,11 @@ export async function packageElectronMacosApp(
 
     const plist = join(contents, 'Info.plist')
     for (const [key, value] of [
-      ['CFBundleIdentifier', 'com.coding.desktop-electron'],
-      ['CFBundleName', 'Coding Electron'],
-      ['CFBundleDisplayName', 'Coding Electron'],
+      ['CFBundleIdentifier', applicationBundleIdentifier],
+      ['CFBundleName', 'Coding'],
+      ['CFBundleDisplayName', 'Coding'],
       ['CFBundleIconFile', 'AppIcon.icns'],
-      ['CFBundleExecutable', 'CodingElectron'],
+      ['CFBundleExecutable', applicationExecutable],
       ['CFBundleShortVersionString', version],
       ['CFBundleVersion', version],
     ]) await run('/usr/libexec/PlistBuddy', ['-c', `Set :${key} ${value}`, plist])
@@ -335,7 +349,7 @@ export async function packageElectronMacosApp(
       [' (GPU)', 'helper.gpu'], [' (Plugin)', 'helper.plugin'],
     ]) {
       const helperPlist = join(contents, 'Frameworks', `Electron Helper${suffix}.app`, 'Contents', 'Info.plist')
-      await run('/usr/libexec/PlistBuddy', ['-c', `Set :CFBundleIdentifier com.coding.desktop-electron.${identifier}`, helperPlist])
+      await run('/usr/libexec/PlistBuddy', ['-c', `Set :CFBundleIdentifier ${applicationBundleIdentifier}.${identifier}`, helperPlist])
     }
     await signAndVerify(stage, run)
     const hadPrevious = await exists(output)

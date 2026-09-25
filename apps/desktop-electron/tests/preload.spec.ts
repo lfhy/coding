@@ -28,7 +28,7 @@ describe('Remote-SSH sandbox preload', () => {
     ])
     expect(Object.isFrozen(bridge)).toBe(true)
     expect(Object.isFrozen(bridge.remoteSSH)).toBe(true)
-    const input = { attemptId: 'attempt-1', auth: { secret: 'one-use' } }
+    const input = { attemptId: 'attempt-1', mode: 'basic', auth: { secret: 'one-use' } }
     await bridge.remoteSSH.connect!(input)
     await bridge.remoteSSH.cancelConnect!('attempt-1')
     await bridge.remoteSSH.listDirectories!('connection-1', '/srv')

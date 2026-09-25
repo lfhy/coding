@@ -1,5 +1,5 @@
 /**
- * 显式 opt-in 的 macOS arm64 打包版冒烟：直接运行完整 .app 中的 CodingElectron，
+ * 显式 opt-in 的 macOS arm64 打包版冒烟：直接运行独立 Electron .app 中的 Coding，
  * 用独立的 CDP 端口观察真实 Host 页面；不进入 keyless Vitest，不安装应用。
  */
 
@@ -14,8 +14,8 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
 const root = fileURLToPath(new URL('../../..', import.meta.url))
-const bundle = join(root, 'dist/CodingElectron.app')
-const executable = join(bundle, 'Contents/MacOS/CodingElectron')
+const bundle = join(root, 'dist/Coding.app')
+const executable = join(bundle, 'Contents/MacOS/Coding')
 const resources = join(bundle, 'Contents/Resources')
 const helperExecutable = join(resources, 'coding-electron-helper')
 const expectedVersion = JSON.parse(await readFile(join(root, 'apps/desktop-electron/package.json'), 'utf8')).version
@@ -53,23 +53,35 @@ async function preflight() {
   for (const path of [executable, helperExecutable, join(resources, 'coding-host'),
     join(resources, 'metadata.json'), join(resources, 'app.asar'), join(resources, 'CodingIcon.png')]) {
     const entry = await lstat(path).catch(() => undefined)
-    assert.ok(entry?.isFile(), `missing packaged regular file: ${path}; rebuild dist/CodingElectron.app`)
+    assert.ok(entry?.isFile(), `missing packaged regular file: ${path}; rebuild dist/Coding.app`)
     if (path === join(resources, 'app.asar')) assert.ok(entry.size > 0, 'packaged app.asar must not be empty')
   }
   const metadata = JSON.parse(await readFile(join(resources, 'metadata.json'), 'utf8'))
   assert.equal(metadata.version, expectedVersion, 'packaged metadata version')
   const plist = join(bundle, 'Contents/Info.plist')
   for (const [key, expected] of [
-    ['CFBundleExecutable', 'CodingElectron'],
+    ['CFBundleIdentifier', 'com.coding.desktop'],
+    ['CFBundleName', 'Coding'],
+    ['CFBundleDisplayName', 'Coding'],
+    ['CFBundleExecutable', 'Coding'],
     ['CFBundleShortVersionString', expectedVersion],
   ]) {
     const value = command('/usr/libexec/PlistBuddy', ['-c', `Print :${key}`, plist])
     assert.equal(value.status, 0, `packaged Info.plist must define ${key}`)
     assert.equal(value.stdout.trim(), expected, `packaged Info.plist ${key}`)
   }
+  for (const [suffix, identifier] of [
+    ['', 'helper'], [' (Renderer)', 'helper.renderer'],
+    [' (GPU)', 'helper.gpu'], [' (Plugin)', 'helper.plugin'],
+  ]) {
+    const helperPlist = join(bundle, 'Contents/Frameworks', `Electron Helper${suffix}.app`, 'Contents/Info.plist')
+    const value = command('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleIdentifier', helperPlist])
+    assert.equal(value.status, 0, `packaged helper Info.plist must define CFBundleIdentifier: ${suffix}`)
+    assert.equal(value.stdout.trim(), `com.coding.desktop.${identifier}`, `packaged helper identifier: ${suffix}`)
+  }
   if (command('/usr/bin/codesign', ['--verify', '--deep', '--strict', bundle]).status !== 0) {
     throw new Error('packaged signature failed; rerun the macOS packaging step, then check ' +
-      '`codesign --verify --deep --strict dist/CodingElectron.app` including nested helpers; do not disable signature checks')
+      '`codesign --verify --deep --strict dist/Coding.app` including nested helpers; do not disable signature checks')
   }
   for (const path of [executable, helperExecutable, join(resources, 'coding-host')]) {
     const arch = command('/usr/bin/lipo', ['-archs', path])
@@ -128,7 +140,7 @@ function helperCommand(pid, home, hostHome) {
   const actual = processCommand(pid)
   return actual !== undefined && actual.startsWith(`${helperExecutable} --home ${hostHome} --cwd ${home} `) &&
     actual.includes(`--host-version ${expectedVersion} `) &&
-    actual.includes(`--runtime-root ${resources} --exclusive-wails-instance`)
+    actual.includes(`--runtime-root ${resources} --exclusive-desktop-instance`)
 }
 
 function ownHelperPid(appPid, home, hostHome) {
@@ -239,10 +251,11 @@ async function inspectPackagedMain(url) {
       socket.addEventListener('open', resolveOpen, { once: true })
       socket.addEventListener('error', () => reject(new Error('Node inspector connection failed')), { once: true })
     }), 'Node inspector connection', 5_000)
-    // 只读求值两个布尔量；不访问环境、Host token、文件、凭据或主进程对象的其他成员。
+    // 只读求值应用身份；不访问环境、Host token、文件或凭据。
     const expression = `(() => {
       const app = process.getBuiltinModule('module').createRequire(process.execPath)('electron').app;
-      return { packaged: app.isPackaged, appPathIsAsar: app.getAppPath() === process.resourcesPath + '/app.asar' };
+      return { packaged: app.isPackaged, appName: app.getName(),
+        appPathIsAsar: app.getAppPath() === process.resourcesPath + '/app.asar' };
     })()`
     const identity = await deadline(new Promise((resolveValue, reject) => {
       socket.addEventListener('message', event => {
@@ -258,8 +271,8 @@ async function inspectPackagedMain(url) {
       socket.send(JSON.stringify({ id: 1, method: 'Runtime.evaluate',
         params: { expression, returnByValue: true } }))
     }), 'packaged main-process identity', 5_000)
-    assert.deepEqual(identity, { packaged: true, appPathIsAsar: true },
-      'Electron main must report app.isPackaged and load Resources/app.asar')
+    assert.deepEqual(identity, { packaged: true, appName: 'Coding', appPathIsAsar: true },
+      'Electron main must report Coding, app.isPackaged and load Resources/app.asar')
   } finally {
     socket.close()
   }
@@ -359,7 +372,7 @@ async function main() {
     assert.ok(!/vite.*error|internal server error/i.test(body), 'packaged Host page must not show build errors')
     assert.equal(errors.length, 0, 'packaged renderer must not report runtime errors')
     assert.equal(existsSync(userData), true, 'packaged Electron userData must be inside isolated HOME')
-    assert.equal((await lstat(instanceSocket)).isSocket(), true, 'Go Wails lock must use isolated TMPDIR')
+    assert.equal((await lstat(instanceSocket)).isSocket(), true, 'Go installed desktop lock must use isolated TMPDIR')
     helperPid = ownHelperPid(child.pid, home, hostHome)
 
     const described = await describeHost(origin)
@@ -395,9 +408,9 @@ async function main() {
     }
     if (passed) {
       assert.ok(appStopped && helperStopped && hostStopped && socketStopped,
-        'packaged Electron/helper/Host and isolated Wails lock must all stop')
+        'packaged Electron/helper/Host and isolated desktop lock must all stop')
       console.log('PASS: signed macOS arm64 app.asar, app.isPackaged, metadata/Host version, real Host page, both WebSockets, ' +
-        'single instance, sandbox preload, Go helper/bridge, isolated Wails lock and cleanup')
+        'single instance, sandbox preload, Go helper/bridge, isolated desktop lock and cleanup')
       console.log('Not inspected by CDP/Node inspector: native menu/Tray and macOS window close/hide; ' +
         'verify those in a native UI session.')
     }

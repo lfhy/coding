@@ -150,6 +150,60 @@ async function initialize(session: LocalPtySession, terminal: FakeTerminal): Pro
 }
 
 describe('LocalPtySession readiness and output', () => {
+  it('基础 SSH 在前台检查不可用时仍能启动并发送首次输入，但只报告推断空闲', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const inspectForeground = vi.fn(async () => { throw new Error('501 terminal-foreground-unavailable') })
+    terminal.inspectForeground = inspectForeground
+    const session = new LocalPtySession(terminal, config(), true)
+
+    const initializing = session.initialize()
+    terminal.emitData('\x1b]133;D;0\x07dsh> ')
+    await vi.advanceTimersByTimeAsync(60)
+    await initializing
+    expect(session.motd).toBe('dsh> ')
+
+    const first = session.startSend({ text: 'printf ready', submit: true })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(terminal.writes).toEqual(['printf ready\r'])
+    terminal.emitData('ready\r\n\x1b]133;D;0\x07dsh> ')
+    await vi.advanceTimersByTimeAsync(60)
+    expect(await first.done).toMatchObject({ waitReason: 'inferred_idle', viewport: 'ready\ndsh> ' })
+    expect(inspectForeground).not.toHaveBeenCalled()
+  })
+
+  it('普通会话仍在输入前要求前台检查成功', async () => {
+    const terminal = new FakeTerminal()
+    const inspectForeground = vi.fn(async () => { throw new Error('501 terminal-foreground-unavailable') })
+    terminal.inspectForeground = inspectForeground
+    const session = new LocalPtySession(terminal, config())
+
+    const first = session.startSend({ text: 'must not execute', submit: true })
+    await expect(first.done).rejects.toThrow('501 terminal-foreground-unavailable')
+    expect(terminal.writes).toEqual([])
+    expect(inspectForeground).toHaveBeenCalledOnce()
+  })
+
+  it('基础 SSH 的取消信号无法确认时拒绝发送且不写入模拟中断字节', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    terminal.inspectForeground = async () => { throw new Error('501 terminal-foreground-unavailable') }
+    const session = new LocalPtySession(terminal, config(), true)
+    const initializing = session.initialize()
+    terminal.emitData('dsh> ')
+    await vi.advanceTimersByTimeAsync(50)
+    await initializing
+
+    terminal.signalForeground = async () => { throw new Error('503 terminal-state-unknown') }
+    const operation = session.startSend({ text: 'sleep 10', submit: true })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(terminal.writes).toEqual(['sleep 10\r'])
+    expect(operation.cancel()).toBe(true)
+    await expect(operation.done).rejects.toThrow('503 terminal-state-unknown')
+    expect(terminal.writes).not.toContain('\x03')
+    expect(session.status().kind).toBe('exited')
+  })
+
   it('在发布提示符就绪前回应拆分的光标位置查询', async () => {
     vi.useFakeTimers()
     const terminal = new FakeTerminal()

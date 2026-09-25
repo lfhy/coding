@@ -1,6 +1,6 @@
 # @deepseek-ai/dsh-code-runtime-worker-thread
 
-这是 [`@deepseek-ai/dsh-code-runtime`](../code-runtime/README.md) seam 的 worker 线程实现。对于普通 Workspace，`WorkerThreadCodeRuntime` 会在每次运行中使用一个全新的 Node `worker_threads.Worker`，输入 TypeScript，由宿主侧剥离类型，通过消息端口桥接 binding，输出 `{ value, logs, error? }`。当 `CodeRunRequest.cwd` 解析为存活的 Remote-SSH marker 时，它会改为驱动远程 Go agent 的一个全新受限 re-exec 子进程；该子进程使用 esbuild/Goja 转换并执行程序，同时在本地 Node Host 上执行每个 binding。**这是隔离措施，而非安全边界**：其信任立场有意与 bash 等价（参见 Code Mode 设计记录 的 Trust posture 章节），但提供本地 worker 有、bash 没有的隔离：独立 isolate、空环境、堆上限与强制终止。
+这是 [`@deepseek-ai/dsh-code-runtime`](../code-runtime/README.md) seam 的 worker 线程实现。对于普通 Workspace，`WorkerThreadCodeRuntime` 会在每次运行中使用一个全新的 Node `worker_threads.Worker`，输入 TypeScript，由宿主侧剥离类型，通过消息端口桥接 binding，输出 `{ value, logs, error? }`。当 `CodeRunRequest.cwd` 解析为存活的 Remote-SSH marker 时，两种模式都经 `/v1/code/*` bridge 运行受限 Goja：agent 模式由远程 Go agent 执行，basic 模式由桌面端在本机启动独立的 Goja isolate（不是远端 agent，也不是本地 Node worker）。编排程序的工具 binding 仍在本地 Node Host 执行，按工作区模式走对应的远端能力。**这是隔离措施，而非安全边界**：其信任立场有意与 bash 等价（参见 Code Mode 设计记录 的 Trust posture 章节），但提供本地 worker 有、bash 没有的隔离：独立 isolate、空环境、堆上限与强制终止。
 
 ## 配置
 
@@ -19,7 +19,7 @@
 ## 设计
 
 - **每次本地运行使用一个全新 worker，不设池化**：本地程序所在的世界会随 worker 一同终止，不会留下需要记录的跨运行状态，也无法发生状态泄漏；仅凭会话日志即可重建运行。
-- **远程 marker 运行使用受限 Goja 子进程**：父 Go agent 会为每个经 esbuild 转换的 TypeScript 程序启动一个 re-exec 子进程，并赋予由本地 Host 的 `maxOldGenerationSizeMb` 设置换算出的字节上限（上限为 2 GiB）。子进程只拥有程序 runner 和带帧事件通道，不拥有 HTTP listener 或保留的 session 状态，因此 OOM 或被强制结束只会终止当前运行，不会带走 agent。父进程会轮询有序的工具调用、日志和终态事件。工具调用会回到本地 binding 函数，因此 Code Mode 的审批、调度和持久子分派日志仍留在 Host；reply 只携带无损 JSON。Host 还会发送 `computeMs`（向上取整为整毫秒，并限制为 agent 的十分钟上限）；子进程只统计 Goja 实际执行程序和 continuation 的时间，不统计等待本地 binding reply 的时间，并会以 `timeout` 中断热循环。start、polling 和 reply 操作都会复核 marker，因此重新绑定会让旧 session 失败，而不是控制新连接。start 已被接受并发布后，任何 marker、next 或 reply 失败、取消或拆卸都只能使用记录的 owner 尽力取消旧 session；它绝不会选择重新绑定后的连接，也不会运行 start、polling 或 reply。agent 会保留已完成的 session 两分钟，供终态 polling 重试，并且最多接纳八个活动或保留中的 session（超出的 start 返回 `code-session-limit`）；单次 polling 中断不会终止程序。远程运行使用 `maxWallMs` 与 agent 十分钟上限中较小的值。
+- **Remote-SSH marker 运行使用受限 Goja 会话**：agent 模式的父 Go agent 会为每个经 esbuild 转换的 TypeScript 程序启动一个 re-exec 子进程；basic 模式由桌面 bridge 以本机 `remote-agent --code-isolate` 资源执行相同的 code 协议，不要求远端安装 agent。两者均经 `/v1/code/*` 路由，不能回退到本地 Node worker。Host 会发送由 `maxOldGenerationSizeMb` 换算的字节上限（最多 2 GiB）；隔离进程只拥有程序 runner 和带帧事件通道，不拥有 HTTP listener 或保留的 session 状态。父端轮询有序的工具调用、日志和终态事件；工具调用回到本地 binding 函数，因此审批、调度和持久子分派日志仍留在 Host，reply 只携带无损 JSON。Host 还会发送 `computeMs`（向上取整为整毫秒，并限制为十分钟）；隔离进程只统计 Goja 执行程序和 continuation 的时间，不统计等待本地 binding reply 的时间，并会以 `timeout` 中断热循环。start、polling 和 reply 操作都会复核 marker；重新绑定使旧 session 失败，已发布的旧 session 只能用记录的 owner 尽力取消，不会向新连接发送普通会话操作。agent 会保留已完成的 session 两分钟，供终态 polling 重试，并且最多接纳八个活动或保留中的 session（超出的 start 返回 `code-session-limit`）；单次 polling 中断不会终止程序。Goja 会话使用 `maxWallMs` 与十分钟上限中较小的值。
 - **在本地执行上下文中，由宿主侧剥离类型**：本地程序会包裹在异步函数外壳中，通过 `node:module` 的 `stripTypeScriptTypes` 剥离类型（只支持可擦除语法；`enum`／namespace 会作为程序 `exception` 被拒绝，且不会启动 worker），再按字节位置切回原内容。之后程序作为 `AsyncFunction` 的函数体执行，因此顶层 `await`／`return` 可用。
 - **端口把对端视为不可信**：模型代码能够访问 `parentPort` 并伪造通信，因此任何代码读取入站消息前，系统都会验证其形状并重新构建（`null`、原始值、无效类型和格式错误的载荷会被静默丢弃；伪造的额外字段绝不会被带入）；宿主对每个调用 id 最多响应一次，只将绑定名称解析为自有属性（伪造的 `constructor` 无法沿原型链访问），丢弃结算后的回复，并验证每个绑定 resolve 值与完成值是否为无损 JSON。伪造的 `log`／`done` 消息无法绕过外层上限：宿主会再次验证，并统计每条获准日志以及完成值或诊断。worker 侧命名空间使用 null-prototype 和 `defineProperty`，因此形似 `__proto__` 的绑定名称只是普通键。
 - **绑定调用被拒绝时使用的异常类属于请求数据**：可选命名空间描述符会指定构造器全局变量，以及用于接收调用失败的成员名称的自有属性。worker 会创建并注入该真实类，使 `instanceof` 生效，同时无需硬编码 `tools` 或 `ToolCallError`；全局变量无效或冲突的声明会在启动 worker 前失败。失败路径使用模块捕获的错误 intrinsic 与属性定义 intrinsic，以及 null-prototype 描述符，因此模型之后的修改无法把被拒绝的绑定变成 worker 崩溃。
@@ -48,6 +48,7 @@ SDK 对外提供默认及具名导出的 `WorkerThreadCodeRuntime` 类，以及 
 - **本地 worker 派生的 OS 进程在程序终止后仍会存活**：`worker.terminate()` 只结束线程，比 bash-local 的进程组终止更弱；在容器后端出现前，孤儿进程清理属于部署职责。
 - **本地类型剥离依赖 Node 的实验性 `stripTypeScriptTypes` API**：如依赖的行为发生变化，amaro 或 sucrase 是已经点名的直接替代品。
 - **远程 Goja 不是 Node 兼容层**：经 marker 路由的程序没有 Node 全局变量、内建模块、原生 addon 或进程内 Host 状态；其受限子进程只拥有 TypeScript 转换、console shim 和声明的异步 binding。
+- **basic 模式的 Goja 在本机而非 SSH 主机**：其编排程序不能直接访问远端进程或文件；须通过 Host binding 使用该工作区的 Bash、文件等远端能力。
 - **本地 worker 的 `computeMs` 到期最多可能超过一个轮询间隔**：系统每 25 ms 采样一次忙碌时间（内部常量，有意不做成配置）。
 - **远程 Goja 的活动片段计时器在调度延迟时可能晚于目标触发**：超出预算的完成值仍会被作为 `timeout` 拒绝，而不会发布。
 - **程序获得一个含 5 个方法的 `console` shim**（`log`／`info`／`warn`／`error`／`debug`）：有意不提供 Node 的完整 console 接口。

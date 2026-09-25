@@ -12,7 +12,7 @@
 | `workspace-write` | 只能写入 `workspaceRoot` + `/tmp`（在 bwrap 下为临时目录，在 Landlock 下为宿主 `/tmp`，在 Seatbelt 下为 `/private/tmp` 加每用户临时目录） |
 | `danger-full-access` | 不作限制；绝不咨询提供方。前台结果携带 `sandbox: { mode, denied: false }`；后台进程句柄不携带沙箱事实。 |
 
-对于 Remote-SSH marker cwd，`danger-full-access` 的前台和后台调用都会通过目标 Go agent 运行。`read-only` 和 `workspace-write` 会在咨询本地沙箱提供方之前失败，因为其内核 runner 无法约束另一台机器上的进程。远程 agent 仍会把工作目录约束到该 marker 所选目录，清除环境中形似凭据的变量及 `DSH_*` 变量，并要求目标上存在 `bash`。
+对于 Remote-SSH marker cwd，`danger-full-access` 的前台和后台调用都会交给对应远端连接；agent 模式通过 Go agent，basic 模式的前台使用 SSH exec、后台使用受管 SSH process。`read-only` 和 `workspace-write` 会在咨询本地沙箱提供方之前失败，因为其内核 runner 无法约束另一台机器上的进程。远端会把工作目录约束到该 marker 所选目录，清除环境中形似凭据的变量及 `DSH_*` 变量，并要求目标上存在 `bash`。
 
 语义：
 
@@ -86,4 +86,4 @@
 - **拒绝从失败命令的 stderr 推断**：后端特征使该推断可跨平台使用，但包含相同后端特征的应用错误可能被分类为拒绝，也可能遗漏未出现在保留尾部中的拒绝。
 - **异步观测到的后台 runner 失败没有即时错误通道**：它记录在已结算进程上，并在调用方使用 `job_output` 读取通用任务时呈现；`SubprocessRuntime` 同步抛出的错误包含 runner 路径时，则会使 `start()` 立即失败。
 - **`danger-full-access` 有意绕过 `ctx.sandbox`**：它是显式无约束模式，不是更宽的沙箱 profile。
-- **Remote-SSH 没有受约束 Shell 模式**：`workspace-write` 仍可用于语义远程文件系统变更，但在真正的远程沙箱提供方出现前，远程 Bash 不能使用该模式。
+- **Remote-SSH 没有受约束 Shell 模式**：`workspace-write` 仍可用于语义远程文件系统变更；agent 和 basic 模式的远程 Bash 均仅能使用 `danger-full-access`。

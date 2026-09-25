@@ -362,7 +362,7 @@ func TestUnclaimedFailedSelectionWithKnownRootRevokesCandidate(t *testing.T) {
 	service, _, manager, _ := unclaimedFixture(t)
 	manager.marker = func(connectionID, remoteRoot string) (remoteagent.RemoteWorkspaceMarker, error) {
 		service.cancel()
-		return remoteagent.RemoteWorkspaceMarker{Version: 1, RemoteRoot: remoteRoot, ConnectionID: connectionID}, nil
+		return remoteagent.RemoteWorkspaceMarker{Version: 3, Mode: remoteagent.ModeAgent, RemoteRoot: remoteRoot, ConnectionID: connectionID}, nil
 	}
 	if _, err := service.RemoteSSHSelectUnclaimed("known-root-failure", "rnew", "/srv/project"); !errors.Is(err, context.Canceled) {
 		t.Fatalf("selection error = %v", err)

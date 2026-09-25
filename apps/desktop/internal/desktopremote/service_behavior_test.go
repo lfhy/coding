@@ -195,7 +195,7 @@ func TestRemoteSSHDirectoryBindingsFilterAndRebindDeterministicMarker(t *testing
 		t.Fatalf("closed connections = %#v", manager.closed)
 	}
 	marker, err := readRemoteWorkspaceMarker(root, "/srv/project")
-	if err != nil || marker == nil || marker.Version != 2 || marker.Generation != 1 || marker.ConnectionID != "rnew" {
+	if err != nil || marker == nil || marker.Version != 3 || marker.Mode != remoteagent.ModeAgent || marker.Generation != 1 || marker.ConnectionID != "rnew" {
 		t.Fatalf("rewritten marker = %#v, %v", marker, err)
 	}
 	info, err := os.Stat(filepath.Join(root, remoteWorkspaceMarkerName))
@@ -498,7 +498,7 @@ func TestRemoteSSHDirectoryAndCloseBindingsUseDeadlines(t *testing.T) {
 }
 
 func sshPasswordInput(secret string) RemoteSSHConnectInput {
-	return RemoteSSHConnectInput{AttemptID: "rattempt", Host: "example.com", Port: 22, Username: "coding", Auth: RemoteSSHAuthInput{Kind: "password", Secret: secret}}
+	return RemoteSSHConnectInput{AttemptID: "rattempt", Mode: remoteagent.ModeAgent, Host: "example.com", Port: 22, Username: "coding", Auth: RemoteSSHAuthInput{Kind: "password", Secret: secret}}
 }
 
 func desktopTestRemoteBridge(t *testing.T) *Bridge {
@@ -568,6 +568,9 @@ func (manager *fakeRemoteSSHManager) Connection(id string) (remoteagent.Connecti
 	if !ok {
 		return remoteagent.ConnectionInfo{}, remoteagent.ErrConnectionNotFound
 	}
+	if info.Mode == "" {
+		info.Mode = remoteagent.ModeAgent
+	}
 	return info, nil
 }
 
@@ -576,7 +579,7 @@ func (manager *fakeRemoteSSHManager) Marker(connectionID, remoteRoot string) (re
 	if manager.marker != nil {
 		return manager.marker(connectionID, remoteRoot)
 	}
-	return remoteagent.RemoteWorkspaceMarker{Version: 1, RemoteRoot: remoteRoot, ConnectionID: connectionID}, nil
+	return remoteagent.RemoteWorkspaceMarker{Version: 3, Mode: remoteagent.ModeAgent, RemoteRoot: remoteRoot, ConnectionID: connectionID}, nil
 }
 
 func (manager *fakeRemoteSSHManager) Close(ctx context.Context, id string) error {

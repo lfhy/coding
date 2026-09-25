@@ -168,10 +168,36 @@ describe('the provider hand-off', () => {
 })
 
 describe('fail closed', () => {
+  it.each(['read-only', 'workspace-write'] as const)(
+    'rejects basic SSH Bash under %s before consulting the sandbox, bridge, or local subprocess',
+    async (mode) => {
+      const markerRoot = mkdtempSync(join(tmpdir(), 'dsh-bash-sandbox-basic-marker-'))
+      writeFileSync(join(markerRoot, REMOTE_WORKSPACE_MARKER), JSON.stringify({
+        version: 3, mode: 'basic', remoteRoot: '/srv/project', connectionId: 'connection-basic', generation: 1,
+      }))
+      const { ctx, bash, calls } = await setup({ mode: 'read-only' })
+      const spawn = vi.spyOn(ctx.subprocess, 'spawn')
+      try {
+        const spec = bash.resolve({
+          command: 'printf unavailable', workdir: markerRoot, sandboxPolicy: executionPolicy(mode),
+        })
+        expect(spec.remoteTarget).toMatchObject({ mode: 'basic', remotePath: '/srv/project' })
+        expect(spec.sandboxPolicy).toMatchObject({ mode })
+        await expect(bash.run(spec)).rejects.toThrow('remote SSH bash requires danger-full-access')
+        expect(() => bash.start(spec)).toThrow('remote SSH bash requires danger-full-access')
+        expect(calls).toHaveLength(0)
+        expect(spawn).not.toHaveBeenCalled()
+      } finally {
+        rmSync(markerRoot, { recursive: true, force: true })
+      }
+    },
+  )
+
   it('refuses a marker workdir under a confined local policy before any local sandbox runner executes', async () => {
     const markerRoot = mkdtempSync(join(tmpdir(), 'dsh-bash-sandbox-remote-marker-'))
     writeFileSync(join(markerRoot, '.coding-remote-workspace.json'), JSON.stringify({
-      version: 2,
+      version: 3,
+      mode: 'agent',
       remoteRoot: '/srv/project',
       connectionId: 'connection-1',
       generation: 1,
@@ -186,10 +212,11 @@ describe('fail closed', () => {
     }
   })
 
-  it('routes a danger-full-access remote background command to the Go process endpoint', async () => {
+  it.each(['agent', 'basic'] as const)('routes a danger-full-access %s remote background command to the bridge', async (mode) => {
     const markerRoot = mkdtempSync(join(tmpdir(), 'dsh-bash-sandbox-remote-background-'))
     writeFileSync(join(markerRoot, REMOTE_WORKSPACE_MARKER), JSON.stringify({
-      version: 2,
+      version: 3,
+      mode,
       remoteRoot: '/srv/project',
       connectionId: 'connection-1',
       generation: 1,
@@ -201,14 +228,23 @@ describe('fail closed', () => {
       exitCode: null, signal: null, stdinClosed: true, startedAt: 1,
     }
     const closed = { ...running, running: false, closed: true, exitCode: 0, exitedAt: 2 }
+    const routes: string[] = []
     const server = createServer((request, response) => {
       const chunks: Buffer[] = []
       request.on('data', (chunk: Buffer) => { chunks.push(chunk) })
       request.on('end', () => {
         const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>
+        routes.push(request.url ?? '')
         response.setHeader('Content-Type', 'application/json')
         switch (request.url) {
+          case '/v1/exec':
+            response.end(JSON.stringify({
+              exitCode: 0, timedOut: false, stdout: 'remote foreground\n', stderr: '',
+              stdoutTruncated: false, stderrTruncated: false,
+            }))
+            return
           case '/v1/processes/start':
+            expect(body).toMatchObject({ root: '/srv/project', path: '/srv/project', argv: ['bash', '-c', 'sleep 1'] })
             response.end(JSON.stringify({ process: running }))
             return
           case '/v1/processes/read':
@@ -227,16 +263,26 @@ describe('fail closed', () => {
         }
       })
     })
-    const { bash, calls } = await setup({ mode: 'danger-full-access' })
+    const { ctx, bash, calls } = await setup({ mode: 'danger-full-access' })
+    const localSpawn = vi.fn(() => { throw new Error('local process unexpectedly started') })
+    ;(ctx.subprocess as LocalSubprocessRuntime).internals.spawn = localSpawn
     try {
       await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
       const address = server.address() as AddressInfo
       process.env.DSH_REMOTE_BRIDGE_URL = `http://127.0.0.1:${address.port}`
       process.env.DSH_REMOTE_BRIDGE_TOKEN = 'test-bridge-token-which-is-long-enough'
+      if (mode === 'basic') {
+        const result = await bash.run(bash.resolve({ command: 'printf remote', workdir: markerRoot }))
+        expect(result.stdout.text).toBe('remote foreground\n')
+        expect(result.sandbox).toEqual({ mode: 'danger-full-access', denied: false })
+        expect(routes).toContain('/v1/exec')
+      }
       const remoteProcess = bash.start(bash.resolve({ command: 'sleep 1', workdir: markerRoot }))
       await remoteProcess.done
       expect(remoteProcess.status).toBe('completed')
       expect(remoteProcess.readOutput()).toEqual({ delta: 'remote background\n', lossy: false })
+      expect(routes).toContain('/v1/processes/start')
+      expect(localSpawn).not.toHaveBeenCalled()
       expect(calls).toHaveLength(0)
     } finally {
       if (originalUrl === undefined) delete process.env.DSH_REMOTE_BRIDGE_URL
@@ -627,7 +673,7 @@ describe('background sandbox facts', () => {
       const task = bash.start(bash.resolve({ command: 'true', workdir: join(parent, 'missing') }))
       await task.done
 
-      expect(task.status).toBe('killed')
+      expect(task.status).toBe('failed')
       expect(task.readOutput().delta).toContain('subprocess failed before reporting an outcome:')
       expect(task.sandbox).toEqual({
         mode: 'read-only',

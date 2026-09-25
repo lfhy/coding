@@ -164,12 +164,16 @@ type CodeRunSessionsOptions struct {
 	MaxSessionBytes      int
 	MaxPollResponseBytes int
 	RunnerOptions        CodeRunnerOptions
+	// ValidateRoot 只用于 start 前的目录检查。默认核验本机目录；basic
+	// 远端 root 仅作会话身份，须注入不访问本机文件系统的校验器。
+	ValidateRoot func(string) error
 }
 
 // CodeRunSessions 是 HTTP route 可复用的远端代码会话表。
 // 它不监听端口；server.go 只需把经过认证的 JSON 请求路由到这些方法。
 type CodeRunSessions struct {
 	runner               *CodeRunner
+	validateRoot         func(string) error
 	pollWait             time.Duration
 	retention            time.Duration
 	maxSessions          int
@@ -287,8 +291,15 @@ func NewCodeRunSessions(options CodeRunSessionsOptions) (*CodeRunSessions, error
 	if err != nil {
 		return nil, err
 	}
+	validateRoot := options.ValidateRoot
+	if validateRoot == nil {
+		validateRoot = func(root string) error {
+			_, err := canonicalSessionRoot(root)
+			return err
+		}
+	}
 	return &CodeRunSessions{
-		runner: runner, pollWait: options.PollWait, retention: options.Retention, maxSessions: options.MaxSessions,
+		runner: runner, validateRoot: validateRoot, pollWait: options.PollWait, retention: options.Retention, maxSessions: options.MaxSessions,
 		maxEvents: options.MaxEvents, maxEventBytes: options.MaxEventBytes,
 		maxSessionBytes: options.MaxSessionBytes, maxPollResponseBytes: options.MaxPollResponseBytes,
 		sessions: make(map[string]*codeRunSession), nonces: make(map[codeRunNonceKey]codeRunNonceRecord), closeDone: make(chan struct{}),
@@ -304,7 +315,7 @@ func (sessions *CodeRunSessions) Start(request CodeRunStartRequest) (CodeRunStar
 	if err != nil {
 		return CodeRunStartResponse{}, err
 	}
-	if _, err := canonicalSessionRoot(request.Root); err != nil {
+	if err := sessions.validateRoot(request.Root); err != nil {
 		return CodeRunStartResponse{}, err
 	}
 	root, err := sessionOwnerRoot(request.Root)

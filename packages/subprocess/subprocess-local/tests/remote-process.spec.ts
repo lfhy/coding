@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import * as nodePty from 'node-pty'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import { RemoteWorkspaceError, REMOTE_WORKSPACE_MARKER, remoteWorkspacePath } from '@deepseek-ai/dsh-subprocess'
 
@@ -13,6 +14,12 @@ const initialBridgeToken = process.env.DSH_REMOTE_BRIDGE_TOKEN
 const roots: string[] = []
 const servers: Server[] = []
 const DROP_BRIDGE_RESPONSE = Symbol('drop bridge response')
+
+class BridgeRejection extends Error {
+  constructor(readonly status: number, readonly bridgeCode: string) {
+    super(bridgeCode)
+  }
+}
 
 afterEach(async () => {
   if (initialBridgeURL === undefined) delete process.env.DSH_REMOTE_BRIDGE_URL
@@ -26,14 +33,15 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
 })
 
-async function marker(): Promise<string> {
+async function marker(mode: 'agent' | 'basic' = 'agent'): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'dsh-subprocess-remote-'))
   roots.push(root)
   await writeFile(join(root, REMOTE_WORKSPACE_MARKER), JSON.stringify({
-    version: 2,
+    version: 3,
     remoteRoot: '/srv/project',
     connectionId: 'connection-1',
     generation: 1,
+    mode,
   }))
   return root
 }
@@ -53,7 +61,7 @@ async function bridge(
         response.end(JSON.stringify({ error: { code: 'invalid-json' } }))
         return
       }
-      void Promise.resolve(handler(request.url ?? '', body)).then((payload) => {
+      void Promise.resolve().then(() => handler(request.url ?? '', body)).then((payload) => {
         if (payload === DROP_BRIDGE_RESPONSE) {
           response.destroy()
           return
@@ -61,9 +69,11 @@ async function bridge(
         response.setHeader('Content-Type', 'application/json')
         response.end(JSON.stringify(payload))
       }, (error: unknown) => {
-        response.statusCode = 500
+        response.statusCode = error instanceof BridgeRejection ? error.status : 500
         response.setHeader('Content-Type', 'application/json')
-        response.end(JSON.stringify({ error: { code: String(error) } }))
+        response.end(JSON.stringify({ error: {
+          code: error instanceof BridgeRejection ? error.bridgeCode : String(error),
+        } }))
       })
     })
   })
@@ -89,8 +99,8 @@ function processSnapshot(overrides: Record<string, unknown> = {}): Record<string
 }
 
 describe('LocalSubprocessRuntime Remote-SSH process routing', () => {
-  it('resolves executables and runs collected process streams on the Go agent', async () => {
-    const cwd = await marker()
+  it.each(['agent', 'basic'] as const)('resolves executables and runs %s process streams on the remote bridge', async (mode) => {
+    const cwd = await marker(mode)
     const calls: Array<{ path: string; body: Record<string, unknown> }> = []
     const closed = processSnapshot({ running: false, closed: true, exitCode: 0, exitedAt: 2 })
     await bridge((path, body) => {
@@ -129,9 +139,12 @@ describe('LocalSubprocessRuntime Remote-SSH process routing', () => {
     })
     const ctx = new Context()
     const fiber = await ctx.plugin(LocalSubprocessRuntime)
+    const localSpawn = vi.fn(() => { throw new Error('local process unexpectedly started') })
+    const runtime = ctx.subprocess as LocalSubprocessRuntime
+    runtime.internals.spawn = localSpawn
     try {
       const target = await remoteWorkspacePath('.', cwd)
-      expect(target).toBeDefined()
+      expect(target?.mode).toBe(mode)
       await expect(ctx.subprocess.resolveExecutable('bash', { PATH: '/remote/bin' }, undefined, target)).resolves.toBe('/remote/bin/bash')
       const handle = ctx.subprocess.spawn({
         argv: ['bash', '-c', 'printf remote'],
@@ -148,13 +161,15 @@ describe('LocalSubprocessRuntime Remote-SSH process routing', () => {
       expect(handle.collected.stderr?.readFrom(0)).toEqual({ text: '', nextOffset: 0, lossy: false })
       expect(calls.map(call => call.path)).toContain('/v1/processes/start')
       expect(calls.map(call => call.path)).toContain('/v1/processes/wait')
+      expect(localSpawn).not.toHaveBeenCalled()
     } finally {
       await fiber.dispose()
     }
   })
 
-  it('owns remote PTY writes, foreground control, and terminal cleanup', async () => {
-    const cwd = await marker()
+  it('owns agent remote PTY writes, foreground control, and terminal cleanup', async () => {
+    const cwd = await marker('agent')
+    const ptySpy = vi.spyOn(nodePty, 'spawn')
     const readStarted = Promise.withResolvers<undefined>()
     const releaseRead = Promise.withResolvers<undefined>()
     let terminated = false
@@ -221,8 +236,57 @@ describe('LocalSubprocessRuntime Remote-SSH process routing', () => {
         '/v1/terminals/signal',
         '/v1/terminals/terminate',
       ]))
+      expect(ptySpy).not.toHaveBeenCalled()
     } finally {
+      ptySpy.mockRestore()
       await fiber.dispose()
+    }
+  })
+
+  it('preserves direct SSH terminal control and termination uncertainty', async () => {
+    const cwd = await marker('basic')
+    const ptySpy = vi.spyOn(nodePty, 'spawn')
+    const routes: string[] = []
+    await bridge((path) => {
+      routes.push(path)
+      switch (path) {
+        case '/v1/terminals/start': return { id: 't'.repeat(32), pid: 8765 }
+        case '/v1/terminals/read': return { chunks: [], cursor: 0, closed: false, truncated: false, exitCode: null }
+        case '/v1/terminals/write': return { accepted: true }
+        case '/v1/terminals/foreground': throw new BridgeRejection(501, 'terminal-foreground-unavailable')
+        case '/v1/terminals/signal': throw new BridgeRejection(503, 'terminal-state-unknown')
+        case '/v1/terminals/terminate': throw new BridgeRejection(503, 'terminal-state-unknown')
+        default: throw new Error(`unexpected bridge path ${path}`)
+      }
+    })
+    const ctx = new Context()
+    const fiber = await ctx.plugin(LocalSubprocessRuntime)
+    const terminal = await ctx.subprocess.spawnTerminal({
+      argv: ['bash'], cwd, cols: 80, rows: 24, graceMs: 50,
+    })
+    terminal.output.on('error', () => {})
+    const doneFailure = terminal.done.catch((error: unknown) => error)
+    try {
+      await terminal.write('echo ready\n')
+      await expect(terminal.inspectForeground()).rejects.toMatchObject({
+        code: 'REMOTE_BRIDGE_REJECTED', bridgeCode: 'terminal-foreground-unavailable',
+      })
+      await expect(terminal.signalForeground('SIGINT')).rejects.toMatchObject({
+        code: 'REMOTE_BRIDGE_REJECTED', bridgeCode: 'terminal-state-unknown',
+      })
+      await expect(terminal.terminate()).rejects.toMatchObject({
+        code: 'REMOTE_BRIDGE_REJECTED', bridgeCode: 'terminal-state-unknown',
+      })
+      await expect(doneFailure).resolves.toMatchObject({
+        code: 'REMOTE_BRIDGE_REJECTED', bridgeCode: 'terminal-state-unknown',
+      })
+      expect(routes).toContain('/v1/terminals/start')
+      expect(routes).toContain('/v1/terminals/write')
+      expect(routes).toContain('/v1/terminals/terminate')
+      expect(ptySpy).not.toHaveBeenCalled()
+    } finally {
+      ptySpy.mockRestore()
+      await fiber.dispose().catch(() => {})
     }
   })
 
@@ -332,7 +396,7 @@ describe('LocalSubprocessRuntime Remote-SSH process routing', () => {
         case '/v1/processes/start':
           starts.push({ body })
           await writeFile(join(cwd, REMOTE_WORKSPACE_MARKER), JSON.stringify({
-            version: 2, remoteRoot: '/srv/project', connectionId: 'connection-2', generation: 2,
+            version: 3, remoteRoot: '/srv/project', connectionId: 'connection-2', generation: 2, mode: 'agent',
           }))
           return DROP_BRIDGE_RESPONSE
         case '/v1/processes/kill':

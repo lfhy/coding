@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/deepseek-ai/coding/apps/desktop/internal/remoteagent"
 )
 
 type remoteBridgeTestMarker struct {
@@ -120,6 +122,64 @@ func TestRemoteBridgeAllowsRemoteExecutionOnlyAsPost(t *testing.T) {
 		if allowedBridgeRoute(http.MethodGet, path) {
 			t.Fatalf("GET %s was accepted", path)
 		}
+	}
+}
+
+func TestRemoteBridgeBasicModeBindsRootBeforeProxy(t *testing.T) {
+	const token = "abcdefghijklmnopqrstuvwxyz0123456789abcdef"
+	var calls atomic.Int32
+	bridge, err := NewBridge(token, func(context.Context, string, string, string, []byte) (int, []byte, error) {
+		calls.Add(1)
+		return http.StatusOK, []byte(`{"ok":true}`), nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = bridge.Close() })
+	mode := remoteagent.ModeBasic
+	bridge.connection = func(string) (remoteagent.ConnectionInfo, error) {
+		return remoteagent.ConnectionInfo{Mode: mode}, nil
+	}
+	marker := publishRemoteBridgeTestMarker(t, bridge, "connection-1", 0)
+	requestFor := func(route, body string, marker remoteBridgeTestMarker) *http.Request {
+		request := httptest.NewRequest(http.MethodPost, route, strings.NewReader(body))
+		request.Header.Set("Authorization", "Bearer "+token)
+		request.Header.Set("Content-Type", "application/json")
+		setRemoteBridgeMarkerHeaders(request, marker, false)
+		return request
+	}
+	for _, route := range []string{"/v1/update_file", "/v1/edit_file", "/v1/search", "/v1/processes/start", "/v1/terminals/start", "/v1/code/start"} {
+		response := httptest.NewRecorder()
+		bridge.serveHTTP(response, requestFor(route, `{"root":"/remote/project"}`, marker))
+		if response.Code != http.StatusOK {
+			t.Fatalf("basic %s = %d %s", route, response.Code, response.Body.String())
+		}
+	}
+	const allowed = 6
+	for _, body := range []string{`{"root":"/"}`, `{"path":"file"}`, `{"root":"/remote/project/sub"}`} {
+		response := httptest.NewRecorder()
+		bridge.serveHTTP(response, requestFor("/v1/read_file", body, marker))
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("unbound root %s = %d", body, response.Code)
+		}
+	}
+	stale := marker
+	stale.generation++
+	response := httptest.NewRecorder()
+	bridge.serveHTTP(response, requestFor("/v1/read_file", `{"root":"/remote/project"}`, stale))
+	if response.Code != http.StatusConflict || calls.Load() != allowed {
+		t.Fatalf("stale marker = %d, proxy calls = %d", response.Code, calls.Load())
+	}
+	response = httptest.NewRecorder()
+	bridge.serveHTTP(response, requestFor("/v1/read_file", `{"root":"/remote/project"}`, marker))
+	if response.Code != http.StatusOK || calls.Load() != allowed+1 {
+		t.Fatalf("bound basic request = %d, proxy calls = %d", response.Code, calls.Load())
+	}
+	mode = remoteagent.ModeAgent
+	response = httptest.NewRecorder()
+	bridge.serveHTTP(response, requestFor("/v1/search", `{}`, marker))
+	if response.Code != http.StatusOK || calls.Load() != allowed+2 {
+		t.Fatalf("agent route = %d, proxy calls = %d", response.Code, calls.Load())
 	}
 }
 

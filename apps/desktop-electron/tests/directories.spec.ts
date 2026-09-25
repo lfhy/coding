@@ -14,10 +14,10 @@ async function fixture() {
   const home = await mkdtemp(join(tmpdir(), 'dsh-electron-dirs-'))
   temporaryHomes.push(home)
   const installedHome = join(home, '.dsh')
-  const wailsDevelopmentHome = join(home, '.dsh-dev')
+  const legacyDevelopmentHome = join(home, '.dsh-dev')
   const hostHome = join(home, '.dsh-electron-dev')
   return {
-    home, installedHome, wailsDevelopmentHome, hostHome,
+    home, installedHome, legacyDevelopmentHome, hostHome,
     userData: join(hostHome, 'electron-user-data'),
     workspace: join(hostHome, 'workspace'),
   }
@@ -31,7 +31,7 @@ describe('Electron 开发目录隔离', () => {
     expect((await stat(paths.workspace)).isDirectory()).toBe(true)
   })
 
-  it.each(['installedHome', 'wailsDevelopmentHome'] as const)(
+  it.each(['installedHome', 'legacyDevelopmentHome'] as const)(
     '拒绝指向 %s 的开发 Home，且不创建任何子目录',
     async (target) => {
       const paths = await fixture()

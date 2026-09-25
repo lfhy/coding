@@ -33,7 +33,7 @@
 - **超时与取消分类**——`run()` 通过一个 deadline 融合按配置上限截取的超时与调用方信号；只有执行器自身超时报告 `timedOut`，上游取消报告 `aborted`，自我终止的命令两者都不报告（见 timeout 库 设计记录）。Windows 将强制终止报告为退出码 1 且无信号，因此带信号标记的事实（`signal`、`killed` 状态）在那里仅限 POSIX；超时/取消分类与平台无关。
 - **面向模型的终端环境**——`NO_COLOR=1 PAGER=cat GIT_PAGER=cat`（没有 `TERM=dumb`：那是 POSIX 概念；现代 PowerShell 渲染器遵循 `NO_COLOR`），作为普通 env 在服务的凭据清理与 `DSH_*` 通道规则之下合并；显式调用方条目仍然优先。
 - **后台进程**——`start()` 立即返回存活的 `ShellProcess` 句柄，不设超时；句柄的 `readOutput()` 把服务基于偏移的 stdout/stderr 读取合并为一条按分段标记、通过消费游标推进的增量。仍在运行的进程属于 subprocess 服务，因此它跨执行器重载存活，并随服务 dispose（被终止并 join）。一切任务相关职责（job id、所有权、轮询、通知）都在通用 [`ctx.jobs` 运行时](../../jobs/jobs/README.md) 中，由工具层把句柄注册进去——本执行器从不接触会话或注册表。
-- **Remote-SSH target 选择**——当前 marker 工作目录会为前台与后台进程选择目标 Go agent。配置的 `pwshPath` 仍保持显式；否则 agent 在目标 PATH 中解析裸 `pwsh`，而不是复用 Host 已解析的绝对路径。Host 保留超时／取消分类、任务所有权与面向模型的渲染。
+- **Remote-SSH target 选择**——agent 模式的 marker 工作目录会为前台与后台进程选择目标 Go agent。配置的 `pwshPath` 仍保持显式；否则 agent 在目标 PATH 中解析裸 `pwsh`，而不是复用 Host 已解析的绝对路径。Host 保留超时／取消分类、任务所有权与面向模型的渲染。basic 模式没有 PowerShell 的等价执行能力，前台与后台都以 `REMOTE_CAPABILITY_UNAVAILABLE` 拒绝，绝不落回本机。
 
 ## 模型体验
 
@@ -47,10 +47,10 @@
 
 - **自身不设沙箱**——本执行器始终以 harness 进程的权限运行命令；需要隔离的部署应组合启用沙箱的 bash 执行器或策略。
 - **无持久 shell 或 PTY**——每次调用都是全新的 `pwsh -Command`。
-- **远程 PowerShell 取决于目标**——目标必须提供所选的显式可执行文件，或在 PATH 中提供 `pwsh`；marker 或 bridge 损坏时会失败，没有本地回退。
+- **远程 PowerShell 仅限 agent 模式**——目标必须提供所选的显式可执行文件，或在 PATH 中提供 `pwsh`；basic 模式不执行 PowerShell；marker 或 bridge 损坏时会失败，没有本地回退。
 - **命令字符串是 PowerShell 文本**——`-Command` 域没有 shell 引号层，但面向模型的命令由 PowerShell 自己解析，因此 PowerShell 语法错误是命令失败，而非启动失败。
-- **后台 provider failure 提示只投递一次**——`SubprocessHandle.done` 可能在 target 开始执行前或后 reject，因此执行器会把不声明阶段的 `subprocess failed before reporting an outcome: …` 与未读 stderr 一起追加到一次 `readOutput()` 增量；丢弃该增量的读取方无法恢复它。
-- **Windows 终止不报告信号**——被强制终止的进程以退出码 1、`signal: null` 结束，因此基于信号的状态分类（POSIX `killed`）在 Windows 上不适用；`kill()` 发起的停止仍会直接标记为 `killed`。
+- **后台 provider failure 提示只投递一次**——`SubprocessHandle.done` 可能在 target 开始执行前或后 reject；句柄以 `failed` 结算，把不声明阶段的 `subprocess failed before reporting an outcome: …` 与未读 stderr 一起追加到一次 `readOutput()` 增量；丢弃后无法恢复。
+- **Windows 终止不报告信号**——被强制终止的进程以退出码 1、`signal: null` 结束。`kill()` 只记录请求并保持句柄 `running`；provider 随后报告退出码 1 才以 `killed` 结算。POSIX 则按已报告的终止信号结算。
 - **编码 preamble 位于命令之前**——PowerShell 要求 `param(...)`、`#requires` 与 `using namespace`/`using assembly` 语句位于脚本最顶部，因此以其中一种开头的命令无法在 UTF-8 输出 preamble 下运行。`param(...)` 脚本可包进 `& { … }`（param 块可以合法地位于脚本块开头）；`using` 语句与 `#requires` 在命令内没有变通办法（`#requires` 在 `-Command` 中无论位置如何都不生效）——此类脚本请改从文件运行。
 - **Windows PowerShell 5.1 下的非 ASCII stdin 可能被错误解码**——preamble 只固定输出编码；`[Console]::InputEncoding` 保持主机默认，因为在重定向 stdin 下设置它会抛出异常。pwsh 7 默认 UTF-8，不受影响。
 

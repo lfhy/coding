@@ -117,7 +117,7 @@ export async function resolveRuntimeConfig(options: RuntimeConfigOptions): Promi
       helper: {
         executable,
         args: ['--home', home, '--cwd', cwd, '--host-version', version,
-          '--runtime-root', resourcesPath, '--exclusive-wails-instance'],
+          '--runtime-root', resourcesPath, '--exclusive-desktop-instance'],
         cwd, env,
       },
     }

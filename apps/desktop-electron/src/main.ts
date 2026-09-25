@@ -80,7 +80,7 @@ function openWindow(): Promise<void> {
       await prepareDevelopmentDirectories({
         hostHome: home,
         installedHome: resolve(homedir(), '.dsh'),
-        wailsDevelopmentHome: resolve(homedir(), '.dsh-dev'),
+        legacyDevelopmentHome: resolve(homedir(), '.dsh-dev'),
         userData: runtimeConfig.userData,
         workspace: runtimeConfig.cwd,
       })
@@ -105,7 +105,7 @@ function openWindow(): Promise<void> {
       disposeRemoteIpc?.()
       disposeRemoteIpc = undefined
       if (!window.isDestroyed()) {
-        dialog.showErrorBox('Coding 原生服务已停止', 'Remote-SSH 和本地 Host 已断开。请重新启动桌面端。')
+        dialog.showErrorBox('Coding 原生服务已停止', '远程连接和本地 Host 已断开。请重新启动桌面端。')
         window.destroy()
       }
     })
@@ -142,12 +142,12 @@ async function start(): Promise<void> {
     await prepareDevelopmentDirectories({
       hostHome: runtimeConfig.home,
       installedHome: resolve(homedir(), '.dsh'),
-      wailsDevelopmentHome: resolve(homedir(), '.dsh-dev'),
+      legacyDevelopmentHome: resolve(homedir(), '.dsh-dev'),
       userData: runtimeConfig.userData,
       workspace: runtimeConfig.cwd,
     })
   }
-  app.setName(app.isPackaged ? 'Coding Electron' : 'Coding Electron Dev')
+  app.setName(app.isPackaged ? 'Coding' : 'Coding Dev')
   app.setPath('userData', runtimeConfig.userData)
   if (!app.requestSingleInstanceLock()) {
     app.quit()
@@ -180,7 +180,7 @@ async function start(): Promise<void> {
 }
 
 function reportError(error: unknown): void {
-  dialog.showErrorBox('Coding Electron 启动失败', error instanceof Error ? error.message : String(error))
+  dialog.showErrorBox('Coding 启动失败', error instanceof Error ? error.message : String(error))
   app.quit()
 }
 

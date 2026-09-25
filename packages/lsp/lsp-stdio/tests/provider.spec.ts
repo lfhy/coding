@@ -3,12 +3,14 @@ import { chmod, mkdtemp, mkdir, rm, writeFile, realpath } from 'node:fs/promises
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import { FsTargetKey } from '@deepseek-ai/dsh-fs'
+import { FsTargetKey, FsVersion } from '@deepseek-ai/dsh-fs'
+import type { FsTarget } from '@deepseek-ai/dsh-fs'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
 import Lsp, { type LspProvider, type LspQueryRequest } from '@deepseek-ai/dsh-lsp'
 import * as LspLocal from '@deepseek-ai/dsh-lsp-stdio'
 import type { Config, LspLocalServerConfig } from '@deepseek-ai/dsh-lsp-stdio'
+import { REMOTE_WORKSPACE_MARKER, remoteWorkspacePath, remoteWorkspaceTargetKey } from '@deepseek-ai/dsh-subprocess'
 import type { RemoteWorkspaceTarget } from '@deepseek-ai/dsh-subprocess'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 
@@ -36,6 +38,41 @@ function config(providerId: string, server: LspLocalServerConfig): Config {
 }
 
 describe('lsp-stdio provider resolution', () => {
+  it('rejects a basic remote workspace before source reads or language-server startup', async () => {
+    await writeFile(join(ws, REMOTE_WORKSPACE_MARKER), JSON.stringify({
+      version: 3, mode: 'basic', remoteRoot: '/srv/project', connectionId: 'connection-1', generation: 1,
+    }))
+    const remote = await remoteWorkspacePath('.', ws)
+    if (remote === undefined) throw new Error('remote marker was not discovered')
+    const target: FsTarget = { targetKey: FsTargetKey(remoteWorkspaceTargetKey(remote)), displayPath: '/srv/project' }
+    const ctx = new Context()
+    await ctx.plugin(Lsp)
+    await ctx.plugin(LocalSubprocessRuntime)
+    await ctx.plugin(LocalFileSystem, { cwd: process.cwd() })
+    vi.spyOn(ctx.fs, 'resolve').mockResolvedValue(target)
+    vi.spyOn(ctx.fs, 'stat').mockResolvedValue({ type: 'directory', size: 0, version: FsVersion('test') })
+    vi.spyOn(ctx.fs, 'processPath').mockReturnValue('/srv/project')
+    vi.spyOn(ctx.fs, 'fileUrl').mockReturnValue('file:///srv/project')
+    const sourceRead = vi.spyOn(ctx.fs, 'streamText')
+    const resolveExecutable = vi.spyOn(ctx.subprocess, 'resolveExecutable')
+    const spawn = vi.spyOn(ctx.subprocess, 'spawn')
+    const fiber = await ctx.plugin(LspLocal, config('basic', {
+      command: process.execPath, extensionToLanguage: { '.ts': 'typescript' },
+    }))
+    try {
+      await expect(ctx.lsp.query(query())).rejects.toMatchObject({
+        code: 'REMOTE_CAPABILITY_UNAVAILABLE',
+        message: 'remote workspace capability is unavailable (lsp)',
+      })
+      expect(sourceRead).not.toHaveBeenCalled()
+      expect(resolveExecutable).not.toHaveBeenCalled()
+      expect(spawn).not.toHaveBeenCalled()
+    } finally {
+      await fiber.dispose()
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('defers bare command resolution until a workspace query', async () => {
     // 将微型可执行脚本放入自定义 PATH；注册阶段只校验配置，选择该 Workspace 的查询才调用解析器。
     const bin = join(root, 'bin')
@@ -229,6 +266,7 @@ describe('lsp-stdio provider resolution', () => {
       remotePath: '/srv/project',
       connectionId: 'connection-1',
       markerGeneration: 1,
+      mode: 'agent',
     }
     const remoteLookup = new Error('remote executable lookup')
     const resolveExecutable = vi.spyOn(ctx.subprocess, 'resolveExecutable').mockImplementation(async (_command, _env, _signal, target) => {

@@ -166,7 +166,12 @@ interface ShellSandboxInfo {
 
 ## 后台进程：`ShellProcess`
 
-`start()` 返回不含 id 或所有者的句柄。`dsh-tool-bash` 将它适配为 `ctx.jobs.start()` 钩子；随后由通用运行时拥有任务标识与生命周期。`done` 会在底层进程结算时完成且绝不 reject；subprocess 提供方的 rejection 会生成状态为 `killed` 的进程，并把不声明阶段的错误写入 stderr。进程结算后仍可读取，并且沙箱事实会在 `done` 完成前写入。
+`start()` 返回不含 id 或所有者的句柄。`dsh-tool-bash` 将它适配为 `ctx.jobs.start()` 钩子；随后由通用运行时拥有任务标识与生命周期。`done` 会在底层进程结算时 resolve 且绝不 reject；subprocess 提供方无法报告退出结果时以 `failed` 结算，在下次 `readOutput()` 中将不声明失败阶段的提示与未读 stderr 一起交付一次。远端 provider 失败也不能证明远端进程已退出，`kill()` 请求同样不是终止事实；只有已报告的信号退出才是 `killed`。进程结算后仍可读取，并且沙箱事实会在 `done` 完成前写入。
+
+```ts type-equiv
+/** 后台进程的生命周期；provider 无法报告退出结果时以 `failed` 结算。 */
+type ShellProcessStatus = 'running' | 'completed' | 'killed' | 'failed'
+```
 
 ```ts type-equiv
 /**
@@ -178,14 +183,11 @@ interface ShellSandboxInfo {
 interface ShellProcess {
   /** Process lifecycle state (settled exactly once). */
   status: ShellProcessStatus
-  /** Exit code once finished (null = killed by signal / still running). */
+  /** 退出码；信号退出、provider 失败及运行中均为 null。 */
   exitCode: number | null
   /** Terminating signal name, when signal-killed. */
   signal: NodeJS.Signals | null
-  /**
-   * Resolves when the underlying process settles (never rejects — provider
-   * rejection settles as `killed` with a stage-neutral error on stderr).
-   */
+  /** 底层进程结算后 resolve；provider rejection 以 `failed` 状态和 stderr 中性提示结算，不向外 reject。 */
   readonly done: Promise<void>
   /** Sandbox facts, stamped once a confined process settles. */
   sandbox?: ShellSandboxInfo
@@ -235,14 +237,14 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 
 ### `ctx.shell` — `ShellExecutor` (abstract seam)
 
-Abstract bash execution service. Subclass, implement the abstract methods, and load the subclass as a plugin — it registers as `ctx.shell` (one implementation per context; loading a second throws, which is cordis' standard duplicate-service behavior).
+Shell 执行抽象服务。子类作为插件注册到 `ctx.shell`；同一上下文重复注册会失败。
 
-Implementations must honor these semantics:
+实现必须遵守以下语义：
 
-- run rejects only for infrastructure failures. Nonzero exits, timeout kills, and abort kills resolve with a ShellRunResult.
-- start returns immediately; no timeout applies to background processes. `done` settles when the process settles and never rejects; provider rejections settle as `killed` with a stage-neutral error on stderr, appended alongside any unread provider output.
-- ShellProcess.readOutput is incremental: consecutive reads never repeat output. Lossy reads report truncation and available spill files.
-- A still-running background process is stopped and awaited when its owning composition tears down. With the subprocess seam that boundary is `ctx.subprocess` disposal, so a background process survives an executor-only reload.
+- run 仅在基础设施失败时 reject；非零退出、超时与取消终止均以 ShellRunResult resolve。
+- start 立即返回，后台进程不应用执行器超时。`done` 在底层结算后 resolve 且不 reject；provider 无法报告退出结果时状态为 `failed`。 中性提示随未读 stderr 一起交付；`kill()` 只发出终止请求，不立即宣称进程已停止。
+- ShellProcess.readOutput 消费式增量读取；丢失未读输出时报告 `lossy` 和可用的 spill 文件。
+- 持有进程的 subprocess 服务释放时终止并等待运行中的后台进程。 仅重载执行器不停止它们。
 
 ```ts cordis-catalog
 /**
@@ -269,7 +271,7 @@ abstract run(spec: ShellExecSpec): Promise<ShellRunResult>
 abstract start(spec: ShellExecSpec): ShellProcess
 ```
 
-Source: [`packages/shell/shell/src/index.ts:66`](../../packages/shell/shell/src/index.ts)
+Source: [`packages/shell/shell/src/index.ts:60`](../../packages/shell/shell/src/index.ts)
 
 <a id="ctxshellenv--shellenvregistry"></a>
 

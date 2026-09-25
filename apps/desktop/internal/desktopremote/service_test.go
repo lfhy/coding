@@ -39,10 +39,10 @@ func (m *serviceManager) ResolvePath(context.Context, string, string) (remoteage
 	return remoteagent.ResolveResponse{Path: "/srv/project", Info: &remoteagent.PathInfo{Path: "/srv/project", Type: "directory"}}, nil
 }
 func (m *serviceManager) Connection(id string) (remoteagent.ConnectionInfo, error) {
-	return remoteagent.ConnectionInfo{ID: id, TargetHost: "example.com", TargetPort: 22, TargetUser: "coding"}, nil
+	return remoteagent.ConnectionInfo{ID: id, Mode: remoteagent.ModeAgent, TargetHost: "example.com", TargetPort: 22, TargetUser: "coding"}, nil
 }
 func (m *serviceManager) Marker(id, root string) (remoteagent.RemoteWorkspaceMarker, error) {
-	return remoteagent.RemoteWorkspaceMarker{Version: 1, RemoteRoot: root, ConnectionID: id}, nil
+	return remoteagent.RemoteWorkspaceMarker{Version: 3, Mode: remoteagent.ModeAgent, RemoteRoot: root, ConnectionID: id}, nil
 }
 func (m *serviceManager) Close(_ context.Context, id string) error {
 	m.mu.Lock()
@@ -135,13 +135,53 @@ func TestRemoteSSHFailureOnlyCodesHealthForwardingDenial(t *testing.T) {
 	}
 }
 
+func TestRemoteSSHConnectRequestRequiresExplicitMode(t *testing.T) {
+	input := RemoteSSHConnectInput{AttemptID: "attempt-1", Host: "example.com", Port: 22, Username: "coding", Auth: RemoteSSHAuthInput{Kind: "password", Secret: "test"}}
+	for _, mode := range []remoteagent.ConnectionMode{"", "unknown"} {
+		input.Mode = mode
+		if _, err := remoteSSHConnectRequest(input); err == nil {
+			t.Fatalf("accepted mode %q", mode)
+		}
+	}
+	for _, mode := range []remoteagent.ConnectionMode{remoteagent.ModeBasic, remoteagent.ModeAgent} {
+		input.Mode = mode
+		request, err := remoteSSHConnectRequest(input)
+		if err != nil || request.Mode != mode {
+			t.Fatalf("mode %q mapped to %+v, %v", mode, request, err)
+		}
+	}
+}
+
+func TestRemoteWorkspaceMarkerModesAndLegacyGeneration(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		marker     remoteagent.RemoteWorkspaceMarker
+		valid      bool
+		generation uint64
+	}{
+		{name: "legacy v1", marker: remoteagent.RemoteWorkspaceMarker{Version: 1}, valid: true},
+		{name: "legacy v2 agent", marker: remoteagent.RemoteWorkspaceMarker{Version: 2, Generation: 7}, valid: true, generation: 7},
+		{name: "v3 basic", marker: remoteagent.RemoteWorkspaceMarker{Version: 3, Mode: remoteagent.ModeBasic, Generation: 8}, valid: true, generation: 8},
+		{name: "v3 agent", marker: remoteagent.RemoteWorkspaceMarker{Version: 3, Mode: remoteagent.ModeAgent, Generation: 9}, valid: true, generation: 9},
+		{name: "v3 missing mode", marker: remoteagent.RemoteWorkspaceMarker{Version: 3, Generation: 1}, generation: 1},
+		{name: "v2 forged basic", marker: remoteagent.RemoteWorkspaceMarker{Version: 2, Mode: remoteagent.ModeBasic, Generation: 1}, generation: 1},
+		{name: "v3 unknown mode", marker: remoteagent.RemoteWorkspaceMarker{Version: 3, Mode: "unknown", Generation: 1}, generation: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if validRemoteWorkspaceMarker(tc.marker) != tc.valid || remoteWorkspaceMarkerGeneration(&tc.marker) != tc.generation {
+				t.Fatalf("marker %+v: valid=%v generation=%d", tc.marker, validRemoteWorkspaceMarker(tc.marker), remoteWorkspaceMarkerGeneration(&tc.marker))
+			}
+		})
+	}
+}
+
 func TestServiceConnectPreservesForwardingDenialCode(t *testing.T) {
 	manager := &serviceManager{connect: func(context.Context, remoteagent.ConnectRequest) (remoteagent.ConnectionInfo, error) {
 		return remoteagent.ConnectionInfo{}, fmt.Errorf("check remote agent health: %w", remoteagent.ErrPortForwardingDenied)
 	}}
 	service := testService(t, manager, &serviceBridge{}, nil)
 	result, err := service.RemoteSSHConnect(RemoteSSHConnectInput{
-		AttemptID: "attempt-1", Host: "example.com", Port: 22, Username: "coding",
+		AttemptID: "attempt-1", Mode: remoteagent.ModeAgent, Host: "example.com", Port: 22, Username: "coding",
 		Auth: RemoteSSHAuthInput{Kind: "password", Secret: "test-only"},
 	})
 	if err != nil || result.Kind != "error" || result.Code != "port-forwarding-denied" || result.Message == "" {
@@ -163,7 +203,7 @@ func TestServiceConnectCancelFencesLateResult(t *testing.T) {
 	service := testService(t, manager, &serviceBridge{}, func(event ProgressEvent) { mu.Lock(); defer mu.Unlock(); progress = append(progress, event) })
 	result := make(chan RemoteSSHConnectResult, 1)
 	go func() {
-		value, _ := service.RemoteSSHConnect(RemoteSSHConnectInput{AttemptID: "attempt-1", Host: "example.com", Port: 22, Username: "coding", Auth: RemoteSSHAuthInput{Kind: "password", Secret: "secret"}})
+		value, _ := service.RemoteSSHConnect(RemoteSSHConnectInput{AttemptID: "attempt-1", Mode: remoteagent.ModeAgent, Host: "example.com", Port: 22, Username: "coding", Auth: RemoteSSHAuthInput{Kind: "password", Secret: "secret"}})
 		result <- value
 	}()
 	select {

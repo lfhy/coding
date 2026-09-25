@@ -16,8 +16,17 @@ type SSHAuth struct {
 	PrivateKeyPassphrase string
 }
 
-// ConnectRequest 描述一次 Remote-SSH 连接与 remote agent 部署。
+// ConnectionMode 指定远端能力来源；不接受隐式默认值。
+type ConnectionMode string
+
+const (
+	ModeBasic ConnectionMode = "basic"
+	ModeAgent ConnectionMode = "agent"
+)
+
+// ConnectRequest 描述一次远程连接；只有 Agent 模式部署远端程序。
 type ConnectRequest struct {
+	Mode             ConnectionMode
 	Host             string
 	Port             int
 	User             string
@@ -27,7 +36,7 @@ type ConnectRequest struct {
 	OnProgress       func(Progress)
 }
 
-// Progress 是连接向导可展示的无敏感部署进度。
+// Progress 是连接向导可展示的无敏感信息进度。
 type Progress struct {
 	Stage     string `json:"stage"`
 	Completed int64  `json:"completed,omitempty"`
@@ -40,11 +49,12 @@ type RemotePlatform struct {
 	Arch string `json:"arch"`
 }
 
-// ConnectionInfo 是供 Wails bridge 和本地工作区 marker 使用的无凭据连接摘要。
+// ConnectionInfo 是供桌面 bridge 和本地工作区 marker 使用的无凭据连接摘要。
 type ConnectionInfo struct {
-	ID string `json:"id"`
-	// Endpoint 保留给 Go 内部兼容调用，始终为空且不跨 Wails/marker 边界公开。
-	// 远端访问只能经 Proxy 的 SSH direct-tcpip 通道。
+	ID   string         `json:"id"`
+	Mode ConnectionMode `json:"mode"`
+	// Endpoint 保留给 Go 内部兼容调用，始终为空且不跨 bridge/marker 边界公开。
+	// 基础模式经 SSH/SFTP 直连，Agent 模式经 SSH direct-tcpip；均由 Proxy 授权。
 	Endpoint         string         `json:"-"`
 	Platform         RemotePlatform `json:"platform"`
 	RemoteHome       string         `json:"remoteHome"`
@@ -54,7 +64,7 @@ type ConnectionInfo struct {
 	TargetUser       string         `json:"-"`
 }
 
-// ProxyResponse 是 bridge 转发 remote agent HTTP 请求的完整受限响应。
+// ProxyResponse 是 bridge 转发远端能力请求的完整受限响应。
 type ProxyResponse struct {
 	Status      int    `json:"status"`
 	ContentType string `json:"contentType"`
@@ -66,10 +76,11 @@ type ProxyResponse struct {
 // 的 marker 复验与实际 dispatch 绑定到同一轮重绑。它不携带地址、认证材料、
 // host key 或 agent token。
 type RemoteWorkspaceMarker struct {
-	Version      int    `json:"version"`
-	RemoteRoot   string `json:"remoteRoot"`
-	ConnectionID string `json:"connectionId"`
-	Generation   uint64 `json:"generation,omitempty"`
+	Version      int            `json:"version"`
+	Mode         ConnectionMode `json:"mode,omitempty"`
+	RemoteRoot   string         `json:"remoteRoot"`
+	ConnectionID string         `json:"connectionId"`
+	Generation   uint64         `json:"generation,omitempty"`
 }
 
 // RemoteDirectory 是远端目录选择器的一层结果，不暴露 SSH 或 agent 凭据。
@@ -155,8 +166,9 @@ func (m *Manager) Marker(connectionID, remoteRoot string) (RemoteWorkspaceMarker
 	if remoteRoot == "" {
 		return RemoteWorkspaceMarker{}, errors.New("remote root is required")
 	}
-	if _, err := m.Connection(connectionID); err != nil {
+	info, err := m.Connection(connectionID)
+	if err != nil {
 		return RemoteWorkspaceMarker{}, err
 	}
-	return RemoteWorkspaceMarker{Version: 1, RemoteRoot: remoteRoot, ConnectionID: connectionID}, nil
+	return RemoteWorkspaceMarker{Version: 3, Mode: info.Mode, RemoteRoot: remoteRoot, ConnectionID: connectionID}, nil
 }

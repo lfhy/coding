@@ -6,7 +6,7 @@ import { isAbsolute, relative, sep } from 'node:path'
 export interface DevelopmentDirectories {
   hostHome: string
   installedHome: string
-  wailsDevelopmentHome: string
+  legacyDevelopmentHome: string
   userData: string
   workspace: string
 }
@@ -28,7 +28,7 @@ export async function prepareDevelopmentDirectories(paths: DevelopmentDirectorie
     throw new Error('Electron development home must not be a symbolic link')
   }
   const actualHome = await realpath(paths.hostHome)
-  for (const otherHome of [paths.installedHome, paths.wailsDevelopmentHome]) {
+  for (const otherHome of [paths.installedHome, paths.legacyDevelopmentHome]) {
     let actualOtherHome: string
     try {
       actualOtherHome = await realpath(otherHome)

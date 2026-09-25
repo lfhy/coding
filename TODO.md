@@ -7,19 +7,19 @@ This file is the cross-session implementation record for Coding. Update it when 
 - Product and application name: `Coding`.
 - Public Linux command: `coding`; do not add a `dsh` alias.
 - Internal package names, plugin identifiers, wire protocol names, `$DSH_HOME`, and the `~/.dsh` default stay compatible with DeepSeek Harness (`dsh`) for this program of work.
-- macOS and Windows ship the native desktop GUI. Linux ships the interactive terminal UI. The first supported release matrix is macOS arm64, Windows amd64, and Linux amd64.
+- macOS arm64 has an Electron desktop GUI; Windows amd64 desktop packaging and native verification remain planned. Linux ships the interactive terminal UI. The target release matrix is macOS arm64, Windows amd64, and Linux amd64.
 
 ## Architecture decisions
 
-- The TypeScript/Cordis Node Host remains the sole owner of agents, sessions, tools, settings, credentials, plugins, and persistence. Go owns native process launch, desktop-window lifecycle, and the Linux terminal presentation; it does not duplicate business rules.
-- `apps/desktop` uses `github.com/webview/webview_go` and navigates directly to the loopback URL served by the existing Web profile. It does not add a proxy or replace the `/api` transport.
+- The TypeScript/Cordis Node Host remains the sole owner of agents, sessions, tools, settings, credentials, plugins, and persistence. Electron owns desktop windows and menus, Go owns the desktop Host/SSH helper and Linux terminal presentation; neither duplicates Host business rules.
+- `apps/desktop-electron` navigates directly to the verified loopback URL served by the existing Web profile. It does not add a proxy or replace the `/api` transport; `apps/desktop` contains the Go helper and remote services.
 - `apps/tui` uses Bubble Tea and Lip Gloss. It consumes the existing unary HTTP plus `events.mux` and `events.host` WebSocket protocol, including reconnect generations. First-party Host features reach feature parity with the Web GUI; third-party browser-only client plugins render a non-executable placeholder with their id and JSON projection.
 - GUI and TUI share `$DSH_HOME`. At most one same-version Host owns that home. Clients read `$DSH_HOME/host.json`, verify loopback reachability and protocol/version compatibility, and attach to a live Host; stale records are replaced only after the recorded PID is no longer alive or the endpoint is unreachable.
 - The Host binds `127.0.0.1:0` for Go-managed launches and emits one machine-readable readiness line after the complete Web tree settles. The record contains port, pid, version, and protocol. A Host with no connected clients and no running Agent or background task exits after five minutes and removes its own record.
-- Desktop startup uses the user's home directory as Host cwd unless `--cwd <dir>` is supplied. The Host's existing `session.create` fallback applies this value to new sessions.
-- macOS `Coding.app` contains a raw Node executable at `Contents/Resources/coding-host` and a pre-expanded, symlink-free Host closure at `Contents/Resources/runtime`; the desktop launcher starts its `bin.js` directly and leaves `$DSH_HOME` for user data. Linux embeds a Node SEA bootstrapper in the `coding` executable. Its first run materializes the verified Host closure and native sidecars into `$DSH_HOME/runtime/<sha256>`; the content-hash directory is reused across product versions with identical bytes, and a successful current-archive startup removes older runtime directories.
+- The packaged desktop Host uses the user's home directory as cwd; development uses `~/.dsh-electron-dev/workspace`. The Host's existing `session.create` fallback applies this value to new sessions.
+- macOS `Coding.app` contains a raw Node executable at `Contents/Resources/coding-host` and a pre-expanded, symlink-free Host closure at `Contents/Resources/runtime`; the Electron Go helper launches its `bin.js` directly and leaves `$DSH_HOME` for user data. Linux embeds a Node SEA bootstrapper in the `coding` executable. Its first run materializes the verified Host closure and native sidecars into `$DSH_HOME/runtime/<sha256>`; the content-hash directory is reused across product versions with identical bytes, and a successful current-archive startup removes older runtime directories.
 - Initial distribution is manual installation only: macOS `.app`/`.dmg`, Windows installer, and one Linux executable. Signing and notarization hooks are prepared but do not block development; automatic update is excluded.
-- Mobile clients will be mobile Web clients of the same Web GUI, not native shells: phones never run the Host; they reach a Host on the user's desktop or a server. The enabling work is Host-side remote-access security (token auth exists; TLS and LAN discovery remain), plus responsive Web GUI adaptation. If a store app is ever needed, package the existing Web GUI with Capacitor; do not adopt Tauri (no maintained Go bindings) or Wails for this.
+- Mobile clients will be mobile Web clients of the same Web GUI, not native shells: phones never run the Host; they reach a Host on the user's desktop or a server. The enabling work is Host-side remote-access security (token auth exists; TLS and LAN discovery remain), plus responsive Web GUI adaptation. If a store app is ever needed, package the existing Web GUI with Capacitor rather than introducing another desktop shell.
 
 ## Phase 0: identity and design record
 
@@ -44,25 +44,25 @@ Acceptance: two local clients sharing one home attach to one compatible Host, a 
 
 ## Phase 2: desktop GUI shell
 
-Status: in progress (dev form on macOS; single-instance + WebView2 check wired; platform smoke pending).
+Status: in progress (macOS arm64 Electron development and packaged smoke passed; installed-app and Windows native verification pending).
 
-- [x] Create `apps/desktop` Go module and shared launcher package. (`apps/desktop`, `apps/internal/hostlaunch`)
-- [x] Parse `--cwd`; discover or start the Host; wait for readiness; navigate a `webview_go` window to its loopback URL.
-- [x] Use `Coding` in the window title, application metadata, and installer metadata. (window title; installer metadata pending packaging)
-- [x] Implement platform single-instance behavior: forward a second invocation's arguments and focus the existing window. (`apps/desktop/internal/instance`)
-- [x] Detect missing Windows WebView2 and present a recovery path. Package macOS as `.app`/`.dmg`, retaining signing/notarization configuration hooks. (WebView2 check done; `scripts/package-macos-app.sh` builds+signs `.app` with developer identity or ad-hoc; notarization command documented in script output)
-- [ ] Smoke-test fresh launch, existing-Host attach, second-instance focus, and post-close idle shutdown on the supported desktop platforms.
+- [x] Create the Electron shell, Go helper module, and shared launcher package. (`apps/desktop-electron`, `apps/desktop/cmd/electron-helper`, `apps/internal/hostlaunch`)
+- [x] Discover or start the Host, wait for readiness, and navigate the Electron window to its verified loopback URL without proxying `/api`.
+- [x] Use `Coding` in the window title and macOS application metadata. (`scripts/package-electron-macos-app.ts`)
+- [x] Enforce a single Electron instance and focus the existing window on a second launch. (`apps/desktop-electron/src/main.ts`)
+- [x] Package and ad-hoc sign the macOS arm64 `.app`; the assembled bundle has passed an isolated-HOME launch smoke. (`scripts/package-electron-macos-app.ts`)
+- [ ] Smoke-test installed macOS app interactions and Windows desktop packaging/native launch; verify existing-Host attach and post-close idle shutdown on each supported platform.
 
-Acceptance: macOS arm64 and Windows amd64 launch the unchanged Web GUI through a native window without requiring a separately installed Node runtime.
+Acceptance: macOS arm64 and Windows amd64 launch the unchanged Web GUI through a native window without requiring a separately installed Node runtime; Windows acceptance remains pending.
 
 ## Phase 3: SEA runtime and distribution assembly
 
-Status: done (macOS arm64 cold-start smoke passed; Windows/Linux platform runs pending CI workflow).
+Status: macOS arm64 runtime and Electron assembly verified in isolated-HOME smoke; Windows/Linux platform runs pending.
 
 - [x] Produce the production `@deepseek-ai/dsh` dependency closure with `pnpm deploy` or an equivalent locked manifest. (`apps/runtime` + `scripts/build-coding-runtime.ts`; full run verified on darwin-arm64)
 - [x] Build a CommonJS SEA bootstrapper with `createRequire(__filename)`, `useCodeCache: false`, and `useSnapshot: false` for the Linux terminal asset. (`scripts/sea/bootstrap.cjs`)
 - [x] Embed the compressed closure, manifest version, and SHA-256; the Linux bootstrapper materializes it atomically and rebuilds damaged runtime directories. (verified: cold start materializes and serves)
-- [x] Package the macOS Node executable and pre-expanded closure under `Coding.app/Contents/Resources`; the desktop launcher runs its `bin.js` without a first-run extraction. (`scripts/build-coding-runtime.ts`, `scripts/package-macos-app.sh`)
+- [x] Package the macOS Node executable and pre-expanded closure under `Coding.app/Contents/Resources`; the Go helper runs its `bin.js` without a first-run extraction. (`scripts/build-coding-runtime.ts`, `scripts/package-electron-macos-app.ts`)
 - [x] Package required native sidecars, including `landlock-run`, ripgrep, and Windows koffi dependencies, in the deployed closure. (Linux materializes it; macOS ships it in the app bundle.)
 - [x] Clean old runtime versions only after a current-version Host reports readiness.
 - [x] Test cold start, corruption recovery, successful cleanup, failed-start preservation, and real startup on all supported target platforms. (macOS arm64 real run passed: readiness line + host.json + Web UI + RPC health probe + old-version cleanup after SIGTERM; Windows/Linux pending `coding-native.yml` runs)

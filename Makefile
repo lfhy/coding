@@ -1,5 +1,4 @@
-# Coding 构建/安装入口。make install 把本机产物装进用户可执行目录；
-# 未构建时先按平台补齐所需产物。
+# Coding 构建/安装入口。macOS 安装应用到 /Applications，Linux 安装 CLI 到用户目录。
 
 SHELL := /bin/sh
 
@@ -11,16 +10,16 @@ UNAME_S := $(shell uname -s)
 UNAME_M := $(shell uname -m)
 
 ifeq ($(UNAME_S),Darwin)
-CLIENT := dist/Coding
 INSTALL := install-app
+ALL := desktop
 else
-CLIENT := dist/coding
 INSTALL := install-cli
+ALL := tui
 endif
 
 .PHONY: all runtime remote-agent desktop dev electron-app check-electron tui install install-app install-cli check uninstall help
 
-all: $(CLIENT)
+all: $(ALL)
 
 # 内嵌 Node Host 的 SEA 单文件运行时（所有客户端共用）。
 runtime:
@@ -30,24 +29,16 @@ runtime:
 remote-agent:
 	pnpm run build:remote-agent
 
-# macOS/Windows 桌面 GUI 壳（需要 CGO 与系统 WebView）。先补齐 devDependencies，
-# 同时修复被中断的 legacy runtime deploy 可能留下的生产依赖状态。
-desktop:
+# macOS arm64 Electron 应用。先补齐打包所需的 devDependencies。
+desktop: electron-app
+
+electron-app:
 	pnpm install --frozen-lockfile --config.confirm-modules-purge=false
 	pnpm run build:desktop
 
-# 使用仓库锁定的 Wails CLI 和当前源码产物启动独立的桌面开发实例。
+# 启动 Electron 开发实例；脚本负责构建 Host、Web、helper 与桌面壳。
 dev:
-	node scripts/dev-desktop.mjs --check-platform
-	pnpm run build
-	mkdir -p .dsh-build/desktop
-	ln -sfn ../../apps/desktop/packaging/icon.iconset/icon_512x512@2x.png .dsh-build/desktop/appicon.png
-	cd apps/desktop && CGO_ENABLED=1 GOBIN="$(CURDIR)/.dsh-build" go install github.com/wailsapp/wails/v2/cmd/wails@$$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v2)
-	node scripts/dev-desktop.mjs
-
-# 与现有 Wails 安装版并存的 macOS Electron 应用；不会覆盖 /Applications/Coding.app。
-electron-app:
-	pnpm run package:electron
+	pnpm run dev:electron
 
 check-electron:
 	pnpm run test:electron:packaged
@@ -58,12 +49,28 @@ tui:
 
 install: $(INSTALL)
 
-install-app: desktop runtime remote-agent
-	./scripts/package-macos-app.sh
-	rm -rf /Applications/Coding.app
-	cp -R dist/Coding.app /Applications/
-	@touch /Applications/Coding.app
-	@echo "Coding: 已安装 /Applications/Coding.app"
+install-app: desktop
+	@set -eu; \
+	  stage=$$(mktemp -d /Applications/.Coding-install.XXXXXXXX); \
+	  installed=0; \
+	  cleanup() { \
+	    if [ "$$installed" -eq 0 ] && { [ -e "$$stage/previous" ] || [ -L "$$stage/previous" ]; }; then \
+	      if [ -e /Applications/Coding.app ] || [ -L /Applications/Coding.app ]; then \
+	        mv /Applications/Coding.app "$$stage/rejected" || return 1; \
+	      fi; \
+	      mv "$$stage/previous" /Applications/Coding.app || { \
+	        echo "Coding: 恢复失败，原应用保留在 $$stage/previous" >&2; return 1; \
+	      }; \
+	    fi; \
+	    rm -rf "$$stage"; \
+	  }; \
+	  trap cleanup EXIT; \
+	  trap 'exit 1' HUP INT TERM; \
+	  cp -R dist/Coding.app "$$stage/Coding.app"; \
+	  if [ -e /Applications/Coding.app ] || [ -L /Applications/Coding.app ]; then mv /Applications/Coding.app "$$stage/previous"; fi; \
+	  mv "$$stage/Coding.app" /Applications/Coding.app; \
+	  installed=1; \
+	  echo "Coding: 已安装 /Applications/Coding.app"
 
 install-cli: tui runtime
 	mkdir -p $(BINDIR)
@@ -79,5 +86,5 @@ uninstall:
 	rm -f $(BINDIR)/coding
 
 help:
-	@echo "目标：dev（Wails 开发实例）/ electron-app（独立 Electron 包）/ check-electron / runtime / desktop / tui / install（Wails 或 CLI）/ uninstall"
-	@echo "签名：CODESIGN_IDENTITY=\"Apple Development: …\" make install（默认 ad-hoc）"
+	@echo "目标：dev（Electron 开发实例）/ desktop 或 electron-app（macOS Electron 包）/ check-electron / runtime / tui / install（macOS 应用或 Linux CLI）/ uninstall"
+	@echo "macOS 应用：dist/Coding.app，本机 ad-hoc 签名，未经公证；make install 会替换 /Applications/Coding.app"

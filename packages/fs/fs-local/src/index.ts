@@ -198,6 +198,10 @@ function fsRemoteError(error: unknown, operation: string, displayPath: string): 
         return new FsError(`cannot ${operation} "${displayPath}": old_string was not found`, 'FS_EDIT_NOT_FOUND')
       case 'outside-root':
         return new FsError(`cannot ${operation} "${displayPath}": path is outside the remote workspace`, 'FS_PERMISSION_DENIED')
+      case 'sftp-hardlink-unsupported':
+        return new FsError(`cannot ${operation} "${displayPath}": atomic create requires the SFTP hardlink extension`, 'FS_IO_ERROR')
+      case 'sftp-posix-rename-unsupported':
+        return new FsError(`cannot ${operation} "${displayPath}": atomic replacement requires the SFTP posix-rename extension`, 'FS_IO_ERROR')
       default:
         return new FsError(`cannot ${operation} "${displayPath}": remote workspace bridge failed`, 'FS_IO_ERROR')
     }
@@ -301,7 +305,7 @@ export class LocalFileSystem extends FileSystem {
         const localAbsolute = await remoteWorkspacePath(path, cwd, signal)
         if (localAbsolute !== undefined && localAbsolute.markerRoot === workspace.markerRoot
           && localAbsolute.remoteRoot === workspace.remoteRoot && localAbsolute.connectionId === workspace.connectionId
-          && localAbsolute.markerGeneration === workspace.markerGeneration) {
+          && localAbsolute.markerGeneration === workspace.markerGeneration && localAbsolute.mode === workspace.mode) {
           return localAbsolute
         }
       }
@@ -314,7 +318,7 @@ export class LocalFileSystem extends FileSystem {
       const mapped = await remoteWorkspacePath(path, cwd, signal)
       if (mapped !== undefined && mapped.markerRoot === workspace.markerRoot
         && mapped.remoteRoot === workspace.remoteRoot && mapped.connectionId === workspace.connectionId
-        && mapped.markerGeneration === workspace.markerGeneration) {
+        && mapped.markerGeneration === workspace.markerGeneration && mapped.mode === workspace.mode) {
         return mapped
       }
       throw new FsError(`cannot ${operation} "${path}": path is outside the remote workspace`, 'FS_NOT_FOUND')
@@ -357,6 +361,7 @@ export class LocalFileSystem extends FileSystem {
         remotePath,
         connectionId: workspace.connectionId,
         markerGeneration: workspace.markerGeneration,
+        mode: workspace.mode,
       }
     } catch (error: unknown) {
       throw fsRemoteError(error, 'resolve', workspace.remotePath)
@@ -411,6 +416,8 @@ export class LocalFileSystem extends FileSystem {
         && remoteParent.markerRoot === remoteChild.markerRoot
         && remoteParent.remoteRoot === remoteChild.remoteRoot
         && remoteParent.connectionId === remoteChild.connectionId
+        && remoteParent.markerGeneration === remoteChild.markerGeneration
+        && remoteParent.mode === remoteChild.mode
         && isRemotePathWithin(remoteParent.remotePath, remoteChild.remotePath)
     }
     const path = relative(this.processPath(parent), this.processPath(child))

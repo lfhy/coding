@@ -12,6 +12,35 @@ import (
 
 type fileHandlers struct{ root string }
 
+// RealPath 在返回路径前解析符号链接，避免测试服务给客户端伪造未规范化路径。
+func (h *fileHandlers) RealPath(name string) (string, error) {
+	if _, err := h.relative(name); err != nil {
+		return "", err
+	}
+	resolved, err := filepath.EvalSymlinks(name)
+	if err != nil {
+		return "", err
+	}
+	if _, err := h.relative(resolved); err != nil {
+		return "", err
+	}
+	return resolved, nil
+}
+
+// Readlink 返回符号链接的原始目标，由客户端验证最终根目录约束。
+func (h *fileHandlers) Readlink(name string) (string, error) {
+	rel, err := h.relative(name)
+	if err != nil {
+		return "", err
+	}
+	root, err := os.OpenRoot(h.root)
+	if err != nil {
+		return "", err
+	}
+	defer root.Close()
+	return root.Readlink(rel)
+}
+
 // relative 保留客户端看到的绝对路径，同时将所有 SFTP 操作关在本次临时目录内。
 func (h *fileHandlers) relative(name string) (string, error) {
 	if name != h.root && !strings.HasPrefix(name, h.root+string(filepath.Separator)) {
@@ -85,6 +114,12 @@ func (h *fileHandlers) Filecmd(request *sftp.Request) error {
 			return err
 		}
 		return root.Rename(rel, target)
+	case "Link":
+		target, err := h.relative(request.Target)
+		if err != nil {
+			return err
+		}
+		return root.Link(rel, target)
 	case "Setstat":
 		if request.AttrFlags().Permissions {
 			return root.Chmod(rel, os.FileMode(request.Attributes().Mode)&0o700)
@@ -93,6 +128,24 @@ func (h *fileHandlers) Filecmd(request *sftp.Request) error {
 	default:
 		return os.ErrPermission
 	}
+}
+
+// PosixRename 覆盖已存在目标，与标准 SFTP Rename 的兼容性假设分开。
+func (h *fileHandlers) PosixRename(request *sftp.Request) error {
+	rel, err := h.relative(request.Filepath)
+	if err != nil {
+		return err
+	}
+	target, err := h.relative(request.Target)
+	if err != nil {
+		return err
+	}
+	root, err := os.OpenRoot(h.root)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	return root.Rename(rel, target)
 }
 
 type fileList []os.FileInfo

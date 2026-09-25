@@ -18,7 +18,7 @@ import remoteCss from './RemoteSshWizard.module.css'
 import {
   getRemoteSshBridge, RemoteSshBridgeError, RemoteSshConfigError,
   validateRemoteSshConfig, type RemoteSshAuthKind, type RemoteSshConnectInput,
-  type RemoteSshDirectoryListing, type RemoteSshProgress,
+  type RemoteSshDirectoryListing, type RemoteSshMode, type RemoteSshProgress,
 } from './remote.ts'
 
 const OPEN_FOLDER = '::open-folder'
@@ -319,6 +319,7 @@ type WizardStep = 'config' | 'progress' | 'directory'
 
 type ConnectedRemote = {
   connectionId: string
+  mode: RemoteSshMode
   homePath?: string | undefined
 }
 
@@ -326,6 +327,7 @@ type HostKeyConfirmation = {
   confirmationId: string
   fingerprint: string
   algorithm: string
+  mode: RemoteSshMode
 }
 
 const remoteSteps = [
@@ -353,6 +355,7 @@ function remoteErrorText(t: WorkspacePickerProps['t'], reason: unknown): string 
   if (reason instanceof RemoteSshConfigError) {
     switch (reason.code) {
       case 'host': return t('picker.remote.error.host')
+      case 'mode': return t('picker.remote.error.bridge')
       case 'port': return t('picker.remote.error.port')
       case 'username': return t('picker.remote.error.username')
       case 'secret': return t('picker.remote.error.secret')
@@ -378,22 +381,28 @@ function remoteParentPath(path: string): string {
 }
 
 /** 将当前向导步骤映射到静态字典键，避免把运行时字符串扩宽为未校验的翻译键。 */
-function remoteStepCopy(t: WorkspacePickerProps['t'], step: WizardStep): { title: string; description: string } {
+function remoteStepCopy(t: WorkspacePickerProps['t'], step: WizardStep, mode: RemoteSshMode): { title: string; description: string } {
   switch (step) {
     case 'config': return { title: t('picker.remote.config.title'), description: t('picker.remote.config.description') }
-    case 'progress': return { title: t('picker.remote.progress.title'), description: t('picker.remote.progress.description') }
-    case 'directory': return { title: t('picker.remote.directory.title'), description: t('picker.remote.directory.description') }
+    case 'progress': return {
+      title: t(mode === 'basic' ? 'picker.remote.progress.basic.title' : 'picker.remote.progress.title'),
+      description: t(mode === 'basic' ? 'picker.remote.progress.basic.description' : 'picker.remote.progress.description'),
+    }
+    case 'directory': return {
+      title: t('picker.remote.directory.title'),
+      description: t(mode === 'basic' ? 'picker.remote.directory.basic.description' : 'picker.remote.directory.description'),
+    }
   }
 }
 
 /** 连接阶段的静态本地化名称。 */
-function remoteProgressLabel(t: WorkspacePickerProps['t'], phase: RemoteSshProgress['phase']): string {
+function remoteProgressLabel(t: WorkspacePickerProps['t'], phase: RemoteSshProgress['phase'], mode: RemoteSshMode): string {
   switch (phase) {
     case 'authenticating': return t('picker.remote.progress.authenticating')
     case 'probing': return t('picker.remote.progress.probing')
     case 'uploading': return t('picker.remote.progress.uploading')
     case 'starting': return t('picker.remote.progress.starting')
-    case 'ready': return t('picker.remote.progress.ready')
+    case 'ready': return t(mode === 'basic' ? 'picker.remote.progress.basic.ready' : 'picker.remote.progress.ready')
     case 'failed': return t('picker.remote.progress.failed')
   }
 }
@@ -431,6 +440,7 @@ export function RemoteSshWizard({ open, onClose, t, createWorkspace, onPick }: R
   const [port, setPort] = useState('22')
   const [username, setUsername] = useState('')
   const [authKind, setAuthKind] = useState<RemoteSshAuthKind>('password')
+  const [mode, setMode] = useState<RemoteSshMode>('basic')
   const [secret, setSecret] = useState('')
   const [progress, setProgress] = useState<Omit<RemoteSshProgress, 'attemptId'>>({ phase: 'authenticating', message: '' })
   const [hostKey, setHostKey] = useState<HostKeyConfirmation | undefined>()
@@ -514,7 +524,9 @@ export function RemoteSshWizard({ open, onClose, t, createWorkspace, onPick }: R
       invalidateOperations()
       void releaseOwnedResources()
       setStep('config')
+      setMode('basic')
       setSecret('')
+      setProgress({ phase: 'authenticating', message: '' })
       setHostKey(undefined)
       setConnection(undefined)
       setDirectory(undefined)
@@ -531,11 +543,15 @@ export function RemoteSshWizard({ open, onClose, t, createWorkspace, onPick }: R
     if (!open || bridge === undefined) return
     return bridge.subscribeProgress((next) => {
       if (nativeConnectAttempt.current?.attemptId !== next.attemptId) return
+      if (mode === 'basic' && (next.phase === 'uploading' || next.phase === 'starting' || next.phase === 'probing')) return
       const failed = next.phase === 'failed'
-      setProgress({ phase: next.phase, message: failed ? t('picker.remote.progress.failed') : next.message })
+      setProgress({
+        phase: next.phase,
+        message: failed ? t('picker.remote.progress.failed') : (mode === 'basic' ? remoteProgressLabel(t, next.phase, mode) : next.message),
+      })
       if (failed) setError(t('picker.remote.progress.failed'))
     })
-  }, [bridge, open, t])
+  }, [bridge, mode, open, t])
 
   useEffect(() => {
     if (forwardingDenied) forwardingAlert.current?.focus()
@@ -560,6 +576,7 @@ export function RemoteSshWizard({ open, onClose, t, createWorkspace, onPick }: R
     try {
       input = validateRemoteSshConfig({
         attemptId: nativeAttemptId,
+        mode: confirmation?.mode ?? mode,
         host: host.trim(),
         port: Number(port),
         username: username.trim(),
@@ -609,23 +626,25 @@ export function RemoteSshWizard({ open, onClose, t, createWorkspace, onPick }: R
       }
       switch (result.kind) {
         case 'ready': {
-          const ready = { connectionId: result.connectionId, homePath: result.homePath }
+          const ready = { connectionId: result.connectionId, homePath: result.homePath, mode: result.mode }
           activeConnection.current = ready
           setConnection(ready)
           setSecret('')
           setError(undefined)
-          setProgress({ phase: 'ready', message: t('picker.remote.progress.ready') })
+          setProgress({ phase: 'ready', message: remoteProgressLabel(t, 'ready', result.mode) })
           break
         }
         case 'host-key-confirmation':
-          pendingHostKey.current = result
-          setHostKey(result)
+          pendingHostKey.current = { ...result, mode: input.mode }
+          setHostKey({ ...result, mode: input.mode })
           break
         case 'error':
           if (confirmation !== undefined) await bridge.rejectHostKey(confirmation.confirmationId).catch(() => {})
           setProgress({ phase: 'failed', message: t('picker.remote.progress.failed') })
-          setForwardingDenied(result.code === 'port-forwarding-denied')
-          setError(result.code === 'port-forwarding-denied' ? undefined : result.message)
+          setForwardingDenied(input.mode === 'agent' && result.code === 'port-forwarding-denied')
+          setError(result.code === 'port-forwarding-denied'
+            ? (input.mode === 'agent' ? undefined : t('picker.remote.progress.basic.forwardingError'))
+            : result.message)
           break
       }
     })().catch((reason: unknown) => {
@@ -739,10 +758,31 @@ export function RemoteSshWizard({ open, onClose, t, createWorkspace, onPick }: R
     setStep('config')
   }
 
-  const currentStepIndex = remoteSteps.findIndex(item => item.id === step)
-  const progressIndex = remoteProgressPhases.indexOf(progress.phase)
+  const selectMode = (next: RemoteSshMode): void => {
+    if (step !== 'config' || next === mode) return
+    invalidateOperations()
+    void releaseOwnedResources()
+    setMode(next)
+    setSecret('')
+    setHostKey(undefined)
+    setConnection(undefined)
+    setDirectory(undefined)
+    setProgress({ phase: 'authenticating', message: '' })
+    setError(undefined)
+    setForwardingDenied(false)
+    setConnecting(false)
+    setDirectoryLoading(false)
+    setSelectingDirectory(false)
+  }
 
-  const { title, description } = remoteStepCopy(t, step)
+  const activeMode = connection?.mode ?? mode
+  const visiblePhases = activeMode === 'basic'
+    ? remoteProgressPhases.filter(phase => phase === 'authenticating' || phase === 'ready')
+    : remoteProgressPhases.slice(0, 4)
+  const currentStepIndex = remoteSteps.findIndex(item => item.id === step)
+  const progressIndex = visiblePhases.indexOf(progress.phase)
+
+  const { title, description } = remoteStepCopy(t, step, activeMode)
 
   return (
     <Modal open={open} onClose={dismiss} title={t('picker.remote.title')} closeLabel={t('close')} headless className={remoteCss.dialog ?? ''}>
@@ -777,6 +817,20 @@ export function RemoteSshWizard({ open, onClose, t, createWorkspace, onPick }: R
                 <div className={remoteCss.notice} role="status">{t('picker.remote.desktopOnly')}</div>
               ) : (
                 <form className={remoteCss.form} onSubmit={(event) => { event.preventDefault(); connect() }}>
+                  <fieldset className={remoteCss.field}>
+                    <legend className={remoteCss.label}>{t('picker.remote.field.mode')}</legend>
+                    <div className={remoteCss.connectionModes}>
+                      {(['basic', 'agent'] as const).map(option => (
+                        <label key={option} className={remoteCss.connectionMode}>
+                          <input type="radio" name="remote-connection-mode" value={option} checked={mode === option} onChange={() => { selectMode(option) }} />
+                          <span className={remoteCss.connectionModeText}>
+                            <span className={remoteCss.connectionModeName}>{t(option === 'basic' ? 'picker.remote.mode.basic' : 'picker.remote.mode.agent')}</span>
+                            <span className={remoteCss.connectionModeDescription}>{t(option === 'basic' ? 'picker.remote.mode.basic.description' : 'picker.remote.mode.agent.description')}</span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
                   <div className={remoteCss.field}>
                     <label className={remoteCss.label} htmlFor="remote-ssh-host">{t('picker.remote.field.host')}</label>
                     <Input id="remote-ssh-host" className={remoteCss.input ?? ''} autoFocus autoComplete="off" value={host} placeholder={t('picker.remote.placeholder.host')} onChange={(event) => { setHost(event.target.value) }} />
@@ -816,7 +870,7 @@ export function RemoteSshWizard({ open, onClose, t, createWorkspace, onPick }: R
                 </div>
               ) : (
                 <div className={remoteCss.progressList} aria-live={forwardingDenied ? 'off' : 'polite'}>
-                  {remoteProgressPhases.slice(0, 4).map((phase, index) => (
+                  {visiblePhases.map((phase, index) => (
                     <div
                       key={phase}
                       className={clsx(
@@ -827,7 +881,7 @@ export function RemoteSshWizard({ open, onClose, t, createWorkspace, onPick }: R
                       )}
                     >
                       <span className={remoteCss.progressDot} />
-                      <span>{forwardingDenied ? remoteCompletedProgressLabel(t, phase) : remoteProgressLabel(t, phase)}</span>
+                      <span>{forwardingDenied ? remoteCompletedProgressLabel(t, phase) : remoteProgressLabel(t, phase, activeMode)}</span>
                     </div>
                   ))}
                   {progress.phase !== 'failed' && progress.message !== '' && <div className={remoteCss.notice}>{progress.message}</div>}

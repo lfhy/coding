@@ -47,14 +47,15 @@ class NeverSpawnSubprocess extends SubprocessRuntime {
   }
 }
 
-async function marker(): Promise<string> {
+async function marker(mode: 'basic' | 'agent' = 'agent'): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'dsh-search-remote-'))
   roots.push(root)
   await writeFile(join(root, REMOTE_WORKSPACE_MARKER), JSON.stringify({
-    version: 2,
+    version: 3,
     remoteRoot: '/srv/project',
     connectionId: 'connection-1',
     generation: 1,
+    mode,
   }))
   return root
 }
@@ -88,6 +89,53 @@ function text(result: { content: { type: string; text?: string }[] }): string {
 }
 
 describe('tool-fs-search Remote-SSH routing', () => {
+  it('routes basic-mode glob and grep through the remote bridge without local ripgrep', async () => {
+    const cwd = await marker('basic')
+    const calls: Array<{ path: string; body: Record<string, unknown> }> = []
+    await bridge((path, body) => {
+      calls.push({ path, body })
+      return { payload: body.kind === 'glob'
+        ? { root: '/srv/project', paths: ['src/remote.ts'], truncated: false }
+        : { root: '/srv/project', matches: [{ path: 'src/remote.ts', lineNumber: 3, line: 'needle' }], truncated: false } }
+    })
+    const ctx = new Context()
+    try {
+      await ctx.plugin(SystemPrompt)
+      await ctx.plugin(ToolRuntime)
+      await ctx.plugin(NeverSpawnSubprocess)
+      await ctx.plugin(ToolFsSearch, { sampleOverCapGlobResults: true })
+      const subprocess = ctx.subprocess as NeverSpawnSubprocess
+
+      for (const kind of ['glob', 'grep'] as const) {
+        const exec = {
+          signal: new AbortController().signal,
+          callId: CallId(`remote-basic-${kind}`),
+          name: kind,
+          arguments: { pattern: 'needle', path: 'src' },
+          agent: { session: { header: { id: 'remote-search-session', cwd } } },
+        }
+        const result = await ctx.tools.execute(exec as never)
+        expect(result.isError).toBe(false)
+        expect(text(result)).toContain(kind === 'glob' ? 'src/remote.ts' : 'Line 3: needle')
+      }
+
+      expect(calls).toHaveLength(2)
+      expect(calls.map(call => call.path)).toEqual(['/v1/search', '/v1/search'])
+      for (const kind of ['glob', 'grep'] as const) {
+        expect(calls.find(call => call.body.kind === kind)?.body).toMatchObject({
+          root: '/srv/project',
+          path: '/srv/project/src',
+          kind,
+          pattern: 'needle',
+          maxBytes: ToolFsSearch.RAW_OUTPUT_MAX_BYTES,
+        })
+      }
+      expect(subprocess.spawns).toEqual([])
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('uses the verified marker workspace for glob without spawning local ripgrep', async () => {
     const cwd = await marker()
     const calls: Array<{ path: string; body: Record<string, unknown> }> = []
@@ -190,6 +238,8 @@ describe('tool-fs-search Remote-SSH routing', () => {
 
       expect(glob.error).toMatchObject({ info: { code: 'SEARCH_INVALID_PATTERN' } })
       expect(grep.error).toMatchObject({ info: { code: 'SEARCH_INVALID_PATTERN' } })
+      expect(text(glob)).toContain('pattern rejected by remote search')
+      expect(text(grep)).toContain('include filter rejected by remote search')
       expect(subprocess.spawns).toEqual([])
     } finally {
       await ctx.fiber.dispose()

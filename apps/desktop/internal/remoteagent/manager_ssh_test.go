@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -45,7 +46,7 @@ func TestManagerRequiresConfirmationThenConnectsThroughPrivateTunnel(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := ConnectRequest{Host: server.host(), Port: server.port(), User: "coding", Auth: SSHAuth{Password: "password"}}
+	request := ConnectRequest{Mode: ModeAgent, Host: server.host(), Port: server.port(), User: "coding", Auth: SSHAuth{Password: "password"}}
 	_, err = manager.Connect(context.Background(), request)
 	var unknown *ErrUnknownHostKey
 	if !errors.As(err, &unknown) {
@@ -80,7 +81,7 @@ func TestManagerRequiresConfirmationThenConnectsThroughPrivateTunnel(t *testing.
 		t.Fatal("wrong-method agent route was accepted")
 	}
 	marker, err := manager.Marker(info.ID, "/remote/workspace")
-	if err != nil || marker != (RemoteWorkspaceMarker{Version: 1, RemoteRoot: "/remote/workspace", ConnectionID: info.ID}) {
+	if err != nil || marker != (RemoteWorkspaceMarker{Version: 3, Mode: ModeAgent, RemoteRoot: "/remote/workspace", ConnectionID: info.ID}) {
 		t.Fatalf("Marker = %#v, %v", marker, err)
 	}
 	if err := manager.Close(context.Background(), info.ID); err != nil {
@@ -93,6 +94,97 @@ func TestManagerRequiresConfirmationThenConnectsThroughPrivateTunnel(t *testing.
 	}
 	if _, err := manager.Connection(info.ID); !errors.Is(err, ErrConnectionNotFound) {
 		t.Fatalf("closed connection lookup = %v", err)
+	}
+}
+
+func TestManagerBasicUsesSFTPWithoutAgentOrPortForwarding(t *testing.T) {
+	server := newManagerSSHFixture(t)
+	var assetCalls atomic.Int32
+	manager, err := NewManager(ManagerOptions{
+		KnownHostsPath: filepath.Join(t.TempDir(), "remote-ssh", "known_hosts"),
+		AgentPathFor: func(RemotePlatform) (string, error) {
+			assetCalls.Add(1)
+			return "", errors.New("agent asset must not be requested")
+		},
+		ConnectTimeout: time.Second, StartupTimeout: 2 * time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := ConnectRequest{Mode: ModeBasic, Host: server.host(), Port: server.port(), User: "coding", Auth: SSHAuth{Password: "password"}}
+	_, err = manager.Connect(context.Background(), request)
+	var unknown *ErrUnknownHostKey
+	if !errors.As(err, &unknown) {
+		t.Fatalf("first host key = %v", err)
+	}
+	other := request
+	other.Mode = ModeAgent
+	if _, err := manager.ConfirmHostKey(context.Background(), unknown.ConfirmationID, other, unknown.Fingerprint); err == nil {
+		t.Fatal("host key confirmation crossed modes")
+	}
+	info, err := manager.ConfirmHostKey(context.Background(), unknown.ConfirmationID, request, unknown.Fingerprint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode != ModeBasic || info.Platform.OS != "linux" || info.RemoteHome != server.root || assetCalls.Load() != 0 {
+		t.Fatalf("basic connection = %+v; asset calls = %d", info, assetCalls.Load())
+	}
+	marker, err := manager.Marker(info.ID, server.root)
+	if err != nil || marker.Mode != ModeBasic || marker.Version != 3 {
+		t.Fatalf("basic marker = %+v, %v", marker, err)
+	}
+	for _, route := range []string{
+		"/v1/read_file", "/v1/update_file", "/v1/edit_file", "/v1/search",
+		"/v1/exec", "/v1/processes/resolve", "/v1/terminals/start",
+	} {
+		response, err := manager.Proxy(context.Background(), info.ID, http.MethodPost, route, []byte(`{}`))
+		if err != nil || response.Status == http.StatusNotImplemented {
+			t.Fatalf("basic route %s = %+v, %v", route, response, err)
+		}
+	}
+	if assetCalls.Load() != 0 {
+		t.Fatalf("code asset loaded before Code Mode request: %d", assetCalls.Load())
+	}
+	response, err := manager.Proxy(context.Background(), info.ID, http.MethodPost, "/v1/code/start", []byte(`{}`))
+	if err != nil || response.Status != http.StatusServiceUnavailable || assetCalls.Load() != 1 {
+		t.Fatalf("unavailable local isolate = %+v, %v; asset calls = %d", response, err, assetCalls.Load())
+	}
+	response, err = manager.Proxy(context.Background(), info.ID, http.MethodPost, "/v1/lsp", []byte(`{}`))
+	if err != nil || response.Status != http.StatusNotImplemented || !strings.Contains(string(response.Body), "unsupported-capability") {
+		t.Fatalf("unsupported LSP route = %+v, %v", response, err)
+	}
+	if server.forwardCalls.Load() != 0 {
+		t.Fatalf("direct-tcpip calls = %d", server.forwardCalls.Load())
+	}
+	select {
+	case <-server.agentStarted:
+		t.Fatal("basic connection started remote agent")
+	default:
+	}
+	if err := manager.Close(context.Background(), info.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.Connection(info.ID); !errors.Is(err, ErrConnectionNotFound) {
+		t.Fatalf("closed basic connection = %v", err)
+	}
+}
+
+func TestBasicRouteMatchesPublishedAgentRoutesExceptHealth(t *testing.T) {
+	for _, route := range []string{
+		"/v1/resolve", "/v1/directories", "/v1/stat", "/v1/read_file", "/v1/read_bytes",
+		"/v1/update_file", "/v1/edit_file", "/v1/exec", "/v1/search",
+		"/v1/processes/resolve", "/v1/processes/start", "/v1/processes/read", "/v1/processes/write", "/v1/processes/wait", "/v1/processes/kill",
+		"/v1/terminals/start", "/v1/terminals/read", "/v1/terminals/write", "/v1/terminals/resize", "/v1/terminals/foreground", "/v1/terminals/signal", "/v1/terminals/terminate",
+		"/v1/code/start", "/v1/code/next", "/v1/code/reply", "/v1/code/cancel",
+	} {
+		if !IsBasicRoute(http.MethodPost, route) {
+			t.Errorf("basic route %s is not enabled", route)
+		}
+	}
+	for _, route := range []string{"/v1/lsp", "/v1/health", "/v1/shutdown", "/v1/processes/unknown"} {
+		if IsBasicRoute(http.MethodPost, route) {
+			t.Errorf("basic route %s was enabled", route)
+		}
 	}
 }
 
@@ -138,7 +230,7 @@ func TestManagerRequiresReadyAndHealthVersionsToAgree(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			request := ConnectRequest{Host: server.host(), Port: server.port(), User: "coding", Auth: SSHAuth{Password: "password"}}
+			request := ConnectRequest{Mode: ModeAgent, Host: server.host(), Port: server.port(), User: "coding", Auth: SSHAuth{Password: "password"}}
 			info, err := manager.Connect(context.Background(), request)
 			if tc.wantFailure {
 				if err == nil {
@@ -216,7 +308,7 @@ func TestHostKeyConfirmationRequiresFreshMatchingRequestAndExpires(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := ConnectRequest{Host: server.host(), Port: server.port(), User: "coding", Auth: SSHAuth{Password: "first-secret"}}
+	request := ConnectRequest{Mode: ModeAgent, Host: server.host(), Port: server.port(), User: "coding", Auth: SSHAuth{Password: "first-secret"}}
 	_, err = manager.Connect(context.Background(), request)
 	var unknown *ErrUnknownHostKey
 	if !errors.As(err, &unknown) {
@@ -265,7 +357,7 @@ func TestPendingHostKeysStayBounded(t *testing.T) {
 	}
 	for index := 0; index < maxPendingHostKeys+5; index++ {
 		address := fmt.Sprintf("host-%d:22", index)
-		if _, err := manager.rememberPendingHostKey(address, signer.PublicKey(), ssh.FingerprintSHA256(signer.PublicKey())); err != nil {
+		if _, err := manager.rememberPendingHostKey(address, ModeAgent, signer.PublicKey(), ssh.FingerprintSHA256(signer.PublicKey())); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -290,11 +382,11 @@ func TestPendingHostKeyConfirmationIDsAreUniquePerHandshake(t *testing.T) {
 		t.Fatal(err)
 	}
 	fingerprint := ssh.FingerprintSHA256(signer.PublicKey())
-	first, err := manager.rememberPendingHostKey("host:22", signer.PublicKey(), fingerprint)
+	first, err := manager.rememberPendingHostKey("host:22", ModeAgent, signer.PublicKey(), fingerprint)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := manager.rememberPendingHostKey("host:22", signer.PublicKey(), fingerprint)
+	second, err := manager.rememberPendingHostKey("host:22", ModeAgent, signer.PublicKey(), fingerprint)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -396,7 +488,7 @@ func TestManagerCancellationSettlesUnpublishedAgentSession(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	result := make(chan error, 1)
 	go func() {
-		_, err := manager.Connect(ctx, ConnectRequest{Host: server.host(), Port: server.port(), User: "coding", Auth: SSHAuth{Password: "password"}})
+		_, err := manager.Connect(ctx, ConnectRequest{Mode: ModeAgent, Host: server.host(), Port: server.port(), User: "coding", Auth: SSHAuth{Password: "password"}})
 		result <- err
 	}()
 	select {
@@ -437,7 +529,7 @@ func TestManagerRejectsChangedKnownHostKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = manager.Connect(context.Background(), ConnectRequest{Host: second.host(), Port: second.port(), User: "coding", Auth: SSHAuth{Password: "password"}})
+	_, err = manager.Connect(context.Background(), ConnectRequest{Mode: ModeAgent, Host: second.host(), Port: second.port(), User: "coding", Auth: SSHAuth{Password: "password"}})
 	var changed *ErrHostKeyChanged
 	if !errors.As(err, &changed) {
 		t.Fatalf("Connect error = %v, want ErrHostKeyChanged", err)
@@ -462,7 +554,7 @@ func TestPlatformProbeParsingSupportsWindowsAndEncodedLaunch(t *testing.T) {
 }
 
 func TestConnectRequestValidationBoundsAndIPv6(t *testing.T) {
-	base := ConnectRequest{Host: "[2001:db8::1]", Port: 22, User: "coding", Auth: SSHAuth{Password: "secret"}}
+	base := ConnectRequest{Mode: ModeAgent, Host: "[2001:db8::1]", Port: 22, User: "coding", Auth: SSHAuth{Password: "secret"}}
 	if err := validateConnectRequest(base); err != nil {
 		t.Fatalf("bracketed IPv6 rejected: %v", err)
 	}
@@ -499,7 +591,7 @@ func connectManagerFixture(t *testing.T, server *managerSSHFixture) (*Manager, C
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := ConnectRequest{Host: server.host(), Port: server.port(), User: "coding", Auth: SSHAuth{Password: "password"}}
+	request := ConnectRequest{Mode: ModeAgent, Host: server.host(), Port: server.port(), User: "coding", Auth: SSHAuth{Password: "password"}}
 	_, err = manager.Connect(context.Background(), request)
 	var unknown *ErrUnknownHostKey
 	if !errors.As(err, &unknown) {
@@ -526,6 +618,7 @@ type managerSSHFixture struct {
 	readyVersion      string
 	healthVersion     string
 	omitHealthVersion bool
+	forwardCalls      atomic.Int32
 }
 
 func newManagerSSHFixture(t *testing.T) *managerSSHFixture {
@@ -605,7 +698,7 @@ func (fixture *managerSSHFixture) serveSession(stream ssh.Channel, requests <-ch
 
 func (fixture *managerSSHFixture) runCommand(stream ssh.Channel, command string) {
 	if strings.Contains(command, "uname -s") {
-		_, _ = io.WriteString(stream, "Linux x86_64\nHOME=remote\n")
+		_, _ = io.WriteString(stream, "Linux x86_64\nHOME="+fixture.root+"\n")
 		fixture.exit(stream)
 		return
 	}
@@ -634,6 +727,7 @@ func (fixture *managerSSHFixture) exit(stream ssh.Channel) {
 }
 
 func (fixture *managerSSHFixture) forward(stream ssh.Channel) {
+	fixture.forwardCalls.Add(1)
 	defer stream.Close()
 	target := strings.TrimPrefix(fixture.agent.URL, "http://")
 	connection, err := net.Dial("tcp", target)

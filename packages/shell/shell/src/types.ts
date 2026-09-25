@@ -139,8 +139,8 @@ export interface ShellRunResult {
   sandbox?: ShellSandboxInfo
 }
 
-/** Lifecycle of a background process. */
-export type ShellProcessStatus = 'running' | 'completed' | 'killed'
+/** 后台进程的生命周期；provider 无法报告退出结果时以 `failed` 结算。 */
+export type ShellProcessStatus = 'running' | 'completed' | 'killed' | 'failed'
 
 /** One incremental {@link ShellProcess.readOutput} read. */
 export interface ShellProcessRead {
@@ -163,14 +163,11 @@ export interface ShellProcessRead {
 export interface ShellProcess {
   /** Process lifecycle state (settled exactly once). */
   status: ShellProcessStatus
-  /** Exit code once finished (null = killed by signal / still running). */
+  /** 退出码；信号退出、provider 失败及运行中均为 null。 */
   exitCode: number | null
   /** Terminating signal name, when signal-killed. */
   signal: NodeJS.Signals | null
-  /**
-   * Resolves when the underlying process settles (never rejects — provider
-   * rejection settles as `killed` with a stage-neutral error on stderr).
-   */
+  /** 底层进程结算后 resolve；provider rejection 以 `failed` 状态和 stderr 中性提示结算，不向外 reject。 */
   readonly done: Promise<void>
   /** Sandbox facts, stamped once a confined process settles. */
   sandbox?: ShellSandboxInfo

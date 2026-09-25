@@ -1,6 +1,6 @@
-# 使用 Web UI
+# 使用 Coding 界面
 
-请先按照[根目录 README](../../../README.md#run) 中的说明启动 Web UI；命令会打印其访问地址。本指南从服务器已经运行的状态开始。`dsh` 进程会把启动时所在的目录作为默认文件系统位置；全新的 Web UI 不会选中任何 Workspace。
+浏览器使用方式请按[根目录 README](../../../README.md#run) 启动 Web UI，命令会打印访问地址；macOS arm64 桌面端由 [Electron 应用](../../../apps/desktop-electron/README.md)提供。本指南从界面已经打开的状态开始。`dsh` 进程会把启动时所在的目录作为默认文件系统位置；全新的界面不会选中任何 Workspace。
 
 ## 配置模型
 
@@ -18,9 +18,13 @@
 
 已有空白 Session 时，面板按钮会沿用该 Session；还没有当前 Session 时会先连接最近使用的 Workspace，没有 Workspace 则在 Host 用户 HOME 创建未分组 Session。发送第一条消息后，所选面板会在这次对话中保持打开。
 
-在 Coding 桌面端中，选择**连接 Remote-SSH**，即可输入 SSH 主机、使用密码或私钥认证、确认未知主机密钥并选择远程目录。凭据只保留在当前对话框／连接中，不会保存；应用重启后需要重新执行连接流程。普通浏览器界面不能发起 SSH 连接。
+在 Coding 桌面端中，选择**远程连接**，先选连接模式，再输入 SSH 主机、使用密码或私钥认证、确认未知主机密钥并选择远程目录。默认的**基础模式**只使用 SSH 与 SFTP，无需上传远端 agent 或允许 SSH TCP 转发；它支持远端目录浏览、文件读取／写入／编辑、`glob`／`grep` 搜索、前台与后台 Bash 命令、持久终端／PTY，以及 Code Mode 的 Bash 和远程文件工具。基础模式不支持 LSP；Windows 远端不支持基础模式的命令与 PTY 操作，执行请求会明确失败。
 
-Remote-SSH 会通过紧凑的 Go agent 在所选目录中运行语义文件系统操作、`glob`／`grep`、前台和后台 Bash、持久终端／PTY、LSP 与 Code Mode。目标侧不需要 Node；本地 Host 仍负责工具审批和持久 Session 日志。在拥有同执行世界的远程沙箱 Provider 出现前，远程 Bash 需要使用**完全访问**（`danger-full-access`）。Code Mode 会经 esbuild 转换 TypeScript，并在 Goja 中运行，因此它拥有声明的工具 binding，但没有 Node 内建模块、`process`、`require` 或 Host 环境。过期 marker 或已断开的连接会失败，而不会在本机运行操作。
+基础模式写入使用 SFTP：原子创建需要服务器支持 hardlink 扩展，覆写与编辑需要 `posix-rename@openssh.com`，缺少相应扩展会失败。按版本覆写会在提交前复核文件，但 SFTP 不提供原子的版本比较交换，并发写入仍可能发生在复核和发布之间。SSH 不提供前台进程组查询，终端的相应检查不可用；信号或终止请求不能保证远端进程树已经退出，状态不明时会报告失败，请检查远端状态后再操作。
+
+需要 LSP 或 Go agent 提供的远端执行语义时，选择 **Agent 模式**。它也支持文件读写编辑、搜索、前后台 Bash、持久终端／PTY 与 Code Mode，会部署仅监听远端回环地址的小型 Go agent，并需要 SSH `direct-tcpip` 转发；目标侧不需要 Node。两种模式的 Code Mode 都经 esbuild 转换 TypeScript 并在隔离的 Goja 中运行，拥有声明的工具 binding，但没有 Node 内建模块、`process`、`require` 或 Host 环境；基础模式的 Goja 隔离进程在桌面 helper 本机，文件与 Bash binding 仍指向远端，不会回退到本机工作区或 Node worker。
+
+两种模式的凭据都只保留在当前对话框／连接中，不会保存；未知主机密钥需要明确确认，已变更的主机密钥会使连接失败。应用重启后需要重新连接，才能复用已有的远程工作区；普通浏览器界面不能发起 SSH 连接。本地 Host 仍负责工具审批和持久 Session 日志。远程 Bash 需要使用**完全访问**（`danger-full-access`）；这不是远端沙箱。连接断开、marker 过期或所选模式不支持操作时，请重新连接或选择合适模式；操作会失败，不会改在本机运行。
 
 ## 运行任务
 

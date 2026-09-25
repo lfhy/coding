@@ -6,13 +6,62 @@ import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { LocalBashExecutor } from '@deepseek-ai/dsh-bash-local'
-import { REMOTE_WORKSPACE_MARKER } from '@deepseek-ai/dsh-subprocess'
+import { REMOTE_WORKSPACE_MARKER, RemoteWorkspaceError } from '@deepseek-ai/dsh-subprocess'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import type { SubprocessHandle, SubprocessOutputReader } from '@deepseek-ai/dsh-subprocess'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import type { ShellProcess } from '@deepseek-ai/dsh-shell'
 
 const spillDir = mkdtempSync(join(tmpdir(), 'dsh-bash-exec-spec-'))
+
+async function withBasicBridge(
+  respond: (
+    body: Record<string, unknown>, url: string | undefined,
+  ) => { status?: number; body: unknown } | Promise<{ status?: number; body: unknown }>,
+  run: (markerRoot: string, received: Array<{ url: string | undefined; body: Record<string, unknown> }>) => Promise<void>,
+): Promise<void> {
+  const markerRoot = mkdtempSync(join(tmpdir(), 'dsh-bash-basic-marker-'))
+  writeFileSync(join(markerRoot, REMOTE_WORKSPACE_MARKER), JSON.stringify({
+    version: 3, mode: 'basic', remoteRoot: '/srv/project', connectionId: 'connection-basic', generation: 1,
+  }))
+  const oldUrl = process.env.DSH_REMOTE_BRIDGE_URL
+  const oldToken = process.env.DSH_REMOTE_BRIDGE_TOKEN
+  const received: Array<{ url: string | undefined; body: Record<string, unknown> }> = []
+  const server = createServer((request, response) => {
+    const chunks: Buffer[] = []
+    request.on('data', (chunk: Buffer) => { chunks.push(chunk) })
+    request.on('end', () => {
+      const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>
+      received.push({ url: request.url, body })
+      void Promise.resolve(respond(body, request.url)).then((result) => {
+        response.statusCode = result.status ?? 200
+        response.setHeader('Content-Type', 'application/json')
+        response.end(JSON.stringify(result.body))
+      })
+    })
+  })
+  try {
+    await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+    const address = server.address() as AddressInfo
+    process.env.DSH_REMOTE_BRIDGE_URL = `http://127.0.0.1:${address.port}`
+    process.env.DSH_REMOTE_BRIDGE_TOKEN = 'test-bridge-token-which-is-long-enough'
+    await run(markerRoot, received)
+  } finally {
+    if (oldUrl === undefined) delete process.env.DSH_REMOTE_BRIDGE_URL
+    else process.env.DSH_REMOTE_BRIDGE_URL = oldUrl
+    if (oldToken === undefined) delete process.env.DSH_REMOTE_BRIDGE_TOKEN
+    else process.env.DSH_REMOTE_BRIDGE_TOKEN = oldToken
+    await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
+    rmSync(markerRoot, { recursive: true, force: true })
+  }
+}
+
+function execResponse(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    exitCode: 0, timedOut: false, stdout: 'remote output\n', stderr: '',
+    stdoutTruncated: false, stderrTruncated: false, ...overrides,
+  }
+}
 
 async function setup(config: ConstructorParameters<typeof LocalBashExecutor>[1] = {}) {
   const ctx = new Context()
@@ -41,6 +90,184 @@ async function readUntil(proc: ShellProcess, expected: string, timeoutMs = 5_000
 }
 
 describe('LocalBashExecutor.run', () => {
+  it('uses one basic foreground SSH exec without spawning a local or managed remote process', async () => {
+    await withBasicBridge(() => ({ body: execResponse({ stdout: 'abcdef', stderr: 'uvwxyz' }) }), async (markerRoot, received) => {
+      const { ctx, bash } = await setup({ maxOutputBytes: 4 })
+      const spawn = vi.spyOn(ctx.subprocess, 'spawn')
+      const logged = vi.spyOn(console, 'log').mockImplementation(() => {})
+      const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+      let result: Awaited<ReturnType<typeof bash.run>>
+      try {
+        result = await bash.run(bash.resolve({
+          command: 'printf output', workdir: markerRoot, stdoutMaxBytes: 5,
+          stdin: 'input', env: { PAGER: 'caller', DEEPSEEK_API_KEY: 'test-secret', DSH_MANAGED: 'untrusted' },
+          dshEnv: { DSH_MANAGED: 'trusted' },
+        }))
+        expect(JSON.stringify([logged.mock.calls, errors.mock.calls])).not.toContain('test-secret')
+      } finally {
+        logged.mockRestore()
+        errors.mockRestore()
+      }
+      expect(spawn).not.toHaveBeenCalled()
+      expect(received).toHaveLength(1)
+      expect(received[0]).toMatchObject({ url: '/v1/exec', body: {
+        root: '/srv/project', path: '/srv/project', shell: 'bash', command: 'printf output',
+        stdin: 'input', timeoutMs: 120_000,
+        env: { NO_COLOR: '1', TERM: 'dumb', PAGER: 'caller', DEEPSEEK_API_KEY: 'test-secret', DSH_MANAGED: 'trusted' },
+      } })
+      expect(received[0]?.url).not.toContain('test-secret')
+      expect(received[0]?.url).not.toContain('DSH_MANAGED')
+      expect(result).toMatchObject({
+        exitCode: 0, signal: null, timedOut: false, aborted: false,
+        stdout: { text: 'bcdef', truncated: true }, stderr: { text: 'wxyz', truncated: true },
+      })
+    })
+  })
+
+  it('routes basic background streams through the process bridge without a local spawn', async () => {
+    const running = {
+      id: 'p'.repeat(32), pid: 4321, running: true, closed: false,
+      exitCode: null, signal: null, stdinClosed: true, startedAt: 1,
+    }
+    const closed = { ...running, running: false, closed: true, exitCode: 0, exitedAt: 2 }
+    await withBasicBridge((body, url) => {
+      switch (url) {
+        case '/v1/processes/start': return { body: { process: running } }
+        case '/v1/processes/read': {
+          const stdout = body.stream === 'stdout'
+          const data = stdout ? 'remote background' : 'warning'
+          return { body: {
+            dataBase64: Buffer.from(data).toString('base64'), nextOffset: Buffer.byteLength(data),
+            lossy: false, truncated: false, eof: true, closed: true, process: closed,
+          } }
+        }
+        case '/v1/processes/wait': return { body: { completed: true, process: closed } }
+        default: throw new Error(`unexpected bridge route ${url}`)
+      }
+    }, async (markerRoot, received) => {
+      const { ctx, bash } = await setup()
+      const spawn = vi.spyOn(ctx.subprocess, 'spawn')
+      const localSpawn = vi.fn(() => { throw new Error('local process unexpectedly started') })
+      ;(ctx.subprocess as LocalSubprocessRuntime).internals.spawn = localSpawn
+      const process = bash.start(bash.resolve({ command: 'printf remote', workdir: markerRoot }))
+      await process.done
+      expect(process.status).toBe('completed')
+      expect(process.readOutput()).toEqual({ delta: 'remote background\n[stderr]\nwarning', lossy: false })
+      expect(process.readOutput()).toEqual({ delta: '', lossy: false })
+      expect(spawn).toHaveBeenCalledTimes(1)
+      expect(localSpawn).not.toHaveBeenCalled()
+      expect(received.map(call => call.url)).toContain('/v1/processes/start')
+      expect(received.find(call => call.url === '/v1/processes/start')?.body).toMatchObject({
+        root: '/srv/project', path: '/srv/project', argv: ['bash', '-c', 'printf remote'],
+        stdout: { mode: 'collect' }, stderr: { mode: 'collect' },
+      })
+    })
+  })
+
+  it('refuses a stale basic marker instead of falling back to local execution', async () => {
+    await withBasicBridge(() => ({ body: execResponse() }), async (markerRoot, received) => {
+      const { ctx, bash } = await setup()
+      const spawn = vi.spyOn(ctx.subprocess, 'spawn')
+      const spec = bash.resolve({ command: 'pwd', workdir: markerRoot })
+      writeFileSync(join(markerRoot, REMOTE_WORKSPACE_MARKER), JSON.stringify({
+        version: 3, mode: 'agent', remoteRoot: '/srv/project', connectionId: 'connection-basic', generation: 2,
+      }))
+      await expect(bash.run(spec)).rejects.toMatchObject({ code: 'REMOTE_WORKSPACE_TARGET_INVALID' })
+      expect(spawn).not.toHaveBeenCalled()
+      expect(received).toHaveLength(0)
+    })
+  })
+
+  it('settles a stale basic background target as failed without local fallback', async () => {
+    await withBasicBridge(() => ({ body: execResponse() }), async (markerRoot, received) => {
+      const { ctx, bash } = await setup()
+      const localSpawn = vi.fn(() => { throw new Error('local process unexpectedly started') })
+      ;(ctx.subprocess as LocalSubprocessRuntime).internals.spawn = localSpawn
+      const spec = bash.resolve({ command: 'pwd', workdir: markerRoot })
+      writeFileSync(join(markerRoot, REMOTE_WORKSPACE_MARKER), JSON.stringify({
+        version: 3, mode: 'agent', remoteRoot: '/srv/project', connectionId: 'connection-basic', generation: 2,
+      }))
+      const process = bash.start(spec)
+      await process.done
+      expect(process.status).toBe('failed')
+      expect(process.readOutput().delta).toContain('subprocess failed before reporting an outcome; remote process status is unknown')
+      expect(localSpawn).not.toHaveBeenCalled()
+      expect(received).toHaveLength(0)
+    })
+  })
+
+  it('reports an unknown basic background termination when the SSH cleanup cannot be confirmed', async () => {
+    const running = {
+      id: 'p'.repeat(32), pid: 4321, running: true, closed: false,
+      exitCode: null, signal: null, stdinClosed: true, startedAt: 1,
+    }
+    await withBasicBridge((_body, url) => {
+      switch (url) {
+        case '/v1/processes/start': return { body: { process: running } }
+        case '/v1/processes/kill': return { status: 503, body: { error: { code: 'termination-unknown' } } }
+        case '/v1/processes/read': return { body: {
+          dataBase64: '', nextOffset: 0, lossy: false, truncated: false,
+          eof: false, closed: false, process: running,
+        } }
+        case '/v1/processes/wait': return { body: { completed: false, process: running } }
+        default: throw new Error(`unexpected bridge route ${url}`)
+      }
+    }, async (markerRoot, received) => {
+      const { ctx, bash } = await setup()
+      const localSpawn = vi.fn(() => { throw new Error('local process unexpectedly started') })
+      ;(ctx.subprocess as LocalSubprocessRuntime).internals.spawn = localSpawn
+      const process = bash.start(bash.resolve({ command: 'sleep 60', workdir: markerRoot }))
+      expect(process.kill()).toBe(true)
+      expect(process.status).toBe('running')
+      expect(process.kill()).toBe(false)
+      await process.done
+      expect(process.status).toBe('failed')
+      expect(process.readOutput().delta).toContain('subprocess failed before reporting an outcome; remote process status is unknown')
+      expect(process.readOutput().delta).toBe('')
+      expect(received.map(call => call.url)).toContain('/v1/processes/kill')
+      expect(localSpawn).not.toHaveBeenCalled()
+    })
+  })
+
+  it('treats timed-out SSH exec and cancelled transport as unknown remote process state', async () => {
+    await withBasicBridge(() => ({ body: execResponse({ exitCode: null, timedOut: true }) }), async (markerRoot) => {
+      const { bash } = await setup()
+      await expect(bash.run(bash.resolve({ command: 'sleep 60', workdir: markerRoot })))
+        .rejects.toThrow(/remote process status is unknown/)
+    })
+    let started!: () => void
+    const dispatched = new Promise<void>((resolve) => { started = resolve })
+    await withBasicBridge(async () => {
+      started()
+      await new Promise((resolve) => { setTimeout(resolve, 50) })
+      return { body: execResponse() }
+    }, async (markerRoot) => {
+      const { bash } = await setup()
+      const controller = new AbortController()
+      const running = bash.run(bash.resolve({ command: 'sleep 60', workdir: markerRoot, signal: controller.signal }))
+      await dispatched
+      controller.abort()
+      await expect(running).rejects.toThrow(/remote process status is unknown/)
+    })
+  })
+
+  it('rejects inconsistent exec responses instead of treating them as a successful command', async () => {
+    await withBasicBridge(() => ({ body: execResponse({ exitCode: null }) }), async (markerRoot) => {
+      const { bash } = await setup()
+      await expect(bash.run(bash.resolve({ command: 'true', workdir: markerRoot })))
+        .rejects.toBeInstanceOf(RemoteWorkspaceError)
+    })
+  })
+
+  it('keeps a UTF-8-safe output tail at the exact byte limit', async () => {
+    await withBasicBridge(() => ({ body: execResponse({ stdout: '前后', stdoutTruncated: true }) }), async (markerRoot) => {
+      const { bash } = await setup()
+      const result = await bash.run(bash.resolve({ command: 'printf output', workdir: markerRoot, stdoutMaxBytes: 3 }))
+      expect(result.stdout).toEqual({ text: '后', truncated: true })
+      const tiny = await bash.run(bash.resolve({ command: 'printf output', workdir: markerRoot, stdoutMaxBytes: 1 }))
+      expect(tiny.stdout).toEqual({ text: '', truncated: true })
+    })
+  })
   it('resolves with output and the effective timeout', async () => {
     const { bash } = await setup({ timeoutMs: 5_000 })
     const result = await bash.run(bash.resolve({ command: 'echo hi' }))
@@ -513,6 +740,36 @@ describe('LocalBashExecutor.start (background process handles)', () => {
     expect(proc.signal).toBe('SIGTERM')
   })
 
+  it('does not turn a completed exit into a kill just because termination was requested', async () => {
+    const { ctx, bash } = await setup()
+    let finish!: (outcome: { exitCode: number; signal: null }) => void
+    const done = new Promise<{ exitCode: number; signal: null }>((resolve) => { finish = resolve })
+    const emptyReader: SubprocessOutputReader = {
+      readFrom: () => ({ text: '', nextOffset: 0, lossy: false }),
+    }
+    const terminate = vi.fn()
+    vi.spyOn(ctx.subprocess, 'spawn').mockReturnValue({
+      pid: -1,
+      stdin: undefined,
+      stdout: undefined,
+      stderr: undefined,
+      collected: { stdout: emptyReader, stderr: emptyReader },
+      done,
+      terminate,
+      waitForExit: async () => true,
+    } satisfies SubprocessHandle)
+
+    const proc = bash.start(bash.resolve({ command: 'true' }))
+    expect(proc.kill()).toBe(true)
+    expect(proc.kill()).toBe(false)
+    expect(proc.status).toBe('running')
+    expect(terminate).toHaveBeenCalledTimes(1)
+    finish({ exitCode: 0, signal: null })
+    await proc.done
+    expect(proc.status).toBe('completed')
+    expect(proc.exitCode).toBe(0)
+  })
+
   it('reports unread stderr and an asynchronous provider rejection exactly once', async () => {
     const { ctx, bash } = await setup()
     const emptyReader: SubprocessOutputReader = {
@@ -539,19 +796,19 @@ describe('LocalBashExecutor.start (background process handles)', () => {
 
     const proc = bash.start(bash.resolve({ command: 'true' }))
     await expect(proc.done).resolves.toBeUndefined()
-    expect(proc.status).toBe('killed')
+    expect(proc.status).toBe('failed')
     expect(proc.readOutput().delta).toBe(
       '[stderr]\ntarget stderr\nsubprocess failed before reporting an outcome: Error: provider lost the direct outcome',
     )
     expect(proc.readOutput().delta).toBe('')
   })
 
-  it('an asynchronous creation failure settles as killed with a stage-neutral note', async () => {
+  it('an asynchronous creation failure settles as failed with a stage-neutral note', async () => {
     const { bash } = await setup()
     const proc = bash.start(bash.resolve({ command: 'true', workdir: '/nonexistent-dsh' }))
     // 即使进程未运行，done 也 resolve（绝不 reject）。
     await expect(proc.done).resolves.toBeUndefined()
-    expect(proc.status).toBe('killed')
+    expect(proc.status).toBe('failed')
     expect(proc.readOutput().delta).toContain('subprocess failed before reporting an outcome:')
   })
 })

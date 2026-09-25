@@ -13,11 +13,18 @@ import (
 )
 
 func main() {
-	if len(os.Args) != 1 {
-		fmt.Fprintln(os.Stderr, "ssh-fixture: no arguments are accepted")
+	withoutForwarding := len(os.Args) == 2 && os.Args[1] == "--no-forwarding"
+	if len(os.Args) != 1 && !withoutForwarding {
+		fmt.Fprintln(os.Stderr, "ssh-fixture: only --no-forwarding is accepted")
 		os.Exit(2)
 	}
-	server, err := sshfixture.Start()
+	var server *sshfixture.Server
+	var err error
+	if withoutForwarding {
+		server, err = sshfixture.StartWithoutForwarding()
+	} else {
+		server, err = sshfixture.Start()
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ssh-fixture: start failed:", err)
 		os.Exit(1)

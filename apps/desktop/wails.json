@@ -1,6 +1,0 @@
-{
-  "name": "Coding Dev",
-  "outputfilename": "CodingDev",
-  "frontend:dir": "frontend",
-  "build:dir": "../../.dsh-build/desktop"
-}

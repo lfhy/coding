@@ -35,10 +35,11 @@ function nonempty(value: unknown, maxBytes: number): value is string {
 }
 
 function connectPayload(value: unknown): boolean {
-  if (!record(value) || !fields(value, ['attemptId', 'host', 'port', 'username', 'auth'], [
+  if (!record(value) || !fields(value, ['attemptId', 'mode', 'host', 'port', 'username', 'auth'], [
     'confirmationId', 'acceptHostKeyFingerprint',
   ])) return false
-  if (!id(value.attemptId) || !nonempty(value.host, 255) || !nonempty(value.username, 255)
+  if (!id(value.attemptId) || (value.mode !== 'basic' && value.mode !== 'agent')
+    || !nonempty(value.host, 255) || !nonempty(value.username, 255)
     || !Number.isInteger(value.port) || (value.port as number) < 1 || (value.port as number) > 65535
     || !record(value.auth) || !fields(value.auth, ['kind', 'secret'])) return false
   if (value.host.trim() !== value.host || value.host.includes('://') || /[\/@?#\s]/u.test(value.host)) return false

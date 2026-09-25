@@ -96,7 +96,7 @@ describe('partial Landlock runner-failure classification', () => {
 
     const task = bash.start(bash.resolve({ command: 'true' }))
     await task.done
-    expect(task.status).toBe('killed')
+    expect(task.status).toBe('failed')
     expect(task.readOutput().delta).toContain(`subprocess failed before reporting an outcome: Error: spawn ${runner}`)
     expect(task.sandbox).toEqual({
       mode: 'read-only',
@@ -130,7 +130,7 @@ describe('partial Landlock runner-failure classification', () => {
 
       const task = bash.start(bash.resolve(request))
       await task.done
-      expect(task.status).toBe('killed')
+      expect(task.status).toBe('failed')
       expect(task.readOutput().delta).toContain(`subprocess failed before reporting an outcome: Error: spawn ${runner} ENOENT`)
       expect(task.sandbox).toEqual({
         mode: 'read-only',

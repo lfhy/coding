@@ -20,6 +20,7 @@ import type {
   LspQueryResult,
 } from '@deepseek-ai/dsh-lsp'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
+import { requireRemoteWorkspaceCapability } from '@deepseek-ai/dsh-subprocess'
 import { abortable, abortError } from './abort.ts'
 import { canonicalizeWorkspace, readHostSource } from './host.ts'
 import type { HostWorkspace } from './host.ts'
@@ -245,6 +246,7 @@ class LocalLspProvider implements LspProvider {
       this.workspaceLookups.delete(workspaceLookup)
     }
     this.assertActive(querySignal)
+    if (workspace.remoteTarget !== undefined) requireRemoteWorkspaceCapability(workspace.remoteTarget, 'lsp')
     const workspaceKey = workspace.target.targetKey
     return this.enqueue(workspaceKey, querySignal, async () => {
       this.assertActive(querySignal)

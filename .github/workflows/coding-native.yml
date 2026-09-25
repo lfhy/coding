@@ -1,7 +1,7 @@
 name: Coding native clients
 
-# 面向 darwin/arm64、windows/amd64、linux/amd64 的 Go 客户端构建与
-# SEA 运行时打包。仅无凭据的构建检查，不发布、不调用真实 API。
+# 面向 macOS arm64 Electron 应用与 Linux amd64 CLI/TUI 的可选构建检查。
+# 桌面包仅本机 ad-hoc 签名，未经公证；不发布、不调用真实 API。
 on:
   workflow_dispatch:
   push:
@@ -16,7 +16,7 @@ permissions:
 
 env:
   NODE_VERSION: '24'
-  GO_VERSION: '1.24'
+  GO_VERSION: '1.25'
   DSH_TELEMETRY_DISABLED: '1'
 
 jobs:
@@ -29,9 +29,7 @@ jobs:
       matrix:
         include:
           - target: darwin-arm64
-            os: macos-latest
-          - target: windows-amd64
-            os: windows-latest
+            os: macos-15-arm
           - target: linux-amd64
             os: ubuntu-latest
     steps:
@@ -52,10 +50,6 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
 
-      - name: Install Linux webview build dependencies
-        if: matrix.target == 'linux-amd64'
-        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -73,16 +67,19 @@ jobs:
         env:
           CGO_ENABLED: '1'
 
-      - name: Build the desktop app (Windows)
-        if: matrix.target == 'windows-amd64'
-        run: pnpm run build:desktop
-        env:
-          CGO_ENABLED: '1'
-
-      - name: Checksum artifacts
+      - name: Archive and checksum the macOS app
+        if: matrix.target == 'darwin-arm64'
         shell: bash
         run: |
-          ls -l dist || true
-          if compgen -G 'dist/Coding*' > /dev/null; then shasum -a 256 dist/Coding* > dist/checksums.txt; fi
-          if compgen -G 'dist/coding' > /dev/null; then shasum -a 256 dist/coding >> dist/checksums.txt; fi
-          cat dist/checksums.txt || true
+          test -d dist/Coding.app
+          ditto -c -k --keepParent --norsrc --noextattr dist/Coding.app dist/Coding-darwin-arm64.zip
+          shasum -a 256 dist/Coding-darwin-arm64.zip > dist/checksums.txt
+          cat dist/checksums.txt
+
+      - name: Checksum the Linux TUI
+        if: matrix.target == 'linux-amd64'
+        shell: bash
+        run: |
+          test -f dist/coding
+          sha256sum dist/coding > dist/checksums.txt
+          cat dist/checksums.txt

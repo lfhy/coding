@@ -33,7 +33,7 @@ async function fixture(): Promise<PackagingPaths> {
     remoteAgent: join(directory, 'remote-agent'),
     icon: join(directory, 'AppIcon.icns'),
     nativeIcon: join(directory, 'CodingIcon.png'),
-    output: join(directory, 'dist', 'CodingElectron.app'),
+    output: join(directory, 'dist', 'Coding.app'),
   }
   const electronContents = join(paths.electron, 'Electron.app', 'Contents')
   await file(join(paths.electron, 'version'), '44.0.0\n')
@@ -175,19 +175,36 @@ describe('macOS Electron application packaging', () => {
     expect(await readFile(previous, 'utf8')).toBe('preserved')
   })
 
-  it('assembles a separate closure and signs nested bundles before the outer app', async () => {
+  it('replaces the previous dist/Coding.app after assembling and signing the new app', async () => {
     const paths = await fixture()
-    const wails = join(paths.output, '..', 'Coding.app', 'unchanged')
-    await file(wails)
+    await file(join(paths.output, 'Contents', 'MacOS', 'Coding'), 'previous bundle')
+    await file(join(paths.output, 'previous.txt'), 'previous bundle')
     const { run, calls } = fakeCommands()
     await expect(packageElectronMacosApp(paths, { run, platform: 'darwin', arch: 'arm64' }))
       .resolves.toBe(paths.output)
-    expect(await readFile(wails, 'utf8')).toBe('fixture')
+    await expect(stat(join(paths.output, 'previous.txt'))).rejects.toThrow()
     const resources = join(paths.output, 'Contents', 'Resources')
-    expect((await stat(join(paths.output, 'Contents', 'MacOS', 'CodingElectron'))).isFile()).toBe(true)
+    expect((await stat(join(paths.output, 'Contents', 'MacOS', 'Coding'))).isFile()).toBe(true)
+    expect(await readFile(join(paths.output, 'Contents', 'MacOS', 'Coding'))).toEqual(Buffer.from('cffaedfe', 'hex'))
     await expect(stat(join(paths.output, 'Contents', 'MacOS', 'Electron'))).rejects.toThrow()
-    expect(calls.some(([command, args]) => command === '/usr/libexec/PlistBuddy'
-      && args[1] === 'Set :CFBundleExecutable CodingElectron')).toBe(true)
+    await expect(stat(join(paths.output, '..', '.Coding.previous.app'))).rejects.toThrow()
+    for (const [key, value] of [
+      ['CFBundleName', 'Coding'],
+      ['CFBundleDisplayName', 'Coding'],
+      ['CFBundleExecutable', 'Coding'],
+      ['CFBundleIdentifier', 'com.coding.desktop'],
+    ]) {
+      expect(calls.some(([command, args]) => command === '/usr/libexec/PlistBuddy'
+        && args[1] === `Set :${key} ${value}`)).toBe(true)
+    }
+    for (const [suffix, identifier] of [
+      ['', 'helper'], [' (Renderer)', 'helper.renderer'],
+      [' (GPU)', 'helper.gpu'], [' (Plugin)', 'helper.plugin'],
+    ]) {
+      expect(calls.some(([command, args]) => command === '/usr/libexec/PlistBuddy'
+        && args[1] === `Set :CFBundleIdentifier com.coding.desktop.${identifier}`
+        && args[2]?.endsWith(`Electron Helper${suffix}.app/Contents/Info.plist`))).toBe(true)
+    }
     const archive = join(resources, 'app.asar')
     const packagedManifest = JSON.parse(extractFile(archive, 'package.json').toString('utf8')) as { main?: unknown }
     expect(packagedManifest.main).toBe('lib/main.js')
@@ -202,7 +219,7 @@ describe('macOS Electron application packaging', () => {
     await expect(stat(join(resources, 'app'))).rejects.toThrow()
     await expect(stat(join(resources, 'default_app.asar'))).rejects.toThrow()
     const signs = calls.filter(([command, args]) => command === 'codesign' && args.includes('--sign'))
-    expect(signs.at(-1)?.[1].at(-1)).toContain('.CodingElectron.staging-')
+    expect(signs.at(-1)?.[1].at(-1)).toContain('.Coding.staging-')
     expect(signs.slice(0, -1).some(([, args]) => args.at(-1)?.includes('Electron Helper.app'))).toBe(true)
     expect(calls.some(([command, args]) => command === 'codesign' && args.includes('--deep') && args.includes('--verify'))).toBe(true)
     const updateIntegrity = calls.find(([command, args]) => command === '/usr/libexec/PlistBuddy'
@@ -218,7 +235,7 @@ describe('macOS Electron application packaging', () => {
     await file(previous, 'preserved')
     const { run } = fakeCommands()
     const move: typeof rename = async (source, destination) => {
-      if (String(source).includes('.CodingElectron.staging-') && String(destination) === paths.output) {
+      if (String(source).includes('.Coding.staging-') && String(destination) === paths.output) {
         throw new Error('injected stage rename failure')
       }
       return rename(source, destination)
@@ -226,12 +243,27 @@ describe('macOS Electron application packaging', () => {
     await expect(packageElectronMacosApp(paths, { run, move, platform: 'darwin', arch: 'arm64' }))
       .rejects.toThrow('injected stage rename failure')
     expect(await readFile(previous, 'utf8')).toBe('preserved')
-    await expect(stat(join(paths.output, '..', '.CodingElectron.previous.app'))).rejects.toThrow()
+    await expect(stat(join(paths.output, '..', '.Coding.previous.app'))).rejects.toThrow()
+  })
+
+  it('preserves the previous application when signing the staged bundle fails', async () => {
+    const paths = await fixture()
+    const previous = join(paths.output, 'previous.txt')
+    await file(previous, 'preserved')
+    const { run } = fakeCommands()
+    const failSigning = async (command: string, args: string[]) => {
+      if (command === 'codesign') throw new Error('injected signing failure')
+      return run(command, args)
+    }
+    await expect(packageElectronMacosApp(paths, { run: failSigning, platform: 'darwin', arch: 'arm64' }))
+      .rejects.toThrow('injected signing failure')
+    expect(await readFile(previous, 'utf8')).toBe('preserved')
+    await expect(stat(join(paths.output, '..', '.Coding.previous.app'))).rejects.toThrow()
   })
 
   it('recovers an interrupted previous-app backup before rejecting bad inputs', async () => {
     const paths = await fixture()
-    const backup = join(paths.output, '..', '.CodingElectron.previous.app')
+    const backup = join(paths.output, '..', '.Coding.previous.app')
     await file(join(backup, 'previous.txt'), 'restorable')
     await rm(paths.helper)
     const { run } = fakeCommands()
@@ -240,23 +272,34 @@ describe('macOS Electron application packaging', () => {
     expect(await readFile(join(paths.output, 'previous.txt'), 'utf8')).toBe('restorable')
   })
 
-  it('refuses installed and Wails application output paths even with test command injection', async () => {
+  it('refuses an installed application output path even with test command injection', async () => {
     const paths = await fixture()
     const { run } = fakeCommands()
-    for (const output of ['/Applications/Coding.app', join(import.meta.dirname, '..', 'dist', 'Coding.app')]) {
-      await expect(packageElectronMacosApp({ ...paths, output }, { run, platform: 'darwin', arch: 'arm64' }))
-        .rejects.toThrow('refusing to overwrite')
-    }
+    await expect(packageElectronMacosApp({ ...paths, output: '/Applications/Coding.app' },
+      { run, platform: 'darwin', arch: 'arm64' })).rejects.toThrow('refusing to overwrite')
   })
 
   it('refuses an output directory redirected by a symbolic link', async () => {
     const paths = await fixture()
     const redirected = join(paths.output, '..', '..', 'redirected')
-    await mkdir(redirected)
+    await mkdir(redirected, { recursive: true })
     await symlink(redirected, join(paths.output, '..'))
     const { run } = fakeCommands()
     await expect(packageElectronMacosApp(paths, { run, platform: 'darwin', arch: 'arm64' }))
       .rejects.toThrow('output directory must not be a symbolic link')
     expect((await stat(redirected)).isDirectory()).toBe(true)
+  })
+
+  it('refuses a redirected application before recovering a backup', async () => {
+    const paths = await fixture()
+    const redirected = join(paths.output, '..', '..', 'redirected')
+    await file(join(redirected, 'unchanged'))
+    await file(join(paths.output, '..', '.Coding.previous.app', 'previous.txt'), 'preserved')
+    await symlink(redirected, paths.output)
+    const { run } = fakeCommands()
+    await expect(packageElectronMacosApp(paths, { run, platform: 'darwin', arch: 'arm64' }))
+      .rejects.toThrow('output path must not be a symbolic link')
+    expect(await readFile(join(redirected, 'unchanged'), 'utf8')).toBe('fixture')
+    expect(await readFile(join(paths.output, '..', '.Coding.previous.app', 'previous.txt'), 'utf8')).toBe('preserved')
   })
 })

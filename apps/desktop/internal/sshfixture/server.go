@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"debug/buildinfo"
 	"encoding/base64"
@@ -43,21 +44,23 @@ type Ready struct {
 // Server 的所有网络监听均局限在本机回环接口，Close 会关闭 SSH 和已启动的 agent。
 type Server struct {
 	Ready
-	listener net.Listener
-	root     string
-	hostKey  ssh.PublicKey
-	hooks    *Hooks
-	config   *ssh.ServerConfig
-	ctx      context.Context
-	cancel   context.CancelFunc
-	mu       sync.Mutex
-	conns    map[net.Conn]struct{}
-	agents   map[*exec.Cmd]struct{}
-	port     int
-	token    string
-	stopping bool
-	wg       sync.WaitGroup
-	once     sync.Once
+	listener       net.Listener
+	root           string
+	hostKey        ssh.PublicKey
+	hooks          *Hooks
+	config         *ssh.ServerConfig
+	ctx            context.Context
+	cancel         context.CancelFunc
+	mu             sync.Mutex
+	conns          map[net.Conn]struct{}
+	agents         map[*exec.Cmd]struct{}
+	port           int
+	token          string
+	stopping       bool
+	denyForwarding bool
+	allowDirect    bool
+	wg             sync.WaitGroup
+	once           sync.Once
 }
 
 // Hooks 仅供保留旧 manager 状态机测试的合成 agent 使用；CLI 总使用严格默认实现。
@@ -67,9 +70,38 @@ type Hooks struct {
 	Forward      func(ssh.Channel)
 }
 
+type fixtureTerminal struct {
+	mu         sync.Mutex
+	cols, rows uint16
+	file       *os.File
+}
+
+type fixtureBootstrapKind uint8
+
+const (
+	fixtureBootstrapUnknown fixtureBootstrapKind = iota
+	fixtureBootstrapExec
+	fixtureBootstrapResolve
+	fixtureBootstrapProcess
+	fixtureBootstrapTerminal
+)
+
 // Start 为每次调用创建独立临时目录、SSH 密钥与密码。测试种子仅在该目录中。
 func Start() (*Server, error) {
 	return start(nil)
+}
+
+// StartWithoutForwarding 模拟禁止 direct-tcpip 的 SSH 服务，仍允许 SFTP。
+func StartWithoutForwarding() (*Server, error) {
+	server, err := start(nil)
+	if err != nil {
+		return nil, err
+	}
+	server.mu.Lock()
+	server.denyForwarding = true
+	server.allowDirect = true
+	server.mu.Unlock()
+	return server, nil
 }
 
 // StartWithHooks 在同一回环 SSH 生命周期上运行旧测试的合成 agent。
@@ -85,6 +117,10 @@ func (s *Server) HostKey() ssh.PublicKey { return s.hostKey }
 
 func start(hooks *Hooks) (*Server, error) {
 	root, err := os.MkdirTemp("", "coding-ssh-fixture-")
+	if err != nil {
+		return nil, err
+	}
+	root, err = filepath.EvalSymlinks(root)
 	if err != nil {
 		return nil, err
 	}
@@ -233,6 +269,13 @@ func (s *Server) serve(conn net.Conn) {
 				}
 			}
 		case "direct-tcpip":
+			s.mu.Lock()
+			denied := s.denyForwarding
+			s.mu.Unlock()
+			if denied {
+				_ = channel.Reject(ssh.Prohibited, "port forwarding is disabled")
+				continue
+			}
 			if s.hooks != nil {
 				stream, reqs, err := channel.Accept()
 				if err == nil {
@@ -276,42 +319,152 @@ func (s *Server) serve(conn net.Conn) {
 
 func (s *Server) session(stream ssh.Channel, requests <-chan *ssh.Request) {
 	defer stream.Close()
-	for request := range requests {
-		switch request.Type {
-		case "subsystem":
-			var payload struct{ Subsystem string }
-			if ssh.Unmarshal(request.Payload, &payload) != nil || payload.Subsystem != "sftp" {
-				_ = request.Reply(false, nil)
-				continue
-			}
-			_ = request.Reply(true, nil)
-			handlers := &fileHandlers{root: s.root}
-			server := sftp.NewRequestServer(stream, sftp.Handlers{FileGet: handlers, FilePut: handlers, FileCmd: handlers, FileList: handlers})
-			_ = server.Serve()
-			_ = server.Close()
-			return
-		case "exec":
-			var payload struct{ Command string }
-			if ssh.Unmarshal(request.Payload, &payload) != nil {
-				_ = request.Reply(false, nil)
-				continue
-			}
-			if payload.Command != probe && !s.isAgentCommand(payload.Command) {
-				_ = request.Reply(false, nil)
-				continue
-			}
-			_ = request.Reply(true, nil)
-			status := uint32(0)
-			if payload.Command == probe {
-				_, _ = fmt.Fprintf(stream, "%s %s\nHOME=%s\n", platformName(), archName(), s.root)
-			} else if err := s.agent(stream, payload.Command); err != nil {
-				status = 1
-			}
+	var terminal *fixtureTerminal
+	var running *exec.Cmd
+	var done <-chan uint32
+	defer func() {
+		if running != nil {
+			stopAgentProcess(running)
+		}
+	}()
+	for {
+		select {
+		case status := <-done:
+			running = nil
 			_, _ = stream.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{status}))
 			return
-		default:
-			_ = request.Reply(false, nil)
+		case request, ok := <-requests:
+			if !ok {
+				return
+			}
+			switch request.Type {
+			case "pty-req":
+				var payload struct {
+					Term                      string
+					Cols, Rows, Width, Height uint32
+					Modes                     string
+				}
+				s.mu.Lock()
+				allowed := s.allowDirect
+				s.mu.Unlock()
+				if !allowed || terminal != nil || running != nil || ssh.Unmarshal(request.Payload, &payload) != nil ||
+					payload.Cols == 0 || payload.Rows == 0 || payload.Cols > 500 || payload.Rows > 500 ||
+					len(payload.Term) > 64 || len(payload.Modes) > 4096 {
+					_ = request.Reply(false, nil)
+					continue
+				}
+				terminal = &fixtureTerminal{cols: uint16(payload.Cols), rows: uint16(payload.Rows)}
+				_ = request.Reply(true, nil)
+			case "window-change":
+				var payload struct{ Cols, Rows, Width, Height uint32 }
+				if terminal == nil || ssh.Unmarshal(request.Payload, &payload) != nil ||
+					payload.Cols == 0 || payload.Rows == 0 || payload.Cols > 500 || payload.Rows > 500 {
+					_ = request.Reply(false, nil)
+					continue
+				}
+				terminal.mu.Lock()
+				terminal.cols, terminal.rows = uint16(payload.Cols), uint16(payload.Rows)
+				terminal.mu.Unlock()
+				terminal.mu.Lock()
+				started := terminal.file != nil
+				terminal.mu.Unlock()
+				if started {
+					_ = resizeFixtureTerminal(terminal)
+				}
+				_ = request.Reply(true, nil)
+			case "signal":
+				var payload struct{ Signal string }
+				if running == nil || ssh.Unmarshal(request.Payload, &payload) != nil ||
+					!fixtureSignal(running, payload.Signal) {
+					_ = request.Reply(false, nil)
+					continue
+				}
+				_ = request.Reply(true, nil)
+			case "subsystem":
+				var payload struct{ Subsystem string }
+				if ssh.Unmarshal(request.Payload, &payload) != nil || payload.Subsystem != "sftp" {
+					_ = request.Reply(false, nil)
+					continue
+				}
+				_ = request.Reply(true, nil)
+				handlers := &fileHandlers{root: s.root}
+				server := sftp.NewRequestServer(stream, sftp.Handlers{FileGet: handlers, FilePut: handlers, FileCmd: handlers, FileList: handlers})
+				_ = server.Serve()
+				_ = server.Close()
+				return
+			case "exec":
+				var payload struct{ Command string }
+				if ssh.Unmarshal(request.Payload, &payload) != nil {
+					_ = request.Reply(false, nil)
+					continue
+				}
+				s.mu.Lock()
+				allowDirect := s.allowDirect
+				s.mu.Unlock()
+				allowed := payload.Command == probe || s.isAgentCommand(payload.Command) ||
+					allowDirect && fixtureDirectScript(payload.Command, false)
+				if terminal != nil {
+					allowed = allowDirect && fixtureDirectScript(payload.Command, true)
+				}
+				if running != nil || done != nil || !allowed {
+					_ = request.Reply(false, nil)
+					continue
+				}
+				_ = request.Reply(true, nil)
+				if payload.Command == probe {
+					_, _ = fmt.Fprintf(stream, "%s %s\nHOME=%s\n", platformName(), archName(), s.root)
+					_, _ = stream.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{0}))
+					return
+				}
+				if s.isAgentCommand(payload.Command) {
+					status := uint32(0)
+					if err := s.agent(stream, payload.Command); err != nil {
+						status = 1
+					}
+					_, _ = stream.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{status}))
+					return
+				}
+				var err error
+				running, done, err = s.directSession(stream, payload.Command, terminal)
+				if err != nil {
+					_, _ = stream.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{1}))
+					return
+				}
+			default:
+				_ = request.Reply(false, nil)
+			}
 		}
+	}
+}
+
+// fixtureDirectScript 只接受产品 basic 路径当前使用的四段完整固定脚本。
+// 摘要变更需与 direct_exec/direct_process/direct_terminal 的协议测试一起审查。
+func fixtureDirectScript(command string, pty bool) bool {
+	const prefix = "bash -c '"
+	if !strings.HasPrefix(command, prefix) || !strings.HasSuffix(command, "'") || len(command) > 8192 {
+		return false
+	}
+	quoted := strings.TrimSuffix(strings.TrimPrefix(command, prefix), "'")
+	script := strings.ReplaceAll(quoted, "'\\''", "'")
+	if "'"+strings.ReplaceAll(script, "'", "'\\''")+"'" != command[len("bash -c "):] {
+		return false
+	}
+	kind := fixtureScriptKind(script)
+	return kind != fixtureBootstrapUnknown && (kind == fixtureBootstrapTerminal) == pty
+}
+
+func fixtureScriptKind(script string) fixtureBootstrapKind {
+	switch fmt.Sprintf("%x", sha256.Sum256([]byte(script))) {
+	case "3909e1cb119c456442d99064cf5ba1078260e3a0bdc733c9075f0057cc9bee08": // direct_exec.go directExecCommand
+		return fixtureBootstrapExec
+	case "649d9e87060fcdb856db0645cdded7de72921774db7a9605e457bc6bafed7423": // direct_process.go resolve
+		return fixtureBootstrapResolve
+	case "80e0db53c7b0b4d156e5bcf52850fa947f3d9bf40dea647cd2b89dd8050b03cf": // direct_process.go launch
+		return fixtureBootstrapProcess
+	case "2ecce0175c7e84b63dd5850b1739362f1db6e5941b9502afb06c652c0142196f": // direct_terminal.go launch
+		return fixtureBootstrapTerminal
+	default:
+		return fixtureBootstrapUnknown
 	}
 }
 

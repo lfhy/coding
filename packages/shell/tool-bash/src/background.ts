@@ -7,19 +7,13 @@
 import type { ShellProcess } from '@deepseek-ai/dsh-shell'
 
 /**
- * Map a settled background process onto the generic task-outcome vocabulary:
- * `killed` stays `killed` (detail: the signal when one is known), everything
- * else is `completed` with the exit code as detail. A nonzero command exit is
- * reported, not failed, exactly like the foreground rendering.
- * @param proc - the settled process handle.
- * @returns the outcome for the `ctx.jobs` registration.
+ * 将后台进程的结算事实映射为任务结果。provider 失败只报告结果未知，不泄露错误原文；
+ * 非零命令退出仍是 `completed`，信号退出才是 `killed`。
+ * @param proc - 已结算的进程句柄。
+ * @returns 提供给 `ctx.jobs` 的结果。
  */
-export function processOutcome(proc: ShellProcess): { status: 'completed' | 'killed'; detail: string } {
-  // TODO(background-infrastructure-outcome): widen ShellProcess with an explicit
-  // infrastructure-failure outcome, then map it to task `failed`. Restricted
-  // runner failures expose sandbox.runnerFailed, but unconfined spawn failures
-  // still alias a signal-less kill; real nonzero command exits must remain
-  // `completed`.
+export function processOutcome(proc: ShellProcess): { status: 'completed' | 'killed' | 'failed'; detail: string } {
+  if (proc.status === 'failed') return { status: 'failed', detail: 'process outcome unknown' }
   if (proc.status === 'killed') {
     return { status: 'killed', detail: proc.signal !== null ? `signal: ${proc.signal}` : 'killed before exit' }
   }

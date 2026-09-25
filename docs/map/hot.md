@@ -18,9 +18,15 @@
 
 ## 桌面壳与 Host 启动
 
-- **路线**：默认 Wails v2 在 `apps/desktop/main.go` 和 `desktop_bindings.go`；Electron 在 `apps/desktop-electron/src/main.ts`、`window.ts`、`native-chrome.ts`。两者复用 `apps/desktop/internal/desktopremote/service.go` 与 `bridge.go`，Electron 的 `apps/desktop/cmd/electron-helper/main.go` 经 `apps/internal/hostlaunch/launcher.go` 启动 Host。Electron 的 helper stdio、Remote-SSH preload/main 授权分别在 `helper-client.ts`、`preload.ts`、`remote-ipc.ts`。
-- **技术与边界**：两种壳导航至经核验的独立 Host 回环 URL；Web UI、RPC 和会话由共享 Client/Host 包拥有。Electron 开发 home 独立，生产配置共享 `~/.dsh` 且先取得 Wails 单实例锁；默认入口仍是 Wails。功能与验收差异见[桌面壳对比](../desktop-shell-comparison.md)，运行限制见 [Electron README](../../apps/desktop-electron/README.md)。
-- **连带与验证**：Host 就绪记录或所有权改动核对 `packages/bundle/web-app/src/managed-host.ts`、`apps/internal/hostlaunch`、Go helper 及两个壳；Remote-SSH 协议改动核对 `desktopremote`、`helperwire`、Electron IPC 和 Client 工作区。打包资源同步 `scripts/build-electron-helper.ts`、`scripts/package-electron-macos-app.ts` 与对应测试。Wails 用 Go 定向测试加本机启动；Electron 的开发态、SSH 和打包版分别做原生验证，命令见[应用条目](#appsdesktop-electron)。
+- **路线**：Electron 壳在 `apps/desktop-electron/src/main.ts`、`window.ts`、`native-chrome.ts`；Go helper `apps/desktop/cmd/electron-helper/main.go` 经 `apps/internal/hostlaunch/launcher.go` 启动 Host，并复用 `apps/desktop/internal/desktopremote/service.go` 与 `bridge.go`。helper stdio、远程连接 preload/main 授权分别在 `helper-client.ts`、`preload.ts`、`remote-ipc.ts`。
+- **技术与边界**：`make dev` 启动 Electron 开发态，`make install` 安装由 `pnpm run build:desktop` 组装的 `dist/Coding.app`。Web UI、RPC 和会话由共享 Client/Host 包拥有；开发 home 独立，生产配置共享 `~/.dsh` 且先取得安装版单实例锁。壳与 Host 边界见[桌面原生验收](../desktop-shell-comparison.md)，运行限制见 [Electron README](../../apps/desktop-electron/README.md)。
+- **连带与验证**：Host 就绪记录或所有权改动核对 `packages/bundle/web-app/src/managed-host.ts`、`apps/internal/hostlaunch` 与 Go helper；远程连接协议改动核对 `desktopremote`、`helperwire`、Electron IPC 和 Client 工作区。打包资源同步 `scripts/build-electron-helper.ts`、`scripts/package-electron-macos-app.ts` 与对应测试。开发态、SSH 和打包版分别做原生验证，命令见[应用条目](#appsdesktop-electron)。
+
+## 远程连接模式与能力
+
+- **路线**：`packages/client/ui-workspace/src/client/WorkspacePicker.tsx` 与 `remote.ts` 持有模式选择和桌面调用；Electron `remote-ipc.ts` 经 `apps/desktop/internal/desktopremote/service.go` 与 `bridge.go` 连接 `apps/desktop/internal/remoteagent/manager_ssh.go`。基础模式由 `direct_sftp.go`、`direct_search.go`、`direct_exec.go`、`direct_process.go`、`direct_terminal.go` 与 `direct_code.go` 提供，Agent 模式由远端 Go agent 提供。
+- **能力边界**：`packages/subprocess/subprocess/src/remote-workspace.ts` 验证 marker、派生 target 并预检能力，bridge 再按活连接授权；`fs-local`、`subprocess-local`、Bash、搜索、LSP 与 Code Mode 的 Provider 在操作入口遵守模式。基础模式支持远端文件读写编辑、前后台命令、PTY、搜索及带远端 binding 的本机隔离 Code Mode，LSP 不可用；任一远端能力失败都不可转到本机工作区或 Host 进程。具体限制见[用户指南](../user/guide/index.md#选择开始方式)及所属包 README。
+- **连带与验证**：模式字段或 bridge 路由变化时同步 Electron 壳、`ui-workspace`、`subprocess` 类型与[子系统页](../subsystems/subprocess.md#可执行文件查找)、相关能力包 README 与定向测试；原生 SSH fixture 和打包版验证分开运行，不把开发态覆盖等同于生产包或真实服务器验收。
 
 ## 侧栏工作区与目录选择
 
@@ -197,7 +203,7 @@
 ## apps/cli
 
 - **拥有**：`dsh` 启动器本身——launcher flag 解析（`parseDshArgs`）、profile patch 层叠加与 boot（`runProfile`）、`dsh plugin` 的 pnpm 转发与 bundle 清单对账（`runPlugin`）、`--dump-config`、有界进程关机（`createProcessShutdown`）与随附 agent-preset root 注入。
-- **不拥有**：应用参数解析（归注入的应用插件，经 `packages/boot/cmdline` 的 `ctx.cmdlineArgs`）；profile/patch 装载算法（归 `packages/boot/app-boot`）；一切插件能力（归 `packages/*`）；桌面壳启动（归 `apps/desktop`）。
+- **不拥有**：应用参数解析（归注入的应用插件，经 `packages/boot/cmdline` 的 `ctx.cmdlineArgs`）；profile/patch 装载算法（归 `packages/boot/app-boot`）；一切插件能力（归 `packages/*`）；桌面壳启动（归 `apps/desktop-electron`）。
 - **入口**：`apps/cli/src/bin.ts`（shebang 入口，按 `parseDshArgs` 结果动态 import 分发 profile/plugin/dump-config 三种模式）。
 - **接线**：`apps/cli/package.json` 的 `bin: {"dsh": "lib/bin.js"}`（由 `apps/cli/tsdown.config.ts` 构建）；profile 模板与 `DEFAULT_PROFILE_BUNDLES` 在 `packages/boot/app-boot/src/profile.ts`。
 - **关键文件**：`apps/cli/src/args.ts`、`apps/cli/src/profile-boot.ts`、`apps/cli/src/plugin.ts`、`apps/cli/src/process-shutdown.ts`、`apps/cli/src/dump-config.ts`。
@@ -205,27 +211,26 @@
 - **不变量**：launcher flag 必须在最前，第一个不认识的 token 起是应用参数（交给 `provideCmdline` 注入的快照；启动器绝不解析应用 flag）；profile 根配置是空 entry list，每次启动在 `prepareProfile` 中重写，组合只经 patch 层按 id 覆盖。
 - **测试**：`pnpm exec vitest run apps/cli/tests/args.spec.ts`
 
-## apps/desktop
+## apps/desktop Go helper 与远程连接
 
-- **拥有**：Go/Wails 桌面壳的窗口、菜单、托盘和单实例锁，以及供 Wails 与 Electron helper 共用的 Remote-SSH 服务和回环 bridge。纯 Go 源码，没有 `package.json`，虽在 `apps/*` 通配下但不是 pnpm workspace 包。
-- **不拥有**：Host 发现、启动与停止协议（归 `apps/internal/hostlaunch`）；Host 与 UI 业务（归 `packages/*`、`apps/web`）；打包脚本（归 `Makefile` 与 `scripts/package-macos-app.sh`）；remote-agent 构建（归 `scripts/build-remote-agent.ts`）。
-- **入口**：`apps/desktop/main.go`（`wails.Run`；`startHost` 调 `launcher.Ensure` 后整窗导航到回环 URL）。
-- **接线**：根 `package.json` 的 `build:desktop`（`cd apps/desktop && CGO_ENABLED=1 go build -tags desktop,production`）；`make dev` 通过锁定的 Wails CLI 启动隔离的开发实例；Host 侧以 `web --coding-host` 启动，该 flag 由 `packages/bundle/web-app/src/startup.ts` 解析，`packages/bundle/web-app/src/managed-host.ts` 发 `coding-host-ready` 记录。
-- **关键文件**：`apps/desktop/main.go`、`apps/desktop/desktop_bindings.go`、`apps/desktop/internal/desktopremote/service.go`、`apps/desktop/internal/desktopremote/bridge.go`、`apps/desktop/cmd/electron-helper/main.go`、`apps/desktop/internal/remoteagent/manager.go`、`apps/internal/hostlaunch/launcher.go`。
-- **改这里要同步**：`apps/internal/hostlaunch`（启动与就绪记录契约）、Electron helper/main/IPC（共享 Remote-SSH 与进程协议）、`scripts/package-macos-app.sh` 和 `scripts/package-electron-macos-app.ts`（两套 Resources 布局）、`packages/bundle/web-app/src/managed-host.ts`（ready 记录格式）。
-- **不变量**：开发版使用独立单实例锁与 `~/.dsh-dev`，不得替换安装版的 Host；Host 命令解析顺序固定（`Options.Command` → `CODING_HOST_COMMAND` → 打包的 `coding-host` → PATH `coding-host` → PATH `dsh` → 仓库源码 `node --import tsx/esm apps/cli/src/bin.ts`）；`DSH_HOME`/`DSH_CWD`/`DSH_APP_VERSION` 由 hostlaunch 独占写入；Wails binding 方法必须校验随机 bridge token，不把 loopback origin 当授权。
-- **桌面壳选型对比**：[Wails v2 与 Electron](../desktop-shell-comparison.md)记录替换时的 Host、原生能力、安全和包体验收边界，不改变当前装配。
-- **测试**：`cd apps/desktop && CGO_ENABLED=1 go test -tags desktop,production ./...`
+- **拥有**：Electron helper、远程 SSH 服务和回环 bridge，以及供安装版使用的单实例锁。纯 Go 源码，没有 `package.json`，虽在 `apps/*` 通配下但不是 pnpm workspace 包。
+- **不拥有**：Host 发现、启动与停止协议（归 `apps/internal/hostlaunch`）；窗口、菜单与托盘（归 `apps/desktop-electron`）；Host 与 UI 业务（归 `packages/*`、`apps/web`）；Electron 打包（归 `scripts/package-electron-macos-app.ts`）。
+- **入口**：`apps/desktop/cmd/electron-helper/main.go`，由 Electron 主进程启动；helper 经 `hostlaunch` 启动 Host，Web 窗口导航至核验的回环 URL。
+- **接线**：Host 侧以 `web --coding-host` 启动，该 flag 由 `packages/bundle/web-app/src/startup.ts` 解析，`packages/bundle/web-app/src/managed-host.ts` 发 `coding-host-ready` 记录。
+- **关键文件**：`apps/desktop/internal/desktopremote/service.go`、`apps/desktop/internal/desktopremote/bridge.go`、`apps/desktop/internal/remoteagent/manager.go`、`apps/desktop/internal/instance/instance.go`、`apps/internal/hostlaunch/launcher.go`。
+- **改这里要同步**：`apps/internal/hostlaunch`（启动与就绪记录契约）、Electron main/IPC（远程连接与进程协议）、`scripts/package-electron-macos-app.ts`（包资源）、`packages/bundle/web-app/src/managed-host.ts`（ready 记录格式）。
+- **不变量**：开发版使用独立单实例锁与 `~/.dsh-electron-dev`，不得替换安装版的 Host；`DSH_HOME`/`DSH_CWD`/`DSH_APP_VERSION` 由 hostlaunch 独占写入；回环 origin 不是 bridge 授权。
+- **测试**：`cd apps/desktop && go test ./cmd/electron-helper ./internal/desktopremote ./internal/helperwire ./internal/remoteagent ./internal/instance`
 
 ## apps/desktop-electron
 
 - **拥有**：Electron 窗口、macOS 菜单和托盘、受限 Remote-SSH preload/main IPC、Go helper 客户端，以及开发与生产运行路径校验。
 - **不拥有**：Remote-SSH 实现与 bridge（归 `apps/desktop/internal/desktopremote`）、Host 生命周期协议（归 `apps/internal/hostlaunch`）、UI 和会话（归 Client/Host 插件）；Browser Use 尚无受控 guest 或工具实现。
-- **入口**：`apps/desktop-electron/src/main.ts`；Go 进程入口在 `apps/desktop/cmd/electron-helper/main.go`。开发命令为 `pnpm run dev:electron`，生产包组装由 `scripts/package-electron-macos-app.ts` 拥有。
+- **入口**：`apps/desktop-electron/src/main.ts`；Go 进程入口在 `apps/desktop/cmd/electron-helper/main.go`。`make dev` 与 `pnpm run dev:electron` 启动开发态；`build:desktop` 经 `scripts/package-electron-macos-app.ts` 组装生产包，`make install` 才将其安装到 `/Applications/Coding.app`。
 - **关键文件**：`apps/desktop-electron/src/window.ts`、`native-chrome.ts`、`preload.ts`、`remote-ipc.ts`、`helper-client.ts`、`runtime-config.ts`、`apps/desktop/internal/helperwire/`。
 - **改这里要同步**：Remote-SSH 输入与状态同步 `packages/client/ui-workspace/src/client/remote.ts`、`apps/desktop/internal/desktopremote` 与 `apps/desktop/cmd/electron-helper`；生产路径及资源同步 `scripts/build-electron-helper.ts`、`scripts/package-electron-macos-app.ts` 和 `apps/desktop-electron/README.md`。
-- **不变量**：main 对每次 IPC 核验窗口、主 frame、精确 Host origin 和输入；同源重载期间暂停授权，窗口丢失即撤权；helper 不经 renderer 转交 SSH 凭据或 bridge token。生产配置使用共享 `~/.dsh`，Go helper 在操作前取得 Wails 安装版锁；`userData` 与 Wails 分离。
-- **测试**：定向运行 `pnpm exec vitest run apps/desktop-electron/tests scripts/build-electron-helper.spec.ts scripts/package-electron-macos-app.spec.ts` 和 `cd apps/desktop && go test ./cmd/electron-helper ./internal/desktopremote ./internal/helperwire`；开发窗口另跑 `pnpm run test:electron:smoke`，真实 SSH fixture 另跑 `pnpm run test:electron:remote-ssh`，打包版启动用 `pnpm run test:electron:packaged` 单独验证。
+- **不变量**：main 对每次 IPC 核验窗口、主 frame、精确 Host origin 和输入；同源重载期间暂停授权，窗口丢失即撤权；helper 不经 renderer 转交 SSH 凭据或 bridge token。生产配置使用共享 `~/.dsh`，Go helper 在操作前取得安装版单实例锁；Chromium `userData` 使用独立目录。
+- **测试**：定向运行 `pnpm exec vitest run apps/desktop-electron/tests scripts/build-electron-helper.spec.ts scripts/package-electron-macos-app.spec.ts` 和 `cd apps/desktop && go test ./cmd/electron-helper ./internal/desktopremote ./internal/helperwire`；开发窗口另跑 `pnpm run test:electron:smoke`，回环 SSH fixture 分别运行 `pnpm run test:electron:remote-basic` 与 `pnpm run test:electron:remote-ssh`，打包版启动用 `pnpm run test:electron:packaged` 单独验证。
 
 ## packages/bundle/base
 

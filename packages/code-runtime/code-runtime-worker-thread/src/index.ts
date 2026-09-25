@@ -497,6 +497,7 @@ function sameRemoteWorkspaceTarget(left: RemoteWorkspaceTarget, right: RemoteWor
     && left.remotePath === right.remotePath
     && left.connectionId === right.connectionId
     && left.markerGeneration === right.markerGeneration
+    && left.mode === right.mode
 }
 
 /**
@@ -560,7 +561,9 @@ export class WorkerThreadCodeRuntime extends CodeRuntime {
   }
 
   /**
-   * 执行一个程序；marker 工作目录会选择远端 Goja，否则使用新的本地 worker。
+   * 执行一个程序；Remote-SSH marker 工作目录经 bridge 运行 Goja，
+   * 其他工作目录使用新的本地 worker。basic marker 的 Goja 在本机 bridge 侧，
+   * 但 binding 仍回到 Host，绝不回退本地 Node worker。
    * 程序失败（包括未创建 worker 的类型剥离语法错误）写入 `result.error`；只有
    * 已处置运行时或非法 binding namespace 这类服务定义误用才会拒绝。
    * @param request - 程序、bindings 与取消信号。
@@ -638,6 +641,7 @@ export class WorkerThreadCodeRuntime extends CodeRuntime {
         remotePath: workspace.remotePath,
         connectionId: workspace.connectionId,
         markerGeneration: workspace.markerGeneration,
+        mode: workspace.mode,
       }
     } catch (error: unknown) {
       if (request.signal?.aborted) return undefined
@@ -646,8 +650,9 @@ export class WorkerThreadCodeRuntime extends CodeRuntime {
   }
 
   /**
-   * 通过 marker bridge 驱动远端 Goja 会话。程序继续在远端执行，绑定调用回到
-   * 本机 Node Host，因此工具审批、Session 日志与调度的所有权不发生迁移。
+   * 通过 marker bridge 驱动 Goja 会话。agent 模式在远端 agent 执行，basic
+   * 模式在本机 bridge 隔离进程执行；binding 均回到 Node Host，因此工具审批、
+   * Session 日志与调度的所有权不发生迁移。
    */
   private async executeRemote(
     request: CodeRunRequest,

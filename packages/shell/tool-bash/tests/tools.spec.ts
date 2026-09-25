@@ -1,4 +1,6 @@
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { createServer } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
@@ -465,6 +467,75 @@ describe('background execution through the job runtime', () => {
     expect(text(final)).toContain('[status: killed, signal: SIGTERM]')
   })
 
+  it('reports a basic SSH kill with unconfirmed cleanup as failed, without leaking bridge errors', async () => {
+    const markerRoot = mkdtempSync(join(tmpdir(), 'dsh-tool-bash-basic-unknown-'))
+    writeFileSync(join(markerRoot, REMOTE_WORKSPACE_MARKER), JSON.stringify({
+      version: 3, mode: 'basic', remoteRoot: '/srv/project', connectionId: 'connection-basic', generation: 1,
+    }))
+    const oldUrl = process.env.DSH_REMOTE_BRIDGE_URL
+    const oldToken = process.env.DSH_REMOTE_BRIDGE_TOKEN
+    const processState = {
+      id: 'p'.repeat(32), pid: 4321, running: true, closed: false,
+      exitCode: null, signal: null, stdinClosed: true, startedAt: 1,
+    }
+    const routes: string[] = []
+    const server = createServer((request, response) => {
+      routes.push(request.url ?? '')
+      request.resume()
+      request.on('end', () => {
+        response.setHeader('Content-Type', 'application/json')
+        switch (request.url) {
+          case '/v1/processes/start':
+            response.end(JSON.stringify({ process: processState }))
+            break
+          case '/v1/processes/read':
+            response.end(JSON.stringify({
+              dataBase64: '', nextOffset: 0, lossy: false, truncated: false,
+              eof: false, closed: false, process: processState,
+            }))
+            break
+          case '/v1/processes/wait':
+            response.end(JSON.stringify({ completed: false, process: processState }))
+            break
+          case '/v1/processes/kill':
+            response.statusCode = 503
+            response.end(JSON.stringify({ error: { code: 'termination-unknown', message: 'private-bridge-secret' } }))
+            break
+          default:
+            response.statusCode = 404
+            response.end('{}')
+        }
+      })
+    })
+    try {
+      await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+      process.env.DSH_REMOTE_BRIDGE_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+      process.env.DSH_REMOTE_BRIDGE_TOKEN = 'test-bridge-token-which-is-long-enough'
+      const ctx = await setupWithTasks()
+      const localSpawn = vi.fn(() => { throw new Error('local process unexpectedly started') })
+      ;(ctx.subprocess as LocalSubprocessRuntime).internals.spawn = localSpawn
+      const started = await call(ctx, 'bash', {
+        command: 'sleep 60', description: 'remote job', workdir: markerRoot, run_in_background: true,
+      })
+      expect(text(started)).toBe('started background job bash-1')
+      const cancellation = await call(ctx, 'job_kill', { job_id: 'bash-1' })
+      expect(text(cancellation)).toBe('requested cancellation of job bash-1')
+      const result = await call(ctx, 'job_output', { job_id: 'bash-1', wait: true })
+      expect(text(result)).toContain('[status: failed, process outcome unknown]')
+      expect(text(result)).toContain('remote process status is unknown')
+      expect(text(result)).not.toContain('private-bridge-secret')
+      expect(routes).toContain('/v1/processes/kill')
+      expect(localSpawn).not.toHaveBeenCalled()
+    } finally {
+      if (oldUrl === undefined) delete process.env.DSH_REMOTE_BRIDGE_URL
+      else process.env.DSH_REMOTE_BRIDGE_URL = oldUrl
+      if (oldToken === undefined) delete process.env.DSH_REMOTE_BRIDGE_TOKEN
+      else process.env.DSH_REMOTE_BRIDGE_TOKEN = oldToken
+      await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
+      rmSync(markerRoot, { recursive: true, force: true })
+    }
+  })
+
   it('a self-signal background exit is reported as killed through the REAL job_output tool', async () => {
     const ctx = await setupWithTasks()
     await call(ctx, 'bash', { command: 'kill -TERM $$', description: 'test command', run_in_background: true })
@@ -796,9 +867,14 @@ describe('processOutcome', () => {
       .toEqual({ status: 'killed', detail: 'signal: SIGTERM' })
   })
 
-  it('maps a killed process without a recorded signal (kill raced exit / spawn failure)', () => {
+  it('maps a killed process without a recorded signal (kill raced exit)', () => {
     expect(processOutcome(settled({ status: 'killed', exitCode: null })))
       .toEqual({ status: 'killed', detail: 'killed before exit' })
+  })
+
+  it('maps provider failure to failed without disclosing provider errors', () => {
+    expect(processOutcome(settled({ status: 'failed', exitCode: null })))
+      .toEqual({ status: 'failed', detail: 'process outcome unknown' })
   })
 
   it('maps a completed process to its exit code', () => {

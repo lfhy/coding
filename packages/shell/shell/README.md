@@ -21,9 +21,11 @@
 | `start(spec)` | 后台执行。立即返回不含任务语义的 `ShellProcess` 句柄；**不应用超时**。调用方可以将其适配到 `ctx.jobs`。 |
 | `sandboxMode` | 工具层的能力事实：沙箱执行器用于限制执行的默认模式（基类中为 `undefined`，即「此执行器不使用沙箱」）。`dsh-tool-bash` 会在注册时读取它，仅当组合确实支持升权字段时才公布这些字段。 |
 | `ShellProcess.readOutput()` | **增量** 读取输出：连续读取绝不会重复交付。因缓冲区容量限制而丢失数据的读取会标记 `lossy`，并指向完整流 spill 文件；provider failure 提示会与未读 stderr 一起追加一次。 |
-| `ShellProcess.kill()` | 终止进程组。如果进程已结束，返回 `false`。 |
+| `ShellProcess.kill()` | 发出幂等的终止请求；首次请求返回 `true`，重复请求或已结算时返回 `false`。请求本身不改变进程结算状态。 |
 
 实现会继承 `ShellExecutor` 并实现抽象方法。dispose（资源释放）必须终止每个运行中的进程并等待其退出。
+
+`ShellProcess.status` 从 `running` 结算到 `completed`、`killed` 或 `failed`：非零命令退出属于 `completed`，有信号等终止事实才属于 `killed`；provider 无法报告退出结果时 `done` 仍会 resolve，状态为 `failed`。`kill()` 成功发出请求不证明进程已停止，尤其 basic SSH 的远端进程树可能仍在运行。
 
 `SHELL_SETTINGS_NAMESPACE`（`bash`）由此处导出而非由某个提供方导出，因为它命名的是能力而不是实现。一个宿主只组装一个 `ctx.shell` 提供方——win32 层会把 POSIX 行换成 pwsh 行，同时挂载两者会因服务重复注册而在加载期失败——所以每个提供方都能用自己的 schema 与组装条目注册这同一个命名空间，两者永不相撞；在平台间携带的 `settings.yaml` 也能在两边继续解析。
 

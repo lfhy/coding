@@ -112,16 +112,18 @@ describe('workspace-write containment', () => {
 
   it('rejects a remote target whose marker is not this session workspace before contacting a bridge', async () => {
     await writeFile(join(workspace, REMOTE_WORKSPACE_MARKER), JSON.stringify({
-      version: 2,
+      version: 3,
       remoteRoot: '/srv/one',
       connectionId: 'connection-1',
       generation: 1,
+      mode: 'agent',
     }))
     await writeFile(join(outside, REMOTE_WORKSPACE_MARKER), JSON.stringify({
-      version: 2,
+      version: 3,
       remoteRoot: '/srv/two',
       connectionId: 'connection-2',
       generation: 1,
+      mode: 'agent',
     }))
     const foreignTarget: FsTarget = {
       displayPath: '/srv/two/file.ts',
@@ -131,6 +133,7 @@ describe('workspace-write containment', () => {
         remotePath: '/srv/two/file.ts',
         connectionId: 'connection-2',
         markerGeneration: 1,
+        mode: 'agent',
       })),
     }
     await expect(fs.writeText(foreignTarget, 'x')).rejects.toMatchObject({ code: 'FS_SANDBOX_DENIED' })
@@ -138,10 +141,11 @@ describe('workspace-write containment', () => {
 
   it('rejects a same-marker remote target outside the policy workspace subdirectory', async () => {
     await writeFile(join(workspace, REMOTE_WORKSPACE_MARKER), JSON.stringify({
-      version: 2,
+      version: 3,
       remoteRoot: '/srv/project',
       connectionId: 'connection-1',
       generation: 1,
+      mode: 'agent',
     }))
     const allowed = join(workspace, 'allowed')
     await mkdir(allowed)
@@ -153,6 +157,7 @@ describe('workspace-write containment', () => {
         remotePath: '/srv/project/outside.txt',
         connectionId: 'connection-1',
         markerGeneration: 1,
+        mode: 'agent',
       })),
     }
     await expect(fs.writeText(targetOutsidePolicy, 'x', undefined, undefined, {
