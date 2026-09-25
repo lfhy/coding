@@ -1,0 +1,173 @@
+package desktopremote
+
+import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/deepseek-ai/coding/apps/desktop/internal/remoteagent"
+)
+
+type serviceManager struct {
+	connect func(context.Context, remoteagent.ConnectRequest) (remoteagent.ConnectionInfo, error)
+	closed  []string
+	mu      sync.Mutex
+}
+
+func (m *serviceManager) Connect(ctx context.Context, request remoteagent.ConnectRequest) (remoteagent.ConnectionInfo, error) {
+	if m.connect != nil {
+		return m.connect(ctx, request)
+	}
+	return remoteagent.ConnectionInfo{}, errors.New("unexpected connection")
+}
+func (m *serviceManager) ConfirmHostKey(ctx context.Context, _ string, request remoteagent.ConnectRequest, _ string) (remoteagent.ConnectionInfo, error) {
+	return m.Connect(ctx, request)
+}
+func (m *serviceManager) RejectHostKey(string) {}
+func (m *serviceManager) ListDirectories(context.Context, string, string) (remoteagent.RemoteDirectory, error) {
+	return remoteagent.RemoteDirectory{Path: "/srv", Entries: []remoteagent.DirectoryEntry{{Name: "project", Path: "/srv/project", Type: "directory"}}}, nil
+}
+func (m *serviceManager) ResolvePath(context.Context, string, string) (remoteagent.ResolveResponse, error) {
+	return remoteagent.ResolveResponse{Path: "/srv/project", Info: &remoteagent.PathInfo{Path: "/srv/project", Type: "directory"}}, nil
+}
+func (m *serviceManager) Connection(id string) (remoteagent.ConnectionInfo, error) {
+	return remoteagent.ConnectionInfo{ID: id, TargetHost: "example.com", TargetPort: 22, TargetUser: "coding"}, nil
+}
+func (m *serviceManager) Marker(id, root string) (remoteagent.RemoteWorkspaceMarker, error) {
+	return remoteagent.RemoteWorkspaceMarker{Version: 1, RemoteRoot: root, ConnectionID: id}, nil
+}
+func (m *serviceManager) Close(_ context.Context, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.closed = append(m.closed, id)
+	return nil
+}
+func (m *serviceManager) CloseAll(context.Context) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.closed = append(m.closed, "all")
+	return nil
+}
+
+type serviceBridge struct {
+	mu         sync.Mutex
+	closed     bool
+	closeOrder func()
+}
+
+func (b *serviceBridge) PublishMarker(_ context.Context, _, _, _ string, generation uint64, write func(uint64) error) (uint64, error) {
+	return generation + 1, write(generation + 1)
+}
+func (b *serviceBridge) RevokeMarker(_ context.Context, _ MarkerIdentity, remove func() (bool, error)) (bool, error) {
+	return remove()
+}
+func (b *serviceBridge) CurrentMarker(_ context.Context, _ MarkerIdentity, verify func() bool) bool {
+	return verify()
+}
+func (b *serviceBridge) Close() error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.closed = true
+	if b.closeOrder != nil {
+		b.closeOrder()
+	}
+	return nil
+}
+
+func testService(t *testing.T, manager *serviceManager, bridge MarkerPublisher, progress func(ProgressEvent)) *Service {
+	t.Helper()
+	service, err := NewService(Options{Home: t.TempDir(), Manager: manager, Bridge: bridge, OnProgress: progress})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = service.CloseAll(context.Background()) })
+	return service
+}
+
+func TestServiceConnectCancelFencesLateResult(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	manager := &serviceManager{connect: func(ctx context.Context, request remoteagent.ConnectRequest) (remoteagent.ConnectionInfo, error) {
+		request.OnProgress(remoteagent.Progress{Stage: "connecting"})
+		close(started)
+		<-release
+		return remoteagent.ConnectionInfo{ID: "connection-1", RemoteHome: "/home/coding"}, nil
+	}}
+	var mu sync.Mutex
+	var progress []ProgressEvent
+	service := testService(t, manager, &serviceBridge{}, func(event ProgressEvent) { mu.Lock(); defer mu.Unlock(); progress = append(progress, event) })
+	result := make(chan RemoteSSHConnectResult, 1)
+	go func() {
+		value, _ := service.RemoteSSHConnect(RemoteSSHConnectInput{AttemptID: "attempt-1", Host: "example.com", Port: 22, Username: "coding", Auth: RemoteSSHAuthInput{Kind: "password", Secret: "secret"}})
+		result <- value
+	}()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("connection did not start")
+	}
+	if err := service.RemoteSSHCancelConnect("attempt-1"); err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	select {
+	case value := <-result:
+		if value.Kind != "error" {
+			t.Fatalf("result = %+v", value)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("cancelled connect did not finish")
+	}
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	if len(manager.closed) != 1 || manager.closed[0] != "connection-1" {
+		t.Fatalf("closed = %v", manager.closed)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(progress) != 1 || progress[0].Phase != "authenticating" || progress[0].Message != "" {
+		t.Fatalf("progress = %v", progress)
+	}
+}
+
+func TestServiceMarkerAndCloseOrder(t *testing.T) {
+	manager := &serviceManager{}
+	bridge := &serviceBridge{closeOrder: func() {
+		manager.mu.Lock()
+		defer manager.mu.Unlock()
+		if len(manager.closed) == 0 || manager.closed[len(manager.closed)-1] != "all" {
+			t.Error("bridge closed before manager")
+		}
+	}}
+	service := testService(t, manager, bridge, nil)
+	listing, err := service.RemoteSSHListDirectories("connection-1", "/srv")
+	if err != nil || len(listing.Entries) != 1 {
+		t.Fatalf("listing = %+v, %v", listing, err)
+	}
+	selected, err := service.RemoteSSHSelectDirectory("connection-1", "/srv/project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selected.RemotePath != "/srv/project" {
+		t.Fatalf("selection = %+v", selected)
+	}
+	marker, err := os.ReadFile(filepath.Join(selected.MarkerPath, remoteWorkspaceMarkerName))
+	if err != nil || len(marker) == 0 {
+		t.Fatalf("marker read = %v", err)
+	}
+	if err := service.RemoteSSHClose("connection-1"); err == nil {
+		t.Fatal("published connection must remain referenced")
+	}
+	if err := service.CloseAll(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	bridge.mu.Lock()
+	defer bridge.mu.Unlock()
+	if !bridge.closed {
+		t.Fatal("bridge not closed")
+	}
+}

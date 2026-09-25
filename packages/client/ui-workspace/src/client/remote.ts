@@ -1,7 +1,7 @@
 /**
  * Remote-SSH 的桌面桥接边界。浏览器 Host 不具备 SSH 权限；只有桌面壳注入
- * 一次性的 bridge token 后，才会暴露这些调用。这里在进入 React 前校验每个
- * Wails 返回值，避免把跨进程的未知数据当成客户端状态。
+ * 受限桥接面后，才会暴露这些调用。Wails 依赖每窗口 token，Electron 依赖
+ * preload 注入的无 token API；跨进程返回值在进入 React 前统一校验。
  */
 
 /** SSH 认证输入的种类；密钥材料只随当前调用传给桌面壳。 */
@@ -125,6 +125,7 @@ type DesktopRuntime = {
 
 type DesktopWindow = Window & {
   __CODING_DESKTOP_BRIDGE_TOKEN?: unknown
+  codingDesktop?: { remoteSSH?: unknown }
   go?: { main?: { App?: DesktopBinding } }
   runtime?: DesktopRuntime
 }
@@ -260,14 +261,66 @@ function bridgeToken(target: DesktopWindow): string | undefined {
   return typeof token === 'string' && token !== '' ? token : undefined
 }
 
+/** 仅接纳 preload 注入的完整能力面；不从网页地址推断桌面权限。 */
+function electronBridge(target: DesktopWindow): RemoteSshBridge | undefined {
+  const candidate = target.codingDesktop?.remoteSSH
+  if (candidate === null || typeof candidate !== 'object' || Array.isArray(candidate)) return undefined
+  const api = candidate as Record<string, unknown>
+  if (
+    typeof api.connect !== 'function'
+    || typeof api.cancelConnect !== 'function'
+    || typeof api.listDirectories !== 'function'
+    || typeof api.selectDirectory !== 'function'
+    || typeof api.close !== 'function'
+    || typeof api.rejectHostKey !== 'function'
+    || typeof api.subscribeProgress !== 'function'
+  ) return undefined
+
+  const connect = api.connect as (input: RemoteSshConnectInput) => Promise<unknown>
+  const cancelConnect = api.cancelConnect as (attemptId: string) => Promise<unknown>
+  const listDirectories = api.listDirectories as (connectionId: string, path: string) => Promise<unknown>
+  const selectDirectory = api.selectDirectory as (connectionId: string, path: string) => Promise<unknown>
+  const close = api.close as (connectionId: string) => Promise<unknown>
+  const rejectHostKey = api.rejectHostKey as (confirmationId: string) => Promise<unknown>
+  const subscribeProgress = api.subscribeProgress as (listener: (payload: unknown) => void) => unknown
+
+  return {
+    connect: input => invokeBinding(() => connect(input), parseConnectResult),
+    cancelConnect: attemptId => invokeBindingEffect(() => cancelConnect(attemptId)),
+    listDirectories: (connectionId, path) => invokeBinding(
+      () => listDirectories(connectionId, path), parseDirectoryListing,
+    ),
+    selectDirectory: (connectionId, path) => invokeBinding(
+      () => selectDirectory(connectionId, path), parseDirectorySelection,
+    ),
+    close: connectionId => invokeBindingEffect(() => close(connectionId)),
+    rejectHostKey: confirmationId => invokeBindingEffect(() => rejectHostKey(confirmationId)),
+    subscribeProgress: (listener) => {
+      try {
+        const dispose = subscribeProgress((payload) => {
+          const progress = parseProgress(payload)
+          if (progress !== undefined) listener(progress)
+        })
+        if (typeof dispose !== 'function') throw new RemoteSshBridgeError('桌面端返回了无效的 Remote-SSH 响应。')
+        return dispose as () => void
+      } catch (reason) {
+        if (reason instanceof RemoteSshBridgeError) throw reason
+        throw new RemoteSshBridgeError('Remote-SSH 桌面桥接调用失败。')
+      }
+    },
+  }
+}
+
 /**
- * 取得桌面壳的受限 Remote-SSH 调用面。普通 Web Host、过期的 Wails 注入或
- * 缺少 token 都返回 undefined，调用者显示桌面端可用提示而不是降级为 HTTP URL。
+ * 取得桌面壳的受限 Remote-SSH 调用面。优先接受完整的 Electron preload API；
+ * 否则仅在 Wails token 和绑定齐备时回退。普通 Web Host 不会降级为 HTTP URL。
  * @returns 仅在本窗口被桌面壳授权时存在的 bridge。
  */
 export function getRemoteSshBridge(): RemoteSshBridge | undefined {
   if (typeof window === 'undefined') return undefined
   const target = window as DesktopWindow
+  const electron = electronBridge(target)
+  if (electron !== undefined) return electron
   const token = bridgeToken(target)
   const app = target.go?.main?.App
   if (

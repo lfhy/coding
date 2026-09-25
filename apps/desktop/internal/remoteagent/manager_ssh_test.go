@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/deepseek-ai/coding/apps/desktop/internal/sshfixture"
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
@@ -69,7 +70,7 @@ func TestManagerRequiresConfirmationThenConnectsThroughPrivateTunnel(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(known), knownhosts.Line([]string{server.address()}, server.signer.PublicKey())) || strings.Contains(string(known), request.Auth.Password) {
+	if !strings.Contains(string(known), knownhosts.Line([]string{server.address()}, server.transport.HostKey())) || strings.Contains(string(known), request.Auth.Password) {
 		t.Fatalf("known_hosts did not contain exactly the accepted host key")
 	}
 	if _, err := manager.Proxy(context.Background(), "missing", http.MethodPost, "/v1/read_file", nil); !errors.Is(err, ErrConnectionNotFound) {
@@ -92,6 +93,72 @@ func TestManagerRequiresConfirmationThenConnectsThroughPrivateTunnel(t *testing.
 	}
 	if _, err := manager.Connection(info.ID); !errors.Is(err, ErrConnectionNotFound) {
 		t.Fatalf("closed connection lookup = %v", err)
+	}
+}
+
+func TestManagerRequiresReadyAndHealthVersionsToAgree(t *testing.T) {
+	cases := []struct {
+		name              string
+		readyVersion      string
+		healthVersion     string
+		omitHealthVersion bool
+		wantFailure       bool
+	}{
+		{name: "matching version", readyVersion: "remote-build", healthVersion: "remote-build"},
+		{name: "different version", readyVersion: "remote-build", healthVersion: "other-build", wantFailure: true},
+		{name: "missing health version", readyVersion: "remote-build", omitHealthVersion: true, wantFailure: true},
+		{name: "empty readiness version", healthVersion: "remote-build", wantFailure: true},
+		{name: "oversized readiness version", readyVersion: strings.Repeat("x", 129), healthVersion: strings.Repeat("x", 129), wantFailure: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := newManagerSSHFixture(t)
+			server.mu.Lock()
+			server.readyVersion = tc.readyVersion
+			server.healthVersion = tc.healthVersion
+			server.omitHealthVersion = tc.omitHealthVersion
+			server.mu.Unlock()
+			knownHosts := filepath.Join(t.TempDir(), "known_hosts")
+			if err := os.Chmod(filepath.Dir(knownHosts), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := confirmKnownHost(knownHosts, server.address(), server.transport.HostKey()); err != nil {
+				t.Fatal(err)
+			}
+			agent := filepath.Join(t.TempDir(), "coding-remote-agent-linux-amd64")
+			if err := os.WriteFile(agent, []byte("test-agent"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			manager, err := NewManager(ManagerOptions{
+				KnownHostsPath: knownHosts,
+				AgentPathFor:   func(RemotePlatform) (string, error) { return agent, nil },
+				ConnectTimeout: time.Second,
+				StartupTimeout: 2 * time.Second,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := ConnectRequest{Host: server.host(), Port: server.port(), User: "coding", Auth: SSHAuth{Password: "password"}}
+			info, err := manager.Connect(context.Background(), request)
+			if tc.wantFailure {
+				if err == nil {
+					t.Fatalf("Connect accepted inconsistent version: %#v", info)
+				}
+				manager.mu.RLock()
+				states, starting := len(manager.states), len(manager.starting)
+				manager.mu.RUnlock()
+				if states != 0 || starting != 0 {
+					t.Fatalf("failed connection persisted: states=%d starting=%d", states, starting)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("matching remote version rejected: %v", err)
+			}
+			if err := manager.Close(context.Background(), info.ID); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 
@@ -277,7 +344,7 @@ func TestManagerCancellationSettlesUnpublishedAgentSession(t *testing.T) {
 	server := newManagerSSHFixture(t)
 	server.readyGate = make(chan struct{})
 	knownHosts := filepath.Join(t.TempDir(), "remote-ssh", "known_hosts")
-	if err := confirmKnownHost(knownHosts, server.address(), server.signer.PublicKey()); err != nil {
+	if err := confirmKnownHost(knownHosts, server.address(), server.transport.HostKey()); err != nil {
 		t.Fatal(err)
 	}
 	agent := filepath.Join(t.TempDir(), "coding-remote-agent-linux-amd64")
@@ -330,7 +397,7 @@ func TestManagerRejectsChangedKnownHostKey(t *testing.T) {
 	if err := os.Chmod(filepath.Dir(knownHosts), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(knownHosts, []byte(knownhosts.Line([]string{second.address()}, first.signer.PublicKey())+"\n"), 0o600); err != nil {
+	if err := os.WriteFile(knownHosts, []byte(knownhosts.Line([]string{second.address()}, first.transport.HostKey())+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	manager, err := NewManager(ManagerOptions{KnownHostsPath: knownHosts, ConnectTimeout: time.Second})
@@ -342,7 +409,7 @@ func TestManagerRejectsChangedKnownHostKey(t *testing.T) {
 	if !errors.As(err, &changed) {
 		t.Fatalf("Connect error = %v, want ErrHostKeyChanged", err)
 	}
-	if changed.Fingerprint != ssh.FingerprintSHA256(second.signer.PublicKey()) {
+	if changed.Fingerprint != ssh.FingerprintSHA256(second.transport.HostKey()) {
 		t.Fatalf("changed key fingerprint = %q", changed.Fingerprint)
 	}
 }
@@ -413,107 +480,63 @@ func connectManagerFixture(t *testing.T, server *managerSSHFixture) (*Manager, C
 }
 
 type managerSSHFixture struct {
-	listener     net.Listener
-	signer       ssh.Signer
-	root         string
-	agent        *httptest.Server
-	mu           sync.Mutex
-	token        string
-	agentStopped chan struct{}
-	stopOnce     sync.Once
-	agentStarted chan struct{}
-	startedOnce  sync.Once
-	readyGate    chan struct{}
+	transport         *sshfixture.Server
+	root              string
+	agent             *httptest.Server
+	mu                sync.Mutex
+	token             string
+	agentStopped      chan struct{}
+	stopOnce          sync.Once
+	agentStarted      chan struct{}
+	startedOnce       sync.Once
+	readyGate         chan struct{}
+	readyVersion      string
+	healthVersion     string
+	omitHealthVersion bool
 }
 
 func newManagerSSHFixture(t *testing.T) *managerSSHFixture {
 	t.Helper()
-	_, private, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	signer, err := ssh.NewSignerFromKey(private)
-	if err != nil {
-		t.Fatal(err)
-	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	fixture := &managerSSHFixture{
-		listener: listener, signer: signer, root: t.TempDir(),
+		root:         t.TempDir(),
 		agentStopped: make(chan struct{}), agentStarted: make(chan struct{}),
+		readyVersion: "test", healthVersion: "test",
 	}
 	fixture.agent = httptest.NewServer(http.HandlerFunc(fixture.serveAgent))
+	var err error
+	fixture.transport, err = sshfixture.StartWithHooks(sshfixture.Hooks{
+		Authenticate: func(username string, _ []byte) bool { return username == "coding" },
+		Session:      fixture.serveSession,
+		Forward:      fixture.forward,
+	})
+	if err != nil {
+		fixture.agent.Close()
+		t.Fatal(err)
+	}
 	t.Cleanup(func() {
-		_ = fixture.listener.Close()
+		fixture.stopAgent()
+		fixture.transport.Close()
 		fixture.agent.Close()
 	})
-	go fixture.accept(t)
 	return fixture
 }
 
-func (fixture *managerSSHFixture) address() string { return fixture.listener.Addr().String() }
+func (fixture *managerSSHFixture) address() string {
+	return net.JoinHostPort(fixture.transport.Host, fmt.Sprint(fixture.transport.Port))
+}
 
 func (fixture *managerSSHFixture) host() string {
 	host, _, _ := net.SplitHostPort(fixture.address())
 	return host
 }
 
-func (fixture *managerSSHFixture) port() int {
-	_, raw, _ := net.SplitHostPort(fixture.address())
-	var port int
-	_, _ = fmt.Sscan(raw, &port)
-	return port
-}
+func (fixture *managerSSHFixture) port() int { return fixture.transport.Port }
 
 func (fixture *managerSSHFixture) stopAgent() {
 	fixture.stopOnce.Do(func() { close(fixture.agentStopped) })
 }
 
-func (fixture *managerSSHFixture) accept(t *testing.T) {
-	config := &ssh.ServerConfig{PasswordCallback: func(ssh.ConnMetadata, []byte) (*ssh.Permissions, error) {
-		return nil, nil
-	}}
-	config.AddHostKey(fixture.signer)
-	for {
-		connection, err := fixture.listener.Accept()
-		if err != nil {
-			return
-		}
-		go fixture.serveSSH(t, config, connection)
-	}
-}
-
-func (fixture *managerSSHFixture) serveSSH(t *testing.T, config *ssh.ServerConfig, connection net.Conn) {
-	server, channels, requests, err := ssh.NewServerConn(connection, config)
-	if err != nil {
-		return
-	}
-	defer server.Close()
-	go ssh.DiscardRequests(requests)
-	for channel := range channels {
-		switch channel.ChannelType() {
-		case "session":
-			stream, requests, err := channel.Accept()
-			if err != nil {
-				continue
-			}
-			go fixture.serveSession(t, stream, requests)
-		case "direct-tcpip":
-			stream, requests, err := channel.Accept()
-			if err != nil {
-				continue
-			}
-			go ssh.DiscardRequests(requests)
-			go fixture.forward(stream)
-		default:
-			_ = channel.Reject(ssh.UnknownChannelType, "unsupported")
-		}
-	}
-}
-
-func (fixture *managerSSHFixture) serveSession(t *testing.T, stream ssh.Channel, requests <-chan *ssh.Request) {
+func (fixture *managerSSHFixture) serveSession(stream ssh.Channel, requests <-chan *ssh.Request) {
 	for request := range requests {
 		switch request.Type {
 		case "subsystem":
@@ -560,12 +583,13 @@ func (fixture *managerSSHFixture) runCommand(stream ssh.Channel, command string)
 	token, _ := io.ReadAll(stream)
 	fixture.mu.Lock()
 	fixture.token = strings.TrimSpace(string(token))
+	version := fixture.readyVersion
 	fixture.mu.Unlock()
 	fixture.startedOnce.Do(func() { close(fixture.agentStarted) })
 	if fixture.readyGate != nil {
 		<-fixture.readyGate
 	}
-	ready, _ := json.Marshal(ReadyRecord{Type: "coding-remote-agent-ready", Protocol: ProtocolVersion, Port: 1, Version: "test"})
+	ready, _ := json.Marshal(ReadyRecord{Type: "coding-remote-agent-ready", Protocol: ProtocolVersion, Port: 1, Version: version})
 	_, _ = stream.Write(append(ready, '\n'))
 	<-fixture.agentStopped
 	fixture.exit(stream)
@@ -591,6 +615,8 @@ func (fixture *managerSSHFixture) forward(stream ssh.Channel) {
 func (fixture *managerSSHFixture) serveAgent(writer http.ResponseWriter, request *http.Request) {
 	fixture.mu.Lock()
 	token := fixture.token
+	version := fixture.healthVersion
+	omitVersion := fixture.omitHealthVersion
 	fixture.mu.Unlock()
 	if request.Header.Get("Authorization") != "Bearer "+token {
 		writer.WriteHeader(http.StatusUnauthorized)
@@ -599,7 +625,11 @@ func (fixture *managerSSHFixture) serveAgent(writer http.ResponseWriter, request
 	writer.Header().Set("Content-Type", "application/json")
 	switch request.URL.Path {
 	case "/v1/health":
-		_, _ = writer.Write([]byte(`{"type":"coding-remote-agent-health","protocol":1,"platform":"linux","arch":"amd64"}`))
+		health := map[string]any{"type": "coding-remote-agent-health", "protocol": ProtocolVersion, "platform": "linux", "arch": "amd64"}
+		if !omitVersion {
+			health["version"] = version
+		}
+		_ = json.NewEncoder(writer).Encode(health)
 	case "/v1/shutdown":
 		fixture.stopAgent()
 		_, _ = writer.Write([]byte(`{"accepted":true}`))

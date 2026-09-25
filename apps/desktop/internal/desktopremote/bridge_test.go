@@ -1,4 +1,4 @@
-package main
+package desktopremote
 
 import (
 	"context"
@@ -20,10 +20,10 @@ type remoteBridgeTestMarker struct {
 	generation uint64
 }
 
-func publishRemoteBridgeTestMarker(t *testing.T, bridge *remoteBridge, connection string, previous uint64) remoteBridgeTestMarker {
+func publishRemoteBridgeTestMarker(t *testing.T, bridge *Bridge, connection string, previous uint64) remoteBridgeTestMarker {
 	t.Helper()
 	marker := remoteBridgeTestMarker{root: t.TempDir(), remoteRoot: "/remote/project", connection: connection}
-	generation, err := bridge.publishMarker(context.Background(), marker.root, marker.remoteRoot, marker.connection, previous, func(uint64) error { return nil })
+	generation, err := bridge.PublishMarker(context.Background(), marker.root, marker.remoteRoot, marker.connection, previous, func(uint64) error { return nil })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,9 +41,9 @@ func setRemoteBridgeMarkerHeaders(request *http.Request, marker remoteBridgeTest
 	}
 }
 
-func TestRemoteBridgeRejectsUnauthenticatedAndUnroutableRequests(t *testing.T) {
+func TestSharedBridgeRejectsUnauthenticatedAndUnroutableRequests(t *testing.T) {
 	var calls atomic.Int32
-	bridge, err := newRemoteBridge("abcdefghijklmnopqrstuvwxyz0123456789abcdef", func(context.Context, string, string, string, []byte) (int, []byte, error) {
+	bridge, err := NewBridge("abcdefghijklmnopqrstuvwxyz0123456789abcdef", func(context.Context, string, string, string, []byte) (int, []byte, error) {
 		calls.Add(1)
 		return http.StatusOK, []byte(`{"ok":true}`), nil
 	})
@@ -78,7 +78,7 @@ func TestRemoteBridgeRejectsUnauthenticatedAndUnroutableRequests(t *testing.T) {
 func TestRemoteBridgeRejectsSpoofedJSONTypeAndRemovedRoutes(t *testing.T) {
 	const token = "abcdefghijklmnopqrstuvwxyz0123456789abcdef"
 	var calls atomic.Int32
-	bridge, err := newRemoteBridge(token, func(context.Context, string, string, string, []byte) (int, []byte, error) {
+	bridge, err := NewBridge(token, func(context.Context, string, string, string, []byte) (int, []byte, error) {
 		calls.Add(1)
 		return http.StatusOK, []byte(`{"ok":true}`), nil
 	})
@@ -111,7 +111,7 @@ func TestRemoteBridgeRejectsSpoofedJSONTypeAndRemovedRoutes(t *testing.T) {
 func TestRemoteBridgeAllowsRemoteExecutionOnlyAsPost(t *testing.T) {
 	for _, path := range []string{
 		"/v1/search", "/v1/code/start", "/v1/code/next", "/v1/code/reply", "/v1/code/cancel",
-		"/v1/terminals/start", "/v1/terminals/read", "/v1/terminals/write", "/v1/terminals/foreground", "/v1/terminals/signal", "/v1/terminals/terminate",
+		"/v1/terminals/start", "/v1/terminals/read", "/v1/terminals/write", "/v1/terminals/resize", "/v1/terminals/foreground", "/v1/terminals/signal", "/v1/terminals/terminate",
 		"/v1/processes/resolve", "/v1/processes/start", "/v1/processes/read", "/v1/processes/write", "/v1/processes/wait", "/v1/processes/kill",
 	} {
 		if !allowedBridgeRoute(http.MethodPost, path) {
@@ -126,7 +126,7 @@ func TestRemoteBridgeAllowsRemoteExecutionOnlyAsPost(t *testing.T) {
 func TestRemoteBridgeForwardsVerifiedRequestWithoutToken(t *testing.T) {
 	const token = "abcdefghijklmnopqrstuvwxyz0123456789abcdef"
 	var gotConnection, gotMethod, gotPath, gotBody string
-	bridge, err := newRemoteBridge(token, func(_ context.Context, connection, method, path string, body []byte) (int, []byte, error) {
+	bridge, err := NewBridge(token, func(_ context.Context, connection, method, path string, body []byte) (int, []byte, error) {
 		gotConnection, gotMethod, gotPath, gotBody = connection, method, path, string(body)
 		return http.StatusOK, []byte(`{"path":"/remote/project"}`), nil
 	})
@@ -153,7 +153,7 @@ func TestRemoteBridgeForwardsVerifiedRequestWithoutToken(t *testing.T) {
 func TestRemoteBridgeAcceptsResponseLargerThanSixteenMiB(t *testing.T) {
 	const token = "abcdefghijklmnopqrstuvwxyz0123456789abcdef"
 	large := []byte(`{"content":"` + strings.Repeat("a", (17<<20)) + `"}`)
-	bridge, err := newRemoteBridge(token, func(context.Context, string, string, string, []byte) (int, []byte, error) {
+	bridge, err := NewBridge(token, func(context.Context, string, string, string, []byte) (int, []byte, error) {
 		return http.StatusOK, large, nil
 	})
 	if err != nil {
@@ -175,7 +175,7 @@ func TestRemoteBridgeAcceptsResponseLargerThanSixteenMiB(t *testing.T) {
 func TestRemoteBridgeRequiresEveryPublishedMarkerIdentityHeader(t *testing.T) {
 	const token = "abcdefghijklmnopqrstuvwxyz0123456789abcdef"
 	var calls atomic.Int32
-	bridge, err := newRemoteBridge(token, func(context.Context, string, string, string, []byte) (int, []byte, error) {
+	bridge, err := NewBridge(token, func(context.Context, string, string, string, []byte) (int, []byte, error) {
 		calls.Add(1)
 		return http.StatusOK, []byte(`{"ok":true}`), nil
 	})
@@ -216,7 +216,7 @@ func TestRemoteBridgeRequiresEveryPublishedMarkerIdentityHeader(t *testing.T) {
 func TestRemoteBridgeRejectsStaleMarkerButAllowsExplicitRetiredCleanup(t *testing.T) {
 	const token = "abcdefghijklmnopqrstuvwxyz0123456789abcdef"
 	var connections []string
-	bridge, err := newRemoteBridge(token, func(_ context.Context, connection, _ string, _ string, _ []byte) (int, []byte, error) {
+	bridge, err := NewBridge(token, func(_ context.Context, connection, _ string, _ string, _ []byte) (int, []byte, error) {
 		connections = append(connections, connection)
 		return http.StatusOK, []byte(`{"accepted":true}`), nil
 	})
@@ -225,7 +225,7 @@ func TestRemoteBridgeRejectsStaleMarkerButAllowsExplicitRetiredCleanup(t *testin
 	}
 	t.Cleanup(func() { _ = bridge.Close() })
 	old := publishRemoteBridgeTestMarker(t, bridge, "connection-1", 0)
-	newGeneration, err := bridge.publishMarker(context.Background(), old.root, old.remoteRoot, "connection-2", old.generation, func(uint64) error { return nil })
+	newGeneration, err := bridge.PublishMarker(context.Background(), old.root, old.remoteRoot, "connection-2", old.generation, func(uint64) error { return nil })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -270,7 +270,7 @@ func TestRemoteBridgeCancelledRebindLeavesOldRouteUntilActiveDispatchReturns(t *
 	const token = "abcdefghijklmnopqrstuvwxyz0123456789abcdef"
 	entered := make(chan struct{})
 	release := make(chan struct{})
-	bridge, err := newRemoteBridge(token, func(context.Context, string, string, string, []byte) (int, []byte, error) {
+	bridge, err := NewBridge(token, func(context.Context, string, string, string, []byte) (int, []byte, error) {
 		close(entered)
 		<-release
 		return http.StatusOK, []byte(`{"ok":true}`), nil
@@ -298,7 +298,7 @@ func TestRemoteBridgeCancelledRebindLeavesOldRouteUntilActiveDispatchReturns(t *
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
 	wrote := false
-	_, err = bridge.publishMarker(ctx, old.root, old.remoteRoot, "connection-2", old.generation, func(uint64) error {
+	_, err = bridge.PublishMarker(ctx, old.root, old.remoteRoot, "connection-2", old.generation, func(uint64) error {
 		wrote = true
 		return nil
 	})
@@ -320,7 +320,7 @@ func TestRemoteBridgeCancelledRebindLeavesOldRouteUntilActiveDispatchReturns(t *
 	case <-time.After(time.Second):
 		t.Fatal("active old request did not finish")
 	}
-	newGeneration, err := bridge.publishMarker(context.Background(), old.root, old.remoteRoot, "connection-2", old.generation, func(uint64) error { return nil })
+	newGeneration, err := bridge.PublishMarker(context.Background(), old.root, old.remoteRoot, "connection-2", old.generation, func(uint64) error { return nil })
 	if err != nil || newGeneration <= old.generation {
 		t.Fatalf("settled rebind = %d, %v", newGeneration, err)
 	}

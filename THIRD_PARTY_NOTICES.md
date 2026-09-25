@@ -127,6 +127,7 @@ External packages **directly declared** only by repository tooling, test infrast
 
 | Package | License |
 | --- | --- |
+| [`@electron/asar`](https://github.com/electron/asar) | MIT |
 | [`@modelcontextprotocol/server-everything`](https://github.com/modelcontextprotocol/servers) | MIT / Apache-2.0 |
 | [`@modelcontextprotocol/server-filesystem`](https://github.com/modelcontextprotocol/servers) | MIT / Apache-2.0 |
 | [`@stylistic/eslint-plugin`](https://github.com/eslint-stylistic/eslint-stylistic) | MIT |

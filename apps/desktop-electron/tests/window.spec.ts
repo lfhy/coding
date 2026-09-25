@@ -1,4 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { fileURLToPath } from 'node:url'
+
+const iconPath = fileURLToPath(new URL('../../desktop/packaging/icon.iconset/icon_512x512@2x.png', import.meta.url))
+const expectedPreload = fileURLToPath(new URL('../src/preload.cjs', import.meta.url))
 
 const electronMock = vi.hoisted(() => ({
   BrowserWindow: vi.fn<(options: Record<string, unknown>) => unknown>(),
@@ -37,7 +41,7 @@ function fakeWindow() {
     on: vi.fn((name: string, listener: (...args: unknown[]) => void) => {
       windowListeners.set(name, listener)
     }),
-    close: vi.fn(),
+    close: vi.fn(), destroy: vi.fn(),
     isDestroyed: vi.fn(() => false),
   }
   electronMock.BrowserWindow.mockImplementation(function BrowserWindow() { return window })
@@ -105,6 +109,7 @@ describe('Host 窗口导航边界', () => {
         webSecurity: true,
         webviewTag: false,
         devTools: false,
+        preload: expectedPreload,
       },
     }))
     expect(fixture.window.loadURL).toHaveBeenCalledWith(`${origin}/`)
@@ -130,7 +135,7 @@ describe('Host 窗口导航边界', () => {
   it('按显式选项开启 DevTools，且只为受信页面每次注入 macOS 避让值', () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
     const fixture = fakeWindow()
-    createHostWindow(origin, { devTools: true })
+    createHostWindow(origin, { devTools: true, iconPath })
     expect(electronMock.BrowserWindow.mock.calls[0]?.[0]).toMatchObject({
       titleBarStyle: 'hiddenInset',
       trafficLightPosition: { x: 16, y: 15 },
@@ -167,7 +172,7 @@ describe('Host 窗口导航边界', () => {
       throw new Error('sensitive image path')
     })
     const fixture = fakeWindow()
-    expect(createHostWindow(origin)).toBe(fixture.window)
+    expect(createHostWindow(origin, { iconPath })).toBe(fixture.window)
     expect(fixture.window.loadURL).toHaveBeenCalledWith(`${origin}/`)
     expect(warning).toHaveBeenCalledWith('Coding Dock 图标加载失败，继续加载 Host 页面。')
     expect(warning.mock.calls.flat().join(' ')).not.toContain('sensitive image path')
@@ -183,7 +188,7 @@ describe('Host 窗口导航边界', () => {
     const [title, message] = electronMock.dialog.showErrorBox.mock.calls[0]!
     expect(`${title} ${message}`).toContain('Host 页面无法加载')
     expect(`${title} ${message}`).not.toMatch(/secret-token|private|127\.0\.0\.1/)
-    expect(fixture.window.close).toHaveBeenCalledTimes(1)
+    expect(fixture.window.destroy).toHaveBeenCalledTimes(1)
   })
 
   it('页面已加载后主 frame 再失败也显示诊断并关闭白屏窗口', async () => {
@@ -192,7 +197,7 @@ describe('Host 窗口导航边界', () => {
     await Promise.resolve()
     emitLoadFailure(fixture, -105, true)
     expect(electronMock.dialog.showErrorBox).toHaveBeenCalledTimes(1)
-    expect(fixture.window.close).toHaveBeenCalledTimes(1)
+    expect(fixture.window.destroy).toHaveBeenCalledTimes(1)
     expect(electronMock.dialog.showErrorBox.mock.calls[0]?.join(' ')).not.toMatch(/secret|private|127\.0\.0\.1/)
   })
 
@@ -203,7 +208,7 @@ describe('Host 窗口导航边界', () => {
     emitLoadFailure(fixture, -3, true)
     emitLoadFailure(fixture, -105, false)
     expect(electronMock.dialog.showErrorBox).not.toHaveBeenCalled()
-    expect(fixture.window.close).not.toHaveBeenCalled()
+    expect(fixture.window.destroy).not.toHaveBeenCalled()
   })
 
   it('首次失败的事件和 loadURL rejection 只显示一次诊断', async () => {
@@ -213,7 +218,7 @@ describe('Host 窗口导航边界', () => {
     emitLoadFailure(fixture, -105, true)
     await Promise.resolve()
     expect(electronMock.dialog.showErrorBox).toHaveBeenCalledTimes(1)
-    expect(fixture.window.close).toHaveBeenCalledTimes(1)
+    expect(fixture.window.destroy).toHaveBeenCalledTimes(1)
   })
 
   it('首次加载被正常取消时 rejection 不显示错误', async () => {
@@ -223,15 +228,27 @@ describe('Host 窗口导航边界', () => {
     emitLoadFailure(fixture, -3, true)
     await Promise.resolve()
     expect(electronMock.dialog.showErrorBox).not.toHaveBeenCalled()
-    expect(fixture.window.close).not.toHaveBeenCalled()
+    expect(fixture.window.destroy).not.toHaveBeenCalled()
   })
 
   it('关闭中的加载取消不弹出误报', async () => {
     const fixture = fakeWindow()
     fixture.window.loadURL.mockRejectedValueOnce(new Error('ERR_ABORTED'))
     createHostWindow(origin)
-    fixture.windowListeners.get('close')!()
+    fixture.windowListeners.get('close')!({ defaultPrevented: false })
     await Promise.resolve()
     expect(electronMock.dialog.showErrorBox).not.toHaveBeenCalled()
+  })
+
+  it('macOS 拦截关闭并隐藏后仍能报告后续 Host 加载失败', async () => {
+    const fixture = fakeWindow()
+    createHostWindow(origin)
+    const event = { defaultPrevented: false }
+    fixture.windowListeners.get('close')!(event)
+    event.defaultPrevented = true
+    await Promise.resolve()
+    emitLoadFailure(fixture, -105, true)
+    expect(electronMock.dialog.showErrorBox).toHaveBeenCalledOnce()
+    expect(fixture.window.destroy).toHaveBeenCalledOnce()
   })
 })

@@ -39,6 +39,28 @@ function installBridge(overrides: Partial<Record<string, unknown>> = {}) {
   return { app, eventsOn, emit: (value: unknown) => { progressListener?.(value) } }
 }
 
+function installElectronBridge(overrides: Partial<Record<string, unknown>> = {}) {
+  let progressListener: ((value: unknown) => void) | undefined
+  const dispose = vi.fn(() => { progressListener = undefined })
+  const remoteSSH = {
+    connect: vi.fn(async () => ({ kind: 'ready', connectionId: 'electron-1' })),
+    cancelConnect: vi.fn(async () => {}),
+    listDirectories: vi.fn(async () => ({
+      path: '/home/coding', entries: [{ name: 'project', path: '/home/coding/project', directory: true }],
+    })),
+    selectDirectory: vi.fn(async () => ({ markerPath: '/local/marker', remotePath: '/home/coding/project' })),
+    close: vi.fn(async () => {}),
+    rejectHostKey: vi.fn(async () => {}),
+    subscribeProgress: vi.fn((listener: (value: unknown) => void) => {
+      progressListener = listener
+      return dispose
+    }),
+    ...overrides,
+  }
+  vi.stubGlobal('codingDesktop', { remoteSSH })
+  return { remoteSSH, dispose, emit: (value: unknown) => { progressListener?.(value) } }
+}
+
 describe('validateRemoteSshConfig', () => {
   it('keeps a valid SSH input intact without normalizing it into a URL', () => {
     expect(validateRemoteSshConfig(input())).toEqual(input())
@@ -73,6 +95,79 @@ describe('getRemoteSshBridge', () => {
     expect(getRemoteSshBridge()).toBeUndefined()
     vi.stubGlobal('__CODING_DESKTOP_BRIDGE_TOKEN', 'window-token')
     expect(getRemoteSshBridge()).toBeUndefined()
+    vi.stubGlobal('codingDesktop', { remoteSSH: { connect: vi.fn() } })
+    expect(getRemoteSshBridge()).toBeUndefined()
+  })
+
+  it('prefers the complete Electron preload API without a Wails token or binding', async () => {
+    const electron = installElectronBridge()
+    expect(getRemoteSshBridge()).toBeDefined()
+    const wails = installBridge()
+    const bridge = getRemoteSshBridge()!
+    await expect(bridge.connect(input())).resolves.toEqual({ kind: 'ready', connectionId: 'electron-1', homePath: undefined })
+    await bridge.cancelConnect('attempt-1')
+    await expect(bridge.listDirectories('electron-1', '/home/coding')).resolves.toMatchObject({
+      entries: [{ path: '/home/coding/project' }],
+    })
+    await expect(bridge.selectDirectory('electron-1', '/home/coding/project')).resolves.toEqual({
+      markerPath: '/local/marker', remotePath: '/home/coding/project',
+    })
+    await bridge.close('electron-1')
+    await bridge.rejectHostKey('confirmation-1')
+    expect(electron.remoteSSH.connect).toHaveBeenCalledWith(input())
+    expect(electron.remoteSSH.cancelConnect).toHaveBeenCalledWith('attempt-1')
+    expect(electron.remoteSSH.listDirectories).toHaveBeenCalledWith('electron-1', '/home/coding')
+    expect(electron.remoteSSH.selectDirectory).toHaveBeenCalledWith('electron-1', '/home/coding/project')
+    expect(electron.remoteSSH.close).toHaveBeenCalledWith('electron-1')
+    expect(electron.remoteSSH.rejectHostKey).toHaveBeenCalledWith('confirmation-1')
+    expect(wails.app.RemoteSSHConnect).not.toHaveBeenCalled()
+  })
+
+  it('falls back to Wails when Electron preload is incomplete', async () => {
+    installElectronBridge({ rejectHostKey: undefined })
+    const wails = installBridge()
+    await getRemoteSshBridge()!.connect(input())
+    expect(wails.app.RemoteSSHConnect).toHaveBeenCalledWith('window-token', input())
+  })
+
+  it('filters Electron progress and disposes its listener on unmount', () => {
+    const electron = installElectronBridge()
+    const listener = vi.fn()
+    const unsubscribe = getRemoteSshBridge()!.subscribeProgress(listener)
+    electron.emit({ attemptId: 'attempt-1', phase: 'uploading', message: 'agent starting' })
+    electron.emit({ attemptId: 'attempt-1', phase: 'unknown', message: 'ignored' })
+    electron.emit({ attemptId: 'attempt-1', phase: 'failed', message: 'ignored', secret: 'hidden' })
+    electron.emit({ attemptId: '', phase: 'ready', message: 'ignored' })
+    electron.emit(null)
+    expect(listener).toHaveBeenCalledExactlyOnceWith({
+      attemptId: 'attempt-1', phase: 'uploading', message: 'agent starting',
+    })
+    unsubscribe()
+    electron.emit({ attemptId: 'attempt-1', phase: 'ready', message: 'late event' })
+    expect(electron.dispose).toHaveBeenCalledOnce()
+    expect(listener).toHaveBeenCalledOnce()
+  })
+
+  it('rejects malformed Electron values and hides native errors', async () => {
+    installElectronBridge({ connect: vi.fn(async () => ({ kind: 'ready', connectionId: 'id', extra: true })) })
+    await expect(getRemoteSshBridge()!.connect(input())).rejects.toBeInstanceOf(RemoteSshBridgeError)
+
+    installElectronBridge({ listDirectories: vi.fn(async () => ({ path: '/', entries: [{ path: '/bad' }] })) })
+    await expect(getRemoteSshBridge()!.listDirectories('id', '/')).rejects.toBeInstanceOf(RemoteSshBridgeError)
+
+    installElectronBridge({ selectDirectory: vi.fn(async () => ({ markerPath: '/marker', remotePath: '/', secret: true })) })
+    await expect(getRemoteSshBridge()!.selectDirectory('id', '/')).rejects.toBeInstanceOf(RemoteSshBridgeError)
+
+    installElectronBridge({ close: vi.fn(async () => { throw new Error('/private/native/path') }) })
+    await expect(getRemoteSshBridge()!.close('id')).rejects.toMatchObject({
+      name: 'RemoteSshBridgeError', message: 'Remote-SSH 桌面桥接调用失败。',
+    })
+
+    installElectronBridge({ subscribeProgress: vi.fn(() => { throw new Error('/private/native/path') }) })
+    expect(() => getRemoteSshBridge()!.subscribeProgress(vi.fn())).toThrow('Remote-SSH 桌面桥接调用失败。')
+
+    installElectronBridge({ subscribeProgress: vi.fn(() => undefined) })
+    expect(() => getRemoteSshBridge()!.subscribeProgress(vi.fn())).toThrow(RemoteSshBridgeError)
   })
 
   it('passes the per-window token to every sensitive binding and validates its results', async () => {

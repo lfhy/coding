@@ -23,8 +23,8 @@
 | 加或改客户端面板 | `map/hot.md` 的 client 条目、[packages/client/AGENTS.md](../packages/client/AGENTS.md) | `packages/client/ui-<name>/`、槽定义、bundle 的 `dsh.client` 行 | `pnpm exec vitest run packages/client/ui-<name>/tests` |
 | 改浏览器启动或白屏 | [map/hot.md 的 Web 启动路线](map/hot.md#web-启动与渲染) | `apps/web`、`packages/client/web`、`modules`、`runtime`、`ui-renderer` | 相应包测试 + `DSH_SNAPSHOT=replay pnpm run test:web` |
 | 改浏览器与 Host 的连接或 RPC | [map/hot.md 的连接路线](map/hot.md#浏览器与-host-传输) | `packages/client/connection`、`packages/api/remotes`、`packages/host/apiproxy`、`packages/host/webserver` | 相应连接/网关测试 + `DSH_SNAPSHOT=replay pnpm run test:web` |
-| 改桌面壳行为 | `map/hot.md` 的 `apps/desktop` 条目 | `apps/desktop/` 的 Go 源码、`apps/internal/`、打包脚本 | Go 构建 + 本机启动桌面端 |
-| 改 Electron 开发原型 | [map/hot.md 的桌面路线](map/hot.md#桌面壳与-host-启动) | `apps/desktop-electron/`、共享 Host 就绪记录契约 | `pnpm run build:electron` + 本机 `pnpm run test:electron:smoke` |
+| 改 Wails 桌面壳行为 | [map/hot.md 的桌面路线](map/hot.md#桌面壳与-host-启动) | `apps/desktop/`、共享 `desktopremote`/`hostlaunch`、打包脚本 | Go 测试 + 本机启动桌面端 |
+| 改 Electron 桌面壳行为 | [map/hot.md 的桌面路线](map/hot.md#桌面壳与-host-启动) | `apps/desktop-electron/`、Go helper、共享 Host/Remote-SSH 契约、打包脚本 | 定向测试 + `pnpm run test:electron:smoke`；SSH 与生产包分别做 opt-in 原生验收 |
 | 改工作区侧栏或目录选择 | [map/hot.md 的导航路线](map/hot.md#侧栏工作区与目录选择) | `ui-sidebar`、`ui-workspace`、目录选择 Client/Host 提供方 | 对应包测试 + `pnpm run test:gui` |
 | 改设置和模型凭据界面 | [map/hot.md 的设置路线](map/hot.md#设置界面与凭据) | `ui-settings*`、settings/credentials 提供方或 `apiproxy` | 对应包测试 + `pnpm run test:gui` |
 | 改输入、命令、工具卡片或轨迹 | [map/hot.md 的对话路线](map/hot.md#对话输入命令与视图) | `ui-conversation`、`ui-input-trigger`、`ui-commands`、`ui-tool`、`ui-trajectory` | 对应包测试 + 用户可见输出的 keyless 回放 |

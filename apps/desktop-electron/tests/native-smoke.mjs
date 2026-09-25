@@ -230,6 +230,104 @@ async function verifyWebSockets(page, origin) {
   ])
 }
 
+async function verifyRemoteSshBridge(page) {
+  const bridge = await page.evaluate(async () => {
+    const remoteSSH = window.codingDesktop?.remoteSSH
+    const methods = remoteSSH === undefined ? [] : Object.keys(remoteSSH).sort()
+    const dispose = remoteSSH?.subscribeProgress(() => {})
+    dispose?.()
+    return {
+      desktopKeys: Object.keys(window.codingDesktop ?? {}),
+      methods,
+      disposeType: typeof dispose,
+      leakedGlobals: [
+        'ipcRenderer', 'require', 'process', 'go', '__CODING_DESKTOP_BRIDGE_TOKEN',
+        'DSH_REMOTE_BRIDGE_TOKEN', 'DSH_HOST_TOKEN', '__CODING_HOST_BEARER',
+        'CODING_HOST_BEARER', 'managedHostToken',
+      ].filter(name => name in window),
+      result: await remoteSSH?.cancelConnect('smoke-attempt'),
+    }
+  })
+  assert.deepEqual(bridge.desktopKeys, ['remoteSSH'], 'preload must expose only the Remote-SSH surface')
+  assert.deepEqual(bridge.methods, [
+    'cancelConnect', 'close', 'connect', 'listDirectories', 'rejectHostKey', 'selectDirectory', 'subscribeProgress',
+  ], 'preload must expose exactly six methods plus progress subscription')
+  assert.equal(bridge.disposeType, 'function', 'progress subscription must have a disposer')
+  assert.deepEqual(bridge.leakedGlobals, [], 'renderer must not expose IPC, Go bridge token or Host bearer globals')
+  assert.deepEqual(bridge.result, {}, 'cancelConnect must complete through preload, main IPC and the Go helper')
+}
+
+async function verifyRemoteSshWizard(page, screenshot) {
+  // 首次使用可选择稍后配置，不读取、填写或保存真实 API Key。
+  const onboarding = page.getByRole('dialog', { name: '添加一个 API Key 开始使用' })
+  await onboarding.getByRole('button', { name: '稍后配置' }).click()
+  await onboarding.waitFor({ state: 'hidden' })
+  await page.getByRole('button', { name: '选择工作区' }).first().click()
+  await page.getByText('连接 Remote-SSH', { exact: true }).first().click()
+  const wizard = page.getByRole('dialog', { name: '连接 Remote-SSH' })
+  await wizard.waitFor({ state: 'visible' })
+  assert.equal(await wizard.locator('#remote-ssh-host').isVisible(), true,
+    'Electron preload must enable the Remote-SSH host form')
+  assert.equal(await wizard.getByText('Remote-SSH 仅在 Coding 桌面端中可用。').count(), 0,
+    'Electron wizard must not show the desktop-only fallback')
+  await wizard.screenshot({ path: screenshot })
+  await wizard.getByRole('button', { name: '关闭' }).click()
+  await wizard.waitFor({ state: 'hidden' })
+}
+
+async function verifyNativeChrome(app, hostHome, record, origin, originalId) {
+  const menu = await app.evaluate(({ Menu }) => {
+    const file = Menu.getApplicationMenu()?.items.find(item => item.label === '文件')
+    return {
+      file: file?.label,
+      items: file?.submenu?.items.map(item => ({ label: item.label, accelerator: item.accelerator })),
+    }
+  })
+  assert.equal(menu.file, '文件', 'native application menu must contain 文件')
+  assert.ok(menu.items?.some(item => item.label === '新建会话' && item.accelerator === 'CmdOrCtrl+N'),
+    'native 新建会话 must have CmdOrCtrl+N')
+  assert.ok(menu.items?.some(item => item.label === '隐藏窗口' && item.accelerator === 'CmdOrCtrl+W'),
+    'native 隐藏窗口 must have CmdOrCtrl+W')
+
+  // 经真实 BrowserWindow.close 事件验证主进程的拦截，不直接调用 nativeChrome 句柄。
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close())
+  await until(() => app.evaluate(({ BrowserWindow }, id) => {
+    const windows = BrowserWindow.getAllWindows()
+    return windows.length === 1 && windows[0].id === id &&
+      !windows[0].isDestroyed() && !windows[0].isVisible()
+  }, originalId), 'macOS close must hide and retain the same BrowserWindow', 10_000)
+  assert.equal(pidAlive(record.pid), true, 'closing the window must not stop the managed Host')
+  assert.deepEqual(await hostRecord(join(hostHome, 'host.json')), record,
+    'closing the window must retain the managed Host record')
+  assert.equal((await describeHost(origin)).managedHostToken, record.token,
+    'managed Host RPC must remain available after closing the window')
+
+  // Dock 激活事件交由入口注册的监听器恢复窗口，不绕开应用生命周期。
+  await app.evaluate(({ app: electronApp }) => electronApp.emit('activate'))
+  await until(() => app.evaluate(({ BrowserWindow }, id) => {
+    const windows = BrowserWindow.getAllWindows()
+    return windows.length === 1 && windows[0].id === id && windows[0].isVisible()
+  }, originalId), 'Dock activate must restore the same BrowserWindow', 10_000)
+
+  // 菜单项的实际 click 回调也应隐藏窗口，之后仍能由 Dock 激活复原。
+  await app.evaluate(({ BrowserWindow, Menu }) => {
+    const window = BrowserWindow.getAllWindows()[0]
+    const file = Menu.getApplicationMenu().items.find(item => item.label === '文件')
+    const hide = file.submenu.items.find(item => item.label === '隐藏窗口')
+    hide.click(hide, window, {})
+  })
+  await until(() => app.evaluate(({ BrowserWindow }, id) => {
+    const windows = BrowserWindow.getAllWindows()
+    return windows.length === 1 && windows[0].id === id && !windows[0].isVisible()
+  }, originalId), 'native menu hide must retain the same BrowserWindow', 10_000)
+  await app.evaluate(({ app: electronApp }) => electronApp.emit('activate'))
+  await until(() => app.evaluate(({ BrowserWindow }, id) => {
+    const windows = BrowserWindow.getAllWindows()
+    return windows.length === 1 && windows[0].id === id && windows[0].isVisible()
+  }, originalId), 'Dock activate must restore the menu-hidden BrowserWindow', 10_000)
+  console.log('macOS Tray existence and status-menu interaction require native UI inspection; Electron exposes no Tray.getAll API')
+}
+
 async function assertBlueFocusedField(locator, name) {
   assert.equal(await locator.isVisible(), true, `${name} input must be visible`)
   const colors = await locator.evaluate(input => {
@@ -296,6 +394,8 @@ async function main() {
   const userData = join(hostHome, 'electron-user-data')
   const screenshot = join(tmpdir(), `dsh-electron-native-${randomUUID()}.png`)
   const afterScreenshot = join(tmpdir(), `dsh-electron-native-focus-${randomUUID()}.png`)
+  const remoteScreenshot = join(tmpdir(), `dsh-electron-native-remote-${randomUUID()}.png`)
+  const restoredScreenshot = join(tmpdir(), `dsh-electron-native-restored-${randomUUID()}.png`)
   let app
   let record
   let passed = false
@@ -364,8 +464,10 @@ async function main() {
     assert.equal(described.home, home)
     assert.equal(described.managedHostToken, record.token)
     await verifyWebSockets(page, origin)
+    await verifyRemoteSshBridge(page)
     await page.screenshot({ path: screenshot })
     await verifyOnboardingFocus(page, afterScreenshot)
+    await verifyRemoteSshWizard(page, remoteScreenshot)
     await verifyWindowBoundary(page, app, origin)
 
     const originalWindow = await app.evaluate(({ BrowserWindow }) => {
@@ -374,6 +476,7 @@ async function main() {
     })
     assert.equal(originalWindow.count, 1, 'first instance must own exactly one native window')
     assert.ok(Number.isSafeInteger(originalWindow.id), 'first instance must have a native window id')
+    await verifyNativeChrome(app, hostHome, record, origin, originalWindow.id)
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].minimize())
     await until(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isMinimized()),
       'primary window minimized', 5_000)
@@ -392,14 +495,18 @@ async function main() {
         'second instance must focus the original window on an unlocked screen', 10_000)
     }
     assert.equal(page.url(), `${origin}/`)
+    await page.screenshot({ path: restoredScreenshot })
     assert.equal(rendererErrors.length, 0, 'renderer should not report runtime errors')
     passed = true
-    console.log(`PASS: Host page, HTTP, two WebSockets, onboarding focus, window safety, ` +
-      `single-instance restore${locked === true ? ' (foreground focus unverified: screen locked)' : ' and focus'}; ` +
-      `screenshots: ${screenshot}, ${afterScreenshot}`)
+    console.log(`PASS: Host page, HTTP, two WebSockets, onboarding focus, Remote-SSH bridge and wizard, window safety, ` +
+      `native menu, close-hide and Dock restore, single-instance restore` +
+      `${locked === true ? ' (foreground focus unverified: screen locked)' : ' and focus'}; ` +
+      `screenshots: ${screenshot}, ${afterScreenshot}, ${remoteScreenshot}, ${restoredScreenshot}`)
   } finally {
     if (!passed && existsSync(screenshot)) console.error(`Failure screenshot: ${screenshot}`)
     if (!passed && existsSync(afterScreenshot)) console.error(`Focus screenshot: ${afterScreenshot}`)
+    if (!passed && existsSync(remoteScreenshot)) console.error(`Remote-SSH screenshot: ${remoteScreenshot}`)
+    if (!passed && existsSync(restoredScreenshot)) console.error(`Restored screenshot: ${restoredScreenshot}`)
     if (app !== undefined) await closeOwnApp(app)
     // 未能证明 Host 所有权或无法等到其退出时保留 HOME，避免删掉仍运行的 Host 的数据。
     let safeToClean = false

@@ -121,7 +121,7 @@ vendor manifest 守卫检查 `vendor/*/src` 下的改动是否连同对应的 `v
 
 在 macOS 或已安装系统 WebView/CGO 依赖的 Linux 上测试原生桌面窗口，从仓库根目录执行 `make dev`；Windows 会在构建前报不支持。该命令先构建当前 Host、Client 和 Web 产物，再用 `apps/desktop/go.mod` 锁定的 Wails CLI 启动桌面壳，同时持续重建 Web 改动；Ctrl+C、终端挂断或开发窗口退出时会清理 Web watcher。开发实例使用独立窗口锁与 `~/.dsh-dev`，从当前仓库启动 Host，不占用已安装客户端的窗口和 `~/.dsh` 数据。需要验证 Remote-SSH 时另运行 `make remote-agent` 生成本地 agent 产物。
 
-macOS 上可另运行 `pnpm run dev:electron` 验证[并存的 Electron 开发原型](../apps/desktop-electron/README.md)。该命令先构建 Host、Client 和 Web，再启动 Electron；`pnpm run build:electron` 仅构建 Electron 壳。原型使用独立的 `~/.dsh-electron-dev`，不改变 Wails 的 `make dev`、`make install` 或 `pnpm run build:desktop`，也不代表 Remote-SSH、托盘、Browser Use 或生产打包已经迁移。实际操作限制与待验证行为见其 README。
+macOS arm64 上可运行 `pnpm run dev:electron` 验证[并存的 Electron 壳](../apps/desktop-electron/README.md)。先运行 `pnpm run build:remote-agent` 准备远端 agent 产物；开发命令构建 Host、Client、Web、Go helper 和 Electron 壳。单独的 `pnpm run build:electron-helper` 仅构建 Go helper，`pnpm run build:electron` 仅构建 Electron 壳。开发态使用独立的 `~/.dsh-electron-dev`；`make install` 与 `pnpm run build:desktop` 仍使用 Wails。开发态原生冒烟、回环 SSH fixture 和生产包分别验收，具体命令与限制见其 README。
 
 ### 演示
 

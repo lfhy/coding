@@ -18,7 +18,7 @@ CLIENT := dist/coding
 INSTALL := install-cli
 endif
 
-.PHONY: all runtime remote-agent desktop dev tui install install-app install-cli check uninstall help
+.PHONY: all runtime remote-agent desktop dev electron-app check-electron tui install install-app install-cli check uninstall help
 
 all: $(CLIENT)
 
@@ -44,6 +44,13 @@ dev:
 	ln -sfn ../../apps/desktop/packaging/icon.iconset/icon_512x512@2x.png .dsh-build/desktop/appicon.png
 	cd apps/desktop && CGO_ENABLED=1 GOBIN="$(CURDIR)/.dsh-build" go install github.com/wailsapp/wails/v2/cmd/wails@$$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v2)
 	node scripts/dev-desktop.mjs
+
+# 与现有 Wails 安装版并存的 macOS Electron 应用；不会覆盖 /Applications/Coding.app。
+electron-app:
+	pnpm run package:electron
+
+check-electron:
+	pnpm run test:electron:packaged
 
 # Linux 交互式 TUI。
 tui:
@@ -72,5 +79,5 @@ uninstall:
 	rm -f $(BINDIR)/coding
 
 help:
-	@echo "目标：dev（独立桌面开发实例）/ runtime / desktop / tui / install（macOS 装 /Applications，Linux 装 ~/.local/bin）/ uninstall"
+	@echo "目标：dev（Wails 开发实例）/ electron-app（独立 Electron 包）/ check-electron / runtime / desktop / tui / install（Wails 或 CLI）/ uninstall"
 	@echo "签名：CODESIGN_IDENTITY=\"Apple Development: …\" make install（默认 ad-hoc）"

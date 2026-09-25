@@ -41,6 +41,7 @@ const (
 	maxSSHPasswordBytes   = 4 << 10
 	maxSSHPrivateKeyBytes = 1 << 20
 	maxRemotePathBytes    = 4 << 10
+	maxAgentVersionBytes  = 128
 )
 
 type connectionState struct {
@@ -49,6 +50,7 @@ type connectionState struct {
 	client       *ssh.Client
 	agentSession *ssh.Session
 	agentPort    int
+	agentVersion string
 	token        string
 	http         *http.Client
 
@@ -126,6 +128,7 @@ func (m *Manager) Connect(ctx context.Context, request ConnectRequest) (Connecti
 		client:       client,
 		agentSession: session,
 		agentPort:    ready.Port,
+		agentVersion: ready.Version,
 		token:        token,
 		done:         make(chan struct{}),
 	}
@@ -404,14 +407,15 @@ func (state *connectionState) health(ctx context.Context) error {
 	var health struct {
 		Type     string `json:"type"`
 		Protocol int    `json:"protocol"`
+		Version  string `json:"version"`
 		Platform string `json:"platform"`
 		Arch     string `json:"arch"`
 	}
 	if err := decodeStrictJSON(response.Body, &health); err != nil {
 		return err
 	}
-	if health.Type != "coding-remote-agent-health" || health.Protocol != ProtocolVersion || health.Platform != state.info.Platform.OS || health.Arch != state.info.Platform.Arch {
-		return errors.New("remote agent health does not match the SSH target platform")
+	if health.Type != "coding-remote-agent-health" || health.Protocol != ProtocolVersion || health.Version != state.agentVersion || health.Platform != state.info.Platform.OS || health.Arch != state.info.Platform.Arch {
+		return errors.New("remote agent health does not match the SSH target or readiness")
 	}
 	return nil
 }
@@ -1090,7 +1094,7 @@ func startRemoteAgent(ctx context.Context, client *ssh.Client, remotePath string
 	case err := <-readFailure:
 		return ReadyRecord{}, "", nil, err
 	case record := <-ready:
-		if record.Protocol != ProtocolVersion || record.Port < 1 || record.Port > 65535 {
+		if record.Protocol != ProtocolVersion || record.Port < 1 || record.Port > 65535 || strings.TrimSpace(record.Version) == "" || len(record.Version) > maxAgentVersionBytes {
 			return ReadyRecord{}, "", nil, errors.New("remote agent returned invalid readiness")
 		}
 		cleanup = false

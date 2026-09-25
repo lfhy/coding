@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { app, BrowserWindow, dialog, nativeImage } from 'electron'
 
-const macOSIconPath = fileURLToPath(new URL('../../desktop/packaging/icon.iconset/icon_512x512@2x.png', import.meta.url))
+const preloadPath = fileURLToPath(new URL('./preload.cjs', import.meta.url))
 
 function validHostOrigin(origin: string): boolean {
   const match = /^http:\/\/127\.0\.0\.1:([1-9]\d{0,4})$/.exec(origin)
@@ -33,12 +33,13 @@ export function isAllowedHostNavigation(origin: string, target: string): boolean
 }
 
 /**
- * 为已验证就绪的独立 Host 建立受限窗口；不向 renderer 暴露 Node 或原生 IPC。
+ * 为已验证就绪的独立 Host 建立受限窗口；renderer 只经 sandbox preload
+ * 请求主进程逐次授权的 Remote-SSH 方法，不直接持有 Node 或 helper。
  * @param origin 主进程验证的 Host origin，须为随机端口的 127.0.0.1 HTTP 地址。
- * @param options 开发态可显式启用 DevTools，默认关闭。
+ * @param options 开发态 DevTools 与由运行模式提供的原生图标路径。
  * @returns 已开始加载 Host 根页面的窗口。
  */
-export function createHostWindow(origin: string, options: { devTools?: boolean } = {}): BrowserWindow {
+export function createHostWindow(origin: string, options: { devTools?: boolean; iconPath?: string } = {}): BrowserWindow {
   if (!validHostOrigin(origin)) throw new Error('Invalid desktop Host origin')
 
   const isMacOS = process.platform === 'darwin'
@@ -61,6 +62,7 @@ export function createHostWindow(origin: string, options: { devTools?: boolean }
       webSecurity: true,
       webviewTag: false,
       devTools: options.devTools === true,
+      preload: preloadPath,
     },
   })
 
@@ -89,9 +91,13 @@ export function createHostWindow(origin: string, options: { devTools?: boolean }
     failureShown = true
     // 不拼接异常文本或 URL；失败窗口不再保留白屏，macOS 可从 Dock 重新发现 Host。
     dialog.showErrorBox('Coding 窗口加载失败', '本地 Host 页面无法加载。请检查 Host 状态并重新启动桌面端。')
-    window.close()
+    window.destroy()
   }
-  window.on('close', () => { closing = true })
+  window.on('close', (event) => {
+    closing = true
+    // macOS 普通关窗由主进程拦截成隐藏；它仍是可复用的同一个窗口。
+    queueMicrotask(() => { if (event.defaultPrevented) closing = false })
+  })
   window.webContents.on('did-fail-load', (_event, errorCode, _description, _url, isMainFrame) => {
     if (errorCode === -3) {
       if (initialLoadPending && isMainFrame) initialLoadCancelled = true
@@ -108,9 +114,9 @@ export function createHostWindow(origin: string, options: { devTools?: boolean }
     void window.webContents.insertCSS(`:root { --app-safe-area-inset-top: ${top}; --app-safe-area-inset-right: ${right}; }`)
       .catch(() => undefined)
   })
-  if (isMacOS && app.dock && existsSync(macOSIconPath)) {
+  if (isMacOS && app.dock && options.iconPath && existsSync(options.iconPath)) {
     try {
-      const icon = nativeImage.createFromPath(macOSIconPath)
+      const icon = nativeImage.createFromPath(options.iconPath)
       if (icon.isEmpty()) throw new Error('Empty Dock icon')
       app.dock.setIcon(icon)
     } catch {

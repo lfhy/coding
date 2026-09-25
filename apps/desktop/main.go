@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/deepseek-ai/coding/apps/desktop/internal/desktopremote"
 	"github.com/deepseek-ai/coding/apps/desktop/internal/instance"
 	"github.com/deepseek-ai/coding/apps/desktop/internal/remoteagent"
 	"github.com/deepseek-ai/coding/apps/internal/hostlaunch"
@@ -39,26 +40,16 @@ const applicationName = "Coding"
 
 // App 承载 Wails 绑定与窗口/运行时引用。
 type App struct {
-	ctx                 context.Context
-	launcher            *hostlaunch.Launcher
-	stateMu             sync.RWMutex
-	endpoint            *url.URL
-	bridgeToken         string
-	remoteManager       remoteSSHManager
-	remoteBridge        *remoteBridge
-	remoteConnectMu     sync.Mutex
-	remoteConnectCancel context.CancelFunc
-	remoteConnectSeq    uint64
-	remoteConnectID     string
-	remoteCancelled     map[string]time.Time
-	remoteConnectWG     sync.WaitGroup
-	remoteMarkerMu      sync.Mutex
-	remoteMarkers       map[string]string
-	remoteStopping      bool
-	remoteShutdownOnce  sync.Once
-	ready               chan struct{}
-	readyOnce           sync.Once
-	windowReady         chan struct{}
+	ctx                context.Context
+	launcher           *hostlaunch.Launcher
+	stateMu            sync.RWMutex
+	endpoint           *url.URL
+	bridgeToken        string
+	remoteService      *desktopremote.Service
+	remoteShutdownOnce sync.Once
+	ready              chan struct{}
+	readyOnce          sync.Once
+	windowReady        chan struct{}
 }
 
 func main() {
@@ -106,7 +97,7 @@ func main() {
 	if err != nil {
 		fatal(err)
 	}
-	bridge, err := newRemoteBridge(hostBridgeToken, func(ctx context.Context, connectionID, method, requestPath string, body []byte) (int, []byte, error) {
+	bridge, err := desktopremote.NewBridge(hostBridgeToken, func(ctx context.Context, connectionID, method, requestPath string, body []byte) (int, []byte, error) {
 		response, err := manager.Proxy(ctx, connectionID, method, requestPath, body)
 		return response.Status, response.Body, err
 	})
@@ -114,9 +105,24 @@ func main() {
 		fatal(err)
 	}
 	app := &App{
-		bridgeToken: bindingToken, remoteManager: manager, remoteBridge: bridge,
-		remoteMarkers: make(map[string]string), ready: make(chan struct{}), windowReady: make(chan struct{}),
+		bridgeToken: bindingToken, ready: make(chan struct{}), windowReady: make(chan struct{}),
 	}
+	service, err := desktopremote.NewService(desktopremote.Options{
+		Home: home, Manager: manager, Bridge: bridge,
+		OnProgress: func(progress desktopremote.ProgressEvent) {
+			if app.ctx != nil {
+				wailsruntime.EventsEmit(app.ctx, "coding:remote-ssh-progress", progress)
+			}
+		},
+		OnCleanupError: func(error) {
+			fmt.Fprintln(os.Stderr, applicationName+": remote workspace marker updated; replaced SSH connection cleanup failed")
+		},
+	})
+	if err != nil {
+		_ = bridge.Close()
+		fatal(err)
+	}
+	app.remoteService = service
 	go lock.Serve(func() {
 		// 可能在 Wails 启动前收到第二次启动请求，待原生窗口可用后再恢复。
 		<-app.windowReady
@@ -400,34 +406,11 @@ func fatal(err error) {
 	os.Exit(1)
 }
 
-// shutdownRemote 先取消未发布的连接尝试并等待其归还 SSH 资源，再停止所有
-// 已发布连接和 Host 使用的回环 bridge。该顺序避免退出期间留下远端 agent。
+// shutdownRemote 由共享服务先归还 SSH 连接、再停止 Host 使用的回环 bridge。
 func (a *App) shutdownRemote() {
 	a.remoteShutdownOnce.Do(func() {
-		a.remoteConnectMu.Lock()
-		a.remoteStopping = true
-		a.remoteConnectSeq++
-		if a.remoteConnectCancel != nil {
-			a.remoteConnectCancel()
-		}
-		a.remoteConnectMu.Unlock()
-
-		attemptsDone := make(chan struct{})
-		go func() {
-			a.remoteConnectWG.Wait()
-			close(attemptsDone)
-		}()
-		select {
-		case <-attemptsDone:
-		case <-time.After(3 * time.Second):
-		}
-		if a.remoteManager != nil {
-			ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-			_ = a.remoteManager.CloseAll(ctx)
-			cancel()
-		}
-		if a.remoteBridge != nil {
-			_ = a.remoteBridge.Close()
+		if a.remoteService != nil {
+			_ = a.remoteService.CloseAll(context.Background())
 		}
 	})
 }
