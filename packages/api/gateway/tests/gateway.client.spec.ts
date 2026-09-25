@@ -404,8 +404,52 @@ describe('Client Typert API', () => {
     await disposeMultipleScoped()
   })
 
+  it('activates an injected consumer only after every method of a fresh namespace is callable', async () => {
+    const call = vi.fn<ConnectionHandle['rpc']['call']>()
+      .mockResolvedValueOnce({ ok: true, value: { ref: 'goal-1' } })
+      .mockResolvedValueOnce({ ok: true, value: 'ready' })
+    const ctx = await bench(call)
+    const observed: unknown[][] = []
+    const invoked: Promise<unknown>[] = []
+    const consumer = ctx.plugin({
+      inject: ['remote.probe'],
+      apply: (scope: Context) => {
+        const namespace = scope.get('remote.probe') as {
+          create: (agentId: string, request: { objective: string }) => Promise<unknown>
+          maybe: (value: string) => Promise<unknown>
+        }
+        observed.push([namespace.create, namespace.maybe])
+        invoked.push(namespace.create('agent-1', { objective: 'ship' }), namespace.maybe('ready'))
+      },
+    })
+
+    const dispose = await ctx.remote.$mount({
+      package: '@fixture/ready',
+      descriptors: [directDescriptor(), maybeDescriptor()],
+    })
+    await consumer
+
+    expect(observed).toHaveLength(1)
+    expect(observed[0]?.[0]).toBeTypeOf('function')
+    expect(observed[0]?.[1]).toBeTypeOf('function')
+    await expect(Promise.all(invoked)).resolves.toEqual([
+      { ok: true, value: { ref: 'goal-1' } },
+      { ok: true, value: 'ready' },
+    ])
+
+    await dispose()
+    expect(ctx.get('remote.probe')).toBeUndefined()
+  })
+
   it('rolls back earlier descriptors when a later descriptor fails to install', async () => {
     const ctx = await bench(vi.fn<ConnectionHandle['rpc']['call']>())
+    const observed: unknown[] = []
+    const consumer = ctx.plugin({
+      inject: ['remote.probe'],
+      apply: (scope: Context) => {
+        observed.push((scope.get('remote.probe') as { archive?: unknown }).archive)
+      },
+    })
     const { scope: _scope, ...first } = directDescriptor()
     const second: InvocationDescriptor = {
       ...first,
@@ -425,10 +469,13 @@ describe('Client Typert API', () => {
     }
 
     expect((ctx.remote as unknown as Record<string, unknown>).probe).toBeUndefined()
+    expect(observed).toEqual([])
     await vi.waitFor(() => { expect(ctx.typert.remotes.list()).toEqual([]) })
     const retry = await ctx.remote.$mount({ package: '@fixture/retry-batch', descriptors: [first, second] })
     expect(ctx.remote.probe.create).toBeTypeOf('function')
     expect((ctx.remote.probe as unknown as Record<string, unknown>).archive).toBeTypeOf('function')
+    await consumer
+    expect(observed).toEqual([expect.any(Function)])
     await retry()
   })
 

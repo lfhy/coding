@@ -178,8 +178,19 @@ class ClientRemoteService extends Service implements TypertClientRemote {
     this.validateContribution(contribution)
     const disposeRemote = callerCtx.typert.remotes.register(contribution)
     const installed: TypertDisposer[] = []
+    const freshNamespaces = new Set<string>()
     try {
-      for (const descriptor of contribution.descriptors) installed.push(await this.install(descriptor))
+      for (const descriptor of contribution.descriptors) {
+        const name = descriptor.namespace
+        if (freshNamespaces.has(name)) continue
+        if (!this.namespaces.has(name)) {
+          const batch = contribution.descriptors.filter(candidate => candidate.namespace === name)
+          installed.push(await this.installFreshNamespace(name, batch))
+          freshNamespaces.add(name)
+        } else {
+          installed.push(await this.install(descriptor))
+        }
+      }
     } catch (error) {
       for (const dispose of installed.reverse()) await dispose()
       await disposeRemote()
@@ -260,7 +271,8 @@ class ClientRemoteService extends Service implements TypertClientRemote {
   }
 
   private async installDirect(descriptor: InvocationDescriptor, token: MountToken): Promise<TypertDisposer> {
-    const namespace = await this.namespace(descriptor.namespace)
+    const namespace = this.namespaces.get(descriptor.namespace)
+    if (namespace === undefined) throw new Error(`client api: namespace ${JSON.stringify(descriptor.namespace)} is not mounted`)
     try {
       namespace.service.installDirect(descriptor, token)
     } catch (error) {
@@ -278,7 +290,8 @@ class ClientRemoteService extends Service implements TypertClientRemote {
     projection: ScopedProjection,
     token: MountToken,
   ): Promise<TypertDisposer> {
-    const namespace = await this.namespace(descriptor.namespace)
+    const namespace = this.namespaces.get(descriptor.namespace)
+    if (namespace === undefined) throw new Error(`client api: namespace ${JSON.stringify(descriptor.namespace)} is not mounted`)
     try {
       namespace.service.installScoped(descriptor, projection, token)
     } catch (error) {
@@ -291,9 +304,15 @@ class ClientRemoteService extends Service implements TypertClientRemote {
     }
   }
 
-  private async namespace(name: string): Promise<RemoteNamespaceHandle> {
-    let namespace = this.namespaces.get(name)
-    if (namespace !== undefined) return namespace
+  private async installFreshNamespace(
+    name: string,
+    descriptors: readonly InvocationDescriptor[],
+  ): Promise<TypertDisposer> {
+    const entries = descriptors.map(descriptor => ({
+      descriptor,
+      projection: scopedProjection(descriptor),
+      token: { active: true, abort: new AbortController() } as MountToken,
+    }))
     let service: RemoteNamespaceService | undefined
     const fiber = this.ownerCtx.plugin({
       name: remoteServiceKey(name),
@@ -303,19 +322,36 @@ class ClientRemoteService extends Service implements TypertClientRemote {
           name,
           (direct, scoped, caller, args) => this.invokeMethod(direct, scoped, caller, args),
         )
+        // Cordis 在插件启动完成后才通知注入者；同一命名空间的全部方法必须先装好。
+        for (const { descriptor, projection, token } of entries) {
+          if (descriptor.invocation.kind === 'direct') service.installDirect(descriptor, token)
+          if (projection !== undefined) service.installScoped(descriptor, projection, token)
+        }
       },
     })
     try {
       await fiber
     } catch (error) {
+      for (const { token } of entries) {
+        token.active = false
+        token.abort.abort()
+      }
       await fiber.dispose()
       throw error
     }
     /* v8 ignore next -- a settled namespace fiber synchronously constructs its Service. */
     if (service === undefined) throw new Error(`client api: namespace ${JSON.stringify(name)} did not start`)
-    namespace = { service, dispose: fiber.dispose }
+    const namespace: RemoteNamespaceHandle = { service, dispose: fiber.dispose }
     this.namespaces.set(name, namespace)
-    return namespace
+    return async () => {
+      for (const { descriptor, projection, token } of entries.reverse()) {
+        token.active = false
+        token.abort.abort()
+        if (projection !== undefined) namespace.service.remove('scoped', descriptor.method, token)
+        if (descriptor.invocation.kind === 'direct') namespace.service.remove('direct', descriptor.method, token)
+      }
+      await this.disposeNamespace(name, namespace)
+    }
   }
 
   private async disposeNamespace(name: string, namespace: RemoteNamespaceHandle): Promise<void> {
