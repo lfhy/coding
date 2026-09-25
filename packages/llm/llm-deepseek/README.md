@@ -12,6 +12,7 @@ harness LLM（大语言模型）seam 的 DeepSeek chat-completions 适配器：�
 - id: llm-deepseek
   name: '@deepseek-ai/dsh-llm-deepseek'
   config:
+    channelName: default     # 可选；唯一渠道的显示名称，最多 64 个字符
     apiKeyEnv: DEEPSEEK_API_KEY  # default; resolved per request via ctx.credentials, then the environment
     baseURL: https://api.deepseek.com # optional; $DEEPSEEK_BASE_URL then the public API when omitted
     thinking: enabled        # optional; provider default is enabled
@@ -36,6 +37,8 @@ harness LLM（大语言模型）seam 的 DeepSeek chat-completions 适配器：�
         description: Company-hosted reasoning model
         contextWindow: 512000
 ```
+
+`channelName` 是当前唯一 DeepSeek 渠道的显示名称，省略时为 `default`；可使用中文和空格，但不能是空字符串或全空白，最多 64 个字符。自定义名称可通过 `llm-deepseek` settings 分节持久保存，不进入模型请求；它不改变路由 id `deepseek-official`、凭据引用 `DEEPSEEK_API_KEY` 或 settings 路径，也不创建第二条渠道。多渠道配置尚未提供。
 
 该插件注册唯一提供方路由 `deepseek-official`，并一同注册解析后的 `retryPolicy`；省略时会解析为 normal 模式并重试五次。请求使用 `provider: deepseek-official` 选择该路由；其 `model` 会作为协议 `model` 字符串原样传递，因此更改 DeepSeek 模型不需要生命周期时注册。省略 `models` 会公布 `deepseek-v4-flash` 和 `deepseek-v4-pro`，两者的上下文窗口均为 1,000,000 token；显式列表会替换这些默认值，`models: []` 则不公布任何模型。在视觉模型端点完成发布前，默认目录不会公布视觉模型，但部署方可以通过 `inputModalities: [text, image]` 主动添加。Catalog 配置项通过 `ctx.llm.listModels('deepseek-official')` 公开给 ACP（Agent Client Protocol）编辑器和 Web 选择器等客户端，但仍只提供建议：未列出模型 id 仍原样传递。省略配置项 name 默认为其 id，省略 `inputModalities` 则表示仅支持 `text`。
 

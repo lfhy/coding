@@ -709,6 +709,18 @@ describe('DeepSeekAdapter against a mock server', () => {
 })
 
 describe('plugin registration and config', () => {
+  it('keeps channel display metadata out of resolved request options', () => {
+    const unnamed = resolveAdapterOptions({})
+    const named = resolveAdapterOptions({ channelName: '我的 DeepSeek' })
+    expect(named).toEqual(unnamed)
+    expect(named).not.toHaveProperty('channelName')
+
+    for (const channelName of ['', ' \t\u3000 ', 'a'.repeat(65)]) {
+      expect(() => resolveAdapterOptions({ channelName })).toThrow(/channelName/)
+    }
+    expect(() => resolveAdapterOptions({ channelName: 'a'.repeat(64) })).not.toThrow()
+  })
+
   it('keeps wire helpers off the package root', () => {
     for (const helper of [
       'httpErrorCode',

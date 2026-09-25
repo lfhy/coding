@@ -13,3 +13,13 @@
   --ds-transition-duration-fast: 0.1s;
   --ds-transition-duration-slow: 0.3s;
 }
+
+:where(input:not([type='checkbox']):not([type='radio']), textarea, select):focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+}
+
+:where(input[type='checkbox'], input[type='radio']):focus-visible:not(:disabled) {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+}

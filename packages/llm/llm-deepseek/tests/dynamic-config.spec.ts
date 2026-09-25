@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { access, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import LlmRuntime, { createUserMessage, INVALID_CREDENTIAL_CODE } from '@deepseek-ai/dsh-llm'
@@ -97,6 +97,34 @@ function prompt(ctx: Context) {
 }
 
 describe('request-level dynamic configuration', () => {
+  it('persists a channel display name while keeping the single provider route', async () => {
+    const dir = await home()
+    const { ctx } = await boot(dir, { baseURL: 'http://127.0.0.1:1' })
+
+    expect(ctx.settings.get(NS)).toMatchObject({ channelName: 'default' })
+    await ctx.settings.update(NS, { channelName: '我的 DeepSeek' })
+    expect(ctx.settings.get(NS)).toMatchObject({ channelName: '我的 DeepSeek' })
+    expect(await readFile(join(dir, 'settings.yaml'), 'utf8')).toContain('channelName: 我的 DeepSeek')
+    expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek' }])
+    expect(ctx.llm.listConfigurableProviders()).toEqual([{
+      provider: 'deepseek-official',
+      displayName: 'DeepSeek',
+      settingsNs: 'llm-deepseek',
+      settingsPath: [],
+    }])
+  })
+
+  it('rejects empty and whitespace-only channel names before persisting', async () => {
+    const dir = await home()
+    const { ctx } = await boot(dir, { baseURL: 'http://127.0.0.1:1' })
+
+    for (const channelName of ['', ' \t\u3000 ', 'a'.repeat(65)]) {
+      await expect(ctx.settings.update(NS, { channelName })).rejects.toThrow()
+    }
+    expect(ctx.settings.get(NS)).toMatchObject({ channelName: 'default' })
+    await expect(access(join(dir, 'settings.yaml'))).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
   it('routes the next request with the freshly resolved base URL and credential', async () => {
     vi.stubEnv('DEEPSEEK_API_KEY', '')
     const dir = await home()

@@ -336,6 +336,11 @@
   line-height: 20px;
 }
 
+.search:focus-within {
+  border-color: var(--dsw-alias-state-business-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 18%, transparent);
+}
+
 .search input::placeholder {
   color: var(--dsw-alias-label-tertiary);
 }

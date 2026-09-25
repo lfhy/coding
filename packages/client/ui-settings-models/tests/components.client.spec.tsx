@@ -17,7 +17,7 @@ import { apiKeyFailure } from '../src/client/apiKey.ts'
 import { SettingsDescribeMirror } from '@deepseek-ai/dsh-client-ui-settings/src/client/settings-mirror.ts'
 import { deriveKeyRef, ModelsSettingsStore } from '../src/client/store.ts'
 import type { ProviderRow } from '../src/client/store.ts'
-import { en } from '../src/client/locales.ts'
+import { en, zh } from '../src/client/locales.ts'
 import { settingsSchema } from './settings-schema.client.ts'
 
 afterEach(cleanup)
@@ -48,6 +48,7 @@ const PiAiConfig = Schema.object({
 })
 
 const DeepSeekConfig = Schema.object({
+  channelName: Schema.string().min(1).max(64).pattern(/\S/u).default('default'),
   apiKeyEnv: Schema.string().role('credential-ref'),
   baseURL: Schema.string().pattern(/^https:\/\//),
   reasoningEffort: Schema.union(['off', 'low', 'high', 'max']),
@@ -91,6 +92,7 @@ function wireNamespaces(): SettingsNamespaceView[] {
       ns: 'llm-deepseek',
       schema: JSON.parse(JSON.stringify(DeepSeekConfig.toJSON())) as unknown,
       value: {
+        channelName: 'default',
         apiKeyEnv: 'DEEPSEEK_API_KEY',
         baseURL: 'https://base',
         defaultContextWindow: 1_000_000,
@@ -444,6 +446,92 @@ describe('ModelsSection', () => {
     })
   })
 
+  it('edits and reloads the DeepSeek channel name without changing route or credential', async () => {
+    let namespace = wireNamespaces()[0]!
+    const mutate = vi.fn((payload: { ops: { op: string; path: string[]; value: string }[] }) => {
+      const name = payload.ops.find(op => op.path.join('.') === 'channelName')?.value
+      if (name !== undefined) {
+        namespace = { ...namespace, value: { ...namespace.value as object, channelName: name },
+          user: { ...namespace.user as object, channelName: name }, revision: namespace.revision + 1 }
+      }
+      return Promise.resolve(ok(namespace))
+    })
+    const scripted = scriptedFace({ mutate })
+    scripted.face.settings.describe.mockImplementation(() => Promise.resolve(ok({
+      writable: true, hasDocument: false, namespaces: [namespace, ...wireNamespaces().slice(1)],
+    })))
+    const { face, set, controller, mirror } = await mountFace(scripted)
+    fireEvent.click(screen.getByRole('button', { name: deepSeekCopy(en.editProvider) }))
+    const name = screen.getByLabelText<HTMLInputElement>(en.channelName)
+    expect(name.value).toBe('default')
+    expect(screen.queryByLabelText(zh.channelName)).toBeNull()
+    fireEvent.change(name, { target: { value: '  团队 渠道  ' } })
+    fireEvent.click(screen.getByRole('button', { name: en.apply }))
+    await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(1) })
+    expect(mutate.mock.calls[0]?.[0]).toEqual({
+      ns: 'llm-deepseek', expectedRevision: 0,
+      ops: [{ op: 'set', path: ['channelName'], value: '团队 渠道' }],
+    })
+    expect(set).not.toHaveBeenCalled()
+    const credentialCalls = face.credentials.describe.mock.calls as { refs: string[] }[][]
+    expect(credentialCalls.some(([payload]) => payload?.refs.includes('DEEPSEEK_API_KEY'))).toBe(true)
+    await act(async () => { await mirror.load(); await controller.load() })
+    fireEvent.click(screen.getByRole('button', { name: deepSeekCopy(en.editProvider) }))
+    expect(screen.getByLabelText<HTMLInputElement>(en.channelName).value).toBe('团队 渠道')
+  })
+
+  it('validates a blank or overlong channel name before any write', async () => {
+    const { mutate, set } = await mountDeepSeekCard()
+    const name = screen.getByLabelText<HTMLInputElement>(en.channelName)
+    const save = screen.getByRole<HTMLButtonElement>('button', { name: en.apply })
+    fireEvent.change(name, { target: { value: '   ' } })
+    expect(name.getAttribute('aria-invalid')).toBe('true')
+    expect(screen.getByRole('alert').textContent).toBe(en.channelNameInvalid)
+    expect(save.disabled).toBe(true)
+    fireEvent.change(name, { target: { value: 'a'.repeat(65) } })
+    expect(save.disabled).toBe(true)
+    expect(mutate).not.toHaveBeenCalled()
+    expect(set).not.toHaveBeenCalled()
+    fireEvent.change(name, { target: { value: 'a'.repeat(64) } })
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(save.disabled).toBe(false)
+    expect(screen.queryByRole('button', { name: /reset channel name/i })).toBeNull()
+  })
+
+  it('localizes the channel input and its validation in Chinese', async () => {
+    const { face } = scriptedFace()
+    const { ProviderEditor } = await import('../src/client/ProviderEditor.tsx')
+    render(<ProviderEditor provider="deepseek-official" displayName="DeepSeek" namespace={wireNamespaces()[0]!}
+      schema={settingsSchema} settingsPath={[]} api={face as never}
+      t={key => zh[key]} readOnly={false} onClose={vi.fn()} />)
+    const name = screen.getByLabelText<HTMLInputElement>(zh.channelName)
+    expect(name.value).toBe('default')
+    fireEvent.change(name, { target: { value: '' } })
+    expect(screen.getByRole('alert').textContent).toBe(zh.channelNameInvalid)
+    expect(screen.queryByRole('button', { name: /重置|恢复默认/u })).toBeNull()
+  })
+
+  it('saves a manually typed default over a custom channel name', async () => {
+    const { face, mutate } = scriptedFace({ mutate: vi.fn(() => Promise.resolve(ok(wireNamespaces()[0]))) })
+    const { ProviderEditor } = await import('../src/client/ProviderEditor.tsx')
+    const current: SettingsNamespaceView = {
+      ...wireNamespaces()[0]!, value: { ...wireNamespaces()[0]!.value as object, channelName: 'Custom' },
+      user: { channelName: 'Custom' },
+    }
+    render(<ProviderEditor provider="deepseek-official" displayName="DeepSeek" namespace={current}
+      schema={settingsSchema} settingsPath={[]} api={face as never} t={t}
+      readOnly={false} onClose={vi.fn()} />)
+    const name = screen.getByLabelText<HTMLInputElement>(en.channelName)
+    expect(name.value).toBe('Custom')
+    fireEvent.change(name, { target: { value: ' default ' } })
+    expect(name.value).toBe(' default ')
+    fireEvent.click(screen.getByRole('button', { name: en.apply }))
+    await waitFor(() => { expect(mutate).toHaveBeenCalledWith({
+      ns: 'llm-deepseek', expectedRevision: 0,
+      ops: [{ op: 'set', path: ['channelName'], value: 'default' }],
+    }) })
+  })
+
   it('materializes inherited models and adds an arbitrary DeepSeek id', async () => {
     const { mutate } = await mountDeepSeekCard({
       mutate: vi.fn(() => Promise.resolve(ok(wireNamespaces()[0]))),
@@ -637,6 +725,7 @@ describe('ModelsSection', () => {
       readOnly={false}
       onClose={() => {}}
     />)
+    expect(screen.getByLabelText<HTMLInputElement>(en.channelName).value).toBe('default')
     fireEvent.click(screen.getByText(en.customized))
     expect(screen.getByText(en.modelsCustomized)).toBeTruthy()
     expect(screen.getAllByLabelText(new RegExp(en.modelId)).map(input => (input as HTMLInputElement).value))

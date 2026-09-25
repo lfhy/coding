@@ -4,11 +4,13 @@
 
 ## 配置 DeepSeek
 
-打开**设置 → 模型**。DeepSeek 卡片提供一个 API 密钥字段；输入密钥并保存。
+首次使用时，可在 DeepSeek 配置弹窗填写 API 密钥和**渠道名称**并保存；也可以稍后打开**设置 → 模型**，在同一 DeepSeek 编辑卡配置密钥或修改名称。渠道名称默认为 `default`，保存时会去除首尾空格，必须包含非空白字符且最长 64 个字符。
 
 ![模型页：DeepSeek 卡片，以及添加提供方与添加自定义提供方两个入口](providers-models-page.zh.png)
 
 密钥是只写的。保存后，页面只会收到脱敏描述符，永远不会收到明文密钥。密钥存储在 `$DSH_HOME/.credentials.yaml` 中，settings 只保留它的凭据引用。
+
+渠道名称是当前单一 DeepSeek 渠道的持久显示名称，不提供多渠道切换。修改它不会改变 `deepseek-official` 模型路由或 API 密钥的凭据引用。
 
 ## 添加目录提供方
 

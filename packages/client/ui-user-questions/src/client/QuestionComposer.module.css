@@ -321,6 +321,11 @@
   border-color: var(--dsw-alias-border-l2);
 }
 
+.customRow:has(.customInput:focus-visible) {
+  border-color: var(--dsw-alias-state-business-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 18%, transparent);
+}
+
 .customInput {
   flex: 1;
   min-width: 0;

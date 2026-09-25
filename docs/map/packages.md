@@ -69,7 +69,7 @@ workspace 共 229 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/client/ui-skill` — skill（技能）调用 source 的浏览器端：把 `/` 触发的 `skill` source 注册进 `ctx.inputTriggers… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
 - `packages/client/ui-slots` — Slot 注册表纯核心、slot 终端设计：SlotMap 声明合并、SlotCore 上唯一的 `register` 组合 API、四 sha… 入口 `src/index.ts`（tests 4）
 - `packages/client/ui-subagent` — Web subagent 功能 owner：向 `conversation.session.header.actions` 贡献可懒加载展开的目… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
-- `packages/client/ui-theme` — 主题插件：基于 --dsw-* token 基础样式表（静态尺度 + 别名语义层）的 ThemeRuntime [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 9）
+- `packages/client/ui-theme` — 主题插件：基于 --dsw-* token 基础样式表（静态尺度 + 别名语义层）的 ThemeRuntime [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 10）
 - `packages/client/ui-tool` — Client 工具展示插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 15）
 - `packages/client/ui-trajectory` — Trajectory 渲染按轮次组织的事件记录表，其中可选择用户、助手、工具和嵌套子工具记录 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 8）
 - `packages/client/ui-user-questions` — Web 提问功能插件：其浏览器侧把 `question` 条目注册到会话拥有的 `conversation.composer` 键控 slot … [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 4）

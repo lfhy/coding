@@ -67,6 +67,11 @@
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
+.card:focus-within {
+  border-color: var(--dsw-alias-state-business-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 18%, transparent);
+}
+
 /* No-workspace trigger state: dashed l4 stroke marks the card as a pick-a-
    workspace affordance rather than a live composer; hover answers in the
    business blue to invite the click. Native `dashed` has a fixed browser

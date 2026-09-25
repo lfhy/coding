@@ -29,6 +29,7 @@ function fail<T>(message: string): RpcResponse<T> {
 }
 
 const DeepSeekConfig = Schema.object({
+  channelName: Schema.string().min(1).max(64).pattern(/\S/u).default('default'),
   apiKeyEnv: Schema.string().role('credential-ref'),
   baseURL: Schema.string().pattern(/^https:\/\//),
   reasoningEffort: Schema.union(['off', 'low', 'high', 'max']),
@@ -41,8 +42,8 @@ const DeepSeekConfig = Schema.object({
   })),
 })
 
-function deepSeekNamespace(apiKeyEnv: string | null): SettingsNamespaceView {
-  const value = apiKeyEnv === null ? {} : { apiKeyEnv }
+function deepSeekNamespace(apiKeyEnv: string | null, channelName?: string): SettingsNamespaceView {
+  const value = { ...apiKeyEnv === null ? {} : { apiKeyEnv }, channelName: channelName ?? 'default' }
   return {
     ns: 'llm-deepseek',
     schema: JSON.parse(JSON.stringify(DeepSeekConfig.toJSON())) as unknown,
@@ -68,6 +69,7 @@ function harness(options: {
   providersReject?: boolean
   setFailure?: string
   setReject?: string
+  channelName?: string
 } = {}) {
   if (document.getElementById('root') === null) {
     const appRoot = document.createElement('div')
@@ -77,7 +79,15 @@ function harness(options: {
   let fileConfigured = false
   const configured = options.configured ?? (() => fileConfigured)
   const apiKeyEnv = options.apiKeyEnv === undefined ? 'DEEPSEEK_API_KEY' : options.apiKeyEnv
-  const mutate = vi.fn((_payload: unknown) => Promise.resolve(ok(deepSeekNamespace(apiKeyEnv))))
+  let storedChannelName = options.channelName
+  const mutate = vi.fn((payload: { ops: { op: string; path: string[]; value?: unknown }[] }) => {
+    for (const op of payload.ops) {
+      if (op.op === 'set' && op.path.join('.') === 'channelName' && typeof op.value === 'string') {
+        storedChannelName = op.value
+      }
+    }
+    return Promise.resolve(ok(deepSeekNamespace(apiKeyEnv, storedChannelName)))
+  })
   const set = vi.fn((_payload: { ref: string; value: string }) => {
     if (options.setReject !== undefined) return Promise.reject(new Error(options.setReject))
     if (options.setFailure !== undefined) return Promise.resolve(fail(options.setFailure))
@@ -105,7 +115,7 @@ function harness(options: {
       describe: () => Promise.resolve(ok({
         writable: options.settingsWritable ?? true,
         hasDocument: false,
-        namespaces: options.settingsNamespace === false ? [] : [deepSeekNamespace(apiKeyEnv)],
+        namespaces: options.settingsNamespace === false ? [] : [deepSeekNamespace(apiKeyEnv, storedChannelName)],
       })),
       mutate,
     },
@@ -170,6 +180,10 @@ describe('DeepSeekOnboardingDialog', () => {
     // 自定义设置区默认展开，使 Base URL 和模型目录直接可见。
     expect((customized as HTMLDetailsElement).open).toBe(true)
     expect(screen.getByLabelText(en.baseUrl)).toBeTruthy()
+    const channel = screen.getByLabelText<HTMLInputElement>(en.channelName)
+    expect(channel.value).toBe('default')
+    expect(channel.tabIndex).toBe(0)
+    expect(key.compareDocumentPosition(channel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(screen.getByRole<HTMLButtonElement>('button', { name: en.onboardingSave }).disabled).toBe(false)
 
     // 初始状态只是默认值，用户仍可按需收起设置区。
@@ -183,6 +197,7 @@ describe('DeepSeekOnboardingDialog', () => {
     await screen.findByRole('dialog')
 
     fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://gateway.example/v1' } })
+    fireEvent.change(screen.getByLabelText(en.channelName), { target: { value: '  Workspace DeepSeek  ' } })
     fireEvent.click(screen.getByRole('button', { name: en.addModel }))
     fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'bootstrap-model' } })
     fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'sk-onboarding' } })
@@ -196,10 +211,32 @@ describe('DeepSeekOnboardingDialog', () => {
       expect(record.expectedRevision).toBe(0)
       if (!Array.isArray(record.ops)) throw new Error('settings mutation did not contain ops')
       expect(record.ops).toContainEqual({ op: 'set', path: ['baseURL'], value: 'https://gateway.example/v1' })
+      expect(record.ops).toContainEqual({ op: 'set', path: ['channelName'], value: 'Workspace DeepSeek' })
       expect(record.ops).toContainEqual({ op: 'set', path: ['models'], value: [{ id: 'bootstrap-model' }] })
     })
     await waitFor(() => { expect(h.set).toHaveBeenCalledWith({ ref: 'DEEPSEEK_API_KEY', value: 'sk-onboarding' }) })
     await waitFor(() => { expect(h.complete).toHaveBeenCalledOnce() })
+  })
+
+  it('reads a saved channel name after reopening the onboarding editor', async () => {
+    const h = harness({ channelName: '团队渠道' })
+    render(<DeepSeekOnboardingDialog {...h.props} />)
+    await screen.findByRole('dialog')
+    expect(screen.getByLabelText<HTMLInputElement>(en.channelName).value).toBe('团队渠道')
+  })
+
+  it('allows a channel-only save without creating a credential', async () => {
+    const h = harness()
+    render(<DeepSeekOnboardingDialog {...h.props} />)
+    await screen.findByRole('dialog')
+    fireEvent.change(screen.getByLabelText(en.channelName), { target: { value: 'Research' } })
+    fireEvent.click(screen.getByRole('button', { name: en.onboardingSave }))
+    await waitFor(() => { expect(h.mutate).toHaveBeenCalledWith({
+      ns: 'llm-deepseek', expectedRevision: 0,
+      ops: [{ op: 'set', path: ['channelName'], value: 'Research' }],
+    }) })
+    expect(h.set).not.toHaveBeenCalled()
+    expect(h.complete).not.toHaveBeenCalled()
   })
 
   it('cannot be dismissed implicitly and restores the previous inert state', async () => {

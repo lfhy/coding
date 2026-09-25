@@ -1,27 +1,12 @@
 /**
- * One provider's editor card, hand-written per adapter family: the primary
- * field is a single write-only **API key** input (the page never asks for an
- * environment-variable name — a typed key stores through `credentials.set`
- * under the profile's reference, deriving `<ROUTE>_API_KEY` when the profile
- * has none. The pi-ai profile records that derivation as `apiKeyEnv` only when
- * a key is entered; a blank key materializes a reference-free profile for
- * provider-native authentication);
- * the 自定义设置 area carries the per-family extras (`baseURL` for
- * both families, DeepSeek's id/name/context-window model catalog, and the
- * display name and wire protocol of a pi-ai route the adapter does not ship —
- * the two fields the create card asked that route for, editable here for the
- * same reason).
- * Reasoning effort is deliberately absent: it is a per-MODEL capability, and
- * the models under one provider disagree about it, so a provider-scoped
- * control can only be set to a value some of them reject. The composer's
- * model picker offers each model its own levels; `settings.yaml` keeps the
- * profile field for a deployment that knows its route. Everything else stays
- * owned by `settings.yaml`. Profile edits land as minimal `settings.mutate`
- * path ops against the stored section — the card names only the fields it can
- * see instead of rebuilding the whole subtree from a partial descriptor.
+ * 按适配器家族编辑单个提供方。API 密钥只写入凭据服务，页面不询问环境变量名；
+ * DeepSeek 渠道名称与密钥并列显示，只作为设置元数据，不改变固定路由和凭据引用。
+ * 自定义设置区承载端点、模型目录和手工声明的 pi-ai 路由身份字段。
+ * 推理等级属于单个模型能力，不提供可能被部分模型拒绝的提供方级输入。
+ * 配置修改只对编辑器可见字段发出 `settings.mutate` 路径操作，不重建脱敏分节。
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { CredentialView, IApiClient, SettingsNamespaceView, SettingsPathOpView } from '@deepseek-ai/dsh-api-remotes/client'
 import {
@@ -38,8 +23,10 @@ import styles from './ModelsSection.module.css'
 /** Per-adapter-family curated field sets (unknown namespaces get the hint alone). */
 type EditorLayout = 'deepseek' | 'pi-ai' | 'unknown'
 
-/** The public DeepSeek endpoint shown as the deepseek base-URL placeholder. */
+/** DeepSeek 地址输入框展示的公共端点占位值。 */
 const DEEPSEEK_PUBLIC_BASE_URL = 'https://api.deepseek.com'
+const DEFAULT_CHANNEL_NAME = 'default'
+const MAX_CHANNEL_NAME_LENGTH = 64
 
 /** Props of {@link ProviderEditor}. */
 export interface ProviderEditorProps {
@@ -155,6 +142,7 @@ function refFor(
  */
 export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   const { namespace, schema, settingsPath, api, t } = props
+  const channelNameId = useId()
   const [draft, setDraft] = useState<Record<string, unknown>>(() => draftAt(schema, namespace, settingsPath))
   const [keyDraft, setKeyDraft] = useState('')
   const [keyState, setKeyState] = useState<CredentialView | undefined>(undefined)
@@ -174,6 +162,15 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   const disabled = props.readOnly || busy
   const layout = layoutOf(namespace.ns)
   const keyRef = refFor(schema, namespace, settingsPath, props.provider)
+  const draftChannelName = schema.getPath(draft, ['channelName'])
+  const effectiveChannelName = schema.getPath(fallback, ['channelName'])
+  const channelName = typeof draftChannelName === 'string'
+    ? draftChannelName
+    : typeof effectiveChannelName === 'string' ? effectiveChannelName : DEFAULT_CHANNEL_NAME
+  const channelNameFailure = layout === 'deepseek' && props.credentialOnly !== true
+    && (channelName.trim().length === 0 || channelName.trim().length > MAX_CHANNEL_NAME_LENGTH)
+    ? 'channelNameInvalid' as const
+    : undefined
   // The same schema read the create card makes, so the choices offered here
   // and there cannot drift apart: both come from the adapter's own `Config`.
   // Only the pi-ai layout has a per-route protocol for the read to find, and
@@ -250,12 +247,14 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
    */
   const applyOnce = async (): Promise<string | undefined> => {
     const ns = namespace.ns
-    // A pi-ai profile names the conventional reference only when this page is
-    // about to store a key. Otherwise the provider keeps its native auth path.
+    const withChannelName = layout === 'deepseek' && typeof draftChannelName === 'string'
+      ? schema.setPath(draft, ['channelName'], draftChannelName.trim())
+      : draft
+    // pi-ai 仅在存储密钥时记录约定引用，留空仍可使用提供方原生认证。
     const next = layout === 'pi-ai' && stringAt(draft, 'apiKeyEnv') === undefined
       && stringAt(fallback, 'apiKeyEnv') === undefined && keyValue.length > 0
-      ? schema.setPath(draft, ['apiKeyEnv'], keyRef)
-      : draft
+      ? schema.setPath(withChannelName, ['apiKeyEnv'], keyRef)
+      : withChannelName
     if (props.credentialOnly !== true) {
       // The same checker gates the submit button, so a card cannot reach this
       // with a bad row; it stays because the schema check below would refuse
@@ -390,6 +389,28 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
           />
           {shownKeyFailure === undefined ? null : <p className={styles['error']}>{t(shownKeyFailure)}</p>}
         </div>
+        {family === 'deepseek' && props.credentialOnly !== true ? (
+          <div className={styles['field']}>
+            <label className={styles['fieldLabel']} htmlFor={channelNameId}>{t('channelName')}</label>
+            <input
+              id={channelNameId}
+              className={styles['input']}
+              type="text"
+              value={channelName}
+              aria-invalid={channelNameFailure !== undefined}
+              aria-describedby={channelNameFailure === undefined ? undefined : `${channelNameId}-error`}
+              disabled={disabled}
+              onChange={(event) => {
+                setDraft(current => schema.setPath(current, ['channelName'], event.target.value))
+              }}
+            />
+            {channelNameFailure === undefined ? null : (
+              <p id={`${channelNameId}-error`} className={styles['error']} role="alert">
+                {t(channelNameFailure)}
+              </p>
+            )}
+          </div>
+        ) : null}
         {props.credentialOnly === true ? null : <details
           className={styles['customized']}
           open={customizedOpen}
@@ -513,6 +534,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
         busy={busy}
         submitDisabled={disabled || layout === 'unknown'
           || (props.credentialOnly !== true && modelFailure !== undefined)
+          || channelNameFailure !== undefined
           || shownKeyFailure !== undefined
           || (props.credentialRequired === true && keyValue.length === 0)}
         submitLabel={props.submitLabel ?? 'apply'}

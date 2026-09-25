@@ -74,6 +74,11 @@
   border-color: var(--dsw-alias-border-l2);
 }
 
+.crumbBar:has(.pathInput:focus-visible) {
+  border-color: var(--dsw-alias-state-business-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 18%, transparent);
+}
+
 /* Deep chains scroll inside the trail (the effect pins the tail into view)
  * so the edit zone to the right never leaves the bar. */
 /* The Miller columns keep their own row so a status/error line below never
@@ -413,6 +418,11 @@
   font-size: 14px;
   line-height: 22px;
   color: var(--dsw-alias-label-primary);
+}
+
+.createInput:focus-visible {
+  border-color: var(--dsw-alias-state-business-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 18%, transparent);
 }
 
 .createInput::placeholder {

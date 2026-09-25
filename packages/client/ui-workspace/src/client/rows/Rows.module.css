@@ -192,6 +192,11 @@
   outline: none;
 }
 
+.renameInput:focus-visible {
+  border-color: var(--dsw-alias-state-business-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 18%, transparent);
+}
+
 .sessionRow .title {
   flex: 1;
 }
