@@ -178,6 +178,7 @@
 - **关键文件**：`apps/desktop/main.go`、`apps/desktop/desktop_bindings.go`、`apps/desktop/remote_bridge.go`、`apps/desktop/internal/remoteagent/manager.go`、`apps/internal/hostlaunch/launcher.go`。
 - **改这里要同步**：`apps/internal/hostlaunch`（启动与就绪记录契约）；`scripts/package-macos-app.sh` 与 `Makefile`（Resources 内的 runtime、remote-agent 与 metadata.json 布局）；`packages/bundle/web-app/src/managed-host.ts`（ready 记录格式）。
 - **不变量**：开发版使用独立单实例锁与 `~/.dsh-dev`，不得替换安装版的 Host；Host 命令解析顺序固定（`Options.Command` → `CODING_HOST_COMMAND` → 打包的 `coding-host` → PATH `coding-host` → PATH `dsh` → 仓库源码 `node --import tsx/esm apps/cli/src/bin.ts`）；`DSH_HOME`/`DSH_CWD`/`DSH_APP_VERSION` 由 hostlaunch 独占写入；Wails binding 方法必须校验随机 bridge token，不把 loopback origin 当授权。
+- **桌面壳选型对比**：[Wails v2 与 Electron](../desktop-shell-comparison.md)记录替换时的 Host、原生能力、安全和包体验收边界，不改变当前装配。
 - **测试**：`cd apps/desktop && CGO_ENABLED=1 go test -tags desktop,production ./...`
 
 ## packages/bundle/base
