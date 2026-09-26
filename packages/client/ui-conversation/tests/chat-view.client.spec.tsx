@@ -1169,7 +1169,7 @@ describe('ChatView', () => {
     expect(view.getByLabelText('回到底部')).toBeTruthy()
   })
 
-  it('one ResizeObserver owns pinned dynamic-height follow and ignores growth while away', () => {
+  it('one ResizeObserver owns pinned follow and anchor measurements while away', () => {
     let notify: (() => void) | undefined
     const observe = vi.fn()
     class ResizeObserverStub {
@@ -1195,7 +1195,8 @@ describe('ChatView', () => {
     Object.defineProperty(scroller, 'scrollHeight', { value: 1_400, writable: true })
     act(() => { notify?.() })
     expect(scroller.scrollTop).toBe(200)
-    expect(observe).toHaveBeenCalledTimes(1)
+    expect(observe).toHaveBeenCalledTimes(2)
+    expect(observe).toHaveBeenCalledWith(scroller)
   })
 
   it('entering the at-bottom threshold does not snap the remaining scroll distance', () => {

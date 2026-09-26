@@ -169,13 +169,13 @@
 
 ## packages/client/ui-conversation
 
-- **拥有**：会话领域浏览器插件：常驻会话壳（`ConversationRoot`）、视图环（`conversation.view`）、Chat 流与 Conversation Node 注册（`registerConversationNodes`/`registerChatNodeRenderers`）、输入区（`InputHub`/`InputBar`、composer 链、`ConversationController`）、审批面板、Todo/Queue dock、统计行，以及约 20 个 `conversation.*` slot 声明。
+- **拥有**：会话领域浏览器插件：常驻会话壳（`ConversationRoot`）、视图环（`conversation.view`）、Chat 流及其左缘轨迹定位细轨、Conversation Node 注册（`registerConversationNodes`/`registerChatNodeRenderers`）、输入区（`InputHub`/`InputBar`、composer 链、`ConversationController`）、审批面板、Todo/Queue dock、统计行，以及约 20 个 `conversation.*` slot 声明。
 - **不拥有**：工具行展示属于 `packages/client/ui-tool`（占用 `conversation.chat.node`）；turn-tail 产物行属于 `packages/client/ui-deliverables`；轨迹视图属于 `packages/client/ui-trajectory`；侧边栏会话列表属于 `packages/client/ui-workspace`。
 - **入口**：`packages/client/ui-conversation/src/client/index.ts`；组装点在 `packages/client/ui-conversation/src/client/apply.ts`。
 - **接线**：`packages/bundle/web-app/cordis.patch.yml` 的 `ui-conversation` 行；`ConversationController` 以类插件形式自注册为 `conversation` 服务；node 半注册 `ui-conversation.busyEnter` settings 节。
-- **关键文件**：`packages/client/ui-conversation/src/client/apply.ts`、`packages/client/ui-conversation/src/client/contract/slots.ts`、`packages/client/ui-conversation/src/client/service.ts`、`packages/client/ui-conversation/src/client/stores.ts`。
+- **关键文件**：`packages/client/ui-conversation/src/client/apply.ts`、`packages/client/ui-conversation/src/client/chat/ChatView.tsx`、`packages/client/ui-conversation/src/client/contract/slots.ts`、`packages/client/ui-conversation/src/client/service.ts`、`packages/client/ui-conversation/src/client/stores.ts`。
 - **改这里要同步**：新 slot 改 `contract/slots.ts` 与 `apply.ts` 的 children 表；跨域类型只进 `contract/`（`scripts/verify-client-domain-graph.ts` 强制领域目录互不 import）；下游占用包。
-- **不变量**：Chat 业务行是彼此独立的注册表贡献——新行注册一个 `ConversationNodeDefinition` 加 keyed `conversation.chat.node` renderer，绝不把事件 switch 折进 `Session`/`SessionManager` 或中央 renderer；`match(event)` 只读当前事件且按 log `seq` 可确定性回放。
+- **不变量**：Chat 业务行是彼此独立的注册表贡献——新行注册一个 `ConversationNodeDefinition` 加 keyed `conversation.chat.node` renderer，绝不把事件 switch 折进 `Session`/`SessionManager` 或中央 renderer；`match(event)` 只读当前事件且按 log `seq` 可确定性回放。ChatView 的定位细轨仅从当前已加载的持久用户／中途引导节点取标记，并与消息流使用同一滚动容器；加载旧页后才增补标记。
 - **测试**：`pnpm exec vitest run packages/client/ui-conversation/tests`
 
 ## packages/client/ui-open-in-app

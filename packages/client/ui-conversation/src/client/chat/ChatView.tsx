@@ -17,12 +17,66 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { ConversationTimelineSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
 import { Button, IconChevronDownOutline14, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatViewSlotProps, RenderMessageImages } from '../contract/slots.ts'
+import { buildConversationAnchors, type ConversationAnchor } from './conversation-anchors.ts'
+import { ConversationAnchorRail } from './ConversationAnchorRail.tsx'
 import { PendingSteeringBubble } from './MessageItem.tsx'
 import { ChatNodeSeat } from './ChatNodeSeat.tsx'
 import { formatRunDuration } from './message-chrome.ts'
 import css from './ChatView.module.css'
 
 const FOLLOW_THRESHOLD = 24
+const ANCHOR_COMPACT_WIDTH = 840
+const ANCHOR_INSET = 8
+const ANCHOR_TARGET_TOP = 16
+
+interface AnchorMark extends ConversationAnchor {
+  readonly position: number
+}
+
+interface AnchorRailLayout {
+  readonly marks: readonly AnchorMark[]
+  readonly activeKey: string | null
+  readonly trackHeight: number
+  readonly compact: boolean
+}
+
+const EMPTY_ANCHOR_RAIL: AnchorRailLayout = {
+  marks: [], activeKey: null, trackHeight: 0, compact: false,
+}
+
+interface AnchorTarget {
+  readonly key: string
+  readonly scrollTop: number
+}
+
+/** 对碰撞的实际位置作最小展开，让每枚已加载刻度保留独立的指针命中区。 */
+function spreadAnchorPositions(positions: readonly number[], trackHeight: number): number[] {
+  if (positions.length < 2) return [...positions]
+  const maxPosition = Math.max(ANCHOR_INSET, trackHeight - ANCHOR_INSET)
+  const gap = Math.min(18, (maxPosition - ANCHOR_INSET) / (positions.length - 1))
+  const spread = [positions[0] ?? ANCHOR_INSET]
+  for (let index = 1; index < positions.length; index++) {
+    spread.push(Math.max(positions[index] ?? ANCHOR_INSET, (spread[index - 1] ?? ANCHOR_INSET) + gap))
+  }
+  if ((spread.at(-1) ?? 0) > maxPosition) {
+    spread[spread.length - 1] = maxPosition
+    for (let index = spread.length - 2; index >= 0; index--) {
+      spread[index] = Math.min(spread[index] ?? ANCHOR_INSET, (spread[index + 1] ?? maxPosition) - gap)
+    }
+  }
+  return spread.map(Math.round)
+}
+
+function activeAnchorKey(targets: readonly AnchorTarget[], scrollTop: number): string | null {
+  let left = 0
+  let right = targets.length
+  while (left < right) {
+    const middle = Math.floor((left + right) / 2)
+    if ((targets[middle]?.scrollTop ?? Infinity) <= scrollTop + 0.5) left = middle + 1
+    else right = middle
+  }
+  return targets[Math.max(0, left - 1)]?.key ?? null
+}
 
 /** Active column host when present; otherwise the view-local scroller. */
 function scrollerOf(from: HTMLElement): HTMLElement {
@@ -210,6 +264,12 @@ export function ChatView({
     () => inbox.filter(item => item.placement === 'steering'),
     [inbox],
   )
+  const imageAnchorLabel = t('chat.anchors.image')
+  const emptyAnchorLabel = t('chat.anchors.empty')
+  const anchors = useMemo(
+    () => buildConversationAnchors(order, nodeStore, { image: imageAnchorLabel, empty: emptyAnchorLabel }),
+    [order, nodeStore, imageAnchorLabel, emptyAnchorLabel],
+  )
   const renderMessageImages = useCallback<RenderMessageImages>(
     owner => renderSlot('conversation.message.images', { ...owner, loadImage }),
     [loadImage, renderSlot],
@@ -218,6 +278,7 @@ export function ChatView({
 
   const listRef = useRef<HTMLDivElement | null>(null)
   const columnRef = useRef<HTMLDivElement | null>(null)
+  const [anchorRail, setAnchorRail] = useState<AnchorRailLayout>(EMPTY_ANCHOR_RAIL)
   const atBottomRef = useRef(true)
   const [atBottom, setAtBottom] = useState(true)
   /** Last position delivered or written on the main thread. */
@@ -233,6 +294,10 @@ export function ChatView({
    *  scroll-driven at-bottom chrome re-render (which would snap inertial
    *  scrolls the rest of the way to the floor). */
   const followSigRef = useRef<string | null>(null)
+  const anchorMeasureRef = useRef<() => void>(() => {})
+  const anchorTargetsRef = useRef<{ targets: readonly AnchorTarget[]; floor: number; trackHeight: number }>({
+    targets: [], floor: 0, trackHeight: 0,
+  })
 
   const firstKey = order[0]
   const firstSeq = firstKey === undefined ? null : nodeStore.get(firstKey)?.anchorSeq ?? null
@@ -240,6 +305,74 @@ export function ChatView({
   const lastNode = lastKey === null ? undefined : nodeStore.get(lastKey)
   const lastSteeringId = pendingSteering[pendingSteering.length - 1]?.id ?? null
   const followSig = `${openState}:${firstSeq}:${lastKey}:${order.length}:${running ? 1 : 0}:${lastSteeringId ?? ''}`
+
+  const measureAnchorRail = useCallback(() => {
+    const local = listRef.current
+    if (local === null || anchors.length === 0) {
+      anchorTargetsRef.current = { targets: [], floor: 0, trackHeight: 0 }
+      setAnchorRail(EMPTY_ANCHOR_RAIL)
+      return
+    }
+    const scrollport = scrollerOf(local)
+    const viewport = scrollport.getBoundingClientRect()
+    const composer = scrollport.querySelector<HTMLElement>('[data-composer-seat]')
+    const visibleBottom = Math.min(viewport.bottom, composer?.getBoundingClientRect().top ?? viewport.bottom)
+    const trackHeight = Math.max(0, Math.round(visibleBottom - viewport.top - 16))
+    const floor = Math.max(0, scrollport.scrollHeight - scrollport.clientHeight)
+    if (trackHeight < 80 || floor <= 1) {
+      anchorTargetsRef.current = { targets: [], floor: 0, trackHeight: 0 }
+      setAnchorRail(EMPTY_ANCHOR_RAIL)
+      return
+    }
+    const travel = Math.max(0, trackHeight - ANCHOR_INSET * 2)
+    const rows = new Map<string, HTMLElement>()
+    for (const row of local.querySelectorAll<HTMLElement>('[data-chat-anchor-key]')) {
+      const key = row.dataset.chatAnchorKey
+      if (key !== undefined) rows.set(key, row)
+    }
+    const measured: ConversationAnchor[] = []
+    const positions: number[] = []
+    const targets: AnchorTarget[] = []
+    const readingTop = Math.min(floor, scrollport.scrollTop + Math.min(80, trackHeight * 0.2))
+    for (const anchor of anchors) {
+      const row = rows.get(anchor.key)
+      if (row === undefined) continue
+      const rowTop = row.getBoundingClientRect().top - viewport.top + scrollport.scrollTop
+      const targetTop = Math.max(0, Math.min(floor, rowTop - ANCHOR_TARGET_TOP))
+      measured.push(anchor)
+      positions.push(ANCHOR_INSET + (targetTop / floor) * travel)
+      targets.push({ key: anchor.key, scrollTop: targetTop })
+    }
+    anchorTargetsRef.current = { targets, floor, trackHeight }
+    const spaced = spreadAnchorPositions(positions, trackHeight)
+    const marks: AnchorMark[] = measured.map((anchor, index) => ({
+      ...anchor, position: spaced[index] ?? ANCHOR_INSET,
+    }))
+    const activeKey = activeAnchorKey(targets, readingTop)
+    const compact = scrollport.clientWidth < ANCHOR_COMPACT_WIDTH || marks.length > travel / 4 + 1
+    setAnchorRail(current => current.activeKey === activeKey
+      && current.trackHeight === trackHeight
+      && current.compact === compact
+      && current.marks.length === marks.length
+      && current.marks.every((mark, index) => {
+        const next = marks[index]
+        return next !== undefined && mark.key === next.key && mark.title === next.title
+          && mark.preview === next.preview && Math.abs(mark.position - next.position) < 0.5
+      })
+      ? current
+      : { marks, activeKey, trackHeight, compact })
+  }, [anchors])
+
+  const updateActiveAnchor = useCallback(() => {
+    const local = listRef.current
+    if (local === null) return
+    const { targets, floor, trackHeight } = anchorTargetsRef.current
+    if (targets.length === 0) return
+    const scrollport = scrollerOf(local)
+    const readingTop = Math.min(floor, scrollport.scrollTop + Math.min(80, trackHeight * 0.2))
+    const key = activeAnchorKey(targets, readingTop)
+    setAnchorRail(current => current.activeKey === key ? current : { ...current, activeKey: key })
+  }, [])
 
   const toBottom = (el: HTMLElement): void => {
     anchorRef.current = null
@@ -310,6 +443,38 @@ export function ChatView({
     // merely because atBottomRef is true (scroll threshold → setState → snap).
     if (appendedUser || appendedSteering || (tipMoved && atBottomRef.current)) toBottom(el)
   })
+
+  // 滚动、正文与编辑器尺寸变化共用已有 ResizeObserver；轨道重测按帧合并。
+  useLayoutEffect(() => {
+    const local = listRef.current
+    if (local === null) return
+    const scrollport = scrollerOf(local)
+    let measureFrame: number | null = null
+    let activeFrame: number | null = null
+    const scheduleMeasure = () => {
+      measureFrame ??= requestAnimationFrame(() => {
+        measureFrame = null
+        measureAnchorRail()
+      })
+    }
+    const scheduleActive = () => {
+      activeFrame ??= requestAnimationFrame(() => {
+        activeFrame = null
+        updateActiveAnchor()
+      })
+    }
+    anchorMeasureRef.current = scheduleMeasure
+    measureAnchorRail()
+    scrollport.addEventListener('scroll', scheduleActive, { passive: true })
+    window.addEventListener('resize', scheduleMeasure)
+    return () => {
+      anchorMeasureRef.current = () => {}
+      scrollport.removeEventListener('scroll', scheduleActive)
+      window.removeEventListener('resize', scheduleMeasure)
+      if (measureFrame !== null) cancelAnimationFrame(measureFrame)
+      if (activeFrame !== null) cancelAnimationFrame(activeFrame)
+    }
+  }, [measureAnchorRail, updateActiveAnchor])
 
   const onScrollRef = useRef(() => {})
   onScrollRef.current = () => {
@@ -384,9 +549,13 @@ export function ChatView({
     if (column === null || local === null || typeof ResizeObserver === 'undefined') return
     const scrollport = scrollerOf(local)
     const composer = scrollport.querySelector<HTMLElement>('[data-composer-seat]')
-    const observer = new ResizeObserver(() => { followRef.current?.() })
+    const observer = new ResizeObserver(() => {
+      followRef.current?.()
+      anchorMeasureRef.current()
+    })
     observer.observe(column)
     if (composer !== null) observer.observe(composer)
+    observer.observe(scrollport)
     return () => { observer.disconnect() }
   }, [])
 
@@ -412,9 +581,37 @@ export function ChatView({
     loadOlder()
   }
 
+  const jumpToAnchor = (key: string): void => {
+    const local = listRef.current
+    if (local === null) return
+    const row = anchorElement(local, key)
+    if (row === null) return
+    const scrollport = scrollerOf(local)
+    const floor = Math.max(0, scrollport.scrollHeight - scrollport.clientHeight)
+    const nextTop = Math.max(0, Math.min(floor,
+      scrollport.scrollTop + flowTop(row, scrollport) - ANCHOR_TARGET_TOP))
+    anchorRef.current = null
+    scrollport.scrollTop = nextTop
+    observedTopRef.current = scrollport.scrollTop
+    const isAtBottom = floor - scrollport.scrollTop <= FOLLOW_THRESHOLD + 1
+    atBottomRef.current = isAtBottom
+    setAtBottom(isAtBottom)
+    const position = isAtBottom ? null : scrollPosition(local, scrollport)
+    chatScroll.save(position)
+    updateActiveAnchor()
+  }
+
   return (
     <div className={css.root}>
       <div ref={listRef} className={css.scroll}>
+        <ConversationAnchorRail
+          marks={anchorRail.marks}
+          activeKey={anchorRail.activeKey}
+          trackHeight={anchorRail.trackHeight}
+          compact={anchorRail.compact}
+          onJump={jumpToAnchor}
+          t={t}
+        />
         <div ref={columnRef} className={css.column} data-chat-flow="">
           {openState === 'loading' && <div className={css.hint}>{t('chat.loadingHistory')}</div>}
           {openState === 'error' && openError !== null && (

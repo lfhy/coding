@@ -43,7 +43,7 @@ workspace 共 229 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/client/ui-attachment` — 对话 UI 的动态附件呈现插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 7）
 - `packages/client/ui-brand-official` — 仅当 `DSH_CLIENT_BUILD_PROFILE` 为 `official` 时… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
 - `packages/client/ui-commands` — 客户端命令 API（`ctx.commandUi`）：以会话为 key 的命令目录缓存、带 `matchSpace`／`matchEnter` … [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 5）
-- `packages/client/ui-conversation` — 会话领域：骨架（标题栏／标签页／编辑器／空状态）、聊天视图（分组步骤摘要流、流式尾部隔离与轮次状态）、编辑器 dock… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 31）
+- `packages/client/ui-conversation` — 会话领域：骨架（标题栏／标签页／编辑器／空状态）、聊天视图（分组步骤摘要流、流式尾部隔离与轮次状态）、编辑器 dock… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 33）
 - `packages/client/ui-deliverables` — 产出文件与可点击文件引用功能的属主 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
 - `packages/client/ui-directory-picker-browse` — 应用内目录浏览界面：浏览式选取交互的浏览器半边 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
 - `packages/client/ui-directory-picker-native` — 原生目录选择界面：原生选取交互的浏览器半边 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 1）

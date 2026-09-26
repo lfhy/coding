@@ -1,0 +1,213 @@
+.slot {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  height: 0;
+  pointer-events: none;
+  -webkit-app-region: no-drag;
+}
+
+.track {
+  position: absolute;
+  top: 0;
+  left: calc(0px - var(--dsh-composer-side-clearance, 16px) - 8px);
+  width: 36px;
+}
+
+.mark {
+  position: absolute;
+  left: 0;
+  display: flex;
+  align-items: center;
+  width: 36px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  pointer-events: auto;
+  transform: translateY(-50%);
+}
+
+.tick {
+  width: 12px;
+  height: 3px;
+  background: var(--dsw-alias-label-caption);
+  transition:
+    width var(--ds-transition-duration-fast) var(--ds-ease-in-out),
+    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);
+}
+
+.mark:hover .tick,
+.mark:focus-visible .tick {
+  width: 24px;
+  background: var(--dsw-alias-label-secondary);
+}
+
+.markActive .tick,
+.markActive:hover .tick,
+.markActive:focus-visible .tick {
+  width: 32px;
+  height: 4px;
+  background: var(--dsw-alias-label-primary);
+}
+
+.mark:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+.previewCard {
+  position: absolute;
+  left: 56px;
+  width: min(320px, calc(100vw - 100px));
+  padding: 12px 14px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-2);
+  box-shadow: var(--dsw-shadow-lv2);
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.previewTitle {
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-s-strong-14);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.previewText {
+  display: -webkit-box;
+  overflow: hidden;
+  margin-top: 6px;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-xs-13);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow-wrap: anywhere;
+}
+
+.compact {
+  position: absolute;
+  top: 12px;
+  left: 8px;
+  pointer-events: auto;
+}
+
+.compactTrigger,
+.close {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.compactGlyph {
+  font-size: 16px;
+  line-height: 20px;
+}
+
+.compactPanel {
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+  /* 收起的导航 rail 与左侧按钮占去空间，弹层右端仍须留 8px。 */
+  width: min(320px, calc(100vw - 112px));
+  max-height: min(340px, calc(100dvh - 120px));
+  margin-top: 8px;
+  overflow: hidden;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-2);
+  box-shadow: var(--dsw-shadow-lv2);
+}
+
+.compactHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 8px 8px 14px;
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-s-strong-14);
+}
+
+.close {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  font-size: 20px;
+  line-height: 24px;
+}
+
+.compactList {
+  max-height: 276px;
+  overflow-y: auto;
+}
+
+.compactItem {
+  display: block;
+  width: 100%;
+  padding: 8px 14px;
+  border: 0;
+  border-left: 3px solid transparent;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.compactItemActive {
+  border-left-color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.compactTitle,
+.compactPreview {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compactTitle {
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-s-strong-14);
+}
+
+.compactPreview {
+  margin-top: 2px;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-xs-13);
+}
+
+.compactTrigger:hover,
+.close:hover,
+.compactItem:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.compactTrigger:focus-visible,
+.close:focus-visible,
+.compactItem:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: -2px;
+}
+
+@media (max-width: 600px) {
+  .previewCard {
+    width: min(264px, calc(100vw - 96px));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tick {
+    transition: none;
+  }
+}
