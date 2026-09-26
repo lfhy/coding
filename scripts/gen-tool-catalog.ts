@@ -27,7 +27,7 @@ import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
 import { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentLimits, ImageAttachmentRef, SaveImageAttachment, StoredImageAttachment } from '@deepseek-ai/dsh-attachment'
 import BrowserUseService from '@deepseek-ai/dsh-browser'
-import type { BrowserCapture, BrowserCommand } from '@deepseek-ai/dsh-browser'
+import type { BrowserCapture, BrowserCommand, BrowserExpectedTarget, BrowserHumanCommand, BrowserSessionState } from '@deepseek-ai/dsh-browser'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import ApprovalService from '@deepseek-ai/dsh-user-approval'
 import PlanModeController from '@deepseek-ai/dsh-plan-mode'
@@ -98,8 +98,16 @@ class CatalogAttachmentStore extends AttachmentStore {
 
 /** 仅提供注册所需服务；目录采集不得启动真实浏览器。 */
 class CatalogBrowserUseService extends BrowserUseService {
-  override execute(_sessionId: SessionId, _command: BrowserCommand, _signal: AbortSignal): Promise<BrowserCapture> {
+  override execute(_sessionId: SessionId, _command: BrowserCommand, _signal: AbortSignal,
+    _expectedTarget?: BrowserExpectedTarget): Promise<BrowserCapture> {
     return Promise.reject(new Error('gen-tool-catalog: browser execution is unreachable during schema harvest'))
+  }
+
+  override state(_sessionId: SessionId): BrowserSessionState | undefined { return undefined }
+
+  override control(_sessionId: SessionId, _command: BrowserHumanCommand,
+    _signal: AbortSignal): Promise<BrowserSessionState | undefined> {
+    return Promise.reject(new Error('gen-tool-catalog: browser control is unreachable during schema harvest'))
   }
 
   override latest(_sessionId: SessionId): BrowserCapture | undefined { return undefined }
@@ -229,7 +237,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
       await ctx.plugin(ToolBrowser)
     },
     note:
-      'Each call asks for one-time approval before browser execution; only allowed-once proceeds. A remote workspace is rejected. Only explicit screenshots save a PNG attachment and render an image block. The browser provider owns URL/network policy and session page lifetime.',
+      'Each call asks for one-time approval bound to the active tab and session revision; only allowed-once proceeds if that target remains current. A remote workspace is rejected. Only explicit screenshots save a PNG attachment and render an image block. The browser provider owns URL/network policy and session tab lifetime.',
   },
   {
     pkg: '@deepseek-ai/dsh-tools',

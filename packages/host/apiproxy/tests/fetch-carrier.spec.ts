@@ -16,6 +16,11 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
     }
   }
   return {
+    browser: {
+      async control(request) {
+        return { rpcId: request.rpcId, result: { ok: true, value: null } }
+      },
+    },
     sessions: {
       async list(request) {
         if (overrides.crashOn === 'session.list') throw new Error('impl crashed')

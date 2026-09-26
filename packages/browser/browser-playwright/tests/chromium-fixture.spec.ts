@@ -6,6 +6,7 @@ import type { AddressInfo } from 'node:net'
 import { Context } from '@deepseek-ai/cordis'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
 import { chromium } from 'playwright'
+import type { BrowserContext } from 'playwright'
 import { describe, expect, it } from 'vitest'
 import PlaywrightBrowserUse from '../src/index.ts'
 import { createBrowserProxy } from '../src/proxy.ts'
@@ -23,6 +24,29 @@ async function fixture(onWait?: () => void): Promise<{
   const server = createServer((req, res) => {
     if (req.url === '/wait') onWait?.()
     res.setHeader('content-type', 'text/html; charset=utf-8')
+    if (req.url === '/popup-source') {
+      res.end('<!doctype html><title>Popup source</title><button onclick="window.open(\'/popup\')">Open popup</button>')
+      return
+    }
+    if (req.url === '/responsive') {
+      res.end(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">
+        <title>Responsive</title><button style="position:absolute;left:300px;top:20px">Reach</button><output></output>
+        <script>function update(){document.querySelector('output').textContent =
+          innerWidth + 'x' + innerHeight + ' ' + (matchMedia('(max-width: 600px)').matches ? 'mobile' : 'desktop')}
+          addEventListener('resize', update);update()</script>`)
+      return
+    }
+    if (req.url === '/high-entropy') {
+      res.end(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">
+        <title>High entropy</title><style>body{margin:0}</style><canvas width="1200" height="1200"></canvas>
+        <script>const ctx=document.querySelector('canvas').getContext('2d');
+          const pixels=ctx.createImageData(1200,1200);let seed=123456789;
+          for(let i=0;i<pixels.data.length;i+=4){seed^=seed<<13;seed^=seed>>>17;seed^=seed<<5;
+            pixels.data[i]=seed&255;pixels.data[i+1]=(seed>>>8)&255;
+            pixels.data[i+2]=(seed>>>16)&255;pixels.data[i+3]=255}
+          ctx.putImageData(pixels,0,0)</script>`)
+      return
+    }
     res.end(page)
   })
   await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
@@ -46,9 +70,15 @@ async function fixture(onWait?: () => void): Promise<{
 }
 
 function element(snapshot: string, role: string, name: string): string {
-  const match = snapshot.match(new RegExp(`(e\\d+) ${role} "${name}"`))
+  const match = snapshot.match(new RegExp(`(e\\d+-[^ ]+) ${role} "${name}"`))
   if (!match?.[1]) throw new Error(`fixture ${role} "${name}" is absent from the browser snapshot`)
   return match[1]
+}
+
+function pngSize(png: Uint8Array | null): { width: number; height: number } {
+  if (!png) throw new Error('browser PNG absent')
+  const bytes = new DataView(png.buffer, png.byteOffset, png.byteLength)
+  return { width: bytes.getUint32(16), height: bytes.getUint32(20) }
 }
 
 describe.skipIf(process.env.DSH_BROWSER_E2E !== '1' || !existsSync(chromium.executablePath()))(
@@ -209,6 +239,123 @@ describe.skipIf(process.env.DSH_BROWSER_E2E !== '1' || !existsSync(chromium.exec
         expect(reopened.observation.generation).not.toBe(initial.observation.generation)
         await ctx.browserUse.closeSession(id)
         expect(ctx.browserUse.latest(id)).toBeUndefined()
+      } finally { await close() }
+    })
+
+    it('keeps tabs independent and navigates real browser history', { timeout: 40_000 }, async () => {
+      const { ctx, origin, close } = await fixture()
+      const id = SessionId('real-tabs')
+      const signal = new AbortController().signal
+      try {
+        const first = await ctx.browserUse.control(id, { kind: 'ensure-tab' }, signal)
+        expect(first).toMatchObject({ tabs: [{ url: 'about:blank' }], observation: null, hasFrame: false })
+        const initialId = first?.activeTabId
+        if (!initialId) throw new Error('first tab absent')
+        const one = await ctx.browserUse.control(id, { kind: 'navigate', url: `${origin}/one` }, signal)
+        expect(one?.tabs[0]).toMatchObject({ url: `${origin}/one`, canGoBack: false })
+        expect(one?.tabs[0]?.generation).toBe(first?.tabs[0]?.generation)
+        expect(one?.observation?.generation).toBe(first?.tabs[0]?.generation)
+        const two = await ctx.browserUse.control(id, { kind: 'navigate', url: `${origin}/two` }, signal)
+        expect(two?.tabs[0]).toMatchObject({ url: `${origin}/two`, canGoBack: true, canGoForward: false })
+        const back = await ctx.browserUse.control(id, { kind: 'back' }, signal)
+        expect(back?.tabs[0]).toMatchObject({ url: `${origin}/one`, canGoForward: true })
+        const forward = await ctx.browserUse.control(id, { kind: 'forward' }, signal)
+        expect(forward?.tabs[0]).toMatchObject({ url: `${origin}/two`, canGoBack: true })
+        const reloaded = await ctx.browserUse.control(id, { kind: 'reload' }, signal)
+        expect(reloaded?.observation?.revision).toBe((forward?.observation?.revision ?? 0) + 1)
+        const oldRef = element(reloaded?.observation?.snapshot ?? '', 'input', 'Search')
+        const blank = await ctx.browserUse.control(id, { kind: 'new-tab' }, signal)
+        expect(blank?.tabs).toHaveLength(2)
+        expect(blank?.observation).toBeNull()
+        expect(blank?.activeTabId).not.toBe(initialId)
+        const second = await ctx.browserUse.control(id, { kind: 'navigate', url: `${origin}/second` }, signal)
+        expect(second?.observation?.tabId).toBe(blank?.activeTabId)
+        await expect(ctx.browserUse.execute(id, { kind: 'fill', ref: oldRef, revision: reloaded?.observation?.revision ?? 0,
+          text: 'cross tab' }, signal)).rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
+        const selected = await ctx.browserUse.control(id, { kind: 'select-tab', tabId: initialId }, signal)
+        expect(selected?.observation?.url).toBe(`${origin}/two`)
+        const otherId = blank?.activeTabId
+        if (!otherId) throw new Error('second tab absent')
+        await ctx.browserUse.control(id, { kind: 'close-tab', tabId: otherId }, signal)
+        expect(ctx.browserUse.state(id)?.tabs).toHaveLength(1)
+        expect(await ctx.browserUse.control(id, { kind: 'close-tab', tabId: initialId }, signal)).toBeUndefined()
+      } finally { await close() }
+    })
+
+    it('closes a popup opened while an internal tab is being created', { timeout: 40_000 }, async () => {
+      const { ctx, origin, close } = await fixture()
+      const id = SessionId('concurrent-popup')
+      const signal = new AbortController().signal
+      try {
+        await ctx.browserUse.control(id, { kind: 'navigate', url: `${origin}/popup-source` }, signal)
+        // 页面事件与内部 newPage 的确切句柄必须区分；测试在开页期间插入真实 window.open。
+        const owners = Reflect.get(ctx.browserUse, 'pages') as Map<SessionId, { browserContext: BrowserContext }>
+        const context = owners.get(id)?.browserContext
+        if (!context) throw new Error('browser context absent')
+        const source = context.pages()[0]
+        if (!source) throw new Error('browser page absent')
+        const originalNewPage = context.newPage.bind(context)
+        let popup: Awaited<ReturnType<BrowserContext['newPage']>> | undefined
+        context.newPage = async () => {
+          const popupEvent = context.waitForEvent('page')
+          await source.getByRole('button', { name: 'Open popup' }).click()
+          popup = await popupEvent
+          return originalNewPage()
+        }
+        const state = await ctx.browserUse.control(id, { kind: 'new-tab' }, signal)
+        expect(state?.tabs).toHaveLength(2)
+        expect(popup?.isClosed()).toBe(true)
+        expect(context.pages()).toHaveLength(2)
+        await ctx.browserUse.closeSession(id)
+        expect(context.pages()).toHaveLength(0)
+      } finally { await close() }
+    })
+
+    it('captures responsive mobile and tall desktop viewports without scaling the PNG', { timeout: 40_000 }, async () => {
+      const { ctx, origin, close } = await fixture()
+      const id = SessionId('responsive-viewport')
+      const signal = new AbortController().signal
+      try {
+        await ctx.browserUse.control(id, { kind: 'ensure-tab' }, signal)
+        const blank = await ctx.browserUse.control(id, { kind: 'set-viewport', width: 375, height: 850 }, signal)
+        expect(blank).toMatchObject({ viewport: { width: 375, height: 850 }, observation: null })
+        const mobile = await ctx.browserUse.execute(id, { kind: 'navigate', url: `${origin}/responsive` }, signal)
+        expect(mobile.observation.snapshot).toContain('375x850 mobile')
+        expect(mobile.observation.viewport).toEqual({ width: 375, height: 850 })
+        expect(pngSize(mobile.png)).toEqual({ width: 375, height: 850 })
+        const clicked = await ctx.browserUse.execute(id, { kind: 'click',
+          ref: element(mobile.observation.snapshot, 'button', 'Reach'), revision: mobile.observation.revision }, signal)
+        expect(clicked.observation.cursor?.x).toBeLessThan(375)
+        expect(clicked.observation.cursor?.y).toBeLessThan(850)
+        const mobileRef = element(clicked.observation.snapshot, 'button', 'Reach')
+        const desktop = await ctx.browserUse.control(id, { kind: 'set-viewport', width: 900, height: 1100 }, signal)
+        expect(desktop?.observation?.snapshot).toContain('900x1100 desktop')
+        expect(desktop?.observation?.viewport).toEqual({ width: 900, height: 1100 })
+        expect(pngSize(ctx.browserUse.latest(id)?.png ?? null)).toEqual({ width: 900, height: 1100 })
+        await expect(ctx.browserUse.execute(id, { kind: 'click', ref: mobileRef,
+          revision: clicked.observation.revision }, signal)).rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
+      } finally { await close() }
+    })
+
+    it('retains real tabs after a high-entropy frame exceeds the PNG limit', { timeout: 40_000 }, async () => {
+      const { ctx, origin, close } = await fixture()
+      const id = SessionId('oversized-real-frame')
+      const signal = new AbortController().signal
+      try {
+        await ctx.browserUse.control(id, { kind: 'ensure-tab' }, signal)
+        await ctx.browserUse.control(id, { kind: 'set-viewport', width: 375, height: 800 }, signal)
+        const initial = await ctx.browserUse.control(id, { kind: 'navigate', url: `${origin}/high-entropy` }, signal)
+        expect(initial?.observation?.url).toBe(`${origin}/high-entropy`)
+        await expect(ctx.browserUse.control(id, { kind: 'set-viewport', width: 900, height: 1100 }, signal))
+          .rejects.toMatchObject({ code: 'BROWSER_FAILED', message: 'browser screenshot exceeds 2097152 bytes' })
+        const oversized = ctx.browserUse.state(id)
+        expect(oversized).toMatchObject({ tabs: [{ url: `${origin}/high-entropy` }],
+          viewport: { width: 900, height: 1100 }, observation: null, hasFrame: false })
+        expect(ctx.browserUse.latest(id)).toBeUndefined()
+        const recovered = await ctx.browserUse.control(id, { kind: 'set-viewport', width: 300, height: 500 }, signal)
+        expect(recovered?.observation).toMatchObject({ url: `${origin}/high-entropy`,
+          viewport: { width: 300, height: 500 } })
+        expect(pngSize(ctx.browserUse.latest(id)?.png ?? null)).toEqual({ width: 300, height: 500 })
       } finally { await close() }
     })
 

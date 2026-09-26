@@ -119,6 +119,8 @@ const PRIVILEGED_METHODS = new Set([
   'agentPreset.remove',
   'host.pickDirectory',
   'host.openPath',
+  // 人工导航能驱动本地浏览器访问 Host 可达的地址，仅允许回环同源调用。
+  'browser.control',
   'settings.describe',
   'settings.openDocument',
   'settings.update',

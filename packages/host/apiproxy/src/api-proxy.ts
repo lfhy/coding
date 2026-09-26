@@ -100,6 +100,9 @@ import type {
 } from '@deepseek-ai/dsh-user-questions'
 import { UserQuestionError } from '@deepseek-ai/dsh-user-questions'
 import { DirectoryPickerError } from '@deepseek-ai/dsh-host-directory-picker'
+import { BrowserUseError } from '@deepseek-ai/dsh-browser'
+import type {} from '@deepseek-ai/dsh-browser'
+import { remoteWorkspacePath } from '@deepseek-ai/dsh-subprocess'
 import {
   ApiRemoteSessionNotFound as SessionNotFound,
   ApiRemoteSubagentSessionOwnership as SubagentSessionOwnership,
@@ -1941,6 +1944,41 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   }
 
   return {
+    browser: {
+      async control(request, signal) {
+        const { sessionId, command } = request.payload
+        const session = ctx.sessions.get(sessionId)
+        if (session === undefined) {
+          return err(request, {
+            code: 'session-not-found', message: 'browser control requires an attached session', details: { sessionId },
+          })
+        }
+        if (isAborted(signal)) return err(request, { code: 'cancelled', message: 'browser control was cancelled', details: {} })
+        try {
+          const cwd = session.header.cwd
+          if (cwd !== undefined && await remoteWorkspacePath('.', cwd, signal) !== undefined) {
+            return err(request, { code: 'browser-failed', message: 'browser control is unavailable in remote workspaces', details: { reason: 'BROWSER_DENIED' } })
+          }
+          if (ctx.sessions.get(sessionId) !== session) {
+            return err(request, { code: 'session-not-found', message: 'browser control requires an attached session', details: { sessionId } })
+          }
+          if (isAborted(signal)) return err(request, { code: 'cancelled', message: 'browser control was cancelled', details: {} })
+          const browserUse = ctx.get('browserUse')
+          if (browserUse === undefined) {
+            return err(request, { code: 'browser-failed', message: 'browser service is unavailable', details: { reason: 'BROWSER_UNAVAILABLE' } })
+          }
+          const state = await browserUse.control(sessionId, command, signal)
+          if (isAborted(signal)) return err(request, { code: 'cancelled', message: 'browser control was cancelled', details: {} })
+          return ok(request, state ?? null)
+        } catch (error: unknown) {
+          if (isAborted(signal)) return err(request, { code: 'cancelled', message: 'browser control was cancelled', details: {} })
+          if (error instanceof BrowserUseError) {
+            return err(request, { code: 'browser-failed', message: `browser control failed (${error.code})`, details: { reason: error.code } })
+          }
+          return err(request, { code: 'browser-failed', message: 'browser control failed', details: { reason: 'BROWSER_FAILED' } })
+        }
+      },
+    },
     sessions: {
       // Attached sessions summarize from memory; persisted-but-unattached (cold)
       // sessions merge in from the persistence store so history survives restarts.

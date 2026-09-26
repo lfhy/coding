@@ -459,14 +459,26 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   },
   {
     key: 'browserUse',
-    summary: '每个 SessionId 独占一个浏览器资源的可替换服务。',
-    description: '每个 SessionId 独占一个浏览器资源的可替换服务。',
+    summary: '每个 SessionId 独占浏览器上下文、标签页与代理的可替换服务。',
+    description: '每个 SessionId 独占浏览器上下文、标签页与代理的可替换服务。',
     methods: [
       {
-        signature: 'abstract execute(sessionId: SessionId, command: BrowserCommand, signal: AbortSignal): Promise<BrowserCapture>',
-        description: '对指定会话执行一个命令，成功时发布对应的观测与可选截图。 元素操作必须拒绝过期 revision；拒绝与取消不得发布虚假的新观测。',
-        parameters: [{ name: 'sessionId', description: '独占页面的会话身份。' }, { name: 'command', description: '导航、快照、交互或关闭命令。' }, { name: 'signal', description: '中止当前操作；提供方应保留调用方给出的中止原因。' }],
+        signature: 'abstract execute(sessionId: SessionId, command: BrowserCommand, signal: AbortSignal, expectedTarget?: BrowserExpectedTarget): Promise<BrowserCapture>',
+        description: '对指定会话执行一个命令，成功时发布对应的观测与可选截图。 元素操作必须拒绝跨标签页或过期 revision；拒绝与取消不得发布虚假的新观测。',
+        parameters: [{ name: 'sessionId', description: '独占浏览器上下文的会话身份。' }, { name: 'command', description: '导航、快照、交互或关闭命令。' }, { name: 'signal', description: '中止当前操作；提供方应保留调用方给出的中止原因。' }, { name: 'expectedTarget', description: '审批前采样的可选空会话或活跃标签页与状态修订版，执行队列中必须再次核对。' }],
         returns: '成功命令产生的观测和可选 PNG 字节。',
+      },
+      {
+        signature: 'abstract state(sessionId: SessionId): BrowserSessionState | undefined',
+        description: '同步读取最近一次队列操作完成后的会话状态，不启动或导航页面。',
+        parameters: [{ name: 'sessionId', description: '要读取的会话身份。' }],
+        returns: '资源不存在时为 undefined；空白标签页没有观测。',
+      },
+      {
+        signature: 'abstract control(sessionId: SessionId, command: BrowserHumanCommand, signal: AbortSignal): Promise<BrowserSessionState | undefined>',
+        description: '串行执行人工导航、标签页或有界页面视口操作，取消时释放不确定的会话状态。',
+        parameters: [{ name: 'sessionId', description: '独占浏览器上下文的会话身份。' }, { name: 'command', description: '人工操作，标签页 id 只在当前会话有效。' }, { name: 'signal', description: '调用方中止信号。' }],
+        returns: '操作后的状态；关闭最后一个标签页时为 undefined。',
       },
       {
         signature: 'abstract latest(sessionId: SessionId): BrowserCapture | undefined',
@@ -2878,8 +2890,32 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type BrowserCommand = {\n    readonly kind: \'navigate\';\n    readonly url: string;\n} | {\n    readonly kind: \'snapshot\';\n} | {\n    readonly kind: \'click\';\n    readonly ref: string;\n    readonly revision: number;\n} | {\n    readonly kind: \'fill\';\n    readonly ref: string;\n    readonly text: string;\n    readonly revision: number;\n} | {\n    readonly kind: \'scroll\';\n    readonly direction: \'up\' | \'down\';\n    readonly pixels: number;\n} | {\n    readonly kind: \'screenshot\';\n} | {\n    readonly kind: \'close\';\n};',
   },
   {
+    name: 'BrowserExpectedTarget',
+    declaration: 'export type BrowserExpectedTarget = {\n    readonly kind: \'none\';\n} | {\n    readonly kind: \'tab\';\n    readonly browserGeneration: string;\n    readonly stateRevision: number;\n    readonly tabId: BrowserTabId;\n    readonly generation: string;\n    readonly url?: string;\n};',
+  },
+  {
+    name: 'BrowserHumanCommand',
+    declaration: 'export type BrowserHumanCommand = {\n    readonly kind: \'ensure-tab\';\n} | {\n    readonly kind: \'new-tab\';\n} | {\n    readonly kind: \'select-tab\';\n    readonly tabId: BrowserTabId;\n} | {\n    readonly kind: \'close-tab\';\n    readonly tabId: BrowserTabId;\n} | {\n    readonly kind: \'navigate\';\n    readonly url: string;\n} | {\n    readonly kind: \'back\';\n} | {\n    readonly kind: \'forward\';\n} | {\n    readonly kind: \'reload\';\n} | {\n    readonly kind: \'set-viewport\';\n    readonly width: number;\n    readonly height: number;\n};',
+  },
+  {
     name: 'BrowserObservation',
-    declaration: 'export interface BrowserObservation {\n    readonly generation: string;\n    readonly revision: number;\n    readonly url: string;\n    readonly title: string;\n    readonly snapshot: string;\n    readonly viewport: {\n        readonly width: number;\n        readonly height: number;\n    };\n    readonly cursor: {\n        readonly x: number;\n        readonly y: number;\n        readonly kind: \'click\' | \'fill\' | \'scroll\';\n        readonly at: number;\n    } | null;\n}',
+    declaration: 'export interface BrowserObservation {\n    readonly tabId: BrowserTabId;\n    readonly generation: string;\n    readonly revision: number;\n    readonly url: string;\n    readonly title: string;\n    readonly snapshot: string;\n    readonly viewport: {\n        readonly width: number;\n        readonly height: number;\n    };\n    readonly cursor: {\n        readonly x: number;\n        readonly y: number;\n        readonly kind: \'click\' | \'fill\' | \'scroll\';\n        readonly at: number;\n    } | null;\n}',
+  },
+  {
+    name: 'BrowserSessionState',
+    declaration: 'export interface BrowserSessionState {\n    readonly browserGeneration: string;\n    readonly stateRevision: number;\n    readonly viewport: {\n        readonly width: number;\n        readonly height: number;\n    };\n    readonly tabs: BrowserTabSummary[];\n    readonly activeTabId: BrowserTabId | null;\n    readonly observation: BrowserObservation | null;\n    readonly hasFrame: boolean;\n}',
+  },
+  {
+    name: 'BrowserTabId',
+    declaration: 'export type BrowserTabId = string & {\n    readonly __browserTabId: unique symbol;\n};',
+  },
+  {
+    name: 'BrowserTabSummary',
+    declaration: 'export interface BrowserTabSummary {\n    readonly id: BrowserTabId;\n    readonly generation: string;\n    readonly url: string;\n    readonly title: string;\n    readonly canGoBack: boolean;\n    readonly canGoForward: boolean;\n}',
+  },
+  {
+    name: 'BrowserUseErrorCode',
+    declaration: 'export type BrowserUseErrorCode = \'BROWSER_INVALID_URL\' | \'BROWSER_STALE_REF\' | \'BROWSER_CLOSED\' | \'BROWSER_DENIED\' | \'BROWSER_UNAVAILABLE\' | \'BROWSER_FAILED\';',
   },
   {
     name: 'CancelOptions',
@@ -3811,7 +3847,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RpcErrorDetailsMap',
-    declaration: 'export interface RpcErrorDetailsMap {\n    \'bad-request\': {\n        issues: ZodIssue[];\n    };\n    \'cancelled\': {};\n    \'session-not-found\': {\n        sessionId: SessionId;\n    };\n    \'model-unavailable\': {\n        provider: string;\n        model: string;\n    };\n    \'session-conflict\': {\n        sessionId: SessionId;\n        requestedCwd: string;\n        existingCwd?: string;\n    };\n    \'invalid-time-zone\': {\n        value: string;\n    };\n    \'workspace-attach-failed\': {\n        sessionId: SessionId;\n        workspaceId: string;\n    };\n    \'workspace-not-found\': {\n        workspaceId: string;\n    };\n    \'workspace-invalid-path\': {\n        path: string;\n    };\n    \'workspace-name-conflict\': {\n        name: string;\n    };\n    \'workspace-move-invalid\': {\n        workspaceId: string;\n        sessionId: SessionId;\n        beforeSessionId?: SessionId;\n    };\n    \'directory-unreadable\': {\n        path: string;\n    };\n    \'directory-exists\': {\n        path: string;\n    };\n    \'directory-create-failed\': {\n        path: string;\n    };\n    \'directory-picker-unavailable\': {\n        capability: string;\n    };\n    \'agent-preset-read-only\': {\n        agentPreset: string;\n        reason: string;\n    };\n    \'agent-preset-locked\': {\n        sessionId: SessionId;\n        agentPreset: string;\n    };\n    \'agent-preset-conflict\': {\n        sessionId: SessionId;\n        requestedPreset: string;\n        existingPreset?: string;\n    };\n    \'agent-preset-not-found\': {\n        agentPreset: string;\n      /* …truncated — full shape in source */',
+    declaration: 'export interface RpcErrorDetailsMap {\n    \'bad-request\': {\n        issues: ZodIssue[];\n    };\n    \'cancelled\': {};\n    \'session-not-found\': {\n        sessionId: SessionId;\n    };\n    \'browser-failed\': {\n        reason: BrowserUseErrorCode;\n    };\n    \'model-unavailable\': {\n        provider: string;\n        model: string;\n    };\n    \'session-conflict\': {\n        sessionId: SessionId;\n        requestedCwd: string;\n        existingCwd?: string;\n    };\n    \'invalid-time-zone\': {\n        value: string;\n    };\n    \'workspace-attach-failed\': {\n        sessionId: SessionId;\n        workspaceId: string;\n    };\n    \'workspace-not-found\': {\n        workspaceId: string;\n    };\n    \'workspace-invalid-path\': {\n        path: string;\n    };\n    \'workspace-name-conflict\': {\n        name: string;\n    };\n    \'workspace-move-invalid\': {\n        workspaceId: string;\n        sessionId: SessionId;\n        beforeSessionId?: SessionId;\n    };\n    \'directory-unreadable\': {\n        path: string;\n    };\n    \'directory-exists\': {\n        path: string;\n    };\n    \'directory-create-failed\': {\n        path: string;\n    };\n    \'directory-picker-unavailable\': {\n        capability: string;\n    };\n    \'agent-preset-read-only\': {\n        agentPreset: string;\n        reason: string;\n    };\n    \'agent-preset-locked\': {\n        sessionId: SessionId;\n        agentPreset: string;\n    };\n    \'agent-preset-conflict\': {\n        sessionId: SessionId;\n        requestedPreset: string;\n        existingPreset?: string;\n    } /* …truncated — full shape in source */',
   },
   {
     name: 'RpcId',

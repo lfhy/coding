@@ -2009,5 +2009,36 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'workbench.browser\', () => ctx.slots.register(\n      { name: \'workbench.browser\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
     source: 'packages/client/ui-open-in-app/src/client/index.ts:27',
   },
+  {
+    key: 'workbench.browser.tabs',
+    kind: 'single',
+    scope: 'session',
+    summary: '浏览器标签占用工作台顶栏中列，与文件标签互斥显示。',
+    doc: '浏览器标签占用工作台顶栏中列，与文件标签互斥显示。',
+    registerOptions: [],
+    ownerProps: [
+      '/** 浏览器内容由贡献条目绘制；容器只持有视图显隐与切换动作。 */\nexport interface WorkbenchBrowserOwnerProps {\n  shown: boolean\n  openBrowser: () => void\n  closeBrowser: () => void\n}',
+    ],
+    ownerPropsReferences: [],
+    standardProps: [
+      'useSessions: SnapshotSelectorHook<SessionListState>',
+      'useWorkspaces: SnapshotSelectorHook<import(\'./workspaces/service.ts\').WorkspaceListState>',
+      'useSession: SnapshotSelectorHook<ConversationSnapshot>',
+      'sessionId: SessionId',
+      'useProjection: UseProjection',
+      'useInput: SnapshotSelectorHook<InputState>',
+      'inputActions: InputActions',
+    ],
+    keyDomain: '',
+    hookContext: '',
+    slotInject: '',
+    declaredBy: 'an entry in \'workbench\' (client-ui-open-in-app), so it exists while that entry is mounted',
+    occupants: [
+      'client-ui-browser BrowserTabs',
+    ],
+    replaceRisk: 'shadows-shipped-ui',
+    example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'workbench.browser.tabs\', () => ctx.slots.register(\n      { name: \'workbench.browser.tabs\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
+    source: 'packages/client/ui-open-in-app/src/client/index.ts:29',
+  },
 ]
 /* jscpd:ignore-end */

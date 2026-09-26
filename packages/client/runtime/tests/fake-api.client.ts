@@ -7,6 +7,7 @@ import type {
   WorkspaceId, WorkspaceView,
 } from '@deepseek-ai/dsh-api-remotes/client'
 import { RpcId } from '@deepseek-ai/dsh-client-connection/client'
+import type { RequestPayload, ResponseValue } from '@deepseek-ai/dsh-host-apiproxy/api'
 import type { SessionRemotes } from '../src/client/sessions/remotes.ts'
 
 /** Programmable-default workspace row (branded id, ISO-ish times). */
@@ -131,6 +132,12 @@ export class FakeApiClient implements IApiClient {
   onCreateDirectory: (payload: unknown) => Promise<RpcResponse<{ path: string }>> =
     () => Promise.resolve(ok({ path: '/home/fake/new' }))
 
+  onBrowserControl: (payload: RequestPayload<'browser.control'>, signal?: AbortSignal)
+  => Promise<RpcResponse<ResponseValue<'browser.control'>>> =
+    () => Promise.resolve(err({
+      code: 'browser-failed', message: 'fake browser service is unavailable', details: { reason: 'BROWSER_UNAVAILABLE' },
+    }))
+
   private readonly muxConns: StreamConn<MuxFrame>[] = []
   private readonly hostConns: StreamConn<HostFrame>[] = []
   lastSearchSignal: AbortSignal | undefined
@@ -181,6 +188,11 @@ export class FakeApiClient implements IApiClient {
     listDirectory: (payload: unknown) => this.record('host.listDirectory', payload, this.onListDirectory(payload)),
     createDirectory: (payload: unknown) => this.record('host.createDirectory', payload, this.onCreateDirectory(payload)),
     openPath: (payload: unknown) => this.record('host.openPath', payload, this.onOpenPath(payload)),
+  }
+
+  readonly browser: IApiClient['browser'] = {
+    control: (payload: RequestPayload<'browser.control'>, signal?: AbortSignal) =>
+      this.record('browser.control', payload, this.onBrowserControl(payload, signal)),
   }
 
   // The archive-set field defaults at the binding below so list stubs keep

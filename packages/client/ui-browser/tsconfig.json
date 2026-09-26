@@ -4,9 +4,13 @@
   "include": ["src"],
   "references": [
     { "path": "../../../vendor/cordis" },
+    { "path": "../../browser/browser" },
+    { "path": "../connection/tsconfig.client.json" },
     { "path": "../locale" },
     { "path": "../runtime" },
+    { "path": "../ui-icons" },
     { "path": "../ui-open-in-app" },
+    { "path": "../../core/session" },
     { "path": "../ui-slots" },
     { "path": "../../runtime-diagnostics/invariants" }
   ]

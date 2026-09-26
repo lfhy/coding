@@ -1,16 +1,19 @@
-/** 会话浏览器轮询、修订版栅栏与截图 URL 的唯一所有者。 */
-
+/** 会话浏览器轮询、人工命令和截图 URL 的唯一所有者。 */
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import type { BrowserHumanCommand } from '@deepseek-ai/dsh-browser/types'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import { parseBrowserState, type BrowserState } from './wire.ts'
 
 export type BrowserView =
-  | { readonly phase: 'loading' | 'empty'; readonly state: null; readonly frameUrl: null }
-  | { readonly phase: 'error'; readonly state: BrowserState | null; readonly frameUrl: string | null; readonly message: string }
-  | { readonly phase: 'ready'; readonly state: BrowserState; readonly frameUrl: string | null }
+  | { readonly phase: 'loading' | 'empty'; readonly state: null; readonly frameUrl: null; readonly pending: boolean }
+  | { readonly phase: 'error'; readonly state: BrowserState | null; readonly frameUrl: string | null; readonly message: string; readonly pending: boolean }
+  | { readonly phase: 'ready'; readonly state: BrowserState; readonly frameUrl: string | null; readonly pending: boolean }
 
 type Fetch = (input: string | URL, init?: RequestInit) => Promise<Response>
+type Control = ConnectionHandle['api']['browser']['control']
 const POLL_MS = 750
-const INITIAL: BrowserView = { phase: 'loading', state: null, frameUrl: null }
+const INITIAL: BrowserView = { phase: 'loading', state: null, frameUrl: null, pending: false }
 
 function hostUrl(path: string, sessionId: string): URL {
   const base = globalThis.location.origin === 'null' ? 'http://dsh.internal' : globalThis.location.origin
@@ -19,7 +22,7 @@ function hostUrl(path: string, sessionId: string): URL {
   return url
 }
 
-/** 每个 Session 一个控制器；start/stop 由持续挂载的 slot 组件持有。 */
+/** 每个 Session 一个控制器；两个 slot 共享同一个稳定快照。 */
 export class BrowserMirrorController {
   readonly view: SnapshotStore<BrowserView> = createSnapshotStore<BrowserView>(INITIAL)
   private active = false
@@ -27,23 +30,28 @@ export class BrowserMirrorController {
   private epoch = 0
   private timer: ReturnType<typeof setTimeout> | undefined
   private pending: AbortController | undefined
+  private action: AbortController | undefined
   private imageUrl: string | null = null
   private last: BrowserState | null = null
   private readonly retiredGenerations = new Set<string>()
   private opened: string | null = null
   private pendingOpen: string | null = null
+  private urgent = false
   private onRevision: (() => void) | undefined
 
   /**
-   * @param sessionId - 所属 Session，作为 Host 路由查询参数。
-   * @param fetcher - 可替换的同源请求载体。
+   * @param sessionId - 当前会话。
+   * @param fetcher - 同源状态和画面载体。
+   * @param control - 经过连接服务的人工命令入口。
    */
-  constructor(private readonly sessionId: string, private readonly fetcher: Fetch = (input, init) => fetch(input, init)) {}
+  constructor(private readonly sessionId: string,
+    private readonly fetcher: Fetch = (input, init) => fetch(input, init),
+    private readonly control?: Control) {}
 
   /**
-   * 开始轮询；首次已存在的观测作为基线，不抢用户当前文件视图。
-   * @param onRevision - 挂载后新观测到达时打开浏览器视图。
-   * @returns 停止轮询和撤销图片 URL 的 disposer。
+   * 内容 slot 挂载期间轮询；基线状态不抢占文件视图。
+   * @param onRevision - 新观测出现后的导航动作。
+   * @returns 终止轮询的 disposer。
    */
   start(onRevision: () => void): () => void {
     if (this.active) throw new Error('browser mirror already started')
@@ -54,27 +62,70 @@ export class BrowserMirrorController {
     return () => { this.stop() }
   }
 
-  /** 用户显式重试会清除错误并立即读取；不会制造并发请求。 */
-  retry(): void {
-    if (!this.active || this.pending) return
+  /** 只在用户实际打开浏览器视图后幂等建立首标签。 */
+  async ensureTab(): Promise<void> {
+    if (!this.active || this.last !== null || this.action !== undefined) return
+    await this.command({ kind: 'ensure-tab' })
+  }
+
+  /**
+   * 执行当前会话的用户浏览器操作。
+   * @param command - 经 RPC 严格校验的命令。
+   * @returns 命令和对应截图同步完毕。
+   */
+  async command(command: BrowserHumanCommand): Promise<boolean> {
+    if (!this.active || this.action !== undefined || this.control === undefined) return false
+    this.epoch++
     this.clearTimer()
-    this.view.set(INITIAL)
+    this.pending?.abort()
+    this.pending = undefined
+    const epoch = this.epoch
+    const action = new AbortController()
+    this.action = action
+    this.view.set({ ...this.view.getSnapshot(), pending: true })
+    try {
+      const response = await this.control({ sessionId: this.sessionId as SessionId, command }, action.signal)
+      if (!this.current(epoch, action)) return false
+      if (!response.result.ok) throw new Error(response.result.error.message)
+      if (response.result.value === null) this.clearState()
+      else await this.accept(parseBrowserState(response.result.value), epoch, action, false)
+      return true
+    } catch (error) {
+      if (this.current(epoch, action)) this.fail(error)
+      return false
+    } finally {
+      if (this.action === action) this.action = undefined
+      if (this.current(epoch, action)) {
+        const view = this.view.getSnapshot()
+        if (view.pending) this.view.set({ ...view, pending: false })
+        this.schedule(epoch)
+      }
+    }
+  }
+
+  /** 错误后立即读取而不并发。 */
+  retry(): void {
+    if (!this.active || this.pending || this.action) return
+    this.clearTimer()
     void this.poll(this.epoch)
   }
 
-  /** 插件及组件都可安全调用，退出后旧请求无法重新发布。 */
+  /** 销毁时旧请求不能发布且释放 Blob。 */
   stop(): void {
     this.active = false
     this.epoch++
     this.clearTimer()
     this.pending?.abort()
+    this.action?.abort()
     this.pending = undefined
+    this.action = undefined
     this.releaseImage()
     this.last = null
     this.retiredGenerations.clear()
     this.initialized = false
     this.opened = null
     this.pendingOpen = null
+    this.urgent = false
     this.onRevision = undefined
     this.view.set(INITIAL)
   }
@@ -83,18 +134,87 @@ export class BrowserMirrorController {
     if (this.timer !== undefined) clearTimeout(this.timer)
     this.timer = undefined
   }
-
+  private schedule(epoch: number): void {
+    this.clearTimer()
+    this.timer = setTimeout(() => { void this.poll(epoch) }, POLL_MS)
+  }
   private releaseImage(): void {
     if (this.imageUrl !== null) URL.revokeObjectURL(this.imageUrl)
     this.imageUrl = null
   }
-
   private current(epoch: number, pending: AbortController): boolean {
     return this.active && epoch === this.epoch && !pending.signal.aborted
   }
+  private clearState(): void {
+    this.initialized = true
+    this.last = null
+    this.opened = null
+    this.pendingOpen = null
+    this.releaseImage()
+    this.view.set({ phase: 'empty', state: null, frameUrl: null, pending: false })
+  }
+  private fail(error: unknown): void {
+    const published = this.view.getSnapshot()
+    if (published.state?.browserGeneration !== this.last?.browserGeneration
+      || published.state?.stateRevision !== this.last?.stateRevision) this.releaseImage()
+    this.view.set({ phase: 'error', state: this.last, frameUrl: this.imageUrl,
+      message: error instanceof Error ? error.message : String(error), pending: false })
+  }
+
+  private async accept(state: BrowserState, epoch: number, pending: AbortController, autoOpen: boolean): Promise<void> {
+    if (!this.current(epoch, pending)) return
+    const previous = this.last
+    if (this.retiredGenerations.has(state.browserGeneration)
+      || (previous?.browserGeneration === state.browserGeneration && state.stateRevision < previous.stateRevision)) return
+    const changed = previous?.browserGeneration !== state.browserGeneration || previous.stateRevision !== state.stateRevision
+    if (!changed && this.view.getSnapshot().phase === 'ready') return
+    const fresh = this.initialized && changed
+    const key = `${state.browserGeneration}:${String(state.stateRevision)}`
+    if (autoOpen && fresh && state.observation !== null) this.pendingOpen = key
+    this.initialized = true
+    if (previous && previous.browserGeneration !== state.browserGeneration) this.retiredGenerations.add(previous.browserGeneration)
+    this.last = state
+    const oldObservation = previous?.observation
+    const observation = state.observation
+    const sameFrame = previous?.browserGeneration === state.browserGeneration
+      && previous.activeTabId === state.activeTabId
+      && oldObservation?.generation === observation?.generation
+      && oldObservation?.revision === observation?.revision
+    if (state.hasFrame && observation && (!sameFrame || this.imageUrl === null)) {
+      const frame = hostUrl('/browser-use/frame', this.sessionId)
+      frame.searchParams.set('tabId', observation.tabId)
+      frame.searchParams.set('browserGeneration', state.browserGeneration)
+      frame.searchParams.set('stateRevision', String(state.stateRevision))
+      frame.searchParams.set('generation', observation.generation)
+      frame.searchParams.set('revision', String(observation.revision))
+      const picture = await this.fetcher(frame, { signal: pending.signal, cache: 'no-store' })
+      if (!this.current(epoch, pending)) return
+      if (picture.status === 409) {
+        this.releaseImage()
+        this.view.set({ phase: 'ready', state, frameUrl: null, pending: false })
+        this.urgent = true
+        return
+      }
+      if (!picture.ok) throw new Error(`画面 HTTP ${String(picture.status)}`)
+      if (picture.headers.get('content-type')?.split(';')[0] !== 'image/png') throw new Error('浏览器画面格式无效')
+      const blob = await picture.blob()
+      if (!this.current(epoch, pending)) return
+      if (blob.size === 0 || blob.size > 2 * 1024 * 1024) throw new Error('浏览器画面大小无效')
+      const url = URL.createObjectURL(blob)
+      this.releaseImage()
+      this.imageUrl = url
+    } else if (!state.hasFrame || !sameFrame) this.releaseImage()
+    if (!this.current(epoch, pending)) return
+    this.view.set({ phase: 'ready', state, frameUrl: this.imageUrl, pending: this.action !== undefined })
+    if (autoOpen && this.pendingOpen === key && this.opened !== key) {
+      this.opened = key
+      this.pendingOpen = null
+      this.onRevision?.()
+    }
+  }
 
   private async poll(epoch: number): Promise<void> {
-    if (!this.active || epoch !== this.epoch || this.pending) return
+    if (!this.active || epoch !== this.epoch || this.action || this.pending) return
     const pending = new AbortController()
     this.pending = pending
     try {
@@ -102,62 +222,19 @@ export class BrowserMirrorController {
         signal: pending.signal, cache: 'no-store',
       })
       if (!this.current(epoch, pending)) return
-      if (response.status === 204) {
-        this.initialized = true
-        this.last = null
-        this.opened = null
-        this.pendingOpen = null
-        this.releaseImage()
-        if (this.view.getSnapshot().phase !== 'empty') this.view.set({ phase: 'empty', state: null, frameUrl: null })
-        return
-      }
+      if (response.status === 204) { this.clearState(); return }
       if (!response.ok) throw new Error(`HTTP ${String(response.status)}`)
-      const state = parseBrowserState(await response.json() as unknown)
-      if (!this.current(epoch, pending)) return
-      const previous = this.last
-      const sameGeneration = previous?.generation === state.generation
-      if (this.retiredGenerations.has(state.generation)) return
-      if (sameGeneration && state.revision < previous.revision) return
-      const changed = !sameGeneration || state.revision !== previous.revision
-      if (!changed && this.view.getSnapshot().phase === 'ready') return
-      const fresh = this.initialized && changed
-      const key = `${state.generation}:${String(state.revision)}`
-      if (fresh) this.pendingOpen = key
-      this.initialized = true
-      if (previous !== null && !sameGeneration) this.retiredGenerations.add(previous.generation)
-      this.last = state
-      if (state.hasFrame && (changed || this.imageUrl === null)) {
-        const frame = hostUrl('/browser-use/frame', this.sessionId)
-        frame.searchParams.set('generation', state.generation)
-        frame.searchParams.set('revision', String(state.revision))
-        const picture = await this.fetcher(frame, { signal: pending.signal, cache: 'no-store' })
-        if (!this.current(epoch, pending)) return
-        if (!picture.ok) throw new Error(`画面 HTTP ${String(picture.status)}`)
-        if (picture.headers.get('content-type')?.split(';')[0] !== 'image/png') throw new Error('浏览器画面格式无效')
-        const blob = await picture.blob()
-        if (!this.current(epoch, pending)) return
-        if (blob.size === 0 || blob.size > 2 * 1024 * 1024) throw new Error('浏览器画面大小无效')
-        const url = URL.createObjectURL(blob)
-        this.releaseImage()
-        this.imageUrl = url
-      } else if (!state.hasFrame) this.releaseImage()
-      if (changed || this.view.getSnapshot().phase !== 'ready') {
-        this.view.set({ phase: 'ready', state, frameUrl: this.imageUrl })
-        if (this.pendingOpen === key && this.opened !== key) {
-          this.opened = key
-          this.pendingOpen = null
-          this.onRevision?.()
-        }
-      }
+      await this.accept(parseBrowserState(await response.json() as unknown), epoch, pending, true)
     } catch (error) {
-      if (!this.current(epoch, pending)) return
-      const published = this.view.getSnapshot().state
-      if (published?.generation !== this.last?.generation || published?.revision !== this.last?.revision) this.releaseImage()
-      this.view.set({ phase: 'error', state: this.last, frameUrl: this.imageUrl,
-        message: error instanceof Error ? error.message : String(error) })
+      if (this.current(epoch, pending)) this.fail(error)
     } finally {
       if (this.pending === pending) this.pending = undefined
-      if (this.current(epoch, pending)) this.timer = setTimeout(() => { void this.poll(epoch) }, POLL_MS)
+      if (this.current(epoch, pending)) {
+        if (this.urgent) {
+          this.urgent = false
+          this.timer = setTimeout(() => { void this.poll(epoch) }, 0)
+        } else this.schedule(epoch)
+      }
     }
   }
 }

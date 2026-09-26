@@ -170,6 +170,7 @@ describe('connection node half', () => {
     // passed), but each privileged method stays loopback-only and 403s.
     for (const method of [
       'host.pickDirectory', 'host.openPath',
+      'browser.control',
       'settings.describe', 'settings.openDocument', 'settings.update', 'settings.replace', 'settings.mutate',
       'credentials.describe', 'credentials.set', 'credentials.unset',
       'llm.discoverModels',
@@ -189,6 +190,30 @@ describe('connection node half', () => {
     const read = fakeResponse()
     await routes[0]!.handler(fakeRequest({ host: 'harness.example' }), read.response)
     expect(read.state.status).not.toBe(403)
+    await dispose()
+  })
+
+  it('keeps browser.control behind loopback Host, same Origin, and Fetch-Metadata fences', async () => {
+    const { routes, dispose } = await mounted({ trustedHosts: ['harness.example'] })
+    const path = `${API_PATH}/browser.control`
+    for (const headers of [
+      { host: 'harness.example', origin: 'http://harness.example' },
+      { host: 'evil.example', origin: 'http://evil.example' },
+      { host: '127.0.0.1:3080', origin: 'http://evil.example' },
+      { host: '127.0.0.1:3080', origin: 'http://127.0.0.1:3080', 'sec-fetch-site': 'cross-site' },
+    ]) {
+      const denied = fakeResponse()
+      await routes[0]!.handler(fakeRequest(headers, path), denied.response)
+      expect(denied.state.status).toBe(403)
+    }
+    for (const headers of [
+      { host: '127.0.0.1:3080' },
+      { host: 'localhost:3080', origin: 'http://localhost:3080', 'sec-fetch-site': 'same-origin' },
+    ]) {
+      const allowed = fakeResponse()
+      await routes[0]!.handler(fakeRequest(headers, path), allowed.response)
+      expect(allowed.state.status).toBe(404)
+    }
     await dispose()
   })
 

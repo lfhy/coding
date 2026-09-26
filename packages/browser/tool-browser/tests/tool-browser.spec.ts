@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import BrowserUseService from '../../browser/src/index.ts'
-import type { BrowserCapture, BrowserCommand } from '@deepseek-ai/dsh-browser'
+import type { BrowserCapture, BrowserCommand, BrowserExpectedTarget, BrowserHumanCommand, BrowserSessionState, BrowserTabId } from '@deepseek-ai/dsh-browser'
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -15,19 +15,60 @@ import * as ToolBrowser from '../src/index.ts'
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC', 'base64')
 const observation = {
-  generation: 'g1', revision: 1, url: 'https://example.com', title: 'Example',
+  tabId: 'tab-1' as BrowserTabId, generation: 'g1', revision: 1, url: 'https://example.com', title: 'Example',
   snapshot: '[e1] button Continue', viewport: { width: 800, height: 600 }, cursor: null,
 }
 
+function activeState(tab = observation, observed: BrowserCapture['observation'] | null = tab): BrowserSessionState {
+  return { browserGeneration: 'browser-1', stateRevision: 1, viewport: tab.viewport,
+    tabs: [{ id: tab.tabId, generation: tab.generation, url: tab.url, title: tab.title, canGoBack: false, canGoForward: false }],
+    activeTabId: tab.tabId, observation: observed, hasFrame: false }
+}
+
 class FakeBrowser extends BrowserUseService {
+  currentState: BrowserSessionState | undefined
   readonly commands = vi.fn(async (
     _id: ReturnType<typeof SessionId>, command: BrowserCommand, signal: AbortSignal,
   ): Promise<BrowserCapture> => {
     signal.throwIfAborted()
-    return { observation, png: command.kind === 'screenshot' ? PNG : null }
+    const active = this.currentState?.tabs.find(tab => tab.id === this.currentState?.activeTabId)
+    const captured = { ...observation, tabId: active?.id ?? observation.tabId,
+      generation: active?.generation ?? observation.generation,
+      url: command.kind === 'navigate' ? command.url : active?.url ?? observation.url }
+    this.currentState = { ...activeState(captured), stateRevision: (this.currentState?.stateRevision ?? 0) + 1 }
+    return { observation: captured, png: command.kind === 'screenshot' ? PNG : null }
   })
-  execute(id: ReturnType<typeof SessionId>, command: BrowserCommand, signal: AbortSignal): Promise<BrowserCapture> {
+  execute(id: ReturnType<typeof SessionId>, command: BrowserCommand, signal: AbortSignal,
+    expectedTarget?: BrowserExpectedTarget): Promise<BrowserCapture> {
+    const active = this.currentState?.tabs.find(tab => tab.id === this.currentState?.activeTabId)
+    if (expectedTarget && (expectedTarget.kind === 'none' ? this.currentState !== undefined :
+      !active || expectedTarget.browserGeneration !== this.currentState?.browserGeneration ||
+      expectedTarget.stateRevision !== this.currentState?.stateRevision ||
+      expectedTarget.tabId !== active.id || expectedTarget.generation !== active.generation ||
+      expectedTarget.url !== undefined && expectedTarget.url !== active.url)) {
+      return Promise.reject(new Error('browser target changed while awaiting approval'))
+    }
     return this.commands(id, command, signal)
+  }
+  readonly state = vi.fn((_id: ReturnType<typeof SessionId>): BrowserSessionState | undefined => this.currentState)
+  control(_id: ReturnType<typeof SessionId>, command: BrowserHumanCommand, signal: AbortSignal): Promise<BrowserSessionState | undefined> {
+    signal.throwIfAborted()
+    if (command.kind === 'select-tab') {
+      const tabId = command.tabId
+      this.currentState = { ...activeState({ ...observation, tabId,
+        url: tabId === observation.tabId ? observation.url : 'https://other.example/' }),
+      stateRevision: (this.currentState?.stateRevision ?? 0) + 1 }
+    } else if (command.kind === 'navigate') {
+      this.currentState = { ...activeState({ ...observation, url: command.url }),
+        stateRevision: (this.currentState?.stateRevision ?? 0) + 1 }
+    } else if (command.kind === 'reload' && this.currentState) {
+      this.currentState = { ...this.currentState, stateRevision: this.currentState.stateRevision + 1 }
+    } else if (command.kind === 'set-viewport' && this.currentState &&
+      (this.currentState.viewport.width !== command.width || this.currentState.viewport.height !== command.height)) {
+      this.currentState = { ...this.currentState, viewport: { width: command.width, height: command.height },
+        stateRevision: this.currentState.stateRevision + 1 }
+    }
+    return Promise.resolve(this.currentState)
   }
   readonly latest = vi.fn((_id: ReturnType<typeof SessionId>): BrowserCapture | undefined => undefined)
   closeSession(): Promise<void> { return Promise.resolve() }
@@ -75,7 +116,7 @@ describe('browser_use', () => {
     await call({ action: 'navigate', url: target })
     expect(asked.mock.calls[0]?.[0].reason).toBe('Browser navigate (target origin: https://example.com; may redirect or load subresources; approval is for this call only)')
     expect(JSON.stringify(agent.session.append.mock.calls)).not.toMatch(/password|private|secret|fragment/)
-    expect(browser.latest).not.toHaveBeenCalled()
+    expect(browser.state).toHaveBeenCalled()
     expect(browser.commands).not.toHaveBeenCalled()
 
     await call({ action: 'navigate', url: 'not a URL' })
@@ -87,10 +128,7 @@ describe('browser_use', () => {
   it('shows only the session’s current bounded origin and safe ref for non-navigation approvals', async () => {
     const { ctx, call, agent } = await setup()
     const browser = ctx.browserUse as FakeBrowser
-    browser.latest.mockImplementation(id => id === agent.session.id ? {
-      observation: { ...observation, url: 'https://user:password@EXAMPLE.com/private?token=secret#fragment' },
-      png: PNG,
-    } : undefined)
+    browser.currentState = activeState({ ...observation, url: 'https://user:password@EXAMPLE.com/private?token=secret#fragment' }, null)
     const asked = vi.fn((_req: { reason?: string }, _next: () => Promise<'rejected'>) => Promise.resolve('rejected' as const))
     ctx.on('approval/request', asked)
     for (const args of [
@@ -99,8 +137,8 @@ describe('browser_use', () => {
       { action: 'snapshot' }, { action: 'scroll', direction: 'down', pixels: 10 },
       { action: 'screenshot' }, { action: 'close' },
     ]) await call(args)
-    expect(browser.latest).toHaveBeenCalledTimes(6)
-    expect(browser.latest.mock.calls.every(([id]) => id === agent.session.id)).toBe(true)
+    expect(browser.state).toHaveBeenCalledTimes(6)
+    expect(browser.state.mock.calls.every(([id]) => id === agent.session.id)).toBe(true)
     const reasons = asked.mock.calls.map(([req]) => req.reason)
     expect(reasons).toEqual([
       'Browser click ref e1 (current origin: https://example.com; approval is for this call only)',
@@ -113,10 +151,10 @@ describe('browser_use', () => {
 
     await call({ action: 'fill', ref: 'e1\nsecret', revision: 1, text: 'hidden' })
     expect(asked.mock.calls.at(-1)?.[0].reason).toContain('ref [opaque]')
-    browser.latest.mockReturnValueOnce({ observation: { ...observation, url: 'data:text/html,secret' }, png: null })
+    browser.currentState = activeState({ ...observation, url: 'data:text/html,secret' }, null)
     await call({ action: 'screenshot' })
     expect(asked.mock.calls.at(-1)?.[0].reason).toContain('current origin: unknown')
-    browser.latest.mockReturnValueOnce(undefined)
+    browser.currentState = activeState({ ...observation, url: 'about:blank' }, null)
     await call({ action: 'snapshot' })
     expect(asked.mock.calls.at(-1)?.[0].reason).toContain('current origin: unknown')
   })
@@ -137,6 +175,8 @@ describe('browser_use', () => {
 
   it('returns canonical observation for PTC and saves a screenshot before rendering its image block', async () => {
     const { ctx, call } = await setup()
+    const browser = ctx.browserUse as FakeBrowser
+    browser.currentState = activeState()
     ctx.on('approval/request', () => Promise.resolve('allowed-once' as const))
     const snapshot = await call({ action: 'snapshot' })
     expect(snapshot.isError).toBe(false)
@@ -148,12 +188,138 @@ describe('browser_use', () => {
     expect(result.content.map(block => block.type)).toEqual(['text', 'image'])
     const image = (result.value as unknown as ToolBrowser.BrowserUseValue).image
     expect(result.content[1]).toMatchObject({ attachment: { attachmentId: image?.attachmentId } })
+    expect((ctx.browserUse as FakeBrowser).state).toHaveBeenCalled()
+  })
+
+  it('binds standard and PTC results to the active tab observed before approval', async () => {
+    const { ctx, call } = await setup()
+    const browser = ctx.browserUse as FakeBrowser
+    browser.currentState = activeState()
+    const execute = vi.spyOn(browser, 'execute')
+    ctx.on('approval/request', () => Promise.resolve('allowed-once' as const))
+    const result = await call({ action: 'snapshot' })
+    expect(result.isError).toBe(false)
+    expect(result.value).toMatchObject({ observation: { tabId: observation.tabId } })
+    expect(text(result)).toContain('"tabId":"tab-1"')
+    expect(browser.commands).toHaveBeenCalledTimes(1)
+    expect(execute).toHaveBeenCalledWith(expect.anything(), { kind: 'snapshot' }, expect.anything(),
+      { kind: 'tab', browserGeneration: 'browser-1', stateRevision: 1,
+        tabId: observation.tabId, generation: 'g1', url: 'https://example.com' })
+  })
+
+  it('rejects a tab switch during approval without executing a command', async () => {
+    const { ctx, call, agent } = await setup()
+    const browser = ctx.browserUse as FakeBrowser
+    browser.currentState = activeState()
+    let decide: ((outcome: 'allowed-once') => void) | undefined
+    ctx.on('approval/request', () => new Promise<'allowed-once'>((resolve) => { decide = resolve }))
+    const pending = call({ action: 'fill', ref: 'e1', revision: 1, text: 'secret' })
+    await vi.waitFor(() => { expect(decide).toBeDefined() })
+    await browser.control(agent.session.id, { kind: 'select-tab', tabId: 'tab-2' as BrowserTabId }, new AbortController().signal)
+    decide?.('allowed-once')
+    const result = await pending
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('browser target changed')
+    expect(browser.commands).not.toHaveBeenCalled()
+    expect(browser.currentState?.activeTabId).toBe('tab-2')
+  })
+
+  it('does not take over a newly created tab after approving first navigation', async () => {
+    const { ctx, call } = await setup()
+    const browser = ctx.browserUse as FakeBrowser
+    ctx.on('approval/request', () => {
+      browser.currentState = activeState()
+      return Promise.resolve('allowed-once' as const)
+    })
+    const result = await call({ action: 'navigate', url: 'https://example.com' })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('browser target changed')
+    expect(browser.commands).not.toHaveBeenCalled()
+  })
+
+  it('rejects a navigation on the same tab while approval is pending', async () => {
+    const { ctx, call, agent } = await setup()
+    const browser = ctx.browserUse as FakeBrowser
+    browser.currentState = activeState()
+    ctx.on('approval/request', () => {
+      void browser.control(agent.session.id, { kind: 'navigate', url: 'https://changed.example/?token=hidden' },
+        new AbortController().signal)
+      return Promise.resolve('allowed-once' as const)
+    })
+    const result = await call({ action: 'click', ref: 'e1', revision: 1 })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('browser target changed')
+    expect(browser.commands).not.toHaveBeenCalled()
+  })
+
+  it('rejects a same-URL reload while approval is pending', async () => {
+    const { ctx, call, agent } = await setup()
+    const browser = ctx.browserUse as FakeBrowser
+    browser.currentState = activeState()
+    ctx.on('approval/request', () => {
+      void browser.control(agent.session.id, { kind: 'reload' }, new AbortController().signal)
+      return Promise.resolve('allowed-once' as const)
+    })
+    const result = await call({ action: 'screenshot' })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('browser target changed')
+    expect(browser.currentState?.activeTabId).toBe(observation.tabId)
+    expect(browser.currentState?.tabs[0]?.url).toBe(observation.url)
+    expect(browser.commands).not.toHaveBeenCalled()
+  })
+
+  it('rejects an approved action after a human viewport change', async () => {
+    const { ctx, call, agent } = await setup()
+    const browser = ctx.browserUse as FakeBrowser
+    browser.currentState = activeState()
+    ctx.on('approval/request', async () => {
+      await browser.control(agent.session.id, { kind: 'set-viewport', width: 1200, height: 700 },
+        new AbortController().signal)
+      return 'allowed-once' as const
+    })
+    const result = await call({ action: 'click', ref: 'e1', revision: 1 })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('browser target changed')
+    expect(browser.currentState?.viewport).toEqual({ width: 1200, height: 700 })
+    expect(browser.commands).not.toHaveBeenCalled()
+  })
+
+  it('rejects a tab switch away and back during approval', async () => {
+    const { ctx, call, agent } = await setup()
+    const browser = ctx.browserUse as FakeBrowser
+    browser.currentState = activeState()
+    ctx.on('approval/request', async () => {
+      const signal = new AbortController().signal
+      await browser.control(agent.session.id, { kind: 'select-tab', tabId: 'tab-2' as BrowserTabId }, signal)
+      await browser.control(agent.session.id, { kind: 'select-tab', tabId: observation.tabId }, signal)
+      return 'allowed-once' as const
+    })
+    const result = await call({ action: 'navigate', url: 'https://example.com/next' })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('browser target changed')
+    expect(browser.currentState?.activeTabId).toBe(observation.tabId)
+    expect(browser.currentState?.tabs[0]?.url).toBe(observation.url)
+    expect(browser.commands).not.toHaveBeenCalled()
+  })
+
+  it('binds an unobserved human-created tab by its tab generation', async () => {
+    const { ctx, call } = await setup()
+    const browser = ctx.browserUse as FakeBrowser
+    browser.currentState = activeState({ ...observation, tabId: 'blank-tab' as BrowserTabId, url: 'about:blank' }, null)
+    const execute = vi.spyOn(browser, 'execute')
+    ctx.on('approval/request', () => Promise.resolve('allowed-once' as const))
+    const result = await call({ action: 'navigate', url: 'https://example.com' })
+    expect(result.isError).toBe(false)
+    expect(execute).toHaveBeenCalledWith(expect.anything(), { kind: 'navigate', url: 'https://example.com' },
+      expect.anything(), { kind: 'tab', browserGeneration: 'browser-1', stateRevision: 1,
+        tabId: 'blank-tab', generation: 'g1', url: 'about:blank' })
   })
 
   it('caps the complete text observation and fails without an image reference if storage fails', async () => {
     const { ctx, call } = await setup()
-    ctx.on('approval/request', () => Promise.resolve('allowed-once' as const))
     const browser = ctx.browserUse as FakeBrowser
+    browser.currentState = activeState()
+    ctx.on('approval/request', () => Promise.resolve('allowed-once' as const))
     browser.commands.mockResolvedValueOnce({
       observation: { ...observation, snapshot: 'x'.repeat(30_000), title: 't'.repeat(2_000) }, png: null,
     })

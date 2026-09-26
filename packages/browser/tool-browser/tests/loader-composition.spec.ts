@@ -7,7 +7,7 @@ import { Context } from '@deepseek-ai/cordis'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import BrowserUseService from '../../browser/src/index.ts'
-import type { BrowserCapture, BrowserCommand } from '../../browser/src/index.ts'
+import type { BrowserCapture, BrowserCommand, BrowserHumanCommand, BrowserSessionState, BrowserTabId } from '../../browser/src/index.ts'
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -21,12 +21,18 @@ class FixtureBrowser extends BrowserUseService {
     signal.throwIfAborted()
     return Promise.resolve({
       observation: {
-        generation: 'fixture-1', revision: 1, url: command.kind === 'navigate' ? command.url : 'about:blank',
+        tabId: 'fixture-tab' as BrowserTabId, generation: 'fixture-1', revision: 1,
+        url: command.kind === 'navigate' ? command.url : 'about:blank',
         title: 'Fixture', snapshot: '[node-1] button Continue',
         viewport: { width: 800, height: 600 }, cursor: null,
       },
       png: null,
     })
+  }
+  state(): BrowserSessionState | undefined { return undefined }
+  control(_id: ReturnType<typeof SessionId>, _command: BrowserHumanCommand,
+    _signal: AbortSignal): Promise<BrowserSessionState | undefined> {
+    return Promise.resolve(undefined)
   }
   latest(): BrowserCapture | undefined { return undefined }
   closeSession(): Promise<void> { return Promise.resolve() }
@@ -100,7 +106,7 @@ describe('browser_use through a real Loader composition', () => {
     })
     expect(result.isError).toBe(false)
     expect(result.value).toMatchObject({
-      action: 'navigate', observation: { url: 'https://example.com/private?token=secret', snapshot: '[node-1] button Continue' }, image: null,
+      action: 'navigate', observation: { tabId: 'fixture-tab', url: 'https://example.com/private?token=secret', snapshot: '[node-1] button Continue' }, image: null,
     })
     expect(result.content).toMatchObject([{ type: 'text' }])
     expect(reasons).toEqual(['Browser navigate (target origin: https://example.com; may redirect or load subresources; approval is for this call only)'])

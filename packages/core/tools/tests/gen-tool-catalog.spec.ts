@@ -2,6 +2,9 @@
  * Guarantee tests for the tool-schema catalog generator (`scripts/gen-tool-catalog.ts`).
  */
 
+import { Context } from '@deepseek-ai/cordis'
+import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
+import * as ToolBrowser from '@deepseek-ai/dsh-tool-browser'
 import { describe, expect, it } from 'vitest'
 import {
   assertManifestComplete,
@@ -45,6 +48,19 @@ describe('gen-tool-catalog collectToolCatalog', () => {
         expect((schema.parameters as unknown as JsonSchema).type).toBe('object')
       }
     }
+  })
+
+  it('harvests browser_use while its separate result contract requires a tab id', async () => {
+    const catalog = await collectToolCatalog()
+    const browser = catalog.find(entry => entry.pkg === '@deepseek-ai/dsh-tool-browser')
+    expect(browser?.schemas.map(schema => schema.name)).toEqual(['browser_use'])
+    expect(browser?.note).toContain('active tab and session revision')
+
+    let definition: ToolDefinition | undefined
+    ToolBrowser.apply({ tools: { register: (tool: ToolDefinition) => { definition = tool } } } as unknown as Context)
+    const observationSchema = (definition?.output.schema as JsonSchema).properties?.observation
+    expect(observationSchema?.properties?.tabId?.type).toBe('string')
+    expect(observationSchema?.required).toContain('tabId')
   })
 
   it('resolves a runtime-spread enum to its literal members (the payoff over AST)', async () => {

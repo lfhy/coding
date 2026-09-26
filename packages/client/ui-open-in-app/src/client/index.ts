@@ -1,4 +1,4 @@
-/** 工作区本地启动入口、文件工作台与底栏终端的浏览器插件。 */
+/** 工作区本地启动入口、功能工作台与底栏终端的浏览器插件。 */
 
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -25,6 +25,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
     /** 工作台右侧预览区的会话级浏览器；隐藏时条目仍保持挂载。 */
     'workbench.browser': { kind: 'single'; scope: 'session'; owner: WorkbenchBrowserOwnerProps }
+    /** 浏览器标签占用工作台顶栏中列，与文件标签互斥显示。 */
+    'workbench.browser.tabs': { kind: 'single'; scope: 'session'; owner: WorkbenchBrowserOwnerProps }
   }
 }
 
@@ -50,7 +52,7 @@ function activeSessionId(ctx: ClientContext): SessionId | undefined {
 }
 
 /**
- * 注册会话页头入口、文件工作台、保留式底栏终端与面板开关。
+ * 注册会话页头入口、功能工作台、保留式底栏终端与面板开关。
  * @param ctx - Client 根上下文。
  */
 export function apply(ctx: ClientContext): void {
@@ -80,7 +82,10 @@ export function apply(ctx: ClientContext): void {
 
   ctx.slots.inject('workbench', () => ctx.slots.register({
     name: 'workbench',
-    children: { 'workbench.browser': { kind: 'single', scope: 'session' } },
+    children: {
+      'workbench.browser': { kind: 'single', scope: 'session' },
+      'workbench.browser.tabs': { kind: 'single', scope: 'session' },
+    },
     locale: NS,
     store: workbench,
     inject: (sessionId: SessionId): WorkspaceWorkbenchInjected => ({

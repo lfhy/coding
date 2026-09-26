@@ -12,8 +12,8 @@
 
 ## 浏览器与 Host 传输
 
-- **路线**：`packages/client/connection/src/client/connection.ts` 管重连和双下行流，`src/client/web-api-client.ts` 发 `/api` 请求；Host 端 `packages/client/connection/src/index.ts`/`api-request-trust.ts` 管路由与信任栅栏，`packages/host/webserver/src/index.ts` 管 HTTP/upgrade 注册，`packages/host/apiproxy/src/api-proxy.ts` 管方法实现，`src/api/rpc.schema.ts` 管 wire 校验；`packages/api/remotes/src/client/index.ts` 是另一套 Typert Remote 入口，先于 API Proxy 认领自己的方法。
-- **技术与边界**：浏览器 unary/respond 用 HTTP POST，下行 `events.mux`/`events.host` 用 WebSocket；webserver 不实现业务，apiproxy 不注册 HTTP 路由。信任规则和方法约定分别见 [connection](../../packages/client/connection/README.md)、[apiproxy](../../packages/host/apiproxy/README.md)、[remotes](../../packages/api/remotes/README.md)。
+- **路线**：`packages/client/connection/src/client/connection.ts` 管重连和双下行流，`src/client/web-api-client.ts` 发 `/api` 请求；Host 端 `packages/client/connection/src/index.ts`/`api-request-trust.ts` 管路由与信任栅栏，`packages/host/webserver/src/index.ts` 管 HTTP/upgrade 注册，`packages/host/apiproxy/src/api-proxy.ts` 管方法实现，`src/api/rpc.schema.ts` 与 `browser.schema.ts` 管 wire 校验；`packages/api/remotes/src/client/index.ts` 是另一套 Typert Remote 入口，先于 API Proxy 认领自己的方法。
+- **技术与边界**：浏览器 unary/respond 用 HTTP POST，下行 `events.mux`/`events.host` 用 WebSocket；webserver 不实现业务，apiproxy 不注册 HTTP 路由。人工 `browser.control` 是回环同源特权方法，只接受已附着的本地 Session，远程 marker 拒绝；方法约定和信任规则分别见 [apiproxy](../../packages/host/apiproxy/README.md)、[connection](../../packages/client/connection/README.md)。另一套 Typert Remote 入口见 [remotes](../../packages/api/remotes/README.md)。
 - **连带与验证**：协议变更同步 API schema、Client 调用、Host handler 与 keyless 回放；路由或升级变更同步信任拒绝测试，不能只验证回环成功路径。定向运行 `pnpm exec vitest run packages/client/connection/tests packages/host/apiproxy/tests packages/host/webserver/tests`，浏览器组装变化再跑 `DSH_SNAPSHOT=replay pnpm run test:web`。
 
 ## 桌面壳与 Host 启动
@@ -180,14 +180,25 @@
 
 ## packages/client/ui-open-in-app
 
-- **拥有**：工作区打开能力的浏览器半：会话页头分体入口（`OpenInAppAction`）及文件侧栏、终端底栏开关（`WorkbenchPanelToggles`），均占用 `conversation.session.header.utilities`；欢迎页开关占用 `conversation.hero.actions`；内置文件工作台（`WorkspaceWorkbench`，占用 `workbench`）在全屏时由顶栏提供面板开关；保留式底栏终端（`RetainedTerminalPanel`）占用 `workbench.bottom`；另有 `OpenInAppController`。
-- **不拥有**：Host 路由（应用启动、文件 list/read、终端 WebSocket）属于 `packages/host/open-in-app`；workbench 壳层几何与 `ctx.layout` 属于 `packages/client/ui-layout`；`conversation.session.header.utilities` 与 `conversation.hero.actions` 座位声明属于 `packages/client/ui-conversation`。
+- **拥有**：工作区打开能力的浏览器半：会话页头分体入口（`OpenInAppAction`）及文件侧栏、终端底栏开关（`WorkbenchPanelToggles`），均占用 `conversation.session.header.utilities`；欢迎页开关占用 `conversation.hero.actions`；内置工作台（`WorkspaceWorkbench`，占用 `workbench`）持有初态功能菜单、文件视图和 `workbench.browser`／`workbench.browser.tabs` 子 slot，全屏时由顶栏提供面板开关；保留式底栏终端（`RetainedTerminalPanel`）占用 `workbench.bottom`；另有 `OpenInAppController`。
+- **不拥有**：浏览器画面、人工导航和标签操作属于 `packages/client/ui-browser`；Host 路由（应用启动、文件 list/read、终端 WebSocket）属于 `packages/host/open-in-app`；workbench 壳层几何与 `ctx.layout` 属于 `packages/client/ui-layout`；`conversation.session.header.utilities` 与 `conversation.hero.actions` 座位声明属于 `packages/client/ui-conversation`。
 - **入口**：`packages/client/ui-open-in-app/src/client/index.ts`（注入 `slots`、`locale`、`layout`、`sessions`、`workspaces`；通过 `ctx.slots.inject(...)` 在各座位注册）；node 半是空 apply。
 - **接线**：`packages/bundle/web-app/cordis.patch.yml` 的 `ui-open-in-app` 行与 host 行 `open-in-app` 并排挂载；共享常量经 `@deepseek-ai/dsh-host-open-in-app/shared`。
 - **关键文件**：`packages/client/ui-open-in-app/src/client/index.ts`、`packages/client/ui-open-in-app/src/client/controller.ts`、`packages/client/ui-open-in-app/src/client/WorkspaceWorkbench.tsx`、`packages/client/ui-open-in-app/src/client/TerminalPanel.tsx`。
 - **改这里要同步**：路由或帧协议改动同步 `packages/host/open-in-app`；面板显隐语义改动同步 `packages/client/ui-layout`（owner props `filesOpen`/`bottomOpen`），页头与欢迎页入口变动核对 `packages/client/ui-conversation` 的座位。
 - **不变量**：文件树只回传当前 Session id 与 Host 返回的 provider segment 数组，绝不提交工作区根或自行拼接 Windows/POSIX/UNC 路径；隐藏底栏或关闭工作台只改布局可见性，不断开已激活终端。
 - **测试**：`pnpm exec vitest run packages/client/ui-open-in-app/tests`
+
+## packages/client/ui-browser
+
+- **拥有**：占用 `workbench.browser` 和 `workbench.browser.tabs` 的会话级截图、人工地址栏／历史／标签控件，以及每 Session 的观测轮询与图片 URL 生命周期。
+- **不拥有**：slot 声明、功能菜单和文件视图（`packages/client/ui-open-in-app`）；Host 的 `browser.control` 实现与信任限制（`packages/host/apiproxy`、`packages/client/connection`）；浏览器状态与模型工具（`packages/browser/browser`、`packages/browser/tool-browser`）。
+- **入口**：`packages/client/ui-browser/src/client/index.ts`（注入 `slots`、`locale`、`connection`，两个 slot 共用会话控制器）；node 半是空 apply。
+- **接线**：`packages/bundle/web-app/cordis.patch.yml` 的 `ui-browser` 行，依赖 `ui-open-in-app` 声明的两个 slot。
+- **关键文件**：`packages/client/ui-browser/src/client/BrowserMirror.tsx`、`packages/client/ui-browser/src/client/controller.ts`、`packages/client/ui-browser/src/client/wire.ts`。
+- **改这里要同步**：人工命令同步 `packages/host/apiproxy/src/api/browser.schema.ts` 与 `packages/browser/browser`；slot owner 改动同步 `ui-open-in-app`；用户可见操作同步[使用指南](../user/guide/index.md#让-agent-使用浏览器)。
+- **不变量**：页面只作为经校验的 PNG 画面进入 Client，绝不嵌入目标页面；旧 generation／revision 和晚到的截图不能覆盖新状态，Blob URL 在换帧、消失和卸载时释放。
+- **测试**：`pnpm exec vitest run packages/client/ui-browser/tests`
 
 ## packages/client/ui-theme
 

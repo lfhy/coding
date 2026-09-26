@@ -16,6 +16,38 @@ import type { SessionRuntime } from '../src/client/sessions/service.ts'
 import type { WorkspaceRuntime } from '../src/client/workspaces/service.ts'
 import { FakeApiClient, fakeRemote, ok } from './fake-api.client.ts'
 
+describe('browser.control fake', () => {
+  it('records the command and signal, and permits a null last-tab result', async () => {
+    const api = new FakeApiClient()
+    const payload = { sessionId: 'fake-session' as never, command: { kind: 'ensure-tab' as const } }
+    const signal = new AbortController().signal
+    api.onBrowserControl = (received, receivedSignal) => {
+      expect(received).toEqual(payload)
+      expect(receivedSignal).toBe(signal)
+      return Promise.resolve(ok(null))
+    }
+
+    expect((await api.browser.control(payload, signal)).result).toEqual({ ok: true, value: null })
+    expect(api.callsOf('browser.control')).toEqual([payload])
+
+    const state = {
+      browserGeneration: 'fake-browser', stateRevision: 1, viewport: { width: 1280, height: 720 }, tabs: [],
+      activeTabId: null, observation: null, hasFrame: false,
+    }
+    api.onBrowserControl = () => Promise.resolve(ok(state))
+    expect((await api.browser.control(payload)).result).toEqual({ ok: true, value: state })
+  })
+
+  it('answers an unprogrammed request with a closed browser failure', async () => {
+    const result = (await new FakeApiClient().browser.control({
+      sessionId: 'fake-session' as never, command: { kind: 'back' },
+    })).result
+    expect(result).toMatchObject({
+      ok: false, error: { code: 'browser-failed', details: { reason: 'BROWSER_UNAVAILABLE' } },
+    })
+  })
+})
+
 interface Bench {
   ctx: Context
   api: FakeApiClient

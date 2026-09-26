@@ -401,7 +401,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/browser/browser-playwright/src/index.ts:26`](../packages/browser/browser-playwright/src/index.ts)
+Source: [`packages/browser/browser-playwright/src/index.ts:29`](../packages/browser/browser-playwright/src/index.ts)
 
 <a id="deepseek-aidsh-client-connection"></a>
 

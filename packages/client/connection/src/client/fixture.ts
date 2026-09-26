@@ -2264,6 +2264,11 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
   }
 
   const api: ApiProxy = {
+    browser: {
+      control: request => err<RequestPayload<'browser.control'>, ResponseValue<'browser.control'>>(request, {
+        code: 'browser-failed', message: 'fixture browser service is unavailable', details: { reason: 'BROWSER_UNAVAILABLE' },
+      }),
+    },
     sessions: {
       list: request => ok(request, { items: [...sessions].sort((a, b) => b.updatedAt - a.updatedAt) }),
       search: (request, signal) => {
@@ -3175,6 +3180,7 @@ export class FixtureApiClient extends AbstractApiClient {
     signal: AbortSignal,
   ): Promise<RpcResponse<unknown>> {
     switch (method) {
+      case 'browser.control': return this.api.browser.control(request, signal)
       case 'session.list': return this.api.sessions.list(request)
       case 'session.search': return this.api.sessions.search(request, signal)
       case 'session.create': return this.api.sessions.create(request)

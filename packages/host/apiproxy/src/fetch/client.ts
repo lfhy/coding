@@ -61,6 +61,7 @@ import {
   credentialsDescribeValueSchema, credentialsSetValueSchema, credentialsUnsetValueSchema,
 } from '../api/credentials.schema.ts'
 import { llmDiscoverModelsValueSchema, llmModelsValueSchema, llmProvidersValueSchema } from '../api/llm.schema.ts'
+import { browserControlValueSchema } from '../api/browser.schema.ts'
 import {
   subagentHistoryValueSchema,
   subagentInterruptValueSchema,
@@ -85,6 +86,9 @@ import {
  * Derived per method key from RpcMethodMap so a map row addition updates this mechanically.
  */
 export interface IApiClient {
+  browser: {
+    control(payload: RequestPayload<'browser.control'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'browser.control'>>>
+  }
   sessions: {
     list(payload: RequestPayload<'session.list'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'session.list'>>>
     search(payload: RequestPayload<'session.search'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'session.search'>>>
@@ -222,6 +226,7 @@ const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseV
   'llm.providers': llmProvidersValueSchema,
   'llm.models': llmModelsValueSchema,
   'llm.discoverModels': llmDiscoverModelsValueSchema,
+  'browser.control': browserControlValueSchema,
 }
 
 /** Default timeout for bounded unary calls (rpc-compare 2026-07-19: a hung host must not leave callers pending forever). */
@@ -242,6 +247,9 @@ const INTERNAL_BASE = 'http://dsh.internal'
  * subclass whose doFetch is toFetchHandler(api).fetch never touches the network.
  */
 export abstract class AbstractApiClient implements IApiClient {
+  readonly browser: IApiClient['browser'] = {
+    control: (payload, signal) => this.callUnary('browser.control', payload, signal, 'caller-signal-only'),
+  }
   /** Instance-owned observation buffer (module-level state would leak across instances/tests). */
   private envelopeBatch: RpcMessage[] = []
   private flushScheduled = false

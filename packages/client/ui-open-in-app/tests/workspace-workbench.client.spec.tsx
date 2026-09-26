@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -32,14 +32,17 @@ function bench(over: {
   filesOpen?: boolean
   listFiles?: WorkspaceWorkbenchProps['listFiles']
   readFile?: WorkspaceWorkbenchProps['readFile']
+  initialView?: 'menu' | 'files' | 'browser'
 } = {}) {
   const instance = createWorkbenchStore().create()
+  if (over.initialView !== undefined) instance.actions.setView(over.initialView)
   const closeWorkbench = vi.fn()
   const toggleWorkbenchFullscreen = vi.fn()
   const toggleFiles = vi.fn()
   const toggleBottom = vi.fn()
   const openWorkbench = vi.fn()
-  const renderSlot = vi.fn(() => <div data-testid="browser-contribution" />)
+  const renderSlot = vi.fn((name: string) => <div data-testid={name === 'workbench.browser'
+    ? 'browser-contribution' : 'browser-tabs-contribution'} />)
   const listFiles = vi.fn(over.listFiles ?? (async () => listing('/workspace', [])))
   const readFile = vi.fn(over.readFile ?? (async (): Promise<WorkspaceFilePayload> => ({
     path: '/workspace/file', content: { kind: 'text', text: '' },
@@ -85,7 +88,7 @@ describe('workspace workbench helpers', () => {
 
 describe('WorkspaceWorkbench shell', () => {
   it('waits for the workbench to be shown before reading the workspace root', async () => {
-    const b = bench({ shown: false })
+    const b = bench({ shown: false, initialView: 'files' })
     const mounted = render(<WorkspaceWorkbench {...b.props} />)
     expect(b.listFiles).not.toHaveBeenCalled()
     mounted.rerender(<WorkspaceWorkbench {...b.props} shown />)
@@ -95,7 +98,7 @@ describe('WorkspaceWorkbench shell', () => {
   })
 
   it('keeps both panel switches in the top bar when fullscreen hides the conversation header', () => {
-    const b = bench({ fullscreen: true, bottomOpen: true, filesOpen: true })
+    const b = bench({ fullscreen: true, bottomOpen: true, filesOpen: true, initialView: 'files' })
     render(<WorkspaceWorkbench {...b.props} />)
     const fullscreen = screen.getByRole('button', { name: zh['workbench.fullscreen.exit'] })
     expect(fullscreen.getAttribute('aria-pressed')).toBe('true')
@@ -116,7 +119,7 @@ describe('WorkspaceWorkbench shell', () => {
     expect(topbar.hasAttribute('data-window-drag-region')).toBe(true)
     expect(within(topbar).getAllByRole('button')
       .filter(button => !button.classList.contains('tabSelect') && !button.classList.contains('tabClose')))
-      .toHaveLength(6)
+      .toHaveLength(5)
   })
 
   it('switches browser and files without unmounting the browser child or clearing file tabs', async () => {
@@ -124,28 +127,38 @@ describe('WorkspaceWorkbench shell', () => {
     b.instance.actions.openFile({ name: 'kept.txt', segments: ['kept.txt'] })
     const mounted = render(<WorkspaceWorkbench {...b.props} />)
     const browser = screen.getByTestId('browser-contribution')
-    fireEvent.click(screen.getByRole('button', { name: zh['workbench.views.browser'] }))
+    const browserTabs = screen.getByTestId('browser-tabs-contribution')
+    const topbar = mounted.container.querySelector('header') as HTMLElement
+    expect(topbar.contains(browserTabs)).toBe(true)
+    expect(browserTabs.parentElement?.hasAttribute('hidden')).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.back'] }))
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.browser'] }))
     expect(b.openWorkbench).toHaveBeenCalledOnce()
     expect(b.instance.store.getSnapshot()).toMatchObject({ view: 'browser', activeId: tabIdForSegments(['kept.txt']) })
     expect(screen.getByTestId('browser-contribution')).toBe(browser)
+    expect(screen.getByTestId('browser-tabs-contribution')).toBe(browserTabs)
+    expect(browserTabs.parentElement?.hasAttribute('hidden')).toBe(false)
     expect(b.renderSlot).toHaveBeenLastCalledWith('workbench.browser', expect.objectContaining({ shown: true }))
+    expect(b.renderSlot).toHaveBeenCalledWith('workbench.browser.tabs', expect.objectContaining({ shown: true }))
     expect((mounted.container.querySelector('main > div:first-child') as HTMLElement).hidden).toBe(true)
     expect(mounted.container.querySelector('main > div:first-child')?.hasAttribute('inert')).toBe(true)
     expect(mounted.container.querySelector('aside')?.hidden).toBe(true)
-    fireEvent.click(screen.getByRole('button', { name: zh['workbench.views.files'] }))
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.back'] }))
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.files'] }))
     expect(b.instance.store.getSnapshot().view).toBe('files')
     expect(b.renderSlot).toHaveBeenLastCalledWith('workbench.browser', expect.objectContaining({ shown: false }))
-    fireEvent.click(screen.getByRole('button', { name: zh['workbench.views.browser'] }))
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.back'] }))
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.browser'] }))
     const owner = (b.renderSlot as unknown as { mock: { lastCall?: [string, {
       closeBrowser: () => void
       openBrowser: () => void
     }] } }).mock.lastCall?.[1]
     expect(owner).toBeDefined()
     if (!owner) throw new Error('browser slot owner was not registered')
-    owner.closeBrowser()
-    expect(b.instance.store.getSnapshot().view).toBe('files')
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: zh['workbench.views.files'] }))
-    owner.openBrowser()
+    act(() => { owner.closeBrowser() })
+    expect(b.instance.store.getSnapshot().view).toBe('menu')
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: zh['workbench.menu.terminal'] }))
+    act(() => { owner.openBrowser() })
     expect(b.instance.store.getSnapshot().view).toBe('browser')
     expect(b.openWorkbench).toHaveBeenCalledTimes(3)
     mounted.rerender(<WorkspaceWorkbench {...b.props} shown={false} />)
@@ -160,8 +173,38 @@ describe('WorkspaceWorkbench shell', () => {
     expect(screen.queryByRole('button', { name: zh['workbench.files.hide'] })).toBeNull()
   })
 
-  it('hides the file sidebar when the owner closes it and keeps its state across visibility changes', async () => {
+  it('starts on a keyboard-operable function menu and only enters wired features', async () => {
     const b = bench({ filesOpen: false })
+    render(<WorkspaceWorkbench {...b.props} />)
+    const menu = screen.getByRole('navigation', { name: zh['workbench.menu.label'] })
+    const topbar = screen.getByRole('region', { name: zh['workbench.label'] })
+      .querySelector('header') as HTMLElement
+    expect(within(topbar).getAllByRole('button')).toHaveLength(2)
+    expect(within(topbar).queryByRole('button', { name: zh['workbench.menu.back'] })).toBeNull()
+    expect(b.instance.store.getSnapshot().view).toBe('menu')
+    expect(b.listFiles).not.toHaveBeenCalled()
+    const items = within(menu).getAllByRole('button')
+    expect(items.map(item => item.textContent)).toEqual([
+      '审查未接入', '终端', '浏览器', '文件', '侧边聊天未接入',
+    ])
+    expect(items[0]?.hasAttribute('disabled')).toBe(true)
+    expect(items[4]?.hasAttribute('disabled')).toBe(true)
+    fireEvent.click(items[0] as HTMLButtonElement)
+    expect(b.instance.store.getSnapshot().view).toBe('menu')
+    fireEvent.click(items[1] as HTMLButtonElement)
+    expect(b.toggleBottom).toHaveBeenCalledOnce()
+    fireEvent.click(items[3] as HTMLButtonElement)
+    expect(b.toggleFiles).toHaveBeenCalledOnce()
+    expect(b.instance.store.getSnapshot().view).toBe('files')
+    await waitFor(() => { expect(b.listFiles).toHaveBeenCalledOnce() })
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: zh['workbench.menu.back'] }))
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.back'] }))
+    fireEvent.click(within(menu).getByRole('button', { name: zh['workbench.menu.browser'] }))
+    expect(b.renderSlot).toHaveBeenLastCalledWith('workbench.browser', expect.objectContaining({ shown: true }))
+  })
+
+  it('hides the file sidebar when the owner closes it and keeps its state across visibility changes', async () => {
+    const b = bench({ filesOpen: false, initialView: 'files' })
     const mounted = render(<WorkspaceWorkbench {...b.props} />)
     await screen.findByText(zh['files.empty'])
     expect(mounted.container.querySelector('aside')?.hidden).toBe(true)
@@ -190,7 +233,7 @@ describe('WorkspaceWorkbench shell', () => {
       path: `/provider/${segments.at(-1) ?? ''}`,
       content: { kind: 'text' as const, text: 'first line\nsecond line' },
     }))
-    const b = bench({ listFiles, readFile })
+    const b = bench({ listFiles, readFile, initialView: 'files' })
     render(<WorkspaceWorkbench {...b.props} />)
 
     await screen.findByRole('button', { name: 'src' })
@@ -238,7 +281,7 @@ describe('WorkspaceWorkbench shell', () => {
       'archive.zip': { path: '/w/archive.zip', content: { kind: 'unsupported', mimeType: 'application/zip' } },
       'unknown.bin': { path: '/w/unknown.bin', content: { kind: 'unsupported' } },
     }
-    const b = bench({
+    const b = bench({ initialView: 'files',
       readFile: async segments => payloads[segments.at(-1) ?? ''] as WorkspaceFilePayload,
     })
     for (const name of Object.keys(payloads)) b.instance.actions.openFile({ name, segments: [name] })
@@ -281,7 +324,7 @@ describe('WorkspaceWorkbench shell', () => {
     const readFile = vi.fn()
       .mockRejectedValueOnce(new Error('offline'))
       .mockResolvedValueOnce({ path: '/w/bad.txt', content: { kind: 'text', text: 'recovered' } })
-    const b = bench({ listFiles, readFile })
+    const b = bench({ listFiles, readFile, initialView: 'files' })
     render(<WorkspaceWorkbench {...b.props} />)
     expect((await screen.findByRole('alert')).textContent).toContain(zh['files.error'])
     fireEvent.click(screen.getByRole('button', { name: zh['files.retry'] }))
@@ -298,7 +341,7 @@ describe('WorkspaceWorkbench shell', () => {
       resolve: (payload: WorkspaceFilePayload) => void
       reject: (error: Error) => void
     }> = []
-    const b = bench({
+    const b = bench({ initialView: 'files',
       listFiles: (_segments, signal) => {
         if (signal !== undefined) signals.push(signal)
         return new Promise((_resolve, reject) => { rejectList = reject })
@@ -326,7 +369,7 @@ describe('WorkspaceWorkbench shell', () => {
       signal: AbortSignal | undefined
       resolve: (value: WorkspaceFilesPayload) => void
     }> = []
-    const b = bench({
+    const b = bench({ initialView: 'files',
       listFiles: (_segments, signal) => new Promise((resolve) => { requests.push({ signal, resolve }) }),
     })
     render(<WorkspaceWorkbench {...b.props} />)

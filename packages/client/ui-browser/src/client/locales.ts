@@ -3,7 +3,7 @@ export const NS = 'browser-mirror'
 
 export const zh = {
   'label': '浏览器画面',
-  'empty': '此会话尚未打开浏览器',
+  'empty': '开始浏览',
   'loading': '正在读取浏览器状态…',
   'error': '无法读取浏览器画面',
   'retry': '重试',
@@ -15,13 +15,27 @@ export const zh = {
   'fill': '填写',
   'scroll': '滚动',
   'ready': '页面已更新',
+  'tabs': '浏览器标签页',
+  'newTab': '新标签页',
+  'addTab': '新建标签页',
+  'closeTab': '关闭{name}',
+  'back': '后退',
+  'forward': '前进',
+  'reload': '刷新',
+  'address': '网址',
+  'addressPlaceholder': '输入网址或域名',
+  'go': '打开网址',
+  'invalidUrl': '请输入有效的 HTTP(S) 网址',
+  'startBrowsing': '开始浏览',
+  'emptyHint': '输入 URL 以打开页面',
+  'pending': '正在打开页面…',
 } as const
 
 export type BrowserMirrorKey = keyof typeof zh
 
 export const en: Record<BrowserMirrorKey, string> = {
   'label': 'Browser view',
-  'empty': 'No browser is open for this session',
+  'empty': 'Start browsing',
   'loading': 'Loading browser state…',
   'error': 'Browser view is unavailable',
   'retry': 'Retry',
@@ -33,4 +47,18 @@ export const en: Record<BrowserMirrorKey, string> = {
   'fill': 'Fill',
   'scroll': 'Scroll',
   'ready': 'Page updated',
+  'tabs': 'Browser tabs',
+  'newTab': 'New tab',
+  'addTab': 'New tab',
+  'closeTab': 'Close {name}',
+  'back': 'Back',
+  'forward': 'Forward',
+  'reload': 'Reload',
+  'address': 'Address',
+  'addressPlaceholder': 'Enter URL or domain',
+  'go': 'Open address',
+  'invalidUrl': 'Enter a valid HTTP(S) address',
+  'startBrowsing': 'Start browsing',
+  'emptyHint': 'Enter a URL to open a page',
+  'pending': 'Opening page…',
 }

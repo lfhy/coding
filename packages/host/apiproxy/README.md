@@ -60,6 +60,10 @@ Workspace 列表与 Session 列表是相互独立的重连基线。`workspace.cr
 
 ## 载体层（`/client` + 根路径）
 
+`browser.control` 是本地用户操作地址栏与标签页的独立 RPC：`{ sessionId, command }` 只接受幂等建立首个标签页的 `ensure-tab`、显式添加标签页的 `new-tab`、`select-tab`、`close-tab`、`navigate`、`back`、`forward`、`reload`，标签页 id 为 UUID；导航仅允许不含凭据且不超过 2048 字符的绝对 HTTP(S) URL。它只使用实时已附着的本地会话，未知或未附着会话返回 `session-not-found`，Remote-SSH marker 返回 `browser-failed`／`BROWSER_DENIED`，不从持久化恢复会话以回退到本地浏览器。成功响应是操作后的 `BrowserSessionState`，关闭最后一个标签页时为 `null`；提供方拒绝返回 `browser-failed`／提供方原因，取消返回 `cancelled`，错误不回显导航 URL。该人类入口不生成模型工具调用、不借用 Agent 权限，也不绕过 `browser_use` 模型调用每次所需的审批；网络载体只让回环同源请求触达此方法，Host/Origin/Fetch-Metadata 防线仍生效。这是单用户本地 Host 的信任模型，不是独立身份认证。
+
+`set-viewport` 使用整数 `width` 200–1920 和 `height` 240–1400，且面积不超过 1,800,000 像素；多余字段和超界值在 RPC 边界被拒绝。成功状态中的 `viewport` 是提供方当前使用的同一尺寸；会话尚无浏览器资源时提供方可返回空态 `null`，界面先通过 `ensure-tab` 建立首标签页。
+
 `AbstractApiClient` 持有全部协议不变量：签发 rpcId、包装／解包信封、Zod 解析、SSE 帧解码、一元请求超时，以及按微任务批处理的信封观测（`subscribeEnvelopes`）；平台子类只提供 `doFetch` 传输环节。`InProcessApiClient` 以 `toFetchHandler(api)` 为基础，仍是同构接点：它运行完整的协议序列化与校验路径而不经过网络，供需要该路径的调用方和载体测试使用。产品的 `dsh --profile headless` 是直连 core 的入口，不挂载本包。
 
 ## 模型体验

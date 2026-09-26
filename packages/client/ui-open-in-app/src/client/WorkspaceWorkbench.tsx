@@ -4,15 +4,20 @@ import {
   useMemo,
   useRef,
   useState,
+  type Ref,
   type ReactNode,
 } from 'react'
 import clsx from 'clsx'
 import {
   IconChevronRightOutline14,
+  IconChevronLeftOutline14,
   IconCloseOutline16,
   IconFolderClose16,
   IconFolderOpen16,
   IconFolderOpenOutline16,
+  IconBrowseOutline16,
+  IconChecklistOutline14,
+  IconNewChatOutline16,
   IconFullscreenOutline16,
   Icon,
   IconRefreshOutline16,
@@ -38,7 +43,7 @@ import type {
 import css from './WorkspaceWorkbench.module.css'
 
 /**
- * 文件工作台注入的 Host 读取能力和当前 Session 的工作台关闭／最大化动作。
+ * 工作台注入的 Host 读取能力和当前 Session 的关闭／最大化动作。
  * 文件树 loading/error/ready 状态由 Session store 持有，跨会话页面切换与工作台
  * 关闭保持不变；全屏及窄屏下会话页头不可操作，顶栏提供两个面板开关。
  */
@@ -55,7 +60,7 @@ export interface WorkspaceWorkbenchInjected {
 /** 工作台 slot、viewing store、Host 读取和词典组成的 props。 */
 export type WorkspaceWorkbenchProps =
   & PropsRuntime<'workbench'>
-  & PropsRenderSlots<'workbench.browser'>
+  & PropsRenderSlots<'workbench.browser' | 'workbench.browser.tabs'>
   & PropsStore<ReturnType<typeof createWorkbenchStore>>
   & PropsLocale<typeof NS>
   & InjectFace<WorkspaceWorkbenchInjected>
@@ -90,16 +95,18 @@ export function formatBytes(size: number | undefined): string {
   return `${(size / (1024 * 1024 * 1024)).toFixed(1)} GiB`
 }
 
-function ToolbarButton({ label, pressed, onClick, icon }: {
+function ToolbarButton({ label, pressed, onClick, icon, buttonRef }: {
   label: string
   pressed?: boolean
   onClick: () => void
   icon: ReactNode
+  buttonRef?: Ref<HTMLButtonElement>
 }): React.JSX.Element {
   return (
     <Tooltip label={label} side="bottom">
       <button
         type="button"
+        ref={buttonRef}
         className={css.toolButton}
         title={label}
         aria-label={label}
@@ -345,8 +352,8 @@ function FilePreview({ tab, visible, readFile, t }: {
 }
 
 /**
- * 固定工作台内容：文件标签与预览居中，懒加载文件树位于右侧。全屏和窄屏
- * 隐藏会话页头时，顶栏仍可切换文件侧栏与终端底栏。
+ * 固定工作台内容：首次显示功能菜单，文件视图使用懒加载目录树，浏览器视图
+ * 在同一顶栏占用标签位。全屏和窄屏隐藏会话页头时保留面板开关。
  * @param props - 布局状态与动作、Session viewing store、Host 文件能力和本地化文案。
  * @returns 保持挂载、可独立隐藏文件侧栏的工作台。
  */
@@ -361,11 +368,27 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
     actions.setView('browser')
     openWorkbench()
   }, [actions, openWorkbench])
-  const filesButton = useRef<HTMLButtonElement>(null)
+  const returnButton = useRef<HTMLButtonElement>(null)
+  const menuTerminalButton = useRef<HTMLButtonElement>(null)
+  const pendingFocus = useRef<'menu' | 'return' | null>(null)
   const showFiles = useCallback((): void => {
+    pendingFocus.current = 'return'
     actions.setView('files')
-    filesButton.current?.focus()
+    if (!filesOpen) toggleFiles()
+  }, [actions, filesOpen, toggleFiles])
+  const showMenu = useCallback((): void => {
+    pendingFocus.current = 'menu'
+    actions.setView('menu')
   }, [actions])
+  useEffect(() => {
+    if (pendingFocus.current === view) {
+      menuTerminalButton.current?.focus()
+      pendingFocus.current = null
+    } else if (pendingFocus.current === 'return' && view !== 'menu') {
+      returnButton.current?.focus()
+      pendingFocus.current = null
+    }
+  }, [view])
   const expanded = useMemo(() => new Set(filesExpanded), [filesExpanded])
   const requests = useRef(new Map<string, AbortController>())
   const rootKey = tabIdForSegments([])
@@ -418,44 +441,55 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
       data-fullscreen={fullscreen || undefined}
     >
       <header className={css.topbar} data-window-drag-region="">
-        <div className={css.viewSwitch} role="group" aria-label={t('workbench.views.label')}>
-          <button type="button" ref={filesButton} className={css.viewButton} aria-pressed={view === 'files'}
-            onClick={showFiles}>{t('workbench.views.files')}</button>
-          <button type="button" className={css.viewButton} aria-pressed={view === 'browser'}
-            onClick={showBrowser}>{t('workbench.views.browser')}</button>
-        </div>
-        <div className={css.tabs} role="tablist" aria-label={t('tabs.label')}>
-          {tabs.map((tab, index) => {
-            const selected = view === 'files' && tab.id === activeId
-            const panelId = `workbench-preview-${String(index)}`
-            return (
-              <div className={clsx(css.tab, selected && css.tabActive)} role="presentation" key={tab.id}>
-                <button
-                  type="button"
-                  className={css.tabSelect}
-                  role="tab"
-                  aria-selected={selected}
-                  aria-controls={panelId}
-                  title={tab.name}
-                  onClick={() => { actions.activateFile(tab.id) }}
-                >
-                  <FileGlyph />
-                  <span>{tab.name}</span>
-                </button>
-                <button
-                  type="button"
-                  className={css.tabClose}
-                  aria-label={t('tabs.close', { name: tab.name })}
-                  title={t('tabs.close', { name: tab.name })}
-                  onClick={() => { actions.closeFile(tab.id) }}
-                >
-                  <IconCloseOutline16 size={12} />
-                </button>
-              </div>
-            )
-          })}
+        <div className={css.tabs}>
+          {view === 'files' && <div className={css.fileTabs} role="tablist" aria-label={t('tabs.label')}>
+            {tabs.map((tab, index) => {
+              const selected = tab.id === activeId
+              const panelId = `workbench-preview-${String(index)}`
+              return (
+                <div className={clsx(css.tab, selected && css.tabActive)} role="presentation" key={tab.id}>
+                  <button
+                    type="button"
+                    className={css.tabSelect}
+                    role="tab"
+                    aria-selected={selected}
+                    aria-controls={panelId}
+                    title={tab.name}
+                    onClick={() => { actions.activateFile(tab.id) }}
+                  >
+                    <FileGlyph />
+                    <span>{tab.name}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={css.tabClose}
+                    aria-label={t('tabs.close', { name: tab.name })}
+                    title={t('tabs.close', { name: tab.name })}
+                    onClick={() => { actions.closeFile(tab.id) }}
+                  >
+                    <IconCloseOutline16 size={12} />
+                  </button>
+                </div>
+              )
+            })}
+          </div>}
+          <div className={css.browserTabs} hidden={!browserShown} {...!browserShown ? { inert: '' } : {}}>
+            {renderSlot('workbench.browser.tabs', {
+              shown: browserShown,
+              openBrowser: showBrowser,
+              closeBrowser: showMenu,
+            })}
+          </div>
         </div>
         <div className={css.viewControls}>
+          {view !== 'menu' && (
+            <ToolbarButton
+              label={t('workbench.menu.back')}
+              onClick={showMenu}
+              buttonRef={returnButton}
+              icon={<IconChevronLeftOutline14 size={14} />}
+            />
+          )}
           {fullscreen && (
             <>
               <ToolbarButton
@@ -485,8 +519,39 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
           />
         </div>
       </header>
-      <div className={clsx(css.body, (!filesOpen || view === 'browser') && css.filesClosed)}>
+      <div className={clsx(css.body, (!filesOpen || view !== 'files') && css.filesClosed)}>
         <main className={css.previewStack}>
+          <div className={css.menuView} hidden={view !== 'menu'} {...view !== 'menu' ? { inert: '' } : {}}>
+            <nav className={css.functionMenu} aria-label={t('workbench.menu.label')}>
+              <button type="button" className={css.functionItem} disabled title={t('workbench.menu.unavailable')}>
+                <IconChecklistOutline14 size={18} />
+                <span>{t('workbench.menu.review')}</span>
+                <small>{t('workbench.menu.unavailable')}</small>
+              </button>
+              <button type="button" ref={menuTerminalButton} className={css.functionItem} onClick={() => {
+                if (!bottomOpen) toggleBottom()
+              }}>
+                <Icon name="bottom-panel" size={18} />
+                <span>{t('workbench.menu.terminal')}</span>
+              </button>
+              <button type="button" className={css.functionItem} onClick={() => {
+                pendingFocus.current = 'return'
+                showBrowser()
+              }}>
+                <IconBrowseOutline16 size={18} />
+                <span>{t('workbench.menu.browser')}</span>
+              </button>
+              <button type="button" className={css.functionItem} onClick={showFiles}>
+                <IconFolderOpenOutline16 size={18} />
+                <span>{t('workbench.menu.files')}</span>
+              </button>
+              <button type="button" className={css.functionItem} disabled title={t('workbench.menu.unavailable')}>
+                <IconNewChatOutline16 size={18} />
+                <span>{t('workbench.menu.chat')}</span>
+                <small>{t('workbench.menu.unavailable')}</small>
+              </button>
+            </nav>
+          </div>
           <div className={css.fileView} hidden={view !== 'files'} {...view !== 'files' ? { inert: '' } : {}}>
             {tabs.map((tab, index) => (
               <div id={`workbench-preview-${String(index)}`} className={css.previewSlot} key={tab.id}>
@@ -505,7 +570,7 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
             {renderSlot('workbench.browser', {
               shown: browserShown,
               openBrowser: showBrowser,
-              closeBrowser: showFiles,
+              closeBrowser: showMenu,
             })}
           </div>
         </main>

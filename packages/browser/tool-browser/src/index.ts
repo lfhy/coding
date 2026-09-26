@@ -1,7 +1,7 @@
 /** 面向模型的受审批浏览器操作；页面、安全策略及资源生命周期属于提供方。 @module @deepseek-ai/dsh-tool-browser */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { BrowserCommand, BrowserObservation } from '@deepseek-ai/dsh-browser'
+import type { BrowserCommand, BrowserExpectedTarget, BrowserObservation } from '@deepseek-ai/dsh-browser'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
@@ -91,6 +91,7 @@ export function parseBrowserCommand(args: BrowserArgs): BrowserCommand {
 
 function boundedObservation(observation: BrowserObservation): BrowserObservation {
   return {
+    tabId: observation.tabId,
     generation: observation.generation.slice(0, MAX_GENERATION_CHARS),
     revision: observation.revision,
     url: observation.url.slice(0, MAX_URL_CHARS),
@@ -109,7 +110,7 @@ function imageRef(image: NonNullable<BrowserUseValue['image']>): ImageAttachment
   }
 }
 
-function renderBrowserResult(value: BrowserUseValue): ContentBlock[] {
+function renderBrowserResult(value: Pick<BrowserUseValue, 'action' | 'image'> & { observation: { tabId: string } }): ContentBlock[] {
   const text = JSON.stringify({ action: value.action, observation: value.observation, image: value.image })
   if (value.action !== 'screenshot' || value.image === null) return [{ type: 'text', text }]
   return [{ type: 'text', text }, { type: 'image', attachment: imageRef(value.image) }]
@@ -160,6 +161,7 @@ export function apply(ctx: Context): void {
         properties: {
           action: { type: 'string', enum: ['navigate', 'snapshot', 'click', 'fill', 'scroll', 'screenshot', 'close'], required: true },
           observation: { type: 'object', required: true, additionalProperties: false, properties: {
+            tabId: { type: 'string', required: true },
             generation: { type: 'string', required: true }, revision: { type: 'integer', required: true },
             url: { type: 'string', required: true }, title: { type: 'string', required: true },
             snapshot: { type: 'string', required: true },
@@ -198,7 +200,21 @@ export function apply(ctx: Context): void {
       exec.signal.throwIfAborted()
       const approval = ctx.get('approval')
       if (approval === undefined) throw new Error('browser_use: approval service is unavailable')
-      const currentUrl = command.kind === 'navigate' ? undefined : ctx.browserUse.latest(agent.session.id)?.observation.url
+      const sessionId = agent.session.id
+      const state = ctx.browserUse.state(sessionId)
+      let expectedTarget: BrowserExpectedTarget
+      if (state === undefined) {
+        if (command.kind !== 'navigate') {
+          throw new Error('browser_use: browser session is closed; navigate to open a page')
+        }
+        expectedTarget = { kind: 'none' }
+      } else {
+        const active = state.tabs.find(tab => tab.id === state.activeTabId)
+        if (active === undefined) throw new Error('browser_use: active tab is unavailable')
+        expectedTarget = { kind: 'tab', browserGeneration: state.browserGeneration, stateRevision: state.stateRevision,
+          tabId: active.id, generation: active.generation, url: active.url }
+      }
+      const currentUrl = command.kind === 'navigate' || expectedTarget.kind === 'none' ? undefined : expectedTarget.url
       const outcome = await approval.request({
         agent, toolName: 'browser_use', callId: exec.callId,
         reason: approvalReason(command, currentUrl),
@@ -206,7 +222,7 @@ export function apply(ctx: Context): void {
       })
       exec.signal.throwIfAborted()
       if (outcome !== 'allowed-once') throw new Error(`browser_use: approval ${outcome}`)
-      const capture = await ctx.browserUse.execute(agent.session.id, command, exec.signal)
+      const capture = await ctx.browserUse.execute(sessionId, command, exec.signal, expectedTarget)
       let image: BrowserUseValue['image'] = null
       if (command.kind === 'screenshot') {
         if (capture.png === null) throw new Error('browser_use: screenshot produced no PNG')

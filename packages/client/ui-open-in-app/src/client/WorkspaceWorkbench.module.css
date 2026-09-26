@@ -14,7 +14,9 @@
 .filesPanel[hidden],
 .preview[hidden],
 .fileView[hidden],
+.menuView[hidden],
 .browserView[hidden],
+.browserTabs[hidden],
 .treeView[hidden] {
   display: none;
 }
@@ -23,7 +25,7 @@
 .topbar {
   position: relative;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 6px;
   min-width: 0;
@@ -47,10 +49,10 @@
 }
 
 .toolButton,
-.viewButton,
 .tabSelect,
 .tabClose,
 .treeRow,
+.functionItem,
 .inlineAction {
   border: 0;
   color: inherit;
@@ -73,15 +75,14 @@
 .toolButton:hover,
 .toolButton:focus-visible,
 .toolButton[aria-pressed='true'],
-.viewButton:hover,
-.viewButton:focus-visible,
-.viewButton[aria-pressed='true'],
 .tabSelect:hover,
 .tabSelect:focus-visible,
 .tabClose:hover,
 .tabClose:focus-visible,
 .treeRow:hover,
 .treeRow:focus-visible,
+.functionItem:not(:disabled):hover,
+.functionItem:focus-visible,
 .inlineAction:hover,
 .inlineAction:focus-visible {
   outline: none;
@@ -89,44 +90,34 @@
 }
 
 .toolButton:focus-visible,
-.viewButton:focus-visible,
 .tabSelect:focus-visible,
 .tabClose:focus-visible,
 .treeRow:focus-visible,
+.functionItem:focus-visible,
 .inlineAction:focus-visible,
 .search:focus-within {
   box-shadow: inset 0 0 0 2px var(--dsw-alias-state-business-primary);
 }
 
 .tabs {
-  display: flex;
-  align-items: center;
   min-width: 0;
   height: 100%;
   overflow-x: auto;
   overflow-y: hidden;
 }
 
-.viewSwitch {
-  display: inline-flex;
+.fileTabs {
+  display: flex;
   align-items: center;
-  gap: 2px;
+  min-width: 0;
+  height: 100%;
 }
 
-.viewButton {
-  height: 30px;
-  padding: 0 8px;
-  border-radius: 8px;
-  color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
-  line-height: 18px;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.viewButton[aria-pressed='true'] {
-  color: var(--dsw-alias-label-primary);
-  background: var(--dsw-alias-interactive-bg-active);
+.browserTabs {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 100%;
 }
 
 .tab {
@@ -219,9 +210,59 @@
 }
 
 .fileView,
+.menuView,
 .browserView {
   width: 100%;
   height: 100%;
+}
+
+.menuView {
+  display: grid;
+  overflow: auto;
+  place-items: center;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+.functionMenu {
+  display: grid;
+  width: min(100%, 520px);
+  gap: 8px;
+}
+
+.functionItem {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  width: 100%;
+  min-height: 48px;
+  gap: 12px;
+  padding: 0 12px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  text-align: left;
+  font-size: 14px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.functionItem span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.functionItem:disabled {
+  color: var(--dsw-alias-label-tertiary);
+  cursor: not-allowed;
+}
+
+.functionItem small {
+  font-size: 11px;
+  line-height: 18px;
+  white-space: nowrap;
 }
 
 .treeView {
@@ -538,7 +579,7 @@ div.treeRow {
 
 @media (max-width: 480px) {
   .topbar {
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: 2px;
     padding: 0 4px;
   }
@@ -576,10 +617,6 @@ div.treeRow {
     position: absolute;
     inset: 0;
     z-index: 2;
-  }
-
-  .viewButton {
-    padding: 0 5px;
   }
 
   .source {

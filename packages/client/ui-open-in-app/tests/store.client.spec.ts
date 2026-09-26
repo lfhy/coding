@@ -48,7 +48,7 @@ describe('file workbench store', () => {
     first.actions.openFile(file)
     first.actions.setView('browser')
     expect(first.store.getSnapshot().view).toBe('browser')
-    expect(second.store.getSnapshot().view).toBe('files')
+    expect(second.store.getSnapshot().view).toBe('menu')
     first.actions.activateFile(tabIdForSegments(file.segments))
     expect(first.store.getSnapshot()).toMatchObject({ view: 'files', activeId: tabIdForSegments(file.segments) })
     first.actions.setView('browser')

@@ -1,4 +1,4 @@
-/** 文件工作台的 Session viewing store。 */
+/** 工作台的 Session viewing store。 */
 
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
 import type { WorkspaceFilesPayload } from './wire.ts'
@@ -18,7 +18,7 @@ export interface WorkbenchFileLevel {
 }
 
 type WorkbenchState = {
-  view: 'files' | 'browser'
+  view: 'menu' | 'files' | 'browser'
   tabs: WorkbenchFileTab[]
   activeId: string | null
   filesQuery: string
@@ -64,13 +64,13 @@ function retainLevel(
 }
 
 /**
- * 创建每 Session 一份的文件工作台 viewing store。
+ * 创建每 Session 一份的工作台 viewing store。
  * @returns 由 slot renderer 实例化的 store handle。
  */
 export function createWorkbenchStore(): EngineStoreHandle<WorkbenchState, WorkbenchActions> {
   return defineStore({
     init: (): WorkbenchState => ({
-      view: 'files',
+      view: 'menu',
       tabs: [],
       activeId: null,
       filesQuery: '',

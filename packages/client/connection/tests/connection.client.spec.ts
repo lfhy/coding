@@ -15,6 +15,29 @@ import { FakeApiClient, deferred, ok } from './fake-api.client.ts'
 const SID = 'fk-c1' as SessionId
 const FAST = { backoffBaseMs: 10, backoffFactor: 1, backoffMaxMs: 10, streamOpenTimeoutMs: 500 }
 
+describe('browser.control fake', () => {
+  it('records the command and signal, and allows a null result when the last tab closes', async () => {
+    const api = new FakeApiClient()
+    const payload = { sessionId: SID, command: { kind: 'ensure-tab' as const } }
+    const signal = new AbortController().signal
+    api.onBrowserControl = (received, receivedSignal) => {
+      expect(received).toEqual(payload)
+      expect(receivedSignal).toBe(signal)
+      return Promise.resolve(ok(null))
+    }
+
+    expect((await api.browser.control(payload, signal)).result).toEqual({ ok: true, value: null })
+    expect(api.callsOf('browser.control')).toEqual([payload])
+  })
+
+  it('answers an unprogrammed request with a closed browser failure', async () => {
+    const result = (await new FakeApiClient().browser.control({ sessionId: SID, command: { kind: 'back' } })).result
+    expect(result).toMatchObject({
+      ok: false, error: { code: 'browser-failed', details: { reason: 'BROWSER_UNAVAILABLE' } },
+    })
+  })
+})
+
 function subscribedFrame(lastSeq = 0) {
   return { type: 'session/subscribed', sessionId: SID, lastSeq } as const
 }

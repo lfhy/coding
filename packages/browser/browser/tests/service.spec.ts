@@ -1,7 +1,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { describe, expect, it } from 'vitest'
-import BrowserUseService, { BrowserUseError, type BrowserCapture, type BrowserCommand } from '../src/index.ts'
+import BrowserUseService, { BrowserUseError, type BrowserCapture, type BrowserCommand, type BrowserHumanCommand, type BrowserSessionState } from '../src/index.ts'
 import type { BrowserObservation } from '../src/types.ts'
 
 class StubBrowserUse extends BrowserUseService {
@@ -13,6 +13,7 @@ class StubBrowserUse extends BrowserUseService {
       await this.closeSession(sessionId)
     }
     const observation: BrowserObservation = {
+      tabId: 'stub-tab' as BrowserObservation['tabId'],
       generation: sessionId,
       revision: 0,
       url: command.kind === 'navigate' ? command.url : 'about:blank',
@@ -28,6 +29,22 @@ class StubBrowserUse extends BrowserUseService {
 
   latest(sessionId: ReturnType<typeof SessionId>): BrowserCapture | undefined {
     return this.captures.get(sessionId)
+  }
+
+  state(sessionId: ReturnType<typeof SessionId>): BrowserSessionState | undefined {
+    const capture = this.latest(sessionId)
+    if (!capture) return undefined
+    return { browserGeneration: sessionId, stateRevision: 1, viewport: capture.observation.viewport,
+      tabs: [{ id: capture.observation.tabId, generation: capture.observation.generation,
+        url: capture.observation.url, title: '',
+        canGoBack: false, canGoForward: false }], activeTabId: capture.observation.tabId,
+      observation: capture.observation, hasFrame: false }
+  }
+
+  control(sessionId: ReturnType<typeof SessionId>, _command: BrowserHumanCommand,
+    signal: AbortSignal): Promise<BrowserSessionState | undefined> {
+    signal.throwIfAborted()
+    return Promise.resolve(this.state(sessionId))
   }
 
   closeSession(sessionId: ReturnType<typeof SessionId>): Promise<void> {

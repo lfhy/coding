@@ -28,7 +28,7 @@ workspace 共 233 个包，按 group 分节。每行给出包目录、职责（R
 
 ## packages/browser
 
-- `packages/browser/browser` — 命令为封闭判别联合：`navigate` 携带 URL；`snapshot` 读取页面… 入口 `src/index.ts`（tests 1）
+- `packages/browser/browser` — 模型命令为封闭判别联合：`navigate` 携带 URL；`snapshot` 读取页面… 入口 `src/index.ts`（tests 1）
 - `packages/browser/browser-playwright` — 配置 `allowedOrigins` 默认为 `[]`，仅允许 DNS 全部答案均为公网地址的 HTTP(S) 请求；特殊用途地址段… 入口 `src/index.ts`（tests 4）
 - `packages/browser/tool-browser` — 工具的 `action` 是 `navigate`、`snapshot`、`click`、`fill`、`scroll`、`screenshot… 入口 `src/index.ts`（tests 2）
 
@@ -48,7 +48,7 @@ workspace 共 233 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/client/ui-agent-preset` — agent preset 的各个表层：General 设置中的一行，用于选择新建会话据以组装的 preset；新建会话界面上的一枚 chip… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 7）
 - `packages/client/ui-attachment` — 对话 UI 的动态附件呈现插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 7）
 - `packages/client/ui-brand-official` — 仅当 `DSH_CLIENT_BUILD_PROFILE` 为 `official` 时… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
-- `packages/client/ui-browser` — 本包的 Client 半边占用 `workbench.browser` 会话级 slot… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 5）
+- `packages/client/ui-browser` — 本包的 Client 半边占用 `workbench.browser` 内容和 `workbench.browser.tabs` 顶栏标签两个会… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 6）
 - `packages/client/ui-commands` — 客户端命令 API（`ctx.commandUi`）：以会话为 key 的命令目录缓存、带 `matchSpace`／`matchEnter` … [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 5）
 - `packages/client/ui-conversation` — 会话领域：骨架（标题栏／标签页／编辑器／空状态）、聊天视图（分组步骤摘要流、流式尾部隔离与轮次状态）、编辑器 dock… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 33）
 - `packages/client/ui-deliverables` — 产出文件与可点击文件引用功能的属主 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
@@ -181,7 +181,7 @@ workspace 共 233 个包，按 group 分节。每行给出包目录、职责（R
 
 ## packages/host
 
-- `packages/host/apiproxy` — 所有客户端共用的 API 网关由三部分组成：TypeScript API 约定（`src/api/`，不依赖 Node… [client] 入口 `src/index.ts`（tests 19）
+- `packages/host/apiproxy` — 所有客户端共用的 API 网关由三部分组成：TypeScript API 约定（`src/api/`，不依赖 Node… [client] 入口 `src/index.ts`（tests 20）
 - `packages/host/directory-picker` — web GUI 宿主的工作区目录选择是一项能力 seam 入口 `src/index.ts`（tests 1）
 - `packages/host/directory-picker-auto` — 目录选择 seam 的**自适应选择器**：一个只有 node 半侧的插件，在启动时一次性判定宿主处境… 入口 `src/index.ts`（tests 2）
 - `packages/host/directory-picker-browse` — 目录选择 seam 的**应用内浏览后端**：`BrowseDirectoryPicker` 以 `browse` 能力注册 `ctx.dire… 入口 `src/index.ts`（tests 1）

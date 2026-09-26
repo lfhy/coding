@@ -1,7 +1,7 @@
 /** 无会话 Hero 的双面板入口经真实 Web 装配创建空白会话并保持面板独立。 */
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import { launchWebScaffold, watchConsole, type WebScaffold } from './scaffold.ts'
 import { newEnglishPage } from './support.ts'
 
@@ -31,7 +31,8 @@ describe('web e2e: no-session Hero panel actions', () => {
     await scaffold?.close()
   })
 
-  it('opens only the requested panel while retaining the left navigation', async () => {
+  it('opens the feature menu first and keeps bottom and right panels independent', async () => {
+    onTestFailed(async () => { await page.screenshot({ path: '/tmp/dsh-hero-panel-failed.png', fullPage: true }) })
     const sidebar = page.locator(SIDEBAR)
     const frame = sidebar.locator('..')
     const hero = page.locator('[data-phase="hero"]')
@@ -79,11 +80,43 @@ describe('web e2e: no-session Hero panel actions', () => {
     expect(await workbench.getAttribute('inert')).toBeNull()
     expect(await bottom.getAttribute('aria-hidden')).toBe('true')
     expect(await bottom.getAttribute('inert')).toBe('')
-    expect(await page.getByRole('region', { name: 'File workbench' }).count()).toBe(1)
-    expect(await page.getByRole('complementary', { name: 'Workspace files' }).count()).toBe(1)
+    const menu = page.getByRole('navigation', { name: 'Workbench features' })
+    await expect.poll(() => menu.isVisible()).toBe(true)
+    await expect.poll(async () => (await workbench.boundingBox())?.width ?? 0).toBeGreaterThan(300)
+    expect(await menu.getByRole('button').count()).toBe(5)
+    for (const name of ['Review', 'Terminal', 'Browser', 'Files', 'Side chat']) {
+      expect(await menu.getByRole('button', { name: new RegExp(name) }).count()).toBe(1)
+    }
+    expect(await menu.getByRole('button', { name: /Review/ }).isDisabled()).toBe(true)
+    expect(await menu.getByRole('button', { name: /Side chat/ }).isDisabled()).toBe(true)
+    expect(await page.getByRole('complementary', { name: 'Workspace files' }).count()).toBe(0)
+    await page.mouse.move(900, 300)
+    await page.screenshot({ path: '/tmp/dsh-hero-panel-menu.png' })
+
+    await menu.getByRole('button', { name: 'Browser' }).click()
+    const mirror = page.getByRole('region', { name: 'Browser view' })
+    await expect.poll(() => mirror.isVisible()).toBe(true)
+    await mirror.getByText('Start browsing').waitFor({ timeout: 10_000 })
+    await expect.poll(() => page.getByRole('tablist', { name: 'Browser tabs' }).getByRole('tab').count(),
+      { timeout: 10_000 }).toBe(1)
+    const address = mirror.getByRole('textbox', { name: 'Address' })
+    expect(await address.inputValue()).toBe('')
+    expect(await bottom.getAttribute('aria-hidden')).toBe('true')
+    await address.focus()
+    await page.mouse.move(1300, 300)
+    await page.screenshot({ path: '/tmp/dsh-hero-panel-browser.png' })
+    await page.getByRole('button', { name: 'Back to features' }).click()
+    await expect.poll(() => menu.isVisible()).toBe(true)
+    await menu.getByRole('button', { name: 'Files' }).click()
+    await expect.poll(() => page.getByRole('complementary', { name: 'Workspace files' }).count()).toBe(1)
+    await expect.poll(() => page.getByText('Loading directory...', { exact: true }).count()).toBe(0)
+    await page.screenshot({ path: '/tmp/dsh-hero-panel-files.png' })
     expect(await hero.getByRole('button', { name: 'Hide files sidebar' }).getAttribute('aria-pressed')).toBe('true')
     expect(await frame.getAttribute('data-sidebar-collapsed')).toBeNull()
     expect((await sidebar.boundingBox())?.width).toBe(sidebarBox!.width)
+    expect(new URL(page.url()).origin).toBe(new URL(scaffold.baseUrl).origin)
+    expect(await page.title()).toContain('Coding')
+    expect(await page.locator('vite-error-overlay').count()).toBe(0)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   }, 60_000)

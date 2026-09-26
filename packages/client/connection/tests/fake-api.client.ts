@@ -3,9 +3,10 @@
 // deferred-controlled timing). Streams are hand pumps: pushMux/pushHost.
 import type {
   HostFrame, IApiClient, ModelSelection, MuxFrame,
-  RpcRequest, RpcResponse, SessionId, SessionModels, SessionSearchItem, SkillEntry, WorkspaceId,
+  ResponseValue, RpcRequest, RpcResponse, SessionId, SessionModels, SessionSearchItem, SkillEntry, WorkspaceId,
 } from '../src/client/api.ts'
 import { RpcId } from '../src/client/api.ts'
+import type { RequestPayload } from '@deepseek-ai/dsh-host-apiproxy/api'
 
 export interface Deferred<T> {
   promise: Promise<T>
@@ -97,6 +98,16 @@ export class FakeApiClient implements IApiClient {
   onCreateDirectory: (payload: unknown) => Promise<RpcResponse<{ path: string }>> =
     () => Promise.resolve(ok({ path: '/home/fake/new' }))
 
+  onBrowserControl: (payload: RequestPayload<'browser.control'>, signal?: AbortSignal)
+  => Promise<RpcResponse<ResponseValue<'browser.control'>>> =
+    () => Promise.resolve({
+      rpcId: RpcId(`fake-${nextRpc++}`),
+      result: {
+        ok: false,
+        error: { code: 'browser-failed', message: 'fake browser service is unavailable', details: { reason: 'BROWSER_UNAVAILABLE' } },
+      },
+    })
+
   private readonly muxConns: StreamConn<MuxFrame>[] = []
   private readonly hostConns: StreamConn<HostFrame>[] = []
   lastSearchSignal: AbortSignal | undefined
@@ -147,6 +158,11 @@ export class FakeApiClient implements IApiClient {
     listDirectory: payload => this.record('host.listDirectory', payload, this.onListDirectory(payload)),
     createDirectory: payload => this.record('host.createDirectory', payload, this.onCreateDirectory(payload)),
     openPath: payload => this.record('host.openPath', payload, this.onOpenPath(payload)),
+  }
+
+  readonly browser: IApiClient['browser'] = {
+    control: (payload: RequestPayload<'browser.control'>, signal?: AbortSignal) =>
+      this.record('browser.control', payload, this.onBrowserControl(payload, signal)),
   }
 
   readonly workspace: IApiClient['workspace'] = {

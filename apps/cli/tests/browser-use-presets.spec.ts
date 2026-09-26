@@ -6,7 +6,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { boot, healProfilesModuleFallback, loadOverlayPatches } from '@deepseek-ai/dsh-app-boot'
 import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
 import { BrowserUseService } from '@deepseek-ai/dsh-browser'
-import type { BrowserCapture, BrowserCommand } from '@deepseek-ai/dsh-browser'
+import type { BrowserCapture, BrowserCommand, BrowserExpectedTarget, BrowserHumanCommand, BrowserSessionState, BrowserTabId } from '@deepseek-ai/dsh-browser'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -18,26 +18,60 @@ const signal = new AbortController().signal
 
 /** 使用真实宿主组合和预设，只将会启动 Chromium 的服务换成可观测的内存提供方。 */
 class FixtureBrowser extends BrowserUseService {
+  private readonly sessions = new Map<string, BrowserSessionState>()
   readonly commands = vi.fn(async (
-    _sessionId: ReturnType<typeof SessionId>, command: BrowserCommand, requestSignal: AbortSignal,
+    sessionId: ReturnType<typeof SessionId>, command: BrowserCommand, requestSignal: AbortSignal,
+    expectedTarget?: BrowserExpectedTarget,
   ): Promise<BrowserCapture> => {
     requestSignal.throwIfAborted()
-    return {
+    const previous = this.sessions.get(sessionId)
+    if (expectedTarget?.kind === 'none' && previous !== undefined) throw new Error('stale browser session')
+    if (expectedTarget?.kind === 'tab' && (
+      previous?.browserGeneration !== expectedTarget.browserGeneration
+      || previous.stateRevision !== expectedTarget.stateRevision
+      || previous.activeTabId !== expectedTarget.tabId
+      || previous.tabs[0]?.generation !== expectedTarget.generation
+      || previous.tabs[0]?.url !== expectedTarget.url
+    )) throw new Error('stale browser tab')
+    const tabId = previous?.activeTabId ?? ('fixture-tab' as BrowserTabId)
+    const url = command.kind === 'navigate' ? command.url : previous?.tabs[0]?.url ?? 'https://example.test/'
+    const capture: BrowserCapture = {
       observation: {
-        generation: 'fixture', revision: 1,
-        url: command.kind === 'navigate' ? command.url : 'https://example.test/',
+        tabId, generation: 'fixture', revision: (previous?.observation?.revision ?? 0) + 1,
+        url,
         title: 'Fixture', snapshot: '[button-1] button Continue',
         viewport: { width: 800, height: 600 }, cursor: null,
       },
       png: null,
     }
+    if (command.kind === 'close') this.sessions.delete(sessionId)
+    else this.sessions.set(sessionId, {
+      browserGeneration: previous?.browserGeneration ?? 'fixture-browser',
+      stateRevision: (previous?.stateRevision ?? 0) + 1,
+      viewport: { width: 800, height: 600 },
+      tabs: [{ id: tabId, generation: 'fixture', url, title: 'Fixture', canGoBack: false, canGoForward: false }],
+      activeTabId: tabId, observation: capture.observation, hasFrame: false,
+    })
+    return capture
   })
 
-  execute(sessionId: ReturnType<typeof SessionId>, command: BrowserCommand, requestSignal: AbortSignal): Promise<BrowserCapture> {
-    return this.commands(sessionId, command, requestSignal)
+  execute(sessionId: ReturnType<typeof SessionId>, command: BrowserCommand, requestSignal: AbortSignal,
+    expectedTarget?: BrowserExpectedTarget): Promise<BrowserCapture> {
+    return this.commands(sessionId, command, requestSignal, expectedTarget)
   }
-  latest(): BrowserCapture | undefined { return undefined }
-  closeSession(): Promise<void> { return Promise.resolve() }
+  state(sessionId: ReturnType<typeof SessionId>): BrowserSessionState | undefined { return this.sessions.get(sessionId) }
+  control(_sessionId: ReturnType<typeof SessionId>, _command: BrowserHumanCommand,
+    _signal: AbortSignal): Promise<BrowserSessionState | undefined> {
+    return Promise.reject(new Error('fixture browser does not exercise human controls'))
+  }
+  latest(sessionId: ReturnType<typeof SessionId>): BrowserCapture | undefined {
+    const observation = this.sessions.get(sessionId)?.observation
+    return observation === null || observation === undefined ? undefined : { observation, png: null }
+  }
+  closeSession(sessionId: ReturnType<typeof SessionId>): Promise<void> {
+    this.sessions.delete(sessionId)
+    return Promise.resolve()
+  }
 }
 
 let root: string
@@ -113,21 +147,22 @@ describe('browser_use in the shipped Web preset composition', () => {
 
       const direct = await call(native.agent, 'browser_use', { action: 'navigate', url: 'https://example.test/native' })
       expect(direct).toMatchObject({ isError: false, value: {
-        action: 'navigate', observation: { url: 'https://example.test/native' }, image: null,
+        action: 'navigate', observation: { tabId: 'fixture-tab', url: 'https://example.test/native' }, image: null,
       } })
       const bypass = await call(coded.agent, 'browser_use', { action: 'snapshot' })
       expect(bypass.error?.info).toMatchObject({ code: 'UNKNOWN_TOOL' })
       expect(browser.commands).toHaveBeenCalledTimes(1)
 
       const composed = await call(coded.agent, 'run_code', {
-        code: 'const result = await tools.browser_use({ action: "snapshot" }); return result.observation.snapshot',
+        code: 'const result = await tools.browser_use({ action: "navigate", url: "https://example.test/code" }); return result.observation.snapshot',
         description: 'Inspect the fixture browser',
       })
       expect(composed).toMatchObject({ isError: false, value: {
         result: '[button-1] button Continue',
       } })
       expect(browser.commands).toHaveBeenCalledTimes(2)
-      expect(browser.commands.mock.calls.map(([, command]) => command.kind)).toEqual(['navigate', 'snapshot'])
+      expect(browser.commands.mock.calls.map(([, command]) => command.kind)).toEqual(['navigate', 'navigate'])
+      expect(browser.commands.mock.calls.map(([, , , target]) => target)).toEqual([{ kind: 'none' }, { kind: 'none' }])
       expect(requested).toHaveBeenCalledTimes(2)
     } finally {
       unlisten()
@@ -151,11 +186,11 @@ describe('browser_use in the shipped Web preset composition', () => {
     const requested = vi.fn(() => Promise.resolve('rejected' as const))
     const unlisten = ctx.on('approval/request', requested, { prepend: true })
     try {
-      const native = await call(local.agent, 'browser_use', { action: 'snapshot' })
+      const native = await call(local.agent, 'browser_use', { action: 'navigate', url: 'https://example.test/native' })
       expect(native.isError).toBe(true)
       expect(JSON.stringify(native.content)).toContain('approval rejected')
       const nested = await call(coded.agent, 'run_code', {
-        code: 'await tools.browser_use({ action: "snapshot" })', description: 'Rejected browser request',
+        code: 'await tools.browser_use({ action: "navigate", url: "https://example.test/code" })', description: 'Rejected browser request',
       })
       expect(nested.isError).toBe(true)
       expect(JSON.stringify(nested.content)).toContain('approval rejected')

@@ -33,6 +33,9 @@
       "path": "../../attachment/attachment"
     },
     {
+      "path": "../../browser/browser"
+    },
+    {
       "path": "../../llm/llm"
     },
     {
@@ -49,6 +52,9 @@
     },
     {
       "path": "../../core/tools"
+    },
+    {
+      "path": "../../subprocess/subprocess"
     },
     {
       "path": "../../session/session-persistence"

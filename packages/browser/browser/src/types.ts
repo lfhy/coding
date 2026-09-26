@@ -1,6 +1,9 @@
 /** 浏览器命令与观测的数据约定。实时页面及访问策略属于提供方。 @module @deepseek-ai/dsh-browser/types */
 
-/** 一次会话浏览器操作。元素引用只在产生它的观测修订版中有效。 */
+/** 会话内标签页的稳定身份；关闭后不可复用。 */
+export type BrowserTabId = string & { readonly __browserTabId: unique symbol }
+
+/** 一次会话浏览器操作。元素引用只在产生它的标签页与观测修订版中有效。 */
 export type BrowserCommand =
   | { readonly kind: 'navigate'; readonly url: string }
   | { readonly kind: 'snapshot' }
@@ -10,8 +13,54 @@ export type BrowserCommand =
   | { readonly kind: 'screenshot' }
   | { readonly kind: 'close' }
 
+/** 审批前目标；会话状态每次发布后递增，切离又切回也不能复用旧审批。 */
+export type BrowserExpectedTarget =
+  | { readonly kind: 'none' }
+  | {
+    readonly kind: 'tab'
+    readonly browserGeneration: string
+    readonly stateRevision: number
+    readonly tabId: BrowserTabId
+    readonly generation: string
+    readonly url?: string
+  }
+
+/** 人工操作仅作用于当前会话，不进入模型工具历史。 */
+export type BrowserHumanCommand =
+  | { readonly kind: 'ensure-tab' }
+  | { readonly kind: 'new-tab' }
+  | { readonly kind: 'select-tab'; readonly tabId: BrowserTabId }
+  | { readonly kind: 'close-tab'; readonly tabId: BrowserTabId }
+  | { readonly kind: 'navigate'; readonly url: string }
+  | { readonly kind: 'back' }
+  | { readonly kind: 'forward' }
+  | { readonly kind: 'reload' }
+  | { readonly kind: 'set-viewport'; readonly width: number; readonly height: number }
+
+/** 标签页在最近一次队列操作完成时的导航状态。 */
+export interface BrowserTabSummary {
+  readonly id: BrowserTabId
+  readonly generation: string
+  readonly url: string
+  readonly title: string
+  readonly canGoBack: boolean
+  readonly canGoForward: boolean
+}
+
+/** 只读会话状态；修订版使画面请求不能跨标签页使用旧截图。 */
+export interface BrowserSessionState {
+  readonly browserGeneration: string
+  readonly stateRevision: number
+  readonly viewport: { readonly width: number; readonly height: number }
+  readonly tabs: BrowserTabSummary[]
+  readonly activeTabId: BrowserTabId | null
+  readonly observation: BrowserObservation | null
+  readonly hasFrame: boolean
+}
+
 /** 成功操作后的纯 JSON 观测；generation 改变时旧修订版及元素引用全部失效。 */
 export interface BrowserObservation {
+  readonly tabId: BrowserTabId
   readonly generation: string
   readonly revision: number
   readonly url: string

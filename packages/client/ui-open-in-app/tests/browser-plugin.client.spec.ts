@@ -98,6 +98,9 @@ describe('open-in-app browser half', () => {
     expect(ctx.slots.snapshot('workbench.browser')).toMatchObject([
       { name: 'workbench.browser', kind: 'single', scope: 'session' },
     ])
+    expect(ctx.slots.snapshot('workbench.browser.tabs')).toMatchObject([
+      { name: 'workbench.browser.tabs', kind: 'single', scope: 'session' },
+    ])
     ctx.slots.register({ name: 'workbench.browser' }, () => null)
     expect(ctx.slots.entries('workbench.browser')).toHaveLength(1)
     expect(action?.store).toBe(workbench?.store)
@@ -120,6 +123,7 @@ describe('open-in-app browser half', () => {
     expect(ctx.slots.entries('conversation.hero.actions')).toEqual([])
     expect(ctx.slots.entries('workbench')).toEqual([])
     expect(ctx.slots.snapshot('workbench.browser')).toEqual([])
+    expect(ctx.slots.snapshot('workbench.browser.tabs')).toEqual([])
     expect(ctx.slots.entries('workbench.browser')).toEqual([])
     expect(ctx.slots.entries('workbench.bottom')).toEqual([])
   })

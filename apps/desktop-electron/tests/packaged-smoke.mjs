@@ -130,11 +130,12 @@ async function verifyBundledBrowser(home, tmp) {
       const first = await service.execute(session, { kind: 'navigate', url: origin + '/' }, signal);
       assert.equal(first.observation.title, 'bundled-browser');
       assert.ok(first.observation.snapshot.includes('local browser page'));
-      assert.match(first.observation.snapshot, /e1 button "Open"/);
       const snapshot = await service.execute(session, { kind: 'snapshot' }, signal);
       assert.ok(snapshot.observation.snapshot.includes('local browser page'));
+      const ref = snapshot.observation.snapshot.match(/(e[0-9]+-[a-f0-9-]+) button "Open"/)?.[1];
+      assert.ok(ref, 'packaged Provider must expose the observed button ref');
       const clicked = await service.execute(session,
-        { kind: 'click', ref: 'e1', revision: snapshot.observation.revision }, signal);
+        { kind: 'click', ref, revision: snapshot.observation.revision }, signal);
       assert.ok(clicked.observation.snapshot.includes('Clicked'));
       const screenshot = await service.execute(session, { kind: 'screenshot' }, signal);
       assert.equal(Buffer.from(screenshot.png).subarray(0, 8).toString('hex'), '89504e470d0a1a0a');

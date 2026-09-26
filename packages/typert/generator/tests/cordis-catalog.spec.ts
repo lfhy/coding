@@ -47,6 +47,12 @@ describe('Typert-backed Cordis catalog', () => {
     expect(CORDIS_CATALOG_POLICY.linkedTypePages.BrowserCommand).toBe('browser.md')
     expect(CORDIS_CATALOG_POLICY.linkedTypePages.BrowserCapture).toBe('browser.md')
     expect(CORDIS_CATALOG_POLICY.linkedTypePages.BrowserObservation).toBe('browser.md')
+    expect(CORDIS_CATALOG_POLICY.linkedTypePages.BrowserExpectedTarget).toBe('browser.md')
+    expect(CORDIS_CATALOG_POLICY.linkedTypePages.BrowserHumanCommand).toBe('browser.md')
+    expect(CORDIS_CATALOG_POLICY.linkedTypePages.BrowserSessionState).toBe('browser.md')
+    expect(CORDIS_CATALOG_POLICY.linkedTypePages.BrowserTabId).toBe('browser.md')
+    expect(CORDIS_CATALOG_POLICY.linkedTypePages.BrowserTabSummary).toBe('browser.md')
+    expect(CORDIS_CATALOG_POLICY.linkedTypePages.BrowserUseErrorCode).toBe('browser.md')
     expect(byKey.get('browserUse')?.type).toBe('BrowserUseService')
     // An interface-typed key is described by its Service Definition: that is where
     // the contract and, by repository convention, the member JSDoc live.

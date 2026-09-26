@@ -18,6 +18,7 @@ function ok<T>(request: RpcRequest<unknown>, value: T): Promise<RpcResponse<T>> 
 
 /** Scripted impl: every method resolves an empty-ish OK unless a case overrides it. */
 function scriptedApi(overrides: {
+  browser?: Partial<ApiProxy['browser']>
   sessions?: Partial<ApiProxy['sessions']>
   subagents?: Partial<ApiProxy['subagents']>
   host?: Partial<ApiProxy['host']>
@@ -34,6 +35,7 @@ function scriptedApi(overrides: {
   const err = <T>(r: RpcRequest<unknown>): Promise<RpcResponse<T>> =>
     Promise.resolve({ rpcId: r.rpcId, result: { ok: false, error: { code: 'internal' as const, message: 'stub', details: {} } } })
   return {
+    browser: { control: r => ok(r, null), ...overrides.browser },
     sessions: {
       list: r => ok(r, { items: [] }),
       search: r => ok(r, { items: [], hasMore: false }),
@@ -148,6 +150,41 @@ function recorderInto(seen: { method: string; payload: unknown }[]) {
 }
 
 describe('unary round trip', () => {
+  it('validates human browser commands before dispatch and parses the complete response state', async () => {
+    const tabId = 'd2857d22-1a15-480a-aac4-43bcb9d60df4'
+    const state = {
+      browserGeneration: 'g', stateRevision: 1, viewport: { width: 1280, height: 720 }, tabs: [{
+        id: tabId as never, generation: 'tab-generation-1', url: 'https://example.com/', title: 'Example', canGoBack: true, canGoForward: false,
+      }], activeTabId: tabId as never, observation: null, hasFrame: false,
+    }
+    const control = vi.fn<ApiProxy['browser']['control']>().mockImplementation(r => ok(r, state))
+    const api = scriptedApi({ browser: { control } })
+    const browser = client(api).browser
+    const valid = await browser.control({ sessionId: sid('s1'), command: { kind: 'navigate', url: 'https://example.com/' } })
+    expect(valid.result).toEqual({ ok: true, value: state })
+    expect(control).toHaveBeenCalledOnce()
+    const resized = await browser.control({ sessionId: sid('s1'), command: { kind: 'set-viewport', width: 1280, height: 720 } })
+    expect(resized.result).toEqual({ ok: true, value: state })
+    expect(control).toHaveBeenCalledTimes(2)
+    for (const command of [
+      { kind: 'navigate', url: 'file:///etc/passwd' },
+      { kind: 'navigate', url: 'http://secret@example.com/' },
+      { kind: 'select-tab', tabId: 'not-uuid' },
+      { kind: 'reload', injected: true },
+      { kind: 'set-viewport', width: 1920, height: 1400 },
+      { kind: 'set-viewport', width: 1280, height: 720, fake: true },
+    ]) {
+      const response = await browser.control({ sessionId: sid('s1'), command } as never)
+      expect(response.result).toMatchObject({ ok: false, error: { code: 'bad-request' } })
+    }
+    expect(control).toHaveBeenCalledTimes(2)
+    control.mockImplementationOnce(r => ok(r, { ...state, stateRevision: 'corrupt' } as never))
+    await expect(browser.control({ sessionId: sid('s1'), command: { kind: 'ensure-tab' } })).rejects.toThrow()
+    control.mockImplementationOnce(r => ok(r, null))
+    expect((await browser.control({ sessionId: sid('s1'), command: { kind: 'close-tab', tabId: tabId as never } })).result)
+      .toEqual({ ok: true, value: null })
+  })
+
   it('carries payload out and value back through the full wire form', async () => {
     let seen: RpcRequest<{ cursor?: string }> | undefined
     const api = scriptedApi({
