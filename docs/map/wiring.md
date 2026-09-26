@@ -36,6 +36,7 @@
 - `tool-ask-user` → `@deepseek-ai/dsh-tool-ask-user`
 - `tool-todo` → `@deepseek-ai/dsh-tool-todo`
 - `tool-web` → `@deepseek-ai/dsh-tool-web`
+- `tool-browser` → `@deepseek-ai/dsh-tool-browser`
 - `tool-presentation` → `@deepseek-ai/dsh-agent-tool-presentation`
 
 ## `apps/cli/config/agent-presets/cordis/agent.cordis.yml`
@@ -115,6 +116,7 @@
 - `tool-ask-user` → `@deepseek-ai/dsh-tool-ask-user`
 - `tool-todo` → `@deepseek-ai/dsh-tool-todo`
 - `tool-web` → `@deepseek-ai/dsh-tool-web`
+- `tool-browser` → `@deepseek-ai/dsh-tool-browser`
 
 ## `examples/acp-agent/cordis.yml`
 
@@ -278,6 +280,7 @@
 - `repeat-tool-reminder` → `@deepseek-ai/dsh-repeat-tool-reminder`
 - `web` → `@deepseek-ai/dsh-web`
 - `web-search-deepseek` → `@deepseek-ai/dsh-web-search-deepseek`
+- `browser-playwright` → `@deepseek-ai/dsh-browser-playwright`
 - `tool-web` → `@deepseek-ai/dsh-tool-web`
 - `tools` → `@deepseek-ai/dsh-tools`
 - `system-prompt` → `@deepseek-ai/dsh-system-prompt`
@@ -301,6 +304,7 @@
 - `session-log-download` → `@deepseek-ai/dsh-session-log-export`
 - `open-in-app` → `@deepseek-ai/dsh-host-open-in-app`
 - `ui-open-in-app` → `@deepseek-ai/dsh-client-ui-open-in-app`
+- `ui-browser` → `@deepseek-ai/dsh-client-ui-browser`
 - `workspace` → `@deepseek-ai/dsh-workspace`
 - `session-projection-cache` → `@deepseek-ai/dsh-session-projection-cache`
 - `session-reference` → `@deepseek-ai/dsh-session-reference`

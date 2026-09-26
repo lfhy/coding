@@ -24,6 +24,7 @@ import type {
   InjectFace,
   PropsLocale,
   PropsRuntime,
+  PropsRenderSlots,
   PropsStore,
 } from '@deepseek-ai/dsh-client-ui-slots'
 import type { createWorkbenchStore, WorkbenchFileTab } from './store.ts'
@@ -45,6 +46,7 @@ export interface WorkspaceWorkbenchInjected {
   listFiles: (segments: readonly string[], signal?: AbortSignal) => Promise<WorkspaceFilesPayload>
   readFile: (segments: readonly string[], signal?: AbortSignal) => Promise<WorkspaceFilePayload>
   closeWorkbench: () => void
+  openWorkbench: () => void
   toggleWorkbenchFullscreen: () => void
   toggleFiles: () => void
   toggleBottom: () => void
@@ -53,6 +55,7 @@ export interface WorkspaceWorkbenchInjected {
 /** 工作台 slot、viewing store、Host 读取和词典组成的 props。 */
 export type WorkspaceWorkbenchProps =
   & PropsRuntime<'workbench'>
+  & PropsRenderSlots<'workbench.browser'>
   & PropsStore<ReturnType<typeof createWorkbenchStore>>
   & PropsLocale<typeof NS>
   & InjectFace<WorkspaceWorkbenchInjected>
@@ -350,9 +353,19 @@ function FilePreview({ tab, visible, readFile, t }: {
 export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.Element {
   const {
     shown, fullscreen, bottomOpen, filesOpen, actions, readFile, listFiles,
-    closeWorkbench, toggleWorkbenchFullscreen, toggleFiles, toggleBottom, t,
+    closeWorkbench, openWorkbench, toggleWorkbenchFullscreen, toggleFiles, toggleBottom, t, renderSlot,
   } = props
-  const { tabs, activeId, filesQuery, filesExpanded, filesLevels } = props.useStore(state => state)
+  const { view, tabs, activeId, filesQuery, filesExpanded, filesLevels } = props.useStore(state => state)
+  const browserShown = shown && view === 'browser'
+  const showBrowser = useCallback((): void => {
+    actions.setView('browser')
+    openWorkbench()
+  }, [actions, openWorkbench])
+  const filesButton = useRef<HTMLButtonElement>(null)
+  const showFiles = useCallback((): void => {
+    actions.setView('files')
+    filesButton.current?.focus()
+  }, [actions])
   const expanded = useMemo(() => new Set(filesExpanded), [filesExpanded])
   const requests = useRef(new Map<string, AbortController>())
   const rootKey = tabIdForSegments([])
@@ -375,11 +388,11 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
   }, [actions, listFiles])
 
   useEffect(() => {
-    if (shown && filesLevels[rootKey] === undefined && !rootRequested.current) {
+    if (shown && view === 'files' && filesLevels[rootKey] === undefined && !rootRequested.current) {
       rootRequested.current = true
       load([])
     }
-  }, [filesLevels, load, rootKey, shown])
+  }, [filesLevels, load, rootKey, shown, view])
 
   useEffect(() => {
     return () => {
@@ -405,9 +418,15 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
       data-fullscreen={fullscreen || undefined}
     >
       <header className={css.topbar} data-window-drag-region="">
+        <div className={css.viewSwitch} role="group" aria-label={t('workbench.views.label')}>
+          <button type="button" ref={filesButton} className={css.viewButton} aria-pressed={view === 'files'}
+            onClick={showFiles}>{t('workbench.views.files')}</button>
+          <button type="button" className={css.viewButton} aria-pressed={view === 'browser'}
+            onClick={showBrowser}>{t('workbench.views.browser')}</button>
+        </div>
         <div className={css.tabs} role="tablist" aria-label={t('tabs.label')}>
           {tabs.map((tab, index) => {
-            const selected = tab.id === activeId
+            const selected = view === 'files' && tab.id === activeId
             const panelId = `workbench-preview-${String(index)}`
             return (
               <div className={clsx(css.tab, selected && css.tabActive)} role="presentation" key={tab.id}>
@@ -466,32 +485,44 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
           />
         </div>
       </header>
-      <div className={clsx(css.body, !filesOpen && css.filesClosed)}>
+      <div className={clsx(css.body, (!filesOpen || view === 'browser') && css.filesClosed)}>
         <main className={css.previewStack}>
-          {tabs.map((tab, index) => (
-            <div id={`workbench-preview-${String(index)}`} className={css.previewSlot} key={tab.id}>
-              <FilePreview tab={tab} visible={tab.id === activeId} readFile={readFile} t={t} />
-            </div>
-          ))}
-          {active === undefined && (
-            <div className={css.emptyState}>
-              <IconFolderOpenOutline16 size={36} />
-              <strong>{t('workbench.empty.title')}</strong>
-              <span>{t('workbench.empty.detail')}</span>
-            </div>
-          )}
+          <div className={css.fileView} hidden={view !== 'files'} {...view !== 'files' ? { inert: '' } : {}}>
+            {tabs.map((tab, index) => (
+              <div id={`workbench-preview-${String(index)}`} className={css.previewSlot} key={tab.id}>
+                <FilePreview tab={tab} visible={tab.id === activeId && view === 'files'} readFile={readFile} t={t} />
+              </div>
+            ))}
+            {active === undefined && (
+              <div className={css.emptyState}>
+                <IconFolderOpenOutline16 size={36} />
+                <strong>{t('workbench.empty.title')}</strong>
+                <span>{t('workbench.empty.detail')}</span>
+              </div>
+            )}
+          </div>
+          <div className={css.browserView} hidden={view !== 'browser'} {...view !== 'browser' ? { inert: '' } : {}}>
+            {renderSlot('workbench.browser', {
+              shown: browserShown,
+              openBrowser: showBrowser,
+              closeBrowser: showFiles,
+            })}
+          </div>
         </main>
-        <FileTree
-          shown={filesOpen}
-          onOpen={(entry) => { actions.openFile({ name: entry.name, segments: entry.segments }) }}
-          query={filesQuery}
-          setQuery={actions.setFilesQuery}
-          expanded={expanded}
-          levels={filesLevels}
-          toggle={toggle}
-          load={load}
-          t={t}
-        />
+        <div className={css.treeView} hidden={view !== 'files' || !filesOpen}
+          {...view !== 'files' || !filesOpen ? { inert: '' } : {}}>
+          <FileTree
+            shown={filesOpen && view === 'files'}
+            onOpen={(entry) => { actions.openFile({ name: entry.name, segments: entry.segments }) }}
+            query={filesQuery}
+            setQuery={actions.setFilesQuery}
+            expanded={expanded}
+            levels={filesLevels}
+            toggle={toggle}
+            load={load}
+            t={t}
+          />
+        </div>
       </div>
     </section>
   )

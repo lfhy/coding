@@ -79,6 +79,9 @@
     - id: ui-open-in-app
       name: '@deepseek-ai/dsh-client-ui-open-in-app'
 
+    - id: ui-browser
+      name: '@deepseek-ai/dsh-client-ui-browser'
+
     - id: workspace
       name: '@deepseek-ai/dsh-workspace'
 

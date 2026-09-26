@@ -18,6 +18,7 @@ export interface WorkbenchFileLevel {
 }
 
 type WorkbenchState = {
+  view: 'files' | 'browser'
   tabs: WorkbenchFileTab[]
   activeId: string | null
   filesQuery: string
@@ -31,6 +32,7 @@ interface OpenFileInput {
 }
 
 type WorkbenchActions = {
+  setView: (draft: WorkbenchState, view: WorkbenchState['view']) => void
   openFile: (draft: WorkbenchState, file: OpenFileInput) => void
   activateFile: (draft: WorkbenchState, id: string) => void
   closeFile: (draft: WorkbenchState, id: string) => void
@@ -68,6 +70,7 @@ function retainLevel(
 export function createWorkbenchStore(): EngineStoreHandle<WorkbenchState, WorkbenchActions> {
   return defineStore({
     init: (): WorkbenchState => ({
+      view: 'files',
       tabs: [],
       activeId: null,
       filesQuery: '',
@@ -75,15 +78,20 @@ export function createWorkbenchStore(): EngineStoreHandle<WorkbenchState, Workbe
       filesLevels: {},
     }),
     actions: {
+      setView: (draft, view) => { draft.view = view },
       openFile: (draft, file) => {
         const id = tabIdForSegments(file.segments)
         if (!draft.tabs.some(tab => tab.id === id)) {
           draft.tabs.push({ id, name: file.name, segments: [...file.segments] })
         }
         draft.activeId = id
+        draft.view = 'files'
       },
       activateFile: (draft, id) => {
-        if (draft.tabs.some(tab => tab.id === id)) draft.activeId = id
+        if (draft.tabs.some(tab => tab.id === id)) {
+          draft.activeId = id
+          draft.view = 'files'
+        }
       },
       closeFile: (draft, id) => {
         const index = draft.tabs.findIndex(tab => tab.id === id)

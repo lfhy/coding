@@ -79,6 +79,7 @@ const GROUP_ORDER = [
   'subagent',
   'tasks',
   'workflow',
+  'browser',
   'web',
   'spill',
   'todo',
@@ -494,6 +495,15 @@ const SERVICE_ROLES: ServiceRole[] = [
     implementations: ['jobs-local'],
     consumers: ['tool-bash', 'tool-terminal', 'tool-subagent', 'tool-jobs'],
     note: 'Producers (background bash, PTY sends, and subagent delegations) register running work; tool-jobs is the model-facing controller that reads, lists, and kills it; jobs-local is the process-local registry.',
+  },
+  {
+    key: 'browserUse',
+    pkg: 'browser',
+    title: 'Session-owned browser operations',
+    mode: 'seam',
+    implementations: ['browser-playwright'],
+    consumers: ['tool-browser'],
+    note: 'The Playwright provider owns isolated session pages and enforces network access; tool-browser requests approval for each model action. The ui-browser client displays the provider\'s read-only HTTP captures, not the service itself.',
   },
   {
     key: 'web',

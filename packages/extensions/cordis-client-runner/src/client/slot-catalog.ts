@@ -1978,5 +1978,36 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'workbench.bottom\', () => ctx.slots.register(\n      { name: \'workbench.bottom\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
     source: 'packages/client/ui-layout/src/client/index.ts:37',
   },
+  {
+    key: 'workbench.browser',
+    kind: 'single',
+    scope: 'session',
+    summary: '工作台右侧预览区的会话级浏览器；隐藏时条目仍保持挂载。',
+    doc: '工作台右侧预览区的会话级浏览器；隐藏时条目仍保持挂载。',
+    registerOptions: [],
+    ownerProps: [
+      '/** 浏览器内容由贡献条目绘制；容器只持有视图显隐与切换动作。 */\nexport interface WorkbenchBrowserOwnerProps {\n  shown: boolean\n  openBrowser: () => void\n  closeBrowser: () => void\n}',
+    ],
+    ownerPropsReferences: [],
+    standardProps: [
+      'useSessions: SnapshotSelectorHook<SessionListState>',
+      'useWorkspaces: SnapshotSelectorHook<import(\'./workspaces/service.ts\').WorkspaceListState>',
+      'useSession: SnapshotSelectorHook<ConversationSnapshot>',
+      'sessionId: SessionId',
+      'useProjection: UseProjection',
+      'useInput: SnapshotSelectorHook<InputState>',
+      'inputActions: InputActions',
+    ],
+    keyDomain: '',
+    hookContext: '',
+    slotInject: '',
+    declaredBy: 'an entry in \'workbench\' (client-ui-open-in-app), so it exists while that entry is mounted',
+    occupants: [
+      'client-ui-browser BrowserMirror',
+    ],
+    replaceRisk: 'shadows-shipped-ui',
+    example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'workbench.browser\', () => ctx.slots.register(\n      { name: \'workbench.browser\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
+    source: 'packages/client/ui-open-in-app/src/client/index.ts:27',
+  },
 ]
 /* jscpd:ignore-end */

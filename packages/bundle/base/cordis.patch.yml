@@ -410,6 +410,11 @@
       config:
         apiKeyEnv: DEEPSEEK_API_KEY
 
+    # The browser is session-owned and launches only on the first approved action.
+    # HTTP preview routes appear only when the Web Host composes its transport.
+    - id: browser-playwright
+      name: '@deepseek-ai/dsh-browser-playwright'
+
     - id: tool-web
       name: '@deepseek-ai/dsh-tool-web'
       config:

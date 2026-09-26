@@ -12,7 +12,10 @@
 
 .root[hidden],
 .filesPanel[hidden],
-.preview[hidden] {
+.preview[hidden],
+.fileView[hidden],
+.browserView[hidden],
+.treeView[hidden] {
   display: none;
 }
 
@@ -20,7 +23,7 @@
 .topbar {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 6px;
   min-width: 0;
@@ -44,6 +47,7 @@
 }
 
 .toolButton,
+.viewButton,
 .tabSelect,
 .tabClose,
 .treeRow,
@@ -69,6 +73,9 @@
 .toolButton:hover,
 .toolButton:focus-visible,
 .toolButton[aria-pressed='true'],
+.viewButton:hover,
+.viewButton:focus-visible,
+.viewButton[aria-pressed='true'],
 .tabSelect:hover,
 .tabSelect:focus-visible,
 .tabClose:hover,
@@ -82,6 +89,7 @@
 }
 
 .toolButton:focus-visible,
+.viewButton:focus-visible,
 .tabSelect:focus-visible,
 .tabClose:focus-visible,
 .treeRow:focus-visible,
@@ -97,6 +105,28 @@
   height: 100%;
   overflow-x: auto;
   overflow-y: hidden;
+}
+
+.viewSwitch {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.viewButton {
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 8px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.viewButton[aria-pressed='true'] {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-active);
 }
 
 .tab {
@@ -172,6 +202,9 @@
 }
 
 .previewStack,
+.fileView,
+.browserView,
+.treeView,
 .previewSlot,
 .preview,
 .previewBody {
@@ -183,6 +216,16 @@
   position: relative;
   overflow: hidden;
   background: var(--dsw-alias-bg-base);
+}
+
+.fileView,
+.browserView {
+  width: 100%;
+  height: 100%;
+}
+
+.treeView {
+  height: 100%;
 }
 
 .previewSlot {
@@ -495,7 +538,7 @@ div.treeRow {
 
 @media (max-width: 480px) {
   .topbar {
-    grid-template-columns: minmax(64px, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     gap: 2px;
     padding: 0 4px;
   }
@@ -525,11 +568,18 @@ div.treeRow {
   }
 
   .filesPanel {
+    width: 100%;
+    border-left: 0;
+  }
+
+  .treeView:not([hidden]) {
     position: absolute;
     inset: 0;
     z-index: 2;
-    width: 100%;
-    border-left: 0;
+  }
+
+  .viewButton {
+    padding: 0 5px;
   }
 
   .source {

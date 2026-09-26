@@ -8,6 +8,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { lstat, mkdir, mkdtemp, readFile, realpath, rm } from 'node:fs/promises'
+import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -18,6 +19,13 @@ const bundle = join(root, 'dist/Coding.app')
 const executable = join(bundle, 'Contents/MacOS/Coding')
 const resources = join(bundle, 'Contents/Resources')
 const helperExecutable = join(resources, 'coding-electron-helper')
+const browserRoot = join(resources, 'playwright-browsers')
+const shellExecutable = join(browserRoot, 'chromium_headless_shell-1228',
+  'chrome-headless-shell-mac-arm64', 'chrome-headless-shell')
+const packagedPlaywright = join(resources, 'runtime', 'node_modules', 'playwright', 'index.mjs')
+const packagedBrowserProvider = join(resources, 'runtime', 'node_modules',
+  '@deepseek-ai', 'dsh-browser-playwright', 'lib', 'index.js')
+const packagedCordis = join(resources, 'runtime', 'node_modules', '@deepseek-ai/cordis', 'lib', 'index.js')
 const expectedVersion = JSON.parse(await readFile(join(root, 'apps/desktop-electron/package.json'), 'utf8')).version
 const timeoutMs = 90_000
 
@@ -51,7 +59,8 @@ async function preflight() {
   assert.ok(typeof expectedVersion === 'string' && expectedVersion.length > 0,
     'Electron application manifest must define a version')
   for (const path of [executable, helperExecutable, join(resources, 'coding-host'),
-    join(resources, 'metadata.json'), join(resources, 'app.asar'), join(resources, 'CodingIcon.png')]) {
+    join(resources, 'metadata.json'), join(resources, 'app.asar'), join(resources, 'CodingIcon.png'),
+    shellExecutable, packagedPlaywright, packagedBrowserProvider, packagedCordis]) {
     const entry = await lstat(path).catch(() => undefined)
     assert.ok(entry?.isFile(), `missing packaged regular file: ${path}; rebuild dist/Coding.app`)
     if (path === join(resources, 'app.asar')) assert.ok(entry.size > 0, 'packaged app.asar must not be empty')
@@ -83,10 +92,76 @@ async function preflight() {
     throw new Error('packaged signature failed; rerun the macOS packaging step, then check ' +
       '`codesign --verify --deep --strict dist/Coding.app` including nested helpers; do not disable signature checks')
   }
-  for (const path of [executable, helperExecutable, join(resources, 'coding-host')]) {
+  for (const path of [executable, helperExecutable, join(resources, 'coding-host'), shellExecutable]) {
     const arch = command('/usr/bin/lipo', ['-archs', path])
     assert.equal(arch.status, 0, `could not inspect packaged Mach-O: ${path}`)
     assert.equal(arch.stdout.trim(), 'arm64', `packaged binary must be arm64: ${path}`)
+  }
+}
+
+async function verifyBundledBrowser(home, tmp) {
+  // 验证打包的 Provider 真实执行，不冒充 Host 的工具审批或模型轮次。
+  const fixture = createServer((_req, res) => {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+    res.end('<title>bundled-browser</title><h1>local browser page</h1>' +
+      '<button id="go" onclick="document.querySelector(\'h1\').textContent=\'Clicked\'">Open</button>')
+  })
+  await new Promise((resolveListen, reject) => {
+    fixture.once('error', reject)
+    fixture.listen(0, '127.0.0.1', resolveListen)
+  })
+  const address = fixture.address()
+  assert.ok(address && typeof address !== 'string', 'loopback fixture must bind a TCP port')
+  const origin = `http://127.0.0.1:${address.port}`
+  // 子进程只接触包内 Provider、Playwright 和浏览器；隔离 HOME 无用户级缓存。
+  const script = `
+    import assert from 'node:assert/strict';
+    const { Context } = await import(process.argv[1]);
+    const { default: Provider } = await import(process.argv[2]);
+    const origin = process.argv[3];
+    const ctx = new Context();
+    const signal = new AbortController().signal;
+    const session = 'packaged-browser-smoke';
+    try {
+      const fiber = ctx.plugin(Provider, { allowedOrigins: [origin] });
+      await fiber.await();
+      const service = ctx.browserUse;
+      assert.ok(service instanceof Provider, 'packaged Cordis service must be the real Provider');
+      const first = await service.execute(session, { kind: 'navigate', url: origin + '/' }, signal);
+      assert.equal(first.observation.title, 'bundled-browser');
+      assert.ok(first.observation.snapshot.includes('local browser page'));
+      assert.match(first.observation.snapshot, /e1 button "Open"/);
+      const snapshot = await service.execute(session, { kind: 'snapshot' }, signal);
+      assert.ok(snapshot.observation.snapshot.includes('local browser page'));
+      const clicked = await service.execute(session,
+        { kind: 'click', ref: 'e1', revision: snapshot.observation.revision }, signal);
+      assert.ok(clicked.observation.snapshot.includes('Clicked'));
+      const screenshot = await service.execute(session, { kind: 'screenshot' }, signal);
+      assert.equal(Buffer.from(screenshot.png).subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
+      await service.closeSession(session);
+    } finally { await ctx.fiber.dispose(); }
+  `
+  const child = spawn(process.execPath, ['--input-type=module', '--eval', script, packagedCordis,
+    packagedBrowserProvider, origin], {
+    cwd: home, stdio: ['ignore', 'ignore', 'pipe'],
+    env: { HOME: home, TMPDIR: tmp, PATH: '/usr/bin:/bin:/usr/sbin',
+      PLAYWRIGHT_BROWSERS_PATH: browserRoot },
+  })
+  let failure = ''
+  child.stderr.on('data', bytes => { failure = (failure + bytes.toString()).slice(-4096) })
+  try {
+    const status = await deadline(new Promise((resolveExit, reject) => {
+      child.once('error', reject)
+      child.once('exit', (code, signal) => signal === null ? resolveExit(code)
+        : reject(new Error(`bundled Provider exited on ${signal}`)))
+    }), 'packaged browser Provider', 45_000)
+    assert.equal(status, 0, `packaged Provider must navigate, snapshot, click and screenshot a real page: ${failure}`)
+    assert.equal(existsSync(join(home, 'Library', 'Caches', 'ms-playwright')), false,
+      'packaged browser must not create a user cache')
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) await stopOwnApp(child)
+    fixture.closeAllConnections()
+    await new Promise(resolveClose => fixture.close(resolveClose))
   }
 }
 
@@ -339,6 +414,7 @@ async function main() {
   let passed = false
   try {
     await Promise.all([home, tmp].map(path => mkdir(path, { recursive: true, mode: 0o700 })))
+    await verifyBundledBrowser(home, tmp)
     // 白名单而非继承：不传用户凭据、代理、SSH agent、Node 注入或真实 DSH_HOME。
     const env = {
       PATH: '/usr/bin:/bin:/usr/sbin', HOME: home, TMPDIR: tmp,
@@ -409,8 +485,9 @@ async function main() {
     if (passed) {
       assert.ok(appStopped && helperStopped && hostStopped && socketStopped,
         'packaged Electron/helper/Host and isolated desktop lock must all stop')
-      console.log('PASS: signed macOS arm64 app.asar, app.isPackaged, metadata/Host version, real Host page, both WebSockets, ' +
+      console.log('PASS: signed macOS arm64 app.asar, bundled browser Provider navigate/snapshot/click/screenshot in isolated HOME, app.isPackaged, metadata/Host version, real Host page, both WebSockets, ' +
         'single instance, sandbox preload, Go helper/bridge, isolated desktop lock and cleanup')
+      console.log('Not exercised: Host browser_use tool approval or a model turn; the isolated Provider test uses the bundled runtime directly.')
       console.log('Not inspected by CDP/Node inspector: native menu/Tray and macOS window close/hide; ' +
         'verify those in a native UI session.')
     }

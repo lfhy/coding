@@ -26,7 +26,10 @@ import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
 import { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentLimits, ImageAttachmentRef, SaveImageAttachment, StoredImageAttachment } from '@deepseek-ai/dsh-attachment'
+import BrowserUseService from '@deepseek-ai/dsh-browser'
+import type { BrowserCapture, BrowserCommand } from '@deepseek-ai/dsh-browser'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
+import ApprovalService from '@deepseek-ai/dsh-user-approval'
 import PlanModeController from '@deepseek-ai/dsh-plan-mode'
 import WebRuntime from '@deepseek-ai/dsh-web'
 import * as WebSearchExa from '@deepseek-ai/dsh-web-search-exa'
@@ -40,6 +43,7 @@ import SkillRegistry from '@deepseek-ai/dsh-skill'
 import * as SkillFileSystem from '@deepseek-ai/dsh-skill-filesystem'
 import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
 import * as ToolAskUser from '@deepseek-ai/dsh-tool-ask-user'
+import * as ToolBrowser from '@deepseek-ai/dsh-tool-browser'
 import * as ToolBash from '@deepseek-ai/dsh-tool-bash'
 import * as ToolPwsh from '@deepseek-ai/dsh-tool-pwsh'
 import * as ToolBashPersistent from '@deepseek-ai/dsh-tool-bash-persistent'
@@ -89,6 +93,19 @@ class CatalogAttachmentStore extends AttachmentStore {
 
   override readImage(_ref: ImageAttachmentRef): Promise<StoredImageAttachment> {
     return Promise.reject(new Error('gen-tool-catalog: attachment reads are unreachable during schema harvest'))
+  }
+}
+
+/** 仅提供注册所需服务；目录采集不得启动真实浏览器。 */
+class CatalogBrowserUseService extends BrowserUseService {
+  override execute(_sessionId: SessionId, _command: BrowserCommand, _signal: AbortSignal): Promise<BrowserCapture> {
+    return Promise.reject(new Error('gen-tool-catalog: browser execution is unreachable during schema harvest'))
+  }
+
+  override latest(_sessionId: SessionId): BrowserCapture | undefined { return undefined }
+
+  override closeSession(_sessionId: SessionId): Promise<void> {
+    return Promise.reject(new Error('gen-tool-catalog: browser closing is unreachable during schema harvest'))
   }
 }
 
@@ -198,6 +215,21 @@ const TOOL_PACKAGES: ToolPackage[] = [
     },
     note:
       'ask_user_question pauses the tool call until the active UI provider returns a human answer.',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tool-browser',
+    dir: 'tool-browser',
+    source: 'packages/browser/tool-browser/src/index.ts',
+    requires: ['ctx.tools', 'ctx.browserUse', 'ctx.attachments', 'ctx.approval and a calling Agent at execution time'],
+    writes: ['tool/call', 'durable attachment on screenshot', 'tool/result'],
+    async mount(ctx) {
+      await ctx.plugin(CatalogBrowserUseService)
+      await ctx.plugin(CatalogAttachmentStore)
+      await ctx.plugin(ApprovalService)
+      await ctx.plugin(ToolBrowser)
+    },
+    note:
+      'Each call asks for one-time approval before browser execution; only allowed-once proceeds. A remote workspace is rejected. Only explicit screenshots save a PNG attachment and render an image block. The browser provider owns URL/network policy and session page lifetime.',
   },
   {
     pkg: '@deepseek-ai/dsh-tools',

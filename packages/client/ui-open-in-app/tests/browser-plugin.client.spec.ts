@@ -95,6 +95,11 @@ describe('open-in-app browser half', () => {
     expect(action?.component).toBe(OpenInAppAction)
     expect(action?.options).toMatchObject({ id: 'open-in-app', order: -10 })
     expect(workbench?.component).toBe(WorkspaceWorkbench)
+    expect(ctx.slots.snapshot('workbench.browser')).toMatchObject([
+      { name: 'workbench.browser', kind: 'single', scope: 'session' },
+    ])
+    ctx.slots.register({ name: 'workbench.browser' }, () => null)
+    expect(ctx.slots.entries('workbench.browser')).toHaveLength(1)
     expect(action?.store).toBe(workbench?.store)
     expect(bottom?.component).toBe(RetainedTerminalPanel)
     expect(ctx.slots.entries('conversation.view')).toEqual([])
@@ -114,6 +119,8 @@ describe('open-in-app browser half', () => {
     expect(ctx.slots.entries('sidebar.brand.action')).toEqual([])
     expect(ctx.slots.entries('conversation.hero.actions')).toEqual([])
     expect(ctx.slots.entries('workbench')).toEqual([])
+    expect(ctx.slots.snapshot('workbench.browser')).toEqual([])
+    expect(ctx.slots.entries('workbench.browser')).toEqual([])
     expect(ctx.slots.entries('workbench.bottom')).toEqual([])
   })
 
@@ -164,10 +171,12 @@ describe('open-in-app browser half', () => {
       path: '/w/README.md', content: { kind: 'markdown', text: '# Readme' },
     })
     workbenchFace.closeWorkbench()
+    workbenchFace.openWorkbench()
     workbenchFace.toggleWorkbenchFullscreen()
     workbenchFace.toggleFiles()
     workbenchFace.toggleBottom()
     expect(closeWorkbench).toHaveBeenCalledWith(SESSION)
+    expect(openWorkbench).toHaveBeenCalledTimes(2)
     expect(toggleWorkbenchFullscreen).toHaveBeenCalledWith(SESSION)
     expect(toggleWorkbenchFiles).toHaveBeenCalledWith(SESSION)
     expect(toggleWorkbenchBottom).toHaveBeenCalledWith(SESSION)

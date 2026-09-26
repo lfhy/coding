@@ -3,7 +3,7 @@
 
 # 包清单
 
-workspace 共 229 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
+workspace 共 233 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
 
 模型可见工具的名称与 schema 见 [tool-catalog.md](../tool-catalog.md)，插件可配置项见 [config-catalog.md](../config-catalog.md)，依赖边见 [module-graph.md](../module-graph.md)。
 
@@ -26,6 +26,12 @@ workspace 共 229 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/boot/app-boot` — 供 app bin（`dsh` 与 `dsh-acp-demo`）共用的启动粘合层：每个 bin 都是在这些辅助函数之上构建的精简自执行组合… 入口 `src/index.ts`（tests 6）
 - `packages/boot/cmdline` — dsh 启动器交给它所引导应用的那条命令行 入口 `src/index.ts`（tests 1）
 
+## packages/browser
+
+- `packages/browser/browser` — 命令为封闭判别联合：`navigate` 携带 URL；`snapshot` 读取页面… 入口 `src/index.ts`（tests 1）
+- `packages/browser/browser-playwright` — 配置 `allowedOrigins` 默认为 `[]`，仅允许 DNS 全部答案均为公网地址的 HTTP(S) 请求；特殊用途地址段… 入口 `src/index.ts`（tests 4）
+- `packages/browser/tool-browser` — 工具的 `action` 是 `navigate`、`snapshot`、`click`、`fill`、`scroll`、`screenshot… 入口 `src/index.ts`（tests 2）
+
 ## packages/bundle
 
 - `packages/bundle/base` — 以 profile 组合包形式交付的共享 dsh 核心：`cordis.patch.yml` 在空的 profile 根之上插入全部基础插件行—… [bundle] 入口 `src/index.ts`（tests 1）
@@ -42,6 +48,7 @@ workspace 共 229 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/client/ui-agent-preset` — agent preset 的各个表层：General 设置中的一行，用于选择新建会话据以组装的 preset；新建会话界面上的一枚 chip… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 7）
 - `packages/client/ui-attachment` — 对话 UI 的动态附件呈现插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 7）
 - `packages/client/ui-brand-official` — 仅当 `DSH_CLIENT_BUILD_PROFILE` 为 `official` 时… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
+- `packages/client/ui-browser` — 本包的 Client 半边占用 `workbench.browser` 会话级 slot… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 5）
 - `packages/client/ui-commands` — 客户端命令 API（`ctx.commandUi`）：以会话为 key 的命令目录缓存、带 `matchSpace`／`matchEnter` … [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 5）
 - `packages/client/ui-conversation` — 会话领域：骨架（标题栏／标签页／编辑器／空状态）、聊天视图（分组步骤摘要流、流式尾部隔离与轮次状态）、编辑器 dock… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 33）
 - `packages/client/ui-deliverables` — 产出文件与可点击文件引用功能的属主 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）

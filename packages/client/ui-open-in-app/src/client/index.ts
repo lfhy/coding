@@ -21,6 +21,20 @@ import { en, NS, zh } from './locales.ts'
 export type { OpenInAppActionInjected, OpenInAppActionProps } from './OpenInAppAction.tsx'
 export type { WorkbenchPanelTogglesInjected, WorkbenchPanelTogglesProps } from './WorkbenchPanelToggles.tsx'
 
+declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface SlotMap {
+    /** 工作台右侧预览区的会话级浏览器；隐藏时条目仍保持挂载。 */
+    'workbench.browser': { kind: 'single'; scope: 'session'; owner: WorkbenchBrowserOwnerProps }
+  }
+}
+
+/** 浏览器内容由贡献条目绘制；容器只持有视图显隐与切换动作。 */
+export interface WorkbenchBrowserOwnerProps {
+  shown: boolean
+  openBrowser: () => void
+  closeBrowser: () => void
+}
+
 /** locale、slot、布局、会话与工作区选择需要的服务。 */
 export const inject = ['slots', 'locale', 'layout', 'sessions', 'workspaces']
 
@@ -66,12 +80,14 @@ export function apply(ctx: ClientContext): void {
 
   ctx.slots.inject('workbench', () => ctx.slots.register({
     name: 'workbench',
+    children: { 'workbench.browser': { kind: 'single', scope: 'session' } },
     locale: NS,
     store: workbench,
     inject: (sessionId: SessionId): WorkspaceWorkbenchInjected => ({
       listFiles: (segments, signal) => controller.listFiles(sessionId, segments, signal),
       readFile: (segments, signal) => controller.readFile(sessionId, segments, signal),
       closeWorkbench: () => { ctx.layout.closeWorkbench(sessionId) },
+      openWorkbench: () => { ctx.layout.openWorkbench(sessionId) },
       toggleWorkbenchFullscreen: () => { ctx.layout.toggleWorkbenchFullscreen(sessionId) },
       toggleFiles: () => { ctx.layout.toggleWorkbenchFiles(sessionId) },
       toggleBottom: () => { ctx.layout.toggleWorkbenchBottom(sessionId) },

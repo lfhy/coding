@@ -5,9 +5,9 @@
  * proof (alias escapes and global script files).
  */
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { collectPackageSources, EventRelationCollector } from './gen-doc-graphs.ts'
 import { TypeScriptProject } from './ts-project.ts'
@@ -94,5 +94,30 @@ describe('event relation call-site indexing', () => {
     // pkgc alone: the script helper is the first demand, so a wrongly passing
     // proof would index helper.ts only and lose the caller.ts call site.
     expect(dispatchersOf(['pkgc'], 'pkgc/script-event')).toEqual(['pkgc'])
+  })
+})
+
+describe('browser capability diagrams', () => {
+  it('shows the service owner, Host provider, and direct model consumer without treating the display client as a provider', () => {
+    const capability = readFileSync(resolve(import.meta.dirname, '../docs/capability-seams.md'), 'utf8')
+    expect(capability).toContain('pkg_browser --> svc_browserUse')
+    expect(capability).toContain('pkg_browser_playwright --> svc_browserUse')
+    expect(capability).toContain('svc_browserUse --> pkg_tool_browser')
+    expect(capability).not.toContain('pkg_ui_browser --> svc_browserUse')
+    expect(capability).not.toContain('svc_browserUse --> pkg_ui_browser')
+    expect(capability).toContain('| `ctx.browserUse` | `seam` | [`browser`](../packages/browser/browser) | [`browser-playwright`](../packages/browser/browser-playwright) | [`tool-browser`](../packages/browser/tool-browser) | - |')
+  })
+
+  it('shows the Host browser provider in the shared base composition', () => {
+    const composition = readFileSync(resolve(import.meta.dirname, '../apps/cli/composition.md'), 'utf8')
+    expect(composition).toContain('plugin_dsh_base_browser_playwright["browser-playwright<br/>@deepseek-ai/dsh-browser-playwright"]')
+    expect(composition).toContain('| `browser-playwright` | `@deepseek-ai/dsh-browser-playwright` |')
+    expect(composition).not.toContain('| `tool-browser` | `@deepseek-ai/dsh-tool-browser` |')
+  })
+
+  it.each(['standard', 'code'])('mounts the model-facing tool in the %s session preset', (preset) => {
+    const config = readFileSync(resolve(import.meta.dirname, `../apps/cli/config/agent-presets/${preset}/agent.cordis.yml`), 'utf8')
+    expect(config).toMatch(/- id: tool-browser\n  name: '@deepseek-ai\/dsh-tool-browser'/)
+    expect(config).not.toContain("name: '@deepseek-ai/dsh-browser-playwright'")
   })
 })

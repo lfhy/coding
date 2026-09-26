@@ -23,6 +23,8 @@ async function fixture(): Promise<RuntimeConfigOptions> {
     mkdir(resourcesPath, { recursive: true }),
     mkdir(join(resourcesPath, 'runtime', 'node_modules', '@deepseek-ai', 'dsh', 'lib'), { recursive: true }),
     mkdir(join(resourcesPath, 'remote-agent'), { recursive: true }),
+    mkdir(join(resourcesPath, 'playwright-browsers', 'chromium_headless_shell-1228',
+      'chrome-headless-shell-mac-arm64'), { recursive: true }),
   ])
   await Promise.all([
     writeFile(join(repoRoot, 'dist', 'coding-electron-helper-darwin-arm64'), ''),
@@ -32,6 +34,10 @@ async function fixture(): Promise<RuntimeConfigOptions> {
     writeFile(join(resourcesPath, 'runtime', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js'), ''),
     writeFile(join(resourcesPath, 'CodingIcon.png'), ''),
     writeFile(join(resourcesPath, 'metadata.json'), '{"version":"0.1.0-rc.8","sha256":"secret-sha"}\n'),
+    writeFile(join(resourcesPath, 'playwright-browsers', 'chromium_headless_shell-1228',
+      'INSTALLATION_COMPLETE'), ''),
+    writeFile(join(resourcesPath, 'playwright-browsers', 'chromium_headless_shell-1228',
+      'chrome-headless-shell-mac-arm64', 'chrome-headless-shell'), ''),
   ])
   return {
     packaged: false, userHome, repoRoot, resourcesPath, platform: 'darwin', arch: 'arm64',
@@ -42,12 +48,14 @@ async function fixture(): Promise<RuntimeConfigOptions> {
       DSH_CWD: '/tmp/old-cwd', DSH_APP_VERSION: 'old-version',
       CODING_HOST_COMMAND: '/tmp/injected-host', CODING_REPO_ROOT: '/tmp/other-repo',
       ELECTRON_RUN_AS_NODE: '1', NODE_OPTIONS: '--require=/tmp/inject.js',
+      PLAYWRIGHT_BROWSERS_PATH: '/tmp/untrusted-user-cache',
     },
   }
 }
 
-function expectCleanEnvironment(environment: NodeJS.ProcessEnv): void {
-  expect(environment).toEqual({ PATH: '/bin', DEEPSEEK_API_KEY: 'local-key', DEEPSEEK_BASE_URL: 'https://example.test' })
+function expectCleanEnvironment(environment: NodeJS.ProcessEnv, browserPath?: string): void {
+  expect(environment).toEqual({ PATH: '/bin', DEEPSEEK_API_KEY: 'local-key', DEEPSEEK_BASE_URL: 'https://example.test',
+    PLAYWRIGHT_BROWSERS_PATH: browserPath ?? '/tmp/untrusted-user-cache' })
 }
 
 describe('Electron runtime configuration', () => {
@@ -87,7 +95,7 @@ describe('Electron runtime configuration', () => {
         cwd: options.userHome,
       },
     })
-    expectCleanEnvironment(result.helper.env)
+    expectCleanEnvironment(result.helper.env, join(options.resourcesPath, 'playwright-browsers'))
     expect((await lstat(installedHome)).isSymbolicLink()).toBe(true)
     await expect(lstat(result.userData)).rejects.toMatchObject({ code: 'ENOENT' })
   })
@@ -107,6 +115,20 @@ describe('Electron runtime configuration', () => {
       await expect(resolveRuntimeConfig(options)).rejects.toThrow(`required file is unavailable: ${join(options.resourcesPath, file)}`)
     },
   )
+
+  it('拒绝缺失或重定向的打包 Chromium，并只覆盖安装版环境', async () => {
+    const options = { ...await fixture(), packaged: true }
+    const shell = join(options.resourcesPath, 'playwright-browsers', 'chromium_headless_shell-1228')
+    await rm(join(shell, 'INSTALLATION_COMPLETE'))
+    await expect(resolveRuntimeConfig(options)).rejects.toThrow('INSTALLATION_COMPLETE')
+    await writeFile(join(shell, 'INSTALLATION_COMPLETE'), '')
+    await rm(join(shell, 'chrome-headless-shell-mac-arm64', 'chrome-headless-shell'))
+    await expect(resolveRuntimeConfig(options)).rejects.toThrow('chrome-headless-shell')
+    await writeFile(join(shell, 'chrome-headless-shell-mac-arm64', 'chrome-headless-shell'), '')
+    await rm(shell, { recursive: true })
+    await symlink(options.userHome, shell)
+    await expect(resolveRuntimeConfig(options)).rejects.toThrow('symbolic link')
+  })
 
   it('拒绝无效版本而不回显 metadata 的其他字段', async () => {
     const options = { ...await fixture(), packaged: true }

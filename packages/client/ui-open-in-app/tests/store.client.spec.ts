@@ -32,12 +32,28 @@ describe('file workbench store', () => {
     instance.actions.closeFile('missing')
     instance.actions.closeFile(tabIdForSegments(third.segments))
     expect(instance.store.getSnapshot()).toEqual({
+      view: 'files',
       tabs: [],
       activeId: null,
       filesQuery: '',
       filesExpanded: [],
       filesLevels: {},
     })
+  })
+
+  it('retains the browser selection per Session and returns to files on tab activation', () => {
+    const first = createWorkbenchStore().create()
+    const second = createWorkbenchStore().create()
+    const file = { name: 'notes.txt', segments: ['notes.txt'] }
+    first.actions.openFile(file)
+    first.actions.setView('browser')
+    expect(first.store.getSnapshot().view).toBe('browser')
+    expect(second.store.getSnapshot().view).toBe('files')
+    first.actions.activateFile(tabIdForSegments(file.segments))
+    expect(first.store.getSnapshot()).toMatchObject({ view: 'files', activeId: tabIdForSegments(file.segments) })
+    first.actions.setView('browser')
+    first.actions.openFile({ name: 'next.txt', segments: ['next.txt'] })
+    expect(first.store.getSnapshot().view).toBe('files')
   })
 
   it('keeps file viewing state in the session store', () => {

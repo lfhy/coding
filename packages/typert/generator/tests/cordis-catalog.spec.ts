@@ -43,6 +43,11 @@ describe('Typert-backed Cordis catalog', () => {
 
   it('resolves each key to the declaration a caller meets, and drops keys no plugin provides', { timeout: 480_000 }, () => {
     const byKey = new Map(projection().model.services.map(service => [service.key, service]))
+    expect(SERVICE_PAGE.browserUse).toBe('browser.md')
+    expect(CORDIS_CATALOG_POLICY.linkedTypePages.BrowserCommand).toBe('browser.md')
+    expect(CORDIS_CATALOG_POLICY.linkedTypePages.BrowserCapture).toBe('browser.md')
+    expect(CORDIS_CATALOG_POLICY.linkedTypePages.BrowserObservation).toBe('browser.md')
+    expect(byKey.get('browserUse')?.type).toBe('BrowserUseService')
     // An interface-typed key is described by its Service Definition: that is where
     // the contract and, by repository convention, the member JSDoc live.
     expect(byKey.get('lsp')?.type).toBe('LspService')

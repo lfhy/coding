@@ -1,5 +1,6 @@
 # The dsh-headless bundle patch: one-shot task mode directly over dsh-base.
-# It mounts no Host, HTTP server, Web runtime, or browser plugin. An ordinary
+# It mounts no HTTP server or Web runtime; the base Host browser provider stays
+# available to the agent without registering preview routes. An ordinary
 # provider plugin injects `cmdlineArgs`, parses the task positional
 # (`dsh --profile headless "<task>"`) and this app's --help, then the direct
 # driver creates an Agent through the core registry and prints its durable result.

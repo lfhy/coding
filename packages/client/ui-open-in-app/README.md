@@ -7,7 +7,7 @@ kind: "package-reference"
 
 ## 概述
 
-本包拥有工作区打开能力的浏览器半边。会话页头紧邻 Session log 提供紧凑入口：本地工作区显示分体按钮，主按钮打开内置文件工作台，菜单可在内置工作台与本地应用之间切换；Remote-SSH 工作区或经 SSH 启动的 Host 只显示固定工作台按钮。终端底栏与文件侧栏开关位于会话页头右侧；工作台全屏或窄屏接管主内容时，开关位于工作台顶栏右侧。宽屏主内容从左到右是对话、文件标签与预览、可筛选的懒加载文件树，真实 xterm 终端位于横跨主内容的底栏。
+本包拥有工作区打开能力的浏览器半边。会话页头紧邻 Session log 提供紧凑入口：本地工作区显示分体按钮，主按钮打开内置文件工作台，菜单可在内置工作台与本地应用之间切换；Remote-SSH 工作区或经 SSH 启动的 Host 只显示固定工作台按钮。终端底栏与文件侧栏开关位于会话页头右侧；工作台全屏或窄屏接管主内容时，开关位于工作台顶栏右侧。宽屏主内容从左到右是对话、可切换的文件预览或浏览器视图、文件视图中的懒加载文件树；真实 xterm 终端位于横跨主内容的底栏。
 
 ## 使用本包
 
@@ -17,7 +17,9 @@ kind: "package-reference"
 
 本地工作区的主按钮默认打开内置文件工作台，下拉菜单先列出内置页面，再列出 Host 已验证且 locale 词典认识的应用，选中项保存在 `dsh.open-in-app.choice`。选择应用后主按钮改为在 macOS、Windows 或 Linux 上启动它；选择内置页面，或记录的应用已经从 catalog 消失时，主按钮回到内置文件工作台。启动请求若发现执行世界已切换为远端，Client 会改为打开工作台，不会把远端路径交给本机应用。
 
-Remote-SSH 与 SSH Host 入口直接为当前 Session 调用 `ctx.layout.openWorkbench(sessionId)`。本包不注册 `conversation.view`，也不增加文件 conversation tab；入口始终进入固定工作台。工作台顶栏左侧承载文件标签，右侧在全屏或窄屏接管主内容时提供两个面板开关及最大化、关闭；并排模式下开关仅在会话页头右侧。点击开关时若工作台未打开，会先打开工作台再显示对应面板：文件侧栏默认呈现内置文件管理，终端底栏默认呈现终端；文件侧栏默认打开，显隐按 Session 保存。空白会话使用欢迎页右上角入口；没有当前会话时该入口可先创建会话。
+Remote-SSH 与 SSH Host 入口直接为当前 Session 调用 `ctx.layout.openWorkbench(sessionId)`。本包不注册 `conversation.view`，也不增加文件 conversation tab；入口始终进入固定工作台。工作台顶栏提供文件／浏览器视图切换和文件标签，右侧在全屏或窄屏接管主内容时提供两个面板开关及最大化、关闭；并排模式下开关仅在会话页头右侧。点击开关时若工作台未打开，会先打开工作台再显示对应面板：文件侧栏默认呈现内置文件管理，终端底栏默认呈现终端；文件侧栏默认打开，显隐按 Session 保存。空白会话使用欢迎页右上角入口；没有当前会话时该入口可先创建会话。
+
+`workbench.browser` 是由本包 `workbench` entry 声明的 Session 级 single slot。浏览器贡献者通过该 slot 绘制右侧预览区，收到 `{ shown, openBrowser, closeBrowser }` owner props；`shown` 只表示工作台正在显示浏览器视图，条目在文件视图和工作台关闭时仍保持挂载。`openBrowser()` 为所属 Session 打开工作台并切换到浏览器，`closeBrowser()` 返回文件视图。文件标签点击也会返回文件视图；浏览器视图隐藏文件预览和目录树并使其不可交互，原有标签、筛选及展开状态按 Session 保留。浏览器条目的实际内容及模型活动订阅由占用插件负责。
 
 欢迎页右上角按从左到右的顺序注册终端底栏与文件侧栏入口到 `conversation.hero.actions`。打开任一入口只显示对应面板；再次点击关闭对应面板，不折叠导航栏。底栏独占时右侧工作台收起但终端继续保留在横跨主内容的底栏；会话页头与工作台顶栏的普通动作仍可同时显示两个面板。已有会话时直接切换对应面板；尚无会话时先连接最近工作区，若没有工作区则在 Host 用户 HOME 创建未分组会话。连接尚未完成时两个入口复用同一次创建，最后一次点击决定打开的面板。创建失败时按钮旁显示错误并允许重试；异步创建期间用户若已切换到另一会话，入口不会抢占选择。面板状态按 Session 保存，欢迎页发送首条消息后继续沿用。
 
@@ -35,7 +37,7 @@ Remote-SSH 与 SSH Host 入口直接为当前 Session 调用 `ctx.layout.openWor
 
 ## 实现
 
-`OpenInAppController` 持有页面级目标缓存、应用选择和 HTTP／WebSocket URL 组装，并在浏览器 wire 边界校验 Host 响应。会话页头与工作台 entry 共用一个 Session scope slot store，保存文件标签、当前文件、筛选、展开目录和已加载目录；文件侧栏显隐由布局按 Session 持有，经 `workbench` owner props 的 `filesOpen` 传入，不同 Session 的状态彼此独立。`WorkbenchPanelToggles` 作为 Session 级条目注册到 `conversation.session.header.utilities`；全屏顶栏直接读取工作台 owner props。终端标签属于 Session scope 的已挂载底栏，终端连接 effect 不依赖底栏 `shown`，因此收起底栏不会触发清理。
+`OpenInAppController` 持有页面级目标缓存、应用选择和 HTTP／WebSocket URL 组装，并在浏览器 wire 边界校验 Host 响应。会话页头与工作台 entry 共用一个 Session scope slot store，保存当前视图、文件标签、当前文件、筛选、展开目录和已加载目录；文件侧栏显隐由布局按 Session 持有，经 `workbench` owner props 的 `filesOpen` 传入，不同 Session 的状态彼此独立。`WorkbenchPanelToggles` 作为 Session 级条目注册到 `conversation.session.header.utilities`；全屏顶栏直接读取工作台 owner props。终端标签属于 Session scope 的已挂载底栏，终端连接 effect 不依赖底栏 `shown`，因此收起底栏不会触发清理。
 
 所有可见文案在 `open-in-app` namespace 中维护中文与英文词典。组件样式使用 CSS Modules 和共享 `--dsw-*` token；768px 规则固定平板文件树宽度，375px 手机视口落入 480px 以下的单面板覆盖规则。
 

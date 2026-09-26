@@ -458,6 +458,31 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'browserUse',
+    summary: '每个 SessionId 独占一个浏览器资源的可替换服务。',
+    description: '每个 SessionId 独占一个浏览器资源的可替换服务。',
+    methods: [
+      {
+        signature: 'abstract execute(sessionId: SessionId, command: BrowserCommand, signal: AbortSignal): Promise<BrowserCapture>',
+        description: '对指定会话执行一个命令，成功时发布对应的观测与可选截图。 元素操作必须拒绝过期 revision；拒绝与取消不得发布虚假的新观测。',
+        parameters: [{ name: 'sessionId', description: '独占页面的会话身份。' }, { name: 'command', description: '导航、快照、交互或关闭命令。' }, { name: 'signal', description: '中止当前操作；提供方应保留调用方给出的中止原因。' }],
+        returns: '成功命令产生的观测和可选 PNG 字节。',
+      },
+      {
+        signature: 'abstract latest(sessionId: SessionId): BrowserCapture | undefined',
+        description: '读取指定会话最近一次成功发布的观测，不启动浏览器操作。',
+        parameters: [{ name: 'sessionId', description: '要读取的会话身份。' }],
+        returns: '已发布的捕获；尚无观测或资源已关闭时为 undefined。',
+      },
+      {
+        signature: 'abstract closeSession(sessionId: SessionId): Promise<void>',
+        description: '停止并释放指定会话的浏览器资源；调用方等待资源完全停稳。',
+        parameters: [{ name: 'sessionId', description: '要关闭的会话身份。' }],
+        returns: '清理完成后兑现；没有该会话资源时也完成。',
+      },
+    ],
+  },
+  {
     key: 'clientModules',
     summary: 'The web plugin table service: incremental `dsh.client` scan + wire composition + bundle route + index tap.',
     description: 'The web plugin table service: incremental `dsh.client` scan + wire composition + bundle route + index tap. Construction runs the activation scan synchronously — a malformed declaration or missing bundle among the already-loaded entries aggregates into one loud throw (FAILED fiber; the boot activation audit reports it).',
@@ -2843,6 +2868,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'Branded',
     declaration: 'export type Branded<B extends string> = string & {\n    readonly [BRAND]: B;\n};',
+  },
+  {
+    name: 'BrowserCapture',
+    declaration: 'export interface BrowserCapture {\n    readonly observation: BrowserObservation;\n    readonly png: Uint8Array | null;\n}',
+  },
+  {
+    name: 'BrowserCommand',
+    declaration: 'export type BrowserCommand = {\n    readonly kind: \'navigate\';\n    readonly url: string;\n} | {\n    readonly kind: \'snapshot\';\n} | {\n    readonly kind: \'click\';\n    readonly ref: string;\n    readonly revision: number;\n} | {\n    readonly kind: \'fill\';\n    readonly ref: string;\n    readonly text: string;\n    readonly revision: number;\n} | {\n    readonly kind: \'scroll\';\n    readonly direction: \'up\' | \'down\';\n    readonly pixels: number;\n} | {\n    readonly kind: \'screenshot\';\n} | {\n    readonly kind: \'close\';\n};',
+  },
+  {
+    name: 'BrowserObservation',
+    declaration: 'export interface BrowserObservation {\n    readonly generation: string;\n    readonly revision: number;\n    readonly url: string;\n    readonly title: string;\n    readonly snapshot: string;\n    readonly viewport: {\n        readonly width: number;\n        readonly height: number;\n    };\n    readonly cursor: {\n        readonly x: number;\n        readonly y: number;\n        readonly kind: \'click\' | \'fill\' | \'scroll\';\n        readonly at: number;\n    } | null;\n}',
   },
   {
     name: 'CancelOptions',

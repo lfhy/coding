@@ -6,6 +6,8 @@ patch 在自身上按平台门控两个 shell 栈：`bash-sandbox`/`tool-bash` �
 
 行集合及其设计依据以行内注释写在 patch 文件里；[生成的组合图](../../../apps/cli/composition.md)负责渲染它。
 
+本层挂载 [`browser-playwright`](../../browser/browser-playwright/README.md) 作为 Host 的会话级浏览器提供方；标准和 PTC／Code Mode 的 agent preset 通过同一个 [`browser_use`](../../browser/tool-browser/README.md) 工具消费它，每次调用须获得一次性审批。默认 `allowedOrigins: []` 只允许公网 HTTP(S) 请求；需访问可信的本地服务时，由 profile 覆盖该提供方行并显式配置 origin。Chromium 在首次获准导航时才启动，缺失时报告不可用；源码、CLI 等未打包环境需安装与锁定 Playwright 版本匹配的 Chromium，macOS arm64 正式桌面包则自带 headless shell，不依赖用户缓存。本组合包自身不交付浏览器文件。Web 的只读画面路由只在同时装配 Web Host 传输时提供。
+
 ## 模型体验
 
 通过插入的行间接产生影响：该组合包选定了随发行版交付的无 persona 提示词基座、工具集合与 DeepSeek 适配器，供各模式组合包进一步特化；它自身不贡献任何模型可见文本。

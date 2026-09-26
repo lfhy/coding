@@ -95,6 +95,8 @@ export async function resolveRuntimeConfig(options: RuntimeConfigOptions): Promi
     await requireEntry(resourcesPath, 'directory')
     const executable = join(resourcesPath, 'coding-electron-helper')
     const iconPath = join(resourcesPath, 'CodingIcon.png')
+    const browserPath = join(resourcesPath, 'playwright-browsers')
+    const shell = join(browserPath, 'chromium_headless_shell-1228')
     const [version] = await Promise.all([
       runtimeVersion(join(resourcesPath, 'metadata.json')),
       requireEntry(executable, 'file'),
@@ -107,6 +109,11 @@ export async function resolveRuntimeConfig(options: RuntimeConfigOptions): Promi
       requireEntry(join(resourcesPath, 'runtime', 'node_modules', '@deepseek-ai', 'dsh', 'lib'), 'directory'),
       requireEntry(join(resourcesPath, 'runtime', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js'), 'file'),
       requireEntry(join(resourcesPath, 'remote-agent'), 'directory'),
+      requireEntry(browserPath, 'directory'),
+      requireEntry(shell, 'directory'),
+      requireEntry(join(shell, 'INSTALLATION_COMPLETE'), 'file'),
+      requireEntry(join(shell, 'chrome-headless-shell-mac-arm64'), 'directory'),
+      requireEntry(join(shell, 'chrome-headless-shell-mac-arm64', 'chrome-headless-shell'), 'file'),
     ])
     const home = join(userHome, '.dsh')
     const cwd = userHome
@@ -118,7 +125,7 @@ export async function resolveRuntimeConfig(options: RuntimeConfigOptions): Promi
         executable,
         args: ['--home', home, '--cwd', cwd, '--host-version', version,
           '--runtime-root', resourcesPath, '--exclusive-desktop-instance'],
-        cwd, env,
+        cwd, env: { ...env, PLAYWRIGHT_BROWSERS_PATH: browserPath },
       },
     }
   }

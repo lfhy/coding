@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import { createWorkbenchStore } from '../src/client/store.ts'
+import { createWorkbenchStore, tabIdForSegments } from '../src/client/store.ts'
 import {
   formatBytes,
   sortTreeEntries,
@@ -38,6 +38,8 @@ function bench(over: {
   const toggleWorkbenchFullscreen = vi.fn()
   const toggleFiles = vi.fn()
   const toggleBottom = vi.fn()
+  const openWorkbench = vi.fn()
+  const renderSlot = vi.fn(() => <div data-testid="browser-contribution" />)
   const listFiles = vi.fn(over.listFiles ?? (async () => listing('/workspace', [])))
   const readFile = vi.fn(over.readFile ?? (async (): Promise<WorkspaceFilePayload> => ({
     path: '/workspace/file', content: { kind: 'text', text: '' },
@@ -49,16 +51,19 @@ function bench(over: {
     bottomOpen: over.bottomOpen ?? false,
     filesOpen: over.filesOpen ?? true,
     closeWorkbench,
+    openWorkbench,
     toggleWorkbenchFullscreen,
     toggleFiles,
     toggleBottom,
     useStore: bindSnapshotSelector(instance.store),
     actions: instance.actions,
+    renderSlot,
     listFiles,
     readFile,
     t,
   } as unknown as WorkspaceWorkbenchProps
-  return { instance, props, closeWorkbench, toggleWorkbenchFullscreen, toggleFiles, toggleBottom, listFiles, readFile }
+  return { instance, props, closeWorkbench, openWorkbench, renderSlot,
+    toggleWorkbenchFullscreen, toggleFiles, toggleBottom, listFiles, readFile }
 }
 
 describe('workspace workbench helpers', () => {
@@ -111,7 +116,41 @@ describe('WorkspaceWorkbench shell', () => {
     expect(topbar.hasAttribute('data-window-drag-region')).toBe(true)
     expect(within(topbar).getAllByRole('button')
       .filter(button => !button.classList.contains('tabSelect') && !button.classList.contains('tabClose')))
-      .toHaveLength(4)
+      .toHaveLength(6)
+  })
+
+  it('switches browser and files without unmounting the browser child or clearing file tabs', async () => {
+    const b = bench()
+    b.instance.actions.openFile({ name: 'kept.txt', segments: ['kept.txt'] })
+    const mounted = render(<WorkspaceWorkbench {...b.props} />)
+    const browser = screen.getByTestId('browser-contribution')
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.views.browser'] }))
+    expect(b.openWorkbench).toHaveBeenCalledOnce()
+    expect(b.instance.store.getSnapshot()).toMatchObject({ view: 'browser', activeId: tabIdForSegments(['kept.txt']) })
+    expect(screen.getByTestId('browser-contribution')).toBe(browser)
+    expect(b.renderSlot).toHaveBeenLastCalledWith('workbench.browser', expect.objectContaining({ shown: true }))
+    expect((mounted.container.querySelector('main > div:first-child') as HTMLElement).hidden).toBe(true)
+    expect(mounted.container.querySelector('main > div:first-child')?.hasAttribute('inert')).toBe(true)
+    expect(mounted.container.querySelector('aside')?.hidden).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.views.files'] }))
+    expect(b.instance.store.getSnapshot().view).toBe('files')
+    expect(b.renderSlot).toHaveBeenLastCalledWith('workbench.browser', expect.objectContaining({ shown: false }))
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.views.browser'] }))
+    const owner = (b.renderSlot as unknown as { mock: { lastCall?: [string, {
+      closeBrowser: () => void
+      openBrowser: () => void
+    }] } }).mock.lastCall?.[1]
+    expect(owner).toBeDefined()
+    if (!owner) throw new Error('browser slot owner was not registered')
+    owner.closeBrowser()
+    expect(b.instance.store.getSnapshot().view).toBe('files')
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: zh['workbench.views.files'] }))
+    owner.openBrowser()
+    expect(b.instance.store.getSnapshot().view).toBe('browser')
+    expect(b.openWorkbench).toHaveBeenCalledTimes(3)
+    mounted.rerender(<WorkspaceWorkbench {...b.props} shown={false} />)
+    expect(b.renderSlot).toHaveBeenLastCalledWith('workbench.browser', expect.objectContaining({ shown: false }))
+    expect(screen.getByTestId('browser-contribution')).toBe(browser)
   })
 
   it('avoids duplicate panel switches while the conversation header is visible', () => {
