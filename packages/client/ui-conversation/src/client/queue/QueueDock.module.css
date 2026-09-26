@@ -153,6 +153,10 @@
   border-color: var(--dsw-alias-state-business-primary);
 }
 
+.editor:focus-visible {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 18%, transparent);
+}
+
 .actions {
   display: flex;
   flex: none;

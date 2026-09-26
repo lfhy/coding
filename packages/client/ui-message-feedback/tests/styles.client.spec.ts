@@ -46,6 +46,14 @@ function block(selector: string): string {
 }
 
 describe('MessageFeedbackActions theme styles', () => {
+  it('备注编辑器的键盘焦点沿自身圆角显示单层主题色光晕', () => {
+    expect(block('.noteInput')).toContain('border-radius: 8px')
+    const focus = block('.noteInput:focus-visible')
+    expect(focus).toContain('border-color: var(--dsw-alias-state-business-primary)')
+    expect(focus).toContain('box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 18%, transparent)')
+    expect(focus).not.toMatch(/outline\s*:/)
+  })
+
   it('names only theme variables the token sheet defines', () => {
     // The regression that motivated this file. An undeclared custom property
     // has no fallback and does not inherit a usable value: the entire

@@ -1,6 +1,7 @@
 /**
  * 显式 opt-in 的 macOS 原生冒烟：先构建 Host/Web 与 Electron，再直接用 Node 运行本文件。
  * 不使用 *.spec.* 命名，避免根 Vitest 的 keyless 套件意外启动 GUI。
+ * --focus-only 只验收输入框焦点，不依赖 macOS 窗口前台与最小化状态。
  */
 
 import assert from 'node:assert/strict'
@@ -266,10 +267,39 @@ async function verifyRemoteSshWizard(page, screenshot) {
   await page.getByText('远程连接', { exact: true }).first().click()
   const wizard = page.getByRole('dialog', { name: '远程连接' })
   await wizard.waitFor({ state: 'visible' })
-  assert.equal(await wizard.locator('#remote-ssh-host').isVisible(), true,
+  const host = wizard.locator('#remote-ssh-host')
+  assert.equal(await host.isVisible(), true,
     'Electron preload must enable the Remote-SSH host form')
   assert.equal(await wizard.getByText('Remote-SSH 仅在 Coding 桌面端中可用。').count(), 0,
     'Electron wizard must not show the desktop-only fallback')
+  // 点击先激活原生窗口，再从模式单选项用 Tab 回到输入框验证键盘焦点。
+  await host.click()
+  await host.press('Shift+Tab')
+  await page.keyboard.press('Tab')
+  const focus = await host.evaluate(input => {
+    const inner = getComputedStyle(input)
+    const outer = getComputedStyle(input.parentElement)
+    const probe = document.createElement('span')
+    probe.style.color = 'var(--dsw-alias-state-business-primary)'
+    document.body.append(probe)
+    const business = getComputedStyle(probe).color
+    probe.remove()
+    return {
+      active: document.activeElement === input,
+      visible: input.matches(':focus-visible'),
+      outline: inner.outlineStyle,
+      radius: outer.borderTopLeftRadius,
+      border: outer.borderTopColor,
+      shadow: outer.boxShadow,
+      business,
+    }
+  })
+  assert.equal(focus.active, true, 'Tab must return focus to the SSH host input')
+  assert.equal(focus.visible, true, 'SSH host input must expose its keyboard focus state')
+  assert.equal(focus.outline, 'none', 'rounded SSH field must not draw a square inner focus outline')
+  assert.notEqual(focus.radius, '0px', 'SSH field focus frame must remain rounded')
+  assert.equal(focus.border, focus.business, 'SSH field must retain its business-color focus frame')
+  assert.notEqual(focus.shadow, 'none', 'SSH field focus must remain visible around the rounded frame')
   await wizard.screenshot({ path: screenshot })
   await wizard.getByRole('button', { name: '关闭' }).click()
   await wizard.waitFor({ state: 'hidden' })
@@ -343,7 +373,6 @@ async function assertBlueFocusedField(locator, name) {
       focused: document.activeElement === input,
       border: style.borderTopColor,
       shadow: style.boxShadow,
-      outline: style.outlineColor,
       outlineStyle: style.outlineStyle,
       business,
       expectedShadow: shadow,
@@ -353,9 +382,7 @@ async function assertBlueFocusedField(locator, name) {
   assert.notEqual(colors.business, 'rgb(0, 0, 0)', `${name} business theme token must not resolve to black`)
   assert.equal(colors.border, colors.business, `${name} focus border must use business blue, not black`)
   assert.equal(colors.shadow, colors.expectedShadow, `${name} focus shadow must use business blue`)
-  if (colors.outlineStyle !== 'none') {
-    assert.equal(colors.outline, colors.business, `${name} focus outline must use business blue, not black`)
-  }
+  assert.equal(colors.outlineStyle, 'none', `${name} text input must not draw a second inner focus outline`)
 }
 
 async function verifyOnboardingFocus(page, afterScreenshot) {
@@ -384,6 +411,9 @@ async function verifyOnboardingFocus(page, afterScreenshot) {
 
 async function main() {
   assert.equal(process.platform, 'darwin', 'native smoke currently requires macOS')
+  assert.ok(process.argv.length === 2 || (process.argv.length === 3 && process.argv[2] === '--focus-only'),
+    'only --focus-only is accepted')
+  const focusOnly = process.argv[2] === '--focus-only'
   assert.ok(existsSync(entry), 'first run pnpm run build && pnpm run build:electron')
 
   const isolated = await mkdtemp(join(tmpdir(), 'dsh-electron-native-'))
@@ -468,6 +498,13 @@ async function main() {
     await page.screenshot({ path: screenshot })
     await verifyOnboardingFocus(page, afterScreenshot)
     await verifyRemoteSshWizard(page, remoteScreenshot)
+    if (focusOnly) {
+      assert.equal(rendererErrors.length, 0, 'renderer should not report runtime errors')
+      passed = true
+      console.log(`PASS: native text input focus, no square inner outline, rounded SSH focus frame; ` +
+        `screenshots: ${afterScreenshot}, ${remoteScreenshot}`)
+      return
+    }
     await verifyWindowBoundary(page, app, origin)
 
     const originalWindow = await app.evaluate(({ BrowserWindow }) => {

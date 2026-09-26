@@ -14,9 +14,16 @@
   --ds-transition-duration-slow: 0.3s;
 }
 
+/* 组件内的输入由圆角外壳或自身边框显示焦点，不再给内部控件叠加方形描边。 */
 :where(input:not([type='checkbox']):not([type='radio']), textarea, select):focus-visible {
-  outline: 2px solid var(--dsw-alias-state-business-primary);
-  outline-offset: 2px;
+  outline: none;
+  border-color: var(--dsw-alias-state-business-primary);
+}
+
+/* 未经组件样式包装的原生控件仍有符合自身圆角的可见键盘焦点。 */
+:where(input:not([type='checkbox']):not([type='radio']), textarea, select):not([class]):not(label > input):focus-visible {
+  border-radius: 8px;
+  box-shadow: 0 0 0 2px var(--dsw-alias-state-business-primary);
 }
 
 :where(input[type='checkbox'], input[type='radio']):focus-visible:not(:disabled) {

@@ -11,10 +11,25 @@ function declarations(css: string, selector: string): string {
 }
 
 describe('输入控件焦点样式', () => {
-  it('给没有组件专属焦点样式的输入控件保留主题色键盘焦点圈', () => {
-    const rule = declarations(read('../src/styles/base.css'), ":where(input:not([type='checkbox']):not([type='radio']), textarea, select):focus-visible")
-    expect(rule).toContain('outline: 2px solid var(--dsw-alias-state-business-primary)')
-    expect(rule).toContain('outline-offset: 2px')
+  it('组件内输入不叠加方形描边，裸原生输入仍有圆角主题色焦点', () => {
+    const css = read('../src/styles/base.css')
+    const inner = declarations(css, ":where(input:not([type='checkbox']):not([type='radio']), textarea, select):focus-visible")
+    expect(inner).toContain('outline: none')
+    expect(inner).toContain('border-color: var(--dsw-alias-state-business-primary)')
+    expect(inner).not.toContain('box-shadow:')
+
+    const native = declarations(css, ":where(input:not([type='checkbox']):not([type='radio']), textarea, select):not([class]):not(label > input):focus-visible")
+    expect(native).toContain('border-radius: 8px')
+    expect(native).toContain('box-shadow: 0 0 0 2px var(--dsw-alias-state-business-primary)')
+  })
+
+  it('远程向导输入外壳保留圆角焦点，单选模式行的焦点沿圆角边界', () => {
+    const input = read('../../ui-primitives/src/Input.module.css')
+    const wizard = read('../../ui-workspace/src/client/RemoteSshWizard.module.css')
+    expect(declarations(input, '.wrap')).toContain('border-radius: 8px')
+    expect(declarations(input, '.wrap:focus-within')).toContain('border-color: var(--dsw-alias-state-business-primary)')
+    expect(declarations(input, '.input')).toContain('outline: none')
+    expect(declarations(wizard, '.connectionMode')).toContain('border-radius: 8px')
   })
 
   it('可用的复选框和单选框聚焦时使用蓝色焦点圈', () => {
