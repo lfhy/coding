@@ -12,7 +12,7 @@
 
 Chat 业务行是彼此独立的注册表贡献，不是封闭的内建联合。Client 插件通过 declaration merging 增加类型化 `ChatNodeDataMap` key，在 `ctx.conversationEvents` 上注册 `ConversationNodeDefinition`，再向 `conversation.chat.node` 注册匹配的 keyed renderer；它无须修改会话 fold 或中央 renderer switch。稳定事件 id、append/prepend 回放、Location data 与 renderer 约束见 [Conversation Node 实操手册](../../../docs/cookbook/adding-a-conversation-node.md)。
 
-Chat 视图左缘的细轨按同一滚动容器内的实际消息位置标记当前已加载的持久用户消息与中途引导消息，每条一枚；阅读位置变化时突出对应标记。悬停或键盘聚焦可预览截取后的消息文本，点击或键盘激活可跳至该消息。未加载的旧消息不占标记，加载旧页后才加入；待处理的 steering 气泡不占标记。窄屏使用可通过键盘操作的紧凑跳转列表代替细轨。该导航只读取 Chat 视图数据，不写入会话日志或持久状态。
+Chat 视图左缘的细轨为当前已加载的持久用户消息与中途引导消息按消息顺序排列标记，每条一枚；标记以 10px 行高密集排列在垂直居中、限高的轨道内，不按消息在对话中的实际高度分布。轨道过长时可独立滚动，阅读位置变化时突出对应标记并使其保持可见。悬停或键盘聚焦可预览截取后的消息文本，点击或键盘激活会把对话滚动到对应消息的稳定位置。未加载的旧消息不占标记，加载旧页后才加入；待处理的 steering 气泡不占标记。窄屏使用可通过键盘操作的紧凑跳转列表代替细轨。该导航只读取 Chat 视图数据，不写入会话日志或持久状态。
 
 会话页头会在标题旁渲染会话作用域的 `'conversation.session.header.actions'` 列表，并在最右侧渲染独立的 `'conversation.session.header.utilities'` 列表。会话上下文和谱系控件保留在 `actions` 中；可选的会话工具不会改变它们的顺序或位置。编辑器链的 currency 包含当前对话 `session`；ui-subagent 会选取 one-shot 或 parent 不可用的已寻址会话，并按原因显示只读文案，而普通 InputBar 会让所有已寻址 child 仅保留 Send，因为继续执行服务不公开逐 Activation 取消操作，`session.cancel` 也会绕过其所有权。
 

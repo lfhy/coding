@@ -25,16 +25,11 @@ import { formatRunDuration } from './message-chrome.ts'
 import css from './ChatView.module.css'
 
 const FOLLOW_THRESHOLD = 24
-const ANCHOR_COMPACT_WIDTH = 840
-const ANCHOR_INSET = 8
+const ANCHOR_COMPACT_WIDTH = 864
 const ANCHOR_TARGET_TOP = 16
 
-interface AnchorMark extends ConversationAnchor {
-  readonly position: number
-}
-
 interface AnchorRailLayout {
-  readonly marks: readonly AnchorMark[]
+  readonly marks: readonly ConversationAnchor[]
   readonly activeKey: string | null
   readonly trackHeight: number
   readonly compact: boolean
@@ -47,24 +42,6 @@ const EMPTY_ANCHOR_RAIL: AnchorRailLayout = {
 interface AnchorTarget {
   readonly key: string
   readonly scrollTop: number
-}
-
-/** 对碰撞的实际位置作最小展开，让每枚已加载刻度保留独立的指针命中区。 */
-function spreadAnchorPositions(positions: readonly number[], trackHeight: number): number[] {
-  if (positions.length < 2) return [...positions]
-  const maxPosition = Math.max(ANCHOR_INSET, trackHeight - ANCHOR_INSET)
-  const gap = Math.min(18, (maxPosition - ANCHOR_INSET) / (positions.length - 1))
-  const spread = [positions[0] ?? ANCHOR_INSET]
-  for (let index = 1; index < positions.length; index++) {
-    spread.push(Math.max(positions[index] ?? ANCHOR_INSET, (spread[index - 1] ?? ANCHOR_INSET) + gap))
-  }
-  if ((spread.at(-1) ?? 0) > maxPosition) {
-    spread[spread.length - 1] = maxPosition
-    for (let index = spread.length - 2; index >= 0; index--) {
-      spread[index] = Math.min(spread[index] ?? ANCHOR_INSET, (spread[index + 1] ?? maxPosition) - gap)
-    }
-  }
-  return spread.map(Math.round)
 }
 
 function activeAnchorKey(targets: readonly AnchorTarget[], scrollTop: number): string | null {
@@ -324,14 +301,12 @@ export function ChatView({
       setAnchorRail(EMPTY_ANCHOR_RAIL)
       return
     }
-    const travel = Math.max(0, trackHeight - ANCHOR_INSET * 2)
     const rows = new Map<string, HTMLElement>()
     for (const row of local.querySelectorAll<HTMLElement>('[data-chat-anchor-key]')) {
       const key = row.dataset.chatAnchorKey
       if (key !== undefined) rows.set(key, row)
     }
     const measured: ConversationAnchor[] = []
-    const positions: number[] = []
     const targets: AnchorTarget[] = []
     const readingTop = Math.min(floor, scrollport.scrollTop + Math.min(80, trackHeight * 0.2))
     for (const anchor of anchors) {
@@ -340,16 +315,12 @@ export function ChatView({
       const rowTop = row.getBoundingClientRect().top - viewport.top + scrollport.scrollTop
       const targetTop = Math.max(0, Math.min(floor, rowTop - ANCHOR_TARGET_TOP))
       measured.push(anchor)
-      positions.push(ANCHOR_INSET + (targetTop / floor) * travel)
       targets.push({ key: anchor.key, scrollTop: targetTop })
     }
     anchorTargetsRef.current = { targets, floor, trackHeight }
-    const spaced = spreadAnchorPositions(positions, trackHeight)
-    const marks: AnchorMark[] = measured.map((anchor, index) => ({
-      ...anchor, position: spaced[index] ?? ANCHOR_INSET,
-    }))
+    const marks: readonly ConversationAnchor[] = measured
     const activeKey = activeAnchorKey(targets, readingTop)
-    const compact = scrollport.clientWidth < ANCHOR_COMPACT_WIDTH || marks.length > travel / 4 + 1
+    const compact = scrollport.clientWidth < ANCHOR_COMPACT_WIDTH
     setAnchorRail(current => current.activeKey === activeKey
       && current.trackHeight === trackHeight
       && current.compact === compact
@@ -357,7 +328,7 @@ export function ChatView({
       && current.marks.every((mark, index) => {
         const next = marks[index]
         return next !== undefined && mark.key === next.key && mark.title === next.title
-          && mark.preview === next.preview && Math.abs(mark.position - next.position) < 0.5
+          && mark.preview === next.preview
       })
       ? current
       : { marks, activeKey, trackHeight, compact })

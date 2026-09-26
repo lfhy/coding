@@ -10,73 +10,98 @@
 .track {
   position: absolute;
   top: 0;
-  left: calc(0px - var(--dsh-composer-side-clearance, 16px) - 8px);
+  left: calc(0px - var(--dsh-composer-side-clearance, 16px) - 20px);
+  display: flex;
+  align-items: center;
+  width: 48px;
+}
+
+.railScroll {
+  box-sizing: border-box;
   width: 36px;
+  max-height: max(10px, calc(100% - 96px));
+  margin-left: 12px;
+  padding-block: 4px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  pointer-events: auto;
 }
 
 .mark {
-  position: absolute;
-  left: 0;
   display: flex;
   align-items: center;
   width: 36px;
-  height: 18px;
+  height: 10px;
   padding: 0;
   border: 0;
   background: transparent;
   cursor: pointer;
-  pointer-events: auto;
-  transform: translateY(-50%);
+  flex: none;
 }
 
 .tick {
   width: 12px;
-  height: 3px;
+  height: 2px;
+  border-radius: 999px;
   background: var(--dsw-alias-label-caption);
+  opacity: 0.58;
+  transform-origin: left center;
   transition:
-    width var(--ds-transition-duration-fast) var(--ds-ease-in-out),
+    transform var(--ds-transition-duration-fast) var(--ds-ease-in-out),
+    opacity var(--ds-transition-duration-fast) var(--ds-ease-in-out),
     background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);
 }
 
-.mark:hover .tick,
-.mark:focus-visible .tick {
-  width: 24px;
-  background: var(--dsw-alias-label-secondary);
+.tickNear {
+  opacity: 0.86;
+  transform: scaleX(1.7);
 }
 
-.markActive .tick,
-.markActive:hover .tick,
-.markActive:focus-visible .tick {
-  width: 32px;
-  height: 4px;
+.tickMid {
+  opacity: 0.72;
+  transform: scaleX(1.25);
+}
+
+.markActive .tick {
   background: var(--dsw-alias-label-primary);
+  opacity: 0.9;
+}
+
+.markFocused .tick {
+  background: var(--dsw-alias-label-primary);
+  opacity: 1;
+  transform: scaleX(2.6);
 }
 
 .mark:focus-visible {
   outline: 2px solid var(--dsw-alias-state-business-primary);
-  outline-offset: 2px;
+  outline-offset: -2px;
   border-radius: 3px;
 }
 
 .previewCard {
-  position: absolute;
-  left: 56px;
-  width: min(320px, calc(100vw - 100px));
+  position: fixed;
+  z-index: 10;
+  box-sizing: border-box;
+  width: min(320px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
   padding: 12px 14px;
+  overflow: hidden;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 12px;
   background: var(--dsw-alias-bg-layer-2);
   box-shadow: var(--dsw-shadow-lv2);
   pointer-events: none;
-  transform: translateY(-50%);
 }
 
 .previewTitle {
+  display: -webkit-box;
   overflow: hidden;
   color: var(--dsw-alias-label-primary);
   font: var(--dsw-font-s-strong-14);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
 }
 
 .previewText {
@@ -198,12 +223,6 @@
 .compactItem:focus-visible {
   outline: 2px solid var(--dsw-alias-state-business-primary);
   outline-offset: -2px;
-}
-
-@media (max-width: 600px) {
-  .previewCard {
-    width: min(264px, calc(100vw - 96px));
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {

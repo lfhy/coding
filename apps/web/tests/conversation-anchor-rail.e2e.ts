@@ -126,6 +126,12 @@ describe('web e2e: conversation anchor rail over loaded Chat history', () => {
     await mark.hover()
     await expect.poll(() => page.getByRole('tooltip').textContent(), { timeout: 10_000 })
       .toContain(target.marker)
+    const previewBounds = await page.getByRole('tooltip').boundingBox()
+    if (previewBounds === null) throw new Error('anchor preview has no layout box')
+    expect(previewBounds.x).toBeGreaterThanOrEqual(16)
+    expect(previewBounds.y).toBeGreaterThanOrEqual(16)
+    expect(previewBounds.x + previewBounds.width).toBeLessThanOrEqual(1680 - 16)
+    expect(previewBounds.y + previewBounds.height).toBeLessThanOrEqual(1000 - 16)
     await page.screenshot({ path: SHOTS.hover })
     await mark.focus()
     await expect.poll(() => page.getByRole('tooltip').textContent(), { timeout: 10_000 })
@@ -135,6 +141,12 @@ describe('web e2e: conversation anchor rail over loaded Chat history', () => {
     await expect.poll(async () => Math.abs(16 - await targetTop(page, target.key)), { timeout: 10_000 })
       .toBeLessThanOrEqual(4)
     await expect.poll(() => mark.getAttribute('aria-current'), { timeout: 10_000 }).toBe('location')
+    const railScroll = rail.locator('[class*="railScroll"]')
+    await expect.poll(() => mark.evaluate((button) => {
+      const viewport = button.parentElement!.getBoundingClientRect()
+      const rect = button.getBoundingClientRect()
+      return rect.top >= viewport.top && rect.bottom <= viewport.bottom
+    }), { timeout: 10_000 }).toBe(true)
     await page.screenshot({ path: SHOTS.after })
     const jumpedTop = await scrollTop(page)
 
@@ -177,43 +189,61 @@ describe('web e2e: conversation anchor rail over loaded Chat history', () => {
     await page.setViewportSize({ width: 1680, height: 1000 })
     await expect.poll(() => scrollport.evaluate(host => host.clientWidth), { timeout: 10_000 })
       .toBeGreaterThanOrEqual(840)
-    await scrollport.evaluate((host) => { host.scrollTop = 0 })
-    await nextPaint(page)
     const older = page.getByRole('button', { name: 'Load earlier', exact: true })
-    await older.waitFor({ timeout: 10_000 })
-    await older.click()
-    await expect.poll(async () => (await loadedUserAnchors(page)).length, { timeout: 30_000 })
-      .toBeGreaterThan(anchors.length)
+    let loadedCount = anchors.length
+    for (let pageIndex = 0; pageIndex < 10 && loadedCount < FIXTURE.turns; pageIndex += 1) {
+      await scrollport.evaluate((host) => { host.scrollTop = 0 })
+      await nextPaint(page)
+      await older.waitFor({ timeout: 10_000 })
+      await older.click()
+      await expect.poll(async () => (await loadedUserAnchors(page)).length, { timeout: 30_000 })
+        .toBeGreaterThan(loadedCount)
+      loadedCount = (await loadedUserAnchors(page)).length
+    }
     const expandedAnchors = await loadedUserAnchors(page)
+    expect(expandedAnchors.length).toBeGreaterThanOrEqual(FIXTURE.turns)
+    expect(await older.count()).toBe(0)
     expect(expandedAnchors[0]?.marker).not.toBe(anchors[0]?.marker)
     await expect.poll(() => rail.getByRole('button').count(), { timeout: 10_000 })
       .toBe(expandedAnchors.length)
-    expect(await rail.getByRole('button', { name: new RegExp(expandedAnchors[0]!.marker) }).count())
-      .toBe(1)
-
-    // 加载更早消息后轨道变密；每个可见标记仍需有独立的鼠标命中区域。
-    const markBoxes = await rail.getByRole('button').evaluateAll(buttons => buttons.map((button) => {
-      const rect = button.getBoundingClientRect()
+    const geometry = await railScroll.evaluate((viewport) => {
+      const rail = viewport.getBoundingClientRect()
+      const host = viewport.closest('[data-conversation-scroll]')!
+      const composer = host.querySelector('[data-composer-seat]')!
+      const visibleHeight = Math.min(host.getBoundingClientRect().bottom, composer.getBoundingClientRect().top)
+        - host.getBoundingClientRect().top - 16
+      const boxes = [...viewport.querySelectorAll('button')].map(button => button.getBoundingClientRect())
       return {
-        label: button.getAttribute('aria-label'),
-        left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom,
+        height: viewport.clientHeight,
+        scrollHeight: viewport.scrollHeight,
+        visibleHeight,
+        centerOffset: Math.abs((rail.top + rail.bottom) / 2
+          - (host.getBoundingClientRect().top + visibleHeight / 2)),
+        rowHeights: boxes.map(box => box.height),
+        rowPitches: boxes.slice(1).map((box, index) => box.top - boxes[index]!.top),
       }
-    }).filter(box => box.bottom > 0 && box.top < innerHeight))
-    const sortedBoxes = [...markBoxes].sort((left, right) => left.top - right.top)
-    for (let index = 1; index < sortedBoxes.length; index += 1) {
-      const previous = sortedBoxes[index - 1]!
-      const current = sortedBoxes[index]!
-      const overlap = previous.bottom - current.top
-      expect(overlap, `${previous.label} (${previous.top}..${previous.bottom}) overlaps `
-        + `${current.label} (${current.top}..${current.bottom})`).toBeLessThanOrEqual(1)
-    }
-    expect(sortedBoxes.length).toBe(expandedAnchors.length)
+    })
+    expect(geometry.height).toBeLessThanOrEqual(geometry.visibleHeight - 96 + 1)
+    expect(geometry.scrollHeight).toBeGreaterThan(geometry.height)
+    expect(geometry.centerOffset).toBeLessThanOrEqual(4)
+    expect(geometry.rowHeights.every(height => Math.abs(height - 10) <= 0.5)).toBe(true)
+    expect(geometry.rowPitches.every(pitch => Math.abs(pitch - 10) <= 0.5)).toBe(true)
+    await page.screenshot({ path: SHOTS.dense })
 
-    const denseTarget = expandedAnchors.find(anchor => anchor.marker === FIXTURE.markers.user(51))
-    if (denseTarget === undefined) throw new Error('previously dense turn 51 is not in the loaded page')
-    const denseBox = markBoxes.find(box => box.label?.includes(denseTarget.marker))
-    if (denseBox === undefined) throw new Error(`rail mark for ${denseTarget.marker} has no visible box`)
-    const point = { x: (denseBox.left + denseBox.right) / 2, y: (denseBox.top + denseBox.bottom) / 2 }
+    // 先将细轨自身滚到底，再把屏幕外的早期标记带回可见区域；消息滚动不随细轨移动。
+    const denseTarget = expandedAnchors[0]!
+    const denseMark = rail.getByRole('button', { name: new RegExp(denseTarget.marker) })
+    await railScroll.evaluate((viewport) => { viewport.scrollTop = viewport.scrollHeight })
+    await nextPaint(page)
+    expect(await denseMark.evaluate(button => (
+      button.getBoundingClientRect().bottom <= button.parentElement!.getBoundingClientRect().top
+    ))).toBe(true)
+    const beforeRailScroll = await scrollTop(page)
+    await denseMark.scrollIntoViewIfNeeded()
+    expect(Math.abs(await scrollTop(page) - beforeRailScroll)).toBeLessThanOrEqual(1)
+    const denseBox = await denseMark.boundingBox()
+    if (denseBox === null) throw new Error(`rail mark for ${denseTarget.marker} has no visible box`)
+    const point = { x: denseBox.x + denseBox.width / 2, y: denseBox.y + denseBox.height / 2 }
     const topmost = await page.evaluate(({ x, y }) => (
       document.elementFromPoint(x, y)?.closest('button')?.getAttribute('aria-label') ?? null
     ), point)
@@ -224,12 +254,16 @@ describe('web e2e: conversation anchor rail over loaded Chat history', () => {
       message: `dense mark ${denseTarget.marker} at (${point.x}, ${point.y}); pointer hit ${topmost}`,
     }).toBeLessThanOrEqual(4)
     await expect.poll(
-      () => rail.getByRole('button', { name: new RegExp(denseTarget.marker) }).getAttribute('aria-current'),
+      () => denseMark.getAttribute('aria-current'),
       { timeout: 10_000 },
     ).toBe('location')
-    await page.screenshot({ path: SHOTS.dense })
+    await expect.poll(() => denseMark.evaluate((button) => {
+      const viewport = button.parentElement!.getBoundingClientRect()
+      const rect = button.getBoundingClientRect()
+      return rect.top >= viewport.top && rect.bottom <= viewport.bottom
+    }), { timeout: 10_000 }).toBe(true)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
     expect(consoleErrors).toEqual([])
-  }, 90_000)
+  }, 150_000)
 })

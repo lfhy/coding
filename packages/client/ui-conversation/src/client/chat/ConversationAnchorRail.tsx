@@ -1,4 +1,4 @@
-import { useRef, useState, type KeyboardEvent } from 'react'
+import { useLayoutEffect, useRef, useState, type FocusEvent, type KeyboardEvent, type MouseEvent } from 'react'
 import clsx from 'clsx'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
 import css from './ConversationAnchorRail.module.css'
@@ -7,8 +7,6 @@ interface AnchorMark {
   readonly key: string
   readonly title: string
   readonly preview: string
-  /** 父级测量的可见轨道内像素位置，不是消息序号。 */
-  readonly position: number
 }
 
 export interface ConversationAnchorRailProps {
@@ -21,21 +19,51 @@ export interface ConversationAnchorRailProps {
   readonly t: ChatViewSlotProps['t']
 }
 
-/** 只呈现父级给定的位置和当前项；滚动及定位归 ChatView 管理。 */
+/** 使用父级标记及当前项；消息滚动与跳转仍归 ChatView 管理。 */
 export function ConversationAnchorRail({
   marks, activeKey, trackHeight, compact, onJump, t,
 }: ConversationAnchorRailProps) {
   const [previewKey, setPreviewKey] = useState<string | null>(null)
+  const [previewAnchor, setPreviewAnchor] = useState<{ right: number; centerY: number } | null>(null)
+  const [interactionKey, setInteractionKey] = useState<string | null>(null)
   const [rovingKey, setRovingKey] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
   const compactTrigger = useRef<HTMLButtonElement>(null)
+  const railScroll = useRef<HTMLDivElement>(null)
+  const previewCard = useRef<HTMLDivElement>(null)
   const activeIndex = marks.findIndex(mark => mark.key === activeKey)
+  const interactionIndex = marks.findIndex(mark => mark.key === interactionKey)
   const rovingIndex = marks.findIndex(mark => mark.key === rovingKey)
   const tabIndex = rovingIndex < 0 ? Math.max(0, activeIndex) : rovingIndex
   const previewMark = marks.find(mark => mark.key === previewKey) ?? null
 
+  useLayoutEffect(() => {
+    if (compact || marks.length < 2 || activeIndex < 0) return
+    const rail = railScroll.current
+    if (rail === null) return
+    rail.scrollTop = Math.max(0, activeIndex * 10 + 5 - rail.clientHeight / 2)
+  }, [activeIndex, compact, marks.length, trackHeight])
+
+  useLayoutEffect(() => {
+    const card = previewCard.current
+    if (card === null || previewAnchor === null) return
+    card.style.left = `${Math.max(16, Math.min(previewAnchor.right + 8, window.innerWidth - card.offsetWidth - 16))}px`
+    card.style.top = `${Math.max(16, Math.min(previewAnchor.centerY - card.offsetHeight / 2, window.innerHeight - card.offsetHeight - 16))}px`
+  }, [previewAnchor])
+
   if (marks.length === 0) return null
-  const hitHeight = Math.max(4, Math.min(18, Math.floor((trackHeight - 16) / Math.max(1, marks.length - 1))))
+
+  const showPreview = (event: MouseEvent<HTMLButtonElement> | FocusEvent<HTMLButtonElement>, key: string): void => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    setInteractionKey(key)
+    setPreviewKey(key)
+    setPreviewAnchor({ right: rect.right, centerY: rect.top + rect.height / 2 })
+  }
+
+  const hidePreview = (key: string): void => {
+    setInteractionKey(current => current === key ? null : current)
+    setPreviewKey(current => current === key ? null : current)
+  }
 
   const closeCompact = (): void => {
     setExpanded(false)
@@ -47,11 +75,13 @@ export function ConversationAnchorRail({
     else setExpanded(false)
     onJump(key)
     setPreviewKey(null)
+    setInteractionKey(null)
   }
 
   const dismiss = (event: KeyboardEvent): void => {
     if (event.key === 'Escape') {
       setPreviewKey(null)
+      setInteractionKey(null)
       if (compact && expanded) closeCompact()
       event.stopPropagation()
     }
@@ -100,53 +130,75 @@ export function ConversationAnchorRail({
     )
   }
 
+  if (marks.length < 2) return null
+
   return (
     <nav className={css.slot} aria-label={t('chat.anchors.label')} onKeyDown={dismiss}>
       <div className={css.track} style={{ height: Math.max(0, trackHeight) }}>
-        {marks.map((mark, index) => (
-          <button
-            key={mark.key}
-            type="button"
-            className={clsx(css.mark, mark.key === activeKey && css.markActive)}
-            style={{
-              top: Math.max(8, Math.min(Math.max(8, trackHeight - 8), mark.position)),
-              height: hitHeight,
-            }}
-            aria-label={t('chat.anchors.position', { current: index + 1, total: marks.length, title: mark.title })}
-            aria-current={mark.key === activeKey ? 'location' : undefined}
-            aria-describedby={previewKey === mark.key ? 'conversation-anchor-preview' : undefined}
-            tabIndex={index === tabIndex ? 0 : -1}
-            onMouseEnter={() => { setPreviewKey(mark.key) }}
-            onMouseLeave={() => { setPreviewKey(current => current === mark.key ? null : current) }}
-            onFocus={() => { setRovingKey(mark.key); setPreviewKey(mark.key) }}
-            onBlur={() => { setPreviewKey(current => current === mark.key ? null : current) }}
-            onClick={() => { jump(mark.key) }}
-            onKeyDown={(event) => {
-              const next = event.key === 'ArrowDown' ? index + 1
-                : event.key === 'ArrowUp' ? index - 1
-                  : event.key === 'Home' ? 0
-                    : event.key === 'End' ? marks.length - 1 : null
-              if (next === null) return
-              event.preventDefault()
-              const target = event.currentTarget.parentElement?.children.item(Math.max(0, Math.min(marks.length - 1, next)))
-              if (target instanceof HTMLButtonElement) target.focus()
-            }}
-          >
-            <span className={css.tick} aria-hidden="true" />
-          </button>
-        ))}
-        {previewMark !== null && (
-          <div
-            id="conversation-anchor-preview"
-            className={css.previewCard}
-            role="tooltip"
-            style={{ top: Math.max(60, Math.min(Math.max(60, trackHeight - 60), previewMark.position)) }}
-          >
-            <div className={css.previewTitle}>{previewMark.title}</div>
-            <div className={css.previewText}>{previewMark.preview}</div>
-          </div>
-        )}
+        <div ref={railScroll} className={css.railScroll} onScroll={(event) => {
+          const focused = event.currentTarget.querySelector<HTMLButtonElement>('button:focus')
+          if (focused === null) {
+            setPreviewKey(null)
+            setInteractionKey(null)
+            return
+          }
+          const viewport = event.currentTarget.getBoundingClientRect()
+          const rect = focused.getBoundingClientRect()
+          if (rect.bottom <= viewport.top || rect.top >= viewport.bottom) {
+            setPreviewKey(null)
+            setInteractionKey(null)
+            return
+          }
+          const index = [...event.currentTarget.children].indexOf(focused)
+          const mark = marks[index]
+          if (mark === undefined) return
+          setInteractionKey(mark.key)
+          setPreviewKey(mark.key)
+          setPreviewAnchor({ right: rect.right, centerY: rect.top + rect.height / 2 })
+        }}>
+          {marks.map((mark, index) => (
+            <button
+              key={mark.key}
+              type="button"
+              className={clsx(css.mark,
+                mark.key === activeKey && interactionIndex < 0 && css.markActive,
+                index === interactionIndex && css.markFocused)}
+              aria-label={t('chat.anchors.position', { current: index + 1, total: marks.length, title: mark.title })}
+              aria-current={mark.key === activeKey ? 'location' : undefined}
+              aria-describedby={previewKey === mark.key ? 'conversation-anchor-preview' : undefined}
+              tabIndex={index === tabIndex ? 0 : -1}
+              onMouseEnter={(event) => { showPreview(event, mark.key) }}
+              onMouseLeave={() => { hidePreview(mark.key) }}
+              onFocus={(event) => { setRovingKey(mark.key); showPreview(event, mark.key) }}
+              onBlur={() => { hidePreview(mark.key) }}
+              onClick={() => { jump(mark.key) }}
+              onKeyDown={(event) => {
+                const next = event.key === 'ArrowDown' ? index + 1
+                  : event.key === 'ArrowUp' ? index - 1
+                    : event.key === 'Home' ? 0
+                      : event.key === 'End' ? marks.length - 1 : null
+                if (next === null) return
+                event.preventDefault()
+                const target = event.currentTarget.parentElement?.children.item(Math.max(0, Math.min(marks.length - 1, next)))
+                if (target instanceof HTMLButtonElement) target.focus()
+              }}
+            >
+              <span
+                className={clsx(css.tick,
+                  interactionIndex >= 0 && Math.abs(index - interactionIndex) === 1 && css.tickNear,
+                  interactionIndex >= 0 && Math.abs(index - interactionIndex) === 2 && css.tickMid)}
+                aria-hidden="true"
+              />
+            </button>
+          ))}
+        </div>
       </div>
+      {previewMark !== null && previewAnchor !== null && (
+        <div ref={previewCard} id="conversation-anchor-preview" className={css.previewCard} role="tooltip">
+          <div className={css.previewTitle}>{previewMark.title}</div>
+          <div className={css.previewText}>{previewMark.preview}</div>
+        </div>
+      )}
     </nav>
   )
 }
