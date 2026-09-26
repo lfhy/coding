@@ -1,8 +1,5 @@
 // @vitest-environment jsdom
-/**
- * 侧边栏品牌行常驻面板开关：无会话不渲染、空白会话可用、关闭态按下态恒为 false、
- * 点击委托给注入的两个开关动作。
- */
+/** 会话页头面板开关跟随当前 Session 的布局投影，欢迎页维持独立入口。 */
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
@@ -70,9 +67,9 @@ function bench(over: {
   const toggleFiles = vi.fn()
   const toggleBottom = vi.fn()
   const props = {
-    wide: true,
     useSessions: bindSnapshotSelector(sessions),
     workbenchSource: (): ObservableSnapshot<WorkbenchLayoutSnapshot> => source,
+    useWorkbenchLayout: bindSnapshotSelector(source),
     toggleFiles,
     toggleBottom,
     t,
@@ -86,14 +83,8 @@ function bench(over: {
   }
 }
 
-describe('WorkbenchPanelToggles visibility', () => {
-  it('renders nothing without a current session', () => {
-    const b = bench({ current: undefined })
-    const { container } = render(<WorkbenchPanelToggles {...b.props} />)
-    expect(container.innerHTML).toBe('')
-  })
-
-  it('renders controls for a blank session with a live working directory', () => {
+describe('会话页头的面板开关', () => {
+  it('renders controls bound to its Session even when it is blank', () => {
     const b = bench({ blank: true })
     render(<WorkbenchPanelToggles {...b.props} />)
     fireEvent.click(screen.getByRole('button', { name: zh['workbench.bottom.show'] }))
@@ -148,10 +139,7 @@ describe('WorkbenchPanelToggles pressed state', () => {
       .getByRole('button', { name: zh['workbench.files.hide'] })
       .getAttribute('aria-pressed')).toBe('true')
 
-    // 组件只读取源当前持有的快照；源改回关闭文件侧栏后重新渲染即回到未按下。
-    b.publish({ open: true, fullscreen: false, bottomOpen: false, filesOpen: false })
-    cleanup()
-    render(<WorkbenchPanelToggles {...b.props} />)
+    act(() => { b.publish({ open: true, fullscreen: false, bottomOpen: false, filesOpen: false }) })
     expect(screen
       .getByRole('button', { name: zh['workbench.files.show'] })
       .getAttribute('aria-pressed')).toBe('false')

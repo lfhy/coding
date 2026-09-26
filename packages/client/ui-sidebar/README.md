@@ -2,11 +2,13 @@
 
 侧边栏外壳插件：负责品牌行、New Session 操作、布局持有的折叠控件、可感知滚动的区域 seat，以及固定在底部的 Settings seat。[ui-workspace](../ui-workspace/README.md) 持有渲染到 `sidebar.workspaces` 的 Workspace 与 Session 浏览器；本包既不派生其中的行，也不持有其视图偏好。折叠到布局拥有的 56px 轨道仍属于本地呈现行为。约定：slot 系统标准。
 
-品牌行在宽侧栏渲染 `sidebar.brand.name`，并在名称与收起控件之间渲染 `sidebar.brand.action` 这个 list slot：宽侧栏是横向图标行，56px rail 中排列在收起控件上方。注册者会收到 `wide`，且该 seat 在显示时必须适应宽栏图标行与 36px rail 控件盒。欢迎页右上角操作行可见时，品牌行只隐藏重复的文件侧栏与底栏开关；原有的侧边栏收起按钮始终保留，折叠后仍可从 rail 展开。全屏工作台遮住欢迎页时恢复面板开关，窄屏 rail 仍有关闭底栏的入口。部署包可以替换展开状态的名称，而无须替换 New Session 控件或 rail 几何；声明感知的 `slots.inject()` 让这种包无论先于还是后于侧边栏激活都能生效。
+品牌行在宽侧栏渲染 `sidebar.brand.name`，并在名称与收起控件之间声明 `sidebar.brand.action` 这个通用 list slot：宽侧栏是横向图标行，56px rail 中排列在收起控件上方。注册者会收到 `wide`，且该 seat 在显示时必须适应宽栏图标行与 36px rail 控件盒。欢迎页操作行可见时该 seat 暂不渲染，侧边栏自身的收起按钮始终保留，折叠后仍可从 rail 展开。部署包可以替换展开状态的名称，而无须替换 New Session 控件或 rail 几何；声明感知的 `slots.inject()` 让这种包无论先于还是后于侧边栏激活都能生效。
 
 New Session 会启动运行时的页面局部前端 Session Intent。运行时优先使用作用域操作明确指定的 Workspace，否则使用当前 Session 所属 Workspace，再否则使用最近活跃 Workspace；一个 Workspace 都没有时则清空选择，进入空白 New Session 页面。Workspace 专属控件与共享选择器由 ui-workspace 持有。
 
-侧边栏的收起与展开由品牌行自身的按钮调用 `ctx.layout.toggleSidebar()`；欢迎页右上角留给终端底栏与文件侧栏开关。品牌行侧栏图形经 [`ui-icons`](../ui-icons/README.md) 的语义入口渲染。
+侧边栏的收起与展开由品牌行自身的按钮调用 `ctx.layout.toggleSidebar()`；品牌行侧栏图形经 [`ui-icons`](../ui-icons/README.md) 的语义入口渲染。
+
+桌面壳注入窗口拖拽样式时，展开侧栏的品牌行空白处与 macOS 交通灯右侧顶部空白可拖动窗口；品牌、操作按钮和折叠 rail 内的交通灯区域不接管原生拖拽。浏览器缺省无拖拽区域。
 
 `SidebarRootComponentProps` 组合布局 owner share、全局 `useSessions` 和 `useWorkspaces` 钩子、已声明的品牌名称、`sidebar.brand.action` 这个 list slot、`sidebar.workspaces` 与 `sidebar.settings` 子 slot，以及注入的 `startSession` 与侧边栏切换回调。这里没有插件 store。
 

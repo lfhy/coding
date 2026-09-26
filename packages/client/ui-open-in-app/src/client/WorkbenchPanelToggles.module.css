@@ -1,5 +1,4 @@
-/* 品牌行内的常驻面板开关：盒形与配色沿用侧边栏图标按钮（28px 圆形，rail 中
-   36px），按下态表示对应面板当前可见。 */
+/* 会话页头的面板开关；按下态表示对应面板当前可见。 */
 
 .root {
   display: flex;
@@ -51,12 +50,5 @@
 
 .button[aria-pressed='true'] {
   background: var(--dsw-alias-interactive-bg-active);
-  color: var(--dsw-alias-label-primary);
-}
-
-/* rail 与侧边栏收起按钮共用 36px 控件盒和主文字色。 */
-.root[data-rail] .button {
-  width: 36px;
-  height: 36px;
   color: var(--dsw-alias-label-primary);
 }

@@ -43,18 +43,18 @@ workspace 共 229 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/client/ui-attachment` — 对话 UI 的动态附件呈现插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 7）
 - `packages/client/ui-brand-official` — 仅当 `DSH_CLIENT_BUILD_PROFILE` 为 `official` 时… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
 - `packages/client/ui-commands` — 客户端命令 API（`ctx.commandUi`）：以会话为 key 的命令目录缓存、带 `matchSpace`／`matchEnter` … [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 5）
-- `packages/client/ui-conversation` — 会话领域：骨架（标题栏／标签页／编辑器／空状态）、聊天视图（分组步骤摘要流、流式尾部隔离与轮次状态）、编辑器 dock… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 30）
+- `packages/client/ui-conversation` — 会话领域：骨架（标题栏／标签页／编辑器／空状态）、聊天视图（分组步骤摘要流、流式尾部隔离与轮次状态）、编辑器 dock… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 31）
 - `packages/client/ui-deliverables` — 产出文件与可点击文件引用功能的属主 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
 - `packages/client/ui-directory-picker-browse` — 应用内目录浏览界面：浏览式选取交互的浏览器半边 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
 - `packages/client/ui-directory-picker-native` — 原生目录选择界面：原生选取交互的浏览器半边 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 1）
-- `packages/client/ui-goal` — Goal 界面插件（浏览器端部分）：`GoalBar` 条带是 `conversation.input.dock` composer 上下文堆栈… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 3）
+- `packages/client/ui-goal` — Goal 界面插件（浏览器端部分）：`GoalBar` 条带是 `conversation.input.dock` composer 上下文堆栈… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 4）
 - `packages/client/ui-icons` — 本包是浏览器客户端图标的独立组件边界 入口 `src/index.ts`（tests 1）
 - `packages/client/ui-input-trigger` — 输入触发流水线插件：光标处的 `/` 与 `@` 检测（词边界 + guard tier 规则）、分组候选菜单… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 5）
 - `packages/client/ui-jobs` — Web 后台任务特性的归属方：向 `conversation.session.header.actions` 贡献一个条目… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
-- `packages/client/ui-layout` — 本包拥有浏览器根布局、瞬时面板几何和 `ctx.layout` [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 6）
+- `packages/client/ui-layout` — 本包拥有浏览器根布局、瞬时面板几何和 `ctx.layout` [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 7）
 - `packages/client/ui-message-feedback` — 单条消息反馈插件的浏览器侧：一对 Like/Dislike 按钮加一个可选备注… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 4）
 - `packages/client/ui-model-selection` — 模型选择插件（浏览器侧）：**两个入口共用一份会话级目录**，由 `ModelDirectoryResolver`… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
-- `packages/client/ui-open-in-app` — 本包拥有工作区打开能力的浏览器半边 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 7）
+- `packages/client/ui-open-in-app` — 本包拥有工作区打开能力的浏览器半边 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 9）
 - `packages/client/ui-permission-presets` — 面向两种不同生命周期的浏览器权限界面 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 3）
 - `packages/client/ui-plan` — Plan mode 状态徽章，纯浏览器 surface 插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
 - `packages/client/ui-primitives` — 纯 React 原子组件（零 cordis）：StateDot、DisclosureRow、ic_ds_* 图标、Button/Pill/Men… 入口 `src/index.ts`（tests 22）
@@ -71,8 +71,8 @@ workspace 共 229 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/client/ui-subagent` — Web subagent 功能 owner：向 `conversation.session.header.actions` 贡献可懒加载展开的目… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
 - `packages/client/ui-theme` — 主题插件：基于 --dsw-* token 基础样式表（静态尺度 + 别名语义层）的 ThemeRuntime [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 10）
 - `packages/client/ui-tool` — Client 工具展示插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 15）
-- `packages/client/ui-trajectory` — Trajectory 渲染按轮次组织的事件记录表，其中可选择用户、助手、工具和嵌套子工具记录 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 8）
-- `packages/client/ui-user-questions` — Web 提问功能插件：其浏览器侧把 `question` 条目注册到会话拥有的 `conversation.composer` 键控 slot … [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 4）
+- `packages/client/ui-trajectory` — Trajectory 渲染按轮次组织的事件记录表，其中可选择用户、助手、工具和嵌套子工具记录 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 9）
+- `packages/client/ui-user-questions` — Web 提问功能插件：其浏览器侧把 `question` 条目注册到会话拥有的 `conversation.composer` 键控 slot … [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 5）
 - `packages/client/ui-workflow-run` — 这个浏览器插件把持久化的顶层工作流运行重建为独立 Chat 节点 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 1）
 - `packages/client/ui-workspace` — 共享 Workspace 浏览器与选择器插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 10）
 - `packages/client/web` — Web 启动内核：`new AppWebEntry(el, seams?).run()` 分两个阶段挂载客户端 入口 `src/index.ts`（tests 3）

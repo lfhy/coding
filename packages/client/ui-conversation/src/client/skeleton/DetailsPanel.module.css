@@ -17,8 +17,13 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 14px 12px 12px;
+  padding: 14px calc(12px + var(--app-safe-area-inset-right, 0px)) 12px 12px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
+  -webkit-app-region: no-drag;
+}
+
+.header :is(button, a, input, select, textarea) {
+  -webkit-app-region: no-drag;
 }
 
 /* figma I54:42735;43:41479: 14/20 wt500. */

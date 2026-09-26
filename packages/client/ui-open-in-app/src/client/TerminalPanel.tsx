@@ -6,9 +6,10 @@ import type { TerminalClientFrame, TerminalServerFrame } from './wire.ts'
 import { NS } from './locales.ts'
 import css from './TerminalPanel.module.css'
 
-/** 终端底栏注入的同源 Host WebSocket URL。 */
+/** 终端底栏注入的同源 Host WebSocket URL 与布局隐藏动作。 */
 export interface TerminalPanelInjected {
   terminalUrl: string
+  closeBottom: () => void
 }
 
 /** 底栏 owner、终端 URL 与词典组成的 props。 */
@@ -89,12 +90,16 @@ function statusText(status: TerminalStatus, t: TerminalPanelProps['t']): string 
 }
 
 /**
- * 保留式底栏终端。首次显示才建立连接；之后 shown 只控制展示，因此收起底栏
- * 不会断开进程。卸载关闭 WebSocket，Host 负责等待对应 PTY 停稳。
+ * 单个终端标签。shown 只控制展示，因此切换标签或收起底栏不会断开进程。
+ * 卸载关闭 WebSocket，Host 负责等待对应 PTY 停稳。
  * @param props - 布局可见状态、Host URL 和本地化文案。
  * @returns xterm 终端及连接状态。
  */
-export function TerminalPanel({ shown, terminalUrl, t }: TerminalPanelProps): React.JSX.Element {
+export function TerminalPanel({ shown, terminalUrl, t, panelId, tabId, focusRequest }: TerminalPanelProps & {
+  panelId?: string
+  tabId?: string
+  focusRequest?: number | null
+}): React.JSX.Element {
   const element = useRef<HTMLDivElement>(null)
   const terminal = useRef<Terminal>()
   const socket = useRef<WebSocket>()
@@ -114,6 +119,8 @@ export function TerminalPanel({ shown, terminalUrl, t }: TerminalPanelProps): Re
     if (node === null) return
     const instance = new Terminal({
       cursorBlink: true,
+      cursorStyle: 'block',
+      cursorInactiveStyle: 'outline',
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
       fontSize: 13,
       minimumContrastRatio: 4.5,
@@ -122,8 +129,18 @@ export function TerminalPanel({ shown, terminalUrl, t }: TerminalPanelProps): Re
     const addon = new FitAddon()
     instance.loadAddon(addon)
     instance.open(node)
-    const style = getComputedStyle(node)
-    instance.options.theme = { background: style.backgroundColor, foreground: style.color }
+    const updateTheme = () => {
+      const style = getComputedStyle(node)
+      instance.options.theme = {
+        background: style.backgroundColor,
+        foreground: style.color,
+        cursor: style.color,
+        cursorAccent: style.backgroundColor,
+      }
+    }
+    updateTheme()
+    const themeObserver = new MutationObserver(updateTheme)
+    themeObserver.observe(document.body, { attributes: true, attributeFilter: ['data-ds-dark-theme', 'style'] })
     instance.textarea?.setAttribute('aria-label', t('terminal.label'))
     terminal.current = instance
 
@@ -143,6 +160,7 @@ export function TerminalPanel({ shown, terminalUrl, t }: TerminalPanelProps): Re
       /* v8 ignore next -- 断开 observer 后的哨兵只防御浏览器已排队的晚到回调。 */
       resize.current = () => {}
       observer.disconnect()
+      themeObserver.disconnect()
       input.dispose()
       instance.dispose()
       terminal.current = undefined
@@ -156,9 +174,9 @@ export function TerminalPanel({ shown, terminalUrl, t }: TerminalPanelProps): Re
   useLayoutEffect(() => {
     if (shown) {
       resize.current()
-      terminal.current?.focus()
+      if (focusRequest !== null) terminal.current?.focus()
     }
-  }, [shown])
+  }, [shown, focusRequest])
 
   useEffect(() => {
     let disposed = false
@@ -213,16 +231,17 @@ export function TerminalPanel({ shown, terminalUrl, t }: TerminalPanelProps): Re
 
   const reconnectable = status.phase === 'disconnected' || status.phase === 'error' || status.phase === 'exited'
   return (
-    <section className={css.root} hidden={!shown} aria-label={t('terminal.label')}>
-      <header className={css.header}>
-        <strong>{t('terminal.label')}</strong>
+    <section className={css.terminal} hidden={!shown} id={panelId} data-connected={status.phase === 'connected'}
+      role={tabId ? 'tabpanel' : undefined}
+      aria-labelledby={tabId} aria-label={tabId ? undefined : t('terminal.label')}>
+      <div className={css.connection} data-connected={status.phase === 'connected'}>
         <span className={css.status} role="status" aria-live="polite">{statusText(status, t)}</span>
         {reconnectable && (
           <button type="button" className={css.reconnect} onClick={() => { setGeneration(value => value + 1) }}>
             {t('terminal.reconnect')}
           </button>
         )}
-      </header>
+      </div>
       <div className={css.screen} ref={element} />
     </section>
   )

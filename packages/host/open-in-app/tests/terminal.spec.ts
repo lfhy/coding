@@ -376,6 +376,52 @@ describe('terminal WebSocket gateway', () => {
     await vi.waitFor(() => { expect(terminal.terminate.mock.calls).toHaveLength(1) })
   })
 
+  it('keeps simultaneous connections for one Session on separate PTYs', async () => {
+    const first = terminalFixture()
+    const second = terminalFixture()
+    const handles = [first.handle, second.handle]
+    const fixture = gatewayFixture(first, { spawn: async () => handles.shift()! })
+    const host = await serve(fixture.gateway)
+    cleanup.push(() => host.close())
+    const url = `${host.origin}/open-in-app/terminal?sessionId=session&cols=80&rows=24`
+    const firstSocket = new WebSocket(url)
+    const secondSocket = new WebSocket(url)
+    const readFirst = frameReader(firstSocket)
+    const readSecond = frameReader(secondSocket)
+
+    expect(await readFirst()).toMatchObject({ type: 'ready' })
+    expect(await readSecond()).toMatchObject({ type: 'ready' })
+    expect(fixture.spawnTerminal).toHaveBeenCalledTimes(2)
+
+    firstSocket.send(JSON.stringify({ type: 'input', data: 'first input' }))
+    secondSocket.send(JSON.stringify({ type: 'input', data: 'second input' }))
+    await vi.waitFor(() => {
+      expect(first.write.mock.calls).toEqual([['first input']])
+      expect(second.write.mock.calls).toEqual([['second input']])
+    })
+    first.output.write('first output')
+    second.output.write('second output')
+    expect(await readFirst()).toEqual({ type: 'output', data: 'first output' })
+    expect(await readSecond()).toEqual({ type: 'output', data: 'second output' })
+
+    const firstClosed = once(firstSocket, 'close')
+    firstSocket.send(JSON.stringify({ type: 'close' }))
+    await firstClosed
+    await vi.waitFor(() => { expect(first.terminate).toHaveBeenCalledOnce() })
+    expect(second.terminate).not.toHaveBeenCalled()
+    expect(secondSocket.readyState).toBe(WebSocket.OPEN)
+
+    secondSocket.send(JSON.stringify({ type: 'input', data: 'still running' }))
+    await vi.waitFor(() => { expect(second.write.mock.calls).toEqual([['second input'], ['still running']]) })
+    second.output.write('still running output')
+    expect(await readSecond()).toEqual({ type: 'output', data: 'still running output' })
+
+    const secondClosed = once(secondSocket, 'close')
+    secondSocket.send(JSON.stringify({ type: 'close' }))
+    await secondClosed
+    await vi.waitFor(() => { expect(second.terminate).toHaveBeenCalledOnce() })
+  })
+
   it('terminates on explicit close and abrupt disconnect', async () => {
     const first = terminalFixture()
     const firstFixture = gatewayFixture(first)

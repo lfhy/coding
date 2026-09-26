@@ -23,11 +23,11 @@ kind: "package-reference"
 | `workbench.bottom` | `session` | `shown` |
 | `shell.overlay` | `root` | 无 owner 数据的有序 list |
 
-`ctx.layout` 提供全局的 `toggleSidebar()`、`openDetails()`、`closeDetails()`，以及接收 `SessionId` 的 `openWorkbench()`、`closeWorkbench()`、`toggleWorkbench()`、`toggleWorkbenchFullscreen()`、`toggleWorkbenchBottom()`、`toggleWorkbenchFiles()` 和欢迎页专用的 `toggleHeroPanel()`。`workbench(sessionId)` 返回会话页头入口、工作台顶栏与面板开关可订阅的显隐投影。打开工作台会关闭详情栏；打开详情栏会暂时覆盖工作台，关闭详情栏后恢复该 Session 的状态。普通面板开关在工作台未打开时会先打开工作台；欢迎页的开关打开目标面板时隐藏另一面板，底栏独占不占用右列。关闭工作台会隐藏底栏独占模式，但不会改写宽度、底栏与文件侧栏偏好。
+`ctx.layout` 提供全局的 `toggleSidebar()`、`openDetails()`、`closeDetails()`，以及接收 `SessionId` 的 `openWorkbench()`、`closeWorkbench()`、`toggleWorkbench()`、`toggleWorkbenchFullscreen()`、`toggleWorkbenchBottom()`、`toggleWorkbenchFiles()` 和欢迎页专用的 `toggleHeroPanel()`。`workbench(sessionId)` 返回供会话页头、欢迎页与工作台顶栏面板开关订阅的显隐投影。打开工作台会关闭详情栏；打开详情栏会暂时覆盖工作台，关闭详情栏后恢复该 Session 的状态。普通面板开关在工作台未打开时会先打开工作台；欢迎页的开关打开目标面板时隐藏另一面板，底栏独占不占用右列。关闭工作台会隐藏底栏独占模式，但不会改写宽度、底栏与文件侧栏偏好。
 
 空白会话同样拥有按 Session 隔离的工作台状态。欢迎页打开底栏后发送首条消息，不会重建布局状态；侧边栏的全局收起状态也不受会话阶段影响。
 
-布局把欢迎页操作行是否可见交给侧边栏：无会话或空白会话且对话区未被全屏工作台遮住时，品牌行只隐藏重复的工作台面板按钮，保留侧边栏自身的折叠按钮；窄屏工作台接管对话区时恢复面板按钮，保证终端底栏仍可关闭。
+布局把欢迎页操作行是否可见交给侧边栏：无会话或空白会话且对话区未被全屏工作台遮住时可见，全屏工作台接管对话区时不可见。会话页头和欢迎页的面板开关分别由 `conversation.session.header.utilities` 与 `conversation.hero.actions` 的占用者提供；全屏工作台使对话区进入 `inert` 时，工作台顶栏仍可切换终端底栏与文件侧栏。
 
 ## 布局行为
 
@@ -36,6 +36,8 @@ kind: "package-reference"
 工作台底栏横跨导航栏之外的主内容，默认高度 260px，拖拽范围为 160--480px。欢迎页可只显示底栏，保持对话区可用并把右列收为零宽；窄屏同样如此。视口过矮时实际高度会向上方工作区让步，尺寸偏好保持不变。工作台、底栏、详情和对话始终保留固定 React 树位置；视觉关闭通过零尺寸、`visibility`、`aria-hidden` 和 `inert` 实现，因此收起底栏或关闭工作台不会仅因布局切换而卸载已激活的终端占用者。
 
 每个尺寸分隔条使用 pointer capture，并把高频移动合并到 animation frame。pointer cancel、capture 丢失、窗口失焦和卸载都会取消待处理帧并结束拖拽。分隔条暴露 `separator` 角色、方向和值域，可用方向键、Home 和 End 调整；轨道动效遵守 `prefers-reduced-motion`。
+
+桌面壳注入窗口拖拽样式时，尺寸分隔条仍保持 `no-drag`，指针拖拽只调整面板尺寸；浏览器未注入时没有窗口拖拽区域。
 
 详情栏沿用既有让步链：先缩到下限，再在对话区空间不足时自动隐藏。切换到另一个非空 Session 会关闭详情栏，并按目标 Session 自己的状态决定是否显示工作台；切回原 Session 会恢复其打开状态、最大化、宽度、底栏开关、文件侧栏开关和底栏高度。布局只负责 1024px 的主内容接管；工作台占用者在 768px 参考宽度收窄文件树，在 375px 手机宽度把文件树改成覆盖预览的单面板呈现。
 

@@ -1,11 +1,5 @@
-/**
- * 侧边栏品牌行里的常驻工作台面板开关：文件侧栏与终端底栏。它们在工作台之外
- * 渲染，因此工作台关闭（还原态）或最大化隐藏整个会话页头时依然可达；点击时
- * 若工作台未打开，布局服务会先打开工作台再显示对应面板——文件侧栏默认呈现
- * 内置文件管理，终端底栏默认呈现终端。没有当前会话时不渲染；空白会话
- * 仍有真实 Session 与工作目录，可直接打开终端。
- */
-import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
+/** 会话页头与欢迎页的文件侧栏、终端底栏开关。 */
+import { useMemo, useState, useCallback, useSyncExternalStore } from 'react'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkbenchLayoutSnapshot } from '@deepseek-ai/dsh-client-ui-layout/client'
@@ -14,23 +8,18 @@ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-cli
 import { NS } from './locales.ts'
 import css from './WorkbenchPanelToggles.module.css'
 
-/** 侧边栏品牌行注入的工作台状态源与两个面板开关动作。 */
+/** 会话页头注入的当前 Session 工作台状态与面板动作。 */
 export interface WorkbenchPanelTogglesInjected {
-  /**
-   * 返回指定 Session 的工作台可见状态源；尚未发布状态的 Session 按关闭态。
-   * @param sessionId - 要读取的会话。
-   * @returns AppFrame 投影的工作台显隐快照源。
-   */
-  workbenchSource: (sessionId: SessionId) => ObservableSnapshot<WorkbenchLayoutSnapshot>
+  hooks: { workbenchLayout: ObservableSnapshot<WorkbenchLayoutSnapshot> }
   /** 切换当前 Session 的文件侧栏；工作台未打开时先打开工作台。 */
   toggleFiles: () => void
   /** 切换当前 Session 的终端底栏；工作台未打开时先打开工作台。 */
   toggleBottom: () => void
 }
 
-/** 品牌行开关的 slot props：owner share、注入面与词典。 */
+/** 会话页头开关的 slot props。 */
 export type WorkbenchPanelTogglesProps =
-  & PropsRuntime<'sidebar.brand.action'>
+  & PropsRuntime<'conversation.session.header.utilities'>
   & InjectFace<WorkbenchPanelTogglesInjected>
   & PropsLocale<typeof NS>
 
@@ -60,7 +49,7 @@ function useWorkbenchLayout(
 
 /** 欢迎页单个面板按钮的状态源与打开动作。 */
 export interface HeroPanelToggleInjected {
-  workbenchSource: WorkbenchPanelTogglesInjected['workbenchSource']
+  workbenchSource: (sessionId: SessionId) => ObservableSnapshot<WorkbenchLayoutSnapshot>
   panel: 'bottom' | 'files'
   togglePanel: () => Promise<void>
 }
@@ -136,38 +125,28 @@ function PanelButton({ label, pressed, onClick, icon }: {
 }
 
 /**
- * 渲染文件侧栏与终端底栏两个常驻开关。
- * @param props - 品牌行 owner share、当前会话状态源与开关动作、本地化文案。
- * @returns 两个开关；没有可操作的会话时返回 null。
+ * 在会话页头右侧渲染文件侧栏与终端底栏开关。
+ * @param props - 当前 Session 的布局投影、开关动作与本地化文案。
+ * @returns 两个随布局状态更新的按钮。
  */
-export function WorkbenchPanelToggles(props: WorkbenchPanelTogglesProps): React.JSX.Element | null {
-  const { wide, workbenchSource, toggleFiles, toggleBottom, useSessions, t } = props
-  const sessionId = useSessions((state) => {
-    const current = state.current
-    return current !== undefined && state.byId[current] !== undefined ? current : undefined
-  })
-  const source = useMemo(
-    () => (sessionId === undefined ? undefined : workbenchSource(sessionId)),
-    [sessionId, workbenchSource],
-  )
-  const workbench = useWorkbenchLayout(source)
-  if (sessionId === undefined) return null
+export function WorkbenchPanelToggles(props: WorkbenchPanelTogglesProps): React.JSX.Element {
+  const { toggleFiles, toggleBottom, useWorkbenchLayout, t } = props
+  const workbench = useWorkbenchLayout(state => state)
   const filesOn = workbench.open && workbench.filesOpen
   const bottomOn = workbench.bottomOpen
-  const iconSize = wide ? 16 : 18
   return (
-    <div className={css.root} {...wide ? {} : { 'data-rail': true }}>
-      <PanelButton
-        label={filesOn ? t('workbench.files.hide') : t('workbench.files.show')}
-        pressed={filesOn}
-        onClick={toggleFiles}
-        icon={<Icon name="files-panel" size={iconSize} />}
-      />
+    <div className={css.root}>
       <PanelButton
         label={bottomOn ? t('workbench.bottom.hide') : t('workbench.bottom.show')}
         pressed={bottomOn}
         onClick={toggleBottom}
-        icon={<Icon name="bottom-panel" size={iconSize} />}
+        icon={<Icon name="bottom-panel" size={18} />}
+      />
+      <PanelButton
+        label={filesOn ? t('workbench.files.hide') : t('workbench.files.show')}
+        pressed={filesOn}
+        onClick={toggleFiles}
+        icon={<Icon name="files-panel" size={18} />}
       />
     </div>
   )

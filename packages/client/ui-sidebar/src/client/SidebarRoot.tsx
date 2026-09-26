@@ -114,7 +114,8 @@ export function SidebarRoot({
       }}
       onPointerLeave={() => { armLinger() }}
     >
-      <div className={css.logoRow}>
+      <div className={css.windowDragInset} data-window-drag-inset data-window-drag-region aria-hidden="true" />
+      <div className={css.logoRow} data-window-drag-region>
         {/* 展开时品牌行兼作新建会话快捷入口；收起后保留切换按钮作为展开入口。 */}
         {wide && (
           <button

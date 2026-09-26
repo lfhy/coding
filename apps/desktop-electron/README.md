@@ -18,6 +18,8 @@ make dev
 
 ## Host、Remote-SSH 与窗口
 
+桌面窗口启动时默认最大化，但不进入全屏。macOS 与 Windows 顶栏的空白区域支持拖动已还原的窗口；双击该区域在最大化和还原之间切换。顶栏按钮和输入框等交互区域不参与拖动，仍可正常点击或输入。
+
 [Go helper](../desktop/cmd/electron-helper/main.go)持有 Host 启动与 Remote-SSH 生命周期：它通过共享的 `desktopremote.Service`、回环 bridge 和 `hostlaunch` 的 `ReplaceCompatibleHost` 发现或替换兼容 Host，并向 Electron 主进程报告经过验证的回环 origin。Host 的 HTTP 和 WebSocket 由窗口直接访问，不经 main 转发；窗口只允许该 origin 的导航，拒绝弹窗、跨源 frame 导航和网页原生权限请求。回环 origin 不是身份认证，不得把 Host token、凭据或私有路径放进 URL 或页面存储。
 
 远程连接的 sandbox preload 只暴露固定操作；main 每次调用都核验所属窗口、主 frame、Host origin 与输入，同源重载期间暂停授权，失去所属窗口即撤销。基础模式使用 SFTP 文件读写编辑和搜索、SSH 前后台命令及 PTY、本机隔离 Goja 的 Code Mode 远端工具 binding，不部署远端 agent 或使用 SSH TCP 转发；LSP 不可用。SFTP 写入需要服务端 hardlink／posix-rename 扩展，版本复核非原子 CAS；SSH PTY 不提供前台进程组查询，终止请求也不能证明整棵进程树停稳。Agent 模式需要部署 Go agent 并使用 `direct-tcpip` 转发。SSH 输入由向导按次提交给原生服务，Go bridge token 不交给 renderer；不得在页面存储或日志中持久化凭据。目录解析前失去页面且无法确认 marker 归属时，helper 会保守保留连接直至退出，不凭连接 ID 盲关已有工作区。macOS 菜单和托盘提供窗口操作，关闭窗口会隐藏，再次激活或从托盘可恢复；退出应用时 helper 先收敛自己持有的连接和 bridge，Host 仍依自身空闲策略退出。Browser Use 和受控 browser guest 尚未实现。

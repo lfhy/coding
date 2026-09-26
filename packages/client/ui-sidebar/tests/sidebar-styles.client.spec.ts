@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 const css = readFileSync(fileURLToPath(new URL('../src/client/SidebarRoot.module.css', import.meta.url)), 'utf8')
+const root = readFileSync(fileURLToPath(new URL('../src/client/SidebarRoot.tsx', import.meta.url)), 'utf8')
 
 /**
  * Declarations of one exact selector, keyed by property.
@@ -26,6 +27,17 @@ function declarations(selector: string): Map<string, string> | undefined {
 }
 
 describe('SidebarRoot.module.css', () => {
+  it('drags safe titlebar gaps but keeps traffic lights and brand controls clear', () => {
+    expect(root).toContain('<div className={css.windowDragInset} data-window-drag-inset data-window-drag-region aria-hidden="true" />')
+    expect(root).toContain('<div className={css.logoRow} data-window-drag-region>')
+    expect(declarations('.windowDragInset')?.get('left')).toBe('90px')
+    expect(declarations('.windowDragInset')?.get('height')).toBe('var(--app-safe-area-inset-top, 0px)')
+    expect(declarations('.windowDragInset')?.get('-webkit-app-region')).toBe('no-drag')
+    expect(declarations('.collapsed .windowDragInset')?.get('display')).toBe('none')
+    expect(declarations('.logoRow')?.get('-webkit-app-region')).toBe('no-drag')
+    expect(css).toMatch(/\.logoRow :is\(button, a, input, select, textarea, \[role='button'\]\)\s*\{\s*-webkit-app-region: no-drag;/)
+  })
+
   it('keeps the safe area and footer edge geometry structural', () => {
     const root = declarations('.root')
     expect(root?.get('--dsh-sidebar-inline-padding')).toBe('12px')

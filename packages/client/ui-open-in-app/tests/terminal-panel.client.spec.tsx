@@ -32,7 +32,7 @@ vi.mock('@xterm/xterm', () => ({
     node: HTMLElement | undefined
     data: ((value: string) => void) | undefined
     writes: string[] = []
-    focus = vi.fn()
+    focus = vi.fn(() => { this.textarea?.focus() })
     dispose = vi.fn()
     inputDispose = vi.fn()
 
@@ -120,6 +120,7 @@ function props(shown = true): TerminalPanelProps {
     sessionId: SESSION,
     shown,
     terminalUrl: 'ws://dsh.internal/open-in-app/terminal?sessionId=terminal-session&cols=80&rows=24',
+    closeBottom: vi.fn(),
     t,
   } as unknown as TerminalPanelProps
 }
@@ -135,6 +136,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  document.body.style.removeProperty('color')
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
@@ -177,6 +179,15 @@ describe('TerminalPanel', () => {
     const connection = FakeWebSocket.instances[0] as FakeWebSocket
     const terminal = terminalMocks.instances[0]
     expect(connection.url).toContain('terminal-session')
+    expect(terminal?.options).toMatchObject({ cursorStyle: 'block', cursorInactiveStyle: 'outline' })
+    expect(terminal?.options.theme).toMatchObject({
+      cursor: getComputedStyle(terminal?.node as HTMLElement).color,
+      cursorAccent: getComputedStyle(terminal?.node as HTMLElement).backgroundColor,
+    })
+    document.body.style.color = 'rgb(23, 45, 67)'
+    await waitFor(() => {
+      expect((terminal?.options.theme as { cursor: string }).cursor).toBe('rgb(23, 45, 67)')
+    })
     expect(screen.getByRole('status').textContent).toBe(zh['terminal.connecting'])
 
     terminal?.data?.('before-open')
@@ -301,5 +312,65 @@ describe('TerminalPanel', () => {
     expect(terminalMocks.instances).toHaveLength(1)
     mounted.rerender(<RetainedTerminalPanel {...props(false)} />)
     expect(FakeWebSocket.instances).toHaveLength(1)
+  })
+
+  it('keeps independent PTYs and output on tab switches, closes one tab, and hides the panel separately', async () => {
+    const p = props()
+    const mounted = render(<RetainedTerminalPanel {...p} />)
+    expect(screen.getByRole('tab', { name: 'coding 1' }).getAttribute('aria-selected')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: zh['terminal.newTab'] }))
+    expect(FakeWebSocket.instances).toHaveLength(2)
+    expect(terminalMocks.instances).toHaveLength(2)
+    const [first, second] = FakeWebSocket.instances
+    const [firstTerminal, secondTerminal] = terminalMocks.instances
+    expect(screen.getByRole('tab', { name: 'coding 2' }).getAttribute('aria-selected')).toBe('true')
+    expect(document.activeElement).toBe(secondTerminal?.textarea)
+    const secondTab = screen.getByRole('tab', { name: 'coding 2' })
+    secondTab.focus()
+    fireEvent.keyDown(secondTab, { key: 'Home' })
+    expect(screen.getByRole('tab', { name: 'coding 1' }).getAttribute('aria-selected')).toBe('true')
+    expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'coding 1' }))
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'coding 1' }), { key: 'ArrowLeft' })
+    expect(screen.getByRole('tab', { name: 'coding 2' }).getAttribute('aria-selected')).toBe('true')
+    expect(document.activeElement).toBe(secondTab)
+    second?.message('{"type":"ready","pid":123,"shell":{"name":"zsh","path":"/bin/zsh"},"cwd":"/w","cols":80,"rows":24}')
+    await waitFor(() => { expect(screen.getByRole('status').textContent).toBe(zh['terminal.connected']) })
+    expect(document.activeElement).toBe(secondTab)
+    second?.message('{"type":"output","data":"second"}')
+    first?.message('{"type":"output","data":"first"}')
+    fireEvent.click(screen.getByRole('tab', { name: 'coding 1' }), { detail: 1 })
+    expect(document.activeElement).toBe(firstTerminal?.textarea)
+    expect(firstTerminal?.writes).toEqual(['first'])
+    expect(secondTerminal?.writes).toEqual(['second'])
+    expect(firstTerminal?.focus).toHaveBeenCalled()
+    expect(first?.close).not.toHaveBeenCalled()
+    expect(second?.close).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('tab', { name: 'coding 2' }))
+    const closeFirst = screen.getByRole('button', { name: zh['terminal.closeTab'].replace('{name}', 'coding 1') })
+    closeFirst.focus()
+    fireEvent.click(closeFirst)
+    expect(first?.close).toHaveBeenCalledOnce()
+    expect(firstTerminal?.dispose).toHaveBeenCalledOnce()
+    expect(second?.close).not.toHaveBeenCalled()
+    expect(screen.getByRole('tab', { name: 'coding 2' }).getAttribute('aria-selected')).toBe('true')
+    expect(document.activeElement).toBe(secondTerminal?.textarea)
+
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.bottom.hide'] }))
+    expect(p.closeBottom).toHaveBeenCalledOnce()
+    mounted.rerender(<RetainedTerminalPanel {...p} shown={false} />)
+    expect(second?.close).not.toHaveBeenCalled()
+    mounted.rerender(<RetainedTerminalPanel {...p} shown />)
+    expect(secondTerminal?.focus).toHaveBeenCalled()
+    expect(document.activeElement).toBe(secondTerminal?.textarea)
+    const closeSecond = screen.getByRole('button', { name: zh['terminal.closeTab'].replace('{name}', 'coding 2') })
+    closeSecond.focus()
+    fireEvent.click(closeSecond)
+    expect(second?.close).toHaveBeenCalledOnce()
+    expect(screen.queryAllByRole('tab')).toEqual([])
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: zh['terminal.newTab'] }))
+    fireEvent.click(screen.getByRole('button', { name: zh['terminal.newTab'] }))
+    expect(screen.getByRole('tab', { name: 'coding 3' })).toBeDefined()
+    expect(FakeWebSocket.instances).toHaveLength(3)
   })
 })

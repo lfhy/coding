@@ -178,6 +178,7 @@ export function ConversationRoot({
 
   return (
     <div className={css.root} data-phase={phase}>
+      {(hero || settling) && <div className={css.windowDragStrip} data-window-drag-strip data-window-drag-region aria-hidden="true" />}
       {hero && (
         <div className={css.heroActions}>
           {renderSlot('conversation.hero.actions', { sidebarCollapsed })}

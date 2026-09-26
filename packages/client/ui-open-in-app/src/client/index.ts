@@ -5,7 +5,6 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
-import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import { OPEN_IN_APP_ICON_PREFIX } from '@deepseek-ai/dsh-host-open-in-app/shared'
 import { OpenInAppController } from './controller.ts'
 import { OpenInAppAction, type OpenInAppActionInjected } from './OpenInAppAction.tsx'
@@ -37,8 +36,7 @@ function activeSessionId(ctx: ClientContext): SessionId | undefined {
 }
 
 /**
- * 注册会话页头入口、文件工作台、保留式底栏终端，以及侧边栏品牌行里的常驻
- * 面板开关。
+ * 注册会话页头入口、文件工作台、保留式底栏终端与面板开关。
  * @param ctx - Client 根上下文。
  */
 export function apply(ctx: ClientContext): void {
@@ -75,24 +73,20 @@ export function apply(ctx: ClientContext): void {
       readFile: (segments, signal) => controller.readFile(sessionId, segments, signal),
       closeWorkbench: () => { ctx.layout.closeWorkbench(sessionId) },
       toggleWorkbenchFullscreen: () => { ctx.layout.toggleWorkbenchFullscreen(sessionId) },
+      toggleFiles: () => { ctx.layout.toggleWorkbenchFiles(sessionId) },
+      toggleBottom: () => { ctx.layout.toggleWorkbenchBottom(sessionId) },
     }),
   }, WorkspaceWorkbench))
 
-  ctx.slots.inject('sidebar.brand.action', () => ctx.slots.register({
-    name: 'sidebar.brand.action',
+  ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
+    name: 'conversation.session.header.utilities',
     id: 'workbench-panels',
     order: 20,
     locale: NS,
-    inject: (): WorkbenchPanelTogglesInjected => ({
-      workbenchSource: sessionId => ctx.layout.workbench(sessionId),
-      toggleFiles: () => {
-        const sessionId = activeSessionId(ctx)
-        if (sessionId !== undefined) ctx.layout.toggleWorkbenchFiles(sessionId)
-      },
-      toggleBottom: () => {
-        const sessionId = activeSessionId(ctx)
-        if (sessionId !== undefined) ctx.layout.toggleWorkbenchBottom(sessionId)
-      },
+    inject: (sessionId: SessionId): WorkbenchPanelTogglesInjected => ({
+      hooks: { workbenchLayout: ctx.layout.workbench(sessionId) },
+      toggleFiles: () => { ctx.layout.toggleWorkbenchFiles(sessionId) },
+      toggleBottom: () => { ctx.layout.toggleWorkbenchBottom(sessionId) },
     }),
   }, WorkbenchPanelToggles))
 
@@ -145,6 +139,7 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: (sessionId: SessionId): TerminalPanelInjected => ({
       terminalUrl: controller.terminalUrl(sessionId),
+      closeBottom: () => { ctx.layout.toggleWorkbenchBottom(sessionId) },
     }),
   }, RetainedTerminalPanel))
 }

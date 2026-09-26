@@ -38,6 +38,7 @@ function fakeWindow() {
   const window = {
     webContents,
     loadURL: vi.fn(async () => undefined),
+    maximize: vi.fn(),
     on: vi.fn((name: string, listener: (...args: unknown[]) => void) => {
       windowListeners.set(name, listener)
     }),
@@ -113,6 +114,7 @@ describe('Host 窗口导航边界', () => {
       },
     }))
     expect(fixture.window.loadURL).toHaveBeenCalledWith(`${origin}/`)
+    expect(fixture.window.maximize).toHaveBeenCalledOnce()
     expect(fixture.webContents.setWindowOpenHandler.mock.calls[0]?.[0]()).toEqual({ action: 'deny' })
     const requestHandler = fixture.permissions.setPermissionRequestHandler.mock.calls[0]?.[0]
     if (!requestHandler) throw new Error('Permission request handler was not registered')
@@ -148,6 +150,7 @@ describe('Host 窗口导航边界', () => {
     domReady()
     expect(fixture.webContents.insertCSS).toHaveBeenCalledTimes(2)
     expect(fixture.webContents.insertCSS).toHaveBeenCalledWith(expect.stringContaining('--app-safe-area-inset-top: 38px'))
+    expect(fixture.webContents.insertCSS).toHaveBeenCalledWith(expect.stringContaining('[data-window-drag-region] { -webkit-app-region: drag !important; }'))
     fixture.webContents.getURL.mockReturnValue('http://127.0.0.1:43124/')
     domReady()
     expect(fixture.webContents.insertCSS).toHaveBeenCalledTimes(2)
@@ -163,6 +166,15 @@ describe('Host 窗口导航边界', () => {
     })
     fixture.listeners.get('dom-ready')!()
     expect(fixture.webContents.insertCSS).toHaveBeenCalledWith(expect.stringContaining('--app-safe-area-inset-right: 138px'))
+    expect(fixture.webContents.insertCSS).toHaveBeenCalledWith(expect.stringContaining('[data-window-drag-region] { -webkit-app-region: drag !important; }'))
+  })
+
+  it('有原生标题栏的 Linux 不把页面顶栏变成拖拽区域', () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('linux')
+    const fixture = fakeWindow()
+    createHostWindow(origin)
+    fixture.listeners.get('dom-ready')!()
+    expect(fixture.webContents.insertCSS).toHaveBeenCalledWith(expect.not.stringContaining('[data-window-drag-region]'))
   })
 
   it('Dock 图标失败仍加载 Host 页面，诊断不泄露底层错误', () => {

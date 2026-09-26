@@ -25,7 +25,7 @@ afterEach(() => {
 
 const SESSION = 'browser-plugin-session' as SessionId
 
-/** 启动侧边栏品牌行、头部 utility、工作台与底栏的最小真实 slot tree。 */
+/** 启动欢迎页、会话页头、工作台与底栏的最小真实 slot tree。 */
 async function bench() {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
@@ -56,8 +56,7 @@ async function bench() {
     toggleWorkbenchFullscreen, toggleWorkbenchBottom, toggleWorkbenchFiles, toggleHeroPanel,
     workbench: vi.fn(() => workbench),
   })
-  // 品牌行开关在 root scope 通过全局 useSessions 选会话；activeSessionId 只读取
-  // `ctx.sessions.list` 的当前选中项，这里提供最小可用的列表快照。
+  // 欢迎页入口从当前会话列表定位可操作的 Session。
   const list = createSnapshotStore<SessionListState>({
     ids: [SESSION],
     byId: { [SESSION]: { id: SESSION, blank: false } },
@@ -87,12 +86,11 @@ describe('open-in-app browser half', () => {
     expect(inject).toEqual(['slots', 'locale', 'layout', 'sessions', 'workspaces'])
   })
 
-  it('registers header, sidebar-brand, workbench, and bottom entries without a conversation view', async () => {
+  it('registers session-header and hero controls, workbench, and bottom without a sidebar action', async () => {
     const { ctx, fiber } = await bench()
-    const action = ctx.slots.entries('conversation.session.header.utilities')[0]
+    const [action, headerPanels] = ctx.slots.entries('conversation.session.header.utilities')
     const workbench = ctx.slots.entries('workbench')[0]
     const bottom = ctx.slots.entries('workbench.bottom')[0]
-    const brandAction = ctx.slots.entries('sidebar.brand.action')[0]
     const heroActions = ctx.slots.entries('conversation.hero.actions')
     expect(action?.component).toBe(OpenInAppAction)
     expect(action?.options).toMatchObject({ id: 'open-in-app', order: -10 })
@@ -101,16 +99,15 @@ describe('open-in-app browser half', () => {
     expect(bottom?.component).toBe(RetainedTerminalPanel)
     expect(ctx.slots.entries('conversation.view')).toEqual([])
 
-    // 常驻的面板开关注册在侧边栏品牌行 list 槽，带 owner props 的注册者 id、词典与注入面。
-    expect(brandAction?.component).toBe(WorkbenchPanelToggles)
+    expect(headerPanels?.component).toBe(WorkbenchPanelToggles)
+    expect(ctx.slots.entries('sidebar.brand.action')).toEqual([])
     expect(heroActions.map(entry => entry.component)).toEqual([HeroPanelToggle, HeroPanelToggle])
     expect(heroActions.map(entry => [entry.options.id, entry.options.order]))
       .toEqual([['bottom-toggle', 0], ['files-toggle', 10]])
-    expect(brandAction?.options).toMatchObject({ id: 'workbench-panels', order: 20 })
-    expect(brandAction?.locale).toBe(NS)
-    const brandInjected = (brandAction?.inject as unknown as () => WorkbenchPanelTogglesInjected)()
-    expect(Object.keys(brandInjected).sort())
-      .toEqual(['toggleBottom', 'toggleFiles', 'workbenchSource'])
+    expect(headerPanels?.options).toMatchObject({ id: 'workbench-panels', order: 20 })
+    expect(headerPanels?.locale).toBe(NS)
+    const headerInjected = (headerPanels?.inject as unknown as (id: SessionId) => WorkbenchPanelTogglesInjected)(SESSION)
+    expect(Object.keys(headerInjected).sort()).toEqual(['hooks', 'toggleBottom', 'toggleFiles'])
 
     await fiber.dispose()
     expect(ctx.slots.entries('conversation.session.header.utilities')).toEqual([])
@@ -142,7 +139,8 @@ describe('open-in-app browser half', () => {
     vi.stubGlobal('fetch', fetcher)
     vi.stubGlobal('location', { origin: 'http://dsh.example' })
     const {
-      ctx, fiber, openWorkbench, closeWorkbench, toggleWorkbenchFullscreen,
+      ctx, fiber, openWorkbench, closeWorkbench, toggleWorkbenchFullscreen, toggleWorkbenchBottom,
+      toggleWorkbenchFiles,
     } = await bench()
     const action = ctx.slots.entries('conversation.session.header.utilities')[0]
     const actionFace = (action?.inject as unknown as (id: SessionId) => OpenInAppActionInjected)(SESSION)
@@ -167,26 +165,32 @@ describe('open-in-app browser half', () => {
     })
     workbenchFace.closeWorkbench()
     workbenchFace.toggleWorkbenchFullscreen()
+    workbenchFace.toggleFiles()
+    workbenchFace.toggleBottom()
     expect(closeWorkbench).toHaveBeenCalledWith(SESSION)
     expect(toggleWorkbenchFullscreen).toHaveBeenCalledWith(SESSION)
+    expect(toggleWorkbenchFiles).toHaveBeenCalledWith(SESSION)
+    expect(toggleWorkbenchBottom).toHaveBeenCalledWith(SESSION)
 
     const bottom = ctx.slots.entries('workbench.bottom')[0]
     const terminalFace = (bottom?.inject as unknown as (id: SessionId) => TerminalPanelInjected)(SESSION)
     expect(terminalFace.terminalUrl)
       .toBe('ws://dsh.example/open-in-app/terminal?sessionId=browser-plugin-session&cols=80&rows=24')
+    terminalFace.closeBottom()
+    expect(toggleWorkbenchBottom).toHaveBeenCalledTimes(2)
     await fiber.dispose()
   })
 
-  it('injects the resident panel toggles for the current session', async () => {
+  it('injects session-bound panel toggles independently of later selection', async () => {
     const { ctx, toggleWorkbenchFiles, toggleWorkbenchBottom } = await bench()
-    const brandAction = ctx.slots.entries('sidebar.brand.action')[0]
-    const face = (brandAction?.inject as unknown as () => WorkbenchPanelTogglesInjected)()
-    const source = face.workbenchSource(SESSION)
+    const headerPanels = ctx.slots.entries('conversation.session.header.utilities')[1]
+    const face = (headerPanels?.inject as unknown as (id: SessionId) => WorkbenchPanelTogglesInjected)(SESSION)
+    const source = face.hooks.workbenchLayout
     expect(source.getSnapshot().open).toBe(false)
 
     face.toggleFiles()
     face.toggleBottom()
-    // 两个开关都作用于当前会话，并委托给布局服务。
+    // 页头注入动作绑定到其 Session，不在点击时读取可能改变的全局选择。
     expect(toggleWorkbenchFiles).toHaveBeenCalledExactlyOnceWith(SESSION)
     expect(toggleWorkbenchBottom).toHaveBeenCalledExactlyOnceWith(SESSION)
   })

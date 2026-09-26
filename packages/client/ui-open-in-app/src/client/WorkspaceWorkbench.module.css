@@ -18,14 +18,29 @@
 
 /* 顶栏右侧常驻视图控制；它随工作台本身可见，因此单独占列而不随会话页头渲染。 */
 .topbar {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 6px;
   min-width: 0;
-  padding: 0 8px;
+  padding: 0 calc(8px + var(--app-safe-area-inset-right, 0px)) 0 calc(8px + var(--app-safe-area-inset-top, 0px));
   border-bottom: 1px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-layer-1);
+  -webkit-app-region: no-drag;
+}
+
+.topbar::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--app-safe-area-inset-top, 0px);
+  content: '';
+  -webkit-app-region: no-drag;
+}
+
+.topbar button,
+.topbar input {
+  -webkit-app-region: no-drag;
 }
 
 .toolButton,

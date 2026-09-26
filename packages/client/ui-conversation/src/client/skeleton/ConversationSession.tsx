@@ -79,7 +79,8 @@ export function ConversationSessionHeader({
     >
       {!hideChrome && (
         <>
-          <div className={css.titleRow}>
+          <div className={css.activeHeaderDragStrip} data-window-drag-header-strip data-window-drag-region aria-hidden="true" />
+          <div className={css.titleRow} data-window-drag-region>
             <div className={css.titleCluster}>
               <nav className={css.crumbs} aria-label={t('session.hierarchy')}>
                 {ancestry.map((summary, index) => {
@@ -118,7 +119,7 @@ export function ConversationSessionHeader({
             </div>
           </div>
           {tabs.length > 1 && (
-            <div className={css.tabs} role="tablist">
+            <div className={css.tabs} role="tablist" data-window-drag-region>
               {tabs.map(viewTab => (
                 <button
                   key={viewTab.id}

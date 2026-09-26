@@ -180,12 +180,12 @@
 
 ## packages/client/ui-open-in-app
 
-- **拥有**：工作区打开能力的浏览器半：会话页头分体入口（`OpenInAppAction`，占用 `conversation.session.header.utilities`）、内置文件工作台（`WorkspaceWorkbench`，占用 `workbench`）、保留式底栏终端（`RetainedTerminalPanel`，占用 `workbench.bottom`）、侧边栏品牌行的面板开关（`WorkbenchPanelToggles`，占用 `sidebar.brand.action`），以及 `OpenInAppController`。
-- **不拥有**：Host 路由（应用启动、文件 list/read、终端 WebSocket）属于 `packages/host/open-in-app`；workbench 壳层几何与 `ctx.layout` 属于 `packages/client/ui-layout`；`sidebar.brand.action` 座位声明属于 `packages/client/ui-sidebar`。
-- **入口**：`packages/client/ui-open-in-app/src/client/index.ts`（`inject = ['slots', 'locale', 'layout', 'sessions']`，四处 `ctx.slots.inject(...)` → `ctx.slots.register(...)`）；node 半是空 apply。
+- **拥有**：工作区打开能力的浏览器半：会话页头分体入口（`OpenInAppAction`）及文件侧栏、终端底栏开关（`WorkbenchPanelToggles`），均占用 `conversation.session.header.utilities`；欢迎页开关占用 `conversation.hero.actions`；内置文件工作台（`WorkspaceWorkbench`，占用 `workbench`）在全屏时由顶栏提供面板开关；保留式底栏终端（`RetainedTerminalPanel`）占用 `workbench.bottom`；另有 `OpenInAppController`。
+- **不拥有**：Host 路由（应用启动、文件 list/read、终端 WebSocket）属于 `packages/host/open-in-app`；workbench 壳层几何与 `ctx.layout` 属于 `packages/client/ui-layout`；`conversation.session.header.utilities` 与 `conversation.hero.actions` 座位声明属于 `packages/client/ui-conversation`。
+- **入口**：`packages/client/ui-open-in-app/src/client/index.ts`（注入 `slots`、`locale`、`layout`、`sessions`、`workspaces`；通过 `ctx.slots.inject(...)` 在各座位注册）；node 半是空 apply。
 - **接线**：`packages/bundle/web-app/cordis.patch.yml` 的 `ui-open-in-app` 行与 host 行 `open-in-app` 并排挂载；共享常量经 `@deepseek-ai/dsh-host-open-in-app/shared`。
 - **关键文件**：`packages/client/ui-open-in-app/src/client/index.ts`、`packages/client/ui-open-in-app/src/client/controller.ts`、`packages/client/ui-open-in-app/src/client/WorkspaceWorkbench.tsx`、`packages/client/ui-open-in-app/src/client/TerminalPanel.tsx`。
-- **改这里要同步**：路由或帧协议改动同步 `packages/host/open-in-app`；面板显隐语义改动同步 `packages/client/ui-layout`（owner props `filesOpen`/`bottomOpen`）与 `packages/client/ui-sidebar`。
+- **改这里要同步**：路由或帧协议改动同步 `packages/host/open-in-app`；面板显隐语义改动同步 `packages/client/ui-layout`（owner props `filesOpen`/`bottomOpen`），页头与欢迎页入口变动核对 `packages/client/ui-conversation` 的座位。
 - **不变量**：文件树只回传当前 Session id 与 Host 返回的 provider segment 数组，绝不提交工作区根或自行拼接 Windows/POSIX/UNC 路径；隐藏底栏或关闭工作台只改布局可见性，不断开已激活终端。
 - **测试**：`pnpm exec vitest run packages/client/ui-open-in-app/tests`
 

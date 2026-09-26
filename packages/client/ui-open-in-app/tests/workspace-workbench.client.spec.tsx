@@ -36,6 +36,8 @@ function bench(over: {
   const instance = createWorkbenchStore().create()
   const closeWorkbench = vi.fn()
   const toggleWorkbenchFullscreen = vi.fn()
+  const toggleFiles = vi.fn()
+  const toggleBottom = vi.fn()
   const listFiles = vi.fn(over.listFiles ?? (async () => listing('/workspace', [])))
   const readFile = vi.fn(over.readFile ?? (async (): Promise<WorkspaceFilePayload> => ({
     path: '/workspace/file', content: { kind: 'text', text: '' },
@@ -48,13 +50,15 @@ function bench(over: {
     filesOpen: over.filesOpen ?? true,
     closeWorkbench,
     toggleWorkbenchFullscreen,
+    toggleFiles,
+    toggleBottom,
     useStore: bindSnapshotSelector(instance.store),
     actions: instance.actions,
     listFiles,
     readFile,
     t,
   } as unknown as WorkspaceWorkbenchProps
-  return { instance, props, closeWorkbench, toggleWorkbenchFullscreen, listFiles, readFile }
+  return { instance, props, closeWorkbench, toggleWorkbenchFullscreen, toggleFiles, toggleBottom, listFiles, readFile }
 }
 
 describe('workspace workbench helpers', () => {
@@ -85,27 +89,36 @@ describe('WorkspaceWorkbench shell', () => {
     })
   })
 
-  it('keeps only the maximize and close controls in the top bar', () => {
+  it('keeps both panel switches in the top bar when fullscreen hides the conversation header', () => {
     const b = bench({ fullscreen: true, bottomOpen: true, filesOpen: true })
     render(<WorkspaceWorkbench {...b.props} />)
     const fullscreen = screen.getByRole('button', { name: zh['workbench.fullscreen.exit'] })
     expect(fullscreen.getAttribute('aria-pressed')).toBe('true')
+    const bottom = screen.getByRole('button', { name: zh['workbench.bottom.hide'] })
+    const files = screen.getByRole('button', { name: zh['workbench.files.hide'] })
+    expect(bottom.getAttribute('aria-pressed')).toBe('true')
+    expect(files.getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(bottom)
+    fireEvent.click(files)
+    expect(b.toggleBottom).toHaveBeenCalledOnce()
+    expect(b.toggleFiles).toHaveBeenCalledOnce()
     fireEvent.click(fullscreen)
     fireEvent.click(screen.getByRole('button', { name: zh['workbench.close'] }))
     expect(b.toggleWorkbenchFullscreen).toHaveBeenCalledOnce()
     expect(b.closeWorkbench).toHaveBeenCalledOnce()
-    // 文件侧栏与终端底栏常驻在侧边栏品牌行：顶栏不再提供这两个开关。
-    for (const label of [
-      zh['workbench.bottom.show'], zh['workbench.bottom.hide'],
-      zh['workbench.files.show'], zh['workbench.files.hide'],
-    ]) {
-      expect(screen.queryByRole('button', { name: label })).toBeNull()
-    }
     const topbar = screen.getByRole('region', { name: zh['workbench.label'] })
       .querySelector('header') as HTMLElement
+    expect(topbar.hasAttribute('data-window-drag-region')).toBe(true)
     expect(within(topbar).getAllByRole('button')
       .filter(button => !button.classList.contains('tabSelect') && !button.classList.contains('tabClose')))
-      .toHaveLength(2)
+      .toHaveLength(4)
+  })
+
+  it('avoids duplicate panel switches while the conversation header is visible', () => {
+    const b = bench({ fullscreen: false, bottomOpen: true })
+    render(<WorkspaceWorkbench {...b.props} />)
+    expect(screen.queryByRole('button', { name: zh['workbench.bottom.hide'] })).toBeNull()
+    expect(screen.queryByRole('button', { name: zh['workbench.files.hide'] })).toBeNull()
   })
 
   it('hides the file sidebar when the owner closes it and keeps its state across visibility changes', async () => {

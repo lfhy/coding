@@ -1353,6 +1353,13 @@ flowchart TD
   pkg_client_ui_message_feedback --> pkg_invariants
   pkg_client_ui_message_feedback --> pkg_message_feedback
   pkg_client_ui_message_feedback --> pkg_typert_protocol
+  pkg_client_ui_open_in_app --> pkg_client_locale
+  pkg_client_ui_open_in_app --> pkg_client_runtime
+  pkg_client_ui_open_in_app --> pkg_client_ui_conversation
+  pkg_client_ui_open_in_app --> pkg_client_ui_layout
+  pkg_client_ui_open_in_app --> pkg_host_open_in_app
+  pkg_client_ui_open_in_app --> pkg_invariants
+  pkg_client_ui_open_in_app --> pkg_session
   pkg_client_ui_plan --> pkg_api_remotes
   pkg_client_ui_plan --> pkg_client_locale
   pkg_client_ui_plan --> pkg_client_runtime
@@ -1414,14 +1421,6 @@ flowchart TD
   pkg_client_ui_model_selection --> pkg_client_ui_conversation
   pkg_client_ui_model_selection --> pkg_client_ui_input_trigger
   pkg_client_ui_model_selection --> pkg_invariants
-  pkg_client_ui_open_in_app --> pkg_client_locale
-  pkg_client_ui_open_in_app --> pkg_client_runtime
-  pkg_client_ui_open_in_app --> pkg_client_ui_conversation
-  pkg_client_ui_open_in_app --> pkg_client_ui_layout
-  pkg_client_ui_open_in_app --> pkg_client_ui_sidebar
-  pkg_client_ui_open_in_app --> pkg_host_open_in_app
-  pkg_client_ui_open_in_app --> pkg_invariants
-  pkg_client_ui_open_in_app --> pkg_session
   pkg_client_ui_permission_presets --> pkg_api_remotes
   pkg_client_ui_permission_presets --> pkg_client_connection
   pkg_client_ui_permission_presets --> pkg_client_locale
@@ -1688,6 +1687,7 @@ flowchart TD
 | [`client-ui-goal`](../packages/client/ui-goal) | `client` | [`api-remotes`](../packages/api/remotes), [`client-locale`](../packages/client/locale), [`client-runtime`](../packages/client/runtime), [`client-ui-conversation`](../packages/client/ui-conversation), [`commands`](../packages/interaction/commands), [`goal`](../packages/goal/goal), [`invariants`](../packages/runtime-diagnostics/invariants), [`session`](../packages/core/session), [`typert-protocol`](../packages/typert/protocol) |
 | [`client-ui-jobs`](../packages/client/ui-jobs) | `client` | [`client-locale`](../packages/client/locale), [`client-runtime`](../packages/client/runtime), [`client-ui-conversation`](../packages/client/ui-conversation), [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`client-ui-message-feedback`](../packages/client/ui-message-feedback) | `client` | [`api-remotes`](../packages/api/remotes), [`client-connection`](../packages/client/connection), [`client-locale`](../packages/client/locale), [`client-runtime`](../packages/client/runtime), [`client-ui-conversation`](../packages/client/ui-conversation), [`invariants`](../packages/runtime-diagnostics/invariants), [`message-feedback`](../packages/feedback/message-feedback), [`typert-protocol`](../packages/typert/protocol) |
+| [`client-ui-open-in-app`](../packages/client/ui-open-in-app) | `client` | [`client-locale`](../packages/client/locale), [`client-runtime`](../packages/client/runtime), [`client-ui-conversation`](../packages/client/ui-conversation), [`client-ui-layout`](../packages/client/ui-layout), [`host-open-in-app`](../packages/host/open-in-app), [`invariants`](../packages/runtime-diagnostics/invariants), [`session`](../packages/core/session) |
 | [`client-ui-plan`](../packages/client/ui-plan) | `client` | [`api-remotes`](../packages/api/remotes), [`client-locale`](../packages/client/locale), [`client-runtime`](../packages/client/runtime), [`client-ui-conversation`](../packages/client/ui-conversation), [`invariants`](../packages/runtime-diagnostics/invariants), [`plan-mode`](../packages/plan/plan-mode) |
 | [`client-ui-sidebar`](../packages/client/ui-sidebar) | `client` | [`client-locale`](../packages/client/locale), [`client-runtime`](../packages/client/runtime), [`client-ui-conversation`](../packages/client/ui-conversation), [`client-ui-layout`](../packages/client/ui-layout), [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`client-ui-subagent`](../packages/client/ui-subagent) | `client` | [`client-locale`](../packages/client/locale), [`client-runtime`](../packages/client/runtime), [`client-ui-conversation`](../packages/client/ui-conversation), [`client-ui-input-trigger`](../packages/client/ui-input-trigger), [`invariants`](../packages/runtime-diagnostics/invariants), [`subagent`](../packages/subagent/subagent), [`token-meter`](../packages/llm/token-meter) |
@@ -1698,7 +1698,6 @@ flowchart TD
 | [`session-log-export`](../packages/session-query/session-log-export) | `session-query` | [`client-locale`](../packages/client/locale), [`client-runtime`](../packages/client/runtime), [`client-ui-commands`](../packages/client/ui-commands), [`client-ui-conversation`](../packages/client/ui-conversation), [`commands`](../packages/interaction/commands), [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`client-ui-brand-official`](../packages/client/ui-brand-official) | `client` | [`client-runtime`](../packages/client/runtime), [`client-ui-conversation`](../packages/client/ui-conversation), [`client-ui-sidebar`](../packages/client/ui-sidebar), [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`client-ui-model-selection`](../packages/client/ui-model-selection) | `client` | [`api-remotes`](../packages/api/remotes), [`client-connection`](../packages/client/connection), [`client-locale`](../packages/client/locale), [`client-runtime`](../packages/client/runtime), [`client-ui-commands`](../packages/client/ui-commands), [`client-ui-conversation`](../packages/client/ui-conversation), [`client-ui-input-trigger`](../packages/client/ui-input-trigger), [`invariants`](../packages/runtime-diagnostics/invariants) |
-| [`client-ui-open-in-app`](../packages/client/ui-open-in-app) | `client` | [`client-locale`](../packages/client/locale), [`client-runtime`](../packages/client/runtime), [`client-ui-conversation`](../packages/client/ui-conversation), [`client-ui-layout`](../packages/client/ui-layout), [`client-ui-sidebar`](../packages/client/ui-sidebar), [`host-open-in-app`](../packages/host/open-in-app), [`invariants`](../packages/runtime-diagnostics/invariants), [`session`](../packages/core/session) |
 | [`client-ui-permission-presets`](../packages/client/ui-permission-presets) | `client` | [`api-remotes`](../packages/api/remotes), [`client-connection`](../packages/client/connection), [`client-locale`](../packages/client/locale), [`client-runtime`](../packages/client/runtime), [`client-ui-commands`](../packages/client/ui-commands), [`client-ui-input-trigger`](../packages/client/ui-input-trigger), [`client-ui-settings`](../packages/client/ui-settings), [`invariants`](../packages/runtime-diagnostics/invariants), [`permission-presets`](../packages/interaction/permission-presets) |
 | [`client-ui-settings-general`](../packages/client/ui-settings-general) | `client` | [`api-remotes`](../packages/api/remotes), [`client-connection`](../packages/client/connection), [`client-locale`](../packages/client/locale), [`client-runtime`](../packages/client/runtime), [`client-ui-settings`](../packages/client/ui-settings), [`client-ui-sidebar`](../packages/client/ui-sidebar), [`invariants`](../packages/runtime-diagnostics/invariants), [`settings`](../packages/settings/settings) |
 | [`client-ui-skill`](../packages/client/ui-skill) | `client` | [`api-remotes`](../packages/api/remotes), [`client-connection`](../packages/client/connection), [`client-locale`](../packages/client/locale), [`client-runtime`](../packages/client/runtime), [`client-ui-input-trigger`](../packages/client/ui-input-trigger), [`client-ui-tool`](../packages/client/ui-tool), [`invariants`](../packages/runtime-diagnostics/invariants) |

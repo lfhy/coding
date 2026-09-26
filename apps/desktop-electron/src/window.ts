@@ -65,6 +65,7 @@ export function createHostWindow(origin: string, options: { devTools?: boolean; 
       preload: preloadPath,
     },
   })
+  window.maximize()
 
   // 权限属于 session；这个最小窗口不授予任何站点原生权限。
   window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => {
@@ -111,7 +112,10 @@ export function createHostWindow(origin: string, options: { devTools?: boolean; 
     // 页面每次加载都恢复避让值：macOS 交通灯在左上，Windows caption 在右上。
     const top = isMacOS ? '38px' : '0px'
     const right = isWindows ? '138px' : '0px'
-    void window.webContents.insertCSS(`:root { --app-safe-area-inset-top: ${top}; --app-safe-area-inset-right: ${right}; }`)
+    const drag = isMacOS || isWindows
+      ? '[data-window-drag-region] { -webkit-app-region: drag !important; }'
+      : ''
+    void window.webContents.insertCSS(`:root { --app-safe-area-inset-top: ${top}; --app-safe-area-inset-right: ${right}; } ${drag}`)
       .catch(() => undefined)
   })
   if (isMacOS && app.dock && options.iconPath && existsSync(options.iconPath)) {

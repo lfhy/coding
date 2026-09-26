@@ -34,6 +34,27 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  -webkit-app-region: no-drag;
+}
+
+/* 空白页没有会话页头，独立保留窗口可拖的顶端空白。 */
+.windowDragStrip {
+  position: absolute;
+  top: 0;
+  right: var(--app-safe-area-inset-right, 0px);
+  left: 0;
+  z-index: 1;
+  height: 40px;
+  -webkit-app-region: no-drag;
+}
+
+/* 56px rail 的右侧仍可能被 macOS 第三颗交通灯覆盖。 */
+:global([data-sidebar-collapsed]) .windowDragStrip {
+  left: max(0px, calc(var(--app-safe-area-inset-top, 0px) - 4px));
+}
+
+:global([data-workbench-shown]) .windowDragStrip {
+  right: 0;
 }
 
 /* 右侧工作台已经隔开会话列与原生窗口控件，无需在列内再次避让。 */
@@ -51,6 +72,34 @@
   flex: none;
   padding: 12px 28px 0 20px;
   border-bottom: 1px solid transparent;
+}
+
+/* 页头顶部单独命中窗口，避免把整块页头划成交通灯背后的拖拽区域。 */
+.activeHeaderDragStrip {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 12px;
+  -webkit-app-region: no-drag;
+}
+
+:global([data-details-collapsed]:not([data-workbench-shown])) .activeHeaderDragStrip {
+  right: var(--app-safe-area-inset-right, 0px);
+}
+
+:global([data-sidebar-collapsed]) .activeHeaderDragStrip {
+  left: max(0px, calc(var(--app-safe-area-inset-top, 0px) - 4px));
+}
+
+/* 仅当会话列触及窗口右边缘时，避开 Windows 原生 caption 控件。 */
+:global([data-details-collapsed]:not([data-workbench-shown])) .header {
+  padding-right: calc(28px + var(--app-safe-area-inset-right, 0px));
+}
+
+/* 页头中注册的操作与标签页仍由网页接收点击和双击。 */
+.header :is(button, a, input, select, textarea, [role='button'], [role='tab']) {
+  -webkit-app-region: no-drag;
 }
 
 .header::after {
@@ -76,6 +125,12 @@
   align-items: center;
   gap: 0;
   min-height: 32px;
+  -webkit-app-region: no-drag;
+}
+
+/* macOS 收起 rail 后标题和按钮一起让开 x<90 的交通灯。 */
+:global([data-sidebar-collapsed]) .titleRow {
+  margin-left: max(0px, calc(var(--app-safe-area-inset-top, 0px) - 24px));
 }
 
 .titleCluster {
@@ -181,6 +236,7 @@
   gap: 36px;
   margin-top: 4px;
   padding-left: 8px;
+  -webkit-app-region: no-drag;
 }
 
 /* figma .Tab 34:11442: 13/16 text (figma wt510, rendered 500), gap 8 to the 2px bar. */

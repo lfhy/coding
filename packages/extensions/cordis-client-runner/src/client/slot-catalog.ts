@@ -1101,6 +1101,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     declaredBy: 'an entry in \'conversation.session.header\' (client-ui-conversation), so it exists while that entry is mounted',
     occupants: [
       'client-ui-open-in-app OpenInAppAction id \'open-in-app\'',
+      'client-ui-open-in-app WorkbenchPanelToggles id \'workbench-panels\'',
       'session-log-export SessionLogDownloadContribution id \'session-log-download\'',
     ],
     replaceRisk: 'none',
@@ -1666,9 +1667,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     hookContext: '',
     slotInject: '',
     declaredBy: 'an entry in \'sidebar\' (client-ui-sidebar), so it exists while that entry is mounted',
-    occupants: [
-      'client-ui-open-in-app WorkbenchPanelToggles id \'workbench-panels\'',
-    ],
+    occupants: [],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.brand.action\', () => ctx.slots.register(\n      { name: \'sidebar.brand.action\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
     source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:29',

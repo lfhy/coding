@@ -8,6 +8,7 @@
 
 .root {
   --dsh-sidebar-inline-padding: 12px;
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -21,6 +22,20 @@
      scrollbar uses the l2 pair. .quietBars hides it without changing layout. */
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+/* macOS 交通灯右侧的顶部留白可拖动；收起 rail 中没有足够的安全宽度。 */
+.windowDragInset {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 90px;
+  height: var(--app-safe-area-inset-top, 0px);
+  -webkit-app-region: no-drag;
+}
+
+.collapsed .windowDragInset {
+  display: none;
 }
 
 /* 收起 rail 使用 36×36 控件盒，居中于 56px 宽度；额外避开 macOS 交通灯。 */
@@ -95,6 +110,11 @@
   margin-bottom: 8px;
   box-sizing: border-box;
   overflow: hidden;
+  -webkit-app-region: no-drag;
+}
+
+.logoRow :is(button, a, input, select, textarea, [role='button']) {
+  -webkit-app-region: no-drag;
 }
 
 .brandActions {

@@ -14,6 +14,7 @@ import {
   IconFolderOpen16,
   IconFolderOpenOutline16,
   IconFullscreenOutline16,
+  Icon,
   IconRefreshOutline16,
   IconSearchOutline16,
   MarkdownText,
@@ -38,14 +39,15 @@ import css from './WorkspaceWorkbench.module.css'
 /**
  * 文件工作台注入的 Host 读取能力和当前 Session 的工作台关闭／最大化动作。
  * 文件树 loading/error/ready 状态由 Session store 持有，跨会话页面切换与工作台
- * 关闭保持不变；文件侧栏与终端底栏的开关常驻在侧边栏品牌行，见
- * WorkbenchPanelToggles，因此工作台顶栏被隐藏或会话页头消失时这些入口依然可达。
+ * 关闭保持不变；全屏及窄屏下会话页头不可操作，顶栏提供两个面板开关。
  */
 export interface WorkspaceWorkbenchInjected {
   listFiles: (segments: readonly string[], signal?: AbortSignal) => Promise<WorkspaceFilesPayload>
   readFile: (segments: readonly string[], signal?: AbortSignal) => Promise<WorkspaceFilePayload>
   closeWorkbench: () => void
   toggleWorkbenchFullscreen: () => void
+  toggleFiles: () => void
+  toggleBottom: () => void
 }
 
 /** 工作台 slot、viewing store、Host 读取和词典组成的 props。 */
@@ -340,16 +342,15 @@ function FilePreview({ tab, visible, readFile, t }: {
 }
 
 /**
- * 固定工作台内容：文件标签与预览居中，懒加载文件树位于右侧。顶栏右侧只保留
- * 最大化和关闭两个工作台自身的动作；文件侧栏与终端底栏的开关由侧边栏品牌行
- * 常驻提供（WorkbenchPanelToggles），文件侧栏显隐由布局 owner props 传入。
+ * 固定工作台内容：文件标签与预览居中，懒加载文件树位于右侧。全屏和窄屏
+ * 隐藏会话页头时，顶栏仍可切换文件侧栏与终端底栏。
  * @param props - 布局状态与动作、Session viewing store、Host 文件能力和本地化文案。
  * @returns 保持挂载、可独立隐藏文件侧栏的工作台。
  */
 export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.Element {
   const {
-    shown, fullscreen, filesOpen, actions, readFile, listFiles,
-    closeWorkbench, toggleWorkbenchFullscreen, t,
+    shown, fullscreen, bottomOpen, filesOpen, actions, readFile, listFiles,
+    closeWorkbench, toggleWorkbenchFullscreen, toggleFiles, toggleBottom, t,
   } = props
   const { tabs, activeId, filesQuery, filesExpanded, filesLevels } = props.useStore(state => state)
   const expanded = useMemo(() => new Set(filesExpanded), [filesExpanded])
@@ -403,7 +404,7 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
       aria-label={t('workbench.label')}
       data-fullscreen={fullscreen || undefined}
     >
-      <header className={css.topbar}>
+      <header className={css.topbar} data-window-drag-region="">
         <div className={css.tabs} role="tablist" aria-label={t('tabs.label')}>
           {tabs.map((tab, index) => {
             const selected = tab.id === activeId
@@ -436,6 +437,22 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
           })}
         </div>
         <div className={css.viewControls}>
+          {fullscreen && (
+            <>
+              <ToolbarButton
+                label={bottomOpen ? t('workbench.bottom.hide') : t('workbench.bottom.show')}
+                pressed={bottomOpen}
+                onClick={toggleBottom}
+                icon={<Icon name="bottom-panel" size={18} />}
+              />
+              <ToolbarButton
+                label={filesOpen ? t('workbench.files.hide') : t('workbench.files.show')}
+                pressed={filesOpen}
+                onClick={toggleFiles}
+                icon={<Icon name="files-panel" size={18} />}
+              />
+            </>
+          )}
           <ToolbarButton
             label={fullscreen ? t('workbench.fullscreen.exit') : t('workbench.fullscreen.enter')}
             pressed={fullscreen}

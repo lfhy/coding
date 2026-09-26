@@ -305,6 +305,85 @@ async function verifyRemoteSshWizard(page, screenshot) {
   await wizard.waitFor({ state: 'hidden' })
 }
 
+async function verifyTitlebar(page, app) {
+  const strip = page.locator('[data-window-drag-strip]')
+  await strip.waitFor({ state: 'visible' })
+  const dragStyle = await strip.evaluate(element => ({
+    region: getComputedStyle(element).getPropertyValue('-webkit-app-region'),
+    rootVariable: getComputedStyle(document.documentElement).getPropertyValue('--dsh-desktop-window-drag'),
+    source: [...document.styleSheets].flatMap(sheet => {
+      try { return [...sheet.cssRules].map(rule => rule.cssText).filter(rule => rule.includes('windowDragStrip')) }
+      catch { return [] }
+    }).slice(0, 2),
+  }))
+  assert.equal(dragStyle.region, 'drag', `empty Hero titlebar must be an Electron drag region: ${JSON.stringify(dragStyle)}`)
+  assert.equal(await page.getByRole('button', { name: '显示终端底栏' }).first().evaluate(element =>
+    getComputedStyle(element).getPropertyValue('-webkit-app-region')), 'no-drag',
+  'titlebar action must remain clickable')
+  await page.getByRole('button', { name: '收起侧边栏' }).click()
+  await page.locator('[data-sidebar-collapsed]').waitFor({ state: 'attached' })
+  const collapsedStrip = await strip.boundingBox()
+  assert.ok(collapsedStrip && collapsedStrip.x >= 89,
+    'collapsed rail drag region must not cover macOS traffic lights')
+  await page.getByRole('button', { name: '打开侧边栏' }).click()
+
+  const locked = screenLocked()
+  if (locked !== false) {
+    console.log(`physical titlebar drag unverified: ${locked === true ? 'screen locked' : 'screen-lock probe unavailable'}`)
+    return false
+  }
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].unmaximize())
+  await until(() => app.evaluate(({ BrowserWindow }) => !BrowserWindow.getAllWindows()[0].isMaximized()),
+    'restore maximized window')
+  const before = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getBounds())
+  const box = await strip.boundingBox()
+  assert.ok(box && box.width > 240 && box.height >= 32, 'titlebar drag strip must have visible space')
+  const x = box.x + 120
+  const y = box.y + 18
+  await page.mouse.move(x, y)
+  await page.mouse.down()
+  await page.mouse.move(x + 55, y + 30, { steps: 8 })
+  await page.mouse.up()
+  await until(() => app.evaluate(({ BrowserWindow }, previous) => {
+    const bounds = BrowserWindow.getAllWindows()[0].getBounds()
+    return bounds.x !== previous.x || bounds.y !== previous.y
+  }, before), 'native titlebar drag moves the restored window', 5_000)
+  await page.mouse.dblclick(x, y)
+  await until(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isMaximized()),
+    'native titlebar double-click maximizes the window', 5_000)
+  return true
+}
+
+async function verifyTerminalTabs(page, screenshot) {
+  await page.getByRole('button', { name: '显示终端底栏' }).first().click()
+  const first = page.getByRole('tab', { name: 'coding 1' })
+  await first.waitFor({ state: 'visible' })
+  await page.getByRole('button', { name: '新建终端' }).click()
+  const second = page.getByRole('tab', { name: 'coding 2' })
+  await second.waitFor({ state: 'visible' })
+  assert.equal(await second.getAttribute('aria-selected'), 'true', 'new terminal must be selected')
+  assert.equal(await page.locator('.xterm-screen').count(), 2, 'each tab must retain its own xterm')
+  const activeTerminal = page.getByRole('tabpanel', { name: 'coding 2' })
+  await until(async () => await activeTerminal.getAttribute('data-connected') === 'true',
+    'second terminal connected')
+  const terminalScreen = await activeTerminal.locator('.xterm-screen').boundingBox()
+  assert.ok(terminalScreen && terminalScreen.height > 80,
+    'connected terminal canvas must fill the bottom panel')
+  await first.click()
+  assert.equal(await first.getAttribute('aria-selected'), 'true', 'first terminal must be switchable')
+  await second.click()
+  await page.screenshot({ path: screenshot })
+  await page.getByRole('button', { name: '关闭 coding 1' }).click()
+  assert.equal(await page.getByRole('tab', { name: 'coding 1' }).count(), 0,
+    'closing one terminal removes only its tab')
+  assert.equal(await second.count(), 1, 'other terminal must remain mounted')
+  await page.getByRole('region', { name: '终端' }).getByRole('button', { name: '隐藏终端底栏' }).click()
+  assert.equal(await page.locator('section[aria-label="终端"]').isVisible(), false,
+    'bottom close must hide the panel without closing its terminal')
+  await page.getByRole('button', { name: '显示终端底栏' }).first().click()
+  await second.waitFor({ state: 'visible' })
+}
+
 async function verifyNativeChrome(app, hostHome, record, origin, originalId) {
   const menu = await app.evaluate(({ Menu }) => {
     const file = Menu.getApplicationMenu()?.items.find(item => item.label === '文件')
@@ -339,6 +418,12 @@ async function verifyNativeChrome(app, hostHome, record, origin, originalId) {
     return windows.length === 1 && windows[0].id === id && windows[0].isVisible()
   }, originalId), 'Dock activate must restore the same BrowserWindow', 10_000)
 
+  // 锁屏或锁屏状态不明时 app.hide() 依赖前台 WindowServer，不能证明菜单回调是否生效。
+  if (screenLocked() !== false) {
+    console.log('native menu hide unverified: unlock the graphical session and rerun')
+    return false
+  }
+
   // 菜单项的实际 click 回调也应隐藏窗口，之后仍能由 Dock 激活复原。
   await app.evaluate(({ BrowserWindow, Menu }) => {
     const window = BrowserWindow.getAllWindows()[0]
@@ -356,6 +441,7 @@ async function verifyNativeChrome(app, hostHome, record, origin, originalId) {
     return windows.length === 1 && windows[0].id === id && windows[0].isVisible()
   }, originalId), 'Dock activate must restore the menu-hidden BrowserWindow', 10_000)
   console.log('macOS Tray existence and status-menu interaction require native UI inspection; Electron exposes no Tray.getAll API')
+  return true
 }
 
 async function assertBlueFocusedField(locator, name) {
@@ -426,6 +512,7 @@ async function main() {
   const afterScreenshot = join(tmpdir(), `dsh-electron-native-focus-${randomUUID()}.png`)
   const remoteScreenshot = join(tmpdir(), `dsh-electron-native-remote-${randomUUID()}.png`)
   const restoredScreenshot = join(tmpdir(), `dsh-electron-native-restored-${randomUUID()}.png`)
+  const terminalScreenshot = join(tmpdir(), `dsh-electron-native-terminal-${randomUUID()}.png`)
   let app
   let record
   let passed = false
@@ -480,6 +567,10 @@ async function main() {
     const bodyText = (await page.locator('body').innerText()).trim()
     assert.ok(bodyText.length > 20, 'real Host page must render meaningful content')
     assert.ok(!/vite.*error|internal server error/i.test(bodyText), 'no build-error overlay')
+    assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isMaximized()), true,
+      'desktop window must open maximized without entering fullscreen')
+    assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen()), false,
+      'maximized desktop window must remain a normal window')
     assert.equal(await app.evaluate(({ app: electronApp }) => electronApp.getPath('userData')), userData)
     const dockIcon = await app.evaluate(({ app: electronApp }) => {
       const icon = electronApp.dock?.getIcon?.()
@@ -505,6 +596,8 @@ async function main() {
         `screenshots: ${afterScreenshot}, ${remoteScreenshot}`)
       return
     }
+    const titlebarInteractionVerified = await verifyTitlebar(page, app)
+    await verifyTerminalTabs(page, terminalScreenshot)
     await verifyWindowBoundary(page, app, origin)
 
     const originalWindow = await app.evaluate(({ BrowserWindow }) => {
@@ -513,7 +606,7 @@ async function main() {
     })
     assert.equal(originalWindow.count, 1, 'first instance must own exactly one native window')
     assert.ok(Number.isSafeInteger(originalWindow.id), 'first instance must have a native window id')
-    await verifyNativeChrome(app, hostHome, record, origin, originalWindow.id)
+    const nativeMenuVerified = await verifyNativeChrome(app, hostHome, record, origin, originalWindow.id)
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].minimize())
     await until(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isMinimized()),
       'primary window minimized', 5_000)
@@ -536,13 +629,16 @@ async function main() {
     assert.equal(rendererErrors.length, 0, 'renderer should not report runtime errors')
     passed = true
     console.log(`PASS: Host page, HTTP, two WebSockets, onboarding focus, Remote-SSH bridge and wizard, window safety, ` +
-      `native menu, close-hide and Dock restore, single-instance restore` +
+      `native titlebar styling${titlebarInteractionVerified ? ', drag and double-click' : ' (physical drag and double-click unverified)'}, ` +
+      `terminal tabs, ${nativeMenuVerified ? 'native menu, ' : 'native menu hide unverified, '}` +
+      `close-hide and Dock restore, single-instance restore` +
       `${locked === true ? ' (foreground focus unverified: screen locked)' : ' and focus'}; ` +
-      `screenshots: ${screenshot}, ${afterScreenshot}, ${remoteScreenshot}, ${restoredScreenshot}`)
+      `screenshots: ${screenshot}, ${afterScreenshot}, ${remoteScreenshot}, ${terminalScreenshot}, ${restoredScreenshot}`)
   } finally {
     if (!passed && existsSync(screenshot)) console.error(`Failure screenshot: ${screenshot}`)
     if (!passed && existsSync(afterScreenshot)) console.error(`Focus screenshot: ${afterScreenshot}`)
     if (!passed && existsSync(remoteScreenshot)) console.error(`Remote-SSH screenshot: ${remoteScreenshot}`)
+    if (!passed && existsSync(terminalScreenshot)) console.error(`Terminal screenshot: ${terminalScreenshot}`)
     if (!passed && existsSync(restoredScreenshot)) console.error(`Restored screenshot: ${restoredScreenshot}`)
     if (app !== undefined) await closeOwnApp(app)
     // 未能证明 Host 所有权或无法等到其退出时保留 HOME，避免删掉仍运行的 Host 的数据。
