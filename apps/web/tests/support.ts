@@ -10,22 +10,15 @@ export const DIST_INDEX = fileURLToPath(new URL('../dist/index.html', import.met
 
 export const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 
-/**
- * Browser language a page must advertise to boot into the product's Chinese
- * surface: with no stored preference the client derives its initial locale
- * from the browser, and Playwright's default browser asks for English.
- */
+/** 无 Host 语言偏好的中文测试仍固定浏览器语言，以免混入浏览器环境变化。 */
 export const ZH_BROWSER_LOCALE = 'zh-CN'
 
 /**
- * Open the standard browser-test page advertising English before client boot.
- * This keeps role locators and goldens deterministic while leaving the Host
- * settings document free to override the provisional browser-derived locale;
- * scenarios asserting the Chinese surface advertise
- * {@link ZH_BROWSER_LOCALE} instead.
- * @param browser - Playwright browser owning the page.
- * @param height - Viewport height; width is fixed to the lane baseline.
- * @returns the initialized page.
+ * 用 en-US 浏览器打开英文测试页面。语言由测试 Host 的显式 `locale.preference: en`
+ * 决定；浏览器语言本身不能覆盖产品默认的中文。
+ * @param browser - 持有页面的 Playwright 浏览器。
+ * @param height - 视口高度；宽度固定为测试基线。
+ * @returns 创建好的页面。
  */
 export async function newEnglishPage(browser: Browser, height = 1000): Promise<Page> {
   return await browser.newPage({ viewport: { width: 1680, height }, locale: 'en-US' })
@@ -83,8 +76,7 @@ export async function connectFreshWorkspace(page: Page, root: string, name = 'wo
 }
 
 /**
- * 在声明 {@link ZH_BROWSER_LOCALE} 的页面中执行
- * {@link connectFreshWorkspace}；刻意保持中文的场景需要本地化后的选择器文案。
+ * 在中文页面中执行 {@link connectFreshWorkspace}，使用本地化后的选择器文案。
  * @param page - the browser page under test.
  * @param root - workspace parent directory.
  * @param name - directory created under `root` and connected.

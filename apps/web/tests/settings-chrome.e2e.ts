@@ -19,7 +19,7 @@ import { ZH_BROWSER_LOCALE, saveFailureShot } from './support.ts'
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/settings-chrome', import.meta.url))
 const DIALOG_EXPECTED = join(SNAPSHOT_DIR, 'dialog.expected.md')
 const PLUGINS_EXPECTED = join(SNAPSHOT_DIR, 'plugins.expected.md')
-// The English fallback surface: a browser naming no shipped language.
+// 显式选择英文后才使用这份英文设置对话框快照。
 const DIALOG_EN_EXPECTED = join(SNAPSHOT_DIR, 'dialog-en.expected.md')
 const PLUGIN_ROW_SELECTOR = '[data-plugin-entry$="ui-settings"]'
 const MODE = webSnapshotMode()
@@ -31,11 +31,11 @@ describe('web e2e: settings modal and General preferences', () => {
   let tripwire: ReturnType<typeof watchConsole>
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({})
+    scaffold = await launchWebScaffold({ localePreference: null })
     // 固定浏览器暂不可用时，允许本场景复用开发机现有的 Chromium 内核浏览器。
     const executablePath = process.env.DSH_PLAYWRIGHT_EXECUTABLE_PATH
     browser = await chromium.launch(executablePath === undefined ? {} : { executablePath })
-    // 中文浏览器页面验证客户端据此解析出的本地化设置界面；英文回退另有下方用例。
+    // 中文页面保留 Host 无语言偏好；下方另以 en-US 浏览器验证默认值。
     page = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
     tripwire = watchConsole(page)
     await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
@@ -396,30 +396,24 @@ describe('web e2e: settings modal and General preferences', () => {
     await page.getByRole('button', { name: '设置', exact: true }).click()
     const zhDialog = page.getByRole('dialog', { name: '设置' })
     await zhDialog.waitFor({ timeout: 10_000 })
-    // The document language follows the active locale in the assembled app, not
-    // only on a directly-mounted plugin. This is a zh browser, so the served
-    // markup's `en` must already have been replaced — asserting it here (rather
-    // than only in an English scenario) is what makes the check discriminating.
+    // 文档语言跟随已组合客户端的当前语言，而非仅依赖服务端 HTML 的初始值。
     expect(await page.evaluate(() => document.documentElement.lang)).toBe('zh-CN')
-    // The Language selector pill shows the active locale's own name.
+    // 语言选择器显示当前语言的本名。
     const selector = zhDialog.getByRole('button', { name: '中文' })
     expect(await selector.getAttribute('aria-haspopup')).toBe('menu')
     await selector.click()
     await page.getByRole('menuitem', { name: 'English' }).click()
-    // The settings-owned copy re-registers localized: dialog title, nav,
-    // Appearance labels. (Only the settings namespaces are localized —
-    // the rest of the app's copy is intentionally out of this row's scope.)
+    // 切换后设置页的标题、导航和外观标签一起使用英文词典。
     const enDialog = page.getByRole('dialog', { name: 'Settings' })
     await enDialog.waitFor({ timeout: 10_000 })
-    // ...and the attribute follows that switch, in the assembled app.
+    // 已组合页面的 lang 属性也随显式选择更新。
     await expect.poll(() => page.evaluate(() => document.documentElement.lang), { timeout: 5_000 }).toBe('en')
     expect(await enDialog.getByRole('button', { name: 'General' }).getAttribute('aria-current')).toBe('true')
     await expect.poll(() => enDialog.getByText('Appearance', { exact: true }).count(), { timeout: 5_000 }).toBe(1)
     expect(await page.evaluate(() => localStorage.getItem('dsh.locale'))).toBeNull()
     await expect.poll(async () => readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8'), { timeout: 5_000 })
       .toMatch(/locale:\n\s+preference: en/)
-    // Reload keeps English; then restore zh so shared page state (and the
-    // other specs' 设置-anchored selectors + goldens) see the default again.
+    // 刷新保持英文；本用例结束前恢复中文，避免影响共用页面的其他断言。
     const warningStart = tripwire.warnings.length
     await page.reload({ waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
@@ -427,8 +421,7 @@ describe('web e2e: settings modal and General preferences', () => {
     const enTrigger = page.getByRole('button', { name: 'Settings' })
     await enTrigger.waitFor({ timeout: 10_000 })
 
-    // A Chinese browser on another port still receives the explicit English
-    // preference from the shared Host settings document.
+    // 另一端口仍读取共享 Host 文档里的显式英文选择。
     const second = await launchWebScaffold({ harnessHome: scaffold.harnessHome })
     const secondPage = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
     const secondTripwire = watchConsole(secondPage)
@@ -458,25 +451,33 @@ describe('web e2e: settings modal and General preferences', () => {
     expect(tripwire.pageErrors).toEqual([])
   }, 90_000)
 
-  it('opens an English browser in English without any stored preference', async () => {
-    // A fresh Host home has no locale preference, so its surface follows the
-    // browser. English is also FALLBACK_LOCALE, so this scenario alone cannot
-    // distinguish detection from the default — the zh scenarios above supply
-    // the discriminating half (a Chinese browser must NOT land on the default).
-    const fresh = await launchWebScaffold({})
+  it('defaults to Chinese in an English browser until English is explicitly selected', async () => {
+    const fresh = await launchWebScaffold({ localePreference: null })
     const enPage = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: 'en-US' })
     const enTripwire = watchConsole(enPage)
     onTestFailed(() => saveFailureShot(enPage, 'web-e2e-settings-browser-language'))
     try {
       await enPage.goto(fresh.baseUrl, { waitUntil: 'load' })
       await enPage.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+      expect(await enPage.evaluate(() => navigator.language)).toBe('en-US')
       expect(await enPage.evaluate(() => localStorage.getItem('dsh.locale'))).toBeNull()
-      await enPage.getByRole('button', { name: 'Settings', exact: true }).click()
-      const dialog = enPage.getByRole('dialog', { name: 'Settings' })
-      await dialog.waitFor({ timeout: 10_000 })
-      await dialog.getByRole('button', { name: 'English' }).waitFor({ timeout: 10_000 })
-      // This page has no closing inventory spec to sweep its console, so the
-      // scenario clears both tripwire channels itself.
+      expect(await enPage.evaluate(() => document.documentElement.lang)).toBe('zh-CN')
+      expect(await readFile(join(fresh.harnessHome, 'settings.yaml'), 'utf8')).not.toMatch(/locale:\n\s+preference:/)
+      await enPage.getByRole('button', { name: '设置', exact: true }).click()
+      const zhDialog = enPage.getByRole('dialog', { name: '设置' })
+      await zhDialog.waitFor({ timeout: 10_000 })
+      await zhDialog.getByRole('button', { name: '中文' }).click()
+      await enPage.getByRole('menuitem', { name: 'English' }).click()
+      const enDialog = enPage.getByRole('dialog', { name: 'Settings' })
+      await enDialog.waitFor({ timeout: 10_000 })
+      await enDialog.getByRole('button', { name: 'English' }).waitFor({ timeout: 10_000 })
+      await expect.poll(() => enDialog.getByRole('button', { name: 'Standard mode' }).isEnabled(), { timeout: 10_000 })
+        .toBe(true)
+      await expect.poll(() => enPage.evaluate(() => document.documentElement.lang), { timeout: 5_000 }).toBe('en')
+      await expect.poll(async () => readFile(join(fresh.harnessHome, 'settings.yaml'), 'utf8'), { timeout: 5_000 })
+        .toMatch(/locale:\n\s+preference: en/)
+      const snapshot = await captureStableAria(enPage, '[role="dialog"]', fresh.workspaceCwd)
+      await compareOrRefreshGolden(DIALOG_EN_EXPECTED, snapshot, MODE)
       expect(enTripwire.pageErrors).toEqual([])
       expect(enTripwire.warnings).toEqual([])
     } finally {
@@ -485,11 +486,8 @@ describe('web e2e: settings modal and General preferences', () => {
     }
   }, 90_000)
 
-  it('opens a browser asking for no shipped language in English', async () => {
-    // The product default for "no usable signal": a French browser ships
-    // neither zh nor en, so resolution falls to FALLBACK_LOCALE (en) rather
-    // than to Chinese.
-    const fresh = await launchWebScaffold({})
+  it('defaults to Chinese when the browser requests an unsupported language', async () => {
+    const fresh = await launchWebScaffold({ localePreference: null })
     const frPage = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: 'fr-FR' })
     const frTripwire = watchConsole(frPage)
     onTestFailed(() => saveFailureShot(frPage, 'web-e2e-settings-unshipped-language'))
@@ -497,19 +495,14 @@ describe('web e2e: settings modal and General preferences', () => {
       await frPage.goto(fresh.baseUrl, { waitUntil: 'load' })
       await frPage.waitForSelector('[class*="frame"]', { timeout: 30_000 })
       expect(await frPage.evaluate(() => localStorage.getItem('dsh.locale'))).toBeNull()
-      await frPage.getByRole('button', { name: 'Settings', exact: true }).click()
-      const dialog = frPage.getByRole('dialog', { name: 'Settings' })
+      await frPage.getByRole('button', { name: '设置', exact: true }).click()
+      const dialog = frPage.getByRole('dialog', { name: '设置' })
       await dialog.waitFor({ timeout: 10_000 })
-      await dialog.getByRole('button', { name: 'English' }).waitFor({ timeout: 10_000 })
-      // 快照只记录各异步设置控制器均完成加载后的稳定界面。
-      await expect.poll(() => dialog.getByRole('button', { name: 'Standard mode' }).isEnabled(), { timeout: 10_000 })
+      await dialog.getByRole('button', { name: '中文' }).waitFor({ timeout: 10_000 })
+      await expect.poll(() => dialog.getByRole('button', { name: '标准模式' }).isEnabled(), { timeout: 10_000 })
         .toBe(true)
-      // 标记本就声明 `en`，单凭这一项不能证明同步已运行；上方中文场景提供区分依据。
-      // 此处仍保留断言，以捕获能解析英文但写入错误标签的未来变更。
-      expect(await frPage.evaluate(() => document.documentElement.lang)).toBe('en')
-      // 英文回退对话框快照与上方中文快照共同固定 locale 解析的两个方向。
-      const snapshot = await captureStableAria(frPage, '[role="dialog"]', fresh.workspaceCwd)
-      await compareOrRefreshGolden(DIALOG_EN_EXPECTED, snapshot, MODE)
+      expect(await frPage.evaluate(() => document.documentElement.lang)).toBe('zh-CN')
+      expect(await readFile(join(fresh.harnessHome, 'settings.yaml'), 'utf8')).not.toMatch(/locale:\n\s+preference:/)
       expect(frTripwire.pageErrors).toEqual([])
       expect(frTripwire.warnings).toEqual([])
     } finally {

@@ -27,10 +27,9 @@ describe('web e2e: plugin configuration section', () => {
   let tripwire: ReturnType<typeof watchConsole>
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({})
+    scaffold = await launchWebScaffold({ localePreference: null })
     browser = await chromium.launch()
-    // Chinese browser: the section asserts the localized copy the client
-    // derives from it, as the rest of the settings surface does.
+    // Host 无语言偏好时验证中文设置文案；浏览器语言同样固定为中文。
     page = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
     tripwire = watchConsole(page)
     await page.goto(scaffold.baseUrl, { waitUntil: 'load' })

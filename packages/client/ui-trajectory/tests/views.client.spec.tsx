@@ -205,6 +205,8 @@ async function bench(snapshot = historySnapshot(NODES)) {
   ctx.plugin({ inject: [...localeInject], apply: localeApply })
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
+  const locale = ctx.get('locale') as { setLocale(id: string): void }
+  locale.setLocale('en')
   return { ctx, slots, fiber, loadOlder, sessionStore }
 }
 

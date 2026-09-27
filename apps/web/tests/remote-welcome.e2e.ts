@@ -22,6 +22,7 @@ describe.skipIf(MODE === 'record')('web e2e: remote welcome notice', () => {
     scaffold = await launchWebScaffold({
       remoteAuthority: 'remote.localhost',
       welcomeNoticePending: true,
+      localePreference: null,
     })
     browser = await chromium.launch()
     page = await browser.newPage({

@@ -21,6 +21,7 @@ import type {
   UserMessage,
 } from '@deepseek-ai/dsh-llm'
 import type { AttachmentIdType, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import z from '@deepseek-ai/schemastery'
 import type {
   SessionEvent,
   SessionId,
@@ -1450,7 +1451,12 @@ export interface FixtureOptions {
   dropSessionCreateResponse?: boolean
   /** Order of the two successful create frames. */
   createFrameOrder?: 'session-first' | 'workspace-first'
+  /** 显式 Host 语言偏好；缺失时由 Client 决定中文默认值。 */
+  localePreference?: 'zh' | 'en'
 }
+
+/** 与 Host 的 locale section 等价的测试用 wire schema；连接层不引用其他 Client 插件。 */
+const FIXTURE_LOCALE_SCHEMA = z.object({ preference: z.union(['zh', 'en']).required(false) }).toJSON()
 
 /** Inbox pump shared by both stream generators (FrameQueue pattern: ONE abort listener hung
  *  outside the loop — a per-iteration {once:true} listener never fires for non-final rounds and
@@ -2992,20 +2998,28 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       },
     },
     settings: {
-      // Only the resolved DeepSeek address needed by first-run readiness is
-      // represented here. Fixture-backed journeys do not open its Models
-      // editor; real schema-driven forms ride the HTTP transport.
+      // 中文默认值属于 Client；测试仅在显式传入偏好时模拟 Host 的英文设置。
       describe: request => ok(request, {
         writable: true,
         hasDocument: true,
-        namespaces: [{
-          ns: 'llm-deepseek',
-          schema: {},
-          value: { apiKeyEnv: 'DEEPSEEK_API_KEY' },
-          applies: 'live',
-          secrets: [{ path: ['apiKey'], set: false }],
-          revision: 0,
-        }],
+        namespaces: [
+          {
+            ns: 'llm-deepseek',
+            schema: {},
+            value: { apiKeyEnv: 'DEEPSEEK_API_KEY' },
+            applies: 'live',
+            secrets: [{ path: ['apiKey'], set: false }],
+            revision: 0,
+          },
+          {
+            ns: 'locale',
+            schema: FIXTURE_LOCALE_SCHEMA,
+            value: options.localePreference === undefined ? {} : { preference: options.localePreference },
+            applies: 'live',
+            secrets: [],
+            revision: 0,
+          },
+        ],
       }),
       // Native opens are deterministic no-op successes in this fixture, as is host.openPath.
       openDocument: request => ok(request, { opened: true as const }),
@@ -3282,11 +3296,13 @@ export class FixtureApiClient extends AbstractApiClient {
 function fixtureOptionsFromLocation(): FixtureOptions {
   if (typeof location === 'undefined') return {}
   const query = new URLSearchParams(location.search)
+  const localePreference = query.get('fixtureLocale')
   return {
     empty: query.get('fixture') === 'empty',
     rejectPrompt: query.get('fixturePrompt') === 'reject',
     failWorkspaceAttach: query.get('fixtureAttach') === 'fail',
     dropSessionCreateResponse: query.get('fixtureSessionCreate') === 'drop-response',
     createFrameOrder: query.get('fixtureFrames') === 'workspace-first' ? 'workspace-first' : 'session-first',
+    ...(localePreference === 'zh' || localePreference === 'en' ? { localePreference } : {}),
   }
 }

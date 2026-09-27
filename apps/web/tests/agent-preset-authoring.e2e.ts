@@ -58,6 +58,7 @@ describe('web e2e: agent-preset authoring is a host-side copy', () => {
   beforeAll(async () => {
     userRoot = await realpath(await mkdtemp(join(tmpdir(), 'dsh-web-e2e-presets-')))
     scaffold = await launchWebScaffold({
+      localePreference: null,
       extraOverlayPath: OVERLAY,
       agentPresets: {
         roots: [
@@ -68,7 +69,7 @@ describe('web e2e: agent-preset authoring is a host-side copy', () => {
       },
     })
     browser = await chromium.launch()
-    // The scenario asserts the shipped Chinese copy, so the browser asks for it.
+    // 无 Host 语言偏好时断言中文界面；浏览器语言也固定为中文。
     page = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
     tripwire = watchConsole(page)
     await page.goto(scaffold.baseUrl, { waitUntil: 'load' })

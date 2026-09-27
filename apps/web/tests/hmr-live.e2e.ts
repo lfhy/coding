@@ -11,7 +11,7 @@ import type { Fiber } from '@deepseek-ai/cordis'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { readClientBuildRecord } from '../../../scripts/client-build-environment.ts'
-import { newEnglishPage, REPO_ROOT } from './support.ts'
+import { REPO_ROOT } from './support.ts'
 
 function spawnSpec(argv: readonly string[], cwd: string, env?: Record<string, string>): SubprocessSpawnSpec {
   return {
@@ -80,12 +80,12 @@ it('hot-reloads a real client-plugin source edit without refreshing the page', a
   const originalSource = await readFile(sourcePath)
   const hour = new Date().getHours()
   const greeting = hour >= 5 && hour < 11
-    ? { key: 'morning', text: 'Good morning, a new day is starting' }
+    ? { key: 'morning', text: '早上好呀，新的一天开始啦' }
     : hour >= 11 && hour < 14
-      ? { key: 'noon', text: 'Good midday, take a short break' }
+      ? { key: 'noon', text: '中午好呀，要不要先休息一下' }
       : hour >= 14 && hour < 19
-        ? { key: 'afternoon', text: 'Good afternoon, I will take it from here' }
-        : { key: 'evening', text: 'Good evening, you did a lot today' }
+        ? { key: 'afternoon', text: '下午好呀，接下来交给我吧' }
+        : { key: 'evening', text: '晚上好呀，今天辛苦啦' }
   const oldText = greeting.text
   const sourceNeedle = `'hero.greeting.${greeting.key}': '${greeting.text}'`
   const newText = `HMR UPDATED ${'x'.repeat(80)}`
@@ -116,7 +116,8 @@ it('hot-reloads a real client-plugin source edit without refreshing the page', a
     ))
     const baseUrl = await waitForOutput(host, /dsh web: (http:\/\/[^\s]+)/, 'built dsh web')
     browser = await chromium.launch()
-    const page = await newEnglishPage(browser)
+    // 无 Host 语言偏好时，英文浏览器也应展示默认的中文词典。
+    const page = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: 'en-US' })
     const pageErrors: string[] = []
     page.on('pageerror', error => pageErrors.push(String(error)))
     await page.goto(baseUrl, { waitUntil: 'load' })

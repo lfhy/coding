@@ -2,11 +2,8 @@
 /**
  * `<html lang>` tracks the active locale.
  *
- * The served markup declares one language, but the resolved locale may differ
- * (browser detection, or a stored Host preference adopted after activation),
- * and it changes again whenever the user switches. Assistive technology and
- * browser features read this attribute, so a stale value misreports the
- * document language rather than merely looking untidy.
+ * HTML 标记可能与已保存的 Host 语言偏好不同；激活和切换时同步 lang，
+ * 避免辅助技术及浏览器功能误判当前语言。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
@@ -52,11 +49,10 @@ const langOf = (): string => document.documentElement.lang
 
 describe('document language', () => {
   beforeEach(() => {
-    // The served markup declares the product default; the plugin must not
-    // depend on that value already being correct.
+    // 即使初始标记与中文默认值不符，插件也必须主动同步。
     document.documentElement.lang = 'en'
-    Object.defineProperty(navigator, 'languages', { value: ['zh-CN'], configurable: true })
-    Object.defineProperty(navigator, 'language', { value: 'zh-CN', configurable: true })
+    Object.defineProperty(navigator, 'languages', { value: ['en-US'], configurable: true })
+    Object.defineProperty(navigator, 'language', { value: 'en-US', configurable: true })
   })
 
   afterEach(() => {
@@ -67,8 +63,7 @@ describe('document language', () => {
     delete own.language
   })
 
-  it('states the resolved locale at activation, not the value the markup shipped', async () => {
-    // A Chinese browser resolves zh even though the markup said en.
+  it('激活时使用中文默认值更新文档语言，不跟随英文浏览器', async () => {
     const { locale } = await bench()
     expect(locale.getLocale().active).toBe('zh')
     expect(langOf()).toBe('zh-CN')
@@ -85,8 +80,7 @@ describe('document language', () => {
     expect(langOf()).toBe('zh-CN')
   })
 
-  it('follows an explicit Host preference that overrides browser detection', async () => {
-    // Stored preference wins over the zh browser pinned above.
+  it('已保存的 Host 英文偏好覆盖中文默认值', async () => {
     const { locale } = await bench('en')
     await vi.waitFor(() => { expect(locale.getLocale().active).toBe('en') })
     await vi.waitFor(() => { expect(langOf()).toBe('en') })

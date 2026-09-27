@@ -86,15 +86,10 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-/**
- * English is both the locale the UI opens in when the browser names no shipped
- * language (and for non-browser runs), and the dictionary consulted after the
- * active locale misses a key. One constant serves both because the shipped
- * `zh`/`en` dictionaries carry identical key sets, so neither direction can
- * leave a key unresolved; the residual case points at English rather than
- * zh because a browser naming neither shipped language is the reader least
- * likely to read Chinese.
- */
+/** 未保存语言偏好时使用中文，与浏览器或系统语言无关。 */
+const DEFAULT_LOCALE: LocaleId = 'zh'
+
+/** 当前语言缺少翻译时仍从英文字典查找，不影响界面默认语言。 */
 export const FALLBACK_LOCALE: LocaleId = 'en'
 
 /** Shared namespace for shell-level texts. */
@@ -148,9 +143,6 @@ export class LocaleRuntime {
   private listeners = new Set<() => void>()
   private readonly ctx: Context
   private readonly host: SettingsScope<LocaleSettings> | undefined
-  /** Browser-derived locale standing wherever no explicit Host selection does. */
-  private readonly provisional: LocaleId
-
   /**
    * @param ctx - owning context (change events are emitted on it; the scope
    * listener is released through ctx.effect on dispose).
@@ -160,8 +152,7 @@ export class LocaleRuntime {
   constructor(ctx: Context, host?: SettingsScope<LocaleSettings>) {
     this.ctx = ctx
     this.host = host
-    this.provisional = resolveInitialLocale()
-    this.snapshot = Object.freeze({ active: this.provisional, locales: LOCALES, revision: 0 })
+    this.snapshot = Object.freeze({ active: DEFAULT_LOCALE, locales: LOCALES, revision: 0 })
     if (host !== undefined) {
       ctx.effect(() => host.subscribe(() => { this.adopt(host) }), 'locale: settings scope adoption')
       this.adopt(host)
@@ -198,16 +189,11 @@ export class LocaleRuntime {
   }
 
   /**
-   * Switch the active locale — the only user preference write entry.
+   * 切换活跃语言，唯一的用户偏好写入入口。
    *
-   * The durable write happens even when the id already matches the active
-   * locale, because the active value may be a provisional browser-derived or
-   * fallback resolution that nothing has stored yet. Picking the language
-   * already on screen is still an explicit choice, and it must survive a
-   * different browser sharing the same DSH home. Only the render notification
-   * is conditional: republishing an unchanged locale would churn every
-   * subscriber for nothing.
-   * @param id - a registered locale id; unknown ids throw.
+   * 即使所选语言与当前显示相同，也要写入 Host：当前显示的中文可能只是未保存的默认值。
+   * 只有语言实际变化时才发布新快照，避免无意义地通知订阅者。
+   * @param id - 已注册的语言 id；未知 id 会抛错。
    */
   setLocale(id: string): void {
     const match = this.snapshot.locales.find(l => l.id === id)
@@ -217,14 +203,13 @@ export class LocaleRuntime {
   }
 
   /**
-   * Adopt the scope's accepted durable selection without writing it back; an
-   * absent selection returns to the browser-derived locale.
-   * @param host - the constructor-narrowed scope driving this adoption.
+   * 采用 Host 已接受的语言偏好且不回写；偏好缺失时回到中文默认值。
+   * @param host - 构造时绑定的设置作用域。
    */
   private adopt(host: SettingsScope<LocaleSettings>): void {
     const section = host.getSnapshot().value
     if (section === undefined) return
-    const target = section.preference ?? this.provisional
+    const target = section.preference ?? DEFAULT_LOCALE
     if (this.snapshot.active === target) return
     this.publish(target, true)
   }
@@ -349,37 +334,6 @@ export class LocaleRuntime {
   }
 }
 
-/**
- * The browser's own language wins over {@link FALLBACK_LOCALE}; an explicit
- * Host preference may replace this provisional value after plugin activation.
- */
-function resolveInitialLocale(): LocaleId {
-  return detectBrowserLocale() ?? FALLBACK_LOCALE
-}
-
-/**
- * The first shipped locale the browser asks for, matched on the primary
- * subtag so every regional variant lands on its language (`zh-Hans-CN` -> zh,
- * `en-GB` -> en). `window` is the browser test, not `navigator`: Node exposes
- * a global `navigator` reporting the machine's own language, which would
- * otherwise decide the locale for non-browser runs (node e2e booting the
- * client tree). `navigator.language` trails the ordered `languages` list and
- * covers its absence on hosts that expose only the single tag.
- */
-function detectBrowserLocale(): LocaleId | undefined {
-  if (typeof window === 'undefined') return undefined
-  /* oxlint-disable-next-line typescript/no-unnecessary-condition --
-   * The DOM lib types `languages` as always present; embedders and older
-   * WebViews ship a Navigator without it, and spreading undefined would
-   * throw at boot. */
-  for (const tag of [...(navigator.languages ?? []), navigator.language]) {
-    const primary = tag.toLowerCase().split('-')[0]
-    const match = LOCALES.find(locale => locale.id === primary)
-    if (match) return match.id
-  }
-  return undefined
-}
-
 /** Required services: slot registration plus the settings transport. */
 export const inject = ['slots', 'connection', 'remote', 'settingsScope']
 
@@ -410,9 +364,7 @@ export function apply(ctx: ClientContext): void {
     )
   }
   ctx.on('locale/change', sync)
-  // The served markup declares one language; the resolved locale may differ
-  // (browser detection, or a stored preference adopted after activation), so
-  // state it once at activation rather than waiting for the first change.
+  // 已保存的语言可能与 HTML 中的中文默认标记不同；激活时立即同步一次，不等待切换事件。
   syncDocumentLanguage(locale.getLocale().active)
   const injected = (actions: BoundActions<typeof store>): LanguageRowInjected => {
     bound = actions

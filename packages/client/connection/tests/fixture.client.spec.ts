@@ -219,6 +219,10 @@ describe('createFixtureApi', () => {
       ns: 'llm-deepseek',
       value: { apiKeyEnv: 'DEEPSEEK_API_KEY' },
       secrets: [{ path: ['apiKey'], set: false }],
+    }, {
+      ns: 'locale',
+      value: {},
+      secrets: [],
     }])
 
     const initial = await api.credentials.describe(req({ refs: ['DEEPSEEK_API_KEY', 'TEST_API_KEY'] }))
@@ -239,6 +243,30 @@ describe('createFixtureApi', () => {
     const cleared = await api.credentials.describe(req({ refs: ['TEST_API_KEY'] }))
     if (!cleared.result.ok) throw new Error('credential describe failed')
     expect(cleared.result.value.credentials.TEST_API_KEY).toEqual({ configured: false, writable: true })
+  })
+
+  it('exposes an explicit Host locale preference only when the fixture requests it', async () => {
+    const api = createFixtureApi({ localePreference: 'en' })
+    const settings = await api.settings.describe(req({}))
+    if (!settings.result.ok) throw new Error('settings describe failed')
+    expect(settings.result.value.namespaces.find(row => row.ns === 'locale')).toMatchObject({
+      value: { preference: 'en' },
+      applies: 'live',
+      revision: 0,
+    })
+  })
+
+  it('maps the assembled-test query to an explicit Host locale preference', async () => {
+    vi.stubGlobal('location', { search: '?fixture&fixtureLocale=en' })
+    try {
+      const client = new FixtureApiClient()
+      const settings = await client.settings.describe({})
+      if (!settings.result.ok) throw new Error('settings describe failed')
+      expect(settings.result.value.namespaces.find(row => row.ns === 'locale')?.value)
+        .toEqual({ preference: 'en' })
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('emits the todo/write snapshot at the real tool boundary: between tool/call and tool/result, timestamps monotonic', async () => {

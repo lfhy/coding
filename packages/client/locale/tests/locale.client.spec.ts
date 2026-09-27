@@ -16,11 +16,8 @@ const make = (host?: StubSettingsScope<LocaleSettings>): {
 }
 
 /**
- * Pin the browser environment a fresh service reads its initial locale from.
- * This package's own specs stub the globals directly instead of using
- * `usePinnedBrowserLanguages` (dsh-client-test-runtime): they need the shapes
- * that helper deliberately cannot express — a missing `languages` list, a
- * list decoupled from `language`, and a non-browser run with no `window`.
+ * 模拟浏览器语言，证明无 Host 偏好时默认中文不受 navigator 影响；
+ * 测试还要覆盖缺失 languages 列表和非浏览器运行。
  */
 const stubLanguages = (...tags: string[]): void => {
   vi.stubGlobal('navigator', { languages: tags, language: tags[0] ?? '' })
@@ -28,7 +25,7 @@ const stubLanguages = (...tags: string[]): void => {
 
 describe('LocaleRuntime', () => {
   beforeEach(() => {
-    // A Chinese browser is the baseline these specs assert their zh state on.
+    // 默认中文不依赖浏览器语言，测试另行覆盖英文浏览器。
     stubLanguages('zh-CN')
   })
 
@@ -147,27 +144,22 @@ describe('LocaleRuntime', () => {
     expect(events).toHaveLength(1)
     expect(events[0]).toBe(svc.getLocale())
     expect(events[0]!.revision).toBe(1)
-    // Re-selecting the active locale publishes nothing (no subscriber churn)
-    // but still writes: the active value may be a provisional browser-derived
-    // resolution nothing has stored, and picking it is an explicit choice that
-    // must outlive this browser.
+    // 重选当前语言不通知订阅者，但仍要把可能尚未保存的默认值写成显式偏好。
     svc.setLocale('en')
     expect(events).toHaveLength(1)
     expect(host.set).toHaveBeenCalledTimes(2)
     expect(host.set).toHaveBeenLastCalledWith('preference', 'en')
   })
 
-  it('persists an explicit pick of the provisional locale, so a shared DSH home agrees', () => {
-    // A browser naming no shipped language opens at FALLBACK_LOCALE with
-    // nothing stored. Choosing that same language in the menu must become
-    // durable, or a Chinese browser sharing the home still opens Chinese.
-    stubLanguages('fr-FR')
+  it('选择与默认值相同的中文也会持久化为显式偏好', () => {
+    // 即使选中的仍是默认中文，也必须写入 Host，供其他浏览器沿用显式选择。
+    stubLanguages('en-US')
     const host = stubSettingsScope<LocaleSettings>()
     const { svc } = make(host)
-    expect(svc.getLocale().active).toBe('en')
+    expect(svc.getLocale().active).toBe('zh')
     expect(host.set).not.toHaveBeenCalled()
-    svc.setLocale('en')
-    expect(host.set).toHaveBeenCalledWith('preference', 'en')
+    svc.setLocale('zh')
+    expect(host.set).toHaveBeenCalledWith('preference', 'zh')
   })
 
   it('setLocale without a host scope stays process-local', () => {
@@ -182,7 +174,7 @@ describe('LocaleRuntime', () => {
     expect(() => { svc.setLocale('fr') }).toThrow('not registered')
   })
 
-  it('adopts a Host preference over the browser language without writing it back', () => {
+  it('采用 Host 的英文偏好覆盖中文默认值且不回写', () => {
     const host = stubSettingsScope<LocaleSettings>()
     const { svc, events } = make(host)
     host.publish({ status: 'ready', value: { preference: 'en' }, revision: 1, writable: true })
@@ -193,7 +185,7 @@ describe('LocaleRuntime', () => {
     expect(events).toHaveLength(1)
   })
 
-  it('an absent Host preference returns to the browser-derived locale', () => {
+  it('Host 偏好被清除后回到中文默认值', () => {
     const host = stubSettingsScope<LocaleSettings>()
     const { svc } = make(host)
     host.publish({ status: 'ready', value: { preference: 'en' }, revision: 1, writable: true })
@@ -212,60 +204,45 @@ describe('LocaleRuntime', () => {
     expect(host.listenerCount()).toBe(0)
   })
 
-  it('opens provisionally in the browser language, matching regional variants on their primary subtag', () => {
+  it('没有 Host 偏好时始终以中文启动，不读取浏览器语言', () => {
     stubLanguages('en-GB', 'zh-CN')
-    expect(make().svc.getLocale().active).toBe('en')
+    expect(make().svc.getLocale().active).toBe('zh')
     stubLanguages('zh-Hant-TW')
     expect(make().svc.getLocale().active).toBe('zh')
-    // An unshipped language walks the list to the first one this app ships.
+    // 即使浏览器首选英文或其他未提供的语言，默认值也不改变。
     stubLanguages('fr-FR', 'en-US')
-    expect(make().svc.getLocale().active).toBe('en')
-    // Only `language` populated: an empty ordered list, and a host that
-    // exposes no `languages` property at all.
+    expect(make().svc.getLocale().active).toBe('zh')
     vi.stubGlobal('navigator', { languages: [], language: 'en-US' })
-    expect(make().svc.getLocale().active).toBe('en')
+    expect(make().svc.getLocale().active).toBe('zh')
     vi.stubGlobal('navigator', { language: 'en-US' })
-    expect(make().svc.getLocale().active).toBe('en')
-    // No shipped language anywhere in the browser's preferences: en is the
-    // product default rather than an arbitrary near-match.
-    stubLanguages('fr-FR', 'de')
-    expect(make().svc.getLocale().active).toBe('en')
+    expect(make().svc.getLocale().active).toBe('zh')
   })
 
-  it('runs outside a browser (node boots): the default decides and the machine language does not', () => {
+  it('非浏览器运行也以中文启动，不读取 Node 的 navigator', () => {
     vi.stubGlobal('window', undefined)
-    // Node exposes its own global navigator; without a window it must not
-    // reach the resolution at all.
-    stubLanguages('zh-CN')
-    const { svc } = make()
-    expect(svc.getLocale().active).toBe('en')
-    svc.setLocale('zh')
-    expect(svc.getLocale().active).toBe('zh')
-  })
-
-  it('lets an explicit in-process preference replace the browser-derived value', () => {
     stubLanguages('en-US')
     const { svc } = make()
-    svc.setLocale('zh')
     expect(svc.getLocale().active).toBe('zh')
+    svc.setLocale('en')
+    expect(svc.getLocale().active).toBe('en')
   })
 
-  it('serves English as both the opening locale and the dictionary fallback', () => {
-    // One constant covers both jobs: the locale the UI opens in with no usable
-    // browser signal, and the dictionary backing a key the active locale
-    // misses. Safe to share only because the shipped zh/en dictionaries carry
-    // identical key sets (asserted below on a registered pair).
+  it('显式进程内选择仍可覆盖中文默认值', () => {
+    stubLanguages('en-US')
+    const { svc } = make()
+    svc.setLocale('en')
+    expect(svc.getLocale().active).toBe('en')
+  })
+
+  it('中文默认界面缺词时仍由英文字典兜底', () => {
     expect(FALLBACK_LOCALE).toBe('en')
     vi.stubGlobal('window', undefined)
     const { svc } = make()
-    // A key present only in en resolves for a zh reader through the fallback.
+    expect(svc.getLocale().active).toBe('zh')
+    // 中文缺词时使用英文；反向缺词仍显示键名，不静默改变字典优先级。
     svc.register('ns', 'zh', {})
     svc.register('ns', 'en', { onlyEn: 'English only' })
-    svc.setLocale('zh')
-    expect(svc.getLocale().active).toBe('zh')
     expect(svc.bind('ns')('onlyEn')).toBe('English only')
-    // The reverse no longer resolves: a zh-only key is unreachable from en, so
-    // the key itself surfaces (fail loud) rather than silently rendering zh.
     svc.register('ns2', 'zh', { onlyZh: '仅中文' })
     svc.register('ns2', 'en', {})
     svc.setLocale('en')

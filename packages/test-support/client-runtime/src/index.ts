@@ -46,7 +46,6 @@ export { TestRemote } from './remote.ts'
 export { conversationSnapshot, workspaceListState } from './fixtures.ts'
 export type { SessionBehaviorOverrides, SessionFixture, Stabilizer } from './fixtures.ts'
 export { makeTranslate } from './translate.ts'
-export { usePinnedBrowserLanguages } from './locale-env.ts'
 
 /**
  * Bind an observable source to the production renderer's selector hook.

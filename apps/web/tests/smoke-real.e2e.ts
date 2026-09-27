@@ -503,6 +503,11 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY || notReady.length > 0)('web smoke
       },
     )
     baseUrl = (await waitForReadyLine(child)).replace('0.0.0.0', '127.0.0.1')
+    // 此真实 API 场景使用英文选择器；先由 Host 持久设置显式选择英文。
+    await rpc(baseUrl, 'settings.mutate', {
+      ns: 'locale',
+      ops: [{ op: 'set', path: ['preference'], value: 'en' }],
+    })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     page.on('pageerror', e => pageErrors.push(String(e)))

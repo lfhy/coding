@@ -141,21 +141,13 @@ const win = window as FixtureWindow
 let unmount: (() => Promise<void>) | undefined
 
 /**
- * Register the per-test jsdom setup and teardown the assembled boot needs:
- * English pinned before boot so role/text locators stay deterministic across
- * localized component migrations (the newEnglishPage e2e convention), the
- * observers and frame callbacks jsdom lacks, and a full reset of the document,
- * the boot globals, and the injected plugin styles afterwards.
+ * 注册组装启动测试所需的 jsdom API 与清理操作：每轮结束时移除插件样式、
+ * 启动全局量和文档内容。英文快照由 fixture 的显式 Host 偏好固定，
+ * 不依赖 jsdom 的浏览器语言。
  */
 export function installAssembledBootEnv(): void {
   beforeEach(() => {
     localStorage.clear()
-    // The locale service derives its provisional locale from the browser and
-    // takes an explicit choice only from Host settings, which this lane's
-    // fixture transport does not serve; pinning the navigator is what selects
-    // English here.
-    Object.defineProperty(navigator, 'languages', { value: ['en-US'], configurable: true })
-    Object.defineProperty(navigator, 'language', { value: 'en-US', configurable: true })
     document.title = 'Coding'
     vi.stubGlobal('ResizeObserver', ResizeObserverStub)
     vi.stubGlobal('EventSource', EventSourceStub)
@@ -174,22 +166,18 @@ export function installAssembledBootEnv(): void {
     document.head.querySelectorAll('style[data-plugin]').forEach((style) => { style.remove() })
     document.title = ''
     history.replaceState(null, '', '/')
-    // Deleting the own properties uncovers jsdom's own accessors again
-    // (Navigator declares both readonly, hence the erased receiver).
-    const ownNavigator = navigator as unknown as Record<string, unknown>
-    delete ownNavigator.languages
-    delete ownNavigator.language
     vi.unstubAllGlobals()
   })
 }
 
 /**
- * Mount the assembled application on the fixture transport; the teardown
- * registered by installAssembledBootEnv disposes it.
- * @param search - fixture query string used to select deterministic host behavior.
+ * 在 fixture 载体上挂载组装后的应用，由测试环境销毁。
+ * @param search - 选择确定性 Host 行为的 fixture 查询字符串；缺省补上英文偏好以固定快照。
  */
 export function mountAssembledApp(search = '?fixture'): void {
-  history.replaceState(null, '', `/${search}`)
+  const query = new URLSearchParams(search)
+  if (!query.has('fixtureLocale')) query.set('fixtureLocale', 'en')
+  history.replaceState(null, '', `/?${query.toString()}`)
   const root = document.createElement('div')
   root.id = 'root'
   document.body.appendChild(root)

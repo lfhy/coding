@@ -289,6 +289,8 @@ export interface LaunchOptions {
   remoteAuthority?: string
   /** Reuse an existing harness home so a second Host can verify user settings across origins. */
   harnessHome?: string
+  /** 新建测试 Home 默认显式选择英文以固定快照；传入 null 保留无偏好状态，复用 Home 不覆盖其原有选择。 */
+  localePreference?: 'en' | 'zh' | null
 }
 
 /** Dispose the booted tree and remove both owned temp roots, reporting every independent cleanup failure. */
@@ -538,6 +540,10 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     })
     await ctx.loader.await()
     assertEntriesLoaded(ctx, 'web e2e scaffold')
+    // 英文快照使用 Host 设置中的显式选择；复用 Home 时保留上一进程的持久偏好。
+    if (options.harnessHome === undefined && options.localePreference !== null) {
+      await ctx.settings.update(settingsNamespace('locale'), { preference: options.localePreference ?? 'en' })
+    }
     if (options.welcomeNoticePending !== true) {
       await ctx.settings.mutate(settingsNamespace(WELCOME_NOTICE_SETTINGS_NAMESPACE), [{
         op: 'set', path: [WELCOME_NOTICE_ACK_FIELD], value: WELCOME_NOTICE_VERSION,

@@ -23,13 +23,12 @@ describe('web e2e: Full access confirmation', () => {
   let tripwire: ReturnType<typeof watchConsole>
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({})
+    scaffold = await launchWebScaffold({ localePreference: null })
     // CI 使用 Playwright 固定的浏览器；匹配版本暂时不可用时，开发者可让此场景单独
     // 指向已安装的 Chromium。
     const executablePath = process.env.DSH_PLAYWRIGHT_EXECUTABLE_PATH
     browser = await chromium.launch(executablePath === undefined ? {} : { executablePath })
-    // 通过 {@link ZH_BROWSER_LOCALE} 固定中文界面，让快照钉住真实注册词典而非测试
-    // 局部翻译回调。
+    // Host 没有语言偏好时展示中文词典，浏览器语言也固定为中文。
     page = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
     tripwire = watchConsole(page)
     await page.goto(scaffold.baseUrl, { waitUntil: 'load' })

@@ -13,10 +13,6 @@ import { THEME_SETTINGS_NAMESPACE, ThemeSettingsSchema } from '../src/theme-sett
 import { AppearanceRow } from '../src/client/AppearanceRow.tsx'
 import type { createAppearanceRowStore } from '../src/client/settings-store.ts'
 
-// These specs assert the shipped Chinese copy. The lane has no jsdom `window`,
-// so browser-language detection never runs and a fresh LocaleRuntime opens on
-// FALLBACK_LOCALE (en); bench stages zh explicitly on the locale instead.
-
 const SLOT = 'settings.general.item'
 
 function deferred<T>() {
