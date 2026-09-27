@@ -200,7 +200,7 @@ async function mountFace(scripted: ReturnType<typeof scriptedFace>) {
     t,
   }
   const view = render(<ModelsSection {...injected} />)
-  return { view, face, update, replace, mutate, set, unset, controller, mirror }
+  return { view, injected, face, update, replace, mutate, set, unset, controller, mirror }
 }
 
 async function mountSection(overrides: Parameters<typeof scriptedFace>[0] = {}) {
@@ -235,13 +235,20 @@ function openAdvanced(): void {
 }
 
 describe('ModelsSection', () => {
-  it('opens the provider-add form from the vision detail rather than leaving that action hidden', async () => {
+  it('keeps provider actions in the models rail without a vision entry', async () => {
     await mountSection()
-    fireEvent.click(screen.getByRole('button', { name: en.visionFallback }))
-    expect(screen.getByRole('heading', { name: en.visionTool })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: en.visionFallback })).toBeNull()
+    expect(screen.queryByText(en.general)).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: en.add }))
     expect(await screen.findByRole('combobox', { name: en.provider })).toBeTruthy()
-    expect(screen.queryByRole('heading', { name: en.visionTool })).toBeNull()
+  })
+
+  it('allows a containing onboarding modal to own the models title', async () => {
+    const { view, injected } = await mountSection()
+    expect(screen.getByRole('heading', { name: en.title, level: 1 })).toBeTruthy()
+    view.rerender(<ModelsSection {...injected} hideHeader />)
+    expect(screen.queryByRole('heading', { name: en.title, level: 1 })).toBeNull()
+    expect(screen.getByRole('complementary', { name: en.provider })).toBeTruthy()
   })
 
   it('renders nothing before the slot injects its dependencies', () => {
@@ -395,6 +402,9 @@ describe('ModelsSection', () => {
     expect((await screen.findByRole('status')).textContent).toBe(
       providerCopy(en.savedProvider, { provider: 'deepseek-official', displayName: 'DeepSeek' }),
     )
+    fireEvent.change(screen.getByLabelText(en.channelName), { target: { value: 'New unsaved name' } })
+    expect(screen.queryByText(providerCopy(en.savedProvider,
+      { provider: 'deepseek-official', displayName: 'DeepSeek' }))).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: en.add }))
     expect(await screen.findByRole('combobox', { name: en.provider })).toBeTruthy()
   })
@@ -1258,6 +1268,19 @@ describe('ModelsSection', () => {
       ns: 'llm-pi-ai',
       ops: [{ op: 'unset', path: ['providers', 'openai'] }],
     })
+  })
+
+  it('clears the saved notice after removing that same provider', async () => {
+    const { mutate } = await mountSection()
+    selectChannel('openai')
+    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://changed' } })
+    fireEvent.click(screen.getByRole('button', { name: en.apply }))
+    await waitFor(() => { expect(screen.getByText(openaiCopy(en.savedProvider))).toBeTruthy() })
+    fireEvent.click(screen.getByRole('button', { name: en.remove }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: openaiCopy(en.deleteTitle) }))
+      .getByRole('button', { name: openaiCopy(en.deleteConfirm) }))
+    await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(2) })
+    await waitFor(() => { expect(screen.queryByText(openaiCopy(en.savedProvider))).toBeNull() })
   })
 
   it('blocks duplicate deletion while the confirmed removal is pending', async () => {

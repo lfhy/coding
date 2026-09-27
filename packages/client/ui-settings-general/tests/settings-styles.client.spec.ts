@@ -45,11 +45,10 @@ describe('SettingsRoot.module.css', () => {
     expect(declarations('.modelsPanel .options')?.get('overflow')).toBe('hidden')
   })
 
-  it('puts the model settings navigation above the content and keeps it horizontally reachable on narrow screens', () => {
-    expect(css).toMatch(/@media \(max-width: 620px\) \{[\s\S]*?\.modelsPanel \{\s*flex-direction: column;/)
-    expect(css).toMatch(
-      /\.modelsPanel \.nav \{\s*width: 100%;[\s\S]*?\.modelsPanel \.navList \{\s*flex-direction: row;\s*overflow-x: auto;/,
-    )
-    expect(css).toMatch(/\.modelsPanel \.navCell \{\s*flex: none;/)
+  it('puts model and image-recognition navigation above their content on narrow screens', () => {
+    expect(css).toMatch(/@media \(max-width: 620px\) \{[\s\S]*?\.modelsPanel,\s*\.visionPanel \{\s*flex-direction: column;/)
+    expect(css).toMatch(/\.modelsPanel \.nav,\s*\.visionPanel \.nav \{\s*width: 100%;/)
+    expect(css).toMatch(/\.modelsPanel \.navList,\s*\.visionPanel \.navList \{\s*flex-direction: row;\s*overflow-x: auto;/)
+    expect(css).toMatch(/\.modelsPanel \.navCell,\s*\.visionPanel \.navCell \{\s*flex: none;/)
   })
 })

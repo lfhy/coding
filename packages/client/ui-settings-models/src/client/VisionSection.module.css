@@ -1,0 +1,78 @@
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 560px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.section h1 {
+  margin: 0;
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 600;
+}
+
+.section h2 {
+  margin: 8px 0 0;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+}
+
+.section p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 22px;
+  overflow-wrap: anywhere;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.section p.error { color: var(--dsw-alias-state-error-primary); }
+
+.field { display: flex; flex-direction: column; gap: 8px; min-width: 0; font-size: 14px; line-height: 22px; }
+.field > span:first-child { font-weight: 600; }
+.selectWrap { position: relative; display: block; width: 100%; min-width: 0; }
+.select {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 42px;
+  padding: 0 32px 0 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  cursor: pointer;
+}
+.select:disabled { opacity: .6; cursor: default; }
+.selectInput { appearance: none; }
+.chevron {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  display: flex;
+  color: var(--dsw-alias-label-tertiary);
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+.selectWrap:has(.select:disabled) .chevron { opacity: .6; }
+.select:focus-visible, .retry:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 2px; }
+.retry {
+  align-self: flex-start;
+  box-sizing: border-box;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 18px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  cursor: pointer;
+}
+.retry:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover-solid); }
+.retry:disabled { opacity: .4; cursor: default; }

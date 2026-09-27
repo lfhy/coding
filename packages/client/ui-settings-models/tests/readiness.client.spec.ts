@@ -44,6 +44,7 @@ function otherRow(overrides: Partial<ProviderRow> = {}): ProviderRow {
 function state(overrides: Partial<ModelsSettingsState> = {}): ModelsSettingsState {
   return {
     status: 'ready',
+    hasLoaded: true,
     error: null,
     credentialError: null,
     writable: true,
@@ -51,6 +52,10 @@ function state(overrides: Partial<ModelsSettingsState> = {}): ModelsSettingsStat
     namespaces: new Map(),
     visionModels: [],
     visionModelsError: null,
+    onboardingModels: [],
+    onboardingModelsError: null,
+    onboardingModelFailures: [],
+    onboardingDefault: null,
     ...overrides,
   }
 }
@@ -69,60 +74,89 @@ describe('providerUsable', () => {
 })
 
 describe('onboardingReadiness', () => {
-  it('waits for the first join and skips onboarding when the adapter directory entry is absent', () => {
+  const choice = { provider: 'hfai', providerName: 'HFAI', model: 'chat', modelName: 'Chat' }
+  const selectable = () => state({
+    rows: [row(), otherRow()],
+    namespaces: new Map([['agent-default-model', {} as never]]),
+    onboardingModels: [choice],
+  })
+
+  it('waits for every join even when old rows and choices remain visible', () => {
     expect(onboardingReadiness(state({ status: 'idle', rows: [] }))).toEqual({ kind: 'loading' })
-    expect(onboardingReadiness(state({ status: 'loading', rows: [] }))).toEqual({ kind: 'loading' })
-    expect(onboardingReadiness(state({ rows: [] }))).toEqual({ kind: 'adapter-absent' })
-    expect(onboardingReadiness(state({
-      rows: [row({
-        entry: {
-          ...row().entry,
-          settingsNs: '',
-        },
-      })],
-    }))).toEqual({ kind: 'adapter-absent' })
+    expect(onboardingReadiness(state({ status: 'loading', rows: [], onboardingModels: [choice] }))).toEqual({ kind: 'loading' })
+    expect(onboardingReadiness({ ...selectable(), status: 'loading', onboardingDefault: { provider: 'hfai', model: 'chat' } }))
+      .toEqual({ kind: 'loading' })
   })
 
-  it('reports a missing writable effective credential', () => {
-    expect(onboardingReadiness(state())).toEqual({ kind: 'credential-missing' })
+  it('requires an explicit current default and a model returned by a usable route', () => {
+    expect(onboardingReadiness(selectable())).toEqual({ kind: 'needs-selection' })
+    expect(onboardingReadiness({ ...selectable(), onboardingDefault: { provider: 'deepseek-official', model: 'stale' } }))
+      .toEqual({ kind: 'needs-selection' })
+    expect(onboardingReadiness({ ...selectable(), onboardingDefault: { provider: 'hfai', model: 'chat' } }))
+      .toEqual({ kind: 'ready' })
   })
 
-  it('ends onboarding once any other registered provider can serve requests', () => {
-    expect(onboardingReadiness(state({ rows: [row(), otherRow()] }))).toEqual({ kind: 'provider-ready' })
-    // A provider the user cannot reach yet leaves the prompt in place.
-    expect(onboardingReadiness(state({
-      rows: [row(), otherRow({ credential: missingCredential })],
-    }))).toEqual({ kind: 'credential-missing' })
+  it('keeps no route, missing credential, and an empty successful model directory distinct', () => {
+    const namespace = new Map([['agent-default-model', {} as never]])
+    expect(onboardingReadiness(state({ rows: [], namespaces: namespace }))).toEqual({ kind: 'needs-setup', reason: 'no-provider' })
+    expect(onboardingReadiness(state({ namespaces: namespace }))).toEqual({ kind: 'needs-setup', reason: 'credential-missing' })
+    expect(onboardingReadiness(state({ rows: [otherRow()], namespaces: namespace })))
+      .toEqual({ kind: 'needs-setup', reason: 'no-models' })
   })
 
-  it('accepts file and process-environment credentials without prompting', () => {
-    expect(onboardingReadiness(state({
-      rows: [row({ credential: { configured: true, source: 'file', writable: true } })],
-    }))).toEqual({ kind: 'provider-ready' })
-    expect(onboardingReadiness(state({
-      rows: [row({ credential: { configured: true, source: 'env', writable: false } })],
-    }))).toEqual({ kind: 'provider-ready' })
+  it('accepts read-only environment and provider-native authentication when the catalog confirms a model', () => {
+    for (const credential of [{ configured: true, source: 'env' as const, writable: false }, undefined]) {
+      const candidate = otherRow({ apiKeyEnv: credential === undefined ? undefined : 'HFAI_API_KEY', credential })
+      expect(onboardingReadiness({ ...selectable(), rows: [candidate] })).toEqual({ kind: 'needs-selection' })
+    }
   })
 
-  it('turns missing capabilities into diagnostics that never block the product', () => {
+  it('accepts a registered route with no settings address only when its default model is listed', () => {
+    const route = otherRow({
+      entry: { provider: 'deepseek-official', displayName: 'DeepSeek', settingsNs: '', settingsPath: [], active: true },
+      configured: false, apiKeyEnv: undefined, credential: undefined,
+    })
+    const bare = state({ rows: [route], namespaces: new Map([['agent-default-model', {} as never]]) })
+    expect(onboardingReadiness(bare)).toEqual({ kind: 'needs-setup', reason: 'no-models' })
+    expect(onboardingReadiness({
+      ...bare,
+      onboardingModels: [{ provider: 'deepseek-official', providerName: 'DeepSeek', model: 'deepseek-v4-flash', modelName: 'Flash' }],
+      onboardingDefault: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+    })).toEqual({ kind: 'ready' })
+  })
+
+  it('keeps whole and provider-local catalog failures distinct from an empty catalog', () => {
+    expect(onboardingReadiness({ ...selectable(), onboardingModelsError: 'RPC down' }))
+      .toEqual({ kind: 'unavailable', reason: 'catalog-unavailable', detail: 'RPC down' })
+    expect(onboardingReadiness({ ...selectable(), onboardingModels: [], onboardingModelFailures: [
+      { id: 'hfai', name: 'HFAI', message: 'timeout' },
+    ] })).toEqual({ kind: 'unavailable', reason: 'catalog-provider-failed', detail: 'HFAI (hfai): timeout' })
+    expect(onboardingReadiness({ ...selectable(), onboardingModelFailures: [
+      { id: 'deepseek-official', name: 'DeepSeek', message: 'timeout' },
+    ] })).toEqual({ kind: 'needs-selection' })
+  })
+
+  it('shows failures or read-only settings without marking onboarding complete', () => {
     expect(onboardingReadiness(state({ status: 'error', error: 'settings down' }))).toEqual({
       kind: 'unavailable',
       reason: 'load-failed',
+      detail: 'settings down',
     })
     expect(onboardingReadiness(state({
-      rows: [row({ entry: { ...row().entry, active: false } })],
-    }))).toEqual({ kind: 'unavailable', reason: 'provider-inactive' })
-    expect(onboardingReadiness(state({
       credentialError: 'credentials service is absent',
+      namespaces: new Map([['agent-default-model', {} as never]]),
     }))).toEqual({
       kind: 'unavailable',
       reason: 'credentials-unavailable',
+      detail: 'credentials service is absent',
     })
     expect(onboardingReadiness(state({
       rows: [row({ credential: undefined })],
+      namespaces: new Map([['agent-default-model', {} as never]]),
     }))).toEqual({ kind: 'unavailable', reason: 'credentials-unavailable' })
     expect(onboardingReadiness(state({
       rows: [row({ credential: { configured: false, writable: false } })],
+      namespaces: new Map([['agent-default-model', {} as never]]),
     }))).toEqual({ kind: 'unavailable', reason: 'credential-read-only' })
     expect(onboardingReadiness(state({ writable: false }))).toEqual({
       kind: 'unavailable',

@@ -9,7 +9,7 @@ import { createPortal } from 'react-dom'
 import clsx from 'clsx'
 import {
   IconAgentPresetOutline16, IconCloseOutline16, IconDataOutline16,
-  IconPersonalizationOutline16, IconSettingsOutline16,
+  IconPersonalizationOutline16, IconSettingsOutline16, IconSparkle16,
 } from '@deepseek-ai/dsh-client-ui-icons'
 import type { SettingsRootComponentProps, SettingsSectionRow } from './shell-contract.ts'
 import css from './SettingsRoot.module.css'
@@ -17,6 +17,7 @@ import css from './SettingsRoot.module.css'
 /** 按设置分区选择导航图标；其他分区使用设置图标。 */
 function navIcon(id: string) {
   if (id === 'models') return <IconDataOutline16 className={css.navIcon} size={16} />
+  if (id === 'vision-understanding') return <IconSparkle16 className={css.navIcon} size={16} />
   if (id === 'agent-presets') return <IconAgentPresetOutline16 className={css.navIcon} size={16} />
   if (id === 'plugins') return <IconPersonalizationOutline16 className={css.navIcon} size={16} />
   return <IconSettingsOutline16 className={css.navIcon} size={16} />
@@ -52,7 +53,8 @@ function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose }: PanelP
   return (
     <div className={css.overlay} role="presentation">
       <div className={css.mask} aria-hidden="true" onClick={onClose} />
-      <div className={clsx(css.panel, active === 'models' && css.modelsPanel)} role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <div className={clsx(css.panel, active === 'models' && css.modelsPanel,
+        active === 'vision-understanding' && css.visionPanel)} role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <nav className={css.nav}>
           <div className={css.navTitle} id={titleId}>{renderSlot('settings.header', {})}</div>
           <div className={css.navList}>

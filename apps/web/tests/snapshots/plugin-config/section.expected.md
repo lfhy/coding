@@ -7,6 +7,9 @@
     - button "模型":
       - img
       - text: 模型
+    - button "图片识别 Fallback":
+      - img
+      - text: 图片识别 Fallback
     - button "插件":
       - img
       - text: 插件

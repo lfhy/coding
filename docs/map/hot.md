@@ -36,9 +36,9 @@
 
 ## 设置界面与凭据
 
-- **路线**：`packages/client/ui-settings/src/client/index.ts`/`settings-mirror.ts` 持有唯一的 `settings.describe` 镜像与设置 slot；`packages/client/ui-settings-general/src/client/SettingsRoot.tsx` 持有带遮罩的设置模态框及左侧导航；`packages/client/ui-settings-models/src/client/ModelsSection.tsx`/`ProviderEditor.tsx` 持有模型分区中列渠道列表和右列详情，视觉理解工具从中列「通用」小节切换右列配置视图。Host 协议在 `packages/host/apiproxy/src/api/settings.schema.ts`/`credentials.schema.ts`，持久设置和机密分别由 `packages/settings/settings-*` 与 `packages/credentials/credentials-*` 管。
-- **技术与边界**：模型分区使用设置弹窗的三列变体，其他分区保持原有几何；视觉理解目标是模型分区右列的独立配置视图，不是应用级页面。首次 DeepSeek 凭据引导仍为独立弹窗。各 UI 行从共享镜像派生作用域，机密配置只传引用，真实值归 Credentials Provider；详见 [ui-settings](../../packages/client/ui-settings/README.md)、[ui-settings-models](../../packages/client/ui-settings-models/README.md) 及所属 Provider README。
-- **连带与验证**：模型导航或列布局变化时同步 `ui-settings-general`、`ui-settings-models` 与用户指南；新 namespace 同步 schema、Host RPC、设置卡片和包 README；凭据字段不能只改表单，需验证来源及遮蔽拒绝。定向运行 `pnpm exec vitest run packages/client/ui-settings/tests packages/client/ui-settings-general/tests packages/client/ui-settings-models/tests packages/host/apiproxy/tests/api-proxy-config.spec.ts`，可见界面再跑 `pnpm run test:gui`。
+- **路线**：`packages/client/ui-settings/src/client/index.ts`/`settings-mirror.ts` 持有唯一的 `settings.describe` 镜像与设置 slot；`packages/client/ui-settings-general/src/client/SettingsRoot.tsx` 持有带遮罩的设置模态框及左侧导航、引导步骤协调；`packages/client/ui-settings-models/src/client/ModelsSection.tsx`/`ProviderEditor.tsx` 持有模型分区的提供方列表与详情，`VisionSection.tsx` 占用独立的图片识别分区，`DeepSeekOnboardingDialog.tsx` 复用模型配置来选择可启动的默认模型。Host 协议在 `packages/host/apiproxy/src/api/settings.schema.ts`/`credentials.schema.ts`，持久设置和机密分别由 `packages/settings/settings-*` 与 `packages/credentials/credentials-*` 管。
+- **技术与边界**：普通设置的模型分区使用三列变体，图片识别使用独立的普通分区；欢迎引导在单独的阻断式弹窗中呈现提供方与模型两列，已有可用默认模型直接完成，否则须取得可用提供方及至少一个目录模型并选择默认值才能开始。各 UI 行从共享镜像派生作用域，机密配置只传引用，真实值归 Credentials Provider；详见 [ui-settings](../../packages/client/ui-settings/README.md)、[ui-settings-models](../../packages/client/ui-settings-models/README.md) 及所属 Provider README。
+- **连带与验证**：模型导航、欢迎引导或列布局变化时同步 `ui-settings-general`、`ui-settings-models` 与用户指南；新 namespace 同步 schema、Host RPC、设置卡片和包 README；凭据字段不能只改表单，需验证来源及遮蔽拒绝。定向运行 `pnpm exec vitest run packages/client/ui-settings/tests packages/client/ui-settings-general/tests packages/client/ui-settings-models/tests packages/host/apiproxy/tests/api-proxy-config.spec.ts`，可见界面再跑 `pnpm run test:gui`。
 
 ## 对话输入命令与视图
 

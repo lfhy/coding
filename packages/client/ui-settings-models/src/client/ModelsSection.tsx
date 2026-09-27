@@ -1,6 +1,5 @@
 /**
- * 设置模态框的模型分区：中列显示渠道和通用入口，右列在渠道详情与视觉理解配置间切换。
- * 两种详情共用设置镜像与凭据状态；视觉目标只从明确声明图片能力的模型中选择。
+ * 设置模态框的模型分区：中列显示渠道，右列显示渠道详情。
  * 写入由编辑器和页面控制器执行，组件只持有导航、草稿和弹窗交互状态。
  */
 
@@ -8,7 +7,7 @@ import { useState } from 'react'
 import type { ReactNode } from 'react'
 import type { IApiClient } from '@deepseek-ai/dsh-api-remotes/client'
 import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
-import { IconChevronLeftOutline14, IconPlusOutline16, IconSearchOutline16, IconSparkle16 } from '@deepseek-ai/dsh-client-ui-icons'
+import { IconChevronLeftOutline14, IconPlusOutline16, IconSearchOutline16 } from '@deepseek-ai/dsh-client-ui-icons'
 import type { InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 import { CustomProviderCard } from './CustomProviderCard.tsx'
 import { deriveKeyRef, messageOf, protocolChoices } from './store.ts'
@@ -18,27 +17,29 @@ import { ProviderEditor } from './ProviderEditor.tsx'
 import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
 
-/** Injected dependencies of {@link ModelsSection} (slot `inject`). */
+/** 模型分区由 slot 注入的设置镜像与写入能力。 */
 export interface ModelsSectionInjected {
-  /** The page store (loaded on mount, refreshed on pushed invalidations). */
+  /** 首次挂载时加载，接收推送失效通知后刷新的共享页面 store。 */
   controller: ModelsSettingsStore
   hooks: {
-    /** Page snapshot bound by the UI renderer as useSnapshot. */
+    /** 由 UI renderer 绑定为 useSnapshot 的页面快照。 */
     snapshot: ModelsSettingsStore['store']
   }
-  /** Wire faces the editor writes through. */
+  /** 编辑器写入使用的 wire 接口。 */
   api: Pick<IApiClient, 'settings' | 'credentials' | 'llm'>
-  /** Settings schema and immutable path callbacks. */
+  /** 设置 schema 与路径读取操作。 */
   schema: SettingsSchemaOperations
-  /** Section copy. */
+  /** 分区文案。 */
   t: (key: keyof typeof en) => string
 }
 
 /**
- * Props delivered by the slot outlet: the inject face spread flat (the
- * renderer erases the share boundary at the render call).
+ * slot outlet 展开 inject face；引导可隐藏本分区标题，外层弹窗自行提供标题。
  */
-export type ModelsSectionProps = Partial<InjectFace<ModelsSectionInjected>>
+export type ModelsSectionProps = Partial<InjectFace<ModelsSectionInjected>> & {
+  /** 引导弹窗拥有自己的标题时隐藏设置分区标题。 */
+  hideHeader?: boolean
+}
 
 type ModelsSectionFace = InjectFace<ModelsSectionInjected>
 
@@ -143,20 +144,20 @@ export function providerCopy(template: string, target: ProviderIdentity): string
 }
 
 /**
- * Render the Models section content column.
- * @param props - slot-delivered injected dependencies.
- * @returns the section, or null while the shell has not injected yet.
+ * 绘制模型设置中的渠道目录与详情。
+ * @param props - slot 注入的能力及可选标题呈现配置。
+ * @returns 模型分区；尚未注入依赖时不渲染。
  */
 export function ModelsSection(props: ModelsSectionProps): ReactNode {
-  const { controller, useSnapshot, api, schema, t } = props
+  const { controller, useSnapshot, api, schema, t, hideHeader = false } = props
   if (
     controller === undefined || useSnapshot === undefined || api === undefined
     || schema === undefined || t === undefined
   ) return null
-  return <Loaded injected={{ controller, useSnapshot, api, schema, t }} />
+  return <Loaded injected={{ controller, useSnapshot, api, schema, t }} hideHeader={hideHeader} />
 }
 
-function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
+function Loaded({ injected, hideHeader }: { injected: ModelsSectionFace; hideHeader: boolean }): ReactNode {
   const { controller, api, schema, t } = injected
   const state = injected.useSnapshot(snapshot => snapshot)
   const [editing, setEditing] = useState<EditorTarget | undefined>(undefined)
@@ -167,12 +168,9 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
   const [savedTarget, setSavedTarget] = useState<ProviderIdentity | undefined>(undefined)
   const [declaring, setDeclaring] = useState(false)
   const [selected, setSelected] = useState<string | undefined>(undefined)
-  const [showVision, setShowVision] = useState(false)
   const [providerQuery, setProviderQuery] = useState('')
   const [mobileDetail, setMobileDetail] = useState(false)
   const [editorEpoch, setEditorEpoch] = useState(0)
-  const [visionBusy, setVisionBusy] = useState(false)
-  const [visionError, setVisionError] = useState<string | undefined>(undefined)
 
   const announceSaved = async (target: ProviderIdentity): Promise<void> => {
     // 等待镜像与渠道目录联接完成，再让保存提示和新的编辑器读取同一 revision。
@@ -205,18 +203,19 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
           return
         }
         setDeleteTarget(undefined)
+        setSavedTarget(undefined)
       })
       .finally(() => { setDeleting(false) })
   }
 
   if (state.status === 'idle') void controller.load()
-  if (state.status === 'error') {
+  if (state.status === 'error' && !state.hasLoaded) {
     /* v8 ignore next -- an error status always carries text; the fallback satisfies the nullable type */
     const errorText = state.error ?? ''
     return (
       <div className={styles['section']}>
         <p className={styles['error']}>{`${t('loadFailed')}: ${errorText}`}</p>
-        <button type="button" className={styles['secondaryButton']} onClick={() => { void controller.load() }}>
+        <button type="button" className={styles['secondaryButton']} onClick={() => { void controller.retry() }}>
           {t('retry')}
         </button>
       </div>
@@ -249,24 +248,15 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
   const currentNamespace = currentTarget === undefined ? undefined : state.namespaces.get(currentTarget.settingsNs)
   const visibleProviders = directory.filter(row =>
     `${row.entry.displayName} ${row.entry.provider}`.toLocaleLowerCase().includes(providerQuery.toLocaleLowerCase()))
-  const visionNamespace = state.namespaces.get('vision-understanding')
-  const visionProvider = visionNamespace === undefined ? undefined : schema.getPath(visionNamespace.value, ['provider'])
-  const visionModel = visionNamespace === undefined ? undefined : schema.getPath(visionNamespace.value, ['model'])
-  const visionValue = typeof visionProvider === 'string' && typeof visionModel === 'string'
-    ? JSON.stringify([visionProvider, visionModel]) : ''
-  const visionKnown = state.visionModels.some(choice => JSON.stringify([choice.provider, choice.model]) === visionValue)
-  const chooseVision = (value: string): void => {
-    const choice = state.visionModels.find(item => JSON.stringify([item.provider, item.model]) === value)
-    setVisionBusy(true)
-    setVisionError(undefined)
-    void controller.setVisionTarget(choice === undefined ? undefined : { provider: choice.provider, model: choice.model })
-      .then((error) => { setVisionError(error) })
-      .finally(() => { setVisionBusy(false) })
-  }
-
   return (
     <div className={styles['modelsSurface']}>
-      <header className={styles['modelsHeader']}><h1>{t('title')}</h1></header>
+      {state.status === 'error' && !hideHeader ? <div role="alert" className={styles['error']}>
+        {`${t('loadFailed')}: ${state.error ?? ''}`}{' '}
+        <button type="button" className={styles['secondaryButton']} onClick={() => { void controller.retry() }}>
+          {t('retry')}
+        </button>
+      </div> : null}
+      {!hideHeader ? <header className={styles['modelsHeader']}><h1>{t('title')}</h1></header> : null}
       <div className={styles['channelPage']}>
         <aside className={`${styles['channelRail']} ${mobileDetail ? styles['mobileHidden'] : ''}`} aria-label={t('provider')}>
           <label className={styles['channelSearch']}>
@@ -277,12 +267,11 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
           <div className={styles['channelRows']}>
             {visibleProviders.map(row => (
               <button key={row.entry.provider} type="button"
-                className={`${styles['channelRow']} ${!showVision && current?.entry.provider === row.entry.provider ? styles['channelSelected'] : ''}`}
-                aria-current={!showVision && current?.entry.provider === row.entry.provider ? 'true' : undefined}
+                className={`${styles['channelRow']} ${current?.entry.provider === row.entry.provider ? styles['channelSelected'] : ''}`}
+                aria-current={current?.entry.provider === row.entry.provider ? 'true' : undefined}
                 onClick={() => {
                   setSavedTarget(undefined)
                   setSelected(row.entry.provider)
-                  setShowVision(false)
                   setAdding(false)
                   setDeclaring(false)
                   setMobileDetail(true)
@@ -294,12 +283,11 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
             ))}
           </div>
           <div className={styles['channelAddActions']}>
-            <button type="button" className={styles['channelAdd']} disabled={addable.length === 0 || !state.writable}
+            <button type="button" className={styles['channelAdd']} disabled={addable.length === 0 || !state.writable || state.status !== 'ready'}
               onClick={() => {
                 const first = addable[0]
                 if (first === undefined) return
                 setSavedTarget(undefined)
-                setShowVision(false)
                 setAdding(true)
                 setDeclaring(false)
                 setEditing(targetOf(first))
@@ -307,10 +295,9 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
               }}>
               <IconPlusOutline16 size={16} />{t('add')}
             </button>
-            <button type="button" className={styles['channelAdd']} disabled={protocols.length === 0 || !state.writable}
+            <button type="button" className={styles['channelAdd']} disabled={protocols.length === 0 || !state.writable || state.status !== 'ready'}
               onClick={() => {
                 setSavedTarget(undefined)
-                setShowVision(false)
                 setDeclaring(true)
                 setAdding(false)
                 setMobileDetail(true)
@@ -318,102 +305,60 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
               <IconPlusOutline16 size={16} />{t('customAdd')}
             </button>
           </div>
-          <div className={styles['generalActions']}>
-            <p>{t('general')}</p>
-            <button type="button" className={`${styles['channelRow']} ${showVision ? styles['channelSelected'] : ''}`}
-              aria-current={showVision ? 'true' : undefined}
-              onClick={() => {
-                setSavedTarget(undefined)
-                setShowVision(true)
-                setAdding(false)
-                setDeclaring(false)
-                setMobileDetail(true)
-              }}>
-              <IconSparkle16 size={18} />
-              <span className={styles['channelName']}>{t('visionFallback')}</span>
-            </button>
-          </div>
         </aside>
-        <main className={`${styles['channelDetail']} ${!mobileDetail ? styles['mobileHiddenDetail'] : ''}`}>
+        <main className={`${styles['channelDetail']} ${!mobileDetail ? styles['mobileHiddenDetail'] : ''}`}
+          onChangeCapture={() => { setSavedTarget(undefined) }}>
           <button type="button" className={styles['channelBack']} onClick={() => { setMobileDetail(false) }}>
             <IconChevronLeftOutline14 size={16} />{t('provider')}
           </button>
-          {showVision ? <section className={styles['visionDetail']} aria-label={t('visionTool')}>
-            <h2>{t('visionTool')}</h2>
-            <p>{t('visionToolDescription')}</p>
-            {visionNamespace === undefined ? <p role="status">{t('visionUnavailable')}</p> : <>
-              {!state.writable ? <p role="status">{t('readOnly')}</p> : null}
-              <label className={styles['field']}><span className={styles['fieldLabel']}>{t('visionRoute')}</span>
-                <select className={`${styles['input']} ${styles['selectInput']}`} value={visionValue}
-                  disabled={!state.writable || visionBusy} onChange={(event) => { chooseVision(event.target.value) }}>
-                  <option value="">{t('visionNotConfigured')}</option>
-                  {visionValue !== '' && !visionKnown ? <option value={visionValue}>{`${String(visionProvider)}/${String(visionModel)}`}</option> : null}
-                  {state.visionModels.map(choice => <option key={JSON.stringify([choice.provider, choice.model])}
-                    value={JSON.stringify([choice.provider, choice.model])}>{`${choice.providerName} / ${choice.modelName}`}</option>)}
-                </select>
+          {savedIdentity === undefined ? null : <p role="status" className={styles['savedNotice']}>{providerCopy(t('savedProvider'), savedIdentity)}</p>}
+          {!state.writable ? <p className={styles['notice']}>{t('readOnly')}</p> : null}
+          {adding && addTarget !== undefined && addNamespace !== undefined ? (
+            <div className={styles['channelEditor']}>
+              <label className={styles['field']}><span className={styles['fieldLabel']}>{t('provider')}</span>
+                <select className={`${styles['input']} ${styles['selectInput']}`} value={addTarget.provider} onChange={(event) => {
+                  const row = addable.find(candidate => candidate.entry.provider === event.target.value)
+                  if (row !== undefined) {
+                    setSavedTarget(undefined)
+                    setEditing(targetOf(row))
+                  }
+                }}>{addable.map(row => (
+                    <option key={row.entry.provider} value={row.entry.provider}>{row.entry.displayName}</option>
+                  ))}</select>
               </label>
-              {state.visionModelsError === null && state.visionModels.length === 0
-                ? <p role="status">{t('visionNoCandidates')}</p> : null}
-              {state.visionModelsError === null ? null : <>
-                <p role="alert" className={styles['error']}>{`${t('visionLoadFailed')}: ${state.visionModelsError}`}</p>
-                <button type="button" className={styles['secondaryButton']} disabled={state.status === 'loading'}
-                  onClick={() => { void controller.load() }}>{t('retry')}</button>
-              </>}
-              {visionValue !== '' && !visionKnown && state.visionModelsError === null
-                ? <p role="status">{t('visionOldTarget')}</p> : null}
-              {visionBusy ? <p role="status">{t('applying')}</p> : null}
-              {visionError === undefined ? null : <p role="alert" className={styles['error']}>{visionError}</p>}
-            </>}
-          </section> : <>
-            {savedIdentity === undefined ? null : <p role="status" className={styles['savedNotice']}>{providerCopy(t('savedProvider'), savedIdentity)}</p>}
-            {!state.writable ? <p className={styles['notice']}>{t('readOnly')}</p> : null}
-            {adding && addTarget !== undefined && addNamespace !== undefined ? (
-              <div className={styles['channelEditor']}>
-                <label className={styles['field']}><span className={styles['fieldLabel']}>{t('provider')}</span>
-                  <select className={`${styles['input']} ${styles['selectInput']}`} value={addTarget.provider} onChange={(event) => {
-                    const row = addable.find(candidate => candidate.entry.provider === event.target.value)
-                    if (row !== undefined) {
-                      setSavedTarget(undefined)
-                      setEditing(targetOf(row))
-                    }
-                  }}>{addable.map(row => (
-                      <option key={row.entry.provider} value={row.entry.provider}>{row.entry.displayName}</option>
-                    ))}</select>
-                </label>
-                <ProviderEditor key={addTarget.provider} {...addTarget} namespace={addNamespace} schema={schema} api={api} t={t}
-                  readOnly={!state.writable} channelLayout
-                  onSettingsCommitted={(view) => { controller.acceptSettingsView(view) }}
-                  onClose={async (changed) => {
-                    await closeEditor(changed, addTarget)
-                    if (changed) setSelected(addTarget.provider)
-                    setEditorEpoch(n => n + 1)
-                  }} />
-              </div>
-            ) : declaring ? (
-              <CustomProviderCard taken={state.rows.map(row => row.entry.provider)} protocols={protocols}
-                revision={state.namespaces.get('llm-pi-ai')?.revision ?? 0} api={api} t={t} readOnly={!state.writable}
+              <ProviderEditor key={addTarget.provider} {...addTarget} namespace={addNamespace} schema={schema} api={api} t={t}
+                readOnly={!state.writable || state.status !== 'ready'} channelLayout
                 onSettingsCommitted={(view) => { controller.acceptSettingsView(view) }}
                 onClose={async (changed) => {
-                  if (changed) await controller.load()
-                  setDeclaring(false)
+                  await closeEditor(changed, addTarget)
+                  if (changed) setSelected(addTarget.provider)
+                  setEditorEpoch(n => n + 1)
                 }} />
-            ) : currentTarget !== undefined && currentNamespace !== undefined ? (
-              <div className={styles['channelEditor']}>
-                <div className={styles['channelHeading']}>
-                  <h2>{currentTarget.displayName}</h2>
-                  {current?.removable ? <button type="button" className={styles['dangerButton']} disabled={!state.writable}
-                    onClick={() => { setDeleteTarget(currentTarget) }}>{t('remove')}</button> : null}
-                </div>
-                <ProviderEditor key={`${currentTarget.provider}:${editorEpoch}`} {...currentTarget} namespace={currentNamespace}
-                  schema={schema} api={api} t={t} readOnly={!state.writable} hideTitle channelLayout
-                  onSettingsCommitted={(view) => { controller.acceptSettingsView(view) }}
-                  onClose={async (changed) => {
-                    if (changed) await announceSaved(currentTarget)
-                    setEditorEpoch(n => n + 1)
-                  }} />
+            </div>
+          ) : declaring ? (
+            <CustomProviderCard taken={state.rows.map(row => row.entry.provider)} protocols={protocols}
+              revision={state.namespaces.get('llm-pi-ai')?.revision ?? 0} api={api} t={t} readOnly={!state.writable || state.status !== 'ready'}
+              onSettingsCommitted={(view) => { controller.acceptSettingsView(view) }}
+              onClose={async (changed) => {
+                if (changed) await controller.load()
+                setDeclaring(false)
+              }} />
+          ) : currentTarget !== undefined && currentNamespace !== undefined ? (
+            <div className={styles['channelEditor']}>
+              <div className={styles['channelHeading']}>
+                <h2>{currentTarget.displayName}</h2>
+                {current?.removable ? <button type="button" className={styles['dangerButton']} disabled={!state.writable || state.status !== 'ready'}
+                  onClick={() => { setDeleteTarget(currentTarget) }}>{t('remove')}</button> : null}
               </div>
-            ) : <p className={styles['intro']}>{t('intro')}</p>}
-          </>}
+              <ProviderEditor key={`${currentTarget.provider}:${editorEpoch}`} {...currentTarget} namespace={currentNamespace}
+                schema={schema} api={api} t={t} readOnly={!state.writable || state.status !== 'ready'} hideTitle channelLayout
+                onSettingsCommitted={(view) => { controller.acceptSettingsView(view) }}
+                onClose={async (changed) => {
+                  if (changed) await announceSaved(currentTarget)
+                  setEditorEpoch(n => n + 1)
+                }} />
+            </div>
+          ) : <p className={styles['intro']}>{t('intro')}</p>}
         </main>
         <Modal open={deleteTarget !== undefined} onClose={closeDelete}
           title={deleteTarget === undefined ? '' : providerCopy(t('deleteTitle'), deleteTarget)} closeLabel={t('close')}

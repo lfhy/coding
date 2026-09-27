@@ -982,15 +982,6 @@ select.input {
 .candidate { display: flex; align-items: center; min-height: 56px; padding-right: 12px; }
 .candidate + .candidate { border-top: 1px solid var(--dsw-alias-border-l1); }
 .candidateLabel { flex: 1; }
-.generalActions { padding-top: 12px; border-top: 1px solid var(--dsw-alias-border-l2); }
-.generalActions p { margin: 0 10px 8px; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 18px; }
-.generalActions .channelRow { gap: 10px; }
-.visionDetail { max-width: 760px; }
-.visionDetail h2 { margin: 0; font-size: 18px; line-height: 26px; }
-.visionDetail p { color: var(--dsw-alias-label-secondary); font-size: 14px; line-height: 22px; overflow-wrap: anywhere; }
-.visionDetail [role="alert"] { color: var(--dsw-alias-state-error-primary); }
-.visionDetail select.input { max-width: 100%; height: 42px; }
-
 @media (max-width: 620px) {
   .modelsHeader { min-height: 52px; padding: 10px 56px 10px 16px; }
   .modelsHeader h1 { font-size: 18px; line-height: 26px; }

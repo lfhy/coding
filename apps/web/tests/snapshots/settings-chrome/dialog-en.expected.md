@@ -7,6 +7,9 @@
     - button "Models":
       - img
       - text: Models
+    - button "Image recognition fallback":
+      - img
+      - text: Image recognition fallback
     - button "Plugins":
       - img
       - text: Plugins

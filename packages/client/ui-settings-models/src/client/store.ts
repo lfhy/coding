@@ -7,7 +7,7 @@
  */
 
 import type {
-  ConfigurableProviderView, CredentialView, IApiClient, SettingsNamespaceView,
+  ConfigurableProviderView, CredentialView, IApiClient, ModelCatalogFailure, SettingsNamespaceView,
 } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
@@ -34,7 +34,7 @@ export interface ProviderRow {
   credential: CredentialView | undefined
 }
 
-/** 已配置路由公开声明图片输入的模型，不从名字或发现端点推断能力。 */
+/** 目录中的渠道模型；视觉候选另按显式图片输入能力筛选。 */
 export interface VisionModelChoice {
   provider: string
   providerName: string
@@ -42,9 +42,11 @@ export interface VisionModelChoice {
   modelName: string
 }
 
-/** Page snapshot. */
+/** 模型设置页面与首次引导共用的快照。 */
 export interface ModelsSettingsState {
   status: 'idle' | 'loading' | 'ready' | 'error'
+  /** 成功联接过的快照在后续刷新失败时仍可供编辑器呈现。 */
+  hasLoaded: boolean
   /** Whole-load failure text; row-level write failures stay in the editor. */
   error: string | null
   /** Credential enrichment failure; provider/settings rows remain usable. */
@@ -58,6 +60,14 @@ export interface ModelsSettingsState {
   visionModels: readonly VisionModelChoice[]
   /** 视觉模型目录读取失败；与成功返回空候选分开。 */
   visionModelsError: string | null
+  /** 已配置或无配置地址、存活且凭据可用的渠道从成功目录返回的模型。 */
+  onboardingModels: readonly VisionModelChoice[]
+  /** 模型目录整体失败；不能将其解释为空模型列表。 */
+  onboardingModelsError: string | null
+  /** 单个渠道的目录失败；其他渠道的成功候选仍可选择。 */
+  onboardingModelFailures: readonly ModelCatalogFailure[]
+  /** agent-default-model 分节经 schema 路径解析出的当前选择。 */
+  onboardingDefault: { provider: string; model: string } | null
 }
 
 /**
@@ -119,8 +129,9 @@ function apiKeyEnvOf(
 export class ModelsSettingsStore {
   /** The snapshot the section renders from (uSES-safe store). */
   readonly store: SnapshotStore<ModelsSettingsState> = createSnapshotStore<ModelsSettingsState>({
-    status: 'idle', error: null, credentialError: null, writable: false, rows: [], namespaces: new Map(),
+    status: 'idle', hasLoaded: false, error: null, credentialError: null, writable: false, rows: [], namespaces: new Map(),
     visionModels: [], visionModelsError: null,
+    onboardingModels: [], onboardingModelsError: null, onboardingModelFailures: [], onboardingDefault: null,
   })
 
   /** Latest load wins; an older response never overwrites a newer one. */
@@ -143,6 +154,15 @@ export class ModelsSettingsStore {
    */
   acceptSettingsView(view: SettingsNamespaceView): void {
     this.describeFace.acceptView(view)
+  }
+
+  /**
+   * 用户重试时强制刷新设置镜像，然后重新联接目录；普通失效通知只读取已有镜像。
+   * @returns 无返回值；失败诊断保存在页面快照中。
+   */
+  async retry(): Promise<void> {
+    await this.describeFace.refresh()
+    await this.load()
   }
 
   /**
@@ -171,12 +191,43 @@ export class ModelsSettingsStore {
   }
 
   /**
-   * Refresh the whole page snapshot: the provider directory and the mirror's
-   * settings answer in parallel, then one batched credential describe over
-   * every referenced ref. Provider failure or absence of an initial settings
-   * answer keeps the last good rows and surfaces an error; a failed settings
-   * refresh reuses the mirror's held view.
-   * @returns nothing; the snapshot carries the outcome.
+   * 将当前目录中可启动的模型设为 agent 默认模型，并清除旧模型的推理档位。
+   * @param target - 同一代联接产出的渠道与模型。
+   * @returns 写入失败或选择失效的诊断；成功时为 undefined。
+   */
+  async selectOnboardingModel(target: { provider: string; model: string }): Promise<string | undefined> {
+    const state = this.store.getSnapshot()
+    if (state.status !== 'ready' || !state.onboardingModels.some(choice =>
+      choice.provider === target.provider && choice.model === target.model)) {
+      return '所选模型不在当前可用目录中，请重试加载后选择。'
+    }
+    if (!state.writable) return '默认模型设置只读，无法保存选择。'
+    const namespace = state.namespaces.get('agent-default-model')
+    if (namespace === undefined) return 'agent-default-model 设置不可用，无法保存默认模型。'
+    try {
+      const response = await this.api.settings.mutate({
+        ns: namespace.ns,
+        expectedRevision: namespace.revision,
+        ops: [
+          { op: 'set', path: ['provider'], value: target.provider },
+          { op: 'set', path: ['model'], value: target.model },
+          { op: 'unset', path: ['reasoningEffort'] },
+        ],
+      })
+      if (!response.result.ok) return response.result.error.message
+      this.describeFace.acceptView(response.result.value)
+      await this.load()
+      return onboardingReadiness(this.store.getSnapshot()).kind === 'ready'
+        ? undefined : '默认模型已保存，但无法确认当前模型目录；请重试加载。'
+    } catch (error) {
+      return messageOf(error)
+    }
+  }
+
+  /**
+   * 刷新渠道、唯一设置镜像、批量凭据与完整模型目录；只有同一代全部结束后才发布可完成快照。
+   * 渠道或首次设置读取失败保留旧行并报告错误；设置镜像后续刷新失败沿用其已持有视图。
+   * @returns 无返回值；快照承载结果和失败诊断。
    */
   async load(): Promise<void> {
     const generation = ++this.generation
@@ -194,6 +245,7 @@ export class ModelsSettingsStore {
       if (mirrored.view === undefined) {
         throw new Error(mirrored.error ?? 'settings are unavailable in this browser')
       }
+      if (mirrored.error !== null) throw new Error(mirrored.error)
       providers = providersResponse.result.value.providers
       writable = mirrored.view.writable
       views = mirrored.view.namespaces
@@ -206,6 +258,11 @@ export class ModelsSettingsStore {
       return
     }
     const namespaces = new Map(views.map(view => [view.ns, view]))
+    const defaultSection = namespaces.get('agent-default-model')
+    const defaultProvider = defaultSection === undefined ? undefined : this.schema.getPath(defaultSection.value, ['provider'])
+    const defaultModel = defaultSection === undefined ? undefined : this.schema.getPath(defaultSection.value, ['model'])
+    const onboardingDefault = typeof defaultProvider === 'string' && typeof defaultModel === 'string'
+      ? { provider: defaultProvider, model: defaultModel } : null
     const rows: ProviderRow[] = providers.map((entry) => {
       const namespace = namespaces.get(entry.settingsNs)
       const configured = namespace !== undefined
@@ -228,69 +285,78 @@ export class ModelsSettingsStore {
     if (refs.length > 0) {
       try {
         const response = await this.api.credentials.describe({ refs })
-        // Credential state is an enrichment for the Models page: neither a
-        // business rejection nor a transport failure fails the load. The
-        // onboarding projection below retains the failure distinction.
+        // 凭据读取失败不阻止设置页展示渠道；首次引导仍从单独诊断中拒绝完成。
         if (response.result.ok) credentials = response.result.value.credentials
         else credentialError = response.result.error.message
       } catch (error) {
         credentialError = messageOf(error)
       }
     }
+    const joinedRows = rows.map(row => ({
+      ...row,
+      ...row.apiKeyEnv !== undefined && credentials[row.apiKeyEnv] !== undefined
+        ? { credential: credentials[row.apiKeyEnv] }
+        : {},
+    }))
     let visionModels: VisionModelChoice[] = []
     let visionModelsError: string | null = null
-    if (namespaces.has('vision-understanding')) {
-      try {
-        const response = await this.api.llm.models({})
-        if (!response.result.ok) {
-          visionModelsError = response.result.error.message
-        } else {
-          const usable = new Set(rows.filter(row => row.configured && providerUsable({
-            ...row,
-            credential: row.apiKeyEnv === undefined ? undefined : credentials[row.apiKeyEnv],
-          })).map(row => row.entry.provider))
-          const relevantFailures = response.result.value.failures.filter(failure => usable.has(failure.id))
-          if (relevantFailures.length > 0) {
-            visionModelsError = relevantFailures.map(failure =>
-              `${failure.name} (${failure.id}): ${failure.message}`).join('; ')
-          }
-          visionModels = response.result.value.groups.flatMap(group => usable.has(group.id)
+    let onboardingModels: VisionModelChoice[] = []
+    let onboardingModelsError: string | null = null
+    let onboardingModelFailures: ModelCatalogFailure[] = []
+    try {
+      const response = await this.api.llm.models({})
+      if (!response.result.ok) {
+        onboardingModelsError = response.result.error.message
+      } else {
+        const usable = new Set(joinedRows.filter(row => routeAvailable(row) && providerUsable(row))
+          .map(row => row.entry.provider))
+        const visionUsable = new Set(joinedRows.filter(row => row.configured && providerUsable(row))
+          .map(row => row.entry.provider))
+        onboardingModelFailures = response.result.value.failures.filter(failure => usable.has(failure.id))
+        onboardingModels = response.result.value.groups.flatMap(group => usable.has(group.id)
+          ? group.models.map(model => ({
+            provider: group.id, providerName: group.name, model: model.id, modelName: model.name,
+          })) : [])
+        if (namespaces.has('vision-understanding')) {
+          const visionFailures = response.result.value.failures.filter(failure => visionUsable.has(failure.id))
+          visionModelsError = visionFailures.length > 0
+            ? visionFailures.map(failure => `${failure.name} (${failure.id}): ${failure.message}`).join('; ')
+            : null
+          visionModels = response.result.value.groups.flatMap(group => visionUsable.has(group.id)
             ? group.models.filter(model => model.inputModalities?.includes('image') === true)
               .map(model => ({ provider: group.id, providerName: group.name, model: model.id, modelName: model.name }))
             : [])
         }
-      } catch (error) {
-        visionModelsError = messageOf(error)
       }
+    } catch (error) {
+      onboardingModelsError = messageOf(error)
+    }
+    if (namespaces.has('vision-understanding') && onboardingModelsError !== null) {
+      visionModelsError = onboardingModelsError
     }
     if (generation !== this.generation) return
     this.store.update((s) => {
       s.status = 'ready'
+      s.hasLoaded = true
       s.error = null
       s.credentialError = credentialError
       s.writable = writable
-      s.rows = rows.map(row => ({
-        ...row,
-        ...row.apiKeyEnv !== undefined && credentials[row.apiKeyEnv] !== undefined
-          ? { credential: credentials[row.apiKeyEnv] }
-          : {},
-      }))
+      s.rows = joinedRows
       s.namespaces = namespaces
       s.visionModels = visionModels
       s.visionModelsError = visionModelsError
+      s.onboardingModels = onboardingModels
+      s.onboardingModelsError = onboardingModelsError
+      s.onboardingModelFailures = onboardingModelFailures
+      s.onboardingDefault = onboardingDefault
     })
   }
 }
 
 /**
- * Whether a joined row can serve model requests as it stands: the route is
- * registered with the adapter registry, and whatever credential its resolved
- * profile names is stored. A profile naming no reference authenticates through
- * the provider's own path (the Bedrock chain, Vertex ADC, a gateway that needs
- * nothing), as does a live route with no settings address at all, so neither
- * owes this page a key.
- * @param row - one joined provider row.
- * @returns whether the user already has this provider to talk to.
+ * 已注册的渠道满足其显式凭据引用时可用于列出的模型；无引用由提供方原生认证。
+ * @param row - 已联接凭据的渠道行。
+ * @returns 渠道目前是否具备调用条件。
  */
 export function providerUsable(row: ProviderRow): boolean {
   if (!row.entry.active) return false
@@ -298,73 +364,66 @@ export function providerUsable(row: ProviderRow): boolean {
   return row.credential?.configured === true
 }
 
-/** First-run onboarding readiness derived only from the shared Models join. */
+/** Host 附加的已注册无配置地址渠道不需要 settings profile。 */
+function routeAvailable(row: ProviderRow): boolean {
+  return row.configured || (row.entry.settingsNs === '' && row.entry.settingsPath.length === 0)
+}
+
+/** 首次引导只从本代 Models 联接结果计算完成状态。 */
 export type OnboardingReadiness =
   | { kind: 'loading' }
-  | { kind: 'adapter-absent' }
-  | { kind: 'provider-ready' }
-  | { kind: 'credential-missing' }
+  | { kind: 'ready' }
+  | { kind: 'needs-setup'; reason: 'no-provider' | 'credential-missing' | 'no-models' }
+  | { kind: 'needs-selection' }
   | {
     kind: 'unavailable'
     reason:
       | 'load-failed'
-      | 'provider-inactive'
       | 'credentials-unavailable'
       | 'settings-read-only'
       | 'credential-read-only'
+      | 'catalog-unavailable'
+      | 'catalog-provider-failed'
+    detail?: string
   }
 
 /**
- * Project first-run readiness from the provider/settings/credential join used
- * by the Models page. The step exists to leave the user with a model to talk
- * to, so ANY usable provider ends it; only when none exists does the official
- * DeepSeek route — the one route the prompt can offer a key field for — decide
- * whether prompting can help. A missing official configurable-provider
- * declaration means the adapter is not repairable by navigating to Models.
- * @param state - current shared Models join snapshot.
- * @returns the onboarding state without reading a parallel fact source.
+ * 只有当前默认模型匹配本代可启动候选，首次引导才可完成。
+ * @param state - 渠道、设置、凭据与完整模型目录的同代快照。
+ * @returns 可开始、待配置、待选择或不可完成的诊断。
  */
 export function onboardingReadiness(state: ModelsSettingsState): OnboardingReadiness {
-  if ((state.status === 'idle' || state.status === 'loading') && state.rows.length === 0) {
-    return { kind: 'loading' }
-  }
+  if (state.status === 'idle' || state.status === 'loading') return { kind: 'loading' }
   if (state.status === 'error') {
-    return {
-      kind: 'unavailable',
-      reason: 'load-failed',
-    }
+    return { kind: 'unavailable', reason: 'load-failed', ...state.error === null ? {} : { detail: state.error } }
   }
-  if (state.rows.some(providerUsable)) return { kind: 'provider-ready' }
-  const row = state.rows.find(candidate =>
-    candidate.entry.provider === 'deepseek-official'
-    && candidate.entry.settingsNs === 'llm-deepseek'
-    && candidate.entry.settingsPath.length === 0)
-  if (row === undefined) return { kind: 'adapter-absent' }
-  if (!row.entry.active) {
-    return {
-      kind: 'unavailable',
-      reason: 'provider-inactive',
-    }
+  if (state.onboardingModelsError !== null) {
+    return { kind: 'unavailable', reason: 'catalog-unavailable', detail: state.onboardingModelsError }
   }
-  // Past the usable gate an active route names a reference it has no stored
-  // credential for, so the remaining questions are all about that credential.
-  if (state.credentialError !== null || row.credential === undefined) {
-    return {
-      kind: 'unavailable',
-      reason: 'credentials-unavailable',
-    }
+  if (state.onboardingDefault !== null && state.onboardingModels.some(choice =>
+    choice.provider === state.onboardingDefault?.provider && choice.model === state.onboardingDefault.model)) {
+    return { kind: 'ready' }
   }
-  if (!state.writable) {
-    return {
-      kind: 'unavailable',
-      reason: 'settings-read-only',
-    }
+  if (!state.writable || !state.namespaces.has('agent-default-model')) {
+    return { kind: 'unavailable', reason: 'settings-read-only' }
   }
-  if (!row.credential.writable) {
-    return {
-      kind: 'unavailable',
-      reason: 'credential-read-only',
-    }
+  if (state.onboardingModels.length > 0) return { kind: 'needs-selection' }
+  if (state.onboardingModelFailures.length > 0) {
+    return { kind: 'unavailable', reason: 'catalog-provider-failed', detail: state.onboardingModelFailures
+      .map(failure => `${failure.name} (${failure.id}): ${failure.message}`).join('; ') }
   }
-  return { kind: 'credential-missing' }
+  const configured = state.rows.filter(row => routeAvailable(row) && row.entry.active)
+  if (configured.length === 0) return { kind: 'needs-setup', reason: 'no-provider' }
+  if (state.credentialError !== null) {
+    return { kind: 'unavailable', reason: 'credentials-unavailable', detail: state.credentialError }
+  }
+  const missing = configured.find(row => row.apiKeyEnv !== undefined && row.credential?.configured !== true)
+  if (missing !== undefined) {
+    if (missing.credential === undefined) {
+      return { kind: 'unavailable', reason: 'credentials-unavailable' }
+    }
+    if (!missing.credential.writable) return { kind: 'unavailable', reason: 'credential-read-only' }
+    return { kind: 'needs-setup', reason: 'credential-missing' }
+  }
+  return { kind: 'needs-setup', reason: 'no-models' }
 }

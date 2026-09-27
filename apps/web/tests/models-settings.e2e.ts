@@ -1,11 +1,12 @@
-// 真实 Web 组合与 HTTP wire 的模型设置回放：设置模态框内的分区导航、
-// 渠道／图片识别 Fallback 双详情、只写凭据和本机 GET /v1/models 均经 Chromium 操作。
+// 真实 Web 组合与 HTTP wire 的模型设置回放：设置模态框内的独立图片识别分区、
+// 渠道详情、只写凭据和本机 GET /v1/models 均经 Chromium 操作。
 // 不发出模型生成请求；测试路由选 minimax-cn，避免开发者的通用环境密钥遮蔽派生引用。
 import { readFile } from 'node:fs/promises'
 import { createServer, type Server } from 'node:http'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { load } from 'js-yaml'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { Browser, Locator, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
@@ -65,15 +66,38 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
         }, point)).toBe(true)
       }
       await hit(dialog.getByRole('navigation').getByRole('button', { name: '模型' }))
-      await hit(dialog.getByRole('main').getByRole('button', { name: '提供方' }))
       if (detail === 'channel') {
+        await hit(dialog.getByRole('main').getByRole('button', { name: '提供方' }))
         await hit(dialog.getByRole('textbox', { name: 'API 地址' }), true)
         await hit(dialog.getByRole('button', { name: '保存', exact: true }))
+        expect(await dialog.getByRole('main').evaluate(node => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(1)
       } else {
-        await hit(dialog.getByRole('combobox', { name: '视觉模型' }), true)
+        const navigation = dialog.getByRole('navigation')
+        const region = dialog.getByRole('region', { name: '视觉理解工具' })
+        const select = region.getByRole('combobox', { name: '视觉模型' })
+        await hit(navigation.getByRole('button', { name: '图片识别 Fallback' }))
+        await hit(select, true)
+        const [navBox, regionBox] = await Promise.all([navigation.boundingBox(), region.boundingBox()])
+        if (navBox === null || regionBox === null) throw new Error('375px 图片识别导航或详情未显示')
+        expect(navBox.y + navBox.height).toBeLessThanOrEqual(regionBox.y + 1)
+        expect(regionBox.width).toBeGreaterThanOrEqual(280)
+        expect(regionBox.x).toBeGreaterThanOrEqual(bounds.x)
+        expect(regionBox.x + regionBox.width).toBeLessThanOrEqual(bounds.x + bounds.width + 1)
+        const selected = await select.evaluate((node) => {
+          const input = node as HTMLSelectElement
+          const style = getComputedStyle(input)
+          const canvas = document.createElement('canvas')
+          const measure = canvas.getContext('2d')
+          if (measure === null) throw new Error('无法测量视觉模型选项宽度')
+          measure.font = style.font
+          const label = input.selectedOptions[0]?.textContent ?? ''
+          const available = input.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight) - 8
+          return { label, fits: measure.measureText(label).width <= available }
+        })
+        expect(selected).toEqual({ label: 'cerebras / Acme Beta', fits: true })
         expect(await dialog.getByRole('button', { name: '保存', exact: true }).count()).toBe(0)
+        expect(await dialog.evaluate(node => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(1)
       }
-      expect(await dialog.getByRole('main').evaluate(node => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(1)
     }
     if (process.env.DSH_SCREENSHOT_DIR !== undefined) {
       await page.screenshot({ path: join(process.env.DSH_SCREENSHOT_DIR, name), fullPage: false })
@@ -99,7 +123,9 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     const address = modelServer.address()
     if (address === null || typeof address === 'string') throw new Error('model listing has no port')
     modelBaseURL = `http://127.0.0.1:${address.port}/v1`
-    scaffold = await launchWebScaffold({ localePreference: null })
+    // 模型设置要测试未配置的 minimax-cn；另用已就绪的 DeepSeek 路由完成首次引导。
+    scaffold = await launchWebScaffold({ localePreference: null, deepSeekMissingCredential: true })
+    await scaffold.ctx.credentials.set(credentialRef('DEEPSEEK_API_KEY'), 'sk-e2e-onboarding-models')
     browser = await chromium.launch()
     // 不预设 Host 语言偏好，固定中文浏览器语言以覆盖中文界面。
     page = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
@@ -138,7 +164,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     // 未激活的适配器仍把已安装目录交给添加控件。
     const add = dialog.getByRole('button', { name: '添加提供方' })
     await add.waitFor({ timeout: 10_000 })
-    // The button enables once the dormant catalog lands in the join.
+    // 目录异步汇合后，添加按钮才可用。
     await expect.poll(async () => add.isEnabled(), { timeout: 10_000 }).toBe(true)
     await add.click()
     const pick = dialog.getByRole('combobox', { name: '提供方' })
@@ -356,16 +382,21 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
   it('switches to independent image fallback detail and persists a paired visual target', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-models-vision-fallback'))
     const dialog = settings()
-    const rail = providerRail()
-    const fallback = rail.getByRole('button', { name: '图片识别 Fallback' })
+    const navigation = dialog.getByRole('navigation')
+    const fallback = navigation.getByRole('button', { name: '图片识别 Fallback' })
+    expect(await providerRail().getByRole('button', { name: '图片识别 Fallback' }).count()).toBe(0)
     await fallback.click()
-    expect(await fallback.getAttribute('aria-current')).toBe('true')
-    expect(await dialog.getByRole('navigation').getByRole('button', { name: '模型' }).getAttribute('aria-current')).toBe('true')
-    const detail = dialog.getByRole('main').getByRole('region', { name: '视觉理解工具' })
+    await expect.poll(() => fallback.getAttribute('aria-current')).toBe('true')
+    expect(await navigation.getByRole('button', { name: '模型' }).getAttribute('aria-current')).toBeNull()
+    const detail = dialog.getByRole('region', { name: '视觉理解工具' })
     await detail.getByRole('heading', { name: '视觉理解工具' }).waitFor()
-    expect(await dialog.getByRole('main').getByRole('heading', { name: 'cerebras' }).count()).toBe(0)
+    expect(await dialog.getByRole('complementary', { name: '提供方' }).count()).toBe(0)
+    expect(await dialog.getByRole('heading', { name: 'cerebras' }).count()).toBe(0)
     expect(await dialog.getByRole('button', { name: '保存', exact: true }).count()).toBe(0)
     expect(await dialog.getByRole('button', { name: '删除', exact: true }).count()).toBe(0)
+    const panel = await dialog.boundingBox()
+    if (panel === null) throw new Error('图片识别分区未绘制')
+    expect(panel.width).toBe(800)
 
     const select = detail.getByRole('combobox', { name: '视觉模型' })
     await expect.poll(async () => select.locator('option').allTextContents(), { timeout: 10_000 })
@@ -394,8 +425,11 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     const cleared = await settingsDocument()
     expect((load(cleared) as Record<string, Record<string, unknown>>)['vision-understanding']?.['provider']).toBeUndefined()
     expect((load(cleared) as Record<string, Record<string, unknown>>)['vision-understanding']?.['model']).toBeUndefined()
+    await navigation.getByRole('button', { name: '模型' }).click()
     await provider('cerebras').click()
     await dialog.getByRole('main').getByRole('heading', { name: 'cerebras' }).waitFor()
+    expect(await navigation.getByRole('button', { name: '模型' }).getAttribute('aria-current')).toBe('true')
+    expect(await fallback.getAttribute('aria-current')).toBeNull()
     expect(await detail.count()).toBe(0)
     expect(await dialog.getByRole('button', { name: '保存', exact: true }).isVisible()).toBe(true)
     expect(await dialog.getByRole('button', { name: '删除', exact: true }).isVisible()).toBe(true)

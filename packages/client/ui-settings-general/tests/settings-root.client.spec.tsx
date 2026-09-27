@@ -198,6 +198,7 @@ describe('SettingsPanel navigation', () => {
       rows: [
         { id: 'general', order: 0, label: 'General' },
         { id: 'models', order: 10, label: 'Models' },
+        { id: 'vision-understanding', order: 15, label: 'Image recognition' },
         { id: 'agent-presets', order: 20, label: 'Agent presets' },
         { id: 'plugins', order: 30, label: 'Plugins' },
         { id: 'contributed', order: 40, label: 'Contributed' },
@@ -205,13 +206,13 @@ describe('SettingsPanel navigation', () => {
     })
     openPanel()
     // 图标本身不携带分区 id，以实际绘制的图形区分。
-    const glyphs = ['General', 'Models', 'Agent presets', 'Plugins', 'Contributed']
+    const glyphs = ['General', 'Models', 'Image recognition', 'Agent presets', 'Plugins', 'Contributed']
       .map(name => screen.getByRole('button', { name }).querySelector('svg')?.innerHTML)
 
     expect(glyphs.every(glyph => glyph !== undefined && glyph !== '')).toBe(true)
-    // 三个特定分区拥有独立图标，其余分区使用通用设置图标。
-    expect(new Set(glyphs.slice(0, 4)).size).toBe(4)
-    expect(glyphs[4]).toBe(glyphs[0])
+    // 四个特定分区拥有独立图标，其余分区使用通用设置图标。
+    expect(new Set(glyphs.slice(0, 5)).size).toBe(5)
+    expect(glyphs[5]).toBe(glyphs[0])
   })
 
   it('switches between ordinary sections without changing the panel geometry', () => {
@@ -245,6 +246,21 @@ describe('SettingsPanel navigation', () => {
     expect(dialog.className).not.toContain('modelsPanel')
     expect(screen.getByTestId('section-general')).toBeTruthy()
     expect(screen.queryByTestId('section-models')).toBeNull()
+  })
+
+  it('opens image recognition as its own ordinary settings section', () => {
+    mount({ rows: [
+      { id: 'general', order: 0, label: 'General' },
+      { id: 'models', order: 10, label: 'Models' },
+      { id: 'vision-understanding', order: 15, label: 'Image recognition' },
+    ] })
+    openPanel()
+    const dialog = screen.getByRole('dialog')
+    fireEvent.click(screen.getByRole('button', { name: 'Image recognition' }))
+    expect(dialog.className).toContain('visionPanel')
+    expect(dialog.className).not.toContain('modelsPanel')
+    expect(screen.getByTestId('section-vision-understanding')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Image recognition' }).getAttribute('aria-current')).toBe('true')
   })
 
   it('mounts onboarding steps in order and transfers ownership only on completion', () => {

@@ -7,6 +7,9 @@
     - button "模型":
       - img
       - text: 模型
+    - button "图片识别 Fallback":
+      - img
+      - text: 图片识别 Fallback
     - button "插件":
       - img
       - text: 插件
@@ -64,10 +67,6 @@
     - button "添加自定义提供方":
       - img
       - text: 添加自定义提供方
-    - paragraph: 通用
-    - button "图片识别 Fallback":
-      - img
-      - text: 图片识别 Fallback
   - main:
     - heading "DeepSeek" [level=2]
     - text: API 密钥

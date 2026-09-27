@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { RpcResponse, SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
-import { SettingsDescribeMirror, type SettingsDescribeView } from '../src/client/settings-mirror.ts'
+import { SettingsDescribeMirror, type SettingsDescribeFace, type SettingsDescribeView } from '../src/client/settings-mirror.ts'
 
 let rpc = 0
 
@@ -91,11 +91,33 @@ describe('SettingsDescribeMirror', () => {
     expect(describeCall).toHaveBeenCalledTimes(1)
   })
 
+  it('lets a user retry through the describe face while preserving a held view on failure', async () => {
+    const describeCall = vi.fn()
+      .mockResolvedValueOnce(described([view('theme', 1)]))
+      .mockResolvedValueOnce(rejected('temporarily unavailable'))
+      .mockResolvedValueOnce(described([view('theme', 2)]))
+    const mirror = new SettingsDescribeMirror({ settings: { describe: describeCall } } as never)
+    const face: SettingsDescribeFace = mirror
+    await face.ensure()
+    const held = face.getSnapshot().view
+
+    await face.refresh()
+    expect(face.getSnapshot()).toEqual({ status: 'ready', view: held, error: 'temporarily unavailable' })
+    await face.ensure()
+    expect(describeCall).toHaveBeenCalledTimes(2)
+
+    await face.refresh()
+    expect(face.getSnapshot()).toMatchObject({ status: 'ready', error: null })
+    expect(face.getSnapshot().view?.namespaces[0]?.revision).toBe(2)
+    expect(describeCall).toHaveBeenCalledTimes(3)
+  })
+
   it('memory persistence is terminally unavailable and never touches the wire', async () => {
     const describeCall = vi.fn()
     const mirror = new SettingsDescribeMirror({ settings: { describe: describeCall } } as never, 'memory')
     await mirror.ensure()
     await mirror.load()
+    await mirror.refresh()
     expect(mirror.getSnapshot()).toEqual({ status: 'unavailable', view: undefined, error: null })
     expect(describeCall).not.toHaveBeenCalled()
   })

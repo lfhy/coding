@@ -69,7 +69,7 @@ workspace 共 234 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/client/ui-renderer` — 负责 React 渲染层的浏览器 Cordis 插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 9）
 - `packages/client/ui-settings` — 设置领域的底座，本身不含任何呈现内容 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 5）
 - `packages/client/ui-settings-general` — 设置外壳、无特定功能归属文案与持久化产品引导 namespace [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 8）
-- `packages/client/ui-settings-models` — 模型设置、视觉理解目标与首次使用凭据引导插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 15）
+- `packages/client/ui-settings-models` — 模型设置、视觉理解目标与首次使用模型配置引导插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 15）
 - `packages/client/ui-settings-plugin-inventory` — Web 设置中的只读**插件列表**标签页 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 3）
 - `packages/client/ui-settings-plugins` — **插件**设置分区及其**插件配置**标签页 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 5）
 - `packages/client/ui-sidebar` — 侧边栏外壳插件：负责品牌行、New Session 操作、布局持有的折叠控件、可感知滚动的区域 seat… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 7）

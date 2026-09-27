@@ -36,6 +36,14 @@ function mountStateful(initial: ModelDraft[] = []) {
 }
 
 describe('channel model catalog', () => {
+  it('does not describe an inherited provider catalog as an empty model directory', () => {
+    render(<ModelListEditor models={[]} overridden={false} onChange={vi.fn()}
+      probe={{ settingsNs: 'llm-pi-ai', provider: 'test' }} api={{ llm: {} } as never}
+      t={key => en[key]} disabled={false} />)
+    expect(screen.getByText(en.modelsInherited)).toBeTruthy()
+    expect(screen.queryByText(en.modelsEmpty)).toBeNull()
+  })
+
   it('shows row-level vision and reasoning facts without opening capacities or guessing absent metadata', () => {
     expect(modelCapabilities({ id: 'known', input: ['text', 'image'], reasoningEfforts: { off: null, high: 'high' } }, 'llm-pi-ai'))
       .toEqual({ vision: 'supported', reasoning: 'supported' })

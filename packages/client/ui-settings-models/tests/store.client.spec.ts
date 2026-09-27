@@ -1,9 +1,10 @@
 /** Page-store join: directory × namespaces × credentials, with last-good rows on failure. */
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { RpcResponse } from '@deepseek-ai/dsh-api-remotes/client'
 import { SettingsDescribeMirror } from '@deepseek-ai/dsh-client-ui-settings/src/client/settings-mirror.ts'
 import { settingsSchema } from './settings-schema.client.ts'
 import { messageOf, ModelsSettingsStore } from '../src/client/store.ts'
+import { onboardingReadiness } from '../src/client/store.ts'
 
 let nextRpc = 0
 function ok<T>(value: T): RpcResponse<T> {
@@ -21,6 +22,12 @@ const DIRECTORY = [
 ]
 
 const NAMESPACES = [
+  {
+    ns: 'agent-default-model', schema: {},
+    value: { provider: 'deepseek-official', model: 'stale', reasoningEffort: 'high' },
+    user: { provider: 'deepseek-official', model: 'stale', reasoningEffort: 'high' },
+    applies: 'live' as const, secrets: [], revision: 7,
+  },
   {
     ns: 'llm-deepseek',
     schema: {},
@@ -45,17 +52,23 @@ function api(overrides: {
   providers?: () => Promise<RpcResponse<{ providers: typeof DIRECTORY }>>
   describeSettings?: () => Promise<RpcResponse<{ writable: boolean; namespaces: typeof NAMESPACES }>>
   describeCredentials?: (refs: string[]) => Promise<RpcResponse<{ credentials: Record<string, unknown> }>>
+  models?: () => Promise<RpcResponse<{
+    groups: Array<{ id: string; name: string; models: Array<{ id: string; name: string }> }>
+    failures: Array<{ id: string; name: string; message: string }>
+  }>>
+  mutate?: (payload: unknown) => Promise<unknown>
 } = {}) {
   const seenRefs: string[][] = []
   const face = {
     llm: {
       providers: overrides.providers ?? (() => Promise.resolve(ok({ providers: DIRECTORY }))),
-      models: () => Promise.resolve(ok({ groups: [], failures: [] })),
+      models: overrides.models ?? (() => Promise.resolve(ok({ groups: [], failures: [] }))),
     },
     settings: {
       describe: overrides.describeSettings ?? (() => Promise.resolve(ok({ writable: true, hasDocument: false, namespaces: NAMESPACES }))),
       update: () => Promise.resolve(fail('unused')),
       replace: () => Promise.resolve(fail('unused')),
+      mutate: overrides.mutate ?? (() => Promise.resolve(fail('unused'))),
     },
     credentials: {
       describe: (payload: { refs: string[] }) => {
@@ -73,6 +86,127 @@ function api(overrides: {
 }
 
 describe('ModelsSettingsStore', () => {
+  it('requires a successfully listed model even after a key is configured', async () => {
+    const { face, mirror } = api()
+    const store = new ModelsSettingsStore(face, settingsSchema, mirror)
+    await store.load()
+    expect(store.store.getSnapshot().onboardingModels).toEqual([])
+    expect(onboardingReadiness(store.store.getSnapshot())).toEqual({ kind: 'needs-setup', reason: 'credential-missing' })
+    const configured = api({ describeCredentials: async refs => ok({ credentials: Object.fromEntries(refs.map(ref => [
+      ref, { configured: true, writable: true },
+    ])) }) })
+    const configuredStore = new ModelsSettingsStore(configured.face, settingsSchema, configured.mirror)
+    await configuredStore.load()
+    expect(onboardingReadiness(configuredStore.store.getSnapshot())).toEqual({ kind: 'needs-setup', reason: 'no-models' })
+  })
+
+  it('offers other configured routes when the preset DeepSeek default is stale', async () => {
+    const { face, mirror } = api({ models: async () => ok({ groups: [
+      { id: 'deepseek-official', name: 'DeepSeek', models: [{ id: 'stale', name: 'Old' }] },
+      { id: 'openai', name: 'OpenAI', models: [{ id: 'chat', name: 'Chat' }] },
+      { id: 'ghost', name: 'Ghost', models: [{ id: 'ghost', name: 'Ghost' }] },
+    ], failures: [] }) })
+    const store = new ModelsSettingsStore(face, settingsSchema, mirror)
+    await store.load()
+    expect(store.store.getSnapshot().onboardingModels).toEqual([
+      { provider: 'openai', providerName: 'OpenAI', model: 'chat', modelName: 'Chat' },
+      { provider: 'ghost', providerName: 'Ghost', model: 'ghost', modelName: 'Ghost' },
+    ])
+    expect(onboardingReadiness(store.store.getSnapshot())).toEqual({ kind: 'needs-selection' })
+  })
+
+  it('joins Host-attached route-only adapters without accepting an unresolved named profile', async () => {
+    const directory = [
+      { provider: 'deepseek-official', displayName: 'DeepSeek', settingsNs: '', settingsPath: [], active: true },
+      { provider: 'dormant', displayName: 'Dormant', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'dormant'], active: true },
+    ]
+    const { face, mirror, seenRefs } = api({
+      providers: async () => ok({ providers: directory as never }),
+      describeSettings: async () => ok({ writable: true, namespaces: NAMESPACES.map(ns => ns.ns === 'agent-default-model'
+        ? { ...ns, value: { provider: 'deepseek-official', model: 'deepseek-v4-flash' } } : ns) } as never),
+      models: async () => ok({ groups: [
+        { id: 'deepseek-official', name: 'DeepSeek', models: [{ id: 'deepseek-v4-flash', name: 'DeepSeek-V4-Flash' }] },
+        { id: 'dormant', name: 'Dormant', models: [{ id: 'not-configured', name: 'Not configured' }] },
+      ], failures: [] }),
+    })
+    const store = new ModelsSettingsStore(face, settingsSchema, mirror)
+    await store.load()
+    expect(seenRefs).toEqual([])
+    expect(store.store.getSnapshot().rows.map(row => row.configured)).toEqual([false, false])
+    expect(store.store.getSnapshot().onboardingModels).toEqual([
+      { provider: 'deepseek-official', providerName: 'DeepSeek', model: 'deepseek-v4-flash', modelName: 'DeepSeek-V4-Flash' },
+    ])
+    expect(onboardingReadiness(store.store.getSnapshot())).toEqual({ kind: 'ready' })
+  })
+
+  it('does not complete a route-only default when the catalog returns no model', async () => {
+    const { face, mirror } = api({
+      providers: async () => ok({ providers: [
+        { provider: 'deepseek-official', displayName: 'DeepSeek', settingsNs: '', settingsPath: [], active: true },
+      ] as never }),
+    })
+    const store = new ModelsSettingsStore(face, settingsSchema, mirror)
+    await store.load()
+    expect(onboardingReadiness(store.store.getSnapshot())).toEqual({ kind: 'needs-setup', reason: 'no-models' })
+  })
+
+  it('preserves the full-catalog and per-provider failure distinction', async () => {
+    const failing = api({ models: async () => fail('catalog RPC rejected') })
+    const store = new ModelsSettingsStore(failing.face, settingsSchema, failing.mirror)
+    await store.load()
+    expect(onboardingReadiness(store.store.getSnapshot())).toEqual({
+      kind: 'unavailable', reason: 'catalog-unavailable', detail: 'catalog RPC rejected',
+    })
+    const partial = api({ models: async () => ok({ groups: [], failures: [
+      { id: 'openai', name: 'OpenAI', message: 'list failed' },
+      { id: 'anthropic', name: 'Anthropic', message: 'not configured' },
+    ] }) })
+    const partialStore = new ModelsSettingsStore(partial.face, settingsSchema, partial.mirror)
+    await partialStore.load()
+    expect(partialStore.store.getSnapshot().onboardingModelFailures).toEqual([
+      { id: 'openai', name: 'OpenAI', message: 'list failed' },
+    ])
+    expect(onboardingReadiness(partialStore.store.getSnapshot())).toEqual({
+      kind: 'unavailable', reason: 'catalog-provider-failed', detail: 'OpenAI (openai): list failed',
+    })
+  })
+
+  it('atomically saves a current choice at the expected revision and clears stale effort', async () => {
+    const mutate = vi.fn(async () => ok({
+      ...NAMESPACES[0], revision: 8, value: { provider: 'openai', model: 'chat' }, user: { provider: 'openai', model: 'chat' },
+    }))
+    const wire = api({
+      mutate,
+      models: async () => ok({ groups: [{ id: 'openai', name: 'OpenAI', models: [{ id: 'chat', name: 'Chat' }] }], failures: [] }),
+    })
+    const store = new ModelsSettingsStore(wire.face, settingsSchema, wire.mirror)
+    await store.load()
+    expect(await store.selectOnboardingModel({ provider: 'deepseek-official', model: 'stale' }))
+      .toContain('不在当前可用目录')
+    expect(mutate).not.toHaveBeenCalled()
+    expect(await store.selectOnboardingModel({ provider: 'openai', model: 'chat' })).toBeUndefined()
+    expect(mutate).toHaveBeenCalledWith({ ns: 'agent-default-model', expectedRevision: 7, ops: [
+      { op: 'set', path: ['provider'], value: 'openai' },
+      { op: 'set', path: ['model'], value: 'chat' },
+      { op: 'unset', path: ['reasoningEffort'] },
+    ] })
+    expect(onboardingReadiness(store.store.getSnapshot())).toEqual({ kind: 'ready' })
+  })
+
+  it('returns revision conflicts and transport errors without accepting a failed default', async () => {
+    for (const mutate of [async () => fail('settings-conflict'), async () => { throw new Error('wire down') }]) {
+      const wire = api({
+        mutate,
+        models: async () => ok({ groups: [{ id: 'openai', name: 'OpenAI', models: [{ id: 'chat', name: 'Chat' }] }], failures: [] }),
+      })
+      const store = new ModelsSettingsStore(wire.face, settingsSchema, wire.mirror)
+      await store.load()
+      expect(await store.selectOnboardingModel({ provider: 'openai', model: 'chat' }))
+        .toMatch(/settings-conflict|wire down/)
+      expect(onboardingReadiness(store.store.getSnapshot())).toEqual({ kind: 'needs-selection' })
+    }
+  })
+
   it('joins rows with configured, removable, and credential state', async () => {
     const { face, mirror, seenRefs } = api()
     const store = new ModelsSettingsStore(face, settingsSchema, mirror)
@@ -133,16 +267,26 @@ describe('ModelsSettingsStore', () => {
   })
 
   it('surfaces a directory failure and keeps the last good rows', async () => {
-    const { face, mirror } = api()
+    let unavailable = false
+    const { face, mirror } = api({ providers: async () => unavailable
+      ? fail('directory down') : ok({ providers: DIRECTORY }) })
     const store = new ModelsSettingsStore(face, settingsSchema, mirror)
     await store.load()
-    expect(store.store.getSnapshot().rows).toHaveLength(4)
+    const lastGood = store.store.getSnapshot()
+    expect(lastGood).toMatchObject({ status: 'ready', hasLoaded: true })
+    expect(lastGood.rows).toHaveLength(4)
+    unavailable = true
+    await store.load()
+    expect(store.store.getSnapshot()).toMatchObject({ status: 'error', hasLoaded: true, error: 'directory down' })
+    expect(store.store.getSnapshot().rows).toBe(lastGood.rows)
+    expect(store.store.getSnapshot().namespaces).toBe(lastGood.namespaces)
+    unavailable = false
+    await store.retry()
+    expect(store.store.getSnapshot()).toMatchObject({ status: 'ready', hasLoaded: true, error: null })
     const broken = api({ providers: () => Promise.resolve(fail('directory down')) })
     const failing = new ModelsSettingsStore(broken.face, settingsSchema, broken.mirror)
     await failing.load()
-    expect(failing.store.getSnapshot()).toMatchObject({ status: 'error', error: 'directory down' })
-    // The first store's snapshot is untouched by the second's failure.
-    expect(store.store.getSnapshot().status).toBe('ready')
+    expect(failing.store.getSnapshot()).toMatchObject({ status: 'error', hasLoaded: false, error: 'directory down' })
   })
 
   it('lets the newest load win over a stale slow response', async () => {
@@ -165,6 +309,30 @@ describe('ModelsSettingsStore', () => {
     release?.()
     await Promise.all([first, second])
     expect(store.store.getSnapshot().status).toBe('ready')
+  })
+
+  it('does not expose old candidate rows as ready while a newer catalog is pending', async () => {
+    let release: (() => void) | undefined
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    let call = 0
+    const { face, mirror } = api({
+      models: async () => {
+        call += 1
+        if (call === 2) {
+          await gate
+          return ok({ groups: [], failures: [] })
+        }
+        return ok({ groups: [{ id: 'openai', name: 'OpenAI', models: [{ id: 'chat', name: 'Chat' }] }], failures: [] })
+      },
+    })
+    const store = new ModelsSettingsStore(face, settingsSchema, mirror)
+    await store.load()
+    const pending = store.load()
+    expect(onboardingReadiness(store.store.getSnapshot())).toEqual({ kind: 'loading' })
+    expect(await store.selectOnboardingModel({ provider: 'openai', model: 'chat' })).toContain('不在当前可用目录')
+    release?.()
+    await pending
+    expect(store.store.getSnapshot().onboardingModels).toEqual([])
   })
 })
 
@@ -241,7 +409,7 @@ describe('edge joins', () => {
     const { face, mirror } = api({
       describeSettings: () => {
         settingsCall += 1
-        return Promise.resolve(settingsCall === 1
+        return Promise.resolve(settingsCall === 1 || settingsCall === 3
           ? ok({ writable: true, hasDocument: false, namespaces: NAMESPACES })
           : fail('settings refresh down'))
       },
@@ -251,8 +419,10 @@ describe('edge joins', () => {
     await mirror.load()
     expect(mirror.getSnapshot().error).toBe('settings refresh down')
     await store.load()
-    expect(store.store.getSnapshot()).toMatchObject({ status: 'ready', error: null })
+    expect(store.store.getSnapshot()).toMatchObject({ status: 'error', hasLoaded: true, error: 'settings refresh down' })
     expect(store.store.getSnapshot().rows).toHaveLength(4)
+    await store.retry()
+    expect(store.store.getSnapshot()).toMatchObject({ status: 'ready', hasLoaded: true, error: null })
   })
 
   it('stringifies a non-Error load failure', async () => {

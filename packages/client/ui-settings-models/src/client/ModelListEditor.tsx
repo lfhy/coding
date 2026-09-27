@@ -394,7 +394,8 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
           <IconRefreshOutline16 size={16} />{busy ? t('fetching') : t('fetchModels')}
         </button>
       </div>
-      {models.length === 0 ? <p className={styles['modelEmpty']}>{t('modelsEmpty')}</p> : null}
+      {models.length === 0 && props.overridden !== false
+        ? <p className={styles['modelEmpty']}>{t('modelsEmpty')}</p> : null}
       {models.map((model, index) => (
         <div key={index} className={styles['modelEntry']}>
           <div className={styles['modelRow']}>

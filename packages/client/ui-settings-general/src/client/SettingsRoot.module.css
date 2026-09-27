@@ -267,7 +267,8 @@
 }
 
 @media (max-width: 620px) {
-  .modelsPanel {
+  .modelsPanel,
+  .visionPanel {
     flex-direction: column;
     width: calc(100vw - 24px);
     max-width: calc(100vw - 24px);
@@ -275,19 +276,22 @@
     border-radius: 16px;
   }
 
-  .modelsPanel .nav {
+  .modelsPanel .nav,
+  .visionPanel .nav {
     width: 100%;
     padding: 12px;
     gap: 8px;
   }
 
-  .modelsPanel .navList {
+  .modelsPanel .navList,
+  .visionPanel .navList {
     flex-direction: row;
     overflow-x: auto;
     overflow-y: hidden;
   }
 
-  .modelsPanel .navCell {
+  .modelsPanel .navCell,
+  .visionPanel .navCell {
     flex: none;
   }
 }

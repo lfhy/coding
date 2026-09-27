@@ -1,23 +1,74 @@
-- dialog "添加一个 API Key 开始使用":
-  - heading "添加一个 API Key 开始使用" [level=2]
-  - paragraph: 配置一个 AI 模型，即可开始使用。
-  - text: API 密钥
-  - textbox "API 密钥":
-    - /placeholder: 输入 API 密钥
-  - text: 渠道名称
-  - textbox "渠道名称": default
-  - group:
-    - text: 自定义设置 API 地址
+- dialog "配置模型，开始使用":
+  - heading "配置模型，开始使用" [level=2]
+  - paragraph: 选择或添加提供方，再为其配置至少一个可用模型。
+  - complementary "提供方":
+    - img
+    - textbox "搜索模型平台…"
+    - button "DeepSeek"
+    - button "amazon-bedrock"
+    - button "ant-ling"
+    - button "anthropic"
+    - button "azure-openai-responses"
+    - button "cerebras"
+    - button "cloudflare-ai-gateway"
+    - button "cloudflare-workers-ai"
+    - button "deepseek"
+    - button "fireworks"
+    - button "github-copilot"
+    - button "google"
+    - button "google-vertex"
+    - button "groq"
+    - button "huggingface"
+    - button "kimi-coding"
+    - button "minimax"
+    - button "minimax-cn"
+    - button "mistral"
+    - button "moonshotai"
+    - button "moonshotai-cn"
+    - button "nvidia"
+    - button "openai"
+    - button "opencode"
+    - button "opencode-go"
+    - button "openrouter"
+    - button "qwen-token-plan"
+    - button "qwen-token-plan-cn"
+    - button "together"
+    - button "vercel-ai-gateway"
+    - button "xai"
+    - button "xiaomi"
+    - button "xiaomi-token-plan-ams"
+    - button "xiaomi-token-plan-cn"
+    - button "xiaomi-token-plan-sgp"
+    - button "zai"
+    - button "zai-coding-cn"
+    - button "添加提供方":
+      - img
+      - text: 添加提供方
+    - button "添加自定义提供方":
+      - img
+      - text: 添加自定义提供方
+  - main:
+    - heading "DeepSeek" [level=2]
+    - text: API 密钥
+    - textbox "API 密钥":
+      - /placeholder: 输入 API 密钥
+    - text: 渠道名称
+    - textbox "渠道名称": default
+    - text: API 地址
     - textbox "API 地址":
       - /placeholder: https://api.deepseek.com
     - region "模型目录":
       - text: 模型目录 正在使用适配器默认模型
+      - button "获取可用模型":
+        - img
+        - text: 获取可用模型
       - textbox "模型 ID 1":
         - /placeholder: 模型 ID
         - text: deepseek-v4-flash
       - textbox "显示名称 1":
         - /placeholder: 显示名称
         - text: DeepSeek-V4-Flash
+      - text: 无视觉 推理
       - button "容量 1":
         - img
       - button "删除模型 1":
@@ -28,6 +79,7 @@
       - textbox "显示名称 2":
         - /placeholder: 显示名称
         - text: DeepSeek-V4-Pro
+      - text: 无视觉 推理
       - button "容量 2":
         - img
       - button "删除模型 2":
@@ -35,5 +87,11 @@
       - button "添加模型":
         - img
         - text: 添加模型
-  - button "稍后配置"
-  - button "保存并继续"
+    - button "取消"
+    - button "保存"
+  - status: 此提供方尚缺 API 密钥，配置后才能使用其模型。
+  - text: 默认模型
+  - combobox "默认模型" [disabled]:
+    - option "选择提供方和模型" [selected]
+  - img
+  - button "开始使用" [disabled]

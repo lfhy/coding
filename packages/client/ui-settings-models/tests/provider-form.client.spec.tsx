@@ -1312,13 +1312,11 @@ describe('hand-declared providers', () => {
     expect(screen.getByRole('button', { name: en.customAdd })).toBeTruthy()
   })
 
-  it('opens the custom-provider form from the vision detail', async () => {
+  it('opens the custom-provider form from the models rail', async () => {
     await mountSection()
-    fireEvent.click(screen.getByRole('button', { name: en.visionFallback }))
-    expect(screen.getByRole('heading', { name: en.visionTool })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: en.visionFallback })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: en.customAdd }))
     expect(screen.getByText(en.customTitle)).toBeTruthy()
-    expect(screen.queryByRole('heading', { name: en.visionTool })).toBeNull()
   })
 
   it('refuses an unusable key on the field and blocks creation', () => {

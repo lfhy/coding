@@ -7,73 +7,26 @@
     - button "模型":
       - img
       - text: 模型
+    - button "图片识别 Fallback":
+      - img
+      - text: 图片识别 Fallback
     - button "插件":
       - img
       - text: 插件
     - button "Agent 预设":
       - img
       - text: Agent 预设
+  - button "打开配置文件"
   - button "关闭":
     - img
     - text: 关闭
-  - banner:
-    - heading "模型" [level=1]
-  - complementary "提供方":
-    - img
-    - textbox "搜索模型平台…"
-    - button "amazon-bedrock"
-    - button "ant-ling"
-    - button "anthropic"
-    - button "azure-openai-responses"
-    - button "cerebras 已配置"
-    - button "cloudflare-ai-gateway"
-    - button "cloudflare-workers-ai"
-    - button "deepseek"
-    - button "fireworks"
-    - button "github-copilot"
-    - button "google"
-    - button "google-vertex"
-    - button "groq"
-    - button "huggingface"
-    - button "kimi-coding"
-    - button "minimax"
-    - button "minimax-cn 已配置"
-    - button "mistral"
-    - button "moonshotai"
-    - button "moonshotai-cn"
-    - button "nvidia"
-    - button "openai"
-    - button "opencode"
-    - button "opencode-go"
-    - button "openrouter"
-    - button "qwen-token-plan"
-    - button "qwen-token-plan-cn"
-    - button "together"
-    - button "vercel-ai-gateway"
-    - button "xai"
-    - button "xiaomi"
-    - button "xiaomi-token-plan-ams"
-    - button "xiaomi-token-plan-cn"
-    - button "xiaomi-token-plan-sgp"
-    - button "zai"
-    - button "zai-coding-cn"
-    - button "添加提供方":
-      - img
-      - text: 添加提供方
-    - button "添加自定义提供方":
-      - img
-      - text: 添加自定义提供方
-    - paragraph: 通用
-    - button "图片识别 Fallback":
-      - img
-      - text: 图片识别 Fallback
-  - main:
-    - region "视觉理解工具":
-      - heading "视觉理解工具" [level=2]
-      - paragraph: 纯文本模型收到图片时，先由选定的视觉模型生成描述；未配置时将提示不支持图片。
-      - text: 视觉模型
-      - combobox "视觉模型":
-        - option "未配置"
-        - option "minimax-cn / MiniMax-M3"
-        - option "cerebras / Acme Beta" [selected]
-        - option "cerebras / Orion Basic"
+  - region "视觉理解工具":
+    - heading "图片识别 Fallback" [level=1]
+    - heading "视觉理解工具" [level=2]
+    - paragraph: 纯文本模型收到图片时，先由选定的视觉模型生成描述；未配置时将提示不支持图片。
+    - text: 视觉模型
+    - combobox "视觉模型":
+      - option "未配置"
+      - option "minimax-cn / MiniMax-M3"
+      - option "cerebras / Acme Beta" [selected]
+      - option "cerebras / Orion Basic"

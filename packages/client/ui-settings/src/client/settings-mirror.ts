@@ -39,29 +39,31 @@ export interface SettingsMirrorSnapshot {
 }
 
 /**
- * The mirror as cross-namespace surfaces consume it: current answer,
- * subscription, first-use read, and the write-answer fold. `load` stays off
- * this face — invalidation refreshes belong to the mirror's owning plugin.
+ * 跨命名空间消费方共享的镜像：读取快照、订阅、首次读取、显式重试和写应答折叠。
+ * 自动失效刷新仍由镜像所属插件负责，消费方不能直接调用内部的 `load`。
  */
 export interface SettingsDescribeFace {
-  /** @returns the current sync snapshot (stable reference until the next change). */
+  /** @returns 当前同步快照；状态未变化时保持引用稳定。 */
   getSnapshot(): SettingsMirrorSnapshot
   /**
-   * Observe snapshot replacements.
-   * @param listener - invoked after each snapshot change.
-   * @returns the disposer removing this listener.
+   * 订阅快照更新。
+   * @param listener - 每次快照变更后调用。
+   * @returns 移除该监听器的 disposer。
    */
   subscribe(listener: () => void): () => void
   /**
-   * Resolve once an answer is held (or the mirror is terminally unavailable),
-   * reading only from `idle`.
-   * @returns settlement of the current or newly started read, if any.
+   * 确保已有应答或确认镜像终态不可用；仅从 `idle` 启动读取。
+   * @returns 当前或新启动读取的完成状态。
    */
   ensure(): Promise<void>
   /**
-   * Fold one write answer's namespace view into the held view without a wire
-   * read, invalidating any older read still in flight.
-   * @param view - the namespace view a settings write answered with.
+   * 显式重读完整设置文档；仅由用户主动重试调用，自动失效仍由镜像所属插件触发。
+   * @returns 本次刷新完成（含并发刷新合并后的补读）。
+   */
+  refresh(): Promise<void>
+  /**
+   * 不经线路读取，将写应答的命名空间折入已持有视图，并使较早的在途读取失效。
+   * @param view - 设置写入返回的命名空间视图。
    */
   acceptView(view: SettingsNamespaceView): void
 }
@@ -124,16 +126,22 @@ export class SettingsDescribeMirror implements SettingsDescribeFace {
   }
 
   /**
-   * Resolve once an answer is held (or the mirror is terminally unavailable),
-   * reading only from `idle`. The cheap idempotent entry for surfaces that
-   * render on first use.
-   * @returns settlement of the current or newly started read, if any.
+   * 确保已有应答或确认镜像终态不可用；仅从 `idle` 启动读取，供首次渲染调用。
+   * @returns 当前或新启动读取的完成状态。
    */
   ensure(): Promise<void> {
     if (this.persistence === 'memory') return Promise.resolve()
     if (this.inFlight !== undefined) return this.inFlight
     if (this.getSnapshot().status === 'idle') return this.load()
     return Promise.resolve()
+  }
+
+  /**
+   * 用户主动重试时重读完整文档，复用插件失效刷新所用的串行读取。
+   * @returns 本次刷新完成（含并发刷新合并后的补读）。
+   */
+  refresh(): Promise<void> {
+    return this.load()
   }
 
   /**

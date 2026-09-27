@@ -7,6 +7,9 @@
     - button "模型":
       - img
       - text: 模型
+    - button "图片识别 Fallback":
+      - img
+      - text: 图片识别 Fallback
     - button "插件":
       - img
       - text: 插件
@@ -21,6 +24,7 @@
   - complementary "提供方":
     - img
     - textbox "搜索模型平台…"
+    - button "DeepSeek 已配置"
     - button "amazon-bedrock"
     - button "ant-ling"
     - button "anthropic"
@@ -64,10 +68,6 @@
     - button "添加自定义提供方":
       - img
       - text: 添加自定义提供方
-    - paragraph: 通用
-    - button "图片识别 Fallback":
-      - img
-      - text: 图片识别 Fallback
   - main:
     - heading "Acme Gateway" [level=2]
     - button "删除"

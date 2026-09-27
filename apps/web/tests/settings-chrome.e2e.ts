@@ -1,4 +1,4 @@
-// Web e2e 设置场景：模态外壳（触发器、导航、模型三列、分节切换、两种关闭路径）、外观偏好
+// Web e2e 设置场景：模态外壳（触发器、导航、模型三列、独立图片识别分区、两种关闭路径）、外观偏好
 // （点击“深色”会依次经过 ThemeRuntime 偏好、Host 设置、theme/change、ui-layout
 // presenter、body 属性、别名 token 与浏览器主题色元数据）、语言行、繁忙态 Enter 偏好，
 // 以及作为后续会话持久默认值的权限。场景不调用模型；所有操作都发生在空白页面的
@@ -10,6 +10,7 @@ import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import { join } from 'node:path'
 import { SessionId } from '@deepseek-ai/dsh-session'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import {
   acknowledgeReloadConnectionLoss, assertFixtureInventory, captureStableAria, compareOrRefreshGolden,
   launchWebScaffold, watchConsole, webSnapshotMode, type WebScaffold,
@@ -24,6 +25,15 @@ const DIALOG_EN_EXPECTED = join(SNAPSHOT_DIR, 'dialog-en.expected.md')
 const PLUGIN_ROW_SELECTOR = '[data-plugin-entry$="ui-settings"]'
 const MODE = webSnapshotMode()
 
+/** 普通设置测试不驱动首次模型引导；独立 Home 用测试凭据启动默认模型。 */
+async function launchReadyScaffold(options: { harnessHome?: string } = {}): Promise<WebScaffold> {
+  const scaffold = await launchWebScaffold({ ...options, localePreference: null, deepSeekMissingCredential: true })
+  if (options.harnessHome === undefined) {
+    await scaffold.ctx.credentials.set(credentialRef('DEEPSEEK_API_KEY'), 'sk-e2e-settings-chrome')
+  }
+  return scaffold
+}
+
 describe('web e2e: settings modal and General preferences', () => {
   let scaffold: WebScaffold
   let browser: Browser
@@ -31,7 +41,7 @@ describe('web e2e: settings modal and General preferences', () => {
   let tripwire: ReturnType<typeof watchConsole>
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({ localePreference: null })
+    scaffold = await launchReadyScaffold()
     // 固定浏览器暂不可用时，允许本场景复用开发机现有的 Chromium 内核浏览器。
     const executablePath = process.env.DSH_PLAYWRIGHT_EXECUTABLE_PATH
     browser = await chromium.launch(executablePath === undefined ? {} : { executablePath })
@@ -94,7 +104,7 @@ describe('web e2e: settings modal and General preferences', () => {
     await expect.poll(() => navigation.getByRole('button', { name: '模型' }).getAttribute('aria-current'), { timeout: 5_000 }).toBe('true')
     expect(await dialog.getByRole('button', { name: '通用设置' }).getAttribute('aria-current')).toBeNull()
     const channels = dialog.getByRole('complementary', { name: '提供方' })
-    await channels.getByRole('button', { name: 'amazon-bedrock', exact: true }).waitFor({ timeout: 10_000 })
+    await channels.getByRole('button', { name: 'amazon-bedrock', exact: true }).click()
     const detail = dialog.getByRole('main')
     await detail.getByRole('heading', { name: 'amazon-bedrock' }).waitFor({ timeout: 10_000 })
     const [dialogBox, navBox, channelsBox, detailBox] = await Promise.all([
@@ -106,9 +116,47 @@ describe('web e2e: settings modal and General preferences', () => {
     expect(navBox.x + navBox.width).toBeLessThanOrEqual(channelsBox.x + 1)
     expect(channelsBox.x + channelsBox.width).toBeLessThanOrEqual(detailBox.x + 1)
     expect(detailBox.x + detailBox.width).toBeLessThanOrEqual(dialogBox.x + dialogBox.width + 1)
-    await channels.getByRole('button', { name: '图片识别 Fallback' }).click()
-    await detail.getByRole('region', { name: '视觉理解工具' }).waitFor({ timeout: 10_000 })
-    expect(await navigation.getByRole('button', { name: '模型' }).getAttribute('aria-current')).toBe('true')
+    expect(await channels.getByRole('button', { name: '图片识别 Fallback' }).count()).toBe(0)
+    const visionNav = navigation.getByRole('button', { name: '图片识别 Fallback' })
+    await visionNav.click()
+    await dialog.getByRole('region', { name: '视觉理解工具' }).waitFor({ timeout: 10_000 })
+    expect(await visionNav.getAttribute('aria-current')).toBe('true')
+    expect(await navigation.getByRole('button', { name: '模型' }).getAttribute('aria-current')).toBeNull()
+    expect(await dialog.getByRole('complementary', { name: '提供方' }).count()).toBe(0)
+    const visionBox = await dialog.boundingBox()
+    const visionNavBox = await navigation.boundingBox()
+    const visionContentBox = await dialog.getByRole('region', { name: '视觉理解工具' }).boundingBox()
+    if (visionBox === null || visionNavBox === null || visionContentBox === null) {
+      throw new Error('图片识别普通分区未全部绘制')
+    }
+    expect(visionBox.width).toBe(800)
+    expect(visionNavBox.x + visionNavBox.width).toBeLessThanOrEqual(visionContentBox.x + 24)
+    expect(visionContentBox.x + visionContentBox.width).toBeLessThanOrEqual(visionBox.x + visionBox.width + 1)
+    await page.setViewportSize({ width: 375, height: 812 })
+    const mobileBox = await dialog.boundingBox()
+    if (mobileBox === null) throw new Error('375px 图片识别分区未显示')
+    expect(mobileBox.x).toBeGreaterThanOrEqual(0)
+    expect(mobileBox.x + mobileBox.width).toBeLessThanOrEqual(375)
+    expect(mobileBox.width).toBe(351)
+    expect(await dialog.evaluate(node => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(1)
+    const mobileNavBox = await navigation.boundingBox()
+    const mobileContentBox = await dialog.getByRole('region', { name: '视觉理解工具' }).boundingBox()
+    if (mobileNavBox === null || mobileContentBox === null) throw new Error('375px 图片识别导航或详情未显示')
+    expect(mobileNavBox.y + mobileNavBox.height).toBeLessThanOrEqual(mobileContentBox.y + 1)
+    expect(mobileContentBox.width).toBeGreaterThanOrEqual(280)
+    expect(mobileContentBox.x + mobileContentBox.width).toBeLessThanOrEqual(mobileBox.x + mobileBox.width + 1)
+    const visionSelect = dialog.getByRole('combobox', { name: '视觉模型' })
+    await visionSelect.scrollIntoViewIfNeeded()
+    expect(await visionSelect.isVisible()).toBe(true)
+    if (process.env.DSH_SCREENSHOT_DIR !== undefined) {
+      await page.screenshot({ path: join(process.env.DSH_SCREENSHOT_DIR, 'settings-chrome-vision-mobile.png') })
+    }
+    await navigation.getByRole('button', { name: '通用设置' }).click()
+    await dialog.getByRole('button', { name: '工作区写入' }).waitFor({ timeout: 10_000 })
+    expect(await navigation.getByRole('button', { name: '通用设置' }).getAttribute('aria-current')).toBe('true')
+    await navigation.getByRole('button', { name: '模型' }).click()
+    await channels.getByRole('button', { name: 'amazon-bedrock', exact: true }).waitFor({ timeout: 10_000 })
+    await page.setViewportSize({ width: 1680, height: 1000 })
     // Plugins is a read-only projection of the same assembled Loader tree.
     // Capture one stable shipped row rather than the whole inventory so adding
     // an unrelated plugin does not rewrite this surface's golden.
@@ -321,7 +369,7 @@ describe('web e2e: settings modal and General preferences', () => {
     // A second live Host binds another ephemeral port but shares the same
     // user-settings home. Its fresh origin has no theme localStorage and still
     // converges to dark before the settings dialog opens.
-    const second = await launchWebScaffold({ harnessHome: scaffold.harnessHome })
+    const second = await launchReadyScaffold({ harnessHome: scaffold.harnessHome })
     const secondPage = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
     const secondTripwire = watchConsole(secondPage)
     try {
@@ -380,7 +428,7 @@ describe('web e2e: settings modal and General preferences', () => {
     const reloaded = page.getByRole('dialog', { name: '设置' })
     await reloaded.getByRole('button', { name: '插话发送' }).waitFor({ timeout: 10_000 })
 
-    const second = await launchWebScaffold({ harnessHome: scaffold.harnessHome })
+    const second = await launchReadyScaffold({ harnessHome: scaffold.harnessHome })
     const secondPage = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
     const secondTripwire = watchConsole(secondPage)
     try {
@@ -439,7 +487,7 @@ describe('web e2e: settings modal and General preferences', () => {
     await enTrigger.waitFor({ timeout: 10_000 })
 
     // 另一端口仍读取共享 Host 文档里的显式英文选择。
-    const second = await launchWebScaffold({ harnessHome: scaffold.harnessHome })
+    const second = await launchReadyScaffold({ harnessHome: scaffold.harnessHome })
     const secondPage = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
     const secondTripwire = watchConsole(secondPage)
     try {
@@ -469,7 +517,7 @@ describe('web e2e: settings modal and General preferences', () => {
   }, 90_000)
 
   it('defaults to Chinese in an English browser until English is explicitly selected', async () => {
-    const fresh = await launchWebScaffold({ localePreference: null })
+    const fresh = await launchReadyScaffold()
     const enPage = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: 'en-US' })
     const enTripwire = watchConsole(enPage)
     onTestFailed(() => saveFailureShot(enPage, 'web-e2e-settings-browser-language'))
@@ -504,7 +552,7 @@ describe('web e2e: settings modal and General preferences', () => {
   }, 90_000)
 
   it('defaults to Chinese when the browser requests an unsupported language', async () => {
-    const fresh = await launchWebScaffold({ localePreference: null })
+    const fresh = await launchReadyScaffold()
     const frPage = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: 'fr-FR' })
     const frTripwire = watchConsole(frPage)
     onTestFailed(() => saveFailureShot(frPage, 'web-e2e-settings-unshipped-language'))

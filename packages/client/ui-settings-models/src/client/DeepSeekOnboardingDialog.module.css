@@ -1,23 +1,22 @@
-.description {
-  margin: 0;
-  font-size: 14px;
-  line-height: 24px;
-  color: var(--dsw-alias-label-secondary);
-}
-
-.editor {
-  margin-top: 24px;
-}
-
-/* 引导弹窗本体即容器：去掉 ProviderEditor 默认的模块底色与内边距，
-   使密钥表单平铺为弹窗一级内容，避免卡片套卡片。 */
-.editor > :first-child {
-  background: none;
-  padding: 0;
-}
-
-@media (max-width: 560px) {
-  .editor {
-    margin-top: 20px;
-  }
-}
+.layout { display: flex; flex-direction: column; min-height: 0; height: 100%; }
+.description { flex: none; margin: 0; padding: 0 28px 20px; font-size: 14px; line-height: 22px; color: var(--dsw-alias-label-secondary); }
+.workspace { flex: 1; min-height: 0; overflow: hidden; border-top: 1px solid var(--dsw-alias-border-l2); border-bottom: 1px solid var(--dsw-alias-border-l2); }
+.footer { flex: none; display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; min-width: 0; padding: 16px 28px 20px; }
+.feedback { align-self: center; min-width: 0; max-width: 360px; }
+.hint, .error { margin: 0; font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
+.hint { color: var(--dsw-alias-label-secondary); }
+.error { color: var(--dsw-alias-state-error-primary); }
+.retry { margin-top: 8px; border: 0; background: transparent; color: var(--dsw-alias-label-primary); cursor: pointer; font: inherit; font-size: 12px; line-height: 18px; text-decoration: underline; }
+.actions { display: flex; align-items: flex-end; gap: 12px; min-width: 0; }
+.modelField { display: flex; flex-direction: column; gap: 6px; min-width: 220px; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 18px; }
+.selectWrap { position: relative; display: block; min-width: 0; }
+.modelField select { box-sizing: border-box; width: 100%; height: 36px; padding: 0 32px 0 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); font: inherit; font-size: 13px; line-height: 20px; }
+.selectInput { appearance: none; }
+.selectChevron { position: absolute; top: 11px; right: 12px; pointer-events: none; color: var(--dsw-alias-label-secondary); }
+.modelField select:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 2px; }
+.start { box-sizing: border-box; flex: none; height: 36px; padding: 0 18px; border: 0; border-radius: 18px; background: var(--dsw-alias-button-primary-fill); color: var(--dsw-alias-label-primary-foreground); cursor: pointer; font: inherit; font-size: 14px; line-height: 22px; }
+.start:hover:not(:disabled) { background: var(--dsw-alias-button-primary-hover); }
+.start:disabled { opacity: .45; cursor: default; }
+.start:focus-visible, .retry:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 2px; }
+@media (max-width: 760px) { .footer { align-items: stretch; flex-direction: column; } .feedback { align-self: stretch; max-width: none; } .actions { width: 100%; } .modelField { flex: 1; min-width: 0; } }
+@media (max-width: 560px) { .description { padding: 0 20px 16px; } .footer { padding: 12px 20px 16px; } .actions { flex-direction: column; align-items: stretch; } .start { width: 100%; } }
