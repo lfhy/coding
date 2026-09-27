@@ -50,6 +50,7 @@ function state(overrides: Partial<ModelsSettingsState> = {}): ModelsSettingsStat
     rows: [row()],
     namespaces: new Map(),
     visionModels: [],
+    visionModelsError: null,
     ...overrides,
   }
 }

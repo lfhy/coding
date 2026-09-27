@@ -235,6 +235,15 @@ function openAdvanced(): void {
 }
 
 describe('ModelsSection', () => {
+  it('opens the provider-add form from the vision detail rather than leaving that action hidden', async () => {
+    await mountSection()
+    fireEvent.click(screen.getByRole('button', { name: en.visionFallback }))
+    expect(screen.getByRole('heading', { name: en.visionTool })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: en.add }))
+    expect(await screen.findByRole('combobox', { name: en.provider })).toBeTruthy()
+    expect(screen.queryByRole('heading', { name: en.visionTool })).toBeNull()
+  })
+
   it('renders nothing before the slot injects its dependencies', () => {
     const uninjected = {} as ModelsSectionProps
     render(<ModelsSection {...uninjected} />)

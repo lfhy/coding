@@ -682,9 +682,9 @@ describe('endpoint interrogation', () => {
     fireEvent.click(screen.getByText(en.fetchModels))
     const dialog = await screen.findByRole('dialog')
     const boxes = within(dialog).getAllByRole('checkbox') as HTMLInputElement[]
-    expect(boxes.map(box => box.checked)).toEqual([true, true, true])
+    expect(boxes.map(box => box.checked)).toEqual([false, false, false])
 
-    fireEvent.click(within_(dialog, en.fetchDeselectAll))
+    fireEvent.click(within_(dialog, en.fetchSelectAll))
     expect(boxes.map(box => box.checked)).toEqual([true, true, true])
     expect(within_(dialog, en.fetchDeselectAll)).toBeTruthy()
 
@@ -1310,6 +1310,15 @@ describe('hand-declared providers', () => {
     fireEvent.click(screen.getByText(en.cancel))
     await waitFor(() => { expect(screen.queryByText(en.customTitle)).toBeNull() })
     expect(screen.getByRole('button', { name: en.customAdd })).toBeTruthy()
+  })
+
+  it('opens the custom-provider form from the vision detail', async () => {
+    await mountSection()
+    fireEvent.click(screen.getByRole('button', { name: en.visionFallback }))
+    expect(screen.getByRole('heading', { name: en.visionTool })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: en.customAdd }))
+    expect(screen.getByText(en.customTitle)).toBeTruthy()
+    expect(screen.queryByRole('heading', { name: en.visionTool })).toBeNull()
   })
 
   it('refuses an unusable key on the field and blocks creation', () => {

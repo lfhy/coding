@@ -1,10 +1,11 @@
-// 真实 Web 组合与 HTTP wire 的模型设置回放：左侧渠道、右侧常驻表单、只写凭据、
-// 草稿端点的本机 GET /v1/models、分组导入与模型能力均经 Chromium 操作。
+// 真实 Web 组合与 HTTP wire 的模型设置回放：设置模态框内的分区导航、
+// 渠道／图片识别 Fallback 双详情、只写凭据和本机 GET /v1/models 均经 Chromium 操作。
 // 不发出模型生成请求；测试路由选 minimax-cn，避免开发者的通用环境密钥遮蔽派生引用。
 import { readFile } from 'node:fs/promises'
 import { createServer, type Server } from 'node:http'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
+import { load } from 'js-yaml'
 import type { Browser, Locator, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
@@ -22,6 +23,7 @@ const DECLARED_EDIT_EXPECTED = join(SNAPSHOT_DIR, 'declared-edit.expected.md')
 const MODEL_PICKER_EXPECTED = join(SNAPSHOT_DIR, 'model-picker.expected.md')
 const NATIVE_DELETE_EXPECTED = join(SNAPSHOT_DIR, 'native-delete.expected.md')
 const DELETE_EXPECTED = join(SNAPSHOT_DIR, 'delete.expected.md')
+const VISION_CONFIGURED_EXPECTED = join(SNAPSHOT_DIR, 'vision-configured.expected.md')
 const MODE = webSnapshotMode()
 const STALE_EDITOR_CONFLICT = '这张卡片打开期间，这些设置已被其他地方改动。请关闭后重新打开，在当前值上编辑。'
 
@@ -42,7 +44,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
   const stableSnapshot = async (selector: string): Promise<string> =>
     (await captureStableAria(page, selector, scaffold.workspaceCwd))
       .replaceAll(modelBaseURL, 'http://127.0.0.1:<mock-port>/v1')
-  const screenshot = async (name: string, width: number, height: number): Promise<void> => {
+  const screenshot = async (name: string, width: number, height: number, detail: 'channel' | 'vision' = 'channel'): Promise<void> => {
     if (process.env.DSH_SCREENSHOT_DIR === undefined && width !== 375) return
     await page.setViewportSize({ width, height })
     if (width === 375) {
@@ -53,6 +55,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
       expect(bounds.x + bounds.width).toBeLessThanOrEqual(width)
       expect(bounds.width).toBeGreaterThanOrEqual(width - 32)
       const hit = async (target: Locator, rightEdge = false): Promise<void> => {
+        await target.scrollIntoViewIfNeeded()
         const box = await target.boundingBox()
         if (box === null) throw new Error('375px 设置控件未显示')
         const point = { x: rightEdge ? box.x + box.width - 8 : box.x + box.width / 2, y: box.y + box.height / 2 }
@@ -61,9 +64,15 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
           return top !== null && (top === node || node.contains(top))
         }, point)).toBe(true)
       }
-      await hit(dialog.getByRole('button', { name: '提供方' }))
-      await hit(dialog.getByRole('textbox', { name: 'API 地址' }), true)
-      await hit(dialog.getByRole('button', { name: '保存', exact: true }))
+      await hit(dialog.getByRole('navigation').getByRole('button', { name: '模型' }))
+      await hit(dialog.getByRole('main').getByRole('button', { name: '提供方' }))
+      if (detail === 'channel') {
+        await hit(dialog.getByRole('textbox', { name: 'API 地址' }), true)
+        await hit(dialog.getByRole('button', { name: '保存', exact: true }))
+      } else {
+        await hit(dialog.getByRole('combobox', { name: '视觉模型' }), true)
+        expect(await dialog.getByRole('button', { name: '保存', exact: true }).count()).toBe(0)
+      }
       expect(await dialog.getByRole('main').evaluate(node => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(1)
     }
     if (process.env.DSH_SCREENSHOT_DIR !== undefined) {
@@ -120,7 +129,13 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     await dialog.waitFor({ timeout: 10_000 })
     await dialog.getByRole('button', { name: '模型' }).click()
     await providerRail().waitFor({ timeout: 10_000 })
-    // The dormant pi-ai adapter contributes its installed catalog to the add control.
+    const modelsNav = dialog.getByRole('navigation').getByRole('button', { name: '模型' })
+    expect(await modelsNav.getAttribute('aria-current')).toBe('true')
+    expect(await provider('anthropic').isVisible()).toBe(true)
+    await provider('minimax-cn').click()
+    await dialog.getByRole('main').getByRole('heading', { name: 'minimax-cn' }).waitFor()
+    expect(await dialog.getByRole('main').getByRole('button', { name: '保存', exact: true }).isVisible()).toBe(true)
+    // 未激活的适配器仍把已安装目录交给添加控件。
     const add = dialog.getByRole('button', { name: '添加提供方' })
     await add.waitFor({ timeout: 10_000 })
     // The button enables once the dormant catalog lands in the join.
@@ -232,6 +247,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     const snapshot = await stableSnapshot('[role="dialog"]')
     await compareOrRefreshGolden(CONFIGURED_EXPECTED, snapshot, MODE)
     await screenshot('models-settings-desktop.png', 1876, 1472)
+    await screenshot('models-settings-reference.png', 1536, 1024)
     await screenshot('models-settings-mobile.png', 375, 812)
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
@@ -311,6 +327,11 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     expect(await reasoning.isChecked()).toBe(true)
     await vision.uncheck()
     await reasoning.uncheck()
+    const betaIndex = (await ids.evaluateAll(nodes => nodes.map(node => (node as HTMLInputElement).value)))
+      .indexOf('acme-2026-beta') + 1
+    expect(betaIndex).toBeGreaterThan(0)
+    await settingsDialog.getByRole('button', { name: `容量 ${betaIndex}` }).click()
+    expect(await first.getByRole('checkbox', { name: '视觉' }).last().isChecked()).toBe(true)
     await first.getByRole('textbox', { name: `上下文窗口 ${importedIndex}` }).fill('256K')
     await first.getByRole('textbox', { name: `最大输出 token ${importedIndex}` }).fill('16K')
     expect(await settingsDocument()).toBe(documentBefore)
@@ -328,6 +349,56 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
       .evaluateAll(nodes => nodes.map(node => (node as HTMLInputElement).value)), { timeout: 10_000 })
       .toEqual(expect.arrayContaining(['acme-2026-alpha', 'acme-2026-beta', 'orion-2025-basic']))
     await screenshot('models-settings-saved-models.png', 1876, 1472)
+    await screenshot('models-settings-saved-models-reference.png', 1536, 1024)
+    expect(tripwire.pageErrors).toEqual([])
+  }, 60_000)
+
+  it('switches to independent image fallback detail and persists a paired visual target', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-models-vision-fallback'))
+    const dialog = settings()
+    const rail = providerRail()
+    const fallback = rail.getByRole('button', { name: '图片识别 Fallback' })
+    await fallback.click()
+    expect(await fallback.getAttribute('aria-current')).toBe('true')
+    expect(await dialog.getByRole('navigation').getByRole('button', { name: '模型' }).getAttribute('aria-current')).toBe('true')
+    const detail = dialog.getByRole('main').getByRole('region', { name: '视觉理解工具' })
+    await detail.getByRole('heading', { name: '视觉理解工具' }).waitFor()
+    expect(await dialog.getByRole('main').getByRole('heading', { name: 'cerebras' }).count()).toBe(0)
+    expect(await dialog.getByRole('button', { name: '保存', exact: true }).count()).toBe(0)
+    expect(await dialog.getByRole('button', { name: '删除', exact: true }).count()).toBe(0)
+
+    const select = detail.getByRole('combobox', { name: '视觉模型' })
+    await expect.poll(async () => select.locator('option').allTextContents(), { timeout: 10_000 })
+      .toContain('cerebras / Acme Beta')
+    expect(await select.inputValue()).toBe('')
+    const before = await settingsDocument()
+    await select.selectOption(JSON.stringify(['cerebras', 'acme-2026-beta']))
+    await expect.poll(async () => select.inputValue(), { timeout: 10_000 })
+      .toBe(JSON.stringify(['cerebras', 'acme-2026-beta']))
+    await expect.poll(settingsDocument, { timeout: 10_000 }).not.toBe(before)
+    const configured = await settingsDocument()
+    expect((load(configured) as Record<string, unknown>)['vision-understanding'])
+      .toMatchObject({ provider: 'cerebras', model: 'acme-2026-beta' })
+    const snapshot = await stableSnapshot('[role="dialog"]')
+    await compareOrRefreshGolden(VISION_CONFIGURED_EXPECTED, snapshot, MODE)
+    await screenshot('models-settings-vision-desktop.png', 1876, 1472, 'vision')
+    await screenshot('models-settings-vision-reference.png', 1536, 1024, 'vision')
+    await screenshot('models-settings-vision-mobile.png', 375, 812, 'vision')
+
+    await select.selectOption('')
+    await expect.poll(async () => select.inputValue(), { timeout: 10_000 }).toBe('')
+    await expect.poll(async () => {
+      const section = (load(await settingsDocument()) as Record<string, Record<string, unknown>>)['vision-understanding']
+      return { provider: section?.['provider'], model: section?.['model'] }
+    }, { timeout: 10_000 }).toEqual({ provider: undefined, model: undefined })
+    const cleared = await settingsDocument()
+    expect((load(cleared) as Record<string, Record<string, unknown>>)['vision-understanding']?.['provider']).toBeUndefined()
+    expect((load(cleared) as Record<string, Record<string, unknown>>)['vision-understanding']?.['model']).toBeUndefined()
+    await provider('cerebras').click()
+    await dialog.getByRole('main').getByRole('heading', { name: 'cerebras' }).waitFor()
+    expect(await detail.count()).toBe(0)
+    expect(await dialog.getByRole('button', { name: '保存', exact: true }).isVisible()).toBe(true)
+    expect(await dialog.getByRole('button', { name: '删除', exact: true }).isVisible()).toBe(true)
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
@@ -437,7 +508,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     await assertFixtureInventory(SNAPSHOT_DIR, [
       'configured.expected.md', 'declared-edit.expected.md', 'declared.expected.md',
       'delete.expected.md', 'empty.expected.md', 'model-picker.expected.md',
-      'native-delete.expected.md',
+      'native-delete.expected.md', 'vision-configured.expected.md',
     ])
   })
 })

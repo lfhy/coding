@@ -71,13 +71,14 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     expect(configuredSettings).toContain('baseURL: https://gateway.example/v1')
     expect(configuredSettings).toContain('maxTokens: 32000')
 
-    // The ordinary Models surface reuses the refreshed join and exposes the
-    // configured write-only placeholder without a reload.
+    // 普通设置模态框复用新联接，渠道详情无须重载即可显示只写密钥占位。
     await page.getByRole('button', { name: '设置', exact: true }).click()
     const settings = page.getByRole('dialog', { name: '设置' })
     await settings.waitFor({ timeout: 10_000 })
     await settings.getByRole('button', { name: '模型' }).click()
-    const deepSeekChannel = settings.getByRole('button', { name: /DeepSeek/ })
+    expect(await settings.getByRole('navigation').getByRole('button', { name: '模型' }).getAttribute('aria-current')).toBe('true')
+    const channels = settings.getByRole('complementary', { name: '提供方' })
+    const deepSeekChannel = channels.getByRole('button', { name: /^DeepSeek/ })
     await deepSeekChannel.waitFor({ timeout: 10_000 })
     await deepSeekChannel.click()
     const configuredInput = settings.getByLabel('API 密钥', { exact: true })
@@ -86,6 +87,11 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
       () => configuredInput.getAttribute('placeholder'),
       { timeout: 10_000 },
     ).toBe('已配置——输入新值可替换')
+    await channels.getByRole('button', { name: '图片识别 Fallback' }).click()
+    await settings.getByRole('region', { name: '视觉理解工具' }).waitFor({ timeout: 10_000 })
+    expect(await settings.getByRole('navigation').getByRole('button', { name: '模型' }).getAttribute('aria-current')).toBe('true')
+    await deepSeekChannel.click()
+    await configuredInput.waitFor({ timeout: 10_000 })
 
     const reloadWarnings = tripwire.warnings.length
     await page.reload({ waitUntil: 'load' })
@@ -144,13 +150,12 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
 
   it('configures arbitrary DeepSeek models and prompts after the selected model is removed', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-onboarding-deepseek-models'))
-    // Opened here rather than inherited: the credential test reloads the page
-    // after configuring the key, so nothing carries an open dialog across.
+    // 凭据场景在保存后重载，此处重新打开设置模态框。
     await page.getByRole('button', { name: '设置', exact: true }).click()
     const settings = page.getByRole('dialog', { name: '设置' })
     await settings.waitFor({ timeout: 10_000 })
     await settings.getByRole('button', { name: '模型' }).click()
-    const deepSeekChannel = settings.getByRole('button', { name: /DeepSeek/ })
+    const deepSeekChannel = settings.getByRole('complementary', { name: '提供方' }).getByRole('button', { name: /^DeepSeek/ })
     await deepSeekChannel.waitFor({ timeout: 10_000 })
     await deepSeekChannel.click()
     await settings.getByRole('button', { name: /删除模型/ }).first().click()
@@ -188,8 +193,7 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     expect(document).not.toMatch(/^\s*- id: deepseek-v4-flash$/m)
 
     await page.keyboard.press('Escape')
-    // A connected Workspace is what puts a live composer — and its model
-    // trigger — on the page; the scaffold boots without one.
+    // scaffold 启动时没有工作区，连接工作区后才能看到输入框中的模型入口。
     await connectFreshWorkspaceZh(page, scaffold.workspaceCwd, 'model-fallback-e2e')
 
     const modelTrigger = page.getByRole('button', { name: '选择模型', exact: true })

@@ -1,7 +1,23 @@
 - dialog "设置":
+  - navigation:
+    - text: 设置
+    - button "通用设置":
+      - img
+      - text: 通用设置
+    - button "模型":
+      - img
+      - text: 模型
+    - button "插件":
+      - img
+      - text: 插件
+    - button "Agent 预设":
+      - img
+      - text: Agent 预设
   - button "关闭":
     - img
     - text: 关闭
+  - banner:
+    - heading "模型" [level=1]
   - complementary "提供方":
     - img
     - textbox "搜索模型平台…"
@@ -48,6 +64,10 @@
     - button "添加自定义提供方":
       - img
       - text: 添加自定义提供方
+    - paragraph: 通用
+    - button "图片识别 Fallback":
+      - img
+      - text: 图片识别 Fallback
   - main:
     - heading "Acme Gateway" [level=2]
     - button "删除"
@@ -88,13 +108,3 @@
         - text: 添加模型
     - button "取消"
     - button "保存"
-    - region "视觉理解工具":
-      - heading "视觉理解工具" [level=3]
-      - paragraph: 纯文本模型收到图片时，先由选定的视觉模型生成描述；未配置时将提示不支持图片。
-      - text: 视觉模型
-      - combobox "视觉模型":
-        - option "未配置" [selected]
-        - option "minimax-cn / MiniMax-M3"
-        - option "cerebras / Acme Beta"
-        - option "cerebras / Orion Basic"
-        - option "Acme Gateway / acme-large"

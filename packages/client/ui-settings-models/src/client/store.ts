@@ -56,6 +56,8 @@ export interface ModelsSettingsState {
   /** Namespace views by ns, for the editor's schema/layers/secrets. */
   namespaces: ReadonlyMap<string, SettingsNamespaceView>
   visionModels: readonly VisionModelChoice[]
+  /** 视觉模型目录读取失败；与成功返回空候选分开。 */
+  visionModelsError: string | null
 }
 
 /**
@@ -117,7 +119,8 @@ function apiKeyEnvOf(
 export class ModelsSettingsStore {
   /** The snapshot the section renders from (uSES-safe store). */
   readonly store: SnapshotStore<ModelsSettingsState> = createSnapshotStore<ModelsSettingsState>({
-    status: 'idle', error: null, credentialError: null, writable: false, rows: [], namespaces: new Map(), visionModels: [],
+    status: 'idle', error: null, credentialError: null, writable: false, rows: [], namespaces: new Map(),
+    visionModels: [], visionModelsError: null,
   })
 
   /** Latest load wins; an older response never overwrites a newer one. */
@@ -235,21 +238,29 @@ export class ModelsSettingsStore {
       }
     }
     let visionModels: VisionModelChoice[] = []
+    let visionModelsError: string | null = null
     if (namespaces.has('vision-understanding')) {
       try {
         const response = await this.api.llm.models({})
-        if (response.result.ok) {
+        if (!response.result.ok) {
+          visionModelsError = response.result.error.message
+        } else {
           const usable = new Set(rows.filter(row => row.configured && providerUsable({
             ...row,
             credential: row.apiKeyEnv === undefined ? undefined : credentials[row.apiKeyEnv],
           })).map(row => row.entry.provider))
+          const relevantFailures = response.result.value.failures.filter(failure => usable.has(failure.id))
+          if (relevantFailures.length > 0) {
+            visionModelsError = relevantFailures.map(failure =>
+              `${failure.name} (${failure.id}): ${failure.message}`).join('; ')
+          }
           visionModels = response.result.value.groups.flatMap(group => usable.has(group.id)
             ? group.models.filter(model => model.inputModalities?.includes('image') === true)
               .map(model => ({ provider: group.id, providerName: group.name, model: model.id, modelName: model.name }))
             : [])
         }
-      } catch {
-        // 目录失败时不推断候选，仍可显示设置中已存的目标。
+      } catch (error) {
+        visionModelsError = messageOf(error)
       }
     }
     if (generation !== this.generation) return
@@ -266,6 +277,7 @@ export class ModelsSettingsStore {
       }))
       s.namespaces = namespaces
       s.visionModels = visionModels
+      s.visionModelsError = visionModelsError
     })
   }
 }

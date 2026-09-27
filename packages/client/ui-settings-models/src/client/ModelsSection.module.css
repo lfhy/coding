@@ -729,11 +729,15 @@ select.input {
 }
 
 /* 模型页的两栏平面：目录可独立滚动，编辑区不再嵌套渠道卡片。 */
+.modelsSurface { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; }
+.modelsHeader { box-sizing: border-box; flex: none; display: flex; align-items: center; min-height: 72px; padding: 16px 72px 16px 32px; }
+.modelsHeader h1 { margin: 0; font-size: 22px; line-height: 30px; font-weight: 600; }
 .channelPage {
   display: grid;
   grid-template-columns: minmax(220px, 27%) minmax(0, 1fr);
   width: 100%;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-bg-layer-2);
 }
@@ -978,14 +982,14 @@ select.input {
 .candidate { display: flex; align-items: center; min-height: 56px; padding-right: 12px; }
 .candidate + .candidate { border-top: 1px solid var(--dsw-alias-border-l1); }
 .candidateLabel { flex: 1; }
-.visionFallback {
-  margin-top: 36px;
-  padding-top: 20px;
-  border-top: 1px solid var(--dsw-alias-border-l2);
-}
-.visionFallback h3 { margin: 0; font-size: 15px; line-height: 22px; font-weight: 600; }
-.visionFallback p { margin: 8px 0 14px; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 18px; }
-.visionFallback select.input { max-width: 100%; height: 38px; }
+.generalActions { padding-top: 12px; border-top: 1px solid var(--dsw-alias-border-l2); }
+.generalActions p { margin: 0 10px 8px; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 18px; }
+.generalActions .channelRow { gap: 10px; }
+.visionDetail { max-width: 760px; }
+.visionDetail h2 { margin: 0; font-size: 22px; line-height: 30px; }
+.visionDetail p { color: var(--dsw-alias-label-secondary); font-size: 14px; line-height: 22px; overflow-wrap: anywhere; }
+.visionDetail [role="alert"] { color: var(--dsw-alias-state-error-primary); }
+.visionDetail select.input { max-width: 100%; height: 42px; }
 
 @media (min-width: 900px) {
   .channelRail { gap: 22px; padding: 20px 18px 18px; }
@@ -1023,6 +1027,8 @@ select.input {
 }
 
 @media (max-width: 620px) {
+  .modelsHeader { min-height: 52px; padding: 10px 56px 10px 16px; }
+  .modelsHeader h1 { font-size: 18px; line-height: 26px; }
   .fetchDialog { width: calc(100vw - 24px); max-width: calc(100vw - 24px); }
   .candidateList { max-height: min(56vh, 480px); }
   .channelPage { display: block; }

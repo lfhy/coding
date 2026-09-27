@@ -1,14 +1,14 @@
 /**
- * 模型设置页从已配置渠道目录、共享设置镜像与凭据状态组成两栏视图。
- * 当前渠道常显编辑器；图片降级目标只从模型目录明确声明的视觉能力中选择。
- * 写入由编辑器和页面控制器执行，组件只保存搜索、选中和弹窗交互状态。
+ * 设置模态框的模型分区：中列显示渠道和通用入口，右列在渠道详情与视觉理解配置间切换。
+ * 两种详情共用设置镜像与凭据状态；视觉目标只从明确声明图片能力的模型中选择。
+ * 写入由编辑器和页面控制器执行，组件只持有导航、草稿和弹窗交互状态。
  */
 
 import { useState } from 'react'
 import type { ReactNode } from 'react'
 import type { IApiClient } from '@deepseek-ai/dsh-api-remotes/client'
 import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
-import { IconChevronLeftOutline14, IconPlusOutline16, IconSearchOutline16 } from '@deepseek-ai/dsh-client-ui-icons'
+import { IconChevronLeftOutline14, IconPlusOutline16, IconSearchOutline16, IconSparkle16 } from '@deepseek-ai/dsh-client-ui-icons'
 import type { InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 import { CustomProviderCard } from './CustomProviderCard.tsx'
 import { deriveKeyRef, messageOf, protocolChoices } from './store.ts'
@@ -167,6 +167,7 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
   const [savedTarget, setSavedTarget] = useState<ProviderIdentity | undefined>(undefined)
   const [declaring, setDeclaring] = useState(false)
   const [selected, setSelected] = useState<string | undefined>(undefined)
+  const [showVision, setShowVision] = useState(false)
   const [providerQuery, setProviderQuery] = useState('')
   const [mobileDetail, setMobileDetail] = useState(false)
   const [editorEpoch, setEditorEpoch] = useState(0)
@@ -254,7 +255,6 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
   const visionValue = typeof visionProvider === 'string' && typeof visionModel === 'string'
     ? JSON.stringify([visionProvider, visionModel]) : ''
   const visionKnown = state.visionModels.some(choice => JSON.stringify([choice.provider, choice.model]) === visionValue)
-
   const chooseVision = (value: string): void => {
     const choice = state.visionModels.find(item => JSON.stringify([item.provider, item.model]) === value)
     setVisionBusy(true)
@@ -265,124 +265,165 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
   }
 
   return (
-    <div className={styles['channelPage']}>
-      <aside className={`${styles['channelRail']} ${mobileDetail ? styles['mobileHidden'] : ''}`} aria-label={t('provider')}>
-        <label className={styles['channelSearch']}>
-          <IconSearchOutline16 size={17} />
-          <input value={providerQuery} onChange={(event) => { setProviderQuery(event.target.value) }}
-            placeholder={t('searchProviders')} aria-label={t('searchProviders')} />
-        </label>
-        <div className={styles['channelRows']}>
-          {visibleProviders.map(row => (
-            <button key={row.entry.provider} type="button"
-              className={`${styles['channelRow']} ${current?.entry.provider === row.entry.provider ? styles['channelSelected'] : ''}`}
-              aria-current={current?.entry.provider === row.entry.provider ? 'true' : undefined}
+    <div className={styles['modelsSurface']}>
+      <header className={styles['modelsHeader']}><h1>{t('title')}</h1></header>
+      <div className={styles['channelPage']}>
+        <aside className={`${styles['channelRail']} ${mobileDetail ? styles['mobileHidden'] : ''}`} aria-label={t('provider')}>
+          <label className={styles['channelSearch']}>
+            <IconSearchOutline16 size={17} />
+            <input value={providerQuery} onChange={(event) => { setProviderQuery(event.target.value) }}
+              placeholder={t('searchProviders')} aria-label={t('searchProviders')} />
+          </label>
+          <div className={styles['channelRows']}>
+            {visibleProviders.map(row => (
+              <button key={row.entry.provider} type="button"
+                className={`${styles['channelRow']} ${!showVision && current?.entry.provider === row.entry.provider ? styles['channelSelected'] : ''}`}
+                aria-current={!showVision && current?.entry.provider === row.entry.provider ? 'true' : undefined}
+                onClick={() => {
+                  setSavedTarget(undefined)
+                  setSelected(row.entry.provider)
+                  setShowVision(false)
+                  setAdding(false)
+                  setDeclaring(false)
+                  setMobileDetail(true)
+                }}>
+                <span className={styles['channelAvatar']} aria-hidden="true">{row.entry.displayName.charAt(0).toLocaleUpperCase()}</span>
+                <span className={styles['channelName']}>{row.entry.displayName}</span>
+                {row.credential?.configured === true ? <span className={styles['channelConfigured']}>{t('configuredShort')}</span> : null}
+              </button>
+            ))}
+          </div>
+          <div className={styles['channelAddActions']}>
+            <button type="button" className={styles['channelAdd']} disabled={addable.length === 0 || !state.writable}
+              onClick={() => {
+                const first = addable[0]
+                if (first === undefined) return
+                setSavedTarget(undefined)
+                setShowVision(false)
+                setAdding(true)
+                setDeclaring(false)
+                setEditing(targetOf(first))
+                setMobileDetail(true)
+              }}>
+              <IconPlusOutline16 size={16} />{t('add')}
+            </button>
+            <button type="button" className={styles['channelAdd']} disabled={protocols.length === 0 || !state.writable}
               onClick={() => {
                 setSavedTarget(undefined)
-                setSelected(row.entry.provider)
+                setShowVision(false)
+                setDeclaring(true)
+                setAdding(false)
+                setMobileDetail(true)
+              }}>
+              <IconPlusOutline16 size={16} />{t('customAdd')}
+            </button>
+          </div>
+          <div className={styles['generalActions']}>
+            <p>{t('general')}</p>
+            <button type="button" className={`${styles['channelRow']} ${showVision ? styles['channelSelected'] : ''}`}
+              aria-current={showVision ? 'true' : undefined}
+              onClick={() => {
+                setSavedTarget(undefined)
+                setShowVision(true)
                 setAdding(false)
                 setDeclaring(false)
                 setMobileDetail(true)
               }}>
-              <span className={styles['channelAvatar']} aria-hidden="true">{row.entry.displayName.charAt(0).toLocaleUpperCase()}</span>
-              <span className={styles['channelName']}>{row.entry.displayName}</span>
-              {row.credential?.configured === true ? <span className={styles['channelConfigured']}>{t('configuredShort')}</span> : null}
+              <IconSparkle16 size={18} />
+              <span className={styles['channelName']}>{t('visionFallback')}</span>
             </button>
-          ))}
-        </div>
-        <div className={styles['channelAddActions']}>
-          <button type="button" className={styles['channelAdd']} disabled={addable.length === 0 || !state.writable}
-            onClick={() => {
-              const first = addable[0]
-              if (first === undefined) return
-              setSavedTarget(undefined)
-              setAdding(true)
-              setDeclaring(false)
-              setEditing(targetOf(first))
-              setMobileDetail(true)
-            }}>
-            <IconPlusOutline16 size={16} />{t('add')}
-          </button>
-          <button type="button" className={styles['channelAdd']} disabled={protocols.length === 0 || !state.writable}
-            onClick={() => { setSavedTarget(undefined); setDeclaring(true); setAdding(false); setMobileDetail(true) }}>
-            <IconPlusOutline16 size={16} />{t('customAdd')}
-          </button>
-        </div>
-      </aside>
-      <main className={`${styles['channelDetail']} ${!mobileDetail ? styles['mobileHiddenDetail'] : ''}`}>
-        <button type="button" className={styles['channelBack']} onClick={() => { setMobileDetail(false) }}>
-          <IconChevronLeftOutline14 size={16} />{t('provider')}
-        </button>
-        {savedIdentity === undefined ? null : <p role="status" className={styles['savedNotice']}>{providerCopy(t('savedProvider'), savedIdentity)}</p>}
-        {!state.writable ? <p className={styles['notice']}>{t('readOnly')}</p> : null}
-        {adding && addTarget !== undefined && addNamespace !== undefined ? (
-          <div className={styles['channelEditor']}>
-            <label className={styles['field']}><span className={styles['fieldLabel']}>{t('provider')}</span>
-              <select className={`${styles['input']} ${styles['selectInput']}`} value={addTarget.provider} onChange={(event) => {
-                const row = addable.find(candidate => candidate.entry.provider === event.target.value)
-                if (row !== undefined) {
-                  setSavedTarget(undefined)
-                  setEditing(targetOf(row))
-                }
-              }}>{addable.map(row => <option key={row.entry.provider} value={row.entry.provider}>{row.entry.displayName}</option>)}</select>
-            </label>
-            <ProviderEditor key={addTarget.provider} {...addTarget} namespace={addNamespace} schema={schema} api={api} t={t}
-              readOnly={!state.writable} channelLayout
-              onSettingsCommitted={(view) => { controller.acceptSettingsView(view) }}
-              onClose={async (changed) => {
-                await closeEditor(changed, addTarget)
-                if (changed) setSelected(addTarget.provider)
-                setEditorEpoch(n => n + 1)
-              }} />
           </div>
-        ) : declaring ? (
-          <CustomProviderCard taken={state.rows.map(row => row.entry.provider)} protocols={protocols}
-            revision={state.namespaces.get('llm-pi-ai')?.revision ?? 0} api={api} t={t} readOnly={!state.writable}
-            onSettingsCommitted={(view) => { controller.acceptSettingsView(view) }}
-            onClose={async (changed) => {
-              if (changed) await controller.load()
-              setDeclaring(false)
-            }} />
-        ) : currentTarget !== undefined && currentNamespace !== undefined ? (
-          <div className={styles['channelEditor']}>
-            <div className={styles['channelHeading']}>
-              <h2>{currentTarget.displayName}</h2>
-              {current?.removable ? <button type="button" className={styles['dangerButton']} disabled={!state.writable}
-                onClick={() => { setDeleteTarget(currentTarget) }}>{t('remove')}</button> : null}
-            </div>
-            <ProviderEditor key={`${currentTarget.provider}:${editorEpoch}`} {...currentTarget} namespace={currentNamespace}
-              schema={schema} api={api} t={t} readOnly={!state.writable} hideTitle channelLayout
-              onSettingsCommitted={(view) => { controller.acceptSettingsView(view) }}
-              onClose={async (changed) => {
-                if (changed) await announceSaved(currentTarget)
-                setEditorEpoch(n => n + 1)
-              }} />
-          </div>
-        ) : <p className={styles['intro']}>{t('intro')}</p>}
-        {visionNamespace === undefined ? null : <section className={styles['visionFallback']} aria-label={t('visionTool')}>
-          <h3>{t('visionTool')}</h3>
-          <p>{t('visionToolDescription')}</p>
-          <label className={styles['field']}><span className={styles['fieldLabel']}>{t('visionRoute')}</span>
-            <select className={`${styles['input']} ${styles['selectInput']}`} value={visionValue}
-              disabled={!state.writable || visionBusy} onChange={(event) => { chooseVision(event.target.value) }}>
-              <option value="">{t('visionNotConfigured')}</option>
-              {visionValue !== '' && !visionKnown ? <option value={visionValue}>{`${String(visionProvider)}/${String(visionModel)}`}</option> : null}
-              {state.visionModels.map(choice => <option key={JSON.stringify([choice.provider, choice.model])}
-                value={JSON.stringify([choice.provider, choice.model])}>{`${choice.providerName} / ${choice.modelName}`}</option>)}
-            </select>
-          </label>
-          {visionBusy ? <p role="status">{t('applying')}</p> : null}
-          {visionError === undefined ? null : <p role="alert" className={styles['error']}>{visionError}</p>}
-        </section>}
-      </main>
-      <Modal open={deleteTarget !== undefined} onClose={closeDelete}
-        title={deleteTarget === undefined ? '' : providerCopy(t('deleteTitle'), deleteTarget)} closeLabel={t('close')}
-        description={deleteTarget === undefined ? '' : providerCopy(deleteTarget.credentialRef === undefined
-          ? t('deleteDescription') : t('deleteDescriptionWithCredential'), deleteTarget)}
-        footer={<><Button variant="outline" autoFocus disabled={deleting} onClick={closeDelete}>{t('cancel')}</Button>
-          <Button variant="outline" disabled={deleting} onClick={confirmDelete}>{deleteTarget === undefined ? '' : providerCopy(t('deleteConfirm'), deleteTarget)}</Button></>}>
-        {deleteFailure === undefined ? null : <p role="alert" className={styles['error']}>{deleteFailure}</p>}
-      </Modal>
+        </aside>
+        <main className={`${styles['channelDetail']} ${!mobileDetail ? styles['mobileHiddenDetail'] : ''}`}>
+          <button type="button" className={styles['channelBack']} onClick={() => { setMobileDetail(false) }}>
+            <IconChevronLeftOutline14 size={16} />{t('provider')}
+          </button>
+          {showVision ? <section className={styles['visionDetail']} aria-label={t('visionTool')}>
+            <h2>{t('visionTool')}</h2>
+            <p>{t('visionToolDescription')}</p>
+            {visionNamespace === undefined ? <p role="status">{t('visionUnavailable')}</p> : <>
+              {!state.writable ? <p role="status">{t('readOnly')}</p> : null}
+              <label className={styles['field']}><span className={styles['fieldLabel']}>{t('visionRoute')}</span>
+                <select className={`${styles['input']} ${styles['selectInput']}`} value={visionValue}
+                  disabled={!state.writable || visionBusy} onChange={(event) => { chooseVision(event.target.value) }}>
+                  <option value="">{t('visionNotConfigured')}</option>
+                  {visionValue !== '' && !visionKnown ? <option value={visionValue}>{`${String(visionProvider)}/${String(visionModel)}`}</option> : null}
+                  {state.visionModels.map(choice => <option key={JSON.stringify([choice.provider, choice.model])}
+                    value={JSON.stringify([choice.provider, choice.model])}>{`${choice.providerName} / ${choice.modelName}`}</option>)}
+                </select>
+              </label>
+              {state.visionModelsError === null && state.visionModels.length === 0
+                ? <p role="status">{t('visionNoCandidates')}</p> : null}
+              {state.visionModelsError === null ? null : <>
+                <p role="alert" className={styles['error']}>{`${t('visionLoadFailed')}: ${state.visionModelsError}`}</p>
+                <button type="button" className={styles['secondaryButton']} disabled={state.status === 'loading'}
+                  onClick={() => { void controller.load() }}>{t('retry')}</button>
+              </>}
+              {visionValue !== '' && !visionKnown && state.visionModelsError === null
+                ? <p role="status">{t('visionOldTarget')}</p> : null}
+              {visionBusy ? <p role="status">{t('applying')}</p> : null}
+              {visionError === undefined ? null : <p role="alert" className={styles['error']}>{visionError}</p>}
+            </>}
+          </section> : <>
+            {savedIdentity === undefined ? null : <p role="status" className={styles['savedNotice']}>{providerCopy(t('savedProvider'), savedIdentity)}</p>}
+            {!state.writable ? <p className={styles['notice']}>{t('readOnly')}</p> : null}
+            {adding && addTarget !== undefined && addNamespace !== undefined ? (
+              <div className={styles['channelEditor']}>
+                <label className={styles['field']}><span className={styles['fieldLabel']}>{t('provider')}</span>
+                  <select className={`${styles['input']} ${styles['selectInput']}`} value={addTarget.provider} onChange={(event) => {
+                    const row = addable.find(candidate => candidate.entry.provider === event.target.value)
+                    if (row !== undefined) {
+                      setSavedTarget(undefined)
+                      setEditing(targetOf(row))
+                    }
+                  }}>{addable.map(row => (
+                      <option key={row.entry.provider} value={row.entry.provider}>{row.entry.displayName}</option>
+                    ))}</select>
+                </label>
+                <ProviderEditor key={addTarget.provider} {...addTarget} namespace={addNamespace} schema={schema} api={api} t={t}
+                  readOnly={!state.writable} channelLayout
+                  onSettingsCommitted={(view) => { controller.acceptSettingsView(view) }}
+                  onClose={async (changed) => {
+                    await closeEditor(changed, addTarget)
+                    if (changed) setSelected(addTarget.provider)
+                    setEditorEpoch(n => n + 1)
+                  }} />
+              </div>
+            ) : declaring ? (
+              <CustomProviderCard taken={state.rows.map(row => row.entry.provider)} protocols={protocols}
+                revision={state.namespaces.get('llm-pi-ai')?.revision ?? 0} api={api} t={t} readOnly={!state.writable}
+                onSettingsCommitted={(view) => { controller.acceptSettingsView(view) }}
+                onClose={async (changed) => {
+                  if (changed) await controller.load()
+                  setDeclaring(false)
+                }} />
+            ) : currentTarget !== undefined && currentNamespace !== undefined ? (
+              <div className={styles['channelEditor']}>
+                <div className={styles['channelHeading']}>
+                  <h2>{currentTarget.displayName}</h2>
+                  {current?.removable ? <button type="button" className={styles['dangerButton']} disabled={!state.writable}
+                    onClick={() => { setDeleteTarget(currentTarget) }}>{t('remove')}</button> : null}
+                </div>
+                <ProviderEditor key={`${currentTarget.provider}:${editorEpoch}`} {...currentTarget} namespace={currentNamespace}
+                  schema={schema} api={api} t={t} readOnly={!state.writable} hideTitle channelLayout
+                  onSettingsCommitted={(view) => { controller.acceptSettingsView(view) }}
+                  onClose={async (changed) => {
+                    if (changed) await announceSaved(currentTarget)
+                    setEditorEpoch(n => n + 1)
+                  }} />
+              </div>
+            ) : <p className={styles['intro']}>{t('intro')}</p>}
+          </>}
+        </main>
+        <Modal open={deleteTarget !== undefined} onClose={closeDelete}
+          title={deleteTarget === undefined ? '' : providerCopy(t('deleteTitle'), deleteTarget)} closeLabel={t('close')}
+          description={deleteTarget === undefined ? '' : providerCopy(deleteTarget.credentialRef === undefined
+            ? t('deleteDescription') : t('deleteDescriptionWithCredential'), deleteTarget)}
+          footer={<><Button variant="outline" autoFocus disabled={deleting} onClick={closeDelete}>{t('cancel')}</Button>
+            <Button variant="outline" disabled={deleting} onClick={confirmDelete}>{deleteTarget === undefined ? '' : providerCopy(t('deleteConfirm'), deleteTarget)}</Button></>}>
+          {deleteFailure === undefined ? null : <p role="alert" className={styles['error']}>{deleteFailure}</p>}
+        </Modal>
+      </div>
     </div>
   )
 

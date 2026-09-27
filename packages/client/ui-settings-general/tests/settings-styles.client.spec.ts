@@ -30,10 +30,26 @@ describe('SettingsRoot.module.css', () => {
     expect(declarations('.trigger.rail')?.get('margin')).toBe('8px 0 0')
   })
 
-  it('keeps the portaled overlay viewport-fixed and the model panel inside a 375px viewport', () => {
+  it('keeps the ordinary panel viewport-bound and gives Models a three-column frame', () => {
     expect(declarations('.overlay')?.get('position')).toBe('fixed')
     expect(declarations('.overlay')?.get('inset')).toBe('0')
-    expect(css).toMatch(/@media \(max-width: 620px\) \{\s*\.modelsPanel \{\s*width: calc\(100vw - 24px\);/)
-    expect(css).toMatch(/max-width: calc\(100vw - 24px\);\s*height: calc\(100vh - 24px\);/)
+    expect(declarations('.panel')?.get('width')).toBe('800px')
+    expect(declarations('.panel')?.get('height')).toBe('min(800px, calc(100vh - 48px))')
+    expect(declarations('.panel')?.get('max-width')).toBe('calc(100vw - 48px)')
+    expect(declarations('.options')?.get('overflow-y')).toBe('auto')
+    expect(declarations('.modelsPanel')?.get('width')).toBe('min(1380px, calc(100vw - 48px))')
+    expect(declarations('.modelsPanel')?.get('height')).toBe('min(936px, calc(100vh - 48px))')
+    expect(declarations('.modelsPanel .nav')?.get('width')).toBe('250px')
+    expect(declarations('.modelsPanel .nav')?.has('display')).toBe(false)
+    expect(declarations('.modelsPanel .options')?.get('padding')).toBe('0')
+    expect(declarations('.modelsPanel .options')?.get('overflow')).toBe('hidden')
+  })
+
+  it('puts the model settings navigation above the content and keeps it horizontally reachable on narrow screens', () => {
+    expect(css).toMatch(/@media \(max-width: 620px\) \{[\s\S]*?\.modelsPanel \{\s*flex-direction: column;/)
+    expect(css).toMatch(
+      /\.modelsPanel \.nav \{\s*width: 100%;[\s\S]*?\.modelsPanel \.navList \{\s*flex-direction: row;\s*overflow-x: auto;/,
+    )
+    expect(css).toMatch(/\.modelsPanel \.navCell \{\s*flex: none;/)
   })
 })

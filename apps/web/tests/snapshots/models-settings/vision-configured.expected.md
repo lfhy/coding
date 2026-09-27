@@ -25,7 +25,7 @@
     - button "ant-ling"
     - button "anthropic"
     - button "azure-openai-responses"
-    - button "cerebras"
+    - button "cerebras 已配置"
     - button "cloudflare-ai-gateway"
     - button "cloudflare-workers-ai"
     - button "deepseek"
@@ -68,24 +68,12 @@
       - img
       - text: 图片识别 Fallback
   - main:
-    - status: 已保存 minimax-cn。
-    - heading "minimax-cn" [level=2]
-    - button "删除"
-    - text: API 密钥
-    - textbox "API 密钥":
-      - /placeholder: 已配置——输入新值可替换
-    - text: API 地址
-    - textbox "API 地址":
-      - /placeholder: https://gateway.minimax.example/v1
-      - text: https://gateway.minimax.example/v1
-    - region "模型目录":
-      - text: 模型目录 正在使用适配器默认模型
-      - button "获取可用模型":
-        - img
-        - text: 获取可用模型
-      - paragraph: 模型选择器中将不显示任何模型；目录外 ID 仍可直接发送。
-      - button "添加模型":
-        - img
-        - text: 添加模型
-    - button "取消"
-    - button "保存"
+    - region "视觉理解工具":
+      - heading "视觉理解工具" [level=2]
+      - paragraph: 纯文本模型收到图片时，先由选定的视觉模型生成描述；未配置时将提示不支持图片。
+      - text: 视觉模型
+      - combobox "视觉模型":
+        - option "未配置"
+        - option "minimax-cn / MiniMax-M3"
+        - option "cerebras / Acme Beta" [selected]
+        - option "cerebras / Orion Basic"

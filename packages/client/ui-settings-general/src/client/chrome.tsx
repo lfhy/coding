@@ -1,10 +1,8 @@
 /**
- * Shell chrome content registered into the shell's trigger/header seats: the
- * trigger row icon + label (figma sidebar foot) and the panel title text.
- * The shell renders the surrounding chrome (button, nav heading row) and
- * reads each entry's `label` option for aria text.
+ * 设置外壳的触发器和标题 slot 内容。外壳负责绘制按钮和导航标题行，
+ * 并从注册项的 `label` 取得可访问文案。
  */
-import { IconSettingsOutline14, IconSettingsOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconSettingsOutline14, IconSettingsOutline16 } from '@deepseek-ai/dsh-client-ui-icons'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import css from './chrome.module.css'
 

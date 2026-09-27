@@ -1,14 +1,8 @@
 /**
- * Settings shell root: the sidebar-foot trigger row plus the centered modal
- * panel (figma 501:29947, 1080x700) with the section nav rail. The shell is
- * a pure composition face — every piece of text (trigger label, panel title,
- * close label, sections) arrives from registrants through slots; accessible
- * names resolve to that content (trigger: its own text; dialog:
- * aria-labelledby the title node; close: visually-hidden slot text). Modal
- * open state and the active section id are component-local viewing state;
- * the onboarding coordinator mounts exactly one ordered registrant while the
- * sessions-derived empty-Hero fact is active. Visible dialog chrome belongs
- * to the step, so a mounted-but-deciding step paints nothing here.
+ * 设置外壳包含侧栏底部触发器与带分区导航的居中模态面板。触发器、标题、
+ * 关闭控件和分区文案均来自 slot 注册项；可访问名称从实际内容取得。
+ * 面板开关与当前分区是组件局部状态。空会话期间，引导协调器每次只挂载
+ * 一个有序步骤；步骤自行持有弹窗框架，尚在判定的步骤不会绘制遮罩。
  */
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -16,11 +10,11 @@ import clsx from 'clsx'
 import {
   IconAgentPresetOutline16, IconCloseOutline16, IconDataOutline16,
   IconPersonalizationOutline16, IconSettingsOutline16,
-} from '@deepseek-ai/dsh-client-ui-primitives'
+} from '@deepseek-ai/dsh-client-ui-icons'
 import type { SettingsRootComponentProps, SettingsSectionRow } from './shell-contract.ts'
 import css from './SettingsRoot.module.css'
 
-/** Nav glyph by section id; unknown ids fall back to the settings gear. */
+/** 按设置分区选择导航图标；其他分区使用设置图标。 */
 function navIcon(id: string) {
   if (id === 'models') return <IconDataOutline16 className={css.navIcon} size={16} />
   if (id === 'agent-presets') return <IconAgentPresetOutline16 className={css.navIcon} size={16} />
@@ -36,14 +30,9 @@ type PanelProps = {
   onClose: () => void
 }
 
-/**
- * The modal layer: full-viewport mask + centered panel. Close paths: the
- * header button, a mask click, and document-level Escape (mounted only while
- * open, so the listener lifetime is the panel's).
- */
+/** 全视口设置面板可由关闭按钮、遮罩或 Escape 关闭；键盘监听随面板挂载与卸载。 */
 function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose }: PanelProps) {
-  // Entries can unmount underneath the requested id, so the render-time
-  // projection falls back to the first row when the id is gone.
+  // 当前分区卸载后，投影回退到首个仍在账本上的分区。
   const active = rows.find(r => r.id === activeId)?.id ?? rows[0]?.id
   const titleId = useId()
 
@@ -56,7 +45,7 @@ function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose }: PanelP
     return () => { document.removeEventListener('keydown', onKeyDown) }
   }, [onClose])
 
-  // Baseline focus management: entering the dialog lands on the close button.
+  // 打开面板后把焦点置于关闭按钮。
   const closeButton = useRef<HTMLButtonElement | null>(null)
   useEffect(() => { closeButton.current?.focus() }, [])
 
@@ -162,9 +151,7 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
         />,
         document.body,
       )}
-      {/* Dialog chrome and `#root` inert ownership live inside each step's
-          visible branch. A step still deciding (private facts loading)
-          renders null, so nothing paints or blocks while it decides. */}
+      {/* 步骤的可见分支持有弹窗框架和 `#root` inert；私有事实判定期间不遮挡界面。 */}
       {onboardingStep !== undefined && renderSlot('settings.onboarding', {
         stepId: onboardingStep.id,
         complete: () => { completeOnboardingStep(onboardingStep.id) },

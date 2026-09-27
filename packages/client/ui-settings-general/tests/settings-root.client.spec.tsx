@@ -25,6 +25,7 @@ function mount({
     { id: 'general', order: 0, label: 'General' },
     { id: 'models', order: 10, label: 'Models' },
     { id: 'agent-presets', order: 20, label: 'Agent presets' },
+    { id: 'plugins', order: 30, label: 'Plugins' },
   ],
   steps = [
     { id: 'welcome', order: -100 },
@@ -156,8 +157,7 @@ describe('SettingsPanel close paths', () => {
     openPanel()
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(screen.queryByRole('dialog')).toBeNull()
-    // Ignored while closed (listener removed with the panel) and non-Escape
-    // keys are ignored while open.
+    // 关闭后监听器随面板卸载；打开时非 Escape 按键不触发关闭。
     fireEvent.keyDown(document, { key: 'Escape' })
     openPanel()
     fireEvent.keyDown(document, { key: 'Enter' })
@@ -189,6 +189,7 @@ describe('SettingsPanel navigation', () => {
     openPanel()
     expect(screen.getByRole('button', { name: 'General' }).getAttribute('aria-current')).toBe('true')
     expect(screen.getByRole('button', { name: 'Models' }).getAttribute('aria-current')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Agent presets' }).getAttribute('aria-current')).toBeNull()
     expect(screen.getByTestId('section-general')).toBeTruthy()
   })
 
@@ -203,24 +204,47 @@ describe('SettingsPanel navigation', () => {
       ],
     })
     openPanel()
-    // Glyphs carry no id of their own, so the drawn paths are what tells them apart.
+    // 图标本身不携带分区 id，以实际绘制的图形区分。
     const glyphs = ['General', 'Models', 'Agent presets', 'Plugins', 'Contributed']
       .map(name => screen.getByRole('button', { name }).querySelector('svg')?.innerHTML)
 
     expect(glyphs.every(glyph => glyph !== undefined && glyph !== '')).toBe(true)
-    // The three ids the shell names get their own glyph; every other section —
-    // including one this package never heard of — shares the gear.
+    // 三个特定分区拥有独立图标，其余分区使用通用设置图标。
     expect(new Set(glyphs.slice(0, 4)).size).toBe(4)
     expect(glyphs[4]).toBe(glyphs[0])
   })
 
-  it('switches the rendered section on nav click', () => {
+  it('switches between ordinary sections without changing the panel geometry', () => {
     mount()
     openPanel()
+    const dialog = screen.getByRole('dialog')
+    const panelClass = dialog.className
+    fireEvent.click(screen.getByRole('button', { name: 'Plugins' }))
+    expect(screen.getByRole('button', { name: 'Plugins' }).getAttribute('aria-current')).toBe('true')
+    expect(screen.getByTestId('section-plugins')).toBeTruthy()
+    expect(screen.queryByTestId('section-general')).toBeNull()
+    expect(screen.getByRole('dialog')).toBe(dialog)
+    expect(dialog.className).toBe(panelClass)
+    expect(screen.getByText('Open configuration file')).toBeTruthy()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('keeps the settings navigation and dialog semantics when entering and leaving Models', () => {
+    mount()
+    openPanel()
+    const dialog = screen.getByRole('dialog', { name: 'Settings Title' })
     fireEvent.click(screen.getByRole('button', { name: 'Models' }))
+    expect(dialog.getAttribute('aria-modal')).toBe('true')
+    expect(dialog.className).toContain('modelsPanel')
+    expect(screen.getByRole('navigation').contains(screen.getByRole('button', { name: 'General' }))).toBe(true)
     expect(screen.getByRole('button', { name: 'Models' }).getAttribute('aria-current')).toBe('true')
     expect(screen.getByTestId('section-models')).toBeTruthy()
-    expect(screen.queryByTestId('section-general')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Close' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'General' }))
+    expect(dialog.className).not.toContain('modelsPanel')
+    expect(screen.getByTestId('section-general')).toBeTruthy()
+    expect(screen.queryByTestId('section-models')).toBeNull()
   })
 
   it('mounts onboarding steps in order and transfers ownership only on completion', () => {
@@ -242,6 +266,7 @@ describe('SettingsPanel navigation', () => {
     })
     expect(screen.getByRole('dialog')).toBeTruthy()
     expect(screen.getByTestId('section-models')).toBeTruthy()
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close' }))
 
     cleanup()
     const inactive = mount({ onboardingActive: false }).renderSlot.mock.calls
@@ -271,6 +296,7 @@ describe('SettingsPanel navigation', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Models' }))
     bump([{ id: 'general', order: 0, label: 'General' }])
     expect(screen.queryByRole('button', { name: 'Models' })).toBeNull()
+    expect(screen.getByRole('dialog').className).not.toContain('modelsPanel')
     expect(screen.getByTestId('section-general')).toBeTruthy()
   })
 

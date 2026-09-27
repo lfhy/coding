@@ -1,4 +1,4 @@
-// Web e2e 设置场景：模态外壳（触发器、导航、分节切换、两种关闭路径）、外观偏好
+// Web e2e 设置场景：模态外壳（触发器、导航、模型三列、分节切换、两种关闭路径）、外观偏好
 // （点击“深色”会依次经过 ThemeRuntime 偏好、Host 设置、theme/change、ui-layout
 // presenter、body 属性、别名 token 与浏览器主题色元数据）、语言行、繁忙态 Enter 偏好，
 // 以及作为后续会话持久默认值的权限。场景不调用模型；所有操作都发生在空白页面的
@@ -88,10 +88,27 @@ describe('web e2e: settings modal and General preferences', () => {
     // 刚打开的中文对话框快照，此时「通用设置」处于激活状态。
     const snapshot = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(DIALOG_EXPECTED, snapshot, MODE)
-    // Section switch: aria-current moves (the Models page itself has its own scenario file).
+    // 模型分区仍在同一个模态框内；设置导航、渠道目录和详情三列互不遮挡。
     await dialog.getByRole('button', { name: '模型' }).click()
-    await expect.poll(() => dialog.getByRole('button', { name: '模型' }).getAttribute('aria-current'), { timeout: 5_000 }).toBe('true')
+    const navigation = dialog.getByRole('navigation')
+    await expect.poll(() => navigation.getByRole('button', { name: '模型' }).getAttribute('aria-current'), { timeout: 5_000 }).toBe('true')
     expect(await dialog.getByRole('button', { name: '通用设置' }).getAttribute('aria-current')).toBeNull()
+    const channels = dialog.getByRole('complementary', { name: '提供方' })
+    await channels.getByRole('button', { name: 'amazon-bedrock', exact: true }).waitFor({ timeout: 10_000 })
+    const detail = dialog.getByRole('main')
+    await detail.getByRole('heading', { name: 'amazon-bedrock' }).waitFor({ timeout: 10_000 })
+    const [dialogBox, navBox, channelsBox, detailBox] = await Promise.all([
+      dialog.boundingBox(), navigation.boundingBox(), channels.boundingBox(), detail.boundingBox(),
+    ])
+    if (dialogBox === null || navBox === null || channelsBox === null || detailBox === null) {
+      throw new Error('模型设置三列未全部绘制')
+    }
+    expect(navBox.x + navBox.width).toBeLessThanOrEqual(channelsBox.x + 1)
+    expect(channelsBox.x + channelsBox.width).toBeLessThanOrEqual(detailBox.x + 1)
+    expect(detailBox.x + detailBox.width).toBeLessThanOrEqual(dialogBox.x + dialogBox.width + 1)
+    await channels.getByRole('button', { name: '图片识别 Fallback' }).click()
+    await detail.getByRole('region', { name: '视觉理解工具' }).waitFor({ timeout: 10_000 })
+    expect(await navigation.getByRole('button', { name: '模型' }).getAttribute('aria-current')).toBe('true')
     // Plugins is a read-only projection of the same assembled Loader tree.
     // Capture one stable shipped row rather than the whole inventory so adding
     // an unrelated plugin does not rewrite this surface's golden.

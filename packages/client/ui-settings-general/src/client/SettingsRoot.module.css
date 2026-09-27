@@ -225,18 +225,27 @@
   white-space: nowrap;
 }
 
-/* 模型页的渠道列表自己承担左栏；其余设置仍使用固定导航和原有几何。 */
+/* 模型分区保留设置导航，内容列留给渠道目录与详情；普通分区沿用基准尺寸。 */
 .modelsPanel {
-  width: min(1800px, calc(100vw - 48px));
-  height: min(1320px, calc(100vh - 48px));
+  width: min(1380px, calc(100vw - 48px));
+  height: min(936px, calc(100vh - 48px));
 }
 
 .modelsPanel .nav {
-  display: none;
+  width: 250px;
+  min-height: 0;
+  padding-bottom: 16px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.modelsPanel .navList {
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .modelsPanel .content {
   position: relative;
+  min-height: 0;
 }
 
 .modelsPanel .header {
@@ -259,9 +268,26 @@
 
 @media (max-width: 620px) {
   .modelsPanel {
+    flex-direction: column;
     width: calc(100vw - 24px);
     max-width: calc(100vw - 24px);
     height: calc(100vh - 24px);
     border-radius: 16px;
+  }
+
+  .modelsPanel .nav {
+    width: 100%;
+    padding: 12px;
+    gap: 8px;
+  }
+
+  .modelsPanel .navList {
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .modelsPanel .navCell {
+    flex: none;
   }
 }

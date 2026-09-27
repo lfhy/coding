@@ -8,7 +8,7 @@ macOS 桌面窗口打开时默认最大化，不会进入全屏。双击顶栏�
 
 ## 配置模型
 
-打开**设置 → 模型**，输入 [DeepSeek API 密钥](https://platform.deepseek.com/)并保存。模型路由会立即可用，不需要重启服务器。
+首次使用可在独立的 DeepSeek 凭据弹窗输入 [DeepSeek API 密钥](https://platform.deepseek.com/)并保存；稍后配置时，打开**设置 → 模型**，在渠道列表中选择 DeepSeek 并保存。模型路由会立即可用，不需要重启服务器。
 
 [模型配置指南](./providers.md)介绍其他提供方和自定义 OpenAI 兼容端点。
 
