@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render } from '@testing-library/react'
-import { Icon, IconPanelLeftOutline16 } from '../src/index.ts'
+import { Icon, IconPanelLeftOutline16, IconTerminalOutline16 } from '../src/index.ts'
 
 afterEach(cleanup)
 
@@ -35,5 +35,20 @@ describe('语义图标适配', () => {
     const view = render(<IconPanelLeftOutline16 />)
     expect(view.container.querySelector('svg')?.getAttribute('viewBox')).toBe('0 0 16 16')
     expect(view.container.querySelector('svg')?.getAttribute('width')).toBe('16')
+  })
+
+  it('工作台终端菜单使用透明内部的线性图标', () => {
+    const view = render(<Icon name="terminal-menu" size={18} className="menu-icon" />)
+    const glyph = render(<IconTerminalOutline16 />)
+    const icon = view.container.querySelector('svg') as SVGElement
+    expect(icon.getAttribute('viewBox')).toBe('0 0 16 16')
+    expect(icon.getAttribute('width')).toBe('18')
+    expect(icon.classList.contains('menu-icon')).toBe(true)
+    expect(icon.getAttribute('aria-hidden')).toBe('true')
+    expect(icon.querySelector('rect')?.getAttribute('stroke')).toBe('currentColor')
+    expect(icon.querySelector('path')?.getAttribute('stroke')).toBe('currentColor')
+    expect(icon.querySelector('path')?.getAttribute('d'))
+      .toBe(glyph.container.querySelector('path')?.getAttribute('d'))
+    expect(view.container.querySelector('.semi-icon')).toBeNull()
   })
 })

@@ -110,6 +110,8 @@ One UI feature = one plugin package (`src/client/` browser half). A multi-domain
 
 [docs/web-styling.md](../../docs/web-styling.md) is authoritative. Shared `--dsw-*` tokens and global sheets live in `ui-theme/src/styles/`; feature components consume semantic aliases through CSS Modules and `clsx`, with no literal colors, component library, or Tailwind. Product copy and project-owned code comments are Chinese.
 
+新增或调整客户端图标时，图形由 [`ui-icons`](ui-icons/README.md) 持有并经其 `src/index.ts` 统一导出；业务组件只从包入口使用语义 `Icon` 或具名图形，不内联图标 SVG、不直接引用第三方图标库或 `ui-icons` 内部文件。同步维护语义映射、包 README 和图标测试。
+
 ## Testing and coverage
 
 GUI 测试层级与仓库测试政策见[测试指南](../../docs/testing.md)，具体测试由改动包的 `tests/` 持有。

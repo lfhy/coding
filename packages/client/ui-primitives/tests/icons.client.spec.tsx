@@ -8,16 +8,15 @@ import {
 
 afterEach(cleanup)
 
-// Icon components all share the IconProps signature; the barrel also exports
-// non-icon atoms (different props shapes), so filter by prefix BEFORE typing.
+// 图标组件共用 IconProps；入口也导出其他组件，应先按名称筛出图标再断言类型。
 const icons = Object.fromEntries(
   Object.entries(primitives).filter(([name]) => /^Icon[A-Z]/.test(name)),
 ) as Record<string, (p: primitives.IconProps) => React.JSX.Element>
 const iconNames = Object.keys(icons)
 
 describe('ic_ds_ icon set', () => {
-  it('exports the full icon set (46 deepsuite + 20 figma extracts + four product glyphs outside those sets)', () => {
-    expect(iconNames.length).toBe(70)
+  it('导出完整图标集（46 个 DeepSuite、20 个 Figma 提取图形和 5 个产品图形）', () => {
+    expect(iconNames.length).toBe(71)
   })
 
   it.each(iconNames)('%s renders an svg with currentColor fills and no hardcoded palette', (name) => {

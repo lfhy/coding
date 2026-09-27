@@ -87,6 +87,22 @@ describe('workspace workbench helpers', () => {
 })
 
 describe('WorkspaceWorkbench shell', () => {
+  it('功能菜单的终端与其他入口采用同尺寸线性 SVG', () => {
+    const b = bench()
+    render(<WorkspaceWorkbench {...b.props} />)
+    const menu = screen.getByRole('navigation', { name: zh['workbench.menu.label'] })
+    const icons = within(menu).getAllByRole('button', { hidden: true })
+      .map(button => button.querySelector('svg'))
+    expect(icons).toHaveLength(5)
+    for (const icon of icons) {
+      expect(icon?.getAttribute('width')).toBe('18')
+      expect(icon?.getAttribute('height')).toBe('18')
+    }
+    const terminal = within(menu).getByRole('button', { name: zh['workbench.menu.terminal'] })
+    expect(terminal.querySelector('svg rect')?.getAttribute('stroke')).toBe('currentColor')
+    expect(terminal.querySelector('.semi-icon')).toBeNull()
+  })
+
   it('waits for the workbench to be shown before reading the workspace root', async () => {
     const b = bench({ shown: false, initialView: 'files' })
     const mounted = render(<WorkspaceWorkbench {...b.props} />)

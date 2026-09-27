@@ -531,7 +531,7 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
               <button type="button" ref={menuTerminalButton} className={css.functionItem} onClick={() => {
                 if (!bottomOpen) toggleBottom()
               }}>
-                <Icon name="bottom-panel" size={18} />
+                <Icon name="terminal-menu" size={18} />
                 <span>{t('workbench.menu.terminal')}</span>
               </button>
               <button type="button" className={css.functionItem} onClick={() => {
