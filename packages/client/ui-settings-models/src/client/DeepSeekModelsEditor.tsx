@@ -9,7 +9,7 @@ import { useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   IconChevronDownOutline14, IconChevronRightOutline14, IconPlusOutline16, IconTrashOutline16,
-} from '@deepseek-ai/dsh-client-ui-primitives'
+} from '@deepseek-ai/dsh-client-ui-icons'
 import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
 
@@ -75,6 +75,7 @@ export interface DeepSeekModelsValidationFailure {
   /** Message key owned by the Models settings section. */
   key: 'modelIdRequired' | 'modelIdDuplicate' | 'modelNameInvalid' | 'modelContextInvalid'
   | 'modelMaxTokensInvalid'
+  | 'modelReasoningInvalid'
 }
 
 /** Convert a schema-validated catalog value into records without dropping hidden fields. */
@@ -91,7 +92,10 @@ export function modelDrafts(value: unknown): DeepSeekModelDraft[] {
  * @param value - user-owned `models` value, or undefined while inherited.
  * @returns the first invalid row, or undefined when the adapter will accept it.
  */
-export function validateDeepSeekModels(value: unknown): DeepSeekModelsValidationFailure | undefined {
+export function validateDeepSeekModels(
+  value: unknown,
+  family: 'deepseek' | 'pi-ai' = 'pi-ai',
+): DeepSeekModelsValidationFailure | undefined {
   if (value === undefined) return undefined
   const models = modelDrafts(value)
   const seen = new Set<string>()
@@ -117,6 +121,13 @@ export function validateDeepSeekModels(value: unknown): DeepSeekModelsValidation
     if (maxTokens !== undefined
       && (typeof maxTokens !== 'number' || !Number.isInteger(maxTokens) || maxTokens <= 0)) {
       return { index, key: 'modelMaxTokensInvalid' }
+    }
+    const reasoning = model['reasoningEfforts']
+    if (family === 'deepseek' && reasoning !== undefined
+      && (!Array.isArray(reasoning) || reasoning.length === 0
+        || reasoning.some((level: unknown) => typeof level !== 'string' || !['off', 'low', 'high', 'max'].includes(level))
+        || new Set(reasoning).size !== reasoning.length)) {
+      return { index, key: 'modelReasoningInvalid' }
     }
   }
   return undefined

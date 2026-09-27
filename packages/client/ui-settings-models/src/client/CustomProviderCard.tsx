@@ -23,7 +23,7 @@
 
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import type { IApiClient } from '@deepseek-ai/dsh-api-remotes/client'
+import type { IApiClient, SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
 import { apiKeyFailure } from './apiKey.ts'
 import { EditorFooter } from './EditorFooter.tsx'
 import { validateDeepSeekModels } from './DeepSeekModelsEditor.tsx'
@@ -65,7 +65,9 @@ export interface CustomProviderCardProps {
   /** Disable writes (read-only settings provider). */
   readOnly: boolean
   /** Close the card; `changed` reports whether a provider was created. */
-  onClose: (changed: boolean) => void
+  onClose: (changed: boolean) => void | Promise<void>
+  /** 新渠道 profile 已提交时折入共享设置镜像，凭据写入失败也保留该事实。 */
+  onSettingsCommitted?: (view: SettingsNamespaceView) => void
 }
 
 /**
@@ -153,6 +155,7 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
         expectedRevision: openedAt,
       })
       if (!response.result.ok) return response.result.error.message
+      props.onSettingsCommitted?.(response.result.value)
       // The provider now exists. A retry after the key write below fails must
       // not re-run this mutate: the revision it holds is the one this write
       // just superseded, so the Host would answer `settings-conflict` and the
@@ -177,7 +180,7 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
         setFailure(outcome)
         return
       }
-      props.onClose(true)
+      await props.onClose(true)
     } catch (error) {
       // A transport failure rejects rather than answering; without this the
       // card would stay busy with nothing shown.
@@ -288,7 +291,7 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
         submitDisabled={disabled || !ready}
         submitLabel="create"
         submitBusyLabel="creating"
-        onCancel={() => { props.onClose(committed) }}
+        onCancel={() => { void props.onClose(committed) }}
         onSubmit={() => { void create() }}
       />
     </div>

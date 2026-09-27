@@ -98,6 +98,16 @@ describe('SettingsRoot trigger', () => {
 })
 
 describe('SettingsPanel chrome seats', () => {
+  it('portals the entire panel to body so sidebar ancestors cannot clip the mobile dialog', () => {
+    const { view } = mount()
+    openPanel()
+    const dialog = screen.getByRole('dialog')
+    expect(dialog.parentElement?.parentElement).toBe(document.body)
+    expect(view.container.contains(dialog)).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
   it('names the dialog via aria-labelledby pointing at the header seat node', () => {
     mount()
     openPanel()
@@ -152,6 +162,18 @@ describe('SettingsPanel close paths', () => {
     openPanel()
     fireEvent.keyDown(document, { key: 'Enter' })
     expect(screen.getByRole('dialog')).toBeTruthy()
+  })
+
+  it('leaves the settings panel open when a nested picker owns Escape', () => {
+    mount()
+    openPanel()
+    const nested = document.createElement('div')
+    nested.setAttribute('role', 'dialog')
+    nested.setAttribute('aria-modal', 'true')
+    document.body.append(nested)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.getByRole('dialog', { name: 'Settings Title' })).toBeTruthy()
+    nested.remove()
   })
 
   it('lands focus on the close button when the dialog opens', () => {

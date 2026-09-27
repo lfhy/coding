@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-/** Model-list editing, endpoint interrogation, and hand-declared provider creation. */
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+/** 模型目录编辑、端点发现，以及手工声明渠道的交互契约。 */
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import Schema from '@deepseek-ai/schemastery'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
@@ -19,6 +19,15 @@ afterEach(cleanup)
 const t: ModelsSectionInjected['t'] = key => en[key]
 
 const PROTOCOLS = ['openai-completions', 'openai-responses', 'anthropic-messages']
+const PI_AI_CAPABILITIES = {
+  input: ['text', 'image'],
+  reasoningEfforts: { off: null, low: 'low', high: 'high', max: 'max' },
+}
+
+/** 手工添加与发现导入都声明完整能力，不依赖模型名称猜测。 */
+function piAiModel(fields: Record<string, unknown>): Record<string, unknown> {
+  return { ...fields, ...PI_AI_CAPABILITIES }
+}
 
 /** The pi-ai profile shape as the host serializes it, including the layer-1 fields. */
 const PiAiConfig = Schema.object({
@@ -73,6 +82,8 @@ function scriptedFace(options: {
   baseProviders?: Record<string, unknown>
   /** Routes the adapter reports as hand-declared; the rest come back as shipped. */
   declaredRoutes?: readonly string[]
+  /** 适配器目录中尚未配置的路由不会占用左栏，而是在添加入口供选择。 */
+  directory?: readonly string[]
   discover?: ReturnType<typeof vi.fn>
   mutate?: ReturnType<typeof vi.fn>
   set?: ReturnType<typeof vi.fn>
@@ -87,7 +98,7 @@ function scriptedFace(options: {
   const face = {
     llm: {
       providers: vi.fn(() => Promise.resolve(ok({
-        providers: Object.keys(providers).map(provider => ({
+        providers: (options.directory ?? Object.keys(providers)).map(provider => ({
           provider,
           displayName: provider,
           settingsNs: 'llm-pi-ai',
@@ -155,14 +166,11 @@ async function mountSection(options: Parameters<typeof scriptedFace>[0] = {}) {
   return { ...scripted, controller }
 }
 
-/** Open the editor of one configured row and expand its customized fold. */
+/** 渠道目录选中后，详情始终展示凭据、端点和模型目录。 */
 function openEditor(provider: string): void {
-  const row = screen.getByText(provider).closest('li')
-  if (row === null) throw new Error(`no row for ${provider}`)
-  fireEvent.click(within_(row, en.edit))
-  const summary = document.querySelector('summary')
-  if (summary === null) throw new Error('no customized fold')
-  fireEvent.click(summary)
+  const rail = screen.getByRole('complementary', { name: en.provider })
+  fireEvent.click(within(rail).getByRole('button', { name: provider }))
+  expect(within(screen.getByRole('main')).getByRole('heading', { level: 2, name: provider })).toBeTruthy()
 }
 
 /** Open one model row's advanced fold, where the capacities live. */
@@ -172,16 +180,21 @@ function expandModel(index: number): void {
 
 /** The button carrying `label`, typed so its disabled/title state is readable. */
 function buttonNamed(label: string): HTMLButtonElement {
-  const found = screen.getByText(label)
+  const found = screen.getByRole('button', { name: label })
   if (!(found instanceof HTMLButtonElement)) throw new Error(`"${label}" is not a button`)
+  return found
+}
+
+/** 按可访问名称定位复选框，并保证 checked 读取来自真实 input。 */
+function checkbox(scope: HTMLElement, name: string): HTMLInputElement {
+  const found = within(scope).getByRole('checkbox', { name })
+  if (!(found instanceof HTMLInputElement)) throw new Error(`"${name}" is not a checkbox input`)
   return found
 }
 
 /** Click the button with `label` inside `scope`. */
 function within_(scope: HTMLElement, label: string): HTMLElement {
-  const found = [...scope.querySelectorAll('button')].find(button => button.textContent === label)
-  if (found === undefined) throw new Error(`no "${label}" button`)
-  return found
+  return within(scope).getByRole('button', { name: label })
 }
 
 describe('protocolChoices', () => {
@@ -251,9 +264,33 @@ describe('model list editing', () => {
 
     fireEvent.click(screen.getByText(en.apply))
     await waitFor(() => { expect(mutate).toHaveBeenCalled() })
-    // What lands in settings is always a plain token count.
+    // 设置中保存纯数值；输入框则保留用户正在键入的容量写法。
     expect(firstMutate(mutate).ops[0]?.value)
-      .toEqual([{ id: 'm', contextWindow: 1_000_000, maxTokens: 1000 }])
+      .toEqual([piAiModel({ id: 'm', contextWindow: 1_000_000, maxTokens: 1000 })])
+  })
+
+  it('edits vision and reasoning for one model without changing another or losing unknown fields', async () => {
+    const { mutate } = await mountSection({ providers: { openai: {
+      baseURL: 'https://proxy.example/v1',
+      models: [
+        { ...piAiModel({ id: 'first', customField: 'kept' }) },
+        piAiModel({ id: 'second' }),
+      ],
+    } } })
+    openEditor('openai')
+    expandModel(1)
+    const main = screen.getByRole('main')
+    expect(checkbox(main, en.visionSupport).checked).toBe(true)
+    expect(checkbox(main, en.reasoningSupport).checked).toBe(true)
+    fireEvent.click(within(main).getByRole('checkbox', { name: en.visionSupport }))
+    fireEvent.click(within(main).getByRole('checkbox', { name: 'high' }))
+    fireEvent.click(within(main).getByRole('button', { name: en.apply }))
+
+    await waitFor(() => { expect(mutate).toHaveBeenCalledOnce() })
+    expect(firstMutate(mutate).ops).toEqual([{ op: 'set', path: ['providers', 'openai', 'models'], value: [
+      { id: 'first', customField: 'kept', input: ['text'], reasoningEfforts: { off: null, low: 'low', max: 'max' } },
+      piAiModel({ id: 'second' }),
+    ] }])
   })
 
   it('refuses to apply while a capacity is unreadable', async () => {
@@ -478,18 +515,42 @@ describe('endpoint interrogation', () => {
     openEditor('openai')
 
     fireEvent.click(screen.getByText(en.fetchModels))
-    await screen.findByText(en.fetchTitle)
-    // The already-configured row starts unchecked; the new one starts checked.
-    const boxes = [...document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')]
-    expect(boxes.map(box => box.checked)).toEqual([false, true])
-    fireEvent.click(screen.getByText(en.fetchAdopt))
+    const dialog = await screen.findByRole('dialog', { name: `openai ${en.models}` })
+    // 发现候选一律默认不选；显式选择新行也不会覆写已配置的容量。
+    expect(checkbox(dialog, 'kept').checked).toBe(false)
+    expect(checkbox(dialog, 'fresh').checked).toBe(false)
+    fireEvent.click(checkbox(dialog, 'fresh'))
+    fireEvent.click(within(dialog).getByRole('button', { name: en.fetchAdopt }))
 
     fireEvent.click(screen.getByText(en.apply))
     await waitFor(() => { expect(mutate).toHaveBeenCalled() })
     expect(firstMutate(mutate).ops[0]?.value).toEqual([
       { id: 'kept', contextWindow: 111 },
-      { id: 'fresh', contextWindow: 4096, name: 'Fresh' },
+      piAiModel({ id: 'fresh', contextWindow: 4096, name: 'Fresh' }),
     ])
+  })
+
+  it('searches the discovered list and imports one model without persisting before Apply', async () => {
+    const discover = vi.fn(() => Promise.resolve(ok({ models: [
+      { id: 'acme-2.5-flash' }, { id: 'acme-2.5-pro' }, { id: 'elsewhere' },
+    ] })))
+    const { mutate } = await mountSection({ discover })
+    openEditor('openai')
+    fireEvent.click(screen.getByRole('button', { name: en.fetchModels }))
+    const dialog = await screen.findByRole('dialog', { name: `openai ${en.models}` })
+    fireEvent.change(within(dialog).getByRole('textbox', { name: en.searchModels }),
+      { target: { value: 'flash' } })
+    expect(within(dialog).getByRole('checkbox', { name: 'acme-2.5-flash' })).toBeTruthy()
+    expect(within(dialog).queryByRole('checkbox', { name: 'acme-2.5-pro' })).toBeNull()
+    fireEvent.click(within(dialog).getByRole('button', { name: `${en.addModel} acme-2.5-flash` }))
+    expect(mutate).not.toHaveBeenCalled()
+    fireEvent.click(within(dialog).getByRole('button', { name: en.cancel }))
+    expect(screen.getByRole('textbox', { name: `${en.modelId} 1` })).toHaveProperty('value', 'acme-2.5-flash')
+    fireEvent.click(screen.getByRole('button', { name: en.apply }))
+    await waitFor(() => { expect(mutate).toHaveBeenCalledOnce() })
+    expect(firstMutate(mutate).ops).toEqual([{
+      op: 'set', path: ['providers', 'openai', 'models'], value: [piAiModel({ id: 'acme-2.5-flash' })],
+    }])
   })
 
   it('keeps the rows editable when the provider cannot be interrogated', async () => {
@@ -580,10 +641,10 @@ describe('endpoint interrogation', () => {
 
     fireEvent.click(screen.getByText(en.fetchModels))
     const dialog = await screen.findByRole('dialog')
-    // The editor card carries a Cancel of its own; this one is the dialog's.
+    // 编辑器本身也有取消按钮，这里只关闭发现弹窗。
     fireEvent.click(within_(dialog, en.cancel))
 
-    await waitFor(() => { expect(screen.queryByText(en.fetchTitle)).toBeNull() })
+    await waitFor(() => { expect(screen.queryByRole('dialog', { name: `openai ${en.models}` })).toBeNull() })
     expect(mutate).not.toHaveBeenCalled()
   })
 
@@ -595,17 +656,20 @@ describe('endpoint interrogation', () => {
     openEditor('openai')
 
     fireEvent.click(screen.getByText(en.fetchModels))
-    await screen.findByText(en.fetchTitle)
-    const boxes = [...document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')]
-    const first = boxes[0] as HTMLInputElement
+    const dialog = await screen.findByRole('dialog', { name: `openai ${en.models}` })
+    const first = within(dialog).getByRole('checkbox', { name: 'a' }) as HTMLInputElement
     fireEvent.click(first)
     fireEvent.click(first)
-    fireEvent.click(screen.getByText(en.fetchAdopt))
+    fireEvent.click(first)
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'b' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: en.fetchAdopt }))
     fireEvent.click(screen.getByText(en.apply))
 
     await waitFor(() => { expect(mutate).toHaveBeenCalled() })
-    // A disclosed output cap rides along with the candidate that has one.
-    expect(firstMutate(mutate).ops[0]?.value).toEqual([{ id: 'a' }, { id: 'b', maxTokens: 2048 }])
+    // 候选模型提供了输出上限时一并导入，未提供时不凭空补值。
+    expect(firstMutate(mutate).ops[0]?.value).toEqual([
+      piAiModel({ id: 'a' }), piAiModel({ id: 'b', maxTokens: 2048 }),
+    ])
   })
 
   it('selects and clears every discovered candidate in one action', async () => {
@@ -617,21 +681,40 @@ describe('endpoint interrogation', () => {
 
     fireEvent.click(screen.getByText(en.fetchModels))
     const dialog = await screen.findByRole('dialog')
-    const boxes = [...dialog.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')]
+    const boxes = within(dialog).getAllByRole('checkbox') as HTMLInputElement[]
     expect(boxes.map(box => box.checked)).toEqual([true, true, true])
+
+    fireEvent.click(within_(dialog, en.fetchDeselectAll))
+    expect(boxes.map(box => box.checked)).toEqual([true, true, true])
+    expect(within_(dialog, en.fetchDeselectAll)).toBeTruthy()
 
     fireEvent.click(within_(dialog, en.fetchDeselectAll))
     expect(boxes.map(box => box.checked)).toEqual([false, false, false])
     expect(within_(dialog, en.fetchSelectAll)).toBeTruthy()
-
-    fireEvent.click(within_(dialog, en.fetchSelectAll))
-    expect(boxes.map(box => box.checked)).toEqual([true, true, true])
-    expect(within_(dialog, en.fetchDeselectAll)).toBeTruthy()
   })
 })
 
-describe('provider rows', () => {
-  it('tags the routes the adapter declared, and only those', async () => {
+describe('channel directory and detail', () => {
+  it('lists dormant catalog routes alongside the configured default and also keeps Add provider available', async () => {
+    await mountSection({ directory: ['openai', 'anthropic'] })
+    const rail = screen.getByRole('complementary', { name: en.provider })
+    expect(within(rail).getByRole('button', { name: 'openai' }).getAttribute('aria-current')).toBe('true')
+    const dormant = within(rail).getByRole('button', { name: 'anthropic' })
+    expect(dormant.getAttribute('aria-current')).toBeNull()
+    fireEvent.click(dormant)
+    const detail = screen.getByRole('main')
+    expect(within(detail).getByRole('heading', { name: 'anthropic' })).toBeTruthy()
+    expect(within(detail).getByLabelText(en.keyInput)).toBeTruthy()
+    expect(within(detail).getByRole('textbox', { name: en.baseUrl })).toBeTruthy()
+    fireEvent.click(within(rail).getByRole('button', { name: en.add }))
+    const choice = within(detail).getByRole('combobox', { name: en.provider }) as HTMLSelectElement
+    expect(choice.value).toBe('anthropic')
+    expect(within(detail).getByLabelText(en.keyInput)).toBeTruthy()
+    expect(within(detail).getByRole('textbox', { name: en.baseUrl })).toBeTruthy()
+    expect(within(detail).getByRole('region', { name: en.models })).toBeTruthy()
+  })
+
+  it('shows configured channels in the rail and switches the persistent detail', async () => {
     await mountSection({
       providers: {
         openai: { apiKeyEnv: 'OPENAI_API_KEY' },
@@ -640,18 +723,23 @@ describe('provider rows', () => {
       declaredRoutes: ['acme-gateway'],
     })
 
-    const rowOf = (provider: string): HTMLElement => {
-      const row = screen.getByText(provider).closest('li')
-      if (row === null) throw new Error(`no row for ${provider}`)
-      return row
-    }
-    expect(rowOf('acme-gateway').textContent).toContain(en.customTag)
-    // `openai` carries a stored profile too — the tag follows the adapter's
-    // catalog, not the presence of settings, so it stays off here.
-    expect(rowOf('openai').textContent).not.toContain(en.customTag)
+    const rail = screen.getByRole('complementary', { name: en.provider })
+    const search = within(rail).getByRole('textbox', { name: en.searchProviders })
+    expect(within(rail).getByRole('button', { name: 'openai' }).getAttribute('aria-current')).toBe('true')
+    expect(within(screen.getByRole('main')).getByRole('heading', { level: 2, name: 'openai' })).toBeTruthy()
+    fireEvent.change(search, { target: { value: 'ACME' } })
+    expect(within(rail).queryByRole('button', { name: 'openai' })).toBeNull()
+    openEditor('acme-gateway')
+    expect(screen.getByRole('textbox', { name: en.baseUrl })).toHaveProperty('value', 'https://acme.test/v1')
+    expect(screen.getByRole('textbox', { name: en.customDisplayName })).toBeTruthy()
+    expect(screen.getByRole('combobox', { name: en.customApi })).toBeTruthy()
+    fireEvent.change(search, { target: { value: '' } })
+    openEditor('openai')
+    expect(screen.queryByRole('textbox', { name: en.customDisplayName })).toBeNull()
+    expect(screen.queryByRole('combobox', { name: en.customApi })).toBeNull()
   })
 
-  it('shows no tag when the adapter draws no catalog distinction', async () => {
+  it('does not claim a hand-declared identity when the adapter reports no distinction', async () => {
     const scripted = scriptedFace({ providers: { openai: { apiKeyEnv: 'OPENAI_API_KEY' } } })
     scripted.face.llm.providers = vi.fn(() => Promise.resolve(ok({
       providers: [{
@@ -673,9 +761,9 @@ describe('provider rows', () => {
       t={t}
     />)
 
-    // Absent is "unknown", never "shipped": an adapter that answers nothing
-    // must not have its routes labelled either way.
-    expect(screen.queryByText(en.customTag)).toBeNull()
+    openEditor('openai')
+    expect(screen.queryByRole('textbox', { name: en.customDisplayName })).toBeNull()
+    expect(screen.queryByRole('combobox', { name: en.customApi })).toBeNull()
   })
 })
 
@@ -725,46 +813,46 @@ describe('hand-declared providers', () => {
           apiKeyEnv: 'ACME_GATEWAY_API_KEY',
           api: 'openai-completions',
           baseURL: 'https://gateway.acme.example/v1',
-          models: [{ id: 'acme-large', contextWindow: 65_536 }],
+          models: [piAiModel({ id: 'acme-large', contextWindow: 65_536 })],
         },
       }],
-      // The section this card was drafted over: a route another tab declared
-      // meanwhile makes this a conflict rather than an overwrite.
+      // 草稿基于 revision 7；另一标签页同时声明路由时须报冲突而非覆写。
       expectedRevision: 7,
     })
     expect(set).toHaveBeenCalledWith({ ref: 'ACME_GATEWAY_API_KEY', value: 'gw-key' })
   })
 
   it('scopes each card to fields a provider can actually own', async () => {
-    // Reasoning effort is a per-MODEL capability and the
-    // models under one provider disagree about it, so a provider-scoped
-    // control could only be set to a value some of them reject — which would
-    // take the whole provider out of the picker. The composer's model picker
-    // owns the choice, and a switch there records provider+model+effort together.
-    const fields = () => [...document.querySelectorAll('input,select')]
-      .map(el => el.getAttribute('aria-label')).filter(Boolean)
-
+    // 推理档位属于模型能力。同一渠道的模型可能支持不同档位，所以不提供渠道级覆盖。
     mountCard()
     fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme' } })
-    expect(fields()).toEqual([en.customRoute, en.customDisplayName, en.baseUrl, en.customApi, en.keyInput])
+    expect(screen.getByRole('textbox', { name: en.customRoute })).toBeTruthy()
+    expect(screen.getByRole('textbox', { name: en.customDisplayName })).toBeTruthy()
+    expect(screen.getByRole('textbox', { name: en.baseUrl })).toBeTruthy()
+    expect(screen.getByRole('combobox', { name: en.customApi })).toBeTruthy()
+    expect(screen.getByLabelText(en.keyInput)).toBeTruthy()
     cleanup()
 
-    // A shipped route's models each carry their own protocol, so its editor
-    // offers no route-level protocol to override them with.
+    // 内置路由由目录模型定义协议，详情不暴露渠道级协议覆盖。
     await mountSection({ providers: { openai: { apiKeyEnv: 'OPENAI_API_KEY' } } })
     openEditor('openai')
-    fireEvent.click(screen.getByText(en.customized))
-    expect(fields()).toEqual([en.keyInput, en.baseUrl])
+    expect(screen.getByLabelText(en.keyInput)).toBeTruthy()
+    expect(screen.getByRole('textbox', { name: en.baseUrl })).toBeTruthy()
+    expect(screen.queryByRole('textbox', { name: en.customDisplayName })).toBeNull()
+    expect(screen.queryByRole('combobox', { name: en.customApi })).toBeNull()
     cleanup()
 
-    // A hand-declared route named its own protocol at creation, so editing it
-    // reaches the same field the create card asked for.
+    // 手工声明路由创建时选择协议，详情仍可编辑该字段。
     await mountSection({
       providers: { 'acme-gateway': { api: 'openai-completions', baseURL: 'https://gateway.acme.example/v1' } },
       declaredRoutes: ['acme-gateway'],
     })
     openEditor('acme-gateway')
-    expect(fields()).toEqual([en.keyInput, en.customDisplayName, en.baseUrl, en.customApi])
+    expect(screen.getByLabelText(en.keyInput)).toBeTruthy()
+    expect(screen.getByRole('textbox', { name: en.customDisplayName })).toBeTruthy()
+    expect(screen.getByRole('textbox', { name: en.baseUrl })).toBeTruthy()
+    expect(screen.getByRole('combobox', { name: en.customApi })).toBeTruthy()
+    expect(screen.queryByRole('textbox', { name: en.customRoute })).toBeNull()
   })
 
   it('renames a declared route and falls back to its id when the name is cleared', async () => {
@@ -1180,7 +1268,7 @@ describe('hand-declared providers', () => {
     expect(firstMutate(mutate).ops[0]?.value).toEqual({
       api: 'anthropic-messages',
       baseURL: 'https://acme.test/v1',
-      models: [{ id: 'm' }],
+      models: [piAiModel({ id: 'm' })],
     })
   })
 
@@ -1290,6 +1378,37 @@ describe('hand-declared providers', () => {
 })
 
 describe('API key field', () => {
+  it('stores a replacement secret through credentials without echoing it into settings', async () => {
+    const { mutate, set } = await mountSection()
+    openEditor('openai')
+    const key = screen.getByLabelText<HTMLInputElement>(en.keyInput)
+    expect(key.type).toBe('password')
+    expect(key.value).toBe('')
+    fireEvent.change(key, { target: { value: 'new-secret' } })
+    fireEvent.click(screen.getByRole('button', { name: en.apply }))
+
+    await waitFor(() => { expect(set).toHaveBeenCalledWith({ ref: 'OPENAI_API_KEY', value: 'new-secret' }) })
+    expect(mutate).not.toHaveBeenCalled()
+    expect(screen.queryByText('new-secret')).toBeNull()
+  })
+
+  it('reports a revision conflict and does not store a key for the rejected settings edit', async () => {
+    const mutate = vi.fn(() => Promise.resolve(fail('stale revision', 'settings-conflict')))
+    const { set } = await mountSection({ mutate })
+    openEditor('openai')
+    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://changed.example/v1' } })
+    fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'new-secret' } })
+    fireEvent.click(screen.getByRole('button', { name: en.apply }))
+
+    await screen.findByText(en.conflict)
+    expect(firstMutate(mutate)).toEqual({
+      ns: 'llm-pi-ai', expectedRevision: 3,
+      ops: [{ op: 'set', path: ['providers', 'openai', 'baseURL'], value: 'https://changed.example/v1' }],
+    })
+    expect(set).not.toHaveBeenCalled()
+    expect(screen.getByRole('textbox', { name: en.baseUrl })).toHaveProperty('value', 'https://changed.example/v1')
+  })
+
   it('submits with a blank key field without writing a credential', async () => {
     const { mutate, set } = await mountSection()
     openEditor('openai')

@@ -1,66 +1,111 @@
 - dialog "设置":
-  - navigation:
-    - text: 设置
-    - button "通用设置":
-      - img
-      - text: 通用设置
-    - button "模型":
-      - img
-      - text: 模型
-    - button "插件":
-      - img
-      - text: 插件
-    - button "Agent 预设":
-      - img
-      - text: Agent 预设
-  - button "打开配置文件"
   - button "关闭":
     - img
     - text: 关闭
-  - heading "模型" [level=2]
-  - paragraph: 填入各提供方的 API 密钥即可使用其模型。
-  - list
-  - text: 提供方
-  - combobox "提供方":
-    - option "amazon-bedrock"
-    - option "ant-ling"
-    - option "anthropic"
-    - option "azure-openai-responses"
-    - option "cerebras"
-    - option "cloudflare-ai-gateway"
-    - option "cloudflare-workers-ai"
-    - option "deepseek"
-    - option "fireworks"
-    - option "github-copilot"
-    - option "google"
-    - option "google-vertex"
-    - option "groq"
-    - option "huggingface"
-    - option "kimi-coding"
-    - option "minimax"
-    - option "minimax-cn" [selected]
-    - option "mistral"
-    - option "moonshotai"
-    - option "moonshotai-cn"
-    - option "nvidia"
-    - option "openai"
-    - option "opencode"
-    - option "opencode-go"
-    - option "openrouter"
-    - option "qwen-token-plan"
-    - option "qwen-token-plan-cn"
-    - option "together"
-    - option "vercel-ai-gateway"
-    - option "xai"
-    - option "xiaomi"
-    - option "xiaomi-token-plan-ams"
-    - option "xiaomi-token-plan-cn"
-    - option "xiaomi-token-plan-sgp"
-    - option "zai"
-    - option "zai-coding-cn"
-  - text: API 密钥
-  - textbox "API 密钥":
-    - /placeholder: 输入 API 密钥，或留空使用环境认证
-  - group: 自定义设置
-  - button "取消"
-  - button "保存"
+  - complementary "提供方":
+    - img
+    - textbox "搜索模型平台…"
+    - button "amazon-bedrock"
+    - button "ant-ling"
+    - button "anthropic"
+    - button "azure-openai-responses"
+    - button "cerebras"
+    - button "cloudflare-ai-gateway"
+    - button "cloudflare-workers-ai"
+    - button "deepseek"
+    - button "fireworks"
+    - button "github-copilot"
+    - button "google"
+    - button "google-vertex"
+    - button "groq"
+    - button "huggingface"
+    - button "kimi-coding"
+    - button "minimax"
+    - button "minimax-cn"
+    - button "mistral"
+    - button "moonshotai"
+    - button "moonshotai-cn"
+    - button "nvidia"
+    - button "openai"
+    - button "opencode"
+    - button "opencode-go"
+    - button "openrouter"
+    - button "qwen-token-plan"
+    - button "qwen-token-plan-cn"
+    - button "together"
+    - button "vercel-ai-gateway"
+    - button "xai"
+    - button "xiaomi"
+    - button "xiaomi-token-plan-ams"
+    - button "xiaomi-token-plan-cn"
+    - button "xiaomi-token-plan-sgp"
+    - button "zai"
+    - button "zai-coding-cn"
+    - button "添加提供方":
+      - img
+      - text: 添加提供方
+    - button "添加自定义提供方":
+      - img
+      - text: 添加自定义提供方
+  - main:
+    - text: 提供方
+    - combobox "提供方":
+      - option "amazon-bedrock"
+      - option "ant-ling"
+      - option "anthropic"
+      - option "azure-openai-responses"
+      - option "cerebras"
+      - option "cloudflare-ai-gateway"
+      - option "cloudflare-workers-ai"
+      - option "deepseek"
+      - option "fireworks"
+      - option "github-copilot"
+      - option "google"
+      - option "google-vertex"
+      - option "groq"
+      - option "huggingface"
+      - option "kimi-coding"
+      - option "minimax"
+      - option "minimax-cn" [selected]
+      - option "mistral"
+      - option "moonshotai"
+      - option "moonshotai-cn"
+      - option "nvidia"
+      - option "openai"
+      - option "opencode"
+      - option "opencode-go"
+      - option "openrouter"
+      - option "qwen-token-plan"
+      - option "qwen-token-plan-cn"
+      - option "together"
+      - option "vercel-ai-gateway"
+      - option "xai"
+      - option "xiaomi"
+      - option "xiaomi-token-plan-ams"
+      - option "xiaomi-token-plan-cn"
+      - option "xiaomi-token-plan-sgp"
+      - option "zai"
+      - option "zai-coding-cn"
+    - text: minimax-cn API 密钥
+    - textbox "API 密钥":
+      - /placeholder: 输入 API 密钥，或留空使用环境认证
+    - text: API 地址
+    - textbox "API 地址":
+      - /placeholder: 提供方默认
+    - region "模型目录":
+      - text: 模型目录 正在使用适配器默认模型
+      - button "获取可用模型":
+        - img
+        - text: 获取可用模型
+      - paragraph: 模型选择器中将不显示任何模型；目录外 ID 仍可直接发送。
+      - button "添加模型":
+        - img
+        - text: 添加模型
+    - button "取消"
+    - button "保存"
+    - region "视觉理解工具":
+      - heading "视觉理解工具" [level=3]
+      - paragraph: 纯文本模型收到图片时，先由选定的视觉模型生成描述；未配置时将提示不支持图片。
+      - text: 视觉模型
+      - combobox "视觉模型":
+        - option "未配置" [selected]

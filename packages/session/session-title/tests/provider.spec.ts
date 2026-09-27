@@ -260,6 +260,46 @@ describe('SessionTitleService Provider lifecycle', () => {
     expect(ctx.sessionTitle.get(session)?.title).toBe('Newest complete title')
   })
 
+  it('does not regenerate or count a replacement as the latest all-prompts message', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(SessionTitleService, CONFIG)
+    const requests: SessionTitleProviderRequest[] = []
+    ctx.sessionTitle.register({
+      id: SessionTitleProviderId('replacement-filter'),
+      automatic: 'all-prompts',
+      async generate(request) {
+        requests.push(request)
+        return { title: `Revision ${requests.length}`, messageSeqs: request.messages.map(message => message.seq) }
+      },
+    })
+    const session = ctx.sessions.create(SessionId('replacement-filter'))
+    const original = appendHumanPrompt(session, 'Original real prompt')
+    await settle()
+    appendRoute(session)
+    await settle()
+    expect(requests).toHaveLength(1)
+
+    const replacement = session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'Description of an image in the original prompt' }],
+      source: { kind: 'user' },
+    }), {
+      surfaceOp: { op: 'replace', start: original.seq, end: original.seq },
+      sourceEventSeqs: [original.seq],
+    })
+    await settle()
+    appendRoute(session, 'change')
+    await settle()
+
+    expect(requests).toHaveLength(1)
+    expect(ctx.sessionTitle.get(session)).toMatchObject({ title: 'Revision 1', messageSeqs: [original.seq] })
+    await ctx.sessionTitle.refresh(session)
+    expect(requests).toHaveLength(2)
+    expect(requests[1]?.messages).toEqual([{ seq: original.seq, text: 'Original real prompt' }])
+    expect(ctx.sessionTitle.get(session)?.messageSeqs).toEqual([original.seq])
+    expect(ctx.sessionTitle.get(session)?.messageSeqs).not.toContain(replacement.seq)
+  })
+
   it('runs an all-messages revision when the next main request reuses its logged header', async () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)

@@ -63,6 +63,8 @@ import type {} from '@deepseek-ai/dsh-session-projection'
 // Type-only: resolves `ctx.get('tasks')` to the background job registry.
 import type {} from '@deepseek-ai/dsh-jobs'
 import type { JobSnapshot } from '@deepseek-ai/dsh-jobs'
+// 仅取得可选服务的 Context 类型；Host 不加载视觉降级插件的运行时代码。
+import type {} from '@deepseek-ai/dsh-llm-vision-fallback'
 // Type-only: resolves `ctx.get('sessionProjectionCache')` (the cold listing column).
 import type {} from '@deepseek-ai/dsh-session-projection-cache'
 // GoalError narrows domain rejections to their stable codes at the wire boundary.
@@ -190,6 +192,11 @@ function messagesHaveImage(messages: readonly { content: readonly ContentBlock[]
   return messages.some(message => contentHasImage(message.content))
 }
 
+/** 显式视觉路由存在时才允许已知文本模型接纳待描述的图片。 */
+function canDescribeImages(ctx: Context): boolean {
+  return ctx.get('visionUnderstanding')?.status().configured === true
+}
+
 /** Resolve the first reference matching one opaque id. */
 function referencedImage(events: readonly SessionEvent[], attachmentId: string): ImageAttachmentRef | undefined {
   for (const event of events) {
@@ -267,12 +274,9 @@ function ok<T>(request: RpcRequest<unknown>, value: T): RpcResponse<T> {
 }
 
 /**
- * Build the provider/model catalog over every registered route. Shared by the
- * session-scoped `session.models` and host-scoped `llm.models`. Catalog
- * membership stays advisory: an unlisted session selection remains valid for
- * provider dispatch, but is not injected back into the selector after its
- * owning catalog stops advertising it. Per-provider failures ride `failures`
- * without failing the sound groups; groups that advertise nothing are dropped.
+ * 汇总所有已注册路由，供 `session.models` 与 `llm.models` 共用。
+ * 目录成员关系仅作建议：未列出的会话选择仍可路由，但不会补入选择器。
+ * 单个提供方失败只进入 `failures`，空目录的分组不返回。
  */
 async function buildModelCatalog(ctx: Context): Promise<{
   groups: ModelProviderGroup[]
@@ -301,6 +305,7 @@ async function buildModelCatalog(ctx: Context): Promise<{
           id: model.id,
           name: model.name,
           ...model.description === undefined ? {} : { description: model.description },
+          ...resolved.inputModalities === undefined ? {} : { inputModalities: [...resolved.inputModalities] },
           ...reasoning === undefined ? {} : { reasoning },
         }
       }))
@@ -457,10 +462,11 @@ function sessionBlank(session: Session): boolean {
   return !session.events.some(event => event.type === 'turn/start')
 }
 
-/** Advance the Session-list hint projection by one committed event. */
+/** 只用追加来源的真人输入刷新 Session 列表时间；模型历史替换不构成新提示。 */
 function applySessionListMetadata(state: SessionListMetadata, event: SessionEvent): SessionListMetadata {
   const blank = state.blank && event.type !== 'turn/start'
-  const lastPromptAt = event.type === 'user/message' && event.data.source.kind === 'user'
+  const lastPromptAt = event.type === 'user/message' && isAppendSurfaceEvent(event)
+    && event.data.source.kind === 'user'
     ? event.time
     : state.lastPromptAt
   return blank === state.blank && lastPromptAt === state.lastPromptAt
@@ -2251,11 +2257,12 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
               .some(message => contentHasImage(message.content))
             if (pendingImage || messagesHaveImage(found.agent.session.deriveMessages())) {
               const info = await ctx.llm.resolveModelInfo(resolved.provider, resolved.model)
-              if (info.inputModalities !== undefined && !info.inputModalities.includes('image')) {
+              if (info.inputModalities !== undefined && !info.inputModalities.includes('image')
+                && !canDescribeImages(ctx)) {
                 return err(request, {
                   code: 'model-unavailable',
-                  message: `Model "${resolved.model}" does not accept image input, but this session already contains images; select an image-capable model.`,
-                  details: { provider, model },
+                  message: `Model "${resolved.model}" does not accept image input while this session contains images; configure a vision understanding model in Settings or select an image-capable model.`,
+                  details: { provider, model, reason: 'MODEL_DOES_NOT_SUPPORT_IMAGES' },
                 })
               }
             }
@@ -2440,10 +2447,11 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             if (hasImage) {
               const current = selectionFor(agent).current
               const modelInfo = await ctx.llm.resolveModelInfo(current.provider, current.model)
-              if (modelInfo.inputModalities !== undefined && !modelInfo.inputModalities.includes('image')) {
+              if (modelInfo.inputModalities !== undefined && !modelInfo.inputModalities.includes('image')
+                && !canDescribeImages(ctx)) {
                 return err(request, {
                   code: 'attachment-error',
-                  message: `Model "${current.model}" does not support image input.`,
+                  message: `Model "${current.model}" does not support image input; configure a vision understanding model in Settings or select an image-capable model.`,
                   details: { reason: 'MODEL_DOES_NOT_SUPPORT_IMAGES' },
                 })
               }

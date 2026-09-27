@@ -659,25 +659,26 @@ interface LlmCallConfigAdapterDefaults {
 
 ## 服务与提供方约定
 
-`LlmAdapter` 是提供方约定：创建子类、实现 `stream()`，再用 `ctx.llm.registerAdapter(providers, adapter)` 注册一个适配器实例。`GenerateOptions.provider` 选择已注册适配器；`GenerateOptions.model` 会传给该适配器，无需在生命周期启动时注册。重复提供方路由会原子失败。可选的 `providerRetryPolicy()` 会按路由捕获并填入 normal 默认值，`providerInfo()` 与异步 `listModels()` 方法则为 `LlmRuntime.listProviders()` / `listModels()` 提供分离的 selector 元数据。该目录仅供参考，不是请求白名单：适配器仍是权威，并可接受未列出的模型 id。单次异步 `resolveModel()` 查询返回确切模型身份，以及可选的对正确性敏感的上下文容量、适配器配置的 `defaultMaxTokens`、由模型持有的有序推理强度 ID 和可选的部署默认值；字段缺失表示元数据不可用或保留提供方持有的行为，而不表示目录成员关系无效。解析器会接收可选的取消信号，并且必须在信号中止后迅速完成结算。`LlmRuntime.resolveModelInfo()` 会校验聚合结果并返回分离值。在最终适配器边界，`resolveCallConfig()` 仅在 `maxTokens` 缺失时填入输出默认值，并校验和填入推理强度，因此直接调用也无法绕过任何一项已配置行为；直接分派会在等待解析前捕获一项适配器注册。agent loop 则使用 `prepareCall()`，使模型解析、请求头持久记录和分派全程使用同一项注册，保留来自同一次查询的分离上下文元数据，并报告适配器填入的配置字段。适配器查找发生在 `llm/stream` waterfall 的终端 continuation，因此 listener 可以在查找前短路调用，或路由一个可变的一次性请求。AgentLoop 在外层 waterfall 返回流句柄时观察到一次请求尝试；这个有限边界不能证明惰性终端适配器已构造完成或开始提供方 I/O。`block-start` / `block-end` 的 `index` 关联与 assembler 共同意味着适配器只需 emit 格式正确的分片——块重组不是每个适配器各自的问题。`ctx.llm.stream()` 与 `llm/stream` waterfall 在一个轮次中的位置见 [architecture.md](../architecture.md#turn-flow)。
+`LlmAdapter` 是提供方约定：创建子类、实现 `stream()`，再用 `ctx.llm.registerAdapter(providers, adapter)` 注册一个适配器实例。`GenerateOptions.provider` 选择已注册适配器；`GenerateOptions.model` 会传给该适配器，无需在生命周期启动时注册。重复提供方路由会原子失败。可选的 `providerRetryPolicy()` 会按路由捕获并填入 normal 默认值，`providerInfo()` 与异步 `listModels()` 方法则为 `LlmRuntime.listProviders()` / `listModels()` 提供分离的 selector 元数据。该目录仅供参考，不是请求白名单：适配器仍是权威，并可接受未列出的模型 id。单次异步 `resolveModel()` 查询返回确切模型身份，以及可选的输入模态、对正确性敏感的上下文容量、适配器配置的 `defaultMaxTokens`、由模型持有的有序推理强度 ID 和可选的部署默认值；字段缺失表示元数据不可用或保留提供方持有的行为，而不表示目录成员关系无效。解析器会接收可选的取消信号，并且必须在信号中止后迅速完成结算。`LlmRuntime.resolveModelInfo()` 会校验聚合结果并返回分离值。在最终适配器边界，`resolveCallConfig()` 仅在 `maxTokens` 缺失时填入输出默认值，并校验和填入推理强度，因此直接调用也无法绕过任何一项已配置行为；直接分派会在等待解析前捕获一项适配器注册。agent loop 则使用 `prepareCall()`，使模型解析、请求头持久记录和分派全程使用同一项注册，保留来自同一次查询的输入模态和上下文元数据，并报告适配器填入的配置字段。适配器查找发生在 `llm/stream` waterfall 的终端 continuation，因此 listener 可以在查找前短路调用，或路由一个可变的一次性请求。AgentLoop 在外层 waterfall 返回流句柄时观察到一次请求尝试；这个有限边界不能证明惰性终端适配器已构造完成或开始提供方 I/O。`block-start` / `block-end` 的 `index` 关联与 assembler 共同意味着适配器只需 emit 格式正确的分片——块重组不是每个适配器各自的问题。`ctx.llm.stream()` 与 `llm/stream` waterfall 在一个轮次中的位置见 [architecture.md](../architecture.md#turn-flow)。
 
 ```ts type-equiv
-/** One model call whose config and adapter registration were resolved together. */
+/** 与确切适配器注册一同解析的单次模型调用。 */
 interface PreparedLlmCall {
-  /** Detached, deep-frozen config with any adapter-owned default materialized. */
+  /** 已填入适配器默认值且与适配器状态分离的深冻结配置。 */
   readonly config: LlmCallConfig
-  /** Immutable retry policy captured with the adapter registration. */
+  /** 与适配器注册一同捕获的不可变重试策略。 */
   readonly retryPolicy: ResolvedRetryPolicy
-  /** Detached context metadata resolved with the registration-bound call. */
+  /** 同次精确解析所得且与适配器状态分离的上下文元数据。 */
   readonly context?: LlmModelContext
-  /** Config fields materialized by the captured adapter rather than proposed by the caller. */
+  /** 同一次精确模型解析所得的输入模态；缺席表示能力未知。 */
+  readonly inputModalities?: readonly ModelModality[]
+  /** 由适配器默认值而非调用方提议填入的配置字段。 */
   readonly adapterDefaults: LlmCallConfigAdapterDefaults
   /**
-   * Dispatch this call once through the registration captured during
-   * preparation. The request's call-config fields must match {@link config};
-   * reuse or mismatch fails with `INVALID_PREPARED_CALL`.
-   * @param options - fully assembled request carrying the prepared config.
-   * @returns the chunk stream, including the `llm/stream` waterfall.
+   * 通过准备时捕获的注册项分发一次。请求配置字段必须与 {@link config} 一致；
+   * 重复调用或配置不符时以 `INVALID_PREPARED_CALL` 失败。
+   * @param options - 携带已准备配置的完整请求。
+   * @returns 包含 `llm/stream` waterfall 的分片流。
    */
   stream(options: GenerateOptions): AsyncIterable<StreamChunk>
 }
@@ -868,7 +869,7 @@ async prepareCall(config: LlmCallConfig, signal?: AbortSignal): Promise<Prepared
 stream(options: GenerateOptions): AsyncIterable<StreamChunk>
 ```
 
-Source: [`packages/llm/llm/src/index.ts:279`](../../packages/llm/llm/src/index.ts)
+Source: [`packages/llm/llm/src/index.ts:280`](../../packages/llm/llm/src/index.ts)
 
 <a id="llm-events"></a>
 

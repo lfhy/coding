@@ -878,7 +878,12 @@ describe('LlmRuntime', () => {
     await ctx.plugin(LlmRuntime)
     let resolutions = 0
     const source = { contextWindow: 128_000 }
+    const modalities: ('text' | 'image')[] = ['text', 'image']
     const adapter = new class extends ScriptedAdapter {
+      override listModels(provider: string) {
+        return Promise.resolve([{ provider, id: 'model', name: 'Catalog model', inputModalities: ['text'] as const }])
+      }
+
       override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
         resolutions += 1
         return Promise.resolve({
@@ -887,6 +892,7 @@ describe('LlmRuntime', () => {
           name: model,
           description: 'Resolved model',
           context: source,
+          inputModalities: modalities,
           reasoning: model === 'no-default'
             ? { efforts: [{ id: ReasoningEffortId('high'), name: 'High' }] }
             : {
@@ -900,9 +906,12 @@ describe('LlmRuntime', () => {
 
     const prepared = await ctx.llm.prepareCall({ provider: 'route', model: 'model' })
     source.contextWindow = 64_000
+    modalities.splice(0)
     expect(prepared.config.reasoningEffort).toBe(ReasoningEffortId('high'))
     expect(prepared.context).toEqual({ contextWindow: 128_000 })
     expect(Object.isFrozen(prepared.context)).toBe(true)
+    expect(prepared.inputModalities).toEqual(['text', 'image'])
+    expect(Object.isFrozen(prepared.inputModalities)).toBe(true)
     for await (const _chunk of prepared.stream({
       ...prepared.config,
       messages: [],

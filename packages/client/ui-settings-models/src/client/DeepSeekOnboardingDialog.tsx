@@ -117,6 +117,7 @@ export function DeepSeekOnboardingDialog(props: DeepSeekOnboardingDialogProps): 
           submitLabel="onboardingSave"
           submitBusyLabel="onboardingSaving"
           onClose={finishCredential}
+          onSettingsCommitted={(view) => { controller.acceptSettingsView(view) }}
         />
       </div>
     </OnboardingModal>

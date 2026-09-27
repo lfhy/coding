@@ -785,7 +785,7 @@ A step or turn errored. The machine reports a failure here even when the error h
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/agent/src/runtime-types.ts:289`](../../packages/core/agent/src/runtime-types.ts)
+Source: [`packages/core/agent/src/runtime-types.ts:305`](../../packages/core/agent/src/runtime-types.ts)
 
 <a id="agentinboxclaimed--emit"></a>
 
@@ -931,6 +931,35 @@ Handle one failed model-request attempt before the loop retries or closes its st
 
 Types: [LlmFailure](llm-streaming.md) · [ResolvedRetryPolicy](llm-streaming.md) · [Scoped](scope.md)
 
+Source: [`packages/core/agent/src/runtime-types.ts:275`](../../packages/core/agent/src/runtime-types.ts)
+
+<a id="agentrequest-history--waterfall"></a>
+
+#### `agent/request-history` — waterfall
+
+在生效配置经精确适配器解析后、主请求读取会话历史前运行。 监听器可在会话日志中持久替换表层节点，必须调用 `next()`； 返回值不能替代历史，主请求随后重新调用 `session.deriveMessages()`。 无已注册适配器时，`inputModalities` 缺席，不能据此推断能力。
+
+```ts cordis-catalog
+/**
+ * 在生效配置经精确适配器解析后、主请求读取会话历史前运行。
+ * 监听器可在会话日志中持久替换表层节点，必须调用 `next()`；
+ * 返回值不能替代历史，主请求随后重新调用 `session.deriveMessages()`。
+ * 无已注册适配器时，`inputModalities` 缺席，不能据此推断能力。
+ * @param payload.agent - 发起请求的 agent。
+ * @param payload.session - 本次请求的持久会话。
+ * @param payload.config - 已准备的冻结调用配置。
+ * @param payload.inputModalities - 同次精确解析所得输入模态，缺席表示未知。
+ * @param payload.turn - 当前轮次编号。
+ * @param payload.step - 当前步骤编号。
+ * @param payload.signal - 当前轮次的取消信号。
+ * 按 agent 作用域筛选分发：带作用域的监听器只接收其所属 agent。
+ * @mode waterfall
+ */
+'agent/request-history'(this: Scoped<Agent>, payload: { agent: Agent; session: Session; config: LlmCallConfig; inputModalities?: readonly ModelModality[]; turn: number; step: number; signal: AbortSignal }, next: () => Promise<void>): Promise<void>
+```
+
+Types: [LlmCallConfig](llm-streaming.md) · [ModelModality](llm-streaming.md) · [Scoped](scope.md) · [Session](session.md)
+
 Source: [`packages/core/agent/src/runtime-types.ts:259`](../../packages/core/agent/src/runtime-types.ts)
 
 <a id="agentsession-start--emit"></a>
@@ -1009,7 +1038,7 @@ The turn is about to close: the model owes no response (no live tool calls, no f
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/agent/src/runtime-types.ts:277`](../../packages/core/agent/src/runtime-types.ts)
+Source: [`packages/core/agent/src/runtime-types.ts:293`](../../packages/core/agent/src/runtime-types.ts)
 
 <a id="agent-loop-events"></a>
 

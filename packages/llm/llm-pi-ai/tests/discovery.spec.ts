@@ -4,7 +4,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import LlmRuntime, { userAgent } from '@deepseek-ai/dsh-llm'
 import * as LlmPiAi from '@deepseek-ai/dsh-llm-pi-ai'
-import { getBuiltinModels } from '@earendil-works/pi-ai/providers/all'
 import { discoverModels } from '../src/discovery.ts'
 
 const servers: Server[] = []
@@ -31,6 +30,7 @@ interface ListingServer {
  */
 async function listingServer(behavior: {
   status?: number
+  location?: string
   body?: string
   chunks?: string[]
   holdOpenMs?: number
@@ -54,6 +54,7 @@ async function listingServer(behavior: {
     response.writeHead(behavior.status ?? 200, {
       'content-type': 'application/json',
       'content-length': String(Buffer.byteLength(body)),
+      ...behavior.location === undefined ? {} : { location: behavior.location },
     })
     response.end(body)
   })
@@ -73,29 +74,43 @@ async function harness(): Promise<Context> {
 }
 
 describe('catalog-route model discovery', () => {
-  it('answers from the installed registry, with capacities and no network call', async () => {
+  it('asks the draft endpoint even for an installed provider', async () => {
     const server = await listingServer({ body: JSON.stringify({ data: [{ id: 'from-the-endpoint' }] }) })
     const ctx = await harness()
 
     const models = await ctx.llm.discoverModels('llm-pi-ai', { provider: 'deepseek', baseURL: server.url })
 
-    // pi-ai's own registry is the authority for its own providers, and it
-    // carries what a listing endpoint would not disclose.
-    expect(models.map(model => model.id).sort())
-      .toEqual(getBuiltinModels('deepseek').map(model => model.id).sort())
-    expect(models.every(model => (model.contextWindow ?? 0) > 0 && (model.maxTokens ?? 0) > 0)).toBe(true)
-    expect(server.paths).toEqual([])
+    expect(models).toEqual([{ id: 'from-the-endpoint' }])
+    expect(server.paths).toEqual(['/models'])
   })
 
-  it('needs no endpoint for a route the catalog describes', async () => {
+  it('uses a configured route endpoint when the draft omits it', async () => {
+    const server = await listingServer({ body: JSON.stringify({ data: [{ id: 'live' }] }) })
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmPiAi, { providers: { deepseek: { baseURL: server.url } } })
+    await expect(ctx.llm.discoverModels('llm-pi-ai', { provider: 'deepseek' }))
+      .resolves.toEqual([{ id: 'live' }])
+    expect(server.paths).toEqual(['/models'])
+  })
+
+  it('uses the installed endpoint for a built-in route without a draft URL', async () => {
+    const urls: string[] = []
+    vi.stubGlobal('fetch', async (url: string) => {
+      urls.push(url)
+      return new Response(JSON.stringify({ data: [{ id: 'live' }] }))
+    })
     const ctx = await harness()
-    await expect(ctx.llm.discoverModels('llm-pi-ai', { provider: 'deepseek' })).resolves.not.toHaveLength(0)
+    await expect(ctx.llm.discoverModels('llm-pi-ai', { provider: 'deepseek' }))
+      .resolves.toEqual([{ id: 'live' }])
+    expect(urls).toHaveLength(1)
+    expect(new URL(urls[0]!).pathname).toBe('/models')
   })
 
   it('says where a route the catalog does not describe must get its models', async () => {
     const ctx = await harness()
     await expect(ctx.llm.discoverModels('llm-pi-ai', { provider: 'acme-gateway' }))
-      .rejects.toThrow(/ships no catalog for provider "acme-gateway".*set a baseURL/s)
+      .rejects.toThrow(/no model listing endpoint.*set a baseURL/)
     // A form that cleared the field says the same thing as one that never had it.
     await expect(ctx.llm.discoverModels('llm-pi-ai', { provider: 'acme-gateway', baseURL: '' }))
       .rejects.toThrow(/set a baseURL/)
@@ -178,16 +193,67 @@ describe('draft-provider model discovery', () => {
       .toEqual(['Bearer stored-key', 'Bearer typed', undefined])
   })
 
-  it('leaves a catalog route\'s credential unresolved, having never reached the network', async () => {
-    // The catalog answers before any endpoint is asked, so a route whose
-    // profile names a credential that is not set must still answer rather than
-    // failing over a key the interrogation never needed.
+  it('never sends a saved key to a changed draft endpoint without a fresh key', async () => {
+    const original = await listingServer({ body: JSON.stringify({ data: [{ id: 'old' }] }) })
+    const changed = await listingServer({ body: JSON.stringify({ data: [{ id: 'new' }] }) })
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    process.env['DISCOVERY_OLD_KEY'] = 'old-secret'
+    touchedEnv.push('DISCOVERY_OLD_KEY')
+    await ctx.plugin(LlmPiAi, { providers: { gateway: {
+      apiKeyEnv: 'DISCOVERY_OLD_KEY', api: 'openai-completions', baseURL: original.url,
+      models: [{ id: 'old' }],
+    } } })
+
+    await expect(ctx.llm.discoverModels('llm-pi-ai', { provider: 'gateway', baseURL: changed.url }))
+      .rejects.toMatchObject({ code: 'DISCOVERY_FAILED' })
+    expect(changed.paths).toEqual([])
+    await expect(ctx.llm.discoverModels('llm-pi-ai', {
+      provider: 'gateway', baseURL: changed.url, apiKey: 'new-one-shot',
+    })).resolves.toEqual([{ id: 'new' }])
+    expect(changed.headers[0]?.authorization).toBe('Bearer new-one-shot')
+    await expect(ctx.llm.discoverModels('llm-pi-ai', { provider: 'gateway' }))
+      .resolves.toEqual([{ id: 'old' }])
+    expect(original.headers[0]?.authorization).toBe('Bearer old-secret')
+  })
+
+  it.each([
+    'file:///tmp/', 'ftp://gateway.example', 'https://name:secret@gateway.example',
+    'https://gateway.example/v1?token=secret', 'https://gateway.example/v1#fragment',
+  ])('rejects an unsafe endpoint before sending a request: %s', async (baseURL) => {
+    const requests: string[] = []
+    vi.stubGlobal('fetch', async (url: string) => {
+      requests.push(url)
+      return new Response(JSON.stringify({ data: [] }))
+    })
+    await expect(discoverModels({ baseURL, apiKey: 'secret' }))
+      .rejects.toMatchObject({ code: 'DISCOVERY_FAILED' })
+    expect(requests).toEqual([])
+  })
+
+  it('does not follow redirects carrying a key', async () => {
+    const target = await listingServer({ body: JSON.stringify({ data: [{ id: 'leak' }] }) })
+    const redirect = await listingServer({ status: 302, location: `${target.url}/models`, body: 'moved' })
+    const nativeFetch = fetch
+    const requests: RequestInit[] = []
+    vi.stubGlobal('fetch', (url: string, init?: RequestInit) => {
+      requests.push(init ?? {})
+      return nativeFetch(url, init)
+    })
+    await expect(discoverModels({ baseURL: redirect.url, apiKey: 'secret' }))
+      .rejects.toMatchObject({ code: 'DISCOVERY_FAILED' })
+    expect(requests[0]?.redirect).toBe('error')
+    expect(target.paths).toEqual([])
+  })
+
+  it('fails when a configured route has no credential for its live request', async () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     Reflect.deleteProperty(process.env, 'ABSENT_FOR_DISCOVERY')
     await ctx.plugin(LlmPiAi, { providers: { deepseek: { apiKeyEnv: 'ABSENT_FOR_DISCOVERY' } } })
 
-    await expect(ctx.llm.discoverModels('llm-pi-ai', { provider: 'deepseek' })).resolves.not.toHaveLength(0)
+    await expect(ctx.llm.discoverModels('llm-pi-ai', { provider: 'deepseek' }))
+      .rejects.toMatchObject({ code: 'MISSING_CREDENTIAL' })
   })
 
   it('drops unusable rows rather than failing the whole listing', async () => {
@@ -310,10 +376,70 @@ describe('draft-provider model discovery', () => {
     })).rejects.toMatchObject({ code: 'ABORTED' })
   })
 
+  it('times out a provider that never answers', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.stubGlobal('fetch', (_url: string, init?: RequestInit) => new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => { reject(new Error('timed out')) }, { once: true })
+      }))
+      const pending = discoverModels({ baseURL: 'https://slow.example/v1' })
+      const result = expect(pending).rejects.toMatchObject({ code: 'DISCOVERY_FAILED' })
+      await vi.advanceTimersByTimeAsync(10_000)
+      await result
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('cancels while a saved credential is still resolving', async () => {
+    const credential = Promise.withResolvers<string | undefined>()
+    const controller = new AbortController()
+    const requests: string[] = []
+    vi.stubGlobal('fetch', async (url: string) => {
+      requests.push(url)
+      return new Response(JSON.stringify({ data: [] }))
+    })
+    const pending = discoverModels(
+      { baseURL: 'https://saved.example/v1', signal: controller.signal },
+      () => ({ baseURL: 'https://saved.example/v1', hasStoredKey: true, apiKey: () => credential.promise }),
+    )
+    controller.abort('cancel before credential resolution')
+    await expect(pending).rejects.toMatchObject({ code: 'ABORTED' })
+    credential.reject(new Error('late credential failure'))
+    await Promise.resolve()
+    expect(requests).toEqual([])
+  })
+
+  it('times out while a saved credential is still resolving', async () => {
+    vi.useFakeTimers()
+    try {
+      const credential = Promise.withResolvers<string | undefined>()
+      const requests: string[] = []
+      vi.stubGlobal('fetch', async (url: string) => {
+        requests.push(url)
+        return new Response(JSON.stringify({ data: [] }))
+      })
+      const pending = discoverModels(
+        { baseURL: 'https://saved.example/v1' },
+        () => ({ baseURL: 'https://saved.example/v1', hasStoredKey: true, apiKey: () => credential.promise }),
+      )
+      const result = expect(pending).rejects.toMatchObject({ code: 'DISCOVERY_FAILED' })
+      await vi.advanceTimersByTimeAsync(10_000)
+      await result
+      credential.resolve('late-secret')
+      await Promise.resolve()
+      expect(requests).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('is offered for the namespace, and refuses one it does not serve', async () => {
     const ctx = await harness()
 
-    await expect(ctx.llm.discoverModels('llm-pi-ai', { provider: 'openai' })).resolves.not.toHaveLength(0)
+    const server = await listingServer({ body: JSON.stringify({ data: [{ id: 'live' }] }) })
+    await expect(ctx.llm.discoverModels('llm-pi-ai', { provider: 'openai', baseURL: server.url }))
+      .resolves.toEqual([{ id: 'live' }])
     await expect(ctx.llm.discoverModels('llm-deepseek', { baseURL: 'https://api.deepseek.com' }))
       .rejects.toMatchObject({ code: 'NO_DISCOVERY' })
     await expect(ctx.llm.discoverModels('llm-pi-ai', { baseURL: '' }))
@@ -324,7 +450,9 @@ describe('draft-provider model discovery', () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     const fiber = await ctx.plugin(LlmPiAi, {})
-    await expect(ctx.llm.discoverModels('llm-pi-ai', { provider: 'openai' })).resolves.not.toHaveLength(0)
+    const server = await listingServer({ body: JSON.stringify({ data: [{ id: 'live' }] }) })
+    await expect(ctx.llm.discoverModels('llm-pi-ai', { provider: 'openai', baseURL: server.url }))
+      .resolves.toEqual([{ id: 'live' }])
 
     await fiber.dispose()
 

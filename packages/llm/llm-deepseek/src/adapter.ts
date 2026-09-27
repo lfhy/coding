@@ -40,8 +40,10 @@ export interface DeepSeekCatalogModel {
   contextWindow?: number
   /** Per-request output cap for this model; omission falls back to the profile's {@link DeepSeekConnectionOptions.maxTokens}. */
   maxTokens?: number
-  /** Accepted request modalities; omission is text-only. */
+  /** 可接收的输入模态；省略时仅支持文本。 */
   inputModalities?: ModelModality[]
+  /** 该模型允许的推理档位；省略时使用渠道级能力。 */
+  reasoningEfforts?: Array<'off' | 'low' | 'high' | 'max'>
 }
 
 /**
@@ -115,6 +117,13 @@ const REASONING_EFFORTS = [
 const OFF_ONLY_REASONING_EFFORTS = [
   { id: OFF_REASONING_EFFORT, name: 'Off' },
 ] as const
+
+function modelReasoningEfforts(model: DeepSeekCatalogModel | undefined, thinking: RequestDefaults['thinking']) {
+  const available = thinking === 'disabled' ? OFF_ONLY_REASONING_EFFORTS : REASONING_EFFORTS
+  return model?.reasoningEfforts === undefined
+    ? available
+    : available.filter(effort => model.reasoningEfforts?.some(id => id === effort.id))
+}
 
 function modelInfo(provider: string, model: DeepSeekCatalogModel): LlmModelInfo {
   return {
@@ -192,50 +201,42 @@ export class DeepSeekAdapter extends LlmAdapter {
   ): Promise<LlmResolvedModelInfo> {
     const connection = this.config.options()
     const configured = connection.models.find(entry => entry.id === model)
+    const efforts = modelReasoningEfforts(configured, connection.defaults.thinking)
+    const requestedDefault = connection.defaults.thinking === 'disabled'
+      ? OFF_REASONING_EFFORT
+      : ReasoningEffortId(connection.defaults.reasoningEffort ?? 'high')
     const contextWindow = configured?.contextWindow
       ?? connection.defaultContextWindow
     return Promise.resolve({
-      // An uncatalogued endpoint is safely treated as text-only. Declaring an
-      // unverified image capability would let the host persist input that the
-      // endpoint may reject on every later turn.
+      // 未列出的模型按纯文本处理，避免把未经验证的视觉输入持久写入会话。
       ...configured === undefined
         ? { provider, id: model, name: model, inputModalities: ['text' as const] }
         : modelInfo(provider, configured),
       context: { contextWindow },
       defaultMaxTokens: configured?.maxTokens ?? connection.maxTokens,
-      ...connection.defaults.thinking === 'disabled'
-        ? {
-          reasoning: {
-            efforts: OFF_ONLY_REASONING_EFFORTS,
-            defaultEffort: OFF_REASONING_EFFORT,
-          },
-        }
-        : {
-          reasoning: {
-            efforts: REASONING_EFFORTS,
-            defaultEffort: connection.defaults.reasoningEffort === 'off'
-              ? OFF_REASONING_EFFORT
-              : connection.defaults.reasoningEffort === 'low'
-                ? LOW_REASONING_EFFORT
-                : connection.defaults.reasoningEffort === 'max'
-                  ? MAX_REASONING_EFFORT
-                  : HIGH_REASONING_EFFORT,
-          },
-        },
+      reasoning: {
+        efforts,
+        defaultEffort: efforts.find(effort => effort.id === requestedDefault)?.id ?? efforts.at(0)?.id ?? OFF_REASONING_EFFORT,
+      },
     })
   }
 
   async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
-    // One resolution per stream call: connection facts and the credential
-    // freeze here and hold for this whole request, so an in-flight stream
-    // never observes a configuration change and the next call re-resolves.
-    // The key resolves *from this snapshot*, so an endpoint and the secret
-    // sent to it can never come from different configuration generations.
+    // 每次流调用只解析一次连接和凭据；进行中的请求不混用其他设置世代的端点或密钥。
     const connection = this.config.options()
+    const model = connection.models.find(entry => entry.id === options.model)
+    const availableEfforts = modelReasoningEfforts(model, connection.defaults.thinking)
+    const defaultEffort = (availableEfforts.find(entry => entry.id === (connection.defaults.reasoningEffort ?? 'high'))
+      ?? availableEfforts.at(0) ?? REASONING_EFFORTS[0]).id as NonNullable<RequestDefaults['reasoningEffort']>
+    if (options.purpose !== 'session-title' && model?.reasoningEfforts !== undefined) {
+      const effort = options.reasoningEffort ?? defaultEffort
+      if (!availableEfforts.some(entry => entry.id === effort)) {
+        throw new LlmError(`DeepSeek model "${options.model}" does not support reasoning effort "${effort}"`, 'UNSUPPORTED_REASONING_EFFORT')
+      }
+    }
     const hasImages = options.messages.some(message => contentHasImage(message.content))
     let attachments: AttachmentStore | undefined
     if (hasImages) {
-      const model = connection.models.find(entry => entry.id === options.model)
       if (model?.inputModalities?.includes('image') !== true) {
         throw new LlmError(
           `DeepSeek model "${options.model}" does not accept image input.`,
@@ -260,7 +261,10 @@ export class DeepSeekAdapter extends LlmAdapter {
     const iterator = this.request(
       options,
       watchdog.signal,
-      connection,
+      model?.reasoningEfforts === undefined ? connection : {
+        ...connection,
+        defaults: { ...connection.defaults, reasoningEffort: defaultEffort },
+      },
       apiKey,
       userId,
       attachments,

@@ -21,6 +21,9 @@
       "path": "../ui-primitives"
     },
     {
+      "path": "../ui-icons"
+    },
+    {
       "path": "../ui-settings"
     },
     {

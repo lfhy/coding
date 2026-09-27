@@ -924,6 +924,7 @@ describe('Agent.cancel()', () => {
     'pre-step',
     'system-prompt',
     'request',
+    'request-history',
     'stopping',
     'tool',
   ] as const)('lets a cooperative %s boundary settle from the explicit turn signal', async (stage) => {
@@ -959,6 +960,12 @@ describe('Agent.cancel()', () => {
         break
       case 'request':
         ctx.on('agent/request', async ({ agent: subject, signal }, next) => {
+          if (subject === agent) await blockUntilAbort(signal)
+          return next()
+        })
+        break
+      case 'request-history':
+        ctx.on('agent/request-history', async ({ agent: subject, signal }, next) => {
           if (subject === agent) await blockUntilAbort(signal)
           return next()
         })

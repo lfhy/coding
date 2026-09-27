@@ -61,7 +61,7 @@ import { assertUsableApiKey, LlmError } from '@deepseek-ai/dsh-llm'
 import type { AdapterRegistrationHandle, DirectoryRegistrationHandle, LlmConfigurableProvider } from '@deepseek-ai/dsh-llm'
 import { deepEqualJson, installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { PiAiAdapter } from './adapter.ts'
-import { catalogProviderIds, catalogProviderTakesApiKey } from './catalog.ts'
+import { catalogModels, catalogProvider, catalogProviderIds, catalogProviderTakesApiKey } from './catalog.ts'
 import { assertServiceable, Config, resolveProfiles } from './config.ts'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
 import { discoverModels } from './discovery.ts'
@@ -230,26 +230,23 @@ export function apply(ctx: Context, config: Config): void {
     directoryFacts = entries
   }
   ensureDirectory()
-  /**
-   * The credential a named route already resolves, for an interrogation whose
-   * draft carries none. A route being declared for the first time names no
-   * profile yet, and a profile that names no credential defers to pi-ai's own
-   * discovery, so both answer `undefined` and the endpoint is asked
-   * unauthenticated — the same posture a request to that route would take.
-   */
-  const storedApiKey = async (provider: string | undefined): Promise<string | undefined> => {
+  /** 已保存路由提供端点与协议；凭据只在查询确认端点相同后才解析。 */
+  const storedRoute = (provider: string | undefined) => {
     if (provider === undefined) return undefined
     const profile = profiles().get(provider)
-    if (profile === undefined) return undefined
-    return resolveApiKey(provider, profile)
+    const baseURL = profile?.piProvider.baseUrl ?? catalogProvider(provider)?.baseUrl
+    if (baseURL === undefined) return undefined
+    const api = profile?.api ?? profile?.piProvider.getModels()[0]?.api
+      ?? catalogModels(provider).values().next().value?.api
+    return {
+      baseURL,
+      ...api === undefined ? {} : { api },
+      hasStoredKey: profile?.apiKeyEnv !== undefined,
+      apiKey: () => profile === undefined ? Promise.resolve(undefined) : resolveApiKey(provider, profile),
+    }
   }
-  // Interrogating an endpoint is a configuration-time action over a draft, so
-  // it is offered for the whole namespace rather than per route: the provider
-  // a surface is adding does not exist yet. The draft is the whole request
-  // except the credential: a configuration surface edits a redacted descriptor
-  // and never holds a stored secret, so an already-configured route supplies
-  // its own here rather than being interrogated unauthenticated.
-  ctx.llm.registerModelDiscovery(NS, request => discoverModels(request, () => storedApiKey(request.provider)))
+  // 新建路由尚未注册，因此查询面向整个 namespace；草稿密钥不进入设置存储。
+  ctx.llm.registerModelDiscovery(NS, request => discoverModels(request, () => storedRoute(request.provider)))
   // Route effects bind to this apply fiber via the stable `ctx` reference,
   // even when a swap runs inside the scoped settings callback below. A bare
   // mount (zero routes) is the dormant posture: nothing registers until a

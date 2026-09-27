@@ -987,6 +987,34 @@ Source: [`packages/core/session/src/types.ts:241`](../packages/core/session/src/
 
 Source: [`packages/core/session/src/types.ts:262`](../packages/core/session/src/types.ts)
 
+### `vision/*`
+
+<a id="visiondescription--log-only"></a>
+
+#### `vision/description` — log-only
+
+```ts persistence-catalog
+/** 不加入 surface；替换节点通过 sourceEventSeqs 引用它。 */
+'vision/description': VisionDescriptionEventData
+```
+
+Types: [VisionDescriptionEventData](subsystems/vision-understanding.md)
+
+Source: [`packages/llm/llm-vision-fallback/src/index.ts:67`](../packages/llm/llm-vision-fallback/src/index.ts)
+
+<a id="visionrequest--log-only"></a>
+
+#### `vision/request` — log-only
+
+```ts persistence-catalog
+/** 非 surface 的视觉请求输入事实；即使调用失败也保留。 */
+'vision/request': VisionRequestEventData
+```
+
+Types: [VisionRequestEventData](subsystems/vision-understanding.md)
+
+Source: [`packages/llm/llm-vision-fallback/src/index.ts:65`](../packages/llm/llm-vision-fallback/src/index.ts)
+
 ### `web/*`
 
 <a id="webdeepseek-search-llm-request--log-only"></a>

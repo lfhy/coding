@@ -222,6 +222,7 @@
 - `agent-default-model` → `@deepseek-ai/dsh-agent-default-model`
 - `jobs` → `@deepseek-ai/dsh-jobs-local`
 - `llm-retry` → `@deepseek-ai/dsh-llm-retry`
+- `llm-vision-fallback` → `@deepseek-ai/dsh-llm-vision-fallback`
 - `settings` → `@deepseek-ai/dsh-settings-file`
 - `credentials` → `@deepseek-ai/dsh-credentials-local`
 - `llm-pi-ai` → `@deepseek-ai/dsh-llm-pi-ai`

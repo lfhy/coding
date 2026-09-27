@@ -64,6 +64,8 @@ export interface ProviderEditorProps {
   autoFocusCredential?: boolean
   /** 初始展开自定义设置区；引导弹窗用它直接展示 Base URL 和模型目录。 */
   defaultCustomizedOpen?: boolean
+  /** 模型页常显凭据、地址和目录；引导卡片仍使用折叠布局。 */
+  channelLayout?: boolean
   /** Override the dismiss action copy. */
   cancelLabel?: keyof typeof en
   /** Override the idle commit action copy. */
@@ -71,7 +73,9 @@ export interface ProviderEditorProps {
   /** Override the in-flight commit action copy. */
   submitBusyLabel?: keyof typeof en
   /** Close the editor; `changed` reports whether an Apply committed. */
-  onClose: (changed: boolean) => void
+  onClose: (changed: boolean) => void | Promise<void>
+  /** 本卡片成功写入后的脱敏分节应答，交给设置镜像而非另读文档。 */
+  onSettingsCommitted?: (view: SettingsNamespaceView) => void
 }
 
 /** A user-section subtree as a plain draft object (absent → empty). */
@@ -214,7 +218,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
 
   // The model list is validated by the same per-row checker for both families,
   // so a bad row is named by its position rather than by a blanket message.
-  const modelFailure = validateDeepSeekModels(schema.getPath(draft, ['models']))
+  const modelFailure = validateDeepSeekModels(schema.getPath(draft, ['models']), layout === 'deepseek' ? 'deepseek' : 'pi-ai')
   const keyFailure = apiKeyFailure(keyDraft)
   // What a probe or a write must carry: the typed key with paste whitespace
   // removed. A blank field yields an empty string, which both call sites read
@@ -260,7 +264,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
       // with a bad row; it stays because the schema check below would refuse
       // the write with a message naming a path instead of the row, and because
       // nothing but this function decides what is written.
-      const failure = validateDeepSeekModels(schema.getPath(next, ['models']))
+      const failure = validateDeepSeekModels(schema.getPath(next, ['models']), layout === 'deepseek' ? 'deepseek' : 'pi-ai')
       /* v8 ignore next 3 -- unreachable from the card: the same failure disables submit */
       if (failure !== undefined) {
         return `${t('model')} ${String(failure.index + 1)}: ${t(failure.key)}`
@@ -287,6 +291,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
           ? t('conflict')
           : response.result.error.message
       }
+      props.onSettingsCommitted?.(response.result.value)
       setCommittedOriginal(schema.getPath(response.result.value.user, settingsPath))
       setExpectedRevision(response.result.value.revision)
       setDraft(next)
@@ -308,7 +313,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
         setFailure(failure)
         return
       }
-      props.onClose(true)
+      await props.onClose(true)
     } catch (error) {
       // A transport failure (disconnect, a request the host refuses) rejects
       // rather than answering; without this the card would stay busy forever
@@ -370,6 +375,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
       },
       onReset: () => { setDraft(current => schema.deletePath(current, ['models'])) },
     }
+    const Customized = props.channelLayout === true ? 'div' : 'details'
     return (
       <>
         <div className={styles['field']}>
@@ -411,12 +417,16 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
             )}
           </div>
         ) : null}
-        {props.credentialOnly === true ? null : <details
+        {props.credentialOnly === true ? null : <Customized
           className={styles['customized']}
-          open={customizedOpen}
-          onToggle={(event) => { setCustomizedOpen(event.currentTarget.open) }}
+          {...props.channelLayout === true ? {} : {
+            open: customizedOpen,
+            onToggle: (event: React.SyntheticEvent<HTMLDetailsElement>) => {
+              setCustomizedOpen(event.currentTarget.open)
+            },
+          }}
         >
-          <summary className={styles['customizedSummary']}>{t('customized')}</summary>
+          {props.channelLayout === true ? null : <summary className={styles['customizedSummary']}>{t('customized')}</summary>}
           <div className={styles['customizedBody']}>
             {/* The name and the protocol are the create card's two remaining
                 profile fields; a route the adapter ships defaults both from
@@ -489,7 +499,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
             {/* Both families edit the same rows through the same contract; only
                 the extras differ — DeepSeek's inherited capacities, pi-ai's
                 endpoint interrogation. */}
-            {family === 'deepseek'
+            {family === 'deepseek' && props.channelLayout !== true
               ? (
                 <DeepSeekModelsEditor
                   {...catalogProps}
@@ -499,15 +509,19 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
                   defaultMaxTokens={typeof defaultMaxTokens === 'number' ? defaultMaxTokens : undefined}
                 />
               )
-              : <ModelListEditor {...catalogProps} probe={probe} probeBlocked={keyFailure} api={api} />}
+              : <ModelListEditor {...catalogProps} probe={probe} probeBlocked={keyFailure} api={api}
+                providerName={props.displayName}
+                {...family === 'deepseek' ? { inheritedReasoningEfforts:
+                  schema.getPath(fallback, ['thinking']) === 'disabled' ? ['off'] : ['off', 'low', 'high', 'max'] } : {}}
+                reasoningDisabled={family === 'deepseek' && schema.getPath(fallback, ['thinking']) === 'disabled'} />}
           </div>
-        </details>}
+        </Customized>}
       </>
     )
   }
 
   return (
-    <div className={props.credentialOnly === true ? styles['addBlock'] : styles['editor']}>
+    <div className={props.channelLayout === true ? styles['channelFields'] : props.credentialOnly === true ? styles['addBlock'] : styles['editor']}>
       {props.hideTitle === true
         ? null
         : (
@@ -540,7 +554,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
         submitLabel={props.submitLabel ?? 'apply'}
         submitBusyLabel={props.submitBusyLabel ?? 'applying'}
         {...props.cancelLabel === undefined ? {} : { cancelLabel: props.cancelLabel }}
-        onCancel={() => { props.onClose(false) }}
+        onCancel={() => { void props.onClose(false) }}
         onSubmit={() => { void apply() }}
       />
     </div>

@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
 import SessionTitleService, {
   SessionTitleProviderId,
+  collectSessionTitleMessages,
   fallbackSessionTitle,
   foldSessionTitle,
   normalizeSessionTitle,
@@ -97,6 +98,53 @@ describe('SessionTitleService', () => {
     await settleTitles()
 
     expect(ctx.sessionTitle.get(session)?.title).toBe('Explain this referenced session')
+  })
+
+  it('does not count a replacement as the first user prompt on live or replayed logs', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(SessionTitleService, CONFIG)
+    const session = ctx.sessions.create(SessionId('replacement-first'))
+    const image = session.append('user/message', createUserMessage({
+      content: [{ type: 'image', attachment: {
+        attachmentId: 'sha256:picture' as never,
+        mediaType: 'image/png',
+        bytes: 128,
+        width: 4,
+        height: 4,
+      } }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    const replacement = session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'Image description is not a new prompt' }],
+      source: { kind: 'user' },
+    }), {
+      surfaceOp: { op: 'replace', start: image.seq, end: image.seq },
+      sourceEventSeqs: [image.seq],
+    })
+    await settleTitles()
+
+    expect(ctx.sessionTitle.get(session)).toBeUndefined()
+    expect(collectSessionTitleMessages(session.events)).toEqual([])
+    expect(collectSessionTitleMessages(session.events, replacement.seq)).toEqual([])
+
+    const prompt = session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'Actual follow-up prompt' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    await settleTitles()
+
+    expect(ctx.sessionTitle.get(session)).toMatchObject({
+      title: 'Actual follow-up prompt',
+      messageSeqs: [prompt.seq],
+    })
+    expect(collectSessionTitleMessages(session.events)).toEqual([
+      { seq: prompt.seq, text: 'Actual follow-up prompt' },
+    ])
+    const replayed = Session.create(SessionId('replacement-replay'), session.events)
+    expect(collectSessionTitleMessages(replayed.events)).toEqual([
+      { seq: prompt.seq, text: 'Actual follow-up prompt' },
+    ])
   })
 
   it('waits through synthetic, empty, and non-text messages, then keeps the first fallback', async () => {

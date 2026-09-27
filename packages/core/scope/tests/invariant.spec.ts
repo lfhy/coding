@@ -36,6 +36,7 @@ describe('scoped-dispatch invariants', () => {
     const ctx = await setup()
     const agent = { id: 'a1' } as unknown as Agent
     const other = { id: 'a2' } as unknown as Agent
+    const session = { id: 's1' } as unknown as Agent['session']
     const signal = new AbortController().signal
     const config = { provider: 'p', model: 'm' }
     const message = freezeMessage({
@@ -54,6 +55,7 @@ describe('scoped-dispatch invariants', () => {
       'agent/session-start': [{ agent, source: 'startup' }],
       'agent/pre-step': [{ agent, messages: [message], turn: 1, step: 1, signal }, () => Promise.resolve({ kind: 'enter', messages: [message] })],
       'agent/request': [{ agent, turn: 1, step: 1, signal }, () => Promise.resolve(config)],
+      'agent/request-history': [{ agent, session, config, turn: 1, step: 1, signal }, () => Promise.resolve()],
       'agent/request-error': [
         {
           agent,

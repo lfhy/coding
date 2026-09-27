@@ -1,18 +1,31 @@
-- dialog "选择要添加的模型":
-  - heading "选择要添加的模型" [level=2]
+- dialog "cerebras 模型目录":
+  - heading "cerebras 模型目录" [level=2]
   - button "关闭":
     - img
   - paragraph: 以下是模型提供方的可用模型，勾选要添加的模型。
+  - img
+  - textbox "搜索模型 ID 或名称"
   - button "全选"
   - list:
     - listitem:
-      - checkbox "MiniMax-M2.7"
-      - text: MiniMax-M2.7
+      - text: acme-2026 2
+      - button "导入模型家族 acme-2026":
+        - img
+      - checkbox "acme-2026-alpha"
+      - text: acme-2026-alpha
+      - button "添加模型 acme-2026-alpha":
+        - img
+      - checkbox "acme-2026-beta"
+      - text: acme-2026-beta
+      - button "添加模型 acme-2026-beta":
+        - img
     - listitem:
-      - checkbox "MiniMax-M2.7-highspeed"
-      - text: MiniMax-M2.7-highspeed
-    - listitem:
-      - checkbox "MiniMax-M3"
-      - text: MiniMax-M3
+      - text: orion-2025 1
+      - button "导入模型家族 orion-2025":
+        - img
+      - checkbox "orion-2025-basic"
+      - text: orion-2025-basic
+      - button "添加模型 orion-2025-basic":
+        - img
   - button "取消"
-  - button "添加所选"
+  - button "添加所选" [disabled]

@@ -72,6 +72,46 @@ function seedMessages(session: Session, count: number): void {
 const api = (ctx: Context) => createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
 
 describe('session.history projections block', () => {
+  it('counts the append-origin image prompt once and leaves its text replacement out of recency', async () => {
+    const { ctx, session } = await harness(true)
+    const gateway = api(ctx)
+    await vi.waitFor(() => {
+      expect(ctx.sessionProjections.snapshot(session).values.sessionListMetadata)
+        .toEqual({ blank: true, lastPromptAt: null })
+    })
+    const now = vi.spyOn(Date, 'now')
+    try {
+      now.mockReturnValue(100)
+      const original = session.append('user/message', createUserMessage({
+        content: [{
+          type: 'image',
+          attachment: { attachmentId: 'source-image' as never, mediaType: 'image/png', bytes: 1, width: 1, height: 1 },
+        }],
+        source: { kind: 'user' },
+      }), { surfaceOp: 'append' })
+      expect(ctx.sessionProjections.snapshot(session).values.sessionListMetadata)
+        .toEqual({ blank: true, lastPromptAt: 100 })
+
+      now.mockReturnValue(200)
+      session.append('user/message', createUserMessage({
+        content: [{ type: 'text', text: 'persisted image description' }],
+        source: { kind: 'user' },
+      }), {
+        surfaceOp: { op: 'replace', start: original.seq, end: original.seq },
+        sourceEventSeqs: [original.seq],
+      })
+      const history = await gateway.sessions.history(request({ sessionId: session.id, maxMessages: 1 }))
+      if (!history.result.ok) throw new Error('history failed')
+      expect(history.result.value.events.map(entry => entry.event.seq)).toEqual([original.seq, original.seq + 1])
+      expect(history.result.value.projections?.values.sessionListMetadata)
+        .toEqual({ blank: true, lastPromptAt: 100 })
+      expect(ctx.sessionProjections.snapshot(session).values.sessionListMetadata)
+        .toEqual({ blank: true, lastPromptAt: 100 })
+    } finally {
+      now.mockRestore()
+    }
+  })
+
   it('serves the unit value on the tail page with asOfSeq = last event seq', async () => {
     const { ctx, session } = await harness(true)
     ctx.sessionProjections.register(lastUserUnit())

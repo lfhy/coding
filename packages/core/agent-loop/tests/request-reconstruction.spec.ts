@@ -378,6 +378,11 @@ describe('request stability across the loop', () => {
     await ctx.plugin(AgentRegistry)
     await ctx.plugin(AgentLoop, { agents: [] })
     let observed: GenerateOptions | undefined
+    let unknownModalities = false
+    ctx.on('agent/request-history', async ({ inputModalities }, next) => {
+      unknownModalities = inputModalities === undefined
+      await next()
+    })
     ctx.on('llm/stream', (options) => {
       observed = options
       return (async function* () {
@@ -393,6 +398,7 @@ describe('request stability across the loop', () => {
     await waitForIdle(ctx, agent)
 
     expect(observed).toMatchObject({ provider: 'listener', model: 'virtual' })
+    expect(unknownModalities).toBe(true)
     expect(agent.session.requestHeader()?.config).toEqual({
       provider: 'listener',
       model: 'virtual',
@@ -428,6 +434,119 @@ describe('request stability across the loop', () => {
     expect(second.messages[0]!.content.some(b => b.type === 'text' && b.text.includes('[summary of turn 1]'))).toBe(true)
     // No header event beyond the anchor: the replace is itself in the log.
     expect(agent.session.events.filter(e => e.type === 'request/header')).toHaveLength(1)
+  })
+
+  it('runs request-history after exact preparation and sends the logged replacement', async () => {
+    let resolutions = 0
+    const adapter = new class extends MockAdapter {
+      override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
+        resolutions += 1
+        return Promise.resolve({ provider, id: model, name: model, inputModalities: ['text'] })
+      }
+    }([textResponse('one'), textResponse('two')])
+    const ctx = await harness(adapter)
+    const agent = ctx.agentLoop.create(SessionId('request-history'), { provider: 'mock', model: 'mock' })
+    const order: string[] = []
+    ctx.on('agent/request-history', async ({ agent: subject, session, config, inputModalities, signal, turn, step }, next) => {
+      expect(subject).toBe(agent)
+      expect(session).toBe(agent.session)
+      expect(config).toEqual({ provider: 'mock', model: 'mock' })
+      expect(Object.isFrozen(config)).toBe(true)
+      expect(inputModalities).toEqual(['text'])
+      expect(Object.isFrozen(inputModalities)).toBe(true)
+      expect(signal.aborted).toBe(false)
+      expect(resolutions).toBe(turn)
+      expect(step).toBe(1)
+      order.push(`before-${turn}`)
+      if (turn === 2) {
+        const first = session.surface.nodes[0]!
+        session.append('user/message', createUserMessage({
+          content: [{ type: 'text', text: '[durable replacement]' }],
+          source: { kind: 'plugin', plugin: 'test' },
+        }), { surfaceOp: { op: 'replace', start: first, end: first }, sourceEventSeqs: [first] })
+      }
+      await next()
+      order.push(`after-${turn}`)
+    })
+    ctx.on('agent/request-history', async (_payload, next) => {
+      order.push('inner')
+      await next()
+    })
+
+    send(agent, 'first')
+    await waitForIdle(ctx, agent)
+    send(agent, 'second')
+    await waitForIdle(ctx, agent)
+
+    expect(order).toEqual(['before-1', 'inner', 'after-1', 'before-2', 'inner', 'after-2'])
+    expect(resolutions).toBe(2)
+    expect(adapter.requests).toHaveLength(2)
+    expect(JSON.stringify(adapter.requests[1]!.messages)).toContain('[durable replacement]')
+    expect(JSON.stringify(adapter.requests[1]!.messages)).not.toContain('"first"')
+    const firstChunk = agent.session.events.find(event => event.type === 'assistant/chunk' && event.data.turn === 2)!
+    const replay = Session.create(SessionId('request-history-replay'), structuredClone(agent.session.events.slice(0, firstChunk.seq)))
+    expect(structuredClone(adapter.requests[1]!.messages)).toEqual(replay.deriveMessages())
+  })
+
+  it.each([
+    ['skipped next', false],
+    ['listener error', true],
+  ])('fails the current turn when request-history has a %s', async (_label, throws) => {
+    const adapter = new MockAdapter([textResponse('later')])
+    const ctx = await harness(adapter)
+    const agent = ctx.agentLoop.create(SessionId(`request-history-${throws}`), { provider: 'mock', model: 'mock' })
+    let invoked = 0
+    ctx.on('agent/request-history', async (_payload, next) => {
+      invoked += 1
+      if (invoked === 1) {
+        if (throws) throw new Error('history failed')
+        return
+      }
+      await next()
+    })
+
+    send(agent, 'first')
+    await waitForIdle(ctx, agent)
+    expect(adapter.requests).toHaveLength(0)
+    const failed = agent.session.events.findLast(event => event.type === 'turn/end')
+    expect(failed?.type === 'turn/end' && failed.data.reason.kind === 'error'
+      ? failed.data.reason.error.message
+      : '').toContain(throws ? 'history failed' : 'must call next()')
+    send(agent, 'second')
+    await waitForIdle(ctx, agent)
+    expect(adapter.requests).toHaveLength(1)
+    expect(invoked).toBe(2)
+  })
+
+  it('re-runs request-history for retries and tool-driven steps', async () => {
+    const adapter = new MockAdapter([
+      [{ type: 'finish', reason: { kind: 'error', failure: { code: 'TRANSIENT', message: 'try again' } } }],
+      toolCallResponse('call-1', 'echo', { text: 'ok' }),
+      textResponse('done'),
+    ])
+    const ctx = await harness(adapter)
+    registerEcho(ctx)
+    const agent = ctx.agentLoop.create(SessionId('request-history-retry'), { provider: 'mock', model: 'mock' })
+    const coordinates: number[] = []
+    const derived: unknown[] = []
+    ctx.on('agent/request-history', async ({ session, step }, next) => {
+      coordinates.push(step)
+      derived.push(structuredClone(session.deriveMessages()))
+      await next()
+    })
+    ctx.on('agent/request-error', async (_payload, next) => {
+      await next()
+      return { kind: 'retry' as const }
+    })
+
+    send(agent, 'go')
+    await waitForIdle(ctx, agent)
+
+    expect(coordinates).toEqual([1, 1, 2])
+    expect(adapter.requests).toHaveLength(3)
+    adapter.requests.forEach((request, index) => {
+      expect(structuredClone(request.messages)).toEqual(derived[index])
+    })
   })
 
   it('a real system-prompt change is a full changed-header snapshot; a stable prompt logs nothing', async () => {

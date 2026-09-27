@@ -34,6 +34,14 @@ export interface ProviderRow {
   credential: CredentialView | undefined
 }
 
+/** 已配置路由公开声明图片输入的模型，不从名字或发现端点推断能力。 */
+export interface VisionModelChoice {
+  provider: string
+  providerName: string
+  model: string
+  modelName: string
+}
+
 /** Page snapshot. */
 export interface ModelsSettingsState {
   status: 'idle' | 'loading' | 'ready' | 'error'
@@ -47,6 +55,7 @@ export interface ModelsSettingsState {
   rows: readonly ProviderRow[]
   /** Namespace views by ns, for the editor's schema/layers/secrets. */
   namespaces: ReadonlyMap<string, SettingsNamespaceView>
+  visionModels: readonly VisionModelChoice[]
 }
 
 /**
@@ -108,7 +117,7 @@ function apiKeyEnvOf(
 export class ModelsSettingsStore {
   /** The snapshot the section renders from (uSES-safe store). */
   readonly store: SnapshotStore<ModelsSettingsState> = createSnapshotStore<ModelsSettingsState>({
-    status: 'idle', error: null, credentialError: null, writable: false, rows: [], namespaces: new Map(),
+    status: 'idle', error: null, credentialError: null, writable: false, rows: [], namespaces: new Map(), visionModels: [],
   })
 
   /** Latest load wins; an older response never overwrites a newer one. */
@@ -123,6 +132,40 @@ export class ModelsSettingsStore {
     private readonly schema: SettingsSchemaOperations,
     private readonly describeFace: SettingsDescribeFace,
   ) {}
+
+  /**
+   * 同步折入本页写入的分节应答；后续目录联接从这面唯一镜像读取。
+   * @param view - Host 已接受且脱敏的设置分节。
+   * @returns 无返回值。
+   */
+  acceptSettingsView(view: SettingsNamespaceView): void {
+    this.describeFace.acceptView(view)
+  }
+
+  /**
+   * 原子设置视觉路由的两个字段，避免中间出现只选渠道或只选模型的无效状态。
+   * @param target - 要保存的渠道和模型；省略则同时清除选择。
+   * @returns 写入失败的诊断，成功时为 undefined。
+   */
+  async setVisionTarget(target: { provider: string; model: string } | undefined): Promise<string | undefined> {
+    const namespace = this.store.getSnapshot().namespaces.get('vision-understanding')
+    if (namespace === undefined) return 'vision-understanding settings unavailable'
+    try {
+      const response = await this.api.settings.mutate({
+        ns: namespace.ns,
+        expectedRevision: namespace.revision,
+        ops: target === undefined
+          ? [{ op: 'unset', path: ['provider'] }, { op: 'unset', path: ['model'] }]
+          : [{ op: 'set', path: ['provider'], value: target.provider }, { op: 'set', path: ['model'], value: target.model }],
+      })
+      if (!response.result.ok) return response.result.error.message
+      this.describeFace.acceptView(response.result.value)
+      await this.load()
+      return undefined
+    } catch (error) {
+      return messageOf(error)
+    }
+  }
 
   /**
    * Refresh the whole page snapshot: the provider directory and the mirror's
@@ -191,6 +234,24 @@ export class ModelsSettingsStore {
         credentialError = messageOf(error)
       }
     }
+    let visionModels: VisionModelChoice[] = []
+    if (namespaces.has('vision-understanding')) {
+      try {
+        const response = await this.api.llm.models({})
+        if (response.result.ok) {
+          const usable = new Set(rows.filter(row => row.configured && providerUsable({
+            ...row,
+            credential: row.apiKeyEnv === undefined ? undefined : credentials[row.apiKeyEnv],
+          })).map(row => row.entry.provider))
+          visionModels = response.result.value.groups.flatMap(group => usable.has(group.id)
+            ? group.models.filter(model => model.inputModalities?.includes('image') === true)
+              .map(model => ({ provider: group.id, providerName: group.name, model: model.id, modelName: model.name }))
+            : [])
+        }
+      } catch {
+        // 目录失败时不推断候选，仍可显示设置中已存的目标。
+      }
+    }
     if (generation !== this.generation) return
     this.store.update((s) => {
       s.status = 'ready'
@@ -204,6 +265,7 @@ export class ModelsSettingsStore {
           : {},
       }))
       s.namespaces = namespaces
+      s.visionModels = visionModels
     })
   }
 }

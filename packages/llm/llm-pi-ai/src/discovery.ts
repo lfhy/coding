@@ -2,22 +2,12 @@
  * Answering "which models can this provider serve?" for the configuration
  * surface's "fetch available models" action.
  *
- * A route the installed pi-ai catalog ships is answered **from that catalog**,
- * with no network call at all: pi-ai's registry is the authoritative list for
- * its own providers, and it carries the capacities a listing endpoint would
- * not disclose. Only a route the catalog does not describe — a gateway, a
- * self-hosted server — is interrogated over the wire.
+ * 仅向当前草稿明确指定、或已配置路由保存的端点发送 GET /models。
+ * 已安装目录仅提供缺省端点，不充当网络查询结果。
  *
- * Neither path is a catalog refresh. Nothing here is stored: the request
- * carries a draft the user is still editing, and the reply is candidate
- * metadata the surface offers for adoption. `settings.yaml` remains the only
- * thing that decides what a route serves.
+ * 查询不会刷新服务目录：草稿与候选结果都不写入 settings.yaml。
  *
- * Only OpenAI-compatible protocols are interrogated. Their listing is the one
- * shape a gateway, a self-hosted server, and the official endpoints all agree
- * on, which is the case this action exists for; every other protocol reports
- * that it cannot be interrogated so the surface falls back to hand-entry
- * rather than guessing a response shape.
+ * 仅探测具有 OpenAI 兼容 GET /models 格式的协议，其余协议要求手工录入。
  *
  * @module dsh-llm-pi-ai/discovery
  */
@@ -25,7 +15,7 @@
 import { INVALID_CREDENTIAL_CODE, LlmError, normalizeApiKey } from '@deepseek-ai/dsh-llm'
 import type { LlmDiscoveredModel, LlmModelDiscoveryRequest } from '@deepseek-ai/dsh-llm'
 import { attributionHeaders } from '@deepseek-ai/dsh-llm'
-import { catalogModels } from './catalog.ts'
+import { catalogProvider } from './catalog.ts'
 
 /**
  * Protocols whose model listing this module can read: the two that speak
@@ -48,6 +38,7 @@ const LISTABLE_PROTOCOLS: ReadonlySet<string> = new Set([
  * is not parseable, so overflow rejects instead of truncating.
  */
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024
+const DISCOVERY_TIMEOUT_MS = 10_000
 
 /** One entry of an OpenAI-compatible `GET /models` reply. */
 interface ListingEntry {
@@ -84,7 +75,19 @@ function label(...candidates: readonly unknown[]): string | undefined {
  * them to `URL` resolution.
  */
 function listingUrl(baseURL: string): string {
-  return `${baseURL.replace(/\/+$/, '')}/models`
+  let base: URL
+  try {
+    base = new URL(baseURL)
+  } catch {
+    throw new LlmError('model discovery needs a valid HTTP(S) baseURL', 'DISCOVERY_FAILED')
+  }
+  if ((base.protocol !== 'http:' && base.protocol !== 'https:')
+    || base.username !== '' || base.password !== '' || /[?#\u0000-\u001f\u007f]/.test(baseURL)
+    || baseURL !== baseURL.trim()) {
+    throw new LlmError('model discovery baseURL must be HTTP(S) without credentials, query, or fragment', 'DISCOVERY_FAILED')
+  }
+  base.pathname = `${base.pathname.replace(/\/+$/, '')}/models`
+  return base.href
 }
 
 /**
@@ -181,104 +184,105 @@ function usableProbeKey(raw: string): string {
 }
 
 /**
- * Interrogate one draft provider endpoint for the models it advertises.
- * @param request - the endpoint, protocol, and one-shot credential to use.
- * @param storedApiKey - the credential the named route already stored, asked
- *   for only when the draft carries none and only on the path that reaches the
- *   network. A configuration surface never holds a stored secret — it edits a
- *   redacted descriptor — so without this an already-configured route would be
- *   interrogated unauthenticated and answer 401.
- * @returns the advertised models in endpoint order.
- * @throws LlmError when the protocol has no readable listing, the endpoint
- *   refuses or fails the request, or the reply is not a model listing.
+ * 读取草稿端点公布的模型，不保存候选结果。
+ * @param request - 草稿端点、协议、一次性凭据及取消信号。
+ * @param storedRoute - 已保存的端点及其凭据解析器，仅在草稿端点与之相同时读取凭据。
+ * @returns 端点返回顺序的候选模型。
+ * @throws LlmError 协议不支持、端点无效或失败、响应无效、超时及调用方取消时抛出。
  */
 export async function discoverModels(
   request: LlmModelDiscoveryRequest,
-  storedApiKey?: () => Promise<string | undefined>,
+  storedRoute?: () => {
+    baseURL: string
+    api?: string
+    hasStoredKey: boolean
+    apiKey: () => Promise<string | undefined>
+  } | undefined,
 ): Promise<readonly LlmDiscoveredModel[]> {
-  // A catalog route already has its answer, and a better one: the installed
-  // entries carry context windows and output caps no listing endpoint reports.
-  if (request.provider !== undefined) {
-    const installed = catalogModels(request.provider)
-    if (installed.size > 0) {
-      return [...installed.values()].map(model => ({
-        id: model.id,
-        name: model.name,
-        contextWindow: model.contextWindow,
-        maxTokens: model.maxTokens,
-      }))
-    }
-  }
-  if (request.baseURL === undefined || request.baseURL.length === 0) {
+  const saved = storedRoute?.()
+  const baseURL = request.baseURL ?? saved?.baseURL ?? (
+    request.provider === undefined ? undefined : catalogProvider(request.provider)?.baseUrl
+  )
+  if (baseURL === undefined || baseURL.length === 0) {
     throw new LlmError(
-      `pi-ai ships no catalog for provider "${request.provider ?? ''}", so its models can only come from its`
-      + " endpoint; set a baseURL, or enter this provider's models by hand",
+      `no model listing endpoint for provider "${request.provider ?? ''}"; set a baseURL or enter its models by hand`,
       'DISCOVERY_FAILED',
     )
   }
-  // A draft that has not chosen a protocol yet is asked as OpenAI Chat
-  // Completions: it is the shape a gateway is overwhelmingly likely to speak,
-  // and the alternative — refusing until the field is filled — would withhold
-  // the action from the case it exists for. The cost is a misdirected message
-  // when the endpoint speaks something else (an Anthropic gateway answers 401,
-  // which reads as a credential problem), and hand-entry remains the way out.
-  const api = request.api ?? 'openai-completions'
+  // 未声明协议的全新草稿按 OpenAI Chat Completions 探测；不支持此格式时需手工录入。
+  const api = request.api ?? saved?.api ?? 'openai-completions'
   if (!LISTABLE_PROTOCOLS.has(api)) {
     throw new LlmError(
       `pi-ai protocol "${api}" has no model listing this build can read; enter this provider's models by hand`,
       'DISCOVERY_UNSUPPORTED',
     )
   }
-  const url = listingUrl(request.baseURL)
-  // A key typed into the form wins: it is the one the user is testing, and it
-  // may be the replacement for exactly the stored key that is failing. The
-  // stored one is only asked for here, past the catalog short-circuit and the
-  // protocol check, so a route answered from the registry costs no credential
-  // lookup — and no diagnostic about a credential it never needed.
-  // A probe carrying no key stays unauthenticated, which is how a route that
-  // relies on the provider's own ambient discovery is meant to be asked.
-  const supplied = request.apiKey ?? await storedApiKey?.()
-  const apiKey = supplied === undefined ? undefined : usableProbeKey(supplied)
-  let response: Response
+  const url = listingUrl(baseURL)
+  // 不将旧路由的密钥发送至正在编辑的新端点；草稿自带一次性密钥仍可探测。
+  if (request.apiKey === undefined && saved?.hasStoredKey && listingUrl(saved.baseURL) !== url) {
+    throw new LlmError(`${url} differs from the saved endpoint; enter an API key for this probe`, 'DISCOVERY_FAILED')
+  }
+  const controller = new AbortController()
+  const onAbort = (): void => { controller.abort(request.signal?.reason) }
+  request.signal?.addEventListener('abort', onAbort, { once: true })
+  if (request.signal?.aborted) onAbort()
+  const timeout = setTimeout(() => { controller.abort(new Error('model discovery timed out')) }, DISCOVERY_TIMEOUT_MS)
   try {
-    response = await fetch(url, {
+    let supplied = request.apiKey
+    if (supplied === undefined && saved !== undefined) {
+      let rejectOnAbort: () => void = () => {}
+      const aborted = new Promise<never>((_resolve, reject) => {
+        rejectOnAbort = () => {
+          reject(controller.signal.reason instanceof Error
+            ? controller.signal.reason : new Error('model discovery aborted'))
+        }
+        controller.signal.addEventListener('abort', rejectOnAbort, { once: true })
+        if (controller.signal.aborted) rejectOnAbort()
+      })
+      try {
+        // 凭据服务没有取消信号；race 会处理其迟到的拒绝，超时后不会发出请求。
+        supplied = await Promise.race([Promise.resolve().then(saved.apiKey), aborted])
+      } finally {
+        controller.signal.removeEventListener('abort', rejectOnAbort)
+      }
+    }
+    controller.signal.throwIfAborted()
+    const apiKey = supplied === undefined ? undefined : usableProbeKey(supplied)
+    const response = await fetch(url, {
       method: 'GET',
+      redirect: 'error',
       headers: {
         accept: 'application/json',
         ...apiKey === undefined ? {} : { authorization: `Bearer ${apiKey}` },
         ...attributionHeaders(),
       },
-      ...request.signal === undefined ? {} : { signal: request.signal },
+      signal: controller.signal,
     })
+    if (!response.ok) {
+      throw new LlmError(
+        `${url} answered ${response.status}${response.status === 401 || response.status === 403 ? '; check the API key' : ''}`,
+        'DISCOVERY_FAILED',
+      )
+    }
+    const text = await readBounded(response, url)
+    let body: unknown
+    try {
+      body = JSON.parse(text)
+    } catch (error: unknown) {
+      throw new LlmError(`${url} did not answer with JSON`, 'DISCOVERY_FAILED', { cause: error })
+    }
+    return readListing(body)
   } catch (error: unknown) {
     if (request.signal?.aborted) {
       throw new LlmError('model discovery aborted by caller', 'ABORTED', { cause: error })
     }
-    throw new LlmError(`could not reach ${url}`, 'DISCOVERY_FAILED', { cause: error })
-  }
-  if (!response.ok) {
-    throw new LlmError(
-      `${url} answered ${response.status}${response.status === 401 || response.status === 403 ? '; check the API key' : ''}`,
-      'DISCOVERY_FAILED',
-    )
-  }
-  let text: string
-  try {
-    text = await readBounded(response, url)
-  } catch (error: unknown) {
-    // Cancellation during the body read rejects with the abort reason, which
-    // may be any value; the caller gets the same coded failure it would have
-    // for a cancellation before the request went out.
-    if (request.signal?.aborted) {
-      throw new LlmError('model discovery aborted by caller', 'ABORTED', { cause: error })
+    if (controller.signal.aborted) {
+      throw new LlmError(`${url} model discovery timed out`, 'DISCOVERY_FAILED', { cause: error })
     }
-    throw error
+    if (error instanceof LlmError) throw error
+    throw new LlmError(`could not read ${url}`, 'DISCOVERY_FAILED', { cause: error })
+  } finally {
+    clearTimeout(timeout)
+    request.signal?.removeEventListener('abort', onAbort)
   }
-  let body: unknown
-  try {
-    body = JSON.parse(text)
-  } catch (error: unknown) {
-    throw new LlmError(`${url} did not answer with JSON`, 'DISCOVERY_FAILED', { cause: error })
-  }
-  return readListing(body)
 }

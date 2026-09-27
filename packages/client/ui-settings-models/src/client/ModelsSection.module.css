@@ -1,12 +1,4 @@
-/* Models settings section, in the settings-panel design language: 14/22 body,
- * 12/18 caption, capsule controls (h36 r18; h28 r14 where a row is dense),
- * 32px fields, and `border-l2` hairlines — the vocabulary GeneralSection and
- * the Button/Input primitives already use.
- *
- * Every color resolves through a `--dsw-alias-*` token. Bare `--border` /
- * `--surface` / `--text-*` names, which nothing in this app defines, would
- * render the light-mode literals written as their fallbacks and stay light
- * under the dark theme. */
+/* 渠道目录与详情使用设置面板的语义 token；旧引导编辑器仍复用本表单样式。 */
 
 .section {
   display: flex;
@@ -462,9 +454,40 @@
 
 .modelRow {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto auto auto;
   align-items: center;
   gap: 6px;
+}
+
+.modelCapabilities {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.capabilityBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 17px;
+}
+
+.capabilitySupported {
+  background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 12%, transparent);
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.capabilityUnknown {
+  border: 1px dashed var(--dsw-alias-border-l2);
+  background: transparent;
 }
 
 /* Square, label-free affordances: the row's own inputs carry the meaning, so
@@ -669,14 +692,358 @@ select.input {
 .candidateLabel {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
+  min-width: 0;
+  gap: 10px;
+  padding: 8px 12px;
   cursor: pointer;
 }
 
+.candidateLabel input {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--dsw-alias-state-business-primary);
+}
+
+.candidateLabel:has(input:disabled) { cursor: default; }
+
+.candidateAvatar {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--dsw-alias-bg-overlay);
+  color: var(--dsw-alias-label-primary);
+  font-size: 17px;
+  line-height: 24px;
+}
+
 .candidateId {
-  flex: 1 1 auto;
-  font-family: var(--ds-font-family-code);
-  font-size: 13px;
+  min-width: 0;
+  font-size: 15px;
+  line-height: 22px;
   overflow-wrap: anywhere;
+}
+
+/* 模型页的两栏平面：目录可独立滚动，编辑区不再嵌套渠道卡片。 */
+.channelPage {
+  display: grid;
+  grid-template-columns: minmax(220px, 27%) minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.channelRail {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px 12px 12px;
+  border-right: 1px solid var(--dsw-alias-border-l2);
+  box-sizing: border-box;
+}
+
+.channelSearch,
+.candidateSearch {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 20px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.channelSearch:focus-within,
+.candidateSearch:focus-within {
+  border-color: var(--dsw-alias-state-business-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 18%, transparent);
+}
+
+.channelSearch input,
+.candidateSearch input {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.channelSearch input::placeholder,
+.candidateSearch input::placeholder {
+  color: var(--dsw-alias-label-dimmed);
+}
+
+.channelRows {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.channelRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 22px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  text-align: left;
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  cursor: pointer;
+}
+
+.channelRow:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.channelRow.channelSelected { background: var(--dsw-alias-interactive-bg-active); }
+.channelRow:focus-visible,
+.channelAdd:focus-visible,
+.channelBack:focus-visible,
+.candidateGroupHead button:focus-visible,
+.candidateAdd:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+}
+
+.channelAvatar {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-primary);
+  font-size: 15px;
+  line-height: 20px;
+}
+
+.channelName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.channelConfigured {
+  border: 1px solid var(--dsw-alias-state-success-primary);
+  border-radius: 12px;
+  padding: 0 5px;
+  color: var(--dsw-alias-state-success-primary);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.channelAddActions { display: grid; gap: 6px; }
+.channelAdd {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 36px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 18px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  cursor: pointer;
+}
+.channelAdd:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+.channelAdd:disabled { opacity: .45; cursor: default; }
+
+.channelDetail {
+  min-width: 0;
+  min-height: 0;
+  padding: 28px 32px;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+.channelEditor { width: 100%; }
+.channelHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 36px;
+  margin-bottom: 20px;
+  padding-right: 36px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+.channelHeading h2 {
+  margin: 0 0 12px;
+  font-size: 18px;
+  line-height: 26px;
+  font-weight: 600;
+}
+.channelFields { display: flex; flex-direction: column; gap: 22px; }
+.channelFields .fieldLabel,
+.channelFields .modelCatalogTitle {
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+.channelFields .input { height: 38px; }
+.channelFields .customized { border: 0; padding: 0; }
+.channelFields .customizedBody { gap: 22px; padding: 0; }
+.channelFields .modelCatalog { padding-top: 10px; gap: 14px; }
+.channelFields .modelListHead { align-items: center; flex-wrap: wrap; }
+.channelFields .modelCatalogHeading { flex-direction: row; align-items: center; gap: 8px; }
+.channelFields .modelEntry { padding: 8px; }
+.channelBack { display: none; }
+
+.expandedChevron { transform: rotate(180deg); }
+.capabilityControls {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+.capabilityControls label { display: inline-flex; align-items: center; gap: 4px; }
+.capabilityControls input { accent-color: var(--dsw-alias-state-business-primary); }
+
+.fetchDialog {
+  width: min(1500px, calc(100vw - 96px));
+  max-width: min(1500px, calc(100vw - 96px));
+  max-height: calc(100vh - 48px);
+}
+.candidateToolbar { margin-bottom: 16px; }
+.candidateSearch { border-radius: 8px; height: 44px; }
+.candidateActions { justify-content: flex-start; }
+.candidateList { gap: 10px; max-height: min(72vh, 860px); }
+.candidateGroup { border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; overflow: hidden; }
+.candidateGroupHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 12px;
+  background: var(--dsw-alias-bg-module-platform);
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 600;
+}
+.candidateCount {
+  border-radius: 12px;
+  padding: 1px 8px;
+  background: var(--dsw-alias-state-success-tertiary);
+  color: var(--dsw-alias-state-success-primary);
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 500;
+}
+.candidateGroupHead button,
+.candidateAdd {
+  display: grid;
+  flex: none;
+  place-items: center;
+  min-width: 36px;
+  height: 36px;
+  margin-left: auto;
+  padding: 0 5px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+.candidateGroupHead button:hover:not(:disabled),
+.candidateAdd:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+.candidateGroupHead button:disabled,
+.candidateAdd:disabled {
+  color: var(--dsw-alias-state-success-primary);
+  cursor: default;
+  font-size: 12px;
+  line-height: 18px;
+}
+.candidate { display: flex; align-items: center; min-height: 56px; padding-right: 12px; }
+.candidate + .candidate { border-top: 1px solid var(--dsw-alias-border-l1); }
+.candidateLabel { flex: 1; }
+.visionFallback {
+  margin-top: 36px;
+  padding-top: 20px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+.visionFallback h3 { margin: 0; font-size: 15px; line-height: 22px; font-weight: 600; }
+.visionFallback p { margin: 8px 0 14px; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 18px; }
+.visionFallback select.input { max-width: 100%; height: 38px; }
+
+@media (min-width: 900px) {
+  .channelRail { gap: 22px; padding: 20px 18px 18px; }
+  .channelSearch { height: 58px; border-radius: 30px; padding: 0 18px; }
+  .channelSearch input { font-size: 20px; line-height: 28px; }
+  .channelRow { min-height: 64px; gap: 16px; padding: 9px 16px; border-radius: 32px; font-size: 20px; line-height: 28px; }
+  .channelAvatar { width: 42px; height: 42px; font-size: 22px; line-height: 28px; }
+  .channelConfigured { border-radius: 16px; padding: 2px 8px; font-size: 14px; line-height: 20px; }
+  .channelAdd { min-height: 48px; border-radius: 24px; font-size: 18px; line-height: 26px; }
+  .channelDetail { padding: 40px 36px; }
+  .channelHeading { min-height: 54px; margin-bottom: 30px; }
+  .channelHeading h2 { font-size: 26px; line-height: 36px; }
+  .channelFields { gap: 28px; }
+  .channelFields .fieldLabel, .channelFields .modelCatalogTitle { font-size: 22px; line-height: 30px; }
+  .channelFields .input { height: 56px; font-size: 20px; line-height: 28px; }
+  .channelFields .customizedBody { gap: 34px; }
+  .channelFields .modelCatalog { padding-top: 18px; gap: 18px; }
+  .channelFields .modelCatalogMeta { font-size: 15px; line-height: 22px; }
+  .channelFields .modelEntry { padding: 12px; border-radius: 12px; }
+  .channelFields .modelRow { gap: 12px; }
+  .channelFields .capabilityBadge { padding: 4px 10px; border-radius: 15px; font-size: 14px; line-height: 20px; }
+  .channelFields .modelEmpty { font-size: 16px; line-height: 24px; }
+  .channelFields .linkButton, .channelFields .addModelButton { height: 40px; border-radius: 20px; font-size: 17px; line-height: 24px; }
+  .candidateSearch { height: 64px; }
+  .candidateSearch input { font-size: 22px; line-height: 30px; }
+  .fetchDialog h2 { font-size: 28px; line-height: 38px; font-weight: 600; }
+  .fetchDialog > div > p { font-size: 18px; line-height: 26px; }
+  .candidateGroupHead { min-height: 64px; padding: 0 20px; font-size: 22px; line-height: 30px; }
+  .candidateCount { font-size: 15px; line-height: 22px; }
+  .candidate { min-height: 76px; padding-right: 20px; }
+  .candidateLabel { gap: 18px; padding: 12px 20px; }
+  .candidateLabel input { width: 18px; height: 18px; }
+  .candidateAvatar { width: 46px; height: 46px; font-size: 22px; line-height: 30px; }
+  .candidateId { font-size: 20px; line-height: 28px; }
+}
+
+@media (max-width: 620px) {
+  .fetchDialog { width: calc(100vw - 24px); max-width: calc(100vw - 24px); }
+  .candidateList { max-height: min(56vh, 480px); }
+  .channelPage { display: block; }
+  .channelRail, .channelDetail { width: 100%; height: 100%; }
+  .channelRail.mobileHidden, .channelDetail.mobileHiddenDetail { display: none; }
+  .channelDetail { padding: 16px; }
+  .channelBack {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    border: 0;
+    margin: 0 0 12px;
+    padding: 4px 0;
+    background: transparent;
+    color: var(--dsw-alias-label-secondary);
+    font: inherit;
+    font-size: 13px;
+    line-height: 20px;
+  }
+  .channelHeading { padding: 24px 28px 0 0; }
+  .modelRow { grid-template-columns: minmax(0, 1fr) auto auto; }
+  .modelRow .input:nth-child(2) { grid-column: 1 / -1; grid-row: 2; }
+  .modelCapabilities { grid-column: 1 / -1; grid-row: 3; justify-content: flex-start; }
 }

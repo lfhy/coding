@@ -35,7 +35,7 @@ export interface RpcErrorDetailsMap {
   'cancelled': {}
   'session-not-found': { sessionId: SessionId }
   'browser-failed': { reason: BrowserUseErrorCode }
-  'model-unavailable': { provider: string; model: string }
+  'model-unavailable': { provider: string; model: string; reason?: 'MODEL_DOES_NOT_SUPPORT_IMAGES' }
   'session-conflict': { sessionId: SessionId; requestedCwd: string; existingCwd?: string }
   'invalid-time-zone': { value: string }
   'workspace-attach-failed': { sessionId: SessionId; workspaceId: string }

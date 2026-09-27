@@ -39,7 +39,7 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
 export interface SessionListMetadata {
   /** Whether the checkpoint prefix contains no turn/start event. */
   blank: boolean
-  /** Latest source.kind=user message time in the checkpoint prefix. */
+  /** 检查点前最近一条追加来源真人消息的时间；替换副本不刷新。 */
   lastPromptAt: number | null
 }
 
@@ -116,15 +116,17 @@ export interface ModelReasoning {
   defaultEffort?: string
 }
 
-/** One model displayed inside its provider group. */
+/** 提供方分组中的一个建议性模型。 */
 export interface ModelCatalogModel {
-  /** Provider-owned model id. */
+  /** 提供方持有的模型 id。 */
   id: string
-  /** Provider-supplied display name. */
+  /** 提供方提供的显示名称。 */
   name: string
-  /** Optional provider-supplied description. */
+  /** 提供方可选的说明。 */
   description?: string
-  /** Exact-route reasoning metadata when the adapter exposes it. */
+  /** 精确路由的输入能力；字段缺席表示未知，列表中没有 image 表示不接受图片。 */
+  inputModalities?: ('text' | 'image')[]
+  /** 适配器提供时的精确路由推理强度。 */
   reasoning?: ModelReasoning
 }
 

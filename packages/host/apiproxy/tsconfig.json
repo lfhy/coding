@@ -39,6 +39,9 @@
       "path": "../../llm/llm"
     },
     {
+      "path": "../../llm/llm-vision-fallback"
+    },
+    {
       "path": "../../core/agent"
     },
     {

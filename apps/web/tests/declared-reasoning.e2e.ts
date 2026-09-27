@@ -66,14 +66,18 @@ describe.skipIf(MODE === 'record')('web e2e: declared reasoning efforts reach th
     const trigger = page.getByRole('button', { name: /^选择模型/ })
     await trigger.waitFor({ timeout: 15_000 })
     await trigger.click()
+    await page.getByRole('menuitem', { name: 'Acme Gateway' }).click()
+    await page.keyboard.press('Escape')
+    await page.getByRole('menuitem', { name: 'Acme Gateway' }).waitFor()
+    await page.getByRole('menuitem', { name: 'Acme Gateway' }).click()
     await page.getByRole('menuitem', { name: /推理等级/ }).click()
 
     // Declared levels, nothing else: the provider-default entry (the route
-    // configures no `reasoning`), then Off/High/Max — minimal, low, medium,
+    // configures no `reasoning`), then none/High/Max — minimal, low, medium,
     // and xhigh were not declared and must not be offered.
     const levels = page.getByRole('menuitemradio')
     await expect.poll(async () => levels.allTextContents(), { timeout: 10_000 })
-      .toEqual(['Default', 'Off', 'High', 'Max'])
+      .toEqual(['Default', 'none', 'High', 'Max'])
     const snapshot = await captureStableAria(page, '[role="menu"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
 
@@ -86,7 +90,67 @@ describe.skipIf(MODE === 'record')('web e2e: declared reasoning efforts reach th
     ).toContain('reasoningEffort: high')
     await expect.poll(() => trigger.getAttribute('aria-label'), { timeout: 10_000 })
       .toBe('选择模型，当前 Acme Think，推理等级 High')
+    expect(await trigger.evaluate(node => node === document.activeElement)).toBe(true)
+    expect(tripwire.warnings).toEqual([])
     expect(tripwire.pageErrors).toEqual([])
+  }, 60_000)
+
+  it('keeps the menu operable after narrowing and on a fresh narrow page', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-declared-reasoning-narrow'))
+    await page.setViewportSize({ width: 375, height: 812 })
+    await expect.poll(() => page.locator('[data-sidebar-collapsed]').getAttribute('data-sidebar-collapsed')).toBe('true')
+    await expect.poll(async () => (await page.locator('#dsh-layout-sidebar').boundingBox())?.width ?? 375)
+      .toBeLessThanOrEqual(56)
+    const trigger = page.getByRole('button', { name: /^选择模型/ })
+    await trigger.click()
+    const menu = page.getByRole('menu', { name: '渠道、模型与推理等级' })
+    await menu.waitFor()
+    await expect.poll(() => menu.getAttribute('aria-busy')).toBe('false')
+    const bounds = await menu.boundingBox()
+    expect(bounds).not.toBeNull()
+    expect(bounds!.x).toBeGreaterThanOrEqual(0)
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(375)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375)
+    const firstChannel = menu.getByRole('menuitem').first()
+    expect(await firstChannel.evaluate((node) => {
+      const bounds = node.getBoundingClientRect()
+      return node.contains(document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2))
+    })).toBe(true)
+    if (process.env.DSH_SCREENSHOT_DIR !== undefined) {
+      await page.screenshot({ path: join(process.env.DSH_SCREENSHOT_DIR, 'model-menu-375.png'), fullPage: false })
+    }
+    await page.keyboard.press('Escape')
+    await menu.waitFor({ state: 'detached' })
+    expect(await trigger.evaluate(node => node === document.activeElement)).toBe(true)
+    expect(tripwire.warnings).toEqual([])
+    expect(tripwire.pageErrors).toEqual([])
+
+    const fresh = await browser.newPage({ viewport: { width: 375, height: 812 }, locale: ZH_BROWSER_LOCALE })
+    const freshTripwire = watchConsole(fresh)
+    try {
+      await fresh.goto(scaffold.baseUrl, { waitUntil: 'load' })
+      await fresh.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+      await expect.poll(() => fresh.locator('[data-sidebar-collapsed]').getAttribute('data-sidebar-collapsed'))
+        .toBe('true')
+      const freshTrigger = fresh.getByRole('button', { name: /^选择模型/ })
+      await freshTrigger.waitFor({ timeout: 15_000 })
+      await freshTrigger.click()
+      const freshMenu = fresh.getByRole('menu', { name: '渠道、模型与推理等级' })
+      await expect.poll(() => freshMenu.getAttribute('aria-busy')).toBe('false')
+      const first = freshMenu.getByRole('menuitem').first()
+      expect(await first.evaluate((node) => {
+        const bounds = node.getBoundingClientRect()
+        return node.contains(document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2))
+      })).toBe(true)
+      if (process.env.DSH_SCREENSHOT_DIR !== undefined) {
+        await fresh.screenshot({ path: join(process.env.DSH_SCREENSHOT_DIR, 'model-menu-fresh-375.png'), fullPage: false })
+      }
+      expect(await fresh.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375)
+      expect(freshTripwire.warnings).toEqual([])
+      expect(freshTripwire.pageErrors).toEqual([])
+    } finally {
+      await fresh.close()
+    }
   }, 60_000)
 
   it('keeps its snapshot inventory closed', async () => {

@@ -107,7 +107,15 @@ describe('web e2e: the composer model switch is the default for later sessions',
     const trigger = page.getByRole('button', { name: /^选择模型/ })
     await trigger.waitFor({ timeout: 15_000 })
     await trigger.click()
-    await page.getByRole('menuitem', { name: /模型/ }).click()
+    await expect.poll(() => page.getByRole('menu').getAttribute('aria-busy')).toBe('false')
+    const origin = page.getByRole('menuitem', { name: 'Origin Gateway' })
+    await expect.poll(() => origin.getAttribute('aria-current')).toBe('true')
+    await expect.poll(() => page.getByRole('menuitem', { name: 'Acme Gateway' }).getAttribute('aria-current')).toBe(null)
+    await page.getByRole('menuitem', { name: 'Acme Gateway' }).click()
+    await page.getByRole('menuitemradio', { name: 'Acme Large' }).waitFor()
+    await page.getByRole('menuitem', { name: 'Acme Gateway' }).click()
+    await origin.waitFor()
+    await page.getByRole('menuitem', { name: 'Acme Gateway' }).click()
     await page.getByRole('menuitemradio', { name: 'Acme Large' }).click()
 
     // The switch is what sets the default: the shared Agent-route settings section
@@ -125,6 +133,7 @@ describe('web e2e: the composer model switch is the default for later sessions',
       .toEqual({ provider: ROUTE, model: MODEL })
     // ...while the one holding a logged route keeps deriving from its log.
     expect(await currentOf(loggedId)).toEqual({ provider: START_ROUTE, model: START_MODEL })
+    expect(tripwire.warnings).toEqual([])
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
@@ -154,14 +163,24 @@ describe('web e2e: the composer model switch is the default for later sessions',
     })
     expect(refused.result).toMatchObject({ ok: false, error: { code: 'model-unavailable' } })
 
-    // The way out stays open. Locking the model seat with everything else
-    // would leave the composer asking for the one thing it prevents.
+    // 恢复一个可用渠道后，模型入口仍可解锁输入框；空目录中不能凭空选择模型。
+    await scaffold.ctx.settings.replace(settingsNamespace('llm-pi-ai'), {
+      providers: {
+        [START_ROUTE]: {
+          displayName: 'Origin Gateway',
+          api: 'openai-completions',
+          baseURL: 'https://gateway.origin.example/v1',
+          models: [{ id: START_MODEL, name: 'Origin Large' }],
+        },
+      },
+    })
     const seat = page.getByRole('button', { name: /^选择模型/ })
     expect(await seat.isEnabled()).toBe(true)
     await seat.click()
-    await page.getByRole('menuitem', { name: /模型/ }).click()
+    await page.getByRole('menuitem', { name: 'Origin Gateway' }).click()
     await page.getByRole('menuitemradio').first().click()
     await expect.poll(async () => box.isEnabled(), { timeout: 15_000 }).toBe(true)
+    expect(tripwire.warnings).toEqual([])
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 })

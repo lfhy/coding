@@ -37,6 +37,7 @@ import { approvalRequestIdSchema, approvalResponsePayloadSchema } from '../src/a
 import { askUserQuestionAnswerSchema, questionResponsePayloadSchema } from '../src/api/questions.schema.ts'
 import { goalEditRequestSchema } from '../src/api/goals.schema.ts'
 import { subagentPromptRequestSchema } from '../src/api/subagents.schema.ts'
+import { llmModelsValueSchema } from '../src/api/llm.schema.ts'
 
 describe('RpcId', () => {
   it('brands a raw string at zero runtime cost', () => {
@@ -72,6 +73,10 @@ describe('rpcErrorSchema', () => {
       message: 'm',
       details: { provider: 'p', model: 'm' },
     }).code).toBe('model-unavailable')
+    expect(rpcErrorSchema.parse({
+      code: 'model-unavailable', message: 'm',
+      details: { provider: 'p', model: 'm', reason: 'MODEL_DOES_NOT_SUPPORT_IMAGES' },
+    }).details).toEqual({ provider: 'p', model: 'm', reason: 'MODEL_DOES_NOT_SUPPORT_IMAGES' })
     expect(rpcErrorSchema.parse({ code: 'agent-busy', message: 'm', details: { reason: 'r' } }).code).toBe('agent-busy')
     expect(rpcErrorSchema.parse({ code: 'queue-item-not-found', message: 'm', details: { itemId: 'i' } }).code).toBe('queue-item-not-found')
     expect(rpcErrorSchema.parse({ code: 'command-error', message: 'm', details: {} }).code).toBe('command-error')
@@ -214,6 +219,7 @@ describe('sessions domain schemas', () => {
           id: 'deepseek-v4-flash',
           name: 'DeepSeek V4 Flash',
           description: 'fast',
+          inputModalities: ['text', 'image'],
           reasoning: {
             efforts: [
               { id: 'off', name: 'Off' },
@@ -224,7 +230,23 @@ describe('sessions domain schemas', () => {
         }],
       }],
       failures: [{ id: 'broken', name: 'Broken', message: 'offline' }],
-    }).groups[0]?.models[0]?.id).toBe('deepseek-v4-flash')
+    }).groups[0]?.models[0]?.inputModalities).toEqual(['text', 'image'])
+    expect(llmModelsValueSchema.parse({
+      groups: [{ id: 'p', name: 'Provider', models: [
+        { id: 'unknown', name: 'Unknown' },
+        { id: 'text-only', name: 'Text Only', inputModalities: ['text'] },
+      ] }],
+      failures: [],
+    }).groups[0]?.models).toEqual([
+      { id: 'unknown', name: 'Unknown' },
+      { id: 'text-only', name: 'Text Only', inputModalities: ['text'] },
+    ])
+    for (const inputModalities of [['audio'], ['text', 'audio'], 'image']) {
+      expect(() => llmModelsValueSchema.parse({
+        groups: [{ id: 'p', name: 'Provider', models: [{ id: 'm', name: 'M', inputModalities }] }],
+        failures: [],
+      })).toThrow()
+    }
     expect(sessionSelectModelRequestSchema.parse({
       sessionId: 's1',
       provider: 'deepseek-official',

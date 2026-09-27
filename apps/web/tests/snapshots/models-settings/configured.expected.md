@@ -1,34 +1,78 @@
 - dialog "设置":
-  - navigation:
-    - text: 设置
-    - button "通用设置":
-      - img
-      - text: 通用设置
-    - button "模型":
-      - img
-      - text: 模型
-    - button "插件":
-      - img
-      - text: 插件
-    - button "Agent 预设":
-      - img
-      - text: Agent 预设
-  - button "打开配置文件"
   - button "关闭":
     - img
     - text: 关闭
-  - heading "模型" [level=2]
-  - paragraph: 填入各提供方的 API 密钥即可使用其模型。
-  - status: 已保存 minimax-cn。
-  - list:
-    - listitem:
-      - text: minimax-cn
-      - img "API 密钥已配置"
-      - button "编辑 minimax-cn": 编辑
-      - button "删除 minimax-cn": 删除
-  - button "添加提供方":
+  - complementary "提供方":
     - img
-    - text: 添加提供方
-  - button "添加自定义提供方":
-    - img
-    - text: 添加自定义提供方
+    - textbox "搜索模型平台…"
+    - button "amazon-bedrock"
+    - button "ant-ling"
+    - button "anthropic"
+    - button "azure-openai-responses"
+    - button "cerebras"
+    - button "cloudflare-ai-gateway"
+    - button "cloudflare-workers-ai"
+    - button "deepseek"
+    - button "fireworks"
+    - button "github-copilot"
+    - button "google"
+    - button "google-vertex"
+    - button "groq"
+    - button "huggingface"
+    - button "kimi-coding"
+    - button "minimax"
+    - button "minimax-cn 已配置"
+    - button "mistral"
+    - button "moonshotai"
+    - button "moonshotai-cn"
+    - button "nvidia"
+    - button "openai"
+    - button "opencode"
+    - button "opencode-go"
+    - button "openrouter"
+    - button "qwen-token-plan"
+    - button "qwen-token-plan-cn"
+    - button "together"
+    - button "vercel-ai-gateway"
+    - button "xai"
+    - button "xiaomi"
+    - button "xiaomi-token-plan-ams"
+    - button "xiaomi-token-plan-cn"
+    - button "xiaomi-token-plan-sgp"
+    - button "zai"
+    - button "zai-coding-cn"
+    - button "添加提供方":
+      - img
+      - text: 添加提供方
+    - button "添加自定义提供方":
+      - img
+      - text: 添加自定义提供方
+  - main:
+    - status: 已保存 minimax-cn。
+    - heading "minimax-cn" [level=2]
+    - button "删除"
+    - text: API 密钥
+    - textbox "API 密钥":
+      - /placeholder: 已配置——输入新值可替换
+    - text: API 地址
+    - textbox "API 地址":
+      - /placeholder: https://gateway.minimax.example/v1
+      - text: https://gateway.minimax.example/v1
+    - region "模型目录":
+      - text: 模型目录 正在使用适配器默认模型
+      - button "获取可用模型":
+        - img
+        - text: 获取可用模型
+      - paragraph: 模型选择器中将不显示任何模型；目录外 ID 仍可直接发送。
+      - button "添加模型":
+        - img
+        - text: 添加模型
+    - button "取消"
+    - button "保存"
+    - region "视觉理解工具":
+      - heading "视觉理解工具" [level=3]
+      - paragraph: 纯文本模型收到图片时，先由选定的视觉模型生成描述；未配置时将提示不支持图片。
+      - text: 视觉模型
+      - combobox "视觉模型":
+        - option "未配置" [selected]
+        - option "minimax-cn / MiniMax-M3"

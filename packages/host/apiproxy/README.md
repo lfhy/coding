@@ -14,6 +14,10 @@ Settings 分节中的 `reasoningEffort` 在 agent-default-model 插件配置中�
 
 存储的选择独立于目录成员关系。默认值指向不可用的提供方时，它仍会作为会话的 `current` 送到 `session.models`，让选择器请求用户重新选择，而不是静默选用其他模型。反过来，适配器也可以服务其目录中未公布的模型。
 
+`session.models` 和 `llm.models` 共用已注册路由的目录投影。每个模型可携带适配器按精确路由解析的 `inputModalities`（`text`／`image`）及推理强度；字段缺席表示能力未知，显式只有 `text` 表示不接受图片。`llm.discoverModels` 返回的端点候选不提供这些能力，也不会自动进入目录；用户保存配置后，由已注册适配器重新解析。
+
+对明确不支持图片的模型，`session.prompt` 在保存附件前、`session.selectModel` 在切换选择前检查本次图片以及当前模型历史和待处理 inbox 中的图片。只有可选的 `ctx.visionUnderstanding.status().configured` 报告显式视觉路由已配置时才放行；未配置时分别返回 `attachment-error` 或 `model-unavailable`，其稳定 `details.reason` 均为 `MODEL_DOES_NOT_SUPPORT_IMAGES`，提示在设置中配置视觉理解模型。放行仅表示允许把原图保存在 Session 中，不代表图片已成功描述；请求前的[视觉理解插件](../../llm/llm-vision-fallback/README.md)负责真实描述、持久替换及失败时阻止文本模型收到图片。模型输入能力未知或本身支持图片时，不触发这项拒绝；附件大小、类型及数量仍由宿主验证，客户端不能绕过该检查直接提交图片字节。
+
 ## 约定层（`/api`）
 
 协议消息组成一个四象限可辨识联合：发起方 × 请求／响应，与物理通道解耦。四种消息分别是 `ClientRequest`（POST `/api/<method>` 的请求体）、`ServerResponse`（该 POST 的响应体）、`ServerRequest`（SSE（Server-Sent Events）帧）和 `ClientResponse`（POST `/api/respond` 的请求体）。响应始终回显对应请求的 `rpcId`，绝不签发新值。方法的参数与返回值结构只存在于领域接口签名（`SessionsApi`、`HostApi`、`EventsApi`）中；`RpcMethodMap` 注册方法，其他所有位置均通过 `RequestPayload<K>`／`ResponseValue<K>` 派生。Zod schema 以 `satisfies z.ZodType<Wire<T>>` 锚定类型，并分两层解析：先解析信封，再解析业务载荷，随后按方法分发。业务错误由 `RpcResult` 的错误分支承载（`RpcErrorDetailsMap` 封闭错误码集合）；HTTP 状态只表达载体层结果。每个 `/api` POST 都必须声明 `application/json` 媒体类型——否则在分发前即以 415 拒绝，因此跨站「简单请求」（浏览器不经 CORS 预检就会发出）永远无法盲目执行有副作用的方法。

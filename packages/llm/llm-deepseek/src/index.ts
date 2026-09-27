@@ -14,7 +14,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { assertUsableApiKey, LlmError, resolveRetryPolicy, RetryPolicySchema } from '@deepseek-ai/dsh-llm'
-import type { ModelModality, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
+import type { LlmModelDiscoveryRequest, ModelModality, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { launchEnvironmentOf, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { deepEqualJson, installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
@@ -28,6 +28,7 @@ import {
   DeepSeekAdapter,
 } from './adapter.ts'
 import type { DeepSeekCatalogModel, DeepSeekConnectionOptions } from './adapter.ts'
+import { discoverModels } from './discovery.ts'
 
 export {
   DEFAULT_CONTEXT_WINDOW,
@@ -54,6 +55,7 @@ const DEFAULT_MODELS: DeepSeekCatalogModel[] = [
 ]
 
 const MODEL_MODALITIES = ['text', 'image'] as const satisfies readonly ModelModality[]
+const MODEL_REASONING_EFFORTS = ['off', 'low', 'high', 'max'] as const
 
 /**
  * 插件配置也作为 `llm-deepseek` settings 分节的结构，所有字段在 yml 中均可省略。
@@ -93,6 +95,8 @@ const catalogModel: z<DeepSeekCatalogModel> = z.object({
   contextWindow: z.number().step(1).min(1),
   maxTokens: z.number().step(1).min(1),
   inputModalities: z.array(z.union(MODEL_MODALITIES)).min(1).default(['text']),
+  // 联合避免 Schemastery 把缺失的数组字段物化为 []；false 在 resolver 被拒绝。
+  reasoningEfforts: z.union([z.const(false), z.array(z.union(MODEL_REASONING_EFFORTS)).min(1)]) as unknown as z<NonNullable<DeepSeekCatalogModel['reasoningEfforts']>>,
 })
 
 export const Config: z<Config> = z.object({
@@ -155,6 +159,15 @@ function resolveModels(models: readonly DeepSeekCatalogModel[] | undefined): Dee
     if (new Set(inputModalities).size !== inputModalities.length) {
       throw new Error(`llm-deepseek: catalog model "${model.id}" inputModalities must not contain duplicates`)
     }
+    const efforts = model.reasoningEfforts
+    if (efforts !== undefined) {
+      if (!Array.isArray(efforts) || efforts.length === 0 || efforts.some(effort => !MODEL_REASONING_EFFORTS.includes(effort))) {
+        throw new Error(`llm-deepseek: catalog model "${model.id}" reasoningEfforts must contain supported efforts`)
+      }
+      if (new Set(efforts).size !== efforts.length) {
+        throw new Error(`llm-deepseek: catalog model "${model.id}" reasoningEfforts must not contain duplicates`)
+      }
+    }
     if (seen.has(model.id)) throw new Error(`llm-deepseek: duplicate catalog model "${model.id}"`)
     seen.add(model.id)
     return {
@@ -164,6 +177,7 @@ function resolveModels(models: readonly DeepSeekCatalogModel[] | undefined): Dee
       ...model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow },
       ...model.maxTokens === undefined ? {} : { maxTokens: model.maxTokens },
       inputModalities: [...inputModalities],
+      ...efforts === undefined ? {} : { reasoningEfforts: [...efforts] },
     }
   })
 }
@@ -191,6 +205,10 @@ export function resolveAdapterOptions(config: Config, environment?: LaunchEnviro
     && config.reasoningEffort !== undefined
     && config.reasoningEffort !== 'off') {
     throw new Error('llm-deepseek: only reasoningEffort "off" can be configured when thinking is disabled')
+  }
+  if (config.thinking === 'disabled' && config.models?.some(model =>
+    model.reasoningEfforts !== undefined && (model.reasoningEfforts.length !== 1 || model.reasoningEfforts[0] !== 'off'))) {
+    throw new Error('llm-deepseek: model reasoningEfforts must be ["off"] when thinking is disabled')
   }
   if (config.defaultContextWindow !== undefined
     && (!Number.isInteger(config.defaultContextWindow) || config.defaultContextWindow <= 0)) {
@@ -289,6 +307,8 @@ export function apply(ctx: Context, config: Config): void {
   ctx.llm.registerConfigurableProviders([
     { provider: PROVIDER, displayName: 'DeepSeek', settingsNs: NS, settingsPath: [] },
   ])
+  ctx.llm.registerModelDiscovery(NS, (request: LlmModelDiscoveryRequest) =>
+    discoverModels(request, options(), resolveApiKey))
   // Route effects bind to this apply fiber via the stable `ctx` reference,
   // even when a swap runs inside the scoped settings callback below.
   const registration = ctx.llm.registerAdapter([PROVIDER], adapter)

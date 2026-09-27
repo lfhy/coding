@@ -192,6 +192,24 @@ describe('request-level dynamic configuration', () => {
     ])
   })
 
+  it('discovers from the latest settings endpoint and its matching credential', async () => {
+    vi.stubEnv('DEEPSEEK_API_KEY', '')
+    const dir = await home()
+    const { ctx } = await boot(dir, { baseURL: 'https://first.example/v1' })
+    const fetcher = vi.fn((_input: RequestInfo | URL, _init?: RequestInit) => Promise.resolve(Response.json({ data: [{ id: 'remote-model' }] })))
+    vi.stubGlobal('fetch', fetcher)
+    try {
+      await ctx.settings.update(NS, { baseURL: 'https://second.example/v1' })
+      await ctx.credentials.set(KEY_REF, 'second-key')
+      await expect(ctx.llm.discoverModels('llm-deepseek', { provider: 'deepseek-official' }))
+        .resolves.toEqual([{ id: 'remote-model' }])
+      expect(fetcher.mock.calls[0]?.[0]).toBe('https://second.example/v1/models')
+      expect(fetcher.mock.calls[0]?.[1]).toMatchObject({ headers: { authorization: 'Bearer second-key' } })
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('applies a changed request image bound to the next request', async () => {
     vi.stubEnv('DEEPSEEK_API_KEY', 'test-key')
     const dir = await home()

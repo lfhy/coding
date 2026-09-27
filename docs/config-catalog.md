@@ -990,14 +990,16 @@ export interface DeepSeekCatalogModel {
   contextWindow?: number
   /** Per-request output cap for this model; omission falls back to the profile's {@link DeepSeekConnectionOptions.maxTokens}. */
   maxTokens?: number
-  /** Accepted request modalities; omission is text-only. */
+  /** 可接收的输入模态；省略时仅支持文本。 */
   inputModalities?: ModelModality[]
+  /** 该模型允许的推理档位；省略时使用渠道级能力。 */
+  reasoningEfforts?: Array<'off' | 'low' | 'high' | 'max'>
 }
 ```
 
-Depends on: [`ModelModality`](../packages/llm/llm/src/index.ts) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
+Depends on: [`ModelModality`](subsystems/llm-streaming.md) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
 
-Source: [`packages/llm/llm-deepseek/src/index.ts:64`](../packages/llm/llm-deepseek/src/index.ts)
+Source: [`packages/llm/llm-deepseek/src/index.ts:66`](../packages/llm/llm-deepseek/src/index.ts)
 
 <a id="deepseek-aidsh-llm-pi-ai"></a>
 
@@ -1313,7 +1315,7 @@ export interface ReplayModelConfig {
 }
 ```
 
-Depends on: [`ModelModality`](../packages/llm/llm/src/index.ts) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
+Depends on: [`ModelModality`](subsystems/llm-streaming.md) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
 
 Source: [`packages/test-support/llm-replay/src/index.ts:776`](../packages/test-support/llm-replay/src/index.ts)
 
@@ -1329,6 +1331,34 @@ export type Config = Readonly<Record<string, never>>
 ```
 
 Source: [`packages/llm/llm-retry/src/index.ts:24`](../packages/llm/llm-retry/src/index.ts)
+
+<a id="deepseek-aidsh-llm-vision-fallback"></a>
+
+## `@deepseek-ai/dsh-llm-vision-fallback`
+
+Requires: `llm` · `sessions`
+
+```ts config-catalog
+/** 用户显式选择的视觉模型和资源预算。 */
+export interface Config {
+  /** 可选，但若提供则必须与 model 成对。 */
+  provider?: string
+  /** 可选，但若提供则必须与 provider 成对。 */
+  model?: string
+  /** 一次请求最多处理的图片数量。 */
+  maxImagesPerRequest: number
+  /** 一次请求中附件声明的总编码字节上限。 */
+  maxImageBytesPerRequest: number
+  /** 单张图片描述的 UTF-16 字符上限。 */
+  maxDescriptionChars: number
+  /** 辅助调用的输出 token 上限。 */
+  maxOutputTokens: number
+  /** 整批视觉降级的毫秒期限。 */
+  timeoutMs: number
+}
+```
+
+Source: [`packages/llm/llm-vision-fallback/src/index.ts:72`](../packages/llm/llm-vision-fallback/src/index.ts)
 
 <a id="deepseek-aidsh-lsp-stdio"></a>
 

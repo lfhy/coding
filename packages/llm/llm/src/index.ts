@@ -148,22 +148,23 @@ export function assertUsableApiKey(raw: string, pkg: string, ref: string): strin
   )
 }
 
-/** One model call whose config and adapter registration were resolved together. */
+/** 与确切适配器注册一同解析的单次模型调用。 */
 export interface PreparedLlmCall {
-  /** Detached, deep-frozen config with any adapter-owned default materialized. */
+  /** 已填入适配器默认值且与适配器状态分离的深冻结配置。 */
   readonly config: LlmCallConfig
-  /** Immutable retry policy captured with the adapter registration. */
+  /** 与适配器注册一同捕获的不可变重试策略。 */
   readonly retryPolicy: ResolvedRetryPolicy
-  /** Detached context metadata resolved with the registration-bound call. */
+  /** 同次精确解析所得且与适配器状态分离的上下文元数据。 */
   readonly context?: LlmModelContext
-  /** Config fields materialized by the captured adapter rather than proposed by the caller. */
+  /** 同一次精确模型解析所得的输入模态；缺席表示能力未知。 */
+  readonly inputModalities?: readonly ModelModality[]
+  /** 由适配器默认值而非调用方提议填入的配置字段。 */
   readonly adapterDefaults: LlmCallConfigAdapterDefaults
   /**
-   * Dispatch this call once through the registration captured during
-   * preparation. The request's call-config fields must match {@link config};
-   * reuse or mismatch fails with `INVALID_PREPARED_CALL`.
-   * @param options - fully assembled request carrying the prepared config.
-   * @returns the chunk stream, including the `llm/stream` waterfall.
+   * 通过准备时捕获的注册项分发一次。请求配置字段必须与 {@link config} 一致；
+   * 重复调用或配置不符时以 `INVALID_PREPARED_CALL` 失败。
+   * @param options - 携带已准备配置的完整请求。
+   * @returns 包含 `llm/stream` waterfall 的分片流。
    */
   stream(options: GenerateOptions): AsyncIterable<StreamChunk>
 }
@@ -730,7 +731,7 @@ export class LlmRuntime extends Service {
     registration: AdapterRegistration,
     config: LlmCallConfig,
     signal?: AbortSignal,
-  ): Promise<{ config: LlmCallConfig; context?: LlmModelContext }> {
+  ): Promise<{ config: LlmCallConfig; context?: LlmModelContext; inputModalities?: readonly ModelModality[] }> {
     const info = await this.resolveModelInfoFor(registration, config.model, signal)
     const defaulted = config.maxTokens === undefined && info.defaultMaxTokens !== undefined
       ? { ...config, maxTokens: info.defaultMaxTokens }
@@ -760,6 +761,7 @@ export class LlmRuntime extends Service {
     return {
       config: resolvedConfig,
       ...info.context === undefined ? {} : { context: info.context },
+      ...info.inputModalities === undefined ? {} : { inputModalities: info.inputModalities },
     }
   }
 
@@ -778,6 +780,9 @@ export class LlmRuntime extends Service {
     const context = resolved.context === undefined
       ? undefined
       : deepFreeze(structuredClone(resolved.context))
+    const inputModalities = resolved.inputModalities === undefined
+      ? undefined
+      : Object.freeze([...resolved.inputModalities])
     const adapterDefaults = deepFreeze<LlmCallConfigAdapterDefaults>({
       ...config.reasoningEffort === undefined && resolvedConfig.reasoningEffort !== undefined
         ? { reasoningEffort: true }
@@ -792,6 +797,7 @@ export class LlmRuntime extends Service {
       retryPolicy: registration.retryPolicy,
       adapterDefaults,
       ...context === undefined ? {} : { context },
+      ...inputModalities === undefined ? {} : { inputModalities },
       stream: (options: GenerateOptions): AsyncIterable<StreamChunk> => {
         if (dispatched) {
           throw new LlmError('a prepared LLM call can only be dispatched once', 'INVALID_PREPARED_CALL')

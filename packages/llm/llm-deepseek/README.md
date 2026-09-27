@@ -36,6 +36,7 @@ harness LLM（大语言模型）seam 的 DeepSeek chat-completions 适配器：�
       - id: private-reasoner
         description: Company-hosted reasoning model
         contextWindow: 512000
+        reasoningEfforts: [off, low] # 可选；仅公布并接受这两个档位
 ```
 
 `channelName` 是当前唯一 DeepSeek 渠道的显示名称，省略时为 `default`；可使用中文和空格，但不能是空字符串或全空白，最多 64 个字符。自定义名称可通过 `llm-deepseek` settings 分节持久保存，不进入模型请求；它不改变路由 id `deepseek-official`、凭据引用 `DEEPSEEK_API_KEY` 或 settings 路径，也不创建第二条渠道。多渠道配置尚未提供。
@@ -50,7 +51,7 @@ harness LLM（大语言模型）seam 的 DeepSeek chat-completions 适配器：�
 
 `maxTokens` 是适配器为对话请求配置的输出上限，默认值为 256,000。Catalog 配置项可以自带 `maxTokens`，它对该模型胜出；不含该上限的配置项以及任何未列出原样传递 id 都解析为 profile 值，因此新增按模型的上限只改变一个模型，而非整条路由。确切模型解析会将胜出值公开为 `defaultMaxTokens`；`LlmRuntime` 会在 agent loop（智能体循环）写入 `request/header` 前，将该值填入 `GenerateOptions.maxTokens`，从而仍可根据持久记录重建协议请求。显式的请求值或 `AgentOptions.maxTokens` 值优先，并会序列化为 `max_tokens`。适配器不会根据 `contextWindow` 自动调低该请求预算；上下文或提供方输出上限较小的部署必须配置与其相容的 `maxTokens`。
 
-同一确切模型结果会在部署策略允许思考时，为每个原样传递模型在 `reasoning` 下公开有序的 `off`、`low`、`high` 和 `max` 推理（reasoning）强度。`reasoningEffort` 选择部署默认值，省略时回退为 `high`。`agent/request` 可以在每个会话步骤替换它；解析后的值会记录在 `request/header`。`low`、`high` 和 `max` 会启用思考，并以同名值序列化为官方顶层 `reasoning_effort`；适配器持有的 `off` 则序列化为 `thinking.type: disabled`，且省略 `reasoning_effort`。不支持的值会在网络 I/O 前以 `UNSUPPORTED_REASONING_EFFORT` 失败。
+同一确切模型结果默认在部署策略允许思考时公开有序的 `off`、`low`、`high` 和 `max` 推理（reasoning）强度；配置项的 `reasoningEfforts` 可以缩小该模型的档位，请求也不能使用被排除的档位。`reasoningEffort` 选择部署默认值，省略时回退为 `high`；默认值不在某模型列表中时，使用其第一个档位。未列出的原样传递模型保留路由级档位。`agent/request` 可以在每个会话步骤替换它；解析后的值会记录在 `request/header`。`low`、`high` 和 `max` 会启用思考，并以同名值序列化为官方顶层 `reasoning_effort`；适配器持有的 `off` 则序列化为 `thinking.type: disabled`，且省略 `reasoning_effort`。不支持的值会在网络 I/O 前以 `UNSUPPORTED_REASONING_EFFORT` 失败。
 
 `thinking: disabled` 是部署锁定：它只公布 `off`，并以 `off` 为默认值。省略 `reasoningEffort` 或将其配置为 `off` 均有效；配置 `low`、`high` 或 `max` 会使插件加载失败，直接按请求启用思考也会在网络 I/O 前失败。携带 `GenerateOptions.purpose: 'session-title'` 的请求也会强制禁用思考并省略已解析的推理强度，将有界输出保留给可见标题文本，不改变会话或压缩（compaction）默认值。
 
@@ -67,6 +68,8 @@ harness LLM（大语言模型）seam 的 DeepSeek chat-completions 适配器：�
 唯一在注册期捕获的事实是重试策略：其解析值变化时，插件原地重新注册该路由（同一适配器实例、一个同步区段），因此 `ctx.llm.providerRetryPolicy('deepseek-official')` 始终报告当前策略。
 
 该插件还会在可配置提供方目录（`ctx.llm.listConfigurableProviders()`）中声明自己的路由：提供方为 `deepseek-official`，settings namespace 为 `llm-deepseek`，settings path 为空——整个分节就是 profile。配置界面借助该条目，把本适配器与休眠的 pi-ai 提供方一并呈现。
+
+该 namespace 的“获取可用模型”会向当前端点发起 `GET /models`；公开地址 `https://api.deepseek.com` 使用 `GET /v1/models`，已带 `/v1` 的地址不会叠加。列表只提供可导入的 id 和服务端实际报告的名称、容量，不替代用户配置，也不凭列表推断视觉或推理能力。请求携带草稿密钥；未提供时仅在草稿地址与当前配置端点相同时读取已存凭据，不把已存密钥发送到其他草稿端点。HTTP 重定向不会跟随；非法 URL、非成功状态、无效 JSON／列表和超过 4 MiB 的响应会失败，请求在 10 秒后超时且支持取消。
 
 ## 应用归因
 

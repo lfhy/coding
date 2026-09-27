@@ -117,6 +117,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Adapters register provider implementations; the loop and compaction call the provider-neutral stream service.',
   },
   {
+    key: 'visionUnderstanding',
+    pkg: 'llm-vision-fallback',
+    title: 'Durable image understanding for text-only models',
+    mode: 'core',
+    consumers: ['apiproxy'],
+    note: 'An explicit image-capable route describes durable attachment references before a text-only request; apiproxy reads only whether that route is configured, while the request-history listener owns validation and replayable replacements.',
+  },
+  {
     key: 'tokenMeter',
     pkg: 'token-meter',
     title: 'Replay token measurement',

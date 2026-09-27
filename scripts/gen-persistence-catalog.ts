@@ -44,6 +44,8 @@ const LINK_MAP: Record<string, string> = {
   ScheduleChange: 'schedule.md',
   StreamChunk: 'llm-streaming.md',
   TokenUsage: 'llm-streaming.md',
+  VisionDescriptionEventData: 'vision-understanding.md',
+  VisionRequestEventData: 'vision-understanding.md',
   TodoItem: 'session.md',
   TurnTrigger: 'session.md',
   TurnEndReason: 'session.md',

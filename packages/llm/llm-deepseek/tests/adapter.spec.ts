@@ -800,6 +800,14 @@ describe('plugin registration and config', () => {
       })
   })
 
+  it('serializes the first supported model effort when the profile default is unavailable', async () => {
+    const server = await mockServer([{ kind: 'sse', events: textEvents }])
+    const ctx = await harness(server.url, { models: [{ id: 'off-only', reasoningEfforts: ['off'] }] })
+    await assemble(ctx, { model: 'off-only', messages: [] })
+    expect(server.requests[0]).toMatchObject({ model: 'off-only', thinking: { type: 'disabled' } })
+    expect(server.requests[0]).not.toHaveProperty('reasoning_effort')
+  })
+
   it.each(['off', 'low', 'max'] as const)('uses the configured %s reasoning default', async (effort) => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
@@ -967,6 +975,8 @@ describe('plugin registration and config', () => {
     [[{ id: 'm', contextWindow: 1.5 }], /contextWindow/],
     [[{ id: 'm', inputModalities: [] }], /inputModalities/],
     [[{ id: 'm', inputModalities: ['text', 'text'] }], /inputModalities must not contain duplicates/],
+    [[{ id: 'm', reasoningEfforts: [] }], /reasoningEfforts/],
+    [[{ id: 'm', reasoningEfforts: ['off', 'off'] }], /reasoningEfforts must not contain duplicates/],
     [[{
       id: 'm',
       inputModalities: ['audio'] as unknown as NonNullable<LlmDeepSeek.DeepSeekCatalogModel['inputModalities']>,
@@ -994,6 +1004,11 @@ describe('plugin registration and config', () => {
 
   it.each(invalidProgrammaticModalities)('rejects programmatic modality config that bypasses the schema', (models, message) => {
     expect(() => resolveAdapterOptions({ models: [...models] })).toThrow(message)
+  })
+
+  it('rejects a model that enables thinking under a disabled deployment', () => {
+    expect(() => resolveAdapterOptions({ thinking: 'disabled', models: [{ id: 'm', reasoningEfforts: ['low'] }] }))
+      .toThrow(/reasoningEfforts must be/)
   })
 
   it.each([0, 1.5])('rejects a per-model output cap of %s', (maxTokens) => {

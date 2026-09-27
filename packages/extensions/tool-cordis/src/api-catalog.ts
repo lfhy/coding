@@ -2172,6 +2172,25 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'visionUnderstanding',
+    summary: '请求前降级服务；Host 可同步读取显式配置状态。',
+    description: '请求前降级服务；Host 可同步读取显式配置状态。',
+    methods: [
+      {
+        signature: 'status(): { configured: boolean; provider?: string; model?: string }',
+        description: '返回路由是否由设置或组合显式、完整地指定；不代表凭据和模型可用。',
+        parameters: [],
+        returns: '供 Host 提前把有图片的文本模型请求判为可尝试的状态。',
+      },
+      {
+        signature: 'async prepareHistory( session: Session, target: LlmCallConfig, inputModalities: readonly string[] | undefined, signal: AbortSignal, ): Promise<void>',
+        description: '只在主模型没有图片输入能力且 surface 含图片时生成描述；失败不会委托主模型。',
+        parameters: [{ name: 'session', description: '请求所属的持久会话。' }, { name: 'target', description: '本次主请求的精确模型路由。' }, { name: 'inputModalities', description: '与主请求同一次解析的能力；缺席视为未知且不触发降级。' }, { name: 'signal', description: 'agent 的轮次取消信号。' }],
+        returns: '全部替换写入并通过持久化检查点后结算。',
+      },
+    ],
+  },
+  {
     key: 'web',
     summary: 'The web access service.',
     description: 'The web access service. Registered as `ctx.web` (one instance per context).\n\nSelection semantics (resolved at execution time, never order-dependent):\n\n- A configured id that is registered and `available()` → that provider.\n- A configured id not registered → `WEB_PROVIDER_CONFIGURED_MISSING`.\n- A configured id registered but unavailable → `WEB_PROVIDER_CONFIGURED_UNAVAILABLE`.\n- No id configured, exactly one registered usable provider → that provider.\n- No id configured, multiple usable providers → `WEB_PROVIDER_AMBIGUOUS`.\n- No id configured, no usable provider → `WEB_PROVIDER_UNAVAILABLE`.',
@@ -2392,6 +2411,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'Handle one failed model-request attempt before the loop retries or closes its step.',
     description: 'Handle one failed model-request attempt before the loop retries or closes its step. A listener returns `{ kind: \'retry\' }` without calling `next()` when it owns recovery, or calls `next()` to delegate. The default `undefined` leaves the failure terminal.',
     parameters: [{ name: 'payload', description: '.signal - the turn abort signal. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.' }],
+  },
+  {
+    name: 'agent/request-history',
+    mode: 'waterfall',
+    signature: '\'agent/request-history\'(this: Scoped<Agent>, payload: { agent: Agent; session: Session; config: LlmCallConfig; inputModalities?: readonly ModelModality[]; turn: number; step: number; signal: AbortSignal }, next: () => Promise<void>): Promise<void>',
+    summary: '在生效配置经精确适配器解析后、主请求读取会话历史前运行。 监听器可在会话日志中持久替换表层节点，必须调用 `next()`； 返回值不能替代历史，主请求随后重新调用 `session.deriveMessages()`。 无已注册适配器时，`inputModalities` 缺席，不能据此推断能力。',
+    description: '在生效配置经精确适配器解析后、主请求读取会话历史前运行。 监听器可在会话日志中持久替换表层节点，必须调用 `next()`； 返回值不能替代历史，主请求随后重新调用 `session.deriveMessages()`。 无已注册适配器时，`inputModalities` 缺席，不能据此推断能力。',
+    parameters: [{ name: 'payload', description: '.signal - 当前轮次的取消信号。 按 agent 作用域筛选分发：带作用域的监听器只接收其所属 agent。' }],
   },
   {
     name: 'agent/session-start',
@@ -3679,7 +3706,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PreparedLlmCall',
-    declaration: 'export interface PreparedLlmCall {\n    readonly config: LlmCallConfig;\n    readonly retryPolicy: ResolvedRetryPolicy;\n    readonly context?: LlmModelContext;\n    readonly adapterDefaults: LlmCallConfigAdapterDefaults;\n    stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
+    declaration: 'export interface PreparedLlmCall {\n    readonly config: LlmCallConfig;\n    readonly retryPolicy: ResolvedRetryPolicy;\n    readonly context?: LlmModelContext;\n    readonly inputModalities?: readonly ModelModality[];\n    readonly adapterDefaults: LlmCallConfigAdapterDefaults;\n    stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
   },
   {
     name: 'PreparedReferencedMessage',
@@ -3847,7 +3874,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RpcErrorDetailsMap',
-    declaration: 'export interface RpcErrorDetailsMap {\n    \'bad-request\': {\n        issues: ZodIssue[];\n    };\n    \'cancelled\': {};\n    \'session-not-found\': {\n        sessionId: SessionId;\n    };\n    \'browser-failed\': {\n        reason: BrowserUseErrorCode;\n    };\n    \'model-unavailable\': {\n        provider: string;\n        model: string;\n    };\n    \'session-conflict\': {\n        sessionId: SessionId;\n        requestedCwd: string;\n        existingCwd?: string;\n    };\n    \'invalid-time-zone\': {\n        value: string;\n    };\n    \'workspace-attach-failed\': {\n        sessionId: SessionId;\n        workspaceId: string;\n    };\n    \'workspace-not-found\': {\n        workspaceId: string;\n    };\n    \'workspace-invalid-path\': {\n        path: string;\n    };\n    \'workspace-name-conflict\': {\n        name: string;\n    };\n    \'workspace-move-invalid\': {\n        workspaceId: string;\n        sessionId: SessionId;\n        beforeSessionId?: SessionId;\n    };\n    \'directory-unreadable\': {\n        path: string;\n    };\n    \'directory-exists\': {\n        path: string;\n    };\n    \'directory-create-failed\': {\n        path: string;\n    };\n    \'directory-picker-unavailable\': {\n        capability: string;\n    };\n    \'agent-preset-read-only\': {\n        agentPreset: string;\n        reason: string;\n    };\n    \'agent-preset-locked\': {\n        sessionId: SessionId;\n        agentPreset: string;\n    };\n    \'agent-preset-conflict\': {\n        sessionId: SessionId;\n        requestedPreset: string;\n        existingPreset?: string;\n    } /* …truncated — full shape in source */',
+    declaration: 'export interface RpcErrorDetailsMap {\n    \'bad-request\': {\n        issues: ZodIssue[];\n    };\n    \'cancelled\': {};\n    \'session-not-found\': {\n        sessionId: SessionId;\n    };\n    \'browser-failed\': {\n        reason: BrowserUseErrorCode;\n    };\n    \'model-unavailable\': {\n        provider: string;\n        model: string;\n        reason?: \'MODEL_DOES_NOT_SUPPORT_IMAGES\';\n    };\n    \'session-conflict\': {\n        sessionId: SessionId;\n        requestedCwd: string;\n        existingCwd?: string;\n    };\n    \'invalid-time-zone\': {\n        value: string;\n    };\n    \'workspace-attach-failed\': {\n        sessionId: SessionId;\n        workspaceId: string;\n    };\n    \'workspace-not-found\': {\n        workspaceId: string;\n    };\n    \'workspace-invalid-path\': {\n        path: string;\n    };\n    \'workspace-name-conflict\': {\n        name: string;\n    };\n    \'workspace-move-invalid\': {\n        workspaceId: string;\n        sessionId: SessionId;\n        beforeSessionId?: SessionId;\n    };\n    \'directory-unreadable\': {\n        path: string;\n    };\n    \'directory-exists\': {\n        path: string;\n    };\n    \'directory-create-failed\': {\n        path: string;\n    };\n    \'directory-picker-unavailable\': {\n        capability: string;\n    };\n    \'agent-preset-read-only\': {\n        agentPreset: string;\n        reason: string;\n    };\n    \'agent-preset-locked\': {\n        sessionId: SessionId;\n        agentPreset: string;\n    };\n    \'agent-preset-conflict\': {\n        sessionId: SessionId;\n        requestedPres /* …truncated — full shape in source */',
   },
   {
     name: 'RpcId',

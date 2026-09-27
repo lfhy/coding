@@ -4,6 +4,8 @@
   - text: API 密钥
   - textbox "API 密钥":
     - /placeholder: 输入 API 密钥
+  - text: 渠道名称
+  - textbox "渠道名称": default
   - group:
     - text: 自定义设置 API 地址
     - textbox "API 地址":

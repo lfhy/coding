@@ -1,34 +1,50 @@
-/**
- * ModelSelect: the composer's named model seat (`conversation.input.model`).
- * Two-level selection per figma 496:26454's MenuDropdown: the root menu is
- * the Model / Effort row pair (label + current value + a right chevron),
- * each drilling into its own list — the provider-grouped model list over
- * the shared directory, and the effort levels. The trigger (313:14108's
- * ToggleButton) shows both: model name + effort in the caption tone.
- * Data and submission ride the SAME per-session ModelDirectory as the
- * /model popup; exact-model reasoning metadata and the selected effort come
- * from the Host rather than a client-owned vocabulary. A rejected selection
- * announces through the shared transient Toast anchored to the composer
- * card; the in-menu strip with Retry remains the catalog-load surface.
- */
+/** 输入框模型入口：从会话目录选择渠道、模型及已公布的推理等级。 */
 import {
-  useEffect, useId, useMemo, useRef, useState, useSyncExternalStore,
+  useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore,
   type KeyboardEvent, type FocusEvent,
 } from 'react'
 import clsx from 'clsx'
 import type { ModelReasoningEffort, ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
 import {
-  IconCheckOutline16, IconChevronDownOutline14, IconChevronRightOutline14,
-  IconWarningOutline16, Toast,
-} from '@deepseek-ai/dsh-client-ui-primitives'
+  IconCheckOutline16, IconChevronDownOutline14, IconChevronLeftOutline14,
+  IconChevronRightOutline14, IconWarningOutline16,
+} from '@deepseek-ai/dsh-client-ui-icons'
+import { Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ModelSelectInjected } from './slots.ts'
 import css from './ModelSelect.module.css'
 
-/** Which pane the dropdown shows: the two-row root or one drilled-in list. */
-type Pane = 'root' | 'model' | 'effort'
+type Pane = 'providers' | 'models' | 'effort'
 
-/** One dynamic effort row; undefined means preserve the provider default. */
+interface MenuPlacement {
+  left: number
+  width: number
+}
+
+function clipsHorizontally(element: HTMLElement): boolean {
+  const style = getComputedStyle(element)
+  const clipped = /^(auto|clip|hidden|scroll)$/
+  return clipped.test(style.overflowX) || clipped.test(style.overflow)
+}
+
+/** 在所有横向裁切祖先与视口的交集内对齐触发器，保留菜单边缘的安全间距。 */
+function measureMenuPlacement(root: HTMLElement): MenuPlacement {
+  const margin = 12
+  let visibleLeft = margin
+  let visibleRight = window.innerWidth - margin
+  for (let ancestor = root.parentElement; ancestor !== null; ancestor = ancestor.parentElement) {
+    if (!clipsHorizontally(ancestor)) continue
+    const rect = ancestor.getBoundingClientRect()
+    visibleLeft = Math.max(visibleLeft, rect.left + margin)
+    visibleRight = Math.min(visibleRight, rect.right - margin)
+  }
+  const anchor = root.getBoundingClientRect()
+  const width = Math.max(0, Math.min(260, visibleRight - visibleLeft))
+  const left = Math.max(visibleLeft, Math.min(anchor.right - width, visibleRight - width))
+  return { left: left - anchor.left, width }
+}
+
+/** undefined 表示沿用提供方的默认推理等级。 */
 interface EffortChoice {
   key: string
   effort: string | undefined
@@ -37,10 +53,9 @@ interface EffortChoice {
 }
 
 /**
- * Render the composer model seat.
- * @param props - owner share (locked) + injected face (shared directory
- * store/verbs) + the standard locale seat.
- * @returns the trigger and, while open, the two-level menu.
+ * 渲染输入框的模型入口。
+ * @param props - 锁定状态、会话目录操作和当前语言的翻译函数。
+ * @returns 触发器及打开时的渠道、模型或推理等级菜单。
  */
 export function ModelSelect(
   { locked, available, directory, load, select, t }:
@@ -51,15 +66,14 @@ export function ModelSelect(
     () => directory.getSnapshot(),
   )
   const [open, setOpen] = useState(false)
-  const [pane, setPane] = useState<Pane>('root')
-  // The in-menu error strip serves catalog loads (its Retry re-runs the
-  // load); a rejected SELECTION announces through the transient toast
-  // instead, so the strip renders only while the latest failure-capable
-  // action was a load.
+  const [pane, setPane] = useState<Pane>('providers')
+  const [providerId, setProviderId] = useState<string | null>(null)
+  // 选择失败通过 Toast 提示，目录加载失败才在菜单内保留重试入口。
   const lastActionRef = useRef<'load' | 'select'>('load')
   const [toast, setToast] = useState<{ seq: number; text: string } | null>(null)
   const toastSeq = useRef(0)
   const rootRef = useRef<HTMLDivElement | null>(null)
+  const [menuPlacement, setMenuPlacement] = useState<MenuPlacement | null>(null)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([])
   const id = useId()
@@ -80,13 +94,17 @@ export function ModelSelect(
     ? -1
     : choices.findIndex(c => c.selection.provider === state.current?.provider && c.selection.model === state.current.model)
   const currentChoice = choices[selectedIndex]
+  const provider = state.groups.find(group => group.id === providerId)
   const reasoning = currentChoice?.model.reasoning
   const effectiveEffort = state.current?.reasoningEffort ?? reasoning?.defaultEffort
   const effortLabel = reasoning === undefined
     ? undefined
     : effectiveEffort === undefined
       ? t('effort.providerDefault')
-      : reasoning.efforts.find(level => level.id === effectiveEffort)?.name ?? effectiveEffort
+      : effectiveEffort === 'off'
+        ? t('effort.none')
+        : reasoning.efforts.find(level => level.id === effectiveEffort)?.name ?? effectiveEffort
+  // 仅在渠道没有声明默认档位时显示默认选项，避免重复列出同一个推理等级。
   const effortChoices = useMemo<readonly EffortChoice[]>(() => reasoning === undefined
     ? []
     : [
@@ -96,7 +114,7 @@ export function ModelSelect(
       ...reasoning.efforts.map((effort: ModelReasoningEffort) => ({
         key: `effort:${effort.id}`,
         effort: effort.id,
-        label: effort.name,
+        label: effort.id === 'off' ? t('effort.none') : effort.name,
         ...effort.description === undefined ? {} : { description: effort.description },
       })),
     ], [reasoning, t])
@@ -107,7 +125,7 @@ export function ModelSelect(
     load()
   }
 
-  // Mount-time load resolves the trigger label; every open refreshes.
+  // 初次加载用于触发器回显；每次展开都会刷新目录。
   useEffect(() => {
     if (available) {
       lastActionRef.current = 'load'
@@ -124,17 +142,51 @@ export function ModelSelect(
     return () => { document.removeEventListener('mousedown', closeOutside) }
   }, [open])
 
+  useLayoutEffect(() => {
+    if (!open || rootRef.current === null) return
+    const root = rootRef.current
+    const place = (): void => {
+      const next = measureMenuPlacement(root)
+      setMenuPlacement(previous => previous?.left === next.left && previous.width === next.width ? previous : next)
+    }
+    place()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(place)
+    observer?.observe(root)
+    for (let ancestor = root.parentElement; ancestor !== null; ancestor = ancestor.parentElement) {
+      if (clipsHorizontally(ancestor)) observer?.observe(ancestor)
+    }
+    window.addEventListener('resize', place)
+    window.addEventListener('scroll', place, true)
+    return () => {
+      observer?.disconnect()
+      window.removeEventListener('resize', place)
+      window.removeEventListener('scroll', place, true)
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (!open || pane === 'providers' || provider !== undefined) return
+    setPane('providers')
+    setProviderId(null)
+  }, [open, pane, provider])
+
+  useEffect(() => {
+    if (open) itemRefs.current.find(item => item !== null)?.focus()
+  }, [open, pane])
+
   if (!available) return null
 
   const show = (): void => {
-    setPane('root')
+    setPane('providers')
+    setProviderId(null)
     setOpen(true)
     reload()
   }
 
   const close = (restoreFocus = false): void => {
     setOpen(false)
-    setPane('root')
+    setPane('providers')
+    setProviderId(null)
     if (restoreFocus) queueMicrotask(() => { triggerRef.current?.focus() })
   }
 
@@ -149,8 +201,8 @@ export function ModelSelect(
   const onRootKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
     if (event.key === 'Escape' && open) {
       event.preventDefault()
-      // Escape backs out of a drilled pane first, then closes.
-      if (pane !== 'root') setPane('root')
+      if (pane === 'effort') setPane('models')
+      else if (pane === 'models') { setPane('providers'); setProviderId(null) }
       else close(true)
       return
     }
@@ -245,34 +297,16 @@ export function ModelSelect(
         <div
           id={`${id}-menu`}
           className={css.menu}
+          style={menuPlacement === null ? undefined : { left: menuPlacement.left, right: 'auto', width: menuPlacement.width }}
           role="menu"
           aria-label={t('menu.aria')}
           aria-busy={state.status === 'loading' || busy}
         >
-          {pane === 'root' && (
+          {pane === 'providers' && (
             <>
-              <button ref={itemRef()} type="button" role="menuitem" className={css.cell} onClick={() => { setPane('model') }}>
-                <span className={css.cellLabel}>{t('menu.model')}</span>
-                <span className={css.cellValue}>{modelLabel}</span>
-                <IconChevronRightOutline14 className={css.cellChevron} />
-              </button>
-              {reasoning !== undefined && (
-                <button ref={itemRef()} type="button" role="menuitem" className={css.cell} onClick={() => { setPane('effort') }}>
-                  <span className={css.cellLabel}>{t('menu.effort')}</span>
-                  <span className={css.cellValue}>{effortLabel}</span>
-                  <IconChevronRightOutline14 className={css.cellChevron} />
-                </button>
-              )}
-            </>
-          )}
-
-          {pane === 'model' && (
-            <>
-              {state.status === 'loading' && (
-                <div className={css.status}>{t('status.loading')}</div>
-              )}
+              {state.status === 'loading' && <div role="status" className={css.status}>{t('status.loading')}</div>}
               {state.error !== null && lastActionRef.current === 'load' && (
-                <div className={css.error}>
+                <div role="alert" className={css.error}>
                   <span>{t('error.action', { message: state.error })}</span>
                   <button type="button" className={css.retry} onClick={reload}>{t('retry')}</button>
                 </div>
@@ -285,48 +319,85 @@ export function ModelSelect(
               ))}
               <div className={clsx(css.groups, 'scrollable')}>
                 {state.groups.map((group) => {
-                  const headingId = `${id}-${group.id}`
+                  const selected = state.current?.provider === group.id
                   return (
-                    <section role="group" aria-labelledby={headingId} className={css.group} key={group.id}>
-                      <div className={css.groupTitle} id={headingId}>{group.name}</div>
-                      {group.models.map((model) => {
-                        const selected = state.current?.provider === group.id && state.current.model === model.id
-                        return (
-                          <button
-                            ref={itemRef()}
-                            type="button"
-                            role="menuitemradio"
-                            aria-checked={selected}
-                            className={clsx(css.option, selected && css.selected)}
-                            key={model.id}
-                            title={model.name}
-                            disabled={busy}
-                            onClick={() => { choose({ provider: group.id, model: model.id }) }}
-                          >
-                            <span className={css.optionCopy}>
-                              <span className={css.modelName}>{model.name}</span>
-                              {model.description !== undefined && (
-                                <span className={css.description}>{model.description}</span>
-                              )}
-                            </span>
-                            <span className={css.check}>
-                              {selected ? <IconCheckOutline16 /> : null}
-                            </span>
-                          </button>
-                        )
-                      })}
-                    </section>
+                    <button
+                      ref={itemRef()}
+                      type="button"
+                      role="menuitem"
+                      aria-current={selected ? 'true' : undefined}
+                      aria-haspopup="menu"
+                      className={clsx(css.provider, selected && css.providerSelected)}
+                      key={group.id}
+                      title={group.name}
+                      onClick={() => { setProviderId(group.id); setPane('models') }}
+                    >
+                      <span className={css.providerCheck}>{selected && <IconCheckOutline16 />}</span>
+                      <span className={css.providerName}>{group.name}</span>
+                      <IconChevronRightOutline14 className={css.cellChevron} />
+                    </button>
                   )
                 })}
               </div>
-              {state.status === 'ready' && choices.length === 0 && (
+              {state.status === 'ready' && state.groups.length === 0 && (
                 <div className={css.empty}>{t('empty.models')}</div>
               )}
             </>
           )}
 
-          {pane === 'effort' && (
+          {pane === 'models' && provider !== undefined && (
             <>
+              <button ref={itemRef()} type="button" role="menuitem" className={css.back} onClick={() => { setPane('providers'); setProviderId(null) }}>
+                <IconChevronLeftOutline14 />
+                <span className={css.providerName}>{provider.name}</span>
+              </button>
+              <div className={clsx(css.groups, 'scrollable')}>
+                {provider.models.map((model) => {
+                  const selected = state.current?.provider === provider.id && state.current.model === model.id
+                  return (
+                    <button
+                      ref={itemRef()}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={selected}
+                      className={clsx(css.option, selected && css.selected)}
+                      key={model.id}
+                      title={model.name}
+                      disabled={busy}
+                      onClick={() => { choose({ provider: provider.id, model: model.id }) }}
+                    >
+                      <span className={css.optionCopy}>
+                        <span className={css.modelName}>{model.name}</span>
+                        {model.description !== undefined && (
+                          <span className={css.description}>{model.description}</span>
+                        )}
+                      </span>
+                      <span className={css.check}>
+                        {selected ? <IconCheckOutline16 /> : null}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+              {provider.models.length === 0 && (
+                <div className={css.empty}>{t('empty.models')}</div>
+              )}
+              {reasoning !== undefined && state.current?.provider === provider.id && (
+                <button ref={itemRef()} type="button" role="menuitem" className={css.cell} onClick={() => { setPane('effort') }}>
+                  <span className={css.cellLabel}>{t('menu.effort')}</span>
+                  <span className={css.cellValue}>{effortLabel}</span>
+                  <IconChevronRightOutline14 className={css.cellChevron} />
+                </button>
+              )}
+            </>
+          )}
+
+          {pane === 'effort' && provider !== undefined && (
+            <>
+              <button ref={itemRef()} type="button" role="menuitem" className={css.back} onClick={() => { setPane('models') }}>
+                <IconChevronLeftOutline14 />
+                <span>{t('menu.effort')}</span>
+              </button>
               {state.error !== null && lastActionRef.current === 'load' && (
                 <div className={css.error}>
                   <span>{t('error.action', { message: state.error })}</span>

@@ -6,7 +6,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Scoped } from '@deepseek-ai/dsh-scope'
-import type { LlmCallConfig, LlmFailure, ResolvedRetryPolicy } from '@deepseek-ai/dsh-llm'
+import type { LlmCallConfig, LlmFailure, ModelModality, ResolvedRetryPolicy } from '@deepseek-ai/dsh-llm'
 import type { AgentCancelCause, Session, SessionId, UserMessage } from '@deepseek-ai/dsh-session'
 export type { AgentCancelCause } from '@deepseek-ai/dsh-session'
 import type { Inbox } from './inbox.ts'
@@ -241,6 +241,22 @@ declare module '@deepseek-ai/cordis' {
      * @mode waterfall
     */
     'agent/request'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; signal: AbortSignal }, next: () => Promise<LlmCallConfig>): Promise<LlmCallConfig>
+    /**
+     * 在生效配置经精确适配器解析后、主请求读取会话历史前运行。
+     * 监听器可在会话日志中持久替换表层节点，必须调用 `next()`；
+     * 返回值不能替代历史，主请求随后重新调用 `session.deriveMessages()`。
+     * 无已注册适配器时，`inputModalities` 缺席，不能据此推断能力。
+     * @param payload.agent - 发起请求的 agent。
+     * @param payload.session - 本次请求的持久会话。
+     * @param payload.config - 已准备的冻结调用配置。
+     * @param payload.inputModalities - 同次精确解析所得输入模态，缺席表示未知。
+     * @param payload.turn - 当前轮次编号。
+     * @param payload.step - 当前步骤编号。
+     * @param payload.signal - 当前轮次的取消信号。
+     * 按 agent 作用域筛选分发：带作用域的监听器只接收其所属 agent。
+     * @mode waterfall
+     */
+    'agent/request-history'(this: Scoped<Agent>, payload: { agent: Agent; session: Session; config: LlmCallConfig; inputModalities?: readonly ModelModality[]; turn: number; step: number; signal: AbortSignal }, next: () => Promise<void>): Promise<void>
     /**
      * Handle one failed model-request attempt before the loop retries or closes
      * its step. A listener returns `{ kind: 'retry' }` without calling `next()`

@@ -1,68 +1,100 @@
 - dialog "设置":
-  - navigation:
-    - text: 设置
-    - button "通用设置":
-      - img
-      - text: 通用设置
-    - button "模型":
-      - img
-      - text: 模型
-    - button "插件":
-      - img
-      - text: 插件
-    - button "Agent 预设":
-      - img
-      - text: Agent 预设
-  - button "打开配置文件"
   - button "关闭":
     - img
     - text: 关闭
-  - heading "模型" [level=2]
-  - paragraph: 填入各提供方的 API 密钥即可使用其模型。
-  - list:
-    - listitem:
-      - text: minimax-cn
-      - img "API 密钥已配置"
-      - button "编辑 minimax-cn": 编辑
-      - button "删除 minimax-cn": 删除
-    - listitem:
-      - text: Acme Gateway 自定义
-      - button "编辑 Acme Gateway (acme-gateway)": 编辑
-      - button "删除 Acme Gateway (acme-gateway)": 删除
-      - text: Acme Gateway acme-gateway API 密钥
-      - textbox "API 密钥":
-        - /placeholder: 输入 API 密钥，或留空使用环境认证
-      - group:
-        - text: 自定义设置 显示名称
-        - textbox "显示名称":
-          - /placeholder: acme-gateway
-          - text: Acme Gateway
-        - text: API 地址
-        - textbox "API 地址":
-          - /placeholder: https://gateway.acme.example/v1
-          - text: https://gateway.acme.example/v1
-        - text: API 协议
-        - combobox "API 协议":
-          - option "openai-completions" [selected]
-          - option "openai-responses"
-          - option "anthropic-messages"
-        - region "模型目录":
-          - text: 模型目录 已自定义模型目录
-          - button "恢复默认模型"
-          - button "获取可用模型"
-          - textbox "模型 ID 1":
-            - /placeholder: 模型 ID
-            - text: acme-large
-          - textbox "显示名称 1":
-            - /placeholder: 显示名称
-          - button "容量 1"
-          - button "删除模型 1"
-          - button "添加模型"
-      - button "取消"
-      - button "保存"
-  - button "添加提供方":
+  - complementary "提供方":
     - img
-    - text: 添加提供方
-  - button "添加自定义提供方":
-    - img
-    - text: 添加自定义提供方
+    - textbox "搜索模型平台…"
+    - button "amazon-bedrock"
+    - button "ant-ling"
+    - button "anthropic"
+    - button "azure-openai-responses"
+    - button "cerebras 已配置"
+    - button "cloudflare-ai-gateway"
+    - button "cloudflare-workers-ai"
+    - button "deepseek"
+    - button "fireworks"
+    - button "github-copilot"
+    - button "google"
+    - button "google-vertex"
+    - button "groq"
+    - button "huggingface"
+    - button "kimi-coding"
+    - button "minimax"
+    - button "minimax-cn 已配置"
+    - button "mistral"
+    - button "moonshotai"
+    - button "moonshotai-cn"
+    - button "nvidia"
+    - button "openai"
+    - button "opencode"
+    - button "opencode-go"
+    - button "openrouter"
+    - button "qwen-token-plan"
+    - button "qwen-token-plan-cn"
+    - button "together"
+    - button "vercel-ai-gateway"
+    - button "xai"
+    - button "xiaomi"
+    - button "xiaomi-token-plan-ams"
+    - button "xiaomi-token-plan-cn"
+    - button "xiaomi-token-plan-sgp"
+    - button "zai"
+    - button "zai-coding-cn"
+    - button "Acme Gateway"
+    - button "添加提供方":
+      - img
+      - text: 添加提供方
+    - button "添加自定义提供方":
+      - img
+      - text: 添加自定义提供方
+  - main:
+    - heading "Acme Gateway" [level=2]
+    - button "删除"
+    - text: API 密钥
+    - textbox "API 密钥":
+      - /placeholder: 输入 API 密钥，或留空使用环境认证
+    - text: 显示名称
+    - textbox "显示名称":
+      - /placeholder: acme-gateway
+      - text: Acme Gateway
+    - text: API 地址
+    - textbox "API 地址":
+      - /placeholder: https://gateway.acme.example/v1
+      - text: https://gateway.acme.example/v1
+    - text: API 协议
+    - combobox "API 协议":
+      - option "openai-completions" [selected]
+      - option "openai-responses"
+      - option "anthropic-messages"
+    - region "模型目录":
+      - text: 模型目录 已自定义模型目录
+      - button "恢复默认模型"
+      - button "获取可用模型":
+        - img
+        - text: 获取可用模型
+      - textbox "模型 ID 1":
+        - /placeholder: 模型 ID
+        - text: acme-large
+      - textbox "显示名称 1":
+        - /placeholder: 显示名称
+      - text: 视觉 推理
+      - button "容量 1":
+        - img
+      - button "删除模型 1":
+        - img
+      - button "添加模型":
+        - img
+        - text: 添加模型
+    - button "取消"
+    - button "保存"
+    - region "视觉理解工具":
+      - heading "视觉理解工具" [level=3]
+      - paragraph: 纯文本模型收到图片时，先由选定的视觉模型生成描述；未配置时将提示不支持图片。
+      - text: 视觉模型
+      - combobox "视觉模型":
+        - option "未配置" [selected]
+        - option "minimax-cn / MiniMax-M3"
+        - option "cerebras / Acme Beta"
+        - option "cerebras / Orion Basic"
+        - option "Acme Gateway / acme-large"

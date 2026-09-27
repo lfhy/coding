@@ -29,4 +29,11 @@ describe('SettingsRoot.module.css', () => {
     expect(declarations('.trigger')?.get('margin')).toBe('4px -2px 0')
     expect(declarations('.trigger.rail')?.get('margin')).toBe('8px 0 0')
   })
+
+  it('keeps the portaled overlay viewport-fixed and the model panel inside a 375px viewport', () => {
+    expect(declarations('.overlay')?.get('position')).toBe('fixed')
+    expect(declarations('.overlay')?.get('inset')).toBe('0')
+    expect(css).toMatch(/@media \(max-width: 620px\) \{\s*\.modelsPanel \{\s*width: calc\(100vw - 24px\);/)
+    expect(css).toMatch(/max-width: calc\(100vw - 24px\);\s*height: calc\(100vh - 24px\);/)
+  })
 })

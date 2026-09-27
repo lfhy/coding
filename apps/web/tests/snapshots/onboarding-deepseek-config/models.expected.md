@@ -1,75 +1,119 @@
 - dialog "设置":
-  - navigation:
-    - text: 设置
-    - button "通用设置":
-      - img
-      - text: 通用设置
-    - button "模型":
-      - img
-      - text: 模型
-    - button "插件":
-      - img
-      - text: 插件
-    - button "Agent 预设":
-      - img
-      - text: Agent 预设
-  - button "打开配置文件"
   - button "关闭":
     - img
     - text: 关闭
-  - heading "模型" [level=2]
-  - paragraph: 填入各提供方的 API 密钥即可使用其模型。
-  - list:
-    - listitem:
-      - text: DeepSeek
-      - img "API 密钥已配置"
-      - button "编辑 DeepSeek (deepseek-official)": 编辑
-      - text: DeepSeek deepseek-official API 密钥
-      - textbox "API 密钥":
-        - /placeholder: 已配置——输入新值可替换
-      - group:
-        - text: 自定义设置 API 地址
-        - textbox "API 地址":
-          - /placeholder: https://api.deepseek.com
-        - region "模型目录":
-          - text: 模型目录 已自定义模型目录
-          - button "恢复默认模型"
-          - textbox "模型 ID 1":
-            - /placeholder: 模型 ID
-            - text: deepseek-v4-pro
-          - textbox "显示名称 1":
-            - /placeholder: 显示名称
-            - text: DeepSeek-V4-Pro
-          - button "容量 1":
-            - img
-          - button "删除模型 1":
-            - img
-          - textbox "模型 ID 2":
-            - /placeholder: 模型 ID
-            - text: private-preview
-          - textbox "显示名称 2":
-            - /placeholder: 显示名称
-            - text: Private Preview
-          - button "容量 2" [expanded]:
-            - img
-          - button "删除模型 2":
-            - img
-          - text: 上下文窗口
-          - textbox "上下文窗口 2":
-            - /placeholder: 1M
-            - text: "131072"
-          - text: 最大输出 token 数
-          - textbox "最大输出 token 数 2":
-            - /placeholder: 256K
-            - text: 64K
-          - button "添加模型":
-            - img
-            - text: 添加模型
-      - button "取消"
-      - button "保存"
-  - button "添加提供方":
+  - complementary "提供方":
     - img
-    - text: 添加提供方
-  - button "添加自定义提供方":
-    - img
-    - text: 添加自定义提供方
+    - textbox "搜索模型平台…"
+    - button "DeepSeek 已配置"
+    - button "amazon-bedrock"
+    - button "ant-ling"
+    - button "anthropic"
+    - button "azure-openai-responses"
+    - button "cerebras"
+    - button "cloudflare-ai-gateway"
+    - button "cloudflare-workers-ai"
+    - button "deepseek"
+    - button "fireworks"
+    - button "github-copilot"
+    - button "google"
+    - button "google-vertex"
+    - button "groq"
+    - button "huggingface"
+    - button "kimi-coding"
+    - button "minimax"
+    - button "minimax-cn"
+    - button "mistral"
+    - button "moonshotai"
+    - button "moonshotai-cn"
+    - button "nvidia"
+    - button "openai"
+    - button "opencode"
+    - button "opencode-go"
+    - button "openrouter"
+    - button "qwen-token-plan"
+    - button "qwen-token-plan-cn"
+    - button "together"
+    - button "vercel-ai-gateway"
+    - button "xai"
+    - button "xiaomi"
+    - button "xiaomi-token-plan-ams"
+    - button "xiaomi-token-plan-cn"
+    - button "xiaomi-token-plan-sgp"
+    - button "zai"
+    - button "zai-coding-cn"
+    - button "添加提供方":
+      - img
+      - text: 添加提供方
+    - button "添加自定义提供方":
+      - img
+      - text: 添加自定义提供方
+  - main:
+    - heading "DeepSeek" [level=2]
+    - text: API 密钥
+    - textbox "API 密钥":
+      - /placeholder: 已配置——输入新值可替换
+    - text: 渠道名称
+    - textbox "渠道名称": default
+    - text: API 地址
+    - textbox "API 地址":
+      - /placeholder: https://api.deepseek.com
+      - text: https://gateway.example/v1
+    - region "模型目录":
+      - text: 模型目录 已自定义模型目录
+      - button "恢复默认模型"
+      - button "获取可用模型":
+        - img
+        - text: 获取可用模型
+      - textbox "模型 ID 1":
+        - /placeholder: 模型 ID
+        - text: deepseek-v4-pro
+      - textbox "显示名称 1":
+        - /placeholder: 显示名称
+        - text: DeepSeek-V4-Pro
+      - text: 无视觉 推理
+      - button "容量 1":
+        - img
+      - button "删除模型 1":
+        - img
+      - textbox "模型 ID 2":
+        - /placeholder: 模型 ID
+        - text: private-preview
+      - textbox "显示名称 2":
+        - /placeholder: 显示名称
+        - text: Private Preview
+      - text: 视觉 推理
+      - button "容量 2" [expanded]:
+        - img
+      - button "删除模型 2":
+        - img
+      - checkbox "视觉" [checked]
+      - text: 视觉
+      - checkbox "推理" [checked]
+      - text: 推理
+      - checkbox "无" [checked]
+      - text: 无
+      - checkbox "low" [checked]
+      - text: low
+      - checkbox "high" [checked]
+      - text: high
+      - checkbox "max"
+      - text: max 上下文窗口
+      - textbox "上下文窗口 2":
+        - /placeholder: 256K
+        - text: "131072"
+      - text: 最大输出 token
+      - textbox "最大输出 token 2":
+        - /placeholder: 32K
+        - text: 64K
+      - button "添加模型":
+        - img
+        - text: 添加模型
+    - button "取消"
+    - button "保存"
+    - region "视觉理解工具":
+      - heading "视觉理解工具" [level=3]
+      - paragraph: 纯文本模型收到图片时，先由选定的视觉模型生成描述；未配置时将提示不支持图片。
+      - text: 视觉模型
+      - combobox "视觉模型":
+        - option "未配置" [selected]

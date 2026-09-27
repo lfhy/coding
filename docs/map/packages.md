@@ -3,7 +3,7 @@
 
 # 包清单
 
-workspace 共 233 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
+workspace 共 234 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
 
 模型可见工具的名称与 schema 见 [tool-catalog.md](../tool-catalog.md)，插件可配置项见 [config-catalog.md](../config-catalog.md)，依赖边见 [module-graph.md](../module-graph.md)。
 
@@ -69,7 +69,7 @@ workspace 共 233 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/client/ui-renderer` — 负责 React 渲染层的浏览器 Cordis 插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 9）
 - `packages/client/ui-settings` — 设置领域的底座，本身不含任何呈现内容 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 5）
 - `packages/client/ui-settings-general` — 设置外壳、无特定功能归属文案与持久化产品引导 namespace [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 8）
-- `packages/client/ui-settings-models` — 模型设置与产品引导插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 10）
+- `packages/client/ui-settings-models` — 模型设置与首次使用凭据引导插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 14）
 - `packages/client/ui-settings-plugin-inventory` — Web 设置中的只读**插件列表**标签页 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 3）
 - `packages/client/ui-settings-plugins` — **插件**设置分区及其**插件配置**标签页 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 5）
 - `packages/client/ui-sidebar` — 侧边栏外壳插件：负责品牌行、New Session 操作、布局持有的折叠控件、可感知滚动的区域 seat… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 7）
@@ -212,9 +212,10 @@ workspace 共 233 个包，按 group 分节。每行给出包目录、职责（R
 ## packages/llm
 
 - `packages/llm/llm` — 提供方无关的 LLM（大语言模型）词汇与抽象服务 入口 `src/index.ts`（tests 12）
-- `packages/llm/llm-deepseek` — harness LLM（大语言模型）seam 的 DeepSeek chat-completions 适配器：直接 `fetch` + SSE… 入口 `src/index.ts`（tests 6）
+- `packages/llm/llm-deepseek` — harness LLM（大语言模型）seam 的 DeepSeek chat-completions 适配器：直接 `fetch` + SSE… 入口 `src/index.ts`（tests 7）
 - `packages/llm/llm-pi-ai` — 基于 `@earendil-works/pi-ai` 的 harness LLM（大语言模型）seam 通用多提供方适配器 入口 `src/index.ts`（tests 9）
 - `packages/llm/llm-retry` — 一个函数插件，通过 agent loop（智能体循环）在已关闭步骤上触发的 `agent/request-error` waterfall… 入口 `src/index.ts`（tests 5）
+- `packages/llm/llm-vision-fallback` — 本插件在 `agent/request-history` 中处理主模型明确不支持图片输入、而当前会话 surface 包含图片的请求 入口 `src/index.ts`（tests 1）
 - `packages/llm/token-meter` — 通过单例 `ctx.tokenMeter` 服务进行具备回放感知能力的 token 测量 [client] 入口 `src/index.ts`（tests 3）
 
 ## packages/lsp

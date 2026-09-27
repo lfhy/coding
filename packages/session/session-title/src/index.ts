@@ -159,10 +159,10 @@ export interface SessionTitleProvider {
 }
 
 /**
- * Collect human text-bearing user messages in log order.
- * @param events - session log or persisted replay.
- * @param throughSeq - optional inclusive event boundary.
- * @returns eligible messages with exact source seqs.
+ * 按日志顺序收集由用户追加且含文本的消息；替换节点不计为新提示词。
+ * @param events - 会话日志或持久化回放事件。
+ * @param throughSeq - 可选的包含端点事件序号。
+ * @returns 符合条件的消息及其原始事件序号。
  */
 export function collectSessionTitleMessages(
   events: readonly SessionEvent[],
@@ -171,7 +171,7 @@ export function collectSessionTitleMessages(
   const messages: SessionTitleUserMessage[] = []
   for (const event of events) {
     if (throughSeq !== undefined && event.seq > throughSeq) break
-    if (event.type !== 'user/message' || event.data.source.kind !== 'user') continue
+    if (event.type !== 'user/message' || event.surfaceOp !== 'append' || event.data.source.kind !== 'user') continue
     const content = event.data.content
     const text = content
       .filter((block): block is Extract<(typeof content)[number], { type: 'text' }> => block.type === 'text')

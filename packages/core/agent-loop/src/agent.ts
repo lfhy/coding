@@ -16,7 +16,7 @@ import type {
   RequestErrorAction,
 } from '@deepseek-ai/dsh-agent'
 import { Inbox, agentEvents, assembleContextFor } from '@deepseek-ai/dsh-agent'
-import type { GenerateOptions, LlmCallConfig, Message, PreparedLlmCall } from '@deepseek-ai/dsh-llm'
+import type { GenerateOptions, LlmCallConfig, PreparedLlmCall } from '@deepseek-ai/dsh-llm'
 import {
   BlockAssembler,
   LlmError,
@@ -338,7 +338,7 @@ export class ReactLoopAgent implements Agent {
 
     while (true) {
       const { request, preparedCall } = await this.buildRequest(
-        turn, step, assembly.tools, system, this.session.deriveMessages(), signal,
+        turn, step, assembly.tools, system, signal,
       )
       const assembler = new BlockAssembler()
       const chunkSeqs: number[] = []
@@ -419,16 +419,12 @@ export class ReactLoopAgent implements Agent {
     }
   }
 
-  /**
-   * Compose one frozen request and bind it to the adapter registration that
-   * resolved its exact-model defaults.
-   */
+  /** 组装冻结请求，并绑定解析其确切模型默认值的适配器注册。 */
   private async buildRequest(
     turn: number,
     step: number,
     tools: GenerateOptions['tools'] & object,
     system: string,
-    boundaryMessages: Message[],
     signal: AbortSignal,
   ): Promise<{ request: GenerateOptions; preparedCall?: PreparedLlmCall }> {
     const { session } = this
@@ -474,6 +470,26 @@ export class ReactLoopAgent implements Agent {
     }
     signal.throwIfAborted()
 
+    let delegatedHistory = 0
+    await this.dispatch.waterfall(
+      'agent/request-history', {
+        session,
+        config: preparedCall?.config ?? deepFreeze(structuredClone(config)),
+        ...preparedCall?.inputModalities === undefined
+          ? {}
+          : { inputModalities: preparedCall.inputModalities },
+        turn,
+        step,
+        signal,
+      },
+      () => {
+        delegatedHistory += 1
+        return Promise.resolve()
+      },
+    )
+    if (delegatedHistory === 0) throw new Error('agent/request-history listener must call next()')
+    signal.throwIfAborted()
+
     const header = canonicalHeader({
       config,
       ...preparedCall === undefined ? {} : { adapterDefaults: preparedCall.adapterDefaults },
@@ -504,7 +520,7 @@ export class ReactLoopAgent implements Agent {
 
     const request = markAgentLoopRequest(deepFreeze({
       ...header.config,
-      messages: boundaryMessages,
+      messages: session.deriveMessages(),
       ...header.system !== undefined ? { system: header.system } : {},
       ...header.tools !== undefined ? { tools: header.tools } : {},
       sessionId: this.session.id,
