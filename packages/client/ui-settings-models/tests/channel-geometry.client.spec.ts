@@ -15,4 +15,11 @@ describe('reference-size model settings geometry', () => {
     expect(modelCss).toContain('width: min(1500px, calc(100vw - 96px))')
     expect(modelCss).toContain('.fetchDialog { width: calc(100vw - 24px); max-width: calc(100vw - 24px); }')
   })
+
+  it('keeps desktop rows and avatars at the same compact scale as the settings navigation', () => {
+    expect(modelCss).toMatch(/\.channelRow \{[^}]*min-height: 44px;[^}]*font-size: 14px;/s)
+    expect(modelCss).toMatch(/\.channelAvatar \{[^}]*width: 28px;[^}]*height: 28px;[^}]*font-size: 15px;/s)
+    expect(modelCss).toContain('.channelFields .input { height: 38px; }')
+    expect(modelCss).not.toContain('@media (min-width: 900px)')
+  })
 })

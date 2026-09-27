@@ -730,8 +730,8 @@ select.input {
 
 /* 模型页的两栏平面：目录可独立滚动，编辑区不再嵌套渠道卡片。 */
 .modelsSurface { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; }
-.modelsHeader { box-sizing: border-box; flex: none; display: flex; align-items: center; min-height: 72px; padding: 16px 72px 16px 32px; }
-.modelsHeader h1 { margin: 0; font-size: 22px; line-height: 30px; font-weight: 600; }
+.modelsHeader { box-sizing: border-box; flex: none; display: flex; align-items: center; min-height: 60px; padding: 12px 72px 12px 24px; }
+.modelsHeader h1 { margin: 0; font-size: 20px; line-height: 28px; font-weight: 600; }
 .channelPage {
   display: grid;
   grid-template-columns: minmax(220px, 27%) minmax(0, 1fr);
@@ -986,45 +986,10 @@ select.input {
 .generalActions p { margin: 0 10px 8px; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 18px; }
 .generalActions .channelRow { gap: 10px; }
 .visionDetail { max-width: 760px; }
-.visionDetail h2 { margin: 0; font-size: 22px; line-height: 30px; }
+.visionDetail h2 { margin: 0; font-size: 18px; line-height: 26px; }
 .visionDetail p { color: var(--dsw-alias-label-secondary); font-size: 14px; line-height: 22px; overflow-wrap: anywhere; }
 .visionDetail [role="alert"] { color: var(--dsw-alias-state-error-primary); }
 .visionDetail select.input { max-width: 100%; height: 42px; }
-
-@media (min-width: 900px) {
-  .channelRail { gap: 22px; padding: 20px 18px 18px; }
-  .channelSearch { height: 58px; border-radius: 30px; padding: 0 18px; }
-  .channelSearch input { font-size: 20px; line-height: 28px; }
-  .channelRow { min-height: 64px; gap: 16px; padding: 9px 16px; border-radius: 32px; font-size: 20px; line-height: 28px; }
-  .channelAvatar { width: 42px; height: 42px; font-size: 22px; line-height: 28px; }
-  .channelConfigured { border-radius: 16px; padding: 2px 8px; font-size: 14px; line-height: 20px; }
-  .channelAdd { min-height: 48px; border-radius: 24px; font-size: 18px; line-height: 26px; }
-  .channelDetail { padding: 40px 36px; }
-  .channelHeading { min-height: 54px; margin-bottom: 30px; }
-  .channelHeading h2 { font-size: 26px; line-height: 36px; }
-  .channelFields { gap: 28px; }
-  .channelFields .fieldLabel, .channelFields .modelCatalogTitle { font-size: 22px; line-height: 30px; }
-  .channelFields .input { height: 56px; font-size: 20px; line-height: 28px; }
-  .channelFields .customizedBody { gap: 34px; }
-  .channelFields .modelCatalog { padding-top: 18px; gap: 18px; }
-  .channelFields .modelCatalogMeta { font-size: 15px; line-height: 22px; }
-  .channelFields .modelEntry { padding: 12px; border-radius: 12px; }
-  .channelFields .modelRow { gap: 12px; }
-  .channelFields .capabilityBadge { padding: 4px 10px; border-radius: 15px; font-size: 14px; line-height: 20px; }
-  .channelFields .modelEmpty { font-size: 16px; line-height: 24px; }
-  .channelFields .linkButton, .channelFields .addModelButton { height: 40px; border-radius: 20px; font-size: 17px; line-height: 24px; }
-  .candidateSearch { height: 64px; }
-  .candidateSearch input { font-size: 22px; line-height: 30px; }
-  .fetchDialog h2 { font-size: 28px; line-height: 38px; font-weight: 600; }
-  .fetchDialog > div > p { font-size: 18px; line-height: 26px; }
-  .candidateGroupHead { min-height: 64px; padding: 0 20px; font-size: 22px; line-height: 30px; }
-  .candidateCount { font-size: 15px; line-height: 22px; }
-  .candidate { min-height: 76px; padding-right: 20px; }
-  .candidateLabel { gap: 18px; padding: 12px 20px; }
-  .candidateLabel input { width: 18px; height: 18px; }
-  .candidateAvatar { width: 46px; height: 46px; font-size: 22px; line-height: 30px; }
-  .candidateId { font-size: 20px; line-height: 28px; }
-}
 
 @media (max-width: 620px) {
   .modelsHeader { min-height: 52px; padding: 10px 56px 10px 16px; }

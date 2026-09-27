@@ -585,7 +585,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
               <button type="button" disabled={group.every(candidate => known.has(candidate.id))}
                 aria-label={`${t(group.every(candidate => known.has(candidate.id)) ? 'familyAdded' : 'addFamily')} ${family}`}
                 onClick={() => { adoptGroup(group) }}>
-                {group.every(candidate => known.has(candidate.id)) ? t('addedShort') : <IconPlusOutline16 size={24} />}</button></div>
+                {group.every(candidate => known.has(candidate.id)) ? t('addedShort') : <IconPlusOutline16 size={18} />}</button></div>
             {group.map(candidate => <div key={candidate.id} className={styles['candidate']}>
               <label className={styles['candidateLabel']}><input type="checkbox" disabled={known.has(candidate.id)}
                 checked={picked.has(candidate.id)}
@@ -595,7 +595,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
               <button type="button" className={styles['candidateAdd']} disabled={known.has(candidate.id)}
                 aria-label={`${t(known.has(candidate.id) ? 'addedModel' : 'addModel')} ${candidate.id}`}
                 onClick={() => { adoptGroup([candidate]) }}>
-                {known.has(candidate.id) ? t('addedShort') : <IconPlusOutline16 size={24} />}</button>
+                {known.has(candidate.id) ? t('addedShort') : <IconPlusOutline16 size={18} />}</button>
             </div>)}
           </li>)}
         </ul>
