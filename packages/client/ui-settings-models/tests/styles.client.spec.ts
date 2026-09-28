@@ -76,6 +76,26 @@ describe('ModelsSection theme styles', () => {
     expect(narrowViewport).not.toContain('.modelRow')
   })
 
+  it('keeps the model settings card above the settings modal and out of table layout', () => {
+    expect(block('.modelSettingsPopover')).toContain('position: fixed')
+    expect(block('.modelSettingsPopover')).toContain('z-index: 1100')
+    expect(block('.modelSettingsPopover')).toContain('max-width: calc(100vw - 24px)')
+    expect(block('.modelSettingsPopover')).toContain('max-height: calc(100vh - 24px)')
+    expect(block('.modelSettingsPopover')).toContain('overflow-y: auto')
+    expect(block('.modelAdvancedFields')).toContain('grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr))')
+    expect(block('.modelEntry')).not.toContain('grid-template-rows')
+  })
+
+  it('uses row separators instead of a catalog frame and keeps checkbox focus visible', () => {
+    expect(block('.modelList')).not.toMatch(/\bborder\s*:/)
+    expect(block('.modelList')).not.toMatch(/\bbackground\s*:/)
+    expect(css).toContain('.modelEntry + .modelEntry { border-top: 1px solid')
+    expect(block('.capabilityBadge')).toContain('background: transparent')
+    expect(css).toContain('.modelCheckboxInput:focus-visible + .modelCheckboxBox {\n  outline: 2px solid')
+    expect(css).toContain('.modelCheckboxInput:checked + .modelCheckboxBox {\n  border-color: var(--dsw-alias-state-business-primary);\n  background: var(--dsw-alias-state-business-primary)')
+    expect(block('.reasoningDropdown')).toContain('grid-column: 1 / -1')
+  })
+
   it('keeps every discovered family at full height when the candidate list scrolls', () => {
     expect(block('.candidateList')).toContain('overflow-y: auto')
     expect(block('.candidateGroup')).toContain('flex-shrink: 0')

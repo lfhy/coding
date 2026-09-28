@@ -72,28 +72,35 @@
           - img
         - button "删除模型 2":
           - img
-        - region "模型设置 2":
-          - checkbox "视觉" [checked]
-          - text: 视觉
-          - checkbox "推理" [checked]
-          - text: 推理
-          - checkbox "无" [checked]
-          - text: 无
-          - checkbox "low" [checked]
-          - text: low
-          - checkbox "high" [checked]
-          - text: high
-          - checkbox "max"
-          - text: max 上下文窗口
-          - textbox "上下文窗口 2":
-            - /placeholder: 256K
-            - text: "131072"
-          - text: 最大输出 token
-          - textbox "最大输出 token 2":
-            - /placeholder: 32K
-            - text: 64K
       - button "添加模型":
         - img
         - text: 添加模型
     - button "取消"
     - button "保存"
+  - dialog "模型设置 2":
+    - text: 模型设置
+    - button "关闭":
+      - img
+    - checkbox "视觉" [checked]
+    - text: 视觉
+    - checkbox "推理" [checked]
+    - text: 推理
+    - group:
+      - text: 思考档位 无 · low · high
+      - img
+      - checkbox "无" [checked]
+      - text: 无
+      - checkbox "low" [checked]
+      - text: low
+      - checkbox "high" [checked]
+      - text: high
+      - checkbox "max"
+      - text: max
+    - text: 上下文窗口
+    - textbox "上下文窗口 2":
+      - /placeholder: 256K
+      - text: "131072"
+    - text: 最大输出 token
+    - textbox "最大输出 token 2":
+      - /placeholder: 32K
+      - text: 64K

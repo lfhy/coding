@@ -191,7 +191,7 @@ describe('web e2e: settings modal and General preferences', () => {
   }, 60_000)
 
   it('keeps every settings section and navigation fixed across viewport sizes', async () => {
-    const dialog = page.getByRole('dialog', { name: '设置' })
+    const dialog = page.getByRole('dialog', { name: '设置', exact: true })
     try {
       await page.getByRole('button', { name: '设置', exact: true }).click()
       const navigation = dialog.getByRole('navigation')
@@ -253,6 +253,34 @@ describe('web e2e: settings modal and General preferences', () => {
               expect(await button.isEnabled()).toBe(true)
             }
             expect(await dialog.getByRole('main').evaluate(node => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(1)
+            const trigger = dialog.getByRole('button', { name: '模型设置 1', exact: true })
+            const card = page.getByRole('dialog', { name: '模型设置 1' })
+            const table = dialog.locator('[class*="modelTableScroller"]')
+            await trigger.scrollIntoViewIfNeeded()
+            const [tableBefore, rowBefore] = await Promise.all([table.boundingBox(), trigger.locator('..').boundingBox()])
+            if (tableBefore === null || rowBefore === null) throw new Error('DeepSeek 模型行未绘制')
+            await trigger.click()
+            await card.waitFor()
+            expect(await card.evaluate(node => node.closest('[class*="modelTableScroller"]') === null)).toBe(true)
+            expect(await dialog.evaluate((node, id) => id !== null && node.contains(document.getElementById(id)),
+              await card.getAttribute('id'))).toBe(true)
+            expect(await table.boundingBox()).toEqual(tableBefore)
+            expect(await trigger.locator('..').boundingBox()).toEqual(rowBefore)
+            const cardBox = await card.boundingBox()
+            if (cardBox === null) throw new Error('DeepSeek 模型浮动卡片未绘制')
+            expect(cardBox.x).toBeGreaterThanOrEqual(0)
+            expect(cardBox.x + cardBox.width).toBeLessThanOrEqual(viewport.width + 1)
+            expect(cardBox.y).toBeGreaterThanOrEqual(0)
+            expect(cardBox.y + cardBox.height).toBeLessThanOrEqual(viewport.height + 1)
+            const vision = card.getByRole('checkbox', { name: '视觉' })
+            const initialVision = await vision.isChecked()
+            await vision.locator('..').click()
+            expect(await vision.isChecked()).toBe(!initialVision)
+            await vision.locator('..').click()
+            expect(await vision.isChecked()).toBe(initialVision)
+            await card.getByRole('button', { name: '关闭' }).click()
+            await expect.poll(() => card.count()).toBe(0)
+            expect(await trigger.evaluate(node => document.activeElement === node)).toBe(true)
             await modelId.scrollIntoViewIfNeeded()
           }
           if (process.env.DSH_SCREENSHOT_DIR !== undefined) {
@@ -278,7 +306,7 @@ describe('web e2e: settings modal and General preferences', () => {
     } finally {
       try {
         if (await dialog.count() > 0) {
-          await page.keyboard.press('Escape')
+          await dialog.getByRole('button', { name: '关闭', exact: true }).first().click()
           await dialog.waitFor({ state: 'hidden', timeout: 5_000 })
         }
       } finally {

@@ -280,10 +280,13 @@ describe('model list editing', () => {
     openEditor('openai')
     expandModel(1)
     const main = screen.getByRole('main')
-    expect(checkbox(main, en.visionSupport).checked).toBe(true)
-    expect(checkbox(main, en.reasoningSupport).checked).toBe(true)
-    fireEvent.click(within(main).getByRole('checkbox', { name: en.visionSupport }))
-    fireEvent.click(within(main).getByRole('checkbox', { name: 'high' }))
+    const card = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
+    expect(main.contains(card)).toBe(false)
+    expect(checkbox(card, en.visionSupport).checked).toBe(true)
+    expect(checkbox(card, en.reasoningSupport).checked).toBe(true)
+    fireEvent.click(within(card).getByRole('checkbox', { name: en.visionSupport }))
+    fireEvent.click(card.querySelector('summary') as HTMLElement)
+    fireEvent.click(within(card).getByRole('checkbox', { name: /^high$/ }))
     fireEvent.click(within(main).getByRole('button', { name: en.apply }))
 
     await waitFor(() => { expect(mutate).toHaveBeenCalledOnce() })
@@ -1137,12 +1140,14 @@ describe('hand-declared providers', () => {
         { target: { value: `${String(at)}.` } })
     }
 
-    // Removing the middle row: the one before keeps its position and text, the
-    // one after moves down carrying its own, and the removed row's text goes.
+    // 删除中间行后，浮动卡片跟随末行前移；切回首行仍保留各自未输完的文字。
     fireEvent.click(screen.getByLabelText(`${en.removeModel} 2`))
     expect(screen.getByLabelText<HTMLInputElement>(`${en.modelId} 1`).value).toBe('first')
+    expect(screen.queryByLabelText(`${en.modelContextWindow} 1`)).toBeNull()
+    expandModel(1)
     expect(screen.getByLabelText<HTMLInputElement>(`${en.modelContextWindow} 1`).value).toBe('1.')
     expect(screen.getByLabelText<HTMLInputElement>(`${en.modelId} 2`).value).toBe('third')
+    expandModel(2)
     expect(screen.getByLabelText<HTMLInputElement>(`${en.modelContextWindow} 2`).value).toBe('3.')
   })
 

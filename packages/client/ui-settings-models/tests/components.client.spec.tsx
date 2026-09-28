@@ -739,23 +739,24 @@ describe('ModelsSection', () => {
     })
     openAdvanced()
     expandRow(1)
-    expandRow(2)
-    const windows = capacityInputs(en.contextWindow)
     // The inherited 1000000 reads back short.
-    expect((windows[0] as HTMLInputElement).value).toBe('1M')
+    const first = screen.getByLabelText<HTMLInputElement>(`${en.contextWindow} 1`)
+    expect(first.value).toBe('1M')
 
     // Keystrokes stay verbatim while the row has focus, so typing `1000` does
     // not rewrite itself to `1K` mid-word.
-    fireEvent.change(windows[0] as HTMLInputElement, { target: { value: '1000' } })
-    expect((windows[0] as HTMLInputElement).value).toBe('1000')
-    fireEvent.change(windows[0] as HTMLInputElement, { target: { value: '1000K' } })
-    expect((windows[0] as HTMLInputElement).value).toBe('1000K')
+    fireEvent.change(first, { target: { value: '1000' } })
+    expect(first.value).toBe('1000')
+    fireEvent.change(first, { target: { value: '1000K' } })
+    expect(first.value).toBe('1000K')
     // 渠道模型行保留用户键入的容量拼写，存储时仍转换为数值。
-    fireEvent.blur(windows[0] as HTMLInputElement)
-    expect((windows[0] as HTMLInputElement).value).toBe('1000K')
+    fireEvent.blur(first)
+    expect(first.value).toBe('1000K')
 
-    fireEvent.change(windows[1] as HTMLInputElement, { target: { value: '256K' } })
-    fireEvent.blur(windows[1] as HTMLInputElement)
+    expandRow(2)
+    const second = screen.getByLabelText<HTMLInputElement>(`${en.contextWindow} 2`)
+    fireEvent.change(second, { target: { value: '256K' } })
+    fireEvent.blur(second)
     fireEvent.click(screen.getByText(en.apply))
 
     await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(1) })
@@ -777,14 +778,15 @@ describe('ModelsSection', () => {
     const { mutate } = await mountDeepSeekCard()
     openAdvanced()
     expandRow(1)
-    expandRow(2)
-    const windows = capacityInputs(en.contextWindow)
-    fireEvent.change(windows[0] as HTMLInputElement, { target: { value: '1 gazillion' } })
+    const first = screen.getByLabelText<HTMLInputElement>(`${en.contextWindow} 1`)
+    fireEvent.change(first, { target: { value: '1 gazillion' } })
     // Blurring a row that is not the edited one leaves the buffer alone.
-    fireEvent.blur(windows[1] as HTMLInputElement)
-    fireEvent.blur(windows[0] as HTMLInputElement)
+    expandRow(2)
+    fireEvent.blur(screen.getByLabelText(`${en.contextWindow} 2`))
+    expandRow(1)
+    fireEvent.blur(screen.getByLabelText(`${en.contextWindow} 1`))
     // The text the user typed is still there to correct.
-    expect((windows[0] as HTMLInputElement).value).toBe('1 gazillion')
+    expect(screen.getByLabelText<HTMLInputElement>(`${en.contextWindow} 1`).value).toBe('1 gazillion')
 
     fireEvent.click(screen.getByText(en.apply))
     await screen.findByText(`Model 1: ${en.modelContextInvalid}`)
@@ -842,14 +844,16 @@ describe('ModelsSection', () => {
     await mountDeepSeekCard()
     openAdvanced()
     expandRow(1)
+    const first = screen.getByLabelText<HTMLInputElement>(`${en.contextWindow} 1`)
+    fireEvent.change(first, { target: { value: 'not a number' } })
+    fireEvent.blur(first)
     expandRow(2)
-    const windows = capacityInputs(en.contextWindow)
-    fireEvent.change(windows[0] as HTMLInputElement, { target: { value: 'not a number' } })
-    fireEvent.blur(windows[0] as HTMLInputElement)
-    fireEvent.change(windows[1] as HTMLInputElement, { target: { value: '2M' } })
+    fireEvent.change(screen.getByLabelText(`${en.contextWindow} 2`), { target: { value: '2M' } })
 
-    expect((windows[0] as HTMLInputElement).value).toBe('not a number')
-    expect((windows[1] as HTMLInputElement).value).toBe('2M')
+    expandRow(1)
+    expect(screen.getByLabelText<HTMLInputElement>(`${en.contextWindow} 1`).value).toBe('not a number')
+    expandRow(2)
+    expect(screen.getByLabelText<HTMLInputElement>(`${en.contextWindow} 2`).value).toBe('2M')
   })
 
   it('re-keys the typed text around a removed row', async () => {
@@ -862,23 +866,24 @@ describe('ModelsSection', () => {
     // Three rows, with text parked on the outer two.
     fireEvent.click(screen.getByText(en.addModel))
     expandRow(1)
-    expandRow(2)
+    fireEvent.change(screen.getByLabelText(`${en.contextWindow} 1`), { target: { value: 'top text' } })
+    fireEvent.blur(screen.getByLabelText(`${en.contextWindow} 1`))
     expandRow(3)
-    fireEvent.change(windows()[0] as HTMLInputElement, { target: { value: 'top text' } })
-    fireEvent.blur(windows()[0] as HTMLInputElement)
-    fireEvent.change(windows()[2] as HTMLInputElement, { target: { value: 'bottom text' } })
-    fireEvent.blur(windows()[2] as HTMLInputElement)
+    fireEvent.change(screen.getByLabelText(`${en.contextWindow} 3`), { target: { value: 'bottom text' } })
+    fireEvent.blur(screen.getByLabelText(`${en.contextWindow} 3`))
 
     // Dropping the middle row leaves the row above untouched and carries the
     // row below down with its own text, rather than stranding it.
     removeRow(1)
-    expect(windows()).toHaveLength(2)
-    expect((windows()[0] as HTMLInputElement).value).toBe('top text')
-    expect((windows()[1] as HTMLInputElement).value).toBe('bottom text')
+    expect(windows()).toHaveLength(1)
+    expect(screen.getByLabelText<HTMLInputElement>(`${en.contextWindow} 2`).value).toBe('bottom text')
+    expandRow(1)
+    expect(screen.getByLabelText<HTMLInputElement>(`${en.contextWindow} 1`).value).toBe('top text')
 
     // Dropping a row that holds text takes that text with it; the survivor
     // keeps its own rather than inheriting the deleted row's.
     removeRow(0)
+    expandRow(1)
     expect(windows()).toHaveLength(1)
     expect((windows()[0] as HTMLInputElement).value).toBe('bottom text')
   })
@@ -902,9 +907,10 @@ describe('ModelsSection', () => {
     })
     openAdvanced()
     expandRow(1)
+    expect(screen.getByLabelText<HTMLInputElement>(`${en.maxTokens} 1`).placeholder).toBe('32K')
     expandRow(2)
-    // The profile's own cap is the placeholder both rows inherit.
-    expect(capacityInputs(en.maxTokens).map(input => input.placeholder)).toEqual(['32K', '32K'])
+    // 两行继承同一个渠道上限，但浮动卡片只显示当前行。
+    expect(screen.getByLabelText<HTMLInputElement>(`${en.maxTokens} 2`).placeholder).toBe('32K')
 
     fireEvent.change(screen.getByLabelText(`${en.maxTokens} 2`), { target: { value: '64K' } })
     fireEvent.blur(screen.getByLabelText(`${en.maxTokens} 2`))

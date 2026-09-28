@@ -17,6 +17,7 @@ import { ZH_BROWSER_LOCALE, connectFreshWorkspaceZh, saveFailureShot } from './s
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/onboarding-deepseek-config', import.meta.url))
 const MISSING_EXPECTED = join(SNAPSHOT_DIR, 'missing.expected.md')
 const MODELS_EXPECTED = join(SNAPSHOT_DIR, 'models.expected.md')
+const MODELS_CARD_EXPECTED = join(SNAPSHOT_DIR, 'models-card.expected.md')
 const MODE = webSnapshotMode()
 const ONBOARDING_TITLE = '配置模型，开始使用'
 
@@ -60,7 +61,7 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     await introChannels.getByRole('button', { name: /^DeepSeek/ }).waitFor({ timeout: 10_000 })
     const keyInput = onboarding.getByLabel('API 密钥', { exact: true })
     await keyInput.waitFor({ timeout: 10_000 })
-    const initial = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
+    const initial = await captureStableAria(page, '[role="dialog"][aria-label="配置模型，开始使用"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(MISSING_EXPECTED, initial, MODE)
     if (process.env.DSH_SCREENSHOT_DIR !== undefined) {
       await page.screenshot({ path: join(process.env.DSH_SCREENSHOT_DIR, 'onboarding-deepseek-missing.png') })
@@ -76,7 +77,10 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
 
     await onboarding.getByLabel('API 地址', { exact: true }).fill('https://gateway.example/v1')
     await onboarding.getByRole('button', { name: '模型设置 2' }).click()
-    await onboarding.getByLabel('最大输出 token 2').fill('32K')
+    const onboardingCard = page.getByRole('dialog', { name: '模型设置 2' })
+    expect(await onboardingCard.evaluate(node => node.closest('[role="dialog"][aria-modal="true"]')?.getAttribute('aria-label')))
+      .toBe(ONBOARDING_TITLE)
+    await onboardingCard.getByLabel('最大输出 token 2').fill('32K')
     const secret = `dsh_onboarding_${randomBytes(12).toString('hex')}`
     await keyInput.fill(secret)
     await onboarding.getByRole('button', { name: '保存', exact: true }).click()
@@ -111,7 +115,7 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
 
     // 普通设置保留三列；欢迎弹窗不曾叠出第二个设置模态框。
     await page.getByRole('button', { name: '设置', exact: true }).click()
-    const settings = page.getByRole('dialog', { name: '设置' })
+    const settings = page.getByRole('dialog', { name: '设置', exact: true })
     await settings.waitFor({ timeout: 10_000 })
     await settings.getByRole('button', { name: '模型' }).click()
     expect(await settings.getByRole('navigation').getByRole('button', { name: '模型' }).getAttribute('aria-current')).toBe('true')
@@ -195,7 +199,7 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     onTestFailed(() => saveFailureShot(page, 'web-e2e-onboarding-deepseek-models'))
     // 凭据场景在保存后重载，此处重新打开设置模态框。
     await page.getByRole('button', { name: '设置', exact: true }).click()
-    const settings = page.getByRole('dialog', { name: '设置' })
+    const settings = page.getByRole('dialog', { name: '设置', exact: true })
     await settings.waitFor({ timeout: 10_000 })
     await settings.getByRole('button', { name: '模型' }).click()
     const deepSeekChannel = settings.getByRole('complementary', { name: '提供方' }).getByRole('button', { name: /^DeepSeek/ })
@@ -208,17 +212,26 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     await settings.getByLabel('模型名称 2').fill('Private Preview')
     // 容量和模型能力都收在该模型自己的展开区域内。
     await settings.getByRole('button', { name: '模型设置 2' }).click()
-    const privatePreview = settings.getByRole('textbox', { name: '模型 ID 2' }).locator('xpath=../..')
-    await privatePreview.getByRole('checkbox', { name: '视觉' }).check()
-    await privatePreview.getByRole('checkbox', { name: '推理' }).check()
-    await privatePreview.getByRole('checkbox', { name: 'max' }).uncheck()
+    const privatePreview = page.getByRole('dialog', { name: '模型设置 2' })
+    expect(await settings.evaluate((node, id) => id !== null && node.contains(node.ownerDocument.getElementById(id)),
+      await privatePreview.getAttribute('id'))).toBe(true)
+    const vision = privatePreview.getByRole('checkbox', { name: '视觉' })
+    if (!await vision.isChecked()) await vision.locator('..').click()
+    const reasoning = privatePreview.getByRole('checkbox', { name: '推理' })
+    if (!await reasoning.isChecked()) await reasoning.locator('..').click()
+    const levels = privatePreview.locator('details')
+    expect(await levels.locator('summary').getAttribute('aria-label')).toBe('思考档位')
+    await levels.locator('summary').click()
+    await privatePreview.getByRole('checkbox', { name: 'max' }).locator('..').click()
     expect(await privatePreview.getByRole('checkbox', { name: '无' }).isChecked()).toBe(true)
-    expect(await privatePreview.getByRole('checkbox', { name: 'high' }).isChecked()).toBe(true)
-    await settings.getByLabel('上下文窗口 2').fill('131072')
-    await settings.getByLabel('最大输出 token 2').fill('64K')
+    expect(await privatePreview.getByRole('checkbox', { name: 'high', exact: true }).isChecked()).toBe(true)
+    await privatePreview.getByLabel('上下文窗口 2').fill('131072')
+    await privatePreview.getByLabel('最大输出 token 2').fill('64K')
 
-    const modelEditor = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
+    const modelEditor = await captureStableAria(page, '[role="dialog"][aria-modal="true"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(MODELS_EXPECTED, modelEditor, MODE)
+    const modelCard = await captureStableAria(page, '[role="dialog"][aria-label="模型设置 2"]', scaffold.workspaceCwd)
+    await compareOrRefreshGolden(MODELS_CARD_EXPECTED, modelCard, MODE)
     await settings.getByRole('button', { name: '保存', exact: true }).click()
     const settingsPath = join(scaffold.harnessHome, 'settings.yaml')
     await expect.poll(() => readFile(settingsPath, 'utf8'), { timeout: 15_000 }).toContain('id: private-preview')
@@ -252,7 +265,7 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
   it('keeps the fixture inventory closed', async () => {
     await assertFixtureInventory(
       SNAPSHOT_DIR,
-      ['missing.expected.md', 'models.expected.md'],
+      ['missing.expected.md', 'models.expected.md', 'models-card.expected.md'],
     )
   })
 })

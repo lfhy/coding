@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useState } from 'react'
 import { ModelListEditor, modelCapabilities, modelFamily } from '../src/client/ModelListEditor.tsx'
@@ -20,7 +20,7 @@ function mount(settingsNs = 'llm-pi-ai', reasoningDisabled = false) {
   return { onChange, discoverModels }
 }
 
-function mountStateful(initial: ModelDraft[] = []) {
+function mountStateful(initial: ModelDraft[] = [], settingsNs = 'llm-pi-ai') {
   const discoverModels = vi.fn(async () => ({ result: { ok: true, value: { models: [
     { id: 'agnes-2.5-flash' }, { id: 'agnes-2.5-pro' }, { id: 'ag-1.0' },
   ] } } }))
@@ -28,7 +28,7 @@ function mountStateful(initial: ModelDraft[] = []) {
   function Fixture() {
     const [models, setModels] = useState<ModelDraft[]>(initial)
     return <ModelListEditor models={models} onChange={(next) => { onChange(next); setModels(next) }}
-      probe={{ settingsNs: 'llm-pi-ai', provider: 'test' }} api={{ llm: { discoverModels } } as never}
+      probe={{ settingsNs, provider: 'test' }} api={{ llm: { discoverModels } } as never}
       t={key => en[key]} disabled={false} providerName="HaiChat" />
   }
   render(<Fixture />)
@@ -69,15 +69,149 @@ describe('channel model catalog', () => {
       const status = screen.getByRole('img', { name: label })
       expect(status.getAttribute('title')).toBe(label)
     }
-    expect(screen.getByRole('img', { name: en.visionUnspecified }).textContent).toContain('?')
-    expect(screen.getByRole('img', { name: en.reasoningUnsupported }).textContent).toContain('×')
+    expect(screen.getByRole('img', { name: en.visionUnspecified }).querySelector('svg')).toBeTruthy()
+    expect(screen.getByRole('img', { name: en.reasoningUnsupported }).querySelector('svg')).toBeTruthy()
     expect(screen.queryByRole('checkbox')).toBeNull()
     const settings = screen.getByRole('button', { name: `${en.modelAdvanced} 1` })
     expect(settings.getAttribute('aria-expanded')).toBe('false')
+    expect(settings.getAttribute('aria-haspopup')).toBe('dialog')
+    const row = settings.parentElement
+    const entries = [...(row?.parentElement?.parentElement?.children ?? [])]
+    expect(entries).toHaveLength(3)
     fireEvent.click(settings)
     expect(settings.getAttribute('aria-expanded')).toBe('true')
-    expect(screen.getByRole('region', { name: `${en.modelAdvanced} 1` }).id)
-      .toBe(settings.getAttribute('aria-controls'))
+    const card = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
+    expect(card.id).toBe(settings.getAttribute('aria-controls'))
+    // 单独挂载的编辑器没有模态框所有者，浮层回退到 body。
+    expect(card.parentElement).toBe(document.body)
+    expect(table?.contains(card)).toBe(false)
+    expect(settings.parentElement).toBe(row)
+    expect([...row!.parentElement!.parentElement!.children]).toEqual(entries)
+    expect(within(card).getByRole('checkbox', { name: en.visionSupport })).toBeTruthy()
+    expect(within(card).getByRole('checkbox', { name: en.reasoningSupport })).toBeTruthy()
+    expect(within(card).getByRole('textbox', { name: `${en.modelContextWindow} 1` })).toBeTruthy()
+  })
+
+  it('portals the card into its owning modal without adding a table row', () => {
+    render(<div role="dialog" aria-modal="true" aria-label="Settings fixture">
+      <ModelListEditor models={[{ id: 'owned' }]} onChange={vi.fn()}
+        probe={{ settingsNs: 'llm-pi-ai', provider: 'test' }} api={{ llm: {} } as never}
+        t={key => en[key]} disabled={false} />
+    </div>)
+    const owner = screen.getByRole('dialog', { name: 'Settings fixture' })
+    const table = within(owner).getAllByRole('region', { name: en.models }).find(node => node.hasAttribute('tabindex'))
+    const trigger = within(owner).getByRole('button', { name: `${en.modelAdvanced} 1` })
+    const row = trigger.parentElement
+    fireEvent.click(trigger)
+    const card = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
+    expect(owner.contains(card)).toBe(true)
+    expect(table?.contains(card)).toBe(false)
+    expect(trigger.parentElement).toBe(row)
+    expect(row?.parentElement?.children).toHaveLength(1)
+  })
+
+  it('gates reasoning levels behind the master toggle and preserves multiple pi-ai levels after reopening', () => {
+    const { onChange } = mountStateful([{ id: 'first', reasoningEfforts: { off: null, low: 'low', high: 'high' } }])
+    const trigger = screen.getByRole('button', { name: `${en.modelAdvanced} 1` })
+    fireEvent.click(trigger)
+    let card = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
+    const reasoning = within(card).getByRole<HTMLInputElement>('checkbox', { name: en.reasoningSupport })
+    expect(reasoning.checked).toBe(true)
+    const summary = card.querySelector('summary')
+    expect(summary?.getAttribute('aria-label')).toBe(en.reasoningLevels)
+    expect((card.querySelector('details') as HTMLDetailsElement).open).toBe(false)
+    fireEvent.click(summary as HTMLElement)
+    expect(within(card).getByRole<HTMLInputElement>('checkbox', { name: en.reasoningNone }).checked).toBe(true)
+    expect(within(card).getByRole<HTMLInputElement>('checkbox', { name: 'low' }).checked).toBe(true)
+    expect(within(card).getByRole<HTMLInputElement>('checkbox', { name: /^high$/ }).checked).toBe(true)
+    fireEvent.click(within(card).getByRole('checkbox', { name: 'max' }))
+    fireEvent.click(within(card).getByRole('checkbox', { name: 'low' }))
+    expect(onChange).toHaveBeenLastCalledWith([{ id: 'first', reasoningEfforts: { off: null, high: 'high', max: 'max' } }])
+    fireEvent.click(reasoning)
+    expect(onChange).toHaveBeenLastCalledWith([{ id: 'first', reasoningEfforts: false }])
+    expect(card.querySelector('details')).toBeNull()
+    fireEvent.click(reasoning)
+    expect(onChange).toHaveBeenLastCalledWith([{ id: 'first', reasoningEfforts: { off: null, high: 'high', max: 'max' } }])
+    expect(card.querySelector('details')).toBeTruthy()
+    fireEvent.click(within(card).getByRole('button', { name: en.close }))
+    fireEvent.click(trigger)
+    card = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
+    fireEvent.click(card.querySelector('summary') as HTMLElement)
+    expect(within(card).getByRole<HTMLInputElement>('checkbox', { name: 'low' }).checked).toBe(false)
+    expect(within(card).getByRole<HTMLInputElement>('checkbox', { name: /^high$/ }).checked).toBe(true)
+    expect(within(card).getByRole<HTMLInputElement>('checkbox', { name: 'max' }).checked).toBe(true)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(card.isConnected).toBe(true)
+    expect((card.querySelector('details') as HTMLDetailsElement).open).toBe(false)
+  })
+
+  it('offers every pi-ai reasoning level and preserves unrelated provider wire values when one changes', () => {
+    const initial = { off: 'native-none', minimal: 'native-brief', medium: 'native-balanced', xhigh: 'native-extended' }
+    const { onChange } = mountStateful([{ id: 'pi', reasoningEfforts: initial }])
+    fireEvent.click(screen.getByRole('button', { name: `${en.modelAdvanced} 1` }))
+    const card = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
+    fireEvent.click(card.querySelector('summary') as HTMLElement)
+    for (const level of [en.reasoningNone, 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']) {
+      expect(within(card).getByRole('checkbox', { name: level })).toBeTruthy()
+    }
+    expect(within(card).getByRole<HTMLInputElement>('checkbox', { name: 'medium' }).checked).toBe(true)
+    fireEvent.click(within(card).getByRole('checkbox', { name: 'medium' }))
+    expect(onChange).toHaveBeenLastCalledWith([{ id: 'pi', reasoningEfforts: {
+      off: 'native-none', minimal: 'native-brief', xhigh: 'native-extended',
+    } }])
+    fireEvent.click(within(card).getByRole('checkbox', { name: 'low' }))
+    expect(onChange).toHaveBeenLastCalledWith([{ id: 'pi', reasoningEfforts: {
+      off: 'native-none', minimal: 'native-brief', xhigh: 'native-extended', low: 'low',
+    } }])
+  })
+
+  it('keeps DeepSeek off-only while disabled and restores selected non-off levels when reenabled', () => {
+    const { onChange } = mountStateful([{ id: 'deepseek', reasoningEfforts: ['off'] }], 'llm-deepseek')
+    fireEvent.click(screen.getByRole('button', { name: `${en.modelAdvanced} 1` }))
+    const card = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
+    const reasoning = within(card).getByRole<HTMLInputElement>('checkbox', { name: en.reasoningSupport })
+    expect(reasoning.checked).toBe(false)
+    expect(card.querySelector('details')).toBeNull()
+    fireEvent.click(reasoning)
+    expect(card.querySelector('details')).toBeTruthy()
+    fireEvent.click(card.querySelector('summary') as HTMLElement)
+    for (const level of ['minimal', 'medium', 'xhigh']) {
+      expect(within(card).queryByRole('checkbox', { name: level })).toBeNull()
+    }
+    fireEvent.click(within(card).getByRole('checkbox', { name: 'low' }))
+    fireEvent.click(within(card).getByRole('checkbox', { name: /^high$/ }))
+    expect(onChange).toHaveBeenLastCalledWith([{ id: 'deepseek', reasoningEfforts: ['off', 'max'] }])
+    fireEvent.click(reasoning)
+    expect(onChange).toHaveBeenLastCalledWith([{ id: 'deepseek', reasoningEfforts: ['off'] }])
+    expect(card.querySelector('details')).toBeNull()
+    fireEvent.click(reasoning)
+    expect(onChange).toHaveBeenLastCalledWith([{ id: 'deepseek', reasoningEfforts: ['off', 'max'] }])
+  })
+
+  it('keeps only one floating editor open and restores the trigger after keyboard or outside dismissal', () => {
+    mountStateful([{ id: 'first' }, { id: 'second' }])
+    const first = screen.getByRole('button', { name: `${en.modelAdvanced} 1` })
+    const second = screen.getByRole('button', { name: `${en.modelAdvanced} 2` })
+    fireEvent.click(first)
+    const firstCard = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
+    expect(firstCard.contains(document.activeElement)).toBe(true)
+    fireEvent.click(second)
+    expect(first.getAttribute('aria-expanded')).toBe('false')
+    expect(second.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.queryByRole('dialog', { name: `${en.modelAdvanced} 1` })).toBeNull()
+    const secondCard = screen.getByRole('dialog', { name: `${en.modelAdvanced} 2` })
+    expect(within(secondCard).getByRole('checkbox', { name: en.reasoningSupport })).toBeTruthy()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('dialog', { name: `${en.modelAdvanced} 2` })).toBeNull()
+    expect(document.activeElement).toBe(second)
+    fireEvent.click(first)
+    fireEvent.pointerDown(document.body)
+    expect(screen.queryByRole('dialog', { name: `${en.modelAdvanced} 1` })).toBeNull()
+    expect(first.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(first)
+    fireEvent.click(within(screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` }))
+      .getByRole('button', { name: en.close }))
+    expect(document.activeElement).toBe(first)
   })
 
   it('groups by version family without inferring capabilities from IDs', () => {
@@ -123,6 +257,8 @@ describe('channel model catalog', () => {
     fireEvent.click(screen.getByRole('button', { name: en.fetchModels }))
     const dialog = await screen.findByRole('dialog', { name: `HaiChat ${en.models}` })
     expect(screen.getAllByRole<HTMLInputElement>('checkbox').map(box => box.checked)).toEqual([false, false, false])
+    const candidate = within(dialog).getByRole('checkbox', { name: 'agnes-2.5-flash' })
+    expect(candidate.closest('label')?.querySelector('[aria-hidden="true"] svg')).toBeTruthy()
     expect(screen.getByRole('button', { name: en.fetchAdopt }).hasAttribute('disabled')).toBe(true)
     fireEvent.click(screen.getByRole('button', { name: en.fetchSelectAll }))
     fireEvent.change(screen.getByRole('textbox', { name: en.searchModels }), { target: { value: 'flash' } })

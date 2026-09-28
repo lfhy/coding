@@ -4,13 +4,14 @@
  * 端点不可发现时显示诊断，手工模型编辑仍可使用。
  */
 
-import { useId, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import type { DiscoveredModelView, IApiClient } from '@deepseek-ai/dsh-api-remotes/client'
 import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
-  IconCheckOutline14, IconChevronDownOutline14, IconPlusOutline16, IconRefreshOutline16,
-  IconSearchOutline16, IconTrashOutline16,
+  IconCheckOutline14, IconChevronDownOutline14, IconCloseOutline16, IconPlusOutline16, IconRefreshOutline16,
+  IconQuestionOutline14, IconSearchOutline16, IconTrashOutline16,
 } from '@deepseek-ai/dsh-client-ui-icons'
 import { formatCapacity, parseCapacity } from './DeepSeekModelsEditor.tsx'
 import type { DeepSeekModelDraft } from './DeepSeekModelsEditor.tsx'
@@ -116,7 +117,7 @@ export interface ModelListEditorProps {
   reasoningDisabled?: boolean
 }
 
-/** Disclosure chevron; rotates to point down while its row is open. */
+/** 模型设置按钮展开时旋转箭头，指向悬浮表单。 */
 function IconChevron({ open }: { open: boolean }): ReactNode {
   return <IconChevronDownOutline14 size={14} className={open ? styles['expandedChevron'] : undefined} />
 }
@@ -144,6 +145,10 @@ const CAPACITY_HINT: Readonly<Record<CapacityField, string>> = {
   contextWindow: '256K',
   maxTokens: '32K',
 }
+
+/** 只提供各适配器接受的档位；pi-ai 的映射值仍保留在模型草稿中。 */
+const DEEPSEEK_REASONING_LEVELS = ['off', 'low', 'high', 'max'] as const
+const PI_AI_REASONING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
 
 /**
  * Spell a stored count for a field that may be unset. The spelling itself is
@@ -188,11 +193,54 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
   const [candidateQuery, setCandidateQuery] = useState('')
   const fetchButton = useRef<HTMLButtonElement>(null)
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set())
-  // 容量与能力开关按行折叠，不占用可扫描的模型目录列。
-  const [expanded, setExpanded] = useState<ReadonlySet<number>>(new Set())
+  // 同时只编辑一行；锚点和表单不进入目录表格的布局或裁剪上下文。
+  const [activeIndex, setActiveIndex] = useState<number | null>(null)
+  const anchorRef = useRef<HTMLButtonElement | null>(null)
+  const panelRef = useRef<HTMLElement>(null)
+  const firstFieldRef = useRef<HTMLInputElement>(null)
+  const openedIndex = activeIndex !== null && activeIndex < models.length ? activeIndex : null
+  const [panelPosition, setPanelPosition] = useState<CSSProperties | null>(null)
+  const [levelsOpen, setLevelsOpen] = useState(false)
+  // 宽屏优先放在触发器旁；档位展开改变表单高度时，同步重新限制在视口内。
+  useLayoutEffect(() => {
+    if (openedIndex === null) { setPanelPosition(null); return }
+    const place = (): void => {
+      const rect = anchorRef.current?.getBoundingClientRect()
+      if (rect === undefined) return
+      const width = panelRef.current?.offsetWidth ?? 0
+      const height = panelRef.current?.offsetHeight ?? 0
+      const margin = 12
+      const gap = 8
+      const clamp = (value: number, extent: number, viewport: number): number =>
+        Math.min(Math.max(value, margin), Math.max(margin, viewport - extent - margin))
+      if (window.innerWidth >= 620 && width > 0 && rect.left - margin >= width + gap) {
+        setPanelPosition({ left: rect.left - width - gap, top: clamp(rect.top, height, window.innerHeight) })
+      } else if (window.innerWidth >= 620 && width > 0
+        && window.innerWidth - rect.right - margin >= width + gap) {
+        setPanelPosition({ left: rect.right + gap, top: clamp(rect.top, height, window.innerHeight) })
+      } else {
+        setPanelPosition({ left: clamp(rect.left, width, window.innerWidth),
+          top: clamp(rect.bottom + gap, height, window.innerHeight) })
+      }
+    }
+    place()
+    window.addEventListener('scroll', place, true)
+    window.addEventListener('resize', place)
+    const panel = panelRef.current
+    const observer = typeof ResizeObserver !== 'undefined' && panel !== null ? new ResizeObserver(place) : null
+    if (panel !== null) observer?.observe(panel)
+    return () => {
+      observer?.disconnect()
+      window.removeEventListener('scroll', place, true)
+      window.removeEventListener('resize', place)
+    }
+  }, [openedIndex, models.length, levelsOpen])
   // 容量输入保留每个字段的原文，避免键入 1000 时中途改写为 1K；无效输入在失焦后仍可见，
   // 也不会因编辑另一行或另一字段而丢失。
   const [editing, setEditing] = useState<ReadonlyMap<string, string>>(new Map())
+  const [rememberedReasoning, setRememberedReasoning] = useState<ReadonlyMap<number, unknown>>(new Map())
+  const levelsRef = useRef<HTMLDetailsElement>(null)
+  const levelsTriggerRef = useRef<HTMLElement>(null)
 
   /** 容量输入的缓存键；删除行后须同步调整行号。 */
   const bufferKey = (index: number, field: CapacityField): string => `${String(index)}:${field}`
@@ -226,13 +274,55 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
     return next
   }
 
-  const toggleExpanded = (index: number): void => {
-    setExpanded((current) => {
-      const next = new Set(current)
-      if (!next.delete(index)) next.add(index)
-      return next
-    })
+  const closeSettings = (): void => {
+    setLevelsOpen(false)
+    setActiveIndex(null)
+    if (anchorRef.current?.isConnected === true) anchorRef.current.focus({ preventScroll: true })
   }
+
+  useEffect(() => {
+    if (openedIndex === null) return
+    if (firstFieldRef.current?.disabled === false) firstFieldRef.current.focus({ preventScroll: true })
+    else panelRef.current?.querySelector('button')?.focus({ preventScroll: true })
+  }, [openedIndex])
+
+  useEffect(() => {
+    if (openedIndex === null) return
+    const outside = (event: PointerEvent): void => {
+      if (!(event.target instanceof Node)) return
+      if (anchorRef.current?.contains(event.target)) return
+      if (panelRef.current?.contains(event.target)) {
+        if (levelsOpen && !levelsRef.current?.contains(event.target)) setLevelsOpen(false)
+        return
+      }
+      if (levelsOpen) { setLevelsOpen(false); return }
+      closeSettings()
+    }
+    const escape = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return
+      // 设置外壳也监听 Escape；只让当前最上层的悬浮表单响应。
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      if (levelsOpen) {
+        setLevelsOpen(false)
+        levelsTriggerRef.current?.focus({ preventScroll: true })
+        return
+      }
+      closeSettings()
+    }
+    const scroll = (event: Event): void => {
+      if (event.target instanceof Node && panelRef.current?.contains(event.target)) return
+      closeSettings()
+    }
+    document.addEventListener('pointerdown', outside)
+    document.addEventListener('keydown', escape, true)
+    document.addEventListener('scroll', scroll, true)
+    return () => {
+      document.removeEventListener('pointerdown', outside)
+      document.removeEventListener('keydown', escape, true)
+      document.removeEventListener('scroll', scroll, true)
+    }
+  }, [openedIndex, levelsOpen])
 
   const patch = (index: number, next: Record<string, unknown>): void => {
     onChange(models.map((model, at) => {
@@ -408,7 +498,8 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                 return <span key={capability} role="img" aria-label={label} title={label}
                   className={`${styles['capabilityBadge']} ${state === 'supported'
                     ? styles['capabilitySupported'] : state === 'unknown' ? styles['capabilityUnknown'] : styles['capabilityUnsupported']}`}>
-                  <span aria-hidden="true">{state === 'supported' ? <IconCheckOutline14 size={14} /> : state === 'unsupported' ? '×' : '?'}</span>
+                  <span aria-hidden="true">{state === 'supported' ? <IconCheckOutline14 size={14} />
+                    : state === 'unsupported' ? <IconCloseOutline16 size={14} /> : <IconQuestionOutline14 size={14} />}</span>
                   <span className={styles['hiddenLabel']}>{label}</span>
                 </span>
               })}
@@ -416,12 +507,18 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                 type="button"
                 className={styles['iconButton']}
                 aria-label={`${t('modelAdvanced')} ${index + 1}`}
-                aria-expanded={expanded.has(index)}
-                aria-controls={expanded.has(index) ? `${advancedId}-${index}` : undefined}
+                aria-haspopup="dialog"
+                aria-expanded={openedIndex === index}
+                aria-controls={openedIndex === index ? `${advancedId}-${index}` : undefined}
                 title={t('modelAdvanced')}
-                onClick={() => { toggleExpanded(index) }}
+                ref={openedIndex === index ? anchorRef : undefined}
+                onClick={(event) => {
+                  anchorRef.current = event.currentTarget
+                  if (openedIndex === index) closeSettings()
+                  else { setLevelsOpen(false); setActiveIndex(index) }
+                }}
               >
-                <IconChevron open={expanded.has(index)} />
+                <IconChevron open={openedIndex === index} />
               </button>
               <button
                 type="button"
@@ -431,100 +528,142 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                 disabled={disabled}
                 onClick={() => {
                   onChange(models.filter((_model, at) => at !== index))
-                  // 折叠状态与输入缓存按行号保存；删除后同步前移，避免后续行继承别行的状态。
-                  setExpanded((current) => {
-                    const next = new Set<number>()
-                    for (const at of current) {
-                      if (at < index) next.add(at)
-                      else if (at > index) next.add(at - 1)
+                  // 删除当前行时关闭表单；删去前面的行则跟随原有模型前移。
+                  setActiveIndex(current => current === null || current === index
+                    ? null : current > index ? current - 1 : current)
+                  setEditing(current => reindexOnRemove(current, index))
+                  setRememberedReasoning((current) => {
+                    const next = new Map<number, unknown>()
+                    for (const [at, selection] of current) {
+                      if (at !== index) next.set(at > index ? at - 1 : at, selection)
                     }
                     return next
                   })
-                  setEditing(current => reindexOnRemove(current, index))
                 }}
               >
                 <IconTrash />
               </button>
             </div>
-            {expanded.has(index)
-              ? (
-                <div id={`${advancedId}-${index}`} className={styles['modelAdvanced']} role="region"
-                  aria-label={`${t('modelAdvanced')} ${index + 1}`}>
-                  <div className={styles['capabilityControls']}>
-                    <label><input type="checkbox" checked={Array.isArray(model[probe.settingsNs === 'llm-deepseek' ? 'inputModalities' : 'input'])
-                    && (model[probe.settingsNs === 'llm-deepseek' ? 'inputModalities' : 'input'] as string[]).includes('image')}
-                    disabled={disabled} onChange={(event) => {
-                      patch(index, { [probe.settingsNs === 'llm-deepseek' ? 'inputModalities' : 'input']:
-                        event.target.checked ? ['text', 'image'] : ['text'] })
-                    }} />{t('visionSupport')}</label>
-                    <label><input type="checkbox" checked={probe.settingsNs === 'llm-deepseek'
-                      ? effortsOf(model).some(level => level !== 'off')
-                      : typeof model['reasoningEfforts'] === 'object' && model['reasoningEfforts'] !== null
-                        && Object.keys(model['reasoningEfforts']).some(level => level !== 'off')}
-                    disabled={disabled || props.reasoningDisabled === true} onChange={(event) => {
-                      patch(index, { reasoningEfforts: event.target.checked
-                        ? probe.settingsNs === 'llm-deepseek' ? ['off', 'low', 'high', 'max']
-                          : { off: null, low: 'low', high: 'high', max: 'max' }
-                        : probe.settingsNs === 'llm-deepseek' ? ['off'] : false })
-                    }} />{t('reasoningSupport')}</label>
-                    {(['off', 'low', 'high', 'max'] as const).map(level => (
-                      <label key={level}><input type="checkbox"
-                        disabled={disabled || props.reasoningDisabled === true && level !== 'off'
-                        || level === 'off' && (probe.settingsNs === 'llm-deepseek'
-                          ? effortsOf(model).length === 1 && effortsOf(model)[0] === 'off'
-                          : model['reasoningEfforts'] === false)}
-                        checked={probe.settingsNs === 'llm-deepseek'
-                          ? effortsOf(model).includes(level)
-                          : typeof model['reasoningEfforts'] === 'object' && model['reasoningEfforts'] !== null
-                            ? level in model['reasoningEfforts'] : level === 'off'}
-                        onChange={(event) => {
-                          if (probe.settingsNs === 'llm-deepseek') {
-                            const prior = effortsOf(model)
-                            const next = event.target.checked ? [...prior, level] : prior.filter(value => value !== level)
-                            patch(index, { reasoningEfforts: next.length === 0 ? ['off'] : next })
-                          } else {
-                            const prior = typeof model['reasoningEfforts'] === 'object' && model['reasoningEfforts'] !== null
-                              ? model['reasoningEfforts'] as Record<string, string | null> : { off: null }
-                            const next = { ...prior }
-                            if (event.target.checked) next[level] = level === 'off' ? null : level
-                            else Reflect.deleteProperty(next, level)
-                            patch(index, { reasoningEfforts: Object.keys(next).every(key => key === 'off') ? false : next })
-                          }
-                        }} />{level === 'off' ? t('reasoningNone') : level}</label>
-                    ))}
-                  </div>
-                  <label className={styles['modelField']}>
-                    <span className={styles['modelFieldLabel']}>{t('modelContextWindow')}</span>
-                    <input
-                      className={styles['input']}
-                      type="text"
-                      inputMode="numeric"
-                      value={capacityText(model, index, 'contextWindow')}
-                      placeholder={CAPACITY_HINT.contextWindow}
-                      aria-label={`${t('modelContextWindow')} ${index + 1}`}
-                      disabled={disabled}
-                      onChange={(event) => { editCapacity(index, 'contextWindow', event.target.value) }}
-                    />
-                  </label>
-                  <label className={styles['modelField']}>
-                    <span className={styles['modelFieldLabel']}>{t('modelMaxTokens')}</span>
-                    <input
-                      className={styles['input']}
-                      type="text"
-                      inputMode="numeric"
-                      value={capacityText(model, index, 'maxTokens')}
-                      placeholder={CAPACITY_HINT.maxTokens}
-                      aria-label={`${t('modelMaxTokens')} ${index + 1}`}
-                      disabled={disabled}
-                      onChange={(event) => { editCapacity(index, 'maxTokens', event.target.value) }}
-                    />
-                  </label>
-                </div>
-              )
-              : null}
           </div>
         ))}</div>
       </div> : null}
+      {openedIndex !== null && createPortal(
+        <section id={`${advancedId}-${openedIndex}`} ref={panelRef} className={styles['modelSettingsPopover']} role="dialog"
+          aria-label={`${t('modelAdvanced')} ${openedIndex + 1}`}
+          style={panelPosition ?? { visibility: 'hidden', left: 0, top: 0 }}>
+          <div className={styles['modelAdvancedHeader']}>
+            <span className={styles['modelAdvancedTitle']}>{t('modelAdvanced')}</span>
+            <button type="button" className={styles['iconButton']} aria-label={t('close')} title={t('close')}
+              onClick={() => { closeSettings() }}><IconCloseOutline16 size={16} /></button>
+          </div>
+          <div className={styles['modelAdvancedFields']}>
+            {(() => {
+              const index = openedIndex
+              const model = models[index]
+              if (model === undefined) return null
+              const deepseek = probe.settingsNs === 'llm-deepseek'
+              const declared = model['reasoningEfforts']
+              const reasoningOn = deepseek ? effortsOf(model).some(level => level !== 'off')
+                : typeof declared === 'object' && declared !== null && !Array.isArray(declared)
+                  && Object.keys(declared).some(level => level !== 'off')
+              const selectedLevels = deepseek ? effortsOf(model)
+                : typeof declared === 'object' && declared !== null && !Array.isArray(declared)
+                  ? Object.keys(declared) : ['off']
+              return <>
+                <div className={styles['capabilityControls']}>
+                  <label className={styles['modelToggle']}><input className={styles['modelCheckboxInput']} type="checkbox"
+                    checked={Array.isArray(model[deepseek ? 'inputModalities' : 'input'])
+                      && (model[deepseek ? 'inputModalities' : 'input'] as string[]).includes('image')}
+                    ref={firstFieldRef} disabled={disabled} onChange={(event) => {
+                      patch(index, { [deepseek ? 'inputModalities' : 'input']:
+                        event.target.checked ? ['text', 'image'] : ['text'] })
+                    }} /><span className={styles['modelCheckboxBox']} aria-hidden="true"><IconCheckOutline14 size={12} /></span>
+                  <span>{t('visionSupport')}</span></label>
+                  <label className={styles['modelToggle']}><input className={styles['modelCheckboxInput']} type="checkbox"
+                    checked={reasoningOn} disabled={disabled || props.reasoningDisabled === true} onChange={(event) => {
+                      if (event.target.checked) {
+                        const saved = rememberedReasoning.get(index)
+                        const restored = deepseek
+                          ? Array.isArray(saved) && saved.some(level => level !== 'off')
+                            ? saved : ['off', 'low', 'high', 'max']
+                          : typeof saved === 'object' && saved !== null && !Array.isArray(saved)
+                            && Object.keys(saved).some(level => level !== 'off')
+                            ? saved : { off: null, low: 'low', high: 'high', max: 'max' }
+                        patch(index, { reasoningEfforts: restored })
+                      } else {
+                        setRememberedReasoning(current => new Map(current).set(index, deepseek ? effortsOf(model) : declared))
+                        setLevelsOpen(false)
+                        patch(index, { reasoningEfforts: deepseek ? ['off'] : false })
+                      }
+                    }} /><span className={styles['modelCheckboxBox']} aria-hidden="true"><IconCheckOutline14 size={12} /></span>
+                  <span>{t('reasoningSupport')}</span></label>
+                </div>
+                {reasoningOn && <details ref={levelsRef} className={styles['reasoningDropdown']} open={levelsOpen}>
+                  <summary ref={levelsTriggerRef} aria-label={t('reasoningLevels')} aria-expanded={levelsOpen}
+                    aria-disabled={disabled || props.reasoningDisabled === true}
+                    onClick={(event) => {
+                      event.preventDefault()
+                      if (!disabled && props.reasoningDisabled !== true) setLevelsOpen(current => !current)
+                    }}>
+                    <span>{t('reasoningLevels')}</span>
+                    <span className={styles['reasoningSelection']}>{selectedLevels.map(level =>
+                      level === 'off' ? t('reasoningNone') : level).join(' · ')}</span>
+                    <IconChevronDownOutline14 size={14} />
+                  </summary>
+                  <div className={styles['reasoningOptions']}>
+                    {(deepseek ? DEEPSEEK_REASONING_LEVELS : PI_AI_REASONING_LEVELS).map(level => (
+                      <label key={level} className={styles['modelToggle']}><input className={styles['modelCheckboxInput']}
+                        type="checkbox" disabled={disabled || props.reasoningDisabled === true}
+                        checked={selectedLevels.includes(level)} onChange={(event) => {
+                          if (deepseek) {
+                            const prior = effortsOf(model)
+                            const next = event.target.checked ? [...prior, level] : prior.filter(value => value !== level)
+                            if (next.every(value => value === 'off')) setLevelsOpen(false)
+                            patch(index, { reasoningEfforts: next.length === 0 ? ['off'] : next })
+                          } else {
+                            const prior = typeof declared === 'object' && declared !== null && !Array.isArray(declared)
+                              ? declared as Record<string, string | null> : { off: null }
+                            const next = { ...prior }
+                            if (event.target.checked) next[level] = level === 'off' ? null : level
+                            else Reflect.deleteProperty(next, level)
+                            if (Object.keys(next).every(key => key === 'off')) setLevelsOpen(false)
+                            patch(index, { reasoningEfforts: Object.keys(next).every(key => key === 'off') ? false : next })
+                          }
+                        }} /><span className={styles['modelCheckboxBox']} aria-hidden="true"><IconCheckOutline14 size={12} /></span>
+                      <span>{level === 'off' ? t('reasoningNone') : level}</span></label>
+                    ))}
+                  </div>
+                </details>}
+                <label className={styles['modelField']}>
+                  <span className={styles['modelFieldLabel']}>{t('modelContextWindow')}</span>
+                  <input
+                    className={styles['input']}
+                    type="text"
+                    inputMode="numeric"
+                    value={capacityText(model, index, 'contextWindow')}
+                    placeholder={CAPACITY_HINT.contextWindow}
+                    aria-label={`${t('modelContextWindow')} ${index + 1}`}
+                    disabled={disabled}
+                    onChange={(event) => { editCapacity(index, 'contextWindow', event.target.value) }}
+                  />
+                </label>
+                <label className={styles['modelField']}>
+                  <span className={styles['modelFieldLabel']}>{t('modelMaxTokens')}</span>
+                  <input
+                    className={styles['input']}
+                    type="text"
+                    inputMode="numeric"
+                    value={capacityText(model, index, 'maxTokens')}
+                    placeholder={CAPACITY_HINT.maxTokens}
+                    aria-label={`${t('modelMaxTokens')} ${index + 1}`}
+                    disabled={disabled}
+                    onChange={(event) => { editCapacity(index, 'maxTokens', event.target.value) }}
+                  />
+                </label>
+              </>
+            })()}
+          </div>
+        </section>, anchorRef.current?.closest('[role="dialog"][aria-modal="true"]') ?? document.body)}
       <button
         type="button"
         className={styles['addModelButton']}
@@ -570,9 +709,11 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                 onClick={() => { adoptGroup(group) }}>
                 {group.every(candidate => known.has(candidate.id)) ? t('addedShort') : <IconPlusOutline16 size={18} />}</button></div>
             {group.map(candidate => <div key={candidate.id} className={styles['candidate']}>
-              <label className={styles['candidateLabel']}><input type="checkbox" disabled={known.has(candidate.id)}
+              <label className={styles['candidateLabel']}><input className={styles['modelCheckboxInput']} type="checkbox"
+                disabled={known.has(candidate.id)}
                 checked={picked.has(candidate.id)}
                 onChange={() => { toggle(candidate.id) }} />
+              <span className={styles['modelCheckboxBox']} aria-hidden="true"><IconCheckOutline14 size={12} /></span>
               <span className={styles['candidateAvatar']} aria-hidden="true">{candidate.id.slice(0, 1).toLocaleUpperCase()}</span>
               <span className={styles['candidateId']}>{candidate.id}</span></label>
               <button type="button" className={styles['candidateAdd']} disabled={known.has(candidate.id)}

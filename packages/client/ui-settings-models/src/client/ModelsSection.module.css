@@ -428,9 +428,6 @@
 .modelList {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 10px;
-  overflow: hidden;
 }
 
 .modelTableScroller {
@@ -483,7 +480,8 @@
 }
 
 .modelTableHead {
-  padding: 0 9px;
+  padding: 0 8px 8px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
   color: var(--dsw-alias-label-tertiary);
   font-size: 12px;
   line-height: 18px;
@@ -502,20 +500,18 @@
   width: 28px;
   height: 28px;
   border-radius: 7px;
-  background: var(--dsw-alias-bg-module-platform);
+  background: transparent;
   color: var(--dsw-alias-label-secondary);
   font-size: 15px;
   line-height: 20px;
 }
 
 .capabilitySupported {
-  background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 12%, transparent);
   color: var(--dsw-alias-state-success-primary);
 }
 
 .capabilityUnknown {
-  border: 1px dashed var(--dsw-alias-border-l2);
-  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
 }
 
 .capabilityUnsupported { background: transparent; }
@@ -561,6 +557,138 @@
   border-radius: 8px;
   background: var(--dsw-alias-bg-module-platform);
 }
+
+/* 行外固定悬浮层：不进入可横向滚动模型表的布局与 paint 裁剪。 */
+.modelSettingsPopover {
+  position: fixed;
+  z-index: 1100;
+  box-sizing: border-box;
+  width: 380px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border: 1px solid var(--dsw-alias-border-inverted);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-3);
+  box-shadow: var(--dsw-shadow-lv3);
+  color: var(--dsw-alias-label-primary);
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+.modelAdvancedHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.modelAdvancedTitle {
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 500;
+}
+
+.modelAdvancedHeader .iconButton:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+}
+
+.modelAdvancedFields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr));
+  gap: 16px 12px;
+}
+
+.modelToggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.modelCheckboxInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.modelCheckboxBox {
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary-foreground);
+}
+
+.modelCheckboxBox svg { opacity: 0; }
+.modelCheckboxInput:checked + .modelCheckboxBox {
+  border-color: var(--dsw-alias-state-business-primary);
+  background: var(--dsw-alias-state-business-primary);
+}
+.modelCheckboxInput:checked + .modelCheckboxBox svg { opacity: 1; }
+.modelCheckboxInput:focus-visible + .modelCheckboxBox {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+}
+.modelToggle:has(input:disabled) { cursor: default; opacity: .5; }
+
+.reasoningDropdown { grid-column: 1 / -1; min-width: 0; }
+.reasoningDropdown summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+  list-style: none;
+}
+.reasoningDropdown summary::-webkit-details-marker { display: none; }
+.reasoningDropdown summary:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+}
+.reasoningDropdown summary[aria-disabled='true'] { cursor: default; opacity: .6; }
+.reasoningDropdown summary svg { flex: none; }
+.reasoningDropdown[open] summary svg { transform: rotate(180deg); }
+.reasoningSelection {
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.reasoningOptions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 12px;
+  padding: 8px 10px 0;
+}
+
+.modelSettingsPopover .input { height: 38px; }
 
 .modelField {
   display: flex;
@@ -723,6 +851,7 @@ select.input {
 }
 
 .candidateLabel {
+  position: relative;
   display: flex;
   align-items: center;
   min-width: 0;
@@ -731,15 +860,7 @@ select.input {
   cursor: pointer;
 }
 
-.candidateLabel input {
-  flex: none;
-  width: 16px;
-  height: 16px;
-  margin: 0;
-  accent-color: var(--dsw-alias-state-business-primary);
-}
-
-.candidateLabel:has(input:disabled) { cursor: default; }
+.candidateLabel:has(input:disabled) { cursor: default; opacity: .6; }
 
 .candidateAvatar {
   display: grid;
@@ -950,13 +1071,13 @@ select.input {
   grid-column: 1 / -1;
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 14px;
+  gap: 8px 20px;
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
   line-height: 18px;
 }
-.capabilityControls label { display: inline-flex; align-items: center; gap: 4px; }
-.capabilityControls input { accent-color: var(--dsw-alias-state-business-primary); }
+.capabilityControls label { display: inline-flex; align-items: center; }
+.capabilityControls input:not(.modelCheckboxInput) { accent-color: var(--dsw-alias-state-business-primary); }
 
 .fetchDialog {
   width: min(1500px, calc(100vw - 96px));
