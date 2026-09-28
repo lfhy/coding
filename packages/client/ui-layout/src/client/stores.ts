@@ -27,7 +27,7 @@ export type WorkbenchState = {
   fullscreen: boolean
   width: number
   bottomOpen: boolean
-  /** Hero 的底栏独占模式；普通工作台关闭仍应隐藏底栏。 */
+  /** 右侧工作台关闭时仍单独显示底栏。 */
   bottomStandalone: boolean
   bottomHeight: number
   filesOpen: boolean
@@ -75,7 +75,7 @@ type LayoutActions = {
 }
 
 /**
- * 创建布局 store。工作台状态按 Session 隔离；工作台打开会关闭详情栏，而详情栏仅暂时覆盖当前工作台，保留其 Session 偏好。关闭工作台时保留本 Session 的宽度、底栏和文件侧栏偏好，重新打开可恢复用户几何。
+ * 创建布局 store。工作台状态按 Session 隔离；工作台打开会关闭详情栏，而详情栏仅暂时覆盖当前工作台，保留其 Session 偏好。关闭右侧工作台时已显示的底栏保持可见，宽度和文件侧栏偏好也保留。
  * @returns 包含定义、身份和实例工厂的 store handle。
  */
 export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutActions> {
@@ -118,15 +118,15 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
       },
       closeWorkbench: (d, sessionId: SessionId) => {
         const state = workbench(d, sessionId)
+        state.bottomStandalone = state.bottomOpen && (state.open || state.bottomStandalone)
         state.open = false
-        state.bottomStandalone = false
         state.fullscreen = false
       },
       toggleWorkbench: (d, sessionId: SessionId) => {
         const state = workbench(d, sessionId)
         if (state.open) {
+          state.bottomStandalone = state.bottomOpen
           state.open = false
-          state.bottomStandalone = false
           state.fullscreen = false
         } else {
           d.details = 0
@@ -139,29 +139,28 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
         const state = d.workbench[sessionId]
         if (state?.open) state.fullscreen = !state.fullscreen
       },
-      // 关闭态的面板切换先打开工作台并关闭详情栏，让常驻入口一次点击就显示目标面板。
+      // 两个面板的入口各自只改变目标面板；显示时关闭暂时遮挡它的详情栏。
       toggleWorkbenchBottom: (d, sessionId: SessionId) => {
         const state = workbench(d, sessionId)
-        if (state.bottomStandalone && state.bottomOpen) {
+        if (d.details === 0 && state.bottomOpen && (state.open || state.bottomStandalone)) {
           state.bottomOpen = false
           state.bottomStandalone = false
           return
         }
-        state.bottomStandalone = false
-        if (state.open) {
-          state.bottomOpen = !state.bottomOpen
-        } else {
-          d.details = 0
-          state.open = true
-          state.fullscreen = false
-          state.bottomOpen = true
-        }
+        d.details = 0
+        state.bottomOpen = true
+        state.bottomStandalone = !state.open
       },
       toggleWorkbenchFiles: (d, sessionId: SessionId) => {
         const state = workbench(d, sessionId)
         state.bottomStandalone = false
         if (state.open) {
-          state.filesOpen = !state.filesOpen
+          if (d.details !== 0) {
+            d.details = 0
+            state.filesOpen = true
+          } else {
+            state.filesOpen = !state.filesOpen
+          }
         } else {
           d.details = 0
           state.open = true

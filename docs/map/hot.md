@@ -153,7 +153,7 @@
 - **接线**：`packages/bundle/web-app/cordis.patch.yml` 的 `ui-layout` 行；`'root'` slot 本体由 `packages/client/runtime/src/client/slots.ts` 预置，禁止第二者注册 root。
 - **关键文件**：`packages/client/ui-layout/src/client/index.ts`、`packages/client/ui-layout/src/client/AppFrame.tsx`、`packages/client/ui-layout/src/client/service.ts`、`packages/client/ui-layout/src/client/stores.ts`。
 - **改这里要同步**：新增或改座位要同步 `SlotMap` 声明、`AppFrame` 的 `children` 表、`PropsRenderSlots` 键集、各占用包（`packages/client/ui-sidebar`、`packages/client/ui-open-in-app`）与 README 的 slot 表。
-- **不变量**：布局状态按 `SessionId` 隔离；欢迎页底栏独占时右列为零宽，普通工作台关闭则隐藏底栏并保留偏好；工作台、底栏与详情的视觉关闭只做零尺寸加 `inert`，绝不卸载固定 React 树位置。
+- **不变量**：布局状态按 `SessionId` 隔离；单独显示底栏时右列为零宽，关闭右侧工作台保留已显示的底栏；工作台、底栏与详情的视觉关闭只做零尺寸加 `inert`，绝不卸载固定 React 树位置。
 - **测试**：`pnpm exec vitest run packages/client/ui-layout/tests`
 
 ## packages/client/ui-slots

@@ -41,13 +41,13 @@ export interface ILayout {
   workbench(sessionId: SessionId): ObservableSnapshot<WorkbenchLayoutSnapshot>
   /** 打开指定 Session 的工作台并关闭详情栏。 */
   openWorkbench(sessionId: SessionId): void
-  /** 关闭指定 Session 的工作台。 */
+  /** 关闭指定 Session 的右侧工作台，保留正在显示的底栏。 */
   closeWorkbench(sessionId: SessionId): void
   /** 切换指定 Session 的工作台；打开时同时关闭详情栏。 */
   toggleWorkbench(sessionId: SessionId): void
   /** 切换指定 Session 的工作台最大化偏好。 */
   toggleWorkbenchFullscreen(sessionId: SessionId): void
-  /** 切换指定 Session 的终端底栏；工作台未打开时先打开工作台再显示该面板。 */
+  /** 切换指定 Session 的终端底栏；右侧工作台关闭时仅显示底栏。 */
   toggleWorkbenchBottom(sessionId: SessionId): void
   /** 切换指定 Session 的工作台文件侧栏；工作台未打开时先打开工作台再显示该面板。 */
   toggleWorkbenchFiles(sessionId: SessionId): void
@@ -138,7 +138,7 @@ export class LayoutController implements ILayout {
     this.#require().openWorkbench(sessionId)
   }
 
-  /** 关闭指定 Session 的工作台。 */
+  /** 关闭指定 Session 的右侧工作台，保留正在显示的底栏。 */
   closeWorkbench(sessionId: SessionId): void {
     this.#require().closeWorkbench(sessionId)
   }
@@ -153,7 +153,7 @@ export class LayoutController implements ILayout {
     this.#require().toggleWorkbenchFullscreen(sessionId)
   }
 
-  /** 切换指定 Session 的终端底栏；工作台未打开时先打开工作台再显示该面板。 */
+  /** 切换指定 Session 的终端底栏；右侧工作台关闭时仅显示底栏。 */
   toggleWorkbenchBottom(sessionId: SessionId): void {
     this.#require().toggleWorkbenchBottom(sessionId)
   }

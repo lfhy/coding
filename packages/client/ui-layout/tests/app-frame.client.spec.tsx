@@ -386,8 +386,9 @@ describe('AppFrame — fixed workbench', () => {
 
     act(() => { instance.actions.closeWorkbench('s-test' as SessionId) })
     expect(tracks(frame)).toEqual([280, 0])
-    expect(rows(frame)).toBe(0)
+    expect(rows(frame)).toBe(260)
     expect(getByTestId('workbench-content').parentElement?.hasAttribute('inert')).toBe(true)
+    expect(getByTestId('center-content').parentElement?.hasAttribute('inert')).toBe(false)
   })
 
   it('keeps a blank Session bottom panel and sidebar state when its first message arrives', () => {
@@ -429,17 +430,22 @@ describe('AppFrame — fixed workbench', () => {
     })
   })
 
-  it('terminal toggle opens the workbench from the closed state', () => {
-    const { frame, instance, publishWorkbench } = mountFrame()
+  it('terminal toggle opens only the bottom row from the closed state', () => {
+    const { frame, instance, publishWorkbench, getByTestId } = mountFrame()
     act(() => { instance.actions.openDetails() })
     expect(tracks(frame)).toEqual([280, 360])
 
     act(() => { instance.actions.toggleWorkbenchBottom('s-test' as SessionId) })
-    expect(tracks(frame)).toEqual([280, 1020])
+    expect(tracks(frame)).toEqual([280, 0])
     expect(rows(frame)).toBe(260)
+    expect(getByTestId('center-content').parentElement?.hasAttribute('inert')).toBe(false)
+    expect(getByTestId('workbench-content').parentElement?.hasAttribute('inert')).toBe(true)
     expect(publishWorkbench).toHaveBeenLastCalledWith('s-test', {
-      open: true, fullscreen: false, bottomOpen: true, filesOpen: true,
+      open: false, fullscreen: false, bottomOpen: true, filesOpen: false,
     })
+    act(() => { instance.actions.toggleWorkbenchBottom('s-test' as SessionId) })
+    expect(tracks(frame)).toEqual([280, 0])
+    expect(rows(frame)).toBe(0)
   })
 
   it('Hero terminal occupies only the bottom row and keeps conversation available on narrow screens', () => {
@@ -459,17 +465,20 @@ describe('AppFrame — fixed workbench', () => {
     expect(ownerFor('workbench.bottom')).toEqual({ shown: false })
   })
 
-  it('closing a combined workbench hides the bottom row without erasing its preference', () => {
-    const { frame, instance, ownerFor } = mountFrame()
+  it('closing a combined workbench leaves the bottom row visible', () => {
+    const { frame, instance, ownerFor, publishWorkbench } = mountFrame()
     act(() => {
       instance.actions.openWorkbench('s-test' as SessionId)
       instance.actions.toggleWorkbenchBottom('s-test' as SessionId)
     })
     expect(rows(frame)).toBe(260)
     act(() => { instance.actions.closeWorkbench('s-test' as SessionId) })
-    expect(rows(frame)).toBe(0)
-    expect(ownerFor('workbench.bottom')).toEqual({ shown: false })
-    expect(instance.getSnapshot().workbench['s-test' as SessionId]?.bottomOpen).toBe(true)
+    expect(tracks(frame)).toEqual([280, 0])
+    expect(rows(frame)).toBe(260)
+    expect(ownerFor('workbench.bottom')).toEqual({ shown: true })
+    expect(publishWorkbench).toHaveBeenLastCalledWith('s-test', {
+      open: false, fullscreen: false, bottomOpen: true, filesOpen: false,
+    })
   })
 
   it('narrow view collapses navigation and gives the main content to workbench', () => {
@@ -543,7 +552,7 @@ describe('AppFrame — narrow-viewport auto-collapse', () => {
     const { frame, instance, ownerFor } = mountFrame()
     expect(ownerFor('sidebar')).toMatchObject({ welcomeActionsVisible: true })
 
-    act(() => { instance.actions.toggleWorkbenchBottom('s-test' as SessionId) })
+    act(() => { instance.actions.openWorkbench('s-test' as SessionId) })
     expect(frame.hasAttribute('data-workbench-fullscreen')).toBe(true)
     expect(ownerFor('sidebar')).toMatchObject({ welcomeActionsVisible: false })
 
