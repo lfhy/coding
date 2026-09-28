@@ -282,15 +282,17 @@ describe('web e2e: seeded history renders through cold resume', () => {
       timeout: 10_000,
     }).toBe(1)
     expect(await page.getByText('Context compacted', { exact: true }).count()).toBe(0)
-    // Tool cards render from logged tool/call + tool/result alone (views are
-    // host-recomputed per page; the generic card is the documented default).
+    // 工具卡片仅由日志中的调用与结果重建；Host 逐页重算视图，缺失时回退通用卡片。
     const toolRows = page.locator('[data-variant], [data-sample]')
     await expect.poll(() => toolRows.count(), { timeout: 10_000 }).toBeGreaterThanOrEqual(2)
     expect(await page.getByText('a.txt', { exact: false }).count()).toBeGreaterThan(0)
-    // The pinned hazard: compaction shadows the surface on the model side
-    // only — the prompt and full tool output must stay on screen.
+    // 压缩仅遮蔽模型侧内容，提示词和完整工具输出仍须保留在对话区。
     expect(await page.getByText(PROMPT, { exact: true }).count()).toBe(1)
 
+    // 本场景不发模型调用：route-only 适配器只提供目录并拒绝流式响应。历史先恢复
+    // 路由 id，选择器需等目录就绪才能解析公告项；此时 Agent 才可用于追加事件。
+    await page.getByRole('button', { name: /^Select model, current/ })
+      .waitFor({ timeout: 10_000 })
     const agent = scaffold.ctx.agents.get(SessionId(SEED_ID))
     if (agent === undefined) throw new Error('seeded session did not attach an agent')
     agent.session.append('user/message', createUserMessage({
@@ -322,11 +324,6 @@ describe('web e2e: seeded history renders through cold resume', () => {
 
   it.skipIf(MODE === 'record')('matches the historical conversation aria golden', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-seeded-aria'))
-    // This scenario issues zero model calls — the scaffold's route-only
-    // adapter serves the catalog and refuses to stream — so history restores
-    // the routed id and the seat resolves it against an advertised row.
-    await page.getByRole('button', { name: /^Select model, current/ })
-      .waitFor({ timeout: 10_000 })
     const snapshot = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
       .split(SEED_ID).join('{{seededId}}')
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)

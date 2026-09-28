@@ -348,6 +348,14 @@ describe('Node 24 lane ownership', () => {
     expect(subject.find(item => item.id === 'web-snapshot')).toMatchObject({
       displayCommand: 'DSH_SNAPSHOT=replay pnpm run test:web:built',
       env: { DSH_SNAPSHOT: 'replay' },
+      after: [
+        'node-compat',
+        'publint',
+        'lint-and-duplication',
+        'snapshot',
+        'node-next-types',
+        'built-bin-smoke',
+      ],
     })
   })
 })
@@ -361,8 +369,61 @@ describe('Linux primary graph', () => {
       displayCommand: 'DSH_SNAPSHOT=replay pnpm run test:web:built',
       env: { DSH_SNAPSHOT: 'replay' },
       needs: ['built-package-invariants'],
+      after: subject.filter(item => item.id !== 'web-snapshot').map(item => item.id),
     })
   })
+})
+
+describe('web snapshot artifact isolation', () => {
+  it.each([
+    ['ci-linux-primary', 'coverage'],
+    ['ci-consumers', 'snapshot'],
+  ] as const)('waits for a failing %s peer without inheriting its failure', async (mode, blockedId) => {
+    const subject = withPnpmEntrypoint(() => gatesForMode(mode))
+    const blocked = Promise.withResolvers<undefined>()
+    const startedBlocked = Promise.withResolvers<undefined>()
+    const starts: string[] = []
+    const finishes: string[] = []
+    const events: string[] = []
+    const execute = vi.fn(async (item: Gate) => {
+      starts.push(item.id)
+      events.push(`start:${item.id}`)
+      if (item.id === blockedId) {
+        startedBlocked.resolve(undefined)
+        await blocked.promise
+      }
+      finishes.push(item.id)
+      events.push(`finish:${item.id}`)
+      return resultFor(item, item.id === blockedId ? 'failed' : 'passed')
+    })
+
+    const running = runGates(subject, subject.length, execute)
+    await startedBlocked.promise
+    try {
+      await vi.waitFor(() => { expect(finishes).toContain('built-bin-smoke') })
+      expect(starts).not.toContain('web-snapshot')
+    } finally {
+      blocked.resolve(undefined)
+    }
+    const results = await running
+    expect(results.find(result => result.gate.id === 'web-snapshot')?.status).toBe('passed')
+    expect(events.indexOf('start:web-snapshot')).toBeGreaterThan(events.indexOf(`finish:${blockedId}`))
+  })
+
+  it.each(['ci-linux-primary', 'ci-consumers'] as const)(
+    'preserves %s ordering with optional web workers',
+    (mode) => {
+      const standard = withPnpmEntrypoint(() => gatesForMode(mode).find(item => item.id === 'web-snapshot'))
+      const parallel = withEnv('DSH_WEB_SNAPSHOT_WORKERS', '2', () =>
+        withPnpmEntrypoint(() => gatesForMode(mode).find(item => item.id === 'web-snapshot')))
+
+      expect(parallel).toMatchObject({
+        displayCommand: 'DSH_SNAPSHOT=replay DSH_WEB_SNAPSHOT_WORKERS=2 pnpm run test:web:ci',
+        needs: standard?.needs,
+        after: standard?.after,
+      })
+    },
+  )
 })
 
 describe('gate process outcomes', () => {

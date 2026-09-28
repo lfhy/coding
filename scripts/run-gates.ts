@@ -209,8 +209,10 @@ export function gatesForMode(selected: Mode): Gate[] {
   switch (selected) {
     case 'ci-primary':
       return ciPrimaryGates()
-    case 'ci-linux-primary':
-      return [...ciPrimaryGates(), webSnapshotGate(['built-package-invariants'])]
+    case 'ci-linux-primary': {
+      const primary = ciPrimaryGates()
+      return [...primary, webSnapshotGate(['built-package-invariants'], primary.map(gate => gate.id))]
+    }
     case 'ci-static':
       return ciStaticGates({ ownsBuild: false })
     case 'ci-lint-contracts-ready':
@@ -395,7 +397,14 @@ function ciConsumerGates(): Gate[] {
       needs: validatedBuild,
     }),
     snapshotGate(validatedBuild),
-    webSnapshotGate(validatedBuild),
+    webSnapshotGate(validatedBuild, [
+      'node-compat',
+      'publint',
+      'lint-and-duplication',
+      'snapshot',
+      'node-next-types',
+      'built-bin-smoke',
+    ]),
     pnpmScript('node-next-types', 'verify-node-next-types', {
       label: 'node-next types',
       needs: validatedBuild,
@@ -404,7 +413,7 @@ function ciConsumerGates(): Gate[] {
   ]
 }
 
-function webSnapshotGate(needs: string[]): Gate {
+function webSnapshotGate(needs: string[], after: string[]): Gate {
   const workerRaw = process.env.DSH_WEB_SNAPSHOT_WORKERS
   if (workerRaw !== undefined && workerRaw !== '') {
     const workers = Number.parseInt(workerRaw, 10)
@@ -416,6 +425,7 @@ function webSnapshotGate(needs: string[]): Gate {
       displayCommand: `DSH_SNAPSHOT=replay DSH_WEB_SNAPSHOT_WORKERS=${workers} pnpm run test:web:ci`,
       env: { DSH_SNAPSHOT: 'replay' },
       needs,
+      after,
       streamOutput: true,
     })
   }
@@ -424,6 +434,7 @@ function webSnapshotGate(needs: string[]): Gate {
     displayCommand: 'DSH_SNAPSHOT=replay pnpm run test:web:built',
     env: { DSH_SNAPSHOT: 'replay' },
     needs,
+    after,
   })
 }
 
