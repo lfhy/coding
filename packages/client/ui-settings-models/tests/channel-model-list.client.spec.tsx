@@ -54,13 +54,30 @@ describe('channel model catalog', () => {
     render(<ModelListEditor models={[
       { id: 'known', input: ['text', 'image'], reasoningEfforts: { off: null, high: 'high' } },
       { id: 'missing' },
+      { id: 'unsupported', input: ['text'], reasoningEfforts: false },
     ]} onChange={onChange} probe={{ settingsNs: 'llm-pi-ai', provider: 'test' }}
     api={{ llm: {} } as never} t={key => en[key]} disabled={false} />)
-    expect(screen.getByText(en.visionSupport)).toBeTruthy()
-    expect(screen.getByText(en.reasoningSupport)).toBeTruthy()
-    expect(screen.getByText(en.visionUnspecified)).toBeTruthy()
-    expect(screen.getByText(en.reasoningUnspecified)).toBeTruthy()
+    const table = screen.getAllByRole('region', { name: en.models }).find(node => node.hasAttribute('tabindex'))
+    expect(table).toBeDefined()
+    expect(table?.getAttribute('tabindex')).toBe('0')
+    expect(table?.textContent).toContain(en.modelVisionColumn)
+    expect(table?.textContent).toContain(en.modelReasoningColumn)
+    for (const label of [
+      en.visionSupport, en.reasoningSupport, en.visionUnspecified, en.reasoningUnspecified,
+      en.visionUnsupported, en.reasoningUnsupported,
+    ]) {
+      const status = screen.getByRole('img', { name: label })
+      expect(status.getAttribute('title')).toBe(label)
+    }
+    expect(screen.getByRole('img', { name: en.visionUnspecified }).textContent).toContain('?')
+    expect(screen.getByRole('img', { name: en.reasoningUnsupported }).textContent).toContain('×')
     expect(screen.queryByRole('checkbox')).toBeNull()
+    const settings = screen.getByRole('button', { name: `${en.modelAdvanced} 1` })
+    expect(settings.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(settings)
+    expect(settings.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByRole('region', { name: `${en.modelAdvanced} 1` }).id)
+      .toBe(settings.getAttribute('aria-controls'))
   })
 
   it('groups by version family without inferring capabilities from IDs', () => {
@@ -189,21 +206,27 @@ describe('channel model catalog', () => {
     expect(document.activeElement).toBe(fetch)
   })
 
-  it('restores inherited capacity without keeping the previous row editing buffer', () => {
+  it('keeps model editing available without a reset control or a customized marker', () => {
+    const onReset = vi.fn()
+    const onChange = vi.fn()
     function Fixture() {
       const [models, setModels] = useState<ModelDraft[]>([{ id: 'same', contextWindow: 2_000 }])
-      const [overridden, setOverridden] = useState(true)
-      return <ModelListEditor models={models} overridden={overridden} onChange={setModels}
-        onReset={() => { setModels([{ id: 'same', contextWindow: 1_000 }]); setOverridden(false) }}
+      return <ModelListEditor models={models} overridden={true} onChange={(next) => { onChange(next); setModels(next) }}
+        onReset={onReset}
         probe={{ settingsNs: 'llm-pi-ai', provider: 'test' }} api={{ llm: {} } as never}
         t={key => en[key]} disabled={false} />
     }
     render(<Fixture />)
+    expect(screen.queryByRole('button', { name: en.resetModels })).toBeNull()
+    expect(screen.queryByText(en.modelsCustomized)).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: `${en.modelAdvanced} 1` }))
+    fireEvent.change(screen.getByRole('textbox', { name: `${en.modelId} 1` }), { target: { value: 'edited' } })
+    expect(onChange).toHaveBeenLastCalledWith([{ id: 'edited', contextWindow: 2_000 }])
     fireEvent.change(screen.getByRole('textbox', { name: `${en.modelContextWindow} 1` }), { target: { value: 'garbage' } })
-    fireEvent.click(screen.getByRole('button', { name: en.resetModels }))
     fireEvent.click(screen.getByRole('button', { name: `${en.modelAdvanced} 1` }))
-    expect(screen.getByRole<HTMLInputElement>('textbox', { name: `${en.modelContextWindow} 1` }).value).toBe('1K')
+    fireEvent.click(screen.getByRole('button', { name: `${en.modelAdvanced} 1` }))
+    expect(screen.getByRole<HTMLInputElement>('textbox', { name: `${en.modelContextWindow} 1` }).value).toBe('garbage')
+    expect(onReset).not.toHaveBeenCalled()
   })
 
   it('rejects DeepSeek false and empty levels before a settings write', () => {

@@ -223,11 +223,12 @@ describe('web e2e: settings modal and General preferences', () => {
           expect(await navigation.boundingBox()).toEqual(nav)
           // 窄屏导航横向滚动会移动条目，但不应移动导航容器。
           if (viewport.width > 620) expect(await general.boundingBox()).toEqual(firstButton)
-          expect(await dialog.evaluate(node => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(1)
+          expect(await dialog.evaluate(node => node.scrollWidth - node.clientWidth),
+            `${viewport.width}×${viewport.height}px ${section} 设置外框横向溢出`).toBeLessThanOrEqual(1)
           if (section === '模型') {
             await dialog.getByRole('complementary', { name: '提供方' }).getByRole('button', { name: /^DeepSeek/ }).click()
             const modelId = dialog.getByRole('textbox', { name: '模型 ID 1', exact: true })
-            const modelName = dialog.getByRole('textbox', { name: '显示名称 1', exact: true })
+            const modelName = dialog.getByRole('textbox', { name: '模型名称 1', exact: true })
             for (const input of [modelId, modelName]) {
               await input.scrollIntoViewIfNeeded()
               const label = await input.getAttribute('aria-label')
@@ -244,7 +245,7 @@ describe('web e2e: settings modal and General preferences', () => {
             }
             expect((await modelId.inputValue()).trim().length).toBeGreaterThan(0)
             for (const button of [
-              dialog.getByRole('button', { name: '容量 1', exact: true }),
+              dialog.getByRole('button', { name: '模型设置 1', exact: true }),
               dialog.getByRole('button', { name: '保存', exact: true }),
             ]) {
               await button.scrollIntoViewIfNeeded()

@@ -175,7 +175,7 @@ function openEditor(provider: string): void {
 
 /** Open one model row's advanced fold, where the capacities live. */
 function expandModel(index: number): void {
-  fireEvent.click(screen.getByLabelText(`${en.modelAdvanced} ${index}`))
+  fireEvent.click(screen.getByRole('button', { name: `${en.modelAdvanced} ${index}` }))
 }
 
 /** The button carrying `label`, typed so its disabled/title state is readable. */
@@ -408,20 +408,19 @@ describe('model list editing', () => {
     expect(screen.queryByLabelText(`${en.modelContextWindow} 1`)).toBeNull()
   })
 
-  it('separates emptying the list from restoring the adapter defaults', async () => {
+  it('allows editing a configured catalog without displaying a reset control', async () => {
     const { mutate } = await mountSection({
       providers: { openai: { baseURL: 'https://proxy.example/v1', models: [{ id: 'kept' }] } },
     })
     openEditor('openai')
 
-    // An empty override is a route that serves no models — a different intent
-    // from handing the catalog back, which is what the reset affordance does.
-    expect(screen.getByText(en.modelsCustomized)).toBeTruthy()
-    fireEvent.click(screen.getByText(en.resetModels))
+    expect(screen.queryByText(en.modelsCustomized)).toBeNull()
+    expect(screen.queryByRole('button', { name: en.resetModels })).toBeNull()
+    fireEvent.change(screen.getByRole('textbox', { name: `${en.modelName} 1` }), { target: { value: 'Kept model' } })
     fireEvent.click(screen.getByText(en.apply))
     await waitFor(() => { expect(mutate).toHaveBeenCalled() })
     expect(firstMutate(mutate).ops)
-      .toContainEqual({ op: 'unset', path: ['providers', 'openai', 'models'] })
+      .toContainEqual({ op: 'set', path: ['providers', 'openai', 'models'], value: [{ id: 'kept', name: 'Kept model' }] })
   })
 
 })

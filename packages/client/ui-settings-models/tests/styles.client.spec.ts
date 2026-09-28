@@ -61,21 +61,24 @@ describe('ModelsSection theme styles', () => {
     expect(block('.rowCard')).not.toMatch(/\bbackground\s*:/)
   })
 
-  it('stacks model inputs by available row width without changing the desktop columns', () => {
-    expect(block('.modelEntry')).toContain('container: model-entry / inline-size')
-    expect(block('.modelRow')).toContain('grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto auto auto')
-    const compact = css.slice(css.indexOf('@container model-entry (max-width: 520px)'), css.indexOf('@media (max-width: 620px)'))
-    expect(compact).toContain('.modelRow { grid-template-columns: minmax(0, 1fr) 28px 28px; }')
-    expect(compact).toContain('.modelRow > .input:first-child { grid-column: 1 / -1; grid-row: 1; }')
-    expect(compact).toContain('.modelRow > .input:nth-child(2) { grid-column: 1 / -1; grid-row: 2; }')
-    expect(compact).toContain('.modelCapabilities { min-width: 0; grid-column: 1; grid-row: 3; justify-content: flex-start; }')
-    expect(compact).toContain('.capabilityBadge { box-sizing: border-box; max-width: 100%; white-space: normal; }')
-    expect(compact).toContain('.modelRow > .iconButton:nth-last-child(2) { grid-column: 2; grid-row: 3; }')
-    expect(compact).toContain('.modelRow > .iconButton:last-child { grid-column: 3; grid-row: 3; }')
+  it('shares six aligned header and row tracks in a horizontally scrollable model table', () => {
+    const columns = 'minmax(120px, 1.3fr) minmax(120px, 1fr) 28px 28px 28px 28px'
+    expect(block('.modelCatalog')).toContain(`--model-columns: ${columns}`)
+    expect(block('.modelTableHead,\n.modelRow')).toContain('grid-template-columns: var(--model-columns)')
+    expect(block('.modelTableScroller')).toContain('overflow-x: auto')
+    expect(block('.modelTableScroller')).toContain('contain: paint')
+    expect(css).toContain('.modelTableScroller > * { box-sizing: border-box; width: 100%; min-width: 390px; }')
+    expect(block('.modelTableScroller:focus-visible')).toContain('outline: 2px solid')
+    expect(block('.capabilityBadge')).toContain('width: 28px')
+    expect(block('.capabilityBadge')).toContain('height: 28px')
     expect(block('.modelAdvanced')).toContain('grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr))')
     const narrowViewport = css.slice(css.indexOf('@media (max-width: 620px)'))
     expect(narrowViewport).not.toContain('.modelRow')
-    expect(narrowViewport).not.toContain('.modelCapabilities')
+  })
+
+  it('keeps every discovered family at full height when the candidate list scrolls', () => {
+    expect(block('.candidateList')).toContain('overflow-y: auto')
+    expect(block('.candidateGroup')).toContain('flex-shrink: 0')
   })
 
   it('gives every dropdown the shared chevron instead of the OS arrow', () => {

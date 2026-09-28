@@ -393,14 +393,12 @@
   padding-top: 12px;
 }
 
-/* Model catalog: a table, not a stack of cards. The column captions are
-   written once above the rows, so a row is one line of fields plus its
-   delete control; each field still carries the indexed `aria-label` that
-   names it, and the caption strip is hidden from assistive tech to keep
-   that name from being announced twice. */
+/* 列标题与编辑行共用列宽；输入框仍以独立名称供屏幕阅读器识别。 */
 .modelCatalog {
+  --model-columns: minmax(120px, 1.3fr) minmax(120px, 1fr) 28px 28px 28px 28px;
   display: flex;
   flex-direction: column;
+  min-width: 0;
   gap: 10px;
   padding-top: 12px;
   border-top: 1px solid var(--dsw-alias-border-l2);
@@ -427,59 +425,87 @@
   line-height: 18px;
 }
 
-/* Model list, shared with the pi-ai provider form: one bordered
-   entry per model, id and display name on the row, capacities behind the
-   row's own disclosure. The rules use this stylesheet's token vocabulary —
-   `--dsw-alias-border-subtle`, `--dsw-alias-text-tertiary`, and
-   `--dsw-alias-text-primary` are undefined here and would resolve to their
-   light-mode literals. */
 .modelList {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  overflow: hidden;
 }
+
+.modelTableScroller {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  /* 横向滚动只属于表格，不让宽行撑开设置弹窗的外层内容。 */
+  contain: paint;
+}
+.modelTableScroller > * { box-sizing: border-box; width: 100%; min-width: 390px; }
+.modelTableScroller:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: -2px; }
 
 .modelListHead {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
-}
-
-.modelEntry {
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
-  padding: 6px;
-  /* 按模型行的实际编辑宽度切换布局，不把侧栏占用误当成详情可用空间。 */
-  container: model-entry / inline-size;
-}
-
-.modelRow {
-  display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto auto auto;
-  align-items: center;
-  gap: 6px;
-}
-
-.modelCapabilities {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
   flex-wrap: wrap;
-  gap: 4px;
 }
 
-.capabilityBadge {
+.fetchAction {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 2px 7px;
-  border-radius: 12px;
+  gap: 5px;
+  flex: none;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+.fetchAction:hover:not(:disabled) { color: var(--dsw-alias-label-primary); text-decoration: underline; }
+.fetchAction:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 2px; border-radius: 2px; }
+.fetchAction:disabled { opacity: .4; cursor: default; }
+
+.modelTableHead,
+.modelRow {
+  display: grid;
+  grid-template-columns: var(--model-columns);
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.modelTableHead {
+  padding: 0 9px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+.modelTableHead > :nth-child(n + 3) { display: flex; justify-content: center; }
+
+.modelEntry { padding: 8px; }
+.modelEntry + .modelEntry { border-top: 1px solid var(--dsw-alias-border-l2); }
+.modelRow > .input { min-width: 0; padding-inline: 8px; }
+
+.capabilityBadge {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
   background: var(--dsw-alias-bg-module-platform);
   color: var(--dsw-alias-label-secondary);
-  white-space: nowrap;
-  font-size: 11px;
-  line-height: 17px;
+  font-size: 15px;
+  line-height: 20px;
 }
 
 .capabilitySupported {
@@ -492,8 +518,9 @@
   background: transparent;
 }
 
-/* Square, label-free affordances: the row's own inputs carry the meaning, so
-   the actions stay glyphs and announce themselves through aria-label. */
+.capabilityUnsupported { background: transparent; }
+
+/* 行操作仅用图标，仍提供可访问名称与键盘焦点。 */
 .iconButton {
   box-sizing: border-box;
   display: inline-flex;
@@ -528,7 +555,11 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr));
   gap: 8px;
-  padding: 8px 4px 2px;
+  margin-top: 8px;
+  padding: 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-module-platform);
 }
 
 .modelField {
@@ -936,7 +967,7 @@ select.input {
 .candidateSearch { border-radius: 8px; height: 44px; }
 .candidateActions { justify-content: flex-start; }
 .candidateList { gap: 10px; max-height: min(72vh, 860px); }
-.candidateGroup { border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; overflow: hidden; }
+.candidateGroup { flex-shrink: 0; border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; overflow: hidden; }
 .candidateGroupHead {
   display: flex;
   align-items: center;
@@ -984,18 +1015,6 @@ select.input {
 .candidate { display: flex; align-items: center; min-height: 56px; padding-right: 12px; }
 .candidate + .candidate { border-top: 1px solid var(--dsw-alias-border-l1); }
 .candidateLabel { flex: 1; }
-
-/* 双输入按 1.4:1 分配，名称至少 120px 需要共 288px；徽标、按钮和间距
-   另占约 184px。520px 以下保留余量并改为全宽输入，避免文字与操作争抢空间。 */
-@container model-entry (max-width: 520px) {
-  .modelRow { grid-template-columns: minmax(0, 1fr) 28px 28px; }
-  .modelRow > .input:first-child { grid-column: 1 / -1; grid-row: 1; }
-  .modelRow > .input:nth-child(2) { grid-column: 1 / -1; grid-row: 2; }
-  .modelCapabilities { min-width: 0; grid-column: 1; grid-row: 3; justify-content: flex-start; }
-  .capabilityBadge { box-sizing: border-box; max-width: 100%; white-space: normal; }
-  .modelRow > .iconButton:nth-last-child(2) { grid-column: 2; grid-row: 3; }
-  .modelRow > .iconButton:last-child { grid-column: 3; grid-row: 3; }
-}
 
 @media (max-width: 620px) {
   .modelsHeader { min-height: 52px; padding: 10px 56px 10px 16px; }

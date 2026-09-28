@@ -26,28 +26,31 @@
       - button "获取可用模型":
         - img
         - text: 获取可用模型
-      - textbox "模型 ID 1":
-        - /placeholder: 模型 ID
-        - text: deepseek-v4-flash
-      - textbox "显示名称 1":
-        - /placeholder: 显示名称
-        - text: DeepSeek-V4-Flash
-      - text: 无视觉 推理
-      - button "容量 1":
-        - img
-      - button "删除模型 1":
-        - img
-      - textbox "模型 ID 2":
-        - /placeholder: 模型 ID
-        - text: deepseek-v4-pro
-      - textbox "显示名称 2":
-        - /placeholder: 显示名称
-        - text: DeepSeek-V4-Pro
-      - text: 无视觉 推理
-      - button "容量 2":
-        - img
-      - button "删除模型 2":
-        - img
+      - region "模型目录":
+        - textbox "模型 ID 1":
+          - /placeholder: 模型 ID
+          - text: deepseek-v4-flash
+        - textbox "模型名称 1":
+          - /placeholder: 模型名称
+          - text: DeepSeek-V4-Flash
+        - img "无视觉"
+        - img "推理"
+        - button "模型设置 1":
+          - img
+        - button "删除模型 1":
+          - img
+        - textbox "模型 ID 2":
+          - /placeholder: 模型 ID
+          - text: deepseek-v4-pro
+        - textbox "模型名称 2":
+          - /placeholder: 模型名称
+          - text: DeepSeek-V4-Pro
+        - img "无视觉"
+        - img "推理"
+        - button "模型设置 2":
+          - img
+        - button "删除模型 2":
+          - img
       - button "添加模型":
         - img
         - text: 添加模型

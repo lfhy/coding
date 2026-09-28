@@ -156,7 +156,8 @@ describe('channel settings layout', () => {
     await waitFor(() => {
       expect(screen.getByRole<HTMLInputElement>('textbox', { name: `${en.modelId} 1` }).value).toBe('cerebras-one')
     })
-    expect(screen.getByText(en.modelsCustomized)).toBeTruthy()
+    expect(screen.queryByText(en.modelsCustomized)).toBeNull()
+    expect(screen.queryByRole('button', { name: en.resetModels })).toBeNull()
     expect(screen.queryByText(en.conflict)).toBeNull()
   })
 

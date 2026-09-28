@@ -75,7 +75,7 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     expect(await page.locator('#root').evaluate(root => (root as HTMLElement).inert)).toBe(true)
 
     await onboarding.getByLabel('API 地址', { exact: true }).fill('https://gateway.example/v1')
-    await onboarding.getByRole('button', { name: '容量 2' }).click()
+    await onboarding.getByRole('button', { name: '模型设置 2' }).click()
     await onboarding.getByLabel('最大输出 token 2').fill('32K')
     const secret = `dsh_onboarding_${randomBytes(12).toString('hex')}`
     await keyInput.fill(secret)
@@ -205,9 +205,9 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     await settings.getByRole('button', { name: '添加模型' }).click()
     const customModelId = settings.getByLabel('模型 ID 2')
     await customModelId.fill('private-preview')
-    await settings.getByLabel('显示名称 2').fill('Private Preview')
+    await settings.getByLabel('模型名称 2').fill('Private Preview')
     // 容量和模型能力都收在该模型自己的展开区域内。
-    await settings.getByRole('button', { name: '容量 2' }).click()
+    await settings.getByRole('button', { name: '模型设置 2' }).click()
     const privatePreview = settings.getByRole('textbox', { name: '模型 ID 2' }).locator('xpath=../..')
     await privatePreview.getByRole('checkbox', { name: '视觉' }).check()
     await privatePreview.getByRole('checkbox', { name: '推理' }).check()

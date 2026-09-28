@@ -4,13 +4,13 @@
  * 端点不可发现时显示诊断，手工模型编辑仍可使用。
  */
 
-import { useRef, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { DiscoveredModelView, IApiClient } from '@deepseek-ai/dsh-api-remotes/client'
 import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
-  IconChevronDownOutline14, IconPlusOutline16, IconRefreshOutline16, IconSearchOutline16,
-  IconThinkOutline14, IconTrashOutline16,
+  IconCheckOutline14, IconChevronDownOutline14, IconPlusOutline16, IconRefreshOutline16,
+  IconSearchOutline16, IconTrashOutline16,
 } from '@deepseek-ai/dsh-client-ui-icons'
 import { formatCapacity, parseCapacity } from './DeepSeekModelsEditor.tsx'
 import type { DeepSeekModelDraft } from './DeepSeekModelsEditor.tsx'
@@ -181,24 +181,20 @@ export function modelFamily(id: string): string {
  */
 export function ModelListEditor(props: ModelListEditorProps): ReactNode {
   const { models, onChange, probe, api, t, disabled } = props
+  const advancedId = useId()
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<string | undefined>(undefined)
   const [candidates, setCandidates] = useState<readonly DiscoveredModelView[] | undefined>(undefined)
   const [candidateQuery, setCandidateQuery] = useState('')
   const fetchButton = useRef<HTMLButtonElement>(null)
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set())
-  // Rows carry an id and a name; capacities are the exception, so they stay
-  // folded until asked for rather than crowding every row with four inputs.
+  // 容量与能力开关按行折叠，不占用可扫描的模型目录列。
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(new Set())
-  // Capacities are edited as text, so a field's keystrokes are held here rather
-  // than re-derived from the parsed count on every change — that would rewrite
-  // `1000` to `1K` mid-word. Unreadable text is kept past blur so the refusal
-  // names a row the user can still see, which is why this is one entry PER
-  // FIELD: a single buffer would be displaced by editing any other field, and
-  // the abandoned one would render its stored NaN as the literal `NaN`.
+  // 容量输入保留每个字段的原文，避免键入 1000 时中途改写为 1K；无效输入在失焦后仍可见，
+  // 也不会因编辑另一行或另一字段而丢失。
   const [editing, setEditing] = useState<ReadonlyMap<string, string>>(new Map())
 
-  /** Buffer key for one capacity field; the row half moves when rows do. */
+  /** 容量输入的缓存键；删除行后须同步调整行号。 */
   const bufferKey = (index: number, field: CapacityField): string => `${String(index)}:${field}`
 
   const editCapacity = (index: number, field: CapacityField, text: string): void => {
@@ -206,7 +202,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
     patch(index, { [field]: parseCapacity(text) })
   }
 
-  /** What a capacity field shows: the buffer while typing, else the stored count. */
+  /** 输入期间显示缓存原文，否则格式化已存容量。 */
   const capacityText = (model: ModelDraft, index: number, field: CapacityField): string =>
     editing.get(bufferKey(index, field)) ?? capacitySpelling(numberOf(model, field))
 
@@ -215,7 +211,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
       ? model['reasoningEfforts'] as string[]
       : model['reasoningEfforts'] === undefined ? props.inheritedReasoningEfforts ?? [] : []
 
-  /** Drop one row's entries and shift the rows after it down, in one pass. */
+  /** 删除目标行的输入缓存，并将后续行号前移。 */
   const reindexOnRemove = (
     current: ReadonlyMap<string, string>,
     index: number,
@@ -224,7 +220,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
     for (const [key, value] of current) {
       const at = Number(key.slice(0, key.indexOf(':')))
       if (at === index) continue
-      // Only the row number moves; the field half of the key is untouched.
+      // 字段名不随行号改变。
       next.set(at > index ? key.replace(/^\d+/, String(at - 1)) : key, value)
     }
     return next
@@ -241,11 +237,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
   const patch = (index: number, next: Record<string, unknown>): void => {
     onChange(models.map((model, at) => {
       if (at !== index) return model
-      // Rebuilt rather than spread over: an emptied optional field has to leave
-      // the profile, not be stored as a value its schema would reject.
-      // Spread first so a field this card does not edit survives; an emptied
-      // optional field is then dropped rather than stored as a value its
-      // schema would reject.
+      // 保留未编辑字段，但清空的可选字段必须从 profile 删除，不能留下 schema 拒绝的空值。
       const cleared = new Set(
         Object.entries(next).filter(([, value]) => value === undefined || value === '').map(([key]) => key),
       )
@@ -357,34 +349,17 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
       <div className={styles['modelListHead']}>
         <div className={styles['modelCatalogHeading']}>
           <span className={styles['modelCatalogTitle']}>{t('models')}</span>
-          {props.overridden === undefined
-            ? null
-            : (
+          {props.overridden === false
+            ? (
               <span className={styles['modelCatalogMeta']}>
-                {props.overridden ? t('modelsCustomized') : t('modelsInherited')}
+                {t('modelsInherited')}
               </span>
-            )}
+            ) : null}
         </div>
-        {props.overridden === true && props.onReset !== undefined
-          ? (
-            <button
-              type="button"
-              className={styles['linkButton']}
-              disabled={disabled}
-              onClick={() => {
-                setEditing(new Map())
-                setExpanded(new Set())
-                props.onReset?.()
-              }}
-            >
-              {t('resetModels')}
-            </button>
-          )
-          : null}
         <button
           type="button"
           ref={fetchButton}
-          className={styles['linkButton']}
+          className={styles['fetchAction']}
           disabled={disabled || busy || !askable || props.probeBlocked !== undefined}
           title={props.probeBlocked !== undefined
             ? t(props.probeBlocked)
@@ -396,153 +371,160 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
       </div>
       {models.length === 0 && props.overridden !== false
         ? <p className={styles['modelEmpty']}>{t('modelsEmpty')}</p> : null}
-      {models.map((model, index) => (
-        <div key={index} className={styles['modelEntry']}>
-          <div className={styles['modelRow']}>
-            <input
-              className={styles['input']}
-              type="text"
-              value={textOf(model, 'id')}
-              placeholder={t('modelId')}
-              aria-label={`${t('modelId')} ${index + 1}`}
-              disabled={disabled}
-              onChange={(event) => { patch(index, { id: event.target.value }) }}
-            />
-            <input
-              className={styles['input']}
-              type="text"
-              value={textOf(model, 'name')}
-              placeholder={t('modelName')}
-              aria-label={`${t('modelName')} ${index + 1}`}
-              disabled={disabled}
-              onChange={(event) => { patch(index, { name: event.target.value === '' ? undefined : event.target.value }) }}
-            />
-            <div className={styles['modelCapabilities']}>
+      {models.length > 0 ? <div className={styles['modelTableScroller']} role="region"
+        aria-label={t('models')} tabIndex={0}>
+        <div className={styles['modelTableHead']} aria-hidden="true">
+          <span>{t('modelId')}</span>
+          <span>{t('modelName')}</span>
+          <span title={t('visionSupport')}>{t('modelVisionColumn')}</span>
+          <span title={t('reasoningSupport')}>{t('modelReasoningColumn')}</span>
+        </div>
+        <div className={styles['modelList']}>{models.map((model, index) => (
+          <div key={index} className={styles['modelEntry']}>
+            <div className={styles['modelRow']}>
+              <input
+                className={styles['input']}
+                type="text"
+                value={textOf(model, 'id')}
+                placeholder={t('modelId')}
+                aria-label={`${t('modelId')} ${index + 1}`}
+                disabled={disabled}
+                onChange={(event) => { patch(index, { id: event.target.value }) }}
+              />
+              <input
+                className={styles['input']}
+                type="text"
+                value={textOf(model, 'name')}
+                placeholder={t('modelName')}
+                aria-label={`${t('modelName')} ${index + 1}`}
+                disabled={disabled}
+                onChange={(event) => { patch(index, { name: event.target.value === '' ? undefined : event.target.value }) }}
+              />
               {(['vision', 'reasoning'] as const).map((capability) => {
                 const state = modelCapabilities(model, probe.settingsNs, props.inheritedReasoningEfforts)[capability]
                 const label = capability === 'vision'
                   ? t(state === 'supported' ? 'visionSupport' : state === 'unsupported' ? 'visionUnsupported' : 'visionUnspecified')
                   : t(state === 'supported' ? 'reasoningSupport' : state === 'unsupported' ? 'reasoningUnsupported' : 'reasoningUnspecified')
-                return <span key={capability} className={`${styles['capabilityBadge']} ${state === 'supported'
-                  ? styles['capabilitySupported'] : state === 'unknown' ? styles['capabilityUnknown'] : ''}`}>
-                  {capability === 'reasoning' && state === 'supported' ? <span aria-hidden="true"><IconThinkOutline14 size={14} /></span> : null}
-                  {label}
+                return <span key={capability} role="img" aria-label={label} title={label}
+                  className={`${styles['capabilityBadge']} ${state === 'supported'
+                    ? styles['capabilitySupported'] : state === 'unknown' ? styles['capabilityUnknown'] : styles['capabilityUnsupported']}`}>
+                  <span aria-hidden="true">{state === 'supported' ? <IconCheckOutline14 size={14} /> : state === 'unsupported' ? '×' : '?'}</span>
+                  <span className={styles['hiddenLabel']}>{label}</span>
                 </span>
               })}
+              <button
+                type="button"
+                className={styles['iconButton']}
+                aria-label={`${t('modelAdvanced')} ${index + 1}`}
+                aria-expanded={expanded.has(index)}
+                aria-controls={expanded.has(index) ? `${advancedId}-${index}` : undefined}
+                title={t('modelAdvanced')}
+                onClick={() => { toggleExpanded(index) }}
+              >
+                <IconChevron open={expanded.has(index)} />
+              </button>
+              <button
+                type="button"
+                className={`${styles['iconButton']} ${styles['iconButtonDanger']}`}
+                aria-label={`${t('removeModel')} ${index + 1}`}
+                title={t('removeModel')}
+                disabled={disabled}
+                onClick={() => {
+                  onChange(models.filter((_model, at) => at !== index))
+                  // 折叠状态与输入缓存按行号保存；删除后同步前移，避免后续行继承别行的状态。
+                  setExpanded((current) => {
+                    const next = new Set<number>()
+                    for (const at of current) {
+                      if (at < index) next.add(at)
+                      else if (at > index) next.add(at - 1)
+                    }
+                    return next
+                  })
+                  setEditing(current => reindexOnRemove(current, index))
+                }}
+              >
+                <IconTrash />
+              </button>
             </div>
-            <button
-              type="button"
-              className={styles['iconButton']}
-              aria-label={`${t('modelAdvanced')} ${index + 1}`}
-              aria-expanded={expanded.has(index)}
-              title={t('modelAdvanced')}
-              onClick={() => { toggleExpanded(index) }}
-            >
-              <IconChevron open={expanded.has(index)} />
-            </button>
-            <button
-              type="button"
-              className={`${styles['iconButton']} ${styles['iconButtonDanger']}`}
-              aria-label={`${t('removeModel')} ${index + 1}`}
-              title={t('removeModel')}
-              disabled={disabled}
-              onClick={() => {
-                onChange(models.filter((_model, at) => at !== index))
-                // Both stores are keyed by position, so every row after this
-                // one shifts down and would otherwise inherit its neighbour's
-                // state — a different row's capacities popping open, or its
-                // half-typed text appearing in another row's field.
-                setExpanded((current) => {
-                  const next = new Set<number>()
-                  for (const at of current) {
-                    if (at < index) next.add(at)
-                    else if (at > index) next.add(at - 1)
-                  }
-                  return next
-                })
-                setEditing(current => reindexOnRemove(current, index))
-              }}
-            >
-              <IconTrash />
-            </button>
-          </div>
-          {expanded.has(index)
-            ? (
-              <div className={styles['modelAdvanced']}>
-                <div className={styles['capabilityControls']}>
-                  <label><input type="checkbox" checked={Array.isArray(model[probe.settingsNs === 'llm-deepseek' ? 'inputModalities' : 'input'])
+            {expanded.has(index)
+              ? (
+                <div id={`${advancedId}-${index}`} className={styles['modelAdvanced']} role="region"
+                  aria-label={`${t('modelAdvanced')} ${index + 1}`}>
+                  <div className={styles['capabilityControls']}>
+                    <label><input type="checkbox" checked={Array.isArray(model[probe.settingsNs === 'llm-deepseek' ? 'inputModalities' : 'input'])
                     && (model[probe.settingsNs === 'llm-deepseek' ? 'inputModalities' : 'input'] as string[]).includes('image')}
-                  disabled={disabled} onChange={(event) => {
-                    patch(index, { [probe.settingsNs === 'llm-deepseek' ? 'inputModalities' : 'input']:
+                    disabled={disabled} onChange={(event) => {
+                      patch(index, { [probe.settingsNs === 'llm-deepseek' ? 'inputModalities' : 'input']:
                         event.target.checked ? ['text', 'image'] : ['text'] })
-                  }} />{t('visionSupport')}</label>
-                  <label><input type="checkbox" checked={probe.settingsNs === 'llm-deepseek'
-                    ? effortsOf(model).some(level => level !== 'off')
-                    : typeof model['reasoningEfforts'] === 'object' && model['reasoningEfforts'] !== null
+                    }} />{t('visionSupport')}</label>
+                    <label><input type="checkbox" checked={probe.settingsNs === 'llm-deepseek'
+                      ? effortsOf(model).some(level => level !== 'off')
+                      : typeof model['reasoningEfforts'] === 'object' && model['reasoningEfforts'] !== null
                         && Object.keys(model['reasoningEfforts']).some(level => level !== 'off')}
-                  disabled={disabled || props.reasoningDisabled === true} onChange={(event) => {
-                    patch(index, { reasoningEfforts: event.target.checked
-                      ? probe.settingsNs === 'llm-deepseek' ? ['off', 'low', 'high', 'max']
-                        : { off: null, low: 'low', high: 'high', max: 'max' }
-                      : probe.settingsNs === 'llm-deepseek' ? ['off'] : false })
-                  }} />{t('reasoningSupport')}</label>
-                  {(['off', 'low', 'high', 'max'] as const).map(level => (
-                    <label key={level}><input type="checkbox"
-                      disabled={disabled || props.reasoningDisabled === true && level !== 'off'
+                    disabled={disabled || props.reasoningDisabled === true} onChange={(event) => {
+                      patch(index, { reasoningEfforts: event.target.checked
+                        ? probe.settingsNs === 'llm-deepseek' ? ['off', 'low', 'high', 'max']
+                          : { off: null, low: 'low', high: 'high', max: 'max' }
+                        : probe.settingsNs === 'llm-deepseek' ? ['off'] : false })
+                    }} />{t('reasoningSupport')}</label>
+                    {(['off', 'low', 'high', 'max'] as const).map(level => (
+                      <label key={level}><input type="checkbox"
+                        disabled={disabled || props.reasoningDisabled === true && level !== 'off'
                         || level === 'off' && (probe.settingsNs === 'llm-deepseek'
                           ? effortsOf(model).length === 1 && effortsOf(model)[0] === 'off'
                           : model['reasoningEfforts'] === false)}
-                      checked={probe.settingsNs === 'llm-deepseek'
-                        ? effortsOf(model).includes(level)
-                        : typeof model['reasoningEfforts'] === 'object' && model['reasoningEfforts'] !== null
-                          ? level in model['reasoningEfforts'] : level === 'off'}
-                      onChange={(event) => {
-                        if (probe.settingsNs === 'llm-deepseek') {
-                          const prior = effortsOf(model)
-                          const next = event.target.checked ? [...prior, level] : prior.filter(value => value !== level)
-                          patch(index, { reasoningEfforts: next.length === 0 ? ['off'] : next })
-                        } else {
-                          const prior = typeof model['reasoningEfforts'] === 'object' && model['reasoningEfforts'] !== null
-                            ? model['reasoningEfforts'] as Record<string, string | null> : { off: null }
-                          const next = { ...prior }
-                          if (event.target.checked) next[level] = level === 'off' ? null : level
-                          else Reflect.deleteProperty(next, level)
-                          patch(index, { reasoningEfforts: Object.keys(next).every(key => key === 'off') ? false : next })
-                        }
-                      }} />{level === 'off' ? t('reasoningNone') : level}</label>
-                  ))}
+                        checked={probe.settingsNs === 'llm-deepseek'
+                          ? effortsOf(model).includes(level)
+                          : typeof model['reasoningEfforts'] === 'object' && model['reasoningEfforts'] !== null
+                            ? level in model['reasoningEfforts'] : level === 'off'}
+                        onChange={(event) => {
+                          if (probe.settingsNs === 'llm-deepseek') {
+                            const prior = effortsOf(model)
+                            const next = event.target.checked ? [...prior, level] : prior.filter(value => value !== level)
+                            patch(index, { reasoningEfforts: next.length === 0 ? ['off'] : next })
+                          } else {
+                            const prior = typeof model['reasoningEfforts'] === 'object' && model['reasoningEfforts'] !== null
+                              ? model['reasoningEfforts'] as Record<string, string | null> : { off: null }
+                            const next = { ...prior }
+                            if (event.target.checked) next[level] = level === 'off' ? null : level
+                            else Reflect.deleteProperty(next, level)
+                            patch(index, { reasoningEfforts: Object.keys(next).every(key => key === 'off') ? false : next })
+                          }
+                        }} />{level === 'off' ? t('reasoningNone') : level}</label>
+                    ))}
+                  </div>
+                  <label className={styles['modelField']}>
+                    <span className={styles['modelFieldLabel']}>{t('modelContextWindow')}</span>
+                    <input
+                      className={styles['input']}
+                      type="text"
+                      inputMode="numeric"
+                      value={capacityText(model, index, 'contextWindow')}
+                      placeholder={CAPACITY_HINT.contextWindow}
+                      aria-label={`${t('modelContextWindow')} ${index + 1}`}
+                      disabled={disabled}
+                      onChange={(event) => { editCapacity(index, 'contextWindow', event.target.value) }}
+                    />
+                  </label>
+                  <label className={styles['modelField']}>
+                    <span className={styles['modelFieldLabel']}>{t('modelMaxTokens')}</span>
+                    <input
+                      className={styles['input']}
+                      type="text"
+                      inputMode="numeric"
+                      value={capacityText(model, index, 'maxTokens')}
+                      placeholder={CAPACITY_HINT.maxTokens}
+                      aria-label={`${t('modelMaxTokens')} ${index + 1}`}
+                      disabled={disabled}
+                      onChange={(event) => { editCapacity(index, 'maxTokens', event.target.value) }}
+                    />
+                  </label>
                 </div>
-                <label className={styles['modelField']}>
-                  <span className={styles['modelFieldLabel']}>{t('modelContextWindow')}</span>
-                  <input
-                    className={styles['input']}
-                    type="text"
-                    inputMode="numeric"
-                    value={capacityText(model, index, 'contextWindow')}
-                    placeholder={CAPACITY_HINT.contextWindow}
-                    aria-label={`${t('modelContextWindow')} ${index + 1}`}
-                    disabled={disabled}
-                    onChange={(event) => { editCapacity(index, 'contextWindow', event.target.value) }}
-                  />
-                </label>
-                <label className={styles['modelField']}>
-                  <span className={styles['modelFieldLabel']}>{t('modelMaxTokens')}</span>
-                  <input
-                    className={styles['input']}
-                    type="text"
-                    inputMode="numeric"
-                    value={capacityText(model, index, 'maxTokens')}
-                    placeholder={CAPACITY_HINT.maxTokens}
-                    aria-label={`${t('modelMaxTokens')} ${index + 1}`}
-                    disabled={disabled}
-                    onChange={(event) => { editCapacity(index, 'maxTokens', event.target.value) }}
-                  />
-                </label>
-              </div>
-            )
-            : null}
-        </div>
-      ))}
+              )
+              : null}
+          </div>
+        ))}</div>
+      </div> : null}
       <button
         type="button"
         className={styles['addModelButton']}

@@ -36,6 +36,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
   let tripwire: ReturnType<typeof watchConsole>
   let modelServer: Server
   let modelBaseURL: string
+  let expandedModelListing = false
   const modelRequests: { method: string | undefined; path: string | undefined; authorization: string | undefined }[] = []
   const consoleErrors: string[] = []
 
@@ -114,11 +115,16 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
         authorization: request.headers.authorization,
       })
       response.writeHead(request.url === '/v1/models' ? 200 : 404, { 'content-type': 'application/json' })
-      response.end(JSON.stringify({ data: [
+      const data = [
         { id: 'acme-2026-alpha', name: 'Acme Alpha', context_window: 128000, max_output_tokens: 8192 },
         { id: 'acme-2026-beta', name: 'Acme Beta' },
         { id: 'orion-2025-basic', name: 'Orion Basic' },
-      ] }))
+      ]
+      response.end(JSON.stringify({ data: expandedModelListing
+        ? [...data, ...Array.from({ length: 28 }, (_, index) => ({
+          id: `geom-${2000 + index}-base`, name: `Geometry ${index + 1}`,
+        }))]
+        : data }))
     })
     await new Promise<void>(resolve => modelServer.listen(0, '127.0.0.1', resolve))
     const address = modelServer.address()
@@ -383,7 +389,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     const importedIndex = (await ids.evaluateAll(nodes => nodes.map(node => (node as HTMLInputElement).value)))
       .indexOf('acme-2026-alpha') + 1
     expect(importedIndex).toBeGreaterThan(0)
-    await settingsDialog.getByRole('button', { name: `容量 ${importedIndex}` }).click()
+    await settingsDialog.getByRole('button', { name: `模型设置 ${importedIndex}` }).click()
     const first = settingsDialog.getByRole('region', { name: '模型目录' })
     const vision = first.getByRole('checkbox', { name: '视觉' }).first()
     const reasoning = first.getByRole('checkbox', { name: '推理' }).first()
@@ -394,10 +400,11 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     const betaIndex = (await ids.evaluateAll(nodes => nodes.map(node => (node as HTMLInputElement).value)))
       .indexOf('acme-2026-beta') + 1
     expect(betaIndex).toBeGreaterThan(0)
-    await settingsDialog.getByRole('button', { name: `容量 ${betaIndex}` }).click()
+    await settingsDialog.getByRole('button', { name: `模型设置 ${betaIndex}` }).click()
     expect(await first.getByRole('checkbox', { name: '视觉' }).last().isChecked()).toBe(true)
     await first.getByRole('textbox', { name: `上下文窗口 ${importedIndex}` }).fill('256K')
     await first.getByRole('textbox', { name: `最大输出 token ${importedIndex}` }).fill('16K')
+    await screenshot('models-settings-expanded-model.png', 1536, 1024)
     expect(await settingsDocument()).toBe(documentBefore)
     await settingsDialog.getByRole('button', { name: '保存', exact: true }).click()
     await expect.poll(settingsDocument, { timeout: 10_000 }).toContain('acme-2026-alpha')
@@ -414,7 +421,57 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
       .toEqual(expect.arrayContaining(['acme-2026-alpha', 'acme-2026-beta', 'orion-2025-basic']))
     await screenshot('models-settings-saved-models.png', 1876, 1472)
     await screenshot('models-settings-saved-models-reference.png', 1536, 1024)
+    await page.emulateMedia({ colorScheme: 'dark' })
+    await expect.poll(() => page.locator('body').getAttribute('data-ds-dark-theme')).toBe('')
+    await screenshot('models-settings-saved-models-dark.png', 1536, 1024)
+    await page.emulateMedia({ colorScheme: 'light' })
+    await expect.poll(() => page.locator('body').getAttribute('data-ds-dark-theme')).toBeNull()
     expect(tripwire.pageErrors).toEqual([])
+  }, 60_000)
+
+  it('keeps a long discovered family list scrollable without collapsing rows', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-models-picker-geometry'))
+    const dialog = settings()
+    await provider('cerebras').click()
+    await page.emulateMedia({ colorScheme: 'dark' })
+    await expect.poll(() => page.locator('body').getAttribute('data-ds-dark-theme')).toBe('')
+    expandedModelListing = true
+    const picker = page.getByRole('dialog', { name: 'cerebras 模型目录' })
+    try {
+      await dialog.getByRole('button', { name: '获取可用模型' }).click()
+      await picker.waitFor({ timeout: 10_000 })
+      const list = picker.locator('ul[class*="candidateList"]')
+      const groups = list.locator('li[class*="candidateGroup"]')
+      await expect.poll(() => groups.count(), { timeout: 10_000 }).toBe(30)
+      const geometry = await list.evaluate(node => ({
+        viewport: node.clientHeight,
+        content: node.scrollHeight,
+      }))
+      expect(geometry.content).toBeGreaterThan(geometry.viewport + 500)
+      expect(geometry.viewport).toBeGreaterThan(200)
+      const first = groups.first()
+      const last = groups.last()
+      for (const group of [first, last]) {
+        const height = await group.evaluate(node => node.getBoundingClientRect().height)
+        expect(height).toBeGreaterThanOrEqual(80)
+      }
+      const lastCheckbox = last.getByRole('checkbox', { name: 'geom-2027-base' })
+      await lastCheckbox.scrollIntoViewIfNeeded()
+      const [listBox, checkboxBox] = await Promise.all([list.boundingBox(), lastCheckbox.boundingBox()])
+      if (listBox === null || checkboxBox === null) throw new Error('模型家族滚动区域或末行未显示')
+      const center = checkboxBox.y + checkboxBox.height / 2
+      expect(center).toBeGreaterThanOrEqual(listBox.y)
+      expect(center).toBeLessThanOrEqual(listBox.y + listBox.height)
+      await lastCheckbox.check()
+      expect(await lastCheckbox.isChecked()).toBe(true)
+      expect(await list.evaluate(node => node.scrollTop)).toBeGreaterThan(0)
+      await screenshot('models-settings-picker-many-families.png', 1680, 1000)
+    } finally {
+      expandedModelListing = false
+      if (await picker.isVisible()) await picker.getByRole('button', { name: '取消', exact: true }).click()
+      await page.emulateMedia({ colorScheme: 'light' })
+      await expect.poll(() => page.locator('body').getAttribute('data-ds-dark-theme')).toBeNull()
+    }
   }, 60_000)
 
   it('switches to independent image fallback detail and persists a paired visual target', async () => {

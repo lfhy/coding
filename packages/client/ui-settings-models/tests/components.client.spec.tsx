@@ -28,7 +28,7 @@ const openaiCopy = (template: string): string => providerCopy(template, OPENAI_T
 
 /** Open one row's capacity disclosure (1-based, as the labels read). */
 function expandRow(position: number): void {
-  fireEvent.click(screen.getByLabelText(`${en.modelAdvanced} ${String(position)}`))
+  fireEvent.click(screen.getByRole('button', { name: `${en.modelAdvanced} ${String(position)}` }))
 }
 
 /** The capacity inputs of every open row, in row order. */
@@ -883,30 +883,17 @@ describe('ModelsSection', () => {
     expect((windows()[0] as HTMLInputElement).value).toBe('bottom text')
   })
 
-  it('drops the typed text when reset replaces the rows it annotated', async () => {
-    // The regression: reset removed the override but left the buffer, so an
-    // inherited row displayed text no settings layer stores — and because an
-    // unreadable buffer never settles, it stayed there indefinitely.
-    const { mutate } = await mountDeepSeekCard({
-      mutate: vi.fn(() => Promise.resolve(ok(wireNamespaces()[0]))),
-    })
+  it('keeps a half-typed capacity when reopening the channel model settings', async () => {
+    await mountDeepSeekCard()
     openAdvanced()
     expandRow(1)
     const windows = capacityInputs(en.contextWindow)
     fireEvent.change(windows[0] as HTMLInputElement, { target: { value: 'garbage' } })
     fireEvent.blur(windows[0] as HTMLInputElement)
-    fireEvent.click(screen.getByText(en.resetModels))
-
-    // 重置同时清空旧容量缓冲与行展开状态，重新打开后必须显示继承值。
+    expect(screen.queryByRole('button', { name: en.resetModels })).toBeNull()
     expandRow(1)
-    const restored = capacityInputs(en.contextWindow)
-    expect((restored[0] as HTMLInputElement).value).toBe('1M')
-
-    // Reset put the draft back where it started, so Apply writes nothing at
-    // all rather than persisting whatever the stale text had parsed to.
-    fireEvent.click(screen.getByText(en.apply))
-    await waitFor(() => { expect(screen.queryByText(en.apply)).toBeNull() })
-    expect(mutate).not.toHaveBeenCalled()
+    expandRow(1)
+    expect((capacityInputs(en.contextWindow)[0] as HTMLInputElement).value).toBe('garbage')
   })
 
   it('edits an output cap per model and carries its text across a removal', async () => {
@@ -979,15 +966,12 @@ describe('ModelsSection', () => {
       .toBe(en.maxTokensPlaceholder)
   })
 
-  it('can empty and reset the model override, then clear optional fields without dropping hidden data', async () => {
+  it('clears optional model fields without dropping hidden data in channel layout', async () => {
     const { mutate } = await mountDeepSeekCard({
       mutate: vi.fn(() => Promise.resolve(ok(wireNamespaces()[0]))),
     })
     openAdvanced()
-    fireEvent.click(screen.getAllByLabelText(new RegExp(en.removeModel))[0] as HTMLElement)
-    fireEvent.click(screen.getByLabelText(new RegExp(en.removeModel)))
-    expect(screen.getByText(en.modelsEmpty)).toBeTruthy()
-    fireEvent.click(screen.getByText(en.resetModels))
+    expect(screen.queryByRole('button', { name: en.resetModels })).toBeNull()
     expect(screen.getByText(en.modelsInherited)).toBeTruthy()
 
     const names = screen.getAllByLabelText(new RegExp(en.modelName))

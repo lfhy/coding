@@ -43,52 +43,55 @@
       - /placeholder: https://api.deepseek.com
       - text: https://gateway.example/v1
     - region "模型目录":
-      - text: 模型目录 已自定义模型目录
-      - button "恢复默认模型"
+      - text: 模型目录
       - button "获取可用模型":
         - img
         - text: 获取可用模型
-      - textbox "模型 ID 1":
-        - /placeholder: 模型 ID
-        - text: deepseek-v4-pro
-      - textbox "显示名称 1":
-        - /placeholder: 显示名称
-        - text: DeepSeek-V4-Pro
-      - text: 无视觉 推理
-      - button "容量 1":
-        - img
-      - button "删除模型 1":
-        - img
-      - textbox "模型 ID 2":
-        - /placeholder: 模型 ID
-        - text: private-preview
-      - textbox "显示名称 2":
-        - /placeholder: 显示名称
-        - text: Private Preview
-      - text: 视觉 推理
-      - button "容量 2" [expanded]:
-        - img
-      - button "删除模型 2":
-        - img
-      - checkbox "视觉" [checked]
-      - text: 视觉
-      - checkbox "推理" [checked]
-      - text: 推理
-      - checkbox "无" [checked]
-      - text: 无
-      - checkbox "low" [checked]
-      - text: low
-      - checkbox "high" [checked]
-      - text: high
-      - checkbox "max"
-      - text: max 上下文窗口
-      - textbox "上下文窗口 2":
-        - /placeholder: 256K
-        - text: "131072"
-      - text: 最大输出 token
-      - textbox "最大输出 token 2":
-        - /placeholder: 32K
-        - text: 64K
+      - region "模型目录":
+        - textbox "模型 ID 1":
+          - /placeholder: 模型 ID
+          - text: deepseek-v4-pro
+        - textbox "模型名称 1":
+          - /placeholder: 模型名称
+          - text: DeepSeek-V4-Pro
+        - img "无视觉"
+        - img "推理"
+        - button "模型设置 1":
+          - img
+        - button "删除模型 1":
+          - img
+        - textbox "模型 ID 2":
+          - /placeholder: 模型 ID
+          - text: private-preview
+        - textbox "模型名称 2":
+          - /placeholder: 模型名称
+          - text: Private Preview
+        - img "视觉"
+        - img "推理"
+        - button "模型设置 2" [expanded]:
+          - img
+        - button "删除模型 2":
+          - img
+        - region "模型设置 2":
+          - checkbox "视觉" [checked]
+          - text: 视觉
+          - checkbox "推理" [checked]
+          - text: 推理
+          - checkbox "无" [checked]
+          - text: 无
+          - checkbox "low" [checked]
+          - text: low
+          - checkbox "high" [checked]
+          - text: high
+          - checkbox "max"
+          - text: max 上下文窗口
+          - textbox "上下文窗口 2":
+            - /placeholder: 256K
+            - text: "131072"
+          - text: 最大输出 token
+          - textbox "最大输出 token 2":
+            - /placeholder: 32K
+            - text: 64K
       - button "添加模型":
         - img
         - text: 添加模型
