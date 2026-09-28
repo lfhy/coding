@@ -1,24 +1,80 @@
 /** 终端第一次显示时才挂载；标签切换或底栏收起都不释放已有 PTY。 */
 
-import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useId, useLayoutEffect, useReducer, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { Icon } from '@deepseek-ai/dsh-client-ui-primitives'
 import { TerminalPanel, type TerminalPanelProps } from './TerminalPanel.tsx'
 import css from './TerminalPanel.module.css'
 
 type Tab = { readonly id: number }
+type TabsState = {
+  readonly tabs: readonly Tab[]
+  readonly activeId: number | null
+  readonly focusRequest: number | null
+  readonly collapseRevision: number
+}
+type TabsAction =
+  | { readonly type: 'add'; readonly id: number }
+  | { readonly type: 'close'; readonly id: number }
+  | { readonly type: 'select'; readonly id: number; readonly focus: boolean }
+  | { readonly type: 'hidden' }
+
+function reduceTabs(state: TabsState, action: TabsAction): TabsState {
+  if (action.type === 'add') {
+    return {
+      ...state,
+      tabs: [...state.tabs, { id: action.id }],
+      activeId: action.id,
+      focusRequest: (state.focusRequest ?? 0) + 1,
+    }
+  }
+  if (action.type === 'close') {
+    const index = state.tabs.findIndex(tab => tab.id === action.id)
+    if (index < 0) return state
+    const tabs = state.tabs.filter(tab => tab.id !== action.id)
+    return {
+      tabs,
+      activeId: state.activeId === action.id
+        ? (tabs[index]?.id ?? tabs[index - 1]?.id ?? null) : state.activeId,
+      focusRequest: (state.focusRequest ?? 0) + 1,
+      collapseRevision: state.collapseRevision + (tabs.length === 0 ? 1 : 0),
+    }
+  }
+  if (action.type === 'select') {
+    if (!state.tabs.some(tab => tab.id === action.id)) return state
+    return {
+      ...state,
+      activeId: action.id,
+      focusRequest: action.focus ? (state.focusRequest ?? 0) + 1 : null,
+    }
+  }
+  return state.focusRequest === 0 ? state : { ...state, focusRequest: 0 }
+}
 
 function TerminalTabs(props: TerminalPanelProps): React.JSX.Element {
   const panelPrefix = useId()
   const nextId = useRef(2)
   const addButton = useRef<HTMLButtonElement>(null)
-  const [tabs, setTabs] = useState<readonly Tab[]>([{ id: 1 }])
-  const [activeId, setActiveId] = useState<number | null>(1)
-  const [focusRequest, setFocusRequest] = useState<number | null>(0)
+  const [state, dispatch] = useReducer(reduceTabs, {
+    tabs: [{ id: 1 }], activeId: 1, focusRequest: 0, collapseRevision: 0,
+  })
+  const { tabs, activeId, focusRequest } = state
+  const wasShown = useRef(props.shown)
+  const handledCollapse = useRef(0)
   const { shown, t } = props
 
   useEffect(() => {
-    if (!shown) setFocusRequest(0)
-  }, [shown])
+    if (!shown) dispatch({ type: 'hidden' })
+    else if (!wasShown.current && tabs.length === 0) {
+      dispatch({ type: 'add', id: nextId.current++ })
+    }
+    wasShown.current = shown
+  }, [shown, tabs.length])
+
+  useEffect(() => {
+    if (handledCollapse.current === state.collapseRevision) return
+    handledCollapse.current = state.collapseRevision
+    if (tabs.length === 0) props.closeBottom()
+  }, [state.collapseRevision, tabs.length, props.closeBottom])
 
   useLayoutEffect(() => {
     if (shown && tabs.length === 0) addButton.current?.focus()
@@ -26,18 +82,10 @@ function TerminalTabs(props: TerminalPanelProps): React.JSX.Element {
 
   const addTab = () => {
     const id = nextId.current++
-    setTabs(current => [...current, { id }])
-    setActiveId(id)
-    setFocusRequest(current => (current ?? 0) + 1)
+    dispatch({ type: 'add', id })
   }
   const closeTab = (id: number) => {
-    const index = tabs.findIndex(tab => tab.id === id)
-    const remaining = tabs.filter(tab => tab.id !== id)
-    setTabs(remaining)
-    setFocusRequest(current => (current ?? 0) + 1)
-    if (activeId === id) {
-      setActiveId(remaining[index]?.id ?? remaining[index - 1]?.id ?? null)
-    }
+    dispatch({ type: 'close', id })
   }
   const selectWithKeyboard = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
     const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length
@@ -46,8 +94,7 @@ function TerminalTabs(props: TerminalPanelProps): React.JSX.Element {
     const tab = tabs[next]
     if (tab === undefined) return
     event.preventDefault()
-    setFocusRequest(null)
-    setActiveId(tab.id)
+    dispatch({ type: 'select', id: tab.id, focus: false })
     event.currentTarget.closest('[role="tablist"]')?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus()
   }
 
@@ -62,8 +109,7 @@ function TerminalTabs(props: TerminalPanelProps): React.JSX.Element {
                 <button type="button" className={css.tabSelect} role="tab" id={`${panelPrefix}-tab-${tab.id}`}
                   aria-controls={`${panelPrefix}-panel-${tab.id}`} aria-selected={activeId === tab.id}
                   tabIndex={activeId === tab.id ? 0 : -1} onClick={(event) => {
-                    setActiveId(tab.id)
-                    setFocusRequest(current => event.detail === 0 ? null : (current ?? 0) + 1)
+                    dispatch({ type: 'select', id: tab.id, focus: event.detail !== 0 })
                   }}
                   onKeyDown={(event) => { selectWithKeyboard(event, index) }}>
                   <Icon name="bottom-panel" size={14} />
@@ -83,7 +129,7 @@ function TerminalTabs(props: TerminalPanelProps): React.JSX.Element {
       <div className={css.panels}>
         {tabs.map(tab => (
           <TerminalPanel key={tab.id} {...props} shown={shown && activeId === tab.id}
-            focusRequest={focusRequest}
+            focusRequest={focusRequest} onCompleted={() => { closeTab(tab.id) }}
             panelId={`${panelPrefix}-panel-${tab.id}`} tabId={`${panelPrefix}-tab-${tab.id}`} />
         ))}
       </div>

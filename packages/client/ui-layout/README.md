@@ -23,7 +23,7 @@ kind: "package-reference"
 | `workbench.bottom` | `session` | `shown` |
 | `shell.overlay` | `root` | 无 owner 数据的有序 list |
 
-`ctx.layout` 提供全局的 `toggleSidebar()`、`openDetails()`、`closeDetails()`，以及接收 `SessionId` 的 `openWorkbench()`、`closeWorkbench()`、`toggleWorkbench()`、`toggleWorkbenchFullscreen()`、`toggleWorkbenchBottom()`、`toggleWorkbenchFiles()` 和欢迎页专用的 `toggleHeroPanel()`。`workbench(sessionId)` 返回供会话页头、欢迎页与工作台顶栏面板开关订阅的显隐投影。打开工作台会关闭详情栏；打开详情栏会暂时覆盖工作台，关闭详情栏后恢复该 Session 的状态。
+`ctx.layout` 提供全局的 `toggleSidebar()`、`openDetails()`、`closeDetails()`，以及接收 `SessionId` 的 `openWorkbench()`、`closeWorkbench()`、`toggleWorkbench()`、`toggleWorkbenchFullscreen()`、`toggleWorkbenchBottom()`、`closeWorkbenchBottom()`、`toggleWorkbenchFiles()` 和欢迎页专用的 `toggleHeroPanel()`。`closeWorkbenchBottom()` 幂等隐藏底栏，不影响右侧工作台和详情栏。`workbench(sessionId)` 返回供会话页头、欢迎页与工作台顶栏面板开关订阅的显隐投影。打开工作台会关闭详情栏；打开详情栏会暂时覆盖工作台，关闭详情栏后恢复该 Session 的状态。
 
 会话页头的底栏开关在右侧工作台关闭时只显示底栏；两个面板都显示时，关闭底栏不影响右列。文件侧栏开关在工作台关闭时打开右列并启用文件侧栏，在工作台已打开时只切换其中的文件侧栏，不影响底栏；工作台的初始视图仍是功能菜单。关闭右侧工作台会保留已显示的底栏，并使其独立占据底部；宽度、底栏与文件侧栏偏好不受影响。欢迎页的开关打开目标面板时隐藏另一面板，底栏独占不占用右列。
 

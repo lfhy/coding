@@ -160,7 +160,7 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: (sessionId: SessionId): TerminalPanelInjected => ({
       terminalUrl: controller.terminalUrl(sessionId),
-      closeBottom: () => { ctx.layout.toggleWorkbenchBottom(sessionId) },
+      closeBottom: () => { ctx.layout.closeWorkbenchBottom(sessionId) },
     }),
   }, RetainedTerminalPanel))
 }

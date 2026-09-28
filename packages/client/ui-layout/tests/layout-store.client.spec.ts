@@ -162,6 +162,32 @@ describe('createLayoutStore', () => {
     expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: true, bottomOpen: false, filesOpen: false })
   })
 
+  it('hides the bottom panel idempotently without changing the right workbench or details', () => {
+    const { store, actions } = createLayoutStore().create()
+    actions.closeWorkbenchBottom(SESSION)
+    expect(store.getSnapshot().workbench[SESSION]).toBeUndefined()
+
+    actions.openWorkbench(SESSION)
+    actions.toggleWorkbenchBottom(SESSION)
+    actions.closeWorkbenchBottom(SESSION)
+    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({
+      open: true, bottomOpen: false, bottomStandalone: false, filesOpen: true,
+    })
+    actions.openDetails()
+    actions.closeWorkbenchBottom(SESSION)
+    expect(store.getSnapshot().details).not.toBe(0)
+    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({
+      open: true, bottomOpen: false, bottomStandalone: false,
+    })
+
+    actions.closeWorkbench(SESSION)
+    actions.toggleWorkbenchBottom(SESSION)
+    actions.closeWorkbenchBottom(SESSION)
+    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({
+      open: false, bottomOpen: false, bottomStandalone: false,
+    })
+  })
+
   it.each([true, false])('the file toggle reveals a workbench obscured by details with filesOpen=%s', (filesOpen) => {
     const { store, actions } = createLayoutStore().create()
     actions.openWorkbench(SESSION)

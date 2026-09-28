@@ -45,6 +45,7 @@ async function bench() {
   const closeWorkbench = vi.fn()
   const toggleWorkbenchFullscreen = vi.fn()
   const toggleWorkbenchBottom = vi.fn()
+  const closeWorkbenchBottom = vi.fn()
   const toggleWorkbenchFiles = vi.fn()
   const toggleHeroPanel = vi.fn()
   const workbench = createSnapshotStore({
@@ -53,7 +54,7 @@ async function bench() {
   ctx.provide('layout', {
     toggleSidebar: vi.fn(), openDetails: vi.fn(), closeDetails: vi.fn(),
     openWorkbench, closeWorkbench, toggleWorkbench: vi.fn(),
-    toggleWorkbenchFullscreen, toggleWorkbenchBottom, toggleWorkbenchFiles, toggleHeroPanel,
+    toggleWorkbenchFullscreen, toggleWorkbenchBottom, closeWorkbenchBottom, toggleWorkbenchFiles, toggleHeroPanel,
     workbench: vi.fn(() => workbench),
   })
   // 欢迎页入口从当前会话列表定位可操作的 Session。
@@ -76,7 +77,7 @@ async function bench() {
   await fiber.await()
   return {
     ctx, fiber, openWorkbench, closeWorkbench, toggleWorkbenchFullscreen,
-    toggleWorkbenchBottom, toggleWorkbenchFiles, toggleHeroPanel,
+    toggleWorkbenchBottom, closeWorkbenchBottom, toggleWorkbenchFiles, toggleHeroPanel,
     sessionList: list, open, connectHome, connectWorkspace, workspaceList,
   }
 }
@@ -150,7 +151,7 @@ describe('open-in-app browser half', () => {
     vi.stubGlobal('fetch', fetcher)
     vi.stubGlobal('location', { origin: 'http://dsh.example' })
     const {
-      ctx, fiber, openWorkbench, closeWorkbench, toggleWorkbenchFullscreen, toggleWorkbenchBottom,
+      ctx, fiber, openWorkbench, closeWorkbench, toggleWorkbenchFullscreen, toggleWorkbenchBottom, closeWorkbenchBottom,
       toggleWorkbenchFiles,
     } = await bench()
     const action = ctx.slots.entries('conversation.session.header.utilities')[0]
@@ -190,7 +191,8 @@ describe('open-in-app browser half', () => {
     expect(terminalFace.terminalUrl)
       .toBe('ws://dsh.example/open-in-app/terminal?sessionId=browser-plugin-session&cols=80&rows=24')
     terminalFace.closeBottom()
-    expect(toggleWorkbenchBottom).toHaveBeenCalledTimes(2)
+    expect(closeWorkbenchBottom).toHaveBeenCalledExactlyOnceWith(SESSION)
+    expect(toggleWorkbenchBottom).toHaveBeenCalledTimes(1)
     await fiber.dispose()
   })
 

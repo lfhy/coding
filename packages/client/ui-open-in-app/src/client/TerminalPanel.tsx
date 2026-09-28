@@ -95,10 +95,11 @@ function statusText(status: TerminalStatus, t: TerminalPanelProps['t']): string 
  * @param props - 布局可见状态、Host URL 和本地化文案。
  * @returns xterm 终端及连接状态。
  */
-export function TerminalPanel({ shown, terminalUrl, t, panelId, tabId, focusRequest }: TerminalPanelProps & {
+export function TerminalPanel({ shown, terminalUrl, t, panelId, tabId, focusRequest, onCompleted }: TerminalPanelProps & {
   panelId?: string
   tabId?: string
   focusRequest?: number | null
+  onCompleted?: () => void
 }): React.JSX.Element {
   const element = useRef<HTMLDivElement>(null)
   const terminal = useRef<Terminal>()
@@ -106,12 +107,14 @@ export function TerminalPanel({ shown, terminalUrl, t, panelId, tabId, focusRequ
   const ready = useRef(false)
   const shownRef = useRef(shown)
   const tRef = useRef(t)
+  const onCompletedRef = useRef(onCompleted)
   /* v8 ignore next -- React 先执行初始化 layout effect，WebSocket／ResizeObserver 才能调用此 ref。 */
   const resize = useRef<() => void>(() => {})
   const [generation, setGeneration] = useState(0)
   const [status, setStatus] = useState<TerminalStatus>({ phase: 'connecting' })
   shownRef.current = shown
   tRef.current = t
+  onCompletedRef.current = onCompleted
 
   useLayoutEffect(() => {
     const node = element.current
@@ -181,6 +184,8 @@ export function TerminalPanel({ shown, terminalUrl, t, panelId, tabId, focusRequ
   useEffect(() => {
     let disposed = false
     let ended = false
+    let closed = false
+    let completed = false
     ready.current = false
     setStatus({ phase: 'connecting' })
     let next: WebSocket
@@ -192,6 +197,7 @@ export function TerminalPanel({ shown, terminalUrl, t, panelId, tabId, focusRequ
     }
     socket.current = next
     next.addEventListener('message', (event) => {
+      if (disposed || closed || socket.current !== next) return
       try {
         const frame = parseTerminalServerFrame(event.data)
         if (frame.type === 'ready') {
@@ -214,17 +220,27 @@ export function TerminalPanel({ shown, terminalUrl, t, panelId, tabId, focusRequ
       }
     })
     next.addEventListener('error', () => {
+      if (disposed || closed || socket.current !== next) return
       ready.current = false
-      if (!disposed) setStatus({ phase: 'error', message: tRef.current('terminal.disconnected') })
+      setStatus({ phase: 'error', message: tRef.current('terminal.disconnected') })
     })
     next.addEventListener('close', () => {
+      if (disposed || closed || socket.current !== next) return
+      closed = true
       ready.current = false
-      if (!disposed && !ended) setStatus({ phase: 'disconnected' })
+      if (ended) {
+        if (!completed) {
+          completed = true
+          onCompletedRef.current?.()
+        }
+      } else {
+        setStatus({ phase: 'disconnected' })
+      }
     })
     return () => {
       disposed = true
       ready.current = false
-      socket.current = undefined
+      if (socket.current === next) socket.current = undefined
       if (next.readyState === WebSocket.CONNECTING || next.readyState === WebSocket.OPEN) next.close()
     }
   }, [generation, terminalUrl])

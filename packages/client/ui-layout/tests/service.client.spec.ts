@@ -23,6 +23,7 @@ function fakePanels(): PanelActions {
     toggleWorkbench: vi.fn(),
     toggleWorkbenchFullscreen: vi.fn(),
     toggleWorkbenchBottom: vi.fn(),
+    closeWorkbenchBottom: vi.fn(),
     toggleWorkbenchFiles: vi.fn(),
     toggleHeroPanel: vi.fn(),
     retainWorkbenchSessions: vi.fn(),
@@ -43,6 +44,7 @@ describe('LayoutController', () => {
     service.toggleWorkbench(SESSION)
     service.toggleWorkbenchFullscreen(SESSION)
     service.toggleWorkbenchBottom(SESSION)
+    service.closeWorkbenchBottom(SESSION)
     service.toggleWorkbenchFiles(SESSION)
     service.toggleHeroPanel(SESSION, 'bottom')
 
@@ -54,6 +56,7 @@ describe('LayoutController', () => {
     expect(panels.toggleWorkbench).toHaveBeenCalledTimes(1)
     expect(panels.toggleWorkbenchFullscreen).toHaveBeenCalledWith(SESSION)
     expect(panels.toggleWorkbenchBottom).toHaveBeenCalledWith(SESSION)
+    expect(panels.closeWorkbenchBottom).toHaveBeenCalledWith(SESSION)
     expect(panels.toggleWorkbenchFiles).toHaveBeenCalledWith(SESSION)
     expect(panels.toggleHeroPanel).toHaveBeenCalledWith(SESSION, 'bottom')
     expect(panels.setSidebar).not.toHaveBeenCalled()
@@ -70,6 +73,7 @@ describe('LayoutController', () => {
     expect(() => { service.openWorkbench(SESSION) }).toThrow(/panel actions not wired/)
     expect(() => { service.closeWorkbench(SESSION) }).toThrow(/panel actions not wired/)
     expect(() => { service.toggleWorkbench(SESSION) }).toThrow(/panel actions not wired/)
+    expect(() => { service.closeWorkbenchBottom(SESSION) }).toThrow(/panel actions not wired/)
     expect(() => { service.toggleWorkbenchFiles(SESSION) }).toThrow(/panel actions not wired/)
     expect(() => { service.toggleHeroPanel(SESSION, 'files') }).toThrow(/panel actions not wired/)
   })

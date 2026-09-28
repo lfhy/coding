@@ -69,6 +69,7 @@ type LayoutActions = {
   toggleWorkbench: (draft: LayoutState, sessionId: SessionId) => void
   toggleWorkbenchFullscreen: (draft: LayoutState, sessionId: SessionId) => void
   toggleWorkbenchBottom: (draft: LayoutState, sessionId: SessionId) => void
+  closeWorkbenchBottom: (draft: LayoutState, sessionId: SessionId) => void
   toggleWorkbenchFiles: (draft: LayoutState, sessionId: SessionId) => void
   toggleHeroPanel: (draft: LayoutState, sessionId: SessionId, panel: 'bottom' | 'files') => void
   retainWorkbenchSessions: (draft: LayoutState, sessionIds: readonly SessionId[]) => void
@@ -150,6 +151,12 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
         d.details = 0
         state.bottomOpen = true
         state.bottomStandalone = !state.open
+      },
+      closeWorkbenchBottom: (d, sessionId: SessionId) => {
+        const state = d.workbench[sessionId]
+        if (state === undefined) return
+        state.bottomOpen = false
+        state.bottomStandalone = false
       },
       toggleWorkbenchFiles: (d, sessionId: SessionId) => {
         const state = workbench(d, sessionId)

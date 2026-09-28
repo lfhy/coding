@@ -382,6 +382,14 @@ async function verifyTerminalTabs(page, screenshot) {
     'bottom close must hide the panel without closing its terminal')
   await page.getByRole('button', { name: '显示终端底栏' }).first().click()
   await second.waitFor({ state: 'visible' })
+  await activeTerminal.locator('textarea').focus()
+  await page.keyboard.type('exit')
+  await page.keyboard.press('Enter')
+  await until(async () => await second.count() === 0, 'exited terminal tab removed', 10_000)
+  await until(async () => !(await page.locator('section[aria-label="终端"]').isVisible()),
+    'last terminal exit hides bottom panel', 10_000)
+  await page.getByRole('button', { name: '显示终端底栏' }).first().click()
+  await page.getByRole('tab', { name: 'coding 3' }).waitFor({ state: 'visible' })
 }
 
 async function verifyNativeChrome(app, hostHome, record, origin, originalId) {

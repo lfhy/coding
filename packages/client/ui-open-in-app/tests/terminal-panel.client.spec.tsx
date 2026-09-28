@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -368,9 +368,70 @@ describe('TerminalPanel', () => {
     fireEvent.click(closeSecond)
     expect(second?.close).toHaveBeenCalledOnce()
     expect(screen.queryAllByRole('tab')).toEqual([])
+    expect(p.closeBottom).toHaveBeenCalledTimes(2)
     expect(document.activeElement).toBe(screen.getByRole('button', { name: zh['terminal.newTab'] }))
-    fireEvent.click(screen.getByRole('button', { name: zh['terminal.newTab'] }))
+    mounted.rerender(<RetainedTerminalPanel {...p} shown={false} />)
+    mounted.rerender(<RetainedTerminalPanel {...p} shown />)
     expect(screen.getByRole('tab', { name: 'coding 3' })).toBeDefined()
     expect(FakeWebSocket.instances).toHaveLength(3)
+  })
+
+  it('removes only the completed tab after its exit frame and socket close', async () => {
+    const p = props()
+    render(<RetainedTerminalPanel {...p} />)
+    fireEvent.click(screen.getByRole('button', { name: zh['terminal.newTab'] }))
+    const [first, second] = FakeWebSocket.instances
+    act(() => { second?.message('{"type":"exit","exitCode":7,"signal":null}') })
+    expect(screen.getByRole('tab', { name: 'coding 2' })).toBeDefined()
+    expect(p.closeBottom).not.toHaveBeenCalled()
+
+    act(() => { second?.finish() })
+    expect(screen.queryByRole('tab', { name: 'coding 2' })).toBeNull()
+    expect(screen.getByRole('tab', { name: 'coding 1' }).getAttribute('aria-selected')).toBe('true')
+    expect(p.closeBottom).not.toHaveBeenCalled()
+    act(() => { second?.finish() })
+    expect(p.closeBottom).not.toHaveBeenCalled()
+
+    act(() => { first?.message('{"type":"exit","exitCode":0,"signal":null}') })
+    expect(screen.getByRole('tab', { name: 'coding 1' })).toBeDefined()
+    act(() => { first?.finish() })
+    await waitFor(() => { expect(p.closeBottom).toHaveBeenCalledOnce() })
+    expect(screen.queryAllByRole('tab')).toEqual([])
+  })
+
+  it('retains unexpectedly disconnected tabs and ignores stale reconnect generations', async () => {
+    const p = props()
+    render(<RetainedTerminalPanel {...p} />)
+    const first = FakeWebSocket.instances[0] as FakeWebSocket
+    act(() => { first.finish() })
+    expect(screen.getByRole('tab', { name: 'coding 1' })).toBeDefined()
+    expect(p.closeBottom).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: zh['terminal.reconnect'] }))
+    await waitFor(() => { expect(FakeWebSocket.instances).toHaveLength(2) })
+    act(() => {
+      first.message('{"type":"exit","exitCode":0,"signal":null}')
+      first.finish()
+    })
+    expect(screen.getByRole('tab', { name: 'coding 1' })).toBeDefined()
+    expect(p.closeBottom).not.toHaveBeenCalled()
+    const second = FakeWebSocket.instances[1] as FakeWebSocket
+    act(() => { second.fail(); second.finish() })
+    expect(screen.getByRole('button', { name: zh['terminal.reconnect'] })).toBeDefined()
+    expect(p.closeBottom).not.toHaveBeenCalled()
+  })
+
+  it('closes the bottom once when independent terminal exits arrive in one batch', () => {
+    const p = props()
+    render(<RetainedTerminalPanel {...p} />)
+    fireEvent.click(screen.getByRole('button', { name: zh['terminal.newTab'] }))
+    const [first, second] = FakeWebSocket.instances
+    act(() => {
+      first?.message('{"type":"exit","exitCode":0,"signal":null}')
+      second?.message('{"type":"exit","exitCode":1,"signal":null}')
+      first?.finish()
+      second?.finish()
+    })
+    expect(screen.queryAllByRole('tab')).toEqual([])
+    expect(p.closeBottom).toHaveBeenCalledOnce()
   })
 })

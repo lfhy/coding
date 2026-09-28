@@ -59,7 +59,7 @@ describe('ui-layout client apply', () => {
       setSidebar: vi.fn(), setDetails: vi.fn(), setWorkbench: vi.fn(), setWorkbenchBottom: vi.fn(),
       toggleSidebar: vi.fn(), setNarrow: vi.fn(), openDetails: vi.fn(), closeDetails: vi.fn(),
       openWorkbench: vi.fn(), closeWorkbench: vi.fn(), toggleWorkbench: vi.fn(),
-      toggleWorkbenchFullscreen: vi.fn(), toggleWorkbenchBottom: vi.fn(),
+      toggleWorkbenchFullscreen: vi.fn(), toggleWorkbenchBottom: vi.fn(), closeWorkbenchBottom: vi.fn(),
       toggleWorkbenchFiles: vi.fn(), toggleHeroPanel: vi.fn(),
       retainWorkbenchSessions: vi.fn(),
     } satisfies PanelActions

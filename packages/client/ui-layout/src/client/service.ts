@@ -49,6 +49,8 @@ export interface ILayout {
   toggleWorkbenchFullscreen(sessionId: SessionId): void
   /** 切换指定 Session 的终端底栏；右侧工作台关闭时仅显示底栏。 */
   toggleWorkbenchBottom(sessionId: SessionId): void
+  /** 隐藏指定 Session 的终端底栏；已隐藏时不改变工作台或详情栏。 */
+  closeWorkbenchBottom(sessionId: SessionId): void
   /** 切换指定 Session 的工作台文件侧栏；工作台未打开时先打开工作台再显示该面板。 */
   toggleWorkbenchFiles(sessionId: SessionId): void
   /** 欢迎页两面板入口：打开其中一个时隐藏另一面板。 */
@@ -156,6 +158,11 @@ export class LayoutController implements ILayout {
   /** 切换指定 Session 的终端底栏；右侧工作台关闭时仅显示底栏。 */
   toggleWorkbenchBottom(sessionId: SessionId): void {
     this.#require().toggleWorkbenchBottom(sessionId)
+  }
+
+  /** 隐藏指定 Session 的终端底栏。 */
+  closeWorkbenchBottom(sessionId: SessionId): void {
+    this.#require().closeWorkbenchBottom(sessionId)
   }
 
   /** 切换指定 Session 的工作台文件侧栏；工作台未打开时先打开工作台再显示该面板。 */
