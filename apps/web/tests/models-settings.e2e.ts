@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { load } from 'js-yaml'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
+import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { Browser, Locator, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
@@ -148,7 +149,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     }
   })
 
-  it('opens the add card over the dormant directory vocabulary', async () => {
+  it('shows only configured channels and keeps dormant catalogs in Add', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-models-empty'))
     await page.getByRole('button', { name: '设置', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: '设置' })
@@ -157,10 +158,10 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     await providerRail().waitFor({ timeout: 10_000 })
     const modelsNav = dialog.getByRole('navigation').getByRole('button', { name: '模型' })
     expect(await modelsNav.getAttribute('aria-current')).toBe('true')
-    expect(await provider('anthropic').isVisible()).toBe(true)
-    await provider('minimax-cn').click()
-    await dialog.getByRole('main').getByRole('heading', { name: 'minimax-cn' }).waitFor()
-    expect(await dialog.getByRole('main').getByRole('button', { name: '保存', exact: true }).isVisible()).toBe(true)
+    await provider('DeepSeek').waitFor({ timeout: 10_000 })
+    for (const dormant of ['anthropic', 'openai', 'minimax-cn', 'amazon-bedrock']) {
+      expect(await provider(dormant).count()).toBe(0)
+    }
     // 未激活的适配器仍把已安装目录交给添加控件。
     const add = dialog.getByRole('button', { name: '添加提供方' })
     await add.waitFor({ timeout: 10_000 })
@@ -172,6 +173,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     await expect.poll(async () => pick.locator('option').count(), { timeout: 10_000 }).toBeGreaterThan(30)
     const options = await pick.locator('option').allTextContents()
     expect(options).toContain('anthropic')
+    expect(options).toContain('openai')
     expect(options).toContain('minimax-cn')
     await pick.selectOption('minimax-cn')
     await dialog.getByRole('textbox', { name: 'API 密钥', exact: true }).waitFor({ timeout: 10_000 })
@@ -225,6 +227,42 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     )
     await compareOrRefreshGolden(NATIVE_DELETE_EXPECTED, snapshot, MODE)
     await deleteDialog.getByRole('button', { name: '取消', exact: true }).click()
+  }, 60_000)
+
+  it('keeps a configured channel editable when its credential is missing', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-models-missing-credential'))
+    // 固定缺失引用，而非依赖开发机的环境密钥；该 profile 此时不能注册可用路由。
+    const missingRef = credentialRef('DSH_E2E_MISSING_MINIMAX_CREDENTIAL')
+    const missingDescribe = page.waitForRequest(request =>
+      request.url().endsWith('/api/credentials.describe') && request.postData()?.includes(missingRef) === true,
+    { timeout: 10_000 })
+    await scaffold.ctx.settings.update(settingsNamespace('llm-pi-ai'), {
+      providers: { 'minimax-cn': { apiKeyEnv: missingRef } },
+    })
+    await missingDescribe
+    await expect.poll(async () => scaffold.ctx.credentials.describe(missingRef))
+      .toMatchObject({ configured: false })
+    const dialog = settings()
+    // 外部写入后重新挂载编辑器，使用更新后的设置修订号。
+    await dialog.getByRole('navigation').getByRole('button', { name: '通用设置', exact: true }).click()
+    await dialog.getByRole('navigation').getByRole('button', { name: '模型', exact: true }).click()
+    await expect.poll(() => provider('minimax-cn').count(), { timeout: 10_000 }).toBe(1)
+    await provider('minimax-cn').click()
+    await dialog.getByRole('main').getByRole('heading', { name: 'minimax-cn', exact: true }).waitFor()
+    const key = dialog.getByRole('textbox', { name: 'API 密钥', exact: true })
+    await expect.poll(() => key.isEnabled(), { timeout: 10_000 }).toBe(true)
+    expect(await key.inputValue()).toBe('')
+    expect(await dialog.getByRole('button', { name: '保存', exact: true }).isEnabled()).toBe(true)
+    expect(await dialog.getByRole('button', { name: '删除', exact: true }).isVisible()).toBe(true)
+    const restoredDescribe = page.waitForRequest(request =>
+      request.url().endsWith('/api/credentials.describe') && request.postData()?.includes('MINIMAX_CN_API_KEY') === true,
+    { timeout: 10_000 })
+    await scaffold.ctx.settings.update(settingsNamespace('llm-pi-ai'), {
+      providers: { 'minimax-cn': { apiKeyEnv: 'MINIMAX_CN_API_KEY' } },
+    })
+    await restoredDescribe
+    await dialog.getByRole('navigation').getByRole('button', { name: '通用设置', exact: true }).click()
+    await dialog.getByRole('navigation').getByRole('button', { name: '模型', exact: true }).click()
   }, 60_000)
 
   it('stores the key under the derived reference and keeps the route live', async () => {
@@ -382,6 +420,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
   it('switches to independent image fallback detail and persists a paired visual target', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-models-vision-fallback'))
     const dialog = settings()
+    const modelPanel = await dialog.boundingBox()
     const navigation = dialog.getByRole('navigation')
     const fallback = navigation.getByRole('button', { name: '图片识别 Fallback' })
     expect(await providerRail().getByRole('button', { name: '图片识别 Fallback' }).count()).toBe(0)
@@ -396,7 +435,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     expect(await dialog.getByRole('button', { name: '删除', exact: true }).count()).toBe(0)
     const panel = await dialog.boundingBox()
     if (panel === null) throw new Error('图片识别分区未绘制')
-    expect(panel.width).toBe(800)
+    expect(panel).toEqual(modelPanel)
 
     const select = detail.getByRole('combobox', { name: '视觉模型' })
     await expect.poll(async () => select.locator('option').allTextContents(), { timeout: 10_000 })
@@ -536,6 +575,53 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     expect(tripwire.warnings).toEqual([])
     expect(consoleErrors).toEqual([])
     expect(await page.locator('vite-error-overlay').count()).toBe(0)
+  }, 60_000)
+
+  it('keeps DeepSeek channel names identical through live edits and reopening', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-models-deepseek-name'))
+    await page.getByRole('button', { name: '设置', exact: true }).click()
+    const dialog = settings()
+    await dialog.getByRole('navigation').getByRole('button', { name: '模型', exact: true }).click()
+    await provider('DeepSeek').click()
+    const assertName = async (name: string): Promise<void> => {
+      await expect.poll(() => providerRail().getByRole('button').filter({ hasText: name }).count(), { timeout: 10_000 }).toBe(1)
+      await dialog.getByRole('main').getByRole('heading', { name, exact: true }).waitFor({ timeout: 10_000 })
+      await expect.poll(() => dialog.getByRole('textbox', { name: '渠道名称', exact: true }).inputValue(), { timeout: 10_000 }).toBe(name)
+    }
+    await assertName('DeepSeek')
+    const customName = '个人 DeepSeek 渠道'
+    await dialog.getByRole('textbox', { name: '渠道名称', exact: true }).fill(customName)
+    await dialog.getByRole('button', { name: '保存', exact: true }).click()
+    await assertName(customName)
+    await expect.poll(settingsDocument, { timeout: 10_000 }).toContain(`channelName: ${customName}`)
+    expect(await providerRail().getByRole('button', { name: /^DeepSeek(?: 已配置)?$/ }).count()).toBe(0)
+    await screenshot('models-settings-deepseek-renamed.png', 1920, 1080)
+    await page.keyboard.press('Escape')
+    await page.getByRole('button', { name: '设置', exact: true }).click()
+    await dialog.getByRole('navigation').getByRole('button', { name: '模型', exact: true }).click()
+    await provider(customName).click()
+    await assertName(customName)
+
+    await dialog.getByRole('textbox', { name: 'API 密钥', exact: true }).fill('sk-e2e-deepseek-renamed')
+    await dialog.getByRole('button', { name: '保存', exact: true }).click()
+    await assertName(customName)
+    await expect.poll(() => dialog.getByRole('textbox', { name: 'API 密钥', exact: true }).inputValue()).toBe('')
+    await scaffold.ctx.settings.update(settingsNamespace('agent-default-model'), {
+      provider: 'deepseek-official', model: 'deepseek-v4-pro',
+    })
+    await assertName(customName)
+    const document = load(await settingsDocument()) as Record<string, Record<string, unknown>>
+    expect(document['llm-deepseek']?.['channelName']).toBe(customName)
+    expect(document['llm-deepseek']?.['apiKeyEnv']).not.toBe(customName)
+    expect(document['agent-default-model']).toMatchObject({ provider: 'deepseek-official', model: 'deepseek-v4-pro' })
+    const credentials = await readFile(join(scaffold.harnessHome, '.credentials.yaml'), 'utf8')
+    expect(credentials).toContain('DEEPSEEK_API_KEY: sk-e2e-deepseek-renamed')
+    expect(credentials).not.toContain(customName)
+    expect(await page.content()).not.toContain('sk-e2e-deepseek-renamed')
+    expect(await page.locator('body').ariaSnapshot()).not.toContain('sk-e2e-deepseek-renamed')
+    expect(consoleErrors.some(line => line.includes('sk-e2e-deepseek-renamed'))).toBe(false)
+    await page.keyboard.press('Escape')
+    expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {

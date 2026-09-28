@@ -695,17 +695,13 @@ describe('endpoint interrogation', () => {
 })
 
 describe('channel directory and detail', () => {
-  it('lists dormant catalog routes alongside the configured default and also keeps Add provider available', async () => {
+  it('keeps dormant catalog routes in Add while the rail shows the configured default', async () => {
     await mountSection({ directory: ['openai', 'anthropic'] })
     const rail = screen.getByRole('complementary', { name: en.provider })
     expect(within(rail).getByRole('button', { name: 'openai' }).getAttribute('aria-current')).toBe('true')
-    const dormant = within(rail).getByRole('button', { name: 'anthropic' })
-    expect(dormant.getAttribute('aria-current')).toBeNull()
-    fireEvent.click(dormant)
+    expect(within(rail).queryByRole('button', { name: 'anthropic' })).toBeNull()
     const detail = screen.getByRole('main')
-    expect(within(detail).getByRole('heading', { name: 'anthropic' })).toBeTruthy()
-    expect(within(detail).getByLabelText(en.keyInput)).toBeTruthy()
-    expect(within(detail).getByRole('textbox', { name: en.baseUrl })).toBeTruthy()
+    expect(within(detail).getByRole('heading', { name: 'openai' })).toBeTruthy()
     fireEvent.click(within(rail).getByRole('button', { name: en.add }))
     const choice = within(detail).getByRole('combobox', { name: en.provider }) as HTMLSelectElement
     expect(choice.value).toBe('anthropic')

@@ -951,10 +951,10 @@ Requires: `llm`
  * 插件配置也作为 `llm-deepseek` settings 分节的结构，所有字段在 yml 中均可省略。
  * 缺少密钥时，每次请求会通过 {@link Config.apiKeyEnv} 查找，仍未找到才以
  * `MISSING_CREDENTIAL` 失败；省略 thinking 使用提供方默认值，省略推理强度
- * 则使用 `high`。渠道名称仅作为设置中的显示元数据，不改变提供方路由。
+ * 则使用 `high`。渠道目录使用有效设置中的名称，不改变提供方路由。
  */
 export interface Config {
-  /** 单一渠道的显示名称，默认 `default`，最多 64 个字符；不用于路由、凭据引用或模型请求。 */
+  /** 单一渠道的显示名称，默认 `DeepSeek`，最多 64 个字符；不用于路由、凭据引用或模型请求。 */
   channelName?: string
   /** Credential reference (environment-variable name) resolved per request; defaults to `DEEPSEEK_API_KEY`. */
   apiKeyEnv?: string
@@ -999,7 +999,7 @@ export interface DeepSeekCatalogModel {
 
 Depends on: [`ModelModality`](subsystems/llm-streaming.md) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
 
-Source: [`packages/llm/llm-deepseek/src/index.ts:66`](../packages/llm/llm-deepseek/src/index.ts)
+Source: [`packages/llm/llm-deepseek/src/index.ts:67`](../packages/llm/llm-deepseek/src/index.ts)
 
 <a id="deepseek-aidsh-llm-pi-ai"></a>
 

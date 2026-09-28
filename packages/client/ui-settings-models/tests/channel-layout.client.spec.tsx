@@ -84,19 +84,32 @@ async function mount() {
 }
 
 describe('channel settings layout', () => {
-  it('lists configured and dormant routes, and always shows the selected channel fields without native Details', async () => {
-    await mount()
+  it('lists configured channels and offers dormant routes only in the explicit add flow', async () => {
+    const { mutate } = await mount()
     const rail = screen.getByRole('complementary', { name: en.provider })
     expect(within(rail).getByRole('button', { name: /Ready/ }).getAttribute('aria-current')).toBe('true')
-    expect(within(rail).getByRole('button', { name: 'Dormant' })).toBeTruthy()
+    expect(within(rail).queryByRole('button', { name: 'Dormant' })).toBeNull()
+    expect(within(rail).queryByRole('button', { name: 'Reserve' })).toBeNull()
     expect(screen.getByRole('textbox', { name: en.baseUrl })).toBeTruthy()
     expect(document.querySelector('details')).toBeNull()
     expect(document.body.textContent).not.toContain('Details')
 
-    fireEvent.click(within(rail).getByRole('button', { name: 'Dormant' }))
-    expect(within(rail).getByRole('button', { name: 'Dormant' }).getAttribute('aria-current')).toBe('true')
+    fireEvent.change(within(rail).getByRole('textbox', { name: en.searchProviders }), { target: { value: 'Dormant' } })
+    expect(within(rail).queryByRole('button', { name: /Ready/ })).toBeNull()
+    expect(within(rail).queryByRole('button', { name: 'Dormant' })).toBeNull()
+    fireEvent.change(within(rail).getByRole('textbox', { name: en.searchProviders }), { target: { value: '' } })
+    fireEvent.click(within(rail).getByRole('button', { name: en.add }))
+    const picker = screen.getByRole<HTMLSelectElement>('combobox', { name: en.provider })
+    expect([...picker.options].map(option => option.value)).toEqual(['dormant', 'reserve'])
     expect(screen.getByRole('textbox', { name: en.baseUrl })).toBeTruthy()
     expect(screen.getByLabelText(en.keyInput)).toBeTruthy()
+    expect(mutate).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: en.apply }))
+    await waitFor(() => {
+      expect(within(rail).getByRole('button', { name: 'Dormant' }).getAttribute('aria-current')).toBe('true')
+    })
+    expect(mutate.mock.calls[0]?.[0].ops).toEqual([{ op: 'set', path: ['providers', 'dormant'], value: {} }])
+    expect(within(rail).queryByRole('button', { name: 'Reserve' })).toBeNull()
   })
 
   it('clears a saved notice when the user changes channels or opens the add flow', async () => {
@@ -104,10 +117,14 @@ describe('channel settings layout', () => {
     fireEvent.click(screen.getByRole('button', { name: en.apply }))
     await waitFor(() => { expect(screen.getByRole('status').textContent).toContain('Ready') })
     const rail = screen.getByRole('complementary', { name: en.provider })
-    fireEvent.click(within(rail).getByRole('button', { name: 'Dormant' }))
+    fireEvent.click(within(rail).getByRole('button', { name: en.add }))
     expect(screen.queryByRole('status')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: en.apply }))
     await waitFor(() => { expect(screen.getByRole('status').textContent).toContain('Dormant') })
+    fireEvent.click(within(rail).getByRole('button', { name: /Ready/ }))
+    expect(screen.queryByRole('status')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: en.apply }))
+    await waitFor(() => { expect(screen.getByRole('status').textContent).toContain('Ready') })
     fireEvent.click(within(rail).getByRole('button', { name: en.add }))
     expect(screen.queryByRole('status')).toBeNull()
   })
@@ -118,6 +135,8 @@ describe('channel settings layout', () => {
     fireEvent.change(screen.getByRole('combobox', { name: en.provider }), { target: { value: 'dormant' } })
     fireEvent.click(screen.getByRole('button', { name: en.apply }))
     await waitFor(() => { expect(screen.getByRole('heading', { name: 'Dormant' })).toBeTruthy() })
+    expect(within(screen.getByRole('complementary', { name: en.provider }))
+      .getByRole('button', { name: 'Dormant' }).getAttribute('aria-current')).toBe('true')
     expect(mutate.mock.calls[0]?.[0].expectedRevision).toBe(2)
     expect(controller.store.getSnapshot().namespaces.get('llm-pi-ai')?.revision).toBe(3)
 

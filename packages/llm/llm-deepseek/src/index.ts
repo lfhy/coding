@@ -46,7 +46,8 @@ export const inject = ['llm']
 
 const NS = settingsNamespace('llm-deepseek')
 const DEFAULT_API_KEY_ENV = 'DEEPSEEK_API_KEY'
-/** The single provider route this plugin owns. */
+const DEFAULT_CHANNEL_NAME = 'DeepSeek'
+/** 本插件拥有的唯一提供方路由。 */
 const PROVIDER = 'deepseek-official'
 
 const DEFAULT_MODELS: DeepSeekCatalogModel[] = [
@@ -61,10 +62,10 @@ const MODEL_REASONING_EFFORTS = ['off', 'low', 'high', 'max'] as const
  * 插件配置也作为 `llm-deepseek` settings 分节的结构，所有字段在 yml 中均可省略。
  * 缺少密钥时，每次请求会通过 {@link Config.apiKeyEnv} 查找，仍未找到才以
  * `MISSING_CREDENTIAL` 失败；省略 thinking 使用提供方默认值，省略推理强度
- * 则使用 `high`。渠道名称仅作为设置中的显示元数据，不改变提供方路由。
+ * 则使用 `high`。渠道目录使用有效设置中的名称，不改变提供方路由。
  */
 export interface Config {
-  /** 单一渠道的显示名称，默认 `default`，最多 64 个字符；不用于路由、凭据引用或模型请求。 */
+  /** 单一渠道的显示名称，默认 `DeepSeek`，最多 64 个字符；不用于路由、凭据引用或模型请求。 */
   channelName?: string
   /** Credential reference (environment-variable name) resolved per request; defaults to `DEEPSEEK_API_KEY`. */
   apiKeyEnv?: string
@@ -100,7 +101,7 @@ const catalogModel: z<DeepSeekCatalogModel> = z.object({
 })
 
 export const Config: z<Config> = z.object({
-  channelName: z.string().min(1).max(64).pattern(/\S/u).default('default'),
+  channelName: z.string().min(1).max(64).pattern(/\S/u).default(DEFAULT_CHANNEL_NAME),
   apiKeyEnv: z.string().role('credential-ref').default(DEFAULT_API_KEY_ENV),
   baseURL: z.string(),
   thinking: z.union(['enabled', 'disabled']),
@@ -248,6 +249,12 @@ export function resolveAdapterOptions(config: Config, environment?: LaunchEnviro
   }
 }
 
+/**
+ * 注册单一 DeepSeek 路由，并在有效设置变化后同步渠道目录名称与重试策略。
+ * @param ctx - 持有适配器与目录注册生命周期的插件上下文。
+ * @param config - 作为设置基础层的插件配置；设置卸载后恢复使用。
+ * @returns 无返回值。
+ */
 export function apply(ctx: Context, config: Config): void {
   let current: () => Config = () => config
   let lastRaw: Config | undefined
@@ -304,9 +311,17 @@ export function apply(ctx: Context, config: Config): void {
     resolveUserId,
     resolveAttachments: () => ctx.get('attachments'),
   })
-  ctx.llm.registerConfigurableProviders([
-    { provider: PROVIDER, displayName: 'DeepSeek', settingsNs: NS, settingsPath: [] },
+  let registeredName = current().channelName ?? DEFAULT_CHANNEL_NAME
+  const directory = ctx.llm.registerConfigurableProviders([
+    { provider: PROVIDER, displayName: registeredName, settingsNs: NS, settingsPath: [] },
   ])
+  const ensureDirectory = (): void => {
+    const displayName = current().channelName ?? DEFAULT_CHANNEL_NAME
+    if (displayName === registeredName) return
+    // 名称只更新配置目录；原子替换保留同一条路由及插件卸载时的清理责任。
+    directory.replace([{ provider: PROVIDER, displayName, settingsNs: NS, settingsPath: [] }])
+    registeredName = displayName
+  }
   ctx.llm.registerModelDiscovery(NS, (request: LlmModelDiscoveryRequest) =>
     discoverModels(request, options(), resolveApiKey))
   // Route effects bind to this apply fiber via the stable `ctx` reference,
@@ -329,6 +344,9 @@ export function apply(ctx: Context, config: Config): void {
     setSource: (source) => {
       current = source
     },
-    onChange: ensureRegistrationFacts,
+    onChange: () => {
+      ensureRegistrationFacts()
+      ensureDirectory()
+    },
   })
 }

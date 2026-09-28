@@ -46,7 +46,7 @@ const PiAiConfig = Schema.object({
 })
 
 const DeepSeekConfig = Schema.object({
-  channelName: Schema.string().min(1).max(64).pattern(/\S/u).default('default'),
+  channelName: Schema.string().min(1).max(64).pattern(/\S/u).default('DeepSeek'),
   apiKeyEnv: Schema.string().role('credential-ref'),
   baseURL: Schema.string().pattern(/^https:\/\//),
   reasoningEffort: Schema.union(['off', 'low', 'high', 'max']),
@@ -90,7 +90,7 @@ function wireNamespaces(): SettingsNamespaceView[] {
       ns: 'llm-deepseek',
       schema: JSON.parse(JSON.stringify(DeepSeekConfig.toJSON())) as unknown,
       value: {
-        channelName: 'default',
+        channelName: 'DeepSeek',
         apiKeyEnv: 'DEEPSEEK_API_KEY',
         baseURL: 'https://base',
         defaultContextWindow: 1_000_000,
@@ -137,6 +137,7 @@ function fail<T>(message: string, code = 'settings-rejected'): RpcResponse<T> {
 }
 
 function scriptedFace(overrides: {
+  namespaces?: () => SettingsNamespaceView[]
   update?: ReturnType<typeof vi.fn>
   replace?: ReturnType<typeof vi.fn>
   mutate?: ReturnType<typeof vi.fn>
@@ -144,6 +145,7 @@ function scriptedFace(overrides: {
   set?: ReturnType<typeof vi.fn>
   unset?: ReturnType<typeof vi.fn>
 } = {}) {
+  const namespaces = overrides.namespaces ?? wireNamespaces
   const update = overrides.update ?? vi.fn(() => Promise.resolve(ok(wireNamespaces()[2])))
   const replace = overrides.replace ?? vi.fn(() => Promise.resolve(ok(wireNamespaces()[2])))
   const mutate = overrides.mutate ?? vi.fn(() => Promise.resolve(ok(wireNamespaces()[2])))
@@ -151,21 +153,24 @@ function scriptedFace(overrides: {
   const unset = overrides.unset ?? vi.fn(() => Promise.resolve(ok({})))
   const face = {
     llm: {
-      providers: vi.fn(() => Promise.resolve(ok({
-        providers: [
-          { provider: 'deepseek-official', displayName: 'DeepSeek', settingsNs: 'llm-deepseek', settingsPath: [], active: true },
-          { provider: 'openai', displayName: 'openai', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai'], active: true },
-          { provider: 'anthropic', displayName: 'anthropic', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'anthropic'], active: false },
-          { provider: 'zombie', displayName: 'zombie', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'zombie'], active: false },
-          { provider: 'broken', displayName: 'broken', settingsNs: 'llm-pi-ai', settingsPath: ['nope', 'x'], active: false },
-          { provider: 'plain', displayName: 'plain', settingsNs: 'llm-plain', settingsPath: ['profiles', 'plain'], active: false },
-        ],
-      }))),
+      providers: vi.fn(() => {
+        const channelName = settingsSchema.getPath(namespaces().find(view => view.ns === 'llm-deepseek')?.value, ['channelName'])
+        return Promise.resolve(ok({
+          providers: [
+            { provider: 'deepseek-official', displayName: typeof channelName === 'string' ? channelName : 'DeepSeek', settingsNs: 'llm-deepseek', settingsPath: [], active: true },
+            { provider: 'openai', displayName: 'openai', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai'], active: true },
+            { provider: 'anthropic', displayName: 'anthropic', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'anthropic'], active: false },
+            { provider: 'zombie', displayName: 'zombie', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'zombie'], active: false },
+            { provider: 'broken', displayName: 'broken', settingsNs: 'llm-pi-ai', settingsPath: ['nope', 'x'], active: false },
+            { provider: 'plain', displayName: 'plain', settingsNs: 'llm-plain', settingsPath: ['profiles', 'plain'], active: false },
+          ],
+        }))
+      }),
       models: vi.fn(() => Promise.resolve(ok({ groups: [], failures: [] }))),
       discoverModels: overrides.discover ?? vi.fn(() => Promise.resolve(ok({ models: [] }))),
     },
     settings: {
-      describe: vi.fn(() => Promise.resolve(ok({ writable: true, hasDocument: false, namespaces: wireNamespaces() }))),
+      describe: vi.fn(() => Promise.resolve(ok({ writable: true, hasDocument: false, namespaces: namespaces() }))),
       update,
       replace,
       mutate,
@@ -262,7 +267,12 @@ describe('ModelsSection', () => {
     expect(screen.getByRole('heading', { name: 'DeepSeek' })).toBeTruthy()
     expect(screen.getByLabelText(en.keyInput)).toBeTruthy()
     expect(within(screen.getByRole('complementary', { name: en.provider })).getByRole('button', { name: 'openai' })).toBeTruthy()
+    expect(within(screen.getByRole('complementary', { name: en.provider })).queryByRole('button', { name: 'anthropic' })).toBeNull()
+    expect(screen.getByLabelText<HTMLInputElement>(en.channelName).value).toBe('DeepSeek')
     expect(screen.getByRole('button', { name: en.add })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: en.add }))
+    const choice = await screen.findByRole<HTMLSelectElement>('combobox', { name: en.provider })
+    expect([...choice.options].map(option => option.value)).toContain('anthropic')
   })
 
   it('shows only credential-confirmed badges and retains always-visible detail', async () => {
@@ -390,14 +400,14 @@ describe('ModelsSection', () => {
   })
 
   it('stores a typed key write-only from the setup card without touching settings', async () => {
-    const { set, update, face } = await mountFirstRun()
+    const { set, update, mutate, face } = await mountFirstRun()
     const key = screen.getByLabelText<HTMLInputElement>(en.keyInput)
     fireEvent.change(key, { target: { value: '  sk-live  ' } })
     fireEvent.click(screen.getByText(en.apply))
     await waitFor(() => { expect(set).toHaveBeenCalledWith({ ref: 'DEEPSEEK_API_KEY', value: 'sk-live' }) })
     expect(update).not.toHaveBeenCalled()
-    // The saved key re-loads the join; the settings answer rides the shared
-    // mirror, so the reload shows as a directory read rather than a describe.
+    expect(mutate).not.toHaveBeenCalled()
+    // 保存密钥后的联接复用设置镜像，只需重读渠道目录。
     await waitFor(() => { expect(face.llm.providers.mock.calls.length).toBeGreaterThan(1) })
     expect((await screen.findByRole('status')).textContent).toBe(
       providerCopy(en.savedProvider, { provider: 'deepseek-official', displayName: 'DeepSeek' }),
@@ -491,7 +501,9 @@ describe('ModelsSection', () => {
   })
 
   it('edits and reloads the DeepSeek channel name without changing route or credential', async () => {
-    let namespace = wireNamespaces()[0]!
+    const original = wireNamespaces()[0]!
+    const profile = { ...original.user as object, reasoningEffort: 'high', models: DEFAULT_DEEPSEEK_MODELS }
+    let namespace: SettingsNamespaceView = { ...original, user: profile, value: { ...original.value as object, ...profile } }
     const mutate = vi.fn((payload: { ops: { op: string; path: string[]; value: string }[] }) => {
       const name = payload.ops.find(op => op.path.join('.') === 'channelName')?.value
       if (name !== undefined) {
@@ -500,14 +512,12 @@ describe('ModelsSection', () => {
       }
       return Promise.resolve(ok(namespace))
     })
-    const scripted = scriptedFace({ mutate })
-    scripted.face.settings.describe.mockImplementation(() => Promise.resolve(ok({
-      writable: true, hasDocument: false, namespaces: [namespace, ...wireNamespaces().slice(1)],
-    })))
+    const scripted = scriptedFace({ mutate, namespaces: () => [namespace, ...wireNamespaces().slice(1)] })
     const { face, set, controller, mirror } = await mountFace(scripted)
     selectChannel('DeepSeek')
     const name = screen.getByLabelText<HTMLInputElement>(en.channelName)
-    expect(name.value).toBe('default')
+    expect(name.value).toBe('DeepSeek')
+    expect(screen.getByRole('heading', { name: name.value, level: 2 })).toBeTruthy()
     expect(screen.queryByLabelText(zh.channelName)).toBeNull()
     fireEvent.change(name, { target: { value: '  团队 渠道  ' } })
     fireEvent.click(screen.getByRole('button', { name: en.apply }))
@@ -517,10 +527,21 @@ describe('ModelsSection', () => {
       ops: [{ op: 'set', path: ['channelName'], value: '团队 渠道' }],
     })
     expect(set).not.toHaveBeenCalled()
+    expect(namespace.user).toEqual({ ...profile, channelName: '团队 渠道' })
     const credentialCalls = face.credentials.describe.mock.calls as { refs: string[] }[][]
     expect(credentialCalls.some(([payload]) => payload?.refs.includes('DEEPSEEK_API_KEY'))).toBe(true)
+    const rail = screen.getByRole('complementary', { name: en.provider })
+    await waitFor(() => { expect(within(rail).getByRole('button', { name: '团队 渠道' })).toBeTruthy() })
+    expect(screen.getByRole('heading', { name: '团队 渠道', level: 2 })).toBeTruthy()
+    fireEvent.change(within(rail).getByRole('textbox', { name: en.searchProviders }), { target: { value: '团队' } })
+    expect(within(rail).getByRole('button', { name: '团队 渠道' })).toBeTruthy()
+    expect(within(rail).queryByRole('button', { name: 'DeepSeek' })).toBeNull()
+    fireEvent.change(within(rail).getByRole('textbox', { name: en.searchProviders }), { target: { value: '' } })
+    selectChannel('openai')
+    selectChannel('团队 渠道')
+    expect(screen.getByLabelText<HTMLInputElement>(en.channelName).value).toBe('团队 渠道')
     await act(async () => { await mirror.load(); await controller.load() })
-    selectChannel('DeepSeek')
+    selectChannel('团队 渠道')
     expect(screen.getByLabelText<HTMLInputElement>(en.channelName).value).toBe('团队 渠道')
   })
 
@@ -542,6 +563,37 @@ describe('ModelsSection', () => {
     expect(screen.queryByRole('button', { name: /reset channel name/i })).toBeNull()
   })
 
+  it('keeps an untouched stored name and hidden model fields while saving address and key', async () => {
+    const original = wireNamespaces()[0]!
+    const profile = {
+      channelName: '  Saved name  ',
+      baseURL: 'https://base',
+      models: DEFAULT_DEEPSEEK_MODELS,
+      reasoningEffort: 'high',
+    }
+    const current: SettingsNamespaceView = {
+      ...original,
+      user: profile,
+      value: { ...original.value as object, ...profile },
+    }
+    const { face, mutate, set } = scriptedFace({ mutate: vi.fn(() => Promise.resolve(ok(current))) })
+    const { ProviderEditor } = await import('../src/client/ProviderEditor.tsx')
+    render(<ProviderEditor provider="deepseek-official" displayName={profile.channelName} namespace={current}
+      schema={settingsSchema} settingsPath={[]} api={face as never} t={t}
+      readOnly={false} onClose={vi.fn()} />)
+    expect(screen.getByLabelText<HTMLInputElement>(en.channelName).value).toBe(profile.channelName)
+    openAdvanced()
+    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://changed' } })
+    fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'sk-replaced' } })
+    fireEvent.click(screen.getByRole('button', { name: en.apply }))
+    await waitFor(() => { expect(set).toHaveBeenCalledWith({ ref: 'DEEPSEEK_API_KEY', value: 'sk-replaced' }) })
+    expect(mutate).toHaveBeenCalledWith({
+      ns: 'llm-deepseek', expectedRevision: 0,
+      ops: [{ op: 'set', path: ['baseURL'], value: 'https://changed' }],
+    })
+    expect(current.user).toEqual(profile)
+  })
+
   it('localizes the channel input and its validation in Chinese', async () => {
     const { face } = scriptedFace()
     const { ProviderEditor } = await import('../src/client/ProviderEditor.tsx')
@@ -549,7 +601,7 @@ describe('ModelsSection', () => {
       schema={settingsSchema} settingsPath={[]} api={face as never}
       t={key => zh[key]} readOnly={false} onClose={vi.fn()} />)
     const name = screen.getByLabelText<HTMLInputElement>(zh.channelName)
-    expect(name.value).toBe('default')
+    expect(name.value).toBe('DeepSeek')
     fireEvent.change(name, { target: { value: '' } })
     expect(screen.getByRole('alert').textContent).toBe(zh.channelNameInvalid)
     expect(screen.queryByRole('button', { name: /重置|恢复默认/u })).toBeNull()
@@ -562,7 +614,7 @@ describe('ModelsSection', () => {
       ...wireNamespaces()[0]!, value: { ...wireNamespaces()[0]!.value as object, channelName: 'Custom' },
       user: { channelName: 'Custom' },
     }
-    render(<ProviderEditor provider="deepseek-official" displayName="DeepSeek" namespace={current}
+    render(<ProviderEditor provider="deepseek-official" displayName="Custom" namespace={current}
       schema={settingsSchema} settingsPath={[]} api={face as never} t={t}
       readOnly={false} onClose={vi.fn()} />)
     const name = screen.getByLabelText<HTMLInputElement>(en.channelName)
@@ -770,7 +822,7 @@ describe('ModelsSection', () => {
       readOnly={false}
       onClose={() => {}}
     />)
-    expect(screen.getByLabelText<HTMLInputElement>(en.channelName).value).toBe('default')
+    expect(screen.getByLabelText<HTMLInputElement>(en.channelName).value).toBe('DeepSeek')
     openAdvanced()
     expect(screen.getByText(en.modelsCustomized)).toBeTruthy()
     expect(screen.getAllByLabelText(new RegExp(en.modelId)).map(input => (input as HTMLInputElement).value))

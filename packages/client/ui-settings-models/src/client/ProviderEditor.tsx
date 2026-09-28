@@ -25,14 +25,13 @@ type EditorLayout = 'deepseek' | 'pi-ai' | 'unknown'
 
 /** DeepSeek 地址输入框展示的公共端点占位值。 */
 const DEEPSEEK_PUBLIC_BASE_URL = 'https://api.deepseek.com'
-const DEFAULT_CHANNEL_NAME = 'default'
 const MAX_CHANNEL_NAME_LENGTH = 64
 
 /** Props of {@link ProviderEditor}. */
 export interface ProviderEditorProps {
   /** Provider route id. */
   provider: string
-  /** Display name for the card title. */
+  /** 目录提供的生效名称，供标题与未编辑的 DeepSeek 名称输入共用。 */
   displayName: string
   /** Hide the title row (the add card renders its own provider select). */
   hideTitle?: boolean
@@ -148,14 +147,13 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   const { namespace, schema, settingsPath, api, t } = props
   const channelNameId = useId()
   const [draft, setDraft] = useState<Record<string, unknown>>(() => draftAt(schema, namespace, settingsPath))
+  const [channelNameDraft, setChannelNameDraft] = useState<string | undefined>(undefined)
   const [keyDraft, setKeyDraft] = useState('')
   const [keyState, setKeyState] = useState<CredentialView | undefined>(undefined)
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<string | undefined>(undefined)
   const [customizedOpen, setCustomizedOpen] = useState(() => props.defaultCustomizedOpen === true)
-  // A settings success advances both retry baselines immediately. Keeping the
-  // derived fields in the draft prevents a pushed namespace refresh from
-  // turning them into deletions when the following credential write is retried.
+  // 设置成功后立即推进重试基线，并保留已写入字段，避免后续凭据重试随刷新误删它们。
   const [committedOriginal, setCommittedOriginal] = useState<unknown>(
     () => schema.getPath(namespace.user, settingsPath),
   )
@@ -166,12 +164,10 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   const disabled = props.readOnly || busy
   const layout = layoutOf(namespace.ns)
   const keyRef = refFor(schema, namespace, settingsPath, props.provider)
-  const draftChannelName = schema.getPath(draft, ['channelName'])
-  const effectiveChannelName = schema.getPath(fallback, ['channelName'])
-  const channelName = typeof draftChannelName === 'string'
-    ? draftChannelName
-    : typeof effectiveChannelName === 'string' ? effectiveChannelName : DEFAULT_CHANNEL_NAME
+  // 未编辑时与列表、标题共用目录的生效名称；只在本字段被编辑后写入名称覆盖。
+  const channelName = channelNameDraft ?? props.displayName
   const channelNameFailure = layout === 'deepseek' && props.credentialOnly !== true
+    && channelNameDraft !== undefined
     && (channelName.trim().length === 0 || channelName.trim().length > MAX_CHANNEL_NAME_LENGTH)
     ? 'channelNameInvalid' as const
     : undefined
@@ -251,8 +247,8 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
    */
   const applyOnce = async (): Promise<string | undefined> => {
     const ns = namespace.ns
-    const withChannelName = layout === 'deepseek' && typeof draftChannelName === 'string'
-      ? schema.setPath(draft, ['channelName'], draftChannelName.trim())
+    const withChannelName = layout === 'deepseek' && channelNameDraft !== undefined
+      ? schema.setPath(draft, ['channelName'], channelNameDraft.trim())
       : draft
     // pi-ai 仅在存储密钥时记录约定引用，留空仍可使用提供方原生认证。
     const next = layout === 'pi-ai' && stringAt(draft, 'apiKeyEnv') === undefined
@@ -407,7 +403,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
               aria-describedby={channelNameFailure === undefined ? undefined : `${channelNameId}-error`}
               disabled={disabled}
               onChange={(event) => {
-                setDraft(current => schema.setPath(current, ['channelName'], event.target.value))
+                setChannelNameDraft(event.target.value)
               }}
             />
             {channelNameFailure === undefined ? null : (

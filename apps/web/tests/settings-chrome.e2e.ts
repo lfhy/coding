@@ -104,9 +104,9 @@ describe('web e2e: settings modal and General preferences', () => {
     await expect.poll(() => navigation.getByRole('button', { name: '模型' }).getAttribute('aria-current'), { timeout: 5_000 }).toBe('true')
     expect(await dialog.getByRole('button', { name: '通用设置' }).getAttribute('aria-current')).toBeNull()
     const channels = dialog.getByRole('complementary', { name: '提供方' })
-    await channels.getByRole('button', { name: 'amazon-bedrock', exact: true }).click()
+    await channels.getByRole('button', { name: /^DeepSeek/ }).click()
     const detail = dialog.getByRole('main')
-    await detail.getByRole('heading', { name: 'amazon-bedrock' }).waitFor({ timeout: 10_000 })
+    await detail.getByRole('heading', { name: 'DeepSeek', exact: true }).waitFor({ timeout: 10_000 })
     const [dialogBox, navBox, channelsBox, detailBox] = await Promise.all([
       dialog.boundingBox(), navigation.boundingBox(), channels.boundingBox(), detail.boundingBox(),
     ])
@@ -129,7 +129,8 @@ describe('web e2e: settings modal and General preferences', () => {
     if (visionBox === null || visionNavBox === null || visionContentBox === null) {
       throw new Error('图片识别普通分区未全部绘制')
     }
-    expect(visionBox.width).toBe(800)
+    expect(visionBox).toEqual(dialogBox)
+    expect(visionNavBox).toEqual(navBox)
     expect(visionNavBox.x + visionNavBox.width).toBeLessThanOrEqual(visionContentBox.x + 24)
     expect(visionContentBox.x + visionContentBox.width).toBeLessThanOrEqual(visionBox.x + visionBox.width + 1)
     await page.setViewportSize({ width: 375, height: 812 })
@@ -155,11 +156,9 @@ describe('web e2e: settings modal and General preferences', () => {
     await dialog.getByRole('button', { name: '工作区写入' }).waitFor({ timeout: 10_000 })
     expect(await navigation.getByRole('button', { name: '通用设置' }).getAttribute('aria-current')).toBe('true')
     await navigation.getByRole('button', { name: '模型' }).click()
-    await channels.getByRole('button', { name: 'amazon-bedrock', exact: true }).waitFor({ timeout: 10_000 })
+    await channels.getByRole('button', { name: /^DeepSeek/ }).waitFor({ timeout: 10_000 })
     await page.setViewportSize({ width: 1680, height: 1000 })
-    // Plugins is a read-only projection of the same assembled Loader tree.
-    // Capture one stable shipped row rather than the whole inventory so adding
-    // an unrelated plugin does not rewrite this surface's golden.
+    // 只固定一个交付插件行，避免无关插件增删改写此处快照。
     await dialog.getByRole('button', { name: '插件', exact: true }).click()
     await dialog.getByRole('heading', { name: '插件', exact: true }).waitFor({ timeout: 10_000 })
     await dialog.getByRole('tab', { name: '插件列表', exact: true }).click()
@@ -181,15 +180,110 @@ describe('web e2e: settings modal and General preferences', () => {
       scaffold.workspaceCwd,
     )
     await compareOrRefreshGolden(PLUGINS_EXPECTED, pluginsSnapshot, MODE)
-    // Close path 1: Escape.
+    // Escape 与关闭按钮分别固定两条关闭路径。
     await page.keyboard.press('Escape')
     await expect.poll(() => page.getByRole('dialog', { name: '设置' }).count(), { timeout: 5_000 }).toBe(0)
     expect(await trigger.getAttribute('aria-expanded')).toBe('false')
-    // Close path 2: the header close button (focus lands there on open).
     await trigger.click()
     await page.getByRole('dialog', { name: '设置' }).getByRole('button', { name: '关闭' }).click()
     await expect.poll(() => page.getByRole('dialog', { name: '设置' }).count(), { timeout: 5_000 }).toBe(0)
     expect(tripwire.pageErrors).toEqual([])
+  }, 60_000)
+
+  it('keeps every settings section and navigation fixed across viewport sizes', async () => {
+    const dialog = page.getByRole('dialog', { name: '设置' })
+    try {
+      await page.getByRole('button', { name: '设置', exact: true }).click()
+      const navigation = dialog.getByRole('navigation')
+      const general = navigation.getByRole('button', { name: '通用设置', exact: true })
+      const sections = ['通用设置', '模型', '图片识别 Fallback', '插件', 'Agent 预设']
+      for (const viewport of [
+        { width: 1920, height: 1080 }, { width: 1024, height: 768 },
+        { width: 768, height: 1024 }, { width: 375, height: 812 },
+      ]) {
+        await page.setViewportSize(viewport)
+        await general.click()
+        const panel = await dialog.boundingBox()
+        const nav = await navigation.boundingBox()
+        const firstButton = await general.boundingBox()
+        if (panel === null || nav === null || firstButton === null) throw new Error('设置外框或导航未绘制')
+        const margin = viewport.width <= 620 ? 24 : 48
+        expect(panel.width).toBe(Math.min(1380, viewport.width - margin))
+        expect(panel.height).toBe(Math.min(936, viewport.height - margin))
+        expect(panel.x).toBeGreaterThanOrEqual(margin / 2)
+        expect(panel.y).toBeGreaterThanOrEqual(margin / 2)
+        expect(panel.x + panel.width).toBeLessThanOrEqual(viewport.width - margin / 2)
+        expect(panel.y + panel.height).toBeLessThanOrEqual(viewport.height - margin / 2)
+        if (viewport.width > 620) expect(nav.width).toBe(250)
+        for (const section of sections) {
+          const target = navigation.getByRole('button', { name: section, exact: true })
+          await target.click()
+          await expect.poll(() => target.getAttribute('aria-current')).toBe('true')
+          expect(await dialog.boundingBox()).toEqual(panel)
+          expect(await navigation.boundingBox()).toEqual(nav)
+          // 窄屏导航横向滚动会移动条目，但不应移动导航容器。
+          if (viewport.width > 620) expect(await general.boundingBox()).toEqual(firstButton)
+          expect(await dialog.evaluate(node => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(1)
+          if (section === '模型') {
+            await dialog.getByRole('complementary', { name: '提供方' }).getByRole('button', { name: /^DeepSeek/ }).click()
+            const modelId = dialog.getByRole('textbox', { name: '模型 ID 1', exact: true })
+            const modelName = dialog.getByRole('textbox', { name: '显示名称 1', exact: true })
+            for (const input of [modelId, modelName]) {
+              await input.scrollIntoViewIfNeeded()
+              const label = await input.getAttribute('aria-label')
+              const box = await input.boundingBox()
+              if (box === null) throw new Error(`${viewport.width}×${viewport.height}px ${label} 未绘制`)
+              // 120px 至少保留十余个正文字符的编辑空间，防止三列把字段挤至不可扫描。
+              expect(box.width, `${viewport.width}×${viewport.height}px ${label} 实际宽度 ${box.width}px`).toBeGreaterThanOrEqual(120)
+              expect(box.height).toBeGreaterThanOrEqual(28)
+              expect(box.x).toBeGreaterThanOrEqual(panel.x)
+              expect(box.x + box.width).toBeLessThanOrEqual(panel.x + panel.width + 1)
+              expect(await input.isEditable()).toBe(true)
+              expect(await input.evaluate((node, point) => document.elementFromPoint(point.x, point.y) === node,
+                { x: box.x + box.width / 2, y: box.y + box.height / 2 })).toBe(true)
+            }
+            expect((await modelId.inputValue()).trim().length).toBeGreaterThan(0)
+            for (const button of [
+              dialog.getByRole('button', { name: '容量 1', exact: true }),
+              dialog.getByRole('button', { name: '保存', exact: true }),
+            ]) {
+              await button.scrollIntoViewIfNeeded()
+              expect(await button.isVisible()).toBe(true)
+              expect(await button.isEnabled()).toBe(true)
+            }
+            expect(await dialog.getByRole('main').evaluate(node => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(1)
+            await modelId.scrollIntoViewIfNeeded()
+          }
+          if (process.env.DSH_SCREENSHOT_DIR !== undefined) {
+            await page.screenshot({ path: join(process.env.DSH_SCREENSHOT_DIR, `settings-${viewport.width}-${sections.indexOf(section)}.png`) })
+          }
+        }
+        const close = dialog.getByRole('button', { name: '关闭', exact: true })
+        await close.scrollIntoViewIfNeeded()
+        const closeBox = await close.boundingBox()
+        if (closeBox === null) throw new Error('设置关闭按钮未绘制')
+        expect(await close.evaluate((node, point) => {
+          const hit = document.elementFromPoint(point.x, point.y)
+          return hit !== null && (hit === node || node.contains(hit))
+        }, { x: closeBox.x + closeBox.width / 2, y: closeBox.y + closeBox.height / 2 })).toBe(true)
+      }
+      await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+      await expect.poll(() => dialog.count()).toBe(0)
+      expect(tripwire.pageErrors).toEqual([])
+    } catch (error) {
+      // 在清理弹窗和视口前保存失败现场，随后保留原始断言错误。
+      await saveFailureShot(page, 'web-e2e-settings-stable-geometry')
+      throw error
+    } finally {
+      try {
+        if (await dialog.count() > 0) {
+          await page.keyboard.press('Escape')
+          await dialog.waitFor({ state: 'hidden', timeout: 5_000 })
+        }
+      } finally {
+        await page.setViewportSize({ width: 1680, height: 1000 })
+      }
+    }
   }, 60_000)
 
   it('stores Permission as the default for future sessions without changing an existing session', async () => {

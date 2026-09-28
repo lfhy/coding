@@ -53,8 +53,7 @@ function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose }: PanelP
   return (
     <div className={css.overlay} role="presentation">
       <div className={css.mask} aria-hidden="true" onClick={onClose} />
-      <div className={clsx(css.panel, active === 'models' && css.modelsPanel,
-        active === 'vision-understanding' && css.visionPanel)} role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <div className={clsx(css.panel, active === 'models' && css.modelsPanel)} role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <nav className={css.nav}>
           <div className={css.navTitle} id={titleId}>{renderSlot('settings.header', {})}</div>
           <div className={css.navList}>
@@ -90,9 +89,9 @@ function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose }: PanelP
 }
 
 /**
- * Render the settings trigger and panel.
- * @param props - composed slot props (contract/slots.ts).
- * @returns the settings shell element tree.
+ * 渲染设置触发器、统一尺寸的分区面板和独立的引导步骤。
+ * @param props - 由 slot 契约组合的组件属性。
+ * @returns 设置外壳的元素树。
  */
 export function SettingsRoot(props: SettingsRootComponentProps) {
   const { wide, useSections, useOnboardingSteps, useSessions, renderSlot } = props
@@ -108,9 +107,7 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
     setOpen(true)
   }, [])
 
-  // The ledger tick keeps the nav rows fresh: registrants re-register with
-  // freshly localized text on locale change, and the trigger/header/close
-  // seats re-render through their own outlets' subscriptions.
+  // 分区账本更新导航文案；触发器、标题和关闭文案由各自 outlet 的订阅更新。
   const rows = useSections(s => s)
   const onboardingSteps = useOnboardingSteps(s => s)
   const onboardingActive = useSessions(state =>

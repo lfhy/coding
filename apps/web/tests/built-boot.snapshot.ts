@@ -125,7 +125,10 @@ it('boots the built plugin graph and renders a fixture session end to end', asyn
   await waitFor(() => {
     expect(screen.queryByText('Coding')).toBeNull()
   })
-  expect(openSidebar.querySelector('svg[viewBox="0 0 16 16"]')).not.toBeNull()
+  // 图标几何与显示尺寸由 ui-icons 测试持有；组装测试只检查真实 SVG 已加载。
+  const sidebarIcon = openSidebar.querySelector('svg')
+  expect(sidebarIcon).not.toBeNull()
+  expect(sidebarIcon?.getAttribute('viewBox')).toMatch(/\S/)
   expect(openSidebar.querySelector('img[src="/favicon.png"]')).toBeNull()
 
   // Every bundle injected its plugin-owned style tag (the loader's CSS path).

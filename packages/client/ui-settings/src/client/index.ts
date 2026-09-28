@@ -58,10 +58,8 @@ export function apply(ctx: ClientContext): void {
       (ctx.get('remote') as ClientContext['remote']).$on('settings/document-updated', () => { void mirror.load() }),
       ctx.on('connection/reset', () => { void mirror.load() }),
     ]
-    // The first connection also emits connection/reset, so startup normally
-    // costs two reads (budgeted in startup-rpc-budget.e2e.ts). The in-flight
-    // fold does not merge them into one; it guarantees at most one pending
-    // read at a time and that no invalidation arriving mid-read is lost.
+    // 首次连接刷新与急切读取最多产生两次请求；发送前的刷新合并到本次读取，
+    // 在途或完成后的刷新触发补读，确保连接建立期间的文档变更不会丢失。
     void mirror.ensure()
     return () => { for (const dispose of disposers) dispose() }
   }, 'ui-settings: describe mirror invalidations')

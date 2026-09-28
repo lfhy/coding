@@ -12,10 +12,8 @@ import { launchWebScaffold, watchConsole, type WebScaffold } from './scaffold.ts
 import { newEnglishPage } from './support.ts'
 
 /**
- * Both reads are the mirror's: once eagerly at bind time over HTTP, and once
- * on the first-connection reset — that second read closes the window where a
- * document commit lands between the eager read and the SSE subscription and
- * its invalidation is lost. Every settings consumer derives from these two.
+ * 镜像绑定时的预读与首次连接重置共用最多两次读取的预算：请求发出前的刷新
+ * 可并入首次读取；请求在途或已完成后的重置需要补读，防止漏掉订阅前的提交。
  */
 const DESCRIBE_BUDGET = 2
 
@@ -35,7 +33,7 @@ afterAll(async () => {
 })
 
 describe('startup RPC budget', () => {
-  it('keeps cold-boot settings.describe at the mirror count', async () => {
+  it('keeps cold-boot settings.describe within the mirror budget', async () => {
     page = await newEnglishPage(browser)
     watchConsole(page)
     const calls: string[] = []
@@ -44,11 +42,12 @@ describe('startup RPC budget', () => {
       if (url.pathname.startsWith('/api/')) calls.push(url.pathname.slice('/api/'.length))
     })
     await page.goto(scaffold.baseUrl)
-    // Boot settles when the workspace picker is interactive; the trailing wait
-    // absorbs the first-connection reset wave the budget must include.
+    // 工作区选择器可交互后仍等待首次连接重置，预算必须覆盖它触发的读取。
     await page.getByRole('textbox', { name: 'Choose workspace' }).waitFor({ timeout: 30_000 })
     await page.waitForTimeout(3000)
     const describeCount = calls.filter(method => method === 'settings.describe').length
-    expect(describeCount, `startup /api calls:\n${calls.join('\n')}`).toBe(DESCRIBE_BUDGET)
+    const diagnostics = `startup /api calls:\n${calls.join('\n')}`
+    expect(describeCount, diagnostics).toBeGreaterThanOrEqual(1)
+    expect(describeCount, diagnostics).toBeLessThanOrEqual(DESCRIBE_BUDGET)
   })
 })

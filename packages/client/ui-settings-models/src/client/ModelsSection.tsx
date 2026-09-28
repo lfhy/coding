@@ -233,20 +233,19 @@ function Loaded({ injected, hideHeader }: { injected: ModelsSectionFace; hideHea
     ? savedTarget
     : { provider: savedRow.entry.provider, displayName: savedRow.entry.displayName }
 
-  const configured = state.rows.filter(row => row.configured)
   const directory = state.rows.filter(row => row.entry.settingsNs !== '' && state.namespaces.has(row.entry.settingsNs))
-  const addable = state.rows.filter(row => !row.configured && row.entry.settingsNs !== '')
+  // 主列表保留已有 profile；未配置的目录条目只由显式添加流程呈现。
+  const channels = directory.filter(row => row.configured)
+  const addable = directory.filter(row => !row.configured)
   const addTarget = adding ? editing : undefined
   const addNamespace = addTarget === undefined ? undefined : state.namespaces.get(addTarget.settingsNs)
-  // Hand-declared routes live in the pi-ai namespace, which is also the only
-  // one whose schema names the protocols one may speak; without it mounted
-  // there is nothing to declare and the entry point stays disabled.
+  // 自定义渠道由 pi-ai 分节持有；未挂载该分节时不能声明渠道。
   const protocols = protocolChoices(state.namespaces.get('llm-pi-ai'), schema)
 
-  const current = directory.find(row => row.entry.provider === selected) ?? configured[0] ?? directory[0]
+  const current = channels.find(row => row.entry.provider === selected) ?? channels[0]
   const currentTarget = current === undefined ? undefined : targetOf(current)
   const currentNamespace = currentTarget === undefined ? undefined : state.namespaces.get(currentTarget.settingsNs)
-  const visibleProviders = directory.filter(row =>
+  const visibleProviders = channels.filter(row =>
     `${row.entry.displayName} ${row.entry.provider}`.toLocaleLowerCase().includes(providerQuery.toLocaleLowerCase()))
   return (
     <div className={styles['modelsSurface']}>

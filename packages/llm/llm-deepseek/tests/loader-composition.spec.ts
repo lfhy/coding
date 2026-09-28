@@ -108,6 +108,31 @@ async function loadComposition(
 }
 
 describe('llm-deepseek real dynamic composition', () => {
+  it('reloads the channel directory name from external settings and a real restart', async () => {
+    const { ctx, settingsPath } = await loadComposition({ withDynamic: true, baseURL: 'http://127.0.0.1:1' })
+    const home = root!
+    expect(ctx.llm.listConfigurableProviders()).toEqual([{
+      provider: 'deepseek-official', displayName: 'DeepSeek', settingsNs: NS, settingsPath: [],
+    }])
+
+    await writeFile(settingsPath, 'llm-deepseek:\n  channelName: 外部渠道\n')
+    await vi.waitFor(() => {
+      expect(ctx.llm.listConfigurableProviders()[0]?.displayName).toBe('外部渠道')
+    }, { timeout: 5000 })
+    expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek' }])
+    expect(ctx.get('settings')!.get(NS)).toMatchObject({ channelName: '外部渠道', apiKeyEnv: 'DEEPSEEK_API_KEY' })
+
+    const llm = ctx.llm
+    await ctx.fiber.dispose()
+    context = undefined
+    expect(llm.listConfigurableProviders()).toEqual([])
+    const restarted = await loadComposition({ withDynamic: true, baseURL: 'http://127.0.0.1:1', reuseRoot: home })
+    expect(restarted.ctx.llm.listConfigurableProviders()).toEqual([{
+      provider: 'deepseek-official', displayName: '外部渠道', settingsNs: NS, settingsPath: [],
+    }])
+    expect(restarted.ctx.get('settings')!.get(NS)).toMatchObject({ channelName: '外部渠道', apiKeyEnv: 'DEEPSEEK_API_KEY' })
+  })
+
   it('boots from cordis.yml and routes the next request after external settings and credential edits', async () => {
     vi.stubEnv('DEEPSEEK_API_KEY', '')
     const serverA = await mockServer([{ kind: 'sse', events: textEvents }])

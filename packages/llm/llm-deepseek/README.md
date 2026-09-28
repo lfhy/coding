@@ -12,7 +12,7 @@ harness LLM（大语言模型）seam 的 DeepSeek chat-completions 适配器：�
 - id: llm-deepseek
   name: '@deepseek-ai/dsh-llm-deepseek'
   config:
-    channelName: default     # 可选；唯一渠道的显示名称，最多 64 个字符
+    channelName: DeepSeek    # 可选；唯一渠道的显示名称，最多 64 个字符
     apiKeyEnv: DEEPSEEK_API_KEY  # default; resolved per request via ctx.credentials, then the environment
     baseURL: https://api.deepseek.com # optional; $DEEPSEEK_BASE_URL then the public API when omitted
     thinking: enabled        # optional; provider default is enabled
@@ -39,7 +39,7 @@ harness LLM（大语言模型）seam 的 DeepSeek chat-completions 适配器：�
         reasoningEfforts: [off, low] # 可选；仅公布并接受这两个档位
 ```
 
-`channelName` 是当前唯一 DeepSeek 渠道的显示名称，省略时为 `default`；可使用中文和空格，但不能是空字符串或全空白，最多 64 个字符。自定义名称可通过 `llm-deepseek` settings 分节持久保存，不进入模型请求；它不改变路由 id `deepseek-official`、凭据引用 `DEEPSEEK_API_KEY` 或 settings 路径，也不创建第二条渠道。多渠道配置尚未提供。
+`channelName` 是当前唯一 DeepSeek 渠道的显示名称，省略时为 `DeepSeek`；可使用中文和空格，但不能是空字符串或全空白，最多 64 个字符，显式的 `default` 也是合法名称。自定义名称可通过 `llm-deepseek` settings 分节持久保存，并同步到可配置提供方目录的 `displayName`，不进入模型请求；它不改变路由 id `deepseek-official`、凭据引用 `DEEPSEEK_API_KEY` 或 settings 路径，也不创建第二条渠道。多渠道配置尚未提供。
 
 该插件注册唯一提供方路由 `deepseek-official`，并一同注册解析后的 `retryPolicy`；省略时会解析为 normal 模式并重试五次。请求使用 `provider: deepseek-official` 选择该路由；其 `model` 会作为协议 `model` 字符串原样传递，因此更改 DeepSeek 模型不需要生命周期时注册。省略 `models` 会公布 `deepseek-v4-flash` 和 `deepseek-v4-pro`，两者的上下文窗口均为 1,000,000 token；显式列表会替换这些默认值，`models: []` 则不公布任何模型。在视觉模型端点完成发布前，默认目录不会公布视觉模型，但部署方可以通过 `inputModalities: [text, image]` 主动添加。Catalog 配置项通过 `ctx.llm.listModels('deepseek-official')` 公开给 ACP（Agent Client Protocol）编辑器和 Web 选择器等客户端，但仍只提供建议：未列出模型 id 仍原样传递。省略配置项 name 默认为其 id，省略 `inputModalities` 则表示仅支持 `text`。
 
@@ -65,9 +65,9 @@ harness LLM（大语言模型）seam 的 DeepSeek chat-completions 适配器：�
 - **`ctx.credentials`**——API 密钥按每次 stream 调用解析，取自与端点*同一*份解析后的快照。配置只携带 `apiKeyEnv`，从不携带字面密钥：该引用经凭据 seam 解析，未挂载 seam 时则经受信环境层解析。由于凭据事实与连接事实同行，被 resolver 拒绝的 settings 快照既不贡献自己的端点，也不贡献自己的密钥：整个先前世代继续服务。每个解析出的密钥在使用前都会被校验格式，因此 HTTP 标头无法承载的值会以 `LlmError('INVALID_CREDENTIAL')` 被拒绝，点名失败的入口，但绝不透露密钥的任何部分，而不是以语义不明的 `fetch` `TypeError` 形式浮现。任何地方都没有密钥的请求以 `MISSING_CREDENTIAL` 失败，并点名每个配置入口，同时路由保持注册、catalog 保持可浏览——首次运行的上手流程就是「浏览模型、存入密钥、再次发起提示」，中间无需任何重启。
 - **`ctx.attachments`**——图片请求会在请求时解析该服务，因此 Cordis 加载顺序不会冻结可选图片能力。服务缺失时，图片输入以 `UNSUPPORTED_CONTENT` 失败；纯文本调用不依赖该服务。
 
-唯一在注册期捕获的事实是重试策略：其解析值变化时，插件原地重新注册该路由（同一适配器实例、一个同步区段），因此 `ctx.llm.providerRetryPolicy('deepseek-official')` 始终报告当前策略。
+重试策略作为提供方元数据注册：其解析值变化时，插件原地重新注册该路由（同一适配器实例、一个同步区段），因此 `ctx.llm.providerRetryPolicy('deepseek-official')` 始终报告当前策略。
 
-该插件还会在可配置提供方目录（`ctx.llm.listConfigurableProviders()`）中声明自己的路由：提供方为 `deepseek-official`，settings namespace 为 `llm-deepseek`，settings path 为空——整个分节就是 profile。配置界面借助该条目，把本适配器与休眠的 pi-ai 提供方一并呈现。
+该插件还会在可配置提供方目录（`ctx.llm.listConfigurableProviders()`）中声明自己的路由：提供方为 `deepseek-official`，settings namespace 为 `llm-deepseek`，settings path 为空——整个分节就是 profile。目录名称取自生效的 `channelName`，有效 settings 更新会同步该名称；配置界面通过该条目编辑默认渠道。
 
 该 namespace 的“获取可用模型”会向当前端点发起 `GET /models`；公开地址 `https://api.deepseek.com` 使用 `GET /v1/models`，已带 `/v1` 的地址不会叠加。列表只提供可导入的 id 和服务端实际报告的名称、容量，不替代用户配置，也不凭列表推断视觉或推理能力。请求携带草稿密钥；未提供时仅在草稿地址与当前配置端点相同时读取已存凭据，不把已存密钥发送到其他草稿端点。HTTP 重定向不会跟随；非法 URL、非成功状态、无效 JSON／列表和超过 4 MiB 的响应会失败，请求在 10 秒后超时且支持取消。
 

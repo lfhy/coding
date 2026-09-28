@@ -97,21 +97,77 @@ function prompt(ctx: Context) {
 }
 
 describe('request-level dynamic configuration', () => {
-  it('persists a channel display name while keeping the single provider route', async () => {
+  it.each(['团队 渠道', 'default', '  团队 渠道  '])('advertises the initial channel name %j unchanged', async (channelName) => {
     const dir = await home()
+    const { ctx } = await boot(dir, { channelName, baseURL: 'http://127.0.0.1:1' })
+
+    expect(ctx.settings.get(NS)).toMatchObject({ channelName, apiKeyEnv: 'DEEPSEEK_API_KEY' })
+    expect(ctx.llm.listConfigurableProviders()).toEqual([{
+      provider: 'deepseek-official', displayName: channelName, settingsNs: NS, settingsPath: [],
+    }])
+    expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek' }])
+  })
+
+  it('persists and reloads the channel directory name without changing other fields', async () => {
+    const dir = await home()
+    await writeFile(join(dir, 'settings.yaml'), [
+      'llm-deepseek:',
+      '  baseURL: https://unchanged.example',
+      '  apiKeyEnv: DEEPSEEK_API_KEY',
+      '  unknownField:',
+      '    retained: true',
+      '',
+    ].join('\n'))
     const { ctx } = await boot(dir, { baseURL: 'http://127.0.0.1:1' })
 
-    expect(ctx.settings.get(NS)).toMatchObject({ channelName: 'default' })
-    await ctx.settings.update(NS, { channelName: '我的 DeepSeek' })
+    expect(ctx.settings.get(NS)).toMatchObject({ channelName: 'DeepSeek' })
+    expect(ctx.llm.listConfigurableProviders()).toEqual([{
+      provider: 'deepseek-official', displayName: 'DeepSeek', settingsNs: NS, settingsPath: [],
+    }])
+    const before = ctx.settings.describe().find(entry => entry.ns === NS)!
+    const observed: string[][] = []
+    ctx.on('llm/adapters-updated', () => {
+      observed.push(ctx.llm.listConfigurableProviders().map(entry => entry.displayName))
+    })
+    await ctx.settings.mutate(NS, [{ op: 'set', path: ['channelName'], value: '我的 DeepSeek' }], before.revision)
     expect(ctx.settings.get(NS)).toMatchObject({ channelName: '我的 DeepSeek' })
+    expect(ctx.settings.describe().find(entry => entry.ns === NS)!.user).toEqual({
+      baseURL: 'https://unchanged.example',
+      apiKeyEnv: 'DEEPSEEK_API_KEY',
+      unknownField: { retained: true },
+      channelName: '我的 DeepSeek',
+    })
     expect(await readFile(join(dir, 'settings.yaml'), 'utf8')).toContain('channelName: 我的 DeepSeek')
     expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek' }])
     expect(ctx.llm.listConfigurableProviders()).toEqual([{
       provider: 'deepseek-official',
-      displayName: 'DeepSeek',
+      displayName: '我的 DeepSeek',
       settingsNs: 'llm-deepseek',
       settingsPath: [],
     }])
+    expect(observed).toEqual([['我的 DeepSeek']])
+
+    await ctx.settings.mutate(NS, [{ op: 'set', path: ['channelName'], value: 'default' }])
+    expect(ctx.llm.listConfigurableProviders()[0]?.displayName).toBe('default')
+    await ctx.fiber.dispose()
+    const restarted = await boot(dir, { baseURL: 'http://127.0.0.1:1' })
+    expect(restarted.ctx.settings.get(NS)).toMatchObject({ channelName: 'default', apiKeyEnv: 'DEEPSEEK_API_KEY' })
+    expect(restarted.ctx.llm.listConfigurableProviders()[0]?.displayName).toBe('default')
+    expect(restarted.ctx.settings.describe().find(entry => entry.ns === NS)!.user).toMatchObject({
+      unknownField: { retained: true }, baseURL: 'https://unchanged.example',
+    })
+  })
+
+  it.each([undefined, '基础渠道'])('restores the inherited channel name %j after removing the user override', async (channelName) => {
+    const dir = await home()
+    const { ctx } = await boot(dir, {
+      baseURL: 'http://127.0.0.1:1', ...channelName === undefined ? {} : { channelName },
+    })
+    await ctx.settings.mutate(NS, [{ op: 'set', path: ['channelName'], value: '用户渠道' }])
+    await ctx.settings.mutate(NS, [{ op: 'unset', path: ['channelName'] }])
+    expect(ctx.settings.get(NS)).toMatchObject({ channelName: channelName ?? 'DeepSeek' })
+    expect(ctx.llm.listConfigurableProviders()[0]?.displayName).toBe(channelName ?? 'DeepSeek')
+    expect(ctx.settings.describe().find(entry => entry.ns === NS)!.user).not.toHaveProperty('channelName')
   })
 
   it('rejects empty and whitespace-only channel names before persisting', async () => {
@@ -121,7 +177,8 @@ describe('request-level dynamic configuration', () => {
     for (const channelName of ['', ' \t\u3000 ', 'a'.repeat(65)]) {
       await expect(ctx.settings.update(NS, { channelName })).rejects.toThrow()
     }
-    expect(ctx.settings.get(NS)).toMatchObject({ channelName: 'default' })
+    expect(ctx.settings.get(NS)).toMatchObject({ channelName: 'DeepSeek' })
+    expect(ctx.llm.listConfigurableProviders()[0]?.displayName).toBe('DeepSeek')
     await expect(access(join(dir, 'settings.yaml'))).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
@@ -307,13 +364,15 @@ describe('request-level dynamic configuration', () => {
     await writeFile(join(dir, '.credentials.yaml'), 'DEEPSEEK_API_KEY: steady-key\n', { mode: 0o600 })
     const serverA = await mockServer([{ kind: 'sse', events: textEvents }])
     const serverB = await mockServer([{ kind: 'sse', events: textEvents }])
-    const { ctx, settingsFiber } = await boot(dir, { baseURL: serverA.url })
+    const { ctx, settingsFiber } = await boot(dir, { baseURL: serverA.url, channelName: '基础渠道' })
 
-    await ctx.settings.update(NS, { baseURL: serverB.url })
+    await ctx.settings.update(NS, { baseURL: serverB.url, channelName: '用户渠道' })
+    expect(ctx.llm.listConfigurableProviders()[0]?.displayName).toBe('用户渠道')
     await prompt(ctx)
     expect(serverB.requests).toHaveLength(1)
 
     await settingsFiber.dispose()
+    expect(ctx.llm.listConfigurableProviders()[0]?.displayName).toBe('基础渠道')
     await prompt(ctx)
     expect(serverA.requests).toHaveLength(1)
     expect(serverA.headers[0]?.authorization).toBe('Bearer steady-key')

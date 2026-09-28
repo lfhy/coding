@@ -450,6 +450,8 @@
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
   padding: 6px;
+  /* 按模型行的实际编辑宽度切换布局，不把侧栏占用误当成详情可用空间。 */
+  container: model-entry / inline-size;
 }
 
 .modelRow {
@@ -524,7 +526,7 @@
 
 .modelAdvanced {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr));
   gap: 8px;
   padding: 8px 4px 2px;
 }
@@ -982,6 +984,19 @@ select.input {
 .candidate { display: flex; align-items: center; min-height: 56px; padding-right: 12px; }
 .candidate + .candidate { border-top: 1px solid var(--dsw-alias-border-l1); }
 .candidateLabel { flex: 1; }
+
+/* 双输入按 1.4:1 分配，名称至少 120px 需要共 288px；徽标、按钮和间距
+   另占约 184px。520px 以下保留余量并改为全宽输入，避免文字与操作争抢空间。 */
+@container model-entry (max-width: 520px) {
+  .modelRow { grid-template-columns: minmax(0, 1fr) 28px 28px; }
+  .modelRow > .input:first-child { grid-column: 1 / -1; grid-row: 1; }
+  .modelRow > .input:nth-child(2) { grid-column: 1 / -1; grid-row: 2; }
+  .modelCapabilities { min-width: 0; grid-column: 1; grid-row: 3; justify-content: flex-start; }
+  .capabilityBadge { box-sizing: border-box; max-width: 100%; white-space: normal; }
+  .modelRow > .iconButton:nth-last-child(2) { grid-column: 2; grid-row: 3; }
+  .modelRow > .iconButton:last-child { grid-column: 3; grid-row: 3; }
+}
+
 @media (max-width: 620px) {
   .modelsHeader { min-height: 52px; padding: 10px 56px 10px 16px; }
   .modelsHeader h1 { font-size: 18px; line-height: 26px; }
@@ -1005,7 +1020,4 @@ select.input {
     line-height: 20px;
   }
   .channelHeading { padding: 24px 28px 0 0; }
-  .modelRow { grid-template-columns: minmax(0, 1fr) auto auto; }
-  .modelRow .input:nth-child(2) { grid-column: 1 / -1; grid-row: 2; }
-  .modelCapabilities { grid-column: 1 / -1; grid-row: 3; justify-content: flex-start; }
 }
