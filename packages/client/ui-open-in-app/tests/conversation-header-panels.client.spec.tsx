@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** 会话页头实际布局：两个面板按钮跟随 utilities 槽，而非标题旁或侧边栏。 */
+/** 会话页头实际布局：概览按钮与 utilities 槽的两个面板按钮位于最右侧。 */
 import { cleanup, fireEvent, render, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
@@ -24,6 +24,7 @@ describe('active conversation panel placement', () => {
     })
     const toggleFiles = vi.fn()
     const toggleBottom = vi.fn()
+    const toggleOverview = vi.fn()
     const panels = {
       useWorkbenchLayout: bindSnapshotSelector(layout), toggleFiles, toggleBottom,
       t: makeTranslate(zh),
@@ -45,6 +46,7 @@ describe('active conversation panel placement', () => {
           ? <WorkbenchPanelToggles {...panels} />
           : null,
       open: vi.fn(), startSession: vi.fn(), actions: { setView: vi.fn() },
+      overviewExpanded: false, toggleOverview,
       t: makeTranslate(conversationZh),
     } as unknown as ConversationSessionHeaderProps
 
@@ -54,9 +56,16 @@ describe('active conversation panel placement', () => {
     const utilities = row.lastElementChild as HTMLElement
     expect(header.getAttribute('aria-hidden')).toBeNull()
     expect(row.firstElementChild?.contains(view.getByTestId('title-action'))).toBe(true)
+    const overview = within(utilities).getByRole('button', { name: conversationZh['overview.expand'] })
+    expect(overview.getAttribute('aria-expanded')).toBe('false')
+    expect(overview.getAttribute('aria-controls')).toBe('dsh-conversation-overview')
     expect(within(utilities).getByRole('button', { name: zh['workbench.files.show'] })).toBeTruthy()
     expect(within(utilities).getAllByRole('button').map(button => button.getAttribute('aria-label')))
-      .toEqual([zh['workbench.bottom.show'], zh['workbench.files.show']])
+      .toEqual([conversationZh['overview.expand'], zh['workbench.bottom.show'], zh['workbench.files.show']])
+    fireEvent.click(overview)
+    expect(toggleOverview).toHaveBeenCalledOnce()
+    expect(toggleBottom).not.toHaveBeenCalled()
+    expect(toggleFiles).not.toHaveBeenCalled()
     const terminal = within(utilities).getByRole('button', { name: zh['workbench.bottom.show'] })
     fireEvent.click(terminal)
     expect(toggleBottom).toHaveBeenCalledOnce()

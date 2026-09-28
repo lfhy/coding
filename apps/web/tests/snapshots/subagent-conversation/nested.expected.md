@@ -9,10 +9,12 @@
     - img
   - button "Collapse session overview" [expanded]:
     - img
-  - button "Open file workbench":
+  - button "Open workbench":
     - img
   - button "Choose an app to open in":
     - img
+  - button "Show terminal panel"
+  - button "Show files sidebar"
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"

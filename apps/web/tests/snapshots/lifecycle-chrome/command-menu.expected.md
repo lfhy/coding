@@ -6,4 +6,4 @@
   - option "goal set or view the goal for a long-running task"
   - option "permission Switch the permission preset (sandbox mode + approval policy)"
   - option "plan Enter or leave plan mode"
-  - option "model Select the model for this conversation"
+  - option "model 选择本会话使用的模型"

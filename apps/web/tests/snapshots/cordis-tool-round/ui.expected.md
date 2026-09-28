@@ -7,13 +7,18 @@
     - img
   - button "Collapse session overview" [expanded]:
     - img
-  - button "Open file workbench":
+  - button "Open workbench":
     - img
   - button "Choose an app to open in":
     - img
+  - button "Show terminal panel"
+  - button "Show files sidebar"
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
+- navigation "Conversation navigation":
+  - 'button "Message 1 of 2: Use only Cordis tools. First call cordis_inspect_self with no ar"'
+  - 'button "Message 2 of 2: Use only Cordis tools. Call cordis_stop with pluginId \"snap-1\"."'
 - text: "Use only Cordis tools. First call cordis_inspect_self with no arguments. Then call cordis_define with plugin kind \"new\", idPrefix \"snap\", name \"snapshot noop\", purpose \"does nothing, for the snapshot\", code.host exactly \"return { name: \\\"snapshot-noop\\\", apply(ctx) {} }\" and code.client exactly \"return { inject: [\\\"slots\\\"], apply(ctx) { ctx.slots.register({ name: \\\"shell.overlay\\\", id: \\\"snapshot-probe\\\" }, () => React.createElement(\\\"div\\\", { \\\"data-snapshot-probe\\\": \\\"loaded\\\" })) } }\". Read its returned pluginId and packageId, then call cordis_run with those exact IDs and mode \"run\". After the run request returns, reply exactly CORDIS_UI_READY and stop. {{clock}}"
 - button "Copy":
   - img

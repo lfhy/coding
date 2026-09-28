@@ -5,13 +5,44 @@
     - img
   - button "Collapse session overview" [expanded]:
     - img
-  - button "Open file workbench":
+  - button "Open workbench":
     - img
   - button "Choose an app to open in":
     - img
+  - button "Show terminal panel"
+  - button "Show files sidebar"
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
+- navigation "Conversation navigation":
+  - 'button "Message 1 of 28: m1"'
+  - 'button "Message 2 of 28: m2"'
+  - 'button "Message 3 of 28: m3"'
+  - 'button "Message 4 of 28: m4"'
+  - 'button "Message 5 of 28: m5"'
+  - 'button "Message 6 of 28: m6"'
+  - 'button "Message 7 of 28: m7"'
+  - 'button "Message 8 of 28: m8"'
+  - 'button "Message 9 of 28: m9"'
+  - 'button "Message 10 of 28: m10"'
+  - 'button "Message 11 of 28: m11"'
+  - 'button "Message 12 of 28: m12"'
+  - 'button "Message 13 of 28: m13"'
+  - 'button "Message 14 of 28: m14"'
+  - 'button "Message 15 of 28: m15"'
+  - 'button "Message 16 of 28: m16"'
+  - 'button "Message 17 of 28: m17"'
+  - 'button "Message 18 of 28: m18"'
+  - 'button "Message 19 of 28: m19"'
+  - 'button "Message 20 of 28: m20"'
+  - 'button "Message 21 of 28: m21"'
+  - 'button "Message 22 of 28: m22"'
+  - 'button "Message 23 of 28: m23"'
+  - 'button "Message 24 of 28: m24"'
+  - 'button "Message 25 of 28: m25"'
+  - 'button "Message 26 of 28: m26"'
+  - 'button "Message 27 of 28: m27"'
+  - 'button "Message 28 of 28: m28"'
 - text: m1 7/25 {{clock}}
 - button "Copy":
   - img

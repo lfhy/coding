@@ -30,7 +30,7 @@ describe('web e2e: goal bar clear convergence', () => {
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     tripwire = watchConsole(page)
-    await page.goto(`${scaffold.baseUrl}?fixture`, { waitUntil: 'load' })
+    await page.goto(`${scaffold.baseUrl}?fixture&fixtureLocale=en`, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
   }, 120_000)
 
@@ -41,9 +41,14 @@ describe('web e2e: goal bar clear convergence', () => {
 
   it('renders one active goal and clears it without exposing a stale error', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-goal-bar-clear'))
-    // Startup reuses the fixture workspace's blank session, keeping this
-    // command independent of alpha's running replay and pending question.
-    const input = page.getByPlaceholder('Describe what you want to build')
+    // 显式从 fixture 工作区创建空白会话，避免命令落入 alpha 的运行回放和待答问题。
+    const sessions = page.getByRole('tree', { name: 'Sessions' })
+    const start = sessions.locator('button[aria-label="New session in fixture"]')
+    await sessions.getByRole('treeitem').filter({
+      has: page.locator('button[aria-label="New session in fixture"]'),
+    }).hover()
+    await start.click()
+    const input = page.locator('textarea:enabled[placeholder="Describe what you want to build"]')
     await input.waitFor({ timeout: 10_000 })
     await input.fill('/goal guard rapid clear clicks')
     await input.press('Enter')

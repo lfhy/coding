@@ -527,7 +527,10 @@ describe('web e2e: settings modal and General preferences', () => {
       expect(await enPage.evaluate(() => navigator.language)).toBe('en-US')
       expect(await enPage.evaluate(() => localStorage.getItem('dsh.locale'))).toBeNull()
       expect(await enPage.evaluate(() => document.documentElement.lang)).toBe('zh-CN')
-      expect(await readFile(join(fresh.harnessHome, 'settings.yaml'), 'utf8')).not.toMatch(/locale:\n\s+preference:/)
+      // 无用户设置写入时，默认语言读取不应创建持久化文档。
+      await expect(readFile(join(fresh.harnessHome, 'settings.yaml'), 'utf8')).rejects.toMatchObject({
+        code: 'ENOENT', path: join(fresh.harnessHome, 'settings.yaml'),
+      })
       await enPage.getByRole('button', { name: '设置', exact: true }).click()
       const zhDialog = enPage.getByRole('dialog', { name: '设置' })
       await zhDialog.waitFor({ timeout: 10_000 })
@@ -567,7 +570,10 @@ describe('web e2e: settings modal and General preferences', () => {
       await expect.poll(() => dialog.getByRole('button', { name: '标准模式' }).isEnabled(), { timeout: 10_000 })
         .toBe(true)
       expect(await frPage.evaluate(() => document.documentElement.lang)).toBe('zh-CN')
-      expect(await readFile(join(fresh.harnessHome, 'settings.yaml'), 'utf8')).not.toMatch(/locale:\n\s+preference:/)
+      // 无用户设置写入时，默认语言读取不应创建持久化文档。
+      await expect(readFile(join(fresh.harnessHome, 'settings.yaml'), 'utf8')).rejects.toMatchObject({
+        code: 'ENOENT', path: join(fresh.harnessHome, 'settings.yaml'),
+      })
       expect(frTripwire.pageErrors).toEqual([])
       expect(frTripwire.warnings).toEqual([])
     } finally {

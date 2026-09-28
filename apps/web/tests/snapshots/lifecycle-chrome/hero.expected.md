@@ -18,8 +18,8 @@
 - button "Settings":
   - img
   - text: Settings
-- button "Collapse sidebar"
-- button "Open bottom panel"
+- button "Show terminal panel"
+- button "Show files sidebar"
 - text: {{greeting}}
 - button "Standard mode":
   - img

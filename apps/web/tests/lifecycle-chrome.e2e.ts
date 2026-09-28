@@ -89,6 +89,11 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
     await expect.poll(() => menu.getByRole('option').allTextContents()).toEqual([
       'compactCompact older conversation history',
     ])
+    // 命令与技能候选独立落定，命令结果出现不代表技能查询已完成。
+    await expect.poll(
+      () => menu.getByText('Loading…', { exact: true }).count(),
+      { timeout: 10_000 },
+    ).toBe(0)
     const fuzzySnapshot = await captureStableAria(page, '[role="listbox"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(FUZZY_COMMAND_MENU_EXPECTED, fuzzySnapshot, MODE)
     await input.fill('')
