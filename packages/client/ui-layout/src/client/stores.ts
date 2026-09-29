@@ -125,15 +125,18 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
       },
       toggleWorkbench: (d, sessionId: SessionId) => {
         const state = workbench(d, sessionId)
-        if (state.open) {
+        if (state.open && d.details === 0) {
           state.bottomStandalone = state.bottomOpen
           state.open = false
           state.fullscreen = false
         } else {
           d.details = 0
-          state.open = true
           state.bottomStandalone = false
-          state.fullscreen = false
+          // 详情栏只遮挡工作台，恢复时保留原有的最大化偏好。
+          if (!state.open) {
+            state.open = true
+            state.fullscreen = false
+          }
         }
       },
       toggleWorkbenchFullscreen: (d, sessionId: SessionId) => {
@@ -188,7 +191,7 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
             state.bottomOpen = true
             state.bottomStandalone = true
           }
-        } else if (d.details === 0 && state.open && state.filesOpen) {
+        } else if (d.details === 0 && state.open) {
           state.open = false
           state.bottomStandalone = state.bottomOpen
           state.fullscreen = false
@@ -196,7 +199,6 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
           d.details = 0
           state.open = true
           state.fullscreen = false
-          state.filesOpen = true
           state.bottomOpen = false
           state.bottomStandalone = false
         }

@@ -220,6 +220,18 @@ describe('createLayoutStore', () => {
     expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: false, bottomOpen: false })
   })
 
+  it('closes the right workbench from Hero even when its inner file tree is hidden', () => {
+    const { store, actions } = createLayoutStore().create()
+    actions.toggleHeroPanel(SESSION, 'files')
+    actions.toggleWorkbenchFiles(SESSION)
+    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: true, filesOpen: false })
+
+    actions.toggleHeroPanel(SESSION, 'files')
+    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: false, filesOpen: false })
+    actions.toggleHeroPanel(SESSION, 'files')
+    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: true, filesOpen: false })
+  })
+
   it('closing the right workbench retains the bottom row when it was visible', () => {
     const { store, actions } = createLayoutStore().create()
     actions.openWorkbench(SESSION)
@@ -271,6 +283,25 @@ describe('createLayoutStore', () => {
     actions.toggleWorkbenchFullscreen(SESSION)
     actions.toggleWorkbench(SESSION)
     expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: false, fullscreen: false })
+  })
+
+  it('restores a workbench obscured by details before toggling it closed', () => {
+    const { store, actions } = createLayoutStore().create()
+    actions.openWorkbench(SESSION)
+    actions.setWorkbench(SESSION, 500)
+    actions.toggleWorkbenchFullscreen(SESSION)
+    actions.toggleWorkbenchFiles(SESSION)
+    actions.openDetails()
+
+    actions.toggleWorkbench(SESSION)
+    expect(store.getSnapshot()).toMatchObject({
+      details: 0,
+      workbench: { [SESSION]: { open: true, fullscreen: true, width: 500, filesOpen: false } },
+    })
+    actions.toggleWorkbench(SESSION)
+    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({
+      open: false, fullscreen: false, width: 500, filesOpen: false,
+    })
   })
 
   it('opening details preserves each session workbench state for later restoration', () => {

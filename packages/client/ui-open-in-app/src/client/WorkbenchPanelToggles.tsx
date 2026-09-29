@@ -1,4 +1,4 @@
-/** 会话页头与欢迎页的文件侧栏、终端底栏开关。 */
+/** 会话页头与欢迎页的右侧边栏、终端底栏开关。 */
 import { useMemo, useState, useCallback, useSyncExternalStore } from 'react'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -11,8 +11,8 @@ import css from './WorkbenchPanelToggles.module.css'
 /** 会话页头注入的当前 Session 工作台状态与面板动作。 */
 export interface WorkbenchPanelTogglesInjected {
   hooks: { workbenchLayout: ObservableSnapshot<WorkbenchLayoutSnapshot> }
-  /** 切换当前 Session 的文件侧栏；工作台未打开时先打开工作台。 */
-  toggleFiles: () => void
+  /** 切换当前 Session 的右侧工作台；保留内部文件侧栏偏好。 */
+  toggleWorkbench: () => void
   /** 切换当前 Session 的终端底栏，不改变右侧工作台的显隐。 */
   toggleBottom: () => void
 }
@@ -67,12 +67,12 @@ export function HeroPanelToggle({ useSessions, workbenchSource, panel, togglePan
     [sessionId, workbenchSource],
   )
   const workbench = useWorkbenchLayout(source)
-  const pressed = panel === 'bottom' ? workbench.bottomOpen : workbench.open && workbench.filesOpen
+  const pressed = panel === 'bottom' ? workbench.bottomOpen : workbench.open
   const [opening, setOpening] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const label = t(panel === 'bottom'
     ? opening ? 'workbench.bottom.opening' : pressed ? 'workbench.bottom.hide' : 'workbench.bottom.show'
-    : opening ? 'workbench.files.opening' : pressed ? 'workbench.files.hide' : 'workbench.files.show')
+    : opening ? 'workbench.right.switching' : pressed ? 'workbench.right.close' : 'workbench.right.open')
   return (
     <>
       <Tooltip label={label} delayMs={500}>
@@ -87,7 +87,7 @@ export function HeroPanelToggle({ useSessions, workbenchSource, panel, togglePan
             setOpening(true)
             setError(null)
             void togglePanel().catch((reason: unknown) => {
-              setError(t(panel === 'bottom' ? 'workbench.bottom.failed' : 'workbench.files.failed', {
+              setError(t(panel === 'bottom' ? 'workbench.bottom.failed' : 'workbench.right.failed', {
                 message: reason instanceof Error ? reason.message : String(reason),
               }))
             }).finally(() => { setOpening(false) })
@@ -125,14 +125,13 @@ function PanelButton({ label, pressed, onClick, icon }: {
 }
 
 /**
- * 在会话页头右侧渲染文件侧栏与终端底栏开关。
+ * 在会话页头右侧渲染右侧边栏与终端底栏开关。
  * @param props - 当前 Session 的布局投影、开关动作与本地化文案。
  * @returns 两个随布局状态更新的按钮。
  */
 export function WorkbenchPanelToggles(props: WorkbenchPanelTogglesProps): React.JSX.Element {
-  const { toggleFiles, toggleBottom, useWorkbenchLayout, t } = props
+  const { toggleWorkbench, toggleBottom, useWorkbenchLayout, t } = props
   const workbench = useWorkbenchLayout(state => state)
-  const filesOn = workbench.open && workbench.filesOpen
   const bottomOn = workbench.bottomOpen
   return (
     <div className={css.root}>
@@ -143,9 +142,9 @@ export function WorkbenchPanelToggles(props: WorkbenchPanelTogglesProps): React.
         icon={<Icon name="bottom-panel" size={18} />}
       />
       <PanelButton
-        label={filesOn ? t('workbench.files.hide') : t('workbench.files.show')}
-        pressed={filesOn}
-        onClick={toggleFiles}
+        label={workbench.open ? t('workbench.right.close') : t('workbench.right.open')}
+        pressed={workbench.open}
+        onClick={toggleWorkbench}
         icon={<Icon name="files-panel" size={18} />}
       />
     </div>

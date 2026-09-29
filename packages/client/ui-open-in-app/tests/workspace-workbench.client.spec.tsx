@@ -182,11 +182,23 @@ describe('WorkspaceWorkbench shell', () => {
     expect(screen.getByTestId('browser-contribution')).toBe(browser)
   })
 
-  it('avoids duplicate panel switches while the conversation header is visible', () => {
-    const b = bench({ fullscreen: false, bottomOpen: true })
-    render(<WorkspaceWorkbench {...b.props} />)
-    expect(screen.queryByRole('button', { name: zh['workbench.bottom.hide'] })).toBeNull()
-    expect(screen.queryByRole('button', { name: zh['workbench.files.hide'] })).toBeNull()
+  it('并排模式保留工作台内部文件树开关，但不重复终端底栏开关', () => {
+    const b = bench({ fullscreen: false, bottomOpen: true, filesOpen: true, initialView: 'files' })
+    const mounted = render(<WorkspaceWorkbench {...b.props} />)
+    const topbar = screen.getByRole('region', { name: zh['workbench.label'] })
+      .querySelector('header') as HTMLElement
+    const hideFiles = within(topbar).getByRole('button', { name: zh['workbench.files.hide'] })
+    expect(hideFiles.getAttribute('aria-pressed')).toBe('true')
+    expect(within(topbar).queryByRole('button', { name: zh['workbench.bottom.hide'] })).toBeNull()
+    fireEvent.click(hideFiles)
+    expect(b.toggleFiles).toHaveBeenCalledOnce()
+    expect(b.toggleBottom).not.toHaveBeenCalled()
+
+    mounted.rerender(<WorkspaceWorkbench {...b.props} filesOpen={false} />)
+    const showFiles = within(topbar).getByRole('button', { name: zh['workbench.files.show'] })
+    expect(showFiles.getAttribute('aria-pressed')).toBe('false')
+    fireEvent.click(showFiles)
+    expect(b.toggleFiles).toHaveBeenCalledTimes(2)
   })
 
   it('starts on a keyboard-operable function menu and only enters wired features', async () => {
@@ -195,7 +207,7 @@ describe('WorkspaceWorkbench shell', () => {
     const menu = screen.getByRole('navigation', { name: zh['workbench.menu.label'] })
     const topbar = screen.getByRole('region', { name: zh['workbench.label'] })
       .querySelector('header') as HTMLElement
-    expect(within(topbar).getAllByRole('button')).toHaveLength(2)
+    expect(within(topbar).getAllByRole('button')).toHaveLength(3)
     expect(within(topbar).queryByRole('button', { name: zh['workbench.menu.back'] })).toBeNull()
     expect(b.instance.store.getSnapshot().view).toBe('menu')
     expect(b.listFiles).not.toHaveBeenCalled()

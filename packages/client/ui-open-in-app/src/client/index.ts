@@ -106,7 +106,7 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: (sessionId: SessionId): WorkbenchPanelTogglesInjected => ({
       hooks: { workbenchLayout: ctx.layout.workbench(sessionId) },
-      toggleFiles: () => { ctx.layout.toggleWorkbenchFiles(sessionId) },
+      toggleWorkbench: () => { ctx.layout.toggleWorkbench(sessionId) },
       toggleBottom: () => { ctx.layout.toggleWorkbenchBottom(sessionId) },
     }),
   }, WorkbenchPanelToggles))

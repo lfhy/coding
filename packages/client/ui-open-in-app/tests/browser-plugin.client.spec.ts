@@ -43,6 +43,7 @@ async function bench() {
   ctx.provide('locale', new LocaleRuntime(ctx))
   const openWorkbench = vi.fn()
   const closeWorkbench = vi.fn()
+  const toggleWorkbench = vi.fn()
   const toggleWorkbenchFullscreen = vi.fn()
   const toggleWorkbenchBottom = vi.fn()
   const closeWorkbenchBottom = vi.fn()
@@ -53,7 +54,7 @@ async function bench() {
   })
   ctx.provide('layout', {
     toggleSidebar: vi.fn(), openDetails: vi.fn(), closeDetails: vi.fn(),
-    openWorkbench, closeWorkbench, toggleWorkbench: vi.fn(),
+    openWorkbench, closeWorkbench, toggleWorkbench,
     toggleWorkbenchFullscreen, toggleWorkbenchBottom, closeWorkbenchBottom, toggleWorkbenchFiles, toggleHeroPanel,
     workbench: vi.fn(() => workbench),
   })
@@ -76,7 +77,7 @@ async function bench() {
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
   return {
-    ctx, fiber, openWorkbench, closeWorkbench, toggleWorkbenchFullscreen,
+    ctx, fiber, openWorkbench, closeWorkbench, toggleWorkbench, toggleWorkbenchFullscreen,
     toggleWorkbenchBottom, closeWorkbenchBottom, toggleWorkbenchFiles, toggleHeroPanel,
     sessionList: list, open, connectHome, connectWorkspace, workspaceList,
   }
@@ -116,7 +117,7 @@ describe('open-in-app browser half', () => {
     expect(headerPanels?.options).toMatchObject({ id: 'workbench-panels', order: 20 })
     expect(headerPanels?.locale).toBe(NS)
     const headerInjected = (headerPanels?.inject as unknown as (id: SessionId) => WorkbenchPanelTogglesInjected)(SESSION)
-    expect(Object.keys(headerInjected).sort()).toEqual(['hooks', 'toggleBottom', 'toggleFiles'])
+    expect(Object.keys(headerInjected).sort()).toEqual(['hooks', 'toggleBottom', 'toggleWorkbench'])
 
     await fiber.dispose()
     expect(ctx.slots.entries('conversation.session.header.utilities')).toEqual([])
@@ -197,16 +198,16 @@ describe('open-in-app browser half', () => {
   })
 
   it('injects session-bound panel toggles independently of later selection', async () => {
-    const { ctx, toggleWorkbenchFiles, toggleWorkbenchBottom } = await bench()
+    const { ctx, toggleWorkbench, toggleWorkbenchBottom } = await bench()
     const headerPanels = ctx.slots.entries('conversation.session.header.utilities')[1]
     const face = (headerPanels?.inject as unknown as (id: SessionId) => WorkbenchPanelTogglesInjected)(SESSION)
     const source = face.hooks.workbenchLayout
     expect(source.getSnapshot().open).toBe(false)
 
-    face.toggleFiles()
+    face.toggleWorkbench()
     face.toggleBottom()
     // 页头注入动作绑定到其 Session，不在点击时读取可能改变的全局选择。
-    expect(toggleWorkbenchFiles).toHaveBeenCalledExactlyOnceWith(SESSION)
+    expect(toggleWorkbench).toHaveBeenCalledExactlyOnceWith(SESSION)
     expect(toggleWorkbenchBottom).toHaveBeenCalledExactlyOnceWith(SESSION)
   })
 

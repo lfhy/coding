@@ -36,7 +36,7 @@ function sessionsStore(current: SessionId | undefined, blank = false) {
 
 interface Bench {
   props: WorkbenchPanelTogglesProps
-  toggleFiles: ReturnType<typeof vi.fn>
+  toggleWorkbench: ReturnType<typeof vi.fn>
   toggleBottom: ReturnType<typeof vi.fn>
   source: ReturnType<typeof createSnapshotStore<WorkbenchLayoutSnapshot>>
   publish: (next: WorkbenchLayoutSnapshot) => void
@@ -64,19 +64,19 @@ function bench(over: {
     filesOpen: true,
     ...over.workbench,
   })
-  const toggleFiles = vi.fn()
+  const toggleWorkbench = vi.fn()
   const toggleBottom = vi.fn()
   const props = {
     useSessions: bindSnapshotSelector(sessions),
     workbenchSource: (): ObservableSnapshot<WorkbenchLayoutSnapshot> => source,
     useWorkbenchLayout: bindSnapshotSelector(source),
-    toggleFiles,
+    toggleWorkbench,
     toggleBottom,
     t,
   } as unknown as WorkbenchPanelTogglesProps
   return {
     props,
-    toggleFiles,
+    toggleWorkbench,
     toggleBottom,
     source,
     publish: (next) => { source.set(next) },
@@ -96,37 +96,40 @@ describe('WorkbenchPanelToggles pressed state', () => {
   it('starts unpressed and delegates both toggles to the injected actions', () => {
     const b = bench()
     render(<WorkbenchPanelToggles {...b.props} />)
-    const files = screen.getByRole('button', { name: zh['workbench.files.show'] })
+    const right = screen.getByRole('button', { name: zh['workbench.right.open'] })
     const bottom = screen.getByRole('button', { name: zh['workbench.bottom.show'] })
-    expect(files.getAttribute('aria-pressed')).toBe('false')
+    expect(right.getAttribute('title')).toBe(zh['workbench.right.open'])
+    expect(right.getAttribute('aria-pressed')).toBe('false')
     expect(bottom.getAttribute('aria-pressed')).toBe('false')
 
-    fireEvent.click(files)
+    fireEvent.click(right)
     fireEvent.click(bottom)
-    expect(b.toggleFiles).toHaveBeenCalledOnce()
+    expect(b.toggleWorkbench).toHaveBeenCalledOnce()
     expect(b.toggleBottom).toHaveBeenCalledOnce()
   })
 
-  it('reflects the file sidebar only while the workbench is open', () => {
+  it('reflects the right sidebar independently of the file tree', () => {
     const closed = bench({ workbench: { open: false, filesOpen: true } })
     render(<WorkbenchPanelToggles {...closed.props} />)
-    // 关闭态下即使布局保留了 filesOpen，按下态也必须为 false，入口文案仍是「显示文件侧栏」。
-    const closedFiles = screen.getByRole('button', { name: zh['workbench.files.show'] })
-    expect(closedFiles.getAttribute('aria-pressed')).toBe('false')
+    const closedRight = screen.getByRole('button', { name: zh['workbench.right.open'] })
+    expect(closedRight.getAttribute('aria-pressed')).toBe('false')
     cleanup()
 
-    const open = bench({ workbench: { open: true, filesOpen: true } })
+    const open = bench({ workbench: { open: true, filesOpen: false } })
     render(<WorkbenchPanelToggles {...open.props} />)
-    const files = screen.getByRole('button', { name: zh['workbench.files.hide'] })
-    expect(files.getAttribute('aria-pressed')).toBe('true')
+    const right = screen.getByRole('button', { name: zh['workbench.right.close'] })
+    expect(right.getAttribute('title')).toBe(zh['workbench.right.close'])
+    expect(right.getAttribute('aria-pressed')).toBe('true')
     expect(screen
       .getByRole('button', { name: zh['workbench.bottom.show'] })
       .getAttribute('aria-pressed')).toBe('false')
+    fireEvent.click(right)
+    expect(open.toggleWorkbench).toHaveBeenCalledOnce()
   })
 
-  it('reflects the terminal panel only while the workbench is open', () => {
-    const open = bench({ workbench: { open: true, bottomOpen: true } })
-    render(<WorkbenchPanelToggles {...open.props} />)
+  it('reflects the standalone terminal while the right sidebar is closed', () => {
+    const b = bench({ workbench: { open: false, bottomOpen: true } })
+    render(<WorkbenchPanelToggles {...b.props} />)
     expect(screen
       .getByRole('button', { name: zh['workbench.bottom.hide'] })
       .getAttribute('aria-pressed')).toBe('true')
@@ -136,12 +139,12 @@ describe('WorkbenchPanelToggles pressed state', () => {
     const b = bench({ workbench: { open: true, filesOpen: true } })
     render(<WorkbenchPanelToggles {...b.props} />)
     expect(screen
-      .getByRole('button', { name: zh['workbench.files.hide'] })
+      .getByRole('button', { name: zh['workbench.right.close'] })
       .getAttribute('aria-pressed')).toBe('true')
 
-    act(() => { b.publish({ open: true, fullscreen: false, bottomOpen: false, filesOpen: false }) })
+    act(() => { b.publish({ open: false, fullscreen: false, bottomOpen: false, filesOpen: true }) })
     expect(screen
-      .getByRole('button', { name: zh['workbench.files.show'] })
+      .getByRole('button', { name: zh['workbench.right.open'] })
       .getAttribute('aria-pressed')).toBe('false')
   })
 })
@@ -153,8 +156,8 @@ describe('欢迎页面板入口', () => {
     const props = { ...b.props, panel, togglePanel } as unknown as
       React.ComponentProps<typeof HeroPanelToggle>
     const view = render(<HeroPanelToggle {...props} />)
-    const openLabel = panel === 'bottom' ? '显示终端底栏' : '显示文件侧栏'
-    const closeLabel = panel === 'bottom' ? '隐藏终端底栏' : '隐藏文件侧栏'
+    const openLabel = panel === 'bottom' ? '显示终端底栏' : '打开右侧边栏'
+    const closeLabel = panel === 'bottom' ? '隐藏终端底栏' : '收起右侧边栏'
     const open = view.getByRole('button', { name: openLabel })
     expect((open as HTMLButtonElement).disabled).toBe(false)
     expect(open.getAttribute('title')).toBe(openLabel)
@@ -167,7 +170,7 @@ describe('欢迎页面板入口', () => {
     const activeProps = { ...active.props, panel, togglePanel } as unknown as
       React.ComponentProps<typeof HeroPanelToggle>
     render(<HeroPanelToggle {...activeProps} />)
-    act(() => { active.publish({ open: true, fullscreen: false, bottomOpen: panel === 'bottom', filesOpen: panel === 'files' }) })
+    act(() => { active.publish({ open: true, fullscreen: false, bottomOpen: panel === 'bottom', filesOpen: false }) })
     expect(screen.getByRole('button', { name: closeLabel }).getAttribute('aria-pressed')).toBe('true')
   })
 
@@ -177,7 +180,7 @@ describe('欢迎页面板入口', () => {
     const props = { ...b.props, panel, togglePanel } as unknown as
       React.ComponentProps<typeof HeroPanelToggle>
     const view = render(<HeroPanelToggle {...props} />)
-    const label = panel === 'bottom' ? '显示终端底栏' : '显示文件侧栏'
+    const label = panel === 'bottom' ? '显示终端底栏' : '打开右侧边栏'
     fireEvent.click(view.getByRole('button', { name: label }))
     expect((await view.findByRole('alert')).textContent).toContain('offline')
     await waitFor(() => { expect((view.getByRole('button', { name: label }) as HTMLButtonElement).disabled).toBe(false) })

@@ -22,11 +22,11 @@ describe('active conversation panel placement', () => {
     const layout = createSnapshotStore<WorkbenchLayoutSnapshot>({
       open: false, fullscreen: false, bottomOpen: false, filesOpen: true,
     })
-    const toggleFiles = vi.fn()
+    const toggleWorkbench = vi.fn()
     const toggleBottom = vi.fn()
     const toggleOverview = vi.fn()
     const panels = {
-      useWorkbenchLayout: bindSnapshotSelector(layout), toggleFiles, toggleBottom,
+      useWorkbenchLayout: bindSnapshotSelector(layout), toggleWorkbench, toggleBottom,
       t: makeTranslate(zh),
     } as unknown as WorkbenchPanelTogglesProps
     const sessions = createSnapshotStore({
@@ -59,17 +59,17 @@ describe('active conversation panel placement', () => {
     const overview = within(utilities).getByRole('button', { name: conversationZh['overview.expand'] })
     expect(overview.getAttribute('aria-expanded')).toBe('false')
     expect(overview.getAttribute('aria-controls')).toBe('dsh-conversation-overview')
-    expect(within(utilities).getByRole('button', { name: zh['workbench.files.show'] })).toBeTruthy()
+    expect(within(utilities).getByRole('button', { name: zh['workbench.right.open'] })).toBeTruthy()
     expect(within(utilities).getAllByRole('button').map(button => button.getAttribute('aria-label')))
-      .toEqual([conversationZh['overview.expand'], zh['workbench.bottom.show'], zh['workbench.files.show']])
+      .toEqual([conversationZh['overview.expand'], zh['workbench.bottom.show'], zh['workbench.right.open']])
     fireEvent.click(overview)
     expect(toggleOverview).toHaveBeenCalledOnce()
     expect(toggleBottom).not.toHaveBeenCalled()
-    expect(toggleFiles).not.toHaveBeenCalled()
+    expect(toggleWorkbench).not.toHaveBeenCalled()
     const terminal = within(utilities).getByRole('button', { name: zh['workbench.bottom.show'] })
     fireEvent.click(terminal)
     expect(toggleBottom).toHaveBeenCalledOnce()
-    expect(toggleFiles).not.toHaveBeenCalled()
+    expect(toggleWorkbench).not.toHaveBeenCalled()
     expect(view.container.querySelector('[data-testid="brand-action-seat"]')).toBeNull()
   })
 })

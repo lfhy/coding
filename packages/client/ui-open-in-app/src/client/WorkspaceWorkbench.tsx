@@ -491,21 +491,19 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
             />
           )}
           {fullscreen && (
-            <>
-              <ToolbarButton
-                label={bottomOpen ? t('workbench.bottom.hide') : t('workbench.bottom.show')}
-                pressed={bottomOpen}
-                onClick={toggleBottom}
-                icon={<Icon name="bottom-panel" size={18} />}
-              />
-              <ToolbarButton
-                label={filesOpen ? t('workbench.files.hide') : t('workbench.files.show')}
-                pressed={filesOpen}
-                onClick={toggleFiles}
-                icon={<Icon name="files-panel" size={18} />}
-              />
-            </>
+            <ToolbarButton
+              label={bottomOpen ? t('workbench.bottom.hide') : t('workbench.bottom.show')}
+              pressed={bottomOpen}
+              onClick={toggleBottom}
+              icon={<Icon name="bottom-panel" size={18} />}
+            />
           )}
+          <ToolbarButton
+            label={filesOpen ? t('workbench.files.hide') : t('workbench.files.show')}
+            pressed={filesOpen}
+            onClick={toggleFiles}
+            icon={<Icon name="files-panel" size={18} />}
+          />
           <ToolbarButton
             label={fullscreen ? t('workbench.fullscreen.exit') : t('workbench.fullscreen.enter')}
             pressed={fullscreen}

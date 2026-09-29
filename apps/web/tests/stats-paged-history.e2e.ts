@@ -183,11 +183,11 @@ describe('web e2e: whole-session stats survive history paging', () => {
     expect(await page.evaluate(() => document.activeElement?.id)).toBe('dsh-conversation-overview-toggle')
     await page.setViewportSize({ width: 1680, height: 1000 })
     await card.waitFor({ state: 'visible' })
-    // 文件侧栏占用工作台列宽，概览默认显隐随剩余会话列宽变化。
-    await page.getByRole('button', { name: 'Show files sidebar', exact: true }).click()
-    const hideFiles = page.getByRole('button', { name: 'Hide files sidebar', exact: true })
-    await hideFiles.waitFor({ state: 'visible' })
-    expect(await hideFiles.getAttribute('aria-pressed')).toBe('true')
+    // 右侧工作台占用列宽，概览默认显隐随剩余会话列宽变化。
+    await page.getByRole('button', { name: 'Open right sidebar', exact: true }).click()
+    const collapseRight = page.getByRole('button', { name: 'Collapse right sidebar', exact: true })
+    await collapseRight.waitFor({ state: 'visible' })
+    expect(await collapseRight.getAttribute('aria-pressed')).toBe('true')
     await expect.poll(() => card.isVisible()).toBe(false)
     await expand.waitFor({ state: 'visible' })
   }, 60_000)

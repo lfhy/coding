@@ -180,7 +180,7 @@
 
 ## packages/client/ui-open-in-app
 
-- **拥有**：工作区打开能力的浏览器半：会话页头分体入口（`OpenInAppAction`）及文件侧栏、终端底栏开关（`WorkbenchPanelToggles`），均占用 `conversation.session.header.utilities`；欢迎页开关占用 `conversation.hero.actions`；内置工作台（`WorkspaceWorkbench`，占用 `workbench`）持有初态功能菜单、文件视图和 `workbench.browser`／`workbench.browser.tabs` 子 slot，全屏时由顶栏提供面板开关；保留式底栏终端（`RetainedTerminalPanel`）占用 `workbench.bottom`；另有 `OpenInAppController`。
+- **拥有**：工作区打开能力的浏览器半：会话页头分体入口（`OpenInAppAction`）及右侧边栏、终端底栏开关（`WorkbenchPanelToggles`），均占用 `conversation.session.header.utilities`；欢迎页开关占用 `conversation.hero.actions`；内置工作台（`WorkspaceWorkbench`，占用 `workbench`）持有初态功能菜单、文件视图和 `workbench.browser`／`workbench.browser.tabs` 子 slot，顶栏始终提供内部文件侧栏开关，接管主内容时另提供终端底栏开关；保留式底栏终端（`RetainedTerminalPanel`）占用 `workbench.bottom`；另有 `OpenInAppController`。
 - **不拥有**：浏览器画面、人工导航和标签操作属于 `packages/client/ui-browser`；Host 路由（应用启动、文件 list/read、终端 WebSocket）属于 `packages/host/open-in-app`；workbench 壳层几何与 `ctx.layout` 属于 `packages/client/ui-layout`；`conversation.session.header.utilities` 与 `conversation.hero.actions` 座位声明属于 `packages/client/ui-conversation`。
 - **入口**：`packages/client/ui-open-in-app/src/client/index.ts`（注入 `slots`、`locale`、`layout`、`sessions`、`workspaces`；通过 `ctx.slots.inject(...)` 在各座位注册）；node 半是空 apply。
 - **接线**：`packages/bundle/web-app/cordis.patch.yml` 的 `ui-open-in-app` 行与 host 行 `open-in-app` 并排挂载；共享常量经 `@deepseek-ai/dsh-host-open-in-app/shared`。

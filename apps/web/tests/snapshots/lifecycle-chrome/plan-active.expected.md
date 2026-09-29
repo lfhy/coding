@@ -19,7 +19,7 @@
   - img
   - text: Settings
 - button "Show terminal panel"
-- button "Show files sidebar"
+- button "Open right sidebar"
 - text: {{greeting}}
 - button "Standard mode":
   - img

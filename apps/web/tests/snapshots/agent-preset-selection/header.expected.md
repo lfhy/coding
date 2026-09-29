@@ -14,4 +14,4 @@
 - button "Choose an app to open in":
   - img
 - button "Show terminal panel"
-- button "Show files sidebar"
+- button "Open right sidebar"
