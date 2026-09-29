@@ -217,6 +217,7 @@ export function Menu({ open, anchor, header, items, selectedId, selectedIds, onS
           disabled={entry.disabled}
           aria-haspopup={hasSub ? 'menu' : undefined}
           aria-expanded={hasSub ? subOpen : undefined}
+          aria-checked={selected}
           onFocus={() => { setOpenSubmenuId(hasSub ? entry.id : null) }}
           onClick={() => {
             if (hasSub) {
