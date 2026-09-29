@@ -1,16 +1,13 @@
 - dialog "配置模型，开始使用":
   - heading "配置模型，开始使用" [level=2]
-  - paragraph: 选择或添加提供方，再为其配置至少一个可用模型。
+  - paragraph: 选择或添加渠道，再为其配置至少一个可用模型。
   - complementary "提供方":
     - img
     - textbox "搜索模型平台…"
     - button "DeepSeek"
-    - button "添加提供方":
+    - button "添加渠道":
       - img
-      - text: 添加提供方
-    - button "添加自定义提供方":
-      - img
-      - text: 添加自定义提供方
+      - text: 添加渠道
   - main:
     - heading "DeepSeek" [level=2]
     - text: API 密钥

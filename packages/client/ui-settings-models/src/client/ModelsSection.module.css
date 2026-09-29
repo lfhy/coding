@@ -735,7 +735,8 @@ select.input {
 }
 
 .input::placeholder {
-  color: var(--dsw-alias-label-dimmed);
+  color: var(--dsw-alias-label-tertiary);
+  opacity: 1;
 }
 
 .input:disabled {
@@ -946,7 +947,8 @@ select.input {
 
 .channelSearch input::placeholder,
 .candidateSearch input::placeholder {
-  color: var(--dsw-alias-label-dimmed);
+  color: var(--dsw-alias-label-tertiary);
+  opacity: 1;
 }
 
 .channelRows {
@@ -1033,6 +1035,10 @@ select.input {
 .channelAdd:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
 .channelAdd:disabled { opacity: .45; cursor: default; }
 
+.customChannelDialog { width: min(640px, 100%); max-height: calc(100dvh - 48px); }
+.customChannelContent { min-height: 0; overflow-y: auto; }
+.customChannelForm { display: flex; flex-direction: column; min-width: 0; gap: 14px; }
+
 .channelDetail {
   min-width: 0;
   min-height: 0;
@@ -1040,6 +1046,7 @@ select.input {
   overflow-y: auto;
   box-sizing: border-box;
 }
+.channelDetail:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: -2px; }
 .channelEditor { width: 100%; }
 .channelHeading {
   display: flex;

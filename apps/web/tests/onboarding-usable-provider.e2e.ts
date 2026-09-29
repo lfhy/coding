@@ -1,5 +1,5 @@
-// 无密钥浏览器场景：在首次引导中添加非 DeepSeek 渠道，保存可用默认模型后退出；
-// 取消添加草稿不关闭引导或丢失渠道。只经真实设置与凭据 wire 配置，不调用模型。
+// 无密钥浏览器场景：在首次引导中创建自定义渠道，选定可用默认模型后退出；
+// 取消创建窗口不关闭引导或丢失渠道。只经真实设置与凭据 wire 配置，不调用模型。
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
@@ -16,6 +16,9 @@ const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/onboarding-usable-provid
 const DISMISSED_EXPECTED = join(SNAPSHOT_DIR, 'dismissed.expected.md')
 const MODE = webSnapshotMode()
 const ONBOARDING_TITLE = '配置模型，开始使用'
+const CUSTOM_ROUTE = 'e2e-onboarding'
+const CUSTOM_MODEL = 'e2e-onboarding-model'
+const CUSTOM_KEY = 'sk-e2e-onboarding'
 
 describe.skipIf(MODE === 'record')('web e2e: another usable provider ends first-run onboarding', () => {
   let scaffold: WebScaffold
@@ -38,7 +41,7 @@ describe.skipIf(MODE === 'record')('web e2e: another usable provider ends first-
     await scaffold?.close()
   })
 
-  it('keeps one onboarding modal while a provider draft is cancelled', async () => {
+  it('keeps onboarding blocking when custom-channel creation is cancelled', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-onboarding-setup-card-cancel'))
     const onboarding = page.getByRole('dialog', { name: ONBOARDING_TITLE })
     await onboarding.waitFor({ timeout: 15_000 })
@@ -52,19 +55,39 @@ describe.skipIf(MODE === 'record')('web e2e: another usable provider ends first-
     const setupKey = onboarding.getByRole('textbox', { name: 'API 密钥', exact: true })
     await setupKey.waitFor({ timeout: 10_000 })
 
-    const add = channels.getByRole('button', { name: '添加提供方' })
+    const add = channels.getByRole('button', { name: '添加渠道', exact: true })
     await expect.poll(async () => add.isEnabled(), { timeout: 10_000 }).toBe(true)
     await add.click()
-    const pick = onboarding.getByRole('main').getByRole('combobox', { name: '提供方' })
-    await pick.waitFor({ timeout: 10_000 })
-    await pick.selectOption('minimax-cn')
-    expect(await onboarding.getByRole('textbox', { name: 'API 密钥', exact: true }).count()).toBe(1)
+    const createDialog = page.getByRole('dialog', { name: '添加渠道', exact: true })
+    await createDialog.waitFor({ timeout: 10_000 })
+    expect(await createDialog.getAttribute('aria-modal')).toBe('true')
+    expect(await page.getByRole('dialog').count()).toBe(2)
+    const bounds = await createDialog.boundingBox()
+    if (bounds === null) throw new Error('添加渠道表单未显示')
+    expect(Math.abs(bounds.x + bounds.width / 2 - 720)).toBeLessThanOrEqual(2)
+    expect(Math.abs(bounds.y + bounds.height / 2 - 480)).toBeLessThanOrEqual(2)
+    await createDialog.getByRole('textbox', { name: 'Provider ID' }).waitFor()
+    await createDialog.getByRole('combobox', { name: 'API 协议' }).waitFor()
+    expect(await createDialog.getByRole('button', { name: 'minimax-cn', exact: true }).count()).toBe(0)
+    expect(await deepSeek.getAttribute('aria-current')).toBe('true')
+    expect(await page.locator('#root').evaluate(root => (root as HTMLElement).inert)).toBe(true)
 
-    // 取消右列草稿与 ESC 都不能解除引导；DeepSeek 渠道仍留在左列。
-    await onboarding.getByRole('button', { name: '取消', exact: true }).click()
-    expect(await pick.count()).toBe(0)
-    await deepSeek.waitFor({ timeout: 10_000 })
+    await createDialog.getByRole('button', { name: '取消', exact: true }).click()
+    await createDialog.waitFor({ state: 'detached' })
+    expect(await onboarding.count()).toBe(1)
+    expect(await page.getByRole('dialog').count()).toBe(1)
+    expect(await page.locator('#root').evaluate(root => (root as HTMLElement).inert)).toBe(true)
     await setupKey.waitFor({ timeout: 10_000 })
+
+    await add.click()
+    await createDialog.waitFor()
+    await page.keyboard.press('Escape')
+    await createDialog.waitFor({ state: 'detached' })
+    expect(await onboarding.count()).toBe(1)
+    expect(await page.getByRole('dialog').count()).toBe(1)
+    expect(await page.locator('#root').evaluate(root => (root as HTMLElement).inert)).toBe(true)
+    await setupKey.waitFor({ timeout: 10_000 })
+    await deepSeek.waitFor({ timeout: 10_000 })
     await page.keyboard.press('Escape')
     expect(await onboarding.count()).toBe(1)
     expect(await page.getByRole('dialog').count()).toBe(1)
@@ -75,22 +98,27 @@ describe.skipIf(MODE === 'record')('web e2e: another usable provider ends first-
     }
 
     await add.click()
-    await pick.selectOption('minimax-cn')
-    await onboarding.getByRole('textbox', { name: 'API 密钥', exact: true }).waitFor({ timeout: 10_000 })
+    await createDialog.getByRole('textbox', { name: 'Provider ID' }).fill(CUSTOM_ROUTE)
+    await createDialog.getByRole('textbox', { name: '显示名称' }).fill('E2E Gateway')
+    await createDialog.getByRole('textbox', { name: 'API 地址' }).fill('https://gateway.example/v1')
+    await createDialog.getByRole('textbox', { name: 'API 密钥' }).fill(CUSTOM_KEY)
+    await createDialog.getByRole('button', { name: '添加模型' }).click()
+    await createDialog.getByRole('textbox', { name: '模型 ID 1' }).fill(CUSTOM_MODEL)
+    expect(await createDialog.getByRole('button', { name: '创建渠道', exact: true }).isEnabled()).toBe(true)
 
     expect(tripwire.warnings).toEqual([])
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
-  it('starts only after the other provider has a model and saves it as the default', async () => {
+  it('starts only after the custom channel has a model and saves it as the default', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-onboarding-other-provider'))
     const onboarding = page.getByRole('dialog', { name: ONBOARDING_TITLE })
-    await onboarding.getByRole('textbox', { name: 'API 密钥', exact: true }).fill('sk-e2e-minimax')
-    await onboarding.getByRole('button', { name: '保存', exact: true }).click()
+    const createDialog = page.getByRole('dialog', { name: '添加渠道', exact: true })
+    await createDialog.getByRole('button', { name: '创建渠道', exact: true }).click()
+    await createDialog.waitFor({ state: 'detached', timeout: 15_000 })
     await onboarding.getByRole('complementary', { name: '提供方' })
-      .getByRole('button', { name: 'minimax-cn 已配置' }).waitFor({ timeout: 15_000 })
-    await onboarding.getByRole('main').getByRole('heading', { name: 'minimax-cn' }).waitFor()
-    await onboarding.getByText('已保存 minimax-cn。', { exact: true }).waitFor()
+      .getByRole('button', { name: 'E2E Gateway 已配置' }).waitFor({ timeout: 15_000 })
+    await onboarding.getByRole('main').getByRole('heading', { name: 'E2E Gateway' }).waitFor()
     expect(await onboarding.count()).toBe(1)
     const start = onboarding.getByRole('button', { name: '开始使用' })
     expect(await start.isDisabled()).toBe(true)
@@ -99,9 +127,9 @@ describe.skipIf(MODE === 'record')('web e2e: another usable provider ends first-
     const choices = await model.locator('option').evaluateAll(options => options.map(option => ({
       label: option.textContent ?? '', value: (option as HTMLOptionElement).value,
     })))
-    const choice = choices.find(option => option.value.startsWith('minimax-cn\u0000'))
+    const choice = choices.find(option => option.value === `${CUSTOM_ROUTE}\u0000${CUSTOM_MODEL}`)
     expect(choice?.label).toBeTruthy()
-    if (choice === undefined) throw new Error('minimax-cn has no usable model in the onboarding catalog')
+    if (choice === undefined) throw new Error('the custom channel model is not usable in onboarding')
     await model.selectOption(choice.value)
     expect(await start.isEnabled()).toBe(true)
     if (process.env.DSH_SCREENSHOT_DIR !== undefined) {
@@ -111,14 +139,16 @@ describe.skipIf(MODE === 'record')('web e2e: another usable provider ends first-
     await onboarding.waitFor({ state: 'detached', timeout: 15_000 })
     expect(await page.locator('#root').evaluate(root => (root as HTMLElement).inert)).toBe(false)
 
-    // 只有 minimax-cn 可用，DeepSeek 仍无凭据；默认选项必须属于这条路由。
+    // 只有刚创建的渠道可用，DeepSeek 仍无凭据；默认选项必须属于新路由。
     const settingsDocument = await readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8')
-    expect(settingsDocument).toContain('apiKeyEnv: MINIMAX_CN_API_KEY')
+    expect(settingsDocument).toContain(`${CUSTOM_ROUTE}:`)
+    expect(settingsDocument).toContain('apiKeyEnv: E2E_ONBOARDING_API_KEY')
+    expect(settingsDocument).toContain(`id: ${CUSTOM_MODEL}`)
     expect(settingsDocument).toContain('agent-default-model:')
-    expect(settingsDocument).toContain('provider: minimax-cn')
-    expect(settingsDocument).toContain(`model: ${choice.value.split('\u0000')[1]}`)
+    expect(settingsDocument).toContain(`provider: ${CUSTOM_ROUTE}`)
+    expect(settingsDocument).toContain(`model: ${CUSTOM_MODEL}`)
     const credentials = await readFile(join(scaffold.harnessHome, '.credentials.yaml'), 'utf8')
-    expect(credentials).toContain('MINIMAX_CN_API_KEY: sk-e2e-minimax')
+    expect(credentials).toContain(`E2E_ONBOARDING_API_KEY: ${CUSTOM_KEY}`)
     expect(credentials).not.toContain('DEEPSEEK_API_KEY')
 
     await page.addInitScript(() => {

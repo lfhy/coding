@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import Schema from '@deepseek-ai/schemastery'
 import type { SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
@@ -18,20 +18,30 @@ type EditableNamespace = Omit<SettingsNamespaceView, 'value' | 'user'> & {
   user: Record<string, unknown>
 }
 
-async function mount() {
+async function mount(options: {
+  dormantConfigured?: boolean
+  failCustomCredentialOnce?: boolean
+  customWriteGate?: Promise<void>
+} = {}) {
+  const profiles = {
+    ready: { apiKeyEnv: 'READY_API_KEY', baseURL: 'https://ready.test' },
+    ...options.dormantConfigured === true ? { dormant: { apiKeyEnv: 'DORMANT_API_KEY', baseURL: 'https://dormant.test' } } : {},
+  }
   let namespace: EditableNamespace = {
     ns: 'llm-pi-ai',
     schema: JSON.parse(JSON.stringify(Schema.object({ providers: Schema.dict(Schema.object({
       apiKeyEnv: Schema.string().role('credential-ref'),
       baseURL: Schema.string(),
+      api: Schema.union(['openai-completions']),
       models: Schema.array(Schema.object({ id: Schema.string().required() })),
     })) }).toJSON())) as unknown,
-    value: { providers: { ready: { apiKeyEnv: 'READY_API_KEY', baseURL: 'https://ready.test' } } },
-    user: { providers: { ready: { apiKeyEnv: 'READY_API_KEY', baseURL: 'https://ready.test' } } },
+    value: { providers: profiles },
+    user: { providers: profiles },
     revision: 2, applies: 'live' as const, secrets: [],
   }
   const stored = new Set(['READY_API_KEY'])
   const mutate = vi.fn(async (request: { expectedRevision?: number; ops: { op: 'set' | 'unset'; path: string[]; value?: unknown }[] }) => {
+    if (request.ops.some(op => op.path.join('.') === 'providers.acme')) await options.customWriteGate
     if (request.expectedRevision !== namespace.revision) {
       return { result: { ok: false, error: { code: 'settings-conflict', message: 'stale revision' } } }
     }
@@ -44,7 +54,12 @@ async function mount() {
     namespace = { ...namespace, revision: namespace.revision + 1, user, value }
     return { result: { ok: true, value: namespace } }
   })
+  let rejectCustomKey = options.failCustomCredentialOnce === true
   const set = vi.fn(async (request: { ref: string }) => {
+    if (request.ref === 'ACME_API_KEY' && rejectCustomKey) {
+      rejectCustomKey = false
+      return { result: { ok: false, error: { code: 'credential-rejected', message: 'credential store unavailable' } } }
+    }
     stored.add(request.ref)
     return { result: { ok: true, value: {} } }
   })
@@ -53,6 +68,12 @@ async function mount() {
       { provider: 'ready', displayName: 'Ready', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'ready'], active: true },
       { provider: 'dormant', displayName: 'Dormant', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'dormant'], active: false },
       { provider: 'reserve', displayName: 'Reserve', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'reserve'], active: false },
+      ...Object.entries(namespace.value.providers as Record<string, { displayName?: string }>)
+        .filter(([provider]) => !['ready', 'dormant', 'reserve'].includes(provider))
+        .map(([provider, profile]) => ({
+          provider, displayName: profile.displayName ?? provider, settingsNs: 'llm-pi-ai',
+          settingsPath: ['providers', provider], active: true,
+        })),
     ] } } })) },
     settings: { describe: vi.fn(async () => ({ result: { ok: true, value: {
       writable: true, hasDocument: true, namespaces: [namespace],
@@ -84,7 +105,21 @@ async function mount() {
 }
 
 describe('channel settings layout', () => {
-  it('lists configured channels and offers dormant routes only in the explicit add flow', async () => {
+  async function submitCustomChannel(key = ''): Promise<HTMLElement> {
+    const rail = screen.getByRole('complementary', { name: en.provider })
+    fireEvent.click(within(rail).getByRole('button', { name: en.add }))
+    const dialog = screen.getByRole('dialog', { name: en.add })
+    fireEvent.change(within(dialog).getByRole('textbox', { name: en.customRoute }), { target: { value: 'acme' } })
+    fireEvent.change(within(dialog).getByRole('textbox', { name: en.customDisplayName }), { target: { value: 'Acme' } })
+    fireEvent.change(within(dialog).getByRole('textbox', { name: en.baseUrl }), { target: { value: 'https://acme.test/v1' } })
+    if (key !== '') fireEvent.change(within(dialog).getByLabelText(en.keyInput), { target: { value: key } })
+    fireEvent.click(within(dialog).getByRole('button', { name: en.addModel }))
+    fireEvent.change(within(dialog).getByRole('textbox', { name: `${en.modelId} 1` }), { target: { value: 'acme-chat' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: en.create }))
+    return dialog
+  }
+
+  it('lists configured channels but never offers dormant built-in routes for addition', async () => {
     const { mutate } = await mount()
     const rail = screen.getByRole('complementary', { name: en.provider })
     expect(within(rail).getByRole('button', { name: /Ready/ }).getAttribute('aria-current')).toBe('true')
@@ -99,60 +134,102 @@ describe('channel settings layout', () => {
     expect(within(rail).queryByRole('button', { name: 'Dormant' })).toBeNull()
     fireEvent.change(within(rail).getByRole('textbox', { name: en.searchProviders }), { target: { value: '' } })
     fireEvent.click(within(rail).getByRole('button', { name: en.add }))
-    const picker = screen.getByRole<HTMLSelectElement>('combobox', { name: en.provider })
-    expect([...picker.options].map(option => option.value)).toEqual(['dormant', 'reserve'])
-    expect(screen.getByRole('textbox', { name: en.baseUrl })).toBeTruthy()
-    expect(screen.getByLabelText(en.keyInput)).toBeTruthy()
+    const dialog = screen.getByRole('dialog', { name: en.add })
+    expect(within(dialog).getByRole('textbox', { name: en.customRoute })).toBeTruthy()
+    expect(within(dialog).queryByRole('button', { name: /Dormant/ })).toBeNull()
+    expect(within(dialog).queryByRole('button', { name: /Reserve/ })).toBeNull()
+    expect(within(dialog).queryByRole('textbox', { name: en.searchProviders })).toBeNull()
     expect(mutate).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: en.apply }))
-    await waitFor(() => {
-      expect(within(rail).getByRole('button', { name: 'Dormant' }).getAttribute('aria-current')).toBe('true')
-    })
-    expect(mutate.mock.calls[0]?.[0].ops).toEqual([{ op: 'set', path: ['providers', 'dormant'], value: {} }])
+    fireEvent.click(within(dialog).getByRole('button', { name: en.cancel }))
+    expect(screen.queryByRole('dialog', { name: en.add })).toBeNull()
+    expect(within(rail).getByRole('button', { name: /Ready/ }).getAttribute('aria-current')).toBe('true')
     expect(within(rail).queryByRole('button', { name: 'Reserve' })).toBeNull()
   })
 
-  it('clears a saved notice when the user changes channels or opens the add flow', async () => {
-    await mount()
+  it('preserves a saved detail across custom-modal cancellation', async () => {
+    await mount({ dormantConfigured: true })
     fireEvent.click(screen.getByRole('button', { name: en.apply }))
     await waitFor(() => { expect(screen.getByRole('status').textContent).toContain('Ready') })
     const rail = screen.getByRole('complementary', { name: en.provider })
     fireEvent.click(within(rail).getByRole('button', { name: en.add }))
+    const dialog = screen.getByRole('dialog', { name: en.add })
+    expect(screen.getByRole('status').textContent).toContain('Ready')
+    fireEvent.click(within(dialog).getByRole('button', { name: en.cancel }))
+    expect(screen.getByRole('status').textContent).toContain('Ready')
+    fireEvent.click(within(rail).getByRole('button', { name: /Dormant/ }))
     expect(screen.queryByRole('status')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: en.apply }))
     await waitFor(() => { expect(screen.getByRole('status').textContent).toContain('Dormant') })
     fireEvent.click(within(rail).getByRole('button', { name: /Ready/ }))
     expect(screen.queryByRole('status')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: en.apply }))
-    await waitFor(() => { expect(screen.getByRole('status').textContent).toContain('Ready') })
-    fireEvent.click(within(rail).getByRole('button', { name: en.add }))
-    expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  it('selects the created custom route and focuses its right-hand detail', async () => {
+    const { mutate } = await mount()
+    const rail = screen.getByRole('complementary', { name: en.provider })
+    const search = within(rail).getByRole<HTMLInputElement>('textbox', { name: en.searchProviders })
+    fireEvent.change(search, { target: { value: 'Ready' } })
+    await submitCustomChannel()
+    await waitFor(() => { expect(screen.queryByRole('dialog', { name: en.add })).toBeNull() })
+    expect(search.value).toBe('')
+    expect(within(rail).getByRole('button', { name: 'Acme' }).getAttribute('aria-current')).toBe('true')
+    expect(screen.getByRole('heading', { name: 'Acme' })).toBeTruthy()
+    expect(document.activeElement).toBe(screen.getByLabelText(en.keyInput))
+    expect(mutate).toHaveBeenCalledOnce()
+    expect(mutate.mock.calls[0]?.[0].ops[0]?.path).toEqual(['providers', 'acme'])
+  })
+
+  it('keeps focus inside the modal while the create action is pending and disabled', async () => {
+    let release!: () => void
+    const customWriteGate = new Promise<void>((resolve) => { release = resolve })
+    const { mutate } = await mount({ customWriteGate })
+    const dialog = await submitCustomChannel()
+    const create = within(dialog).getByRole<HTMLButtonElement>('button', { name: en.creating })
+    await waitFor(() => { expect(mutate).toHaveBeenCalledOnce() })
+    expect(create.disabled).toBe(true)
+    expect(dialog.contains(document.activeElement)).toBe(true)
+    expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: en.close }))
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.getByRole('dialog', { name: en.add })).toBe(dialog)
+    await act(async () => { release(); await customWriteGate })
+    await waitFor(() => { expect(screen.queryByRole('dialog', { name: en.add })).toBeNull() })
+  })
+
+  it('selects a committed route when the credential fails and the modal is dismissed', async () => {
+    const { mutate, set } = await mount({ failCustomCredentialOnce: true })
+    const dialog = await submitCustomChannel('sk-acme')
+    expect(await within(dialog).findByText('credential store unavailable')).toBeTruthy()
+    expect(within(dialog).getByRole<HTMLInputElement>('textbox', { name: en.customRoute }).disabled).toBe(true)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => { expect(screen.queryByRole('dialog', { name: en.add })).toBeNull() })
+    expect(within(screen.getByRole('complementary', { name: en.provider }))
+      .getByRole('button', { name: 'Acme' }).getAttribute('aria-current')).toBe('true')
+    expect(screen.getByRole('heading', { name: 'Acme' })).toBeTruthy()
+    expect(document.activeElement).toBe(screen.getByLabelText(en.keyInput))
+    expect(mutate).toHaveBeenCalledOnce()
+    expect(set).toHaveBeenCalledOnce()
   })
 
   it('uses each local commit revision for the next key, URL, and model save without losing the current catalog', async () => {
-    const { mutate, set, controller } = await mount()
-    fireEvent.click(screen.getByRole('button', { name: en.add }))
-    fireEvent.change(screen.getByRole('combobox', { name: en.provider }), { target: { value: 'dormant' } })
-    fireEvent.click(screen.getByRole('button', { name: en.apply }))
-    await waitFor(() => { expect(screen.getByRole('heading', { name: 'Dormant' })).toBeTruthy() })
+    const { mutate, set, controller } = await mount({ dormantConfigured: true })
+    fireEvent.click(within(screen.getByRole('complementary', { name: en.provider })).getByRole('button', { name: 'Dormant' }))
+    expect(screen.getByRole('heading', { name: 'Dormant' })).toBeTruthy()
     expect(within(screen.getByRole('complementary', { name: en.provider }))
       .getByRole('button', { name: 'Dormant' }).getAttribute('aria-current')).toBe('true')
-    expect(mutate.mock.calls[0]?.[0].expectedRevision).toBe(2)
-    expect(controller.store.getSnapshot().namespaces.get('llm-pi-ai')?.revision).toBe(3)
 
     fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'key-two' } })
-    fireEvent.change(screen.getByRole('textbox', { name: en.baseUrl }), { target: { value: 'https://dormant.test' } })
+    fireEvent.change(screen.getByRole('textbox', { name: en.baseUrl }), { target: { value: 'https://dormant-next.test' } })
     fireEvent.click(screen.getByRole('button', { name: en.apply }))
-    await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(2) })
-    expect(mutate.mock.calls[1]?.[0].expectedRevision).toBe(3)
+    await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(1) })
+    expect(mutate.mock.calls[0]?.[0].expectedRevision).toBe(2)
     await waitFor(() => { expect(set).toHaveBeenCalledWith({ ref: 'DORMANT_API_KEY', value: 'key-two' }) })
-    await waitFor(() => { expect(controller.store.getSnapshot().namespaces.get('llm-pi-ai')?.revision).toBe(4) })
+    await waitFor(() => { expect(controller.store.getSnapshot().namespaces.get('llm-pi-ai')?.revision).toBe(3) })
 
     fireEvent.click(screen.getByRole('button', { name: en.addModel }))
     fireEvent.change(screen.getByRole('textbox', { name: `${en.modelId} 1` }), { target: { value: 'cerebras-one' } })
     fireEvent.click(screen.getByRole('button', { name: en.apply }))
-    await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(3) })
-    expect(mutate.mock.calls[2]?.[0].expectedRevision).toBe(4)
+    await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(2) })
+    expect(mutate.mock.calls[1]?.[0].expectedRevision).toBe(3)
     await waitFor(() => {
       expect(screen.getByRole<HTMLInputElement>('textbox', { name: `${en.modelId} 1` }).value).toBe('cerebras-one')
     })

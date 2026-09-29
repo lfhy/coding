@@ -19,6 +19,7 @@ import { ZH_BROWSER_LOCALE, saveFailureShot } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/models-settings', import.meta.url))
 const EMPTY_EXPECTED = join(SNAPSHOT_DIR, 'empty.expected.md')
+const CUSTOM_MODAL_EXPECTED = join(SNAPSHOT_DIR, 'custom-channel-modal.expected.md')
 const CONFIGURED_EXPECTED = join(SNAPSHOT_DIR, 'configured.expected.md')
 const DECLARED_EXPECTED = join(SNAPSHOT_DIR, 'declared.expected.md')
 const DECLARED_EDIT_EXPECTED = join(SNAPSHOT_DIR, 'declared-edit.expected.md')
@@ -44,6 +45,12 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
   const providerRail = () => settings().getByRole('complementary', { name: '提供方' })
   const provider = (name: string) => providerRail().getByRole('button').filter({ hasText: name }).first()
   const settingsDocument = () => readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8')
+  const settingsDocumentIfPresent = async (): Promise<string> => {
+    try { return await settingsDocument() } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return ''
+      throw error
+    }
+  }
   const stableSnapshot = async (selector: string): Promise<string> =>
     (await captureStableAria(page, selector, scaffold.workspaceCwd))
       .replaceAll(modelBaseURL, 'http://127.0.0.1:<mock-port>/v1')
@@ -155,7 +162,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     }
   })
 
-  it('shows only configured channels and keeps dormant catalogs in Add', async () => {
+  it('opens only a centered custom-channel form without exposing built-in routes', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-models-empty'))
     await page.getByRole('button', { name: '设置', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: '设置' })
@@ -165,49 +172,95 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     const modelsNav = dialog.getByRole('navigation').getByRole('button', { name: '模型' })
     expect(await modelsNav.getAttribute('aria-current')).toBe('true')
     await provider('DeepSeek').waitFor({ timeout: 10_000 })
+    await providerRail().getByRole('button', { name: 'DeepSeek 已配置' }).waitFor({ timeout: 10_000 })
     for (const dormant of ['anthropic', 'openai', 'minimax-cn', 'amazon-bedrock']) {
       expect(await provider(dormant).count()).toBe(0)
     }
-    // 未激活的适配器仍把已安装目录交给添加控件。
-    const add = dialog.getByRole('button', { name: '添加提供方' })
+    // 已安装但未配置的目录路由不进入可添加列表；唯一入口直接打开自定义表单。
+    const add = providerRail().getByRole('button', { name: '添加渠道', exact: true })
     await add.waitFor({ timeout: 10_000 })
-    // 目录异步汇合后，添加按钮才可用。
+    expect(await providerRail().getByRole('button', { name: '添加渠道', exact: true }).count()).toBe(1)
+    expect(await providerRail().getByRole('button', { name: '添加提供方' }).count()).toBe(0)
+    expect(await providerRail().getByRole('button', { name: '添加自定义提供方' }).count()).toBe(0)
+    // 等待设置镜像和自定义协议列表就绪。
     await expect.poll(async () => add.isEnabled(), { timeout: 10_000 }).toBe(true)
-    await add.click()
-    const pick = dialog.getByRole('combobox', { name: '提供方' })
-    await pick.waitFor({ timeout: 10_000 })
-    await expect.poll(async () => pick.locator('option').count(), { timeout: 10_000 }).toBeGreaterThan(30)
-    const options = await pick.locator('option').allTextContents()
-    expect(options).toContain('anthropic')
-    expect(options).toContain('openai')
-    expect(options).toContain('minimax-cn')
-    await pick.selectOption('minimax-cn')
-    await dialog.getByRole('textbox', { name: 'API 密钥', exact: true }).waitFor({ timeout: 10_000 })
-    const snapshot = await stableSnapshot('[role="dialog"]')
-    await compareOrRefreshGolden(EMPTY_EXPECTED, snapshot, MODE)
+    const createDialog = page.getByRole('dialog', { name: '添加渠道', exact: true })
+    const originalSettings = await settingsDocumentIfPresent()
+    await compareOrRefreshGolden(EMPTY_EXPECTED, await stableSnapshot('[role="dialog"][aria-modal="true"]'), MODE)
+    for (const viewport of [{ width: 1680, height: 1000 }, { width: 375, height: 812 }]) {
+      await page.setViewportSize(viewport)
+      await add.click()
+      await createDialog.waitFor({ timeout: 10_000 })
+      expect(await createDialog.getAttribute('aria-modal')).toBe('true')
+      const bounds = await createDialog.boundingBox()
+      if (bounds === null) throw new Error('添加渠道弹窗未显示')
+      expect(bounds.x).toBeGreaterThanOrEqual(0)
+      expect(bounds.x + bounds.width).toBeLessThanOrEqual(viewport.width)
+      expect(Math.abs(bounds.x + bounds.width / 2 - viewport.width / 2)).toBeLessThanOrEqual(2)
+      expect(Math.abs(bounds.y + bounds.height / 2 - viewport.height / 2)).toBeLessThanOrEqual(2)
+      const routeInput = createDialog.getByRole('textbox', { name: 'Provider ID' })
+      await routeInput.waitFor()
+      await createDialog.getByRole('combobox', { name: 'API 协议' }).waitFor()
+      await createDialog.getByRole('button', { name: '创建渠道', exact: true }).waitFor()
+      const routeLabel = createDialog.locator('label[for]').filter({ hasText: 'Provider ID' }).first()
+      expect(await routeLabel.getAttribute('for')).toBe(await routeInput.getAttribute('id'))
+      await createDialog.getByRole('textbox', { name: 'API 地址' }).focus()
+      await routeLabel.click()
+      expect(await routeInput.evaluate(node => document.activeElement === node)).toBe(true)
+      expect(await createDialog.getByRole('button', { name: 'anthropic', exact: true }).count()).toBe(0)
+      expect(await createDialog.getByRole('button', { name: 'minimax-cn', exact: true }).count()).toBe(0)
+      expect(await createDialog.getByRole('button', { name: '添加自定义渠道' }).count()).toBe(0)
+      if (viewport.width === 1680) {
+        const snapshot = await stableSnapshot('[role="dialog"][aria-label="添加渠道"]')
+        await compareOrRefreshGolden(CUSTOM_MODAL_EXPECTED, snapshot, MODE)
+      }
+      if (process.env.DSH_SCREENSHOT_DIR !== undefined) {
+        await page.screenshot({ path: join(process.env.DSH_SCREENSHOT_DIR,
+          viewport.width === 375 ? 'models-settings-add-channel-mobile.png' : 'models-settings-add-channel-desktop.png') })
+        if (viewport.width === 1680) {
+          await page.emulateMedia({ colorScheme: 'dark' })
+          await expect.poll(() => page.locator('body').getAttribute('data-ds-dark-theme')).toBe('')
+          await page.screenshot({ path: join(process.env.DSH_SCREENSHOT_DIR, 'models-settings-add-channel-dark.png') })
+          await page.emulateMedia({ colorScheme: 'light' })
+          await expect.poll(() => page.locator('body').getAttribute('data-ds-dark-theme')).toBeNull()
+        }
+      }
+      if (viewport.width === 375) await page.keyboard.press('Escape')
+      else await createDialog.getByRole('button', { name: '取消', exact: true }).click()
+      await expect.poll(() => createDialog.count()).toBe(0)
+      expect(await provider('DeepSeek').getAttribute('aria-current')).toBe('true')
+      expect(await settingsDocumentIfPresent()).toBe(originalSettings)
+    }
+    await page.setViewportSize({ width: 1680, height: 1000 })
   }, 60_000)
 
   it('refuses a key no HTTP header can carry before anything is written', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-models-illegal-key'))
-    const dialog = page.getByRole('dialog', { name: '设置' })
+    // 内置路由只能由外部配置或已有 profile 出现，测试夹具据此准备后续编辑流程。
+    await scaffold.ctx.settings.update(settingsNamespace('llm-pi-ai'), {
+      providers: { 'minimax-cn': {} },
+    })
+    const dialog = settings()
+    await dialog.getByRole('navigation').getByRole('button', { name: '通用设置', exact: true }).click()
+    await dialog.getByRole('navigation').getByRole('button', { name: '模型', exact: true }).click()
+    await expect.poll(() => provider('minimax-cn').count(), { timeout: 10_000 }).toBe(1)
+    await provider('minimax-cn').click()
+    await dialog.getByRole('main').getByRole('heading', { name: 'minimax-cn', exact: true }).waitFor()
     const key = dialog.getByLabel('API 密钥')
     const save = dialog.getByRole('button', { name: '保存', exact: true })
 
-    // A key no HTTP header can carry would save cleanly and fail the first
-    // turn with a ByteString TypeError; the form names the offending field
-    // instead.
+    // 无法进入 HTTP Header 的密钥须由表单指明错误字段，避免保存后首轮请求才触发 ByteString 错误。
     await key.fill('sk-\u{1F600}minimax')
     await dialog.getByText('该 API 密钥格式错误，请检查。').waitFor({ timeout: 10_000 })
     await expect.poll(async () => save.isEnabled(), { timeout: 10_000 }).toBe(false)
 
-    // Clearing it restores submit: an empty field means "keep what is stored",
-    // never a refusal, or editing any other setting would demand the key.
+    // 清空输入恢复提交能力：空字段表示保留已存密钥，不妨碍编辑其他设置。
     await key.fill('')
     await expect.poll(async () => save.isEnabled(), { timeout: 10_000 }).toBe(true)
     expect(await dialog.getByText('该 API 密钥格式错误，请检查。').count()).toBe(0)
   }, 60_000)
 
-  it('saves a blank key as a reference-free provider-native profile', async () => {
+  it('retains a reference-free provider-native profile when saving a blank key', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-models-native-auth'))
     const dialog = page.getByRole('dialog', { name: '设置' })
     await dialog.getByRole('button', { name: '保存', exact: true }).click()
@@ -325,10 +378,16 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
   it('fetches a real model listing and imports grouped candidates into an unsaved draft', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-models-picker'))
     const settingsDialog = settings()
-    // minimax-cn 的目录使用 anthropic-messages，故新建 OpenAI 兼容渠道探测
-    // GET /models；端点只指向本机 mock，不访问厂商真实服务。
-    await settingsDialog.getByRole('button', { name: '添加提供方' }).click()
-    await settingsDialog.getByRole('combobox', { name: '提供方' }).selectOption('cerebras')
+    // minimax-cn 使用 anthropic-messages；夹具预置 cerebras 后仍在界面编辑
+    // 密钥和本机 mock 地址，验证 OpenAI 兼容渠道的真实 GET /models。
+    await scaffold.ctx.settings.update(settingsNamespace('llm-pi-ai'), {
+      providers: { cerebras: {} },
+    })
+    await settingsDialog.getByRole('navigation').getByRole('button', { name: '通用设置', exact: true }).click()
+    await settingsDialog.getByRole('navigation').getByRole('button', { name: '模型', exact: true }).click()
+    await expect.poll(() => provider('cerebras').count(), { timeout: 10_000 }).toBe(1)
+    await provider('cerebras').click()
+    await settingsDialog.getByRole('main').getByRole('heading', { name: 'cerebras', exact: true }).waitFor()
     await settingsDialog.getByRole('textbox', { name: 'API 密钥', exact: true }).fill('sk-e2e-cerebras')
     await settingsDialog.getByRole('textbox', { name: 'API 地址' }).fill(modelBaseURL)
     await settingsDialog.getByRole('button', { name: '保存', exact: true }).click()
@@ -708,26 +767,104 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
   it('declares a route the adapter does not ship', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-models-declare'))
     const dialog = page.getByRole('dialog', { name: '设置' })
-    const declare = dialog.getByRole('button', { name: '添加自定义提供方' })
-    await expect.poll(async () => declare.isEnabled(), { timeout: 10_000 }).toBe(true)
-    await declare.click()
-    await dialog.getByLabel('Provider ID').fill('acme-gateway')
-    await dialog.getByLabel('显示名称').fill('Acme Gateway')
-    await dialog.getByLabel('API 地址').fill('https://gateway.acme.example/v1')
-    // No reasoning effort on a provider card at all: effort is a per-model
-    // capability, the models under one provider disagree about it, and a
-    // switch in the composer already records provider+model+effort together.
-    expect(await dialog.getByLabel('推理强度').count()).toBe(0)
-    await dialog.getByRole('button', { name: '添加模型' }).click()
-    await dialog.getByLabel('模型 ID 1').fill('acme-large')
-    await dialog.getByRole('button', { name: '创建提供方', exact: true }).click()
+    const searchProviders = providerRail().getByRole('textbox', { name: '搜索模型平台…' })
+    await searchProviders.fill('openai')
+    const add = providerRail().getByRole('button', { name: '添加渠道', exact: true })
+    await expect.poll(async () => add.isEnabled(), { timeout: 10_000 }).toBe(true)
+    await add.click()
+    const createDialog = page.getByRole('dialog', { name: '添加渠道', exact: true })
+    await createDialog.getByRole('textbox', { name: 'Provider ID' }).fill('acme-gateway')
+    await createDialog.getByLabel('显示名称').fill('Acme Gateway')
+    await createDialog.getByLabel('API 地址').fill('https://gateway.acme.example/v1')
+    // 推理强度属于单个模型能力，而非整个渠道；composer 中的切换会一并记录所选强度。
+    expect(await createDialog.getByLabel('推理强度').count()).toBe(0)
+    await createDialog.getByRole('button', { name: '添加模型' }).click()
+    await createDialog.getByLabel('模型 ID 1').fill('acme-large')
+    await createDialog.getByRole('textbox', { name: 'API 密钥', exact: true }).fill('sk-e2e-acme')
+    await page.setViewportSize({ width: 375, height: 812 })
+    const mobileCreate = createDialog.getByRole('button', { name: '创建渠道', exact: true })
+    await mobileCreate.scrollIntoViewIfNeeded()
+    const mobileAction = await mobileCreate.boundingBox()
+    if (mobileAction === null) throw new Error('375px 自定义渠道创建按钮未显示')
+    expect(mobileAction.x).toBeGreaterThanOrEqual(0)
+    expect(mobileAction.x + mobileAction.width).toBeLessThanOrEqual(375)
+    expect(mobileAction.y + mobileAction.height).toBeLessThanOrEqual(812)
+    expect(await mobileCreate.evaluate((node) => {
+      const box = node.getBoundingClientRect()
+      const top = node.ownerDocument.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)
+      return top === node || node.contains(top)
+    })).toBe(true)
+    if (process.env.DSH_SCREENSHOT_DIR !== undefined) {
+      await page.screenshot({ path: join(process.env.DSH_SCREENSHOT_DIR, 'models-settings-add-channel-filled-mobile.png') })
+    }
+    await page.setViewportSize({ width: 1680, height: 1000 })
+    const failure = '模拟凭据写入失败'
+    let rejectedWrites = 0
+    let releaseWrite: (() => void) | undefined
+    const credentialGate = new Promise<void>((resolve) => { releaseWrite = resolve })
+    await page.route('**/api/credentials.set', async (route) => {
+      const envelope = route.request().postDataJSON() as { rpcId: string; payload: { ref: string } }
+      expect(envelope.payload.ref).toBe('ACME_GATEWAY_API_KEY')
+      rejectedWrites += 1
+      await credentialGate
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          type: 'server-response',
+          rpcId: envelope.rpcId,
+          result: { ok: false, error: { code: 'credential-rejected', message: failure, details: { ref: envelope.payload.ref } } },
+        }),
+      })
+    })
+    try {
+      const create = createDialog.getByRole('button', { name: '创建渠道', exact: true })
+      await create.focus()
+      expect(await createDialog.evaluate(node => node.contains(node.ownerDocument.activeElement))).toBe(true)
+      await create.click()
+      await expect.poll(() => rejectedWrites, { timeout: 10_000 }).toBe(1)
+      const creating = createDialog.getByRole('button', { name: '创建中…' })
+      await creating.waitFor({ timeout: 10_000 })
+      expect(await creating.isDisabled()).toBe(true)
+      expect(await createDialog.evaluate(node => node.contains(node.ownerDocument.activeElement))).toBe(true)
+      for (let step = 0; step < 3; step += 1) {
+        await page.keyboard.press('Tab')
+        expect(await createDialog.evaluate(node => node.contains(node.ownerDocument.activeElement))).toBe(true)
+      }
+      releaseWrite?.()
+      await createDialog.getByText(failure).waitFor({ timeout: 10_000 })
+      await expect.poll(() => create.isEnabled()).toBe(true)
+      expect(await createDialog.getByRole('textbox', { name: 'Provider ID' }).isDisabled()).toBe(true)
+      await expect.poll(settingsDocument, { timeout: 10_000 }).toContain('acme-gateway:')
+      expect(await settingsDocument()).toContain('apiKeyEnv: ACME_GATEWAY_API_KEY')
+      expect(await readFile(join(scaffold.harnessHome, '.credentials.yaml'), 'utf8')).not.toContain('ACME_GATEWAY_API_KEY')
+      expect(await searchProviders.inputValue()).toBe('openai')
+      expect(await provider('Acme Gateway').count()).toBe(0)
+    } finally {
+      releaseWrite?.()
+      await page.unroute('**/api/credentials.set')
+    }
+    await createDialog.getByRole('button', { name: '创建渠道', exact: true }).click()
 
+    await expect.poll(() => createDialog.count()).toBe(0)
+    await expect.poll(() => searchProviders.inputValue()).toBe('')
     await provider('Acme Gateway').waitFor({ timeout: 10_000 })
+    await expect.poll(() => provider('Acme Gateway').getAttribute('aria-current')).toBe('true')
+    await dialog.getByRole('main').getByRole('heading', { name: 'Acme Gateway', exact: true }).waitFor()
+    await page.setViewportSize({ width: 375, height: 812 })
+    await dialog.getByRole('main').getByRole('button', { name: '提供方', exact: true }).click()
+    await provider('Acme Gateway').waitFor()
+    expect(await provider('Acme Gateway').getAttribute('aria-current')).toBe('true')
+    expect(await searchProviders.inputValue()).toBe('')
+    await provider('Acme Gateway').click()
+    await page.setViewportSize({ width: 1680, height: 1000 })
+    await dialog.getByRole('main').getByRole('heading', { name: 'Acme Gateway', exact: true }).waitFor()
     const document = await readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8')
     expect(document).toContain('acme-gateway:')
+    await expect.poll(async () => readFile(join(scaffold.harnessHome, '.credentials.yaml'), 'utf8'))
+      .toContain('ACME_GATEWAY_API_KEY: sk-e2e-acme')
 
-    // The tag follows the adapter's installed catalog: this route is in no
-    // catalog, while minimax-cn is — even though both now have profiles.
+    // “自定义”标记取决于适配器目录，而非是否有 profile：acme-gateway 不在目录，minimax-cn 在目录。
     await provider('Acme Gateway').click()
     await expect.poll(async () => dialog.getByLabel('API 协议').count(), { timeout: 10_000 }).toBe(1)
     expect(await provider('minimax-cn').getByText('自定义').count()).toBe(0)
@@ -857,7 +994,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {
     await assertFixtureInventory(SNAPSHOT_DIR, [
       'configured.expected.md', 'declared-edit.expected.md', 'declared.expected.md',
-      'delete.expected.md', 'empty.expected.md', 'model-picker.expected.md',
+      'custom-channel-modal.expected.md', 'delete.expected.md', 'empty.expected.md', 'model-picker.expected.md',
       'native-delete.expected.md', 'vision-configured.expected.md',
     ])
   })

@@ -3,7 +3,7 @@
  * 写入由编辑器和页面控制器执行，组件只持有导航、草稿和弹窗交互状态。
  */
 
-import { useState } from 'react'
+import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { IApiClient } from '@deepseek-ai/dsh-api-remotes/client'
 import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -160,8 +160,6 @@ export function ModelsSection(props: ModelsSectionProps): ReactNode {
 function Loaded({ injected, hideHeader }: { injected: ModelsSectionFace; hideHeader: boolean }): ReactNode {
   const { controller, api, schema, t } = injected
   const state = injected.useSnapshot(snapshot => snapshot)
-  const [editing, setEditing] = useState<EditorTarget | undefined>(undefined)
-  const [adding, setAdding] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<EditorTarget | undefined>(undefined)
   const [deleting, setDeleting] = useState(false)
   const [deleteFailure, setDeleteFailure] = useState<string | undefined>(undefined)
@@ -171,18 +169,67 @@ function Loaded({ injected, hideHeader }: { injected: ModelsSectionFace; hideHea
   const [providerQuery, setProviderQuery] = useState('')
   const [mobileDetail, setMobileDetail] = useState(false)
   const [editorEpoch, setEditorEpoch] = useState(0)
+  const addButtonRef = useRef<HTMLButtonElement>(null)
+  const detailRef = useRef<HTMLElement>(null)
+  const restoreTriggerFocus = useRef(false)
+  const focusCreatedDetail = useRef(false)
+  const customBusy = useRef(false)
+  const committedRoute = useRef<string | undefined>(undefined)
+  const closingCustom = useRef(false)
+
+  useLayoutEffect(() => {
+    if (declaring) return
+    if (restoreTriggerFocus.current) {
+      restoreTriggerFocus.current = false
+      addButtonRef.current?.focus()
+    } else if (focusCreatedDetail.current) {
+      focusCreatedDetail.current = false
+      const detail = detailRef.current
+      // 创建后将焦点交给新渠道详情；无可编辑字段时仍停留在详情区域。
+      const focusTarget = detail?.querySelector<HTMLElement>('input:not(:disabled), select:not(:disabled), textarea:not(:disabled)') ?? detail
+      focusTarget?.focus()
+    }
+  }, [declaring, mobileDetail])
+
+  const closeCustom = useCallback(async (changed: boolean, provider?: string): Promise<void> => {
+    if (closingCustom.current) return
+    closingCustom.current = true
+    try {
+      if (changed) {
+        await controller.load()
+        if (provider !== undefined) {
+          setSavedTarget(undefined)
+          setProviderQuery('')
+          setSelected(provider)
+          setMobileDetail(true)
+          focusCreatedDetail.current = true
+        }
+      } else {
+        restoreTriggerFocus.current = true
+      }
+      setDeclaring(false)
+    } finally {
+      closingCustom.current = false
+    }
+  }, [controller])
+
+  const dismissCustom = useCallback((): void => {
+    if (customBusy.current) return
+    // 模型设置也会打开 Modal；其 Escape 不能顺带关闭添加渠道。
+    const dialogs = document.querySelectorAll('[role="dialog"][aria-modal="true"]')
+    if (!dialogs[dialogs.length - 1]?.classList.contains(styles['customChannelDialog'] as string)) return
+    const provider = committedRoute.current
+    void closeCustom(provider !== undefined, provider)
+  }, [closeCustom])
+
+  const recordCustomBusy = useCallback((busy: boolean): void => {
+    customBusy.current = busy
+  }, [])
 
   const announceSaved = async (target: ProviderIdentity): Promise<void> => {
     // 等待镜像与渠道目录联接完成，再让保存提示和新的编辑器读取同一 revision。
     await controller.load()
     setSavedTarget(target)
-  }
-
-  const closeEditor = async (changed: boolean, target: ProviderIdentity): Promise<void> => {
-    if (changed) await announceSaved(target)
-    setEditing(undefined)
-    setAdding(false)
-    setDeclaring(false)
   }
 
   const closeDelete = (): void => {
@@ -234,11 +281,8 @@ function Loaded({ injected, hideHeader }: { injected: ModelsSectionFace; hideHea
     : { provider: savedRow.entry.provider, displayName: savedRow.entry.displayName }
 
   const directory = state.rows.filter(row => row.entry.settingsNs !== '' && state.namespaces.has(row.entry.settingsNs))
-  // 主列表保留已有 profile；未配置的目录条目只由显式添加流程呈现。
+  // 主列表只显示已有 profile；未配置目录路由不能在此创建。
   const channels = directory.filter(row => row.configured)
-  const addable = directory.filter(row => !row.configured)
-  const addTarget = adding ? editing : undefined
-  const addNamespace = addTarget === undefined ? undefined : state.namespaces.get(addTarget.settingsNs)
   // 自定义渠道由 pi-ai 分节持有；未挂载该分节时不能声明渠道。
   const protocols = protocolChoices(state.namespaces.get('llm-pi-ai'), schema)
 
@@ -271,8 +315,6 @@ function Loaded({ injected, hideHeader }: { injected: ModelsSectionFace; hideHea
                 onClick={() => {
                   setSavedTarget(undefined)
                   setSelected(row.entry.provider)
-                  setAdding(false)
-                  setDeclaring(false)
                   setMobileDetail(true)
                 }}>
                 <span className={styles['channelAvatar']} aria-hidden="true">{row.entry.displayName.charAt(0).toLocaleUpperCase()}</span>
@@ -282,67 +324,26 @@ function Loaded({ injected, hideHeader }: { injected: ModelsSectionFace; hideHea
             ))}
           </div>
           <div className={styles['channelAddActions']}>
-            <button type="button" className={styles['channelAdd']} disabled={addable.length === 0 || !state.writable || state.status !== 'ready'}
+            <button ref={addButtonRef} type="button" className={styles['channelAdd']}
+              disabled={protocols.length === 0 || !state.writable || state.status !== 'ready'}
               onClick={() => {
-                const first = addable[0]
-                if (first === undefined) return
-                setSavedTarget(undefined)
-                setAdding(true)
-                setDeclaring(false)
-                setEditing(targetOf(first))
-                setMobileDetail(true)
+                customBusy.current = false
+                committedRoute.current = undefined
+                closingCustom.current = false
+                setDeclaring(true)
               }}>
               <IconPlusOutline16 size={16} />{t('add')}
             </button>
-            <button type="button" className={styles['channelAdd']} disabled={protocols.length === 0 || !state.writable || state.status !== 'ready'}
-              onClick={() => {
-                setSavedTarget(undefined)
-                setDeclaring(true)
-                setAdding(false)
-                setMobileDetail(true)
-              }}>
-              <IconPlusOutline16 size={16} />{t('customAdd')}
-            </button>
           </div>
         </aside>
-        <main className={`${styles['channelDetail']} ${!mobileDetail ? styles['mobileHiddenDetail'] : ''}`}
+        <main ref={detailRef} tabIndex={-1} className={`${styles['channelDetail']} ${!mobileDetail ? styles['mobileHiddenDetail'] : ''}`}
           onChangeCapture={() => { setSavedTarget(undefined) }}>
           <button type="button" className={styles['channelBack']} onClick={() => { setMobileDetail(false) }}>
             <IconChevronLeftOutline14 size={16} />{t('provider')}
           </button>
           {savedIdentity === undefined ? null : <p role="status" className={styles['savedNotice']}>{providerCopy(t('savedProvider'), savedIdentity)}</p>}
           {!state.writable ? <p className={styles['notice']}>{t('readOnly')}</p> : null}
-          {adding && addTarget !== undefined && addNamespace !== undefined ? (
-            <div className={styles['channelEditor']}>
-              <label className={styles['field']}><span className={styles['fieldLabel']}>{t('provider')}</span>
-                <select className={`${styles['input']} ${styles['selectInput']}`} value={addTarget.provider} onChange={(event) => {
-                  const row = addable.find(candidate => candidate.entry.provider === event.target.value)
-                  if (row !== undefined) {
-                    setSavedTarget(undefined)
-                    setEditing(targetOf(row))
-                  }
-                }}>{addable.map(row => (
-                    <option key={row.entry.provider} value={row.entry.provider}>{row.entry.displayName}</option>
-                  ))}</select>
-              </label>
-              <ProviderEditor key={addTarget.provider} {...addTarget} namespace={addNamespace} schema={schema} api={api} t={t}
-                readOnly={!state.writable || state.status !== 'ready'} channelLayout
-                onSettingsCommitted={(view) => { controller.acceptSettingsView(view) }}
-                onClose={async (changed) => {
-                  await closeEditor(changed, addTarget)
-                  if (changed) setSelected(addTarget.provider)
-                  setEditorEpoch(n => n + 1)
-                }} />
-            </div>
-          ) : declaring ? (
-            <CustomProviderCard taken={state.rows.map(row => row.entry.provider)} protocols={protocols}
-              revision={state.namespaces.get('llm-pi-ai')?.revision ?? 0} api={api} t={t} readOnly={!state.writable || state.status !== 'ready'}
-              onSettingsCommitted={(view) => { controller.acceptSettingsView(view) }}
-              onClose={async (changed) => {
-                if (changed) await controller.load()
-                setDeclaring(false)
-              }} />
-          ) : currentTarget !== undefined && currentNamespace !== undefined ? (
+          {currentTarget !== undefined && currentNamespace !== undefined ? (
             <div className={styles['channelEditor']}>
               <div className={styles['channelHeading']}>
                 <h2>{currentTarget.displayName}</h2>
@@ -359,6 +360,20 @@ function Loaded({ injected, hideHeader }: { injected: ModelsSectionFace; hideHea
             </div>
           ) : <p className={styles['intro']}>{t('intro')}</p>}
         </main>
+        <Modal open={declaring} trapFocus onClose={dismissCustom} title={t('add')}
+          closeLabel={t('close')} description={t('customModalDescription')}
+          className={styles['customChannelDialog'] as string}
+          contentClassName={styles['customChannelContent'] as string}>
+          {declaring ? <CustomProviderCard embedded autoFocusRoute taken={state.rows.map(row => row.entry.provider)}
+            protocols={protocols} revision={state.namespaces.get('llm-pi-ai')?.revision ?? 0}
+            api={api} t={t} readOnly={!state.writable || state.status !== 'ready'}
+            onBusyChange={recordCustomBusy}
+            onSettingsCommitted={(view, provider) => {
+              controller.acceptSettingsView(view)
+              committedRoute.current = provider
+            }}
+            onClose={closeCustom} /> : null}
+        </Modal>
         <Modal open={deleteTarget !== undefined} onClose={closeDelete}
           title={deleteTarget === undefined ? '' : providerCopy(t('deleteTitle'), deleteTarget)} closeLabel={t('close')}
           description={deleteTarget === undefined ? '' : providerCopy(deleteTarget.credentialRef === undefined

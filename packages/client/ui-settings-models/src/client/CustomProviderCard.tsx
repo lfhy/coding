@@ -21,7 +21,7 @@
  * levels instead.
  */
 
-import { useState } from 'react'
+import { useId, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { IApiClient, SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
 import { apiKeyFailure } from './apiKey.ts'
@@ -64,10 +64,16 @@ export interface CustomProviderCardProps {
   t: (key: keyof typeof en) => string
   /** Disable writes (read-only settings provider). */
   readOnly: boolean
-  /** Close the card; `changed` reports whether a provider was created. */
-  onClose: (changed: boolean) => void | Promise<void>
+  /** 模态框内使用平面表单，不重复绘制卡片背景和标题。 */
+  embedded?: boolean
+  /** 模态框打开后聚焦 Provider ID。 */
+  autoFocusRoute?: boolean
+  /** 提交开始和结束时同步上报；外层关闭路径据此拒绝中途卸载。 */
+  onBusyChange?: (busy: boolean) => void
+  /** 关闭卡片；profile 已创建时返回其路由 ID，包括凭据写入失败后的取消。 */
+  onClose: (changed: boolean, provider?: string) => void | Promise<void>
   /** 新渠道 profile 已提交时折入共享设置镜像，凭据写入失败也保留该事实。 */
-  onSettingsCommitted?: (view: SettingsNamespaceView) => void
+  onSettingsCommitted?: (view: SettingsNamespaceView, provider: string) => void
 }
 
 /**
@@ -77,6 +83,16 @@ export interface CustomProviderCardProps {
  */
 export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
   const { taken, protocols, api, t } = props
+  const fieldId = useId()
+  const routeId = `${fieldId}-route`
+  const displayNameId = `${fieldId}-display-name`
+  const baseURLId = `${fieldId}-base-url`
+  const protocolId = `${fieldId}-protocol`
+  const keyId = `${fieldId}-key`
+  const formRef = useRef<HTMLDivElement>(null)
+  const routeInputRef = useRef<HTMLInputElement>(null)
+  const keyInputRef = useRef<HTMLInputElement>(null)
+  const focusAfterFailure = useRef(false)
   // Captured at mount, like the editor's: the write must be judged against the
   // section this card was drafted over, not whatever it grew into meanwhile.
   const [openedAt] = useState(() => props.revision)
@@ -94,23 +110,30 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
    * the credential alone.
    */
   const [committed, setCommitted] = useState(false)
+
+  useLayoutEffect(() => {
+    if (busy || !focusAfterFailure.current) return
+    focusAfterFailure.current = false
+    const field = committed ? keyInputRef.current : routeInputRef.current
+    if (field?.disabled === false) field.focus()
+  }, [busy, committed, failure])
+
   const disabled = props.readOnly || busy
   /** Everything but the key stops being editable once the provider exists. */
   const profileDisabled = disabled || committed
 
   const routeInvalid = route.length > 0 && !ROUTE_PATTERN.test(route)
-  const routeTaken = taken.includes(route)
+  const routeTaken = !committed && taken.includes(route)
   // Rows are checked by the same per-row validator the editor cards use, so a
   // bad row is named by its position here too. Capacities have route-level
   // fallbacks; what a route cannot default is at least one model.
   const modelFailure = validateDeepSeekModels(models)
-  const keyFailure = apiKeyFailure(keyDraft)
-  // The typed key with paste whitespace removed. A blank field yields an empty
-  // string, which the create path reads as "no key supplied" — a route may
-  // legitimately authenticate through the provider's own ambient discovery.
+  // 已提交的 profile 若指向凭据引用，重试不得把清空密钥视为创建完成。
+  const keyFailure = committed && keyDraft.trim().length === 0 ? 'keyRequired' : apiKeyFailure(keyDraft)
+  // 首次创建可不填写密钥，使用提供方原生认证；已提交 profile 若记录了引用，重试则必须写入密钥。
   const keyValue = keyDraft.trim()
   const ready = route.length > 0 && !routeInvalid && !routeTaken
-    && baseURL.length > 0 && models.length > 0 && modelFailure === undefined
+    && baseURL.length > 0 && protocol.length > 0 && models.length > 0 && modelFailure === undefined
     && keyFailure === undefined
   // The one blocked gate worth a line under the form. A satisfied card says
   // nothing at all rather than printing an empty paragraph.
@@ -155,7 +178,7 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
         expectedRevision: openedAt,
       })
       if (!response.result.ok) return response.result.error.message
-      props.onSettingsCommitted?.(response.result.value)
+      props.onSettingsCommitted?.(response.result.value, route)
       // The provider now exists. A retry after the key write below fails must
       // not re-run this mutate: the revision it holds is the one this write
       // just superseded, so the Host would answer `settings-conflict` and the
@@ -172,37 +195,50 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
   }
 
   const create = async (): Promise<void> => {
+    props.onBusyChange?.(true)
+    // 提交按钮即将禁用；先把焦点移到弹窗内始终可用的关闭按钮。
+    if (props.embedded === true) {
+      formRef.current?.closest('[role="dialog"]')?.querySelector<HTMLButtonElement>('button[aria-label]')?.focus({ preventScroll: true })
+    }
+    focusAfterFailure.current = false
     setBusy(true)
     setFailure(undefined)
     try {
       const outcome = await createOnce()
       if (outcome !== undefined) {
+        focusAfterFailure.current = true
         setFailure(outcome)
         return
       }
-      await props.onClose(true)
+      await props.onClose(true, route)
     } catch (error) {
       // A transport failure rejects rather than answering; without this the
       // card would stay busy with nothing shown.
+      focusAfterFailure.current = true
       setFailure(messageOf(error))
     } finally {
+      props.onBusyChange?.(false)
       setBusy(false)
     }
   }
 
   return (
-    <div className={styles['editor']}>
-      <div className={styles['editorHeader']}>
+    <div ref={formRef} className={props.embedded === true ? styles['customChannelForm'] : styles['editor']}>
+      {props.embedded === true ? null : <div className={styles['editorHeader']}>
         <span className={styles['editorTitle']}>{t('customTitle')}</span>
-      </div>
+      </div>}
       <div className={styles['field']}>
-        <span className={styles['fieldLabel']}>{t('customRoute')}</span>
+        <label className={styles['fieldLabel']} htmlFor={routeId}>{t('customRoute')}</label>
         <input
+          ref={routeInputRef}
+          id={routeId}
           className={styles['input']}
           type="text"
           value={route}
           placeholder="acme-gateway"
-          aria-label={t('customRoute')}
+          aria-invalid={routeInvalid || routeTaken}
+          aria-describedby={`${routeId}-hint`}
+          autoFocus={props.autoFocusRoute === true}
           disabled={profileDisabled}
           onChange={(event) => { setRoute(event.target.value) }}
         />
@@ -210,38 +246,38 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
       {/* A rejected id reads as a fault, not as guidance — the same split the
           key field below already makes between its failure and its hint. */}
       {routeInvalid || routeTaken
-        ? <p className={styles['error']}>{t(routeInvalid ? 'customRouteInvalid' : 'customRouteTaken')}</p>
-        : <p className={styles['advancedHint']}>{t('customRouteHint')}</p>}
+        ? <p id={`${routeId}-hint`} className={styles['error']}>{t(routeInvalid ? 'customRouteInvalid' : 'customRouteTaken')}</p>
+        : <p id={`${routeId}-hint`} className={styles['advancedHint']}>{t('customRouteHint')}</p>}
       <div className={styles['field']}>
-        <span className={styles['fieldLabel']}>{t('customDisplayName')}</span>
+        <label className={styles['fieldLabel']} htmlFor={displayNameId}>{t('customDisplayName')}</label>
         <input
+          id={displayNameId}
           className={styles['input']}
           type="text"
           value={displayName}
           placeholder={route.length === 0 ? t('customDisplayName') : route}
-          aria-label={t('customDisplayName')}
           disabled={profileDisabled}
           onChange={(event) => { setDisplayName(event.target.value) }}
         />
       </div>
       <div className={styles['field']}>
-        <span className={styles['fieldLabel']}>{t('baseUrl')}</span>
+        <label className={styles['fieldLabel']} htmlFor={baseURLId}>{t('baseUrl')}</label>
         <input
+          id={baseURLId}
           className={styles['input']}
           type="text"
           value={baseURL}
           placeholder="https://gateway.example/v1"
-          aria-label={t('baseUrl')}
           disabled={profileDisabled}
           onChange={(event) => { setBaseURL(event.target.value) }}
         />
       </div>
       <div className={styles['field']}>
-        <span className={styles['fieldLabel']}>{t('customApi')}</span>
+        <label className={styles['fieldLabel']} htmlFor={protocolId}>{t('customApi')}</label>
         <select
+          id={protocolId}
           className={`${styles['input']} ${styles['selectInput']}`}
           value={protocol}
-          aria-label={t('customApi')}
           disabled={profileDisabled}
           onChange={(event) => { setProtocol(event.target.value) }}
         >
@@ -249,14 +285,17 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
         </select>
       </div>
       <div className={styles['field']}>
-        <span className={styles['fieldLabel']}>{t('keyInput')}</span>
+        <label className={styles['fieldLabel']} htmlFor={keyId}>{t('keyInput')}</label>
         <input
+          ref={keyInputRef}
+          id={keyId}
           className={styles['input']}
           type="password"
           autoComplete="off"
           value={keyDraft}
           placeholder={t('keyPlaceholder')}
-          aria-label={t('keyInput')}
+          aria-invalid={keyFailure !== undefined}
+          aria-describedby={keyFailure === undefined ? undefined : `${keyId}-error`}
           disabled={disabled}
           onChange={(event) => { setKeyDraft(event.target.value) }}
         />
@@ -265,7 +304,7 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
             through the provider's own ambient discovery or OAuth. */}
         {keyFailure === undefined
           ? null
-          : <p className={styles['error']}>{t(keyFailure === 'keyBlank' ? 'keyBlankNew' : keyFailure)}</p>}
+          : <p id={`${keyId}-error`} className={styles['error']}>{t(keyFailure === 'keyBlank' ? 'keyBlankNew' : keyFailure)}</p>}
       </div>
       <ModelListEditor
         models={models}
@@ -291,7 +330,7 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
         submitDisabled={disabled || !ready}
         submitLabel="create"
         submitBusyLabel="creating"
-        onCancel={() => { void props.onClose(committed) }}
+        onCancel={() => { void (committed ? props.onClose(true, route) : props.onClose(false)) }}
         onSubmit={() => { void create() }}
       />
     </div>

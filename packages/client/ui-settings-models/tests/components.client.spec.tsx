@@ -52,6 +52,7 @@ const PiAiConfig = Schema.object({
   providers: Schema.dict(Schema.object({
     apiKeyEnv: Schema.string().role('credential-ref'),
     baseURL: Schema.string(),
+    api: Schema.union(['openai-completions', 'openai-responses']),
     reasoning: Schema.union(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']),
     headers: Schema.dict(Schema.string()),
   })),
@@ -245,6 +246,20 @@ function selectChannel(name: string): void {
   fireEvent.click(within(rail).getByRole('button', { name: new RegExp(`^${name}(?:${en.configuredShort})?$`) }))
 }
 
+function openCustomChannel(): HTMLElement {
+  const rail = screen.getByRole('complementary', { name: en.provider })
+  fireEvent.click(within(rail).getByRole('button', { name: en.add }))
+  return screen.getByRole('dialog', { name: en.add })
+}
+
+function fillCustomChannel(dialog: HTMLElement, route = 'acme', key = ''): void {
+  fireEvent.change(within(dialog).getByRole('textbox', { name: en.customRoute }), { target: { value: route } })
+  fireEvent.change(within(dialog).getByRole('textbox', { name: en.baseUrl }), { target: { value: 'https://acme.test/v1' } })
+  if (key !== '') fireEvent.change(within(dialog).getByLabelText(en.keyInput), { target: { value: key } })
+  fireEvent.click(within(dialog).getByRole('button', { name: en.addModel }))
+  fireEvent.change(within(dialog).getByRole('textbox', { name: `${en.modelId} 1` }), { target: { value: 'acme-chat' } })
+}
+
 /** 引导弹窗仍折叠高级设置；渠道详情已常显。 */
 function openAdvanced(): void {
   const summary = screen.queryByText(en.customized)
@@ -252,12 +267,20 @@ function openAdvanced(): void {
 }
 
 describe('ModelsSection', () => {
-  it('keeps provider actions in the models rail without a vision entry', async () => {
+  it('opens the custom route form without installed catalog choices', async () => {
     await mountSection()
     expect(screen.queryByRole('button', { name: en.visionFallback })).toBeNull()
     expect(screen.queryByText(en.general)).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: en.add }))
-    expect(await screen.findByRole('combobox', { name: en.provider })).toBeTruthy()
+    const rail = screen.getByRole('complementary', { name: en.provider })
+    expect(within(rail).getByRole('button', { name: en.add })).toBeTruthy()
+    expect(within(rail).getAllByRole('button', { name: en.add })).toHaveLength(1)
+    const dialog = openCustomChannel()
+    expect(within(dialog).getByRole('textbox', { name: en.customRoute })).toBe(document.activeElement)
+    expect(within(dialog).getByRole('button', { name: en.create })).toBeTruthy()
+    expect(screen.queryByRole('combobox', { name: en.provider })).toBeNull()
+    expect(within(dialog).queryByRole('button', { name: /anthropic/i })).toBeNull()
+    expect(within(dialog).queryByRole('textbox', { name: en.searchProviders })).toBeNull()
+    expect(screen.getByRole('heading', { name: 'DeepSeek' })).toBeTruthy()
   })
 
   it('allows a containing onboarding modal to own the models title', async () => {
@@ -281,10 +304,10 @@ describe('ModelsSection', () => {
     expect(within(screen.getByRole('complementary', { name: en.provider })).getByRole('button', { name: 'openai' })).toBeTruthy()
     expect(within(screen.getByRole('complementary', { name: en.provider })).queryByRole('button', { name: 'anthropic' })).toBeNull()
     expect(screen.getByLabelText<HTMLInputElement>(en.channelName).value).toBe('DeepSeek')
-    expect(screen.getByRole('button', { name: en.add })).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: en.add }))
-    const choice = await screen.findByRole<HTMLSelectElement>('combobox', { name: en.provider })
-    expect([...choice.options].map(option => option.value)).toContain('anthropic')
+    const dialog = openCustomChannel()
+    expect(within(dialog).queryByRole('button', { name: /anthropic/i })).toBeNull()
+    expect(within(dialog).getByRole('textbox', { name: en.customRoute })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'DeepSeek' })).toBeTruthy()
   })
 
   it('shows only credential-confirmed badges and retains always-visible detail', async () => {
@@ -427,8 +450,9 @@ describe('ModelsSection', () => {
     fireEvent.change(screen.getByLabelText(en.channelName), { target: { value: 'New unsaved name' } })
     expect(screen.queryByText(providerCopy(en.savedProvider,
       { provider: 'deepseek-official', displayName: 'DeepSeek' }))).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: en.add }))
-    expect(await screen.findByRole('combobox', { name: en.provider })).toBeTruthy()
+    const dialog = openCustomChannel()
+    expect(within(dialog).getByRole('textbox', { name: en.customRoute })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'DeepSeek' })).toBeTruthy()
   })
 
   it('reuses the provider editor as a required credential-only onboarding form', async () => {
@@ -1099,110 +1123,63 @@ describe('ModelsSection', () => {
     })
   })
 
-  it('adds a dormant provider with a derived reference and stores its key', async () => {
+  it('creates a custom route from the modal and stores its derived credential', async () => {
     const { mutate, set } = await mountSection()
-    fireEvent.click(screen.getByText(en.add))
-    const pick = await screen.findByRole<HTMLSelectElement>('combobox', { name: en.provider })
-    expect([...pick.options].map(option => option.value)).toEqual(['anthropic', 'broken', 'plain'])
-    expect(pick.value).toBe('anthropic')
-    // A dormant profile has no endpoint anywhere: the pi-ai placeholder
-    // falls back to the provider-default wording.
-    openAdvanced()
-    expect(screen.getByLabelText<HTMLInputElement>(en.baseUrl).placeholder).toBe(en.baseUrlDefault)
-    const addKey = screen.getByLabelText<HTMLInputElement>(en.keyInput)
-    expect(addKey.placeholder).toBe(en.keyPlaceholderNative)
-    fireEvent.change(addKey, { target: { value: 'sk-ant' } })
-    fireEvent.click(screen.getByText(en.apply))
-    await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(1) })
-    expect(mutate.mock.calls[0]?.[0]).toEqual({
-      ns: 'llm-pi-ai',
-      ops: [{ op: 'set', path: ['providers', 'anthropic', 'apiKeyEnv'], value: 'ANTHROPIC_API_KEY' }],
-      expectedRevision: 0,
-    })
-    await waitFor(() => { expect(set).toHaveBeenCalledWith({ ref: 'ANTHROPIC_API_KEY', value: 'sk-ant' }) })
-  })
-
-  it('keeps pi-ai provider-native authentication when no key is entered', async () => {
-    const { mutate, set } = await mountSection()
-    fireEvent.click(screen.getByText(en.add))
-    await screen.findByRole('combobox', { name: en.provider })
-    fireEvent.click(screen.getByText(en.apply))
+    const dialog = openCustomChannel()
+    fillCustomChannel(dialog, 'acme', 'sk-acme')
+    expect(within(dialog).getByRole<HTMLButtonElement>('button', { name: en.create }).disabled).toBe(false)
+    fireEvent.click(within(dialog).getByRole('button', { name: en.create }))
     await waitFor(() => { expect(mutate).toHaveBeenCalledOnce() })
     expect(mutate.mock.calls[0]?.[0]).toEqual({
-      ns: 'llm-pi-ai',
-      ops: [{ op: 'set', path: ['providers', 'anthropic'], value: {} }],
-      expectedRevision: 0,
+      ns: 'llm-pi-ai', expectedRevision: 0,
+      ops: [{ op: 'set', path: ['providers', 'acme'], value: {
+        apiKeyEnv: 'ACME_API_KEY', api: 'openai-completions', baseURL: 'https://acme.test/v1',
+        models: [{ id: 'acme-chat', input: ['text', 'image'], reasoningEfforts: {
+          off: null, low: 'low', high: 'high', max: 'max',
+        } }],
+      } }],
     })
+    await waitFor(() => { expect(set).toHaveBeenCalledWith({ ref: 'ACME_API_KEY', value: 'sk-acme' }) })
+    await waitFor(() => { expect(screen.queryByRole('dialog', { name: en.add })).toBeNull() })
+  })
+
+  it('keeps provider-native authentication when a new custom route has no key', async () => {
+    const { mutate, set } = await mountSection()
+    const dialog = openCustomChannel()
+    fillCustomChannel(dialog)
+    fireEvent.click(within(dialog).getByRole('button', { name: en.create }))
+    await waitFor(() => { expect(mutate).toHaveBeenCalledOnce() })
+    const request = mutate.mock.calls[0]?.[0] as { ops: Array<{ value: Record<string, unknown> }> }
+    expect(request.ops[0]?.value).not.toHaveProperty('apiKeyEnv')
     expect(set).not.toHaveBeenCalled()
   })
 
-  it('retries only the credential after refreshed settings already committed', async () => {
-    const committed = wireNamespaces()[2]!
-    const afterSettings: SettingsNamespaceView = {
-      ...committed,
-      value: { providers: {
-        ...(committed.value as { providers: object }).providers,
-        anthropic: { apiKeyEnv: 'ANTHROPIC_API_KEY' },
-      } },
-      user: { providers: {
-        ...(committed.user as { providers: object }).providers,
-        anthropic: { apiKeyEnv: 'ANTHROPIC_API_KEY' },
-      } },
-      revision: 1,
-    }
-    const mutate = vi.fn(() => Promise.resolve(ok(afterSettings)))
+  it('retries only the credential when custom profile creation already committed', async () => {
     const set = vi.fn()
       .mockResolvedValueOnce(fail('credential store unavailable', 'credential-rejected'))
       .mockResolvedValueOnce(ok({}))
-    const { face, controller, mirror } = await mountSection({ mutate, set })
-    fireEvent.click(screen.getByText(en.add))
-    await screen.findByRole('combobox', { name: en.provider })
-    fireEvent.change(screen.getByLabelText<HTMLInputElement>(en.keyInput), { target: { value: 'sk-ant' } })
-    fireEvent.click(screen.getByText(en.apply))
-    await screen.findByText('credential store unavailable')
+    const { mutate } = await mountSection({ set })
+    const dialog = openCustomChannel()
+    fillCustomChannel(dialog, 'acme', 'sk-acme')
+    fireEvent.click(within(dialog).getByRole('button', { name: en.create }))
+    expect(await within(dialog).findByText('credential store unavailable')).toBeTruthy()
     expect(mutate).toHaveBeenCalledOnce()
-    face.settings.describe.mockResolvedValue(ok({
-      writable: true,
-      hasDocument: false,
-      namespaces: wireNamespaces().map(namespace => namespace.ns === 'llm-pi-ai' ? afterSettings : namespace),
-    }))
-    // The refreshed settings answer reaches the page through the mirror's own
-    // refresh (the document commit's invalidation in production).
-    await act(async () => {
-      await mirror.load()
-      await controller.load()
-    })
-    expect(controller.store.getSnapshot().namespaces.get('llm-pi-ai')?.revision).toBe(1)
-    fireEvent.click(screen.getByText(en.apply))
+    expect(within(dialog).getByRole<HTMLInputElement>('textbox', { name: en.customRoute }).disabled).toBe(true)
+    expect(within(dialog).getByLabelText<HTMLInputElement>(en.keyInput).disabled).toBe(false)
+    fireEvent.click(within(dialog).getByRole('button', { name: en.create }))
     await waitFor(() => { expect(set).toHaveBeenCalledTimes(2) })
     expect(mutate).toHaveBeenCalledOnce()
-    expect(set).toHaveBeenLastCalledWith({ ref: 'ANTHROPIC_API_KEY', value: 'sk-ant' })
+    expect(set).toHaveBeenLastCalledWith({ ref: 'ACME_API_KEY', value: 'sk-acme' })
   })
 
-  it('switches the add card target and degrades unknown or broken targets loudly', async () => {
-    await mountSection()
-    fireEvent.click(screen.getByText(en.add))
-    const pick = await screen.findByRole<HTMLSelectElement>('combobox', { name: en.provider })
-    fireEvent.change(pick, { target: { value: 'broken' } })
-    await screen.findByText(/unresolvable settings path/)
-    fireEvent.change(pick, { target: { value: 'plain' } })
-    await waitFor(() => {
-      expect(screen.getAllByText(content => content.includes(en.advancedHint)).length).toBeGreaterThan(0)
-    })
-    // The hint-only card cannot apply anything, and offers no key field.
-    expect(screen.getByText<HTMLButtonElement>(en.apply).disabled).toBe(true)
-    expect(screen.queryAllByLabelText(en.keyInput)).toHaveLength(0)
-  })
-
-  it('surfaces a rejected settings write and never stores the key after it', async () => {
+  it('leaves the custom modal open when settings rejects creation and never stores the key', async () => {
     const { set } = await mountSection({
-      mutate: vi.fn(() => Promise.resolve(fail('llm-pi-ai: unknown pi-ai provider "bogus"'))),
+      mutate: vi.fn(() => Promise.resolve(fail('llm-pi-ai: rejected custom route'))),
     })
-    fireEvent.click(screen.getByText(en.add))
-    await screen.findByRole('combobox', { name: en.provider })
-    fireEvent.change(screen.getByLabelText<HTMLInputElement>(en.keyInput), { target: { value: 'sk-x' } })
-    fireEvent.click(screen.getByText(en.apply))
-    await screen.findByText(/unknown pi-ai provider/)
+    const dialog = openCustomChannel()
+    fillCustomChannel(dialog, 'acme', 'sk-acme')
+    fireEvent.click(within(dialog).getByRole('button', { name: en.create }))
+    expect(await within(dialog).findByText(/rejected custom route/)).toBeTruthy()
     expect(set).not.toHaveBeenCalled()
   })
 
@@ -1418,25 +1395,79 @@ describe('ModelsSection', () => {
     expect(update).not.toHaveBeenCalled()
   })
 
-  it('cancels the add card back to the add button', async () => {
-    await mountSection()
-    fireEvent.click(screen.getByText(en.add))
-    await screen.findByRole('combobox', { name: en.provider })
-    fireEvent.click(screen.getByText(en.cancel))
-    await screen.findByText(en.add)
-    expect(screen.queryByRole('combobox', { name: en.provider })).toBeNull()
+  it('keeps the selected channel draft and returns focus after modal dismissal', async () => {
+    const { mutate } = await mountSection()
+    selectChannel('openai')
+    const url = screen.getByRole<HTMLInputElement>('textbox', { name: en.baseUrl })
+    fireEvent.change(url, { target: { value: 'https://unsaved.test' } })
+    const trigger = within(screen.getByRole('complementary', { name: en.provider }))
+      .getByRole<HTMLButtonElement>('button', { name: en.add })
+    trigger.focus()
+    let dialog = openCustomChannel()
+    fireEvent.change(within(dialog).getByRole('textbox', { name: en.customRoute }), { target: { value: 'discard' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: en.cancel }))
+    expect(screen.queryByRole('dialog', { name: en.add })).toBeNull()
+    expect(document.activeElement).toBe(trigger)
+    expect(screen.getByRole('heading', { name: 'openai' })).toBeTruthy()
+    expect(screen.getByRole<HTMLInputElement>('textbox', { name: en.baseUrl }).value).toBe('https://unsaved.test')
+    dialog = openCustomChannel()
+    expect(within(dialog).getByRole<HTMLInputElement>('textbox', { name: en.customRoute }).value).toBe('')
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('dialog', { name: en.add })).toBeNull()
+    expect(document.activeElement).toBe(trigger)
+    dialog = openCustomChannel()
+    fireEvent.click(dialog.previousElementSibling as Element)
+    expect(screen.queryByRole('dialog', { name: en.add })).toBeNull()
+    expect(document.activeElement).toBe(trigger)
+    expect(screen.getByRole<HTMLInputElement>('textbox', { name: en.baseUrl }).value).toBe('https://unsaved.test')
+    expect(mutate).not.toHaveBeenCalled()
   })
 
-  it('cancels add and returns to the previously selected channel detail', async () => {
-    await mountFirstRun()
-    expect(screen.getByRole('heading', { name: 'DeepSeek' })).toBeTruthy()
-    fireEvent.click(screen.getByText(en.add))
-    expect(await screen.findByRole('combobox', { name: en.provider })).toBeTruthy()
-    fireEvent.change(screen.getByLabelText<HTMLInputElement>(en.keyInput), { target: { value: 'discard' } })
-    fireEvent.click(screen.getByRole('button', { name: en.cancel }))
-    expect(screen.queryByRole('combobox', { name: en.provider })).toBeNull()
-    expect(screen.getByRole('heading', { name: 'DeepSeek' })).toBeTruthy()
-    expect(screen.getByLabelText<HTMLInputElement>(en.keyInput).value).toBe('')
+  it('keeps custom creation available when every installed route is configured', async () => {
+    const scripted = scriptedFace()
+    scripted.face.llm.providers.mockResolvedValue(ok({ providers: [
+      { provider: 'deepseek-official', displayName: 'DeepSeek', settingsNs: 'llm-deepseek', settingsPath: [], active: true },
+      { provider: 'openai', displayName: 'openai', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai'], active: true },
+    ] }))
+    await mountFace(scripted)
+    const dialog = openCustomChannel()
+    expect(within(dialog).getByRole('textbox', { name: en.customRoute })).toBeTruthy()
+    expect(within(dialog).queryByRole('button', { name: 'anthropic' })).toBeNull()
+  })
+
+  it('disables the add action when no installed or custom route can be added', async () => {
+    const scripted = scriptedFace({ namespaces: () => [wireNamespaces()[0]!] })
+    scripted.face.llm.providers.mockResolvedValue(ok({ providers: [
+      { provider: 'deepseek-official', displayName: 'DeepSeek', settingsNs: 'llm-deepseek', settingsPath: [], active: true },
+    ] }))
+    await mountFace(scripted)
+    const rail = screen.getByRole('complementary', { name: en.provider })
+    const add = within(rail).getByRole<HTMLButtonElement>('button', { name: en.add })
+    expect(add.disabled).toBe(true)
+    fireEvent.click(add)
+    expect(screen.queryByRole('dialog', { name: en.add })).toBeNull()
+  })
+
+  it('opens the custom form above onboarding on a narrow viewport', async () => {
+    const { view, injected } = await mountFirstRun()
+    const oldWidth = window.innerWidth
+    try {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: 375 })
+      fireEvent(window, new Event('resize'))
+      view.rerender(<div role="dialog" aria-label={en.onboardingTitle}>
+        <ModelsSection {...injected} hideHeader />
+      </div>)
+      const dialog = openCustomChannel()
+      expect(screen.getByRole('dialog', { name: en.onboardingTitle })).toBeTruthy()
+      expect(within(dialog).getByRole('textbox', { name: en.customRoute })).toBeTruthy()
+      fireEvent.click(within(dialog).getByRole('button', { name: en.cancel }))
+      expect(screen.queryByRole('dialog', { name: en.add })).toBeNull()
+      expect(screen.getByRole('dialog', { name: en.onboardingTitle })).toBeTruthy()
+      expect(screen.getByRole('heading', { name: 'DeepSeek' })).toBeTruthy()
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: oldWidth })
+      fireEvent(window, new Event('resize'))
+    }
   })
 
   it('loads on first render of an idle controller', async () => {

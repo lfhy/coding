@@ -26,12 +26,9 @@
     - textbox "搜索模型平台…"
     - button "DeepSeek 已配置"
     - button "minimax-cn 已配置"
-    - button "添加提供方":
+    - button "添加渠道":
       - img
-      - text: 添加提供方
-    - button "添加自定义提供方":
-      - img
-      - text: 添加自定义提供方
+      - text: 添加渠道
   - main:
     - status: 已保存 minimax-cn。
     - heading "minimax-cn" [level=2]

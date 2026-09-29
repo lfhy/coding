@@ -25,12 +25,9 @@
     - img
     - textbox "搜索模型平台…"
     - button "DeepSeek 已配置"
-    - button "添加提供方":
+    - button "添加渠道":
       - img
-      - text: 添加提供方
-    - button "添加自定义提供方":
-      - img
-      - text: 添加自定义提供方
+      - text: 添加渠道
   - main:
     - heading "DeepSeek" [level=2]
     - text: API 密钥

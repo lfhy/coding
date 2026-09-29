@@ -16,6 +16,7 @@ afterEach(cleanup)
 const providerSchema = Schema.object({ providers: Schema.dict(Schema.object({
   apiKeyEnv: Schema.string().role('credential-ref'),
   baseURL: Schema.string(),
+  api: Schema.union(['openai-completions']),
   models: Schema.array(Schema.object({ id: Schema.string().required() })),
 })) })
 const defaultSchema = Schema.object({ provider: Schema.string(), model: Schema.string(), reasoningEffort: Schema.string() })
@@ -134,7 +135,7 @@ describe('configured channel projection', () => {
     expect(within(rail).queryByText(en.configuredShort) !== null).toBe(options.credential?.configured === true)
   })
 
-  it('keeps an empty channel list empty until adding a catalog profile explicitly', async () => {
+  it('keeps an empty channel list empty when the custom form opens', async () => {
     const { api, mutate } = await mount()
     const rail = screen.getByRole('complementary', { name: en.provider })
     expect(within(rail).queryByRole('button', { name: 'Existing' })).toBeNull()
@@ -143,26 +144,20 @@ describe('configured channel projection', () => {
     expect(screen.queryByLabelText(en.keyInput)).toBeNull()
     expect(screen.getByText(en.intro)).toBeTruthy()
     fireEvent.click(within(rail).getByRole('button', { name: en.add }))
-    const picker = screen.getByRole<HTMLSelectElement>('combobox', { name: en.provider })
-    expect([...picker.options].map(option => option.value)).toEqual(['existing', 'catalog'])
-    fireEvent.change(picker, { target: { value: 'catalog' } })
-    fireEvent.click(screen.getByRole('button', { name: en.apply }))
-    await waitFor(() => {
-      expect(within(rail).getByRole('button', { name: 'Catalog' }).getAttribute('aria-current')).toBe('true')
-    })
-    expect(mutate).toHaveBeenCalledWith({ ns: 'llm-pi-ai', expectedRevision: 0,
-      ops: [{ op: 'set', path: ['providers', 'catalog'], value: {} }] })
+    const dialog = screen.getByRole('dialog', { name: en.add })
+    expect(within(dialog).getByRole('textbox', { name: en.customRoute })).toBeTruthy()
+    expect(within(dialog).queryByRole('button', { name: /Existing|Catalog/ })).toBeNull()
+    expect(mutate).not.toHaveBeenCalled()
+    fireEvent.click(within(dialog).getByRole('button', { name: en.cancel }))
+    expect(screen.queryByRole('dialog', { name: en.add })).toBeNull()
     expect(api.credentials.set).not.toHaveBeenCalled()
     expect(within(rail).queryByRole('button', { name: 'Existing' })).toBeNull()
   })
 
-  it('can configure the first channel and select its default model during onboarding', async () => {
-    const { complete, mutate } = await mount({ onboarding: true })
+  it('selects the default model from a configured channel during onboarding', async () => {
+    const { complete, mutate } = await mount({ onboarding: true, profile: {} })
     expect(screen.getByRole('dialog', { name: en.onboardingTitle })).toBeTruthy()
     expect(complete).not.toHaveBeenCalled()
-    expect(screen.queryByLabelText(en.keyInput)).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: en.add }))
-    fireEvent.click(screen.getByRole('button', { name: en.apply }))
     const models = screen.getByRole<HTMLSelectElement>('combobox', { name: en.onboardingModel })
     await waitFor(() => { expect([...models.options].map(option => option.value)).toContain('existing\u0000chat') })
     expect(screen.getByRole('complementary', { name: en.provider }).textContent).toContain('Existing')

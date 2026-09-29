@@ -25,62 +25,49 @@
     - img
     - textbox "搜索模型平台…"
     - button "DeepSeek 已配置"
-    - button "添加提供方":
+    - button "添加渠道":
       - img
-      - text: 添加提供方
-    - button "添加自定义提供方":
-      - img
-      - text: 添加自定义提供方
+      - text: 添加渠道
   - main:
-    - text: 提供方
-    - combobox "提供方":
-      - option "amazon-bedrock"
-      - option "ant-ling"
-      - option "anthropic"
-      - option "azure-openai-responses"
-      - option "cerebras"
-      - option "cloudflare-ai-gateway"
-      - option "cloudflare-workers-ai"
-      - option "deepseek"
-      - option "fireworks"
-      - option "github-copilot"
-      - option "google"
-      - option "google-vertex"
-      - option "groq"
-      - option "huggingface"
-      - option "kimi-coding"
-      - option "minimax"
-      - option "minimax-cn" [selected]
-      - option "mistral"
-      - option "moonshotai"
-      - option "moonshotai-cn"
-      - option "nvidia"
-      - option "openai"
-      - option "opencode"
-      - option "opencode-go"
-      - option "openrouter"
-      - option "qwen-token-plan"
-      - option "qwen-token-plan-cn"
-      - option "together"
-      - option "vercel-ai-gateway"
-      - option "xai"
-      - option "xiaomi"
-      - option "xiaomi-token-plan-ams"
-      - option "xiaomi-token-plan-cn"
-      - option "xiaomi-token-plan-sgp"
-      - option "zai"
-      - option "zai-coding-cn"
-    - text: minimax-cn API 密钥
+    - heading "DeepSeek" [level=2]
+    - text: API 密钥
     - textbox "API 密钥":
-      - /placeholder: 输入 API 密钥，或留空使用环境认证
+      - /placeholder: 已配置——输入新值可替换
+    - text: 渠道名称
+    - textbox "渠道名称": DeepSeek
     - text: API 地址
     - textbox "API 地址":
-      - /placeholder: 提供方默认
+      - /placeholder: https://api.deepseek.com
     - region "模型目录":
       - text: 模型目录 正在使用适配器默认模型
       - button "获取可用模型":
         - img
         - text: 获取可用模型
+      - region "模型目录":
+        - textbox "模型 ID 1":
+          - /placeholder: 模型 ID
+          - text: deepseek-v4-flash
+        - textbox "模型名称 1":
+          - /placeholder: 模型名称
+          - text: DeepSeek-V4-Flash
+        - img "无视觉"
+        - img "推理"
+        - button "模型设置 1":
+          - img
+        - button "删除模型 1":
+          - img
+        - textbox "模型 ID 2":
+          - /placeholder: 模型 ID
+          - text: deepseek-v4-pro
+        - textbox "模型名称 2":
+          - /placeholder: 模型名称
+          - text: DeepSeek-V4-Pro
+        - img "无视觉"
+        - img "推理"
+        - button "模型设置 2":
+          - img
+        - button "删除模型 2":
+          - img
       - button "添加模型":
         - img
         - text: 添加模型

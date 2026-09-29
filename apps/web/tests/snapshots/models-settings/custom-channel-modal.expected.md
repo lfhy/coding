@@ -1,0 +1,33 @@
+- dialog "添加渠道":
+  - heading "添加渠道" [level=2]
+  - button "关闭":
+    - img
+  - paragraph: 设置唯一的 Provider ID、API 协议、地址和至少一个模型；API 密钥可选。
+  - text: Provider ID
+  - textbox "Provider ID":
+    - /placeholder: acme-gateway
+  - paragraph: 以小写字母开头的标识，在请求中唯一标识该提供方，并用于派生凭据名。
+  - text: 显示名称
+  - textbox "显示名称"
+  - text: API 地址
+  - textbox "API 地址":
+    - /placeholder: https://gateway.example/v1
+  - text: API 协议
+  - combobox "API 协议":
+    - option "openai-completions" [selected]
+    - option "openai-responses"
+    - option "anthropic-messages"
+  - text: API 密钥
+  - textbox "API 密钥":
+    - /placeholder: 输入 API 密钥
+  - region "模型目录":
+    - text: 模型目录
+    - button "获取可用模型" [disabled]:
+      - img
+      - text: 获取可用模型
+    - paragraph: 模型选择器中将不显示任何模型；目录外 ID 仍可直接发送。
+    - button "添加模型":
+      - img
+      - text: 添加模型
+  - button "取消"
+  - button "创建渠道" [disabled]

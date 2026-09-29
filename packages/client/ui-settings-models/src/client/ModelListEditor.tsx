@@ -661,6 +661,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
       </button>
       {failure !== undefined ? <p className={styles['error']}>{failure}</p> : null}
       <Modal
+        trapFocus
         open={candidates !== undefined}
         onClose={closePicker}
         title={props.providerName === undefined ? t('fetchTitle') : `${props.providerName} ${t('models')}`}

@@ -27,19 +27,16 @@
     - button "DeepSeek 已配置"
     - button "cerebras 已配置"
     - button "minimax-cn 已配置"
-    - button "Acme Gateway"
-    - button "添加提供方":
+    - button "Acme Gateway 已配置"
+    - button "添加渠道":
       - img
-      - text: 添加提供方
-    - button "添加自定义提供方":
-      - img
-      - text: 添加自定义提供方
+      - text: 添加渠道
   - main:
     - heading "Acme Gateway" [level=2]
     - button "删除"
     - text: API 密钥
     - textbox "API 密钥":
-      - /placeholder: 输入 API 密钥，或留空使用环境认证
+      - /placeholder: 已配置——输入新值可替换
     - text: 显示名称
     - textbox "显示名称":
       - /placeholder: acme-gateway
