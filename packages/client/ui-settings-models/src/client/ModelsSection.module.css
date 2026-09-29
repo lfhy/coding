@@ -541,7 +541,7 @@
   opacity: 0.4;
 }
 
-/* The delete glyph keeps the danger tint the rest of the section uses. */
+/* 删除操作沿用该分区的危险状态色。 */
 .iconButtonDanger:hover:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover-danger);
   color: var(--dsw-alias-state-error-primary);
@@ -558,44 +558,21 @@
   background: var(--dsw-alias-bg-module-platform);
 }
 
-/* 行外固定悬浮层：不进入可横向滚动模型表的布局与 paint 裁剪。 */
-.modelSettingsPopover {
-  position: fixed;
-  z-index: 1100;
+/* 独立窗口沿用共享 Modal 几何；只在此规定模型表单的宽度和滚动范围。 */
+.modelSettingsDialog {
   box-sizing: border-box;
-  width: 380px;
-  max-width: calc(100vw - 24px);
-  max-height: calc(100vh - 24px);
+  width: min(500px, calc(100vw - 48px));
+  min-height: min(480px, calc(100vh - 48px));
+  max-height: calc(100vh - 48px);
+  overflow: visible;
+  justify-content: space-between;
+}
+
+.modelSettingsContent {
+  min-height: 0;
   overflow-y: auto;
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  border: 1px solid var(--dsw-alias-border-inverted);
-  border-radius: 12px;
-  background: var(--dsw-alias-bg-layer-3);
-  box-shadow: var(--dsw-shadow-lv3);
-  color: var(--dsw-alias-label-primary);
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
-}
-
-.modelAdvancedHeader {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-}
-
-.modelAdvancedTitle {
-  font-size: 14px;
-  line-height: 22px;
-  font-weight: 500;
-}
-
-.modelAdvancedHeader .iconButton:focus-visible {
-  outline: 2px solid var(--dsw-alias-state-business-primary);
-  outline-offset: 2px;
 }
 
 .modelAdvancedFields {
@@ -603,92 +580,84 @@
   grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr));
   gap: 16px 12px;
 }
-
-.modelToggle {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 28px;
-  color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
-  line-height: 18px;
-  cursor: pointer;
-}
-
-.modelCheckboxInput {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-}
-
-.modelCheckboxBox {
-  box-sizing: border-box;
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 16px;
-  height: 16px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 4px;
-  background: var(--dsw-alias-bg-layer-1);
-  color: var(--dsw-alias-label-primary-foreground);
-}
-
-.modelCheckboxBox svg { opacity: 0; }
-.modelCheckboxInput:checked + .modelCheckboxBox {
-  border-color: var(--dsw-alias-state-business-primary);
-  background: var(--dsw-alias-state-business-primary);
-}
-.modelCheckboxInput:checked + .modelCheckboxBox svg { opacity: 1; }
-.modelCheckboxInput:focus-visible + .modelCheckboxBox {
+.modelAdvancedFields:focus-visible {
   outline: 2px solid var(--dsw-alias-state-business-primary);
   outline-offset: 2px;
+  border-radius: 8px;
 }
-.modelToggle:has(input:disabled) { cursor: default; opacity: .5; }
 
-.reasoningDropdown { grid-column: 1 / -1; min-width: 0; }
-.reasoningDropdown summary {
+.capabilityToggle {
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   gap: 8px;
-  box-sizing: border-box;
-  min-height: 36px;
-  padding: 0 10px;
+  min-height: 40px;
+  min-width: 0;
+  padding: 6px 10px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
-  line-height: 18px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
   cursor: pointer;
-  list-style: none;
 }
-.reasoningDropdown summary::-webkit-details-marker { display: none; }
-.reasoningDropdown summary:focus-visible {
+.capabilityToggle[aria-pressed='true'] {
+  color: var(--dsw-alias-label-primary);
+  border-color: var(--dsw-alias-state-business-primary);
+}
+.capabilityToggle svg { flex: none; color: var(--dsw-alias-label-dimmed); }
+.capabilityToggle[aria-pressed='true'] svg { color: var(--dsw-alias-state-business-primary); }
+.capabilityToggle:hover:not(:disabled),
+.reasoningTrigger:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+.capabilityToggle:focus-visible,
+.reasoningTrigger:focus-visible {
   outline: 2px solid var(--dsw-alias-state-business-primary);
   outline-offset: 2px;
 }
-.reasoningDropdown summary[aria-disabled='true'] { cursor: default; opacity: .6; }
-.reasoningDropdown summary svg { flex: none; }
-.reasoningDropdown[open] summary svg { transform: rotate(180deg); }
-.reasoningSelection {
-  min-width: 0;
-  margin-left: auto;
-  overflow: hidden;
-  color: var(--dsw-alias-label-tertiary);
-  white-space: nowrap;
-  text-overflow: ellipsis;
+.capabilityToggle:disabled,
+.reasoningTrigger:disabled { cursor: default; opacity: .5; }
+.capabilityToggle span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.reasoningField { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.reasoningDropdown { display: flex; width: 100%; min-width: 0; }
+.reasoningTrigger {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 42px;
+  padding: 6px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  cursor: pointer;
 }
-.reasoningOptions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 4px 12px;
-  padding: 8px 10px 0;
+.reasoningTrigger > svg { flex: none; margin-left: auto; color: var(--dsw-alias-label-tertiary); }
+.reasoningTrigger[aria-expanded='true'] > svg { transform: rotate(180deg); }
+.reasoningSelection {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+.reasoningChip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 7px;
+  border-radius: 16px;
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 18px;
 }
 
-.modelSettingsPopover .input { height: 38px; }
+.modelSettingsDialog .input { height: 38px; }
 
 .modelField {
   display: flex;
@@ -701,6 +670,13 @@
   font-size: 12px;
   line-height: 18px;
 }
+
+.modelFieldError {
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 12px;
+  line-height: 18px;
+}
+.modelField .input[aria-invalid='true'] { border-color: var(--dsw-alias-state-error-primary); }
 
 .modelEmpty {
   padding: 12px;
@@ -861,6 +837,37 @@ select.input {
 }
 
 .candidateLabel:has(input:disabled) { cursor: default; opacity: .6; }
+
+.modelCheckboxInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.modelCheckboxBox {
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary-foreground);
+}
+
+.modelCheckboxBox svg { opacity: 0; }
+.modelCheckboxInput:checked + .modelCheckboxBox {
+  border-color: var(--dsw-alias-state-business-primary);
+  background: var(--dsw-alias-state-business-primary);
+}
+.modelCheckboxInput:checked + .modelCheckboxBox svg { opacity: 1; }
+.modelCheckboxInput:focus-visible + .modelCheckboxBox {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+}
 
 .candidateAvatar {
   display: grid;
@@ -1069,15 +1076,10 @@ select.input {
 .expandedChevron { transform: rotate(180deg); }
 .capabilityControls {
   grid-column: 1 / -1;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 20px;
-  color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
-  line-height: 18px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
 }
-.capabilityControls label { display: inline-flex; align-items: center; }
-.capabilityControls input:not(.modelCheckboxInput) { accent-color: var(--dsw-alias-state-business-primary); }
 
 .fetchDialog {
   width: min(1500px, calc(100vw - 96px));

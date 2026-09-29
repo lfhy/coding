@@ -4,13 +4,12 @@
  * 端点不可发现时显示诊断，手工模型编辑仍可使用。
  */
 
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
-import type { CSSProperties, ReactNode } from 'react'
-import { createPortal } from 'react-dom'
+import { useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import type { DiscoveredModelView, IApiClient } from '@deepseek-ai/dsh-api-remotes/client'
-import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Menu, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
-  IconCheckOutline14, IconChevronDownOutline14, IconCloseOutline16, IconPlusOutline16, IconRefreshOutline16,
+  Icon, IconCheckOutline14, IconChevronDownOutline14, IconCloseOutline16, IconPlusOutline16, IconRefreshOutline16,
   IconQuestionOutline14, IconSearchOutline16, IconTrashOutline16,
 } from '@deepseek-ai/dsh-client-ui-icons'
 import { formatCapacity, parseCapacity } from './DeepSeekModelsEditor.tsx'
@@ -64,6 +63,13 @@ function textOf(model: ModelDraft, key: string): string {
 function numberOf(model: ModelDraft, key: string): number | undefined {
   const value = model[key]
   return typeof value === 'number' ? value : undefined
+}
+
+/** 局部草稿只替换表单能编辑的字段，保留目录行里未展示的提供方扩展字段。 */
+function withModelFields(model: ModelDraft, next: Record<string, unknown>): ModelDraft {
+  const cleared = new Set(Object.entries(next)
+    .filter(([, value]) => value === undefined || value === '').map(([key]) => key))
+  return Object.fromEntries(Object.entries({ ...model, ...next }).filter(([key]) => !cleared.has(key)))
 }
 
 /** What an interrogation needs, taken from the live form. */
@@ -186,121 +192,95 @@ export function modelFamily(id: string): string {
  */
 export function ModelListEditor(props: ModelListEditorProps): ReactNode {
   const { models, onChange, probe, api, t, disabled } = props
-  const advancedId = useId()
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<string | undefined>(undefined)
   const [candidates, setCandidates] = useState<readonly DiscoveredModelView[] | undefined>(undefined)
   const [candidateQuery, setCandidateQuery] = useState('')
   const fetchButton = useRef<HTMLButtonElement>(null)
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set())
-  // 同时只编辑一行；锚点和表单不进入目录表格的布局或裁剪上下文。
+  // 同时只编辑一行；草稿留在独立窗口中，不进入模型目录表格的布局。
   const [activeIndex, setActiveIndex] = useState<number | null>(null)
   const anchorRef = useRef<HTMLButtonElement | null>(null)
-  const panelRef = useRef<HTMLElement>(null)
-  const firstFieldRef = useRef<HTMLInputElement>(null)
+  const modalBodyRef = useRef<HTMLDivElement>(null)
+  const firstFieldRef = useRef<HTMLButtonElement>(null)
+  const reasoningToggleRef = useRef<HTMLButtonElement>(null)
   const openedIndex = activeIndex !== null && activeIndex < models.length ? activeIndex : null
-  const [panelPosition, setPanelPosition] = useState<CSSProperties | null>(null)
   const [levelsOpen, setLevelsOpen] = useState(false)
-  // 宽屏优先放在触发器旁；档位展开改变表单高度时，同步重新限制在视口内。
-  useLayoutEffect(() => {
-    if (openedIndex === null) { setPanelPosition(null); return }
-    const place = (): void => {
-      const rect = anchorRef.current?.getBoundingClientRect()
-      if (rect === undefined) return
-      const width = panelRef.current?.offsetWidth ?? 0
-      const height = panelRef.current?.offsetHeight ?? 0
-      const margin = 12
-      const gap = 8
-      const clamp = (value: number, extent: number, viewport: number): number =>
-        Math.min(Math.max(value, margin), Math.max(margin, viewport - extent - margin))
-      if (window.innerWidth >= 620 && width > 0 && rect.left - margin >= width + gap) {
-        setPanelPosition({ left: rect.left - width - gap, top: clamp(rect.top, height, window.innerHeight) })
-      } else if (window.innerWidth >= 620 && width > 0
-        && window.innerWidth - rect.right - margin >= width + gap) {
-        setPanelPosition({ left: rect.right + gap, top: clamp(rect.top, height, window.innerHeight) })
-      } else {
-        setPanelPosition({ left: clamp(rect.left, width, window.innerWidth),
-          top: clamp(rect.bottom + gap, height, window.innerHeight) })
-      }
-    }
-    place()
-    window.addEventListener('scroll', place, true)
-    window.addEventListener('resize', place)
-    const panel = panelRef.current
-    const observer = typeof ResizeObserver !== 'undefined' && panel !== null ? new ResizeObserver(place) : null
-    if (panel !== null) observer?.observe(panel)
-    return () => {
-      observer?.disconnect()
-      window.removeEventListener('scroll', place, true)
-      window.removeEventListener('resize', place)
-    }
-  }, [openedIndex, models.length, levelsOpen])
-  // 容量输入保留每个字段的原文，避免键入 1000 时中途改写为 1K；无效输入在失焦后仍可见，
-  // 也不会因编辑另一行或另一字段而丢失。
-  const [editing, setEditing] = useState<ReadonlyMap<string, string>>(new Map())
-  const [rememberedReasoning, setRememberedReasoning] = useState<ReadonlyMap<number, unknown>>(new Map())
-  const levelsRef = useRef<HTMLDetailsElement>(null)
-  const levelsTriggerRef = useRef<HTMLElement>(null)
-
-  /** 容量输入的缓存键；删除行后须同步调整行号。 */
-  const bufferKey = (index: number, field: CapacityField): string => `${String(index)}:${field}`
-
-  const editCapacity = (index: number, field: CapacityField, text: string): void => {
-    setEditing(current => new Map(current).set(bufferKey(index, field), text))
-    patch(index, { [field]: parseCapacity(text) })
+  const [draft, setDraft] = useState<ModelDraft | null>(null)
+  const [draftDirty, setDraftDirty] = useState(false)
+  const [capacityDraft, setCapacityDraft] = useState<Partial<Record<CapacityField, string>>>({})
+  const [rememberedReasoning, setRememberedReasoning] = useState<unknown>(undefined)
+  const levelsTriggerRef = useRef<HTMLButtonElement>(null)
+  const invalidCapacity = (field: CapacityField): boolean => {
+    const value = draft === null ? undefined : numberOf(draft, field)
+    return value !== undefined && (!Number.isSafeInteger(value) || value <= 0)
+  }
+  const editCapacity = (field: CapacityField, text: string): void => {
+    setDraftDirty(true)
+    setCapacityDraft(current => ({ ...current, [field]: text }))
+    setDraft(current => current === null ? null : withModelFields(current, { [field]: parseCapacity(text) }))
   }
 
-  /** 输入期间显示缓存原文，否则格式化已存容量。 */
-  const capacityText = (model: ModelDraft, index: number, field: CapacityField): string =>
-    editing.get(bufferKey(index, field)) ?? capacitySpelling(numberOf(model, field))
+  /** 输入期间保持原文，避免把正在键入的 1000 中途改写为 1K。 */
+  const capacityText = (model: ModelDraft, field: CapacityField): string =>
+    capacityDraft[field] ?? capacitySpelling(numberOf(model, field))
 
   const effortsOf = (model: ModelDraft): readonly string[] =>
     Array.isArray(model['reasoningEfforts'])
       ? model['reasoningEfforts'] as string[]
       : model['reasoningEfforts'] === undefined ? props.inheritedReasoningEfforts ?? [] : []
 
-  /** 删除目标行的输入缓存，并将后续行号前移。 */
-  const reindexOnRemove = (
-    current: ReadonlyMap<string, string>,
-    index: number,
-  ): Map<string, string> => {
-    const next = new Map<string, string>()
-    for (const [key, value] of current) {
-      const at = Number(key.slice(0, key.indexOf(':')))
-      if (at === index) continue
-      // 字段名不随行号改变。
-      next.set(at > index ? key.replace(/^\d+/, String(at - 1)) : key, value)
-    }
-    return next
-  }
-
   const closeSettings = (): void => {
     setLevelsOpen(false)
     setActiveIndex(null)
+    setDraft(null)
+    setDraftDirty(false)
+    setCapacityDraft({})
+    setRememberedReasoning(undefined)
     if (anchorRef.current?.isConnected === true) anchorRef.current.focus({ preventScroll: true })
+  }
+
+  const openSettings = (index: number, anchor: HTMLButtonElement): void => {
+    const model = models[index]
+    if (model === undefined) return
+    anchorRef.current = anchor
+    setLevelsOpen(false)
+    setCapacityDraft({})
+    setDraftDirty(false)
+    setRememberedReasoning(undefined)
+    setDraft({ ...model })
+    setActiveIndex(index)
+  }
+
+  const saveSettings = (): void => {
+    if (openedIndex === null || draft === null || disabled
+      || invalidCapacity('contextWindow') || invalidCapacity('maxTokens')) return
+    if (draftDirty) {
+      // 行 ID／名称仍可在窗口打开期间编辑；提交只覆盖模型设置窗口拥有的字段。
+      const inputKey = probe.settingsNs === 'llm-deepseek' ? 'inputModalities' : 'input'
+      const fields = { [inputKey]: draft[inputKey], reasoningEfforts: draft['reasoningEfforts'],
+        contextWindow: draft['contextWindow'], maxTokens: draft['maxTokens'] }
+      onChange(models.map((model, index) => index === openedIndex ? withModelFields(model, fields) : model))
+    }
+    closeSettings()
+  }
+
+  const patchDraft = (next: Record<string, unknown>): void => {
+    setDraftDirty(true)
+    setDraft(current => current === null ? null : withModelFields(current, next))
   }
 
   useEffect(() => {
     if (openedIndex === null) return
     if (firstFieldRef.current?.disabled === false) firstFieldRef.current.focus({ preventScroll: true })
-    else panelRef.current?.querySelector('button')?.focus({ preventScroll: true })
+    else modalBodyRef.current?.focus({ preventScroll: true })
   }, [openedIndex])
 
   useEffect(() => {
     if (openedIndex === null) return
-    const outside = (event: PointerEvent): void => {
-      if (!(event.target instanceof Node)) return
-      if (anchorRef.current?.contains(event.target)) return
-      if (panelRef.current?.contains(event.target)) {
-        if (levelsOpen && !levelsRef.current?.contains(event.target)) setLevelsOpen(false)
-        return
-      }
-      if (levelsOpen) { setLevelsOpen(false); return }
-      closeSettings()
-    }
     const escape = (event: KeyboardEvent): void => {
       if (event.key !== 'Escape') return
-      // 设置外壳也监听 Escape；只让当前最上层的悬浮表单响应。
+      // 内层菜单或窗口先消费 Escape，不能再关闭后方的设置窗口。
       event.preventDefault()
       event.stopImmediatePropagation()
       if (levelsOpen) {
@@ -310,31 +290,14 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
       }
       closeSettings()
     }
-    const scroll = (event: Event): void => {
-      if (event.target instanceof Node && panelRef.current?.contains(event.target)) return
-      closeSettings()
-    }
-    document.addEventListener('pointerdown', outside)
     document.addEventListener('keydown', escape, true)
-    document.addEventListener('scroll', scroll, true)
     return () => {
-      document.removeEventListener('pointerdown', outside)
       document.removeEventListener('keydown', escape, true)
-      document.removeEventListener('scroll', scroll, true)
     }
   }, [openedIndex, levelsOpen])
 
   const patch = (index: number, next: Record<string, unknown>): void => {
-    onChange(models.map((model, at) => {
-      if (at !== index) return model
-      // 保留未编辑字段，但清空的可选字段必须从 profile 删除，不能留下 schema 拒绝的空值。
-      const cleared = new Set(
-        Object.entries(next).filter(([, value]) => value === undefined || value === '').map(([key]) => key),
-      )
-      return Object.fromEntries(
-        Object.entries({ ...model, ...next }).filter(([key]) => !cleared.has(key)),
-      )
-    }))
+    onChange(models.map((model, at) => at === index ? withModelFields(model, next) : model))
   }
 
   const fetchModels = async (): Promise<void> => {
@@ -509,13 +472,11 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                 aria-label={`${t('modelAdvanced')} ${index + 1}`}
                 aria-haspopup="dialog"
                 aria-expanded={openedIndex === index}
-                aria-controls={openedIndex === index ? `${advancedId}-${index}` : undefined}
                 title={t('modelAdvanced')}
                 ref={openedIndex === index ? anchorRef : undefined}
                 onClick={(event) => {
-                  anchorRef.current = event.currentTarget
                   if (openedIndex === index) closeSettings()
-                  else { setLevelsOpen(false); setActiveIndex(index) }
+                  else openSettings(index, event.currentTarget)
                 }}
               >
                 <IconChevron open={openedIndex === index} />
@@ -531,14 +492,10 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                   // 删除当前行时关闭表单；删去前面的行则跟随原有模型前移。
                   setActiveIndex(current => current === null || current === index
                     ? null : current > index ? current - 1 : current)
-                  setEditing(current => reindexOnRemove(current, index))
-                  setRememberedReasoning((current) => {
-                    const next = new Map<number, unknown>()
-                    for (const [at, selection] of current) {
-                      if (at !== index) next.set(at > index ? at - 1 : at, selection)
-                    }
-                    return next
-                  })
+                  if (openedIndex === index) {
+                    setDraft(null)
+                    setLevelsOpen(false)
+                  }
                 }}
               >
                 <IconTrash />
@@ -547,123 +504,153 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
           </div>
         ))}</div>
       </div> : null}
-      {openedIndex !== null && createPortal(
-        <section id={`${advancedId}-${openedIndex}`} ref={panelRef} className={styles['modelSettingsPopover']} role="dialog"
-          aria-label={`${t('modelAdvanced')} ${openedIndex + 1}`}
-          style={panelPosition ?? { visibility: 'hidden', left: 0, top: 0 }}>
-          <div className={styles['modelAdvancedHeader']}>
-            <span className={styles['modelAdvancedTitle']}>{t('modelAdvanced')}</span>
-            <button type="button" className={styles['iconButton']} aria-label={t('close')} title={t('close')}
-              onClick={() => { closeSettings() }}><IconCloseOutline16 size={16} /></button>
-          </div>
-          <div className={styles['modelAdvancedFields']}>
-            {(() => {
-              const index = openedIndex
-              const model = models[index]
-              if (model === undefined) return null
-              const deepseek = probe.settingsNs === 'llm-deepseek'
-              const declared = model['reasoningEfforts']
-              const reasoningOn = deepseek ? effortsOf(model).some(level => level !== 'off')
-                : typeof declared === 'object' && declared !== null && !Array.isArray(declared)
+      {openedIndex !== null && <Modal open trapFocus onClose={closeSettings}
+        title={t('modelAdvanced')} ariaLabel={`${t('modelAdvanced')} ${openedIndex + 1}`}
+        closeLabel={t('close')}
+        className={styles['modelSettingsDialog'] ?? ''}
+        contentClassName={styles['modelSettingsContent'] ?? ''}
+        footer={<>
+          <Button variant="outline" onClick={closeSettings}>{t('cancel')}</Button>
+          <Button variant="primary"
+            disabled={disabled || invalidCapacity('contextWindow') || invalidCapacity('maxTokens')}
+            onClick={saveSettings}>{t('save')}</Button>
+        </>}>
+        <div ref={modalBodyRef} tabIndex={-1} className={styles['modelAdvancedFields']}>
+          {(() => {
+            const index = openedIndex
+            const model = draft
+            if (model === null) return null
+            const deepseek = probe.settingsNs === 'llm-deepseek'
+            const declared = model['reasoningEfforts']
+            const reasoningOn = deepseek ? effortsOf(model).some(level => level !== 'off')
+              : typeof declared === 'object' && declared !== null && !Array.isArray(declared)
                   && Object.keys(declared).some(level => level !== 'off')
-              const selectedLevels = deepseek ? effortsOf(model)
-                : typeof declared === 'object' && declared !== null && !Array.isArray(declared)
-                  ? Object.keys(declared) : ['off']
-              return <>
-                <div className={styles['capabilityControls']}>
-                  <label className={styles['modelToggle']}><input className={styles['modelCheckboxInput']} type="checkbox"
-                    checked={Array.isArray(model[deepseek ? 'inputModalities' : 'input'])
-                      && (model[deepseek ? 'inputModalities' : 'input'] as string[]).includes('image')}
-                    ref={firstFieldRef} disabled={disabled} onChange={(event) => {
-                      patch(index, { [deepseek ? 'inputModalities' : 'input']:
-                        event.target.checked ? ['text', 'image'] : ['text'] })
-                    }} /><span className={styles['modelCheckboxBox']} aria-hidden="true"><IconCheckOutline14 size={12} /></span>
-                  <span>{t('visionSupport')}</span></label>
-                  <label className={styles['modelToggle']}><input className={styles['modelCheckboxInput']} type="checkbox"
-                    checked={reasoningOn} disabled={disabled || props.reasoningDisabled === true} onChange={(event) => {
-                      if (event.target.checked) {
-                        const saved = rememberedReasoning.get(index)
-                        const restored = deepseek
-                          ? Array.isArray(saved) && saved.some(level => level !== 'off')
-                            ? saved : ['off', 'low', 'high', 'max']
-                          : typeof saved === 'object' && saved !== null && !Array.isArray(saved)
-                            && Object.keys(saved).some(level => level !== 'off')
-                            ? saved : { off: null, low: 'low', high: 'high', max: 'max' }
-                        patch(index, { reasoningEfforts: restored })
-                      } else {
-                        setRememberedReasoning(current => new Map(current).set(index, deepseek ? effortsOf(model) : declared))
+            const selectedLevels = deepseek ? effortsOf(model)
+              : typeof declared === 'object' && declared !== null && !Array.isArray(declared)
+                ? Object.keys(declared) : ['off']
+            const visionOn = Array.isArray(model[deepseek ? 'inputModalities' : 'input'])
+                && (model[deepseek ? 'inputModalities' : 'input'] as string[]).includes('image')
+            return <>
+              <div className={styles['capabilityControls']}>
+                <button type="button" ref={firstFieldRef} className={styles['capabilityToggle']}
+                  aria-label={t('visionSupport')} aria-pressed={visionOn} disabled={disabled}
+                  onClick={() => { patchDraft({ [deepseek ? 'inputModalities' : 'input']:
+                      visionOn ? ['text'] : ['text', 'image'] }) }}>
+                  <Icon name="model-vision" size={16} /><span>{t('visionSupport')}</span>
+                </button>
+                <button type="button" ref={reasoningToggleRef} className={styles['capabilityToggle']}
+                  aria-label={t('reasoningSupport')} aria-pressed={reasoningOn}
+                  disabled={disabled || props.reasoningDisabled === true}
+                  onClick={() => {
+                    if (!reasoningOn) {
+                      const restored = deepseek
+                        ? Array.isArray(rememberedReasoning) && rememberedReasoning.some(level => level !== 'off')
+                          ? rememberedReasoning : ['off', 'low', 'high', 'max']
+                        : typeof rememberedReasoning === 'object' && rememberedReasoning !== null
+                            && !Array.isArray(rememberedReasoning)
+                            && Object.keys(rememberedReasoning).some(level => level !== 'off')
+                          ? rememberedReasoning : { off: null, low: 'low', high: 'high', max: 'max' }
+                      patchDraft({ reasoningEfforts: restored })
+                    } else {
+                      setRememberedReasoning(deepseek ? effortsOf(model) : declared)
+                      setLevelsOpen(false)
+                      patchDraft({ reasoningEfforts: deepseek ? ['off'] : false })
+                    }
+                  }}>
+                  <Icon name="model-reasoning" size={16} /><span>{t('reasoningSupport')}</span>
+                </button>
+              </div>
+              {reasoningOn && <div className={styles['reasoningField']}>
+                <span className={styles['modelFieldLabel']}>{t('reasoningLevels')}</span>
+                <Menu portal open={levelsOpen} compact multiSelect matchAnchorWidth highlightSelected keyboardNavigation
+                  portalContainer={levelsTriggerRef.current?.closest('[role="dialog"]') ?? null}
+                  className={styles['reasoningDropdown'] ?? ''}
+                  selectedIds={selectedLevels}
+                  items={(deepseek ? DEEPSEEK_REASONING_LEVELS : PI_AI_REASONING_LEVELS)
+                    .map(level => ({ id: level, label: level === 'off' ? t('reasoningNone') : level }))}
+                  onClose={() => { setLevelsOpen(false) }}
+                  onSelect={(level) => {
+                    if (deepseek) {
+                      const next = selectedLevels.includes(level)
+                        ? selectedLevels.filter(value => value !== level) : [...selectedLevels, level]
+                      if (next.every(value => value === 'off')) {
                         setLevelsOpen(false)
-                        patch(index, { reasoningEfforts: deepseek ? ['off'] : false })
+                        reasoningToggleRef.current?.focus({ preventScroll: true })
                       }
-                    }} /><span className={styles['modelCheckboxBox']} aria-hidden="true"><IconCheckOutline14 size={12} /></span>
-                  <span>{t('reasoningSupport')}</span></label>
-                </div>
-                {reasoningOn && <details ref={levelsRef} className={styles['reasoningDropdown']} open={levelsOpen}>
-                  <summary ref={levelsTriggerRef} aria-label={t('reasoningLevels')} aria-expanded={levelsOpen}
-                    aria-disabled={disabled || props.reasoningDisabled === true}
-                    onClick={(event) => {
-                      event.preventDefault()
-                      if (!disabled && props.reasoningDisabled !== true) setLevelsOpen(current => !current)
-                    }}>
-                    <span>{t('reasoningLevels')}</span>
-                    <span className={styles['reasoningSelection']}>{selectedLevels.map(level =>
-                      level === 'off' ? t('reasoningNone') : level).join(' · ')}</span>
+                      patchDraft({ reasoningEfforts: next.length === 0 ? ['off'] : next })
+                    } else {
+                      const prior = typeof declared === 'object' && declared !== null && !Array.isArray(declared)
+                        ? declared as Record<string, string | null> : { off: null }
+                      const next = { ...prior }
+                      if (level in next) Reflect.deleteProperty(next, level)
+                      else next[level] = level === 'off' ? null : level
+                      const offOnly = Object.keys(next).every(value => value === 'off')
+                      if (offOnly) {
+                        setLevelsOpen(false)
+                        reasoningToggleRef.current?.focus({ preventScroll: true })
+                      }
+                      patchDraft({ reasoningEfforts: offOnly ? false : next })
+                    }
+                  }}
+                  anchor={<button type="button" ref={levelsTriggerRef} className={styles['reasoningTrigger']}
+                    aria-label={`${t('reasoningLevels')}: ${selectedLevels.map(level => level === 'off'
+                      ? t('reasoningNone') : level).join(', ')}`}
+                    aria-haspopup="menu" aria-expanded={levelsOpen}
+                    disabled={disabled || props.reasoningDisabled === true}
+                    onKeyDown={(event) => {
+                      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                        event.preventDefault()
+                        setLevelsOpen(true)
+                      }
+                    }}
+                    onClick={() => { setLevelsOpen(current => !current) }}>
+                    <span className={styles['reasoningSelection']} aria-hidden="true">
+                      {selectedLevels.map(level => <span key={level} className={styles['reasoningChip']}>
+                        {level === 'off' ? t('reasoningNone') : level}
+                      </span>)}
+                    </span>
                     <IconChevronDownOutline14 size={14} />
-                  </summary>
-                  <div className={styles['reasoningOptions']}>
-                    {(deepseek ? DEEPSEEK_REASONING_LEVELS : PI_AI_REASONING_LEVELS).map(level => (
-                      <label key={level} className={styles['modelToggle']}><input className={styles['modelCheckboxInput']}
-                        type="checkbox" disabled={disabled || props.reasoningDisabled === true}
-                        checked={selectedLevels.includes(level)} onChange={(event) => {
-                          if (deepseek) {
-                            const prior = effortsOf(model)
-                            const next = event.target.checked ? [...prior, level] : prior.filter(value => value !== level)
-                            if (next.every(value => value === 'off')) setLevelsOpen(false)
-                            patch(index, { reasoningEfforts: next.length === 0 ? ['off'] : next })
-                          } else {
-                            const prior = typeof declared === 'object' && declared !== null && !Array.isArray(declared)
-                              ? declared as Record<string, string | null> : { off: null }
-                            const next = { ...prior }
-                            if (event.target.checked) next[level] = level === 'off' ? null : level
-                            else Reflect.deleteProperty(next, level)
-                            if (Object.keys(next).every(key => key === 'off')) setLevelsOpen(false)
-                            patch(index, { reasoningEfforts: Object.keys(next).every(key => key === 'off') ? false : next })
-                          }
-                        }} /><span className={styles['modelCheckboxBox']} aria-hidden="true"><IconCheckOutline14 size={12} /></span>
-                      <span>{level === 'off' ? t('reasoningNone') : level}</span></label>
-                    ))}
-                  </div>
-                </details>}
-                <label className={styles['modelField']}>
-                  <span className={styles['modelFieldLabel']}>{t('modelContextWindow')}</span>
-                  <input
-                    className={styles['input']}
-                    type="text"
-                    inputMode="numeric"
-                    value={capacityText(model, index, 'contextWindow')}
-                    placeholder={CAPACITY_HINT.contextWindow}
-                    aria-label={`${t('modelContextWindow')} ${index + 1}`}
-                    disabled={disabled}
-                    onChange={(event) => { editCapacity(index, 'contextWindow', event.target.value) }}
-                  />
-                </label>
-                <label className={styles['modelField']}>
-                  <span className={styles['modelFieldLabel']}>{t('modelMaxTokens')}</span>
-                  <input
-                    className={styles['input']}
-                    type="text"
-                    inputMode="numeric"
-                    value={capacityText(model, index, 'maxTokens')}
-                    placeholder={CAPACITY_HINT.maxTokens}
-                    aria-label={`${t('modelMaxTokens')} ${index + 1}`}
-                    disabled={disabled}
-                    onChange={(event) => { editCapacity(index, 'maxTokens', event.target.value) }}
-                  />
-                </label>
-              </>
-            })()}
-          </div>
-        </section>, anchorRef.current?.closest('[role="dialog"][aria-modal="true"]') ?? document.body)}
+                  </button>}
+                />
+              </div>}
+              <label className={styles['modelField']}>
+                <span className={styles['modelFieldLabel']}>{t('modelContextWindow')}</span>
+                <input
+                  className={styles['input']}
+                  type="text"
+                  inputMode="numeric"
+                  value={capacityText(model, 'contextWindow')}
+                  placeholder={CAPACITY_HINT.contextWindow}
+                  aria-label={`${t('modelContextWindow')} ${index + 1}`}
+                  aria-invalid={invalidCapacity('contextWindow')}
+                  disabled={disabled}
+                  onChange={(event) => { editCapacity('contextWindow', event.target.value) }}
+                />
+                {invalidCapacity('contextWindow') && <span className={styles['modelFieldError']} role="alert">
+                  {t('modelContextInvalid')}
+                </span>}
+              </label>
+              <label className={styles['modelField']}>
+                <span className={styles['modelFieldLabel']}>{t('modelMaxTokens')}</span>
+                <input
+                  className={styles['input']}
+                  type="text"
+                  inputMode="numeric"
+                  value={capacityText(model, 'maxTokens')}
+                  placeholder={CAPACITY_HINT.maxTokens}
+                  aria-label={`${t('modelMaxTokens')} ${index + 1}`}
+                  aria-invalid={invalidCapacity('maxTokens')}
+                  disabled={disabled}
+                  onChange={(event) => { editCapacity('maxTokens', event.target.value) }}
+                />
+                {invalidCapacity('maxTokens') && <span className={styles['modelFieldError']} role="alert">
+                  {t('modelMaxTokensInvalid')}
+                </span>}
+              </label>
+            </>
+          })()}
+        </div>
+      </Modal>}
       <button
         type="button"
         className={styles['addModelButton']}

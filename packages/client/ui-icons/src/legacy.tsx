@@ -346,7 +346,7 @@ export const IconThinkOutline14 = ({ size = 14, className }: IconProps) => (
 
 /** ic_ds_think_outline_16 */
 export const IconThinkOutline16 = ({ size = 16, className }: IconProps) => (
-  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <path
       d="M8.00192 6.64454C8.75026 6.64454 9.35732 7.25169 9.35739 8.00001C9.35739 8.74838 8.7503 9.35548 8.00192 9.35548C7.25367 9.35533 6.64743 8.74829 6.64743 8.00001C6.6475 7.25178 7.25371 6.64468 8.00192 6.64454Z"
       fill="currentColor"

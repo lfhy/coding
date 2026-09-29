@@ -4,6 +4,10 @@
 
 图标的实现与新语义入口位于 [`ui-icons`](../ui-icons/README.md)；本包只转发其已有具名图标和统一 `Icon` 组件，供既有使用者逐步迁移。
 
+`Menu` 的 `selectedIds` 显示多个选中标记；真正允许同时勾选时传入 `multiSelect`，选项才以 `menuitemcheckbox` 和 `aria-checked` 报告状态。消费方在 `onSelect` 中更新选择并决定何时关闭；其他菜单维持普通 `menuitem` 语义。`portal` 菜单固定于锚点并避开祖先滚动裁剪，可用 `matchAnchorWidth` 使宽度对齐触发框；`highlightSelected` 在行尾勾选之外用主题强调底色标记已选项。嵌套模态框传入 `portalContainer` 可把选项保留在对话框的无障碍子树中；`keyboardNavigation` 使打开时焦点进入选项，方向键与 Home/End 导航。
+
+`Modal` 居中渲染可见 `title`，同名的多行编辑窗口可用 `ariaLabel` 提供包含行号的无障碍名称，同时保留简短可见标题。阻断式嵌套窗口可启用 `trapFocus`，让 Tab 在当前窗口的操作之间循环。
+
 ## 悬浮卡片
 
 `HoverCard` 通过指针离开宽限期，使采用 portal 渲染的预览在跨过与锚点之间的间隙时仍可触及。消费方还可传入 `copyText`：此时卡片为指针与键盘激活提供按钮语义，其无障碍名称会在 `copyLabel` 前缀后包含该值，通过包内剪贴板辅助函数原样写入该值，并且只有宿主接受写入后，才会临时将内容替换为 `copiedLabel`。与卡片相交的非折叠文本选区会阻止指针点击激活；成功反馈保持卡片原有高度，并随卡片关闭或在一秒后清除。`copyLabel` 和 `copiedLabel` 采用 label prop，是因为这个 zero-cordis 原子组件无法读取应用 locale；省略 `copyText` 时，卡片维持只读且可选择文本的行为。历史依据见已归档的悬浮卡片复制 设计记录。

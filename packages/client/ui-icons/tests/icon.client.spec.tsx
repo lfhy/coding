@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render } from '@testing-library/react'
-import { Icon, IconPanelLeftOutline16, IconTerminalOutline16 } from '../src/index.ts'
+import { Icon, IconPanelLeftOutline16, IconTerminalOutline16, IconThinkOutline16 } from '../src/index.ts'
 
 afterEach(cleanup)
 
@@ -50,5 +50,17 @@ describe('语义图标适配', () => {
     expect(icon.querySelector('path')?.getAttribute('d'))
       .toBe(glyph.container.querySelector('path')?.getAttribute('d'))
     expect(view.container.querySelector('.semi-icon')).toBeNull()
+  })
+
+  it('模型能力的视觉与推理语义使用各自图形并向无障碍树隐藏', () => {
+    const view = render(<><Icon name="model-vision" size={16} /><Icon name="model-reasoning" size={16} /></>)
+    const vision = view.container.querySelector('.semi-icon') as HTMLElement
+    const reasoning = view.container.querySelector('svg[viewBox="0 0 16 16"]') as SVGElement
+    const original = render(<IconThinkOutline16 />)
+    expect(vision.querySelector('svg')).not.toBeNull()
+    expect(vision.getAttribute('aria-hidden')).toBe('true')
+    expect(reasoning.getAttribute('aria-hidden')).toBe('true')
+    expect(reasoning.querySelector('path')?.getAttribute('d'))
+      .toBe(original.container.querySelector('path')?.getAttribute('d'))
   })
 })

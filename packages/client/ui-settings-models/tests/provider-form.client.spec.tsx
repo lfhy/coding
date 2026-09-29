@@ -173,9 +173,16 @@ function openEditor(provider: string): void {
   expect(within(screen.getByRole('main')).getByRole('heading', { level: 2, name: provider })).toBeTruthy()
 }
 
-/** Open one model row's advanced fold, where the capacities live. */
+/** 打开指定模型行的设置浮层。 */
 function expandModel(index: number): void {
   fireEvent.click(screen.getByRole('button', { name: `${en.modelAdvanced} ${index}` }))
+}
+
+/** 浮层保存只提交到提供方草稿，持久化仍由提供方表单负责。 */
+function saveModel(index: number): void {
+  const dialog = screen.getByRole('dialog', { name: `${en.modelAdvanced} ${index}` })
+  fireEvent.click(within(dialog).getByRole('button', { name: en.save }))
+  expect(screen.queryByRole('dialog', { name: `${en.modelAdvanced} ${index}` })).toBeNull()
 }
 
 /** The button carrying `label`, typed so its disabled/title state is readable. */
@@ -218,8 +225,11 @@ describe('model list editing', () => {
     expandModel(1)
     fireEvent.change(screen.getByLabelText(`${en.modelContextWindow} 1`), { target: { value: '65536' } })
     fireEvent.change(screen.getByLabelText(`${en.modelName} 1`), { target: { value: 'Acme' } })
-    // Clearing an optional field must drop it rather than store an empty value.
+    // 清空可选名称时不得存入空字符串。
     fireEvent.change(screen.getByLabelText(`${en.modelName} 1`), { target: { value: '' } })
+    expect(mutate).not.toHaveBeenCalled()
+    saveModel(1)
+    expect(mutate).not.toHaveBeenCalled()
     fireEvent.click(screen.getByText(en.apply))
 
     await waitFor(() => { expect(mutate).toHaveBeenCalled() })
@@ -262,6 +272,7 @@ describe('model list editing', () => {
     fireEvent.change(screen.getByLabelText(`${en.modelMaxTokens} 1`), { target: { value: '1000' } })
     expect(screen.getByLabelText<HTMLInputElement>(`${en.modelMaxTokens} 1`).value).toBe('1000')
 
+    saveModel(1)
     fireEvent.click(screen.getByText(en.apply))
     await waitFor(() => { expect(mutate).toHaveBeenCalled() })
     // 设置中保存纯数值；输入框则保留用户正在键入的容量写法。
@@ -282,11 +293,19 @@ describe('model list editing', () => {
     const main = screen.getByRole('main')
     const card = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
     expect(main.contains(card)).toBe(false)
-    expect(checkbox(card, en.visionSupport).checked).toBe(true)
-    expect(checkbox(card, en.reasoningSupport).checked).toBe(true)
-    fireEvent.click(within(card).getByRole('checkbox', { name: en.visionSupport }))
-    fireEvent.click(card.querySelector('summary') as HTMLElement)
-    fireEvent.click(within(card).getByRole('checkbox', { name: /^high$/ }))
+    const vision = within(card).getByRole('button', { name: en.visionSupport })
+    const reasoning = within(card).getByRole('button', { name: en.reasoningSupport })
+    expect(vision.getAttribute('aria-pressed')).toBe('true')
+    expect(reasoning.getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(vision)
+    expect(vision.getAttribute('aria-pressed')).toBe('false')
+    fireEvent.click(within(card).getByRole('button', { name: /Reasoning levels:/ }))
+    const high = screen.getByRole('menuitemcheckbox', { name: 'high' })
+    expect(high.getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(high)
+    expect(high.getAttribute('aria-checked')).toBe('false')
+    expect(mutate).not.toHaveBeenCalled()
+    saveModel(1)
     fireEvent.click(within(main).getByRole('button', { name: en.apply }))
 
     await waitFor(() => { expect(mutate).toHaveBeenCalledOnce() })
@@ -296,7 +315,28 @@ describe('model list editing', () => {
     ] }])
   })
 
-  it('refuses to apply while a capacity is unreadable', async () => {
+  it('cancels a model popup without changing the provider draft', async () => {
+    const { mutate } = await mountSection({ providers: { openai: {
+      baseURL: 'https://proxy.example/v1',
+      models: [piAiModel({ id: 'kept', contextWindow: 65_536, customField: 'kept' })],
+    } } })
+    openEditor('openai')
+    expandModel(1)
+    const dialog = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
+    fireEvent.click(within(dialog).getByRole('button', { name: en.visionSupport }))
+    fireEvent.change(within(dialog).getByRole('textbox', { name: `${en.modelContextWindow} 1` }),
+      { target: { value: '1M' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: en.cancel }))
+
+    expandModel(1)
+    const reopened = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
+    expect(within(reopened).getByRole('button', { name: en.visionSupport }).getAttribute('aria-pressed')).toBe('true')
+    expect(within(reopened).getByRole<HTMLInputElement>('textbox', { name: `${en.modelContextWindow} 1` }).value)
+      .toBe('65536')
+    expect(mutate).not.toHaveBeenCalled()
+  })
+
+  it('refuses to save an unreadable capacity into the provider draft', async () => {
     const { mutate } = await mountSection()
     openEditor('openai')
 
@@ -305,11 +345,11 @@ describe('model list editing', () => {
     expandModel(1)
     fireEvent.change(screen.getByLabelText(`${en.modelMaxTokens} 1`), { target: { value: 'abc' } })
 
-    // Silently dropping it would store a route sized differently from what the
-    // field shows, so the text stays put and the write is refused instead.
+    // 无效输入必须留在浮层并阻断本行保存，不能悄悄丢弃后持久化。
     expect(screen.getByLabelText<HTMLInputElement>(`${en.modelMaxTokens} 1`).value).toBe('abc')
-    expect(screen.getByText(`${en.model} 1: ${en.modelMaxTokensInvalid}`)).toBeTruthy()
-    expect(buttonNamed(en.apply).disabled).toBe(true)
+    const dialog = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
+    expect(within(dialog).getByRole('alert').textContent).toBe(en.modelMaxTokensInvalid)
+    expect(within(dialog).getByRole<HTMLButtonElement>('button', { name: en.save }).disabled).toBe(true)
     expect(mutate).not.toHaveBeenCalled()
   })
 
@@ -342,8 +382,9 @@ describe('model list editing', () => {
     fireEvent.change(screen.getByLabelText(`${en.modelMaxTokens} 2`), { target: { value: '2048' } })
     fireEvent.change(screen.getByLabelText(`${en.modelName} 2`), { target: { value: 'Second' } })
     fireEvent.change(screen.getByLabelText(`${en.modelContextWindow} 2`), { target: { value: '4096' } })
-    // Clearing it back to empty must drop the field, not store a zero.
+    // 清空容量时丢弃字段，不存入零。
     fireEvent.change(screen.getByLabelText(`${en.modelContextWindow} 2`), { target: { value: '' } })
+    saveModel(2)
     fireEvent.click(screen.getByText(en.apply))
 
     await waitFor(() => { expect(mutate).toHaveBeenCalled() })
@@ -798,6 +839,7 @@ describe('hand-declared providers', () => {
     fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'acme-large' } })
     expandModel(1)
     fireEvent.change(screen.getByLabelText(`${en.modelContextWindow} 1`), { target: { value: '65536' } })
+    saveModel(1)
     fireEvent.click(screen.getByText(en.create))
 
     await waitFor(() => { expect(onClose).toHaveBeenCalledWith(true) })
@@ -1114,7 +1156,7 @@ describe('hand-declared providers', () => {
     expect(buttonNamed(en.create).disabled).toBe(false)
   })
 
-  it('refuses to create while a capacity is unreadable', () => {
+  it('refuses to save an unreadable capacity in a new provider', () => {
     mountCard()
     fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme' } })
     fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
@@ -1123,11 +1165,12 @@ describe('hand-declared providers', () => {
     expandModel(1)
     fireEvent.change(screen.getByLabelText(`${en.modelContextWindow} 1`), { target: { value: '64 KiB' } })
 
-    expect(screen.getByText(`${en.model} 1: ${en.modelContextInvalid}`)).toBeTruthy()
-    expect(buttonNamed(en.create).disabled).toBe(true)
+    const dialog = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
+    expect(within(dialog).getByRole('alert').textContent).toBe(en.modelContextInvalid)
+    expect(within(dialog).getByRole<HTMLButtonElement>('button', { name: en.save }).disabled).toBe(true)
   })
 
-  it('keeps each half-typed capacity with its own row across a removal', () => {
+  it('discards unsaved capacity edits on row changes and removal', () => {
     mountCard()
     fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme' } })
     fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
@@ -1135,20 +1178,20 @@ describe('hand-declared providers', () => {
       fireEvent.click(screen.getByRole('button', { name: en.addModel }))
       fireEvent.change(screen.getByLabelText(`${en.modelId} ${String(at)}`), { target: { value: id } })
       expandModel(at)
-      // Deliberately mid-word: the buffer exists so text like this survives.
+      // 未保存的容量只属于当前浮层，切换模型不会沿用前一行的输入。
       fireEvent.change(screen.getByLabelText(`${en.modelContextWindow} ${String(at)}`),
         { target: { value: `${String(at)}.` } })
     }
 
-    // 删除中间行后，浮动卡片跟随末行前移；切回首行仍保留各自未输完的文字。
+    // 删除前面的行时浮层跟随模型前移，但不会把未提交的输入混入别的行。
     fireEvent.click(screen.getByLabelText(`${en.removeModel} 2`))
     expect(screen.getByLabelText<HTMLInputElement>(`${en.modelId} 1`).value).toBe('first')
     expect(screen.queryByLabelText(`${en.modelContextWindow} 1`)).toBeNull()
     expandModel(1)
-    expect(screen.getByLabelText<HTMLInputElement>(`${en.modelContextWindow} 1`).value).toBe('1.')
+    expect(screen.getByLabelText<HTMLInputElement>(`${en.modelContextWindow} 1`).value).toBe('')
     expect(screen.getByLabelText<HTMLInputElement>(`${en.modelId} 2`).value).toBe('third')
     expandModel(2)
-    expect(screen.getByLabelText<HTMLInputElement>(`${en.modelContextWindow} 2`).value).toBe('3.')
+    expect(screen.getByLabelText<HTMLInputElement>(`${en.modelContextWindow} 2`).value).toBe('')
   })
 
   it('refuses two models sharing one id', () => {

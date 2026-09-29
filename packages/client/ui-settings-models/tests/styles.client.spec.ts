@@ -76,29 +76,42 @@ describe('ModelsSection theme styles', () => {
     expect(narrowViewport).not.toContain('.modelRow')
   })
 
-  it('keeps the model settings card above the settings modal and out of table layout', () => {
-    expect(block('.modelSettingsPopover')).toContain('position: fixed')
-    expect(block('.modelSettingsPopover')).toContain('z-index: 1100')
-    expect(block('.modelSettingsPopover')).toContain('max-width: calc(100vw - 24px)')
-    expect(block('.modelSettingsPopover')).toContain('max-height: calc(100vh - 24px)')
-    expect(block('.modelSettingsPopover')).toContain('overflow-y: auto')
+  it('sizes the independent centered Modal without anchoring it to a model row', () => {
+    expect(block('.modelSettingsDialog')).toContain('width: min(500px, calc(100vw - 48px))')
+    expect(block('.modelSettingsDialog')).toContain('min-height: min(480px, calc(100vh - 48px))')
+    expect(block('.modelSettingsDialog')).toContain('max-height: calc(100vh - 48px)')
+    expect(block('.modelSettingsDialog')).toContain('justify-content: space-between')
+    expect(block('.modelSettingsDialog')).not.toMatch(/\b(?:position|left|top|transform|z-index)\s*:/)
+    expect(block('.modelSettingsContent')).toContain('overflow-y: auto')
     expect(block('.modelAdvancedFields')).toContain('grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr))')
     expect(block('.modelEntry')).not.toContain('grid-template-rows')
+    expect(css).not.toContain('.modelSettingsPopover')
   })
 
-  it('uses row separators instead of a catalog frame and keeps checkbox focus visible', () => {
+  it('uses row separators and pressed icon toggles without a details-based dropdown', () => {
     expect(block('.modelList')).not.toMatch(/\bborder\s*:/)
     expect(block('.modelList')).not.toMatch(/\bbackground\s*:/)
     expect(css).toContain('.modelEntry + .modelEntry { border-top: 1px solid')
     expect(block('.capabilityBadge')).toContain('background: transparent')
-    expect(css).toContain('.modelCheckboxInput:focus-visible + .modelCheckboxBox {\n  outline: 2px solid')
-    expect(css).toContain('.modelCheckboxInput:checked + .modelCheckboxBox {\n  border-color: var(--dsw-alias-state-business-primary);\n  background: var(--dsw-alias-state-business-primary)')
-    expect(block('.reasoningDropdown')).toContain('grid-column: 1 / -1')
+    expect(block('.capabilityToggle')).toContain('color: var(--dsw-alias-label-secondary)')
+    expect(css).toContain('.capabilityToggle svg { flex: none; color: var(--dsw-alias-label-dimmed); }')
+    expect(css).toContain(".capabilityToggle[aria-pressed='true'] svg { color: var(--dsw-alias-state-business-primary); }")
+    expect(block('.capabilityToggle:focus-visible,\n.reasoningTrigger:focus-visible')).toContain('outline: 2px solid')
+    expect(block('.reasoningField')).toContain('grid-column: 1 / -1')
+    expect(block('.reasoningDropdown')).toContain('width: 100%')
+    expect(block('.reasoningTrigger')).toContain('width: 100%')
+    expect(block('.reasoningSelection')).toContain('flex-wrap: wrap')
+    expect(block('.reasoningChip')).toContain('border-radius: 16px')
+    expect(block('.modelAdvancedFields:focus-visible')).toContain('outline: 2px solid')
+    expect(css).not.toContain('.reasoningDropdown summary')
+    expect(css).not.toContain('.reasoningDropdown[open]')
   })
 
   it('keeps every discovered family at full height when the candidate list scrolls', () => {
     expect(block('.candidateList')).toContain('overflow-y: auto')
     expect(block('.candidateGroup')).toContain('flex-shrink: 0')
+    expect(css).toContain('.modelCheckboxInput:focus-visible + .modelCheckboxBox {\n  outline: 2px solid')
+    expect(css).toContain('.modelCheckboxInput:checked + .modelCheckboxBox {\n  border-color: var(--dsw-alias-state-business-primary);\n  background: var(--dsw-alias-state-business-primary)')
   })
 
   it('gives every dropdown the shared chevron instead of the OS arrow', () => {

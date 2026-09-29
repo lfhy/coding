@@ -196,6 +196,15 @@
   background: transparent;
 }
 
+.selectedHighlight {
+  background: var(--dsw-alias-state-business-tertiary);
+}
+
+.list.matchAnchorWidth {
+  min-width: 0;
+  max-width: calc(100vw - 24px);
+}
+
 /* Destructive row: error text/icon, danger hover fill. */
 .danger {
   color: var(--dsw-alias-state-error-primary);

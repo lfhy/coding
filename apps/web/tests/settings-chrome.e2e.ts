@@ -262,23 +262,26 @@ describe('web e2e: settings modal and General preferences', () => {
             await trigger.click()
             await card.waitFor()
             expect(await card.evaluate(node => node.closest('[class*="modelTableScroller"]') === null)).toBe(true)
-            expect(await dialog.evaluate((node, id) => id !== null && node.contains(document.getElementById(id)),
-              await card.getAttribute('id'))).toBe(true)
+            expect(await dialog.evaluate(node =>
+              !node.contains(document.querySelector('[role="dialog"][aria-label="模型设置 1"]')))).toBe(true)
             expect(await table.boundingBox()).toEqual(tableBefore)
             expect(await trigger.locator('..').boundingBox()).toEqual(rowBefore)
             const cardBox = await card.boundingBox()
-            if (cardBox === null) throw new Error('DeepSeek 模型浮动卡片未绘制')
+            if (cardBox === null) throw new Error('DeepSeek 模型独立窗口未绘制')
             expect(cardBox.x).toBeGreaterThanOrEqual(0)
             expect(cardBox.x + cardBox.width).toBeLessThanOrEqual(viewport.width + 1)
             expect(cardBox.y).toBeGreaterThanOrEqual(0)
             expect(cardBox.y + cardBox.height).toBeLessThanOrEqual(viewport.height + 1)
-            const vision = card.getByRole('checkbox', { name: '视觉' })
-            const initialVision = await vision.isChecked()
-            await vision.locator('..').click()
-            expect(await vision.isChecked()).toBe(!initialVision)
-            await vision.locator('..').click()
-            expect(await vision.isChecked()).toBe(initialVision)
-            await card.getByRole('button', { name: '关闭' }).click()
+            expect(cardBox.x + cardBox.width / 2).toBeCloseTo(viewport.width / 2, 0)
+            expect(cardBox.y + cardBox.height / 2).toBeCloseTo(viewport.height / 2, 0)
+            const vision = card.getByRole('button', { name: '视觉', exact: true })
+            const initialVision = await vision.getAttribute('aria-pressed')
+            expect(['true', 'false']).toContain(initialVision)
+            await vision.click()
+            expect(await vision.getAttribute('aria-pressed')).toBe(initialVision === 'true' ? 'false' : 'true')
+            await vision.click()
+            expect(await vision.getAttribute('aria-pressed')).toBe(initialVision)
+            await card.getByRole('button', { name: '取消', exact: true }).click()
             await expect.poll(() => card.count()).toBe(0)
             expect(await trigger.evaluate(node => document.activeElement === node)).toBe(true)
             await modelId.scrollIntoViewIfNeeded()
@@ -305,6 +308,11 @@ describe('web e2e: settings modal and General preferences', () => {
       throw error
     } finally {
       try {
+        const modelDialog = page.getByRole('dialog', { name: '模型设置 1', exact: true })
+        if (await modelDialog.count() > 0) {
+          await modelDialog.getByRole('button', { name: '取消', exact: true }).click()
+          await modelDialog.waitFor({ state: 'hidden', timeout: 5_000 })
+        }
         if (await dialog.count() > 0) {
           await dialog.getByRole('button', { name: '关闭', exact: true }).first().click()
           await dialog.waitFor({ state: 'hidden', timeout: 5_000 })

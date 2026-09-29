@@ -35,6 +35,12 @@ function mountStateful(initial: ModelDraft[] = [], settingsNs = 'llm-pi-ai') {
   return { onChange }
 }
 
+function reasoningTrigger(card: HTMLElement): HTMLButtonElement {
+  return within(card).getByRole<HTMLButtonElement>('button', {
+    name: name => name.startsWith(`${en.reasoningLevels}: `),
+  })
+}
+
 describe('channel model catalog', () => {
   it('does not describe an inherited provider catalog as an empty model directory', () => {
     render(<ModelListEditor models={[]} overridden={false} onChange={vi.fn()}
@@ -81,18 +87,20 @@ describe('channel model catalog', () => {
     fireEvent.click(settings)
     expect(settings.getAttribute('aria-expanded')).toBe('true')
     const card = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
-    expect(card.id).toBe(settings.getAttribute('aria-controls'))
-    // 单独挂载的编辑器没有模态框所有者，浮层回退到 body。
-    expect(card.parentElement).toBe(document.body)
+    expect(card.getAttribute('aria-modal')).toBe('true')
+    expect(card.parentElement?.getAttribute('role')).toBe('presentation')
+    expect(card.parentElement?.parentElement).toBe(document.body)
     expect(table?.contains(card)).toBe(false)
     expect(settings.parentElement).toBe(row)
     expect([...row!.parentElement!.parentElement!.children]).toEqual(entries)
-    expect(within(card).getByRole('checkbox', { name: en.visionSupport })).toBeTruthy()
-    expect(within(card).getByRole('checkbox', { name: en.reasoningSupport })).toBeTruthy()
+    expect(within(card).getByRole('button', { name: en.visionSupport }).getAttribute('aria-pressed')).toBe('true')
+    expect(within(card).getByRole('button', { name: en.reasoningSupport }).getAttribute('aria-pressed')).toBe('true')
     expect(within(card).getByRole('textbox', { name: `${en.modelContextWindow} 1` })).toBeTruthy()
+    expect(within(card).getByRole('button', { name: en.save })).toBeTruthy()
+    expect(within(card).getByRole('button', { name: en.cancel })).toBeTruthy()
   })
 
-  it('portals the card into its owning modal without adding a table row', () => {
+  it('centers the independent model modal outside the owning settings dialog without adding a table row', () => {
     render(<div role="dialog" aria-modal="true" aria-label="Settings fixture">
       <ModelListEditor models={[{ id: 'owned' }]} onChange={vi.fn()}
         probe={{ settingsNs: 'llm-pi-ai', provider: 'test' }} api={{ llm: {} } as never}
@@ -104,10 +112,14 @@ describe('channel model catalog', () => {
     const row = trigger.parentElement
     fireEvent.click(trigger)
     const card = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
-    expect(owner.contains(card)).toBe(true)
+    expect(card.getAttribute('aria-modal')).toBe('true')
+    expect(owner.contains(card)).toBe(false)
+    expect(card.parentElement?.parentElement).toBe(document.body)
     expect(table?.contains(card)).toBe(false)
     expect(trigger.parentElement).toBe(row)
     expect(row?.parentElement?.children).toHaveLength(1)
+    expect(within(card).getByRole('button', { name: en.cancel })).toBeTruthy()
+    expect(within(card).getByRole('button', { name: en.save })).toBeTruthy()
   })
 
   it('gates reasoning levels behind the master toggle and preserves multiple pi-ai levels after reopening', () => {
@@ -115,34 +127,37 @@ describe('channel model catalog', () => {
     const trigger = screen.getByRole('button', { name: `${en.modelAdvanced} 1` })
     fireEvent.click(trigger)
     let card = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
-    const reasoning = within(card).getByRole<HTMLInputElement>('checkbox', { name: en.reasoningSupport })
-    expect(reasoning.checked).toBe(true)
-    const summary = card.querySelector('summary')
-    expect(summary?.getAttribute('aria-label')).toBe(en.reasoningLevels)
-    expect((card.querySelector('details') as HTMLDetailsElement).open).toBe(false)
-    fireEvent.click(summary as HTMLElement)
-    expect(within(card).getByRole<HTMLInputElement>('checkbox', { name: en.reasoningNone }).checked).toBe(true)
-    expect(within(card).getByRole<HTMLInputElement>('checkbox', { name: 'low' }).checked).toBe(true)
-    expect(within(card).getByRole<HTMLInputElement>('checkbox', { name: /^high$/ }).checked).toBe(true)
-    fireEvent.click(within(card).getByRole('checkbox', { name: 'max' }))
-    fireEvent.click(within(card).getByRole('checkbox', { name: 'low' }))
-    expect(onChange).toHaveBeenLastCalledWith([{ id: 'first', reasoningEfforts: { off: null, high: 'high', max: 'max' } }])
+    const reasoning = within(card).getByRole('button', { name: en.reasoningSupport })
+    expect(reasoning.getAttribute('aria-pressed')).toBe('true')
+    const levels = reasoningTrigger(card)
+    expect(levels.getAttribute('aria-expanded')).toBe('false')
+    expect(levels.textContent).toContain('low')
+    fireEvent.click(levels)
+    const menu = screen.getByRole('menu')
+    expect(card.contains(menu)).toBe(true)
+    expect(menu.parentElement).toBe(card)
+    expect(within(menu).getByRole('menuitemcheckbox', { name: en.reasoningNone }).getAttribute('aria-checked')).toBe('true')
+    expect(within(menu).getByRole('menuitemcheckbox', { name: 'low' }).getAttribute('aria-checked')).toBe('true')
+    expect(within(menu).getByRole('menuitemcheckbox', { name: /^high$/ }).getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(within(menu).getByRole('menuitemcheckbox', { name: 'max' }))
+    fireEvent.click(within(menu).getByRole('menuitemcheckbox', { name: 'low' }))
+    expect(onChange).not.toHaveBeenCalled()
+    expect(within(menu).getByRole('menuitemcheckbox', { name: 'max' }).getAttribute('aria-checked')).toBe('true')
+    expect(within(menu).getByRole('menuitemcheckbox', { name: 'low' }).getAttribute('aria-checked')).toBe('false')
     fireEvent.click(reasoning)
-    expect(onChange).toHaveBeenLastCalledWith([{ id: 'first', reasoningEfforts: false }])
-    expect(card.querySelector('details')).toBeNull()
+    expect(reasoning.getAttribute('aria-pressed')).toBe('false')
+    expect(screen.queryByRole('menu')).toBeNull()
     fireEvent.click(reasoning)
-    expect(onChange).toHaveBeenLastCalledWith([{ id: 'first', reasoningEfforts: { off: null, high: 'high', max: 'max' } }])
-    expect(card.querySelector('details')).toBeTruthy()
-    fireEvent.click(within(card).getByRole('button', { name: en.close }))
+    expect(reasoning.getAttribute('aria-pressed')).toBe('true')
+    expect(onChange).not.toHaveBeenCalled()
+    fireEvent.click(within(card).getByRole('button', { name: en.save }))
+    expect(onChange).toHaveBeenCalledExactlyOnceWith([{ id: 'first', reasoningEfforts: { off: null, high: 'high', max: 'max' } }])
     fireEvent.click(trigger)
     card = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
-    fireEvent.click(card.querySelector('summary') as HTMLElement)
-    expect(within(card).getByRole<HTMLInputElement>('checkbox', { name: 'low' }).checked).toBe(false)
-    expect(within(card).getByRole<HTMLInputElement>('checkbox', { name: /^high$/ }).checked).toBe(true)
-    expect(within(card).getByRole<HTMLInputElement>('checkbox', { name: 'max' }).checked).toBe(true)
-    fireEvent.keyDown(document, { key: 'Escape' })
-    expect(card.isConnected).toBe(true)
-    expect((card.querySelector('details') as HTMLDetailsElement).open).toBe(false)
+    fireEvent.click(reasoningTrigger(card))
+    expect(screen.getByRole('menuitemcheckbox', { name: 'low' }).getAttribute('aria-checked')).toBe('false')
+    expect(screen.getByRole('menuitemcheckbox', { name: /^high$/ }).getAttribute('aria-checked')).toBe('true')
+    expect(screen.getByRole('menuitemcheckbox', { name: 'max' }).getAttribute('aria-checked')).toBe('true')
   })
 
   it('offers every pi-ai reasoning level and preserves unrelated provider wire values when one changes', () => {
@@ -150,68 +165,170 @@ describe('channel model catalog', () => {
     const { onChange } = mountStateful([{ id: 'pi', reasoningEfforts: initial }])
     fireEvent.click(screen.getByRole('button', { name: `${en.modelAdvanced} 1` }))
     const card = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
-    fireEvent.click(card.querySelector('summary') as HTMLElement)
+    fireEvent.click(reasoningTrigger(card))
     for (const level of [en.reasoningNone, 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']) {
-      expect(within(card).getByRole('checkbox', { name: level })).toBeTruthy()
+      expect(screen.getByRole('menuitemcheckbox', { name: level })).toBeTruthy()
     }
-    expect(within(card).getByRole<HTMLInputElement>('checkbox', { name: 'medium' }).checked).toBe(true)
-    fireEvent.click(within(card).getByRole('checkbox', { name: 'medium' }))
-    expect(onChange).toHaveBeenLastCalledWith([{ id: 'pi', reasoningEfforts: {
+    expect(screen.getByRole('menuitemcheckbox', { name: 'medium' }).getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'medium' }))
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'low' }))
+    expect(onChange).not.toHaveBeenCalled()
+    fireEvent.click(within(card).getByRole('button', { name: en.save }))
+    expect(onChange).toHaveBeenCalledExactlyOnceWith([{ id: 'pi', reasoningEfforts: {
       off: 'native-none', minimal: 'native-brief', xhigh: 'native-extended',
-    } }])
-    fireEvent.click(within(card).getByRole('checkbox', { name: 'low' }))
-    expect(onChange).toHaveBeenLastCalledWith([{ id: 'pi', reasoningEfforts: {
-      off: 'native-none', minimal: 'native-brief', xhigh: 'native-extended', low: 'low',
+      low: 'low',
     } }])
   })
+
+  it.each(['llm-pi-ai', 'llm-deepseek'])(
+    'returns focus to the reasoning toggle when the last active level is removed for %s', (settingsNs) => {
+      const efforts = settingsNs === 'llm-deepseek' ? ['off', 'low'] : { off: null, low: 'low' }
+      mountStateful([{ id: 'single-level', reasoningEfforts: efforts }], settingsNs)
+      fireEvent.click(screen.getByRole('button', { name: `${en.modelAdvanced} 1` }))
+      const card = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
+      const reasoning = within(card).getByRole('button', { name: en.reasoningSupport })
+      fireEvent.click(reasoningTrigger(card))
+      const low = screen.getByRole('menuitemcheckbox', { name: 'low' })
+      low.focus()
+      fireEvent.click(low)
+      expect(screen.queryByRole('menu')).toBeNull()
+      expect(reasoning.getAttribute('aria-pressed')).toBe('false')
+      expect(document.activeElement).toBe(reasoning)
+    },
+  )
 
   it('keeps DeepSeek off-only while disabled and restores selected non-off levels when reenabled', () => {
     const { onChange } = mountStateful([{ id: 'deepseek', reasoningEfforts: ['off'] }], 'llm-deepseek')
     fireEvent.click(screen.getByRole('button', { name: `${en.modelAdvanced} 1` }))
     const card = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
-    const reasoning = within(card).getByRole<HTMLInputElement>('checkbox', { name: en.reasoningSupport })
-    expect(reasoning.checked).toBe(false)
-    expect(card.querySelector('details')).toBeNull()
+    const reasoning = within(card).getByRole('button', { name: en.reasoningSupport })
+    expect(reasoning.getAttribute('aria-pressed')).toBe('false')
+    expect(within(card).queryByRole('button', { name: name => name.startsWith(`${en.reasoningLevels}: `) })).toBeNull()
     fireEvent.click(reasoning)
-    expect(card.querySelector('details')).toBeTruthy()
-    fireEvent.click(card.querySelector('summary') as HTMLElement)
+    expect(reasoningTrigger(card)).toBeTruthy()
+    fireEvent.click(reasoningTrigger(card))
     for (const level of ['minimal', 'medium', 'xhigh']) {
-      expect(within(card).queryByRole('checkbox', { name: level })).toBeNull()
+      expect(screen.queryByRole('menuitemcheckbox', { name: level })).toBeNull()
     }
-    fireEvent.click(within(card).getByRole('checkbox', { name: 'low' }))
-    fireEvent.click(within(card).getByRole('checkbox', { name: /^high$/ }))
-    expect(onChange).toHaveBeenLastCalledWith([{ id: 'deepseek', reasoningEfforts: ['off', 'max'] }])
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'low' }))
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: /^high$/ }))
+    expect(onChange).not.toHaveBeenCalled()
     fireEvent.click(reasoning)
-    expect(onChange).toHaveBeenLastCalledWith([{ id: 'deepseek', reasoningEfforts: ['off'] }])
-    expect(card.querySelector('details')).toBeNull()
+    expect(reasoning.getAttribute('aria-pressed')).toBe('false')
     fireEvent.click(reasoning)
-    expect(onChange).toHaveBeenLastCalledWith([{ id: 'deepseek', reasoningEfforts: ['off', 'max'] }])
+    expect(reasoning.getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(within(card).getByRole('button', { name: en.save }))
+    expect(onChange).toHaveBeenCalledExactlyOnceWith([{ id: 'deepseek', reasoningEfforts: ['off', 'max'] }])
   })
 
-  it('keeps only one floating editor open and restores the trigger after keyboard or outside dismissal', () => {
-    mountStateful([{ id: 'first' }, { id: 'second' }])
+  it('keeps one model modal open and discards drafts on Escape, backdrop, or Close', () => {
+    const { onChange } = mountStateful([{ id: 'first' }, { id: 'second' }])
     const first = screen.getByRole('button', { name: `${en.modelAdvanced} 1` })
     const second = screen.getByRole('button', { name: `${en.modelAdvanced} 2` })
     fireEvent.click(first)
     const firstCard = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
     expect(firstCard.contains(document.activeElement)).toBe(true)
+    fireEvent.click(within(firstCard).getByRole('button', { name: en.visionSupport }))
     fireEvent.click(second)
     expect(first.getAttribute('aria-expanded')).toBe('false')
     expect(second.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getAllByRole('dialog', { name: `${en.modelAdvanced} 2` })).toHaveLength(1)
     expect(screen.queryByRole('dialog', { name: `${en.modelAdvanced} 1` })).toBeNull()
     const secondCard = screen.getByRole('dialog', { name: `${en.modelAdvanced} 2` })
-    expect(within(secondCard).getByRole('checkbox', { name: en.reasoningSupport })).toBeTruthy()
+    expect(within(secondCard).getByRole('textbox', { name: `${en.modelContextWindow} 2` })).toBeTruthy()
+    expect(within(secondCard).getByRole('button', { name: en.reasoningSupport })).toBeTruthy()
+    fireEvent.click(within(secondCard).getByRole('button', { name: en.reasoningSupport }))
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(screen.queryByRole('dialog', { name: `${en.modelAdvanced} 2` })).toBeNull()
     expect(document.activeElement).toBe(second)
     fireEvent.click(first)
-    fireEvent.pointerDown(document.body)
+    expect(within(screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` }))
+      .getByRole('button', { name: en.visionSupport }).getAttribute('aria-pressed')).toBe('false')
+    fireEvent.click(within(screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` }))
+      .getByRole('button', { name: en.visionSupport }))
+    const backdrop = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
+      .parentElement?.querySelector<HTMLElement>('[aria-hidden="true"]')
+    expect(backdrop).toBeTruthy()
+    fireEvent.click(backdrop as HTMLElement)
     expect(screen.queryByRole('dialog', { name: `${en.modelAdvanced} 1` })).toBeNull()
     expect(first.getAttribute('aria-expanded')).toBe('false')
     fireEvent.click(first)
     fireEvent.click(within(screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` }))
       .getByRole('button', { name: en.close }))
     expect(document.activeElement).toBe(first)
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('dismisses the levels menu first on Escape while keeping the unsaved model editor open', () => {
+    const { onChange } = mountStateful([{ id: 'first', reasoningEfforts: { off: null, low: 'low' } }])
+    fireEvent.click(screen.getByRole('button', { name: `${en.modelAdvanced} 1` }))
+    const card = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
+    const levels = reasoningTrigger(card)
+    fireEvent.click(levels)
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'high' }))
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(card.isConnected).toBe(true)
+    expect(levels.getAttribute('aria-expanded')).toBe('false')
+    expect(document.activeElement).toBe(levels)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(card.isConnected).toBe(false)
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('discards unsaved capability and capacity changes on Cancel', () => {
+    const { onChange } = mountStateful([{ id: 'first', input: ['text'], maxTokens: 8_000 }])
+    const trigger = screen.getByRole('button', { name: `${en.modelAdvanced} 1` })
+    fireEvent.click(trigger)
+    let card = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
+    fireEvent.click(within(card).getByRole('button', { name: en.visionSupport }))
+    fireEvent.change(within(card).getByRole('textbox', { name: `${en.modelMaxTokens} 1` }),
+      { target: { value: '16K' } })
+    fireEvent.click(within(card).getByRole('button', { name: en.cancel }))
+    expect(card.isConnected).toBe(false)
+    expect(onChange).not.toHaveBeenCalled()
+    fireEvent.click(trigger)
+    card = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
+    expect(within(card).getByRole('button', { name: en.visionSupport }).getAttribute('aria-pressed')).toBe('false')
+    expect(within(card).getByRole<HTMLInputElement>('textbox', { name: `${en.modelMaxTokens} 1` }).value).toBe('8K')
+  })
+
+  it('commits valid capacities and vision only on Save, then round-trips their display', () => {
+    const { onChange } = mountStateful([{ id: 'first', input: ['text'], contextWindow: 2_000 }])
+    const trigger = screen.getByRole('button', { name: `${en.modelAdvanced} 1` })
+    fireEvent.click(trigger)
+    const card = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
+    const vision = within(card).getByRole('button', { name: en.visionSupport })
+    expect(vision.getAttribute('aria-pressed')).toBe('false')
+    fireEvent.click(vision)
+    fireEvent.change(within(card).getByRole('textbox', { name: `${en.modelContextWindow} 1` }),
+      { target: { value: '256K' } })
+    fireEvent.change(within(card).getByRole('textbox', { name: `${en.modelMaxTokens} 1` }),
+      { target: { value: '1M' } })
+    expect(onChange).not.toHaveBeenCalled()
+    fireEvent.click(within(card).getByRole('button', { name: en.save }))
+    expect(onChange).toHaveBeenCalledExactlyOnceWith([
+      { id: 'first', input: ['text', 'image'], contextWindow: 256_000, maxTokens: 1_000_000 },
+    ])
+    fireEvent.click(trigger)
+    const saved = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
+    expect(within(saved).getByRole<HTMLInputElement>('textbox', { name: `${en.modelContextWindow} 1` }).value).toBe('256K')
+    expect(within(saved).getByRole<HTMLInputElement>('textbox', { name: `${en.modelMaxTokens} 1` }).value).toBe('1M')
+  })
+
+  it.each([
+    [en.modelContextWindow, 'garbage'], [en.modelContextWindow, '0'], [en.modelContextWindow, '-1'],
+    [en.modelContextWindow, '1.5'], [en.modelContextWindow, '1.0001K'], [en.modelMaxTokens, 'garbage'],
+  ])('does not save invalid %s capacity %s', (label, value) => {
+    const { onChange } = mountStateful([{ id: 'first', contextWindow: 2_000 }])
+    fireEvent.click(screen.getByRole('button', { name: `${en.modelAdvanced} 1` }))
+    const card = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
+    const field = within(card).getByRole<HTMLInputElement>('textbox', { name: `${label} 1` })
+    fireEvent.change(field, { target: { value } })
+    fireEvent.click(within(card).getByRole('button', { name: en.save }))
+    expect(card.isConnected).toBe(true)
+    expect(field.value).toBe(value)
+    expect(onChange).not.toHaveBeenCalled()
   })
 
   it('groups by version family without inferring capabilities from IDs', () => {
@@ -342,7 +459,7 @@ describe('channel model catalog', () => {
     expect(document.activeElement).toBe(fetch)
   })
 
-  it('keeps model editing available without a reset control or a customized marker', () => {
+  it('keeps row ID/name edits while the floating editor saves its own draft without a reset control', () => {
     const onReset = vi.fn()
     const onChange = vi.fn()
     function Fixture() {
@@ -357,12 +474,27 @@ describe('channel model catalog', () => {
     expect(screen.queryByText(en.modelsCustomized)).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: `${en.modelAdvanced} 1` }))
     fireEvent.change(screen.getByRole('textbox', { name: `${en.modelId} 1` }), { target: { value: 'edited' } })
-    expect(onChange).toHaveBeenLastCalledWith([{ id: 'edited', contextWindow: 2_000 }])
-    fireEvent.change(screen.getByRole('textbox', { name: `${en.modelContextWindow} 1` }), { target: { value: 'garbage' } })
-    fireEvent.click(screen.getByRole('button', { name: `${en.modelAdvanced} 1` }))
-    fireEvent.click(screen.getByRole('button', { name: `${en.modelAdvanced} 1` }))
-    expect(screen.getByRole<HTMLInputElement>('textbox', { name: `${en.modelContextWindow} 1` }).value).toBe('garbage')
+    fireEvent.change(screen.getByRole('textbox', { name: `${en.modelName} 1` }), { target: { value: 'Visible' } })
+    const card = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
+    fireEvent.change(within(card).getByRole('textbox', { name: `${en.modelContextWindow} 1` }),
+      { target: { value: '4K' } })
+    expect(onChange).toHaveBeenCalledTimes(2)
+    fireEvent.click(within(card).getByRole('button', { name: en.save }))
+    expect(onChange).toHaveBeenLastCalledWith([{ id: 'edited', name: 'Visible', contextWindow: 4_000 }])
     expect(onReset).not.toHaveBeenCalled()
+  })
+
+  it('does not emit a change when an inherited model editor is saved untouched', () => {
+    const onChange = vi.fn()
+    render(<ModelListEditor models={[{ id: 'inherited' }]} overridden={false} onChange={onChange}
+      probe={{ settingsNs: 'llm-deepseek', provider: 'deepseek-official' }} api={{ llm: {} } as never}
+      inheritedReasoningEfforts={['off', 'low', 'high', 'max']}
+      t={key => en[key]} disabled={false} />)
+    fireEvent.click(screen.getByRole('button', { name: `${en.modelAdvanced} 1` }))
+    const card = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
+    fireEvent.click(within(card).getByRole('button', { name: en.save }))
+    expect(onChange).not.toHaveBeenCalled()
+    expect(card.isConnected).toBe(false)
   })
 
   it('rejects DeepSeek false and empty levels before a settings write', () => {
@@ -379,9 +511,12 @@ describe('channel model catalog', () => {
       probe={{ settingsNs: 'llm-deepseek', provider: 'deepseek-official' }} api={{ llm: {} } as never}
       t={key => en[key]} disabled={false} />)
     fireEvent.click(screen.getByRole('button', { name: `${en.modelAdvanced} 1` }))
-    const reasoning = screen.getByRole<HTMLInputElement>('checkbox', { name: en.reasoningSupport })
-    expect(reasoning.checked).toBe(true)
+    const card = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
+    const reasoning = within(card).getByRole('button', { name: en.reasoningSupport })
+    expect(reasoning.getAttribute('aria-pressed')).toBe('true')
     fireEvent.click(reasoning)
+    expect(onChange).not.toHaveBeenCalled()
+    fireEvent.click(within(card).getByRole('button', { name: en.save }))
     expect(onChange).toHaveBeenCalledWith([{ id: 'inherited', reasoningEfforts: ['off'] }])
   })
 })

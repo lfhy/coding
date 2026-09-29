@@ -1,11 +1,12 @@
 /** 用产品语义名称选择图标，隔离具体图标库和旋转规则。 */
 import SemiSidebar from '@douyinfe/semi-icons/lib/es/icons/IconSidebar'
 import SemiTerminal from '@douyinfe/semi-icons/lib/es/icons/IconTerminal'
-import { IconTerminalOutline16 } from './legacy.tsx'
+import SemiImageStroked from '@douyinfe/semi-icons/lib/es/icons/IconImageStroked'
+import { IconTerminalOutline16, IconThinkOutline16 } from './legacy.tsx'
 import type { IconProps } from './props.ts'
 
 /** 消费方使用的图标含义，不暴露第三方库中的组件名。 */
-export type IconName = 'sidebar' | 'files-panel' | 'bottom-panel' | 'terminal-menu'
+export type IconName = 'sidebar' | 'files-panel' | 'bottom-panel' | 'terminal-menu' | 'model-vision' | 'model-reasoning'
 
 /** 产品语义名称加上共享的布局属性。 */
 export interface SemanticIconProps extends IconProps {
@@ -22,6 +23,10 @@ export function Icon({ name, size = 16, className }: SemanticIconProps) {
     return <SemiTerminal size="inherit" style={{ fontSize: size }} className={className} aria-hidden="true" />
   }
   if (name === 'terminal-menu') return <IconTerminalOutline16 size={size} className={className} />
+  if (name === 'model-vision') {
+    return <SemiImageStroked size="inherit" style={{ fontSize: size }} className={className} aria-hidden="true" />
+  }
+  if (name === 'model-reasoning') return <IconThinkOutline16 size={size} className={className} />
   return (
     <SemiSidebar
       size="inherit"

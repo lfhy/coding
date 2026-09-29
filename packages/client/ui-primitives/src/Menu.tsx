@@ -64,12 +64,17 @@ const MEASURE_STYLE: CSSProperties = { visibility: 'hidden', left: 0, top: 0 }
  * @param props.items - 可选行与分隔符。
  * @param props.selectedId - 显示为选中的行。
  * @param props.selectedIds - 存在独立选项组时显示为选中的行。
+ * @param props.multiSelect - 选项允许同时选中时使用复选菜单项语义；其状态由 selectedIds 提供。
+ * @param props.highlightSelected - 为已选行填充业务强调底色，默认只显示行尾勾选。
  * @param props.onSelect - 行点击回调；禁用行及仅展开子菜单的父行不会调用。
  * @param props.onClose - 外部点击或 Escape 时调用。
  * @param props.align - 相对锚点的列表对齐方式，默认 start。
  * @param props.side - 在锚点下方（默认 bottom）或上方（top）展开。
  * @param props.portal - 是否渲染到 document.body 并根据锚点矩形固定定位；
  * 适用于祖先 overflow 会裁剪原位列表的场景，默认保留纯 CSS 原位定位。
+ * @param props.portalContainer - portal 菜单的目标节点；模态框内使用其对话框节点，使选项仍在无障碍子树中。
+ * @param props.matchAnchorWidth - portal 菜单与锚点等宽，且不超出视口边距。
+ * @param props.keyboardNavigation - 打开时聚焦已选或首个选项，并支持方向键、Home 和 End。
  * @param props.closeOnPointerLeave - 指针离开触发元素与列表后是否在宽限期关闭；
  * 默认直到外部点击、Escape 或选择才关闭，宽限期允许跨越 4px 间隙后返回。
  * @param props.dense - 在不改变标准字体或卡片宽度的情况下缩小行距。
@@ -80,7 +85,7 @@ const MEASURE_STYLE: CSSProperties = { visibility: 'hidden', left: 0, top: 0 }
  * @param props.footer - 固定在可滚动项目区下方、以细线分隔的行。
  * @returns 含条件列表的锚点 wrapper。
  */
-export function Menu({ open, anchor, header, items, selectedId, selectedIds, onSelect, onClose, align = 'start', side = 'bottom', portal = false, closeOnPointerLeave = false, dense = false, compact = false, getAnchorRect, footer, className }: {
+export function Menu({ open, anchor, header, items, selectedId, selectedIds, multiSelect = false, highlightSelected = false, onSelect, onClose, align = 'start', side = 'bottom', portal = false, portalContainer, matchAnchorWidth = false, keyboardNavigation = false, closeOnPointerLeave = false, dense = false, compact = false, getAnchorRect, footer, className }: {
   open: boolean
   anchor: ReactNode
   header?: ReactNode
@@ -88,11 +93,16 @@ export function Menu({ open, anchor, header, items, selectedId, selectedIds, onS
   footer?: readonly MenuEntry[]
   selectedId?: string | undefined
   selectedIds?: readonly string[] | undefined
+  multiSelect?: boolean
+  highlightSelected?: boolean
   onSelect: (id: string) => void
   onClose: () => void
   align?: 'start' | 'end'
   side?: 'bottom' | 'top' | 'right'
   portal?: boolean
+  portalContainer?: Element | null
+  matchAnchorWidth?: boolean
+  keyboardNavigation?: boolean
   closeOnPointerLeave?: boolean
   dense?: boolean
   compact?: boolean
@@ -103,7 +113,12 @@ export function Menu({ open, anchor, header, items, selectedId, selectedIds, onS
   const listRef = useRef<HTMLDivElement>(null)
   const [openSubmenuId, setOpenSubmenuId] = useState<string | null>(null)
   const [fixedPos, setFixedPos] = useState<CSSProperties | null>(null)
+  const focusedOpenRef = useRef(false)
   const { arm: armClose, cancel: cancelClose } = usePointerGrace(onClose)
+  const selectionKey = selectedIds?.join('\u0000') ?? selectedId ?? ''
+
+  const focusableItems = (): HTMLButtonElement[] =>
+    [...(listRef.current?.querySelectorAll<HTMLButtonElement>('button[role^="menuitem"]:not(:disabled)') ?? [])]
 
   // Portal mode: fixed-position the list from the anchor rect before paint;
   // track the anchor while open (capture-phase scroll catches nested panes).
@@ -125,7 +140,7 @@ export function Menu({ open, anchor, header, items, selectedId, selectedIds, onS
       const vw = window.innerWidth
       const vh = window.innerHeight
       const listEl = listRef.current
-      const lw = listEl?.offsetWidth ?? 0
+      const lw = matchAnchorWidth ? Math.min(r.width, vw - MARGIN * 2) : listEl?.offsetWidth ?? 0
       const lh = listEl?.offsetHeight ?? 0
 
       let x: number
@@ -144,7 +159,7 @@ export function Menu({ open, anchor, header, items, selectedId, selectedIds, onS
       if (lw > 0) x = Math.min(Math.max(x, MARGIN), vw - lw - MARGIN)
       if (lh > 0) y = Math.min(Math.max(y, MARGIN), vh - lh - MARGIN)
 
-      setFixedPos({ left: x, top: y })
+      setFixedPos({ left: x, top: y, ...matchAnchorWidth ? { width: lw } : {} })
     }
     // First run measures the hidden pre-render (same commit as `open`), so
     // end/top alignment and clamping use real dimensions before anything
@@ -152,11 +167,26 @@ export function Menu({ open, anchor, header, items, selectedId, selectedIds, onS
     place()
     window.addEventListener('scroll', place, true)
     window.addEventListener('resize', place)
+    const observer = typeof ResizeObserver === 'undefined' || rootRef.current === null
+      ? null : new ResizeObserver(place)
+    if (rootRef.current !== null) observer?.observe(rootRef.current)
     return () => {
+      observer?.disconnect()
       window.removeEventListener('scroll', place, true)
       window.removeEventListener('resize', place)
     }
-  }, [open, portal, align, side, getAnchorRect])
+  }, [open, portal, align, side, matchAnchorWidth, getAnchorRect, selectionKey])
+
+  useEffect(() => {
+    if (!open) { focusedOpenRef.current = false; return }
+    // portal 列表首帧先隐藏供测量，待定位后才可取得浏览器焦点。
+    if (!keyboardNavigation || focusedOpenRef.current || (portal && fixedPos === null)) return
+    const items = focusableItems()
+    const checked = items.find(item => item.getAttribute('aria-checked') === 'true')
+    const target = checked ?? items[0]
+    target?.focus({ preventScroll: true })
+    focusedOpenRef.current = target !== undefined
+  }, [open, keyboardNavigation, portal, fixedPos])
 
   useEffect(() => {
     if (!open) {
@@ -212,12 +242,13 @@ export function Menu({ open, anchor, header, items, selectedId, selectedIds, onS
       >
         <button
           type="button"
-          role="menuitem"
-          className={clsx(css.item, selected && css.selected, entry.danger === true && css.danger)}
+          role={multiSelect ? 'menuitemcheckbox' : 'menuitem'}
+          className={clsx(css.item, selected && css.selected, selected && highlightSelected && css.selectedHighlight,
+            entry.danger === true && css.danger)}
           disabled={entry.disabled}
           aria-haspopup={hasSub ? 'menu' : undefined}
           aria-expanded={hasSub ? subOpen : undefined}
-          aria-checked={selected}
+          aria-checked={multiSelect ? selected : undefined}
           onFocus={() => { setOpenSubmenuId(hasSub ? entry.id : null) }}
           onClick={() => {
             if (hasSub) {
@@ -260,9 +291,31 @@ export function Menu({ open, anchor, header, items, selectedId, selectedIds, onS
   const list = open && (
     <div
       ref={listRef}
-      className={clsx(css.list, dense && css.denseList, compact && css.compactList, scrollable && css.scrollable, portal && css.portal, side === 'top' && !portal && css.sideTop, align === 'end' && !portal && css.alignEnd)}
+      className={clsx(css.list, dense && css.denseList, compact && css.compactList, scrollable && css.scrollable,
+        portal && css.portal, matchAnchorWidth && css.matchAnchorWidth,
+        side === 'top' && !portal && css.sideTop, align === 'end' && !portal && css.alignEnd)}
       style={portal ? fixedPos ?? MEASURE_STYLE : undefined}
       role="menu"
+      onKeyDown={keyboardNavigation ? (event) => {
+        const items = focusableItems()
+        const current = items.indexOf(document.activeElement as HTMLButtonElement)
+        let next: number
+        switch (event.key) {
+          case 'ArrowDown': next = (current + 1) % items.length; break
+          case 'ArrowUp': next = (current - 1 + items.length) % items.length; break
+          case 'Home': next = 0; break
+          case 'End': next = items.length - 1; break
+          case 'Tab':
+            event.preventDefault()
+            onClose()
+            rootRef.current?.querySelector('button')?.focus({ preventScroll: true })
+            return
+          default: return
+        }
+        if (items.length === 0) return
+        event.preventDefault()
+        items[next]?.focus({ preventScroll: true })
+      } : undefined}
       // React portals bubble synthetic events through the REACT tree: without
       // this stop, an item click re-fires the anchor row's own onClick
       // (open/toggle) after onSelect.
@@ -292,7 +345,7 @@ export function Menu({ open, anchor, header, items, selectedId, selectedIds, onS
       onPointerLeave={closeOnPointerLeave ? () => { if (open) armClose() } : undefined}
     >
       {anchor}
-      {portal ? (list !== false && createPortal(list, document.body)) : list}
+      {portal ? (list !== false && createPortal(list, portalContainer ?? document.body)) : list}
     </span>
   )
 }

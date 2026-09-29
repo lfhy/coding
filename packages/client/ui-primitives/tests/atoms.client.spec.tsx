@@ -114,12 +114,25 @@ describe('Menu', () => {
     const menu = screen.getByRole('menu')
     expect(menu.className).toMatch(/sideTop|alignEnd/)
     const selected = screen.getByRole('menuitem', { name: 'Alpha' })
-    expect(selected.getAttribute('aria-checked')).toBe('true')
+    expect(selected.hasAttribute('aria-checked')).toBe(false)
     expect(selected.querySelector('svg')).not.toBeNull()
     const other = screen.getByRole('menuitem', { name: 'Beta' })
-    expect(other.getAttribute('aria-checked')).toBe('false')
+    expect(other.hasAttribute('aria-checked')).toBe(false)
     expect(other.querySelector('svg')).toBeNull()
     fireEvent.keyDown(document, { key: 'a' })
+  })
+
+  it('announces checked state for multi-select rows without changing ordinary menu semantics', () => {
+    render(<Menu open anchor={<span>trigger</span>} items={items} selectedIds={['a']} multiSelect highlightSelected
+      onSelect={() => {}} onClose={() => {}} />)
+    const selected = screen.getByRole('menuitemcheckbox', { name: 'Alpha' })
+    const other = screen.getByRole('menuitemcheckbox', { name: 'Beta' })
+    expect(selected.getAttribute('aria-checked')).toBe('true')
+    expect(other.getAttribute('aria-checked')).toBe('false')
+    expect(selected.querySelector('svg')).not.toBeNull()
+    expect(other.querySelector('svg')).toBeNull()
+    expect(selected.className).toMatch(/selectedHighlight/)
+    expect(other.className).not.toMatch(/selectedHighlight/)
   })
 
   it('renders a leading icon and a separator between groups', () => {
@@ -300,6 +313,57 @@ describe('Menu', () => {
     expect(menu.style.top).toBe('132px')
   })
 
+  it('portal mode can match the anchor width for an overlaid multi-select', () => {
+    const rect = { left: 40, right: 340, top: 100, bottom: 128, width: 300, height: 28,
+      x: 40, y: 100, toJSON: () => ({}) } as DOMRect
+    render(<Menu portal open compact matchAnchorWidth getAnchorRect={() => rect}
+      anchor={null} items={items} onSelect={() => {}} onClose={() => {}} />)
+    const menu = screen.getByRole('menu')
+    expect(menu.style.width).toBe('300px')
+    expect(menu.style.left).toBe('40px')
+    expect(menu.className).toMatch(/matchAnchorWidth/)
+  })
+
+  it('keeps keyboard-navigable options inside their modal and returns focus on Tab', () => {
+    const target = document.createElement('div')
+    target.setAttribute('role', 'dialog')
+    document.body.append(target)
+    const onClose = vi.fn()
+    try {
+      render(<Menu portal open multiSelect keyboardNavigation portalContainer={target}
+        anchor={<button type="button">trigger</button>} items={[items[0]!, { id: 'b', label: 'Beta' }]} selectedIds={['a']}
+        onSelect={() => {}} onClose={onClose} />)
+      const selected = screen.getByRole('menuitemcheckbox', { name: 'Alpha' })
+      const other = screen.getByRole('menuitemcheckbox', { name: 'Beta' })
+      expect(target.contains(screen.getByRole('menu'))).toBe(true)
+      expect(document.activeElement).toBe(selected)
+      fireEvent.keyDown(selected, { key: 'ArrowDown' })
+      expect(document.activeElement).toBe(other)
+      fireEvent.keyDown(other, { key: 'Home' })
+      expect(document.activeElement).toBe(selected)
+      fireEvent.keyDown(selected, { key: 'End' })
+      expect(document.activeElement).toBe(other)
+      fireEvent.keyDown(other, { key: 'Tab' })
+      expect(onClose).toHaveBeenCalledTimes(1)
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'trigger' }))
+    } finally {
+      target.remove()
+    }
+  })
+
+  it('repositions a portal menu when selected chips resize its anchor', () => {
+    let bottom = 128
+    const getAnchorRect = () => ({ left: 40, right: 340, top: 100, bottom, width: 300,
+      height: bottom - 100, x: 40, y: 100, toJSON: () => ({}) }) as DOMRect
+    const props = { portal: true, open: true, matchAnchorWidth: true, getAnchorRect,
+      anchor: <span>trigger</span>, items, onSelect: () => {}, onClose: () => {} }
+    const { rerender } = render(<Menu {...props} selectedIds={['a']} />)
+    expect(screen.getByRole('menu').style.top).toBe('132px')
+    bottom = 154
+    rerender(<Menu {...props} selectedIds={['a', 'b']} />)
+    expect(screen.getByRole('menu').style.top).toBe('158px')
+  })
+
   it('portal mode skips the frame when getAnchorRect returns null (no menu until a rect exists)', () => {
     render(
       <Menu
@@ -382,6 +446,24 @@ describe('Menu', () => {
 })
 
 describe('Modal', () => {
+  it('keeps Tab inside an opt-in blocking dialog', () => {
+    render(<Modal open trapFocus title="Model settings" onClose={() => {}}
+      footer={<button type="button">Save</button>}><button type="button">Vision</button></Modal>)
+    const close = screen.getByRole('button', { name: 'Close' })
+    const save = screen.getByRole('button', { name: 'Save' })
+    save.focus()
+    fireEvent.keyDown(save, { key: 'Tab' })
+    expect(document.activeElement).toBe(close)
+    fireEvent.keyDown(close, { key: 'Tab', shiftKey: true })
+    expect(document.activeElement).toBe(save)
+  })
+
+  it('keeps a short visible title while identifying a specific row to assistive technology', () => {
+    render(<Modal open title="Model settings" ariaLabel="Model settings 2" onClose={() => {}}>fields</Modal>)
+    expect(screen.getByRole('dialog', { name: 'Model settings 2' })).toBeDefined()
+    expect(screen.getByRole('heading', { name: 'Model settings' })).toBeDefined()
+  })
+
   it('is absent while closed; Escape and mask click call onClose', () => {
     const onClose = vi.fn()
     const { rerender } = render(

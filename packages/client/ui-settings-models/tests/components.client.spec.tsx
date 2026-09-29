@@ -26,14 +26,26 @@ const t: ModelsSectionInjected['t'] = key => en[key]
 const OPENAI_TARGET = { provider: 'openai', displayName: 'openai' }
 const openaiCopy = (template: string): string => providerCopy(template, OPENAI_TARGET)
 
-/** Open one row's capacity disclosure (1-based, as the labels read). */
+/** 按显示顺序打开一行的模型设置悬浮表单。 */
 function expandRow(position: number): void {
   fireEvent.click(screen.getByRole('button', { name: `${en.modelAdvanced} ${String(position)}` }))
 }
 
-/** The capacity inputs of every open row, in row order. */
+/** 当前悬浮表单中的容量输入框。 */
 function capacityInputs(label: string): HTMLInputElement[] {
   return screen.getAllByLabelText<HTMLInputElement>(new RegExp(label))
+}
+
+/** 将悬浮表单的局部草稿并入渠道草稿，不写入设置。 */
+function saveRow(position: number): void {
+  fireEvent.click(within(screen.getByRole('dialog', { name: `${en.modelAdvanced} ${String(position)}` }))
+    .getByRole('button', { name: en.save }))
+}
+
+/** 放弃悬浮表单的局部草稿。 */
+function cancelRow(position: number): void {
+  fireEvent.click(within(screen.getByRole('dialog', { name: `${en.modelAdvanced} ${String(position)}` }))
+    .getByRole('button', { name: en.cancel }))
 }
 
 const PiAiConfig = Schema.object({
@@ -643,8 +655,10 @@ describe('ModelsSection', () => {
     expandRow(3)
     fireEvent.change(ids[2] as HTMLInputElement, { target: { value: 'private-preview' } })
     fireEvent.change(names[2] as HTMLInputElement, { target: { value: 'Private Preview' } })
-    // Only row 3 is open, so its capacity is addressed by its own label.
+    // 只有第三行打开，可直接通过该行的可访问名称找到容量输入框。
     fireEvent.change(screen.getByLabelText(`${en.contextWindow} 3`), { target: { value: '131072' } })
+    expect(mutate).not.toHaveBeenCalled()
+    saveRow(3)
     fireEvent.click(screen.getByText(en.apply))
 
     await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(1) })
@@ -739,24 +753,26 @@ describe('ModelsSection', () => {
     })
     openAdvanced()
     expandRow(1)
-    // The inherited 1000000 reads back short.
+    // 继承的 1000000 以简短形式回显。
     const first = screen.getByLabelText<HTMLInputElement>(`${en.contextWindow} 1`)
     expect(first.value).toBe('1M')
 
-    // Keystrokes stay verbatim while the row has focus, so typing `1000` does
-    // not rewrite itself to `1K` mid-word.
+    // 输入中保持原文，不在输入 1000 途中改写为 1K。
     fireEvent.change(first, { target: { value: '1000' } })
     expect(first.value).toBe('1000')
     fireEvent.change(first, { target: { value: '1000K' } })
     expect(first.value).toBe('1000K')
-    // 渠道模型行保留用户键入的容量拼写，存储时仍转换为数值。
+    // 悬浮表单保留用户键入的拼写，局部保存后转换为数值。
     fireEvent.blur(first)
     expect(first.value).toBe('1000K')
+    saveRow(1)
 
     expandRow(2)
     const second = screen.getByLabelText<HTMLInputElement>(`${en.contextWindow} 2`)
     fireEvent.change(second, { target: { value: '256K' } })
     fireEvent.blur(second)
+    saveRow(2)
+    expect(mutate).not.toHaveBeenCalled()
     fireEvent.click(screen.getByText(en.apply))
 
     await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(1) })
@@ -780,16 +796,14 @@ describe('ModelsSection', () => {
     expandRow(1)
     const first = screen.getByLabelText<HTMLInputElement>(`${en.contextWindow} 1`)
     fireEvent.change(first, { target: { value: '1 gazillion' } })
-    // Blurring a row that is not the edited one leaves the buffer alone.
-    expandRow(2)
-    fireEvent.blur(screen.getByLabelText(`${en.contextWindow} 2`))
+    fireEvent.blur(first)
+    expect(first.value).toBe('1 gazillion')
+    expect(screen.getByRole('alert').textContent).toBe(en.modelContextInvalid)
+    expect(within(screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` }))
+      .getByRole<HTMLButtonElement>('button', { name: en.save }).disabled).toBe(true)
+    cancelRow(1)
     expandRow(1)
-    fireEvent.blur(screen.getByLabelText(`${en.contextWindow} 1`))
-    // The text the user typed is still there to correct.
-    expect(screen.getByLabelText<HTMLInputElement>(`${en.contextWindow} 1`).value).toBe('1 gazillion')
-
-    fireEvent.click(screen.getByText(en.apply))
-    await screen.findByText(`Model 1: ${en.modelContextInvalid}`)
+    expect(screen.getByLabelText<HTMLInputElement>(`${en.contextWindow} 1`).value).toBe('1M')
     expect(mutate).not.toHaveBeenCalled()
   })
 
@@ -837,58 +851,59 @@ describe('ModelsSection', () => {
       .toEqual(base === undefined ? ['deepseek-v4-flash', 'deepseek-v4-pro'] : ['pinned-by-deployment'])
   })
 
-  it('keeps every row\'s unreadable text, not just the last one edited', async () => {
-    // The regression: one active buffer meant editing a second row displaced
-    // the first, which then fell back to rendering its stored NaN as `NaN` —
-    // losing the text the user was told they could still correct.
-    await mountDeepSeekCard()
+  it('discards an unreadable row draft when switching rows without saving', async () => {
+    const { mutate } = await mountDeepSeekCard()
     openAdvanced()
     expandRow(1)
     const first = screen.getByLabelText<HTMLInputElement>(`${en.contextWindow} 1`)
     fireEvent.change(first, { target: { value: 'not a number' } })
     fireEvent.blur(first)
+    expect(first.value).toBe('not a number')
     expandRow(2)
     fireEvent.change(screen.getByLabelText(`${en.contextWindow} 2`), { target: { value: '2M' } })
+    saveRow(2)
 
     expandRow(1)
-    expect(screen.getByLabelText<HTMLInputElement>(`${en.contextWindow} 1`).value).toBe('not a number')
+    expect(screen.getByLabelText<HTMLInputElement>(`${en.contextWindow} 1`).value).toBe('1M')
+    cancelRow(1)
     expandRow(2)
     expect(screen.getByLabelText<HTMLInputElement>(`${en.contextWindow} 2`).value).toBe('2M')
+    expect(mutate).not.toHaveBeenCalled()
   })
 
-  it('re-keys the typed text around a removed row', async () => {
+  it('keeps saved row capacities attached to their models after removal', async () => {
     await mountDeepSeekCard()
     openAdvanced()
     const windows = (): HTMLInputElement[] => capacityInputs(en.contextWindow)
     const removeRow = (at: number): void => {
       fireEvent.click(screen.getAllByLabelText(new RegExp(en.removeModel))[at] as HTMLElement)
     }
-    // Three rows, with text parked on the outer two.
+    // 第一行和第三行分别保存有效容量，再删除中间行。
     fireEvent.click(screen.getByText(en.addModel))
     expandRow(1)
-    fireEvent.change(screen.getByLabelText(`${en.contextWindow} 1`), { target: { value: 'top text' } })
-    fireEvent.blur(screen.getByLabelText(`${en.contextWindow} 1`))
+    fireEvent.change(screen.getByLabelText(`${en.contextWindow} 1`), { target: { value: '128K' } })
+    saveRow(1)
     expandRow(3)
-    fireEvent.change(screen.getByLabelText(`${en.contextWindow} 3`), { target: { value: 'bottom text' } })
-    fireEvent.blur(screen.getByLabelText(`${en.contextWindow} 3`))
+    fireEvent.change(screen.getByLabelText(`${en.contextWindow} 3`), { target: { value: '64K' } })
+    saveRow(3)
 
-    // Dropping the middle row leaves the row above untouched and carries the
-    // row below down with its own text, rather than stranding it.
+    // 删除中间行后，两侧模型的容量仍各归其主。
     removeRow(1)
-    expect(windows()).toHaveLength(1)
-    expect(screen.getByLabelText<HTMLInputElement>(`${en.contextWindow} 2`).value).toBe('bottom text')
+    expandRow(2)
+    expect(screen.getByLabelText<HTMLInputElement>(`${en.contextWindow} 2`).value).toBe('64K')
+    cancelRow(2)
     expandRow(1)
-    expect(screen.getByLabelText<HTMLInputElement>(`${en.contextWindow} 1`).value).toBe('top text')
+    expect(screen.getByLabelText<HTMLInputElement>(`${en.contextWindow} 1`).value).toBe('128K')
+    cancelRow(1)
 
-    // Dropping a row that holds text takes that text with it; the survivor
-    // keeps its own rather than inheriting the deleted row's.
+    // 删除第一行后，剩余模型只保留自己的容量。
     removeRow(0)
     expandRow(1)
     expect(windows()).toHaveLength(1)
-    expect((windows()[0] as HTMLInputElement).value).toBe('bottom text')
+    expect((windows()[0] as HTMLInputElement).value).toBe('64K')
   })
 
-  it('keeps a half-typed capacity when reopening the channel model settings', async () => {
+  it('discards a half-typed capacity when reopening the channel model settings', async () => {
     await mountDeepSeekCard()
     openAdvanced()
     expandRow(1)
@@ -898,7 +913,7 @@ describe('ModelsSection', () => {
     expect(screen.queryByRole('button', { name: en.resetModels })).toBeNull()
     expandRow(1)
     expandRow(1)
-    expect((capacityInputs(en.contextWindow)[0] as HTMLInputElement).value).toBe('garbage')
+    expect((capacityInputs(en.contextWindow)[0] as HTMLInputElement).value).toBe('1M')
   })
 
   it('edits an output cap per model and carries its text across a removal', async () => {
@@ -915,13 +930,13 @@ describe('ModelsSection', () => {
     fireEvent.change(screen.getByLabelText(`${en.maxTokens} 2`), { target: { value: '64K' } })
     fireEvent.blur(screen.getByLabelText(`${en.maxTokens} 2`))
     expect(screen.getByLabelText<HTMLInputElement>(`${en.maxTokens} 2`).value).toBe('64K')
+    saveRow(2)
 
-    // Dropping the row above carries the cap text down with its own row.
+    // 删除前一行后，已保存的输出上限跟随原模型移动。
     fireEvent.click(screen.getAllByLabelText(new RegExp(en.removeModel))[0] as HTMLElement)
-    expect(screen.getByLabelText<HTMLInputElement>(`${en.maxTokens} 1`).value).toBe('64K')
-    // The disclosure closes on a second press.
     expandRow(1)
-    expect(screen.queryByLabelText(`${en.maxTokens} 1`)).toBeNull()
+    expect(screen.getByLabelText<HTMLInputElement>(`${en.maxTokens} 1`).value).toBe('64K')
+    cancelRow(1)
 
     fireEvent.click(screen.getByText(en.apply))
     await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(1) })
@@ -985,6 +1000,7 @@ describe('ModelsSection', () => {
     const windows = capacityInputs(en.contextWindow)
     fireEvent.change(names[0] as HTMLInputElement, { target: { value: '' } })
     fireEvent.change(windows[0] as HTMLInputElement, { target: { value: '' } })
+    saveRow(1)
     fireEvent.click(screen.getByText(en.apply))
 
     await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(1) })
