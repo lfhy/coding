@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import Schema from '@deepseek-ai/schemastery'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
+import { Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { RpcResponse, SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
 import {
   ModelsSection, needsSetup, providerCopy, providerTargetLabel, removeProviderProfile,
@@ -252,10 +253,11 @@ function openCustomChannel(): HTMLElement {
   return screen.getByRole('dialog', { name: en.add })
 }
 
-function fillCustomChannel(dialog: HTMLElement, route = 'acme', key = ''): void {
-  fireEvent.change(within(dialog).getByRole('textbox', { name: en.customRoute }), { target: { value: route } })
+function fillCustomChannel(dialog: HTMLElement, name = 'Acme', key = ''): void {
+  fireEvent.change(within(dialog).getByRole('textbox', { name: en.channelName }), { target: { value: name } })
   fireEvent.change(within(dialog).getByRole('textbox', { name: en.baseUrl }), { target: { value: 'https://acme.test/v1' } })
   if (key !== '') fireEvent.change(within(dialog).getByLabelText(en.keyInput), { target: { value: key } })
+  fireEvent.click(within(dialog).getByRole('button', { name: en.customNext }))
   fireEvent.click(within(dialog).getByRole('button', { name: en.addModel }))
   fireEvent.change(within(dialog).getByRole('textbox', { name: `${en.modelId} 1` }), { target: { value: 'acme-chat' } })
 }
@@ -275,8 +277,11 @@ describe('ModelsSection', () => {
     expect(within(rail).getByRole('button', { name: en.add })).toBeTruthy()
     expect(within(rail).getAllByRole('button', { name: en.add })).toHaveLength(1)
     const dialog = openCustomChannel()
-    expect(within(dialog).getByRole('textbox', { name: en.customRoute })).toBe(document.activeElement)
-    expect(within(dialog).getByRole('button', { name: en.create })).toBeTruthy()
+    expect(within(dialog).getByRole('textbox', { name: en.channelName })).toBe(document.activeElement)
+    expect(within(dialog).queryByRole('textbox', { name: 'Provider ID' })).toBeNull()
+    expect(within(dialog).getAllByRole('tab')).toHaveLength(2)
+    expect(within(dialog).getByRole('button', { name: en.customNext })).toBeTruthy()
+    expect(within(dialog).queryByRole('button', { name: en.create })).toBeNull()
     expect(screen.queryByRole('combobox', { name: en.provider })).toBeNull()
     expect(within(dialog).queryByRole('button', { name: /anthropic/i })).toBeNull()
     expect(within(dialog).queryByRole('textbox', { name: en.searchProviders })).toBeNull()
@@ -306,7 +311,7 @@ describe('ModelsSection', () => {
     expect(screen.getByLabelText<HTMLInputElement>(en.channelName).value).toBe('DeepSeek')
     const dialog = openCustomChannel()
     expect(within(dialog).queryByRole('button', { name: /anthropic/i })).toBeNull()
-    expect(within(dialog).getByRole('textbox', { name: en.customRoute })).toBeTruthy()
+    expect(within(dialog).getByRole('textbox', { name: en.channelName })).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'DeepSeek' })).toBeTruthy()
   })
 
@@ -451,7 +456,7 @@ describe('ModelsSection', () => {
     expect(screen.queryByText(providerCopy(en.savedProvider,
       { provider: 'deepseek-official', displayName: 'DeepSeek' }))).toBeNull()
     const dialog = openCustomChannel()
-    expect(within(dialog).getByRole('textbox', { name: en.customRoute })).toBeTruthy()
+    expect(within(dialog).getByRole('textbox', { name: en.channelName })).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'DeepSeek' })).toBeTruthy()
   })
 
@@ -1126,20 +1131,24 @@ describe('ModelsSection', () => {
   it('creates a custom route from the modal and stores its derived credential', async () => {
     const { mutate, set } = await mountSection()
     const dialog = openCustomChannel()
-    fillCustomChannel(dialog, 'acme', 'sk-acme')
+    fillCustomChannel(dialog, 'Acme', 'sk-acme')
     expect(within(dialog).getByRole<HTMLButtonElement>('button', { name: en.create }).disabled).toBe(false)
     fireEvent.click(within(dialog).getByRole('button', { name: en.create }))
     await waitFor(() => { expect(mutate).toHaveBeenCalledOnce() })
+    const request = mutate.mock.calls[0]?.[0] as { ops: Array<{ path: string[] }> }
+    const route = request.ops[0]?.path[1]
+    if (route === undefined) throw new Error('created route is missing')
+    expect(route).toMatch(/^channel-[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/)
     expect(mutate.mock.calls[0]?.[0]).toEqual({
       ns: 'llm-pi-ai', expectedRevision: 0,
-      ops: [{ op: 'set', path: ['providers', 'acme'], value: {
-        apiKeyEnv: 'ACME_API_KEY', api: 'openai-completions', baseURL: 'https://acme.test/v1',
+      ops: [{ op: 'set', path: ['providers', route], value: {
+        displayName: 'Acme', apiKeyEnv: deriveKeyRef(route), api: 'openai-completions', baseURL: 'https://acme.test/v1',
         models: [{ id: 'acme-chat', input: ['text', 'image'], reasoningEfforts: {
           off: null, low: 'low', high: 'high', max: 'max',
         } }],
       } }],
     })
-    await waitFor(() => { expect(set).toHaveBeenCalledWith({ ref: 'ACME_API_KEY', value: 'sk-acme' }) })
+    await waitFor(() => { expect(set).toHaveBeenCalledWith({ ref: deriveKeyRef(route), value: 'sk-acme' }) })
     await waitFor(() => { expect(screen.queryByRole('dialog', { name: en.add })).toBeNull() })
   })
 
@@ -1160,16 +1169,21 @@ describe('ModelsSection', () => {
       .mockResolvedValueOnce(ok({}))
     const { mutate } = await mountSection({ set })
     const dialog = openCustomChannel()
-    fillCustomChannel(dialog, 'acme', 'sk-acme')
+    fillCustomChannel(dialog, 'Acme', 'sk-acme')
     fireEvent.click(within(dialog).getByRole('button', { name: en.create }))
     expect(await within(dialog).findByText('credential store unavailable')).toBeTruthy()
     expect(mutate).toHaveBeenCalledOnce()
-    expect(within(dialog).getByRole<HTMLInputElement>('textbox', { name: en.customRoute }).disabled).toBe(true)
+    expect(within(dialog).getByRole<HTMLInputElement>('textbox', { name: en.channelName }).disabled).toBe(true)
     expect(within(dialog).getByLabelText<HTMLInputElement>(en.keyInput).disabled).toBe(false)
-    fireEvent.click(within(dialog).getByRole('button', { name: en.create }))
+    expect(document.activeElement).toBe(within(dialog).getByLabelText(en.keyInput))
+    expect(within(dialog).queryByRole('button', { name: en.create })).toBeNull()
+    fireEvent.click(within(dialog).getByRole('button', { name: en.retry }))
     await waitFor(() => { expect(set).toHaveBeenCalledTimes(2) })
     expect(mutate).toHaveBeenCalledOnce()
-    expect(set).toHaveBeenLastCalledWith({ ref: 'ACME_API_KEY', value: 'sk-acme' })
+    const request = mutate.mock.calls[0]?.[0] as { ops: Array<{ path: string[] }> }
+    const route = request.ops[0]?.path[1]
+    if (route === undefined) throw new Error('created route is missing')
+    expect(set).toHaveBeenLastCalledWith({ ref: deriveKeyRef(route), value: 'sk-acme' })
   })
 
   it('leaves the custom modal open when settings rejects creation and never stores the key', async () => {
@@ -1177,7 +1191,7 @@ describe('ModelsSection', () => {
       mutate: vi.fn(() => Promise.resolve(fail('llm-pi-ai: rejected custom route'))),
     })
     const dialog = openCustomChannel()
-    fillCustomChannel(dialog, 'acme', 'sk-acme')
+    fillCustomChannel(dialog, 'Acme', 'sk-acme')
     fireEvent.click(within(dialog).getByRole('button', { name: en.create }))
     expect(await within(dialog).findByText(/rejected custom route/)).toBeTruthy()
     expect(set).not.toHaveBeenCalled()
@@ -1361,6 +1375,30 @@ describe('ModelsSection', () => {
     await waitFor(() => { expect(screen.queryByText(/directory down/)).toBeNull() })
   })
 
+  it('keeps loaded channel details visible through a failed refresh and retries from its alert', async () => {
+    const { controller, face, view, injected } = await mountSection()
+    selectChannel('openai')
+    const url = screen.getByRole<HTMLInputElement>('textbox', { name: en.baseUrl })
+    fireEvent.change(url, { target: { value: 'https://unsaved.test' } })
+    face.llm.providers.mockResolvedValueOnce(fail('directory refresh unavailable') as never)
+    await act(async () => { await controller.load() })
+    const alert = screen.getByRole('alert')
+    expect(alert.textContent).toContain('directory refresh unavailable')
+    expect(screen.getByRole('heading', { name: 'openai' })).toBeTruthy()
+    expect(url.value).toBe('https://unsaved.test')
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: en.apply }).disabled).toBe(true)
+
+    view.rerender(<ModelsSection {...injected} hideHeader />)
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.getByRole('heading', { name: 'openai' })).toBeTruthy()
+    view.rerender(<ModelsSection {...injected} />)
+    fireEvent.click(within(screen.getByRole('alert')).getByRole('button', { name: en.retry }))
+    await waitFor(() => { expect(screen.queryByRole('alert')).toBeNull() })
+    expect(screen.getByRole<HTMLInputElement>('textbox', { name: en.baseUrl }).value).toBe('https://unsaved.test')
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: en.apply }).disabled).toBe(false)
+    expect(face.settings.describe).toHaveBeenCalledTimes(2)
+  })
+
   it('shows the read-only notice and disables mutations for a read-only provider', async () => {
     const { face } = await mountSection()
     face.settings.describe.mockImplementation(() => Promise.resolve(ok({
@@ -1404,14 +1442,14 @@ describe('ModelsSection', () => {
       .getByRole<HTMLButtonElement>('button', { name: en.add })
     trigger.focus()
     let dialog = openCustomChannel()
-    fireEvent.change(within(dialog).getByRole('textbox', { name: en.customRoute }), { target: { value: 'discard' } })
+    fillCustomChannel(dialog, 'Discard')
     fireEvent.click(within(dialog).getByRole('button', { name: en.cancel }))
     expect(screen.queryByRole('dialog', { name: en.add })).toBeNull()
     expect(document.activeElement).toBe(trigger)
     expect(screen.getByRole('heading', { name: 'openai' })).toBeTruthy()
     expect(screen.getByRole<HTMLInputElement>('textbox', { name: en.baseUrl }).value).toBe('https://unsaved.test')
     dialog = openCustomChannel()
-    expect(within(dialog).getByRole<HTMLInputElement>('textbox', { name: en.customRoute }).value).toBe('')
+    expect(within(dialog).getByRole<HTMLInputElement>('textbox', { name: en.channelName }).value).toBe('')
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(screen.queryByRole('dialog', { name: en.add })).toBeNull()
     expect(document.activeElement).toBe(trigger)
@@ -1431,8 +1469,67 @@ describe('ModelsSection', () => {
     ] }))
     await mountFace(scripted)
     const dialog = openCustomChannel()
-    expect(within(dialog).getByRole('textbox', { name: en.customRoute })).toBeTruthy()
+    expect(within(dialog).getByRole('textbox', { name: en.channelName })).toBeTruthy()
     expect(within(dialog).queryByRole('button', { name: 'anthropic' })).toBeNull()
+  })
+
+  it('closes only the nested model settings when Escape is pressed over a custom draft', async () => {
+    const { mutate, set } = await mountSection()
+    const dialog = openCustomChannel()
+    fillCustomChannel(dialog)
+    fireEvent.click(within(dialog).getByRole('button', { name: `${en.modelAdvanced} 1` }))
+    expect(screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })).toBeTruthy()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('dialog', { name: `${en.modelAdvanced} 1` })).toBeNull()
+    expect(screen.getByRole('dialog', { name: en.add })).toBe(dialog)
+    expect(within(dialog).getByRole<HTMLInputElement>('textbox', { name: `${en.modelId} 1` }).value).toBe('acme-chat')
+    expect(mutate).not.toHaveBeenCalled()
+    expect(set).not.toHaveBeenCalled()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('dialog', { name: en.add })).toBeNull()
+  })
+
+  it('preserves the custom draft when a higher-priority app modal receives Escape', async () => {
+    const { mutate, set } = await mountSection()
+    const dialog = openCustomChannel()
+    fillCustomChannel(dialog)
+    const onClose = vi.fn()
+    const appDialog = render(<Modal open trapFocus title="Application confirmation" onClose={onClose}>
+      <button type="button">Keep editing</button>
+    </Modal>)
+    const confirmation = screen.getByRole('dialog', { name: 'Application confirmation' })
+    within(confirmation).getByRole('button', { name: 'Keep editing' }).focus()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(onClose).toHaveBeenCalledOnce()
+    expect(screen.getByRole('dialog', { name: en.add })).toBe(dialog)
+    expect(within(dialog).getByRole<HTMLInputElement>('textbox', { name: `${en.modelId} 1` }).value).toBe('acme-chat')
+    expect(mutate).not.toHaveBeenCalled()
+    expect(set).not.toHaveBeenCalled()
+
+    appDialog.rerender(<Modal open={false} title="Application confirmation" onClose={onClose} />)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('dialog', { name: en.add })).toBeNull()
+    expect(onClose).toHaveBeenCalledOnce()
+    expect(mutate).not.toHaveBeenCalled()
+    expect(set).not.toHaveBeenCalled()
+  })
+
+  it('retains a cancellable custom draft when its adapter namespace disappears during refresh', async () => {
+    let namespaces = wireNamespaces()
+    const { controller, mirror, mutate, set } = await mountSection({ namespaces: () => namespaces })
+    const dialog = openCustomChannel()
+    fireEvent.change(within(dialog).getByRole('textbox', { name: en.channelName }), { target: { value: 'Draft' } })
+    namespaces = namespaces.filter(view => view.ns !== 'llm-pi-ai')
+    await act(async () => { await mirror.refresh(); await controller.load() })
+    expect(screen.getByRole('dialog', { name: en.add })).toBe(dialog)
+    expect(within(dialog).getByRole<HTMLInputElement>('textbox', { name: en.channelName }).value).toBe('Draft')
+    expect(within(dialog).getByRole<HTMLButtonElement>('button', { name: en.customNext }).disabled).toBe(true)
+    fireEvent.click(within(dialog).getByRole('button', { name: en.cancel }))
+    expect(screen.queryByRole('dialog', { name: en.add })).toBeNull()
+    const rail = screen.getByRole('complementary', { name: en.provider })
+    expect(within(rail).getByRole<HTMLButtonElement>('button', { name: en.add }).disabled).toBe(true)
+    expect(mutate).not.toHaveBeenCalled()
+    expect(set).not.toHaveBeenCalled()
   })
 
   it('disables the add action when no installed or custom route can be added', async () => {
@@ -1459,7 +1556,7 @@ describe('ModelsSection', () => {
       </div>)
       const dialog = openCustomChannel()
       expect(screen.getByRole('dialog', { name: en.onboardingTitle })).toBeTruthy()
-      expect(within(dialog).getByRole('textbox', { name: en.customRoute })).toBeTruthy()
+      expect(within(dialog).getByRole('textbox', { name: en.channelName })).toBeTruthy()
       fireEvent.click(within(dialog).getByRole('button', { name: en.cancel }))
       expect(screen.queryByRole('dialog', { name: en.add })).toBeNull()
       expect(screen.getByRole('dialog', { name: en.onboardingTitle })).toBeTruthy()

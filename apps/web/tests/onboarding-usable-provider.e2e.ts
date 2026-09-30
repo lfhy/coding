@@ -3,6 +3,8 @@
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
+import { load } from 'js-yaml'
+import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
@@ -16,7 +18,6 @@ const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/onboarding-usable-provid
 const DISMISSED_EXPECTED = join(SNAPSHOT_DIR, 'dismissed.expected.md')
 const MODE = webSnapshotMode()
 const ONBOARDING_TITLE = '配置模型，开始使用'
-const CUSTOM_ROUTE = 'e2e-onboarding'
 const CUSTOM_MODEL = 'e2e-onboarding-model'
 const CUSTOM_KEY = 'sk-e2e-onboarding'
 
@@ -66,8 +67,13 @@ describe.skipIf(MODE === 'record')('web e2e: another usable provider ends first-
     if (bounds === null) throw new Error('添加渠道表单未显示')
     expect(Math.abs(bounds.x + bounds.width / 2 - 720)).toBeLessThanOrEqual(2)
     expect(Math.abs(bounds.y + bounds.height / 2 - 480)).toBeLessThanOrEqual(2)
-    await createDialog.getByRole('textbox', { name: 'Provider ID' }).waitFor()
-    await createDialog.getByRole('combobox', { name: 'API 协议' }).waitFor()
+    const name = createDialog.getByRole('textbox', { name: '渠道名称', exact: true })
+    await name.waitFor()
+    expect(await name.evaluate(node => document.activeElement === node)).toBe(true)
+    expect(await createDialog.getByRole('textbox', { name: 'Provider ID' }).count()).toBe(0)
+    await createDialog.getByRole('combobox', { name: '上游请求格式', exact: true }).waitFor()
+    expect(await createDialog.getByRole('tab').count()).toBe(2)
+    expect(await createDialog.getByRole('button', { name: '创建渠道', exact: true }).count()).toBe(0)
     expect(await createDialog.getByRole('button', { name: 'minimax-cn', exact: true }).count()).toBe(0)
     expect(await deepSeek.getAttribute('aria-current')).toBe('true')
     expect(await page.locator('#root').evaluate(root => (root as HTMLElement).inert)).toBe(true)
@@ -98,10 +104,13 @@ describe.skipIf(MODE === 'record')('web e2e: another usable provider ends first-
     }
 
     await add.click()
-    await createDialog.getByRole('textbox', { name: 'Provider ID' }).fill(CUSTOM_ROUTE)
-    await createDialog.getByRole('textbox', { name: '显示名称' }).fill('E2E Gateway')
+    await name.fill('E2E Gateway')
     await createDialog.getByRole('textbox', { name: 'API 地址' }).fill('https://gateway.example/v1')
     await createDialog.getByRole('textbox', { name: 'API 密钥' }).fill(CUSTOM_KEY)
+    const beforeNext = scaffold.ctx.settings.get(settingsNamespace('llm-pi-ai'))
+    await createDialog.getByRole('button', { name: '下一步', exact: true }).click()
+    expect(scaffold.ctx.settings.get(settingsNamespace('llm-pi-ai'))).toEqual(beforeNext)
+    expect(await createDialog.getByRole('tab').nth(1).getAttribute('aria-selected')).toBe('true')
     await createDialog.getByRole('button', { name: '添加模型' }).click()
     await createDialog.getByRole('textbox', { name: '模型 ID 1' }).fill(CUSTOM_MODEL)
     expect(await createDialog.getByRole('button', { name: '创建渠道', exact: true }).isEnabled()).toBe(true)
@@ -116,6 +125,18 @@ describe.skipIf(MODE === 'record')('web e2e: another usable provider ends first-
     const createDialog = page.getByRole('dialog', { name: '添加渠道', exact: true })
     await createDialog.getByRole('button', { name: '创建渠道', exact: true }).click()
     await createDialog.waitFor({ state: 'detached', timeout: 15_000 })
+    const configuredDocument = load(await readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8')) as {
+      'llm-pi-ai'?: { providers?: Record<string, { displayName?: string; apiKeyEnv?: string }> }
+    }
+    const created = Object.entries(configuredDocument['llm-pi-ai']?.providers ?? {})
+      .find(([, profile]) => profile.displayName === 'E2E Gateway')
+    if (created === undefined) throw new Error('新渠道 profile 未保存')
+    const [customRoute, profile] = created
+    expect(customRoute).toMatch(/^channel-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
+    // import { deriveKeyRef } from '@deepseek-ai/dsh-client-ui-settings-models/src/client/store.ts'
+    // 不引入 Client 图；镜像约定并同时验证 Host 落盘的引用。
+    const keyRef = `${customRoute.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}_API_KEY`
+    expect(profile.apiKeyEnv).toBe(keyRef)
     await onboarding.getByRole('complementary', { name: '提供方' })
       .getByRole('button', { name: 'E2E Gateway 已配置' }).waitFor({ timeout: 15_000 })
     await onboarding.getByRole('main').getByRole('heading', { name: 'E2E Gateway' }).waitFor()
@@ -127,7 +148,7 @@ describe.skipIf(MODE === 'record')('web e2e: another usable provider ends first-
     const choices = await model.locator('option').evaluateAll(options => options.map(option => ({
       label: option.textContent ?? '', value: (option as HTMLOptionElement).value,
     })))
-    const choice = choices.find(option => option.value === `${CUSTOM_ROUTE}\u0000${CUSTOM_MODEL}`)
+    const choice = choices.find(option => option.value === `${customRoute}\u0000${CUSTOM_MODEL}`)
     expect(choice?.label).toBeTruthy()
     if (choice === undefined) throw new Error('the custom channel model is not usable in onboarding')
     await model.selectOption(choice.value)
@@ -141,15 +162,17 @@ describe.skipIf(MODE === 'record')('web e2e: another usable provider ends first-
 
     // 只有刚创建的渠道可用，DeepSeek 仍无凭据；默认选项必须属于新路由。
     const settingsDocument = await readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8')
-    expect(settingsDocument).toContain(`${CUSTOM_ROUTE}:`)
-    expect(settingsDocument).toContain('apiKeyEnv: E2E_ONBOARDING_API_KEY')
+    expect(settingsDocument).toContain(`${customRoute}:`)
+    expect(settingsDocument).toContain(`apiKeyEnv: ${keyRef}`)
     expect(settingsDocument).toContain(`id: ${CUSTOM_MODEL}`)
     expect(settingsDocument).toContain('agent-default-model:')
-    expect(settingsDocument).toContain(`provider: ${CUSTOM_ROUTE}`)
+    expect(settingsDocument).toContain(`provider: ${customRoute}`)
     expect(settingsDocument).toContain(`model: ${CUSTOM_MODEL}`)
     const credentials = await readFile(join(scaffold.harnessHome, '.credentials.yaml'), 'utf8')
-    expect(credentials).toContain(`E2E_ONBOARDING_API_KEY: ${CUSTOM_KEY}`)
+    expect(credentials).toContain(`${keyRef}: ${CUSTOM_KEY}`)
     expect(credentials).not.toContain('DEEPSEEK_API_KEY')
+    expect(await page.content()).not.toContain(CUSTOM_KEY)
+    expect(await page.locator('body').ariaSnapshot()).not.toContain(CUSTOM_KEY)
 
     await page.addInitScript(() => {
       const sightings: string[] = []

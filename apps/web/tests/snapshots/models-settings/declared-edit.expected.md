@@ -39,14 +39,14 @@
       - /placeholder: 已配置——输入新值可替换
     - text: 显示名称
     - textbox "显示名称":
-      - /placeholder: acme-gateway
+      - /placeholder: channel-{{uuid}}
       - text: Acme Gateway
     - text: API 地址
     - textbox "API 地址":
       - /placeholder: https://gateway.acme.example/v1
       - text: https://gateway.acme.example/v1
-    - text: API 协议
-    - combobox "API 协议":
+    - text: 上游请求格式
+    - combobox "上游请求格式":
       - option "openai-completions" [selected]
       - option "openai-responses"
       - option "anthropic-messages"

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /** 模型目录编辑、端点发现，以及手工声明渠道的交互契约。 */
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Schema from '@deepseek-ai/schemastery'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import type { RpcResponse, SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
@@ -14,7 +14,18 @@ import { ModelsSettingsStore, deriveKeyRef, protocolChoices } from '../src/clien
 import { en } from '../src/client/locales.ts'
 import { settingsSchema } from './settings-schema.client.ts'
 
-afterEach(cleanup)
+const UUID = '11111111-1111-4111-8111-111111111111'
+const GENERATED_ROUTE = `channel-${UUID}`
+
+let randomUuid = vi.fn<() => ReturnType<Crypto['randomUUID']>>(() => UUID)
+beforeEach(() => {
+  randomUuid = vi.fn<() => ReturnType<Crypto['randomUUID']>>(() => UUID)
+  vi.spyOn(crypto, 'randomUUID').mockImplementation(randomUuid)
+})
+afterEach(() => {
+  cleanup()
+  vi.restoreAllMocks()
+})
 
 const t: ModelsSectionInjected['t'] = key => en[key]
 
@@ -180,8 +191,19 @@ async function mountSectionWithCreatedRoute(set?: ReturnType<typeof vi.fn>) {
     directory.push(route)
     return Promise.resolve(ok(piAiNamespace(providers)))
   })
-  return mountSection({ providers, directory, declaredRoutes: ['acme'], mutate,
+  const mounted = await mountSection({ providers, directory, declaredRoutes: [GENERATED_ROUTE], mutate,
     ...set === undefined ? {} : { set } })
+  mounted.face.llm.providers = vi.fn(() => Promise.resolve(ok({
+    providers: directory.map(provider => ({
+      provider,
+      displayName: (providers[provider] as { displayName?: string }).displayName ?? provider,
+      settingsNs: 'llm-pi-ai',
+      settingsPath: ['providers', provider],
+      active: true,
+      declared: provider === GENERATED_ROUTE,
+    })),
+  })))
+  return mounted
 }
 
 /** 渠道目录选中后，详情始终展示凭据、端点和模型目录。 */
@@ -196,8 +218,32 @@ function openCustomModal(): HTMLElement {
   const rail = screen.getByRole('complementary', { name: en.provider })
   fireEvent.click(within(rail).getByRole('button', { name: en.add }))
   const dialog = screen.getByRole('dialog', { name: en.add })
-  expect(within(dialog).getByLabelText(en.customRoute)).toBeTruthy()
+  expect(within(dialog).getByLabelText(en.channelName)).toBeTruthy()
   return dialog
+}
+
+/** 填写第一步草稿；此 helper 不切换步骤或发起写入。 */
+function fillCustomChannel(
+  name = 'Acme Gateway', baseURL = 'https://acme.test/v1', key = '',
+): void {
+  const form = within(screen.queryByRole('dialog', { name: en.add }) ?? document.body)
+  fireEvent.change(form.getByLabelText(en.channelName), { target: { value: name } })
+  fireEvent.change(form.getByLabelText(en.baseUrl), { target: { value: baseURL } })
+  fireEvent.change(form.getByLabelText(en.keyInput), { target: { value: key } })
+}
+
+/** 通过下一步按钮切换到模型草稿，不替代被测字段校验。 */
+function nextCustomStep(): void {
+  const next = buttonNamed(en.customNext)
+  expect(next.disabled).toBe(false)
+  fireEvent.click(next)
+}
+
+/** 新建模型行仍只编辑本地草稿。 */
+function addCustomModel(id = 'm', index = 1): void {
+  const form = within(screen.queryByRole('dialog', { name: en.add }) ?? document.body)
+  fireEvent.click(form.getByRole('button', { name: en.addModel }))
+  fireEvent.change(form.getByLabelText(`${en.modelId} ${String(index)}`), { target: { value: id } })
 }
 
 /** 打开指定模型行的设置浮层。 */
@@ -665,29 +711,35 @@ describe('endpoint interrogation', () => {
     expect(firstProbe(discover)).toEqual({ settingsNs: 'llm-pi-ai', provider: 'openai' })
   })
 
-  it('keeps the create card asking only once it has an endpoint', () => {
-    // A provider being declared has no route yet, so the endpoint is the only
-    // thing an interrogation could go on.
-    const scripted = scriptedFace()
+  it('interrogates the latest unpersisted channel information after returning from the model step', async () => {
+    const scripted = scriptedFace({
+      discover: vi.fn(() => Promise.resolve(ok({ models: [{ id: 'candidate' }] }))),
+    })
     render(
       <CustomProviderCard
         taken={[]} protocols={PROTOCOLS} revision={7} api={scripted.face as never}
         t={t} readOnly={false} onClose={vi.fn()}
       />,
     )
-    expect(buttonNamed(en.fetchModels).disabled).toBe(true)
-    expect(buttonNamed(en.fetchModels).title).toBe(en.fetchNeedsBaseUrl)
-
-    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
-    expect(buttonNamed(en.fetchModels).disabled).toBe(false)
-    fireEvent.click(screen.getByText(en.fetchModels))
-
-    // A provider being declared names no route, so only the endpoint travels.
-    expect(firstProbe(scripted.discover)).toEqual({
-      settingsNs: 'llm-pi-ai',
-      baseURL: 'https://acme.test/v1',
-      api: 'openai-completions',
+    fillCustomChannel()
+    nextCustomStep()
+    fireEvent.click(screen.getByRole('button', { name: en.fetchModels }))
+    const picker = await screen.findByRole('dialog')
+    fireEvent.click(within(picker).getByRole('button', { name: en.cancel }))
+    fireEvent.click(screen.getByRole('button', { name: en.customBack }))
+    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://edited.test/v1' } })
+    fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: '  typed-key  ' } })
+    fireEvent.change(screen.getByLabelText(en.customApi), { target: { value: 'openai-responses' } })
+    nextCustomStep()
+    fireEvent.click(screen.getByRole('button', { name: en.fetchModels }))
+    await waitFor(() => { expect(scripted.discover).toHaveBeenCalledTimes(2) })
+    expect(scripted.discover).toHaveBeenLastCalledWith({
+      settingsNs: 'llm-pi-ai', baseURL: 'https://edited.test/v1',
+      api: 'openai-responses', apiKey: 'typed-key',
     })
+    expect(scripted.mutate).not.toHaveBeenCalled()
+    expect(scripted.set).not.toHaveBeenCalled()
+    expect(randomUuid).toHaveBeenCalledOnce()
   })
 
   it('folds a row\u2019s capacities away until they are asked for', async () => {
@@ -779,6 +831,9 @@ describe('channel directory and detail', () => {
     expect(within(dialog).queryByRole('textbox', { name: en.searchProviders })).toBeNull()
     expect(within(dialog).getByLabelText(en.keyInput)).toBeTruthy()
     expect(within(dialog).getByRole('textbox', { name: en.baseUrl })).toBeTruthy()
+    expect(within(dialog).queryByRole('region', { name: en.models })).toBeNull()
+    fillCustomChannel()
+    nextCustomStep()
     expect(within(dialog).getByRole('region', { name: en.models })).toBeTruthy()
   })
 
@@ -842,78 +897,291 @@ describe('hand-declared providers', () => {
   ) {
     const scripted = scriptedFace(wire)
     const onClose = vi.fn()
-    render(
+    const view = render(
       <CustomProviderCard
-        taken={['openai']}
-        protocols={PROTOCOLS}
-        revision={7}
-        api={scripted.face as never}
-        t={t}
-        readOnly={false}
-        onClose={onClose}
+        taken={['openai']} protocols={PROTOCOLS} revision={7}
+        api={scripted.face as never} t={t} readOnly={false} onClose={onClose}
         {...overrides}
       />,
     )
-    return { ...scripted, onClose }
+    return { ...scripted, onClose, view }
   }
 
-  it('associates visible labels with their native focus targets', () => {
+  it('associates all visible channel labels with native controls and hides the generated ID', () => {
     mountCard()
-
-    for (const label of [en.customRoute, en.baseUrl, en.customApi]) {
+    for (const label of [en.channelName, en.baseUrl, en.customApi, en.keyInput]) {
       const field = screen.getByLabelText(label)
       const visibleLabel = screen.getByText<HTMLLabelElement>(label, { selector: 'label' })
       expect(visibleLabel.control).toBe(field)
       expect(field.id).toBe(visibleLabel.htmlFor)
     }
+    expect(screen.queryByRole('textbox', { name: 'Provider ID' })).toBeNull()
+    expect(screen.queryByDisplayValue(GENERATED_ROUTE)).toBeNull()
+    expect(screen.queryByText(GENERATED_ROUTE)).toBeNull()
+    expect(screen.queryByRole('button', { name: en.addModel })).toBeNull()
+    expect(screen.queryByRole('button', { name: en.create })).toBeNull()
   })
 
-  it('writes the whole profile and the key under the derived reference', async () => {
-    const { mutate, set, onClose } = mountCard()
+  it('requires meaningful channel information before Next or the model tab can advance', () => {
+    const { mutate, set } = mountCard()
+    expect(buttonNamed(en.customNext).disabled).toBe(true)
+    expect(screen.getByRole<HTMLButtonElement>('tab', { name: en.customModelsStep }).disabled).toBe(true)
+    fireEvent.change(screen.getByLabelText(en.channelName), { target: { value: '   ' } })
+    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
+    expect(buttonNamed(en.customNext).disabled).toBe(true)
+    fireEvent.change(screen.getByLabelText(en.channelName), { target: { value: 'x'.repeat(65) } })
+    expect(screen.getByText(en.channelNameInvalid)).toBeTruthy()
+    expect(buttonNamed(en.customNext).disabled).toBe(true)
+    fireEvent.change(screen.getByLabelText(en.channelName), { target: { value: 'Acme Gateway' } })
+    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: '   ' } })
+    expect(buttonNamed(en.customNext).disabled).toBe(true)
+    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
+    fireEvent.change(screen.getByLabelText(en.customApi), { target: { value: '' } })
+    expect(buttonNamed(en.customNext).disabled).toBe(true)
+    fireEvent.change(screen.getByLabelText(en.customApi), { target: { value: 'openai-completions' } })
+    fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'sk-\u{1F600}' } })
+    expect(screen.getByText(en.keyIllegalCharacters)).toBeTruthy()
+    expect(buttonNamed(en.customNext).disabled).toBe(true)
+    fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: '' } })
+    nextCustomStep()
+    expect(screen.getByRole('tab', { name: en.customModelsStep }).getAttribute('aria-selected')).toBe('true')
+    expect(buttonNamed(en.create).disabled).toBe(true)
+    expect(mutate).not.toHaveBeenCalled()
+    expect(set).not.toHaveBeenCalled()
+  })
 
-    fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme-gateway' } })
-    fireEvent.change(screen.getByLabelText(en.customDisplayName), { target: { value: 'Acme Gateway' } })
-    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://gateway.acme.example/v1' } })
-    fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'gw-key' } })
-    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
-    fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'acme-large' } })
+  it('uses accessible keyboard tabs and keeps both steps as an unpersisted draft', () => {
+    const { mutate, set } = mountCard()
+    const information = screen.getByRole('tab', { name: en.customChannelInfo })
+    const models = screen.getByRole('tab', { name: en.customModelsStep })
+    information.focus()
+    fireEvent.keyDown(information, { key: 'ArrowRight' })
+    expect(information.getAttribute('aria-selected')).toBe('true')
+    fillCustomChannel('Acme Gateway', 'https://acme.test/v1', 'gw-key')
+    fireEvent.change(screen.getByLabelText(en.customApi), { target: { value: 'anthropic-messages' } })
+    fireEvent.keyDown(information, { key: 'ArrowLeft' })
+    expect(document.activeElement).toBe(models)
+    expect(models.getAttribute('aria-selected')).toBe('true')
+    fireEvent.keyDown(models, { key: 'x' })
+    expect(document.activeElement).toBe(models)
+    expect(models.getAttribute('aria-selected')).toBe('true')
+    fireEvent.keyDown(information, { key: 'End' })
+    expect(document.activeElement).toBe(models)
+    expect(models.getAttribute('aria-selected')).toBe('true')
+    expect(information.getAttribute('tabindex')).toBe('-1')
+    expect(models.getAttribute('tabindex')).toBe('0')
+    expect(screen.getByRole('tabpanel').getAttribute('aria-labelledby')).toBe(models.id)
+    expect(screen.getByRole('tabpanel').id).toBe(models.getAttribute('aria-controls'))
+    expect(screen.queryByLabelText(en.channelName)).toBeNull()
+    expect(screen.queryByLabelText(en.baseUrl)).toBeNull()
+    expect(screen.queryByLabelText(en.keyInput)).toBeNull()
+    expect(screen.queryByLabelText(en.customApi)).toBeNull()
+    addCustomModel('m')
+    fireEvent.keyDown(models, { key: 'Home' })
+    expect(document.activeElement).toBe(information)
+    expect(information.getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByLabelText(en.channelName)).toHaveProperty('value', 'Acme Gateway')
+    expect(screen.getByLabelText(en.baseUrl)).toHaveProperty('value', 'https://acme.test/v1')
+    expect(screen.getByLabelText(en.keyInput)).toHaveProperty('value', 'gw-key')
+    expect(screen.getByLabelText(en.customApi)).toHaveProperty('value', 'anthropic-messages')
+    nextCustomStep()
+    expect(screen.getByLabelText(`${en.modelId} 1`)).toHaveProperty('value', 'm')
+    fireEvent.click(screen.getByRole('button', { name: en.customBack }))
+    expect(screen.getByLabelText(en.baseUrl)).toHaveProperty('value', 'https://acme.test/v1')
+    expect(mutate).not.toHaveBeenCalled()
+    expect(set).not.toHaveBeenCalled()
+  })
+
+  it('writes one full profile at the stable generated route with the opening revision and derived key', async () => {
+    const { mutate, set, onClose, discover } = mountCard({}, {
+      discover: vi.fn(() => Promise.resolve(ok({ models: [{ id: 'candidate' }] }))),
+    })
+    fillCustomChannel('  Acme Gateway  ', 'https://gateway.acme.example/v1', '  gw-key  ')
+    nextCustomStep()
+    fireEvent.click(screen.getByRole('button', { name: en.fetchModels }))
+    await waitFor(() => { expect(discover).toHaveBeenCalledOnce() })
+    expect(firstProbe(discover)).toEqual({
+      settingsNs: 'llm-pi-ai', baseURL: 'https://gateway.acme.example/v1',
+      api: 'openai-completions', apiKey: 'gw-key',
+    })
+    const picker = await screen.findByRole('dialog')
+    fireEvent.click(within(picker).getByRole('button', { name: en.cancel }))
+    addCustomModel('acme-large')
     expandModel(1)
     fireEvent.change(screen.getByLabelText(`${en.modelContextWindow} 1`), { target: { value: '65536' } })
     saveModel(1)
-    fireEvent.click(screen.getByText(en.create))
-
-    await waitFor(() => { expect(onClose).toHaveBeenCalledWith(true, 'acme-gateway') })
+    fireEvent.click(screen.getByRole('button', { name: en.customBack }))
+    fireEvent.change(screen.getByLabelText(en.channelName), { target: { value: '  Renamed Gateway  ' } })
+    nextCustomStep()
+    expect(randomUuid).toHaveBeenCalledOnce()
+    expect(mutate).not.toHaveBeenCalled()
+    expect(set).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: en.create }))
+    await waitFor(() => { expect(onClose).toHaveBeenCalledWith(true, GENERATED_ROUTE) })
+    expect(mutate).toHaveBeenCalledOnce()
     expect(firstMutate(mutate)).toEqual({
-      ns: 'llm-pi-ai',
+      ns: 'llm-pi-ai', expectedRevision: 7,
       ops: [{
-        op: 'set',
-        path: ['providers', 'acme-gateway'],
-        value: {
-          displayName: 'Acme Gateway',
-          apiKeyEnv: 'ACME_GATEWAY_API_KEY',
-          api: 'openai-completions',
-          baseURL: 'https://gateway.acme.example/v1',
+        op: 'set', path: ['providers', GENERATED_ROUTE], value: {
+          displayName: 'Renamed Gateway', apiKeyEnv: deriveKeyRef(GENERATED_ROUTE),
+          api: 'openai-completions', baseURL: 'https://gateway.acme.example/v1',
           models: [piAiModel({ id: 'acme-large', contextWindow: 65_536 })],
         },
       }],
-      // 草稿基于 revision 7；另一标签页同时声明路由时须报冲突而非覆写。
-      expectedRevision: 7,
     })
-    expect(set).toHaveBeenCalledWith({ ref: 'ACME_GATEWAY_API_KEY', value: 'gw-key' })
+    expect(GENERATED_ROUTE).toMatch(/^channel-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/)
+    expect(deriveKeyRef(GENERATED_ROUTE)).toMatch(/^[A-Za-z_][A-Za-z0-9_]*$/)
+    expect(set).toHaveBeenCalledWith({ ref: deriveKeyRef(GENERATED_ROUTE), value: 'gw-key' })
+  })
+
+  it('skips taken generated IDs without exposing an ID editing control', async () => {
+    const secondUuid = '22222222-2222-4222-8222-222222222222'
+    randomUuid.mockReturnValueOnce(UUID).mockReturnValueOnce(secondUuid)
+    const { mutate, onClose } = mountCard({ taken: [GENERATED_ROUTE] })
+    fillCustomChannel()
+    nextCustomStep()
+    addCustomModel()
+    fireEvent.click(screen.getByRole('button', { name: en.create }))
+    const route = `channel-${secondUuid}`
+    await waitFor(() => { expect(onClose).toHaveBeenCalledWith(true, route) })
+    expect(firstMutate(mutate).ops[0]?.path).toEqual(['providers', route])
+    expect(randomUuid).toHaveBeenCalledTimes(2)
+    expect(screen.queryByRole('textbox', { name: 'Provider ID' })).toBeNull()
+  })
+
+  it('blocks a generated route occupied after opening without replacing its ID or revision', async () => {
+    const { face, mutate, set, onClose, view } = mountCard()
+    fillCustomChannel()
+    nextCustomStep()
+    addCustomModel()
+    const rerenderTaken = (taken: readonly string[]): void => {
+      view.rerender(<CustomProviderCard taken={taken} protocols={PROTOCOLS} revision={8}
+        api={face as never} t={t} readOnly={false} onClose={onClose} />)
+    }
+    rerenderTaken(['openai', GENERATED_ROUTE])
+    expect(buttonNamed(en.create).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: en.customBack }))
+    expect(screen.getByRole('alert').textContent).toBe(en.customRouteTaken)
+    expect(buttonNamed(en.customNext).disabled).toBe(true)
+    expect(screen.getByLabelText(en.channelName)).toHaveProperty('value', 'Acme Gateway')
+    expect(mutate).not.toHaveBeenCalled()
+    expect(set).not.toHaveBeenCalled()
+    expect(randomUuid).toHaveBeenCalledOnce()
+
+    rerenderTaken(['openai'])
+    expect(screen.queryByText(en.customRouteTaken)).toBeNull()
+    nextCustomStep()
+    expect(screen.getByLabelText(`${en.modelId} 1`)).toHaveProperty('value', 'm')
+    fireEvent.click(screen.getByRole('button', { name: en.create }))
+    await waitFor(() => { expect(onClose).toHaveBeenCalledWith(true, GENERATED_ROUTE) })
+    expect(firstMutate(mutate)).toMatchObject({ expectedRevision: 7,
+      ops: [{ op: 'set', path: ['providers', GENERATED_ROUTE] }] })
+    expect(randomUuid).toHaveBeenCalledOnce()
+  })
+
+  it('coalesces final confirmation clicks before the pending write disables the button', async () => {
+    let finishWrite!: (response: RpcResponse<SettingsNamespaceView>) => void
+    const mutate = vi.fn(() => new Promise<RpcResponse<SettingsNamespaceView>>((resolve) => { finishWrite = resolve }))
+    const onBusyChange = vi.fn()
+    const { set, onClose, namespace } = mountCard({ onBusyChange }, { mutate })
+    fillCustomChannel('Acme Gateway', 'https://acme.test/v1', 'gw-key')
+    nextCustomStep()
+    addCustomModel()
+    const create = buttonNamed(en.create)
+    // 原生点击共用一次 React 批次，第二次确认不能依赖下一次渲染的 disabled。
+    act(() => {
+      create.click()
+      create.click()
+    })
+    expect(mutate).toHaveBeenCalledOnce()
+    expect(set).not.toHaveBeenCalled()
+    expect(onClose).not.toHaveBeenCalled()
+    expect(onBusyChange).toHaveBeenCalledTimes(1)
+    expect(onBusyChange).toHaveBeenCalledWith(true)
+    expect(buttonNamed(en.creating).disabled).toBe(true)
+
+    await act(async () => { finishWrite(ok(namespace)) })
+    expect(mutate).toHaveBeenCalledOnce()
+    expect(set).toHaveBeenCalledOnce()
+    expect(set).toHaveBeenCalledWith({ ref: deriveKeyRef(GENERATED_ROUTE), value: 'gw-key' })
+    expect(onClose).toHaveBeenCalledOnce()
+    expect(onClose).toHaveBeenCalledWith(true, GENERATED_ROUTE)
+    expect(onBusyChange).toHaveBeenNthCalledWith(2, false)
+  })
+
+  it('checks both live directory routes and persisted profiles omitted from the rail', async () => {
+    const persistedUuid = '22222222-2222-4222-8222-222222222222'
+    const freeUuid = '33333333-3333-4333-8333-333333333333'
+    randomUuid
+      .mockReturnValueOnce(UUID).mockReturnValueOnce(persistedUuid).mockReturnValueOnce(freeUuid)
+    const { mutate } = await mountSection({
+      directory: [GENERATED_ROUTE],
+      providers: { [`channel-${persistedUuid}`]: { baseURL: 'https://persisted.test/v1' } },
+    })
+    const dialog = openCustomModal()
+    fillCustomChannel()
+    nextCustomStep()
+    addCustomModel()
+    fireEvent.click(within(dialog).getByRole('button', { name: en.create }))
+    await waitFor(() => { expect(mutate).toHaveBeenCalledOnce() })
+    expect(firstMutate(mutate).ops[0]?.path).toEqual(['providers', `channel-${freeUuid}`])
+    expect(randomUuid).toHaveBeenCalledTimes(3)
+  })
+
+  it('generates distinct IDs for separate drafts and never persists a cancelled draft', async () => {
+    const secondUuid = '22222222-2222-4222-8222-222222222222'
+    randomUuid.mockReturnValueOnce(UUID).mockReturnValueOnce(secondUuid)
+    const { mutate, set } = await mountSection()
+    const first = openCustomModal()
+    fillCustomChannel('Cancelled draft')
+    nextCustomStep()
+    addCustomModel('discarded')
+    fireEvent.click(within(first).getByRole('button', { name: en.cancel }))
+    await waitFor(() => { expect(screen.queryByRole('dialog', { name: en.add })).toBeNull() })
+    expect(mutate).not.toHaveBeenCalled()
+    expect(set).not.toHaveBeenCalled()
+    const second = openCustomModal()
+    fillCustomChannel('Second draft')
+    nextCustomStep()
+    addCustomModel('kept')
+    fireEvent.click(within(second).getByRole('button', { name: en.create }))
+    await waitFor(() => { expect(mutate).toHaveBeenCalledOnce() })
+    expect(firstMutate(mutate).ops[0]?.path).toEqual(['providers', `channel-${secondUuid}`])
+    expect(firstMutate(mutate).ops[0]?.value).toMatchObject({ models: [{ id: 'kept' }] })
+    expect(randomUuid).toHaveBeenCalledTimes(2)
+  })
+
+  it('creates separate routes for two completed drafts with the same display name', async () => {
+    const secondUuid = '22222222-2222-4222-8222-222222222222'
+    randomUuid.mockReturnValueOnce(UUID).mockReturnValueOnce(secondUuid)
+    const first = mountCard()
+    fillCustomChannel('Same display name')
+    nextCustomStep()
+    addCustomModel()
+    fireEvent.click(screen.getByRole('button', { name: en.create }))
+    await waitFor(() => { expect(first.onClose).toHaveBeenCalledWith(true, GENERATED_ROUTE) })
+    cleanup()
+    const secondRoute = `channel-${secondUuid}`
+    const second = mountCard({ taken: [GENERATED_ROUTE] })
+    fillCustomChannel('Same display name')
+    nextCustomStep()
+    addCustomModel()
+    fireEvent.click(screen.getByRole('button', { name: en.create }))
+    await waitFor(() => { expect(second.onClose).toHaveBeenCalledWith(true, secondRoute) })
+    expect(firstMutate(first.mutate).ops[0]?.path).toEqual(['providers', GENERATED_ROUTE])
+    expect(firstMutate(second.mutate).ops[0]?.path).toEqual(['providers', secondRoute])
+    expect(secondRoute).not.toBe(GENERATED_ROUTE)
+    expect(randomUuid).toHaveBeenCalledTimes(2)
   })
 
   it('scopes each card to fields a provider can actually own', async () => {
-    // 推理档位属于模型能力。同一渠道的模型可能支持不同档位，所以不提供渠道级覆盖。
     mountCard()
-    fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme' } })
-    expect(screen.getByRole('textbox', { name: en.customRoute })).toBeTruthy()
-    expect(screen.getByRole('textbox', { name: en.customDisplayName })).toBeTruthy()
+    expect(screen.queryByRole('textbox', { name: 'Provider ID' })).toBeNull()
+    expect(screen.getByRole('textbox', { name: en.channelName })).toBeTruthy()
     expect(screen.getByRole('textbox', { name: en.baseUrl })).toBeTruthy()
     expect(screen.getByRole('combobox', { name: en.customApi })).toBeTruthy()
     expect(screen.getByLabelText(en.keyInput)).toBeTruthy()
     cleanup()
-
-    // 内置路由由目录模型定义协议，详情不暴露渠道级协议覆盖。
     await mountSection({ providers: { openai: { apiKeyEnv: 'OPENAI_API_KEY' } } })
     openEditor('openai')
     expect(screen.getByLabelText(en.keyInput)).toBeTruthy()
@@ -921,18 +1189,14 @@ describe('hand-declared providers', () => {
     expect(screen.queryByRole('textbox', { name: en.customDisplayName })).toBeNull()
     expect(screen.queryByRole('combobox', { name: en.customApi })).toBeNull()
     cleanup()
-
-    // 手工声明路由创建时选择协议，详情仍可编辑该字段。
     await mountSection({
       providers: { 'acme-gateway': { api: 'openai-completions', baseURL: 'https://gateway.acme.example/v1' } },
       declaredRoutes: ['acme-gateway'],
     })
     openEditor('acme-gateway')
-    expect(screen.getByLabelText(en.keyInput)).toBeTruthy()
     expect(screen.getByRole('textbox', { name: en.customDisplayName })).toBeTruthy()
-    expect(screen.getByRole('textbox', { name: en.baseUrl })).toBeTruthy()
     expect(screen.getByRole('combobox', { name: en.customApi })).toBeTruthy()
-    expect(screen.queryByRole('textbox', { name: en.customRoute })).toBeNull()
+    expect(screen.queryByRole('textbox', { name: 'Provider ID' })).toBeNull()
   })
 
   it('renames a declared route and falls back to its id when the name is cleared', async () => {
@@ -1065,460 +1329,286 @@ describe('hand-declared providers', () => {
     expect(screen.getByLabelText<HTMLSelectElement>(en.customApi).value).toBe('')
   })
 
-  it('retries only the key after the profile landed, and reports the provider on cancel', async () => {
+  it('retries only the key after the profile landed and keeps the generated ID stable', async () => {
     const set = vi.fn()
       .mockResolvedValueOnce(fail('credential store is read-only', 'credential-rejected'))
       .mockResolvedValueOnce(ok({}))
     const { mutate, onClose } = mountCard({}, { set })
-
-    fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme' } })
-    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
-    fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: '  gw-key  ' } })
-    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
-    fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'm' } })
-    fireEvent.click(screen.getByText(en.create))
-
-    // The profile landed; only the key failed. The card says so and stays open.
-    await waitFor(() => { expect(screen.getByText('credential store is read-only')).toBeTruthy() })
+    fillCustomChannel('Acme Gateway', 'https://acme.test/v1', '  gw-key  ')
+    nextCustomStep()
+    addCustomModel()
+    fireEvent.click(screen.getByRole('button', { name: en.create }))
+    await screen.findByText('credential store is read-only')
     expect(onClose).not.toHaveBeenCalled()
-    expect(mutate).toHaveBeenCalledTimes(1)
-    // The key is stored trimmed, matching the editor.
-    expect(set).toHaveBeenNthCalledWith(1, { ref: 'ACME_API_KEY', value: 'gw-key' })
-
-    // The provider exists now, so the fields describing it are settled and
-    // only the key can still be corrected.
-    expect(screen.getByLabelText<HTMLInputElement>(en.customRoute).disabled).toBe(true)
+    expect(mutate).toHaveBeenCalledOnce()
+    expect(screen.getByLabelText<HTMLInputElement>(en.channelName).disabled).toBe(true)
     expect(screen.getByLabelText<HTMLInputElement>(en.baseUrl).disabled).toBe(true)
+    expect(screen.getByLabelText<HTMLSelectElement>(en.customApi).disabled).toBe(true)
     expect(screen.getByLabelText<HTMLInputElement>(en.keyInput).disabled).toBe(false)
-
-    // profile 已绑定派生凭据；清空密钥不能把未完成的凭据写入伪装成创建成功。
+    expect(set).toHaveBeenNthCalledWith(1, { ref: deriveKeyRef(GENERATED_ROUTE), value: 'gw-key' })
+    fireEvent.click(screen.getByRole('tab', { name: en.customModelsStep }))
+    expect(screen.getByLabelText<HTMLInputElement>(`${en.modelId} 1`).disabled).toBe(true)
+    expect(buttonNamed(en.addModel).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: en.customBack }))
     fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: '' } })
     expect(screen.getByText(en.keyRequired)).toBeTruthy()
-    expect(buttonNamed(en.create).disabled).toBe(true)
-    expect(mutate).toHaveBeenCalledTimes(1)
-    expect(set).toHaveBeenCalledTimes(1)
+    expect(buttonNamed(en.retry).disabled).toBe(true)
     expect(onClose).not.toHaveBeenCalled()
-
     fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'gw-key-2' } })
-    expect(screen.queryByText(en.keyRequired)).toBeNull()
-    fireEvent.click(screen.getByText(en.create))
-    await waitFor(() => { expect(onClose).toHaveBeenCalledWith(true, 'acme') })
-    // Re-running the profile write would carry the revision this card's own
-    // first write superseded, so the Host would answer settings-conflict and
-    // the key could never be stored from here at all.
-    expect(mutate).toHaveBeenCalledTimes(1)
-    expect(set).toHaveBeenNthCalledWith(2, { ref: 'ACME_API_KEY', value: 'gw-key-2' })
+    expect(screen.queryByRole('button', { name: en.customNext })).toBeNull()
+    expect(screen.queryByRole('button', { name: en.create })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: en.retry }))
+    await waitFor(() => { expect(onClose).toHaveBeenCalledWith(true, GENERATED_ROUTE) })
+    // 重试已提交 profile 会使用失效 revision，因而只能重试凭据。
+    expect(mutate).toHaveBeenCalledOnce()
+    expect(set).toHaveBeenNthCalledWith(2, { ref: deriveKeyRef(GENERATED_ROUTE), value: 'gw-key-2' })
+    expect(randomUuid).toHaveBeenCalledOnce()
   })
 
-  it('reports the created provider when cancelled after its profile landed', async () => {
+  it('reports the created route when cancelled after the profile landed', async () => {
     const set = vi.fn().mockResolvedValue(fail('nope', 'credential-rejected'))
     const { onClose } = mountCard({}, { set })
-
-    fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme' } })
-    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
-    fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'gw-key' } })
-    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
-    fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'm' } })
-    fireEvent.click(screen.getByText(en.create))
-    await waitFor(() => { expect(screen.getByText('nope')).toBeTruthy() })
-
-    // Walking away leaves a real provider behind; reporting no change would
-    // leave the page without the row it now has.
-    fireEvent.click(screen.getByText(en.cancel))
-    expect(onClose).toHaveBeenCalledWith(true, 'acme')
+    fillCustomChannel('Acme Gateway', 'https://acme.test/v1', 'gw-key')
+    nextCustomStep()
+    addCustomModel()
+    fireEvent.click(screen.getByRole('button', { name: en.create }))
+    await screen.findByText('nope')
+    fireEvent.click(screen.getByRole('button', { name: en.cancel }))
+    expect(onClose).toHaveBeenCalledWith(true, GENERATED_ROUTE)
   })
 
-  it('never contradicts a filled-in field with the next gate\u2019s copy', () => {
-    mountCard()
-    const routeField = screen.getByLabelText(en.customRoute)
-    fireEvent.change(routeField, { target: { value: '2' } })
-    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
-    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
-    fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'm' } })
+  it('retries close after native-auth profile creation without inventing a credential requirement', async () => {
+    const onClose = vi.fn()
+      .mockRejectedValueOnce(new Error('directory refresh failed'))
+      .mockResolvedValueOnce(undefined)
+    const { mutate, set } = mountCard({ onClose })
+    fillCustomChannel('Native Gateway')
+    nextCustomStep()
+    addCustomModel()
+    fireEvent.click(screen.getByRole('button', { name: en.create }))
+    await screen.findByText('directory refresh failed')
+    expect(firstMutate(mutate).ops[0]?.value).not.toHaveProperty('apiKeyEnv')
+    expect(screen.queryByText(en.keyRequired)).toBeNull()
+    expect(screen.getByLabelText<HTMLInputElement>(en.keyInput).disabled).toBe(true)
+    expect(buttonNamed(en.retry).disabled).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: en.retry }))
+    await waitFor(() => { expect(onClose).toHaveBeenCalledTimes(2) })
+    expect(onClose).toHaveBeenNthCalledWith(1, true, GENERATED_ROUTE)
+    expect(onClose).toHaveBeenNthCalledWith(2, true, GENERATED_ROUTE)
+    expect(mutate).toHaveBeenCalledOnce()
+    expect(set).not.toHaveBeenCalled()
+    expect(randomUuid).toHaveBeenCalledOnce()
+  })
 
-    // The route field explains itself right under the input; the shared line
-    // must stay silent rather than falling through to "no models yet" while
-    // the list above plainly has one.
-    expect(screen.getByText(en.customRouteInvalid)).toBeTruthy()
+  it('names the missing model gate only on step two and clears it after a valid row', () => {
+    const { mutate, set } = mountCard()
+    fillCustomChannel()
     expect(screen.queryByText(en.customNeedsModels)).toBeNull()
-
-    // Fixing the route hands the line back to the gate that is actually unmet.
-    fireEvent.change(routeField, { target: { value: 'acme' } })
-    expect(screen.queryByText(en.customNeedsModels)).toBeNull()
-    expect(buttonNamed(en.create).disabled).toBe(false)
-  })
-
-  it('refuses a route id whose derived credential reference would be illegal', () => {
-    mountCard()
-    const routeField = screen.getByLabelText(en.customRoute)
-    fireEvent.change(routeField, { target: { value: 'https://acme.test/v1' } })
-
-    // Without this check a digit-leading id passes the card and fails at the
-    // credential seam with a raw regular expression: the
-    // reference derives as `123_API_KEY`, and a credential reference is a
-    // POSIX shell identifier, which cannot start with a digit.
-    fireEvent.change(routeField, { target: { value: '123' } })
-    expect(screen.getByText(en.customRouteInvalid)).toBeTruthy()
-    expect(buttonNamed(en.create).disabled).toBe(true)
-
-    fireEvent.change(routeField, { target: { value: 'a1' } })
-    expect(screen.queryByText(en.customRouteInvalid)).toBeNull()
-  })
-
-  it('styles a rejected route id as a fault and its guidance as a hint', () => {
-    mountCard()
-    const routeField = screen.getByLabelText(en.customRoute)
-    // Same split the key field makes: what the user got wrong reads as a
-    // fault, what they have yet to do reads as guidance.
-    expect(screen.getByText(en.customRouteHint).className).toMatch(/advancedHint/)
-
-    fireEvent.change(routeField, { target: { value: '2' } })
-    expect(screen.getByText(en.customRouteInvalid).className).toMatch(/error/)
-
-    fireEvent.change(routeField, { target: { value: 'openai' } })
-    expect(screen.getByText(en.customRouteTaken).className).toMatch(/error/)
-  })
-
-  it('derives a reference the credential seam accepts for every id it admits', () => {
-    // The two rules have to stay in step; this is the relation, checked
-    // directly rather than through the DOM.
-    const CREDENTIAL_REF = /^[A-Za-z_][A-Za-z0-9_]*$/
-    for (const id of ['a', 'ds', 'a1', 'acme-gateway', 'x-1-y', 'zz9']) {
-      expect(CREDENTIAL_REF.test(deriveKeyRef(id))).toBe(true)
-    }
-  })
-
-  it('names the blocked gate under the form, and nothing once it is satisfied', () => {
-    mountCard()
-    fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme' } })
-
-    // Endpoint first: the gate names the one thing standing in the way.
-    expect(screen.getByText(en.customNeedsBaseUrl)).toBeTruthy()
-    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
+    nextCustomStep()
     expect(screen.getByText(en.customNeedsModels)).toBeTruthy()
-
-    // Satisfied: the shared line disappears rather than rendering empty.
+    expect(buttonNamed(en.create).disabled).toBe(true)
     fireEvent.click(screen.getByRole('button', { name: en.addModel }))
-    fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'acme-large' } })
-    expect(screen.queryByText(en.customNeedsBaseUrl)).toBeNull()
+    expect(buttonNamed(en.create).disabled).toBe(true)
+    fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'm' } })
     expect(screen.queryByText(en.customNeedsModels)).toBeNull()
     expect(buttonNamed(en.create).disabled).toBe(false)
+    expect(mutate).not.toHaveBeenCalled()
+    expect(set).not.toHaveBeenCalled()
   })
 
-  it('refuses to save an unreadable capacity in a new provider', () => {
+  it('refuses an unreadable capacity in a new provider model popup', () => {
     mountCard()
-    fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme' } })
-    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
-    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
-    fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'acme-large' } })
+    fillCustomChannel()
+    nextCustomStep()
+    addCustomModel('acme-large')
     expandModel(1)
     fireEvent.change(screen.getByLabelText(`${en.modelContextWindow} 1`), { target: { value: '64 KiB' } })
-
     const dialog = screen.getByRole('dialog', { name: `${en.modelAdvanced} 1` })
     expect(within(dialog).getByRole('alert').textContent).toBe(en.modelContextInvalid)
     expect(within(dialog).getByRole<HTMLButtonElement>('button', { name: en.save }).disabled).toBe(true)
   })
 
-  it('discards unsaved capacity edits on row changes and removal', () => {
+  it('discards unsaved capacity edits on model changes and removal', () => {
     mountCard()
-    fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme' } })
-    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
+    fillCustomChannel()
+    nextCustomStep()
     for (const [at, id] of [[1, 'first'], [2, 'second'], [3, 'third']] as const) {
-      fireEvent.click(screen.getByRole('button', { name: en.addModel }))
-      fireEvent.change(screen.getByLabelText(`${en.modelId} ${String(at)}`), { target: { value: id } })
+      addCustomModel(id, at)
       expandModel(at)
-      // 未保存的容量只属于当前浮层，切换模型不会沿用前一行的输入。
       fireEvent.change(screen.getByLabelText(`${en.modelContextWindow} ${String(at)}`),
         { target: { value: `${String(at)}.` } })
     }
-
-    // 删除前面的行时浮层跟随模型前移，但不会把未提交的输入混入别的行。
     fireEvent.click(screen.getByLabelText(`${en.removeModel} 2`))
-    expect(screen.getByLabelText<HTMLInputElement>(`${en.modelId} 1`).value).toBe('first')
+    expect(screen.getByLabelText(`${en.modelId} 1`)).toHaveProperty('value', 'first')
     expect(screen.queryByLabelText(`${en.modelContextWindow} 1`)).toBeNull()
     expandModel(1)
-    expect(screen.getByLabelText<HTMLInputElement>(`${en.modelContextWindow} 1`).value).toBe('')
-    expect(screen.getByLabelText<HTMLInputElement>(`${en.modelId} 2`).value).toBe('third')
+    expect(screen.getByLabelText(`${en.modelContextWindow} 1`)).toHaveProperty('value', '')
+    expect(screen.getByLabelText(`${en.modelId} 2`)).toHaveProperty('value', 'third')
     expandModel(2)
-    expect(screen.getByLabelText<HTMLInputElement>(`${en.modelContextWindow} 2`).value).toBe('')
+    expect(screen.getByLabelText(`${en.modelContextWindow} 2`)).toHaveProperty('value', '')
   })
 
-  it('refuses two models sharing one id', () => {
-    mountCard()
-    fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme' } })
-    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
-    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
-    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
-    fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'same' } })
-    fireEvent.change(screen.getByLabelText(`${en.modelId} 2`), { target: { value: 'same' } })
-
-    // The adapter refuses a duplicate outright, so the form must not offer to
-    // write one.
+  it('refuses duplicate model IDs and accepts a repaired row', () => {
+    const { mutate } = mountCard()
+    fillCustomChannel()
+    nextCustomStep()
+    addCustomModel('same')
+    addCustomModel('same', 2)
     expect(screen.getByText(`${en.model} 2: ${en.modelIdDuplicate}`)).toBeTruthy()
     expect(buttonNamed(en.create).disabled).toBe(true)
-
     fireEvent.change(screen.getByLabelText(`${en.modelId} 2`), { target: { value: 'other' } })
     expect(buttonNamed(en.create).disabled).toBe(false)
+    expect(mutate).not.toHaveBeenCalled()
   })
 
-  it('creates a model with no capacities, which the route\u2019s fallbacks size', async () => {
-    const { mutate, onClose } = mountCard()
-    fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme' } })
-    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
-    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
-    fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'bare' } })
-
-    // A listing that discloses nothing but ids is enough to create a working
-    // provider; the adapter sizes what configuration leaves out.
-    expect(buttonNamed(en.create).disabled).toBe(false)
-    fireEvent.click(screen.getByText(en.create))
-
-    await waitFor(() => { expect(onClose).toHaveBeenCalledWith(true, 'acme') })
-    expect(firstMutate(mutate).ops[0]?.value).toMatchObject({ models: [{ id: 'bare' }] })
-  })
-
-  it('refuses to create until the route, endpoint, and a model are usable', () => {
-    mountCard()
-    expect(buttonNamed(en.create).disabled).toBe(true)
-
-    fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'Acme Gateway' } })
-    expect(screen.getByText(en.customRouteInvalid)).toBeTruthy()
-    fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'openai' } })
-    expect(screen.getByText(en.customRouteTaken)).toBeTruthy()
-
-    fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme' } })
-    expect(screen.getByText(en.customNeedsBaseUrl)).toBeTruthy()
-    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
-    expect(screen.getByText(en.customNeedsModels)).toBeTruthy()
-    expect(buttonNamed(en.create).disabled).toBe(true)
-
-    // A model row with no id is not a model.
-    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
-    expect(buttonNamed(en.create).disabled).toBe(true)
-    fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'm' } })
-    expect(buttonNamed(en.create).disabled).toBe(false)
-  })
-
-  it('surfaces a refused write and a rejected transport without closing', async () => {
-    const refused = vi.fn(() => Promise.resolve(fail('read-only settings', 'settings-rejected')))
-    const { onClose } = mountCard({ api: { ...scriptedFace({ mutate: refused }).face } as never })
-
-    fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme' } })
-    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
-    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
-    fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'm' } })
-    fireEvent.click(screen.getByText(en.create))
-
-    await screen.findByText('read-only settings')
-    expect(onClose).not.toHaveBeenCalled()
-  })
-
-  it('surfaces a rejected transport during create', async () => {
-    const rejecting = vi.fn(() => Promise.reject(new Error('carrier down')))
-    const { onClose } = mountCard({ api: { ...scriptedFace({ mutate: rejecting }).face } as never })
-
-    fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme' } })
-    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
-    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
-    fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'm' } })
-    fireEvent.click(screen.getByText(en.create))
-
-    await screen.findByText('carrier down')
-    expect(onClose).not.toHaveBeenCalled()
-  })
-
-  it('reports a stored profile whose key write was refused', async () => {
-    const set = vi.fn(() => Promise.resolve(fail('credential is read-only', 'credential-rejected')))
-    const { onClose } = mountCard({ api: { ...scriptedFace({ set }).face } as never })
-
-    fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme' } })
-    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
-    fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'k' } })
-    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
-    fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'm' } })
-    fireEvent.click(screen.getByText(en.create))
-
-    await screen.findByText('credential is read-only')
-    expect(onClose).not.toHaveBeenCalled()
-  })
-
-  it('creates with the chosen protocol and no display name', async () => {
-    const { mutate, onClose } = mountCard()
-
-    fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme' } })
-    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
+  it('creates without capacities or a key while retaining the chosen protocol and required name', async () => {
+    const { mutate, set, onClose } = mountCard()
+    fillCustomChannel('  Native Gateway  ')
     fireEvent.change(screen.getByLabelText(en.customApi), { target: { value: 'anthropic-messages' } })
-    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
-    fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'm' } })
-    fireEvent.click(screen.getByText(en.create))
-
-    await waitFor(() => { expect(onClose).toHaveBeenCalledWith(true, 'acme') })
-    // No display name configured means none stored; the route id is the name.
-    // No key typed means no reference either, matching the editor: the route
-    // keeps its provider-native auth path instead of resolving a reference
-    // nothing ever sets. The with-key case is covered above.
+    nextCustomStep()
+    addCustomModel('bare')
+    fireEvent.click(screen.getByRole('button', { name: en.create }))
+    await waitFor(() => { expect(onClose).toHaveBeenCalledWith(true, GENERATED_ROUTE) })
     expect(firstMutate(mutate).ops[0]?.value).toEqual({
-      api: 'anthropic-messages',
-      baseURL: 'https://acme.test/v1',
-      models: [piAiModel({ id: 'm' })],
+      displayName: 'Native Gateway', api: 'anthropic-messages',
+      baseURL: 'https://acme.test/v1', models: [piAiModel({ id: 'bare' })],
     })
+    expect(set).not.toHaveBeenCalled()
   })
 
-  it('offers no protocol when the namespace declares none', () => {
+  it.each([
+    ['refused write', () => Promise.resolve(fail('read-only settings', 'settings-rejected')), 'read-only settings'],
+    ['rejected transport', () => Promise.reject(new Error('carrier down')), 'carrier down'],
+  ])('surfaces a %s without closing or storing a key', async (_label, answer, message) => {
+    const mutate = vi.fn(answer)
+    const { set, onClose } = mountCard({}, { mutate })
+    fillCustomChannel('Acme Gateway', 'https://acme.test/v1', 'gw-key')
+    nextCustomStep()
+    addCustomModel()
+    fireEvent.click(screen.getByRole('button', { name: en.create }))
+    await screen.findByText(message)
+    expect(onClose).not.toHaveBeenCalled()
+    expect(set).not.toHaveBeenCalled()
+  })
+
+  it('keeps the generated route and opening revision after a conflict without storing the key', async () => {
+    const mutate = vi.fn().mockResolvedValue(fail('stale revision', 'settings-conflict'))
+    const { set, onClose } = mountCard({}, { mutate })
+    fillCustomChannel('Acme Gateway', 'https://acme.test/v1', 'gw-key')
+    nextCustomStep()
+    addCustomModel()
+    fireEvent.click(screen.getByRole('button', { name: en.create }))
+    await screen.findByText('stale revision')
+    expect(set).not.toHaveBeenCalled()
+    expect(onClose).not.toHaveBeenCalled()
+    fireEvent.change(screen.getByLabelText(en.channelName), { target: { value: 'Corrected Name' } })
+    nextCustomStep()
+    fireEvent.click(screen.getByRole('button', { name: en.create }))
+    await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(2) })
+    for (const [request] of mutate.mock.calls as unknown as [MutateCall][]) {
+      expect(request.expectedRevision).toBe(7)
+      expect(request.ops[0]?.path).toEqual(['providers', GENERATED_ROUTE])
+    }
+    expect(randomUuid).toHaveBeenCalledOnce()
+    expect(set).not.toHaveBeenCalled()
+  })
+
+  it('offers no protocol when the namespace declares none and cannot advance', () => {
     mountCard({ protocols: [] })
+    fillCustomChannel()
     expect(screen.getByLabelText<HTMLSelectElement>(en.customApi).value).toBe('')
+    expect(buttonNamed(en.customNext).disabled).toBe(true)
   })
 
-  it('closes without writing on cancel, and honors a read-only deployment', () => {
-    const { onClose, mutate } = mountCard()
-    fireEvent.click(screen.getByText(en.cancel))
+  it('closes without writes on cancel and honors a read-only deployment', () => {
+    const { onClose, mutate, set } = mountCard()
+    fireEvent.click(screen.getByRole('button', { name: en.cancel }))
     expect(onClose).toHaveBeenCalledWith(false)
     expect(mutate).not.toHaveBeenCalled()
+    expect(set).not.toHaveBeenCalled()
     cleanup()
-
     mountCard({ readOnly: true })
-    expect(screen.getByLabelText<HTMLInputElement>(en.customRoute).disabled).toBe(true)
-    expect(buttonNamed(en.create).disabled).toBe(true)
+    expect(screen.getByLabelText<HTMLInputElement>(en.channelName).disabled).toBe(true)
+    expect(buttonNamed(en.customNext).disabled).toBe(true)
   })
 
-  it('keeps the existing right-side detail while the create dialog is open', async () => {
-    await mountSection({ providers: { openai: { baseURL: 'https://proxy.example/v1' } } })
-
-    const dialog = openCustomModal()
-    expect(within(dialog).getByLabelText(en.customRoute)).toBeTruthy()
-    expect(within(screen.getByRole('main')).getByRole('heading', { name: 'openai' })).toBeTruthy()
-  })
-
-  it('reaches the card from the section and returns to the button on cancel', async () => {
+  it('keeps the current right-side detail and returns to Add after cancelling a model draft', async () => {
     await mountSection()
     const rail = screen.getByRole('complementary', { name: en.provider })
-    expect(within(rail).getByRole('button', { name: 'openai' }).getAttribute('aria-current')).toBe('true')
-
     const dialog = openCustomModal()
-    fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme' } })
-
+    expect(within(screen.getByRole('main')).getByRole('heading', { name: 'openai' })).toBeTruthy()
+    fillCustomChannel()
+    nextCustomStep()
+    addCustomModel()
     fireEvent.click(within(dialog).getByRole('button', { name: en.cancel }))
     await waitFor(() => { expect(screen.queryByRole('dialog', { name: en.add })).toBeNull() })
     expect(screen.getByRole('button', { name: en.add })).toBeTruthy()
     expect(within(rail).getByRole('button', { name: 'openai' }).getAttribute('aria-current')).toBe('true')
     expect(within(screen.getByRole('main')).getByRole('heading', { name: 'openai' })).toBeTruthy()
-    expect(within(rail).queryByRole('button', { name: 'acme' })).toBeNull()
+    expect(within(rail).queryByRole('button', { name: GENERATED_ROUTE })).toBeNull()
   })
 
-  it('selects the new channel and shows its detail after custom creation', async () => {
+  it('selects the new channel and displays its detail after final creation', async () => {
     const { mutate } = await mountSectionWithCreatedRoute()
     const dialog = openCustomModal()
-    fireEvent.change(within(dialog).getByLabelText(en.customRoute), { target: { value: 'acme' } })
-    fireEvent.change(within(dialog).getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
-    fireEvent.click(within(dialog).getByRole('button', { name: en.addModel }))
-    fireEvent.change(within(dialog).getByLabelText(`${en.modelId} 1`), { target: { value: 'm' } })
+    fillCustomChannel('Acme Gateway')
+    nextCustomStep()
+    addCustomModel()
     fireEvent.click(within(dialog).getByRole('button', { name: en.create }))
     await waitFor(() => { expect(mutate).toHaveBeenCalledOnce() })
-    expect(firstMutate(mutate).ops).toMatchObject([{ op: 'set', path: ['providers', 'acme'] }])
+    expect(firstMutate(mutate).ops[0]?.path).toEqual(['providers', GENERATED_ROUTE])
     await waitFor(() => { expect(screen.queryByRole('dialog', { name: en.add })).toBeNull() })
-
     const rail = screen.getByRole('complementary', { name: en.provider })
     await waitFor(() => {
-      expect(within(rail).getByRole('button', { name: 'acme' }).getAttribute('aria-current')).toBe('true')
-      expect(within(screen.getByRole('main')).getByRole('heading', { name: 'acme' })).toBeTruthy()
+      expect(within(rail).getByRole('button', { name: 'Acme Gateway' }).getAttribute('aria-current')).toBe('true')
+      expect(within(screen.getByRole('main')).getByRole('heading', { name: 'Acme Gateway' })).toBeTruthy()
     })
   })
 
-  it('selects a created channel when cancelling after its key write fails', async () => {
+  it('selects the created channel when cancelling after its credential write fails', async () => {
     const set = vi.fn(() => Promise.resolve(fail('credential is read-only', 'credential-rejected')))
     const { mutate } = await mountSectionWithCreatedRoute(set)
     const dialog = openCustomModal()
-    fireEvent.change(within(dialog).getByLabelText(en.customRoute), { target: { value: 'acme' } })
-    fireEvent.change(within(dialog).getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
-    fireEvent.change(within(dialog).getByLabelText(en.keyInput), { target: { value: 'gw-key' } })
-    fireEvent.click(within(dialog).getByRole('button', { name: en.addModel }))
-    fireEvent.change(within(dialog).getByLabelText(`${en.modelId} 1`), { target: { value: 'm' } })
+    fillCustomChannel('Acme Gateway', 'https://acme.test/v1', 'gw-key')
+    nextCustomStep()
+    addCustomModel()
     fireEvent.click(within(dialog).getByRole('button', { name: en.create }))
-    await waitFor(() => { expect(mutate).toHaveBeenCalledOnce() })
-    expect(firstMutate(mutate).ops).toMatchObject([{ op: 'set', path: ['providers', 'acme'] }])
-    await waitFor(() => { expect(set).toHaveBeenCalledOnce() })
-
     await within(dialog).findByText('credential is read-only')
     fireEvent.click(within(dialog).getByRole('button', { name: en.cancel }))
     const rail = screen.getByRole('complementary', { name: en.provider })
     await waitFor(() => {
-      expect(within(rail).getByRole('button', { name: 'acme' }).getAttribute('aria-current')).toBe('true')
-      expect(within(screen.getByRole('main')).getByRole('heading', { name: 'acme' })).toBeTruthy()
+      expect(within(rail).getByRole('button', { name: 'Acme Gateway' }).getAttribute('aria-current')).toBe('true')
+      expect(within(screen.getByRole('main')).getByRole('heading', { name: 'Acme Gateway' })).toBeTruthy()
     })
     expect(mutate).toHaveBeenCalledOnce()
     expect(set).toHaveBeenCalledOnce()
   })
 
-  it('opens the custom-provider form directly from the single rail action', async () => {
-    await mountSection()
+  it('opens channel information directly from the single rail action without a built-in selector', async () => {
+    await mountSection({ directory: ['openai', 'cerebras'] })
     expect(screen.queryByRole('button', { name: en.visionFallback })).toBeNull()
     expect(screen.getAllByRole('button', { name: en.add })).toHaveLength(1)
     const dialog = openCustomModal()
-    expect(within(dialog).getByLabelText(en.customRoute)).toBeTruthy()
+    expect(within(dialog).getAllByRole('tab')).toHaveLength(2)
+    expect(within(dialog).getByRole('textbox', { name: en.channelName })).toBeTruthy()
+    expect(within(dialog).queryByRole('button', { name: 'cerebras' })).toBeNull()
+    expect(within(dialog).queryByRole('textbox', { name: en.searchProviders })).toBeNull()
   })
 
-  it('refuses an unusable key on the field and blocks creation', () => {
-    const { mutate, set } = mountCard()
-
-    fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme-gateway' } })
-    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://gateway.acme.example/v1' } })
-    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
-    fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'acme-large' } })
-    fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'sk-\u{1F600}' } })
-
-    // A hand-declared route reaches the same judgement as an edited one, so a
-    // key that no header can carry never becomes a profile plus a bad secret.
-    expect(screen.getByText(en.keyIllegalCharacters)).toBeTruthy()
-    expect(buttonNamed(en.create).disabled).toBe(true)
-    expect(mutate).not.toHaveBeenCalled()
-    expect(set).not.toHaveBeenCalled()
-  })
-
-  it('stays silent about the other gates when only the key is refused', () => {
-    mountCard()
-
-    fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme-gateway' } })
-    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://gateway.acme.example/v1' } })
-    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
-    fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'acme-large' } })
-    fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'sk-\u{1F600}' } })
-
-    // Route, endpoint, and models are all satisfied, so answering with the
-    // next unmet gate would print a second, false fault beside the real one.
-    expect(screen.getByText(en.keyIllegalCharacters)).toBeTruthy()
+  it.each([
+    ['sk-\u{1F600}', en.keyIllegalCharacters],
+    ['OPENAI_API_KEY=sk-abc', en.keyIllegalCharacters],
+    ['   ', en.keyBlankNew],
+  ])('blocks a refused key %j before advancing or making any writes', (key, message) => {
+    const { mutate, set, discover } = mountCard()
+    fillCustomChannel('Acme Gateway', 'https://acme.test/v1', key)
+    expect(screen.getByText(message)).toBeTruthy()
     expect(screen.queryByText(en.customNeedsModels)).toBeNull()
     expect(screen.queryByText(en.customNeedsBaseUrl)).toBeNull()
-  })
-
-  it('tells a whitespace-only key what a blank field means on a create card', () => {
-    const { mutate } = mountCard()
-
-    fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme-gateway' } })
-    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://gateway.acme.example/v1' } })
-    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
-    fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'acme-large' } })
-    fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: '   ' } })
-
-    // There is no stored key to keep here, so the blank case says the thing
-    // that is true of a route being declared: it may authenticate elsewhere.
-    expect(screen.getByText(en.keyBlankNew)).toBeTruthy()
-    expect(screen.queryByText(en.keyBlank)).toBeNull()
-    expect(buttonNamed(en.fetchModels).title).toBe(en.keyBlankNew)
-    expect(buttonNamed(en.create).disabled).toBe(true)
+    expect(buttonNamed(en.customNext).disabled).toBe(true)
     expect(mutate).not.toHaveBeenCalled()
-  })
-
-  it('creates without a key when the route authenticates some other way', async () => {
-    const { set, onClose } = mountCard()
-
-    fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'ambient-gateway' } })
-    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://gateway.acme.example/v1' } })
-    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
-    fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'acme-large' } })
-    fireEvent.click(screen.getByText(en.create))
-
-    await waitFor(() => { expect(onClose).toHaveBeenCalledWith(true, 'ambient-gateway') })
     expect(set).not.toHaveBeenCalled()
+    expect(discover).not.toHaveBeenCalled()
   })
 })
 
@@ -1657,8 +1747,8 @@ describe('API key field', () => {
     const load = vi.spyOn(controller, 'load')
 
     const dialog = openCustomModal()
-    fireEvent.change(within(dialog).getByLabelText(en.customRoute), { target: { value: 'acme' } })
-    fireEvent.change(within(dialog).getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
+    fillCustomChannel()
+    nextCustomStep()
     fireEvent.click(within(dialog).getByRole('button', { name: en.addModel }))
     fireEvent.change(within(dialog).getByLabelText(`${en.modelId} 1`), { target: { value: 'm' } })
     fireEvent.click(within(dialog).getByRole('button', { name: en.create }))

@@ -191,19 +191,17 @@ function Loaded({ injected, hideHeader }: { injected: ModelsSectionFace; hideHea
     }
   }, [declaring, mobileDetail])
 
-  const closeCustom = useCallback(async (changed: boolean, provider?: string): Promise<void> => {
+  const closeCustom = useCallback(async (provider?: string): Promise<void> => {
     if (closingCustom.current) return
     closingCustom.current = true
     try {
-      if (changed) {
+      if (provider !== undefined) {
         await controller.load()
-        if (provider !== undefined) {
-          setSavedTarget(undefined)
-          setProviderQuery('')
-          setSelected(provider)
-          setMobileDetail(true)
-          focusCreatedDetail.current = true
-        }
+        setSavedTarget(undefined)
+        setProviderQuery('')
+        setSelected(provider)
+        setMobileDetail(true)
+        focusCreatedDetail.current = true
       } else {
         restoreTriggerFocus.current = true
       }
@@ -218,8 +216,7 @@ function Loaded({ injected, hideHeader }: { injected: ModelsSectionFace; hideHea
     // 模型设置也会打开 Modal；其 Escape 不能顺带关闭添加渠道。
     const dialogs = document.querySelectorAll('[role="dialog"][aria-modal="true"]')
     if (!dialogs[dialogs.length - 1]?.classList.contains(styles['customChannelDialog'] as string)) return
-    const provider = committedRoute.current
-    void closeCustom(provider !== undefined, provider)
+    void closeCustom(committedRoute.current)
   }, [closeCustom])
 
   const recordCustomBusy = useCallback((busy: boolean): void => {
@@ -285,6 +282,16 @@ function Loaded({ injected, hideHeader }: { injected: ModelsSectionFace; hideHea
   const channels = directory.filter(row => row.configured)
   // 自定义渠道由 pi-ai 分节持有；未挂载该分节时不能声明渠道。
   const protocols = protocolChoices(state.namespaces.get('llm-pi-ai'), schema)
+  // 目录可能尚未联接新 profile；生成 ID 时同时保留所有设置层已占用的键。
+  const takenRoutes = new Set(state.rows.map(row => row.entry.provider))
+  for (const namespace of state.namespaces.values()) {
+    for (const layer of [namespace.value, namespace.user, namespace.base]) {
+      const providers = schema.getPath(layer, ['providers'])
+      if (typeof providers === 'object' && providers !== null && !Array.isArray(providers)) {
+        for (const provider of Object.keys(providers)) takenRoutes.add(provider)
+      }
+    }
+  }
 
   const current = channels.find(row => row.entry.provider === selected) ?? channels[0]
   const currentTarget = current === undefined ? undefined : targetOf(current)
@@ -294,7 +301,7 @@ function Loaded({ injected, hideHeader }: { injected: ModelsSectionFace; hideHea
   return (
     <div className={styles['modelsSurface']}>
       {state.status === 'error' && !hideHeader ? <div role="alert" className={styles['error']}>
-        {`${t('loadFailed')}: ${state.error ?? ''}`}{' '}
+        {t('loadFailed')}: {state.error}{' '}
         <button type="button" className={styles['secondaryButton']} onClick={() => { void controller.retry() }}>
           {t('retry')}
         </button>
@@ -364,7 +371,7 @@ function Loaded({ injected, hideHeader }: { injected: ModelsSectionFace; hideHea
           closeLabel={t('close')} description={t('customModalDescription')}
           className={styles['customChannelDialog'] as string}
           contentClassName={styles['customChannelContent'] as string}>
-          {declaring ? <CustomProviderCard embedded autoFocusRoute taken={state.rows.map(row => row.entry.provider)}
+          {declaring ? <CustomProviderCard embedded autoFocusName taken={[...takenRoutes]}
             protocols={protocols} revision={state.namespaces.get('llm-pi-ai')?.revision ?? 0}
             api={api} t={t} readOnly={!state.writable || state.status !== 'ready'}
             onBusyChange={recordCustomBusy}
@@ -372,7 +379,7 @@ function Loaded({ injected, hideHeader }: { injected: ModelsSectionFace; hideHea
               controller.acceptSettingsView(view)
               committedRoute.current = provider
             }}
-            onClose={closeCustom} /> : null}
+            onClose={(_changed, provider) => closeCustom(provider)} /> : null}
         </Modal>
         <Modal open={deleteTarget !== undefined} onClose={closeDelete}
           title={deleteTarget === undefined ? '' : providerCopy(t('deleteTitle'), deleteTarget)} closeLabel={t('close')}
