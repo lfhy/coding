@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import { boot, healProfilesModuleFallback, loadOverlayPatches } from '@deepseek-ai/dsh-app-boot'
 import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
-import { BrowserUseService } from '@deepseek-ai/dsh-browser'
+import { BrowserUseError, BrowserUseService } from '@deepseek-ai/dsh-browser'
 import type { BrowserCapture, BrowserCommand, BrowserExpectedTarget, BrowserHumanCommand, BrowserSessionState, BrowserTabId } from '@deepseek-ai/dsh-browser'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -19,6 +19,7 @@ const signal = new AbortController().signal
 /** 使用真实宿主组合和预设，只将会启动 Chromium 的服务换成可观测的内存提供方。 */
 class FixtureBrowser extends BrowserUseService {
   private readonly sessions = new Map<string, BrowserSessionState>()
+  private readonly operations = new Set<ReturnType<typeof SessionId>>()
   readonly commands = vi.fn(async (
     sessionId: ReturnType<typeof SessionId>, command: BrowserCommand, requestSignal: AbortSignal,
     expectedTarget?: BrowserExpectedTarget,
@@ -46,6 +47,7 @@ class FixtureBrowser extends BrowserUseService {
     }
     if (command.kind === 'close') this.sessions.delete(sessionId)
     else this.sessions.set(sessionId, {
+      operationActive: false,
       browserGeneration: previous?.browserGeneration ?? 'fixture-browser',
       stateRevision: (previous?.stateRevision ?? 0) + 1,
       viewport: { width: 800, height: 600 },
@@ -59,7 +61,22 @@ class FixtureBrowser extends BrowserUseService {
     expectedTarget?: BrowserExpectedTarget): Promise<BrowserCapture> {
     return this.commands(sessionId, command, requestSignal, expectedTarget)
   }
-  state(sessionId: ReturnType<typeof SessionId>): BrowserSessionState | undefined { return this.sessions.get(sessionId) }
+  acquireOperation(sessionId: ReturnType<typeof SessionId>, requestSignal: AbortSignal): Promise<() => void> {
+    requestSignal.throwIfAborted()
+    if (this.operations.has(sessionId)) throw new BrowserUseError('browser operation already active', 'BROWSER_BUSY')
+    this.operations.add(sessionId)
+    let released = false
+    return Promise.resolve(() => {
+      if (released) return
+      released = true
+      this.operations.delete(sessionId)
+    })
+  }
+  operationActive(sessionId: ReturnType<typeof SessionId>): boolean { return this.operations.has(sessionId) }
+  state(sessionId: ReturnType<typeof SessionId>): BrowserSessionState | undefined {
+    const state = this.sessions.get(sessionId)
+    return state && { ...state, operationActive: this.operationActive(sessionId) }
+  }
   control(_sessionId: ReturnType<typeof SessionId>, _command: BrowserHumanCommand,
     _signal: AbortSignal): Promise<BrowserSessionState | undefined> {
     return Promise.reject(new Error('fixture browser does not exercise human controls'))
@@ -162,6 +179,8 @@ describe('browser_use in the shipped Web preset composition', () => {
       expect(browser.commands).toHaveBeenCalledExactlyOnceWith(selected.agent.session.id, {
         kind: 'navigate', url: args.url,
       }, expect.any(AbortSignal), { kind: 'none' })
+      expect(browser.state(selected.agent.session.id)?.operationActive).toBe(false)
+      expect(browser.operationActive(selected.agent.session.id)).toBe(false)
 
       // Web 宿主保留等待客户端的审批通道；受限调用用拒绝答复结束，避免等待未连接的客户端。
       unlisten = ctx.on('approval/request', () => Promise.resolve('rejected' as const), { prepend: true })
@@ -183,6 +202,7 @@ describe('browser_use in the shipped Web preset composition', () => {
       ])
       expect(requested).toHaveBeenCalledTimes(2)
       expect(browser.commands).toHaveBeenCalledTimes(1)
+      expect(browser.operationActive(isolated.agent.session.id)).toBe(false)
     } finally {
       unlisten?.()
       requested.mockRestore()

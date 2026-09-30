@@ -3,10 +3,11 @@ import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client
 import type { BrowserHumanCommand } from '@deepseek-ai/dsh-browser/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
-import { parseBrowserState, type BrowserState } from './wire.ts'
+import { parseBrowserState, parseBrowserStateOrLock, type BrowserState } from './wire.ts'
 
 export type BrowserView =
   | { readonly phase: 'loading' | 'empty'; readonly state: null; readonly frameUrl: null; readonly pending: boolean }
+  | { readonly phase: 'busy'; readonly state: null; readonly frameUrl: null; readonly pending: boolean }
   | { readonly phase: 'error'; readonly state: BrowserState | null; readonly frameUrl: string | null; readonly message: string; readonly pending: boolean }
   | { readonly phase: 'ready'; readonly state: BrowserState; readonly frameUrl: string | null; readonly pending: boolean }
 
@@ -64,7 +65,7 @@ export class BrowserMirrorController {
 
   /** 只在用户实际打开浏览器视图后幂等建立首标签。 */
   async ensureTab(): Promise<void> {
-    if (!this.active || this.last !== null || this.action !== undefined) return
+    if (!this.active || this.last !== null || this.action !== undefined || this.view.getSnapshot().phase === 'busy') return
     await this.command({ kind: 'ensure-tab' })
   }
 
@@ -74,7 +75,22 @@ export class BrowserMirrorController {
    * @returns 命令和对应截图同步完毕。
    */
   async command(command: BrowserHumanCommand): Promise<boolean> {
-    if (!this.active || this.action !== undefined || this.control === undefined) return false
+    if (!this.active || this.action !== undefined || this.control === undefined
+      || this.view.getSnapshot().phase === 'busy' || this.view.getSnapshot().state?.operationActive) return false
+    if ('target' in command) {
+      const { state, frameUrl, phase, pending } = this.view.getSnapshot()
+      const observation = state?.observation
+      if (phase !== 'ready' || pending || frameUrl === null || !state.hasFrame || !observation
+        || state.browserGeneration !== command.target.browserGeneration
+        || state.stateRevision !== command.target.stateRevision
+        || state.activeTabId !== command.target.tabId
+        || observation.generation !== command.target.generation
+        || observation.revision !== command.target.revision
+        || state.viewport.width !== command.target.viewport.width
+        || state.viewport.height !== command.target.viewport.height
+        || observation.viewport.width !== command.target.viewport.width
+        || observation.viewport.height !== command.target.viewport.height) return false
+    }
     this.epoch++
     this.clearTimer()
     this.pending?.abort()
@@ -153,6 +169,14 @@ export class BrowserMirrorController {
     this.releaseImage()
     this.view.set({ phase: 'empty', state: null, frameUrl: null, pending: false })
   }
+  private lockWithoutState(): void {
+    this.initialized = true
+    this.last = null
+    this.opened = null
+    this.pendingOpen = null
+    this.releaseImage()
+    this.view.set({ phase: 'busy', state: null, frameUrl: null, pending: false })
+  }
   private fail(error: unknown): void {
     const published = this.view.getSnapshot()
     if (published.state?.browserGeneration !== this.last?.browserGeneration
@@ -166,9 +190,10 @@ export class BrowserMirrorController {
     const previous = this.last
     if (this.retiredGenerations.has(state.browserGeneration)
       || (previous?.browserGeneration === state.browserGeneration && state.stateRevision < previous.stateRevision)) return
-    const changed = previous?.browserGeneration !== state.browserGeneration || previous.stateRevision !== state.stateRevision
+    const revisionChanged = previous?.browserGeneration !== state.browserGeneration || previous.stateRevision !== state.stateRevision
+    const changed = revisionChanged || previous.operationActive !== state.operationActive
     if (!changed && this.view.getSnapshot().phase === 'ready') return
-    const fresh = this.initialized && changed
+    const fresh = this.initialized && revisionChanged
     const key = `${state.browserGeneration}:${String(state.stateRevision)}`
     if (autoOpen && fresh && state.observation !== null) this.pendingOpen = key
     this.initialized = true
@@ -224,7 +249,9 @@ export class BrowserMirrorController {
       if (!this.current(epoch, pending)) return
       if (response.status === 204) { this.clearState(); return }
       if (!response.ok) throw new Error(`HTTP ${String(response.status)}`)
-      await this.accept(parseBrowserState(await response.json() as unknown), epoch, pending, true)
+      const state = parseBrowserStateOrLock(await response.json() as unknown)
+      if ('browserGeneration' in state) await this.accept(state, epoch, pending, true)
+      else this.lockWithoutState()
     } catch (error) {
       if (this.current(epoch, pending)) this.fail(error)
     } finally {

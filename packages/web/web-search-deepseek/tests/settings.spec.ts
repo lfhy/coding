@@ -87,6 +87,15 @@ describe('web-search-deepseek settings section', () => {
     await bench.ctx.fiber.dispose()
   })
 
+  it('rejects unsafe saved endpoints before persistence', async () => {
+    const bench = await boot()
+    for (const baseURL of ['http://127.0.0.1/v1', 'https://[::1]/v1', 'https://user:password@search.test/v1', 'https://search.test/v1?token=x', 'https://localhost/v1', 'https://host.local./v1', 'https://host.internal../v1']) {
+      await expect(bench.ctx.settings.update(WEB_SEARCH_DEEPSEEK_SETTINGS_NAMESPACE, { baseURL })).rejects.toThrow()
+    }
+    expect(bench.ctx.settings.describe().find(row => String(row.ns) === 'web-search-deepseek')?.user).toBeUndefined()
+    await bench.ctx.fiber.dispose()
+  })
+
   it('keeps the literal key out of every described layer', async () => {
     const bench = await boot()
     await bench.ctx.settings.update(WEB_SEARCH_DEEPSEEK_SETTINGS_NAMESPACE, { apiKey: 'ds-stored-secret' })

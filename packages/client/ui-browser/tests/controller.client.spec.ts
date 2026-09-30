@@ -143,4 +143,42 @@ describe('browser session controller', () => {
     expect(await pending).toBe(false)
     expect(controller.view.getSnapshot().phase).toBe('loading')
   })
+
+  it('publishes a lease even without a browser and restores the empty state when it ends', async () => {
+    let locked = true
+    const fetcher = vi.fn(async () => locked ? json({ operationActive: true }) : new Response(null, { status: 204 }))
+    const control = vi.fn()
+    const controller = new BrowserMirrorController('session-a', fetcher, control as never)
+    const stop = controller.start(vi.fn())
+    await flush()
+    expect(controller.view.getSnapshot().phase).toBe('busy')
+    await controller.ensureTab()
+    expect(control).not.toHaveBeenCalled()
+    locked = false
+    await vi.advanceTimersByTimeAsync(750)
+    expect(controller.view.getSnapshot().phase).toBe('empty')
+    stop()
+  })
+
+  it('publishes lease changes without a revision bump and refuses manual or stale-frame actions', async () => {
+    let locked = false
+    const fetcher = vi.fn(async (url: string | URL) => String(url).includes('/frame?') ? frame()
+      : json({ ...state(), operationActive: locked }))
+    const control = vi.fn(async () => ({ result: { ok: true, value: state(2) } }))
+    const controller = new BrowserMirrorController('session-a', fetcher, control as never)
+    const stop = controller.start(vi.fn())
+    await flush()
+    locked = true
+    await vi.advanceTimersByTimeAsync(750)
+    expect(controller.view.getSnapshot().state?.operationActive).toBe(true)
+    expect(await controller.command({ kind: 'back' })).toBe(false)
+    locked = false
+    await vi.advanceTimersByTimeAsync(750)
+    expect(controller.view.getSnapshot().state?.operationActive).toBe(false)
+    const target = { browserGeneration: 'g1', stateRevision: 0, tabId: id as never,
+      generation: 'tab-g1', revision: 1, viewport: { width: 1280, height: 720 } }
+    expect(await controller.command({ kind: 'click', target, x: 1, y: 1 })).toBe(false)
+    expect(control).not.toHaveBeenCalled()
+    stop()
+  })
 })

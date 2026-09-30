@@ -19,7 +19,7 @@ const searchProvider = (options: DeepSeekSearchProviderOptions): DeepSeekSearchP
  * can complete without structured source blocks, so this is not a reliable
  * merge signal. Its body remains because mocks cannot confirm the wire shape.
  */
-const apiKey = process.env.DEEPSEEK_API_KEY
+const apiKey = process.env.DEEPSEEK_SEARCH_API_KEY
 const maybe = apiKey !== undefined && apiKey.length > 0 ? describe : describe.skip
 
 maybe('DeepSeekSearchProvider real API', () => {

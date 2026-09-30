@@ -24,6 +24,7 @@
   "exclude": [
     "tests/scaffold.ts",
     "tests/browser-use-mirror.e2e.ts",
+    "tests/search-settings.e2e.ts",
     "tests/active-conversation-panel-actions.e2e.ts",
     "tests/scaffold-hermetic.e2e.ts",
     "tests/startup-rpc-budget.e2e.ts",

@@ -29,6 +29,14 @@ export const zh = {
   'startBrowsing': '开始浏览',
   'emptyHint': '输入 URL 以打开页面',
   'pending': '正在打开页面…',
+  'agentBusy': 'AI 正在操作浏览器，完成后可继续人工操作',
+  'typeMode': '输入',
+  'typeModeHint': '选择截图中的输入位置并插入文本',
+  'selectTypeTarget': '选择截图中的输入位置',
+  'clickPage': '点击截图中的页面；可用鼠标滚轮滚动',
+  'typeAtPoint': '在选中位置插入文本',
+  'insertText': '插入',
+  'cancel': '取消',
 } as const
 
 export type BrowserMirrorKey = keyof typeof zh
@@ -61,4 +69,12 @@ export const en: Record<BrowserMirrorKey, string> = {
   'startBrowsing': 'Start browsing',
   'emptyHint': 'Enter a URL to open a page',
   'pending': 'Opening page…',
+  'agentBusy': 'AI is using the browser. Manual controls resume when it finishes.',
+  'typeMode': 'Type',
+  'typeModeHint': 'Choose a location in the screenshot and insert text',
+  'selectTypeTarget': 'Choose an input location in the screenshot',
+  'clickPage': 'Click the page screenshot; use the mouse wheel to scroll',
+  'typeAtPoint': 'Insert text at the selected location',
+  'insertText': 'Insert',
+  'cancel': 'Cancel',
 }

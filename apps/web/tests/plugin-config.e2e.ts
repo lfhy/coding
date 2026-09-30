@@ -1,9 +1,6 @@
-// Web e2e scenario: the configurable tab in Plugins settings — the cards a
-// deployment's exposed host-plane namespaces produce, one field edited through the real
-// wire down to `$DSH_HOME/settings.yaml`, and the override badge and reset
-// that layering produces. Zero model calls: everything is client state plus
-// the settings document on a blank frame, so there is no fixture and a stray
-// stream would fail loud on the open llm seam.
+// 浏览器回放：插件配置只展示本部署开放的 Host 命名空间卡片；字段编辑经真实
+// wire 写入 `$DSH_HOME/settings.yaml`，并验证覆盖标记与重置。不调用模型，
+// 因此无需 fixture；意外的模型流会由未封闭的 llm seam 暴露。
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
@@ -41,12 +38,7 @@ describe('web e2e: plugin configuration section', () => {
     await scaffold?.close()
   })
 
-  /**
-   * Open the settings dialog on the Plugins section. The scenarios share one
-   * page so the settings document accumulates across them, so this leaves any
-   * dialog a previous scenario opened closed first — its mask would otherwise
-   * swallow the trigger click.
-   */
+  /** 测试共用页面与设置文档；重新打开前先关闭旧对话框，避免遮罩截获设置按钮。 */
   async function openPlugins() {
     if (await page.getByRole('dialog', { name: '设置' }).count() > 0) {
       await page.keyboard.press('Escape')
@@ -70,20 +62,28 @@ describe('web e2e: plugin configuration section', () => {
     return readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8').catch(() => '')
   }
 
-  it('shows one card per exposed host-plane namespace', async () => {
+  it('shows two plugin cards and keeps search in its own section', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-config-cards'))
     const dialog = await openPlugins()
 
-    // Every card the shipped web composition exposes: the shell executor, the
-    // agent loop, and the DeepSeek search provider.
-    await dialog.getByText('终端', { exact: true }).waitFor({ timeout: 10_000 })
-    expect(await dialog.getByText('Agent 循环', { exact: true }).count()).toBe(1)
-    expect(await dialog.getByText('网页搜索', { exact: true }).count()).toBe(1)
-    // Collapsed: a card's fields appear only once it is expanded.
+    const cards = dialog.getByRole('tabpanel', { name: '插件配置' }).getByRole('listitem')
+    await dialog.getByRole('button', { name: '展开设置: 终端' }).waitFor({ timeout: 10_000 })
+    await expect.poll(() => cards.count(), { timeout: 10_000 }).toBe(2)
+    expect(await dialog.getByRole('button', { name: '展开设置: Agent 循环' }).count()).toBe(1)
+    expect(await dialog.getByRole('button', { name: '展开设置: 网页搜索' }).count()).toBe(0)
+    expect(await dialog.getByRole('radio', { name: /DuckDuckGo|DeepSeek 官方/ }).count()).toBe(0)
+    // 卡片收起时，其字段不应出现。
     expect(await dialog.getByLabel('命令超时（毫秒）').count()).toBe(0)
 
     const snapshot = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(SECTION_EXPECTED, snapshot, MODE)
+
+    await dialog.getByRole('navigation').getByRole('button', { name: '联网搜索', exact: true }).click()
+    const search = dialog.getByRole('region', { name: '联网搜索' })
+    await search.getByRole('heading', { name: '联网搜索' }).waitFor({ timeout: 10_000 })
+    expect(await search.getByRole('radio', { name: /DuckDuckGo/ }).count()).toBe(1)
+    expect(await search.getByRole('radio', { name: /DeepSeek 官方/ }).count()).toBe(1)
+    expect(await dialog.getByRole('tab', { name: '插件配置' }).count()).toBe(0)
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 

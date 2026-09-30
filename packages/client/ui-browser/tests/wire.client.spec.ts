@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeBrowserUrl, parseBrowserState } from '../src/client/wire.ts'
+import { normalizeBrowserUrl, parseBrowserState, parseBrowserStateOrLock } from '../src/client/wire.ts'
 import { otherId, state } from './browser-fixtures.ts'
 
 describe('browser state wire', () => {
@@ -8,6 +8,12 @@ describe('browser state wire', () => {
     expect(normalizeBrowserUrl('example.com/path')).toBe('https://example.com/path')
     expect(normalizeBrowserUrl('example.com:8080')).toBe('https://example.com:8080/')
     expect(normalizeBrowserUrl('http://localhost:3000/')).toBe('http://localhost:3000/')
+  })
+  it('accepts only the exact lock-only response and validates the full-state operation flag', () => {
+    expect(parseBrowserStateOrLock({ operationActive: true })).toEqual({ operationActive: true })
+    expect(() => parseBrowserStateOrLock({ operationActive: true, tabs: [] })).toThrow()
+    expect(() => parseBrowserStateOrLock({ operationActive: false })).toThrow()
+    expect(() => parseBrowserState({ ...state(), operationActive: 'yes' })).toThrow()
   })
   it('accepts the provider multiline Page text and Elements snapshot without weakening other fields', () => {
     const snapshot = 'Page text:\nExample Domain\r\nA sample\tlink\nElements:\n[1] link "More information"'

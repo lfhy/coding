@@ -159,6 +159,18 @@ describe('DeepSeekSearchProvider availability', () => {
     expect(searchProvider({ ...options, baseURL: 'not a url' }).available()).toBe(false)
   })
 
+  it('rejects local hostname suffixes even with trailing DNS root dots', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    for (const hostname of ['localhost.', 'host.local.', 'host.internal..']) {
+      const provider = searchProvider({ ...options, baseURL: `https://${hostname}/anthropic/v1` })
+      expect(provider.available()).toBe(false)
+      await expect(provider.search({ query: 'q' }))
+        .rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_ERROR' }))
+    }
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
   it('is misconfigured when request limits are not positive integers', () => {
     expect(searchProvider({ ...options, maxTokens: 0 }).available()).toBe(false)
     expect(searchProvider({ ...options, maxUses: 0 }).available()).toBe(false)
@@ -294,13 +306,13 @@ describe('DeepSeekSearchProvider error handling', () => {
     }).search({ query: 'q' }, controller.signal))
       .rejects.toThrow(expect.objectContaining({
         code: 'WEB_PROVIDER_ERROR',
-        message: 'DeepSeek search credential resolution failed: Error: credential backend failed',
+        message: 'DeepSeek search credential resolution failed',
       }))
   })
 
   it('uses the default credential reference when no resolver is configured', async () => {
     await expect(searchProvider({ ...options, apiKey: '' }).search({ query: 'q' }))
-      .rejects.toThrow('DeepSeek search has no API key for "DEEPSEEK_API_KEY"')
+      .rejects.toThrow('DeepSeek search has no API key for "DEEPSEEK_SEARCH_API_KEY"')
   })
 
   it('observes cancellation triggered synchronously by credential resolution', async () => {
@@ -323,6 +335,12 @@ describe('DeepSeekSearchProvider error handling', () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ error: { message: 'rate limited' } }, { status: 429 })))
     await expect(searchProvider(options).search({ query: 'q' }))
       .rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_ERROR', message: 'rate limited' }))
+  })
+
+  it('redacts the current credential if a remote error echoes it', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ error: { message: 'invalid ds-key' } }, { status: 401 })))
+    await expect(searchProvider(options).search({ query: 'q' }))
+      .rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_ERROR', message: 'invalid [redacted]' }))
   })
 
   it('handles a string-form error body', async () => {
@@ -460,8 +478,8 @@ describe('web-search-deepseek plugin registration', () => {
   })
 
   it('falls back to the env key and defaults when config omits them', async () => {
-    const prev = process.env.DEEPSEEK_API_KEY
-    process.env.DEEPSEEK_API_KEY = 'env-key'
+    const prev = process.env.DEEPSEEK_SEARCH_API_KEY
+    process.env.DEEPSEEK_SEARCH_API_KEY = 'env-key'
     try {
       const fetchMock = vi.fn(async () => jsonResponse(searchResponse()))
       vi.stubGlobal('fetch', fetchMock)
@@ -475,14 +493,14 @@ describe('web-search-deepseek plugin registration', () => {
       expect(JSON.parse(init.body as string)).toMatchObject({ model: 'deepseek-v4-flash' })
       await ctx.fiber.dispose()
     } finally {
-      if (prev === undefined) delete process.env.DEEPSEEK_API_KEY
-      else process.env.DEEPSEEK_API_KEY = prev
+      if (prev === undefined) delete process.env.DEEPSEEK_SEARCH_API_KEY
+      else process.env.DEEPSEEK_SEARCH_API_KEY = prev
     }
   })
 
   it('resolves the credential for each search so a stored or rotated key needs no restart', async () => {
-    const previous = process.env.DEEPSEEK_API_KEY
-    delete process.env.DEEPSEEK_API_KEY
+    const previous = process.env.DEEPSEEK_SEARCH_API_KEY
+    delete process.env.DEEPSEEK_SEARCH_API_KEY
     const dir = await mkdtemp(join(tmpdir(), 'dsh-web-search-credentials-'))
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => jsonResponse(searchResponse()))
     vi.stubGlobal('fetch', fetchMock)
@@ -495,7 +513,7 @@ describe('web-search-deepseek plugin registration', () => {
       await expect(ctx.web.search({ query: 'missing' }))
         .rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_CREDENTIAL_MISSING' }))
 
-      const ref = credentialRef('DEEPSEEK_API_KEY')
+      const ref = credentialRef('DEEPSEEK_SEARCH_API_KEY')
       await ctx.credentials.set(ref, 'stored-key')
       await ctx.web.search({ query: 'stored' })
       await ctx.credentials.set(ref, 'rotated-key')
@@ -506,14 +524,14 @@ describe('web-search-deepseek plugin registration', () => {
     } finally {
       await ctx.fiber.dispose()
       await rm(dir, { recursive: true, force: true })
-      if (previous === undefined) delete process.env.DEEPSEEK_API_KEY
-      else process.env.DEEPSEEK_API_KEY = previous
+      if (previous === undefined) delete process.env.DEEPSEEK_SEARCH_API_KEY
+      else process.env.DEEPSEEK_SEARCH_API_KEY = previous
     }
   })
 
   it('reports an actionable credential error when neither config nor env supplies a key', async () => {
-    const prev = process.env.DEEPSEEK_API_KEY
-    delete process.env.DEEPSEEK_API_KEY
+    const prev = process.env.DEEPSEEK_SEARCH_API_KEY
+    delete process.env.DEEPSEEK_SEARCH_API_KEY
     try {
       const ctx = new Context()
       await ctx.plugin(WebRuntime, { searchProvider: DEEPSEEK_PROVIDER_ID })
@@ -526,9 +544,9 @@ describe('web-search-deepseek plugin registration', () => {
       }
       expect(caught).toMatchObject({ code: 'WEB_PROVIDER_CREDENTIAL_MISSING' })
       if (!(caught instanceof Error)) throw new Error('search did not throw an Error')
-      expect(caught.message).toMatch(/store it through the credentials service.*Models page/s)
+      expect(caught.message).toMatch(/store it through the credentials service.*Search settings page/s)
     } finally {
-      if (prev !== undefined) process.env.DEEPSEEK_API_KEY = prev
+      if (prev !== undefined) process.env.DEEPSEEK_SEARCH_API_KEY = prev
     }
   })
 })

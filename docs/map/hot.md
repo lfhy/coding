@@ -13,7 +13,7 @@
 ## 浏览器与 Host 传输
 
 - **路线**：`packages/client/connection/src/client/connection.ts` 管重连和双下行流，`src/client/web-api-client.ts` 发 `/api` 请求；Host 端 `packages/client/connection/src/index.ts`/`api-request-trust.ts` 管路由与信任栅栏，`packages/host/webserver/src/index.ts` 管 HTTP/upgrade 注册，`packages/host/apiproxy/src/api-proxy.ts` 管方法实现，`src/api/rpc.schema.ts` 与 `browser.schema.ts` 管 wire 校验；`packages/api/remotes/src/client/index.ts` 是另一套 Typert Remote 入口，先于 API Proxy 认领自己的方法。
-- **技术与边界**：浏览器 unary/respond 用 HTTP POST，下行 `events.mux`/`events.host` 用 WebSocket；webserver 不实现业务，apiproxy 不注册 HTTP 路由。人工 `browser.control` 是回环同源特权方法，只接受已附着的本地 Session，远程 marker 拒绝；方法约定和信任规则分别见 [apiproxy](../../packages/host/apiproxy/README.md)、[connection](../../packages/client/connection/README.md)。另一套 Typert Remote 入口见 [remotes](../../packages/api/remotes/README.md)。
+- **技术与边界**：浏览器 unary/respond 用 HTTP POST，下行 `events.mux`/`events.host` 用 WebSocket；webserver 不实现业务，apiproxy 不注册 HTTP 路由。人工 `browser.control` 是回环同源特权方法，只接受已附着的本地 Session，远程 marker 拒绝；Agent 浏览器操作从审批等待至执行结束持有 Host 操作权，人工命令被拒绝。方法约定和信任规则分别见 [apiproxy](../../packages/host/apiproxy/README.md)、[connection](../../packages/client/connection/README.md)。另一套 Typert Remote 入口见 [remotes](../../packages/api/remotes/README.md)。
 - **连带与验证**：协议变更同步 API schema、Client 调用、Host handler 与 keyless 回放；路由或升级变更同步信任拒绝测试，不能只验证回环成功路径。定向运行 `pnpm exec vitest run packages/client/connection/tests packages/host/apiproxy/tests packages/host/webserver/tests`，浏览器组装变化再跑 `DSH_SNAPSHOT=replay pnpm run test:web`。
 
 ## 桌面壳与 Host 启动
@@ -191,13 +191,13 @@
 
 ## packages/client/ui-browser
 
-- **拥有**：占用 `workbench.browser` 和 `workbench.browser.tabs` 的会话级截图、人工地址栏／历史／标签控件，以及每 Session 的观测轮询与图片 URL 生命周期。
+- **拥有**：占用 `workbench.browser` 和 `workbench.browser.tabs` 的会话级截图、人工地址栏／历史／标签与截图坐标交互，以及每 Session 的观测轮询与图片 URL 生命周期。
 - **不拥有**：slot 声明、功能菜单和文件视图（`packages/client/ui-open-in-app`）；Host 的 `browser.control` 实现与信任限制（`packages/host/apiproxy`、`packages/client/connection`）；浏览器状态与模型工具（`packages/browser/browser`、`packages/browser/tool-browser`）。
 - **入口**：`packages/client/ui-browser/src/client/index.ts`（注入 `slots`、`locale`、`connection`，两个 slot 共用会话控制器）；node 半是空 apply。
 - **接线**：`packages/bundle/web-app/cordis.patch.yml` 的 `ui-browser` 行，依赖 `ui-open-in-app` 声明的两个 slot。
 - **关键文件**：`packages/client/ui-browser/src/client/BrowserMirror.tsx`、`packages/client/ui-browser/src/client/controller.ts`、`packages/client/ui-browser/src/client/wire.ts`。
 - **改这里要同步**：人工命令同步 `packages/host/apiproxy/src/api/browser.schema.ts` 与 `packages/browser/browser`；slot owner 改动同步 `ui-open-in-app`；用户可见操作同步[使用指南](../user/guide/index.md#让-agent-使用浏览器)。
-- **不变量**：页面只作为经校验的 PNG 画面进入 Client，绝不嵌入目标页面；旧 generation／revision 和晚到的截图不能覆盖新状态，Blob URL 在换帧、消失和卸载时释放。
+- **不变量**：页面只作为经校验的 PNG 画面进入 Client，绝不嵌入目标页面；截图等比缩小且不超过原生大小，坐标命令绑定当前画面身份；Agent 操作持有 Host 操作权时控件禁用；旧 generation／revision 和晚到的截图不能覆盖新状态，Blob URL 在换帧、消失和卸载时释放。
 - **测试**：`pnpm exec vitest run packages/client/ui-browser/tests`
 
 ## packages/client/ui-theme
@@ -236,7 +236,7 @@
 ## apps/desktop-electron
 
 - **拥有**：Electron 窗口、macOS 菜单和托盘、受限 Remote-SSH preload/main IPC、Go helper 客户端，以及开发与生产运行路径校验。
-- **不拥有**：Remote-SSH 实现与 bridge（归 `apps/desktop/internal/desktopremote`）、Host 生命周期协议（归 `apps/internal/hostlaunch`）、UI 和会话（归 Client/Host 插件）；`browser_use` 的工具与 Playwright 页面归 [浏览器包](../../packages/browser/tool-browser/README.md)及其[提供方](../../packages/browser/browser-playwright/README.md)，工作台只读截图归 [ui-browser](../../packages/client/ui-browser/README.md)，桌面壳不持有受控 guest。
+- **不拥有**：Remote-SSH 实现与 bridge（归 `apps/desktop/internal/desktopremote`）、Host 生命周期协议（归 `apps/internal/hostlaunch`）、UI 和会话（归 Client/Host 插件）；`browser_use` 的工具与 Playwright 页面归 [浏览器包](../../packages/browser/tool-browser/README.md)及其[提供方](../../packages/browser/browser-playwright/README.md)，工作台截图和人工坐标命令归 [ui-browser](../../packages/client/ui-browser/README.md)，桌面壳不持有受控 guest。
 - **入口**：`apps/desktop-electron/src/main.ts`；Go 进程入口在 `apps/desktop/cmd/electron-helper/main.go`。`make dev` 与 `pnpm run dev:electron` 启动开发态；`build:desktop` 经 `scripts/package-electron-macos-app.ts` 组装生产包，`make install` 才将其安装到 `/Applications/Coding.app`。
 - **关键文件**：`apps/desktop-electron/src/window.ts`、`native-chrome.ts`、`preload.ts`、`remote-ipc.ts`、`helper-client.ts`、`runtime-config.ts`、`apps/desktop/internal/helperwire/`。
 - **改这里要同步**：Remote-SSH 输入与状态同步 `packages/client/ui-workspace/src/client/remote.ts`、`apps/desktop/internal/desktopremote` 与 `apps/desktop/cmd/electron-helper`；生产路径及资源（含 Playwright 浏览器）同步 `scripts/build-electron-helper.ts`、`scripts/package-electron-macos-app.ts` 和 `apps/desktop-electron/README.md`。

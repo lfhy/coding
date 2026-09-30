@@ -21,6 +21,11 @@ import * as ToolBrowser from '../src/index.ts'
 
 class FixtureBrowser extends BrowserUseService {
   readonly calls: { sessionId: ReturnType<typeof SessionId>; command: BrowserCommand }[] = []
+  operationActive(): boolean { return false }
+  acquireOperation(_id: ReturnType<typeof SessionId>, signal: AbortSignal): Promise<() => void> {
+    signal.throwIfAborted()
+    return Promise.resolve(() => {})
+  }
 
   execute(id: ReturnType<typeof SessionId>, command: BrowserCommand, signal: AbortSignal): Promise<BrowserCapture> {
     signal.throwIfAborted()

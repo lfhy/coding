@@ -4,12 +4,12 @@ import { randomUUID } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { Context } from '@deepseek-ai/cordis'
 import { BrowserUseError, BrowserUseService } from '@deepseek-ai/dsh-browser'
-import type { BrowserCapture, BrowserCommand, BrowserExpectedTarget, BrowserHumanCommand, BrowserObservation, BrowserSessionState, BrowserTabId, BrowserTabSummary } from '@deepseek-ai/dsh-browser'
+import type { BrowserCapture, BrowserCommand, BrowserExpectedTarget, BrowserHumanCommand, BrowserHumanTarget, BrowserObservation, BrowserSessionState, BrowserTabId, BrowserTabSummary } from '@deepseek-ai/dsh-browser'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-session'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { chromium } from 'playwright'
-import type { Browser, BrowserContext, ElementHandle, Page } from 'playwright'
+import type { Browser, BrowserContext, ElementHandle, JSHandle, Page } from 'playwright'
 import { validateBrowserUrl } from './url.ts'
 
 const VIEWPORT = { width: 1280, height: 720 }
@@ -27,6 +27,7 @@ interface SessionTab {
   readonly id: BrowserTabId
   readonly page: Page
   readonly generation: string
+  documentHandle: JSHandle<Document>
   revision: number
   refs: Map<string, ElementHandle>
   capture?: BrowserCapture
@@ -49,7 +50,7 @@ interface SessionPage {
 
 function tabId(): BrowserTabId { return randomUUID() as BrowserTabId }
 
-function fail(message: string, code: 'BROWSER_FAILED' | 'BROWSER_STALE_REF' | 'BROWSER_UNAVAILABLE' | 'BROWSER_CLOSED'): BrowserUseError {
+function fail(message: string, code: 'BROWSER_FAILED' | 'BROWSER_STALE_REF' | 'BROWSER_UNAVAILABLE' | 'BROWSER_CLOSED' | 'BROWSER_BUSY'): BrowserUseError {
   return new BrowserUseError(message, code)
 }
 
@@ -86,6 +87,7 @@ function validSessionId(raw: string | null): raw is SessionId {
 export default class PlaywrightBrowserUse extends BrowserUseService {
   private readonly pages = new Map<SessionId, SessionPage>()
   private readonly tails = new Map<SessionId, Promise<void>>()
+  private readonly operations = new Map<SessionId, symbol>()
   private pendingCreates = 0
   private browser: Promise<Browser> | undefined
   private readonly reapTimer: NodeJS.Timeout
@@ -103,7 +105,7 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
     })
     this.reapTimer = setInterval(() => {
       for (const [id, owner] of this.pages) {
-        if (Date.now() - owner.lastUsed >= IDLE_TIMEOUT && !this.tails.has(id)) {
+        if (Date.now() - owner.lastUsed >= IDLE_TIMEOUT && !this.tails.has(id) && !this.operations.has(id)) {
           this.pages.delete(id)
           void this.destroy(owner).catch(() => {})
         }
@@ -117,6 +119,7 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
     ctx.effect(() => async () => {
       this.disposed = true
       clearInterval(this.reapTimer)
+      this.operations.clear()
       await Promise.all([...this.tails.values()])
       await Promise.all([...this.pages.values()].map(page => this.destroy(page)))
       if (this.browser) await (await this.browser).close()
@@ -138,9 +141,10 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
     })
     try {
       const page = await browserContext.newPage()
+      const documentHandle = await page.evaluateHandle(() => document)
       const id = tabId()
       const generation = randomUUID()
-      const tab: SessionTab = { id, page, generation, revision: 0, refs: new Map(),
+      const tab: SessionTab = { id, page, generation, documentHandle, revision: 0, refs: new Map(),
         summary: { id, generation, url: 'about:blank', title: '', canGoBack: false, canGoForward: false },
         history: [], historyIndex: -1 }
       const tabs = new Map([[id, tab]])
@@ -152,6 +156,7 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
         else void opened.close().catch(() => {})
       })
       page.on('dialog', (dialog) => { void dialog.dismiss() })
+      this.trackNavigation(owner, tab)
       return owner
     } catch (error) {
       await browserContext.close()
@@ -161,10 +166,31 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
 
   private async destroy(owner: SessionPage): Promise<void> {
     owner.closing ??= (async () => {
-      for (const tab of owner.tabs.values()) await this.clearRefs(tab)
+      for (const tab of owner.tabs.values()) {
+        await this.clearRefs(tab)
+        await tab.documentHandle.dispose().catch(() => {})
+      }
       await owner.browserContext.close().catch(() => {})
     })()
     await owner.closing
+  }
+
+  private trackNavigation(owner: SessionPage, tab: SessionTab): void {
+    tab.page.on('framenavigated', (frame) => {
+      if (frame !== tab.page.mainFrame()) return
+      // 同 URL 重载也替换 Document；撤销旧画面并使审批及截图坐标的状态修订版失效。
+      delete tab.capture
+      const refs = tab.refs
+      tab.refs = new Map()
+      void Promise.all([...refs.values()].map(ref => ref.dispose().catch(() => {})))
+      owner.stateRevision++
+      owner.lastUsed = Date.now()
+    })
+  }
+
+  private async sameDocument(tab: SessionTab): Promise<boolean> {
+    try { return await tab.documentHandle.evaluate(doc => doc === document) }
+    catch { return false }
   }
 
   private async clearRefs(tab: SessionTab): Promise<void> {
@@ -178,15 +204,49 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
     return tab
   }
 
-  private view(owner: SessionPage): BrowserSessionState {
+  private view(sessionId: SessionId, owner: SessionPage): BrowserSessionState {
     const active = this.active(owner)
     const capture = active.capture
     const current = capture?.observation.viewport.width === owner.viewport.width &&
       capture.observation.viewport.height === owner.viewport.height ? capture : undefined
-    return { browserGeneration: owner.browserGeneration, stateRevision: owner.stateRevision,
+    return { operationActive: this.operationActive(sessionId), browserGeneration: owner.browserGeneration,
+      stateRevision: owner.stateRevision,
       viewport: { ...owner.viewport },
       tabs: [...owner.tabs.values()].map(tab => ({ ...tab.summary })), activeTabId: active.id,
       observation: current?.observation ?? null, hasFrame: current?.png !== null && current?.png !== undefined }
+  }
+
+  /** @inheritdoc */
+  operationActive(sessionId: SessionId): boolean { return this.operations.has(sessionId) }
+
+  private ensureAvailable(): void {
+    if (this.disposed) throw fail('browser provider disposed', 'BROWSER_UNAVAILABLE')
+  }
+
+  /** @inheritdoc */
+  async acquireOperation(sessionId: SessionId, signal: AbortSignal): Promise<() => void> {
+    signal.throwIfAborted()
+    this.ensureAvailable()
+    if (this.operations.has(sessionId)) throw fail('browser operation already active', 'BROWSER_BUSY')
+    const token = Symbol('browser operation')
+    this.operations.set(sessionId, token)
+    const release = (): void => { if (this.operations.get(sessionId) === token) this.operations.delete(sessionId) }
+    let onAbort = (): void => {}
+    try {
+      await Promise.race([
+        this.tails.get(sessionId) ?? Promise.resolve(),
+        new Promise<never>((_resolve, reject) => {
+          // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- 必须向调用方透传原始 AbortSignal.reason。
+          onAbort = () => { reject(signal.reason) }
+          signal.addEventListener('abort', onAbort, { once: true })
+          if (signal.aborted) onAbort()
+        }),
+      ])
+      signal.throwIfAborted()
+      this.ensureAvailable()
+      return release
+    } catch (error) { release(); throw error }
+    finally { signal.removeEventListener('abort', onAbort) }
   }
 
   private updateSummary(tab: SessionTab, title: string): void {
@@ -206,6 +266,29 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
   private async observe(owner: SessionPage, tab: SessionTab, cursor: BrowserObservation['cursor']): Promise<BrowserCapture> {
     const page = tab.page
     const refs = new Map<string, ElementHandle>()
+    const documentHandle = await page.evaluateHandle(() => document)
+    const stateRevision = owner.stateRevision
+    try {
+      return await this.observeDocument(owner, tab, cursor, documentHandle, stateRevision, refs)
+    } catch (error) {
+      const changed = error instanceof BrowserUseError && error.code === 'BROWSER_STALE_REF' ||
+        owner.stateRevision !== stateRevision ||
+        !await documentHandle.evaluate(doc => doc === document).catch(() => false)
+      await documentHandle.dispose().catch(() => {})
+      for (const ref of refs.values()) await ref.dispose().catch(() => {})
+      if (!(error instanceof OversizedFrameError) && changed) {
+        delete tab.capture
+        await this.clearRefs(tab)
+        if (owner.stateRevision === stateRevision) owner.stateRevision++
+        throw fail('browser document changed during observation', 'BROWSER_STALE_REF')
+      }
+      throw error
+    }
+  }
+
+  private async observeDocument(owner: SessionPage, tab: SessionTab, cursor: BrowserObservation['cursor'],
+    documentHandle: JSHandle<Document>, stateRevision: number, refs: Map<string, ElementHandle>): Promise<BrowserCapture> {
+    const page = tab.page
     const entries: string[] = []
     // 页面内先筛视口相交元素，再跨进程取至多 150 个句柄；扫描节点也有上限。
     const selection = await page.evaluateHandle(({ selector, limit, scanLimit, viewport }) => {
@@ -270,8 +353,10 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
       .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ' ')
     const title = (await page.title()).slice(0, 4096).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ' ')
     const png = await page.screenshot({ type: 'png', animations: 'disabled', timeout: 10_000 })
+    if (owner.stateRevision !== stateRevision || !await documentHandle.evaluate(doc => doc === document)) {
+      throw fail('browser document changed during observation', 'BROWSER_STALE_REF')
+    }
     if (png.byteLength > FRAME_LIMIT) {
-      for (const handle of refs.values()) await handle.dispose().catch(() => {})
       await this.clearRefs(tab)
       delete tab.capture
       this.recordNavigation(tab)
@@ -288,6 +373,11 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
       snapshot, viewport: { ...owner.viewport }, cursor,
     }
     await this.clearRefs(tab)
+    await tab.documentHandle.dispose().catch(() => {})
+    if (owner.stateRevision !== stateRevision || !await documentHandle.evaluate(doc => doc === document)) {
+      throw fail('browser document changed during observation', 'BROWSER_STALE_REF')
+    }
+    tab.documentHandle = documentHandle
     tab.refs = refs
     tab.revision = observation.revision
     const capture = { observation, png: new Uint8Array(png) }
@@ -349,6 +439,9 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
             expectedTarget.url !== this.active(owner).page.url())) {
           throw fail('browser target changed while awaiting approval', 'BROWSER_STALE_REF')
         }
+        if (expectedTarget.kind === 'tab' && owner && !await this.sameDocument(this.active(owner))) {
+          throw fail('browser target changed while awaiting approval', 'BROWSER_STALE_REF')
+        }
       }
       if (command.kind === 'close') {
         const tab = owner && this.active(owner)
@@ -372,17 +465,26 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
   /** @inheritdoc */
   state(sessionId: SessionId): BrowserSessionState | undefined {
     const owner = this.pages.get(sessionId)
-    return owner && this.view(owner)
+    return owner && this.view(sessionId, owner)
   }
 
   /** @inheritdoc */
-  async control(sessionId: SessionId, command: BrowserHumanCommand, signal: AbortSignal): Promise<BrowserSessionState | undefined> {
+  async control(sessionId: SessionId, command: BrowserHumanCommand, signal: AbortSignal,
+    guard?: () => Promise<void>): Promise<BrowserSessionState | undefined> {
     signal.throwIfAborted()
+    if (this.operationActive(sessionId)) throw fail('browser is controlled by the agent', 'BROWSER_BUSY')
     if (command.kind === 'set-viewport') this.validateViewport(command.width, command.height)
     return await this.enqueue(sessionId, signal, async () => {
+      await guard?.()
+      signal.throwIfAborted()
       let owner = this.pages.get(sessionId)
       if (command.kind === 'navigate') validateBrowserUrl(command.url)
-      if (!owner && command.kind !== 'navigate' && command.kind !== 'new-tab' && command.kind !== 'ensure-tab') return undefined
+      if (!owner && command.kind !== 'navigate' && command.kind !== 'new-tab' && command.kind !== 'ensure-tab') {
+        if (command.kind === 'click' || command.kind === 'scroll' || command.kind === 'type') {
+          throw fail('browser screenshot is no longer current', 'BROWSER_STALE_REF')
+        }
+        return undefined
+      }
       const created = !owner
       if (!owner) owner = await this.createOwner(sessionId, signal)
       switch (command.kind) {
@@ -401,11 +503,13 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
             }
             const id = tabId()
             const generation = randomUUID()
-            const tab: SessionTab = { id, page: createdPage, generation, revision: 0, refs: new Map(),
+            const documentHandle = await createdPage.evaluateHandle(() => document)
+            const tab: SessionTab = { id, page: createdPage, generation, documentHandle, revision: 0, refs: new Map(),
               summary: { id, generation, url: 'about:blank', title: '', canGoBack: false, canGoForward: false },
               history: [], historyIndex: -1 }
             owner.tabs.set(id, tab)
             createdPage.on('dialog', (dialog) => { void dialog.dismiss() })
+            this.trackNavigation(owner, tab)
             owner.activeTabId = id
             owner.stateRevision++
           } finally {
@@ -430,6 +534,7 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
           const tab = owner.tabs.get(command.tabId)
           if (!tab) throw fail('browser tab is closed', 'BROWSER_CLOSED')
           await this.clearRefs(tab)
+          await tab.documentHandle.dispose().catch(() => {})
           owner.tabs.delete(command.tabId)
           await tab.page.close()
           if (owner.tabs.size === 0) {
@@ -445,6 +550,30 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
           await this.active(owner).page.goto(command.url, { waitUntil: 'domcontentloaded', timeout: 15_000 })
           await this.observe(owner, this.active(owner), null)
           break
+        case 'click':
+        case 'scroll':
+        case 'type': {
+          const tab = this.active(owner)
+          await this.validateHumanTarget(owner, tab, command.target, command.x, command.y)
+          const { x, y } = command
+          if (command.kind === 'click') await tab.page.mouse.click(x, y)
+          else if (command.kind === 'scroll') {
+            if (!Number.isSafeInteger(command.pixels) || command.pixels < 1 || command.pixels > 2000) {
+              throw fail('browser scroll distance must be 1..2000 pixels', 'BROWSER_FAILED')
+            }
+            await tab.page.mouse.move(x, y)
+            await tab.page.mouse.wheel(0, (command.direction === 'down' ? 1 : -1) * command.pixels)
+            await this.settleScroll(tab.page)
+          } else {
+            if (command.text.length > 2000) throw fail('browser text exceeds 2000 characters', 'BROWSER_FAILED')
+            await tab.page.mouse.click(x, y)
+            await tab.page.keyboard.insertText(command.text)
+          }
+          await this.observe(owner, tab, command.kind === 'type'
+            ? { x, y, kind: 'fill', at: Date.now() }
+            : { x, y, kind: command.kind, at: Date.now() })
+          break
+        }
         case 'set-viewport': {
           if (owner.viewport.width === command.width && owner.viewport.height === command.height) break
           owner.viewport = { width: command.width, height: command.height }
@@ -480,9 +609,30 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
         default: { const unreachable: never = command; throw new Error(`unknown browser command: ${String(unreachable)}`) }
       }
       owner.lastUsed = Date.now()
-      return this.view(owner)
+      return this.view(sessionId, owner)
     })
   }
+
+  private async validateHumanTarget(owner: SessionPage, tab: SessionTab, target: BrowserHumanTarget,
+    x: number, y: number): Promise<void> {
+    const observed = tab.capture?.observation
+    if (target.browserGeneration !== owner.browserGeneration || target.stateRevision !== owner.stateRevision ||
+      target.tabId !== owner.activeTabId || target.generation !== tab.generation ||
+      target.revision !== observed?.revision || observed.url !== tab.page.url() ||
+      target.viewport.width !== owner.viewport.width || target.viewport.height !== owner.viewport.height ||
+      observed.viewport.width !== owner.viewport.width || observed.viewport.height !== owner.viewport.height ||
+      tab.capture?.png === null || tab.capture?.png === undefined ||
+      !Number.isSafeInteger(x) || !Number.isSafeInteger(y) || x < 0 || y < 0 ||
+      x >= owner.viewport.width || y >= owner.viewport.height) {
+      throw fail('browser screenshot is no longer current', 'BROWSER_STALE_REF')
+    }
+    if (!await this.sameDocument(tab) || target.stateRevision !== owner.stateRevision ||
+      observed !== this.currentCapture(tab)?.observation || observed.url !== tab.page.url()) {
+      throw fail('browser screenshot is no longer current', 'BROWSER_STALE_REF')
+    }
+  }
+
+  private currentCapture(tab: SessionTab): BrowserCapture | undefined { return tab.capture }
 
   private validateViewport(width: number, height: number): void {
     if (!Number.isInteger(width) || !Number.isInteger(height) ||
@@ -504,6 +654,14 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
     await page.evaluate(() => new Promise<void>((resolve) => {
       const timeout = setTimeout(resolve, 200)
       requestAnimationFrame(() => { clearTimeout(timeout); resolve() })
+    }))
+  }
+
+  private async settleScroll(page: Page): Promise<void> {
+    // wheel 调用兑现时页面的滚动事件与绘制可能还未完成；两帧后再采集页面和画面。
+    await page.evaluate(() => new Promise<void>((resolve) => {
+      const timeout = setTimeout(resolve, 250)
+      requestAnimationFrame(() => requestAnimationFrame(() => { clearTimeout(timeout); resolve() }))
     }))
   }
 
@@ -593,7 +751,11 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
       keys.length !== (frame ? 6 : 1) || !validSessionId(url.searchParams.get('sessionId'))) { send(res, 400); return }
     const sessionId = url.searchParams.get('sessionId') as SessionId
     const state = this.state(sessionId)
-    if (!state) { send(res, frame ? 404 : 204); return }
+    if (!state) {
+      if (!frame && this.operationActive(sessionId)) send(res, 200, { operationActive: true })
+      else send(res, frame ? 404 : 204)
+      return
+    }
     const capture = this.latest(sessionId)
     if (frame) {
       const generation = url.searchParams.get('generation')

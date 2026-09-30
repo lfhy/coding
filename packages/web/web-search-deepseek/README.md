@@ -10,15 +10,15 @@ Exa 和 Perplexity 提供专用搜索端点，DeepSeek 则没有。该提供方�
 
 **严格模式**：如果响应不含 `web_search_tool_result` 块（未触发原生搜索），提供方会抛出 `WebError` `WEB_PROVIDER_ERROR`，而非降级为文本抓取。
 
-它复用 `DEEPSEEK_API_KEY` 凭据引用（不增加密钥），但**不会**复用 `$DEEPSEEK_BASE_URL`：搜索端点使用 Anthropic 兼容基址（`https://api.deepseek.com/anthropic/v1`），不同于 LLM（大语言模型）适配器使用的 chat-completions 基址（`https://api.deepseek.com`）。已挂载的凭据服务具有权威性；没有该服务时，提供方会回退到启动进程的环境变量。每次搜索都会解析该引用，因此在 Web 的 Models 页中存储或轮换的密钥无需重启，即可用于下一次调用。
+搜索使用独立的 `DEEPSEEK_SEARCH_API_KEY` 凭据引用，避免把第三方模型端点的密钥发送到搜索端点；也**不会**复用 `$DEEPSEEK_BASE_URL`：搜索端点使用 Anthropic 兼容基址（`https://api.deepseek.com/anthropic/v1`），不同于 chat-completions 基址。已挂载的凭据服务具有权威性；没有该服务时才从启动环境变量读取。每次搜索重新解析该引用，设置或轮换搜索密钥无需重启。默认组合使用匿名 DuckDuckGo；在 `web.searchProvider` 明确选 `deepseek-official` 后，缺失凭据和认证失败都会原样报错，不自动切换后端。
 
 ## 配置
 
 | 配置键 | 默认值 | 含义 |
 |---|---|---|
 | `apiKey` | 未设置 | DeepSeek API 密钥字面值。优先使用 `apiKeyEnv`，避免密钥进入配置；非空字面值优先。 |
-| `apiKeyEnv` | `DEEPSEEK_API_KEY` | 每次搜索都会通过 `ctx.credentials` 解析该凭据引用；没有该 seam 时则从进程环境解析。值缺失时，调用以 `WEB_PROVIDER_CREDENTIAL_MISSING` 失败。 |
-| `baseURL` | `https://api.deepseek.com/anthropic/v1` | Anthropic 兼容端点基址；追加 `/messages`。缺省时回退到任一环境层中的 `$DEEPSEEK_SEARCH_BASE_URL`；禁止复用属于 chat-completions LLM 适配器的 `$DEEPSEEK_BASE_URL`。无法解析时提供方不可用。 |
+| `apiKeyEnv` | `DEEPSEEK_SEARCH_API_KEY` | 每次搜索通过 `ctx.credentials` 解析搜索专用引用；没有该 seam 时则从进程环境解析。值缺失时以 `WEB_PROVIDER_CREDENTIAL_MISSING` 失败。 |
+| `baseURL` | `https://api.deepseek.com/anthropic/v1` | Anthropic 兼容端点基址；追加 `/messages`。缺省时回退到 `$DEEPSEEK_SEARCH_BASE_URL`；设置只接受无用户信息、查询、片段及内网字面主机名的 HTTPS URL。 |
 | `model` | `deepseek-v4-flash` | Anthropic 格式模型名称。 |
 | `apiVersion` | `2023-06-01` | `anthropic-version` 标头值。 |
 | `maxTokens` | `4096` | Messages 请求生成 token 的正整数上限。 |
@@ -28,8 +28,8 @@ Exa 和 Perplexity 提供专用搜索端点，DeepSeek 则没有。该提供方�
 - id: web-search-deepseek
   name: '@deepseek-ai/dsh-web-search-deepseek'
   config:
-    apiKeyEnv: DEEPSEEK_API_KEY
-    baseURL: https://gateway.internal/anthropic/v1
+    apiKeyEnv: DEEPSEEK_SEARCH_API_KEY
+    baseURL: https://search.example.com/anthropic/v1
 ```
 
 上面的条目是 `web-search-deepseek` Settings 段的 base 层：叠加其上的用户层会作用于**下一次**搜索，因为提供方是按次投影该段，而不是在注册时固化它。因此端点或模型变化时，seam 的提供方选择不会闪断。`apiKey` 带有 `role('secret')`，所以它在任何一层都不会出现在 `describe()` 响应中——配置表层只能知道 credentials 领域是否为 `apiKeyEnv` 所命名的引用持有值，而无从知道某一层是否带着字面密钥。
@@ -40,7 +40,7 @@ DeepSeek 返回的提供方生成答案均不被该提供方信任为 `content`�
 
 结果按 URL 去重，因为一次请求可能在多次搜索中呈现同一页面。DeepSeek 公开 `maxUses` 而非结果数量旋钮，因此 seam 会强制执行 `maxResults`：截断 `sources[]` 并设置 `truncated`。
 
-提供方失败变为 `WEB_PROVIDER_ERROR`；调用方取消变为 `WEB_ABORTED`。HTTP 重定向会在接触 `Location` 目标前被拒绝，并以 `WEB_PROVIDER_ERROR` 呈现。
+提供方失败变为 `WEB_PROVIDER_ERROR`；调用方取消变为 `WEB_ABORTED`。HTTP 重定向会在接触 `Location` 目标前被拒绝，并以 `WEB_PROVIDER_ERROR` 呈现。错误消息中的当前密钥会被遮蔽，凭据解析器的异常细节不会进入工具结果。
 
 ## 请求日志
 
@@ -66,7 +66,7 @@ DeepSeek 返回的提供方生成答案均不被该提供方信任为 `content`�
 
 #### 模型看到的内容
 
-通过 [`dsh-tool-web`](../tool-web/README.md)，会话模型会看到结构化搜索块中去重后的 URL、标题、日期与引用 snippet；提供方文本不会作为答案受到信任。该提供方的具体错误消息包括带有处理指引的凭据缺失消息、`DeepSeek search credential resolution failed: <error>`、`DeepSeek search aborted`、`DeepSeek search request failed: <error>`、`DeepSeek returned no web_search_tool_result blocks; the request may not have triggered native web search` 和 `DeepSeek returned an unprocessable response body: <error>`；HTTP 失败保留提供方消息。错误包装属于消费方。
+通过 [`dsh-tool-web`](../tool-web/README.md)，会话模型会看到结构化搜索块中去重后的 URL、标题、日期与引用 snippet；提供方文本不会作为答案受到信任。该提供方的具体错误消息包括带有处理指引的凭据缺失消息、`DeepSeek search credential resolution failed`、`DeepSeek search aborted`、`DeepSeek search request failed: <error>`、`DeepSeek returned no web_search_tool_result blocks; the request may not have triggered native web search` 和 `DeepSeek returned an unprocessable response body: <error>`；HTTP 失败保留经当前密钥遮蔽的提供方消息。错误包装属于消费方。
 
 #### Token 影响
 

@@ -1,6 +1,6 @@
 /** 人工浏览器 RPC 的严格输入及会话状态响应。 */
 import { z } from 'zod'
-import type { BrowserObservation, BrowserTabId, BrowserTabSummary } from '@deepseek-ai/dsh-browser/types'
+import type { BrowserHumanTarget, BrowserObservation, BrowserTabId, BrowserTabSummary } from '@deepseek-ai/dsh-browser/types'
 import type { RequestPayload, ResponseValue } from './rpc-map.ts'
 import type { Wire } from './rpc.schema.ts'
 import { sessionIdSchema } from './sessions.schema.ts'
@@ -28,6 +28,14 @@ const safeUrlSchema = z.string().min(1).max(2048).refine((value) => {
   }
 }, { message: 'browser URL must be an absolute HTTP(S) URL without credentials' })
 
+const humanTargetSchema = z.strictObject({
+  browserGeneration: z.string().min(1).max(128), stateRevision: z.number().int().nonnegative(),
+  tabId: tabIdSchema, generation: z.string().min(1).max(128), revision: z.number().int().positive(),
+  viewport: browserViewportSchema,
+}) satisfies z.ZodType<Wire<BrowserHumanTarget>>
+
+const coordinateSchema = z.number().int().nonnegative().max(1920)
+
 /** 所有分支与顶层对象均拒绝多余字段，避免工具参数混入人工入口。 */
 export const browserControlRequestSchema = z.strictObject({
   sessionId: sessionIdSchema,
@@ -47,6 +55,11 @@ export const browserControlRequestSchema = z.strictObject({
     z.strictObject({ kind: z.literal('back') }),
     z.strictObject({ kind: z.literal('forward') }),
     z.strictObject({ kind: z.literal('reload') }),
+    z.strictObject({ kind: z.literal('click'), target: humanTargetSchema, x: coordinateSchema, y: coordinateSchema }),
+    z.strictObject({ kind: z.literal('scroll'), target: humanTargetSchema, x: coordinateSchema, y: coordinateSchema,
+      direction: z.enum(['up', 'down']), pixels: z.number().int().min(1).max(2000) }),
+    z.strictObject({ kind: z.literal('type'), target: humanTargetSchema, x: coordinateSchema, y: coordinateSchema,
+      text: z.string().max(2000) }),
   ]),
 }) satisfies z.ZodType<Wire<RequestPayload<'browser.control'>>>
 
@@ -74,6 +87,7 @@ const browserObservationSchema = z.strictObject({
 
 /** null 只表示最后一个标签页关闭，不表示未知会话。 */
 export const browserControlValueSchema = z.strictObject({
+  operationActive: z.boolean(),
   browserGeneration: z.string(),
   stateRevision: z.number().int().nonnegative(),
   viewport: browserViewportSchema,

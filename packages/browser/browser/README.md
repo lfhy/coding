@@ -6,7 +6,13 @@
 
 `execute(sessionId, command, signal, expectedTarget?)` 执行一次 `BrowserCommand`，返回 `BrowserCapture`；可选 `expectedTarget` 以 `kind: 'none'` 绑定调用前不存在的会话，或以 `kind: 'tab'` 绑定会话 generation、状态修订版、标签页 id、页面 generation 和可选 URL，执行队列中任一目标变化均拒绝，包括同 URL 刷新和切离后切回。每次人工选择标签页、导航及发布新观测均递增状态修订版，重复选择当前页也不例外。`latest(sessionId)` 同步读取活跃标签页最近成功发布的捕获；空白标签页、尚未产生观测或关闭后返回 `undefined`。`state(sessionId)` 同步读取标签页列表、活跃标签页与最近观测；未知或关闭会话返回 `undefined`。`control(sessionId, command, signal)` 串行处理人工命令，关闭最后一页后返回 `undefined`。`closeSession(sessionId)` 等待该会话资源停止；不存在资源时正常完成。Provider 必须隔离会话、拒绝过期元素修订版，并在拒绝或取消时不发布新观测。调用方中止时保留 `AbortSignal` 的原因。
 
+模型消费方在审批前调用 `acquireOperation(sessionId, signal)`：提供方立即阻止新人工命令，排空此前已接纳的操作，然后消费方读取审批目标；执行和结果保存后须在 `finally` 调用返回的幂等释放函数。占用期间 `control` 和同会话第二次占用均返回 `BROWSER_BUSY`，`operationActive(sessionId)` 对尚无浏览器资源的会话也可读取。会话状态同时携带 `operationActive`，拒绝或取消不会留下占用。
+
 模型命令为封闭判别联合：`navigate` 携带 URL；`snapshot` 读取页面；`click` 和 `fill` 携带元素 `ref` 与观测 `revision`；`scroll` 携带方向与像素量；`screenshot` 获取图像；`close` 关闭会话。人工命令包含幂等的 `ensure-tab`、新增 `new-tab`、带 `BrowserTabId` 的 `select-tab` 和 `close-tab`，以及 `navigate`、`back`、`forward`、`reload`、`set-viewport(width,height)`。`BrowserSessionState` 包含 `browserGeneration`、`stateRevision`、当前视口、带页面 generation 的标签页摘要、活跃标签页 id、观测与截图存在标记；空白页也有可绑定目标身份的 generation。视口由 Provider 校验边界并按会话应用于所有页面，尺寸改变会使旧截图和元素引用失效，重新发布活跃页观测。`BrowserObservation` 包含标签页 id、`generation`、`revision`、最终 URL、标题、文本快照、视口和最后操作指针。不同标签页、generation 或观测修订版之间不得复用元素引用；捕获中的 `png` 与可序列化的观测分离。类型可从包入口或 `@deepseek-ai/dsh-browser/types` 导入。
+
+截图人工操作 `click`、`scroll`、`type` 带视口内整数坐标及 `BrowserHumanTarget`：会话 generation、状态 revision、标签页 id、页面 generation、观测 revision 和视口。提供方在队列中核对全部身份、当前截图和页面 URL，过期则以 `BROWSER_STALE_REF` 拒绝且不触碰页面；`type` 点选坐标后插入文本，不替换已有输入，也不模拟键盘按键事件。
+
+`control` 的可选异步 `guard` 在提供方队列中、任何页面副作用前执行；网络入口可用它复核会话附着和远程工作区状态，拒绝时命令不执行。`expectedTarget.stateRevision` 与人工目标的同一状态 revision 在页面自行导航时也必须失效，包括同 URL 重载；只读状态不得继续供应过期截图。
 
 Provider 通过 `BrowserUseError.code` 报告 `BROWSER_INVALID_URL`、`BROWSER_STALE_REF`、`BROWSER_CLOSED`（已关闭会话上的操作）、`BROWSER_DENIED`、`BROWSER_UNAVAILABLE` 或 `BROWSER_FAILED`；取消原因直接向调用方传播。跨进程/RPC、页面和模型 JSON 输入的校验，以及页面操作权限检查必须发生在实际做出相应决定的 Provider 或 Consumer 边界；本接口不要求网络目的地过滤。这个抽象服务没有配置项、事件或注册器；Cordis 仅允许当前 context 的一个实现。
 

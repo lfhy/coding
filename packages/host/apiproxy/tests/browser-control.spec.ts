@@ -14,8 +14,10 @@ import { RpcId } from '../src/api/rpc.ts'
 import { createApiProxy } from '../src/api-proxy.ts'
 
 const tabId = 'd2857d22-1a15-480a-aac4-43bcb9d60df4'
+const target = { browserGeneration: 'generation-1', stateRevision: 2, tabId,
+  generation: 'tab-generation-1', revision: 2, viewport: { width: 1280, height: 720 } }
 const state: BrowserSessionState = {
-  browserGeneration: 'generation-1', stateRevision: 2,
+  operationActive: false, browserGeneration: 'generation-1', stateRevision: 2,
   viewport: { width: 1280, height: 720 },
   tabs: [{ id: tabId as never, generation: 'tab-generation-1', url: 'https://example.com/', title: 'Example', canGoBack: false, canGoForward: false }],
   activeTabId: tabId as never,
@@ -41,7 +43,7 @@ async function harness(cwd?: string, withBrowser = true) {
   const detach = ctx.sessions.enter(session)
   ctx.sessions.announce(session)
   const control = vi.fn<(
-    sessionId: typeof id, command: BrowserHumanCommand, signal: AbortSignal,
+    sessionId: typeof id, command: BrowserHumanCommand, signal: AbortSignal, guard?: () => Promise<void>,
   ) => Promise<BrowserSessionState | undefined>>()
     .mockResolvedValue(state)
   if (withBrowser) ctx.provide('browserUse', { control } as never)
@@ -58,6 +60,9 @@ describe('browser.control wire schemas', () => {
       { kind: 'ensure-tab' }, { kind: 'new-tab' }, { kind: 'select-tab', tabId }, { kind: 'close-tab', tabId },
       { kind: 'navigate', url: 'https://example.com/' }, { kind: 'back' }, { kind: 'forward' }, { kind: 'reload' },
       { kind: 'set-viewport', width: 1280, height: 720 },
+      { kind: 'click', target, x: 10, y: 20 },
+      { kind: 'scroll', target, x: 10, y: 20, direction: 'down', pixels: 120 },
+      { kind: 'type', target, x: 10, y: 20, text: 'hello' },
     ]) expect(browserControlRequestSchema.safeParse({ sessionId: 's', command }).success).toBe(true)
     for (const payload of [
       { sessionId: 's', command: { kind: 'reload' }, agentId: 'forged' },
@@ -67,6 +72,11 @@ describe('browser.control wire schemas', () => {
       { sessionId: 's', command: { kind: 'click', ref: '1' } },
       { sessionId: 's', command: { kind: 'navigate' } },
       { sessionId: 's', command: { kind: 'set-viewport', width: 1280, height: 720, fake: true } },
+      { sessionId: 's', command: { kind: 'click', target: { ...target, tabId: 'bad' }, x: 10, y: 20 } },
+      { sessionId: 's', command: { kind: 'click', target, x: -1, y: 20 } },
+      { sessionId: 's', command: { kind: 'click', target, x: 10, y: 20, script: 'alert(1)' } },
+      { sessionId: 's', command: { kind: 'scroll', target, x: 10, y: 20, direction: 'down', pixels: 2001 } },
+      { sessionId: 's', command: { kind: 'type', target, x: 10, y: 20, text: 'a'.repeat(2001) } },
     ]) expect(browserControlRequestSchema.safeParse(payload).success).toBe(false)
   })
 
@@ -124,7 +134,8 @@ describe('browser.control gateway', () => {
     const signal = new AbortController().signal
     const result = await api.browser.control(request(id, { kind: 'navigate', url: 'https://example.com/' }), signal)
     expect(result).toEqual({ rpcId: RpcId('browser-call'), result: { ok: true, value: state } })
-    expect(control).toHaveBeenCalledWith(id, { kind: 'navigate', url: 'https://example.com/' }, signal)
+    expect(control).toHaveBeenCalledWith(id, { kind: 'navigate', url: 'https://example.com/' }, signal,
+      expect.any(Function))
     control.mockResolvedValueOnce(undefined)
     expect((await api.browser.control(request(id, { kind: 'close-tab', tabId: tabId as never }), signal)).result)
       .toEqual({ ok: true, value: null })
@@ -152,6 +163,32 @@ describe('browser.control gateway', () => {
     expect(control).not.toHaveBeenCalled()
   })
 
+  it('rechecks the remote marker in the provider queue before any page operation', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-browser-queued-remote-'))
+    roots.push(root)
+    const { api, request, control } = await harness(root)
+    control.mockImplementationOnce(async (_id, _command, _signal, guard) => {
+      await writeFile(join(root, REMOTE_WORKSPACE_MARKER), JSON.stringify({
+        version: 3, remoteRoot: '/srv/project', connectionId: 'connection-1', generation: 1, mode: 'agent',
+      }))
+      await guard?.()
+      return state
+    })
+    const result = await api.browser.control(request(), new AbortController().signal)
+    expect(result.result).toMatchObject({ ok: false, error: { code: 'browser-failed', details: { reason: 'BROWSER_DENIED' } } })
+  })
+
+  it('rechecks the attached session in the provider queue', async () => {
+    const { api, request, control, detach } = await harness()
+    control.mockImplementationOnce(async (_id, _command, _signal, guard) => {
+      detach()
+      await guard?.()
+      return state
+    })
+    const result = await api.browser.control(request(), new AbortController().signal)
+    expect(result.result).toMatchObject({ ok: false, error: { code: 'session-not-found' } })
+  })
+
   it('maps provider errors and caller cancellation without exposing navigation URLs', async () => {
     const { api, request, control } = await harness()
     const sensitive = 'https://example.com/private-path'
@@ -171,5 +208,13 @@ describe('browser.control gateway', () => {
     const failure = await api.browser.control(request(), new AbortController().signal)
     expect(failure.result).toMatchObject({ ok: false, error: { code: 'browser-failed', details: { reason: 'BROWSER_FAILED' } } })
     expect(JSON.stringify(failure)).not.toContain(sensitive)
+  })
+
+  it('propagates model ownership rejection without performing a screenshot click', async () => {
+    const { api, request, control } = await harness()
+    control.mockRejectedValueOnce(new BrowserUseError('browser is controlled by the agent', 'BROWSER_BUSY'))
+    const refused = await api.browser.control(request(undefined, { kind: 'click', target: target as never, x: 10, y: 20 }),
+      new AbortController().signal)
+    expect(refused.result).toMatchObject({ ok: false, error: { code: 'browser-failed', details: { reason: 'BROWSER_BUSY' } } })
   })
 })

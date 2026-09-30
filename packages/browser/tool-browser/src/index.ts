@@ -203,45 +203,52 @@ export function apply(ctx: Context): void {
       const approval = ctx.get('approval')
       if (approval === undefined) throw new Error('browser_use: approval service is unavailable')
       const sessionId = agent.session.id
-      const state = ctx.browserUse.state(sessionId)
-      let expectedTarget: BrowserExpectedTarget
-      if (state === undefined) {
-        if (command.kind !== 'navigate') {
-          throw new Error('browser_use: browser session is closed; navigate to open a page')
+      const release = await ctx.browserUse.acquireOperation(sessionId, exec.signal)
+      try {
+        const state = ctx.browserUse.state(sessionId)
+        let expectedTarget: BrowserExpectedTarget
+        if (state === undefined) {
+          if (command.kind !== 'navigate') {
+            throw new Error('browser_use: browser session is closed; navigate to open a page')
+          }
+          expectedTarget = { kind: 'none' }
+        } else {
+          const active = state.tabs.find(tab => tab.id === state.activeTabId)
+          if (active === undefined) throw new Error('browser_use: active tab is unavailable')
+          expectedTarget = { kind: 'tab', browserGeneration: state.browserGeneration, stateRevision: state.stateRevision,
+            tabId: active.id, generation: active.generation, url: active.url }
         }
-        expectedTarget = { kind: 'none' }
-      } else {
-        const active = state.tabs.find(tab => tab.id === state.activeTabId)
-        if (active === undefined) throw new Error('browser_use: active tab is unavailable')
-        expectedTarget = { kind: 'tab', browserGeneration: state.browserGeneration, stateRevision: state.stateRevision,
-          tabId: active.id, generation: active.generation, url: active.url }
-      }
-      const sandboxPolicy = ctx.get('sandboxPolicy')
-      const fullAccess = sandboxPolicy?.resolve({ session: agent.session }).mode === 'danger-full-access'
-        && (approval.overrideOf(agent.session) ?? approval.config.policy ?? 'ask') === 'never'
-      if (!fullAccess) {
-        const currentUrl = command.kind === 'navigate' || expectedTarget.kind === 'none' ? undefined : expectedTarget.url
-        const outcome = await approval.request({
-          agent, toolName: 'browser_use', callId: exec.callId,
-          reason: approvalReason(command, currentUrl),
-          signal: exec.signal,
-        })
+        const sandboxPolicy = ctx.get('sandboxPolicy')
+        const fullAccess = sandboxPolicy?.resolve({ session: agent.session }).mode === 'danger-full-access'
+          && (approval.overrideOf(agent.session) ?? approval.config.policy ?? 'ask') === 'never'
+        if (!fullAccess) {
+          const currentUrl = command.kind === 'navigate' || expectedTarget.kind === 'none' ? undefined : expectedTarget.url
+          const outcome = await approval.request({
+            agent, toolName: 'browser_use', callId: exec.callId,
+            reason: approvalReason(command, currentUrl),
+            signal: exec.signal,
+          })
+          exec.signal.throwIfAborted()
+          if (outcome !== 'allowed-once') throw new Error(`browser_use: approval ${outcome}`)
+        }
         exec.signal.throwIfAborted()
-        if (outcome !== 'allowed-once') throw new Error(`browser_use: approval ${outcome}`)
-      }
-      exec.signal.throwIfAborted()
-      const capture = await ctx.browserUse.execute(sessionId, command, exec.signal, expectedTarget)
-      let image: BrowserUseValue['image'] = null
-      if (command.kind === 'screenshot') {
-        if (capture.png === null) throw new Error('browser_use: screenshot produced no PNG')
-        const ref = await ctx.attachments.saveImage({ data: capture.png, mediaType: 'image/png', name: 'browser-screenshot.png' })
-        image = {
-          attachmentId: ref.attachmentId, mediaType: 'image/png', bytes: ref.bytes,
-          width: ref.width, height: ref.height,
-          ...ref.name === undefined ? {} : { name: ref.name },
+        if (cwd !== undefined && await remoteWorkspacePath('.', cwd, exec.signal) !== undefined) {
+          throw new Error('browser_use: remote workspaces do not support browser operations')
         }
-      }
-      return { action: command.kind, observation: boundedObservation(capture.observation), image }
+        exec.signal.throwIfAborted()
+        const capture = await ctx.browserUse.execute(sessionId, command, exec.signal, expectedTarget)
+        let image: BrowserUseValue['image'] = null
+        if (command.kind === 'screenshot') {
+          if (capture.png === null) throw new Error('browser_use: screenshot produced no PNG')
+          const ref = await ctx.attachments.saveImage({ data: capture.png, mediaType: 'image/png', name: 'browser-screenshot.png' })
+          image = {
+            attachmentId: ref.attachmentId, mediaType: 'image/png', bytes: ref.bytes,
+            width: ref.width, height: ref.height,
+            ...ref.name === undefined ? {} : { name: ref.name },
+          }
+        }
+        return { action: command.kind, observation: boundedObservation(capture.observation), image }
+      } finally { release() }
     },
   }))
 }

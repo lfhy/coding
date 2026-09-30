@@ -7,6 +7,7 @@
  */
 
 import { WebError } from '@deepseek-ai/dsh-web'
+import { isIP } from 'node:net'
 import type {
   WebSearchProvider,
   WebSearchRequest,
@@ -33,6 +34,24 @@ export const DEEPSEEK_PROVIDER_ID = 'deepseek-official'
  * provider does NOT reuse `$DEEPSEEK_BASE_URL` — only the API key is shared.
  */
 export const DEEPSEEK_DEFAULT_BASE_URL = 'https://api.deepseek.com/anthropic/v1'
+
+/** 拒绝凭据、内网字面地址及会改变目标路径解释的端点部分。 */
+export function isSafeBaseUrl(raw: string): boolean {
+  try {
+    const url = new URL(raw)
+    const hostname = url.hostname.toLowerCase().replace(/\.+$/, '')
+    return url.protocol === 'https:' && hostname.length > 0 && isIP(hostname.replace(/^\[|\]$/g, '')) === 0
+      && hostname !== 'localhost' && !hostname.endsWith('.localhost')
+      && !hostname.endsWith('.local') && !hostname.endsWith('.internal')
+      && !url.username && !url.password && !url.search && !url.hash
+  } catch {
+    return false
+  }
+}
+
+function redactCredential(message: string, apiKey: string): string {
+  return message.replaceAll(apiKey, '[redacted]')
+}
 
 /** Default Anthropic-format model name (aligned with the repo's DeepSeek model vocabulary). */
 export const DEEPSEEK_DEFAULT_MODEL = 'deepseek-v4-flash'
@@ -189,7 +208,7 @@ export class DeepSeekSearchProvider implements WebSearchProvider {
   available(): boolean {
     const options = this.resolveOptions()
     return ((options.apiKey?.length ?? 0) > 0 || options.resolveApiKey !== undefined)
-      && URL.canParse(options.baseURL)
+      && isSafeBaseUrl(options.baseURL)
       && isPositiveInteger(options.maxTokens)
       && isPositiveInteger(options.maxUses)
   }
@@ -201,7 +220,10 @@ export class DeepSeekSearchProvider implements WebSearchProvider {
     const options = this.resolveOptions()
     const apiKey = await this.apiKey(options, signal)
     throwIfSearchAborted(signal)
-    const endpoint = `${options.baseURL}/messages`
+    if (!isSafeBaseUrl(options.baseURL)) {
+      throw new WebError('DeepSeek search endpoint must be an HTTPS URL without credentials, query, or fragment', 'WEB_PROVIDER_ERROR')
+    }
+    const endpoint = `${options.baseURL.replace(/\/+$/, '')}/messages`
     const body: DeepSeekSearchLlmRequest['body'] = {
       model: options.model,
       max_tokens: options.maxTokens,
@@ -237,7 +259,7 @@ export class DeepSeekSearchProvider implements WebSearchProvider {
       })
     } catch (error: unknown) {
       if (signal?.aborted === true || isAbortError(error)) throw searchAborted(signal, error)
-      throw new WebError(`DeepSeek search request failed: ${String(error)}`, 'WEB_PROVIDER_ERROR', { cause: error })
+      throw new WebError(`DeepSeek search request failed: ${redactCredential(String(error), apiKey)}`, 'WEB_PROVIDER_ERROR')
     }
 
     if (!response.ok) {
@@ -246,7 +268,7 @@ export class DeepSeekSearchProvider implements WebSearchProvider {
       try {
         const parsed = await response.json() as AnthropicError
         const detail = typeof parsed.error === 'string' ? parsed.error : parsed.error?.message ?? parsed.message
-        if (detail !== undefined && detail.length > 0) message = detail
+        if (detail !== undefined && detail.length > 0) message = redactCredential(detail, apiKey)
       } catch (error: unknown) {
         // An abort fired mid-body must surface as WEB_ABORTED, not be swallowed
         // into a generic HTTP-error message — cancellation is not a provider
@@ -265,7 +287,7 @@ export class DeepSeekSearchProvider implements WebSearchProvider {
     } catch (error: unknown) {
       if (signal?.aborted === true || isAbortError(error)) throw searchAborted(signal, error)
       if (error instanceof WebError) throw error
-      throw new WebError(`DeepSeek returned an unprocessable response body: ${String(error)}`, 'WEB_PROVIDER_ERROR', { cause: error })
+      throw new WebError(`DeepSeek returned an unprocessable response body: ${redactCredential(String(error), apiKey)}`, 'WEB_PROVIDER_ERROR')
     }
   }
 
@@ -283,17 +305,13 @@ export class DeepSeekSearchProvider implements WebSearchProvider {
       resolved = await abortable(options.resolveApiKey?.() ?? Promise.resolve(undefined), signal)
     } catch (error: unknown) {
       if (signal?.aborted === true || isAbortError(error)) throw searchAborted(signal, error)
-      throw new WebError(
-        `DeepSeek search credential resolution failed: ${String(error)}`,
-        'WEB_PROVIDER_ERROR',
-        { cause: error },
-      )
+      throw new WebError('DeepSeek search credential resolution failed', 'WEB_PROVIDER_ERROR')
     }
     if (resolved !== undefined && resolved.length > 0) return resolved
-    const ref = options.apiKeyEnv ?? 'DEEPSEEK_API_KEY'
+    const ref = options.apiKeyEnv ?? 'DEEPSEEK_SEARCH_API_KEY'
     throw new WebError(
       `DeepSeek search has no API key for "${ref}"; store it through the credentials service`
-      + ' (the web Models page writes it), export it in the launching environment, or set a literal'
+      + ' (the web Search settings page writes it), export it in the launching environment, or set a literal'
       + ' "apiKey" in the web-search-deepseek config',
       'WEB_PROVIDER_CREDENTIAL_MISSING',
     )

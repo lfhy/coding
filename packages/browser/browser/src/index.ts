@@ -4,7 +4,7 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { BrowserCapture, BrowserCommand, BrowserExpectedTarget, BrowserHumanCommand, BrowserSessionState, BrowserUseErrorCode } from './types.ts'
 
-export type { BrowserCapture, BrowserCommand, BrowserExpectedTarget, BrowserHumanCommand, BrowserObservation, BrowserSessionState, BrowserTabId, BrowserTabSummary, BrowserUseErrorCode } from './types.ts'
+export type { BrowserCapture, BrowserCommand, BrowserExpectedTarget, BrowserHumanCommand, BrowserHumanTarget, BrowserObservation, BrowserOperationOnlyState, BrowserSessionState, BrowserTabId, BrowserTabSummary, BrowserUseErrorCode } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -25,6 +25,21 @@ export abstract class BrowserUseService extends Service {
   constructor(ctx: Context) {
     super(ctx, 'browserUse')
   }
+
+  /**
+   * 在审批开始前独占会话的人工入口，并等待此前已接纳的操作完成；调用者必须在 finally 释放。
+   * @param sessionId - 要独占的浏览器会话。
+   * @param signal - 等待期间的取消信号。
+   * @returns 幂等的释放函数；获得后才可采样审批目标。
+   */
+  abstract acquireOperation(sessionId: SessionId, signal: AbortSignal): Promise<() => void>
+
+  /**
+   * 查询会话是否正被模型操作占用，即使浏览器资源尚未创建也可查询。
+   * @param sessionId - 要查询的会话。
+   * @returns 模型操作从审批到执行结束的占用状态。
+   */
+  abstract operationActive(sessionId: SessionId): boolean
 
   /**
    * 对指定会话执行一个命令，成功时发布对应的观测与可选截图。
@@ -50,9 +65,11 @@ export abstract class BrowserUseService extends Service {
    * @param sessionId - 独占浏览器上下文的会话身份。
    * @param command - 人工操作，标签页 id 只在当前会话有效。
    * @param signal - 调用方中止信号。
+   * @param guard - 可选的异步准入复核，在提供方执行队列中、操作页面前调用。
    * @returns 操作后的状态；关闭最后一个标签页时为 undefined。
    */
-  abstract control(sessionId: SessionId, command: BrowserHumanCommand, signal: AbortSignal): Promise<BrowserSessionState | undefined>
+  abstract control(sessionId: SessionId, command: BrowserHumanCommand, signal: AbortSignal,
+    guard?: () => Promise<void>): Promise<BrowserSessionState | undefined>
 
   /**
    * 读取指定会话最近一次成功发布的观测，不启动浏览器操作。

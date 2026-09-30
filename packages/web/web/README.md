@@ -9,6 +9,7 @@
 | `@deepseek-ai/dsh-web`（本包） | Service Definition：服务、提供方注册表、选择策略、请求／结果词汇、`WebError` 分类体系 |
 | `@deepseek-ai/dsh-web-search-exa` | 搜索提供方：Exa |
 | `@deepseek-ai/dsh-web-search-perplexity` | 搜索提供方：Perplexity |
+| `@deepseek-ai/dsh-web-search-duckduckgo` | 搜索提供方：DuckDuckGo 公共 HTML 页面，无密钥 |
 | `@deepseek-ai/dsh-web-fetch-http` | 抓取提供方：匿名公共 HTTP(S) |
 | `@deepseek-ai/dsh-tool-web` | Consumer：面向模型的 `web_search`／`web_fetch` 工具 schema，构建于 `ctx.web` 之上 |
 
@@ -26,7 +27,7 @@
 
 ## 选择
 
-选择绝不依赖注册、配置或 HMR（热模块替换）顺序。能力要么具有显式提供方 id（配置 `searchProvider`／`fetchProvider`，或由环境变量 `$DSH_WEB_SEARCH_PROVIDER`／`$DSH_WEB_FETCH_PROVIDER` 提供相同字段），要么在恰好只注册一个可用提供方时自动选择。`search()`／`fetch()` 会在执行时解析提供方：
+选择绝不依赖注册、配置或 HMR（热模块替换）顺序。能力要么具有显式提供方 id（`web` 设置分节的 `searchProvider`／`fetchProvider` 覆盖组合条目，组合条目可由 `$DSH_WEB_SEARCH_PROVIDER`／`$DSH_WEB_FETCH_PROVIDER` 补足），要么在恰好只注册一个可用提供方时自动选择。默认组合选 `duckduckgo`，用户可将 `web.searchProvider` 改为 `deepseek-official`；设置在下一次操作生效。其他组合仍可通过自身条目选择额外注册的提供方。`search()`／`fetch()` 会在执行时解析提供方：
 
 | 情况 | 执行 |
 |---|---|
@@ -38,6 +39,8 @@
 | 无 id，多个可用提供方 | `WEB_PROVIDER_AMBIGUOUS` |
 
 失败分支会抛出 `WebError`；调用方按其结构化 code（加消息细节：缺失 id、歧义候选集合）路由。提供方自身的 `available()` 是便宜的局部检查（凭据是否存在、配置是否可解析），供执行时选择使用，且**禁止发起网络调用**；`dsh-tool-web` 永远不会调用它。工具通过 `ctx.web.search()`／`fetch()` 执行，并按抛出的 code 路由，因此提供方选择只有一个归属方。
+
+显式选择 `deepseek-official` 后，缺少密钥、认证失败、超时或返回格式变化均直接报告该提供方的错误，绝不会改用 DuckDuckGo；切换提供方必须由用户改设置完成。
 
 ## 词汇
 

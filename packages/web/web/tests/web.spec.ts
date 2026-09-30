@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import { SettingsProvider, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import WebRuntime, {
   WebError,
+  WEB_SETTINGS_NAMESPACE,
   type WebFetchProvider,
   type WebFetchResult,
   type WebSearchProvider,
@@ -153,6 +155,44 @@ describe('WebRuntime execution resolution', () => {
     const controller = new AbortController()
     await web.search({ query: 'q' }, controller.signal)
     expect(seen[0]).toBe(controller.signal)
+  })
+})
+
+class MemorySettings extends SettingsProvider {
+  doc: Record<string, unknown> = {}
+  get writable(): boolean { return true }
+  protected load(): Promise<Record<string, unknown>> { return Promise.resolve(structuredClone(this.doc)) }
+  protected persist(ns: SettingsNamespace, section: Record<string, unknown>): Promise<void> {
+    this.doc = { ...this.doc, [ns]: structuredClone(section) }
+    return Promise.resolve()
+  }
+}
+
+describe('WebRuntime settings', () => {
+  it('switches the selected backend on the next operation without replacing the service', async () => {
+    const ctx = new Context()
+    await ctx.plugin(WebRuntime, { searchProvider: 'duckduckgo' })
+    await ctx.plugin(MemorySettings)
+    const ddg = makeSearchProvider('duckduckgo', available, () => Promise.resolve(searchResult('ddg')))
+    const deepseek = makeSearchProvider('deepseek-official', available, () => Promise.resolve(searchResult('deepseek')))
+    ctx.web.registerSearchProvider(ddg)
+    ctx.web.registerSearchProvider(deepseek)
+    expect(ctx.settings.describe().map(row => String(row.ns))).toContain('web')
+    await expect(ctx.web.search({ query: 'q' })).resolves.toMatchObject({ content: 'ddg' })
+    await ctx.settings.update(WEB_SETTINGS_NAMESPACE, { searchProvider: 'deepseek-official' })
+    await expect(ctx.web.search({ query: 'q' })).resolves.toMatchObject({ content: 'deepseek' })
+    await ctx.fiber.dispose()
+  })
+
+  it('never switches to anonymous search after the selected provider is unavailable', async () => {
+    const ctx = new Context()
+    await ctx.plugin(WebRuntime, { searchProvider: 'duckduckgo' })
+    await ctx.plugin(MemorySettings)
+    ctx.web.registerSearchProvider(makeSearchProvider('duckduckgo', available, () => Promise.resolve(searchResult('ddg'))))
+    ctx.web.registerSearchProvider(makeSearchProvider('deepseek-official', unavailable, () => Promise.resolve(searchResult('deepseek'))))
+    await ctx.settings.update(WEB_SETTINGS_NAMESPACE, { searchProvider: 'deepseek-official' })
+    await expect(ctx.web.search({ query: 'q' })).rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_CONFIGURED_UNAVAILABLE' }))
+    await ctx.fiber.dispose()
   })
 })
 

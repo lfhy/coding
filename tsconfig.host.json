@@ -10,6 +10,7 @@
   "include": [
     "apps/web/tests/scaffold.ts",
     "apps/web/tests/browser-use-mirror.e2e.ts",
+    "apps/web/tests/search-settings.e2e.ts",
     "apps/web/tests/active-conversation-panel-actions.e2e.ts",
     "apps/web/tests/default-model.e2e.ts",
     "apps/web/tests/declared-reasoning.e2e.ts",
@@ -243,6 +244,7 @@
     { "path": "./packages/web/web-search-exa" },
     { "path": "./packages/web/web-search-perplexity" },
     { "path": "./packages/web/web-search-deepseek" },
+    { "path": "./packages/web/web-search-duckduckgo" },
     { "path": "./packages/web/web-fetch-http" },
     { "path": "./packages/web/tool-web" },
     { "path": "./packages/spill/spill" },

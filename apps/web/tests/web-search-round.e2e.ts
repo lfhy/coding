@@ -1,16 +1,11 @@
-// Web e2e scenario for the shipped default search composition. A real browser
-// drives `web_search`; the model stream is replayed while the real DeepSeek
-// provider calls a deterministic local Anthropic-compatible endpoint through
-// the real credentials service.
+// 默认搜索组合的浏览器端到端场景：模型流使用回放，真实 DuckDuckGo
+// 提供方的固定 HTML 请求由本地 fixture 接管，不访问搜索公网。
 import { readFile } from 'node:fs/promises'
-import { createServer, type Server } from 'node:http'
-import type { AddressInfo } from 'node:net'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
-import { credentialRef } from '@deepseek-ai/dsh-credentials'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import { WEB_SEARCH_MAX_RESULTS } from '@deepseek-ai/dsh-tool-web'
 import {
   assertFixtureInventory, captureStableAria, compareOrRefreshGolden, fixtureUserPrompts,
@@ -24,140 +19,97 @@ const UI_EXPECTED = fileURLToPath(new URL('./snapshots/web-search-round/ui.expec
 const MODE = webSnapshotMode()
 const QUERIES = ['DeepSeek Harness snapshot search', 'DeepSeek Harness multi-query search'] as const
 const PROMPT = `Use web_search once with queries ${JSON.stringify(QUERIES)}. Then reply exactly SEARCH_DONE and stop.`
-const SEARCH_CREDENTIAL_REF = credentialRef('DSH_WEB_SEARCH_E2E_KEY')
-const SEARCH_CREDENTIAL = 'snapshot-search-key'
 
 /**
- * Provider results the double returns per query. The combined result exceeds
- * the shipped `searchMaxResults`, so the tool's round-robin cap and the card's
- * scroll container are both exercised. Each row carries a title, a snippet,
- * and a date, so 8 kept rows exceed the `.sources` 320px max-height.
+ * 每个查询提供六条真实解析器可读取的来源；合并后超过默认上限，
+ * 保留下来的八条也足以让卡片来源列表出现滚动。
  */
 const PROVIDER_RESULT_COUNT = 6
 
-/** One provider result's URL, by 1-based provider order. */
 function resultUrl(queryIndex: number, ordinal: number): string {
   return `https://docs.example.test/search/${queryIndex + 1}/${ordinal}`
 }
 
-/** One provider result's title, by 1-based provider order. */
 function resultTitle(queryIndex: number, ordinal: number): string {
   return `Snapshot Search ${queryIndex + 1} Result ${ordinal}`
 }
 
-/** One provider result's citation excerpt, by 1-based provider order. */
 function resultSnippet(queryIndex: number, ordinal: number): string {
-  return `Snapshot search ${queryIndex + 1} excerpt ${ordinal}: the harness replays this source list from a local endpoint.`
+  return `Snapshot search ${queryIndex + 1} excerpt ${ordinal}: the harness replays this source list from a local HTML fixture.`
 }
 
-/** One provider result's `page_age`, by 1-based provider order (July 2026 days 01..12). */
-function resultPageAge(ordinal: number): string {
-  return `2026-07-${String(ordinal).padStart(2, '0')}`
-}
-
-/** The 1-based provider ordinals, in provider order. */
 const RESULT_ORDINALS = Array.from({ length: PROVIDER_RESULT_COUNT }, (_value, index) => index + 1)
 
-/** Sources kept after round-robin merging reaches the shipped combined cap. */
 const KEPT_SOURCES = RESULT_ORDINALS.flatMap(ordinal => QUERIES.map((_query, queryIndex) => ({
   url: resultUrl(queryIndex, ordinal),
   title: resultTitle(queryIndex, ordinal),
   snippet: resultSnippet(queryIndex, ordinal),
-  publishedAt: resultPageAge(ordinal),
 }))).slice(0, WEB_SEARCH_MAX_RESULTS)
 
-/** URLs omitted after the combined source cap is reached. */
 const DROPPED_SOURCE_URLS = RESULT_ORDINALS.flatMap(ordinal => QUERIES.map(
   (_query, queryIndex) => resultUrl(queryIndex, ordinal),
 )).slice(WEB_SEARCH_MAX_RESULTS)
 
 interface CapturedSearchRequest {
-  path: string
-  apiKey: string | undefined
-  body: unknown
+  url: string
+  init: RequestInit | undefined
 }
 
-/** Start the deterministic DeepSeek Messages double used by the real provider. */
-async function startSearchServer(captured: CapturedSearchRequest[]): Promise<{ server: Server; baseURL: string }> {
-  const server = createServer((request, response) => {
-    let body = ''
-    request.setEncoding('utf8')
-    request.on('data', (chunk: string) => { body += chunk })
-    request.on('end', () => {
-      const parsedBody = JSON.parse(body) as unknown
-      captured.push({
-        path: request.url ?? '',
-        apiKey: typeof request.headers['x-api-key'] === 'string' ? request.headers['x-api-key'] : undefined,
-        body: parsedBody,
-      })
-      const serializedBody = JSON.stringify(parsedBody)
-      const queryIndex = QUERIES.findIndex(query => serializedBody.includes(`Perform a web search for the query: ${query}`))
-      if (queryIndex < 0) {
-        response.writeHead(400, { 'content-type': 'application/json' })
-        response.end(JSON.stringify({ error: 'unknown fixture query' }))
-        return
-      }
-      response.writeHead(200, { 'content-type': 'application/json' })
-      response.end(JSON.stringify({
-        content: [
-          {
-            type: 'text',
-            text: `Found ${PROVIDER_RESULT_COUNT} sources.`,
-            citations: RESULT_ORDINALS.map(ordinal => ({
-              type: 'web_search_result_location',
-              url: resultUrl(queryIndex, ordinal),
-              cited_text: resultSnippet(queryIndex, ordinal),
-            })),
-          },
-          {
-            type: 'web_search_tool_result',
-            content: RESULT_ORDINALS.map(ordinal => ({
-              type: 'web_search_result',
-              url: resultUrl(queryIndex, ordinal),
-              title: resultTitle(queryIndex, ordinal),
-              page_age: resultPageAge(ordinal),
-            })),
-          },
-        ],
-      }))
-    })
-  })
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', () => {
-      server.off('error', reject)
-      resolve()
-    })
-  })
-  const address = server.address() as AddressInfo
-  return { server, baseURL: `http://127.0.0.1:${address.port}` }
+/** 生成真实解析器读取的 HTML，并通过 uddg 验证原始来源 URL 的还原。 */
+function searchHtml(queryIndex: number): string {
+  const rows = RESULT_ORDINALS.map(ordinal => `
+    <div class="result results_links">
+      <a class="result__a" href="//duckduckgo.com/l/?uddg=${encodeURIComponent(resultUrl(queryIndex, ordinal))}">${resultTitle(queryIndex, ordinal)}</a>
+      <div class="result__snippet">${resultSnippet(queryIndex, ordinal)}</div>
+    </div>`)
+  return `<!doctype html><html><body>${rows.join('')}</body></html>`
 }
 
 describe('web e2e: shipped default web search', () => {
   let scaffold: WebScaffold
   let browser: Browser
   let page: Page
-  let searchServer: Server | undefined
-  let searchBaseURL: string
+  let originalFetch: typeof fetch
+  let settledSessionId: SessionId
   let tripwire: ReturnType<typeof watchConsole>
   const searchRequests: CapturedSearchRequest[] = []
+  const unexpectedHostRequests: string[] = []
+  const unexpectedBrowserRequests: string[] = []
   const sessionEvents: SessionEvent[] = []
 
   beforeAll(async () => {
-    const search = await startSearchServer(searchRequests)
-    searchServer = search.server
-    searchBaseURL = search.baseURL
+    originalFetch = globalThis.fetch
+    globalThis.fetch = (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input))
+      if (url.origin === 'https://html.duckduckgo.com' && url.pathname === '/html/') {
+        searchRequests.push({ url: url.href, init })
+        const queryIndex = QUERIES.findIndex(query => query === url.searchParams.get('q'))
+        if (queryIndex < 0) throw new Error(`unexpected DuckDuckGo fixture query: ${url.href}`)
+        return Promise.resolve(new Response(searchHtml(queryIndex), {
+          headers: { 'content-type': 'text/html; charset=UTF-8' },
+        }))
+      }
+      if (MODE === 'record' || url.protocol === 'http:' && ['127.0.0.1', 'localhost'].includes(url.hostname)) {
+        return originalFetch(input, init)
+      }
+      unexpectedHostRequests.push(url.href)
+      throw new Error(`unexpected external Host request: ${url.href}`)
+    }
     scaffold = await launchWebScaffold({
-      deepSeekSearch: {
-        baseURL: search.baseURL,
-        apiKeyEnv: SEARCH_CREDENTIAL_REF,
-      },
       ...(MODE === 'record' ? {} : { replayFixture: FIXTURE, paceMs: 15 }),
     })
-    await scaffold.ctx.credentials.set(SEARCH_CREDENTIAL_REF, SEARCH_CREDENTIAL)
     scaffold.ctx.on('session/event', (_session, event: SessionEvent) => { sessionEvents.push(event) })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
+    await page.route('**/*', async (route) => {
+      const url = new URL(route.request().url())
+      if (url.protocol === 'http:' && url.hostname === '127.0.0.1') {
+        await route.continue()
+        return
+      }
+      unexpectedBrowserRequests.push(url.href)
+      await route.abort()
+    })
     tripwire = watchConsole(page)
     await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
@@ -165,18 +117,12 @@ describe('web e2e: shipped default web search', () => {
   }, 120_000)
 
   afterAll(async () => {
-    await browser?.close()
-    await scaffold?.close()
-    await new Promise<void>((resolve, reject) => {
-      if (searchServer === undefined) {
-        resolve()
-        return
-      }
-      searchServer.close((error) => {
-        if (error === undefined) resolve()
-        else reject(error)
-      })
-    })
+    try {
+      await browser?.close()
+      await scaffold?.close()
+    } finally {
+      if (originalFetch !== undefined) globalThis.fetch = originalFetch
+    }
   })
 
   it('drives the recorded search to a settled turn (all modes)', async () => {
@@ -189,44 +135,23 @@ describe('web e2e: shipped default web search', () => {
     const settled = scaffold.whenTurnSettled()
     await input.fill(PROMPT)
     await input.press('Enter')
-    const sessionId = await settled
-    if (MODE === 'record') await recordFixture(scaffold, sessionId, FIXTURE)
+    settledSessionId = await settled
+    if (MODE === 'record') await recordFixture(scaffold, settledSessionId, FIXTURE)
   }, 200_000)
 
-  it.skipIf(MODE === 'record')('uses the real provider and persists the capped structured result', () => {
+  it.skipIf(MODE === 'record')('uses default DuckDuckGo and persists the capped structured result', () => {
     expect(searchRequests).toHaveLength(QUERIES.length)
     for (const query of QUERIES) {
-      const request = searchRequests.find(candidate => JSON.stringify(candidate.body).includes(query))
+      const request = searchRequests.find(candidate => new URL(candidate.url).searchParams.get('q') === query)
       if (request === undefined) throw new Error(`missing provider request for query: ${query}`)
-      expect(request).toMatchObject({ path: '/messages', apiKey: SEARCH_CREDENTIAL })
-      expect(request.body).toMatchObject({
-        messages: [{
-          role: 'user',
-          content: [{ type: 'text', text: `Perform a web search for the query: ${query}` }],
-        }],
-      })
-      const tools = (request.body as { tools?: unknown }).tools
-      expect(tools).toHaveLength(1)
-      expect((tools as unknown[])[0]).toMatchObject({ type: 'web_search_20250305', name: 'web_search' })
+      expect(request.url).toBe(`https://html.duckduckgo.com/html/?${new URLSearchParams({ q: query })}`)
+      expect(request.init).toMatchObject({ redirect: 'error', headers: { accept: 'text/html' } })
+      expect(request.init?.body).toBeUndefined()
+      expect(JSON.stringify(request.init)).not.toMatch(/authorization|api.?key/i)
     }
-
-    const auxiliaryRequests = sessionEvents.filter(
-      (event): event is Extract<SessionEvent, { type: 'web/deepseek-search-llm-request' }> =>
-        event.type === 'web/deepseek-search-llm-request',
-    )
-    expect(auxiliaryRequests).toHaveLength(QUERIES.length)
-    for (const query of QUERIES) {
-      const request = searchRequests.find(candidate => JSON.stringify(candidate.body).includes(query))
-      const auxiliaryRequest = auxiliaryRequests.find(event => JSON.stringify(event.data.body).includes(query))
-      if (request === undefined || auxiliaryRequest === undefined) {
-        throw new Error(`missing paired provider request for query: ${query}`)
-      }
-      expect(auxiliaryRequest.data).toEqual({
-        endpoint: `${searchBaseURL}/messages`,
-        apiVersion: '2023-06-01',
-        body: request.body,
-      })
-    }
+    expect(sessionEvents.filter(event => event.type === 'web/deepseek-search-llm-request')).toEqual([])
+    expect(unexpectedHostRequests).toEqual([])
+    expect(unexpectedBrowserRequests).toEqual([])
 
     const searchCall = sessionEvents.find(
       (event): event is Extract<SessionEvent, { type: 'tool/call' }> =>
@@ -241,8 +166,7 @@ describe('web e2e: shipped default web search', () => {
     const content = searchResult.data.message.content[0]
     expect(content.isError).toBe(false)
     const rendered = content.content.filter(block => block.type === 'text').map(block => block.text).join('')
-    // The tool interleaves sources from both seam results before applying the
-    // combined cap, so each query remains represented in model-visible output.
+    // 合并结果先交错排列再截断，每个查询的来源都应进入持久化的模型上下文。
     for (const source of KEPT_SOURCES) {
       expect(rendered).toContain(`[${source.title}](${source.url})`)
     }
@@ -256,6 +180,11 @@ describe('web e2e: shipped default web search', () => {
       sources: KEPT_SOURCES,
       truncated: true,
     })
+    const history = scaffold.ctx.sessions.get(settledSessionId)?.deriveMessages()
+    if (history === undefined) throw new Error('the settled search session was not retained')
+    const modelHistory = JSON.stringify(history)
+    for (const source of KEPT_SOURCES) expect(modelHistory).toContain(source.url)
+    for (const url of DROPPED_SOURCE_URLS) expect(modelHistory).not.toContain(url)
   })
 
   it.skipIf(MODE === 'record')('matches the settled search card aria golden', async () => {
@@ -318,6 +247,8 @@ describe('web e2e: shipped default web search', () => {
   it.skipIf(MODE === 'record')('stayed clean and kept the exact fixture inventory', async () => {
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
+    expect(unexpectedHostRequests).toEqual([])
+    expect(unexpectedBrowserRequests).toEqual([])
     await assertFixtureInventory(SNAPSHOT_DIR, ['session.jsonl', 'ui.expected.md'])
   })
 })

@@ -7,6 +7,9 @@
     - button "模型":
       - img
       - text: 模型
+    - button "联网搜索":
+      - img
+      - text: 联网搜索
     - button "图片识别 Fallback":
       - img
       - text: 图片识别 Fallback

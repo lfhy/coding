@@ -22,13 +22,18 @@ const observation = {
 }
 
 function activeState(tab = observation, observed: BrowserCapture['observation'] | null = tab): BrowserSessionState {
-  return { browserGeneration: 'browser-1', stateRevision: 1, viewport: tab.viewport,
+  return { operationActive: false, browserGeneration: 'browser-1', stateRevision: 1, viewport: tab.viewport,
     tabs: [{ id: tab.tabId, generation: tab.generation, url: tab.url, title: tab.title, canGoBack: false, canGoForward: false }],
     activeTabId: tab.tabId, observation: observed, hasFrame: false }
 }
 
 class FakeBrowser extends BrowserUseService {
   currentState: BrowserSessionState | undefined
+  readonly acquireOperation = vi.fn(async (_id: ReturnType<typeof SessionId>, signal: AbortSignal) => {
+    signal.throwIfAborted()
+    return vi.fn()
+  })
+  operationActive(): boolean { return false }
   readonly commands = vi.fn(async (
     _id: ReturnType<typeof SessionId>, command: BrowserCommand, signal: AbortSignal,
   ): Promise<BrowserCapture> => {
@@ -382,6 +387,36 @@ describe('browser_use', () => {
     expect((rejected.ctx.browserUse as FakeBrowser).commands).not.toHaveBeenCalled()
   })
 
+  it('acquires ownership before asking and releases it on denial, cancellation and screenshot storage failure', async () => {
+    const { ctx, call } = await setup()
+    const browser = ctx.browserUse as FakeBrowser
+    browser.currentState = activeState()
+    const deniedRelease = vi.fn()
+    browser.acquireOperation.mockResolvedValueOnce(deniedRelease)
+    ctx.on('approval/request', () => {
+      expect(browser.acquireOperation).toHaveBeenCalledTimes(1)
+      expect(deniedRelease).not.toHaveBeenCalled()
+      return Promise.resolve('rejected' as const)
+    })
+    expect((await call({ action: 'snapshot' })).isError).toBe(true)
+    expect(deniedRelease).toHaveBeenCalledOnce()
+    const cancelledRelease = vi.fn()
+    browser.acquireOperation.mockResolvedValueOnce(cancelledRelease)
+    const controller = new AbortController()
+    controller.abort(new Error('cancelled'))
+    expect((await call({ action: 'snapshot' }, controller.signal)).isError).toBe(true)
+    expect(cancelledRelease).not.toHaveBeenCalled()
+
+    const full = await setup(true, { mode: 'danger-full-access', policy: 'never' })
+    const fullBrowser = full.ctx.browserUse as FakeBrowser
+    fullBrowser.currentState = activeState()
+    const failedRelease = vi.fn()
+    fullBrowser.acquireOperation.mockResolvedValueOnce(failedRelease)
+    vi.spyOn(full.ctx.attachments, 'saveImage').mockRejectedValueOnce(new Error('storage failed'))
+    expect((await full.call({ action: 'screenshot' })).isError).toBe(true)
+    expect(failedRelease).toHaveBeenCalledOnce()
+  })
+
   it('returns canonical observation for PTC and saves a screenshot before rendering its image block', async () => {
     const { ctx, call } = await setup()
     const browser = ctx.browserUse as FakeBrowser
@@ -608,6 +643,22 @@ describe('browser_use', () => {
     expect((ctx.browserUse as FakeBrowser).commands).not.toHaveBeenCalled()
   })
 
+  it('rejects a remote marker introduced while approval is pending', async () => {
+    const { ctx, call, agent } = await setup()
+    const browser = ctx.browserUse as FakeBrowser
+    browser.currentState = activeState()
+    ctx.on('approval/request', async () => {
+      await writeFile(join(agent.session.header.cwd, '.coding-remote-workspace.json'), JSON.stringify({
+        version: 3, remoteRoot: '/srv/project', connectionId: 'test', generation: 1, mode: 'basic',
+      }))
+      return 'allowed-once' as const
+    })
+    const result = await call({ action: 'snapshot' })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('remote workspaces')
+    expect(browser.commands).not.toHaveBeenCalled()
+  })
+
   it.each([false, true])('does not execute when cancelled and withdraws the tool on disposal (full access: %s)', async (fullAccess) => {
     const { ctx, call, fiber } = await setup(true, fullAccess ? { mode: 'danger-full-access', policy: 'never' } : {})
     const controller = new AbortController()
@@ -622,12 +673,16 @@ describe('browser_use', () => {
   it('keeps approval cancellation ahead of browser execution', async () => {
     const { ctx, call } = await setup()
     const controller = new AbortController()
+    const release = vi.fn()
+    const browser = ctx.browserUse as FakeBrowser
+    browser.acquireOperation.mockResolvedValueOnce(release)
     ctx.on('approval/request', () => new Promise((resolve) => {
       controller.abort(new Error('cancelled during approval'))
       resolve('allowed-once')
     }))
     const result = await call({ action: 'snapshot' }, controller.signal)
     expect(result.isError).toBe(true)
-    expect((ctx.browserUse as FakeBrowser).commands).not.toHaveBeenCalled()
+    expect(browser.commands).not.toHaveBeenCalled()
+    expect(release).toHaveBeenCalledOnce()
   })
 })

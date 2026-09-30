@@ -1973,11 +1973,26 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           if (browserUse === undefined) {
             return err(request, { code: 'browser-failed', message: 'browser service is unavailable', details: { reason: 'BROWSER_UNAVAILABLE' } })
           }
-          const state = await browserUse.control(sessionId, command, signal)
+          const state = await browserUse.control(sessionId, command, signal, async () => {
+            signal.throwIfAborted()
+            if (ctx.sessions.get(sessionId) !== session) {
+              throw new BrowserUseError('browser control requires an attached session', 'BROWSER_DENIED')
+            }
+            if (cwd !== undefined && await remoteWorkspacePath('.', cwd, signal) !== undefined) {
+              throw new BrowserUseError('browser control is unavailable in remote workspaces', 'BROWSER_DENIED')
+            }
+            signal.throwIfAborted()
+            if (ctx.sessions.get(sessionId) !== session) {
+              throw new BrowserUseError('browser control requires an attached session', 'BROWSER_DENIED')
+            }
+          })
           if (isAborted(signal)) return err(request, { code: 'cancelled', message: 'browser control was cancelled', details: {} })
           return ok(request, state ?? null)
         } catch (error: unknown) {
           if (isAborted(signal)) return err(request, { code: 'cancelled', message: 'browser control was cancelled', details: {} })
+          if (ctx.sessions.get(sessionId) !== session) {
+            return err(request, { code: 'session-not-found', message: 'browser control requires an attached session', details: { sessionId } })
+          }
           if (error instanceof BrowserUseError) {
             return err(request, { code: 'browser-failed', message: `browser control failed (${error.code})`, details: { reason: error.code } })
           }

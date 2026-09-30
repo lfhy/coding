@@ -6,7 +6,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { chromium } from 'playwright'
 import type { Browser, BrowserContext, Page } from 'playwright'
 import { JSDOM } from 'jsdom'
-import type { BrowserCommand, BrowserHumanCommand } from '@deepseek-ai/dsh-browser'
+import { BrowserUseError } from '@deepseek-ai/dsh-browser'
+import type { BrowserCommand, BrowserHumanCommand, BrowserSessionState } from '@deepseek-ai/dsh-browser'
 import PlaywrightBrowserUse, { trustedFrameRequest } from '../src/index.ts'
 
 vi.mock('playwright', () => ({ chromium: { launch: vi.fn() } }))
@@ -22,16 +23,20 @@ const locator = {
   count: vi.fn(async () => 1), nth: vi.fn(() => ({ elementHandle: async () => handle })),
   evaluate: vi.fn(async (_evaluate: (body: HTMLElement) => string) => 'Visible content'),
 }
+const documentHandle = {
+  evaluate: vi.fn(async () => true), dispose: vi.fn(async () => {}),
+}
+const mainFrame = {}
 const page = {
   locator: vi.fn((selector: string) => selector === 'body' ? { evaluate: locator.evaluate } : locator),
-  evaluateHandle: vi.fn(async (_evaluate: unknown, _options: {
+  evaluateHandle: vi.fn(async (_evaluate: unknown, _options?: {
     selector: string
     limit: number
     scanLimit: number
     viewport: { width: number; height: number }
-  }) => ({
+  }) => _options === undefined ? documentHandle : {
     getProperties: async () => new Map([['0', handle]]), dispose: async () => {},
-  })),
+  }),
   evaluate: vi.fn(async (_evaluate: () => Promise<void>) => {}),
   goto: vi.fn(async () => null), screenshot: vi.fn(async () => png),
   goBack: vi.fn(async () => ({})), goForward: vi.fn(async () => ({})), reload: vi.fn(async () => ({})),
@@ -39,8 +44,10 @@ const page = {
   bringToFront: vi.fn(async () => {}),
   close: vi.fn(async () => {}),
   title: vi.fn(async () => 'Title'), url: vi.fn(() => 'http://127.0.0.1:8080/'),
+  mainFrame: vi.fn(() => mainFrame),
   on: vi.fn((_event: string, _listener: (dialog: { dismiss: () => Promise<void> }) => void) => {}),
-  mouse: { wheel: vi.fn(async () => {}) },
+  mouse: { wheel: vi.fn(async () => {}), click: vi.fn(async () => {}), move: vi.fn(async () => {}) },
+  keyboard: { insertText: vi.fn(async () => {}) },
 }
 const browserContext = {
   route: vi.fn(async (_pattern: string, _handler: (route: {
@@ -60,6 +67,14 @@ function ref(snapshot: string): string {
   const match = snapshot.match(/(e1-[^ ]+) button "Open"/)
   if (!match?.[1]) throw new Error('missing browser ref')
   return match[1]
+}
+
+function target(state: BrowserSessionState) {
+  const observation = state.observation
+  if (!observation) throw new Error('browser screenshot absent')
+  return { browserGeneration: state.browserGeneration, stateRevision: state.stateRevision,
+    tabId: observation.tabId, generation: observation.generation, revision: observation.revision,
+    viewport: observation.viewport }
 }
 
 type RouteHandler = (req: IncomingMessage, res: ServerResponse) => void | Promise<void>
@@ -117,6 +132,10 @@ beforeEach(() => {
   vi.useRealTimers()
   vi.unstubAllGlobals()
   vi.clearAllMocks()
+  documentHandle.evaluate.mockResolvedValue(true)
+  page.evaluateHandle.mockImplementation(async (_evaluate, options) => options === undefined ? documentHandle : {
+    getProperties: async () => new Map([['0', handle]]), dispose: async () => {},
+  })
   vi.mocked(chromium).launch.mockResolvedValue(browser as unknown as Browser)
   page.screenshot.mockResolvedValue(png)
   page.goto.mockResolvedValue(null)
@@ -164,6 +183,7 @@ describe('Playwright browser owner', () => {
     shadow.append(nested)
     const hidden = add('button', { style: 'display:none' })
     const evaluateHandle = async (evaluate: unknown, options: Parameters<typeof page.evaluateHandle>[1]) => {
+      if (options === undefined) return documentHandle
       const elements = (evaluate as (options: Parameters<typeof page.evaluateHandle>[1]) => Element[])(options)
       return { getProperties: async () => new Map(elements.map((element, index) => [String(index), {
         asElement: () => ({
@@ -196,9 +216,6 @@ describe('Playwright browser owner', () => {
     await ctx.fiber.dispose()
     dom.window.close()
     vi.unstubAllGlobals()
-    page.evaluateHandle.mockImplementation(async () => ({
-      getProperties: async () => new Map([['0', handle]]), dispose: async () => {},
-    }))
   })
 
   it('executes visibility filtering after handles are collected and cleans up failures', async () => {
@@ -212,6 +229,8 @@ describe('Playwright browser owner', () => {
       const result = { evaluate, dispose: detachFailure, asElement: () => result }
       return result
     }
+    page.evaluateHandle.mockResolvedValueOnce(documentHandle)
+    page.evaluateHandle.mockResolvedValueOnce(documentHandle)
     page.evaluateHandle.mockResolvedValueOnce({ getProperties: async () => new Map([
       ['non-element', nonElement], ['missing', candidate(async () => null)],
       ['left', candidate(async () => ({ role: 'button', name: 'offscreen', x: -31, y: 0, width: 30, height: 40 }))],
@@ -227,6 +246,7 @@ describe('Playwright browser owner', () => {
     expect(detachFailure).toHaveBeenCalledTimes(6)
     disposed.mockRejectedValueOnce(new Error('cleanup failed'))
     const broken = { ...handle, asElement: () => { throw new Error('handle failed') }, dispose: disposed }
+    page.evaluateHandle.mockResolvedValueOnce(documentHandle)
     page.evaluateHandle.mockResolvedValueOnce({ getProperties: async () => new Map([['broken', broken]]), dispose: async () => {} } as never)
     await expect(service.execute(id, { kind: 'snapshot' }, signal)).rejects.toMatchObject({ code: 'BROWSER_FAILED' })
     expect(disposed).toHaveBeenCalledTimes(2)
@@ -801,7 +821,8 @@ describe('Playwright browser owner', () => {
     expect(resized?.viewport).toEqual({ width: 375, height: 800 })
     expect(resized?.stateRevision).toBe(approved.stateRevision + 2)
     expect(service.latest(id)?.observation.viewport).toEqual({ width: 375, height: 800 })
-    expect(page.evaluateHandle.mock.calls.at(-1)?.[1]).toMatchObject({ viewport: { width: 375, height: 800 } })
+    expect(page.evaluateHandle.mock.calls.findLast(([, options]) => options !== undefined)?.[1])
+      .toMatchObject({ viewport: { width: 375, height: 800 } })
     await expect(service.execute(id, { kind: 'click', ref: ref(initial.observation.snapshot),
       revision: initial.observation.revision }, signal)).rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
     await expect(service.execute(id, { kind: 'snapshot' }, signal, {
@@ -923,6 +944,254 @@ describe('Playwright browser owner', () => {
     })).rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
     expect(handle.click).not.toHaveBeenCalled()
     expect(service.latest(id)?.observation.url).toBe(capture.observation.url)
+    await ctx.fiber.dispose()
+  })
+
+  it('invalidates a same-URL document reload for both human screenshots and model approvals', async () => {
+    const { ctx, service, routes } = await provider()
+    const id = SessionId('same-url-document')
+    const signal = new AbortController().signal
+    await service.execute(id, { kind: 'navigate', url: 'http://127.0.0.1:8080/' }, signal)
+    const approved = service.state(id)!
+    const listener = page.on.mock.calls.find(([event]) => event === 'framenavigated')?.[1]
+    if (!listener) throw new Error('main-frame navigation listener absent')
+    listener(mainFrame as never)
+    expect(service.state(id)).toMatchObject({ stateRevision: approved.stateRevision + 1,
+      observation: null, hasFrame: false })
+    const state = await request(routes, '/browser-use/state?sessionId=same-url-document')
+    expect(JSON.parse(state.body as string)).toMatchObject({ observation: null, hasFrame: false })
+    await expect(service.control(id, { kind: 'click', target: target(approved), x: 10, y: 20 }, signal))
+      .rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
+    await expect(service.execute(id, { kind: 'snapshot' }, signal, {
+      kind: 'tab', browserGeneration: approved.browserGeneration, stateRevision: approved.stateRevision,
+      tabId: approved.activeTabId!, generation: approved.tabs[0]!.generation, url: approved.tabs[0]!.url,
+    })).rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
+    expect(page.mouse.click).not.toHaveBeenCalled()
+    expect(page.screenshot).toHaveBeenCalledTimes(1)
+    const refreshed = await service.execute(id, { kind: 'snapshot' }, signal)
+    expect(refreshed.observation.revision).toBeGreaterThan(approved.observation!.revision)
+    expect(service.state(id)).toMatchObject({ hasFrame: true, observation: { revision: refreshed.observation.revision } })
+    await ctx.fiber.dispose()
+  })
+
+  it('rejects changed Document identity even before the navigation event is delivered', async () => {
+    const { ctx, service } = await headlessProvider()
+    const id = SessionId('document-before-event')
+    const signal = new AbortController().signal
+    await service.execute(id, { kind: 'navigate', url: 'http://127.0.0.1:8080/' }, signal)
+    const approved = service.state(id)!
+    documentHandle.evaluate.mockResolvedValue(false)
+    await expect(service.control(id, { kind: 'click', target: target(approved), x: 10, y: 20 }, signal))
+      .rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
+    await expect(service.execute(id, { kind: 'snapshot' }, signal, {
+      kind: 'tab', browserGeneration: approved.browserGeneration, stateRevision: approved.stateRevision,
+      tabId: approved.activeTabId!, generation: approved.tabs[0]!.generation, url: approved.tabs[0]!.url,
+    })).rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
+    expect(page.mouse.click).not.toHaveBeenCalled()
+    await ctx.fiber.dispose()
+  })
+
+  it('disposes provisional element handles and old frames if Document changes during observation', async () => {
+    const { ctx, service } = await headlessProvider()
+    const id = SessionId('document-changed-observation')
+    const signal = new AbortController().signal
+    await service.execute(id, { kind: 'navigate', url: 'http://127.0.0.1:8080/' }, signal)
+    const before = service.state(id)!
+    handle.dispose.mockClear()
+    documentHandle.evaluate.mockResolvedValueOnce(false)
+    await expect(service.execute(id, { kind: 'snapshot' }, signal))
+      .rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
+    expect(handle.dispose).toHaveBeenCalled()
+    expect(service.state(id)).toMatchObject({ stateRevision: before.stateRevision + 1,
+      observation: null, hasFrame: false })
+    await ctx.fiber.dispose()
+  })
+
+  it('rejects a new Document arriving after element scan but before screenshot', async () => {
+    const { ctx, service } = await headlessProvider()
+    const id = SessionId('navigate-during-scan')
+    const signal = new AbortController().signal
+    await service.execute(id, { kind: 'navigate', url: 'http://127.0.0.1:8080/' }, signal)
+    const before = service.state(id)!
+    const listener = page.on.mock.calls.find(([event]) => event === 'framenavigated')?.[1]
+    if (!listener) throw new Error('main-frame navigation listener absent')
+    handle.dispose.mockClear()
+    locator.evaluate.mockImplementationOnce(async () => {
+      listener(mainFrame as never)
+      return 'Old document text'
+    })
+    await expect(service.execute(id, { kind: 'snapshot' }, signal))
+      .rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
+    expect(page.screenshot).toHaveBeenCalledTimes(2)
+    expect(handle.dispose).toHaveBeenCalled()
+    expect(service.state(id)).toMatchObject({ stateRevision: before.stateRevision + 1,
+      observation: null, hasFrame: false })
+    expect(service.latest(id)).toBeUndefined()
+    await ctx.fiber.dispose()
+  })
+
+  it('holds model ownership through approval and releases it after rejection or cancellation', async () => {
+    const { ctx, service, routes } = await provider()
+    const id = SessionId('model-lease')
+    const controller = new AbortController()
+    const release = await service.acquireOperation(id, controller.signal)
+    expect(service.operationActive(id)).toBe(true)
+    expect(await request(routes, '/browser-use/state?sessionId=model-lease')).toEqual({
+      status: 200, body: JSON.stringify({ operationActive: true }),
+    })
+    await expect(service.control(id, { kind: 'ensure-tab' }, controller.signal))
+      .rejects.toMatchObject({ code: 'BROWSER_BUSY' })
+    await expect(service.acquireOperation(id, controller.signal)).rejects.toMatchObject({ code: 'BROWSER_BUSY' })
+    release()
+    release()
+    expect(service.operationActive(id)).toBe(false)
+    expect((await request(routes, '/browser-use/state?sessionId=model-lease')).status).toBe(204)
+    const next = await service.acquireOperation(id, controller.signal)
+    next()
+    controller.abort(new Error('cancelled'))
+    await expect(service.acquireOperation(id, controller.signal)).rejects.toBe(controller.signal.reason)
+    await ctx.fiber.dispose()
+  })
+
+  it('drains an already accepted human operation before sampling the model target', async () => {
+    const { ctx, service } = await headlessProvider()
+    const id = SessionId('pending-human')
+    const signal = new AbortController().signal
+    let finish!: () => void
+    page.goto.mockImplementationOnce(() => new Promise((resolve) => { finish = () => { resolve(null) } }))
+    const human = service.control(id, { kind: 'navigate', url: 'http://127.0.0.1:8080/' }, signal)
+    const lease = service.acquireOperation(id, signal)
+    expect(service.operationActive(id)).toBe(true)
+    await expect(service.control(id, { kind: 'new-tab' }, signal)).rejects.toMatchObject({ code: 'BROWSER_BUSY' })
+    await vi.waitFor(() => { expect(finish).toBeTypeOf('function') })
+    finish()
+    await human
+    const release = await lease
+    expect(service.state(id)?.observation?.revision).toBe(1)
+    release()
+    expect(service.state(id)?.operationActive).toBe(false)
+    await ctx.fiber.dispose()
+  })
+
+  it('releases ownership promptly when cancelled during the pending-human drain', async () => {
+    const { ctx, service } = await headlessProvider()
+    const id = SessionId('cancel-pending-human')
+    let finish!: () => void
+    page.goto.mockImplementationOnce(() => new Promise((resolve) => { finish = () => { resolve(null) } }))
+    const human = service.control(id, { kind: 'navigate', url: 'http://127.0.0.1:8080/' }, new AbortController().signal)
+    const controller = new AbortController()
+    const lease = service.acquireOperation(id, controller.signal)
+    expect(service.operationActive(id)).toBe(true)
+    controller.abort(new Error('cancelled while waiting'))
+    await expect(lease).rejects.toBe(controller.signal.reason)
+    expect(service.operationActive(id)).toBe(false)
+    await vi.waitFor(() => { expect(finish).toBeTypeOf('function') })
+    finish()
+    await human
+    await service.control(id, { kind: 'reload' }, new AbortController().signal)
+    await ctx.fiber.dispose()
+  })
+
+  it('does not strand a lease if cancellation wins before the abort listener is installed', async () => {
+    const { ctx, service } = await headlessProvider()
+    const id = SessionId('cancel-before-listener')
+    let finish!: () => void
+    page.goto.mockImplementationOnce(() => new Promise((resolve) => { finish = () => { resolve(null) } }))
+    const human = service.control(id, { kind: 'navigate', url: 'http://127.0.0.1:8080/' }, new AbortController().signal)
+    const controller = new AbortController()
+    const reason = new Error('cancelled while installing listener')
+    const addEventListener = controller.signal.addEventListener.bind(controller.signal)
+    vi.spyOn(controller.signal, 'addEventListener').mockImplementation((...args) => {
+      controller.abort(reason)
+      addEventListener(...args)
+    })
+    const lease = service.acquireOperation(id, controller.signal)
+    await expect(lease).rejects.toBe(reason)
+    expect(service.operationActive(id)).toBe(false)
+    await vi.waitFor(() => { expect(finish).toBeTypeOf('function') })
+    finish()
+    await human
+    await ctx.fiber.dispose()
+  })
+
+  it('rejects stale screenshot coordinates before touching the page and bounds the pointer', async () => {
+    const { ctx, service } = await headlessProvider()
+    const id = SessionId('human-coordinates')
+    const signal = new AbortController().signal
+    await service.execute(id, { kind: 'navigate', url: 'http://127.0.0.1:8080/' }, signal)
+    const state = service.state(id)!
+    const expected = target(state)
+    await expect(service.control(id, { kind: 'click', target: expected, x: 1280, y: 20 }, signal))
+      .rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
+    expect(page.mouse.click).not.toHaveBeenCalled()
+    const clicked = await service.control(id, { kind: 'click', target: expected, x: 10, y: 20 }, signal)
+    expect(page.mouse.click).toHaveBeenCalledWith(10, 20)
+    expect(clicked?.observation?.cursor).toMatchObject({ x: 10, y: 20, kind: 'click' })
+    await expect(service.control(id, { kind: 'type', target: expected, x: 10, y: 20, text: 'secret' }, signal))
+      .rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
+    expect(page.keyboard.insertText).not.toHaveBeenCalled()
+    await service.control(id, { kind: 'type', target: target(clicked!), x: 10, y: 20, text: 'hello' }, signal)
+    expect(page.keyboard.insertText).toHaveBeenCalledWith('hello')
+    const afterType = service.state(id)!
+    await service.control(id, { kind: 'scroll', target: target(afterType), x: 15, y: 25,
+      direction: 'down', pixels: 120 }, signal)
+    expect(page.mouse.move).toHaveBeenCalledWith(15, 25)
+    expect(page.mouse.wheel).toHaveBeenCalledWith(0, 120)
+    expect(service.state(id)?.stateRevision).toBeGreaterThan(afterType.stateRevision)
+    await ctx.fiber.dispose()
+  })
+
+  it('runs human admission guards after earlier queued page work settles', async () => {
+    const { ctx, service } = await headlessProvider()
+    const id = SessionId('queued-guard')
+    let finish!: () => void
+    page.goto.mockImplementationOnce(() => new Promise((resolve) => { finish = () => { resolve(null) } }))
+    const first = service.control(id, { kind: 'navigate', url: 'http://127.0.0.1:8080/' }, new AbortController().signal)
+    const guard = vi.fn(async () => { throw new BrowserUseError('remote workspace', 'BROWSER_DENIED') })
+    const next = service.control(id, { kind: 'ensure-tab' }, new AbortController().signal, guard)
+    await vi.waitFor(() => { expect(finish).toBeTypeOf('function') })
+    expect(guard).not.toHaveBeenCalled()
+    finish()
+    await first
+    await expect(next).rejects.toMatchObject({ code: 'BROWSER_DENIED' })
+    expect(guard).toHaveBeenCalledOnce()
+    expect(service.state(id)).toBeUndefined()
+    await ctx.fiber.dispose()
+  })
+
+  it('waits for the scroll render before publishing its observation', async () => {
+    const { ctx, service } = await headlessProvider()
+    const id = SessionId('settle-human-scroll')
+    const signal = new AbortController().signal
+    await service.execute(id, { kind: 'navigate', url: 'http://127.0.0.1:8080/' }, signal)
+    const before = service.state(id)!
+    let settle!: () => void
+    page.evaluate.mockImplementationOnce(() => new Promise<void>((resolve) => { settle = () => { resolve() } }))
+    locator.evaluate.mockResolvedValueOnce('Scrolled: yes')
+    const scrolling = service.control(id, { kind: 'scroll', target: target(before), x: 15, y: 25,
+      direction: 'down', pixels: 120 }, signal)
+    await vi.waitFor(() => { expect(settle).toBeTypeOf('function') })
+    expect(page.mouse.wheel).toHaveBeenCalledWith(0, 120)
+    expect(page.screenshot).toHaveBeenCalledTimes(1)
+    expect(service.state(id)?.stateRevision).toBe(before.stateRevision)
+    settle()
+    const after = await scrolling
+    expect(after?.observation?.snapshot).toContain('Scrolled: yes')
+    expect(page.screenshot).toHaveBeenCalledTimes(2)
+    await ctx.fiber.dispose()
+  })
+
+  it('does not publish a new observation when the page closes during scroll settlement', async () => {
+    const { ctx, service } = await headlessProvider()
+    const id = SessionId('closed-during-human-scroll')
+    const signal = new AbortController().signal
+    await service.execute(id, { kind: 'navigate', url: 'http://127.0.0.1:8080/' }, signal)
+    const before = service.state(id)!
+    page.evaluate.mockRejectedValueOnce(new Error('page closed'))
+    await expect(service.control(id, { kind: 'scroll', target: target(before), x: 15, y: 25,
+      direction: 'down', pixels: 120 }, signal)).rejects.toMatchObject({ code: 'BROWSER_FAILED' })
+    expect(page.screenshot).toHaveBeenCalledTimes(1)
+    expect(service.state(id)).toBeUndefined()
     await ctx.fiber.dispose()
   })
 

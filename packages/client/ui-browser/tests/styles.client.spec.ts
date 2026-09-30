@@ -19,6 +19,8 @@ describe('browser responsive styles', () => {
     expect(css).toContain('.tabs { display: flex')
     expect(css).toContain('overflow-x: auto')
     expect(css).toContain('width: 100%')
+    expect(rule('.viewport')).toContain('max-width: 100%')
+    expect(rule('.viewport')).not.toMatch(/(?:^|[;{]\s*)width: 100%/)
     expect(css).toContain('.address:focus-within')
     expect(css).toContain('@media (max-width: 768px)')
     expect(css).toContain('@media (max-width: 375px)')

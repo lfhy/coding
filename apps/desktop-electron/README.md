@@ -24,7 +24,7 @@ make dev
 
 远程连接的 sandbox preload 只暴露固定操作；main 每次调用都核验所属窗口、主 frame、Host origin 与输入，同源重载期间暂停授权，失去所属窗口即撤销。基础模式使用 SFTP 文件读写编辑和搜索、SSH 前后台命令及 PTY、本机隔离 Goja 的 Code Mode 远端工具 binding，不部署远端 agent 或使用 SSH TCP 转发；LSP 不可用。SFTP 写入需要服务端 hardlink／posix-rename 扩展，版本复核非原子 CAS；SSH PTY 不提供前台进程组查询，终止请求也不能证明整棵进程树停稳。Agent 模式需要部署 Go agent 并使用 `direct-tcpip` 转发。SSH 输入由向导按次提交给原生服务，Go bridge token 不交给 renderer；不得在页面存储或日志中持久化凭据。目录解析前失去页面且无法确认 marker 归属时，helper 会保守保留连接直至退出，不凭连接 ID 盲关已有工作区。macOS 菜单和托盘提供窗口操作，关闭窗口会隐藏，再次激活或从托盘可恢复；退出应用时 helper 先收敛自己持有的连接和 bridge，Host 仍依自身空闲策略退出。
 
-`browser_use` 由共享 Host 的 [Playwright 提供方](../../packages/browser/browser-playwright/README.md)执行；完全访问且关闭审批提示的会话无需逐次审批，其他组合遵循[工具的会话权限规则](../../packages/browser/tool-browser/README.md)。它不复用 Electron 窗口，也不提供可交互的 browser guest。桌面窗口复用 Web Client 的[只读工作台画面](../../packages/client/ui-browser/README.md)，显示最近一次成功操作的截图，用户不能在画面中直接控制页面；远程工作区不支持浏览器操作。
+`browser_use` 由共享 Host 的 [Playwright 提供方](../../packages/browser/browser-playwright/README.md)执行；完全访问且关闭审批提示的会话无需逐次审批，其他组合遵循[工具的会话权限规则](../../packages/browser/tool-browser/README.md)。它不复用 Electron 窗口，也不提供浏览器 guest。桌面窗口复用 Web Client 的[浏览器工作台](../../packages/client/ui-browser/README.md)：画面是 Host 页面操作后捕获的 PNG 镜像，用户可按截图坐标发出点击、滚动和文本插入命令，不能直接访问网页 DOM。Agent 操作从等待审批至结束期间，Host 拒绝人工命令，界面也禁用控件；远程工作区不支持浏览器操作。
 
 ## 打包与安装边界
 

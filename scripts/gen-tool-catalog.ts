@@ -98,6 +98,12 @@ class CatalogAttachmentStore extends AttachmentStore {
 
 /** 仅提供注册所需服务；目录采集不得启动真实浏览器。 */
 class CatalogBrowserUseService extends BrowserUseService {
+  override acquireOperation(_sessionId: SessionId, _signal: AbortSignal): Promise<() => void> {
+    return Promise.reject(new Error('gen-tool-catalog: browser acquisition is unreachable during schema harvest'))
+  }
+
+  override operationActive(_sessionId: SessionId): boolean { return false }
+
   override execute(_sessionId: SessionId, _command: BrowserCommand, _signal: AbortSignal,
     _expectedTarget?: BrowserExpectedTarget): Promise<BrowserCapture> {
     return Promise.reject(new Error('gen-tool-catalog: browser execution is unreachable during schema harvest'))

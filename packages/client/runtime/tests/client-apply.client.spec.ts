@@ -31,7 +31,8 @@ describe('browser.control fake', () => {
     expect(api.callsOf('browser.control')).toEqual([payload])
 
     const state = {
-      browserGeneration: 'fake-browser', stateRevision: 1, viewport: { width: 1280, height: 720 }, tabs: [],
+      operationActive: false, browserGeneration: 'fake-browser', stateRevision: 1,
+      viewport: { width: 1280, height: 720 }, tabs: [],
       activeTabId: null, observation: null, hasFrame: false,
     }
     api.onBrowserControl = () => Promise.resolve(ok(state))

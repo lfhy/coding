@@ -1,6 +1,6 @@
 /**
  * Register a DeepSeek-backed provider in `ctx.web`. It calls the Anthropic-compatible Messages API
- * with native `web_search_20250305`. The provider reuses `DEEPSEEK_API_KEY` but not
+ * with native `web_search_20250305`. Search uses its own credential reference, not
  * `DEEPSEEK_BASE_URL`, because search and chat-completions use different bases.
  * @module @deepseek-ai/dsh-web-search-deepseek
  */
@@ -20,6 +20,7 @@ import {
   DEEPSEEK_DEFAULT_MAX_TOKENS,
   DEEPSEEK_DEFAULT_MAX_USES,
   DEEPSEEK_DEFAULT_MODEL,
+  isSafeBaseUrl,
 } from './provider.ts'
 import type { DeepSeekSearchProviderOptions } from './provider.ts'
 
@@ -40,13 +41,13 @@ export const name = 'web-search-deepseek'
 /** The web seam this provider registers into. */
 export const inject = ['web']
 
-const DEFAULT_API_KEY_ENV = 'DEEPSEEK_API_KEY'
+const DEFAULT_API_KEY_ENV = 'DEEPSEEK_SEARCH_API_KEY'
 
 /** Plugin config (all optional — `apply` fills env-var and constant defaults). */
 export interface Config {
   /** Literal DeepSeek API key; prefer {@link apiKeyEnv} so no secret enters configuration files. */
   apiKey?: string
-  /** Credential reference resolved for each search; defaults to `DEEPSEEK_API_KEY`. */
+  /** 每次搜索独立解析的凭据引用；默认 `DEEPSEEK_SEARCH_API_KEY`。 */
   apiKeyEnv?: string
   /** Anthropic-compatible endpoint base; `/messages` is appended. */
   baseURL?: string
@@ -63,9 +64,6 @@ export interface Config {
 export const Config: z<Config> = z.object({
   apiKey: z.string().role('secret'),
   apiKeyEnv: z.string().role('credential-ref').default(DEFAULT_API_KEY_ENV),
-  // Declared here rather than only at the use site: a configuration surface
-  // renders the resolved section, so a default the schema does not carry reads
-  // there as no value at all.
   baseURL: z.string(),
   model: z.string().default(DEEPSEEK_DEFAULT_MODEL),
   apiVersion: z.string().default(DEEPSEEK_DEFAULT_API_VERSION),
@@ -127,6 +125,15 @@ function resolveOptions(ctx: Context, config: Config): DeepSeekSearchProviderOpt
 export function apply(ctx: Context, config: Config): void {
   let current: () => Config = () => config
   installSettingsSection(ctx, WEB_SEARCH_DEEPSEEK_SETTINGS_NAMESPACE, Config, config, {
+    validate: (value) => {
+      if (value.baseURL !== undefined && !isSafeBaseUrl(value.baseURL)) {
+        throw new TypeError('web-search-deepseek.baseURL must be an HTTPS URL without credentials, query, or fragment')
+      }
+      if (value.model !== undefined && value.model.trim().length === 0) {
+        throw new TypeError('web-search-deepseek.model must not be blank')
+      }
+      credentialRef(value.apiKeyEnv ?? DEFAULT_API_KEY_ENV)
+    },
     setSource: (source) => {
       current = source
     },

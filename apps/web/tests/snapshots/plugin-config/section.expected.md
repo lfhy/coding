@@ -7,6 +7,9 @@
     - button "模型":
       - img
       - text: 模型
+    - button "联网搜索":
+      - img
+      - text: 联网搜索
     - button "图片识别 Fallback":
       - img
       - text: 图片识别 Fallback
@@ -34,8 +37,4 @@
       - listitem:
         - 'button "展开设置: Agent 循环"':
           - text: Agent 循环 Agent 如何派发工具调用。
-          - img
-      - listitem:
-        - 'button "展开设置: 网页搜索"':
-          - text: 网页搜索 DeepSeek 搜索提供方。
           - img

@@ -6,6 +6,8 @@ patch 在自身上按平台门控两个 shell 栈：`bash-sandbox`/`tool-bash` �
 
 行集合及其设计依据以行内注释写在 patch 文件里；[生成的组合图](../../../apps/cli/composition.md)负责渲染它。
 
+本层的 `web` 行默认选择无密钥的 DuckDuckGo 搜索；`web-search-deepseek` 同时挂载但只在 `web.searchProvider` 明确选 `deepseek-official` 时运行，其密钥引用为 `DEEPSEEK_SEARCH_API_KEY`，与模型凭据分离。提供方或认证失败不会自动切换后端；可在搜索设置中改选。
+
 本层挂载 [`browser-playwright`](../../browser/browser-playwright/README.md) 作为 Host 的会话级浏览器提供方；标准和 PTC／Code Mode 的 agent preset 通过同一个 [`browser_use`](../../browser/tool-browser/README.md) 工具消费它。完全访问且关闭审批提示的会话无需逐次审批，其他组合遵循[工具的会话权限规则](../../browser/tool-browser/README.md)。提供方使用 Chromium 原生联网，不限制网络目的地，无需配置本地 origin。Chromium 在首次页面创建时启动，缺失时报告不可用；源码、CLI 等未打包环境需安装与锁定 Playwright 版本匹配的 Chromium，macOS arm64 正式桌面包则自带 headless shell，不依赖用户缓存。本组合包自身不交付浏览器文件。Web 的只读画面路由只在同时装配 Web Host 传输时提供。
 
 ## 模型体验

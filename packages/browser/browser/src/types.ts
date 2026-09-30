@@ -36,6 +36,19 @@ export type BrowserHumanCommand =
   | { readonly kind: 'forward' }
   | { readonly kind: 'reload' }
   | { readonly kind: 'set-viewport'; readonly width: number; readonly height: number }
+  | { readonly kind: 'click'; readonly target: BrowserHumanTarget; readonly x: number; readonly y: number }
+  | { readonly kind: 'scroll'; readonly target: BrowserHumanTarget; readonly x: number; readonly y: number; readonly direction: 'up' | 'down'; readonly pixels: number }
+  | { readonly kind: 'type'; readonly target: BrowserHumanTarget; readonly x: number; readonly y: number; readonly text: string }
+
+/** 截图对应的目标身份；人工坐标命令在提供方队列中按全部字段核对。 */
+export interface BrowserHumanTarget {
+  readonly browserGeneration: string
+  readonly stateRevision: number
+  readonly tabId: BrowserTabId
+  readonly generation: string
+  readonly revision: number
+  readonly viewport: { readonly width: number; readonly height: number }
+}
 
 /** 标签页在最近一次队列操作完成时的导航状态。 */
 export interface BrowserTabSummary {
@@ -49,6 +62,7 @@ export interface BrowserTabSummary {
 
 /** 只读会话状态；修订版使画面请求不能跨标签页使用旧截图。 */
 export interface BrowserSessionState {
+  readonly operationActive: boolean
   readonly browserGeneration: string
   readonly stateRevision: number
   readonly viewport: { readonly width: number; readonly height: number }
@@ -56,6 +70,11 @@ export interface BrowserSessionState {
   readonly activeTabId: BrowserTabId | null
   readonly observation: BrowserObservation | null
   readonly hasFrame: boolean
+}
+
+/** 仅首次模型导航等待审批、尚未创建浏览器资源时的只读状态。 */
+export interface BrowserOperationOnlyState {
+  readonly operationActive: true
 }
 
 /** 成功操作后的纯 JSON 观测；generation 改变时旧修订版及元素引用全部失效。 */
@@ -89,3 +108,4 @@ export type BrowserUseErrorCode =
   | 'BROWSER_DENIED'
   | 'BROWSER_UNAVAILABLE'
   | 'BROWSER_FAILED'
+  | 'BROWSER_BUSY'

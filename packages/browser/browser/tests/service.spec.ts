@@ -6,6 +6,11 @@ import type { BrowserObservation } from '../src/types.ts'
 
 class StubBrowserUse extends BrowserUseService {
   private readonly captures = new Map<ReturnType<typeof SessionId>, BrowserCapture>()
+  operationActive(): boolean { return false }
+  acquireOperation(_sessionId: ReturnType<typeof SessionId>, signal: AbortSignal): Promise<() => void> {
+    signal.throwIfAborted()
+    return Promise.resolve(() => {})
+  }
 
   async execute(sessionId: ReturnType<typeof SessionId>, command: BrowserCommand, signal: AbortSignal): Promise<BrowserCapture> {
     signal.throwIfAborted()
@@ -34,7 +39,7 @@ class StubBrowserUse extends BrowserUseService {
   state(sessionId: ReturnType<typeof SessionId>): BrowserSessionState | undefined {
     const capture = this.latest(sessionId)
     if (!capture) return undefined
-    return { browserGeneration: sessionId, stateRevision: 1, viewport: capture.observation.viewport,
+    return { operationActive: false, browserGeneration: sessionId, stateRevision: 1, viewport: capture.observation.viewport,
       tabs: [{ id: capture.observation.tabId, generation: capture.observation.generation,
         url: capture.observation.url, title: '',
         canGoBack: false, canGoForward: false }], activeTabId: capture.observation.tabId,

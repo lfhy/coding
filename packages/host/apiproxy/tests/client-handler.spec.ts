@@ -153,6 +153,7 @@ describe('unary round trip', () => {
   it('validates human browser commands before dispatch and parses the complete response state', async () => {
     const tabId = 'd2857d22-1a15-480a-aac4-43bcb9d60df4'
     const state = {
+      operationActive: false,
       browserGeneration: 'g', stateRevision: 1, viewport: { width: 1280, height: 720 }, tabs: [{
         id: tabId as never, generation: 'tab-generation-1', url: 'https://example.com/', title: 'Example', canGoBack: true, canGoForward: false,
       }], activeTabId: tabId as never, observation: null, hasFrame: false,
@@ -179,6 +180,10 @@ describe('unary round trip', () => {
     }
     expect(control).toHaveBeenCalledTimes(2)
     control.mockImplementationOnce(r => ok(r, { ...state, stateRevision: 'corrupt' } as never))
+    await expect(browser.control({ sessionId: sid('s1'), command: { kind: 'ensure-tab' } })).rejects.toThrow()
+    const missingOperationActive: Partial<typeof state> = { ...state }
+    delete missingOperationActive.operationActive
+    control.mockImplementationOnce(r => ok(r, missingOperationActive as never))
     await expect(browser.control({ sessionId: sid('s1'), command: { kind: 'ensure-tab' } })).rejects.toThrow()
     control.mockImplementationOnce(r => ok(r, null))
     expect((await browser.control({ sessionId: sid('s1'), command: { kind: 'close-tab', tabId: tabId as never } })).result)

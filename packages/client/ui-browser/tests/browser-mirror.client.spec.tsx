@@ -287,8 +287,89 @@ describe('browser UI', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reload' }))
     expect(result.command).toHaveBeenCalledWith({ kind: 'reload' })
     expect(screen.getByRole('img', { name: 'Browser page screenshot' }).getAttribute('src')).toBe('blob:frame')
+    expect(screen.getByRole('img', { name: 'Browser page screenshot' }).parentElement?.parentElement?.getAttribute('style'))
+      .toContain('width: 1280px; aspect-ratio: 1280 / 720')
     expect(screen.getByRole('img', { name: 'Click' }).getAttribute('style')).toContain('left: 25%')
     expect(result.container.querySelector('iframe, webview')).toBeNull()
+  })
+
+  it('maps loaded screenshot clicks, wheel gestures and chosen text input to an exact Host target', () => {
+    const result = mount(ready())
+    const img = screen.getByRole('img', { name: 'Browser page screenshot' }) as HTMLImageElement
+    const button = screen.getByRole('button', { name: /Click the page screenshot/ })
+    expect(button.hasAttribute('disabled')).toBe(true)
+    Object.defineProperties(img, {
+      complete: { configurable: true, value: true },
+      naturalWidth: { configurable: true, value: 1280 },
+      naturalHeight: { configurable: true, value: 720 },
+    })
+    img.getBoundingClientRect = () => ({ left: 100, top: 30, right: 740, bottom: 390,
+      width: 640, height: 360 } as DOMRect)
+    fireEvent.load(img)
+    expect(button.hasAttribute('disabled')).toBe(false)
+    fireEvent.click(button, { clientX: 260, clientY: 210, detail: 1 })
+    const target = { browserGeneration: 'g1', stateRevision: 1, tabId: id,
+      generation: 'tab-g1', revision: 1, viewport: { width: 1280, height: 720 } }
+    expect(result.command).toHaveBeenCalledWith({ kind: 'click', target, x: 320, y: 360 })
+    fireEvent.click(button, { clientX: 90, clientY: 210, detail: 1 })
+    expect(result.command).toHaveBeenCalledTimes(1)
+    const wheel = new WheelEvent('wheel', { bubbles: true, cancelable: true,
+      clientX: 420, clientY: 120, deltaY: 240 })
+    act(() => { button.dispatchEvent(wheel) })
+    expect(wheel.defaultPrevented).toBe(true)
+    expect(result.command).toHaveBeenCalledWith({ kind: 'scroll', target, x: 640, y: 180,
+      direction: 'down', pixels: 240 })
+    fireEvent.click(screen.getByRole('button', { name: 'Type' }))
+    fireEvent.click(button, { clientX: 260, clientY: 210, detail: 1 })
+    const text = screen.getByRole('textbox', { name: 'Insert text at the selected location' })
+    fireEvent.change(text, { target: { value: 'hello' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Insert' }))
+    expect(result.command).toHaveBeenCalledWith({ kind: 'type', target, x: 320, y: 360, text: 'hello' })
+  })
+
+  it('disables all manual actions while the agent owns the browser and rejects mismatched frames', () => {
+    const busy = { ...state(), operationActive: true }
+    const result = mount({ phase: 'ready', state: busy as never, frameUrl: 'blob:frame', pending: false })
+    expect(screen.getByRole('status').textContent).toContain('AI is using the browser')
+    expect(screen.getByRole('textbox', { name: 'Address' }).hasAttribute('disabled')).toBe(true)
+    expect(screen.getByRole('button', { name: 'Type' }).hasAttribute('disabled')).toBe(true)
+    expect(screen.getByRole('button', { name: /Click the page screenshot/ }).hasAttribute('disabled')).toBe(true)
+    render(<BrowserTabs {...result.props} />)
+    expect(screen.getByRole('tab', { name: 'Example' }).hasAttribute('disabled')).toBe(true)
+    result.unmount()
+    const lock = mount({ phase: 'busy', state: null, frameUrl: null, pending: false })
+    expect(lock.ensureTab).not.toHaveBeenCalled()
+    expect(screen.getByText('AI is using the browser. Manual controls resume when it finishes.')).toBeTruthy()
+  })
+
+  it('waits for matching image pixels and viewport before enabling screenshot actions', () => {
+    const result = mount(ready())
+    const img = screen.getByRole('img', { name: 'Browser page screenshot' }) as HTMLImageElement
+    const action = screen.getByRole('button', { name: /Click the page screenshot/ })
+    Object.defineProperties(img, {
+      complete: { configurable: true, value: true },
+      naturalWidth: { configurable: true, value: 1280 },
+      naturalHeight: { configurable: true, value: 721 },
+    })
+    fireEvent.load(img)
+    expect(action.hasAttribute('disabled')).toBe(true)
+    Object.defineProperty(img, 'naturalHeight', { configurable: true, value: 720 })
+    const mismatched: BrowserView = { ...ready(), state: { ...state(), viewport: { width: 940, height: 620 } } as never }
+    result.rerender(<BrowserMirror {...result.props} useBrowserMirror={viewHook(mismatched)} />)
+    expect(action.hasAttribute('disabled')).toBe(true)
+    result.rerender(<BrowserMirror {...result.props} useBrowserMirror={viewHook(ready())} />)
+    expect(action.hasAttribute('disabled')).toBe(false)
+  })
+
+  it('pauses automatic viewport resizing during agent work and resumes when released', async () => {
+    mockResizeObserver()
+    const locked: BrowserView = { ...ready(), state: { ...state(), operationActive: true } as never }
+    const result = mount(locked)
+    act(() => { observers[0]!.fire(940, 620) })
+    await act(async () => { await vi.advanceTimersByTimeAsync(200) })
+    expect(result.command).not.toHaveBeenCalled()
+    result.rerender(<BrowserMirror {...result.props} useBrowserMirror={viewHook(ready())} />)
+    expect(result.command).toHaveBeenCalledWith({ kind: 'set-viewport', width: 940, height: 620 })
   })
 
   it('disables controls while pending and displays actionable error', () => {

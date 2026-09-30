@@ -1,17 +1,19 @@
 /** 经真实 Web Loader、人工 RPC 和 Host 浏览器提供方验收工作台浏览流程。 */
 
+import { randomUUID } from 'node:crypto'
 import { createServer, type Server } from 'node:http'
 import type { Browser, Locator, Page, Request } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import { createAssistantMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId, SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
-import type { BrowserHumanCommand, BrowserSessionState } from '@deepseek-ai/dsh-browser'
+import type { BrowserHumanCommand, BrowserHumanTarget, BrowserSessionState } from '@deepseek-ai/dsh-browser'
 import { launchWebScaffold, seedSession, watchConsole, webSnapshotMode, type WebScaffold } from './scaffold.ts'
 import { newEnglishPage } from './support.ts'
 
 const FIRST = 'browser-mirror-first'
 const SECOND = 'browser-mirror-second'
+const INTERACTIVE = 'browser-mirror-interactive'
 const MODE = webSnapshotMode()
 
 function fixture(title: string): string {
@@ -40,6 +42,19 @@ function fixture(title: string): string {
 
 async function fixtureServer(): Promise<{ server: Server; origin: string }> {
   const server = createServer((request, response) => {
+    if (request.url === '/interactive') {
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+      response.end(`<!doctype html><html><head><title>Interactive fixture</title></head>
+        <body style="margin:0;padding:24px;font:20px sans-serif;background:#d5e7fa">
+          <h1>Interactive mirror</h1><p id="clicks">Clicks: 0</p>
+          <button onclick="document.querySelector('#clicks').textContent='Clicks: '+(Number(document.querySelector('#clicks').textContent.split(': ')[1])+1)">Increment clicks</button>
+          <label for="entry">Message</label><input id="entry" aria-label="Message" oninput="document.querySelector('#typed').textContent='Typed: '+this.value">
+          <p id="typed">Typed: empty</p><p id="scrolled">Scrolled: no</p>
+          <div style="height:1400px"></div><p>Bottom marker</p>
+          <script>addEventListener('scroll', () => { if (scrollY > 200) document.querySelector('#scrolled').textContent='Scrolled: yes' })</script>
+        </body></html>`)
+      return
+    }
     const second = request.url === '/second'
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
     response.end(`<!doctype html><html><head><title>${second ? 'Second fixture' : 'Mirror fixture'}</title></head><body
@@ -67,6 +82,45 @@ function browserCommand(request: Request): BrowserHumanCommand | null {
   if (new URL(request.url()).pathname !== '/api/browser.control') return null
   const body = request.postDataJSON() as { payload?: { command?: BrowserHumanCommand } }
   return body.payload?.command ?? null
+}
+
+function humanTarget(state: BrowserSessionState): BrowserHumanTarget {
+  const observation = state.observation
+  if (!observation || !state.activeTabId) throw new Error('current screenshot target missing')
+  return { browserGeneration: state.browserGeneration, stateRevision: state.stateRevision,
+    tabId: state.activeTabId, generation: observation.generation, revision: observation.revision,
+    viewport: observation.viewport }
+}
+
+async function controlFromPage(page: Page, baseUrl: string, id: string, command: BrowserHumanCommand): Promise<{
+  result: { ok: boolean; error?: { code: string; details?: { reason?: string } } }
+}> {
+  const response = await page.request.post(`${baseUrl}/api/browser.control`, {
+    data: { type: 'client-request', rpcId: randomUUID(), method: 'browser.control',
+      payload: { sessionId: id, command } },
+    headers: { origin: baseUrl },
+  })
+  expect(response.status()).toBe(200)
+  return await response.json() as { result: { ok: boolean; error?: { code: string; details?: { reason?: string } } } }
+}
+
+function observedPoint(state: BrowserSessionState, role: string, name: string): { x: number; y: number } {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const row = state.observation?.snapshot.match(new RegExp(`e\\d+-\\S+ ${role} "${escaped}" \\((\\d+),(\\d+),(\\d+),(\\d+)\\)`))
+  if (!row) throw new Error(`visible ${role} ${name} missing from browser observation`)
+  return { x: Number(row[1]) + Math.floor(Number(row[3]) / 2),
+    y: Number(row[2]) + Math.floor(Number(row[4]) / 2) }
+}
+
+async function gestureOnFrame(page: Page, mirror: Locator, state: BrowserSessionState,
+  point: { x: number; y: number }, action: 'click' | 'scroll' | 'scroll-up'): Promise<void> {
+  const frame = mirror.getByRole('img', { name: 'Browser page screenshot' })
+  const box = await frame.boundingBox()
+  if (!box) throw new Error('interactive screenshot geometry missing')
+  const x = box.x + point.x / state.viewport.width * box.width
+  const y = box.y + point.y / state.viewport.height * box.height
+  if (action === 'click') await page.mouse.click(x, y)
+  else { await page.mouse.move(x, y); await page.mouse.wheel(0, action === 'scroll-up' ? -650 : 650) }
 }
 
 async function expectAddress(address: Locator, url: string): Promise<void> {
@@ -160,6 +214,7 @@ describe('web e2e: browser-use mirror over the shipped Loader', () => {
     scaffold = await launchWebScaffold()
     await seedSession(scaffold, fixture(FIRST), FIRST)
     await seedSession(scaffold, fixture(SECOND), SECOND)
+    await seedSession(scaffold, fixture(INTERACTIVE), INTERACTIVE)
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     tripwire = watchConsole(page)
@@ -393,6 +448,110 @@ describe('web e2e: browser-use mirror over the shipped Loader', () => {
     expect(await page.locator('vite-error-overlay').count()).toBe(0)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
+    expect(consoleErrors).toEqual([])
+  }, 120_000)
+
+  it.skipIf(MODE === 'record')('acts on the real page through screenshot coordinates and rejects busy or stale gestures', async () => {
+    onTestFailed(async () => { await page.screenshot({ path: '/tmp/dsh-browser-human-gestures-failed.png', fullPage: true }) })
+    await openSession(page, INTERACTIVE)
+    await page.getByRole('button', { name: 'Open right sidebar' }).click()
+    await page.getByRole('navigation', { name: 'Workbench features' }).getByRole('button', { name: 'Browser' }).click()
+    const mirror = page.getByRole('region', { name: 'Browser view' })
+    const address = mirror.getByRole('textbox', { name: 'Address' })
+    await address.fill(`${origin}/interactive`)
+    await address.press('Enter')
+    await expect.poll(async () => (await browserState(page, scaffold.baseUrl, INTERACTIVE))?.observation?.title)
+      .toBe('Interactive fixture')
+    const image = mirror.getByRole('img', { name: 'Browser page screenshot' })
+    const action = mirror.locator('button:has(> img[alt="Browser page screenshot"])')
+    await expect.poll(() => action.isEnabled()).toBe(true)
+    const initial = await expectViewportFit(page, mirror, scaffold.baseUrl, INTERACTIVE)
+    const imageBox = await image.boundingBox()
+    if (!imageBox) throw new Error('screenshot dimensions missing')
+    const dimensions = await image.evaluate((node: HTMLImageElement) => ({ width: node.naturalWidth, height: node.naturalHeight }))
+    expect(imageBox.width).toBeLessThanOrEqual(dimensions.width + 1)
+    expect(imageBox.height).toBeLessThanOrEqual(dimensions.height + 1)
+    expect(Math.abs(imageBox.width / imageBox.height - dimensions.width / dimensions.height)).toBeLessThan(0.01)
+    await page.screenshot({ path: '/tmp/dsh-browser-human-before.png' })
+
+    const oldTarget = humanTarget(initial)
+    await gestureOnFrame(page, mirror, initial, observedPoint(initial, 'button', 'Increment clicks'), 'click')
+    await expect.poll(async () => (await browserState(page, scaffold.baseUrl, INTERACTIVE))?.observation?.snapshot)
+      .toContain('Clicks: 1')
+    const clicked = await browserState(page, scaffold.baseUrl, INTERACTIVE)
+    if (!clicked) throw new Error('browser state missing after human click')
+    expect(clicked.observation?.cursor?.kind).toBe('click')
+    const stale = await controlFromPage(page, scaffold.baseUrl, INTERACTIVE, {
+      kind: 'click', target: oldTarget, ...observedPoint(initial, 'button', 'Increment clicks'),
+    })
+    expect(stale.result).toMatchObject({ ok: false,
+      error: { code: 'browser-failed', details: { reason: 'BROWSER_STALE_REF' } } })
+    const afterStale = await browserState(page, scaffold.baseUrl, INTERACTIVE)
+    expect(afterStale?.stateRevision).toBe(clicked.stateRevision)
+    expect(afterStale?.observation?.snapshot).toContain('Clicks: 1')
+
+    await expect.poll(() => action.isEnabled()).toBe(true)
+    const typeButton = mirror.locator('button[aria-pressed]')
+    await typeButton.click()
+    await expect.poll(() => typeButton.getAttribute('aria-pressed')).toBe('true')
+    await gestureOnFrame(page, mirror, clicked, observedPoint(clicked, 'input', 'Message'), 'click')
+    const typeInput = mirror.locator('#browser-page-text')
+    await expect.poll(() => typeInput.isVisible()).toBe(true)
+    await typeInput.fill('Human typed here')
+    await typeInput.press('Enter')
+    await expect.poll(async () => (await browserState(page, scaffold.baseUrl, INTERACTIVE))?.observation?.snapshot)
+      .toContain('Typed: Human typed here')
+    const typed = await browserState(page, scaffold.baseUrl, INTERACTIVE)
+    if (!typed) throw new Error('browser state missing after human type')
+    expect(typed.observation?.cursor?.kind).toBe('fill')
+
+    await expect.poll(() => action.isEnabled()).toBe(true)
+    const mirrorScroll = await action.evaluate(node => ({
+      top: node.parentElement?.parentElement?.scrollTop,
+      left: node.parentElement?.parentElement?.scrollLeft,
+    }))
+    await gestureOnFrame(page, mirror, typed, { x: Math.floor(typed.viewport.width / 2),
+      y: Math.floor(typed.viewport.height / 2) }, 'scroll')
+    await expect.poll(async () => (await browserState(page, scaffold.baseUrl, INTERACTIVE))?.observation?.snapshot)
+      .toContain('Scrolled: yes')
+    const scrolled = await browserState(page, scaffold.baseUrl, INTERACTIVE)
+    if (!scrolled) throw new Error('browser state missing after human scroll')
+    expect(scrolled.observation?.cursor?.kind).toBe('scroll')
+    expect(await action.evaluate(node => ({
+      top: node.parentElement?.parentElement?.scrollTop,
+      left: node.parentElement?.parentElement?.scrollLeft,
+    }))).toEqual(mirrorScroll)
+    await page.screenshot({ path: '/tmp/dsh-browser-human-after.png' })
+
+    const release = await scaffold.ctx.browserUse.acquireOperation(SessionId(INTERACTIVE), new AbortController().signal)
+    try {
+      await expect.poll(async () => (await browserState(page, scaffold.baseUrl, INTERACTIVE))?.operationActive).toBe(true)
+      await expect.poll(() => action.isDisabled(), { timeout: 10_000 }).toBe(true)
+      await expect.poll(() => address.isDisabled()).toBe(true)
+      await expect.poll(() => typeButton.isDisabled()).toBe(true)
+      const busy = await controlFromPage(page, scaffold.baseUrl, INTERACTIVE, {
+        kind: 'click', target: humanTarget(scrolled), ...observedPoint(initial, 'button', 'Increment clicks'),
+      })
+      expect(busy.result).toMatchObject({ ok: false, error: { code: 'browser-failed' } })
+      expect((await browserState(page, scaffold.baseUrl, INTERACTIVE))?.stateRevision).toBe(scrolled.stateRevision)
+    } finally { release() }
+    await expect.poll(async () => (await browserState(page, scaffold.baseUrl, INTERACTIVE))?.operationActive).toBe(false)
+    await expect.poll(() => action.isEnabled(), { timeout: 10_000 }).toBe(true)
+    await expect.poll(() => address.isEnabled()).toBe(true)
+    await expect.poll(() => typeButton.isEnabled()).toBe(true)
+    const released = await browserState(page, scaffold.baseUrl, INTERACTIVE)
+    if (!released) throw new Error('browser state missing after model operation release')
+    await gestureOnFrame(page, mirror, released, { x: Math.floor(released.viewport.width / 2),
+      y: Math.floor(released.viewport.height / 2) }, 'scroll-up')
+    await expect.poll(async () => (await browserState(page, scaffold.baseUrl, INTERACTIVE))?.observation?.snapshot)
+      .toContain('button "Increment clicks"')
+    await expect.poll(() => action.isEnabled()).toBe(true)
+    const returned = await browserState(page, scaffold.baseUrl, INTERACTIVE)
+    if (!returned) throw new Error('browser state missing after returning to the page top')
+    await gestureOnFrame(page, mirror, returned, observedPoint(returned, 'button', 'Increment clicks'), 'click')
+    await expect.poll(async () => (await browserState(page, scaffold.baseUrl, INTERACTIVE))?.observation?.snapshot)
+      .toContain('Clicks: 2')
+    expect(tripwire.pageErrors).toEqual([])
     expect(consoleErrors).toEqual([])
   }, 120_000)
 })

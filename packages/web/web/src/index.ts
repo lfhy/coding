@@ -8,6 +8,7 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type {
   WebFetchProvider,
   WebFetchRequest,
@@ -59,6 +60,9 @@ export interface WebRuntimeConfig {
   readonly fetchProvider?: string
 }
 
+/** 用户可持久化的搜索与抓取提供方选择。 */
+export const WEB_SETTINGS_NAMESPACE = settingsNamespace('web')
+
 /**
  * The web access service. Registered as `ctx.web` (one instance per context).
  *
@@ -84,13 +88,20 @@ export class WebRuntime extends Service {
 
   private searchProviders = new Map<string, WebSearchProvider>()
   private fetchProviders = new Map<string, WebFetchProvider>()
-  private readonly searchProviderId: string | undefined
-  private readonly fetchProviderId: string | undefined
+  private currentConfig: () => WebRuntimeConfig
 
   constructor(ctx: Context, config: WebRuntimeConfig = {}) {
     super(ctx, 'web')
-    this.searchProviderId = config.searchProvider ?? process.env.DSH_WEB_SEARCH_PROVIDER
-    this.fetchProviderId = config.fetchProvider ?? process.env.DSH_WEB_FETCH_PROVIDER
+    const base: { searchProvider?: string; fetchProvider?: string } = {}
+    const searchProvider = config.searchProvider ?? process.env.DSH_WEB_SEARCH_PROVIDER
+    const fetchProvider = config.fetchProvider ?? process.env.DSH_WEB_FETCH_PROVIDER
+    if (searchProvider !== undefined) base.searchProvider = searchProvider
+    if (fetchProvider !== undefined) base.fetchProvider = fetchProvider
+    this.currentConfig = () => base
+    installSettingsSection(ctx, WEB_SETTINGS_NAMESPACE, WebRuntime.Config, base, {
+      setSource: (source) => { this.currentConfig = source },
+      onChange: () => {},
+    })
   }
 
   /**
@@ -138,9 +149,10 @@ export class WebRuntime extends Service {
    * @returns the provider's results, capped to `request.maxResults`.
    */
   async search(request: WebSearchRequest, signal?: AbortSignal): Promise<WebSearchResult> {
+    const searchProviderId = this.currentConfig().searchProvider
     const provider = resolveProvider({
       providers: this.searchProviders,
-      ...this.searchProviderId !== undefined ? { configuredId: this.searchProviderId } : {},
+      ...searchProviderId !== undefined ? { configuredId: searchProviderId } : {},
     })
     const result = await provider.search(request, signal)
     return capSources(result, request.maxResults)
@@ -155,9 +167,10 @@ export class WebRuntime extends Service {
    * @returns the retrieval outcome; non-2xx responses resolve descriptively.
    */
   async fetch(request: WebFetchRequest, signal?: AbortSignal): Promise<WebFetchResult> {
+    const fetchProviderId = this.currentConfig().fetchProvider
     const provider = resolveProvider({
       providers: this.fetchProviders,
-      ...this.fetchProviderId !== undefined ? { configuredId: this.fetchProviderId } : {},
+      ...fetchProviderId !== undefined ? { configuredId: fetchProviderId } : {},
     })
     return provider.fetch(request, signal)
   }

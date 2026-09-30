@@ -463,6 +463,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: '每个 SessionId 独占浏览器上下文与标签页的可替换服务。',
     methods: [
       {
+        signature: 'abstract acquireOperation(sessionId: SessionId, signal: AbortSignal): Promise<() => void>',
+        description: '在审批开始前独占会话的人工入口，并等待此前已接纳的操作完成；调用者必须在 finally 释放。',
+        parameters: [{ name: 'sessionId', description: '要独占的浏览器会话。' }, { name: 'signal', description: '等待期间的取消信号。' }],
+        returns: '幂等的释放函数；获得后才可采样审批目标。',
+      },
+      {
+        signature: 'abstract operationActive(sessionId: SessionId): boolean',
+        description: '查询会话是否正被模型操作占用，即使浏览器资源尚未创建也可查询。',
+        parameters: [{ name: 'sessionId', description: '要查询的会话。' }],
+        returns: '模型操作从审批到执行结束的占用状态。',
+      },
+      {
         signature: 'abstract execute(sessionId: SessionId, command: BrowserCommand, signal: AbortSignal, expectedTarget?: BrowserExpectedTarget): Promise<BrowserCapture>',
         description: '对指定会话执行一个命令，成功时发布对应的观测与可选截图。 元素操作必须拒绝跨标签页或过期 revision；拒绝与取消不得发布虚假的新观测。',
         parameters: [{ name: 'sessionId', description: '独占浏览器上下文的会话身份。' }, { name: 'command', description: '导航、快照、交互或关闭命令。' }, { name: 'signal', description: '中止当前操作；提供方应保留调用方给出的中止原因。' }, { name: 'expectedTarget', description: '审批前采样的可选空会话或活跃标签页与状态修订版，执行队列中必须再次核对。' }],
@@ -475,9 +487,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: '资源不存在时为 undefined；空白标签页没有观测。',
       },
       {
-        signature: 'abstract control(sessionId: SessionId, command: BrowserHumanCommand, signal: AbortSignal): Promise<BrowserSessionState | undefined>',
+        signature: 'abstract control(sessionId: SessionId, command: BrowserHumanCommand, signal: AbortSignal, guard?: () => Promise<void>): Promise<BrowserSessionState | undefined>',
         description: '串行执行人工导航、标签页或有界页面视口操作，取消时释放不确定的会话状态。',
-        parameters: [{ name: 'sessionId', description: '独占浏览器上下文的会话身份。' }, { name: 'command', description: '人工操作，标签页 id 只在当前会话有效。' }, { name: 'signal', description: '调用方中止信号。' }],
+        parameters: [{ name: 'sessionId', description: '独占浏览器上下文的会话身份。' }, { name: 'command', description: '人工操作，标签页 id 只在当前会话有效。' }, { name: 'signal', description: '调用方中止信号。' }, { name: 'guard', description: '可选的异步准入复核，在提供方执行队列中、操作页面前调用。' }],
         returns: '操作后的状态；关闭最后一个标签页时为 undefined。',
       },
       {
@@ -2922,7 +2934,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BrowserHumanCommand',
-    declaration: 'export type BrowserHumanCommand = {\n    readonly kind: \'ensure-tab\';\n} | {\n    readonly kind: \'new-tab\';\n} | {\n    readonly kind: \'select-tab\';\n    readonly tabId: BrowserTabId;\n} | {\n    readonly kind: \'close-tab\';\n    readonly tabId: BrowserTabId;\n} | {\n    readonly kind: \'navigate\';\n    readonly url: string;\n} | {\n    readonly kind: \'back\';\n} | {\n    readonly kind: \'forward\';\n} | {\n    readonly kind: \'reload\';\n} | {\n    readonly kind: \'set-viewport\';\n    readonly width: number;\n    readonly height: number;\n};',
+    declaration: 'export type BrowserHumanCommand = {\n    readonly kind: \'ensure-tab\';\n} | {\n    readonly kind: \'new-tab\';\n} | {\n    readonly kind: \'select-tab\';\n    readonly tabId: BrowserTabId;\n} | {\n    readonly kind: \'close-tab\';\n    readonly tabId: BrowserTabId;\n} | {\n    readonly kind: \'navigate\';\n    readonly url: string;\n} | {\n    readonly kind: \'back\';\n} | {\n    readonly kind: \'forward\';\n} | {\n    readonly kind: \'reload\';\n} | {\n    readonly kind: \'set-viewport\';\n    readonly width: number;\n    readonly height: number;\n} | {\n    readonly kind: \'click\';\n    readonly target: BrowserHumanTarget;\n    readonly x: number;\n    readonly y: number;\n} | {\n    readonly kind: \'scroll\';\n    readonly target: BrowserHumanTarget;\n    readonly x: number;\n    readonly y: number;\n    readonly direction: \'up\' | \'down\';\n    readonly pixels: number;\n} | {\n    readonly kind: \'type\';\n    readonly target: BrowserHumanTarget;\n    readonly x: number;\n    readonly y: number;\n    readonly text: string;\n};',
+  },
+  {
+    name: 'BrowserHumanTarget',
+    declaration: 'export interface BrowserHumanTarget {\n    readonly browserGeneration: string;\n    readonly stateRevision: number;\n    readonly tabId: BrowserTabId;\n    readonly generation: string;\n    readonly revision: number;\n    readonly viewport: {\n        readonly width: number;\n        readonly height: number;\n    };\n}',
   },
   {
     name: 'BrowserObservation',
@@ -2930,7 +2946,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BrowserSessionState',
-    declaration: 'export interface BrowserSessionState {\n    readonly browserGeneration: string;\n    readonly stateRevision: number;\n    readonly viewport: {\n        readonly width: number;\n        readonly height: number;\n    };\n    readonly tabs: BrowserTabSummary[];\n    readonly activeTabId: BrowserTabId | null;\n    readonly observation: BrowserObservation | null;\n    readonly hasFrame: boolean;\n}',
+    declaration: 'export interface BrowserSessionState {\n    readonly operationActive: boolean;\n    readonly browserGeneration: string;\n    readonly stateRevision: number;\n    readonly viewport: {\n        readonly width: number;\n        readonly height: number;\n    };\n    readonly tabs: BrowserTabSummary[];\n    readonly activeTabId: BrowserTabId | null;\n    readonly observation: BrowserObservation | null;\n    readonly hasFrame: boolean;\n}',
   },
   {
     name: 'BrowserTabId',
@@ -2942,7 +2958,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BrowserUseErrorCode',
-    declaration: 'export type BrowserUseErrorCode = \'BROWSER_INVALID_URL\' | \'BROWSER_STALE_REF\' | \'BROWSER_CLOSED\' | \'BROWSER_DENIED\' | \'BROWSER_UNAVAILABLE\' | \'BROWSER_FAILED\';',
+    declaration: 'export type BrowserUseErrorCode = \'BROWSER_INVALID_URL\' | \'BROWSER_STALE_REF\' | \'BROWSER_CLOSED\' | \'BROWSER_DENIED\' | \'BROWSER_UNAVAILABLE\' | \'BROWSER_FAILED\' | \'BROWSER_BUSY\';',
   },
   {
     name: 'CancelOptions',

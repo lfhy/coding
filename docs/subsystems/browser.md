@@ -140,6 +140,21 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 
 ```ts cordis-catalog
 /**
+ * 在审批开始前独占会话的人工入口，并等待此前已接纳的操作完成；调用者必须在 finally 释放。
+ * @param sessionId - 要独占的浏览器会话。
+ * @param signal - 等待期间的取消信号。
+ * @returns 幂等的释放函数；获得后才可采样审批目标。
+ */
+abstract acquireOperation(sessionId: SessionId, signal: AbortSignal): Promise<() => void>
+
+/**
+ * 查询会话是否正被模型操作占用，即使浏览器资源尚未创建也可查询。
+ * @param sessionId - 要查询的会话。
+ * @returns 模型操作从审批到执行结束的占用状态。
+ */
+abstract operationActive(sessionId: SessionId): boolean
+
+/**
  * 对指定会话执行一个命令，成功时发布对应的观测与可选截图。
  * 元素操作必须拒绝跨标签页或过期 revision；拒绝与取消不得发布虚假的新观测。
  * @param sessionId - 独占浏览器上下文的会话身份。
@@ -162,9 +177,10 @@ abstract state(sessionId: SessionId): BrowserSessionState | undefined
  * @param sessionId - 独占浏览器上下文的会话身份。
  * @param command - 人工操作，标签页 id 只在当前会话有效。
  * @param signal - 调用方中止信号。
+ * @param guard - 可选的异步准入复核，在提供方执行队列中、操作页面前调用。
  * @returns 操作后的状态；关闭最后一个标签页时为 undefined。
  */
-abstract control(sessionId: SessionId, command: BrowserHumanCommand, signal: AbortSignal): Promise<BrowserSessionState | undefined>
+abstract control(sessionId: SessionId, command: BrowserHumanCommand, signal: AbortSignal, guard?: () => Promise<void>): Promise<BrowserSessionState | undefined>
 
 /**
  * 读取指定会话最近一次成功发布的观测，不启动浏览器操作。

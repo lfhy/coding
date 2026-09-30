@@ -8,6 +8,10 @@
 
 当 composition 同时具有 `webServer` 与 `connection` 时，Web Host 注册只读 GET `/browser-use/state?sessionId=` 与 `/browser-use/frame?sessionId=&tabId=&browserGeneration=&stateRevision=&generation=&revision=`；headless 模式不注册 HTTP 路由。状态返回完整标签页状态，未知或关闭会话返回 204；画面请求必须同时匹配会话、活跃标签页、会话与页面 generation、状态与页面 revision，未知会话返回 404，过期或无截图返回 409。响应不缓存；服务先经过 composition 的 `connection.requestRejection`，再限制服务器和请求来源为环回地址及同源 Host/Origin。这是 Host 预览 API 的入站信任限制，与页面的出站联网无关；这里不提供页面写入 HTTP 路由。
 
+状态还携带 `operationActive`，模型占用且尚无浏览器资源时只返回 `{operationActive:true}`，其余无资源情况仍返回 204。人工截图坐标命令按会话串行，进入队列时验证截图身份与当前页面 URL，目标过期不会误点后来显示的页面。人工滚动等待页面经过两次渲染帧或有界兜底等待后再发布观测，页面在等待中关闭则失败且不发布旧画面。
+
+主 frame 自行导航（包括同 URL 文档重载）立即撤销旧截图并递增状态 revision，模型审批目标和人工坐标因此失效；输入前还核对最近观测的 `Document` 身份，以拒绝导航事件尚未送达的旧页面。普通同文档动画不触发整图比对。显式重新观测成功后恢复截图。人工控制的可选 `guard` 在会话操作队列内执行；拒绝远程工作区或已脱离的 Session 时不执行命令。
+
 真实 Chromium 环回验收为可选检查：安装匹配版本的 Chromium 后运行 `DSH_BROWSER_E2E=1 pnpm exec vitest run packages/browser/browser-playwright/tests/chromium-fixture.spec.ts`。普通 keyless 单测不下载浏览器，也不依赖图形桌面。
 
 ## Model Experience

@@ -1,5 +1,5 @@
 /** Host 状态跨网络边界的严格校验。 */
-import type { BrowserSessionState, BrowserTabId } from '@deepseek-ai/dsh-browser/types'
+import type { BrowserOperationOnlyState, BrowserSessionState, BrowserTabId } from '@deepseek-ai/dsh-browser/types'
 export type BrowserState = BrowserSessionState
 function object(value: unknown): Record<string, unknown> {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error('浏览器观测格式无效')
@@ -37,6 +37,7 @@ export function parseBrowserState(value: unknown): BrowserState {
   const data = object(value)
   const browserViewport = object(data.viewport)
   if (!text(data.browserGeneration, 128) || !/^[a-zA-Z0-9._~-]+$/.test(data.browserGeneration)
+    || typeof data.operationActive !== 'boolean'
     || !integer(data.stateRevision, 0) || !Array.isArray(data.tabs) || data.tabs.length > 100
     || !integer(browserViewport.width, 200, 1920) || !integer(browserViewport.height, 240, 1400)
     || browserViewport.width * browserViewport.height > 1_800_000
@@ -87,7 +88,17 @@ export function parseBrowserState(value: unknown): BrowserState {
   if (data.hasFrame && observation === null) throw new Error('浏览器画面缺少观测')
   return { browserGeneration: data.browserGeneration, stateRevision: data.stateRevision,
     viewport: { width: browserViewport.width, height: browserViewport.height },
-    tabs, activeTabId: data.activeTabId, observation, hasFrame: data.hasFrame }
+    tabs, activeTabId: data.activeTabId, observation, hasFrame: data.hasFrame,
+    operationActive: data.operationActive }
+}
+/** 无浏览器资源时仅接受 Host 明确公布的审批锁，不把畸形状态当作空白页。 */
+export function parseBrowserStateOrLock(value: unknown): BrowserState | BrowserOperationOnlyState {
+  const data = object(value)
+  if (!('browserGeneration' in data)) {
+    if (Object.keys(data).length === 1 && data.operationActive === true) return { operationActive: true }
+    throw new Error('浏览器操作状态无效')
+  }
+  return parseBrowserState(data)
 }
 /**
  * 地址栏支持带协议网址和域名，拒绝凭据与非 HTTP(S) 输入。
