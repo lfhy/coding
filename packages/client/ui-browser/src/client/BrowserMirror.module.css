@@ -10,24 +10,30 @@
   font-family: var(--dsw-font-family);
 }
 .root[hidden], .tabs[hidden] { display: none; }
-.tabs { display: flex; align-items: end; gap: 4px; min-width: 0; width: 100%; overflow-x: auto; white-space: nowrap; }
+.tabs { display: flex; align-items: center; gap: 4px; min-width: 0; width: 100%; overflow-x: auto; white-space: nowrap; }
+/* 标签条目是一整块：选中与悬停都画在这一层，关闭键才落在标签内部，形状沿用工作台文件标签。 */
 .tab {
   display: flex; align-items: center; flex: 0 1 184px; min-width: 88px; max-width: 220px;
-  height: 34px; border-radius: 8px 8px 0 0; color: var(--dsw-alias-label-secondary);
+  height: 34px; border-radius: 9px; color: var(--dsw-alias-label-secondary);
 }
-.tab[data-active='true'] { color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-layer-1); }
-.tabSelect { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; height: 100%; text-align: left; }
+.tab:not([data-active='true']):hover:has(> button:enabled) { background: var(--dsw-alias-interactive-bg-hover); }
+.tab[data-active='true'] { color: var(--dsw-alias-label-primary); background: var(--dsw-alias-interactive-bg-active); }
+.tabSelect {
+  display: flex; align-items: center; gap: 7px; min-width: 0; flex: 1; height: 100%;
+  padding: 0 4px 0 10px; text-align: left;
+}
 .tabGlyph { display: grid; place-items: center; flex: none; width: 16px; height: 16px; color: var(--dsw-alias-state-business-primary); }
 .tabGlyph svg { display: block; }
 .agentPointerFill { fill: var(--dsw-alias-bg-layer-1); }
-.tabName { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tabName { min-width: 0; overflow: hidden; font: var(--dsw-font-xs-13); text-overflow: ellipsis; }
 .tabClose { display: grid; place-items: center; flex: none; width: 26px; height: 26px; padding: 0; }
-.addTab { display: grid; place-items: center; flex: none; width: 32px; height: 32px; margin-bottom: 1px; padding: 0; }
+.addTab { display: grid; place-items: center; flex: none; width: 32px; height: 32px; padding: 0; }
 .tab button, .addTab, .history button, .address button, .message button {
   border: 0; border-radius: 8px; background: transparent; color: inherit;
   font: inherit; cursor: pointer;
 }
-.tab button:hover:not(:disabled), .addTab:hover:not(:disabled), .history button:hover:not(:disabled),
+/* 关闭键的高亮收在标签块内部，读作标签里的一枚按钮。 */
+.tabClose:hover:not(:disabled), .addTab:hover:not(:disabled), .history button:hover:not(:disabled),
 .address button:hover:not(:disabled), .message button:hover:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover);
 }
