@@ -1,0 +1,8 @@
+{
+  "steps": [
+    {
+      "op": "prompt",
+      "text": "Navigate to https://browser.example.invalid/full-access and report the observed page title."
+    }
+  ]
+}

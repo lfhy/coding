@@ -9,6 +9,7 @@
     { "path": "../../llm/llm" },
     { "path": "../../core/tools" },
     { "path": "../../interaction/user-approval" },
+    { "path": "../../sandbox/sandbox-policy" },
     { "path": "../../attachment/attachment" },
     { "path": "../../subprocess/subprocess" },
     { "path": "../../runtime-diagnostics/invariants" }

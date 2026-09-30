@@ -129,10 +129,73 @@ function call(agent: Agent, name: string, args: unknown) {
 }
 
 describe('browser_use in the shipped Web preset composition', () => {
+  it.each(['standard', 'code'] as const)('honors Full access in %s without approval and restores session-local restrictions', async (preset) => {
+    const selected = await agent(preset, root)
+    const isolated = await agent(preset, root)
+    const browser = ctx.browserUse as FixtureBrowser
+    browser.commands.mockClear()
+    const requested = vi.spyOn(ctx.approval, 'request')
+    const args = { action: 'navigate', url: 'https://example.test/full-access' }
+    const execute = (target: Agent) => preset === 'standard'
+      ? call(target, 'browser_use', args)
+      : call(target, 'run_code', {
+        code: `return await tools.browser_use(${JSON.stringify(args)})`,
+        description: 'Inspect the full-access fixture browser',
+      })
+    const audits = (target: Agent) => target.session.events.filter(event =>
+      event.type === 'approval/asked' || event.type === 'approval/decided')
+    let unlisten: (() => void) | undefined
+    try {
+      // 与权限选择器共用真实预设写入路径；不安装审批答复器。
+      ctx.permissionPresets.set(selected.agent.session, 'danger-full-access')
+      expect(ctx.permissionPresets.current(selected.agent.session.events)).toBe('danger-full-access')
+      const result = await execute(selected.agent)
+      const value = {
+        action: 'navigate', observation: { tabId: 'fixture-tab', url: args.url, snapshot: '[button-1] button Continue' }, image: null,
+      }
+      expect(result.isError, JSON.stringify(result.content)).toBe(false)
+      expect(result).toMatchObject({ isError: false, value: preset === 'standard' ? value : { result: value } })
+      expect(JSON.stringify(result.content)).toContain(args.url)
+      expect(JSON.stringify(result.content)).toContain('[button-1] button Continue')
+      expect(requested).not.toHaveBeenCalled()
+      expect(audits(selected.agent)).toEqual([])
+      expect(browser.commands).toHaveBeenCalledExactlyOnceWith(selected.agent.session.id, {
+        kind: 'navigate', url: args.url,
+      }, expect.any(AbortSignal), { kind: 'none' })
+
+      // Web 宿主保留等待客户端的审批通道；受限调用用拒绝答复结束，避免等待未连接的客户端。
+      unlisten = ctx.on('approval/request', () => Promise.resolve('rejected' as const), { prepend: true })
+      expect(ctx.permissionPresets.current(isolated.agent.session.events)).toBe('workspace-write')
+      const otherResult = await execute(isolated.agent)
+      expect(otherResult.isError).toBe(true)
+      expect(JSON.stringify(otherResult.content)).toContain('approval rejected')
+      expect(audits(isolated.agent).map(event => event.type)).toEqual(['approval/asked', 'approval/decided'])
+      expect(audits(selected.agent)).toEqual([])
+
+      ctx.permissionPresets.set(selected.agent.session, 'workspace-write')
+      expect(ctx.permissionPresets.current(selected.agent.session.events)).toBe('workspace-write')
+      const restricted = await execute(selected.agent)
+      expect(restricted.isError).toBe(true)
+      expect(JSON.stringify(restricted.content)).toContain('approval rejected')
+      expect(audits(selected.agent)).toMatchObject([
+        { type: 'approval/asked', data: { toolName: 'browser_use' } },
+        { type: 'approval/decided', data: { outcome: 'rejected' } },
+      ])
+      expect(requested).toHaveBeenCalledTimes(2)
+      expect(browser.commands).toHaveBeenCalledTimes(1)
+    } finally {
+      unlisten?.()
+      requested.mockRestore()
+      await isolated.dispose()
+      await selected.dispose()
+    }
+  }, 30_000)
+
   it('presents one native schema in standard and one SDK binding in Code Mode, and executes both', async () => {
     const native = await agent('standard', root)
     const coded = await agent('code', root)
     const browser = ctx.browserUse as FixtureBrowser
+    browser.commands.mockClear()
     const requested = vi.fn(() => Promise.resolve('allowed-once' as const))
     const unlisten = ctx.on('approval/request', requested, { prepend: true })
     try {
@@ -195,14 +258,22 @@ describe('browser_use in the shipped Web preset composition', () => {
       expect(nested.isError).toBe(true)
       expect(JSON.stringify(nested.content)).toContain('approval rejected')
 
-      const remoteResult = await call(remoteAgent.agent, 'browser_use', { action: 'snapshot' })
-      expect(remoteResult.isError).toBe(true)
-      expect(JSON.stringify(remoteResult.content)).toContain('remote workspace')
-      const remoteCodeResult = await call(remoteCodeAgent.agent, 'run_code', {
-        code: 'await tools.browser_use({ action: "snapshot" })', description: 'Remote browser request',
-      })
-      expect(remoteCodeResult.isError).toBe(true)
-      expect(JSON.stringify(remoteCodeResult.content)).toMatch(/remote|REMOTE/)
+      for (const permission of ['workspace-write', 'danger-full-access']) {
+        ctx.permissionPresets.set(remoteAgent.agent.session, permission)
+        ctx.permissionPresets.set(remoteCodeAgent.agent.session, permission)
+        const remoteResult = await call(remoteAgent.agent, 'browser_use', { action: 'snapshot' })
+        expect(remoteResult.isError).toBe(true)
+        expect(JSON.stringify(remoteResult.content)).toContain('remote workspace')
+        const remoteCodeResult = await call(remoteCodeAgent.agent, 'run_code', {
+          code: 'await tools.browser_use({ action: "snapshot" })', description: 'Remote browser request',
+        })
+        expect(remoteCodeResult.isError).toBe(true)
+        expect(JSON.stringify(remoteCodeResult.content)).toMatch(/remote|REMOTE/)
+        for (const target of [remoteAgent.agent, remoteCodeAgent.agent]) {
+          expect(target.session.events.filter(event =>
+            event.type === 'approval/asked' || event.type === 'approval/decided')).toEqual([])
+        }
+      }
       expect(requested).toHaveBeenCalledTimes(2)
       expect(browser.commands).not.toHaveBeenCalled()
     } finally {

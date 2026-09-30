@@ -9,7 +9,7 @@ kind: "package-reference"
 
 本包的 Client 半边占用 `workbench.browser` 内容和 `workbench.browser.tabs` 顶栏标签两个会话级 slot；`ui-open-in-app` 声明 slot 并提供 `{ shown, openBrowser, closeBrowser }`。每个挂载的 Session 每约 750ms 从同源 Host GET `/browser-use/state?sessionId=` 读取观测，状态存在时再按 generation/revision GET `/browser-use/frame` 读取 PNG。工作台切换视图不会卸载内容条目；首次读取已有浏览器状态只作为基线，不抢用户的选择。挂载后出现新的模型操作画面时调用 `openBrowser()`。
 
-选择浏览器视图时，如当前 Session 没有浏览器状态，会通过 `browser.control` 幂等建立一个 `about:blank` 标签；地址栏接受 HTTP(S) 网址或域名，回车导航，省略协议时补 `https://`。顶栏可新增、选取与关闭标签；工具栏按历史状态启用后退、前进和刷新。关闭最后一个标签返回功能菜单，并结束 Host 中该 Session 的浏览器上下文。命令进行时控件禁用，失败可重试；人工导航与模型 `browser_use` 共用该 Session 的浏览器状态，但人工命令不借用模型工具的一次性审批。
+选择浏览器视图时，如当前 Session 没有浏览器状态，会通过 `browser.control` 幂等建立一个 `about:blank` 标签；地址栏接受 HTTP(S) 网址或域名，回车导航，省略协议时补 `https://`。顶栏可新增、选取与关闭标签；工具栏按历史状态启用后退、前进和刷新。关闭最后一个标签返回功能菜单，并结束 Host 中该 Session 的浏览器上下文。命令进行时控件禁用，失败可重试；人工导航与模型 `browser_use` 共用该 Session 的浏览器状态，但人工命令不使用模型工具的审批，也不改变[工具的会话权限规则](../../browser/tool-browser/README.md)。
 
 浏览器视图可见且有活动标签时，Client 按画布可用尺寸发送有界 `set-viewport` 命令，使 Host 页面视口与右栏同步，再按返回的观测尺寸显示截图和虚拟指针；隐藏视图或关闭标签不会触发调尺寸。尺寸约束由 [`apiproxy`](../../host/apiproxy/README.md) 的人工 RPC 契约规定，画面仍只是 PNG 镜像，不能通过截图点击目标网页 DOM。
 

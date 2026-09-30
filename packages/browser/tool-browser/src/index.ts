@@ -1,4 +1,4 @@
-/** 面向模型的受审批浏览器操作；页面、安全策略及资源生命周期属于提供方。 @module @deepseek-ai/dsh-tool-browser */
+/** 面向模型的浏览器操作；调用会话的权限决定是否审批，页面、安全策略及资源生命周期属于提供方。 @module @deepseek-ai/dsh-tool-browser */
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { BrowserCommand, BrowserExpectedTarget, BrowserObservation } from '@deepseek-ai/dsh-browser'
@@ -8,6 +8,7 @@ import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import { remoteWorkspacePath } from '@deepseek-ai/dsh-subprocess'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-user-approval'
+import type {} from '@deepseek-ai/dsh-sandbox-policy'
 
 /** 插件名。 */
 export const name = 'tool-browser'
@@ -139,13 +140,14 @@ function approvalReason(command: BrowserCommand, currentUrl: string | undefined)
 }
 
 /**
- * 注册单一 browser_use 工具；每次调用都以调用者身份申请一次性审批。
+ * 注册单一 browser_use 工具；仅全权限且关闭审批提示的会话免于一次性审批，审批服务缺席仍拒绝。
  * @param ctx - 持有浏览器服务、附件存储和工具注册表的上下文。
+ * @returns 无返回值；工具注册随插件卸载撤销。
  */
 export function apply(ctx: Context): void {
   ctx.tools.register(defineTool({
     name: 'browser_use',
-    description: 'Use a session browser to navigate, inspect accessible elements, interact by observed ref and revision, scroll, capture a screenshot, or close. Each call asks for approval. No selectors or scripts.',
+    description: 'Use a session browser to navigate, inspect accessible elements, interact by observed ref and revision, scroll, capture a screenshot, or close. Calls require approval except in full-access mode with approval prompts disabled. No selectors or scripts.',
     parameters: {
       action: { type: 'string', enum: ['navigate', 'snapshot', 'click', 'fill', 'scroll', 'screenshot', 'close'], required: true, description: 'One browser operation.' },
       url: { type: 'string', description: 'URL for navigate.' },
@@ -214,14 +216,20 @@ export function apply(ctx: Context): void {
         expectedTarget = { kind: 'tab', browserGeneration: state.browserGeneration, stateRevision: state.stateRevision,
           tabId: active.id, generation: active.generation, url: active.url }
       }
-      const currentUrl = command.kind === 'navigate' || expectedTarget.kind === 'none' ? undefined : expectedTarget.url
-      const outcome = await approval.request({
-        agent, toolName: 'browser_use', callId: exec.callId,
-        reason: approvalReason(command, currentUrl),
-        signal: exec.signal,
-      })
+      const sandboxPolicy = ctx.get('sandboxPolicy')
+      const fullAccess = sandboxPolicy?.resolve({ session: agent.session }).mode === 'danger-full-access'
+        && (approval.overrideOf(agent.session) ?? approval.config.policy ?? 'ask') === 'never'
+      if (!fullAccess) {
+        const currentUrl = command.kind === 'navigate' || expectedTarget.kind === 'none' ? undefined : expectedTarget.url
+        const outcome = await approval.request({
+          agent, toolName: 'browser_use', callId: exec.callId,
+          reason: approvalReason(command, currentUrl),
+          signal: exec.signal,
+        })
+        exec.signal.throwIfAborted()
+        if (outcome !== 'allowed-once') throw new Error(`browser_use: approval ${outcome}`)
+      }
       exec.signal.throwIfAborted()
-      if (outcome !== 'allowed-once') throw new Error(`browser_use: approval ${outcome}`)
       const capture = await ctx.browserUse.execute(sessionId, command, exec.signal, expectedTarget)
       let image: BrowserUseValue['image'] = null
       if (command.kind === 'screenshot') {

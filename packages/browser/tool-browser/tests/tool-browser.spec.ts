@@ -8,9 +8,11 @@ import type { BrowserCapture, BrowserCommand, BrowserExpectedTarget, BrowserHuma
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
+import SandboxPolicyService, { setSandboxMode, type Config as SandboxPolicyConfig } from '@deepseek-ai/dsh-sandbox-policy'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
-import ApprovalService from '@deepseek-ai/dsh-user-approval'
+import ApprovalService, { setApprovalPolicy, type ApprovalPolicy } from '@deepseek-ai/dsh-user-approval'
 import * as ToolBrowser from '../src/index.ts'
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC', 'base64')
@@ -79,7 +81,7 @@ afterEach(async () => {
   await Promise.all(directories.splice(0).map(path => rm(path, { recursive: true, force: true })))
 })
 
-async function setup(approval = true) {
+async function setup(approval = true, policies: { mode?: SandboxPolicyConfig['mode']; policy?: ApprovalPolicy } = {}) {
   const home = await mkdtemp(join(tmpdir(), 'dsh-browser-tool-'))
   directories.push(home)
   const ctx = new Context()
@@ -87,13 +89,19 @@ async function setup(approval = true) {
   await ctx.plugin(ToolRuntime, { mode: 'native' })
   await ctx.plugin(FakeBrowser)
   await ctx.plugin(LocalAttachmentStore, { dshHome: home })
-  if (approval) await ctx.plugin(ApprovalService)
+  if (policies.mode !== undefined) await ctx.plugin(SandboxPolicyService, { mode: policies.mode })
+  if (approval) await ctx.plugin(ApprovalService, policies.policy === undefined ? {} : { policy: policies.policy })
   const fiber = await ctx.plugin(ToolBrowser)
+  const events = [{ type: 'turn/start' }, { type: 'user/message' }] as unknown as SessionEvent[]
   const agent = {
     session: {
       id: SessionId('browser-test'), header: { cwd: home },
-      events: [{ type: 'turn/start' }, { type: 'user/message' }],
-      append: vi.fn(() => ({})),
+      events,
+      append: vi.fn((type: string, data: unknown) => {
+        const event = { type, data } as SessionEvent
+        events.push(event)
+        return event
+      }),
     },
   }
   const call = (args: unknown, signal = new AbortController().signal) => ctx.tools.execute({
@@ -107,6 +115,204 @@ function text(result: { content: readonly { type: string; text?: string }[] }): 
 }
 
 describe('browser_use', () => {
+  it.each([
+    { action: 'navigate', url: 'https://example.com' },
+    { action: 'snapshot' },
+    { action: 'click', ref: 'e1', revision: 1 },
+    { action: 'fill', ref: 'e1', revision: 1, text: 'hello' },
+    { action: 'scroll', direction: 'down', pixels: 10 },
+    { action: 'screenshot' },
+    { action: 'close' },
+  ])('executes $action in full access without approval requests or audits', async (args) => {
+    const { ctx, call, agent } = await setup(true, { mode: 'danger-full-access', policy: 'never' })
+    const browser = ctx.browserUse as FakeBrowser
+    browser.currentState = activeState()
+    const request = vi.spyOn(ctx.approval, 'request')
+    const answerer = vi.fn(() => Promise.resolve('allowed-once' as const))
+    ctx.on('approval/request', answerer)
+    const saveImage = vi.spyOn(ctx.attachments, 'saveImage')
+    const result = await call(args)
+    expect(result.isError).toBe(false)
+    expect(browser.commands).toHaveBeenCalledTimes(1)
+    expect(request).not.toHaveBeenCalled()
+    expect(answerer).not.toHaveBeenCalled()
+    expect(agent.session.append).not.toHaveBeenCalled()
+    if (args.action === 'screenshot') {
+      expect(saveImage).toHaveBeenCalledTimes(1)
+      const image = (result.value as unknown as ToolBrowser.BrowserUseValue).image
+      expect(image).toMatchObject({ mediaType: 'image/png', bytes: PNG.length, width: 1, height: 1 })
+      expect(result.content.map(block => block.type)).toEqual(['text', 'image'])
+      const stored = await (saveImage.mock.results[0]!.value as ReturnType<typeof ctx.attachments.saveImage>)
+      expect((await ctx.attachments.readImage(stored)).data).toEqual(new Uint8Array(PNG))
+    } else {
+      expect(saveImage).not.toHaveBeenCalled()
+    }
+  })
+
+  for (const source of ['defaults', 'overrides'] as const) {
+    it.each([
+      ['read-only', 'ask'], ['read-only', 'never'],
+      ['workspace-write', 'ask'], ['workspace-write', 'never'],
+      ['danger-full-access', 'ask'], ['danger-full-access', 'never'],
+    ] as const)(`resolves %s + %s from session ${source}`, async (mode, policy) => {
+      const defaults = source === 'defaults' ? { mode, policy } : {
+        mode: mode === 'danger-full-access' ? 'read-only' as const : 'danger-full-access' as const,
+        policy: policy === 'never' ? 'ask' as const : 'never' as const,
+      }
+      const { ctx, call, agent } = await setup(true, defaults)
+      if (source === 'overrides') {
+        setSandboxMode(agent.session as unknown as Session, mode)
+        setApprovalPolicy(agent.session as unknown as Session, policy)
+        agent.session.append.mockClear()
+      }
+      const browser = ctx.browserUse as FakeBrowser
+      browser.currentState = activeState()
+      const request = vi.spyOn(ctx.approval, 'request')
+      const answerer = vi.fn(() => Promise.resolve('allowed-once' as const))
+      ctx.on('approval/request', answerer)
+      const result = await call({ action: 'snapshot' })
+      const bypass = mode === 'danger-full-access' && policy === 'never'
+      const allowed = bypass || policy === 'ask'
+      expect(result.isError).toBe(!allowed)
+      expect(browser.commands).toHaveBeenCalledTimes(allowed ? 1 : 0)
+      expect(request).toHaveBeenCalledTimes(bypass ? 0 : 1)
+      expect(answerer).toHaveBeenCalledTimes(policy === 'ask' ? 1 : 0)
+      expect(agent.session.append.mock.calls.map(([type]) => type)).toEqual(
+        bypass ? [] : ['approval/asked', 'approval/decided'],
+      )
+      if (!allowed) expect(text(result)).toContain('approval rejected')
+    })
+  }
+
+  it('still requires an answerer with danger-full-access + ask', async () => {
+    const { ctx, call } = await setup(true, { mode: 'danger-full-access', policy: 'ask' })
+    const result = await call({ action: 'navigate', url: 'https://example.com' })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('approval unavailable')
+    expect((ctx.browserUse as FakeBrowser).commands).not.toHaveBeenCalled()
+  })
+
+  it('defaults an absent optional approval policy to ask under danger-full-access', async () => {
+    const { ctx, call } = await setup(true, { mode: 'danger-full-access', policy: 'never' })
+    ctx.approval.config = {}
+    const answerer = vi.fn(() => Promise.resolve('rejected' as const))
+    ctx.on('approval/request', answerer)
+    const result = await call({ action: 'navigate', url: 'https://example.com' })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('approval rejected')
+    expect(answerer).toHaveBeenCalledTimes(1)
+    expect((ctx.browserUse as FakeBrowser).commands).not.toHaveBeenCalled()
+  })
+
+  it.each(['ask', 'never'] as const)('retains legacy approval behavior without sandboxPolicy under %s', async (policy) => {
+    const { ctx, call } = await setup(true, { policy })
+    expect(ctx.get('sandboxPolicy')).toBeUndefined()
+    const request = vi.spyOn(ctx.approval, 'request')
+    const answerer = vi.fn(() => Promise.resolve('allowed-once' as const))
+    ctx.on('approval/request', answerer)
+    const result = await call({ action: 'navigate', url: 'https://example.com' })
+    expect(result.isError).toBe(policy === 'never')
+    expect(request).toHaveBeenCalledTimes(1)
+    expect(answerer).toHaveBeenCalledTimes(policy === 'ask' ? 1 : 0)
+    expect((ctx.browserUse as FakeBrowser).commands).toHaveBeenCalledTimes(policy === 'ask' ? 1 : 0)
+  })
+
+  it('fails closed without approval service even under full access', async () => {
+    const { ctx, call } = await setup(false, { mode: 'danger-full-access' })
+    const result = await call({ action: 'navigate', url: 'https://example.com' })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('approval service is unavailable')
+    expect((ctx.browserUse as FakeBrowser).commands).not.toHaveBeenCalled()
+  })
+
+  it('rejects unavailable active tabs before approval or browser execution', async () => {
+    const { ctx, call } = await setup()
+    const browser = ctx.browserUse as FakeBrowser
+    browser.currentState = { ...activeState(), activeTabId: 'missing-tab' as BrowserTabId }
+    const request = vi.spyOn(ctx.approval, 'request')
+    const result = await call({ action: 'snapshot' })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('active tab is unavailable')
+    expect(request).not.toHaveBeenCalled()
+    expect(browser.commands).not.toHaveBeenCalled()
+  })
+
+  it('requires a calling agent even under full access', async () => {
+    const { ctx } = await setup(true, { mode: 'danger-full-access', policy: 'never' })
+    const result = await ctx.tools.execute({ name: 'browser_use', callId: CallId('agentless-browser'),
+      arguments: { action: 'navigate', url: 'https://example.com' }, signal: new AbortController().signal })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('calling agent is required')
+    expect((ctx.browserUse as FakeBrowser).commands).not.toHaveBeenCalled()
+  })
+
+  it('uses the live policy pair on every call, not a stale preset selection', async () => {
+    const { ctx, call, agent } = await setup(true, { mode: 'read-only', policy: 'ask' })
+    const session = agent.session as unknown as Session
+    agent.session.append('permission/preset', { preset: 'danger-full-access' })
+    const browser = ctx.browserUse as FakeBrowser
+    browser.currentState = activeState()
+    const request = vi.spyOn(ctx.approval, 'request')
+    const answerer = vi.fn(() => Promise.resolve('rejected' as const))
+    ctx.on('approval/request', answerer)
+    const snapshot = () => call({ action: 'snapshot' })
+    expect((await snapshot()).isError).toBe(true)
+    setSandboxMode(session, 'danger-full-access')
+    setApprovalPolicy(session, 'never')
+    expect((await snapshot()).isError).toBe(false)
+    setApprovalPolicy(session, 'ask')
+    expect((await snapshot()).isError).toBe(true)
+    setApprovalPolicy(session, 'never')
+    setSandboxMode(session, 'workspace-write')
+    expect((await snapshot()).isError).toBe(true)
+    setSandboxMode(session, 'danger-full-access')
+    expect((await snapshot()).isError).toBe(false)
+    expect(request).toHaveBeenCalledTimes(3)
+    expect(answerer).toHaveBeenCalledTimes(2)
+    expect(browser.commands).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps both first-navigation and active-tab target bindings in full access', async () => {
+    const { ctx, call, agent } = await setup(true, { mode: 'danger-full-access', policy: 'never' })
+    const browser = ctx.browserUse as FakeBrowser
+    const execute = vi.spyOn(browser, 'execute')
+    const resolve = vi.spyOn(ctx.sandboxPolicy, 'resolve')
+    expect((await call({ action: 'navigate', url: 'https://example.com' })).isError).toBe(false)
+    expect(execute.mock.calls[0]?.[3]).toEqual({ kind: 'none' })
+    browser.currentState = activeState()
+    expect((await call({ action: 'snapshot' })).isError).toBe(false)
+    expect(execute.mock.calls[1]?.[3]).toEqual({ kind: 'tab', browserGeneration: 'browser-1', stateRevision: 1,
+      tabId: observation.tabId, generation: 'g1', url: 'https://example.com' })
+    expect(resolve).toHaveBeenCalledWith({ session: agent.session })
+
+    const original = ctx.sandboxPolicy.resolve.bind(ctx.sandboxPolicy)
+    resolve.mockImplementationOnce((request) => {
+      browser.currentState = activeState({ ...observation, generation: 'replacement' })
+      return original(request)
+    })
+    const changed = await call({ action: 'snapshot' })
+    expect(changed.isError).toBe(true)
+    expect(text(changed)).toContain('browser target changed')
+    expect(browser.commands).toHaveBeenCalledTimes(2)
+  })
+
+  it('checks cancellation immediately before provider execution in full access', async () => {
+    const { ctx, call } = await setup(true, { mode: 'danger-full-access', policy: 'never' })
+    const browser = ctx.browserUse as FakeBrowser
+    browser.currentState = activeState()
+    const controller = new AbortController()
+    const original = ctx.sandboxPolicy.resolve.bind(ctx.sandboxPolicy)
+    vi.spyOn(ctx.sandboxPolicy, 'resolve').mockImplementationOnce((request) => {
+      controller.abort(new Error('cancelled before browser execution'))
+      return original(request)
+    })
+    const execute = vi.spyOn(browser, 'execute')
+    const result = await call({ action: 'snapshot' }, controller.signal)
+    expect(result.isError).toBe(true)
+    expect(execute).not.toHaveBeenCalled()
+    expect(browser.commands).not.toHaveBeenCalled()
+  })
+
   it('shows a bounded target origin rather than URL secrets for each navigation approval', async () => {
     const { ctx, call, agent } = await setup()
     const browser = ctx.browserUse as FakeBrowser
@@ -157,6 +363,9 @@ describe('browser_use', () => {
     browser.currentState = activeState({ ...observation, url: 'about:blank' }, null)
     await call({ action: 'snapshot' })
     expect(asked.mock.calls.at(-1)?.[0].reason).toContain('current origin: unknown')
+    browser.currentState = activeState({ ...observation, url: 'https://example.com/' + 'x'.repeat(2048) }, null)
+    await call({ action: 'snapshot' })
+    expect(asked.mock.calls.at(-1)?.[0].reason).toContain('current origin: unknown')
   })
 
   it('denies missing approval and rejected decisions before any browser side effect', async () => {
@@ -189,6 +398,38 @@ describe('browser_use', () => {
     const image = (result.value as unknown as ToolBrowser.BrowserUseValue).image
     expect(result.content[1]).toMatchObject({ attachment: { attachmentId: image?.attachmentId } })
     expect((ctx.browserUse as FakeBrowser).state).toHaveBeenCalled()
+  })
+
+  it('rejects missing screenshot bytes without saving an attachment', async () => {
+    const { ctx, call } = await setup(true, { mode: 'danger-full-access', policy: 'never' })
+    const browser = ctx.browserUse as FakeBrowser
+    browser.currentState = activeState()
+    browser.commands.mockResolvedValueOnce({ observation, png: null })
+    const saveImage = vi.spyOn(ctx.attachments, 'saveImage')
+    const result = await call({ action: 'screenshot' })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('screenshot produced no PNG')
+    expect(saveImage).not.toHaveBeenCalled()
+  })
+
+  it('renders unnamed persisted screenshots and null-image canonical values', async () => {
+    const { ctx, call } = await setup(true, { mode: 'danger-full-access', policy: 'never' })
+    const browser = ctx.browserUse as FakeBrowser
+    browser.currentState = activeState()
+    const saveImage = ctx.attachments.saveImage.bind(ctx.attachments)
+    vi.spyOn(ctx.attachments, 'saveImage').mockImplementationOnce(async (input) => {
+      const { name: _name, ...ref } = await saveImage(input)
+      return ref
+    })
+    const result = await call({ action: 'screenshot' })
+    expect(result.isError).toBe(false)
+    const value = result.value as unknown as ToolBrowser.BrowserUseValue
+    expect(value.image).not.toHaveProperty('name')
+    expect(result.content[1]).toMatchObject({ type: 'image', attachment: { attachmentId: value.image?.attachmentId } })
+    expect(result.content[1]).not.toHaveProperty('attachment.name')
+    const canonical = { action: 'screenshot', observation, image: null }
+    const rendered = ctx.tools.get('browser_use')!.output.render({ action: 'screenshot' }, canonical)
+    expect(rendered).toEqual([{ type: 'text', text: JSON.stringify(canonical) }])
   })
 
   it('binds standard and PTC results to the active tab observed before approval', async () => {
@@ -343,7 +584,9 @@ describe('browser_use', () => {
     ctx.on('approval/request', asked)
     for (const args of [
       { action: 'navigate', url: '' }, { action: 'snapshot', url: 'https://example.com' },
+      { action: 'navigate', url: 'https://example.com/' + 'x'.repeat(2048) },
       { action: 'click', ref: '', revision: 1 }, { action: 'click', ref: 'e1', revision: 0 },
+      { action: 'click', ref: 'x'.repeat(257), revision: 1 },
       { action: 'fill', ref: 'e1', revision: 1, text: 'x'.repeat(2001) },
       { action: 'scroll', direction: 'up', pixels: 2001 },
     ]) expect((await call(args)).isError).toBe(true)
@@ -351,8 +594,8 @@ describe('browser_use', () => {
     expect((ctx.browserUse as FakeBrowser).commands).not.toHaveBeenCalled()
   })
 
-  it('blocks a remote marker before approval without local fallback', async () => {
-    const { ctx, call, agent } = await setup()
+  it.each([false, true])('blocks a remote marker without local fallback (full access: %s)', async (fullAccess) => {
+    const { ctx, call, agent } = await setup(true, fullAccess ? { mode: 'danger-full-access', policy: 'never' } : {})
     await writeFile(join(agent.session.header.cwd, '.coding-remote-workspace.json'), JSON.stringify({
       version: 3, remoteRoot: '/srv/project', connectionId: 'test', generation: 1, mode: 'basic',
     }))
@@ -365,8 +608,8 @@ describe('browser_use', () => {
     expect((ctx.browserUse as FakeBrowser).commands).not.toHaveBeenCalled()
   })
 
-  it('does not execute when cancelled, and withdraws the tool on plugin disposal', async () => {
-    const { ctx, call, fiber } = await setup()
+  it.each([false, true])('does not execute when cancelled and withdraws the tool on disposal (full access: %s)', async (fullAccess) => {
+    const { ctx, call, fiber } = await setup(true, fullAccess ? { mode: 'danger-full-access', policy: 'never' } : {})
     const controller = new AbortController()
     controller.abort(new Error('cancelled'))
     expect((await call({ action: 'snapshot' }, controller.signal)).isError).toBe(true)

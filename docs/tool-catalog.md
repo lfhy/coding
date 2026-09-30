@@ -123,7 +123,7 @@ ask_user_question pauses the tool call until the active UI provider returns a hu
 
 ### `browser_use`
 
-Use a session browser to navigate, inspect accessible elements, interact by observed ref and revision, scroll, capture a screenshot, or close. Each call asks for approval. No selectors or scripts.
+Use a session browser to navigate, inspect accessible elements, interact by observed ref and revision, scroll, capture a screenshot, or close. Calls require approval except in full-access mode with approval prompts disabled. No selectors or scripts.
 
 ```json
 {

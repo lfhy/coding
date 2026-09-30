@@ -414,8 +414,8 @@
       config:
         apiKeyEnv: DEEPSEEK_API_KEY
 
-    # The browser is session-owned and launches only on the first approved action.
-    # HTTP preview routes appear only when the Web Host composes its transport.
+    # 浏览器归会话所有，在模型导航获准或人工创建标签页时按需启动；完全访问预设无需逐次审批。
+    # HTTP 预览路由仅在 Web Host 挂载传输服务时注册。
     - id: browser-playwright
       name: '@deepseek-ai/dsh-browser-playwright'
 

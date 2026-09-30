@@ -1,12 +1,12 @@
 # 浏览器使用
 
-浏览器使用能力由 [`@deepseek-ai/dsh-browser`](../../packages/browser/browser/README.md) 定义 `ctx.browserUse`，由 [Playwright 提供方](../../packages/browser/browser-playwright/README.md)实现，并由 [`browser_use` 工具](../../packages/browser/tool-browser/README.md)消费。服务按 `SessionId` 隔离浏览器上下文与标签页；工具负责一次性审批和模型结果，提供方负责实际网络访问限制、页面资源及清理。工作台读取 Host 的标签页状态与画面。
+浏览器使用能力由 [`@deepseek-ai/dsh-browser`](../../packages/browser/browser/README.md) 定义 `ctx.browserUse`，由 [Playwright 提供方](../../packages/browser/browser-playwright/README.md)实现，并由 [`browser_use` 工具](../../packages/browser/tool-browser/README.md)消费。服务按 `SessionId` 隔离浏览器上下文与标签页；工具负责调用会话的权限判断、所需审批和模型结果，完全访问的免逐次审批条件见[工具 README](../../packages/browser/tool-browser/README.md)。提供方负责实际网络访问限制、页面资源及清理。工作台读取 Host 的标签页状态与画面。
 
 以下跨包类型声明来自 [`packages/browser/browser/src/types.ts`](../../packages/browser/browser/src/types.ts)。服务方法的完整签名与 JSDoc 由下方 Cordis API 区域生成。
 
 ## 命令与引用
 
-`BrowserCommand` 和 `BrowserHumanCommand` 是封闭的判别联合。`click` 与 `fill` 使用最近观测中的不透明元素 `ref` 和 `revision`，而不是选择器或脚本；提供方必须拒绝跨标签页及过期引用。`close` 释放会话浏览器资源。人工命令在同一会话中建立、选择、关闭标签页或导航活跃标签页，标签页 id 关闭后不可复用。`set-viewport` 调整会话所有页面的视口，状态暴露当前宽高；尺寸改变使旧截图、元素引用和审批失效。视口边界由[提供方](../../packages/browser/browser-playwright/README.md)校验。`browserGeneration` 标识会话浏览器资源，`generation` 标识标签页的页面代际；状态每次发布后递增 `stateRevision`，因此切离又切回也不能沿用旧审批。审批前采样的 `expectedTarget` 区分无会话和已有标签页，并在执行队列中复核；空白标签页也暴露 generation。
+`BrowserCommand` 和 `BrowserHumanCommand` 是封闭的判别联合。`click` 与 `fill` 使用最近观测中的不透明元素 `ref` 和 `revision`，而不是选择器或脚本；提供方必须拒绝跨标签页及过期引用。`close` 释放会话浏览器资源。人工命令在同一会话中建立、选择、关闭标签页或导航活跃标签页，标签页 id 关闭后不可复用。`set-viewport` 调整会话所有页面的视口，状态暴露当前宽高；尺寸改变使旧截图、元素引用和审批失效。视口边界由[提供方](../../packages/browser/browser-playwright/README.md)校验。`browserGeneration` 标识会话浏览器资源，`generation` 标识标签页的页面代际；状态每次发布后递增 `stateRevision`，因此切离又切回也不能沿用旧审批。调用前采样的 `expectedTarget` 区分无会话和已有标签页，并在执行队列中复核，无论该调用是否需要审批；空白标签页也暴露 generation。
 
 ```ts type-equiv
 /** 一次会话浏览器操作。元素引用只在产生它的标签页与观测修订版中有效。 */
