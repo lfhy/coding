@@ -788,11 +788,11 @@ describe('sandbox escalation API (write/edit)', () => {
     }
   }
 
-  async function setupConfining(opts: { approval?: boolean } = {}) {
+  async function setupConfining(opts: { approval?: boolean; mode?: SandboxMode } = {}) {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
-    await ctx.plugin(SandboxPolicyService, { mode: 'workspace-write' })
+    await ctx.plugin(SandboxPolicyService, { mode: opts.mode ?? 'workspace-write' })
     await ctx.plugin(SandboxingFakeFs)
     await ctx.plugin(FsPolicy)
     if (opts.approval === true) await ctx.plugin(ApprovalService)
@@ -903,6 +903,44 @@ describe('sandbox escalation API (write/edit)', () => {
     expect(result.isError).toBe(false)
     expect(fs.stamped).toEqual([{ mode: 'danger-full-access', workspaceRoot: resolve('/session-project') }])
     expect(prompted).not.toHaveBeenCalled()
+  })
+
+  it.each(['write', 'edit'] as const)('%s accepts a redundant full-access request without a reason', async (name) => {
+    const { ctx, fs } = await setupConfining({ mode: 'danger-full-access' })
+    const agent = escalationAgent()
+    const args = name === 'write'
+      ? { file_path: 'a.txt', content: 'new' }
+      : { file_path: 'a.txt', old_string: 'x', new_string: 'xx' }
+    if (name === 'edit') {
+      fs.files.set('key:a.txt', 'x')
+      await call(ctx, 'read', { file_path: 'a.txt' }, agent)
+    }
+    for (const justification of ['', ' ', undefined]) {
+      const result = await call(ctx, name, {
+        ...args,
+        sandbox_permissions: 'danger-full-access',
+        ...justification === undefined ? {} : { justification },
+      }, agent)
+      expect(result.isError).toBe(false)
+    }
+    expect(fs.stamped.map(policy => policy?.mode)).toEqual([
+      'danger-full-access', 'danger-full-access', 'danger-full-access',
+    ])
+  })
+
+  it.each(['write', 'edit'] as const)('%s rejects a real escalation with an empty reason under a restricted session', async (name) => {
+    const { ctx, fs } = await setupConfining({ mode: 'danger-full-access' })
+    const args = name === 'write'
+      ? { file_path: 'a.txt', content: 'new' }
+      : { file_path: 'a.txt', old_string: 'old', new_string: 'new' }
+    const agent = escalationAgent([{ type: 'sandbox/mode', data: { mode: 'read-only' } }])
+    const result = await call(ctx, name, {
+      ...args,
+      sandbox_permissions: 'danger-full-access',
+      justification: '',
+    }, agent)
+    expect(text(result)).toContain('invalid justification: expected a non-empty sentence')
+    expect(fs.stamped).toEqual([])
   })
 
   it('a rejected escalation fails closed with its own text and never mutates', async () => {

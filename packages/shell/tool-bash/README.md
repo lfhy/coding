@@ -19,8 +19,8 @@
 | `timeoutMs` | number | 以毫秒为单位覆盖超时时间。执行器会应用其配置的默认值和上限。 |
 | `workdir` | string | 本次调用的工作目录。默认为调用方 agent（智能体）会话 cwd 的文件系统标识（`session.header.cwd`），使每个会话都在自己的工作区中运行；相对 `workdir` 也以同一标识为基准解析。在 Remote-SSH marker Workspace 中，解析出的本地路径必须仍位于同一 marker 下；subprocess 提供方随后会在该 target 上运行前台或后台工作。 |
 | `run_in_background` | boolean | 立即返回 job id；不应用超时。 |
-| `sandbox_permissions` | string enum | 仅当已挂载的执行器启用沙箱时才会公开（`ctx.shell.sandboxMode` 报告一个具有限制作用的默认值）：被拒命令所需的更宽模式，取自封闭的目标词汇 `workspace-write`/`danger-full-access`（有效模式按会话确定，因此绝不能按执行器默认值缩减）。执行时，已经是本次调用生效模式的目标会作为幂等请求跳过审批；严格更宽的目标会请求审批，更窄或非法的目标则在提示任何人前失败。 |
-| `justification` | string | 必须与 `sandbox_permissions` 一同提供（缺少任一项都会产生验证错误）：用一句话向用户解释此命令为何需要这项更宽权限。 |
+| `sandbox_permissions` | string enum | 仅当已挂载的执行器启用沙箱时才会公开（`ctx.shell.sandboxMode` 已定义）：被拒命令所需的更宽模式，取自封闭的目标词汇 `workspace-write`/`danger-full-access`（有效模式按会话确定，因此不能按执行器默认值缩减）。已生效的同档目标无需审批；严格更宽的目标会请求审批，更窄或非法的目标则在提示任何人前失败。当前已是 `danger-full-access` 时无需提交此参数。 |
+| `justification` | string | 提权时必须与 `sandbox_permissions` 一同提供：用一句话向用户解释此命令为何需要更宽权限。仅当本次调用已处于 `danger-full-access` 且重复指定同档目标时，缺省或空理由可随多余的同档请求幂等执行。 |
 
 执行前，`command`、`workdir` 和 `timeoutMs` 会通过 `ctx.shell.resolve()` 依据执行器配置默认值完成解析，因此 Service Definition（`ShellExecSpec`）收到显式的 `workdir`/`timeoutMs` 值。工具层会根据调用方 agent 的 `session.header.cwd` 应用工作目录默认值，然后才调用 `resolve()`：由于 N 个会话共享一个执行器，逐会话 cwd 必须来自 `exec.agent`；只有无法取得会话 cwd 时，执行器才回退到自身配置／`process.cwd()`。存在沙箱策略时，工具会复用已经规范化的 `workspaceRoot` 作为工作目录基准，防止限制逻辑与进程启动过程对同一个会话路径拼写产生不同解析结果。
 

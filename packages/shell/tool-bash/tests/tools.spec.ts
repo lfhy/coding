@@ -184,14 +184,14 @@ class CountingStartExecutor extends ShellExecutor {
   }
 }
 
-async function setupSandboxed(withApproval = false) {
+async function setupSandboxed(withApproval = false, mode: 'read-only' | 'danger-full-access' = 'read-only') {
   const ctx = new Context()
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(LocalJobRegistry)
   await ctx.plugin(ToolTasks)
-  await ctx.plugin(SandboxPolicyService, {})
+  await ctx.plugin(SandboxPolicyService, { mode })
   await ctx.plugin(RecordingSandboxExecutor)
   if (withApproval) await ctx.plugin(ApprovalService)
   await ctx.plugin(BashEnvPlugin)
@@ -703,6 +703,30 @@ describe('sandbox escalation through the generic task producer', () => {
     expect(result.isError).toBe(false)
     expect(bash.modes).toEqual(['danger-full-access'])
     expect(prompted).not.toHaveBeenCalled()
+  })
+
+  it('accepts a redundant full-access request without a reason, but rejects a real escalation without one', async () => {
+    const { ctx, bash } = await setupSandboxed(false, 'danger-full-access')
+    for (const justification of ['', ' ', undefined]) {
+      const result = await call(ctx, 'bash', {
+        command: 'true',
+        description: 'test command',
+        sandbox_permissions: 'danger-full-access',
+        ...justification === undefined ? {} : { justification },
+      })
+      expect(result.isError).toBe(false)
+    }
+    expect(bash.modes).toEqual(['danger-full-access', 'danger-full-access', 'danger-full-access'])
+
+    const restricted = sandboxAgent('read-only')
+    const result = await call(ctx, 'bash', {
+      command: 'true',
+      description: 'test command',
+      sandbox_permissions: 'danger-full-access',
+      justification: '',
+    }, restricted)
+    expect(text(result)).toContain('invalid justification: expected a non-empty sentence')
+    expect(bash.modes).toHaveLength(3)
   })
 
   it('fails closed when approval cannot be routed', async () => {

@@ -39,6 +39,16 @@ describe('validateEscalationArgs', () => {
     expect(() => { validateEscalationArgs(undefined, 'orphan reason') }).toThrow(/only valid together with sandbox_permissions/)
     expect(() => { validateEscalationArgs('workspace-write', '   ') }).toThrow(/non-empty sentence/)
   })
+
+  it('only exempts redundant full access from the reason requirement', () => {
+    for (const justification of ['', ' ', undefined]) {
+      expect(() => { validateEscalationArgs('danger-full-access', justification, 'danger-full-access') }).not.toThrow()
+      expect(() => { validateEscalationArgs('danger-full-access', justification, 'read-only') }).toThrow()
+      expect(() => { validateEscalationArgs('danger-full-access', justification, 'workspace-write') }).toThrow()
+    }
+    expect(() => { validateEscalationArgs('workspace-write', '', 'workspace-write') }).toThrow(/non-empty sentence/)
+    expect(() => { validateEscalationArgs(undefined, ' ', 'danger-full-access') }).toThrow(/only valid together/)
+  })
 })
 
 describe('the model-facing markers', () => {

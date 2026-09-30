@@ -34,14 +34,19 @@ export const WIDER_MODES: Record<string, readonly SandboxMode[]> = {
 export const ESCALATION_TARGETS: readonly SandboxMode[] = ['workspace-write', 'danger-full-access']
 
 /**
- * Validate the escalation argument pairing a tool schema cannot express:
- * `sandbox_permissions` and `justification` travel together — an approval
- * prompt without a reason, or a reason driving nothing, is a malformed ask —
- * and the justification must be a non-empty sentence.
- * @param sandboxPermissions - the raw `sandbox_permissions` argument, if given.
- * @param justification - the raw `justification` argument, if given.
+ * 校验工具 schema 无法表达的升权参数配对。只有本次调用已在
+ * `danger-full-access` 下、目标也相同时，空理由才代表无需审批的幂等请求；
+ * 其他请求缺少理由或仅提供理由均在执行前失败。
+ * @param sandboxPermissions - 原始 `sandbox_permissions` 参数。
+ * @param justification - 原始 `justification` 参数。
+ * @param effectiveMode - 本次调用已经生效的沙箱模式；未提供时严格校验配对。
  */
-export function validateEscalationArgs(sandboxPermissions: string | undefined, justification: string | undefined): void {
+export function validateEscalationArgs(
+  sandboxPermissions: string | undefined,
+  justification: string | undefined,
+  effectiveMode?: SandboxMode,
+): void {
+  if (sandboxPermissions === 'danger-full-access' && effectiveMode === 'danger-full-access') return
   if (sandboxPermissions !== undefined && justification === undefined) {
     throw new Error('invalid escalation: sandbox_permissions requires a justification')
   }

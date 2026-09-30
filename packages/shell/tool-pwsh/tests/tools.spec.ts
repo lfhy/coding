@@ -202,7 +202,7 @@ class ConfiningFakeBash extends ShellExecutor {
 }
 
 /** Sandboxed composition: the shared policy service + a confining executor + the pwsh tool (+ optional approval). */
-async function setupSandboxed(withApproval = false) {
+async function setupSandboxed(withApproval = false, mode: 'read-only' | 'danger-full-access' = 'read-only') {
   const ctx = new Context()
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
@@ -210,7 +210,7 @@ async function setupSandboxed(withApproval = false) {
   await ctx.plugin(LocalJobRegistry)
   await ctx.plugin(ToolTasks)
   await ctx.plugin(BashEnvPlugin)
-  await ctx.plugin(SandboxPolicyService, {})
+  await ctx.plugin(SandboxPolicyService, { mode })
   await ctx.plugin(ConfiningFakeBash)
   if (withApproval) await ctx.plugin(ApprovalService)
   await ctx.plugin(ToolPwsh)
@@ -588,7 +588,7 @@ describe('sandbox escalation through ctx.approval', () => {
     const { ctx } = await setupSandboxed(true)
     const prompted = vi.fn()
     ctx.on('approval/request', () => { prompted(); return Promise.resolve<ApprovalOutcome>('allowed-once') })
-    const result = await call(ctx, 'pwsh', { ...escalate, sandbox_permissions: 'workspace-write' }, sandboxAgent('workspace-write'))
+    const result = await call(ctx, 'pwsh', { ...escalate, sandbox_permissions: 'workspace-write' }, sandboxAgent('danger-full-access'))
     expect(text(result)).toContain('not strictly wider')
     expect(prompted).not.toHaveBeenCalled()
 
@@ -598,6 +598,29 @@ describe('sandbox escalation through ctx.approval', () => {
       data: { mode: 'unknown-mode' },
     })
     expect(text(await call(ctx, 'pwsh', escalate, malformed))).toContain('not strictly wider')
+  })
+
+  it('accepts a redundant full-access request without a reason, but rejects a real escalation without one', async () => {
+    const { ctx, bash } = await setupSandboxed(false, 'danger-full-access')
+    for (const justification of ['', ' ', undefined]) {
+      const result = await call(ctx, 'pwsh', {
+        command: 'Write-Output ok',
+        description: 'test command',
+        sandbox_permissions: 'danger-full-access',
+        ...justification === undefined ? {} : { justification },
+      })
+      expect(result.isError).toBe(false)
+    }
+    expect(bash.modes).toEqual(['danger-full-access', 'danger-full-access', 'danger-full-access'])
+
+    const result = await call(ctx, 'pwsh', {
+      command: 'Write-Output ok',
+      description: 'test command',
+      sandbox_permissions: 'danger-full-access',
+      justification: '',
+    }, sandboxAgent('read-only'))
+    expect(text(result)).toContain('invalid justification: expected a non-empty sentence')
+    expect(bash.modes).toHaveLength(3)
   })
 
   it('fails closed when approval cannot be routed', async () => {

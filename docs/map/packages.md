@@ -3,7 +3,7 @@
 
 # 包清单
 
-workspace 共 234 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
+workspace 共 236 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
 
 模型可见工具的名称与 schema 见 [tool-catalog.md](../tool-catalog.md)，插件可配置项见 [config-catalog.md](../config-catalog.md)，依赖边见 [module-graph.md](../module-graph.md)。
 
@@ -28,7 +28,7 @@ workspace 共 234 个包，按 group 分节。每行给出包目录、职责（R
 
 ## packages/browser
 
-- `packages/browser/browser` — 模型命令为封闭判别联合：`navigate` 携带 URL；`snapshot` 读取页面… 入口 `src/index.ts`（tests 1）
+- `packages/browser/browser` — 模型消费方在审批前调用 `acquireOperation(sessionId, signal)`：提供方立即阻止新人工命令… 入口 `src/index.ts`（tests 1）
 - `packages/browser/browser-playwright` — 本包没有配置项 入口 `src/index.ts`（tests 3）
 - `packages/browser/tool-browser` — 其余组合保持一次性审批路径：`danger-full-access` 搭配 `ask` 仍对每次调用（包括快照与关闭）申请审批… 入口 `src/index.ts`（tests 2）
 
@@ -48,7 +48,7 @@ workspace 共 234 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/client/ui-agent-preset` — agent preset 的各个表层：General 设置中的一行，用于选择新建会话据以组装的 preset；新建会话界面上的一枚 chip… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 7）
 - `packages/client/ui-attachment` — 对话 UI 的动态附件呈现插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 7）
 - `packages/client/ui-brand-official` — 仅当 `DSH_CLIENT_BUILD_PROFILE` 为 `official` 时… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
-- `packages/client/ui-browser` — 本包的 Client 半边占用 `workbench.browser` 内容和 `workbench.browser.tabs` 顶栏标签两个会… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 6）
+- `packages/client/ui-browser` — 本包的 Client 半边占用 `workbench.browser` 内容和 `workbench.browser.tabs` 顶栏标签两个会… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 7）
 - `packages/client/ui-commands` — 客户端命令 API（`ctx.commandUi`）：以会话为 key 的命令目录缓存、带 `matchSpace`／`matchEnter` … [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 5）
 - `packages/client/ui-conversation` — 会话领域：骨架（标题栏／标签页／编辑器／空状态）、聊天视图（分组步骤摘要流、流式尾部隔离与轮次状态）、输入区 dock… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 34）
 - `packages/client/ui-deliverables` — 产出文件与可点击文件引用功能的属主 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
@@ -72,6 +72,7 @@ workspace 共 234 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/client/ui-settings-models` — 模型设置、视觉理解目标与首次使用模型配置引导插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 14）
 - `packages/client/ui-settings-plugin-inventory` — Web 设置中的只读**插件列表**标签页 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 3）
 - `packages/client/ui-settings-plugins` — **插件**设置分区及其**插件配置**标签页 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 5）
+- `packages/client/ui-settings-search` — 独立的「联网搜索」设置分区 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 3）
 - `packages/client/ui-sidebar` — 侧边栏外壳插件：负责品牌行、New Session 操作、布局持有的折叠控件、可感知滚动的区域 seat… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 7）
 - `packages/client/ui-skill` — skill（技能）调用 source 的浏览器端：把 `/` 触发的 `skill` source 注册进 `ctx.inputTriggers… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
 - `packages/client/ui-slots` — Slot 注册表纯核心、slot 终端设计：SlotMap 声明合并、SlotCore 上唯一的 `register` 组合 API、四 sha… 入口 `src/index.ts`（tests 4）
@@ -380,6 +381,7 @@ workspace 共 234 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/web/web` — **`WebRuntime`**（`ctx.web`）定义 harness 具备哪些 web 访问能力（搜索 web、抓取 URL）… 入口 `src/index.ts`（tests 1）
 - `packages/web/web-fetch-http` — 一个匿名公共 HTTP(S) `WebFetchProvider`，用于 harness web 能力 seam（`ctx.web`） 入口 `src/index.ts`（tests 1）
 - `packages/web/web-search-deepseek` — 由 DeepSeek 支持的 `WebSearchProvider`，用于 harness web 能力 seam（`ctx.web`） 入口 `src/index.ts`（tests 3）
+- `packages/web/web-search-duckduckgo` — 无密钥的 DuckDuckGo 搜索提供方，向 `ctx.web` 注册 id `duckduckgo` 入口 `src/index.ts`（tests 2）
 - `packages/web/web-search-exa` — 由 Exa 支持的 `WebSearchProvider`，用于 harness web 能力 seam（`ctx.web`） 入口 `src/index.ts`（tests 1）
 - `packages/web/web-search-perplexity` — 由 Perplexity 支持的 `WebSearchProvider`，用于 harness web 能力 seam（`ctx.web`） 入口 `src/index.ts`（tests 1）
 
