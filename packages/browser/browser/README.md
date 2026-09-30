@@ -8,7 +8,7 @@
 
 模型命令为封闭判别联合：`navigate` 携带 URL；`snapshot` 读取页面；`click` 和 `fill` 携带元素 `ref` 与观测 `revision`；`scroll` 携带方向与像素量；`screenshot` 获取图像；`close` 关闭会话。人工命令包含幂等的 `ensure-tab`、新增 `new-tab`、带 `BrowserTabId` 的 `select-tab` 和 `close-tab`，以及 `navigate`、`back`、`forward`、`reload`、`set-viewport(width,height)`。`BrowserSessionState` 包含 `browserGeneration`、`stateRevision`、当前视口、带页面 generation 的标签页摘要、活跃标签页 id、观测与截图存在标记；空白页也有可绑定目标身份的 generation。视口由 Provider 校验边界并按会话应用于所有页面，尺寸改变会使旧截图和元素引用失效，重新发布活跃页观测。`BrowserObservation` 包含标签页 id、`generation`、`revision`、最终 URL、标题、文本快照、视口和最后操作指针。不同标签页、generation 或观测修订版之间不得复用元素引用；捕获中的 `png` 与可序列化的观测分离。类型可从包入口或 `@deepseek-ai/dsh-browser/types` 导入。
 
-Provider 通过 `BrowserUseError.code` 报告 `BROWSER_INVALID_URL`、`BROWSER_STALE_REF`、`BROWSER_CLOSED`（已关闭会话上的操作）、`BROWSER_DENIED`、`BROWSER_UNAVAILABLE` 或 `BROWSER_FAILED`；取消原因直接向调用方传播。跨进程/RPC、页面和模型 JSON 输入的校验，以及网络与页面权限检查必须发生在实际做出相应决定的 Provider 或 Consumer 边界。这个抽象服务没有配置项、事件或注册器；Cordis 仅允许当前 context 的一个实现。
+Provider 通过 `BrowserUseError.code` 报告 `BROWSER_INVALID_URL`、`BROWSER_STALE_REF`、`BROWSER_CLOSED`（已关闭会话上的操作）、`BROWSER_DENIED`、`BROWSER_UNAVAILABLE` 或 `BROWSER_FAILED`；取消原因直接向调用方传播。跨进程/RPC、页面和模型 JSON 输入的校验，以及页面操作权限检查必须发生在实际做出相应决定的 Provider 或 Consumer 边界；本接口不要求网络目的地过滤。这个抽象服务没有配置项、事件或注册器；Cordis 仅允许当前 context 的一个实现。
 
 ## Model Experience
 

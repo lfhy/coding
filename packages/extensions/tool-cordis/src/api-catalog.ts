@@ -459,8 +459,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   },
   {
     key: 'browserUse',
-    summary: '每个 SessionId 独占浏览器上下文、标签页与代理的可替换服务。',
-    description: '每个 SessionId 独占浏览器上下文、标签页与代理的可替换服务。',
+    summary: '每个 SessionId 独占浏览器上下文与标签页的可替换服务。',
+    description: '每个 SessionId 独占浏览器上下文与标签页的可替换服务。',
     methods: [
       {
         signature: 'abstract execute(sessionId: SessionId, command: BrowserCommand, signal: AbortSignal, expectedTarget?: BrowserExpectedTarget): Promise<BrowserCapture>',

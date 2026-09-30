@@ -481,6 +481,9 @@ importers:
       '@deepseek-ai/dsh-browser':
         specifier: workspace:*
         version: link:../packages/browser/browser
+      '@deepseek-ai/dsh-browser-playwright':
+        specifier: workspace:*
+        version: link:../packages/browser/browser-playwright
       '@deepseek-ai/dsh-code-runtime-worker-thread':
         specifier: workspace:*
         version: link:../packages/code-runtime/code-runtime-worker-thread
@@ -1042,9 +1045,6 @@ importers:
       '@deepseek-ai/dsh-browser':
         specifier: workspace:^
         version: link:../browser
-      '@deepseek-ai/schemastery':
-        specifier: link:../../../vendor/schemastery
-        version: link:../../../vendor/schemastery
       playwright:
         specifier: 1.61.1
         version: 1.61.1

@@ -5,7 +5,7 @@
 
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { lstat, mkdir, mkdtemp, readFile, realpath, rm } from 'node:fs/promises'
 import { createServer } from 'node:http'
@@ -101,10 +101,28 @@ async function preflight() {
 
 async function verifyBundledBrowser(home, tmp) {
   // 验证打包的 Provider 真实执行，不冒充 Host 的工具审批或模型轮次。
+  let handshakes = 0
+  const sockets = new Set()
   const fixture = createServer((_req, res) => {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
     res.end('<title>bundled-browser</title><h1>local browser page</h1>' +
-      '<button id="go" onclick="document.querySelector(\'h1\').textContent=\'Clicked\'">Open</button>')
+      '<button id="go" onclick="document.querySelector(\'h1\').textContent=\'Clicked\'">Open</button>' +
+      '<output>Socket waiting</output><script>const socket = new WebSocket("ws://" + location.host + "/socket");' +
+      'socket.onmessage = event => { document.querySelector("output").textContent = event.data; socket.close() };</script>')
+  })
+  fixture.on('upgrade', (req, socket) => {
+    const key = req.headers['sec-websocket-key']
+    if (req.url !== '/socket' || typeof key !== 'string') { socket.destroy(); return }
+    handshakes++
+    sockets.add(socket)
+    socket.on('error', () => { socket.destroy() })
+    socket.on('close', () => { sockets.delete(socket) })
+    const accept = createHash('sha1').update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64')
+    socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`)
+    const message = Buffer.from('Packaged localhost WebSocket delivered')
+    // 本地 fixture 只发送一条短文本帧，并响应浏览器关闭帧。
+    socket.write(Buffer.concat([Buffer.from([0x81, message.length]), message]))
+    socket.on('data', () => { socket.end(Buffer.from([0x88, 0])) })
   })
   await new Promise((resolveListen, reject) => {
     fixture.once('error', reject)
@@ -112,7 +130,7 @@ async function verifyBundledBrowser(home, tmp) {
   })
   const address = fixture.address()
   assert.ok(address && typeof address !== 'string', 'loopback fixture must bind a TCP port')
-  const origin = `http://127.0.0.1:${address.port}`
+  const origin = `http://localhost:${address.port}`
   // 子进程只接触包内 Provider、Playwright 和浏览器；隔离 HOME 无用户级缓存。
   const script = `
     import assert from 'node:assert/strict';
@@ -123,13 +141,20 @@ async function verifyBundledBrowser(home, tmp) {
     const signal = new AbortController().signal;
     const session = 'packaged-browser-smoke';
     try {
-      const fiber = ctx.plugin(Provider, { allowedOrigins: [origin] });
+      const fiber = ctx.plugin(Provider);
       await fiber.await();
       const service = ctx.browserUse;
       assert.ok(service instanceof Provider, 'packaged Cordis service must be the real Provider');
       const first = await service.execute(session, { kind: 'navigate', url: origin + '/' }, signal);
+      assert.equal(first.observation.url, origin + '/');
       assert.equal(first.observation.title, 'bundled-browser');
       assert.ok(first.observation.snapshot.includes('local browser page'));
+      const websocketDeadline = Date.now() + 10_000;
+      let websocketSnapshot = first;
+      while (!websocketSnapshot.observation.snapshot.includes('Packaged localhost WebSocket delivered')) {
+        assert.ok(Date.now() < websocketDeadline, 'packaged Provider must receive a localhost WebSocket message');
+        websocketSnapshot = await service.execute(session, { kind: 'snapshot' }, signal);
+      }
       const snapshot = await service.execute(session, { kind: 'snapshot' }, signal);
       assert.ok(snapshot.observation.snapshot.includes('local browser page'));
       const ref = snapshot.observation.snapshot.match(/(e[0-9]+-[a-f0-9-]+) button "Open"/)?.[1];
@@ -156,11 +181,13 @@ async function verifyBundledBrowser(home, tmp) {
       child.once('exit', (code, signal) => signal === null ? resolveExit(code)
         : reject(new Error(`bundled Provider exited on ${signal}`)))
     }), 'packaged browser Provider', 45_000)
-    assert.equal(status, 0, `packaged Provider must navigate, snapshot, click and screenshot a real page: ${failure}`)
+    assert.equal(status, 0, `packaged Provider must navigate localhost, receive WebSocket output, snapshot, click and screenshot: ${failure}`)
+    assert.equal(handshakes, 1, 'packaged default Provider must make one real localhost WebSocket handshake')
     assert.equal(existsSync(join(home, 'Library', 'Caches', 'ms-playwright')), false,
       'packaged browser must not create a user cache')
   } finally {
     if (child.exitCode === null && child.signalCode === null) await stopOwnApp(child)
+    for (const socket of sockets) socket.destroy()
     fixture.closeAllConnections()
     await new Promise(resolveClose => fixture.close(resolveClose))
   }
@@ -486,7 +513,7 @@ async function main() {
     if (passed) {
       assert.ok(appStopped && helperStopped && hostStopped && socketStopped,
         'packaged Electron/helper/Host and isolated desktop lock must all stop')
-      console.log('PASS: signed macOS arm64 app.asar, bundled browser Provider navigate/snapshot/click/screenshot in isolated HOME, app.isPackaged, metadata/Host version, real Host page, both WebSockets, ' +
+      console.log('PASS: signed macOS arm64 app.asar, bundled default browser Provider localhost navigation/WebSocket/snapshot/click/screenshot in isolated HOME, app.isPackaged, metadata/Host version, real Host page, both Host WebSockets, ' +
         'single instance, sandbox preload, Go helper/bridge, isolated desktop lock and cleanup')
       console.log('Not exercised: Host browser_use tool approval or a model turn; the isolated Provider test uses the bundled runtime directly.')
       console.log('Not inspected by CDP/Node inspector: native menu/Tray and macOS window close/hide; ' +

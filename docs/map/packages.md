@@ -29,7 +29,7 @@ workspace 共 234 个包，按 group 分节。每行给出包目录、职责（R
 ## packages/browser
 
 - `packages/browser/browser` — 模型命令为封闭判别联合：`navigate` 携带 URL；`snapshot` 读取页面… 入口 `src/index.ts`（tests 1）
-- `packages/browser/browser-playwright` — 配置 `allowedOrigins` 默认为 `[]`，仅允许 DNS 全部答案均为公网地址的 HTTP(S) 请求；特殊用途地址段… 入口 `src/index.ts`（tests 4）
+- `packages/browser/browser-playwright` — 本包没有配置项 入口 `src/index.ts`（tests 3）
 - `packages/browser/tool-browser` — 其余组合保持一次性审批路径：`danger-full-access` 搭配 `ask` 仍对每次调用（包括快照与关闭）申请审批… 入口 `src/index.ts`（tests 2）
 
 ## packages/bundle

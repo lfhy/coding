@@ -511,7 +511,7 @@ const SERVICE_ROLES: ServiceRole[] = [
     mode: 'seam',
     implementations: ['browser-playwright'],
     consumers: ['tool-browser'],
-    note: 'The Playwright provider owns isolated session pages and enforces network access; tool-browser requests approval unless the session has full access with approval prompts disabled. The ui-browser client displays the provider\'s read-only HTTP captures, not the service itself.',
+    note: 'The Playwright provider owns isolated session pages and uses native browser networking without destination restrictions; tool-browser requests approval unless the session has full access with approval prompts disabled. The ui-browser client displays the provider\'s read-only HTTP captures, not the service itself.',
   },
   {
     key: 'web',

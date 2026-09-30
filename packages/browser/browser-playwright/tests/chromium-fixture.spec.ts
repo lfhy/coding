@@ -1,15 +1,16 @@
 /** 手动 opt-in：以真实 Chromium 和环回页面验收隔离、元素交互与生命周期。 */
 
 import { existsSync } from 'node:fs'
-import { createServer, request } from 'node:http'
+import { createHash } from 'node:crypto'
+import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
+import type { Duplex } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
 import { chromium } from 'playwright'
 import type { BrowserContext } from 'playwright'
 import { describe, expect, it } from 'vitest'
 import PlaywrightBrowserUse from '../src/index.ts'
-import { createBrowserProxy } from '../src/proxy.ts'
 
 const page = `<!doctype html><title>Fixture</title>
   <input aria-label="Search"><button onclick="document.querySelector('output').textContent =
@@ -52,7 +53,7 @@ async function fixture(onWait?: () => void): Promise<{
   await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
   const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
   const ctx = new Context()
-  const fiber = ctx.plugin(PlaywrightBrowserUse, { allowedOrigins: [origin] })
+  const fiber = ctx.plugin(PlaywrightBrowserUse)
   try { await fiber.await() }
   catch (error) {
     await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
@@ -94,7 +95,7 @@ describe.skipIf(process.env.DSH_BROWSER_E2E !== '1' || !existsSync(chromium.exec
       const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
       const ctx = new Context()
       try {
-        await ctx.plugin(PlaywrightBrowserUse, { allowedOrigins: [origin] }).await()
+        await ctx.plugin(PlaywrightBrowserUse).await()
         const id = SessionId('long-dom')
         const signal = new AbortController().signal
         const initial = await ctx.browserUse.execute(id, { kind: 'navigate', url: origin }, signal)
@@ -110,92 +111,154 @@ describe.skipIf(process.env.DSH_BROWSER_E2E !== '1' || !existsSync(chromium.exec
       }
     })
 
-    it('allows credentialed Chromium but denies an unauthenticated local proxy client', { timeout: 40_000 }, async () => {
-      let hits = 0
-      const target = createServer((_req, res) => { hits++; res.end(page) })
-      await new Promise<void>((resolve) => { target.listen(0, '127.0.0.1', resolve) })
-      const origin = `http://127.0.0.1:${(target.address() as AddressInfo).port}`
-      const proxy = await createBrowserProxy(new Set([origin]))
-      const browser = await chromium.launch({ headless: true })
+    it('navigates loopback and localhost with the default Provider and no network config', { timeout: 40_000 }, async () => {
+      const { ctx, origin, close } = await fixture()
+      const signal = new AbortController().signal
       try {
-        const status = await new Promise<number>((resolve, reject) => {
-          const req = request(proxy.server, { path: `${origin}/`, headers: { host: new URL(origin).host } },
-            (res) => { res.resume(); res.on('end', () => { resolve(res.statusCode ?? 0) }) })
-          req.on('error', reject)
-          req.end()
-        })
-        expect(status).toBe(407)
-        expect(hits).toBe(0)
-        const context = await browser.newContext({ proxy: { server: proxy.server,
-          username: proxy.username, password: proxy.password, bypass: '<-loopback>' } })
-        try {
-          const browserPage = await context.newPage()
-          await browserPage.goto(origin)
-          expect(await browserPage.title()).toBe('Fixture')
-          expect(hits).toBeGreaterThan(0)
-        } finally { await context.close() }
-      } finally {
-        await browser.close()
-        await proxy.close()
-        await new Promise<void>((resolve) => { target.close(() => { resolve() }) })
-      }
+        for (const url of [origin, origin.replace('127.0.0.1', 'localhost')]) {
+          const capture = await ctx.browserUse.execute(SessionId('default-local'), { kind: 'navigate', url }, signal)
+          expect(capture.observation.url).toBe(`${url}/`)
+          expect(capture.observation.title).toBe('Fixture')
+          expect(capture.observation.snapshot).toContain('Waiting')
+        }
+      } finally { await close() }
     })
 
-    it('rejects a redirect to an unlisted loopback origin before reaching it', { timeout: 40_000 }, async () => {
-      let targetHits = 0
-      const target = createServer((_req, res) => { targetHits++; res.end('private target') })
-      await new Promise<void>((resolve) => { target.listen(0, '127.0.0.1', resolve) })
-      const targetUrl = `http://127.0.0.1:${(target.address() as AddressInfo).port}/private`
-      const redirect = createServer((_req, res) => { res.writeHead(302, { location: targetUrl }); res.end() })
-      await new Promise<void>((resolve) => { redirect.listen(0, '127.0.0.1', resolve) })
+    it('follows a cross-origin loopback redirect and loads secondary-origin script and image', { timeout: 40_000 }, async () => {
+      const hits = { redirect: 0, target: 0, script: 0, image: 0 }
+      const target = createServer((req, res) => {
+        if (req.url !== '/landing') { res.writeHead(404); res.end(); return }
+        hits.target++
+        res.setHeader('content-type', 'text/html; charset=utf-8')
+        res.end(`<!doctype html><title>Redirect target</title><output id="script">Script waiting</output>
+          <output id="image">Image waiting</output><img src="${resourcesOrigin}/pixel.svg"
+          onload="document.querySelector('#image').textContent='Cross-origin image loaded'">
+          <script src="${resourcesOrigin}/script.js"></script>`)
+      })
+      const resources = createServer((req, res) => {
+        if (req.url === '/start') {
+          hits.redirect++; res.writeHead(302, { location: targetUrl }); res.end()
+        } else if (req.url === '/script.js') {
+          hits.script++; res.setHeader('content-type', 'text/javascript')
+          res.end("document.querySelector('#script').textContent='Cross-origin script loaded'")
+        } else if (req.url === '/pixel.svg') {
+          hits.image++; res.setHeader('content-type', 'image/svg+xml')
+          res.end('<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><rect width="1" height="1"/></svg>')
+        } else { res.writeHead(404); res.end() }
+      })
+      await Promise.all([target, resources].map(server => new Promise<void>((resolve) => {
+        server.listen(0, '127.0.0.1', resolve)
+      })))
+      const resourcesOrigin = `http://127.0.0.1:${(resources.address() as AddressInfo).port}`
+      const targetUrl = `http://localhost:${(target.address() as AddressInfo).port}/landing`
       const ctx = new Context()
       try {
-        await ctx.plugin(PlaywrightBrowserUse, {
-          allowedOrigins: [`http://127.0.0.1:${(redirect.address() as AddressInfo).port}`],
-        }).await()
-        await expect(ctx.browserUse.execute(SessionId('redirect'), { kind: 'navigate',
-          url: `http://127.0.0.1:${(redirect.address() as AddressInfo).port}/` },
-        new AbortController().signal)).rejects.toMatchObject({ code: 'BROWSER_FAILED' })
-        expect(targetHits).toBe(0)
+        await ctx.plugin(PlaywrightBrowserUse).await()
+        const id = SessionId('default-redirect')
+        const signal = new AbortController().signal
+        const redirected = await ctx.browserUse.execute(id, { kind: 'navigate', url: `${resourcesOrigin}/start` }, signal)
+        expect(redirected.observation.url).toBe(targetUrl)
+        expect(redirected.observation.title).toBe('Redirect target')
+        await expect.poll(async () => {
+          const capture = await ctx.browserUse.execute(id, { kind: 'snapshot' }, signal)
+          return capture.observation.snapshot.includes('Cross-origin script loaded') &&
+            capture.observation.snapshot.includes('Cross-origin image loaded')
+        }).toBe(true)
+        expect(hits).toEqual({ redirect: 1, target: 1, script: 1, image: 1 })
       } finally {
         await ctx.fiber.dispose()
-        await Promise.all([target, redirect].map(server => new Promise<void>((resolve) => {
+        await Promise.all([target, resources].map(server => new Promise<void>((resolve) => {
+          server.closeAllConnections()
           server.close(() => { resolve() })
         })))
       }
     })
 
-    it('checks a rebound DNS answer at the proxy and never reaches the private target', { timeout: 40_000 }, async () => {
-      let targetHits = 0
-      const target = createServer((_req, res) => { targetHits++; res.end('private target') })
-      await new Promise<void>((resolve) => { target.listen(0, '127.0.0.1', resolve) })
-      const port = (target.address() as AddressInfo).port
-      let resolutions = 0
-      const proxy = await createBrowserProxy(new Set(), async () => {
-        resolutions++
-        return [{ address: '127.0.0.1' }]
+    it('completes a real default loopback WebSocket handshake and observes its page message', { timeout: 40_000 }, async () => {
+      let handshakes = 0
+      const sockets = new Set<Duplex>()
+      const server = createServer((_req, res) => {
+        res.setHeader('content-type', 'text/html; charset=utf-8')
+        res.end(`<!doctype html><title>WebSocket fixture</title><output>Socket waiting</output>
+          <script>const socket = new WebSocket('ws://' + location.host + '/socket');
+          socket.onmessage = event => { document.querySelector('output').textContent = event.data; socket.close() };</script>`)
       })
-      const browser = await chromium.launch({ headless: true })
+      server.on('upgrade', (req, socket) => {
+        const key = req.headers['sec-websocket-key']
+        if (req.url !== '/socket' || typeof key !== 'string') { socket.destroy(); return }
+        handshakes++
+        sockets.add(socket)
+        socket.on('error', () => { socket.destroy() })
+        socket.on('close', () => { sockets.delete(socket) })
+        const accept = createHash('sha1').update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64')
+        socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`)
+        const message = Buffer.from('Loopback WebSocket delivered')
+        // 仅发送一条短文本帧；读到客户端关闭帧后结束连接，不实现通用 WebSocket 服务。
+        socket.write(Buffer.concat([Buffer.from([0x81, message.length]), message]))
+        socket.on('data', () => { socket.end(Buffer.from([0x88, 0])) })
+      })
+      await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+      const ctx = new Context()
       try {
-        // 首次 DNS 答案模拟预检；浏览器真正请求时代理必须重新校验并拒绝私网答案。
-        const { resolveRequestUrl } = await import('../src/policy.ts')
-        await resolveRequestUrl(`http://rebind.example:${port}/`, new Set(), async () => {
-          resolutions++
-          return [{ address: '8.8.8.8' }]
-        })
-        const context = await browser.newContext({ proxy: { server: proxy.server,
-          username: proxy.username, password: proxy.password, bypass: '<-loopback>' } })
-        try {
-          await expect(context.newPage().then(page => page.goto(`http://rebind.example:${port}/`, {
-            waitUntil: 'domcontentloaded', timeout: 5000,
-          }))).rejects.toThrow()
-          expect(targetHits).toBe(0)
-          expect(resolutions).toBeGreaterThan(1)
-        } finally { await context.close() }
+        await ctx.plugin(PlaywrightBrowserUse).await()
+        const id = SessionId('default-websocket')
+        const signal = new AbortController().signal
+        await ctx.browserUse.execute(id, { kind: 'navigate',
+          url: `http://127.0.0.1:${(server.address() as AddressInfo).port}/` }, signal)
+        await expect.poll(async () => (await ctx.browserUse.execute(id, { kind: 'snapshot' }, signal))
+          .observation.snapshot).toContain('Loopback WebSocket delivered')
+        expect(handshakes).toBe(1)
       } finally {
-        await browser.close()
-        await proxy.close()
-        await new Promise<void>((resolve) => { target.close(() => { resolve() }) })
+        await ctx.fiber.dispose()
+        for (const socket of sockets) socket.destroy()
+        server.closeAllConnections()
+        await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
+      }
+    })
+
+    it('retains a redirected page whose final URL exceeds the navigation input bound', { timeout: 40_000 }, async () => {
+      const landingPath = `/landing?q=${'x'.repeat(4200)}`
+      const hits = { redirect: 0, landing: 0 }
+      const server = createServer((req, res) => {
+        if (req.url === '/start') {
+          hits.redirect++
+          res.writeHead(302, { location: landingPath })
+          res.end()
+        } else if (req.url === landingPath) {
+          hits.landing++
+          res.setHeader('content-type', 'text/html; charset=utf-8')
+          res.end('<!doctype html><title>Long redirect URL</title><h1>Long redirect page retained</h1>')
+        } else { res.writeHead(404); res.end() }
+      })
+      await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+      const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+      const inputUrl = `${origin}/start`
+      const finalUrl = `${origin}${landingPath}`
+      const ctx = new Context()
+      try {
+        await ctx.plugin(PlaywrightBrowserUse).await()
+        const id = SessionId('long-redirect-url')
+        const signal = new AbortController().signal
+        expect(inputUrl.length).toBeLessThan(4096)
+        expect(finalUrl.length).toBeGreaterThan(4096)
+        const redirected = await ctx.browserUse.execute(id, { kind: 'navigate', url: inputUrl }, signal)
+        expect(redirected.observation.url).toBe(finalUrl)
+        expect(redirected.observation.title).toBe('Long redirect URL')
+        expect(redirected.observation.snapshot).toContain('Long redirect page retained')
+        expect(ctx.browserUse.state(id)?.observation?.url).toBe(finalUrl)
+        const snapshot = await ctx.browserUse.execute(id, { kind: 'snapshot' }, signal)
+        expect(snapshot.observation.url).toBe(finalUrl)
+        expect(snapshot.observation.title).toBe('Long redirect URL')
+        expect(snapshot.observation.snapshot).toContain('Long redirect page retained')
+        const screenshot = await ctx.browserUse.execute(id, { kind: 'screenshot' }, signal)
+        expect(screenshot.observation.url).toBe(finalUrl)
+        expect(screenshot.png?.slice(0, 8)).toEqual(pngHeader)
+        expect(ctx.browserUse.latest(id)?.observation.url).toBe(finalUrl)
+        expect(hits).toEqual({ redirect: 1, landing: 1 })
+      } finally {
+        await ctx.fiber.dispose()
+        server.closeAllConnections()
+        await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
       }
     })
 

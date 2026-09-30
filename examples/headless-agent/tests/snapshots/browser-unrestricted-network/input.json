@@ -1,0 +1,8 @@
+{
+  "steps": [
+    {
+      "op": "prompt",
+      "text": "Navigate to http://127.0.0.1:59723/browser-unrestricted-network and report the observed page title."
+    }
+  ]
+}

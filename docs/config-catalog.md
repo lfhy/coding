@@ -389,20 +389,6 @@ Depends on: [`LocalConfig`](#deepseek-aidsh-bash-local)
 
 Source: [`packages/shell/bash-sandbox/src/index.ts:36`](../packages/shell/bash-sandbox/src/index.ts)
 
-<a id="deepseek-aidsh-browser-playwright"></a>
-
-## `@deepseek-ai/dsh-browser-playwright`
-
-```ts config-catalog
-/** 显式放行的精确 origin；空列表只允许经 DNS 校验的公网 HTTP(S)。 */
-export interface Config {
-  /** 显式放行的精确 HTTP(S) origin；默认只允许 DNS 校验通过的公网目的地。 */
-  readonly allowedOrigins: string[]
-}
-```
-
-Source: [`packages/browser/browser-playwright/src/index.ts:29`](../packages/browser/browser-playwright/src/index.ts)
-
 <a id="deepseek-aidsh-client-connection"></a>
 
 ## `@deepseek-ai/dsh-client-connection`
@@ -3265,6 +3251,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-agent` ([`packages/core/agent/src/index.ts`](../packages/core/agent/src/index.ts))
 - `@deepseek-ai/dsh-api-gateway` — requires `typert` ([`packages/api/gateway/src/index.ts`](../packages/api/gateway/src/index.ts))
 - `@deepseek-ai/dsh-api-remotes` ([`packages/api/remotes/src/index.ts`](../packages/api/remotes/src/index.ts))
+- `@deepseek-ai/dsh-browser-playwright` ([`packages/browser/browser-playwright/src/index.ts`](../packages/browser/browser-playwright/src/index.ts))
 - `@deepseek-ai/dsh-client-locale` ([`packages/client/locale/src/index.ts`](../packages/client/locale/src/index.ts))
 - `@deepseek-ai/dsh-client-modules` — requires `webServer` · `loader` ([`packages/client/modules/src/index.ts`](../packages/client/modules/src/index.ts))
 - `@deepseek-ai/dsh-client-runtime` ([`packages/client/runtime/src/index.ts`](../packages/client/runtime/src/index.ts))

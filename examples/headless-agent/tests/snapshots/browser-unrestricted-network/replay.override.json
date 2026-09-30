@@ -1,0 +1,22 @@
+[
+  {
+    "kind": "chunks",
+    "chunks": [
+      { "type": "block-start", "index": 0, "blockType": "tool-call" },
+      { "type": "tool-call-delta", "index": 0, "id": "call_browser_loopback", "name": "browser_use", "argumentsDelta": "{\"action\":\"navigate\",\"url\":\"http://127.0.0.1:59723/browser-unrestricted-network\"}" },
+      { "type": "block-end", "index": 0, "block": { "type": "tool-call", "id": "call_browser_loopback", "name": "browser_use", "arguments": "{\"action\":\"navigate\",\"url\":\"http://127.0.0.1:59723/browser-unrestricted-network\"}" } },
+      { "type": "usage", "usage": { "inputTokens": 30, "outputTokens": 8 } },
+      { "type": "finish", "reason": { "kind": "tool-calls" } }
+    ]
+  },
+  {
+    "kind": "chunks",
+    "chunks": [
+      { "type": "block-start", "index": 0, "blockType": "text" },
+      { "type": "text-delta", "index": 0, "text": "Observed page title: Loopback browser fixture." },
+      { "type": "block-end", "index": 0, "block": { "type": "text", "text": "Observed page title: Loopback browser fixture." } },
+      { "type": "usage", "usage": { "inputTokens": 60, "outputTokens": 8 } },
+      { "type": "finish", "reason": { "kind": "stop" } }
+    ]
+  }
+]

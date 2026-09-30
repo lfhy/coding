@@ -1,6 +1,6 @@
 # 浏览器使用
 
-浏览器使用能力由 [`@deepseek-ai/dsh-browser`](../../packages/browser/browser/README.md) 定义 `ctx.browserUse`，由 [Playwright 提供方](../../packages/browser/browser-playwright/README.md)实现，并由 [`browser_use` 工具](../../packages/browser/tool-browser/README.md)消费。服务按 `SessionId` 隔离浏览器上下文与标签页；工具负责调用会话的权限判断、所需审批和模型结果，完全访问的免逐次审批条件见[工具 README](../../packages/browser/tool-browser/README.md)。提供方负责实际网络访问限制、页面资源及清理。工作台读取 Host 的标签页状态与画面。
+浏览器使用能力由 [`@deepseek-ai/dsh-browser`](../../packages/browser/browser/README.md) 定义 `ctx.browserUse`，由 [Playwright 提供方](../../packages/browser/browser-playwright/README.md)实现，并由 [`browser_use` 工具](../../packages/browser/tool-browser/README.md)消费。服务按 `SessionId` 隔离浏览器上下文与标签页；工具负责调用会话的权限判断、所需审批和模型结果，完全访问的免逐次审批条件见[工具 README](../../packages/browser/tool-browser/README.md)。提供方负责导航输入校验、页面资源及清理，使用 Chromium 原生联网，不过滤目的地、重定向或子资源。工作台读取 Host 的标签页状态与画面；预览 API 的入站信任限制由提供方持有，与页面出站联网无关。
 
 以下跨包类型声明来自 [`packages/browser/browser/src/types.ts`](../../packages/browser/browser/src/types.ts)。服务方法的完整签名与 JSDoc 由下方 Cordis API 区域生成。
 
@@ -111,7 +111,7 @@ export interface BrowserCapture {
 
 ## 失败与生命周期
 
-`BrowserUseError.code` 供消费方区分无效 URL、过期引用、已关闭会话、策略拒绝、浏览器不可用与其他操作失败；调用方取消则保留 `AbortSignal` 的原因。`closeSession(sessionId)` 等待资源停稳，不存在资源时正常完成。页面与最近捕获只存在于提供方运行期间，不定义重启恢复或跨会话共享。具体提供方的网络边界和部署限制见其 [README](../../packages/browser/browser-playwright/README.md)。
+`BrowserUseError.code` 供消费方区分无效 URL、过期引用、已关闭会话、策略拒绝、浏览器不可用与其他操作失败；调用方取消则保留 `AbortSignal` 的原因。`closeSession(sessionId)` 等待资源停稳，不存在资源时正常完成。页面与最近捕获只存在于提供方运行期间，不定义重启恢复或跨会话共享。具体提供方的导航输入、原生联网和部署限制见其 [README](../../packages/browser/browser-playwright/README.md)。
 
 ```ts type-equiv
 /** 可供消费方识别的浏览器失败种类；调用方取消保留 AbortSignal 的原因。 */
@@ -136,7 +136,7 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 
 ### `ctx.browserUse` — `BrowserUseService` (abstract seam)
 
-每个 SessionId 独占浏览器上下文、标签页与代理的可替换服务。
+每个 SessionId 独占浏览器上下文与标签页的可替换服务。
 
 ```ts cordis-catalog
 /**

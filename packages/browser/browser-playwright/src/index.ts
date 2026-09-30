@@ -8,11 +8,9 @@ import type { BrowserCapture, BrowserCommand, BrowserExpectedTarget, BrowserHuma
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-session'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import z from '@deepseek-ai/schemastery'
 import { chromium } from 'playwright'
 import type { Browser, BrowserContext, ElementHandle, Page } from 'playwright'
-import { validateAllowedOrigins, validateRequestUrl } from './policy.ts'
-import { createBrowserProxy } from './proxy.ts'
+import { validateBrowserUrl } from './url.ts'
 
 const VIEWPORT = { width: 1280, height: 720 }
 const VIEWPORT_LIMITS = { minWidth: 200, maxWidth: 1920, minHeight: 240, maxHeight: 1400, maxArea: 1_800_000 }
@@ -24,12 +22,6 @@ const MAX_SESSIONS = 8
 const MAX_TABS = 8
 const IDLE_TIMEOUT = 10 * 60_000
 const ELEMENT_SELECTOR = 'button, a[href], input, textarea, select, [role="button"], [role="link"], [role="textbox"]'
-
-/** 显式放行的精确 origin；空列表只允许经 DNS 校验的公网 HTTP(S)。 */
-export interface Config {
-  /** 显式放行的精确 HTTP(S) origin；默认只允许 DNS 校验通过的公网目的地。 */
-  readonly allowedOrigins: string[]
-}
 
 interface SessionTab {
   readonly id: BrowserTabId
@@ -45,7 +37,6 @@ interface SessionTab {
 
 interface SessionPage {
   readonly browserContext: BrowserContext
-  readonly proxy: Awaited<ReturnType<typeof createBrowserProxy>>
   readonly browserGeneration: string
   readonly tabs: Map<BrowserTabId, SessionTab>
   activeTabId: BrowserTabId
@@ -57,11 +48,6 @@ interface SessionPage {
 }
 
 function tabId(): BrowserTabId { return randomUUID() as BrowserTabId }
-
-async function validateFinalUrl(url: string, origins: ReadonlySet<string>): Promise<void> {
-  if (url === 'about:blank') return
-  await validateRequestUrl(url, origins)
-}
 
 function fail(message: string, code: 'BROWSER_FAILED' | 'BROWSER_STALE_REF' | 'BROWSER_UNAVAILABLE' | 'BROWSER_CLOSED'): BrowserUseError {
   return new BrowserUseError(message, code)
@@ -98,9 +84,6 @@ function validSessionId(raw: string | null): raw is SessionId {
 
 /** Host 提供方。操作按会话顺序运行；中止时销毁该会话以免保留未知页面状态。 */
 export default class PlaywrightBrowserUse extends BrowserUseService {
-  static Config: z<Config> = z.object({ allowedOrigins: z.array(z.string()).default([]) })
-
-  private readonly allowedOrigins: ReadonlySet<string>
   private readonly pages = new Map<SessionId, SessionPage>()
   private readonly tails = new Map<SessionId, Promise<void>>()
   private pendingCreates = 0
@@ -108,9 +91,8 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
   private readonly reapTimer: NodeJS.Timeout
   private disposed = false
 
-  constructor(ctx: Context, config: Config) {
+  constructor(ctx: Context) {
     super(ctx)
-    this.allowedOrigins = validateAllowedOrigins(config.allowedOrigins)
     ctx.inject(['webServer', 'connection'], (webCtx) => {
       for (const path of ['/browser-use/state', '/browser-use/frame']) {
         webCtx.effect(() => webCtx.webServer.register({
@@ -128,7 +110,7 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
       }
     }, 60_000)
     this.reapTimer.unref()
-    // oxlint-disable-next-line typescript/no-misused-promises -- SessionStore observes returned async cleanup
+    // oxlint-disable-next-line typescript/no-misused-promises -- SessionStore 等待异步清理完成。
     ctx.on('session/disposed', async (session) => {
       await this.closeSession(session.id)
     })
@@ -142,9 +124,7 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
   }
 
   private async launch(): Promise<Browser> {
-    this.browser ??= chromium.launch({ headless: true, args: [
-      '--disable-quic', '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
-    ] }).catch((error: unknown) => {
+    this.browser ??= chromium.launch({ headless: true }).catch((error: unknown) => {
       this.browser = undefined
       throw new BrowserUseError('Chromium unavailable; install the matching Playwright Chromium browser with pnpm exec playwright install chromium or configure the system browser installation.', 'BROWSER_UNAVAILABLE', { cause: error })
     })
@@ -153,23 +133,10 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
 
   private async create(): Promise<SessionPage> {
     const browser = await this.launch()
-    const proxy = await createBrowserProxy(this.allowedOrigins)
-    let browserContext: BrowserContext
+    const browserContext = await browser.newContext({
+      viewport: VIEWPORT, acceptDownloads: false, permissions: [],
+    })
     try {
-      browserContext = await browser.newContext({
-        viewport: VIEWPORT, acceptDownloads: false, serviceWorkers: 'block', permissions: [],
-        proxy: { server: proxy.server, username: proxy.username, password: proxy.password,
-          bypass: '<-loopback>' },
-      })
-    } catch (error) { await proxy.close(); throw error }
-    try {
-      await browserContext.route('**/*', async (route) => {
-        try {
-          await validateRequestUrl(route.request().url(), this.allowedOrigins)
-          await route.continue()
-        } catch { await route.abort('blockedbyclient').catch(() => {}) }
-      })
-      await browserContext.routeWebSocket('**/*', (socket) => { void socket.close() })
       const page = await browserContext.newPage()
       const id = tabId()
       const generation = randomUUID()
@@ -177,7 +144,7 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
         summary: { id, generation, url: 'about:blank', title: '', canGoBack: false, canGoForward: false },
         history: [], historyIndex: -1 }
       const tabs = new Map([[id, tab]])
-      const owner: SessionPage = { browserContext, proxy, browserGeneration: randomUUID(), tabs, activeTabId: id,
+      const owner: SessionPage = { browserContext, browserGeneration: randomUUID(), tabs, activeTabId: id,
         stateRevision: 0, viewport: { ...VIEWPORT }, pendingPages: undefined, closing: undefined, lastUsed: Date.now() }
       browserContext.on('page', (opened) => {
         if ([...owner.tabs.values()].some(tab => tab.page === opened)) return
@@ -188,7 +155,6 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
       return owner
     } catch (error) {
       await browserContext.close()
-      await proxy.close()
       throw error
     }
   }
@@ -197,7 +163,6 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
     owner.closing ??= (async () => {
       for (const tab of owner.tabs.values()) await this.clearRefs(tab)
       await owner.browserContext.close().catch(() => {})
-      await owner.proxy.close()
     })()
     await owner.closing
   }
@@ -305,7 +270,6 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
       .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ' ')
     const title = (await page.title()).slice(0, 4096).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ' ')
     const png = await page.screenshot({ type: 'png', animations: 'disabled', timeout: 10_000 })
-    await validateFinalUrl(page.url(), this.allowedOrigins)
     if (png.byteLength > FRAME_LIMIT) {
       for (const handle of refs.values()) await handle.dispose().catch(() => {})
       await this.clearRefs(tab)
@@ -395,7 +359,7 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
         return capture
       }
       if (!owner && command.kind !== 'navigate') throw fail('browser session is closed; navigate to open a page', 'BROWSER_CLOSED')
-      if (command.kind === 'navigate') await this.validateNavigation(command.url)
+      if (command.kind === 'navigate') validateBrowserUrl(command.url)
       if (!owner) owner = await this.createOwner(sessionId, signal)
       const tab = this.active(owner)
       if ((command.kind === 'click' || command.kind === 'fill') && tab.capture?.observation.url !== tab.page.url()) {
@@ -417,7 +381,7 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
     if (command.kind === 'set-viewport') this.validateViewport(command.width, command.height)
     return await this.enqueue(sessionId, signal, async () => {
       let owner = this.pages.get(sessionId)
-      if (command.kind === 'navigate') await this.validateNavigation(command.url)
+      if (command.kind === 'navigate') validateBrowserUrl(command.url)
       if (!owner && command.kind !== 'navigate' && command.kind !== 'new-tab' && command.kind !== 'ensure-tab') return undefined
       const created = !owner
       if (!owner) owner = await this.createOwner(sessionId, signal)
@@ -505,8 +469,11 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
             : command.kind === 'forward'
               ? await tab.page.goForward({ waitUntil: 'domcontentloaded', timeout: 15_000 })
               : await tab.page.reload({ waitUntil: 'domcontentloaded', timeout: 15_000 })
-          if (command.kind === 'back' && result && tab.historyIndex > 0) tab.historyIndex--
-          if (command.kind === 'forward' && result && tab.historyIndex < tab.history.length - 1) tab.historyIndex++
+          if (command.kind === 'back') {
+            if (result && tab.historyIndex > 0) tab.historyIndex--
+          } else if (command.kind === 'forward' && result && tab.historyIndex < tab.history.length - 1) {
+            tab.historyIndex++
+          }
           await this.observe(owner, tab, null)
           break
         }
@@ -515,11 +482,6 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
       owner.lastUsed = Date.now()
       return this.view(owner)
     })
-  }
-
-  private async validateNavigation(url: string): Promise<void> {
-    if (url.length > 4096) throw fail('browser URL exceeds 4096 characters', 'BROWSER_FAILED')
-    await validateRequestUrl(url, this.allowedOrigins)
   }
 
   private validateViewport(width: number, height: number): void {

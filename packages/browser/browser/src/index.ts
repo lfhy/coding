@@ -20,7 +20,7 @@ export class BrowserUseError extends Error {
   }
 }
 
-/** 每个 SessionId 独占浏览器上下文、标签页与代理的可替换服务。 */
+/** 每个 SessionId 独占浏览器上下文与标签页的可替换服务。 */
 export abstract class BrowserUseService extends Service {
   constructor(ctx: Context) {
     super(ctx, 'browserUse')

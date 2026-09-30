@@ -1,9 +1,6 @@
 /** 经真实 Web Loader、人工 RPC 和 Host 浏览器提供方验收工作台浏览流程。 */
 
 import { createServer, type Server } from 'node:http'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import type { Browser, Locator, Page, Request } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
@@ -153,7 +150,6 @@ describe('web e2e: browser-use mirror over the shipped Loader', () => {
   let page: Page
   let target: Server
   let origin: string
-  let temp: string
   let tripwire: ReturnType<typeof watchConsole>
   const consoleErrors: string[] = []
 
@@ -161,11 +157,7 @@ describe('web e2e: browser-use mirror over the shipped Loader', () => {
     const serverFixture = await fixtureServer()
     target = serverFixture.server
     origin = serverFixture.origin
-    temp = await mkdtemp(join(tmpdir(), 'dsh-browser-mirror-e2e-'))
-    const overlay = join(temp, 'browser-overlay.yml')
-    // 放行仅限本测试的环回页面；本地 origin 不进入产品配置。
-    await writeFile(overlay, `- id: browser-playwright\n  config:\n    allowedOrigins: [${JSON.stringify(origin)}]\n`)
-    scaffold = await launchWebScaffold({ extraOverlayPath: overlay })
+    scaffold = await launchWebScaffold()
     await seedSession(scaffold, fixture(FIRST), FIRST)
     await seedSession(scaffold, fixture(SECOND), SECOND)
     browser = await chromium.launch()
@@ -182,7 +174,6 @@ describe('web e2e: browser-use mirror over the shipped Loader', () => {
     await browser?.close()
     await scaffold?.close()
     if (target) await new Promise<void>((resolve, reject) => target.close((error) => { if (error) reject(error); else resolve() }))
-    if (temp) await rm(temp, { recursive: true, force: true })
   })
 
   it.skipIf(MODE === 'record')('opens the five-action menu, drives real browser tabs, then mirrors an Agent click per session', async () => {
