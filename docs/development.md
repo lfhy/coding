@@ -6,14 +6,21 @@
 
 ### 前置条件
 
-- Node.js 支持 `^22.19.0 || >=24.0.0`；个人客户端 CI 使用 Node 24。
-- 启用了 Corepack 的 pnpm。仓库在 `package.json` 中固定使用 `pnpm@11.7.0`；如果 `pnpm --version` 无法通过 Corepack 解析，请先运行 `corepack enable`。
+- macOS arm64 或 Linux x64，且可以运行 `make`。macOS 的 `make toolkit` 会检查构建和调试所需的 Node.js、仓库指定的 pnpm、Go 和 Xcode 命令行工具；系统已有符合要求的工具时会跳过安装。若 macOS 没有 `make`，先运行 `xcode-select --install`；Linux 没有 `make` 时先通过系统包管理器安装。
+- Node.js 支持 `^22.19.0 || >=24.0.0`；个人客户端 CI 使用 Node 24。Go 在 macOS 上需 1.25 或更新版本，在 Linux 上需 1.24 或更新版本。
+- Linux 需先准备符合上述版本的 Node.js、仓库指定的 pnpm 和 Go。
 - Git 2.26 或更高版本；钩子设置会启用 Git 的 worktree 专属配置扩展。
 - 可选：一个 DeepSeek API key，用于 Web、headless 和 ACP（Agent Client Protocol）自动化 agent（智能体）演示以及真实 API 的 e2e 测试。
 
 ### 首次搭建
 
-在仓库根目录安装依赖：
+macOS 在仓库根目录准备工具：
+
+```sh
+make toolkit
+```
+
+若本次安装了 Homebrew，请在当前终端执行 `eval "$(/opt/homebrew/bin/brew shellenv)"`，使后续的 `pnpm` 命令可用。随后安装依赖：
 
 ```sh
 pnpm install
@@ -118,6 +125,10 @@ vendor manifest 守卫检查 `vendor/*/src` 下的改动是否连同对应的 `v
 ### 日常命令
 
 根目录的[贡献者说明](../AGENTS.md#commands)概述常用命令，[`package.json`](../package.json) 与 [scripts/run-gates.ts](../scripts/run-gates.ts) 则负责当前脚本和门禁清单。请选择覆盖变更表面的最小检查集。包公开行为变更还需更新所属 README 或 JSDoc，而基于构建产物的检查需要先运行 `pnpm run build`。
+
+`make build` 构建当前平台的默认客户端：macOS arm64 为 Electron 应用，Linux x64 为 TUI。Linux 若还需要 Host 运行时，另行执行 `make runtime`。
+
+`make build` 和 `make dev` 下载 Electron 与 Playwright Chromium 时使用 [Makefile](../Makefile) 中的国内镜像地址；pnpm 包依赖使用根目录 [`.npmrc`](../.npmrc) 配置的国内 registry。
 
 macOS arm64 上测试原生桌面窗口，从仓库根目录执行 `make dev`，启动[默认的 Electron 壳](../apps/desktop-electron/README.md)。开发入口依次构建 Host、Client、Web、远端 agent 资源、Go helper 和 Electron 壳；开发态使用独立的 `~/.dsh-electron-dev`，不读取安装版 `~/.dsh` 设置和凭据。`pnpm run dev:electron` 可直接运行相同的壳；`pnpm run build:electron-helper` 仅构建 Go helper，`pnpm run build:electron` 仅构建 Electron 壳。Linux 和 Windows 的 Electron 原生运行尚未验收。
 

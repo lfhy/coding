@@ -8,6 +8,9 @@ BINDIR ?= $(PREFIX)/bin
 
 UNAME_S := $(shell uname -s)
 UNAME_M := $(shell uname -m)
+ELECTRON_MIRROR := https://npmmirror.com/mirrors/electron/
+ELECTRON_CUSTOM_DIR := {{ version }}
+PLAYWRIGHT_CHROMIUM_DOWNLOAD_HOST := https://npmmirror.com/mirrors/playwright
 
 ifeq ($(UNAME_S),Darwin)
 INSTALL := install-app
@@ -17,9 +20,20 @@ INSTALL := install-cli
 ALL := tui
 endif
 
-.PHONY: all runtime remote-agent desktop dev electron-app check-electron tui install install-app install-cli check uninstall help
+.PHONY: all build toolkit runtime remote-agent desktop dev electron-app check-electron tui install install-app install-cli check uninstall help
 
 all: $(ALL)
+
+# macOS 构建前补齐本机工具；Linux 仍使用既有 TUI 构建入口。
+build:
+ifeq ($(UNAME_S),Darwin)
+	@./scripts/install-toolkit.sh make $(ALL)
+else
+	$(MAKE) $(ALL)
+endif
+
+toolkit:
+	@./scripts/install-toolkit.sh
 
 # 内嵌 Node Host 的 SEA 单文件运行时（所有客户端共用）。
 runtime:
@@ -34,11 +48,11 @@ desktop: electron-app
 
 electron-app:
 	pnpm install --frozen-lockfile --config.confirm-modules-purge=false
-	pnpm run build:desktop
+	ELECTRON_MIRROR="$(ELECTRON_MIRROR)" ELECTRON_CUSTOM_DIR="$(ELECTRON_CUSTOM_DIR)" PLAYWRIGHT_CHROMIUM_DOWNLOAD_HOST="$(PLAYWRIGHT_CHROMIUM_DOWNLOAD_HOST)" pnpm run build:desktop
 
 # 启动 Electron 开发实例；脚本负责构建 Host、Web、helper 与桌面壳。
 dev:
-	pnpm run dev:electron
+	ELECTRON_MIRROR="$(ELECTRON_MIRROR)" ELECTRON_CUSTOM_DIR="$(ELECTRON_CUSTOM_DIR)" PLAYWRIGHT_CHROMIUM_DOWNLOAD_HOST="$(PLAYWRIGHT_CHROMIUM_DOWNLOAD_HOST)" pnpm run dev:electron
 
 check-electron:
 	pnpm run test:electron:packaged
@@ -86,5 +100,5 @@ uninstall:
 	rm -f $(BINDIR)/coding
 
 help:
-	@echo "目标：dev（Electron 开发实例）/ desktop 或 electron-app（macOS Electron 包）/ check-electron / runtime / tui / install（macOS 应用或 Linux CLI）/ uninstall"
+	@echo "目标：toolkit（macOS 构建工具）/ build（macOS 桌面包或 Linux TUI）/ dev（Electron 开发实例）/ desktop 或 electron-app（macOS Electron 包）/ check-electron / runtime / tui / install（macOS 应用或 Linux CLI）/ uninstall"
 	@echo "macOS 应用：dist/Coding.app，本机 ad-hoc 签名，未经公证；make install 会替换 /Applications/Coding.app"

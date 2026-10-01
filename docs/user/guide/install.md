@@ -4,13 +4,14 @@
 
 ## macOS 桌面应用
 
-在 macOS arm64 上准备 Node.js（`^22.19.0 || >=24.0.0`）、仓库指定的 pnpm、Go 和本机 Xcode 命令行工具，并确保可以写入用于安装的 `/Applications` 目录。从仓库根目录构建：
+在 macOS arm64 的原生终端中，从仓库根目录检查并准备构建工具，再构建应用。`make toolkit` 会安装缺少的 arm64 Node.js（`^22.19.0 || >=24.0.0`）、仓库指定的 pnpm、Go 1.25 或更新版本和 Xcode 命令行工具；已有符合要求的工具会跳过。`make build` 也会先执行相同的工具检查。如系统没有 `make`，先运行 `xcode-select --install`。
 
 ```sh
-make desktop
+make toolkit
+make build
 ```
 
-构建会安装锁定依赖，并在 `dist/Coding.app` 生成带独立 Node Host、Go helper 和远端 agent 资源的 Electron 应用。构建不会修改 `/Applications/Coding.app`。可以先直接打开本地构建产物；如需安装到系统应用目录，再从仓库根目录运行：
+构建会安装锁定依赖，并在 `dist/Coding.app` 生成带独立 Node Host、Go helper 和远端 agent 资源的 Electron 应用。构建不会修改 `/Applications/Coding.app`。可以先直接打开本地构建产物；如需安装到系统应用目录，确保可以写入 `/Applications`，再从仓库根目录运行：
 
 ```sh
 make install
@@ -24,11 +25,11 @@ make install
 
 ## Linux 终端客户端
 
-Linux x64 的 `coding` 是终端界面，不是桌面 GUI。从仓库构建需要 Node.js、仓库指定的 pnpm 和 Go 1.24 或更新版本。先安装依赖，再构建客户端与它需要的 Host：
+Linux x64 的 `coding` 是终端界面，不是桌面 GUI。从仓库构建需要 Node.js、仓库指定的 pnpm 和 Go 1.24 或更新版本。准备这些工具后，安装依赖并构建客户端与它需要的 Host：
 
 ```sh
 pnpm install --frozen-lockfile
-make tui
+make build
 make runtime
 ```
 
