@@ -1,6 +1,8 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -21,6 +23,7 @@ import {
   IconFullscreenOutline16,
   Icon,
   IconRefreshOutline16,
+  IconPlusOutline16,
   IconSearchOutline16,
   MarkdownText,
   Tooltip,
@@ -32,7 +35,10 @@ import type {
   PropsRenderSlots,
   PropsStore,
 } from '@deepseek-ai/dsh-client-ui-slots'
-import type { createWorkbenchStore, WorkbenchFileTab } from './store.ts'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
+import type { createWorkbenchStore, createRetainedWorkbenchStore, WorkbenchFileTab, WorkbenchState } from './store.ts'
+import { TerminalPanel } from './TerminalPanel.tsx'
 import { tabIdForSegments } from './store.ts'
 import { NS } from './locales.ts'
 import type {
@@ -42,28 +48,41 @@ import type {
 } from './wire.ts'
 import css from './WorkspaceWorkbench.module.css'
 
-/**
- * 工作台注入的 Host 读取能力和当前 Session 的关闭／最大化动作。
- * 文件树 loading/error/ready 状态由 Session store 持有，跨会话页面切换与工作台
- * 关闭保持不变；全屏及窄屏下会话页头不可操作，顶栏提供两个面板开关。
- */
+/** 根级工作台按所属 Session 调用 Host 和布局动作。 */
 export interface WorkspaceWorkbenchInjected {
-  listFiles: (segments: readonly string[], signal?: AbortSignal) => Promise<WorkspaceFilesPayload>
-  readFile: (segments: readonly string[], signal?: AbortSignal) => Promise<WorkspaceFilePayload>
+  listFiles: (sessionId: SessionId, segments: readonly string[], signal?: AbortSignal) => Promise<WorkspaceFilesPayload>
+  readFile: (sessionId: SessionId, segments: readonly string[], signal?: AbortSignal) => Promise<WorkspaceFilePayload>
+  terminalUrl: (sessionId: SessionId) => string
+  closeWorkbench: (sessionId: SessionId) => void
+  openWorkbench: (sessionId: SessionId) => void
+  toggleWorkbenchFullscreen: (sessionId: SessionId) => void
+  toggleFiles: (sessionId: SessionId) => void
+  toggleBottom: (sessionId: SessionId) => void
+}
+
+/** 工作台 slot、根级 viewing store、Host 能力和词典组成的 props。 */
+export type WorkspaceWorkbenchProps =
+  & PropsRuntime<'workbench'>
+  & PropsRenderSlots<'workbench.browser' | 'workbench.browser.tabs'>
+  & PropsStore<ReturnType<typeof createRetainedWorkbenchStore>>
+  & PropsLocale<typeof NS>
+  & InjectFace<WorkspaceWorkbenchInjected>
+
+type WorkbenchActions = BoundActions<ReturnType<typeof createWorkbenchStore>>
+type WorkbenchViewProps = Pick<WorkspaceWorkbenchProps, 'shown' | 'fullscreen' | 'bottomOpen' | 'filesOpen' | 't' | 'renderSlot'> & {
+  sessionId: SessionId
+  state: WorkbenchState
+  actions: WorkbenchActions
+  panelPrefix: string
+  selectTab: (id: string, focus: boolean) => void
   closeWorkbench: () => void
   openWorkbench: () => void
   toggleWorkbenchFullscreen: () => void
   toggleFiles: () => void
   toggleBottom: () => void
+  listFiles: (segments: readonly string[], signal?: AbortSignal) => Promise<WorkspaceFilesPayload>
+  readFile: (segments: readonly string[], signal?: AbortSignal) => Promise<WorkspaceFilePayload>
 }
-
-/** 工作台 slot、viewing store、Host 读取和词典组成的 props。 */
-export type WorkspaceWorkbenchProps =
-  & PropsRuntime<'workbench'>
-  & PropsRenderSlots<'workbench.browser' | 'workbench.browser.tabs'>
-  & PropsStore<ReturnType<typeof createWorkbenchStore>>
-  & PropsLocale<typeof NS>
-  & InjectFace<WorkspaceWorkbenchInjected>
 
 interface LevelState {
   readonly phase: 'loading' | 'ready' | 'error'
@@ -117,6 +136,10 @@ function ToolbarButton({ label, pressed, onClick, icon, buttonRef }: {
       </button>
     </Tooltip>
   )
+}
+
+function tabDomId(prefix: string, sessionId: string, tabId: string, kind: 'tab' | 'panel'): string {
+  return `${prefix}-${kind}-${encodeURIComponent(sessionId)}-${encodeURIComponent(tabId)}`
 }
 
 function FileGlyph(): React.JSX.Element {
@@ -307,7 +330,7 @@ function PreviewContent({ payload, name, t }: {
 function FilePreview({ tab, visible, readFile, t }: {
   tab: WorkbenchFileTab
   visible: boolean
-  readFile: WorkspaceWorkbenchInjected['readFile']
+  readFile: WorkbenchViewProps['readFile']
   t: WorkspaceWorkbenchProps['t']
 }): React.JSX.Element {
   const [revision, setRevision] = useState(0)
@@ -352,25 +375,95 @@ function FilePreview({ tab, visible, readFile, t }: {
 }
 
 /**
- * 固定工作台内容：首次显示功能菜单，文件视图使用懒加载目录树，浏览器视图
- * 在同一顶栏占用标签位。全屏和窄屏隐藏会话页头时保留面板开关。
- * @param props - 布局状态与动作、Session viewing store、Host 文件能力和本地化文案。
- * @returns 保持挂载、可独立隐藏文件侧栏的工作台。
+ * 根级工作台保留每个 Session 的终端；会话切换只替换文件与浏览器的展示树。
+ * @param props - 布局状态、根级 tab store、Host 能力和本地化文案。
+ * @returns 按类型渲染内容并保留已激活 PTY 的工作台。
  */
 export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.Element {
+  const sessionId = props.useSessions(state => state.current)
+  const sessionIds = props.useSessions(state => state.ids)
+  const sessions = props.useStore(state => state.sessions)
+  const panelPrefix = useId()
+  const [focusRequest, setFocusRequest] = useState<number | null>(0)
+  const state = sessionId === undefined ? undefined : sessions[sessionId]
+  useEffect(() => { setFocusRequest(0) }, [props.shown, sessionId])
+  useEffect(() => {
+    props.actions.retainSessions(sessionIds)
+    if (sessionId !== undefined && sessionIds.includes(sessionId)) props.actions.initSession(sessionId)
+  }, [props.actions, sessionId, sessionIds])
+  const viewProps = useMemo(() => {
+    if (sessionId === undefined) return undefined
+    const actions: WorkbenchActions = {
+      setView: (view) => { props.actions.setView(sessionId, view) },
+      openFile: (file) => { props.actions.openFile(sessionId, file) },
+      activateFile: (id) => { props.actions.activateFile(sessionId, id) },
+      closeFile: (id) => { props.actions.closeFile(sessionId, id) },
+      openTerminal: () => {
+        setFocusRequest(previous => (previous ?? 0) + 1)
+        props.actions.openTerminal(sessionId)
+      },
+      activateTab: (id) => { props.actions.activateTab(sessionId, id) },
+      closeTab: (id) => {
+        setFocusRequest(previous => (previous ?? 0) + 1)
+        props.actions.closeTab(sessionId, id)
+      },
+      syncBrowserTabs: (tabs, activeId) => { props.actions.syncBrowserTabs(sessionId, tabs, activeId) },
+      setFilesQuery: (query) => { props.actions.setFilesQuery(sessionId, query) },
+      toggleFilesExpanded: (key) => { props.actions.toggleFilesExpanded(sessionId, key) },
+      setFilesLevel: (segments, phase) => { props.actions.setFilesLevel(sessionId, segments, phase) },
+      setFilesListing: (segments, listing) => { props.actions.setFilesListing(sessionId, segments, listing) },
+    }
+    return {
+      actions,
+      selectTab: (id: string, focus: boolean) => {
+        setFocusRequest(previous => focus ? (previous ?? 0) + 1 : null)
+        actions.activateTab(id)
+      },
+      listFiles: (segments: readonly string[], signal?: AbortSignal) => props.listFiles(sessionId, segments, signal),
+      readFile: (segments: readonly string[], signal?: AbortSignal) => props.readFile(sessionId, segments, signal),
+      closeWorkbench: () => { props.closeWorkbench(sessionId) },
+      openWorkbench: () => { props.openWorkbench(sessionId) },
+      toggleWorkbenchFullscreen: () => { props.toggleWorkbenchFullscreen(sessionId) },
+      toggleFiles: () => { props.toggleFiles(sessionId) },
+      toggleBottom: () => { props.toggleBottom(sessionId) },
+    }
+  }, [props.actions, props.listFiles, props.readFile, props.closeWorkbench, props.openWorkbench,
+    props.toggleWorkbenchFullscreen, props.toggleFiles, props.toggleBottom, sessionId])
+  const terminalShown = props.shown && state?.view === 'terminal'
+  return <section className={css.root} hidden={!props.shown || state === undefined}
+    aria-label={props.t('workbench.label')} data-fullscreen={props.fullscreen || undefined}>
+    {state !== undefined && viewProps !== undefined && <WorkbenchView key={sessionId}
+      {...props} {...viewProps} sessionId={sessionId as SessionId} state={state} panelPrefix={panelPrefix} />}
+    <div className={css.terminalStack} hidden={!terminalShown} {...!terminalShown ? { inert: '' } : {}}>
+      {Object.entries(sessions).flatMap(([id, session]) => session.tabs.filter(tab => tab.type === 'terminal').map(tab => (
+        <TerminalPanel key={`${id}:${tab.id}`} terminalUrl={props.terminalUrl(id as SessionId)} t={props.t}
+          shown={terminalShown && id === sessionId && tab.id === state.activeId} focusRequest={focusRequest}
+          panelId={tabDomId(panelPrefix, id, tab.id, 'panel')} tabId={tabDomId(panelPrefix, id, tab.id, 'tab')}
+          onCompleted={() => { props.actions.closeTab(id as SessionId, tab.id) }} />
+      )))}
+    </div>
+  </section>
+}
+
+function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
   const {
     shown, fullscreen, bottomOpen, filesOpen, actions, readFile, listFiles,
     closeWorkbench, openWorkbench, toggleWorkbenchFullscreen, toggleFiles, toggleBottom, t, renderSlot,
+    panelPrefix, selectTab,
   } = props
-  const { view, tabs, activeId, filesQuery, filesExpanded, filesLevels } = props.useStore(state => state)
+  const { view, tabs, activeId, filesQuery, filesExpanded, filesLevels } = props.state
   const browserShown = shown && view === 'browser'
-  const showBrowser = useCallback((): void => {
+  const showBrowser = useCallback((tabId?: string): void => {
     actions.setView('browser')
+    if (tabId !== undefined) actions.activateTab(`browser:${tabId}`)
     openWorkbench()
   }, [actions, openWorkbench])
   const returnButton = useRef<HTMLButtonElement>(null)
   const menuTerminalButton = useRef<HTMLButtonElement>(null)
+  const tablist = useRef<HTMLDivElement>(null)
+  const focusAfterClose = useRef(false)
   const pendingFocus = useRef<'menu' | 'return' | null>(null)
+  const previousView = useRef(view)
   const showFiles = useCallback((): void => {
     pendingFocus.current = 'return'
     actions.setView('files')
@@ -381,6 +474,8 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
     actions.setView('menu')
   }, [actions])
   useEffect(() => {
+    if (view === 'menu' && previousView.current !== 'menu') menuTerminalButton.current?.focus()
+    previousView.current = view
     if (pendingFocus.current === view) {
       menuTerminalButton.current?.focus()
       pendingFocus.current = null
@@ -389,10 +484,18 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
       pendingFocus.current = null
     }
   }, [view])
+  useLayoutEffect(() => {
+    if (!focusAfterClose.current) return
+    focusAfterClose.current = false
+    if (view === 'menu') menuTerminalButton.current?.focus()
+    else if (view !== 'terminal') tablist.current?.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')?.focus()
+  }, [tabs, view])
   const expanded = useMemo(() => new Set(filesExpanded), [filesExpanded])
   const requests = useRef(new Map<string, AbortController>())
   const rootKey = tabIdForSegments([])
-  const rootRequested = useRef(filesLevels[rootKey] !== undefined)
+  const rootRequested = useRef(filesLevels[rootKey] !== undefined && filesLevels[rootKey].phase !== 'loading')
+  const interruptedLevels = useRef(Object.values(filesLevels)
+    .filter(level => level?.phase === 'loading' && tabIdForSegments(level.segments) !== rootKey))
   const load = useCallback((pathSegments: readonly string[]): void => {
     const key = tabIdForSegments(pathSegments)
     requests.current.get(key)?.abort()
@@ -411,11 +514,19 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
   }, [actions, listFiles])
 
   useEffect(() => {
-    if (shown && view === 'files' && filesLevels[rootKey] === undefined && !rootRequested.current) {
+    if (shown && view === 'files' && !rootRequested.current
+      && (filesLevels[rootKey] === undefined || filesLevels[rootKey].phase === 'loading')) {
       rootRequested.current = true
       load([])
     }
   }, [filesLevels, load, rootKey, shown, view])
+
+  useEffect(() => {
+    if (!shown || view !== 'files') return
+    // Session 展示树重挂载时，继续被上一棵树取消的目录读取。
+    for (const level of interruptedLevels.current) if (level !== undefined) load(level.segments)
+    interruptedLevels.current = []
+  }, [load, shown, view])
 
   useEffect(() => {
     return () => {
@@ -433,53 +544,59 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
 
   const active = useMemo(() => tabs.find(tab => tab.id === activeId), [activeId, tabs])
 
+  const browserOwner = {
+    shown: browserShown,
+    openBrowser: showBrowser,
+    syncBrowserTabs: actions.syncBrowserTabs,
+    ...view === 'browser' && active?.type === 'browser' ? { selectedTabId: active.browserTabId } : {},
+  }
   return (
-    <section
-      className={css.root}
-      hidden={!shown}
-      aria-label={t('workbench.label')}
-      data-fullscreen={fullscreen || undefined}
-    >
+    <>
       <header className={css.topbar} data-window-drag-region="">
-        <div className={css.tabs}>
-          {view === 'files' && <div className={css.fileTabs} role="tablist" aria-label={t('tabs.label')}>
-            {tabs.map((tab, index) => {
-              const selected = tab.id === activeId
-              const panelId = `workbench-preview-${String(index)}`
-              return (
-                <div className={clsx(css.tab, selected && css.tabActive)} role="presentation" key={tab.id}>
-                  <button
-                    type="button"
-                    className={css.tabSelect}
-                    role="tab"
-                    aria-selected={selected}
-                    aria-controls={panelId}
-                    title={tab.name}
-                    onClick={() => { actions.activateFile(tab.id) }}
-                  >
-                    <FileGlyph />
-                    <span>{tab.name}</span>
-                  </button>
-                  <button
-                    type="button"
-                    className={css.tabClose}
-                    aria-label={t('tabs.close', { name: tab.name })}
-                    title={t('tabs.close', { name: tab.name })}
-                    onClick={() => { actions.closeFile(tab.id) }}
-                  >
-                    <IconCloseOutline16 size={12} />
-                  </button>
-                </div>
-              )
-            })}
-          </div>}
-          <div className={css.browserTabs} hidden={!browserShown} {...!browserShown ? { inert: '' } : {}}>
-            {renderSlot('workbench.browser.tabs', {
-              shown: browserShown,
-              openBrowser: showBrowser,
-              closeBrowser: showMenu,
-            })}
+        <div ref={tablist} className={css.tabs} role="tablist" aria-label={t('tabs.label')}
+          tabIndex={view === 'menu' && tabs.length > 0 ? 0 : undefined}
+          onKeyDown={(event) => {
+            const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]:not(:disabled)'))
+            const index = buttons.indexOf(event.target as HTMLButtonElement)
+            if (buttons.length === 0 || (index < 0 && event.target !== event.currentTarget)) return
+            const next = event.key === 'ArrowRight' ? (index + 1) % buttons.length
+              : event.key === 'ArrowLeft' ? (index - 1 + buttons.length) % buttons.length
+                : event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : -1
+            if (next < 0) return
+            event.preventDefault()
+            buttons[next]?.click()
+            buttons[next]?.focus()
+          }}>
+          {tabs.map((tab, index) => {
+            if (tab.type === 'browser') return <div key={tab.id} className={css.browserTabs}>
+              {renderSlot('workbench.browser.tabs', { ...browserOwner, shown,
+                tabId: tab.browserTabId, tabName: tab.name, browserShown: browserShown && activeId === tab.id })}
+            </div>
+            const name = tab.type === 'terminal' ? t('terminal.tab', { number: String(tab.number) }) : tab.name
+            const selected = tab.id === activeId && view === (tab.type === 'file' ? 'files' : 'terminal')
+            return <div className={clsx(css.tab, selected && css.tabActive)} role="presentation" key={tab.id}>
+              <button type="button" className={css.tabSelect} role="tab" aria-selected={selected}
+                tabIndex={selected || (view === 'menu' && index === 0) ? 0 : -1}
+                aria-controls={tabDomId(panelPrefix, props.sessionId, tab.id, 'panel')}
+                id={tabDomId(panelPrefix, props.sessionId, tab.id, 'tab')} title={name}
+                onClick={(event) => { selectTab(tab.id, event.detail !== 0) }}>
+                {tab.type === 'terminal' ? <Icon name="terminal-menu" size={14} /> : <FileGlyph />}
+                <span>{name}</span>
+              </button>
+              <button type="button" className={css.tabClose} aria-label={t('tabs.close', { name })}
+                title={t('tabs.close', { name })} onClick={() => {
+                  focusAfterClose.current = true
+                  actions.closeTab(tab.id)
+                }}>
+                <IconCloseOutline16 size={12} />
+              </button>
+            </div>
+          })}
+          <div className={css.browserTabs}>
+            {renderSlot('workbench.browser.tabs', { ...browserOwner, shown, browserShown })}
           </div>
+          {tabs.some(tab => tab.type === 'terminal') && <ToolbarButton label={t('terminal.newTab')}
+            onClick={() => { actions.openTerminal() }} icon={<IconPlusOutline16 size={14} />} />}
         </div>
         <div className={css.viewControls}>
           {view !== 'menu' && (
@@ -527,7 +644,7 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
                 <small>{t('workbench.menu.unavailable')}</small>
               </button>
               <button type="button" ref={menuTerminalButton} className={css.functionItem} onClick={() => {
-                if (!bottomOpen) toggleBottom()
+                actions.openTerminal()
               }}>
                 <Icon name="terminal-menu" size={18} />
                 <span>{t('workbench.menu.terminal')}</span>
@@ -551,8 +668,10 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
             </nav>
           </div>
           <div className={css.fileView} hidden={view !== 'files'} {...view !== 'files' ? { inert: '' } : {}}>
-            {tabs.map((tab, index) => (
-              <div id={`workbench-preview-${String(index)}`} className={css.previewSlot} key={tab.id}>
+            {tabs.filter(tab => tab.type === 'file').map(tab => (
+              <div id={tabDomId(panelPrefix, props.sessionId, tab.id, 'panel')}
+                role="tabpanel" aria-labelledby={tabDomId(panelPrefix, props.sessionId, tab.id, 'tab')}
+                hidden={tab.id !== activeId || view !== 'files'} className={css.previewSlot} key={tab.id}>
                 <FilePreview tab={tab} visible={tab.id === activeId && view === 'files'} readFile={readFile} t={t} />
               </div>
             ))}
@@ -565,11 +684,7 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
             )}
           </div>
           <div className={css.browserView} hidden={view !== 'browser'} {...view !== 'browser' ? { inert: '' } : {}}>
-            {renderSlot('workbench.browser', {
-              shown: browserShown,
-              openBrowser: showBrowser,
-              closeBrowser: showMenu,
-            })}
+            {renderSlot('workbench.browser', browserOwner)}
           </div>
         </main>
         <div className={css.treeView} hidden={view !== 'files' || !filesOpen}
@@ -587,6 +702,6 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
           />
         </div>
       </div>
-    </section>
+    </>
   )
 }

@@ -38,7 +38,7 @@ export class BrowserMirrorController {
   private opened: string | null = null
   private pendingOpen: string | null = null
   private urgent = false
-  private onRevision: (() => void) | undefined
+  private onRevision: ((state: BrowserState) => void) | undefined
 
   /**
    * @param sessionId - 当前会话。
@@ -51,10 +51,10 @@ export class BrowserMirrorController {
 
   /**
    * 内容 slot 挂载期间轮询；基线状态不抢占文件视图。
-   * @param onRevision - 新观测出现后的导航动作。
+   * @param onRevision - 新观测出现后，以同一份已发布状态执行的导航动作。
    * @returns 终止轮询的 disposer。
    */
-  start(onRevision: () => void): () => void {
+  start(onRevision: (state: BrowserState) => void): () => void {
     if (this.active) throw new Error('browser mirror already started')
     this.active = true
     this.onRevision = onRevision
@@ -234,7 +234,7 @@ export class BrowserMirrorController {
     if (autoOpen && this.pendingOpen === key && this.opened !== key) {
       this.opened = key
       this.pendingOpen = null
-      this.onRevision?.()
+      this.onRevision?.(state)
     }
   }
 

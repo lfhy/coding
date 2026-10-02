@@ -91,7 +91,7 @@ function statusText(status: TerminalStatus, t: TerminalPanelProps['t']): string 
 }
 
 /**
- * 单个终端标签。shown 只控制展示，因此切换标签或收起底栏不会断开进程。
+ * 单个终端标签。shown 只控制展示，因此切换标签、会话或隐藏面板不会断开进程。
  * 卸载关闭 WebSocket，Host 负责等待对应 PTY 停稳。
  * @param props - 布局可见状态、Host URL 和本地化文案。
  * @returns xterm 终端及连接状态。

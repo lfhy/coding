@@ -1,4 +1,5 @@
 .root {
+  position: relative;
   display: grid;
   grid-template-rows: 44px minmax(0, 1fr);
   width: 100%;
@@ -13,9 +14,11 @@
 .root[hidden],
 .filesPanel[hidden],
 .preview[hidden],
+.previewSlot[hidden],
 .fileView[hidden],
 .menuView[hidden],
 .browserView[hidden],
+.terminalStack[hidden],
 .browserTabs[hidden],
 .treeView[hidden] {
   display: none;
@@ -100,6 +103,8 @@
 }
 
 .tabs {
+  display: flex;
+  align-items: center;
   min-width: 0;
   height: 100%;
   overflow-x: auto;
@@ -114,6 +119,7 @@
 }
 
 .browserTabs {
+  flex: none;
   display: flex;
   align-items: center;
   min-width: 0;
@@ -632,4 +638,12 @@ div.treeRow {
   .chevron {
     transition: none;
   }
+}
+
+/* 终端树独立于随 Session 切换的文件／浏览器内容，覆盖同一工作台内容区。 */
+.terminalStack {
+  position: absolute;
+  inset: 44px 0 0;
+  min-width: 0;
+  min-height: 0;
 }

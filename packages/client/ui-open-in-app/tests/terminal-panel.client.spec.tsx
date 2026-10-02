@@ -1,9 +1,13 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
-import type { SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
+import { useState } from 'react'
+import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { createSnapshotStore, type SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { WorkspaceWorkbench, type WorkspaceWorkbenchProps } from '../src/client/WorkspaceWorkbench.tsx'
+import { WorkbenchPanelToggles } from '../src/client/WorkbenchPanelToggles.tsx'
+import { createRetainedWorkbenchStore } from '../src/client/store.ts'
 import { RetainedTerminalPanel } from '../src/client/RetainedTerminalPanel.tsx'
 import { parseTerminalServerFrame, TerminalPanel, type TerminalPanelProps } from '../src/client/TerminalPanel.tsx'
 import { zh } from '../src/client/locales.ts'
@@ -151,6 +155,182 @@ afterEach(() => {
   document.body.style.removeProperty('color')
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
+})
+
+function rightWorkbench() {
+  const instance = createRetainedWorkbenchStore().create()
+  const list = createSnapshotStore<Pick<SessionListState, 'ids' | 'current'>>({ ids: RETAINED_IDS, current: SESSION })
+  const bottomToggle = vi.fn()
+  const workbenchProps = {
+    shown: true, fullscreen: false, bottomOpen: false, filesOpen: true, t,
+    useStore: bindSnapshotSelector(instance.store), actions: instance.actions,
+    useSessions: bindSnapshotSelector(list),
+    terminalUrl: retainedProps().terminalUrl,
+    listFiles: vi.fn(async () => ({ path: '/w', entries: [], truncated: false })),
+    readFile: vi.fn(async () => ({ path: '/w/a.txt', content: { kind: 'text', text: 'file output' } })),
+    openWorkbench: vi.fn(), closeWorkbench: vi.fn(), toggleWorkbenchFullscreen: vi.fn(),
+    toggleFiles: vi.fn(), toggleBottom: bottomToggle,
+    renderSlot: vi.fn((name: string, owner: {
+      shown: boolean
+      tabId?: string
+      browserShown?: boolean
+      openBrowser: (id?: string) => void
+    }) => name === 'workbench.browser'
+      ? <div hidden={!owner.shown}>browser page</div>
+      : owner.tabId === undefined ? null : <button type="button" role="tab"
+        aria-selected={owner.browserShown} onClick={() => { owner.openBrowser(owner.tabId) }}>browser tab</button>),
+  } as unknown as WorkspaceWorkbenchProps
+  return { instance, list, props: workbenchProps, bottomToggle }
+}
+
+describe('右侧和底栏终端', () => {
+  it('菜单和页头分别打开各自终端，输入输出与关闭互不串线', async () => {
+    const b = rightWorkbench()
+    const closeBottom = vi.fn()
+    function BothPanels() {
+      const [bottomOpen, setBottomOpen] = useState(false)
+      return <>
+        <WorkbenchPanelToggles {...{
+          sessionId: SESSION, t,
+          useWorkbenchLayout: (selector: (value: unknown) => unknown) => selector({ open: true, bottomOpen }),
+          toggleBottom: () => { setBottomOpen(value => !value) }, toggleWorkbench: vi.fn(),
+        } as unknown as Parameters<typeof WorkbenchPanelToggles>[0]} />
+        <WorkspaceWorkbench {...b.props} bottomOpen={bottomOpen} />
+        <section aria-label="终端底栏"><RetainedTerminalPanel {...retainedProps(SESSION, bottomOpen)}
+          closeBottom={() => { closeBottom(); setBottomOpen(false) }} /></section>
+      </>
+    }
+    const mounted = render(<BothPanels />)
+    expect(FakeWebSocket.instances).toHaveLength(0)
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.terminal'] }))
+    expect(FakeWebSocket.instances).toHaveLength(1)
+    expect(b.bottomToggle).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: zh['workbench.bottom.show'] })).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.bottom.show'] }))
+    expect(FakeWebSocket.instances).toHaveLength(2)
+    const right = within(screen.getByRole('region', { name: zh['workbench.label'] }))
+    const bottom = within(screen.getByRole('region', { name: '终端底栏' }))
+    expect(right.getByRole('tab', { name: 'coding 1' }).getAttribute('aria-selected')).toBe('true')
+    expect(bottom.getByRole('tab', { name: 'coding 1' }).getAttribute('aria-selected')).toBe('true')
+    const [rightSocket, bottomSocket] = FakeWebSocket.instances
+    const [rightTerminal, bottomTerminal] = terminalMocks.instances
+    act(() => {
+      for (const socket of FakeWebSocket.instances) {
+        socket.open()
+        socket.message('{"type":"ready","pid":123,"shell":{"name":"zsh","path":"/bin/zsh"},"cwd":"/w","cols":80,"rows":24}')
+      }
+      rightSocket?.message('{"type":"output","data":"right output"}')
+      bottomSocket?.message('{"type":"output","data":"bottom output"}')
+      rightTerminal?.data?.('right input\r')
+      bottomTerminal?.data?.('bottom input\r')
+    })
+    expect(rightTerminal?.writes).toEqual(['right output'])
+    expect(bottomTerminal?.writes).toEqual(['bottom output'])
+    expect(rightSocket?.sent.map((value): unknown => JSON.parse(value))).toContainEqual({ type: 'input', data: 'right input\r' })
+    expect(bottomSocket?.sent.map((value): unknown => JSON.parse(value))).toContainEqual({ type: 'input', data: 'bottom input\r' })
+    expect(rightSocket?.sent.some(value => value.includes('bottom input'))).toBe(false)
+    expect(bottomSocket?.sent.some(value => value.includes('right input'))).toBe(false)
+    expect(right.getByRole('tab', { name: 'coding 1' }).id).not.toBe(bottom.getByRole('tab', { name: 'coding 1' }).id)
+    fireEvent.click(right.getByRole('button', { name: zh['tabs.close'].replace('{name}', 'coding 1') }))
+    expect(rightSocket?.close).toHaveBeenCalledOnce()
+    expect(rightTerminal?.dispose).toHaveBeenCalledOnce()
+    expect(bottomSocket?.close).not.toHaveBeenCalled()
+    expect(bottomTerminal?.dispose).not.toHaveBeenCalled()
+    expect(closeBottom).not.toHaveBeenCalled()
+    expect(right.getByRole('navigation', { name: zh['workbench.menu.label'] })).toBeDefined()
+    fireEvent.click(right.getByRole('button', { name: zh['workbench.menu.terminal'] }))
+    const nextRight = FakeWebSocket.instances[2]
+    fireEvent.click(bottom.getByRole('button', { name: zh['terminal.closeTab'].replace('{name}', 'coding 1') }))
+    await waitFor(() => { expect(closeBottom).toHaveBeenCalledOnce() })
+    expect(bottomSocket?.close).toHaveBeenCalledOnce()
+    expect(nextRight?.close).not.toHaveBeenCalled()
+    expect(right.getByRole('tab', { name: 'coding 2' })).toBeDefined()
+    mounted.unmount()
+    expect(nextRight?.close).toHaveBeenCalledOnce()
+  })
+
+  it('混合类型和终端标签切换保留PTY，隐藏及会话切换保留输出，移除才释放', () => {
+    const b = rightWorkbench()
+    const mounted = render(<WorkspaceWorkbench {...b.props} />)
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.terminal'] }))
+    fireEvent.click(screen.getByRole('button', { name: zh['terminal.newTab'] }))
+    const [first, second] = FakeWebSocket.instances
+    const [firstTerminal, secondTerminal] = terminalMocks.instances
+    act(() => {
+      first?.message('{"type":"output","data":"first scrollback"}')
+      second?.message('{"type":"output","data":"second scrollback"}')
+    })
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'coding 2' }), { key: 'Home' })
+    expect(screen.getByRole('tab', { name: 'coding 1' }).getAttribute('aria-selected')).toBe('true')
+    expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'coding 1' }))
+    fireEvent.click(screen.getByRole('button', { name: zh['terminal.newTab'] }))
+    expect(document.activeElement).toBe(terminalMocks.instances[2]?.textarea)
+    fireEvent.click(screen.getByRole('button', { name: zh['tabs.close'].replace('{name}', 'coding 3') }))
+    act(() => {
+      b.instance.actions.openFile(SESSION, { name: 'a.txt', segments: ['a.txt'] })
+      b.instance.actions.syncBrowserTabs(SESSION, [{ id: 'browser-page', name: 'Page' }], 'browser-page')
+    })
+    expect(screen.getByRole('tab', { name: 'a.txt' })).toBeDefined()
+    expect(screen.getByRole('tab', { name: 'coding 1' })).toBeDefined()
+    fireEvent.click(screen.getByRole('tab', { name: 'browser tab' }))
+    expect(screen.getByText('browser page').hasAttribute('hidden')).toBe(false)
+    fireEvent.click(screen.getByRole('tab', { name: 'coding 1' }), { detail: 1 })
+    expect(firstTerminal?.writes).toEqual(['first scrollback'])
+    expect(secondTerminal?.writes).toEqual(['second scrollback'])
+    expect(document.activeElement).toBe(firstTerminal?.textarea)
+    expect(FakeWebSocket.instances).toHaveLength(3)
+    expect(first?.close).not.toHaveBeenCalled()
+    expect(second?.close).not.toHaveBeenCalled()
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'coding 1' }), { key: 'ArrowRight' })
+    expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'coding 2' }))
+    mounted.rerender(<WorkspaceWorkbench {...b.props} shown={false} />)
+    mounted.rerender(<WorkspaceWorkbench {...b.props} />)
+    expect(document.activeElement).toBe(secondTerminal?.textarea)
+    fireEvent.click(screen.getByRole('tab', { name: 'coding 1' }), { detail: 1 })
+    mounted.rerender(<WorkspaceWorkbench {...b.props} shown={false} />)
+    act(() => { b.list.set({ ids: RETAINED_IDS, current: OTHER_SESSION }) })
+    mounted.rerender(<WorkspaceWorkbench {...b.props} />)
+    expect(FakeWebSocket.instances).toHaveLength(3)
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.terminal'] }))
+    const other = FakeWebSocket.instances[3]
+    act(() => { b.list.set({ ids: RETAINED_IDS, current: SESSION }) })
+    expect(FakeWebSocket.instances).toHaveLength(4)
+    expect(firstTerminal?.writes).toEqual(['first scrollback'])
+    expect(first?.close).not.toHaveBeenCalled()
+    expect(other?.close).not.toHaveBeenCalled()
+    act(() => { b.list.set({ ids: RETAINED_IDS, current: undefined }) })
+    expect(first?.close).not.toHaveBeenCalled()
+    act(() => { b.list.set({ ids: [OTHER_SESSION], current: OTHER_SESSION }) })
+    expect(first?.close).toHaveBeenCalledOnce()
+    expect(second?.close).toHaveBeenCalledOnce()
+    expect(firstTerminal?.dispose).toHaveBeenCalledOnce()
+    expect(other?.close).not.toHaveBeenCalled()
+    mounted.unmount()
+    expect(other?.close).toHaveBeenCalledOnce()
+  })
+
+  it('右侧shell退出关闭所属tab，意外断连保持tab并只重连对应socket', () => {
+    const b = rightWorkbench()
+    render(<WorkspaceWorkbench {...b.props} />)
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.terminal'] }))
+    fireEvent.click(screen.getByRole('button', { name: zh['terminal.newTab'] }))
+    const [first, second] = FakeWebSocket.instances
+    act(() => { second?.finish() })
+    expect(screen.getByRole('tab', { name: 'coding 2' })).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: zh['terminal.reconnect'] }))
+    expect(FakeWebSocket.instances).toHaveLength(3)
+    expect(first?.close).not.toHaveBeenCalled()
+    const reconnected = FakeWebSocket.instances[2]
+    act(() => {
+      reconnected?.message('{"type":"exit","exitCode":0,"signal":null}')
+      reconnected?.finish()
+    })
+    expect(screen.queryByRole('tab', { name: 'coding 2' })).toBeNull()
+    expect(screen.getByRole('tab', { name: 'coding 1' }).getAttribute('aria-selected')).toBe('true')
+    act(() => { first?.message('{"type":"exit","exitCode":0,"signal":null}'); first?.finish() })
+    expect(screen.getByRole('navigation', { name: zh['workbench.menu.label'] })).toBeDefined()
+    expect(b.bottomToggle).not.toHaveBeenCalled()
+  })
 })
 
 describe('terminal frame parser', () => {

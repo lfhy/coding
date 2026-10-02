@@ -31,9 +31,9 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     /** 既有会话详情栏；工作台打开时保持挂载但不参与布局。 */
     'details': { kind: 'single'; scope: 'session'; owner: DetailsOwnerProps }
     /**
-     * 会话级固定工作台右栏。占用者绘制文件预览与顶栏视图控制；页头入口在会话层打开工作台；关闭时 entry 保持挂载。
+     * 根级固定工作台右栏；占用者按会话保留标签与终端树，关闭与会话切换时 entry 保持挂载。
      */
-    'workbench': { kind: 'single'; scope: 'session'; owner: WorkbenchOwnerProps }
+    'workbench': { kind: 'single'; scope: 'root'; owner: WorkbenchOwnerProps }
     /** 根布局持有的终端底栏；会话切换时保留各会话的终端树。 */
     'workbench.bottom': { kind: 'single'; scope: 'root'; owner: WorkbenchBottomOwnerProps }
     /** 全框架浮层；容器透传指针事件，由各 entry 自行恢复。 */
@@ -98,7 +98,7 @@ export function apply(ctx: ClientContext): void {
         'sidebar': { kind: 'single', scope: 'root' },
         'conversation': { kind: 'single', scope: 'session-maybe' },
         'details': { kind: 'single', scope: 'session' },
-        'workbench': { kind: 'single', scope: 'session' },
+        'workbench': { kind: 'single', scope: 'root' },
         'workbench.bottom': { kind: 'single', scope: 'root' },
         'shell.overlay': { kind: 'list', scope: 'root' },
       },

@@ -35,7 +35,7 @@ async function bench() {
       'conversation.hero.actions': { kind: 'list', scope: 'root' },
       'conversation.session.header.utilities': { kind: 'list', scope: 'session' },
       'conversation.view': { kind: 'list', scope: 'session' },
-      'workbench': { kind: 'single', scope: 'session' },
+      'workbench': { kind: 'single', scope: 'root' },
       'workbench.bottom': { kind: 'single', scope: 'root' },
     },
   } as never, () => null)
@@ -104,7 +104,8 @@ describe('open-in-app browser half', () => {
     ])
     ctx.slots.register({ name: 'workbench.browser' }, () => null)
     expect(ctx.slots.entries('workbench.browser')).toHaveLength(1)
-    expect(action?.store).toBe(workbench?.store)
+    expect(action?.store).toBeUndefined()
+    expect(workbench?.store).toBeDefined()
     expect(bottom?.component).toBe(RetainedTerminalPanel)
     expect(ctx.slots.entries('conversation.view')).toEqual([])
 
@@ -168,18 +169,18 @@ describe('open-in-app browser half', () => {
     expect(openWorkbench).toHaveBeenCalledWith(SESSION)
 
     const workbench = ctx.slots.entries('workbench')[0]
-    const workbenchFace = (workbench?.inject as unknown as (id: SessionId) => WorkspaceWorkbenchInjected)(SESSION)
-    await expect(workbenchFace.listFiles([])).resolves.toEqual({
+    const workbenchFace = (workbench?.inject as unknown as () => WorkspaceWorkbenchInjected)()
+    await expect(workbenchFace.listFiles(SESSION, [])).resolves.toEqual({
       path: '/w', entries: [{ name: 'README.md', type: 'file', segments: ['README.md'] }], truncated: false,
     })
-    await expect(workbenchFace.readFile(['README.md'])).resolves.toEqual({
+    await expect(workbenchFace.readFile(SESSION, ['README.md'])).resolves.toEqual({
       path: '/w/README.md', content: { kind: 'markdown', text: '# Readme' },
     })
-    workbenchFace.closeWorkbench()
-    workbenchFace.openWorkbench()
-    workbenchFace.toggleWorkbenchFullscreen()
-    workbenchFace.toggleFiles()
-    workbenchFace.toggleBottom()
+    workbenchFace.closeWorkbench(SESSION)
+    workbenchFace.openWorkbench(SESSION)
+    workbenchFace.toggleWorkbenchFullscreen(SESSION)
+    workbenchFace.toggleFiles(SESSION)
+    workbenchFace.toggleBottom(SESSION)
     expect(closeWorkbench).toHaveBeenCalledWith(SESSION)
     expect(openWorkbench).toHaveBeenCalledTimes(2)
     expect(toggleWorkbenchFullscreen).toHaveBeenCalledWith(SESSION)

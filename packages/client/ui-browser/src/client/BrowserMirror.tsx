@@ -10,20 +10,26 @@ import type {} from '@deepseek-ai/dsh-client-ui-open-in-app/client'
 import type { BrowserView } from './controller.ts'
 import { fitBrowserViewport, type BrowserViewport } from './viewport.ts'
 import { pointOnFrame } from './interaction.ts'
-import { normalizeBrowserUrl } from './wire.ts'
+import { normalizeBrowserUrl, type BrowserState } from './wire.ts'
 import { NS } from './locales.ts'
 import css from './BrowserMirror.module.css'
 
 /** 两个 slot 共用同一个会话控制器，但只让内容 slot 持有轮询。 */
 export interface BrowserMirrorInjected {
   hooks: { browserMirror: HostObservable<BrowserView> }
-  start: (onRevision: () => void) => () => void
+  start: (onRevision: (state: BrowserState) => void) => () => void
   ensureTab: () => Promise<void>
   command: (command: BrowserHumanCommand) => Promise<boolean>
   retry: () => void
 }
 export type BrowserMirrorProps = PropsRuntime<'workbench.browser'> & PropsLocale<typeof NS> & InjectFace<BrowserMirrorInjected>
 export type BrowserTabsProps = PropsRuntime<'workbench.browser.tabs'> & PropsLocale<typeof NS> & InjectFace<BrowserMirrorInjected>
+
+function browserTabNames(state: BrowserState, t: BrowserMirrorProps['t']) {
+  return state.tabs.map(tab => ({
+    id: tab.id, name: tab.title || (tab.url === 'about:blank' ? t('newTab') : tab.url),
+  }))
+}
 
 function AgentPointer() {
   return <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -32,60 +38,62 @@ function AgentPointer() {
   </svg>
 }
 
+function focusWorkbenchTab(row: Element | null): void {
+  queueMicrotask(() => {
+    if (!row?.isConnected) return
+    const button = row.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]:not(:disabled)')
+      ?? row.querySelector<HTMLButtonElement>('[role="tab"]:not(:disabled)')
+      ?? row.querySelector<HTMLButtonElement>('button:not(:disabled)')
+    button?.focus()
+  })
+}
+
 /**
- * 工作台顶部标签列；外层工作台继续拥有窗口尺寸和文件视图切换。
- * @param props - 共享会话状态与标签操作。
- * @returns 标签栏。
+ * 向工作台统一标签行贡献一个浏览器页面；未给 tabId 时贡献新增页面按钮。
+ * @param props - 共享会话状态、所属页面与标签操作。
+ * @returns 页面标签或新增页面按钮。
  */
-export function BrowserTabs({ shown, closeBrowser, useBrowserMirror, command, t }: BrowserTabsProps) {
+export function BrowserTabs({ shown, browserShown = shown, tabId, tabName,
+  openBrowser, useBrowserMirror, command, t }: BrowserTabsProps) {
   const { state, pending, phase } = useBrowserMirror(view => view)
+  const hostTab = state?.tabs.find(tab => tab.id === tabId)
+  const tab = hostTab ?? (tabId !== undefined && state === null
+    ? { id: tabId, title: tabName ?? t('newTab'), url: 'about:blank' } : undefined)
   const disabled = pending || phase === 'busy' || state?.operationActive === true
-  const focusAfterAction = useRef<string | null>(null)
-  const tabButtons = useRef(new Map<string, HTMLButtonElement>())
-  const addButton = useRef<HTMLButtonElement>(null)
-  useEffect(() => {
-    if (focusAfterAction.current === null || pending) return
-    if (phase === 'error') { focusAfterAction.current = null; return }
-    const requested = focusAfterAction.current
-    if (requested === 'new' && state?.activeTabId) {
-      tabButtons.current.get(state.activeTabId)?.focus()
-    } else if (requested === 'active' && state?.activeTabId) {
-      tabButtons.current.get(state.activeTabId)?.focus()
-    } else if (requested !== 'new' && requested !== 'active') {
-      ;(tabButtons.current.get(requested) ?? addButton.current)?.focus()
-    } else addButton.current?.focus()
-    focusAfterAction.current = null
-  }, [state, pending, phase])
-  return <div className={css.tabs} hidden={!shown} role="tablist" aria-label={t('tabs')}>
-    {state?.tabs.map((tab, index) => {
-      const selected = tab.id === state.activeTabId
-      return <div className={css.tab} data-active={selected} key={tab.id}>
-        <button type="button" className={css.tabSelect} role="tab" aria-selected={selected}
-          ref={(node) => { if (node) tabButtons.current.set(tab.id, node); else tabButtons.current.delete(tab.id) }}
-          disabled={disabled} title={disabled ? t('agentBusy') : tab.title || tab.url}
-          onClick={() => { if (!selected) void command({ kind: 'select-tab', tabId: tab.id }) }}>
-          <span className={css.tabGlyph} aria-hidden="true">
-            {selected && state.observation?.cursor ? <AgentPointer /> : <IconGlobeOutline14 />}
-          </span>
-          <span className={css.tabName}>{tab.title || (tab.url === 'about:blank' ? t('newTab') : tab.url)}</span>
-        </button>
-        <button type="button" className={css.tabClose} disabled={disabled}
-          aria-label={t('closeTab', { name: tab.title || t('newTab') })}
-          title={t('closeTab', { name: tab.title || t('newTab') })}
-          onClick={() => {
-            focusAfterAction.current = state.tabs[index + 1]?.id ?? state.tabs[index - 1]?.id ?? 'active'
-            void command({ kind: 'close-tab', tabId: tab.id }).then((success) => {
-              if (!success) { focusAfterAction.current = null; return }
-              if (state.tabs.length === 1) { focusAfterAction.current = null; closeBrowser() }
-            })
-          }}><IconCloseOutline16 size={12} /></button>
-      </div>
-    })}
-    <button type="button" ref={addButton} className={css.addTab} disabled={disabled} aria-label={t('addTab')}
-      title={disabled ? t('agentBusy') : t('addTab')} onClick={() => {
-        focusAfterAction.current = 'new'
-        void command({ kind: 'new-tab' }).then((success) => { if (!success) focusAfterAction.current = null })
-      }}><IconPlusOutline16 size={14} /></button>
+    || (tabId !== undefined && state === null)
+  const selected = browserShown && (state === null || tab?.id === state.activeTabId)
+  return <div className={css.tabs} hidden={!shown}>
+    {tab !== undefined && <div className={css.tab} data-active={selected}>
+      <button type="button" className={css.tabSelect} role="tab" aria-selected={selected}
+        tabIndex={selected ? 0 : -1}
+        disabled={disabled} title={disabled ? t('agentBusy') : tab.title || tab.url}
+        onClick={() => {
+          if (hostTab === undefined) return
+          openBrowser(hostTab.id)
+          if (hostTab.id !== state?.activeTabId) void command({ kind: 'select-tab', tabId: hostTab.id })
+        }}>
+        <span className={css.tabGlyph} aria-hidden="true">
+          {selected && state?.observation?.cursor ? <AgentPointer /> : <IconGlobeOutline14 />}
+        </span>
+        <span className={css.tabName}>{tab.title || (tab.url === 'about:blank' ? t('newTab') : tab.url)}</span>
+      </button>
+      <button type="button" className={css.tabClose} disabled={disabled}
+        aria-label={t('closeTab', { name: tab.title || t('newTab') })}
+        title={t('closeTab', { name: tab.title || t('newTab') })}
+        onClick={(event) => {
+          if (hostTab === undefined) return
+          const row = event.currentTarget.closest('[role="tablist"]')
+          void command({ kind: 'close-tab', tabId: hostTab.id }).then((success) => {
+            if (success) focusWorkbenchTab(row)
+          })
+        }}><IconCloseOutline16 size={12} /></button>
+    </div>}
+    {tabId === undefined && <button type="button" className={css.addTab} disabled={disabled} aria-label={t('addTab')}
+      title={disabled ? t('agentBusy') : t('addTab')} onClick={(event) => {
+        const row = event.currentTarget.closest('[role="tablist"]')
+        openBrowser()
+        void command({ kind: 'new-tab' }).then((success) => { if (success) focusWorkbenchTab(row) })
+      }}><IconPlusOutline16 size={14} /></button>}
   </div>
 }
 
@@ -94,13 +102,36 @@ export function BrowserTabs({ shown, closeBrowser, useBrowserMirror, command, t 
  * @param props - 工作台 owner、词典和状态 hook。
  * @returns 浏览器内容区域。
  */
-export function BrowserMirror({ shown, openBrowser, useBrowserMirror, start, ensureTab, command, retry, t }: BrowserMirrorProps) {
+export function BrowserMirror({ shown, selectedTabId, openBrowser, syncBrowserTabs,
+  useBrowserMirror, start, ensureTab, command, retry, t }: BrowserMirrorProps) {
   const view = useBrowserMirror(value => value)
+  const viewRef = useRef(view)
+  viewRef.current = view
   const phaseRef = useRef(view.phase)
   phaseRef.current = view.phase
   const openRef = useRef(openBrowser)
   openRef.current = openBrowser
-  useEffect(() => start(() => { openRef.current() }), [start])
+  const syncRef = useRef(syncBrowserTabs)
+  syncRef.current = syncBrowserTabs
+  const tRef = useRef(t)
+  tRef.current = t
+  useEffect(() => start((state) => {
+    syncRef.current(browserTabNames(state, tRef.current), state.activeTabId)
+    openRef.current(state.activeTabId ?? undefined)
+  }), [start])
+  useEffect(() => {
+    if (view.state !== null) {
+      syncBrowserTabs(browserTabNames(view.state, t), view.state.activeTabId)
+    } else if (view.phase === 'empty') syncBrowserTabs([], null)
+  }, [view.state, view.phase, syncBrowserTabs, t])
+  // 只响应工作台选中页变化；Host 新画面交给同步投影，避免旧选择反抢模型刚打开的页。
+  useEffect(() => {
+    const current = viewRef.current
+    if (!shown || selectedTabId === undefined || current.phase !== 'ready' || current.pending
+      || current.state.operationActive || current.state.activeTabId === selectedTabId) return
+    const target = current.state.tabs.find(tab => tab.id === selectedTabId)
+    if (target !== undefined) void command({ kind: 'select-tab', tabId: target.id })
+  }, [shown, selectedTabId, command])
   // 每次由菜单进入仅等待一次明确基线；已有标签会消耗机会，关闭后的 empty 不会重建。
   const entry = useRef({ shown: false, awaitingState: false })
   useEffect(() => {

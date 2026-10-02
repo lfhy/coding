@@ -15,9 +15,10 @@ function rule(selector: string): string {
 }
 
 describe('browser responsive styles', () => {
-  it('keeps tabs scrollable and image/cursor scaled without clipping narrow controls', () => {
+  it('joins the workbench tab row and scales image/cursor without clipping narrow controls', () => {
     expect(css).toContain('.tabs { display: flex')
-    expect(css).toContain('overflow-x: auto')
+    expect(rule('.tabs {')).toContain('flex: none')
+    expect(rule('.tabs {')).not.toContain('overflow-x')
     expect(css).toContain('width: 100%')
     expect(rule('.viewport')).toContain('max-width: 100%')
     expect(rule('.viewport')).not.toMatch(/(?:^|[;{]\s*)width: 100%/)

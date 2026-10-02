@@ -7,7 +7,7 @@ import {
   type MenuItem,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
-import type { InjectFace, PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
+import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { WorkbenchLayoutSnapshot } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { OpenInAppOpenResult } from '@deepseek-ai/dsh-host-open-in-app/shared'
@@ -17,7 +17,6 @@ import {
   resolveOpenChoice,
   type WorkspaceOpenTargets,
 } from './controller.ts'
-import type { createWorkbenchStore } from './store.ts'
 import css from './OpenInAppAction.module.css'
 
 /** 注入会话头部工作区打开控件和布局动作的浏览器操作。 */
@@ -37,7 +36,6 @@ export interface OpenInAppActionInjected {
 /** 会话页头工作区打开控件与当前 Session 的工作台显隐。 */
 export type OpenInAppActionProps =
   PropsRuntime<'conversation.session.header.utilities'>
-  & PropsStore<ReturnType<typeof createWorkbenchStore>>
   & PropsLocale<typeof NS>
   & InjectFace<OpenInAppActionInjected>
 

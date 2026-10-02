@@ -46,7 +46,7 @@ describe('ui-layout client apply', () => {
     expect(slots.spec('sidebar')).toEqual({ kind: 'single', scope: 'root' })
     expect(slots.spec('conversation')).toEqual({ kind: 'single', scope: 'session-maybe' })
     expect(slots.spec('details')).toEqual({ kind: 'single', scope: 'session' })
-    expect(slots.spec('workbench')).toEqual({ kind: 'single', scope: 'session' })
+    expect(slots.spec('workbench')).toEqual({ kind: 'single', scope: 'root' })
     expect(slots.spec('workbench.bottom')).toEqual({ kind: 'single', scope: 'root' })
     expect(slots.spec('shell.overlay')).toEqual({ kind: 'list', scope: 'root' })
   })

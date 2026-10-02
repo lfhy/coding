@@ -7,7 +7,7 @@ kind: "package-reference"
 
 ## 概述
 
-本包拥有浏览器根布局、瞬时面板几何和 `ctx.layout`。AppFrame 保留导航栏、对话区和既有详情栏，并声明独立的会话级 `workbench` 与 `workbench.bottom` slot。宽屏工作台遵循导航栏自己的展开偏好，主内容上方形成左侧对话与右侧固定工作台；工作台占用者再把自己的区域拆成中间预览和右侧文件树。包内主题呈现器把 `ctx.theme` 的已解析快照投影到 document；功能插件只负责填充 slot，不直接操作根网格。
+本包拥有浏览器根布局、瞬时面板几何和 `ctx.layout`。AppFrame 保留导航栏、对话区和既有详情栏，并声明独立的 root scope `workbench` 与 `workbench.bottom` slot。工作台占用者通过 `useSessions` 读取当前 Session，底栏占用者接收 owner 的当前 Session id；两者按 Session 保留内容。宽屏工作台遵循导航栏自己的展开偏好，主内容上方形成左侧对话与右侧固定工作台；工作台占用者再把自己的区域拆成中间预览和右侧文件树。包内主题呈现器把 `ctx.theme` 的已解析快照投影到 document；功能插件只负责填充 slot，不直接操作根网格。
 
 <a id="use-this-package"></a>
 ## 使用本包
@@ -19,7 +19,7 @@ kind: "package-reference"
 | `sidebar` | `root` | `collapsed`、实际 `width`、欢迎页操作行是否可见 |
 | `conversation` | `session-maybe` | 空 owner share |
 | `details` | `session` | 空 owner share |
-| `workbench` | `session` | 可见、全屏、底栏与文件侧栏状态和控制回调 |
+| `workbench` | `root` | `shown`、`fullscreen`、`bottomOpen`、`filesOpen`；当前 Session 由占用者通过 `useSessions` 读取 |
 | `workbench.bottom` | `root` | 当前 Session id 与底栏可见性；占用者按 Session 保留终端 |
 | `shell.overlay` | `root` | 无 owner 数据的有序 list |
 

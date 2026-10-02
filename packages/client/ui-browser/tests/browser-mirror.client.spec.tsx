@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { BrowserMirror, BrowserTabs, type BrowserMirrorProps } from '../src/client/BrowserMirror.tsx'
 import type { BrowserView } from '../src/client/controller.ts'
+import type { BrowserState } from '../src/client/wire.ts'
 import { en } from '../src/client/locales.ts'
 import { id, otherId, state } from './browser-fixtures.ts'
 
@@ -25,13 +26,13 @@ const t = (key: keyof typeof en, args?: { name: string }) => en[key].replace('{n
 function mount(view: BrowserView, shown = true) {
   const command = vi.fn(async () => true)
   const ensureTab = vi.fn(async () => {})
-  const start = vi.fn(() => vi.fn())
-  const closeBrowser = vi.fn()
-  const props = { shown, openBrowser: vi.fn(), closeBrowser, start, command, ensureTab,
+  const start = vi.fn((_onRevision: (state: BrowserState) => void) => vi.fn())
+  const syncBrowserTabs = vi.fn()
+  const props = { shown, browserShown: shown, openBrowser: vi.fn(), syncBrowserTabs, start, command, ensureTab,
     retry: vi.fn(), useBrowserMirror: <S,>(selector: (snapshot: BrowserView) => S): S => selector(view),
     t } as unknown as BrowserMirrorProps
   const result = render(<BrowserMirror {...props} />)
-  return { ...result, props, command, ensureTab, start, closeBrowser }
+  return { ...result, props, command, ensureTab, start, syncBrowserTabs }
 }
 const ready = (revision = 1): BrowserView => ({
   phase: 'ready', state: state(revision) as never, frameUrl: 'blob:frame', pending: false,
@@ -41,6 +42,13 @@ const loading: BrowserView = { phase: 'loading', state: null, frameUrl: null, pe
 function viewHook(view: BrowserView): BrowserMirrorProps['useBrowserMirror'] {
   return selector => selector(view)
 }
+function browserTabsRow(props: BrowserMirrorProps, view: BrowserView) {
+  return <div role="tablist" aria-label="Workbench tabs">
+    {view.state?.tabs.map(tab => <BrowserTabs key={tab.id} {...props} tabId={tab.id}
+      useBrowserMirror={viewHook(view)} />)}
+    <BrowserTabs {...props} useBrowserMirror={viewHook(view)} />
+  </div>
+}
 function navigated(url: string, revision: number): BrowserView {
   const value = state(revision, otherId)
   return { phase: 'ready', state: {
@@ -49,6 +57,60 @@ function navigated(url: string, revision: number): BrowserView {
 }
 
 describe('browser UI', () => {
+  it('projects page tabs while retaining them across unknown, busy and hidden states', () => {
+    const result = mount(loading, false)
+    expect(result.syncBrowserTabs).not.toHaveBeenCalled()
+    result.rerender(<BrowserMirror {...result.props} useBrowserMirror={viewHook(ready())} />)
+    expect(result.syncBrowserTabs).toHaveBeenLastCalledWith([
+      { id, name: 'Example' }, { id: otherId, name: 'New tab' },
+    ], id)
+    result.syncBrowserTabs.mockClear()
+    result.rerender(<BrowserMirror {...result.props} useBrowserMirror={viewHook({
+      phase: 'busy', state: null, frameUrl: null, pending: false,
+    })} />)
+    result.rerender(<BrowserMirror {...result.props} useBrowserMirror={viewHook({
+      phase: 'error', state: null, frameUrl: null, pending: false, message: 'HTTP 503',
+    })} />)
+    result.rerender(<BrowserMirror {...result.props} useBrowserMirror={viewHook(loading)} />)
+    expect(result.syncBrowserTabs).not.toHaveBeenCalled()
+    result.rerender(<BrowserMirror {...result.props} useBrowserMirror={viewHook(empty)} />)
+    expect(result.syncBrowserTabs).toHaveBeenLastCalledWith([], null)
+    expect(result.start).toHaveBeenCalledTimes(1)
+  })
+
+  it('passes the revised Host page to workbench selection while polling remains mounted', () => {
+    const result = mount(ready())
+    result.rerender(<BrowserMirror {...result.props} shown={false} />)
+    expect(result.start).toHaveBeenCalledTimes(1)
+    result.start.mock.calls[0]![0](state(2, otherId) as unknown as BrowserState)
+    expect(result.props.openBrowser).toHaveBeenCalledWith(otherId)
+    expect(result.syncBrowserTabs).toHaveBeenLastCalledWith(expect.any(Array), otherId)
+  })
+
+  it('aligns a workbench fallback to its browser page without overriding new Host observations', () => {
+    const result = mount(ready(), false)
+    result.rerender(<BrowserMirror {...result.props} shown selectedTabId={otherId} />)
+    expect(result.command).toHaveBeenCalledExactlyOnceWith({ kind: 'select-tab', tabId: otherId })
+    result.rerender(<BrowserMirror {...result.props} shown selectedTabId={otherId}
+      useBrowserMirror={viewHook(ready(2))} />)
+    expect(result.command).toHaveBeenCalledTimes(1)
+    expect(result.syncBrowserTabs).toHaveBeenLastCalledWith(expect.any(Array), id)
+  })
+
+  it('lets Host hydration and pending manual selection settle without sending duplicate page commands', () => {
+    const result = mount(loading)
+    result.rerender(<BrowserMirror {...result.props} selectedTabId={otherId} />)
+    result.rerender(<BrowserMirror {...result.props} selectedTabId={otherId}
+      useBrowserMirror={viewHook(ready())} />)
+    expect(result.command).not.toHaveBeenCalled()
+    result.rerender(<BrowserMirror {...result.props} selectedTabId={id}
+      useBrowserMirror={viewHook({ ...ready(), pending: true })} />)
+    expect(result.command).not.toHaveBeenCalled()
+    result.rerender(<BrowserMirror {...result.props} selectedTabId={otherId}
+      useBrowserMirror={viewHook({ ...ready(), state: { ...state(), operationActive: true } as never })} />)
+    expect(result.command).not.toHaveBeenCalled()
+  })
+
   it('mounts hidden without creating a tab and ensures first tab when displayed empty', () => {
     const hidden = mount(empty, false)
     expect(screen.getByRole('region', { hidden: true }).hasAttribute('hidden')).toBe(true)
@@ -67,12 +129,12 @@ describe('browser UI', () => {
     const result = mount(loading)
     result.rerender(<BrowserMirror {...result.props} useBrowserMirror={viewHook(existing)} />)
     expect(result.ensureTab).not.toHaveBeenCalled()
-    render(<BrowserTabs {...result.props} useBrowserMirror={viewHook(existing)} />)
+    render(browserTabsRow(result.props, existing))
     fireEvent.click(screen.getByRole('button', { name: 'Close Example' }))
     result.rerender(<BrowserMirror {...result.props} useBrowserMirror={viewHook(empty)} />)
     await Promise.resolve()
     expect(result.command).toHaveBeenCalledWith({ kind: 'close-tab', tabId: id })
-    expect(result.closeBrowser).toHaveBeenCalledTimes(1)
+    expect(result.syncBrowserTabs).toHaveBeenLastCalledWith([], null)
     expect(result.ensureTab).not.toHaveBeenCalled()
     result.rerender(<BrowserMirror {...result.props} shown={false} useBrowserMirror={viewHook(empty)} />)
     result.rerender(<BrowserMirror {...result.props} shown useBrowserMirror={viewHook(empty)} />)
@@ -334,7 +396,7 @@ describe('browser UI', () => {
     expect(screen.getByRole('textbox', { name: 'Address' }).hasAttribute('disabled')).toBe(true)
     expect(screen.getByRole('button', { name: 'Type' }).hasAttribute('disabled')).toBe(true)
     expect(screen.getByRole('button', { name: /Click the page screenshot/ }).hasAttribute('disabled')).toBe(true)
-    render(<BrowserTabs {...result.props} />)
+    render(browserTabsRow(result.props, { phase: 'ready', state: busy as never, frameUrl: 'blob:frame', pending: false }))
     expect(screen.getByRole('tab', { name: 'Example' }).hasAttribute('disabled')).toBe(true)
     result.unmount()
     const lock = mount({ phase: 'busy', state: null, frameUrl: null, pending: false })
@@ -383,10 +445,10 @@ describe('browser UI', () => {
     expect(error.props.retry).toHaveBeenCalledTimes(1)
   })
 
-  it('selects and closes tabs and returns to menu when the final tab closes', async () => {
+  it('selects and closes pages through their individual workbench contributions', async () => {
     const result = mount(ready())
-    const tabs = render(<BrowserTabs {...result.props} />)
-    expect(screen.getByRole('tablist', { name: 'Browser tabs' })).toBeTruthy()
+    const tabs = render(browserTabsRow(result.props, ready()))
+    expect(screen.getAllByRole('tablist')).toHaveLength(1)
     expect(screen.getByRole('tab', { name: 'Example' }).querySelector('svg')).not.toBeNull()
     expect(screen.getByRole('tab', { name: 'Example' }).querySelector('path')?.getAttribute('stroke')).toBe('currentColor')
     expect(screen.getByRole('tab', { name: /New tab/ }).querySelector('svg')).not.toBeNull()
@@ -403,23 +465,77 @@ describe('browser UI', () => {
     expect(result.command).toHaveBeenCalledWith({ kind: 'close-tab', tabId: id })
     tabs.unmount()
     const sole = { ...state(), tabs: [state().tabs[0]] }
-    render(<BrowserTabs {...result.props}
-      useBrowserMirror={selector => selector({ phase: 'ready', state: sole as never, frameUrl: null, pending: false })} />)
+    render(browserTabsRow(result.props, { phase: 'ready', state: sole as never, frameUrl: null, pending: false }))
     fireEvent.click(screen.getByRole('button', { name: 'Close Example' }))
     await Promise.resolve()
-    expect(result.closeBrowser).toHaveBeenCalledTimes(1)
+    expect(result.command).toHaveBeenLastCalledWith({ kind: 'close-tab', tabId: id })
   })
 
-  it('hands keyboard focus to the next tab after closing an active tab', () => {
+  it('hands keyboard focus to the next tab after closing an active tab', async () => {
     const result = mount(ready())
     const initial = ready()
-    const tabs = render(<BrowserTabs {...result.props} useBrowserMirror={selector => selector(initial)} />)
+    const tabs = render(browserTabsRow(result.props, initial))
     const close = screen.getByRole('button', { name: 'Close Example' })
     close.focus()
     fireEvent.click(close)
     const next = { ...state(2, otherId), tabs: [state().tabs[1]] }
-    tabs.rerender(<BrowserTabs {...result.props}
-      useBrowserMirror={selector => selector({ phase: 'ready', state: next as never, frameUrl: null, pending: false })} />)
-    expect(document.activeElement).toBe(screen.getByRole('tab', { name: /New tab/ }))
+    tabs.rerender(browserTabsRow(result.props, { phase: 'ready', state: next as never, frameUrl: null, pending: false }))
+    await waitFor(() => { expect(document.activeElement).toBe(screen.getByRole('tab', { name: /New tab/ })) })
+  })
+
+  it('renders each browser page in the shared tab row and reopens an already active Host page', () => {
+    const result = mount(ready(), false)
+    const tabs = render(<div role="tablist" aria-label="Workbench tabs">
+      <button type="button" role="tab" aria-selected>coding 1</button>
+      <BrowserTabs {...result.props} shown browserShown={false} tabId={id} />
+      <BrowserTabs {...result.props} shown browserShown={false} tabId={otherId} />
+    </div>)
+    expect(screen.getAllByRole('tablist')).toHaveLength(1)
+    expect(screen.getAllByRole('tab')).toHaveLength(3)
+    expect(screen.getByRole('tab', { name: 'Example' }).getAttribute('aria-selected')).toBe('false')
+    expect(screen.queryByRole('button', { name: 'New tab' })).toBeNull()
+    fireEvent.click(screen.getByRole('tab', { name: 'Example' }))
+    expect(result.props.openBrowser).toHaveBeenCalledWith(id)
+    expect(result.command).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('tab', { name: 'New tab' }))
+    expect(result.props.openBrowser).toHaveBeenLastCalledWith(otherId)
+    expect(result.command).toHaveBeenCalledWith({ kind: 'select-tab', tabId: otherId })
+    tabs.rerender(<div role="tablist" aria-label="Workbench tabs">
+      <button type="button" role="tab" aria-selected={false}>coding 1</button>
+      <BrowserTabs {...result.props} shown browserShown tabId={id} />
+    </div>)
+    expect(screen.getByRole('tab', { name: 'Example' }).getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('contributes a separate new-page action and leaves final page removal to the workbench', async () => {
+    const result = mount(ready(), false)
+    const add = render(<BrowserTabs {...result.props} shown />)
+    expect(screen.queryByRole('tab')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'New tab' }))
+    expect(result.props.openBrowser).toHaveBeenCalledWith()
+    expect(result.command).toHaveBeenCalledWith({ kind: 'new-tab' })
+    add.unmount()
+    const sole: BrowserView = { ...ready(), state: { ...state(), tabs: [state().tabs[0]] } as never }
+    render(<BrowserTabs {...result.props} shown browserShown tabId={id}
+      useBrowserMirror={viewHook(sole)} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Close Example' }))
+    await Promise.resolve()
+    expect(result.command).toHaveBeenCalledWith({ kind: 'close-tab', tabId: id })
+    expect(result.props.openBrowser).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the workbench page descriptor visible and disabled while Host state is unavailable', () => {
+    const result = mount(loading, false)
+    const tab = render(<BrowserTabs {...result.props} shown browserShown tabId={id} tabName="Example" />)
+    const page = screen.getByRole('tab', { name: 'Example' })
+    expect(page.getAttribute('aria-selected')).toBe('true')
+    expect(page.hasAttribute('disabled')).toBe(true)
+    expect(screen.getByRole('button', { name: 'Close Example' }).hasAttribute('disabled')).toBe(true)
+    tab.rerender(<BrowserTabs {...result.props} shown browserShown={false} tabId={id} tabName="Example"
+      useBrowserMirror={viewHook({ phase: 'busy', state: null, frameUrl: null, pending: false })} />)
+    expect(screen.getByRole('tab', { name: 'Example' }).getAttribute('aria-selected')).toBe('false')
+    fireEvent.click(page)
+    expect(result.props.openBrowser).not.toHaveBeenCalled()
+    expect(result.command).not.toHaveBeenCalled()
   })
 })

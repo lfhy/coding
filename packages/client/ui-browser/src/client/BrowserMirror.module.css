@@ -10,7 +10,7 @@
   font-family: var(--dsw-font-family);
 }
 .root[hidden], .tabs[hidden] { display: none; }
-.tabs { display: flex; align-items: center; gap: 4px; min-width: 0; width: 100%; overflow-x: auto; white-space: nowrap; }
+.tabs { display: flex; align-items: center; flex: none; gap: 4px; min-width: 0; white-space: nowrap; }
 /* 标签条目是一整块：选中与悬停都画在这一层，关闭键才落在标签内部，形状沿用工作台文件标签。 */
 .tab {
   display: flex; align-items: center; flex: 0 1 184px; min-width: 88px; max-width: 220px;

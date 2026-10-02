@@ -108,7 +108,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation\', () => ctx.slots.register(\n      { name: \'conversation\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-layout/src/client/index.ts:29',
+    source: 'packages/client/ui-layout/src/client/index.ts:30',
   },
   {
     key: 'conversation.chat.assistant-actions',
@@ -1219,7 +1219,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'details\', () => ctx.slots.register(\n      { name: \'details\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-layout/src/client/index.ts:31',
+    source: 'packages/client/ui-layout/src/client/index.ts:32',
   },
   {
     key: 'root',
@@ -1633,7 +1633,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     occupants: [],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'shell.overlay\', () => ctx.slots.register(\n      { name: \'shell.overlay\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-layout/src/client/index.ts:39',
+    source: 'packages/client/ui-layout/src/client/index.ts:40',
   },
   {
     key: 'sidebar',
@@ -1659,7 +1659,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar\', () => ctx.slots.register(\n      { name: \'sidebar\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-layout/src/client/index.ts:27',
+    source: 'packages/client/ui-layout/src/client/index.ts:28',
   },
   {
     key: 'sidebar.brand.action',
@@ -1951,9 +1951,9 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
   {
     key: 'workbench',
     kind: 'single',
-    scope: 'session',
-    summary: '会话级固定工作台右栏。占用者绘制文件预览与顶栏视图控制；页头入口在会话层打开工作台；关闭时 entry 保持挂载。',
-    doc: '会话级固定工作台右栏。占用者绘制文件预览与顶栏视图控制；页头入口在会话层打开工作台；关闭时 entry 保持挂载。',
+    scope: 'root',
+    summary: '根级固定工作台右栏；占用者按会话保留标签与终端树，关闭与会话切换时 entry 保持挂载。',
+    doc: '根级固定工作台右栏；占用者按会话保留标签与终端树，关闭与会话切换时 entry 保持挂载。',
     registerOptions: [],
     ownerProps: [
       '/** 工作台右栏 owner share。 */\nexport interface WorkbenchOwnerProps {\n  /** 当前会话的工作台是否可见。 */\n  shown: boolean\n  /** 是否实际占据全部主内容；窄屏会自动进入该呈现。 */\n  fullscreen: boolean\n  /** 底栏是否实际可见。 */\n  bottomOpen: boolean\n  /** 工作台内文件侧栏是否可见。 */\n  filesOpen: boolean\n}',
@@ -1962,11 +1962,6 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     standardProps: [
       'useSessions: SnapshotSelectorHook<SessionListState>',
       'useWorkspaces: SnapshotSelectorHook<import(\'./workspaces/service.ts\').WorkspaceListState>',
-      'useSession: SnapshotSelectorHook<ConversationSnapshot>',
-      'sessionId: SessionId',
-      'useProjection: UseProjection',
-      'useInput: SnapshotSelectorHook<InputState>',
-      'inputActions: InputActions',
     ],
     keyDomain: '',
     hookContext: '',
@@ -1977,27 +1972,24 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'workbench\', () => ctx.slots.register(\n      { name: \'workbench\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-layout/src/client/index.ts:35',
+    source: 'packages/client/ui-layout/src/client/index.ts:36',
   },
   {
     key: 'workbench.bottom',
     kind: 'single',
-    scope: 'session',
-    summary: '会话级工作台底栏；在视觉关闭时保持挂载。',
-    doc: '会话级工作台底栏；在视觉关闭时保持挂载。',
+    scope: 'root',
+    summary: '根布局持有的终端底栏；会话切换时保留各会话的终端树。',
+    doc: '根布局持有的终端底栏；会话切换时保留各会话的终端树。',
     registerOptions: [],
     ownerProps: [
-      '/** 工作台底栏 owner share。 */\nexport interface WorkbenchBottomOwnerProps {\n  /** 底栏是否实际可见。 */\n  shown: boolean\n}',
+      '/** 工作台底栏 owner share。 */\nexport interface WorkbenchBottomOwnerProps {\n  /** 当前会话；无选择时底栏仍保留其他会话的终端。 */\n  sessionId: SessionId | undefined\n  /** 当前会话的底栏是否实际可见。 */\n  shown: boolean\n}',
     ],
-    ownerPropsReferences: [],
+    ownerPropsReferences: [
+      'SessionId',
+    ],
     standardProps: [
       'useSessions: SnapshotSelectorHook<SessionListState>',
       'useWorkspaces: SnapshotSelectorHook<import(\'./workspaces/service.ts\').WorkspaceListState>',
-      'useSession: SnapshotSelectorHook<ConversationSnapshot>',
-      'sessionId: SessionId',
-      'useProjection: UseProjection',
-      'useInput: SnapshotSelectorHook<InputState>',
-      'inputActions: InputActions',
     ],
     keyDomain: '',
     hookContext: '',
@@ -2008,7 +2000,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'workbench.bottom\', () => ctx.slots.register(\n      { name: \'workbench.bottom\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-layout/src/client/index.ts:37',
+    source: 'packages/client/ui-layout/src/client/index.ts:38',
   },
   {
     key: 'workbench.browser',
@@ -2018,7 +2010,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     doc: '工作台右侧预览区的会话级浏览器；隐藏时条目仍保持挂载。',
     registerOptions: [],
     ownerProps: [
-      '/** 浏览器内容由贡献条目绘制；容器只持有视图显隐与切换动作。 */\nexport interface WorkbenchBrowserOwnerProps {\n  shown: boolean\n  openBrowser: () => void\n  closeBrowser: () => void\n}',
+      '/** 浏览器内容由贡献条目绘制；容器只持有视图显隐与切换动作。 */\nexport interface WorkbenchBrowserOwnerProps {\n  shown: boolean\n  openBrowser: (tabId?: string) => void\n  syncBrowserTabs: (tabs: readonly { id: string; name: string }[], activeId: string | null) => void\n  tabId?: string\n  tabName?: string\n  selectedTabId?: string\n  browserShown?: boolean\n}',
     ],
     ownerPropsReferences: [],
     standardProps: [
@@ -2039,17 +2031,17 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'workbench.browser\', () => ctx.slots.register(\n      { name: \'workbench.browser\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-open-in-app/src/client/index.ts:27',
+    source: 'packages/client/ui-open-in-app/src/client/index.ts:26',
   },
   {
     key: 'workbench.browser.tabs',
     kind: 'single',
     scope: 'session',
-    summary: '浏览器标签占用工作台顶栏中列，与文件标签互斥显示。',
-    doc: '浏览器标签占用工作台顶栏中列，与文件标签互斥显示。',
+    summary: '每个浏览器页面向工作台统一顶栏贡献一个标签或新建按钮。',
+    doc: '每个浏览器页面向工作台统一顶栏贡献一个标签或新建按钮。',
     registerOptions: [],
     ownerProps: [
-      '/** 浏览器内容由贡献条目绘制；容器只持有视图显隐与切换动作。 */\nexport interface WorkbenchBrowserOwnerProps {\n  shown: boolean\n  openBrowser: () => void\n  closeBrowser: () => void\n}',
+      '/** 浏览器内容由贡献条目绘制；容器只持有视图显隐与切换动作。 */\nexport interface WorkbenchBrowserOwnerProps {\n  shown: boolean\n  openBrowser: (tabId?: string) => void\n  syncBrowserTabs: (tabs: readonly { id: string; name: string }[], activeId: string | null) => void\n  tabId?: string\n  tabName?: string\n  selectedTabId?: string\n  browserShown?: boolean\n}',
     ],
     ownerPropsReferences: [],
     standardProps: [
@@ -2070,7 +2062,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'workbench.browser.tabs\', () => ctx.slots.register(\n      { name: \'workbench.browser.tabs\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-open-in-app/src/client/index.ts:29',
+    source: 'packages/client/ui-open-in-app/src/client/index.ts:28',
   },
 ]
 /* jscpd:ignore-end */

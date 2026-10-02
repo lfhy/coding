@@ -14,7 +14,7 @@ import {
   type HeroPanelToggleInjected, type WorkbenchPanelTogglesInjected,
 } from './WorkbenchPanelToggles.tsx'
 import { RetainedTerminalPanel } from './RetainedTerminalPanel.tsx'
-import { createWorkbenchStore } from './store.ts'
+import { createRetainedWorkbenchStore } from './store.ts'
 import { en, NS, zh } from './locales.ts'
 
 export type { OpenInAppActionInjected, OpenInAppActionProps } from './OpenInAppAction.tsx'
@@ -24,7 +24,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
     /** 工作台右侧预览区的会话级浏览器；隐藏时条目仍保持挂载。 */
     'workbench.browser': { kind: 'single'; scope: 'session'; owner: WorkbenchBrowserOwnerProps }
-    /** 浏览器标签占用工作台顶栏中列，与文件标签互斥显示。 */
+    /** 每个浏览器页面向工作台统一顶栏贡献一个标签或新建按钮。 */
     'workbench.browser.tabs': { kind: 'single'; scope: 'session'; owner: WorkbenchBrowserOwnerProps }
   }
 }
@@ -32,8 +32,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 /** 浏览器内容由贡献条目绘制；容器只持有视图显隐与切换动作。 */
 export interface WorkbenchBrowserOwnerProps {
   shown: boolean
-  openBrowser: () => void
-  closeBrowser: () => void
+  openBrowser: (tabId?: string) => void
+  syncBrowserTabs: (tabs: readonly { id: string; name: string }[], activeId: string | null) => void
+  tabId?: string
+  tabName?: string
+  selectedTabId?: string
+  browserShown?: boolean
 }
 
 /** locale、slot、布局、会话与工作区选择需要的服务。 */
@@ -56,7 +60,7 @@ function activeSessionId(ctx: ClientContext): SessionId | undefined {
  */
 export function apply(ctx: ClientContext): void {
   const controller = new OpenInAppController()
-  const workbench = createWorkbenchStore()
+  const workbench = createRetainedWorkbenchStore()
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'open-in-app: dictionaries')
 
   ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
@@ -64,7 +68,6 @@ export function apply(ctx: ClientContext): void {
     id: 'open-in-app',
     order: -10,
     locale: NS,
-    store: workbench,
     inject: (sessionId: SessionId): OpenInAppActionInjected => ({
       hooks: {
         openInAppTargets: controller.targets,
@@ -87,14 +90,15 @@ export function apply(ctx: ClientContext): void {
     },
     locale: NS,
     store: workbench,
-    inject: (sessionId: SessionId): WorkspaceWorkbenchInjected => ({
-      listFiles: (segments, signal) => controller.listFiles(sessionId, segments, signal),
-      readFile: (segments, signal) => controller.readFile(sessionId, segments, signal),
-      closeWorkbench: () => { ctx.layout.closeWorkbench(sessionId) },
-      openWorkbench: () => { ctx.layout.openWorkbench(sessionId) },
-      toggleWorkbenchFullscreen: () => { ctx.layout.toggleWorkbenchFullscreen(sessionId) },
-      toggleFiles: () => { ctx.layout.toggleWorkbenchFiles(sessionId) },
-      toggleBottom: () => { ctx.layout.toggleWorkbenchBottom(sessionId) },
+    inject: (): WorkspaceWorkbenchInjected => ({
+      listFiles: (sessionId, segments, signal) => controller.listFiles(sessionId, segments, signal),
+      readFile: (sessionId, segments, signal) => controller.readFile(sessionId, segments, signal),
+      terminalUrl: sessionId => controller.terminalUrl(sessionId),
+      closeWorkbench: (sessionId) => { ctx.layout.closeWorkbench(sessionId) },
+      openWorkbench: (sessionId) => { ctx.layout.openWorkbench(sessionId) },
+      toggleWorkbenchFullscreen: (sessionId) => { ctx.layout.toggleWorkbenchFullscreen(sessionId) },
+      toggleFiles: (sessionId) => { ctx.layout.toggleWorkbenchFiles(sessionId) },
+      toggleBottom: (sessionId) => { ctx.layout.toggleWorkbenchBottom(sessionId) },
     }),
   }, WorkspaceWorkbench))
 

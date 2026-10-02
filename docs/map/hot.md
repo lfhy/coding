@@ -180,19 +180,19 @@
 
 ## packages/client/ui-open-in-app
 
-- **拥有**：工作区打开能力的浏览器半：会话页头分体入口（`OpenInAppAction`）及右侧边栏、终端底栏开关（`WorkbenchPanelToggles`），均占用 `conversation.session.header.utilities`；欢迎页开关占用 `conversation.hero.actions`；内置工作台（`WorkspaceWorkbench`，占用 `workbench`）持有初态功能菜单、文件视图和 `workbench.browser`／`workbench.browser.tabs` 子 slot，顶栏始终提供内部文件侧栏开关，接管主内容时另提供终端底栏开关；保留式底栏终端（`RetainedTerminalPanel`）占用 `workbench.bottom`；另有 `OpenInAppController`。
+- **拥有**：工作区打开能力的浏览器半：会话页头分体入口（`OpenInAppAction`）及右侧边栏、终端底栏开关（`WorkbenchPanelToggles`），均占用 `conversation.session.header.utilities`；欢迎页开关占用 `conversation.hero.actions`；内置工作台（`WorkspaceWorkbench`，占用 root scope `workbench`）按 Session 持有功能菜单、统一的 `file`／`browser`／`terminal` 标签、文件视图及右侧终端，声明 `workbench.browser`／`workbench.browser.tabs` 子 slot；保留式底栏终端（`RetainedTerminalPanel`）独立占用 `workbench.bottom`；另有 `OpenInAppController`。
 - **不拥有**：浏览器画面、人工导航和标签操作属于 `packages/client/ui-browser`；Host 路由（应用启动、文件 list/read、终端 WebSocket）属于 `packages/host/open-in-app`；workbench 壳层几何与 `ctx.layout` 属于 `packages/client/ui-layout`；`conversation.session.header.utilities` 与 `conversation.hero.actions` 座位声明属于 `packages/client/ui-conversation`。
 - **入口**：`packages/client/ui-open-in-app/src/client/index.ts`（注入 `slots`、`locale`、`layout`、`sessions`、`workspaces`；通过 `ctx.slots.inject(...)` 在各座位注册）；node 半是空 apply。
 - **接线**：`packages/bundle/web-app/cordis.patch.yml` 的 `ui-open-in-app` 行与 host 行 `open-in-app` 并排挂载；共享常量经 `@deepseek-ai/dsh-host-open-in-app/shared`。
-- **关键文件**：`packages/client/ui-open-in-app/src/client/index.ts`、`packages/client/ui-open-in-app/src/client/controller.ts`、`packages/client/ui-open-in-app/src/client/WorkspaceWorkbench.tsx`、`packages/client/ui-open-in-app/src/client/TerminalPanel.tsx`。
+- **关键文件**：`packages/client/ui-open-in-app/src/client/index.ts`、`packages/client/ui-open-in-app/src/client/controller.ts`、`packages/client/ui-open-in-app/src/client/store.ts`、`packages/client/ui-open-in-app/src/client/WorkspaceWorkbench.tsx`、`packages/client/ui-open-in-app/src/client/TerminalPanel.tsx`、`packages/client/ui-open-in-app/src/client/RetainedTerminalPanel.tsx`。
 - **改这里要同步**：路由或帧协议改动同步 `packages/host/open-in-app`；面板显隐语义改动同步 `packages/client/ui-layout`（owner props `filesOpen`/`bottomOpen`），页头与欢迎页入口变动核对 `packages/client/ui-conversation` 的座位。
-- **不变量**：文件树只回传当前 Session id 与 Host 返回的 provider segment 数组，绝不提交工作区根或自行拼接 Windows/POSIX/UNC 路径；隐藏底栏或关闭工作台只改布局可见性，不断开已激活终端。
+- **不变量**：文件树只回传当前 Session id 与 Host 返回的 provider segment 数组，绝不提交工作区根或自行拼接 Windows/POSIX/UNC 路径；菜单终端新建右侧标签，底栏入口显示独立底栏，两处标签分别独占 WebSocket 与 PTY；切换标签或 Session、隐藏底栏或工作台均不释放已激活终端，关闭对应标签释放该终端。
 - **测试**：`pnpm exec vitest run packages/client/ui-open-in-app/tests`
 
 ## packages/client/ui-browser
 
-- **拥有**：占用 `workbench.browser` 和 `workbench.browser.tabs` 的会话级截图、人工地址栏／历史／标签与截图坐标交互，以及每 Session 的观测轮询与图片 URL 生命周期。
-- **不拥有**：slot 声明、功能菜单和文件视图（`packages/client/ui-open-in-app`）；Host 的 `browser.control` 实现与信任限制（`packages/host/apiproxy`、`packages/client/connection`）；浏览器状态与模型工具（`packages/browser/browser`、`packages/browser/tool-browser`）。
+- **拥有**：占用 `workbench.browser` 和 `workbench.browser.tabs` 的会话级截图、人工地址栏／历史／页面标签与截图坐标交互，通过 `syncBrowserTabs()` 把每个 Host 页面同步为统一顶栏中的 `browser` 标签，以及每 Session 的观测轮询与图片 URL 生命周期。
+- **不拥有**：slot 声明、功能菜单、统一工作台标签状态、文件视图和终端（`packages/client/ui-open-in-app`）；Host 的 `browser.control` 实现与信任限制（`packages/host/apiproxy`、`packages/client/connection`）；浏览器状态与模型工具（`packages/browser/browser`、`packages/browser/tool-browser`）。
 - **入口**：`packages/client/ui-browser/src/client/index.ts`（注入 `slots`、`locale`、`connection`，两个 slot 共用会话控制器）；node 半是空 apply。
 - **接线**：`packages/bundle/web-app/cordis.patch.yml` 的 `ui-browser` 行，依赖 `ui-open-in-app` 声明的两个 slot。
 - **关键文件**：`packages/client/ui-browser/src/client/BrowserMirror.tsx`、`packages/client/ui-browser/src/client/controller.ts`、`packages/client/ui-browser/src/client/wire.ts`。
