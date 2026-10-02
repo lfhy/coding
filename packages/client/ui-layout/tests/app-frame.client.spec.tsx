@@ -206,7 +206,7 @@ describe('AppFrame', () => {
       bottomOpen: false,
       filesOpen: true,
     })
-    expect(slotCalls.find(c => c.key === 'workbench.bottom')!.props).toEqual({ shown: false })
+    expect(slotCalls.find(c => c.key === 'workbench.bottom')!.props).toEqual({ sessionId: 's-test', shown: false })
   })
 
   it('keeps the conversation slot mounted while no session is current', () => {
@@ -375,7 +375,7 @@ describe('AppFrame — fixed workbench', () => {
     act(() => { instance.actions.toggleWorkbenchBottom('s-test' as SessionId) })
     expect(rows(frame)).toBe(260)
     expect(frame.hasAttribute('data-bottom-open')).toBe(true)
-    expect(ownerFor('workbench.bottom')).toEqual({ shown: true })
+    expect(ownerFor('workbench.bottom')).toEqual({ sessionId: 's-test', shown: true })
     expect(getByTestId('bottom-content').parentElement?.hasAttribute('inert')).toBe(false)
 
     act(() => { instance.actions.toggleWorkbenchFullscreen('s-test' as SessionId) })
@@ -458,11 +458,11 @@ describe('AppFrame — fixed workbench', () => {
     expect(getByTestId('workbench-content').parentElement?.hasAttribute('inert')).toBe(true)
     expect(getByTestId('center-content').parentElement?.hasAttribute('inert')).toBe(false)
     expect(ownerFor('sidebar')).toMatchObject({ welcomeActionsVisible: true })
-    expect(ownerFor('workbench.bottom')).toEqual({ shown: true })
+    expect(ownerFor('workbench.bottom')).toEqual({ sessionId: 's-test', shown: true })
     act(() => { instance.actions.toggleHeroPanel('s-test' as SessionId, 'files') })
     expect(rows(frame)).toBe(0)
     expect(tracks(frame)).toEqual([SIDEBAR_COLLAPSED, 768 - SIDEBAR_COLLAPSED])
-    expect(ownerFor('workbench.bottom')).toEqual({ shown: false })
+    expect(ownerFor('workbench.bottom')).toEqual({ sessionId: 's-test', shown: false })
   })
 
   it('closing a combined workbench leaves the bottom row visible', () => {
@@ -475,7 +475,7 @@ describe('AppFrame — fixed workbench', () => {
     act(() => { instance.actions.closeWorkbench('s-test' as SessionId) })
     expect(tracks(frame)).toEqual([280, 0])
     expect(rows(frame)).toBe(260)
-    expect(ownerFor('workbench.bottom')).toEqual({ shown: true })
+    expect(ownerFor('workbench.bottom')).toEqual({ sessionId: 's-test', shown: true })
     expect(publishWorkbench).toHaveBeenLastCalledWith('s-test', {
       open: false, fullscreen: false, bottomOpen: true, filesOpen: false,
     })

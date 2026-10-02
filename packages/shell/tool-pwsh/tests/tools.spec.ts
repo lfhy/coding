@@ -588,8 +588,8 @@ describe('sandbox escalation through ctx.approval', () => {
     const { ctx } = await setupSandboxed(true)
     const prompted = vi.fn()
     ctx.on('approval/request', () => { prompted(); return Promise.resolve<ApprovalOutcome>('allowed-once') })
-    const result = await call(ctx, 'pwsh', { ...escalate, sandbox_permissions: 'workspace-write' }, sandboxAgent('danger-full-access'))
-    expect(text(result)).toContain('not strictly wider')
+    const result = await call(ctx, 'pwsh', { ...escalate, sandbox_permissions: 'read-only' }, sandboxAgent('danger-full-access'))
+    expect(text(result)).toContain('must be one of ["workspace-write","danger-full-access"]')
     expect(prompted).not.toHaveBeenCalled()
 
     const malformed = sandboxAgent()
@@ -621,6 +621,18 @@ describe('sandbox escalation through ctx.approval', () => {
     }, sandboxAgent('read-only'))
     expect(text(result)).toContain('invalid justification: expected a non-empty sentence')
     expect(bash.modes).toHaveLength(3)
+  })
+
+  it('keeps full access for a redundant narrower target without justification or approval', async () => {
+    const { ctx, bash } = await setupSandboxed(false, 'danger-full-access')
+    for (const justification of [undefined, '', ' ']) {
+      const result = await call(ctx, 'pwsh', {
+        command: 'Write-Output ok', description: 'test redundant request', sandbox_permissions: 'workspace-write',
+        ...justification === undefined ? {} : { justification },
+      })
+      expect(result.isError).toBe(false)
+    }
+    expect(bash.modes).toEqual(Array(3).fill('danger-full-access'))
   })
 
   it('fails closed when approval cannot be routed', async () => {

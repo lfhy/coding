@@ -34,9 +34,8 @@ export const WIDER_MODES: Record<string, readonly SandboxMode[]> = {
 export const ESCALATION_TARGETS: readonly SandboxMode[] = ['workspace-write', 'danger-full-access']
 
 /**
- * 校验工具 schema 无法表达的升权参数配对。只有本次调用已在
- * `danger-full-access` 下、目标也相同时，空理由才代表无需审批的幂等请求；
- * 其他请求缺少理由或仅提供理由均在执行前失败。
+ * 校验工具 schema 无法表达的升权参数配对。本次已处于 `danger-full-access` 时，
+ * 公开目标值的重复请求不需要理由；其他请求缺少理由或仅提供理由均在执行前失败。
  * @param sandboxPermissions - 原始 `sandbox_permissions` 参数。
  * @param justification - 原始 `justification` 参数。
  * @param effectiveMode - 本次调用已经生效的沙箱模式；未提供时严格校验配对。
@@ -46,7 +45,7 @@ export function validateEscalationArgs(
   justification: string | undefined,
   effectiveMode?: SandboxMode,
 ): void {
-  if (sandboxPermissions === 'danger-full-access' && effectiveMode === 'danger-full-access') return
+  if (effectiveMode === 'danger-full-access' && ESCALATION_TARGETS.includes(sandboxPermissions as SandboxMode)) return
   if (sandboxPermissions !== undefined && justification === undefined) {
     throw new Error('invalid escalation: sandbox_permissions requires a justification')
   }
@@ -139,8 +138,8 @@ export interface EscalationRequest {
 }
 
 /**
- * 在执行前解析沙箱升权请求。若 schema 公开的目标已经等于调用的生效模式，则返回该
- * 模式且不请求审批；否则先检查目标是否严格拓宽，再解析审批通道并映射所有结果。
+ * 已具备 `danger-full-access` 的调用不会因公开但较窄的目标值降低权限或请求审批；
+ * 其他模式下，同档请求无需审批，只有严格拓宽才会请求审批。
  * 更窄或非法的请求、缺少审批服务、无 agent、拒绝、取消和无法应答都会以各自文案
  * 抛出，工具注册表会将其转成 `isError`，且操作尚未执行。
  * @param request - 待判断的升权请求，见 {@link EscalationRequest}。
@@ -149,8 +148,11 @@ export interface EscalationRequest {
  */
 export async function approveEscalation<A, C>(request: EscalationRequest, approval: EscalationApproval<A, C>): Promise<SandboxMode> {
   const { requestedMode: mode, effectiveMode, justification, subject } = request
-  // schema 无法按会话裁剪；模型重复提交当前已生效的公开目标时，不应制造一次虚假的
-  // 升权失败或审批。未知值即使碰巧等于损坏的外部状态，也不能通过这个幂等分支。
+  // schema 无法按会话裁剪。全访问已经生效时，公开的目标字段不能降权或要求审批。
+  // 仅允许封闭词汇；未知值仍须在操作前失败。
+  if (effectiveMode === 'danger-full-access' && ESCALATION_TARGETS.includes(mode as SandboxMode)) {
+    return effectiveMode
+  }
   if (mode === effectiveMode && ESCALATION_TARGETS.includes(mode)) {
     return effectiveMode
   }

@@ -1,7 +1,6 @@
-/* 设置外壳复用侧栏底部的触发器节奏；所有分区共用固定面板和导航几何。
-   模型分区只调整内容列，由所属插件绘制提供方列表与详情。 */
+/* 侧栏触发器与设置页导航共用现有排版与交互 token；模型分区自绘内容列。 */
 
-/* Trigger row: the 42px foot-row box shared with the Cordis footer action. */
+/* 触发器与侧栏底部其他行共用 42px 高度。 */
 .trigger {
   flex: none;
   display: flex;
@@ -27,7 +26,7 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-/* Rail trigger: the same 36x36 circle box as the other rail controls. */
+/* 折叠侧栏时使用与相邻控件一致的圆形点击区域。 */
 .trigger.rail {
   width: 36px;
   height: 36px;
@@ -43,43 +42,27 @@
   white-space: nowrap;
 }
 
-/* Full-viewport layer (figma Mask 501:29946 #000@24%): mask tokens match the
-   Modal primitive (--dsw-alias-bg-mask-1 + --dsw-mask-blur). */
-.overlay {
+/* 设置页通过 portal 脱离侧栏裁切，独占视口而不绘制遮罩或浮动外框。 */
+.page {
   position: fixed;
   inset: 0;
   z-index: 1000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  overflow: hidden;
+  background: var(--dsw-alias-bg-base);
 }
 
-.mask {
-  position: absolute;
-  inset: 0;
-  background: var(--dsw-alias-bg-mask-1);
-  backdrop-filter: var(--dsw-mask-blur);
-}
-
-/* 所有设置分区沿用模型页的 1380 × 936px 上限，视口限制优先于内容尺寸。
-   切换分区时不改变外框或导航位置；超出可用高度的内容在所属列内滚动。 */
 .panel {
-  position: relative;
-  z-index: 1;
   display: flex;
-  width: min(1380px, calc(100vw - 48px));
-  height: min(936px, calc(100vh - 48px));
-  max-width: calc(100vw - 48px);
-  border-radius: 24px;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
   overflow: hidden;
   background: var(--dsw-alias-bg-layer-2);
-  box-shadow: var(--dsw-shadow-lv3);
-  /* 滚动条继承面板的 layer-2 token，适用于任意实际滚动的后代。 */
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
-/* 分区共用 250px 导航列，保留模型页的间距和独立滚动。 */
+/* 导航保持固定宽度；页面内容和导航列表分别滚动。 */
 .nav {
   flex: none;
   display: flex;
@@ -87,21 +70,53 @@
   gap: 18px;
   width: 250px;
   min-height: 0;
-  padding: 22px 12px 16px;
+  padding: 16px 12px;
   box-sizing: border-box;
   background: var(--dsw-alias-bg-layer-1);
 }
 
-/* Title row (figma 501:29959): 16/500 lh24, 12px side padding. */
+.navHeading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.back {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.back:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.back:focus-visible,
+.navCell:focus-visible,
+.trigger:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+}
+
 .navTitle {
-  padding: 0 12px;
+  min-width: 0;
   font-size: 16px;
   line-height: 24px;
   font-weight: 500;
   color: var(--dsw-alias-label-primary);
 }
 
-/* 导航条目超出面板时只滚动列表，不移动标题或内容列。 */
+/* 导航条目超出可用高度时只滚动列表。 */
 .navList {
   display: flex;
   flex-direction: column;
@@ -160,15 +175,15 @@
   flex-direction: column;
 }
 
-/* Header (figma .Header 501:29981): h54, pad (10,20,14,8), close right. */
+/* 内容操作留在顶栏；返回按钮始终位于左上角导航标题旁。 */
 .header {
   flex: none;
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  align-items: center;
+  justify-content: flex-end;
   gap: 8px;
-  height: 54px;
-  padding: 20px 14px 8px 10px;
+  min-height: 54px;
+  padding: 12px 24px;
   box-sizing: border-box;
 }
 
@@ -181,26 +196,7 @@
   margin-left: auto;
 }
 
-/* Close button (figma .Icon_container 501:29982): 28x28, r28, 14px glyph. */
-.close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: none;
-  border-radius: 28px;
-  background: transparent;
-  cursor: pointer;
-  color: var(--dsw-alias-label-primary);
-}
-
-.close:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-}
-
-/* Options area (figma Options 501:29983): pad (24,0,24,24), scrolls. */
+/* 内容从页顶操作区下方开始，保持独立滚动。 */
 .options {
   flex: 1;
   min-height: 0;
@@ -208,7 +204,7 @@
   overflow-y: auto;
 }
 
-/* Visually-hidden text seat (close button accessible name from slot content). */
+/* 返回按钮的可访问名称由设置文案 slot 提供。 */
 .hiddenLabel {
   position: absolute;
   width: 1px;
@@ -218,24 +214,7 @@
   white-space: nowrap;
 }
 
-/* 模型插件持有内容列的双列布局和滚动，关闭按钮覆盖在其右上方。 */
-.modelsPanel .content {
-  position: relative;
-}
-
-.modelsPanel .header {
-  position: absolute;
-  top: 0;
-  right: 0;
-  z-index: 2;
-  height: 48px;
-  padding: 10px 12px;
-}
-
-.modelsPanel .actions {
-  display: none;
-}
-
+/* 模型分区自行绘制双列内容；全屏页面始终保留顶栏操作。 */
 .modelsPanel .options {
   padding: 0;
   overflow: hidden;
@@ -244,10 +223,6 @@
 @media (max-width: 620px) {
   .panel {
     flex-direction: column;
-    width: calc(100vw - 24px);
-    max-width: calc(100vw - 24px);
-    height: calc(100vh - 24px);
-    border-radius: 16px;
   }
 
   .nav {
@@ -260,5 +235,10 @@
     flex-direction: row;
     overflow-x: auto;
     overflow-y: hidden;
+  }
+
+  .header {
+    min-height: 48px;
+    padding: 8px 12px;
   }
 }

@@ -617,6 +617,12 @@ describe('createFixtureApi', () => {
     const rootPath = await api.workspace.create(req({ path: '/' }))
     if (!rootPath.result.ok) throw new Error('rootPath failed')
     expect(rootPath.result.value.workspace.title).toBe('/')
+    const custom = await api.workspace.create(req({ path: '/tmp/fixture-workspaces/opaque-marker', title: 'project' }))
+    if (!custom.result.ok) throw new Error('custom create failed')
+    expect(custom.result.value.workspace.title).toBe('project')
+    const reused = await api.workspace.create(req({ path: '/tmp/fixture-workspaces/opaque-marker', title: 'different' }))
+    if (!reused.result.ok) throw new Error('reuse failed')
+    expect(reused.result.value).toMatchObject({ created: false, workspace: { title: 'project' } })
   })
 
   it('workspace.rename covers not-found, conflict, no-op, and the changed frame', async () => {

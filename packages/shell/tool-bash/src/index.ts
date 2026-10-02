@@ -341,9 +341,9 @@ export function apply(ctx: Context, config: Config = {}): void {
     async execute(args: BashToolArgs, exec) {
       const standingPolicy = resolveSandboxPolicy(exec)
       validateBashArgs(args, standingPolicy?.mode)
-      // Description is display metadata; workdir defaults to the caller's session.
-      const approvedMode = args.sandbox_permissions !== undefined && args.justification !== undefined
-        ? await approveBashEscalation(args.sandbox_permissions, args.justification, exec, standingPolicy)
+      // description 仅供展示；未指定 workdir 时使用调用会话的工作区。
+      const approvedMode = args.sandbox_permissions !== undefined
+        ? await approveBashEscalation(args.sandbox_permissions, args.justification ?? '', exec, standingPolicy)
         : undefined
       const policy = approvedMode === undefined
         ? standingPolicy
@@ -358,7 +358,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         ...policy !== undefined ? { sandboxPolicy: policy } : {},
       }
       if (args.run_in_background === true) {
-        // Undeclared keys are allowed, so schema omission also needs enforcement.
+        // 未公开的键仍可能到达执行期，因此禁用后台任务也必须在此拒绝。
         if (!backgroundEnabled) {
           throw new Error('run_in_background is disabled for this deployment (enableRunInBackground: false)')
         }
@@ -366,7 +366,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         if (jobs === undefined) {
           throw new Error('background jobs unavailable: load @deepseek-ai/dsh-jobs and @deepseek-ai/dsh-tool-jobs')
         }
-        // The caller owns cancellation until ctx.jobs commits detached ownership.
+        // 后台任务发布前由当前调用持有取消权。
         if (exec.signal.aborted) {
           const error = new HarnessError('tool call aborted', TOOL_ABORTED)
           error.name = 'AbortError'

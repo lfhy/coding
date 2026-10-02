@@ -57,12 +57,13 @@ const GROUPS = [{
 async function bench() {
   const ctx = new Context()
   let current: ModelSelection = { provider: 'deepseek-official', model: 'deepseek-v4-flash' }
+  let groups = GROUPS
   const calls = { models: 0, select: 0 }
   ctx.provide('connection', { api: { sessions: {
     models: () => {
       calls.models += 1
       return Promise.resolve({
-        result: { ok: true as const, value: { current, routable, groups: GROUPS, failures: [] } },
+        result: { ok: true as const, value: { current, routable, groups, failures: [] } },
       })
     },
     selectModel: (payload: { provider: string; model: string; reasoningEffort?: string }) => {
@@ -130,6 +131,7 @@ async function bench() {
     seat: () => seats.get('conversation.input.model')!,
     hostCurrent: () => current,
     setHostCurrent: (selection: ModelSelection) => { current = selection },
+    renameChannel: (name: string) => { groups = GROUPS.map(group => ({ ...group, name })) },
     address: (id: SessionId) => { addressed.add(id) },
     setRoutable: (next: boolean) => { routable = next },
     blockOf: (key: string) => blocks.get(sid(key)),
@@ -155,6 +157,19 @@ describe('ui-model-selection dual entry', () => {
     expect(options.map((o: SelectOption) => o.label)).toEqual(['DeepSeek-V4-Flash', 'DeepSeek-V4-Pro'])
     expect(options[0]).toMatchObject({ active: true, detail: 'DeepSeek' })
     expect(options[1]?.active).toBeUndefined()
+  })
+
+  it('refreshes the shared channel label after settings invalidation without changing its route id', async () => {
+    const b = await bench()
+    b.mint('s1')
+    const face = b.seat().inject!(sid('s1'))
+    expect((await b.contribution().ui.options(projection('s1'), new AbortController().signal))[0]?.detail).toBe('DeepSeek')
+    b.renameChannel('团队渠道')
+    b.ctx.remote.$dispatch('settings/document-updated', ['llm-deepseek', 1])
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(face.directory.getSnapshot().groups[0]).toMatchObject({ id: 'deepseek-official', name: '团队渠道' })
+    expect((await b.contribution().ui.options(projection('s1'), new AbortController().signal))[0]?.detail).toBe('团队渠道')
   })
 
   it('a seat selection is the current the popup marks active next — one shared state', async () => {

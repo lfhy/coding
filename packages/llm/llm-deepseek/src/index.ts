@@ -308,6 +308,7 @@ export function apply(ctx: Context, config: Config): void {
   const adapter = new DeepSeekAdapter({
     options,
     resolveApiKey,
+    providerName: () => current().channelName ?? DEFAULT_CHANNEL_NAME,
     resolveUserId,
     resolveAttachments: () => ctx.get('attachments'),
   })
@@ -328,16 +329,15 @@ export function apply(ctx: Context, config: Config): void {
   // even when a swap runs inside the scoped settings callback below.
   const registration = ctx.llm.registerAdapter([PROVIDER], adapter)
   let registeredPolicy = options().retryPolicy
+  let registeredProviderName = registeredName
   const ensureRegistrationFacts = (): void => {
     const policy = options().retryPolicy
-    if (deepEqualJson(policy, registeredPolicy)) return
-    // The registry captures the retry policy at registration, so it is the one
-    // fact per-request resolution cannot refresh. `replace` re-reads it in one
-    // synchronous registry section: disposing and re-registering instead would
-    // publish an empty route set between the two, and an observer that reacted
-    // to it would see this provider disappear and come back.
+    const providerName = current().channelName ?? DEFAULT_CHANNEL_NAME
+    if (deepEqualJson(policy, registeredPolicy) && providerName === registeredProviderName) return
+    // 注册表会捕获渠道名称与重试策略，名称变化须原地替换并通知选择器重读目录。
     registration.replace([PROVIDER])
     registeredPolicy = policy
+    registeredProviderName = providerName
   }
 
   installSettingsSection(ctx, NS, Config, config, {
@@ -345,8 +345,8 @@ export function apply(ctx: Context, config: Config): void {
       current = source
     },
     onChange: () => {
-      ensureRegistrationFacts()
       ensureDirectory()
+      ensureRegistrationFacts()
     },
   })
 }

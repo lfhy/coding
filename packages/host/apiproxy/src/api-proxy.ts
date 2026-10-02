@@ -1661,12 +1661,12 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     return agent
   }
 
-  /** Resolve or create one path while holding the Host's workspace-create chain. */
-  function ensureWorkspace(path: string): Promise<{ workspace: Workspace; created: boolean }> {
+  /** 在 Host 工作区创建队列中查找或新建目录，已有记录不覆盖标题。 */
+  function ensureWorkspace(path: string, title?: string): Promise<{ workspace: Workspace; created: boolean }> {
     const operation = workspaceCreationChain.then(async () => {
       const existing = await ctx.workspaceRegistry.resolveByPath(path)
       if (existing !== undefined) return { workspace: existing, created: false }
-      return { workspace: await ctx.workspaceRegistry.create(path), created: true }
+      return { workspace: await ctx.workspaceRegistry.create(path, title), created: true }
     })
     workspaceCreationChain = operation.then(() => undefined, () => undefined)
     return operation
@@ -2786,14 +2786,12 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       },
 
       async create(request) {
-        const { path } = request.payload
+        const { path, title } = request.payload
         try {
-          const { workspace, created } = await ensureWorkspace(path)
+          const { workspace, created } = await ensureWorkspace(path, title)
           return ok(request, { workspace: workspaceView(workspace), created })
         } catch (error: unknown) {
-          // The registry rejects a path that does not resolve to an existing
-          // directory (realpath ENOENT / not-a-directory) — the business
-          // error of the typed-path flow, surfaced as a validation failure.
+          // 注册表拒绝无法解析为已有目录的路径；目录选择流程将其映射为校验失败。
           return err(request, {
             code: 'workspace-invalid-path',
             message: `cannot create a workspace at "${path}": ${error instanceof Error ? error.message : String(error)}`,

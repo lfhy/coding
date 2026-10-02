@@ -208,11 +208,11 @@ export class WorkspaceRuntime implements IWorkspaces {
   }
 
   /**
-   * Register an existing path as a Workspace.
-   * @param input - the Host create payload.
-   * @returns the created or idempotently resolved Workspace.
+   * 注册已有目录；可选标题只在首次创建时提交，重复采用不会覆盖原标题。
+   * @param input - Host 创建请求，包含本地路径与可选显示名。
+   * @returns 新建或已注册的工作区视图。
    */
-  async create(input: { path: string }): Promise<WorkspaceView> {
+  async create(input: { path: string; title?: string }): Promise<WorkspaceView> {
     const result = await this.manager.create(input)
     if (!result.ok) throw new WorkspaceCreateError(result.error)
     return result.value.workspace

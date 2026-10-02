@@ -19,6 +19,7 @@ function ok<T>(request: RpcRequest<unknown>, value: T): Promise<RpcResponse<T>> 
 /** Scripted impl: every method resolves an empty-ish OK unless a case overrides it. */
 function scriptedApi(overrides: {
   browser?: Partial<ApiProxy['browser']>
+  workspace?: Partial<ApiProxy['workspace']>
   sessions?: Partial<ApiProxy['sessions']>
   subagents?: Partial<ApiProxy['subagents']>
   host?: Partial<ApiProxy['host']>
@@ -90,6 +91,7 @@ function scriptedApi(overrides: {
       insertBefore: r => ok(r, { workspaceIds: [r.payload.workspaceId] }),
       insertSessionBefore: r => ok(r, { workspace: { workspaceId: 'w1' as never, path: '/t', title: 't', sessionIds: [], createdAt: '0', updatedAt: '0' } }),
       archiveSession: r => ok(r, { archivedSessionIds: [r.payload.sessionId] }),
+      ...overrides.workspace,
     },
     skills: { list: r => ok(r, { skills: [] }), ...overrides.skills },
     agentPresets: {
@@ -481,6 +483,13 @@ describe('workspace domain round trip', () => {
     const response = await client(scriptedApi()).workspace.create({} as never)
     expect(response.result.ok).toBe(false)
     if (!response.result.ok) expect(response.result.error.code).toBe('bad-request')
+  })
+
+  it.each([{ path: '/t', title: '' }, { path: '/t', title: '   ' }])('rejects an empty workspace title before dispatch', async (payload) => {
+    const create = vi.fn()
+    const response = await client(scriptedApi({ workspace: { create } })).workspace.create(payload)
+    expect(response.result).toMatchObject({ ok: false, error: { code: 'bad-request' } })
+    expect(create).not.toHaveBeenCalled()
   })
 })
 

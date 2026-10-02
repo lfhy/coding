@@ -40,13 +40,19 @@ describe('validateEscalationArgs', () => {
     expect(() => { validateEscalationArgs('workspace-write', '   ') }).toThrow(/non-empty sentence/)
   })
 
-  it('only exempts redundant full access from the reason requirement', () => {
-    for (const justification of ['', ' ', undefined]) {
-      expect(() => { validateEscalationArgs('danger-full-access', justification, 'danger-full-access') }).not.toThrow()
-      expect(() => { validateEscalationArgs('danger-full-access', justification, 'read-only') }).toThrow()
-      expect(() => { validateEscalationArgs('danger-full-access', justification, 'workspace-write') }).toThrow()
+  it('treats advertised targets as redundant at full access without weakening restricted sessions', () => {
+    for (const target of ESCALATION_TARGETS) {
+      for (const justification of ['', ' ', undefined]) {
+        expect(() => { validateEscalationArgs(target, justification, 'danger-full-access') }).not.toThrow()
+        if (target === 'danger-full-access') {
+          expect(() => { validateEscalationArgs(target, justification, 'read-only') }).toThrow()
+          expect(() => { validateEscalationArgs(target, justification, 'workspace-write') }).toThrow()
+        }
+      }
     }
     expect(() => { validateEscalationArgs('workspace-write', '', 'workspace-write') }).toThrow(/non-empty sentence/)
+    expect(() => { validateEscalationArgs('unknown-mode', '', 'danger-full-access') }).toThrow(/non-empty sentence/)
+    expect(() => { validateEscalationArgs('unknown-mode', undefined, 'danger-full-access') }).toThrow(/requires a justification/)
     expect(() => { validateEscalationArgs(undefined, ' ', 'danger-full-access') }).toThrow(/only valid together/)
   })
 })
@@ -95,6 +101,10 @@ describe('approveEscalation', () => {
     const spy = ingredients({ approver: approver('allowed-once', r => seen.push(r)), agent: undefined })
     await expect(approveEscalation(req({ effectiveMode: 'workspace-write' }), spy))
       .resolves.toBe('workspace-write')
+    await expect(approveEscalation(req({ requestedMode: 'workspace-write', effectiveMode: 'danger-full-access' }), {
+      ...spy,
+      approver: undefined,
+    })).resolves.toBe('danger-full-access')
     await expect(approveEscalation(req({ requestedMode: 'danger-full-access', effectiveMode: 'danger-full-access' }), {
       ...spy,
       approver: undefined,
@@ -107,7 +117,9 @@ describe('approveEscalation', () => {
     const spy = ingredients({ approver: approver('allowed-once', r => seen.push(r)) })
     await expect(approveEscalation(req({ requestedMode: 'read-only' }), spy))
       .rejects.toThrow(/not strictly wider than this call's current "read-only" mode/)
-    await expect(approveEscalation(req({ requestedMode: 'workspace-write', effectiveMode: 'danger-full-access' as never }), spy))
+    await expect(approveEscalation(req({ requestedMode: 'read-only', effectiveMode: 'danger-full-access' }), spy))
+      .rejects.toThrow(/not strictly wider/)
+    await expect(approveEscalation(req({ requestedMode: 'unknown-mode', effectiveMode: 'danger-full-access' }), spy))
       .rejects.toThrow(/not strictly wider/)
     expect(seen).toEqual([])
   })

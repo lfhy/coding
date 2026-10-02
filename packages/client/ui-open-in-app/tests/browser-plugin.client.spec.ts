@@ -16,7 +16,6 @@ import {
   type HeroPanelToggleInjected, type WorkbenchPanelTogglesInjected,
 } from '../src/client/WorkbenchPanelToggles.tsx'
 import { RetainedTerminalPanel } from '../src/client/RetainedTerminalPanel.tsx'
-import type { TerminalPanelInjected } from '../src/client/TerminalPanel.tsx'
 import { en, NS, zh } from '../src/client/locales.ts'
 
 afterEach(() => {
@@ -37,7 +36,7 @@ async function bench() {
       'conversation.session.header.utilities': { kind: 'list', scope: 'session' },
       'conversation.view': { kind: 'list', scope: 'session' },
       'workbench': { kind: 'single', scope: 'session' },
-      'workbench.bottom': { kind: 'single', scope: 'session' },
+      'workbench.bottom': { kind: 'single', scope: 'root' },
     },
   } as never, () => null)
   ctx.provide('locale', new LocaleRuntime(ctx))
@@ -188,10 +187,13 @@ describe('open-in-app browser half', () => {
     expect(toggleWorkbenchBottom).toHaveBeenCalledWith(SESSION)
 
     const bottom = ctx.slots.entries('workbench.bottom')[0]
-    const terminalFace = (bottom?.inject as unknown as (id: SessionId) => TerminalPanelInjected)(SESSION)
-    expect(terminalFace.terminalUrl)
+    const terminalFace = (bottom?.inject as unknown as () => {
+      terminalUrl: (id: SessionId) => string
+      closeBottom: (id: SessionId) => void
+    })()
+    expect(terminalFace.terminalUrl(SESSION))
       .toBe('ws://dsh.example/open-in-app/terminal?sessionId=browser-plugin-session&cols=80&rows=24')
-    terminalFace.closeBottom()
+    terminalFace.closeBottom(SESSION)
     expect(closeWorkbenchBottom).toHaveBeenCalledExactlyOnceWith(SESSION)
     expect(toggleWorkbenchBottom).toHaveBeenCalledTimes(1)
     await fiber.dispose()

@@ -436,7 +436,7 @@ export function AppFrame({
         })}
       </WorkbenchColumn>
       <WorkbenchBottom hidden={!bottomShown}>
-        {renderSlot('workbench.bottom', { shown: bottomShown })}
+        {renderSlot('workbench.bottom', { sessionId: activeSession, shown: bottomShown })}
       </WorkbenchBottom>
       <div className={css.overlayLayer} data-shell-overlay>
         {renderSlot('shell.overlay', {})}

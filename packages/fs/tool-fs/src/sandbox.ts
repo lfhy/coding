@@ -72,9 +72,9 @@ export class FsSandboxController {
   }
 
   /**
-   * 解析本次变更携带的策略：已生效的同档目标沿用常驻模式且跳过审批，严格更宽的目标
-   * 在执行前经 `ctx.approval` 解析，其余调用使用会话常驻模式。调用会话 cwd 始终作为
-   * 工作区根传递；参数配对按本次调用实际生效的模式校验。
+   * 解析本次变更携带的策略：全访问下公开的目标字段是冗余请求，不会降权；其他模式下
+   * 同档目标跳过审批，严格拓宽目标在执行前经 `ctx.approval` 解析。
+   * 调用会话 cwd 始终作为工作区根传递；参数配对按本次调用实际生效的模式校验。
    * @param toolName - 变更工具名，用于审批审计记录。
    * @param args - 本次调用的升权参数。
    * @param exec - 工具执行上下文（agent、callId、signal）。
@@ -83,7 +83,7 @@ export class FsSandboxController {
   async resolvePolicy(toolName: string, args: FsEscalationArgs, exec: ToolExecution): Promise<SandboxExecutionPolicy | undefined> {
     const standingPolicy = this.policy?.resolve({ ...exec.agent ? { session: exec.agent.session } : {} })
     validateEscalationArgs(args.sandbox_permissions, args.justification, standingPolicy?.mode)
-    if (args.sandbox_permissions === undefined || args.justification === undefined) {
+    if (args.sandbox_permissions === undefined) {
       return standingPolicy
     }
     if (this.escalationModes.length === 0) {
@@ -91,7 +91,7 @@ export class FsSandboxController {
     }
     const policy = standingPolicy as SandboxExecutionPolicy
     const approvedMode = await approveEscalation(
-      { requestedMode: args.sandbox_permissions, justification: args.justification, effectiveMode: policy.mode, subject: 'operation' },
+      { requestedMode: args.sandbox_permissions, justification: args.justification ?? '', effectiveMode: policy.mode, subject: 'operation' },
       {
         approver: this.ctx.get('approval'),
         agent: exec.agent,

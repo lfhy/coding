@@ -928,6 +928,27 @@ describe('sandbox escalation API (write/edit)', () => {
     ])
   })
 
+  it.each(['write', 'edit'] as const)('%s keeps full access for a redundant narrower target', async (name) => {
+    const { ctx, fs } = await setupConfining({ mode: 'danger-full-access' })
+    const agent = escalationAgent()
+    if (name === 'edit') {
+      fs.files.set('key:a.txt', 'x')
+      await call(ctx, 'read', { file_path: 'a.txt' }, agent)
+    }
+    const args = name === 'write'
+      ? { file_path: 'a.txt', content: 'new' }
+      : { file_path: 'a.txt', old_string: 'x', new_string: 'xx' }
+    for (const justification of ['', ' ', undefined]) {
+      const result = await call(ctx, name, {
+        ...args,
+        sandbox_permissions: 'workspace-write',
+        ...justification === undefined ? {} : { justification },
+      }, agent)
+      expect(result.isError).toBe(false)
+    }
+    expect(fs.stamped.map(policy => policy?.mode)).toEqual(Array(3).fill('danger-full-access'))
+  })
+
   it.each(['write', 'edit'] as const)('%s rejects a real escalation with an empty reason under a restricted session', async (name) => {
     const { ctx, fs } = await setupConfining({ mode: 'danger-full-access' })
     const args = name === 'write'

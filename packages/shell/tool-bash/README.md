@@ -19,8 +19,8 @@
 | `timeoutMs` | number | 以毫秒为单位覆盖超时时间。执行器会应用其配置的默认值和上限。 |
 | `workdir` | string | 本次调用的工作目录。默认为调用方 agent（智能体）会话 cwd 的文件系统标识（`session.header.cwd`），使每个会话都在自己的工作区中运行；相对 `workdir` 也以同一标识为基准解析。在 Remote-SSH marker Workspace 中，解析出的本地路径必须仍位于同一 marker 下；subprocess 提供方随后会在该 target 上运行前台或后台工作。 |
 | `run_in_background` | boolean | 立即返回 job id；不应用超时。 |
-| `sandbox_permissions` | string enum | 仅当已挂载的执行器启用沙箱时才会公开（`ctx.shell.sandboxMode` 已定义）：被拒命令所需的更宽模式，取自封闭的目标词汇 `workspace-write`/`danger-full-access`（有效模式按会话确定，因此不能按执行器默认值缩减）。已生效的同档目标无需审批；严格更宽的目标会请求审批，更窄或非法的目标则在提示任何人前失败。当前已是 `danger-full-access` 时无需提交此参数。 |
-| `justification` | string | 提权时必须与 `sandbox_permissions` 一同提供：用一句话向用户解释此命令为何需要更宽权限。仅当本次调用已处于 `danger-full-access` 且重复指定同档目标时，缺省或空理由可随多余的同档请求幂等执行。 |
+| `sandbox_permissions` | string enum | 仅当已挂载的执行器启用沙箱时才会公开（`ctx.shell.sandboxMode` 已定义）：被拒命令所需的更宽模式，取自封闭的目标词汇 `workspace-write`/`danger-full-access`（有效模式按会话确定，因此不能按执行器默认值缩减）。已处于 `danger-full-access` 时，重复传入任何公开目标均不会降权或请求审批；其余模式下，同档目标无需审批，严格更宽的目标会请求审批，更窄或非法的目标则在提示任何人前失败。 |
+| `justification` | string | 提权时必须与 `sandbox_permissions` 一同提供：用一句话向用户解释此命令为何需要更宽权限。仅当本次调用已处于 `danger-full-access` 且传入公开目标时，缺省或空理由可随多余的请求执行。 |
 
 执行前，`command`、`workdir` 和 `timeoutMs` 会通过 `ctx.shell.resolve()` 依据执行器配置默认值完成解析，因此 Service Definition（`ShellExecSpec`）收到显式的 `workdir`/`timeoutMs` 值。工具层会根据调用方 agent 的 `session.header.cwd` 应用工作目录默认值，然后才调用 `resolve()`：由于 N 个会话共享一个执行器，逐会话 cwd 必须来自 `exec.agent`；只有无法取得会话 cwd 时，执行器才回退到自身配置／`process.cwd()`。存在沙箱策略时，工具会复用已经规范化的 `workspaceRoot` 作为工作目录基准，防止限制逻辑与进程启动过程对同一个会话路径拼写产生不同解析结果。
 
@@ -46,7 +46,7 @@
 
 除非启用沙箱的执行器（[`dsh-bash-sandbox`](../bash-sandbox/)）限制命令，否则命令以执行器的完整权限运行。仅拒绝型沙箱会把拒绝作为结果事实报告，并在此渲染为拒绝标记；逐调用的允许／拒绝／询问策略由 `tools/pre-execute` waterfall（瀑布式事件）负责（参见 docs/architecture.md）。
 
-需要升权的 bash 调用会在执行前解析 `ctx.approval`。`allowed-once` 只对该次调用应用请求模式；审批被拒、取消、不可用或缺少审批上下文时，命令完全不会执行，并返回不同的错误。若重试指定的公开目标已经是本次调用的生效模式，命令会按该不变模式运行且不请求审批。发生真实拒绝后，模型可以在同一轮次中使用满足需要的最窄更宽模式和理由重试同一命令一次；审批提示本身就是征求同意的步骤。升权绝不能预先推测，禁用或拒绝审批即为最终结果。其理由见 沙箱 设计记录。
+需要升权的 bash 调用会在执行前解析 `ctx.approval`。`allowed-once` 只对该次调用应用请求模式；审批被拒、取消、不可用或缺少审批上下文时，命令完全不会执行，并返回不同的错误。若本次调用已处于 `danger-full-access`，公开目标值和空理由均视为冗余，不会改变模式或请求审批；较窄会话仍必须提供有效理由并通过审批。发生真实拒绝后，模型可以在同一轮次中使用满足需要的最窄更宽模式和理由重试同一命令一次；审批提示本身就是征求同意的步骤。升权绝不能预先推测，禁用或拒绝审批即为最终结果。其理由见 沙箱 设计记录。
 
 ## 逐会话模式切换
 

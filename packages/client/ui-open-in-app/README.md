@@ -33,13 +33,13 @@ Remote-SSH 与 SSH Host 入口直接为当前 Session 调用 `ctx.layout.openWor
 
 文件树只把当前 Session id 与 Host 返回的 provider segment 数组回传给 list/read 路由，不提交工作区根，也不拼接 Windows、POSIX 或 UNC 路径。工作台视觉关闭时不请求目录；首次显示后才读取根目录，避免隐藏 entry 在 Session 尚未就绪时留下错误状态。目录按文件夹优先排序，展开时才读取下一层；筛选只作用于已加载层，点击文件会打开或激活中间标签。Markdown 使用共享 `MarkdownText`，代码和普通文本保留换行，图片使用 Host 校验后的 MIME 与 base64 内容，其它类型显示明确的 unsupported 状态。
 
-底栏使用 `@xterm/xterm` 与 `@xterm/addon-fit`，首次显示时才为当前 Session 建立首个 Host WebSocket。`coding 1` 等终端标签可新增、切换和单独关闭；每个标签独占一个 WebSocket 与 PTY，切换标签保留输出和进程，关闭标签释放对应连接。Shell 退出时，Client 在同一连接收到 exit 帧并断开后移除对应标签；意外断连或连接错误保留标签以供重连。手动或正常退出关闭最后一个标签时收起底栏，重新展开空底栏会创建新终端；底栏右端关闭按钮只隐藏底栏，不终止已有标签。Client 发送输入和 fit 后的 resize 帧，接收 ready、output、exit 与 error 帧。隐藏底栏或关闭工作台只改变固定布局可见性，不断开已激活终端。xterm 的光标跟随主题前景色；点击标签、新建终端或重新展开底栏会聚焦终端，方向键切换标签则把焦点留在标签上，连接就绪不会抢占焦点。组件卸载会释放 xterm、ResizeObserver 和 WebSocket；Host 随 socket 生命周期终止对应 PTY。本地 POSIX、本地 Windows 和 Remote-SSH 的实际 resize 与进程树语义由 Session Agent 的 subprocess provider 实现。
+底栏使用 `@xterm/xterm` 与 `@xterm/addon-fit`，首次显示时才为当前 Session 建立首个 Host WebSocket。根布局保持底栏占用者挂载，底栏按 Session 保留已激活的终端树；切换会话只隐藏原会话并展示目标会话，切回时沿用原 WebSocket、PTY、标签与滚屏。会话从列表移除、插件卸载或页面关闭时才释放对应终端树。`coding 1` 等终端标签可新增、切换和单独关闭；每个标签独占一个 WebSocket 与 PTY，切换标签保留输出和进程，关闭标签释放对应连接。Shell 退出时，Client 在同一连接收到 exit 帧并断开后移除对应标签；意外断连或连接错误保留标签以供重连。手动或正常退出关闭最后一个标签时收起底栏，重新展开空底栏会创建新终端；底栏右端关闭按钮只隐藏底栏，不终止已有标签。Client 发送输入和 fit 后的 resize 帧，接收 ready、output、exit 与 error 帧。隐藏底栏或关闭工作台只改变固定布局可见性，不断开已激活终端。xterm 的光标跟随主题前景色；点击标签、新建终端或重新展开底栏会聚焦终端，方向键切换标签则把焦点留在标签上，连接就绪不会抢占焦点。组件卸载会释放 xterm、ResizeObserver 和 WebSocket；Host 随 socket 生命周期终止对应 PTY。本地 POSIX、本地 Windows 和 Remote-SSH 的实际 resize 与进程树语义由 Session Agent 的 subprocess provider 实现。
 
 响应式行为以 768px 与 375px 参考视口固定：两者都由布局壳让工作台接管 rail 外主内容；768px 下文件树固定为 260px 并隐藏大小列，375px 下顶栏和按钮收紧，文件树打开时覆盖整个预览区，关闭文件侧栏后回到文件标签与预览。终端底栏继续横跨主内容，并按每次可见尺寸重新 fit。
 
 ## 实现
 
-`OpenInAppController` 持有页面级目标缓存、应用选择和 HTTP／WebSocket URL 组装，并在浏览器 wire 边界校验 Host 响应。会话页头与工作台 entry 共用一个 Session scope slot store，保存当前视图、文件标签、当前文件、筛选、展开目录和已加载目录；文件侧栏显隐由布局按 Session 持有，经 `workbench` owner props 的 `filesOpen` 传入，不同 Session 的状态彼此独立。`WorkbenchPanelToggles` 作为 Session 级条目注册到 `conversation.session.header.utilities`；工作台顶栏直接读取工作台 owner props。终端标签属于 Session scope 的已挂载底栏，终端连接 effect 不依赖底栏 `shown`，因此收起底栏不会触发清理。
+`OpenInAppController` 持有页面级目标缓存、应用选择和 HTTP／WebSocket URL 组装，并在浏览器 wire 边界校验 Host 响应。会话页头与工作台 entry 共用一个 Session scope slot store，保存当前视图、文件标签、当前文件、筛选、展开目录和已加载目录；文件侧栏显隐由布局按 Session 持有，经 `workbench` owner props 的 `filesOpen` 传入，不同 Session 的状态彼此独立。`WorkbenchPanelToggles` 作为 Session 级条目注册到 `conversation.session.header.utilities`；工作台顶栏直接读取工作台 owner props。终端标签属于根 scope 的已挂载底栏，按 Session 保存；终端连接 effect 不依赖底栏 `shown`，因此切换会话或收起底栏不会触发清理。
 
 所有可见文案在 `open-in-app` namespace 中维护中文与英文词典。组件样式使用 CSS Modules 和共享 `--dsw-*` token；768px 规则固定平板文件树宽度，375px 手机视口落入 480px 以下的单面板覆盖规则。
 
@@ -57,6 +57,6 @@ Remote-SSH 与 SSH Host 入口直接为当前 Session 调用 `ctx.layout.openWor
 - 文件内容由 Host 完整返回；大文件截断、大小上限和二进制分类由 Host 契约负责。
 - 文件树不监听实时文件系统变更，用户可显式刷新根目录或文件预览。
 - 预览只覆盖 Markdown、代码、文本和图片；PDF、Office 与 HTML 沙箱预览尚未接入。
-- 已激活终端只在当前组件与 WebSocket 生命周期内保留；Session scope 卸载、网络断开或插件释放会终止对应 PTY，重新连接会创建新终端而不是接回旧进程。
+- 已激活终端只在当前页面与 WebSocket 生命周期内保留；Session 从列表移除、网络断开或插件释放会终止对应 PTY，重新连接会创建新终端而不是接回旧进程。
 
 **运行时 invariant：** companion 只保留包归属，不安装额外关系。真实 SlotRegistry 测试验证页头开关、欢迎页、工作台和底栏 entry 会随插件 fiber 一起释放。

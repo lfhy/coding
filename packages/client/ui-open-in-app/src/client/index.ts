@@ -14,7 +14,6 @@ import {
   type HeroPanelToggleInjected, type WorkbenchPanelTogglesInjected,
 } from './WorkbenchPanelToggles.tsx'
 import { RetainedTerminalPanel } from './RetainedTerminalPanel.tsx'
-import type { TerminalPanelInjected } from './TerminalPanel.tsx'
 import { createWorkbenchStore } from './store.ts'
 import { en, NS, zh } from './locales.ts'
 
@@ -158,9 +157,9 @@ export function apply(ctx: ClientContext): void {
   ctx.slots.inject('workbench.bottom', () => ctx.slots.register({
     name: 'workbench.bottom',
     locale: NS,
-    inject: (sessionId: SessionId): TerminalPanelInjected => ({
-      terminalUrl: controller.terminalUrl(sessionId),
-      closeBottom: () => { ctx.layout.closeWorkbenchBottom(sessionId) },
+    inject: () => ({
+      terminalUrl: (sessionId: SessionId) => controller.terminalUrl(sessionId),
+      closeBottom: (sessionId: SessionId) => { ctx.layout.closeWorkbenchBottom(sessionId) },
     }),
   }, RetainedTerminalPanel))
 }

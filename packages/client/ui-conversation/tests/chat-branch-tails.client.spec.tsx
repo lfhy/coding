@@ -189,11 +189,13 @@ describe('MessageItem arms', () => {
     expect(exec).toHaveBeenCalledWith('copy')
   })
 
-  it('user copy never claims success when the host rejects the write', async () => {
+  it('user copy never claims success when both clipboard paths reject the write', async () => {
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
       value: { writeText: vi.fn().mockRejectedValue(new Error('denied')) },
     })
+    const exec = vi.fn(() => false)
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: exec })
     render(
       <MessageItem t={t} node={{
         kind: 'user', seq: 1, time: 1_000,
@@ -207,6 +209,7 @@ describe('MessageItem arms', () => {
       await Promise.resolve()
       await Promise.resolve()
     })
+    expect(exec).toHaveBeenCalledWith('copy')
     expect(screen.getByRole('button', { name: '复制' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: '复制成功' })).toBeNull()
   })

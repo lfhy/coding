@@ -119,7 +119,7 @@ describe('llm-deepseek real dynamic composition', () => {
     await vi.waitFor(() => {
       expect(ctx.llm.listConfigurableProviders()[0]?.displayName).toBe('外部渠道')
     }, { timeout: 5000 })
-    expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek' }])
+    expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: '外部渠道' }])
     expect(ctx.get('settings')!.get(NS)).toMatchObject({ channelName: '外部渠道', apiKeyEnv: 'DEEPSEEK_API_KEY' })
 
     const llm = ctx.llm
@@ -130,6 +130,7 @@ describe('llm-deepseek real dynamic composition', () => {
     expect(restarted.ctx.llm.listConfigurableProviders()).toEqual([{
       provider: 'deepseek-official', displayName: '外部渠道', settingsNs: NS, settingsPath: [],
     }])
+    expect(restarted.ctx.llm.listProviders()[0]?.name).toBe('外部渠道')
     expect(restarted.ctx.get('settings')!.get(NS)).toMatchObject({ channelName: '外部渠道', apiKeyEnv: 'DEEPSEEK_API_KEY' })
   })
 

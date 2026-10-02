@@ -298,6 +298,17 @@ describe('workspace.create', () => {
     expect(existsSync(missing)).toBe(false)
   })
 
+  it('uses a supplied remote directory title only when a marker workspace is first registered', async () => {
+    const { api, root } = await harness()
+    const marker = stageDir(root, '24ad319d67f7')
+    const first = expectOk(await api.workspace.create(request({ path: marker, title: 'project' })))
+    expect(first).toMatchObject({ created: true, workspace: { path: marker, title: 'project' } })
+
+    const repeated = expectOk(await api.workspace.create(request({ path: marker, title: 'different' })))
+    expect(repeated).toMatchObject({ created: false, workspace: { workspaceId: first.workspace.workspaceId, title: 'project' } })
+    expect(expectOk(await api.workspace.list(request({}))).items).toHaveLength(1)
+  })
+
   it('adopts different paths that derive the same Workspace title', async () => {
     const { api, root } = await harness()
     const first = join(root, 'one', 'project')

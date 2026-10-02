@@ -2,8 +2,16 @@
 
 import { useEffect, useId, useLayoutEffect, useReducer, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { Icon } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { TerminalPanel, type TerminalPanelProps } from './TerminalPanel.tsx'
+import { NS } from './locales.ts'
 import css from './TerminalPanel.module.css'
+
+type RetainedTerminalProps = PropsRuntime<'workbench.bottom'> & PropsLocale<typeof NS> & InjectFace<{
+  terminalUrl: (sessionId: SessionId) => string
+  closeBottom: (sessionId: SessionId) => void
+}>
 
 type Tab = { readonly id: number }
 type TabsState = {
@@ -60,7 +68,7 @@ function TerminalTabs(props: TerminalPanelProps): React.JSX.Element {
   const { tabs, activeId, focusRequest } = state
   const wasShown = useRef(props.shown)
   const handledCollapse = useRef(0)
-  const { shown, t } = props
+  const { shown, t, closeBottom } = props
 
   useEffect(() => {
     if (!shown) dispatch({ type: 'hidden' })
@@ -73,8 +81,8 @@ function TerminalTabs(props: TerminalPanelProps): React.JSX.Element {
   useEffect(() => {
     if (handledCollapse.current === state.collapseRevision) return
     handledCollapse.current = state.collapseRevision
-    if (tabs.length === 0) props.closeBottom()
-  }, [state.collapseRevision, tabs.length, props.closeBottom])
+    if (tabs.length === 0) closeBottom()
+  }, [state.collapseRevision, tabs.length, closeBottom])
 
   useLayoutEffect(() => {
     if (shown && tabs.length === 0) addButton.current?.focus()
@@ -124,7 +132,7 @@ function TerminalTabs(props: TerminalPanelProps): React.JSX.Element {
         <button ref={addButton} type="button" className={css.iconButton} aria-label={t('terminal.newTab')}
           title={t('terminal.newTab')} onClick={addTab}>+</button>
         <button type="button" className={css.iconButton} aria-label={t('workbench.bottom.hide')}
-          title={t('workbench.bottom.hide')} onClick={props.closeBottom}>×</button>
+          title={t('workbench.bottom.hide')} onClick={closeBottom}>×</button>
       </header>
       <div className={css.panels}>
         {tabs.map(tab => (
@@ -139,13 +147,25 @@ function TerminalTabs(props: TerminalPanelProps): React.JSX.Element {
 
 /**
  * 避免从未打开的底栏初始化 xterm，同时保留已激活终端的连接和滚屏。
- * @param props - 布局 owner 与 Host 终端 URL。
- * @returns 尚未启用时为空；启用后保持每个标签自己的终端组件。
+ * @param props - 当前会话、会话列表与 Host 终端 URL 工厂。
+ * @returns 已启用会话保持挂载的终端树。
  */
-export function RetainedTerminalPanel(props: TerminalPanelProps): ReactNode {
-  const [activated, setActivated] = useState(props.shown)
+export function RetainedTerminalPanel(props: RetainedTerminalProps): ReactNode {
+  const { sessionId, shown, useSessions, terminalUrl, closeBottom, ...rest } = props
+  const sessionIds = useSessions(state => state.ids)
+  const [activated, setActivated] = useState<readonly SessionId[]>(() =>
+    shown && sessionId !== undefined ? [sessionId] : [])
   useEffect(() => {
-    if (props.shown) setActivated(true)
-  }, [props.shown])
-  return activated ? <TerminalTabs {...props} /> : null
+    setActivated((current) => {
+      const retained = current.filter(id => sessionIds.includes(id))
+      if (!shown || sessionId === undefined || !sessionIds.includes(sessionId) || retained.includes(sessionId)) {
+        return retained.length === current.length ? current : retained
+      }
+      return [...retained, sessionId]
+    })
+  }, [sessionIds, sessionId, shown])
+  return activated.map(id => (
+    <TerminalTabs key={id} {...rest} sessionId={id} shown={shown && sessionId === id}
+      terminalUrl={terminalUrl(id)} closeBottom={() => { closeBottom(id) }} />
+  ))
 }

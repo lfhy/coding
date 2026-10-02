@@ -124,7 +124,7 @@ describe('ui-settings-general apply', () => {
     await fiber.await()
     expect(b.locale.bind('settings')('title')).toBe('设置')
     b.locale.setLocale('en')
-    expect(b.locale.bind('settings')('close')).toBe('Close')
+    expect(b.locale.bind('settings')('close')).toBe('Back')
     b.locale.setLocale('zh')
     await fiber.dispose()
     // The (ns, locale) seats are free again — the dictionary disposer ran.

@@ -135,8 +135,8 @@ export type WorkspaceBrowserInjected = {
    * the Host response/changed frame; failures leave the order unchanged.
    */
   insertSessionBefore: (workspaceId: WorkspaceId, sessionId: SessionId, beforeSessionId?: SessionId) => Promise<void>
-  /** Adopt a picked host directory as a real Workspace before targeting a Session. */
-  createWorkspace: (input: { path: string }) => Promise<WorkspaceView>
+  /** 注册已选本地目录；可选标题只在新工作区创建时生效。 */
+  createWorkspace: (input: { path: string; title?: string }) => Promise<WorkspaceView>
 }
 
 /** Full browser props: shell owner share + viewing store + injected actions + the locale seat. */
@@ -154,8 +154,8 @@ export type WorkspaceBrowserProps =
  * supplies the implicit index signature required by the registry.
  */
 export type WorkspacePickerInjected = DirectoryPickingInjected & {
-  /** Adopt a picked host directory as a real Workspace before targeting a Session. */
-  createWorkspace: (input: { path: string }) => Promise<WorkspaceView>
+  /** 注册已选本地目录；可选标题只在新工作区创建时生效。 */
+  createWorkspace: (input: { path: string; title?: string }) => Promise<WorkspaceView>
   /** 创建并打开不归属任何工作区的会话。 */
   startSessionWithoutWorkspace: () => Promise<void>
 }

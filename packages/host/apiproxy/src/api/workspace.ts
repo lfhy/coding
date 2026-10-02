@@ -22,7 +22,7 @@ export interface WorkspaceView {
   workspaceId: WorkspaceId
   /** Canonical directory path (host-side realpath canon). */
   path: string
-  /** Display title (defaults to the path basename at create). */
+  /** 显示标题；首次创建默认使用本地路径的 basename，也可显式指定。 */
   title: string
   /**
    * Sessions accounted under this workspace, in manually owned order
@@ -46,14 +46,12 @@ export interface WorkspaceApi {
   list(request: RpcRequest<{}>): Promise<RpcResponse<{ items: WorkspaceView[]; archivedSessionIds: SessionId[] }>>
 
   /**
-   * Creates (or idempotently resolves) a workspace over an EXISTING directory
-   * (no mkdir — a missing or non-directory path fails with
-   * `workspace-invalid-path`). A path resolving to a directory already owned
-   * by a workspace returns that workspace (`created: false`). Adoption allows
-   * distinct canonical paths whose basenames produce the same display title;
-   * the registry's basename title default names the new workspace.
+   * 为已有目录创建或查找工作区，不创建目录；路径不存在或不是目录时返回
+   * `workspace-invalid-path`。规范路径已有工作区时返回该记录与 `created: false`，
+   * 不修改原标题。新记录使用可选非空 `title`，否则使用本地路径的 basename；
+   * 不同规范路径允许使用相同标题。
    */
-  create(request: RpcRequest<{ path: string }>):
+  create(request: RpcRequest<{ path: string; title?: string }>):
   Promise<RpcResponse<{ workspace: WorkspaceView; created: boolean }>>
 
   /**

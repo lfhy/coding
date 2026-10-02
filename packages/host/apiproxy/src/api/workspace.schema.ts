@@ -31,9 +31,10 @@ export const workspaceListValueSchema = z.object({
   archivedSessionIds: z.array(sessionIdSchema),
 }) satisfies z.ZodType<Wire<ResponseValue<'workspace.list'>>>
 
-/** workspace.create request payload: the existing directory to adopt. */
+/** workspace.create 请求：已有目录路径与仅用于新记录的可选非空标题。 */
 export const workspaceCreateRequestSchema = z.object({
   path: z.string(),
+  title: z.string().trim().min(1).optional(),
 }) satisfies z.ZodType<Wire<RequestPayload<'workspace.create'>>>
 
 /** workspace.create response value. */

@@ -2,6 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import type { SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { RetainedTerminalPanel } from '../src/client/RetainedTerminalPanel.tsx'
 import { parseTerminalServerFrame, TerminalPanel, type TerminalPanelProps } from '../src/client/TerminalPanel.tsx'
@@ -113,7 +114,18 @@ class FakeWebSocket extends EventTarget {
 }
 
 const SESSION = 'terminal-session' as SessionId
+const OTHER_SESSION = 'other-session' as SessionId
+const RETAINED_IDS = [SESSION, OTHER_SESSION]
 const t: TerminalPanelProps['t'] = makeTranslate(zh)
+
+function retainedProps(sessionId: SessionId | undefined = SESSION, shown = true) {
+  return {
+    sessionId, shown, t,
+    useSessions: (selector: (state: SessionListState) => unknown) => selector({ ids: RETAINED_IDS } as SessionListState),
+    terminalUrl: (id: SessionId) => `ws://dsh.internal/open-in-app/terminal?sessionId=${id}`,
+    closeBottom: vi.fn(),
+  } as unknown as Parameters<typeof RetainedTerminalPanel>[0]
+}
 
 function props(shown = true): TerminalPanelProps {
   return {
@@ -122,7 +134,7 @@ function props(shown = true): TerminalPanelProps {
     terminalUrl: 'ws://dsh.internal/open-in-app/terminal?sessionId=terminal-session&cols=80&rows=24',
     closeBottom: vi.fn(),
     t,
-  } as unknown as TerminalPanelProps
+  }
 }
 
 beforeEach(() => {
@@ -304,18 +316,55 @@ describe('TerminalPanel', () => {
   })
 
   it('defers terminal allocation until the bottom panel is first shown', async () => {
-    const mounted = render(<RetainedTerminalPanel {...props(false)} />)
+    const mounted = render(<RetainedTerminalPanel {...retainedProps(SESSION, false)} />)
     expect(FakeWebSocket.instances).toEqual([])
     expect(terminalMocks.instances).toEqual([])
-    mounted.rerender(<RetainedTerminalPanel {...props(true)} />)
+    mounted.rerender(<RetainedTerminalPanel {...retainedProps(SESSION, true)} />)
     await waitFor(() => { expect(FakeWebSocket.instances).toHaveLength(1) })
     expect(terminalMocks.instances).toHaveLength(1)
-    mounted.rerender(<RetainedTerminalPanel {...props(false)} />)
+    mounted.rerender(<RetainedTerminalPanel {...retainedProps(SESSION, false)} />)
     expect(FakeWebSocket.instances).toHaveLength(1)
   })
 
+  it('preserves each session PTY across conversation switches and releases removed sessions', async () => {
+    const firstProps = retainedProps()
+    const mounted = render(<RetainedTerminalPanel {...firstProps} />)
+    const first = FakeWebSocket.instances[0] as FakeWebSocket
+    const firstTerminal = terminalMocks.instances[0]
+    act(() => { first.message('{"type":"output","data":"retained output"}') })
+
+    mounted.rerender(<RetainedTerminalPanel {...firstProps} sessionId={OTHER_SESSION} shown />)
+    await waitFor(() => { expect(FakeWebSocket.instances).toHaveLength(2) })
+    const second = FakeWebSocket.instances[1] as FakeWebSocket
+    expect(second.url).toContain('other-session')
+    expect(first.close).not.toHaveBeenCalled()
+    expect(firstTerminal?.dispose).not.toHaveBeenCalled()
+
+    mounted.rerender(<RetainedTerminalPanel {...firstProps} sessionId={SESSION} shown />)
+    expect(FakeWebSocket.instances).toHaveLength(2)
+    expect(first.close).not.toHaveBeenCalled()
+    expect(firstTerminal?.writes).toEqual(['retained output'])
+    expect(second.close).not.toHaveBeenCalled()
+
+    mounted.rerender(<RetainedTerminalPanel {...firstProps} sessionId={undefined} shown={false} />)
+    expect(first.close).not.toHaveBeenCalled()
+    expect(second.close).not.toHaveBeenCalled()
+
+    const reducedIds = [OTHER_SESSION]
+    const reduced = {
+      ...firstProps,
+      useSessions: ((selector: (state: SessionListState) => unknown) =>
+        selector({ ids: reducedIds } as SessionListState)) as typeof firstProps.useSessions,
+    }
+    mounted.rerender(<RetainedTerminalPanel {...reduced} />)
+    expect(first.close).toHaveBeenCalledOnce()
+    expect(second.close).not.toHaveBeenCalled()
+    mounted.unmount()
+    expect(second.close).toHaveBeenCalledOnce()
+  })
+
   it('keeps independent PTYs and output on tab switches, closes one tab, and hides the panel separately', async () => {
-    const p = props()
+    const p = retainedProps()
     const mounted = render(<RetainedTerminalPanel {...p} />)
     expect(screen.getByRole('tab', { name: 'coding 1' }).getAttribute('aria-selected')).toBe('true')
     fireEvent.click(screen.getByRole('button', { name: zh['terminal.newTab'] }))
@@ -377,7 +426,7 @@ describe('TerminalPanel', () => {
   })
 
   it('removes only the completed tab after its exit frame and socket close', async () => {
-    const p = props()
+    const p = retainedProps()
     render(<RetainedTerminalPanel {...p} />)
     fireEvent.click(screen.getByRole('button', { name: zh['terminal.newTab'] }))
     const [first, second] = FakeWebSocket.instances
@@ -400,7 +449,7 @@ describe('TerminalPanel', () => {
   })
 
   it('retains unexpectedly disconnected tabs and ignores stale reconnect generations', async () => {
-    const p = props()
+    const p = retainedProps()
     render(<RetainedTerminalPanel {...p} />)
     const first = FakeWebSocket.instances[0] as FakeWebSocket
     act(() => { first.finish() })
@@ -421,7 +470,7 @@ describe('TerminalPanel', () => {
   })
 
   it('closes the bottom once when independent terminal exits arrive in one batch', () => {
-    const p = props()
+    const p = retainedProps()
     render(<RetainedTerminalPanel {...p} />)
     fireEvent.click(screen.getByRole('button', { name: zh['terminal.newTab'] }))
     const [first, second] = FakeWebSocket.instances

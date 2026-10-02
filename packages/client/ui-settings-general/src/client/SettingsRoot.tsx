@@ -1,14 +1,12 @@
 /**
- * 设置外壳包含侧栏底部触发器与带分区导航的居中模态面板。触发器、标题、
- * 关闭控件和分区文案均来自 slot 注册项；可访问名称从实际内容取得。
- * 面板开关与当前分区是组件局部状态。空会话期间，引导协调器每次只挂载
- * 一个有序步骤；步骤自行持有弹窗框架，尚在判定的步骤不会绘制遮罩。
+ * 设置外壳包含侧栏触发器与独立的全屏设置页面。页面的返回控件和分区文案
+ * 均来自 slot 注册项；引导步骤仍自行持有阻断式弹窗。
  */
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import clsx from 'clsx'
 import {
-  IconAgentPresetOutline16, IconCloseOutline16, IconDataOutline16,
+  IconAgentPresetOutline16, IconChevronLeftOutline14, IconDataOutline16,
   IconPersonalizationOutline16, IconSettingsOutline16, IconSparkle16,
 } from '@deepseek-ai/dsh-client-ui-icons'
 import type { SettingsRootComponentProps, SettingsSectionRow } from './shell-contract.ts'
@@ -29,33 +27,55 @@ type PanelProps = {
   activeId: string | undefined
   onSelect: (id: string) => void
   onClose: () => void
+  trigger: HTMLButtonElement | null
 }
 
-/** 全视口设置面板可由关闭按钮、遮罩或 Escape 关闭；键盘监听随面板挂载与卸载。 */
-function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose }: PanelProps) {
-  // 当前分区卸载后，投影回退到首个仍在账本上的分区。
+/** 全屏设置页可由左上角返回按钮或 Escape 离开；内层弹窗自行处理 Escape。 */
+function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose, trigger }: PanelProps) {
   const active = rows.find(r => r.id === activeId)?.id ?? rows[0]?.id
   const titleId = useId()
+  const returnButton = useRef<HTMLButtonElement | null>(null)
+  const pageRef = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
+    returnButton.current?.focus()
     const onKeyDown = (e: KeyboardEvent) => {
-      // 子弹窗拥有自己的 Escape；关闭选择框不应同时关掉整个设置页。
-      if (e.key === 'Escape' && document.querySelectorAll('[role="dialog"][aria-modal="true"]').length === 1) onClose()
+      if (e.key !== 'Escape' || e.defaultPrevented) return
+      // 弹窗或展开的菜单先消费 Escape，不能同时离开设置页。
+      if (document.querySelector('[role="dialog"][aria-modal="true"], [role="menu"], [role="listbox"]')) return
+      onClose()
     }
     document.addEventListener('keydown', onKeyDown)
     return () => { document.removeEventListener('keydown', onKeyDown) }
   }, [onClose])
 
-  // 打开面板后把焦点置于关闭按钮。
-  const closeButton = useRef<HTMLButtonElement | null>(null)
-  useEffect(() => { closeButton.current?.focus() }, [])
+  useEffect(() => {
+    const page = pageRef.current
+    if (page === null) return
+    const siblings = Array.from(document.body.children).filter(
+      (element): element is HTMLElement => element instanceof HTMLElement
+        && element !== page
+        && !element.querySelector('[role="dialog"][aria-modal="true"], [role="menu"], [role="listbox"]'),
+    )
+    const previous = siblings.map(element => ({ element, inert: element.inert }))
+    siblings.forEach((element) => { element.inert = true })
+    return () => {
+      previous.forEach(({ element, inert }) => { element.inert = inert })
+      if (trigger?.isConnected) trigger.focus()
+    }
+  }, [trigger])
 
   return (
-    <div className={css.overlay} role="presentation">
-      <div className={css.mask} aria-hidden="true" onClick={onClose} />
-      <div className={clsx(css.panel, active === 'models' && css.modelsPanel)} role="dialog" aria-modal="true" aria-labelledby={titleId}>
+    <main ref={pageRef} className={css.page} aria-labelledby={titleId}>
+      <div className={clsx(css.panel, active === 'models' && css.modelsPanel)}>
         <nav className={css.nav}>
-          <div className={css.navTitle} id={titleId}>{renderSlot('settings.header', {})}</div>
+          <div className={css.navHeading}>
+            <button ref={returnButton} type="button" className={css.back} onClick={onClose}>
+              <IconChevronLeftOutline14 size={16} />
+              <span className={css.hiddenLabel}>{renderSlot('settings.close', {})}</span>
+            </button>
+            <div className={css.navTitle} id={titleId}>{renderSlot('settings.header', {})}</div>
+          </div>
           <div className={css.navList}>
             {rows.map(row => (
               <button
@@ -74,28 +94,25 @@ function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose }: PanelP
         <div className={css.content}>
           <div className={css.header}>
             <div className={css.actions}>{renderSlot('settings.action', {})}</div>
-            <button ref={closeButton} type="button" className={css.close} onClick={onClose}>
-              <IconCloseOutline16 size={14} />
-              <span className={css.hiddenLabel}>{renderSlot('settings.close', {})}</span>
-            </button>
           </div>
           <div className={css.options}>
             {active !== undefined && renderSlot('settings.section', { close: onClose }, { only: active })}
           </div>
         </div>
       </div>
-    </div>
+    </main>
   )
 }
 
 /**
- * 渲染设置触发器、统一尺寸的分区面板和独立的引导步骤。
+ * 渲染设置触发器、全屏分区页面和独立的引导步骤。
  * @param props - 由 slot 契约组合的组件属性。
  * @returns 设置外壳的元素树。
  */
 export function SettingsRoot(props: SettingsRootComponentProps) {
   const { wide, useSections, useOnboardingSteps, useSessions, renderSlot } = props
   const [open, setOpen] = useState(false)
+  const triggerRef = useRef<HTMLButtonElement | null>(null)
   const [activeId, setActiveId] = useState<string | undefined>(undefined)
   const [completedOnboarding, setCompletedOnboarding] = useState<ReadonlySet<string>>(() => new Set())
   const close = useCallback(() => {
@@ -107,7 +124,7 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
     setOpen(true)
   }, [])
 
-  // 分区账本更新导航文案；触发器、标题和关闭文案由各自 outlet 的订阅更新。
+  // 分区账本更新导航文案；触发器、标题和返回文案由各自 outlet 的订阅更新。
   const rows = useSections(s => s)
   const onboardingSteps = useOnboardingSteps(s => s)
   const onboardingActive = useSessions(state =>
@@ -132,9 +149,9 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
   return (
     <>
       <button
+        ref={triggerRef}
         type="button"
         className={clsx(css.trigger, !wide && css.rail)}
-        aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => { setOpen(true) }}
       >
@@ -147,6 +164,7 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
           activeId={activeId}
           onSelect={setActiveId}
           onClose={close}
+          trigger={triggerRef.current}
         />,
         document.body,
       )}

@@ -7,8 +7,8 @@ import { transportError } from '@deepseek-ai/dsh-host-apiproxy/api'
 import type { ObservableSnapshot } from '../contract/store.ts'
 import { Notifier } from '../sessions/notifier.ts'
 
-/** Host input retained by a local Workspace until materialization succeeds. */
-export type WorkspaceCreateInput = { path: string }
+/** 本地工作区在 Host 实体化前保留的创建输入；标题只用于首次注册。 */
+export type WorkspaceCreateInput = { path: string; title?: string }
 
 /** Observable state of a client-local Workspace intent. */
 export interface WorkspaceIntentSnapshot {

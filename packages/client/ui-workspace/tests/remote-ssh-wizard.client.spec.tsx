@@ -57,7 +57,7 @@ function installDesktop(overrides: Partial<Record<string, unknown>> = {}) {
   return { remoteSSH, emit: (payload: unknown) => { emitProgress?.(payload) } }
 }
 
-type CreateWorkspace = (input: { path: string }) => Promise<WorkspaceView>
+type CreateWorkspace = (input: { path: string; title?: string }) => Promise<WorkspaceView>
 
 function mount(createWorkspace?: CreateWorkspace, translate: WorkspacePickerProps['t'] = t) {
   const onClose = vi.fn()
@@ -293,12 +293,30 @@ describe('RemoteSshWizard', () => {
     fireEvent.click(screen.getByRole('button', { name: '选择此文件夹' }))
     await waitFor(() => {
       expect(desktop.remoteSSH.selectDirectory).toHaveBeenCalledWith('connection-1', '/home/coding/project')
-      expect(b.createWorkspace).toHaveBeenCalledWith({ path: '/local/markers/remote-workspace' })
+      expect(b.createWorkspace).toHaveBeenCalledWith({ path: '/local/markers/remote-workspace', title: 'project' })
       expect(b.onPick).toHaveBeenCalledWith('remote-workspace')
     })
     expect(b.onClose).toHaveBeenCalledOnce()
     expect(desktop.remoteSSH.close).not.toHaveBeenCalled()
     expect(persist.mock.calls.flat().join(' ')).not.toContain('transient-only')
+  })
+
+  it.each([
+    ['C:\\Users\\coding\\project', 'project'],
+    ['C:\\', 'C:\\'],
+    ['/', '/'],
+  ])('uses the remote directory name for %s rather than the marker name', async (remotePath, title) => {
+    const desktop = installDesktop({ selectDirectory: vi.fn(async () => ({
+      markerPath: '/local/markers/24ad319d67f7', remotePath,
+    })) })
+    const b = mount()
+    await connectReady()
+    await openDirectory()
+    fireEvent.click(screen.getByRole('button', { name: '选择此文件夹' }))
+    await waitFor(() => {
+      expect(desktop.remoteSSH.selectDirectory).toHaveBeenCalledWith('connection-1', '/home/coding')
+      expect(b.createWorkspace).toHaveBeenCalledWith({ path: '/local/markers/24ad319d67f7', title })
+    })
   })
 
   it('returns the opaque host-key confirmation id with the displayed fingerprint and fresh credentials', async () => {
@@ -497,7 +515,7 @@ describe('RemoteSshWizard', () => {
     expect(desktop.remoteSSH.close).not.toHaveBeenCalled()
     pendingSelection.resolve({ markerPath: '/local/markers/remote-workspace', remotePath: '/home/coding' })
     await pendingSelection.promise
-    await waitFor(() => { expect(createWorkspace).toHaveBeenCalledWith({ path: '/local/markers/remote-workspace' }) })
+    await waitFor(() => { expect(createWorkspace).toHaveBeenCalledWith({ path: '/local/markers/remote-workspace', title: 'coding' }) })
     expect(b.onPick).not.toHaveBeenCalled()
     expect(desktop.remoteSSH.close).not.toHaveBeenCalled()
   })
@@ -540,7 +558,7 @@ describe('RemoteSshWizard', () => {
     await connectReady()
 
     pendingSelection.resolve({ markerPath: '/local/markers/remote-workspace', remotePath: '/home/coding' })
-    await waitFor(() => { expect(b.createWorkspace).toHaveBeenCalledWith({ path: '/local/markers/remote-workspace' }) })
+    await waitFor(() => { expect(b.createWorkspace).toHaveBeenCalledWith({ path: '/local/markers/remote-workspace', title: 'coding' }) })
     await openDirectory()
     await waitFor(() => { expect(desktop.remoteSSH.listDirectories).toHaveBeenLastCalledWith('connection-2', '/home/coding') })
 

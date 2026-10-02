@@ -376,12 +376,32 @@ describe('writeClipboard', () => {
     expect(writeText).toHaveBeenCalledWith('payload')
   })
 
-  it('reports false when the Clipboard API rejects', async () => {
+  it('falls back to execCommand when the async Clipboard API refuses the write', async () => {
+    const writeText = vi.fn().mockRejectedValue(new Error('denied'))
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    let selected: string | undefined
+    const exec = vi.fn(() => {
+      selected = document.querySelector<HTMLTextAreaElement>('textarea[readonly]')?.value
+      return true
+    })
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: exec })
+    await expect(writeClipboard('payload')).resolves.toBe(true)
+    expect(writeText).toHaveBeenCalledWith('payload')
+    expect(exec).toHaveBeenCalledWith('copy')
+    expect(selected).toBe('payload')
+    expect(document.querySelector('textarea')).toBeNull()
+  })
+
+  it('reports false when both clipboard paths refuse the write', async () => {
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
       value: { writeText: vi.fn().mockRejectedValue(new Error('denied')) },
     })
+    const exec = vi.fn(() => false)
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: exec })
     await expect(writeClipboard('payload')).resolves.toBe(false)
+    expect(exec).toHaveBeenCalledWith('copy')
+    expect(document.querySelector('textarea')).toBeNull()
   })
 
   it('selects a detached textarea for the execCommand fallback and removes it after', async () => {

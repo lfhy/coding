@@ -3,6 +3,7 @@
  * 并将绑定 actions 接到 `ctx.layout`；独立 effect 负责主题 DOM 投影。
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
 import type { AppFrameInjected } from './AppFrame.tsx'
 import type { PanelActions } from './service.ts'
@@ -33,8 +34,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * 会话级固定工作台右栏。占用者绘制文件预览与顶栏视图控制；页头入口在会话层打开工作台；关闭时 entry 保持挂载。
      */
     'workbench': { kind: 'single'; scope: 'session'; owner: WorkbenchOwnerProps }
-    /** 会话级工作台底栏；在视觉关闭时保持挂载。 */
-    'workbench.bottom': { kind: 'single'; scope: 'session'; owner: WorkbenchBottomOwnerProps }
+    /** 根布局持有的终端底栏；会话切换时保留各会话的终端树。 */
+    'workbench.bottom': { kind: 'single'; scope: 'root'; owner: WorkbenchBottomOwnerProps }
     /** 全框架浮层；容器透传指针事件，由各 entry 自行恢复。 */
     'shell.overlay': { kind: 'list'; scope: 'root' }
   }
@@ -73,7 +74,9 @@ export interface WorkbenchOwnerProps {
 
 /** 工作台底栏 owner share。 */
 export interface WorkbenchBottomOwnerProps {
-  /** 底栏是否实际可见。 */
+  /** 当前会话；无选择时底栏仍保留其他会话的终端。 */
+  sessionId: SessionId | undefined
+  /** 当前会话的底栏是否实际可见。 */
   shown: boolean
 }
 
@@ -96,7 +99,7 @@ export function apply(ctx: ClientContext): void {
         'conversation': { kind: 'single', scope: 'session-maybe' },
         'details': { kind: 'single', scope: 'session' },
         'workbench': { kind: 'single', scope: 'session' },
-        'workbench.bottom': { kind: 'single', scope: 'session' },
+        'workbench.bottom': { kind: 'single', scope: 'root' },
         'shell.overlay': { kind: 'list', scope: 'root' },
       },
       store: createLayoutStore,

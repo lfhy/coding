@@ -1,29 +1,20 @@
-// Host clipboard write shared by Web UI copy controls. Success feedback stays
-// with each control; this helper only reports whether the host accepted a write.
+// Web 复制控件共用剪贴板写入；反馈状态由各控件持有。
 
 /**
- * Write text to the host clipboard, preferring the async Clipboard API and
- * falling back to `execCommand('copy')` on hosts (jsdom, insecure contexts)
- * that omit it.
- * @param text - the exact text to place on the clipboard.
- * @returns true only when the host accepted the write.
+ * 将原样文本写入剪贴板。异步 API 不可用或被宿主拒绝时尝试选区复制。
+ * @param text - 要写入剪贴板的原样文本。
+ * @returns 仅在宿主确认任一路径写入成功时返回 true。
  */
 export async function writeClipboard(text: string): Promise<boolean> {
-  // lib.dom types clipboard non-optional, but insecure contexts omit it —
-  // that runtime gap is exactly what this guard detects.
   /* oxlint-disable-next-line typescript/no-unnecessary-condition */
   if (navigator.clipboard?.writeText) {
     try {
       await navigator.clipboard.writeText(text)
       return true
     } catch {
-      // Denied permissions / iframe policy — do not claim success.
-      return false
+      // 某些宿主提供异步 API 却拒绝写入；继续尝试受用户手势允许的选区复制。
     }
   }
-  // jsdom and older hosts: best-effort execCommand path when present.
-  // execCommand('copy') is the only clipboard fallback where the async API
-  // is missing; deprecated but deliberately retained.
   /* oxlint-disable typescript/no-deprecated */
   const exec = typeof document.execCommand === 'function'
     ? document.execCommand.bind(document)

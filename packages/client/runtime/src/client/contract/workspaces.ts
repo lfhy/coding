@@ -39,11 +39,11 @@ export interface IWorkspaces {
    */
   startSessionWithoutWorkspace(): Promise<void>
   /**
-   * Register an existing path as a Workspace.
-   * @param input - the Host create payload.
-   * @returns the created or idempotently resolved Workspace.
+   * 注册已有目录；可选标题只用于新工作区，重复采用保留原有标题。
+   * @param input - Host 创建请求；`path` 是本地目录，`title` 是可选显示名。
+   * @returns 新建或已注册的工作区视图。
    */
-  create(input: { path: string }): Promise<WorkspaceView>
+  create(input: { path: string; title?: string }): Promise<WorkspaceView>
   /**
    * Open the Host's native directory picker.
    * @returns the selected path, or null when the user cancelled.

@@ -20,7 +20,7 @@ kind: "package-reference"
 | `conversation` | `session-maybe` | 空 owner share |
 | `details` | `session` | 空 owner share |
 | `workbench` | `session` | 可见、全屏、底栏与文件侧栏状态和控制回调 |
-| `workbench.bottom` | `session` | `shown` |
+| `workbench.bottom` | `root` | 当前 Session id 与底栏可见性；占用者按 Session 保留终端 |
 | `shell.overlay` | `root` | 无 owner 数据的有序 list |
 
 `ctx.layout` 提供全局的 `toggleSidebar()`、`openDetails()`、`closeDetails()`，以及接收 `SessionId` 的 `openWorkbench()`、`closeWorkbench()`、`toggleWorkbench()`、`toggleWorkbenchFullscreen()`、`toggleWorkbenchBottom()`、`closeWorkbenchBottom()`、`toggleWorkbenchFiles()` 和欢迎页专用的 `toggleHeroPanel()`。`closeWorkbenchBottom()` 幂等隐藏底栏，不影响右侧工作台和详情栏。`workbench(sessionId)` 返回供会话页头、欢迎页与工作台顶栏面板开关订阅的显隐投影。打开工作台会关闭详情栏；打开详情栏会暂时覆盖工作台，关闭详情栏后恢复该 Session 的状态。

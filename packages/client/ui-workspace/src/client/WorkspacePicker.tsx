@@ -35,8 +35,8 @@ export interface WorkspacePickFlowProps {
   anchorRef?: RefObject<HTMLElement | null> | undefined
   /** 工作区列表的标准 selector hook。 */
   useWorkspaces: <S>(selector: (state: WorkspaceListState) => S) => S
-  /** 采用 Host 目录并创建工作区。 */
-  createWorkspace: (input: { path: string }) => Promise<WorkspaceView>
+  /** 注册所选目录；可选标题仅供远程 marker 首次创建时使用。 */
+  createWorkspace: (input: { path: string; title?: string }) => Promise<WorkspaceView>
   /** 当前表层的目录流是否已由能力包占用。 */
   useDirectoryFlow: SnapshotSelectorHook<boolean>
   /** 渲染目录流 slot。 */
@@ -365,6 +365,12 @@ function remoteErrorText(t: WorkspacePickerProps['t'], reason: unknown): string 
   return reason instanceof Error ? reason.message : t('picker.remote.error.bridge')
 }
 
+function remoteDirectoryName(path: string): string {
+  if (/^[A-Za-z]:[\\/]$/u.test(path)) return path
+  const name = path.split(/[\\/]/u).filter(Boolean).at(-1)
+  return name?.trim() ? name : path
+}
+
 /** 把远端路径向上一层折叠，兼容 POSIX 与 Windows agent 返回的路径。 */
 function remoteParentPath(path: string): string {
   const separator = path.includes('\\') ? '\\' : '/'
@@ -424,7 +430,7 @@ interface RemoteSshWizardProps {
   open: boolean
   onClose: () => void
   t: WorkspacePickerProps['t']
-  createWorkspace: (input: { path: string }) => Promise<WorkspaceView>
+  createWorkspace: (input: { path: string; title?: string }) => Promise<WorkspaceView>
   onPick: (workspaceId: WorkspaceId) => void
 }
 
@@ -705,7 +711,10 @@ export function RemoteSshWizard({ open, onClose, t, createWorkspace, onPick }: R
         if (activeConnection.current?.connectionId === ownedConnection.connectionId) {
           activeConnection.current = undefined
         }
-        const workspace = await createWorkspace({ path: selection.markerPath })
+        const workspace = await createWorkspace({
+          path: selection.markerPath,
+          title: remoteDirectoryName(selection.remotePath),
+        })
         if (currentAttempt !== attempt.current) return
         onPick(workspace.workspaceId)
         onClose()

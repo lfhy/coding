@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
@@ -190,6 +190,19 @@ describe('ModelSelect reasoning effort', () => {
     expect(toast.textContent).toContain('模型操作失败：model-unavailable: session already contains images')
     // 选择失败不触发目录加载重试入口。
     expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+  })
+
+  it('updates the open composer channel label from a refreshed directory', () => {
+    const directory = createSnapshotStore<ModelDirectoryState>(state())
+    render(<ModelSelect locked={false} available directory={directory} load={vi.fn()} select={vi.fn()} t={t} />)
+    fireEvent.click(screen.getByRole('button', { name: /选择模型，当前/ }))
+    expect(screen.getByRole('menuitem', { name: 'DeepSeek' })).toBeTruthy()
+
+    act(() => {
+      directory.set(state({ groups: [{ ...state().groups[0]!, name: '团队渠道' }] }))
+    })
+    expect(screen.queryByRole('menuitem', { name: 'DeepSeek' })).toBeNull()
+    expect(screen.getByRole('menuitem', { name: '团队渠道' }).getAttribute('aria-current')).toBe('true')
   })
 
   it('lists real channels first, scopes models to one channel, and supports back and focus', async () => {

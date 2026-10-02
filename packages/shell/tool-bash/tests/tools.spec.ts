@@ -680,8 +680,8 @@ describe('sandbox escalation through the generic task producer', () => {
     const { ctx } = await setupSandboxed(true)
     const prompted = vi.fn()
     ctx.on('approval/request', () => { prompted(); return Promise.resolve<ApprovalOutcome>('allowed-once') })
-    const result = await call(ctx, 'bash', { ...escalate, sandbox_permissions: 'workspace-write' }, sandboxAgent('danger-full-access'))
-    expect(text(result)).toContain('not strictly wider')
+    const result = await call(ctx, 'bash', { ...escalate, sandbox_permissions: 'read-only' }, sandboxAgent('danger-full-access'))
+    expect(text(result)).toContain('must be one of ["workspace-write","danger-full-access"]')
     expect(prompted).not.toHaveBeenCalled()
 
     const malformed = sandboxAgent()
@@ -727,6 +727,46 @@ describe('sandbox escalation through the generic task producer', () => {
     }, restricted)
     expect(text(result)).toContain('invalid justification: expected a non-empty sentence')
     expect(bash.modes).toHaveLength(3)
+  })
+
+  it('keeps full access for redundant narrower requests without a reason or approval, including background work', async () => {
+    const { ctx, bash } = await setupSandboxed(false, 'danger-full-access')
+    const agent = sandboxAgent('danger-full-access', ctx)
+    ctx.agents.register(agent)
+    for (const justification of [undefined, '', ' ']) {
+      const args = {
+        command: 'true', description: 'test redundant request', sandbox_permissions: 'workspace-write',
+        ...justification === undefined ? {} : { justification },
+      }
+      expect((await call(ctx, 'bash', args, agent)).isError).toBe(false)
+    }
+    const background = await call(ctx, 'bash', {
+      command: 'true', description: 'test background request', sandbox_permissions: 'workspace-write',
+      run_in_background: true,
+    }, agent)
+    expect(background.isError).toBe(false)
+    expect(bash.modes).toEqual(Array(4).fill('danger-full-access'))
+    expect(agent.session.events.some(event => event.type === 'approval/asked')).toBe(false)
+  })
+
+  it('keeps a workspace-write child restricted under a full-access deployment', async () => {
+    const { ctx, bash } = await setupSandboxed(false, 'danger-full-access')
+    const restricted = sandboxAgent('workspace-write')
+    const base = { command: 'true', description: 'test child request' }
+    expect((await call(ctx, 'bash', base, restricted)).isError).toBe(false)
+    const redundant = await call(ctx, 'bash', {
+      ...base, sandbox_permissions: 'workspace-write', justification: 'already writable',
+    }, restricted)
+    expect(redundant.isError).toBe(false)
+    const missingReason = await call(ctx, 'bash', {
+      ...base, sandbox_permissions: 'danger-full-access',
+    }, restricted)
+    expect(text(missingReason)).toContain('sandbox_permissions requires a justification')
+    const withoutApproval = await call(ctx, 'bash', {
+      ...base, sandbox_permissions: 'danger-full-access', justification: 'needs broader access',
+    }, restricted)
+    expect(text(withoutApproval)).toContain('no approval service is composed')
+    expect(bash.modes).toEqual(['workspace-write', 'workspace-write'])
   })
 
   it('fails closed when approval cannot be routed', async () => {

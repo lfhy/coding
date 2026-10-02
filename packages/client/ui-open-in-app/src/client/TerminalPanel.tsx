@@ -1,22 +1,23 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
-import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { TerminalClientFrame, TerminalServerFrame } from './wire.ts'
 import { NS } from './locales.ts'
 import css from './TerminalPanel.module.css'
 
-/** 终端底栏注入的同源 Host WebSocket URL 与布局隐藏动作。 */
+/** 单个 Session 终端的 Host URL 与布局隐藏动作。 */
 export interface TerminalPanelInjected {
   terminalUrl: string
   closeBottom: () => void
 }
 
-/** 底栏 owner、终端 URL 与词典组成的 props。 */
-export type TerminalPanelProps =
-  & PropsRuntime<'workbench.bottom'>
-  & PropsLocale<typeof NS>
-  & InjectFace<TerminalPanelInjected>
+/** 单个 Session 终端的显示状态与本地化词典。 */
+export type TerminalPanelProps = {
+  sessionId: SessionId
+  shown: boolean
+} & PropsLocale<typeof NS> & TerminalPanelInjected
 
 type TerminalStatus =
   | { readonly phase: 'connecting' }
@@ -95,7 +96,7 @@ function statusText(status: TerminalStatus, t: TerminalPanelProps['t']): string 
  * @param props - 布局可见状态、Host URL 和本地化文案。
  * @returns xterm 终端及连接状态。
  */
-export function TerminalPanel({ shown, terminalUrl, t, panelId, tabId, focusRequest, onCompleted }: TerminalPanelProps & {
+export function TerminalPanel({ shown, terminalUrl, t, panelId, tabId, focusRequest, onCompleted }: Pick<TerminalPanelProps, 'shown' | 'terminalUrl' | 't'> & {
   panelId?: string
   tabId?: string
   focusRequest?: number | null
