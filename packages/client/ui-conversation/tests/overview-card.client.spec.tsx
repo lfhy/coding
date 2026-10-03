@@ -71,6 +71,10 @@ function props(values: Record<string, unknown> = {}, nodes: ConversationSnapshot
     },
     overviewExpanded: true,
     toggleOverview: vi.fn(),
+    renderSlot: ((name: string, owner: { collapse?: () => void }) => name === 'conversation.overview.git'
+      ? null
+      : <button type="button" onClick={owner.collapse}>{name}</button>) as OverviewCardProps['renderSlot'],
+    SessionProvider: ({ children }) => children(SID),
     t,
   }
   return panel
@@ -93,8 +97,19 @@ describe('session overview card', () => {
     expect(view.queryByRole('heading', { name: '会话概览' })).toBeNull()
     expect(view.getByRole('heading', { level: 2, name: '协作' })).toBeTruthy()
     expect(view.getByRole('heading', { level: 2, name: '运行统计' })).toBeTruthy()
-    expect(view.getByText('子代理').closest('div')?.textContent).toBe('子代理21 运行中')
-    expect(view.getByText('后台任务').closest('div')?.textContent).toBe('后台任务21 运行中')
+    expect(view.getByRole('button', { name: /子代理/ }).textContent).toBe('子代理21 运行中')
+    expect(view.getByRole('button', { name: /后台任务/ }).textContent).toBe('后台任务21 运行中')
+    const subagents = view.getByRole('button', { name: /子代理/ })
+    fireEvent.click(subagents)
+    expect(subagents.getAttribute('aria-expanded')).toBe('true')
+    expect(view.getByRole('button', { name: 'conversation.overview.subagents' })).toBeTruthy()
+    fireEvent.click(view.getByRole('button', { name: 'conversation.overview.subagents' }))
+    expect(subagents.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(view.getByRole('button', { name: /后台任务/ }))
+    expect(view.getByRole('button', { name: 'conversation.overview.jobs' })).toBeTruthy()
+    fireEvent.click(view.getByRole('button', { name: /子代理/ }))
+    expect(view.queryByRole('button', { name: 'conversation.overview.jobs' })).toBeNull()
+    expect(view.getByRole('button', { name: 'conversation.overview.subagents' })).toBeTruthy()
     expect(view.getByText('轮次').nextElementSibling?.textContent).toBe('2')
     expect(view.getByText('步骤').nextElementSibling?.textContent).toBe('449')
     expect(view.getByText('LLM 耗时').nextElementSibling?.textContent).toBe('139m54s')

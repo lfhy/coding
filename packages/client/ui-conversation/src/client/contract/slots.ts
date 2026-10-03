@@ -147,6 +147,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'conversation.details.tool': { kind: 'single'; scope: 'session'; owner: DetailsToolOwnerProps }
     /** 对话页面内的会话概览卡片；默认显隐由根会话列宽决定。 */
     'conversation.overview': { kind: 'single'; scope: 'session'; owner: ConversationOverviewOwnerProps }
+    /** 当前会话的 Git 状态与操作；非仓库时不显示。 */
+    'conversation.overview.git': { kind: 'single'; scope: 'session' }
+    /** 概览协作行展开的子代理目录；子代理插件负责列表与导航。 */
+    'conversation.overview.subagents': { kind: 'single'; scope: 'session'; owner: ConversationOverviewDetailOwnerProps }
+    /** 概览协作行展开的后台任务列表；后台任务插件负责列表。 */
+    'conversation.overview.jobs': { kind: 'single'; scope: 'session'; owner: ConversationOverviewDetailOwnerProps }
     /**
      * The composer takeover chain: entries are selector-routed replacements
      * of the default InputBar. Declared by this package's 'conversation'
@@ -305,6 +311,12 @@ export interface ConversationOverviewOwnerProps {
   overviewExpanded: boolean
   /** 切换当前列宽下的显隐偏好。 */
   toggleOverview: () => void
+}
+
+/** 协作列表关闭时由概览卡片收回键盘焦点。 */
+export interface ConversationOverviewDetailOwnerProps {
+  /** 收起所在协作行并将焦点还给该行。 */
+  collapse: () => void
 }
 
 /**

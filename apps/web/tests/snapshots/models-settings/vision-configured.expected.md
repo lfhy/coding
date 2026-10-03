@@ -1,5 +1,8 @@
-- dialog "设置":
+- main "设置":
   - navigation:
+    - button "返回":
+      - img
+      - text: 返回
     - text: 设置
     - button "通用设置":
       - img
@@ -20,9 +23,6 @@
       - img
       - text: Agent 预设
   - button "打开配置文件"
-  - button "关闭":
-    - img
-    - text: 关闭
   - region "视觉理解工具":
     - heading "图片识别 Fallback" [level=1]
     - heading "视觉理解工具" [level=2]

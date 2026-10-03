@@ -57,7 +57,7 @@ async function provideSlotFaces(ctx: Context): Promise<void> {
   ctx.slots.register({
     name: 'root',
     children: {
-      'conversation.session.header.actions': { kind: 'list', scope: 'session' },
+      'conversation.overview.subagents': { kind: 'single', scope: 'session' },
       'conversation.composer': { kind: 'chain', scope: 'session' },
     },
   } as never, () => null)
@@ -94,7 +94,7 @@ describe('apply', () => {
 
   it('registers catalog actions and selects read-only subagent composers from session facts', async () => {
     const { ctx, face } = await fullBench(FAMILY)
-    const catalogEntry = ctx.slots.entries('conversation.session.header.actions')
+    const catalogEntry = ctx.slots.entries('conversation.overview.subagents')
       .find(entry => entry.component === SubagentCatalogAction)!
     const actions = (catalogEntry.inject as unknown as (id: SessionId) => SubagentCatalogInjected)(sid('parent'))
     const address: SubagentAddress = {

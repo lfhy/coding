@@ -97,7 +97,7 @@ describe('web e2e: no-session Hero panel actions', () => {
     const mirror = page.getByRole('region', { name: 'Browser view' })
     await expect.poll(() => mirror.isVisible()).toBe(true)
     await mirror.getByText('Start browsing').waitFor({ timeout: 10_000 })
-    await expect.poll(() => page.getByRole('tablist', { name: 'Browser tabs' }).getByRole('tab').count(),
+    await expect.poll(() => page.getByRole('tablist', { name: 'Workbench tabs' }).getByRole('tab').count(),
       { timeout: 10_000 }).toBe(1)
     const address = mirror.getByRole('textbox', { name: 'Address' })
     expect(await address.inputValue()).toBe('')

@@ -1,4 +1,4 @@
-/** Web subagent catalog, navigation, and addressed-session composer owner. */
+/** 浏览器子代理目录、导航与已寻址会话编辑器的注册方。 */
 import type {
   ClientContext, SessionId, SubagentAddress,
 } from '@deepseek-ai/dsh-client-runtime/client'
@@ -40,8 +40,8 @@ function selectReadOnlySubagent(owner: ComposerChainProps): SubagentReadOnlyMatc
 }
 
 /**
- * Client plugin body: register the subagent catalog and read-only composer seats.
- * @param ctx - client root context.
+ * 注册概览子代理目录与只读编辑器席位。
+ * @param ctx - 客户端根上下文。
  */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-subagent: dictionaries')
@@ -58,11 +58,9 @@ export function apply(ctx: ClientContext): void {
     },
   })
   ctx.slots.inject(
-    'conversation.session.header.actions',
+    'conversation.overview.subagents',
     () => ctx.slots.register({
-      name: 'conversation.session.header.actions',
-      id: 'subagent-catalog',
-      order: 10,
+      name: 'conversation.overview.subagents',
       locale: NS,
       inject: catalogActions,
     }, SubagentCatalogAction),

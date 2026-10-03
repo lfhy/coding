@@ -83,6 +83,9 @@ describe('apply wiring', () => {
     expect(conversationSession?.store).toBeDefined()
     expect(conversationHeader?.store).toBe(conversationSession?.store)
     expect(b.slots.entries('conversation.overview')).toHaveLength(1)
+    expect(b.slots.spec('conversation.overview.subagents')).toEqual({ kind: 'single', scope: 'session' })
+    expect(b.slots.spec('conversation.overview.jobs')).toEqual({ kind: 'single', scope: 'session' })
+    expect(b.slots.spec('conversation.overview.git')).toEqual({ kind: 'single', scope: 'session' })
     expect(details?.store).toBe(conversationSession?.store)
     expect(chatView?.store).toBe(conversationSession?.store)
     // The hero holes ride the conversation entry's children declaration (the

@@ -57,8 +57,12 @@ export function parseBrowserCommand(args: BrowserArgs): BrowserCommand {
     fill: ['action', 'ref', 'revision', 'text'], scroll: ['action', 'direction', 'pixels'],
     screenshot: ['action'], close: ['action'],
   }
-  if (Object.keys(args).some(key => !allowed[args.action].includes(key as keyof BrowserArgs))) {
-    throw new Error(`browser_use: unexpected field for ${args.action}`)
+  const unexpected = Object.keys(args).filter(key => !allowed[args.action].includes(key as keyof BrowserArgs))
+  if (unexpected.length > 0) {
+    const correction = args.action === 'navigate'
+      ? ' Use {"action":"navigate","url":"https://example.com"}; omit all other fields.'
+      : ''
+    throw new Error(`browser_use: unexpected field for ${args.action}: ${unexpected.join(', ')}; only ${allowed[args.action].join(', ')} allowed.${correction}`)
   }
   switch (args.action) {
     case 'navigate':
@@ -147,15 +151,15 @@ function approvalReason(command: BrowserCommand, currentUrl: string | undefined)
 export function apply(ctx: Context): void {
   ctx.tools.register(defineTool({
     name: 'browser_use',
-    description: 'Use a session browser to navigate, inspect accessible elements, interact by observed ref and revision, scroll, capture a screenshot, or close. Calls require approval except in full-access mode with approval prompts disabled. No selectors or scripts.',
+    description: 'Operate a session browser. Pass only fields for the chosen action: navigate {"action":"navigate","url":"https://example.com"}; snapshot {"action":"snapshot"}; click {"action":"click","ref":"e1","revision":1}; fill {"action":"fill","ref":"e1","revision":1,"text":"hello"}; scroll {"action":"scroll","direction":"down","pixels":500}; screenshot {"action":"screenshot"}; close {"action":"close"}. Omit unrelated fields, even if empty. Use observed ref and revision, never selectors or scripts. Approval is required unless full access disables approval prompts.',
     parameters: {
-      action: { type: 'string', enum: ['navigate', 'snapshot', 'click', 'fill', 'scroll', 'screenshot', 'close'], required: true, description: 'One browser operation.' },
-      url: { type: 'string', description: 'URL for navigate.' },
-      ref: { type: 'string', description: 'Opaque element ref from the latest observation for click or fill.' },
-      revision: { type: 'integer', description: 'Positive observation revision paired with ref.' },
-      text: { type: 'string', description: 'Text for fill, at most 2000 characters.' },
-      direction: { type: 'string', enum: ['up', 'down'], description: 'Scroll direction.' },
-      pixels: { type: 'integer', description: 'Scroll distance, 1..2000 pixels.' },
+      action: { type: 'string', enum: ['navigate', 'snapshot', 'click', 'fill', 'scroll', 'screenshot', 'close'], required: true, description: 'Choose one operation: navigate requires only action/url; snapshot, screenshot, close require action only; click requires action/ref/revision; fill requires action/ref/revision/text; scroll requires action/direction/pixels.' },
+      url: { type: 'string', description: 'Required only for navigate; omit for all other actions. Use an absolute HTTP(S) URL without credentials, at most 2048 characters.' },
+      ref: { type: 'string', description: 'Required only for click or fill; otherwise omit. Opaque element ref from the latest observation, not a selector.' },
+      revision: { type: 'integer', description: 'Required only for click or fill; otherwise omit. Positive observation revision paired with ref.' },
+      text: { type: 'string', description: 'Required only for fill; otherwise omit. Text to enter, at most 2000 characters.' },
+      direction: { type: 'string', enum: ['up', 'down'], description: 'Required only for scroll; otherwise omit. Scroll direction.' },
+      pixels: { type: 'integer', description: 'Required only for scroll; otherwise omit. Scroll distance, 1..2000 pixels.' },
     },
     output: {
       schema: {

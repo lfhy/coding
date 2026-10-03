@@ -115,6 +115,7 @@ import {
   inspectApiRemoteSession,
 } from '@deepseek-ai/dsh-api-remotes'
 import { canOpenNativePath, openNativePath, openNativeTextFile } from '@deepseek-ai/dsh-native-command'
+import { GitOperationError, workspaceGitStatus, workspaceGitPush, workspaceGitPull } from './workspace-git.ts'
 
 /** Page size when history is called without maxMessages. */
 const DEFAULT_MAX_MESSAGES = 50
@@ -1661,6 +1662,38 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     return agent
   }
 
+  /** 仅会话记录能选中目录；不接纳客户端路径，也不恢复冷 Agent。 */
+  async function gitForSession<T>(
+    request: RpcRequest<{ sessionId: SessionId }>,
+    signal: AbortSignal,
+    operation: (cwd: string, signal: AbortSignal) => Promise<T>,
+  ): Promise<RpcResponse<T>> {
+    const { sessionId } = request.payload
+    try {
+      signal.throwIfAborted()
+      const session = await readSessionState(sessionId)
+      const cwd = session.header.cwd
+      if (cwd === undefined) return err(request, {
+        code: 'git-unavailable', message: 'session has no workspace directory', details: { sessionId, reason: 'NO_WORKSPACE' },
+      })
+      signal.throwIfAborted()
+      return ok(request, await operation(cwd, signal))
+    } catch (error: unknown) {
+      if (signal.aborted) return err(request, { code: 'cancelled', message: 'Git operation was cancelled', details: {} })
+      if (error instanceof SessionNotFound) return err(request, {
+        code: 'session-not-found', message: error.message, details: { sessionId },
+      })
+      if (error instanceof GitOperationError) return err(request, {
+        code: error.code === 'GIT_CONFLICT' ? 'git-conflict' : 'git-unavailable',
+        message: error.message, details: { sessionId, reason: error.code },
+      })
+      return err(request, {
+        code: 'git-unavailable', message: error instanceof Error ? error.message : String(error),
+        details: { sessionId, reason: 'GIT_FAILED' },
+      })
+    }
+  }
+
   /** 在 Host 工作区创建队列中查找或新建目录，已有记录不覆盖标题。 */
   function ensureWorkspace(path: string, title?: string): Promise<{ workspace: Workspace; created: boolean }> {
     const operation = workspaceCreationChain.then(async () => {
@@ -2778,6 +2811,18 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     },
 
     workspace: {
+      async gitStatus(request, signal) {
+        return gitForSession(request, signal, workspaceGitStatus)
+      },
+
+      async gitPush(request, signal) {
+        return gitForSession(request, signal, workspaceGitPush)
+      },
+
+      async gitPull(request, signal) {
+        return gitForSession(request, signal, workspaceGitPull)
+      },
+
       list(request) {
         return Promise.resolve(ok(request, {
           items: ctx.workspaceRegistry.list().map(workspaceView),

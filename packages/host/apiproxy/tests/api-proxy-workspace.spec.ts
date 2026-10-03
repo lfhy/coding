@@ -331,6 +331,21 @@ describe('workspace.create', () => {
   })
 })
 
+describe('session-bound workspace Git RPC', () => {
+  it('reads the session cwd rather than a caller path, returns null outside Git, and rejects missing sessions', async () => {
+    const { api, root } = await harness()
+    const sessionId = SessionId('git-workspace')
+    expectOk(await api.sessions.create(request({ cwd: stageDir(root, 'project'), sessionId })))
+    expect(expectOk(await api.workspace.gitStatus(request({ sessionId }), new AbortController().signal))).toBeNull()
+    expect((await api.workspace.gitPush(request({ sessionId }), new AbortController().signal)).result).toMatchObject({
+      ok: false, error: { code: 'git-unavailable', details: { reason: 'GIT_NO_REPOSITORY', sessionId } },
+    })
+    expect((await api.workspace.gitStatus(request({ sessionId: SessionId('missing') }), new AbortController().signal)).result).toMatchObject({
+      ok: false, error: { code: 'session-not-found' },
+    })
+  })
+})
+
 describe('workspace.insertBefore', () => {
   it('commits the complete order, streams one order frame, and maps unknown ids', async () => {
     const { api, ctx, root } = await harness()

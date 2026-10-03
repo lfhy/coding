@@ -47,12 +47,14 @@
 - region "Session overview":
   - button "Collapse session overview"
   - heading "Collaboration" [level=2]
-  - term: Subagents
-  - definition:
+  - button "Subagents 0":
+    - text: Subagents
     - strong: "0"
-  - term: Background tasks
-  - definition:
+    - img
+  - button "Background tasks 0":
+    - text: Background tasks
     - strong: "0"
+    - img
   - heading "Run statistics" [level=2]
   - term: Turns
   - definition: "1"

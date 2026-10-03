@@ -44,6 +44,19 @@ describe('SettingsRoot.module.css', () => {
     expect(declarations('.back:focus-visible')?.get('outline')).toContain('2px solid')
   })
 
+  it('clears the desktop traffic lights without adding Web spacing', () => {
+    expect(declarations('.page')?.get('inset')).toBe('0')
+    expect(declarations('.nav')?.get('padding')).toBe(
+      'calc(16px + var(--app-safe-area-inset-top, 0px)) 12px 16px',
+    )
+    expect(declarations('.header')?.get('padding')).toBe('12px 24px')
+    const narrow = css.slice(css.indexOf('@media (max-width: 620px)'))
+    expect(declarations('.nav', narrow)?.get('padding')).toBe(
+      'calc(12px + var(--app-safe-area-inset-top, 0px)) 12px 12px',
+    )
+    expect(declarations('.header', narrow)?.get('padding')).toBe('8px 12px')
+  })
+
   it('keeps navigation and ordinary content independently scrollable', () => {
     expect(declarations('.nav')?.get('width')).toBe('250px')
     expect(declarations('.navList')?.get('overflow-y')).toBe('auto')

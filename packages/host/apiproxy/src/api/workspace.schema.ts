@@ -7,7 +7,7 @@
 import { z } from 'zod'
 import type { RequestPayload, ResponseValue } from './rpc-map.ts'
 import type { Wire } from './rpc.schema.ts'
-import type { WorkspaceView } from './workspace.ts'
+import type { WorkspaceView, GitChangedFile, GitStatus, GitOperationResult } from './workspace.ts'
 import { sessionIdSchema, workspaceIdSchema } from './sessions.schema.ts'
 
 export { workspaceIdSchema } from './sessions.schema.ts'
@@ -30,6 +30,26 @@ export const workspaceListValueSchema = z.object({
   items: z.array(workspaceViewSchema),
   archivedSessionIds: z.array(sessionIdSchema),
 }) satisfies z.ZodType<Wire<ResponseValue<'workspace.list'>>>
+
+/** Git RPC 仅接受会话 id；工作目录始终由 Host 从会话头推导。 */
+const gitRequestSchema = z.strictObject({ sessionId: sessionIdSchema })
+export const workspaceGitStatusRequestSchema = gitRequestSchema satisfies z.ZodType<Wire<RequestPayload<'workspace.gitStatus'>>>
+export const workspaceGitPushRequestSchema = gitRequestSchema satisfies z.ZodType<Wire<RequestPayload<'workspace.gitPush'>>>
+export const workspaceGitPullRequestSchema = gitRequestSchema satisfies z.ZodType<Wire<RequestPayload<'workspace.gitPull'>>>
+
+const gitChangedFileSchema = z.strictObject({
+  path: z.string(), status: z.string(), additions: z.number().int().nonnegative(), deletions: z.number().int().nonnegative(),
+}) satisfies z.ZodType<Wire<GitChangedFile>>
+const gitStatusSchema = z.strictObject({
+  branch: z.string().nullable(), ahead: z.number().int().nonnegative(), behind: z.number().int().nonnegative(),
+  additions: z.number().int().nonnegative(), deletions: z.number().int().nonnegative(), files: z.array(gitChangedFileSchema),
+}) satisfies z.ZodType<Wire<GitStatus>>
+const gitOperationSchema = z.strictObject({
+  branch: z.string().nullable(), commitCreated: z.boolean(), commit: z.string().optional(),
+}) satisfies z.ZodType<Wire<GitOperationResult>>
+export const workspaceGitStatusValueSchema = gitStatusSchema.nullable() satisfies z.ZodType<Wire<ResponseValue<'workspace.gitStatus'>>>
+export const workspaceGitPushValueSchema = gitOperationSchema satisfies z.ZodType<Wire<ResponseValue<'workspace.gitPush'>>>
+export const workspaceGitPullValueSchema = gitOperationSchema satisfies z.ZodType<Wire<ResponseValue<'workspace.gitPull'>>>
 
 /** workspace.create 请求：已有目录路径与仅用于新记录的可选非空标题。 */
 export const workspaceCreateRequestSchema = z.object({

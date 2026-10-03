@@ -6,7 +6,7 @@ import {
   type SessionSummary, type SubagentAddress, type SubagentCatalogSnapshot,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import {
-  IconChevronDownOutline14, IconChevronRightOutline14, IconRefreshOutline14, StateDot,
+  IconChevronRightOutline14, IconRefreshOutline14, StateDot,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { NS } from './locales.ts'
@@ -25,9 +25,9 @@ export interface SubagentCatalogInjected {
   setCatalogOpen: (parentSessionId: SessionId, open: boolean) => void
 }
 
-/** Full props for the session-header catalog action. */
+/** 概览子代理子 slot 的会话、导航及本地化 props。 */
 export type SubagentCatalogActionProps =
-  PropsRuntime<'conversation.session.header.actions'> & SubagentCatalogInjected & PropsLocale<typeof NS>
+  PropsRuntime<'conversation.overview.subagents'> & SubagentCatalogInjected & PropsLocale<typeof NS>
 
 interface CatalogRowsProps {
   parentSessionId: SessionId
@@ -405,21 +405,19 @@ function CatalogRows({
 }
 
 /**
- * Render the current session's direct catalog and lazily expanded descendants.
- * @param props - session standard props plus catalog navigation actions.
- * @returns The action while the catalog is pending or summaries establish descendants.
+ * 展示当前会话的直接目录，并按需展开后代目录。
+ * @param props - 会话数据、子代理导航动作及收起回调。
+ * @returns 可键盘操作的子代理目录；卸载时释放活动目录观察。
  */
 export function SubagentCatalogAction({
-  sessionId, useSessions, openChild, refresh, setCatalogOpen, t,
+  sessionId, useSessions, openChild, refresh, setCatalogOpen, collapse, t,
 }: SubagentCatalogActionProps) {
   const catalogs = useSessions(state => state.subagentsByParent)
   const summaries = useSessions(state => state.byId)
   const catalog = catalogs[sessionId]
-  const [open, setOpen] = useState(false)
   const [now, setNow] = useState(() => Date.now())
   const [expanded, setExpanded] = useState<ReadonlySet<SessionId>>(() => new Set())
   const rootRef = useRef<HTMLDivElement>(null)
-  const triggerRef = useRef<HTMLButtonElement>(null)
   const observedCatalogs = useRef(new Set<SessionId>())
   const setCatalogOpenRef = useRef(setCatalogOpen)
   setCatalogOpenRef.current = setCatalogOpen
@@ -427,9 +425,6 @@ export function SubagentCatalogAction({
     () => summarizeVisibleSubagents(summaries, sessionId, catalog),
     [sessionId, summaries, catalog],
   )
-  const descendantCount = descendants.count
-  const totalCountKey = descendantCount === 1 ? 'count.total.one' : 'count.total.other'
-  const runningCountKey = descendants.runningCount === 1 ? 'count.running.one' : 'count.running.other'
   // 摘要可先于目录公布成员；加载占位仍保留入口，只有目录行可导航。
   const summaryBackedLoading = descendants.count > 0
     && (catalog === undefined || (catalog.state === 'ready' && catalog.entries.length === 0))
@@ -442,6 +437,9 @@ export function SubagentCatalogAction({
     }
     : catalog
 
+  const shownCatalog: SubagentCatalogSnapshot = presentedCatalog ?? {
+    entries: [], parentAvailable: false, state: 'loading', error: null,
+  }
   const observeCatalog = (parentSessionId: SessionId, next: boolean): void => {
     if (next) observedCatalogs.current.add(parentSessionId)
     else observedCatalogs.current.delete(parentSessionId)
@@ -456,14 +454,9 @@ export function SubagentCatalogAction({
     setExpanded(new Set())
   }
 
-  const changeOpen = (next: boolean, restoreFocus = false): void => {
-    setOpen(next)
-    if (next) {
-      setNow(Date.now())
-      observeCatalog(sessionId, true)
-    }
-    else closeAllCatalogs()
-    if (restoreFocus) queueMicrotask(() => { triggerRef.current?.focus() })
+  const closeCatalog = (): void => {
+    closeAllCatalogs()
+    collapse()
   }
 
   const closeBranch = (root: SessionId): void => {
@@ -491,44 +484,21 @@ export function SubagentCatalogAction({
   }
 
   useEffect(() => {
-    if (!open) return
-    const closeOutside = (event: PointerEvent): void => {
-      if (event.target instanceof Node && !rootRef.current?.contains(event.target)) {
-        changeOpen(false)
+    setNow(Date.now())
+    observeCatalog(sessionId, true)
+    return () => {
+      for (const parentSessionId of observedCatalogs.current) {
+        setCatalogOpenRef.current(parentSessionId, false)
       }
+      observedCatalogs.current.clear()
     }
-    document.addEventListener('pointerdown', closeOutside)
-    return () => { document.removeEventListener('pointerdown', closeOutside) }
-  }, [open])
+  }, [sessionId])
 
   useEffect(() => {
-    if (!open || descendants.runningCount === 0) return
+    if (descendants.runningCount === 0) return
     const timer = setInterval(() => { setNow(Date.now()) }, 1_000)
     return () => { clearInterval(timer) }
-  }, [open, descendants.runningCount])
-
-  useEffect(() => () => {
-    for (const parentSessionId of observedCatalogs.current) {
-      setCatalogOpenRef.current(parentSessionId, false)
-    }
-    observedCatalogs.current.clear()
-  }, [])
-
-  // Visibility needs evidence of children (entries, summary-known descendants,
-  // or a failed load worth retrying). A bare loading catalog is not evidence:
-  // selecting any session schedules a refresh whose loading snapshot would
-  // otherwise flash the action in and out on childless sessions.
-  const visible = presentedCatalog !== undefined
-    && (presentedCatalog.state === 'error'
-      || presentedCatalog.entries.length > 0
-      || descendantCount > 0)
-  useEffect(() => {
-    if (visible || !open) return
-    setOpen(false)
-    closeAllCatalogs()
-  }, [visible, open])
-
-  if (!visible) return null
+  }, [descendants.runningCount])
 
   const focusAt = (index: number): void => {
     const items = treeItems(rootRef.current)
@@ -541,7 +511,7 @@ export function SubagentCatalogAction({
     const index = items.indexOf(document.activeElement as HTMLElement)
     if (event.key === 'Escape') {
       event.preventDefault()
-      changeOpen(false, true)
+      closeCatalog()
     } else if (event.key === 'Home') {
       event.preventDefault()
       focusAt(0)
@@ -558,49 +528,21 @@ export function SubagentCatalogAction({
   }
 
   return (
-    <div className={css.root} ref={rootRef} onKeyDown={navigate}>
-      <button
-        ref={triggerRef}
-        type="button"
-        className={css.trigger}
-        aria-haspopup="tree"
-        aria-expanded={open}
-        aria-label={t(
-          descendants.runningCount > 0 ? runningCountKey : totalCountKey,
-          { count: descendants.runningCount > 0 ? descendants.runningCount : descendantCount },
-        )}
-        onClick={() => { changeOpen(!open) }}
-        onKeyDown={(event) => {
-          if (event.key !== 'ArrowDown') return
-          event.preventDefault()
-          if (!open) changeOpen(true)
-          queueMicrotask(() => { focusAt(0) })
-        }}
-      >
-        <span className={css.activitySlot}>
-          {descendants.runningCount > 0 && <StateDot state="ongoing" />}
-        </span>
-        <span className={css.count}>{t(totalCountKey, { count: descendantCount })}</span>
-        <IconChevronDownOutline14 className={open ? css.triggerOpen : undefined} />
-      </button>
-      {open && (
-        <div className={css.menu} role="tree" aria-label={t('tree.aria')}>
-          <CatalogRows
-            parentSessionId={sessionId}
-            catalog={presentedCatalog}
-            catalogs={catalogs}
-            summaries={summaries}
-            expanded={expanded}
-            level={1}
-            now={now}
-            openChild={openChild}
-            refresh={refresh}
-            toggleBranch={toggleBranch}
-            closeCatalog={() => { changeOpen(false) }}
-            t={t}
-          />
-        </div>
-      )}
+    <div ref={rootRef} className={css.menu} role="tree" aria-label={t('tree.aria')} onKeyDown={navigate}>
+      <CatalogRows
+        parentSessionId={sessionId}
+        catalog={shownCatalog}
+        catalogs={catalogs}
+        summaries={summaries}
+        expanded={expanded}
+        level={1}
+        now={now}
+        openChild={openChild}
+        refresh={refresh}
+        toggleBranch={toggleBranch}
+        closeCatalog={closeCatalog}
+        t={t}
+      />
     </div>
   )
 }

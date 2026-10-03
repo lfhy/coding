@@ -50,14 +50,14 @@ workspace 共 236 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/client/ui-brand-official` — 仅当 `DSH_CLIENT_BUILD_PROFILE` 为 `official` 时… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
 - `packages/client/ui-browser` — 本包的 Client 半边占用 `workbench.browser` 内容和 `workbench.browser.tabs` 顶栏标签两个会… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 8）
 - `packages/client/ui-commands` — 客户端命令 API（`ctx.commandUi`）：以会话为 key 的命令目录缓存、带 `matchSpace`／`matchEnter` … [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 5）
-- `packages/client/ui-conversation` — 会话领域：骨架（标题栏／标签页／编辑器／空状态）、聊天视图（分组步骤摘要流、流式尾部隔离与轮次状态）、输入区 dock… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 34）
+- `packages/client/ui-conversation` — 会话领域：骨架（标题栏／标签页／编辑器／空状态）、聊天视图（分组步骤摘要流、流式尾部隔离与轮次状态）、输入区 dock… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 36）
 - `packages/client/ui-deliverables` — 产出文件与可点击文件引用功能的属主 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
 - `packages/client/ui-directory-picker-browse` — 应用内目录浏览界面：浏览式选取交互的浏览器半边 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
 - `packages/client/ui-directory-picker-native` — 原生目录选择界面：原生选取交互的浏览器半边 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 1）
 - `packages/client/ui-goal` — Goal 界面插件（浏览器端部分）：`GoalBar` 条带是 `conversation.input.dock` composer 上下文堆栈… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 4）
 - `packages/client/ui-icons` — 本包是浏览器客户端图标的独立组件边界 入口 `src/index.ts`（tests 1）
 - `packages/client/ui-input-trigger` — 输入触发流水线插件：光标处的 `/` 与 `@` 检测（词边界 + guard tier 规则）、分组候选菜单… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 5）
-- `packages/client/ui-jobs` — Web 后台任务特性的归属方：向 `conversation.session.header.actions` 贡献一个条目… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
+- `packages/client/ui-jobs` — Web 后台任务特性的归属方：向 `conversation.overview.jobs` 贡献一个会话作用域列表… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
 - `packages/client/ui-layout` — 本包拥有浏览器根布局、瞬时面板几何和 `ctx.layout` [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 7）
 - `packages/client/ui-message-feedback` — 单条消息反馈插件的浏览器侧：一对 Like/Dislike 按钮加一个可选备注… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 4）
 - `packages/client/ui-model-selection` — 模型选择插件（浏览器侧）：**两个入口共用一份会话级目录**，由 `ModelDirectoryResolver`… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
@@ -76,7 +76,7 @@ workspace 共 236 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/client/ui-sidebar` — 侧边栏外壳插件：负责品牌行、New Session 操作、布局持有的折叠控件、可感知滚动的区域 seat… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 7）
 - `packages/client/ui-skill` — skill（技能）调用 source 的浏览器端：把 `/` 触发的 `skill` source 注册进 `ctx.inputTriggers… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
 - `packages/client/ui-slots` — Slot 注册表纯核心、slot 终端设计：SlotMap 声明合并、SlotCore 上唯一的 `register` 组合 API、四 sha… 入口 `src/index.ts`（tests 4）
-- `packages/client/ui-subagent` — Web subagent 功能 owner：向 `conversation.session.header.actions` 贡献可懒加载展开的目… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
+- `packages/client/ui-subagent` — Web subagent 功能 owner：向 `conversation.overview.subagents` 贡献按需展开的目录树… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
 - `packages/client/ui-theme` — 主题插件：基于 --dsw-* token 基础样式表（静态尺度 + 别名语义层）的 ThemeRuntime [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 10）
 - `packages/client/ui-tool` — Client 工具展示插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 15）
 - `packages/client/ui-trajectory` — Trajectory 渲染按轮次组织的事件记录表，其中可选择用户、助手、工具和嵌套子工具记录 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 9）
@@ -182,7 +182,7 @@ workspace 共 236 个包，按 group 分节。每行给出包目录、职责（R
 
 ## packages/host
 
-- `packages/host/apiproxy` — 所有客户端共用的 API 网关由三部分组成：TypeScript API 约定（`src/api/`，不依赖 Node… [client] 入口 `src/index.ts`（tests 20）
+- `packages/host/apiproxy` — 所有客户端共用的 API 网关由三部分组成：TypeScript API 约定（`src/api/`，不依赖 Node… [client] 入口 `src/index.ts`（tests 21）
 - `packages/host/directory-picker` — web GUI 宿主的工作区目录选择是一项能力 seam 入口 `src/index.ts`（tests 1）
 - `packages/host/directory-picker-auto` — 目录选择 seam 的**自适应选择器**：一个只有 node 半侧的插件，在启动时一次性判定宿主处境… 入口 `src/index.ts`（tests 2）
 - `packages/host/directory-picker-browse` — 目录选择 seam 的**应用内浏览后端**：`BrowseDirectoryPicker` 以 `browse` 能力注册 `ctx.dire… 入口 `src/index.ts`（tests 1）

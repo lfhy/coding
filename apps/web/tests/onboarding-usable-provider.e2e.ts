@@ -200,7 +200,7 @@ describe.skipIf(MODE === 'record')('web e2e: another usable provider ends first-
 
     // 模型分区保留 DeepSeek 渠道行，未配置密钥也不会重新出现引导弹窗。
     await page.getByRole('button', { name: '设置', exact: true }).click()
-    const settings = page.getByRole('dialog', { name: '设置' })
+    const settings = page.getByRole('main', { name: '设置', exact: true }).first()
     await settings.waitFor({ timeout: 10_000 })
     await settings.getByRole('button', { name: '模型' }).click()
     const deepSeek = settings.getByRole('complementary', { name: '提供方' }).getByRole('button', { name: 'DeepSeek', exact: true })

@@ -7,10 +7,15 @@
 // sessions.attachment route, the single-click ImageLightbox, and the composer
 // intake chain (paste → ordered thumbnail rail → image-only send enablement → remove).
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
-import { expect, it } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { installAssembledBootEnv, mountAssembledApp } from './assembled-boot.ts'
 
 installAssembledBootEnv()
+
+beforeEach(() => {
+  vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 1, height: 1, close: vi.fn() })))
+})
+afterEach(() => { vi.restoreAllMocks() })
 
 /** Open the fixture history session (the alpha log carrying the turn-72 image pair) and wait for its gallery. */
 async function openFixtureSession(): Promise<void> {
@@ -198,7 +203,13 @@ it('accepts a whole-page drop under the limits-labeled overlay and refuses an ov
   expect([...(rail?.querySelectorAll('img') ?? [])]).toHaveLength(1)
 })
 
-it('renders a host dimension rejection with the projected 2000px limit', async () => {
+it('resizes an oversized PNG before the fixture host rejects the image with its projected limit', async () => {
+  vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 3000, height: 1000, close: vi.fn() })))
+  const drawImage = vi.fn()
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext')
+    .mockReturnValue({ drawImage } as unknown as CanvasRenderingContext2D)
+  const toBlob = vi.spyOn(HTMLCanvasElement.prototype, 'toBlob')
+    .mockImplementation((callback) => { callback(new Blob(['resized'], { type: 'image/png' })) })
   mountAssembledApp('?fixture&fixturePrompt=reject')
 
   const tree = await screen.findByRole('tree', { name: 'Sessions' }, { timeout: 10_000 })
@@ -217,6 +228,8 @@ it('renders a host dimension rejection with the projected 2000px limit', async (
   await waitFor(() => {
     expect(document.querySelector('[role="group"][aria-label="Pending images"]')).not.toBeNull()
   })
+  expect(drawImage).toHaveBeenCalledWith(expect.anything(), 0, 0, 2000, 666)
+  expect(toBlob).toHaveBeenCalledWith(expect.any(Function), 'image/png', undefined)
   fireEvent.keyDown(textarea, { key: 'Enter' })
 
   const message = 'Image sides must be at most 2000px; downscale it and try again'

@@ -115,9 +115,9 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     expect(selectedSettings).toContain('provider: deepseek-official')
     expect(selectedSettings).toContain('model: deepseek-v4-pro')
 
-    // 普通设置保留三列；欢迎弹窗不曾叠出第二个设置模态框。
+    // 普通设置作为完整页面保留三列；欢迎弹窗不曾叠出第二个设置模态框。
     await page.getByRole('button', { name: '设置', exact: true }).click()
-    const settings = page.getByRole('dialog', { name: '设置', exact: true })
+    const settings = page.getByRole('main', { name: '设置', exact: true }).first()
     await settings.waitFor({ timeout: 10_000 })
     await settings.getByRole('button', { name: '模型' }).click()
     expect(await settings.getByRole('navigation').getByRole('button', { name: '模型' }).getAttribute('aria-current')).toBe('true')
@@ -199,9 +199,9 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
 
   it('configures arbitrary DeepSeek models and prompts after the selected model is removed', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-onboarding-deepseek-models'))
-    // 凭据场景在保存后重载，此处重新打开设置模态框。
+    // 凭据场景在保存后重载，此处重新打开设置页面。
     await page.getByRole('button', { name: '设置', exact: true }).click()
-    const settings = page.getByRole('dialog', { name: '设置', exact: true })
+    const settings = page.getByRole('main', { name: '设置', exact: true }).first()
     await settings.waitFor({ timeout: 10_000 })
     await settings.getByRole('button', { name: '模型' }).click()
     const deepSeekChannel = settings.getByRole('complementary', { name: '提供方' }).getByRole('button', { name: /^DeepSeek/ })
@@ -236,7 +236,7 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     await privatePreview.getByLabel('上下文窗口 2').fill('131072')
     await privatePreview.getByLabel('最大输出 token 2').fill('64K')
 
-    const modelEditor = await captureStableAria(page, '[role="dialog"][aria-modal="true"]', scaffold.workspaceCwd)
+    const modelEditor = await captureStableAria(page, 'main[aria-labelledby]:has(> div > nav)', scaffold.workspaceCwd)
     await compareOrRefreshGolden(MODELS_EXPECTED, modelEditor, MODE)
     const modelCard = await captureStableAria(page, '[role="dialog"][aria-label="模型设置 2"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(MODELS_CARD_EXPECTED, modelCard, MODE)

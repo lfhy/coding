@@ -15,11 +15,9 @@ import { apply as applyNode } from '../src/index.ts'
 import * as JobInvariant from '../src/invariant.ts'
 import { en, NS, zh } from '../src/client/locales.ts'
 
-/** Slot ledger reader: entry ids currently registered in the header list. */
-function headerEntryIds(ctx: Context): (string | undefined)[] {
-  return ctx.slots
-    .entries('conversation.session.header.actions')
-    .map(entry => entry.options.id)
+/** Slot ledger reader: number of registered overview job entries. */
+function overviewEntries(ctx: Context): number {
+  return ctx.slots.entries('conversation.overview.jobs').length
 }
 
 /** Boot the browser half over a real slot tree that declares the header list. */
@@ -29,7 +27,7 @@ async function bench(): Promise<{ ctx: Context; fiber: ReturnType<Context['plugi
   ctx.slots.register({
     name: 'root',
     children: {
-      'conversation.session.header.actions': { kind: 'list', scope: 'session' },
+      'conversation.overview.jobs': { kind: 'single', scope: 'session' },
     },
   } as never, () => null)
   ctx.provide('sessions', {})
@@ -50,11 +48,11 @@ describe('ui-job browser half', () => {
     expect(inject).toEqual(['sessions', 'slots', 'locale'])
   })
 
-  it('registers the header action, and fiber teardown removes it (HMR safety)', async () => {
+  it('registers the overview list, and fiber teardown removes it (HMR safety)', async () => {
     const { ctx, fiber } = await bench()
-    expect(headerEntryIds(ctx)).toContain('job-list')
+    expect(overviewEntries(ctx)).toBe(1)
     await fiber.dispose()
-    expect(headerEntryIds(ctx)).not.toContain('job-list')
+    expect(overviewEntries(ctx)).toBe(0)
   })
 
   it('registers both dictionaries under its own namespace and releases them with the fiber', async () => {

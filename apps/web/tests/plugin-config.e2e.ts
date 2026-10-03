@@ -38,23 +38,23 @@ describe('web e2e: plugin configuration section', () => {
     await scaffold?.close()
   })
 
-  /** 测试共用页面与设置文档；重新打开前先关闭旧对话框，避免遮罩截获设置按钮。 */
+  /** 测试共用页面与设置文档；重新打开前先离开旧设置页。 */
   async function openPlugins() {
-    if (await page.getByRole('dialog', { name: '设置' }).count() > 0) {
+    const settingsPage = page.getByRole('main', { name: '设置', exact: true }).first()
+    if (await settingsPage.count() > 0) {
       await page.keyboard.press('Escape')
-      await expect.poll(() => page.getByRole('dialog', { name: '设置' }).count(), { timeout: 5_000 }).toBe(0)
+      await expect.poll(() => settingsPage.count(), { timeout: 5_000 }).toBe(0)
     }
     await page.getByRole('button', { name: '设置', exact: true }).click()
-    const dialog = page.getByRole('dialog', { name: '设置' })
-    await dialog.waitFor({ timeout: 10_000 })
-    await dialog.getByRole('button', { name: '插件', exact: true }).click()
+    await settingsPage.waitFor({ timeout: 10_000 })
+    await settingsPage.getByRole('button', { name: '插件', exact: true }).click()
     await expect
-      .poll(() => dialog.getByRole('button', { name: '插件', exact: true }).getAttribute('aria-current'), { timeout: 5_000 })
+      .poll(() => settingsPage.getByRole('button', { name: '插件', exact: true }).getAttribute('aria-current'), { timeout: 5_000 })
       .toBe('true')
     await expect
-      .poll(() => dialog.getByRole('tab', { name: '插件配置', exact: true }).getAttribute('aria-selected'), { timeout: 5_000 })
+      .poll(() => settingsPage.getByRole('tab', { name: '插件配置', exact: true }).getAttribute('aria-selected'), { timeout: 5_000 })
       .toBe('true')
-    return dialog
+    return settingsPage
   }
 
   /** The settings document as the Host has written it so far. */
@@ -75,7 +75,7 @@ describe('web e2e: plugin configuration section', () => {
     // 卡片收起时，其字段不应出现。
     expect(await dialog.getByLabel('命令超时（毫秒）').count()).toBe(0)
 
-    const snapshot = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
+    const snapshot = await captureStableAria(page, 'main[aria-labelledby]:has(> div > nav)', scaffold.workspaceCwd)
     await compareOrRefreshGolden(SECTION_EXPECTED, snapshot, MODE)
 
     await dialog.getByRole('navigation').getByRole('button', { name: '联网搜索', exact: true }).click()

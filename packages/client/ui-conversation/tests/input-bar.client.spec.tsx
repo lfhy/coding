@@ -240,45 +240,51 @@ describe('image draft rail', () => {
     expect(shell.snapshot.draft).toBe('同时粘贴的文字')
   })
 
-  it('pre-checks projected limits at intake: whole-batch refusal with product copy, none added', () => {
+  it('pre-checks projected limits at intake: whole-batch refusal with product copy, none added', async () => {
     const limits = {
       maxImageBytes: 1024 * 1024,
       maxImagesPerMessage: 2,
       maxMessageImageBytes: 2 * 1024 * 1024,
       maxImagePixels: 40_000_000,
       maxImageDimension: 2000,
-      mediaTypes: ['image/png'] as const,
+      mediaTypes: ['image/png', 'image/gif'] as const,
     }
     const png = (bytes: number, name: string) => new File([new ArrayBuffer(bytes)], name, { type: 'image/png' })
-    const intake = (result: ReturnType<typeof bench>, files: File[]) => {
-      act(() => { attachmentOwner(result.slotCalls).onAddImages(files) })
+    const originalBitmap = globalThis.createImageBitmap
+    globalThis.createImageBitmap = vi.fn(async () => ({ width: 1, height: 1, close: () => {} }))
+    const intake = async (result: ReturnType<typeof bench>, files: File[]) => {
+      await act(async () => { attachmentOwner(result.slotCalls).onAddImages(files) })
     }
+    try {
     // Count: three at once over a two-image limit → the whole batch refused.
-    const overCount = bench({ addImages: vi.fn(() => null), imageLimits: limits })
-    intake(overCount, [png(8, 'a.png'), png(8, 'b.png'), png(8, 'c.png')])
-    expect(overCount.view.getByRole('alert').textContent).toContain('一条消息最多添加 2 张图片')
-    expect(overCount.props.addImages).not.toHaveBeenCalled()
-    cleanup()
-    // Per-file bytes.
-    const overFile = bench({ addImages: vi.fn(() => null), imageLimits: limits })
-    intake(overFile, [png(1024 * 1024 + 1, 'big.png')])
-    expect(overFile.view.getByRole('alert').textContent).toContain('单张图片不能超过 1MB')
-    expect(overFile.props.addImages).not.toHaveBeenCalled()
-    cleanup()
-    // Aggregate bytes across the existing rail plus the new batch.
-    const held = new File([new ArrayBuffer(1024 * 1024 * 1.5)], 'held.png', { type: 'image/png' })
-    const attachment = { kind: 'image' as const, id: 'draft-1' as DraftAttachmentId, file: held, previewUrl: 'blob:held' }
-    const overTotal = bench({ addImages: vi.fn(() => null), imageLimits: limits, attachments: [attachment] })
-    intake(overTotal, [png(1024 * 1024, 'more.png')])
-    expect(overTotal.view.getByRole('alert').textContent).toContain('图片总大小超过 2MB')
-    expect(overTotal.props.addImages).not.toHaveBeenCalled()
-    cleanup()
-    // Within every limit: the batch passes through to addImages.
-    const within = bench({ addImages: vi.fn(() => null), imageLimits: limits })
-    const fits = png(16, 'fits.png')
-    intake(within, [fits])
-    expect(within.props.addImages).toHaveBeenCalledWith([fits])
-    expect(within.view.queryByRole('alert')).toBeNull()
+      const overCount = bench({ addImages: vi.fn(() => null), imageLimits: limits })
+      await intake(overCount, [png(8, 'a.png'), png(8, 'b.png'), png(8, 'c.png')])
+      expect(overCount.view.getByRole('alert').textContent).toContain('一条消息最多添加 2 张图片')
+      expect(overCount.props.addImages).not.toHaveBeenCalled()
+      cleanup()
+      // Per-file bytes.
+      const overFile = bench({ addImages: vi.fn(() => null), imageLimits: limits })
+      await intake(overFile, [new File([new ArrayBuffer(1024 * 1024 + 1)], 'big.gif', { type: 'image/gif' })])
+      expect(overFile.view.getByRole('alert').textContent).toContain('单张图片不能超过 1MB')
+      expect(overFile.props.addImages).not.toHaveBeenCalled()
+      cleanup()
+      // Aggregate bytes across the existing rail plus the new batch.
+      const held = new File([new ArrayBuffer(1024 * 1024 * 1.5)], 'held.png', { type: 'image/png' })
+      const attachment = { kind: 'image' as const, id: 'draft-1' as DraftAttachmentId, file: held, previewUrl: 'blob:held' }
+      const overTotal = bench({ addImages: vi.fn(() => null), imageLimits: limits, attachments: [attachment] })
+      await intake(overTotal, [png(1024 * 1024, 'more.png')])
+      expect(overTotal.view.getByRole('alert').textContent).toContain('图片总大小超过 2MB')
+      expect(overTotal.props.addImages).not.toHaveBeenCalled()
+      cleanup()
+      // Within every limit: the batch passes through to addImages.
+      const within = bench({ addImages: vi.fn(() => null), imageLimits: limits })
+      const fits = png(16, 'fits.png')
+      await intake(within, [fits])
+      expect(within.props.addImages).toHaveBeenCalledWith([fits])
+      expect(within.view.queryByRole('alert')).toBeNull()
+    } finally {
+      globalThis.createImageBitmap = originalBitmap
+    }
   })
 
   it('announces the format problem before any limit when the batch holds a non-image', () => {

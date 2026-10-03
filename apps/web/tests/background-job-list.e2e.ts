@@ -1,8 +1,8 @@
-// Web e2e scenario: the session-header background-job list over the real
+// Web e2e scenario: the session overview's background-task row over the real
 // host. No model call is involved — a genuine `run_in_background` bash call
 // registers with `ctx.jobs`, and the assertion chain is the whole delivery
 // path: registry change feed → api-proxy `session/jobs` frame → the client's
-// `jobsBySession` mirror → the header action.
+// `jobsBySession` mirror → the overview collaboration row.
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
@@ -80,13 +80,12 @@ describe.skipIf(MODE === 'record')('web e2e: background job list', () => {
     await scaffold?.close()
   })
 
-  it('shows a running background job in the session header without a refresh', async () => {
+  it('shows a running background job in the overview without a refresh', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-background-job-running'))
-    // Point assertion, not a poll: `expect.poll` retries until a predicate
-    // holds, so polling for zero passes at t=0 and proves nothing. The
-    // "renders nothing without a task" branch is owned by the component suite.
-    const trigger = page.getByRole('button', { name: '1 background job running' })
-    expect(await trigger.count()).toBe(0)
+    const overview = page.getByRole('region', { name: 'Session overview' })
+    const trigger = overview.getByRole('button', { name: /^Background tasks / })
+    await trigger.waitFor({ timeout: 15_000 })
+    expect(await trigger.textContent()).toContain('0')
 
     const started = await scaffold.ctx.tools.execute({
       signal: new AbortController().signal,
@@ -100,13 +99,13 @@ describe.skipIf(MODE === 'record')('web e2e: background job list', () => {
     if (matched === null) throw new Error(`background bash reported no job id: ${reported}`)
     jobId = JobId(matched[0])
 
-    await trigger.waitFor({ timeout: 15_000 })
+    await expect.poll(() => trigger.textContent(), { timeout: 15_000 }).toContain('1 running')
     await trigger.click()
-    const row = page.getByRole('list', { name: 'Background jobs' }).getByRole('listitem').first()
+    const row = overview.getByRole('list', { name: 'Background jobs' }).getByRole('listitem').first()
     await row.waitFor({ timeout: 10_000 })
     await expect.poll(() => row.textContent()).toContain(COMMAND)
 
-    const snapshot = await captureStableAria(page, '[class*="menu"]', scaffold.workspaceCwd)
+    const snapshot = await captureStableAria(page, '#dsh-overview-jobs', scaffold.workspaceCwd)
     await compareOrRefreshGolden(RUNNING_EXPECTED, snapshot, MODE)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
@@ -116,12 +115,13 @@ describe.skipIf(MODE === 'record')('web e2e: background job list', () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-background-job-settled'))
     expect(scaffold.ctx.jobs.kill(jobId, agent, 'web e2e cancellation')).toBe('requested')
 
-    // The trigger drops its live count once the task leaves running/stopping,
+    // The row drops its live count once the task leaves running/stopping,
     // which is also the proof that settlement reached the browser unprompted.
-    const idle = page.getByRole('button', { name: '1 background job' })
+    const idle = page.getByRole('region', { name: 'Session overview' })
+      .getByRole('button', { name: 'Background tasks 1', exact: true })
     await idle.waitFor({ timeout: 20_000 })
 
-    const snapshot = await captureStableAria(page, '[class*="menu"]', scaffold.workspaceCwd)
+    const snapshot = await captureStableAria(page, '#dsh-overview-jobs', scaffold.workspaceCwd)
     await compareOrRefreshGolden(SETTLED_EXPECTED, snapshot, MODE)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])

@@ -166,6 +166,15 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
       },
     },
     workspace: {
+      async gitStatus(request) {
+        return { rpcId: request.rpcId, result: { ok: true, value: null } }
+      },
+      async gitPush(request) {
+        return { rpcId: request.rpcId, result: { ok: true, value: { branch: 'main', commitCreated: true, commit: 'abc' } } }
+      },
+      async gitPull(request) {
+        return { rpcId: request.rpcId, result: { ok: false, error: { code: 'git-conflict', message: 'diverged', details: { sessionId: request.payload.sessionId, reason: 'GIT_CONFLICT' } } } }
+      },
       async list(request) {
         return { rpcId: request.rpcId, result: { ok: true, value: { items: [], archivedSessionIds: [] } } }
       },
@@ -317,6 +326,21 @@ describe('unary round trip (handler ⇄ client, no network)', () => {
     const response = await client().sessions.list({})
     expect(response.result).toEqual({ ok: true, value: { items: [] } })
     expect(response.rpcId).toMatch(/[0-9a-f-]{36}/)
+  })
+
+  it('round-trips session-bound Git operations and rejects client-selected directories', async () => {
+    const c = client()
+    const payload = { sessionId: 's' as never }
+    expect((await c.workspace.gitStatus(payload)).result).toEqual({ ok: true, value: null })
+    expect((await c.workspace.gitPush(payload)).result).toEqual({ ok: true, value: { branch: 'main', commitCreated: true, commit: 'abc' } })
+    expect((await c.workspace.gitPull(payload)).result).toEqual({
+      ok: false, error: { code: 'git-conflict', message: 'diverged', details: { sessionId: 's', reason: 'GIT_CONFLICT' } },
+    })
+    const response = await toFetchHandler(fakeApi()).fetch(new Request('http://dsh.internal/api/workspace.gitPush', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ type: 'client-request', rpcId: 'bad-git', method: 'workspace.gitPush', payload: { sessionId: 's', cwd: '/other' } }),
+    }))
+    expect(await response.json()).toMatchObject({ result: { ok: false, error: { code: 'bad-request' } } })
   })
 
   it('carries the tail-page projections block through the wire schema (Zod must not strip it)', async () => {

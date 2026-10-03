@@ -1,5 +1,6 @@
 /** Registers the conversation components, shared store, and service callbacks. */
 import type { Context } from '@deepseek-ai/cordis'
+import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import { resolveSlotLabel, type BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
 import {
   resolveWorkspacePath, type ISessions, type SessionId,
@@ -35,6 +36,7 @@ import { ConversationRoot } from './skeleton/ConversationRoot.tsx'
 import { ConversationSession, ConversationSessionHeader } from './skeleton/ConversationSession.tsx'
 import { DetailsPanel } from './skeleton/DetailsPanel.tsx'
 import { OverviewCard } from './skeleton/OverviewCard.tsx'
+import { GitOverview, type GitOverviewInjected } from './skeleton/GitOverview.tsx'
 import { en, NS, zh, type ConversationKey } from './locales.ts'
 import { registerConversationNodes } from './conversation-nodes/register.ts'
 import { registerChatNodeRenderers } from './chat/register-node-renderers.ts'
@@ -114,6 +116,7 @@ function selectApproval({ interactions }: ComposerChainProps): ApprovalWait | nu
  */
 export function apply(ctx: Context): void {
   const sessions = ctx.sessions
+  const connection = ctx.get('connection') as ConnectionHandle
   const workspaces = ctx.workspaces
   const layout = ctx.layout
   const slots = ctx.slots
@@ -272,7 +275,45 @@ export function apply(ctx: Context): void {
     }),
   }, ConversationSessionHeader)
 
-  slots.register({ name: 'conversation.overview', locale: NS }, OverviewCard)
+  slots.register({
+    name: 'conversation.overview',
+    locale: NS,
+    children: {
+      'conversation.overview.git': { kind: 'single', scope: 'session' },
+      'conversation.overview.subagents': { kind: 'single', scope: 'session' },
+      'conversation.overview.jobs': { kind: 'single', scope: 'session' },
+    },
+  }, OverviewCard)
+
+  slots.register({
+    name: 'conversation.overview.git',
+    locale: NS,
+    inject: (): GitOverviewInjected => ({
+      status: async (sessionId) => {
+        const response = await connection.api.workspace.gitStatus({ sessionId })
+        if (!response.result.ok) throw new Error(response.result.error.message)
+        return response.result.value
+      },
+      operate: async (sessionId, action) => {
+        const response = action === 'push'
+          ? await connection.api.workspace.gitPush({ sessionId })
+          : await connection.api.workspace.gitPull({ sessionId })
+        if (!response.result.ok) {
+          if (response.result.error.code === 'git-conflict') return 'conflict'
+          throw new Error(response.result.error.message)
+        }
+        return 'done'
+      },
+      resolveConflict: async (sessionId, prompt) => {
+        const id = await sessions.fork({ sessionId, increaseTitle: true })
+        sessions.open(id)
+        const binding = sessions.binding(id)
+        if (binding === undefined) throw new Error('New session is not available')
+        const result = await binding.session.prompt([{ type: 'text', text: prompt }], 'queue')
+        if (!result.ok) throw new Error(result.error.message)
+      },
+    }),
+  }, GitOverview)
 
   // The default composer body: its own single slot inside the composer
   // chain's fallback. Public machine surface arrives via the

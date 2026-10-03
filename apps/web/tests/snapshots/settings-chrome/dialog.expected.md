@@ -1,5 +1,8 @@
-- dialog "设置":
+- main "设置":
   - navigation:
+    - button "返回":
+      - img
+      - text: 返回
     - text: 设置
     - button "通用设置":
       - img
@@ -20,9 +23,6 @@
       - img
       - text: Agent 预设
   - button "打开配置文件"
-  - button "关闭":
-    - img
-    - text: 关闭
   - text: Agent 预设 对此后新建的会话生效。运行中的会话保持它开始时的预设。
   - button "标准模式":
     - text: 标准模式

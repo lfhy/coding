@@ -1,7 +1,7 @@
-import { useMemo } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { summarizeVisibleSubagents, type JobView } from '@deepseek-ai/dsh-client-runtime/client'
-import { IconAgentPresetOutline16, IconChecklistOutline14, IconCloseOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import { IconAgentPresetOutline16, IconChecklistOutline14, IconChevronRightOutline14, IconCloseOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // 投影键由各自能力包声明，卡片只消费现有会话数据。
 import type {} from '@deepseek-ai/dsh-session-stats/client'
 import type {} from '@deepseek-ai/dsh-token-meter/client'
@@ -14,7 +14,9 @@ import css from './OverviewCard.module.css'
 const NO_JOBS: readonly JobView[] = []
 
 /** 对话页面内会话概览的框架派生 props。 */
-export type OverviewCardProps = PropsRuntime<'conversation.overview'> & PropsLocale<'conversation'>
+export type OverviewCardProps = PropsRuntime<'conversation.overview'>
+  & PropsRenderSlots<'conversation.overview.subagents' | 'conversation.overview.jobs' | 'conversation.overview.git'>
+  & PropsLocale<'conversation'>
 
 /**
  * 展示当前会话的协作计数与全日志运行统计；缺少投影时仅回退到已加载窗口。
@@ -22,8 +24,15 @@ export type OverviewCardProps = PropsRuntime<'conversation.overview'> & PropsLoc
  * @returns 对话页内的信息卡，收起时保留隐藏的受控区域。
  */
 export function OverviewCard({
-  sessionId, useSession, useSessions, useProjection, overviewExpanded, toggleOverview, t,
+  sessionId, useSession, useSessions, useProjection, overviewExpanded, toggleOverview, renderSlot, t,
 }: OverviewCardProps) {
+  const [expanded, setExpanded] = useState<'subagents' | 'jobs' | null>(null)
+  const subagentsButton = useRef<HTMLButtonElement>(null)
+  const jobsButton = useRef<HTMLButtonElement>(null)
+  const collapse = (row: 'subagents' | 'jobs'): void => {
+    setExpanded(null)
+    queueMicrotask(() => { (row === 'subagents' ? subagentsButton : jobsButton).current?.focus() })
+  }
   const summaries = useSessions(state => state.byId)
   const catalog = useSessions(state => state.subagentsByParent[sessionId])
   const jobs = useSessions(state => state.jobsBySession[sessionId]) ?? NO_JOBS
@@ -61,25 +70,65 @@ export function OverviewCard({
 
         <div className={css.group}>
           <h2 className={css.groupTitle}>{t('overview.collaboration')}</h2>
-          <dl className={css.counts}>
-            <div className={css.countRow}>
-              <span className={css.rowIcon} aria-hidden="true"><IconAgentPresetOutline16 /></span>
-              <dt>{t('overview.subagents')}</dt>
-              <dd>
-                <strong>{childCount}</strong>
-                {runningChildren > 0 && <span>{t('overview.runningCount', { count: runningChildren })}</span>}
-              </dd>
+          <div className={css.counts}>
+            <div className={css.collaborationEntry}>
+              <button
+                ref={subagentsButton}
+                type="button"
+                className={css.countRow}
+                aria-expanded={expanded === 'subagents'}
+                aria-controls="dsh-overview-subagents"
+                onClick={() => { setExpanded(value => value === 'subagents' ? null : 'subagents') }}
+                onKeyDown={(event) => {
+                  if (event.key !== 'ArrowDown') return
+                  event.preventDefault()
+                  setExpanded('subagents')
+                  queueMicrotask(() => {
+                    document.querySelector<HTMLElement>('#dsh-overview-subagents [role="treeitem"]')?.focus()
+                  })
+                }}
+              >
+                <span className={css.rowIcon} aria-hidden="true"><IconAgentPresetOutline16 /></span>
+                <span className={css.countLabel}>{t('overview.subagents')}</span>
+                <span className={css.countValue}>
+                  <strong>{childCount}</strong>
+                  {runningChildren > 0 && <span>{t('overview.runningCount', { count: runningChildren })}</span>}
+                </span>
+                <IconChevronRightOutline14 className={expanded === 'subagents' ? css.chevronOpen : css.chevron} />
+              </button>
+              <div id="dsh-overview-subagents" hidden={expanded !== 'subagents'} className={css.collaborationDetail}>
+                {overviewExpanded && expanded === 'subagents' && renderSlot('conversation.overview.subagents', {
+                  collapse: () => { collapse('subagents') },
+                })}
+              </div>
             </div>
-            <div className={css.countRow}>
-              <span className={css.rowIcon} aria-hidden="true"><IconChecklistOutline14 /></span>
-              <dt>{t('overview.jobs')}</dt>
-              <dd>
-                <strong>{jobs.length}</strong>
-                {runningJobs > 0 && <span>{t('overview.runningCount', { count: runningJobs })}</span>}
-              </dd>
+            <div className={css.collaborationEntry}>
+              <button
+                ref={jobsButton}
+                type="button"
+                className={css.countRow}
+                aria-expanded={expanded === 'jobs'}
+                aria-controls="dsh-overview-jobs"
+                onClick={() => { setExpanded(value => value === 'jobs' ? null : 'jobs') }}
+              >
+                <span className={css.rowIcon} aria-hidden="true"><IconChecklistOutline14 /></span>
+                <span className={css.countLabel}>{t('overview.jobs')}</span>
+                <span className={css.countValue}>
+                  <strong>{jobs.length}</strong>
+                  {runningJobs > 0 && <span>{t('overview.runningCount', { count: runningJobs })}</span>}
+                </span>
+                <IconChevronRightOutline14 className={expanded === 'jobs' ? css.chevronOpen : css.chevron} />
+              </button>
+              <div id="dsh-overview-jobs" hidden={expanded !== 'jobs'} className={css.collaborationDetail}>
+                {overviewExpanded && expanded === 'jobs' && renderSlot('conversation.overview.jobs', {
+                  collapse: () => { collapse('jobs') },
+                })}
+              </div>
             </div>
-          </dl>
+          </div>
         </div>
+
+        {renderSlot('conversation.overview.git', {})}
 
         <div className={css.group}>
           <h2 className={css.groupTitle}>{t('overview.statistics')}</h2>

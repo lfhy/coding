@@ -107,9 +107,15 @@ describe('ModelsSection theme styles', () => {
     expect(css).not.toContain('.reasoningDropdown[open]')
   })
 
-  it('keeps every discovered family at full height when the candidate list scrolls', () => {
+  it('keeps the discovered picker compact with one bounded scrolling list', () => {
+    expect(block('.fetchDialog')).toContain('width: min(560px, calc(100vw - 48px))')
+    expect(block('.fetchDialog')).toContain('max-height: min(680px, calc(100vh - 48px))')
+    expect(block('.fetchDialog')).toContain('border-color: var(--dsw-alias-border-l2)')
     expect(block('.candidateList')).toContain('overflow-y: auto')
+    expect(block('.candidateList')).toContain('border: 1px solid var(--dsw-alias-border-l2)')
+    expect(block('.candidateGroup')).not.toMatch(/\bborder\s*:/)
     expect(block('.candidateGroup')).toContain('flex-shrink: 0')
+    expect(css).not.toContain('1500px')
     expect(css).toContain('.modelCheckboxInput:focus-visible + .modelCheckboxBox {\n  outline: 2px solid')
     expect(css).toContain('.modelCheckboxInput:checked + .modelCheckboxBox {\n  border-color: var(--dsw-alias-state-business-primary);\n  background: var(--dsw-alias-state-business-primary)')
   })

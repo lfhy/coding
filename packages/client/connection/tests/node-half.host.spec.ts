@@ -170,6 +170,7 @@ describe('connection node half', () => {
     // passed), but each privileged method stays loopback-only and 403s.
     for (const method of [
       'host.pickDirectory', 'host.openPath',
+      'workspace.gitStatus', 'workspace.gitPush', 'workspace.gitPull',
       'browser.control',
       'settings.describe', 'settings.openDocument', 'settings.update', 'settings.replace', 'settings.mutate',
       'credentials.describe', 'credentials.set', 'credentials.unset',

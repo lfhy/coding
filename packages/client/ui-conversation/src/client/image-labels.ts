@@ -36,9 +36,9 @@ export function attachmentErrorText(
     case 'IMAGE_DIMENSION_TOO_LARGE':
       if (limits !== undefined) return t('image.dimensionTooLarge', { size: limits.maxImageDimension })
       break
-    // Undecodable bytes or a declared type its bytes contradict: solvable by
-    // replacing or re-exporting the file, so it reads as a format problem.
+    // 解码失败提示重新导出；声明类型与实际格式不符则提示格式要求。
     case 'INVALID_IMAGE':
+      return t('image.decodeFailed')
     case 'IMAGE_TYPE_MISMATCH':
       return t('image.unsupportedType')
     case 'TOO_MANY_IMAGES':

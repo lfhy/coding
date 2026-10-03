@@ -1,14 +1,14 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useMemo, useState, type KeyboardEvent } from 'react'
 import type { JobView } from '@deepseek-ai/dsh-client-runtime/client'
-import { IconChevronDownOutline14, StateDot, useDismissOnOutsidePointer, type StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
+import { StateDot, type StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { NS } from './locales.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import css from './JobListAction.module.css'
 
-/** Full props for the session-header background-job action. */
+/** 概览后台任务子 slot 的会话 props 与本地化接口。 */
 export type JobListActionProps =
-  PropsRuntime<'conversation.session.header.actions'> & PropsLocale<typeof NS>
+  PropsRuntime<'conversation.overview.jobs'> & PropsLocale<typeof NS>
 
 /** Stable empty list so a session with no jobs keeps one array identity. */
 const NO_TASKS: readonly JobView[] = []
@@ -85,99 +85,52 @@ function ordered(jobs: readonly JobView[]): JobView[] {
 }
 
 /**
- * Session-header entry point for this session's background jobs. It renders
- * nothing at all until the session has at least one job, so an ordinary
- * conversation never grows a control for a capability it is not using.
- * @param props - runtime slot currency plus the namespace translator.
- * @returns the trigger and its popover list, or null when there is nothing to show.
+ * 概览协作行展开后的后台任务列表；无任务时仍保留空列表语义。
+ * @param props - 会话镜像、收起动作与本地化接口。
+ * @returns 按活动状态和结算时间排序的任务列表。
  */
-export function JobListAction({ sessionId, useSessions, t }: JobListActionProps) {
+export function JobListAction({ sessionId, useSessions, collapse, t }: JobListActionProps) {
   const jobs = useSessions(state => state.jobsBySession[sessionId]) ?? NO_TASKS
-  const [open, setOpen] = useState(false)
   const [now, setNow] = useState(() => Date.now())
-  const rootRef = useRef<HTMLDivElement>(null)
-  const triggerRef = useRef<HTMLButtonElement>(null)
 
   const rows = useMemo(() => ordered(jobs), [jobs])
   const liveCount = useMemo(() => jobs.filter(isLive).length, [jobs])
 
-  useDismissOnOutsidePointer(rootRef, open, setOpen)
-
-  // The clock only runs while an open list is showing something that moves.
   useEffect(() => {
-    if (!open || liveCount === 0) return
+    if (liveCount === 0) return
     setNow(Date.now())
     const timer = setInterval(() => { setNow(Date.now()) }, 1_000)
     return () => { clearInterval(timer) }
-  }, [open, liveCount])
+  }, [liveCount])
 
-  // The last job disappearing removes this control; close first so focus does
-  // not vanish from an unmounting node.
-  useEffect(() => {
-    if (jobs.length === 0 && open) setOpen(false)
-  }, [jobs.length, open])
-
-  if (jobs.length === 0) return null
-
-  const countKey = liveCount > 0
-    ? (liveCount === 1 ? 'count.live.one' : 'count.live.other')
-    : (jobs.length === 1 ? 'count.idle.one' : 'count.idle.other')
-  const countLabel = t(countKey, { count: liveCount > 0 ? liveCount : jobs.length })
-
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
-    if (event.key !== 'Escape' || !open) return
+  const onKeyDown = (event: KeyboardEvent<HTMLUListElement>): void => {
+    if (event.key !== 'Escape') return
     event.preventDefault()
-    setOpen(false)
-    triggerRef.current?.focus()
+    collapse()
   }
 
   return (
-    <div ref={rootRef} className={css.root} onKeyDown={onKeyDown}>
-      <button
-        ref={triggerRef}
-        type="button"
-        className={css.trigger}
-        aria-expanded={open}
-        aria-label={countLabel}
-        onClick={() => {
-          // Sample the clock in the same commit that opens the list: the
-          // mount-time value predates every job, so the first painted frame
-          // would otherwise clamp a long-running row to zero until the
-          // open effect corrects it a frame later.
-          setNow(Date.now())
-          setOpen(current => !current)
-        }}
-      >
-        {liveCount > 0 ? <StateDot state="ongoing" className={css.triggerDot} /> : null}
-        <span className={css.count}>{countLabel}</span>
-        <IconChevronDownOutline14 className={open ? css.triggerOpen : undefined} />
-      </button>
-      {open
-        ? (
-          <ul className={css.menu} aria-label={t('list.aria')}>
-            {rows.map((job) => {
-              const live = isLive(job)
-              const elapsed = live ? now - job.startedAt : (job.finishedAt ?? job.startedAt) - job.startedAt
-              const duration = formatDuration(elapsed, t)
-              const status = statusLabel(job.status, t)
-              return (
-                <li key={job.id} className={live ? css.row : `${css.row} ${css.rowSettled}`}>
-                  <StateDot state={dotState(job.status)} className={css.rowDot} />
-                  <span className={css.kind}>{job.kind}</span>
-                  <span className={css.label} title={job.label}>{job.label}</span>
-                  <span className={css.status} title={job.detail ?? status}>{job.detail ?? status}</span>
-                  <span
-                    className={css.duration}
-                    title={t(live ? 'duration.title.live' : 'duration.title.done', { duration })}
-                  >
-                    {duration}
-                  </span>
-                </li>
-              )
-            })}
-          </ul>
+    <ul className={css.menu} aria-label={t('list.aria')} onKeyDown={onKeyDown}>
+      {rows.map((job) => {
+        const live = isLive(job)
+        const elapsed = live ? now - job.startedAt : (job.finishedAt ?? job.startedAt) - job.startedAt
+        const duration = formatDuration(elapsed, t)
+        const status = statusLabel(job.status, t)
+        return (
+          <li key={job.id} className={live ? css.row : `${css.row} ${css.rowSettled}`}>
+            <StateDot state={dotState(job.status)} className={css.rowDot} />
+            <span className={css.kind}>{job.kind}</span>
+            <span className={css.label} title={job.label}>{job.label}</span>
+            <span className={css.status} title={job.detail ?? status}>{job.detail ?? status}</span>
+            <span
+              className={css.duration}
+              title={t(live ? 'duration.title.live' : 'duration.title.done', { duration })}
+            >
+              {duration}
+            </span>
+          </li>
         )
-        : null}
-    </div>
+      })}
+    </ul>
   )
 }

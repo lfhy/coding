@@ -50,6 +50,13 @@ function childFixture(source: string, fixtureId: string, withContinuation: boole
   return [childHeader, ...eventLines, ...continued, ''].join('\n')
 }
 
+async function openSubagents(page: Page): Promise<void> {
+  const button = page.getByRole('region', { name: 'Session overview' })
+    .getByRole('button', { name: /^Subagents / })
+  await button.waitFor({ timeout: 15_000 })
+  if (await button.getAttribute('aria-expanded') !== 'true') await button.click()
+}
+
 async function waitForAgentToSettle(scaffold: WebScaffold, id: SessionId): Promise<void> {
   const deadline = Date.now() + 30_000
   while (scaffold.ctx.agents.get(id) !== undefined) {
@@ -224,13 +231,14 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
     const warningStart = tripwire.warnings.length
     await page.reload({ waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
-    const catalogButton = page.getByRole('button', { name: /subagents/ })
+    const catalogButton = page.getByRole('region', { name: 'Session overview' })
+      .getByRole('button', { name: /^Subagents / })
     await catalogButton.waitFor({ timeout: 15_000 })
-    await catalogButton.click()
+    await openSubagents(page)
     const catalogTree = page.getByRole('tree', { name: 'Subagent sessions' })
     await catalogTree.getByRole('treeitem').nth(1).waitFor({ timeout: 15_000 })
     await catalogTree.press('Escape')
-    await page.getByRole('button', { name: '3 subagents' }).waitFor({ timeout: 15_000 })
+    await page.getByRole('region', { name: 'Session overview' }).getByRole('button', { name: /^Subagents / }).waitFor({ timeout: 15_000 })
     acknowledgeReloadConnectionLoss(tripwire, warningStart)
   }, 120_000)
 
@@ -277,10 +285,10 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
       await page.reload({ waitUntil: 'load' })
       await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
       await expect.poll(() => emptyDelivered, { timeout: 15_000 }).toBe(true)
-      await page.getByRole('button', { name: '3 subagents' }).waitFor({ timeout: 15_000 })
+      await page.getByRole('region', { name: 'Session overview' }).getByRole('button', { name: /^Subagents / }).waitFor({ timeout: 15_000 })
       acknowledgeReloadConnectionLoss(tripwire, warningStart)
 
-      await page.getByRole('button', { name: '3 subagents' }).click()
+      await openSubagents(page)
       await expect.poll(() => trailingRequested, { timeout: 15_000 }).toBe(true)
       const tree = page.getByRole('tree', { name: 'Subagent sessions' })
       await tree.getByRole('treeitem', { name: 'Loading subagents' }).first().waitFor()
@@ -301,11 +309,13 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
 
   it('expands a persisted grandchild progressively without activating either level', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-subagent-tree'))
-    await page.getByRole('button', { name: '3 subagents' }).click()
+    await openSubagents(page)
     expect(await page.getByRole('button', {
       name: `Expand ${ONE_SHOT_LABEL} descendants`,
     }).count()).toBe(0)
-    const oneShotRow = page.getByRole('treeitem', { name: new RegExp(ONE_SHOT_LABEL) })
+    const oneShotRow = page.getByRole('tree', { name: 'Subagent sessions' })
+      .getByRole('treeitem', { name: new RegExp(ONE_SHOT_LABEL) })
+    await oneShotRow.waitFor({ timeout: 15_000 })
     expect(await oneShotRow.getByText('~6mo 12d', { exact: true }).count()).toBe(1)
     expect(await oneShotRow.getAttribute('aria-label')).toContain('192d 00h 00m 00s')
     await page.getByRole('button', { name: `Expand ${LABEL} descendants` }).click()
@@ -327,7 +337,7 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
 
   it('opens the completed child from persistence without activating it', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-subagent-open'))
-    await page.getByRole('button', { name: '3 subagents' }).click()
+    await openSubagents(page)
     await page.getByRole('treeitem', { name: new RegExp(LABEL) }).click()
     await expect.poll(
       () => page.getByText(INITIAL_PROMPT, { exact: true }).count(),
@@ -383,7 +393,7 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
 
   it('opens an unavailable persisted grandchild after recording the available child', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-subagent-grandchild'))
-    await page.getByRole('button', { name: '1 subagent' }).click()
+    await openSubagents(page)
     const tree = page.getByRole('tree', { name: 'Subagent sessions' })
     const nestedRow = tree.getByRole('treeitem', { name: new RegExp(NESTED_LABEL) })
     expect(await nestedRow.locator(':scope > *').count()).toBe(1)
@@ -394,11 +404,9 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
     ])
     expect(treeBox).not.toBeNull()
     expect(clickAreaBox).not.toBeNull()
-    expect([
-      Math.round(clickAreaBox!.x - treeBox!.x),
-      Math.round(treeBox!.x + treeBox!.width - clickAreaBox!.x - clickAreaBox!.width),
-    // Menu padding alone insets the rows now that the border is gone.
-    ]).toEqual([4, 4])
+    // 概览中的树占满当前卡片宽度，不再依赖页头菜单的固定内边距。
+    expect(clickAreaBox!.x).toBeGreaterThanOrEqual(treeBox!.x)
+    expect(clickAreaBox!.x + clickAreaBox!.width).toBeLessThanOrEqual(treeBox!.x + treeBox!.width + 1)
     await compareOrRefreshGolden(
       BRANCHLESS_EXPECTED,
       await captureStableAria(page, '[role="tree"][aria-label="Subagent sessions"]', scaffold.workspaceCwd),
@@ -426,10 +434,9 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
   it('opens a one-shot child as permanently read-only history', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-subagent-one-shot'))
     const parentSession = page.getByRole('tree', { name: 'Sessions' })
-      .getByRole('treeitem')
-      .last()
+      .getByRole('treeitem', { name: /Ask a research subagent to/ })
     await parentSession.click()
-    await page.getByRole('button', { name: '3 subagents' }).click()
+    await openSubagents(page)
     await page.getByRole('treeitem', { name: new RegExp(ONE_SHOT_LABEL) }).click()
     await page.getByText('One-shot tasks do not accept follow-ups; review the full execution record here.').waitFor()
     expect(scaffold.ctx.agents.get(oneShotId)).toBeUndefined()
@@ -440,7 +447,7 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
     await page.getByRole('tree', { name: 'Sessions' })
       .getByRole('treeitem', { name: /Ask a research subagent to/ })
       .click()
-    await page.getByRole('button', { name: '3 subagents' }).click()
+    await openSubagents(page)
     await page.getByRole('treeitem', { name: new RegExp(LABEL) }).click()
     await page.getByRole('textbox', { name: 'Message the agent' }).waitFor()
     const forkResponse = page.waitForResponse(response =>
@@ -466,7 +473,7 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
     onTestFailed(() => saveFailureShot(page, 'web-e2e-subagent-post-fork-followup'))
     const sessions = page.getByRole('tree', { name: 'Sessions' })
     await sessions.getByRole('treeitem', { name: /Ask a research subagent to/ }).click()
-    await page.getByRole('button', { name: '3 subagents' }).click()
+    await openSubagents(page)
     await page.getByRole('treeitem', { name: new RegExp(LABEL) }).click()
     await page.locator('textarea:enabled').first().waitFor()
     expect(scaffold.ctx.agents.get(childId)).toBeUndefined()
@@ -483,7 +490,7 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
     await expect.poll(() => scaffold.ctx.agents.get(forkId)).not.toBeUndefined()
 
     await sessions.getByRole('treeitem', { name: /Ask a research subagent to/ }).click()
-    await page.getByRole('button', { name: '3 subagents' }).click()
+    await openSubagents(page)
     await page.getByRole('treeitem', { name: new RegExp(LABEL) }).click()
     const input = page.locator('textarea:enabled').first()
     await input.waitFor()

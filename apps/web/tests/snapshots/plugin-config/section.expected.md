@@ -1,5 +1,8 @@
-- dialog "设置":
+- main "设置":
   - navigation:
+    - button "返回":
+      - img
+      - text: 返回
     - text: 设置
     - button "通用设置":
       - img
@@ -20,9 +23,6 @@
       - img
       - text: Agent 预设
   - button "打开配置文件"
-  - button "关闭":
-    - img
-    - text: 关闭
   - heading "插件" [level=2]
   - paragraph: 配置和查看本部署已安装的插件。
   - tablist "插件视图":

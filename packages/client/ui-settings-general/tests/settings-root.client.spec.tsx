@@ -99,6 +99,20 @@ describe('SettingsRoot page', () => {
     expect(screen.getByRole('button', { name: 'Back' }).querySelector('svg')).toBeTruthy()
   })
 
+  it('keeps the return control in the navigation heading across settings sections', () => {
+    mount()
+    const page = openPage()
+    const nav = screen.getByRole('navigation')
+    const back = screen.getByRole('button', { name: 'Back' })
+    expect(nav.contains(back)).toBe(true)
+    expect(nav.contains(screen.getByText('Settings Title'))).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Models' }))
+    expect(screen.getByRole('main')).toBe(page)
+    expect(screen.getByRole('navigation')).toBe(nav)
+    expect(nav.contains(back)).toBe(true)
+    expect(screen.getByTestId('section-models')).toBeTruthy()
+  })
+
   it('returns by the top-left back button and restores focus and app interactivity', () => {
     const { view } = mount()
     const trigger = screen.getByRole('button', { name: 'Settings' })

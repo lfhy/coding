@@ -1,5 +1,8 @@
-- dialog "设置":
+- main "设置":
   - navigation:
+    - button "返回":
+      - img
+      - text: 返回
     - text: 设置
     - button "通用设置":
       - img
@@ -19,11 +22,8 @@
     - button "Agent 预设":
       - img
       - text: Agent 预设
-  - button "关闭":
-    - img
-    - text: 关闭
-  - banner:
-    - heading "模型" [level=1]
+  - button "打开配置文件"
+  - heading "模型" [level=1]
   - complementary "提供方":
     - img
     - textbox "搜索模型平台…"

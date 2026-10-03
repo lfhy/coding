@@ -1,4 +1,4 @@
-// 真实 Web 组合与 HTTP wire 的模型设置回放：设置模态框内的独立图片识别分区、
+// 真实 Web 组合与 HTTP wire 的模型设置回放：全屏设置页中的独立图片识别分区、
 // 渠道详情、只写凭据和本机 GET /v1/models 均经 Chromium 操作。
 // 不发出模型生成请求；测试路由选 minimax-cn，避免开发者的通用环境密钥遮蔽派生引用。
 import { readFile } from 'node:fs/promises'
@@ -45,7 +45,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
   const modelRequests: { method: string | undefined; path: string | undefined; authorization: string | undefined }[] = []
   const consoleErrors: string[] = []
 
-  const settings = () => page.getByRole('dialog', { name: '设置', exact: true })
+  const settings = () => page.getByRole('main', { name: '设置', exact: true }).first()
   const providerRail = () => settings().getByRole('complementary', { name: '提供方' })
   const provider = (name: string) => providerRail().getByRole('button').filter({ hasText: name }).first()
   const settingsDocument = () => readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8')
@@ -173,7 +173,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
   it('opens only a centered custom-channel form without exposing built-in routes', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-models-empty'))
     await page.getByRole('button', { name: '设置', exact: true }).click()
-    const dialog = page.getByRole('dialog', { name: '设置' })
+    const dialog = settings()
     await dialog.waitFor({ timeout: 10_000 })
     await dialog.getByRole('button', { name: '模型' }).click()
     await providerRail().waitFor({ timeout: 10_000 })
@@ -197,7 +197,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
       { timeout: 10_000 }).toBe('已配置——输入新值可替换')
     const createDialog = page.getByRole('dialog', { name: '添加渠道', exact: true })
     const originalSettings = await settingsDocumentIfPresent()
-    await compareOrRefreshGolden(EMPTY_EXPECTED, await stableSnapshot('[role="dialog"][aria-modal="true"]'), MODE)
+    await compareOrRefreshGolden(EMPTY_EXPECTED, await stableSnapshot('main[aria-labelledby]:has(> div > nav)'), MODE)
     for (const viewport of [{ width: 1536, height: 1024 }, { width: 768, height: 1024 }, { width: 375, height: 812 }]) {
       await page.setViewportSize(viewport)
       await add.click()
@@ -325,7 +325,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
 
   it('retains a reference-free provider-native profile when saving a blank key', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-models-native-auth'))
-    const dialog = page.getByRole('dialog', { name: '设置' })
+    const dialog = settings()
     await dialog.getByRole('button', { name: '保存', exact: true }).click()
     await provider('minimax-cn').waitFor({ timeout: 10_000 })
     await dialog.getByText('已保存 minimax-cn。', { exact: true }).waitFor({ timeout: 10_000 })
@@ -338,7 +338,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
 
   it('describes reference-free deletion without claiming a credential exists', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-models-native-delete'))
-    const settingsDialog = page.getByRole('dialog', { name: '设置' })
+    const settingsDialog = settings()
     await settingsDialog.getByRole('button', { name: '删除', exact: true }).click()
     const deleteDialog = page.getByRole('dialog', { name: '删除 minimax-cn？' })
     await deleteDialog.waitFor({ timeout: 10_000 })
@@ -389,7 +389,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
 
   it('stores the key under the derived reference and keeps the route live', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-models-add'))
-    const dialog = page.getByRole('dialog', { name: '设置' })
+    const dialog = settings()
     await provider('minimax-cn').click()
     await dialog.getByRole('textbox', { name: 'API 密钥', exact: true }).fill('sk-e2e-minimax')
     await dialog.getByRole('button', { name: '保存', exact: true }).click()
@@ -414,7 +414,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
 
   it('applies a customized-settings field as a merge patch', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-models-customized'))
-    const dialog = page.getByRole('dialog', { name: '设置' })
+    const dialog = settings()
     await provider('minimax-cn').click()
     const url = dialog.getByLabel('API 地址')
     await url.waitFor({ timeout: 10_000 })
@@ -430,7 +430,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     const document = await readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8')
     expect(document).toContain('baseURL: https://gateway.minimax.example/v1')
     expect(document).toContain('apiKeyEnv: MINIMAX_CN_API_KEY')
-    const snapshot = await stableSnapshot('[role="dialog"]')
+    const snapshot = await stableSnapshot('main[aria-labelledby]:has(> div > nav)')
     await compareOrRefreshGolden(CONFIGURED_EXPECTED, snapshot, MODE)
     await screenshot('models-settings-desktop.png', 1876, 1472)
     await screenshot('models-settings-reference.png', 1536, 1024)
@@ -747,7 +747,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
       const last = groups.last()
       for (const group of [first, last]) {
         const height = await group.evaluate(node => node.getBoundingClientRect().height)
-        expect(height).toBeGreaterThanOrEqual(80)
+        expect(height).toBeGreaterThanOrEqual(76)
       }
       const lastCheckbox = last.getByRole('checkbox', { name: 'geom-2027-base' })
       const lastLabel = lastCheckbox.locator('..')
@@ -801,7 +801,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     const configured = await settingsDocument()
     expect((load(configured) as Record<string, unknown>)['vision-understanding'])
       .toMatchObject({ provider: 'cerebras', model: 'acme-2026-beta' })
-    const snapshot = await stableSnapshot('[role="dialog"]')
+    const snapshot = await stableSnapshot('main[aria-labelledby]:has(> div > nav)')
     await compareOrRefreshGolden(VISION_CONFIGURED_EXPECTED, snapshot, MODE)
     await screenshot('models-settings-vision-desktop.png', 1876, 1472, 'vision')
     await screenshot('models-settings-vision-reference.png', 1536, 1024, 'vision')
@@ -829,7 +829,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
 
   it('declares a route the adapter does not ship', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-models-declare'))
-    const dialog = page.getByRole('dialog', { name: '设置' })
+    const dialog = settings()
     const searchProviders = providerRail().getByRole('textbox', { name: '搜索模型平台…' })
     await searchProviders.fill('openai')
     const add = providerRail().getByRole('button', { name: '添加渠道', exact: true })
@@ -958,14 +958,14 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     await expect.poll(async () => dialog.getByLabel('上游请求格式').count(), { timeout: 10_000 }).toBe(1)
     expect(await provider('minimax-cn').getByText('自定义').count()).toBe(0)
 
-    const snapshot = await stableSnapshot('[role="dialog"]')
+    const snapshot = await stableSnapshot('main[aria-labelledby]:has(> div > nav)')
     await compareOrRefreshGolden(DECLARED_EXPECTED, snapshot, MODE)
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
   it('reopens the name and protocol a declared route was created with', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-models-declared-identity'))
-    const dialog = page.getByRole('dialog', { name: '设置' })
+    const dialog = settings()
     await provider('Acme Gateway').click()
     // 创建草稿填写的名称和协议可直接重开编辑，不需要手改 settings.yaml。
     const protocol = dialog.getByLabel('上游请求格式')
@@ -973,7 +973,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     expect(await protocol.inputValue()).toBe('openai-completions')
     const name = dialog.getByLabel('显示名称', { exact: true })
     expect(await name.inputValue()).toBe('Acme Gateway')
-    const snapshot = await stableSnapshot('[role="dialog"]')
+    const snapshot = await stableSnapshot('main[aria-labelledby]:has(> div > nav)')
     await compareOrRefreshGolden(DECLARED_EDIT_EXPECTED, snapshot, MODE)
 
     await protocol.selectOption('anthropic-messages')
@@ -993,7 +993,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
 
   it('confirms an identified provider deletion before removing its profile and key', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-models-delete'))
-    const settingsDialog = page.getByRole('dialog', { name: '设置' })
+    const settingsDialog = settings()
     await provider('minimax-cn').click()
     await settingsDialog.getByRole('button', { name: '删除', exact: true }).click()
     const deleteDialog = page.getByRole('dialog', { name: '删除 minimax-cn？' })

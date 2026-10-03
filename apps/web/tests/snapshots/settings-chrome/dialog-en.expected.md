@@ -1,5 +1,8 @@
-- dialog "Settings":
+- main "Settings":
   - navigation:
+    - button "Back":
+      - img
+      - text: Back
     - text: Settings
     - button "General":
       - img
@@ -20,9 +23,6 @@
       - img
       - text: Agent presets
   - button "Open configuration file"
-  - button "Close":
-    - img
-    - text: Close
   - text: Agent preset Applies to sessions you start from now on. Running sessions keep the preset they began with.
   - button "Standard mode":
     - text: Standard mode

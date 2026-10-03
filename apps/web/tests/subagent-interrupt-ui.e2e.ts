@@ -8,8 +8,8 @@
 // Replay-binding note: only the PRIMARY script can hang, and scripts bind by
 // first-call order, so the child issues the composition's first model call
 // (claiming the overridden primary) and the parent's one UI prompt — needed
-// so the non-blank parent renders its header catalog — binds to a derived
-// child fixture afterwards.
+// so the non-blank parent renders its overview collaboration row — binds to a
+// derived child fixture afterwards.
 import { existsSync } from 'node:fs'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -152,7 +152,7 @@ describe.skipIf(MODE === 'record')('web e2e: composer interrupt for a running co
     await waitFor(() => existsSync(readyFile), 'the held child turn to open')
 
     // One prompted parent turn makes the parent non-blank so the session
-    // header (and its subagent catalog action) renders.
+    // overview (and its subagent collaboration row) renders.
     const parentSettled = scaffold.whenTurnSettled()
     const parentInput = page.locator('textarea:enabled').first()
     await parentInput.fill('Ask a research subagent to explain event sourcing.')
@@ -164,7 +164,7 @@ describe.skipIf(MODE === 'record')('web e2e: composer interrupt for a running co
     const warningStart = tripwire.warnings.length
     await page.reload({ waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
-    await page.getByRole('button', { name: /1 subagent/ }).waitFor({ timeout: 15_000 })
+    await page.getByRole('region', { name: 'Session overview' }).getByRole('button', { name: /^Subagents / }).waitFor({ timeout: 15_000 })
     acknowledgeReloadConnectionLoss(tripwire, warningStart)
     expect(scaffold.ctx.agents.get(childId)?.status).toBe('running')
   }, 120_000)
@@ -197,7 +197,7 @@ describe.skipIf(MODE === 'record')('web e2e: composer interrupt for a running co
       await route.fulfill({ response, json: body })
     })
     try {
-      await page.getByRole('button', { name: /1 subagent/ }).click()
+      await page.getByRole('region', { name: 'Session overview' }).getByRole('button', { name: /^Subagents / }).click()
       await page.getByRole('treeitem', { name: new RegExp(LABEL) }).click()
       const input = page.getByRole('textbox', {
         name: 'Parent session offline; sending is unavailable but you can still stop the run',
@@ -256,7 +256,7 @@ describe.skipIf(MODE === 'record')('web e2e: composer interrupt for a running co
     // Reselect the child with the truthful catalog: parent available again.
     await page.getByRole('navigation', { name: 'Session hierarchy' })
       .getByRole('button').first().click()
-    await page.getByRole('button', { name: /1 subagent/ }).click()
+    await page.getByRole('region', { name: 'Session overview' }).getByRole('button', { name: /^Subagents / }).click()
     await page.getByRole('treeitem', { name: new RegExp(LABEL) }).click()
     const input = page.getByRole('textbox', { name: 'Message the agent' })
     await input.waitFor({ timeout: 15_000 })

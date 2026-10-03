@@ -84,6 +84,9 @@ function scriptedApi(overrides: {
       ...overrides.host,
     },
     workspace: {
+      gitStatus: r => ok(r, null),
+      gitPush: r => ok(r, { branch: 'main', commitCreated: false }),
+      gitPull: r => ok(r, { branch: 'main', commitCreated: false }),
       list: r => ok(r, { items: [], archivedSessionIds: [] }),
       create: r => ok(r, { workspace: { workspaceId: 'w1' as never, path: '/t', title: 't', sessionIds: [], createdAt: '0', updatedAt: '0' }, created: true }),
       rename: r => ok(r, { workspace: { workspaceId: 'w1' as never, path: '/t', title: 't', sessionIds: [], createdAt: '0', updatedAt: '0' } }),

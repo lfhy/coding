@@ -5,9 +5,6 @@
     - button "event-sourcing researcher" [disabled]
   - img
   - text: Standard mode
-  - button "1 subagent":
-    - text: 1 subagent
-    - img
   - button "New session":
     - img
   - button "Collapse session overview" [expanded]:
@@ -67,12 +64,14 @@
 - region "Session overview":
   - button "Collapse session overview"
   - heading "Collaboration" [level=2]
-  - term: Subagents
-  - definition:
+  - button "Subagents 1":
+    - text: Subagents
     - strong: "1"
-  - term: Background tasks
-  - definition:
+    - img
+  - button "Background tasks 0":
+    - text: Background tasks
     - strong: "0"
+    - img
   - heading "Run statistics" [level=2]
   - term: Turns
   - definition: "2"

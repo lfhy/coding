@@ -41,6 +41,7 @@ import {
   workspaceInsertBeforeRequestSchema,
   workspaceInsertSessionBeforeRequestSchema,
   workspaceListRequestSchema,
+  workspaceGitStatusRequestSchema, workspaceGitPushRequestSchema, workspaceGitPullRequestSchema,
   workspaceRenameRequestSchema,
 } from '../api/workspace.schema.ts'
 import { skillListRequestSchema } from '../api/skills.schema.ts'
@@ -111,6 +112,9 @@ const UNARY_ROUTES: UnaryRoutes = {
   'host.createDirectory': { schema: hostCreateDirectoryRequestSchema, invoke: (api, r) => api.host.createDirectory(r) },
   'host.openPath': { schema: hostOpenPathRequestSchema, invoke: (api, r, signal) => api.host.openPath(r, signal) },
   'workspace.list': { schema: workspaceListRequestSchema, invoke: (api, r) => api.workspace.list(r) },
+  'workspace.gitStatus': { schema: workspaceGitStatusRequestSchema, invoke: (api, r, signal) => api.workspace.gitStatus(r, signal) },
+  'workspace.gitPush': { schema: workspaceGitPushRequestSchema, invoke: (api, r, signal) => api.workspace.gitPush(r, signal) },
+  'workspace.gitPull': { schema: workspaceGitPullRequestSchema, invoke: (api, r, signal) => api.workspace.gitPull(r, signal) },
   'workspace.create': { schema: workspaceCreateRequestSchema, invoke: (api, r) => api.workspace.create(r) },
   'workspace.rename': { schema: workspaceRenameRequestSchema, invoke: (api, r) => api.workspace.rename(r) },
   'workspace.delete': { schema: workspaceDeleteRequestSchema, invoke: (api, r) => api.workspace.delete(r) },

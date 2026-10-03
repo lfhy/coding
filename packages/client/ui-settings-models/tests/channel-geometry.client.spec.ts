@@ -14,9 +14,10 @@ describe('reference-size model settings geometry', () => {
     expect(visionCss).toContain('max-width: 560px')
   })
 
-  it('fits the wide discovery dialog within desktop and 375px viewports', () => {
-    expect(modelCss).toContain('width: min(1500px, calc(100vw - 96px))')
-    expect(modelCss).toContain('.fetchDialog { width: calc(100vw - 24px); max-width: calc(100vw - 24px); }')
+  it('fits the compact discovery dialog within desktop and 375px viewports', () => {
+    expect(modelCss).toContain('width: min(560px, calc(100vw - 48px))')
+    expect(modelCss).toContain('.fetchDialog { width: calc(100vw - 48px); }')
+    expect(modelCss).toContain('max-height: min(680px, calc(100vh - 48px))')
   })
 
   it('keeps desktop rows and avatars at the same compact scale as the settings navigation', () => {

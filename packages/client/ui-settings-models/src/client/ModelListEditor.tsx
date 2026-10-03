@@ -668,10 +668,11 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
         closeLabel={t('close')}
         description={t('fetchDescription')}
         className={styles['fetchDialog'] as string}
+        contentClassName={styles['fetchContent'] as string}
         footer={(
           <>
             <Button variant="outline" onClick={closePicker}>{t('cancel')}</Button>
-            <Button variant="outline" disabled={!selectable.some(candidate => picked.has(candidate.id))}
+            <Button variant="primary" disabled={!selectable.some(candidate => picked.has(candidate.id))}
               onClick={adoptPicked}>{t('fetchAdopt')}</Button>
           </>
         )}
@@ -685,6 +686,9 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
             placeholder={t('searchModels')} aria-label={t('searchModels')} /></label>
         </div>
         <div className={styles['candidateActions']}>
+          <span className={styles['candidateTotal']} role="status" aria-live="polite">
+            {filteredCandidates.length}/{activeCandidates.length} {t('models')}
+          </span>
           <Button variant="ghost" size="sm" disabled={selectable.length === 0} onClick={toggleAllCandidates}>
             {t(allCandidatesPicked ? 'fetchDeselectAll' : 'fetchSelectAll')}
           </Button>
@@ -702,7 +706,6 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                 checked={picked.has(candidate.id)}
                 onChange={() => { toggle(candidate.id) }} />
               <span className={styles['modelCheckboxBox']} aria-hidden="true"><IconCheckOutline14 size={12} /></span>
-              <span className={styles['candidateAvatar']} aria-hidden="true">{candidate.id.slice(0, 1).toLocaleUpperCase()}</span>
               <span className={styles['candidateId']}>{candidate.id}</span></label>
               <button type="button" className={styles['candidateAdd']} disabled={known.has(candidate.id)}
                 aria-label={`${t(known.has(candidate.id) ? 'addedModel' : 'addModel')} ${candidate.id}`}

@@ -9,6 +9,32 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { RpcRequest, RpcResponse } from './rpc.ts'
 
+/** Git 工作树中一个已变更文件及其相对仓库根的路径。 */
+export interface GitChangedFile {
+  path: string
+  status: string
+  additions: number
+  deletions: number
+}
+
+/** 当前会话目录所属 Git 仓库的状态；不属于仓库时返回 null。 */
+export interface GitStatus {
+  branch: string | null
+  ahead: number
+  behind: number
+  additions: number
+  deletions: number
+  files: GitChangedFile[]
+}
+
+/** push/pull 操作完成后的当前分支和本次自动提交信息。 */
+export interface GitOperationResult {
+  branch: string | null
+  commitCreated: boolean
+  commit?: string
+}
+
+
 /**
  * Wire-side workspace id brand. Deliberately re-declared here rather than
  * imported from dsh-workspace: api/ must stay browser-importable with zero
@@ -37,6 +63,15 @@ export interface WorkspaceView {
 
 /** Workspace-domain unary methods (the map keys workspace.* of RpcMethodMap). */
 export interface WorkspaceApi {
+  /** 查询当前会话 cwd 的 Git 状态；非 Git 目录返回 null，远端工作区显式拒绝。 */
+  gitStatus(request: RpcRequest<{ sessionId: SessionId }>, signal: AbortSignal): Promise<RpcResponse<GitStatus | null>>
+
+  /** 明确用户操作：提交该仓库全部未忽略的工作树改动，然后推送其当前上游分支。 */
+  gitPush(request: RpcRequest<{ sessionId: SessionId }>, signal: AbortSignal): Promise<RpcResponse<GitOperationResult>>
+
+  /** 从当前上游拉取；冲突以 git-conflict 错误返回，保留 Git 的冲突现场。 */
+  gitPull(request: RpcRequest<{ sessionId: SessionId }>, signal: AbortSignal): Promise<RpcResponse<GitOperationResult>>
+
   /**
    * Lists all workspaces in the registry's durable display order, plus the
    * registry-global archive set (the reconnect baseline of

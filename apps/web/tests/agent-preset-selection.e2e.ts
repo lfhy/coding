@@ -6,7 +6,7 @@
 // Two surfaces, one host rule: a session's composition is fixed when the
 // session starts. Before that, the new-session chip stages the choice beside
 // the workspace picker — the only screen where it still works. After it, the
-// session header names what the session runs and offers no control at all,
+// session header names what the session runs and offers no preset control,
 // because the host answers `agent-preset-locked` to anything else.
 //
 // Zero model calls: no replay fixture mounts, so a stray stream fails loud.
@@ -83,8 +83,8 @@ function seedLog(): string {
 }
 
 /**
- * Persist one child so the assembled header snapshot exercises both action
- * contributors whose relative order is the product contract under test.
+ * Persist one child so the assembled overview exercises its collaboration
+ * row alongside the session header's immutable preset label.
  * @param scaffold - the booted Web scaffold.
  * @param parentId - the seeded session whose header the browser opens.
  */
@@ -113,7 +113,7 @@ async function seedSubagent(scaffold: WebScaffold, parentId: SessionId): Promise
       seq: 1,
       time: createdAt + 1,
       data: {
-        content: [{ type: 'text', text: 'Check the session-header action order.' }],
+        content: [{ type: 'text', text: 'Check the overview collaboration row.' }],
         source: { kind: 'user' },
       },
       surfaceOp: 'append',
@@ -123,7 +123,7 @@ async function seedSubagent(scaffold: WebScaffold, parentId: SessionId): Promise
       seq: 2,
       time: createdAt + 2,
       data: snapshotSubagentDescriptor({
-        mode: 'one-shot', provider: 'spawn', label: 'header order probe',
+        mode: 'one-shot', provider: 'spawn', label: 'overview collaboration probe',
       }),
     },
     {
@@ -282,12 +282,17 @@ describe('web e2e: agent-preset selection', () => {
 
     await compareOrRefreshGolden(HEADER_EXPECTED, snapshot, MODE)
     expect(snapshot).toContain('Minimal mode')
-    expect(snapshot).toContain('button "1 subagent"')
-    expect(snapshot.indexOf('Minimal mode')).toBeLessThan(snapshot.indexOf('button "1 subagent"'))
-    expect(snapshot.indexOf('button "1 subagent"')).toBeLessThan(snapshot.indexOf('button "New session"'))
+    expect(snapshot).toContain('button "New session"')
     // Static chrome, not a control: the header can only report a composition
     // the host would refuse to change.
     expect(snapshot).not.toContain('button "Minimal mode"')
+    expect(snapshot).not.toContain('Subagents')
+    const overview = page.getByRole('region', { name: 'Session overview' })
+    const collaboration = overview.getByRole('button', { name: 'Subagents 1' })
+    await collaboration.waitFor({ timeout: 15_000 })
+    await collaboration.click()
+    await overview.getByRole('tree', { name: 'Subagent sessions' })
+      .getByRole('treeitem', { name: /overview collaboration probe/ }).waitFor({ timeout: 15_000 })
   })
 
   it('drove every surface without a page error or a stream warning', () => {

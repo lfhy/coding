@@ -2669,6 +2669,9 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       openPath: request => ok(request, { opened: true as const }),
     },
     workspace: {
+      gitStatus: request => ok(request, null),
+      gitPush: request => err(request, { code: 'git-unavailable', message: 'fixture has no Git repository', details: { sessionId: request.payload.sessionId, reason: 'GIT_NO_REPOSITORY' } }),
+      gitPull: request => err(request, { code: 'git-unavailable', message: 'fixture has no Git repository', details: { sessionId: request.payload.sessionId, reason: 'GIT_NO_REPOSITORY' } }),
       list: request => ok(request, {
         items: workspaces.map(w => ({ ...w })),
         archivedSessionIds: [...archivedSessionIds],
@@ -3217,6 +3220,9 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'host.createDirectory': return this.api.host.createDirectory(request)
       case 'host.openPath': return this.api.host.openPath(request, new AbortController().signal)
       case 'workspace.list': return this.api.workspace.list(request)
+      case 'workspace.gitStatus': return this.api.workspace.gitStatus(request, signal)
+      case 'workspace.gitPush': return this.api.workspace.gitPush(request, signal)
+      case 'workspace.gitPull': return this.api.workspace.gitPull(request, signal)
       case 'workspace.create': return this.api.workspace.create(request)
       case 'workspace.rename': return this.api.workspace.rename(request)
       case 'workspace.delete': return this.api.workspace.delete(request)

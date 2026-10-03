@@ -123,7 +123,7 @@ ask_user_question pauses the tool call until the active UI provider returns a hu
 
 ### `browser_use`
 
-Use a session browser to navigate, inspect accessible elements, interact by observed ref and revision, scroll, capture a screenshot, or close. Calls require approval except in full-access mode with approval prompts disabled. No selectors or scripts.
+Operate a session browser. Pass only fields for the chosen action: navigate {"action":"navigate","url":"https://example.com"}; snapshot {"action":"snapshot"}; click {"action":"click","ref":"e1","revision":1}; fill {"action":"fill","ref":"e1","revision":1,"text":"hello"}; scroll {"action":"scroll","direction":"down","pixels":500}; screenshot {"action":"screenshot"}; close {"action":"close"}. Omit unrelated fields, even if empty. Use observed ref and revision, never selectors or scripts. Approval is required unless full access disables approval prompts.
 
 ```json
 {
@@ -131,7 +131,7 @@ Use a session browser to navigate, inspect accessible elements, interact by obse
   "properties": {
     "action": {
       "type": "string",
-      "description": "One browser operation.",
+      "description": "Choose one operation: navigate requires only action/url; snapshot, screenshot, close require action only; click requires action/ref/revision; fill requires action/ref/revision/text; scroll requires action/direction/pixels.",
       "enum": [
         "navigate",
         "snapshot",
@@ -144,23 +144,23 @@ Use a session browser to navigate, inspect accessible elements, interact by obse
     },
     "url": {
       "type": "string",
-      "description": "URL for navigate."
+      "description": "Required only for navigate; omit for all other actions. Use an absolute HTTP(S) URL without credentials, at most 2048 characters."
     },
     "ref": {
       "type": "string",
-      "description": "Opaque element ref from the latest observation for click or fill."
+      "description": "Required only for click or fill; otherwise omit. Opaque element ref from the latest observation, not a selector."
     },
     "revision": {
       "type": "integer",
-      "description": "Positive observation revision paired with ref."
+      "description": "Required only for click or fill; otherwise omit. Positive observation revision paired with ref."
     },
     "text": {
       "type": "string",
-      "description": "Text for fill, at most 2000 characters."
+      "description": "Required only for fill; otherwise omit. Text to enter, at most 2000 characters."
     },
     "direction": {
       "type": "string",
-      "description": "Scroll direction.",
+      "description": "Required only for scroll; otherwise omit. Scroll direction.",
       "enum": [
         "up",
         "down"
@@ -168,7 +168,7 @@ Use a session browser to navigate, inspect accessible elements, interact by obse
     },
     "pixels": {
       "type": "integer",
-      "description": "Scroll distance, 1..2000 pixels."
+      "description": "Required only for scroll; otherwise omit. Scroll distance, 1..2000 pixels."
     }
   },
   "required": [

@@ -5,6 +5,7 @@
   - paragraph: 以下是模型提供方的可用模型，勾选要添加的模型。
   - img
   - textbox "搜索模型 ID 或名称"
+  - status: 3/3 模型目录
   - button "全选"
   - list:
     - listitem:

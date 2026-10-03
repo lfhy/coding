@@ -25,6 +25,7 @@ import type { ComposerBarProps } from '../contract/slots.ts'
 import { deriveDecorations } from '../input/decorations.ts'
 import type { DraftDecorations } from '../input/decorations.ts'
 import { attachmentErrorText, imageSizeText } from '../image-labels.ts'
+import { ImagePreparationError, prepareImage } from './prepare-image.ts'
 import { ReferenceIcon } from '../reference/ReferenceIcon.tsx'
 import { ContextMeter } from './ContextMeter.tsx'
 import { PermissionSelect } from './PermissionSelect.tsx'
@@ -411,7 +412,7 @@ export function InputBar({
       .filter(item => item.kind === 'file')
       .map(item => item.getAsFile())
       .filter((file): file is File => file !== null)
-    if (files.length > 0) intakeImages(files)
+    if (files.length > 0) void intakeImages(files)
     const text = e.clipboardData.getData('text/plain')
     if (text === '') {
       if (files.length > 0) e.preventDefault()
@@ -430,36 +431,49 @@ export function InputBar({
     keyboard.track(keyboard.snapshot.draft, caret)
   }
 
-  // Intake pre-check (DeepSeek Chat semantics): an addition that would break
-  // a projected limit is refused as a whole batch, announced immediately, and
-  // never enters the rail — no more submit-time failure rolling the rail
-  // back. The host enforces the same limits at submit for callers that bypass
-  // this composer.
-  const intakeImages = useCallback((files: readonly File[]): void => {
+  // 会话切换或卸载后，晚到的解码结果不得加入新草稿。
+  const intakeGeneration = useRef(0)
+  useEffect(() => {
+    intakeGeneration.current++
+    return () => { intakeGeneration.current++ }
+  }, [sessionId])
+  const intakeImages = useCallback(async (files: readonly File[]): Promise<void> => {
     if (addImages === undefined || files.length === 0) return
-    const rejected = ((): string | null => {
+    // 格式错误先于解码、数量与大小限制反馈。
+    if (imageLimits !== undefined && files.some(file => !(imageLimits.mediaTypes as readonly string[]).includes(file.type))) {
+      const rejection = addImages(files)
+      if (rejection !== null) showToast(rejection)
+      return
+    }
+    const generation = ++intakeGeneration.current
+    const current = () => generation === intakeGeneration.current
+    try {
+      const prepared = imageLimits === undefined ? files : await Promise.all(files.map(file => prepareImage(file, imageLimits)))
+      if (!current()) return
       if (imageLimits !== undefined) {
-        // Format precedes limits (DeepSeek Chat's filter order): a batch with
-        // a non-image must announce the format problem, not a count or size
-        // it could never pass anyway — addImages rejects it authoritatively.
-        if (files.some(file => !(imageLimits.mediaTypes as readonly string[]).includes(file.type))) {
-          return addImages(files)
+        if (attachments.length + prepared.length > imageLimits.maxImagesPerMessage) {
+          showToast(t('image.tooMany', { count: imageLimits.maxImagesPerMessage }))
+          return
         }
-        if (attachments.length + files.length > imageLimits.maxImagesPerMessage) {
-          return t('image.tooMany', { count: imageLimits.maxImagesPerMessage })
-        }
-        if (files.some(file => file.size > imageLimits.maxImageBytes)) {
-          return t('image.fileTooLarge', { size: imageSizeText(imageLimits.maxImageBytes) })
+        if (prepared.some(file => file.size > imageLimits.maxImageBytes)) {
+          showToast(t('image.fileTooLarge', { size: imageSizeText(imageLimits.maxImageBytes) }))
+          return
         }
         const total = attachments.reduce((sum, attachment) => sum + attachment.file.size, 0)
-          + files.reduce((sum, file) => sum + file.size, 0)
+          + prepared.reduce((sum, file) => sum + file.size, 0)
         if (total > imageLimits.maxMessageImageBytes) {
-          return t('image.totalTooLarge', { size: imageSizeText(imageLimits.maxMessageImageBytes) })
+          showToast(t('image.totalTooLarge', { size: imageSizeText(imageLimits.maxMessageImageBytes) }))
+          return
         }
       }
-      return addImages(files)
-    })()
-    if (rejected !== null) showToast(rejected)
+      const rejected = addImages(prepared)
+      if (rejected !== null) showToast(rejected)
+    } catch (error) {
+      if (!current()) return
+      showToast(error instanceof ImagePreparationError
+        ? t(error.reason === 'gif' ? 'image.gifTooLarge' : error.reason === 'decode' ? 'image.decodeFailed' : 'image.resizeFailed')
+        : t('image.resizeFailed'))
+    }
   }, [addImages, attachments, imageLimits, showToast, t])
 
   const canAcceptDrop = !locked && !machineBusy && addImages !== undefined
@@ -633,7 +647,7 @@ export function InputBar({
         {renderSlot('conversation.input.attachments', {
           attachments,
           canAcceptDrop,
-          onAddImages: intakeImages,
+          onAddImages: (files) => { void intakeImages(files) },
           onRemoveImage: (id) => { removeImage?.(id) },
           dropLimits: imageLimits === undefined ? undefined : {
             count: imageLimits.maxImagesPerMessage,

@@ -218,6 +218,9 @@ export class FakeApiClient implements IApiClient {
     payload => Promise.resolve(ok({ archivedSessionIds: [(payload as { sessionId: SessionId }).sessionId] }))
 
   readonly workspace: IApiClient['workspace'] = {
+    gitStatus: (payload: unknown) => this.record('workspace.gitStatus', payload, Promise.resolve(ok(null))),
+    gitPush: (payload: unknown) => this.record('workspace.gitPush', payload, Promise.resolve(ok({ branch: 'main', commitCreated: false }))),
+    gitPull: (payload: unknown) => this.record('workspace.gitPull', payload, Promise.resolve(ok({ branch: 'main', commitCreated: false }))),
     list: (payload: unknown) => this.record('workspace.list', payload, this.onWorkspaceList(payload).then(response => (
       response.result.ok
         ? { ...response, result: { ok: true as const, value: { archivedSessionIds: [] as never[], ...response.result.value } } }

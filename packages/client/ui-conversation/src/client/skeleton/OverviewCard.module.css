@@ -38,6 +38,10 @@
   gap: 12px;
 }
 
+.countRow {
+  gap: 6px;
+}
+
 .close {
   position: absolute;
   top: 10px;
@@ -68,7 +72,14 @@
   outline-offset: 2px;
 }
 
-.group + .group {
+.group + .group,
+.group + [data-overview-git] {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+
+[data-overview-git] + .group {
   margin-top: 16px;
   padding-top: 16px;
   border-top: 1px solid var(--dsw-alias-border-l2);
@@ -93,9 +104,49 @@
 
 .countRow {
   justify-content: flex-start;
-  min-height: 20px;
+  min-height: 28px;
+  width: 100%;
+  padding: 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
   font: var(--dsw-font-xs-13);
   color: var(--dsw-alias-label-primary);
+}
+
+.countRow:hover,
+.countRow:focus-visible {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.countRow:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+}
+
+.collaborationEntry {
+  min-width: 0;
+}
+
+.collaborationDetail {
+  min-width: 0;
+  padding: 4px 0 4px 8px;
+}
+
+.collaborationDetail[hidden] {
+  display: none;
+}
+
+.chevron,
+.chevronOpen {
+  flex: none;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.chevronOpen {
+  transform: rotate(90deg);
 }
 
 .rowIcon {
@@ -108,11 +159,11 @@
   color: var(--dsw-alias-label-secondary);
 }
 
-.countRow dt {
+.countLabel {
   flex: 1;
 }
 
-.countRow dd,
+.countValue,
 .metrics dd {
   margin: 0;
   text-align: right;
@@ -120,17 +171,17 @@
   white-space: nowrap;
 }
 
-.countRow dd {
+.countValue {
   display: flex;
   align-items: baseline;
   gap: 6px;
 }
 
-.countRow strong {
+.countValue strong {
   font: var(--dsw-font-xs-strong-13);
 }
 
-.countRow dd span {
+.countValue span {
   font: var(--dsw-font-xxs-12);
   color: var(--dsw-alias-label-secondary);
 }

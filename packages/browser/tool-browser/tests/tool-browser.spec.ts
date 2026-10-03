@@ -613,6 +613,56 @@ describe('browser_use', () => {
     expect(failed.content.every(block => block.type === 'text')).toBe(true)
   })
 
+  it.each([
+    [{ action: 'navigate', url: 'https://example.com', pixels: 10 }, 'navigate', 'pixels', 'action, url'],
+    [{ action: 'snapshot', url: 'https://example.com' }, 'snapshot', 'url', 'action'],
+    [{ action: 'click', ref: 'e1', revision: 1, text: 'x' }, 'click', 'text', 'action, ref, revision'],
+    [{ action: 'fill', ref: 'e1', revision: 1, text: 'x', url: 'https://example.com' }, 'fill', 'url', 'action, ref, revision, text'],
+    [{ action: 'scroll', direction: 'up', pixels: 10, ref: 'e1' }, 'scroll', 'ref', 'action, direction, pixels'],
+    [{ action: 'screenshot', direction: 'up' }, 'screenshot', 'direction', 'action'],
+    [{ action: 'close', revision: 1 }, 'close', 'revision', 'action'],
+  ] as const)('explains unexpected fields for $1 without executing', async (args, action, field, allowed) => {
+    const { ctx, call } = await setup(true, { mode: 'danger-full-access', policy: 'never' })
+    const result = await call(args)
+    expect(result.isError).toBe(true)
+    const correction = action === 'navigate'
+      ? '. Use {"action":"navigate","url":"https://example.com"}; omit all other fields.'
+      : '.'
+    expect(text(result)).toContain(`browser_use: unexpected field for ${action}: ${field}; only ${allowed} allowed${correction}`)
+    expect((ctx.browserUse as FakeBrowser).commands).not.toHaveBeenCalled()
+  })
+
+  it('rejects unrelated fields even when their values are empty', async () => {
+    const { ctx, call } = await setup(true, { mode: 'danger-full-access', policy: 'never' })
+    const result = await call({ action: 'navigate', url: 'https://example.com', ref: '', pixels: 0 })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('unexpected field for navigate: ref, pixels; only action, url allowed')
+    expect((ctx.browserUse as FakeBrowser).commands).not.toHaveBeenCalled()
+  })
+
+  it('describes exact action-specific examples and optional-field omission in the published schema', async () => {
+    const { ctx } = await setup()
+    const schema = ctx.tools.schemas().find(tool => tool.name === 'browser_use')!
+    expect(schema.description).toContain('navigate {"action":"navigate","url":"https://example.com"}')
+    expect(schema.description).toContain('snapshot {"action":"snapshot"}')
+    expect(schema.description).toContain('click {"action":"click","ref":"e1","revision":1}')
+    expect(schema.description).toContain('fill {"action":"fill","ref":"e1","revision":1,"text":"hello"}')
+    expect(schema.description).toContain('scroll {"action":"scroll","direction":"down","pixels":500}')
+    expect(schema.description).toContain('screenshot {"action":"screenshot"}')
+    expect(schema.description).toContain('close {"action":"close"}')
+    expect(schema.description).toContain('Omit unrelated fields, even if empty.')
+    const parameters = JSON.stringify(schema.parameters)
+    expect(parameters).toContain('navigate requires only action/url')
+    expect(parameters).toContain('fill requires action/ref/revision/text')
+    expect(parameters).toContain('snapshot, screenshot, close require action only')
+    for (const guidance of [
+      'Required only for navigate; omit for all other actions',
+      'Required only for click or fill; otherwise omit',
+      'Required only for fill; otherwise omit',
+      'Required only for scroll; otherwise omit',
+    ]) expect(parameters).toContain(guidance)
+  })
+
   it('rejects mismatched fields and bounds before approval or browser execution', async () => {
     const { ctx, call } = await setup()
     const asked = vi.fn(() => Promise.resolve('allowed-once' as const))

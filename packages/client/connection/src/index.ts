@@ -119,6 +119,10 @@ const PRIVILEGED_METHODS = new Set([
   'agentPreset.remove',
   'host.pickDirectory',
   'host.openPath',
+  // Git push/pull 会写仓库并联系远端；状态也披露本机文件路径，均限定回环同源。
+  'workspace.gitStatus',
+  'workspace.gitPush',
+  'workspace.gitPull',
   // 人工导航能驱动本地浏览器访问 Host 可达的地址，仅允许回环同源调用。
   'browser.control',
   'settings.describe',

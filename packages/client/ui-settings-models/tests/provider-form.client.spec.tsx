@@ -654,8 +654,11 @@ describe('endpoint interrogation', () => {
     openEditor('openai')
     fireEvent.click(screen.getByRole('button', { name: en.fetchModels }))
     const dialog = await screen.findByRole('dialog', { name: `openai ${en.models}` })
+    expect(within(dialog).getByRole('status').textContent).toBe(`3/3 ${en.models}`)
+    expect(within(dialog).getByRole('button', { name: en.fetchAdopt }).hasAttribute('disabled')).toBe(true)
     fireEvent.change(within(dialog).getByRole('textbox', { name: en.searchModels }),
       { target: { value: 'flash' } })
+    expect(within(dialog).getByRole('status').textContent).toBe(`1/3 ${en.models}`)
     expect(within(dialog).getByRole('checkbox', { name: 'acme-2.5-flash' })).toBeTruthy()
     expect(within(dialog).queryByRole('checkbox', { name: 'acme-2.5-pro' })).toBeNull()
     fireEvent.click(within(dialog).getByRole('button', { name: `${en.addModel} acme-2.5-flash` }))

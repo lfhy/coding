@@ -8,10 +8,14 @@
 // the commands/execute payload — and clears the composer on success, including
 // when the image is the whole `/plan` task.
 import { fireEvent, screen, waitFor } from '@testing-library/react'
-import { expect, it } from 'vitest'
+import { beforeEach, expect, it, vi } from 'vitest'
 import { installAssembledBootEnv, mountAssembledApp } from './assembled-boot.ts'
 
 installAssembledBootEnv()
+
+beforeEach(() => {
+  vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 1, height: 1, close: vi.fn() })))
+})
 
 /** Open a fresh fixture session and return its composer textarea. */
 async function freshComposer(): Promise<HTMLTextAreaElement> {
