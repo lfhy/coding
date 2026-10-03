@@ -1,2 +1,3 @@
-- list "Background jobs":
-  - listitem: bash sleep 45 running {{duration}}
+- region "Background tasks":
+  - list "Background jobs":
+    - listitem: bash sleep 45 running {{duration}}

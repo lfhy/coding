@@ -291,7 +291,8 @@ describe('web e2e: agent-preset selection', () => {
     const collaboration = overview.getByRole('button', { name: 'Subagents 1' })
     await collaboration.waitFor({ timeout: 15_000 })
     await collaboration.click()
-    await overview.getByRole('tree', { name: 'Subagent sessions' })
+    await page.getByRole('region', { name: 'Subagents' })
+      .getByRole('tree', { name: 'Subagent sessions' })
       .getByRole('treeitem', { name: /overview collaboration probe/ }).waitFor({ timeout: 15_000 })
   })
 

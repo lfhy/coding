@@ -71,14 +71,18 @@ export function GitOverview({ sessionId, status, operate, resolveConflict, t }: 
 
   return (
     <section data-overview-git className={css.root} aria-label={t('overview.git.title')}>
-      <h2 className={css.title}>{t('overview.git.title')}</h2>
-      {git.branch && <p className={css.branch}>{git.branch}</p>}
-      <p className={css.summary}>{t('overview.git.changes', {
-        count: git.files.length, additions: git.additions, deletions: git.deletions,
-      })}</p>
-      {(git.ahead > 0 || git.behind > 0) && <p className={css.summary}>{t('overview.git.sync', {
-        ahead: git.ahead, behind: git.behind,
-      })}</p>}
+      <div className={css.header}>
+        <h2 className={css.title}>{t('overview.git.title')}</h2>
+        {git.branch && <span className={css.branch} title={git.branch}>{git.branch}</span>}
+      </div>
+      <div className={css.metrics}>
+        <p className={css.changes}>{t('overview.git.changes', {
+          count: git.files.length, additions: git.additions, deletions: git.deletions,
+        })}</p>
+        {(git.ahead > 0 || git.behind > 0) && <p className={css.sync}>{t('overview.git.sync', {
+          ahead: git.ahead, behind: git.behind,
+        })}</p>}
+      </div>
       <div className={css.actions}>
         <button type="button" disabled={busy !== null} onClick={() => { void run('push') }}>
           {busy === 'push' ? t('overview.git.pushRunning') : t('overview.git.push')}
@@ -87,7 +91,7 @@ export function GitOverview({ sessionId, status, operate, resolveConflict, t }: 
           {busy === 'pull' ? t('overview.git.pullRunning') : t('overview.git.pull')}
         </button>
       </div>
-      {notice === 'done' && <p role="status" className={css.summary}>{t('overview.git.done')}</p>}
+      {notice === 'done' && <p role="status" className={css.notice}>{t('overview.git.done')}</p>}
       {notice === 'conflict' && <div role="alert" className={css.feedback}>
         <p>{t('overview.git.conflict')}</p>
         <button type="button" disabled={busy !== null} onClick={() => { void solve() }}>

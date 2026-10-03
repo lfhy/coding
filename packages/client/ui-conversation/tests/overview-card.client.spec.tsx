@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, within } from '@testing-library/react'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import {
   createSnapshotStore, EMPTY_CHAT_SNAPSHOT, EMPTY_CONVERSATION_VIEWS,
@@ -125,6 +125,115 @@ describe('session overview card', () => {
     expect(view.queryByRole('region', { name: '会话概览' })).toBeNull()
     view.rerender(<OverviewCard {...panel} overviewExpanded />)
     expect(view.getByRole('region', { name: '会话概览' })).toBeTruthy()
+  })
+
+  it('layers a long catalog outside the scroll-clipped card without shifting Git or statistics', () => {
+    const panel = props()
+    panel.renderSlot = ((name: string, owner: { collapse?: () => void }) => name === 'conversation.overview.git'
+      ? <div data-overview-git="">Git marker</div>
+      : name === 'conversation.overview.subagents'
+        ? <div>{Array.from({ length: 20 }, (_, index) => <button type="button" key={index} onClick={owner.collapse}>Child {index}</button>)}</div>
+        : <button type="button" onClick={owner.collapse}>Job</button>) as OverviewCardProps['renderSlot']
+    const view = render(<OverviewCard {...panel} />)
+    const card = view.getByRole('region', { name: '会话概览' })
+    const git = view.getByText('Git marker')
+    const stats = view.getByRole('heading', { name: '运行统计' })
+    const cardChildren = Array.from(card.children)
+    fireEvent.click(view.getByRole('button', { name: /子代理/ }))
+    const layer = view.getByRole('region', { name: '子代理' })
+    expect(layer.parentElement).toBe(document.body)
+    expect(view.getByRole('button', { name: /子代理/ }).getAttribute('aria-controls')).toBe(layer.id)
+    expect(card.contains(layer)).toBe(false)
+    expect(within(layer).getAllByRole('button')).toHaveLength(20)
+    expect(layer.style.maxHeight).not.toBe('')
+    expect(card.children.length).toBe(cardChildren.length)
+    expect(Array.from(card.children)).toEqual(cardChildren)
+    expect(card.contains(git)).toBe(true)
+    expect(card.contains(stats)).toBe(true)
+    fireEvent.click(view.getByRole('button', { name: /后台任务/ }))
+    expect(view.queryByRole('region', { name: '子代理' })).toBeNull()
+    expect(view.getByRole('region', { name: '后台任务' }).parentElement).toBe(document.body)
+  })
+
+  it('positions the layer near viewport edges and follows card scrolling', () => {
+    const originalWidth = window.innerWidth
+    const originalHeight = window.innerHeight
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 375 })
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 400 })
+    try {
+      const view = render(<OverviewCard {...props()} />)
+      const anchor = view.getByRole('button', { name: /子代理/ })
+      let top = 340
+      vi.spyOn(anchor, 'getBoundingClientRect').mockImplementation(() => ({
+        top, bottom: top + 28, left: 320, right: 360, width: 40, height: 28,
+      }) as DOMRect)
+      fireEvent.click(anchor)
+      const layer = view.getByRole('region', { name: '子代理' })
+      expect(parseFloat(layer.style.left)).toBeLessThanOrEqual(375 - 12 - 288)
+      expect(parseFloat(layer.style.top)).toBeLessThan(top)
+      expect(parseFloat(layer.style.maxHeight)).toBeLessThanOrEqual(400 - 24)
+      top = 20
+      fireEvent.scroll(view.getByRole('region', { name: '会话概览' }))
+      expect(parseFloat(layer.style.top)).toBeGreaterThan(top)
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalWidth })
+      Object.defineProperty(window, 'innerHeight', { configurable: true, value: originalHeight })
+    }
+  })
+
+  it('supports ArrowDown navigation, Escape focus return and outside dismissal', async () => {
+    const panel = props()
+    panel.renderSlot = ((name: string, owner: { collapse?: () => void }) => name === 'conversation.overview.git'
+      ? null
+      : <button type="button" role="treeitem" onClick={owner.collapse}>{name}</button>) as OverviewCardProps['renderSlot']
+    const view = render(<OverviewCard {...panel} />)
+    const anchor = view.getByRole('button', { name: /子代理/ })
+    anchor.focus()
+    fireEvent.keyDown(anchor, { key: 'ArrowDown' })
+    await vi.waitFor(() => { expect(document.activeElement).toBe(view.getByRole('treeitem')) })
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await vi.waitFor(() => { expect(document.activeElement).toBe(anchor) })
+    expect(view.queryByRole('region', { name: '子代理' })).toBeNull()
+    fireEvent.click(anchor)
+    fireEvent.pointerDown(document.body)
+    expect(view.queryByRole('region', { name: '子代理' })).toBeNull()
+    fireEvent.click(anchor)
+    fireEvent.click(view.getByRole('treeitem'))
+    await vi.waitFor(() => { expect(document.activeElement).toBe(anchor) })
+  })
+
+  it('closes on outside focus, overview collapse, and session change without reusing another instance ID', () => {
+    const panel = props()
+    const view = render(<><OverviewCard {...panel} /><OverviewCard {...panel} /></>)
+    const anchors = view.getAllByRole('button', { name: /子代理/ })
+    expect(anchors[0]!.getAttribute('aria-controls')).not.toBe(anchors[1]!.getAttribute('aria-controls'))
+    fireEvent.click(anchors[0]!)
+    const layer = view.getByRole('region', { name: '子代理' })
+    expect(anchors[0]!.getAttribute('aria-controls')).toBe(layer.id)
+    view.unmount()
+
+    const single = render(<OverviewCard {...panel} />)
+    const anchor = single.getByRole('button', { name: /子代理/ })
+    const outside = document.createElement('button')
+    document.body.append(outside)
+    try {
+      fireEvent.click(anchor)
+      anchor.focus()
+      expect(single.getByRole('region', { name: '子代理' })).toBeTruthy()
+      act(() => { outside.focus() })
+      expect(document.activeElement).toBe(outside)
+      expect(single.queryByRole('region', { name: '子代理' })).toBeNull()
+      fireEvent.click(anchor)
+      single.rerender(<OverviewCard {...panel} overviewExpanded={false} />)
+      expect(single.queryByRole('region', { name: '子代理' })).toBeNull()
+      single.rerender(<OverviewCard {...panel} overviewExpanded />)
+      expect(anchor.getAttribute('aria-expanded')).toBe('false')
+      fireEvent.click(anchor)
+      single.rerender(<OverviewCard {...panel} sessionId={OTHER} />)
+      expect(single.queryByRole('region', { name: '子代理' })).toBeNull()
+    } finally {
+      outside.remove()
+    }
   })
 
   it('falls back to visible steps without projections and omits unknown timings and billing', () => {

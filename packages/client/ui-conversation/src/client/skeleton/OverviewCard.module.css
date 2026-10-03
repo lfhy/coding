@@ -130,13 +130,19 @@
   min-width: 0;
 }
 
-.collaborationDetail {
+.collaborationPopover {
+  position: fixed;
+  z-index: 1100;
+  box-sizing: border-box;
+  overflow-y: auto;
   min-width: 0;
-  padding: 4px 0 4px 8px;
-}
-
-.collaborationDetail[hidden] {
-  display: none;
+  padding: 8px;
+  border: 1px solid var(--dsw-alias-border-inverted);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-3);
+  box-shadow: var(--dsw-shadow-lv3);
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
 .chevron,

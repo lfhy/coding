@@ -101,11 +101,12 @@ describe.skipIf(MODE === 'record')('web e2e: background job list', () => {
 
     await expect.poll(() => trigger.textContent(), { timeout: 15_000 }).toContain('1 running')
     await trigger.click()
-    const row = overview.getByRole('list', { name: 'Background jobs' }).getByRole('listitem').first()
+    const row = page.getByRole('region', { name: 'Background tasks' })
+      .getByRole('list', { name: 'Background jobs' }).getByRole('listitem').first()
     await row.waitFor({ timeout: 10_000 })
     await expect.poll(() => row.textContent()).toContain(COMMAND)
 
-    const snapshot = await captureStableAria(page, '#dsh-overview-jobs', scaffold.workspaceCwd)
+    const snapshot = await captureStableAria(page, '[role="region"][aria-label="Background tasks"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(RUNNING_EXPECTED, snapshot, MODE)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
@@ -121,7 +122,7 @@ describe.skipIf(MODE === 'record')('web e2e: background job list', () => {
       .getByRole('button', { name: 'Background tasks 1', exact: true })
     await idle.waitFor({ timeout: 20_000 })
 
-    const snapshot = await captureStableAria(page, '#dsh-overview-jobs', scaffold.workspaceCwd)
+    const snapshot = await captureStableAria(page, '[role="region"][aria-label="Background tasks"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(SETTLED_EXPECTED, snapshot, MODE)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
