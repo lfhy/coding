@@ -43,6 +43,7 @@ export interface RpcErrorDetailsMap {
   'workspace-invalid-path': { path: string }
   'git-unavailable': { sessionId: SessionId; reason: string }
   'git-conflict': { sessionId: SessionId; reason: string }
+  'git-branch-not-found': { sessionId: SessionId; reason: string }
   'workspace-name-conflict': { name: string }
   'workspace-move-invalid': { workspaceId: string; sessionId: SessionId; beforeSessionId?: SessionId }
   'directory-unreadable': { path: string }

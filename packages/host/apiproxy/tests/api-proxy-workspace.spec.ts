@@ -337,6 +337,10 @@ describe('session-bound workspace Git RPC', () => {
     const sessionId = SessionId('git-workspace')
     expectOk(await api.sessions.create(request({ cwd: stageDir(root, 'project'), sessionId })))
     expect(expectOk(await api.workspace.gitStatus(request({ sessionId }), new AbortController().signal))).toBeNull()
+    expect(expectOk(await api.workspace.gitBranches(request({ sessionId }), new AbortController().signal))).toBeNull()
+    expect((await api.workspace.gitCheckout(request({ sessionId, branch: 'main' }), new AbortController().signal)).result).toMatchObject({
+      ok: false, error: { code: 'git-unavailable', details: { reason: 'GIT_NO_REPOSITORY', sessionId } },
+    })
     expect((await api.workspace.gitPush(request({ sessionId }), new AbortController().signal)).result).toMatchObject({
       ok: false, error: { code: 'git-unavailable', details: { reason: 'GIT_NO_REPOSITORY', sessionId } },
     })

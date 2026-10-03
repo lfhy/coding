@@ -27,6 +27,12 @@ export interface GitStatus {
   files: GitChangedFile[]
 }
 
+/** 仓库的全部本地分支及当前分支；游离 HEAD 的 current 为 null。 */
+export interface GitBranches {
+  branches: string[]
+  current: string | null
+}
+
 /** push/pull 操作完成后的当前分支和本次自动提交信息。 */
 export interface GitOperationResult {
   branch: string | null
@@ -65,6 +71,12 @@ export interface WorkspaceView {
 export interface WorkspaceApi {
   /** 查询当前会话 cwd 的 Git 状态；非 Git 目录返回 null，远端工作区显式拒绝。 */
   gitStatus(request: RpcRequest<{ sessionId: SessionId }>, signal: AbortSignal): Promise<RpcResponse<GitStatus | null>>
+
+  /** 查询已有本地分支；非 Git 目录返回 null，远端工作区显式拒绝。 */
+  gitBranches(request: RpcRequest<{ sessionId: SessionId }>, signal: AbortSignal): Promise<RpcResponse<GitBranches | null>>
+
+  /** 只切换已有本地分支；未提交改动阻止切换，成功后返回最新状态。 */
+  gitCheckout(request: RpcRequest<{ sessionId: SessionId; branch: string }>, signal: AbortSignal): Promise<RpcResponse<GitStatus>>
 
   /** 明确用户操作：提交该仓库全部未忽略的工作树改动，然后推送其当前上游分支。 */
   gitPush(request: RpcRequest<{ sessionId: SessionId }>, signal: AbortSignal): Promise<RpcResponse<GitOperationResult>>

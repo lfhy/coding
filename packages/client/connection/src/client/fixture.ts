@@ -2670,6 +2670,8 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     },
     workspace: {
       gitStatus: request => ok(request, null),
+      gitBranches: request => ok(request, null),
+      gitCheckout: request => err(request, { code: 'git-unavailable', message: 'fixture has no Git repository', details: { sessionId: request.payload.sessionId, reason: 'GIT_NO_REPOSITORY' } }),
       gitPush: request => err(request, { code: 'git-unavailable', message: 'fixture has no Git repository', details: { sessionId: request.payload.sessionId, reason: 'GIT_NO_REPOSITORY' } }),
       gitPull: request => err(request, { code: 'git-unavailable', message: 'fixture has no Git repository', details: { sessionId: request.payload.sessionId, reason: 'GIT_NO_REPOSITORY' } }),
       list: request => ok(request, {
@@ -3221,6 +3223,8 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'host.openPath': return this.api.host.openPath(request, new AbortController().signal)
       case 'workspace.list': return this.api.workspace.list(request)
       case 'workspace.gitStatus': return this.api.workspace.gitStatus(request, signal)
+      case 'workspace.gitBranches': return this.api.workspace.gitBranches(request, signal)
+      case 'workspace.gitCheckout': return this.api.workspace.gitCheckout(request, signal)
       case 'workspace.gitPush': return this.api.workspace.gitPush(request, signal)
       case 'workspace.gitPull': return this.api.workspace.gitPull(request, signal)
       case 'workspace.create': return this.api.workspace.create(request)

@@ -85,6 +85,8 @@ function scriptedApi(overrides: {
     },
     workspace: {
       gitStatus: r => ok(r, null),
+      gitBranches: r => ok(r, null),
+      gitCheckout: r => ok(r, { branch: r.payload.branch, ahead: 0, behind: 0, additions: 0, deletions: 0, files: [] }),
       gitPush: r => ok(r, { branch: 'main', commitCreated: false }),
       gitPull: r => ok(r, { branch: 'main', commitCreated: false }),
       list: r => ok(r, { items: [], archivedSessionIds: [] }),

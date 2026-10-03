@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { workspaceGitPull, workspaceGitPush, workspaceGitStatus } from '../src/workspace-git.ts'
+import { workspaceGitBranches, workspaceGitCheckout, workspaceGitPull, workspaceGitPush, workspaceGitStatus } from '../src/workspace-git.ts'
 
 const roots: string[] = []
 const signal = new AbortController().signal
@@ -35,6 +35,8 @@ describe('standalone workspace Git', () => {
   it('returns null outside a repository and rejects write operations', async () => {
     const root = temp()
     expect(await workspaceGitStatus(root, signal)).toBeNull()
+    expect(await workspaceGitBranches(root, signal)).toBeNull()
+    await expect(workspaceGitCheckout(root, signal, 'main')).rejects.toMatchObject({ code: 'GIT_NO_REPOSITORY' })
     await expect(workspaceGitPush(root, signal)).rejects.toMatchObject({ code: 'GIT_NO_REPOSITORY' })
     await expect(workspaceGitPull(root, signal)).rejects.toMatchObject({ code: 'GIT_NO_REPOSITORY' })
   })
@@ -96,6 +98,46 @@ describe('standalone workspace Git', () => {
       { path: 'renamed.txt', status: 'RM', additions: 2, deletions: 0 },
       { path: 'after.txt', status: 'A ', additions: 1, deletions: 0 },
     ]))
+  })
+
+  it('lists local branches and switches only when the working tree is clean', async () => {
+    const root = repo()
+    const original = git(root, 'branch', '--show-current')
+    git(root, 'branch', 'feature')
+    git(root, 'branch', 'other/nested')
+    git(root, 'update-ref', 'refs/remotes/origin/remote-only', 'HEAD')
+    expect(git(root, 'branch', '-r')).toContain('origin/remote-only')
+    expect(await workspaceGitBranches(root, signal)).toEqual({
+      branches: ['feature', 'other/nested', original].sort((a, b) => a.localeCompare(b)), current: original,
+    })
+    await expect(workspaceGitCheckout(root, signal, 'missing')).rejects.toMatchObject({ code: 'GIT_BRANCH_NOT_FOUND' })
+    writeFileSync(join(root, 'new.txt'), 'untracked\n')
+    await expect(workspaceGitCheckout(root, signal, 'feature')).rejects.toMatchObject({ code: 'GIT_CONFLICT' })
+    expect(git(root, 'branch', '--show-current')).toBe(original)
+    rmSync(join(root, 'new.txt'))
+    expect(await workspaceGitCheckout(root, signal, 'feature')).toMatchObject({ branch: 'feature', files: [] })
+    expect(await workspaceGitBranches(root, signal)).toMatchObject({ current: 'feature' })
+    git(root, 'checkout', '--detach', '-q')
+    expect(await workspaceGitBranches(root, signal)).toMatchObject({ current: null })
+    expect(await workspaceGitCheckout(root, signal, original)).toMatchObject({ branch: original })
+  })
+
+  it('does not overwrite ignored files when switching to a branch that tracks their path', async () => {
+    const root = repo()
+    const original = git(root, 'branch', '--show-current')
+    git(root, 'switch', '-qc', 'feature')
+    writeFileSync(join(root, 'private.txt'), 'branch content\n')
+    git(root, 'add', 'private.txt')
+    git(root, 'commit', '-qm', 'add private file')
+    git(root, 'switch', '-q', original)
+    writeFileSync(join(root, '.gitignore'), 'private.txt\n')
+    git(root, 'add', '.gitignore')
+    git(root, 'commit', '-qm', 'ignore private file')
+    writeFileSync(join(root, 'private.txt'), 'local secret\n')
+    expect((await workspaceGitStatus(root, signal))?.files).toEqual([])
+    await expect(workspaceGitCheckout(root, signal, 'feature')).rejects.toMatchObject({ code: 'GIT_CONFLICT' })
+    expect(readFileSync(join(root, 'private.txt'), 'utf8')).toBe('local secret\n')
+    expect(git(root, 'branch', '--show-current')).toBe(original)
   })
 
   it('requires an upstream before staging; explicitly pushes non-ignored changes', async () => {

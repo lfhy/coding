@@ -46,6 +46,8 @@ export interface RpcMethodMap {
   'host.openPath': HostApi['openPath']
   'workspace.list': WorkspaceApi['list']
   'workspace.gitStatus': WorkspaceApi['gitStatus']
+  'workspace.gitBranches': WorkspaceApi['gitBranches']
+  'workspace.gitCheckout': WorkspaceApi['gitCheckout']
   'workspace.gitPush': WorkspaceApi['gitPush']
   'workspace.gitPull': WorkspaceApi['gitPull']
   'workspace.create': WorkspaceApi['create']

@@ -294,6 +294,16 @@ export function apply(ctx: Context): void {
         if (!response.result.ok) throw new Error(response.result.error.message)
         return response.result.value
       },
+      branches: async (sessionId) => {
+        const response = await connection.api.workspace.gitBranches({ sessionId })
+        if (!response.result.ok) throw new Error(response.result.error.message)
+        return response.result.value
+      },
+      checkout: async (sessionId, branch) => {
+        const response = await connection.api.workspace.gitCheckout({ sessionId, branch })
+        if (!response.result.ok) throw new Error(response.result.error.message)
+        return response.result.value
+      },
       operate: async (sessionId, action) => {
         const response = action === 'push'
           ? await connection.api.workspace.gitPush({ sessionId })

@@ -14,6 +14,12 @@ export interface GitStatus {
   files: Array<{ path: string; status: string; additions: number; deletions: number }>
 }
 
+/** 当前仓库的本地分支列表与 HEAD 所指分支；游离 HEAD 的 current 为 null。 */
+export interface GitBranches {
+  branches: string[]
+  current: string | null
+}
+
 /** 写操作的提交结果；pull 不创建提交。 */
 export interface GitOperationResult {
   branch: string | null
@@ -24,7 +30,7 @@ export interface GitOperationResult {
 /** 可供调用方区别环境、仓库、上游和冲突的失败。 */
 export class GitOperationError extends Error {
   constructor(
-    public readonly code: 'GIT_UNAVAILABLE' | 'GIT_NO_REPOSITORY' | 'GIT_REMOTE_UNAVAILABLE' | 'GIT_CONFLICT' | 'GIT_FAILED',
+    public readonly code: 'GIT_UNAVAILABLE' | 'GIT_NO_REPOSITORY' | 'GIT_REMOTE_UNAVAILABLE' | 'GIT_CONFLICT' | 'GIT_FAILED' | 'GIT_BRANCH_NOT_FOUND',
     message: string,
   ) {
     super(message)
@@ -205,6 +211,31 @@ export async function workspaceGitStatus(cwd: string, signal: AbortSignal): Prom
     additions: files.reduce((sum, file) => sum + file.additions, 0),
     deletions: files.reduce((sum, file) => sum + file.deletions, 0),
   }
+}
+
+/** 返回全部本地分支；非仓库返回 null，远程 marker 从不调用本机 Git。 */
+export async function workspaceGitBranches(cwd: string, signal: AbortSignal): Promise<GitBranches | null> {
+  if (!await guard(cwd, signal)) return null
+  const raw = await checked(cwd, signal, ['for-each-ref', '--format=%(refname:short)', 'refs/heads'])
+  return {
+    branches: raw.split('\n').filter(Boolean).sort((a, b) => a.localeCompare(b)),
+    current: await branchName(cwd, signal),
+  }
+}
+
+/** 仅切换已有本地分支；切换前拒绝脏工作树，并返回切换后的最新状态。 */
+export async function workspaceGitCheckout(cwd: string, signal: AbortSignal, branch: string): Promise<GitStatus> {
+  const available = await workspaceGitBranches(cwd, signal)
+  if (available === null) throw new GitOperationError('GIT_NO_REPOSITORY', 'Not a Git repository')
+  if (!available.branches.includes(branch)) throw new GitOperationError('GIT_BRANCH_NOT_FOUND', `Local Git branch not found: ${branch}`)
+  const status = await workspaceGitStatus(cwd, signal)
+  if (status === null) throw new GitOperationError('GIT_NO_REPOSITORY', 'Not a Git repository')
+  if (status.branch === branch) return status
+  if (status.files.length > 0) throw new GitOperationError('GIT_CONFLICT', 'Cannot switch branches with uncommitted changes')
+  await checked(cwd, signal, ['switch', '--no-overwrite-ignore', '--', branch])
+  const result = await workspaceGitStatus(cwd, signal)
+  if (result === null) throw new GitOperationError('GIT_NO_REPOSITORY', 'Not a Git repository')
+  return result
 }
 
 function commitMessage(status: GitStatus): string {

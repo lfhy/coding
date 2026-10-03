@@ -7,7 +7,7 @@
 import { z } from 'zod'
 import type { RequestPayload, ResponseValue } from './rpc-map.ts'
 import type { Wire } from './rpc.schema.ts'
-import type { WorkspaceView, GitChangedFile, GitStatus, GitOperationResult } from './workspace.ts'
+import type { WorkspaceView, GitChangedFile, GitStatus, GitBranches, GitOperationResult } from './workspace.ts'
 import { sessionIdSchema, workspaceIdSchema } from './sessions.schema.ts'
 
 export { workspaceIdSchema } from './sessions.schema.ts'
@@ -34,6 +34,8 @@ export const workspaceListValueSchema = z.object({
 /** Git RPC 仅接受会话 id；工作目录始终由 Host 从会话头推导。 */
 const gitRequestSchema = z.strictObject({ sessionId: sessionIdSchema })
 export const workspaceGitStatusRequestSchema = gitRequestSchema satisfies z.ZodType<Wire<RequestPayload<'workspace.gitStatus'>>>
+export const workspaceGitBranchesRequestSchema = gitRequestSchema satisfies z.ZodType<Wire<RequestPayload<'workspace.gitBranches'>>>
+export const workspaceGitCheckoutRequestSchema = gitRequestSchema.extend({ branch: z.string().min(1) }) satisfies z.ZodType<Wire<RequestPayload<'workspace.gitCheckout'>>>
 export const workspaceGitPushRequestSchema = gitRequestSchema satisfies z.ZodType<Wire<RequestPayload<'workspace.gitPush'>>>
 export const workspaceGitPullRequestSchema = gitRequestSchema satisfies z.ZodType<Wire<RequestPayload<'workspace.gitPull'>>>
 
@@ -48,6 +50,11 @@ const gitOperationSchema = z.strictObject({
   branch: z.string().nullable(), commitCreated: z.boolean(), commit: z.string().optional(),
 }) satisfies z.ZodType<Wire<GitOperationResult>>
 export const workspaceGitStatusValueSchema = gitStatusSchema.nullable() satisfies z.ZodType<Wire<ResponseValue<'workspace.gitStatus'>>>
+const gitBranchesSchema = z.strictObject({
+  branches: z.array(z.string()), current: z.string().nullable(),
+}) satisfies z.ZodType<Wire<GitBranches>>
+export const workspaceGitBranchesValueSchema = gitBranchesSchema.nullable() satisfies z.ZodType<Wire<ResponseValue<'workspace.gitBranches'>>>
+export const workspaceGitCheckoutValueSchema = gitStatusSchema satisfies z.ZodType<Wire<ResponseValue<'workspace.gitCheckout'>>>
 export const workspaceGitPushValueSchema = gitOperationSchema satisfies z.ZodType<Wire<ResponseValue<'workspace.gitPush'>>>
 export const workspaceGitPullValueSchema = gitOperationSchema satisfies z.ZodType<Wire<ResponseValue<'workspace.gitPull'>>>
 

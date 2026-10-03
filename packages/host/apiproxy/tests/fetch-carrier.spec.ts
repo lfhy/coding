@@ -169,6 +169,18 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
       async gitStatus(request) {
         return { rpcId: request.rpcId, result: { ok: true, value: null } }
       },
+      async gitBranches(request) {
+        return { rpcId: request.rpcId, result: { ok: true, value: { branches: ['feature', 'main'], current: 'main' } } }
+      },
+      async gitCheckout(request) {
+        return {
+          rpcId: request.rpcId,
+          result: {
+            ok: true,
+            value: { branch: request.payload.branch, ahead: 0, behind: 0, additions: 0, deletions: 0, files: [] },
+          },
+        }
+      },
       async gitPush(request) {
         return { rpcId: request.rpcId, result: { ok: true, value: { branch: 'main', commitCreated: true, commit: 'abc' } } }
       },
@@ -332,6 +344,8 @@ describe('unary round trip (handler ⇄ client, no network)', () => {
     const c = client()
     const payload = { sessionId: 's' as never }
     expect((await c.workspace.gitStatus(payload)).result).toEqual({ ok: true, value: null })
+    expect((await c.workspace.gitBranches(payload)).result).toEqual({ ok: true, value: { branches: ['feature', 'main'], current: 'main' } })
+    expect((await c.workspace.gitCheckout({ ...payload, branch: 'feature' })).result).toMatchObject({ ok: true, value: { branch: 'feature' } })
     expect((await c.workspace.gitPush(payload)).result).toEqual({ ok: true, value: { branch: 'main', commitCreated: true, commit: 'abc' } })
     expect((await c.workspace.gitPull(payload)).result).toEqual({
       ok: false, error: { code: 'git-conflict', message: 'diverged', details: { sessionId: 's', reason: 'GIT_CONFLICT' } },
@@ -341,6 +355,11 @@ describe('unary round trip (handler ⇄ client, no network)', () => {
       body: JSON.stringify({ type: 'client-request', rpcId: 'bad-git', method: 'workspace.gitPush', payload: { sessionId: 's', cwd: '/other' } }),
     }))
     expect(await response.json()).toMatchObject({ result: { ok: false, error: { code: 'bad-request' } } })
+    const invalidBranch = await toFetchHandler(fakeApi()).fetch(new Request('http://dsh.internal/api/workspace.gitCheckout', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ type: 'client-request', rpcId: 'bad-branch', method: 'workspace.gitCheckout', payload: { sessionId: 's', branch: '', cwd: '/other' } }),
+    }))
+    expect(await invalidBranch.json()).toMatchObject({ result: { ok: false, error: { code: 'bad-request' } } })
   })
 
   it('carries the tail-page projections block through the wire schema (Zod must not strip it)', async () => {

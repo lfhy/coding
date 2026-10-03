@@ -219,6 +219,8 @@ export class FakeApiClient implements IApiClient {
 
   readonly workspace: IApiClient['workspace'] = {
     gitStatus: (payload: unknown) => this.record('workspace.gitStatus', payload, Promise.resolve(ok(null))),
+    gitBranches: (payload: unknown) => this.record('workspace.gitBranches', payload, Promise.resolve(ok(null))),
+    gitCheckout: (payload: { branch: string }) => this.record('workspace.gitCheckout', payload, Promise.resolve(ok({ branch: payload.branch, ahead: 0, behind: 0, additions: 0, deletions: 0, files: [] }))),
     gitPush: (payload: unknown) => this.record('workspace.gitPush', payload, Promise.resolve(ok({ branch: 'main', commitCreated: false }))),
     gitPull: (payload: unknown) => this.record('workspace.gitPull', payload, Promise.resolve(ok({ branch: 'main', commitCreated: false }))),
     list: (payload: unknown) => this.record('workspace.list', payload, this.onWorkspaceList(payload).then(response => (

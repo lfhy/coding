@@ -115,7 +115,7 @@ import {
   inspectApiRemoteSession,
 } from '@deepseek-ai/dsh-api-remotes'
 import { canOpenNativePath, openNativePath, openNativeTextFile } from '@deepseek-ai/dsh-native-command'
-import { GitOperationError, workspaceGitStatus, workspaceGitPush, workspaceGitPull } from './workspace-git.ts'
+import { GitOperationError, workspaceGitStatus, workspaceGitBranches, workspaceGitCheckout, workspaceGitPush, workspaceGitPull } from './workspace-git.ts'
 
 /** Page size when history is called without maxMessages. */
 const DEFAULT_MAX_MESSAGES = 50
@@ -1684,7 +1684,8 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         code: 'session-not-found', message: error.message, details: { sessionId },
       })
       if (error instanceof GitOperationError) return err(request, {
-        code: error.code === 'GIT_CONFLICT' ? 'git-conflict' : 'git-unavailable',
+        code: error.code === 'GIT_CONFLICT' ? 'git-conflict'
+          : error.code === 'GIT_BRANCH_NOT_FOUND' ? 'git-branch-not-found' : 'git-unavailable',
         message: error.message, details: { sessionId, reason: error.code },
       })
       return err(request, {
@@ -2813,6 +2814,15 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     workspace: {
       async gitStatus(request, signal) {
         return gitForSession(request, signal, workspaceGitStatus)
+      },
+
+      async gitBranches(request, signal) {
+        return gitForSession(request, signal, workspaceGitBranches)
+      },
+
+      async gitCheckout(request, signal) {
+        const { branch } = request.payload
+        return gitForSession(request, signal, (cwd, abort) => workspaceGitCheckout(cwd, abort, branch))
       },
 
       async gitPush(request, signal) {

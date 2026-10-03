@@ -38,7 +38,8 @@ import {
   workspaceInsertBeforeValueSchema,
   workspaceInsertSessionBeforeValueSchema,
   workspaceListValueSchema,
-  workspaceGitStatusValueSchema, workspaceGitPushValueSchema, workspaceGitPullValueSchema,
+  workspaceGitStatusValueSchema, workspaceGitBranchesValueSchema, workspaceGitCheckoutValueSchema,
+  workspaceGitPushValueSchema, workspaceGitPullValueSchema,
   workspaceRenameValueSchema,
 } from '../api/workspace.schema.ts'
 import { skillListValueSchema } from '../api/skills.schema.ts'
@@ -120,6 +121,8 @@ export interface IApiClient {
   workspace: {
     list(payload: RequestPayload<'workspace.list'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.list'>>>
     gitStatus(payload: RequestPayload<'workspace.gitStatus'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.gitStatus'>>>
+    gitBranches(payload: RequestPayload<'workspace.gitBranches'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.gitBranches'>>>
+    gitCheckout(payload: RequestPayload<'workspace.gitCheckout'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.gitCheckout'>>>
     gitPush(payload: RequestPayload<'workspace.gitPush'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.gitPush'>>>
     gitPull(payload: RequestPayload<'workspace.gitPull'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.gitPull'>>>
     create(payload: RequestPayload<'workspace.create'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.create'>>>
@@ -201,6 +204,8 @@ const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseV
   'host.openPath': hostOpenPathValueSchema,
   'workspace.list': workspaceListValueSchema,
   'workspace.gitStatus': workspaceGitStatusValueSchema,
+  'workspace.gitBranches': workspaceGitBranchesValueSchema,
+  'workspace.gitCheckout': workspaceGitCheckoutValueSchema,
   'workspace.gitPush': workspaceGitPushValueSchema,
   'workspace.gitPull': workspaceGitPullValueSchema,
   'workspace.create': workspaceCreateValueSchema,
@@ -461,6 +466,8 @@ export abstract class AbstractApiClient implements IApiClient {
   readonly workspace: IApiClient['workspace'] = {
     list: (payload, signal) => this.callUnary('workspace.list', payload, signal),
     gitStatus: (payload, signal) => this.callUnary('workspace.gitStatus', payload, signal),
+    gitBranches: (payload, signal) => this.callUnary('workspace.gitBranches', payload, signal),
+    gitCheckout: (payload, signal) => this.callUnary('workspace.gitCheckout', payload, signal),
     gitPush: (payload, signal) => this.callUnary('workspace.gitPush', payload, signal, 'caller-signal-only'),
     gitPull: (payload, signal) => this.callUnary('workspace.gitPull', payload, signal, 'caller-signal-only'),
     create: (payload, signal) => this.callUnary('workspace.create', payload, signal),
