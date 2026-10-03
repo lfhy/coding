@@ -25,6 +25,7 @@ async function bench() {
   const slots = ctx.get('slots') as SlotRegistry
   ctx.provide('sessions', new TestSessions(stabilize, ctx))
   ctx.provide('workspaces', new TestWorkspaces(stabilize))
+  ctx.provide('layout', {} as never)
   const fiber = ctx.plugin({ inject: [...UiRenderer.inject], apply: UiRenderer.apply })
   await fiber.await()
   return { ctx, slots, fiber }
@@ -39,6 +40,18 @@ function container(): HTMLElement {
 describe('UI renderer plugin', () => {
   it('provides no host-side behavior', () => {
     expect(() => { nodeApply() }).not.toThrow()
+  })
+
+  it('waits for layout before publishing the mount face', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SlotRegistry).await()
+    ctx.provide('sessions', new TestSessions(stabilize, ctx))
+    const fiber = ctx.plugin({ inject: [...UiRenderer.inject], apply: UiRenderer.apply })
+    expect(ctx.get('uiRenderer')).toBeUndefined()
+    ctx.provide('layout', {} as never)
+    await fiber.await()
+    expect(ctx.get('uiRenderer')).toBeDefined()
+    await stabilize(() => fiber.dispose())
   })
 
   it('installs the renderer and mounts the assembled application', async () => {

@@ -8,6 +8,7 @@ import { flushSync } from 'react-dom'
 import { createRoot, hydrateRoot, type Root } from 'react-dom/client'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
+import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import { createSlotRenderer } from './scoped-slots.tsx'
 import { buildRenderApp } from './app.tsx'
 
@@ -37,8 +38,8 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-/** Services required before application assembly. */
-export const inject = ['slots', 'sessions']
+/** 根布局的服务与 root 注册必须先就绪，挂载后才能访问 root slot。 */
+export const inject = ['slots', 'sessions', 'layout']
 
 interface BootSnapshot {
   className: string
