@@ -78,8 +78,9 @@ describe('ModelSelect reasoning effort', () => {
     const trigger = screen.getByRole('button', {
       name: '选择模型，当前 DeepSeek-V4-Flash，推理等级 High',
     })
-    expect(trigger.textContent).toBe('选择强度')
+    expect(trigger.textContent).toBe('DeepSeek-V4-FlashHigh')
     fireEvent.click(trigger)
+    expect(trigger.textContent).toBe('选择强度')
     const dialog = screen.getByRole('dialog')
     expect(within(dialog).getByText('High', { selector: 'strong' })).toBeTruthy()
     expect(within(dialog).getByRole('button', { name: /DeepSeek-V4-Flash/ })).toBeTruthy()
@@ -108,6 +109,7 @@ describe('ModelSelect reasoning effort', () => {
       expect(slider.getAttribute('aria-describedby')).toBe(screen.getByText('Largest budget').id)
     })
     expect(select).toHaveBeenCalledTimes(1)
+    await waitFor(() => { expect(slider).toBe(document.activeElement) })
     expect(screen.getByRole('dialog')).toBeTruthy()
     fireEvent.click(within(dialog).getByRole('button', { name: /重置|默认/ }))
     await waitFor(() => {
@@ -115,6 +117,8 @@ describe('ModelSelect reasoning effort', () => {
       expect(slider.getAttribute('aria-valuetext')).toBe('High')
     })
     expect(select).toHaveBeenCalledTimes(2)
+    fireEvent.keyDown(dialog, { key: 'Escape' })
+    expect(trigger.textContent).toBe('DeepSeek-V4-FlashHigh')
   })
 
   it('labels the off effort as none while submitting the adapter wire value', async () => {
@@ -298,6 +302,7 @@ describe('ModelSelect reasoning effort', () => {
     await waitFor(() => {
       expect(select).toHaveBeenCalledWith({ provider: 'moonshot', model: 'kimi', reasoningEffort: 'low' })
       expect(trigger.getAttribute('aria-label')).toContain('Kimi，推理等级 Low')
+      expect(trigger.textContent).toBe('KimiLow')
       expect(trigger).toBe(document.activeElement)
     })
   })

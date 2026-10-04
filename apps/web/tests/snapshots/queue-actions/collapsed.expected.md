@@ -31,7 +31,7 @@
   - img
 - 'button "Access mode, current: Workspace Write"': Workspace Write
 - button "Select model, current DeepSeek-V4-Flash":
-  - text: Select model
+  - text: DeepSeek-V4-Flash
   - img
 - button "Stop generating"
 - region "Session overview":

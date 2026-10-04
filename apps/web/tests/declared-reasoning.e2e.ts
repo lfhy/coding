@@ -103,6 +103,7 @@ describe.skipIf(MODE === 'record')('web e2e: declared reasoning efforts reach th
     onTestFailed(() => saveFailureShot(page, 'web-e2e-declared-reasoning'))
     const trigger = page.getByRole('button', { name: /^选择模型/ })
     await trigger.waitFor({ timeout: 15_000 })
+    expect(await trigger.textContent()).toBe('Acme ThinkDefault')
     await trigger.click()
     const effort = page.getByRole('dialog', { name: '推理等级与当前模型' })
     await expect.poll(() => effort.getAttribute('aria-busy'), { timeout: 10_000 }).toBe('false')
@@ -184,6 +185,7 @@ describe.skipIf(MODE === 'record')('web e2e: declared reasoning efforts reach th
     await page.keyboard.press('Escape')
     await effort.waitFor({ state: 'detached' })
     expect(await page.getByRole('button', { name: /^选择模型/ }).evaluate(node => node === document.activeElement)).toBe(true)
+    expect(await page.getByRole('button', { name: /^选择模型/ }).textContent()).toBe('Acme ThinkHigh')
     expect(tripwire.warnings).toEqual([])
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
@@ -195,6 +197,7 @@ describe.skipIf(MODE === 'record')('web e2e: declared reasoning efforts reach th
     await expect.poll(async () => (await page.locator('#dsh-layout-sidebar').boundingBox())?.width ?? 375)
       .toBeLessThanOrEqual(56)
     const trigger = page.getByRole('button', { name: /^选择模型/ })
+    expect(await trigger.textContent()).toBe('Acme ThinkHigh')
     await trigger.click()
     const effort = page.getByRole('dialog', { name: '推理等级与当前模型' })
     await effort.waitFor()
@@ -271,7 +274,9 @@ describe.skipIf(MODE === 'record')('web e2e: declared reasoning efforts reach th
     await models.getByRole('group', { name: '渠道列表' }).getByRole('button', { name: 'Reference' }).click()
     await models.getByRole('button', { name: '6 Astra' }).click()
     await expect.poll(() => trigger.getAttribute('aria-label')).toContain('推理等级 Ultra')
+    expect(await trigger.textContent()).toBe('6 AstraUltra')
     await trigger.click()
+    expect(await trigger.textContent()).toBe('选择强度')
     const effort = page.getByRole('dialog', { name: '推理等级与当前模型' })
     const title = effort.locator('strong')
     const slider = effort.getByRole('slider', { name: '调整推理等级' })
@@ -299,6 +304,13 @@ describe.skipIf(MODE === 'record')('web e2e: declared reasoning efforts reach th
     await expect.poll(() => selections.at(-1)?.reasoningEffort).toBe('max')
     if (process.env.DSH_SCREENSHOT_DIR !== undefined) {
       await page.screenshot({ path: join(process.env.DSH_SCREENSHOT_DIR, 'reasoning-max-reference.png'), fullPage: false })
+    }
+    await page.keyboard.press('Escape')
+    await effort.waitFor({ state: 'detached' })
+    expect(await trigger.textContent()).toBe('6 AstraMax')
+    if (process.env.DSH_SCREENSHOT_DIR !== undefined) {
+      await trigger.evaluate((node) => { (node as HTMLElement).blur() })
+      await page.screenshot({ path: join(process.env.DSH_SCREENSHOT_DIR, 'reasoning-collapsed-reference.png'), fullPage: false })
     }
     expect(tripwire.warnings).toEqual([])
     expect(tripwire.pageErrors).toEqual([])

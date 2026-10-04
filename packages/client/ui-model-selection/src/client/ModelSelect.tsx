@@ -193,11 +193,11 @@ export function ModelSelect(
     if (!open) return
     if (pane === 'models') {
       searchRef.current?.focus()
-    } else if (restoreEffortFocusRef.current) {
+    } else if (!busy && restoreEffortFocusRef.current) {
       restoreEffortFocusRef.current = false
       effortControlRef.current?.focus()
     }
-  }, [open, pane])
+  }, [open, pane, busy, draftIndex])
 
   if (!available) return null
 
@@ -286,6 +286,7 @@ export function ModelSelect(
   const commitEffort = (index: number): void => {
     const level = effortStops[index]
     if (level !== undefined) {
+      restoreEffortFocusRef.current = true
       setDraftIndex(index)
       chooseEffort(level.effort)
     }
@@ -293,7 +294,7 @@ export function ModelSelect(
 
   const modelLabel = currentChoice?.model.name ?? t('trigger.fallback')
   const triggerLabel = effortLabel === undefined ? modelLabel : `${modelLabel} · ${effortLabel}`
-  const visibleTriggerLabel = hasEffortPanel ? t('trigger.strength') : t('trigger.fallback')
+  const visibleTriggerLabel = open ? t('trigger.strength') : modelLabel
   const triggerAria = currentChoice === undefined
     ? t('trigger.selectAria')
     : effortLabel === undefined
@@ -304,7 +305,7 @@ export function ModelSelect(
       <button
         ref={triggerRef}
         type="button"
-        className={css.trigger}
+        className={clsx(css.trigger, open && css.triggerOpen)}
         aria-label={triggerAria}
         aria-haspopup="dialog"
         aria-expanded={open}
@@ -320,6 +321,7 @@ export function ModelSelect(
         }}
       >
         <span className={css.triggerLabel}>{visibleTriggerLabel}</span>
+        {!open && effortLabel !== undefined && <span className={css.triggerEffort}>{effortLabel}</span>}
         <IconChevronDownOutline14 className={clsx(css.chevron, open && css.chevronOpen)} />
       </button>
 

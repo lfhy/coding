@@ -1,6 +1,6 @@
 # @deepseek-ai/dsh-client-ui-model-selection
 
-模型选择插件（浏览器侧）：**两个入口共用一份会话级目录**，由 `ModelDirectoryResolver`（`ctx.modelDirectories`）持有。对于普通会话，`/model` popupSelect 贡献项（经 `ctx.commandUi` 注册）与 composer 的具名 `conversation.input.model` slot 都通过同一个 `ModelDirectory` 实例，经 `session.models` 加载会话的建议目录，并经 `session.selectModel` 提交。composer 的「选择强度」入口打开紧凑弹层，视觉上仅显示当前档位、模型名称和滑轨；拖动时预览档位名称与颜色，松开或键盘操作结束后提交适配器为确切模型公布的离散等级，右上角可重置为默认值。适配器公布的档位说明保留为滑块的辅助描述。点击模型名称打开并排的渠道与模型选择器：左侧列出 Host 公布的渠道，右侧只展示当前渠道的模型，并可按名称或 ID 搜索。当前模型没有可调等级或不在目录中时，入口直接打开模型选择器。选择器受视口和对话区裁切边界约束。`/model` 应用所选模型的默认推理强度。
+模型选择插件（浏览器侧）：**两个入口共用一份会话级目录**，由 `ModelDirectoryResolver`（`ctx.modelDirectories`）持有。对于普通会话，`/model` popupSelect 贡献项（经 `ctx.commandUi` 注册）与 composer 的具名 `conversation.input.model` slot 都通过同一个 `ModelDirectory` 实例，经 `session.models` 加载会话的建议目录，并经 `session.selectModel` 提交。composer 入口收起时回显当前模型名称及已公布的推理等级；展开后底部入口显示「选择强度」，紧凑弹层在视觉上仅显示当前档位、模型名称和滑轨。拖动时预览档位名称与颜色，松开或键盘操作结束后提交适配器为确切模型公布的离散等级，右上角可重置为默认值。适配器公布的档位说明保留为滑块的辅助描述。点击模型名称打开并排的渠道与模型选择器：左侧列出 Host 公布的渠道，右侧只展示当前渠道的模型，并可按名称或 ID 搜索。当前模型没有可调等级或不在目录中时，入口直接打开模型选择器。选择器受视口和对话区裁切边界约束。`/model` 应用所选模型的默认推理强度。
 
 Host 报告的 `ModelSelection` 是唯一的会话选择事实，其中包含提供方、模型与可选的推理（reasoning）强度；但只有当该提供方／模型对仍在已公布分组中时才会回显。目录行缺席时，可路由的选择保持不变，但模型区域会提示 `Select model`；系统不会合成陈旧行，且在用户选择已公布的模型之前不会提供推理强度选择。目录加载与选择共享一个代次计数器，旧响应不会覆盖新结果；连接重置会丢弃所有常驻目录投影，并在显示前重新拉取 Host 恢复的选择。各提供方的元数据获取失败会内联列出，同时可用分组仍可选择；选择失败会保留先前的选择和目录。
 

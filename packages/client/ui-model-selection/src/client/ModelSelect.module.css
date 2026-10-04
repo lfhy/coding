@@ -6,22 +6,34 @@
 .trigger {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  gap: 4px;
   min-width: 0;
-  width: 116px;
-  max-width: min(116px, 45cqw);
+  max-width: min(360px, 45cqw);
   height: 28px;
-  padding: 0 7px 0 13px;
+  padding: 0 4px 0 8px;
   border: 0;
   border-radius: 999px;
-  background: var(--dsw-specific-reasoning-trigger);
-  color: var(--dsw-specific-reasoning-trigger-label);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
   font: var(--dsw-font-xs-strong-13);
   cursor: pointer;
 }
 
 .trigger:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.triggerOpen {
+  justify-content: space-between;
+  gap: 8px;
+  width: 116px;
+  max-width: min(116px, 45cqw);
+  padding: 0 7px 0 13px;
+  background: var(--dsw-specific-reasoning-trigger);
+  color: var(--dsw-specific-reasoning-trigger-label);
+}
+
+.triggerOpen:hover:not(:disabled) {
   background: var(--dsw-specific-reasoning-trigger-hover);
 }
 
@@ -69,14 +81,22 @@
   white-space: nowrap;
 }
 
+.triggerEffort {
+  flex: 0 0 auto;
+  color: var(--dsw-alias-label-caption);
+}
+
 .chevron,
 .cellChevron {
   flex: 0 0 auto;
   color: var(--dsw-alias-label-caption);
 }
 
-.trigger .chevron,
 .modelLink .cellChevron {
+  color: inherit;
+}
+
+.triggerOpen .chevron {
   color: inherit;
 }
 
