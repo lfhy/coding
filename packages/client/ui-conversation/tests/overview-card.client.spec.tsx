@@ -97,7 +97,7 @@ describe('session overview card', () => {
     expect(view.queryByRole('heading', { name: '会话概览' })).toBeNull()
     expect(view.getByRole('heading', { level: 2, name: '协作' })).toBeTruthy()
     expect(view.getByRole('heading', { level: 2, name: '运行统计' })).toBeTruthy()
-    expect(view.getByRole('button', { name: /子代理/ }).textContent).toBe('子代理21 运行中')
+    expect(view.getByRole('button', { name: /子代理/ }).textContent).toBe('子代理1 运行中')
     expect(view.getByRole('button', { name: /后台任务/ }).textContent).toBe('后台任务21 运行中')
     const subagents = view.getByRole('button', { name: /子代理/ })
     fireEvent.click(subagents)
@@ -125,6 +125,19 @@ describe('session overview card', () => {
     expect(view.queryByRole('region', { name: '会话概览' })).toBeNull()
     view.rerender(<OverviewCard {...panel} overviewExpanded />)
     expect(view.getByRole('region', { name: '会话概览' })).toBeTruthy()
+  })
+
+  it('shows the total subagents only after all descendants stop running', () => {
+    const panel = props()
+    const view = render(<OverviewCard {...panel} />)
+    expect(view.getByRole('button', { name: /子代理/ }).textContent).toBe('子代理1 运行中')
+    const stopped = list()
+    const child = stopped.byId[CHILD]
+    if (child === undefined) throw new Error('Missing child fixture')
+    stopped.byId[CHILD] = { ...child, running: false }
+    panel.useSessions = bindSnapshotSelector(createSnapshotStore(stopped))
+    view.rerender(<OverviewCard {...panel} />)
+    expect(view.getByRole('button', { name: /子代理/ }).textContent).toBe('子代理2')
   })
 
   it('layers a long catalog outside the scroll-clipped card without shifting Git or statistics', () => {

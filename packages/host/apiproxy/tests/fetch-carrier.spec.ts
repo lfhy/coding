@@ -347,6 +347,12 @@ describe('unary round trip (handler ⇄ client, no network)', () => {
     expect((await c.workspace.gitBranches(payload)).result).toEqual({ ok: true, value: { branches: ['feature', 'main'], current: 'main' } })
     expect((await c.workspace.gitCheckout({ ...payload, branch: 'feature' })).result).toMatchObject({ ok: true, value: { branch: 'feature' } })
     expect((await c.workspace.gitPush(payload)).result).toEqual({ ok: true, value: { branch: 'main', commitCreated: true, commit: 'abc' } })
+    const observed: unknown[] = []
+    const stop = c.subscribeEnvelopes(batch => observed.push(...batch))
+    expect((await c.workspace.gitPush({ ...payload, credentials: { username: 'alice', password: 'secret-token' } })).result.ok).toBe(true)
+    await Promise.resolve()
+    stop()
+    expect(JSON.stringify(observed)).not.toContain('secret-token')
     expect((await c.workspace.gitPull(payload)).result).toEqual({
       ok: false, error: { code: 'git-conflict', message: 'diverged', details: { sessionId: 's', reason: 'GIT_CONFLICT' } },
     })

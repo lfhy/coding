@@ -1,7 +1,10 @@
 import { spawn } from 'node:child_process'
 import { createReadStream } from 'node:fs'
-import { lstat } from 'node:fs/promises'
+import { lstat, mkdtemp, writeFile, rm, chmod } from 'node:fs/promises'
+import { createServer } from 'node:net'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { GitCredentials } from './api/workspace.ts'
 import { remoteWorkspacePath } from '@deepseek-ai/dsh-subprocess'
 
 /** 工作区 Git 的文件变更及相对上游的提交差距。 */
@@ -30,8 +33,9 @@ export interface GitOperationResult {
 /** 可供调用方区别环境、仓库、上游和冲突的失败。 */
 export class GitOperationError extends Error {
   constructor(
-    public readonly code: 'GIT_UNAVAILABLE' | 'GIT_NO_REPOSITORY' | 'GIT_REMOTE_UNAVAILABLE' | 'GIT_CONFLICT' | 'GIT_FAILED' | 'GIT_BRANCH_NOT_FOUND',
+    public readonly code: 'GIT_UNAVAILABLE' | 'GIT_NO_REPOSITORY' | 'GIT_REMOTE_UNAVAILABLE' | 'GIT_CONFLICT' | 'GIT_FAILED' | 'GIT_BRANCH_NOT_FOUND' | 'GIT_AUTH_REQUIRED' | 'GIT_AUTH_FAILED',
     message: string,
+    public readonly remote?: string,
   ) {
     super(message)
     this.name = 'GitOperationError'
@@ -42,13 +46,20 @@ const OUTPUT_LIMIT = 4 * 1024 * 1024
 const COMMAND_TIMEOUT = 60_000
 
 type GitOutput = { stdout: string; stderr: string; code: number }
+type GitRunOptions = { askpass?: string; socket?: string }
 
-function runGit(cwd: string, signal: AbortSignal, args: string[]): Promise<GitOutput> {
+function runGit(cwd: string, signal: AbortSignal, args: string[], options: GitRunOptions = {}): Promise<GitOutput> {
   signal.throwIfAborted()
   return new Promise((resolve, reject) => {
     const child = spawn('git', ['--no-pager', ...args], {
       cwd, signal, stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' },
+      env: {
+        ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never',
+        GIT_ASKPASS: options.askpass ?? '', SSH_ASKPASS: '', GIT_SSH_COMMAND: 'ssh -o BatchMode=yes',
+        GIT_CONFIG_COUNT: '2', GIT_CONFIG_KEY_0: 'credential.helper', GIT_CONFIG_VALUE_0: '',
+        GIT_CONFIG_KEY_1: 'core.askPass', GIT_CONFIG_VALUE_1: options.askpass ?? '',
+        ...(options.socket === undefined ? {} : { DSH_GIT_ASKPASS_SOCKET: options.socket }),
+      },
     })
     const output: Buffer[] = []
     const errors: Buffer[] = []
@@ -70,7 +81,7 @@ function runGit(cwd: string, signal: AbortSignal, args: string[]): Promise<GitOu
     child.once('error', (error) => {
       clearTimeout(timer)
       if (signal.aborted) reject(new Error('Git command was cancelled'))
-      else reject(new GitOperationError('code' in error && error.code === 'ENOENT' ? 'GIT_UNAVAILABLE' : 'GIT_FAILED', error.message))
+      else reject(new GitOperationError('code' in error && error.code === 'ENOENT' ? 'GIT_UNAVAILABLE' : 'GIT_FAILED', 'Git command could not start'))
     })
     child.once('close', (code) => {
       clearTimeout(timer)
@@ -83,15 +94,87 @@ function runGit(cwd: string, signal: AbortSignal, args: string[]): Promise<GitOu
 }
 
 function failure(result: GitOutput, fallback: GitOperationError['code'] = 'GIT_FAILED'): GitOperationError {
-  const message = result.stderr.trim() || result.stdout.trim() || 'Git command failed'
-  const conflict = /conflict|not possible to fast-forward|divergent|would be overwritten|unmerged|non-fast-forward/i.test(message)
+  const message = 'Git command failed'
+  const diagnostic = `${result.stderr}\n${result.stdout}`
+  const conflict = /conflict|not possible to fast-forward|divergent|would be overwritten|unmerged|non-fast-forward/i.test(diagnostic)
   return new GitOperationError(conflict ? 'GIT_CONFLICT' : fallback, message)
+}
+
+function httpsRemote(url: string): { display: string } | undefined {
+  try {
+    const parsed = new URL(url.trim())
+    if (parsed.protocol !== 'https:' || !parsed.hostname || parsed.username || parsed.password) return undefined
+    return { display: `https://${parsed.host}` }
+  } catch { return undefined }
+}
+
+function requireHttpsCredentials(url: string): string {
+  const remote = httpsRemote(url)
+  if (remote === undefined) throw new GitOperationError('GIT_REMOTE_UNAVAILABLE', 'Git credentials require an HTTPS remote without embedded user information')
+  return remote.display
+}
+
+function authenticationFailure(result: GitOutput, credentials: GitCredentials | undefined, remote: string): GitOperationError | undefined {
+  const output = `${result.stderr}\n${result.stdout}`
+  const denied = /could not read (?:Username|Password)|terminal prompts disabled|Authentication failed|HTTP Basic: Access denied/i
+  const httpDenied = /requested URL returned error: 40[13]|Invalid username or password/i
+  if (!denied.test(output) && !httpDenied.test(output)) return undefined
+  return new GitOperationError(credentials === undefined ? 'GIT_AUTH_REQUIRED' : 'GIT_AUTH_FAILED',
+    credentials === undefined ? 'Git credentials required' : 'Git authentication failed', remote)
+}
+
+/** 临时套接字向 askpass 子进程逐项提供凭据；脚本和环境不包含机密。 */
+async function withAskpass<T>(
+  credentials: GitCredentials, signal: AbortSignal, operation: (options: GitRunOptions) => Promise<T>,
+): Promise<T> {
+  signal.throwIfAborted()
+  const directory = await mkdtemp(join(tmpdir(), 'dsh-git-'))
+  const socket = join(directory, 'askpass.sock')
+  const script = join(directory, 'askpass.cjs')
+  const server = createServer((connection) => {
+    let prompt = ''
+    connection.setEncoding('utf8')
+    connection.on('data', (chunk: string) => {
+      prompt += chunk
+      if (prompt.length > 1024) { connection.destroy(); return }
+      if (!prompt.includes('\n')) return
+      connection.end(`${/username/i.test(prompt) ? credentials.username : credentials.password}\n`)
+    })
+  })
+  try {
+    await writeFile(script, `#!${process.execPath}\nconst net = require('node:net');\nconst c = net.connect(process.env.DSH_GIT_ASKPASS_SOCKET);\nc.on('connect', () => c.write(process.argv[2] + '\\n'));\nc.pipe(process.stdout);\nc.on('error', () => process.exit(1));\n`, { mode: 0o700 })
+    await chmod(script, 0o700)
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject)
+      server.listen(socket, () => { server.off('error', reject); resolve() })
+    })
+    return await operation({ askpass: script, socket })
+  } finally {
+    server.close()
+    await rm(directory, { recursive: true, force: true })
+  }
 }
 
 async function checked(cwd: string, signal: AbortSignal, args: string[], code?: GitOperationError['code']): Promise<string> {
   const result = await runGit(cwd, signal, args)
   if (result.code !== 0) throw failure(result, code)
   return result.stdout
+}
+
+async function remoteCommand(cwd: string, signal: AbortSignal, args: string[], url: string, credentials?: GitCredentials): Promise<void> {
+  const https = httpsRemote(url)
+  if (credentials !== undefined && https === undefined) requireHttpsCredentials(url)
+  const remote = https?.display ?? 'Git remote'
+  const invoke = async (options: GitRunOptions) => {
+    const result = await runGit(cwd, signal, args, options)
+    if (result.code === 0) return
+    throw (https === undefined ? undefined : authenticationFailure(result, credentials, remote))
+      ?? (/conflict|not possible to fast-forward|divergent|would be overwritten|non-fast-forward/i.test(result.stderr)
+        ? new GitOperationError('GIT_CONFLICT', 'Git remote history or working tree conflicts')
+        : new GitOperationError('GIT_FAILED', 'Git remote operation failed'))
+  }
+  if (credentials === undefined) await invoke({})
+  else await withAskpass(credentials, signal, invoke)
 }
 
 async function guard(cwd: string, signal: AbortSignal): Promise<boolean> {
@@ -120,9 +203,9 @@ async function branchName(cwd: string, signal: AbortSignal): Promise<string | nu
   return result.stdout.trim()
 }
 
-async function upstream(cwd: string, signal: AbortSignal): Promise<string> {
+async function upstream(cwd: string, signal: AbortSignal): Promise<{ name: string; fetchUrl: string; pushUrl: string }> {
   const result = await runGit(cwd, signal, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'])
-  if (result.code !== 0) throw new GitOperationError('GIT_REMOTE_UNAVAILABLE', result.stderr.trim() || 'No upstream is configured')
+  if (result.code !== 0) throw new GitOperationError('GIT_REMOTE_UNAVAILABLE', 'No upstream is configured')
   const name = result.stdout.trim()
   const slash = name.indexOf('/')
   if (slash < 1 || slash === name.length - 1) throw new GitOperationError('GIT_REMOTE_UNAVAILABLE', 'Upstream has no remote branch')
@@ -131,7 +214,7 @@ async function upstream(cwd: string, signal: AbortSignal): Promise<string> {
   if (!url.trim()) throw new GitOperationError('GIT_REMOTE_UNAVAILABLE', 'Upstream remote has no URL')
   const pushUrl = await checked(cwd, signal, ['remote', 'get-url', '--push', remote], 'GIT_REMOTE_UNAVAILABLE')
   if (!pushUrl.trim()) throw new GitOperationError('GIT_REMOTE_UNAVAILABLE', 'Upstream remote has no push URL')
-  return name
+  return { name, fetchUrl: url.trim(), pushUrl: pushUrl.trim() }
 }
 
 async function untrackedLines(path: string, signal: AbortSignal): Promise<number> {
@@ -194,7 +277,7 @@ export async function workspaceGitStatus(cwd: string, signal: AbortSignal): Prom
     if (count !== undefined) Object.assign(file, count)
     else if (file.status === '??') {
       try { file.additions = await untrackedLines(join(root, file.path), signal) }
-      catch (error) { signal.throwIfAborted(); throw new GitOperationError('GIT_FAILED', `Cannot count untracked file ${file.path}: ${String(error)}`) }
+      catch { signal.throwIfAborted(); throw new GitOperationError('GIT_FAILED', `Cannot count untracked file ${file.path}`) }
     }
   }
   let ahead = 0
@@ -254,11 +337,19 @@ function commitMessage(status: GitStatus): string {
 }
 
 /** 显式推送会暂存所有非忽略文件并自动提交；无上游时不修改工作树。 */
-export async function workspaceGitPush(cwd: string, signal: AbortSignal): Promise<GitOperationResult> {
+export async function workspaceGitPush(cwd: string, signal: AbortSignal, credentials?: GitCredentials): Promise<GitOperationResult> {
   if (!await guard(cwd, signal)) throw new GitOperationError('GIT_NO_REPOSITORY', 'Not a Git repository')
   const branch = await branchName(cwd, signal)
   if (branch === null) throw new GitOperationError('GIT_REMOTE_UNAVAILABLE', 'Cannot push a detached HEAD')
   const upstreamName = await upstream(cwd, signal)
+  const slash = upstreamName.name.indexOf('/')
+  if (slash < 1 || slash === upstreamName.name.length - 1) {
+    throw new GitOperationError('GIT_REMOTE_UNAVAILABLE', 'Upstream has no remote branch')
+  }
+  const remote = upstreamName.name.slice(0, slash)
+  const remoteBranch = upstreamName.name.slice(slash + 1)
+  // 认证预检必须先于暂存和提交；只有实际 push 才改变远端状态。
+  await remoteCommand(cwd, signal, ['ls-remote', '--exit-code', remote, `refs/heads/${remoteBranch}`], upstreamName.pushUrl, credentials)
   const pending = await workspaceGitStatus(cwd, signal)
   await checked(cwd, signal, ['add', '--all', '--', ':/'])
   const staged = await runGit(cwd, signal, ['diff', '--cached', '--quiet'])
@@ -269,22 +360,16 @@ export async function workspaceGitPush(cwd: string, signal: AbortSignal): Promis
   }) : undefined
   if (summary !== undefined) await checked(cwd, signal, ['-c', 'core.hooksPath=/dev/null', 'commit', '-m', summary])
   const commit = commitCreated ? (await checked(cwd, signal, ['rev-parse', 'HEAD'])).trim() : undefined
-  const slash = upstreamName.indexOf('/')
-  if (slash < 1 || slash === upstreamName.length - 1) {
-    throw new GitOperationError('GIT_REMOTE_UNAVAILABLE', 'Upstream has no remote branch')
-  }
-  const remote = upstreamName.slice(0, slash)
-  const remoteBranch = upstreamName.slice(slash + 1)
-  await checked(cwd, signal, ['-c', 'core.hooksPath=/dev/null', 'push', '--porcelain', remote, `HEAD:refs/heads/${remoteBranch}`])
+  await remoteCommand(cwd, signal, ['-c', 'core.hooksPath=/dev/null', 'push', '--porcelain', remote, `HEAD:refs/heads/${remoteBranch}`], upstreamName.pushUrl, credentials)
   return { branch, commitCreated, ...(commit === undefined ? {} : { commit }) }
 }
 
 /** 只接受快进拉取；分叉或脏文件阻挡快进时明确报告冲突，不进行 rebase 或合并提交。 */
-export async function workspaceGitPull(cwd: string, signal: AbortSignal): Promise<GitOperationResult> {
+export async function workspaceGitPull(cwd: string, signal: AbortSignal, credentials?: GitCredentials): Promise<GitOperationResult> {
   if (!await guard(cwd, signal)) throw new GitOperationError('GIT_NO_REPOSITORY', 'Not a Git repository')
   const branch = await branchName(cwd, signal)
   if (branch === null) throw new GitOperationError('GIT_REMOTE_UNAVAILABLE', 'Cannot pull a detached HEAD')
-  await upstream(cwd, signal)
-  await checked(cwd, signal, ['-c', 'core.hooksPath=/dev/null', '-c', 'pull.ff=only', 'pull', '--ff-only'])
+  const tracking = await upstream(cwd, signal)
+  await remoteCommand(cwd, signal, ['-c', 'core.hooksPath=/dev/null', '-c', 'pull.ff=only', 'pull', '--ff-only'], tracking.fetchUrl, credentials)
   return { branch, commitCreated: false }
 }

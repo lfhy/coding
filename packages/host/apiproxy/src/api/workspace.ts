@@ -33,7 +33,12 @@ export interface GitBranches {
   current: string | null
 }
 
-/** push/pull 操作完成后的当前分支和本次自动提交信息。 */
+/** 一次 Git 远端操作使用的临时凭据；不持久化、不回显。 */
+export interface GitCredentials {
+  username: string
+  password: string
+}
+
 export interface GitOperationResult {
   branch: string | null
   commitCreated: boolean
@@ -79,10 +84,12 @@ export interface WorkspaceApi {
   gitCheckout(request: RpcRequest<{ sessionId: SessionId; branch: string }>, signal: AbortSignal): Promise<RpcResponse<GitStatus>>
 
   /** 明确用户操作：提交该仓库全部未忽略的工作树改动，然后推送其当前上游分支。 */
-  gitPush(request: RpcRequest<{ sessionId: SessionId }>, signal: AbortSignal): Promise<RpcResponse<GitOperationResult>>
+  gitPush(request: RpcRequest<{ sessionId: SessionId; credentials?: GitCredentials }>, signal: AbortSignal):
+  Promise<RpcResponse<GitOperationResult>>
 
   /** 从当前上游拉取；冲突以 git-conflict 错误返回，保留 Git 的冲突现场。 */
-  gitPull(request: RpcRequest<{ sessionId: SessionId }>, signal: AbortSignal): Promise<RpcResponse<GitOperationResult>>
+  gitPull(request: RpcRequest<{ sessionId: SessionId; credentials?: GitCredentials }>, signal: AbortSignal):
+  Promise<RpcResponse<GitOperationResult>>
 
   /**
    * Lists all workspaces in the registry's durable display order, plus the

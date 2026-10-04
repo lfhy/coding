@@ -357,7 +357,8 @@ export abstract class AbstractApiClient implements IApiClient {
     timeoutPolicy: UnaryTimeoutPolicy = 'default',
   ): Promise<RpcResponse<ResponseValue<K>>> {
     const message: ClientRequest = { type: 'client-request', rpcId: this.mintRpcId(), method, payload }
-    this.onEnvelope(message)
+    // 密码只进入请求体；诊断订阅者不得观察到凭据载荷。
+    if ((method !== 'workspace.gitPush' && method !== 'workspace.gitPull') || !('credentials' in payload)) this.onEnvelope(message)
     const response = await this.postJson(`/api/${method}`, message, signal, timeoutPolicy)
     const full = serverResponseSchema.parse(await response.json())
     this.onEnvelope(full)

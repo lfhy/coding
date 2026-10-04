@@ -304,12 +304,15 @@ export function apply(ctx: Context): void {
         if (!response.result.ok) throw new Error(response.result.error.message)
         return response.result.value
       },
-      operate: async (sessionId, action) => {
+      operate: async (sessionId, action, credentials) => {
         const response = action === 'push'
-          ? await connection.api.workspace.gitPush({ sessionId })
-          : await connection.api.workspace.gitPull({ sessionId })
+          ? await connection.api.workspace.gitPush({ sessionId, ...(credentials ? { credentials } : {}) })
+          : await connection.api.workspace.gitPull({ sessionId, ...(credentials ? { credentials } : {}) })
         if (!response.result.ok) {
           if (response.result.error.code === 'git-conflict') return 'conflict'
+          if (response.result.error.code === 'git-auth-required') {
+            return { authRequired: response.result.error.details.remote }
+          }
           throw new Error(response.result.error.message)
         }
         return 'done'

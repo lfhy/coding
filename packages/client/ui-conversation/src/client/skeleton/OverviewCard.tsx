@@ -164,8 +164,9 @@ export function OverviewCard({
                 <span className={css.rowIcon} aria-hidden="true"><IconAgentPresetOutline16 /></span>
                 <span className={css.countLabel}>{t('overview.subagents')}</span>
                 <span className={css.countValue}>
-                  <strong>{childCount}</strong>
-                  {runningChildren > 0 && <span>{t('overview.runningCount', { count: runningChildren })}</span>}
+                  {runningChildren > 0
+                    ? <span>{t('overview.runningCount', { count: runningChildren })}</span>
+                    : <strong>{childCount}</strong>}
                 </span>
                 <IconChevronRightOutline14 className={expanded === 'subagents' ? css.chevronOpen : css.chevron} />
               </button>

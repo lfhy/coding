@@ -1683,13 +1683,17 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       if (error instanceof SessionNotFound) return err(request, {
         code: 'session-not-found', message: error.message, details: { sessionId },
       })
+      if (error instanceof GitOperationError && (error.code === 'GIT_AUTH_REQUIRED' || error.code === 'GIT_AUTH_FAILED')) return err(request, {
+        code: error.code === 'GIT_AUTH_REQUIRED' ? 'git-auth-required' : 'git-auth-failed',
+        message: error.message, details: { sessionId, remote: error.remote ?? 'Git remote' },
+      })
       if (error instanceof GitOperationError) return err(request, {
         code: error.code === 'GIT_CONFLICT' ? 'git-conflict'
           : error.code === 'GIT_BRANCH_NOT_FOUND' ? 'git-branch-not-found' : 'git-unavailable',
         message: error.message, details: { sessionId, reason: error.code },
       })
       return err(request, {
-        code: 'git-unavailable', message: error instanceof Error ? error.message : String(error),
+        code: 'git-unavailable', message: 'Git operation failed',
         details: { sessionId, reason: 'GIT_FAILED' },
       })
     }
@@ -2826,11 +2830,11 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       },
 
       async gitPush(request, signal) {
-        return gitForSession(request, signal, workspaceGitPush)
+        return gitForSession(request, signal, (cwd, abort) => workspaceGitPush(cwd, abort, request.payload.credentials))
       },
 
       async gitPull(request, signal) {
-        return gitForSession(request, signal, workspaceGitPull)
+        return gitForSession(request, signal, (cwd, abort) => workspaceGitPull(cwd, abort, request.payload.credentials))
       },
 
       list(request) {

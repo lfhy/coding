@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process'
+import { createServer as createHttpsServer } from 'node:https'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -185,6 +186,59 @@ describe('standalone workspace Git', () => {
     await expect(workspaceGitPull(root, signal)).rejects.toMatchObject({ code: 'GIT_CONFLICT' })
     expect(git(root, 'status', '--porcelain')).toBe('')
     expect(git(root, 'log', '-1', '--format=%s')).toBe('local')
+  })
+
+  it('challenges for HTTPS credentials before staging and retries without exposing secrets', async () => {
+    const root = repo()
+    const bare = temp()
+    git(bare, 'init', '--bare', '-q')
+    const key = join(bare, 'server.key')
+    const certificate = join(bare, 'server.crt')
+    execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', key,
+      '-out', certificate, '-days', '1', '-subj', '/CN=localhost'], { stdio: 'ignore' })
+    const server = createHttpsServer({ key: readFileSync(key), cert: readFileSync(certificate) }, (request, response) => {
+      if (request.headers.authorization !== `Basic ${Buffer.from('alice:private-token').toString('base64')}`) {
+        response.writeHead(401, { 'WWW-Authenticate': 'Basic realm="git"' })
+        response.end('authorization required')
+        return
+      }
+      response.writeHead(404)
+      response.end('not a Git endpoint')
+    })
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    try {
+      const address = server.address()
+      if (address === null || typeof address === 'string') throw new Error('Missing HTTPS address')
+      const url = `https://127.0.0.1:${address.port}/private.git`
+      git(root, 'remote', 'add', 'origin', url)
+      const branch = git(root, 'branch', '--show-current')
+      git(root, 'config', `branch.${branch}.remote`, 'origin')
+      git(root, 'config', `branch.${branch}.merge`, `refs/heads/${branch}`)
+      git(root, 'update-ref', `refs/remotes/origin/${branch}`, 'HEAD')
+      git(root, 'config', 'http.sslVerify', 'false')
+      writeFileSync(join(root, 'pending.txt'), 'uncommitted\n')
+      await expect(workspaceGitPush(root, signal)).rejects.toMatchObject({ code: 'GIT_AUTH_REQUIRED', remote: `https://127.0.0.1:${address.port}` })
+      expect(git(root, 'status', '--porcelain')).toBe('?? pending.txt')
+      await expect(workspaceGitPull(root, signal, { username: 'alice', password: 'wrong' })).rejects.toMatchObject({ code: 'GIT_AUTH_FAILED' })
+      await expect(workspaceGitPull(root, signal, { username: 'alice', password: 'private-token' })).rejects.toMatchObject({ code: 'GIT_FAILED' })
+    } finally {
+      server.close()
+    }
+  })
+
+  it('never offers credential retry to HTTP or SSH remotes', async () => {
+    const root = repo()
+    const branch = git(root, 'branch', '--show-current')
+    git(root, 'remote', 'add', 'origin', 'http://localhost:1/private.git')
+    git(root, 'config', `branch.${branch}.remote`, 'origin')
+    git(root, 'config', `branch.${branch}.merge`, `refs/heads/${branch}`)
+    git(root, 'update-ref', `refs/remotes/origin/${branch}`, 'HEAD')
+    const credentials = { username: 'alice', password: 'secret' }
+    await expect(workspaceGitPush(root, signal, credentials)).rejects.toMatchObject({ code: 'GIT_REMOTE_UNAVAILABLE' })
+    git(root, 'remote', 'set-url', 'origin', 'https://alice:embedded-secret@localhost:1/private.git')
+    await expect(workspaceGitPull(root, signal, credentials)).rejects.toMatchObject({ code: 'GIT_REMOTE_UNAVAILABLE' })
+    git(root, 'remote', 'set-url', 'origin', 'git@example.org:repo.git')
+    await expect(workspaceGitPull(root, signal, credentials)).rejects.toMatchObject({ code: 'GIT_REMOTE_UNAVAILABLE' })
   })
 
   it('honors cancellation before launching Git', async () => {
