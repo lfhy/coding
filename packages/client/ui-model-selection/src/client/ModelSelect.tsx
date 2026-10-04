@@ -1,7 +1,7 @@
 /** 输入框模型入口：从会话目录选择渠道、模型及已公布的推理等级。 */
 import {
   useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore,
-  type KeyboardEvent, type FocusEvent,
+  type CSSProperties, type KeyboardEvent, type FocusEvent,
 } from 'react'
 import clsx from 'clsx'
 import type { ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
@@ -39,7 +39,7 @@ function measureMenuPlacement(root: HTMLElement, wide: boolean): MenuPlacement {
     visibleRight = Math.min(visibleRight, rect.right - margin)
   }
   const anchor = root.getBoundingClientRect()
-  const width = Math.max(0, Math.min(wide ? 600 : 300, visibleRight - visibleLeft))
+  const width = Math.max(0, Math.min(wide ? 600 : 260, visibleRight - visibleLeft))
   const left = Math.max(visibleLeft, Math.min(anchor.right - width, visibleRight - width))
   return { left: left - anchor.left, width }
 }
@@ -69,8 +69,9 @@ export function ModelSelect(
   const rootRef = useRef<HTMLDivElement | null>(null)
   const [menuPlacement, setMenuPlacement] = useState<MenuPlacement | null>(null)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
-  const firstFocusRef = useRef<HTMLButtonElement | HTMLInputElement | null>(null)
   const searchRef = useRef<HTMLInputElement | null>(null)
+  const effortControlRef = useRef<HTMLInputElement | HTMLButtonElement | null>(null)
+  const restoreEffortFocusRef = useRef(false)
   const id = useId()
 
   const choices = useMemo(() => state.groups.flatMap(group =>
@@ -115,6 +116,17 @@ export function ModelSelect(
   const activeEffort = draftIndex === null
     ? effortStops[effortIndex]
     : effortStops[draftIndex]
+  const activeEffortId = activeEffort?.effort?.toLowerCase()
+  const activeEffortName = activeEffort?.label.toLowerCase()
+  const effortTone = activeEffortName === 'ultra' || activeEffortId === 'ultra' || activeEffortId === 'xhigh'
+    ? css.toneUltra
+    : activeEffortId === 'max' ? css.toneMax
+      : activeEffortId === 'high' || activeEffortId === 'medium' ? css.toneHigh
+        : activeEffortId === 'low' || activeEffortId === 'minimal' ? css.toneLow
+          : css.toneNeutral
+  const previewIndex = draftIndex ?? Math.max(0, effortIndex)
+  const sliderStyle = { '--reasoning-position': effortStops.length > 1
+    ? previewIndex / (effortStops.length - 1) : 0 } as CSSProperties
   const hasEffortPanel = new Set(effortStops.map(level => level.effort)).size > 1
     || (effortStops.length > 0 && effortIndex < 0)
   const normalizedQuery = query.trim().toLocaleLowerCase()
@@ -178,7 +190,13 @@ export function ModelSelect(
   }, [open, pane, hasEffortPanel])
 
   useEffect(() => {
-    if (open) (pane === 'models' ? searchRef.current : firstFocusRef.current)?.focus()
+    if (!open) return
+    if (pane === 'models') {
+      searchRef.current?.focus()
+    } else if (restoreEffortFocusRef.current) {
+      restoreEffortFocusRef.current = false
+      effortControlRef.current?.focus()
+    }
   }, [open, pane])
 
   if (!available) return null
@@ -188,6 +206,7 @@ export function ModelSelect(
     setProviderId(currentChoice?.group.id ?? state.groups[0]?.id ?? null)
     setQuery('')
     setDraftIndex(null)
+    restoreEffortFocusRef.current = false
     setOpen(true)
     reload()
   }
@@ -196,13 +215,17 @@ export function ModelSelect(
     setOpen(false)
     setPane('effort')
     setProviderId(null)
+    restoreEffortFocusRef.current = false
     if (restoreFocus) queueMicrotask(() => { triggerRef.current?.focus() })
   }
 
   const onRootKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
     if (event.key === 'Escape' && open) {
       event.preventDefault()
-      if (pane === 'models' && hasEffortPanel) setPane('effort')
+      if (pane === 'models' && hasEffortPanel) {
+        restoreEffortFocusRef.current = true
+        setPane('effort')
+      }
       else close(true)
       return
     }
@@ -244,24 +267,33 @@ export function ModelSelect(
 
   const chooseEffort = (effort: string | undefined): void => {
     if (busy || state.current === null) return
-    if (state.current.reasoningEffort === effort) return
+    if (state.current.reasoningEffort === effort) {
+      setDraftIndex(null)
+      return
+    }
     const selection: ModelSelection = {
       provider: state.current.provider,
       model: state.current.model,
       ...effort === undefined ? {} : { reasoningEffort: effort },
     }
     lastActionRef.current = 'select'
-    void select(selection).then((accepted) => { settleSelection(accepted, true) })
+    void select(selection).then((accepted) => {
+      setDraftIndex(null)
+      settleSelection(accepted, true)
+    })
   }
 
   const commitEffort = (index: number): void => {
-    setDraftIndex(null)
     const level = effortStops[index]
-    if (level !== undefined) chooseEffort(level.effort)
+    if (level !== undefined) {
+      setDraftIndex(index)
+      chooseEffort(level.effort)
+    }
   }
 
   const modelLabel = currentChoice?.model.name ?? t('trigger.fallback')
   const triggerLabel = effortLabel === undefined ? modelLabel : `${modelLabel} · ${effortLabel}`
+  const visibleTriggerLabel = hasEffortPanel ? t('trigger.strength') : t('trigger.fallback')
   const triggerAria = currentChoice === undefined
     ? t('trigger.selectAria')
     : effortLabel === undefined
@@ -287,15 +319,14 @@ export function ModelSelect(
           }
         }}
       >
-        <span className={css.triggerLabel}>{modelLabel}</span>
-        {effortLabel !== undefined && <span className={css.triggerEffort}>{effortLabel}</span>}
+        <span className={css.triggerLabel}>{visibleTriggerLabel}</span>
         <IconChevronDownOutline14 className={clsx(css.chevron, open && css.chevronOpen)} />
       </button>
 
       {open && (
         <div
           id={`${id}-menu`}
-          className={clsx(css.menu, pane === 'models' && css.wideMenu)}
+          className={clsx(css.menu, pane === 'models' ? css.wideMenu : css.effortMenu, pane === 'effort' && effortTone)}
           style={menuPlacement === null ? undefined : { left: menuPlacement.left, width: menuPlacement.width }}
           role="dialog"
           aria-modal="false"
@@ -305,8 +336,7 @@ export function ModelSelect(
           {pane === 'effort' && (
             <>
               <div className={css.effortHeader}>
-                <span className={css.eyebrow}>{t('menu.effort')}</span>
-                <strong className={css.currentEffort}>{effortLabel ?? t('empty.efforts')}</strong>
+                <strong className={css.currentEffort}>{activeEffort?.label ?? effortLabel ?? t('empty.efforts')}</strong>
                 {reasoning !== undefined && (
                   <button
                     type="button"
@@ -318,20 +348,18 @@ export function ModelSelect(
                   ><IconRefreshOutline16 /></button>
                 )}
                 <button
-                  ref={(node) => { firstFocusRef.current = node }}
                   type="button"
                   className={css.modelLink}
+                  aria-label={t('models.currentAria', { model: modelLabel })}
                   onClick={() => { setPane('models') }}
                 >
-                  <span className={css.modelLinkCopy}>
-                    <span className={css.eyebrow}>{t('models.current')}</span>
-                    <span className={css.modelName}>{modelLabel}</span>
-                  </span>
+                  <span className={css.modelName}>{modelLabel}</span>
                   <IconChevronRightOutline14 className={css.cellChevron} />
                 </button>
               </div>
               <div className={css.compactMessages}>
-                {state.status === 'loading' && <div role="status" className={css.status}>{t('status.loading')}</div>}
+                {state.status === 'loading' && state.groups.length === 0
+                  && <div role="status" className={css.status}>{t('status.loading')}</div>}
                 {state.error !== null && lastActionRef.current === 'load' && (
                   <div role="alert" className={css.error}>
                     <span>{t('error.action', { message: state.error })}</span>
@@ -347,9 +375,17 @@ export function ModelSelect(
               </div>
               {effortStops.length > 1 && (
                 <div className={css.sliderGroup}>
-                  <label htmlFor={`${id}-effort`} className={css.eyebrow}>{t('effort.adjust')}</label>
-                  <div className={clsx(css.sliderRail, effortIndex < 0 && draftIndex === null && css.sliderUnspecified)}>
+                  <label htmlFor={`${id}-effort`} className={css.visuallyHidden}>{t('effort.adjust')}</label>
+                  <div
+                    className={clsx(css.sliderRail, effortIndex < 0 && draftIndex === null && css.sliderUnspecified)}
+                    style={sliderStyle}
+                  >
+                    <span className={css.sliderFill} aria-hidden="true" />
+                    <span className={css.railDots} aria-hidden="true">
+                      {effortStops.map(level => <span key={level.effort ?? 'default'} />)}
+                    </span>
                     <input
+                      ref={(node) => { effortControlRef.current = node }}
                       id={`${id}-effort`}
                       className={css.slider}
                       type="range"
@@ -372,20 +408,15 @@ export function ModelSelect(
                         if (draftIndex !== null) commitEffort(Number(event.currentTarget.value))
                       }}
                     />
-                    {effortIndex < 0 && draftIndex === null && (
-                      <span className={css.defaultHint} aria-hidden="true">{effortLabel}</span>
-                    )}
-                  </div>
-                  <div className={css.scale} aria-hidden="true">
-                    {effortStops.map(level => <span key={level.effort ?? 'default'}>{level.label}</span>)}
                   </div>
                   {activeEffort?.description !== undefined && (
-                    <div id={`${id}-effort-description`} className={css.effortDescription}>{activeEffort.description}</div>
+                    <div id={`${id}-effort-description`} className={css.visuallyHidden}>{activeEffort.description}</div>
                   )}
                 </div>
               )}
               {effortStops.length === 1 && effortStops[0] !== undefined && (
                 <button
+                  ref={(node) => { effortControlRef.current = node }}
                   type="button"
                   className={css.singleEffort}
                   aria-describedby={effortStops[0].description === undefined ? undefined : `${id}-effort-description`}
@@ -394,7 +425,7 @@ export function ModelSelect(
                 >{effortStops[0].label}</button>
               )}
               {effortStops.length === 1 && effortStops[0]?.description !== undefined && (
-                <div id={`${id}-effort-description`} className={css.effortDescription}>{effortStops[0].description}</div>
+                <div id={`${id}-effort-description`} className={css.visuallyHidden}>{effortStops[0].description}</div>
               )}
             </>
           )}
@@ -423,7 +454,10 @@ export function ModelSelect(
                 <div className={css.modelsHeader}>
                   <span className={css.providerName}>{provider?.name ?? t('models.title')}</span>
                   {hasEffortPanel && (
-                    <button type="button" className={css.back} onClick={() => { setPane('effort') }}>
+                    <button type="button" className={css.back} onClick={() => {
+                      restoreEffortFocusRef.current = true
+                      setPane('effort')
+                    }}>
                       <IconChevronLeftOutline14 />{t('models.back')}
                     </button>
                   )}

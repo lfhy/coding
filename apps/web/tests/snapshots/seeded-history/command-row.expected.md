@@ -57,7 +57,7 @@
   - img
 - 'button "Access mode, current: Read Only"': Read Only
 - button "Select model, current DeepSeek-V4-Flash":
-  - text: DeepSeek-V4-Flash
+  - text: Select model
   - img
 - button "Send message" [disabled]
 - region "Session overview":

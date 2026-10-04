@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
+import { LlmAdapter, ReasoningEffortId, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import {
   assertFixtureInventory, captureStableAria, compareOrRefreshGolden,
@@ -18,6 +19,33 @@ const OVERLAY = fileURLToPath(new URL('./declared-reasoning.overlay.yml', import
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/declared-reasoning', import.meta.url))
 const UI_EXPECTED = fileURLToPath(new URL('./snapshots/declared-reasoning/ui.expected.md', import.meta.url))
 const MODE = webSnapshotMode()
+const VISUAL_PROVIDER = 'reference-efforts'
+const VISUAL_MODEL = 'astra'
+
+/** 为深色强度面板提供含 Max 与 Ultra 的确切模型目录，不执行网络请求。 */
+class ReferenceEffortAdapter extends LlmAdapter {
+  override providerInfo(provider: string) { return { id: provider, name: 'Reference' } }
+
+  override listModels(provider: string) {
+    return Promise.resolve([{ provider, id: VISUAL_MODEL, name: '6 Astra' }])
+  }
+
+  override resolveModel(provider: string, model: string) {
+    return Promise.resolve({
+      provider, id: model, name: '6 Astra',
+      reasoning: {
+        efforts: ['off', 'minimal', 'low', 'medium', 'max', 'ultra'].map(id => ({
+          id: ReasoningEffortId(id), name: id === 'ultra' ? 'Ultra' : id === 'max' ? 'Max' : id,
+        })),
+        defaultEffort: ReasoningEffortId('ultra'),
+      },
+    })
+  }
+
+  override async *stream(_options: GenerateOptions): AsyncIterable<StreamChunk> {
+    throw new Error('reference effort adapter must not stream in this scenario')
+  }
+}
 
 describe.skipIf(MODE === 'record')('web e2e: declared reasoning efforts reach the composer', () => {
   let scaffold: WebScaffold
@@ -45,8 +73,12 @@ describe.skipIf(MODE === 'record')('web e2e: declared reasoning efforts reach th
         },
       },
     })
+    scaffold.ctx.effect(
+      () => scaffold.ctx.llm.registerAdapter([VISUAL_PROVIDER], new ReferenceEffortAdapter()),
+      'declared reasoning visual adapter',
+    )
     browser = await chromium.launch()
-    page = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
+    page = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE, colorScheme: 'dark' })
     tripwire = watchConsole(page)
     page.on('request', (request) => {
       if (!request.url().endsWith('/api/session.selectModel')) return
@@ -56,6 +88,10 @@ describe.skipIf(MODE === 'record')('web e2e: declared reasoning efforts reach th
     await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     await connectFreshWorkspaceZh(page, scaffold.workspaceCwd)
+    expect(new URL(page.url()).origin).toBe(scaffold.baseUrl)
+    expect(await page.title()).toContain('Coding')
+    expect(await page.locator('vite-error-overlay').count()).toBe(0)
+    expect(await page.evaluate(() => document.body.hasAttribute('data-ds-dark-theme'))).toBe(true)
   }, 120_000)
 
   afterAll(async () => {
@@ -72,14 +108,13 @@ describe.skipIf(MODE === 'record')('web e2e: declared reasoning efforts reach th
     await expect.poll(() => effort.getAttribute('aria-busy'), { timeout: 10_000 }).toBe('false')
     const slider = effort.getByRole('slider', { name: '调整推理等级' })
     await slider.waitFor()
+    expect(await trigger.textContent()).toBe('选择强度')
     expect(await slider.getAttribute('min')).toBe('0')
     expect(await slider.getAttribute('max')).toBe('3')
     expect(await slider.getAttribute('step')).toBe('1')
     expect(await slider.getAttribute('aria-valuetext')).toBe('Default')
-    for (const level of ['none', 'High', 'Max']) {
-      expect(await effort.getByText(level, { exact: true }).count()).toBe(1)
-    }
-    expect(await effort.getByText('Low', { exact: true }).count()).toBe(0)
+    expect(await effort.getByText('Default', { exact: true }).count()).toBe(1)
+    expect(await effort.getByText('none', { exact: true }).count()).toBe(0)
     expect(await effort.getByRole('button', { name: /当前模型\s*Acme Think/ }).count()).toBe(1)
     effortSnapshot = await captureStableAria(page, '[role="dialog"][aria-label="推理等级与当前模型"]', scaffold.workspaceCwd)
     if (process.env.DSH_SCREENSHOT_DIR !== undefined) {
@@ -90,12 +125,14 @@ describe.skipIf(MODE === 'record')('web e2e: declared reasoning efforts reach th
     await slider.focus()
     await slider.press('ArrowRight')
     await expect.poll(() => slider.getAttribute('aria-valuetext')).toBe('none')
+    await effort.getByText('none', { exact: true }).waitFor()
     await expect.poll(() => selections.at(-1), { timeout: 10_000 }).toMatchObject({
       provider: 'acme-gateway', model: 'acme-think', reasoningEffort: 'off',
     })
     await expect.poll(() => effort.getAttribute('aria-busy')).toBe('false')
     await slider.press('ArrowRight')
     await expect.poll(() => slider.getAttribute('aria-valuetext')).toBe('High')
+    await effort.getByText('High', { exact: true }).waitFor()
     await expect.poll(() => selections.at(-1), { timeout: 10_000 }).toMatchObject({
       provider: 'acme-gateway', model: 'acme-think', reasoningEffort: 'high',
     })
@@ -116,6 +153,7 @@ describe.skipIf(MODE === 'record')('web e2e: declared reasoning efforts reach th
     const effort = page.getByRole('dialog', { name: '推理等级与当前模型' })
     await effort.getByRole('button', { name: /当前模型\s*Acme Think/ }).click()
     const models = page.getByRole('dialog', { name: '选择模型' })
+    expect(await page.getByRole('button', { name: /^选择模型，当前/ }).textContent()).toBe('选择强度')
     await expect.poll(() => models.getAttribute('aria-busy')).toBe('false')
     const providers = models.locator('[aria-label="渠道列表"]')
     const channel = providers.getByRole('button', { name: 'Acme Gateway' })
@@ -194,7 +232,7 @@ describe.skipIf(MODE === 'record')('web e2e: declared reasoning efforts reach th
     expect(tripwire.warnings).toEqual([])
     expect(tripwire.pageErrors).toEqual([])
 
-    const fresh = await browser.newPage({ viewport: { width: 375, height: 812 }, locale: ZH_BROWSER_LOCALE })
+    const fresh = await browser.newPage({ viewport: { width: 375, height: 812 }, locale: ZH_BROWSER_LOCALE, colorScheme: 'dark' })
     const freshTripwire = watchConsole(fresh)
     try {
       await fresh.goto(scaffold.baseUrl, { waitUntil: 'load' })
@@ -220,6 +258,50 @@ describe.skipIf(MODE === 'record')('web e2e: declared reasoning efforts reach th
     } finally {
       await fresh.close()
     }
+  }, 60_000)
+
+  it('previews the Ultra and Max palettes for an exact model without sending a prompt', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-reference-effort-colors'))
+    await page.setViewportSize({ width: 1680, height: 1000 })
+    const trigger = page.getByRole('button', { name: /^选择模型/ })
+    await trigger.click()
+    await page.getByRole('dialog', { name: '推理等级与当前模型' })
+      .getByRole('button', { name: /当前模型/ }).click()
+    const models = page.getByRole('dialog', { name: '选择模型' })
+    await models.getByRole('group', { name: '渠道列表' }).getByRole('button', { name: 'Reference' }).click()
+    await models.getByRole('button', { name: '6 Astra' }).click()
+    await expect.poll(() => trigger.getAttribute('aria-label')).toContain('推理等级 Ultra')
+    await trigger.click()
+    const effort = page.getByRole('dialog', { name: '推理等级与当前模型' })
+    const title = effort.locator('strong')
+    const slider = effort.getByRole('slider', { name: '调整推理等级' })
+    await expect.poll(() => effort.getAttribute('aria-busy')).toBe('false')
+    expect(await effort.getByRole('status').count()).toBe(0)
+    await expect.poll(() => title.textContent()).toBe('Ultra')
+    expect(await title.evaluate(node => getComputedStyle(node).color)).toBe('rgb(179, 86, 249)')
+    expect(await effort.locator('[aria-hidden="true"]').first().evaluate(node => getComputedStyle(node).backgroundImage))
+      .toContain('linear-gradient')
+    expect(await effort.getByRole('button', { name: '当前模型 6 Astra' }).textContent()).toBe('6 Astra')
+    if (process.env.DSH_SCREENSHOT_DIR !== undefined) {
+      await page.screenshot({ path: join(process.env.DSH_SCREENSHOT_DIR, 'reasoning-ultra-reference.png'), fullPage: false })
+    }
+
+    const bounds = await slider.boundingBox()
+    expect(bounds).not.toBeNull()
+    const y = bounds!.y + bounds!.height / 2
+    await page.mouse.move(bounds!.x + bounds!.width - 14, y)
+    await page.mouse.down()
+    await page.mouse.move(bounds!.x + 14 + (bounds!.width - 28) * 4 / 5, y, { steps: 5 })
+    await expect.poll(() => title.textContent()).toBe('Max')
+    await expect.poll(() => title.evaluate(node => getComputedStyle(node).color)).toBe('rgb(24, 119, 238)')
+    expect(selections.at(-1)?.reasoningEffort).toBe('ultra')
+    await page.mouse.up()
+    await expect.poll(() => selections.at(-1)?.reasoningEffort).toBe('max')
+    if (process.env.DSH_SCREENSHOT_DIR !== undefined) {
+      await page.screenshot({ path: join(process.env.DSH_SCREENSHOT_DIR, 'reasoning-max-reference.png'), fullPage: false })
+    }
+    expect(tripwire.warnings).toEqual([])
+    expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
   it('matches the refreshed accessible snapshot', async () => {

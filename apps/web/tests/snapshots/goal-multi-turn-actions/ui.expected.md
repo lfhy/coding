@@ -214,7 +214,7 @@
   - img
 - 'button "Access mode, current: Workspace Write"': Workspace Write
 - button "Select model, current DeepSeek-V4-Flash":
-  - text: DeepSeek-V4-Flash
+  - text: Select model
   - img
 - button "9% of context used"
 - button "Send message" [disabled]

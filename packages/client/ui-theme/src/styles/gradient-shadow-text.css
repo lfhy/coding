@@ -1,6 +1,19 @@
 body {
   --dsw-linear-gradient-think: linear-gradient(180deg, #fff 20.19%, rgba(255, 255, 255, 0) 100%);
   --dsw-linear-think-select: linear-gradient(180deg, #f5f6f7 20.19%, rgba(245, 246, 247, 0) 100%);
+  --dsw-linear-reasoning-ultra: linear-gradient(90deg, var(--dsw-static-indigo-600), var(--dsw-static-violet-400));
+  --dsw-linear-reasoning-stars:
+    radial-gradient(circle at 9% 69%, rgba(255, 255, 255, 0.88) 0 1px, transparent 1.7px),
+    radial-gradient(circle at 14% 43%, rgba(255, 255, 255, 0.6) 0 1.3px, transparent 2px),
+    radial-gradient(circle at 19% 58%, rgba(255, 255, 255, 0.77) 0 0.8px, transparent 1.7px),
+    radial-gradient(circle at 29% 54%, rgba(255, 255, 255, 0.65) 0 1px, transparent 1.8px),
+    radial-gradient(circle at 42% 60%, rgba(255, 255, 255, 0.94) 0 1px, transparent 1.8px),
+    radial-gradient(circle at 49% 49%, rgba(255, 255, 255, 0.75) 0 1.3px, transparent 2px),
+    radial-gradient(circle at 55% 71%, rgba(255, 255, 255, 0.9) 0 0.9px, transparent 1.8px),
+    radial-gradient(circle at 58% 38%, rgba(255, 255, 255, 0.7) 0 0.9px, transparent 1.7px),
+    radial-gradient(circle at 70% 57%, rgba(255, 255, 255, 0.8) 0 1.4px, transparent 2.2px),
+    radial-gradient(circle at 81% 37%, rgba(255, 255, 255, 0.65) 0 1px, transparent 1.7px),
+    radial-gradient(circle at 91% 60%, rgba(255, 255, 255, 0.85) 0 1px, transparent 1.7px);
   /* 阴影 */
   --dsw-shadow-lv1: 0 2px 4px 0 rgba(0, 0, 0, 0.05);
   --dsw-shadow-lv1-blur: 0 4px 12px 0 rgba(0, 0, 0, 0.02);
