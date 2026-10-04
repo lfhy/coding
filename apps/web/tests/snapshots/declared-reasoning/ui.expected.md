@@ -1,10 +1,10 @@
-- menu "渠道、模型与推理等级":
-  - menuitem "推理等级":
+- dialog "推理等级与当前模型":
+  - text: 推理等级
+  - strong: Default
+  - button "恢复模型默认等级" [disabled]:
     - img
-    - text: 推理等级
-  - menuitemradio "Default" [checked]:
-    - text: Default
+  - button "当前模型 Acme Think":
+    - text: 当前模型 Acme Think
     - img
-  - menuitemradio "none"
-  - menuitemradio "High"
-  - menuitemradio "Max"
+  - text: 调整推理等级
+  - slider "调整推理等级": "0"

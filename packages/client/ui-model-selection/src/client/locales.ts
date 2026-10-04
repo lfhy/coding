@@ -1,14 +1,6 @@
-/**
- * `model` namespace dictionaries.
- *
- * `trigger.selectAria` reads identically to `trigger.fallback` today and is
- * still a separate key: the visible fallback label and the accessible name of
- * an unset trigger are free to diverge per locale, and folding it into
- * `trigger.aria` would announce the degenerate "Select model, current Select
- * model".
- */
+/** 模型入口文案；未选模型时的可访问名称与触发器回退文案独立。 */
 
-/** Simplified Chinese dictionary (the key-set source of truth). */
+/** 简体中文词典，也是翻译键的来源。 */
 export const zh = {
   'command.description': '选择本会话使用的模型',
   'option.loadError': '目录加载失败：{message}',
@@ -18,21 +10,32 @@ export const zh = {
   'trigger.ariaEffort': '选择模型，当前 {model}，推理等级 {effort}',
   'menu.aria': '渠道、模型与推理等级',
   'menu.effort': '推理等级',
+  'effort.aria': '推理等级与当前模型',
+  'effort.adjust': '调整推理等级',
+  'effort.reset': '恢复模型默认等级',
   'effort.providerDefault': 'Default',
   'effort.none': 'none',
+  'models.aria': '选择模型',
+  'models.current': '当前模型',
+  'models.title': '模型',
+  'models.back': '返回推理等级',
+  'models.search': '搜索模型',
+  'providers.aria': '渠道列表',
+  'providers.title': '渠道',
   'status.loading': '正在刷新模型列表…',
   'error.action': '模型操作失败：{message}',
   'action.reload': '重新加载',
   'warning.groupLoad': '{name} 加载失败：{message}',
   'empty.models': '没有可用的模型。',
+  'empty.search': '没有匹配的模型。',
   'blocked.composer': '当前模型不可用，请先选择模型',
   'empty.efforts': '当前模型未提供推理等级。',
 } satisfies Record<string, string>
 
-/** The model namespace key union. */
+/** 模型命名空间的翻译键。 */
 export type ModelKey = keyof typeof zh
 
-/** English dictionary, checked complete against the zh key set. */
+/** 英文词典，与中文词典保持相同键集。 */
 export const en = {
   'command.description': 'Select the model for this conversation',
   'option.loadError': 'Catalog failed to load: {message}',
@@ -42,13 +45,24 @@ export const en = {
   'trigger.ariaEffort': 'Select model, current {model}, reasoning effort {effort}',
   'menu.aria': 'Provider, model, and reasoning effort',
   'menu.effort': 'Effort',
+  'effort.aria': 'Reasoning effort and current model',
+  'effort.adjust': 'Adjust reasoning effort',
+  'effort.reset': 'Reset to model default',
   'effort.providerDefault': 'Default',
   'effort.none': 'none',
+  'models.aria': 'Select model',
+  'models.current': 'Current model',
+  'models.title': 'Models',
+  'models.back': 'Back to effort',
+  'models.search': 'Search models',
+  'providers.aria': 'Provider list',
+  'providers.title': 'Providers',
   'status.loading': 'Refreshing model list…',
   'error.action': 'Model operation failed: {message}',
   'action.reload': 'Reload',
   'warning.groupLoad': '{name} failed to load: {message}',
   'empty.models': 'No models available.',
+  'empty.search': 'No matching models.',
   'blocked.composer': 'This model is unavailable — select one to continue',
   'empty.efforts': 'This model provides no reasoning effort levels.',
 } satisfies Record<ModelKey, string>

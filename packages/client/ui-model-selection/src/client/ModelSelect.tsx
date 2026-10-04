@@ -4,17 +4,17 @@ import {
   type KeyboardEvent, type FocusEvent,
 } from 'react'
 import clsx from 'clsx'
-import type { ModelReasoningEffort, ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
+import type { ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
 import {
   IconCheckOutline16, IconChevronDownOutline14, IconChevronLeftOutline14,
-  IconChevronRightOutline14, IconWarningOutline16,
+  IconChevronRightOutline14, IconRefreshOutline16, IconSearchOutline16, IconWarningOutline16,
 } from '@deepseek-ai/dsh-client-ui-icons'
 import { Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ModelSelectInjected } from './slots.ts'
 import css from './ModelSelect.module.css'
 
-type Pane = 'providers' | 'models' | 'effort'
+type Pane = 'effort' | 'models'
 
 interface MenuPlacement {
   left: number
@@ -28,7 +28,7 @@ function clipsHorizontally(element: HTMLElement): boolean {
 }
 
 /** 在所有横向裁切祖先与视口的交集内对齐触发器，保留菜单边缘的安全间距。 */
-function measureMenuPlacement(root: HTMLElement): MenuPlacement {
+function measureMenuPlacement(root: HTMLElement, wide: boolean): MenuPlacement {
   const margin = 12
   let visibleLeft = margin
   let visibleRight = window.innerWidth - margin
@@ -39,23 +39,15 @@ function measureMenuPlacement(root: HTMLElement): MenuPlacement {
     visibleRight = Math.min(visibleRight, rect.right - margin)
   }
   const anchor = root.getBoundingClientRect()
-  const width = Math.max(0, Math.min(260, visibleRight - visibleLeft))
+  const width = Math.max(0, Math.min(wide ? 600 : 300, visibleRight - visibleLeft))
   const left = Math.max(visibleLeft, Math.min(anchor.right - width, visibleRight - width))
   return { left: left - anchor.left, width }
-}
-
-/** undefined 表示沿用提供方的默认推理等级。 */
-interface EffortChoice {
-  key: string
-  effort: string | undefined
-  label: string
-  description?: string
 }
 
 /**
  * 渲染输入框的模型入口。
  * @param props - 锁定状态、会话目录操作和当前语言的翻译函数。
- * @returns 触发器及打开时的渠道、模型或推理等级菜单。
+ * @returns 触发器及打开时的推理强度或模型选择面板。
  */
 export function ModelSelect(
   { locked, available, directory, load, select, t }:
@@ -66,8 +58,10 @@ export function ModelSelect(
     () => directory.getSnapshot(),
   )
   const [open, setOpen] = useState(false)
-  const [pane, setPane] = useState<Pane>('providers')
+  const [pane, setPane] = useState<Pane>('effort')
   const [providerId, setProviderId] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
+  const [draftIndex, setDraftIndex] = useState<number | null>(null)
   // 选择失败通过 Toast 提示，目录加载失败才在菜单内保留重试入口。
   const lastActionRef = useRef<'load' | 'select'>('load')
   const [toast, setToast] = useState<{ seq: number; text: string } | null>(null)
@@ -75,7 +69,8 @@ export function ModelSelect(
   const rootRef = useRef<HTMLDivElement | null>(null)
   const [menuPlacement, setMenuPlacement] = useState<MenuPlacement | null>(null)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
-  const itemRefs = useRef<(HTMLButtonElement | null)[]>([])
+  const firstFocusRef = useRef<HTMLButtonElement | HTMLInputElement | null>(null)
+  const searchRef = useRef<HTMLInputElement | null>(null)
   const id = useId()
 
   const choices = useMemo(() => state.groups.flatMap(group =>
@@ -104,20 +99,29 @@ export function ModelSelect(
       : effectiveEffort === 'off'
         ? t('effort.none')
         : reasoning.efforts.find(level => level.id === effectiveEffort)?.name ?? effectiveEffort
-  // 仅在渠道没有声明默认档位时显示默认选项，避免重复列出同一个推理等级。
-  const effortChoices = useMemo<readonly EffortChoice[]>(() => reasoning === undefined
+  const effortStops = useMemo(() => reasoning === undefined
     ? []
     : [
       ...reasoning.defaultEffort === undefined
-        ? [{ key: 'provider-default', effort: undefined, label: t('effort.providerDefault') }]
+        ? [{ effort: undefined, label: t('effort.providerDefault'), description: undefined }]
         : [],
-      ...reasoning.efforts.map((effort: ModelReasoningEffort) => ({
-        key: `effort:${effort.id}`,
-        effort: effort.id,
-        label: effort.id === 'off' ? t('effort.none') : effort.name,
-        ...effort.description === undefined ? {} : { description: effort.description },
+      ...reasoning.efforts.map(level => ({
+        effort: level.id,
+        label: level.id === 'off' ? t('effort.none') : level.name,
+        description: level.description,
       })),
     ], [reasoning, t])
+  const effortIndex = effortStops.findIndex(level => level.effort === effectiveEffort)
+  const activeEffort = draftIndex === null
+    ? effortStops[effortIndex]
+    : effortStops[draftIndex]
+  const hasEffortPanel = new Set(effortStops.map(level => level.effort)).size > 1
+    || (effortStops.length > 0 && effortIndex < 0)
+  const normalizedQuery = query.trim().toLocaleLowerCase()
+  const filteredModels = provider?.models.filter(model =>
+    model.name.toLocaleLowerCase().includes(normalizedQuery)
+    || model.id.toLocaleLowerCase().includes(normalizedQuery),
+  ) ?? []
   const busy = state.status === 'selecting'
 
   const reload = (): void => {
@@ -146,7 +150,7 @@ export function ModelSelect(
     if (!open || rootRef.current === null) return
     const root = rootRef.current
     const place = (): void => {
-      const next = measureMenuPlacement(root)
+      const next = measureMenuPlacement(root, pane === 'models')
       setMenuPlacement(previous => previous?.left === next.left && previous.width === next.width ? previous : next)
     }
     place()
@@ -162,54 +166,53 @@ export function ModelSelect(
       window.removeEventListener('resize', place)
       window.removeEventListener('scroll', place, true)
     }
-  }, [open])
+  }, [open, pane])
 
   useEffect(() => {
-    if (!open || pane === 'providers' || provider !== undefined) return
-    setPane('providers')
-    setProviderId(null)
-  }, [open, pane, provider])
+    if (!open || pane !== 'models' || provider !== undefined || state.groups.length === 0) return
+    setProviderId(currentChoice?.group.id ?? state.groups[0]?.id ?? null)
+  }, [open, pane, provider, currentChoice, state.groups])
 
   useEffect(() => {
-    if (open) itemRefs.current.find(item => item !== null)?.focus()
+    if (open && pane === 'effort' && !hasEffortPanel) setPane('models')
+  }, [open, pane, hasEffortPanel])
+
+  useEffect(() => {
+    if (open) (pane === 'models' ? searchRef.current : firstFocusRef.current)?.focus()
   }, [open, pane])
 
   if (!available) return null
 
   const show = (): void => {
-    setPane('providers')
-    setProviderId(null)
+    setPane(hasEffortPanel ? 'effort' : 'models')
+    setProviderId(currentChoice?.group.id ?? state.groups[0]?.id ?? null)
+    setQuery('')
+    setDraftIndex(null)
     setOpen(true)
     reload()
   }
 
   const close = (restoreFocus = false): void => {
     setOpen(false)
-    setPane('providers')
+    setPane('effort')
     setProviderId(null)
     if (restoreFocus) queueMicrotask(() => { triggerRef.current?.focus() })
-  }
-
-  const moveFocus = (offset: number): void => {
-    const items = itemRefs.current.filter(item => item !== null)
-    if (items.length === 0) return
-    const active = items.findIndex(item => item === document.activeElement)
-    const next = (Math.max(active, 0) + offset + items.length) % items.length
-    items[next]?.focus()
   }
 
   const onRootKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
     if (event.key === 'Escape' && open) {
       event.preventDefault()
-      if (pane === 'effort') setPane('models')
-      else if (pane === 'models') { setPane('providers'); setProviderId(null) }
+      if (pane === 'models' && hasEffortPanel) setPane('effort')
       else close(true)
       return
     }
-    if (!open) return
+    if (!open || pane !== 'models' || event.target instanceof HTMLInputElement) return
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      const items = Array.from(rootRef.current?.querySelectorAll<HTMLButtonElement>('[data-model-option]') ?? [])
+      if (items.length === 0 || !items.includes(document.activeElement as HTMLButtonElement)) return
       event.preventDefault()
-      moveFocus(event.key === 'ArrowDown' ? 1 : -1)
+      const active = items.indexOf(document.activeElement as HTMLButtonElement)
+      items[(active + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus()
     }
   }
 
@@ -218,9 +221,9 @@ export function ModelSelect(
     close()
   }
 
-  const settleSelection = (accepted: boolean): void => {
+  const settleSelection = (accepted: boolean, keepOpen = false): void => {
     if (accepted) {
-      if (rootRef.current !== null) close(true)
+      if (!keepOpen && rootRef.current !== null) close(true)
       return
     }
     const message = directory.getSnapshot().error
@@ -236,22 +239,25 @@ export function ModelSelect(
       return
     }
     lastActionRef.current = 'select'
-    void select(selection).then(settleSelection)
+    void select(selection).then((accepted) => { settleSelection(accepted) })
   }
 
   const chooseEffort = (effort: string | undefined): void => {
-    if (state.current === null) return
-    if (effectiveEffort === effort) {
-      close(true)
-      return
-    }
+    if (busy || state.current === null) return
+    if (state.current.reasoningEffort === effort) return
     const selection: ModelSelection = {
       provider: state.current.provider,
       model: state.current.model,
       ...effort === undefined ? {} : { reasoningEffort: effort },
     }
     lastActionRef.current = 'select'
-    void select(selection).then(settleSelection)
+    void select(selection).then((accepted) => { settleSelection(accepted, true) })
+  }
+
+  const commitEffort = (index: number): void => {
+    setDraftIndex(null)
+    const level = effortStops[index]
+    if (level !== undefined) chooseEffort(level.effort)
   }
 
   const modelLabel = currentChoice?.model.name ?? t('trigger.fallback')
@@ -261,13 +267,6 @@ export function ModelSelect(
     : effortLabel === undefined
       ? t('trigger.aria', { model: modelLabel })
       : t('trigger.ariaEffort', { model: modelLabel, effort: effortLabel })
-  itemRefs.current = []
-  let itemIndex = 0
-  const itemRef = () => {
-    const at = itemIndex++
-    return (node: HTMLButtonElement | null) => { itemRefs.current[at] = node }
-  }
-
   return (
     <div ref={rootRef} className={css.root} onKeyDown={onRootKeyDown} onBlur={onBlur}>
       <button
@@ -275,7 +274,7 @@ export function ModelSelect(
         type="button"
         className={css.trigger}
         aria-label={triggerAria}
-        aria-haspopup="menu"
+        aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={open ? `${id}-menu` : undefined}
         title={triggerLabel}
@@ -296,139 +295,198 @@ export function ModelSelect(
       {open && (
         <div
           id={`${id}-menu`}
-          className={css.menu}
-          style={menuPlacement === null ? undefined : { left: menuPlacement.left, right: 'auto', width: menuPlacement.width }}
-          role="menu"
-          aria-label={t('menu.aria')}
+          className={clsx(css.menu, pane === 'models' && css.wideMenu)}
+          style={menuPlacement === null ? undefined : { left: menuPlacement.left, width: menuPlacement.width }}
+          role="dialog"
+          aria-modal="false"
+          aria-label={pane === 'models' ? t('models.aria') : t('effort.aria')}
           aria-busy={state.status === 'loading' || busy}
         >
-          {pane === 'providers' && (
+          {pane === 'effort' && (
             <>
-              {state.status === 'loading' && <div role="status" className={css.status}>{t('status.loading')}</div>}
-              {state.error !== null && lastActionRef.current === 'load' && (
-                <div role="alert" className={css.error}>
-                  <span>{t('error.action', { message: state.error })}</span>
-                  <button type="button" className={css.retry} onClick={reload}>{t('retry')}</button>
-                </div>
-              )}
-              {state.failures.map(failure => (
-                <div className={css.warning} key={failure.id}>
-                  <span>{t('warning.groupLoad', { name: failure.name, message: failure.message })}</span>
-                  <button type="button" className={css.retry} onClick={reload}>{t('retry')}</button>
-                </div>
-              ))}
-              <div className={clsx(css.groups, 'scrollable')}>
-                {state.groups.map((group) => {
-                  const selected = state.current?.provider === group.id
-                  return (
-                    <button
-                      ref={itemRef()}
-                      type="button"
-                      role="menuitem"
-                      aria-current={selected ? 'true' : undefined}
-                      aria-haspopup="menu"
-                      className={clsx(css.provider, selected && css.providerSelected)}
-                      key={group.id}
-                      title={group.name}
-                      onClick={() => { setProviderId(group.id); setPane('models') }}
-                    >
-                      <span className={css.providerCheck}>{selected && <IconCheckOutline16 />}</span>
-                      <span className={css.providerName}>{group.name}</span>
-                      <IconChevronRightOutline14 className={css.cellChevron} />
-                    </button>
-                  )
-                })}
-              </div>
-              {state.status === 'ready' && state.groups.length === 0 && (
-                <div className={css.empty}>{t('empty.models')}</div>
-              )}
-            </>
-          )}
-
-          {pane === 'models' && provider !== undefined && (
-            <>
-              <button ref={itemRef()} type="button" role="menuitem" className={css.back} onClick={() => { setPane('providers'); setProviderId(null) }}>
-                <IconChevronLeftOutline14 />
-                <span className={css.providerName}>{provider.name}</span>
-              </button>
-              <div className={clsx(css.groups, 'scrollable')}>
-                {provider.models.map((model) => {
-                  const selected = state.current?.provider === provider.id && state.current.model === model.id
-                  return (
-                    <button
-                      ref={itemRef()}
-                      type="button"
-                      role="menuitemradio"
-                      aria-checked={selected}
-                      className={clsx(css.option, selected && css.selected)}
-                      key={model.id}
-                      title={model.name}
-                      disabled={busy}
-                      onClick={() => { choose({ provider: provider.id, model: model.id }) }}
-                    >
-                      <span className={css.optionCopy}>
-                        <span className={css.modelName}>{model.name}</span>
-                        {model.description !== undefined && (
-                          <span className={css.description}>{model.description}</span>
-                        )}
-                      </span>
-                      <span className={css.check}>
-                        {selected ? <IconCheckOutline16 /> : null}
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
-              {provider.models.length === 0 && (
-                <div className={css.empty}>{t('empty.models')}</div>
-              )}
-              {reasoning !== undefined && state.current?.provider === provider.id && (
-                <button ref={itemRef()} type="button" role="menuitem" className={css.cell} onClick={() => { setPane('effort') }}>
-                  <span className={css.cellLabel}>{t('menu.effort')}</span>
-                  <span className={css.cellValue}>{effortLabel}</span>
+              <div className={css.effortHeader}>
+                <span className={css.eyebrow}>{t('menu.effort')}</span>
+                <strong className={css.currentEffort}>{effortLabel ?? t('empty.efforts')}</strong>
+                {reasoning !== undefined && (
+                  <button
+                    type="button"
+                    className={css.reset}
+                    aria-label={t('effort.reset')}
+                    title={t('effort.reset')}
+                    disabled={busy || (state.current?.reasoningEffort ?? reasoning.defaultEffort) === reasoning.defaultEffort}
+                    onClick={() => { chooseEffort(undefined) }}
+                  ><IconRefreshOutline16 /></button>
+                )}
+                <button
+                  ref={(node) => { firstFocusRef.current = node }}
+                  type="button"
+                  className={css.modelLink}
+                  onClick={() => { setPane('models') }}
+                >
+                  <span className={css.modelLinkCopy}>
+                    <span className={css.eyebrow}>{t('models.current')}</span>
+                    <span className={css.modelName}>{modelLabel}</span>
+                  </span>
                   <IconChevronRightOutline14 className={css.cellChevron} />
                 </button>
+              </div>
+              <div className={css.compactMessages}>
+                {state.status === 'loading' && <div role="status" className={css.status}>{t('status.loading')}</div>}
+                {state.error !== null && lastActionRef.current === 'load' && (
+                  <div role="alert" className={css.error}>
+                    <span>{t('error.action', { message: state.error })}</span>
+                    <button type="button" className={css.retry} onClick={reload}>{t('action.reload')}</button>
+                  </div>
+                )}
+                {state.failures.map(failure => (
+                  <div className={css.warning} key={failure.id}>
+                    <span>{t('warning.groupLoad', { name: failure.name, message: failure.message })}</span>
+                    <button type="button" className={css.retry} onClick={reload}>{t('action.reload')}</button>
+                  </div>
+                ))}
+              </div>
+              {effortStops.length > 1 && (
+                <div className={css.sliderGroup}>
+                  <label htmlFor={`${id}-effort`} className={css.eyebrow}>{t('effort.adjust')}</label>
+                  <div className={clsx(css.sliderRail, effortIndex < 0 && draftIndex === null && css.sliderUnspecified)}>
+                    <input
+                      id={`${id}-effort`}
+                      className={css.slider}
+                      type="range"
+                      min={0}
+                      max={effortStops.length - 1}
+                      step={1}
+                      value={draftIndex ?? Math.max(0, effortIndex)}
+                      aria-valuetext={activeEffort?.label ?? effortLabel}
+                      aria-describedby={activeEffort?.description === undefined ? undefined : `${id}-effort-description`}
+                      disabled={busy}
+                      onChange={(event) => { setDraftIndex(Number(event.currentTarget.value)) }}
+                      onPointerUp={(event) => { commitEffort(Number(event.currentTarget.value)) }}
+                      onPointerCancel={() => { setDraftIndex(null) }}
+                      onKeyUp={(event) => {
+                        if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) {
+                          commitEffort(Number(event.currentTarget.value))
+                        }
+                      }}
+                      onBlur={(event) => {
+                        if (draftIndex !== null) commitEffort(Number(event.currentTarget.value))
+                      }}
+                    />
+                    {effortIndex < 0 && draftIndex === null && (
+                      <span className={css.defaultHint} aria-hidden="true">{effortLabel}</span>
+                    )}
+                  </div>
+                  <div className={css.scale} aria-hidden="true">
+                    {effortStops.map(level => <span key={level.effort ?? 'default'}>{level.label}</span>)}
+                  </div>
+                  {activeEffort?.description !== undefined && (
+                    <div id={`${id}-effort-description`} className={css.effortDescription}>{activeEffort.description}</div>
+                  )}
+                </div>
+              )}
+              {effortStops.length === 1 && effortStops[0] !== undefined && (
+                <button
+                  type="button"
+                  className={css.singleEffort}
+                  aria-describedby={effortStops[0].description === undefined ? undefined : `${id}-effort-description`}
+                  disabled={busy || effectiveEffort === effortStops[0].effort}
+                  onClick={() => { chooseEffort(effortStops[0]?.effort) }}
+                >{effortStops[0].label}</button>
+              )}
+              {effortStops.length === 1 && effortStops[0]?.description !== undefined && (
+                <div id={`${id}-effort-description`} className={css.effortDescription}>{effortStops[0].description}</div>
               )}
             </>
           )}
-
-          {pane === 'effort' && provider !== undefined && (
-            <>
-              <button ref={itemRef()} type="button" role="menuitem" className={css.back} onClick={() => { setPane('models') }}>
-                <IconChevronLeftOutline14 />
-                <span>{t('menu.effort')}</span>
-              </button>
-              {state.error !== null && lastActionRef.current === 'load' && (
-                <div className={css.error}>
-                  <span>{t('error.action', { message: state.error })}</span>
-                  <button type="button" className={css.retry} onClick={reload}>{t('action.reload')}</button>
+          {pane === 'models' && (
+            <div className={css.browser}>
+              <div className={clsx(css.providers, 'scrollable')} role="group" aria-label={t('providers.aria')}>
+                <div className={css.eyebrow}>{t('providers.title')}</div>
+                {state.groups.map((group) => {
+                  const active = providerId === group.id
+                  return (
+                    <button
+                      key={group.id}
+                      type="button"
+                      className={clsx(css.provider, active && css.providerSelected)}
+                      aria-pressed={active}
+                      title={group.name}
+                      onClick={() => { setProviderId(group.id); setQuery('') }}
+                    >
+                      <span className={css.providerCheck}>{state.current?.provider === group.id && <IconCheckOutline16 />}</span>
+                      <span className={css.providerName}>{group.name}</span>
+                    </button>
+                  )
+                })}
+              </div>
+              <div className={css.modelsPane}>
+                <div className={css.modelsHeader}>
+                  <span className={css.providerName}>{provider?.name ?? t('models.title')}</span>
+                  {hasEffortPanel && (
+                    <button type="button" className={css.back} onClick={() => { setPane('effort') }}>
+                      <IconChevronLeftOutline14 />{t('models.back')}
+                    </button>
+                  )}
                 </div>
-              )}
-              {effortChoices.length === 0
-                ? <div className={css.empty}>{t('empty.efforts')}</div>
-                : effortChoices.map(level => (
-                  <button
-                    ref={itemRef()}
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={effectiveEffort === level.effort}
-                    className={clsx(css.option, effectiveEffort === level.effort && css.selected)}
-                    key={level.key}
-                    disabled={busy}
-                    onClick={() => { chooseEffort(level.effort) }}
-                  >
-                    <span className={css.optionCopy}>
-                      <span className={css.modelName}>{level.label}</span>
-                      {level.description !== undefined && (
-                        <span className={css.description}>{level.description}</span>
-                      )}
-                    </span>
-                    <span className={css.check}>
-                      {effectiveEffort === level.effort ? <IconCheckOutline16 /> : null}
-                    </span>
-                  </button>
+                <label className={css.searchBox}>
+                  <IconSearchOutline16 />
+                  <span className={css.visuallyHidden}>{t('models.search')}</span>
+                  <input
+                    ref={searchRef}
+                    type="search"
+                    value={query}
+                    placeholder={t('models.search')}
+                    onChange={(event) => { setQuery(event.currentTarget.value) }}
+                  />
+                </label>
+                {state.status === 'loading' && <div role="status" className={css.status}>{t('status.loading')}</div>}
+                {state.error !== null && lastActionRef.current === 'load' && (
+                  <div role="alert" className={css.error}>
+                    <span>{t('error.action', { message: state.error })}</span>
+                    <button type="button" className={css.retry} onClick={reload}>{t('action.reload')}</button>
+                  </div>
+                )}
+                {state.failures.map(failure => (
+                  <div className={css.warning} key={failure.id}>
+                    <span>{t('warning.groupLoad', { name: failure.name, message: failure.message })}</span>
+                    <button type="button" className={css.retry} onClick={reload}>{t('action.reload')}</button>
+                  </div>
                 ))}
-            </>
+                <div className={clsx(css.groups, 'scrollable')}>
+                  {filteredModels.map((model) => {
+                    if (provider === undefined) return null
+                    const selected = state.current?.provider === provider.id && state.current.model === model.id
+                    return (
+                      <button
+                        data-model-option
+                        type="button"
+                        aria-current={selected ? 'true' : undefined}
+                        className={clsx(css.option, selected && css.selected)}
+                        key={model.id}
+                        title={model.name}
+                        disabled={busy}
+                        onClick={() => { choose({
+                          provider: provider.id,
+                          model: model.id,
+                          ...model.reasoning?.defaultEffort === undefined ? {} : { reasoningEffort: model.reasoning.defaultEffort },
+                        }) }}
+                      >
+                        <span className={css.optionCopy}>
+                          <span className={css.modelName}>{model.name}</span>
+                          {model.description !== undefined && (
+                            <span className={css.description}>{model.description}</span>
+                          )}
+                        </span>
+                        <span className={css.check}>
+                          {selected ? <IconCheckOutline16 /> : null}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+                {filteredModels.length === 0 && <div className={css.empty}>{query ? t('empty.search') : t('empty.models')}</div>}
+              </div>
+            </div>
           )}
         </div>
       )}
