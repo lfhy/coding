@@ -22,6 +22,7 @@ interface FixturePage {
   on(event: string, listener: unknown): void
   evaluateHandle(): Promise<{
     getProperties(): Promise<Map<string, never>>
+    evaluate(): Promise<boolean>
     dispose(): Promise<void>
   }>
   locator(selector: string): { evaluate(): Promise<string> }
@@ -54,6 +55,7 @@ function page(): FixturePage {
     on() {},
     evaluateHandle: () => Promise.resolve({
       getProperties: () => Promise.resolve(new Map<string, never>()),
+      evaluate: () => Promise.resolve(true),
       dispose: () => Promise.resolve(),
     }),
     locator(selector) {

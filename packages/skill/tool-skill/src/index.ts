@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
-import { defineTool } from '@deepseek-ai/dsh-tools'
+import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { UserMessage } from '@deepseek-ai/dsh-session'
 import {
@@ -25,6 +25,7 @@ export const name = 'tool-skill'
 export const inject = ['agents', 'tools', 'skills']
 
 const DEFAULT_CATALOG_DESCRIPTION_MAX_LENGTH = 500
+const catalogToolDefinitions = new WeakSet<ToolDefinition>()
 /**
  * Durable provider and item records for one published session skill catalog. The catalog is a
  * `catalog`-form context, so it records the entries it published beside the
@@ -159,28 +160,18 @@ export function apply(ctx: Context, config: Config = {}): void {
     },
   })
   ctx.tools.register(skillTool)
+  catalogToolDefinitions.add(skillTool)
 
-  // User-explicit skill invocation: a claimed user message whose first line
-  // starts with `/<name>` naming a user-invocable skill is a deterministic
-  // load gesture. The rendered body enters this step as injected
-  // instructions context appended after every other injection — background
-  // first (workspace rules, runtime policy, the catalog), the material the
-  // model must act on last, closest to its answer. Registration order makes
-  // that placement deterministic: this listener registers before the catalog
-  // listener, so the waterfall hands it the catalog-bearing list to extend.
-  // Only `source.kind === 'user'` messages are scanned — external text
-  // cannot forge the gesture — and a token naming no user-invocable skill
-  // stays ordinary prose (the command registry is a different closed
-  // namespace, resolved client-side before a line ever becomes a prompt).
-  // This is the only entry point for `disable-model-invocation` skills; the
-  // catalog and the `skill` tool below never see them.
+  // 用户消息中的 /name 手势独立于模型工具可见性；用户专用技能也经此入口加载。
+  // 先向下游委托，目录等背景上下文排在已加载正文之前；同一步骤若有其他实例已注入同名正文，则沿用它。
   ctx.on('agent/pre-step', async (
     { agent, messages, signal },
     next,
   ): Promise<PreStepDecision> => {
     const decision = await next()
     if (decision.kind === 'reject') return decision
-    const names = invokedSkillNames(messages)
+    const names = invokedSkillNames(messages).filter(name => !decision.messages.some(message =>
+      message.source.kind === 'skill-invocation' && message.source.name === name))
     if (names.length === 0) return decision
     signal.throwIfAborted()
     const lookup = { cwd: agent.session.header.cwd, signal, scope: agent }
@@ -188,10 +179,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     for (const name of names) {
       const skill = await ctx.skills.get(name, lookup)
       signal.throwIfAborted()
-      // Unknown names and user-disabled skills stay plain prose: the
-      // gesture was never a claim this boundary recognizes. The check sits
-      // on the loaded definition — the single lookup that produces what is
-      // actually injected.
+      // 未知名称和禁止用户调用的技能保留为普通文本；按实际加载的定义裁决。
       if (skill === undefined || !isUserInvocable(skill)) continue
       const source: SkillInvocationSource = { kind: 'skill-invocation', name, form: 'instructions' }
       injections.push(createUserMessage({
@@ -203,13 +191,8 @@ export function apply(ctx: Context, config: Config = {}): void {
     return { kind: 'enter', messages: [...decision.messages, ...injections] }
   })
 
-  // Register after the tool so reverse teardown removes guidance first. Exact definition
-  // identity prevents a scoped shadow merely named `skill` from inheriting this catalog.
-  //
-  // The comparison is against the definition this plugin registered, not against
-  // a lookup of its own name: `register()` files into the CALLING context's
-  // scope, so a plugin mounted inside an agent preset registers for that agent
-  // alone and an unscoped lookup correctly finds nothing.
+  // 在工具之后注册监听器，卸载时先撤销目录指引。精确工具身份可排除普通同名遮蔽；
+  // 同类插件的其他实例则由当前可见实例处理，避免外层监听器删除其目录。
   ctx.on('agent/pre-step', async (
     { agent, signal },
     next,
@@ -217,7 +200,12 @@ export function apply(ctx: Context, config: Config = {}): void {
     const decision = await next()
     if (decision.kind === 'reject') return decision
     signal.throwIfAborted()
-    const toolVisible = ctx.tools.get(skillTool.name, agent) === skillTool
+    const visibleTool = ctx.tools.get(skillTool.name, agent)
+    // 其他预设的同类工具负责自己的目录；普通遮蔽项或隐藏仍要停用旧目录。
+    if (visibleTool !== skillTool && visibleTool !== undefined && catalogToolDefinitions.has(visibleTool)) {
+      return decision
+    }
+    const toolVisible = visibleTool === skillTool
     const snapshot = toolVisible
       ? await ctx.skills.snapshot({ cwd: agent.session.header.cwd, signal, scope: agent })
       : { skills: [], complete: true }

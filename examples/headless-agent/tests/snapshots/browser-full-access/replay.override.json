@@ -3,8 +3,8 @@
     "kind": "chunks",
     "chunks": [
       { "type": "block-start", "index": 0, "blockType": "tool-call" },
-      { "type": "tool-call-delta", "index": 0, "id": "call_browser_full_access", "name": "browser_use", "argumentsDelta": "{\"action\":\"navigate\",\"url\":\"https://browser.example.invalid/full-access\"}" },
-      { "type": "block-end", "index": 0, "block": { "type": "tool-call", "id": "call_browser_full_access", "name": "browser_use", "arguments": "{\"action\":\"navigate\",\"url\":\"https://browser.example.invalid/full-access\"}" } },
+      { "type": "tool-call-delta", "index": 0, "id": "call_browser_full_access", "name": "browser_navigate", "argumentsDelta": "{\"url\":\"https://browser.example.invalid/full-access\"}" },
+      { "type": "block-end", "index": 0, "block": { "type": "tool-call", "id": "call_browser_full_access", "name": "browser_navigate", "arguments": "{\"url\":\"https://browser.example.invalid/full-access\"}" } },
       { "type": "usage", "usage": { "inputTokens": 30, "outputTokens": 8 } },
       { "type": "finish", "reason": { "kind": "tool-calls" } }
     ]

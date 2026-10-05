@@ -82,13 +82,14 @@
 
 # ── skills ──────────────────────────────────────────────────────────────────
 
-# The skill REGISTRY lives in the host composition and is layered per scope:
-# these rows register into THIS preset's layer of it, so they need no realm.
-# `skill-filesystem` contributes local-root discovery for agents on this preset, and
-# `tool-skill` gives them the catalog and loader; the merged catalog also
-# carries whatever the deployment registered globally (repository plugins).
+# 技能注册表属于宿主组合，并按 agent 作用域分层；这些提供方注册到本预设层，无需独立 realm。
+# 文件系统提供方发现本地技能，随包提供方贡献浏览器技能；`tool-skill` 发布目录和按需加载工具。
+# 合并后的目录也包含部署在全局注册的技能。
 - id: skill-filesystem
   name: '@deepseek-ai/dsh-skill-filesystem'
+
+- id: skill-browser-use
+  name: '@deepseek-ai/dsh-skill-browser-use'
 
 - id: tool-skill
   name: '@deepseek-ai/dsh-tool-skill'

@@ -515,7 +515,7 @@ async function main() {
         'packaged Electron/helper/Host and isolated desktop lock must all stop')
       console.log('PASS: signed macOS arm64 app.asar, bundled default browser Provider localhost navigation/WebSocket/snapshot/click/screenshot in isolated HOME, app.isPackaged, metadata/Host version, real Host page, both Host WebSockets, ' +
         'single instance, sandbox preload, Go helper/bridge, isolated desktop lock and cleanup')
-      console.log('Not exercised: Host browser_use tool approval or a model turn; the isolated Provider test uses the bundled runtime directly.')
+      console.log('Not exercised: Host approval of the seven browser_* tools or a model turn; the isolated Provider test uses the bundled runtime directly.')
       console.log('Not inspected by CDP/Node inspector: native menu/Tray and macOS window close/hide; ' +
         'verify those in a native UI session.')
     }

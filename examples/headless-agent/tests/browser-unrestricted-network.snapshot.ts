@@ -64,7 +64,7 @@ describe('Unrestricted browser network transcript snapshot', () => {
         const results = events.filter(event => event.type === 'tool/result')
         expect(results).toHaveLength(1)
         const resultBlock = results[0]?.data.message.content[0]
-        expect(resultBlock).toMatchObject({ toolCallId: 'call_browser_loopback', isError: false })
+        expect(resultBlock, JSON.stringify(resultBlock)).toMatchObject({ toolCallId: 'call_browser_loopback', isError: false })
         const text = resultBlock?.content[0]
         if (text?.type !== 'text') throw new Error('browser navigation did not produce a text observation')
         expect(JSON.parse(text.text) as unknown).toMatchObject({
@@ -75,7 +75,7 @@ describe('Unrestricted browser network transcript snapshot', () => {
         })
         expect(normalized).not.toContain('"type":"approval/asked"')
         expect(normalized).not.toContain('"type":"approval/decided"')
-        expect(normalized).toContain('Calls require approval except in full-access mode with approval prompts disabled.')
+        expect(normalized).toContain('"name":"browser_navigate"')
         expect(normalized).toContain('Local network access verified')
         expect(normalized).toContain('"isError":false')
         expect(normalized).not.toContain('"isError":true')

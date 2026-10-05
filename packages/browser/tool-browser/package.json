@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-tool-browser",
-  "description": "Approval-gated model-facing browser_use tool over the session browser service",
+  "description": "Approval-gated model-facing browser action tools over the session browser service",
   "version": "0.1.0-rc.8",
   "publishConfig": { "access": "public" },
   "repository": {

@@ -109,9 +109,12 @@ async function setup(approval = true, policies: { mode?: SandboxPolicyConfig['mo
       }),
     },
   }
-  const call = (args: unknown, signal = new AbortController().signal) => ctx.tools.execute({
-    name: 'browser_use', callId: CallId('browser-call'), arguments: args, signal, agent: agent as never,
-  })
+  const call = (input: { action: string } & Record<string, unknown>, signal = new AbortController().signal) => {
+    const { action, ...args } = input
+    return ctx.tools.execute({
+      name: `browser_${action}`, callId: CallId('browser-call'), arguments: args, signal, agent: agent as never,
+    })
+  }
   return { ctx, call, agent, fiber }
 }
 
@@ -119,7 +122,7 @@ function text(result: { content: readonly { type: string; text?: string }[] }): 
   return result.content.filter(block => block.type === 'text').map(block => block.text).join('')
 }
 
-describe('browser_use', () => {
+describe('browser action tools', () => {
   it.each([
     { action: 'navigate', url: 'https://example.com' },
     { action: 'snapshot' },
@@ -244,8 +247,8 @@ describe('browser_use', () => {
 
   it('requires a calling agent even under full access', async () => {
     const { ctx } = await setup(true, { mode: 'danger-full-access', policy: 'never' })
-    const result = await ctx.tools.execute({ name: 'browser_use', callId: CallId('agentless-browser'),
-      arguments: { action: 'navigate', url: 'https://example.com' }, signal: new AbortController().signal })
+    const result = await ctx.tools.execute({ name: 'browser_navigate', callId: CallId('agentless-browser'),
+      arguments: { url: 'https://example.com' }, signal: new AbortController().signal })
     expect(result.isError).toBe(true)
     expect(text(result)).toContain('calling agent is required')
     expect((ctx.browserUse as FakeBrowser).commands).not.toHaveBeenCalled()
@@ -373,6 +376,27 @@ describe('browser_use', () => {
     expect(asked.mock.calls.at(-1)?.[0].reason).toContain('current origin: unknown')
   })
 
+  it('audits the invoked action-specific tool name for every approval', async () => {
+    const { ctx, call } = await setup()
+    const browser = ctx.browserUse as FakeBrowser
+    browser.currentState = activeState()
+    const names: string[] = []
+    ctx.on('approval/request', (request) => {
+      names.push(request.toolName)
+      return Promise.resolve('rejected' as const)
+    })
+    for (const args of [
+      { action: 'navigate', url: 'https://example.com' }, { action: 'snapshot' },
+      { action: 'click', ref: 'e1', revision: 1 }, { action: 'fill', ref: 'e1', revision: 1, text: 'hello' },
+      { action: 'scroll', direction: 'down', pixels: 10 }, { action: 'screenshot' }, { action: 'close' },
+    ] as const) expect((await call(args)).isError).toBe(true)
+    expect(names).toEqual([
+      'browser_navigate', 'browser_snapshot', 'browser_click', 'browser_fill',
+      'browser_scroll', 'browser_screenshot', 'browser_close',
+    ])
+    expect(browser.commands).not.toHaveBeenCalled()
+  })
+
   it('denies missing approval and rejected decisions before any browser side effect', async () => {
     const absent = await setup(false)
     expect((await absent.call({ action: 'navigate', url: 'https://example.com' })).isError).toBe(true)
@@ -463,7 +487,7 @@ describe('browser_use', () => {
     expect(result.content[1]).toMatchObject({ type: 'image', attachment: { attachmentId: value.image?.attachmentId } })
     expect(result.content[1]).not.toHaveProperty('attachment.name')
     const canonical = { action: 'screenshot', observation, image: null }
-    const rendered = ctx.tools.get('browser_use')!.output.render({ action: 'screenshot' }, canonical)
+    const rendered = ctx.tools.get('browser_screenshot')!.output.render({}, canonical)
     expect(rendered).toEqual([{ type: 'text', text: JSON.stringify(canonical) }])
   })
 
@@ -614,21 +638,18 @@ describe('browser_use', () => {
   })
 
   it.each([
-    [{ action: 'navigate', url: 'https://example.com', pixels: 10 }, 'navigate', 'pixels', 'action, url'],
-    [{ action: 'snapshot', url: 'https://example.com' }, 'snapshot', 'url', 'action'],
-    [{ action: 'click', ref: 'e1', revision: 1, text: 'x' }, 'click', 'text', 'action, ref, revision'],
-    [{ action: 'fill', ref: 'e1', revision: 1, text: 'x', url: 'https://example.com' }, 'fill', 'url', 'action, ref, revision, text'],
-    [{ action: 'scroll', direction: 'up', pixels: 10, ref: 'e1' }, 'scroll', 'ref', 'action, direction, pixels'],
-    [{ action: 'screenshot', direction: 'up' }, 'screenshot', 'direction', 'action'],
-    [{ action: 'close', revision: 1 }, 'close', 'revision', 'action'],
+    [{ action: 'navigate', url: 'https://example.com', pixels: 10 }, 'navigate', 'pixels', 'only url allowed'],
+    [{ action: 'snapshot', url: 'https://example.com' }, 'snapshot', 'url', 'no parameters'],
+    [{ action: 'click', ref: 'e1', revision: 1, text: 'x' }, 'click', 'text', 'only ref, revision allowed'],
+    [{ action: 'fill', ref: 'e1', revision: 1, text: 'x', url: 'https://example.com' }, 'fill', 'url', 'only ref, revision, text allowed'],
+    [{ action: 'scroll', direction: 'up', pixels: 10, ref: 'e1' }, 'scroll', 'ref', 'only direction, pixels allowed'],
+    [{ action: 'screenshot', direction: 'up' }, 'screenshot', 'direction', 'no parameters'],
+    [{ action: 'close', revision: 1 }, 'close', 'revision', 'no parameters'],
   ] as const)('explains unexpected fields for $1 without executing', async (args, action, field, allowed) => {
     const { ctx, call } = await setup(true, { mode: 'danger-full-access', policy: 'never' })
     const result = await call(args)
     expect(result.isError).toBe(true)
-    const correction = action === 'navigate'
-      ? '. Use {"action":"navigate","url":"https://example.com"}; omit all other fields.'
-      : '.'
-    expect(text(result)).toContain(`browser_use: unexpected field for ${action}: ${field}; only ${allowed} allowed${correction}`)
+    expect(text(result)).toContain(`browser_${action}: unexpected field: ${field}; ${allowed}`)
     expect((ctx.browserUse as FakeBrowser).commands).not.toHaveBeenCalled()
   })
 
@@ -636,31 +657,39 @@ describe('browser_use', () => {
     const { ctx, call } = await setup(true, { mode: 'danger-full-access', policy: 'never' })
     const result = await call({ action: 'navigate', url: 'https://example.com', ref: '', pixels: 0 })
     expect(result.isError).toBe(true)
-    expect(text(result)).toContain('unexpected field for navigate: ref, pixels; only action, url allowed')
+    expect(text(result)).toContain('browser_navigate: unexpected field: ref, pixels; only url allowed')
     expect((ctx.browserUse as FakeBrowser).commands).not.toHaveBeenCalled()
   })
 
-  it('describes exact action-specific examples and optional-field omission in the published schema', async () => {
+  it('rejects an action field sent directly to an action-specific tool', async () => {
+    const { ctx, agent } = await setup(true, { mode: 'danger-full-access', policy: 'never' })
+    const result = await ctx.tools.execute({
+      name: 'browser_navigate', callId: CallId('unexpected-action'),
+      arguments: { action: 'navigate', url: 'https://example.com' },
+      signal: new AbortController().signal, agent: agent as never,
+    })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('browser_navigate: unexpected field: action; only url allowed')
+    expect((ctx.browserUse as FakeBrowser).commands).not.toHaveBeenCalled()
+  })
+
+  it('publishes only seven action-specific tool schemas with required parameters', async () => {
     const { ctx } = await setup()
-    const schema = ctx.tools.schemas().find(tool => tool.name === 'browser_use')!
-    expect(schema.description).toContain('navigate {"action":"navigate","url":"https://example.com"}')
-    expect(schema.description).toContain('snapshot {"action":"snapshot"}')
-    expect(schema.description).toContain('click {"action":"click","ref":"e1","revision":1}')
-    expect(schema.description).toContain('fill {"action":"fill","ref":"e1","revision":1,"text":"hello"}')
-    expect(schema.description).toContain('scroll {"action":"scroll","direction":"down","pixels":500}')
-    expect(schema.description).toContain('screenshot {"action":"screenshot"}')
-    expect(schema.description).toContain('close {"action":"close"}')
-    expect(schema.description).toContain('Omit unrelated fields, even if empty.')
-    const parameters = JSON.stringify(schema.parameters)
-    expect(parameters).toContain('navigate requires only action/url')
-    expect(parameters).toContain('fill requires action/ref/revision/text')
-    expect(parameters).toContain('snapshot, screenshot, close require action only')
-    for (const guidance of [
-      'Required only for navigate; omit for all other actions',
-      'Required only for click or fill; otherwise omit',
-      'Required only for fill; otherwise omit',
-      'Required only for scroll; otherwise omit',
-    ]) expect(parameters).toContain(guidance)
+    const schemas = ctx.tools.schemas().filter(tool => tool.name.startsWith('browser_'))
+    expect(schemas.map(tool => tool.name)).toEqual([
+      'browser_navigate', 'browser_snapshot', 'browser_click', 'browser_fill',
+      'browser_scroll', 'browser_screenshot', 'browser_close',
+    ])
+    expect(ctx.tools.get('browser_use')).toBeUndefined()
+    expect(schemas.map(tool => (tool.parameters as { required?: string[] }).required ?? [])).toEqual([
+      ['url'], [], ['ref', 'revision'], ['ref', 'revision', 'text'],
+      ['direction', 'pixels'], [], [],
+    ])
+    for (const schema of schemas) {
+      expect((schema.parameters as { properties: Record<string, unknown> }).properties).not.toHaveProperty('action')
+    }
+    expect(schemas.find(tool => tool.name === 'browser_snapshot')?.description).toContain('ref and revision')
+    expect(schemas.find(tool => tool.name === 'browser_click')?.description).toContain('current browser observation')
   })
 
   it('rejects mismatched fields and bounds before approval or browser execution', async () => {
@@ -715,9 +744,9 @@ describe('browser_use', () => {
     controller.abort(new Error('cancelled'))
     expect((await call({ action: 'snapshot' }, controller.signal)).isError).toBe(true)
     expect((ctx.browserUse as FakeBrowser).commands).not.toHaveBeenCalled()
-    expect(ctx.tools.get('browser_use')).toBeDefined()
+    expect(ctx.tools.get('browser_snapshot')).toBeDefined()
     await fiber.dispose()
-    expect(ctx.tools.get('browser_use')).toBeUndefined()
+    expect(ctx.tools.schemas().filter(tool => tool.name.startsWith('browser_'))).toEqual([])
   })
 
   it('keeps approval cancellation ahead of browser execution', async () => {

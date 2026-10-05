@@ -34,7 +34,7 @@
       mode: native
     includeHarnessIdentity: false
     includeRuntimeContext: false
-    persona: 'Use browser_use to inspect the requested page and report its observed title.'
+    persona: 'Use browser_navigate to inspect the requested page and report its observed title.'
     workspaceContext: false
     skills:
       enabled: false

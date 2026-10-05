@@ -16,7 +16,7 @@ This table connects model-visible tool names to the plugin package and service s
 | Tool package | Model-visible names | Requires | Writes / affects | Shipped aliases | Deployment note |
 | --- | --- | --- | --- | --- | --- |
 | `@deepseek-ai/dsh-tool-ask-user` | `ask_user_question` | `ctx.tools`, `ctx.userQuestions` | `tool/call`, `tool/result after a UI/provider answers the question` | - | ask_user_question pauses the tool call until the active UI provider returns a human answer. |
-| `@deepseek-ai/dsh-tool-browser` | `browser_use` | `ctx.tools`, `ctx.browserUse`, `ctx.attachments`, `ctx.approval and a calling Agent at execution time` | `tool/call`, `durable attachment on screenshot`, `tool/result` | - | Each call asks for one-time approval bound to the active tab and session revision; only allowed-once proceeds if that target remains current. A remote workspace is rejected. Only explicit screenshots save a PNG attachment and render an image block. The browser provider owns URL/network policy and session tab lifetime. |
+| `@deepseek-ai/dsh-tool-browser` | `browser_click`, `browser_close`, `browser_fill`, `browser_navigate`, `browser_screenshot`, `browser_scroll`, `browser_snapshot` | `ctx.tools`, `ctx.browserUse`, `ctx.attachments`, `ctx.approval and a calling Agent at execution time` | `tool/call`, `durable attachment on screenshot`, `tool/result` | - | Each operation is bound to the active tab and session revision. Full access with approval prompts disabled proceeds directly; otherwise only allowed-once approval proceeds if that target remains current. A remote workspace is rejected. Only explicit screenshots save a PNG attachment and render an image block. The browser provider owns URL/network policy and session tab lifetime. |
 | `@deepseek-ai/dsh-tools` | `run_code` | `ctx.tools`, `ctx.codeRuntime (execution time)`, `ctx.systemPrompt` | `tool/call`, `one tool/code-dispatch-start + tool/code-dispatch pair per bridged sub-call`, `tool/result` | - | Owned by the tool registry as a reserved transport outside filterable capability layers under `mode: code` / `mode: both` (see the Code Mode design record). Under `code` it is the registry's only wire contribution; the other visible capabilities are declared in a generated SDK section in the loaded runtime's language, and a program calls them through bindings scheduled under the native concurrency contract (submission-ordered starts and policy; concurrency-safe bodies overlap up to `maxParallelSubCalls`) that re-enter the complete guarded tool pipeline and link each nested execution to this outer result. |
 | `@deepseek-ai/dsh-plan-mode` | `exit_plan_mode` | `ctx.tools`, `ctx.systemPrompt`, `ctx.userQuestions (execution time, opportunistic)` | `tool/call`, `plan/mode inactive on an approved review`, `tool/result` | - | exit_plan_mode stays in the model-facing schema while planning is inactive so transitions add no tool-catalog churn on top of the plan-policy change. Its execute path rejects calls outside plan mode; in plan mode it presents the plan over the user-questions seam (approve / keep planning with feedback), and approval logs plan mode inactive at the step boundary. |
 | `@deepseek-ai/dsh-tool-bash` | `bash` | `ctx.tools`, `ctx.shell`, `ctx.systemPrompt`, `ctx.shellEnv`, `ctx.jobs at call time for run_in_background` | `tool/call`, `tool/result` | - | The bash tool is the model-facing consumer of the bash executor seam. A `run_in_background` run registers with the generic `ctx.jobs` runtime and is collected/stopped through the `job_*` tools from `@deepseek-ai/dsh-tool-jobs`; the `enableRunInBackground` config (default true) removes the parameter entirely when disabled. |
@@ -121,46 +121,121 @@ ask_user_question pauses the tool call until the active UI provider returns a hu
 
 ## `@deepseek-ai/dsh-tool-browser`
 
-### `browser_use`
+### `browser_click`
 
-Operate a session browser. Pass only fields for the chosen action: navigate {"action":"navigate","url":"https://example.com"}; snapshot {"action":"snapshot"}; click {"action":"click","ref":"e1","revision":1}; fill {"action":"fill","ref":"e1","revision":1,"text":"hello"}; scroll {"action":"scroll","direction":"down","pixels":500}; screenshot {"action":"screenshot"}; close {"action":"close"}. Omit unrelated fields, even if empty. Use observed ref and revision, never selectors or scripts. Approval is required unless full access disables approval prompts.
+Click an element using its ref and revision from the current browser observation; never use selectors.
 
 ```json
 {
   "type": "object",
   "properties": {
-    "action": {
-      "type": "string",
-      "description": "Choose one operation: navigate requires only action/url; snapshot, screenshot, close require action only; click requires action/ref/revision; fill requires action/ref/revision/text; scroll requires action/direction/pixels.",
-      "enum": [
-        "navigate",
-        "snapshot",
-        "click",
-        "fill",
-        "scroll",
-        "screenshot",
-        "close"
-      ]
-    },
-    "url": {
-      "type": "string",
-      "description": "Required only for navigate; omit for all other actions. Use an absolute HTTP(S) URL without credentials, at most 2048 characters."
-    },
     "ref": {
       "type": "string",
-      "description": "Required only for click or fill; otherwise omit. Opaque element ref from the latest observation, not a selector."
+      "description": "Opaque ref from the current observation, not a selector."
     },
     "revision": {
       "type": "integer",
-      "description": "Required only for click or fill; otherwise omit. Positive observation revision paired with ref."
+      "description": "Positive revision paired with the current observation ref."
+    }
+  },
+  "required": [
+    "ref",
+    "revision"
+  ]
+}
+```
+
+Source: [`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts)
+
+### `browser_close`
+
+Close the session browser only when requested; the returned observation is no longer a live page.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts)
+
+### `browser_fill`
+
+Fill an element using its ref and revision from the current browser observation; never use selectors.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "ref": {
+      "type": "string",
+      "description": "Opaque ref from the current observation, not a selector."
+    },
+    "revision": {
+      "type": "integer",
+      "description": "Positive revision paired with the current observation ref."
     },
     "text": {
       "type": "string",
-      "description": "Required only for fill; otherwise omit. Text to enter, at most 2000 characters."
-    },
+      "description": "Text to enter, at most 2000 characters."
+    }
+  },
+  "required": [
+    "ref",
+    "revision",
+    "text"
+  ]
+}
+```
+
+Source: [`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts)
+
+### `browser_navigate`
+
+Open an absolute HTTP(S) URL. Load the browser-use skill first when available; inspect the returned observation before acting.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "url": {
+      "type": "string",
+      "description": "Absolute HTTP(S) URL without credentials, at most 2048 characters."
+    }
+  },
+  "required": [
+    "url"
+  ]
+}
+```
+
+Source: [`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts)
+
+### `browser_screenshot`
+
+Capture and persist a PNG of the active page; also return its current observation.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts)
+
+### `browser_scroll`
+
+Scroll the active page, then return a fresh observation with refs and revision.
+
+```json
+{
+  "type": "object",
+  "properties": {
     "direction": {
       "type": "string",
-      "description": "Required only for scroll; otherwise omit. Scroll direction.",
+      "description": "Scroll direction.",
       "enum": [
         "up",
         "down"
@@ -168,18 +243,32 @@ Operate a session browser. Pass only fields for the chosen action: navigate {"ac
     },
     "pixels": {
       "type": "integer",
-      "description": "Required only for scroll; otherwise omit. Scroll distance, 1..2000 pixels."
+      "description": "Requested wheel delta, 1..2000 pixels; capped at one viewport height per call."
     }
   },
   "required": [
-    "action"
+    "direction",
+    "pixels"
   ]
 }
 ```
 
 Source: [`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts)
 
-Each call asks for one-time approval bound to the active tab and session revision; only allowed-once proceeds if that target remains current. A remote workspace is rejected. Only explicit screenshots save a PNG attachment and render an image block. The browser provider owns URL/network policy and session tab lifetime.
+### `browser_snapshot`
+
+Read the current page. Load the browser-use skill first when available; use an observed ref and revision for browser_click or browser_fill.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts)
+
+Each operation is bound to the active tab and session revision. Full access with approval prompts disabled proceeds directly; otherwise only allowed-once approval proceeds if that target remains current. A remote workspace is rejected. Only explicit screenshots save a PNG attachment and render an image block. The browser provider owns URL/network policy and session tab lifetime.
 
 <a id="deepseek-aidsh-tools"></a>
 

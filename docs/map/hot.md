@@ -236,7 +236,7 @@
 ## apps/desktop-electron
 
 - **拥有**：Electron 窗口、macOS 菜单和托盘、受限 Remote-SSH preload/main IPC、Go helper 客户端，以及开发与生产运行路径校验。
-- **不拥有**：Remote-SSH 实现与 bridge（归 `apps/desktop/internal/desktopremote`）、Host 生命周期协议（归 `apps/internal/hostlaunch`）、UI 和会话（归 Client/Host 插件）；`browser_use` 的工具与 Playwright 页面归 [浏览器包](../../packages/browser/tool-browser/README.md)及其[提供方](../../packages/browser/browser-playwright/README.md)，工作台截图和人工坐标命令归 [ui-browser](../../packages/client/ui-browser/README.md)，桌面壳不持有受控 guest。
+- **不拥有**：Remote-SSH 实现与 bridge（归 `apps/desktop/internal/desktopremote`）、Host 生命周期协议（归 `apps/internal/hostlaunch`）、UI 和会话（归 Client/Host 插件）；七项浏览器工具与 Playwright 页面归 [浏览器工具包](../../packages/browser/tool-browser/README.md)及其[提供方](../../packages/browser/browser-playwright/README.md)，工作台截图和人工坐标命令归 [ui-browser](../../packages/client/ui-browser/README.md)，桌面壳不持有受控 guest。
 - **入口**：`apps/desktop-electron/src/main.ts`；Go 进程入口在 `apps/desktop/cmd/electron-helper/main.go`。`make dev` 与 `pnpm run dev:electron` 启动开发态；`build:desktop` 经 `scripts/package-electron-macos-app.ts` 组装生产包，`make install` 才将其安装到 `/Applications/Coding.app`。
 - **关键文件**：`apps/desktop-electron/src/window.ts`、`native-chrome.ts`、`preload.ts`、`remote-ipc.ts`、`helper-client.ts`、`runtime-config.ts`、`apps/desktop/internal/helperwire/`。
 - **改这里要同步**：Remote-SSH 输入与状态同步 `packages/client/ui-workspace/src/client/remote.ts`、`apps/desktop/internal/desktopremote` 与 `apps/desktop/cmd/electron-helper`；生产路径及资源（含 Playwright 浏览器）同步 `scripts/build-electron-helper.ts`、`scripts/package-electron-macos-app.ts` 和 `apps/desktop-electron/README.md`。

@@ -54,7 +54,7 @@ Agent（智能体）可以读取和编辑工作区文件、运行命令、委派
 
 ### 让 Agent 使用浏览器
 
-在本地 Session 中提出网页任务，例如“打开这个网页，读取标题并截取画面”。标准工具模式和 PTC／Code Mode 都通过同一个 `browser_use` 工具操作 Host 中的独立 Chromium 页面。当前会话使用**完全访问**（有效沙箱模式为 `danger-full-access`，有效审批策略为 `never`）时，操作无需逐次审批；`danger-full-access` 搭配 `ask` 仍需逐次审批，较窄权限搭配 `never` 则拒绝操作。审批拒绝、取消或没有可用响应时不会执行；具体权限规则见[浏览器工具](../../../packages/browser/tool-browser/README.md)。macOS arm64 正式桌面包自带与锁定 Playwright 版本匹配的 Chromium headless shell，无须在用户缓存中另行安装；源码开发、CLI 等未打包环境首次使用前需备有匹配的 Chromium，可运行 `pnpm exec playwright install chromium` 安装，缺失时操作会报告浏览器不可用。桌面窗口本身不会被用作该页面。
+在本地 Session 中提出网页任务，例如“打开这个网页，读取标题并截取画面”。标准工具模式和 PTC／Code Mode 都通过 `browser_navigate`、`browser_snapshot`、`browser_click`、`browser_fill`、`browser_scroll`、`browser_screenshot` 和 `browser_close` 操作 Host 中的独立 Chromium 页面。预设提供按需加载的 [`browser-use` 技能](../../../packages/skill/skill-browser-use/README.md)：它指导 Agent 先观察页面，再使用观测中的元素引用操作；除非要求关闭，否则页面留在工作台供查看。技能不授予额外权限。当前会话使用**完全访问**（有效沙箱模式为 `danger-full-access`，有效审批策略为 `never`）时，操作无需逐次审批；`danger-full-access` 搭配 `ask` 仍需逐次审批，较窄权限搭配 `never` 则拒绝操作。审批拒绝、取消或没有可用响应时不会执行；具体权限规则见[浏览器工具](../../../packages/browser/tool-browser/README.md)。macOS arm64 正式桌面包自带与锁定 Playwright 版本匹配的 Chromium headless shell，无须在用户缓存中另行安装；源码开发、CLI 等未打包环境首次使用前需备有匹配的 Chromium，可运行 `pnpm exec playwright install chromium` 安装，缺失时操作会报告浏览器不可用。桌面窗口本身不会被用作该页面。
 
 直接打开工作台并选择**浏览器**；若该 Session 尚无浏览器页面，会出现一个空白标签。在地址栏输入 HTTP(S) 网址或域名并按回车即可导航；工具栏可后退、前进和刷新，工作台顶栏的 `+` 可新增页面，也可切换或关闭各页面标签，文件与终端标签仍在同一行中。关闭最后一个浏览器页面后可继续使用其他类型标签；没有标签时回到功能菜单。
 

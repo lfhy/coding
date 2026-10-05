@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { Context } from '@deepseek-ai/cordis'
 import { createUserMessage, CallId, type Message } from '@deepseek-ai/dsh-llm'
-import { createScope, type Scope } from '@deepseek-ai/dsh-scope'
+import { bindScopeParent, createScope, type Scope } from '@deepseek-ai/dsh-scope'
 import { Session, SessionId, type SessionEvent, type UserMessage } from '@deepseek-ai/dsh-session'
 import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
@@ -675,6 +675,84 @@ describe('dsh-tool-skill', () => {
     })
     expect(foreign.isError).toBe(true)
     await scope.dispose()
+  })
+
+  it('keeps two mounted skill-tool catalogs isolated across interleaved agent steps', async () => {
+    const home = await tempDir('tool-multiple-presets')
+    const ctx = await setup(home)
+    const firstKey = { preset: 'first' }
+    const secondKey = { preset: 'second' }
+    const firstPreset = createScope(ctx, firstKey)
+    const secondPreset = createScope(ctx, secondKey)
+    const first = agentForCwd('/workspace/first')
+    const second = agentForCwd('/workspace/second')
+    bindScopeParent(first, firstKey)
+    bindScopeParent(second, secondKey)
+    try {
+      await firstPreset.ctx.plugin(toolSkill)
+      await secondPreset.ctx.plugin(toolSkill)
+      const firstRegistry = firstPreset.ctx.get('skills')
+      const secondRegistry = secondPreset.ctx.get('skills')
+      if (firstRegistry === undefined || secondRegistry === undefined) throw new Error('skills service missing')
+      firstRegistry.register({ name: 'first-skill', description: 'First', source: 'runtime', content: 'First body.' })
+      secondRegistry.register({ name: 'second-skill', description: 'Second', source: 'runtime', content: 'Second body.' })
+      openMessageTurn(first.session)
+      openMessageTurn(second.session)
+
+      await fireStep(ctx, first, 1, 1)
+      await fireStep(ctx, second, 1, 1)
+      expect(catalogMessages(first.session)).toHaveLength(1)
+      expect(catalogMessages(second.session)).toHaveLength(1)
+      expect(JSON.stringify(catalogMessages(first.session))).toContain('first-skill')
+      expect(JSON.stringify(catalogMessages(first.session))).not.toContain('second-skill')
+      expect(JSON.stringify(catalogMessages(second.session))).toContain('second-skill')
+      expect(JSON.stringify(catalogMessages(second.session))).not.toContain('first-skill')
+
+      const gesture = () => createUserMessage({
+        content: [{ type: 'text', text: '/first-skill use these instructions' }],
+        source: { kind: 'user' },
+      })
+      const invoked = async (messages: UserMessage[]) => {
+        const decision = await proposeStep(ctx, first, messages)
+        if (decision.kind !== 'enter') throw new Error('expected enter')
+        return decision.messages.filter(message => message.source.kind === 'skill-invocation')
+      }
+      expect((await invoked([gesture()])).map(message => message.source)).toEqual([
+        { kind: 'skill-invocation', name: 'first-skill', form: 'instructions' },
+      ])
+      expect(await invoked([gesture(), gesture()])).toHaveLength(1)
+
+      const firstAgentScope = createScope(ctx, first)
+      const firstTools = firstAgentScope.ctx.get('tools')
+      if (firstTools === undefined) throw new Error('tools service missing')
+      try {
+        const liftRestriction = firstTools.restrict({ deny: ['skill'] })
+        await fireStep(ctx, first, 1, 2)
+        expect(catalogMessages(first.session).at(-1)?.data.source).toMatchObject({ entries: [], update: true })
+        expect(ctx.tools.get('skill', first)).toBeUndefined()
+        expect(await invoked([gesture()])).toHaveLength(1)
+        liftRestriction()
+        await fireStep(ctx, first, 1, 3)
+        expect(JSON.stringify(catalogMessages(first.session).at(-1))).toContain('first-skill')
+
+        const unshadow = firstTools.register(defineContentToolFixture({
+          name: 'skill', description: 'A different tool.', parameters: {},
+          execute: () => Promise.resolve([{ type: 'text', text: 'shadow' }]),
+        }))
+        await fireStep(ctx, first, 1, 4)
+        expect(catalogMessages(first.session).at(-1)?.data.source).toMatchObject({ entries: [], update: true })
+        unshadow()
+        await fireStep(ctx, first, 1, 5)
+        expect(JSON.stringify(catalogMessages(first.session).at(-1))).toContain('first-skill')
+      } finally {
+        await firstAgentScope.dispose()
+      }
+      await fireStep(ctx, second, 1, 2)
+      expect(catalogMessages(second.session)).toHaveLength(1)
+    } finally {
+      await secondPreset.dispose()
+      await firstPreset.dispose()
+    }
   })
 
   it('retains the last-good catalog while any provider discovery is incomplete', async () => {

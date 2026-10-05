@@ -243,7 +243,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
       await ctx.plugin(ToolBrowser)
     },
     note:
-      'Each call asks for one-time approval bound to the active tab and session revision; only allowed-once proceeds if that target remains current. A remote workspace is rejected. Only explicit screenshots save a PNG attachment and render an image block. The browser provider owns URL/network policy and session tab lifetime.',
+      'Each operation is bound to the active tab and session revision. Full access with approval prompts disabled proceeds directly; otherwise only allowed-once approval proceeds if that target remains current. A remote workspace is rejected. Only explicit screenshots save a PNG attachment and render an image block. The browser provider owns URL/network policy and session tab lifetime.',
   },
   {
     pkg: '@deepseek-ai/dsh-tools',

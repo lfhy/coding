@@ -29,7 +29,9 @@ describe('gen-tool-catalog collectToolCatalog', () => {
     const catalog = await collectToolCatalog()
     const names = catalog.flatMap(entry => entry.schemas.map(s => s.name)).sort()
     expect(names).toEqual([
-      'ask_user_question', 'bash', 'bash', 'browser_use', 'cordis_define', 'cordis_inspect_list',
+      'ask_user_question', 'bash', 'bash', 'browser_click', 'browser_close', 'browser_fill',
+      'browser_navigate', 'browser_screenshot', 'browser_scroll', 'browser_snapshot',
+      'cordis_define', 'cordis_inspect_list',
       'cordis_inspect_query', 'cordis_inspect_self', 'cordis_run', 'cordis_stop',
       'cordis_undefine', 'create_goal', 'edit', 'exit_plan_mode', 'followup_task', 'get_goal', 'glob', 'grep',
       'interrupt_agent', 'interrupt_agent', 'job_kill', 'job_list', 'job_output',
@@ -50,17 +52,27 @@ describe('gen-tool-catalog collectToolCatalog', () => {
     }
   })
 
-  it('harvests browser_use while its separate result contract requires a tab id', async () => {
+  it('harvests seven browser operations with action-specific arguments and one result shape', async () => {
     const catalog = await collectToolCatalog()
     const browser = catalog.find(entry => entry.pkg === '@deepseek-ai/dsh-tool-browser')
-    expect(browser?.schemas.map(schema => schema.name)).toEqual(['browser_use'])
+    const actions = ['navigate', 'snapshot', 'click', 'fill', 'scroll', 'screenshot', 'close']
+    expect(browser?.schemas.map(schema => schema.name)).toEqual(actions.map(action => `browser_${action}`).sort())
     expect(browser?.note).toContain('active tab and session revision')
 
-    let definition: ToolDefinition | undefined
-    ToolBrowser.apply({ tools: { register: (tool: ToolDefinition) => { definition = tool } } } as unknown as Context)
-    const observationSchema = (definition?.output.schema as JsonSchema).properties?.observation
-    expect(observationSchema?.properties?.tabId?.type).toBe('string')
-    expect(observationSchema?.required).toContain('tabId')
+    const definitions: ToolDefinition[] = []
+    ToolBrowser.apply({ tools: { register: (tool: ToolDefinition) => { definitions.push(tool) } } } as unknown as Context)
+    expect(definitions.map(definition => definition.name)).toEqual(actions.map(action => `browser_${action}`))
+    for (const definition of definitions) {
+      const parameters = definition.parameters as unknown as JsonSchema
+      expect(parameters.properties).not.toHaveProperty('action')
+      const result = definition.output.schema as JsonSchema
+      expect(Object.keys(result.properties ?? {})).toEqual(['action', 'observation', 'image'])
+      expect(result.required).toEqual(['action', 'observation', 'image'])
+      expect(result.properties?.action).toMatchObject({ const: definition.name.slice('browser_'.length) })
+      const observation = result.properties?.observation
+      expect(observation?.properties?.tabId?.type).toBe('string')
+      expect(observation?.required).toContain('tabId')
+    }
   })
 
   it('resolves a runtime-spread enum to its literal members (the payoff over AST)', async () => {

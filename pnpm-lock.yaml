@@ -213,6 +213,9 @@ importers:
       '@deepseek-ai/dsh-skill':
         specifier: workspace:^
         version: link:../../packages/skill/skill
+      '@deepseek-ai/dsh-skill-browser-use':
+        specifier: workspace:^
+        version: link:../../packages/skill/skill-browser-use
       '@deepseek-ai/dsh-skill-filesystem':
         specifier: workspace:^
         version: link:../../packages/skill/skill-filesystem
@@ -7544,6 +7547,18 @@ importers:
         specifier: workspace:^
         version: link:../skill
 
+  packages/skill/skill-browser-use:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      '@deepseek-ai/dsh-skill':
+        specifier: workspace:^
+        version: link:../skill
+
   packages/skill/skill-filesystem:
     dependencies:
       '@deepseek-ai/schemastery':
@@ -9377,6 +9392,9 @@ importers:
       '@deepseek-ai/dsh-skill':
         specifier: workspace:^
         version: link:../../packages/skill/skill
+      '@deepseek-ai/dsh-skill-browser-use':
+        specifier: workspace:^
+        version: link:../../packages/skill/skill-browser-use
       '@deepseek-ai/dsh-skill-filesystem':
         specifier: workspace:^
         version: link:../../packages/skill/skill-filesystem

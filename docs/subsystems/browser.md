@@ -1,6 +1,6 @@
 # 浏览器使用
 
-浏览器使用能力由 [`@deepseek-ai/dsh-browser`](../../packages/browser/browser/README.md) 定义 `ctx.browserUse`，由 [Playwright 提供方](../../packages/browser/browser-playwright/README.md)实现，并由 [`browser_use` 工具](../../packages/browser/tool-browser/README.md)消费。服务按 `SessionId` 隔离浏览器上下文与标签页；工具负责调用会话的权限判断、所需审批和模型结果，完全访问的免逐次审批条件见[工具 README](../../packages/browser/tool-browser/README.md)。提供方负责导航输入校验、页面资源及清理，使用 Chromium 原生联网，不过滤目的地、重定向或子资源。工作台读取 Host 的标签页状态与画面；预览 API 的入站信任限制由提供方持有，与页面出站联网无关。
+浏览器使用能力由 [`@deepseek-ai/dsh-browser`](../../packages/browser/browser/README.md) 定义 `ctx.browserUse`，由 [Playwright 提供方](../../packages/browser/browser-playwright/README.md)实现，并由[七项浏览器工具](../../packages/browser/tool-browser/README.md)消费。服务按 `SessionId` 隔离浏览器上下文与标签页；工具负责调用会话的权限判断、所需审批和模型结果，完全访问的免逐次审批条件见[工具 README](../../packages/browser/tool-browser/README.md)。提供方负责导航输入校验、页面资源及清理，使用 Chromium 原生联网，不过滤目的地、重定向或子资源。工作台读取 Host 的标签页状态与画面；预览 API 的入站信任限制由提供方持有，与页面出站联网无关。
 
 以下跨包类型声明来自 [`packages/browser/browser/src/types.ts`](../../packages/browser/browser/src/types.ts)。服务方法的完整签名与 JSDoc 由下方 Cordis API 区域生成。
 

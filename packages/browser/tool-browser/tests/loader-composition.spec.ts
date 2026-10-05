@@ -117,8 +117,8 @@ function session(context: Context): Session {
 
 function execute(context: Context, owner: Session) {
   return context.tools.execute({
-    name: 'browser_use', callId: CallId('loader-browser-call'),
-    arguments: { action: 'navigate', url: 'https://example.com/private?token=secret' },
+    name: 'browser_navigate', callId: CallId('loader-browser-call'),
+    arguments: { url: 'https://example.com/private?token=secret' },
     signal: new AbortController().signal, agent: { session: owner } as never,
   })
 }
@@ -135,7 +135,7 @@ function expectObservation(result: Awaited<ReturnType<typeof execute>>): void {
   expect(result.content).toMatchObject([{ type: 'text' }])
 }
 
-describe('browser_use through a real Loader composition', () => {
+describe('browser_navigate through a real Loader composition', () => {
   it('loads tool dependencies and returns an approved model-visible observation without sandbox policy', async () => {
     const context = await boot()
     const owner = session(context)
@@ -148,7 +148,7 @@ describe('browser_use through a real Loader composition', () => {
     expectObservation(await execute(context, owner))
     expect(reasons).toEqual(['Browser navigate (target origin: https://example.com; may redirect or load subresources; approval is for this call only)'])
     expect(approvalAudit(owner)).toMatchObject([
-      { type: 'approval/asked', data: { toolName: 'browser_use', callId: 'loader-browser-call', reason: reasons[0] } },
+      { type: 'approval/asked', data: { toolName: 'browser_navigate', callId: 'loader-browser-call', reason: reasons[0] } },
       { type: 'approval/decided', data: { outcome: 'allowed-once' } },
     ])
     expect(approvalAudit(owner)[1]?.data.id).toBe(approvalAudit(owner)[0]?.data.id)
@@ -190,10 +190,10 @@ describe('browser_use through a real Loader composition', () => {
     expect(result.isError).toBe(true)
     expect(result.content).toMatchObject([{ type: 'text' }])
     const block = result.content[0]
-    expect(block?.type === 'text' ? block.text : '').toContain(`browser_use: approval ${outcome}`)
+    expect(block?.type === 'text' ? block.text : '').toContain(`browser_navigate: approval ${outcome}`)
     expect((context.browserUse as FixtureBrowser).calls).toEqual([])
     expect(approvalAudit(owner)).toMatchObject([
-      { type: 'approval/asked', data: { toolName: 'browser_use' } },
+      { type: 'approval/asked', data: { toolName: 'browser_navigate' } },
       { type: 'approval/decided', data: { outcome } },
     ])
   })

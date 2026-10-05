@@ -66,7 +66,7 @@ Workspace 列表与 Session 列表是相互独立的重连基线。`workspace.cr
 
 ## 载体层（`/client` + 根路径）
 
-`browser.control` 是本地用户操作地址栏、标签页与截图的独立 RPC：`{ sessionId, command }` 接受幂等建立首个标签页的 `ensure-tab`、显式添加标签页的 `new-tab`、`select-tab`、`close-tab`、`navigate`、`back`、`forward`、`reload` 及截图坐标操作，标签页 id 为 UUID；导航仅允许不含凭据且不超过 2048 字符的绝对 HTTP(S) URL。它只使用实时已附着的本地会话，未知或未附着会话返回 `session-not-found`，Remote-SSH marker 返回 `browser-failed`／`BROWSER_DENIED`，不从持久化恢复会话以回退到本地浏览器。成功响应是操作后的 `BrowserSessionState`，关闭最后一个标签页时为 `null`；提供方拒绝返回 `browser-failed`／提供方原因，取消返回 `cancelled`，错误不回显导航 URL。该人类入口不生成模型工具调用、不借用 Agent 权限，也不改变 [`browser_use` 的会话权限与审批规则](../../browser/tool-browser/README.md)；网络载体只让回环同源请求触达此方法，Host/Origin/Fetch-Metadata 防线仍生效。这是单用户本地 Host 的信任模型，不是独立身份认证。
+`browser.control` 是本地用户操作地址栏、标签页与截图的独立 RPC：`{ sessionId, command }` 接受幂等建立首个标签页的 `ensure-tab`、显式添加标签页的 `new-tab`、`select-tab`、`close-tab`、`navigate`、`back`、`forward`、`reload` 及截图坐标操作，标签页 id 为 UUID；导航仅允许不含凭据且不超过 2048 字符的绝对 HTTP(S) URL。它只使用实时已附着的本地会话，未知或未附着会话返回 `session-not-found`，Remote-SSH marker 返回 `browser-failed`／`BROWSER_DENIED`，不从持久化恢复会话以回退到本地浏览器。成功响应是操作后的 `BrowserSessionState`，关闭最后一个标签页时为 `null`；提供方拒绝返回 `browser-failed`／提供方原因，取消返回 `cancelled`，错误不回显导航 URL。该人类入口不生成模型工具调用、不借用 Agent 权限，也不改变[七项浏览器工具的会话权限与审批规则](../../browser/tool-browser/README.md)；网络载体只让回环同源请求触达此方法，Host/Origin/Fetch-Metadata 防线仍生效。这是单用户本地 Host 的信任模型，不是独立身份认证。
 
 截图人工操作 `click`、`scroll`、`type` 也属于 `browser.control`：带 `target: { browserGeneration, stateRevision, tabId, generation, revision, viewport }` 和视口内整数 `x/y`；滚动方向为 `up/down`、距离 1–2000 像素，输入是最多 2000 字符的插入文本。Provider 拒绝旧截图 `BROWSER_STALE_REF`，模型操作从审批前到执行后占用浏览器时人工入口返回 `browser-failed`／`BROWSER_BUSY`；只读状态的 `operationActive` 供 UI 禁用控件，首次模型导航等待审批时状态仅为 `{operationActive:true}`。全部命令仍沿既有本地会话与环回同源限制。
 

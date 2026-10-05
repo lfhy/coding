@@ -18,7 +18,7 @@ const streamExpected = join(fixtureDir, 'stream-json.expected.jsonl')
 const refreshing = process.env.DSH_SNAPSHOT === 'refresh'
 
 describe('Full access browser transcript snapshot', () => {
-  it('executes browser_use without approval through the assembled headless agent', async () => {
+  it('executes browser_navigate without approval through the assembled headless agent', async () => {
     const input = JSON.parse(await readFile(join(fixtureDir, 'input.json'), 'utf8')) as {
       steps: { op: string; text: string }[]
     }
@@ -60,7 +60,7 @@ describe('Full access browser transcript snapshot', () => {
         const normalized = normalizeSessionLog(packedSession, context)
         expect(normalized).not.toContain('"type":"approval/asked"')
         expect(normalized).not.toContain('"type":"approval/decided"')
-        expect(normalized).toContain('Calls require approval except in full-access mode with approval prompts disabled.')
+        expect(normalized).toContain('"name":"browser_navigate"')
         expect(normalized).toContain('Browser access verified')
         expect(normalized).toContain('"isError":false')
         expect(normalized).not.toContain('"isError":true')
