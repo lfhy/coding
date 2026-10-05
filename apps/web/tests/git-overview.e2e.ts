@@ -118,6 +118,7 @@ describe('web e2e: assembled Git overview', () => {
     const branchButton = popup.getByRole('button', { name: /Switch branch/ })
     await branchButton.waitFor()
     expect(await branchButton.textContent()).toContain('main')
+    const branchLabel = popup.getByText('Switch branch', { exact: true })
     const changes = popup.getByText('Changes', { exact: true })
     const sync = popup.getByText('Sync status', { exact: true })
     expect(await changes.evaluate(element => !!element.parentElement?.querySelector('svg'))).toBe(true)
@@ -126,6 +127,22 @@ describe('web e2e: assembled Git overview', () => {
     await popup.getByText('+4', { exact: true }).waitFor()
     await popup.getByText('−2', { exact: true }).waitFor()
     await popup.getByText('1 ahead · 0 behind', { exact: true }).waitFor()
+    const [branchLabelBox, changesLabelBox, syncLabelBox, branchValueBox, changesValueBox, syncValueBox,
+      branchRowBox, changesRowBox, syncRowBox] = await Promise.all([
+      branchLabel.boundingBox(), changes.boundingBox(), sync.boundingBox(),
+      branchButton.getByText('main', { exact: true }).boundingBox(),
+      popup.getByText('+4', { exact: true }).locator('..').boundingBox(),
+      popup.getByText('1 ahead · 0 behind', { exact: true }).boundingBox(),
+      branchButton.boundingBox(), changes.locator('../..').boundingBox(), sync.locator('../..').boundingBox(),
+    ])
+    if (!branchLabelBox || !changesLabelBox || !syncLabelBox || !branchValueBox || !changesValueBox || !syncValueBox
+      || !branchRowBox || !changesRowBox || !syncRowBox) throw new Error('Git detail rows are not visible')
+    expect(Math.max(branchLabelBox.x, changesLabelBox.x, syncLabelBox.x)
+      - Math.min(branchLabelBox.x, changesLabelBox.x, syncLabelBox.x)).toBeLessThanOrEqual(1)
+    const valueEnds = [branchValueBox, changesValueBox, syncValueBox].map(box => box.x + box.width)
+    expect(Math.max(...valueEnds) - Math.min(...valueEnds)).toBeLessThanOrEqual(1)
+    const centers = [branchRowBox, changesRowBox, syncRowBox].map(box => box.y + box.height / 2)
+    expect(Math.abs((centers[1] - centers[0]) - (centers[2] - centers[1]))).toBeLessThanOrEqual(1)
 
     const push = popup.getByRole('button', { name: 'Push', exact: true })
     const pull = popup.getByRole('button', { name: 'Pull', exact: true })

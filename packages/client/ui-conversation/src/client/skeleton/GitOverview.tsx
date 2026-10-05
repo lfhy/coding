@@ -282,7 +282,7 @@ export function GitOverview({ sessionId, status, branches, checkout, operate, re
             aria-controls={branchListId} disabled={busy !== null} onClick={() => { void toggleBranches() }}>
             <span className={css.branchLabel}>
               <span className={css.metricIcon} aria-hidden="true"><IconBranchOutline16 /></span>
-              {t('overview.git.branches')}
+              <span className={css.metricLabel}>{t('overview.git.branches')}</span>
             </span>
             <span className={css.branchCurrent} title={git.branch ?? undefined}>{git.branch ?? t('overview.git.detached')}</span>
             <IconChevronRightOutline14 className={showBranches ? css.chevronOpen : css.chevron} aria-hidden="true" />
