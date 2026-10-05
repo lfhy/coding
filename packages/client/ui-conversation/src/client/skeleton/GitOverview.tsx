@@ -171,6 +171,12 @@ export function GitOverview({ sessionId, status, branches, checkout, operate, re
 
   if (git === null) return null
 
+  const changeSummary = <>
+    {t('overview.git.fileCount', { count: git.files.length })}
+    {git.additions > 0 && <> · <span className={css.additions}>+{git.additions}</span></>}
+    {git.deletions > 0 && <> <span className={css.deletions}>−{git.deletions}</span></>}
+  </>
+
   const toggleBranches = async () => {
     if (showBranches) {
       setShowBranches(false)
@@ -271,7 +277,7 @@ export function GitOverview({ sessionId, status, branches, checkout, operate, re
         onClick={() => { if (open) close(false); else setOpen(true) }}>
         <span className={css.rowIcon} aria-hidden="true"><IconBranchOutline16 /></span>
         <span className={css.rowLabel}>{t('overview.git.title')}</span>
-        <span className={css.rowBranch} title={git.branch ?? undefined}>{git.branch ?? t('overview.git.detached')}</span>
+        <span className={css.rowSummary}>{changeSummary}</span>
         <IconChevronRightOutline14 className={open ? css.chevronOpen : css.chevron} aria-hidden="true" />
       </button>
       {open && createPortal(
@@ -300,11 +306,7 @@ export function GitOverview({ sessionId, status, branches, checkout, operate, re
                 <span className={css.metricIcon} aria-hidden="true"><IconListPenOutline16 /></span>
                 <span className={css.metricLabel}>{t('overview.git.changesLabel')}</span>
               </span>
-              <span className={css.metricValue}>
-                {t('overview.git.fileCount', { count: git.files.length })}
-                {git.additions > 0 && <> · <span className={css.additions}>+{git.additions}</span></>}
-                {git.deletions > 0 && <> <span className={css.deletions}>−{git.deletions}</span></>}
-              </span>
+              <span className={css.metricValue}>{changeSummary}</span>
             </div>}
             {(git.ahead > 0 || git.behind > 0) && <div className={css.metricRow}>
               <span className={css.metricHeading}>

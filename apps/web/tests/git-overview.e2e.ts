@@ -96,7 +96,10 @@ describe('web e2e: assembled Git overview', () => {
       .toEqual(['added.txt', 'edited.txt', 'removed.txt'])
     await expect.poll(() => gitArea.count(), { timeout: 15_000 }).toBe(1)
     const gitRow = gitArea.getByRole('button', { name: /Git changes/ })
-    await expect.poll(() => gitRow.textContent(), { timeout: 15_000 }).toContain('main')
+    await expect.poll(() => gitRow.textContent(), { timeout: 15_000 }).toContain('3 files · +4 −2')
+    expect(await gitRow.textContent()).not.toContain('main')
+    await gitRow.getByText('+4', { exact: true }).waitFor()
+    await gitRow.getByText('−2', { exact: true }).waitFor()
     expect(await gitArea.getByRole('button', { name: 'Push' }).count()).toBe(0)
 
     const subagents = overview.getByRole('button', { name: /Subagents/ })
@@ -127,6 +130,20 @@ describe('web e2e: assembled Git overview', () => {
     await popup.getByText('+4', { exact: true }).waitFor()
     await popup.getByText('−2', { exact: true }).waitFor()
     await popup.getByText('1 ahead · 0 behind', { exact: true }).waitFor()
+    expect(await gitRow.getByText('+4', { exact: true }).locator('..').textContent())
+      .toBe(await popup.getByText('+4', { exact: true }).locator('..').textContent())
+    const [outerAdditions, innerAdditions, outerDeletions, innerDeletions, rowLabel] = await Promise.all([
+      gitRow.getByText('+4', { exact: true }).evaluate(element => getComputedStyle(element).color),
+      popup.getByText('+4', { exact: true }).evaluate(element => getComputedStyle(element).color),
+      gitRow.getByText('−2', { exact: true }).evaluate(element => getComputedStyle(element).color),
+      popup.getByText('−2', { exact: true }).evaluate(element => getComputedStyle(element).color),
+      gitRow.getByText('Git changes', { exact: true }).evaluate(element => getComputedStyle(element).color),
+    ])
+    expect(outerAdditions).toBe(innerAdditions)
+    expect(outerDeletions).toBe(innerDeletions)
+    expect(outerAdditions).not.toBe(outerDeletions)
+    expect(outerAdditions).not.toBe(rowLabel)
+    expect(outerDeletions).not.toBe(rowLabel)
     const [branchLabelBox, changesLabelBox, syncLabelBox, branchValueBox, changesValueBox, syncValueBox,
       branchRowBox, changesRowBox, syncRowBox] = await Promise.all([
       branchLabel.boundingBox(), changes.boundingBox(), sync.boundingBox(),

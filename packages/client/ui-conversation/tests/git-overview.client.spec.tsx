@@ -43,7 +43,10 @@ describe('Git overview', () => {
     empty.view.unmount()
     const { view } = fixture()
     const row = await screen.findByRole('button', { name: /Git 变更/ })
-    expect(row.textContent).toContain('main')
+    expect(row.textContent).toContain('1 个文件 · +17 −4')
+    expect(row.textContent).not.toContain('main')
+    expect(within(row).getByText('+17')).toBeTruthy()
+    expect(within(row).getByText('−4')).toBeTruthy()
     expect(row.querySelector('svg')).toBeTruthy()
     expect(view.container.contains(row)).toBe(true)
     expect(screen.queryByText('变更')).toBeNull()
@@ -56,6 +59,8 @@ describe('Git overview', () => {
     expect(within(layer).getByText('变更').parentElement?.querySelector('svg')).toBeTruthy()
     expect(within(layer).getByText('+17')).toBeTruthy()
     expect(within(layer).getByText('−4')).toBeTruthy()
+    expect(within(row).getByText('+17').parentElement?.textContent)
+      .toBe(within(layer).getByText('+17').parentElement?.textContent)
     expect(within(layer).getByText('同步状态').parentElement?.querySelector('svg')).toBeTruthy()
     expect(within(layer).getByText('待推送 1 · 待拉取 2')).toBeTruthy()
     const push = within(layer).getByRole('button', { name: '推送' })
@@ -80,9 +85,18 @@ describe('Git overview', () => {
   })
 
   it('hides empty change counts and switches between local branches without growing the card', async () => {
-    const { actions, view } = fixture({ status: vi.fn(async () => ({ ...git, files: [], additions: 0, deletions: 0 })) })
+    const cleanGit = { ...git, files: [], additions: 0, deletions: 0 }
+    const { actions, view } = fixture({
+      status: vi.fn(async () => cleanGit),
+      checkout: vi.fn<GitOverviewInjected['checkout']>(async (_id, branch) => ({ ...cleanGit, branch })),
+    })
     const layer = await openGit()
     const cardChildCount = view.container.querySelector('[data-overview-git]')?.childElementCount
+    const row = screen.getByRole('button', { name: /Git 变更/ })
+    expect(row.textContent).toContain('0 个文件')
+    expect(row.textContent).not.toContain('main')
+    expect(row.textContent).not.toContain('+0')
+    expect(row.textContent).not.toContain('−0')
     expect(within(layer).queryByText('变更')).toBeNull()
     fireEvent.click(within(layer).getByRole('button', { name: /切换分支/ }))
     const branchList = await screen.findByRole('group', { name: '本地分支' })
@@ -93,7 +107,9 @@ describe('Git overview', () => {
     expect(within(layer).getByRole('button', { name: '拉取' })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'feature/ui' }))
     await waitFor(() => { expect(actions.checkout).toHaveBeenCalledWith(sessionId, 'feature/ui') })
-    expect((await screen.findByRole('button', { name: /Git 变更/ })).textContent).toContain('feature/ui')
+    await waitFor(() => { expect(within(layer).getByRole('button', { name: /切换分支/ }).textContent).toContain('feature/ui') })
+    expect(row.textContent).toContain('0 个文件')
+    expect(row.textContent).not.toContain('feature/ui')
     expect(screen.queryByRole('group', { name: '本地分支' })).toBeNull()
   })
 
@@ -111,7 +127,8 @@ describe('Git overview', () => {
     fireEvent.click(within(layer).getByRole('button', { name: /切换分支/ }))
     fireEvent.click(await screen.findByRole('button', { name: 'feature/ui' }))
     expect((await screen.findByRole('alert')).textContent).toContain('working tree is dirty')
-    expect(screen.getByRole('button', { name: /Git 变更/ }).textContent).toContain('main')
+    expect(within(layer).getByRole('button', { name: /切换分支/ }).textContent).toContain('main')
+    expect(screen.getByRole('button', { name: /Git 变更/ }).textContent).toContain('1 个文件 · +17 −4')
   })
 
   it('pushes, pulls, refreshes status, and notifies outside the card', async () => {

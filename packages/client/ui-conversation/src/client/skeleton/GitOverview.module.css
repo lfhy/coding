@@ -50,17 +50,19 @@
 }
 
 .rowLabel {
-  flex: 1;
-  min-width: 0;
+  flex: none;
+  white-space: nowrap;
 }
 
-.rowBranch {
+.rowSummary {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   text-align: right;
   font: var(--dsw-font-xs-strong-13);
+  font-variant-numeric: tabular-nums;
 }
 
 .chevron,
