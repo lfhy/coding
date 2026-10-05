@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { BrowserMirrorController } from '../src/client/controller.ts'
+import { BrowserMirrorController, desktopBrowserPresentation } from '../src/client/controller.ts'
 import { id, otherId, state } from './browser-fixtures.ts'
 
 const json = (value: unknown) => new Response(JSON.stringify(value), { headers: { 'content-type': 'application/json' } })
@@ -18,6 +18,33 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); createUrl.mockClear(); revokeUrl.mockClear() })
 
 describe('browser session controller', () => {
+  it('detects only the complete desktop presentation capability', () => {
+    expect(desktopBrowserPresentation()).toBeNull()
+    vi.stubGlobal('codingDesktop', { browser: { available: false, present: vi.fn() } })
+    expect(desktopBrowserPresentation()).toBeNull()
+    vi.stubGlobal('codingDesktop', { browser: { available: true } })
+    expect(desktopBrowserPresentation()).toBeNull()
+    const present = vi.fn()
+    vi.stubGlobal('codingDesktop', { browser: { available: true, present } })
+    expect(desktopBrowserPresentation()).toMatchObject({ present })
+  })
+
+  it('polls validated state and accepts commands without acquiring frames in native mode', async () => {
+    const fetcher = vi.fn(async (url: string | URL) => {
+      if (String(url).includes('/frame?')) throw new Error('native guest must not fetch frames')
+      return json(state())
+    })
+    const control = vi.fn(async () => ({ result: { ok: true, value: state(2) } }))
+    const controller = new BrowserMirrorController('session-a', fetcher, control as never, true)
+    const stop = controller.start(vi.fn())
+    await flush()
+    expect(controller.view.getSnapshot()).toMatchObject({ phase: 'ready', frameUrl: null })
+    expect(await controller.command({ kind: 'reload' })).toBe(true)
+    expect(controller.view.getSnapshot()).toMatchObject({ state: { stateRevision: 2 }, frameUrl: null })
+    expect(fetcher.mock.calls.every(([url]) => String(url).includes('/state?'))).toBe(true)
+    expect(createUrl).not.toHaveBeenCalled()
+    stop()
+  })
   it('tracks revision and precisely keys frame by session, tab, and both generations', async () => {
     let hits = 0
     const fetcher = vi.fn(async (url: string | URL) => String(url).includes('/frame?') ? frame() : json(state(++hits)))

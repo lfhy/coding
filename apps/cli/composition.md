@@ -160,6 +160,8 @@ flowchart LR
   cfg --> plugin_dsh_base_web_search_tavily
   plugin_dsh_base_browser_playwright["browser-playwright<br/>@deepseek-ai/dsh-browser-playwright"]
   cfg --> plugin_dsh_base_browser_playwright
+  plugin_dsh_base_browser_electron["browser-electron<br/>@deepseek-ai/dsh-browser-electron"]
+  cfg --> plugin_dsh_base_browser_electron
   plugin_dsh_base_tool_web["tool-web<br/>@deepseek-ai/dsh-tool-web"]
   cfg --> plugin_dsh_base_tool_web
   plugin_dsh_base_tools["tools<br/>@deepseek-ai/dsh-tools"]
@@ -252,6 +254,7 @@ flowchart LR
 | `web-search-deepseek` | `@deepseek-ai/dsh-web-search-deepseek` |
 | `web-search-tavily` | `@deepseek-ai/dsh-web-search-tavily` |
 | `browser-playwright` | `@deepseek-ai/dsh-browser-playwright` |
+| `browser-electron` | `@deepseek-ai/dsh-browser-electron` |
 | `tool-web` | `@deepseek-ai/dsh-tool-web` |
 | `tools` | `@deepseek-ai/dsh-tools` |
 | `system-prompt` | `@deepseek-ai/dsh-system-prompt` |

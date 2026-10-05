@@ -374,7 +374,7 @@ describe.skipIf(process.env.DSH_BROWSER_E2E !== '1' || !existsSync(chromium.exec
       } finally { await close() }
     })
 
-    it('captures responsive mobile and tall desktop viewports without scaling the PNG', { timeout: 40_000 }, async () => {
+    it('captures responsive mobile and tall desktop viewports at device density with CSS coordinates', { timeout: 40_000 }, async () => {
       const { ctx, origin, close } = await fixture()
       const id = SessionId('responsive-viewport')
       const signal = new AbortController().signal
@@ -385,7 +385,7 @@ describe.skipIf(process.env.DSH_BROWSER_E2E !== '1' || !existsSync(chromium.exec
         const mobile = await ctx.browserUse.execute(id, { kind: 'navigate', url: `${origin}/responsive` }, signal)
         expect(mobile.observation.snapshot).toContain('375x850 mobile')
         expect(mobile.observation.viewport).toEqual({ width: 375, height: 850 })
-        expect(pngSize(mobile.png)).toEqual({ width: 375, height: 850 })
+        expect(pngSize(mobile.png)).toEqual({ width: 750, height: 1700 })
         const clicked = await ctx.browserUse.execute(id, { kind: 'click',
           ref: element(mobile.observation.snapshot, 'button', 'Reach'), revision: mobile.observation.revision }, signal)
         expect(clicked.observation.cursor?.x).toBeLessThan(375)
@@ -394,7 +394,7 @@ describe.skipIf(process.env.DSH_BROWSER_E2E !== '1' || !existsSync(chromium.exec
         const desktop = await ctx.browserUse.control(id, { kind: 'set-viewport', width: 900, height: 1100 }, signal)
         expect(desktop?.observation?.snapshot).toContain('900x1100 desktop')
         expect(desktop?.observation?.viewport).toEqual({ width: 900, height: 1100 })
-        expect(pngSize(ctx.browserUse.latest(id)?.png ?? null)).toEqual({ width: 900, height: 1100 })
+        expect(pngSize(ctx.browserUse.latest(id)?.png ?? null)).toEqual({ width: 1800, height: 2200 })
         await expect(ctx.browserUse.execute(id, { kind: 'click', ref: mobileRef,
           revision: clicked.observation.revision }, signal)).rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
       } finally { await close() }
@@ -409,6 +409,7 @@ describe.skipIf(process.env.DSH_BROWSER_E2E !== '1' || !existsSync(chromium.exec
         await ctx.browserUse.control(id, { kind: 'set-viewport', width: 375, height: 800 }, signal)
         const initial = await ctx.browserUse.control(id, { kind: 'navigate', url: `${origin}/high-entropy` }, signal)
         expect(initial?.observation?.url).toBe(`${origin}/high-entropy`)
+        expect(pngSize(ctx.browserUse.latest(id)?.png ?? null)).toEqual({ width: 375, height: 800 })
         await expect(ctx.browserUse.control(id, { kind: 'set-viewport', width: 900, height: 1100 }, signal))
           .rejects.toMatchObject({ code: 'BROWSER_FAILED', message: 'browser screenshot exceeds 2097152 bytes' })
         const oversized = ctx.browserUse.state(id)
@@ -418,7 +419,7 @@ describe.skipIf(process.env.DSH_BROWSER_E2E !== '1' || !existsSync(chromium.exec
         const recovered = await ctx.browserUse.control(id, { kind: 'set-viewport', width: 300, height: 500 }, signal)
         expect(recovered?.observation).toMatchObject({ url: `${origin}/high-entropy`,
           viewport: { width: 300, height: 500 } })
-        expect(pngSize(ctx.browserUse.latest(id)?.png ?? null)).toEqual({ width: 300, height: 500 })
+        expect(pngSize(ctx.browserUse.latest(id)?.png ?? null)).toEqual({ width: 600, height: 1000 })
       } finally { await close() }
     })
 

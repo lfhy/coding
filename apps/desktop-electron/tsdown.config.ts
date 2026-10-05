@@ -8,7 +8,10 @@ export default defineConfig([
     fixedExtension: false,
     platform: 'node',
     target: 'node22',
-    deps: { neverBundle: ['electron'] },
+    deps: {
+      alwaysBundle: ['ws', /^@deepseek-ai\/dsh-browser-electron(?:\/|$)/u],
+      neverBundle: ['electron'],
+    },
     dts: false,
     clean: true,
   },

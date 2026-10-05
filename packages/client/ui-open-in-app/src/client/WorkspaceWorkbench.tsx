@@ -71,8 +71,10 @@ export type WorkspaceWorkbenchProps =
 type WorkbenchActions = BoundActions<ReturnType<typeof createWorkbenchStore>>
 type WorkbenchViewProps = Pick<WorkspaceWorkbenchProps, 'shown' | 'fullscreen' | 'bottomOpen' | 'filesOpen' | 't' | 'renderSlot'> & {
   sessionId: SessionId
+  narrow: boolean
   state: WorkbenchState
   actions: WorkbenchActions
+  completedFocusTabId: string | null
   panelPrefix: string
   selectTab: (id: string, focus: boolean) => void
   closeWorkbench: () => void
@@ -384,9 +386,21 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
   const sessionIds = props.useSessions(state => state.ids)
   const sessions = props.useStore(state => state.sessions)
   const panelPrefix = useId()
+  const rootRef = useRef<HTMLElement>(null)
+  const [narrow, setNarrow] = useState(false)
   const [focusRequest, setFocusRequest] = useState<number | null>(0)
+  const [completedFocus, setCompletedFocus] = useState<{ sessionId: SessionId; tabId: string } | null>(null)
   const state = sessionId === undefined ? undefined : sessions[sessionId]
   useEffect(() => { setFocusRequest(0) }, [props.shown, sessionId])
+  useEffect(() => {
+    const root = rootRef.current
+    if (root === null || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry !== undefined && entry.contentRect.width > 0) setNarrow(entry.contentRect.width <= 640)
+    })
+    observer.observe(root)
+    return () => { observer.disconnect() }
+  }, [])
   useEffect(() => {
     props.actions.retainSessions(sessionIds)
     if (sessionId !== undefined && sessionIds.includes(sessionId)) props.actions.initSession(sessionId)
@@ -396,6 +410,7 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
     const actions: WorkbenchActions = {
       setView: (view) => { props.actions.setView(sessionId, view) },
       openFile: (file) => { props.actions.openFile(sessionId, file) },
+      openFileManager: () => { props.actions.openFileManager(sessionId) },
       activateFile: (id) => { props.actions.activateFile(sessionId, id) },
       closeFile: (id) => { props.actions.closeFile(sessionId, id) },
       openTerminal: () => {
@@ -404,7 +419,7 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
       },
       activateTab: (id) => { props.actions.activateTab(sessionId, id) },
       closeTab: (id) => {
-        setFocusRequest(previous => (previous ?? 0) + 1)
+        setFocusRequest(null)
         props.actions.closeTab(sessionId, id)
       },
       syncBrowserTabs: (tabs, activeId) => { props.actions.syncBrowserTabs(sessionId, tabs, activeId) },
@@ -430,16 +445,24 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
   }, [props.actions, props.listFiles, props.readFile, props.closeWorkbench, props.openWorkbench,
     props.toggleWorkbenchFullscreen, props.toggleFiles, props.toggleBottom, sessionId])
   const terminalShown = props.shown && state?.view === 'terminal'
-  return <section className={css.root} hidden={!props.shown || state === undefined}
-    aria-label={props.t('workbench.label')} data-fullscreen={props.fullscreen || undefined}>
+  return <section ref={rootRef} className={css.root} hidden={!props.shown || state === undefined}
+    aria-label={props.t('workbench.label')} data-fullscreen={props.fullscreen || undefined}
+    data-narrow={narrow || undefined}>
     {state !== undefined && viewProps !== undefined && <WorkbenchView key={sessionId}
-      {...props} {...viewProps} sessionId={sessionId as SessionId} state={state} panelPrefix={panelPrefix} />}
+      {...props} {...viewProps} sessionId={sessionId as SessionId} state={state} panelPrefix={panelPrefix}
+      narrow={narrow} completedFocusTabId={completedFocus !== null && completedFocus.sessionId === sessionId
+        ? completedFocus.tabId : null} />}
     <div className={css.terminalStack} hidden={!terminalShown} {...!terminalShown ? { inert: '' } : {}}>
       {Object.entries(sessions).flatMap(([id, session]) => session.tabs.filter(tab => tab.type === 'terminal').map(tab => (
         <TerminalPanel key={`${id}:${tab.id}`} terminalUrl={props.terminalUrl(id as SessionId)} t={props.t}
           shown={terminalShown && id === sessionId && tab.id === state.activeId} focusRequest={focusRequest}
           panelId={tabDomId(panelPrefix, id, tab.id, 'panel')} tabId={tabDomId(panelPrefix, id, tab.id, 'tab')}
-          onCompleted={() => { props.actions.closeTab(id as SessionId, tab.id) }} />
+          onCompleted={() => {
+            const wasActive = props.shown && id === sessionId && state?.activeId === tab.id
+            if (wasActive) setFocusRequest(null)
+            props.actions.closeTab(id as SessionId, tab.id)
+            if (wasActive) setCompletedFocus({ sessionId: id as SessionId, tabId: tab.id })
+          }} />
       )))}
     </div>
   </section>
@@ -447,12 +470,33 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
 
 function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
   const {
-    shown, fullscreen, bottomOpen, filesOpen, actions, readFile, listFiles,
+    shown, fullscreen, bottomOpen, filesOpen, narrow, actions, readFile, listFiles, completedFocusTabId,
     closeWorkbench, openWorkbench, toggleWorkbenchFullscreen, toggleFiles, toggleBottom, t, renderSlot,
     panelPrefix, selectTab,
   } = props
   const { view, tabs, activeId, filesQuery, filesExpanded, filesLevels } = props.state
+  const active = useMemo(() => tabs.find(tab => tab.id === activeId), [activeId, tabs])
+  const [previewTreeOpen, setPreviewTreeOpen] = useState(false)
+  const narrowPreview = narrow && view === 'files' && active?.type === 'file'
+  const treeVisible = view === 'files' && filesOpen && (!narrowPreview || previewTreeOpen)
+  const filesTogglePressed = view === 'files' ? treeVisible : filesOpen
+  useEffect(() => { setPreviewTreeOpen(false) }, [activeId, narrow])
+  const toggleVisibleFiles = useCallback((): void => {
+    if (!narrowPreview) {
+      toggleFiles()
+    } else if (filesOpen) {
+      setPreviewTreeOpen(open => !open)
+    } else {
+      setPreviewTreeOpen(true)
+      toggleFiles()
+    }
+  }, [narrowPreview, filesOpen, toggleFiles])
   const browserShown = shown && view === 'browser'
+  const [newTabRequest, setNewTabRequest] = useState(0)
+  const [handledTabRequest, setHandledTabRequest] = useState(0)
+  const markTabRequestHandled = useCallback((request: number): void => {
+    setHandledTabRequest(previous => Math.max(previous, request))
+  }, [])
   const showBrowser = useCallback((tabId?: string): void => {
     actions.setView('browser')
     if (tabId !== undefined) actions.activateTab(`browser:${tabId}`)
@@ -461,12 +505,16 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
   const returnButton = useRef<HTMLButtonElement>(null)
   const menuTerminalButton = useRef<HTMLButtonElement>(null)
   const tablist = useRef<HTMLDivElement>(null)
+  const pendingBrowserFocus = useRef<string | null>(null)
+  const browserFocusAllowed = useRef(browserShown)
+  browserFocusAllowed.current = browserShown
   const focusAfterClose = useRef(false)
+  const lastCompletedFocus = useRef(completedFocusTabId)
   const pendingFocus = useRef<'menu' | 'return' | null>(null)
   const previousView = useRef(view)
   const showFiles = useCallback((): void => {
     pendingFocus.current = 'return'
-    actions.setView('files')
+    actions.openFileManager()
     if (!filesOpen) toggleFiles()
   }, [actions, filesOpen, toggleFiles])
   const showMenu = useCallback((): void => {
@@ -488,8 +536,35 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
     if (!focusAfterClose.current) return
     focusAfterClose.current = false
     if (view === 'menu') menuTerminalButton.current?.focus()
-    else if (view !== 'terminal') tablist.current?.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')?.focus()
+    else tablist.current?.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')?.focus()
   }, [tabs, view])
+  useLayoutEffect(() => {
+    if (completedFocusTabId === null || lastCompletedFocus.current === completedFocusTabId
+      || tabs.some(tab => tab.id === completedFocusTabId)) return
+    lastCompletedFocus.current = completedFocusTabId
+    if (view === 'menu') menuTerminalButton.current?.focus()
+    else tablist.current?.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')?.focus()
+  }, [completedFocusTabId, tabs, view])
+  const focusPendingBrowserTab = useCallback((tabId: string): void => {
+    if (!browserFocusAllowed.current || pendingBrowserFocus.current !== tabId) return
+    const button = Array.from(tablist.current?.querySelectorAll<HTMLButtonElement>('[data-browser-tab-id]') ?? [])
+      .find(candidate => candidate.dataset.browserTabId === tabId)
+    if (button === undefined || button.disabled) return
+    button.focus()
+    pendingBrowserFocus.current = null
+  }, [])
+  const focusBrowserTab = useCallback((tabId: string): void => {
+    if (!browserFocusAllowed.current) return
+    pendingBrowserFocus.current = tabId
+    focusPendingBrowserTab(tabId)
+  }, [focusPendingBrowserTab])
+  useLayoutEffect(() => {
+    if (!browserShown) {
+      pendingBrowserFocus.current = null
+      return
+    }
+    if (pendingBrowserFocus.current !== null) focusPendingBrowserTab(pendingBrowserFocus.current)
+  }, [tabs, browserShown, focusPendingBrowserTab])
   const expanded = useMemo(() => new Set(filesExpanded), [filesExpanded])
   const requests = useRef(new Map<string, AbortController>())
   const rootKey = tabIdForSegments([])
@@ -542,10 +617,13 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
     if (opening && filesLevels[key]?.phase !== 'ready') load(entry.segments)
   }, [actions, expanded, filesLevels, load])
 
-  const active = useMemo(() => tabs.find(tab => tab.id === activeId), [activeId, tabs])
-
   const browserOwner = {
     shown: browserShown,
+    newTabRequest,
+    handledTabRequest,
+    markTabRequestHandled,
+    focusBrowserTab,
+    focusPendingBrowserTab,
     openBrowser: showBrowser,
     syncBrowserTabs: actions.syncBrowserTabs,
     ...view === 'browser' && active?.type === 'browser' ? { selectedTabId: active.browserTabId } : {},
@@ -570,17 +648,22 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
           {tabs.map((tab, index) => {
             if (tab.type === 'browser') return <div key={tab.id} className={css.browserTabs}>
               {renderSlot('workbench.browser.tabs', { ...browserOwner, shown,
-                tabId: tab.browserTabId, tabName: tab.name, browserShown: browserShown && activeId === tab.id })}
+                tabId: tab.browserTabId, tabName: tab.name, browserShown: browserShown && activeId === tab.id,
+                tabDomId: tabDomId(panelPrefix, props.sessionId, tab.id, 'tab'),
+                panelDomId: tabDomId(panelPrefix, props.sessionId, tab.id, 'panel') })}
             </div>
-            const name = tab.type === 'terminal' ? t('terminal.tab', { number: String(tab.number) }) : tab.name
-            const selected = tab.id === activeId && view === (tab.type === 'file' ? 'files' : 'terminal')
+            const name = tab.type === 'terminal' ? t('terminal.tab', { number: String(tab.number) })
+              : tab.type === 'file-manager' ? t('files.tab') : tab.name
+            const selected = tab.id === activeId && view === (tab.type === 'file' || tab.type === 'file-manager'
+              ? 'files' : 'terminal')
             return <div className={clsx(css.tab, selected && css.tabActive)} role="presentation" key={tab.id}>
               <button type="button" className={css.tabSelect} role="tab" aria-selected={selected}
                 tabIndex={selected || (view === 'menu' && index === 0) ? 0 : -1}
                 aria-controls={tabDomId(panelPrefix, props.sessionId, tab.id, 'panel')}
                 id={tabDomId(panelPrefix, props.sessionId, tab.id, 'tab')} title={name}
                 onClick={(event) => { selectTab(tab.id, event.detail !== 0) }}>
-                {tab.type === 'terminal' ? <Icon name="terminal-menu" size={14} /> : <FileGlyph />}
+                {tab.type === 'terminal' ? <Icon name="terminal-menu" size={14} />
+                  : tab.type === 'file-manager' ? <IconFolderOpenOutline16 size={14} /> : <FileGlyph />}
                 <span>{name}</span>
               </button>
               <button type="button" className={css.tabClose} aria-label={t('tabs.close', { name })}
@@ -592,11 +675,7 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
               </button>
             </div>
           })}
-          <div className={css.browserTabs}>
-            {renderSlot('workbench.browser.tabs', { ...browserOwner, shown, browserShown })}
-          </div>
-          {tabs.some(tab => tab.type === 'terminal') && <ToolbarButton label={t('terminal.newTab')}
-            onClick={() => { actions.openTerminal() }} icon={<IconPlusOutline16 size={14} />} />}
+          <ToolbarButton label={t('tabs.add')} onClick={showMenu} icon={<IconPlusOutline16 size={14} />} />
         </div>
         <div className={css.viewControls}>
           {view !== 'menu' && (
@@ -616,9 +695,9 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
             />
           )}
           <ToolbarButton
-            label={filesOpen ? t('workbench.files.hide') : t('workbench.files.show')}
-            pressed={filesOpen}
-            onClick={toggleFiles}
+            label={filesTogglePressed ? t('workbench.files.hide') : t('workbench.files.show')}
+            pressed={filesTogglePressed}
+            onClick={toggleVisibleFiles}
             icon={<Icon name="files-panel" size={18} />}
           />
           <ToolbarButton
@@ -634,7 +713,8 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
           />
         </div>
       </header>
-      <div className={clsx(css.body, (!filesOpen || view !== 'files') && css.filesClosed)}>
+      <div className={clsx(css.body, !treeVisible && css.filesClosed)}
+        data-file-manager={active?.type === 'file-manager' || undefined}>
         <main className={css.previewStack}>
           <div className={css.menuView} hidden={view !== 'menu'} {...view !== 'menu' ? { inert: '' } : {}}>
             <nav className={css.functionMenu} aria-label={t('workbench.menu.label')}>
@@ -651,6 +731,7 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
               </button>
               <button type="button" className={css.functionItem} onClick={() => {
                 pendingFocus.current = 'return'
+                setNewTabRequest(previous => previous + 1)
                 showBrowser()
               }}>
                 <IconBrowseOutline16 size={18} />
@@ -668,6 +749,17 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
             </nav>
           </div>
           <div className={css.fileView} hidden={view !== 'files'} {...view !== 'files' ? { inert: '' } : {}}>
+            {tabs.filter(tab => tab.type === 'file-manager').map(tab => (
+              <div id={tabDomId(panelPrefix, props.sessionId, tab.id, 'panel')}
+                role="tabpanel" aria-labelledby={tabDomId(panelPrefix, props.sessionId, tab.id, 'tab')}
+                hidden={tab.id !== activeId || view !== 'files'} className={css.previewSlot} key={tab.id}>
+                <div className={css.emptyState}>
+                  <IconFolderOpenOutline16 size={36} />
+                  <strong>{t('workbench.empty.title')}</strong>
+                  <span>{t('workbench.empty.detail')}</span>
+                </div>
+              </div>
+            ))}
             {tabs.filter(tab => tab.type === 'file').map(tab => (
               <div id={tabDomId(panelPrefix, props.sessionId, tab.id, 'panel')}
                 role="tabpanel" aria-labelledby={tabDomId(panelPrefix, props.sessionId, tab.id, 'tab')}
@@ -684,14 +776,29 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
             )}
           </div>
           <div className={css.browserView} hidden={view !== 'browser'} {...view !== 'browser' ? { inert: '' } : {}}>
-            {renderSlot('workbench.browser', browserOwner)}
+            <div className={css.browserPanel}
+              {...active?.type === 'browser' ? {
+                id: tabDomId(panelPrefix, props.sessionId, active.id, 'panel'),
+                role: 'tabpanel',
+                'aria-labelledby': tabDomId(panelPrefix, props.sessionId, active.id, 'tab'),
+              } : {}}>
+              {renderSlot('workbench.browser', browserOwner)}
+            </div>
+            {tabs.filter(tab => tab.type === 'browser' && tab.id !== activeId).map(tab => (
+              <div key={tab.id} id={tabDomId(panelPrefix, props.sessionId, tab.id, 'panel')}
+                role="tabpanel" aria-labelledby={tabDomId(panelPrefix, props.sessionId, tab.id, 'tab')}
+                hidden {...{ inert: '' }} />
+            ))}
           </div>
         </main>
-        <div className={css.treeView} hidden={view !== 'files' || !filesOpen}
-          {...view !== 'files' || !filesOpen ? { inert: '' } : {}}>
+        <div className={css.treeView} hidden={!treeVisible}
+          {...!treeVisible ? { inert: '' } : {}}>
           <FileTree
-            shown={filesOpen && view === 'files'}
-            onOpen={(entry) => { actions.openFile({ name: entry.name, segments: entry.segments }) }}
+            shown={treeVisible}
+            onOpen={(entry) => {
+              setPreviewTreeOpen(false)
+              actions.openFile({ name: entry.name, segments: entry.segments })
+            }}
             query={filesQuery}
             setQuery={actions.setFilesQuery}
             expanded={expanded}

@@ -48,7 +48,9 @@ async function requireEntry(path: string, kind: 'file' | 'directory', optional =
 }
 
 function cleanEnvironment(environment: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const env = { ...environment }
+  const env = Object.fromEntries(Object.entries(environment).filter(
+    ([key]) => !key.startsWith('DSH_DESKTOP_BROWSER_BRIDGE_'),
+  ))
   delete env.DSH_REMOTE_BRIDGE_URL
   delete env.DSH_REMOTE_BRIDGE_TOKEN
   delete env.DSH_AGENTS_HOME

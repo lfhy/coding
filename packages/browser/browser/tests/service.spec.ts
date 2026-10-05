@@ -1,6 +1,6 @@
 import { Context } from '@deepseek-ai/cordis'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import BrowserUseService, { BrowserUseError, type BrowserCapture, type BrowserCommand, type BrowserHumanCommand, type BrowserSessionState } from '../src/index.ts'
 import type { BrowserObservation } from '../src/types.ts'
 
@@ -67,8 +67,16 @@ describe('BrowserUseService contract', () => {
     const signal = new AbortController().signal
 
     expect(ctx.browserUse.latest(first)).toBeUndefined()
+    expect(await ctx.browserUse.prepareTarget(first, signal)).toEqual({ kind: 'none' })
     const capture = await ctx.browserUse.execute(first, { kind: 'navigate', url: 'https://example.com' }, signal)
     expect(ctx.browserUse.latest(first)).toBe(capture)
+    expect(await ctx.browserUse.prepareTarget(first, signal)).toEqual({ kind: 'tab',
+      browserGeneration: first, stateRevision: 1, tabId: capture.observation.tabId,
+      generation: capture.observation.generation, url: 'https://example.com' })
+    const state = ctx.browserUse.state(first)!
+    const read = vi.spyOn(ctx.browserUse, 'state').mockReturnValueOnce({ ...state, activeTabId: null })
+    await expect(ctx.browserUse.prepareTarget(first, signal)).rejects.toMatchObject({ code: 'BROWSER_CLOSED' })
+    read.mockRestore()
     expect(ctx.browserUse.latest(second)).toBeUndefined()
     await ctx.browserUse.closeSession(first)
     expect(ctx.browserUse.latest(first)).toBeUndefined()
@@ -80,6 +88,7 @@ describe('BrowserUseService contract', () => {
     const controller = new AbortController()
     const reason = new Error('cancelled')
     controller.abort(reason)
+    await expect(ctx.browserUse.prepareTarget(SessionId('first'), controller.signal)).rejects.toBe(reason)
     await expect(ctx.browserUse.execute(SessionId('first'), { kind: 'snapshot' }, controller.signal)).rejects.toBe(reason)
     const failure = new BrowserUseError('reference belongs to an older snapshot', 'BROWSER_STALE_REF', { cause: reason })
     expect(failure).toMatchObject({ name: 'BrowserUseError', code: 'BROWSER_STALE_REF', cause: reason })

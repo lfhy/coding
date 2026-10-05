@@ -198,9 +198,26 @@
   grid-template-columns: minmax(0, 1fr);
 }
 
+/* 工作台侧栏自己的宽度不足时，手动展开的树盖在完整预览之上，而不是挤窄内容。 */
+.root[data-narrow='true'] .body:not(.filesClosed) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.root[data-narrow='true'] .treeView:not([hidden]) {
+  position: absolute;
+  inset: 0 0 0 auto;
+  z-index: 2;
+  width: min(100%, 280px);
+}
+
+.root[data-narrow='true'] .body[data-file-manager='true'] .treeView:not([hidden]) {
+  width: 100%;
+}
+
 .previewStack,
 .fileView,
 .browserView,
+.browserPanel,
 .treeView,
 .previewSlot,
 .preview,
@@ -218,6 +235,11 @@
 .fileView,
 .menuView,
 .browserView {
+  width: 100%;
+  height: 100%;
+}
+
+.browserPanel {
   width: 100%;
   height: 100%;
 }
@@ -623,6 +645,12 @@ div.treeRow {
     position: absolute;
     inset: 0;
     z-index: 2;
+    width: 100%;
+  }
+
+  .root[data-narrow='true'] .treeView:not([hidden]) {
+    inset: 0;
+    width: 100%;
   }
 
   .source {

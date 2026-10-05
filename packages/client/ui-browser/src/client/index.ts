@@ -4,7 +4,7 @@ import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-open-in-app/client'
-import { BrowserMirrorController } from './controller.ts'
+import { BrowserMirrorController, desktopBrowserPresentation } from './controller.ts'
 import { BrowserMirror, BrowserTabs, type BrowserMirrorInjected } from './BrowserMirror.tsx'
 import { en, NS, zh, type BrowserMirrorKey } from './locales.ts'
 
@@ -30,7 +30,7 @@ export function apply(ctx: ClientContext): void {
     let controller = controllers.get(sessionId)
     if (controller === undefined) {
       controller = new BrowserMirrorController(sessionId, undefined,
-        (request, signal) => connection.api.browser.control(request, signal))
+        (request, signal) => connection.api.browser.control(request, signal), desktopBrowserPresentation() !== null)
       controllers.set(sessionId, controller)
     }
     return controller

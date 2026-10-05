@@ -14,7 +14,9 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"strconv"
 	"syscall"
 
 	"github.com/deepseek-ai/coding/apps/desktop/internal/desktopremote"
@@ -27,6 +29,29 @@ import (
 type config struct {
 	home, cwd, repoRoot, runtimeRoot, hostVersion string
 	exclusiveDesktopInstance                      bool
+}
+
+type browserBridgeConfig struct{ origin, token string }
+
+var browserBridgeOriginPattern = regexp.MustCompile(`^ws://127\.0\.0\.1:([1-9][0-9]{0,4})/browser-bridge$`)
+var browserBridgeTokenPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
+
+// browserBridgeEnvironment 核验 Electron 私有环境；失败诊断不得包含令牌。
+func browserBridgeEnvironment() (browserBridgeConfig, error) {
+	origin, hasOrigin := os.LookupEnv("DSH_DESKTOP_BROWSER_BRIDGE_ORIGIN")
+	token, hasToken := os.LookupEnv("DSH_DESKTOP_BROWSER_BRIDGE_TOKEN")
+	if !hasOrigin && !hasToken {
+		return browserBridgeConfig{}, nil
+	}
+	match := browserBridgeOriginPattern.FindStringSubmatch(origin)
+	if !hasOrigin || !hasToken || match == nil || !browserBridgeTokenPattern.MatchString(token) {
+		return browserBridgeConfig{}, errors.New("invalid desktop browser bridge environment")
+	}
+	port, err := strconv.Atoi(match[1])
+	if err != nil || port > 65535 {
+		return browserBridgeConfig{}, errors.New("invalid desktop browser bridge environment")
+	}
+	return browserBridgeConfig{origin: origin, token: token}, nil
 }
 
 func parseConfig(args []string) (config, error) {
@@ -83,6 +108,10 @@ func main() {
 
 func run(args []string, stdin io.Reader, stdout io.Writer) error {
 	cfg, err := parseConfig(args)
+	if err != nil {
+		return err
+	}
+	browserBridge, err := browserBridgeEnvironment()
 	if err != nil {
 		return err
 	}
@@ -185,7 +214,7 @@ func run(args []string, stdin io.Reader, stdout io.Writer) error {
 	launcher, err := hostlaunch.New(hostlaunch.Options{
 		Home: cfg.home, CWD: cfg.cwd, Version: cfg.hostVersion, Command: command, RuntimeRoot: cfg.runtimeRoot,
 		ReplaceCompatibleHost: true,
-		Environment:           hostEnvironment(bridge.URL(), bridgeToken, agentsHome),
+		Environment:           hostEnvironment(bridge.URL(), bridgeToken, agentsHome, browserBridge),
 	})
 	if err != nil {
 		return err
@@ -265,12 +294,17 @@ func prepareAgentsHome(home string) (string, error) {
 	return filepath.Join(home, "agents"), nil
 }
 
-func hostEnvironment(bridgeURL, bridgeToken, agentsHome string) map[string]string {
-	return map[string]string{
+func hostEnvironment(bridgeURL, bridgeToken, agentsHome string, browserBridge browserBridgeConfig) map[string]string {
+	env := map[string]string{
 		"DSH_REMOTE_BRIDGE_URL":   bridgeURL,
 		"DSH_REMOTE_BRIDGE_TOKEN": bridgeToken,
 		"DSH_AGENTS_HOME":         agentsHome,
 	}
+	if browserBridge.origin != "" {
+		env["DSH_DESKTOP_BROWSER_BRIDGE_ORIGIN"] = browserBridge.origin
+		env["DSH_DESKTOP_BROWSER_BRIDGE_TOKEN"] = browserBridge.token
+	}
+	return env
 }
 
 func agentPathFor(root string) func(remoteagent.RemotePlatform) (string, error) {

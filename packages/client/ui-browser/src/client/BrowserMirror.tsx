@@ -1,13 +1,13 @@
-/** Host 画面只作为 PNG 展示，不把目标页面嵌入 Client DOM。 */
+/** 桌面端让原生 guest 覆盖占位区；普通 Web 仍只展示 Host PNG。 */
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type MouseEvent } from 'react'
 import {
   IconChevronLeftOutline14, IconChevronRightOutline14, IconCloseOutline16,
-  IconGlobeOutline14, IconPlusOutline16, IconRefreshOutline16,
+  IconGlobeOutline14, IconRefreshOutline16,
 } from '@deepseek-ai/dsh-client-ui-icons'
 import type { BrowserHumanCommand, BrowserHumanTarget } from '@deepseek-ai/dsh-browser/types'
 import type { HostObservable, InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-open-in-app/client'
-import type { BrowserView } from './controller.ts'
+import { desktopBrowserPresentation, type BrowserView } from './controller.ts'
 import { fitBrowserViewport, type BrowserViewport } from './viewport.ts'
 import { pointOnFrame } from './interaction.ts'
 import { normalizeBrowserUrl, type BrowserState } from './wire.ts'
@@ -48,23 +48,34 @@ function focusWorkbenchTab(row: Element | null): void {
   })
 }
 
+function frameMatchesViewport(frame: HTMLImageElement | null, viewport: BrowserViewport): boolean {
+  if (frame === null) return false
+  return frame.naturalWidth === viewport.width && frame.naturalHeight === viewport.height
+    || frame.naturalWidth === viewport.width * 2 && frame.naturalHeight === viewport.height * 2
+}
+
 /**
- * 向工作台统一标签行贡献一个浏览器页面；未给 tabId 时贡献新增页面按钮。
+ * 向工作台统一标签行贡献一个浏览器页面；新增功能由工作台统一入口负责。
  * @param props - 共享会话状态、所属页面与标签操作。
- * @returns 页面标签或新增页面按钮。
+ * @returns 页面标签；没有页面 id 时不渲染。
  */
-export function BrowserTabs({ shown, browserShown = shown, tabId, tabName,
-  openBrowser, useBrowserMirror, command, t }: BrowserTabsProps) {
+export function BrowserTabs({ shown, browserShown = shown, tabId, tabName, tabDomId, panelDomId,
+  openBrowser, focusPendingBrowserTab, useBrowserMirror, command, t }: BrowserTabsProps) {
   const { state, pending, phase } = useBrowserMirror(view => view)
   const hostTab = state?.tabs.find(tab => tab.id === tabId)
-  const tab = hostTab ?? (tabId !== undefined && state === null
+  const tab = hostTab ?? (state === null
     ? { id: tabId, title: tabName ?? t('newTab'), url: 'about:blank' } : undefined)
   const disabled = pending || phase === 'busy' || state?.operationActive === true
-    || (tabId !== undefined && state === null)
+    || state === null
   const selected = browserShown && (state === null || tab?.id === state.activeTabId)
+  useEffect(() => {
+    if (shown && !disabled && tabId !== undefined) focusPendingBrowserTab(tabId)
+  }, [shown, disabled, tabId, focusPendingBrowserTab])
+  if (tabId === undefined) return null
   return <div className={css.tabs} hidden={!shown}>
     {tab !== undefined && <div className={css.tab} data-active={selected}>
       <button type="button" className={css.tabSelect} role="tab" aria-selected={selected}
+        data-browser-tab-id={tab.id} id={tabDomId} aria-controls={panelDomId}
         tabIndex={selected ? 0 : -1}
         disabled={disabled} title={disabled ? t('agentBusy') : tab.title || tab.url}
         onClick={() => {
@@ -88,12 +99,6 @@ export function BrowserTabs({ shown, browserShown = shown, tabId, tabName,
           })
         }}><IconCloseOutline16 size={12} /></button>
     </div>}
-    {tabId === undefined && <button type="button" className={css.addTab} disabled={disabled} aria-label={t('addTab')}
-      title={disabled ? t('agentBusy') : t('addTab')} onClick={(event) => {
-        const row = event.currentTarget.closest('[role="tablist"]')
-        openBrowser()
-        void command({ kind: 'new-tab' }).then((success) => { if (success) focusWorkbenchTab(row) })
-      }}><IconPlusOutline16 size={14} /></button>}
   </div>
 }
 
@@ -102,8 +107,11 @@ export function BrowserTabs({ shown, browserShown = shown, tabId, tabName,
  * @param props - 工作台 owner、词典和状态 hook。
  * @returns 浏览器内容区域。
  */
-export function BrowserMirror({ shown, selectedTabId, openBrowser, syncBrowserTabs,
+export function BrowserMirror({ sessionId, shown, selectedTabId, newTabRequest, handledTabRequest,
+  markTabRequestHandled, openBrowser, syncBrowserTabs, focusBrowserTab,
   useBrowserMirror, start, ensureTab, command, retry, t }: BrowserMirrorProps) {
+  const nativePresenter = desktopBrowserPresentation()
+  const native = nativePresenter !== null
   const view = useBrowserMirror(value => value)
   const viewRef = useRef(view)
   viewRef.current = view
@@ -134,6 +142,7 @@ export function BrowserMirror({ shown, selectedTabId, openBrowser, syncBrowserTa
   }, [shown, selectedTabId, command])
   // 每次由菜单进入仅等待一次明确基线；已有标签会消耗机会，关闭后的 empty 不会重建。
   const entry = useRef({ shown: false, awaitingState: false })
+  const issuedTabRequest = useRef(handledTabRequest)
   useEffect(() => {
     if (!shown) {
       entry.current.shown = false
@@ -145,19 +154,88 @@ export function BrowserMirror({ shown, selectedTabId, openBrowser, syncBrowserTa
       entry.current.awaitingState = true
     }
     if (!entry.current.awaitingState) return
+    if (newTabRequest > issuedTabRequest.current) {
+      entry.current.awaitingState = false
+      return
+    }
     if (view.state !== null) {
       entry.current.awaitingState = false
     } else if (view.phase === 'empty') {
       entry.current.awaitingState = false
       void ensureTab()
     }
-  }, [shown, view.phase, view.state, ensureTab])
+  }, [shown, view.phase, view.state, ensureTab, newTabRequest])
+  useEffect(() => {
+    if (!shown || newTabRequest <= issuedTabRequest.current || view.phase === 'loading'
+      || view.phase === 'busy' || view.pending || view.state?.operationActive) return
+    issuedTabRequest.current += 1
+    markTabRequestHandled(issuedTabRequest.current)
+    void command({ kind: 'new-tab' }).then((success) => {
+      const activeTabId = viewRef.current.state?.activeTabId
+      if (success && activeTabId !== null && activeTabId !== undefined) focusBrowserTab(activeTabId)
+    })
+  }, [shown, newTabRequest, view.phase, view.pending, view.state?.operationActive,
+    command, focusBrowserTab, markTabRequestHandled])
   const active = view.state?.tabs.find(tab => tab.id === view.state?.activeTabId)
   const agentBusy = view.phase === 'busy' || view.state?.operationActive === true
   const controlsDisabled = view.pending || agentBusy
   const tabId = active?.id ?? null
   const browserGeneration = view.state?.browserGeneration ?? null
   const canvasRef = useRef<HTMLDivElement>(null)
+  const [inputError, setInputError] = useState<string | null>(null)
+  const nativeNotice = native && (inputError !== null || view.pending || agentBusy && view.phase !== 'busy')
+  useLayoutEffect(() => {
+    if (nativePresenter === null || tabId === null || !shown || view.phase !== 'ready') return
+    const canvas = canvasRef.current
+    if (canvas === null) return
+    let previous = ''
+    const send = (visible: boolean, bounds = { x: 0, y: 0, width: 0, height: 0 }) => {
+      const key = `${String(visible)}:${bounds.x}:${bounds.y}:${bounds.width}:${bounds.height}`
+      if (key === previous) return
+      previous = key
+      // IPC 的完成顺序不决定呈现顺序；旧响应不能再提交先前的尺寸。
+      try { void nativePresenter.present({ sessionId, tabId, bounds, visible }).catch(() => {}) }
+      catch { /* 页面卸载期间的同步拒绝不重新显示旧 guest。 */ }
+    }
+    const measure = () => {
+      const rect = canvas.getBoundingClientRect()
+      const left = Math.max(0, Math.floor(rect.left))
+      const top = Math.max(0, Math.floor(rect.top))
+      const right = Math.min(window.innerWidth, Math.ceil(rect.right))
+      const bottom = Math.min(window.innerHeight, Math.ceil(rect.bottom))
+      const width = right - left
+      const height = bottom - top
+      const modal = [...document.querySelectorAll('[role="dialog"][aria-modal="true"]')]
+        .some(dialog => dialog.closest('[hidden], [aria-hidden="true"]') === null)
+      if (document.visibilityState === 'hidden' || modal || canvas.closest('[inert]') || !canvas.isConnected
+        || !Number.isFinite(width) || !Number.isFinite(height)
+        || width < 200 || height < 240) { send(false); return }
+      send(true, { x: left, y: top, width, height })
+    }
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
+    observer?.observe(canvas)
+    window.addEventListener('resize', measure)
+    window.addEventListener('scroll', measure, true)
+    document.addEventListener('visibilitychange', measure)
+    // 共享 Modal 作为 body portal 挂载；原生子视图必须在遮罩出现时先退让。
+    const modalSelector = '[role="dialog"][aria-modal="true"]'
+    const modalObserver = new MutationObserver((records) => {
+      if (records.some(record => record.type === 'attributes' ||
+        [...record.addedNodes, ...record.removedNodes].some(node => node instanceof Element &&
+          (node.matches(modalSelector) || node.querySelector(modalSelector) !== null)))) measure()
+    })
+    modalObserver.observe(document.body, { childList: true, subtree: true,
+      attributes: true, attributeFilter: ['role', 'aria-modal', 'aria-hidden', 'hidden', 'inert'] })
+    measure()
+    return () => {
+      observer?.disconnect()
+      modalObserver.disconnect()
+      window.removeEventListener('resize', measure)
+      window.removeEventListener('scroll', measure, true)
+      document.removeEventListener('visibilitychange', measure)
+      send(false)
+    }
+  }, [nativePresenter, sessionId, tabId, shown, view.phase, nativeNotice])
   const observerEpoch = useRef(0)
   const lastViewportAttempt = useRef<string | null>(null)
   const viewportRetryTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -171,7 +249,7 @@ export function BrowserMirror({ shown, selectedTabId, openBrowser, syncBrowserTa
   }
   useEffect(() => {
     const epoch = ++observerEpoch.current
-    if (!shown || tabId === null || browserGeneration === null || canvasRef.current === null
+    if (native || !shown || tabId === null || browserGeneration === null || canvasRef.current === null
       || typeof ResizeObserver === 'undefined') return
     let timer: ReturnType<typeof setTimeout> | undefined
     const observer = new ResizeObserver(([entry]) => {
@@ -196,11 +274,11 @@ export function BrowserMirror({ shown, selectedTabId, openBrowser, syncBrowserTa
       viewportRetryCount.current = 0
       viewportTarget.current = null
     }
-  }, [shown, tabId, browserGeneration])
+  }, [native, shown, tabId, browserGeneration])
   const currentViewport = view.state?.viewport
   const stateRevision = view.state?.stateRevision
   useEffect(() => {
-    if (!shown || tabId === null || browserGeneration === null || desiredViewport === null
+    if (native || !shown || tabId === null || browserGeneration === null || desiredViewport === null
       || desiredViewport.epoch !== observerEpoch.current || view.pending || view.phase !== 'ready'
       || currentViewport === undefined) return
     if (agentBusy) {
@@ -241,7 +319,7 @@ export function BrowserMirror({ shown, selectedTabId, openBrowser, syncBrowserTa
     }
     void command({ kind: 'set-viewport', width: desiredViewport.width, height: desiredViewport.height })
       .then((success) => { if (success) viewportRetryCount.current = 0; else failed() }, failed)
-  }, [shown, tabId, browserGeneration, desiredViewport, view.pending, view.phase, agentBusy,
+  }, [native, shown, tabId, browserGeneration, desiredViewport, view.pending, view.phase, agentBusy,
     currentViewport?.width, currentViewport?.height, stateRevision, command, retry, viewportRetryRevision])
   const address = active?.url === 'about:blank' ? '' : active?.url ?? ''
   const addressRef = useRef<HTMLInputElement>(null)
@@ -254,7 +332,6 @@ export function BrowserMirror({ shown, selectedTabId, openBrowser, syncBrowserTa
   }>({
     value: '', dirty: false, submitted: null, tabId: null,
   })
-  const [inputError, setInputError] = useState<string | null>(null)
   const ownDraft = draft.tabId === tabId ? draft : null
   useEffect(() => {
     if (addressFocused && addressRef.current !== document.activeElement) setAddressFocused(false)
@@ -280,8 +357,8 @@ export function BrowserMirror({ shown, selectedTabId, openBrowser, syncBrowserTa
   const frameActionRef = useRef<HTMLButtonElement>(null)
   const [loadedFrame, setLoadedFrame] = useState<string | null>(null)
   const frameReady = view.phase === 'ready' && view.state.hasFrame && view.frameUrl !== null && loadedFrame === view.frameUrl
-    && frameRef.current?.complete === true && frameRef.current.naturalWidth === observation?.viewport.width
-    && frameRef.current.naturalHeight === observation.viewport.height
+    && frameRef.current?.complete === true && observation !== null && observation !== undefined
+    && frameMatchesViewport(frameRef.current, observation.viewport)
     && view.state.viewport.width === observation.viewport.width
     && view.state.viewport.height === observation.viewport.height
     && view.state.activeTabId === observation.tabId
@@ -355,7 +432,7 @@ export function BrowserMirror({ shown, selectedTabId, openBrowser, syncBrowserTa
       setInputError(t('invalidUrl'))
     }
   }
-  return <section className={css.root} hidden={!shown} aria-label={t('label')}>
+  return <section className={css.root} hidden={!shown} data-native-notice={nativeNotice} aria-label={t('label')}>
     <div className={css.toolbar}>
       <div className={css.history}>
         <button type="button" aria-label={t('back')} title={agentBusy ? t('agentBusy') : t('back')} disabled={!active?.canGoBack || controlsDisabled}
@@ -387,18 +464,23 @@ export function BrowserMirror({ shown, selectedTabId, openBrowser, syncBrowserTa
           <IconChevronRightOutline14 />
         </button>
       </form>
-      <button type="button" className={css.typeMode} data-active={typeMode}
+      {!native && <button type="button" className={css.typeMode} data-active={typeMode}
         disabled={!frameReady || controlsDisabled} aria-pressed={typeMode}
         title={agentBusy ? t('agentBusy') : t('typeModeHint')}
-        onClick={() => { setTypeMode(previous => !previous); setTypeTarget(null) }}>{t('typeMode')}</button>
+        onClick={() => { setTypeMode(previous => !previous); setTypeTarget(null) }}>{t('typeMode')}</button>}
     </div>
+    {nativeNotice && <div className={css.nativeNotice}>
+      {inputError && <p id="browser-address-error" className={css.nativeError} role="alert">{inputError}</p>}
+      {view.pending && <p role="status">{t('pending')}</p>}
+      {agentBusy && view.phase !== 'busy' && <p role="status">{t('agentBusy')}</p>}
+    </div>}
     <div className={css.body} ref={canvasRef} data-testid="browser-canvas">
-      {inputError && <p id="browser-address-error" className={css.inputError} role="alert">{inputError}</p>}
-      {view.pending && <p role="status" className={css.pending}>{t('pending')}</p>}
-      {agentBusy && view.phase !== 'busy' && <p role="status" className={css.busyNotice}>{t('agentBusy')}</p>}
+      {!native && inputError && <p id="browser-address-error" className={css.inputError} role="alert">{inputError}</p>}
+      {!native && view.pending && <p role="status" className={css.pending}>{t('pending')}</p>}
+      {!native && agentBusy && view.phase !== 'busy' && <p role="status" className={css.busyNotice}>{t('agentBusy')}</p>}
       {view.phase === 'loading' && <p role="status" className={css.message}>{t('loading')}</p>}
       {view.phase === 'busy' && <p className={css.message} role="status">{t('agentBusy')}</p>}
-      {(view.phase === 'empty' || view.phase === 'ready' && (!active || active.url === 'about:blank')) && <div className={css.blank}>
+      {(view.phase === 'empty' || view.phase === 'ready' && (!active || !native && active.url === 'about:blank')) && <div className={css.blank}>
         <span className={css.blankGlobe} aria-hidden="true"><IconGlobeOutline14 size={40} /></span>
         <h2>{t('startBrowsing')}</h2><p>{t('emptyHint')}</p>
       </div>}
@@ -411,7 +493,8 @@ export function BrowserMirror({ shown, selectedTabId, openBrowser, syncBrowserTa
           setViewportRetryRevision(previous => previous + 1)
         }}>{t('retry')}</button>
       </div>}
-      {view.phase === 'ready' && active && active.url !== 'about:blank' && <div className={css.canvas}>
+      {view.phase === 'ready' && active && native && <div className={css.nativeCanvas} aria-label={t('nativePage')} />}
+      {view.phase === 'ready' && active && !native && active.url !== 'about:blank' && <div className={css.canvas}>
         {view.frameUrl !== null && observation && <div className={css.viewport}
           style={{ width: observation.viewport.width,
             aspectRatio: `${observation.viewport.width} / ${observation.viewport.height}` }}>

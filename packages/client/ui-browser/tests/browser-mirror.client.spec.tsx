@@ -28,7 +28,10 @@ function mount(view: BrowserView, shown = true) {
   const ensureTab = vi.fn(async () => {})
   const start = vi.fn((_onRevision: (state: BrowserState) => void) => vi.fn())
   const syncBrowserTabs = vi.fn()
-  const props = { shown, browserShown: shown, openBrowser: vi.fn(), syncBrowserTabs, start, command, ensureTab,
+  const props = { sessionId: 'session-a', shown, browserShown: shown, newTabRequest: 0,
+    handledTabRequest: 0, markTabRequestHandled: vi.fn(), focusBrowserTab: vi.fn(),
+    focusPendingBrowserTab: vi.fn(),
+    openBrowser: vi.fn(), syncBrowserTabs, start, command, ensureTab,
     retry: vi.fn(), useBrowserMirror: <S,>(selector: (snapshot: BrowserView) => S): S => selector(view),
     t } as unknown as BrowserMirrorProps
   const result = render(<BrowserMirror {...props} />)
@@ -46,7 +49,6 @@ function browserTabsRow(props: BrowserMirrorProps, view: BrowserView) {
   return <div role="tablist" aria-label="Workbench tabs">
     {view.state?.tabs.map(tab => <BrowserTabs key={tab.id} {...props} tabId={tab.id}
       useBrowserMirror={viewHook(view)} />)}
-    <BrowserTabs {...props} useBrowserMirror={viewHook(view)} />
   </div>
 }
 function navigated(url: string, revision: number): BrowserView {
@@ -57,6 +59,122 @@ function navigated(url: string, revision: number): BrowserView {
 }
 
 describe('browser UI', () => {
+  it('positions the native guest on resize and scroll without screenshot or viewport commands', () => {
+    mockResizeObserver()
+    const present = vi.fn(async () => {})
+    vi.stubGlobal('codingDesktop', { browser: { available: true, present } })
+    const result = mount(ready())
+    const area = screen.getByLabelText('Browser page')
+    expect(screen.queryByAltText('Browser page screenshot')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Type' })).toBeNull()
+    const bounds = vi.spyOn(screen.getByTestId('browser-canvas'), 'getBoundingClientRect').mockReturnValue({
+      left: 12.2, top: 84.5, right: 1012.3, bottom: 684.5,
+    } as DOMRect)
+    act(() => { window.dispatchEvent(new Event('resize')) })
+    expect(present).toHaveBeenLastCalledWith({ sessionId: 'session-a', tabId: id,
+      bounds: { x: 12, y: 84, width: 1001, height: 601 }, visible: true })
+    act(() => { observers[0]!.fire(1000, 600); window.dispatchEvent(new Event('scroll')) })
+    expect(result.command).not.toHaveBeenCalled()
+    bounds.mockReturnValue({ left: 12, top: 84, right: 150, bottom: 200 } as DOMRect)
+    act(() => { window.dispatchEvent(new Event('scroll')) })
+    expect(present).toHaveBeenLastCalledWith(expect.objectContaining({ visible: false }))
+    bounds.mockReturnValue({ left: 13, top: 85, right: 1013, bottom: 685 } as DOMRect)
+    act(() => { window.dispatchEvent(new Event('resize')) })
+    expect(present).toHaveBeenLastCalledWith(expect.objectContaining({ visible: true,
+      bounds: { x: 13, y: 85, width: 1000, height: 600 } }))
+    expect(area.isConnected).toBe(true)
+    result.unmount()
+    expect(present).toHaveBeenLastCalledWith({ sessionId: 'session-a', tabId: id,
+      bounds: { x: 0, y: 0, width: 0, height: 0 }, visible: false })
+  })
+
+  it('hides the old native guest on tab switch, concealment, and session remount despite late IPC replies', async () => {
+    let resolveFirst!: () => void
+    const present = vi.fn().mockImplementationOnce(() => new Promise<void>((resolve) => { resolveFirst = resolve }))
+      .mockResolvedValue(undefined)
+    vi.stubGlobal('codingDesktop', { browser: { available: true, present } })
+    const bounds = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      left: 10, top: 80, right: 900, bottom: 680,
+    } as DOMRect)
+    const result = mount(ready())
+    expect(present).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session-a', tabId: id, visible: true }))
+    result.rerender(<BrowserMirror {...result.props} useBrowserMirror={viewHook({
+      ...ready(2), state: state(2, otherId) as never,
+    })} />)
+    expect(present).toHaveBeenCalledWith(expect.objectContaining({ tabId: id, visible: false }))
+    result.rerender(<BrowserMirror {...result.props} shown={false} useBrowserMirror={viewHook({
+      ...ready(2), state: state(2, otherId) as never,
+    })} />)
+    expect(present).toHaveBeenCalledWith(expect.objectContaining({ tabId: otherId, visible: false }))
+    result.unmount()
+    const next = mount(ready(), true)
+    next.rerender(<BrowserMirror {...next.props} sessionId={'session-b' as never} />)
+    resolveFirst()
+    await act(async () => { await Promise.resolve() })
+    expect(present).toHaveBeenLastCalledWith(expect.objectContaining({ sessionId: 'session-b', tabId: id, visible: true }))
+    next.unmount()
+    bounds.mockRestore()
+  })
+
+  it('keeps native URL errors and pending status above the guest bounds while preserving Web placement', () => {
+    const present = vi.fn(async () => {})
+    vi.stubGlobal('codingDesktop', { browser: { available: true, present } })
+    const bounds = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(() => ({
+      left: 10, top: document.querySelector('[data-native-notice="true"]') ? 120 : 80,
+      right: 900, bottom: 680,
+    } as DOMRect))
+    const result = mount(ready())
+    expect(present).toHaveBeenLastCalledWith(expect.objectContaining({ bounds: { x: 10, y: 80,
+      width: 890, height: 600 }, visible: true }))
+    const address = screen.getByRole('textbox', { name: 'Address' })
+    fireEvent.focus(address)
+    fireEvent.change(address, { target: { value: 'javascript:alert(1)' } })
+    fireEvent.submit(address.closest('form')!)
+    const error = screen.getByRole('alert')
+    expect(error.id).toBe('browser-address-error')
+    expect(present).toHaveBeenLastCalledWith(expect.objectContaining({ bounds: { x: 10, y: 120,
+      width: 890, height: 560 }, visible: true }))
+    expect(error.parentElement!.compareDocumentPosition(screen.getByTestId('browser-canvas'))
+      & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+    result.rerender(<BrowserMirror {...result.props} useBrowserMirror={viewHook({ ...ready(), pending: true })} />)
+    const pending = screen.getByRole('status', { name: '' })
+    expect(pending.textContent).toBe('Opening page…')
+    expect(pending.parentElement).toBe(error.parentElement)
+    result.unmount()
+    bounds.mockRestore()
+    vi.unstubAllGlobals()
+    const web = mount(ready())
+    fireEvent.change(screen.getByRole('textbox', { name: 'Address' }), { target: { value: 'javascript:alert(1)' } })
+    fireEvent.submit(screen.getByRole('textbox', { name: 'Address' }).closest('form')!)
+    expect(screen.getByRole('alert').parentElement).toBe(screen.getByTestId('browser-canvas'))
+    web.unmount()
+  })
+
+  it('hides the native guest for a document modal and restores it when the modal closes', async () => {
+    const present = vi.fn(async () => {})
+    vi.stubGlobal('codingDesktop', { browser: { available: true, present } })
+    const bounds = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      left: 10, top: 80, right: 900, bottom: 680,
+    } as DOMRect)
+    const result = mount(ready())
+    expect(present).toHaveBeenLastCalledWith(expect.objectContaining({ visible: true }))
+    const dialog = document.createElement('div')
+    dialog.setAttribute('role', 'dialog')
+    dialog.setAttribute('aria-modal', 'true')
+    await act(async () => { document.body.append(dialog); await Promise.resolve() })
+    expect(present).toHaveBeenLastCalledWith(expect.objectContaining({ visible: false }))
+    await act(async () => { dialog.remove(); await Promise.resolve() })
+    expect(present).toHaveBeenLastCalledWith(expect.objectContaining({ visible: true }))
+    result.unmount()
+    bounds.mockRestore()
+  })
+
+  it('keeps the image mirror in Web without the native preload', () => {
+    const result = mount(ready())
+    expect(screen.getByAltText('Browser page screenshot')).toBeTruthy()
+    expect(screen.queryByLabelText('Browser page')).toBeNull()
+    result.unmount()
+  })
   it('projects page tabs while retaining them across unknown, busy and hidden states', () => {
     const result = mount(loading, false)
     expect(result.syncBrowserTabs).not.toHaveBeenCalled()
@@ -121,6 +239,37 @@ describe('browser UI', () => {
     expect(screen.getByText('Start browsing')).toBeTruthy()
     expect(screen.getByText('Enter a URL to open a page')).toBeTruthy()
     expect(screen.getByText('Start browsing').parentElement?.querySelector('svg')).not.toBeNull()
+  })
+
+  it('uses an explicit workbench request to create a page without also ensuring an empty tab', () => {
+    const result = mount(empty, false)
+    result.rerender(<BrowserMirror {...result.props} shown newTabRequest={1} />)
+    expect(result.command).toHaveBeenCalledExactlyOnceWith({ kind: 'new-tab' })
+    expect(result.ensureTab).not.toHaveBeenCalled()
+    result.rerender(<BrowserMirror {...result.props} shown newTabRequest={1} />)
+    expect(result.command).toHaveBeenCalledTimes(1)
+  })
+
+  it('acknowledges the issued request so a remounted content slot does not replay it', () => {
+    const result = mount(ready(), false)
+    result.rerender(<BrowserMirror {...result.props} shown newTabRequest={1} />)
+    expect(result.command).toHaveBeenCalledExactlyOnceWith({ kind: 'new-tab' })
+    expect(result.props.markTabRequestHandled).toHaveBeenCalledExactlyOnceWith(1)
+    result.unmount()
+    const remounted = render(<BrowserMirror {...result.props} shown newTabRequest={1} handledTabRequest={1} />)
+    expect(result.command).toHaveBeenCalledTimes(1)
+    remounted.rerender(<BrowserMirror {...result.props} shown newTabRequest={2} handledTabRequest={1} />)
+    expect(result.command).toHaveBeenCalledTimes(2)
+    expect(result.props.markTabRequestHandled).toHaveBeenLastCalledWith(2)
+  })
+
+  it('retries a pending browser-tab focus only after the tab becomes enabled', () => {
+    const result = mount(ready())
+    const busy: BrowserView = { ...ready(), pending: true }
+    const tab = render(<BrowserTabs {...result.props} tabId={id} useBrowserMirror={viewHook(busy)} />)
+    expect(result.props.focusPendingBrowserTab).not.toHaveBeenCalled()
+    tab.rerender(<BrowserTabs {...result.props} tabId={id} useBrowserMirror={viewHook(ready())} />)
+    expect(result.props.focusPendingBrowserTab).toHaveBeenCalledExactlyOnceWith(id)
   })
 
   it('consumes the entry opportunity when an existing tab loads, so closing the last tab never recreates it', async () => {
@@ -355,15 +504,15 @@ describe('browser UI', () => {
     expect(result.container.querySelector('iframe, webview')).toBeNull()
   })
 
-  it('maps loaded screenshot clicks, wheel gestures and chosen text input to an exact Host target', () => {
+  it.each([1, 2])('maps %ix screenshot clicks, wheel gestures and text input in CSS viewport coordinates', (scale) => {
     const result = mount(ready())
     const img = screen.getByRole('img', { name: 'Browser page screenshot' }) as HTMLImageElement
     const button = screen.getByRole('button', { name: /Click the page screenshot/ })
     expect(button.hasAttribute('disabled')).toBe(true)
     Object.defineProperties(img, {
       complete: { configurable: true, value: true },
-      naturalWidth: { configurable: true, value: 1280 },
-      naturalHeight: { configurable: true, value: 720 },
+      naturalWidth: { configurable: true, value: 1280 * scale },
+      naturalHeight: { configurable: true, value: 720 * scale },
     })
     img.getBoundingClientRect = () => ({ left: 100, top: 30, right: 740, bottom: 390,
       width: 640, height: 360 } as DOMRect)
@@ -404,7 +553,7 @@ describe('browser UI', () => {
     expect(screen.getByText('AI is using the browser. Manual controls resume when it finishes.')).toBeTruthy()
   })
 
-  it('waits for matching image pixels and viewport before enabling screenshot actions', () => {
+  it('accepts 1x fallback and 2x image pixels but rejects mismatched or arbitrary scales', () => {
     const result = mount(ready())
     const img = screen.getByRole('img', { name: 'Browser page screenshot' }) as HTMLImageElement
     const action = screen.getByRole('button', { name: /Click the page screenshot/ })
@@ -415,10 +564,28 @@ describe('browser UI', () => {
     })
     fireEvent.load(img)
     expect(action.hasAttribute('disabled')).toBe(true)
-    Object.defineProperty(img, 'naturalHeight', { configurable: true, value: 720 })
+    Object.defineProperties(img, {
+      naturalWidth: { configurable: true, value: 1920 },
+      naturalHeight: { configurable: true, value: 1080 },
+    })
+    result.rerender(<BrowserMirror {...result.props} useBrowserMirror={viewHook(ready())} />)
+    expect(action.hasAttribute('disabled')).toBe(true)
+    Object.defineProperties(img, {
+      naturalWidth: { configurable: true, value: 2560 },
+      naturalHeight: { configurable: true, value: 720 },
+    })
+    result.rerender(<BrowserMirror {...result.props} useBrowserMirror={viewHook(ready())} />)
+    expect(action.hasAttribute('disabled')).toBe(true)
+    Object.defineProperty(img, 'naturalHeight', { configurable: true, value: 1440 })
+    result.rerender(<BrowserMirror {...result.props} useBrowserMirror={viewHook(ready())} />)
+    expect(action.hasAttribute('disabled')).toBe(false)
     const mismatched: BrowserView = { ...ready(), state: { ...state(), viewport: { width: 940, height: 620 } } as never }
     result.rerender(<BrowserMirror {...result.props} useBrowserMirror={viewHook(mismatched)} />)
     expect(action.hasAttribute('disabled')).toBe(true)
+    Object.defineProperties(img, {
+      naturalWidth: { configurable: true, value: 1280 },
+      naturalHeight: { configurable: true, value: 720 },
+    })
     result.rerender(<BrowserMirror {...result.props} useBrowserMirror={viewHook(ready())} />)
     expect(action.hasAttribute('disabled')).toBe(false)
   })
@@ -452,15 +619,12 @@ describe('browser UI', () => {
     expect(screen.getByRole('tab', { name: 'Example' }).querySelector('svg')).not.toBeNull()
     expect(screen.getByRole('tab', { name: 'Example' }).querySelector('path')?.getAttribute('stroke')).toBe('currentColor')
     expect(screen.getByRole('tab', { name: /New tab/ }).querySelector('svg')).not.toBeNull()
-    for (const label of ['New tab', 'Close Example']) {
-      const button = screen.getByRole('button', { name: label })
-      expect(button.querySelector('svg')).not.toBeNull()
-      expect(button.textContent).toBe('')
-    }
+    const close = screen.getByRole('button', { name: 'Close Example' })
+    expect(close.querySelector('svg')).not.toBeNull()
+    expect(close.textContent).toBe('')
     fireEvent.click(screen.getByRole('tab', { name: /New tab/ }))
     expect(result.command).toHaveBeenCalledWith({ kind: 'select-tab', tabId: otherId })
-    fireEvent.click(screen.getByRole('button', { name: 'New tab' }))
-    expect(result.command).toHaveBeenCalledWith({ kind: 'new-tab' })
+    expect(screen.queryByRole('button', { name: 'New tab' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Close Example' }))
     expect(result.command).toHaveBeenCalledWith({ kind: 'close-tab', tabId: id })
     tabs.unmount()
@@ -507,13 +671,20 @@ describe('browser UI', () => {
     expect(screen.getByRole('tab', { name: 'Example' }).getAttribute('aria-selected')).toBe('true')
   })
 
-  it('contributes a separate new-page action and leaves final page removal to the workbench', async () => {
+  it('links each contributed browser tab to the owner-provided panel ID', () => {
+    const result = mount(ready(), false)
+    render(<BrowserTabs {...result.props} shown browserShown tabId={id}
+      tabDomId="owner-browser-tab" panelDomId="owner-browser-panel" />)
+    const tab = screen.getByRole('tab', { name: 'Example' })
+    expect(tab.id).toBe('owner-browser-tab')
+    expect(tab.getAttribute('aria-controls')).toBe('owner-browser-panel')
+  })
+
+  it('contributes only page tabs and leaves final page removal to the workbench', async () => {
     const result = mount(ready(), false)
     const add = render(<BrowserTabs {...result.props} shown />)
     expect(screen.queryByRole('tab')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'New tab' }))
-    expect(result.props.openBrowser).toHaveBeenCalledWith()
-    expect(result.command).toHaveBeenCalledWith({ kind: 'new-tab' })
+    expect(screen.queryByRole('button', { name: 'New tab' })).toBeNull()
     add.unmount()
     const sole: BrowserView = { ...ready(), state: { ...state(), tabs: [state().tabs[0]] } as never }
     render(<BrowserTabs {...result.props} shown browserShown tabId={id}
@@ -521,7 +692,7 @@ describe('browser UI', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close Example' }))
     await Promise.resolve()
     expect(result.command).toHaveBeenCalledWith({ kind: 'close-tab', tabId: id })
-    expect(result.props.openBrowser).toHaveBeenCalledTimes(1)
+    expect(result.props.openBrowser).not.toHaveBeenCalled()
   })
 
   it('keeps the workbench page descriptor visible and disabled while Host state is unavailable', () => {

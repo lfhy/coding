@@ -389,6 +389,22 @@ Depends on: [`LocalConfig`](#deepseek-aidsh-bash-local)
 
 Source: [`packages/shell/bash-sandbox/src/index.ts:36`](../packages/shell/bash-sandbox/src/index.ts)
 
+<a id="deepseek-aidsh-browser-electron"></a>
+
+## `@deepseek-ai/dsh-browser-electron`
+
+```ts config-catalog
+/** 仅保存环境变量名称；Host 启动时注入的端点和令牌绝不进入配置转储。 */
+export interface Config {
+  /** 桌面主进程注入私有桥地址的环境变量名，不在配置中保存地址。 */
+  readonly originEnv: string
+  /** 桌面主进程注入本次启动令牌的环境变量名，不在配置中保存令牌。 */
+  readonly tokenEnv: string
+}
+```
+
+Source: [`packages/browser/browser-electron/src/index.ts:23`](../packages/browser/browser-electron/src/index.ts)
+
 <a id="deepseek-aidsh-client-connection"></a>
 
 ## `@deepseek-ai/dsh-client-connection`

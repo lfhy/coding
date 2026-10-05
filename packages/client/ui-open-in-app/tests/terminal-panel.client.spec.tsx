@@ -253,7 +253,8 @@ describe('右侧和底栏终端', () => {
     const b = rightWorkbench()
     const mounted = render(<WorkspaceWorkbench {...b.props} />)
     fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.terminal'] }))
-    fireEvent.click(screen.getByRole('button', { name: zh['terminal.newTab'] }))
+    fireEvent.click(screen.getByRole('button', { name: zh['tabs.add'] }))
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.terminal'] }))
     const [first, second] = FakeWebSocket.instances
     const [firstTerminal, secondTerminal] = terminalMocks.instances
     act(() => {
@@ -263,7 +264,8 @@ describe('右侧和底栏终端', () => {
     fireEvent.keyDown(screen.getByRole('tab', { name: 'coding 2' }), { key: 'Home' })
     expect(screen.getByRole('tab', { name: 'coding 1' }).getAttribute('aria-selected')).toBe('true')
     expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'coding 1' }))
-    fireEvent.click(screen.getByRole('button', { name: zh['terminal.newTab'] }))
+    fireEvent.click(screen.getByRole('button', { name: zh['tabs.add'] }))
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.terminal'] }))
     expect(document.activeElement).toBe(terminalMocks.instances[2]?.textarea)
     fireEvent.click(screen.getByRole('button', { name: zh['tabs.close'].replace('{name}', 'coding 3') }))
     act(() => {
@@ -313,7 +315,8 @@ describe('右侧和底栏终端', () => {
     const b = rightWorkbench()
     render(<WorkspaceWorkbench {...b.props} />)
     fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.terminal'] }))
-    fireEvent.click(screen.getByRole('button', { name: zh['terminal.newTab'] }))
+    fireEvent.click(screen.getByRole('button', { name: zh['tabs.add'] }))
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.terminal'] }))
     const [first, second] = FakeWebSocket.instances
     act(() => { second?.finish() })
     expect(screen.getByRole('tab', { name: 'coding 2' })).toBeDefined()
@@ -327,9 +330,27 @@ describe('右侧和底栏终端', () => {
     })
     expect(screen.queryByRole('tab', { name: 'coding 2' })).toBeNull()
     expect(screen.getByRole('tab', { name: 'coding 1' }).getAttribute('aria-selected')).toBe('true')
+    expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'coding 1' }))
     act(() => { first?.message('{"type":"exit","exitCode":0,"signal":null}'); first?.finish() })
     expect(screen.getByRole('navigation', { name: zh['workbench.menu.label'] })).toBeDefined()
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: zh['workbench.menu.terminal'] }))
     expect(b.bottomToggle).not.toHaveBeenCalled()
+  })
+
+  it('关闭活动终端后将键盘焦点交给相邻终端标签', () => {
+    const b = rightWorkbench()
+    render(<WorkspaceWorkbench {...b.props} />)
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.terminal'] }))
+    fireEvent.click(screen.getByRole('button', { name: zh['tabs.add'] }))
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.terminal'] }))
+    const close = screen.getByRole('button', { name: zh['tabs.close'].replace('{name}', 'coding 2') })
+    close.focus()
+    fireEvent.click(close)
+    const adjacent = screen.getByRole('tab', { name: 'coding 1' })
+    expect(adjacent.getAttribute('aria-selected')).toBe('true')
+    expect(document.activeElement).toBe(adjacent)
+    expect(FakeWebSocket.instances[0]?.close).not.toHaveBeenCalled()
+    expect(FakeWebSocket.instances[1]?.close).toHaveBeenCalledOnce()
   })
 })
 

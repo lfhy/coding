@@ -118,6 +118,7 @@ flowchart TD
   end
   subgraph group_browser["packages/browser"]
     pkg_browser["browser"]
+    pkg_browser_electron["browser-electron"]
     pkg_browser_playwright["browser-playwright"]
     pkg_tool_browser["tool-browser"]
   end
@@ -494,6 +495,9 @@ flowchart TD
   pkg_app_boot --> pkg_system_prompt
   pkg_browser --> pkg_invariants
   pkg_browser --> pkg_session
+  pkg_browser_electron --> pkg_host_webserver
+  pkg_browser_electron --> pkg_invariants
+  pkg_browser_electron --> pkg_session
   pkg_browser_playwright --> pkg_host_webserver
   pkg_browser_playwright --> pkg_invariants
   pkg_browser_playwright --> pkg_session
@@ -1597,6 +1601,7 @@ flowchart TD
 | [`spill`](../packages/spill/spill) | `spill` | [`brand`](../packages/util/brand), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`session`](../packages/core/session) |
 | [`app-boot`](../packages/boot/app-boot) | `boot` | [`home-paths`](../packages/util/home-paths), [`invariants`](../packages/runtime-diagnostics/invariants), [`launch-environment`](../packages/util/launch-environment), [`system-prompt`](../packages/core/system-prompt) |
 | [`browser`](../packages/browser/browser) | `browser` | [`invariants`](../packages/runtime-diagnostics/invariants), [`session`](../packages/core/session) |
+| [`browser-electron`](../packages/browser/browser-electron) | `browser` | [`host-webserver`](../packages/host/webserver), [`invariants`](../packages/runtime-diagnostics/invariants), [`session`](../packages/core/session) |
 | [`browser-playwright`](../packages/browser/browser-playwright) | `browser` | [`host-webserver`](../packages/host/webserver), [`invariants`](../packages/runtime-diagnostics/invariants), [`session`](../packages/core/session) |
 | [`code-runtime-worker-thread`](../packages/code-runtime/code-runtime-worker-thread) | `code-runtime` | [`code-runtime`](../packages/code-runtime/code-runtime), [`invariants`](../packages/runtime-diagnostics/invariants), [`session`](../packages/core/session), [`subprocess`](../packages/subprocess/subprocess), [`timeout`](../packages/util/timeout) |
 | [`persona`](../packages/preset/persona) | `preset` | [`invariants`](../packages/runtime-diagnostics/invariants), [`system-prompt`](../packages/core/system-prompt) |

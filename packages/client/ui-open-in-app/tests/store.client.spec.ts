@@ -141,6 +141,21 @@ describe('统一工作台标签', () => {
     expect(instance.getSnapshot()).toMatchObject({ view: 'menu', activeId: 'terminal:1' })
   })
 
+  it('文件管理器作为独立标签复用，文件预览保持独立且关闭时回退到邻近标签', () => {
+    const instance = createWorkbenchStore().create()
+    instance.actions.openTerminal()
+    instance.actions.openFileManager()
+    instance.actions.openFileManager()
+    expect(instance.getSnapshot().tabs.map(tab => tab.type)).toEqual(['terminal', 'file-manager'])
+    expect(instance.getSnapshot()).toMatchObject({ view: 'files', activeId: 'file-manager' })
+    instance.actions.openFile({ name: 'readme.md', segments: ['readme.md'] })
+    expect(instance.getSnapshot().tabs.map(tab => tab.type)).toEqual(['terminal', 'file-manager', 'file'])
+    instance.actions.closeTab(tabIdForSegments(['readme.md']))
+    expect(instance.getSnapshot()).toMatchObject({ view: 'files', activeId: 'file-manager' })
+    instance.actions.closeTab('file-manager')
+    expect(instance.getSnapshot()).toMatchObject({ view: 'terminal', activeId: 'terminal:1' })
+  })
+
   it('同步浏览器标题和活动页时保留文件与终端选择，返回浏览器时恢复 Host 活动页', () => {
     const instance = createWorkbenchStore().create()
     const fileId = tabIdForSegments(['notes.txt'])
@@ -184,6 +199,18 @@ describe('统一工作台标签', () => {
 describe('根级保留工作台状态', () => {
   const firstId = 'first-session' as SessionId
   const secondId = 'second-session' as SessionId
+
+  it('按 Session 分别保留文件管理器，并在移除 Session 后释放', () => {
+    const instance = createRetainedWorkbenchStore().create()
+    instance.actions.openFileManager(firstId)
+    instance.actions.openFileManager(secondId)
+    instance.actions.openFile(firstId, { name: 'first.txt', segments: ['first.txt'] })
+    expect(instance.getSnapshot().sessions[firstId]?.tabs.map(tab => tab.type)).toEqual(['file-manager', 'file'])
+    expect(instance.getSnapshot().sessions[secondId]).toMatchObject({ view: 'files', activeId: 'file-manager' })
+    instance.actions.retainSessions([secondId])
+    expect(instance.getSnapshot().sessions[firstId]).toBeUndefined()
+    expect(instance.getSnapshot().sessions[secondId]?.tabs).toEqual([{ type: 'file-manager', id: 'file-manager' }])
+  })
 
   it('按 Session 延迟初始化，隔离标签和文件树，并仅释放离开会话列表的状态', () => {
     const instance = createRetainedWorkbenchStore().create()

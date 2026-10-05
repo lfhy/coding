@@ -286,6 +286,7 @@
 - `web-search-deepseek` → `@deepseek-ai/dsh-web-search-deepseek`
 - `web-search-tavily` → `@deepseek-ai/dsh-web-search-tavily`
 - `browser-playwright` → `@deepseek-ai/dsh-browser-playwright`
+- `browser-electron` → `@deepseek-ai/dsh-browser-electron`
 - `tool-web` → `@deepseek-ai/dsh-tool-web`
 - `tools` → `@deepseek-ai/dsh-tools`
 - `system-prompt` → `@deepseek-ai/dsh-system-prompt`

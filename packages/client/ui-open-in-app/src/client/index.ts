@@ -24,7 +24,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
     /** 工作台右侧预览区的会话级浏览器；隐藏时条目仍保持挂载。 */
     'workbench.browser': { kind: 'single'; scope: 'session'; owner: WorkbenchBrowserOwnerProps }
-    /** 每个浏览器页面向工作台统一顶栏贡献一个标签或新建按钮。 */
+    /** 每个浏览器页面向工作台统一顶栏贡献一个标签。 */
     'workbench.browser.tabs': { kind: 'single'; scope: 'session'; owner: WorkbenchBrowserOwnerProps }
   }
 }
@@ -36,8 +36,17 @@ export interface WorkbenchBrowserOwnerProps {
   syncBrowserTabs: (tabs: readonly { id: string; name: string }[], activeId: string | null) => void
   tabId?: string
   tabName?: string
+  tabDomId?: string
+  panelDomId?: string
   selectedTabId?: string
   browserShown?: boolean
+  /** 工作台菜单每次选择浏览器递增，内容贡献者为每个序号建立一个页面。 */
+  newTabRequest: number
+  /** 已交给浏览器命令的序号由工作台保留，贡献条目重挂载时不重复执行。 */
+  handledTabRequest: number
+  markTabRequestHandled: (request: number) => void
+  focusBrowserTab: (tabId: string) => void
+  focusPendingBrowserTab: (tabId: string) => void
 }
 
 /** locale、slot、布局、会话与工作区选择需要的服务。 */

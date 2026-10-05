@@ -422,6 +422,15 @@
     # HTTP 预览路由仅在 Web Host 挂载传输服务时注册。
     - id: browser-playwright
       name: '@deepseek-ai/dsh-browser-playwright'
+      disabled: !!js Boolean(process.env.DSH_DESKTOP_BROWSER_BRIDGE_ORIGIN)
+
+    # 受管桌面 Host 由主进程注入本次启动的私有桥地址和令牌；与 Playwright 提供方互斥。
+    - id: browser-electron
+      name: '@deepseek-ai/dsh-browser-electron'
+      disabled: !!js "!process.env.DSH_DESKTOP_BROWSER_BRIDGE_ORIGIN"
+      config:
+        originEnv: DSH_DESKTOP_BROWSER_BRIDGE_ORIGIN
+        tokenEnv: DSH_DESKTOP_BROWSER_BRIDGE_TOKEN
 
     - id: tool-web
       name: '@deepseek-ai/dsh-tool-web'

@@ -9,7 +9,13 @@
     "dev": "pnpm run build && install-electron && electron lib/main.js",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
+  "dependencies": {
+    "@deepseek-ai/dsh-browser": "workspace:^",
+    "@deepseek-ai/dsh-browser-electron": "workspace:^",
+    "ws": "^8.21.0"
+  },
   "devDependencies": {
+    "@types/ws": "^8.18.1",
     "@types/node": "^22.20.0",
     "electron": "44.0.0",
     "playwright": "1.61.1",

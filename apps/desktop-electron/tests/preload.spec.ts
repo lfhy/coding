@@ -8,6 +8,7 @@ vi.mock('electron', () => electron)
 
 type Bridge = {
   remoteSSH: Record<string, (...args: unknown[]) => unknown>
+  browser: { available: boolean; present(input: unknown): Promise<void> }
 }
 
 async function preload(): Promise<Bridge> {
@@ -20,14 +21,17 @@ async function preload(): Promise<Bridge> {
 describe('Remote-SSH sandbox preload', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('仅向页面暴露不可变的七项方法和两个固定 IPC channel', async () => {
+  it('仅向页面暴露不可变的 Remote-SSH 和浏览器呈现入口', async () => {
     const bridge = await preload()
-    expect(Object.keys(bridge)).toEqual(['remoteSSH'])
+    expect(Object.keys(bridge)).toEqual(['remoteSSH', 'browser'])
     expect(Object.keys(bridge.remoteSSH)).toEqual([
       'connect', 'cancelConnect', 'listDirectories', 'selectDirectory', 'close', 'rejectHostKey', 'subscribeProgress',
     ])
     expect(Object.isFrozen(bridge)).toBe(true)
     expect(Object.isFrozen(bridge.remoteSSH)).toBe(true)
+    expect(Object.keys(bridge.browser)).toEqual(['available', 'present'])
+    expect(Object.isFrozen(bridge.browser)).toBe(true)
+    expect(bridge.browser.available).toBe(true)
     const input = { attemptId: 'attempt-1', mode: 'basic', auth: { secret: 'one-use' } }
     await bridge.remoteSSH.connect!(input)
     await bridge.remoteSSH.cancelConnect!('attempt-1')
@@ -35,6 +39,8 @@ describe('Remote-SSH sandbox preload', () => {
     await bridge.remoteSSH.selectDirectory!('connection-1', '/srv')
     await bridge.remoteSSH.close!('connection-1')
     await bridge.remoteSSH.rejectHostKey!('confirmation-1')
+    const placement = { sessionId: 'session-1', tabId: 'tab-1', bounds: { x: 0, y: 0, width: 500, height: 300 }, visible: true }
+    await bridge.browser.present(placement)
     expect(electron.ipcRenderer.invoke.mock.calls).toEqual([
       ['coding:remote-ssh', 'connect', input],
       ['coding:remote-ssh', 'cancelConnect', { attemptId: 'attempt-1' }],
@@ -42,9 +48,12 @@ describe('Remote-SSH sandbox preload', () => {
       ['coding:remote-ssh', 'selectDirectory', { connectionId: 'connection-1', path: '/srv' }],
       ['coding:remote-ssh', 'close', { connectionId: 'connection-1' }],
       ['coding:remote-ssh', 'rejectHostKey', { confirmationId: 'confirmation-1' }],
+      ['coding:browser-present', placement],
     ])
     expect(bridge.remoteSSH.invoke).toBeUndefined()
     expect(bridge.remoteSSH.ipcRenderer).toBeUndefined()
+    expect((bridge.browser as unknown as Record<string, unknown>).invoke).toBeUndefined()
+    expect((bridge.browser as unknown as Record<string, unknown>).navigate).toBeUndefined()
   })
 
   it('进度监听只订阅独立 channel，并可幂等撤销', async () => {

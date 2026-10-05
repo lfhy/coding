@@ -12,6 +12,12 @@ export interface WorkbenchFileTab {
   segments: string[]
 }
 
+/** 会话级文件管理器标签，文件树筛选与展开状态仍由工作台保存。 */
+export interface WorkbenchFileManagerTab {
+  type: 'file-manager'
+  id: 'file-manager'
+}
+
 /** 独占一个 PTY 的终端标签；编号在所属 Session 内递增。 */
 export interface WorkbenchTerminalTab {
   type: 'terminal'
@@ -29,7 +35,7 @@ export interface WorkbenchBrowserTab {
 }
 
 /** 标签类型决定工作台内容和关闭行为。 */
-export type WorkbenchTab = WorkbenchFileTab | WorkbenchTerminalTab | WorkbenchBrowserTab
+export type WorkbenchTab = WorkbenchFileTab | WorkbenchFileManagerTab | WorkbenchTerminalTab | WorkbenchBrowserTab
 
 /** 一层目录的读取状态。 */
 export interface WorkbenchFileLevel {
@@ -63,6 +69,7 @@ interface BrowserTabInput {
 type WorkbenchActions = {
   setView: (draft: WorkbenchState, view: WorkbenchState['view']) => void
   openFile: (draft: WorkbenchState, file: OpenFileInput) => void
+  openFileManager: (draft: WorkbenchState) => void
   openTerminal: (draft: WorkbenchState) => void
   activateTab: (draft: WorkbenchState, id: string) => void
   closeTab: (draft: WorkbenchState, id: string) => void
@@ -112,7 +119,7 @@ function initialWorkbenchState(): WorkbenchState {
 }
 
 function viewForTab(tab: WorkbenchTab): Exclude<WorkbenchState['view'], 'menu'> {
-  return tab.type === 'file' ? 'files' : tab.type
+  return tab.type === 'file' || tab.type === 'file-manager' ? 'files' : tab.type
 }
 
 function selectTab(draft: WorkbenchState, tab: WorkbenchTab): void {
@@ -133,12 +140,11 @@ const workbenchActions: WorkbenchActions = {
   setView: (draft, view) => {
     draft.view = view
     if (view === 'menu') return
-    const type = view === 'files' ? 'file' : view
-    const active = draft.tabs.find(tab => tab.id === draft.activeId && tab.type === type)
+    const active = draft.tabs.find(tab => tab.id === draft.activeId && viewForTab(tab) === view)
     const rememberedBrowser = view === 'browser'
       ? draft.tabs.find(tab => tab.type === 'browser' && tab.browserTabId === draft.activeBrowserTabId)
       : undefined
-    const next = rememberedBrowser ?? active ?? draft.tabs.find(tab => tab.type === type)
+    const next = rememberedBrowser ?? active ?? draft.tabs.find(tab => viewForTab(tab) === view)
     draft.activeId = next?.id ?? null
   },
   openFile: (draft, file) => {
@@ -148,6 +154,14 @@ const workbenchActions: WorkbenchActions = {
     }
     draft.activeId = id
     draft.view = 'files'
+  },
+  openFileManager: (draft) => {
+    let tab = draft.tabs.find((candidate): candidate is WorkbenchFileManagerTab => candidate.type === 'file-manager')
+    if (tab === undefined) {
+      tab = { type: 'file-manager', id: 'file-manager' }
+      draft.tabs.push(tab)
+    }
+    selectTab(draft, tab)
   },
   openTerminal: (draft) => {
     const number = draft.nextTerminalNumber++
@@ -271,6 +285,7 @@ export function createRetainedWorkbenchStore(): EngineStoreHandle<RetainedWorkbe
       openFile: (draft, id: SessionId, file: OpenFileInput) => {
         workbenchActions.openFile(sessionState(draft, id), file)
       },
+      openFileManager: (draft, id: SessionId) => { workbenchActions.openFileManager(sessionState(draft, id)) },
       openTerminal: (draft, id: SessionId) => { workbenchActions.openTerminal(sessionState(draft, id)) },
       activateTab: (draft, id: SessionId, tabId: string) => {
         workbenchActions.activateTab(sessionState(draft, id), tabId)

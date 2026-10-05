@@ -1,4 +1,4 @@
-/** Sandbox preload 只公开受限 Remote-SSH 方法，不向页面转交 ipcRenderer。 */
+/** Sandbox preload 只公开受限 Remote-SSH 与浏览器呈现方法，不转交 ipcRenderer。 */
 import { contextBridge, ipcRenderer } from 'electron'
 
 const invoke = (method: string, payload: unknown): Promise<unknown> => ipcRenderer.invoke('coding:remote-ssh', method, payload)
@@ -23,4 +23,9 @@ const remoteSSH = Object.freeze({
   },
 })
 
-contextBridge.exposeInMainWorld('codingDesktop', Object.freeze({ remoteSSH }))
+const browser = Object.freeze({
+  available: true,
+  present: (input: unknown): Promise<void> => ipcRenderer.invoke('coding:browser-present', input),
+})
+
+contextBridge.exposeInMainWorld('codingDesktop', Object.freeze({ remoteSSH, browser }))

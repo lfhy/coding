@@ -153,14 +153,15 @@ async function expectViewportFit(page: Page, mirror: Locator, baseUrl: string, i
     const pixels = await image.evaluate((node: HTMLImageElement) => ({
       width: node.naturalWidth, height: node.naturalHeight, ready: node.complete,
     }))
-    return pixels.ready && pixels.width === state.viewport.width && pixels.height === state.viewport.height
-      && state.observation.viewport.width === pixels.width && state.observation.viewport.height === pixels.height
+    return pixels.ready && pixels.width === state.viewport.width * 2 && pixels.height === state.viewport.height * 2
+      && state.observation.viewport.width === state.viewport.width
+      && state.observation.viewport.height === state.viewport.height
   }, { timeout: 15_000 }).toBe(true)
   const state = await browserState(page, baseUrl, id)
   const canvasBox = await canvas.boundingBox()
   const imageBox = await image.boundingBox()
   if (!state?.observation || !canvasBox || !imageBox) throw new Error('browser viewport geometry missing')
-  // 截图占满实际内容画布；不要退回固定 1280×720 后在底下留下几百像素空白。
+  // 2x 截图占满 CSS 像素画布；不要按原始 PNG 像素放大或退回固定 1280×720。
   expect(Math.abs(imageBox.x - canvasBox.x)).toBeLessThanOrEqual(2)
   expect(Math.abs(imageBox.y - canvasBox.y)).toBeLessThanOrEqual(2)
   expect(Math.abs(imageBox.width - canvasBox.width)).toBeLessThanOrEqual(2)
@@ -305,7 +306,9 @@ describe('web e2e: browser-use mirror over the shipped Loader', () => {
       .toBeGreaterThan(beforeReload)
     await expect.poll(async () => (await browserState(page, scaffold.baseUrl, FIRST))?.observation?.snapshot.includes('Mirror before click')).toBe(true)
 
-    await tabs.getByRole('button', { name: 'New tab' }).click()
+    await tabs.getByRole('button', { name: 'Add workbench tab' }).click()
+    await expect.poll(() => menu.isVisible()).toBe(true)
+    await menu.getByRole('button', { name: 'Browser' }).click()
     await expect.poll(async () => (await browserState(page, scaffold.baseUrl, FIRST))?.tabs.length).toBe(2)
     const secondTab = (await browserState(page, scaffold.baseUrl, FIRST))?.activeTabId
     expect(secondTab).toBeTruthy()
@@ -400,13 +403,17 @@ describe('web e2e: browser-use mirror over the shipped Loader', () => {
     await page.screenshot({ path: '/tmp/dsh-browser-menu-return.png' })
     await menu.getByRole('button', { name: 'Files' }).click()
     await page.getByText('Open a file', { exact: true }).waitFor()
+    const filesTab = tabs.getByRole('tab', { name: 'File manager' })
+    await expect.poll(() => filesTab.getAttribute('aria-selected')).toBe('true')
     await expect.poll(() => backToFeatures.evaluate(node => document.activeElement === node)).toBe(true)
     await backToFeatures.click()
     await expect.poll(() => menu.isVisible()).toBe(true)
-    await menu.getByRole('button', { name: 'Browser' }).click()
+    await tabs.getByRole('tab', { name: 'Mirror fixture' }).click()
     await expect.poll(() => mirror.isVisible()).toBe(true)
     await expect.poll(() => mirror.getByRole('img', { name: 'Browser page screenshot' }).count()).toBe(1)
     expect((await browserState(page, scaffold.baseUrl, FIRST))?.activeTabId).toBe(firstTab)
+    await tabs.getByRole('button', { name: 'Close File manager' }).click()
+    await expect.poll(() => filesTab.count()).toBe(0)
     await openSession(page, SECOND)
     expect(await mirror.isVisible()).toBe(false)
     expect(await browserState(page, scaffold.baseUrl, SECOND)).toBeNull()
@@ -433,12 +440,13 @@ describe('web e2e: browser-use mirror over the shipped Loader', () => {
     await expect.poll(() => mirror.getByRole('img', { name: 'Click' }).count()).toBe(0)
     const humanCommands = commands.filter(command => command.kind !== 'set-viewport')
     expect(humanCommands.slice(0, 12).map(command => command.kind)).toEqual([
-      'ensure-tab', 'navigate', 'navigate', 'back', 'forward', 'back', 'reload',
+      'new-tab', 'navigate', 'navigate', 'back', 'forward', 'back', 'reload',
       'new-tab', 'navigate', 'select-tab', 'select-tab', 'close-tab',
     ])
     expect(humanCommands.at(-1)?.kind).toBe('close-tab')
     expect(humanCommands.slice(12, -1).length).toBeGreaterThanOrEqual(1)
-    expect(humanCommands.slice(12, -1).every(command => command.kind === 'ensure-tab')).toBe(true)
+    expect(humanCommands.slice(12, -1).every(command => command.kind === 'ensure-tab' || command.kind === 'new-tab'))
+      .toBe(true)
     expect(commands.filter(command => command.kind === 'set-viewport').length).toBeGreaterThanOrEqual(2)
     expect(commands.filter(command => command.kind === 'navigate').map(command => command.url))
       .toEqual([`${origin}/`, `${origin}/second`, `${origin}/second`])
@@ -468,18 +476,24 @@ describe('web e2e: browser-use mirror over the shipped Loader', () => {
     const imageBox = await image.boundingBox()
     if (!imageBox) throw new Error('screenshot dimensions missing')
     const dimensions = await image.evaluate((node: HTMLImageElement) => ({ width: node.naturalWidth, height: node.naturalHeight }))
-    expect(imageBox.width).toBeLessThanOrEqual(dimensions.width + 1)
-    expect(imageBox.height).toBeLessThanOrEqual(dimensions.height + 1)
+    expect(dimensions).toEqual({ width: initial.viewport.width * 2, height: initial.viewport.height * 2 })
+    expect(imageBox.width).toBeLessThanOrEqual(initial.viewport.width + 1)
+    expect(imageBox.height).toBeLessThanOrEqual(initial.viewport.height + 1)
     expect(Math.abs(imageBox.width / imageBox.height - dimensions.width / dimensions.height)).toBeLessThan(0.01)
     await page.screenshot({ path: '/tmp/dsh-browser-human-before.png' })
 
     const oldTarget = humanTarget(initial)
-    await gestureOnFrame(page, mirror, initial, observedPoint(initial, 'button', 'Increment clicks'), 'click')
+    const buttonPoint = observedPoint(initial, 'button', 'Increment clicks')
+    expect(buttonPoint.x).toBeLessThan(initial.viewport.width)
+    expect(buttonPoint.y).toBeLessThan(initial.viewport.height)
+    await gestureOnFrame(page, mirror, initial, buttonPoint, 'click')
     await expect.poll(async () => (await browserState(page, scaffold.baseUrl, INTERACTIVE))?.observation?.snapshot)
       .toContain('Clicks: 1')
     const clicked = await browserState(page, scaffold.baseUrl, INTERACTIVE)
     if (!clicked) throw new Error('browser state missing after human click')
     expect(clicked.observation?.cursor?.kind).toBe('click')
+    expect(clicked.observation?.cursor?.x).toBeCloseTo(buttonPoint.x, 0)
+    expect(clicked.observation?.cursor?.y).toBeCloseTo(buttonPoint.y, 0)
     const stale = await controlFromPage(page, scaffold.baseUrl, INTERACTIVE, {
       kind: 'click', target: oldTarget, ...observedPoint(initial, 'button', 'Increment clicks'),
     })

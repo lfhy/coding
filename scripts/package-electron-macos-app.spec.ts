@@ -79,6 +79,14 @@ async function fixture(): Promise<PackagingPaths> {
   await file(join(runtimeModules, 'playwright-core', 'browsers.json'),
     '{"browsers":[{"name":"chromium-headless-shell","revision":"1228"}]}\n')
   await file(join(runtimeModules, '@deepseek-ai', 'dsh-browser-playwright', 'lib', 'index.js'))
+  const electronProvider = join(runtimeModules, '@deepseek-ai', 'dsh-browser-electron')
+  await file(join(electronProvider, 'package.json'), `${JSON.stringify({
+    name: '@deepseek-ai/dsh-browser-electron',
+    exports: { './protocol': { default: './lib/types/protocol.js' } },
+  })}\n`)
+  await file(join(electronProvider, 'lib', 'index.js'))
+  await file(join(electronProvider, 'lib', 'types', 'protocol.js'))
+  await file(join(runtimeModules, 'ws', 'index.js'))
   return paths
 }
 
@@ -152,6 +160,23 @@ describe('macOS Electron application packaging', () => {
     const { run } = fakeCommands()
     await expect(packageElectronMacosApp(paths, { run, platform: 'darwin', arch: 'arm64' }))
       .rejects.toThrow('coding-electron-helper-darwin-arm64')
+    expect(await readFile(previous, 'utf8')).toBe('preserved')
+  })
+
+  it.each([
+    'import WebSocket from "ws"',
+    'import { parseBridgeFrame } from "@deepseek-ai/dsh-browser-electron/protocol"',
+    'import "./unpacked-chunk.js"',
+    'await import("ws")',
+  ])('rejects an unresolved main-process import before replacing an existing app: %s', async (source) => {
+    const paths = await fixture()
+    const previous = join(paths.output, 'previous.txt')
+    await file(previous, 'preserved')
+    await file(join(paths.shell, 'lib', 'main.js'), `${source}\n`)
+    const { run, calls } = fakeCommands()
+    await expect(packageElectronMacosApp(paths, { run, platform: 'darwin', arch: 'arm64' }))
+      .rejects.toThrow('unresolved Electron main import')
+    expect(calls.some(([command, args]) => command === process.execPath && args.includes('install'))).toBe(false)
     expect(await readFile(previous, 'utf8')).toBe('preserved')
   })
 
@@ -240,7 +265,10 @@ describe('macOS Electron application packaging', () => {
     expect(extractFile(archive, 'lib/main.js').toString('utf8')).toBe('console.log("test")\n')
     expect(listPackage(archive, { isPack: false })).toContain('/lib/preload.cjs')
     for (const item of ['coding-host', 'coding-electron-helper', 'metadata.json',
-      'runtime/node_modules/@deepseek-ai/dsh/lib/bin.js', 'remote-agent/manifest.json', 'CodingIcon.png',
+      'runtime/node_modules/@deepseek-ai/dsh/lib/bin.js',
+      'runtime/node_modules/@deepseek-ai/dsh-browser-electron/lib/index.js',
+      'runtime/node_modules/@deepseek-ai/dsh-browser-electron/lib/types/protocol.js',
+      'runtime/node_modules/ws/index.js', 'remote-agent/manifest.json', 'CodingIcon.png',
       'playwright-browsers/chromium_headless_shell-1228/chrome-headless-shell-mac-arm64/chrome-headless-shell']) {
       expect((await stat(join(resources, item))).isFile()).toBe(true)
     }
@@ -320,6 +348,30 @@ describe('macOS Electron application packaging', () => {
     await file(browserMetadata, '{"browsers":[{"name":"chromium-headless-shell","revision":"1227"}]}\n')
     await expect(packageElectronMacosApp(paths, { run, platform: 'darwin', arch: 'arm64' }))
       .rejects.toThrow('Host runtime Playwright Chromium headless shell revision 1228')
+    expect(calls.some(([command, args]) => command === process.execPath && args.includes('install'))).toBe(false)
+    expect(await readFile(join(paths.output, 'previous.txt'), 'utf8')).toBe('preserved')
+  })
+
+  it('拒绝缺失或错误导出的桌面浏览器 Provider 与传输依赖，不触碰旧包', async () => {
+    const paths = await fixture()
+    await file(join(paths.output, 'previous.txt'), 'preserved')
+    const { run, calls } = fakeCommands()
+    const modules = join(paths.runtime, 'runtime', 'node_modules')
+    const provider = join(modules, '@deepseek-ai', 'dsh-browser-electron')
+    const required = [join(provider, 'lib', 'index.js'), join(provider, 'lib', 'types', 'protocol.js'),
+      join(modules, 'ws', 'index.js')]
+    for (const path of required) {
+      await rm(path)
+      await expect(packageElectronMacosApp(paths, { run, platform: 'darwin', arch: 'arm64' }))
+        .rejects.toThrow(path)
+      await file(path)
+    }
+    await file(join(provider, 'package.json'), JSON.stringify({
+      name: '@deepseek-ai/dsh-browser-electron',
+      exports: { './protocol': { default: './lib/protocol.js' } },
+    }))
+    await expect(packageElectronMacosApp(paths, { run, platform: 'darwin', arch: 'arm64' }))
+      .rejects.toThrow('invalid Host runtime Electron browser protocol export')
     expect(calls.some(([command, args]) => command === process.execPath && args.includes('install'))).toBe(false)
     expect(await readFile(join(paths.output, 'previous.txt'), 'utf8')).toBe('preserved')
   })

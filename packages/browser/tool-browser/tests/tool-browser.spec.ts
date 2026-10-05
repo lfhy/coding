@@ -240,7 +240,7 @@ describe('browser action tools', () => {
     const request = vi.spyOn(ctx.approval, 'request')
     const result = await call({ action: 'snapshot' })
     expect(result.isError).toBe(true)
-    expect(text(result)).toContain('active tab is unavailable')
+    expect(text(result)).toContain('active browser tab is closed')
     expect(request).not.toHaveBeenCalled()
     expect(browser.commands).not.toHaveBeenCalled()
   })
@@ -284,6 +284,7 @@ describe('browser action tools', () => {
     const { ctx, call, agent } = await setup(true, { mode: 'danger-full-access', policy: 'never' })
     const browser = ctx.browserUse as FakeBrowser
     const execute = vi.spyOn(browser, 'execute')
+    const prepareTarget = vi.spyOn(browser, 'prepareTarget')
     const resolve = vi.spyOn(ctx.sandboxPolicy, 'resolve')
     expect((await call({ action: 'navigate', url: 'https://example.com' })).isError).toBe(false)
     expect(execute.mock.calls[0]?.[3]).toEqual({ kind: 'none' })
@@ -291,6 +292,8 @@ describe('browser action tools', () => {
     expect((await call({ action: 'snapshot' })).isError).toBe(false)
     expect(execute.mock.calls[1]?.[3]).toEqual({ kind: 'tab', browserGeneration: 'browser-1', stateRevision: 1,
       tabId: observation.tabId, generation: 'g1', url: 'https://example.com' })
+    expect(prepareTarget).toHaveBeenCalledTimes(2)
+    expect(prepareTarget.mock.calls.every(([id]) => id === agent.session.id)).toBe(true)
     expect(resolve).toHaveBeenCalledWith({ session: agent.session })
 
     const original = ctx.sandboxPolicy.resolve.bind(ctx.sandboxPolicy)
@@ -324,13 +327,14 @@ describe('browser action tools', () => {
   it('shows a bounded target origin rather than URL secrets for each navigation approval', async () => {
     const { ctx, call, agent } = await setup()
     const browser = ctx.browserUse as FakeBrowser
+    const prepareTarget = vi.spyOn(browser, 'prepareTarget')
     const asked = vi.fn((_req: { reason?: string }, _next: () => Promise<'rejected'>) => Promise.resolve('rejected' as const))
     ctx.on('approval/request', asked)
     const target = 'https://user:password@EXAMPLE.com/private?token=secret#fragment'
     await call({ action: 'navigate', url: target })
     expect(asked.mock.calls[0]?.[0].reason).toBe('Browser navigate (target origin: https://example.com; may redirect or load subresources; approval is for this call only)')
     expect(JSON.stringify(agent.session.append.mock.calls)).not.toMatch(/password|private|secret|fragment/)
-    expect(browser.state).toHaveBeenCalled()
+    expect(prepareTarget).toHaveBeenCalledWith(agent.session.id, expect.any(AbortSignal))
     expect(browser.commands).not.toHaveBeenCalled()
 
     await call({ action: 'navigate', url: 'not a URL' })
@@ -444,6 +448,7 @@ describe('browser action tools', () => {
   it('returns canonical observation for PTC and saves a screenshot before rendering its image block', async () => {
     const { ctx, call } = await setup()
     const browser = ctx.browserUse as FakeBrowser
+    const prepareTarget = vi.spyOn(browser, 'prepareTarget')
     browser.currentState = activeState()
     ctx.on('approval/request', () => Promise.resolve('allowed-once' as const))
     const snapshot = await call({ action: 'snapshot' })
@@ -456,7 +461,7 @@ describe('browser action tools', () => {
     expect(result.content.map(block => block.type)).toEqual(['text', 'image'])
     const image = (result.value as unknown as ToolBrowser.BrowserUseValue).image
     expect(result.content[1]).toMatchObject({ attachment: { attachmentId: image?.attachmentId } })
-    expect((ctx.browserUse as FakeBrowser).state).toHaveBeenCalled()
+    expect(prepareTarget).toHaveBeenCalledTimes(2)
   })
 
   it('rejects missing screenshot bytes without saving an attachment', async () => {
@@ -507,6 +512,44 @@ describe('browser action tools', () => {
         tabId: observation.tabId, generation: 'g1', url: 'https://example.com' })
   })
 
+  it('prepares a self-navigated target under ownership before approval and uses its fresh origin', async () => {
+    const { ctx, call, agent } = await setup()
+    const browser = ctx.browserUse as FakeBrowser
+    browser.currentState = activeState()
+    let owned = false
+    const release = vi.fn()
+    browser.acquireOperation.mockImplementationOnce(async () => {
+      owned = true
+      return release
+    })
+    const refreshed = { ...observation, generation: 'g2', url: 'https://fresh.example/private?token=secret' }
+    const prepareTarget = vi.spyOn(browser, 'prepareTarget').mockImplementationOnce(async (id, signal) => {
+      expect(owned).toBe(true)
+      browser.currentState = { ...activeState(refreshed), stateRevision: 2 }
+      return BrowserUseService.prototype.prepareTarget.call(browser, id, signal)
+    })
+    const execute = vi.spyOn(browser, 'execute')
+    const request = vi.spyOn(ctx.approval, 'request')
+    const reasons: string[] = []
+    ctx.on('approval/request', ({ reason }) => {
+      reasons.push(reason ?? '')
+      return Promise.resolve('allowed-once' as const)
+    })
+
+    const result = await call({ action: 'snapshot' })
+    expect(result.isError).toBe(false)
+    expect(prepareTarget).toHaveBeenCalledWith(agent.session.id, expect.any(AbortSignal))
+    expect(execute).toHaveBeenCalledWith(agent.session.id, { kind: 'snapshot' }, expect.any(AbortSignal), {
+      kind: 'tab', browserGeneration: 'browser-1', stateRevision: 2,
+      tabId: observation.tabId, generation: 'g2', url: refreshed.url,
+    })
+    expect(reasons).toEqual(['Browser snapshot (current origin: https://fresh.example; approval is for this call only)'])
+    expect(JSON.stringify(agent.session.append.mock.calls)).not.toContain('token=secret')
+    expect(request).toHaveBeenCalledTimes(1)
+    expect(browser.commands).toHaveBeenCalledTimes(1)
+    expect(release).toHaveBeenCalledOnce()
+  })
+
   it('rejects a tab switch during approval without executing a command', async () => {
     const { ctx, call, agent } = await setup()
     const browser = ctx.browserUse as FakeBrowser
@@ -541,6 +584,8 @@ describe('browser action tools', () => {
     const { ctx, call, agent } = await setup()
     const browser = ctx.browserUse as FakeBrowser
     browser.currentState = activeState()
+    const prepareTarget = vi.spyOn(browser, 'prepareTarget')
+    const request = vi.spyOn(ctx.approval, 'request')
     ctx.on('approval/request', () => {
       void browser.control(agent.session.id, { kind: 'navigate', url: 'https://changed.example/?token=hidden' },
         new AbortController().signal)
@@ -549,6 +594,8 @@ describe('browser action tools', () => {
     const result = await call({ action: 'click', ref: 'e1', revision: 1 })
     expect(result.isError).toBe(true)
     expect(text(result)).toContain('browser target changed')
+    expect(prepareTarget).toHaveBeenCalledTimes(1)
+    expect(request).toHaveBeenCalledTimes(1)
     expect(browser.commands).not.toHaveBeenCalled()
   })
 

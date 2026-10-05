@@ -224,18 +224,9 @@ async function executeBrowserCommand(ctx: Context, command: BrowserCommand, exec
   const sessionId = agent.session.id
   const release = await ctx.browserUse.acquireOperation(sessionId, exec.signal)
   try {
-    const state = ctx.browserUse.state(sessionId)
-    let expectedTarget: BrowserExpectedTarget
-    if (state === undefined) {
-      if (command.kind !== 'navigate') {
-        throw new Error(`${toolName}: browser session is closed; use browser_navigate to open a page`)
-      }
-      expectedTarget = { kind: 'none' }
-    } else {
-      const active = state.tabs.find(tab => tab.id === state.activeTabId)
-      if (active === undefined) throw new Error(`${toolName}: active tab is unavailable`)
-      expectedTarget = { kind: 'tab', browserGeneration: state.browserGeneration, stateRevision: state.stateRevision,
-        tabId: active.id, generation: active.generation, url: active.url }
+    const expectedTarget: BrowserExpectedTarget = await ctx.browserUse.prepareTarget(sessionId, exec.signal)
+    if (expectedTarget.kind === 'none' && command.kind !== 'navigate') {
+      throw new Error(`${toolName}: browser session is closed; use browser_navigate to open a page`)
     }
     const sandboxPolicy = ctx.get('sandboxPolicy')
     const fullAccess = sandboxPolicy?.resolve({ session: agent.session }).mode === 'danger-full-access'

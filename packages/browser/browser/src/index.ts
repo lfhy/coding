@@ -42,6 +42,26 @@ export abstract class BrowserUseService extends Service {
   abstract operationActive(sessionId: SessionId): boolean
 
   /**
+   * 在取得操作权后刷新当前目标的身份，不读取页面内容或截图。
+   * 静态提供方默认从已发布状态绑定目标；有活页的提供方应覆盖以处理页面自行导航。
+   * @param sessionId - 要绑定的浏览器会话。
+   * @param signal - 等待目标刷新期间的取消信号。
+   * @returns 审批及后续执行共用的确切目标身份。
+   */
+  prepareTarget(sessionId: SessionId, signal: AbortSignal): Promise<BrowserExpectedTarget> {
+    return Promise.resolve().then(() => {
+      signal.throwIfAborted()
+      const state = this.state(sessionId)
+      if (!state) return { kind: 'none' } as const
+      if (!state.activeTabId) throw new BrowserUseError('active browser tab is closed', 'BROWSER_CLOSED')
+      const tab = state.tabs.find(candidate => candidate.id === state.activeTabId)
+      if (!tab) throw new BrowserUseError('active browser tab is closed', 'BROWSER_CLOSED')
+      return { kind: 'tab', browserGeneration: state.browserGeneration, stateRevision: state.stateRevision,
+        tabId: tab.id, generation: tab.generation, url: tab.url } as const
+    })
+  }
+
+  /**
    * 对指定会话执行一个命令，成功时发布对应的观测与可选截图。
    * 元素操作必须拒绝跨标签页或过期 revision；拒绝与取消不得发布虚假的新观测。
    * @param sessionId - 独占浏览器上下文的会话身份。

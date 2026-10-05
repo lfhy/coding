@@ -1,6 +1,6 @@
 /**
  * 显式 opt-in 的 macOS arm64 打包版冒烟：直接运行独立 Electron .app 中的 Coding，
- * 用独立的 CDP 端口观察真实 Host 页面；不进入 keyless Vitest，不安装应用。
+ * 通过 Electron 测试通道观察主进程和真实 Host 页面；不进入 keyless Vitest，不安装应用。
  */
 
 import assert from 'node:assert/strict'
@@ -12,7 +12,7 @@ import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { chromium } from 'playwright'
+import { _electron } from 'playwright'
 
 const root = fileURLToPath(new URL('../../..', import.meta.url))
 const bundle = join(root, 'dist/Coding.app')
@@ -25,6 +25,10 @@ const shellExecutable = join(browserRoot, 'chromium_headless_shell-1228',
 const packagedPlaywright = join(resources, 'runtime', 'node_modules', 'playwright', 'index.mjs')
 const packagedBrowserProvider = join(resources, 'runtime', 'node_modules',
   '@deepseek-ai', 'dsh-browser-playwright', 'lib', 'index.js')
+const packagedElectronBrowser = join(resources, 'runtime', 'node_modules',
+  '@deepseek-ai', 'dsh-browser-electron')
+const packagedElectronProtocol = join(packagedElectronBrowser, 'lib', 'types', 'protocol.js')
+const packagedBrowserTransport = join(resources, 'runtime', 'node_modules', 'ws', 'index.js')
 const packagedCordis = join(resources, 'runtime', 'node_modules', '@deepseek-ai/cordis', 'lib', 'index.js')
 const expectedVersion = JSON.parse(await readFile(join(root, 'apps/desktop-electron/package.json'), 'utf8')).version
 const timeoutMs = 90_000
@@ -60,11 +64,17 @@ async function preflight() {
     'Electron application manifest must define a version')
   for (const path of [executable, helperExecutable, join(resources, 'coding-host'),
     join(resources, 'metadata.json'), join(resources, 'app.asar'), join(resources, 'CodingIcon.png'),
-    shellExecutable, packagedPlaywright, packagedBrowserProvider, packagedCordis]) {
+    shellExecutable, packagedPlaywright, packagedBrowserProvider, packagedCordis,
+    join(packagedElectronBrowser, 'package.json'), join(packagedElectronBrowser, 'lib', 'index.js'),
+    packagedElectronProtocol, packagedBrowserTransport]) {
     const entry = await lstat(path).catch(() => undefined)
     assert.ok(entry?.isFile(), `missing packaged regular file: ${path}; rebuild dist/Coding.app`)
     if (path === join(resources, 'app.asar')) assert.ok(entry.size > 0, 'packaged app.asar must not be empty')
   }
+  const providerManifest = JSON.parse(await readFile(join(packagedElectronBrowser, 'package.json'), 'utf8'))
+  assert.equal(providerManifest.name, '@deepseek-ai/dsh-browser-electron', 'packaged native browser provider')
+  assert.equal(providerManifest.exports?.['./protocol']?.default, './lib/types/protocol.js',
+    'packaged main-process browser bridge must resolve the shipped protocol')
   const metadata = JSON.parse(await readFile(join(resources, 'metadata.json'), 'utf8'))
   assert.equal(metadata.version, expectedVersion, 'packaged metadata version')
   const plist = join(bundle, 'Contents/Info.plist')
@@ -186,7 +196,7 @@ async function verifyBundledBrowser(home, tmp) {
     assert.equal(existsSync(join(home, 'Library', 'Caches', 'ms-playwright')), false,
       'packaged browser must not create a user cache')
   } finally {
-    if (child.exitCode === null && child.signalCode === null) await stopOwnApp(child)
+    if (child.exitCode === null && child.signalCode === null) await stopOwnProcess(child)
     for (const socket of sockets) socket.destroy()
     fixture.closeAllConnections()
     await new Promise(resolveClose => fixture.close(resolveClose))
@@ -258,7 +268,7 @@ function ownHelperPid(appPid, home, hostHome) {
   return matches[0]
 }
 
-async function stopOwnApp(child) {
+async function stopOwnProcess(child) {
   if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM')
   await Promise.race([
     new Promise(resolveExit => {
@@ -276,6 +286,13 @@ async function stopOwnApp(child) {
     new Promise(resolveWait => setTimeout(resolveWait, 2_000)),
   ])
   return !pidAlive(child.pid)
+}
+
+async function stopOwnApp(app) {
+  const child = app.process()
+  try { await deadline(app.close(), 'packaged Electron shutdown', 10_000) }
+  catch { /* 仅终止本次测试启动的进程；Host/helper 另行核验所有权。 */ }
+  return stopOwnProcess(child)
 }
 
 async function stopVerifiedHelper(pid, home, hostHome) {
@@ -324,67 +341,45 @@ async function secondLaunch(env) {
     }), 'second packaged Electron instance', 15_000)
     assert.equal(code, 0, 'second instance should activate the original and exit')
   } finally {
-    if (child.exitCode === null && child.signalCode === null) await stopOwnApp(child)
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill('SIGTERM')
+      await Promise.race([
+        new Promise(resolveExit => child.once('exit', resolveExit)),
+        new Promise(resolveWait => setTimeout(resolveWait, 2_000)),
+      ])
+      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+    }
   }
 }
 
-function launchOwnApp(env) {
-  const child = spawn(executable, ['--inspect=0', '--remote-debugging-port=0'], {
-    cwd: root, env, stdio: ['ignore', 'ignore', 'pipe'],
-  })
-  let stderr = ''
-  let endpoint
-  let inspector
-  // stderr 只用于发现 CDP endpoint；绝不输出原文（可能包含授权信息）。
-  child.stderr.on('data', bytes => {
-    stderr = (stderr + bytes.toString()).slice(-4096)
-    const match = /DevTools listening on (ws:\/\/127\.0\.0\.1:\d+\/devtools\/browser\/[\w-]+)/.exec(stderr)
-    if (match) endpoint = match[1]
-    const nodeMatch = /Debugger listening on (ws:\/\/127\.0\.0\.1:\d+\/[\w-]+)/.exec(stderr)
-    if (nodeMatch) inspector = nodeMatch[1]
-  })
-  child.stderr.on('error', () => {})
-  return { child, endpoint: () => endpoint, inspector: () => inspector }
-}
-
-async function inspectPackagedMain(url) {
-  const socket = new WebSocket(url)
-  try {
-    await deadline(new Promise((resolveOpen, reject) => {
-      socket.addEventListener('open', resolveOpen, { once: true })
-      socket.addEventListener('error', () => reject(new Error('Node inspector connection failed')), { once: true })
-    }), 'Node inspector connection', 5_000)
-    // 只读求值应用身份；不访问环境、Host token、文件或凭据。
-    const expression = `(() => {
-      const app = process.getBuiltinModule('module').createRequire(process.execPath)('electron').app;
-      return { packaged: app.isPackaged, appName: app.getName(),
-        appPathIsAsar: app.getAppPath() === process.resourcesPath + '/app.asar' };
-    })()`
-    const identity = await deadline(new Promise((resolveValue, reject) => {
-      socket.addEventListener('message', event => {
-        let reply
-        try { reply = JSON.parse(event.data) } catch { reject(new Error('invalid Node inspector response')); return }
-        if (reply.id !== 1) return
-        if (reply.error || reply.result?.exceptionDetails) {
-          reject(new Error('packaged main-process identity evaluation failed'))
-          return
-        }
-        resolveValue(reply.result?.result?.value)
-      })
-      socket.send(JSON.stringify({ id: 1, method: 'Runtime.evaluate',
-        params: { expression, returnByValue: true } }))
-    }), 'packaged main-process identity', 5_000)
-    assert.deepEqual(identity, { packaged: true, appName: 'Coding', appPathIsAsar: true },
-      'Electron main must report Coding, app.isPackaged and load Resources/app.asar')
-  } finally {
-    socket.close()
+async function inspectPackagedMain(app, guestUrl) {
+  // 测试通道只读取应用身份和原生视图，不访问进程环境、Host token 或文件。
+  const identity = await app.evaluate(({ app: electronApp, BrowserWindow, WebContentsView }) => ({
+    packaged: electronApp.isPackaged,
+    appName: electronApp.getName(),
+    appPathIsAsar: electronApp.getAppPath() === process.resourcesPath + '/app.asar',
+    guests: BrowserWindow.getAllWindows().flatMap(window => window.contentView.children
+      .filter(view => view instanceof WebContentsView)
+      .map(view => ({ id: view.webContents.id, url: view.webContents.getURL(),
+        title: view.webContents.getTitle(), bounds: view.getBounds() }))),
+  }))
+  assert.equal(identity.packaged, true, 'Electron main must be packaged')
+  assert.equal(identity.appName, 'Coding', 'Electron main application name')
+  assert.equal(identity.appPathIsAsar, true, 'Electron main must load Resources/app.asar')
+  if (guestUrl !== undefined) {
+    assert.equal(identity.guests.length, 1, 'packaged browser must own one WebContentsView')
+    assert.equal(identity.guests[0].url, guestUrl, 'native guest must hold the Host-controlled page')
+    assert.ok(identity.guests[0].id > 0 && identity.guests[0].bounds.width >= 200,
+      'native guest must occupy a live viewport')
+    return identity.guests[0]
   }
+  return identity.guests
 }
 
-async function findPage(browser, origin) {
+async function findPage(app, origin) {
   let page
   await until(() => {
-    page = browser.contexts().flatMap(context => context.pages())
+    page = app.windows()
       .find(candidate => !candidate.isClosed() && candidate.url() === `${origin}/`)
     return page !== undefined
   }, 'packaged Host renderer')
@@ -408,16 +403,25 @@ async function verifyRemoteBridge(page) {
     return {
       keys: native && Object.keys(native),
       methods: native?.remoteSSH && Object.keys(native.remoteSSH),
+      browserKeys: native?.browser && Object.keys(native.browser),
+      browserAvailable: native?.browser?.available,
+      browserPresentType: typeof native?.browser?.present,
       node: typeof window.require,
       ipc: typeof native?.remoteSSH?.ipcRenderer,
+      browserIpc: typeof native?.browser?.ipcRenderer,
     }
   })
-  assert.deepEqual(bridge.keys, ['remoteSSH'], 'packaged sandbox preload must be present')
+  assert.deepEqual(bridge.keys, ['remoteSSH', 'browser'], 'packaged sandbox preload must be present')
   assert.deepEqual(bridge.methods, [
     'connect', 'cancelConnect', 'listDirectories', 'selectDirectory', 'close', 'rejectHostKey', 'subscribeProgress',
   ])
+  assert.deepEqual(bridge.browserKeys, ['available', 'present'],
+    'packaged browser preload must expose only presentation')
+  assert.equal(bridge.browserAvailable, true)
+  assert.equal(bridge.browserPresentType, 'function')
   assert.equal(bridge.node, 'undefined')
   assert.equal(bridge.ipc, 'undefined')
+  assert.equal(bridge.browserIpc, 'undefined')
   // 随机且不存在的 attempt ID：只走本地 bridge/helper，不联系 SSH 主机或读取密钥。
   const result = await page.evaluate(async attemptId => {
     const dispose = window.codingDesktop.remoteSSH.subscribeProgress(() => {})
@@ -425,6 +429,102 @@ async function verifyRemoteBridge(page) {
     finally { dispose() }
   }, `smoke-${randomUUID()}`)
   assert.deepEqual(result, {}, 'Remote-SSH preload call must reach the live Go helper')
+}
+
+async function browserRpc(page, method, payload) {
+  const response = await page.evaluate(async ({ method, payload }) => {
+    const rpcId = crypto.randomUUID()
+    const result = await fetch(`/api/${method}`, { method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ type: 'client-request', rpcId, method, payload }) })
+    return { status: result.status, envelope: await result.json(), rpcId }
+  }, { method, payload })
+  assert.equal(response.status, 200, `${method} HTTP status`)
+  assert.equal(response.envelope.type, 'server-response', `${method} response envelope`)
+  assert.equal(response.envelope.rpcId, response.rpcId, `${method} request identity`)
+  assert.equal(response.envelope.result?.ok, true,
+    `${method} result: ${response.envelope.result?.error?.code ?? 'unknown'}`)
+  return response.envelope.result.value
+}
+
+async function completeOnboarding(page) {
+  const dialog = page.getByRole('dialog', { name: '配置模型，开始使用' })
+  await dialog.waitFor({ state: 'visible', timeout: timeoutMs })
+  // 仅在隔离 HOME 内保存测试占位值；不使用真实凭据或触发模型请求。
+  await dialog.locator('input[type="password"][aria-label="API 密钥"]').fill('packaged-smoke-local-placeholder')
+  await dialog.getByRole('button', { name: '保存' }).click()
+  const model = dialog.getByRole('combobox', { name: '默认模型' })
+  try {
+    await until(async () => !await dialog.isVisible() ||
+      await model.locator('option').count() > 1 && await model.isEnabled(),
+    'packaged onboarding completion or model catalog', 15_000)
+  } catch (error) {
+    const diagnostics = await dialog.locator('[role="alert"], [role="status"]').allInnerTexts()
+    const options = await model.locator('option').allInnerTexts()
+    throw new Error(`onboarding did not finish or expose a model: ${JSON.stringify({ diagnostics, options })}`,
+      { cause: error })
+  }
+  if (await dialog.isVisible()) {
+    await model.selectOption({ index: 1 })
+    await dialog.getByRole('button', { name: '开始使用' }).click()
+  }
+  await dialog.waitFor({ state: 'hidden', timeout: timeoutMs })
+  await until(() => page.locator('#root').evaluate(root => !root.inert),
+    'packaged workbench unlocked after onboarding')
+}
+
+async function verifyNativeBrowser(page, app) {
+  const fixture = createServer((_request, response) => {
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+    response.end('<title>Packaged native fixture</title><button id="human" ' +
+      'onclick="document.querySelector(\'output\').textContent=\'Human clicked\'">Click</button>' +
+      '<output>Waiting</output>')
+  })
+  await new Promise((resolveListen, reject) => {
+    fixture.once('error', reject)
+    fixture.listen(0, '127.0.0.1', resolveListen)
+  })
+  try {
+    const address = fixture.address()
+    assert.ok(address && typeof address !== 'string', 'native fixture must bind a loopback port')
+    const url = `http://127.0.0.1:${address.port}/`
+    await page.getByRole('button', { name: '打开右侧边栏' }).click()
+    const menu = page.getByRole('navigation', { name: '工作台功能' })
+    await menu.waitFor({ state: 'visible' })
+    await menu.getByRole('button', { name: '浏览器' }).click()
+    await page.getByTestId('browser-canvas').waitFor({ state: 'visible' })
+    const sessions = await browserRpc(page, 'session.list', {})
+    assert.equal(sessions.items.length, 1, 'packaged workbench must create one Host Session')
+    const sessionId = sessions.items[0].sessionId
+    const addressField = page.getByRole('textbox', { name: '网址' })
+    await addressField.fill(url)
+    await addressField.press('Enter')
+    let state
+    await until(async () => {
+      state = await browserRpc(page, 'browser.control', { sessionId, command: { kind: 'ensure-tab' } })
+      return state?.tabs[0]?.url === url
+    }, 'packaged Host browser.control on native guest')
+    const guest = await inspectPackagedMain(app, url)
+    const guestPage = app.context().pages()
+      .find(candidate => !candidate.isClosed() && candidate.url() === url)
+    assert.ok(guestPage, 'packaged native WebContentsView must expose an interactive Chromium target')
+    await guestPage.locator('#human').click()
+    await until(async () => await guestPage.locator('output').innerText() === 'Human clicked',
+      'packaged native guest human interaction', 10_000)
+    assert.equal((await inspectPackagedMain(app, url)).id, guest.id,
+      'Host control and human input must retain the same native WebContentsView')
+    assert.equal((await browserRpc(page, 'browser.control',
+      { sessionId, command: { kind: 'ensure-tab' } })).activeTabId, state.activeTabId,
+    'Host must retain the native guest tab after human interaction')
+    assert.equal(await browserRpc(page, 'browser.control',
+      { sessionId, command: { kind: 'close-tab', tabId: state.activeTabId } }), null,
+    'closing the packaged browser tab must release the guest')
+    await until(async () => (await inspectPackagedMain(app)).length === 0,
+      'packaged native guest teardown', 10_000)
+  } finally {
+    fixture.closeAllConnections()
+    await new Promise(resolveClose => fixture.close(resolveClose))
+  }
 }
 
 async function main() {
@@ -435,8 +535,8 @@ async function main() {
   const hostHome = join(home, '.dsh')
   const userData = join(home, '.dsh-electron-user-data')
   const instanceSocket = join(tmp, 'coding-instance.sock')
+  let app
   let child
-  let browser
   let record
   let helperPid
   let passed = false
@@ -448,25 +548,22 @@ async function main() {
       PATH: '/usr/bin:/bin:/usr/sbin', HOME: home, TMPDIR: tmp,
       USER: process.env.USER ?? '', LOGNAME: process.env.LOGNAME ?? '', LANG: 'en_US.UTF-8',
     }
-    const launched = launchOwnApp(env)
-    child = launched.child
-    await deadline(new Promise((resolveReady, reject) => {
-      const timer = setInterval(() => {
-        if (launched.endpoint() && launched.inspector()) { clearInterval(timer); resolveReady() }
-      }, 100)
-      child.once('error', () => { clearInterval(timer); reject(new Error('packaged Electron executable failed to start')) })
-      child.once('exit', () => { clearInterval(timer); reject(new Error('packaged Electron exited before CDP became ready')) })
-    }), 'packaged Electron CDP readiness')
     try {
-      browser = await chromium.connectOverCDP(launched.endpoint(), { timeout: 15_000 })
-    } catch {
-      throw new Error('CDP endpoint announced but handshake failed; check for an Electron startup dialog ' +
-        'before isolated userData and Host readiness')
+      app = await _electron.launch({ executablePath: executable, args: [], cwd: root, env, timeout: timeoutMs })
+    } catch (error) {
+      const timedOut = error instanceof Error && /timed out|timeout/i.test(error.message)
+      throw new Error(timedOut
+        ? 'signed Coding.app did not establish the Electron test channel before timeout; ' +
+          'check whether the graphical session is unlocked and the packaged main process starts'
+        : 'signed Coding.app exited or rejected the Electron test channel before readiness; ' +
+          'check the packaged main-process startup', { cause: error })
     }
+    child = app.process()
+    await deadline(app.firstWindow(), 'packaged first Host window')
     await until(async () => { record = await hostRecord(join(hostHome, 'host.json')); return record !== undefined },
       'isolated packaged Host discovery record')
     const origin = `http://127.0.0.1:${record.port}`
-    const page = await findPage(browser, origin)
+    const page = await findPage(app, origin)
     const errors = []
     page.on('pageerror', error => errors.push(error.message))
     page.on('console', message => { if (message.type() === 'error') errors.push(message.text()) })
@@ -484,9 +581,11 @@ async function main() {
     assert.equal(described.home, home, 'Host must see test HOME')
     assert.equal(described.cwd, await realpath(home), 'packaged Host workspace must be test HOME')
     assert.ok(described.managedHostToken === record.token, 'Host must own isolated discovery record')
-    await inspectPackagedMain(launched.inspector())
+    await inspectPackagedMain(app)
     await verifyWebSockets(page, origin)
     await verifyRemoteBridge(page)
+    await completeOnboarding(page)
+    await verifyNativeBrowser(page, app)
     await secondLaunch(env)
     assert.equal(helperCommand(helperPid, home, hostHome), true, 'second instance must retain original helper')
     const retained = await hostRecord(join(hostHome, 'host.json'))
@@ -498,9 +597,7 @@ async function main() {
     assert.equal(errors.length, 0, 'renderer must remain healthy after second instance')
     passed = true
   } finally {
-    // CDP 只能观察 renderer；不能假装它证明了 app.isPackaged、Tray 或原生菜单动作。
-    if (browser !== undefined) await browser.close().catch(() => undefined)
-    const appStopped = child === undefined ? true : await stopOwnApp(child).catch(() => false)
+    const appStopped = app === undefined ? child === undefined : await stopOwnApp(app).catch(() => false)
     const helperStopped = child === undefined ? true : helperPid === undefined ? false :
       await stopVerifiedHelper(helperPid, home, hostHome).catch(() => false)
     const hostStopped = child === undefined ? true : await stopVerifiedHost(hostHome, record).catch(() => false)
@@ -513,10 +610,11 @@ async function main() {
     if (passed) {
       assert.ok(appStopped && helperStopped && hostStopped && socketStopped,
         'packaged Electron/helper/Host and isolated desktop lock must all stop')
-      console.log('PASS: signed macOS arm64 app.asar, bundled default browser Provider localhost navigation/WebSocket/snapshot/click/screenshot in isolated HOME, app.isPackaged, metadata/Host version, real Host page, both Host WebSockets, ' +
+      console.log('PASS: signed macOS arm64 app.asar, bundled Playwright Provider localhost navigation/WebSocket/snapshot/click/screenshot, packaged Electron Provider/protocol/transport, ' +
+        'real Host browser.control and interactive WebContentsView guest, app.isPackaged, metadata/Host version, real Host page, both Host WebSockets, ' +
         'single instance, sandbox preload, Go helper/bridge, isolated desktop lock and cleanup')
-      console.log('Not exercised: Host approval of the seven browser_* tools or a model turn; the isolated Provider test uses the bundled runtime directly.')
-      console.log('Not inspected by CDP/Node inspector: native menu/Tray and macOS window close/hide; ' +
+      console.log('Not exercised: Host approval of the seven browser_* tools or a model turn; the isolated Playwright Provider test uses the bundled runtime directly.')
+      console.log('Not inspected by the Electron test channel: native menu/Tray and macOS window close/hide; ' +
         'verify those in a native UI session.')
     }
   }

@@ -354,10 +354,23 @@ importers:
         version: 10.0.0
 
   apps/desktop-electron:
+    dependencies:
+      '@deepseek-ai/dsh-browser':
+        specifier: workspace:^
+        version: link:../../packages/browser/browser
+      '@deepseek-ai/dsh-browser-electron':
+        specifier: workspace:^
+        version: link:../../packages/browser/browser-electron
+      ws:
+        specifier: ^8.21.0
+        version: 8.21.0
     devDependencies:
       '@types/node':
         specifier: ^22.20.0
         version: 22.20.0
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
       electron:
         specifier: 44.0.0
         version: 44.0.0
@@ -1043,6 +1056,34 @@ importers:
         specifier: workspace:^
         version: link:../../core/session
 
+  packages/browser/browser-electron:
+    dependencies:
+      '@deepseek-ai/dsh-browser':
+        specifier: workspace:^
+        version: link:../browser
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+      ws:
+        specifier: ^8.21.0
+        version: 8.21.0
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-host-webserver':
+        specifier: workspace:^
+        version: link:../../host/webserver
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      '@deepseek-ai/dsh-session':
+        specifier: workspace:^
+        version: link:../../core/session
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
+
   packages/browser/browser-playwright:
     dependencies:
       '@deepseek-ai/dsh-browser':
@@ -1142,6 +1183,9 @@ importers:
       '@deepseek-ai/dsh-bash-sandbox':
         specifier: workspace:^
         version: link:../../shell/bash-sandbox
+      '@deepseek-ai/dsh-browser-electron':
+        specifier: workspace:^
+        version: link:../../browser/browser-electron
       '@deepseek-ai/dsh-browser-playwright':
         specifier: workspace:^
         version: link:../../browser/browser-playwright
@@ -9282,6 +9326,9 @@ importers:
       '@deepseek-ai/dsh-browser':
         specifier: workspace:^
         version: link:../../packages/browser/browser
+      '@deepseek-ai/dsh-browser-electron':
+        specifier: workspace:^
+        version: link:../../packages/browser/browser-electron
       '@deepseek-ai/dsh-browser-playwright':
         specifier: workspace:^
         version: link:../../packages/browser/browser-playwright

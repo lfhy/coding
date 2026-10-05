@@ -13,6 +13,29 @@ export type BrowserView =
 
 type Fetch = (input: string | URL, init?: RequestInit) => Promise<Response>
 type Control = ConnectionHandle['api']['browser']['control']
+export interface BrowserPresentation {
+  present(input: {
+    sessionId: string
+    tabId: string
+    bounds: {
+      x: number
+      y: number
+      width: number
+      height: number
+    }
+    visible: boolean
+  }): Promise<unknown>
+}
+
+/** 只有完整的受限 preload 能力才启用原生画面；普通 Web 保留截图回退。 */
+export function desktopBrowserPresentation(): BrowserPresentation | null {
+  const desktop = (globalThis as typeof globalThis & { codingDesktop?: { browser?: unknown } }).codingDesktop
+  const browser = desktop?.browser
+  if (typeof browser !== 'object' || browser === null) return null
+  const capability = browser as { available?: unknown; present?: unknown }
+  return capability.available === true && typeof capability.present === 'function'
+    ? browser as BrowserPresentation : null
+}
 const POLL_MS = 750
 const INITIAL: BrowserView = { phase: 'loading', state: null, frameUrl: null, pending: false }
 
@@ -44,10 +67,12 @@ export class BrowserMirrorController {
    * @param sessionId - 当前会话。
    * @param fetcher - 同源状态和画面载体。
    * @param control - 经过连接服务的人工命令入口。
+   * @param nativePresentation - 原生 guest 已接管画面时不请求 PNG。
    */
   constructor(private readonly sessionId: string,
     private readonly fetcher: Fetch = (input, init) => fetch(input, init),
-    private readonly control?: Control) {}
+    private readonly control?: Control,
+    private readonly nativePresentation = false) {}
 
   /**
    * 内容 slot 挂载期间轮询；基线状态不抢占文件视图。
@@ -80,7 +105,7 @@ export class BrowserMirrorController {
     if ('target' in command) {
       const { state, frameUrl, phase, pending } = this.view.getSnapshot()
       const observation = state?.observation
-      if (phase !== 'ready' || pending || frameUrl === null || !state.hasFrame || !observation
+      if (this.nativePresentation || phase !== 'ready' || pending || frameUrl === null || !state.hasFrame || !observation
         || state.browserGeneration !== command.target.browserGeneration
         || state.stateRevision !== command.target.stateRevision
         || state.activeTabId !== command.target.tabId
@@ -205,7 +230,7 @@ export class BrowserMirrorController {
       && previous.activeTabId === state.activeTabId
       && oldObservation?.generation === observation?.generation
       && oldObservation?.revision === observation?.revision
-    if (state.hasFrame && observation && (!sameFrame || this.imageUrl === null)) {
+    if (!this.nativePresentation && state.hasFrame && observation && (!sameFrame || this.imageUrl === null)) {
       const frame = hostUrl('/browser-use/frame', this.sessionId)
       frame.searchParams.set('tabId', observation.tabId)
       frame.searchParams.set('browserGeneration', state.browserGeneration)

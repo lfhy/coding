@@ -240,6 +240,7 @@
     { "path": "./packages/compaction/compaction-tool-result-pruner" },
     { "path": "./packages/web/web" },
     { "path": "./packages/browser/browser" },
+    { "path": "./packages/browser/browser-electron" },
     { "path": "./packages/browser/browser-playwright" },
     { "path": "./packages/browser/tool-browser" },
     { "path": "./packages/web/web-search-exa" },

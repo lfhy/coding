@@ -24,7 +24,9 @@ make dev
 
 远程连接的 sandbox preload 只暴露固定操作；main 每次调用都核验所属窗口、主 frame、Host origin 与输入，同源重载期间暂停授权，失去所属窗口即撤销。基础模式使用 SFTP 文件读写编辑和搜索、SSH 前后台命令及 PTY、本机隔离 Goja 的 Code Mode 远端工具 binding，不部署远端 agent 或使用 SSH TCP 转发；LSP 不可用。SFTP 写入需要服务端 hardlink／posix-rename 扩展，版本复核非原子 CAS；SSH PTY 不提供前台进程组查询，终止请求也不能证明整棵进程树停稳。Agent 模式需要部署 Go agent 并使用 `direct-tcpip` 转发。SSH 输入由向导按次提交给原生服务，Go bridge token 不交给 renderer；不得在页面存储或日志中持久化凭据。目录解析前失去页面且无法确认 marker 归属时，helper 会保守保留连接直至退出，不凭连接 ID 盲关已有工作区。macOS 菜单和托盘提供窗口操作，关闭窗口会隐藏，再次激活或从托盘可恢复；退出应用时 helper 先收敛自己持有的连接和 bridge，Host 仍依自身空闲策略退出。
 
-七项[浏览器工具](../../packages/browser/tool-browser/README.md)由共享 Host 的 [Playwright 提供方](../../packages/browser/browser-playwright/README.md)执行；完全访问且关闭审批提示的会话无需逐次审批，其他组合遵循工具的会话权限规则。它们不复用 Electron 窗口，也不提供浏览器 guest。桌面窗口复用 Web Client 的[浏览器工作台](../../packages/client/ui-browser/README.md)：画面是 Host 页面操作后捕获的 PNG 镜像，用户可按截图坐标发出点击、滚动和文本插入命令，不能直接访问网页 DOM。Agent 操作从等待审批至结束期间，Host 拒绝人工命令，界面也禁用控件；远程工作区不支持浏览器操作。
+七项[浏览器工具](../../packages/browser/tool-browser/README.md)在桌面 Host 中使用 [Electron 提供方](../../packages/browser/browser-electron/README.md)，Web/CLI 才使用 [Playwright 提供方](../../packages/browser/browser-playwright/README.md)。Electron 主进程按 Session 持有独立的临时 partition 和 `WebContentsView` 页面；工作台中的真人与 Host Agent 操作同一 guest，不是 renderer `<webview>`，也不是 PNG 镜像。预加载脚本只向受限 Host 主 frame 暴露定位和显隐 guest 的呈现方法，不向页面开放浏览器控制权或私有 bridge 令牌；主进程核验窗口、origin、frame 和位置，隐藏工作台或切换标签仅卸载视图，关闭标签、Session 或销毁窗口才释放相应资源。模型显式截图仍产生图像附件，画面在桌面 Client 中无需轮询 PNG 显示。
+
+Host 经启动环境中的一次性令牌连接主进程私有回环 WebSocket；令牌不进入 URL 或 renderer。断线、超时或取消会使该 Host 的浏览器会话失效，当前 Host 进程不会自动重连，也不能静默改用 Playwright。Agent 操作从审批等待至结束独占 Session，期间人工命令被拒绝，原生 guest 暂时隐藏以免发生未授权输入。完全访问且关闭审批提示的会话无需逐次审批，其他组合仍遵循工具的会话权限规则；远程工作区不支持浏览器操作。guest 禁用下载、弹窗、页面权限请求以及访问 Host origin，不提供任意页面脚本入口。
 
 ## 打包与安装边界
 

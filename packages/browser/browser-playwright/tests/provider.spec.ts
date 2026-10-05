@@ -316,6 +316,7 @@ describe('Playwright browser owner', () => {
     await service.execute(id, { kind: 'snapshot' }, signal)
     handle.dispose.mockRejectedValueOnce(new Error('detached new ref'))
     page.screenshot.mockResolvedValueOnce(new Uint8Array(2 * 1024 * 1024 + 1))
+      .mockResolvedValueOnce(new Uint8Array(2 * 1024 * 1024 + 1))
     await expect(service.execute(id, { kind: 'snapshot' }, signal)).rejects.toMatchObject({ code: 'BROWSER_FAILED' })
     const listener = browserContext.on.mock.calls.find(([event]) => event === 'page')?.[1]
     if (!listener) throw new Error('missing page listener')
@@ -560,6 +561,7 @@ describe('Playwright browser owner', () => {
     const id = SessionId('large')
     const signal = new AbortController().signal
     page.screenshot.mockResolvedValueOnce(new Uint8Array(2 * 1024 * 1024 + 1))
+      .mockResolvedValueOnce(new Uint8Array(2 * 1024 * 1024 + 1))
     await expect(service.execute(id, { kind: 'navigate', url: 'http://127.0.0.1:8080/' }, signal))
       .rejects.toMatchObject({ code: 'BROWSER_FAILED' })
     expect(service.state(id)).toMatchObject({ tabs: [{ url: 'http://127.0.0.1:8080/' }],
@@ -567,6 +569,23 @@ describe('Playwright browser owner', () => {
     expect(service.latest(id)).toBeUndefined()
     expect(browserContext.close).not.toHaveBeenCalled()
     expect((await service.execute(id, { kind: 'snapshot' }, signal)).observation.revision).toBe(1)
+    await ctx.fiber.dispose()
+  })
+
+  it('tries device pixels first and falls back to CSS pixels only for an oversized frame', async () => {
+    const { ctx, service } = await headlessProvider()
+    const id = SessionId('dense-frame-fallback')
+    const signal = new AbortController().signal
+    const cssPng = new Uint8Array([137, 80, 78, 71, 1])
+    page.screenshot.mockResolvedValueOnce(new Uint8Array(2 * 1024 * 1024 + 1)).mockResolvedValueOnce(cssPng)
+    const capture = await service.execute(id, { kind: 'navigate', url: 'http://localhost/' }, signal)
+    expect(capture.png).toEqual(cssPng)
+    expect(page.screenshot.mock.calls.slice(0, 2)).toEqual([
+      [expect.objectContaining({ scale: 'device' })], [expect.objectContaining({ scale: 'css' })],
+    ])
+    expect(service.latest(id)).toBe(capture)
+    await service.execute(id, { kind: 'screenshot' }, signal)
+    expect(page.screenshot.mock.calls.at(-1)).toEqual([expect.objectContaining({ scale: 'device' })])
     await ctx.fiber.dispose()
   })
 
@@ -583,6 +602,7 @@ describe('Playwright browser owner', () => {
     const second = await service.control(id, { kind: 'navigate', url: 'http://127.0.0.1:8080/' }, signal)
     const before = service.state(id)
     secondScreenshot.mockResolvedValueOnce(new Uint8Array(2 * 1024 * 1024 + 1))
+      .mockResolvedValueOnce(new Uint8Array(2 * 1024 * 1024 + 1))
     await expect(service.control(id, { kind: 'set-viewport', width: 900, height: 1100 }, signal))
       .rejects.toMatchObject({ code: 'BROWSER_FAILED' })
     const oversized = service.state(id)
@@ -645,7 +665,7 @@ describe('Playwright browser owner', () => {
       new AbortController().signal)
     expect(vi.mocked(chromium).launch.mock.calls).toEqual([[{ headless: true }]])
     expect(browser.newContext).toHaveBeenCalledExactlyOnceWith({
-      viewport: { width: 1280, height: 720 }, acceptDownloads: false, permissions: [],
+      viewport: { width: 1280, height: 720 }, deviceScaleFactor: 2, acceptDownloads: false, permissions: [],
     })
     expect(browserContext.route).not.toHaveBeenCalled()
     expect(browserContext.routeWebSocket).not.toHaveBeenCalled()
@@ -947,6 +967,78 @@ describe('Playwright browser owner', () => {
     await ctx.fiber.dispose()
   })
 
+  it('refreshes a spontaneous cross-origin target before approval without capturing page content', async () => {
+    const { ctx, service } = await headlessProvider()
+    const id = SessionId('spontaneous-cross-origin')
+    const signal = new AbortController().signal
+    const original = await service.execute(id, { kind: 'navigate', url: 'http://127.0.0.1:8080/' }, signal)
+    const oldTarget = await service.prepareTarget(id, signal)
+    const previous = service.state(id)!
+    const nextUrl = 'https://example.org/landing'
+    page.url.mockReturnValue(nextUrl)
+    documentHandle.evaluate.mockResolvedValueOnce(false)
+    const snapshots = page.screenshot.mock.calls.length
+    const refreshed = await service.prepareTarget(id, signal)
+    expect(refreshed).toMatchObject({ kind: 'tab', url: nextUrl,
+      stateRevision: previous.stateRevision + 1, tabId: original.observation.tabId })
+    expect(service.state(id)?.tabs[0]?.url).toBe(nextUrl)
+    expect(service.state(id)?.hasFrame).toBe(false)
+    expect(page.screenshot).toHaveBeenCalledTimes(snapshots)
+    expect(locator.evaluate).toHaveBeenCalledTimes(1)
+    await expect(service.execute(id, { kind: 'click', ref: ref(original.observation.snapshot), revision: 1 },
+      signal, oldTarget)).rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
+    expect(handle.click).not.toHaveBeenCalled()
+    const captured = await service.execute(id, { kind: 'snapshot' }, signal, refreshed)
+    expect(captured.observation.url).toBe(nextUrl)
+    await ctx.fiber.dispose()
+  })
+
+  it('rebinds a same-URL reload before approval but rejects a subsequent navigation during approval', async () => {
+    const { ctx, service } = await headlessProvider()
+    const id = SessionId('same-url-preparation')
+    const signal = new AbortController().signal
+    const original = await service.execute(id, { kind: 'navigate', url: 'http://127.0.0.1:8080/' }, signal)
+    const previous = await service.prepareTarget(id, signal)
+    const listener = page.on.mock.calls.find(([event]) => event === 'framenavigated')?.[1]
+    if (!listener) throw new Error('main-frame navigation listener absent')
+    listener(mainFrame as never)
+    documentHandle.evaluate.mockResolvedValueOnce(false)
+    const fresh = await service.prepareTarget(id, signal)
+    expect(fresh).toMatchObject({ kind: 'tab', url: original.observation.url })
+    if (fresh.kind !== 'tab' || previous.kind !== 'tab') throw new Error('tab target absent')
+    expect(fresh.stateRevision).toBeGreaterThan(previous.stateRevision)
+    expect(page.screenshot).toHaveBeenCalledTimes(1)
+    const captured = await service.execute(id, { kind: 'snapshot' }, signal, fresh)
+    expect(captured.observation.revision).toBe(2)
+    const approved = await service.prepareTarget(id, signal)
+    listener(mainFrame as never)
+    await expect(service.execute(id, { kind: 'click', ref: ref(captured.observation.snapshot),
+      revision: captured.observation.revision }, signal, approved))
+      .rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
+    expect(handle.click).not.toHaveBeenCalled()
+    expect(page.screenshot).toHaveBeenCalledTimes(2)
+    await ctx.fiber.dispose()
+  })
+
+  it('retries preparation when navigation advances stateRevision during a metadata await', async () => {
+    const { ctx, service } = await headlessProvider()
+    const id = SessionId('navigation-during-preparation')
+    const signal = new AbortController().signal
+    await service.execute(id, { kind: 'navigate', url: 'http://127.0.0.1:8080/' }, signal)
+    const before = service.state(id)!
+    const listener = page.on.mock.calls.find(([event]) => event === 'framenavigated')?.[1]
+    if (!listener) throw new Error('main-frame navigation listener absent')
+    const racingDocument = { evaluate: vi.fn(async () => { listener(mainFrame as never); return true }),
+      dispose: vi.fn(async () => {}) }
+    page.evaluateHandle.mockResolvedValueOnce(racingDocument)
+    const prepared = await service.prepareTarget(id, signal)
+    expect(prepared).toMatchObject({ kind: 'tab', stateRevision: before.stateRevision + 1 })
+    expect(racingDocument.dispose).toHaveBeenCalledOnce()
+    expect(service.state(id)?.hasFrame).toBe(false)
+    expect(page.screenshot).toHaveBeenCalledTimes(1)
+    await ctx.fiber.dispose()
+  })
+
   it('invalidates a same-URL document reload for both human screenshots and model approvals', async () => {
     const { ctx, service, routes } = await provider()
     const id = SessionId('same-url-document')
@@ -1215,7 +1307,7 @@ describe('Playwright browser owner', () => {
     const blank = service.state(other)?.tabs[0]
     const approved = service.state(other)
     if (!blank) throw new Error('missing blank tab')
-    page.url.mockImplementationOnce(() => 'about:blank')
+    page.url.mockImplementationOnce(() => 'about:blank').mockImplementationOnce(() => 'about:blank')
     await service.execute(other, { kind: 'navigate', url: 'http://127.0.0.1:8080/' }, signal,
       { kind: 'tab', tabId: blank.id, generation: blank.generation, url: blank.url,
         browserGeneration: approved?.browserGeneration ?? '', stateRevision: approved?.stateRevision ?? -1 })

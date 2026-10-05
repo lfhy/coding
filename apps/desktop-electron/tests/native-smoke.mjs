@@ -9,6 +9,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, realpath, rm } from 'node:fs/promises'
+import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -235,11 +236,15 @@ async function verifyRemoteSshBridge(page) {
   const bridge = await page.evaluate(async () => {
     const remoteSSH = window.codingDesktop?.remoteSSH
     const methods = remoteSSH === undefined ? [] : Object.keys(remoteSSH).sort()
+    const browser = window.codingDesktop?.browser
     const dispose = remoteSSH?.subscribeProgress(() => {})
     dispose?.()
     return {
       desktopKeys: Object.keys(window.codingDesktop ?? {}),
       methods,
+      browserKeys: browser === undefined ? [] : Object.keys(browser).sort(),
+      browserAvailable: browser?.available,
+      browserPresentType: typeof browser?.present,
       disposeType: typeof dispose,
       leakedGlobals: [
         'ipcRenderer', 'require', 'process', 'go', '__CODING_DESKTOP_BRIDGE_TOKEN',
@@ -249,7 +254,12 @@ async function verifyRemoteSshBridge(page) {
       result: await remoteSSH?.cancelConnect('smoke-attempt'),
     }
   })
-  assert.deepEqual(bridge.desktopKeys, ['remoteSSH'], 'preload must expose only the Remote-SSH surface')
+  assert.deepEqual(bridge.desktopKeys, ['remoteSSH', 'browser'],
+    'preload must expose only Remote-SSH and browser presentation surfaces')
+  assert.deepEqual(bridge.browserKeys, ['available', 'present'],
+    'browser preload must expose only availability and presentation')
+  assert.equal(bridge.browserAvailable, true, 'native guest presentation must be available')
+  assert.equal(bridge.browserPresentType, 'function', 'native guest presentation must be callable')
   assert.deepEqual(bridge.methods, [
     'cancelConnect', 'close', 'connect', 'listDirectories', 'rejectHostKey', 'selectDirectory', 'subscribeProgress',
   ], 'preload must expose exactly six methods plus progress subscription')
@@ -259,10 +269,7 @@ async function verifyRemoteSshBridge(page) {
 }
 
 async function verifyRemoteSshWizard(page, screenshot) {
-  // 首次使用可选择稍后配置，不读取、填写或保存真实 API Key。
-  const onboarding = page.getByRole('dialog', { name: '添加一个 API Key 开始使用' })
-  await onboarding.getByRole('button', { name: '稍后配置' }).click()
-  await onboarding.waitFor({ state: 'hidden' })
+  // 引导已由隔离的本地模型配置完成；不读取或提交真实 API Key。
   await page.getByRole('button', { name: '选择工作区' }).first().click()
   await page.getByText('远程连接', { exact: true }).first().click()
   const wizard = page.getByRole('dialog', { name: '远程连接' })
@@ -480,27 +487,329 @@ async function assertBlueFocusedField(locator, name) {
 }
 
 async function verifyOnboardingFocus(page, afterScreenshot) {
-  const dialog = page.getByRole('dialog', { name: '添加一个 API Key 开始使用' })
+  const dialog = page.getByRole('dialog', { name: '配置模型，开始使用' })
   await dialog.waitFor({ state: 'visible', timeout: timeoutMs })
+  const title = dialog.getByRole('heading', { name: '配置模型，开始使用' })
   const credential = dialog.locator('input[type="password"][aria-label="API 密钥"]')
   const channel = dialog.getByLabel('渠道名称', { exact: true })
   const baseUrl = dialog.getByLabel('API 地址', { exact: true })
 
-  // 首次打开应把焦点给密钥字段，但不会读取、填写或提交任何凭据。
-  await until(() => credential.evaluate(input => document.activeElement === input),
-    'API Key first-run autofocus', 5_000)
+  // 当前引导先聚焦标题；测试仅输入临时非凭据文本，不向真实提供方发请求。
+  await until(() => title.evaluate(element => document.activeElement === element),
+    'model onboarding title autofocus', 5_000)
+  await credential.click()
   await assertBlueFocusedField(credential, 'API Key')
 
-  assert.equal(await channel.inputValue(), 'default', 'channel name must initially be default')
+  assert.equal(await channel.inputValue(), 'DeepSeek', 'channel name must initially name the shipped provider')
   await channel.click()
   await assertBlueFocusedField(channel, 'channel name')
   await channel.fill('smoke-local')
   assert.equal(await channel.inputValue(), 'smoke-local', 'channel name must be locally editable without saving')
-  await channel.fill('default')
+  await channel.fill('DeepSeek')
 
   await baseUrl.click()
   await assertBlueFocusedField(baseUrl, 'API URL')
   await page.screenshot({ path: afterScreenshot })
+}
+
+async function browserFixture() {
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+    response.end(`<!doctype html><title>Native guest fixture</title>
+      <h1>Live native guest</h1>
+      <button id="human" onclick="document.querySelector('#human-result').textContent='Human clicked'">Human click</button>
+      <output id="human-result">Waiting</output>
+      <input id="typed" aria-label="Guest input" oninput="document.querySelector('#typed-result').textContent=this.value">
+      <output id="typed-result">Waiting</output>
+      <button id="agent" onclick="document.querySelector('#agent-result').textContent='Agent clicked'">Agent click</button>
+      <output id="agent-result">Waiting</output>
+      <button id="popup" onclick="window.open('https://example.com/native-guest-popup')">Open popup</button>`)
+  })
+  await new Promise((resolveListen, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', resolveListen)
+  })
+  const address = server.address()
+  assert.ok(address && typeof address !== 'string', 'native guest fixture must bind locally')
+  return { url: `http://127.0.0.1:${address.port}/`,
+    close: async () => {
+      server.closeAllConnections()
+      await new Promise(resolveClose => server.close(resolveClose))
+    } }
+}
+
+async function scriptedModel() {
+  let browserStep = 0
+  const observations = []
+  const failures = []
+  const toolNames = []
+  const server = createServer((request, response) => {
+    if (request.url !== '/chat/completions' || request.method !== 'POST' ||
+      request.socket.remoteAddress !== '127.0.0.1') {
+      response.writeHead(404).end()
+      return
+    }
+    let body = ''
+    request.on('data', chunk => { body += chunk.toString('utf8') })
+    request.on('end', () => {
+      try {
+        const payload = JSON.parse(body)
+        const tools = (payload.tools ?? []).map(tool => tool.function?.name)
+        const titleRequest = !tools.includes('browser_snapshot')
+        let frames
+        if (titleRequest) {
+          frames = [{ choices: [{ delta: { content: 'Native smoke session' }, finish_reason: 'stop' }] }]
+        } else {
+          toolNames.push(tools)
+          assert.ok(tools.includes('browser_click'), 'the shipped Agent must advertise browser_click')
+          const results = payload.messages.filter(message => message.role === 'tool')
+          let name
+          let args
+          if (browserStep === 0) {
+            assert.equal(results.length, 0, 'first model step must start before browser tools')
+            name = 'browser_snapshot'
+            args = '{}'
+          } else if (browserStep === 1) {
+            const snapshot = JSON.parse(results.at(-1)?.content)
+            assert.equal(snapshot.action, 'snapshot', 'model must receive actual browser_snapshot output')
+            assert.ok(snapshot.observation.snapshot.includes('Human clicked'),
+              'Agent snapshot must see the human click in the original guest')
+            assert.ok(snapshot.observation.snapshot.includes('native typed text'),
+              'Agent snapshot must see human keyboard input in the original guest')
+            const ref = snapshot.observation.snapshot.match(/(e\d+-\S+) button "Agent click"/)?.[1]
+            assert.ok(ref, 'Agent must receive the observed button ref')
+            observations.push(snapshot.observation)
+            name = 'browser_click'
+            args = JSON.stringify({ ref, revision: snapshot.observation.revision })
+          } else if (browserStep === 2) {
+            const clicked = JSON.parse(results.at(-1)?.content)
+            assert.equal(clicked.action, 'click', 'model must receive actual browser_click output')
+            assert.ok(clicked.observation.snapshot.includes('Agent clicked'),
+              'Agent click must mutate the original guest')
+            observations.push(clicked.observation)
+          } else throw new Error('unexpected extra native Agent request')
+          browserStep++
+          frames = name === undefined
+            ? [{ choices: [{ delta: { content: 'NATIVE_AGENT_OK' }, finish_reason: 'stop' }] }]
+            : [
+              { choices: [{ delta: { tool_calls: [{ index: 0, id: `native-${browserStep}`, type: 'function',
+                function: { name, arguments: args } }] } }] },
+              { choices: [{ delta: {}, finish_reason: 'tool_calls' }],
+                usage: { prompt_tokens: 10, completion_tokens: 5 } },
+            ]
+        }
+        response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store' })
+        for (const frame of frames) response.write(`data: ${JSON.stringify(frame)}\n\n`)
+        response.end('data: [DONE]\n\n')
+      } catch (error) {
+        failures.push(error instanceof Error ? error.message : String(error))
+        response.writeHead(500).end('invalid scripted model step')
+      }
+    })
+  })
+  await new Promise((resolveListen, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', resolveListen)
+  })
+  const address = server.address()
+  assert.ok(address && typeof address !== 'string', 'scripted model must bind locally')
+  return { url: `http://127.0.0.1:${address.port}`, observations, failures, toolNames,
+    get browserStep() { return browserStep },
+    close: async () => {
+      server.closeAllConnections()
+      await new Promise(resolveClose => server.close(resolveClose))
+    } }
+}
+
+async function browserRpcResponse(page, method, payload) {
+  const response = await page.evaluate(async ({ method, payload }) => {
+    const rpcId = crypto.randomUUID()
+    const result = await fetch(`/api/${method}`, { method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ type: 'client-request', rpcId, method, payload }) })
+    return { status: result.status, envelope: await result.json(), rpcId }
+  }, { method, payload })
+  assert.equal(response.status, 200, `${method} HTTP status`)
+  assert.equal(response.envelope.type, 'server-response', `${method} response envelope`)
+  assert.equal(response.envelope.rpcId, response.rpcId, `${method} request identity`)
+  return response.envelope.result
+}
+
+async function browserRpc(page, method, payload) {
+  const result = await browserRpcResponse(page, method, payload)
+  assert.equal(result?.ok, true, `${method} result: ${result?.error?.code ?? 'unknown'}`)
+  return result.value
+}
+
+async function nativeGuest(app, id) {
+  return app.evaluate(({ BrowserWindow }, expected) => {
+    const views = BrowserWindow.getAllWindows()[0].contentView.children
+      .filter(view => view.webContents && !view.webContents.isDestroyed())
+    const guest = views.find(view => view.webContents.id === expected)
+      ?? views.find(view => view.webContents.getTitle() === 'Native guest fixture')
+    if (!guest) return null
+    return { id: guest.webContents.id, title: guest.webContents.getTitle(),
+      url: guest.webContents.getURL(), bounds: guest.getBounds(), attached: views.includes(guest) }
+  }, id)
+}
+
+async function guestScript(app, guestId, expression) {
+  return app.evaluate(({ webContents }, { guestId, expression }) => {
+    const guest = webContents.fromId(guestId)
+    if (!guest || guest.isDestroyed()) throw new Error('native guest no longer exists')
+    return guest.executeJavaScript(expression)
+  }, { guestId, expression })
+}
+
+async function clickGuest(guestPage, selector) {
+  await guestPage.locator(selector).click()
+}
+
+async function verifyAgentOnNativeGuest(page, app, sessionId, guestId, model) {
+  const prompted = await browserRpc(page, 'session.prompt', { sessionId, mode: 'queue',
+    content: [{ type: 'text', text: 'Inspect the open native guest and click Agent click.' }] })
+  assert.equal(prompted.accepted, true, 'shipped Host must accept the scripted Agent turn')
+  let history
+  try {
+    await until(async () => {
+      history = await browserRpc(page, 'session.history', { sessionId, maxMessages: 10 })
+      return history.events.some(({ event }) => event.type === 'turn/end')
+    }, 'scripted native Agent turn completion', 45_000)
+  } catch (error) {
+    throw new Error(`${error.message}; scripted model errors: ${model.failures.join(' | ') || 'none'}`)
+  }
+  assert.deepEqual(model.failures, [], 'scripted model requests must all match the keyless browser flow')
+  assert.equal(model.browserStep, 3, 'Agent must call snapshot, then click, then complete')
+  assert.ok(model.toolNames.every(names => names.includes('browser_snapshot') && names.includes('browser_click')),
+    'shipped model requests must advertise the real browser tools')
+  const events = history.events.map(({ event }) => event)
+  const calls = events.filter(event => event.type === 'tool/call')
+  assert.deepEqual(calls.map(event => event.data.name), ['browser_snapshot', 'browser_click'],
+    'Host session log must record both actual model tool calls')
+  const results = events.filter(event => event.type === 'tool/result')
+  assert.deepEqual(results.map(event => event.data.message.content[0]?.isError), [false, false],
+    'both Host browser tools must succeed through the shipped approval path')
+  assert.deepEqual(results.map(event => event.data.message.content[0]?.toolCallId),
+    calls.map(event => event.data.callId), 'session log must pair tool results with model calls')
+  assert.equal(events.findLast(event => event.type === 'turn/end')?.data.reason.kind, 'completed',
+    'scripted Agent turn must complete')
+  assert.equal(model.observations.length, 2, 'mock model must inspect the real tool observations')
+  assert.equal(model.observations[0].tabId, model.observations[1].tabId,
+    'Agent snapshot and ref click must operate the same browser tab')
+  assert.equal(await nativeGuest(app, guestId), null,
+    'Agent tools must not present the browser guest over the file-manager workbench')
+  assert.equal(await app.evaluate(({ webContents }, id) => {
+    const guest = webContents.fromId(id)
+    return guest && !guest.isDestroyed() ? guest.id : null
+  }, guestId), guestId, 'Agent tools must retain the exact hidden human-operated WebContentsView')
+  assert.equal(await guestScript(app, guestId, 'document.querySelector("#agent-result").textContent'),
+    'Agent clicked', 'Agent ref click must be visible in the original native guest')
+  assert.equal(await guestScript(app, guestId, 'document.querySelector("#typed-result").textContent'),
+    'native typed text', 'Agent call must preserve the human-entered native DOM')
+}
+
+async function verifyNativeBrowser(page, app, fixtureUrl, hostOrigin, screenshot, guestScreenshot, model) {
+  // 欢迎页入口先创建空白 Session；工作台菜单才建立该 Session 的浏览器标签。
+  await page.getByRole('button', { name: '打开右侧边栏' }).click()
+  const menu = page.getByRole('navigation', { name: '工作台功能' })
+  await menu.waitFor({ state: 'visible' })
+  await menu.getByRole('button', { name: '浏览器' }).click()
+  const canvas = page.getByTestId('browser-canvas')
+  await canvas.waitFor({ state: 'visible' })
+  const sessions = await browserRpc(page, 'session.list', {})
+  assert.equal(sessions.items.length, 1, 'workbench entry must create one local Session')
+  const sessionId = sessions.items[0].sessionId
+  const address = page.getByRole('textbox', { name: '网址' })
+  await address.fill(fixtureUrl)
+  await address.press('Enter')
+  await until(async () => (await browserRpc(page, 'browser.control',
+    { sessionId, command: { kind: 'ensure-tab' } })).tabs[0]?.url === fixtureUrl,
+  'Host browser.control must reach native guest')
+  const initialBrowser = await browserRpc(page, 'browser.control',
+    { sessionId, command: { kind: 'ensure-tab' } })
+  const firstId = initialBrowser.activeTabId
+  let guest
+  await until(async () => {
+    guest = await nativeGuest(app)
+    return guest?.attached && guest.url === fixtureUrl && guest.title === 'Native guest fixture'
+  }, 'native WebContentsView visible with page title')
+  const guestId = guest.id
+  const guestPage = app.context().pages().find(candidate => !candidate.isClosed() && candidate.url() === fixtureUrl)
+  assert.ok(guestPage, `live guest must expose an interactive Chromium target; ` +
+    `targets=${app.context().pages().map(candidate => candidate.url()).join(', ')}`)
+  assert.ok(guest.bounds.width >= 200 && guest.bounds.height >= 240,
+    'native guest must occupy a real visible viewport')
+  assert.equal(await canvas.locator('img').count(), 0, 'desktop browser must not present a PNG image')
+  assert.equal(await page.getByLabel('浏览器页面').count(), 1, 'renderer must have a native guest placeholder')
+  assert.deepEqual(await guestScript(app, guestId, `[
+    'codingDesktop', 'require', 'process', 'ipcRenderer', 'DSH_HOST_TOKEN',
+    'DSH_DESKTOP_BROWSER_BRIDGE_TOKEN', '__CODING_DESKTOP_BRIDGE_TOKEN',
+  ].filter(name => name in window)`), [], 'guest page must not receive preload, Node or bridge credentials')
+  await clickGuest(guestPage, '#human')
+  await until(async () => await guestScript(app, guestId,
+    'document.querySelector("#human-result").textContent') === 'Human clicked', 'native guest human click', 10_000)
+  await clickGuest(guestPage, '#typed')
+  await guestPage.keyboard.type('native typed text')
+  await until(async () => await guestScript(app, guestId,
+    'document.querySelector("#typed-result").textContent') === 'native typed text', 'native guest keyboard input', 10_000)
+  await clickGuest(guestPage, '#popup')
+  assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), 1,
+    'guest window.open must not create a BrowserWindow')
+  assert.equal(await guestScript(app, guestId,
+    'navigator.permissions.query({ name: "geolocation" }).then(value => value.state)'), 'denied',
+  'native guest must deny permissions')
+  // 浏览器工作台隐藏后，Agent 仍应在同一未呈现的 guest 中完成观测和点击。
+  await page.getByRole('button', { name: '添加工作台标签' }).click()
+  await menu.getByRole('button', { name: '文件', exact: true }).click()
+  await page.getByRole('tab', { name: '文件管理器' }).waitFor({ state: 'visible' })
+  await until(async () => await nativeGuest(app, guestId) === null, 'hidden guest detached')
+  assert.equal(await guestScript(app, guestId,
+    'document.querySelector("#typed-result").textContent'), 'native typed text',
+  'hidden guest must retain its document')
+  assert.equal(await guestScript(app, guestId,
+    'document.querySelector("#agent-result").textContent'), 'Waiting',
+  'Agent click must not happen before the hidden workbench test')
+  await verifyAgentOnNativeGuest(page, app, sessionId, guestId, model)
+  await page.locator(`[data-browser-tab-id="${firstId}"]`).click()
+  await until(async () => (await nativeGuest(app, guestId))?.attached, 'same guest restored')
+  assert.equal((await nativeGuest(app, guestId)).id, guestId,
+    'restoring the browser workbench must present the human/Agent guest')
+  // 人工入口和 Electron 的网络层均不得让 guest 访问承载 Client/RPC 的 Host 端口。
+  const hostAlias = `http://localhost:${new URL(hostOrigin).port}/`
+  for (const blockedUrl of [hostOrigin + '/', hostAlias]) {
+    const denied = await browserRpcResponse(page, 'browser.control',
+      { sessionId, command: { kind: 'navigate', url: blockedUrl } })
+    assert.deepEqual({ code: denied.error?.code, reason: denied.error?.details?.reason },
+      { code: 'browser-failed', reason: 'BROWSER_DENIED' }, 'guest navigation to Host origin must be denied')
+    assert.equal((await nativeGuest(app, guestId)).url, fixtureUrl,
+      'denied Host navigation must retain the live fixture in the same guest')
+  }
+  const subresource = await guestScript(app, guestId,
+    `fetch(${JSON.stringify(hostAlias)}, { mode: 'no-cors', cache: 'no-store' })
+      .then(() => 'loaded', error => error.name)`)
+  assert.equal(subresource, 'TypeError', 'guest subresource fetch to Host alias must be canceled')
+  assert.equal((await nativeGuest(app, guestId)).id, guestId,
+    'denied Host requests must retain the human/Agent guest identity')
+  // Host 页截图不会合成 WebContentsView；直接截 guest target 作为真实页面画面证据。
+  await guestPage.screenshot({ path: guestScreenshot })
+  await page.screenshot({ path: screenshot })
+  // 通过共享 Host 控制面验证标签切换，再关掉页面释放该会话资源。
+  const second = await browserRpc(page, 'browser.control', { sessionId, command: { kind: 'new-tab' } })
+  assert.notEqual(second.activeTabId, firstId, 'new tab must have a different id')
+  await page.locator(`[data-browser-tab-id="${second.activeTabId}"]`).waitFor({ state: 'visible' })
+  await page.locator(`[data-browser-tab-id="${firstId}"]`).click()
+  await until(async () => (await browserRpc(page, 'browser.control',
+    { sessionId, command: { kind: 'ensure-tab' } })).activeTabId === firstId,
+  'human workbench tab selection must reach Host')
+  await until(async () => (await nativeGuest(app, guestId))?.attached, 'switching tabs restores original guest')
+  assert.equal(await guestScript(app, guestId, 'document.querySelector("#typed-result").textContent'),
+    'native typed text', 'switching tabs must retain original DOM state')
+  await browserRpc(page, 'browser.control', { sessionId, command: { kind: 'close-tab', tabId: second.activeTabId } })
+  assert.equal(await browserRpc(page, 'browser.control',
+    { sessionId, command: { kind: 'close-tab', tabId: firstId } }), null,
+  'closing the last tab must release the Session browser')
+  await until(async () => await app.evaluate(({ webContents }, id) => webContents.fromId(id)?.isDestroyed() !== false,
+    guestId), 'closed native guest destroyed')
 }
 
 async function main() {
@@ -521,8 +830,12 @@ async function main() {
   const remoteScreenshot = join(tmpdir(), `dsh-electron-native-remote-${randomUUID()}.png`)
   const restoredScreenshot = join(tmpdir(), `dsh-electron-native-restored-${randomUUID()}.png`)
   const terminalScreenshot = join(tmpdir(), `dsh-electron-native-terminal-${randomUUID()}.png`)
+  const browserScreenshot = join(tmpdir(), `dsh-electron-native-browser-${randomUUID()}.png`)
+  const guestScreenshot = join(tmpdir(), `dsh-electron-native-guest-${randomUUID()}.png`)
   let app
   let record
+  let fixture
+  let model
   let passed = false
   try {
     await Promise.all([home, tmp, workspace].map(path => mkdir(path, { recursive: true, mode: 0o700 })))
@@ -596,6 +909,14 @@ async function main() {
     await verifyRemoteSshBridge(page)
     await page.screenshot({ path: screenshot })
     await verifyOnboardingFocus(page, afterScreenshot)
+    model = await scriptedModel()
+    await browserRpc(page, 'settings.update', { ns: 'llm-deepseek',
+      patch: { baseURL: model.url, thinking: 'disabled', reasoningEffort: 'off' } })
+    await browserRpc(page, 'credentials.set',
+      { ref: 'DEEPSEEK_API_KEY', value: 'native-smoke-local-placeholder' })
+    await browserRpc(page, 'settings.update', { ns: 'agent-default-model',
+      patch: { provider: 'deepseek-official', model: 'deepseek-v4-flash' } })
+    await page.getByRole('dialog', { name: '配置模型，开始使用' }).waitFor({ state: 'hidden' })
     await verifyRemoteSshWizard(page, remoteScreenshot)
     if (focusOnly) {
       assert.equal(rendererErrors.length, 0, 'renderer should not report runtime errors')
@@ -604,8 +925,12 @@ async function main() {
         `screenshots: ${afterScreenshot}, ${remoteScreenshot}`)
       return
     }
+    await browserRpc(page, 'settings.update', { ns: 'permission',
+      patch: { defaultPreset: 'danger-full-access' } })
     const titlebarInteractionVerified = await verifyTitlebar(page, app)
     await verifyTerminalTabs(page, terminalScreenshot)
+    fixture = await browserFixture()
+    await verifyNativeBrowser(page, app, fixture.url, origin, browserScreenshot, guestScreenshot, model)
     await verifyWindowBoundary(page, app, origin)
 
     const originalWindow = await app.evaluate(({ BrowserWindow }) => {
@@ -638,16 +963,21 @@ async function main() {
     passed = true
     console.log(`PASS: Host page, HTTP, two WebSockets, onboarding focus, Remote-SSH bridge and wizard, window safety, ` +
       `native titlebar styling${titlebarInteractionVerified ? ', drag and double-click' : ' (physical drag and double-click unverified)'}, ` +
-      `terminal tabs, ${nativeMenuVerified ? 'native menu, ' : 'native menu hide unverified, '}` +
+      `terminal tabs, native shared-session browser guest, ${nativeMenuVerified ? 'native menu, ' : 'native menu hide unverified, '}` +
       `close-hide and Dock restore, single-instance restore` +
       `${locked === true ? ' (foreground focus unverified: screen locked)' : ' and focus'}; ` +
-      `screenshots: ${screenshot}, ${afterScreenshot}, ${remoteScreenshot}, ${terminalScreenshot}, ${restoredScreenshot}`)
+      `screenshots: ${screenshot}, ${afterScreenshot}, ${remoteScreenshot}, ${terminalScreenshot}, ${browserScreenshot}, ${guestScreenshot}, ${restoredScreenshot}`)
+    console.log('PASS: scripted loopback model drove shipped Host browser_snapshot and browser_click on the human-operated native guest; Host origin/localhost navigation and guest subresource fetch denied; no external model API used')
   } finally {
     if (!passed && existsSync(screenshot)) console.error(`Failure screenshot: ${screenshot}`)
     if (!passed && existsSync(afterScreenshot)) console.error(`Focus screenshot: ${afterScreenshot}`)
     if (!passed && existsSync(remoteScreenshot)) console.error(`Remote-SSH screenshot: ${remoteScreenshot}`)
     if (!passed && existsSync(terminalScreenshot)) console.error(`Terminal screenshot: ${terminalScreenshot}`)
+    if (!passed && existsSync(browserScreenshot)) console.error(`Browser screenshot: ${browserScreenshot}`)
+    if (!passed && existsSync(guestScreenshot)) console.error(`Guest screenshot: ${guestScreenshot}`)
     if (!passed && existsSync(restoredScreenshot)) console.error(`Restored screenshot: ${restoredScreenshot}`)
+    if (fixture !== undefined) await fixture.close()
+    if (model !== undefined) await model.close()
     if (app !== undefined) await closeOwnApp(app)
     // 未能证明 Host 所有权或无法等到其退出时保留 HOME，避免删掉仍运行的 Host 的数据。
     let safeToClean = false

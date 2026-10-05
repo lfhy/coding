@@ -23,6 +23,7 @@
     "@deepseek-ai/dsh-brand": "workspace:^",
     "@deepseek-ai/dsh-browser": "workspace:^",
     "@deepseek-ai/dsh-browser-playwright": "workspace:^",
+    "@deepseek-ai/dsh-browser-electron": "workspace:^",
     "@deepseek-ai/dsh-code-runtime": "workspace:^",
     "@deepseek-ai/dsh-code-runtime-worker-thread": "workspace:^",
     "@deepseek-ai/dsh-command-compact": "workspace:^",

@@ -10,6 +10,7 @@
   font-family: var(--dsw-font-family);
 }
 .root[hidden], .tabs[hidden] { display: none; }
+.root[data-native-notice='true'] { grid-template-rows: 48px auto minmax(0, 1fr); }
 .tabs { display: flex; align-items: center; flex: none; gap: 4px; min-width: 0; white-space: nowrap; }
 /* 标签条目是一整块：选中与悬停都画在这一层，关闭键才落在标签内部，形状沿用工作台文件标签。 */
 .tab {
@@ -66,6 +67,11 @@
 .address button { display: grid; place-items: center; flex: none; width: 28px; height: 26px; padding: 0; }
 .typeMode { flex: none; height: 30px; padding: 0 8px; font: var(--dsw-font-xs-13); }
 .typeMode[data-active='true'] { background: var(--dsw-alias-interactive-bg-active); }
+.nativeNotice { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; min-width: 0;
+  padding: 6px 12px; border-bottom: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xxs-12); }
+.nativeNotice p { margin: 0; }
+.nativeError { color: var(--dsw-alias-state-error-primary); }
 .body { position: relative; display: grid; min-width: 0; min-height: 0; overflow: hidden; }
 .blank {
   display: flex; align-items: center; justify-content: center; flex-direction: column;
@@ -83,6 +89,7 @@
 .message button { padding: 6px 10px; }
 .canvas { display: flex; justify-content: center; min-width: 0; min-height: 0; overflow: auto;
   overscroll-behavior: contain; background: var(--dsw-alias-bg-base); }
+.nativeCanvas { min-width: 0; min-height: 0; width: 100%; height: 100%; background: var(--dsw-alias-bg-base); }
 .viewport { position: relative; max-width: 100%; flex: none; align-self: flex-start; overflow: hidden; }
 .frameAction { display: block; width: 100%; height: 100%; padding: 0; border: 0; background: transparent; cursor: crosshair; }
 .root .frameAction:disabled { opacity: 1; cursor: default; }

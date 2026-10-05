@@ -50,7 +50,7 @@ describe('Unrestricted browser network transcript snapshot', () => {
           .map(line => JSON.parse(line) as unknown)
         expect(calls).toEqual([
           { kind: 'new-context', options: {
-            viewport: { width: 1280, height: 720 }, acceptDownloads: false, permissions: [],
+            viewport: { width: 1280, height: 720 }, deviceScaleFactor: 2, acceptDownloads: false, permissions: [],
           } },
           { kind: 'goto', url: 'http://127.0.0.1:59723/browser-unrestricted-network',
             options: { waitUntil: 'domcontentloaded', timeout: 15_000 } },

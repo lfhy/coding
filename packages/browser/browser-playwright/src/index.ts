@@ -137,7 +137,7 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
   private async create(): Promise<SessionPage> {
     const browser = await this.launch()
     const browserContext = await browser.newContext({
-      viewport: VIEWPORT, acceptDownloads: false, permissions: [],
+      viewport: VIEWPORT, deviceScaleFactor: 2, acceptDownloads: false, permissions: [],
     })
     try {
       const page = await browserContext.newPage()
@@ -198,6 +198,49 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
     tab.refs.clear()
   }
 
+  /** 只刷新审批所需的 URL 与 Document 身份，不观测页面或发布截图。 */
+  private async refreshTarget(owner: SessionPage): Promise<BrowserExpectedTarget> {
+    const tab = this.active(owner)
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const revision = owner.stateRevision
+      const url = tab.page.url()
+      const current = await tab.page.evaluateHandle(() => document)
+      let adopted = false
+      let disposed = false
+      try {
+        const same = await this.sameDocument(tab)
+        const stable = await current.evaluate(doc => doc === document).catch(() => false)
+        if (revision !== owner.stateRevision || url !== tab.page.url() || !stable) continue
+        if (!same || tab.summary.url !== url) {
+          delete tab.capture
+          await this.clearRefs(tab)
+          if (revision !== owner.stateRevision || url !== tab.page.url() ||
+            !await current.evaluate(doc => doc === document).catch(() => false)) continue
+          const previous = tab.documentHandle
+          tab.documentHandle = current
+          adopted = true
+          tab.summary = { ...tab.summary, url, title: '' }
+          this.recordNavigation(tab)
+          owner.stateRevision++ // 导航事件尚未到达时也撤销旧审批，并通知只读状态的消费方。
+          const boundRevision = owner.stateRevision
+          await previous.dispose().catch(() => {})
+          if (boundRevision !== owner.stateRevision || url !== tab.page.url() ||
+            !await current.evaluate(doc => doc === document).catch(() => false) ||
+            boundRevision !== owner.stateRevision) continue
+        }
+        if (!adopted) {
+          await current.dispose().catch(() => {})
+          disposed = true
+        }
+        if ((!adopted && owner.stateRevision !== revision) || url !== tab.page.url()) continue
+        owner.lastUsed = Date.now()
+        return { kind: 'tab', browserGeneration: owner.browserGeneration, stateRevision: owner.stateRevision,
+          tabId: tab.id, generation: tab.generation, url }
+      } finally { if (!adopted && !disposed) await current.dispose().catch(() => {}) }
+    }
+    throw fail('browser target changed during preparation', 'BROWSER_STALE_REF')
+  }
+
   private active(owner: SessionPage): SessionTab {
     const tab = owner.tabs.get(owner.activeTabId)
     if (!tab) throw fail('active browser tab is closed', 'BROWSER_CLOSED')
@@ -218,6 +261,14 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
 
   /** @inheritdoc */
   operationActive(sessionId: SessionId): boolean { return this.operations.has(sessionId) }
+
+  /** @inheritdoc */
+  override prepareTarget(sessionId: SessionId, signal: AbortSignal): Promise<BrowserExpectedTarget> {
+    return this.enqueue(sessionId, signal, async () => {
+      const owner = this.pages.get(sessionId)
+      return owner ? this.refreshTarget(owner) : { kind: 'none' }
+    })
+  }
 
   private ensureAvailable(): void {
     if (this.disposed) throw fail('browser provider disposed', 'BROWSER_UNAVAILABLE')
@@ -352,9 +403,15 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
     const snapshot = `Page text:\n${text}\nElements:\n${entries.join('\n')}`.slice(0, SNAPSHOT_LIMIT)
       .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ' ')
     const title = (await page.title()).slice(0, 4096).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ' ')
-    const png = await page.screenshot({ type: 'png', animations: 'disabled', timeout: 10_000 })
+    let png = await page.screenshot({ type: 'png', scale: 'device', animations: 'disabled', timeout: 10_000 })
     if (owner.stateRevision !== stateRevision || !await documentHandle.evaluate(doc => doc === document)) {
       throw fail('browser document changed during observation', 'BROWSER_STALE_REF')
+    }
+    if (png.byteLength > FRAME_LIMIT) {
+      png = await page.screenshot({ type: 'png', scale: 'css', animations: 'disabled', timeout: 10_000 })
+      if (owner.stateRevision !== stateRevision || !await documentHandle.evaluate(doc => doc === document)) {
+        throw fail('browser document changed during observation', 'BROWSER_STALE_REF')
+      }
     }
     if (png.byteLength > FRAME_LIMIT) {
       await this.clearRefs(tab)
@@ -439,8 +496,12 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
             expectedTarget.url !== this.active(owner).page.url())) {
           throw fail('browser target changed while awaiting approval', 'BROWSER_STALE_REF')
         }
-        if (expectedTarget.kind === 'tab' && owner && !await this.sameDocument(this.active(owner))) {
-          throw fail('browser target changed while awaiting approval', 'BROWSER_STALE_REF')
+        if (expectedTarget.kind === 'tab' && owner) {
+          const tab = this.active(owner)
+          if (!await this.sameDocument(tab) || expectedTarget.stateRevision !== owner.stateRevision ||
+            expectedTarget.url !== undefined && expectedTarget.url !== tab.page.url()) {
+            throw fail('browser target changed while awaiting approval', 'BROWSER_STALE_REF')
+          }
         }
       }
       if (command.kind === 'close') {

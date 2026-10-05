@@ -1,6 +1,6 @@
 /**
  * Electron 桌面入口：Go helper 独占受管 Host 和 Remote-SSH，主进程拥有
- * 窗口、托盘及逐调用授权的最小 preload IPC。
+ * 窗口、浏览器 guest、托盘及逐调用授权的最小 preload IPC。
  * @module @deepseek-ai/dsh-desktop-electron/main
  */
 
@@ -9,6 +9,9 @@ import { homedir } from 'node:os'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { app, BrowserWindow, dialog } from 'electron'
+import { createBrowserBridge, type BrowserBridge } from './browser-bridge.ts'
+import { createBrowserGuestManager, type BrowserGuestManager } from './browser-guest.ts'
+import { installBrowserIpc } from './browser-ipc.ts'
 import { prepareDevelopmentDirectories } from './directories.ts'
 import { launchHelper, type HelperClient } from './helper-client.ts'
 import { createNativeChrome, type NativeChrome } from './native-chrome.ts'
@@ -24,6 +27,10 @@ let runtimeConfig: RuntimeConfig
 let helper: HelperClient | undefined
 let helperClosing: Promise<void> | undefined
 let disposeRemoteIpc: (() => void) | undefined
+let disposeBrowserIpc: (() => void) | undefined
+let browserBridge: BrowserBridge | undefined
+let browserManager: BrowserGuestManager | undefined
+let browserClosing: Promise<void> | undefined
 let disposeActivation: (() => void) | undefined
 let disposeHelperClosed: (() => void) | undefined
 let launching: Promise<void> | undefined
@@ -31,8 +38,25 @@ let startupAbort: AbortController | undefined
 let quitting = false
 let quitCompleted = false
 
+/** 先撤销 renderer 与 Host 通道，再释放同一窗口拥有的所有 guest。 */
+function stopBrowser(): Promise<void> {
+  if (browserClosing) return browserClosing
+  disposeBrowserIpc?.()
+  disposeBrowserIpc = undefined
+  const bridge = browserBridge
+  const manager = browserManager
+  browserBridge = undefined
+  browserManager = undefined
+  browserClosing = (async () => {
+    try { await bridge?.dispose() } catch { /* helper 关闭不依赖桥清理成功。 */ }
+    try { await manager?.dispose() } catch { /* 窗口和 helper 仍须关闭。 */ }
+  })().finally(() => { browserClosing = undefined })
+  return browserClosing
+}
+
 /** 结束当前 helper：先请求它关闭 SSH/bridge，再有界终止自己持有的进程。 */
 async function stopHelper(): Promise<void> {
+  await stopBrowser()
   const current = helper
   if (current === undefined) return
   helper = undefined
@@ -75,6 +99,7 @@ function openWindow(): Promise<void> {
   startupAbort = controller
   launching = (async () => {
     await helperClosing
+    await browserClosing
     if (!app.isPackaged) {
       const home = runtimeConfig.home
       await prepareDevelopmentDirectories({
@@ -85,9 +110,21 @@ function openWindow(): Promise<void> {
         workspace: runtimeConfig.cwd,
       })
     }
-    const next = await launchHelper({ ...runtimeConfig.helper, signal: controller.signal })
+    const bridge = await createBrowserBridge()
+    browserBridge = bridge
+    let next: HelperClient
+    try {
+      next = await launchHelper({ ...runtimeConfig.helper, signal: controller.signal,
+        env: { ...runtimeConfig.helper.env,
+          DSH_DESKTOP_BROWSER_BRIDGE_ORIGIN: bridge.origin,
+          DSH_DESKTOP_BROWSER_BRIDGE_TOKEN: bridge.token } })
+    } catch (error) {
+      await stopBrowser()
+      throw error
+    }
     if (quitting || controller.signal.aborted) {
       await next.close()
+      await stopBrowser()
       return
     }
     helper = next
@@ -96,12 +133,20 @@ function openWindow(): Promise<void> {
       iconPath: runtimeConfig.iconPath,
     })
     mainWindow = window
+    const manager = createBrowserGuestManager(window, {
+      hostOrigin: next.origin,
+      onState: (sessionId, state, capture) => { bridge.publish(sessionId, state, capture) },
+    })
+    browserManager = manager
+    bridge.attach(manager)
+    disposeBrowserIpc = installBrowserIpc({ window, origin: next.origin, manager })
     disposeRemoteIpc = installRemoteIpc({ window, origin: next.origin, helper: next })
     nativeChrome = createNativeChrome({ window, origin: next.origin, iconPath: runtimeConfig.iconPath })
     disposeActivation = next.onActivate(() => { nativeChrome?.showWindow() })
     disposeHelperClosed = next.onClosed((reason) => {
       if (helper !== next || quitting || reason === 'closed') return
       helper = undefined
+      void stopBrowser()
       disposeRemoteIpc?.()
       disposeRemoteIpc = undefined
       if (!window.isDestroyed()) {
@@ -116,6 +161,7 @@ function openWindow(): Promise<void> {
     })
     window.on('closed', () => {
       if (mainWindow !== window) return
+      void stopBrowser()
       nativeChrome?.dispose()
       nativeChrome = undefined
       mainWindow = undefined

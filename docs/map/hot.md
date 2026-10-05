@@ -18,7 +18,7 @@
 
 ## 桌面壳与 Host 启动
 
-- **路线**：Electron 壳在 `apps/desktop-electron/src/main.ts`、`window.ts`、`native-chrome.ts`；Go helper `apps/desktop/cmd/electron-helper/main.go` 经 `apps/internal/hostlaunch/launcher.go` 启动 Host，并复用 `apps/desktop/internal/desktopremote/service.go` 与 `bridge.go`。helper stdio、远程连接 preload/main 授权分别在 `helper-client.ts`、`preload.ts`、`remote-ipc.ts`。
+- **路线**：Electron 壳在 `apps/desktop-electron/src/main.ts`、`window.ts`、`native-chrome.ts`；Go helper `apps/desktop/cmd/electron-helper/main.go` 经 `apps/internal/hostlaunch/launcher.go` 启动 Host，并复用 `apps/desktop/internal/desktopremote/service.go` 与 `bridge.go`。helper stdio、远程连接 preload/main 授权分别在 `helper-client.ts`、`preload.ts`、`remote-ipc.ts`；桌面浏览器 guest、私有 Host 桥与受限呈现 IPC 在 `browser-guest.ts`、`browser-bridge.ts`、`browser-ipc.ts`。
 - **技术与边界**：`make dev` 启动 Electron 开发态，`make install` 安装由 `pnpm run build:desktop` 组装的 `dist/Coding.app`。Web UI、RPC 和会话由共享 Client/Host 包拥有；开发 home 独立，生产配置共享 `~/.dsh` 且先取得安装版单实例锁。壳与 Host 边界见[桌面原生验收](../desktop-shell-comparison.md)，运行限制见 [Electron README](../../apps/desktop-electron/README.md)。
 - **连带与验证**：Host 就绪记录或所有权改动核对 `packages/bundle/web-app/src/managed-host.ts`、`apps/internal/hostlaunch` 与 Go helper；远程连接协议改动核对 `desktopremote`、`helperwire`、Electron IPC 和 Client 工作区。打包资源同步 `scripts/build-electron-helper.ts`、`scripts/package-electron-macos-app.ts` 与对应测试。开发态、SSH 和打包版分别做原生验证，命令见[应用条目](#appsdesktop-electron)。
 
@@ -180,7 +180,7 @@
 
 ## packages/client/ui-open-in-app
 
-- **拥有**：工作区打开能力的浏览器半：会话页头分体入口（`OpenInAppAction`）及右侧边栏、终端底栏开关（`WorkbenchPanelToggles`），均占用 `conversation.session.header.utilities`；欢迎页开关占用 `conversation.hero.actions`；内置工作台（`WorkspaceWorkbench`，占用 root scope `workbench`）按 Session 持有功能菜单、统一的 `file`／`browser`／`terminal` 标签、文件视图及右侧终端，声明 `workbench.browser`／`workbench.browser.tabs` 子 slot；保留式底栏终端（`RetainedTerminalPanel`）独立占用 `workbench.bottom`；另有 `OpenInAppController`。
+- **拥有**：工作区打开能力的浏览器半：会话页头分体入口（`OpenInAppAction`）及右侧边栏、终端底栏开关（`WorkbenchPanelToggles`），均占用 `conversation.session.header.utilities`；欢迎页开关占用 `conversation.hero.actions`；内置工作台（`WorkspaceWorkbench`，占用 root scope `workbench`）按 Session 持有功能菜单、唯一共享新增入口、统一的文件管理器／文件预览／浏览器页面／终端标签、文件视图及右侧终端，声明 `workbench.browser`／`workbench.browser.tabs` 子 slot；保留式底栏终端（`RetainedTerminalPanel`）独立占用 `workbench.bottom`；另有 `OpenInAppController`。
 - **不拥有**：浏览器画面、人工导航和标签操作属于 `packages/client/ui-browser`；Host 路由（应用启动、文件 list/read、终端 WebSocket）属于 `packages/host/open-in-app`；workbench 壳层几何与 `ctx.layout` 属于 `packages/client/ui-layout`；`conversation.session.header.utilities` 与 `conversation.hero.actions` 座位声明属于 `packages/client/ui-conversation`。
 - **入口**：`packages/client/ui-open-in-app/src/client/index.ts`（注入 `slots`、`locale`、`layout`、`sessions`、`workspaces`；通过 `ctx.slots.inject(...)` 在各座位注册）；node 半是空 apply。
 - **接线**：`packages/bundle/web-app/cordis.patch.yml` 的 `ui-open-in-app` 行与 host 行 `open-in-app` 并排挂载；共享常量经 `@deepseek-ai/dsh-host-open-in-app/shared`。
@@ -191,13 +191,13 @@
 
 ## packages/client/ui-browser
 
-- **拥有**：占用 `workbench.browser` 和 `workbench.browser.tabs` 的会话级截图、人工地址栏／历史／页面标签与截图坐标交互，通过 `syncBrowserTabs()` 把每个 Host 页面同步为统一顶栏中的 `browser` 标签，以及每 Session 的观测轮询与图片 URL 生命周期。
+- **拥有**：占用 `workbench.browser` 和 `workbench.browser.tabs` 的会话级人工地址栏／历史／页面标签，通过 `syncBrowserTabs()` 把每个 Host 页面同步为统一顶栏中的 `browser` 标签；Web/CLI 的截图坐标交互、观测轮询与图片 URL 生命周期；桌面端的原生 guest 呈现请求，不请求 PNG 镜像。
 - **不拥有**：slot 声明、功能菜单、统一工作台标签状态、文件视图和终端（`packages/client/ui-open-in-app`）；Host 的 `browser.control` 实现与信任限制（`packages/host/apiproxy`、`packages/client/connection`）；浏览器状态与模型工具（`packages/browser/browser`、`packages/browser/tool-browser`）。
 - **入口**：`packages/client/ui-browser/src/client/index.ts`（注入 `slots`、`locale`、`connection`，两个 slot 共用会话控制器）；node 半是空 apply。
 - **接线**：`packages/bundle/web-app/cordis.patch.yml` 的 `ui-browser` 行，依赖 `ui-open-in-app` 声明的两个 slot。
 - **关键文件**：`packages/client/ui-browser/src/client/BrowserMirror.tsx`、`packages/client/ui-browser/src/client/controller.ts`、`packages/client/ui-browser/src/client/wire.ts`。
 - **改这里要同步**：人工命令同步 `packages/host/apiproxy/src/api/browser.schema.ts` 与 `packages/browser/browser`；slot owner 改动同步 `ui-open-in-app`；用户可见操作同步[使用指南](../user/guide/index.md#让-agent-使用浏览器)。
-- **不变量**：页面只作为经校验的 PNG 画面进入 Client，绝不嵌入目标页面；截图等比缩小且不超过原生大小，坐标命令绑定当前画面身份；Agent 操作持有 Host 操作权时控件禁用；旧 generation／revision 和晚到的截图不能覆盖新状态，Blob URL 在换帧、消失和卸载时释放。
+- **不变量**：Web/CLI 页面只作为经校验的 PNG 画面进入 Client，截图等比缩小且不超过原生大小，坐标命令绑定当前画面身份；桌面端使用主进程持有的 `WebContentsView`，renderer 只呈现 guest 的位置，不使用 `<webview>` 或 PNG 镜像；Agent 操作持有 Host 操作权时控件禁用；旧 generation／revision 和晚到的截图不能覆盖新状态，Web/CLI Blob URL 在换帧、消失和卸载时释放。
 - **测试**：`pnpm exec vitest run packages/client/ui-browser/tests`
 
 ## packages/client/ui-theme
@@ -235,12 +235,12 @@
 
 ## apps/desktop-electron
 
-- **拥有**：Electron 窗口、macOS 菜单和托盘、受限 Remote-SSH preload/main IPC、Go helper 客户端，以及开发与生产运行路径校验。
-- **不拥有**：Remote-SSH 实现与 bridge（归 `apps/desktop/internal/desktopremote`）、Host 生命周期协议（归 `apps/internal/hostlaunch`）、UI 和会话（归 Client/Host 插件）；七项浏览器工具与 Playwright 页面归 [浏览器工具包](../../packages/browser/tool-browser/README.md)及其[提供方](../../packages/browser/browser-playwright/README.md)，工作台截图和人工坐标命令归 [ui-browser](../../packages/client/ui-browser/README.md)，桌面壳不持有受控 guest。
+- **拥有**：Electron 窗口、macOS 菜单和托盘、受限 preload/main IPC、Go helper 客户端、按 Session 管理的实时浏览器 guest 与 Host 私有回环桥，以及开发与生产运行路径校验。
+- **不拥有**：Remote-SSH 实现与 bridge（归 `apps/desktop/internal/desktopremote`）、Host 生命周期协议（归 `apps/internal/hostlaunch`）、UI 和会话（归 Client/Host 插件）；七项浏览器工具归 [浏览器工具包](../../packages/browser/tool-browser/README.md)，桌面 Host 能力契约归 [Electron 提供方](../../packages/browser/browser-electron/README.md)，Web/CLI 的 Playwright 页面归其[提供方](../../packages/browser/browser-playwright/README.md)，工作台标签与呈现请求归 [ui-browser](../../packages/client/ui-browser/README.md)。
 - **入口**：`apps/desktop-electron/src/main.ts`；Go 进程入口在 `apps/desktop/cmd/electron-helper/main.go`。`make dev` 与 `pnpm run dev:electron` 启动开发态；`build:desktop` 经 `scripts/package-electron-macos-app.ts` 组装生产包，`make install` 才将其安装到 `/Applications/Coding.app`。
-- **关键文件**：`apps/desktop-electron/src/window.ts`、`native-chrome.ts`、`preload.ts`、`remote-ipc.ts`、`helper-client.ts`、`runtime-config.ts`、`apps/desktop/internal/helperwire/`。
+- **关键文件**：`apps/desktop-electron/src/window.ts`、`native-chrome.ts`、`preload.ts`、`remote-ipc.ts`、`browser-guest.ts`、`browser-bridge.ts`、`browser-ipc.ts`、`helper-client.ts`、`runtime-config.ts`、`apps/desktop/internal/helperwire/`。
 - **改这里要同步**：Remote-SSH 输入与状态同步 `packages/client/ui-workspace/src/client/remote.ts`、`apps/desktop/internal/desktopremote` 与 `apps/desktop/cmd/electron-helper`；生产路径及资源（含 Playwright 浏览器）同步 `scripts/build-electron-helper.ts`、`scripts/package-electron-macos-app.ts` 和 `apps/desktop-electron/README.md`。
-- **不变量**：main 对每次 IPC 核验窗口、主 frame、精确 Host origin 和输入；同源重载期间暂停授权，窗口丢失即撤权；helper 不经 renderer 转交 SSH 凭据或 bridge token。生产配置使用共享 `~/.dsh`，Go helper 在操作前取得安装版单实例锁；Chromium `userData` 使用独立目录。
+- **不变量**：main 对每次 IPC 核验窗口、主 frame、精确 Host origin 和输入；同源重载期间暂停授权，窗口丢失即撤权；helper 不经 renderer 转交 SSH 凭据或浏览器 bridge token。浏览器桥断开后失效并清理 guest，不切换到 Playwright；按 Session 临时 partition 隔离，隐藏页面仅卸载视图。生产配置使用共享 `~/.dsh`，Go helper 在操作前取得安装版单实例锁；Chromium `userData` 使用独立目录。
 - **测试**：定向运行 `pnpm exec vitest run apps/desktop-electron/tests scripts/build-electron-helper.spec.ts scripts/package-electron-macos-app.spec.ts` 和 `cd apps/desktop && go test ./cmd/electron-helper ./internal/desktopremote ./internal/helperwire`；开发窗口另跑 `pnpm run test:electron:smoke`，回环 SSH fixture 分别运行 `pnpm run test:electron:remote-basic` 与 `pnpm run test:electron:remote-ssh`，打包版启动用 `pnpm run test:electron:packaged` 单独验证。
 
 ## packages/bundle/base

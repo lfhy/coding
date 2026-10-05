@@ -2,10 +2,12 @@
 import { execFile as execFileCallback } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { readFile, readdir, lstat, mkdir, cp, rm, rename, writeFile, copyFile, chmod, open, realpath } from 'node:fs/promises'
+import { isBuiltin } from 'node:module'
 import { join, dirname, resolve, sep } from 'node:path'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import { createPackage, extractFile, getRawHeader, listPackage } from '@electron/asar'
+import ts from 'typescript'
 
 const execFile = promisify(execFileCallback)
 const root = resolve(import.meta.dirname, '..')
@@ -68,6 +70,26 @@ async function requireFile(path: string): Promise<void> {
 async function requireDirectory(path: string): Promise<void> {
   const entry = await lstat(path).catch(() => undefined)
   if (!entry?.isDirectory()) throw new Error(`package: required directory missing: ${path}`)
+}
+
+async function validateMainImports(path: string): Promise<void> {
+  const source = ts.createSourceFile(path, await readFile(path, 'utf8'), ts.ScriptTarget.Latest, true)
+  const checkSpecifier = (specifier: string): void => {
+    if (specifier !== 'electron' && !isBuiltin(specifier)) {
+      throw new Error(`package: unresolved Electron main import: ${specifier}`)
+    }
+  }
+  const visit = (node: ts.Node): void => {
+    if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier &&
+      ts.isStringLiteral(node.moduleSpecifier)) {
+      checkSpecifier(node.moduleSpecifier.text)
+    } else if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
+      const argument = node.arguments[0]
+      if (argument && ts.isStringLiteral(argument)) checkSpecifier(argument.text)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
 }
 
 async function exists(path: string): Promise<boolean> {
@@ -143,6 +165,20 @@ async function validatePlaywright(paths: PackagingPaths): Promise<void> {
   await requireFile(join(paths.playwright, 'cli.js'))
 }
 
+async function validateElectronBrowser(paths: PackagingPaths): Promise<void> {
+  const modules = join(paths.runtime, 'runtime', 'node_modules')
+  const provider = join(modules, '@deepseek-ai', 'dsh-browser-electron')
+  const manifest: unknown = JSON.parse(await readFile(join(provider, 'package.json'), 'utf8'))
+  const record = manifest as { name?: unknown; exports?: { './protocol'?: { default?: unknown } } }
+  if (typeof manifest !== 'object' || manifest === null || record.name !== '@deepseek-ai/dsh-browser-electron' ||
+    record.exports?.['./protocol']?.default !== './lib/types/protocol.js') {
+    throw new Error('package: invalid Host runtime Electron browser protocol export')
+  }
+  await requireFile(join(provider, 'lib', 'index.js'))
+  await requireFile(join(provider, 'lib', 'types', 'protocol.js'))
+  await requireFile(join(modules, 'ws', 'index.js'))
+}
+
 async function validateShell(browserRoot: string, run: Run): Promise<string> {
   await requireDirectory(browserRoot)
   const shell = join(browserRoot, shellDirectory)
@@ -205,7 +241,9 @@ async function validate(paths: PackagingPaths, run: Run): Promise<string> {
     || manifest.devDependencies?.electron !== electronVersion) {
     throw new Error('package: unexpected Electron application manifest')
   }
-  await requireFile(join(paths.shell, 'lib', 'main.js'))
+  const main = join(paths.shell, 'lib', 'main.js')
+  await requireFile(main)
+  await validateMainImports(main)
   await requireFile(join(paths.shell, 'lib', 'preload.cjs'))
   await requireFile(paths.icon)
   await requireFile(paths.nativeIcon)
@@ -228,6 +266,7 @@ async function validate(paths: PackagingPaths, run: Run): Promise<string> {
   }
   await assertArm64(paths.helper, run)
   await validatePlaywright(paths)
+  await validateElectronBrowser(paths)
 
   const agentManifest = join(paths.remoteAgent, 'manifest.json')
   const agent: unknown = JSON.parse(await readFile(agentManifest, 'utf8'))

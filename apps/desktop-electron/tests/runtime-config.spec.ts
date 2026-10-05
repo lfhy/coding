@@ -44,6 +44,8 @@ async function fixture(): Promise<RuntimeConfigOptions> {
     environment: {
       PATH: '/bin', DEEPSEEK_API_KEY: 'local-key', DEEPSEEK_BASE_URL: 'https://example.test',
       DSH_REMOTE_BRIDGE_URL: 'old-origin', DSH_REMOTE_BRIDGE_TOKEN: 'old-token',
+      DSH_DESKTOP_BROWSER_BRIDGE_ORIGIN: 'ws://127.0.0.1:1234/browser-bridge',
+      DSH_DESKTOP_BROWSER_BRIDGE_TOKEN: 'inherited-secret', DSH_DESKTOP_BROWSER_BRIDGE_EXTRA: 'untrusted',
       DSH_AGENTS_HOME: '/tmp/old-agents', DSH_HOME: '/tmp/old-home',
       DSH_CWD: '/tmp/old-cwd', DSH_APP_VERSION: 'old-version',
       CODING_HOST_COMMAND: '/tmp/injected-host', CODING_REPO_ROOT: '/tmp/other-repo',
@@ -74,6 +76,7 @@ describe('Electron runtime configuration', () => {
       },
     })
     expectCleanEnvironment(result.helper.env)
+    expect(options.environment.DSH_DESKTOP_BROWSER_BRIDGE_TOKEN).toBe('inherited-secret')
     expect(options.environment.DSH_HOME).toBe('/tmp/old-home')
     await expect(lstat(home)).rejects.toMatchObject({ code: 'ENOENT' })
   })

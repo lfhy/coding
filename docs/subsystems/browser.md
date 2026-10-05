@@ -1,12 +1,12 @@
 # 浏览器使用
 
-浏览器使用能力由 [`@deepseek-ai/dsh-browser`](../../packages/browser/browser/README.md) 定义 `ctx.browserUse`，由 [Playwright 提供方](../../packages/browser/browser-playwright/README.md)实现，并由[七项浏览器工具](../../packages/browser/tool-browser/README.md)消费。服务按 `SessionId` 隔离浏览器上下文与标签页；工具负责调用会话的权限判断、所需审批和模型结果，完全访问的免逐次审批条件见[工具 README](../../packages/browser/tool-browser/README.md)。提供方负责导航输入校验、页面资源及清理，使用 Chromium 原生联网，不过滤目的地、重定向或子资源。工作台读取 Host 的标签页状态与画面；预览 API 的入站信任限制由提供方持有，与页面出站联网无关。
+浏览器使用能力由 [`@deepseek-ai/dsh-browser`](../../packages/browser/browser/README.md) 定义 `ctx.browserUse`，由 Web/CLI 的 [Playwright 提供方](../../packages/browser/browser-playwright/README.md)或桌面 Host 的 [Electron 提供方](../../packages/browser/browser-electron/README.md)实现，并由[七项浏览器工具](../../packages/browser/tool-browser/README.md)消费。服务按 `SessionId` 隔离浏览器资源与标签页；工具负责调用会话的权限判断、所需审批和模型结果，完全访问的免逐次审批条件见[工具 README](../../packages/browser/tool-browser/README.md)。提供方负责导航输入校验、页面资源及清理，使用 Chromium 原生联网，不过滤目的地、重定向或子资源。工作台读取 Host 标签页状态；Web/CLI 绘制 Host 操作后捕获的 PNG，桌面端呈现与 Agent 共用的实时 `WebContentsView` guest。预览 API 的入站信任限制由提供方持有，与页面出站联网无关。
 
 以下跨包类型声明来自 [`packages/browser/browser/src/types.ts`](../../packages/browser/browser/src/types.ts)。服务方法的完整签名与 JSDoc 由下方 Cordis API 区域生成。
 
 ## 命令与引用
 
-`BrowserCommand` 和 `BrowserHumanCommand` 是封闭的判别联合。`click` 与 `fill` 使用最近观测中的不透明元素 `ref` 和 `revision`，而不是选择器或脚本；提供方必须拒绝跨标签页及过期引用。`close` 释放会话浏览器资源。人工命令在同一会话中建立、选择、关闭标签页或导航活跃标签页，标签页 id 关闭后不可复用。`set-viewport` 调整会话所有页面的视口，状态暴露当前宽高；尺寸改变使旧截图、元素引用和审批失效。视口边界由[提供方](../../packages/browser/browser-playwright/README.md)校验。`browserGeneration` 标识会话浏览器资源，`generation` 标识标签页的页面代际；状态每次发布后递增 `stateRevision`，因此切离又切回也不能沿用旧审批。调用前采样的 `expectedTarget` 区分无会话和已有标签页，并在执行队列中复核，无论该调用是否需要审批；空白标签页也暴露 generation。
+`BrowserCommand` 和 `BrowserHumanCommand` 是封闭的判别联合。`click` 与 `fill` 使用最近观测中的不透明元素 `ref` 和 `revision`，而不是选择器或脚本；提供方必须拒绝跨标签页及过期引用。`close` 释放会话浏览器资源。人工命令在同一会话中建立、选择、关闭标签页或导航活跃标签页，标签页 id 关闭后不可复用。`set-viewport` 调整会话所有页面的 CSS 视口，状态暴露当前宽高；尺寸改变使旧截图、元素引用和审批失效。视口边界与 PNG 像素密度由[提供方](../../packages/browser/browser-playwright/README.md)持有，交互坐标始终按 CSS 视口计算。`browserGeneration` 标识会话浏览器资源，`generation` 标识标签页的页面代际；状态每次发布后递增 `stateRevision`，因此切离又切回也不能沿用旧审批。模型取得会话操作权后调用 `prepareTarget` 只刷新目标身份，不发布页面观测；它区分无会话和已有标签页，把 `expectedTarget` 交给审批及执行队列复核，无论该调用是否需要审批。页面在两次调用之间自行导航可绑定新目标，审批期间的再次变化仍拒绝本次调用；空白标签页也暴露 generation。
 
 ```ts type-equiv
 /** 一次会话浏览器操作。元素引用只在产生它的标签页与观测修订版中有效。 */
@@ -80,7 +80,7 @@ export interface BrowserSessionState {
 
 ## 观测与截图
 
-成功命令发布一份 `BrowserObservation`。`generation` 改变时旧修订版和元素引用全部失效；`latest(sessionId)` 只返回活跃标签页最近成功发布的捕获，不执行页面操作，尚无观测或关闭后返回 `undefined`。`state(sessionId)` 可读取空白标签页而不启动页面操作。拒绝或取消不会发布新的观测。`png` 与可序列化的观测分开保存，可能为 `null`；面向模型的工具仅在显式截图时持久化图像附件。
+成功命令发布一份 `BrowserObservation`。`generation` 改变时旧修订版和元素引用全部失效；`latest(sessionId)` 只返回活跃标签页最近成功发布的捕获，不执行页面操作，尚无观测或关闭后返回 `undefined`。`state(sessionId)` 可读取空白标签页而不启动页面操作。拒绝或取消不会发布新的观测。`png` 与可序列化的观测分开保存，可能为 `null`；Web/CLI 以它绘制操作后的页面，桌面 Client 不以 PNG 替代 live guest。面向模型的工具仅在显式截图时持久化图像附件。
 
 ```ts type-equiv
 /** 成功操作后的纯 JSON 观测；generation 改变时旧修订版及元素引用全部失效。 */
@@ -111,7 +111,7 @@ export interface BrowserCapture {
 
 ## 失败与生命周期
 
-`BrowserUseError.code` 供消费方区分无效 URL、过期引用、已关闭会话、策略拒绝、浏览器不可用与其他操作失败；调用方取消则保留 `AbortSignal` 的原因。`closeSession(sessionId)` 等待资源停稳，不存在资源时正常完成。页面与最近捕获只存在于提供方运行期间，不定义重启恢复或跨会话共享。具体提供方的导航输入、原生联网和部署限制见其 [README](../../packages/browser/browser-playwright/README.md)。
+`BrowserUseError.code` 供消费方区分无效 URL、过期引用、已关闭会话、策略拒绝、浏览器不可用与其他操作失败；调用方取消则保留 `AbortSignal` 的原因。`closeSession(sessionId)` 等待资源停稳，不存在资源时正常完成。页面与最近捕获只存在于提供方运行期间，不定义重启恢复或跨会话共享。桌面 Host 与主进程的私有连接断开、超时或取消会使相关 guest 失效，不会改道到 Playwright；具体导航输入、联网与部署限制见两个提供方的 README。
 
 ```ts type-equiv
 /** 可供消费方识别的浏览器失败种类；调用方取消保留 AbortSignal 的原因。 */
@@ -153,6 +153,15 @@ abstract acquireOperation(sessionId: SessionId, signal: AbortSignal): Promise<()
  * @returns 模型操作从审批到执行结束的占用状态。
  */
 abstract operationActive(sessionId: SessionId): boolean
+
+/**
+ * 在取得操作权后刷新当前目标的身份，不读取页面内容或截图。
+ * 静态提供方默认从已发布状态绑定目标；有活页的提供方应覆盖以处理页面自行导航。
+ * @param sessionId - 要绑定的浏览器会话。
+ * @param signal - 等待目标刷新期间的取消信号。
+ * @returns 审批及后续执行共用的确切目标身份。
+ */
+prepareTarget(sessionId: SessionId, signal: AbortSignal): Promise<BrowserExpectedTarget>
 
 /**
  * 对指定会话执行一个命令，成功时发布对应的观测与可选截图。

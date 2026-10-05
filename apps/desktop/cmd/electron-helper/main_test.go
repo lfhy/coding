@@ -125,6 +125,63 @@ func TestPrepareAgentsHomePrivateAndRejectsSymlink(t *testing.T) {
 	}
 }
 
+func TestBrowserBridgeEnvironment(t *testing.T) {
+	const origin = "ws://127.0.0.1:49152/browser-bridge"
+	const token = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	tests := []struct {
+		name, origin, token   string
+		withOrigin, withToken bool
+		valid                 bool
+	}{
+		{name: "absent", valid: true},
+		{name: "valid", origin: origin, token: token, withOrigin: true, withToken: true, valid: true},
+		{name: "missing origin", token: token, withToken: true},
+		{name: "missing token", origin: origin, withOrigin: true},
+		{name: "empty origin", token: token, withOrigin: true, withToken: true},
+		{name: "empty token", origin: origin, withOrigin: true, withToken: true},
+		{name: "remote address", origin: "ws://192.0.2.1:49152/browser-bridge", token: token, withOrigin: true, withToken: true},
+		{name: "host alias", origin: "ws://localhost:49152/browser-bridge", token: token, withOrigin: true, withToken: true},
+		{name: "wrong scheme", origin: "wss://127.0.0.1:49152/browser-bridge", token: token, withOrigin: true, withToken: true},
+		{name: "wrong path", origin: "ws://127.0.0.1:49152/remote-bridge", token: token, withOrigin: true, withToken: true},
+		{name: "credentials", origin: "ws://user@127.0.0.1:49152/browser-bridge", token: token, withOrigin: true, withToken: true},
+		{name: "query", origin: origin + "?token=" + token, token: token, withOrigin: true, withToken: true},
+		{name: "port zero", origin: "ws://127.0.0.1:0/browser-bridge", token: token, withOrigin: true, withToken: true},
+		{name: "port overflow", origin: "ws://127.0.0.1:65536/browser-bridge", token: token, withOrigin: true, withToken: true},
+		{name: "leading zero port", origin: "ws://127.0.0.1:0123/browser-bridge", token: token, withOrigin: true, withToken: true},
+		{name: "short token", origin: origin, token: token[:63], withOrigin: true, withToken: true},
+		{name: "uppercase token", origin: origin, token: "A" + token[1:], withOrigin: true, withToken: true},
+		{name: "non-hex token", origin: origin, token: "g" + token[1:], withOrigin: true, withToken: true},
+		{name: "line break token", origin: origin, token: token + "\n", withOrigin: true, withToken: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("DSH_DESKTOP_BROWSER_BRIDGE_ORIGIN", test.origin)
+			t.Setenv("DSH_DESKTOP_BROWSER_BRIDGE_TOKEN", test.token)
+			if !test.withOrigin {
+				if err := os.Unsetenv("DSH_DESKTOP_BROWSER_BRIDGE_ORIGIN"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if !test.withToken {
+				if err := os.Unsetenv("DSH_DESKTOP_BROWSER_BRIDGE_TOKEN"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			got, err := browserBridgeEnvironment()
+			if (err == nil) != test.valid {
+				t.Fatalf("bridge environment valid = %v, want %v", err == nil, test.valid)
+			}
+			if err != nil && (strings.Contains(err.Error(), test.token) && test.token != "" ||
+				strings.Contains(err.Error(), test.origin) && test.origin != "") {
+				t.Fatal("bridge secret leaked into validation error")
+			}
+			if test.valid && (got.origin != test.origin || got.token != test.token) {
+				t.Fatal("bridge environment not preserved")
+			}
+		})
+	}
+}
+
 func TestHostEnvironmentOverridesAmbientAgentHome(t *testing.T) {
 	t.Setenv("DSH_AGENTS_HOME", "/global/agents")
 	home := filepath.Join(t.TempDir(), "isolated")
@@ -132,9 +189,49 @@ func TestHostEnvironmentOverridesAmbientAgentHome(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	env := hostEnvironment("http://127.0.0.1:1234", "private-bridge-token", agents)
+	env := hostEnvironment("http://127.0.0.1:1234", "private-bridge-token", agents, browserBridgeConfig{})
 	if env["DSH_AGENTS_HOME"] != agents || env["DSH_AGENTS_HOME"] == os.Getenv("DSH_AGENTS_HOME") {
 		t.Fatalf("agent home not isolated: %q", env["DSH_AGENTS_HOME"])
+	}
+	if env["DSH_REMOTE_BRIDGE_URL"] != "http://127.0.0.1:1234" || env["DSH_REMOTE_BRIDGE_TOKEN"] != "private-bridge-token" {
+		t.Fatal("remote bridge environment changed")
+	}
+	if _, present := env["DSH_DESKTOP_BROWSER_BRIDGE_TOKEN"]; present {
+		t.Fatal("browser bridge token unexpectedly set")
+	}
+}
+
+func TestHostEnvironmentForwardsBrowserBridgeWithoutExposingItElsewhere(t *testing.T) {
+	browser := browserBridgeConfig{
+		origin: "ws://127.0.0.1:49152/browser-bridge",
+		token:  "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+	}
+	env := hostEnvironment("http://127.0.0.1:1234", "remote-token", "/private/agents", browser)
+	if env["DSH_DESKTOP_BROWSER_BRIDGE_ORIGIN"] != browser.origin ||
+		env["DSH_DESKTOP_BROWSER_BRIDGE_TOKEN"] != browser.token {
+		t.Fatal("browser bridge environment not forwarded to Host")
+	}
+	if env["DSH_REMOTE_BRIDGE_TOKEN"] != "remote-token" {
+		t.Fatal("remote bridge token changed")
+	}
+}
+
+func TestInvalidBrowserBridgeRejectedBeforeHelperHomeWrites(t *testing.T) {
+	const secret = "inherited-private-secret"
+	t.Setenv("DSH_DESKTOP_BROWSER_BRIDGE_ORIGIN", "ws://127.0.0.1:49152/browser-bridge")
+	t.Setenv("DSH_DESKTOP_BROWSER_BRIDGE_TOKEN", secret)
+	home := filepath.Join(t.TempDir(), "not-created")
+	args := []string{"--home", home, "--cwd", t.TempDir(), "--runtime-root", t.TempDir(), "--host-version", "dev"}
+	var stdout bytes.Buffer
+	err := run(args, strings.NewReader(""), &stdout)
+	if err == nil || strings.Contains(err.Error(), secret) {
+		t.Fatal("invalid bridge token must fail without exposing the secret")
+	}
+	if stdout.Len() != 0 {
+		t.Fatal("invalid bridge token leaked to helper stdout")
+	}
+	if _, err := os.Stat(home); !os.IsNotExist(err) {
+		t.Fatalf("helper touched home before bridge validation: %v", err)
 	}
 }
 
