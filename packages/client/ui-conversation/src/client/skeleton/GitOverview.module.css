@@ -93,38 +93,64 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
   width: 100%;
   min-width: 0;
 }
 
 .branchButton {
-  padding: 4px;
+  min-height: 32px;
+  padding: 6px 4px;
   border: 0;
   border-radius: 6px;
   background: transparent;
   color: var(--dsw-alias-label-primary);
-  font: var(--dsw-font-xs-strong-13);
+  text-align: left;
+  font: var(--dsw-font-xs-13);
   cursor: pointer;
 }
 
-.branchButton span {
+.branchLabel,
+.metricHeading {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.branchCurrent {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-align: right;
+  font: var(--dsw-font-xs-strong-13);
+}
+
+.metricIcon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--dsw-alias-label-secondary);
 }
 
 .branchList {
+  position: fixed;
+  z-index: 1101;
+  box-sizing: border-box;
   display: grid;
   gap: 4px;
-  max-height: 180px;
   overflow-y: auto;
-  margin-top: 8px;
-  padding: 4px;
+  padding: 6px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
   background: var(--dsw-alias-bg-layer-3);
+  box-shadow: var(--dsw-shadow-lv2);
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
@@ -163,7 +189,6 @@
 }
 
 .metricLabel {
-  flex: none;
   color: var(--dsw-alias-label-secondary);
   font: var(--dsw-font-xs-13);
 }
@@ -174,6 +199,7 @@
   font: var(--dsw-font-xs-strong-13);
   font-variant-numeric: tabular-nums;
   color: var(--dsw-alias-label-primary);
+  overflow-wrap: anywhere;
 }
 
 .additions {
@@ -185,9 +211,26 @@
 }
 
 .actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   margin-top: 16px;
+}
+
+.actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.actions button svg {
+  flex: none;
+}
+
+.pushIcon {
+  transform: rotate(180deg);
 }
 
 .actions button,

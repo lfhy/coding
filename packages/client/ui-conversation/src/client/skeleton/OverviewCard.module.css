@@ -72,11 +72,14 @@
   outline-offset: 2px;
 }
 
-.card > .group:not(:first-of-type),
-.card > [data-overview-git] {
+.card > .group:not(:first-of-type) {
   margin-top: 16px;
   padding-top: 16px;
   border-top: 1px solid var(--dsw-alias-border-l2);
+}
+
+.card [data-overview-git] {
+  margin-top: 8px;
 }
 
 .groupTitle {

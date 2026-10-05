@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import type { CSSProperties, FormEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { IconBranchOutline16, IconChevronRightOutline14, Modal, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
+import {
+  IconBranchOutline16, IconChevronRightOutline14, IconDownloadOutline16, IconListPenOutline16,
+  IconRefreshOutline16, Modal, Toast,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import css from './GitOverview.module.css'
@@ -45,11 +48,15 @@ export function GitOverview({ sessionId, status, branches, checkout, operate, re
   const [open, setOpen] = useState(false)
   const [showBranches, setShowBranches] = useState(false)
   const popoverId = useId()
+  const branchListId = useId()
   const usernameId = useId()
   const passwordId = useId()
   const trigger = useRef<HTMLButtonElement>(null)
   const popover = useRef<HTMLDivElement>(null)
+  const branchTrigger = useRef<HTMLButtonElement>(null)
+  const branchMenu = useRef<HTMLDivElement>(null)
   const [position, setPosition] = useState<CSSProperties | null>(null)
+  const [branchPosition, setBranchPosition] = useState<CSSProperties | null>(null)
   const [busy, setBusy] = useState<'push' | 'pull' | 'resolve' | 'checkout' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [conflict, setConflict] = useState(false)
@@ -108,6 +115,28 @@ export function GitOverview({ sessionId, status, branches, checkout, operate, re
         width,
         maxHeight,
       })
+      const branchAnchor = branchTrigger.current
+      const menu = branchMenu.current
+      if (!branchAnchor || !menu) return
+      const branchRect = branchAnchor.getBoundingClientRect()
+      const panelRect = layer.getBoundingClientRect()
+      if (branchRect.height > 0 && panelRect.height > 0
+        && (branchRect.bottom <= panelRect.top || branchRect.top >= panelRect.bottom
+          || branchRect.bottom <= margin || branchRect.top >= window.innerHeight - margin)) {
+        setShowBranches(false)
+        return
+      }
+      const branchWidth = Math.min(branchRect.width, Math.max(0, window.innerWidth - margin * 2))
+      const branchBelow = Math.max(0, window.innerHeight - margin - branchRect.bottom - gap)
+      const branchAbove = Math.max(0, branchRect.top - margin - gap)
+      const branchUseAbove = branchBelow < Math.min(180, menu.scrollHeight) && branchAbove > branchBelow
+      const branchMaxHeight = Math.min(180, branchUseAbove ? branchAbove : branchBelow)
+      setBranchPosition({
+        left: Math.min(Math.max(branchRect.left, margin), window.innerWidth - branchWidth - margin),
+        top: branchUseAbove ? branchRect.top - gap - Math.min(menu.scrollHeight, branchMaxHeight) : branchRect.bottom + gap,
+        width: branchWidth,
+        maxHeight: branchMaxHeight,
+      })
     }
     place()
     window.addEventListener('scroll', place, true)
@@ -121,7 +150,7 @@ export function GitOverview({ sessionId, status, branches, checkout, operate, re
   useEffect(() => {
     if (!open || auth !== null) return
     const isOutside = (target: EventTarget | null): boolean => target instanceof Node
-      && !trigger.current?.contains(target) && !popover.current?.contains(target)
+      && !trigger.current?.contains(target) && !popover.current?.contains(target) && !branchMenu.current?.contains(target)
     const onPointerDown = (event: PointerEvent) => { if (isOutside(event.target)) close(false) }
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented || popover.current?.contains(event.target as Node)) return
@@ -249,19 +278,28 @@ export function GitOverview({ sessionId, status, branches, checkout, operate, re
         <div ref={popover} id={popoverId} className={css.popover} role="region" aria-label={t('overview.git.title')}
           style={position ?? { visibility: 'hidden', left: 0, top: 0 }}
           onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(true) } }}>
-          <button type="button" className={css.branchButton} aria-expanded={showBranches} disabled={busy !== null}
-            onClick={() => { void toggleBranches() }}>
-            <span>{git.branch ?? t('overview.git.detached')}</span>
+          <button ref={branchTrigger} type="button" className={css.branchButton} aria-expanded={showBranches}
+            aria-controls={branchListId} disabled={busy !== null} onClick={() => { void toggleBranches() }}>
+            <span className={css.branchLabel}>
+              <span className={css.metricIcon} aria-hidden="true"><IconBranchOutline16 /></span>
+              {t('overview.git.branches')}
+            </span>
+            <span className={css.branchCurrent} title={git.branch ?? undefined}>{git.branch ?? t('overview.git.detached')}</span>
             <IconChevronRightOutline14 className={showBranches ? css.chevronOpen : css.chevron} aria-hidden="true" />
           </button>
-          {showBranches && branchList && <div className={css.branchList} role="group" aria-label={t('overview.git.branchList')}>
+          {showBranches && branchList && <div ref={branchMenu} id={branchListId} className={css.branchList} role="group"
+            aria-label={t('overview.git.branchList')}
+            style={branchPosition ?? { visibility: 'hidden', left: 0, top: 0 }}>
             {branchList.branches.map(branch => <button key={branch} type="button" className={css.branchOption}
               aria-current={branch === git.branch ? 'true' : undefined} disabled={busy !== null}
               onClick={() => { void switchBranch(branch) }}>{branch}</button>)}
           </div>}
           <div className={css.metrics}>
             {git.files.length > 0 && <div className={css.metricRow}>
-              <span className={css.metricLabel}>{t('overview.git.changesLabel')}</span>
+              <span className={css.metricHeading}>
+                <span className={css.metricIcon} aria-hidden="true"><IconListPenOutline16 /></span>
+                <span className={css.metricLabel}>{t('overview.git.changesLabel')}</span>
+              </span>
               <span className={css.metricValue}>
                 {t('overview.git.fileCount', { count: git.files.length })}
                 {git.additions > 0 && <> · <span className={css.additions}>+{git.additions}</span></>}
@@ -269,15 +307,20 @@ export function GitOverview({ sessionId, status, branches, checkout, operate, re
               </span>
             </div>}
             {(git.ahead > 0 || git.behind > 0) && <div className={css.metricRow}>
-              <span className={css.metricLabel}>{t('overview.git.syncLabel')}</span>
+              <span className={css.metricHeading}>
+                <span className={css.metricIcon} aria-hidden="true"><IconRefreshOutline16 /></span>
+                <span className={css.metricLabel}>{t('overview.git.syncLabel')}</span>
+              </span>
               <span className={css.metricValue}>{t('overview.git.sync', { ahead: git.ahead, behind: git.behind })}</span>
             </div>}
           </div>
           <div className={css.actions}>
             <button type="button" disabled={busy !== null} onClick={() => { void run('push') }}>
+              <IconDownloadOutline16 className={css.pushIcon} aria-hidden="true" />
               {busy === 'push' ? t('overview.git.pushRunning') : t('overview.git.push')}
             </button>
             <button type="button" disabled={busy !== null} onClick={() => { void run('pull') }}>
+              <IconDownloadOutline16 aria-hidden="true" />
               {busy === 'pull' ? t('overview.git.pullRunning') : t('overview.git.pull')}
             </button>
           </div>
