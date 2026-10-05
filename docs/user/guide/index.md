@@ -16,9 +16,9 @@ macOS 桌面窗口打开时默认最大化，不会进入全屏。双击顶栏�
 
 ## 配置联网搜索
 
-`web_search` 默认使用免费的 DuckDuckGo 搜索，不需要 API 密钥。在**设置 → 联网搜索**可选择 `deepseek-official`；该选择只影响联网搜索，不改变对话模型。DeepSeek 搜索需要单独的 `DEEPSEEK_SEARCH_API_KEY` 凭据，不使用对话模型的 `DEEPSEEK_API_KEY`。
+`web_search` 默认使用免费的 DuckDuckGo 搜索，不需要 API 密钥。在**设置 → 联网搜索**可选择 DuckDuckGo、Tavily（`tavily`）或 DeepSeek（`deepseek-official`）；该选择只影响联网搜索，不改变对话模型。选择 Tavily 时，在该页保存独立的 `TAVILY_API_KEY` 凭据；DeepSeek 搜索使用独立的 `DEEPSEEK_SEARCH_API_KEY`，不使用对话模型的 `DEEPSEEK_API_KEY`。所选提供方缺少凭据或搜索失败时会直接报告错误，不自动切换到其他提供方。
 
-DeepSeek 搜索调用 Anthropic 兼容 Messages API，默认基址为 `https://api.deepseek.com/anthropic/v1`，请求发往其 `/messages` 路径；自定义端点可通过 `web-search-deepseek.baseURL` 或 `DEEPSEEK_SEARCH_BASE_URL` 设置，不能填入对话模型使用的 chat-completions 基址。搜索提供方配置和失败规则见 [DeepSeek 搜索提供方](../../../packages/web/web-search-deepseek/README.md)。
+各提供方的 HTTP(S) 前向代理在**设置 → 联网搜索**分别配置，互不共享。DuckDuckGo 只有代理地址；Tavily 还可修改默认 `https://api.tavily.com` 的 API 基址；DeepSeek 还可修改 Anthropic 兼容 Messages API 的基址，默认 `https://api.deepseek.com/anthropic/v1`。端点、代理和凭据的详细配置见 [DuckDuckGo](../../../packages/web/web-search-duckduckgo/README.md)、[Tavily](../../../packages/web/web-search-tavily/README.md)和 [DeepSeek](../../../packages/web/web-search-deepseek/README.md) 搜索提供方。
 
 ## 选择开始方式
 

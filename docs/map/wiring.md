@@ -284,6 +284,7 @@
 - `web` → `@deepseek-ai/dsh-web`
 - `web-search-duckduckgo` → `@deepseek-ai/dsh-web-search-duckduckgo`
 - `web-search-deepseek` → `@deepseek-ai/dsh-web-search-deepseek`
+- `web-search-tavily` → `@deepseek-ai/dsh-web-search-tavily`
 - `browser-playwright` → `@deepseek-ai/dsh-browser-playwright`
 - `tool-web` → `@deepseek-ai/dsh-tool-web`
 - `tools` → `@deepseek-ai/dsh-tools`

@@ -9,6 +9,7 @@
 | [`web-search-perplexity/`](web-search-perplexity/README.md) | 通过 Perplexity 提供 web 搜索 | 注册到 `ctx.web` |
 | [`web-search-deepseek/`](web-search-deepseek/README.md) | 提供 DeepSeek 原生 web 搜索 | 注册到 `ctx.web` |
 | [`web-search-duckduckgo/`](web-search-duckduckgo/README.md) | 提供无凭据的 DuckDuckGo 公共 HTML 搜索 | 注册到 `ctx.web` |
+| [`web-search-tavily/`](web-search-tavily/README.md) | 通过 Tavily API 提供 web 搜索 | 注册到 `ctx.web` |
 | [`web-fetch-http/`](web-fetch-http/README.md) | 抓取公共 HTTP 和 HTTPS 资源 | 注册到 `ctx.web` |
 | [`tool-web/`](tool-web/README.md) | 向模型公开 web 搜索和抓取 | 注册到 `ctx.tools` |
 

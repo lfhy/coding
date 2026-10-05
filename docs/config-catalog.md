@@ -3151,8 +3151,10 @@ export interface Config {
   apiKey?: string
   /** 每次搜索独立解析的凭据引用；默认 `DEEPSEEK_SEARCH_API_KEY`。 */
   apiKeyEnv?: string
-  /** Anthropic-compatible endpoint base; `/messages` is appended. */
+  /** Anthropic 兼容端点基址；请求会追加 `/messages`。 */
   baseURL?: string
+  /** 仅当前搜索使用的 HTTP(S) 前向代理地址。 */
+  proxyURL?: string
   /** Anthropic-format model name. Defaults to `deepseek-v4-flash`. */
   model?: string
   /** `anthropic-version` header value. Defaults to `2023-06-01`. */
@@ -3164,7 +3166,23 @@ export interface Config {
 }
 ```
 
-Source: [`packages/web/web-search-deepseek/src/index.ts:47`](../packages/web/web-search-deepseek/src/index.ts)
+Source: [`packages/web/web-search-deepseek/src/index.ts:48`](../packages/web/web-search-deepseek/src/index.ts)
+
+<a id="deepseek-aidsh-web-search-duckduckgo"></a>
+
+## `@deepseek-ai/dsh-web-search-duckduckgo`
+
+Requires: `web`
+
+```ts config-catalog
+/** DuckDuckGo 搜索的可选 HTTP(S) 前向代理配置。 */
+export interface Config {
+  /** 下次搜索使用的代理 URL；缺省时直连。 */
+  proxyURL?: string
+}
+```
+
+Source: [`packages/web/web-search-duckduckgo/src/index.ts:16`](../packages/web/web-search-duckduckgo/src/index.ts)
 
 <a id="deepseek-aidsh-web-search-exa"></a>
 
@@ -3213,6 +3231,28 @@ export interface Config {
 ```
 
 Source: [`packages/web/web-search-perplexity/src/index.ts:32`](../packages/web/web-search-perplexity/src/index.ts)
+
+<a id="deepseek-aidsh-web-search-tavily"></a>
+
+## `@deepseek-ai/dsh-web-search-tavily`
+
+Requires: `web`
+
+```ts config-catalog
+/** 可保存的 Tavily 搜索配置；密钥引用每次请求重新解析。 */
+export interface Config {
+  /** 密钥字面值；非空时优先于凭据引用。 */
+  apiKey?: string
+  /** 凭据引用，默认 `TAVILY_API_KEY`。 */
+  apiKeyEnv?: string
+  /** 搜索端点基址，追加 `/search`。 */
+  baseURL?: string
+  /** 只作用于此提供方的 HTTP(S) 前向代理。 */
+  proxyURL?: string
+}
+```
+
+Source: [`packages/web/web-search-tavily/src/index.ts:28`](../packages/web/web-search-tavily/src/index.ts)
 
 <a id="deepseek-aidsh-workflow-worker-thread"></a>
 
@@ -3322,7 +3362,6 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-tool-cordis` — requires `tools` · `systemPrompt` · `dynamicCordisRunner` · `cordisInspect` ([`packages/extensions/tool-cordis/src/index.ts`](../packages/extensions/tool-cordis/src/index.ts))
 - `@deepseek-ai/dsh-tool-subagent-control` — requires `tools` · `subagents` ([`packages/subagent/tool-subagent-control/src/index.ts`](../packages/subagent/tool-subagent-control/src/index.ts))
 - `@deepseek-ai/dsh-user-questions` ([`packages/interaction/user-questions/src/index.ts`](../packages/interaction/user-questions/src/index.ts))
-- `@deepseek-ai/dsh-web-search-duckduckgo` — requires `web` ([`packages/web/web-search-duckduckgo/src/index.ts`](../packages/web/web-search-duckduckgo/src/index.ts))
 - `@deepseek-ai/dsh-workspace` — requires `storageDomain` · `sessionPersistence` ([`packages/workspace/workspace/src/index.ts`](../packages/workspace/workspace/src/index.ts))
 
 ## Seam packages (not directly loadable)

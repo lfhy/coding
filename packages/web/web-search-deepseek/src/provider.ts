@@ -8,6 +8,7 @@
 
 import { WebError } from '@deepseek-ai/dsh-web'
 import { isIP } from 'node:net'
+import { fetch as proxyFetch, ProxyAgent } from 'undici'
 import type {
   WebSearchProvider,
   WebSearchRequest,
@@ -35,7 +36,11 @@ export const DEEPSEEK_PROVIDER_ID = 'deepseek-official'
  */
 export const DEEPSEEK_DEFAULT_BASE_URL = 'https://api.deepseek.com/anthropic/v1'
 
-/** 拒绝凭据、内网字面地址及会改变目标路径解释的端点部分。 */
+/**
+ * 校验搜索端点，拒绝凭据、内网字面地址及会改变目标路径解释的部分。
+ * @param raw - 待检查的端点基址。
+ * @returns 仅符合端点限制的 HTTPS 地址返回 true；不解析 DNS。
+ */
 export function isSafeBaseUrl(raw: string): boolean {
   try {
     const url = new URL(raw)
@@ -44,6 +49,24 @@ export function isSafeBaseUrl(raw: string): boolean {
       && hostname !== 'localhost' && !hostname.endsWith('.localhost')
       && !hostname.endsWith('.local') && !hostname.endsWith('.internal')
       && !url.username && !url.password && !url.search && !url.hash
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 校验前向代理地址；允许本机地址，但拒绝凭据、查询和片段。
+ * @param raw - 待检查的代理地址。
+ * @returns 仅无用户信息的 HTTP(S) 代理地址返回 true。
+ */
+export function isSafeProxyUrl(raw: string): boolean {
+  try {
+    const url = new URL(raw)
+    const authority = raw.match(/^https?:[/\\]+([^/\\?#]*)/iu)?.[1]
+    return (url.protocol === 'http:' || url.protocol === 'https:')
+      && url.hostname.length > 0 && authority !== undefined && !authority.includes('@')
+      && !url.username && !url.password
+      && !raw.includes('?') && !raw.includes('#')
   } catch {
     return false
   }
@@ -67,6 +90,14 @@ export const DEEPSEEK_DEFAULT_MAX_USES = 5
 
 /** Attribution header sent on every request. Bump with the package version. */
 const USER_AGENT = 'deepseek-harness/0.0.1'
+
+type SearchRequestInit = {
+  method: 'POST'
+  redirect: 'error'
+  headers: Record<string, string>
+  body: string
+  signal?: AbortSignal
+}
 
 /**
  * Exact secret-free DeepSeek Messages request recorded immediately before one
@@ -111,8 +142,10 @@ export interface DeepSeekSearchProviderOptions {
   resolveApiKey?: () => Promise<string | undefined>
   /** Credential reference named by missing-credential diagnostics. */
   apiKeyEnv?: CredentialRef
-  /** Endpoint base; `/messages` is appended. */
+  /** 端点基址；请求会追加 `/messages`。 */
   baseURL: string
+  /** 当前搜索的 HTTP(S) 前向代理；缺省时保留原生 fetch 传输。 */
+  proxyURL?: string
   /** Anthropic-format model name. */
   model: string
   /** `anthropic-version` header value. */
@@ -209,6 +242,7 @@ export class DeepSeekSearchProvider implements WebSearchProvider {
     const options = this.resolveOptions()
     return ((options.apiKey?.length ?? 0) > 0 || options.resolveApiKey !== undefined)
       && isSafeBaseUrl(options.baseURL)
+      && (options.proxyURL === undefined || isSafeProxyUrl(options.proxyURL))
       && isPositiveInteger(options.maxTokens)
       && isPositiveInteger(options.maxUses)
   }
@@ -222,6 +256,9 @@ export class DeepSeekSearchProvider implements WebSearchProvider {
     throwIfSearchAborted(signal)
     if (!isSafeBaseUrl(options.baseURL)) {
       throw new WebError('DeepSeek search endpoint must be an HTTPS URL without credentials, query, or fragment', 'WEB_PROVIDER_ERROR')
+    }
+    if (options.proxyURL !== undefined && !isSafeProxyUrl(options.proxyURL)) {
+      throw new WebError('DeepSeek search proxy must be an HTTP(S) URL without credentials, query, or fragment', 'WEB_PROVIDER_ERROR')
     }
     const endpoint = `${options.baseURL.replace(/\/+$/, '')}/messages`
     const body: DeepSeekSearchLlmRequest['body'] = {
@@ -239,24 +276,46 @@ export class DeepSeekSearchProvider implements WebSearchProvider {
       body,
     })
     throwIfSearchAborted(signal)
-    let response: Response
+    const requestInit = {
+      method: 'POST',
+      redirect: 'error',
+      headers: {
+        // 官方端点读取 `x-api-key`；Anthropic 兼容端点可能读取 Bearer 凭据。
+        'x-api-key': apiKey,
+        'authorization': `Bearer ${apiKey}`,
+        'anthropic-version': options.apiVersion,
+        'content-type': 'application/json',
+        'accept': 'application/json',
+        'user-agent': USER_AGENT,
+      },
+      body: JSON.stringify(body),
+      ...signal !== undefined ? { signal } : {},
+    } satisfies SearchRequestInit
+    const proxyAgent = options.proxyURL === undefined ? undefined : new ProxyAgent(options.proxyURL)
+    const destroyOnAbort = (): void => { void proxyAgent?.destroy() }
+    signal?.addEventListener('abort', destroyOnAbort, { once: true })
     try {
-      response = await fetch(endpoint, {
-        method: 'POST',
-        redirect: 'error',
-        headers: {
-          // Official DeepSeek expects `x-api-key`; an Anthropic-compatible proxy
-          // may expect `Authorization: Bearer` — send both so either resolves.
-          'x-api-key': apiKey,
-          'authorization': `Bearer ${apiKey}`,
-          'anthropic-version': options.apiVersion,
-          'content-type': 'application/json',
-          'accept': 'application/json',
-          'user-agent': USER_AGENT,
-        },
-        body: JSON.stringify(body),
-        ...signal !== undefined ? { signal } : {},
-      })
+      return await this.dispatch(endpoint, requestInit, proxyAgent, apiKey, signal)
+    } finally {
+      signal?.removeEventListener('abort', destroyOnAbort)
+      if (signal?.aborted === true) await proxyAgent?.destroy()
+      else await proxyAgent?.close()
+    }
+  }
+
+  /** 每次代理请求只使用自己的 dispatcher，读完响应后由调用方释放。 */
+  private async dispatch(
+    endpoint: string,
+    requestInit: SearchRequestInit,
+    proxyAgent: ProxyAgent | undefined,
+    apiKey: string,
+    signal?: AbortSignal,
+  ): Promise<WebSearchResult> {
+    let response: Response | Awaited<ReturnType<typeof proxyFetch>>
+    try {
+      response = proxyAgent === undefined
+        ? await fetch(endpoint, requestInit)
+        : await proxyFetch(endpoint, { ...requestInit, dispatcher: proxyAgent })
     } catch (error: unknown) {
       if (signal?.aborted === true || isAbortError(error)) throw searchAborted(signal, error)
       throw new WebError(`DeepSeek search request failed: ${redactCredential(String(error), apiKey)}`, 'WEB_PROVIDER_ERROR')

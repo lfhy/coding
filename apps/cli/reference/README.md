@@ -84,7 +84,9 @@ dsh web --help
 
 ## 共享部署行为
 
-基础组合包挂载原生 DeepSeek 适配器、settings 与凭据提供方、稳定的 `web_search` 和已禁用的会话遥测。提供方凭据依次从继承环境、`$DSH_HOME/.credentials.yaml`、调用目录的 `.env` 和 `$DSH_HOME/.env` 解析；受管文档从不物化进 `process.env`，而两个 `.env` 文件都是普通启动环境层。搜索默认使用无需密钥的 DuckDuckGo；显式选择 `deepseek-official` 时才需要独立的 `DEEPSEEK_SEARCH_API_KEY`，其 Anthropic 兼容 Messages 端点可通过 `web-search-deepseek.baseURL` 或 `DEEPSEEK_SEARCH_BASE_URL` 配置，不复用对话模型的 `DEEPSEEK_BASE_URL`。只有 patch 层插入提供方并启用 `web_fetch` 后，该工具才可用。
+基础组合包挂载原生 DeepSeek 适配器、settings 与凭据提供方、稳定的 `web_search` 和已禁用的会话遥测。提供方凭据依次从继承环境、`$DSH_HOME/.credentials.yaml`、调用目录的 `.env` 和 `$DSH_HOME/.env` 解析；受管文档从不物化进 `process.env`，而两个 `.env` 文件都是普通启动环境层。
+
+搜索默认使用无需密钥的 DuckDuckGo；显式选择 `tavily` 时使用独立的 `TAVILY_API_KEY`，其 API 基址由 `web-search-tavily.baseURL` 配置，默认为 `https://api.tavily.com`。显式选择 `deepseek-official` 时使用独立的 `DEEPSEEK_SEARCH_API_KEY`，其 Anthropic 兼容 Messages 端点可通过 `web-search-deepseek.baseURL` 或 `DEEPSEEK_SEARCH_BASE_URL` 配置，不复用对话模型的 `DEEPSEEK_BASE_URL`。`web-search-duckduckgo.proxyURL`、`web-search-tavily.proxyURL` 和 `web-search-deepseek.proxyURL` 分别配置各自的 HTTP(S) 前向代理；已选提供方失败时不自动切换。只有 patch 层插入提供方并启用 `web_fetch` 后，该工具才可用。
 
 会话遥测默认留在本地。`DSH_TELEMETRY_MODE=FULL` 将每条已投影会话事件作为 OTLP/HTTP 日志流式发送，`DSH_TELEMETRY_MODE=FEEDBACK_ONLY` 则仅在记录反馈时上传会话日志后缀。`DSH_TELEMETRY_OTLP_URL` 选择其他 collector。任何非空的 `DSH_TELEMETRY_DISABLED` 都是具有最终效力的遥测强制关闭开关。随附基础配置没有遥测脱敏规则，因此显式启用的导出可能包含消息文本、工具参数和结果，以及 workspace 路径；相关部署决策见默认关闭 设计记录。
 

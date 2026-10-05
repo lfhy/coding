@@ -3,7 +3,7 @@
 
 # 包清单
 
-workspace 共 237 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
+workspace 共 238 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
 
 模型可见工具的名称与 schema 见 [tool-catalog.md](../tool-catalog.md)，插件可配置项见 [config-catalog.md](../config-catalog.md)，依赖边见 [module-graph.md](../module-graph.md)。
 
@@ -385,6 +385,7 @@ workspace 共 237 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/web/web-search-duckduckgo` — 无密钥的 DuckDuckGo 搜索提供方，向 `ctx.web` 注册 id `duckduckgo` 入口 `src/index.ts`（tests 2）
 - `packages/web/web-search-exa` — 由 Exa 支持的 `WebSearchProvider`，用于 harness web 能力 seam（`ctx.web`） 入口 `src/index.ts`（tests 1）
 - `packages/web/web-search-perplexity` — 由 Perplexity 支持的 `WebSearchProvider`，用于 harness web 能力 seam（`ctx.web`） 入口 `src/index.ts`（tests 1）
+- `packages/web/web-search-tavily` — Tavily 的专用搜索端点提供 `WebSearchProvider`，以 `tavily` 登记到 web 能力（`ctx.web`） 入口 `src/index.ts`（tests 2）
 
 ## packages/workflow
 

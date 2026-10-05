@@ -21,6 +21,7 @@ import {
   DEEPSEEK_DEFAULT_MAX_USES,
   DEEPSEEK_DEFAULT_MODEL,
   isSafeBaseUrl,
+  isSafeProxyUrl,
 } from './provider.ts'
 import type { DeepSeekSearchProviderOptions } from './provider.ts'
 
@@ -49,8 +50,10 @@ export interface Config {
   apiKey?: string
   /** 每次搜索独立解析的凭据引用；默认 `DEEPSEEK_SEARCH_API_KEY`。 */
   apiKeyEnv?: string
-  /** Anthropic-compatible endpoint base; `/messages` is appended. */
+  /** Anthropic 兼容端点基址；请求会追加 `/messages`。 */
   baseURL?: string
+  /** 仅当前搜索使用的 HTTP(S) 前向代理地址。 */
+  proxyURL?: string
   /** Anthropic-format model name. Defaults to `deepseek-v4-flash`. */
   model?: string
   /** `anthropic-version` header value. Defaults to `2023-06-01`. */
@@ -65,6 +68,7 @@ export const Config: z<Config> = z.object({
   apiKey: z.string().role('secret'),
   apiKeyEnv: z.string().role('credential-ref').default(DEFAULT_API_KEY_ENV),
   baseURL: z.string(),
+  proxyURL: z.string(),
   model: z.string().default(DEEPSEEK_DEFAULT_MODEL),
   apiVersion: z.string().default(DEEPSEEK_DEFAULT_API_VERSION),
   maxTokens: z.number().step(1).min(1).default(DEEPSEEK_DEFAULT_MAX_TOKENS),
@@ -100,7 +104,7 @@ function resolveOptions(ctx: Context, config: Config): DeepSeekSearchProviderOpt
     resolveApiKey: async () => {
       const credentials = ctx.get('credentials')
       if (credentials !== undefined) return (await credentials.resolve(apiKeyEnv))?.value
-      // Without the seam the environment is the whole credential plane.
+      // 未装载凭据服务时，启动环境是唯一的凭据来源。
       const ambient = launchEnvironmentOf(ctx).get(apiKeyEnv)
       return ambient !== undefined && ambient.value.length > 0 ? ambient.value : undefined
     },
@@ -108,6 +112,7 @@ function resolveOptions(ctx: Context, config: Config): DeepSeekSearchProviderOpt
     baseURL: config.baseURL
       ?? launchEnvironmentOf(ctx).get(SEARCH_BASE_URL_ENV)?.value
       ?? DEEPSEEK_DEFAULT_BASE_URL,
+    ...config.proxyURL === undefined ? {} : { proxyURL: config.proxyURL },
     model: config.model ?? DEEPSEEK_DEFAULT_MODEL,
     apiVersion: config.apiVersion ?? DEEPSEEK_DEFAULT_API_VERSION,
     maxTokens: config.maxTokens ?? DEEPSEEK_DEFAULT_MAX_TOKENS,
@@ -128,6 +133,9 @@ export function apply(ctx: Context, config: Config): void {
     validate: (value) => {
       if (value.baseURL !== undefined && !isSafeBaseUrl(value.baseURL)) {
         throw new TypeError('web-search-deepseek.baseURL must be an HTTPS URL without credentials, query, or fragment')
+      }
+      if (value.proxyURL !== undefined && !isSafeProxyUrl(value.proxyURL)) {
+        throw new TypeError('web-search-deepseek.proxyURL must be an HTTP(S) URL without credentials, query, or fragment')
       }
       if (value.model !== undefined && value.model.trim().length === 0) {
         throw new TypeError('web-search-deepseek.model must not be blank')

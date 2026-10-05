@@ -5,7 +5,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { SearchSettingsSection } from './SearchSettingsSection.tsx'
-import { SearchSettingsController, decodeWeb, decodeDeepSeek } from './controller.ts'
+import { SearchSettingsController, decodeWeb, decodeDuckDuckGo, decodeDeepSeek, decodeTavily } from './controller.ts'
 import { zh, en, type SearchSettingsKey } from './locales.ts'
 
 export type { SearchSettingsFace } from './controller.ts'
@@ -28,7 +28,9 @@ export function apply(ctx: ClientContext): void {
   const api = (ctx.get('connection') as ConnectionHandle).api
   const controller = new SearchSettingsController(
     ctx.settingsScope.bind({ namespace: 'web', decode: decodeWeb }),
+    ctx.settingsScope.bind({ namespace: 'web-search-duckduckgo', decode: decodeDuckDuckGo }),
     ctx.settingsScope.bind({ namespace: 'web-search-deepseek', decode: decodeDeepSeek }),
+    ctx.settingsScope.bind({ namespace: 'web-search-tavily', decode: decodeTavily }),
     api,
   )
   ctx.effect(() => () => { controller.dispose() }, 'ui-settings-search: controller')

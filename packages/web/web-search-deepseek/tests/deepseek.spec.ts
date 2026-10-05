@@ -159,6 +159,18 @@ describe('DeepSeekSearchProvider availability', () => {
     expect(searchProvider({ ...options, baseURL: 'not a url' }).available()).toBe(false)
   })
 
+  it('rejects an unsafe proxy even when called directly outside Settings', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    for (const proxyURL of ['http://user:password@127.0.0.1:8080', 'http://@127.0.0.1:8080']) {
+      const provider = searchProvider({ ...options, proxyURL })
+      expect(provider.available()).toBe(false)
+      await expect(provider.search({ query: 'q' }))
+        .rejects.toMatchObject({ code: 'WEB_PROVIDER_ERROR' })
+    }
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
   it('rejects local hostname suffixes even with trailing DNS root dots', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)

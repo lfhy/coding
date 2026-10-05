@@ -395,8 +395,9 @@
         thresholds: [3, 5, 8]
         argumentsPreviewChars: 500
 
-    # 各模式都提供 web_search：默认匿名 DuckDuckGo；明确选 DeepSeek 后逐次解析搜索专用密钥，
-    # 认证失败不会切换后端。DeepSeek Messages 搜索地址独立于 chat-completions。
+    # 各模式都提供 web_search：默认匿名 DuckDuckGo；明确选 DeepSeek 或 Tavily 后
+    # 逐次解析各自的搜索密钥，认证失败不会切换后端。
+    # DeepSeek Messages 搜索地址独立于 chat-completions。
     # 当前权限预设尚未区分公开网络读取，因此不装配 web_fetch，避免绕过审批。
     # DeepSeek 需要完整辅助模型轮次；工具搜索预算为 60 秒。
     - id: web
@@ -411,6 +412,11 @@
       name: '@deepseek-ai/dsh-web-search-deepseek'
       config:
         apiKeyEnv: DEEPSEEK_SEARCH_API_KEY
+
+    - id: web-search-tavily
+      name: '@deepseek-ai/dsh-web-search-tavily'
+      config:
+        apiKeyEnv: TAVILY_API_KEY
 
     # 浏览器归会话所有，在模型导航获准或人工创建标签页时按需启动；完全访问预设无需逐次审批。
     # HTTP 预览路由仅在 Web Host 挂载传输服务时注册。

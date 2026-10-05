@@ -1,6 +1,8 @@
 /** 从 DuckDuckGo 公共 HTML 搜索页提取可引用的搜索结果，不依赖 API 密钥。 */
 import { parse } from 'parse5'
 import type { DefaultTreeAdapterMap } from 'parse5'
+import { ProxyAgent, fetch as undiciFetch } from 'undici'
+import type { Response as UndiciResponse } from 'undici'
 import { WebError } from '@deepseek-ai/dsh-web'
 import type { WebSearchProvider, WebSearchRequest, WebSearchResult, WebSearchSource } from '@deepseek-ai/dsh-web'
 
@@ -15,6 +17,23 @@ const MAX_TITLE_CHARS = 200
 const MAX_SNIPPET_CHARS = 500
 const USER_AGENT = 'deepseek-harness/0.0.1'
 type Node = DefaultTreeAdapterMap['node']
+
+/**
+ * 校验代理地址；允许本机代理，但拒绝可能将明文凭据写进设置的 URL 成分。
+ * @param raw - 候选 HTTP(S) 前向代理 URL。
+ * @returns 地址可用于代理连接时为 true。
+ */
+export function isValidProxyURL(raw: string): boolean {
+  try {
+    const url = new URL(raw)
+    if ((url.protocol !== 'http:' && url.protocol !== 'https:') || !url.hostname) return false
+    const authority = /^https?:\/\/([^/?#]*)/i.exec(raw)?.[1]
+    return raw.trim() === raw && authority !== undefined && !authority.includes('@')
+      && !url.href.includes('?') && !url.href.includes('#')
+  } catch {
+    return false
+  }
+}
 
 function element(node: Node): node is DefaultTreeAdapterMap['element'] {
   return 'tagName' in node
@@ -96,9 +115,11 @@ export function parseDuckDuckGoResults(html: string): WebSearchResult {
   return { sources, truncated: false }
 }
 
-async function readBounded(response: Response): Promise<string> {
-  if (response.body === null) throw new WebError('DuckDuckGo returned an empty response body', 'WEB_PROVIDER_ERROR')
-  const reader = response.body.getReader()
+async function readBounded(response: Response | UndiciResponse): Promise<string> {
+  // Undici 与 DOM 的 stream 类型声明不同，运行时均交付 Uint8Array 字节块。
+  const body = response.body as ReadableStream<Uint8Array> | null
+  if (body === null) throw new WebError('DuckDuckGo returned an empty response body', 'WEB_PROVIDER_ERROR')
+  const reader = body.getReader()
   const chunks: Uint8Array[] = []
   let total = 0
   let complete = false
@@ -126,6 +147,9 @@ async function readBounded(response: Response): Promise<string> {
 export class DuckDuckGoSearchProvider implements WebSearchProvider {
   readonly id = DUCKDUCKGO_PROVIDER_ID
 
+  /** @param resolveProxyURL - 单次搜索开始时读取最新设置；缺省时直连。 */
+  constructor(private readonly resolveProxyURL: () => string | undefined = () => undefined) {}
+
   available(): boolean { return true }
 
   /**
@@ -140,24 +164,39 @@ export class DuckDuckGoSearchProvider implements WebSearchProvider {
     }
     const url = new URL('/html/', SEARCH_ORIGIN)
     url.searchParams.set('q', request.query)
+    const proxyURL = this.resolveProxyURL()
+    if (proxyURL !== undefined && !isValidProxyURL(proxyURL)) {
+      throw new WebError('DuckDuckGo proxy URL must be an HTTP(S) URL without credentials, query, or fragment', 'WEB_PROVIDER_ERROR')
+    }
+    const dispatcher = proxyURL === undefined ? undefined : new ProxyAgent(proxyURL)
+    let bodyConsumed = false
     try {
-      const response = await fetch(url, {
+      const options = {
         redirect: 'error',
         headers: { accept: 'text/html', 'user-agent': USER_AGENT },
         ...signal === undefined ? {} : { signal },
-      })
+      } as const
+      const response = dispatcher === undefined
+        ? await fetch(url, options)
+        : await undiciFetch(url, { ...options, dispatcher })
       if (!response.ok) throw new WebError(`DuckDuckGo search failed (HTTP ${String(response.status)})`, 'WEB_PROVIDER_ERROR')
       const contentType = response.headers.get('content-type') ?? ''
       if (!/^text\/html(?:\s*;|$)/i.test(contentType)) {
         throw new WebError('DuckDuckGo returned a non-HTML response', 'WEB_PROVIDER_ERROR')
       }
-      return parseDuckDuckGoResults(await readBounded(response))
+      const html = await readBounded(response)
+      bodyConsumed = true
+      return parseDuckDuckGoResults(html)
     } catch (error: unknown) {
       if (signal?.aborted === true || error instanceof DOMException && error.name === 'AbortError') {
         throw new WebError('DuckDuckGo search aborted', 'WEB_ABORTED', { cause: error })
       }
       if (error instanceof WebError) throw error
       throw new WebError('DuckDuckGo search request failed', 'WEB_PROVIDER_ERROR', { cause: error })
+    } finally {
+      // 拒绝响应或读取中断时，未完成的主体仍占用连接；close() 会等待它结束。
+      if (!bodyConsumed || signal?.aborted === true) await dispatcher?.destroy()
+      else await dispatcher?.close()
     }
   }
 }
