@@ -22,7 +22,7 @@ const MODE = webSnapshotMode()
 const VISUAL_PROVIDER = 'reference-efforts'
 const VISUAL_MODEL = 'astra'
 
-/** 为深色强度面板提供含 Max 与 Ultra 的确切模型目录，不执行网络请求。 */
+/** 为两种主题的强度面板提供含 Max 与 Ultra 的确切模型目录，不执行网络请求。 */
 class ReferenceEffortAdapter extends LlmAdapter {
   override providerInfo(provider: string) { return { id: provider, name: 'Reference' } }
 
@@ -305,6 +305,35 @@ describe.skipIf(MODE === 'record')('web e2e: declared reasoning efforts reach th
     if (process.env.DSH_SCREENSHOT_DIR !== undefined) {
       await page.screenshot({ path: join(process.env.DSH_SCREENSHOT_DIR, 'reasoning-max-reference.png'), fullPage: false })
     }
+    await page.emulateMedia({ colorScheme: 'light' })
+    await expect.poll(() => page.evaluate(() => document.body.hasAttribute('data-ds-dark-theme'))).toBe(false)
+    const rail = slider.locator('..')
+    expect(await effort.evaluate(node => getComputedStyle(node).backgroundColor)).toBe('rgb(255, 255, 255)')
+    expect(await title.evaluate(node => getComputedStyle(node).color)).toBe('rgb(59, 130, 246)')
+    expect(await rail.evaluate(node => getComputedStyle(node).backgroundColor)).toBe('rgb(229, 229, 229)')
+    expect(await rail.locator(':scope > span').first().evaluate(node => getComputedStyle(node).backgroundColor))
+      .toBe('rgb(59, 130, 246)')
+    expect(await trigger.evaluate(node => getComputedStyle(node).backgroundColor)).toBe('rgb(241, 243, 245)')
+    if (process.env.DSH_SCREENSHOT_DIR !== undefined) {
+      await page.screenshot({ path: join(process.env.DSH_SCREENSHOT_DIR, 'reasoning-max-light.png'), fullPage: false })
+    }
+    await page.setViewportSize({ width: 375, height: 812 })
+    await expect.poll(() => page.locator('[data-sidebar-collapsed]').getAttribute('data-sidebar-collapsed')).toBe('true')
+    await expect.poll(async () => (await page.locator('#dsh-layout-sidebar').boundingBox())?.width ?? 375)
+      .toBeLessThanOrEqual(56)
+    await expect.poll(async () => (await effort.boundingBox())?.x ?? -1).toBeGreaterThanOrEqual(0)
+    await expect.poll(async () => (await effort.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(240)
+    await expect.poll(async () => {
+      const bounds = await effort.boundingBox()
+      return bounds === null ? 376 : bounds.x + bounds.width
+    }).toBeLessThanOrEqual(375)
+    if (process.env.DSH_SCREENSHOT_DIR !== undefined) {
+      await page.screenshot({ path: join(process.env.DSH_SCREENSHOT_DIR, 'reasoning-max-light-375.png'), fullPage: false })
+    }
+    await page.setViewportSize({ width: 1680, height: 1000 })
+    await page.emulateMedia({ colorScheme: 'dark' })
+    await expect.poll(() => page.evaluate(() => document.body.hasAttribute('data-ds-dark-theme'))).toBe(true)
+    expect(await effort.evaluate(node => getComputedStyle(node).backgroundColor)).toBe('rgb(35, 35, 36)')
     await page.keyboard.press('Escape')
     await effort.waitFor({ state: 'detached' })
     expect(await trigger.textContent()).toBe('6 AstraMax')

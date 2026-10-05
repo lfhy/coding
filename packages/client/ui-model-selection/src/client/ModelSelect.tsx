@@ -386,6 +386,9 @@ export function ModelSelect(
                     <span className={css.railDots} aria-hidden="true">
                       {effortStops.map(level => <span key={level.effort ?? 'default'} />)}
                     </span>
+                    <span className={clsx(css.railDots, css.railDotsActive)} aria-hidden="true">
+                      {effortStops.map(level => <span key={level.effort ?? 'default'} />)}
+                    </span>
                     <input
                       ref={(node) => { effortControlRef.current = node }}
                       id={`${id}-effort`}

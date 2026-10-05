@@ -45,7 +45,7 @@
 
 .modelLink:hover,
 .reset:hover:not(:disabled) {
-  color: var(--dsw-specific-reasoning-thumb);
+  color: var(--dsw-specific-reasoning-hover);
 }
 
 .singleEffort:hover:not(:disabled) {
@@ -241,6 +241,14 @@
   background: var(--dsw-specific-reasoning-dot);
 }
 
+.railDotsActive {
+  clip-path: inset(0 calc(100% - (14px + (100% - 28px) * var(--reasoning-position))) 0 0);
+}
+
+.railDotsActive > span {
+  background: var(--dsw-specific-reasoning-dot-active);
+}
+
 .toneUltra .railDots {
   display: none;
 }
@@ -274,6 +282,7 @@
   border: 0;
   border-radius: 50%;
   background: var(--dsw-specific-reasoning-thumb);
+  box-shadow: var(--dsw-specific-reasoning-thumb-shadow);
 }
 
 .slider::-moz-range-thumb {
@@ -282,6 +291,7 @@
   border: 0;
   border-radius: 50%;
   background: var(--dsw-specific-reasoning-thumb);
+  box-shadow: var(--dsw-specific-reasoning-thumb-shadow);
 }
 
 .sliderUnspecified .slider {
@@ -289,13 +299,13 @@
 }
 
 .sliderUnspecified:focus-within {
-  outline: 2px solid var(--dsw-specific-reasoning-thumb);
+  outline: 2px solid var(--dsw-specific-reasoning-focus);
   outline-offset: 3px;
   border-radius: 999px;
 }
 
 .slider:focus-visible {
-  outline: 2px solid var(--dsw-specific-reasoning-thumb);
+  outline: 2px solid var(--dsw-specific-reasoning-focus);
   outline-offset: 3px;
   border-radius: 999px;
 }
