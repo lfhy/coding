@@ -1,12 +1,18 @@
 /** 经真实 Web Loader、人工 RPC 和 Host 浏览器提供方验收工作台浏览流程。 */
 
 import { randomUUID } from 'node:crypto'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer, type Server } from 'node:http'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { Browser, Locator, Page, Request } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
-import { createAssistantMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { CallId, createAssistantMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
+import type { StreamChunk } from '@deepseek-ai/dsh-llm'
+import type { ReplayOverrideDoc } from '@deepseek-ai/dsh-llm-replay'
 import { Session, SessionId, SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
+import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { BrowserHumanCommand, BrowserHumanTarget, BrowserSessionState } from '@deepseek-ai/dsh-browser'
 import { launchWebScaffold, seedSession, watchConsole, webSnapshotMode, type WebScaffold } from './scaffold.ts'
 import { newEnglishPage } from './support.ts'
@@ -14,7 +20,31 @@ import { newEnglishPage } from './support.ts'
 const FIRST = 'browser-mirror-first'
 const SECOND = 'browser-mirror-second'
 const INTERACTIVE = 'browser-mirror-interactive'
+const MODEL = 'browser-mirror-model-navigate'
+const MODEL_PROMPT = 'Open the local fixture in the browser and report its title.'
+const MODEL_CALL_ID = CallId('web-model-browser-navigate')
 const MODE = webSnapshotMode()
+
+function modelNavigateReplay(url: string): ReplayOverrideDoc {
+  const argumentsJson = JSON.stringify({ url })
+  const toolCall: StreamChunk[] = [
+    { type: 'block-start', index: 0, blockType: 'tool-call' },
+    { type: 'tool-call-delta', index: 0, id: MODEL_CALL_ID, name: 'browser_navigate', argumentsDelta: argumentsJson },
+    { type: 'block-end', index: 0, block: {
+      type: 'tool-call', id: MODEL_CALL_ID, name: 'browser_navigate', arguments: argumentsJson,
+    } },
+    { type: 'usage', usage: { inputTokens: 20, outputTokens: 10 } },
+    { type: 'finish', reason: { kind: 'tool-calls' } },
+  ]
+  const final: StreamChunk[] = [
+    { type: 'block-start', index: 0, blockType: 'text' },
+    { type: 'text-delta', index: 0, text: 'Second fixture opened.' },
+    { type: 'block-end', index: 0, block: { type: 'text', text: 'Second fixture opened.' } },
+    { type: 'usage', usage: { inputTokens: 20, outputTokens: 5 } },
+    { type: 'finish', reason: { kind: 'stop' } },
+  ]
+  return [{ kind: 'chunks', chunks: toolCall }, { kind: 'chunks', chunks: final }]
+}
 
 function fixture(title: string): string {
   const session = Session.create(SessionId('browser-mirror-fixture'))
@@ -205,17 +235,30 @@ describe('web e2e: browser-use mirror over the shipped Loader', () => {
   let page: Page
   let target: Server
   let origin: string
+  let replayDir: string | undefined
   let tripwire: ReturnType<typeof watchConsole>
   const consoleErrors: string[] = []
+  const modelEvents: SessionEvent[] = []
 
   beforeAll(async () => {
     const serverFixture = await fixtureServer()
     target = serverFixture.server
     origin = serverFixture.origin
-    scaffold = await launchWebScaffold()
+    if (MODE !== 'record') {
+      replayDir = await mkdtemp(join(tmpdir(), 'dsh-web-browser-model-'))
+      const replayOverride = join(replayDir, 'model-navigate.override.json')
+      await writeFile(replayOverride, JSON.stringify(modelNavigateReplay(`${origin}/second`)))
+      scaffold = await launchWebScaffold({
+        replayFixture: join(replayDir, 'override-only.jsonl'), replayOverride,
+      })
+    } else scaffold = await launchWebScaffold()
+    scaffold.ctx.on('session/event', (session, event: SessionEvent) => {
+      if (session.id === SessionId(MODEL)) modelEvents.push(event)
+    })
     await seedSession(scaffold, fixture(FIRST), FIRST)
     await seedSession(scaffold, fixture(SECOND), SECOND)
     await seedSession(scaffold, fixture(INTERACTIVE), INTERACTIVE)
+    await seedSession(scaffold, fixture(MODEL), MODEL)
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     tripwire = watchConsole(page)
@@ -230,6 +273,7 @@ describe('web e2e: browser-use mirror over the shipped Loader', () => {
     await browser?.close()
     await scaffold?.close()
     if (target) await new Promise<void>((resolve, reject) => target.close((error) => { if (error) reject(error); else resolve() }))
+    if (replayDir !== undefined) await rm(replayDir, { recursive: true, force: true })
   })
 
   it.skipIf(MODE === 'record')('opens the five-action menu, drives real browser tabs, then mirrors an Agent click per session', async () => {
@@ -564,6 +608,59 @@ describe('web e2e: browser-use mirror over the shipped Loader', () => {
     await gestureOnFrame(page, mirror, returned, observedPoint(returned, 'button', 'Increment clicks'), 'click')
     await expect.poll(async () => (await browserState(page, scaffold.baseUrl, INTERACTIVE))?.observation?.snapshot)
       .toContain('Clicks: 2')
+    expect(tripwire.pageErrors).toEqual([])
+    expect(consoleErrors).toEqual([])
+  }, 120_000)
+
+  it.skipIf(MODE === 'record')('reveals the Web PNG mirror when a model-facing browser tool navigates from a closed workbench', async () => {
+    onTestFailed(async () => { await page.screenshot({ path: '/tmp/dsh-browser-model-reveal-failed.png', fullPage: true }) })
+    await openSession(page, MODEL)
+    const closeSidebar = page.getByRole('button', { name: 'Close right sidebar' })
+    if (await closeSidebar.isVisible()) await closeSidebar.click()
+    await expect.poll(() => page.getByRole('button', { name: 'Open right sidebar' }).isVisible()).toBe(true)
+    const mirror = page.getByRole('region', { name: 'Browser view' })
+    const menu = page.getByRole('navigation', { name: 'Workbench features' })
+    expect(await mirror.isVisible()).toBe(false)
+    expect(await menu.isVisible()).toBe(false)
+    expect(await browserState(page, scaffold.baseUrl, MODEL)).toBeNull()
+
+    const approvals: string[] = []
+    const disposeApproval = scaffold.ctx.on('approval/request', (request) => {
+      approvals.push(request.toolName)
+      return Promise.resolve('allowed-once' as const)
+    }, { prepend: true })
+    try {
+      const composer = page.locator('textarea:enabled').first()
+      await composer.fill(MODEL_PROMPT)
+      const settled = scaffold.whenTurnSettled()
+      await composer.press('Enter')
+      expect(await settled).toBe(SessionId(MODEL))
+      expect(approvals).toEqual(['browser_navigate'])
+    } finally { disposeApproval() }
+
+    const call = modelEvents.find(event => event.type === 'tool/call' && event.data.name === 'browser_navigate')
+    expect(call?.type === 'tool/call' ? call.data.callId : undefined).toBe(MODEL_CALL_ID)
+    const result = modelEvents.find(event => event.type === 'tool/result'
+      && event.data.message.source.callId === MODEL_CALL_ID)
+    if (result?.type !== 'tool/result') throw new Error('model browser navigation produced no durable tool result')
+    expect(result.data.message.content[0].isError).toBe(false)
+    expect(result.data.message.content[0].content.filter(block => block.type === 'text').map(block => block.text).join(''))
+      .toContain(`${origin}/second`)
+
+    await expect.poll(async () => (await browserState(page, scaffold.baseUrl, MODEL))?.observation?.url)
+      .toBe(`${origin}/second`)
+    await expect.poll(() => mirror.isVisible(), { timeout: 15_000 }).toBe(true)
+    await expect.poll(async () => (await page.locator('#dsh-layout-workbench').boundingBox())?.width ?? 0)
+      .toBeGreaterThan(300)
+    const tab = page.getByRole('tablist', { name: 'Workbench tabs' }).getByRole('tab', { name: 'Second fixture' })
+    await expect.poll(() => tab.getAttribute('aria-selected')).toBe('true')
+    const state = await expectViewportFit(page, mirror, scaffold.baseUrl, MODEL)
+    expect(state.activeTabId).toBeTruthy()
+    expect(await tab.getAttribute('data-browser-tab-id')).toBe(state.activeTabId)
+    const image = mirror.getByRole('img', { name: 'Browser page screenshot' })
+    expect(await image.getAttribute('src')).toMatch(/^blob:/)
+    expect(await mirror.locator('iframe, webview').count()).toBe(0)
+    await page.screenshot({ path: '/tmp/dsh-browser-model-revealed.png' })
     expect(tripwire.pageErrors).toEqual([])
     expect(consoleErrors).toEqual([])
   }, 120_000)

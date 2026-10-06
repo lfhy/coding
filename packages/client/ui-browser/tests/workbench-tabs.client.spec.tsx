@@ -213,7 +213,7 @@ describe('typed workbench with the browser provider', () => {
     expect(b.control).toHaveBeenCalledTimes(2)
   })
 
-  it('opens a newly observed model page from a terminal without selecting the remembered old page', async () => {
+  it('keeps a terminal selected when Host publishes a page without a settled navigation result', async () => {
     const b = await bench()
     fireEvent.click(b.workbench.view.getByRole('button', { name: '终端' }))
     const observed = state(2)
@@ -224,10 +224,11 @@ describe('typed workbench with the browser provider', () => {
         url: 'https://model.example/', title: 'Model page' } }
     b.publish(next)
     await waitFor(() => {
-      expect(b.workbench.view.getByRole('tab', { name: 'Model page' }).getAttribute('aria-selected')).toBe('true')
+      expect(b.workbench.view.getByRole('tab', { name: 'Model page' })).toBeTruthy()
     }, { timeout: 2_000 })
     expect(b.hostState().activeTabId).toBe(addedId)
     expect(b.control).not.toHaveBeenCalled()
-    expect(b.workbench.view.getByRole('tab', { name: 'coding 1' }).getAttribute('aria-selected')).toBe('false')
+    expect(b.workbench.view.getByRole('tab', { name: 'coding 1' }).getAttribute('aria-selected')).toBe('true')
+    expect(b.workbench.view.getByRole('tab', { name: 'Model page' }).getAttribute('aria-selected')).toBe('false')
   })
 })

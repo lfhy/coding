@@ -111,7 +111,7 @@ export interface BrowserCapture {
 
 ## 失败与生命周期
 
-`BrowserUseError.code` 供消费方区分无效 URL、过期引用、已关闭会话、策略拒绝、浏览器不可用与其他操作失败；调用方取消则保留 `AbortSignal` 的原因。`closeSession(sessionId)` 等待资源停稳，不存在资源时正常完成。页面与最近捕获只存在于提供方运行期间，不定义重启恢复或跨会话共享。桌面 Host 与主进程的私有连接断开、超时或取消会使相关 guest 失效，不会改道到 Playwright；具体导航输入、联网与部署限制见两个提供方的 README。
+`BrowserUseError.code` 供消费方区分无效 URL、过期引用、已关闭会话、策略拒绝、浏览器不可用与其他操作失败；调用方取消则保留 `AbortSignal` 的原因。`closeSession(sessionId)` 等待资源停稳，不存在资源时正常完成。页面与最近捕获只存在于提供方运行期间，不定义重启恢复或跨会话共享。桌面原生导航超时若能停止并证明停稳，失败结果仍保留同一 guest，后续快照须作为新调用重新取得审批；无法停稳只关闭该 Session。未呈现的 guest 可发布不含 PNG 的 DOM 观测，显式截图不可用；已呈现页面截图超时也只关闭该 Session。私有桥请求超时、取消及连接断开仍使桌面连接与全部 guest 失效，不会改道到 Playwright；具体时限与限制见[Electron 提供方](../../packages/browser/browser-electron/README.md)。
 
 ```ts type-equiv
 /** 可供消费方识别的浏览器失败种类；调用方取消保留 AbortSignal 的原因。 */

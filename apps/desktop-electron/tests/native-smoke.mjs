@@ -513,7 +513,21 @@ async function verifyOnboardingFocus(page, afterScreenshot) {
 }
 
 async function browserFixture() {
-  const server = createServer((_request, response) => {
+  let stalledRequests = 0
+  const server = createServer((request, response) => {
+    if (request.url === '/stalled-image') {
+      stalledRequests++
+      response.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'no-store' })
+      response.flushHeaders()
+      return
+    }
+    if (request.url === '/timeout') {
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
+      response.end(`<!doctype html><title>Native guest timeout fixture</title>
+        <h1>Timeout recovery fixture</h1><p>The document is ready while its image is still loading.</p>
+        <img src="/stalled-image" alt="Stalled fixture image">`)
+      return
+    }
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
     response.end(`<!doctype html><title>Native guest fixture</title>
       <h1>Live native guest</h1>
@@ -532,6 +546,8 @@ async function browserFixture() {
   const address = server.address()
   assert.ok(address && typeof address !== 'string', 'native guest fixture must bind locally')
   return { url: `http://127.0.0.1:${address.port}/`,
+    timeoutUrl: `http://127.0.0.1:${address.port}/timeout`,
+    get stalledRequests() { return stalledRequests },
     close: async () => {
       server.closeAllConnections()
       await new Promise(resolveClose => server.close(resolveClose))
@@ -615,6 +631,164 @@ async function scriptedModel() {
   assert.ok(address && typeof address !== 'string', 'scripted model must bind locally')
   return { url: `http://127.0.0.1:${address.port}`, observations, failures, toolNames,
     get browserStep() { return browserStep },
+    close: async () => {
+      server.closeAllConnections()
+      await new Promise(resolveClose => server.close(resolveClose))
+    } }
+}
+
+async function scriptedNavigateModel(fixtureUrl) {
+  let phase = 'navigate'
+  let step = 0
+  const observations = []
+  const failures = []
+  const server = createServer((request, response) => {
+    if (request.url !== '/chat/completions' || request.method !== 'POST' ||
+      request.socket.remoteAddress !== '127.0.0.1') {
+      response.writeHead(404).end()
+      return
+    }
+    let body = ''
+    request.on('data', chunk => { body += chunk.toString('utf8') })
+    request.on('end', () => {
+      try {
+        const payload = JSON.parse(body)
+        const tools = (payload.tools ?? []).map(tool => tool.function?.name)
+        let frames
+        if (!tools.includes('browser_snapshot')) {
+          frames = [{ choices: [{ delta: { content: 'Native navigate smoke' }, finish_reason: 'stop' }] }]
+        } else {
+          assert.ok(tools.includes('browser_navigate'), 'shipped Agent must advertise browser_navigate')
+          const results = payload.messages.filter(message => message.role === 'tool')
+          let name
+          let args
+          if (phase === 'navigate' && step === 0) {
+            assert.equal(results.length, 0, 'fresh Session must start before browser tools')
+            name = 'browser_navigate'
+            args = JSON.stringify({ url: fixtureUrl })
+          } else if (phase === 'navigate' && step === 1) {
+            const content = results.at(-1)?.content
+            assert.ok(content?.startsWith('{'), `Agent navigation tool failed: ${content}`)
+            const navigated = JSON.parse(content)
+            assert.equal(navigated.action, 'navigate', 'model must receive actual browser_navigate output')
+            assert.equal(navigated.observation.url, fixtureUrl, 'Agent navigation must reach local fixture')
+            observations.push(navigated.observation)
+          } else if (phase === 'snapshot' && step === 0) {
+            name = 'browser_snapshot'
+            args = '{}'
+          } else if (phase === 'snapshot' && step === 1) {
+            const snapshot = JSON.parse(results.at(-1)?.content)
+            assert.equal(snapshot.action, 'snapshot', 'second model turn must receive browser_snapshot output')
+            assert.ok(snapshot.observation.snapshot.includes('Human clicked'),
+              'second model turn must see the human mutation in the native guest')
+            observations.push(snapshot.observation)
+          } else throw new Error(`unexpected native navigate model request: ${phase}/${step}`)
+          step++
+          frames = name === undefined
+            ? [{ choices: [{ delta: { content: 'NATIVE_NAVIGATE_OK' }, finish_reason: 'stop' }] }]
+            : [
+              { choices: [{ delta: { tool_calls: [{ index: 0, id: `native-${phase}-${step}`, type: 'function',
+                function: { name, arguments: args } }] } }] },
+              { choices: [{ delta: {}, finish_reason: 'tool_calls' }],
+                usage: { prompt_tokens: 10, completion_tokens: 5 } },
+            ]
+        }
+        response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store' })
+        for (const frame of frames) response.write(`data: ${JSON.stringify(frame)}\n\n`)
+        response.end('data: [DONE]\n\n')
+      } catch (error) {
+        failures.push(error instanceof Error ? error.message : String(error))
+        response.writeHead(500).end('invalid scripted model step')
+      }
+    })
+  })
+  await new Promise((resolveListen, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', resolveListen)
+  })
+  const address = server.address()
+  assert.ok(address && typeof address !== 'string', 'navigate model must bind locally')
+  return { url: `http://127.0.0.1:${address.port}`, observations, failures,
+    get step() { return step },
+    startSnapshot() {
+      assert.equal(phase, 'navigate')
+      assert.equal(step, 2, 'navigate turn must have completed before second model prompt')
+      phase = 'snapshot'
+      step = 0
+    },
+    close: async () => {
+      server.closeAllConnections()
+      await new Promise(resolveClose => server.close(resolveClose))
+    } }
+}
+
+async function scriptedTimeoutRecoveryModel(timeoutUrl) {
+  let step = 0
+  const failures = []
+  const observations = []
+  const server = createServer((request, response) => {
+    if (request.url !== '/chat/completions' || request.method !== 'POST' ||
+      request.socket.remoteAddress !== '127.0.0.1') {
+      response.writeHead(404).end()
+      return
+    }
+    let body = ''
+    request.on('data', chunk => { body += chunk.toString('utf8') })
+    request.on('end', () => {
+      try {
+        const payload = JSON.parse(body)
+        const tools = (payload.tools ?? []).map(tool => tool.function?.name)
+        let frames
+        if (!tools.includes('browser_snapshot')) {
+          frames = [{ choices: [{ delta: { content: 'Native timeout smoke' }, finish_reason: 'stop' }] }]
+        } else {
+          assert.ok(tools.includes('browser_navigate'), 'shipped Agent must advertise browser_navigate')
+          const results = payload.messages.filter(message => message.role === 'tool')
+          let name
+          let args
+          if (step === 0) {
+            name = 'browser_navigate'
+            args = JSON.stringify({ url: timeoutUrl })
+          } else if (step === 1) {
+            assert.ok(results.at(-1)?.content.includes('browser navigation timed out; loading stopped'),
+              'model must receive the safe navigation timeout diagnostic')
+            name = 'browser_snapshot'
+            args = '{}'
+          } else if (step === 2) {
+            const snapshot = JSON.parse(results.at(-1)?.content)
+            assert.equal(snapshot.action, 'snapshot', 'Agent must recover with a real browser_snapshot')
+            assert.equal(snapshot.observation.url, timeoutUrl, 'snapshot must inspect the stopped page')
+            assert.ok(snapshot.observation.snapshot.includes('Timeout recovery fixture'),
+              'fresh Agent snapshot must read the DOM loaded before the stalled image')
+            observations.push(snapshot.observation)
+          } else throw new Error(`unexpected native timeout model step: ${step}`)
+          step++
+          frames = name === undefined
+            ? [{ choices: [{ delta: { content: 'NATIVE_TIMEOUT_RECOVERED' }, finish_reason: 'stop' }] }]
+            : [
+              { choices: [{ delta: { tool_calls: [{ index: 0, id: `native-timeout-${step}`, type: 'function',
+                function: { name, arguments: args } }] } }] },
+              { choices: [{ delta: {}, finish_reason: 'tool_calls' }],
+                usage: { prompt_tokens: 10, completion_tokens: 5 } },
+            ]
+        }
+        response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store' })
+        for (const frame of frames) response.write(`data: ${JSON.stringify(frame)}\n\n`)
+        response.end('data: [DONE]\n\n')
+      } catch (error) {
+        failures.push(error instanceof Error ? error.message : String(error))
+        response.writeHead(500).end('invalid scripted timeout recovery step')
+      }
+    })
+  })
+  await new Promise((resolveListen, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', resolveListen)
+  })
+  const address = server.address()
+  assert.ok(address && typeof address !== 'string', 'timeout model must bind locally')
+  return { url: `http://127.0.0.1:${address.port}`, failures, observations,
+    get step() { return step },
     close: async () => {
       server.closeAllConnections()
       await new Promise(resolveClose => server.close(resolveClose))
@@ -810,6 +984,207 @@ async function verifyNativeBrowser(page, app, fixtureUrl, hostOrigin, screenshot
   'closing the last tab must release the Session browser')
   await until(async () => await app.evaluate(({ webContents }, id) => webContents.fromId(id)?.isDestroyed() !== false,
     guestId), 'closed native guest destroyed')
+  return sessionId
+}
+
+async function verifyAgentNavigateAutoReveal(page, app, fixtureUrl, model) {
+  // 无 Workspace 时侧栏「新建会话」先返回欢迎页；欢迎页右侧边栏入口创建本地空会话。
+  await page.getByRole('button', { name: '收起右侧边栏' }).first().click()
+  await page.getByRole('button', { name: '打开右侧边栏' }).first().waitFor({ state: 'visible' })
+  const previous = (await browserRpc(page, 'session.list', {})).items.map(item => item.sessionId)
+  await page.getByRole('button', { name: '新建会话' }).first().click()
+  await page.getByRole('button', { name: '打开右侧边栏' }).first().click()
+  let sessionId
+  await until(async () => {
+    const sessions = await browserRpc(page, 'session.list', {})
+    sessionId = sessions.items.find(item => !previous.includes(item.sessionId))?.sessionId
+    return sessionId !== undefined
+  }, 'fresh Session for model-driven navigation')
+  await page.getByRole('button', { name: '收起右侧边栏' }).first().click()
+  assert.equal(await page.getByRole('button', { name: '打开右侧边栏' }).first().isVisible(), true,
+    'fresh Session right sidebar must begin closed')
+
+  const prompted = await browserRpc(page, 'session.prompt', { sessionId, mode: 'queue',
+    content: [{ type: 'text', text: 'Use browser_navigate to open the local fixture.' }] })
+  assert.equal(prompted.accepted, true, 'fresh Session must accept scripted navigation turn')
+  let history
+  try {
+    await until(async () => {
+      history = await browserRpc(page, 'session.history', { sessionId, maxMessages: 30 })
+      return history.events.some(({ event }) => event.type === 'turn/end')
+    }, 'model-driven navigation turn completion', 45_000)
+  } catch (error) {
+    throw new Error(`${error.message}; scripted navigate model errors: ${model.failures.join(' | ') || 'none'}`)
+  }
+  assert.deepEqual(model.failures, [], 'scripted navigation model must receive valid browser observations')
+  assert.equal(model.step, 2, 'Agent must navigate and complete its first turn')
+  const firstEvents = history.events.map(({ event }) => event)
+  const navigateCalls = firstEvents.filter(event => event.type === 'tool/call')
+  assert.deepEqual(navigateCalls.map(event => event.data.name), ['browser_navigate'],
+    'fresh Session must record the model browser_navigate tool call')
+  const navigateResults = firstEvents.filter(event => event.type === 'tool/result')
+  assert.deepEqual(navigateResults.map(event => event.data.message.content[0]?.isError), [false],
+    'native browser_navigate must succeed through the shipped approval path')
+  assert.equal(navigateResults[0].data.message.content[0]?.toolCallId, navigateCalls[0].data.callId,
+    'navigation tool result must pair with the model call')
+  assert.equal(firstEvents.findLast(event => event.type === 'turn/end')?.data.reason.kind, 'completed')
+  const tabId = model.observations[0].tabId
+  assert.ok(tabId, 'Agent navigation must produce a real browser tab id')
+
+  // 轮次与工具租约结束后才验收视图；租约中原生 guest 可能有意退让。
+  let state
+  await until(async () => {
+    const result = await browserRpcResponse(page, 'browser.control',
+      { sessionId, command: { kind: 'ensure-tab' } })
+    if (result?.error?.code === 'browser-failed' && result.error.details?.reason === 'BROWSER_BUSY') return false
+    assert.equal(result.ok, true, `human browser control after turn: ${result?.error?.code ?? 'unknown'}`)
+    state = result.value
+    return state?.activeTabId === tabId
+  }, 'navigation lease release and active tab')
+  assert.deepEqual(state.tabs.map(tab => tab.id), [tabId],
+    'auto-reveal must retain only the tab opened by the Agent')
+  await page.getByRole('button', { name: '收起右侧边栏' }).first().waitFor({ state: 'visible' })
+  const selected = page.locator(`[data-browser-tab-id="${tabId}"][aria-selected="true"]`)
+  await selected.waitFor({ state: 'visible' })
+  await page.getByTestId('browser-canvas').waitFor({ state: 'visible' })
+  let guest
+  await until(async () => {
+    guest = await nativeGuest(app)
+    return guest?.attached && guest.url === fixtureUrl && guest.title === 'Native guest fixture'
+  }, 'Agent-navigated guest automatically visible in the right sidebar')
+  const guestId = guest.id
+  const guestPage = app.context().pages().find(candidate => !candidate.isClosed() && candidate.url() === fixtureUrl)
+  assert.ok(guestPage, 'auto-revealed guest must remain an interactive Chromium target')
+  await clickGuest(guestPage, '#human')
+  await until(async () => await guestScript(app, guestId,
+    'document.querySelector("#human-result").textContent') === 'Human clicked',
+  'human mutation in Agent-navigated native guest', 10_000)
+
+  model.startSnapshot()
+  const second = await browserRpc(page, 'session.prompt', { sessionId, mode: 'queue',
+    content: [{ type: 'text', text: 'Take a fresh browser snapshot to inspect my click.' }] })
+  assert.equal(second.accepted, true, 'same Session must accept the second scripted Agent turn')
+  try {
+    await until(async () => {
+      history = await browserRpc(page, 'session.history', { sessionId, maxMessages: 30 })
+      return history.events.filter(({ event }) => event.type === 'turn/end').length >= 2
+    }, 'second native snapshot turn completion', 45_000)
+  } catch (error) {
+    throw new Error(`${error.message}; scripted navigate model errors: ${model.failures.join(' | ') || 'none'}`)
+  }
+  assert.deepEqual(model.failures, [], 'second scripted model request must receive the human mutation')
+  assert.equal(model.step, 2, 'Agent must snapshot and complete its second turn')
+  assert.deepEqual(model.observations.map(observation => observation.tabId), [tabId, tabId],
+    'second Agent snapshot must observe the same browser tab')
+  assert.deepEqual(history.events.filter(({ event }) => event.type === 'tool/call')
+    .map(({ event }) => event.data.name), ['browser_navigate', 'browser_snapshot'],
+  'session log must record navigation and the later snapshot in order')
+  assert.equal(await app.evaluate(({ webContents }, id) => {
+    const current = webContents.fromId(id)
+    return current && !current.isDestroyed() ? current.id : null
+  }, guestId), guestId, 'human mutation and Agent snapshot must retain the same native guest')
+  await until(async () => (await nativeGuest(app, guestId))?.attached,
+    'original guest visible after second Agent turn')
+  assert.equal(await guestScript(app, guestId, 'document.querySelector("#human-result").textContent'),
+    'Human clicked', 'Agent snapshot must preserve the human-mutated DOM')
+  assert.equal((await browserRpc(page, 'browser.control',
+    { sessionId, command: { kind: 'close-tab', tabId } })), null,
+  'closing the Agent-opened tab must release fresh Session browser resources')
+  await until(async () => await app.evaluate(({ webContents }, id) => webContents.fromId(id)?.isDestroyed() !== false,
+    guestId), 'Agent-opened native guest destroyed')
+}
+
+async function verifyAgentTimeoutRecovery(page, app, sessionId, fixture, model) {
+  const initial = await browserRpc(page, 'browser.control',
+    { sessionId, command: { kind: 'ensure-tab' } })
+  const tabId = initial.activeTabId
+  await page.locator(`[data-browser-tab-id="${tabId}"]`).waitFor({ state: 'visible' })
+  await page.locator(`[data-browser-tab-id="${tabId}"]`).click()
+  const opened = await browserRpcResponse(page, 'browser.control',
+    { sessionId, command: { kind: 'navigate', url: fixture.url } })
+  if (!opened.ok) {
+    assert.equal(opened.error?.details?.reason, 'BROWSER_STALE_REF',
+      `stable guest navigation: ${JSON.stringify(opened.error)}`)
+    const after = await browserRpc(page, 'browser.control',
+      { sessionId, command: { kind: 'ensure-tab' } })
+    assert.equal(after.activeTabId, tabId)
+    assert.equal(after.tabs.find(tab => tab.id === tabId)?.url, fixture.url,
+      'stale first capture must still leave the live local page in the original tab')
+  } else assert.equal(opened.value.activeTabId, tabId)
+  let guest
+  await until(async () => {
+    guest = await nativeGuest(app)
+    return guest?.url === fixture.url && guest.title === 'Native guest fixture'
+  }, 'stable guest before timeout navigation')
+  const guestId = guest.id
+  await page.getByRole('button', { name: '收起右侧边栏' }).first().click()
+  await page.getByRole('button', { name: '打开右侧边栏' }).first().waitFor({ state: 'visible' })
+  const priorTurns = (await browserRpc(page, 'session.history', { sessionId, maxMessages: 30 }))
+    .events.filter(({ event }) => event.type === 'turn/end').length
+  const prompted = await browserRpc(page, 'session.prompt', { sessionId, mode: 'queue',
+    content: [{ type: 'text', text: 'Navigate to the stalled local fixture, then recover with a new snapshot.' }] })
+  assert.equal(prompted.accepted, true, 'Agent must accept timeout recovery turn')
+  try {
+    await until(async () => {
+      if (fixture.stalledRequests === 0) return false
+      try {
+        return await guestScript(app, guestId, `document.readyState !== 'loading' &&
+          document.title === 'Native guest timeout fixture' &&
+          document.body.innerText.includes('Timeout recovery fixture')`)
+      } catch { return false }
+    }, 'DOM ready while local image response remains stalled', 8_000)
+  } catch (error) {
+    const current = await app.evaluate(({ webContents }, id) => {
+      const wc = webContents.fromId(id)
+      return wc && !wc.isDestroyed() ? { url: wc.getURL(), loading: wc.isLoadingMainFrame() } : null
+    }, guestId)
+    throw new Error(`${error.message}; image requests=${fixture.stalledRequests}, guest=${JSON.stringify(current)}, ` +
+      `model step=${model.step}, errors=${model.failures.join(' | ') || 'none'}`)
+  }
+  let history
+  try {
+    await until(async () => {
+      history = await browserRpc(page, 'session.history', { sessionId, maxMessages: 30 })
+      return history.events.filter(({ event }) => event.type === 'turn/end').length > priorTurns
+    }, 'Agent timeout and fresh snapshot turn completion', 45_000)
+  } catch (error) {
+    throw new Error(`${error.message}; scripted timeout model errors: ${model.failures.join(' | ') || 'none'}`)
+  }
+  assert.deepEqual(model.failures, [], 'scripted recovery model must receive the timeout then fresh snapshot')
+  assert.equal(model.step, 3, 'Agent must navigate, snapshot after timeout, then complete')
+  const events = history.events.map(({ event }) => event)
+  const calls = events.filter(event => event.type === 'tool/call').slice(-2)
+  assert.deepEqual(calls.map(event => event.data.name), ['browser_navigate', 'browser_snapshot'],
+    'Session must record actual model navigation and subsequent snapshot calls')
+  const results = events.filter(event => event.type === 'tool/result').slice(-2)
+  assert.deepEqual(results.map(event => event.data.message.content[0]?.isError), [true, false],
+    'navigation must fail with a timeout while the fresh snapshot succeeds')
+  assert.deepEqual(results.map(event => event.data.message.content[0]?.toolCallId),
+    calls.map(event => event.data.callId), 'recovery tool results must pair with model calls')
+  assert.equal(events.findLast(event => event.type === 'turn/end')?.data.reason.kind, 'completed')
+  assert.equal(model.observations[0]?.tabId, tabId, 'fresh snapshot must retain the original browser tab')
+  assert.equal(await app.evaluate(({ webContents }, id) => {
+    const current = webContents.fromId(id)
+    return current && !current.isDestroyed() ? current.id : null
+  }, guestId), guestId, 'stopped navigation must retain the same native WebContentsView')
+  let state
+  await until(async () => {
+    const result = await browserRpcResponse(page, 'browser.control',
+      { sessionId, command: { kind: 'ensure-tab' } })
+    if (result?.error?.code === 'browser-failed' && result.error.details?.reason === 'BROWSER_BUSY') return false
+    assert.equal(result.ok, true, `human browser control after recovery: ${JSON.stringify(result.error)}`)
+    state = result.value
+    return state?.activeTabId === tabId
+  }, 'timeout recovery lease release and original tab')
+  assert.deepEqual(state.tabs.map(tab => tab.id), [tabId],
+    'timeout recovery must not create a replacement tab')
+  await page.getByRole('button', { name: '收起右侧边栏' }).first().waitFor({ state: 'visible' })
+  await page.locator(`[data-browser-tab-id="${tabId}"][aria-selected="true"]`).waitFor({ state: 'visible' })
+  await until(async () => (await nativeGuest(app, guestId))?.attached,
+    'recoverable navigation timeout automatically reveals the original guest')
+  assert.equal(await browserRpc(page, 'browser.control',
+    { sessionId, command: { kind: 'close-tab', tabId } }), null,
+  'closing recovered tab must release its browser resources')
 }
 
 async function main() {
@@ -836,6 +1211,8 @@ async function main() {
   let record
   let fixture
   let model
+  let navigateModel
+  let timeoutModel
   let passed = false
   try {
     await Promise.all([home, tmp, workspace].map(path => mkdir(path, { recursive: true, mode: 0o700 })))
@@ -930,7 +1307,16 @@ async function main() {
     const titlebarInteractionVerified = await verifyTitlebar(page, app)
     await verifyTerminalTabs(page, terminalScreenshot)
     fixture = await browserFixture()
-    await verifyNativeBrowser(page, app, fixture.url, origin, browserScreenshot, guestScreenshot, model)
+    const recoverySessionId = await verifyNativeBrowser(page, app, fixture.url, origin,
+      browserScreenshot, guestScreenshot, model)
+    timeoutModel = await scriptedTimeoutRecoveryModel(fixture.timeoutUrl)
+    await browserRpc(page, 'settings.update', { ns: 'llm-deepseek',
+      patch: { baseURL: timeoutModel.url, thinking: 'disabled', reasoningEffort: 'off' } })
+    await verifyAgentTimeoutRecovery(page, app, recoverySessionId, fixture, timeoutModel)
+    navigateModel = await scriptedNavigateModel(fixture.url)
+    await browserRpc(page, 'settings.update', { ns: 'llm-deepseek',
+      patch: { baseURL: navigateModel.url, thinking: 'disabled', reasoningEffort: 'off' } })
+    await verifyAgentNavigateAutoReveal(page, app, fixture.url, navigateModel)
     await verifyWindowBoundary(page, app, origin)
 
     const originalWindow = await app.evaluate(({ BrowserWindow }) => {
@@ -963,11 +1349,13 @@ async function main() {
     passed = true
     console.log(`PASS: Host page, HTTP, two WebSockets, onboarding focus, Remote-SSH bridge and wizard, window safety, ` +
       `native titlebar styling${titlebarInteractionVerified ? ', drag and double-click' : ' (physical drag and double-click unverified)'}, ` +
-      `terminal tabs, native shared-session browser guest, ${nativeMenuVerified ? 'native menu, ' : 'native menu hide unverified, '}` +
+      `terminal tabs, native shared-session browser guest and auto-reveal, ${nativeMenuVerified ? 'native menu, ' : 'native menu hide unverified, '}` +
       `close-hide and Dock restore, single-instance restore` +
       `${locked === true ? ' (foreground focus unverified: screen locked)' : ' and focus'}; ` +
       `screenshots: ${screenshot}, ${afterScreenshot}, ${remoteScreenshot}, ${terminalScreenshot}, ${browserScreenshot}, ${guestScreenshot}, ${restoredScreenshot}`)
     console.log('PASS: scripted loopback model drove shipped Host browser_snapshot and browser_click on the human-operated native guest; Host origin/localhost navigation and guest subresource fetch denied; no external model API used')
+    console.log('PASS: separate fresh Session browser_navigate auto-revealed its native guest and selected tab; a human click persisted into the next model browser_snapshot on the same guest')
+    console.log('PASS: stalled local image timed out browser_navigate, stopped loading safely, and the same Electron guest/tab yielded a fresh Agent browser_snapshot')
   } finally {
     if (!passed && existsSync(screenshot)) console.error(`Failure screenshot: ${screenshot}`)
     if (!passed && existsSync(afterScreenshot)) console.error(`Focus screenshot: ${afterScreenshot}`)
@@ -978,6 +1366,8 @@ async function main() {
     if (!passed && existsSync(restoredScreenshot)) console.error(`Restored screenshot: ${restoredScreenshot}`)
     if (fixture !== undefined) await fixture.close()
     if (model !== undefined) await model.close()
+    if (navigateModel !== undefined) await navigateModel.close()
+    if (timeoutModel !== undefined) await timeoutModel.close()
     if (app !== undefined) await closeOwnApp(app)
     // 未能证明 Host 所有权或无法等到其退出时保留 HOME，避免删掉仍运行的 Host 的数据。
     let safeToClean = false

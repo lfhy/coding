@@ -10,6 +10,9 @@ const MAX_TABS = 8
 const FRAME_LIMIT = 2 * 1024 * 1024
 const MAX_URL_LENGTH = 4096
 const OVERLONG_URL = 'about:blank#browser-url-exceeds-limit'
+const NAVIGATION_TIMEOUT_MS = 10_000
+const NAVIGATION_STOP_TIMEOUT_MS = 3_000
+const SCREENSHOT_TIMEOUT_MS = 5_000
 
 interface Tab {
   id: BrowserTabId
@@ -22,6 +25,7 @@ interface Tab {
   worldContextId?: number
   syntheticInput: boolean
   domRevision?: number
+  everPresented: boolean
 }
 
 interface Owner {
@@ -235,7 +239,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     wc.setWindowOpenHandler(() => ({ action: 'deny' }))
     const id = randomUUID() as BrowserTabId
     const generation = randomUUID()
-    const tab: Tab = { id, generation, view, revision: 0, navigation: 0, syntheticInput: false,
+    const tab: Tab = { id, generation, view, revision: 0, navigation: 0, syntheticInput: false, everPresented: false,
       summary: { id, generation, url: 'about:blank', title: '', canGoBack: false, canGoForward: false } }
     owner.tabs.set(id, tab)
     view.setBounds({ x: 0, y: 0, ...owner.viewport })
@@ -376,12 +380,26 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     if (page.href === null || page.href !== usableUrl(sessionId, owner, tab)) staleObservation(sessionId, owner, tab)
     const snapshot = `Page text:\n${page.text}\nElements:\n${page.entries.join('\n')}`.slice(0, 12_000)
       .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ' ')
-    const image = await wc.debugger.sendCommand('Page.captureScreenshot', {
-      format: 'png', captureBeyondViewport: false, fromSurface: true,
-    }) as { data: string }
+    let png: Uint8Array | null = null
+    if (tab.everPresented) {
+      let timer: ReturnType<typeof setTimeout> | undefined
+      try {
+        const image = await Promise.race([
+          wc.debugger.sendCommand('Page.captureScreenshot', {
+            format: 'png', captureBeyondViewport: false, fromSurface: true,
+          }) as Promise<{ data: string }>,
+          new Promise<never>((_resolve, reject) => {
+            timer = setTimeout(() => {
+              destroy(sessionId)
+              reject(new GuestError('browser screenshot timed out; browser session closed', 'BROWSER_FAILED'))
+            }, SCREENSHOT_TIMEOUT_MS)
+          }),
+        ])
+        png = Buffer.from(image.data, 'base64')
+      } finally { if (timer) clearTimeout(timer) }
+    }
     assertStable(sessionId, owner, tab, navigation)
     if (page.href !== usableUrl(sessionId, owner, tab)) staleObservation(sessionId, owner, tab)
-    let png: Uint8Array = Buffer.from(image.data, 'base64')
     const domRevision = await evaluate<number>(tab, 'globalThis.__dshGuestReadMutationRevision()')
     assertStable(sessionId, owner, tab, navigation)
     if (page.href !== usableUrl(sessionId, owner, tab)) staleObservation(sessionId, owner, tab)
@@ -390,10 +408,10 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
       emit(sessionId, owner)
       fail('browser document changed during observation', 'BROWSER_STALE_REF')
     }
-    if (png.byteLength > FRAME_LIMIT) {
+    if (png && png.byteLength > FRAME_LIMIT) {
       png = nativeImage.createFromBuffer(Buffer.from(png)).resize({ ...owner.viewport, quality: 'best' }).toPNG()
     }
-    if (png.byteLength > FRAME_LIMIT) {
+    if (png && png.byteLength > FRAME_LIMIT) {
       // 大画面不被发布；页面仍然可供人工使用，先前的元素引用亦不可复用。
       delete tab.capture
       owner.revision++
@@ -404,11 +422,11 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     const observation: BrowserObservation = { tabId: tab.id, generation: tab.generation,
       revision: ++tab.revision, url: page.href, title: tab.summary.title, snapshot,
       viewport: { ...owner.viewport }, cursor }
-    const capture: BrowserCapture = { observation, png: new Uint8Array(png) }
+    const capture: BrowserCapture = { observation, png: png === null ? null : new Uint8Array(png) }
     tab.capture = capture
     tab.domRevision = page.domRevision
     owner.revision++
-    emit(sessionId, owner, capture)
+    emit(sessionId, owner, capture.png === null ? undefined : capture)
     return capture
   }
 
@@ -436,9 +454,54 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     }
   }
 
-  async function navigate(tab: Tab, url: string): Promise<void> {
-    await tab.view.webContents.loadURL(allowedUrl(url, options.hostOrigin))
+  async function navigate(sessionId: string, owner: Owner, tab: Tab, url: string): Promise<void> {
+    const wc = tab.view.webContents
+    const completed = Promise.resolve(wc.loadURL(allowedUrl(url, options.hostOrigin)))
+      .then(() => ({ timedOut: false as const }), (error: unknown) => ({ timedOut: false as const, error }))
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const deadline = new Promise<{ timedOut: true }>((resolve) => {
+      timer = setTimeout(() => { resolve({ timedOut: true }) }, NAVIGATION_TIMEOUT_MS)
+    })
+    const result = await Promise.race([completed, deadline])
+    if (timer) clearTimeout(timer)
+    if (!result.timedOut) {
+      // 保留 loadURL 的原始失败诊断，不能把被拒绝的导航当作已完成页面。
+      if ('error' in result) throw result.error
+      refreshSummary(tab)
+      return
+    }
+
+    // 停止之后仍须等待原 loadURL 收敛，并确认主 frame 与 CDP 均可响应。
+    // 超时的旧调用不再有任何继续观察或写回状态的机会。
+    let stopTimer: ReturnType<typeof setTimeout> | undefined
+    let quiescent = false
+    const recovery = { expired: false }
+    const stillRecovering = (): boolean => !recovery.expired
+    try {
+      wc.stop()
+      quiescent = await Promise.race([
+        (async () => {
+          await completed
+          if (recovery.expired || wc.isDestroyed() || wc.isLoadingMainFrame()) return false
+          const debuggerApi = wc.debugger
+          if (!debuggerApi.isAttached()) debuggerApi.attach('1.3')
+          await debuggerApi.sendCommand('Page.getFrameTree')
+          return stillRecovering() && !wc.isDestroyed() && !wc.isLoadingMainFrame()
+        })().catch(() => false),
+        new Promise<false>((resolve) => {
+          stopTimer = setTimeout(() => { recovery.expired = true; resolve(false) }, NAVIGATION_STOP_TIMEOUT_MS)
+        }),
+      ])
+    } catch { /* 无法证明导航停稳时只销毁当前 Session。 */ }
+    finally { if (stopTimer) clearTimeout(stopTimer) }
+    if (!quiescent) {
+      destroy(sessionId)
+      fail('browser navigation timed out and could not be stopped safely; browser session closed', 'BROWSER_FAILED')
+    }
+    invalidate(owner, tab)
     refreshSummary(tab)
+    emit(sessionId, owner)
+    fail('browser navigation timed out; loading stopped, take a new snapshot of the current page', 'BROWSER_FAILED')
   }
 
   function checkHumanTarget(owner: Owner, tab: Tab, target: BrowserHumanTarget, x: number, y: number): void {
@@ -491,7 +554,10 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     const oldBounds = presented?.bounds
     if (!same || !oldBounds || Object.keys(effective).some(key => effective[key as keyof typeof effective] !==
       oldBounds[key as keyof typeof effective])) tab.view.setBounds(effective)
-    if (!same) window.contentView.addChildView(tab.view)
+    if (!same) {
+      window.contentView.addChildView(tab.view)
+      tab.everPresented = true
+    }
     presented = { sessionId, tabId, bounds: effective }
     if (owner.viewport.width !== boundedWidth || owner.viewport.height !== boundedHeight) {
       owner.viewport = { width: boundedWidth, height: boundedHeight }
@@ -535,7 +601,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
       let cursor: BrowserObservation['cursor'] = null
       let mutated = false
       try { switch (command.kind) {
-        case 'navigate': await navigate(tab, command.url); break
+        case 'navigate': await navigate(sessionId, owner, tab, command.url); break
         case 'click':
         case 'fill': {
           if (command.revision !== tab.revision || !tab.capture) fail('stale browser element revision', 'BROWSER_STALE_REF')
@@ -589,7 +655,11 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
         case 'snapshot': case 'screenshot': break
         default: { const never: never = command; throw new Error(`unknown browser command: ${String(never)}`) }
       }
-      return await observe(sessionId, owner, tab, cursor)
+      const capture = await observe(sessionId, owner, tab, cursor)
+      if (command.kind === 'screenshot' && capture.png === null) {
+        fail('browser screenshot unavailable until the page is shown in the desktop workbench', 'BROWSER_FAILED')
+      }
+      return capture
       } catch (error) {
         if (mutated && owners.get(sessionId) === owner && owner.tabs.has(tab.id)) {
           invalidate(owner, tab)
@@ -625,7 +695,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
             destroyTab(closing)
             break
           }
-          case 'navigate': await navigate(tab, command.url); await observe(sessionId, owner, tab, null); break
+          case 'navigate': await navigate(sessionId, owner, tab, command.url); await observe(sessionId, owner, tab, null); break
           case 'back':
           case 'forward':
           case 'reload': {

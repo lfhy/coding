@@ -33,6 +33,10 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 export interface WorkbenchBrowserOwnerProps {
   shown: boolean
   openBrowser: (tabId?: string) => void
+  interactionEpoch: number
+  browserAutoRevealed: boolean
+  requestAutoReveal: (epoch: number) => boolean
+  autoRevealBrowser: (tabId: string, epoch: number) => void
   syncBrowserTabs: (tabs: readonly { id: string; name: string }[], activeId: string | null) => void
   tabId?: string
   tabName?: string

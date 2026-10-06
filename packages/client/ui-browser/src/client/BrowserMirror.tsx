@@ -5,6 +5,7 @@ import {
   IconGlobeOutline14, IconRefreshOutline16,
 } from '@deepseek-ai/dsh-client-ui-icons'
 import type { BrowserHumanCommand, BrowserHumanTarget } from '@deepseek-ai/dsh-browser/types'
+import type { ToolCallBlock } from '@deepseek-ai/dsh-client-runtime/client'
 import type { HostObservable, InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-open-in-app/client'
 import { desktopBrowserPresentation, type BrowserView } from './controller.ts'
@@ -17,7 +18,7 @@ import css from './BrowserMirror.module.css'
 /** 两个 slot 共用同一个会话控制器，但只让内容 slot 持有轮询。 */
 export interface BrowserMirrorInjected {
   hooks: { browserMirror: HostObservable<BrowserView> }
-  start: (onRevision: (state: BrowserState) => void) => () => void
+  start: () => () => void
   ensureTab: () => Promise<void>
   command: (command: BrowserHumanCommand) => Promise<boolean>
   retry: () => void
@@ -29,6 +30,29 @@ function browserTabNames(state: BrowserState, t: BrowserMirrorProps['t']) {
   return state.tabs.map(tab => ({
     id: tab.id, name: tab.title || (tab.url === 'about:blank' ? t('newTab') : tab.url),
   }))
+}
+
+const STOPPED_NAVIGATION_DIAGNOSTIC = 'browser navigation timed out; loading stopped, take a new snapshot of the current page'
+
+type NavigationRevealTarget = { tabId: string | null }
+
+function navigationRevealTarget(call: ToolCallBlock, native: boolean): NavigationRevealTarget | null {
+  if (!('kind' in call) || call.call?.name !== 'browser_navigate') return null
+  const text = call.content.find(block => block.type === 'text')
+  if (text?.type !== 'text') return null
+  if (call.isError) {
+    if (!native) return null
+    const diagnostic = text.text.startsWith('Error: ') ? text.text.slice('Error: '.length) : text.text
+    return diagnostic === STOPPED_NAVIGATION_DIAGNOSTIC ? { tabId: null } : null
+  }
+  try {
+    const value: unknown = JSON.parse(text.text)
+    if (typeof value !== 'object' || value === null || !('action' in value) || value.action !== 'navigate'
+      || !('observation' in value) || typeof value.observation !== 'object' || value.observation === null
+      || !('tabId' in value.observation) || typeof value.observation.tabId !== 'string'
+      || value.observation.tabId.length === 0) return null
+    return { tabId: value.observation.tabId }
+  } catch { return null }
 }
 
 function AgentPointer() {
@@ -108,8 +132,12 @@ export function BrowserTabs({ shown, browserShown = shown, tabId, tabName, tabDo
  * @returns 浏览器内容区域。
  */
 export function BrowserMirror({ sessionId, shown, selectedTabId, newTabRequest, handledTabRequest,
-  markTabRequestHandled, openBrowser, syncBrowserTabs, focusBrowserTab,
+  markTabRequestHandled, syncBrowserTabs, focusBrowserTab, useSession,
+  interactionEpoch, browserAutoRevealed, requestAutoReveal, autoRevealBrowser,
   useBrowserMirror, start, ensureTab, command, retry, t }: BrowserMirrorProps) {
+  const nodes = useSession(snapshot => snapshot.nodes)
+  const runningCalls = useSession(snapshot => snapshot.runningCalls)
+  const openState = useSession(snapshot => snapshot.openState)
   const nativePresenter = desktopBrowserPresentation()
   const native = nativePresenter !== null
   const view = useBrowserMirror(value => value)
@@ -117,29 +145,68 @@ export function BrowserMirror({ sessionId, shown, selectedTabId, newTabRequest, 
   viewRef.current = view
   const phaseRef = useRef(view.phase)
   phaseRef.current = view.phase
-  const openRef = useRef(openBrowser)
-  openRef.current = openBrowser
-  const syncRef = useRef(syncBrowserTabs)
-  syncRef.current = syncBrowserTabs
-  const tRef = useRef(t)
-  tRef.current = t
-  useEffect(() => start((state) => {
-    syncRef.current(browserTabNames(state, tRef.current), state.activeTabId)
-    openRef.current(state.activeTabId ?? undefined)
-  }), [start])
+  useEffect(() => start(), [start])
+  const observed = useRef<{ ready: boolean; seq: number; pending: (NavigationRevealTarget & { epoch: number }) | null }>({
+    ready: false, seq: 0, pending: null,
+  })
+  useEffect(() => {
+    if (openState !== 'open') return
+    const tracked = observed.current
+    const cutoff = tracked.ready ? tracked.seq : 0
+    const found = { latestSeq: cutoff, seq: cutoff, target: null as NavigationRevealTarget | null }
+    const visit = (call: ToolCallBlock): void => {
+      for (const child of call.subCalls) visit(child)
+      if (!('kind' in call)) return
+      found.latestSeq = Math.max(found.latestSeq, call.seq)
+      if (call.seq <= cutoff) return
+      const target = navigationRevealTarget(call, native)
+      if (target !== null && call.seq > found.seq) {
+        found.seq = call.seq
+        found.target = target
+      }
+    }
+    // 历史首次建立水位；后续只读新追加的尾部及仍在执行的调用树。
+    for (let index = nodes.length - 1; index >= 0; index--) {
+      const node = nodes[index]
+      if (node === undefined) break
+      if (tracked.ready && node.seq <= cutoff) break
+      if (node.kind === 'tool-result') visit(node)
+    }
+    for (const call of runningCalls) visit(call)
+    if (!tracked.ready) {
+      tracked.ready = true
+      tracked.seq = found.latestSeq
+      return
+    }
+    tracked.seq = found.latestSeq
+    if (found.target !== null) {
+      tracked.pending = { ...found.target, epoch: interactionEpoch }
+    }
+  }, [nodes, runningCalls, openState, interactionEpoch, native])
   useEffect(() => {
     if (view.state !== null) {
       syncBrowserTabs(browserTabNames(view.state, t), view.state.activeTabId)
     } else if (view.phase === 'empty') syncBrowserTabs([], null)
   }, [view.state, view.phase, syncBrowserTabs, t])
+  useEffect(() => {
+    const pending = observed.current.pending
+    if (pending === null) return
+    if (pending.epoch !== interactionEpoch) { observed.current.pending = null; return }
+    const targetTabId = pending.tabId ?? view.state?.activeTabId
+    if (targetTabId === null || targetTabId === undefined || view.state?.activeTabId !== targetTabId
+      || !view.state.tabs.some(tab => tab.id === targetTabId)) return
+    observed.current.pending = null
+    if (!requestAutoReveal(pending.epoch)) return
+    autoRevealBrowser(targetTabId, pending.epoch)
+  }, [view, nodes, runningCalls, interactionEpoch, requestAutoReveal, autoRevealBrowser])
   // 只响应工作台选中页变化；Host 新画面交给同步投影，避免旧选择反抢模型刚打开的页。
   useEffect(() => {
     const current = viewRef.current
-    if (!shown || selectedTabId === undefined || current.phase !== 'ready' || current.pending
+    if (!shown || browserAutoRevealed || selectedTabId === undefined || current.phase !== 'ready' || current.pending
       || current.state.operationActive || current.state.activeTabId === selectedTabId) return
     const target = current.state.tabs.find(tab => tab.id === selectedTabId)
     if (target !== undefined) void command({ kind: 'select-tab', tabId: target.id })
-  }, [shown, selectedTabId, command])
+  }, [shown, selectedTabId, browserAutoRevealed, command])
   // 每次由菜单进入仅等待一次明确基线；已有标签会消耗机会，关闭后的 empty 不会重建。
   const entry = useRef({ shown: false, awaitingState: false })
   const issuedTabRequest = useRef(handledTabRequest)

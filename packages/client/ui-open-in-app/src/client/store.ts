@@ -51,6 +51,8 @@ export type WorkbenchState = {
   activeId: string | null
   nextTerminalNumber: number
   activeBrowserTabId: string | null
+  interactionEpoch: number
+  browserAutoRevealed: boolean
   filesQuery: string
   filesExpanded: readonly string[]
   filesLevels: Readonly<Record<string, WorkbenchFileLevel | undefined>>
@@ -76,6 +78,8 @@ type WorkbenchActions = {
   activateFile: (draft: WorkbenchState, id: string) => void
   closeFile: (draft: WorkbenchState, id: string) => void
   syncBrowserTabs: (draft: WorkbenchState, tabs: readonly BrowserTabInput[], activeBrowserTabId?: string | null) => void
+  recordInteraction: (draft: WorkbenchState) => void
+  autoRevealBrowser: (draft: WorkbenchState, tabId: string, epoch: number) => void
   setFilesQuery: (draft: WorkbenchState, query: string) => void
   toggleFilesExpanded: (draft: WorkbenchState, key: string) => void
   setFilesLevel: (draft: WorkbenchState, segments: readonly string[], phase: 'loading' | 'error') => void
@@ -112,6 +116,8 @@ function initialWorkbenchState(): WorkbenchState {
     activeId: null,
     nextTerminalNumber: 1,
     activeBrowserTabId: null,
+    interactionEpoch: 0,
+    browserAutoRevealed: false,
     filesQuery: '',
     filesExpanded: [],
     filesLevels: {},
@@ -138,6 +144,8 @@ function retainLevel(
 
 const workbenchActions: WorkbenchActions = {
   setView: (draft, view) => {
+    draft.interactionEpoch++
+    draft.browserAutoRevealed = false
     draft.view = view
     if (view === 'menu') return
     const active = draft.tabs.find(tab => tab.id === draft.activeId && viewForTab(tab) === view)
@@ -148,6 +156,7 @@ const workbenchActions: WorkbenchActions = {
     draft.activeId = next?.id ?? null
   },
   openFile: (draft, file) => {
+    draft.interactionEpoch++
     const id = tabIdForSegments(file.segments)
     if (!draft.tabs.some(tab => tab.id === id)) {
       draft.tabs.push({ type: 'file', id, name: file.name, segments: [...file.segments] })
@@ -156,6 +165,7 @@ const workbenchActions: WorkbenchActions = {
     draft.view = 'files'
   },
   openFileManager: (draft) => {
+    draft.interactionEpoch++
     let tab = draft.tabs.find((candidate): candidate is WorkbenchFileManagerTab => candidate.type === 'file-manager')
     if (tab === undefined) {
       tab = { type: 'file-manager', id: 'file-manager' }
@@ -164,6 +174,7 @@ const workbenchActions: WorkbenchActions = {
     selectTab(draft, tab)
   },
   openTerminal: (draft) => {
+    draft.interactionEpoch++
     const number = draft.nextTerminalNumber++
     const tab: WorkbenchTerminalTab = { type: 'terminal', id: `terminal:${String(number)}`, number }
     draft.tabs.push(tab)
@@ -171,11 +182,17 @@ const workbenchActions: WorkbenchActions = {
   },
   activateTab: (draft, id) => {
     const tab = draft.tabs.find(tab => tab.id === id)
-    if (tab !== undefined) selectTab(draft, tab)
+    if (tab !== undefined) {
+      draft.interactionEpoch++
+      draft.browserAutoRevealed = false
+      selectTab(draft, tab)
+    }
   },
   closeTab: (draft, id) => {
     const index = draft.tabs.findIndex(tab => tab.id === id)
     if (index < 0) return
+    draft.interactionEpoch++
+    draft.browserAutoRevealed = false
     draft.tabs.splice(index, 1)
     if (draft.tabs.length === 0) {
       draft.activeId = null
@@ -210,6 +227,9 @@ const workbenchActions: WorkbenchActions = {
       draft.tabs = nextTabs
     }
     const browsers = nextTabs.filter(tab => tab.type === 'browser')
+    if (activeBrowserTabId !== undefined && activeBrowserTabId !== draft.activeBrowserTabId) {
+      draft.browserAutoRevealed = false
+    }
     const requestedId = activeBrowserTabId === undefined ? draft.activeBrowserTabId : activeBrowserTabId
     const selected = browsers.find(tab => tab.browserTabId === requestedId) ?? browsers[0]
     draft.activeBrowserTabId = selected?.browserTabId ?? null
@@ -229,6 +249,17 @@ const workbenchActions: WorkbenchActions = {
         selectTab(draft, next)
       }
     }
+  },
+  recordInteraction: (draft) => {
+    draft.interactionEpoch++
+    draft.browserAutoRevealed = false
+  },
+  autoRevealBrowser: (draft, tabId, epoch) => {
+    if (draft.interactionEpoch !== epoch) return
+    const tab = draft.tabs.find(tab => tab.type === 'browser' && tab.browserTabId === tabId)
+    if (tab === undefined) return
+    selectTab(draft, tab)
+    draft.browserAutoRevealed = true
   },
   setFilesQuery: (draft, query) => { draft.filesQuery = query },
   toggleFilesExpanded: (draft, key) => {
@@ -297,6 +328,10 @@ export function createRetainedWorkbenchStore(): EngineStoreHandle<RetainedWorkbe
       closeFile: (draft, id: SessionId, tabId: string) => { workbenchActions.closeFile(sessionState(draft, id), tabId) },
       syncBrowserTabs: (draft, id: SessionId, tabs: readonly BrowserTabInput[], activeBrowserTabId?: string | null) => {
         workbenchActions.syncBrowserTabs(sessionState(draft, id), tabs, activeBrowserTabId)
+      },
+      recordInteraction: (draft, id: SessionId) => { workbenchActions.recordInteraction(sessionState(draft, id)) },
+      autoRevealBrowser: (draft, id: SessionId, tabId: string, epoch: number) => {
+        workbenchActions.autoRevealBrowser(sessionState(draft, id), tabId, epoch)
       },
       setFilesQuery: (draft, id: SessionId, query: string) => {
         workbenchActions.setFilesQuery(sessionState(draft, id), query)

@@ -201,7 +201,7 @@ Open an absolute HTTP(S) URL. Load the browser-use skill first when available; i
   "properties": {
     "url": {
       "type": "string",
-      "description": "Absolute HTTP(S) URL without credentials, at most 2048 characters."
+      "description": "Plain absolute HTTP(S) address, such as https://example.com/. Do not pass a Markdown link like [label](https://example.com/). No credentials; at most 2048 characters."
     }
   },
   "required": [

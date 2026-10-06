@@ -50,7 +50,6 @@ function hostUrl(path: string, sessionId: string): URL {
 export class BrowserMirrorController {
   readonly view: SnapshotStore<BrowserView> = createSnapshotStore<BrowserView>(INITIAL)
   private active = false
-  private initialized = false
   private epoch = 0
   private timer: ReturnType<typeof setTimeout> | undefined
   private pending: AbortController | undefined
@@ -58,10 +57,7 @@ export class BrowserMirrorController {
   private imageUrl: string | null = null
   private last: BrowserState | null = null
   private readonly retiredGenerations = new Set<string>()
-  private opened: string | null = null
-  private pendingOpen: string | null = null
   private urgent = false
-  private onRevision: ((state: BrowserState) => void) | undefined
 
   /**
    * @param sessionId - 当前会话。
@@ -75,14 +71,12 @@ export class BrowserMirrorController {
     private readonly nativePresentation = false) {}
 
   /**
-   * 内容 slot 挂载期间轮询；基线状态不抢占文件视图。
-   * @param onRevision - 新观测出现后，以同一份已发布状态执行的导航动作。
+   * 内容 slot 挂载期间轮询；观测本身不改变工作台选择。
    * @returns 终止轮询的 disposer。
    */
-  start(onRevision: (state: BrowserState) => void): () => void {
+  start(): () => void {
     if (this.active) throw new Error('browser mirror already started')
     this.active = true
-    this.onRevision = onRevision
     this.view.set(INITIAL)
     void this.poll(this.epoch)
     return () => { this.stop() }
@@ -129,7 +123,7 @@ export class BrowserMirrorController {
       if (!this.current(epoch, action)) return false
       if (!response.result.ok) throw new Error(response.result.error.message)
       if (response.result.value === null) this.clearState()
-      else await this.accept(parseBrowserState(response.result.value), epoch, action, false)
+      else await this.accept(parseBrowserState(response.result.value), epoch, action)
       return true
     } catch (error) {
       if (this.current(epoch, action)) this.fail(error)
@@ -163,11 +157,7 @@ export class BrowserMirrorController {
     this.releaseImage()
     this.last = null
     this.retiredGenerations.clear()
-    this.initialized = false
-    this.opened = null
-    this.pendingOpen = null
     this.urgent = false
-    this.onRevision = undefined
     this.view.set(INITIAL)
   }
 
@@ -187,18 +177,12 @@ export class BrowserMirrorController {
     return this.active && epoch === this.epoch && !pending.signal.aborted
   }
   private clearState(): void {
-    this.initialized = true
     this.last = null
-    this.opened = null
-    this.pendingOpen = null
     this.releaseImage()
     this.view.set({ phase: 'empty', state: null, frameUrl: null, pending: false })
   }
   private lockWithoutState(): void {
-    this.initialized = true
     this.last = null
-    this.opened = null
-    this.pendingOpen = null
     this.releaseImage()
     this.view.set({ phase: 'busy', state: null, frameUrl: null, pending: false })
   }
@@ -210,7 +194,7 @@ export class BrowserMirrorController {
       message: error instanceof Error ? error.message : String(error), pending: false })
   }
 
-  private async accept(state: BrowserState, epoch: number, pending: AbortController, autoOpen: boolean): Promise<void> {
+  private async accept(state: BrowserState, epoch: number, pending: AbortController): Promise<void> {
     if (!this.current(epoch, pending)) return
     const previous = this.last
     if (this.retiredGenerations.has(state.browserGeneration)
@@ -218,10 +202,6 @@ export class BrowserMirrorController {
     const revisionChanged = previous?.browserGeneration !== state.browserGeneration || previous.stateRevision !== state.stateRevision
     const changed = revisionChanged || previous.operationActive !== state.operationActive
     if (!changed && this.view.getSnapshot().phase === 'ready') return
-    const fresh = this.initialized && revisionChanged
-    const key = `${state.browserGeneration}:${String(state.stateRevision)}`
-    if (autoOpen && fresh && state.observation !== null) this.pendingOpen = key
-    this.initialized = true
     if (previous && previous.browserGeneration !== state.browserGeneration) this.retiredGenerations.add(previous.browserGeneration)
     this.last = state
     const oldObservation = previous?.observation
@@ -256,11 +236,6 @@ export class BrowserMirrorController {
     } else if (!state.hasFrame || !sameFrame) this.releaseImage()
     if (!this.current(epoch, pending)) return
     this.view.set({ phase: 'ready', state, frameUrl: this.imageUrl, pending: this.action !== undefined })
-    if (autoOpen && this.pendingOpen === key && this.opened !== key) {
-      this.opened = key
-      this.pendingOpen = null
-      this.onRevision?.(state)
-    }
   }
 
   private async poll(epoch: number): Promise<void> {
@@ -275,7 +250,7 @@ export class BrowserMirrorController {
       if (response.status === 204) { this.clearState(); return }
       if (!response.ok) throw new Error(`HTTP ${String(response.status)}`)
       const state = parseBrowserStateOrLock(await response.json() as unknown)
-      if ('browserGeneration' in state) await this.accept(state, epoch, pending, true)
+      if ('browserGeneration' in state) await this.accept(state, epoch, pending)
       else this.lockWithoutState()
     } catch (error) {
       if (this.current(epoch, pending)) this.fail(error)

@@ -16,6 +16,7 @@ function fakeContents() {
   const events = new Map<string, (...args: never[]) => void>()
   let url = ''
   let destroyed = false
+  let loading = false
   let domRevision = 0
   const sendCommand = vi.fn(async (command: string, params?: unknown): Promise<unknown> => {
     if (command === 'Page.getFrameTree') return { frameTree: { frame: { id: 'frame' } } }
@@ -52,10 +53,14 @@ function fakeContents() {
     on: vi.fn((name: string, fn: (...args: never[]) => void) => { events.set(name, fn) }),
     getURL: vi.fn(() => url),
     loadURL: vi.fn(async (next: string) => {
+      loading = true
       events.get('did-start-navigation')?.({ isMainFrame: true } as never)
       url = next
       events.get('did-navigate')?.()
+      loading = false
     }),
+    stop: vi.fn(() => { loading = false }),
+    isLoadingMainFrame: vi.fn(() => loading),
     reload: vi.fn(), sendInputEvent: vi.fn(), insertText: vi.fn(async () => undefined),
     isDestroyed: vi.fn(() => destroyed),
     close: vi.fn(() => { destroyed = true; events.get('destroyed')?.() }),
@@ -242,7 +247,7 @@ describe('Electron 实时浏览器 guest', () => {
     const updates: Array<{ sessionId: string; state: unknown; capture: unknown }> = []
     const manager = createBrowserGuestManager(fixture(), { onState: (sessionId, state, capture) => {
       const event = { v: 1, type: 'state', sessionId, state, ...(capture ? { capture: {
-        observation: capture.observation, png: Buffer.from(capture.png!).toString('base64'),
+        observation: capture.observation, png: capture.png === null ? null : Buffer.from(capture.png).toString('base64'),
       } } : {}) } as const
       parseBridgeEvent(event)
       updates.push({ sessionId, state, capture })
@@ -262,7 +267,7 @@ describe('Electron 实时浏览器 guest', () => {
     const independent = await manager.execute('s2', { kind: 'snapshot' })
     expect(independent.observation.tabId).toBe(second.observation.tabId)
     parseBridgeResponse({ v: 1, id: 'independent', ok: true, value: {
-      observation: independent.observation, png: Buffer.from(independent.png!).toString('base64'),
+      observation: independent.observation, png: independent.png === null ? null : Buffer.from(independent.png).toString('base64'),
     } }, 'execute')
     wc.pageNavigate('https://example.com/#short')
     const recovered = await manager.execute('s1', { kind: 'snapshot' })
@@ -379,10 +384,12 @@ describe('Electron 实时浏览器 guest', () => {
   it('每会话上限八个标签页，超限截图不能发布旧观测', async () => {
     const updates: unknown[] = []
     const manager = createBrowserGuestManager(fixture(), { onState: (_id, state) => updates.push(state) })
-    await manager.control('s1', { kind: 'ensure-tab' })
-    for (let i = 1; i < 8; i++) await manager.control('s1', { kind: 'new-tab' })
+    let current = await manager.control('s1', { kind: 'ensure-tab' })
+    for (let i = 1; i < 8; i++) current = await manager.control('s1', { kind: 'new-tab' })
     await expect(manager.control('s1', { kind: 'new-tab' })).rejects.toMatchObject({ code: 'BROWSER_UNAVAILABLE' })
     const wc = electron.views.at(-1)!.webContents
+    manager.present({ sessionId: 's1', tabId: current!.activeTabId!,
+      visible: true, bounds: { x: 0, y: 0, width: 500, height: 400 } })
     wc.debugger.sendCommand.mockImplementation(async (command: string, params?: unknown): Promise<unknown> => {
       if (command === 'Page.getFrameTree') return { frameTree: { frame: { id: 'frame' } } }
       if (command === 'Page.createIsolatedWorld') return { executionContextId: 4 }
@@ -405,7 +412,9 @@ describe('Electron 实时浏览器 guest', () => {
 
   it('高分屏截图超过上限时退到 CSS 像素，再发布同一观测', async () => {
     const manager = createBrowserGuestManager(fixture())
-    await manager.control('s1', { kind: 'ensure-tab' })
+    const state = await manager.control('s1', { kind: 'ensure-tab' })
+    manager.present({ sessionId: 's1', tabId: state!.activeTabId!, visible: true,
+      bounds: { x: 0, y: 0, width: 500, height: 400 } })
     const wc = electron.views[0]!.webContents
     const original = wc.debugger.sendCommand.getMockImplementation()!
     wc.debugger.sendCommand.mockImplementation((command: string, params?: unknown) => {
@@ -418,5 +427,132 @@ describe('Electron 实时浏览器 guest', () => {
     expect(electron.createFromBuffer).toHaveBeenCalledOnce()
     expect(capture.png?.byteLength).toBe(8)
     await manager.dispose()
+  })
+
+  it('从未呈现的租约页面导航与快照仅发布 DOM，呈现后恢复原生画面', async () => {
+    const window = fixture()
+    const updates: unknown[] = []
+    const manager = createBrowserGuestManager(window, { onState: (_id, state, capture) => updates.push({ state, capture }) })
+    await manager.lease('s1')
+    const first = await manager.execute('s1', { kind: 'navigate', url: 'https://example.com/' }, { kind: 'none' })
+    const wc = electron.views[0]!.webContents
+    expect(first.observation.snapshot).toContain('Hello')
+    expect(first.png).toBeNull()
+    expect(updates.at(-1)).toMatchObject({ state: { hasFrame: false, observation: first.observation }, capture: undefined })
+    expect(wc.debugger.sendCommand.mock.calls.some(([command]) => command === 'Page.captureScreenshot')).toBe(false)
+    const target = await manager.prepare('s1')
+    const second = await manager.execute('s1', { kind: 'snapshot' }, target)
+    expect(second.observation.tabId).toBe(first.observation.tabId)
+    expect(second.observation.revision).toBeGreaterThan(first.observation.revision)
+    expect(second.png).toBeNull()
+    await expect(manager.execute('s1', { kind: 'screenshot' })).rejects.toThrow('shown in the desktop workbench')
+    expect(window.contentView.children).toHaveLength(0)
+    manager.present({ sessionId: 's1', tabId: first.observation.tabId, visible: true,
+      bounds: { x: 0, y: 0, width: 500, height: 400 } })
+    expect(window.contentView.children).toHaveLength(0)
+    await manager.release('s1')
+    expect(window.contentView.children).toHaveLength(1)
+    await manager.lease('s1')
+    expect(window.contentView.children).toHaveLength(0)
+    const captured = await manager.execute('s1', { kind: 'snapshot' })
+    expect(captured.observation.tabId).toBe(first.observation.tabId)
+    expect(captured.png?.byteLength).toBe(8)
+    expect(wc.debugger.sendCommand.mock.calls.some(([command]) => command === 'Page.captureScreenshot')).toBe(true)
+    await manager.release('s1')
+    await manager.dispose()
+  })
+
+  it('已呈现页面 CDP 截图卡住时仅关闭该 Session，迟到截图不能发布', async () => {
+    vi.useFakeTimers()
+    try {
+      const updates: Array<{ sessionId: string; state: unknown; capture: unknown }> = []
+      const window = fixture()
+      const manager = createBrowserGuestManager(window, { onState: (sessionId, state, capture) =>
+        updates.push({ sessionId, state, capture }) })
+      const first = await manager.execute('s1', { kind: 'navigate', url: 'https://example.com/' })
+      manager.present({ sessionId: 's1', tabId: first.observation.tabId, visible: true,
+        bounds: { x: 0, y: 0, width: 500, height: 400 } })
+      const independent = await manager.execute('s2', { kind: 'navigate', url: 'https://example.org/' })
+      const wc = electron.views[0]!.webContents
+      let complete!: (image: { data: string }) => void
+      const original = wc.debugger.sendCommand.getMockImplementation()!
+      wc.debugger.sendCommand.mockImplementation((command: string, params?: unknown) => command === 'Page.captureScreenshot'
+        ? new Promise((resolve) => { complete = resolve }) : original(command, params))
+      const pending = manager.execute('s1', { kind: 'snapshot' })
+      await vi.advanceTimersByTimeAsync(0)
+      await vi.advanceTimersByTimeAsync(5_000)
+      await expect(pending).rejects.toThrow('browser screenshot timed out; browser session closed')
+      expect(wc.close).toHaveBeenCalledOnce()
+      expect(await manager.prepare('s1')).toEqual({ kind: 'none' })
+      const count = updates.length
+      complete({ data: Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).toString('base64') })
+      await vi.advanceTimersByTimeAsync(0)
+      expect(updates).toHaveLength(count)
+      expect((await manager.execute('s2', { kind: 'snapshot' })).observation.tabId).toBe(independent.observation.tabId)
+      await manager.dispose()
+    } finally { vi.useRealTimers() }
+  })
+
+  it.each(['model', 'human'] as const)('%s 导航卡住但停止收敛后保留 guest，并撤销旧审批与画面', async (kind) => {
+    vi.useFakeTimers()
+    try {
+      const manager = createBrowserGuestManager(fixture())
+      const first = await manager.execute('s1', { kind: 'navigate', url: 'https://example.com/old' })
+      const approved = await manager.prepare('s1')
+      const wc = electron.views[0]!.webContents
+      let finish!: () => void
+      wc.loadURL.mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve }))
+      wc.isLoadingMainFrame.mockReturnValue(true)
+      wc.stop.mockImplementationOnce(() => { wc.isLoadingMainFrame.mockReturnValue(false); finish() })
+      if (kind === 'model') await manager.lease('s1')
+      const pending = kind === 'model'
+        ? manager.execute('s1', { kind: 'navigate', url: 'https://example.com/slow' }, approved)
+        : manager.control('s1', { kind: 'navigate', url: 'https://example.com/slow' })
+      await vi.advanceTimersByTimeAsync(0)
+      await vi.advanceTimersByTimeAsync(10_000)
+      await expect(pending).rejects.toMatchObject({ code: 'BROWSER_FAILED' })
+      await expect(pending).rejects.toThrow('take a new snapshot')
+      expect(wc.stop).toHaveBeenCalledOnce()
+      expect(wc.close).not.toHaveBeenCalled()
+      await expect(manager.execute('s1', { kind: 'snapshot' }, approved))
+        .rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
+      const after = await manager.execute('s1', { kind: 'snapshot' })
+      expect(after.observation.tabId).toBe(first.observation.tabId)
+      expect(after.observation.revision).toBeGreaterThan(first.observation.revision)
+      if (kind === 'model') await manager.release('s1')
+      await manager.dispose()
+    } finally { vi.useRealTimers() }
+  })
+
+  it.each(['stop throws', 'load never settles', 'CDP stalls'] as const)('%s 时仅关闭超时 Session，迟到结果不能写回', async (failure) => {
+    vi.useFakeTimers()
+    try {
+      const updates: Array<{ sessionId: string; state: unknown }> = []
+      const manager = createBrowserGuestManager(fixture(), { onState: (sessionId, state) => updates.push({ sessionId, state }) })
+      await manager.control('s1', { kind: 'ensure-tab' })
+      const independent = await manager.execute('s2', { kind: 'navigate', url: 'https://example.org/' })
+      const wc = electron.views[0]!.webContents
+      let finish!: () => void
+      wc.loadURL.mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve }))
+      wc.isLoadingMainFrame.mockReturnValue(true)
+      if (failure === 'stop throws') wc.stop.mockImplementationOnce(() => { throw new Error('stop failed') })
+      else if (failure === 'CDP stalls') {
+        wc.stop.mockImplementationOnce(() => { wc.isLoadingMainFrame.mockReturnValue(false); finish() })
+        wc.debugger.sendCommand.mockImplementationOnce(() => new Promise(() => {}))
+      } else wc.stop.mockImplementationOnce(() => { wc.isLoadingMainFrame.mockReturnValue(false) })
+      const pending = manager.execute('s1', { kind: 'navigate', url: 'https://example.com/slow' })
+      await vi.advanceTimersByTimeAsync(0)
+      await vi.advanceTimersByTimeAsync(failure === 'stop throws' ? 10_000 : 13_000)
+      await expect(pending).rejects.toMatchObject({ code: 'BROWSER_FAILED' })
+      await expect(pending).rejects.toThrow('browser session closed')
+      expect(wc.close).toHaveBeenCalledOnce()
+      expect(await manager.prepare('s1')).toEqual({ kind: 'none' })
+      finish()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(updates.at(-1)).toMatchObject({ sessionId: 's1', state: null })
+      const other = await manager.execute('s2', { kind: 'snapshot' })
+      expect(other.observation.tabId).toBe(independent.observation.tabId)
+      await manager.dispose()
+    } finally { vi.useRealTimers() }
   })
 })

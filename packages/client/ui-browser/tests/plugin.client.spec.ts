@@ -26,7 +26,7 @@ describe('browser twin-slot lifetime', () => {
     const tabsFace = tabs.inject as unknown as (id: string) => BrowserMirrorInjected
     expect(contentFace('session-1').hooks.browserMirror).toBe(tabsFace('session-1').hooks.browserMirror)
     expect(contentFace('session-2').hooks.browserMirror).not.toBe(contentFace('session-1').hooks.browserMirror)
-    const stop = contentFace('session-1').start(vi.fn())
+    const stop = contentFace('session-1').start()
     stop()
     owner()
     expect(ctx.slots.entries('workbench.browser')).toEqual([])

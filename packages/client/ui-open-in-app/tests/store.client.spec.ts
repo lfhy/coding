@@ -38,6 +38,8 @@ describe('file workbench store', () => {
       activeId: null,
       nextTerminalNumber: 1,
       activeBrowserTabId: null,
+      interactionEpoch: 8,
+      browserAutoRevealed: false,
       filesQuery: '',
       filesExpanded: [],
       filesLevels: {},
@@ -94,6 +96,26 @@ describe('file workbench store', () => {
 })
 
 describe('统一工作台标签', () => {
+  it('自动显露仅选中 Host 已同步的页面，人工操作优先于迟到的观测', () => {
+    const instance = createWorkbenchStore().create()
+    instance.actions.openFile({ name: 'notes.txt', segments: ['notes.txt'] })
+    instance.actions.syncBrowserTabs([{ id: 'one', name: '第一页' }, { id: 'two', name: '第二页' }], 'one')
+    const epoch = instance.getSnapshot().interactionEpoch
+    instance.actions.autoRevealBrowser('missing', epoch)
+    expect(instance.getSnapshot().view).toBe('files')
+    instance.actions.autoRevealBrowser('two', epoch)
+    expect(instance.getSnapshot()).toMatchObject({ view: 'browser', activeId: 'browser:two', browserAutoRevealed: true })
+    instance.actions.syncBrowserTabs([{ id: 'one', name: '第一页' }, { id: 'two', name: '第二页' }], 'one')
+    expect(instance.getSnapshot()).toMatchObject({ activeId: 'browser:one', browserAutoRevealed: false })
+    instance.actions.activateTab('browser:one')
+    instance.actions.autoRevealBrowser('two', epoch)
+    expect(instance.getSnapshot()).toMatchObject({ activeId: 'browser:one', browserAutoRevealed: false })
+    instance.actions.syncBrowserTabs([{ id: 'one', name: '第一页' }, { id: 'two', name: '第二页' }], 'one')
+    expect(instance.getSnapshot().activeId).toBe('browser:one')
+    instance.actions.recordInteraction()
+    instance.actions.autoRevealBrowser('two', epoch)
+    expect(instance.getSnapshot().activeId).toBe('browser:one')
+  })
   it('按标签类型切换内容，关闭活动标签时选择相邻项，关闭最后一项回到菜单', () => {
     const instance = createWorkbenchStore().create()
     const fileId = tabIdForSegments(['notes.txt'])

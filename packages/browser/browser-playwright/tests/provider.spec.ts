@@ -705,6 +705,24 @@ describe('Playwright browser owner', () => {
     await ctx.fiber.dispose()
   })
 
+  it('preserves an existing page when direct navigation receives an invalid URL', async () => {
+    const { ctx, service } = await headlessProvider()
+    const id = SessionId('invalid-existing')
+    const signal = new AbortController().signal
+    const first = await service.execute(id, { kind: 'navigate', url: 'http://localhost/' }, signal)
+    const original = service.state(id)
+    for (const url of ['[link](https://example.com/?token=secret)', 'not a URL']) {
+      await expect(service.execute(id, { kind: 'navigate', url }, signal))
+        .rejects.toMatchObject({ code: 'BROWSER_INVALID_URL' })
+      expect(service.state(id)).toEqual(original)
+      expect(service.latest(id)?.observation).toEqual(first.observation)
+    }
+    expect(browserContext.close).not.toHaveBeenCalled()
+    expect(page.goto).toHaveBeenCalledTimes(1)
+    expect((await service.execute(id, { kind: 'snapshot' }, signal)).observation.tabId).toBe(first.observation.tabId)
+    await ctx.fiber.dispose()
+  })
+
   it('closes a context when first-page creation fails and can create a fresh session', async () => {
     const { ctx, service } = await headlessProvider()
     const id = SessionId('failed-first-page')

@@ -423,6 +423,8 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
         props.actions.closeTab(sessionId, id)
       },
       syncBrowserTabs: (tabs, activeId) => { props.actions.syncBrowserTabs(sessionId, tabs, activeId) },
+      recordInteraction: () => { props.actions.recordInteraction(sessionId) },
+      autoRevealBrowser: (tabId, epoch) => { props.actions.autoRevealBrowser(sessionId, tabId, epoch) },
       setFilesQuery: (query) => { props.actions.setFilesQuery(sessionId, query) },
       toggleFilesExpanded: (key) => { props.actions.toggleFilesExpanded(sessionId, key) },
       setFilesLevel: (segments, phase) => { props.actions.setFilesLevel(sessionId, segments, phase) },
@@ -436,7 +438,10 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
       },
       listFiles: (segments: readonly string[], signal?: AbortSignal) => props.listFiles(sessionId, segments, signal),
       readFile: (segments: readonly string[], signal?: AbortSignal) => props.readFile(sessionId, segments, signal),
-      closeWorkbench: () => { props.closeWorkbench(sessionId) },
+      closeWorkbench: () => {
+        props.actions.recordInteraction(sessionId)
+        props.closeWorkbench(sessionId)
+      },
       openWorkbench: () => { props.openWorkbench(sessionId) },
       toggleWorkbenchFullscreen: () => { props.toggleWorkbenchFullscreen(sessionId) },
       toggleFiles: () => { props.toggleFiles(sessionId) },
@@ -502,6 +507,16 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
     if (tabId !== undefined) actions.activateTab(`browser:${tabId}`)
     openWorkbench()
   }, [actions, openWorkbench])
+  const requestAutoReveal = useCallback((epoch: number): boolean => {
+    if (props.state.interactionEpoch !== epoch) return false
+    openWorkbench()
+    return true
+  }, [props.state.interactionEpoch, openWorkbench])
+  const wasShown = useRef(shown)
+  useEffect(() => {
+    if (wasShown.current && !shown) actions.recordInteraction()
+    wasShown.current = shown
+  }, [shown, actions])
   const returnButton = useRef<HTMLButtonElement>(null)
   const menuTerminalButton = useRef<HTMLButtonElement>(null)
   const tablist = useRef<HTMLDivElement>(null)
@@ -619,6 +634,10 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
 
   const browserOwner = {
     shown: browserShown,
+    interactionEpoch: props.state.interactionEpoch,
+    browserAutoRevealed: props.state.browserAutoRevealed,
+    requestAutoReveal,
+    autoRevealBrowser: actions.autoRevealBrowser,
     newTabRequest,
     handledTabRequest,
     markTabRequestHandled,

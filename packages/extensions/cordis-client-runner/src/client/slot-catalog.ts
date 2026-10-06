@@ -2099,7 +2099,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     doc: '工作台右侧预览区的会话级浏览器；隐藏时条目仍保持挂载。',
     registerOptions: [],
     ownerProps: [
-      '/** 浏览器内容由贡献条目绘制；容器只持有视图显隐与切换动作。 */\nexport interface WorkbenchBrowserOwnerProps {\n  shown: boolean\n  openBrowser: (tabId?: string) => void\n  syncBrowserTabs: (tabs: readonly { id: string; name: string }[], activeId: string | null) => void\n  tabId?: string\n  tabName?: string\n  tabDomId?: string\n  panelDomId?: string\n  selectedTabId?: string\n  browserShown?: boolean\n  /** 工作台菜单每次选择浏览器递增，内容贡献者为每个序号建立一个页面。 */\n  newTabRequest: number\n  /** 已交给浏览器命令的序号由工作台保留，贡献条目重挂载时不重复执行。 */\n  handledTabRequest: number\n  markTabRequestHandled: (request: number) => void\n  focusBrowserTab: (tabId: string) => void\n  focusPendingBrowserTab: (tabId: string) => void\n}',
+      '/** 浏览器内容由贡献条目绘制；容器只持有视图显隐与切换动作。 */\nexport interface WorkbenchBrowserOwnerProps {\n  shown: boolean\n  openBrowser: (tabId?: string) => void\n  interactionEpoch: number\n  browserAutoRevealed: boolean\n  requestAutoReveal: (epoch: number) => boolean\n  autoRevealBrowser: (tabId: string, epoch: number) => void\n  syncBrowserTabs: (tabs: readonly { id: string; name: string }[], activeId: string | null) => void\n  tabId?: string\n  tabName?: string\n  tabDomId?: string\n  panelDomId?: string\n  selectedTabId?: string\n  browserShown?: boolean\n  /** 工作台菜单每次选择浏览器递增，内容贡献者为每个序号建立一个页面。 */\n  newTabRequest: number\n  /** 已交给浏览器命令的序号由工作台保留，贡献条目重挂载时不重复执行。 */\n  handledTabRequest: number\n  markTabRequestHandled: (request: number) => void\n  focusBrowserTab: (tabId: string) => void\n  focusPendingBrowserTab: (tabId: string) => void\n}',
     ],
     ownerPropsReferences: [],
     standardProps: [
@@ -2130,7 +2130,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     doc: '每个浏览器页面向工作台统一顶栏贡献一个标签。',
     registerOptions: [],
     ownerProps: [
-      '/** 浏览器内容由贡献条目绘制；容器只持有视图显隐与切换动作。 */\nexport interface WorkbenchBrowserOwnerProps {\n  shown: boolean\n  openBrowser: (tabId?: string) => void\n  syncBrowserTabs: (tabs: readonly { id: string; name: string }[], activeId: string | null) => void\n  tabId?: string\n  tabName?: string\n  tabDomId?: string\n  panelDomId?: string\n  selectedTabId?: string\n  browserShown?: boolean\n  /** 工作台菜单每次选择浏览器递增，内容贡献者为每个序号建立一个页面。 */\n  newTabRequest: number\n  /** 已交给浏览器命令的序号由工作台保留，贡献条目重挂载时不重复执行。 */\n  handledTabRequest: number\n  markTabRequestHandled: (request: number) => void\n  focusBrowserTab: (tabId: string) => void\n  focusPendingBrowserTab: (tabId: string) => void\n}',
+      '/** 浏览器内容由贡献条目绘制；容器只持有视图显隐与切换动作。 */\nexport interface WorkbenchBrowserOwnerProps {\n  shown: boolean\n  openBrowser: (tabId?: string) => void\n  interactionEpoch: number\n  browserAutoRevealed: boolean\n  requestAutoReveal: (epoch: number) => boolean\n  autoRevealBrowser: (tabId: string, epoch: number) => void\n  syncBrowserTabs: (tabs: readonly { id: string; name: string }[], activeId: string | null) => void\n  tabId?: string\n  tabName?: string\n  tabDomId?: string\n  panelDomId?: string\n  selectedTabId?: string\n  browserShown?: boolean\n  /** 工作台菜单每次选择浏览器递增，内容贡献者为每个序号建立一个页面。 */\n  newTabRequest: number\n  /** 已交给浏览器命令的序号由工作台保留，贡献条目重挂载时不重复执行。 */\n  handledTabRequest: number\n  markTabRequestHandled: (request: number) => void\n  focusBrowserTab: (tabId: string) => void\n  focusPendingBrowserTab: (tabId: string) => void\n}',
     ],
     ownerPropsReferences: [],
     standardProps: [

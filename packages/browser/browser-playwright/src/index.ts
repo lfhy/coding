@@ -758,7 +758,7 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
       } catch (error) {
         const owner = this.pages.get(sessionId)
         if (owner && !(error instanceof OversizedFrameError || error instanceof BrowserUseError &&
-          ['BROWSER_STALE_REF', 'BROWSER_CLOSED', 'BROWSER_UNAVAILABLE'].includes(error.code))) {
+          ['BROWSER_STALE_REF', 'BROWSER_CLOSED', 'BROWSER_UNAVAILABLE', 'BROWSER_INVALID_URL'].includes(error.code))) {
           this.pages.delete(sessionId)
           await this.destroy(owner)
         }

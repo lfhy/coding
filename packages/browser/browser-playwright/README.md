@@ -4,7 +4,7 @@
 
 本包没有配置项。浏览器直接使用 Chromium 原生网络栈，不设置代理、目的地允许列表、公私网或 DNS 地址检查，也不拦截 HTTP 请求、重定向或子资源；页面可访问浏览器支持的网络目的地，包括环回与私网服务，WebSocket（`ws`／`wss`）和普通服务工作线程可用。Chromium 的 TLS 证书验证、同源与 CORS 等标准安全机制保持启用。
 
-模型和人工 `navigate` 的输入必须是无用户信息凭据的绝对 HTTP(S) URL，最多 4096 字符；格式、凭据和长度校验只检查命令输入，不筛选网络目的地。下载、弹窗和授予页面浏览器权限不可用。Chromium 缺失时返回 `BROWSER_UNAVAILABLE`，需安装与锁定 Playwright 版本匹配的 Chromium (`pnpm exec playwright install chromium`)；不会复用桌面 Host 应用窗口。
+模型和人工 `navigate` 的输入必须是无用户信息凭据的绝对 HTTP(S) URL，最多 4096 字符；格式、凭据和长度校验只检查命令输入，不筛选网络目的地。格式无效的导航输入不会关闭已有页面。下载、弹窗和授予页面浏览器权限不可用。Chromium 缺失时返回 `BROWSER_UNAVAILABLE`，需安装与锁定 Playwright 版本匹配的 Chromium (`pnpm exec playwright install chromium`)；不会复用桌面 Host 应用窗口。
 
 当 composition 同时具有 `webServer` 与 `connection` 时，Web Host 注册只读 GET `/browser-use/state?sessionId=` 与 `/browser-use/frame?sessionId=&tabId=&browserGeneration=&stateRevision=&generation=&revision=`；headless 模式不注册 HTTP 路由。状态返回完整标签页状态，未知或关闭会话返回 204；画面请求必须同时匹配会话、活跃标签页、会话与页面 generation、状态与页面 revision，未知会话返回 404，过期或无截图返回 409。响应不缓存；服务先经过 composition 的 `connection.requestRejection`，再限制服务器和请求来源为环回地址及同源 Host/Origin。这是 Host 预览 API 的入站信任限制，与页面的出站联网无关；这里不提供页面写入 HTTP 路由。
 

@@ -330,17 +330,45 @@ describe('browser action tools', () => {
     const prepareTarget = vi.spyOn(browser, 'prepareTarget')
     const asked = vi.fn((_req: { reason?: string }, _next: () => Promise<'rejected'>) => Promise.resolve('rejected' as const))
     ctx.on('approval/request', asked)
-    const target = 'https://user:password@EXAMPLE.com/private?token=secret#fragment'
+    const target = 'https://EXAMPLE.com/private?token=secret#fragment'
     await call({ action: 'navigate', url: target })
     expect(asked.mock.calls[0]?.[0].reason).toBe('Browser navigate (target origin: https://example.com; may redirect or load subresources; approval is for this call only)')
-    expect(JSON.stringify(agent.session.append.mock.calls)).not.toMatch(/password|private|secret|fragment/)
+    expect(JSON.stringify(agent.session.append.mock.calls)).not.toMatch(/private|secret|fragment/)
     expect(prepareTarget).toHaveBeenCalledWith(agent.session.id, expect.any(AbortSignal))
     expect(browser.commands).not.toHaveBeenCalled()
 
-    await call({ action: 'navigate', url: 'not a URL' })
-    expect(asked.mock.calls.at(-1)?.[0].reason).toContain('target origin: invalid target')
     await call({ action: 'navigate', url: `https://${Array(5).fill('a'.repeat(60)).join('.')}.com` })
     expect(asked.mock.calls.at(-1)?.[0].reason).toContain('target origin: invalid target')
+  })
+
+  it.each([
+    '[private](https://example.com/?token=secret)',
+    'not a URL with secret', 'http:example.com/private?token=secret',
+    'file:///private?token=secret', 'https://user:password@example.com/private?token=secret',
+  ])('rejects non-plain or invalid navigation before approval and provider execution', async (url) => {
+    const { ctx, call, agent } = await setup()
+    const browser = ctx.browserUse as FakeBrowser
+    browser.currentState = activeState()
+    const request = vi.spyOn(ctx.approval, 'request')
+    const prepare = vi.spyOn(browser, 'prepareTarget')
+    const result = await call({ action: 'navigate', url })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toMatch(/browser_navigate: url must/)
+    expect(text(result)).not.toMatch(/private|secret|user:password|\[private\]/)
+    expect(text(result).length).toBeLessThan(300)
+    expect(request).not.toHaveBeenCalled()
+    expect(prepare).not.toHaveBeenCalled()
+    expect(browser.commands).not.toHaveBeenCalled()
+    expect(agent.session.append).not.toHaveBeenCalled()
+    expect(browser.currentState).toEqual(activeState())
+  })
+
+  it('accepts a plain Unicode query URL without normalizing the provider command', async () => {
+    const { ctx, call } = await setup()
+    ctx.on('approval/request', () => Promise.resolve('allowed-once' as const))
+    const url = 'https://example.com/search?q=中文&lang=简体'
+    expect((await call({ action: 'navigate', url })).isError).toBe(false)
+    expect((ctx.browserUse as FakeBrowser).commands.mock.calls[0]?.[1]).toEqual({ kind: 'navigate', url })
   })
 
   it('shows only the session’s current bounded origin and safe ref for non-navigation approvals', async () => {
@@ -737,6 +765,9 @@ describe('browser action tools', () => {
     }
     expect(schemas.find(tool => tool.name === 'browser_snapshot')?.description).toContain('ref and revision')
     expect(schemas.find(tool => tool.name === 'browser_click')?.description).toContain('current browser observation')
+    const navigate = schemas.find(tool => tool.name === 'browser_navigate')
+    expect((navigate?.parameters as { properties: { url: { description: string } } }).properties.url.description)
+      .toContain('Do not pass a Markdown link')
   })
 
   it('rejects mismatched fields and bounds before approval or browser execution', async () => {

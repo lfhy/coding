@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { BrowserMirror, BrowserTabs, type BrowserMirrorProps } from '../src/client/BrowserMirror.tsx'
 import type { BrowserView } from '../src/client/controller.ts'
-import type { BrowserState } from '../src/client/wire.ts'
+import type { ToolCallBlock } from '@deepseek-ai/dsh-client-runtime/client'
 import { en } from '../src/client/locales.ts'
 import { id, otherId, state } from './browser-fixtures.ts'
 
@@ -23,14 +23,17 @@ function mockResizeObserver() {
   vi.stubGlobal('ResizeObserver', MockResizeObserver)
 }
 const t = (key: keyof typeof en, args?: { name: string }) => en[key].replace('{name}', args?.name ?? '')
-function mount(view: BrowserView, shown = true) {
+function mount(view: BrowserView, shown = true, useSession = sessionHook([])) {
   const command = vi.fn(async () => true)
   const ensureTab = vi.fn(async () => {})
-  const start = vi.fn((_onRevision: (state: BrowserState) => void) => vi.fn())
+  const start = vi.fn(() => vi.fn())
   const syncBrowserTabs = vi.fn()
   const props = { sessionId: 'session-a', shown, browserShown: shown, newTabRequest: 0,
     handledTabRequest: 0, markTabRequestHandled: vi.fn(), focusBrowserTab: vi.fn(),
     focusPendingBrowserTab: vi.fn(),
+    interactionEpoch: 0, browserAutoRevealed: false,
+    requestAutoReveal: vi.fn(() => true), autoRevealBrowser: vi.fn(),
+    useSession,
     openBrowser: vi.fn(), syncBrowserTabs, start, command, ensureTab,
     retry: vi.fn(), useBrowserMirror: <S,>(selector: (snapshot: BrowserView) => S): S => selector(view),
     t } as unknown as BrowserMirrorProps
@@ -42,8 +45,25 @@ const ready = (revision = 1): BrowserView => ({
 })
 const empty: BrowserView = { phase: 'empty', state: null, frameUrl: null, pending: false }
 const loading: BrowserView = { phase: 'loading', state: null, frameUrl: null, pending: false }
+const stoppedNavigation = 'browser navigation timed out; loading stopped, take a new snapshot of the current page'
 function viewHook(view: BrowserView): BrowserMirrorProps['useBrowserMirror'] {
   return selector => selector(view)
+}
+function sessionHook(nodes: readonly ToolCallBlock[], openState = 'open'): BrowserMirrorProps['useSession'] {
+  return selector => selector({ nodes, runningCalls: [], openState } as never)
+}
+function result(seq: number, name: string, tabId: string, options: {
+  isError?: boolean
+  action?: string
+  content?: string
+  subCalls?: readonly ToolCallBlock[]
+} = {}): ToolCallBlock {
+  return { kind: 'tool-result', seq, callId: `call-${String(seq)}`, time: seq,
+    call: { name, argsRaw: '{}' }, callTime: 0, callView: null, resultView: null,
+    isError: options.isError ?? false,
+    content: [{ type: 'text', text: options.content ?? JSON.stringify({ action: options.action ?? 'navigate',
+      observation: { tabId } }) }], subCalls: options.subCalls ?? [],
+  }
 }
 function browserTabsRow(props: BrowserMirrorProps, view: BrowserView) {
   return <div role="tablist" aria-label="Workbench tabs">
@@ -196,13 +216,133 @@ describe('browser UI', () => {
     expect(result.start).toHaveBeenCalledTimes(1)
   })
 
-  it('passes the revised Host page to workbench selection while polling remains mounted', () => {
+  it('does not reveal a page merely because the Host revision changes', () => {
     const result = mount(ready())
     result.rerender(<BrowserMirror {...result.props} shown={false} />)
     expect(result.start).toHaveBeenCalledTimes(1)
-    result.start.mock.calls[0]![0](state(2, otherId) as unknown as BrowserState)
-    expect(result.props.openBrowser).toHaveBeenCalledWith(otherId)
+    result.rerender(<BrowserMirror {...result.props} shown={false} useBrowserMirror={viewHook({
+      ...ready(2), state: state(2, otherId) as never,
+    })} />)
+    expect(result.props.requestAutoReveal).not.toHaveBeenCalled()
+    expect(result.props.autoRevealBrowser).not.toHaveBeenCalled()
     expect(result.syncBrowserTabs).toHaveBeenLastCalledWith(expect.any(Array), otherId)
+  })
+
+  it('reveals only a new settled navigate result once its exact Host page exists', () => {
+    const browser = mount(ready(), false)
+    const navigation = result(8, 'browser_navigate', otherId)
+    browser.rerender(<BrowserMirror {...browser.props} useSession={sessionHook([navigation])}
+      useBrowserMirror={viewHook(ready(2))} />)
+    expect(browser.props.requestAutoReveal).not.toHaveBeenCalled()
+    browser.rerender(<BrowserMirror {...browser.props} useSession={sessionHook([navigation])}
+      useBrowserMirror={viewHook({ phase: 'error', state: state(3, otherId) as never,
+        frameUrl: null, pending: false, message: 'frame unavailable' })} />)
+    expect(browser.props.requestAutoReveal).toHaveBeenCalledExactlyOnceWith(0)
+    expect(browser.props.autoRevealBrowser).toHaveBeenCalledExactlyOnceWith(otherId, 0)
+    expect(browser.command).not.toHaveBeenCalled()
+    browser.rerender(<BrowserMirror {...browser.props} useSession={sessionHook([navigation])}
+      useBrowserMirror={viewHook(ready(3))} browserAutoRevealed shown selectedTabId={otherId} />)
+    expect(browser.command).not.toHaveBeenCalled()
+    expect(browser.props.autoRevealBrowser).toHaveBeenCalledTimes(1)
+  })
+
+  it('recognizes nested Code Mode navigation but ignores history, errors and other tools', () => {
+    const historical = result(10, 'browser_navigate', id)
+    const browser = mount(loading, false, sessionHook([historical], 'loading'))
+    browser.rerender(<BrowserMirror {...browser.props} useSession={sessionHook([historical])}
+      useBrowserMirror={viewHook(ready())} />)
+    expect(browser.props.autoRevealBrowser).not.toHaveBeenCalled()
+    const ignored = [result(11, 'browser_snapshot', id), result(12, 'browser_navigate', id, { isError: true }),
+      result(13, 'browser_navigate', id, { action: 'snapshot' }),
+      result(14, 'browser_navigate', id, { content: 'not json' })]
+    browser.rerender(<BrowserMirror {...browser.props} useSession={sessionHook([historical, ...ignored])} />)
+    expect(browser.props.autoRevealBrowser).not.toHaveBeenCalled()
+    const nested = result(16, 'code', id, { subCalls: [result(15, 'browser_navigate', otherId)] })
+    browser.rerender(<BrowserMirror {...browser.props} useSession={sessionHook([historical, ...ignored, nested])}
+      useBrowserMirror={viewHook({ ...ready(2), state: state(2, otherId) as never })} />)
+    expect(browser.props.autoRevealBrowser).toHaveBeenCalledExactlyOnceWith(otherId, 0)
+  })
+
+  it('lets an intervening manual choice or close cancel a pending navigation reveal', () => {
+    const browser = mount(ready(), false)
+    const navigation = result(8, 'browser_navigate', otherId)
+    browser.rerender(<BrowserMirror {...browser.props} useSession={sessionHook([navigation])}
+      useBrowserMirror={viewHook(loading)} />)
+    browser.rerender(<BrowserMirror {...browser.props} useSession={sessionHook([navigation])}
+      useBrowserMirror={viewHook(ready(2))} interactionEpoch={1} />)
+    expect(browser.props.autoRevealBrowser).not.toHaveBeenCalled()
+  })
+
+  it('reveals the inspectable active native page after a recoverable navigation timeout', () => {
+    vi.stubGlobal('codingDesktop', { browser: { available: true, present: vi.fn(async () => {}) } })
+    const browser = mount(ready(), false)
+    const timeout = result(8, 'browser_navigate', otherId,
+      { isError: true, content: `Error: ${stoppedNavigation}` })
+    browser.rerender(<BrowserMirror {...browser.props} useSession={sessionHook([timeout])}
+      useBrowserMirror={viewHook(loading)} />)
+    expect(browser.props.requestAutoReveal).not.toHaveBeenCalled()
+    browser.rerender(<BrowserMirror {...browser.props} useSession={sessionHook([timeout])}
+      useBrowserMirror={viewHook({ phase: 'error', state: state(2, otherId) as never,
+        frameUrl: null, pending: false, message: 'frame unavailable' })} />)
+    expect(browser.props.requestAutoReveal).toHaveBeenCalledExactlyOnceWith(0)
+    expect(browser.props.autoRevealBrowser).toHaveBeenCalledExactlyOnceWith(otherId, 0)
+    expect(browser.ensureTab).not.toHaveBeenCalled()
+    expect(browser.command).not.toHaveBeenCalled()
+  })
+
+  it('recognizes a Code Mode child timeout without its registry error prefix', () => {
+    vi.stubGlobal('codingDesktop', { browser: { available: true, present: vi.fn(async () => {}) } })
+    const browser = mount(ready(), false)
+    const child = result(9, 'browser_navigate', id, { isError: true, content: stoppedNavigation })
+    browser.rerender(<BrowserMirror {...browser.props} useSession={sessionHook([
+      result(10, 'run_code', id, { subCalls: [child] }),
+    ])} />)
+    expect(browser.props.autoRevealBrowser).toHaveBeenCalledExactlyOnceWith(id, 0)
+    expect(browser.command).not.toHaveBeenCalled()
+  })
+
+  it('does not reveal native pages for denial, invalid URL, unsafe timeout, or unrelated errors', () => {
+    vi.stubGlobal('codingDesktop', { browser: { available: true, present: vi.fn(async () => {}) } })
+    const browser = mount(ready(), false)
+    const failures = [
+      'Error: browser_navigate: approval rejected',
+      'Error: browser_navigate: url must be a plain absolute HTTP(S) URL',
+      'Error: browser navigation timed out and could not be stopped safely; browser session closed',
+      'Error: browser action timed out',
+      `Error: ${stoppedNavigation} (extra)`,
+    ]
+    for (const [index, content] of failures.entries()) {
+      browser.rerender(<BrowserMirror {...browser.props} useSession={sessionHook([
+        result(index + 8, 'browser_navigate', id, { isError: true, content }),
+      ])} />)
+    }
+    browser.rerender(<BrowserMirror {...browser.props} useSession={sessionHook([
+      result(20, 'browser_snapshot', id, { isError: true, content: `Error: ${stoppedNavigation}` }),
+    ])} />)
+    expect(browser.props.autoRevealBrowser).not.toHaveBeenCalled()
+  })
+
+  it('does not reveal a timeout in Web or after the user changes their workbench choice', () => {
+    const timeout = result(8, 'browser_navigate', id, { isError: true, content: `Error: ${stoppedNavigation}` })
+    const web = mount(ready(), false)
+    web.rerender(<BrowserMirror {...web.props} useSession={sessionHook([timeout])} />)
+    expect(web.props.autoRevealBrowser).not.toHaveBeenCalled()
+    web.unmount()
+    vi.stubGlobal('codingDesktop', { browser: { available: true, present: vi.fn(async () => {}) } })
+    const native = mount(loading, false)
+    native.rerender(<BrowserMirror {...native.props} useSession={sessionHook([timeout])} />)
+    native.rerender(<BrowserMirror {...native.props} useSession={sessionHook([timeout])}
+      useBrowserMirror={viewHook(ready(2))} interactionEpoch={1} />)
+    expect(native.props.autoRevealBrowser).not.toHaveBeenCalled()
+  })
+
+  it('treats an already settled native timeout in loaded history as baseline only', () => {
+    vi.stubGlobal('codingDesktop', { browser: { available: true, present: vi.fn(async () => {}) } })
+    const timeout = result(8, 'browser_navigate', id, { isError: true, content: `Error: ${stoppedNavigation}` })
+    const browser = mount(loading, false, sessionHook([timeout], 'loading'))
+    browser.rerender(<BrowserMirror {...browser.props} useSession={sessionHook([timeout])}
+      useBrowserMirror={viewHook(ready())} />)
+    expect(browser.props.autoRevealBrowser).not.toHaveBeenCalled()
   })
 
   it('aligns a workbench fallback to its browser page without overriding new Host observations', () => {

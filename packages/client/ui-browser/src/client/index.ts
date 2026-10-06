@@ -39,7 +39,7 @@ export function apply(ctx: ClientContext): void {
     const controller = controllerFor(sessionId)
     return {
       hooks: { browserMirror: controller.view },
-      start: onRevision => controller.start(onRevision),
+      start: () => controller.start(),
       ensureTab: () => controller.ensureTab(),
       command: command => controller.command(command),
       retry: () => { controller.retry() },

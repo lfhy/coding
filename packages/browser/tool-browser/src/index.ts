@@ -23,6 +23,17 @@ const MAX_GENERATION_CHARS = 128
 const MAX_FILL_CHARS = 2_000
 const MAX_APPROVAL_ORIGIN_CHARS = 256
 
+function validateNavigationUrl(raw: string): void {
+  const invalid = 'browser_navigate: url must be a plain absolute HTTP(S) URL (for example, https://example.com/), not a Markdown link; pass only the address'
+  let url: URL
+  try { url = new URL(raw) } catch { throw new Error(invalid) }
+  const authority = raw.match(/^https?:\/\/([^/?#\\\s]+)(?:[/?#]|$)/i)?.[1]
+  if (!authority || !['http:', 'https:'].includes(url.protocol)) throw new Error(invalid)
+  if (authority.includes('@') || url.username || url.password) {
+    throw new Error('browser_navigate: url must not contain username or password; pass an HTTP(S) address without credentials')
+  }
+}
+
 /** 工具成功后的规范 JSON；截图引用在结果提交前已持久保存。 */
 export interface BrowserUseValue {
   action: BrowserCommand['kind']
@@ -67,6 +78,7 @@ export function parseBrowserCommand(action: BrowserCommand['kind'], args: Browse
     case 'navigate':
       if (args.url === undefined || args.url.trim().length === 0) throw new Error(`${toolName}: url must be non-empty`)
       if (args.url.length > MAX_URL_CHARS) throw new Error(`${toolName}: url exceeds ${MAX_URL_CHARS} characters`)
+      validateNavigationUrl(args.url)
       return { kind: 'navigate', url: args.url }
     case 'click':
     case 'fill': {
@@ -193,7 +205,7 @@ export function apply(ctx: Context): void {
   const ref = { type: 'string', required: true, description: 'Opaque ref from the current observation, not a selector.' } as const
   const revision = { type: 'integer', required: true, description: 'Positive revision paired with the current observation ref.' } as const
   register('navigate', 'Open an absolute HTTP(S) URL. Load the browser-use skill first when available; inspect the returned observation before acting.', {
-    url: { type: 'string', required: true, description: 'Absolute HTTP(S) URL without credentials, at most 2048 characters.' },
+    url: { type: 'string', required: true, description: 'Plain absolute HTTP(S) address, such as https://example.com/. Do not pass a Markdown link like [label](https://example.com/). No credentials; at most 2048 characters.' },
   })
   register('snapshot', 'Read the current page. Load the browser-use skill first when available; use an observed ref and revision for browser_click or browser_fill.', {})
   register('click', 'Click an element using its ref and revision from the current browser observation; never use selectors.', {
