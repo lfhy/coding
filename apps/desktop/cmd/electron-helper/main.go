@@ -115,6 +115,9 @@ func run(args []string, stdin io.Reader, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if cfg.runtimeRoot != "" && browserBridge.origin == "" {
+		return errors.New("packaged helper requires desktop browser bridge")
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	// 获锁失败时不得创建 manager、bridge 或操作共享 Home。

@@ -1,7 +1,7 @@
 /** 组装并本机签名独立的 macOS arm64 Electron 应用；不执行安装。 */
 import { execFile as execFileCallback } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { readFile, readdir, lstat, mkdir, cp, rm, rename, writeFile, copyFile, chmod, open, realpath } from 'node:fs/promises'
+import { readFile, readdir, lstat, mkdir, cp, rm, rename, writeFile, copyFile, chmod, open } from 'node:fs/promises'
 import { isBuiltin } from 'node:module'
 import { join, dirname, resolve, sep } from 'node:path'
 import { promisify } from 'node:util'
@@ -24,7 +24,7 @@ const remoteArtifacts = [
   ['windows', 'arm64', 'coding-remote-agent-windows-arm64.exe', /PE32\+.*(?:Aarch64|ARM64)/u],
 ] as const
 
-type Run = (command: string, args: string[], env?: NodeJS.ProcessEnv) => Promise<string>
+type Run = (command: string, args: string[]) => Promise<string>
 
 export interface PackagingPaths {
   electron: string
@@ -32,7 +32,6 @@ export interface PackagingPaths {
   runtime: string
   helper: string
   remoteAgent: string
-  playwright: string
   icon: string
   nativeIcon: string
   output: string
@@ -51,14 +50,13 @@ const defaultPaths: PackagingPaths = {
   runtime: join(root, 'dist', 'coding-runtime'),
   helper: join(root, 'dist', 'coding-electron-helper-darwin-arm64'),
   remoteAgent: join(root, 'dist', 'remote-agent'),
-  playwright: join(root, 'packages', 'browser', 'browser-playwright', 'node_modules', 'playwright'),
   icon: join(root, 'apps', 'desktop', 'packaging', 'AppIcon.icns'),
   nativeIcon: join(root, 'apps', 'desktop', 'packaging', 'icon.iconset', 'icon_512x512@2x.png'),
   output: join(root, 'dist', applicationName),
 }
 
-async function runCommand(command: string, args: string[], env?: NodeJS.ProcessEnv): Promise<string> {
-  const { stdout } = await execFile(command, args, { maxBuffer: 1024 * 1024, env })
+async function runCommand(command: string, args: string[]): Promise<string> {
+  const { stdout } = await execFile(command, args, { maxBuffer: 1024 * 1024 })
   return stdout.trim()
 }
 
@@ -135,34 +133,14 @@ async function fileHash(path: string): Promise<string> {
 }
 
 const playwrightVersion = '1.61.1'
-const chromiumRevision = '1228'
-const shellDirectory = `chromium_headless_shell-${chromiumRevision}`
-const shellPlatformDirectory = 'chrome-headless-shell-mac-arm64'
-
-async function validatePlaywrightInstallation(playwright: string, core: string, label: string): Promise<void> {
-  if (await readVersion(join(playwright, 'package.json')) !== playwrightVersion ||
-    await readVersion(join(core, 'package.json')) !== playwrightVersion) {
-    throw new Error(`package: expected ${label} Playwright ${playwrightVersion}`)
-  }
-  const manifest: unknown = JSON.parse(await readFile(join(core, 'browsers.json'), 'utf8'))
-  const browsers = typeof manifest === 'object' && manifest !== null && 'browsers' in manifest
-    ? manifest.browsers : undefined
-  if (!Array.isArray(browsers) || browsers.filter((entry: unknown) =>
-    typeof entry === 'object' && entry !== null && 'name' in entry && entry.name === 'chromium-headless-shell'
-    && 'revision' in entry && entry.revision === chromiumRevision).length !== 1) {
-    throw new Error(`package: expected ${label} Playwright Chromium headless shell revision ${chromiumRevision}`)
-  }
-}
 
 async function validatePlaywright(paths: PackagingPaths): Promise<void> {
-  // pnpm 将 workspace playwright 与 playwright-core 放在同一个已解析的 node_modules 中。
-  const workspaceCore = join(dirname(await realpath(paths.playwright)), 'playwright-core')
-  await validatePlaywrightInstallation(paths.playwright, workspaceCore, 'workspace')
   const runtimeModules = join(paths.runtime, 'runtime', 'node_modules')
-  await validatePlaywrightInstallation(join(runtimeModules, 'playwright'),
-    join(runtimeModules, 'playwright-core'), 'Host runtime')
+  if (await readVersion(join(runtimeModules, 'playwright', 'package.json')) !== playwrightVersion ||
+    await readVersion(join(runtimeModules, 'playwright-core', 'package.json')) !== playwrightVersion) {
+    throw new Error(`package: expected Host runtime Playwright ${playwrightVersion}`)
+  }
   await requireFile(join(runtimeModules, '@deepseek-ai', 'dsh-browser-playwright', 'lib', 'index.js'))
-  await requireFile(join(paths.playwright, 'cli.js'))
 }
 
 async function validateElectronBrowser(paths: PackagingPaths): Promise<void> {
@@ -177,25 +155,6 @@ async function validateElectronBrowser(paths: PackagingPaths): Promise<void> {
   await requireFile(join(provider, 'lib', 'index.js'))
   await requireFile(join(provider, 'lib', 'types', 'protocol.js'))
   await requireFile(join(modules, 'ws', 'index.js'))
-}
-
-async function validateShell(browserRoot: string, run: Run): Promise<string> {
-  await requireDirectory(browserRoot)
-  const shell = join(browserRoot, shellDirectory)
-  await requireDirectory(shell)
-  await rejectSymlinks(shell)
-  for (const marker of ['INSTALLATION_COMPLETE', 'DEPENDENCIES_VALIDATED']) await requireFile(join(shell, marker))
-  const platform = join(shell, shellPlatformDirectory)
-  await requireDirectory(platform)
-  for (const required of ['chrome-headless-shell', 'icudtl.dat', 'headless_command_resources.pak',
-    'headless_lib_data.pak', 'headless_lib_strings.pak', 'v8_context_snapshot.arm64.bin']) {
-    await requireFile(join(platform, required))
-  }
-  await assertArm64(join(platform, 'chrome-headless-shell'), run)
-  const binaries: string[] = []
-  await walk(shell, binaries, [])
-  for (const binary of binaries) await assertArm64(binary, run)
-  return shell
 }
 
 async function validate(paths: PackagingPaths, run: Run): Promise<string> {
@@ -379,19 +338,15 @@ export async function packageElectronMacosApp(
   const version = await validate(paths, run)
   await mkdir(outputDirectory, { recursive: true })
   const stage = join(outputDirectory, `.Coding.staging-${process.pid}.app`)
-  const browserStage = join(outputDirectory, `.Coding.playwright-staging-${process.pid}`)
   await rm(stage, { recursive: true, force: true })
-  await rm(browserStage, { recursive: true, force: true })
   try {
-    // 独立下载目录消除用户缓存与旧版本安装的干扰；只复制当前锁定的 headless shell。
-    await run(process.execPath, [join(paths.playwright, 'cli.js'), 'install', '--only-shell', 'chromium'], {
-      ...process.env, PLAYWRIGHT_BROWSERS_PATH: browserStage, PLAYWRIGHT_SKIP_BROWSER_GC: '1',
-    })
-    const browserSource = await validateShell(browserStage, run)
     await cp(join(paths.electron, 'Electron.app'), stage, { recursive: true, verbatimSymlinks: true })
     const contents = join(stage, 'Contents')
     await rename(join(contents, 'MacOS', 'Electron'), join(contents, 'MacOS', applicationExecutable))
     const resources = join(contents, 'Resources')
+    if (await exists(join(resources, 'playwright-browsers'))) {
+      throw new Error('package: unexpected Playwright browser resource in Electron application')
+    }
     const appDirectory = join(stage, '.asar-source')
     const archive = join(resources, 'app.asar')
     await rm(join(resources, 'default_app.asar'), { force: true })
@@ -423,10 +378,6 @@ export async function packageElectronMacosApp(
     await chmod(join(resources, 'coding-electron-helper'), 0o755)
     await copyFile(paths.icon, join(resources, 'AppIcon.icns'))
     await copyFile(paths.nativeIcon, join(resources, 'CodingIcon.png'))
-    const browserTarget = join(resources, 'playwright-browsers')
-    await mkdir(browserTarget)
-    await cp(browserSource, join(browserTarget, shellDirectory), { recursive: true })
-    await validateShell(browserTarget, run)
 
     const plist = join(contents, 'Info.plist')
     for (const [key, value] of [
@@ -454,7 +405,6 @@ export async function packageElectronMacosApp(
       const helperPlist = join(contents, 'Frameworks', `Electron Helper${suffix}.app`, 'Contents', 'Info.plist')
       await run('/usr/libexec/PlistBuddy', ['-c', `Set :CFBundleIdentifier ${applicationBundleIdentifier}.${identifier}`, helperPlist])
     }
-    await rm(browserStage, { recursive: true, force: true })
     await signAndVerify(stage, run)
     const hadPrevious = await exists(output)
     if (hadPrevious) await move(output, backup)
@@ -474,7 +424,6 @@ export async function packageElectronMacosApp(
     return output
   } catch (error) {
     await rm(stage, { recursive: true, force: true })
-    await rm(browserStage, { recursive: true, force: true })
     throw error
   }
 }

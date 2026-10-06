@@ -47,6 +47,8 @@ func TestParseConfigRequiresExplicitIsolatedPaths(t *testing.T) {
 }
 
 func TestExclusiveDesktopInstanceRejectsLiveOwnerBeforeHomeWrites(t *testing.T) {
+	t.Setenv("DSH_DESKTOP_BROWSER_BRIDGE_ORIGIN", "ws://127.0.0.1:49152/browser-bridge")
+	t.Setenv("DSH_DESKTOP_BROWSER_BRIDGE_TOKEN", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
 	lockDirectory, err := os.MkdirTemp("", "ci-")
 	if err != nil {
 		t.Fatal(err)
@@ -63,14 +65,56 @@ func TestExclusiveDesktopInstanceRejectsLiveOwnerBeforeHomeWrites(t *testing.T) 
 	home := filepath.Join(t.TempDir(), "not-created")
 	args := []string{"--home", home, "--cwd", t.TempDir(), "--runtime-root", t.TempDir(), "--host-version", "dev", "--exclusive-desktop-instance"}
 	var stdout bytes.Buffer
-	if err := run(args, strings.NewReader(""), &stdout); err == nil {
-		t.Fatal("helper accepted active installed desktop owner")
+	if err := run(args, strings.NewReader(""), &stdout); err == nil || err.Error() != "installed desktop instance already owns the shared lock" {
+		t.Fatalf("helper did not reach installed desktop lock: %v", err)
 	}
 	if stdout.Len() != 0 {
 		t.Fatalf("stdout unexpectedly contains protocol data: %q", stdout.String())
 	}
 	if _, err := os.Stat(home); !os.IsNotExist(err) {
 		t.Fatalf("helper touched shared home: %v", err)
+	}
+}
+
+func TestPackagedHelperRequiresBrowserBridgeBeforeHomeWrites(t *testing.T) {
+	for _, key := range []string{"DSH_DESKTOP_BROWSER_BRIDGE_ORIGIN", "DSH_DESKTOP_BROWSER_BRIDGE_TOKEN"} {
+		t.Setenv(key, "")
+		if err := os.Unsetenv(key); err != nil {
+			t.Fatal(err)
+		}
+	}
+	home := filepath.Join(t.TempDir(), "not-created")
+	args := []string{"--home", home, "--cwd", t.TempDir(), "--runtime-root", t.TempDir(), "--host-version", "dev"}
+	var stdout bytes.Buffer
+	if err := run(args, strings.NewReader(""), &stdout); err == nil || err.Error() != "packaged helper requires desktop browser bridge" {
+		t.Fatalf("packaged helper without browser bridge = %v", err)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("helper wrote protocol data before bridge validation: %q", stdout.String())
+	}
+	if _, err := os.Stat(home); !os.IsNotExist(err) {
+		t.Fatalf("helper touched home before bridge validation: %v", err)
+	}
+}
+
+func TestDevelopmentHelperAllowsAbsentBrowserBridge(t *testing.T) {
+	for _, key := range []string{"DSH_DESKTOP_BROWSER_BRIDGE_ORIGIN", "DSH_DESKTOP_BROWSER_BRIDGE_TOKEN"} {
+		t.Setenv(key, "")
+		if err := os.Unsetenv(key); err != nil {
+			t.Fatal(err)
+		}
+	}
+	home := filepath.Join(t.TempDir(), "not-created")
+	args := []string{"--home", home, "--cwd", t.TempDir(), "--repo-root", t.TempDir(), "--host-version", "dev"}
+	var stdout bytes.Buffer
+	if err := run(args, strings.NewReader(""), &stdout); err == nil || err.Error() != "development Host entry is unavailable" {
+		t.Fatalf("development helper did not reach Host entry check: %v", err)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("helper wrote protocol data before Host entry check: %q", stdout.String())
+	}
+	if _, err := os.Stat(home); !os.IsNotExist(err) {
+		t.Fatalf("helper touched home before Host entry check: %v", err)
 	}
 }
 

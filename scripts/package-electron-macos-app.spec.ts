@@ -31,7 +31,6 @@ async function fixture(): Promise<PackagingPaths> {
     runtime: join(directory, 'coding-runtime'),
     helper: join(directory, 'coding-electron-helper-darwin-arm64'),
     remoteAgent: join(directory, 'remote-agent'),
-    playwright: join(directory, 'playwright'),
     icon: join(directory, 'AppIcon.icns'),
     nativeIcon: join(directory, 'CodingIcon.png'),
     output: join(directory, 'dist', 'Coding.app'),
@@ -68,16 +67,9 @@ async function fixture(): Promise<PackagingPaths> {
     artifacts: remoteArtifacts.map(([goos, goarch, filename]) => ({ goos, goarch, file: filename })),
   })}\n`)
   for (const [, , name] of remoteArtifacts) await file(join(paths.remoteAgent, name))
-  await file(join(paths.playwright, 'package.json'), '{"version":"1.61.1"}\n')
-  await file(join(paths.playwright, 'cli.js'))
-  await file(join(directory, 'playwright-core', 'package.json'), '{"version":"1.61.1"}\n')
-  await file(join(directory, 'playwright-core', 'browsers.json'),
-    '{"browsers":[{"name":"chromium-headless-shell","revision":"1228"}]}\n')
   const runtimeModules = join(paths.runtime, 'runtime', 'node_modules')
   await file(join(runtimeModules, 'playwright', 'package.json'), '{"version":"1.61.1"}\n')
   await file(join(runtimeModules, 'playwright-core', 'package.json'), '{"version":"1.61.1"}\n')
-  await file(join(runtimeModules, 'playwright-core', 'browsers.json'),
-    '{"browsers":[{"name":"chromium-headless-shell","revision":"1228"}]}\n')
   await file(join(runtimeModules, '@deepseek-ai', 'dsh-browser-playwright', 'lib', 'index.js'))
   const electronProvider = join(runtimeModules, '@deepseek-ai', 'dsh-browser-electron')
   await file(join(electronProvider, 'package.json'), `${JSON.stringify({
@@ -90,28 +82,11 @@ async function fixture(): Promise<PackagingPaths> {
   return paths
 }
 
-async function installShell(root: string): Promise<void> {
-  const shell = join(root, 'chromium_headless_shell-1228')
-  const platform = join(shell, 'chrome-headless-shell-mac-arm64')
-  for (const marker of ['INSTALLATION_COMPLETE', 'DEPENDENCIES_VALIDATED']) await file(join(shell, marker), '')
-  for (const name of ['icudtl.dat', 'headless_command_resources.pak', 'headless_lib_data.pak',
-    'headless_lib_strings.pak', 'v8_context_snapshot.arm64.bin']) await file(join(platform, name))
-  await file(join(platform, 'chrome-headless-shell'), Buffer.from('cffaedfe', 'hex'))
-  await file(join(platform, 'libEGL.dylib'), Buffer.from('cffaedfe', 'hex'))
-}
-
-function fakeCommands(install: (root: string) => Promise<void> = installShell) {
+function fakeCommands() {
   const calls: Array<[string, string[]]> = []
   let archiveIntegrity = ''
-  const run = async (command: string, args: string[], env?: NodeJS.ProcessEnv): Promise<string> => {
+  const run = async (command: string, args: string[]): Promise<string> => {
     calls.push([command, args])
-    if (command === process.execPath && args.includes('install')) {
-      expect(args.slice(-3)).toEqual(['install', '--only-shell', 'chromium'])
-      expect(env?.PLAYWRIGHT_SKIP_BROWSER_GC).toBe('1')
-      expect(env?.PLAYWRIGHT_BROWSERS_PATH).toContain('.Coding.playwright-staging-')
-      await install(env!.PLAYWRIGHT_BROWSERS_PATH!)
-      return ''
-    }
     if (command === '/usr/libexec/PlistBuddy') {
       if (args[1]?.includes('default_app.asar:hash')) {
         const archive = join(args[2] ?? '', '..', 'Resources', 'default_app.asar')
@@ -176,7 +151,7 @@ describe('macOS Electron application packaging', () => {
     const { run, calls } = fakeCommands()
     await expect(packageElectronMacosApp(paths, { run, platform: 'darwin', arch: 'arm64' }))
       .rejects.toThrow('unresolved Electron main import')
-    expect(calls.some(([command, args]) => command === process.execPath && args.includes('install'))).toBe(false)
+    expect(calls.some(([command]) => command === process.execPath)).toBe(false)
     expect(await readFile(previous, 'utf8')).toBe('preserved')
   })
 
@@ -229,6 +204,18 @@ describe('macOS Electron application packaging', () => {
     expect(await readFile(previous, 'utf8')).toBe('preserved')
   })
 
+  it('rejects an unexpected Playwright browser resource without replacing the old app', async () => {
+    const paths = await fixture()
+    const previous = join(paths.output, 'previous.txt')
+    await file(previous, 'preserved')
+    await file(join(paths.electron, 'Electron.app', 'Contents', 'Resources', 'playwright-browsers', 'browser'), 'unexpected')
+    const { run, calls } = fakeCommands()
+    await expect(packageElectronMacosApp(paths, { run, platform: 'darwin', arch: 'arm64' }))
+      .rejects.toThrow('unexpected Playwright browser resource')
+    expect(calls.some(([command]) => command === process.execPath)).toBe(false)
+    expect(await readFile(previous, 'utf8')).toBe('preserved')
+  })
+
   it('replaces the previous dist/Coding.app after assembling and signing the new app', async () => {
     const paths = await fixture()
     await file(join(paths.output, 'Contents', 'MacOS', 'Coding'), 'previous bundle')
@@ -268,8 +255,8 @@ describe('macOS Electron application packaging', () => {
       'runtime/node_modules/@deepseek-ai/dsh/lib/bin.js',
       'runtime/node_modules/@deepseek-ai/dsh-browser-electron/lib/index.js',
       'runtime/node_modules/@deepseek-ai/dsh-browser-electron/lib/types/protocol.js',
-      'runtime/node_modules/ws/index.js', 'remote-agent/manifest.json', 'CodingIcon.png',
-      'playwright-browsers/chromium_headless_shell-1228/chrome-headless-shell-mac-arm64/chrome-headless-shell']) {
+      'runtime/node_modules/ws/index.js', 'runtime/node_modules/playwright/package.json',
+      'runtime/node_modules/playwright-core/package.json', 'remote-agent/manifest.json', 'CodingIcon.png']) {
       expect((await stat(join(resources, item))).isFile()).toBe(true)
     }
     expect(await readFile(join(resources, 'CodingIcon.png'), 'utf8'))
@@ -279,9 +266,9 @@ describe('macOS Electron application packaging', () => {
     const signs = calls.filter(([command, args]) => command === 'codesign' && args.includes('--sign'))
     expect(signs.at(-1)?.[1].at(-1)).toContain('.Coding.staging-')
     expect(signs.slice(0, -1).some(([, args]) => args.at(-1)?.includes('Electron Helper.app'))).toBe(true)
-    expect(signs.some(([, args]) => args.at(-1)?.endsWith('/chrome-headless-shell'))).toBe(true)
-    expect(signs.some(([, args]) => args.at(-1)?.endsWith('/libEGL.dylib'))).toBe(true)
-    await expect(stat(join(paths.output, '..', `.Coding.playwright-staging-${process.pid}`))).rejects.toThrow()
+    expect(calls.some(([command]) => command === process.execPath)).toBe(false)
+    expect(calls.some(([, args]) => args.some(arg => arg.includes('chrome-headless-shell')))).toBe(false)
+    await expect(stat(join(resources, 'playwright-browsers'))).rejects.toThrow()
     expect(calls.some(([command, args]) => command === 'codesign' && args.includes('--deep') && args.includes('--verify'))).toBe(true)
     const updateIntegrity = calls.find(([command, args]) => command === '/usr/libexec/PlistBuddy'
       && args[1]?.startsWith('Add :ElectronAsarIntegrity:Resources/app.asar:hash string '))
@@ -307,34 +294,7 @@ describe('macOS Electron application packaging', () => {
     await expect(stat(join(paths.output, '..', '.Coding.previous.app'))).rejects.toThrow()
   })
 
-  it('拒绝不匹配的 Playwright revision、缺件、重定向或架构错误，保留原包', async () => {
-    const paths = await fixture()
-    await file(join(paths.output, 'previous.txt'), 'preserved')
-    const { run } = fakeCommands()
-    const browsers = join(paths.playwright, '..', 'playwright-core', 'browsers.json')
-    await file(browsers, '{"browsers":[{"name":"chromium-headless-shell","revision":"999"}]}\n')
-    await expect(packageElectronMacosApp(paths, { run, platform: 'darwin', arch: 'arm64' }))
-      .rejects.toThrow('revision 1228')
-    await file(browsers, '{"browsers":[{"name":"chromium-headless-shell","revision":"1228"}]}\n')
-    for (const install of [
-      async (root: string) => { await installShell(root); await rm(join(root, 'chromium_headless_shell-1228',
-        'chrome-headless-shell-mac-arm64', 'icudtl.dat')) },
-      async (root: string) => { await installShell(root); await symlink(paths.icon,
-        join(root, 'chromium_headless_shell-1228', 'escape')) },
-    ]) {
-      const commands = fakeCommands(install)
-      await expect(packageElectronMacosApp(paths, { run: commands.run, platform: 'darwin', arch: 'arm64' }))
-        .rejects.toThrow()
-    }
-    const wrongArch = fakeCommands()
-    const runWrongArch = async (command: string, args: string[], env?: NodeJS.ProcessEnv) =>
-      command === 'lipo' && args[1]?.endsWith('chrome-headless-shell') ? 'x86_64' : wrongArch.run(command, args, env)
-    await expect(packageElectronMacosApp(paths, { run: runWrongArch, platform: 'darwin', arch: 'arm64' }))
-      .rejects.toThrow('expected arm64 Mach-O')
-    expect(await readFile(join(paths.output, 'previous.txt'), 'utf8')).toBe('preserved')
-  })
-
-  it('拒绝与 workspace 不一致的 Host runtime Playwright 版本和 revision，不触碰旧包', async () => {
+  it('拒绝版本不匹配或缺失的 Host runtime Playwright JavaScript 包，不触碰旧包', async () => {
     const paths = await fixture()
     await file(join(paths.output, 'previous.txt'), 'preserved')
     const { run, calls } = fakeCommands()
@@ -344,11 +304,11 @@ describe('macOS Electron application packaging', () => {
     await expect(packageElectronMacosApp(paths, { run, platform: 'darwin', arch: 'arm64' }))
       .rejects.toThrow('Host runtime Playwright 1.61.1')
     await file(packagePath, '{"version":"1.61.1"}\n')
-    const browserMetadata = join(modules, 'playwright-core', 'browsers.json')
-    await file(browserMetadata, '{"browsers":[{"name":"chromium-headless-shell","revision":"1227"}]}\n')
+    const corePackage = join(modules, 'playwright-core', 'package.json')
+    await rm(corePackage)
     await expect(packageElectronMacosApp(paths, { run, platform: 'darwin', arch: 'arm64' }))
-      .rejects.toThrow('Host runtime Playwright Chromium headless shell revision 1228')
-    expect(calls.some(([command, args]) => command === process.execPath && args.includes('install'))).toBe(false)
+      .rejects.toThrow(corePackage)
+    expect(calls.some(([command]) => command === process.execPath)).toBe(false)
     expect(await readFile(join(paths.output, 'previous.txt'), 'utf8')).toBe('preserved')
   })
 
@@ -372,7 +332,7 @@ describe('macOS Electron application packaging', () => {
     }))
     await expect(packageElectronMacosApp(paths, { run, platform: 'darwin', arch: 'arm64' }))
       .rejects.toThrow('invalid Host runtime Electron browser protocol export')
-    expect(calls.some(([command, args]) => command === process.execPath && args.includes('install'))).toBe(false)
+    expect(calls.some(([command]) => command === process.execPath)).toBe(false)
     expect(await readFile(join(paths.output, 'previous.txt'), 'utf8')).toBe('preserved')
   })
 
@@ -381,9 +341,9 @@ describe('macOS Electron application packaging', () => {
     const previous = join(paths.output, 'previous.txt')
     await file(previous, 'preserved')
     const { run } = fakeCommands()
-    const failSigning = async (command: string, args: string[], env?: NodeJS.ProcessEnv) => {
+    const failSigning = async (command: string, args: string[]) => {
       if (command === 'codesign') throw new Error('injected signing failure')
-      return run(command, args, env)
+      return run(command, args)
     }
     await expect(packageElectronMacosApp(paths, { run: failSigning, platform: 'darwin', arch: 'arm64' }))
       .rejects.toThrow('injected signing failure')

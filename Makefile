@@ -10,7 +10,6 @@ UNAME_S := $(shell uname -s)
 UNAME_M := $(shell uname -m)
 ELECTRON_MIRROR := https://npmmirror.com/mirrors/electron/
 ELECTRON_CUSTOM_DIR := {{ version }}
-PLAYWRIGHT_CHROMIUM_DOWNLOAD_HOST := https://npmmirror.com/mirrors/playwright
 
 ifeq ($(UNAME_S),Darwin)
 INSTALL := install-app
@@ -48,11 +47,11 @@ desktop: electron-app
 
 electron-app:
 	pnpm install --frozen-lockfile --config.confirm-modules-purge=false
-	ELECTRON_MIRROR="$(ELECTRON_MIRROR)" ELECTRON_CUSTOM_DIR="$(ELECTRON_CUSTOM_DIR)" PLAYWRIGHT_CHROMIUM_DOWNLOAD_HOST="$(PLAYWRIGHT_CHROMIUM_DOWNLOAD_HOST)" pnpm run build:desktop
+	ELECTRON_MIRROR="$(ELECTRON_MIRROR)" ELECTRON_CUSTOM_DIR="$(ELECTRON_CUSTOM_DIR)" pnpm run build:desktop
 
 # 启动 Electron 开发实例；脚本负责构建 Host、Web、helper 与桌面壳。
 dev:
-	ELECTRON_MIRROR="$(ELECTRON_MIRROR)" ELECTRON_CUSTOM_DIR="$(ELECTRON_CUSTOM_DIR)" PLAYWRIGHT_CHROMIUM_DOWNLOAD_HOST="$(PLAYWRIGHT_CHROMIUM_DOWNLOAD_HOST)" pnpm run dev:electron
+	ELECTRON_MIRROR="$(ELECTRON_MIRROR)" ELECTRON_CUSTOM_DIR="$(ELECTRON_CUSTOM_DIR)" pnpm run dev:electron
 
 check-electron:
 	pnpm run test:electron:packaged

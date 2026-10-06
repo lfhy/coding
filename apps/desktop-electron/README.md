@@ -10,7 +10,7 @@
 make dev
 ```
 
-该命令经 `pnpm run dev:electron` 构建 Host、Client、Web、远端 agent 资源和 Go helper，再构建并启动 Electron；初次安装 Electron 开发二进制需要下载。单独构建 Go helper 可用 `pnpm run build:electron-helper`，单独构建壳可用 `pnpm run build:electron`，两者都不生成安装包。`pnpm run test:electron:smoke` 需要本机图形会话，不属于默认无凭据测试。开发态原生冒烟已贯通真实 Host HTTP、两条 WebSocket、无凭据的远程连接 `cancelConnect`、UI 向导及菜单/关闭复开窗口；托盘 UI 点击因 macOS 锁屏未验收。两种模式的 SSH 路径由下述独立测试覆盖，模型请求未验收。
+该命令经 `pnpm run dev:electron` 构建 Host、Client、Web、远端 agent 资源和 Go helper，再构建并启动 Electron；初次安装 Electron 开发二进制需要下载。单独构建 Go helper 可用 `pnpm run build:electron-helper`，单独构建壳可用 `pnpm run build:electron`，两者都不生成安装包。`pnpm run test:electron:smoke` 需要本机图形会话，不属于默认无凭据测试。开发态原生冒烟覆盖真实 Host HTTP、两条 WebSocket、无凭据的远程连接 `cancelConnect`、UI 向导及菜单/关闭复开窗口，以及回环脚本模型驱动的浏览器工具与真人共用 guest；托盘 UI 点击因 macOS 锁屏未验收。两种模式的 SSH 路径由下述独立测试覆盖；真实外部模型请求未验收。
 
 `pnpm run test:electron:remote-ssh` 的 Agent 模式已通过单独 opt-in 的 macOS 图形验收：在隔离 HOME 中经真实向导确认未知主机、连接 agent、选择目录和创建工作区，再由 Host 验证远程文件列表与读取、PTY resize、同目录 generation 重绑、旧连接拒绝、取消和退出。`pnpm run test:electron:remote-basic` 使用禁止 TCP 转发的回环 SSH fixture 验证默认基础模式、主机密钥确认、无远端 agent、Host 文件列表与读取、PTY 输入及 resize、本地隔离和退出清理；命令也构建 Code Mode 所需的本机隔离程序，但该原生脚本不调用模型或 Code Mode。两项测试只使用 fixture 一次性密码，不依赖用户 SSH agent、`~/.ssh` 或模型 API key；失败时保留并报告本次临时目录，成功且 Host 退出后删除。它们不属于默认测试，也不验证真实远端服务器、模型调用或安装版 SSH。`pnpm run package:electron` 与 `pnpm run build:desktop` 组装同一个生产包；`pnpm run test:electron:packaged` 则另行验收已有包。
 
@@ -30,4 +30,6 @@ Host 经启动环境中的一次性令牌连接主进程私有回环 WebSocket�
 
 ## 打包与安装边界
 
-`pnpm run build:desktop` 组装 `dist/Coding.app` macOS arm64 包，使用 `com.coding.desktop` bundle identifier。打包不会触碰 `/Applications/Coding.app`；只有调用 `make install` 才将新包安装到该路径，并替换已有应用。本机包通过 ad-hoc 深签名与隔离 HOME 原生冒烟：直接运行 `.app` 验证 `app.isPackaged`、`app.asar`、真实 Host 页面与两条 WebSocket、preload 到 Go helper/bridge 的无凭据取消、单实例及退出清理。该测试未安装或公证；打包资源包含独立 Host runtime、Go helper、remote-agent 和与锁定 Playwright 版本匹配的 Chromium headless shell。安装版启动前校验包内浏览器文件，并将 `PLAYWRIGHT_BROWSERS_PATH` 指向包内资源；开发态仍依赖开发环境中的匹配浏览器安装。生产配置使用已有 `~/.dsh` 与单独的 `~/.dsh-electron-user-data`；helper 在操作共享 Home 前取得安装版单实例锁，获锁失败时不得碰共享 Home。打包版浏览器工具的完整模型操作流程、原生菜单/托盘点击、关窗隐藏及远程连接未验收，模型请求和安装后运行也未验收。Windows/Linux 原生运行尚未验证。
+`pnpm run build:desktop` 组装 `dist/Coding.app` macOS arm64 包，使用 `com.coding.desktop` bundle identifier。打包不会触碰 `/Applications/Coding.app`；只有调用 `make install` 才将新包安装到该路径，并替换已有应用。打包资源包含 Electron Framework、独立 Host runtime、Go helper 和 remote-agent；桌面浏览器使用 Electron 自带的原生 guest，包不交付或下载单独的 Playwright Chromium headless shell，也不需要 `PLAYWRIGHT_BROWSERS_PATH` 指向包内浏览器。
+
+本机包经 ad-hoc 深签名；`pnpm run test:electron:packaged` 在隔离 HOME 中直接运行 `.app`，验证 `app.isPackaged`、`app.asar`、真实 Host 页面与两条 WebSocket，以及回环脚本模型通过 Host 执行 `browser_navigate`、`browser_snapshot`、`browser_click` 并与真人共用原生 guest。该冒烟还覆盖 preload 到 Go helper/bridge 的无凭据取消、单实例及退出清理，不安装或公证。生产配置使用已有 `~/.dsh` 与单独的 `~/.dsh-electron-user-data`；helper 在操作共享 Home 前取得安装版单实例锁，获锁失败时不得碰共享 Home。原生菜单/托盘点击、关窗隐藏、远程连接、真实外部模型请求和安装后运行不在该冒烟覆盖范围；Windows/Linux 原生运行尚未验证。

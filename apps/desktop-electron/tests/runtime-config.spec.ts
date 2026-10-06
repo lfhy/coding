@@ -23,8 +23,6 @@ async function fixture(): Promise<RuntimeConfigOptions> {
     mkdir(resourcesPath, { recursive: true }),
     mkdir(join(resourcesPath, 'runtime', 'node_modules', '@deepseek-ai', 'dsh', 'lib'), { recursive: true }),
     mkdir(join(resourcesPath, 'remote-agent'), { recursive: true }),
-    mkdir(join(resourcesPath, 'playwright-browsers', 'chromium_headless_shell-1228',
-      'chrome-headless-shell-mac-arm64'), { recursive: true }),
   ])
   await Promise.all([
     writeFile(join(repoRoot, 'dist', 'coding-electron-helper-darwin-arm64'), ''),
@@ -34,10 +32,6 @@ async function fixture(): Promise<RuntimeConfigOptions> {
     writeFile(join(resourcesPath, 'runtime', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js'), ''),
     writeFile(join(resourcesPath, 'CodingIcon.png'), ''),
     writeFile(join(resourcesPath, 'metadata.json'), '{"version":"0.1.0-rc.8","sha256":"secret-sha"}\n'),
-    writeFile(join(resourcesPath, 'playwright-browsers', 'chromium_headless_shell-1228',
-      'INSTALLATION_COMPLETE'), ''),
-    writeFile(join(resourcesPath, 'playwright-browsers', 'chromium_headless_shell-1228',
-      'chrome-headless-shell-mac-arm64', 'chrome-headless-shell'), ''),
   ])
   return {
     packaged: false, userHome, repoRoot, resourcesPath, platform: 'darwin', arch: 'arm64',
@@ -55,9 +49,11 @@ async function fixture(): Promise<RuntimeConfigOptions> {
   }
 }
 
-function expectCleanEnvironment(environment: NodeJS.ProcessEnv, browserPath?: string): void {
-  expect(environment).toEqual({ PATH: '/bin', DEEPSEEK_API_KEY: 'local-key', DEEPSEEK_BASE_URL: 'https://example.test',
-    PLAYWRIGHT_BROWSERS_PATH: browserPath ?? '/tmp/untrusted-user-cache' })
+function expectCleanEnvironment(environment: NodeJS.ProcessEnv, packaged = false): void {
+  expect(environment).toEqual({
+    PATH: '/bin', DEEPSEEK_API_KEY: 'local-key', DEEPSEEK_BASE_URL: 'https://example.test',
+    ...(packaged ? {} : { PLAYWRIGHT_BROWSERS_PATH: '/tmp/untrusted-user-cache' }),
+  })
 }
 
 describe('Electron runtime configuration', () => {
@@ -81,10 +77,12 @@ describe('Electron runtime configuration', () => {
     await expect(lstat(home)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
-  it('从 Resources 读取生产版本且不触碰安装版 Home', async () => {
+  it('无需打包 Chromium 即可读取生产版本，并清理继承的浏览器路径且不触碰安装版 Home', async () => {
     const options = { ...await fixture(), packaged: true }
     const installedHome = join(options.userHome, '.dsh')
     await symlink(join(options.userHome, 'missing-installed-target'), installedHome)
+    await expect(lstat(join(options.resourcesPath, 'playwright-browsers')))
+      .rejects.toMatchObject({ code: 'ENOENT' })
     const result = await resolveRuntimeConfig(options)
     expect(result).toMatchObject({
       home: installedHome, cwd: options.userHome,
@@ -98,7 +96,8 @@ describe('Electron runtime configuration', () => {
         cwd: options.userHome,
       },
     })
-    expectCleanEnvironment(result.helper.env, join(options.resourcesPath, 'playwright-browsers'))
+    expectCleanEnvironment(result.helper.env, true)
+    expect(options.environment.PLAYWRIGHT_BROWSERS_PATH).toBe('/tmp/untrusted-user-cache')
     expect((await lstat(installedHome)).isSymbolicLink()).toBe(true)
     await expect(lstat(result.userData)).rejects.toMatchObject({ code: 'ENOENT' })
   })
@@ -119,19 +118,15 @@ describe('Electron runtime configuration', () => {
     },
   )
 
-  it('拒绝缺失或重定向的打包 Chromium，并只覆盖安装版环境', async () => {
-    const options = { ...await fixture(), packaged: true }
-    const shell = join(options.resourcesPath, 'playwright-browsers', 'chromium_headless_shell-1228')
-    await rm(join(shell, 'INSTALLATION_COMPLETE'))
-    await expect(resolveRuntimeConfig(options)).rejects.toThrow('INSTALLATION_COMPLETE')
-    await writeFile(join(shell, 'INSTALLATION_COMPLETE'), '')
-    await rm(join(shell, 'chrome-headless-shell-mac-arm64', 'chrome-headless-shell'))
-    await expect(resolveRuntimeConfig(options)).rejects.toThrow('chrome-headless-shell')
-    await writeFile(join(shell, 'chrome-headless-shell-mac-arm64', 'chrome-headless-shell'), '')
-    await rm(shell, { recursive: true })
-    await symlink(options.userHome, shell)
-    await expect(resolveRuntimeConfig(options)).rejects.toThrow('symbolic link')
-  })
+  it.each(['runtime', 'remote-agent'])(
+    '无浏览器包时仍拒绝缺失的生产目录 %s', async (directory) => {
+      const options = { ...await fixture(), packaged: true }
+      await rm(join(options.resourcesPath, directory), { recursive: true })
+      await expect(resolveRuntimeConfig(options)).rejects.toThrow(
+        `required directory is unavailable: ${join(options.resourcesPath, directory)}`,
+      )
+    },
+  )
 
   it('拒绝无效版本而不回显 metadata 的其他字段', async () => {
     const options = { ...await fixture(), packaged: true }

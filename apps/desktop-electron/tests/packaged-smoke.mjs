@@ -5,7 +5,7 @@
 
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { lstat, mkdir, mkdtemp, readFile, realpath, rm } from 'node:fs/promises'
 import { createServer } from 'node:http'
@@ -20,16 +20,10 @@ const executable = join(bundle, 'Contents/MacOS/Coding')
 const resources = join(bundle, 'Contents/Resources')
 const helperExecutable = join(resources, 'coding-electron-helper')
 const browserRoot = join(resources, 'playwright-browsers')
-const shellExecutable = join(browserRoot, 'chromium_headless_shell-1228',
-  'chrome-headless-shell-mac-arm64', 'chrome-headless-shell')
-const packagedPlaywright = join(resources, 'runtime', 'node_modules', 'playwright', 'index.mjs')
-const packagedBrowserProvider = join(resources, 'runtime', 'node_modules',
-  '@deepseek-ai', 'dsh-browser-playwright', 'lib', 'index.js')
 const packagedElectronBrowser = join(resources, 'runtime', 'node_modules',
   '@deepseek-ai', 'dsh-browser-electron')
 const packagedElectronProtocol = join(packagedElectronBrowser, 'lib', 'types', 'protocol.js')
 const packagedBrowserTransport = join(resources, 'runtime', 'node_modules', 'ws', 'index.js')
-const packagedCordis = join(resources, 'runtime', 'node_modules', '@deepseek-ai/cordis', 'lib', 'index.js')
 const expectedVersion = JSON.parse(await readFile(join(root, 'apps/desktop-electron/package.json'), 'utf8')).version
 const timeoutMs = 90_000
 
@@ -64,13 +58,14 @@ async function preflight() {
     'Electron application manifest must define a version')
   for (const path of [executable, helperExecutable, join(resources, 'coding-host'),
     join(resources, 'metadata.json'), join(resources, 'app.asar'), join(resources, 'CodingIcon.png'),
-    shellExecutable, packagedPlaywright, packagedBrowserProvider, packagedCordis,
     join(packagedElectronBrowser, 'package.json'), join(packagedElectronBrowser, 'lib', 'index.js'),
     packagedElectronProtocol, packagedBrowserTransport]) {
     const entry = await lstat(path).catch(() => undefined)
     assert.ok(entry?.isFile(), `missing packaged regular file: ${path}; rebuild dist/Coding.app`)
     if (path === join(resources, 'app.asar')) assert.ok(entry.size > 0, 'packaged app.asar must not be empty')
   }
+  assert.equal(existsSync(browserRoot), false,
+    'packaged native browser must not ship a Playwright browser binary')
   const providerManifest = JSON.parse(await readFile(join(packagedElectronBrowser, 'package.json'), 'utf8'))
   assert.equal(providerManifest.name, '@deepseek-ai/dsh-browser-electron', 'packaged native browser provider')
   assert.equal(providerManifest.exports?.['./protocol']?.default, './lib/types/protocol.js',
@@ -102,104 +97,10 @@ async function preflight() {
     throw new Error('packaged signature failed; rerun the macOS packaging step, then check ' +
       '`codesign --verify --deep --strict dist/Coding.app` including nested helpers; do not disable signature checks')
   }
-  for (const path of [executable, helperExecutable, join(resources, 'coding-host'), shellExecutable]) {
+  for (const path of [executable, helperExecutable, join(resources, 'coding-host')]) {
     const arch = command('/usr/bin/lipo', ['-archs', path])
     assert.equal(arch.status, 0, `could not inspect packaged Mach-O: ${path}`)
     assert.equal(arch.stdout.trim(), 'arm64', `packaged binary must be arm64: ${path}`)
-  }
-}
-
-async function verifyBundledBrowser(home, tmp) {
-  // 验证打包的 Provider 真实执行，不冒充 Host 的工具审批或模型轮次。
-  let handshakes = 0
-  const sockets = new Set()
-  const fixture = createServer((_req, res) => {
-    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
-    res.end('<title>bundled-browser</title><h1>local browser page</h1>' +
-      '<button id="go" onclick="document.querySelector(\'h1\').textContent=\'Clicked\'">Open</button>' +
-      '<output>Socket waiting</output><script>const socket = new WebSocket("ws://" + location.host + "/socket");' +
-      'socket.onmessage = event => { document.querySelector("output").textContent = event.data; socket.close() };</script>')
-  })
-  fixture.on('upgrade', (req, socket) => {
-    const key = req.headers['sec-websocket-key']
-    if (req.url !== '/socket' || typeof key !== 'string') { socket.destroy(); return }
-    handshakes++
-    sockets.add(socket)
-    socket.on('error', () => { socket.destroy() })
-    socket.on('close', () => { sockets.delete(socket) })
-    const accept = createHash('sha1').update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64')
-    socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`)
-    const message = Buffer.from('Packaged localhost WebSocket delivered')
-    // 本地 fixture 只发送一条短文本帧，并响应浏览器关闭帧。
-    socket.write(Buffer.concat([Buffer.from([0x81, message.length]), message]))
-    socket.on('data', () => { socket.end(Buffer.from([0x88, 0])) })
-  })
-  await new Promise((resolveListen, reject) => {
-    fixture.once('error', reject)
-    fixture.listen(0, '127.0.0.1', resolveListen)
-  })
-  const address = fixture.address()
-  assert.ok(address && typeof address !== 'string', 'loopback fixture must bind a TCP port')
-  const origin = `http://localhost:${address.port}`
-  // 子进程只接触包内 Provider、Playwright 和浏览器；隔离 HOME 无用户级缓存。
-  const script = `
-    import assert from 'node:assert/strict';
-    const { Context } = await import(process.argv[1]);
-    const { default: Provider } = await import(process.argv[2]);
-    const origin = process.argv[3];
-    const ctx = new Context();
-    const signal = new AbortController().signal;
-    const session = 'packaged-browser-smoke';
-    try {
-      const fiber = ctx.plugin(Provider);
-      await fiber.await();
-      const service = ctx.browserUse;
-      assert.ok(service instanceof Provider, 'packaged Cordis service must be the real Provider');
-      const first = await service.execute(session, { kind: 'navigate', url: origin + '/' }, signal);
-      assert.equal(first.observation.url, origin + '/');
-      assert.equal(first.observation.title, 'bundled-browser');
-      assert.ok(first.observation.snapshot.includes('local browser page'));
-      const websocketDeadline = Date.now() + 10_000;
-      let websocketSnapshot = first;
-      while (!websocketSnapshot.observation.snapshot.includes('Packaged localhost WebSocket delivered')) {
-        assert.ok(Date.now() < websocketDeadline, 'packaged Provider must receive a localhost WebSocket message');
-        websocketSnapshot = await service.execute(session, { kind: 'snapshot' }, signal);
-      }
-      const snapshot = await service.execute(session, { kind: 'snapshot' }, signal);
-      assert.ok(snapshot.observation.snapshot.includes('local browser page'));
-      const ref = snapshot.observation.snapshot.match(/(e[0-9]+-[a-f0-9-]+) button "Open"/)?.[1];
-      assert.ok(ref, 'packaged Provider must expose the observed button ref');
-      const clicked = await service.execute(session,
-        { kind: 'click', ref, revision: snapshot.observation.revision }, signal);
-      assert.ok(clicked.observation.snapshot.includes('Clicked'));
-      const screenshot = await service.execute(session, { kind: 'screenshot' }, signal);
-      assert.equal(Buffer.from(screenshot.png).subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
-      await service.closeSession(session);
-    } finally { await ctx.fiber.dispose(); }
-  `
-  const child = spawn(process.execPath, ['--input-type=module', '--eval', script, packagedCordis,
-    packagedBrowserProvider, origin], {
-    cwd: home, stdio: ['ignore', 'ignore', 'pipe'],
-    env: { HOME: home, TMPDIR: tmp, PATH: '/usr/bin:/bin:/usr/sbin',
-      PLAYWRIGHT_BROWSERS_PATH: browserRoot },
-  })
-  let failure = ''
-  child.stderr.on('data', bytes => { failure = (failure + bytes.toString()).slice(-4096) })
-  try {
-    const status = await deadline(new Promise((resolveExit, reject) => {
-      child.once('error', reject)
-      child.once('exit', (code, signal) => signal === null ? resolveExit(code)
-        : reject(new Error(`bundled Provider exited on ${signal}`)))
-    }), 'packaged browser Provider', 45_000)
-    assert.equal(status, 0, `packaged Provider must navigate localhost, receive WebSocket output, snapshot, click and screenshot: ${failure}`)
-    assert.equal(handshakes, 1, 'packaged default Provider must make one real localhost WebSocket handshake')
-    assert.equal(existsSync(join(home, 'Library', 'Caches', 'ms-playwright')), false,
-      'packaged browser must not create a user cache')
-  } finally {
-    if (child.exitCode === null && child.signalCode === null) await stopOwnProcess(child)
-    for (const socket of sockets) socket.destroy()
-    fixture.closeAllConnections()
-    await new Promise(resolveClose => fixture.close(resolveClose))
   }
 }
 
@@ -447,84 +348,247 @@ async function browserRpc(page, method, payload) {
   return response.envelope.result.value
 }
 
-async function completeOnboarding(page) {
-  const dialog = page.getByRole('dialog', { name: '配置模型，开始使用' })
-  await dialog.waitFor({ state: 'visible', timeout: timeoutMs })
-  // 仅在隔离 HOME 内保存测试占位值；不使用真实凭据或触发模型请求。
-  await dialog.locator('input[type="password"][aria-label="API 密钥"]').fill('packaged-smoke-local-placeholder')
-  await dialog.getByRole('button', { name: '保存' }).click()
-  const model = dialog.getByRole('combobox', { name: '默认模型' })
-  try {
-    await until(async () => !await dialog.isVisible() ||
-      await model.locator('option').count() > 1 && await model.isEnabled(),
-    'packaged onboarding completion or model catalog', 15_000)
-  } catch (error) {
-    const diagnostics = await dialog.locator('[role="alert"], [role="status"]').allInnerTexts()
-    const options = await model.locator('option').allInnerTexts()
-    throw new Error(`onboarding did not finish or expose a model: ${JSON.stringify({ diagnostics, options })}`,
-      { cause: error })
-  }
-  if (await dialog.isVisible()) {
-    await model.selectOption({ index: 1 })
-    await dialog.getByRole('button', { name: '开始使用' }).click()
-  }
-  await dialog.waitFor({ state: 'hidden', timeout: timeoutMs })
-  await until(() => page.locator('#root').evaluate(root => !root.inert),
-    'packaged workbench unlocked after onboarding')
+async function browserControlAfterTurn(page, sessionId, command) {
+  const response = await page.evaluate(async ({ sessionId, command }) => {
+    const rpcId = crypto.randomUUID()
+    const result = await fetch('/api/browser.control', { method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ type: 'client-request', rpcId, method: 'browser.control',
+        payload: { sessionId, command } }) })
+    return { status: result.status, envelope: await result.json(), rpcId }
+  }, { sessionId, command })
+  assert.equal(response.status, 200, 'browser.control HTTP status')
+  assert.equal(response.envelope.type, 'server-response', 'browser.control response envelope')
+  assert.equal(response.envelope.rpcId, response.rpcId, 'browser.control request identity')
+  const result = response.envelope.result
+  if (result?.error?.code === 'browser-failed' && result.error.details?.reason === 'BROWSER_BUSY') return undefined
+  assert.equal(result?.ok, true, `browser.control after Agent turn: ${result?.error?.code ?? 'unknown'}`)
+  return result.value
 }
 
-async function verifyNativeBrowser(page, app) {
+async function browserFixture() {
   const fixture = createServer((_request, response) => {
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
-    response.end('<title>Packaged native fixture</title><button id="human" ' +
-      'onclick="document.querySelector(\'output\').textContent=\'Human clicked\'">Click</button>' +
-      '<output>Waiting</output>')
+    response.end(`<!doctype html><title>Packaged native fixture</title>
+      <h1>Local packaged browser page</h1>
+      <button id="human" onclick="document.querySelector('#human-result').textContent='Human clicked'">Human click</button>
+      <output id="human-result">Waiting</output>
+      <button id="agent" onclick="document.querySelector('#agent-result').textContent='Agent clicked'">Agent click</button>
+      <output id="agent-result">Waiting</output>`)
   })
   await new Promise((resolveListen, reject) => {
     fixture.once('error', reject)
     fixture.listen(0, '127.0.0.1', resolveListen)
   })
-  try {
-    const address = fixture.address()
-    assert.ok(address && typeof address !== 'string', 'native fixture must bind a loopback port')
-    const url = `http://127.0.0.1:${address.port}/`
-    await page.getByRole('button', { name: '打开右侧边栏' }).click()
-    const menu = page.getByRole('navigation', { name: '工作台功能' })
-    await menu.waitFor({ state: 'visible' })
-    await menu.getByRole('button', { name: '浏览器' }).click()
-    await page.getByTestId('browser-canvas').waitFor({ state: 'visible' })
-    const sessions = await browserRpc(page, 'session.list', {})
-    assert.equal(sessions.items.length, 1, 'packaged workbench must create one Host Session')
-    const sessionId = sessions.items[0].sessionId
-    const addressField = page.getByRole('textbox', { name: '网址' })
-    await addressField.fill(url)
-    await addressField.press('Enter')
-    let state
-    await until(async () => {
-      state = await browserRpc(page, 'browser.control', { sessionId, command: { kind: 'ensure-tab' } })
-      return state?.tabs[0]?.url === url
-    }, 'packaged Host browser.control on native guest')
-    const guest = await inspectPackagedMain(app, url)
-    const guestPage = app.context().pages()
-      .find(candidate => !candidate.isClosed() && candidate.url() === url)
-    assert.ok(guestPage, 'packaged native WebContentsView must expose an interactive Chromium target')
-    await guestPage.locator('#human').click()
-    await until(async () => await guestPage.locator('output').innerText() === 'Human clicked',
-      'packaged native guest human interaction', 10_000)
-    assert.equal((await inspectPackagedMain(app, url)).id, guest.id,
-      'Host control and human input must retain the same native WebContentsView')
-    assert.equal((await browserRpc(page, 'browser.control',
-      { sessionId, command: { kind: 'ensure-tab' } })).activeTabId, state.activeTabId,
-    'Host must retain the native guest tab after human interaction')
-    assert.equal(await browserRpc(page, 'browser.control',
-      { sessionId, command: { kind: 'close-tab', tabId: state.activeTabId } }), null,
-    'closing the packaged browser tab must release the guest')
-    await until(async () => (await inspectPackagedMain(app)).length === 0,
-      'packaged native guest teardown', 10_000)
-  } finally {
+  const address = fixture.address()
+  assert.ok(address && typeof address !== 'string', 'native fixture must bind a loopback port')
+  return { url: `http://127.0.0.1:${address.port}/`, close: async () => {
     fixture.closeAllConnections()
     await new Promise(resolveClose => fixture.close(resolveClose))
+  } }
+}
+
+async function scriptedModel(fixtureUrl) {
+  let phase = 'navigate'
+  let step = 0
+  const failures = []
+  const observations = []
+  const server = createServer((request, response) => {
+    if (request.url !== '/chat/completions' || request.method !== 'POST' ||
+      request.socket.remoteAddress !== '127.0.0.1') {
+      response.writeHead(404).end()
+      return
+    }
+    let body = ''
+    request.on('data', chunk => { body += chunk.toString('utf8') })
+    request.on('end', () => {
+      try {
+        const payload = JSON.parse(body)
+        const tools = (payload.tools ?? []).map(tool => tool.function?.name)
+        let frames
+        if (!tools.includes('browser_snapshot')) {
+          frames = [{ choices: [{ delta: { content: 'Packaged native smoke' }, finish_reason: 'stop' }] }]
+        } else {
+          assert.ok(tools.includes('browser_navigate') && tools.includes('browser_click'),
+            'packaged Agent must advertise the native browser tools')
+          const results = payload.messages.filter(message => message.role === 'tool')
+          let name
+          let args
+          if (phase === 'navigate' && step === 0) {
+            assert.equal(results.length, 0, 'fresh Session must begin before browser tools')
+            name = 'browser_navigate'
+            args = JSON.stringify({ url: fixtureUrl })
+          } else if (phase === 'navigate' && step === 1) {
+            const navigated = JSON.parse(results.at(-1)?.content)
+            assert.equal(navigated.action, 'navigate', 'model must receive real browser_navigate output')
+            assert.equal(navigated.observation.url, fixtureUrl, 'Agent must reach local fixture')
+            observations.push(navigated.observation)
+          } else if (phase === 'inspect' && step === 0) {
+            name = 'browser_snapshot'
+            args = '{}'
+          } else if (phase === 'inspect' && step === 1) {
+            const snapshot = JSON.parse(results.at(-1)?.content)
+            assert.equal(snapshot.action, 'snapshot', 'model must receive real browser_snapshot output')
+            assert.ok(snapshot.observation.snapshot.includes('Human clicked'),
+              'Agent must observe the human DOM mutation in the same guest')
+            const ref = snapshot.observation.snapshot.match(/(e\d+-\S+) button "Agent click"/)?.[1]
+            assert.ok(ref, 'Agent must receive a clickable observed ref')
+            observations.push(snapshot.observation)
+            name = 'browser_click'
+            args = JSON.stringify({ ref, revision: snapshot.observation.revision })
+          } else if (phase === 'inspect' && step === 2) {
+            const clicked = JSON.parse(results.at(-1)?.content)
+            assert.equal(clicked.action, 'click', 'model must receive real browser_click output')
+            assert.ok(clicked.observation.snapshot.includes('Agent clicked'),
+              'Agent click must mutate the native guest')
+            observations.push(clicked.observation)
+          } else throw new Error(`unexpected packaged model request: ${phase}/${step}`)
+          step++
+          frames = name === undefined
+            ? [{ choices: [{ delta: { content: 'PACKAGED_NATIVE_OK' }, finish_reason: 'stop' }] }]
+            : [
+              { choices: [{ delta: { tool_calls: [{ index: 0, id: `packaged-${phase}-${step}`,
+                type: 'function', function: { name, arguments: args } }] } }] },
+              { choices: [{ delta: {}, finish_reason: 'tool_calls' }],
+                usage: { prompt_tokens: 10, completion_tokens: 5 } },
+            ]
+        }
+        response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store' })
+        for (const frame of frames) response.write(`data: ${JSON.stringify(frame)}\n\n`)
+        response.end('data: [DONE]\n\n')
+      } catch (error) {
+        failures.push(error instanceof Error ? error.message : String(error))
+        response.writeHead(500).end('invalid scripted model step')
+      }
+    })
+  })
+  await new Promise((resolveListen, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', resolveListen)
+  })
+  const address = server.address()
+  assert.ok(address && typeof address !== 'string', 'scripted model must bind locally')
+  return { url: `http://127.0.0.1:${address.port}`, observations, failures,
+    get step() { return step },
+    startInspect() {
+      assert.equal(phase, 'navigate')
+      assert.equal(step, 2, 'navigation turn must finish before human input')
+      phase = 'inspect'
+      step = 0
+    },
+    close: async () => {
+      server.closeAllConnections()
+      await new Promise(resolveClose => server.close(resolveClose))
+    } }
+}
+
+async function completeOnboarding(page, model) {
+  // 只在隔离 HOME 中写入回环模型及占位凭据；不读取用户真实配置。
+  await browserRpc(page, 'settings.update', { ns: 'llm-deepseek',
+    patch: { baseURL: model.url, thinking: 'disabled', reasoningEffort: 'off' } })
+  await browserRpc(page, 'credentials.set',
+    { ref: 'DEEPSEEK_API_KEY', value: 'packaged-smoke-local-placeholder' })
+  await browserRpc(page, 'settings.update', { ns: 'agent-default-model',
+    patch: { provider: 'deepseek-official', model: 'deepseek-v4-flash' } })
+  await browserRpc(page, 'settings.update', { ns: 'permission',
+    patch: { defaultPreset: 'danger-full-access' } })
+  await page.getByRole('dialog', { name: '配置模型，开始使用' }).waitFor({ state: 'hidden', timeout: timeoutMs })
+  await until(() => page.locator('#root').evaluate(root => !root.inert),
+    'packaged workbench unlocked after onboarding')
+}
+
+async function promptAndHistory(page, sessionId, text, turnCount, model) {
+  const prompted = await browserRpc(page, 'session.prompt', { sessionId, mode: 'queue',
+    content: [{ type: 'text', text }] })
+  assert.equal(prompted.accepted, true, 'packaged Host must accept the scripted Agent turn')
+  let history
+  try {
+    await until(async () => {
+      history = await browserRpc(page, 'session.history', { sessionId, maxMessages: 30 })
+      return history.events.filter(({ event }) => event.type === 'turn/end').length >= turnCount
+    }, `packaged Agent turn ${turnCount}`, 45_000)
+  } catch (error) {
+    throw new Error(`${error.message}; scripted model errors: ${model.failures.join(' | ') || 'none'}`)
   }
+  assert.deepEqual(model.failures, [], 'scripted model must receive valid browser observations')
+  return history.events.map(({ event }) => event)
+}
+
+async function verifyNativeBrowser(page, app, fixtureUrl, model) {
+  await page.getByRole('button', { name: '打开右侧边栏' }).click()
+  const menu = page.getByRole('navigation', { name: '工作台功能' })
+  await menu.waitFor({ state: 'visible' })
+  await menu.getByRole('button', { name: '浏览器' }).click()
+  await page.getByTestId('browser-canvas').waitFor({ state: 'visible' })
+  const sessions = await browserRpc(page, 'session.list', {})
+  assert.equal(sessions.items.length, 1, 'packaged workbench must create one Host Session')
+  const sessionId = sessions.items[0].sessionId
+  let events = await promptAndHistory(page, sessionId,
+    'Use browser_navigate to open the local fixture.', 1, model)
+  assert.equal(model.step, 2, 'Agent must navigate and finish the first turn')
+  let calls = events.filter(event => event.type === 'tool/call')
+  let results = events.filter(event => event.type === 'tool/result')
+  assert.deepEqual(calls.map(event => event.data.name), ['browser_navigate'])
+  assert.deepEqual(results.map(event => event.data.message.content[0]?.isError), [false],
+    'real browser_navigate must pass the Host tool policy')
+  assert.equal(results[0].data.message.content[0]?.toolCallId, calls[0].data.callId)
+  assert.equal(events.findLast(event => event.type === 'turn/end')?.data.reason.kind, 'completed')
+  const tabId = model.observations[0].tabId
+  assert.ok(tabId, 'native navigation must return a browser tab id')
+  let state
+  await until(async () => {
+    state = await browserControlAfterTurn(page, sessionId, { kind: 'ensure-tab' })
+    return state?.activeTabId === tabId && state.tabs[0]?.url === fixtureUrl
+  }, 'packaged Agent navigation and browser lease release')
+  await page.getByTestId('browser-canvas').waitFor({ state: 'visible' })
+  let guest
+  await until(async () => {
+    const guests = await inspectPackagedMain(app)
+    guest = guests.find(candidate => candidate.url === fixtureUrl)
+    return guest?.title === 'Packaged native fixture' && guest.bounds.width >= 200
+  }, 'packaged Agent-opened native guest visible')
+  const guestPage = app.context().pages()
+    .find(candidate => !candidate.isClosed() && candidate.url() === fixtureUrl)
+  assert.ok(guestPage, 'Agent-opened WebContentsView must expose an interactive Chromium target')
+  assert.deepEqual(await guestPage.evaluate(() => [
+    'codingDesktop', 'require', 'process', 'ipcRenderer', 'DSH_HOST_TOKEN',
+    'DSH_DESKTOP_BROWSER_BRIDGE_TOKEN', '__CODING_DESKTOP_BRIDGE_TOKEN',
+  ].filter(name => name in window)), [], 'native guest must not receive Host/preload credentials')
+  await guestPage.locator('#human').click()
+  assert.equal(await guestPage.locator('#human-result').innerText(), 'Human clicked',
+    'human click must update the live native guest DOM')
+  assert.equal((await inspectPackagedMain(app, fixtureUrl)).id, guest.id,
+    'human input must retain the Agent-opened WebContentsView')
+
+  model.startInspect()
+  events = await promptAndHistory(page, sessionId,
+    'Take a browser_snapshot of my click, then click Agent click.', 2, model)
+  assert.equal(model.step, 3, 'Agent must snapshot, click and finish the second turn')
+  calls = events.filter(event => event.type === 'tool/call')
+  results = events.filter(event => event.type === 'tool/result')
+  assert.deepEqual(calls.map(event => event.data.name),
+    ['browser_navigate', 'browser_snapshot', 'browser_click'], 'session log must record the model tool sequence')
+  assert.deepEqual(results.map(event => event.data.message.content[0]?.isError), [false, false, false],
+    'all browser tools must succeed through the Host tool path and policy')
+  assert.deepEqual(results.map(event => event.data.message.content[0]?.toolCallId),
+    calls.map(event => event.data.callId), 'tool results must pair with model calls')
+  assert.equal(events.filter(event => event.type === 'turn/start').length, 2,
+    'session history must retain both Agent turn starts')
+  assert.equal(events.filter(event => event.type === 'turn/end').length, 2)
+  assert.equal(events.findLast(event => event.type === 'turn/end')?.data.reason.kind, 'completed')
+  assert.deepEqual(model.observations.map(observation => observation.tabId), [tabId, tabId, tabId],
+    'Agent navigation, snapshot and click must use the same native tab')
+  assert.equal(await guestPage.locator('#agent-result').innerText(), 'Agent clicked',
+    'Agent click must update the human-operated native guest')
+  assert.equal(await guestPage.locator('#human-result').innerText(), 'Human clicked',
+    'Agent tools must preserve the human DOM mutation')
+  await until(async () => (await inspectPackagedMain(app, fixtureUrl)).id === guest.id,
+    'same native guest visible after Agent interaction')
+  assert.equal(await browserRpc(page, 'browser.control',
+    { sessionId, command: { kind: 'close-tab', tabId } }), null,
+  'closing the packaged Agent browser tab must release the guest')
+  await until(async () => (await inspectPackagedMain(app)).length === 0,
+    'packaged native guest teardown', 10_000)
 }
 
 async function main() {
@@ -539,10 +603,13 @@ async function main() {
   let child
   let record
   let helperPid
+  let fixture
+  let model
   let passed = false
   try {
     await Promise.all([home, tmp].map(path => mkdir(path, { recursive: true, mode: 0o700 })))
-    await verifyBundledBrowser(home, tmp)
+    fixture = await browserFixture()
+    model = await scriptedModel(fixture.url)
     // 白名单而非继承：不传用户凭据、代理、SSH agent、Node 注入或真实 DSH_HOME。
     const env = {
       PATH: '/usr/bin:/bin:/usr/sbin', HOME: home, TMPDIR: tmp,
@@ -584,8 +651,10 @@ async function main() {
     await inspectPackagedMain(app)
     await verifyWebSockets(page, origin)
     await verifyRemoteBridge(page)
-    await completeOnboarding(page)
-    await verifyNativeBrowser(page, app)
+    await completeOnboarding(page, model)
+    await verifyNativeBrowser(page, app, fixture.url, model)
+    assert.equal(existsSync(join(home, 'Library', 'Caches', 'ms-playwright')), false,
+      'packaged native browser must not create a Playwright browser cache')
     await secondLaunch(env)
     assert.equal(helperCommand(helperPid, home, hostHome), true, 'second instance must retain original helper')
     const retained = await hostRecord(join(hostHome, 'host.json'))
@@ -602,6 +671,8 @@ async function main() {
       await stopVerifiedHelper(helperPid, home, hostHome).catch(() => false)
     const hostStopped = child === undefined ? true : await stopVerifiedHost(hostHome, record).catch(() => false)
     const socketStopped = !existsSync(instanceSocket)
+    await model?.close()
+    await fixture?.close()
     if (appStopped && helperStopped && hostStopped && socketStopped) {
       await rm(isolated, { recursive: true, force: true })
     } else {
@@ -610,10 +681,10 @@ async function main() {
     if (passed) {
       assert.ok(appStopped && helperStopped && hostStopped && socketStopped,
         'packaged Electron/helper/Host and isolated desktop lock must all stop')
-      console.log('PASS: signed macOS arm64 app.asar, bundled Playwright Provider localhost navigation/WebSocket/snapshot/click/screenshot, packaged Electron Provider/protocol/transport, ' +
-        'real Host browser.control and interactive WebContentsView guest, app.isPackaged, metadata/Host version, real Host page, both Host WebSockets, ' +
+      console.log('PASS: signed macOS arm64 app.asar without a Playwright browser binary, packaged Electron Provider/protocol/transport, ' +
+        'real Host Agent browser_navigate/snapshot/click on one interactive WebContentsView guest with human DOM continuity, app.isPackaged, metadata/Host version, real Host page, both Host WebSockets, ' +
         'single instance, sandbox preload, Go helper/bridge, isolated desktop lock and cleanup')
-      console.log('Not exercised: Host approval of the seven browser_* tools or a model turn; the isolated Playwright Provider test uses the bundled runtime directly.')
+      console.log('The local scripted model exercises three browser_* tools through the Host tool path and two persisted Agent turns; remaining browser tools are not exercised.')
       console.log('Not inspected by the Electron test channel: native menu/Tray and macOS window close/hide; ' +
         'verify those in a native UI session.')
     }
