@@ -120,6 +120,19 @@
   line-height: 18px;
 }
 
+.browserOpenStatus {
+  position: sticky;
+  bottom: 8px;
+  align-self: center;
+  max-width: calc(100% - 32px);
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-xxs-12);
+  pointer-events: none;
+}
+
 .openError {
   color: var(--dsw-alias-state-error-primary);
   font-size: 12px;

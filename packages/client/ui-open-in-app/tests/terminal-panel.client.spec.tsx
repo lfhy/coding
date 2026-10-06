@@ -164,11 +164,13 @@ function rightWorkbench() {
   const workbenchProps = {
     shown: true, fullscreen: false, bottomOpen: false, t,
     useStore: bindSnapshotSelector(instance.store), actions: instance.actions,
+    useSidebarRightTabs: (selector: (definitions: readonly never[]) => unknown) => selector([]),
     useSessions: bindSnapshotSelector(list),
     terminalUrl: retainedProps().terminalUrl,
     listFiles: vi.fn(async () => ({ path: '/w', entries: [], truncated: false })),
     readFile: vi.fn(async () => ({ path: '/w/a.txt', content: { kind: 'text', text: 'file output' } })),
     openWorkbench: vi.fn(), closeWorkbench: vi.fn(), toggleWorkbenchFullscreen: vi.fn(),
+    openSidebarTab: vi.fn(),
     toggleBottom: bottomToggle,
     renderSlot: vi.fn((name: string, owner: {
       shown: boolean

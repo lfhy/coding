@@ -1,9 +1,12 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { useEffect } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { createWorkbenchStore, createRetainedWorkbenchStore } from '../src/client/store.ts'
+import type { SidebarRightTabDefinition } from '../src/client/sidebar-tab-registry.ts'
+import type { SidebarRightTabOwnerProps } from '../src/client/sidebar-tab-contract.ts'
 import {
   formatBytes,
   sortTreeEntries,
@@ -31,6 +34,18 @@ function listing(path: string, entries: readonly WorkspaceFileEntry[], truncated
   return { path, entries, truncated }
 }
 
+function tabNameFromOwner(owner: unknown): string | undefined {
+  if (typeof owner !== 'object' || owner === null || !('tab' in owner)) return undefined
+  const tab = owner.tab
+  if (typeof tab !== 'object' || tab === null || !('name' in tab)) return undefined
+  return typeof tab.name === 'string' ? tab.name : undefined
+}
+
+function entryKeyFromOptions(options: unknown): string | undefined {
+  if (typeof options !== 'object' || options === null || !('entryKey' in options)) return undefined
+  return typeof options.entryKey === 'string' ? options.entryKey : undefined
+}
+
 function bench(over: {
   shown?: boolean
   fullscreen?: boolean
@@ -38,6 +53,7 @@ function bench(over: {
   listFiles?: (segments: readonly string[], signal?: AbortSignal) => Promise<WorkspaceFilesPayload>
   readFile?: (segments: readonly string[], signal?: AbortSignal) => Promise<WorkspaceFilePayload>
   initialView?: 'menu' | 'files' | 'browser'
+  externalDefinitions?: readonly SidebarRightTabDefinition[]
 } = {}) {
   const rootInstance = createRetainedWorkbenchStore().create()
   rootInstance.actions.initSession(SESSION)
@@ -52,7 +68,14 @@ function bench(over: {
   const toggleWorkbenchFullscreen = vi.fn()
   const toggleBottom = vi.fn()
   const openWorkbench = vi.fn()
-  const renderSlot = vi.fn((name: string) => <div data-testid={name === 'workbench.browser'
+  const openSidebarTab = vi.fn((_sessionId: SessionId, kind: string) => {
+    const definition = over.externalDefinitions?.find(candidate => candidate.kind === kind)
+    if (definition === undefined) return
+    const address = `sidebar://${kind}`
+    instance.actions.openExternalTab({ definitionId: definition.id, kind,
+      name: definition.title(address), address, multiple: definition.multiple ?? false })
+  })
+  const renderSlot = vi.fn((name: string, _owner?: unknown, _options?: unknown) => <div data-testid={name === 'workbench.browser'
     ? 'browser-contribution' : 'browser-tabs-contribution'} />)
   const listFiles = vi.fn(over.listFiles ?? (async () => listing('/workspace', [])))
   const readFile = vi.fn(over.readFile ?? (async (): Promise<WorkspaceFilePayload> => ({
@@ -67,7 +90,10 @@ function bench(over: {
     openWorkbench,
     toggleWorkbenchFullscreen,
     toggleBottom,
+    openSidebarTab,
     useStore: bindSnapshotSelector(rootInstance.store),
+    useSidebarRightTabs: (selector: (definitions: readonly SidebarRightTabDefinition[]) => unknown) =>
+      selector(over.externalDefinitions ?? []),
     actions: rootInstance.actions,
     useSessions: (selector: (state: { ids: readonly SessionId[]; current: SessionId }) => unknown) =>
       selector({ ids: [SESSION], current: SESSION }),
@@ -77,7 +103,7 @@ function bench(over: {
     terminalUrl: (id: SessionId) => `ws://test/terminal?sessionId=${id}`,
     t,
   } as unknown as WorkspaceWorkbenchProps
-  return { instance, props, closeWorkbench, openWorkbench, renderSlot,
+  return { instance, props, closeWorkbench, openWorkbench, openSidebarTab, renderSlot,
     toggleWorkbenchFullscreen, toggleBottom, listFiles, readFile }
 }
 
@@ -99,6 +125,144 @@ describe('workspace workbench helpers', () => {
 })
 
 describe('WorkspaceWorkbench shell', () => {
+  it('lists third-party guide entries in the add menu and opens their subtab', () => {
+    const b = bench({ externalDefinitions: [{ id: 'plugin:notes', kind: 'notes',
+      title: () => 'Notes', guide: [{ id: 'new', order: 30,
+        title: () => 'Open notes', description: () => 'A private note' }] }] })
+    b.renderSlot.mockImplementation((name, owner?: unknown) => name === 'sidebar.right.pane.tab.title'
+      ? <span>{tabNameFromOwner(owner)}</span> : <div data-testid={name} />)
+    render(<WorkspaceWorkbench {...b.props} />)
+    expect(screen.getByRole('button', { name: /Open notes/ }).textContent).toContain('A private note')
+    fireEvent.click(screen.getByRole('button', { name: /Open notes/ }))
+    expect(b.openSidebarTab).toHaveBeenCalledExactlyOnceWith(SESSION, 'notes')
+    expect(screen.getByRole('tab', { name: 'Notes' }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByRole('tabpanel', { name: 'Notes' })).toBeDefined()
+  })
+
+  it('isolates throwing third-party guide labels without breaking built-in menu actions', () => {
+    const b = bench({ externalDefinitions: [
+      { id: 'plugin:bad-title', kind: 'bad-title', title: () => 'Bad title',
+        guide: [{ id: 'open', order: 10, title: () => { throw new Error('title failed') } }] },
+      { id: 'plugin:bad-description', kind: 'bad-description', title: () => 'Bad description',
+        guide: [{ id: 'open', order: 20, title: () => 'Hidden entry',
+          description: () => { throw new Error('description failed') } }] },
+      { id: 'plugin:healthy', kind: 'healthy', title: () => 'Healthy',
+        guide: [{ id: 'open', order: 30, title: () => 'Healthy entry' }] },
+    ] })
+    b.renderSlot.mockImplementation((name, owner?: unknown) => name === 'sidebar.right.pane.tab.title'
+      ? <span>{tabNameFromOwner(owner)}</span> : <div data-testid={name} />)
+    render(<WorkspaceWorkbench {...b.props} />)
+    expect(screen.queryByRole('button', { name: 'Hidden entry' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Healthy entry' })).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.files'] }))
+    expect(screen.getByRole('tab', { name: zh['files.tab'] })).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: zh['tabs.add'] }))
+    fireEvent.click(screen.getByRole('button', { name: 'Healthy entry' }))
+    expect(b.openSidebarTab).toHaveBeenCalledExactlyOnceWith(SESSION, 'healthy')
+    expect(screen.getByRole('tab', { name: 'Healthy' }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByRole('tab', { name: zh['files.tab'] })).toBeDefined()
+  })
+
+  it('disables guide entries rejected by the provider and contains a late opening error', () => {
+    const b = bench({ externalDefinitions: [
+      { id: 'plugin:blocked', kind: 'blocked', title: () => 'Blocked', canOpen: () => false,
+        guide: [{ id: 'open', order: 10, title: () => 'Blocked page' }] },
+      { id: 'plugin:late', kind: 'late', title: () => 'Late',
+        guide: [{ id: 'open', order: 20, title: () => 'Late page' }] },
+    ] })
+    b.openSidebarTab.mockImplementationOnce(() => { throw new Error('provider unavailable') })
+    render(<WorkspaceWorkbench {...b.props} />)
+    const blocked = screen.getByRole('button', { name: 'Blocked page' }) as HTMLButtonElement
+    expect(blocked.disabled).toBe(true)
+    fireEvent.click(blocked)
+    expect(b.openSidebarTab).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Late page' }))
+    expect(screen.getByRole('alert').textContent).toBe(zh['workbench.menu.unavailable'])
+    expect(b.instance.getSnapshot().view).toBe('menu')
+  })
+
+  it('dispatches an existing tab through the in-force replacement, then restores the builtin', () => {
+    const builtin: SidebarRightTabDefinition = { id: 'builtin:notes', kind: 'notes',
+      title: () => 'Notes', keepMounted: true }
+    const extension: SidebarRightTabDefinition = { id: 'extension:notes', kind: 'notes',
+      title: () => 'Extension Notes', keepMounted: true }
+    const b = bench({ externalDefinitions: [builtin] })
+    b.renderSlot.mockImplementation((name, owner?: unknown, options?: unknown) => {
+      if (name === 'sidebar.right.pane.tab.title') return <span>{tabNameFromOwner(owner)}</span>
+      if (name === 'sidebar.right.pane.tab') return <div data-testid="provider-body">{entryKeyFromOptions(options)}</div>
+      return <div data-testid={name} />
+    })
+    act(() => { b.instance.actions.openExternalTab({ definitionId: builtin.id, kind: builtin.kind,
+      name: 'Notes', address: 'sidebar://notes' }) })
+    const mounted = render(<WorkspaceWorkbench {...b.props} />)
+    expect(screen.getByTestId('provider-body').textContent).toBe(builtin.id)
+    const externalHook = ((selector: (definitions: readonly SidebarRightTabDefinition[]) => unknown) =>
+      selector([extension])) as WorkspaceWorkbenchProps['useSidebarRightTabs']
+    mounted.rerender(<WorkspaceWorkbench {...b.props} useSidebarRightTabs={externalHook} />)
+    expect(screen.getByTestId('provider-body').textContent).toBe(extension.id)
+    expect(b.instance.getSnapshot().tabs.find(tab => tab.type === 'external')?.definitionId).toBe(builtin.id)
+    mounted.rerender(<WorkspaceWorkbench {...b.props} />)
+    expect(screen.getByTestId('provider-body').textContent).toBe(builtin.id)
+  })
+
+  it('dispatches a registered child tab body and title, retaining only opted-in inactive bodies', () => {
+    const mounts = vi.fn()
+    const unmounts = vi.fn()
+    function ExternalBody({ name }: { name: string }) {
+      useEffect(() => {
+        mounts(name)
+        return () => { unmounts(name) }
+      }, [name])
+      return <div data-testid={`external-${name}`}>{name} content</div>
+    }
+    const definitions: readonly SidebarRightTabDefinition[] = [
+      { id: 'plugin:retained', kind: 'retained', keepMounted: true, title: () => 'Retained' },
+      { id: 'plugin:ephemeral', kind: 'ephemeral', title: () => 'Ephemeral' },
+    ]
+    const b = bench({ externalDefinitions: definitions })
+    b.renderSlot.mockImplementation((name, owner?: unknown, options?: unknown) => {
+      if (name === 'sidebar.right.pane.tab.title') return <span>{tabNameFromOwner(owner)}</span>
+      if (name === 'sidebar.right.pane.tab') return <ExternalBody name={tabNameFromOwner(owner) ?? ''} />
+      return <div data-testid={name === 'workbench.browser'
+        ? 'browser-contribution' : 'browser-tabs-contribution'} data-entry-key={entryKeyFromOptions(options)} />
+    })
+    act(() => {
+      b.instance.actions.openExternalTab({ definitionId: 'plugin:retained', kind: 'retained',
+        name: 'Retained', address: 'sidebar://retained' })
+    })
+    const mounted = render(<WorkspaceWorkbench {...b.props} />)
+    const retained = screen.getByRole('tab', { name: 'Retained' })
+    const retainedPanel = mounted.container.querySelector(`[id="${retained.getAttribute('aria-controls')}"]`) as HTMLElement
+    expect(retainedPanel.getAttribute('aria-labelledby')).toBe(retained.id)
+    expect(retainedPanel.hidden).toBe(false)
+    expect(screen.getByTestId('external-Retained')).toBeDefined()
+    const bodyCall = b.renderSlot.mock.calls.findLast(([name]) => name === 'sidebar.right.pane.tab')
+    const bodyOwner = bodyCall?.[1] as SidebarRightTabOwnerProps | undefined
+    expect(bodyOwner?.tab).toMatchObject({ kind: 'retained', address: 'sidebar://retained' })
+    expect(bodyOwner).toMatchObject({ shown: true, tabDomId: retained.id, panelDomId: retainedPanel.id })
+    expect(typeof bodyOwner?.selectTab).toBe('function')
+    expect(typeof bodyOwner?.closeTab).toBe('function')
+    expect(bodyCall?.[2]).toMatchObject({ entryKey: 'plugin:retained', hookContext: bodyOwner })
+    act(() => {
+      b.instance.actions.openExternalTab({ definitionId: 'plugin:ephemeral', kind: 'ephemeral',
+        name: 'Ephemeral', address: 'sidebar://ephemeral' })
+    })
+    expect(retainedPanel.hidden).toBe(true)
+    expect(retainedPanel.hasAttribute('inert')).toBe(true)
+    expect(screen.getByTestId('external-Retained')).toBeDefined()
+    expect(screen.getByTestId('external-Ephemeral')).toBeDefined()
+    const ephemeral = screen.getByRole('tab', { name: 'Ephemeral' })
+    expect(ephemeral.getAttribute('aria-selected')).toBe('true')
+    fireEvent.click(retained)
+    expect(screen.queryByTestId('external-Ephemeral')).toBeNull()
+    expect(unmounts).toHaveBeenCalledWith('Ephemeral')
+    expect(mounts).toHaveBeenCalledWith('Retained')
+    fireEvent.click(screen.getByRole('button', { name: zh['tabs.close'].replace('{name}', 'Retained') }))
+    expect(screen.queryByTestId('external-Retained')).toBeNull()
+    expect(unmounts).toHaveBeenCalledWith('Retained')
+    expect(screen.getByRole('tab', { name: 'Ephemeral' }).getAttribute('aria-selected')).toBe('true')
+  })
+
   it('功能菜单的终端与其他入口采用同尺寸线性 SVG', () => {
     const b = bench()
     render(<WorkspaceWorkbench {...b.props} />)

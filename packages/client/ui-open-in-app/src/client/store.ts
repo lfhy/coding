@@ -34,8 +34,25 @@ export interface WorkbenchBrowserTab {
   browserTabId: string
 }
 
+/** 第三方标签的导航参数只接受可序列化的 JSON 值。 */
+export type WorkbenchExternalParams = string | number | boolean | null
+  | readonly WorkbenchExternalParams[] | { readonly [key: string]: WorkbenchExternalParams }
+
+/** 第三方定义在当前 Session 中打开的标签；kind 用于去重，definitionId 保留初次打开的归属。 */
+export interface WorkbenchExternalTab {
+  type: 'external'
+  id: string
+  definitionId: string
+  kind: string
+  name: string
+  address: string
+  params?: WorkbenchExternalParams
+  revision: number
+}
+
 /** 标签类型决定工作台内容和关闭行为。 */
-export type WorkbenchTab = WorkbenchFileTab | WorkbenchFileManagerTab | WorkbenchTerminalTab | WorkbenchBrowserTab
+export type WorkbenchTab = WorkbenchFileTab | WorkbenchFileManagerTab | WorkbenchTerminalTab
+  | WorkbenchBrowserTab | WorkbenchExternalTab
 
 /** 一层目录的读取状态。 */
 export interface WorkbenchFileLevel {
@@ -46,10 +63,11 @@ export interface WorkbenchFileLevel {
 
 /** 单个 Session 的标签、当前视图与文件树状态。 */
 export type WorkbenchState = {
-  view: 'menu' | 'files' | 'browser' | 'terminal'
+  view: 'menu' | 'files' | 'browser' | 'terminal' | 'external'
   tabs: WorkbenchTab[]
   activeId: string | null
   nextTerminalNumber: number
+  nextExternalNumber: number
   activeBrowserTabId: string | null
   interactionEpoch: number
   browserAutoRevealed: boolean
@@ -68,11 +86,29 @@ interface BrowserTabInput {
   readonly name: string
 }
 
+interface OpenExternalTabInput {
+  readonly definitionId: string
+  readonly kind: string
+  readonly name: string
+  readonly address: string
+  readonly params?: WorkbenchExternalParams
+  readonly multiple?: boolean
+}
+
+interface UpdateExternalTabInput {
+  readonly name?: string
+  readonly address: string
+  readonly params?: WorkbenchExternalParams
+}
+
 type WorkbenchActions = {
   setView: (draft: WorkbenchState, view: WorkbenchState['view']) => void
   openFile: (draft: WorkbenchState, file: OpenFileInput) => void
   openFileManager: (draft: WorkbenchState) => void
   openTerminal: (draft: WorkbenchState) => void
+  openExternalTab: (draft: WorkbenchState, input: OpenExternalTabInput) => void
+  updateExternalTab: (draft: WorkbenchState, tabId: string, update: UpdateExternalTabInput) => void
+  closeExternalTab: (draft: WorkbenchState, tabId: string) => void
   activateTab: (draft: WorkbenchState, id: string) => void
   closeTab: (draft: WorkbenchState, id: string) => void
   activateFile: (draft: WorkbenchState, id: string) => void
@@ -94,6 +130,7 @@ export type RetainedWorkbenchState = {
 type RetainedWorkbenchActions = {
   initSession: (draft: RetainedWorkbenchState, sessionId: SessionId) => void
   retainSessions: (draft: RetainedWorkbenchState, sessionIds: readonly SessionId[]) => void
+  closeExternalByDefinition: (draft: RetainedWorkbenchState, definitionId: string) => void
 } & {
   [Action in keyof WorkbenchActions]: WorkbenchActions[Action] extends
   (draft: WorkbenchState, ...args: infer Args) => void
@@ -115,6 +152,7 @@ function initialWorkbenchState(): WorkbenchState {
     tabs: [],
     activeId: null,
     nextTerminalNumber: 1,
+    nextExternalNumber: 1,
     activeBrowserTabId: null,
     interactionEpoch: 0,
     browserAutoRevealed: false,
@@ -140,6 +178,10 @@ function retainLevel(
   phase: 'loading' | 'error',
 ): WorkbenchFileLevel {
   return { phase, segments: [...segments], listing: level?.listing }
+}
+
+function externalTabId(kind: string, number?: number): string {
+  return `external:${JSON.stringify(number === undefined ? [kind] : [kind, number])}`
 }
 
 const workbenchActions: WorkbenchActions = {
@@ -179,6 +221,44 @@ const workbenchActions: WorkbenchActions = {
     const tab: WorkbenchTerminalTab = { type: 'terminal', id: `terminal:${String(number)}`, number }
     draft.tabs.push(tab)
     selectTab(draft, tab)
+  },
+  openExternalTab: (draft, input) => {
+    draft.interactionEpoch++
+    draft.browserAutoRevealed = false
+    const existing = !input.multiple
+      ? draft.tabs.find((tab): tab is WorkbenchExternalTab => tab.type === 'external' && tab.kind === input.kind)
+      : undefined
+    if (existing !== undefined) {
+      existing.name = input.name
+      existing.address = input.address
+      if (input.params === undefined) delete existing.params
+      else existing.params = input.params
+      existing.revision++
+      selectTab(draft, existing)
+      return
+    }
+    const id = input.multiple
+      ? externalTabId(input.kind, draft.nextExternalNumber++)
+      : externalTabId(input.kind)
+    const tab: WorkbenchExternalTab = {
+      type: 'external', id, definitionId: input.definitionId, kind: input.kind,
+      name: input.name, address: input.address, revision: 0,
+      ...(input.params === undefined ? {} : { params: input.params }),
+    }
+    draft.tabs.push(tab)
+    selectTab(draft, tab)
+  },
+  updateExternalTab: (draft, tabId, update) => {
+    const tab = draft.tabs.find((candidate): candidate is WorkbenchExternalTab => candidate.type === 'external' && candidate.id === tabId)
+    if (tab === undefined) return
+    tab.address = update.address
+    if (update.params === undefined) delete tab.params
+    else tab.params = update.params
+    if (update.name !== undefined) tab.name = update.name
+    tab.revision++
+  },
+  closeExternalTab: (draft, tabId) => {
+    if (draft.tabs.some(tab => tab.type === 'external' && tab.id === tabId)) workbenchActions.closeTab(draft, tabId)
   },
   activateTab: (draft, id) => {
     const tab = draft.tabs.find(tab => tab.id === id)
@@ -310,6 +390,13 @@ export function createRetainedWorkbenchStore(): EngineStoreHandle<RetainedWorkbe
         if (Object.keys(draft.sessions).every(id => retained.has(id))) return
         draft.sessions = Object.fromEntries(Object.entries(draft.sessions).filter(([id]) => retained.has(id)))
       },
+      closeExternalByDefinition: (draft, definitionId: string) => {
+        for (const session of Object.values(draft.sessions)) {
+          const ids = session.tabs.filter(tab => tab.type === 'external' && tab.definitionId === definitionId)
+            .map(tab => tab.id)
+          for (const id of ids) workbenchActions.closeTab(session, id)
+        }
+      },
       setView: (draft, id: SessionId, view: WorkbenchState['view']) => {
         workbenchActions.setView(sessionState(draft, id), view)
       },
@@ -318,6 +405,15 @@ export function createRetainedWorkbenchStore(): EngineStoreHandle<RetainedWorkbe
       },
       openFileManager: (draft, id: SessionId) => { workbenchActions.openFileManager(sessionState(draft, id)) },
       openTerminal: (draft, id: SessionId) => { workbenchActions.openTerminal(sessionState(draft, id)) },
+      openExternalTab: (draft, id: SessionId, input: OpenExternalTabInput) => {
+        workbenchActions.openExternalTab(sessionState(draft, id), input)
+      },
+      updateExternalTab: (draft, id: SessionId, tabId: string, update: UpdateExternalTabInput) => {
+        workbenchActions.updateExternalTab(sessionState(draft, id), tabId, update)
+      },
+      closeExternalTab: (draft, id: SessionId, tabId: string) => {
+        workbenchActions.closeExternalTab(sessionState(draft, id), tabId)
+      },
       activateTab: (draft, id: SessionId, tabId: string) => {
         workbenchActions.activateTab(sessionState(draft, id), tabId)
       },

@@ -21,9 +21,10 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
+import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
 import { createChatStore } from '../src/client/stores.ts'
 import { ChatView } from '../src/client/chat/ChatView.tsx'
-import { zh } from '../src/client/locales.ts'
+import { en, zh } from '../src/client/locales.ts'
 import { AssistantNodeView } from '../src/client/chat/AssistantNodeView.tsx'
 import { CommandNodeView, ManualCompactionNodeView } from '../src/client/chat/CommandNodeView.tsx'
 import {
@@ -406,6 +407,85 @@ describe('ChatView', () => {
     expect(view.getByRole('link', { name: 'Live link' })).toBe(link)
   })
 
+  it('opens rapid links independently and keeps feedback until every request settles', async () => {
+    const requests = new Map<string, { resolve: () => void; reject: (error: Error) => void }>()
+    const h = makeHarness({ nodes: [assistant(2,
+      '[First](https://example.org/first) [Second](https://example.org/second)')] })
+    h.props.openBrowserUrl = vi.fn((url: string) => new Promise<void>((resolve, reject) => {
+      requests.set(url, { resolve, reject })
+    }))
+    render(<h.ChatView {...h.props} />)
+    fireEvent.click(screen.getByRole('link', { name: 'First' }))
+    fireEvent.click(screen.getByRole('link', { name: 'Second' }))
+    expect(screen.getByRole('status').textContent).toBe('正在打开链接（2 个待完成）…')
+    await waitFor(() => { expect(requests.size).toBe(2) })
+    expect(h.props.openBrowserUrl).toHaveBeenNthCalledWith(1, 'https://example.org/first')
+    expect(h.props.openBrowserUrl).toHaveBeenNthCalledWith(2, 'https://example.org/second')
+    await act(async () => { requests.get('https://example.org/first')!.resolve() })
+    expect(screen.getByRole('status').textContent).toBe('正在打开链接（1 个待完成）…')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    await act(async () => { requests.get('https://example.org/second')!.resolve() })
+    expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  it('keeps a newer refusal when an older request succeeds, with English pending feedback', async () => {
+    const requests = new Map<string, { resolve: () => void; reject: (error: Error) => void }>()
+    const h = makeHarness({ nodes: [assistant(2,
+      '[First](https://example.org/first) [Second](https://example.org/second)')] })
+    h.props.t = makeTranslate(en, commonEn)
+    h.props.openBrowserUrl = vi.fn((url: string) => new Promise<void>((resolve, reject) => {
+      requests.set(url, { resolve, reject })
+    }))
+    render(<h.ChatView {...h.props} />)
+    fireEvent.click(screen.getByRole('link', { name: 'First' }))
+    fireEvent.click(screen.getByRole('link', { name: 'Second' }))
+    expect(screen.getByRole('status').textContent).toBe('Opening links (2 pending)…')
+    await waitFor(() => { expect(requests.size).toBe(2) })
+    await act(async () => { requests.get('https://example.org/second')!.reject(new Error('second refused')) })
+    expect(screen.getByRole('dialog', { name: 'Couldn’t open link' }).textContent).toContain('second refused')
+    await act(async () => { requests.get('https://example.org/first')!.resolve() })
+    expect(screen.getByRole('dialog', { name: 'Couldn’t open link' }).textContent).toContain('second refused')
+    expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  it('does not replace the newer refusal when an older request also fails', async () => {
+    const requests = new Map<string, (error: Error) => void>()
+    const h = makeHarness({ nodes: [assistant(2,
+      '[First](https://example.org/first) [Second](https://example.org/second)')] })
+    h.props.openBrowserUrl = vi.fn((url: string) => new Promise<void>((_resolve, reject) => {
+      requests.set(url, reject)
+    }))
+    render(<h.ChatView {...h.props} />)
+    fireEvent.click(screen.getByRole('link', { name: 'First' }))
+    fireEvent.click(screen.getByRole('link', { name: 'Second' }))
+    await waitFor(() => { expect(requests.size).toBe(2) })
+    await act(async () => { requests.get('https://example.org/second')!(new Error('second refused')) })
+    await act(async () => { requests.get('https://example.org/first')!(new Error('first refused')) })
+    expect(screen.getByRole('dialog', { name: '无法打开链接' }).textContent).toContain('second refused')
+  })
+
+  it('dismisses an earlier refusal without discarding a later pending link', async () => {
+    const requests = new Map<string, { resolve: () => void; reject: (error: Error) => void }>()
+    const h = makeHarness({ nodes: [assistant(2,
+      '[First](https://example.org/first) [Second](https://example.org/second)')] })
+    h.props.openBrowserUrl = vi.fn((url: string) => new Promise<void>((resolve, reject) => {
+      requests.set(url, { resolve, reject })
+    }))
+    const view = render(<h.ChatView {...h.props} />)
+    fireEvent.click(screen.getByRole('link', { name: 'First' }))
+    fireEvent.click(screen.getByRole('link', { name: 'Second' }))
+    await waitFor(() => { expect(requests.size).toBe(2) })
+    await act(async () => { requests.get('https://example.org/first')!.reject(new Error('first refused')) })
+    const dialog = screen.getByRole('dialog', { name: '无法打开链接' })
+    expect(screen.getByRole('status').textContent).toBe('正在打开链接（1 个待完成）…')
+    fireEvent.click(within(dialog).getByRole('button', { name: '取消' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.getByRole('status').textContent).toBe('正在打开链接（1 个待完成）…')
+    view.unmount()
+    await act(async () => { requests.get('https://example.org/second')!.reject(new Error('late refusal')) })
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
   it('shows a retryable in-page browser refusal and leaves file mentions independent', async () => {
     const h = makeHarness({
       nodes: [assistant(2, '[Reference](https://example.org/r) and `report.md`')],
@@ -451,6 +531,7 @@ describe('ChatView', () => {
     view.rerender(<h.ChatView {...{ ...h.props, sessionId: 's2' as SessionId }} />)
     await act(async () => { rejectNext(new Error('old session refusal')) })
     expect(screen.queryByRole('dialog', { name: '无法打开链接' })).toBeNull()
+    expect(screen.queryByRole('status')).toBeNull()
   })
 
   it('hands a windowless tool result to the Tool seat with an empty tool name', () => {

@@ -514,6 +514,8 @@ async function verifyOnboardingFocus(page, afterScreenshot) {
 
 async function browserFixture() {
   let stalledRequests = 0
+  let pendingAssistantImages = 0
+  let completedAssistantImages = 0
   const server = createServer((request, response) => {
     if (request.url === '/stalled-image') {
       stalledRequests++
@@ -526,6 +528,22 @@ async function browserFixture() {
       response.end(`<!doctype html><title>Native guest timeout fixture</title>
         <h1>Timeout recovery fixture</h1><p>The document is ready while its image is still loading.</p>
         <img src="/stalled-image" alt="Stalled fixture image">`)
+      return
+    }
+    if (request.url === '/assistant-link-pending') {
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
+      response.end(`<!doctype html><title>Native guest fixture</title>
+        <h1>Pending assistant link</h1><img src="/delayed-assistant-image" alt="Delayed image">`)
+      return
+    }
+    if (request.url === '/delayed-assistant-image') {
+      pendingAssistantImages++
+      response.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'no-store' })
+      response.flushHeaders()
+      setTimeout(() => {
+        completedAssistantImages++
+        response.end(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg==', 'base64'))
+      }, 3_000)
       return
     }
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
@@ -547,8 +565,11 @@ async function browserFixture() {
   assert.ok(address && typeof address !== 'string', 'native guest fixture must bind locally')
   return { url: `http://127.0.0.1:${address.port}/`,
     assistantLinkUrl: `http://127.0.0.1:${address.port}/assistant-link`,
+    pendingAssistantLinkUrl: `http://127.0.0.1:${address.port}/assistant-link-pending`,
     timeoutUrl: `http://127.0.0.1:${address.port}/timeout`,
     get stalledRequests() { return stalledRequests },
+    get pendingAssistantImages() { return pendingAssistantImages },
+    get completedAssistantImages() { return completedAssistantImages },
     close: async () => {
       server.closeAllConnections()
       await new Promise(resolveClose => server.close(resolveClose))
@@ -723,7 +744,7 @@ async function scriptedNavigateModel(fixtureUrl) {
     } }
 }
 
-async function scriptedAssistantLinkModel(fixtureUrl) {
+async function scriptedAssistantLinkModel(fixtureUrl, pendingUrl) {
   let responses = 0
   const failures = []
   const server = createServer((request, response) => {
@@ -739,7 +760,7 @@ async function scriptedAssistantLinkModel(fixtureUrl) {
         const payload = JSON.parse(body)
         const tools = (payload.tools ?? []).map(tool => tool.function?.name)
         const content = tools.includes('browser_snapshot')
-          ? `请查看[打开本地页面](${fixtureUrl})。`
+          ? `请查看[打开本地页面](${fixtureUrl})、[打开慢速页面](${pendingUrl})、[再次打开本地页面](${fixtureUrl})和[第三次打开本地页面](${fixtureUrl})。`
           : 'Native assistant link smoke'
         if (tools.includes('browser_snapshot')) responses++
         response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store' })
@@ -1241,16 +1262,90 @@ async function verifyAssistantLinkOpensNativeGuest(page, app, sessionId, fixture
     await page.locator(`[data-browser-tab-id="${newTabId}"]`).click()
     await until(async () => (await nativeGuest(app, newGuest.id))?.attached,
       'new guest reselected without replacement')
-    await browserRpc(page, 'browser.control', { sessionId, command: { kind: 'close-tab', tabId: oldTabId } })
-    assert.equal(await browserRpc(page, 'browser.control',
-      { sessionId, command: { kind: 'close-tab', tabId: newTabId } }), null,
-    'closing both assistant-link test tabs releases this Session browser')
+    const rapidTabIds = await verifyRapidAssistantLinks(page, app, sessionId, fixture,
+      [oldTabId, newTabId], [oldGuestId, newGuest.id])
+    for (const tabId of [oldTabId, newTabId, ...rapidTabIds]) {
+      const closed = await browserRpc(page, 'browser.control',
+        { sessionId, command: { kind: 'close-tab', tabId } })
+      if (tabId === rapidTabIds.at(-1)) {
+        assert.equal(closed, null, 'closing all assistant-link test tabs releases this Session browser')
+      }
+    }
   } finally {
     await page.evaluate(() => {
       if (window.__nativeSmokeOriginalOpen !== undefined) window.open = window.__nativeSmokeOriginalOpen
       delete window.__nativeSmokeOriginalOpen
       delete window.__nativeSmokeWindowOpenCalls
     }).catch(() => undefined)
+  }
+}
+
+async function verifyRapidAssistantLinks(page, app, sessionId, fixture, oldTabIds, oldGuestIds) {
+  const pending = page.getByRole('link', { name: '打开慢速页面', exact: true })
+  const repeated = page.getByRole('link', { name: '再次打开本地页面', exact: true })
+  const latest = page.getByRole('link', { name: '第三次打开本地页面', exact: true })
+  for (const link of [pending, repeated, latest]) await link.waitFor({ state: 'visible' })
+  const dialogs = []
+  const onDialog = dialog => {
+    dialogs.push(dialog.message())
+    void dialog.dismiss()
+  }
+  page.on('dialog', onDialog)
+  try {
+    await pending.click({ noWaitAfter: true })
+    await until(() => Promise.resolve(fixture.pendingAssistantImages > 0),
+      'first assistant link navigation starts loading its delayed image', 10_000)
+    assert.equal(fixture.completedAssistantImages, 0,
+      'first assistant link navigation must still be pending before rapid clicks')
+    await repeated.click({ noWaitAfter: true })
+    await latest.click({ noWaitAfter: true })
+    assert.equal(fixture.completedAssistantImages, 0,
+      'repeated assistant link clicks must arrive while the first navigation is pending')
+
+    await until(async () => await page.locator('[data-browser-tab-id]').count() === 5 &&
+      await page.locator('[data-browser-tab-id][aria-selected="true"]').count() === 1,
+    'rapid assistant links settle as three additional browser tabs', 30_000)
+    const settled = await browserRpc(page, 'browser.control',
+      { sessionId, command: { kind: 'ensure-tab' } })
+    assert.equal(fixture.completedAssistantImages, 1, 'first delayed navigation must finish')
+    assert.deepEqual(settled.tabs.slice(0, 2).map(tab => tab.id), oldTabIds,
+      'rapid clicks must retain both pre-existing tabs')
+    assert.deepEqual(settled.tabs.slice(2).map(tab => tab.url),
+      [fixture.pendingAssistantLinkUrl, fixture.assistantLinkUrl, fixture.assistantLinkUrl],
+      'each rapid click, including a repeated URL, must create its own tab in click order')
+    const rapidTabIds = settled.tabs.slice(2).map(tab => tab.id)
+    assert.equal(new Set(settled.tabs.map(tab => tab.id)).size, 5,
+      'rapid assistant links must not reuse an existing tab')
+    assert.equal(settled.activeTabId, rapidTabIds[2],
+      'the newest clicked assistant link must be selected after all navigation settles')
+    await page.locator(`[data-browser-tab-id="${rapidTabIds[2]}"][aria-selected="true"]`)
+      .waitFor({ state: 'visible' })
+    const guestIds = []
+    for (const [index, tabId] of rapidTabIds.entries()) {
+      await page.locator(`[data-browser-tab-id="${tabId}"]`).click()
+      let guest
+      await until(async () => {
+        guest = await nativeGuest(app)
+        return guest?.attached && guest.url === settled.tabs[index + 2].url
+      }, 'each rapid assistant tab presents its own native guest')
+      guestIds.push(guest.id)
+    }
+    assert.equal(new Set([...oldGuestIds, ...guestIds]).size, 5,
+      'all old and rapid assistant tabs must own distinct native guests')
+    await page.locator(`[data-browser-tab-id="${rapidTabIds[2]}"]`).click()
+    await until(async () => (await nativeGuest(app, guestIds[2]))?.attached,
+      'newest rapid assistant guest restored after inspecting the other guests')
+    assert.equal(await guestScript(app, oldGuestIds[0],
+      'document.querySelector("#human-result").textContent'), 'Human clicked',
+    'the original guest DOM must survive rapid assistant link navigation')
+    assert.equal(await page.getByRole('dialog', { name: '无法打开链接' }).count(), 0,
+      'rapid assistant links must not surface an error dialog')
+    assert.equal(await page.getByText(/BROWSER_BUSY|BROWSER_FAILED/).count(), 0,
+      'rapid assistant links must not surface browser busy or failed diagnostics')
+    assert.deepEqual(dialogs, [], 'rapid assistant links must not open native dialogs')
+    return rapidTabIds
+  } finally {
+    page.off('dialog', onDialog)
   }
 }
 
@@ -1478,7 +1573,8 @@ async function main() {
     await browserRpc(page, 'settings.update', { ns: 'llm-deepseek',
       patch: { baseURL: navigateModel.url, thinking: 'disabled', reasoningEffort: 'off' } })
     const linkSessionId = await verifyAgentNavigateAutoReveal(page, app, fixture.url, navigateModel)
-    assistantLinkModel = await scriptedAssistantLinkModel(fixture.assistantLinkUrl)
+    assistantLinkModel = await scriptedAssistantLinkModel(fixture.assistantLinkUrl,
+      fixture.pendingAssistantLinkUrl)
     await browserRpc(page, 'settings.update', { ns: 'llm-deepseek',
       patch: { baseURL: assistantLinkModel.url, thinking: 'disabled', reasoningEffort: 'off' } })
     await verifyAssistantLinkOpensNativeGuest(page, app, linkSessionId, fixture, assistantLinkModel, origin)
@@ -1520,7 +1616,7 @@ async function main() {
       `screenshots: ${screenshot}, ${afterScreenshot}, ${remoteScreenshot}, ${terminalScreenshot}, ${browserScreenshot}, ${guestScreenshot}, ${restoredScreenshot}`)
     console.log('PASS: scripted loopback model drove shipped Host browser_snapshot and browser_click on the human-operated native guest; Host origin/localhost navigation and guest subresource fetch denied; no external model API used')
     console.log('PASS: separate fresh Session browser_navigate auto-revealed its native guest and selected tab; a human click persisted into the next model browser_snapshot on the same guest')
-    console.log('PASS: ordinary assistant Markdown link reopened the hidden right sidebar, selected a new native guest tab, and preserved the previous page without window.open')
+    console.log('PASS: assistant Markdown links reopened the hidden sidebar, preserved old native guests, and queued rapid repeated clicks as distinct tabs with the newest selected, without window.open or dialogs')
     console.log('PASS: stalled local image timed out browser_navigate, stopped loading safely, and the same Electron guest/tab yielded a fresh Agent browser_snapshot')
   } finally {
     if (!passed && existsSync(screenshot)) console.error(`Failure screenshot: ${screenshot}`)

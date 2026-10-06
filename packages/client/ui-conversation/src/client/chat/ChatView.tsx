@@ -1,17 +1,11 @@
-// ChatView: the default conversation view — one stable keyed parent list over
-// final business Nodes, plus paging, pending steering and bottom-follow.
-// Each row dispatches through 'conversation.chat.node'; ui-tool owns the
-// tool-call renderer and its recursive root/subcall composition. A Host
+// ChatView：以稳定 key 呈现最终业务节点，处理分页、待处理引导与底部跟随。
+// 各行经 conversation.chat.node 分发；ui-tool 持有工具调用行的展示。
 // 注入的文件与浏览器链接打开动作若被拒绝，由视图显示页面内对话框。
 //
-// Scroll: when nested under `[data-conversation-scroll]` (active conversation
-// column), that host is the scrollport and this view is flow content; when
-// mounted alone (unit tests), `.scroll` owns overflow. Bottom-follow and
-// prepend anchoring always target the resolved scrollport.
+// 活跃会话以 [data-conversation-scroll] 为滚动容器；独立挂载时由 .scroll 滚动。
+// 底部跟随和旧页锚定始终使用解析出的滚动容器。
 //
-// Render economics: order changes only when rows enter, leave or move. Each
-// ChatNodeSeat subscribes to one Node key, so Assistant deltas and Tool
-// lifecycle updates replace only their own row without remounting it.
+// order 仅在行增删或移动时变化；各 ChatNodeSeat 按节点 key 订阅，流式更新不重挂载行。
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ConversationTimelineSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
@@ -239,46 +233,73 @@ export function ChatView({
 
   const [browserOpenError, setBrowserOpenError] = useState<{
     sessionId: typeof sessionId
+    requestId: number
     url: string
     message: string
   } | null>(null)
-  const [browserOpenBusy, setBrowserOpenBusy] = useState(false)
+  const [browserOpenPending, setBrowserOpenPending] = useState<{
+    sessionId: typeof sessionId
+    ids: ReadonlySet<number>
+  }>(() => ({ sessionId, ids: new Set() }))
+  const [browserOpenRetry, setBrowserOpenRetry] = useState<number | null>(null)
   const browserOpenRequest = useRef(0)
-  // 绑定触发时的会话和请求序号，避免切会话、关闭或重试后迟到的结果污染当前视图。
+  const browserOpenGeneration = useRef(0)
+  const browserDismissedThrough = useRef(0)
+  // 每次点击独立完成；切会话或卸载使旧结果失效，关闭弹窗只屏蔽此前的错误。
   const activeSession = useRef(sessionId)
   activeSession.current = sessionId
   useEffect(() => {
     setBrowserOpenError(null)
-    setBrowserOpenBusy(false)
-    return () => { browserOpenRequest.current += 1 }
+    setBrowserOpenPending({ sessionId, ids: new Set() })
+    setBrowserOpenRetry(null)
+    return () => { browserOpenGeneration.current += 1 }
   }, [sessionId])
 
-  const requestOpenBrowserUrl = useCallback((url: string) => {
+  const requestOpenBrowserUrl = useCallback((url: string, retryOf?: number) => {
     const id = ++browserOpenRequest.current
+    const generation = browserOpenGeneration.current
     const requestedSession = sessionId
-    setBrowserOpenBusy(true)
+    setBrowserOpenPending(pending => ({
+      sessionId: requestedSession,
+      ids: new Set(pending.sessionId === requestedSession ? pending.ids : []).add(id),
+    }))
+    if (retryOf !== undefined) setBrowserOpenRetry(id)
     void Promise.resolve().then(() => openBrowserUrl(url)).then(
       () => {
-        if (id !== browserOpenRequest.current || requestedSession !== activeSession.current) return
-        setBrowserOpenError(null)
-        setBrowserOpenBusy(false)
+        if (generation !== browserOpenGeneration.current || requestedSession !== activeSession.current) return
+        setBrowserOpenPending((pending) => {
+          const next = new Set(pending.ids)
+          next.delete(id)
+          return { sessionId: requestedSession, ids: next }
+        })
+        if (retryOf !== undefined) {
+          setBrowserOpenRetry(current => current === id ? null : current)
+          setBrowserOpenError(current => current?.requestId === retryOf ? null : current)
+        }
       },
       (error: unknown) => {
-        if (id !== browserOpenRequest.current || requestedSession !== activeSession.current) return
-        setBrowserOpenError({
+        if (generation !== browserOpenGeneration.current || requestedSession !== activeSession.current) return
+        setBrowserOpenPending((pending) => {
+          const next = new Set(pending.ids)
+          next.delete(id)
+          return { sessionId: requestedSession, ids: next }
+        })
+        if (retryOf !== undefined) setBrowserOpenRetry(current => current === id ? null : current)
+        if (id <= browserDismissedThrough.current) return
+        setBrowserOpenError(current => current !== null && current.requestId > id ? current : {
           sessionId: requestedSession,
+          requestId: id,
           url,
           message: openFailureMessage(error, t('browserOpen.unknown')),
         })
-        setBrowserOpenBusy(false)
       },
     )
   }, [openBrowserUrl, sessionId, t])
 
   const closeBrowserOpenError = useCallback(() => {
-    browserOpenRequest.current += 1
+    browserDismissedThrough.current = browserOpenRequest.current
     setBrowserOpenError(null)
-    setBrowserOpenBusy(false)
+    setBrowserOpenRetry(null)
   }, [])
 
   const pendingSteering = useMemo(
@@ -690,6 +711,11 @@ export function ChatView({
           </div>
         )}
       </div>
+      {browserOpenPending.sessionId === sessionId && browserOpenPending.ids.size > 0 && (
+        <div className={css.browserOpenStatus} role="status">
+          {t('browserOpen.opening', { count: browserOpenPending.ids.size })}
+        </div>
+      )}
       {fileOpenError !== null && (
         <FileOpenErrorDialog
           path={fileOpenError.path}
@@ -710,8 +736,8 @@ export function ChatView({
           footer={(
             <>
               <Button variant="outline" className={css.modalAction} onClick={closeBrowserOpenError}>{t('cancel')}</Button>
-              <Button variant="primary" className={css.modalAction} disabled={browserOpenBusy}
-                onClick={() => { requestOpenBrowserUrl(browserOpenError.url) }}>{t('retry')}</Button>
+              <Button variant="primary" className={css.modalAction} disabled={browserOpenRetry !== null}
+                onClick={() => { requestOpenBrowserUrl(browserOpenError.url, browserOpenError.requestId) }}>{t('retry')}</Button>
             </>
           )}
         />

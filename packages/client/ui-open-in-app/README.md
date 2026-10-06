@@ -7,7 +7,7 @@ kind: "package-reference"
 
 ## 概述
 
-右侧工作台的标签、功能菜单与显隐按 Session 管理；文件管理器、文件预览、浏览器页面和终端是不同的标签类型。浏览器画面的平台差异由 [`ui-browser`](../ui-browser/README.md) 和对应提供方负责，工作台只提供内容位置和标签状态。
+右侧工作台的标签、功能菜单与显隐按 Session 管理；文件管理器、文件预览、浏览器页面、终端和可选的外部插件内容使用同一标签栏。浏览器画面的平台差异由 [`ui-browser`](../ui-browser/README.md) 和对应提供方负责，工作台只提供内容位置和标签状态。
 
 本包拥有工作区打开能力的浏览器半边、右侧工作台和底栏终端。工作台把文件、浏览器页面和终端会话放在同一行标签中，按标签类型绘制内容；底栏终端有独立入口和标签。会话页头紧邻 Session log 提供本地工作区分体按钮，主按钮打开内置工作台，菜单可选择本地应用；Remote-SSH 工作区或经 SSH 启动的 Host 只显示固定工作台按钮。终端底栏与右侧边栏开关位于会话页头右侧；全屏或窄屏接管主内容时，工作台顶栏另提供终端底栏开关。
 
@@ -43,9 +43,17 @@ Shell 退出时，Client 在同一连接收到 exit 帧并断开后移除对应�
 
 响应式行为以 768px 与 375px 参考视口固定：两者都由布局壳让工作台接管 rail 外主内容；768px 下隐藏文件大小列，375px 下顶栏和按钮收紧。工作台容器自身宽度不超过 640px 时，文件管理器标签让文件树占满内容区，文件预览标签则独占内容区而不显示文件树；切回文件管理器标签或从功能菜单选择文件即可显示文件树。容器更宽时，文件管理器与文件预览标签均显示文件树。终端底栏继续横跨主内容，并按每次可见尺寸重新 fit。
 
+### 外部标签扩展
+
+其他 Client 插件可以向 `ctx.sidebarRightTabs.register(definition)` 注册右侧工作台的标签类型。`ctx.sidebarRight.openTab(kind, { params? })` 在当前 Session 打开类型入口；`openTabForSession(sessionId, kind, { params? })` 定向打开，`openResourceForSession(sessionId, address, { kind?, params? })` 则按地址路由。`focusTab`、`updateTab`、`closeTab` 操作的是指定 Session 中的实例 id，而不是定义 id。定义的 `id` 标识内容提供方，`kind` 标识默认单实例去重类别：重复打开同一 `kind` 会更新并选中已有标签；`multiple: true` 为每次打开分配新的实例 id。`params` 只接受可序列化的 JSON 值。类型可使用 URI `patterns`、`priority` 和 `canOpen` 选择地址，显式 `kind` 不检查 pattern，但仍须通过 `canOpen`；未找到可用类型时打开失败。定义的 `title(address)` 在打开时生成并保存实例标题，`updateTab` 可更新地址、参数和可选标题。
+
+定义可提供按 `order` 排列的 `guide` 入口；这些入口和内置功能共用工作台的 `+` 菜单，`canOpen` 否决类型入口时该项不可用。内容注册到 Session 级 keyed slot `sidebar.right.pane.tab`，可选的标签标题注册到 `sidebar.right.pane.tab.title`，两者的注册键均为定义 `id`，不是实例 id；标题未贡献时使用保存的实例标题。owner 提供 `tab`（含实例 id、地址、参数和修订号）、`shown`、`tabDomId`、`panelDomId`、`selectTab` 与 `closeTab`，不传 React 节点或服务对象。`keepMounted: true` 使内容在当前 Session 切换标签或隐藏工作台时保留挂载；切换 Session 会重挂内容，未设置时仅绘制当前可见实例。工作台状态按 Session 隔离。注册用插件自身的 `ctx.effect()` 持有 disposer，slot 贡献用 `ctx.slots.inject(...)` 跟随声明和插件生命周期撤销；定义卸载时按定义 id 关闭各 Session 已打开的对应实例。
+
+该扩展只在现有单个右侧工作台中显示标签，不提供分栏、浮动窗或跨 Session 移动。上游 Better Sidebar v0.24.1 仅作为交互设计参考：其二进制插件依赖 DSH 0.2 和本项目没有的 `ui-sidebar-right`，不能直接安装或加载。这里不引入 ego-browser 的独立 Chrome/CDP 画面路径；它也不是 WebView。工作台浏览器继续由 Host 浏览器提供方与桌面原生 guest 承担。
+
 ## 实现
 
-`OpenInAppController` 持有页面级目标缓存、应用选择和 HTTP／WebSocket URL 组装，并在浏览器 wire 边界校验 Host 响应。工作台 entry 的 root scope store 按 Session 保存 `file`、`browser`、`terminal` 标签、选中项、筛选、展开目录和已加载目录；文件树是否显示由当前标签类型及窄屏文件预览布局决定。`WorkbenchPanelToggles` 作为 Session 级条目注册到 `conversation.session.header.utilities`；工作台顶栏直接读取工作台 owner props。底栏终端标签由独立的 root scope 占用者按 Session 保存；两处终端连接 effect 均不依赖 `shown`，切换标签、切换会话或隐藏面板不会触发清理。
+`OpenInAppController` 持有页面级目标缓存、应用选择和 HTTP／WebSocket URL 组装，并在浏览器 wire 边界校验 Host 响应。工作台 entry 的 root scope store 按 Session 保存 `file`、`browser`、`terminal`、`external` 标签、选中项、筛选、展开目录和已加载目录；文件树是否显示由当前标签类型及窄屏文件预览布局决定。`WorkbenchPanelToggles` 作为 Session 级条目注册到 `conversation.session.header.utilities`；工作台顶栏直接读取工作台 owner props。底栏终端标签由独立的 root scope 占用者按 Session 保存；两处终端连接 effect 均不依赖 `shown`，切换标签、切换会话或隐藏面板不会触发清理。
 
 所有可见文案在 `open-in-app` namespace 中维护中文与英文词典。组件样式使用 CSS Modules 和共享 `--dsw-*` token；768px 规则固定平板文件树宽度，375px 手机视口使用单面板布局。
 

@@ -1,4 +1,4 @@
-import { createServer, type Server } from 'node:http'
+import { createServer, type Server, type ServerResponse } from 'node:http'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
@@ -24,10 +24,12 @@ const UI_EXPECTED = fileURLToPath(new URL('./snapshots/markdown-inline-code-link
 const MODE = webSnapshotMode()
 const SEED_ID = 'markdown-inline-code-links-web-e2e'
 const REFERENCE_ID = 'markdown-reference-links-web-e2e'
+const RAPID_ID = 'markdown-rapid-links-web-e2e'
 const DONE = 'INLINE_CODE_LINK_DONE'
 
-/** 保留主会话的快照输入，并用第二会话验收引用式链接的真实点击路径。 */
-function markdownFixture(linkUrl: string, reference = false): string {
+/** 保留主会话的快照输入，并为引用式及并发点击准备独立会话。 */
+function markdownFixture(linkUrl: string, reference = false,
+  rapidUrls?: readonly [delayed: string, next: string, failure: string]): string {
   const session = Session.create(SessionId('markdown-inline-code-links-source'))
   const eventTimeOrigin = new Date().setHours(12, 0, 0, 0)
   session.append('turn/start', { turn: 1 })
@@ -36,7 +38,7 @@ function markdownFixture(linkUrl: string, reference = false): string {
     source: { kind: 'user' },
   }), { surfaceOp: 'append' })
   session.append('session/title', {
-    title: reference ? 'Reference preview links' : 'Inline code links',
+    title: reference ? 'Reference preview links' : rapidUrls ? 'Rapid preview links' : 'Inline code links',
     messageSeqs: [user.seq],
     source: { kind: 'fallback' },
   })
@@ -58,6 +60,17 @@ function markdownFixture(linkUrl: string, reference = false): string {
           'Rejected: [Unsafe preview](javascript:alert(1))',
           '',
           'Relative: [Local preview](/preview)',
+          '',
+          DONE,
+        ].join('\n') : rapidUrls ? [
+          '## Rapid preview links',
+          '',
+          `[Open original](${linkUrl})`,
+          `[Open delayed](${rapidUrls[0]})`,
+          `[Open next](${rapidUrls[1]})`,
+          `[Open again](${rapidUrls[1]})`,
+          `[Open failure](${rapidUrls[2]})`,
+          `[Open after failure](${rapidUrls[1]})`,
           '',
           DONE,
         ].join('\n') : [
@@ -97,8 +110,33 @@ function markdownFixture(linkUrl: string, reference = false): string {
 }
 
 /** 目标站点独立于 Host origin，避免把应用入口误当作浏览器 guest 页面。 */
-async function fixtureServer(): Promise<{ server: Server; url: string }> {
-  const server = createServer((_request, response) => {
+async function fixtureServer(): Promise<{
+  server: Server
+  url: string
+  origin: string
+  waitForDelayed: () => Promise<void>
+  releaseDelayed: () => void
+  waitForFailure: () => Promise<void>
+  releaseFailure: () => void
+}> {
+  let delayedResponse: ServerResponse | undefined
+  let failureResponse: ServerResponse | undefined
+  let notifyDelayed: (() => void) | undefined
+  let notifyFailure: (() => void) | undefined
+  // 两个待结算请求分别作为真实导航到达 Host 外目标的同步栅栏。
+  const delayedArrival = new Promise<void>((resolve) => { notifyDelayed = resolve })
+  const failureArrival = new Promise<void>((resolve) => { notifyFailure = resolve })
+  const server = createServer((request, response) => {
+    if (request.url?.startsWith('/delayed')) {
+      delayedResponse = response
+      notifyDelayed?.()
+      return
+    }
+    if (request.url?.startsWith('/failure')) {
+      failureResponse = response
+      notifyFailure?.()
+      return
+    }
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
     response.end('<!doctype html><html><head><title>Chat link preview</title></head>'
       + '<body style="background:#d5e7fa;font:32px sans-serif;padding:80px">'
@@ -110,7 +148,25 @@ async function fixtureServer(): Promise<{ server: Server; url: string }> {
   })
   const address = server.address()
   if (address === null || typeof address === 'string') throw new Error('fixture server has no port')
-  return { server, url: `http://127.0.0.1:${String(address.port)}/preview?demo=1` }
+  const origin = `http://127.0.0.1:${String(address.port)}`
+  return {
+    server,
+    url: `${origin}/preview?demo=1`,
+    origin,
+    waitForDelayed: () => delayedArrival,
+    releaseDelayed: () => {
+      if (!delayedResponse) return
+      delayedResponse.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+      delayedResponse.end('<!doctype html><html><head><title>Chat link preview</title></head>'
+        + '<body><h1>Assistant link target</h1></body></html>')
+      delayedResponse = undefined
+    },
+    waitForFailure: () => failureArrival,
+    releaseFailure: () => {
+      failureResponse?.destroy()
+      failureResponse = undefined
+    },
+  }
 }
 
 async function browserState(page: Page, baseUrl: string, id: string): Promise<BrowserSessionState | null> {
@@ -158,15 +214,28 @@ describe('web e2e: Markdown inline-code links', () => {
   let page: Page
   let linkUrl: string
   let target: Server
+  let targetOrigin: string
+  let waitForDelayed: () => Promise<void>
+  let releaseDelayed: () => void
+  let waitForFailure: () => Promise<void>
+  let releaseFailure: () => void
   let tripwire: ReturnType<typeof watchConsole>
 
   beforeAll(async () => {
     const fixture = await fixtureServer()
     target = fixture.server
     linkUrl = fixture.url
+    targetOrigin = fixture.origin
+    waitForDelayed = fixture.waitForDelayed
+    releaseDelayed = fixture.releaseDelayed
+    waitForFailure = fixture.waitForFailure
+    releaseFailure = fixture.releaseFailure
     scaffold = await launchWebScaffold({})
     await seedSession(scaffold, markdownFixture(linkUrl), SEED_ID)
     await seedSession(scaffold, markdownFixture(linkUrl, true), REFERENCE_ID)
+    await seedSession(scaffold, markdownFixture(linkUrl, false,
+      [`${targetOrigin}/delayed?demo=1`, `${targetOrigin}/next?demo=2`,
+        `${targetOrigin}/failure?demo=3`]), RAPID_ID)
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     tripwire = watchConsole(page)
@@ -175,6 +244,8 @@ describe('web e2e: Markdown inline-code links', () => {
   }, 120_000)
 
   afterAll(async () => {
+    releaseDelayed?.()
+    releaseFailure?.()
     await browser?.close()
     await scaffold?.close()
     if (target) await new Promise<void>((resolve, reject) => target.close((error) => {
@@ -253,5 +324,86 @@ describe('web e2e: Markdown inline-code links', () => {
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
     await assertFixtureInventory(SNAPSHOT_DIR, ['ui.expected.md'])
+  }, 120_000)
+
+  it.skipIf(MODE === 'record')('queues rapid distinct and repeated links while navigation is pending', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-markdown-rapid-links'))
+    await page.setViewportSize({ width: 1680, height: 1000 })
+    await openSession(page, 'Rapid preview links')
+    await expect.poll(() => page.getByText(DONE, { exact: true }).count(), { timeout: 15_000 }).toBe(1)
+    const shellUrl = page.url()
+    const commands: string[] = []
+    page.on('request', (request) => {
+      if (new URL(request.url()).pathname !== '/api/browser.control') return
+      const body = request.postDataJSON() as { payload?: { command?: { kind: string; url?: string } } }
+      if (body.payload?.command?.kind === 'open-url' && body.payload.command.url !== undefined) {
+        commands.push(body.payload.command.url)
+      }
+    })
+
+    expect(await browserState(page, scaffold.baseUrl, RAPID_ID)).toBeNull()
+    await page.getByRole('link', { name: 'Open original' }).click()
+    const originalId = await expectOpenTab(page, scaffold.baseUrl, RAPID_ID, linkUrl, 1)
+    const delayedUrl = `${targetOrigin}/delayed?demo=1`
+    const nextUrl = `${targetOrigin}/next?demo=2`
+    try {
+      await page.getByRole('link', { name: 'Open delayed' }).click()
+      await waitForDelayed()
+      await page.getByRole('link', { name: 'Open next' }).click()
+      await page.getByRole('link', { name: 'Open again' }).click()
+      expect(page.url()).toBe(shellUrl)
+      releaseDelayed()
+
+      await expect.poll(() => commands, { timeout: 30_000 }).toEqual([linkUrl, delayedUrl, nextUrl, nextUrl])
+      const finalId = await expectOpenTab(page, scaffold.baseUrl, RAPID_ID, nextUrl, 4)
+      const state = await browserState(page, scaffold.baseUrl, RAPID_ID)
+      expect(state?.tabs.map(tab => tab.url)).toEqual([linkUrl, delayedUrl, nextUrl, nextUrl])
+      expect(new Set(state?.tabs.map(tab => tab.id)).size).toBe(4)
+      expect(state?.tabs.find(tab => tab.id === originalId)?.url).toBe(linkUrl)
+      expect(finalId).not.toBe(originalId)
+      expect(page.url()).toBe(shellUrl)
+      await expect.poll(() => page.getByRole('dialog', { name: 'Couldn’t open link' }).count()).toBe(0)
+      await page.screenshot({ path: '/tmp/dsh-chat-link-rapid.png' })
+      expect(tripwire.pageErrors).toEqual([])
+    } finally {
+      releaseDelayed()
+    }
+  }, 120_000)
+
+  it.skipIf(MODE === 'record')('continues queued link clicks after an earlier navigation fails', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-markdown-rapid-link-failure'))
+    const before = await browserState(page, scaffold.baseUrl, RAPID_ID)
+    expect(before?.tabs.length).toBe(4)
+    const originalIds = before?.tabs.map(tab => tab.id) ?? []
+    const shellUrl = page.url()
+    try {
+      await page.getByRole('link', { name: 'Open failure' }).click()
+      await waitForFailure()
+      await page.getByRole('link', { name: 'Open after failure' }).click()
+      releaseFailure()
+
+      await expect.poll(async () => {
+        const state = await browserState(page, scaffold.baseUrl, RAPID_ID)
+        return state?.tabs.length === 5 && state.tabs.slice(0, 4).every((tab, index) => tab.id === originalIds[index])
+          && !state.tabs.some(tab => tab.url.includes('/failure'))
+          && state.activeTabId !== null && !originalIds.includes(state.activeTabId)
+          && state.tabs.find(tab => tab.id === state.activeTabId)?.url === `${targetOrigin}/next?demo=2`
+      }, { timeout: 30_000 }).toBe(true)
+      const finalId = await expectOpenTab(page, scaffold.baseUrl, RAPID_ID, `${targetOrigin}/next?demo=2`, 5)
+      const state = await browserState(page, scaffold.baseUrl, RAPID_ID)
+      expect(state?.tabs.slice(0, 4).map(tab => tab.id)).toEqual(originalIds)
+      expect(state?.tabs.some(tab => tab.url.includes('/failure'))).toBe(false)
+      expect(originalIds).not.toContain(finalId)
+      expect(page.url()).toBe(shellUrl)
+      const failureDialog = page.getByRole('dialog', { name: 'Couldn’t open link' })
+      await expect.poll(() => failureDialog.count()).toBe(1)
+      expect(await failureDialog.textContent()).toContain('BROWSER_FAILED')
+      expect(await failureDialog.textContent()).not.toContain('BROWSER_BUSY')
+      await failureDialog.getByRole('button', { name: 'Cancel' }).click()
+      await expect.poll(() => failureDialog.count()).toBe(0)
+      expect(tripwire.pageErrors).toEqual([])
+    } finally {
+      releaseFailure()
+    }
   }, 120_000)
 })

@@ -30,6 +30,7 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   InjectFace,
+  HostObservable,
   PropsLocale,
   PropsRuntime,
   PropsRenderSlots,
@@ -37,7 +38,11 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
-import type { createWorkbenchStore, createRetainedWorkbenchStore, WorkbenchFileTab, WorkbenchState } from './store.ts'
+import type {
+  createWorkbenchStore, createRetainedWorkbenchStore, WorkbenchExternalTab, WorkbenchFileTab, WorkbenchState,
+} from './store.ts'
+import type { SidebarRightTabDefinition } from './sidebar-tab-registry.ts'
+import type { SidebarRightTabOwnerProps } from './index.ts'
 import { TerminalPanel } from './TerminalPanel.tsx'
 import { tabIdForSegments } from './store.ts'
 import { NS } from './locales.ts'
@@ -50,6 +55,7 @@ import css from './WorkspaceWorkbench.module.css'
 
 /** 根级工作台按所属 Session 调用 Host 和布局动作。 */
 export interface WorkspaceWorkbenchInjected {
+  hooks: { sidebarRightTabs: HostObservable<readonly SidebarRightTabDefinition[]> }
   listFiles: (sessionId: SessionId, segments: readonly string[], signal?: AbortSignal) => Promise<WorkspaceFilesPayload>
   readFile: (sessionId: SessionId, segments: readonly string[], signal?: AbortSignal) => Promise<WorkspaceFilePayload>
   terminalUrl: (sessionId: SessionId) => string
@@ -57,12 +63,14 @@ export interface WorkspaceWorkbenchInjected {
   openWorkbench: (sessionId: SessionId) => void
   toggleWorkbenchFullscreen: (sessionId: SessionId) => void
   toggleBottom: (sessionId: SessionId) => void
+  openSidebarTab: (sessionId: SessionId, kind: string) => void
 }
 
 /** 工作台 slot、根级 viewing store、Host 能力和词典组成的 props。 */
 export type WorkspaceWorkbenchProps =
   & PropsRuntime<'workbench'>
-  & PropsRenderSlots<'workbench.browser' | 'workbench.browser.tabs'>
+  & PropsRenderSlots<'workbench.browser' | 'workbench.browser.tabs'
+    | 'sidebar.right.pane.tab' | 'sidebar.right.pane.tab.title'>
   & PropsStore<ReturnType<typeof createRetainedWorkbenchStore>>
   & PropsLocale<typeof NS>
   & InjectFace<WorkspaceWorkbenchInjected>
@@ -72,6 +80,7 @@ type WorkbenchViewProps = Pick<WorkspaceWorkbenchProps, 'shown' | 'fullscreen' |
   sessionId: SessionId
   narrow: boolean
   state: WorkbenchState
+  tabDefinitions: readonly SidebarRightTabDefinition[]
   actions: WorkbenchActions
   completedFocusTabId: string | null
   panelPrefix: string
@@ -80,6 +89,7 @@ type WorkbenchViewProps = Pick<WorkspaceWorkbenchProps, 'shown' | 'fullscreen' |
   openWorkbench: () => void
   toggleWorkbenchFullscreen: () => void
   toggleBottom: () => void
+  openSidebarTab: (kind: string) => void
   listFiles: (segments: readonly string[], signal?: AbortSignal) => Promise<WorkspaceFilesPayload>
   readFile: (segments: readonly string[], signal?: AbortSignal) => Promise<WorkspaceFilePayload>
 }
@@ -140,6 +150,30 @@ function ToolbarButton({ label, pressed, onClick, icon, buttonRef }: {
 
 function tabDomId(prefix: string, sessionId: string, tabId: string, kind: 'tab' | 'panel'): string {
   return `${prefix}-${kind}-${encodeURIComponent(sessionId)}-${encodeURIComponent(tabId)}`
+}
+
+function externalTabOwner(
+  tab: WorkbenchExternalTab,
+  shown: boolean,
+  prefix: string,
+  sessionId: SessionId,
+  selectTab: () => void,
+  closeTab: () => void,
+): SidebarRightTabOwnerProps {
+  return {
+    tab, shown,
+    tabDomId: tabDomId(prefix, sessionId, tab.id, 'tab'),
+    panelDomId: tabDomId(prefix, sessionId, tab.id, 'panel'),
+    selectTab, closeTab,
+  }
+}
+
+function guideAvailable(definition: SidebarRightTabDefinition): boolean {
+  try {
+    return definition.canOpen?.(`sidebar://${encodeURIComponent(definition.kind)}`) !== false
+  } catch {
+    return false
+  }
 }
 
 function FileGlyph(): React.JSX.Element {
@@ -413,6 +447,9 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
         setFocusRequest(previous => (previous ?? 0) + 1)
         props.actions.openTerminal(sessionId)
       },
+      openExternalTab: (input) => { props.actions.openExternalTab(sessionId, input) },
+      updateExternalTab: (tabId, update) => { props.actions.updateExternalTab(sessionId, tabId, update) },
+      closeExternalTab: (tabId) => { props.actions.closeExternalTab(sessionId, tabId) },
       activateTab: (id) => { props.actions.activateTab(sessionId, id) },
       closeTab: (id) => {
         setFocusRequest(null)
@@ -441,16 +478,19 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
       openWorkbench: () => { props.openWorkbench(sessionId) },
       toggleWorkbenchFullscreen: () => { props.toggleWorkbenchFullscreen(sessionId) },
       toggleBottom: () => { props.toggleBottom(sessionId) },
+      openSidebarTab: (kind: string) => { props.openSidebarTab(sessionId, kind) },
     }
   }, [props.actions, props.listFiles, props.readFile, props.closeWorkbench, props.openWorkbench,
-    props.toggleWorkbenchFullscreen, props.toggleBottom, sessionId])
+    props.toggleWorkbenchFullscreen, props.toggleBottom, props.openSidebarTab, sessionId])
   const terminalShown = props.shown && state?.view === 'terminal'
+  const tabDefinitions = props.useSidebarRightTabs(definitions => definitions)
   return <section ref={rootRef} className={css.root} hidden={!props.shown || state === undefined}
     aria-label={props.t('workbench.label')} data-fullscreen={props.fullscreen || undefined}
     data-narrow={narrow || undefined}>
     {state !== undefined && viewProps !== undefined && <WorkbenchView key={sessionId}
       {...props} {...viewProps} sessionId={sessionId as SessionId} state={state} panelPrefix={panelPrefix}
-      narrow={narrow} completedFocusTabId={completedFocus !== null && completedFocus.sessionId === sessionId
+      narrow={narrow} tabDefinitions={tabDefinitions}
+      completedFocusTabId={completedFocus !== null && completedFocus.sessionId === sessionId
         ? completedFocus.tabId : null} />}
     <div className={css.terminalStack} hidden={!terminalShown} {...!terminalShown ? { inert: '' } : {}}>
       {Object.entries(sessions).flatMap(([id, session]) => session.tabs.filter(tab => tab.type === 'terminal').map(tab => (
@@ -471,10 +511,14 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
 function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
   const {
     shown, fullscreen, bottomOpen, narrow, actions, readFile, listFiles, completedFocusTabId,
-    closeWorkbench, openWorkbench, toggleWorkbenchFullscreen, toggleBottom, t, renderSlot,
-    panelPrefix, selectTab,
+    closeWorkbench, openWorkbench, toggleWorkbenchFullscreen, toggleBottom, openSidebarTab, t, renderSlot,
+    panelPrefix, selectTab, tabDefinitions,
   } = props
   const { view, tabs, activeId, filesQuery, filesExpanded, filesLevels } = props.state
+  const guideEntries = tabDefinitions.flatMap(definition => (definition.guide ?? []).map(entry => ({
+    definition, entry,
+  }))).sort((left, right) => left.entry.order - right.entry.order)
+  const [guideError, setGuideError] = useState<string | null>(null)
   const active = useMemo(() => tabs.find(tab => tab.id === activeId), [activeId, tabs])
   const narrowPreview = narrow && view === 'files' && active?.type === 'file'
   const treeVisible = view === 'files' && !narrowPreview
@@ -517,6 +561,7 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
   }, [actions])
   const showMenu = useCallback((): void => {
     pendingFocus.current = 'menu'
+    setGuideError(null)
     actions.setView('menu')
   }, [actions])
   useEffect(() => {
@@ -654,6 +699,32 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
                 tabDomId: tabDomId(panelPrefix, props.sessionId, tab.id, 'tab'),
                 panelDomId: tabDomId(panelPrefix, props.sessionId, tab.id, 'panel') })}
             </div>
+            if (tab.type === 'external') {
+              const selected = view === 'external' && activeId === tab.id
+              const definitionId = tabDefinitions.find(candidate => candidate.kind === tab.kind)?.id ?? tab.definitionId
+              const owner = externalTabOwner(tab, shown && selected, panelPrefix, props.sessionId,
+                () => { selectTab(tab.id, true) }, () => { actions.closeExternalTab(tab.id) })
+              return <div className={clsx(css.tab, selected && css.tabActive)} role="presentation" key={tab.id}>
+                <button type="button" className={css.tabSelect} role="tab" aria-selected={selected}
+                  tabIndex={selected || (view === 'menu' && index === 0) ? 0 : -1}
+                  aria-controls={owner.panelDomId} id={owner.tabDomId} title={tab.name}
+                  onClick={(event) => { selectTab(tab.id, event.detail !== 0) }}>
+                  <span className={css.externalTitle}>
+                    {renderSlot('sidebar.right.pane.tab.title', owner, {
+                      entryKey: definitionId, hookContext: owner, fallback: tab.name,
+                    })}
+                  </span>
+                </button>
+                <button type="button" className={css.tabClose}
+                  aria-label={t('tabs.close', { name: tab.name })}
+                  title={t('tabs.close', { name: tab.name })} onClick={() => {
+                    focusAfterClose.current = true
+                    actions.closeExternalTab(tab.id)
+                  }}>
+                  <IconCloseOutline16 size={12} />
+                </button>
+              </div>
+            }
             const name = tab.type === 'terminal' ? t('terminal.tab', { number: String(tab.number) })
               : tab.type === 'file-manager' ? t('files.tab') : tab.name
             const selected = tab.id === activeId && view === (tab.type === 'file' || tab.type === 'file-manager'
@@ -742,6 +813,35 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
                 <span>{t('workbench.menu.chat')}</span>
                 <small>{t('workbench.menu.unavailable')}</small>
               </button>
+              {guideEntries.map(({ definition, entry }) => {
+                let title: string
+                let description: string | undefined
+                try {
+                  title = entry.title()
+                  description = entry.description?.()
+                } catch {
+                  // 第三方词条失效只隐藏自身，不中断内置功能菜单。
+                  return null
+                }
+                const available = guideAvailable(definition)
+                return <button type="button" className={css.functionItem} key={`${definition.id}:${entry.id}`}
+                  disabled={!available} title={!available ? t('workbench.menu.unavailable') : undefined}
+                  onClick={() => {
+                    pendingFocus.current = 'return'
+                    try {
+                      openSidebarTab(definition.kind)
+                      setGuideError(null)
+                    } catch {
+                      pendingFocus.current = null
+                      setGuideError(t('workbench.menu.unavailable'))
+                    }
+                  }}>
+                  <IconPlusOutline16 size={18} />
+                  <span>{title}</span>
+                  {description !== undefined && <small>{description}</small>}
+                </button>
+              })}
+              {guideError !== null && <p className={css.guideError} role="alert">{guideError}</p>}
             </nav>
           </div>
           <div className={css.fileView} hidden={view !== 'files'} {...view !== 'files' ? { inert: '' } : {}}>
@@ -786,6 +886,21 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
                 hidden {...{ inert: '' }} />
             ))}
           </div>
+          {tabs.filter((tab): tab is WorkbenchExternalTab => tab.type === 'external').map((tab) => {
+            const visible = shown && view === 'external' && activeId === tab.id
+            const definition = tabDefinitions.find(candidate => candidate.kind === tab.kind)
+            if (!visible && definition?.keepMounted !== true) return null
+            const owner = externalTabOwner(tab, visible, panelPrefix, props.sessionId,
+              () => { selectTab(tab.id, true) }, () => { actions.closeExternalTab(tab.id) })
+            return <div className={css.externalPanel} key={tab.id} id={owner.panelDomId}
+              role="tabpanel" aria-labelledby={owner.tabDomId} hidden={!visible}
+              {...!visible ? { inert: '' } : {}}>
+              {renderSlot('sidebar.right.pane.tab', owner, {
+                entryKey: definition?.id ?? tab.definitionId, hookContext: owner,
+                fallback: <p className={css.previewMessage} role="status">{t('workbench.menu.unavailable')}</p>,
+              })}
+            </div>
+          })}
         </main>
         <div className={css.treeView} hidden={!treeVisible}
           {...narrowFileManager !== undefined ? {

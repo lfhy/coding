@@ -180,13 +180,13 @@
 
 ## packages/client/ui-open-in-app
 
-- **拥有**：工作区打开能力的浏览器半：会话页头分体入口（`OpenInAppAction`）及右侧边栏、终端底栏开关（`WorkbenchPanelToggles`），均占用 `conversation.session.header.utilities`；欢迎页开关占用 `conversation.hero.actions`；内置工作台（`WorkspaceWorkbench`，占用 root scope `workbench`）按 Session 持有功能菜单、唯一共享新增入口、统一的文件管理器／文件预览／浏览器页面／终端标签、文件视图及右侧终端，声明 `workbench.browser`／`workbench.browser.tabs` 子 slot；保留式底栏终端（`RetainedTerminalPanel`）独立占用 `workbench.bottom`；另有 `OpenInAppController`。
+- **拥有**：工作区打开能力的浏览器半：会话页头分体入口（`OpenInAppAction`）及右侧边栏、终端底栏开关（`WorkbenchPanelToggles`），均占用 `conversation.session.header.utilities`；欢迎页开关占用 `conversation.hero.actions`；内置工作台（`WorkspaceWorkbench`，占用 root scope `workbench`）按 Session 持有功能菜单、唯一共享新增入口、统一的文件管理器／文件预览／浏览器页面／终端／外部标签、文件视图及右侧终端，声明 `workbench.browser`／`workbench.browser.tabs` 与 keyed `sidebar.right.pane.tab`／`.title` 子 slot；保留式底栏终端（`RetainedTerminalPanel`）独立占用 `workbench.bottom`；另有 `OpenInAppController`。
 - **不拥有**：浏览器画面、人工导航和标签操作属于 `packages/client/ui-browser`；Host 路由（应用启动、文件 list/read、终端 WebSocket）属于 `packages/host/open-in-app`；workbench 壳层几何与 `ctx.layout` 属于 `packages/client/ui-layout`；`conversation.session.header.utilities` 与 `conversation.hero.actions` 座位声明属于 `packages/client/ui-conversation`。
 - **入口**：`packages/client/ui-open-in-app/src/client/index.ts`（注入 `slots`、`locale`、`layout`、`sessions`、`workspaces`；通过 `ctx.slots.inject(...)` 在各座位注册）；node 半是空 apply。
 - **接线**：`packages/bundle/web-app/cordis.patch.yml` 的 `ui-open-in-app` 行与 host 行 `open-in-app` 并排挂载；共享常量经 `@deepseek-ai/dsh-host-open-in-app/shared`。
-- **关键文件**：`packages/client/ui-open-in-app/src/client/index.ts`、`packages/client/ui-open-in-app/src/client/controller.ts`、`packages/client/ui-open-in-app/src/client/store.ts`、`packages/client/ui-open-in-app/src/client/WorkspaceWorkbench.tsx`、`packages/client/ui-open-in-app/src/client/TerminalPanel.tsx`、`packages/client/ui-open-in-app/src/client/RetainedTerminalPanel.tsx`。
-- **改这里要同步**：路由或帧协议改动同步 `packages/host/open-in-app`；工作台或底栏显隐语义改动同步 `packages/client/ui-layout`（owner prop `bottomOpen`），页头与欢迎页入口变动核对 `packages/client/ui-conversation` 的座位。
-- **不变量**：文件树只回传当前 Session id 与 Host 返回的 provider segment 数组，绝不提交工作区根或自行拼接 Windows/POSIX/UNC 路径；菜单终端新建右侧标签，底栏入口显示独立底栏，两处标签分别独占 WebSocket 与 PTY；切换标签或 Session、隐藏底栏或工作台均不释放已激活终端，关闭对应标签释放该终端。
+- **关键文件**：`packages/client/ui-open-in-app/src/client/index.ts`、`packages/client/ui-open-in-app/src/client/controller.ts`、`packages/client/ui-open-in-app/src/client/store.ts`、`packages/client/ui-open-in-app/src/client/WorkspaceWorkbench.tsx`、`packages/client/ui-open-in-app/src/client/sidebar-tab-registry.ts`、`packages/client/ui-open-in-app/src/client/sidebar-tab-service.ts`、`packages/client/ui-open-in-app/src/client/TerminalPanel.tsx`、`packages/client/ui-open-in-app/src/client/RetainedTerminalPanel.tsx`。
+- **改这里要同步**：路由或帧协议改动同步 `packages/host/open-in-app`；工作台或底栏显隐语义改动同步 `packages/client/ui-layout`（owner prop `bottomOpen`），页头与欢迎页入口变动核对 `packages/client/ui-conversation` 的座位；外部标签定义、实例状态或 keyed slot 变动同步本包 README 和对应插件贡献。
+- **不变量**：文件树只回传当前 Session id 与 Host 返回的 provider segment 数组，绝不提交工作区根或自行拼接 Windows/POSIX/UNC 路径；菜单终端新建右侧标签，底栏入口显示独立底栏，两处标签分别独占 WebSocket 与 PTY；切换标签或 Session、隐藏底栏或工作台均不释放已激活终端，关闭对应标签释放该终端；外部标签按 Session 隔离，定义卸载时清理该定义的已打开实例。
 - **测试**：`pnpm exec vitest run packages/client/ui-open-in-app/tests`
 
 ## packages/client/ui-browser

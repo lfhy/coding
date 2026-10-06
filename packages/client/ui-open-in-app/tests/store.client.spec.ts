@@ -37,6 +37,7 @@ describe('file workbench store', () => {
       tabs: [],
       activeId: null,
       nextTerminalNumber: 1,
+      nextExternalNumber: 1,
       activeBrowserTabId: null,
       interactionEpoch: 8,
       browserAutoRevealed: false,
@@ -96,6 +97,57 @@ describe('file workbench store', () => {
 })
 
 describe('统一工作台标签', () => {
+  it('第三方标签按 kind 去重，保留初始 definitionId 并使每次导航递增 revision', () => {
+    const instance = createWorkbenchStore().create()
+    const first = { definitionId: 'plugin:issues', kind: 'issue', name: '问题', address: '/issues/1', params: { id: 1 } }
+    instance.actions.openExternalTab(first)
+    const id = instance.getSnapshot().activeId!
+    expect(id).toBe('external:["issue"]')
+    expect(instance.getSnapshot()).toMatchObject({
+      view: 'external', tabs: [{ type: 'external', ...first, id, revision: 0 }],
+    })
+    instance.actions.openExternalTab({ ...first, definitionId: 'plugin:replacement' })
+    expect(instance.getSnapshot().tabs).toHaveLength(1)
+    expect(instance.getSnapshot().tabs[0]).toMatchObject({ definitionId: 'plugin:issues', revision: 1 })
+    instance.actions.updateExternalTab(id, { address: first.address, params: first.params })
+    expect(instance.getSnapshot().tabs[0]).toMatchObject({ name: '问题', revision: 2 })
+    instance.actions.updateExternalTab(id, { name: '更新名称', address: '/issues/2', params: [2, null] })
+    expect(instance.getSnapshot().tabs[0]).toMatchObject({ name: '更新名称', address: '/issues/2', params: [2, null], revision: 3 })
+    instance.actions.updateExternalTab('missing', { address: '/missing' })
+    expect(instance.getSnapshot().tabs).toHaveLength(1)
+  })
+
+  it('多个同类标签独立导航，ID 与内置标签不冲突，关闭时选择邻近项', () => {
+    const instance = createWorkbenchStore().create()
+    instance.actions.openFileManager()
+    const input = { definitionId: 'plugin:tasks', kind: 'terminal:1', name: '任务', address: '/tasks', multiple: true }
+    instance.actions.openExternalTab(input)
+    const firstId = instance.getSnapshot().activeId!
+    instance.actions.openTerminal()
+    instance.actions.openExternalTab(input)
+    const secondId = instance.getSnapshot().activeId!
+    expect([firstId, secondId]).toEqual(['external:["terminal:1",1]', 'external:["terminal:1",2]'])
+    expect(instance.getSnapshot().tabs.map(tab => tab.id)).toEqual(['file-manager', firstId, 'terminal:1', secondId])
+    instance.actions.updateExternalTab(firstId, { address: '/tasks/1' })
+    expect(instance.getSnapshot().tabs.find(tab => tab.id === firstId)).toMatchObject({ revision: 1, address: '/tasks/1' })
+    expect(instance.getSnapshot().tabs.find(tab => tab.id === secondId)).toMatchObject({ revision: 0, address: '/tasks' })
+    instance.actions.closeExternalTab(secondId)
+    expect(instance.getSnapshot()).toMatchObject({ view: 'terminal', activeId: 'terminal:1' })
+    instance.actions.closeExternalTab('terminal:1')
+    expect(instance.getSnapshot().tabs.map(tab => tab.id)).toEqual(['file-manager', firstId, 'terminal:1'])
+    instance.actions.activateTab(firstId)
+    instance.actions.closeExternalTab(firstId)
+    expect(instance.getSnapshot()).toMatchObject({ view: 'terminal', activeId: 'terminal:1' })
+    instance.actions.closeTab('terminal:1')
+    expect(instance.getSnapshot()).toMatchObject({ view: 'files', activeId: 'file-manager' })
+    instance.actions.closeExternalTab('file-manager')
+    expect(instance.getSnapshot().tabs).toEqual([{ type: 'file-manager', id: 'file-manager' }])
+    instance.actions.closeTab('file-manager')
+    instance.actions.openExternalTab({ ...input, multiple: false })
+    instance.actions.closeExternalTab(instance.getSnapshot().activeId!)
+    expect(instance.getSnapshot()).toMatchObject({ view: 'menu', activeId: null, tabs: [] })
+  })
+
   it('自动显露仅选中 Host 已同步的页面，人工操作优先于迟到的观测', () => {
     const instance = createWorkbenchStore().create()
     instance.actions.openFile({ name: 'notes.txt', segments: ['notes.txt'] })
@@ -221,6 +273,70 @@ describe('统一工作台标签', () => {
 describe('根级保留工作台状态', () => {
   const firstId = 'first-session' as SessionId
   const secondId = 'second-session' as SessionId
+
+  it('同 kind 的后续提供方导航不会夺取初始标签归属', () => {
+    const instance = createRetainedWorkbenchStore().create()
+    instance.actions.openExternalTab(firstId, {
+      definitionId: 'builtin:review', kind: 'review', name: '审查', address: '/first',
+    })
+    instance.actions.openExternalTab(firstId, {
+      definitionId: 'extension:review', kind: 'review', name: '扩展审查', address: '/second',
+    })
+    instance.actions.closeExternalByDefinition('extension:review')
+    expect(instance.getSnapshot().sessions[firstId]).toMatchObject({
+      view: 'external', activeId: 'external:["review"]',
+      tabs: [{ definitionId: 'builtin:review', name: '扩展审查', address: '/second', revision: 1 }],
+    })
+    instance.actions.closeExternalByDefinition('builtin:review')
+    expect(instance.getSnapshot().sessions[firstId]).toMatchObject({ view: 'menu', activeId: null, tabs: [] })
+  })
+
+  it('定义卸载关闭各 Session 的全部同源标签，并保留内置及其他定义的标签', () => {
+    const instance = createRetainedWorkbenchStore().create()
+    const input = { definitionId: 'plugin:tasks', kind: 'tasks', name: '任务', address: '/tasks', multiple: true }
+    instance.actions.openExternalTab(firstId, input)
+    instance.actions.openTerminal(firstId)
+    instance.actions.openExternalTab(firstId, input)
+    instance.actions.openExternalTab(firstId, { definitionId: 'plugin:other', kind: 'other', name: '其他', address: '/other' })
+    instance.actions.openExternalTab(secondId, input)
+    instance.actions.activateTab(firstId, 'external:["tasks",2]')
+    instance.actions.closeExternalByDefinition('plugin:tasks')
+    expect(instance.getSnapshot().sessions[firstId]).toMatchObject({
+      view: 'external', activeId: 'external:["other"]',
+      tabs: [{ type: 'terminal', id: 'terminal:1' }, { type: 'external', definitionId: 'plugin:other' }],
+    })
+    expect(instance.getSnapshot().sessions[secondId]).toMatchObject({ view: 'menu', activeId: null, tabs: [] })
+    const unchanged = instance.getSnapshot()
+    instance.actions.closeExternalByDefinition('plugin:missing')
+    expect(instance.getSnapshot()).toBe(unchanged)
+    instance.actions.closeExternalByDefinition('plugin:other')
+    expect(instance.getSnapshot().sessions[firstId]).toMatchObject({
+      view: 'terminal', activeId: 'terminal:1', tabs: [{ type: 'terminal', id: 'terminal:1' }],
+    })
+  })
+
+  it('第三方标签按 Session 隔离且随会话释放，并使用同一套切换和关闭行为', () => {
+    const instance = createRetainedWorkbenchStore().create()
+    const input = { definitionId: 'plugin:git', kind: 'git', name: 'Git', address: '/changes' }
+    instance.actions.openExternalTab(firstId, input)
+    instance.actions.openExternalTab(secondId, input)
+    const tabId = 'external:["git"]'
+    instance.actions.updateExternalTab(firstId, tabId, { address: '/history', params: { branch: 'main' } })
+    instance.actions.openFile(secondId, { name: 'note', segments: ['note'] })
+    instance.actions.activateTab(secondId, tabId)
+    expect(instance.getSnapshot().sessions[firstId]).toMatchObject({
+      view: 'external', activeId: tabId, tabs: [{ address: '/history', revision: 1 }],
+    })
+    expect(instance.getSnapshot().sessions[secondId]).toMatchObject({
+      view: 'external', activeId: tabId, tabs: [{ address: '/changes', revision: 0 }, { type: 'file' }],
+    })
+    instance.actions.closeExternalTab(secondId, tabId)
+    expect(instance.getSnapshot().sessions[secondId]).toMatchObject({ view: 'files', activeId: tabIdForSegments(['note']) })
+    instance.actions.retainSessions([secondId])
+    expect(instance.getSnapshot().sessions[firstId]).toBeUndefined()
+    instance.actions.openExternalTab(firstId, input)
+    expect(instance.getSnapshot().sessions[firstId]?.tabs[0]).toMatchObject({ revision: 0 })
+  })
 
   it('按 Session 分别保留文件管理器，并在移除 Session 后释放', () => {
     const instance = createRetainedWorkbenchStore().create()

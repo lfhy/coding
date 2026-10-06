@@ -2604,6 +2604,9 @@ importers:
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
+      picomatch:
+        specifier: ^4.0.4
+        version: 4.0.4
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^

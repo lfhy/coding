@@ -18,6 +18,7 @@
 .fileView[hidden],
 .menuView[hidden],
 .browserView[hidden],
+.externalPanel[hidden],
 .terminalStack[hidden],
 .browserTabs[hidden],
 .treeView[hidden] {
@@ -163,6 +164,14 @@
   white-space: nowrap;
 }
 
+.externalTitle {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .tabClose {
   display: inline-flex;
   align-items: center;
@@ -211,6 +220,7 @@
 .fileView,
 .browserView,
 .browserPanel,
+.externalPanel,
 .treeView,
 .previewSlot,
 .preview,
@@ -235,6 +245,12 @@
 .browserPanel {
   width: 100%;
   height: 100%;
+}
+
+.externalPanel {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
 }
 
 .menuView {
@@ -284,6 +300,13 @@
   font-size: 11px;
   line-height: 18px;
   white-space: nowrap;
+}
+
+.guideError {
+  margin: 0;
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 13px;
+  line-height: 20px;
 }
 
 .treeView {

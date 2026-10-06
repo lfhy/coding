@@ -62,7 +62,7 @@ workspace 共 239 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/client/ui-layout` — 本包拥有浏览器根布局、瞬时面板几何和 `ctx.layout` [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 7）
 - `packages/client/ui-message-feedback` — 单条消息反馈插件的浏览器侧：一对 Like/Dislike 按钮加一个可选备注… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 4）
 - `packages/client/ui-model-selection` — 模型选择插件（浏览器侧）：**两个入口共用一份会话级目录**，由 `ModelDirectoryResolver`… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
-- `packages/client/ui-open-in-app` — 右侧工作台的标签、功能菜单与显隐按 Session 管理；文件管理器、文件预览、浏览器页面和终端是不同的标签类型 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 10）
+- `packages/client/ui-open-in-app` — 右侧工作台的标签、功能菜单与显隐按 Session 管理；文件管理器、文件预览、浏览器页面、终端和可选的外部插件内容使用同一标签栏 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 13）
 - `packages/client/ui-permission-presets` — 面向两种不同生命周期的浏览器权限界面 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 3）
 - `packages/client/ui-plan` — Plan mode 状态徽章，纯浏览器 surface 插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
 - `packages/client/ui-primitives` — 纯 React 原子组件（零 cordis）：StateDot、DisclosureRow、ic_ds_* 图标、Button/Pill/Men… 入口 `src/index.ts`（tests 22）

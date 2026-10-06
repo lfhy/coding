@@ -29,9 +29,13 @@ function mount(view: BrowserView, shown = true, useSession = sessionHook([])) {
   const ensureTab = vi.fn(async () => {})
   const start = vi.fn(() => vi.fn())
   const syncBrowserTabs = vi.fn()
-  let opener: ((url: string, isCurrent: () => boolean) => Promise<void>) | undefined
-  const registerLinkOpener = vi.fn((_sessionId: string, open: typeof opener) => {
+  let opener: ((url: string, isCurrent: () => boolean, shouldReveal: () => boolean,
+    click: { interactionEpoch: number; selectedTabId?: string }) => Promise<void>) | undefined
+  let clickState: (() => { interactionEpoch: number; selectedTabId?: string }) | undefined
+  const registerLinkOpener = vi.fn((_sessionId: string, open: typeof opener,
+    currentClick: () => { interactionEpoch: number; selectedTabId?: string }) => {
     opener = open
+    clickState = currentClick
     return () => { if (opener === open) opener = undefined }
   })
   const openUrl = vi.fn(async (): Promise<LinkedState> => state(2, otherId) as never)
@@ -46,7 +50,8 @@ function mount(view: BrowserView, shown = true, useSession = sessionHook([])) {
     t } as unknown as BrowserMirrorProps
   const result = render(<BrowserMirror {...props} />)
   return { ...result, props, command, ensureTab, start, syncBrowserTabs, openUrl,
-    openLink: (url: string) => opener!(url, () => opener !== undefined) }
+    openLink: (url: string, shouldReveal = () => true, click = clickState!()) =>
+      opener!(url, () => opener !== undefined, shouldReveal, click) }
 }
 const ready = (revision = 1): BrowserView => ({
   phase: 'ready', state: state(revision) as never, frameUrl: 'blob:frame', pending: false,
@@ -79,6 +84,17 @@ function browserTabsRow(props: BrowserMirrorProps, view: BrowserView) {
       useBrowserMirror={viewHook(view)} />)}
   </div>
 }
+function browserWorkbench(props: BrowserMirrorProps, view: BrowserView, selected: string) {
+  return <>
+    <div role="tablist" aria-label="Workbench tabs">
+      {view.state?.tabs.map(tab => <BrowserTabs key={tab.id} {...props} tabId={tab.id}
+        shown browserShown={tab.id === selected} useBrowserMirror={viewHook(view)} />)}
+    </div>
+    <div role="tabpanel" aria-label="Selected browser panel">
+      <BrowserMirror {...props} shown selectedTabId={selected} useBrowserMirror={viewHook(view)} />
+    </div>
+  </>
+}
 function navigated(url: string, revision: number): BrowserView {
   const value = state(revision, otherId)
   return { phase: 'ready', state: {
@@ -102,6 +118,114 @@ describe('browser UI', () => {
     expect(order).toEqual(['sync', 'open'])
     expect(browser.command).not.toHaveBeenCalled()
     expect(browser.props.markTabRequestHandled).not.toHaveBeenCalled()
+  })
+
+  it('syncs superseded pages without revealing them, then selects the last accepted link', async () => {
+    const browser = mount(ready())
+    browser.rerender(<BrowserMirror {...browser.props} selectedTabId={id} />)
+    const lastId = '032ef1b7-466b-45a7-8d57-3288cf12b8b1'
+    const last = { ...state(3), activeTabId: lastId, observation: null, hasFrame: false,
+      tabs: [...state().tabs, { id: lastId, generation: 'linked', url: 'https://second.example/',
+        title: 'Second', canGoBack: false, canGoForward: false }] }
+    browser.openUrl.mockResolvedValueOnce(state(2, otherId) as never).mockResolvedValueOnce(last as never)
+    await act(async () => { await browser.openLink('https://first.example/', () => false) })
+    expect(browser.syncBrowserTabs).toHaveBeenLastCalledWith(expect.any(Array), id)
+    expect(browser.props.openBrowser).not.toHaveBeenCalled()
+    expect(browser.command).not.toHaveBeenCalled()
+    await act(async () => { await browser.openLink('https://second.example/') })
+    expect(browser.syncBrowserTabs).toHaveBeenLastCalledWith(expect.any(Array), lastId)
+    expect(browser.props.openBrowser).toHaveBeenCalledExactlyOnceWith(lastId)
+  })
+
+  it('keeps the prior selected tab while a superseded Host state arrives before its frame settles', async () => {
+    let finish!: (value: LinkedState) => void
+    let newest = true
+    const browser = mount(ready())
+    browser.rerender(<BrowserMirror {...browser.props} selectedTabId={id} />)
+    browser.openUrl.mockImplementation(() => new Promise<LinkedState>((resolve) => { finish = resolve }))
+    const opening = browser.openLink('https://first.example/', () => newest)
+    newest = false
+    browser.rerender(<BrowserMirror {...browser.props} selectedTabId={id}
+      useBrowserMirror={viewHook({ phase: 'ready', state: state(2, otherId) as never,
+        frameUrl: null, pending: true })} />)
+    expect(browser.syncBrowserTabs).toHaveBeenLastCalledWith(expect.any(Array), id)
+    await act(async () => { finish(state(2, otherId) as never); await opening })
+    expect(browser.props.openBrowser).not.toHaveBeenCalled()
+    expect(browser.command).not.toHaveBeenCalled()
+  })
+
+  it('keeps the selected tab and panel aligned while a queued link supersedes the Host page', async () => {
+    const browser = mount(ready())
+    let finish!: (value: LinkedState) => void
+    let newest = true
+    const firstState = { ...state(2, otherId), hasFrame: true,
+      tabs: state().tabs.map(tab => tab.id === otherId
+        ? { ...tab, url: 'https://first.example/', title: 'First' } : tab),
+      observation: { ...state().observation!, tabId: otherId, generation: 'tab-g2',
+        url: 'https://first.example/', title: 'First' } }
+    const lastId = '032ef1b7-466b-45a7-8d57-3288cf12b8b1'
+    const lastState = { ...state(3), activeTabId: lastId, observation: null, hasFrame: false,
+      tabs: [...firstState.tabs, { id: lastId, generation: 'tab-g3', url: 'https://last.example/',
+        title: 'Last', canGoBack: false, canGoForward: false }] }
+    const firstView: BrowserView = { phase: 'ready', state: firstState as never,
+      frameUrl: 'blob:first', pending: true }
+    const lastView: BrowserView = { phase: 'ready', state: lastState as never,
+      frameUrl: null, pending: false }
+    browser.rerender(browserWorkbench(browser.props, ready(), id))
+    browser.openUrl.mockImplementationOnce(() => new Promise<LinkedState>((resolve) => { finish = resolve }))
+      .mockResolvedValueOnce(lastState as never)
+    const opening = browser.openLink('https://first.example/', () => newest)
+    newest = false
+    browser.rerender(browserWorkbench(browser.props, firstView, id))
+    expect(screen.getAllByRole('tab', { selected: true })).toHaveLength(1)
+    expect(screen.getByRole('tab', { name: 'Example' }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByRole('tabpanel', { name: 'Selected browser panel' })
+      .querySelector('[role="status"]')?.textContent).toBe('Loading browser state…')
+    expect(screen.queryByAltText('Browser page screenshot')).toBeNull()
+    expect(browser.command).not.toHaveBeenCalled()
+    await act(async () => { finish(firstState as never); await opening })
+    expect(browser.props.openBrowser).not.toHaveBeenCalled()
+    await act(async () => { await browser.openLink('https://last.example/') })
+    browser.rerender(browserWorkbench(browser.props, lastView, lastId))
+    expect(screen.getAllByRole('tab', { selected: true })).toHaveLength(1)
+    expect(screen.getByRole('tab', { name: 'Last' }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByRole('tabpanel', { name: 'Selected browser panel' })
+      .querySelector('[role="status"]')).toBeNull()
+    expect(browser.props.openBrowser).toHaveBeenCalledExactlyOnceWith(lastId)
+    expect(browser.command).not.toHaveBeenCalled()
+  })
+
+  it('conceals a stale desktop guest until the manually selected tab becomes Host active', () => {
+    const present = vi.fn(async () => {})
+    vi.stubGlobal('codingDesktop', { browser: { available: true, present } })
+    const bounds = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      left: 10, top: 80, right: 900, bottom: 680,
+    } as DOMRect)
+    const browser = mount(ready())
+    browser.rerender(browserWorkbench(browser.props, ready(), id))
+    expect(present).toHaveBeenLastCalledWith(expect.objectContaining({ tabId: id, visible: true }))
+    const hostFirst: BrowserView = { phase: 'ready', state: state(2, otherId) as never,
+      frameUrl: null, pending: true }
+    browser.rerender(browserWorkbench(browser.props, hostFirst, id))
+    expect(screen.getAllByRole('tab', { selected: true })).toHaveLength(1)
+    expect(screen.getByRole('tab', { name: 'Example' }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByRole('status').textContent).toBe('Loading browser state…')
+    expect(screen.queryByLabelText('Browser page')).toBeNull()
+    expect(present).toHaveBeenLastCalledWith(expect.objectContaining({ tabId: id, visible: false }))
+    browser.rerender(browserWorkbench(browser.props, { ...ready(3), state: state(3) as never }, id))
+    expect(present).toHaveBeenLastCalledWith(expect.objectContaining({ tabId: id, visible: true }))
+    expect(browser.command).not.toHaveBeenCalled()
+    browser.unmount()
+    bounds.mockRestore()
+  })
+
+  it('respects a manual workbench change made after a queued click but before its Host turn', async () => {
+    const browser = mount(ready(), true)
+    const originalClick = { interactionEpoch: 0 }
+    browser.rerender(<BrowserMirror {...browser.props} shown={false} interactionEpoch={1} />)
+    await act(async () => { await browser.openLink('https://queued.example/', () => true, originalClick) })
+    expect(browser.syncBrowserTabs).toHaveBeenLastCalledWith(expect.any(Array), otherId)
+    expect(browser.props.openBrowser).not.toHaveBeenCalled()
   })
 
   it('does not reveal a stale session or switch the old selected page during the link command', async () => {

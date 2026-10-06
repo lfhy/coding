@@ -2,6 +2,7 @@
 
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
@@ -15,10 +16,28 @@ import {
 } from './WorkbenchPanelToggles.tsx'
 import { RetainedTerminalPanel } from './RetainedTerminalPanel.tsx'
 import { createRetainedWorkbenchStore } from './store.ts'
+import type { SidebarRightTabDefinition } from './sidebar-tab-registry.ts'
+import { SidebarRightTabRegistry } from './sidebar-tab-registry.ts'
+import { SidebarRightController } from './sidebar-tab-service.ts'
+import { tabInfoInject, type SidebarRightTabOwnerProps, type SidebarRightTabSlotInject } from './sidebar-tab-contract.ts'
 import { en, NS, zh } from './locales.ts'
 
 export type { OpenInAppActionInjected, OpenInAppActionProps } from './OpenInAppAction.tsx'
 export type { WorkbenchPanelTogglesInjected, WorkbenchPanelTogglesProps } from './WorkbenchPanelToggles.tsx'
+export type { SidebarRightTabDefinition, SidebarRightGuideEntry, SidebarRightGuideBox } from './sidebar-tab-registry.ts'
+export type { SidebarRightTabOwnerProps } from './sidebar-tab-contract.ts'
+export type {
+  ISidebarRight, SidebarRightKindOptions, SidebarRightOpenOptions, SidebarRightUpdateOptions,
+} from './sidebar-tab-service.ts'
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /** 当前 Client 插件树贡献的右侧标签类型。 */
+    sidebarRightTabs: SidebarRightTabRegistry
+    /** 指定 Session 的单面板标签动作。 */
+    sidebarRight: SidebarRightController
+  }
+}
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
@@ -26,6 +45,22 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'workbench.browser': { kind: 'single'; scope: 'session'; owner: WorkbenchBrowserOwnerProps }
     /** 每个浏览器页面向工作台统一顶栏贡献一个标签。 */
     'workbench.browser.tabs': { kind: 'single'; scope: 'session'; owner: WorkbenchBrowserOwnerProps }
+    /** 第三方标签的内容座位；注册键等于定义 id。 */
+    'sidebar.right.pane.tab': {
+      kind: 'keyed'
+      scope: 'session'
+      owner: SidebarRightTabOwnerProps
+      hookContext: SidebarRightTabOwnerProps
+      inject: SidebarRightTabSlotInject
+    }
+    /** 第三方标签的标题座位；未注册时工作台使用保存的名称。 */
+    'sidebar.right.pane.tab.title': {
+      kind: 'keyed'
+      scope: 'session'
+      owner: SidebarRightTabOwnerProps
+      hookContext: SidebarRightTabOwnerProps
+      inject: SidebarRightTabSlotInject
+    }
   }
 }
 
@@ -74,6 +109,31 @@ function activeSessionId(ctx: ClientContext): SessionId | undefined {
 export function apply(ctx: ClientContext): void {
   const controller = new OpenInAppController()
   const workbench = createRetainedWorkbenchStore()
+  const sidebarRightTabs = new SidebarRightTabRegistry()
+  const sidebarRight = new SidebarRightController(sidebarRightTabs, ctx.layout, () => activeSessionId(ctx))
+  const sidebarRightSource: HostObservable<readonly SidebarRightTabDefinition[]> = {
+    getSnapshot: () => sidebarRightTabs.entries(),
+    subscribe: listener => sidebarRightTabs.subscribe(listener),
+  }
+  ctx.effect(() => {
+    const disposeTabs = ctx.reflect.provide('sidebarRightTabs', sidebarRightTabs)
+    const disposeActions = ctx.reflect.provide('sidebarRight', sidebarRight)
+    return () => {
+      void disposeActions()
+      void disposeTabs()
+    }
+  }, 'open-in-app: sidebar right services')
+  ctx.effect(() => {
+    const knownIds = new Set(sidebarRightTabs.entries().map(definition => definition.id))
+    return sidebarRightTabs.subscribe(() => {
+      for (const id of knownIds) {
+        if (sidebarRightTabs.has(id)) continue
+        sidebarRight.closeDefinitionTabs(id)
+        knownIds.delete(id)
+      }
+      for (const definition of sidebarRightTabs.entries()) knownIds.add(definition.id)
+    })
+  }, 'open-in-app: close unloaded tab definitions')
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'open-in-app: dictionaries')
 
   ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
@@ -95,24 +155,37 @@ export function apply(ctx: ClientContext): void {
     }),
   }, OpenInAppAction))
 
-  ctx.slots.inject('workbench', () => ctx.slots.register({
-    name: 'workbench',
-    children: {
-      'workbench.browser': { kind: 'single', scope: 'session' },
-      'workbench.browser.tabs': { kind: 'single', scope: 'session' },
-    },
-    locale: NS,
-    store: workbench,
-    inject: (): WorkspaceWorkbenchInjected => ({
-      listFiles: (sessionId, segments, signal) => controller.listFiles(sessionId, segments, signal),
-      readFile: (sessionId, segments, signal) => controller.readFile(sessionId, segments, signal),
-      terminalUrl: sessionId => controller.terminalUrl(sessionId),
-      closeWorkbench: (sessionId) => { ctx.layout.closeWorkbench(sessionId) },
-      openWorkbench: (sessionId) => { ctx.layout.openWorkbench(sessionId) },
-      toggleWorkbenchFullscreen: (sessionId) => { ctx.layout.toggleWorkbenchFullscreen(sessionId) },
-      toggleBottom: (sessionId) => { ctx.layout.toggleWorkbenchBottom(sessionId) },
-    }),
-  }, WorkspaceWorkbench))
+  ctx.slots.inject('workbench', () => {
+    const disposeWorkbench = ctx.slots.register({
+      name: 'workbench',
+      children: {
+        'workbench.browser': { kind: 'single', scope: 'session' },
+        'workbench.browser.tabs': { kind: 'single', scope: 'session' },
+        'sidebar.right.pane.tab': { kind: 'keyed', scope: 'session', inject: tabInfoInject },
+        'sidebar.right.pane.tab.title': { kind: 'keyed', scope: 'session', inject: tabInfoInject },
+      },
+      locale: NS,
+      store: workbench,
+      inject: (actions): WorkspaceWorkbenchInjected => {
+        sidebarRight.attach(actions)
+        return {
+          hooks: { sidebarRightTabs: sidebarRightSource },
+          listFiles: (sessionId, segments, signal) => controller.listFiles(sessionId, segments, signal),
+          readFile: (sessionId, segments, signal) => controller.readFile(sessionId, segments, signal),
+          terminalUrl: sessionId => controller.terminalUrl(sessionId),
+          closeWorkbench: (sessionId) => { ctx.layout.closeWorkbench(sessionId) },
+          openWorkbench: (sessionId) => { ctx.layout.openWorkbench(sessionId) },
+          toggleWorkbenchFullscreen: (sessionId) => { ctx.layout.toggleWorkbenchFullscreen(sessionId) },
+          toggleBottom: (sessionId) => { ctx.layout.toggleWorkbenchBottom(sessionId) },
+          openSidebarTab: (sessionId, kind) => { sidebarRight.openTabForSession(sessionId, kind) },
+        }
+      },
+    }, WorkspaceWorkbench)
+    return () => {
+      sidebarRight.detach()
+      disposeWorkbench()
+    }
+  })
 
   ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
     name: 'conversation.session.header.utilities',
