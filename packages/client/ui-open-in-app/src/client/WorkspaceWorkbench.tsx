@@ -56,7 +56,6 @@ export interface WorkspaceWorkbenchInjected {
   closeWorkbench: (sessionId: SessionId) => void
   openWorkbench: (sessionId: SessionId) => void
   toggleWorkbenchFullscreen: (sessionId: SessionId) => void
-  toggleFiles: (sessionId: SessionId) => void
   toggleBottom: (sessionId: SessionId) => void
 }
 
@@ -68,8 +67,8 @@ export type WorkspaceWorkbenchProps =
   & PropsLocale<typeof NS>
   & InjectFace<WorkspaceWorkbenchInjected>
 
-type WorkbenchActions = BoundActions<ReturnType<typeof createWorkbenchStore>>
-type WorkbenchViewProps = Pick<WorkspaceWorkbenchProps, 'shown' | 'fullscreen' | 'bottomOpen' | 'filesOpen' | 't' | 'renderSlot'> & {
+type WorkbenchActions = Omit<BoundActions<ReturnType<typeof createWorkbenchStore>>, 'activateFile' | 'closeFile'>
+type WorkbenchViewProps = Pick<WorkspaceWorkbenchProps, 'shown' | 'fullscreen' | 'bottomOpen' | 't' | 'renderSlot'> & {
   sessionId: SessionId
   narrow: boolean
   state: WorkbenchState
@@ -80,7 +79,6 @@ type WorkbenchViewProps = Pick<WorkspaceWorkbenchProps, 'shown' | 'fullscreen' |
   closeWorkbench: () => void
   openWorkbench: () => void
   toggleWorkbenchFullscreen: () => void
-  toggleFiles: () => void
   toggleBottom: () => void
   listFiles: (segments: readonly string[], signal?: AbortSignal) => Promise<WorkspaceFilesPayload>
   readFile: (segments: readonly string[], signal?: AbortSignal) => Promise<WorkspaceFilePayload>
@@ -411,8 +409,6 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
       setView: (view) => { props.actions.setView(sessionId, view) },
       openFile: (file) => { props.actions.openFile(sessionId, file) },
       openFileManager: () => { props.actions.openFileManager(sessionId) },
-      activateFile: (id) => { props.actions.activateFile(sessionId, id) },
-      closeFile: (id) => { props.actions.closeFile(sessionId, id) },
       openTerminal: () => {
         setFocusRequest(previous => (previous ?? 0) + 1)
         props.actions.openTerminal(sessionId)
@@ -444,11 +440,10 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
       },
       openWorkbench: () => { props.openWorkbench(sessionId) },
       toggleWorkbenchFullscreen: () => { props.toggleWorkbenchFullscreen(sessionId) },
-      toggleFiles: () => { props.toggleFiles(sessionId) },
       toggleBottom: () => { props.toggleBottom(sessionId) },
     }
   }, [props.actions, props.listFiles, props.readFile, props.closeWorkbench, props.openWorkbench,
-    props.toggleWorkbenchFullscreen, props.toggleFiles, props.toggleBottom, sessionId])
+    props.toggleWorkbenchFullscreen, props.toggleBottom, sessionId])
   const terminalShown = props.shown && state?.view === 'terminal'
   return <section ref={rootRef} className={css.root} hidden={!props.shown || state === undefined}
     aria-label={props.t('workbench.label')} data-fullscreen={props.fullscreen || undefined}
@@ -475,27 +470,16 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
 
 function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
   const {
-    shown, fullscreen, bottomOpen, filesOpen, narrow, actions, readFile, listFiles, completedFocusTabId,
-    closeWorkbench, openWorkbench, toggleWorkbenchFullscreen, toggleFiles, toggleBottom, t, renderSlot,
+    shown, fullscreen, bottomOpen, narrow, actions, readFile, listFiles, completedFocusTabId,
+    closeWorkbench, openWorkbench, toggleWorkbenchFullscreen, toggleBottom, t, renderSlot,
     panelPrefix, selectTab,
   } = props
   const { view, tabs, activeId, filesQuery, filesExpanded, filesLevels } = props.state
   const active = useMemo(() => tabs.find(tab => tab.id === activeId), [activeId, tabs])
-  const [previewTreeOpen, setPreviewTreeOpen] = useState(false)
   const narrowPreview = narrow && view === 'files' && active?.type === 'file'
-  const treeVisible = view === 'files' && filesOpen && (!narrowPreview || previewTreeOpen)
-  const filesTogglePressed = view === 'files' ? treeVisible : filesOpen
-  useEffect(() => { setPreviewTreeOpen(false) }, [activeId, narrow])
-  const toggleVisibleFiles = useCallback((): void => {
-    if (!narrowPreview) {
-      toggleFiles()
-    } else if (filesOpen) {
-      setPreviewTreeOpen(open => !open)
-    } else {
-      setPreviewTreeOpen(true)
-      toggleFiles()
-    }
-  }, [narrowPreview, filesOpen, toggleFiles])
+  const treeVisible = view === 'files' && !narrowPreview
+  // 窄屏目录树承接文件管理器标签的面板关联，宽屏仍与预览区并列。
+  const narrowFileManager = narrow ? tabs.find(tab => tab.type === 'file-manager') : undefined
   const browserShown = shown && view === 'browser'
   const [newTabRequest, setNewTabRequest] = useState(0)
   const [handledTabRequest, setHandledTabRequest] = useState(0)
@@ -530,8 +514,7 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
   const showFiles = useCallback((): void => {
     pendingFocus.current = 'return'
     actions.openFileManager()
-    if (!filesOpen) toggleFiles()
-  }, [actions, filesOpen, toggleFiles])
+  }, [actions])
   const showMenu = useCallback((): void => {
     pendingFocus.current = 'menu'
     actions.setView('menu')
@@ -585,7 +568,7 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
   const rootKey = tabIdForSegments([])
   const rootRequested = useRef(filesLevels[rootKey] !== undefined && filesLevels[rootKey].phase !== 'loading')
   const interruptedLevels = useRef(Object.values(filesLevels)
-    .filter(level => level?.phase === 'loading' && tabIdForSegments(level.segments) !== rootKey))
+    .filter((level): level is LevelState => level?.phase === 'loading' && tabIdForSegments(level.segments) !== rootKey))
   const load = useCallback((pathSegments: readonly string[]): void => {
     const key = tabIdForSegments(pathSegments)
     requests.current.get(key)?.abort()
@@ -614,7 +597,7 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
   useEffect(() => {
     if (!shown || view !== 'files') return
     // Session 展示树重挂载时，继续被上一棵树取消的目录读取。
-    for (const level of interruptedLevels.current) if (level !== undefined) load(level.segments)
+    for (const level of interruptedLevels.current) load(level.segments)
     interruptedLevels.current = []
   }, [load, shown, view])
 
@@ -714,12 +697,6 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
             />
           )}
           <ToolbarButton
-            label={filesTogglePressed ? t('workbench.files.hide') : t('workbench.files.show')}
-            pressed={filesTogglePressed}
-            onClick={toggleVisibleFiles}
-            icon={<Icon name="files-panel" size={18} />}
-          />
-          <ToolbarButton
             label={fullscreen ? t('workbench.fullscreen.exit') : t('workbench.fullscreen.enter')}
             pressed={fullscreen}
             onClick={toggleWorkbenchFullscreen}
@@ -733,7 +710,7 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
         </div>
       </header>
       <div className={clsx(css.body, !treeVisible && css.filesClosed)}
-        data-file-manager={active?.type === 'file-manager' || undefined}>
+        data-file-manager={view === 'files' && active?.type === 'file-manager' || undefined}>
         <main className={css.previewStack}>
           <div className={css.menuView} hidden={view !== 'menu'} {...view !== 'menu' ? { inert: '' } : {}}>
             <nav className={css.functionMenu} aria-label={t('workbench.menu.label')}>
@@ -768,7 +745,7 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
             </nav>
           </div>
           <div className={css.fileView} hidden={view !== 'files'} {...view !== 'files' ? { inert: '' } : {}}>
-            {tabs.filter(tab => tab.type === 'file-manager').map(tab => (
+            {tabs.filter(tab => tab.type === 'file-manager' && !narrow).map(tab => (
               <div id={tabDomId(panelPrefix, props.sessionId, tab.id, 'panel')}
                 role="tabpanel" aria-labelledby={tabDomId(panelPrefix, props.sessionId, tab.id, 'tab')}
                 hidden={tab.id !== activeId || view !== 'files'} className={css.previewSlot} key={tab.id}>
@@ -811,11 +788,15 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
           </div>
         </main>
         <div className={css.treeView} hidden={!treeVisible}
+          {...narrowFileManager !== undefined ? {
+            id: tabDomId(panelPrefix, props.sessionId, narrowFileManager.id, 'panel'),
+            role: 'tabpanel',
+            'aria-labelledby': tabDomId(panelPrefix, props.sessionId, narrowFileManager.id, 'tab'),
+          } : {}}
           {...!treeVisible ? { inert: '' } : {}}>
           <FileTree
             shown={treeVisible}
             onOpen={(entry) => {
-              setPreviewTreeOpen(false)
               actions.openFile({ name: entry.name, segments: entry.segments })
             }}
             query={filesQuery}

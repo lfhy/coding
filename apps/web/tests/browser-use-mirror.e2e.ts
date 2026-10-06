@@ -1,7 +1,7 @@
 /** 经真实 Web Loader、人工 RPC 和 Host 浏览器提供方验收工作台浏览流程。 */
 
 import { randomUUID } from 'node:crypto'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -13,9 +13,13 @@ import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { ReplayOverrideDoc } from '@deepseek-ai/dsh-llm-replay'
 import { Session, SessionId, SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { BrowserHumanCommand, BrowserHumanTarget, BrowserSessionState } from '@deepseek-ai/dsh-browser'
-import { launchWebScaffold, seedSession, watchConsole, webSnapshotMode, type WebScaffold } from './scaffold.ts'
-import { newEnglishPage } from './support.ts'
+import {
+  captureStableAria, compareOrRefreshGolden, launchWebScaffold, seedSession, watchConsole,
+  webSnapshotMode, type WebScaffold,
+} from './scaffold.ts'
+import { newEnglishPage, REPO_ROOT, saveFailureShot } from './support.ts'
 
 const FIRST = 'browser-mirror-first'
 const SECOND = 'browser-mirror-second'
@@ -24,6 +28,7 @@ const MODEL = 'browser-mirror-model-navigate'
 const MODEL_PROMPT = 'Open the local fixture in the browser and report its title.'
 const MODEL_CALL_ID = CallId('web-model-browser-navigate')
 const MODE = webSnapshotMode()
+const FILE_GOLDEN_DIR = join(REPO_ROOT, 'apps/web/tests/snapshots/workbench-file-navigation')
 
 function modelNavigateReplay(url: string): ReplayOverrideDoc {
   const argumentsJson = JSON.stringify({ url })
@@ -229,6 +234,34 @@ async function openSession(page: Page, id: string): Promise<void> {
   await page.getByRole('button', { name: 'Clear search' }).click()
 }
 
+async function expectNoLegacyFilesToggle(page: Page): Promise<void> {
+  expect(await page.getByRole('button', {
+    name: /^(?:(?:Show|Hide) files? sidebar|(?:显示|隐藏)文件侧栏)$/i,
+    includeHidden: true,
+  }).count()).toBe(0)
+}
+
+async function expectWorkbenchGeometry(page: Page, workbench: Locator, surfaces: Locator[]): Promise<void> {
+  const container = await workbench.boundingBox()
+  if (!container) throw new Error('visible workbench geometry missing')
+  const documentWidth = await page.evaluate(() => document.documentElement.scrollWidth)
+  expect(documentWidth).toBeLessThanOrEqual(page.viewportSize()!.width + 1)
+  expect(container.x).toBeGreaterThanOrEqual(-1)
+  expect(container.x + container.width).toBeLessThanOrEqual(page.viewportSize()!.width + 1)
+  for (const surface of surfaces) {
+    const box = await surface.boundingBox()
+    if (!box) throw new Error('visible workbench surface geometry missing')
+    expect(box.x).toBeGreaterThanOrEqual(container.x - 1)
+    expect(box.x + box.width).toBeLessThanOrEqual(container.x + container.width + 1)
+  }
+  const tabs = workbench.getByRole('tablist', { name: /^(?:Workbench tabs|工作台选项卡)$/ })
+  const controls = workbench.getByRole('button', { name: /^(?:Close workbench|关闭工作台)$/ })
+  const tabBox = await tabs.boundingBox()
+  const controlBox = await controls.boundingBox()
+  if (!tabBox || !controlBox) throw new Error('workbench toolbar geometry missing')
+  expect(tabBox.x + tabBox.width).toBeLessThanOrEqual(controlBox.x + 1)
+}
+
 describe('web e2e: browser-use mirror over the shipped Loader', () => {
   let scaffold: WebScaffold
   let browser: Browser
@@ -259,6 +292,7 @@ describe('web e2e: browser-use mirror over the shipped Loader', () => {
     await seedSession(scaffold, fixture(SECOND), SECOND)
     await seedSession(scaffold, fixture(INTERACTIVE), INTERACTIVE)
     await seedSession(scaffold, fixture(MODEL), MODEL)
+    await writeFile(join(scaffold.workspaceCwd, 'sidebar-preview.txt'), 'File preview remains available.\n')
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     tripwire = watchConsole(page)
@@ -663,5 +697,149 @@ describe('web e2e: browser-use mirror over the shipped Loader', () => {
     await page.screenshot({ path: '/tmp/dsh-browser-model-revealed.png' })
     expect(tripwire.pageErrors).toEqual([])
     expect(consoleErrors).toEqual([])
+  }, 120_000)
+
+  it.skipIf(MODE === 'record')('keeps file navigation without the legacy sidebar toggle across responsive workbench views', async () => {
+    const filesPage = await newEnglishPage(browser)
+    const health = watchConsole(filesPage)
+    const errors: string[] = []
+    filesPage.on('console', (message) => {
+      if (message.type() === 'error') errors.push(message.text())
+    })
+    try {
+      if (MODE === 'refresh') await mkdir(FILE_GOLDEN_DIR, { recursive: true })
+      await filesPage.goto(scaffold.baseUrl, { waitUntil: 'load' })
+      expect(new URL(filesPage.url()).origin).toBe(new URL(scaffold.baseUrl).origin)
+      expect(await filesPage.title()).toContain('Coding')
+      await openSession(filesPage, FIRST)
+      expect(await filesPage.locator('vite-error-overlay').count()).toBe(0)
+      await expectNoLegacyFilesToggle(filesPage)
+      await filesPage.getByRole('button', { name: 'Open right sidebar' }).click()
+      const workbench = filesPage.getByRole('region', { name: /^(?:Workbench|工作台)$/ })
+      const menu = filesPage.getByRole('navigation', { name: 'Workbench features' })
+      const tabs = workbench.getByRole('tablist', { name: 'Workbench tabs' })
+      const manager = tabs.getByRole('tab', { name: 'File manager' })
+      const tree = workbench.locator('aside[aria-label="Workspace files"]')
+      const preview = workbench.locator('article[aria-label="sidebar-preview.txt"]')
+      await expect.poll(() => menu.isVisible()).toBe(true)
+      await expectNoLegacyFilesToggle(filesPage)
+      await menu.getByRole('button', { name: 'Files' }).click()
+      await expect.poll(() => manager.getAttribute('aria-selected')).toBe('true')
+      await expect.poll(() => tree.getByRole('button', { name: /sidebar-preview\.txt/ }).count()).toBe(1)
+      const managerTabId = await manager.getAttribute('id')
+      const managerPanelId = await manager.getAttribute('aria-controls')
+      if (!managerTabId || !managerPanelId) throw new Error('file manager tab is missing its panel association')
+      const managerPanel = filesPage.locator(`[id="${managerPanelId}"]`)
+      await expectNoLegacyFilesToggle(filesPage)
+      await tabs.getByRole('button', { name: 'Add workbench tab' }).click()
+      await menu.getByRole('button', { name: 'Files' }).click()
+      expect(await manager.count()).toBe(1)
+      await tree.getByRole('button', { name: /sidebar-preview\.txt/ }).click()
+      const fileTab = tabs.getByRole('tab', { name: 'sidebar-preview.txt' })
+      await expect.poll(() => fileTab.getAttribute('aria-selected')).toBe('true')
+      await expect.poll(() => preview.textContent()).toContain('File preview remains available.')
+      await expectNoLegacyFilesToggle(filesPage)
+      await manager.click()
+      await expect.poll(() => manager.getAttribute('aria-selected')).toBe('true')
+      await expect.poll(() => tree.isVisible()).toBe(true)
+      await expectNoLegacyFilesToggle(filesPage)
+
+      await workbench.getByRole('button', { name: 'Maximize workbench' }).click()
+      await expect.poll(() => workbench.getAttribute('data-fullscreen')).toBe('true')
+      await workbench.getByRole('button', { name: 'Show terminal panel' }).click()
+      await expect.poll(() => workbench.getByRole('button', { name: 'Hide terminal panel' }).count()).toBe(1)
+      await workbench.getByRole('button', { name: 'Hide terminal panel' }).click()
+      for (const width of [1680, 1024, 768, 375]) {
+        await filesPage.setViewportSize({ width, height: width === 375 ? 812 : 1000 })
+        await expect.poll(async () => {
+          const box = await workbench.boundingBox()
+          return box === null ? Infinity : box.x + box.width
+        }).toBeLessThanOrEqual(width + 1)
+        await expect.poll(async () => {
+          const box = await workbench.boundingBox()
+          return box !== null && (await workbench.getAttribute('data-narrow') === 'true') === (box.width <= 640)
+        }).toBe(true)
+        const narrow = await workbench.getAttribute('data-narrow') === 'true'
+        await manager.click()
+        await expect.poll(() => tree.isVisible()).toBe(true)
+        await expect.poll(() => managerPanel.isVisible()).toBe(true)
+        expect(await filesPage.locator('[id]').evaluateAll((nodes, id) =>
+          nodes.filter(node => node.id === id).length, managerPanelId)).toBe(1)
+        expect(await managerPanel.getAttribute('role')).toBe('tabpanel')
+        expect(await managerPanel.getAttribute('aria-labelledby')).toBe(managerTabId)
+        expect(await manager.getAttribute('aria-controls')).toBe(managerPanelId)
+        // 窄容器让文件树本身承担管理器面板，宽容器仍由预览列占有该面板。
+        expect(await managerPanel.locator('aside[aria-label="Workspace files"]').count()).toBe(narrow ? 1 : 0)
+        await expectWorkbenchGeometry(filesPage, workbench, [tree])
+        await filesPage.mouse.move(1, 1)
+        if (width === 375) {
+          await expect.poll(() => filesPage.getByRole('tooltip').count()).toBe(0)
+          await compareOrRefreshGolden(join(FILE_GOLDEN_DIR, 'narrow-manager.ui.expected.md'),
+            await captureStableAria(filesPage, '#dsh-layout-workbench', scaffold.workspaceCwd), MODE)
+        }
+        if (narrow) {
+          const box = await tree.boundingBox()
+          const container = await workbench.boundingBox()
+          expect(box!.width).toBeGreaterThanOrEqual(container!.width - 2)
+        }
+        await fileTab.click()
+        await expect.poll(() => preview.isVisible()).toBe(true)
+        await expect.poll(() => tree.isVisible()).toBe(!narrow)
+        await expect.poll(() => managerPanel.isVisible()).toBe(false)
+        expect(await filesPage.locator('[id]').evaluateAll((nodes, id) =>
+          nodes.filter(node => node.id === id).length, managerPanelId)).toBe(1)
+        await expectWorkbenchGeometry(filesPage, workbench, narrow ? [preview] : [preview, tree])
+        if (narrow) {
+          const previewBox = await preview.boundingBox()
+          const container = await workbench.boundingBox()
+          expect(previewBox!.width).toBeGreaterThanOrEqual(container!.width - 2)
+        } else {
+          const previewBox = await preview.boundingBox()
+          const treeBox = await tree.boundingBox()
+          expect(previewBox!.x + previewBox!.width).toBeLessThanOrEqual(treeBox!.x + 1)
+        }
+        await expectNoLegacyFilesToggle(filesPage)
+        if (width === 1680 || width === 375) {
+          await filesPage.mouse.move(1, 1)
+          await expect.poll(() => filesPage.getByRole('tooltip').count()).toBe(0)
+          await compareOrRefreshGolden(join(FILE_GOLDEN_DIR,
+            width === 1680 ? 'desktop-preview.ui.expected.md' : 'narrow-preview.ui.expected.md'),
+          await captureStableAria(filesPage, '#dsh-layout-workbench', scaffold.workspaceCwd), MODE)
+        }
+        await manager.click()
+        await expect.poll(() => managerPanel.isVisible()).toBe(true)
+        await expect.poll(() => tree.isVisible()).toBe(true)
+      }
+      await filesPage.setViewportSize({ width: 1680, height: 1000 })
+      await workbench.getByRole('button', { name: 'Back to features' }).click()
+      await expect.poll(() => menu.isVisible()).toBe(true)
+      await expectNoLegacyFilesToggle(filesPage)
+      await menu.getByRole('button', { name: 'Browser' }).click()
+      await expect.poll(() => workbench.getByRole('region', { name: 'Browser view' }).isVisible()).toBe(true)
+      await expectNoLegacyFilesToggle(filesPage)
+      await workbench.getByRole('button', { name: 'Back to features' }).click()
+      await menu.getByRole('button', { name: 'Terminal' }).click()
+      await expect.poll(() => tabs.getByRole('tab', { name: 'coding 1' }).count()).toBe(1)
+      await expectNoLegacyFilesToggle(filesPage)
+      await manager.click()
+      await expect.poll(() => tree.isVisible()).toBe(true)
+      await scaffold.ctx.settings.update(settingsNamespace('locale'), { preference: 'zh' })
+      await expect.poll(() => workbench.getAttribute('aria-label')).toBe('工作台')
+      await expectNoLegacyFilesToggle(filesPage)
+      await workbench.getByRole('button', { name: '返回功能菜单' }).click()
+      await expectNoLegacyFilesToggle(filesPage)
+      await workbench.getByRole('button', { name: '关闭工作台' }).click()
+      await expect.poll(() => workbench.isVisible()).toBe(false)
+      expect(health.pageErrors).toEqual([])
+      expect(health.warnings).toEqual([])
+      expect(errors).toEqual([])
+      expect(await filesPage.locator('vite-error-overlay').count()).toBe(0)
+    } catch (error) {
+      await saveFailureShot(filesPage, 'workbench-file-navigation')
+      throw error
+    } finally {
+      await scaffold.ctx.settings.update(settingsNamespace('locale'), { preference: 'en' })
+      await filesPage.close()
+    }
   }, 120_000)
 })

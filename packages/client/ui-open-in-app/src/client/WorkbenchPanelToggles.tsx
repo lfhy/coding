@@ -28,7 +28,6 @@ const CLOSED_WORKBENCH: WorkbenchLayoutSnapshot = {
   open: false,
   fullscreen: false,
   bottomOpen: false,
-  filesOpen: false,
 }
 
 /**

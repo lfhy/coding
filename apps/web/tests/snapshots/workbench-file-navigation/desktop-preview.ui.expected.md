@@ -1,0 +1,46 @@
+- region "Workbench":
+  - tablist "Workbench tabs":
+    - tab "File manager":
+      - img
+      - text: File manager
+    - button "Close File manager":
+      - img
+    - tab "sidebar-preview.txt" [selected]
+    - button "Close sidebar-preview.txt":
+      - img
+    - button "Add workbench tab":
+      - img
+  - button "Back to features":
+    - img
+  - button "Show terminal panel"
+  - button "Exit full screen" [pressed]:
+    - img
+  - button "Close workbench":
+    - img
+  - main:
+    - tabpanel "sidebar-preview.txt":
+      - article "sidebar-preview.txt":
+        - text: {{cwd}}/sidebar-preview.txt
+        - button "Refresh file":
+          - img
+        - text: File preview remains available.
+  - complementary "Workspace files":
+    - text: {{cwd}}
+    - button "Refresh file":
+      - img
+    - img
+    - text: Filter files…
+    - searchbox "Filter files…"
+    - tree "Workspace files":
+      - treeitem ".dsh-home":
+        - button ".dsh-home":
+          - img
+          - img
+          - text: .dsh-home
+      - treeitem ".dsh-storages":
+        - button ".dsh-storages":
+          - img
+          - img
+          - text: .dsh-storages
+      - treeitem "sidebar-preview.txt 32 B":
+        - button "sidebar-preview.txt 32 B"

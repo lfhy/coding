@@ -61,7 +61,6 @@ function bench(over: {
     open: false,
     fullscreen: false,
     bottomOpen: false,
-    filesOpen: true,
     ...over.workbench,
   })
   const toggleWorkbench = vi.fn()
@@ -108,14 +107,14 @@ describe('WorkbenchPanelToggles pressed state', () => {
     expect(b.toggleBottom).toHaveBeenCalledOnce()
   })
 
-  it('reflects the right sidebar independently of the file tree', () => {
-    const closed = bench({ workbench: { open: false, filesOpen: true } })
+  it('reflects the right sidebar from workbench visibility', () => {
+    const closed = bench({ workbench: { open: false } })
     render(<WorkbenchPanelToggles {...closed.props} />)
     const closedRight = screen.getByRole('button', { name: zh['workbench.right.open'] })
     expect(closedRight.getAttribute('aria-pressed')).toBe('false')
     cleanup()
 
-    const open = bench({ workbench: { open: true, filesOpen: false } })
+    const open = bench({ workbench: { open: true } })
     render(<WorkbenchPanelToggles {...open.props} />)
     const right = screen.getByRole('button', { name: zh['workbench.right.close'] })
     expect(right.getAttribute('title')).toBe(zh['workbench.right.close'])
@@ -136,13 +135,13 @@ describe('WorkbenchPanelToggles pressed state', () => {
   })
 
   it('takes the pressed state from the snapshot the injected source holds', () => {
-    const b = bench({ workbench: { open: true, filesOpen: true } })
+    const b = bench({ workbench: { open: true } })
     render(<WorkbenchPanelToggles {...b.props} />)
     expect(screen
       .getByRole('button', { name: zh['workbench.right.close'] })
       .getAttribute('aria-pressed')).toBe('true')
 
-    act(() => { b.publish({ open: false, fullscreen: false, bottomOpen: false, filesOpen: true }) })
+    act(() => { b.publish({ open: false, fullscreen: false, bottomOpen: false }) })
     expect(screen
       .getByRole('button', { name: zh['workbench.right.open'] })
       .getAttribute('aria-pressed')).toBe('false')
@@ -170,7 +169,7 @@ describe('欢迎页面板入口', () => {
     const activeProps = { ...active.props, panel, togglePanel } as unknown as
       React.ComponentProps<typeof HeroPanelToggle>
     render(<HeroPanelToggle {...activeProps} />)
-    act(() => { active.publish({ open: true, fullscreen: false, bottomOpen: panel === 'bottom', filesOpen: false }) })
+    act(() => { active.publish({ open: true, fullscreen: false, bottomOpen: panel === 'bottom' }) })
     expect(screen.getByRole('button', { name: closeLabel }).getAttribute('aria-pressed')).toBe('true')
   })
 
@@ -184,5 +183,20 @@ describe('欢迎页面板入口', () => {
     fireEvent.click(view.getByRole('button', { name: label }))
     expect((await view.findByRole('alert')).textContent).toContain('offline')
     await waitFor(() => { expect((view.getByRole('button', { name: label }) as HTMLButtonElement).disabled).toBe(false) })
+  })
+
+  it('非 Error 的失败原因也可见，并允许重试', async () => {
+    const b = bench({ current: undefined })
+    const togglePanel = vi.fn().mockRejectedValueOnce('connection unavailable').mockResolvedValueOnce(undefined)
+    const props = { ...b.props, sidebarCollapsed: false, panel: 'files', workbenchSource: () => b.source, togglePanel } as
+      React.ComponentProps<typeof HeroPanelToggle>
+    render(<HeroPanelToggle {...props} />)
+    const right = screen.getByRole('button', { name: zh['workbench.right.open'] })
+    fireEvent.click(right)
+    expect((await screen.findByRole('alert')).textContent).toContain('connection unavailable')
+    await waitFor(() => { expect((right as HTMLButtonElement).disabled).toBe(false) })
+    fireEvent.click(right)
+    await waitFor(() => { expect(togglePanel).toHaveBeenCalledTimes(2) })
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 })

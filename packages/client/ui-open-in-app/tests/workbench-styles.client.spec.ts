@@ -14,6 +14,18 @@ describe('workbench desktop titlebar', () => {
   })
 })
 
+describe('workbench narrow files layout', () => {
+  it('gives the file manager a full-width tree without a preview overlay', () => {
+    expect(css).toMatch(
+      /\.root\[data-narrow='true'\] \.body\[data-file-manager='true'\]\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/,
+    )
+    expect(css).toMatch(
+      /\.root\[data-narrow='true'\] \.body\[data-file-manager='true'\] \.previewStack\s*\{[^}]*display:\s*none/,
+    )
+    expect(css).not.toMatch(/\.root\[data-narrow='true'\] \.treeView[^{}]*\{[^}]*position:\s*absolute/)
+  })
+})
+
 describe('terminal tabs', () => {
   it('places new tabs alongside existing tabs and keeps panel close at the right edge', () => {
     expect(terminalCss).toMatch(/\.tabs\s*\{[^}]*flex:\s*0 1 auto/)

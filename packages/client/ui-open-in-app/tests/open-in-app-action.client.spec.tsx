@@ -35,7 +35,7 @@ function bench(over: {
   target?: WorkspaceOpenTarget
   choice?: string
   cwd?: string
-  workbench?: Partial<{ open: boolean; fullscreen: boolean; bottomOpen: boolean; filesOpen: boolean }>
+  workbench?: Partial<{ open: boolean; fullscreen: boolean; bottomOpen: boolean }>
   launch?: (appId: string, path: string) => Promise<'launched' | 'files'>
 } = {}): Bench {
   const cwd = over.cwd
@@ -134,7 +134,7 @@ describe('OpenInAppAction target routing', () => {
       const entry = screen.getByRole('button', { name: zh['workbench.open.title'] })
       expect(entry.getAttribute('aria-pressed')).toBe(workbench.open ? 'true' : null)
       for (const label of [
-        zh['workbench.files.show'], zh['workbench.files.hide'], zh['workbench.close'],
+        '显示文件侧栏', '隐藏文件侧栏', zh['workbench.close'],
       ]) {
         expect(screen.queryByRole('button', { name: label })).toBeNull()
       }

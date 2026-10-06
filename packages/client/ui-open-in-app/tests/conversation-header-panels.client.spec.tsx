@@ -20,7 +20,7 @@ const SESSION = 'header-panel-session' as SessionId
 describe('active conversation panel placement', () => {
   it('renders both switches after title actions at the far right of the visible header', () => {
     const layout = createSnapshotStore<WorkbenchLayoutSnapshot>({
-      open: false, fullscreen: false, bottomOpen: false, filesOpen: true,
+      open: false, fullscreen: false, bottomOpen: false,
     })
     const toggleWorkbench = vi.fn()
     const toggleBottom = vi.fn()

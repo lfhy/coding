@@ -30,7 +30,6 @@ export type WorkbenchState = {
   /** 右侧工作台关闭时仍单独显示底栏。 */
   bottomStandalone: boolean
   bottomHeight: number
-  filesOpen: boolean
 }
 
 /** 布局偏好；0 宽度只用于既有 sidebar/details 的关闭语义。 */
@@ -50,7 +49,6 @@ function workbench(draft: LayoutState, sessionId: SessionId): WorkbenchState {
     bottomOpen: false,
     bottomStandalone: false,
     bottomHeight: WORKBENCH_BOTTOM_DEFAULT,
-    filesOpen: true,
   }
 }
 
@@ -70,13 +68,12 @@ type LayoutActions = {
   toggleWorkbenchFullscreen: (draft: LayoutState, sessionId: SessionId) => void
   toggleWorkbenchBottom: (draft: LayoutState, sessionId: SessionId) => void
   closeWorkbenchBottom: (draft: LayoutState, sessionId: SessionId) => void
-  toggleWorkbenchFiles: (draft: LayoutState, sessionId: SessionId) => void
   toggleHeroPanel: (draft: LayoutState, sessionId: SessionId, panel: 'bottom' | 'files') => void
   retainWorkbenchSessions: (draft: LayoutState, sessionIds: readonly SessionId[]) => void
 }
 
 /**
- * 创建布局 store。工作台状态按 Session 隔离；工作台打开会关闭详情栏，而详情栏仅暂时覆盖当前工作台，保留其 Session 偏好。关闭右侧工作台时已显示的底栏保持可见，宽度和文件侧栏偏好也保留。
+ * 创建布局 store。工作台状态按 Session 隔离；工作台打开会关闭详情栏，而详情栏仅暂时覆盖当前工作台，保留其 Session 偏好。关闭右侧工作台时已显示的底栏保持可见，尺寸偏好也保留。
  * @returns 包含定义、身份和实例工厂的 store handle。
  */
 export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutActions> {
@@ -143,7 +140,7 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
         const state = d.workbench[sessionId]
         if (state?.open) state.fullscreen = !state.fullscreen
       },
-      // 两个面板的入口各自只改变目标面板；显示时关闭暂时遮挡它的详情栏。
+      // 底栏入口只改变底栏；显示时关闭暂时遮挡它的详情栏。
       toggleWorkbenchBottom: (d, sessionId: SessionId) => {
         const state = workbench(d, sessionId)
         if (d.details === 0 && state.bottomOpen && (state.open || state.bottomStandalone)) {
@@ -160,23 +157,6 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
         if (state === undefined) return
         state.bottomOpen = false
         state.bottomStandalone = false
-      },
-      toggleWorkbenchFiles: (d, sessionId: SessionId) => {
-        const state = workbench(d, sessionId)
-        state.bottomStandalone = false
-        if (state.open) {
-          if (d.details !== 0) {
-            d.details = 0
-            state.filesOpen = true
-          } else {
-            state.filesOpen = !state.filesOpen
-          }
-        } else {
-          d.details = 0
-          state.open = true
-          state.fullscreen = false
-          state.filesOpen = true
-        }
       },
       toggleHeroPanel: (d, sessionId: SessionId, panel: 'bottom' | 'files') => {
         const state = workbench(d, sessionId)

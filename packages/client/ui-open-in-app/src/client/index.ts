@@ -110,7 +110,6 @@ export function apply(ctx: ClientContext): void {
       closeWorkbench: (sessionId) => { ctx.layout.closeWorkbench(sessionId) },
       openWorkbench: (sessionId) => { ctx.layout.openWorkbench(sessionId) },
       toggleWorkbenchFullscreen: (sessionId) => { ctx.layout.toggleWorkbenchFullscreen(sessionId) },
-      toggleFiles: (sessionId) => { ctx.layout.toggleWorkbenchFiles(sessionId) },
       toggleBottom: (sessionId) => { ctx.layout.toggleWorkbenchBottom(sessionId) },
     }),
   }, WorkspaceWorkbench))

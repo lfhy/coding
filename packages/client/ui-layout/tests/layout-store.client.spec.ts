@@ -104,7 +104,7 @@ describe('createLayoutStore', () => {
     })
   })
 
-  it('workbench presentation toggles only while open and close preserves the visible bottom and panel preferences', () => {
+  it('workbench presentation toggles only while open and close preserves the visible bottom and size preferences', () => {
     const { store, actions } = createLayoutStore().create()
     actions.toggleWorkbenchFullscreen(SESSION)
     expect(store.getSnapshot().workbench).toEqual({})
@@ -123,43 +123,29 @@ describe('createLayoutStore', () => {
       bottomOpen: true,
       bottomStandalone: true,
       bottomHeight: 320,
-      filesOpen: true,
     })
   })
 
-  it('resident panel toggles only open their own panel and preserve the other one', () => {
+  it('bottom toggle preserves the right workbench and opens only the bottom row when the right side is closed', () => {
     const { store, actions } = createLayoutStore().create()
     actions.openDetails()
 
-    // 文件入口打开右列；底栏入口在右列关闭时只打开底部一行。
-    actions.toggleWorkbenchFiles(SESSION)
-    expect(store.getSnapshot()).toMatchObject({
-      details: 0,
-      workbench: { [SESSION]: { open: true, fullscreen: false, bottomOpen: false, filesOpen: true } },
-    })
-    actions.toggleWorkbenchFiles(SESSION)
-    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: true, filesOpen: false })
-
-    actions.closeWorkbench(SESSION)
-    actions.openDetails()
     actions.toggleWorkbenchBottom(SESSION)
     expect(store.getSnapshot()).toMatchObject({
       details: 0,
-      workbench: { [SESSION]: { open: false, fullscreen: false, bottomOpen: true, bottomStandalone: true, filesOpen: false } },
+      workbench: { [SESSION]: { open: false, fullscreen: false, bottomOpen: true, bottomStandalone: true } },
     })
     actions.toggleWorkbenchBottom(SESSION)
     expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: false, bottomOpen: false, bottomStandalone: false })
 
     actions.toggleWorkbenchBottom(SESSION)
     expect(store.getSnapshot().workbench[SESSION]).toMatchObject({
-      open: false, bottomOpen: true, bottomStandalone: true, filesOpen: false,
+      open: false, bottomOpen: true, bottomStandalone: true,
     })
-    actions.toggleWorkbenchFiles(SESSION)
-    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: true, bottomOpen: true, bottomStandalone: false, filesOpen: true })
-    actions.toggleWorkbenchFiles(SESSION)
-    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: true, bottomOpen: true, filesOpen: false })
+    actions.openWorkbench(SESSION)
+    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: true, bottomOpen: true, bottomStandalone: false })
     actions.toggleWorkbenchBottom(SESSION)
-    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: true, bottomOpen: false, filesOpen: false })
+    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: true, bottomOpen: false })
   })
 
   it('hides the bottom panel idempotently without changing the right workbench or details', () => {
@@ -171,7 +157,7 @@ describe('createLayoutStore', () => {
     actions.toggleWorkbenchBottom(SESSION)
     actions.closeWorkbenchBottom(SESSION)
     expect(store.getSnapshot().workbench[SESSION]).toMatchObject({
-      open: true, bottomOpen: false, bottomStandalone: false, filesOpen: true,
+      open: true, bottomOpen: false, bottomStandalone: false,
     })
     actions.openDetails()
     actions.closeWorkbenchBottom(SESSION)
@@ -188,20 +174,6 @@ describe('createLayoutStore', () => {
     })
   })
 
-  it.each([true, false])('the file toggle reveals a workbench obscured by details with filesOpen=%s', (filesOpen) => {
-    const { store, actions } = createLayoutStore().create()
-    actions.openWorkbench(SESSION)
-    if (!filesOpen) actions.toggleWorkbenchFiles(SESSION)
-    actions.toggleWorkbenchBottom(SESSION)
-    actions.openDetails()
-
-    actions.toggleWorkbenchFiles(SESSION)
-    expect(store.getSnapshot()).toMatchObject({
-      details: 0,
-      workbench: { [SESSION]: { open: true, filesOpen: true, bottomOpen: true } },
-    })
-  })
-
   it('Hero buttons alternate exclusive panel visibility without changing the navigation', () => {
     const { store, actions } = createLayoutStore().create()
     actions.toggleHeroPanel(SESSION, 'bottom')
@@ -209,7 +181,7 @@ describe('createLayoutStore', () => {
     expect(store.getSnapshot().sidebar).toBe(SIDEBAR_DEFAULT)
     actions.toggleHeroPanel(SESSION, 'files')
     expect(store.getSnapshot().workbench[SESSION]).toMatchObject({
-      open: true, filesOpen: true, bottomOpen: false, bottomStandalone: false,
+      open: true, bottomOpen: false, bottomStandalone: false,
     })
     actions.toggleHeroPanel(SESSION, 'bottom')
     expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: false, bottomOpen: true, bottomStandalone: true })
@@ -220,16 +192,15 @@ describe('createLayoutStore', () => {
     expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: false, bottomOpen: false })
   })
 
-  it('closes the right workbench from Hero even when its inner file tree is hidden', () => {
+  it('toggles the entire right workbench from Hero', () => {
     const { store, actions } = createLayoutStore().create()
     actions.toggleHeroPanel(SESSION, 'files')
-    actions.toggleWorkbenchFiles(SESSION)
-    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: true, filesOpen: false })
+    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: true })
 
     actions.toggleHeroPanel(SESSION, 'files')
-    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: false, filesOpen: false })
+    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: false })
     actions.toggleHeroPanel(SESSION, 'files')
-    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: true, filesOpen: false })
+    expect(store.getSnapshot().workbench[SESSION]).toMatchObject({ open: true })
   })
 
   it('closing the right workbench retains the bottom row when it was visible', () => {
@@ -290,17 +261,16 @@ describe('createLayoutStore', () => {
     actions.openWorkbench(SESSION)
     actions.setWorkbench(SESSION, 500)
     actions.toggleWorkbenchFullscreen(SESSION)
-    actions.toggleWorkbenchFiles(SESSION)
     actions.openDetails()
 
     actions.toggleWorkbench(SESSION)
     expect(store.getSnapshot()).toMatchObject({
       details: 0,
-      workbench: { [SESSION]: { open: true, fullscreen: true, width: 500, filesOpen: false } },
+      workbench: { [SESSION]: { open: true, fullscreen: true, width: 500 } },
     })
     actions.toggleWorkbench(SESSION)
     expect(store.getSnapshot().workbench[SESSION]).toMatchObject({
-      open: false, fullscreen: false, width: 500, filesOpen: false,
+      open: false, fullscreen: false, width: 500,
     })
   })
 

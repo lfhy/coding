@@ -1,0 +1,40 @@
+- region "Workbench":
+  - tablist "Workbench tabs":
+    - tab "File manager" [selected]:
+      - img
+      - text: File manager
+    - button "Close File manager":
+      - img
+    - tab "sidebar-preview.txt"
+    - button "Close sidebar-preview.txt":
+      - img
+    - button "Add workbench tab":
+      - img
+  - button "Back to features":
+    - img
+  - button "Show terminal panel"
+  - button "Exit full screen" [pressed]:
+    - img
+  - button "Close workbench":
+    - img
+  - tabpanel "File manager":
+    - complementary "Workspace files":
+      - text: {{cwd}}
+      - button "Refresh file":
+        - img
+      - img
+      - text: Filter files…
+      - searchbox "Filter files…"
+      - tree "Workspace files":
+        - treeitem ".dsh-home":
+          - button ".dsh-home":
+            - img
+            - img
+            - text: .dsh-home
+        - treeitem ".dsh-storages":
+          - button ".dsh-storages":
+            - img
+            - img
+            - text: .dsh-storages
+        - treeitem "sidebar-preview.txt":
+          - button "sidebar-preview.txt"

@@ -19,17 +19,17 @@ kind: "package-reference"
 | `sidebar` | `root` | `collapsed`、实际 `width`、欢迎页操作行是否可见 |
 | `conversation` | `session-maybe` | 空 owner share |
 | `details` | `session` | 空 owner share |
-| `workbench` | `root` | `shown`、`fullscreen`、`bottomOpen`、`filesOpen`；当前 Session 由占用者通过 `useSessions` 读取 |
+| `workbench` | `root` | `shown`、`fullscreen`、`bottomOpen`；当前 Session 由占用者通过 `useSessions` 读取 |
 | `workbench.bottom` | `root` | 当前 Session id 与底栏可见性；占用者按 Session 保留终端 |
 | `shell.overlay` | `root` | 无 owner 数据的有序 list |
 
-`ctx.layout` 提供全局的 `toggleSidebar()`、`openDetails()`、`closeDetails()`，以及接收 `SessionId` 的 `openWorkbench()`、`closeWorkbench()`、`toggleWorkbench()`、`toggleWorkbenchFullscreen()`、`toggleWorkbenchBottom()`、`closeWorkbenchBottom()`、`toggleWorkbenchFiles()` 和欢迎页专用的 `toggleHeroPanel()`。`closeWorkbenchBottom()` 幂等隐藏底栏，不影响右侧工作台和详情栏。`workbench(sessionId)` 返回供会话页头、欢迎页与工作台顶栏面板开关订阅的显隐投影。打开工作台会关闭详情栏；打开详情栏会暂时覆盖工作台，关闭详情栏后恢复该 Session 的状态。
+`ctx.layout` 提供全局的 `toggleSidebar()`、`openDetails()`、`closeDetails()`，以及接收 `SessionId` 的 `openWorkbench()`、`closeWorkbench()`、`toggleWorkbench()`、`toggleWorkbenchFullscreen()`、`toggleWorkbenchBottom()`、`closeWorkbenchBottom()` 和欢迎页专用的 `toggleHeroPanel()`。`closeWorkbenchBottom()` 幂等隐藏底栏，不影响右侧工作台和详情栏。`workbench(sessionId)` 返回供会话页头、欢迎页与工作台顶栏面板开关订阅的显隐投影。打开工作台会关闭详情栏；打开详情栏会暂时覆盖工作台，关闭详情栏后恢复该 Session 的状态。
 
-会话页头的底栏开关在右侧工作台关闭时只显示底栏；两个面板都显示时，关闭底栏不影响右列。页头的右侧边栏开关切换整个工作台，与其中的文件侧栏显隐无关；详情栏暂时遮挡工作台时，点击页头开关会恢复右栏。工作台内的文件侧栏开关只切换文件树，不影响底栏，工作台的初始视图仍是功能菜单。关闭右侧工作台会保留已显示的底栏，并使其独立占据底部；宽度、底栏与文件侧栏偏好不受影响。欢迎页的右侧边栏开关也按整个工作台显隐切换；打开目标面板时隐藏另一面板，底栏独占不占用右列。
+会话页头的底栏开关在右侧工作台关闭时只显示底栏；两个面板都显示时，关闭底栏不影响右列。页头的右侧边栏开关切换整个工作台；详情栏暂时遮挡工作台时，点击页头开关会恢复右栏。工作台的初始视图仍是功能菜单。关闭右侧工作台会保留已显示的底栏，并使其独立占据底部；宽度与底栏偏好不受影响。欢迎页的右侧边栏开关也按整个工作台显隐切换；打开目标面板时隐藏另一面板，底栏独占不占用右列。
 
 空白会话同样拥有按 Session 隔离的工作台状态。欢迎页打开底栏后发送首条消息，不会重建布局状态；侧边栏的全局收起状态也不受会话阶段影响。
 
-布局把欢迎页操作行是否可见交给侧边栏：无会话或空白会话且对话区未被全屏工作台遮住时可见，全屏工作台接管对话区时不可见。会话页头和欢迎页的面板开关分别由 `conversation.session.header.utilities` 与 `conversation.hero.actions` 的占用者提供；工作台顶栏始终可切换内部文件侧栏，全屏工作台使对话区进入 `inert` 时也可从顶栏切换终端底栏。
+布局把欢迎页操作行是否可见交给侧边栏：无会话或空白会话且对话区未被全屏工作台遮住时可见，全屏工作台接管对话区时不可见。会话页头和欢迎页的面板开关分别由 `conversation.session.header.utilities` 与 `conversation.hero.actions` 的占用者提供；全屏工作台使对话区进入 `inert` 时仍可从工作台顶栏切换终端底栏。
 
 ## 布局行为
 
@@ -41,7 +41,7 @@ kind: "package-reference"
 
 桌面壳注入窗口拖拽样式时，尺寸分隔条仍保持 `no-drag`，指针拖拽只调整面板尺寸；浏览器未注入时没有窗口拖拽区域。
 
-详情栏沿用既有让步链：先缩到下限，再在对话区空间不足时自动隐藏。切换到另一个非空 Session 会关闭详情栏，并按目标 Session 自己的状态决定是否显示工作台；切回原 Session 会恢复其打开状态、最大化、宽度、底栏开关、文件侧栏开关和底栏高度。布局只负责 1024px 的主内容接管；工作台占用者在 768px 参考宽度收窄文件树，在 375px 手机宽度把文件树改成覆盖预览的单面板呈现。
+详情栏沿用既有让步链：先缩到下限，再在对话区空间不足时自动隐藏。切换到另一个非空 Session 会关闭详情栏，并按目标 Session 自己的状态决定是否显示工作台；切回原 Session 会恢复其打开状态、最大化、宽度、底栏开关和底栏高度。布局只负责 1024px 的主内容接管；工作台占用者在 768px 参考宽度收窄文件树，容器宽度不超过 640px 时让文件预览独占内容区。
 
 ## 主题呈现
 

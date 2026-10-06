@@ -19,14 +19,12 @@ export interface WorkbenchLayoutSnapshot {
   open: boolean
   fullscreen: boolean
   bottomOpen: boolean
-  filesOpen: boolean
 }
 
 const CLOSED_WORKBENCH: WorkbenchLayoutSnapshot = {
   open: false,
   fullscreen: false,
   bottomOpen: false,
-  filesOpen: false,
 }
 
 /** `ctx.layout` 的公开动作。 */
@@ -51,8 +49,6 @@ export interface ILayout {
   toggleWorkbenchBottom(sessionId: SessionId): void
   /** 隐藏指定 Session 的终端底栏；已隐藏时不改变工作台或详情栏。 */
   closeWorkbenchBottom(sessionId: SessionId): void
-  /** 切换指定 Session 的工作台文件侧栏；工作台未打开时先打开工作台再显示该面板。 */
-  toggleWorkbenchFiles(sessionId: SessionId): void
   /** 欢迎页两面板入口：打开其中一个时隐藏另一面板。 */
   toggleHeroPanel(sessionId: SessionId, panel: 'bottom' | 'files'): void
 }
@@ -94,8 +90,7 @@ export class LayoutController implements ILayout {
     const current = this.#views.getSnapshot()[sessionId]
     if (current?.open === next.open
       && current.fullscreen === next.fullscreen
-      && current.bottomOpen === next.bottomOpen
-      && current.filesOpen === next.filesOpen) return
+      && current.bottomOpen === next.bottomOpen) return
     this.#views.set({ ...this.#views.getSnapshot(), [sessionId]: next })
   }
 
@@ -165,15 +160,10 @@ export class LayoutController implements ILayout {
     this.#require().closeWorkbenchBottom(sessionId)
   }
 
-  /** 切换指定 Session 的工作台文件侧栏；工作台未打开时先打开工作台再显示该面板。 */
-  toggleWorkbenchFiles(sessionId: SessionId): void {
-    this.#require().toggleWorkbenchFiles(sessionId)
-  }
-
   /**
    * 欢迎页专用互斥面板入口。
    * @param sessionId - 当前会话。
-   * @param panel - 要切换的底栏或文件侧栏。
+   * @param panel - 要切换的底栏或 `files` 工作台右栏。
    * @returns 无返回值。
    */
   toggleHeroPanel(sessionId: SessionId, panel: 'bottom' | 'files'): void {

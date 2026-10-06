@@ -162,14 +162,14 @@ function rightWorkbench() {
   const list = createSnapshotStore<Pick<SessionListState, 'ids' | 'current'>>({ ids: RETAINED_IDS, current: SESSION })
   const bottomToggle = vi.fn()
   const workbenchProps = {
-    shown: true, fullscreen: false, bottomOpen: false, filesOpen: true, t,
+    shown: true, fullscreen: false, bottomOpen: false, t,
     useStore: bindSnapshotSelector(instance.store), actions: instance.actions,
     useSessions: bindSnapshotSelector(list),
     terminalUrl: retainedProps().terminalUrl,
     listFiles: vi.fn(async () => ({ path: '/w', entries: [], truncated: false })),
     readFile: vi.fn(async () => ({ path: '/w/a.txt', content: { kind: 'text', text: 'file output' } })),
     openWorkbench: vi.fn(), closeWorkbench: vi.fn(), toggleWorkbenchFullscreen: vi.fn(),
-    toggleFiles: vi.fn(), toggleBottom: bottomToggle,
+    toggleBottom: bottomToggle,
     renderSlot: vi.fn((name: string, owner: {
       shown: boolean
       tabId?: string

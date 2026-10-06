@@ -185,7 +185,7 @@
 - **入口**：`packages/client/ui-open-in-app/src/client/index.ts`（注入 `slots`、`locale`、`layout`、`sessions`、`workspaces`；通过 `ctx.slots.inject(...)` 在各座位注册）；node 半是空 apply。
 - **接线**：`packages/bundle/web-app/cordis.patch.yml` 的 `ui-open-in-app` 行与 host 行 `open-in-app` 并排挂载；共享常量经 `@deepseek-ai/dsh-host-open-in-app/shared`。
 - **关键文件**：`packages/client/ui-open-in-app/src/client/index.ts`、`packages/client/ui-open-in-app/src/client/controller.ts`、`packages/client/ui-open-in-app/src/client/store.ts`、`packages/client/ui-open-in-app/src/client/WorkspaceWorkbench.tsx`、`packages/client/ui-open-in-app/src/client/TerminalPanel.tsx`、`packages/client/ui-open-in-app/src/client/RetainedTerminalPanel.tsx`。
-- **改这里要同步**：路由或帧协议改动同步 `packages/host/open-in-app`；面板显隐语义改动同步 `packages/client/ui-layout`（owner props `filesOpen`/`bottomOpen`），页头与欢迎页入口变动核对 `packages/client/ui-conversation` 的座位。
+- **改这里要同步**：路由或帧协议改动同步 `packages/host/open-in-app`；工作台或底栏显隐语义改动同步 `packages/client/ui-layout`（owner prop `bottomOpen`），页头与欢迎页入口变动核对 `packages/client/ui-conversation` 的座位。
 - **不变量**：文件树只回传当前 Session id 与 Host 返回的 provider segment 数组，绝不提交工作区根或自行拼接 Windows/POSIX/UNC 路径；菜单终端新建右侧标签，底栏入口显示独立底栏，两处标签分别独占 WebSocket 与 PTY；切换标签或 Session、隐藏底栏或工作台均不释放已激活终端，关闭对应标签释放该终端。
 - **测试**：`pnpm exec vitest run packages/client/ui-open-in-app/tests`
 

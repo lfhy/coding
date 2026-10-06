@@ -204,7 +204,6 @@ describe('AppFrame', () => {
       shown: false,
       fullscreen: false,
       bottomOpen: false,
-      filesOpen: true,
     })
     expect(slotCalls.find(c => c.key === 'workbench.bottom')!.props).toEqual({ sessionId: 's-test', shown: false })
   })
@@ -355,9 +354,9 @@ describe('AppFrame — fixed workbench', () => {
     expect(frame.hasAttribute('data-workbench-shown')).toBe(true)
     expect(getByTestId('details-content').parentElement?.hasAttribute('inert')).toBe(true)
     expect(getByTestId('workbench-content').parentElement?.hasAttribute('inert')).toBe(false)
-    expect(ownerFor('workbench')).toMatchObject({ shown: true, fullscreen: false, bottomOpen: false, filesOpen: true })
+    expect(ownerFor('workbench')).toEqual({ shown: true, fullscreen: false, bottomOpen: false })
     expect(publishWorkbench).toHaveBeenLastCalledWith('s-test', {
-      open: true, fullscreen: false, bottomOpen: false, filesOpen: true,
+      open: true, fullscreen: false, bottomOpen: false,
     })
   })
 
@@ -412,21 +411,21 @@ describe('AppFrame — fixed workbench', () => {
     expect(ownerFor('conversation')).toEqual({ sidebarCollapsed: true })
   })
 
-  it('persistent panel toggles open the workbench first and project the files preference', () => {
+  it('opens the right workbench from the Hero files entry and publishes its visibility', () => {
     const { frame, instance, ownerFor, publishWorkbench } = mountFrame()
 
-    act(() => { instance.actions.toggleWorkbenchFiles('s-test' as SessionId) })
+    act(() => { instance.actions.toggleHeroPanel('s-test' as SessionId, 'files') })
     expect(tracks(frame)).toEqual([280, 1020])
     expect(instance.getSnapshot().details).toBe(0)
-    expect(ownerFor('workbench')).toMatchObject({ shown: true, bottomOpen: false, filesOpen: true })
+    expect(ownerFor('workbench')).toEqual({ shown: true, fullscreen: false, bottomOpen: false })
     expect(publishWorkbench).toHaveBeenLastCalledWith('s-test', {
-      open: true, fullscreen: false, bottomOpen: false, filesOpen: true,
+      open: true, fullscreen: false, bottomOpen: false,
     })
 
-    act(() => { instance.actions.toggleWorkbenchFiles('s-test' as SessionId) })
-    expect(ownerFor('workbench')).toMatchObject({ shown: true, filesOpen: false })
+    act(() => { instance.actions.toggleHeroPanel('s-test' as SessionId, 'files') })
+    expect(ownerFor('workbench')).toEqual({ shown: false, fullscreen: false, bottomOpen: false })
     expect(publishWorkbench).toHaveBeenLastCalledWith('s-test', {
-      open: true, fullscreen: false, bottomOpen: false, filesOpen: false,
+      open: false, fullscreen: false, bottomOpen: false,
     })
   })
 
@@ -441,7 +440,7 @@ describe('AppFrame — fixed workbench', () => {
     expect(getByTestId('center-content').parentElement?.hasAttribute('inert')).toBe(false)
     expect(getByTestId('workbench-content').parentElement?.hasAttribute('inert')).toBe(true)
     expect(publishWorkbench).toHaveBeenLastCalledWith('s-test', {
-      open: false, fullscreen: false, bottomOpen: true, filesOpen: false,
+      open: false, fullscreen: false, bottomOpen: true,
     })
     act(() => { instance.actions.toggleWorkbenchBottom('s-test' as SessionId) })
     expect(tracks(frame)).toEqual([280, 0])
@@ -477,7 +476,7 @@ describe('AppFrame — fixed workbench', () => {
     expect(rows(frame)).toBe(260)
     expect(ownerFor('workbench.bottom')).toEqual({ sessionId: 's-test', shown: true })
     expect(publishWorkbench).toHaveBeenLastCalledWith('s-test', {
-      open: false, fullscreen: false, bottomOpen: true, filesOpen: false,
+      open: false, fullscreen: false, bottomOpen: true,
     })
   })
 

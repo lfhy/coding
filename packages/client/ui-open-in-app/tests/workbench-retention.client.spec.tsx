@@ -59,6 +59,11 @@ class Socket extends EventTarget {
   output(data: string): void {
     this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ type: 'output', data }) }))
   }
+
+  finish(): void {
+    this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ type: 'exit', exitCode: 0, signal: null }) }))
+    this.dispatchEvent(new Event('close'))
+  }
 }
 
 let runtime: SlotTestRuntime | undefined
@@ -89,9 +94,9 @@ async function bench() {
   runtime.slots.installLocale(locale)
   runtime.provide('layout', {
     openWorkbench: vi.fn(), closeWorkbench: vi.fn(),
-    toggleWorkbenchFullscreen: vi.fn(), toggleWorkbenchFiles: vi.fn(),
+    toggleWorkbenchFullscreen: vi.fn(),
     toggleWorkbenchBottom: vi.fn(), closeWorkbenchBottom: vi.fn(),
-    workbench: () => createSnapshotStore({ open: true, fullscreen: false, bottomOpen: true, filesOpen: true }),
+    workbench: () => createSnapshotStore({ open: true, fullscreen: false, bottomOpen: true }),
   })
   const first = await runtime.sessions.add({ id: 'workbench-retained-first' })
   const second = await runtime.sessions.add({ id: 'workbench-retained-second' }, { current: false })
@@ -101,13 +106,29 @@ async function bench() {
   })
   const feature = await runtime.mount({ inject: [...inject], apply })
   const workbench = runtime.renderSlot('workbench', {
-    shown: true, fullscreen: false, bottomOpen: true, filesOpen: true,
+    shown: true, fullscreen: false, bottomOpen: true,
   })
   const bottom = runtime.renderSlot('workbench.bottom', { sessionId: first, shown: true })
   return { runtime, feature, workbench, bottom, first, second }
 }
 
 describe('root workbench terminal lifetime', () => {
+  it('removes a completed hidden terminal without changing the selected file manager', async () => {
+    const b = await bench()
+    fireEvent.click(b.workbench.view.getByRole('button', { name: '终端' }))
+    const terminalTab = b.workbench.view.getByRole('tab', { name: 'coding 1' })
+    const right = Socket.instances[1]
+    if (!right) throw new Error('right terminal did not connect')
+    fireEvent.click(b.workbench.view.getByRole('button', { name: '返回功能菜单' }))
+    fireEvent.click(b.workbench.view.getByRole('button', { name: '文件' }))
+    const manager = b.workbench.view.getByRole('tab', { name: '文件管理器' })
+    expect(manager.getAttribute('aria-selected')).toBe('true')
+    act(() => { right.finish() })
+    expect(b.workbench.view.queryByRole('tab', { name: 'coding 1' })).toBeNull()
+    expect(terminalTab.isConnected).toBe(false)
+    expect(manager.getAttribute('aria-selected')).toBe('true')
+  })
+
   it('restarts an interrupted directory read when its Session is selected again', async () => {
     const requests: Array<{ signal: AbortSignal; resolve: (response: Response) => void }> = []
     const fetcher = vi.fn((_input: string | URL, options?: RequestInit) => new Promise<Response>((resolve) => {

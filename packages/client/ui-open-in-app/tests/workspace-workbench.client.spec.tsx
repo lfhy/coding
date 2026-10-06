@@ -35,7 +35,6 @@ function bench(over: {
   shown?: boolean
   fullscreen?: boolean
   bottomOpen?: boolean
-  filesOpen?: boolean
   listFiles?: (segments: readonly string[], signal?: AbortSignal) => Promise<WorkspaceFilesPayload>
   readFile?: (segments: readonly string[], signal?: AbortSignal) => Promise<WorkspaceFilePayload>
   initialView?: 'menu' | 'files' | 'browser'
@@ -51,7 +50,6 @@ function bench(over: {
   if (over.initialView !== undefined) instance.actions.setView(over.initialView)
   const closeWorkbench = vi.fn()
   const toggleWorkbenchFullscreen = vi.fn()
-  const toggleFiles = vi.fn()
   const toggleBottom = vi.fn()
   const openWorkbench = vi.fn()
   const renderSlot = vi.fn((name: string) => <div data-testid={name === 'workbench.browser'
@@ -65,11 +63,9 @@ function bench(over: {
     shown: over.shown ?? true,
     fullscreen: over.fullscreen ?? false,
     bottomOpen: over.bottomOpen ?? false,
-    filesOpen: over.filesOpen ?? true,
     closeWorkbench,
     openWorkbench,
     toggleWorkbenchFullscreen,
-    toggleFiles,
     toggleBottom,
     useStore: bindSnapshotSelector(rootInstance.store),
     actions: rootInstance.actions,
@@ -82,7 +78,7 @@ function bench(over: {
     t,
   } as unknown as WorkspaceWorkbenchProps
   return { instance, props, closeWorkbench, openWorkbench, renderSlot,
-    toggleWorkbenchFullscreen, toggleFiles, toggleBottom, listFiles, readFile }
+    toggleWorkbenchFullscreen, toggleBottom, listFiles, readFile }
 }
 
 describe('workspace workbench helpers', () => {
@@ -129,19 +125,21 @@ describe('WorkspaceWorkbench shell', () => {
     })
   })
 
-  it('keeps both panel switches in the top bar when fullscreen hides the conversation header', () => {
-    const b = bench({ fullscreen: true, bottomOpen: true, filesOpen: true, initialView: 'files' })
-    render(<WorkspaceWorkbench {...b.props} />)
+  it('keeps the terminal panel control in the top bar when fullscreen hides the conversation header', () => {
+    const b = bench({ fullscreen: true, bottomOpen: true, initialView: 'files' })
+    const mounted = render(<WorkspaceWorkbench {...b.props} />)
     const fullscreen = screen.getByRole('button', { name: zh['workbench.fullscreen.exit'] })
     expect(fullscreen.getAttribute('aria-pressed')).toBe('true')
     const bottom = screen.getByRole('button', { name: zh['workbench.bottom.hide'] })
-    const files = screen.getByRole('button', { name: zh['workbench.files.hide'] })
     expect(bottom.getAttribute('aria-pressed')).toBe('true')
-    expect(files.getAttribute('aria-pressed')).toBe('true')
+    expect(screen.queryByRole('button', { name: /文件侧栏/ })).toBeNull()
     fireEvent.click(bottom)
-    fireEvent.click(files)
     expect(b.toggleBottom).toHaveBeenCalledOnce()
-    expect(b.toggleFiles).toHaveBeenCalledOnce()
+    mounted.rerender(<WorkspaceWorkbench {...b.props} bottomOpen={false} />)
+    const showBottom = screen.getByRole('button', { name: zh['workbench.bottom.show'] })
+    expect(showBottom.getAttribute('aria-pressed')).toBe('false')
+    fireEvent.click(showBottom)
+    expect(b.toggleBottom).toHaveBeenCalledTimes(2)
     fireEvent.click(fullscreen)
     fireEvent.click(screen.getByRole('button', { name: zh['workbench.close'] }))
     expect(b.toggleWorkbenchFullscreen).toHaveBeenCalledOnce()
@@ -151,7 +149,7 @@ describe('WorkspaceWorkbench shell', () => {
     expect(topbar.hasAttribute('data-window-drag-region')).toBe(true)
     expect(within(topbar).getAllByRole('button')
       .filter(button => !button.classList.contains('tabSelect') && !button.classList.contains('tabClose')))
-      .toHaveLength(6)
+      .toHaveLength(5)
   })
 
   it('switches browser and files without unmounting the browser child or clearing file tabs', async () => {
@@ -216,6 +214,7 @@ describe('WorkspaceWorkbench shell', () => {
       markTabRequestHandled: (request: number) => void
       focusBrowserTab: (tabId: string) => void
       focusPendingBrowserTab: (tabId: string) => void
+      syncBrowserTabs: (tabs: readonly { id: string; name: string }[], activeId: string) => void
     }] } }).mock.lastCall?.[1]
     if (!owner) throw new Error('browser slot owner was not registered')
     expect(owner.newTabRequest).toBe(1)
@@ -223,8 +222,12 @@ describe('WorkspaceWorkbench shell', () => {
     expect(b.renderSlot).toHaveBeenLastCalledWith('workbench.browser', expect.objectContaining({
       newTabRequest: 1, handledTabRequest: 1,
     }))
-    act(() => { b.instance.actions.syncBrowserTabs([{ id: 'new-page', name: 'New page' }], 'new-page') })
+    act(() => { owner.focusBrowserTab('new-page') })
+    act(() => { owner.focusPendingBrowserTab('unrelated-page') })
+    act(() => { owner.syncBrowserTabs([{ id: 'new-page', name: 'New page' }], 'new-page') })
     const tab = screen.getByRole('tab', { name: 'New page' })
+    expect(document.activeElement).toBe(tab)
+    screen.getByRole('button', { name: zh['workbench.fullscreen.enter'] }).focus()
     ;(tab as HTMLButtonElement).disabled = true
     act(() => { owner.focusBrowserTab('new-page') })
     expect(document.activeElement).not.toBe(tab)
@@ -236,6 +239,18 @@ describe('WorkspaceWorkbench shell', () => {
     expect(document.activeElement).toBe(menu)
     act(() => { owner.focusBrowserTab('new-page') })
     expect(document.activeElement).toBe(menu)
+  })
+
+  it('tolerates a browser focus reply arriving after the workbench is unmounted', () => {
+    const b = bench()
+    const mounted = render(<WorkspaceWorkbench {...b.props} />)
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.browser'] }))
+    const owner = (b.renderSlot as unknown as { mock: { lastCall?: [string, {
+      focusBrowserTab: (tabId: string) => void
+    }] } }).mock.lastCall?.[1]
+    if (!owner) throw new Error('browser slot owner was not registered')
+    mounted.unmount()
+    expect(() => { owner.focusBrowserTab('late-page') }).not.toThrow()
   })
 
   it('keeps one browser content instance while reassigning the active page panel relationship', () => {
@@ -256,32 +271,79 @@ describe('WorkspaceWorkbench shell', () => {
     expect(screen.getByTestId('browser-contribution')).toBe(browser)
   })
 
-  it('并排模式保留工作台内部文件树开关，但不重复终端底栏开关', () => {
-    const b = bench({ fullscreen: false, bottomOpen: true, filesOpen: true, initialView: 'files' })
-    const mounted = render(<WorkspaceWorkbench {...b.props} />)
+  it('only reveals a browser page when its interaction is still current', () => {
+    const b = bench()
+    b.instance.actions.syncBrowserTabs([{ id: 'page', name: 'Page' }], 'page')
+    render(<WorkspaceWorkbench {...b.props} />)
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.browser'] }))
+    const owner = (b.renderSlot as unknown as { mock: { lastCall?: [string, {
+      interactionEpoch: number
+      requestAutoReveal: (epoch: number) => boolean
+      autoRevealBrowser: (tabId: string, epoch: number) => void
+    }] } }).mock.lastCall?.[1]
+    if (!owner) throw new Error('browser slot owner was not registered')
+    expect(owner.requestAutoReveal(owner.interactionEpoch + 1)).toBe(false)
+    expect(b.openWorkbench).toHaveBeenCalledOnce()
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.back'] }))
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.files'] }))
+    const current = (b.renderSlot as unknown as { mock: { lastCall?: [string, typeof owner] } }).mock.lastCall?.[1]
+    if (!current) throw new Error('browser slot owner was not registered')
+    expect(current.requestAutoReveal(owner.interactionEpoch)).toBe(false)
+    expect(current.requestAutoReveal(current.interactionEpoch)).toBe(true)
+    act(() => { current.autoRevealBrowser('page', current.interactionEpoch) })
+    expect(b.instance.getSnapshot()).toMatchObject({ view: 'browser', activeId: 'browser:page', browserAutoRevealed: true })
+    expect(b.openWorkbench).toHaveBeenCalledTimes(2)
+    act(() => { b.instance.actions.recordInteraction() })
+    const afterInteraction = (b.renderSlot as unknown as { mock: { lastCall?: [string, typeof owner] } }).mock.lastCall?.[1]
+    if (!afterInteraction) throw new Error('browser slot owner was not registered')
+    expect(afterInteraction.requestAutoReveal(current.interactionEpoch)).toBe(false)
+    expect(b.openWorkbench).toHaveBeenCalledTimes(2)
+  })
+
+  it('navigates workbench tabs by arrow, Home and End without changing the feature menu on other keys', () => {
+    const b = bench()
+    render(<WorkspaceWorkbench {...b.props} />)
+    const tabs = screen.getByRole('tablist', { name: zh['tabs.label'] })
+    fireEvent.keyDown(tabs, { key: 'ArrowLeft' })
+    expect(b.instance.getSnapshot().view).toBe('menu')
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.files'] }))
+    act(() => { b.instance.actions.openFile({ name: 'note.txt', segments: ['note.txt'] }) })
+    const manager = screen.getByRole('tab', { name: zh['files.tab'] })
+    const preview = screen.getByRole('tab', { name: 'note.txt' })
+    fireEvent.keyDown(preview, { key: 'ArrowLeft' })
+    expect(manager.getAttribute('aria-selected')).toBe('true')
+    expect(document.activeElement).toBe(manager)
+    fireEvent.keyDown(manager, { key: 'ArrowRight' })
+    expect(preview.getAttribute('aria-selected')).toBe('true')
+    fireEvent.keyDown(preview, { key: 'Home' })
+    expect(manager.getAttribute('aria-selected')).toBe('true')
+    fireEvent.keyDown(manager, { key: 'End' })
+    expect(preview.getAttribute('aria-selected')).toBe('true')
+    fireEvent.keyDown(preview, { key: 'Escape' })
+    expect(preview.getAttribute('aria-selected')).toBe('true')
+    fireEvent.keyDown(screen.getByRole('button', { name: zh['tabs.add'] }), { key: 'ArrowLeft' })
+    expect(preview.getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('并排模式不显示遗留文件侧栏开关，也不重复终端底栏开关', () => {
+    const b = bench({ fullscreen: false, bottomOpen: true, initialView: 'files' })
+    render(<WorkspaceWorkbench {...b.props} />)
     const topbar = screen.getByRole('region', { name: zh['workbench.label'] })
       .querySelector('header') as HTMLElement
-    const hideFiles = within(topbar).getByRole('button', { name: zh['workbench.files.hide'] })
-    expect(hideFiles.getAttribute('aria-pressed')).toBe('true')
+    expect(within(topbar).queryByRole('button', { name: /文件侧栏/ })).toBeNull()
     expect(within(topbar).queryByRole('button', { name: zh['workbench.bottom.hide'] })).toBeNull()
-    fireEvent.click(hideFiles)
-    expect(b.toggleFiles).toHaveBeenCalledOnce()
+    expect(screen.getByRole('complementary', { name: zh['files.label'] }).parentElement?.hidden).toBe(false)
     expect(b.toggleBottom).not.toHaveBeenCalled()
-
-    mounted.rerender(<WorkspaceWorkbench {...b.props} filesOpen={false} />)
-    const showFiles = within(topbar).getByRole('button', { name: zh['workbench.files.show'] })
-    expect(showFiles.getAttribute('aria-pressed')).toBe('false')
-    fireEvent.click(showFiles)
-    expect(b.toggleFiles).toHaveBeenCalledTimes(2)
   })
 
   it('starts on a keyboard-operable function menu and only enters wired features', async () => {
-    const b = bench({ filesOpen: false })
+    const b = bench()
     render(<WorkspaceWorkbench {...b.props} />)
     const menu = screen.getByRole('navigation', { name: zh['workbench.menu.label'] })
     const topbar = screen.getByRole('region', { name: zh['workbench.label'] })
       .querySelector('header') as HTMLElement
-    expect(within(topbar).getAllByRole('button')).toHaveLength(4)
+    expect(within(topbar).getAllByRole('button')).toHaveLength(3)
+    expect(within(topbar).queryByRole('button', { name: /文件侧栏/ })).toBeNull()
     expect(within(topbar).getByRole('button', { name: zh['tabs.add'] })).toBeDefined()
     expect(within(topbar).queryByRole('button', { name: zh['workbench.menu.back'] })).toBeNull()
     expect(b.instance.store.getSnapshot().view).toBe('menu')
@@ -301,8 +363,8 @@ describe('WorkspaceWorkbench shell', () => {
     expect(screen.getByTestId('right-terminal').hasAttribute('hidden')).toBe(false)
     fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.back'] }))
     fireEvent.click(items[3] as HTMLButtonElement)
-    expect(b.toggleFiles).toHaveBeenCalledOnce()
     expect(b.instance.store.getSnapshot().view).toBe('files')
+    expect(screen.getByRole('tab', { name: zh['files.tab'] }).getAttribute('aria-selected')).toBe('true')
     await waitFor(() => { expect(b.listFiles).toHaveBeenCalledOnce() })
     expect(document.activeElement).toBe(screen.getByRole('button', { name: zh['workbench.menu.back'] }))
     fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.back'] }))
@@ -357,18 +419,28 @@ describe('WorkspaceWorkbench shell', () => {
     expect(document.activeElement).toBe(preview)
   })
 
-  it('keeps the manager tree usable but gives narrow file previews the full workbench width', async () => {
+  it('窄屏预览独占内容，返回文件管理器仍保留目录筛选与展开', async () => {
     let resize: ResizeObserverCallback | undefined
     vi.stubGlobal('ResizeObserver', class {
       constructor(callback: ResizeObserverCallback) { resize = callback }
       observe(): void {}
       disconnect(): void {}
     })
-    const b = bench({ listFiles: async () => listing('/workspace', [
-      { name: 'note.txt', type: 'file', segments: ['note.txt'] },
-    ]) })
-    render(<WorkspaceWorkbench {...b.props} />)
+    const b = bench({ listFiles: async segments => segments.length === 0
+      ? listing('/workspace', [
+        { name: 'src', type: 'directory', segments: ['src'] },
+        { name: 'note.txt', type: 'file', segments: ['note.txt'] },
+      ])
+      : listing('/workspace/src', [
+        { name: 'nested.txt', type: 'file', segments: ['src', 'nested.txt'] },
+      ]) })
+    const mounted = render(<WorkspaceWorkbench {...b.props} />)
     fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.files'] }))
+    act(() => { resize?.([], {} as ResizeObserver) })
+    act(() => {
+      resize?.([{ contentRect: { width: 0 } } as ResizeObserverEntry], {} as ResizeObserver)
+    })
+    expect(screen.getByRole('region', { name: zh['workbench.label'] }).hasAttribute('data-narrow')).toBe(false)
     act(() => {
       resize?.([{ contentRect: { width: 440 } } as ResizeObserverEntry], {} as ResizeObserver)
     })
@@ -376,18 +448,32 @@ describe('WorkspaceWorkbench shell', () => {
     expect(region.getAttribute('data-narrow')).toBe('true')
     const tree = screen.getByRole('complementary', { name: zh['files.label'] }).parentElement as HTMLElement
     expect(tree.hidden).toBe(false)
-    expect(screen.getByRole('tab', { name: zh['files.tab'] }).getAttribute('aria-selected')).toBe('true')
+    const manager = screen.getByRole('tab', { name: zh['files.tab'] })
+    expect(manager.getAttribute('aria-selected')).toBe('true')
+    const managerId = manager.getAttribute('aria-controls')
+    expect(managerId).not.toBeNull()
+    const managerPanels = () => mounted.container.querySelectorAll(`[id="${managerId}"][role="tabpanel"]`)
+    expect(managerPanels()).toHaveLength(1)
+    expect(managerPanels()[0]?.hasAttribute('hidden')).toBe(false)
+    expect(managerPanels()[0]?.querySelector('[role="tree"]')).not.toBeNull()
+    fireEvent.click(await screen.findByRole('button', { name: 'src' }))
+    await screen.findByRole('button', { name: 'nested.txt' })
+    const filter = screen.getByRole('searchbox', { name: zh['files.filter'] })
+    fireEvent.change(filter, { target: { value: 'note' } })
     fireEvent.click(await screen.findByRole('button', { name: 'note.txt' }))
     expect(screen.getByRole('tab', { name: 'note.txt' }).getAttribute('aria-selected')).toBe('true')
     expect(tree.hidden).toBe(true)
-    expect(b.toggleFiles).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: zh['workbench.files.show'] }))
+    expect(managerPanels()).toHaveLength(1)
+    expect(managerPanels()[0]?.hasAttribute('hidden')).toBe(true)
+    expect(screen.queryByRole('button', { name: /文件侧栏/ })).toBeNull()
+    expect(b.instance.getSnapshot().filesExpanded).toContain(JSON.stringify(['src']))
+    fireEvent.click(manager)
     expect(tree.hidden).toBe(false)
-    expect(b.toggleFiles).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: zh['workbench.files.hide'] }))
-    expect(tree.hidden).toBe(true)
-    fireEvent.click(screen.getByRole('tab', { name: zh['files.tab'] }))
-    expect(tree.hidden).toBe(false)
+    expect(managerPanels()).toHaveLength(1)
+    expect(managerPanels()[0]?.hasAttribute('hidden')).toBe(false)
+    expect(filter).toHaveProperty('value', 'note')
+    fireEvent.change(filter, { target: { value: '' } })
+    expect(screen.getByRole('button', { name: 'nested.txt' })).toBeDefined()
     fireEvent.click(screen.getByRole('tab', { name: 'note.txt' }))
     expect(tree.hidden).toBe(true)
     act(() => {
@@ -395,18 +481,21 @@ describe('WorkspaceWorkbench shell', () => {
     })
     expect(region.hasAttribute('data-narrow')).toBe(false)
     expect(tree.hidden).toBe(false)
+    expect(managerPanels()).toHaveLength(1)
+    expect(managerPanels()[0]?.hasAttribute('hidden')).toBe(true)
+    expect(screen.queryByRole('button', { name: /文件侧栏/ })).toBeNull()
   })
 
-  it('hides the file sidebar when the owner closes it and keeps its state across visibility changes', async () => {
-    const b = bench({ filesOpen: false, initialView: 'files' })
+  it('工作台隐藏后保留目录与筛选状态，恢复时不重复读取', async () => {
+    const b = bench({ initialView: 'files' })
     const mounted = render(<WorkspaceWorkbench {...b.props} />)
     await screen.findByText(zh['files.empty'])
-    expect(mounted.container.querySelector('aside')?.hidden).toBe(true)
-    mounted.rerender(<WorkspaceWorkbench {...b.props} shown={false} filesOpen={false} />)
-    b.instance.actions.setFilesQuery('kept')
-    expect(mounted.container.querySelector('aside')?.hidden).toBe(true)
+    expect(mounted.container.querySelector('aside')?.hidden).toBe(false)
+    act(() => { b.instance.actions.setFilesQuery('kept') })
+    mounted.rerender(<WorkspaceWorkbench {...b.props} shown={false} />)
+    expect(mounted.container.querySelector('section')?.hidden).toBe(true)
     expect(b.instance.getSnapshot()).toMatchObject({ filesQuery: 'kept' })
-    mounted.rerender(<WorkspaceWorkbench {...b.props} shown filesOpen />)
+    mounted.rerender(<WorkspaceWorkbench {...b.props} shown />)
     await waitFor(() => { expect(mounted.container.querySelector('aside')?.hidden).toBe(false) })
 
     expect(b.listFiles).toHaveBeenCalledExactlyOnceWith([], expect.any(AbortSignal))

@@ -46,15 +46,14 @@ async function bench() {
   const toggleWorkbenchFullscreen = vi.fn()
   const toggleWorkbenchBottom = vi.fn()
   const closeWorkbenchBottom = vi.fn()
-  const toggleWorkbenchFiles = vi.fn()
   const toggleHeroPanel = vi.fn()
   const workbench = createSnapshotStore({
-    open: false, fullscreen: false, bottomOpen: false, filesOpen: true,
+    open: false, fullscreen: false, bottomOpen: false,
   })
   ctx.provide('layout', {
     toggleSidebar: vi.fn(), openDetails: vi.fn(), closeDetails: vi.fn(),
     openWorkbench, closeWorkbench, toggleWorkbench,
-    toggleWorkbenchFullscreen, toggleWorkbenchBottom, closeWorkbenchBottom, toggleWorkbenchFiles, toggleHeroPanel,
+    toggleWorkbenchFullscreen, toggleWorkbenchBottom, closeWorkbenchBottom, toggleHeroPanel,
     workbench: vi.fn(() => workbench),
   })
   // 欢迎页入口从当前会话列表定位可操作的 Session。
@@ -77,7 +76,7 @@ async function bench() {
   await fiber.await()
   return {
     ctx, fiber, openWorkbench, closeWorkbench, toggleWorkbench, toggleWorkbenchFullscreen,
-    toggleWorkbenchBottom, closeWorkbenchBottom, toggleWorkbenchFiles, toggleHeroPanel,
+    toggleWorkbenchBottom, closeWorkbenchBottom, toggleHeroPanel,
     sessionList: list, open, connectHome, connectWorkspace, workspaceList,
   }
 }
@@ -153,7 +152,6 @@ describe('open-in-app browser half', () => {
     vi.stubGlobal('location', { origin: 'http://dsh.example' })
     const {
       ctx, fiber, openWorkbench, closeWorkbench, toggleWorkbenchFullscreen, toggleWorkbenchBottom, closeWorkbenchBottom,
-      toggleWorkbenchFiles,
     } = await bench()
     const action = ctx.slots.entries('conversation.session.header.utilities')[0]
     const actionFace = (action?.inject as unknown as (id: SessionId) => OpenInAppActionInjected)(SESSION)
@@ -179,12 +177,10 @@ describe('open-in-app browser half', () => {
     workbenchFace.closeWorkbench(SESSION)
     workbenchFace.openWorkbench(SESSION)
     workbenchFace.toggleWorkbenchFullscreen(SESSION)
-    workbenchFace.toggleFiles(SESSION)
     workbenchFace.toggleBottom(SESSION)
     expect(closeWorkbench).toHaveBeenCalledWith(SESSION)
     expect(openWorkbench).toHaveBeenCalledTimes(2)
     expect(toggleWorkbenchFullscreen).toHaveBeenCalledWith(SESSION)
-    expect(toggleWorkbenchFiles).toHaveBeenCalledWith(SESSION)
     expect(toggleWorkbenchBottom).toHaveBeenCalledWith(SESSION)
 
     const bottom = ctx.slots.entries('workbench.bottom')[0]
@@ -222,14 +218,14 @@ describe('open-in-app browser half', () => {
     const filesFace = (files?.inject as unknown as () => HeroPanelToggleInjected)()
     expect(bottomFace.panel).toBe('bottom')
     expect(filesFace.panel).toBe('files')
+    expect(bottomFace.workbenchSource(SESSION).getSnapshot()).toMatchObject({ open: false, bottomOpen: false })
+    expect(filesFace.workbenchSource(SESSION).getSnapshot()).toMatchObject({ open: false, bottomOpen: false })
     await bottomFace.togglePanel()
     expect(b.toggleHeroPanel).toHaveBeenCalledExactlyOnceWith(SESSION, 'bottom')
     expect(b.toggleWorkbenchBottom).not.toHaveBeenCalled()
-    expect(b.toggleWorkbenchFiles).not.toHaveBeenCalled()
     await filesFace.togglePanel()
     expect(b.toggleHeroPanel).toHaveBeenLastCalledWith(SESSION, 'files')
     expect(b.toggleHeroPanel).toHaveBeenCalledTimes(2)
-    expect(b.toggleWorkbenchFiles).not.toHaveBeenCalled()
     expect(b.connectHome).not.toHaveBeenCalled()
   })
 

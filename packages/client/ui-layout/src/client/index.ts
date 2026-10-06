@@ -68,8 +68,6 @@ export interface WorkbenchOwnerProps {
   fullscreen: boolean
   /** 底栏是否实际可见。 */
   bottomOpen: boolean
-  /** 工作台内文件侧栏是否可见。 */
-  filesOpen: boolean
 }
 
 /** 工作台底栏 owner share。 */

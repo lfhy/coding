@@ -63,8 +63,8 @@ async function bench(initiallyEmpty = false, pauseNewTab?: () => Promise<void>) 
   runtime.slots.installLocale(locale)
   runtime.provide('layout', {
     openWorkbench: vi.fn(), closeWorkbench: vi.fn(),
-    toggleWorkbenchFullscreen: vi.fn(), toggleWorkbenchFiles: vi.fn(), toggleWorkbenchBottom: vi.fn(),
-    workbench: () => createSnapshotStore({ open: true, fullscreen: false, bottomOpen: false, filesOpen: true }),
+    toggleWorkbenchFullscreen: vi.fn(), toggleWorkbenchBottom: vi.fn(),
+    workbench: () => createSnapshotStore({ open: true, fullscreen: false, bottomOpen: false }),
   })
   let hostState: ReturnType<typeof state> | null = initiallyEmpty
     ? null : { ...state(), observation: null, hasFrame: false }
@@ -97,7 +97,7 @@ async function bench(initiallyEmpty = false, pauseNewTab?: () => Promise<void>) 
   await runtime.mount({ inject: [...workbenchInject], apply: applyWorkbench })
   const browserProvider = await runtime.mount({ inject: [...inject], apply })
   const workbench = runtime.renderSlot('workbench', {
-    shown: true, fullscreen: false, bottomOpen: false, filesOpen: true,
+    shown: true, fullscreen: false, bottomOpen: false,
   })
   if (!initiallyEmpty) await waitFor(() => {
     expect(workbench.view.getByRole('tab', { name: 'Example' })).toBeTruthy()

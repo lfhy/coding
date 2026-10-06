@@ -2045,7 +2045,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     doc: '根级固定工作台右栏；占用者按会话保留标签与终端树，关闭与会话切换时 entry 保持挂载。',
     registerOptions: [],
     ownerProps: [
-      '/** 工作台右栏 owner share。 */\nexport interface WorkbenchOwnerProps {\n  /** 当前会话的工作台是否可见。 */\n  shown: boolean\n  /** 是否实际占据全部主内容；窄屏会自动进入该呈现。 */\n  fullscreen: boolean\n  /** 底栏是否实际可见。 */\n  bottomOpen: boolean\n  /** 工作台内文件侧栏是否可见。 */\n  filesOpen: boolean\n}',
+      '/** 工作台右栏 owner share。 */\nexport interface WorkbenchOwnerProps {\n  /** 当前会话的工作台是否可见。 */\n  shown: boolean\n  /** 是否实际占据全部主内容；窄屏会自动进入该呈现。 */\n  fullscreen: boolean\n  /** 底栏是否实际可见。 */\n  bottomOpen: boolean\n}',
     ],
     ownerPropsReferences: [],
     standardProps: [
