@@ -820,6 +820,125 @@ describe('Playwright browser owner', () => {
     await ctx.fiber.dispose()
   })
 
+  it('opens a URL in a fresh active tab while retaining the previous page and session isolation', async () => {
+    const { ctx, service } = await headlessProvider()
+    const id = SessionId('open-url')
+    const other = SessionId('other-open-url')
+    const signal = new AbortController().signal
+    const initial = await service.execute(id, { kind: 'navigate', url: 'http://127.0.0.1:8080/' }, signal)
+    const before = service.state(id)
+    const otherState = await service.control(other, { kind: 'ensure-tab' }, signal)
+    const secondPage = { ...page, on: vi.fn(), goto: vi.fn(async () => null), close: vi.fn(async () => {}),
+      url: vi.fn(() => 'http://127.0.0.1:8080/second'), title: vi.fn(async () => 'Second') }
+    browserContext.newPage.mockResolvedValueOnce(secondPage as unknown as Page)
+    const opened = await service.control(id, { kind: 'open-url', url: 'http://127.0.0.1:8080/second' }, signal)
+    expect(opened?.tabs).toHaveLength(2)
+    expect(opened?.tabs[0]).toMatchObject({ id: initial.observation.tabId, url: initial.observation.url })
+    expect(opened?.activeTabId).toBe(opened?.tabs[1]?.id)
+    expect(opened?.observation).toMatchObject({ tabId: opened?.activeTabId,
+      url: 'http://127.0.0.1:8080/second', title: 'Second' })
+    expect(opened?.hasFrame).toBe(true)
+    expect(secondPage.goto).toHaveBeenCalledExactlyOnceWith('http://127.0.0.1:8080/second',
+      { waitUntil: 'domcontentloaded', timeout: 15_000 })
+    expect(page.goto).toHaveBeenCalledOnce()
+    expect(page.close).not.toHaveBeenCalled()
+    expect(service.state(other)).toEqual(otherState)
+    const selected = await service.control(id, { kind: 'select-tab', tabId: initial.observation.tabId }, signal)
+    expect(selected?.observation?.tabId).toBe(initial.observation.tabId)
+    expect(selected?.observation?.revision).toBe(before?.observation?.revision)
+    await ctx.fiber.dispose()
+  })
+
+  it('validates open-url before allocating a tab and reuses the first page for an empty owner', async () => {
+    const { ctx, service } = await headlessProvider()
+    const signal = new AbortController().signal
+    const id = SessionId('open-url-invalid')
+    const first = await service.control(id, { kind: 'ensure-tab' }, signal)
+    const allocated = browserContext.newPage.mock.calls.length
+    await expect(service.control(id, { kind: 'open-url', url: 'file:///tmp/private' }, signal))
+      .rejects.toMatchObject({ code: 'BROWSER_DENIED' })
+    expect(browserContext.newPage).toHaveBeenCalledTimes(allocated)
+    expect(service.state(id)).toEqual(first)
+    const empty = SessionId('open-url-empty')
+    await expect(service.control(empty, { kind: 'open-url', url: 'not a URL' }, signal))
+      .rejects.toMatchObject({ code: 'BROWSER_INVALID_URL' })
+    expect(service.state(empty)).toBeUndefined()
+    const opened = await service.control(empty, { kind: 'open-url', url: 'http://127.0.0.1:8080/' }, signal)
+    expect(opened?.tabs).toHaveLength(1)
+    expect(opened?.activeTabId).toBe(opened?.observation?.tabId)
+    expect(opened?.observation?.url).toBe('http://127.0.0.1:8080/')
+    expect(browserContext.newPage).toHaveBeenCalledTimes(allocated + 1)
+    await ctx.fiber.dispose()
+  })
+
+  it('rolls back a failed open-url without closing an existing page', async () => {
+    const { ctx, service } = await headlessProvider()
+    const id = SessionId('open-url-rollback')
+    const signal = new AbortController().signal
+    await service.execute(id, { kind: 'navigate', url: 'http://127.0.0.1:8080/' }, signal)
+    const before = service.state(id)
+    const failedPage = { ...page, on: vi.fn(), close: vi.fn(async () => {}),
+      goto: vi.fn(async () => { throw new Error('navigation failed') }) }
+    browserContext.newPage.mockResolvedValueOnce(failedPage as unknown as Page)
+    await expect(service.control(id, { kind: 'open-url', url: 'http://127.0.0.1:8080/failure' }, signal))
+      .rejects.toMatchObject({ code: 'BROWSER_FAILED' })
+    expect(failedPage.close).toHaveBeenCalledOnce()
+    expect(page.bringToFront).toHaveBeenCalledOnce()
+    expect(browserContext.close).not.toHaveBeenCalled()
+    expect(service.state(id)).toMatchObject({ activeTabId: before?.activeTabId,
+      tabs: before?.tabs, observation: before?.observation, hasFrame: true })
+    expect(service.state(id)?.stateRevision).toBeGreaterThan(before?.stateRevision ?? 0)
+    await service.control(id, { kind: 'reload' }, signal)
+    await ctx.fiber.dispose()
+  })
+
+  it('rolls back the new tab when navigation succeeds but observation fails', async () => {
+    const { ctx, service } = await headlessProvider()
+    const id = SessionId('open-url-observation-failure')
+    const signal = new AbortController().signal
+    const before = await service.control(id, { kind: 'navigate', url: 'http://127.0.0.1:8080/' }, signal)
+    const newPage = { ...page, on: vi.fn(), goto: vi.fn(async () => null), close: vi.fn(async () => {}),
+      screenshot: vi.fn(async () => { throw new Error('capture failed') }) }
+    browserContext.newPage.mockResolvedValueOnce(newPage as unknown as Page)
+    await expect(service.control(id, { kind: 'open-url', url: 'http://127.0.0.1:8080/capture' }, signal))
+      .rejects.toMatchObject({ code: 'BROWSER_FAILED' })
+    expect(newPage.goto).toHaveBeenCalledOnce()
+    expect(newPage.close).toHaveBeenCalledOnce()
+    expect(service.state(id)).toMatchObject({ tabs: before?.tabs, activeTabId: before?.activeTabId,
+      observation: before?.observation, hasFrame: true })
+    await ctx.fiber.dispose()
+  })
+
+  it('holds the entire open-url operation against Agent acquisition and fails closed if rollback is uncertain', async () => {
+    const { ctx, service } = await headlessProvider()
+    const id = SessionId('open-url-lease')
+    const signal = new AbortController().signal
+    await service.control(id, { kind: 'ensure-tab' }, signal)
+    let finish!: () => void
+    const secondPage = { ...page, on: vi.fn(), goto: vi.fn(() => new Promise<null>((resolve) => {
+      finish = () => { resolve(null) }
+    })) }
+    browserContext.newPage.mockResolvedValueOnce(secondPage as unknown as Page)
+    const opening = service.control(id, { kind: 'open-url', url: 'http://127.0.0.1:8080/new' }, signal)
+    const lease = service.acquireOperation(id, signal)
+    await vi.waitFor(() => { expect(finish).toBeTypeOf('function') })
+    await expect(service.control(id, { kind: 'open-url', url: 'http://127.0.0.1:8080/other' }, signal))
+      .rejects.toMatchObject({ code: 'BROWSER_BUSY' })
+    finish()
+    await opening
+    const release = await lease
+    expect(service.state(id)?.tabs).toHaveLength(2)
+    release()
+    const broken = { ...page, on: vi.fn(), goto: vi.fn(async () => { throw new Error('failed') }),
+      close: vi.fn(async () => { throw new Error('close uncertain') }) }
+    browserContext.newPage.mockResolvedValueOnce(broken as unknown as Page)
+    await expect(service.control(id, { kind: 'open-url', url: 'http://127.0.0.1:8080/broken' }, signal))
+      .rejects.toMatchObject({ code: 'BROWSER_FAILED' })
+    expect(service.state(id)).toBeUndefined()
+    expect(browserContext.close).toHaveBeenCalled()
+    await ctx.fiber.dispose()
+  })
+
   it('resizes a blank tab without navigation and rejects out-of-bounds dimensions', async () => {
     const { ctx, service } = await headlessProvider()
     const id = SessionId('blank-viewport')

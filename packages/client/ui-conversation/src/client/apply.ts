@@ -455,6 +455,8 @@ export function apply(ctx: Context): void {
           layout.openDetails()
         },
         fileMentions: owner => ctx.get('chatFileMentions')?.forClosing(owner),
+        openBrowserUrl: url => ctx.get('chatBrowserLinks')?.open(sessionId, url)
+          ?? Promise.reject(new Error(t('browserOpen.unavailable'))),
         openFile: (path) => {
           const cwd = sessions.list.getSnapshot().byId[sessionId]?.cwd
           return workspaces.openPath(resolveWorkspacePath(cwd, path))

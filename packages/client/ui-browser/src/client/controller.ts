@@ -89,11 +89,39 @@ export class BrowserMirrorController {
   }
 
   /**
+   * 为正文链接建立独立页面；只有 Host 回显了新活动页才允许工作台展示。
+   * @param url - 已由 Chat 限定为 HTTP(S) 的目标。
+   * @returns 包含新活动页的 Host 观测。
+   */
+  async openUrl(url: string): Promise<BrowserState> {
+    const before = new Set(this.view.getSnapshot().state?.tabs.map(tab => tab.id) ?? [])
+    const acknowledged: { state?: BrowserState } = {}
+    const epoch = this.epoch + 1
+    const success = await this.execute({ kind: 'open-url', url }, (state) => {
+      if (state.activeTabId === null || before.has(state.activeTabId)
+        || !state.tabs.some(tab => tab.id === state.activeTabId)) {
+        throw new Error('浏览器未返回新页面，请刷新后重试')
+      }
+      acknowledged.state = state
+    })
+    const view = this.view.getSnapshot()
+    // Host 已承认新页面时，截图失败只影响画面重试，不得把打开链接变成可重复提交的失败。
+    if (acknowledged.state !== undefined && this.active && this.epoch === epoch
+      && view.state === acknowledged.state) return acknowledged.state
+    if (!success) throw new Error(view.phase === 'error' ? view.message : '浏览器当前不可操作，请稍后重试')
+    throw new Error('浏览器未返回新页面，请刷新后重试')
+  }
+
+  /**
    * 执行当前会话的用户浏览器操作。
    * @param command - 经 RPC 严格校验的命令。
    * @returns 命令和对应截图同步完毕。
    */
   async command(command: BrowserHumanCommand): Promise<boolean> {
+    return this.execute(command)
+  }
+
+  private async execute(command: BrowserHumanCommand, onAcknowledged?: (state: BrowserState) => void): Promise<boolean> {
     if (!this.active || this.action !== undefined || this.control === undefined
       || this.view.getSnapshot().phase === 'busy' || this.view.getSnapshot().state?.operationActive) return false
     if ('target' in command) {
@@ -123,7 +151,11 @@ export class BrowserMirrorController {
       if (!this.current(epoch, action)) return false
       if (!response.result.ok) throw new Error(response.result.error.message)
       if (response.result.value === null) this.clearState()
-      else await this.accept(parseBrowserState(response.result.value), epoch, action)
+      else {
+        const state = parseBrowserState(response.result.value)
+        onAcknowledged?.(state)
+        await this.accept(state, epoch, action)
+      }
       return true
     } catch (error) {
       if (this.current(epoch, action)) this.fail(error)

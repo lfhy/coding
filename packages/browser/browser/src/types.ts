@@ -25,10 +25,11 @@ export type BrowserExpectedTarget =
     readonly url?: string
   }
 
-/** 人工操作仅作用于当前会话，不进入模型工具历史。 */
+/** 人工操作仅作用于当前会话，不进入模型工具历史；open-url 在同一提供方队列中新增、选中并导航标签页。 */
 export type BrowserHumanCommand =
   | { readonly kind: 'ensure-tab' }
   | { readonly kind: 'new-tab' }
+  | { readonly kind: 'open-url'; readonly url: string }
   | { readonly kind: 'select-tab'; readonly tabId: BrowserTabId }
   | { readonly kind: 'close-tab'; readonly tabId: BrowserTabId }
   | { readonly kind: 'navigate'; readonly url: string }

@@ -59,6 +59,16 @@ class OversizedFrameError extends BrowserUseError {
   constructor() { super(`browser screenshot exceeds ${FRAME_LIMIT} bytes`, 'BROWSER_FAILED') }
 }
 
+/** 新标签导航失败且仅回收该标签页后，保留原会话。 */
+class RolledBackTabError extends BrowserUseError {
+  constructor(cause: unknown) { super('browser new tab navigation failed', 'BROWSER_FAILED', { cause }) }
+}
+
+/** URL 校验未触碰页面；错误不撤销已有会话。 */
+class InvalidNavigationInputError extends BrowserUseError {
+  constructor(error: BrowserUseError) { super(error.message, error.code, { cause: error }) }
+}
+
 /** 只读画面的入口必须再检查 Host/Origin 和环回连接，不能仅依赖 API 鉴权。 */
 export function trustedFrameRequest(req: IncomingMessage, host: string, port: number): boolean {
   if (host !== '127.0.0.1') return false
@@ -529,6 +539,51 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
     return owner && this.view(sessionId, owner)
   }
 
+  private async addTab(owner: SessionPage): Promise<SessionTab> {
+    if (owner.tabs.size >= MAX_TABS) throw fail('browser tab limit reached', 'BROWSER_UNAVAILABLE')
+    // page 事件可能与内部 newPage 同期到达；只承认 newPage 返回的确切句柄。
+    const pending = new Set<Page>()
+    owner.pendingPages = pending
+    let createdPage: Page | undefined
+    try {
+      createdPage = await owner.browserContext.newPage()
+      if (owner.viewport.width !== VIEWPORT.width || owner.viewport.height !== VIEWPORT.height) {
+        await createdPage.setViewportSize(owner.viewport)
+      }
+      const id = tabId()
+      const generation = randomUUID()
+      const documentHandle = await createdPage.evaluateHandle(() => document)
+      const tab: SessionTab = { id, page: createdPage, generation, documentHandle, revision: 0, refs: new Map(),
+        summary: { id, generation, url: 'about:blank', title: '', canGoBack: false, canGoForward: false },
+        history: [], historyIndex: -1 }
+      owner.tabs.set(id, tab)
+      createdPage.on('dialog', (dialog) => { void dialog.dismiss() })
+      this.trackNavigation(owner, tab)
+      owner.activeTabId = id
+      owner.stateRevision++
+      return tab
+    } finally {
+      owner.pendingPages = undefined
+      await Promise.all([...pending].filter(page => page !== createdPage).map(page => page.close().catch(() => {})))
+    }
+  }
+
+  private async rollbackTab(owner: SessionPage, tab: SessionTab, previousTabId: BrowserTabId): Promise<void> {
+    await this.clearRefs(tab)
+    await tab.documentHandle.dispose().catch(() => {})
+    await tab.page.close()
+    await this.activeTab(owner, previousTabId).page.bringToFront()
+    owner.tabs.delete(tab.id)
+    owner.activeTabId = previousTabId
+    owner.stateRevision++
+  }
+
+  private activeTab(owner: SessionPage, id: BrowserTabId): SessionTab {
+    const tab = owner.tabs.get(id)
+    if (!tab) throw fail('browser tab is closed', 'BROWSER_CLOSED')
+    return tab
+  }
+
   /** @inheritdoc */
   async control(sessionId: SessionId, command: BrowserHumanCommand, signal: AbortSignal,
     guard?: () => Promise<void>): Promise<BrowserSessionState | undefined> {
@@ -539,8 +594,15 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
       await guard?.()
       signal.throwIfAborted()
       let owner = this.pages.get(sessionId)
-      if (command.kind === 'navigate') validateBrowserUrl(command.url)
-      if (!owner && command.kind !== 'navigate' && command.kind !== 'new-tab' && command.kind !== 'ensure-tab') {
+      if (command.kind === 'navigate' || command.kind === 'open-url') {
+        try { validateBrowserUrl(command.url) }
+        catch (error) {
+          if (error instanceof BrowserUseError) throw new InvalidNavigationInputError(error)
+          throw error
+        }
+      }
+      if (!owner && command.kind !== 'navigate' && command.kind !== 'open-url' &&
+        command.kind !== 'new-tab' && command.kind !== 'ensure-tab') {
         if (command.kind === 'click' || command.kind === 'scroll' || command.kind === 'type') {
           throw fail('browser screenshot is no longer current', 'BROWSER_STALE_REF')
         }
@@ -552,30 +614,20 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
         case 'ensure-tab': break
         case 'new-tab': {
           if (created) break
-          if (owner.tabs.size >= MAX_TABS) throw fail('browser tab limit reached', 'BROWSER_UNAVAILABLE')
-          // page 事件可能与内部 newPage 同期到达；只承认 newPage 返回的确切句柄。
-          const pending = new Set<Page>()
-          owner.pendingPages = pending
-          let createdPage: Page | undefined
+          await this.addTab(owner)
+          break
+        }
+        case 'open-url': {
+          const previousTabId = owner.activeTabId
+          const tab = created ? this.active(owner) : await this.addTab(owner)
           try {
-            createdPage = await owner.browserContext.newPage()
-            if (owner.viewport.width !== VIEWPORT.width || owner.viewport.height !== VIEWPORT.height) {
-              await createdPage.setViewportSize(owner.viewport)
-            }
-            const id = tabId()
-            const generation = randomUUID()
-            const documentHandle = await createdPage.evaluateHandle(() => document)
-            const tab: SessionTab = { id, page: createdPage, generation, documentHandle, revision: 0, refs: new Map(),
-              summary: { id, generation, url: 'about:blank', title: '', canGoBack: false, canGoForward: false },
-              history: [], historyIndex: -1 }
-            owner.tabs.set(id, tab)
-            createdPage.on('dialog', (dialog) => { void dialog.dismiss() })
-            this.trackNavigation(owner, tab)
-            owner.activeTabId = id
-            owner.stateRevision++
-          } finally {
-            owner.pendingPages = undefined
-            await Promise.all([...pending].filter(page => page !== createdPage).map(page => page.close().catch(() => {})))
+            await tab.page.goto(command.url, { waitUntil: 'domcontentloaded', timeout: 15_000 })
+            await this.observe(owner, tab, null)
+          } catch (error) {
+            if (created || signal.aborted) throw error
+            // 只有新页及原活动页的恢复均确定完成，才能保留已有会话。
+            await this.rollbackTab(owner, tab, previousTabId)
+            throw new RolledBackTabError(error)
           }
           break
         }
@@ -757,7 +809,8 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
         return result
       } catch (error) {
         const owner = this.pages.get(sessionId)
-        if (owner && !(error instanceof OversizedFrameError || error instanceof BrowserUseError &&
+        if (owner && !(error instanceof OversizedFrameError || error instanceof RolledBackTabError ||
+          error instanceof InvalidNavigationInputError || error instanceof BrowserUseError &&
           ['BROWSER_STALE_REF', 'BROWSER_CLOSED', 'BROWSER_UNAVAILABLE', 'BROWSER_INVALID_URL'].includes(error.code))) {
           this.pages.delete(sessionId)
           await this.destroy(owner)

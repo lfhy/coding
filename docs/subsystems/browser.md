@@ -6,7 +6,7 @@
 
 ## 命令与引用
 
-`BrowserCommand` 和 `BrowserHumanCommand` 是封闭的判别联合。`click` 与 `fill` 使用最近观测中的不透明元素 `ref` 和 `revision`，而不是选择器或脚本；提供方必须拒绝跨标签页及过期引用。`close` 释放会话浏览器资源。人工命令在同一会话中建立、选择、关闭标签页或导航活跃标签页，标签页 id 关闭后不可复用。`set-viewport` 调整会话所有页面的 CSS 视口，状态暴露当前宽高；尺寸改变使旧截图、元素引用和审批失效。视口边界与 PNG 像素密度由[提供方](../../packages/browser/browser-playwright/README.md)持有，交互坐标始终按 CSS 视口计算。`browserGeneration` 标识会话浏览器资源，`generation` 标识标签页的页面代际；状态每次发布后递增 `stateRevision`，因此切离又切回也不能沿用旧审批。模型取得会话操作权后调用 `prepareTarget` 只刷新目标身份，不发布页面观测；它区分无会话和已有标签页，把 `expectedTarget` 交给审批及执行队列复核，无论该调用是否需要审批。页面在两次调用之间自行导航可绑定新目标，审批期间的再次变化仍拒绝本次调用；空白标签页也暴露 generation。
+`BrowserCommand` 和 `BrowserHumanCommand` 是封闭的判别联合。`click` 与 `fill` 使用最近观测中的不透明元素 `ref` 和 `revision`，而不是选择器或脚本；提供方必须拒绝跨标签页及过期引用。`close` 释放会话浏览器资源。人工命令在同一会话中建立、选择、关闭标签页或导航活跃标签页，标签页 id 关闭后不可复用。`open-url` 在同一提供方队列中新建、选中并导航标签页，不覆盖当前页；Assistant 正文 HTTP(S) 链接的普通激活通过此命令打开当前 Session 的右侧浏览器工作台，成功收到新活动标签页后才显示，失败则在对话页显示错误与重试入口，不弹出外部窗口。它属于用户操作，不产生模型工具调用或模型审批；Host 仍只接受已附着的本地 Session 并拒绝远程工作区，具体 RPC 限制见[网关 README](../../packages/host/apiproxy/README.md)。`set-viewport` 调整会话所有页面的 CSS 视口，状态暴露当前宽高；尺寸改变使旧截图、元素引用和审批失效。视口边界与 PNG 像素密度由[提供方](../../packages/browser/browser-playwright/README.md)持有，交互坐标始终按 CSS 视口计算。`browserGeneration` 标识会话浏览器资源，`generation` 标识标签页的页面代际；状态每次发布后递增 `stateRevision`，因此切离又切回也不能沿用旧审批。模型取得会话操作权后调用 `prepareTarget` 只刷新目标身份，不发布页面观测；它区分无会话和已有标签页，把 `expectedTarget` 交给审批及执行队列复核，无论该调用是否需要审批。页面在两次调用之间自行导航可绑定新目标，审批期间的再次变化仍拒绝本次调用；空白标签页也暴露 generation。
 
 ```ts type-equiv
 /** 一次会话浏览器操作。元素引用只在产生它的标签页与观测修订版中有效。 */
@@ -40,10 +40,11 @@ export type BrowserExpectedTarget =
 ```
 
 ```ts type-equiv
-/** 人工操作仅作用于当前会话，不进入模型工具历史。 */
+/** 人工操作仅作用于当前会话，不进入模型工具历史；open-url 在同一提供方队列中新增、选中并导航标签页。 */
 export type BrowserHumanCommand =
   | { readonly kind: 'ensure-tab' }
   | { readonly kind: 'new-tab' }
+  | { readonly kind: 'open-url'; readonly url: string }
   | { readonly kind: 'select-tab'; readonly tabId: BrowserTabId }
   | { readonly kind: 'close-tab'; readonly tabId: BrowserTabId }
   | { readonly kind: 'navigate'; readonly url: string }

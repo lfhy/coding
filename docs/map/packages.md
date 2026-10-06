@@ -49,7 +49,7 @@ workspace 共 239 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/client/ui-agent-preset` — agent preset 的各个表层：General 设置中的一行，用于选择新建会话据以组装的 preset；新建会话界面上的一枚 chip… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 7）
 - `packages/client/ui-attachment` — 对话 UI 的动态附件呈现插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 7）
 - `packages/client/ui-brand-official` — 仅当 `DSH_CLIENT_BUILD_PROFILE` 为 `official` 时… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
-- `packages/client/ui-browser` — 本包的 Client 半边占用 `workbench.browser` 内容和 `workbench.browser.tabs` 顶栏标签两个会… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 8）
+- `packages/client/ui-browser` — 本包的 Client 半边占用 `workbench.browser` 内容和 `workbench.browser.tabs` 顶栏标签两个会… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 9）
 - `packages/client/ui-commands` — 客户端命令 API（`ctx.commandUi`）：以会话为 key 的命令目录缓存、带 `matchSpace`／`matchEnter` … [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 5）
 - `packages/client/ui-conversation` — 会话领域：骨架（标题栏／标签页／编辑器／空状态）、聊天视图（分组步骤摘要流、流式尾部隔离与轮次状态）、输入区 dock… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 36）
 - `packages/client/ui-deliverables` — 产出文件与可点击文件引用功能的属主 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）

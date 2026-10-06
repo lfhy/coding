@@ -18,6 +18,80 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); createUrl.mockClear(); revokeUrl.mockClear() })
 
 describe('browser session controller', () => {
+  it('opens a fresh Host page and never treats a failed or old-page response as success', async () => {
+    const url = 'https://linked.example/'
+    const fresh = { ...state(2, otherId), tabs: [...state().tabs,
+      { id: '032ef1b7-466b-45a7-8d57-3288cf12b8b1', generation: 'new', url, title: 'Link',
+        canGoBack: false, canGoForward: false }], activeTabId: '032ef1b7-466b-45a7-8d57-3288cf12b8b1',
+    observation: null, hasFrame: false }
+    const control = vi.fn().mockResolvedValueOnce({ result: { ok: true, value: fresh } })
+      .mockResolvedValueOnce({ result: { ok: false, error: { message: '远程工作区不支持人工浏览器' } } })
+      .mockResolvedValueOnce({ result: { ok: true, value: fresh } })
+    const controller = new BrowserMirrorController('session-a', async () => json(state()), control as never)
+    const stop = controller.start()
+    await flush()
+    expect((await controller.openUrl(url)).activeTabId).toBe(fresh.activeTabId)
+    expect(control).toHaveBeenCalledWith({ sessionId: 'session-a', command: { kind: 'open-url', url } },
+      expect.any(AbortSignal))
+    await expect(controller.openUrl(url)).rejects.toThrow('远程工作区不支持人工浏览器')
+    await expect(controller.openUrl(url)).rejects.toThrow('未返回新页面')
+    stop()
+  })
+
+  it('keeps each successive link in its own newly selected page', async () => {
+    const firstId = '032ef1b7-466b-45a7-8d57-3288cf12b8b1'
+    const secondId = '641c045c-421f-4a10-b00b-987bf39c37bf'
+    const first = { ...state(2), activeTabId: firstId, observation: null, hasFrame: false,
+      tabs: [...state().tabs, { id: firstId, generation: 'first', url: 'https://first.example/', title: 'First',
+        canGoBack: false, canGoForward: false }] }
+    const second = { ...first, stateRevision: 3, activeTabId: secondId,
+      tabs: [...first.tabs, { id: secondId, generation: 'second', url: 'https://second.example/', title: 'Second',
+        canGoBack: false, canGoForward: false }] }
+    const control = vi.fn().mockResolvedValueOnce({ result: { ok: true, value: first } })
+      .mockResolvedValueOnce({ result: { ok: true, value: second } })
+    const controller = new BrowserMirrorController('session-a', async () => json(state()), control as never, true)
+    const stop = controller.start()
+    await flush()
+    expect((await controller.openUrl('https://first.example/')).activeTabId).toBe(firstId)
+    expect((await controller.openUrl('https://second.example/')).activeTabId).toBe(secondId)
+    expect(controller.view.getSnapshot().state?.tabs.map(tab => tab.id)).toEqual([id, otherId, firstId, secondId])
+    expect(control.mock.calls.map(([request]) => (request as { command: unknown }).command)).toEqual([
+      { kind: 'open-url', url: 'https://first.example/' }, { kind: 'open-url', url: 'https://second.example/' },
+    ])
+    stop()
+  })
+
+  it.each([409, 503])('does not submit another open-url after Host succeeds but frame GET returns %i', async (status) => {
+    const newId = '032ef1b7-466b-45a7-8d57-3288cf12b8b1'
+    const url = 'https://linked.example/'
+    const initial = state()
+    const fresh = { ...state(2), activeTabId: newId,
+      tabs: [...initial.tabs, { id: newId, generation: 'linked', url, title: 'Linked',
+        canGoBack: false, canGoForward: false }],
+      observation: { ...state(2).observation!, tabId: newId, generation: 'linked', url, title: 'Linked' } }
+    let frameHits = 0
+    const fetcher = vi.fn(async (input: string | URL) => {
+      if (!String(input).includes('/frame?')) return json(frameHits === 0 ? initial : fresh)
+      frameHits++
+      return frameHits === 2 ? new Response(null, { status }) : frame()
+    })
+    const control = vi.fn(async () => ({ result: { ok: true, value: fresh } }))
+    const controller = new BrowserMirrorController('session-a', fetcher, control as never)
+    const stop = controller.start()
+    await flush()
+    expect((await controller.openUrl(url)).activeTabId).toBe(newId)
+    expect(controller.view.getSnapshot()).toMatchObject({ state: { activeTabId: newId },
+      phase: status === 409 ? 'ready' : 'error' })
+    if (status === 503) {
+      controller.retry()
+      await flush()
+      expect(controller.view.getSnapshot()).toMatchObject({ phase: 'ready', state: { activeTabId: newId } })
+    }
+    expect(control).toHaveBeenCalledExactlyOnceWith({ sessionId: 'session-a', command: { kind: 'open-url', url } },
+      expect.any(AbortSignal))
+    stop()
+  })
+
   it('detects only the complete desktop presentation capability', () => {
     expect(desktopBrowserPresentation()).toBeNull()
     vi.stubGlobal('codingDesktop', { browser: { available: false, present: vi.fn() } })

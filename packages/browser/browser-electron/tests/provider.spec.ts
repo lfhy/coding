@@ -77,6 +77,16 @@ describe('desktop browser bridge', () => {
   })
 
   it('validates complete wire messages and bounded PNG decoding', () => {
+    expect(parseBridgeRequest({ v: 1, id: 'open', method: 'control', sessionId: id,
+      command: { kind: 'open-url', url: 'https://example.com/' } }).command).toEqual({
+      kind: 'open-url', url: 'https://example.com/',
+    })
+    for (const command of [{ kind: 'open-url' }, { kind: 'open-url', url: '' },
+      { kind: 'open-url', url: 'https://example.com/', tabId: 'unexpected' }]) {
+      expect(() => parseBridgeRequest({ v: 1, id: 'open', method: 'control', sessionId: id, command })).toThrow()
+    }
+    expect(() => parseBridgeRequest({ v: 1, id: 'open', method: 'execute', sessionId: id,
+      command: { kind: 'open-url', url: 'https://example.com/' } })).toThrow()
     expect(() => parseBridgeRequest({ v: 1, id: 'x', method: 'execute', sessionId: id,
       command: { kind: 'click', ref: 'r', revision: -1 } })).toThrow()
     expect(() => parseBridgeResponse({ v: 1, id: 'x', ok: true, value: { observation, png: 'broken' } }, 'execute')).toThrow()

@@ -58,7 +58,9 @@ describe('browser.control wire schemas', () => {
   it('accepts every human command and rejects extra or malformed fields', () => {
     for (const command of [
       { kind: 'ensure-tab' }, { kind: 'new-tab' }, { kind: 'select-tab', tabId }, { kind: 'close-tab', tabId },
-      { kind: 'navigate', url: 'https://example.com/' }, { kind: 'back' }, { kind: 'forward' }, { kind: 'reload' },
+      { kind: 'navigate', url: 'https://example.com/' },
+      { kind: 'open-url', url: 'https://example.com/search?q=%E4%B8%AD%E6%96%87' },
+      { kind: 'back' }, { kind: 'forward' }, { kind: 'reload' },
       { kind: 'set-viewport', width: 1280, height: 720 },
       { kind: 'click', target, x: 10, y: 20 },
       { kind: 'scroll', target, x: 10, y: 20, direction: 'down', pixels: 120 },
@@ -71,6 +73,8 @@ describe('browser.control wire schemas', () => {
       { sessionId: '', command: { kind: 'back' } },
       { sessionId: 's', command: { kind: 'click', ref: '1' } },
       { sessionId: 's', command: { kind: 'navigate' } },
+      { sessionId: 's', command: { kind: 'open-url' } },
+      { sessionId: 's', command: { kind: 'open-url', url: 'https://example.com/', tabId } },
       { sessionId: 's', command: { kind: 'set-viewport', width: 1280, height: 720, fake: true } },
       { sessionId: 's', command: { kind: 'click', target: { ...target, tabId: 'bad' }, x: 10, y: 20 } },
       { sessionId: 's', command: { kind: 'click', target, x: -1, y: 20 } },
@@ -85,8 +89,16 @@ describe('browser.control wire schemas', () => {
       'javascript:alert(1)', 'file:///etc/passwd', 'http://user@example.com/',
       'https://user:pass@example.com/', '//example.com/', 'not a url', ' https://example.com/',
       'https://example.com/\n', 'https://example.com/' + 'a'.repeat(2048),
-    ]) expect(browserControlRequestSchema.safeParse({ sessionId: 's', command: { kind: 'navigate', url } }).success).toBe(false)
-    expect(browserControlRequestSchema.safeParse({ sessionId: 's', command: { kind: 'navigate', url: 'http://example.com/' } }).success).toBe(true)
+    ]) for (const kind of ['navigate', 'open-url']) {
+      expect(browserControlRequestSchema.safeParse({ sessionId: 's', command: { kind, url } }).success).toBe(false)
+    }
+    for (const kind of ['navigate', 'open-url']) {
+      expect(browserControlRequestSchema.safeParse({ sessionId: 's', command: { kind, url: 'http://example.com/' } }).success).toBe(true)
+      expect(browserControlRequestSchema.safeParse({ sessionId: 's', command: { kind, url: 'https://example.com/搜索?q=中文' } }).success).toBe(true)
+      expect(browserControlRequestSchema.safeParse({ sessionId: 's', command: {
+        kind, url: 'https://example.com/'.padEnd(2048, 'a'),
+      } }).success).toBe(true)
+    }
   })
 
   it('bounds viewport dimensions and pixel area without coercion', () => {
@@ -136,6 +148,9 @@ describe('browser.control gateway', () => {
     expect(result).toEqual({ rpcId: RpcId('browser-call'), result: { ok: true, value: state } })
     expect(control).toHaveBeenCalledWith(id, { kind: 'navigate', url: 'https://example.com/' }, signal,
       expect.any(Function))
+    const openUrl = { kind: 'open-url', url: 'https://example.com/搜索?q=中文' } as const
+    expect((await api.browser.control(request(id, openUrl), signal)).result).toEqual({ ok: true, value: state })
+    expect(control).toHaveBeenCalledWith(id, openUrl, signal, expect.any(Function))
     control.mockResolvedValueOnce(undefined)
     expect((await api.browser.control(request(id, { kind: 'close-tab', tabId: tabId as never }), signal)).result)
       .toEqual({ ok: true, value: null })

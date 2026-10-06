@@ -2,7 +2,7 @@
 // final business Nodes, plus paging, pending steering and bottom-follow.
 // Each row dispatches through 'conversation.chat.node'; ui-tool owns the
 // tool-call renderer and its recursive root/subcall composition. A Host
-// open-path refusal from the injected opener is an in-page dialog here.
+// 注入的文件与浏览器链接打开动作若被拒绝，由视图显示页面内对话框。
 //
 // Scroll: when nested under `[data-conversation-scroll]` (active conversation
 // column), that host is the scrollport and this view is flow content; when
@@ -188,7 +188,7 @@ function TurnStatus({ startTime, t }: {
  */
 export function ChatView({
   useSession, useSessions, useStore, renderSlot, sessionId, openFile, loadOlder, loadImage, inspectCall, chatScroll, forkAt,
-  fileMentions, t,
+  fileMentions, openBrowserUrl, t,
 }: ChatViewSlotProps) {
   const order = useSession(s => s.chat.order)
   const nodeStore = useSession(s => s.chat.nodes)
@@ -235,6 +235,50 @@ export function ChatView({
     fileOpenRequest.current += 1
     setFileOpenError(null)
     setFileOpenBusy(false)
+  }, [])
+
+  const [browserOpenError, setBrowserOpenError] = useState<{
+    sessionId: typeof sessionId
+    url: string
+    message: string
+  } | null>(null)
+  const [browserOpenBusy, setBrowserOpenBusy] = useState(false)
+  const browserOpenRequest = useRef(0)
+  // 绑定触发时的会话和请求序号，避免切会话、关闭或重试后迟到的结果污染当前视图。
+  const activeSession = useRef(sessionId)
+  activeSession.current = sessionId
+  useEffect(() => {
+    setBrowserOpenError(null)
+    setBrowserOpenBusy(false)
+    return () => { browserOpenRequest.current += 1 }
+  }, [sessionId])
+
+  const requestOpenBrowserUrl = useCallback((url: string) => {
+    const id = ++browserOpenRequest.current
+    const requestedSession = sessionId
+    setBrowserOpenBusy(true)
+    void Promise.resolve().then(() => openBrowserUrl(url)).then(
+      () => {
+        if (id !== browserOpenRequest.current || requestedSession !== activeSession.current) return
+        setBrowserOpenError(null)
+        setBrowserOpenBusy(false)
+      },
+      (error: unknown) => {
+        if (id !== browserOpenRequest.current || requestedSession !== activeSession.current) return
+        setBrowserOpenError({
+          sessionId: requestedSession,
+          url,
+          message: openFailureMessage(error, t('browserOpen.unknown')),
+        })
+        setBrowserOpenBusy(false)
+      },
+    )
+  }, [openBrowserUrl, sessionId, t])
+
+  const closeBrowserOpenError = useCallback(() => {
+    browserOpenRequest.current += 1
+    setBrowserOpenError(null)
+    setBrowserOpenBusy(false)
   }, [])
 
   const pendingSteering = useMemo(
@@ -605,6 +649,7 @@ export function ChatView({
               selectedCallId={selectedCallId}
               cwd={cwd}
               openFile={requestOpenFile}
+              openBrowserUrl={requestOpenBrowserUrl}
               inspectCall={inspectCall}
               forkAt={forkAt}
               renderMessageImages={renderMessageImages}
@@ -653,6 +698,22 @@ export function ChatView({
           onClose={closeFileOpenError}
           onRetry={() => { requestOpenFile(fileOpenError.path) }}
           t={t}
+        />
+      )}
+      {browserOpenError?.sessionId === sessionId && (
+        <Modal
+          open
+          onClose={closeBrowserOpenError}
+          closeLabel={t('close')}
+          title={t('browserOpen.title')}
+          description={browserOpenError.message}
+          footer={(
+            <>
+              <Button variant="outline" className={css.modalAction} onClick={closeBrowserOpenError}>{t('cancel')}</Button>
+              <Button variant="primary" className={css.modalAction} disabled={browserOpenBusy}
+                onClick={() => { requestOpenBrowserUrl(browserOpenError.url) }}>{t('retry')}</Button>
+            </>
+          )}
         />
       )}
     </div>

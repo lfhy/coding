@@ -360,10 +360,23 @@ export interface ChatFileMentions {
   forClosing(owner: TurnTailOwnerProps): MarkdownFileMentions | undefined
 }
 
+/** 可选的 Assistant 正文链接打开服务；点击时由 Chat 视图按当前会话查找。 */
+export interface ChatBrowserLinks {
+  /**
+   * 在指定会话的浏览器工作台打开链接；失败时拒绝，由调用方显示重试入口。
+   * @param sessionId - 点击链接时所属的会话。
+   * @param url - Markdown 链接的目标地址。
+   * @returns 打开操作完成时兑现的 Promise。
+   */
+  open(sessionId: SessionId, url: string): Promise<void>
+}
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     /** Prose file-mention provider (ui-deliverables); reach via ctx.get — optional. */
     chatFileMentions: ChatFileMentions
+    /** Assistant 正文链接打开服务；通过 ctx.get 可选获取。 */
+    chatBrowserLinks: ChatBrowserLinks
   }
 }
 
@@ -413,6 +426,8 @@ export interface ChatNodeOwnerProps {
   /** Session workspace root; Tool summaries display paths relative to it. */
   cwd?: string | undefined
   openFile: (path: string) => void
+  /** 仅由 Assistant 正文传入 MarkdownText，不用于文件词条和其他节点。 */
+  openBrowserUrl: (url: string) => void
   inspectCall: (callId: CallId) => void
   forkAt: (seq: number) => void
   /** Render a historical image group through the attachment slot. */
@@ -755,6 +770,8 @@ export interface ChatViewInjected {
    * hand the path off (the chat view shows that reason and a retry).
    */
   openFile: (path: string) => Promise<void>
+  /** 点击时惰性查找可选服务；缺席或打开失败都拒绝，由视图显示重试。 */
+  openBrowserUrl: (url: string) => Promise<void>
   loadOlder: () => void
   /** Resolve a session-authorized historical image for inline display. */
   loadImage: (attachment: ImageAttachmentRef) => Promise<string>

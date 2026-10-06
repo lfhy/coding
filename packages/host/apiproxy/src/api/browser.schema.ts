@@ -42,6 +42,7 @@ export const browserControlRequestSchema = z.strictObject({
   command: z.discriminatedUnion('kind', [
     z.strictObject({ kind: z.literal('ensure-tab') }),
     z.strictObject({ kind: z.literal('new-tab') }),
+    z.strictObject({ kind: z.literal('open-url'), url: safeUrlSchema }),
     z.strictObject({ kind: z.literal('select-tab'), tabId: tabIdSchema }),
     z.strictObject({ kind: z.literal('close-tab'), tabId: tabIdSchema }),
     z.strictObject({ kind: z.literal('navigate'), url: safeUrlSchema }),

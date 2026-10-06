@@ -11,7 +11,7 @@
  * full parse self-heals it.
  */
 
-import { memo, useMemo, useRef } from 'react'
+import { memo, useCallback, useLayoutEffect, useMemo, useRef } from 'react'
 import type { ReactNode } from 'react'
 import { IncrementalMarkdownParser } from './incremental.ts'
 import { parseGfm, parseGfmWithMath } from './parse.ts'
@@ -19,17 +19,18 @@ import {
   collectReferenceTargets, createReferenceTargets, renderBlocks, renderFootnoteSection,
   wrapBlockChildren,
 } from './render.tsx'
-import type { MarkdownCodeLabels, MarkdownFileMentions, MarkdownRenderContext, ReferenceTargets } from './render.tsx'
+import type { MarkdownCodeLabels, MarkdownFileMentions, MarkdownOpenUrl, MarkdownRenderContext, ReferenceTargets } from './render.tsx'
 import 'katex/dist/katex.min.css'
 import css from './MarkdownText.module.css'
 
 export type { MarkdownCodeLabels, MarkdownFileMentions } from './render.tsx'
 
-/** One settled full render: parse with math, resolve references, append the footnote section. */
+/** 完整解析已定稿文本，解析引用并附加脚注。 */
 function renderSettled(
   text: string,
   codeLabels: MarkdownCodeLabels | undefined,
   fileMentions: MarkdownFileMentions | undefined,
+  openUrl: MarkdownOpenUrl,
 ): ReactNode[] {
   const root = parseGfmWithMath(text)
   const targets = createReferenceTargets()
@@ -38,6 +39,7 @@ function renderSettled(
     streaming: false,
     codeLabels,
     fileMentions,
+    openUrl,
     targets,
     footnoteOrder: [],
     footnoteCounts: new Map(),
@@ -67,8 +69,11 @@ class StreamingRenderer {
   private lastText: string | null = null
   private lastRendered: ReactNode[] = []
 
-  /** @param codeLabels - Fence copy labels baked into cached elements; the owner replaces the renderer when they change. */
-  constructor(private readonly codeLabels: MarkdownCodeLabels | undefined) {}
+  /** @param codeLabels - 围栏复制文案会固化在缓存元素中；变更时持有方重建渲染器。 */
+  constructor(
+    private readonly codeLabels: MarkdownCodeLabels | undefined,
+    private readonly openUrl: MarkdownOpenUrl,
+  ) {}
 
   /**
    * Render the current accumulated text. Idempotent per text value, so React
@@ -102,6 +107,7 @@ class StreamingRenderer {
         streaming: true,
         codeLabels: this.codeLabels,
         fileMentions: undefined,
+        openUrl: this.openUrl,
         targets: frameTargets,
         footnoteOrder: this.frozenFootnoteOrder,
         footnoteCounts: this.frozenFootnoteCounts,
@@ -120,6 +126,7 @@ class StreamingRenderer {
       streaming: true,
       codeLabels: this.codeLabels,
       fileMentions: undefined,
+      openUrl: this.openUrl,
       targets: frameTargets,
       footnoteOrder: [...this.frozenFootnoteOrder],
       footnoteCounts: new Map(this.frozenFootnoteCounts),
@@ -138,39 +145,41 @@ class StreamingRenderer {
 }
 
 /**
- * Render untrusted assistant-authored Markdown as semantic React elements.
- * @param props - Markdown source text preserved by the session projection;
- * `streaming` renders fences and TeX plain (highlighting and KaTeX land on
- * the finalize swap) and parses incrementally across chunks; `codeLabels`
- * forwards localized copy-button labels to fence CodeBlocks — pass a
- * reference-stable object (memoized per locale revision), because a new
- * identity discards the streaming render cache mid-message. `fileMentions`
- * links inline-code tokens its resolver recognizes as real files; this is
- * the single streaming gate — it applies to settled renders only, because a
- * streaming message's vocabulary is not final and frozen cached elements
- * must not bake in handlers that could go stale.
- * @returns A GFM document with TeX math rendered through KaTeX; raw HTML,
- * relative links, and unsafe protocols are disabled, while absolute HTTP(S)
- * images render directly.
+ * 将不受信任的 assistant Markdown 渲染为语义化 React 元素。
+ * @param props - `text` 是会话投影保留的源码；`streaming` 增量解析分片，围栏高亮和 TeX 排版留待定稿。
+ * `codeLabels` 向围栏代码块提供本地化复制文案，须保持引用稳定，否则会重建流式缓存。
+ * `fileMentions` 只在定稿时解析真实文件，因为流式冻结元素不能固化可能过期的文件入口。
+ * `onOpenUrl` 仅拦截 HTTP(S) 链接未经修饰的主键激活（含 Enter），冻结链接在激活时读取最新回调。
+ * @returns GFM 与 KaTeX 文档；原始 HTML、相对链接和危险协议不可交互，绝对 HTTP(S) 图片可显示。
  */
-export const MarkdownText = memo(function MarkdownText({ text, streaming = false, codeLabels, fileMentions }: {
+export const MarkdownText = memo(function MarkdownText({ text, streaming = false, codeLabels, fileMentions, onOpenUrl }: {
   text: string
   streaming?: boolean
   codeLabels?: MarkdownCodeLabels | undefined
   fileMentions?: MarkdownFileMentions | undefined
+  onOpenUrl?: ((href: string) => void) | undefined
 }) {
   const streamRef = useRef<StreamingRenderer | null>(null)
   const streamLabelsRef = useRef<MarkdownCodeLabels | undefined>(codeLabels)
+  const onOpenUrlRef = useRef(onOpenUrl)
+  useLayoutEffect(() => { onOpenUrlRef.current = onOpenUrl }, [onOpenUrl])
+  const openUrl = useCallback<MarkdownOpenUrl>((href, event) => {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+    const callback = onOpenUrlRef.current
+    if (callback === undefined) return
+    event.preventDefault()
+    callback(href)
+  }, [])
   const children = useMemo(() => {
     if (!streaming) {
       streamRef.current = null
-      return renderSettled(text, codeLabels, fileMentions)
+      return renderSettled(text, codeLabels, fileMentions, openUrl)
     }
     if (streamRef.current === null || streamLabelsRef.current !== codeLabels) {
-      streamRef.current = new StreamingRenderer(codeLabels)
+      streamRef.current = new StreamingRenderer(codeLabels, openUrl)
       streamLabelsRef.current = codeLabels
     }
     return streamRef.current.render(text)
-  }, [text, streaming, codeLabels, fileMentions])
+  }, [text, streaming, codeLabels, fileMentions, openUrl])
   return <div className={css.markdown}>{children}</div>
 })

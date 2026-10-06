@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { JsonBlock, MarkdownText, MessageText } from '@deepseek-ai/dsh-client-ui-primitives'
 import { cjkFriendlyStrong } from '../src/markdown/cjkFriendlyStrong.ts'
 import { mathCompatibility } from '../src/markdown/mathCompatibility.ts'
@@ -146,6 +146,85 @@ describe('MarkdownText', () => {
       .find(code => code.textContent === ` ${localUrl} `)
     expect(paddedCode?.querySelector('a')).toBeNull()
     expect(container.querySelector('pre code a')).toBeNull()
+  })
+
+  it('optionally intercepts ordinary, reference, autolink, and complete inline-code HTTP(S) links', () => {
+    const openUrl = vi.fn<(href: string) => void>()
+    const source = [
+      '[ordinary](https://example.com/doc)',
+      '[reference][target]',
+      '<https://example.com/auto>',
+      '`http://127.0.0.1:3199/?demo=1`',
+      '[mail](mailto:dev@example.com)',
+      '[relative](/local)',
+      '[unsafe](javascript:alert(1))',
+      '[target]: https://example.com/reference',
+    ].join('\n\n')
+    const { container } = render(<MarkdownText text={source} onOpenUrl={openUrl} />)
+    const hrefs = [
+      'https://example.com/doc',
+      'https://example.com/reference',
+      'https://example.com/auto',
+      'http://127.0.0.1:3199/?demo=1',
+    ]
+    for (const [index, href] of hrefs.entries()) {
+      const link = screen.getAllByRole('link')[index]
+      expect(link?.getAttribute('href')).toBe(href)
+      expect(link?.getAttribute('target')).toBe('_blank')
+      expect(link?.getAttribute('rel')).toBe('noopener noreferrer')
+      expect(fireEvent.click(link as Element)).toBe(false)
+    }
+    expect(openUrl.mock.calls.map(([href]) => href)).toEqual(hrefs)
+    expect(container.querySelector('code a')?.getAttribute('href')).toBe(hrefs[3])
+    expect(screen.getByRole('link', { name: 'mail' }).getAttribute('target')).toBeNull()
+    expect(fireEvent.click(screen.getByRole('link', { name: 'mail' }))).toBe(true)
+    expect(screen.getByText('relative').closest('a')).toBeNull()
+    expect(screen.getByText('unsafe').closest('a')).toBeNull()
+    expect(openUrl).toHaveBeenCalledTimes(4)
+  })
+
+  it('preserves default navigation without a callback, and modified or auxiliary activation with one', () => {
+    const openUrl = vi.fn()
+    const source = '[safe](https://example.com/path)'
+    const rendered = render(<MarkdownText text={source} />)
+    const link = screen.getByRole('link', { name: 'safe' })
+    const originalMarkup = link.outerHTML
+    expect(fireEvent.click(link)).toBe(true)
+    rendered.rerender(<MarkdownText text={source} onOpenUrl={openUrl} />)
+    expect(link.outerHTML).toBe(originalMarkup)
+    for (const modifier of ['ctrlKey', 'metaKey', 'shiftKey', 'altKey'] as const) {
+      expect(fireEvent.click(link, { [modifier]: true })).toBe(true)
+    }
+    expect(fireEvent.click(link, { button: 1 })).toBe(true)
+    expect(fireEvent(link, new MouseEvent('auxclick', { bubbles: true, cancelable: true, button: 1 }))).toBe(true)
+    expect(openUrl).not.toHaveBeenCalled()
+    link.focus()
+    expect(document.activeElement).toBe(link)
+    // 浏览器用 detail=0 的 click 表示 Enter 激活锚点。
+    expect(fireEvent.click(link, { detail: 0 })).toBe(false)
+    expect(openUrl).toHaveBeenCalledExactlyOnceWith('https://example.com/path')
+    rendered.rerender(<MarkdownText text={source} />)
+    expect(fireEvent.click(link)).toBe(true)
+    expect(openUrl).toHaveBeenCalledTimes(1)
+  })
+
+  it('dispatches frozen streaming links to the latest callback after the active session changes', () => {
+    const first = vi.fn()
+    const second = vi.fn()
+    const source = '[frozen](https://example.com/first)\n\none\n\ntwo\n\nthree'
+    const rendered = render(<MarkdownText text={source} streaming />)
+    const link = screen.getByRole('link', { name: 'frozen' })
+    expect(fireEvent.click(link)).toBe(true)
+    rendered.rerender(<MarkdownText text={source} streaming onOpenUrl={first} />)
+    expect(fireEvent.click(link)).toBe(false)
+    expect(first).toHaveBeenCalledExactlyOnceWith('https://example.com/first')
+    rendered.rerender(<MarkdownText text={`${source}\n\nfour`} streaming onOpenUrl={second} />)
+    expect(screen.getByRole('link', { name: 'frozen' })).toBe(link)
+    expect(fireEvent.click(link)).toBe(false)
+    expect(second).toHaveBeenCalledExactlyOnceWith('https://example.com/first')
+    rendered.rerender(<MarkdownText text={`${source}\n\nfour`} streaming />)
+    expect(fireEvent.click(link)).toBe(true)
+    expect(second).toHaveBeenCalledTimes(1)
   })
 
   it('links inline code through the file-mention resolver: URL first, settled only, never inside links', () => {

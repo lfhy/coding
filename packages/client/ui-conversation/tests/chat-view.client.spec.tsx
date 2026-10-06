@@ -153,6 +153,7 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
   const { set, source } = makeSource(init)
   const openDetails = vi.fn<(t: SelectionTarget) => void>()
   const openFile = vi.fn<(path: string) => Promise<void>>().mockResolvedValue(undefined)
+  const openBrowserUrl = vi.fn<(url: string) => Promise<void>>().mockResolvedValue(undefined)
   const loadOlder = vi.fn()
   const inspectCall = vi.fn<(callId: string) => void>()
   // In-memory scroll memory matching the apply.ts per-session map contract.
@@ -282,6 +283,7 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
     SessionProvider: SessionProviderStub,
     openDetails,
     openFile,
+    openBrowserUrl,
     loadOlder,
     loadImage: vi.fn(() => Promise.reject(new Error('not used'))),
     inspectCall,
@@ -294,7 +296,7 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
   }
   const setSelection = (next: SelectionTarget | null): void => { chat.actions.select(next) }
   return {
-    set, ChatView, props, openDetails, openFile, loadOlder, inspectCall,
+    set, ChatView, props, openDetails, openFile, openBrowserUrl, loadOlder, inspectCall,
     chatScroll, forkAt, setSelection, toolOwners,
   }
 }
@@ -377,6 +379,80 @@ describe('Chat node rendering', () => {
 })
 
 describe('ChatView', () => {
+  it('opens only settled Assistant prose links through the browser callback', async () => {
+    const h = makeHarness({ nodes: [
+      user(1, '[User link](https://example.org/user)'),
+      assistant(2, '[Assistant link](https://example.org/answer)'),
+    ] })
+    render(<h.ChatView {...h.props} />)
+    expect(screen.queryByRole('link', { name: 'User link' })).toBeNull()
+    expect(h.openBrowserUrl).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('link', { name: 'Assistant link' }))
+    await waitFor(() => { expect(h.openBrowserUrl).toHaveBeenCalledWith('https://example.org/answer') })
+    expect(h.openBrowserUrl).toHaveBeenCalledTimes(1)
+  })
+
+  it('opens streaming Assistant links without remounting the link on further chunks', async () => {
+    const h = makeHarness({ partial: {
+      turn: 1, step: 1, blocks: [{ kind: 'text', text: '[Live link](https://example.org/live)' }],
+    } })
+    const view = render(<h.ChatView {...h.props} />)
+    const link = screen.getByRole('link', { name: 'Live link' })
+    fireEvent.click(link)
+    await waitFor(() => { expect(h.openBrowserUrl).toHaveBeenCalledWith('https://example.org/live') })
+    act(() => { h.set({ partial: {
+      turn: 1, step: 1, blocks: [{ kind: 'text', text: '[Live link](https://example.org/live) more' }],
+    } }) })
+    expect(view.getByRole('link', { name: 'Live link' })).toBe(link)
+  })
+
+  it('shows a retryable in-page browser refusal and leaves file mentions independent', async () => {
+    const h = makeHarness({
+      nodes: [assistant(2, '[Reference](https://example.org/r) and `report.md`')],
+      turnEnds: new Map([[1, 2]]),
+    })
+    h.props.openBrowserUrl = vi.fn().mockRejectedValueOnce(new Error('browser failed'))
+      .mockResolvedValueOnce(undefined)
+    h.props.fileMentions = () => ({ resolve: text => text === 'report.md'
+      ? { open: () => { void h.openFile('report.md') }, label: '打开 report.md', title: 'report.md' }
+      : undefined })
+    render(<h.ChatView {...h.props} />)
+    fireEvent.click(screen.getByRole('link', { name: 'Reference' }))
+    const dialog = await screen.findByRole('dialog', { name: '无法打开链接' })
+    expect(dialog.textContent).toContain('browser failed')
+    fireEvent.click(screen.getByRole('button', { name: '打开 report.md' }))
+    expect(h.openFile).toHaveBeenCalledWith('report.md')
+    expect(h.props.openBrowserUrl).toHaveBeenCalledTimes(1)
+    fireEvent.click(within(dialog).getByRole('button', { name: '重试' }))
+    await waitFor(() => { expect(screen.queryByRole('dialog', { name: '无法打开链接' })).toBeNull() })
+    expect(h.props.openBrowserUrl).toHaveBeenCalledTimes(2)
+  })
+
+  it('ignores a late browser refusal after dismissal and session switch', async () => {
+    let reject!: (error: unknown) => void
+    const h = makeHarness({ nodes: [assistant(2, '[Reference](https://example.org/r)')] })
+    h.props.openBrowserUrl = vi.fn()
+      .mockRejectedValueOnce(new Error('first refusal'))
+      .mockImplementationOnce(() => new Promise<void>((_resolve, fail) => { reject = fail }))
+    const view = render(<h.ChatView {...h.props} />)
+    fireEvent.click(screen.getByRole('link', { name: 'Reference' }))
+    const dialog = await screen.findByRole('dialog', { name: '无法打开链接' })
+    fireEvent.click(within(dialog).getByRole('button', { name: '重试' }))
+    await waitFor(() => { expect(reject).toBeTypeOf('function') })
+    fireEvent.click(within(dialog).getByRole('button', { name: '取消' }))
+    await act(async () => { reject(new Error('late refusal')) })
+    expect(screen.queryByRole('dialog', { name: '无法打开链接' })).toBeNull()
+
+    let rejectNext!: (error: unknown) => void
+    h.props.openBrowserUrl = vi.fn(() => new Promise<void>((_resolve, fail) => { rejectNext = fail }))
+    view.rerender(<h.ChatView {...h.props} />)
+    fireEvent.click(screen.getByRole('link', { name: 'Reference' }))
+    await waitFor(() => { expect(rejectNext).toBeTypeOf('function') })
+    view.rerender(<h.ChatView {...{ ...h.props, sessionId: 's2' as SessionId }} />)
+    await act(async () => { rejectNext(new Error('old session refusal')) })
+    expect(screen.queryByRole('dialog', { name: '无法打开链接' })).toBeNull()
+  })
+
   it('hands a windowless tool result to the Tool seat with an empty tool name', () => {
     const h = makeHarness({
       nodes: [{ ...toolResult(3, 'w1'), call: null }],

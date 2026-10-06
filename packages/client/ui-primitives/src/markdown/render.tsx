@@ -17,7 +17,7 @@
  */
 
 import { Fragment, createElement } from 'react'
-import type { Key, ReactNode } from 'react'
+import type { Key, MouseEvent, ReactNode } from 'react'
 import type * as Md from 'mdast'
 import type {} from 'mdast-util-math'
 import { normalizeUri } from 'micromark-util-sanitize-uri'
@@ -114,6 +114,9 @@ export interface MarkdownFileMentions {
   resolve(value: string): { open: () => void; label: string; title: string } | undefined
 }
 
+/** 已通过协议白名单的 HTTP(S) 链接点击分派器；调用方决定是否拦截默认导航。 */
+export type MarkdownOpenUrl = (href: string, event: MouseEvent<HTMLAnchorElement>) => void
+
 /**
  * One render pass's state: immutable options and targets plus the footnote
  * numbering accumulated in document order while references render.
@@ -125,6 +128,8 @@ export interface MarkdownRenderContext {
   readonly codeLabels: MarkdownCodeLabels | undefined
   /** Inline-code file mentions; absent wherever no opener vocabulary exists. */
   readonly fileMentions: MarkdownFileMentions | undefined
+  /** HTTP(S) 链接的稳定点击分派器，可供流式缓存的元素读取最新回调。 */
+  readonly openUrl?: MarkdownOpenUrl
   /** Inside an anchor's children: interactive mentions must not nest there. */
   readonly inLink?: boolean
   /** Reference targets visible to this pass. */
@@ -230,13 +235,10 @@ function renderNode(node: Md.RootContent, key: Key, context: MarkdownRenderConte
     case 'inlineCode': {
       // Parity with mdast-util-to-hast: inline code renders line endings as spaces.
       const value = node.value.replace(/\r?\n|\r/g, ' ')
-      // An inline-code token that is entirely an absolute HTTP(S) URL keeps
-      // its code chrome and gains the same safe external anchor as a link;
-      // commands, partial URLs, and other schemes stay inert. The value is
-      // authored text, not a parsed destination, so no normalizeUri: port,
-      // path, and query render unchanged.
+      // 完整的绝对 HTTP(S) URL 保留代码样式并获得安全外链；命令、部分 URL 和其他协议仍不可交互。
+      // 这里使用作者原文而非解析出的目的地址，端口、路径与查询参数无需 normalizeUri。
       const href = inlineCodeHttpUrl(value)
-      if (href !== undefined) return <code key={key}>{renderSafeLink(href, [value], 'link')}</code>
+      if (href !== undefined) return <code key={key}>{renderSafeLink(href, [value], 'link', context)}</code>
       // A token the owner's file-mention vocabulary recognizes opens that
       // file; the resolver, not this renderer, decides what names a file.
       // Inside an anchor the token stays inert — a button cannot nest there.
@@ -275,7 +277,7 @@ function renderNode(node: Md.RootContent, key: Key, context: MarkdownRenderConte
     case 'table':
       return renderTable(node, key, context)
     case 'link':
-      return renderAnchor(node.url, renderChildren(node.children, { ...context, inLink: true }), key)
+      return renderAnchor(node.url, renderChildren(node.children, { ...context, inLink: true }), key, context)
     case 'linkReference':
       return renderLinkReference(node, key, context)
     case 'image':
@@ -432,8 +434,8 @@ function renderTableRow(
   return <tr key={key}>{cells}</tr>
 }
 
-/** Anchor over an already-authored href: allowlisted or unwrapped, external links get the safe attributes. */
-function renderSafeLink(href: string, children: ReactNode[], key: Key): ReactNode {
+/** 仅为白名单链接创建锚点；HTTP(S) 保留安全外链属性并可由持有方拦截点击。 */
+function renderSafeLink(href: string, children: ReactNode[], key: Key, context: MarkdownRenderContext): ReactNode {
   const safeHref = sanitizeUrl(href)
   if (safeHref === '') return <Fragment key={key}>{children}</Fragment>
   const external = ['http:', 'https:'].includes(new URL(safeHref).protocol)
@@ -442,15 +444,16 @@ function renderSafeLink(href: string, children: ReactNode[], key: Key): ReactNod
       key={key}
       href={safeHref}
       {...(external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+      onClick={external ? event => context.openUrl?.(safeHref, event) : undefined}
     >
       {children}
     </a>
   )
 }
 
-/** Anchor over a parsed markdown destination, which hast normalized before the allowlist saw it. */
-function renderAnchor(url: string, children: ReactNode[], key: Key): ReactNode {
-  return renderSafeLink(normalizeUri(url), children, key)
+/** Markdown 目的地址先按原有规则归一化，再交由协议白名单判定。 */
+function renderAnchor(url: string, children: ReactNode[], key: Key, context: MarkdownRenderContext): ReactNode {
+  return renderSafeLink(normalizeUri(url), children, key, context)
 }
 
 /**
@@ -506,7 +509,7 @@ function renderLinkReference(
     // not an anchor, so mentions inside it stay live.
     return <Fragment key={key}>{'['}{renderChildren(node.children, context)}{referenceSuffix(node)}</Fragment>
   }
-  return renderAnchor(definition.url, renderChildren(node.children, { ...context, inLink: true }), key)
+  return renderAnchor(definition.url, renderChildren(node.children, { ...context, inLink: true }), key, context)
 }
 
 function renderImageReference(

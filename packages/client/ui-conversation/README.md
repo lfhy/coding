@@ -52,6 +52,8 @@ Host 带 placement 的 `session/queue` 快照也会携带待处理 steering。Qu
 
 完成的一轮会物化一个有序的 `turn-tail` Conversation Node。它由引擎维护的 `TurnLocation` 提供收尾 Assistant 和 Turn data；renderer 在该 Node 的 IconActions 之前渲染 `conversation.chat.turnTail` chain，并派发包含 Turn、收尾 seq 和 `openFile` 的 `TurnTailOwnerProps`。本包只拥有空位；`@deepseek-ai/dsh-client-ui-deliverables` 把改写工具的 `locations` 累积到 Turn data，并拥有产物行、chip 上限和文案，因此把该插件从 cordis.yml 中组合掉即可关闭该交互面，空位以零成本渲染为空。收尾正文经由同一个开关参与其中：chat 视图向可选的 `chatFileMentions` service（ctx.get；由同一插件提供）索取收尾消息的行内代码词表，并把结果接进 MarkdownText 的 `fileMentions` seam——service 缺席时正文保持死文本。
 
+Assistant 正文中的 Markdown 链接仅在用户无修饰键主键点击时交给可选的 `chatBrowserLinks` 服务，按点击所属的 `SessionId` 在浏览器工作台打开；渲染正文不会自动打开链接，用户消息、文件词条和其他插件内容不走这一路径。服务缺席或打开失败时，Chat 视图显示可关闭、可重试的页面内对话框；切换会话或关闭后，先前请求的迟到结果不会重新显示错误。
+
 欢迎页右上角渲染根作用域的 `conversation.hero.actions` 列表 slot；工作台插件依次注册终端底栏和右侧边栏图标按钮。该操作行只在 Hero 阶段出现，输入栏、Workspace picker 和滚动容器不因操作行的显示而重挂载。
 
 桌面壳注入窗口拖拽样式时，Hero 顶端的空白条与活跃会话、详情面板页头的空白处可拖动窗口；操作按钮、链接、输入与视图标签保持可点击。页头在 Windows 为原生 caption 控件留右侧空间，工作台占右列时由工作台页头承担避让；浏览器缺省无拖拽区域。

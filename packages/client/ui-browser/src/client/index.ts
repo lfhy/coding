@@ -2,6 +2,8 @@
 
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { ChatBrowserLinks } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-open-in-app/client'
 import { BrowserMirrorController, desktopBrowserPresentation } from './controller.ts'
@@ -26,6 +28,33 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-browser: dictionaries')
   const connection = ctx.get('connection') as ConnectionHandle
   const controllers = new Map<string, BrowserMirrorController>()
+  const openers = new Map<string, (url: string, isCurrent: () => boolean) => Promise<void>>()
+  const inFlight = new Map<string, { url: string; promise: Promise<void> }>()
+  const registerLinkOpener = (sessionId: string, open: (url: string, isCurrent: () => boolean) => Promise<void>) => {
+    openers.set(sessionId, open)
+    return () => {
+      if (openers.get(sessionId) !== open) return
+      openers.delete(sessionId)
+      inFlight.delete(sessionId)
+    }
+  }
+  const links: ChatBrowserLinks = {
+    open(sessionId: SessionId, url: string): Promise<void> {
+      const owner = openers.get(sessionId)
+      if (owner === undefined) return Promise.reject(new Error('当前会话的浏览器工作台尚未就绪，请稍后重试'))
+      const pending = inFlight.get(sessionId)
+      if (pending !== undefined) return pending.url === url ? pending.promise
+        : Promise.reject(new Error('浏览器正在打开另一链接，请稍后重试'))
+      const promise = Promise.resolve().then(async () => {
+        if (openers.get(sessionId) !== owner) throw new Error('会话已切换，请在当前会话重试')
+        await owner(url, () => openers.get(sessionId) === owner)
+        if (openers.get(sessionId) !== owner) throw new Error('会话已切换，请在当前会话重试')
+      }).finally(() => { if (inFlight.get(sessionId)?.promise === promise) inFlight.delete(sessionId) })
+      inFlight.set(sessionId, { url, promise })
+      return promise
+    },
+  }
+  ctx.provide('chatBrowserLinks', links)
   const controllerFor = (sessionId: string) => {
     let controller = controllers.get(sessionId)
     if (controller === undefined) {
@@ -42,6 +71,8 @@ export function apply(ctx: ClientContext): void {
       start: () => controller.start(),
       ensureTab: () => controller.ensureTab(),
       command: command => controller.command(command),
+      openUrl: url => controller.openUrl(url),
+      registerLinkOpener,
       retry: () => { controller.retry() },
     }
   }
@@ -54,6 +85,8 @@ export function apply(ctx: ClientContext): void {
       dispose()
       for (const controller of controllers.values()) controller.stop()
       controllers.clear()
+      openers.clear()
+      inFlight.clear()
     }
   })
   ctx.slots.inject('workbench.browser.tabs', () => ctx.slots.register({

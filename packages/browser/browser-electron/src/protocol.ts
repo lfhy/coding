@@ -110,7 +110,9 @@ function sameObservation(left: BrowserObservation, right: BrowserObservation): b
 function command(value: unknown, human: boolean): boolean {
   if (!record(value) || typeof value.kind !== 'string') return false
   const kind = value.kind
-  if (kind === 'navigate') return fields(value, ['kind', 'url']) && bounded(value.url, 4096)
+  if (kind === 'navigate' || human && kind === 'open-url') {
+    return fields(value, ['kind', 'url']) && bounded(value.url, 4096)
+  }
   if (human) {
     if (['ensure-tab', 'new-tab', 'back', 'forward', 'reload'].includes(kind)) return fields(value, ['kind'])
     if (['select-tab', 'close-tab'].includes(kind)) return fields(value, ['kind', 'tabId']) && bounded(value.tabId, 128)

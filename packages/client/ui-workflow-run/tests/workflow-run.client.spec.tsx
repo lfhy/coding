@@ -292,6 +292,7 @@ function panelProps(data: WorkflowRunChatData, sessions = listState(), openSessi
     selectedCallId: undefined,
     cwd: undefined,
     openFile: () => {},
+    openBrowserUrl: vi.fn(),
     inspectCall: () => {},
     forkAt: () => {},
     renderMessageImages: () => null,
@@ -787,9 +788,11 @@ describe('WorkflowRunPanel', () => {
       name: 'audit', status: 'running', phases: [phase()],
     }
     const openSession = vi.fn()
-    render(<WorkflowRunPanel {...panelProps(data, listState(), openSession)} />)
+    const props = panelProps(data, listState(), openSession)
+    render(<WorkflowRunPanel {...props} />)
     fireEvent.click(screen.getByRole('button', { name: '打开 worker' }))
     expect(openSession).toHaveBeenCalledWith('child-1')
+    expect(props.openBrowserUrl).not.toHaveBeenCalled()
   })
 
   it('promotes a running member when its ordinary Session row arrives', () => {

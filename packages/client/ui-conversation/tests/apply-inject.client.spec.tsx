@@ -247,6 +247,18 @@ describe('conversation slot inject API', () => {
     await b.runtime.dispose()
   })
 
+  it('opens browser links with its bound session through a lazily resolved optional service', async () => {
+    const b = await bench()
+    const { injected } = b.chatViewApi(ROOT)
+    await expect(injected.openBrowserUrl('https://example.org/first'))
+      .rejects.toThrow('浏览器工作台不可用')
+    const open = vi.fn().mockResolvedValue(undefined)
+    b.runtime.provide('chatBrowserLinks', { open })
+    await injected.openBrowserUrl('https://example.org/second')
+    expect(open).toHaveBeenCalledWith(ROOT, 'https://example.org/second')
+    await b.runtime.dispose()
+  })
+
   it('routes workspace switching through the runtime owner, carrying the draft', async () => {
     const b = await bench()
     const resident = b.residentApi(ROOT)

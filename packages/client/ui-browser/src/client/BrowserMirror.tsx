@@ -21,6 +21,8 @@ export interface BrowserMirrorInjected {
   start: () => () => void
   ensureTab: () => Promise<void>
   command: (command: BrowserHumanCommand) => Promise<boolean>
+  openUrl: (url: string) => Promise<BrowserState>
+  registerLinkOpener: (sessionId: string, open: (url: string, isCurrent: () => boolean) => Promise<void>) => () => void
   retry: () => void
 }
 export type BrowserMirrorProps = PropsRuntime<'workbench.browser'> & PropsLocale<typeof NS> & InjectFace<BrowserMirrorInjected>
@@ -132,9 +134,9 @@ export function BrowserTabs({ shown, browserShown = shown, tabId, tabName, tabDo
  * @returns 浏览器内容区域。
  */
 export function BrowserMirror({ sessionId, shown, selectedTabId, newTabRequest, handledTabRequest,
-  markTabRequestHandled, syncBrowserTabs, focusBrowserTab, useSession,
+  markTabRequestHandled, syncBrowserTabs, focusBrowserTab, openBrowser, useSession,
   interactionEpoch, browserAutoRevealed, requestAutoReveal, autoRevealBrowser,
-  useBrowserMirror, start, ensureTab, command, retry, t }: BrowserMirrorProps) {
+  useBrowserMirror, start, ensureTab, command, openUrl, registerLinkOpener, retry, t }: BrowserMirrorProps) {
   const nodes = useSession(snapshot => snapshot.nodes)
   const runningCalls = useSession(snapshot => snapshot.runningCalls)
   const openState = useSession(snapshot => snapshot.openState)
@@ -146,6 +148,34 @@ export function BrowserMirror({ sessionId, shown, selectedTabId, newTabRequest, 
   const phaseRef = useRef(view.phase)
   phaseRef.current = view.phase
   useEffect(() => start(), [start])
+  const linkOwner = useRef({ syncBrowserTabs, openBrowser, t, openUrl, interactionEpoch, selectedTabId })
+  linkOwner.current = { syncBrowserTabs, openBrowser, t, openUrl, interactionEpoch, selectedTabId }
+  const linkOpening = useRef(false)
+  const linkRevealTab = useRef<string | null>(null)
+  const manualLinkChoice = useRef<{ tabId: string; epoch: number } | null>(null)
+  const [linkSettlement, setLinkSettlement] = useState(0)
+  useEffect(() => registerLinkOpener(sessionId, async (url, isCurrent) => {
+    const epoch = linkOwner.current.interactionEpoch
+    manualLinkChoice.current = null
+    linkOpening.current = true
+    try {
+      const state = await linkOwner.current.openUrl(url)
+      if (!isCurrent()) throw new Error('会话已切换，请在当前会话重试')
+      const activeId = state.activeTabId
+      if (activeId === null) throw new Error('浏览器未返回活动页面，请刷新后重试')
+      const owner = linkOwner.current
+      const changed = owner.interactionEpoch !== epoch
+      const manualTabId = changed && owner.selectedTabId !== undefined
+        && state.tabs.some(tab => tab.id === owner.selectedTabId) ? owner.selectedTabId : null
+      if (manualTabId !== null) manualLinkChoice.current = { tabId: manualTabId, epoch: owner.interactionEpoch }
+      if (!changed) linkRevealTab.current = activeId
+      owner.syncBrowserTabs(browserTabNames(state, owner.t), manualTabId ?? activeId)
+      if (owner.interactionEpoch === epoch) owner.openBrowser(activeId)
+    } finally {
+      linkOpening.current = false
+      if (manualLinkChoice.current !== null && isCurrent()) setLinkSettlement(previous => previous + 1)
+    }
+  }), [sessionId, registerLinkOpener])
   const observed = useRef<{ ready: boolean; seq: number; pending: (NavigationRevealTarget & { epoch: number }) | null }>({
     ready: false, seq: 0, pending: null,
   })
@@ -185,9 +215,14 @@ export function BrowserMirror({ sessionId, shown, selectedTabId, newTabRequest, 
   }, [nodes, runningCalls, openState, interactionEpoch, native])
   useEffect(() => {
     if (view.state !== null) {
-      syncBrowserTabs(browserTabNames(view.state, t), view.state.activeTabId)
+      const choice = manualLinkChoice.current
+      if (choice !== null && choice.epoch !== interactionEpoch) manualLinkChoice.current = null
+      const selected = choice !== null && choice.epoch === interactionEpoch
+        && view.state.tabs.some(tab => tab.id === choice.tabId) ? choice.tabId : view.state.activeTabId
+      syncBrowserTabs(browserTabNames(view.state, t), selected)
+      if (view.state.activeTabId === choice?.tabId) manualLinkChoice.current = null
     } else if (view.phase === 'empty') syncBrowserTabs([], null)
-  }, [view.state, view.phase, syncBrowserTabs, t])
+  }, [view.state, view.phase, syncBrowserTabs, t, interactionEpoch])
   useEffect(() => {
     const pending = observed.current.pending
     if (pending === null) return
@@ -200,13 +235,29 @@ export function BrowserMirror({ sessionId, shown, selectedTabId, newTabRequest, 
     autoRevealBrowser(targetTabId, pending.epoch)
   }, [view, nodes, runningCalls, interactionEpoch, requestAutoReveal, autoRevealBrowser])
   // 只响应工作台选中页变化；Host 新画面交给同步投影，避免旧选择反抢模型刚打开的页。
+  const manualHostTabId = manualLinkChoice.current === null ? undefined : view.state?.activeTabId
+  const manualHostPending = manualLinkChoice.current === null ? undefined : view.pending
+  const manualHostPhase = manualLinkChoice.current === null ? undefined : view.phase
+  const manualHostBusy = manualLinkChoice.current === null ? undefined : view.state?.operationActive
   useEffect(() => {
     const current = viewRef.current
+    if (linkRevealTab.current === selectedTabId) linkRevealTab.current = null
+    if (linkOpening.current || linkRevealTab.current !== null) return
+    const manual = manualLinkChoice.current
+    if (manual !== null && manual.epoch === interactionEpoch && manual.tabId === selectedTabId) {
+      if (current.phase === 'ready' && !current.pending && !current.state.operationActive
+        && current.state.activeTabId !== manual.tabId) {
+        const target = current.state.tabs.find(tab => tab.id === manual.tabId)
+        if (target !== undefined) void command({ kind: 'select-tab', tabId: target.id })
+      }
+      return
+    }
     if (!shown || browserAutoRevealed || selectedTabId === undefined || current.phase !== 'ready' || current.pending
       || current.state.operationActive || current.state.activeTabId === selectedTabId) return
     const target = current.state.tabs.find(tab => tab.id === selectedTabId)
     if (target !== undefined) void command({ kind: 'select-tab', tabId: target.id })
-  }, [shown, selectedTabId, browserAutoRevealed, command])
+  }, [shown, selectedTabId, browserAutoRevealed, command, linkSettlement, interactionEpoch,
+    manualHostTabId, manualHostPending, manualHostPhase, manualHostBusy])
   // 每次由菜单进入仅等待一次明确基线；已有标签会消耗机会，关闭后的 empty 不会重建。
   const entry = useRef({ shown: false, awaitingState: false })
   const issuedTabRequest = useRef(handledTabRequest)

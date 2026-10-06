@@ -23,22 +23,30 @@ function mockResizeObserver() {
   vi.stubGlobal('ResizeObserver', MockResizeObserver)
 }
 const t = (key: keyof typeof en, args?: { name: string }) => en[key].replace('{name}', args?.name ?? '')
+type LinkedState = Awaited<ReturnType<BrowserMirrorProps['openUrl']>>
 function mount(view: BrowserView, shown = true, useSession = sessionHook([])) {
   const command = vi.fn(async () => true)
   const ensureTab = vi.fn(async () => {})
   const start = vi.fn(() => vi.fn())
   const syncBrowserTabs = vi.fn()
+  let opener: ((url: string, isCurrent: () => boolean) => Promise<void>) | undefined
+  const registerLinkOpener = vi.fn((_sessionId: string, open: typeof opener) => {
+    opener = open
+    return () => { if (opener === open) opener = undefined }
+  })
+  const openUrl = vi.fn(async (): Promise<LinkedState> => state(2, otherId) as never)
   const props = { sessionId: 'session-a', shown, browserShown: shown, newTabRequest: 0,
     handledTabRequest: 0, markTabRequestHandled: vi.fn(), focusBrowserTab: vi.fn(),
     focusPendingBrowserTab: vi.fn(),
     interactionEpoch: 0, browserAutoRevealed: false,
     requestAutoReveal: vi.fn(() => true), autoRevealBrowser: vi.fn(),
     useSession,
-    openBrowser: vi.fn(), syncBrowserTabs, start, command, ensureTab,
+    openBrowser: vi.fn(), syncBrowserTabs, start, command, ensureTab, openUrl, registerLinkOpener,
     retry: vi.fn(), useBrowserMirror: <S,>(selector: (snapshot: BrowserView) => S): S => selector(view),
     t } as unknown as BrowserMirrorProps
   const result = render(<BrowserMirror {...props} />)
-  return { ...result, props, command, ensureTab, start, syncBrowserTabs }
+  return { ...result, props, command, ensureTab, start, syncBrowserTabs, openUrl,
+    openLink: (url: string) => opener!(url, () => opener !== undefined) }
 }
 const ready = (revision = 1): BrowserView => ({
   phase: 'ready', state: state(revision) as never, frameUrl: 'blob:frame', pending: false,
@@ -79,6 +87,79 @@ function navigated(url: string, revision: number): BrowserView {
 }
 
 describe('browser UI', () => {
+  it('opens an Assistant link in the hidden workbench only after syncing the exact Host tabs', async () => {
+    const browser = mount(ready(), false)
+    const order: string[] = []
+    browser.syncBrowserTabs.mockImplementation(() => { order.push('sync') })
+    browser.props.openBrowser = vi.fn(() => { order.push('open') })
+    browser.rerender(<BrowserMirror {...browser.props} />)
+    await act(async () => { await browser.openLink('https://linked.example/') })
+    expect(browser.openUrl).toHaveBeenCalledExactlyOnceWith('https://linked.example/')
+    expect(browser.syncBrowserTabs).toHaveBeenLastCalledWith([
+      { id, name: 'Example' }, { id: otherId, name: 'New tab' },
+    ], otherId)
+    expect(browser.props.openBrowser).toHaveBeenCalledExactlyOnceWith(otherId)
+    expect(order).toEqual(['sync', 'open'])
+    expect(browser.command).not.toHaveBeenCalled()
+    expect(browser.props.markTabRequestHandled).not.toHaveBeenCalled()
+  })
+
+  it('does not reveal a stale session or switch the old selected page during the link command', async () => {
+    let finish!: (value: LinkedState) => void
+    const browser = mount(ready())
+    browser.openUrl.mockImplementation(() => new Promise<LinkedState>((resolve) => { finish = resolve }))
+    const opening = browser.openLink('https://linked.example/')
+    browser.rerender(<BrowserMirror {...browser.props} selectedTabId={otherId} />)
+    expect(browser.command).not.toHaveBeenCalled()
+    browser.unmount()
+    finish(state(2, otherId) as never)
+    await expect(opening).rejects.toThrow('会话已切换')
+    expect(browser.props.openBrowser).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    { choice: '关闭或转到文件/终端', shown: false, selectedTabId: undefined },
+    { choice: '切换浏览器页面', shown: true, selectedTabId: id },
+  ])('keeps a newer workbench choice ($choice) after a delayed link result', async ({ shown, selectedTabId }) => {
+    let finish!: (value: LinkedState) => void
+    const browser = mount(ready(), true)
+    browser.openUrl.mockImplementation(() => new Promise<LinkedState>((resolve) => { finish = resolve }))
+    const opening = browser.openLink('https://linked.example/')
+    browser.rerender(<BrowserMirror {...browser.props} shown={shown}
+      {...selectedTabId === undefined ? {} : { selectedTabId }}
+      interactionEpoch={1} />)
+    await act(async () => {
+      finish(state(2, otherId) as never)
+      await opening
+    })
+    expect(browser.props.openBrowser).not.toHaveBeenCalled()
+    if (selectedTabId !== undefined) {
+      expect(browser.syncBrowserTabs).toHaveBeenLastCalledWith(expect.any(Array), selectedTabId)
+      const hostState = state(2, otherId) as never
+      browser.rerender(<BrowserMirror {...browser.props} shown selectedTabId={selectedTabId}
+        interactionEpoch={1} useBrowserMirror={viewHook({ phase: 'error', state: hostState,
+          frameUrl: null, pending: false, message: '画面 HTTP 503' })} />)
+      expect(browser.command).not.toHaveBeenCalled()
+      browser.rerender(<BrowserMirror {...browser.props} shown selectedTabId={selectedTabId}
+        interactionEpoch={1} useBrowserMirror={viewHook({ phase: 'ready', state: hostState,
+          frameUrl: null, pending: false })} />)
+      expect(browser.syncBrowserTabs).toHaveBeenLastCalledWith(expect.any(Array), selectedTabId)
+      expect(browser.command).toHaveBeenCalledExactlyOnceWith({ kind: 'select-tab', tabId: selectedTabId })
+    } else {
+      expect(browser.syncBrowserTabs).toHaveBeenLastCalledWith(expect.any(Array), otherId)
+      expect(browser.command).not.toHaveBeenCalled()
+    }
+  })
+
+  it('does not reveal a tab after a Host error and permits a later attempt', async () => {
+    const browser = mount(ready(), false)
+    browser.openUrl.mockRejectedValueOnce(new Error('远程工作区不支持人工浏览器'))
+    await expect(browser.openLink('https://linked.example/')).rejects.toThrow('远程工作区')
+    expect(browser.props.openBrowser).not.toHaveBeenCalled()
+    await act(async () => { await browser.openLink('https://linked.example/') })
+    expect(browser.props.openBrowser).toHaveBeenCalledExactlyOnceWith(otherId)
+  })
+
   it('positions the native guest on resize and scroll without screenshot or viewport commands', () => {
     mockResizeObserver()
     const present = vi.fn(async () => {})

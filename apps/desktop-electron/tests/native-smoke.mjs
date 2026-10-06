@@ -546,6 +546,7 @@ async function browserFixture() {
   const address = server.address()
   assert.ok(address && typeof address !== 'string', 'native guest fixture must bind locally')
   return { url: `http://127.0.0.1:${address.port}/`,
+    assistantLinkUrl: `http://127.0.0.1:${address.port}/assistant-link`,
     timeoutUrl: `http://127.0.0.1:${address.port}/timeout`,
     get stalledRequests() { return stalledRequests },
     close: async () => {
@@ -716,6 +717,48 @@ async function scriptedNavigateModel(fixtureUrl) {
       phase = 'snapshot'
       step = 0
     },
+    close: async () => {
+      server.closeAllConnections()
+      await new Promise(resolveClose => server.close(resolveClose))
+    } }
+}
+
+async function scriptedAssistantLinkModel(fixtureUrl) {
+  let responses = 0
+  const failures = []
+  const server = createServer((request, response) => {
+    if (request.url !== '/chat/completions' || request.method !== 'POST' ||
+      request.socket.remoteAddress !== '127.0.0.1') {
+      response.writeHead(404).end()
+      return
+    }
+    let body = ''
+    request.on('data', chunk => { body += chunk.toString('utf8') })
+    request.on('end', () => {
+      try {
+        const payload = JSON.parse(body)
+        const tools = (payload.tools ?? []).map(tool => tool.function?.name)
+        const content = tools.includes('browser_snapshot')
+          ? `请查看[打开本地页面](${fixtureUrl})。`
+          : 'Native assistant link smoke'
+        if (tools.includes('browser_snapshot')) responses++
+        response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store' })
+        response.write(`data: ${JSON.stringify({ choices: [{ delta: { content }, finish_reason: 'stop' }] })}\n\n`)
+        response.end('data: [DONE]\n\n')
+      } catch (error) {
+        failures.push(error instanceof Error ? error.message : String(error))
+        response.writeHead(500).end('invalid scripted assistant link step')
+      }
+    })
+  })
+  await new Promise((resolveListen, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', resolveListen)
+  })
+  const address = server.address()
+  assert.ok(address && typeof address !== 'string', 'assistant link model must bind locally')
+  return { url: `http://127.0.0.1:${address.port}`, failures,
+    get responses() { return responses },
     close: async () => {
       server.closeAllConnections()
       await new Promise(resolveClose => server.close(resolveClose))
@@ -1092,6 +1135,123 @@ async function verifyAgentNavigateAutoReveal(page, app, fixtureUrl, model) {
   'closing the Agent-opened tab must release fresh Session browser resources')
   await until(async () => await app.evaluate(({ webContents }, id) => webContents.fromId(id)?.isDestroyed() !== false,
     guestId), 'Agent-opened native guest destroyed')
+  return sessionId
+}
+
+async function verifyAssistantLinkOpensNativeGuest(page, app, sessionId, fixture, model, hostOrigin) {
+  // 同一当前会话先有一个页面，再收起右栏：链接必须新建页面并重新选择浏览器。
+  const menu = page.getByRole('navigation', { name: '工作台功能' })
+  await page.getByRole('button', { name: '添加工作台标签' }).click()
+  await menu.getByRole('button', { name: '浏览器' }).click()
+  await page.getByTestId('browser-canvas').waitFor({ state: 'visible' })
+  const initial = await browserRpc(page, 'browser.control', { sessionId, command: { kind: 'ensure-tab' } })
+  const oldTabId = initial.activeTabId
+  assert.ok(oldTabId, 'current Session must have an existing browser tab')
+  const address = page.getByRole('textbox', { name: '网址' })
+  await address.fill(fixture.url)
+  await address.press('Enter')
+  await until(async () => (await browserRpc(page, 'browser.control',
+    { sessionId, command: { kind: 'ensure-tab' } })).tabs.find(tab => tab.id === oldTabId)?.url === fixture.url,
+  'existing Session browser page reaches local fixture')
+  let oldGuest
+  await until(async () => {
+    oldGuest = await nativeGuest(app)
+    return oldGuest?.attached && oldGuest.url === fixture.url
+  }, 'existing native guest presented')
+  const oldGuestId = oldGuest.id
+  const oldPage = app.context().pages().find(candidate => !candidate.isClosed() && candidate.url() === fixture.url)
+  assert.ok(oldPage, 'existing native guest must expose an interactive target')
+  await clickGuest(oldPage, '#human')
+  assert.equal(await guestScript(app, oldGuestId, 'document.querySelector("#human-result").textContent'),
+    'Human clicked', 'existing guest must retain a distinguishable DOM mutation')
+  await page.getByRole('button', { name: '收起右侧边栏' }).first().click()
+  await page.getByRole('button', { name: '打开右侧边栏' }).first().waitFor({ state: 'visible' })
+  await until(async () => await nativeGuest(app, oldGuestId) === null, 'old guest detached while sidebar hidden')
+
+  const priorTurns = (await browserRpc(page, 'session.history', { sessionId, maxMessages: 100 }))
+    .events.filter(({ event }) => event.type === 'turn/end').length
+  const prompted = await browserRpc(page, 'session.prompt', { sessionId, mode: 'queue',
+    content: [{ type: 'text', text: 'Offer the local fixture as an ordinary Markdown link.' }] })
+  assert.equal(prompted.accepted, true, 'current Session must accept the scripted assistant link turn')
+  let history
+  try {
+    await until(async () => {
+      history = await browserRpc(page, 'session.history', { sessionId, maxMessages: 100 })
+      return history.events.filter(({ event }) => event.type === 'turn/end').length > priorTurns
+    }, 'scripted assistant Markdown turn completion', 45_000)
+  } catch (error) {
+    throw new Error(`${error.message}; scripted assistant link errors: ${model.failures.join(' | ') || 'none'}`)
+  }
+  assert.deepEqual(model.failures, [], 'scripted link model must serve the real Agent request')
+  assert.equal(model.responses, 1, 'Agent must emit one ordinary Markdown link response')
+  const link = page.getByRole('link', { name: '打开本地页面', exact: true })
+  await link.waitFor({ state: 'visible' })
+  assert.equal(await link.getAttribute('href'), fixture.assistantLinkUrl,
+    'visible conversation anchor must retain the external-to-Host local fixture URL')
+  assert.notEqual(new URL(fixture.assistantLinkUrl).origin, hostOrigin,
+    'assistant link must not point back to the Host renderer')
+  const before = await browserRpc(page, 'browser.control', { sessionId, command: { kind: 'ensure-tab' } })
+  assert.equal(before.activeTabId, oldTabId)
+  assert.deepEqual(before.tabs.map(tab => tab.id), [oldTabId], 'existing page must precede the assistant click')
+  await page.evaluate(() => {
+    window.__nativeSmokeWindowOpenCalls = 0
+    window.__nativeSmokeOriginalOpen = window.open
+    window.open = (...args) => {
+      window.__nativeSmokeWindowOpenCalls++
+      return window.__nativeSmokeOriginalOpen(...args)
+    }
+  })
+  try {
+    await link.click({ noWaitAfter: true })
+    let opened
+    await until(async () => {
+      opened = await browserRpc(page, 'browser.control', { sessionId, command: { kind: 'ensure-tab' } })
+      return opened.tabs.length === 2 && opened.activeTabId !== oldTabId &&
+        opened.tabs.find(tab => tab.id === opened.activeTabId)?.url === fixture.assistantLinkUrl
+    }, 'assistant click opens a new active Host browser tab')
+    const newTabId = opened.activeTabId
+    assert.equal(opened.tabs.find(tab => tab.id === oldTabId)?.url, fixture.url,
+      'existing page must survive the assistant link')
+    await page.getByRole('button', { name: '收起右侧边栏' }).first().waitFor({ state: 'visible' })
+    await page.locator(`[data-browser-tab-id="${newTabId}"][aria-selected="true"]`).waitFor({ state: 'visible' })
+    await page.getByTestId('browser-canvas').waitFor({ state: 'visible' })
+    let newGuest
+    await until(async () => {
+      newGuest = await nativeGuest(app)
+      return newGuest?.attached && newGuest.url === fixture.assistantLinkUrl &&
+        newGuest.title === 'Native guest fixture'
+    }, 'assistant link displayed in a main-owned native WebContentsView')
+    assert.notEqual(newGuest.id, oldGuestId, 'link must use a new guest, not navigate the old page')
+    assert.equal(await guestScript(app, newGuest.id, 'document.querySelector("#human-result").textContent'),
+      'Waiting', 'new guest must load the local fixture document, not a renderer screenshot')
+    assert.equal(await guestScript(app, oldGuestId, 'document.querySelector("#human-result").textContent'),
+      'Human clicked', 'hidden old native guest DOM must remain intact')
+    assert.equal(await page.locator('#human-result').count(), 0,
+      'fixture DOM belongs to the native guest and must not be confused with Host renderer DOM')
+    assert.equal(await page.getByTestId('browser-canvas').locator('img').count(), 0,
+      'native guest presentation must not rely on a renderer screenshot')
+    assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), 1,
+      'assistant link must not create another BrowserWindow')
+    assert.equal(await page.evaluate(() => window.__nativeSmokeWindowOpenCalls), 0,
+      'assistant link must not call renderer window.open')
+    assert.equal(page.url(), `${hostOrigin}/`, 'assistant click must not navigate the Host renderer')
+    await page.locator(`[data-browser-tab-id="${oldTabId}"]`).click()
+    await until(async () => (await nativeGuest(app, oldGuestId))?.attached,
+      'old native guest can still be selected after assistant link opens')
+    await page.locator(`[data-browser-tab-id="${newTabId}"]`).click()
+    await until(async () => (await nativeGuest(app, newGuest.id))?.attached,
+      'new guest reselected without replacement')
+    await browserRpc(page, 'browser.control', { sessionId, command: { kind: 'close-tab', tabId: oldTabId } })
+    assert.equal(await browserRpc(page, 'browser.control',
+      { sessionId, command: { kind: 'close-tab', tabId: newTabId } }), null,
+    'closing both assistant-link test tabs releases this Session browser')
+  } finally {
+    await page.evaluate(() => {
+      if (window.__nativeSmokeOriginalOpen !== undefined) window.open = window.__nativeSmokeOriginalOpen
+      delete window.__nativeSmokeOriginalOpen
+      delete window.__nativeSmokeWindowOpenCalls
+    }).catch(() => undefined)
+  }
 }
 
 async function verifyAgentTimeoutRecovery(page, app, sessionId, fixture, model) {
@@ -1213,6 +1373,7 @@ async function main() {
   let model
   let navigateModel
   let timeoutModel
+  let assistantLinkModel
   let passed = false
   try {
     await Promise.all([home, tmp, workspace].map(path => mkdir(path, { recursive: true, mode: 0o700 })))
@@ -1316,7 +1477,11 @@ async function main() {
     navigateModel = await scriptedNavigateModel(fixture.url)
     await browserRpc(page, 'settings.update', { ns: 'llm-deepseek',
       patch: { baseURL: navigateModel.url, thinking: 'disabled', reasoningEffort: 'off' } })
-    await verifyAgentNavigateAutoReveal(page, app, fixture.url, navigateModel)
+    const linkSessionId = await verifyAgentNavigateAutoReveal(page, app, fixture.url, navigateModel)
+    assistantLinkModel = await scriptedAssistantLinkModel(fixture.assistantLinkUrl)
+    await browserRpc(page, 'settings.update', { ns: 'llm-deepseek',
+      patch: { baseURL: assistantLinkModel.url, thinking: 'disabled', reasoningEffort: 'off' } })
+    await verifyAssistantLinkOpensNativeGuest(page, app, linkSessionId, fixture, assistantLinkModel, origin)
     await verifyWindowBoundary(page, app, origin)
 
     const originalWindow = await app.evaluate(({ BrowserWindow }) => {
@@ -1355,6 +1520,7 @@ async function main() {
       `screenshots: ${screenshot}, ${afterScreenshot}, ${remoteScreenshot}, ${terminalScreenshot}, ${browserScreenshot}, ${guestScreenshot}, ${restoredScreenshot}`)
     console.log('PASS: scripted loopback model drove shipped Host browser_snapshot and browser_click on the human-operated native guest; Host origin/localhost navigation and guest subresource fetch denied; no external model API used')
     console.log('PASS: separate fresh Session browser_navigate auto-revealed its native guest and selected tab; a human click persisted into the next model browser_snapshot on the same guest')
+    console.log('PASS: ordinary assistant Markdown link reopened the hidden right sidebar, selected a new native guest tab, and preserved the previous page without window.open')
     console.log('PASS: stalled local image timed out browser_navigate, stopped loading safely, and the same Electron guest/tab yielded a fresh Agent browser_snapshot')
   } finally {
     if (!passed && existsSync(screenshot)) console.error(`Failure screenshot: ${screenshot}`)
@@ -1368,6 +1534,7 @@ async function main() {
     if (model !== undefined) await model.close()
     if (navigateModel !== undefined) await navigateModel.close()
     if (timeoutModel !== undefined) await timeoutModel.close()
+    if (assistantLinkModel !== undefined) await assistantLinkModel.close()
     if (app !== undefined) await closeOwnApp(app)
     // 未能证明 Host 所有权或无法等到其退出时保留 HOME，避免删掉仍运行的 Host 的数据。
     let safeToClean = false

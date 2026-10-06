@@ -672,7 +672,39 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
       if (leases.has(sessionId)) return Promise.reject(new GuestError('browser operation already active', 'BROWSER_BUSY'))
       return enqueue(sessionId, async () => {
         let owner = owners.get(sessionId)
-        if (command.kind === 'navigate') allowedUrl(command.url, options.hostOrigin)
+        if (command.kind === 'navigate' || command.kind === 'open-url') allowedUrl(command.url, options.hostOrigin)
+        if (command.kind === 'open-url') {
+          const existing = owner
+          owner ??= ensure(sessionId)
+          const oldTabId = owner.active
+          const oldTab = existing ? active(owner) : undefined
+          const tab = existing ? createTab(owner, sessionId) : active(owner)
+          const oldPresentation = presented?.sessionId === sessionId && presented.tabId === oldTabId
+          if (existing) {
+            owner.active = tab.id
+            owner.revision++
+            if (oldPresentation && oldTab) { detach(oldTab); presented = undefined }
+          }
+          try {
+            await navigate(sessionId, owner, tab, command.url)
+            await observe(sessionId, owner, tab, null)
+            emit(sessionId, owner)
+            return state(sessionId, owner)
+          } catch (error) {
+            if (owners.get(sessionId) === owner) {
+              if (existing) {
+                owner.tabs.delete(tab.id)
+                owner.active = oldTabId
+                owner.revision++
+                destroyTab(tab)
+                if (oldPresentation && !presented && requestedPresentation?.sessionId === sessionId &&
+                  requestedPresentation.tabId === oldTabId && requestedPresentation.visible) show(requestedPresentation)
+                emit(sessionId, owner)
+              } else destroy(sessionId)
+            }
+            throw error
+          }
+        }
         if (!owner && ['ensure-tab', 'new-tab', 'navigate'].includes(command.kind)) {
           owner = ensure(sessionId)
           if (command.kind === 'new-tab') return state(sessionId, owner)

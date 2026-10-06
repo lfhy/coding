@@ -6,6 +6,7 @@
     { "path": "../../../vendor/cordis" },
     { "path": "../../browser/browser" },
     { "path": "../connection/tsconfig.client.json" },
+    { "path": "../ui-conversation" },
     { "path": "../locale" },
     { "path": "../runtime" },
     { "path": "../ui-icons" },
