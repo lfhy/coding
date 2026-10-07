@@ -515,7 +515,21 @@ async function verifyOnboardingFocus(page, afterScreenshot) {
 async function browserFixture() {
   let stalledRequests = 0
   let pendingAssistantImages = 0
-  let completedAssistantImages = 0
+  const pendingAssistantResponses = new Set()
+  let heldFreshAssistantImages = 0
+  let freshAssistantImageStartedAt = 0
+  const freshAssistantResponses = new Set()
+  const freshAssistantDocuments = new Set()
+  const pixel = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg==', 'base64')
+  const releaseFreshAssistantDocument = () => {
+    for (const response of freshAssistantDocuments) {
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
+      response.end(`<!doctype html><title>Fresh assistant link fixture</title>
+        <h1>Fresh assistant link document</h1>
+        <img src="/held-fresh-assistant-image" alt="Held image">`)
+    }
+    freshAssistantDocuments.clear()
+  }
   const server = createServer((request, response) => {
     if (request.url === '/stalled-image') {
       stalledRequests++
@@ -536,14 +550,26 @@ async function browserFixture() {
         <h1>Pending assistant link</h1><img src="/delayed-assistant-image" alt="Delayed image">`)
       return
     }
-    if (request.url === '/delayed-assistant-image') {
-      pendingAssistantImages++
+    if (request.url === '/fresh-assistant-link-pending') {
+      freshAssistantDocuments.add(response)
+      response.once('close', () => freshAssistantDocuments.delete(response))
+      return
+    }
+    if (request.url === '/held-fresh-assistant-image') {
+      heldFreshAssistantImages++
+      freshAssistantImageStartedAt = Date.now()
+      freshAssistantResponses.add(response)
+      response.once('close', () => freshAssistantResponses.delete(response))
       response.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'no-store' })
       response.flushHeaders()
-      setTimeout(() => {
-        completedAssistantImages++
-        response.end(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg==', 'base64'))
-      }, 3_000)
+      return
+    }
+    if (request.url === '/delayed-assistant-image') {
+      pendingAssistantImages++
+      pendingAssistantResponses.add(response)
+      response.once('close', () => pendingAssistantResponses.delete(response))
+      response.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'no-store' })
+      response.flushHeaders()
       return
     }
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
@@ -566,11 +592,30 @@ async function browserFixture() {
   return { url: `http://127.0.0.1:${address.port}/`,
     assistantLinkUrl: `http://127.0.0.1:${address.port}/assistant-link`,
     pendingAssistantLinkUrl: `http://127.0.0.1:${address.port}/assistant-link-pending`,
+    freshPendingAssistantLinkUrl: `http://127.0.0.1:${address.port}/fresh-assistant-link-pending`,
     timeoutUrl: `http://127.0.0.1:${address.port}/timeout`,
     get stalledRequests() { return stalledRequests },
     get pendingAssistantImages() { return pendingAssistantImages },
-    get completedAssistantImages() { return completedAssistantImages },
+    get pendingAssistantImageResponses() { return pendingAssistantResponses.size },
+    releasePendingAssistantImages: () => {
+      for (const response of pendingAssistantResponses) response.end(pixel)
+      pendingAssistantResponses.clear()
+    },
+    get heldFreshAssistantImages() { return heldFreshAssistantImages },
+    get freshAssistantImageStartedAt() { return freshAssistantImageStartedAt },
+    get pendingFreshAssistantImages() { return freshAssistantResponses.size },
+    get pendingFreshAssistantDocuments() { return freshAssistantDocuments.size },
+    releaseFreshAssistantDocument,
+    releaseFreshAssistantImages: () => {
+      for (const response of freshAssistantResponses) response.end()
+      freshAssistantResponses.clear()
+    },
     close: async () => {
+      releaseFreshAssistantDocument()
+      for (const response of pendingAssistantResponses) response.end(pixel)
+      pendingAssistantResponses.clear()
+      for (const response of freshAssistantResponses) response.end()
+      freshAssistantResponses.clear()
       server.closeAllConnections()
       await new Promise(resolveClose => server.close(resolveClose))
     } }
@@ -744,7 +789,7 @@ async function scriptedNavigateModel(fixtureUrl) {
     } }
 }
 
-async function scriptedAssistantLinkModel(fixtureUrl, pendingUrl) {
+async function scriptedAssistantLinkModel(fixtureUrl, pendingUrl, fresh = false) {
   let responses = 0
   const failures = []
   const server = createServer((request, response) => {
@@ -760,7 +805,9 @@ async function scriptedAssistantLinkModel(fixtureUrl, pendingUrl) {
         const payload = JSON.parse(body)
         const tools = (payload.tools ?? []).map(tool => tool.function?.name)
         const content = tools.includes('browser_snapshot')
-          ? `请查看[打开本地页面](${fixtureUrl})、[打开慢速页面](${pendingUrl})、[再次打开本地页面](${fixtureUrl})和[第三次打开本地页面](${fixtureUrl})。`
+          ? fresh
+            ? `请查看[打开首个慢速页面](${pendingUrl})，然后[打开后续本地页面](${fixtureUrl})。`
+            : `请查看[打开本地页面](${fixtureUrl})、[打开慢速页面](${pendingUrl})、[再次打开本地页面](${fixtureUrl})和[第三次打开本地页面](${fixtureUrl})。`
           : 'Native assistant link smoke'
         if (tools.includes('browser_snapshot')) responses++
         response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store' })
@@ -1159,6 +1206,157 @@ async function verifyAgentNavigateAutoReveal(page, app, fixtureUrl, model) {
   return sessionId
 }
 
+async function verifyFreshAssistantLinkOpensNativeGuest(page, app, fixture, model) {
+  let stage = 'create fresh Session'
+  let clickedAt = 0
+  let controlResultCode = 'not received'
+  let controlReason = 'not received'
+  const onControlResponse = async response => {
+    if (new URL(response.url()).pathname !== '/api/browser.control') return
+    const envelope = await response.json().catch(() => null)
+    const result = envelope?.result
+    controlResultCode = result?.ok === true ? 'ok' : result?.error?.code ?? 'unknown'
+    const reason = result?.error?.details?.reason
+    controlReason = typeof reason === 'string' && /^BROWSER_[A-Z_]+$/.test(reason) ? reason : 'none'
+  }
+  page.on('response', onControlResponse)
+  try {
+    const closeSidebar = page.getByRole('button', { name: '收起右侧边栏' }).first()
+    if (await closeSidebar.isVisible()) await closeSidebar.click()
+    const previous = (await browserRpc(page, 'session.list', {})).items.map(item => item.sessionId)
+    await page.getByRole('button', { name: '新建会话' }).first().click()
+    await page.getByRole('button', { name: '打开右侧边栏' }).first().click()
+    let sessionId
+    await until(async () => {
+      const sessions = await browserRpc(page, 'session.list', {})
+      sessionId = sessions.items.find(item => !previous.includes(item.sessionId))?.sessionId
+      return sessionId !== undefined
+    }, 'fresh assistant-link Session')
+    await page.getByRole('button', { name: '收起右侧边栏' }).first().click()
+    await page.getByRole('button', { name: '打开右侧边栏' }).first().waitFor({ state: 'visible' })
+    assert.equal(await page.locator('[data-browser-tab-id]').count(), 0,
+      'fresh Session must not have opened a browser workbench or tab')
+    const freshStateStatus = await page.evaluate(async sessionId => {
+      const url = new URL('/browser-use/state', location.origin)
+      url.searchParams.set('sessionId', sessionId)
+      return (await fetch(url, { cache: 'no-store' })).status
+    }, sessionId)
+    assert.equal(freshStateStatus, 204, 'fresh Session browser state must be absent before the first click')
+
+    stage = 'render first assistant response'
+    const prompted = await browserRpc(page, 'session.prompt', { sessionId, mode: 'queue',
+      content: [{ type: 'text', text: 'Offer local pages as ordinary Markdown links.' }] })
+    assert.equal(prompted.accepted, true, 'fresh Session must accept the first scripted response')
+    await until(async () => {
+      const history = await browserRpc(page, 'session.history', { sessionId, maxMessages: 30 })
+      return history.events.some(({ event }) => event.type === 'turn/end')
+    }, 'first assistant Markdown response', 45_000)
+    assert.deepEqual(model.failures, [], 'fresh link model must serve the actual Agent request')
+    assert.equal(model.responses, 1, 'fresh Session must display its first assistant response')
+    const first = page.getByRole('link', { name: '打开首个慢速页面', exact: true })
+    const followUp = page.getByRole('link', { name: '打开后续本地页面', exact: true })
+    await first.waitFor({ state: 'visible' })
+    await followUp.waitFor({ state: 'visible' })
+    assert.equal(await first.getAttribute('href'), fixture.freshPendingAssistantLinkUrl)
+    assert.equal(await followUp.getAttribute('href'), fixture.assistantLinkUrl)
+
+    stage = 'click first assistant link with no browser workbench'
+    clickedAt = Date.now()
+    await first.click({ noWaitAfter: true })
+    await until(() => Promise.resolve(fixture.pendingFreshAssistantDocuments === 1),
+      'first assistant link requests its gated document', 10_000)
+    stage = 'reveal browser before document response'
+    await page.getByRole('button', { name: '收起右侧边栏' }).first()
+      .waitFor({ state: 'visible', timeout: 5_000 })
+    const pendingTab = page.locator('[data-browser-pending-id][aria-selected="true"]')
+    await pendingTab.waitFor({ state: 'visible', timeout: 5_000 })
+    assert.ok((await pendingTab.innerText()).includes(fixture.freshPendingAssistantLinkUrl),
+      'optimistic browser tab must show the requested URL before the document responds')
+    const loading = page.getByTestId('browser-link-loading')
+    await loading.waitFor({ state: 'visible', timeout: 5_000 })
+    const loadingMotion = await loading.evaluate(element => ({
+      reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
+      animation: getComputedStyle(element).animationName,
+    }))
+    if (!loadingMotion.reduced) assert.notEqual(loadingMotion.animation, 'none',
+      'pending link spinner must animate unless reduced motion is requested')
+    const pendingStatus = loading.locator('..')
+    assert.equal(await pendingStatus.getAttribute('role'), 'status',
+      'the spinner must be accompanied by a loading status')
+    assert.ok((await pendingStatus.innerText()).includes(fixture.freshPendingAssistantLinkUrl),
+      'pending browser panel must display the requested URL and loading state')
+    assert.equal(fixture.pendingFreshAssistantDocuments, 1,
+      'the workbench and loading tab must appear before the server responds')
+    assert.equal(fixture.heldFreshAssistantImages, 0,
+      'the document body must remain unsent during immediate workbench reveal')
+
+    stage = 'resolve document while image remains pending'
+    fixture.releaseFreshAssistantDocument()
+    await until(() => Promise.resolve(fixture.heldFreshAssistantImages === 1),
+      'fresh document loads and its image remains pending', 10_000)
+    await until(async () => await page.locator('[data-browser-tab-id][aria-selected="true"]').count() === 1,
+      'fresh assistant link opens one selected browser tab', 12_000)
+    await page.getByTestId('browser-canvas').waitFor({ state: 'visible', timeout: 12_000 })
+    const firstState = await browserRpc(page, 'browser.control',
+      { sessionId, command: { kind: 'ensure-tab' } })
+    assert.equal(firstState.tabs.length, 1, 'first assistant link creates one native tab')
+    assert.equal(firstState.tabs[0]?.url, fixture.freshPendingAssistantLinkUrl)
+    const firstTabId = firstState.activeTabId
+    const firstGuestId = await app.evaluate(({ BrowserWindow }, url) =>
+      BrowserWindow.getAllWindows()[0].contentView.children
+        .find(view => view.webContents?.getURL() === url)?.webContents.id ?? null,
+    fixture.freshPendingAssistantLinkUrl)
+    assert.ok(firstGuestId, 'first link must present a main-owned guest despite the pending image')
+    const firstGuestPage = app.context().pages().find(candidate =>
+      !candidate.isClosed() && candidate.url() === fixture.freshPendingAssistantLinkUrl)
+    assert.ok(firstGuestPage, 'DOM-ready native guest must expose an interactive Chromium target')
+    assert.equal(await firstGuestPage.locator('h1').textContent({ timeout: 10_000 }),
+      'Fresh assistant link document', 'native guest DOM must be ready while its image is pending')
+
+    stage = 'click independent follow-up while image remains pending'
+    await followUp.click({ noWaitAfter: true })
+    await until(async () => await page.locator('[data-browser-tab-id]').count() === 2,
+      'independent follow-up link opens a second tab', 12_000)
+    const secondState = await browserRpc(page, 'browser.control',
+      { sessionId, command: { kind: 'ensure-tab' } })
+    assert.deepEqual(secondState.tabs.map(tab => tab.url),
+      [fixture.freshPendingAssistantLinkUrl, fixture.assistantLinkUrl],
+    'follow-up link must not replace the first pending native guest')
+    assert.notEqual(secondState.activeTabId, firstTabId, 'follow-up tab must be independently selected')
+    await page.locator(`[data-browser-tab-id="${secondState.activeTabId}"][aria-selected="true"]`)
+      .waitFor({ state: 'visible' })
+    assert.equal(fixture.pendingFreshAssistantImages, 1,
+      'the first image request must remain pending through the independent click')
+
+    stage = 'hold subresource beyond ten seconds without browser error'
+    await until(() => Promise.resolve(Date.now() - fixture.freshAssistantImageStartedAt > 10_000),
+      'fresh assistant image stays pending beyond ten seconds', 12_000)
+    assert.equal(fixture.pendingFreshAssistantImages, 1,
+      'the first image response must still be held after ten seconds')
+    assert.equal(await page.getByText(/BROWSER_FAILED/).count(), 0,
+      'pending subresource must not surface BROWSER_FAILED')
+    assert.equal(await page.getByRole('dialog', { name: '无法打开链接' }).count(), 0,
+      'pending subresource must not surface a link failure dialog')
+    assert.equal(await app.evaluate(({ webContents }, id) =>
+      webContents.fromId(id)?.isDestroyed() === false, firstGuestId), true,
+    'the first guest must survive after the follow-up link opens')
+    for (const tab of secondState.tabs) {
+      await browserRpc(page, 'browser.control',
+        { sessionId, command: { kind: 'close-tab', tabId: tab.id } })
+    }
+  } catch (error) {
+    const failedVisible = await page.getByText(/BROWSER_FAILED/).count().catch(() => 0)
+    throw new Error(`fresh assistant link acceptance failed; stage=${stage}; ` +
+      `elapsedMs=${clickedAt === 0 ? 0 : Date.now() - clickedAt}; ` +
+      `controlResultCode=${controlResultCode}; controlReason=${controlReason}; ` +
+      `BROWSER_FAILED visible=${failedVisible > 0}; errorType=${error instanceof Error ? error.name : 'unknown'}`)
+  } finally {
+    page.off('response', onControlResponse)
+    fixture.releaseFreshAssistantDocument()
+    fixture.releaseFreshAssistantImages()
+  }
+}
+
 async function verifyAssistantLinkOpensNativeGuest(page, app, sessionId, fixture, model, hostOrigin) {
   // 同一当前会话先有一个页面，再收起右栏：链接必须新建页面并重新选择浏览器。
   const menu = page.getByRole('navigation', { name: '工作台功能' })
@@ -1295,19 +1493,20 @@ async function verifyRapidAssistantLinks(page, app, sessionId, fixture, oldTabId
     await pending.click({ noWaitAfter: true })
     await until(() => Promise.resolve(fixture.pendingAssistantImages > 0),
       'first assistant link navigation starts loading its delayed image', 10_000)
-    assert.equal(fixture.completedAssistantImages, 0,
-      'first assistant link navigation must still be pending before rapid clicks')
+    assert.equal(fixture.pendingAssistantImageResponses, 1,
+      'first assistant link image must still be loading before rapid clicks')
     await repeated.click({ noWaitAfter: true })
     await latest.click({ noWaitAfter: true })
-    assert.equal(fixture.completedAssistantImages, 0,
-      'repeated assistant link clicks must arrive while the first navigation is pending')
+    assert.equal(fixture.pendingAssistantImageResponses, 1,
+      'repeated assistant link clicks must arrive while the first image is loading')
 
     await until(async () => await page.locator('[data-browser-tab-id]').count() === 5 &&
       await page.locator('[data-browser-tab-id][aria-selected="true"]').count() === 1,
     'rapid assistant links settle as three additional browser tabs', 30_000)
     const settled = await browserRpc(page, 'browser.control',
       { sessionId, command: { kind: 'ensure-tab' } })
-    assert.equal(fixture.completedAssistantImages, 1, 'first delayed navigation must finish')
+    assert.equal(fixture.pendingAssistantImageResponses, 1,
+      'independent tabs must settle while the first image remains loading')
     assert.deepEqual(settled.tabs.slice(0, 2).map(tab => tab.id), oldTabIds,
       'rapid clicks must retain both pre-existing tabs')
     assert.deepEqual(settled.tabs.slice(2).map(tab => tab.url),
@@ -1345,6 +1544,7 @@ async function verifyRapidAssistantLinks(page, app, sessionId, fixture, oldTabId
     assert.deepEqual(dialogs, [], 'rapid assistant links must not open native dialogs')
     return rapidTabIds
   } finally {
+    fixture.releasePendingAssistantImages()
     page.off('dialog', onDialog)
   }
 }
@@ -1469,6 +1669,7 @@ async function main() {
   let navigateModel
   let timeoutModel
   let assistantLinkModel
+  let freshAssistantLinkModel
   let passed = false
   try {
     await Promise.all([home, tmp, workspace].map(path => mkdir(path, { recursive: true, mode: 0o700 })))
@@ -1578,6 +1779,11 @@ async function main() {
     await browserRpc(page, 'settings.update', { ns: 'llm-deepseek',
       patch: { baseURL: assistantLinkModel.url, thinking: 'disabled', reasoningEffort: 'off' } })
     await verifyAssistantLinkOpensNativeGuest(page, app, linkSessionId, fixture, assistantLinkModel, origin)
+    freshAssistantLinkModel = await scriptedAssistantLinkModel(fixture.assistantLinkUrl,
+      fixture.freshPendingAssistantLinkUrl, true)
+    await browserRpc(page, 'settings.update', { ns: 'llm-deepseek',
+      patch: { baseURL: freshAssistantLinkModel.url, thinking: 'disabled', reasoningEffort: 'off' } })
+    await verifyFreshAssistantLinkOpensNativeGuest(page, app, fixture, freshAssistantLinkModel)
     await verifyWindowBoundary(page, app, origin)
 
     const originalWindow = await app.evaluate(({ BrowserWindow }) => {
@@ -1617,6 +1823,7 @@ async function main() {
     console.log('PASS: scripted loopback model drove shipped Host browser_snapshot and browser_click on the human-operated native guest; Host origin/localhost navigation and guest subresource fetch denied; no external model API used')
     console.log('PASS: separate fresh Session browser_navigate auto-revealed its native guest and selected tab; a human click persisted into the next model browser_snapshot on the same guest')
     console.log('PASS: assistant Markdown links reopened the hidden sidebar, preserved old native guests, and queued rapid repeated clicks as distinct tabs with the newest selected, without window.open or dialogs')
+    console.log('PASS: first assistant Markdown link in a fresh Session auto-revealed a native guest despite a subresource held beyond ten seconds; an independent follow-up link opened another tab without BROWSER_FAILED')
     console.log('PASS: stalled local image timed out browser_navigate, stopped loading safely, and the same Electron guest/tab yielded a fresh Agent browser_snapshot')
   } finally {
     if (!passed && existsSync(screenshot)) console.error(`Failure screenshot: ${screenshot}`)
@@ -1631,6 +1838,7 @@ async function main() {
     if (navigateModel !== undefined) await navigateModel.close()
     if (timeoutModel !== undefined) await timeoutModel.close()
     if (assistantLinkModel !== undefined) await assistantLinkModel.close()
+    if (freshAssistantLinkModel !== undefined) await freshAssistantLinkModel.close()
     if (app !== undefined) await closeOwnApp(app)
     // 未能证明 Host 所有权或无法等到其退出时保留 HOME，避免删掉仍运行的 Host 的数据。
     let safeToClean = false

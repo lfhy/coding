@@ -73,6 +73,13 @@ export interface WorkbenchBrowserOwnerProps {
   requestAutoReveal: (epoch: number) => boolean
   autoRevealBrowser: (tabId: string, epoch: number) => void
   syncBrowserTabs: (tabs: readonly { id: string; name: string }[], activeId: string | null) => void
+  beginBrowserLink: (id: string, url: string) => void
+  completeBrowserLink: (id: string, tabId: string) => void
+  failBrowserLink: (id: string, message: string) => void
+  clearBrowserLinks: () => void
+  selectPendingBrowserLink: (id: string) => void
+  closePendingBrowserLink: (id: string) => void
+  pendingBrowserLink?: { id: string; url: string; error?: string }
   tabId?: string
   tabName?: string
   tabDomId?: string

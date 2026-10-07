@@ -367,7 +367,33 @@ async function browserControlAfterTurn(page, sessionId, command) {
 }
 
 async function browserFixture() {
-  const fixture = createServer((_request, response) => {
+  const pendingDocuments = new Set()
+  const pendingImages = new Set()
+  const pixel = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg==', 'base64')
+  let imageStartedAt = 0
+  const releaseDocument = () => {
+    for (const response of pendingDocuments) {
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
+      response.end(`<!doctype html><title>Packaged first assistant link</title>
+        <h1>Packaged first link document</h1>
+        <img src="/held-assistant-image" alt="Held image">`)
+    }
+    pendingDocuments.clear()
+  }
+  const fixture = createServer((request, response) => {
+    if (request.url === '/first-assistant-link') {
+      pendingDocuments.add(response)
+      response.once('close', () => pendingDocuments.delete(response))
+      return
+    }
+    if (request.url === '/held-assistant-image') {
+      imageStartedAt = Date.now()
+      pendingImages.add(response)
+      response.once('close', () => pendingImages.delete(response))
+      response.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'no-store' })
+      response.flushHeaders()
+      return
+    }
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
     response.end(`<!doctype html><title>Packaged native fixture</title>
       <h1>Local packaged browser page</h1>
@@ -382,13 +408,26 @@ async function browserFixture() {
   })
   const address = fixture.address()
   assert.ok(address && typeof address !== 'string', 'native fixture must bind a loopback port')
-  return { url: `http://127.0.0.1:${address.port}/`, close: async () => {
-    fixture.closeAllConnections()
-    await new Promise(resolveClose => fixture.close(resolveClose))
-  } }
+  return { url: `http://127.0.0.1:${address.port}/`,
+    firstLinkUrl: `http://127.0.0.1:${address.port}/first-assistant-link`,
+    get pendingDocuments() { return pendingDocuments.size },
+    get pendingImages() { return pendingImages.size },
+    get imageStartedAt() { return imageStartedAt },
+    releaseDocument,
+    releaseImages: () => {
+      for (const response of pendingImages) response.end(pixel)
+      pendingImages.clear()
+    },
+    close: async () => {
+      releaseDocument()
+      for (const response of pendingImages) response.end(pixel)
+      pendingImages.clear()
+      fixture.closeAllConnections()
+      await new Promise(resolveClose => fixture.close(resolveClose))
+    } }
 }
 
-async function scriptedModel(fixtureUrl) {
+async function scriptedModel(fixtureUrl, firstLinkUrl) {
   let phase = 'navigate'
   let step = 0
   const failures = []
@@ -406,7 +445,14 @@ async function scriptedModel(fixtureUrl) {
         const payload = JSON.parse(body)
         const tools = (payload.tools ?? []).map(tool => tool.function?.name)
         let frames
-        if (!tools.includes('browser_snapshot')) {
+        if (phase === 'assistant-link' && tools.includes('browser_snapshot')) {
+          assert.equal(payload.messages.filter(message => message.role === 'tool').length, 0,
+            'first assistant link must be offered without opening a browser tool')
+          step++
+          frames = [{ choices: [{ delta: { content:
+            `请查看[打开首个慢速页面](${firstLinkUrl})，然后[打开后续本地页面](${fixtureUrl})。` },
+          finish_reason: 'stop' }] }]
+        } else if (!tools.includes('browser_snapshot')) {
           frames = [{ choices: [{ delta: { content: 'Packaged native smoke' }, finish_reason: 'stop' }] }]
         } else {
           assert.ok(tools.includes('browser_navigate') && tools.includes('browser_click'),
@@ -474,6 +520,12 @@ async function scriptedModel(fixtureUrl) {
       assert.equal(phase, 'navigate')
       assert.equal(step, 2, 'navigation turn must finish before human input')
       phase = 'inspect'
+      step = 0
+    },
+    startAssistantLink() {
+      assert.equal(phase, 'inspect')
+      assert.equal(step, 3, 'existing Agent navigation/snapshot/click turn must finish first')
+      phase = 'assistant-link'
       step = 0
     },
     close: async () => {
@@ -591,6 +643,125 @@ async function verifyNativeBrowser(page, app, fixtureUrl, model) {
     'packaged native guest teardown', 10_000)
 }
 
+async function verifyFirstAssistantLink(page, app, fixture, model) {
+  const failures = []
+  const onControlResponse = async response => {
+    if (new URL(response.url()).pathname !== '/api/browser.control') return
+    const result = (await response.json().catch(() => null))?.result
+    if (result?.error?.code === 'browser-failed') failures.push(result.error.details?.reason ?? 'browser-failed')
+  }
+  page.on('response', onControlResponse)
+  try {
+    await page.getByRole('button', { name: '收起右侧边栏' }).first().click()
+    const previous = (await browserRpc(page, 'session.list', {})).items.map(item => item.sessionId)
+    await page.getByRole('button', { name: '新建会话' }).first().click()
+    await page.getByRole('button', { name: '打开右侧边栏' }).first().click()
+    let sessionId
+    await until(async () => {
+      const sessions = await browserRpc(page, 'session.list', {})
+      sessionId = sessions.items.find(item => !previous.includes(item.sessionId))?.sessionId
+      return sessionId !== undefined
+    }, 'packaged fresh assistant-link Session')
+    await page.getByRole('button', { name: '收起右侧边栏' }).first().click()
+    await page.getByRole('button', { name: '打开右侧边栏' }).first().waitFor({ state: 'visible' })
+    assert.equal(await page.locator('[data-browser-tab-id], [data-browser-pending-id]').count(), 0,
+      'fresh Session must not have a browser tab before its first assistant link')
+    const stateStatus = await page.evaluate(async id => {
+      const url = new URL('/browser-use/state', location.origin)
+      url.searchParams.set('sessionId', id)
+      return (await fetch(url, { cache: 'no-store' })).status
+    }, sessionId)
+    assert.equal(stateStatus, 204, 'fresh Session must have no browser state before the link click')
+
+    model.startAssistantLink()
+    const events = await promptAndHistory(page, sessionId,
+      'Offer the local pages as ordinary Markdown links.', 1, model)
+    assert.equal(model.step, 1, 'first response must contain links without invoking browser tools')
+    assert.deepEqual(events.filter(event => event.type === 'tool/call'), [],
+      'first assistant response must not open a browser through the Agent')
+    const first = page.getByRole('link', { name: '打开首个慢速页面', exact: true })
+    const followUp = page.getByRole('link', { name: '打开后续本地页面', exact: true })
+    await first.waitFor({ state: 'visible' })
+    await followUp.waitFor({ state: 'visible' })
+    assert.equal(await first.getAttribute('href'), fixture.firstLinkUrl)
+    assert.equal(await followUp.getAttribute('href'), fixture.url)
+
+    await first.click({ noWaitAfter: true })
+    await until(() => fixture.pendingDocuments === 1,
+      'packaged first assistant link requests gated document', 10_000)
+    await page.getByRole('button', { name: '收起右侧边栏' }).first()
+      .waitFor({ state: 'visible', timeout: 5_000 })
+    const pendingTab = page.locator('#dsh-layout-workbench [role="tab"][data-browser-pending-id][aria-selected="true"]')
+    await pendingTab.waitFor({ state: 'visible', timeout: 5_000 })
+    assert.ok(await pendingTab.getAttribute('data-browser-pending-id'),
+      'selected pending tab must have a UI click identity')
+    assert.equal(await page.locator('#dsh-layout-workbench [role="tab"][data-browser-tab-id]').count(), 0,
+      'the selected tab must remain UI-only until navigation finishes')
+    assert.ok((await pendingTab.innerText()).includes(fixture.firstLinkUrl),
+      'selected UI-only tab must display the destination before HTTP responds')
+    const loading = page.getByTestId('browser-link-loading')
+    await loading.waitFor({ state: 'visible', timeout: 5_000 })
+    const motion = await loading.evaluate(element => ({
+      reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
+      name: getComputedStyle(element).animationName,
+    }))
+    if (!motion.reduced) assert.notEqual(motion.name, 'none', 'loading spinner must animate')
+    const status = loading.locator('..')
+    assert.equal(await status.getAttribute('role'), 'status', 'loading animation must carry a status')
+    assert.ok((await status.innerText()).includes(fixture.firstLinkUrl),
+      'loading panel must display the destination URL')
+    assert.equal(fixture.pendingDocuments, 1, 'pending browser UI must precede the target document')
+    assert.equal(fixture.pendingImages, 0, 'document must remain withheld through the initial UI assertion')
+
+    fixture.releaseDocument()
+    await until(() => fixture.pendingImages === 1,
+      'packaged document requests held image', 10_000)
+    await page.locator('#dsh-layout-workbench [role="tab"][data-browser-tab-id][aria-selected="true"]')
+      .waitFor({ state: 'visible', timeout: 12_000 })
+    assert.equal(await page.locator('#dsh-layout-workbench [role="tab"][data-browser-pending-id]').count(), 0,
+      'DOM-ready native tab must replace the UI-only pending tab')
+    await page.getByTestId('browser-canvas').waitFor({ state: 'visible', timeout: 12_000 })
+    const firstState = await browserControlAfterTurn(page, sessionId, { kind: 'ensure-tab' })
+    assert.equal(firstState?.tabs.length, 1, 'DOM-ready first link must create one native tab')
+    assert.equal(firstState.tabs[0].url, fixture.firstLinkUrl)
+    let firstGuest
+    await until(async () => {
+      firstGuest = (await inspectPackagedMain(app)).find(guest => guest.url === fixture.firstLinkUrl)
+      return firstGuest?.title === 'Packaged first assistant link' && firstGuest.bounds.width >= 200
+    }, 'DOM-ready packaged native guest visible while its image is held', 12_000)
+    const guestPage = app.context().pages()
+      .find(candidate => !candidate.isClosed() && candidate.url() === fixture.firstLinkUrl)
+    assert.ok(guestPage, 'first assistant link must expose the real interactive native guest')
+    assert.equal(await guestPage.locator('h1').innerText(), 'Packaged first link document')
+    assert.equal(fixture.pendingImages, 1, 'native guest must appear before its image finishes')
+
+    await followUp.click({ noWaitAfter: true })
+    await until(async () => {
+      const state = await browserControlAfterTurn(page, sessionId, { kind: 'ensure-tab' })
+      return state?.tabs.length === 2 && state.tabs[1]?.url === fixture.url
+    }, 'follow-up link opens independent native tab', 12_000)
+    await until(() => Date.now() - fixture.imageStartedAt > 10_000,
+      'held image remains pending beyond ten seconds', 12_000)
+    assert.equal(fixture.pendingImages, 1, 'first image must remain pending after ten seconds')
+    assert.deepEqual(failures, [], 'held subresource must not return BROWSER_FAILED')
+    assert.equal(await page.getByText(/BROWSER_FAILED/).count(), 0,
+      'held subresource must not surface BROWSER_FAILED in the workbench')
+    assert.equal(await app.evaluate(({ webContents }, id) =>
+      webContents.fromId(id)?.isDestroyed() === false, firstGuest.id), true,
+    'first native guest must survive detached after the independent follow-up navigation')
+    const finalState = await browserControlAfterTurn(page, sessionId, { kind: 'ensure-tab' })
+    for (const tab of finalState.tabs) {
+      await browserRpc(page, 'browser.control', { sessionId, command: { kind: 'close-tab', tabId: tab.id } })
+    }
+    await until(async () => (await inspectPackagedMain(app)).length === 0,
+      'packaged assistant-link guests teardown', 10_000)
+  } finally {
+    page.off('response', onControlResponse)
+    fixture.releaseDocument()
+    fixture.releaseImages()
+  }
+}
+
 async function main() {
   await preflight()
   const isolated = await mkdtemp(join(tmpdir(), 'dsh-electron-packaged-'))
@@ -609,7 +780,7 @@ async function main() {
   try {
     await Promise.all([home, tmp].map(path => mkdir(path, { recursive: true, mode: 0o700 })))
     fixture = await browserFixture()
-    model = await scriptedModel(fixture.url)
+    model = await scriptedModel(fixture.url, fixture.firstLinkUrl)
     // 白名单而非继承：不传用户凭据、代理、SSH agent、Node 注入或真实 DSH_HOME。
     const env = {
       PATH: '/usr/bin:/bin:/usr/sbin', HOME: home, TMPDIR: tmp,
@@ -653,6 +824,7 @@ async function main() {
     await verifyRemoteBridge(page)
     await completeOnboarding(page, model)
     await verifyNativeBrowser(page, app, fixture.url, model)
+    await verifyFirstAssistantLink(page, app, fixture, model)
     assert.equal(existsSync(join(home, 'Library', 'Caches', 'ms-playwright')), false,
       'packaged native browser must not create a Playwright browser cache')
     await secondLaunch(env)
@@ -682,7 +854,8 @@ async function main() {
       assert.ok(appStopped && helperStopped && hostStopped && socketStopped,
         'packaged Electron/helper/Host and isolated desktop lock must all stop')
       console.log('PASS: signed macOS arm64 app.asar without a Playwright browser binary, packaged Electron Provider/protocol/transport, ' +
-        'real Host Agent browser_navigate/snapshot/click on one interactive WebContentsView guest with human DOM continuity, app.isPackaged, metadata/Host version, real Host page, both Host WebSockets, ' +
+        'real Host Agent browser_navigate/snapshot/click on one interactive WebContentsView guest with human DOM continuity, ' +
+        'fresh assistant-link immediate loading UI and DOM-ready native guest with a held image, app.isPackaged, metadata/Host version, real Host page, both Host WebSockets, ' +
         'single instance, sandbox preload, Go helper/bridge, isolated desktop lock and cleanup')
       console.log('The local scripted model exercises three browser_* tools through the Host tool path and two persisted Agent turns; remaining browser tools are not exercised.')
       console.log('Not inspected by the Electron test channel: native menu/Tray and macOS window close/hide; ' +

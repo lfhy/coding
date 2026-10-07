@@ -25,11 +25,14 @@ const MODE = webSnapshotMode()
 const SEED_ID = 'markdown-inline-code-links-web-e2e'
 const REFERENCE_ID = 'markdown-reference-links-web-e2e'
 const RAPID_ID = 'markdown-rapid-links-web-e2e'
+const IMMEDIATE_ID = 'markdown-immediate-links-web-e2e'
+const MANUAL_ID = 'markdown-manual-links-web-e2e'
+const IMMEDIATE_PATH = '/delayed?first=1&source=assistant-markdown-link-with-a-long-destination-for-mobile-layout'
 const DONE = 'INLINE_CODE_LINK_DONE'
 
 /** 保留主会话的快照输入，并为引用式及并发点击准备独立会话。 */
 function markdownFixture(linkUrl: string, reference = false,
-  rapidUrls?: readonly [delayed: string, next: string, failure: string]): string {
+  rapidUrls?: readonly [delayed: string, next: string, failure: string], title?: string): string {
   const session = Session.create(SessionId('markdown-inline-code-links-source'))
   const eventTimeOrigin = new Date().setHours(12, 0, 0, 0)
   session.append('turn/start', { turn: 1 })
@@ -38,7 +41,7 @@ function markdownFixture(linkUrl: string, reference = false,
     source: { kind: 'user' },
   }), { surfaceOp: 'append' })
   session.append('session/title', {
-    title: reference ? 'Reference preview links' : rapidUrls ? 'Rapid preview links' : 'Inline code links',
+    title: title ?? (reference ? 'Reference preview links' : rapidUrls ? 'Rapid preview links' : 'Inline code links'),
     messageSeqs: [user.seq],
     source: { kind: 'fallback' },
   })
@@ -63,7 +66,7 @@ function markdownFixture(linkUrl: string, reference = false,
           '',
           DONE,
         ].join('\n') : rapidUrls ? [
-          '## Rapid preview links',
+          `## ${title ?? 'Rapid preview links'}`,
           '',
           `[Open original](${linkUrl})`,
           `[Open delayed](${rapidUrls[0]})`,
@@ -74,7 +77,7 @@ function markdownFixture(linkUrl: string, reference = false,
           '',
           DONE,
         ].join('\n') : [
-          '## Inline code links',
+          `## ${title ?? 'Inline code links'}`,
           '',
           `Preview: \`${linkUrl}\``,
           '',
@@ -118,23 +121,32 @@ async function fixtureServer(): Promise<{
   releaseDelayed: () => void
   waitForFailure: () => Promise<void>
   releaseFailure: () => void
+  allowFailureRetry: () => void
 }> {
   let delayedResponse: ServerResponse | undefined
   let failureResponse: ServerResponse | undefined
-  let notifyDelayed: (() => void) | undefined
-  let notifyFailure: (() => void) | undefined
+  const delayedWaiters: Array<() => void> = []
+  const failureWaiters: Array<() => void> = []
+  let failureAttempts = 0
+  let allowFailureRetry = false
   // 两个待结算请求分别作为真实导航到达 Host 外目标的同步栅栏。
-  const delayedArrival = new Promise<void>((resolve) => { notifyDelayed = resolve })
-  const failureArrival = new Promise<void>((resolve) => { notifyFailure = resolve })
   const server = createServer((request, response) => {
     if (request.url?.startsWith('/delayed')) {
       delayedResponse = response
-      notifyDelayed?.()
+      for (const resolve of delayedWaiters.splice(0)) resolve()
       return
     }
     if (request.url?.startsWith('/failure')) {
+      failureAttempts += 1
+      if (allowFailureRetry) {
+        response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+        response.end('<!doctype html><html><head><title>Chat link preview</title></head>'
+          + '<body><h1>Assistant link target</h1></body></html>')
+        return
+      }
+      if (failureAttempts > 1) { response.destroy(); return }
       failureResponse = response
-      notifyFailure?.()
+      for (const resolve of failureWaiters.splice(0)) resolve()
       return
     }
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
@@ -153,7 +165,9 @@ async function fixtureServer(): Promise<{
     server,
     url: `${origin}/preview?demo=1`,
     origin,
-    waitForDelayed: () => delayedArrival,
+    waitForDelayed: () => delayedResponse === undefined ? new Promise<void>((resolve) => {
+      delayedWaiters.push(resolve)
+    }) : Promise.resolve(),
     releaseDelayed: () => {
       if (!delayedResponse) return
       delayedResponse.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
@@ -161,11 +175,14 @@ async function fixtureServer(): Promise<{
         + '<body><h1>Assistant link target</h1></body></html>')
       delayedResponse = undefined
     },
-    waitForFailure: () => failureArrival,
+    waitForFailure: () => failureResponse === undefined ? new Promise<void>((resolve) => {
+      failureWaiters.push(resolve)
+    }) : Promise.resolve(),
     releaseFailure: () => {
       failureResponse?.destroy()
       failureResponse = undefined
     },
+    allowFailureRetry: () => { allowFailureRetry = true },
   }
 }
 
@@ -208,6 +225,18 @@ async function expectOpenTab(page: Page, baseUrl: string, id: string, url: strin
   return state.activeTabId
 }
 
+async function expectPendingTab(page: Page, url: string, selected = true): Promise<string> {
+  const workbench = page.locator('#dsh-layout-workbench')
+  const tab = workbench.locator('[role="tab"][data-browser-pending-id]').filter({ hasText: url })
+  await expect.poll(() => workbench.isVisible()).toBe(true)
+  await expect.poll(() => tab.count()).toBe(1)
+  expect(await tab.getAttribute('aria-selected')).toBe(String(selected))
+  expect(await tab.getAttribute('title')).toBe(url)
+  const pendingId = await tab.getAttribute('data-browser-pending-id')
+  if (!pendingId) throw new Error('pending browser tab has no click identity')
+  return pendingId
+}
+
 describe('web e2e: Markdown inline-code links', () => {
   let scaffold: WebScaffold
   let browser: Browser
@@ -219,6 +248,7 @@ describe('web e2e: Markdown inline-code links', () => {
   let releaseDelayed: () => void
   let waitForFailure: () => Promise<void>
   let releaseFailure: () => void
+  let allowFailureRetry: () => void
   let tripwire: ReturnType<typeof watchConsole>
 
   beforeAll(async () => {
@@ -230,12 +260,18 @@ describe('web e2e: Markdown inline-code links', () => {
     releaseDelayed = fixture.releaseDelayed
     waitForFailure = fixture.waitForFailure
     releaseFailure = fixture.releaseFailure
+    allowFailureRetry = fixture.allowFailureRetry
     scaffold = await launchWebScaffold({})
     await seedSession(scaffold, markdownFixture(linkUrl), SEED_ID)
     await seedSession(scaffold, markdownFixture(linkUrl, true), REFERENCE_ID)
     await seedSession(scaffold, markdownFixture(linkUrl, false,
       [`${targetOrigin}/delayed?demo=1`, `${targetOrigin}/next?demo=2`,
         `${targetOrigin}/failure?demo=3`]), RAPID_ID)
+    await seedSession(scaffold, markdownFixture(`${targetOrigin}${IMMEDIATE_PATH}`, false,
+      undefined, 'Immediate loading links'), IMMEDIATE_ID)
+    await seedSession(scaffold, markdownFixture(linkUrl, false,
+      [`${targetOrigin}/delayed?manual=1`, `${targetOrigin}/next?manual=2`,
+        `${targetOrigin}/failure?manual=3`], 'Manual selection links'), MANUAL_ID)
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     tripwire = watchConsole(page)
@@ -326,6 +362,79 @@ describe('web e2e: Markdown inline-code links', () => {
     await assertFixtureInventory(SNAPSHOT_DIR, ['ui.expected.md'])
   }, 120_000)
 
+  it.skipIf(MODE === 'record')('shows the first assistant URL as a selected loading page before its HTTP document arrives', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-markdown-immediate-link'))
+    await page.setViewportSize({ width: 1680, height: 1000 })
+    await openSession(page, 'Immediate loading links')
+    await expect.poll(() => page.getByText(DONE, { exact: true }).count(), { timeout: 15_000 }).toBe(1)
+    expect(await browserState(page, scaffold.baseUrl, IMMEDIATE_ID)).toBeNull()
+    const shellUrl = page.url()
+    const url = `${targetOrigin}${IMMEDIATE_PATH}`
+    try {
+      await page.locator('[class*="markdown"] code a').click()
+      await waitForDelayed()
+      // Host 可以先分配 about:blank，但目标文档仍被 fixture 持有，不能完成页面观测。
+      expect((await browserState(page, scaffold.baseUrl, IMMEDIATE_ID))?.observation?.title)
+        .not.toBe('Chat link preview')
+      await expectPendingTab(page, url)
+      await expect.poll(async () => (await page.locator('#dsh-layout-workbench').boundingBox())?.width ?? 0)
+        .toBeGreaterThan(500)
+      expect(await page.locator('#dsh-layout-workbench [role="tab"][data-browser-tab-id]').count()).toBe(0)
+      const mirror = page.getByRole('region', { name: 'Browser view' })
+      await expect.poll(() => mirror.isVisible()).toBe(true)
+      await expect.poll(() => mirror.getByTestId('browser-link-loading').count()).toBe(1)
+      await expect.poll(() => mirror.getByRole('status').filter({ hasText: 'Opening page' }).count()).toBe(1)
+      expect(await mirror.getByRole('status').textContent()).toContain(url)
+      expect(await mirror.getByRole('img', { name: 'Browser page screenshot' }).count()).toBe(0)
+      expect(await mirror.getByText('Start browsing').isVisible()).toBe(false)
+      await page.screenshot({ path: '/tmp/dsh-chat-link-initial-loading.png' })
+      expect(page.url()).toBe(shellUrl)
+
+      await page.setViewportSize({ width: 375, height: 812 })
+      await expect.poll(() => page.locator('[data-workbench-fullscreen]').count()).toBe(1)
+      await expectPendingTab(page, url)
+      await expect.poll(() => mirror.getByTestId('browser-link-loading').isVisible()).toBe(true)
+      const status = mirror.getByRole('status')
+      await expect.poll(() => status.isVisible()).toBe(true)
+      expect(await status.textContent()).toContain(url)
+      await expect.poll(() => status.locator('strong').evaluate((element) => {
+        const lineHeight = Number.parseFloat(getComputedStyle(element).lineHeight)
+        return element.getBoundingClientRect().height > lineHeight
+      })).toBe(true)
+      await expect.poll(async () => {
+        const box = await mirror.boundingBox()
+        return box === null ? Infinity : box.x + box.width
+      }).toBeLessThanOrEqual(375)
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(376)
+      await page.screenshot({ path: '/tmp/dsh-chat-link-initial-loading-mobile.png' })
+      await page.setViewportSize({ width: 1680, height: 1000 })
+      await expectPendingTab(page, url)
+      await expect.poll(() => page.locator('[data-workbench-fullscreen]').count()).toBe(0)
+      await expect.poll(async () => {
+        const width = Number(await page.locator('[data-side="sidebar"]').getAttribute('aria-valuenow'))
+        const box = await page.locator('#dsh-layout-sidebar').boundingBox()
+        return box === null || width < 240 ? Infinity : Math.abs(box.width - width)
+      }).toBeLessThanOrEqual(2)
+      await expect.poll(async () => {
+        const width = Number(await page.locator('[data-side="workbench"]').getAttribute('aria-valuenow'))
+        const box = await page.locator('#dsh-layout-workbench').boundingBox()
+        return box === null || width < 500 ? Infinity : Math.abs(box.width - width)
+      }).toBeLessThanOrEqual(2)
+
+      releaseDelayed()
+      const hostId = await expectOpenTab(page, scaffold.baseUrl, IMMEDIATE_ID, url, 1)
+      await expect.poll(() => page.locator('#dsh-layout-workbench [role="tab"][data-browser-pending-id]').count())
+        .toBe(0)
+      expect(await page.locator('#dsh-layout-workbench [role="tab"][data-browser-tab-id]').count()).toBe(1)
+      expect(await page.locator(`#dsh-layout-workbench [role="tab"][data-browser-tab-id="${hostId}"]`).count()).toBe(1)
+      await expect.poll(() => mirror.getByTestId('browser-link-loading').count()).toBe(0)
+      await page.screenshot({ path: '/tmp/dsh-chat-link-initial-loaded.png' })
+      expect(tripwire.pageErrors).toEqual([])
+    } finally {
+      releaseDelayed()
+    }
+  }, 120_000)
+
   it.skipIf(MODE === 'record')('queues rapid distinct and repeated links while navigation is pending', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-markdown-rapid-links'))
     await page.setViewportSize({ width: 1680, height: 1000 })
@@ -351,6 +460,14 @@ describe('web e2e: Markdown inline-code links', () => {
       await waitForDelayed()
       await page.getByRole('link', { name: 'Open next' }).click()
       await page.getByRole('link', { name: 'Open again' }).click()
+      const pending = page.locator('#dsh-layout-workbench [role="tab"][data-browser-pending-id]')
+      await expect.poll(() => pending.count()).toBe(3)
+      const pendingIds = await pending.evaluateAll(tabs => tabs.map(tab => tab.getAttribute('data-browser-pending-id')))
+      expect(new Set(pendingIds).size).toBe(3)
+      expect(await pending.allTextContents()).toEqual([delayedUrl, nextUrl, nextUrl])
+      expect(await pending.nth(2).getAttribute('aria-selected')).toBe('true')
+      expect((await browserState(page, scaffold.baseUrl, RAPID_ID))?.tabs[0]?.url).toBe(linkUrl)
+      expect(await page.locator('#dsh-layout-workbench [role="tab"][data-browser-tab-id]').count()).toBe(1)
       expect(page.url()).toBe(shellUrl)
       releaseDelayed()
 
@@ -361,6 +478,8 @@ describe('web e2e: Markdown inline-code links', () => {
       expect(new Set(state?.tabs.map(tab => tab.id)).size).toBe(4)
       expect(state?.tabs.find(tab => tab.id === originalId)?.url).toBe(linkUrl)
       expect(finalId).not.toBe(originalId)
+      await expect.poll(() => pending.count()).toBe(0)
+      expect(await page.locator('#dsh-layout-workbench [role="tab"][data-browser-tab-id]').count()).toBe(4)
       expect(page.url()).toBe(shellUrl)
       await expect.poll(() => page.getByRole('dialog', { name: 'Couldn’t open link' }).count()).toBe(0)
       await page.screenshot({ path: '/tmp/dsh-chat-link-rapid.png' })
@@ -370,8 +489,40 @@ describe('web e2e: Markdown inline-code links', () => {
     }
   }, 120_000)
 
+  it.skipIf(MODE === 'record')('preserves an explicit Files choice while an assistant link is loading', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-markdown-link-manual-selection'))
+    await openSession(page, 'Manual selection links')
+    await expect.poll(() => page.getByText(DONE, { exact: true }).count(), { timeout: 15_000 }).toBe(1)
+    await page.getByRole('link', { name: 'Open original' }).click()
+    await expectOpenTab(page, scaffold.baseUrl, MANUAL_ID, linkUrl, 1)
+    const delayedUrl = `${targetOrigin}/delayed?manual=1`
+    try {
+      await page.getByRole('link', { name: 'Open delayed' }).click()
+      await waitForDelayed()
+      await expectPendingTab(page, delayedUrl)
+      await page.getByRole('button', { name: 'Back to features' }).click()
+      await page.getByRole('navigation', { name: 'Workbench features' }).getByRole('button', { name: 'Files' }).click()
+      const fileManager = page.getByRole('complementary', { name: 'Workspace files' })
+      await expect.poll(() => fileManager.isVisible()).toBe(true)
+      await expectPendingTab(page, delayedUrl, false)
+      releaseDelayed()
+      await expect.poll(async () => (await browserState(page, scaffold.baseUrl, MANUAL_ID))?.tabs.length,
+        { timeout: 20_000 }).toBe(2)
+      await expect.poll(() => page.locator('#dsh-layout-workbench [role="tab"][data-browser-pending-id]').count())
+        .toBe(0)
+      expect(await fileManager.isVisible()).toBe(true)
+      expect(await page.getByRole('tab', { name: 'File manager' }).getAttribute('aria-selected')).toBe('true')
+      expect(await page.locator('#dsh-layout-workbench [role="tab"][data-browser-tab-id]').count()).toBe(2)
+      expect(tripwire.pageErrors).toEqual([])
+    } finally {
+      releaseDelayed()
+    }
+  }, 120_000)
+
   it.skipIf(MODE === 'record')('continues queued link clicks after an earlier navigation fails', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-markdown-rapid-link-failure'))
+    await openSession(page, 'Rapid preview links')
+    await expect.poll(() => page.getByText(DONE, { exact: true }).count(), { timeout: 15_000 }).toBe(1)
     const before = await browserState(page, scaffold.baseUrl, RAPID_ID)
     expect(before?.tabs.length).toBe(4)
     const originalIds = before?.tabs.map(tab => tab.id) ?? []
@@ -380,6 +531,9 @@ describe('web e2e: Markdown inline-code links', () => {
       await page.getByRole('link', { name: 'Open failure' }).click()
       await waitForFailure()
       await page.getByRole('link', { name: 'Open after failure' }).click()
+      const failureUrl = `${targetOrigin}/failure?demo=3`
+      const failedId = await expectPendingTab(page, failureUrl, false)
+      await expectPendingTab(page, `${targetOrigin}/next?demo=2`)
       releaseFailure()
 
       await expect.poll(async () => {
@@ -395,12 +549,22 @@ describe('web e2e: Markdown inline-code links', () => {
       expect(state?.tabs.some(tab => tab.url.includes('/failure'))).toBe(false)
       expect(originalIds).not.toContain(finalId)
       expect(page.url()).toBe(shellUrl)
-      const failureDialog = page.getByRole('dialog', { name: 'Couldn’t open link' })
-      await expect.poll(() => failureDialog.count()).toBe(1)
-      expect(await failureDialog.textContent()).toContain('BROWSER_FAILED')
-      expect(await failureDialog.textContent()).not.toContain('BROWSER_BUSY')
-      await failureDialog.getByRole('button', { name: 'Cancel' }).click()
-      await expect.poll(() => failureDialog.count()).toBe(0)
+      const failedTab = page.locator(`#dsh-layout-workbench [role="tab"][data-browser-pending-id="${failedId}"]`)
+      await expect.poll(() => failedTab.count()).toBe(1)
+      expect(await page.getByRole('dialog', { name: 'Couldn’t open link' }).count()).toBe(0)
+      await failedTab.click()
+      const mirror = page.getByRole('region', { name: 'Browser view' })
+      await expect.poll(() => mirror.getByRole('alert').count()).toBe(1)
+      expect(await mirror.getByRole('alert').textContent()).toContain('BROWSER_FAILED')
+      expect(await mirror.getByRole('alert').textContent()).toContain(failureUrl)
+      allowFailureRetry()
+      await mirror.getByRole('button', { name: 'Retry' }).click()
+      await expect.poll(async () => (await browserState(page, scaffold.baseUrl, RAPID_ID))?.tabs.length,
+        { timeout: 20_000 }).toBe(6)
+      await expect.poll(() => failedTab.count()).toBe(0)
+      expect(await page.locator('#dsh-layout-workbench [role="tab"][data-browser-tab-id]').count()).toBe(6)
+      const retried = await browserState(page, scaffold.baseUrl, RAPID_ID)
+      expect(retried?.tabs.at(-1)?.url).toBe(failureUrl)
       expect(tripwire.pageErrors).toEqual([])
     } finally {
       releaseFailure()

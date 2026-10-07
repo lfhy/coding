@@ -363,10 +363,10 @@ export interface ChatFileMentions {
 /** 可选的 Assistant 正文链接打开服务；点击时由 Chat 视图按当前会话查找。 */
 export interface ChatBrowserLinks {
   /**
-   * 在指定会话的浏览器工作台打开链接；失败时拒绝，由调用方显示重试入口。
+   * 接纳指定会话的链接后立即展示工作台加载标签；导航失败由该标签呈现重试。
    * @param sessionId - 点击链接时所属的会话。
    * @param url - Markdown 链接的目标地址。
-   * @returns 打开操作完成时兑现的 Promise。
+   * @returns 工作台接纳并展示加载标签时兑现；服务不可用、容量满或会话失效等接纳前失败时拒绝。
    */
   open(sessionId: SessionId, url: string): Promise<void>
 }

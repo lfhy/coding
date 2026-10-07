@@ -405,6 +405,26 @@ describe('WorkspaceWorkbench shell', () => {
     expect(document.activeElement).toBe(menu)
   })
 
+  it('reveals the first linked page before a Host tab exists without requesting an empty tab', () => {
+    const b = bench()
+    render(<WorkspaceWorkbench {...b.props} />)
+    const owner = (b.renderSlot as unknown as { mock: { lastCall?: [string, {
+      beginBrowserLink: (id: string, url: string) => void
+    }] } }).mock.lastCall?.[1]
+    if (!owner) throw new Error('browser slot owner was not registered')
+    act(() => { owner.beginBrowserLink('browser-link:1', 'https://slow.example/') })
+    expect(b.openWorkbench).toHaveBeenCalledOnce()
+    expect(b.instance.getSnapshot()).toMatchObject({ view: 'browser', activeId: 'browser-link:1' })
+    expect(b.renderSlot).toHaveBeenCalledWith('workbench.browser', expect.objectContaining({
+      pendingBrowserLink: { id: 'browser-link:1', type: 'browser-pending', url: 'https://slow.example/' },
+      newTabRequest: 0,
+    }))
+    expect(b.renderSlot).toHaveBeenCalledWith('workbench.browser.tabs', expect.objectContaining({
+      pendingBrowserLink: { id: 'browser-link:1', type: 'browser-pending', url: 'https://slow.example/' },
+      browserShown: true,
+    }))
+  })
+
   it('tolerates a browser focus reply arriving after the workbench is unmounted', () => {
     const b = bench()
     const mounted = render(<WorkspaceWorkbench {...b.props} />)

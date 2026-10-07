@@ -22,9 +22,12 @@ export interface BrowserMirrorInjected {
   ensureTab: () => Promise<void>
   command: (command: BrowserHumanCommand) => Promise<boolean>
   openUrl: (url: string) => Promise<BrowserState>
-  registerLinkOpener: (sessionId: string, open: (url: string, isCurrent: () => boolean,
+  registerLinkOpener: (sessionId: string, open: (url: string, pendingId: string, isCurrent: () => boolean,
     shouldReveal: () => boolean, click: { interactionEpoch: number; selectedTabId?: string }) => Promise<void>,
+    begin: (id: string, url: string) => void,
+    clear: () => void,
     clickState: () => { interactionEpoch: number; selectedTabId?: string }) => () => void
+  retryLink: (url: string, pendingId: string) => Promise<void>
   retry: () => void
 }
 export type BrowserMirrorProps = PropsRuntime<'workbench.browser'> & PropsLocale<typeof NS> & InjectFace<BrowserMirrorInjected>
@@ -88,7 +91,8 @@ function frameMatchesViewport(frame: HTMLImageElement | null, viewport: BrowserV
  * @returns 页面标签；没有页面 id 时不渲染。
  */
 export function BrowserTabs({ shown, browserShown = shown, tabId, tabName, tabDomId, panelDomId,
-  openBrowser, focusPendingBrowserTab, useBrowserMirror, command, t }: BrowserTabsProps) {
+  pendingBrowserLink, openBrowser, selectPendingBrowserLink, closePendingBrowserLink,
+  focusPendingBrowserTab, useBrowserMirror, command, t }: BrowserTabsProps) {
   const { state, pending, phase } = useBrowserMirror(view => view)
   const hostTab = state?.tabs.find(tab => tab.id === tabId)
   const tab = hostTab ?? (state === null
@@ -99,6 +103,23 @@ export function BrowserTabs({ shown, browserShown = shown, tabId, tabName, tabDo
   useEffect(() => {
     if (shown && !disabled && tabId !== undefined) focusPendingBrowserTab(tabId)
   }, [shown, disabled, tabId, focusPendingBrowserTab])
+  if (pendingBrowserLink !== undefined) return <div className={css.tabs} hidden={!shown}>
+    <div className={css.tab} data-active={browserShown}>
+      <button type="button" className={css.tabSelect} role="tab" aria-selected={browserShown}
+        data-browser-pending-id={pendingBrowserLink.id} id={tabDomId} aria-controls={panelDomId}
+        tabIndex={browserShown ? 0 : -1} title={pendingBrowserLink.url}
+        onClick={() => { selectPendingBrowserLink(pendingBrowserLink.id) }}>
+        <span className={css.tabGlyph} aria-hidden="true"><IconGlobeOutline14 /></span>
+        <span className={css.tabName}>{pendingBrowserLink.url}</span>
+      </button>
+      <button type="button" className={css.tabClose} disabled={pendingBrowserLink.error === undefined}
+        aria-label={pendingBrowserLink.error === undefined ? t('linkClosingUnavailable')
+          : t('closeTab', { name: pendingBrowserLink.url })}
+        title={pendingBrowserLink.error === undefined ? t('linkClosingUnavailable')
+          : t('closeTab', { name: pendingBrowserLink.url })}
+        onClick={() => { closePendingBrowserLink(pendingBrowserLink.id) }}><IconCloseOutline16 size={12} /></button>
+    </div>
+  </div>
   if (tabId === undefined) return null
   return <div className={css.tabs} hidden={!shown}>
     {tab !== undefined && <div className={css.tab} data-active={selected}>
@@ -137,8 +158,9 @@ export function BrowserTabs({ shown, browserShown = shown, tabId, tabName, tabDo
  */
 export function BrowserMirror({ sessionId, shown, selectedTabId, newTabRequest, handledTabRequest,
   markTabRequestHandled, syncBrowserTabs, focusBrowserTab, openBrowser, useSession,
+  pendingBrowserLink, beginBrowserLink, completeBrowserLink, failBrowserLink, clearBrowserLinks,
   interactionEpoch, browserAutoRevealed, requestAutoReveal, autoRevealBrowser,
-  useBrowserMirror, start, ensureTab, command, openUrl, registerLinkOpener, retry, t }: BrowserMirrorProps) {
+  useBrowserMirror, start, ensureTab, command, openUrl, registerLinkOpener, retryLink, retry, t }: BrowserMirrorProps) {
   const nodes = useSession(snapshot => snapshot.nodes)
   const runningCalls = useSession(snapshot => snapshot.runningCalls)
   const openState = useSession(snapshot => snapshot.openState)
@@ -150,8 +172,10 @@ export function BrowserMirror({ sessionId, shown, selectedTabId, newTabRequest, 
   const phaseRef = useRef(view.phase)
   phaseRef.current = view.phase
   useEffect(() => start(), [start])
-  const linkOwner = useRef({ syncBrowserTabs, openBrowser, t, openUrl, interactionEpoch, selectedTabId })
-  linkOwner.current = { syncBrowserTabs, openBrowser, t, openUrl, interactionEpoch, selectedTabId }
+  const linkOwner = useRef({ syncBrowserTabs, openBrowser, t, openUrl, beginBrowserLink, clearBrowserLinks,
+    completeBrowserLink, failBrowserLink, interactionEpoch, selectedTabId })
+  linkOwner.current = { syncBrowserTabs, openBrowser, t, openUrl, beginBrowserLink, clearBrowserLinks,
+    completeBrowserLink, failBrowserLink, interactionEpoch, selectedTabId }
   const linkOpening = useRef(false)
   const linkRevealTab = useRef<string | null>(null)
   const manualLinkChoice = useRef<{ tabId: string; epoch: number } | null>(null)
@@ -159,7 +183,7 @@ export function BrowserMirror({ sessionId, shown, selectedTabId, newTabRequest, 
   const activeLinkIntent = useRef<{ click: { interactionEpoch: number; selectedTabId?: string }
     shouldReveal: () => boolean } | null>(null)
   const [linkSettlement, setLinkSettlement] = useState(0)
-  useEffect(() => registerLinkOpener(sessionId, async (url, isCurrent, shouldReveal, click) => {
+  useEffect(() => registerLinkOpener(sessionId, async (url, pendingId, isCurrent, shouldReveal, click) => {
     activeLinkIntent.current = { click, shouldReveal }
     linkOpening.current = true
     try {
@@ -183,8 +207,9 @@ export function BrowserMirror({ sessionId, shown, selectedTabId, newTabRequest, 
       } else if (latest) supersededLinkChoice.current = null
       if (!changed && latest) linkRevealTab.current = activeId
       owner.syncBrowserTabs(browserTabNames(state, owner.t), preservedTabId ?? activeId)
-      if (!changed && latest) owner.openBrowser(activeId)
+      owner.completeBrowserLink(pendingId, activeId)
     } catch (error) {
+      if (isCurrent()) linkOwner.current.failBrowserLink(pendingId, error instanceof Error ? error.message : String(error))
       if (shouldReveal() && supersededLinkChoice.current?.epoch === linkOwner.current.interactionEpoch) {
         manualLinkChoice.current = supersededLinkChoice.current
         supersededLinkChoice.current = null
@@ -195,7 +220,9 @@ export function BrowserMirror({ sessionId, shown, selectedTabId, newTabRequest, 
       activeLinkIntent.current = null
       if (manualLinkChoice.current !== null && isCurrent()) setLinkSettlement(previous => previous + 1)
     }
-  }, () => ({ interactionEpoch: linkOwner.current.interactionEpoch,
+  }, (id, url) => { linkOwner.current.beginBrowserLink(id, url) },
+  () => { linkOwner.current.clearBrowserLinks() },
+  () => ({ interactionEpoch: linkOwner.current.interactionEpoch,
     ...linkOwner.current.selectedTabId === undefined ? {} : { selectedTabId: linkOwner.current.selectedTabId } })),
   [sessionId, registerLinkOpener])
   const observed = useRef<{ ready: boolean; seq: number; pending: (NavigationRevealTarget & { epoch: number }) | null }>({
@@ -236,6 +263,7 @@ export function BrowserMirror({ sessionId, shown, selectedTabId, newTabRequest, 
     }
   }, [nodes, runningCalls, openState, interactionEpoch, native])
   useEffect(() => {
+    if (linkOpening.current) return
     if (view.state !== null) {
       const choice = manualLinkChoice.current
       if (choice !== null && choice.epoch !== interactionEpoch) manualLinkChoice.current = null
@@ -306,13 +334,13 @@ export function BrowserMirror({ sessionId, shown, selectedTabId, newTabRequest, 
       entry.current.awaitingState = false
       return
     }
-    if (view.state !== null) {
+    if (pendingBrowserLink !== undefined || view.state !== null) {
       entry.current.awaitingState = false
     } else if (view.phase === 'empty') {
       entry.current.awaitingState = false
       void ensureTab()
     }
-  }, [shown, view.phase, view.state, ensureTab, newTabRequest])
+  }, [shown, view.phase, view.state, ensureTab, newTabRequest, pendingBrowserLink])
   useEffect(() => {
     if (!shown || newTabRequest <= issuedTabRequest.current || view.phase === 'loading'
       || view.phase === 'busy' || view.pending || view.state?.operationActive) return
@@ -328,16 +356,16 @@ export function BrowserMirror({ sessionId, shown, selectedTabId, newTabRequest, 
   const awaitingSelectedTab = shown && view.phase === 'ready' && selectedTabId !== undefined
     && active?.id !== selectedTabId
   const agentBusy = view.phase === 'busy' || view.state?.operationActive === true
-  const controlsDisabled = view.pending || agentBusy || awaitingSelectedTab
+  const controlsDisabled = view.pending || agentBusy || awaitingSelectedTab || pendingBrowserLink !== undefined
   const tabId = active?.id ?? null
   const browserGeneration = view.state?.browserGeneration ?? null
   const canvasRef = useRef<HTMLDivElement>(null)
   const [inputError, setInputError] = useState<string | null>(null)
-  const nativeNotice = native && (inputError !== null || view.pending && !awaitingSelectedTab
+  const nativeNotice = native && pendingBrowserLink === undefined && (inputError !== null || view.pending && !awaitingSelectedTab
     || agentBusy && view.phase !== 'busy')
   useLayoutEffect(() => {
     if (nativePresenter === null || tabId === null || !shown || view.phase !== 'ready'
-      || awaitingSelectedTab) return
+      || awaitingSelectedTab || pendingBrowserLink !== undefined) return
     const canvas = canvasRef.current
     if (canvas === null) return
     let previous = ''
@@ -387,7 +415,7 @@ export function BrowserMirror({ sessionId, shown, selectedTabId, newTabRequest, 
       document.removeEventListener('visibilitychange', measure)
       send(false)
     }
-  }, [nativePresenter, sessionId, tabId, shown, view.phase, nativeNotice, awaitingSelectedTab])
+  }, [nativePresenter, sessionId, tabId, shown, view.phase, nativeNotice, awaitingSelectedTab, pendingBrowserLink])
   const observerEpoch = useRef(0)
   const lastViewportAttempt = useRef<string | null>(null)
   const viewportRetryTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -401,7 +429,8 @@ export function BrowserMirror({ sessionId, shown, selectedTabId, newTabRequest, 
   }
   useEffect(() => {
     const epoch = ++observerEpoch.current
-    if (native || !shown || awaitingSelectedTab || tabId === null || browserGeneration === null || canvasRef.current === null
+    if (native || !shown || pendingBrowserLink !== undefined || awaitingSelectedTab || tabId === null
+      || browserGeneration === null || canvasRef.current === null
       || typeof ResizeObserver === 'undefined') return
     let timer: ReturnType<typeof setTimeout> | undefined
     const observer = new ResizeObserver(([entry]) => {
@@ -426,11 +455,12 @@ export function BrowserMirror({ sessionId, shown, selectedTabId, newTabRequest, 
       viewportRetryCount.current = 0
       viewportTarget.current = null
     }
-  }, [native, shown, awaitingSelectedTab, tabId, browserGeneration])
+  }, [native, shown, pendingBrowserLink, awaitingSelectedTab, tabId, browserGeneration])
   const currentViewport = view.state?.viewport
   const stateRevision = view.state?.stateRevision
   useEffect(() => {
-    if (native || !shown || awaitingSelectedTab || tabId === null || browserGeneration === null || desiredViewport === null
+    if (native || !shown || pendingBrowserLink !== undefined || awaitingSelectedTab || tabId === null
+      || browserGeneration === null || desiredViewport === null
       || desiredViewport.epoch !== observerEpoch.current || view.pending || view.phase !== 'ready'
       || currentViewport === undefined) return
     if (agentBusy) {
@@ -471,10 +501,11 @@ export function BrowserMirror({ sessionId, shown, selectedTabId, newTabRequest, 
     }
     void command({ kind: 'set-viewport', width: desiredViewport.width, height: desiredViewport.height })
       .then((success) => { if (success) viewportRetryCount.current = 0; else failed() }, failed)
-  }, [native, shown, awaitingSelectedTab, tabId, browserGeneration, desiredViewport, view.pending, view.phase, agentBusy,
+  }, [native, shown, pendingBrowserLink, awaitingSelectedTab, tabId, browserGeneration, desiredViewport,
+    view.pending, view.phase, agentBusy,
     currentViewport?.width, currentViewport?.height, stateRevision, command, retry, viewportRetryRevision])
   const addressTab = awaitingSelectedTab ? view.state.tabs.find(tab => tab.id === selectedTabId) : active
-  const address = addressTab?.url === 'about:blank' ? '' : addressTab?.url ?? ''
+  const address = pendingBrowserLink?.url ?? (addressTab?.url === 'about:blank' ? '' : addressTab?.url ?? '')
   const addressRef = useRef<HTMLInputElement>(null)
   const [addressFocused, setAddressFocused] = useState(false)
   const [draft, setDraft] = useState<{
@@ -629,19 +660,36 @@ export function BrowserMirror({ sessionId, shown, selectedTabId, newTabRequest, 
       {agentBusy && view.phase !== 'busy' && <p role="status">{t('agentBusy')}</p>}
     </div>}
     <div className={css.body} ref={canvasRef} data-testid="browser-canvas">
-      {!native && inputError && <p id="browser-address-error" className={css.inputError} role="alert">{inputError}</p>}
-      {!native && view.pending && !awaitingSelectedTab
+      {pendingBrowserLink !== undefined && <div className={css.linkStatus}
+        {...pendingBrowserLink.error === undefined ? { role: 'status' } : { role: 'alert' }}>
+        {pendingBrowserLink.error === undefined && <span className={css.linkSpinner}
+          data-testid="browser-link-loading" aria-hidden="true" />}
+        <span>{pendingBrowserLink.error === undefined ? t('pending') : t('linkError')}</span>
+        <strong className={css.linkUrl}>{pendingBrowserLink.url}</strong>
+        {pendingBrowserLink.error !== undefined && <>
+          <span>{pendingBrowserLink.error}</span>
+          <button type="button" onClick={() => {
+            void retryLink(pendingBrowserLink.url, pendingBrowserLink.id).catch((error: unknown) => {
+              failBrowserLink(pendingBrowserLink.id, error instanceof Error ? error.message : String(error))
+            })
+          }}>
+            {t('retry')}
+          </button>
+        </>}
+      </div>}
+      {pendingBrowserLink === undefined && !native && inputError && <p id="browser-address-error" className={css.inputError} role="alert">{inputError}</p>}
+      {pendingBrowserLink === undefined && !native && view.pending && !awaitingSelectedTab
         && <p role="status" className={css.pending}>{t('pending')}</p>}
-      {!native && agentBusy && view.phase !== 'busy' && <p role="status" className={css.busyNotice}>{t('agentBusy')}</p>}
-      {view.phase === 'loading' && <p role="status" className={css.message}>{t('loading')}</p>}
-      {awaitingSelectedTab && <p role="status" className={css.message}>{t('loading')}</p>}
-      {view.phase === 'busy' && <p className={css.message} role="status">{t('agentBusy')}</p>}
-      {(view.phase === 'empty' || view.phase === 'ready' && !awaitingSelectedTab
+      {pendingBrowserLink === undefined && !native && agentBusy && view.phase !== 'busy' && <p role="status" className={css.busyNotice}>{t('agentBusy')}</p>}
+      {pendingBrowserLink === undefined && view.phase === 'loading' && <p role="status" className={css.message}>{t('loading')}</p>}
+      {pendingBrowserLink === undefined && awaitingSelectedTab && <p role="status" className={css.message}>{t('loading')}</p>}
+      {pendingBrowserLink === undefined && view.phase === 'busy' && <p className={css.message} role="status">{t('agentBusy')}</p>}
+      {pendingBrowserLink === undefined && (view.phase === 'empty' || view.phase === 'ready' && !awaitingSelectedTab
         && (!active || !native && active.url === 'about:blank')) && <div className={css.blank}>
         <span className={css.blankGlobe} aria-hidden="true"><IconGlobeOutline14 size={40} /></span>
         <h2>{t('startBrowsing')}</h2><p>{t('emptyHint')}</p>
       </div>}
-      {view.phase === 'error' && <div className={css.message} role="alert">
+      {pendingBrowserLink === undefined && view.phase === 'error' && <div className={css.message} role="alert">
         <span>{t('error')}: {view.message}</span><button type="button" onClick={() => {
           clearViewportRetry()
           viewportRetryCount.current = 0
@@ -650,9 +698,9 @@ export function BrowserMirror({ sessionId, shown, selectedTabId, newTabRequest, 
           setViewportRetryRevision(previous => previous + 1)
         }}>{t('retry')}</button>
       </div>}
-      {view.phase === 'ready' && !awaitingSelectedTab && active && native
+      {pendingBrowserLink === undefined && view.phase === 'ready' && !awaitingSelectedTab && active && native
         && <div className={css.nativeCanvas} aria-label={t('nativePage')} />}
-      {view.phase === 'ready' && !awaitingSelectedTab && active && !native && active.url !== 'about:blank' && <div className={css.canvas}>
+      {pendingBrowserLink === undefined && view.phase === 'ready' && !awaitingSelectedTab && active && !native && active.url !== 'about:blank' && <div className={css.canvas}>
         {view.frameUrl !== null && observation && <div className={css.viewport}
           style={{ width: observation.viewport.width,
             aspectRatio: `${observation.viewport.width} / ${observation.viewport.height}` }}>

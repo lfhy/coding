@@ -242,6 +242,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     const tab: Tab = { id, generation, view, revision: 0, navigation: 0, syntheticInput: false, everPresented: false,
       summary: { id, generation, url: 'about:blank', title: '', canGoBack: false, canGoForward: false } }
     owner.tabs.set(id, tab)
+    const isCurrent = (): boolean => owners.get(sessionId) === owner && owner.tabs.get(id) === tab
     view.setBounds({ x: 0, y: 0, ...owner.viewport })
     const denyNavigation = (event: { url: string; isMainFrame?: boolean; preventDefault(): void }): void => {
       if (event.isMainFrame === false || event.url === 'about:blank') return
@@ -252,29 +253,30 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     wc.on('will-frame-navigate', denyNavigation)
     wc.on('will-redirect', denyNavigation)
     wc.on('did-start-navigation', (details) => {
-      if (!details.isMainFrame) return
+      if (!details.isMainFrame || !isCurrent()) return
       // Electron 的 did-start-navigation 在 same-document 中也触发；保守撤销截图。
       invalidate(owner, tab)
       emit(sessionId, owner)
     })
-    wc.on('did-navigate', () => { refreshSummary(tab); emit(sessionId, owner) })
+    wc.on('did-navigate', () => { if (isCurrent()) { refreshSummary(tab); emit(sessionId, owner) } })
     wc.on('did-navigate-in-page', (_event, _url, isMainFrame) => {
-      if (!isMainFrame) return
+      if (!isMainFrame || !isCurrent()) return
       invalidate(owner, tab)
       refreshSummary(tab)
       emit(sessionId, owner)
     })
     wc.on('page-title-updated', (_event, title) => {
-      if (owners.get(sessionId) !== owner || !owner.tabs.has(tab.id)) return
+      if (!isCurrent()) return
       const current = title.slice(0, 4096).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ' ')
       if (current === tab.summary.title) return
       invalidate(owner, tab)
       refreshSummary(tab, current)
       emit(sessionId, owner)
     })
-    wc.on('render-process-gone', () => { invalidate(owner, tab); emit(sessionId, owner) })
-    wc.on('destroyed', () => { invalidate(owner, tab); if (owners.get(sessionId) === owner) emit(sessionId, owner) })
+    wc.on('render-process-gone', () => { if (isCurrent()) { invalidate(owner, tab); emit(sessionId, owner) } })
+    wc.on('destroyed', () => { if (isCurrent()) { invalidate(owner, tab); emit(sessionId, owner) } })
     wc.on('input-event', (event, input) => {
+      if (!isCurrent()) return
       if (tab.syntheticInput) return
       if (owner.lease) { event.preventDefault(); return }
       if (['mouseDown', 'mouseUp', 'mouseWheel', 'keyDown', 'keyUp', 'char'].includes(input.type)) {
@@ -454,19 +456,55 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     }
   }
 
-  async function navigate(sessionId: string, owner: Owner, tab: Tab, url: string): Promise<void> {
+  async function navigate(sessionId: string, owner: Owner, tab: Tab, url: string, human = false): Promise<void> {
     const wc = tab.view.webContents
-    const completed = Promise.resolve(wc.loadURL(allowedUrl(url, options.hostOrigin)))
+    const destination = allowedUrl(url, options.hostOrigin)
+    let ready = false
+    let started = false
+    let readyTask: ReturnType<typeof setImmediate> | undefined
+    let resolveReady!: (value: { timedOut: false; error?: unknown }) => void
+    const domReady = new Promise<{ timedOut: false; error?: unknown }>((resolve) => { resolveReady = resolve })
+    const onStart = (details: { isMainFrame: boolean }): void => {
+      if (details.isMainFrame && owners.get(sessionId) === owner && owner.tabs.get(tab.id) === tab) {
+        if (readyTask) clearImmediate(readyTask)
+        readyTask = undefined
+        started = true; ready = false
+      }
+    }
+    const onDomReady = (): void => {
+      if (started && owners.get(sessionId) === owner && owner.tabs.get(tab.id) === tab) { ready = true; finishReady() }
+    }
+    function finishReady(): void {
+      if (!ready || owners.get(sessionId) !== owner || owner.tabs.get(tab.id) !== tab || wc.isDestroyed()) return
+      try { allowedUrl(wc.getURL(), options.hostOrigin) }
+      catch (error) { resolveReady({ timedOut: false, error }); return }
+      // 给本次 loadURL 拒绝一次先于 DOM 成功回执的机会；共享的失败事件可能属于上次加载。
+      readyTask ??= setImmediate(() => { resolveReady({ timedOut: false }) })
+    }
+    if (human) {
+      wc.on('did-start-navigation', onStart)
+      wc.on('dom-ready', onDomReady)
+    }
+    const completed = Promise.resolve().then(() => wc.loadURL(destination))
       .then(() => ({ timedOut: false as const }), (error: unknown) => ({ timedOut: false as const, error }))
+    const readiness = human ? Promise.race([completed, domReady]) : completed
     let timer: ReturnType<typeof setTimeout> | undefined
     const deadline = new Promise<{ timedOut: true }>((resolve) => {
       timer = setTimeout(() => { resolve({ timedOut: true }) }, NAVIGATION_TIMEOUT_MS)
     })
-    const result = await Promise.race([completed, deadline])
+    const result = await Promise.race([readiness, deadline])
     if (timer) clearTimeout(timer)
+    if (human) {
+      if (readyTask) clearImmediate(readyTask)
+      wc.removeListener('did-start-navigation', onStart)
+      wc.removeListener('dom-ready', onDomReady)
+    }
     if (!result.timedOut) {
       // 保留 loadURL 的原始失败诊断，不能把被拒绝的导航当作已完成页面。
       if ('error' in result) throw result.error
+      if (owners.get(sessionId) !== owner || owner.tabs.get(tab.id) !== tab || wc.isDestroyed()) {
+        fail('browser navigation target changed', 'BROWSER_STALE_REF')
+      }
       refreshSummary(tab)
       return
     }
@@ -686,8 +724,9 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
             if (oldPresentation && oldTab) { detach(oldTab); presented = undefined }
           }
           try {
-            await navigate(sessionId, owner, tab, command.url)
-            await observe(sessionId, owner, tab, null)
+            await navigate(sessionId, owner, tab, command.url, true)
+            invalidate(owner, tab)
+            refreshSummary(tab)
             emit(sessionId, owner)
             return state(sessionId, owner)
           } catch (error) {
@@ -727,7 +766,11 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
             destroyTab(closing)
             break
           }
-          case 'navigate': await navigate(sessionId, owner, tab, command.url); await observe(sessionId, owner, tab, null); break
+          case 'navigate':
+            await navigate(sessionId, owner, tab, command.url, true)
+            invalidate(owner, tab)
+            refreshSummary(tab)
+            break
           case 'back':
           case 'forward':
           case 'reload': {

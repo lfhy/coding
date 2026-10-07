@@ -268,6 +268,46 @@ describe('统一工作台标签', () => {
     instance.actions.syncBrowserTabs([], null)
     expect(instance.getSnapshot()).toMatchObject({ view: 'menu', activeId: null, tabs: [] })
   })
+
+  it('链接点击先显示独立占位页，Host 同步不会抢占它，失败可重试且人工选择优先', () => {
+    const instance = createWorkbenchStore().create()
+    const actions = instance.actions
+    actions.beginBrowserLink('browser-link:1', 'https://one.example/')
+    actions.beginBrowserLink('browser-link:2', 'https://two.example/')
+    expect(instance.getSnapshot()).toMatchObject({ view: 'browser', activeId: 'browser-link:2',
+      tabs: [{ type: 'browser-pending', id: 'browser-link:1' }, { type: 'browser-pending', id: 'browser-link:2' }] })
+    actions.syncBrowserTabs([{ id: 'host-one', name: 'One' }], 'host-one')
+    expect(instance.getSnapshot().activeId).toBe('browser-link:2')
+    actions.completeBrowserLink('browser-link:1', 'host-one')
+    expect(instance.getSnapshot().activeId).toBe('browser-link:2')
+    actions.failBrowserLink('browser-link:2', 'network error')
+    expect(instance.getSnapshot().tabs.find(tab => tab.id === 'browser-link:2'))
+      .toMatchObject({ error: 'network error', url: 'https://two.example/' })
+    actions.beginBrowserLink('browser-link:2', 'https://two.example/')
+    expect(instance.getSnapshot().tabs.find(tab => tab.id === 'browser-link:2')).not.toHaveProperty('error')
+    actions.activateTab('browser:host-one')
+    actions.syncBrowserTabs([{ id: 'host-one', name: 'One' }, { id: 'host-two', name: 'Two' }], 'host-one')
+    actions.completeBrowserLink('browser-link:2', 'host-two')
+    expect(instance.getSnapshot()).toMatchObject({ view: 'browser', activeId: 'browser:host-one' })
+  })
+
+  it('菜单切换优先于完成的链接，关闭占位页不发送 Host id', () => {
+    const instance = createWorkbenchStore().create()
+    instance.actions.beginBrowserLink('browser-link:1', 'https://example.com/')
+    instance.actions.setView('menu')
+    instance.actions.syncBrowserTabs([{ id: 'host-one', name: 'One' }], 'host-one')
+    instance.actions.completeBrowserLink('browser-link:1', 'host-one')
+    expect(instance.getSnapshot()).toMatchObject({ view: 'menu', activeId: 'browser:host-one' })
+    instance.actions.beginBrowserLink('browser-link:2', 'https://example.com/')
+    instance.actions.closeTab('browser-link:2')
+    instance.actions.failBrowserLink('browser-link:2', 'ignored')
+    expect(instance.getSnapshot().tabs.some(tab => tab.id === 'browser-link:2')).toBe(false)
+    instance.actions.beginBrowserLink('browser-link:3', 'https://another.example.com/')
+    instance.actions.failBrowserLink('browser-link:3', 'network error')
+    instance.actions.clearBrowserLinks()
+    expect(instance.getSnapshot().tabs.some(tab => tab.type === 'browser-pending')).toBe(false)
+    expect(instance.getSnapshot()).toMatchObject({ view: 'browser', activeId: 'browser:host-one' })
+  })
 })
 
 describe('根级保留工作台状态', () => {

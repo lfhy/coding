@@ -456,6 +456,12 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
         props.actions.closeTab(sessionId, id)
       },
       syncBrowserTabs: (tabs, activeId) => { props.actions.syncBrowserTabs(sessionId, tabs, activeId) },
+      beginBrowserLink: (id, url) => { props.actions.beginBrowserLink(sessionId, id, url) },
+      completeBrowserLink: (id, tabId) => {
+        props.actions.completeBrowserLink(sessionId, id, tabId)
+      },
+      failBrowserLink: (id, message) => { props.actions.failBrowserLink(sessionId, id, message) },
+      clearBrowserLinks: () => { props.actions.clearBrowserLinks(sessionId) },
       recordInteraction: () => { props.actions.recordInteraction(sessionId) },
       autoRevealBrowser: (tabId, epoch) => { props.actions.autoRevealBrowser(sessionId, tabId, epoch) },
       setFilesQuery: (query) => { props.actions.setFilesQuery(sessionId, query) },
@@ -673,6 +679,15 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
     focusPendingBrowserTab,
     openBrowser: showBrowser,
     syncBrowserTabs: actions.syncBrowserTabs,
+    beginBrowserLink: (id: string, url: string) => {
+      actions.beginBrowserLink(id, url)
+      openWorkbench()
+    },
+    completeBrowserLink: actions.completeBrowserLink,
+    failBrowserLink: actions.failBrowserLink,
+    clearBrowserLinks: actions.clearBrowserLinks,
+    selectPendingBrowserLink: (id: string) => { actions.activateTab(id) },
+    closePendingBrowserLink: (id: string) => { actions.closeTab(id) },
     ...view === 'browser' && active?.type === 'browser' ? { selectedTabId: active.browserTabId } : {},
   }
   return (
@@ -693,9 +708,11 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
             buttons[next]?.focus()
           }}>
           {tabs.map((tab, index) => {
-            if (tab.type === 'browser') return <div key={tab.id} className={css.browserTabs}>
+            if (tab.type === 'browser' || tab.type === 'browser-pending') return <div key={tab.id} className={css.browserTabs}>
               {renderSlot('workbench.browser.tabs', { ...browserOwner, shown,
-                tabId: tab.browserTabId, tabName: tab.name, browserShown: browserShown && activeId === tab.id,
+                ...tab.type === 'browser' ? { tabId: tab.browserTabId, tabName: tab.name } : {
+                  pendingBrowserLink: tab,
+                }, browserShown: browserShown && activeId === tab.id,
                 tabDomId: tabDomId(panelPrefix, props.sessionId, tab.id, 'tab'),
                 panelDomId: tabDomId(panelPrefix, props.sessionId, tab.id, 'panel') })}
             </div>
@@ -873,14 +890,16 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
           </div>
           <div className={css.browserView} hidden={view !== 'browser'} {...view !== 'browser' ? { inert: '' } : {}}>
             <div className={css.browserPanel}
-              {...active?.type === 'browser' ? {
+              {...active?.type === 'browser' || active?.type === 'browser-pending' ? {
                 id: tabDomId(panelPrefix, props.sessionId, active.id, 'panel'),
                 role: 'tabpanel',
                 'aria-labelledby': tabDomId(panelPrefix, props.sessionId, active.id, 'tab'),
               } : {}}>
-              {renderSlot('workbench.browser', browserOwner)}
+              {renderSlot('workbench.browser', { ...browserOwner,
+                ...active?.type === 'browser-pending' ? { pendingBrowserLink: active } : {},
+              })}
             </div>
-            {tabs.filter(tab => tab.type === 'browser' && tab.id !== activeId).map(tab => (
+            {tabs.filter(tab => (tab.type === 'browser' || tab.type === 'browser-pending') && tab.id !== activeId).map(tab => (
               <div key={tab.id} id={tabDomId(panelPrefix, props.sessionId, tab.id, 'panel')}
                 role="tabpanel" aria-labelledby={tabDomId(panelPrefix, props.sessionId, tab.id, 'tab')}
                 hidden {...{ inert: '' }} />

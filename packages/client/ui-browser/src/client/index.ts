@@ -11,15 +11,19 @@ import { BrowserMirror, BrowserTabs, type BrowserMirrorInjected } from './Browse
 import { en, NS, zh, type BrowserMirrorKey } from './locales.ts'
 
 type LinkClick = { interactionEpoch: number; selectedTabId?: string }
-type LinkOpener = (url: string, isCurrent: () => boolean, shouldReveal: () => boolean,
+type LinkOpener = (url: string, pendingId: string, isCurrent: () => boolean, shouldReveal: () => boolean,
   click: LinkClick) => Promise<void>
-type LinkOwner = { open: LinkOpener; clickState: () => LinkClick }
+type LinkOwner = {
+  open: LinkOpener
+  begin: (id: string, url: string) => void
+  clear: () => void
+  clickState: () => LinkClick
+}
 type LinkJob = {
   url: string
+  pendingId: string
   sequence: number
   click: LinkClick
-  resolve: () => void
-  reject: (error: unknown) => void
 }
 type LinkQueue = { owner: LinkOwner; jobs: LinkJob[]; running: boolean; cancelled: boolean; sequence: number }
 
@@ -46,20 +50,23 @@ export function apply(ctx: ClientContext): void {
   const controllers = new Map<string, BrowserMirrorController>()
   const openers = new Map<string, LinkOwner>()
   const queues = new Map<string, LinkQueue>()
+  let nextLinkId = 0
   const cancelQueue = (sessionId: string, queue: LinkQueue) => {
     queue.cancelled = true
-    const waiting = queue.jobs.splice(queue.running ? 1 : 0)
-    for (const job of waiting) job.reject(new Error('会话已切换，请在当前会话重试'))
+    queue.jobs.splice(queue.running ? 1 : 0)
     if (queues.get(sessionId) === queue) queues.delete(sessionId)
   }
-  const registerLinkOpener = (sessionId: string, open: LinkOpener, clickState: () => LinkClick) => {
+  const registerLinkOpener = (sessionId: string, open: LinkOpener,
+    begin: LinkOwner['begin'], clear: LinkOwner['clear'], clickState: () => LinkClick) => {
     const previous = queues.get(sessionId)
     if (previous !== undefined) cancelQueue(sessionId, previous)
-    const owner = { open, clickState }
+    openers.get(sessionId)?.clear()
+    const owner = { open, begin, clear, clickState }
     openers.set(sessionId, owner)
     return () => {
       if (openers.get(sessionId) !== owner) return
       openers.delete(sessionId)
+      owner.clear()
       const queue = queues.get(sessionId)
       if (queue !== undefined) cancelQueue(sessionId, queue)
     }
@@ -74,36 +81,36 @@ export function apply(ctx: ClientContext): void {
         const current = () => !queue.cancelled && openers.get(sessionId) === queue.owner
         try {
           if (!current()) throw new Error('会话已切换，请在当前会话重试')
-          await queue.owner.open(job.url, current,
+          await queue.owner.open(job.url, job.pendingId, current,
             () => current() && queue.sequence === job.sequence, job.click)
-          if (!current()) throw new Error('会话已切换，请在当前会话重试')
-          job.resolve()
-        } catch (error) { job.reject(error) }
+        } catch { /* 已接纳点击的失败只由页面内状态呈现，不能触发会话弹窗。 */ }
         queue.jobs.shift()
       }
       queue.running = false
       if (queues.get(sessionId) === queue) queues.delete(sessionId)
     })()
   }
+  const enqueueLink = (sessionId: SessionId, url: string, retryId?: string): Promise<void> => {
+    const owner = openers.get(sessionId)
+    if (owner === undefined) return Promise.reject(new Error('当前会话的浏览器工作台尚未就绪，请稍后重试'))
+    let queue = queues.get(sessionId)
+    if (queue === undefined) {
+      queue = { owner, jobs: [], running: false, cancelled: false, sequence: 0 }
+      queues.set(sessionId, queue)
+    }
+    if (retryId !== undefined && queue.jobs.some(job => job.pendingId === retryId)) return Promise.resolve()
+    if (queue.jobs.length >= MAX_QUEUED_LINKS) {
+      return Promise.reject(new Error('待打开的链接过多，请等待当前链接完成后重试'))
+    }
+    const click = owner.clickState()
+    const pendingId = retryId ?? `browser-link:${String(++nextLinkId)}`
+    owner.begin(pendingId, url)
+    queue.jobs.push({ url, pendingId, click, sequence: ++queue.sequence })
+    drain(sessionId, queue)
+    return Promise.resolve()
+  }
   const links: ChatBrowserLinks = {
-    open(sessionId: SessionId, url: string): Promise<void> {
-      const owner = openers.get(sessionId)
-      if (owner === undefined) return Promise.reject(new Error('当前会话的浏览器工作台尚未就绪，请稍后重试'))
-      let queue = queues.get(sessionId)
-      if (queue === undefined) {
-        queue = { owner, jobs: [], running: false, cancelled: false, sequence: 0 }
-        queues.set(sessionId, queue)
-      }
-      if (queue.jobs.length >= MAX_QUEUED_LINKS) {
-        return Promise.reject(new Error('待打开的链接过多，请等待当前链接完成后重试'))
-      }
-      const click = owner.clickState()
-      const promise = new Promise<void>((resolve, reject) => {
-        queue.jobs.push({ url, click, sequence: ++queue.sequence, resolve, reject })
-      })
-      drain(sessionId, queue)
-      return promise
-    },
+    open(sessionId: SessionId, url: string): Promise<void> { return enqueueLink(sessionId, url) },
   }
   ctx.provide('chatBrowserLinks', links)
   const controllerFor = (sessionId: string) => {
@@ -124,6 +131,7 @@ export function apply(ctx: ClientContext): void {
       command: command => controller.command(command),
       openUrl: url => controller.openUrl(url),
       registerLinkOpener,
+      retryLink: (url, pendingId) => enqueueLink(sessionId as SessionId, url, pendingId),
       retry: () => { controller.retry() },
     }
   }
@@ -136,8 +144,9 @@ export function apply(ctx: ClientContext): void {
       dispose()
       for (const controller of controllers.values()) controller.stop()
       controllers.clear()
-      openers.clear()
       for (const [sessionId, queue] of queues) cancelQueue(sessionId, queue)
+      for (const owner of openers.values()) owner.clear()
+      openers.clear()
     }
   })
   ctx.slots.inject('workbench.browser.tabs', () => ctx.slots.register({

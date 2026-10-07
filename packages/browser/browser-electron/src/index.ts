@@ -82,6 +82,7 @@ export default class ElectronBrowserUse extends BrowserUseService {
   private readonly captures = new Map<SessionId, BrowserCapture>()
   private readonly tails = new Map<SessionId, Promise<void>>()
   private readonly operations = new Map<SessionId, symbol>()
+  private readonly closingControls = new Map<SessionId, boolean>()
   private readonly pending = new Map<string, Pending>()
   private readonly socket: WebSocket
   private readonly ready: Promise<void>
@@ -138,6 +139,7 @@ export default class ElectronBrowserUse extends BrowserUseService {
     this.states.clear()
     this.captures.clear()
     this.operations.clear()
+    this.closingControls.clear()
     for (const entry of this.pending.values()) {
       clearTimeout(entry.timer)
       entry.reject(unavailable('desktop browser bridge was lost'))
@@ -165,7 +167,10 @@ export default class ElectronBrowserUse extends BrowserUseService {
 
   private publish(event: BridgeStateEvent): void {
     const id = event.sessionId as SessionId
-    if (event.state === null) { this.states.delete(id); this.captures.delete(id); return }
+    if (event.state === null) {
+      if (this.closingControls.has(id)) this.closingControls.set(id, true)
+      this.states.delete(id); this.captures.delete(id); return
+    }
     if (!this.states.has(id) && this.states.size >= MAX_SESSIONS) throw new Error('desktop browser session limit exceeded')
     if (event.state.tabs.length > MAX_TABS) throw new Error('desktop browser tab limit exceeded')
     const previous = this.states.get(id)
@@ -299,19 +304,35 @@ export default class ElectronBrowserUse extends BrowserUseService {
       if (command.kind === 'new-tab' && (this.states.get(id)?.tabs.length ?? 0) >= MAX_TABS) {
         throw new BrowserUseError('browser tab limit reached', 'BROWSER_UNAVAILABLE')
       }
-      const response = await this.request('control', id, { command }, signal)
-      if (!response.ok) throw unavailable('desktop browser control response is invalid')
-      const state = response.value as BrowserSessionState | null
-      if (state === null) { this.states.delete(id); this.captures.delete(id); return undefined }
-      const current = this.states.get(id)
-      if (current && (current.browserGeneration !== state.browserGeneration ||
-        current.stateRevision > state.stateRevision)) {
-        throw new BrowserUseError('browser state changed during operation', 'BROWSER_STALE_REF')
-      }
-      this.states.set(id, state)
-      if (!state.hasFrame || this.captures.get(id)?.observation.revision !== state.observation?.revision ||
-        this.captures.get(id)?.observation.generation !== state.observation?.generation) this.captures.delete(id)
-      return state
+      const previous = this.states.get(id)
+      this.closingControls.set(id, false)
+      try {
+        const response = await this.request('control', id, { command }, signal)
+        if (!response.ok) throw unavailable('desktop browser control response is invalid')
+        const state = response.value as BrowserSessionState | null
+        const current = this.states.get(id)
+        if (state === null) {
+          if (this.closingControls.get(id) && current) {
+            throw new BrowserUseError('browser session changed during operation', 'BROWSER_STALE_REF')
+          }
+          this.states.delete(id); this.captures.delete(id); return undefined
+        }
+        if (this.closingControls.get(id) || current && current.browserGeneration !== state.browserGeneration ||
+          command.kind === 'open-url' && previous?.tabs.some(tab => tab.id === state.activeTabId)) {
+          throw new BrowserUseError('browser state changed during operation', 'BROWSER_STALE_REF')
+        }
+        if (current && current.stateRevision > state.stateRevision) {
+          // 响应确认命令成功；较新的事件仅在仍指向命令所选标签时可作为返回状态。
+          if (current.activeTabId !== state.activeTabId) {
+            throw new BrowserUseError('browser active tab changed during operation', 'BROWSER_STALE_REF')
+          }
+          return current
+        }
+        this.states.set(id, state)
+        if (!state.hasFrame || this.captures.get(id)?.observation.revision !== state.observation?.revision ||
+          this.captures.get(id)?.observation.generation !== state.observation?.generation) this.captures.delete(id)
+        return state
+      } finally { this.closingControls.delete(id) }
     })
   }
 

@@ -34,6 +34,14 @@ export interface WorkbenchBrowserTab {
   browserTabId: string
 }
 
+/** 尚未取得 Host 页面 id 的会话链接；失败时保留目标供重试。 */
+export interface WorkbenchPendingBrowserTab {
+  type: 'browser-pending'
+  id: string
+  url: string
+  error?: string
+}
+
 /** 第三方标签的导航参数只接受可序列化的 JSON 值。 */
 export type WorkbenchExternalParams = string | number | boolean | null
   | readonly WorkbenchExternalParams[] | { readonly [key: string]: WorkbenchExternalParams }
@@ -52,7 +60,7 @@ export interface WorkbenchExternalTab {
 
 /** 标签类型决定工作台内容和关闭行为。 */
 export type WorkbenchTab = WorkbenchFileTab | WorkbenchFileManagerTab | WorkbenchTerminalTab
-  | WorkbenchBrowserTab | WorkbenchExternalTab
+  | WorkbenchBrowserTab | WorkbenchPendingBrowserTab | WorkbenchExternalTab
 
 /** 一层目录的读取状态。 */
 export interface WorkbenchFileLevel {
@@ -114,6 +122,10 @@ type WorkbenchActions = {
   activateFile: (draft: WorkbenchState, id: string) => void
   closeFile: (draft: WorkbenchState, id: string) => void
   syncBrowserTabs: (draft: WorkbenchState, tabs: readonly BrowserTabInput[], activeBrowserTabId?: string | null) => void
+  beginBrowserLink: (draft: WorkbenchState, id: string, url: string) => void
+  completeBrowserLink: (draft: WorkbenchState, id: string, tabId: string) => void
+  failBrowserLink: (draft: WorkbenchState, id: string, message: string) => void
+  clearBrowserLinks: (draft: WorkbenchState) => void
   recordInteraction: (draft: WorkbenchState) => void
   autoRevealBrowser: (draft: WorkbenchState, tabId: string, epoch: number) => void
   setFilesQuery: (draft: WorkbenchState, query: string) => void
@@ -163,7 +175,8 @@ function initialWorkbenchState(): WorkbenchState {
 }
 
 function viewForTab(tab: WorkbenchTab): Exclude<WorkbenchState['view'], 'menu'> {
-  return tab.type === 'file' || tab.type === 'file-manager' ? 'files' : tab.type
+  return tab.type === 'file' || tab.type === 'file-manager' ? 'files'
+    : tab.type === 'browser-pending' ? 'browser' : tab.type
 }
 
 function selectTab(draft: WorkbenchState, tab: WorkbenchTab): void {
@@ -315,10 +328,12 @@ const workbenchActions: WorkbenchActions = {
     draft.activeBrowserTabId = selected?.browserTabId ?? null
 
     // Host 浏览器活动页更新不会抢走文件或终端；首次空 browser 视图保留加载入口。
-    if (draft.view === 'browser' && selected !== undefined) {
+    if (draft.view === 'browser' && selected !== undefined
+      && draft.tabs.find(tab => tab.id === draft.activeId)?.type !== 'browser-pending') {
       draft.activeId = selected.id
     } else if ((draft.activeId !== null && !nextTabs.some(tab => tab.id === draft.activeId))
-      || (draft.view === 'browser' && previousBrowserCount > 0 && browsers.length === 0)) {
+      || (draft.view === 'browser' && previousBrowserCount > 0 && browsers.length === 0
+        && nextTabs.find(tab => tab.id === draft.activeId)?.type !== 'browser-pending')) {
       const next = nextTabs[activeIndex] ?? nextTabs[activeIndex - 1] ?? nextTabs[0]
       if (next === undefined) {
         draft.activeId = null
@@ -329,6 +344,52 @@ const workbenchActions: WorkbenchActions = {
         selectTab(draft, next)
       }
     }
+  },
+  beginBrowserLink: (draft, id, url) => {
+    const existing = draft.tabs.find(tab => tab.type === 'browser-pending' && tab.id === id)
+    if (existing?.type === 'browser-pending') {
+      delete existing.error
+      selectTab(draft, existing)
+      return
+    }
+    const tab: WorkbenchPendingBrowserTab = { type: 'browser-pending', id, url }
+    draft.tabs.push(tab)
+    selectTab(draft, tab)
+  },
+  completeBrowserLink: (draft, id, tabId) => {
+    const index = draft.tabs.findIndex(tab => tab.type === 'browser-pending' && tab.id === id)
+    if (index < 0) return
+    const selected = draft.view === 'browser' && draft.activeId === id
+    draft.tabs.splice(index, 1)
+    const host = draft.tabs.find(tab => tab.type === 'browser' && tab.browserTabId === tabId)
+    if (host !== undefined && selected) selectTab(draft, host)
+    else if (selected) {
+      const next = draft.tabs[index] ?? draft.tabs[index - 1]
+      if (next !== undefined) selectTab(draft, next)
+      else { draft.activeId = null; draft.view = 'menu' }
+    } else if (draft.activeId === id) {
+      draft.activeId = host?.id ?? draft.tabs[0]?.id ?? null
+    }
+  },
+  failBrowserLink: (draft, id, message) => {
+    const tab = draft.tabs.find(tab => tab.type === 'browser-pending' && tab.id === id)
+    if (tab?.type === 'browser-pending') tab.error = message
+  },
+  clearBrowserLinks: (draft) => {
+    if (!draft.tabs.some(tab => tab.type === 'browser-pending')) return
+    const activePending = draft.view === 'browser'
+      && draft.tabs.find(tab => tab.id === draft.activeId)?.type === 'browser-pending'
+    draft.tabs = draft.tabs.filter(tab => tab.type !== 'browser-pending')
+    if (!activePending) {
+      if (draft.activeId !== null && !draft.tabs.some(tab => tab.id === draft.activeId)) {
+        draft.activeId = draft.tabs[0]?.id ?? null
+      }
+      return
+    }
+    const next = draft.tabs.find(tab => tab.type === 'browser' && tab.browserTabId === draft.activeBrowserTabId)
+      ?? draft.tabs[0]
+    if (next !== undefined) selectTab(draft, next)
+    else { draft.activeId = null; draft.view = 'menu' }
   },
   recordInteraction: (draft) => {
     draft.interactionEpoch++
@@ -424,6 +485,20 @@ export function createRetainedWorkbenchStore(): EngineStoreHandle<RetainedWorkbe
       closeFile: (draft, id: SessionId, tabId: string) => { workbenchActions.closeFile(sessionState(draft, id), tabId) },
       syncBrowserTabs: (draft, id: SessionId, tabs: readonly BrowserTabInput[], activeBrowserTabId?: string | null) => {
         workbenchActions.syncBrowserTabs(sessionState(draft, id), tabs, activeBrowserTabId)
+      },
+      beginBrowserLink: (draft, id: SessionId, tabId: string, url: string) => {
+        workbenchActions.beginBrowserLink(sessionState(draft, id), tabId, url)
+      },
+      completeBrowserLink: (draft, id: SessionId, pendingId: string, tabId: string) => {
+        workbenchActions.completeBrowserLink(sessionState(draft, id), pendingId, tabId)
+      },
+      failBrowserLink: (draft, id: SessionId, tabId: string, message: string) => {
+        const state = draft.sessions[id]
+        if (state !== undefined) workbenchActions.failBrowserLink(state, tabId, message)
+      },
+      clearBrowserLinks: (draft, id: SessionId) => {
+        const state = draft.sessions[id]
+        if (state !== undefined) workbenchActions.clearBrowserLinks(state)
       },
       recordInteraction: (draft, id: SessionId) => { workbenchActions.recordInteraction(sessionState(draft, id)) },
       autoRevealBrowser: (draft, id: SessionId, tabId: string, epoch: number) => {

@@ -14,6 +14,7 @@ const electron = vi.hoisted(() => ({
 
 function fakeContents() {
   const events = new Map<string, (...args: never[]) => void>()
+  const listeners = new Map<string, Array<(...args: never[]) => void>>()
   let url = ''
   let destroyed = false
   let loading = false
@@ -35,6 +36,16 @@ function fakeContents() {
     events,
     mutate: () => { domRevision++ },
     pageNavigate: (next: string) => { url = next; events.get('did-navigate-in-page')?.({} as never, next as never, true as never) },
+    begin: (next: string) => {
+      loading = true
+      events.get('did-start-navigation')?.({ isMainFrame: true } as never)
+      url = next
+    },
+    commit: (next: string) => {
+      contents.begin(next)
+      events.get('did-navigate')?.()
+    },
+    domReady: () => events.get('dom-ready')?.(),
     debugger: { isAttached: vi.fn(() => true), attach: vi.fn(), sendCommand },
     session: {
       setPermissionRequestHandler: vi.fn<(
@@ -50,13 +61,19 @@ function fakeContents() {
     navigationHistory: { canGoBack: vi.fn(() => false), canGoForward: vi.fn(() => false),
       goBack: vi.fn(), goForward: vi.fn() },
     setWindowOpenHandler: vi.fn<(handler: () => { action: 'deny' }) => void>(),
-    on: vi.fn((name: string, fn: (...args: never[]) => void) => { events.set(name, fn) }),
+    on: vi.fn((name: string, fn: (...args: never[]) => void) => {
+      const callbacks = listeners.get(name) ?? []
+      callbacks.push(fn)
+      listeners.set(name, callbacks)
+      events.set(name, (...args: never[]) => { for (const callback of [...callbacks]) callback(...args) })
+    }),
+    removeListener: vi.fn((name: string, fn: (...args: never[]) => void) => {
+      const callbacks = listeners.get(name)
+      if (callbacks) callbacks.splice(callbacks.indexOf(fn), 1)
+    }),
     getURL: vi.fn(() => url),
     loadURL: vi.fn(async (next: string) => {
-      loading = true
-      events.get('did-start-navigation')?.({ isMainFrame: true } as never)
-      url = next
-      events.get('did-navigate')?.()
+      contents.commit(next)
       loading = false
     }),
     stop: vi.fn(() => { loading = false }),
@@ -211,7 +228,7 @@ describe('Electron 实时浏览器 guest', () => {
     const updates: unknown[] = []
     const manager = createBrowserGuestManager(fixture(), { onState: (_id, state) => updates.push(state) })
     const opened = await manager.control('s1', { kind: 'navigate', url: 'https://example.com/' })
-    expect(opened?.observation?.url).toBe('https://example.com/')
+    expect(opened).toMatchObject({ observation: null, hasFrame: false, tabs: [{ url: 'https://example.com/' }] })
     const oldRevision = opened!.stateRevision
     electron.views[0]!.webContents.events.get('input-event')?.({ preventDefault: vi.fn() } as never,
       { type: 'mouseDown' } as never)
@@ -220,7 +237,107 @@ describe('Electron 实时浏览器 guest', () => {
     await manager.dispose()
   })
 
-  it('原子开页复用空会话首个 guest，已有会话则创建独立标签并返回其观测', async () => {
+  it('人工开页在主 frame DOM 就绪后返回，未完成的图片加载不阻塞原生标签', async () => {
+    vi.useFakeTimers()
+    try {
+      const manager = createBrowserGuestManager(fixture())
+      let finish!: () => void
+      electron.WebContentsView.mockImplementationOnce(function () {
+        const view = { webContents: fakeContents(), setBounds: vi.fn() }
+        view.webContents.loadURL.mockImplementationOnce((url: string) => {
+          view.webContents.begin(url)
+          view.webContents.domReady()
+          return new Promise<void>((resolve) => { finish = resolve })
+        })
+        view.webContents.debugger.sendCommand.mockRejectedValue(new Error('strict observation unavailable'))
+        electron.views.push(view)
+        return view
+      })
+      const pending = manager.control('s1', { kind: 'open-url', url: 'https://example.com/slow-image' })
+      await vi.advanceTimersByTimeAsync(0)
+      const state = await pending
+      expect(state).toMatchObject({ observation: null, hasFrame: false,
+        tabs: [{ url: 'https://example.com/slow-image' }] })
+      expect(electron.views[0]!.webContents.debugger.sendCommand).not.toHaveBeenCalled()
+      expect(electron.views[0]!.webContents.stop).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(electron.views[0]!.webContents.close).not.toHaveBeenCalled()
+      finish()
+      await manager.dispose()
+    } finally { vi.useRealTimers() }
+  })
+
+  it('主 frame 虽触发 DOM 就绪但 loadURL 随即拒绝时不承认开页成功', async () => {
+    const manager = createBrowserGuestManager(fixture())
+    electron.WebContentsView.mockImplementationOnce(function () {
+      const view = { webContents: fakeContents(), setBounds: vi.fn() }
+      view.webContents.loadURL.mockImplementationOnce(async (url: string) => {
+        view.webContents.commit(url)
+        view.webContents.domReady()
+        throw new Error('navigation rejected')
+      })
+      electron.views.push(view)
+      return view
+    })
+    await expect(manager.control('s1', { kind: 'open-url', url: 'https://example.com/' }))
+      .rejects.toThrow('navigation rejected')
+    expect(electron.views[0]!.webContents.close).toHaveBeenCalledOnce()
+    expect(await manager.prepare('s1')).toEqual({ kind: 'none' })
+    await manager.dispose()
+  })
+
+  it('旧页面迟到的 ERR_ABORTED 不会把正在加载的新人工导航误判为失败', async () => {
+    vi.useFakeTimers()
+    try {
+      const manager = createBrowserGuestManager(fixture())
+      const initial = await manager.control('s1', { kind: 'ensure-tab' })
+      const wc = electron.views[0]!.webContents
+      let rejectOld!: (reason: Error) => void
+      wc.loadURL.mockImplementationOnce((url: string) => {
+        wc.begin(url)
+        wc.domReady()
+        return new Promise<void>((_resolve, reject) => { rejectOld = reject })
+      })
+      const firstPending = manager.control('s1', { kind: 'navigate', url: 'https://example.com/first' })
+      await vi.advanceTimersByTimeAsync(0)
+      const first = await firstPending
+      expect(first?.activeTabId).toBe(initial?.activeTabId)
+      wc.loadURL.mockImplementationOnce((url: string) => {
+        wc.begin(url)
+        wc.events.get('did-fail-load')?.({} as never, -3 as never,
+          'ERR_ABORTED' as never, 'https://example.com/first' as never, true as never)
+        rejectOld(new Error('ERR_ABORTED'))
+        wc.domReady()
+        return new Promise<void>(() => {})
+      })
+      const secondPending = manager.control('s1', { kind: 'navigate', url: 'https://example.com/second' })
+      await vi.advanceTimersByTimeAsync(0)
+      const second = await secondPending
+      expect(second).toMatchObject({ observation: null, hasFrame: false,
+        tabs: [{ url: 'https://example.com/second' }] })
+      expect(wc.stop).not.toHaveBeenCalled()
+      expect(wc.events.get('did-fail-load')).toBeUndefined()
+      expect(wc.removeListener).toHaveBeenCalledWith('dom-ready', expect.any(Function))
+      await manager.dispose()
+    } finally { vi.useRealTimers() }
+  })
+
+  it('人工地址栏导航不依赖动态 DOM 的严格观测，并撤销旧模型引用', async () => {
+    const manager = createBrowserGuestManager(fixture())
+    const old = await manager.execute('s1', { kind: 'navigate', url: 'https://example.com/old' })
+    const wc = electron.views[0]!.webContents
+    wc.debugger.sendCommand.mockClear()
+    wc.debugger.sendCommand.mockRejectedValueOnce(new Error('dynamic DOM'))
+    const changed = await manager.control('s1', { kind: 'navigate', url: 'https://example.com/new' })
+    expect(changed).toMatchObject({ observation: null, hasFrame: false,
+      tabs: [{ url: 'https://example.com/new' }] })
+    expect(wc.debugger.sendCommand).not.toHaveBeenCalled()
+    await expect(manager.execute('s1', { kind: 'click', ref: 'e1', revision: old.observation.revision }))
+      .rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
+    await manager.dispose()
+  })
+
+  it('原子开页复用空会话首个 guest，已有会话则创建独立标签并返回原生页面状态', async () => {
     const events: unknown[] = []
     const manager = createBrowserGuestManager(fixture(), { hostOrigin, onState: (sessionId, state, capture) => {
       parseBridgeEvent({ v: 1, type: 'state', sessionId, state, ...(capture ? { capture: {
@@ -230,12 +347,12 @@ describe('Electron 实时浏览器 guest', () => {
     } })
     const first = await manager.control('s1', { kind: 'open-url', url: 'https://example.com/first' })
     expect(electron.views).toHaveLength(1)
-    expect(first).toMatchObject({ activeTabId: first!.observation!.tabId,
-      observation: { url: 'https://example.com/first' }, tabs: [{ url: 'https://example.com/first' }] })
+    expect(first).toMatchObject({ observation: null, hasFrame: false,
+      tabs: [{ url: 'https://example.com/first' }] })
     const second = await manager.control('s1', { kind: 'open-url', url: 'https://example.org/second' })
     expect(electron.views).toHaveLength(2)
-    expect(second).toMatchObject({ activeTabId: second!.observation!.tabId,
-      observation: { url: 'https://example.org/second' } })
+    expect(second).toMatchObject({ observation: null, hasFrame: false,
+      tabs: [{}, { url: 'https://example.org/second' }] })
     expect(second!.activeTabId).not.toBe(first!.activeTabId)
     expect(second!.tabs.map(tab => tab.url)).toEqual(['https://example.com/first', 'https://example.org/second'])
     expect(electron.views[0]!.webContents.close).not.toHaveBeenCalled()
@@ -245,11 +362,11 @@ describe('Electron 实时浏览器 guest', () => {
     electron.views[1]!.webContents.events.get('will-redirect')?.(redirect as never)
     expect(redirect.preventDefault).toHaveBeenCalledOnce()
     expect(events.at(-1)).toMatchObject({ activeTabId: second!.activeTabId,
-      observation: { tabId: second!.activeTabId } })
+      observation: null, hasFrame: false })
     await manager.dispose()
   })
 
-  it('原子开页在导航或观测失败后只关闭新标签，并恢复旧标签与呈现', async () => {
+  it('原子开页在导航失败后只关闭新标签，并恢复旧标签与呈现', async () => {
     const window = fixture()
     const manager = createBrowserGuestManager(window)
     const old = await manager.control('s1', { kind: 'open-url', url: 'https://example.com/old' })
@@ -257,21 +374,30 @@ describe('Electron 实时浏览器 guest', () => {
     manager.present({ sessionId: 's1', tabId: old!.activeTabId!, visible: true,
       bounds: { x: 0, y: 0, width: 500, height: 400 } })
     expect(window.contentView.children).toHaveLength(1)
-    for (const failure of ['navigation', 'observation'] as const) {
+    for (const failure of ['navigation', 'main-frame'] as const) {
       electron.WebContentsView.mockImplementationOnce(function () {
         const view = { webContents: fakeContents(), setBounds: vi.fn() }
         if (failure === 'navigation') view.webContents.loadURL.mockRejectedValueOnce(new Error('navigation failed'))
-        else view.webContents.debugger.sendCommand.mockRejectedValueOnce(new Error('observation failed'))
+        else view.webContents.loadURL.mockImplementationOnce(async () => {
+          view.webContents.events.get('did-start-navigation')?.({ isMainFrame: true } as never)
+          view.webContents.events.get('did-fail-load')?.({} as never, -105 as never,
+            'ERR_NAME_NOT_RESOLVED' as never, 'https://example.com/new' as never, true as never)
+          throw new Error('ERR_NAME_NOT_RESOLVED')
+        })
         electron.views.push(view)
         return view
       })
       await expect(manager.control('s1', { kind: 'open-url', url: 'https://example.com/new' }))
-        .rejects.toThrow(failure === 'navigation' ? 'navigation failed' : 'observation failed')
+        .rejects.toThrow(failure === 'navigation' ? 'navigation failed' : 'ERR_NAME_NOT_RESOLVED')
       const failed = electron.views.at(-1)!.webContents
       expect(failed.close).toHaveBeenCalledOnce()
       expect(window.contentView.children).toHaveLength(1)
       const restored = await manager.control('s1', { kind: 'ensure-tab' })
       expect(restored).toMatchObject({ activeTabId: old!.activeTabId, tabs: [{ id: old!.activeTabId }] })
+      failed.commit('https://example.com/late')
+      failed.domReady()
+      failed.events.get('page-title-updated')?.({} as never, 'Late title' as never)
+      expect(await manager.control('s1', { kind: 'ensure-tab' })).toEqual(restored)
       expect(electron.views[0]!.webContents.close).not.toHaveBeenCalled()
       expect((await manager.control('s2', { kind: 'ensure-tab' }))!.activeTabId).toBe(other!.activeTabId)
     }

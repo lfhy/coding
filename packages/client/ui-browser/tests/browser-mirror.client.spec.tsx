@@ -29,16 +29,18 @@ function mount(view: BrowserView, shown = true, useSession = sessionHook([])) {
   const ensureTab = vi.fn(async () => {})
   const start = vi.fn(() => vi.fn())
   const syncBrowserTabs = vi.fn()
-  let opener: ((url: string, isCurrent: () => boolean, shouldReveal: () => boolean,
+  let opener: ((url: string, pendingId: string, isCurrent: () => boolean, shouldReveal: () => boolean,
     click: { interactionEpoch: number; selectedTabId?: string }) => Promise<void>) | undefined
   let clickState: (() => { interactionEpoch: number; selectedTabId?: string }) | undefined
-  const registerLinkOpener = vi.fn((_sessionId: string, open: typeof opener,
+  const registerLinkOpener = vi.fn((_sessionId: string, open: typeof opener, _begin: (id: string, url: string) => void,
+    _clear: () => void,
     currentClick: () => { interactionEpoch: number; selectedTabId?: string }) => {
     opener = open
     clickState = currentClick
     return () => { if (opener === open) opener = undefined }
   })
   const openUrl = vi.fn(async (): Promise<LinkedState> => state(2, otherId) as never)
+  const retryLink = vi.fn(async () => {})
   const props = { sessionId: 'session-a', shown, browserShown: shown, newTabRequest: 0,
     handledTabRequest: 0, markTabRequestHandled: vi.fn(), focusBrowserTab: vi.fn(),
     focusPendingBrowserTab: vi.fn(),
@@ -46,12 +48,14 @@ function mount(view: BrowserView, shown = true, useSession = sessionHook([])) {
     requestAutoReveal: vi.fn(() => true), autoRevealBrowser: vi.fn(),
     useSession,
     openBrowser: vi.fn(), syncBrowserTabs, start, command, ensureTab, openUrl, registerLinkOpener,
+    beginBrowserLink: vi.fn(), completeBrowserLink: vi.fn(), failBrowserLink: vi.fn(), clearBrowserLinks: vi.fn(),
+    selectPendingBrowserLink: vi.fn(), closePendingBrowserLink: vi.fn(), retryLink,
     retry: vi.fn(), useBrowserMirror: <S,>(selector: (snapshot: BrowserView) => S): S => selector(view),
     t } as unknown as BrowserMirrorProps
   const result = render(<BrowserMirror {...props} />)
-  return { ...result, props, command, ensureTab, start, syncBrowserTabs, openUrl,
+  return { ...result, props, command, ensureTab, start, syncBrowserTabs, openUrl, retryLink,
     openLink: (url: string, shouldReveal = () => true, click = clickState!()) =>
-      opener!(url, () => opener !== undefined, shouldReveal, click) }
+      opener!(url, 'browser-link:unit', () => opener !== undefined, shouldReveal, click) }
 }
 const ready = (revision = 1): BrowserView => ({
   phase: 'ready', state: state(revision) as never, frameUrl: 'blob:frame', pending: false,
@@ -103,19 +107,45 @@ function navigated(url: string, revision: number): BrowserView {
 }
 
 describe('browser UI', () => {
-  it('opens an Assistant link in the hidden workbench only after syncing the exact Host tabs', async () => {
+  it('shows destination and an accessible page-level loading state before the first Host result', () => {
+    const browser = mount(ready())
+    const pendingBrowserLink = { id: 'browser-link:1', url: 'https://slow.example/' }
+    browser.rerender(<>
+      <div role="tablist"><BrowserTabs {...browser.props} pendingBrowserLink={pendingBrowserLink}
+        tabDomId="link-tab" panelDomId="link-panel" browserShown /></div>
+      <BrowserMirror {...browser.props} pendingBrowserLink={pendingBrowserLink} />
+    </>)
+    expect(screen.getByRole('tab', { selected: true }).getAttribute('data-browser-pending-id')).toBe('browser-link:1')
+    expect(screen.getByRole('status').textContent).toContain('https://slow.example/')
+    expect(screen.getByTestId('browser-link-loading')).not.toBeNull()
+    expect(screen.queryByAltText('Browser page screenshot')).toBeNull()
+    expect(browser.ensureTab).not.toHaveBeenCalled()
+    expect(browser.command).not.toHaveBeenCalled()
+
+    browser.rerender(<BrowserMirror {...browser.props} pendingBrowserLink={{ ...pendingBrowserLink,
+      error: 'HTTP 503' }} />)
+    expect(screen.getByRole('alert').textContent).toContain('HTTP 503')
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(browser.props.retryLink).toHaveBeenCalledExactlyOnceWith('https://slow.example/', 'browser-link:1')
+    browser.retryLink.mockRejectedValueOnce(new Error('Too many pending links'))
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    return waitFor(() => { expect(browser.props.failBrowserLink)
+      .toHaveBeenCalledExactlyOnceWith('browser-link:1', 'Too many pending links') })
+  })
+
+  it('replaces the pending Assistant tab after syncing the exact Host tabs', async () => {
     const browser = mount(ready(), false)
     const order: string[] = []
     browser.syncBrowserTabs.mockImplementation(() => { order.push('sync') })
-    browser.props.openBrowser = vi.fn(() => { order.push('open') })
+    browser.props.completeBrowserLink = vi.fn(() => { order.push('complete') })
     browser.rerender(<BrowserMirror {...browser.props} />)
     await act(async () => { await browser.openLink('https://linked.example/') })
     expect(browser.openUrl).toHaveBeenCalledExactlyOnceWith('https://linked.example/')
     expect(browser.syncBrowserTabs).toHaveBeenLastCalledWith([
       { id, name: 'Example' }, { id: otherId, name: 'New tab' },
     ], otherId)
-    expect(browser.props.openBrowser).toHaveBeenCalledExactlyOnceWith(otherId)
-    expect(order).toEqual(['sync', 'open'])
+    expect(browser.props.completeBrowserLink).toHaveBeenCalledExactlyOnceWith('browser-link:unit', otherId)
+    expect(order).toEqual(['sync', 'complete'])
     expect(browser.command).not.toHaveBeenCalled()
     expect(browser.props.markTabRequestHandled).not.toHaveBeenCalled()
   })
@@ -134,7 +164,7 @@ describe('browser UI', () => {
     expect(browser.command).not.toHaveBeenCalled()
     await act(async () => { await browser.openLink('https://second.example/') })
     expect(browser.syncBrowserTabs).toHaveBeenLastCalledWith(expect.any(Array), lastId)
-    expect(browser.props.openBrowser).toHaveBeenCalledExactlyOnceWith(lastId)
+    expect(browser.props.completeBrowserLink).toHaveBeenLastCalledWith('browser-link:unit', lastId)
   })
 
   it('keeps the prior selected tab while a superseded Host state arrives before its frame settles', async () => {
@@ -142,13 +172,14 @@ describe('browser UI', () => {
     let newest = true
     const browser = mount(ready())
     browser.rerender(<BrowserMirror {...browser.props} selectedTabId={id} />)
+    browser.syncBrowserTabs.mockClear()
     browser.openUrl.mockImplementation(() => new Promise<LinkedState>((resolve) => { finish = resolve }))
     const opening = browser.openLink('https://first.example/', () => newest)
     newest = false
     browser.rerender(<BrowserMirror {...browser.props} selectedTabId={id}
       useBrowserMirror={viewHook({ phase: 'ready', state: state(2, otherId) as never,
         frameUrl: null, pending: true })} />)
-    expect(browser.syncBrowserTabs).toHaveBeenLastCalledWith(expect.any(Array), id)
+    expect(browser.syncBrowserTabs).not.toHaveBeenCalled()
     await act(async () => { finish(state(2, otherId) as never); await opening })
     expect(browser.props.openBrowser).not.toHaveBeenCalled()
     expect(browser.command).not.toHaveBeenCalled()
@@ -191,7 +222,7 @@ describe('browser UI', () => {
     expect(screen.getByRole('tab', { name: 'Last' }).getAttribute('aria-selected')).toBe('true')
     expect(screen.getByRole('tabpanel', { name: 'Selected browser panel' })
       .querySelector('[role="status"]')).toBeNull()
-    expect(browser.props.openBrowser).toHaveBeenCalledExactlyOnceWith(lastId)
+    expect(browser.props.completeBrowserLink).toHaveBeenLastCalledWith('browser-link:unit', lastId)
     expect(browser.command).not.toHaveBeenCalled()
   })
 
@@ -281,7 +312,7 @@ describe('browser UI', () => {
     await expect(browser.openLink('https://linked.example/')).rejects.toThrow('远程工作区')
     expect(browser.props.openBrowser).not.toHaveBeenCalled()
     await act(async () => { await browser.openLink('https://linked.example/') })
-    expect(browser.props.openBrowser).toHaveBeenCalledExactlyOnceWith(otherId)
+    expect(browser.props.completeBrowserLink).toHaveBeenLastCalledWith('browser-link:unit', otherId)
   })
 
   it('positions the native guest on resize and scroll without screenshot or viewport commands', () => {

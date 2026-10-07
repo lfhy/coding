@@ -167,6 +167,81 @@ describe('desktop browser bridge', () => {
     await expect(provider.closeSession(id)).rejects.toMatchObject({ code: 'BROWSER_UNAVAILABLE' })
   })
 
+  it('returns the newer same-tab event state when it arrives before a successful control response', async () => {
+    const newer: BrowserSessionState = { ...state, stateRevision: 2, hasFrame: false,
+      observation: { ...state.observation!, revision: 2, title: 'Updated', snapshot: 'Updated DOM' },
+      tabs: [{ ...state.tabs[0]!, title: 'Updated' }] }
+    const { provider } = await fixture((request, peer) => {
+      peer.send(JSON.stringify({ v: 1, type: 'state', sessionId: id, state: newer }))
+      peer.send(JSON.stringify({ v: 1, id: request.id, ok: true, value: state }))
+    })
+    await expect(provider.control(id, { kind: 'navigate', url: 'https://example.com/' },
+      new AbortController().signal)).resolves.toEqual(newer)
+    expect(provider.state(id)).toEqual(newer)
+    expect(provider.latest(id)).toBeUndefined()
+  })
+
+  it('acknowledges open-url only with its new tab when a newer event precedes the response', async () => {
+    const openedTab = { ...state.tabs[0]!, id: 'tab-2' as BrowserSessionState['tabs'][number]['id'],
+      generation: 'page-2', url: 'https://example.com/' }
+    const openedObservation = { ...observation, tabId: openedTab.id, generation: openedTab.generation,
+      url: openedTab.url }
+    const opened: BrowserSessionState = { ...state, stateRevision: 2, tabs: [...state.tabs, openedTab],
+      activeTabId: openedTab.id, observation: openedObservation }
+    const newer: BrowserSessionState = { ...opened, stateRevision: 3, hasFrame: false,
+      observation: { ...openedObservation, revision: 2, title: 'New title' } }
+    const { provider } = await fixture((request, peer) => {
+      if (request.command?.kind === 'open-url') {
+        peer.send(JSON.stringify({ v: 1, type: 'state', sessionId: id, state: newer }))
+        peer.send(JSON.stringify({ v: 1, id: request.id, ok: true, value: opened }))
+      } else {
+        peer.send(JSON.stringify({ v: 1, type: 'state', sessionId: id, state }))
+        peer.send(JSON.stringify({ v: 1, id: request.id, ok: true, value: state }))
+      }
+    })
+    await provider.control(id, { kind: 'ensure-tab' }, new AbortController().signal)
+    await expect(provider.control(id, { kind: 'open-url', url: openedTab.url },
+      new AbortController().signal)).resolves.toEqual(newer)
+    expect(provider.state(id)).toEqual(newer)
+  })
+
+  it('does not acknowledge an unrelated active tab as the result of open-url', async () => {
+    const openedTab = { ...state.tabs[0]!, id: 'tab-2' as BrowserSessionState['tabs'][number]['id'] }
+    const otherTab = { ...state.tabs[0]!, id: 'tab-3' as BrowserSessionState['tabs'][number]['id'] }
+    const opened: BrowserSessionState = { ...state, stateRevision: 2, tabs: [...state.tabs, openedTab, otherTab],
+      activeTabId: openedTab.id, observation: { ...observation, tabId: openedTab.id } }
+    const newer: BrowserSessionState = { ...opened, stateRevision: 3, activeTabId: otherTab.id,
+      observation: { ...observation, tabId: otherTab.id } }
+    const { provider } = await fixture((request, peer) => {
+      peer.send(JSON.stringify({ v: 1, type: 'state', sessionId: id, state: newer }))
+      peer.send(JSON.stringify({ v: 1, id: request.id, ok: true, value: opened }))
+    })
+    await expect(provider.control(id, { kind: 'open-url', url: 'https://example.com/' },
+      new AbortController().signal)).rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
+    expect(provider.state(id)).toEqual(newer)
+  })
+
+  it('does not resurrect a session closed before a successful control response', async () => {
+    const { provider } = await fixture((request, peer) => {
+      peer.send(JSON.stringify({ v: 1, type: 'state', sessionId: id, state: null }))
+      peer.send(JSON.stringify({ v: 1, id: request.id, ok: true, value: state }))
+    })
+    await expect(provider.control(id, { kind: 'ensure-tab' }, new AbortController().signal))
+      .rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
+    expect(provider.state(id)).toBeUndefined()
+  })
+
+  it('rejects a response from a replaced browser generation', async () => {
+    const replacement: BrowserSessionState = { ...state, browserGeneration: 'browser-2', stateRevision: 2 }
+    const { provider } = await fixture((request, peer) => {
+      peer.send(JSON.stringify({ v: 1, type: 'state', sessionId: id, state: replacement }))
+      peer.send(JSON.stringify({ v: 1, id: request.id, ok: true, value: state }))
+    })
+    await expect(provider.control(id, { kind: 'ensure-tab' }, new AbortController().signal))
+      .rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
+    expect(provider.state(id)).toEqual(replacement)
+  })
+
   it('rejects a pending operation when the main process disconnects', async () => {
     const { provider, socket, messages } = await fixture()
     const pending = provider.control(id, { kind: 'ensure-tab' }, new AbortController().signal)
