@@ -8,7 +8,7 @@ import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, realpath, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -531,9 +531,12 @@ async function browserFixture() {
   const releaseFreshAssistantDocument = () => {
     for (const response of freshAssistantDocuments) {
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
-      response.end(`<!doctype html><title>Fresh assistant link fixture</title>
+      response.end(`<!doctype html><html><head><title>Fresh assistant link fixture</title>
+        <style>html,body{margin:0;background:#fff}#early-paint{width:360px;height:120px;
+          background:#e6007e;color:#fff;font:24px sans-serif;padding:0;box-sizing:border-box}</style>
+        </head><body><div id="early-paint">Page visible while loading</div>
         <h1>Fresh assistant link document</h1>
-        <script src="/held-fresh-assistant-script"></script>`)
+        <script src="/held-fresh-assistant-script"></script></body></html>`)
     }
     freshAssistantDocuments.clear()
   }
@@ -1340,6 +1343,55 @@ async function verifyFreshAssistantLinkOpensNativeGuest(page, app, fixture, mode
     await until(() => Promise.resolve(app.context().pages().some(candidate => !candidate.isClosed()
       && candidate.url() === fixture.freshPendingAssistantLinkUrl)),
     'committed native guest exposes a Chromium page while the parser is blocked', 12_000)
+    stage = 'inspect and capture the painted guest before parser completion'
+    const loadingGuestPage = app.context().pages().find(candidate => !candidate.isClosed()
+      && candidate.url() === fixture.freshPendingAssistantLinkUrl)
+    assert.ok(loadingGuestPage, 'committed guest must expose its own Chromium target')
+    const cdp = await loadingGuestPage.context().newCDPSession(loadingGuestPage)
+    try {
+      let loadingDocument
+      await until(async () => {
+        const result = await cdp.send('Runtime.evaluate', { expression: `(() => {
+          const marker = document.querySelector('#early-paint')
+          const rect = marker?.getBoundingClientRect()
+          return { readyState: document.readyState, marker: marker?.textContent,
+            background: marker && getComputedStyle(marker).backgroundColor,
+            rect: rect && { x: rect.x, y: rect.y, width: rect.width, height: rect.height } }
+        })()`, returnByValue: true })
+        loadingDocument = result.result.value
+        return loadingDocument?.readyState === 'loading' &&
+          loadingDocument.marker === 'Page visible while loading'
+      }, 'visible fixture DOM before parser script returns', 8_000)
+      assert.equal(loadingDocument.background, 'rgb(230, 0, 126)',
+        'early visible fixture must have its conspicuous paint color')
+      assert.deepEqual(loadingDocument.rect, { x: 0, y: 0, width: 360, height: 120 },
+        'early paint marker must occupy a known viewport rectangle')
+      const paint = await deadline(app.evaluate(async ({ webContents }, id) => {
+        const guest = webContents.fromId(id)
+        if (!guest || guest.isDestroyed()) throw new Error('native guest was destroyed before paint capture')
+        const image = await guest.capturePage()
+        const { width, height } = image.getSize(1)
+        const bitmap = image.getBitmap({ scaleFactor: 1 })
+        const offset = (32 * width + 32) * 4
+        return { width, height, pixel: [...bitmap.subarray(offset, offset + 4)],
+          png: image.toPNG().toString('base64') }
+      }, firstGuestId), 'native guest paint capture while parser blocked', 8_000)
+      assert.ok(paint.width >= 360 && paint.height >= 120,
+        'captured native guest viewport must include the early marker')
+      const loadingScreenshot = join(tmpdir(), `dsh-electron-native-loading-${randomUUID()}.png`)
+      await writeFile(loadingScreenshot, Buffer.from(paint.png, 'base64'))
+      console.log(`Native guest early paint: readyState=${loadingDocument.readyState}, ` +
+        `pixel=${JSON.stringify(paint.pixel)}, screenshot=${loadingScreenshot}`)
+      // Electron 的平台原生 bitmap 可使用 RGBA 或 BGRA；两者的颜色通道都必须吻合。
+      const channels = paint.pixel.slice(0, 3).sort((a, b) => a - b)
+      assert.ok(channels[0] <= 5 && Math.abs(channels[1] - 126) <= 5 &&
+        Math.abs(channels[2] - 230) <= 5,
+      `native guest must actually paint the magenta marker during loading: ${JSON.stringify(paint.pixel)}`)
+      assert.equal(fixture.pendingFreshAssistantScripts, 1,
+        'parser script must still be held after capture, before first resource release')
+    } finally {
+      await cdp.detach().catch(() => undefined)
+    }
     await loading.waitFor({ state: 'visible', timeout: 5_000 })
     assert.equal(await pendingCanvas.getAttribute('aria-busy'), 'true',
       'browser content must keep loading after native navigation commits')
@@ -1420,7 +1472,8 @@ async function verifyFreshAssistantLinkOpensNativeGuest(page, app, fixture, mode
     throw new Error(`fresh assistant link acceptance failed; stage=${stage}; ` +
       `elapsedMs=${clickedAt === 0 ? 0 : Date.now() - clickedAt}; ` +
       `controlResultCode=${controlResultCode}; controlReason=${controlReason}; ` +
-      `BROWSER_FAILED visible=${failedVisible > 0}; errorType=${error instanceof Error ? error.name : 'unknown'}`)
+      `BROWSER_FAILED visible=${failedVisible > 0}; ` +
+      `error=${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`)
   } finally {
     page.off('response', onControlResponse)
     fixture.releaseFreshAssistantDocument()
@@ -1898,7 +1951,7 @@ async function main() {
     console.log('PASS: scripted loopback model drove shipped Host browser_snapshot and browser_click on the human-operated native guest; Host origin/localhost navigation and guest subresource fetch denied; no external model API used')
     console.log('PASS: separate fresh Session browser_navigate auto-revealed its native guest and selected tab; a human click persisted into the next model browser_snapshot on the same guest')
     console.log('PASS: assistant Markdown links reopened the hidden sidebar, preserved old native guests, and queued rapid repeated clicks as distinct tabs with the newest selected, without window.open or dialogs')
-    console.log('PASS: fresh assistant link committed a native guest before DOM ready, kept the address spinner through a parser-blocking script and held image beyond ten seconds, then cleared it after load; a follow-up link opened another tab without BROWSER_FAILED')
+    console.log('PASS: fresh assistant link painted real native guest content while readyState=loading and the address spinner remained visible through a parser-blocking script and held image beyond ten seconds; a follow-up link opened another tab without BROWSER_FAILED')
     console.log('PASS: stalled local image timed out browser_navigate, stopped loading safely, and the same Electron guest/tab yielded a fresh Agent browser_snapshot')
   } finally {
     if (!passed && existsSync(screenshot)) console.error(`Failure screenshot: ${screenshot}`)
