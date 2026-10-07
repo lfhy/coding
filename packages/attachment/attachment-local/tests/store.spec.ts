@@ -43,6 +43,8 @@ const LIMITS: ImageAttachmentLimits = {
   maxImagesPerMessage: 2,
   maxMessageImageBytes: 2048,
   maxImagePixels: 16,
+  maxSourceImagePixels: 1000,
+  maxSourceImageFrames: 10,
   maxImageDimension: 2000,
   mediaTypes: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'],
 }
@@ -156,7 +158,7 @@ describe('local attachment store', () => {
     await expect(readImageFile(storageRoot, ref, controller.signal)).rejects.toBe(cancellation)
   })
 
-  it('rejects malformed bytes, mismatched declarations, byte limits, and decoded-pixel limits', async () => {
+  it('rejects malformed bytes, mismatched declarations, and impossible byte limits while shrinking excess pixels', async () => {
     const storageRoot = await root()
     await expect(saveImageFile(storageRoot, {
       data: new Uint8Array(0), mediaType: 'image/png',
@@ -174,12 +176,14 @@ describe('local attachment store', () => {
     const wide = new Uint8Array(await sharp({
       create: { width: 5, height: 5, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 1 } },
     }).png().toBuffer())
-    await expect(saveImageFile(storageRoot, {
+    const reduced = await saveImageFile(storageRoot, {
       data: wide, mediaType: 'image/png',
-    }, LIMITS)).rejects.toMatchObject({ code: 'IMAGE_TOO_MANY_PIXELS' })
-    await expect(saveImageFile(storageRoot, {
+    }, LIMITS)
+    expect(reduced.width * reduced.height).toBeLessThanOrEqual(16)
+    const reducedSide = await saveImageFile(storageRoot, {
       data: wide, mediaType: 'image/png',
-    }, { ...LIMITS, maxImagePixels: 25, maxImageDimension: 4 })).rejects.toMatchObject({ code: 'IMAGE_DIMENSION_TOO_LARGE' })
+    }, { ...LIMITS, maxImagePixels: 25, maxImageDimension: 4 })
+    expect(Math.max(reducedSide.width, reducedSide.height)).toBeLessThanOrEqual(4)
     const unnamed = await saveImageFile(storageRoot, {
       data: PNG, mediaType: 'image/png', name: '\u0000',
     }, LIMITS)

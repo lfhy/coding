@@ -17,7 +17,7 @@ const page = `<!doctype html><title>Fixture</title>
     document.querySelector('input').value">Go</button><output>Waiting</output>`
 const pngHeader = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])
 
-async function fixture(onWait?: () => void): Promise<{
+async function fixture(onWait?: () => void, onHighEntropy?: () => void): Promise<{
   ctx: Context
   origin: string
   close: () => Promise<void>
@@ -38,6 +38,7 @@ async function fixture(onWait?: () => void): Promise<{
       return
     }
     if (req.url === '/high-entropy') {
+      onHighEntropy?.()
       res.end(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">
         <title>High entropy</title><style>body{margin:0}</style><canvas width="1200" height="1200"></canvas>
         <script>const ctx=document.querySelector('canvas').getContext('2d');
@@ -400,8 +401,9 @@ describe.skipIf(process.env.DSH_BROWSER_E2E !== '1' || !existsSync(chromium.exec
       } finally { await close() }
     })
 
-    it('retains real tabs after a high-entropy frame exceeds the PNG limit', { timeout: 40_000 }, async () => {
-      const { ctx, origin, close } = await fixture()
+    it('normalizes a noisy device-density PNG without replaying navigation', { timeout: 40_000 }, async () => {
+      let navigationCount = 0
+      const { ctx, origin, close } = await fixture(undefined, () => { navigationCount++ })
       const id = SessionId('oversized-real-frame')
       const signal = new AbortController().signal
       try {
@@ -409,17 +411,20 @@ describe.skipIf(process.env.DSH_BROWSER_E2E !== '1' || !existsSync(chromium.exec
         await ctx.browserUse.control(id, { kind: 'set-viewport', width: 375, height: 800 }, signal)
         const initial = await ctx.browserUse.control(id, { kind: 'navigate', url: `${origin}/high-entropy` }, signal)
         expect(initial?.observation?.url).toBe(`${origin}/high-entropy`)
-        expect(pngSize(ctx.browserUse.latest(id)?.png ?? null)).toEqual({ width: 375, height: 800 })
-        await expect(ctx.browserUse.control(id, { kind: 'set-viewport', width: 900, height: 1100 }, signal))
-          .rejects.toMatchObject({ code: 'BROWSER_FAILED', message: 'browser screenshot exceeds 2097152 bytes' })
-        const oversized = ctx.browserUse.state(id)
-        expect(oversized).toMatchObject({ tabs: [{ url: `${origin}/high-entropy` }],
-          viewport: { width: 900, height: 1100 }, observation: null, hasFrame: false })
-        expect(ctx.browserUse.latest(id)).toBeUndefined()
-        const recovered = await ctx.browserUse.control(id, { kind: 'set-viewport', width: 300, height: 500 }, signal)
-        expect(recovered?.observation).toMatchObject({ url: `${origin}/high-entropy`,
-          viewport: { width: 300, height: 500 } })
-        expect(pngSize(ctx.browserUse.latest(id)?.png ?? null)).toEqual({ width: 600, height: 1000 })
+        const resized = await ctx.browserUse.control(id, { kind: 'set-viewport', width: 900, height: 1100 }, signal)
+        const frame = ctx.browserUse.latest(id)?.png
+        expect(resized).toMatchObject({ tabs: [{ url: `${origin}/high-entropy` }],
+          viewport: { width: 900, height: 1100 }, hasFrame: true })
+        expect(frame?.byteLength).toBeLessThanOrEqual(2 * 1024 * 1024)
+        expect(frame?.slice(0, 8)).toEqual(pngHeader)
+        const dimensions = pngSize(frame ?? null)
+        expect(dimensions.width).toBeGreaterThan(0)
+        expect(Math.abs(dimensions.width / dimensions.height - 900 / 1100)).toBeLessThan(0.005)
+        expect(navigationCount).toBe(1)
+        const next = await ctx.browserUse.execute(id, { kind: 'snapshot' }, signal)
+        expect(next.observation.url).toBe(`${origin}/high-entropy`)
+        expect(next.png?.byteLength).toBeLessThanOrEqual(2 * 1024 * 1024)
+        expect(navigationCount).toBe(1)
       } finally { await close() }
     })
 

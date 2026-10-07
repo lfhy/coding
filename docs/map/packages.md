@@ -18,7 +18,7 @@ workspace 共 239 个包，按 group 分节。每行给出包目录、职责（R
 
 ## packages/attachment
 
-- `packages/attachment/attachment` — 持久附件服务边界 入口 `src/index.ts`（tests 2）
+- `packages/attachment/attachment` — 持久附件服务边界 入口 `src/index.ts`（tests 3）
 - `packages/attachment/attachment-local` — 这是 `@deepseek-ai/dsh-attachment` 的私有本地实现 入口 `src/index.ts`（tests 3）
 
 ## packages/boot
@@ -30,7 +30,7 @@ workspace 共 239 个包，按 group 分节。每行给出包目录、职责（R
 
 - `packages/browser/browser` — 模型消费方在审批前调用 `acquireOperation(sessionId, signal)`：提供方立即阻止新人工命令… 入口 `src/index.ts`（tests 1）
 - `packages/browser/browser-electron` — 模型操作从审批到执行结束独占会话；人工操作按会话排队，并在命令发送前执行准入复核 入口 `src/index.ts`（tests 1）
-- `packages/browser/browser-playwright` — 本包没有配置项 入口 `src/index.ts`（tests 3）
+- `packages/browser/browser-playwright` — 截图以设备像素密度捕获一次，已在 2 MiB 以内的画面保持原样；超限则直接用共享 `fitImage` 策略和 Sharp PNG 编码器等比… 入口 `src/index.ts`（tests 3）
 - `packages/browser/tool-browser` — 其余组合保持一次性审批路径：`danger-full-access` 搭配 `ask` 仍对每次调用（包括快照与关闭）申请审批… 入口 `src/index.ts`（tests 2）
 
 ## packages/bundle

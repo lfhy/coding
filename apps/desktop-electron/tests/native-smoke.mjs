@@ -590,6 +590,28 @@ async function browserFixture() {
       response.flushHeaders()
       return
     }
+    if (request.url === '/large-screenshot') {
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
+      response.end(`<!doctype html><title>Large native screenshot fixture</title>
+        <style>html,body{margin:0}canvas{display:block}</style>
+        <canvas id="noise" width="3200" height="2200"></canvas>
+        <script>
+          const canvas = document.querySelector('#noise')
+          const context = canvas.getContext('2d')
+          const image = context.createImageData(canvas.width, canvas.height)
+          let seed = 0x12345678
+          for (let index = 0; index < image.data.length; index += 4) {
+            seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5
+            image.data[index] = seed & 255
+            image.data[index + 1] = (seed >>> 8) & 255
+            image.data[index + 2] = (seed >>> 16) & 255
+            image.data[index + 3] = 255
+          }
+          context.putImageData(image, 0, 0)
+          document.documentElement.dataset.noiseReady = 'true'
+        </script>`)
+      return
+    }
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
     response.end(`<!doctype html><title>Native guest fixture</title>
       <h1>Live native guest</h1>
@@ -608,6 +630,7 @@ async function browserFixture() {
   const address = server.address()
   assert.ok(address && typeof address !== 'string', 'native guest fixture must bind locally')
   return { url: `http://127.0.0.1:${address.port}/`,
+    largeScreenshotUrl: `http://127.0.0.1:${address.port}/large-screenshot`,
     assistantLinkUrl: `http://127.0.0.1:${address.port}/assistant-link`,
     pendingAssistantLinkUrl: `http://127.0.0.1:${address.port}/assistant-link-pending`,
     freshPendingAssistantLinkUrl: `http://127.0.0.1:${address.port}/fresh-assistant-link-pending`,
@@ -811,6 +834,58 @@ async function scriptedNavigateModel(fixtureUrl) {
     } }
 }
 
+async function scriptedScreenshotModel() {
+  let step = 0
+  const failures = []
+  const server = createServer((request, response) => {
+    if (request.url !== '/chat/completions' || request.method !== 'POST' ||
+      request.socket.remoteAddress !== '127.0.0.1') {
+      response.writeHead(404).end()
+      return
+    }
+    let body = ''
+    request.on('data', chunk => { body += chunk.toString('utf8') })
+    request.on('end', () => {
+      try {
+        const payload = JSON.parse(body)
+        const tools = (payload.tools ?? []).map(tool => tool.function?.name)
+        let frames
+        if (!tools.includes('browser_screenshot')) {
+          frames = [{ choices: [{ delta: { content: 'Native screenshot smoke' }, finish_reason: 'stop' }] }]
+        } else {
+          if (step === 0) {
+            frames = [
+              { choices: [{ delta: { tool_calls: [{ index: 0, id: 'native-large-screenshot', type: 'function',
+                function: { name: 'browser_screenshot', arguments: '{}' } }] } }] },
+              { choices: [{ delta: {}, finish_reason: 'tool_calls' }],
+                usage: { prompt_tokens: 10, completion_tokens: 5 } },
+            ]
+          } else throw new Error('text-only model must reject the persisted image before another request')
+          step++
+        }
+        response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store' })
+        for (const frame of frames) response.write(`data: ${JSON.stringify(frame)}\n\n`)
+        response.end('data: [DONE]\n\n')
+      } catch (error) {
+        failures.push(error instanceof Error ? error.message : String(error))
+        response.writeHead(500).end('invalid scripted screenshot step')
+      }
+    })
+  })
+  await new Promise((resolveListen, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', resolveListen)
+  })
+  const address = server.address()
+  assert.ok(address && typeof address !== 'string', 'screenshot model must bind locally')
+  return { url: `http://127.0.0.1:${address.port}`, failures,
+    get step() { return step },
+    close: async () => {
+      server.closeAllConnections()
+      await new Promise(resolveClose => server.close(resolveClose))
+    } }
+}
+
 async function scriptedAssistantLinkModel(fixtureUrl, pendingUrl, fresh = false) {
   let responses = 0
   const failures = []
@@ -948,16 +1023,17 @@ async function browserRpc(page, method, payload) {
   return result.value
 }
 
-async function nativeGuest(app, id) {
-  return app.evaluate(({ BrowserWindow }, expected) => {
+async function nativeGuest(app, id, expectedUrl) {
+  return app.evaluate(({ BrowserWindow }, { expected, expectedUrl }) => {
     const views = BrowserWindow.getAllWindows()[0].contentView.children
       .filter(view => view.webContents && !view.webContents.isDestroyed())
     const guest = views.find(view => view.webContents.id === expected)
+      ?? views.find(view => view.webContents.getURL() === expectedUrl)
       ?? views.find(view => view.webContents.getTitle() === 'Native guest fixture')
     if (!guest) return null
     return { id: guest.webContents.id, title: guest.webContents.getTitle(),
       url: guest.webContents.getURL(), bounds: guest.getBounds(), attached: views.includes(guest) }
-  }, id)
+  }, { expected: id, expectedUrl })
 }
 
 async function guestScript(app, guestId, expression) {
@@ -1118,6 +1194,112 @@ async function verifyNativeBrowser(page, app, fixtureUrl, hostOrigin, screenshot
   await until(async () => await app.evaluate(({ webContents }, id) => webContents.fromId(id)?.isDestroyed() !== false,
     guestId), 'closed native guest destroyed')
   return sessionId
+}
+
+function pngSize(bytes) {
+  assert.equal(bytes.subarray(0, 8).toString('hex'), '89504e470d0a1a0a', 'image must remain PNG')
+  return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) }
+}
+
+async function verifyLargeNativeScreenshot(page, app, fixtureUrl, model) {
+  const closeSidebar = page.getByRole('button', { name: '收起右侧边栏' }).first()
+  if (await closeSidebar.isVisible()) await closeSidebar.click()
+  const previous = (await browserRpc(page, 'session.list', {})).items.map(item => item.sessionId)
+  await page.getByRole('button', { name: '新建会话' }).first().click()
+  await page.getByRole('button', { name: '打开右侧边栏' }).first().click()
+  let sessionId
+  await until(async () => {
+    const sessions = await browserRpc(page, 'session.list', {})
+    sessionId = sessions.items.find(item => !previous.includes(item.sessionId))?.sessionId
+    return sessionId !== undefined
+  }, 'fresh Session for large native screenshot')
+  const menu = page.getByRole('navigation', { name: '工作台功能' })
+  await menu.getByRole('button', { name: '浏览器' }).click()
+  await page.getByTestId('browser-canvas').waitFor({ state: 'visible' })
+  const address = page.getByRole('textbox', { name: '网址' })
+  await address.fill(fixtureUrl)
+  await address.press('Enter')
+  let state
+  await until(async () => {
+    state = await browserRpc(page, 'browser.control', { sessionId, command: { kind: 'ensure-tab' } })
+    return state.tabs.find(tab => tab.id === state.activeTabId)?.url === fixtureUrl
+  }, 'large native screenshot fixture navigation')
+  const tabId = state.activeTabId
+  let guest
+  await until(async () => {
+    guest = await nativeGuest(app, undefined, fixtureUrl)
+    return guest?.attached && guest.url === fixtureUrl
+  }, 'large screenshot native guest presented')
+  const guestId = guest.id
+  await until(() => guestScript(app, guestId,
+    'document.documentElement.dataset.noiseReady === "true"'), 'deterministic noise painted')
+
+  // 原生视图须仍挂载，否则 Chromium 无可供 CDP 捕获的 surface。
+  const raw = await app.evaluate(async ({ webContents }, id) => {
+    const contents = webContents.fromId(id)
+    if (!contents.debugger.isAttached()) contents.debugger.attach('1.3')
+    const captured = await contents.debugger.sendCommand('Page.captureScreenshot', {
+      format: 'png', captureBeyondViewport: false, fromSurface: true,
+    })
+    const bytes = Buffer.from(captured.data, 'base64')
+    return { bytes: bytes.length, width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) }
+  }, guestId)
+  assert.ok(raw.bytes > 2 * 1024 * 1024,
+    `unfitted native screenshot must exceed bridge limit: ${JSON.stringify(raw)}`)
+  assert.ok(raw.width >= 1500 && raw.height >= 700,
+    `large screenshot must capture a meaningful viewport: ${JSON.stringify(raw)}`)
+
+  const previousTurns = (await browserRpc(page, 'session.history', { sessionId, maxMessages: 100 }))
+    .events.filter(({ event }) => event.type === 'turn/end').length
+  const prompted = await browserRpc(page, 'session.prompt', { sessionId, mode: 'queue',
+    content: [{ type: 'text', text: 'Take a browser_screenshot of the local fixture.' }] })
+  assert.equal(prompted.accepted, true)
+  let history
+  try {
+    await until(async () => {
+      history = await browserRpc(page, 'session.history', { sessionId, maxMessages: 100 })
+      return history.events.filter(({ event }) => event.type === 'turn/end').length > previousTurns
+    }, 'native screenshot Agent turn completion', 60_000)
+  } catch (error) {
+    throw new Error(`${error.message}; scripted screenshot model errors: ${model.failures.join(' | ') || 'none'}`)
+  }
+  assert.deepEqual(model.failures, [], 'screenshot model must receive a valid tool response')
+  const events = history.events.map(({ event }) => event)
+  // 文本模型不会消费图片；持久化发生在视觉模型检查之前，轮次以明确错误终止。
+  assert.equal(model.step, 1, 'text-only model must not receive the screenshot image')
+  const turn = events.findLast(event => event.type === 'turn/end')
+  assert.equal(turn?.data.reason.kind, 'error')
+  assert.match(turn.data.reason.error.message, /text-only model.*cannot receive images/)
+  const call = events.filter(event => event.type === 'tool/call').at(-1)
+  assert.equal(call?.data.name, 'browser_screenshot', 'real Host must call browser_screenshot')
+  const result = events.filter(event => event.type === 'tool/result').at(-1)
+  const content = result?.data.message.content[0]
+  assert.equal(content?.toolCallId, call.data.callId)
+  assert.equal(content?.isError, false, 'native screenshot must succeed through Host')
+  const image = content.content.find(block => block.type === 'image')?.attachment
+  assert.equal(image?.mediaType, 'image/png', 'screenshot tool must persist a PNG reference')
+  assert.ok(image?.attachmentId, 'session log must reference the durable image')
+  const described = JSON.parse(content.content.find(block => block.type === 'text')?.text)
+  assert.equal(described.action, 'screenshot')
+  assert.deepEqual(described.image, image, 'model-visible reference must match persisted tool image')
+  // Host 的桥接协议在工具成功前解码并拒绝超过 2 MiB 的 PNG；此结果来自实际桥接响应。
+  assert.ok(image.bytes > 0 && image.bytes <= 2 * 1024 * 1024,
+    `successful native browser bridge must carry a PNG within 2 MiB: ${image.bytes}`)
+  const saved = await browserRpc(page, 'session.attachment', { sessionId, attachmentId: image.attachmentId })
+  const finalBytes = Buffer.from(saved.data, 'base64')
+  const finalSize = pngSize(finalBytes)
+  assert.deepEqual(finalSize, { width: saved.attachment.width, height: saved.attachment.height })
+  assert.ok(Math.max(finalSize.width, finalSize.height) <= 2000,
+    `model attachment must respect final dimension limit: ${JSON.stringify(finalSize)}`)
+  assert.ok(finalSize.width >= 300 && finalSize.height >= 140,
+    `model attachment must preserve meaningful dimensions: ${JSON.stringify(finalSize)}`)
+  assert.ok(Math.abs(finalSize.width / finalSize.height - raw.width / raw.height) < 0.025,
+    'fitted model PNG must preserve source aspect ratio')
+
+  console.log(`PASS: native screenshot raw=${raw.bytes}B ${raw.width}x${raw.height}; ` +
+    `Host bridge-accepted image=${image.bytes}B ${image.width}x${image.height}; ` +
+    `durable model PNG=${finalBytes.length}B ${finalSize.width}x${finalSize.height}`)
+  await browserRpc(page, 'browser.control', { sessionId, command: { kind: 'close-tab', tabId } })
 }
 
 async function verifyAgentNavigateAutoReveal(page, app, fixtureUrl, model) {
@@ -1794,6 +1976,7 @@ async function main() {
   let record
   let fixture
   let model
+  let screenshotModel
   let navigateModel
   let timeoutModel
   let assistantLinkModel
@@ -1898,6 +2081,10 @@ async function main() {
     await browserRpc(page, 'settings.update', { ns: 'llm-deepseek',
       patch: { baseURL: timeoutModel.url, thinking: 'disabled', reasoningEffort: 'off' } })
     await verifyAgentTimeoutRecovery(page, app, recoverySessionId, fixture, timeoutModel)
+    screenshotModel = await scriptedScreenshotModel()
+    await browserRpc(page, 'settings.update', { ns: 'llm-deepseek',
+      patch: { baseURL: screenshotModel.url, thinking: 'disabled', reasoningEffort: 'off' } })
+    await verifyLargeNativeScreenshot(page, app, fixture.largeScreenshotUrl, screenshotModel)
     navigateModel = await scriptedNavigateModel(fixture.url)
     await browserRpc(page, 'settings.update', { ns: 'llm-deepseek',
       patch: { baseURL: navigateModel.url, thinking: 'disabled', reasoningEffort: 'off' } })
@@ -1963,6 +2150,7 @@ async function main() {
     if (!passed && existsSync(restoredScreenshot)) console.error(`Restored screenshot: ${restoredScreenshot}`)
     if (fixture !== undefined) await fixture.close()
     if (model !== undefined) await model.close()
+    if (screenshotModel !== undefined) await screenshotModel.close()
     if (navigateModel !== undefined) await navigateModel.close()
     if (timeoutModel !== undefined) await timeoutModel.close()
     if (assistantLinkModel !== undefined) await assistantLinkModel.close()
@@ -1979,6 +2167,6 @@ async function main() {
 }
 
 main().catch(error => {
-  console.error(`FAIL: ${error instanceof Error ? error.message : String(error)}`)
+  console.error(`FAIL: ${error instanceof Error ? error.stack : String(error)}`)
   process.exitCode = 1
 })

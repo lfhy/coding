@@ -2,9 +2,13 @@
 
 持久附件服务边界。`ctx.attachments` 校验并持久提交不可变图片字节，随后返回可序列化的 `ImageAttachmentRef`；消费方绝不会在会话事件中持久保存浏览器路径、对象 URL、提供方 URL 或 base64。
 
-未发送的输入区图片仍是由浏览器持有的临时草稿。`validateImage` 运行相同的准入策略，但不执行持久化。`saveImages` 负责批次图片数量和总字节限制，先校验全部成员，再按顺序提交，并且只在完整批次成功后返回引用。后续存储失败不会返回部分引用，但较早写入的不可变内容寻址对象可能保持不可达，直至具备按引用感知的垃圾回收。`AttachmentError.code` 使用封闭的 `AttachmentErrorCode` 字符串联合类型。其 `ImageAdmissionErrorCode` 子集标记可由调用方修正的图片输入失败；`isImageAdmissionError` 在运行时识别该子集，使每个协议适配器可以映射自己的错误词汇。`saveImage` 会在发布任何模型可见的会话事件前提交一张已接受的图片，`readImage` 则根据已记录的元数据校验内容寻址对象。调用方可以取消 `readImage`；实现会在后端读取与校验工作的边界观察取消，并保留取消语义，而不会将其转换为存储失败。
+公开子路径 `@deepseek-ai/dsh-attachment/image-processing` 的 `fitImage` 只持有尺寸、像素和编码字节预算的有限次缩放／压缩策略：原图满足限额则原样返回；否则由调用方提供编码器按目标尺寸和质量输出字节，直至符合预算或明确失败。它不解码、不验证来源格式，也不保证动画或透明度；本地附件提供方使用 Sharp 完成完整校验、原格式重编码及动图语义核验，浏览器截图提供方用各自可用的 PNG 编码器复用相同策略处理画面传输上限。截图预览的传输预算与模型附件最终限额彼此独立。
 
-`admitEncodedImages(attachments, images)` 是每个接受浏览器上传的 RPC 端点（会话 prompt 端点与命令执行器）共用的 wire 入口：它对每个成员强制执行规范 base64，随后把批量准入——限额、校验、有序提交——委托给 `saveImages`。base64 上传形式为 `EncodedImageAttachment`，从 `@deepseek-ai/dsh-attachment/types` 导出，供 wire 契约引用。
+未发送的输入区图片仍是由浏览器持有的临时草稿。`validateImage` 运行相同的准入与归一化策略，但不执行持久化；`saveImage` 与 `saveImages` 将超出最终尺寸或字节限制、仍处于源输入安全限额内的图片交由提供方统一缩放／压缩，而非由消费方各自处理。`saveImages` 先检查原始批次张数及字节总额，再准备全部成员；最终总额仍超限时可按剩余预算重新处理，最终限额在归一化之后判断。全部成员成功后才按顺序提交并返回引用；存储失败不会返回部分引用，但较早写入的不可变内容寻址对象可能保持不可达，直至具备按引用感知的垃圾回收。
+
+`AttachmentError.code` 使用封闭的 `AttachmentErrorCode` 字符串联合类型。其 `ImageAdmissionErrorCode` 子集标记可由调用方修正的图片输入失败；`isImageAdmissionError` 在运行时识别该子集，使每个协议适配器可以映射自己的错误词汇。`saveImage` 会在发布任何模型可见的会话事件前提交一张已接受的图片，`readImage` 则根据已记录的元数据校验内容寻址对象。调用方可以取消 `readImage`；实现会在后端读取与校验工作的边界观察取消，并保留取消语义，而不会将其转换为存储失败。
+
+`admitEncodedImages(attachments, images)` 是浏览器 RPC、ACP 与 MCP 等内联 base64 图片的共用入口：它在解码分配前检查源字节与批次额度，并强制执行规范 base64，随后把归一化、最终限额与有序提交委托给 `saveImages`。协议适配器仅判断自身的图片路由能力并映射错误，不复制图片处理策略。base64 上传形式为 `EncodedImageAttachment`，从 `@deepseek-ai/dsh-attachment/types` 导出，供 wire 契约引用。
 
 ## 模型体验
 

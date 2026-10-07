@@ -3,6 +3,8 @@
 import { randomUUID } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { Context } from '@deepseek-ai/cordis'
+import { DEFAULT_MAX_SOURCE_IMAGE_BYTES, DEFAULT_MAX_SOURCE_IMAGE_PIXELS, normalizeImage } from '@deepseek-ai/dsh-attachment-local'
+import { AttachmentError } from '@deepseek-ai/dsh-attachment'
 import { BrowserUseError, BrowserUseService } from '@deepseek-ai/dsh-browser'
 import type { BrowserCapture, BrowserCommand, BrowserExpectedTarget, BrowserHumanCommand, BrowserHumanTarget, BrowserObservation, BrowserSessionState, BrowserTabId, BrowserTabSummary } from '@deepseek-ai/dsh-browser'
 import type {} from '@deepseek-ai/dsh-host-webserver'
@@ -16,6 +18,9 @@ const VIEWPORT = { width: 1280, height: 720 }
 const VIEWPORT_LIMITS = { minWidth: 200, maxWidth: 1920, minHeight: 240, maxHeight: 1400, maxArea: 1_800_000 }
 const SNAPSHOT_LIMIT = 12_000
 const FRAME_LIMIT = 2 * 1024 * 1024
+// Chromium 的受控视口至多 720 万设备像素；仍限制跨进程返回的编码数据与解码量。
+const FRAME_SOURCE_LIMITS = { maxSourceBytes: DEFAULT_MAX_SOURCE_IMAGE_BYTES,
+  maxSourcePixels: DEFAULT_MAX_SOURCE_IMAGE_PIXELS, maxSourceFrames: 1 }
 const ELEMENT_LIMIT = 150
 const ELEMENT_SCAN_LIMIT = 50_000
 const MAX_SESSIONS = 8
@@ -54,7 +59,7 @@ function fail(message: string, code: 'BROWSER_FAILED' | 'BROWSER_STALE_REF' | 'B
   return new BrowserUseError(message, code)
 }
 
-/** 已知的截图体积限制不会使页面执行状态失控；其余 BROWSER_FAILED 仍销毁会话。 */
+/** 已知的画面限额不会使页面执行状态失控；其余 BROWSER_FAILED 仍销毁会话。 */
 class OversizedFrameError extends BrowserUseError {
   constructor() { super(`browser screenshot exceeds ${FRAME_LIMIT} bytes`, 'BROWSER_FAILED') }
 }
@@ -413,24 +418,37 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
     const snapshot = `Page text:\n${text}\nElements:\n${entries.join('\n')}`.slice(0, SNAPSHOT_LIMIT)
       .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ' ')
     const title = (await page.title()).slice(0, 4096).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ' ')
-    let png = await page.screenshot({ type: 'png', scale: 'device', animations: 'disabled', timeout: 10_000 })
-    if (owner.stateRevision !== stateRevision || !await documentHandle.evaluate(doc => doc === document)) {
+    let png: Uint8Array = await page.screenshot({ type: 'png', scale: 'device', animations: 'disabled', timeout: 10_000 })
+    if (owner.stateRevision !== stateRevision ||
+      !await documentHandle.evaluate(doc => doc === document).catch(() => false)) {
       throw fail('browser document changed during observation', 'BROWSER_STALE_REF')
     }
     if (png.byteLength > FRAME_LIMIT) {
-      png = await page.screenshot({ type: 'png', scale: 'css', animations: 'disabled', timeout: 10_000 })
-      if (owner.stateRevision !== stateRevision || !await documentHandle.evaluate(doc => doc === document)) {
+      try {
+        const normalized = await normalizeImage(png, { maxBytes: FRAME_LIMIT, ...FRAME_SOURCE_LIMITS })
+        if (normalized.metadata.mediaType !== 'image/png') throw fail('browser screenshot is not PNG', 'BROWSER_FAILED')
+        png = normalized.data
+      } catch (error) {
+        if (owner.stateRevision !== stateRevision ||
+          !await documentHandle.evaluate(doc => doc === document).catch(() => false)) {
+          throw fail('browser document changed during observation', 'BROWSER_STALE_REF')
+        }
+        if (error instanceof AttachmentError &&
+          (error.code === 'IMAGE_TOO_LARGE' || error.code === 'IMAGE_TOO_MANY_PIXELS')) {
+          await this.clearRefs(tab)
+          delete tab.capture
+          this.recordNavigation(tab)
+          this.updateSummary(tab, title)
+          owner.stateRevision++
+          owner.lastUsed = Date.now()
+          throw new OversizedFrameError()
+        }
+        throw error
+      }
+      if (owner.stateRevision !== stateRevision ||
+        !await documentHandle.evaluate(doc => doc === document).catch(() => false)) {
         throw fail('browser document changed during observation', 'BROWSER_STALE_REF')
       }
-    }
-    if (png.byteLength > FRAME_LIMIT) {
-      await this.clearRefs(tab)
-      delete tab.capture
-      this.recordNavigation(tab)
-      this.updateSummary(tab, title)
-      owner.stateRevision++
-      owner.lastUsed = Date.now()
-      throw new OversizedFrameError()
     }
     this.recordNavigation(tab)
     this.updateSummary(tab, title)
@@ -441,7 +459,8 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
     }
     await this.clearRefs(tab)
     await tab.documentHandle.dispose().catch(() => {})
-    if (owner.stateRevision !== stateRevision || !await documentHandle.evaluate(doc => doc === document)) {
+    if (owner.stateRevision !== stateRevision ||
+      !await documentHandle.evaluate(doc => doc === document).catch(() => false)) {
       throw fail('browser document changed during observation', 'BROWSER_STALE_REF')
     }
     tab.documentHandle = documentHandle

@@ -44,7 +44,17 @@ function admissionFixture(options: {
     name: model,
     inputModalities: ['text', 'image'] as const,
   }))
-  const attachments = options.attachments === false ? undefined : { saveImages }
+  const attachments = options.attachments === false ? undefined : {
+    saveImages,
+    imageLimits: {
+      maxImageBytes: 3,
+      maxImagesPerMessage: 2,
+      maxMessageImageBytes: 5,
+      maxImagePixels: 1024,
+      maxImageDimension: 2000,
+      mediaTypes: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'],
+    },
+  }
   const llm = options.llm === false ? undefined : { resolveModelInfo }
   const ctx = {
     get(name: string) {
@@ -108,6 +118,19 @@ describe('ACP rich content codec', () => {
     await expect(admitAcpPrompt(fixture.ctx, fixture.agent, [
       { type: 'resource', resource: { uri: 'file:///tmp/a', text: 'a' } },
     ], true, signal)).rejects.toThrow(/embedded resource/)
+    expect(fixture.saveImages).not.toHaveBeenCalled()
+  })
+
+  it('refuses oversized encoded sources and the raw aggregate before writing', async () => {
+    const fixture = admissionFixture()
+    const signal = new AbortController().signal
+    await expect(admitAcpPrompt(fixture.ctx, fixture.agent, [
+      { type: 'image', data: 'AAAAAA==', mimeType: 'image/png' },
+    ], true, signal)).rejects.toMatchObject({ kind: 'invalid', cause: { code: 'IMAGE_TOO_LARGE' } })
+    await expect(admitAcpPrompt(fixture.ctx, fixture.agent, [
+      { type: 'image', data: 'AAAA', mimeType: 'image/png' },
+      { type: 'image', data: 'AAAA', mimeType: 'image/png' },
+    ], true, signal)).rejects.toMatchObject({ kind: 'invalid', cause: { code: 'IMAGES_TOO_LARGE' } })
     expect(fixture.saveImages).not.toHaveBeenCalled()
   })
 

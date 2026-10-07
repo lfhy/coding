@@ -5,6 +5,7 @@ import AttachmentStore, {
   AttachmentId,
   isImageAdmissionError,
   type ImageAttachmentRef,
+  type ImageAttachmentLimits,
   type ImageMediaType,
   type SaveImageAttachment,
   type StoredImageAttachment,
@@ -20,7 +21,7 @@ const LIMITS = {
 }
 
 class RecordingStore extends AttachmentStore {
-  readonly imageLimits = LIMITS
+  readonly imageLimits: ImageAttachmentLimits = LIMITS
   readonly calls: string[] = []
   rejectValidationAt: number | undefined
   rejectSaveAt: number | undefined
@@ -64,7 +65,7 @@ describe('AttachmentStore.saveImages', () => {
     expect(refs.map(ref => ref.name)).toEqual(['1.png', '2.png'])
   })
 
-  it('rejects count, aggregate bytes, and deployment media types before validation', async () => {
+  it('rejects count and media type before preparation, aggregate bytes after preparation', async () => {
     const store = new RecordingStore(new Context())
 
     await expect(store.saveImages([image(1), image(2), image(3)]))
@@ -85,6 +86,19 @@ describe('AttachmentStore.saveImages', () => {
     await expect(store.saveImages([image(1), image(2)]))
       .rejects.toThrow('invalid:2')
     expect(store.calls).toEqual(['validate:1', 'validate:2'])
+  })
+
+  it('bounds raw source bytes before preparation independently of final bytes', async () => {
+    const store = new RecordingStore(new Context())
+    store.imageLimits.maxSourceImageBytes = 2
+    store.imageLimits.maxSourceMessageImageBytes = 3
+    await expect(store.saveImages([{ data: Uint8Array.of(1, 2, 3), mediaType: 'image/png' }]))
+      .rejects.toMatchObject({ code: 'IMAGE_TOO_LARGE' })
+    await expect(store.saveImages([
+      { data: Uint8Array.of(1, 2), mediaType: 'image/png' },
+      { data: Uint8Array.of(3, 4), mediaType: 'image/png' },
+    ])).rejects.toMatchObject({ code: 'IMAGES_TOO_LARGE' })
+    expect(store.calls).toEqual([])
   })
 
   it('returns no partial references when storage fails after an earlier commit', async () => {

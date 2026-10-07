@@ -6,6 +6,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { chromium } from 'playwright'
 import type { Browser, BrowserContext, Page } from 'playwright'
 import { JSDOM } from 'jsdom'
+import { randomBytes } from 'node:crypto'
+import sharp from 'sharp'
 import { BrowserUseError } from '@deepseek-ai/dsh-browser'
 import type { BrowserCommand, BrowserHumanCommand, BrowserSessionState } from '@deepseek-ai/dsh-browser'
 import PlaywrightBrowserUse, { trustedFrameRequest } from '../src/index.ts'
@@ -13,6 +15,19 @@ import PlaywrightBrowserUse, { trustedFrameRequest } from '../src/index.ts'
 vi.mock('playwright', () => ({ chromium: { launch: vi.fn() } }))
 
 const png = new Uint8Array([137, 80, 78, 71])
+let noisyFrame: Promise<Uint8Array<ArrayBuffer>> | undefined
+
+function oversizedPng(): Promise<Uint8Array<ArrayBuffer>> {
+  noisyFrame ??= sharp(randomBytes(1600 * 1200 * 3),
+    { raw: { width: 1600, height: 1200, channels: 3 } }).png({ compressionLevel: 0 }).toBuffer()
+    .then(encoded => new Uint8Array(encoded))
+  return noisyFrame
+}
+
+function pngSize(data: Uint8Array): { width: number; height: number } {
+  const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
+  return { width: view.getUint32(16), height: view.getUint32(20) }
+}
 const handle = {
   asElement: vi.fn(() => handle),
   evaluate: vi.fn(async () => ({ role: 'button', name: 'Open', x: 10, y: 20, width: 30, height: 40 })),
@@ -307,7 +322,7 @@ describe('Playwright browser owner', () => {
     vi.useRealTimers()
   })
 
-  it('contains cleanup failures for stale handles, oversized frames and rejected popup closure', async () => {
+  it('contains cleanup failures for stale handles and rejected popup closure', async () => {
     const { ctx, service } = await headlessProvider()
     const id = SessionId('contained-cleanup')
     const signal = new AbortController().signal
@@ -315,9 +330,7 @@ describe('Playwright browser owner', () => {
     handle.dispose.mockRejectedValueOnce(new Error('detached old ref'))
     await service.execute(id, { kind: 'snapshot' }, signal)
     handle.dispose.mockRejectedValueOnce(new Error('detached new ref'))
-    page.screenshot.mockResolvedValueOnce(new Uint8Array(2 * 1024 * 1024 + 1))
-      .mockResolvedValueOnce(new Uint8Array(2 * 1024 * 1024 + 1))
-    await expect(service.execute(id, { kind: 'snapshot' }, signal)).rejects.toMatchObject({ code: 'BROWSER_FAILED' })
+    await service.execute(id, { kind: 'snapshot' }, signal)
     const listener = browserContext.on.mock.calls.find(([event]) => event === 'page')?.[1]
     if (!listener) throw new Error('missing page listener')
     listener(page as unknown as Page)
@@ -556,40 +569,71 @@ describe('Playwright browser owner', () => {
     await ctx.fiber.dispose()
   })
 
-  it('retains the session but publishes no frame when a PNG exceeds its limit', async () => {
+  it('normalizes an oversized PNG and keeps the session and element refs usable', async () => {
     const { ctx, service } = await provider()
     const id = SessionId('large')
     const signal = new AbortController().signal
-    page.screenshot.mockResolvedValueOnce(new Uint8Array(2 * 1024 * 1024 + 1))
-      .mockResolvedValueOnce(new Uint8Array(2 * 1024 * 1024 + 1))
-    await expect(service.execute(id, { kind: 'navigate', url: 'http://127.0.0.1:8080/' }, signal))
-      .rejects.toMatchObject({ code: 'BROWSER_FAILED' })
-    expect(service.state(id)).toMatchObject({ tabs: [{ url: 'http://127.0.0.1:8080/' }],
-      observation: null, hasFrame: false })
-    expect(service.latest(id)).toBeUndefined()
+    const source = await oversizedPng()
+    expect(source.byteLength).toBeGreaterThan(2 * 1024 * 1024)
+    page.screenshot.mockResolvedValueOnce(source)
+    const capture = await service.execute(id, { kind: 'navigate', url: 'http://127.0.0.1:8080/' }, signal)
+    expect(capture.png?.byteLength).toBeLessThanOrEqual(2 * 1024 * 1024)
+    expect(capture.png?.slice(0, 4)).toEqual(png)
+    expect(pngSize(capture.png as Uint8Array).width / pngSize(capture.png as Uint8Array).height)
+      .toBeCloseTo(1600 / 1200, 2)
+    expect(service.state(id)).toMatchObject({ tabs: [{ url: 'http://127.0.0.1:8080/' }], hasFrame: true })
     expect(browserContext.close).not.toHaveBeenCalled()
-    expect((await service.execute(id, { kind: 'snapshot' }, signal)).observation.revision).toBe(1)
+    expect((await service.execute(id, { kind: 'click', ref: ref(capture.observation.snapshot),
+      revision: capture.observation.revision }, signal)).observation.revision).toBe(2)
     await ctx.fiber.dispose()
   })
 
-  it('tries device pixels first and falls back to CSS pixels only for an oversized frame', async () => {
+  it('captures device pixels once and preserves under-cap bytes unchanged', async () => {
     const { ctx, service } = await headlessProvider()
     const id = SessionId('dense-frame-fallback')
     const signal = new AbortController().signal
-    const cssPng = new Uint8Array([137, 80, 78, 71, 1])
-    page.screenshot.mockResolvedValueOnce(new Uint8Array(2 * 1024 * 1024 + 1)).mockResolvedValueOnce(cssPng)
+    const source = await oversizedPng()
+    page.screenshot.mockResolvedValueOnce(source)
     const capture = await service.execute(id, { kind: 'navigate', url: 'http://localhost/' }, signal)
-    expect(capture.png).toEqual(cssPng)
-    expect(page.screenshot.mock.calls.slice(0, 2)).toEqual([
-      [expect.objectContaining({ scale: 'device' })], [expect.objectContaining({ scale: 'css' })],
-    ])
+    expect(capture.png?.byteLength).toBeLessThanOrEqual(2 * 1024 * 1024)
+    expect(page.screenshot).toHaveBeenCalledTimes(1)
+    expect(page.screenshot.mock.calls[0]).toEqual([expect.objectContaining({ scale: 'device' })])
     expect(service.latest(id)).toBe(capture)
-    await service.execute(id, { kind: 'screenshot' }, signal)
+    const next = await service.execute(id, { kind: 'screenshot' }, signal)
+    expect(next.png).toEqual(png)
     expect(page.screenshot.mock.calls.at(-1)).toEqual([expect.objectContaining({ scale: 'device' })])
     await ctx.fiber.dispose()
   })
 
-  it('keeps tabs after an oversized resize and recovers their captures when shrunk', async () => {
+  it('does not publish a normalized PNG after its Document changes', async () => {
+    const { ctx, service } = await headlessProvider()
+    const id = SessionId('normalized-stale-document')
+    const signal = new AbortController().signal
+    await service.execute(id, { kind: 'navigate', url: 'http://127.0.0.1:8080/' }, signal)
+    const before = service.state(id)
+    page.screenshot.mockResolvedValueOnce(await oversizedPng())
+    documentHandle.evaluate.mockResolvedValueOnce(true).mockResolvedValueOnce(false)
+    await expect(service.execute(id, { kind: 'screenshot' }, signal))
+      .rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
+    expect(service.state(id)).toMatchObject({ stateRevision: (before?.stateRevision ?? 0) + 1,
+      observation: null, hasFrame: false })
+    expect(service.latest(id)).toBeUndefined()
+    await ctx.fiber.dispose()
+  })
+
+  it('destroys an uncertain session when screenshot bytes are not a PNG', async () => {
+    const { ctx, service } = await headlessProvider()
+    const id = SessionId('invalid-captured-png')
+    const signal = new AbortController().signal
+    page.screenshot.mockResolvedValueOnce(new Uint8Array(2 * 1024 * 1024 + 1))
+    await expect(service.execute(id, { kind: 'navigate', url: 'http://127.0.0.1:8080/' }, signal))
+      .rejects.toMatchObject({ code: 'BROWSER_FAILED' })
+    expect(service.state(id)).toBeUndefined()
+    expect(browserContext.close).toHaveBeenCalledOnce()
+    await ctx.fiber.dispose()
+  })
+
+  it('keeps tabs and invalidates old frame URLs after an oversized resize', async () => {
     const { ctx, service, routes } = await provider()
     const id = SessionId('oversized-resize')
     const signal = new AbortController().signal
@@ -601,23 +645,20 @@ describe('Playwright browser owner', () => {
     await service.control(id, { kind: 'new-tab' }, signal)
     const second = await service.control(id, { kind: 'navigate', url: 'http://127.0.0.1:8080/' }, signal)
     const before = service.state(id)
-    secondScreenshot.mockResolvedValueOnce(new Uint8Array(2 * 1024 * 1024 + 1))
-      .mockResolvedValueOnce(new Uint8Array(2 * 1024 * 1024 + 1))
-    await expect(service.control(id, { kind: 'set-viewport', width: 900, height: 1100 }, signal))
-      .rejects.toMatchObject({ code: 'BROWSER_FAILED' })
-    const oversized = service.state(id)
-    expect(oversized).toMatchObject({ viewport: { width: 900, height: 1100 },
+    secondScreenshot.mockResolvedValueOnce(await oversizedPng())
+    const resized = await service.control(id, { kind: 'set-viewport', width: 900, height: 1100 }, signal)
+    expect(resized).toMatchObject({ viewport: { width: 900, height: 1100 },
       tabs: [{ id: first.observation.tabId }, { id: second?.activeTabId,
         url: 'http://127.0.0.1:8080/second' }], activeTabId: second?.activeTabId,
-      observation: null, hasFrame: false })
-    expect(oversized?.stateRevision).toBe((before?.stateRevision ?? 0) + 2)
-    expect(service.latest(id)).toBeUndefined()
+      hasFrame: true })
+    expect(resized?.stateRevision).toBe((before?.stateRevision ?? 0) + 2)
+    expect(service.latest(id)?.png?.byteLength).toBeLessThanOrEqual(2 * 1024 * 1024)
     expect(browserContext.close).not.toHaveBeenCalled()
-    const oldFrame = `/browser-use/frame?sessionId=oversized-resize&tabId=${second?.activeTabId}&browserGeneration=${oversized?.browserGeneration}&stateRevision=${oversized?.stateRevision}&generation=${second?.observation?.generation}&revision=${second?.observation?.revision}`
+    const oldFrame = `/browser-use/frame?sessionId=oversized-resize&tabId=${second?.activeTabId}&browserGeneration=${resized?.browserGeneration}&stateRevision=${before?.stateRevision}&generation=${second?.observation?.generation}&revision=${second?.observation?.revision}`
     expect((await request(routes, oldFrame)).status).toBe(409)
     const recovered = await service.control(id, { kind: 'set-viewport', width: 375, height: 800 }, signal)
     expect(recovered?.observation).toMatchObject({ viewport: { width: 375, height: 800 },
-      revision: (second?.observation?.revision ?? 0) + 1 })
+      revision: (second?.observation?.revision ?? 0) + 2 })
     expect(recovered?.hasFrame).toBe(true)
     const firstAgain = await service.control(id, { kind: 'select-tab', tabId: first.observation.tabId }, signal)
     expect(firstAgain?.observation).toMatchObject({ tabId: first.observation.tabId,

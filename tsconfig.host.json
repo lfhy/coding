@@ -53,6 +53,7 @@
     "apps/web/tests/message-feedback.e2e.ts",
     "apps/web/tests/message-feedback-layout.e2e.ts",
     "apps/web/tests/markdown-images.e2e.ts",
+    "apps/web/tests/image-normalization.e2e.ts",
     "apps/web/tests/reference-composer.e2e.ts",
     "apps/web/tests/math-rendering.e2e.ts",
     "apps/web/tests/markdown-cjk-strong.e2e.ts",

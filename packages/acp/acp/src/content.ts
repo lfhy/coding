@@ -2,8 +2,8 @@
 
 import type { ContentBlock as AcpContentBlock } from '@agentclientprotocol/sdk'
 import type { Context } from '@deepseek-ai/cordis'
-import { isImageAdmissionError } from '@deepseek-ai/dsh-attachment'
-import type { ImageAttachmentRef, ImageMediaType, SaveImageAttachment } from '@deepseek-ai/dsh-attachment'
+import { admitEncodedImages, isImageAdmissionError } from '@deepseek-ai/dsh-attachment'
+import type { EncodedImageAttachment, ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 
@@ -14,9 +14,6 @@ const IMAGE_MEDIA_TYPES: readonly ImageMediaType[] = [
   'image/webp',
   'image/gif',
 ]
-
-/** Canonical RFC 4648 base64, excluding whitespace and URL-safe aliases. */
-const CANONICAL_BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
 
 /** Content-admission failure category used by the protocol handler. */
 export type AcpContentFailureKind = 'invalid' | 'internal'
@@ -43,20 +40,13 @@ function imageMediaType(value: string): ImageMediaType | undefined {
   return IMAGE_MEDIA_TYPES.includes(value as ImageMediaType) ? value as ImageMediaType : undefined
 }
 
-/** Strictly decode one ACP inline image without accepting base64 aliases. */
-function decodeImage(block: Extract<AcpContentBlock, { type: 'image' }>): SaveImageAttachment {
+/** 校验 ACP 图片声明；原始数据交给共享附件入口限额和解码。 */
+function encodedImage(block: Extract<AcpContentBlock, { type: 'image' }>): EncodedImageAttachment {
   const mediaType = imageMediaType(block.mimeType)
   if (mediaType === undefined) {
     throw new AcpContentError('image mimeType must be image/png, image/jpeg, image/webp, or image/gif', 'invalid')
   }
-  if (!CANONICAL_BASE64.test(block.data)) {
-    throw new AcpContentError('image data must be canonical base64', 'invalid')
-  }
-  const data = Buffer.from(block.data, 'base64')
-  if (data.toString('base64') !== block.data) {
-    throw new AcpContentError('image data must be canonical base64', 'invalid')
-  }
-  return { data, mediaType }
+  return { data: block.data, mediaType }
 }
 
 /** Resolve the exact current route and require explicit image input support. */
@@ -128,7 +118,7 @@ export async function admitAcpPrompt(
   imageEnabled: boolean,
   signal: AbortSignal,
 ): Promise<ContentBlock[]> {
-  const images: SaveImageAttachment[] = []
+  const images: EncodedImageAttachment[] = []
   for (const block of prompt) {
     switch (block.type) {
       case 'text':
@@ -136,7 +126,7 @@ export async function admitAcpPrompt(
         break
       case 'image':
         if (!imageEnabled) throw new AcpContentError('inline image prompts were not advertised by this connection', 'invalid')
-        images.push(decodeImage(block))
+        images.push(encodedImage(block))
         break
       case 'audio':
         throw new AcpContentError('audio prompt content is not supported', 'invalid')
@@ -155,7 +145,7 @@ export async function admitAcpPrompt(
     await assertImageRoute(ctx, agent, signal)
     signal.throwIfAborted()
     try {
-      refs = await attachments.saveImages(images)
+      refs = await admitEncodedImages(attachments, images)
     } catch (error: unknown) {
       if (isImageAdmissionError(error)) {
         throw new AcpContentError(error.message, 'invalid', { cause: error })

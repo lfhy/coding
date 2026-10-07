@@ -14,7 +14,7 @@ import type {
   SaveImageAttachment,
   StoredImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
-import { detectImage, probeImage } from './image.ts'
+import { detectImage, normalizeImage, probeImage } from './image.ts'
 
 const ID_PATTERN = /^sha256:([a-f0-9]{64})$/
 const durableHomes = new Set<string>()
@@ -25,9 +25,7 @@ function digest(data: Uint8Array): string {
 
 function displayName(value: string | undefined): string | undefined {
   if (value === undefined) return undefined
-  // Strip both separator styles by hand: a POSIX host treats `\` as an
-  // ordinary character, so path.basename would keep a Windows client's full
-  // local path and leak it into the reference and the session log.
+  // POSIX 会把反斜杠当普通字符；必须同时去除 Windows 路径前缀，避免泄露到日志。
   const leaf = value.slice(Math.max(value.lastIndexOf('/'), value.lastIndexOf('\\')) + 1)
   const clean = leaf.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 255)
   return clean === '' ? undefined : clean
@@ -49,22 +47,57 @@ async function inspectMetadata(
   limits: ImageAttachmentLimits,
 ): Promise<Omit<ImageAttachmentRef, 'attachmentId' | 'name'>> {
   if (data.byteLength === 0) throw new AttachmentError('Image is empty.', 'INVALID_IMAGE')
-  const detected = await detectImage(data, { maxPixels: limits.maxImagePixels, maxDimension: limits.maxImageDimension })
+  if (data.byteLength > limits.maxImageBytes) {
+    throw new AttachmentError('Image exceeds the configured byte limit.', 'IMAGE_TOO_LARGE')
+  }
+  const detected = await detectImage(data, {
+    maxPixels: limits.maxImagePixels,
+    maxDimension: limits.maxImageDimension,
+    source: {
+      maxSourceBytes: limits.maxImageBytes,
+      maxSourcePixels: limits.maxSourceImagePixels ?? limits.maxImagePixels,
+      maxSourceFrames: limits.maxSourceImageFrames ?? 1,
+    },
+  })
   if (detected.mediaType !== declaredMediaType) throw new AttachmentError('Declared image type does not match its bytes.', 'IMAGE_TYPE_MISMATCH')
   return { ...detected, bytes: data.byteLength }
 }
 
 /**
- * Run the full admission policy for one image without touching storage.
- * @param input - encoded bytes and declared metadata.
- * @param limits - resolved storage policy.
- * @returns completion after the encoded raster has been fully decoded.
+ * 完整校验和归一化单张图片，不触碰持久存储。
+ * @param input - 编码字节及声明类型。
+ * @param limits - 已解析的输出限额。
+ * @param maxBytes - 可选的更严格批次分配预算。
+ * @returns 归一化后、可提交的图片输入。
+ */
+export async function prepareImageFile(
+  input: SaveImageAttachment,
+  limits: ImageAttachmentLimits,
+  maxBytes = limits.maxImageBytes,
+): Promise<SaveImageAttachment> {
+  if (input.data.byteLength === 0) throw new AttachmentError('Image is empty.', 'INVALID_IMAGE')
+  const normalized = await normalizeImage(input.data, {
+    maxBytes,
+    maxPixels: limits.maxImagePixels,
+    maxDimension: limits.maxImageDimension,
+    maxSourceBytes: limits.maxSourceImageBytes ?? limits.maxImageBytes,
+    maxSourcePixels: limits.maxSourceImagePixels ?? limits.maxImagePixels,
+    maxSourceFrames: limits.maxSourceImageFrames ?? 1,
+  })
+  if (normalized.metadata.mediaType !== input.mediaType) {
+    throw new AttachmentError('Declared image type does not match its bytes.', 'IMAGE_TYPE_MISMATCH')
+  }
+  return { ...input, data: normalized.data }
+}
+
+/**
+ * 校验单张图片而不创建目录或持久对象。
+ * @param input - 编码字节及声明类型。
+ * @param limits - 源安全上限与归一化后的输出限额。
+ * @returns 完整校验和归一化完成后的通知。
  */
 export async function validateImageFile(input: SaveImageAttachment, limits: ImageAttachmentLimits): Promise<void> {
-  if (input.data.byteLength > limits.maxImageBytes) {
-    throw new AttachmentError('Image exceeds the configured byte limit.', 'IMAGE_TOO_LARGE')
-  }
-  await inspectMetadata(input.data, input.mediaType, limits)
+  await prepareImageFile(input, limits)
 }
 
 /**
@@ -127,14 +160,28 @@ async function ensureDurableHome(path: string): Promise<string> {
 }
 
 /**
- * Save and verify immutable image bytes below a versioned attachment root.
- * @param root - absolute `DSH_HOME/attachments/v1` root.
- * @param input - encoded bytes and declared metadata.
- * @param limits - resolved storage policy.
- * @returns durable content-addressed reference.
+ * 归一化并持久提交不可变图片字节。
+ * @param root - `DSH_HOME/attachments/v1` 的绝对路径。
+ * @param input - 编码字节及声明类型。
+ * @param limits - 已解析的输出限额。
+ * @returns 持久内容寻址引用。
  */
 export async function saveImageFile(root: string, input: SaveImageAttachment, limits: ImageAttachmentLimits): Promise<ImageAttachmentRef> {
-  if (input.data.byteLength > limits.maxImageBytes) throw new AttachmentError('Image exceeds the configured byte limit.', 'IMAGE_TOO_LARGE')
+  return savePreparedImageFile(root, await prepareImageFile(input, limits), limits)
+}
+
+/**
+ * 提交经过归一化的字节；批次先准备全部成员后再调用此方法。
+ * @param root - `DSH_HOME/attachments/v1` 的绝对路径。
+ * @param input - 已归一化的输入。
+ * @param limits - 用于核验最终字节和像素的限额。
+ * @returns 持久内容寻址引用。
+ */
+export async function savePreparedImageFile(
+  root: string,
+  input: SaveImageAttachment,
+  limits: ImageAttachmentLimits,
+): Promise<ImageAttachmentRef> {
   const metadata = await inspectMetadata(input.data, input.mediaType, limits)
   const sha256 = digest(input.data)
   const bucket = join(root, 'objects', sha256.slice(0, 2))

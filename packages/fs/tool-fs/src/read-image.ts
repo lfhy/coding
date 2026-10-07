@@ -179,12 +179,14 @@ export function applyReadImageTool(ctx: Context): void {
 
       const { target, info } = await resolveRegularReadTarget(ctx, exec, args.file_path)
 
-      // The tool result is one message carrying one image, so the per-message
-      // aggregate bound applies beside the per-image bound.
-      const byteCap = Math.min(attachments.imageLimits.maxImageBytes, attachments.imageLimits.maxMessageImageBytes)
+      // 单张工具结果即一条只含一张图片的消息；读取原始文件时使用源限额，
+      // 最终附件的字节限额由 saveImage 在归一化后校验。
+      const byteCap = Math.min(
+        attachments.imageLimits.maxSourceImageBytes ?? attachments.imageLimits.maxImageBytes,
+        attachments.imageLimits.maxSourceMessageImageBytes ?? attachments.imageLimits.maxMessageImageBytes,
+      )
       const data = await ctx.fs.readBytes(target, exec.signal, byteCap)
-      // Persist before returning: the image block must reference a durably
-      // committed object by the time the tool/result event is appended.
+      // 返回前持久化，确保 tool/result 事件写入时图像引用已有对应对象。
       let ref: ImageAttachmentRef
       try {
         ref = await attachments.saveImage({ data, mediaType, name: basename(target.displayPath) })

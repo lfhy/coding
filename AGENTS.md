@@ -57,6 +57,7 @@ CI 不代表桌面端所有平台已经支持。新增桌面壳或原生模块�
 - Host 和 Client 是两个独立 aggregate；普通包只能登记到一个 aggregate。根 `tsconfig.json` 是 solution，不作为构造全仓 `ts.Program` 的种子。
 - 源码检查通过 `tsconfig.base.json` 的 `paths` 解析到 `src`；只有明确消费构建结果的检查才读取 `lib/`、`dist/` 或打包目录。不要让本地陈旧产物改变测试结果。
 - 每个能力完整包含 Service Definition、Provider 和 Consumer。注册是 effect：使用 `ctx.effect()`、`ctx.on()` 或注册器返回的 disposer 管理生命周期。
+- 多入口共用的校验、归一化和业务限额归能力拥有者的 Service／Provider 实现；Consumer 只负责自身来源、传输与权限安全检查，不复制处理策略。图片尺寸／字节预算复用 [`fitImage`](packages/attachment/attachment/README.md) 策略，各提供方负责自身编解码与格式语义；模型附件经 `ctx.attachments.saveImage`／`saveImages` 准入，内联 base64 经 `admitEncodedImages`。最终模型限额在归一化后判断，动图不得静默压成单帧。
 - 新的模型可见输入必须能从 session log 重建；新增模型可见行为时同步事件、投影、SDK 期望输出和 keyless snapshot。
 - 跨进程、文件、网络、worker 和模型 JSON 边界进行运行时校验；同进程的静态类型边界信任 TypeScript，不为接口已保证的值增加重复 fallback。
 - 跨边界 id 使用 `Branded` 类型；联合类型按 discriminant 分支，封闭联合以 `assertNever` 收尾。

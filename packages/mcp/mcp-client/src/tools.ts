@@ -16,8 +16,8 @@ import type { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { ListToolsResultSchema } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import type { Context } from '@deepseek-ai/cordis'
-import { isImageAdmissionError } from '@deepseek-ai/dsh-attachment'
-import type { AttachmentStore, ImageAttachmentRef, ImageMediaType, SaveImageAttachment } from '@deepseek-ai/dsh-attachment'
+import { admitEncodedImages, isImageAdmissionError } from '@deepseek-ai/dsh-attachment'
+import type { AttachmentStore, EncodedImageAttachment, ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { ToolDefinition, ToolExecution, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import { assertSupportedJsonSchema } from '@deepseek-ai/dsh-tools'
@@ -62,9 +62,6 @@ const IMAGE_MEDIA_TYPES: readonly ImageMediaType[] = [
   'image/webp',
   'image/gif',
 ]
-
-/** Canonical RFC 4648 base64, excluding whitespace and URL-safe aliases. */
-const CANONICAL_BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
 
 /** List without mutating the SDK's per-page output-validator cache. */
 function listToolsUncached(client: Client, cursor?: string) {
@@ -376,19 +373,15 @@ function isImageMediaType(value: string): value is ImageMediaType {
   return IMAGE_MEDIA_TYPES.includes(value as ImageMediaType)
 }
 
-/** Decode one untrusted MCP image block without accepting base64 aliases. */
-function decodeImage(block: McpContentBlock): SaveImageAttachment {
+/** 校验 MCP 图片字段；原始数据交给共享附件入口限额和解码。 */
+function encodedImage(block: McpContentBlock): EncodedImageAttachment {
   if (block.mimeType === undefined || !isImageMediaType(block.mimeType)) {
     throw new Error('the declared media type is not PNG, JPEG, WebP, or GIF')
   }
-  if (block.data === undefined || !CANONICAL_BASE64.test(block.data)) {
+  if (typeof block.data !== 'string') {
     throw new Error('the image data is not canonical base64')
   }
-  const data = Buffer.from(block.data, 'base64')
-  if (data.toString('base64') !== block.data) {
-    throw new Error('the image data is not canonical base64')
-  }
-  return { data, mediaType: block.mimeType }
+  return { data: block.data, mediaType: block.mimeType }
 }
 
 /**
@@ -427,9 +420,8 @@ function imageDiagnostic(block: McpContentBlock, reason: string): string {
 }
 
 /**
- * Decode, preflight, and durably save one MCP result's ordered image batch.
- * Any refusal projects every image as text while retaining the canonical raw
- * value for programmatic callers.
+ * 校验并持久化 MCP 结果中的有序图片批次；任何拒绝都将图片投影为诊断文本，
+ * 同时保留完整原始结果供编程调用方读取。
  */
 async function prepareImageProjection(
   ctx: Context,
@@ -437,16 +429,16 @@ async function prepareImageProjection(
   content: JsonValue[],
   toolName: string,
 ): Promise<ContentBlock[]> {
-  const decoded: SaveImageAttachment[] = []
+  const encoded: EncodedImageAttachment[] = []
   const validationErrors = new Map<number, string>()
   const imageIndexes: number[] = []
   for (const [index, value] of content.entries()) {
     if (!isRecord(value) || value.type !== 'image') continue
     imageIndexes.push(index)
     try {
-      decoded.push(decodeImage(value as unknown as McpContentBlock))
+      encoded.push(encodedImage(value as unknown as McpContentBlock))
     } catch (error: unknown) {
-      // decodeImage owns every throw above and always produces Error.
+      // 此处异常均由 encodedImage 抛出，类型固定为 Error。
       validationErrors.set(index, (error as Error).message)
     }
   }
@@ -470,7 +462,7 @@ async function prepareImageProjection(
   }
 
   try {
-    const refs = await attachments.saveImages(decoded)
+    const refs = await admitEncodedImages(attachments, encoded)
     const byIndex = new Map(imageIndexes.map((index, offset) => [index, refs[offset] as ImageAttachmentRef] as const))
     return projectContent(content, toolName, (_block, index) => ({
       type: 'image',
@@ -480,9 +472,14 @@ async function prepareImageProjection(
     const reason = isImageAdmissionError(error)
       ? `image admission rejected the result: ${error.message}`
       : 'durable image storage rejected the result'
-    return projectContent(content, toolName, block => ({
+    const invalidIndex = isImageAdmissionError(error) && 'imageIndex' in error && typeof error.imageIndex === 'number'
+      ? imageIndexes[error.imageIndex]
+      : undefined
+    return projectContent(content, toolName, (block, index) => ({
       type: 'text',
-      text: imageDiagnostic(block, reason),
+      text: imageDiagnostic(block, invalidIndex === undefined || index === invalidIndex
+        ? reason
+        : 'another image in the same result was invalid'),
     }))
   }
 }

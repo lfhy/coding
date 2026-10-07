@@ -2,10 +2,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { deflateSync } from 'node:zlib'
 import { Context } from '@deepseek-ai/cordis'
 import BrowserUseService from '../../browser/src/index.ts'
 import type { BrowserCapture, BrowserCommand, BrowserExpectedTarget, BrowserHumanCommand, BrowserSessionState, BrowserTabId } from '@deepseek-ai/dsh-browser'
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
+import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
@@ -16,6 +18,36 @@ import ApprovalService, { setApprovalPolicy, type ApprovalPolicy } from '@deepse
 import * as ToolBrowser from '../src/index.ts'
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC', 'base64')
+
+function pngChunk(type: string, data: Buffer): Buffer {
+  const body = Buffer.concat([Buffer.from(type), data])
+  let crc = 0xffffffff
+  for (const byte of body) {
+    crc ^= byte
+    for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ ((crc & 1) === 1 ? 0xedb88320 : 0)
+  }
+  const chunk = Buffer.alloc(12 + data.length)
+  chunk.writeUInt32BE(data.length)
+  body.copy(chunk, 4)
+  chunk.writeUInt32BE((crc ^ 0xffffffff) >>> 0, 8 + data.length)
+  return chunk
+}
+
+function largePng(): Buffer {
+  const width = 2560
+  const height = 1440
+  const header = Buffer.alloc(13)
+  header.writeUInt32BE(width)
+  header.writeUInt32BE(height, 4)
+  header[8] = 8
+  header[9] = 2
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    pngChunk('IHDR', header),
+    pngChunk('IDAT', deflateSync(Buffer.alloc((width * 3 + 1) * height))),
+    pngChunk('IEND', Buffer.alloc(0)),
+  ])
+}
 const observation = {
   tabId: 'tab-1' as BrowserTabId, generation: 'g1', revision: 1, url: 'https://example.com', title: 'Example',
   snapshot: '[e1] button Continue', viewport: { width: 800, height: 600 }, cursor: null,
@@ -490,6 +522,29 @@ describe('browser action tools', () => {
     const image = (result.value as unknown as ToolBrowser.BrowserUseValue).image
     expect(result.content[1]).toMatchObject({ attachment: { attachmentId: image?.attachmentId } })
     expect(prepareTarget).toHaveBeenCalledTimes(2)
+  })
+
+  it('persists an oversized screenshot through the shared image normalization before returning its reference', async () => {
+    const { ctx, call } = await setup(true, { mode: 'danger-full-access', policy: 'never' })
+    const browser = ctx.browserUse as FakeBrowser
+    browser.currentState = activeState()
+    const source = largePng()
+    expect(source.byteLength).toBeLessThan(2 * 1024 * 1024)
+    browser.commands.mockResolvedValueOnce({ observation, png: source })
+
+    const result = await call({ action: 'screenshot' })
+    expect(result.isError).toBe(false)
+    const image = (result.value as unknown as ToolBrowser.BrowserUseValue).image
+    expect(image).not.toBeNull()
+    expect(image).toMatchObject({ mediaType: 'image/png', width: 2000, height: 1125 })
+    expect(result.content.map(block => block.type)).toEqual(['text', 'image'])
+    const ref = { ...image!, attachmentId: AttachmentId(image!.attachmentId) }
+    expect(result.content[0]).toEqual({ type: 'text', text: JSON.stringify(result.value) })
+    expect(result.content[1]).toEqual({ type: 'image', attachment: ref })
+    const stored = await ctx.attachments.readImage(ref)
+    expect(stored.ref).toEqual(ref)
+    expect(stored.data.byteLength).toBe(image!.bytes)
+    expect(stored.data).not.toEqual(new Uint8Array(source))
   })
 
   it('rejects missing screenshot bytes without saving an attachment', async () => {

@@ -6,24 +6,31 @@ import z from '@deepseek-ai/schemastery'
 import { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentLimits, ImageAttachmentRef, SaveImageAttachment, StoredImageAttachment } from '@deepseek-ai/dsh-attachment'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
-import { readImageFile, saveImageFile, validateImageFile } from './store.ts'
+import { prepareImageFile, readImageFile, saveImageFile, savePreparedImageFile, validateImageFile } from './store.ts'
 
 export { readImageFile, saveImageFile, validateImageFile } from './store.ts'
+export { normalizeImage } from './image.ts'
+export type { DecodedImageLimits, NormalizedImage, SourceImageLimits } from './image.ts'
 
 /** Default maximum encoded bytes for one image. */
 export const DEFAULT_MAX_IMAGE_BYTES = 3.5 * 1024 * 1024
+/** 单张源图片的最大编码字节数。 */
+export const DEFAULT_MAX_SOURCE_IMAGE_BYTES = 100 * 1024 * 1024
+/** 单次上传的源图片编码字节总额。 */
+export const DEFAULT_MAX_SOURCE_MESSAGE_IMAGE_BYTES = 100 * 1024 * 1024
+/** 单张源图片所有帧的最大解码像素总额。 */
+export const DEFAULT_MAX_SOURCE_IMAGE_PIXELS = 80_000_000
+/** 单张源动画允许的最大帧数。 */
+export const DEFAULT_MAX_SOURCE_IMAGE_FRAMES = 100
 /** Default maximum images in one prompt. */
 export const DEFAULT_MAX_IMAGES_PER_MESSAGE = 20
 /** Default maximum aggregate image bytes in one prompt. */
 export const DEFAULT_MAX_MESSAGE_IMAGE_BYTES = 100 * 1024 * 1024
-/** Default maximum intrinsic pixels for one image. */
+/** 单张图片归一化后的最大像素数。 */
 export const DEFAULT_MAX_IMAGE_PIXELS = 40_000_000
 /**
- * Default maximum intrinsic width and height for one image. Deployed model
- * routes reject any request whose history carries an image with a side above
- * 2000px once the request holds many images, and an admitted image rides
- * every later request of its session, so admission refuses at the same line
- * to keep the durable history streamable.
+ * 图片归一化后的默认单边上限。图片会随历史重复发送，因此持久对象必须符合
+ * 已部署模型路由对多图请求的 2000px 限制。
  */
 export const DEFAULT_MAX_IMAGE_DIMENSION = 2000
 
@@ -31,15 +38,23 @@ export const DEFAULT_MAX_IMAGE_DIMENSION = 2000
 export interface Config {
   /** Explicit harness home; omitted follows `DSH_HOME`, then `~/.dsh`. */
   dshHome?: string
-  /** Maximum encoded bytes accepted for one image. */
+  /** 单张归一化图片允许的最大编码字节数。 */
   maxImageBytes?: number
+  /** 单张原始输入的编码字节上限。 */
+  maxSourceImageBytes?: number
   /** Maximum image count accepted in one submitted message. */
   maxImagesPerMessage?: number
-  /** Maximum aggregate encoded image bytes accepted in one submitted message. */
+  /** 一条消息中归一化图片的编码字节总额上限。 */
   maxMessageImageBytes?: number
-  /** Maximum intrinsic width multiplied by height accepted for one image. */
+  /** 单条消息的原始输入编码字节总额上限。 */
+  maxSourceMessageImageBytes?: number
+  /** 单张归一化图片的最大宽高像素乘积。 */
   maxImagePixels?: number
-  /** Maximum intrinsic width and maximum intrinsic height accepted for one image. */
+  /** 单张原始图片全部帧的解码像素总额上限。 */
+  maxSourceImagePixels?: number
+  /** 单张原始动画的帧数上限。 */
+  maxSourceImageFrames?: number
+  /** 单张归一化图片的最大宽度与高度。 */
   maxImageDimension?: number
 }
 
@@ -48,9 +63,13 @@ export class LocalAttachmentStore extends AttachmentStore {
   static Config: z<Config> = z.object({
     dshHome: z.string(),
     maxImageBytes: z.number().step(1).min(1).default(DEFAULT_MAX_IMAGE_BYTES),
+    maxSourceImageBytes: z.number().step(1).min(1).default(DEFAULT_MAX_SOURCE_IMAGE_BYTES),
     maxImagesPerMessage: z.number().step(1).min(1).default(DEFAULT_MAX_IMAGES_PER_MESSAGE),
     maxMessageImageBytes: z.number().step(1).min(1).default(DEFAULT_MAX_MESSAGE_IMAGE_BYTES),
+    maxSourceMessageImageBytes: z.number().step(1).min(1).default(DEFAULT_MAX_SOURCE_MESSAGE_IMAGE_BYTES),
     maxImagePixels: z.number().step(1).min(1).default(DEFAULT_MAX_IMAGE_PIXELS),
+    maxSourceImagePixels: z.number().step(1).min(1).default(DEFAULT_MAX_SOURCE_IMAGE_PIXELS),
+    maxSourceImageFrames: z.number().step(1).min(1).default(DEFAULT_MAX_SOURCE_IMAGE_FRAMES),
     maxImageDimension: z.number().step(1).min(1).default(DEFAULT_MAX_IMAGE_DIMENSION),
   })
 
@@ -63,9 +82,13 @@ export class LocalAttachmentStore extends AttachmentStore {
     this.root = resolve(join(resolveDshHome(config.dshHome), 'attachments', 'v1'))
     this.imageLimits = Object.freeze({
       maxImageBytes: config.maxImageBytes ?? DEFAULT_MAX_IMAGE_BYTES,
+      maxSourceImageBytes: config.maxSourceImageBytes ?? DEFAULT_MAX_SOURCE_IMAGE_BYTES,
       maxImagesPerMessage: config.maxImagesPerMessage ?? DEFAULT_MAX_IMAGES_PER_MESSAGE,
       maxMessageImageBytes: config.maxMessageImageBytes ?? DEFAULT_MAX_MESSAGE_IMAGE_BYTES,
+      maxSourceMessageImageBytes: config.maxSourceMessageImageBytes ?? DEFAULT_MAX_SOURCE_MESSAGE_IMAGE_BYTES,
       maxImagePixels: config.maxImagePixels ?? DEFAULT_MAX_IMAGE_PIXELS,
+      maxSourceImagePixels: config.maxSourceImagePixels ?? DEFAULT_MAX_SOURCE_IMAGE_PIXELS,
+      maxSourceImageFrames: config.maxSourceImageFrames ?? DEFAULT_MAX_SOURCE_IMAGE_FRAMES,
       maxImageDimension: config.maxImageDimension ?? DEFAULT_MAX_IMAGE_DIMENSION,
       mediaTypes: Object.freeze(['image/png', 'image/jpeg', 'image/webp', 'image/gif'] as const),
     })
@@ -73,6 +96,14 @@ export class LocalAttachmentStore extends AttachmentStore {
 
   async validateImage(input: SaveImageAttachment): Promise<void> {
     await validateImageFile(input, this.imageLimits)
+  }
+
+  protected override prepareImage(input: SaveImageAttachment, maxBytes?: number): Promise<SaveImageAttachment> {
+    return prepareImageFile(input, this.imageLimits, maxBytes)
+  }
+
+  protected override savePreparedImage(input: SaveImageAttachment): Promise<ImageAttachmentRef> {
+    return savePreparedImageFile(this.root, input, this.imageLimits)
   }
 
   async saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef> {

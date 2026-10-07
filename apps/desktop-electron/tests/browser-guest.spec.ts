@@ -3,14 +3,25 @@ import { runInNewContext } from 'node:vm'
 import type { BrowserWindow } from 'electron'
 import { parseBridgeEvent, parseBridgeResponse } from '../../../packages/browser/browser-electron/src/protocol.ts'
 import { createBrowserGuestManager } from '../src/browser-guest.ts'
+import { fitBrowserPng } from '../src/browser-image.ts'
 
 const electron = vi.hoisted(() => ({
   views: [] as Array<{ webContents: ReturnType<typeof fakeContents>; setBounds: ReturnType<typeof vi.fn> }>,
   WebContentsView: vi.fn<(options: Record<string, unknown>) => unknown>(),
-  createFromBuffer: vi.fn((_bytes: Buffer) => ({ resize: vi.fn((_size: unknown) => ({
-    toPNG: () => Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
-  })) })),
+  createFromBuffer: vi.fn(),
 }))
+
+function png(width = 1, height = 1, payload = 0): Buffer {
+  const bytes = Buffer.alloc(33 + payload)
+  Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(bytes)
+  bytes.writeUInt32BE(13, 8)
+  bytes.write('IHDR', 12, 'ascii')
+  bytes.writeUInt32BE(width, 16)
+  bytes.writeUInt32BE(height, 20)
+  bytes[24] = 8
+  bytes[25] = 6
+  return bytes
+}
 
 function fakeContents() {
   const events = new Map<string, (...args: never[]) => void>()
@@ -22,7 +33,7 @@ function fakeContents() {
   const sendCommand = vi.fn(async (command: string, params?: unknown): Promise<unknown> => {
     if (command === 'Page.getFrameTree') return { frameTree: { frame: { id: 'frame' } } }
     if (command === 'Page.createIsolatedWorld') return { executionContextId: 4 }
-    if (command === 'Page.captureScreenshot') return { data: Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).toString('base64') }
+    if (command === 'Page.captureScreenshot') return { data: png().toString('base64') }
     if (command === 'Runtime.evaluate') {
       if ((params as { expression: string }).expression === 'globalThis.__dshGuestReadMutationRevision()') {
         return { result: { value: domRevision } }
@@ -111,6 +122,14 @@ const hostOrigin = 'http://127.0.0.1:12345'
 beforeEach(() => {
   vi.clearAllMocks()
   electron.views.length = 0
+  electron.createFromBuffer.mockImplementation((bytes: Buffer) => {
+    const size = { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) }
+    return { isEmpty: () => false, getSize: () => size,
+      resize: vi.fn((target: { width: number; height: number }) => ({
+        toPNG: () => png(target.width, target.height, target.width * target.height * 2),
+        getSize: () => target,
+      })) }
+  })
   electron.WebContentsView.mockImplementation(function () {
     const view = { webContents: fakeContents(), setBounds: vi.fn() }
     electron.views.push(view)
@@ -119,6 +138,15 @@ beforeEach(() => {
 })
 
 describe('Electron 实时浏览器 guest', () => {
+  it('已在传输预算内的 PNG 原字节保留，且不重新编码', async () => {
+    const source = png(2560, 1440)
+    const result = await fitBrowserPng(source.toString('base64'), 2 * 1024 * 1024)
+    expect(Buffer.from(result)).toEqual(source)
+    expect(electron.createFromBuffer).toHaveBeenCalledTimes(2)
+    const native = electron.createFromBuffer.mock.results[0]?.value as { resize: ReturnType<typeof vi.fn> } | undefined
+    expect(native?.resize).not.toHaveBeenCalled()
+  })
+
   it('创建受限的内存 guest，并阻止弹窗、下载、权限和 Host 地址', async () => {
     const manager = createBrowserGuestManager(fixture(), { hostOrigin })
     const state = await manager.control('s1', { kind: 'ensure-tab' })
@@ -690,18 +718,23 @@ describe('Electron 实时浏览器 guest', () => {
         }
         return { result: { value: { text: '', entries: [], title: '', href: 'about:blank', domRevision: 0 } } }
       }
-      if (command === 'Page.captureScreenshot') return { data: Buffer.alloc(2 * 1024 * 1024 + 1).toString('base64') }
+      if (command === 'Page.captureScreenshot') return { data: png(3000, 2000, 2 * 1024 * 1024).toString('base64') }
       return {}
     })
-    electron.createFromBuffer.mockImplementationOnce(() => ({ resize: vi.fn(() => ({
-      toPNG: () => Buffer.alloc(2 * 1024 * 1024 + 1),
-    })) }))
-    await expect(manager.execute('s1', { kind: 'snapshot' })).rejects.toMatchObject({ code: 'BROWSER_FAILED' })
+    electron.createFromBuffer.mockImplementation((bytes: Buffer) => ({ isEmpty: () => false,
+      getSize: () => ({ width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) }),
+      resize: vi.fn((target: { width: number; height: number }) => ({
+        toPNG: () => png(target.width, target.height, 2 * 1024 * 1024),
+        getSize: () => target,
+      })) }))
+    await expect(manager.execute('s1', { kind: 'snapshot' })).rejects.toThrow('browser screenshot processing failed')
     expect(updates.at(-1)).toMatchObject({ observation: null, hasFrame: false })
+    await expect(manager.execute('s1', { kind: 'click', ref: 'old', revision: 1 }))
+      .rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
     await manager.dispose()
   })
 
-  it('高分屏截图超过上限时退到 CSS 像素，再发布同一观测', async () => {
+  it('高细节高分屏截图经共享缩图策略反复适配并发布有效 PNG', async () => {
     const manager = createBrowserGuestManager(fixture())
     const state = await manager.control('s1', { kind: 'ensure-tab' })
     manager.present({ sessionId: 's1', tabId: state!.activeTabId!, visible: true,
@@ -710,13 +743,57 @@ describe('Electron 实时浏览器 guest', () => {
     const original = wc.debugger.sendCommand.getMockImplementation()!
     wc.debugger.sendCommand.mockImplementation((command: string, params?: unknown) => {
       if (command === 'Page.captureScreenshot') {
-        return Promise.resolve({ data: Buffer.alloc(2 * 1024 * 1024 + 1).toString('base64') })
+        return Promise.resolve({ data: png(3000, 2000, 2 * 1024 * 1024).toString('base64') })
       }
       return original(command, params)
     })
     const capture = await manager.execute('s1', { kind: 'snapshot' })
-    expect(electron.createFromBuffer).toHaveBeenCalledOnce()
-    expect(capture.png?.byteLength).toBe(8)
+    expect(electron.createFromBuffer).toHaveBeenCalled()
+    expect(capture.png?.byteLength).toBeLessThanOrEqual(2 * 1024 * 1024)
+    expect(capture.png?.byteLength).toBeGreaterThan(33)
+    expect(Buffer.from(capture.png!).subarray(0, 8)).toEqual(png().subarray(0, 8))
+    await manager.dispose()
+  })
+
+  it('拒绝非法 PNG 与超像素截图，不让不可信数据进入原生解码器', async () => {
+    const updates: unknown[] = []
+    const manager = createBrowserGuestManager(fixture(), { onState: (_id, state) => updates.push(state) })
+    const state = await manager.control('s1', { kind: 'ensure-tab' })
+    manager.present({ sessionId: 's1', tabId: state!.activeTabId!, visible: true,
+      bounds: { x: 0, y: 0, width: 500, height: 400 } })
+    const wc = electron.views[0]!.webContents
+    const original = wc.debugger.sendCommand.getMockImplementation()!
+    for (const data of ['not-base64!', Buffer.alloc(40).toString('base64'), png(10_000, 10_000).toString('base64')]) {
+      wc.debugger.sendCommand.mockImplementation((command: string, params?: unknown) => command === 'Page.captureScreenshot'
+        ? Promise.resolve({ data }) : original(command, params))
+      electron.createFromBuffer.mockClear()
+      await expect(manager.execute('s1', { kind: 'snapshot' })).rejects.toMatchObject({ code: 'BROWSER_FAILED' })
+      expect(electron.createFromBuffer).not.toHaveBeenCalled()
+      expect(updates.at(-1)).toMatchObject({ observation: null, hasFrame: false })
+    }
+    await manager.dispose()
+  })
+
+  it('缩图期间页面导航不发布迟到的截图', async () => {
+    const updates: unknown[] = []
+    const manager = createBrowserGuestManager(fixture(), { onState: (_id, state) => updates.push(state) })
+    const state = await manager.control('s1', { kind: 'ensure-tab' })
+    manager.present({ sessionId: 's1', tabId: state!.activeTabId!, visible: true,
+      bounds: { x: 0, y: 0, width: 500, height: 400 } })
+    const wc = electron.views[0]!.webContents
+    const original = wc.debugger.sendCommand.getMockImplementation()!
+    wc.debugger.sendCommand.mockImplementation((command: string, params?: unknown) => command === 'Page.captureScreenshot'
+      ? Promise.resolve({ data: png(3000, 2000, 2 * 1024 * 1024).toString('base64') })
+      : original(command, params))
+    electron.createFromBuffer.mockImplementation((bytes: Buffer) => ({ isEmpty: () => false,
+      getSize: () => ({ width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) }),
+      resize: vi.fn((target: { width: number; height: number }) => {
+        wc.events.get('did-start-navigation')?.({ isMainFrame: true } as never)
+        return { toPNG: () => png(target.width, target.height), getSize: () => target }
+      }),
+    }))
+    await expect(manager.execute('s1', { kind: 'snapshot' })).rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
+    expect(updates.at(-1)).toMatchObject({ observation: null, hasFrame: false })
     await manager.dispose()
   })
 
@@ -747,7 +824,7 @@ describe('Electron 实时浏览器 guest', () => {
     expect(window.contentView.children).toHaveLength(0)
     const captured = await manager.execute('s1', { kind: 'snapshot' })
     expect(captured.observation.tabId).toBe(first.observation.tabId)
-    expect(captured.png?.byteLength).toBe(8)
+    expect(Buffer.from(captured.png!)).toEqual(png())
     expect(wc.debugger.sendCommand.mock.calls.some(([command]) => command === 'Page.captureScreenshot')).toBe(true)
     await manager.release('s1')
     await manager.dispose()
@@ -776,7 +853,7 @@ describe('Electron 实时浏览器 guest', () => {
       expect(wc.close).toHaveBeenCalledOnce()
       expect(await manager.prepare('s1')).toEqual({ kind: 'none' })
       const count = updates.length
-      complete({ data: Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).toString('base64') })
+      complete({ data: png().toString('base64') })
       await vi.advanceTimersByTimeAsync(0)
       expect(updates).toHaveLength(count)
       expect((await manager.execute('s2', { kind: 'snapshot' })).observation.tabId).toBe(independent.observation.tabId)

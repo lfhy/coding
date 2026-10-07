@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@deepseek-ai/dsh-attachment": "workspace:^",
     "@deepseek-ai/dsh-browser": "workspace:^",
     "@deepseek-ai/dsh-browser-electron": "workspace:^",
     "ws": "^8.21.0"

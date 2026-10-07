@@ -67,6 +67,7 @@
     "tests/message-feedback.e2e.ts",
     "tests/message-feedback-layout.e2e.ts",
     "tests/markdown-images.e2e.ts",
+    "tests/image-normalization.e2e.ts",
     "tests/reference-composer.e2e.ts",
     "tests/math-rendering.e2e.ts",
     "tests/markdown-cjk-strong.e2e.ts",

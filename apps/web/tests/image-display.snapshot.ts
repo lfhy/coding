@@ -155,7 +155,7 @@ it('accepts pasted images into the composer rail in order and removes them', asy
   }, { timeout: 6_000 })
 })
 
-it('accepts a whole-page drop under the limits-labeled overlay and refuses an over-limit batch at intake', async () => {
+it('accepts a whole-page drop under the overlay and refuses an over-limit batch at intake', async () => {
   mountAssembledApp()
 
   const tree = await screen.findByRole('tree', { name: 'Sessions' }, { timeout: 10_000 })
@@ -164,17 +164,12 @@ it('accepts a whole-page drop under the limits-labeled overlay and refuses an ov
   fireEvent.click(start)
   const textarea = await screen.findByPlaceholderText('Describe what you want to build', {}, { timeout: 10_000 })
 
-  // A file drag anywhere over the page raises the full-viewport overlay whose
-  // desc line carries the projected limits — copy that can only render after
-  // the imageLimits projection crossed the real fixture transport.
+  // 页面任意位置拖入文件都会显示全屏接收层；文件安全额度由投影传给输入栏。
   const image = new File([new Uint8Array([137, 80, 78, 71])], 'dropped.png', { type: 'image/png' })
   const dataTransfer = { types: ['Files'], files: [image], dropEffect: 'none' }
   fireEvent.dragEnter(document.body, { dataTransfer })
   const overlay = await screen.findByRole('status')
   expect(overlay.textContent).toContain('Drag images here to add them')
-  await waitFor(() => {
-    expect(overlay.textContent).toContain('Up to 20 images, 5MB each')
-  })
 
   // Dropping on the transcript area (not the composer card) lands in the rail.
   fireEvent.drop(document.body, { dataTransfer })
@@ -203,13 +198,8 @@ it('accepts a whole-page drop under the limits-labeled overlay and refuses an ov
   expect([...(rail?.querySelectorAll('img') ?? [])]).toHaveLength(1)
 })
 
-it('resizes an oversized PNG before the fixture host rejects the image with its projected limit', async () => {
-  vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 3000, height: 1000, close: vi.fn() })))
-  const drawImage = vi.fn()
-  vi.spyOn(HTMLCanvasElement.prototype, 'getContext')
-    .mockReturnValue({ drawImage } as unknown as CanvasRenderingContext2D)
+it('keeps the original image in the draft when the fixture host rejects submission', async () => {
   const toBlob = vi.spyOn(HTMLCanvasElement.prototype, 'toBlob')
-    .mockImplementation((callback) => { callback(new Blob(['resized'], { type: 'image/png' })) })
   mountAssembledApp('?fixture&fixturePrompt=reject')
 
   const tree = await screen.findByRole('tree', { name: 'Sessions' }, { timeout: 10_000 })
@@ -228,8 +218,8 @@ it('resizes an oversized PNG before the fixture host rejects the image with its 
   await waitFor(() => {
     expect(document.querySelector('[role="group"][aria-label="Pending images"]')).not.toBeNull()
   })
-  expect(drawImage).toHaveBeenCalledWith(expect.anything(), 0, 0, 2000, 666)
-  expect(toBlob).toHaveBeenCalledWith(expect.any(Function), 'image/png', undefined)
+  expect(createImageBitmap).not.toHaveBeenCalled()
+  expect(toBlob).not.toHaveBeenCalled()
   fireEvent.keyDown(textarea, { key: 'Enter' })
 
   const message = 'Image sides must be at most 2000px; downscale it and try again'
@@ -241,4 +231,6 @@ it('resizes an oversized PNG before the fixture host rejects the image with its 
     }
   `)
   expect(document.querySelector('[role="group"][aria-label="Pending images"]')).not.toBeNull()
+  expect(createImageBitmap).not.toHaveBeenCalled()
+  expect(toBlob).not.toHaveBeenCalled()
 })

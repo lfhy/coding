@@ -355,6 +355,9 @@ importers:
 
   apps/desktop-electron:
     dependencies:
+      '@deepseek-ai/dsh-attachment':
+        specifier: workspace:^
+        version: link:../../packages/attachment/attachment
       '@deepseek-ai/dsh-browser':
         specifier: workspace:^
         version: link:../../packages/browser/browser
@@ -1086,6 +1089,12 @@ importers:
 
   packages/browser/browser-playwright:
     dependencies:
+      '@deepseek-ai/dsh-attachment':
+        specifier: workspace:^
+        version: link:../../attachment/attachment
+      '@deepseek-ai/dsh-attachment-local':
+        specifier: workspace:^
+        version: link:../../attachment/attachment-local
       '@deepseek-ai/dsh-browser':
         specifier: workspace:^
         version: link:../browser
@@ -1105,6 +1114,9 @@ importers:
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../core/session
+      sharp:
+        specifier: ^0.35.3
+        version: 0.35.3(@types/node@22.20.0)
 
   packages/browser/tool-browser:
     devDependencies:

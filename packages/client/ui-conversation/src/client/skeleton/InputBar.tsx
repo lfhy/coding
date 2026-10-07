@@ -25,7 +25,7 @@ import type { ComposerBarProps } from '../contract/slots.ts'
 import { deriveDecorations } from '../input/decorations.ts'
 import type { DraftDecorations } from '../input/decorations.ts'
 import { attachmentErrorText, imageSizeText } from '../image-labels.ts'
-import { ImagePreparationError, prepareImage } from './prepare-image.ts'
+import { imageSourceByteLimits } from './image-intake.ts'
 import { ReferenceIcon } from '../reference/ReferenceIcon.tsx'
 import { ContextMeter } from './ContextMeter.tsx'
 import { PermissionSelect } from './PermissionSelect.tsx'
@@ -412,7 +412,7 @@ export function InputBar({
       .filter(item => item.kind === 'file')
       .map(item => item.getAsFile())
       .filter((file): file is File => file !== null)
-    if (files.length > 0) void intakeImages(files)
+    if (files.length > 0) intakeImages(files)
     const text = e.clipboardData.getData('text/plain')
     if (text === '') {
       if (files.length > 0) e.preventDefault()
@@ -431,49 +431,33 @@ export function InputBar({
     keyboard.track(keyboard.snapshot.draft, caret)
   }
 
-  // 会话切换或卸载后，晚到的解码结果不得加入新草稿。
-  const intakeGeneration = useRef(0)
-  useEffect(() => {
-    intakeGeneration.current++
-    return () => { intakeGeneration.current++ }
-  }, [sessionId])
-  const intakeImages = useCallback(async (files: readonly File[]): Promise<void> => {
+  const intakeImages = useCallback((files: readonly File[]): void => {
     if (addImages === undefined || files.length === 0) return
-    // 格式错误先于解码、数量与大小限制反馈。
+    // 格式错误先于数量与原始字节限制反馈。
     if (imageLimits !== undefined && files.some(file => !(imageLimits.mediaTypes as readonly string[]).includes(file.type))) {
       const rejection = addImages(files)
       if (rejection !== null) showToast(rejection)
       return
     }
-    const generation = ++intakeGeneration.current
-    const current = () => generation === intakeGeneration.current
-    try {
-      const prepared = imageLimits === undefined ? files : await Promise.all(files.map(file => prepareImage(file, imageLimits)))
-      if (!current()) return
-      if (imageLimits !== undefined) {
-        if (attachments.length + prepared.length > imageLimits.maxImagesPerMessage) {
-          showToast(t('image.tooMany', { count: imageLimits.maxImagesPerMessage }))
-          return
-        }
-        if (prepared.some(file => file.size > imageLimits.maxImageBytes)) {
-          showToast(t('image.fileTooLarge', { size: imageSizeText(imageLimits.maxImageBytes) }))
-          return
-        }
-        const total = attachments.reduce((sum, attachment) => sum + attachment.file.size, 0)
-          + prepared.reduce((sum, file) => sum + file.size, 0)
-        if (total > imageLimits.maxMessageImageBytes) {
-          showToast(t('image.totalTooLarge', { size: imageSizeText(imageLimits.maxMessageImageBytes) }))
-          return
-        }
+    if (imageLimits !== undefined) {
+      const sourceLimits = imageSourceByteLimits(imageLimits)
+      if (attachments.length + files.length > imageLimits.maxImagesPerMessage) {
+        showToast(t('image.tooMany', { count: imageLimits.maxImagesPerMessage }))
+        return
       }
-      const rejected = addImages(prepared)
-      if (rejected !== null) showToast(rejected)
-    } catch (error) {
-      if (!current()) return
-      showToast(error instanceof ImagePreparationError
-        ? t(error.reason === 'gif' ? 'image.gifTooLarge' : error.reason === 'decode' ? 'image.decodeFailed' : 'image.resizeFailed')
-        : t('image.resizeFailed'))
+      if (files.some(file => file.size > sourceLimits.file)) {
+        showToast(t('image.fileTooLarge', { size: imageSizeText(sourceLimits.file) }))
+        return
+      }
+      const total = attachments.reduce((sum, attachment) => sum + attachment.file.size, 0)
+        + files.reduce((sum, file) => sum + file.size, 0)
+      if (total > sourceLimits.message) {
+        showToast(t('image.totalTooLarge', { size: imageSizeText(sourceLimits.message) }))
+        return
+      }
     }
+    const rejected = addImages(files)
+    if (rejected !== null) showToast(rejected)
   }, [addImages, attachments, imageLimits, showToast, t])
 
   const canAcceptDrop = !locked && !machineBusy && addImages !== undefined
@@ -647,11 +631,11 @@ export function InputBar({
         {renderSlot('conversation.input.attachments', {
           attachments,
           canAcceptDrop,
-          onAddImages: (files) => { void intakeImages(files) },
+          onAddImages: intakeImages,
           onRemoveImage: (id) => { removeImage?.(id) },
           dropLimits: imageLimits === undefined ? undefined : {
             count: imageLimits.maxImagesPerMessage,
-            size: imageSizeText(imageLimits.maxImageBytes),
+            size: imageSizeText(imageSourceByteLimits(imageLimits).file),
           },
         })}
         {/* One scrollport, two text layers. The hidden mirror renders draft+'\n' and stretches the

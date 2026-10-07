@@ -22,6 +22,7 @@ import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import type { MuxFrame, RpcRequest } from '@deepseek-ai/dsh-host-apiproxy/api'
 import { RpcId } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
 import { createApiProxy } from '@deepseek-ai/dsh-host-apiproxy'
+import { imageLimitsProjectionSchema } from '../src/api/sessions.schema.ts'
 
 declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionMap {
@@ -70,6 +71,42 @@ function seedMessages(session: Session, count: number): void {
 }
 
 const api = (ctx: Context) => createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+
+const legacyImageLimits = {
+  maxImageBytes: 5 * 1024 * 1024,
+  maxImagesPerMessage: 20,
+  maxMessageImageBytes: 100 * 1024 * 1024,
+  maxImagePixels: 40_000_000,
+  maxImageDimension: 2000,
+  mediaTypes: ['image/png'] as const,
+}
+
+describe('imageLimits projection schema', () => {
+  it('retains all optional source limits and accepts legacy projections without them', () => {
+    const sourceLimits = {
+      ...legacyImageLimits,
+      maxSourceImageBytes: 100 * 1024 * 1024,
+      maxSourceMessageImageBytes: 100 * 1024 * 1024,
+      maxSourceImagePixels: 80_000_000,
+      maxSourceImageFrames: 100,
+    }
+    expect(imageLimitsProjectionSchema.parse(sourceLimits)).toEqual(sourceLimits)
+    expect(imageLimitsProjectionSchema.parse(legacyImageLimits)).toEqual(legacyImageLimits)
+  })
+
+  it('rejects invalid source limits, media types, and unrecognized fields', () => {
+    for (const invalid of [
+      { ...legacyImageLimits, maxSourceImageBytes: 0 },
+      { ...legacyImageLimits, maxSourceMessageImageBytes: -1 },
+      { ...legacyImageLimits, maxSourceImagePixels: 1.5 },
+      { ...legacyImageLimits, maxSourceImageFrames: '100' },
+      { ...legacyImageLimits, mediaTypes: ['image/svg+xml'] },
+      { ...legacyImageLimits, maxUnknownBytes: 10 },
+    ]) {
+      expect(imageLimitsProjectionSchema.safeParse(invalid).success).toBe(false)
+    }
+  })
+})
 
 describe('session.history projections block', () => {
   it('counts the append-origin image prompt once and leaves its text replacement out of recency', async () => {
@@ -130,12 +167,11 @@ describe('session.history projections block', () => {
   it('publishes the attachments imageLimits as a constant unit while both seams are composed', async () => {
     const { ctx, session } = await harness(true)
     const limits = {
-      maxImageBytes: 5 * 1024 * 1024,
-      maxImagesPerMessage: 20,
-      maxMessageImageBytes: 100 * 1024 * 1024,
-      maxImagePixels: 40_000_000,
-      maxImageDimension: 2000,
-      mediaTypes: ['image/png'] as const,
+      ...legacyImageLimits,
+      maxSourceImageBytes: 100 * 1024 * 1024,
+      maxSourceMessageImageBytes: 100 * 1024 * 1024,
+      maxSourceImagePixels: 80_000_000,
+      maxSourceImageFrames: 100,
     }
     await ctx.plugin(class extends AttachmentStore {
       readonly imageLimits = limits

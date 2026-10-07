@@ -37,9 +37,17 @@ interface ImageAttachmentRef {
 /** Deployment-resolved limits used by upload admission and request buffering. */
 interface ImageAttachmentLimits {
   maxImageBytes: number
+  /** 单张输入在解码和归一化前允许的编码字节数；省略时沿用 maxImageBytes。 */
+  maxSourceImageBytes?: number
   maxImagesPerMessage: number
   maxMessageImageBytes: number
+  /** 单条消息的原始编码字节总额；省略时沿用 maxMessageImageBytes。 */
+  maxSourceMessageImageBytes?: number
   maxImagePixels: number
+  /** 单张输入所有帧的解码像素总额。 */
+  maxSourceImagePixels?: number
+  /** 单张输入允许的最大动画帧数。 */
+  maxSourceImageFrames?: number
   /** Maximum intrinsic width and maximum intrinsic height in pixels for one image. */
   maxImageDimension: number
   mediaTypes: readonly ImageMediaType[]
@@ -81,7 +89,9 @@ interface StoredImageAttachment {
 }
 ```
 
-`saveImage()` 校验字节并以原子方式提交一个对象，之后才返回其引用。`validateImage()` 执行相同的准入检查，但不持久化任何内容；批量调用方会在保存任何成员前通过它校验所有成员，因此校验拒绝不会留下部分对象。`admitEncodedImages()` 是面向 base64 上传的 wire 入口：强制执行规范 base64，随后把批量准入委托给 `saveImages()`，由后者负责张数与聚合字节上限以及先全量校验再保存的顺序。`readImage()` 接受来自已授权会话路径的引用，只在完整性校验通过后返回字节。该服务刻意不规定保留策略：恢复和 fork 后的会话可能共享对象，因此基于引用的垃圾回收会延期实现，而不是与任何一个会话的删除绑定。
+`saveImage()` 完整校验并按提供方策略归一化图片，再原子提交对象并返回引用；`validateImage()` 执行相同的准入，但不持久化。`saveImages()` 先检查输入批次张数与源字节总额、准备全部成员并对归一化后的最终总额作判断，必要时在提交前按批次预算重新处理。`admitEncodedImages()` 是浏览器 RPC、ACP 和 MCP 共用的内联 base64 入口，在解码前检查源字节上限和规范 base64，再委托 `saveImages()`。输入不合规不写入；存储失败不返回部分引用，但此前发布的不可变对象可能等待后续垃圾回收。具体源与最终限额、动图保留规则归[本地提供方](../../packages/attachment/attachment-local/README.md)所有。
+
+`readImage()` 接受来自已授权会话路径的引用，只在完整性校验通过后返回字节。历史对象不会因后续写入限额收紧而被重写或拒读。该服务刻意不规定保留策略：恢复和 fork 后的会话可能共享对象，因此基于引用的垃圾回收会延期实现，而不是与任何一个会话的删除绑定。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -107,12 +117,11 @@ Immutable binary attachment service. Implementations validate bytes before publi
 abstract validateImage(input: SaveImageAttachment): Promise<void>
 
 /**
- * Validate one ordered image batch before committing any member.
- * Validation failures start no writes; storage failures return no partial
- * references, although already published content-addressed objects may stay
- * unreachable until a future retention policy collects them.
- * @param inputs - encoded images in their owning message order.
- * @returns durable references in the exact input order.
+ * 按顺序提交批次前，先校验并归一化所有成员。最终总额超限时，
+ * 保留已合规的小图，并对其余成员按确定的均分预算重新处理。
+ * 准入失败不会写入；存储失败不返回部分引用，但已经发布的不可变对象可能保留到后续回收。
+ * @param inputs - 按消息顺序排列的原始编码图片。
+ * @returns 与输入顺序一致的持久引用。
  */
 async saveImages(inputs: readonly SaveImageAttachment[]): Promise<readonly ImageAttachmentRef[]>
 

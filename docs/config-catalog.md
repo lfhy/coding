@@ -327,20 +327,28 @@ Source: [`packages/core/agent-tool-presentation/src/index.ts:38`](../packages/co
 export interface Config {
   /** Explicit harness home; omitted follows `DSH_HOME`, then `~/.dsh`. */
   dshHome?: string
-  /** Maximum encoded bytes accepted for one image. */
+  /** 单张归一化图片允许的最大编码字节数。 */
   maxImageBytes?: number
+  /** 单张原始输入的编码字节上限。 */
+  maxSourceImageBytes?: number
   /** Maximum image count accepted in one submitted message. */
   maxImagesPerMessage?: number
-  /** Maximum aggregate encoded image bytes accepted in one submitted message. */
+  /** 一条消息中归一化图片的编码字节总额上限。 */
   maxMessageImageBytes?: number
-  /** Maximum intrinsic width multiplied by height accepted for one image. */
+  /** 单条消息的原始输入编码字节总额上限。 */
+  maxSourceMessageImageBytes?: number
+  /** 单张归一化图片的最大宽高像素乘积。 */
   maxImagePixels?: number
-  /** Maximum intrinsic width and maximum intrinsic height accepted for one image. */
+  /** 单张原始图片全部帧的解码像素总额上限。 */
+  maxSourceImagePixels?: number
+  /** 单张原始动画的帧数上限。 */
+  maxSourceImageFrames?: number
+  /** 单张归一化图片的最大宽度与高度。 */
   maxImageDimension?: number
 }
 ```
 
-Source: [`packages/attachment/attachment-local/src/index.ts:31`](../packages/attachment/attachment-local/src/index.ts)
+Source: [`packages/attachment/attachment-local/src/index.ts:38`](../packages/attachment/attachment-local/src/index.ts)
 
 <a id="deepseek-aidsh-bash-local"></a>
 

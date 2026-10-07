@@ -438,9 +438,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async saveImages(inputs: readonly SaveImageAttachment[]): Promise<readonly ImageAttachmentRef[]>',
-        description: 'Validate one ordered image batch before committing any member. Validation failures start no writes; storage failures return no partial references, although already published content-addressed objects may stay unreachable until a future retention policy collects them.',
-        parameters: [{ name: 'inputs', description: 'encoded images in their owning message order.' }],
-        returns: 'durable references in the exact input order.',
+        description: '按顺序提交批次前，先校验并归一化所有成员。最终总额超限时， 保留已合规的小图，并对其余成员按确定的均分预算重新处理。 准入失败不会写入；存储失败不返回部分引用，但已经发布的不可变对象可能保留到后续回收。',
+        parameters: [{ name: 'inputs', description: '按消息顺序排列的原始编码图片。' }],
+        returns: '与输入顺序一致的持久引用。',
       },
       {
         signature: 'abstract saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef>',
@@ -3376,7 +3376,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ImageAttachmentLimits',
-    declaration: 'export interface ImageAttachmentLimits {\n    maxImageBytes: number;\n    maxImagesPerMessage: number;\n    maxMessageImageBytes: number;\n    maxImagePixels: number;\n    maxImageDimension: number;\n    mediaTypes: readonly ImageMediaType[];\n}',
+    declaration: 'export interface ImageAttachmentLimits {\n    maxImageBytes: number;\n    maxSourceImageBytes?: number;\n    maxImagesPerMessage: number;\n    maxMessageImageBytes: number;\n    maxSourceMessageImageBytes?: number;\n    maxImagePixels: number;\n    maxSourceImagePixels?: number;\n    maxSourceImageFrames?: number;\n    maxImageDimension: number;\n    mediaTypes: readonly ImageMediaType[];\n}',
   },
   {
     name: 'ImageAttachmentRef',

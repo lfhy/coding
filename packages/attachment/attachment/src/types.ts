@@ -26,9 +26,17 @@ export interface ImageAttachmentRef {
 /** Deployment-resolved limits used by upload admission and request buffering. */
 export interface ImageAttachmentLimits {
   maxImageBytes: number
+  /** 单张输入在解码和归一化前允许的编码字节数；省略时沿用 maxImageBytes。 */
+  maxSourceImageBytes?: number
   maxImagesPerMessage: number
   maxMessageImageBytes: number
+  /** 单条消息的原始编码字节总额；省略时沿用 maxMessageImageBytes。 */
+  maxSourceMessageImageBytes?: number
   maxImagePixels: number
+  /** 单张输入所有帧的解码像素总额。 */
+  maxSourceImagePixels?: number
+  /** 单张输入允许的最大动画帧数。 */
+  maxSourceImageFrames?: number
   /** Maximum intrinsic width and maximum intrinsic height in pixels for one image. */
   maxImageDimension: number
   mediaTypes: readonly ImageMediaType[]

@@ -38,14 +38,14 @@ export { API_PATH, HOST_EVENTS_PATH, MUX_EVENTS_PATH } from './api-path.ts'
 /** Stable Cordis plugin name. */
 export const name = 'client-connection'
 
-/** Headroom for RPC JSON fields around aggregate base64 image payloads. */
+/** 图片批次的 base64 载荷以外，为 RPC JSON 字段保留的空间。 */
 const REQUEST_ENVELOPE_HEADROOM_BYTES = 1024 * 1024
 
 function assertImageBodyCapacity(ctx: Context, maxRequestBodyBytes: number): void {
   const attachments = ctx.get('attachments')
   if (attachments === undefined) return
   const requiredImageBodyBytes = Math.ceil(
-    attachments.imageLimits.maxMessageImageBytes * 4 / 3,
+    (attachments.imageLimits.maxSourceMessageImageBytes ?? attachments.imageLimits.maxMessageImageBytes) * 4 / 3,
   ) + REQUEST_ENVELOPE_HEADROOM_BYTES
   if (maxRequestBodyBytes < requiredImageBodyBytes) {
     throw new Error(

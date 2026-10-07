@@ -1,8 +1,9 @@
 /** Electron 主进程持有的实时浏览器标签页；模型与人工操作共享同一 WebContentsView。 */
 
 import { randomUUID } from 'node:crypto'
-import { BrowserWindow, nativeImage, WebContentsView } from 'electron'
+import { BrowserWindow, WebContentsView } from 'electron'
 import type { BrowserCapture, BrowserCommand, BrowserExpectedTarget, BrowserHumanCommand, BrowserHumanTarget, BrowserObservation, BrowserSessionState, BrowserTabId, BrowserTabSummary, BrowserUseErrorCode } from '@deepseek-ai/dsh-browser'
+import { fitBrowserPng } from './browser-image.ts'
 
 const INITIAL_VIEWPORT = { width: 1280, height: 720 }
 const MAX_SESSIONS = 8
@@ -394,8 +395,9 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     let png: Uint8Array | null = null
     if (tab.everPresented) {
       let timer: ReturnType<typeof setTimeout> | undefined
+      let image: { data: string }
       try {
-        const image = await Promise.race([
+        image = await Promise.race([
           wc.debugger.sendCommand('Page.captureScreenshot', {
             format: 'png', captureBeyondViewport: false, fromSurface: true,
           }) as Promise<{ data: string }>,
@@ -406,8 +408,15 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
             }, SCREENSHOT_TIMEOUT_MS)
           }),
         ])
-        png = Buffer.from(image.data, 'base64')
       } finally { if (timer) clearTimeout(timer) }
+      try { png = await fitBrowserPng(image.data, FRAME_LIMIT) }
+      catch (error) {
+        assertStable(sessionId, owner, tab, navigation)
+        invalidate(owner, tab)
+        emit(sessionId, owner)
+        fail(error instanceof Error ? `browser screenshot processing failed: ${error.message}` :
+          'browser screenshot processing failed', 'BROWSER_FAILED')
+      }
     }
     assertStable(sessionId, owner, tab, navigation)
     if (page.href !== usableUrl(sessionId, owner, tab)) staleObservation(sessionId, owner, tab)
@@ -418,16 +427,6 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
       invalidate(owner, tab)
       emit(sessionId, owner)
       fail('browser document changed during observation', 'BROWSER_STALE_REF')
-    }
-    if (png && png.byteLength > FRAME_LIMIT) {
-      png = nativeImage.createFromBuffer(Buffer.from(png)).resize({ ...owner.viewport, quality: 'best' }).toPNG()
-    }
-    if (png && png.byteLength > FRAME_LIMIT) {
-      // 大画面不被发布；页面仍然可供人工使用，先前的元素引用亦不可复用。
-      delete tab.capture
-      owner.revision++
-      emit(sessionId, owner)
-      fail(`browser screenshot exceeds ${FRAME_LIMIT} bytes`, 'BROWSER_FAILED')
     }
     refreshSummary(tab, page.title.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ' '))
     const observation: BrowserObservation = { tabId: tab.id, generation: tab.generation,

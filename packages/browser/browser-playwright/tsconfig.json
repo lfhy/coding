@@ -3,6 +3,8 @@
   "compilerOptions": { "rootDir": "src", "outDir": "lib/types", "types": ["node"] },
   "include": ["src"],
   "references": [
+    { "path": "../../attachment/attachment" },
+    { "path": "../../attachment/attachment-local" },
     { "path": "../browser" },
     { "path": "../../host/webserver" },
     { "path": "../../core/session" },

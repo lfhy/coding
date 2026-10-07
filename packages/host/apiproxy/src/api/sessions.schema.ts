@@ -222,18 +222,18 @@ export const sessionListMetadataProjectionSchema: z.ZodType<SessionListMetadata>
   lastPromptAt: z.number().nullable(),
 })
 
-/**
- * imageLimits projection unit schema (host-side view validation). zod widens
- * `readonly ImageMediaType[]` to `string[]`; on the JSON wire the two
- * serialize identically, so the cast records exactly that widening.
- */
-export const imageLimitsProjectionSchema = z.object({
+/** imageLimits 投影校验完整的上传准入限制；缺省源图限制兼容旧服务。 */
+export const imageLimitsProjectionSchema = z.strictObject({
   maxImageBytes: z.number().int().positive(),
+  maxSourceImageBytes: z.number().int().positive().optional(),
   maxImagesPerMessage: z.number().int().positive(),
   maxMessageImageBytes: z.number().int().positive(),
+  maxSourceMessageImageBytes: z.number().int().positive().optional(),
   maxImagePixels: z.number().int().positive(),
+  maxSourceImagePixels: z.number().int().positive().optional(),
+  maxSourceImageFrames: z.number().int().positive().optional(),
   maxImageDimension: z.number().int().positive(),
-  mediaTypes: z.array(z.string()),
+  mediaTypes: z.array(z.enum(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])),
 }) as unknown as z.ZodType<ImageAttachmentLimits>
 
 /** session.history response value (projections rides the tail page only). */

@@ -55,24 +55,27 @@ describe('attachment rejection copy', () => {
     expect(imageSizeText(2.5 * 1024 * 1024)).toBe('2.5MB')
   })
 
-  it('maps user-solvable reasons to limit-naming copy', () => {
+  it('maps user-solvable reasons without claiming ambiguous Host byte limits', () => {
     expect(attachmentErrorText(t, 'MODEL_DOES_NOT_SUPPORT_IMAGES')).toBe('当前模型不支持图片，请切换支持图片的模型')
     expect(attachmentErrorText(t, 'SUBAGENT_IMAGE_UNSUPPORTED')).toBe('子智能体会话暂不支持图片')
-    expect(attachmentErrorText(t, 'IMAGE_TOO_MANY_PIXELS')).toBe('图片分辨率过大，请压缩后重试')
+    expect(attachmentErrorText(t, 'IMAGE_TOO_MANY_PIXELS')).toBe('图片解码规模超过安全上限，请换用尺寸更小或帧数更少的原图')
     expect(attachmentErrorText(t, 'INVALID_IMAGE')).toBe('图片无法解码，请重新导出或选择其他图片')
     expect(attachmentErrorText(t, 'IMAGE_TYPE_MISMATCH')).toBe('仅支持 PNG、JPG、WebP、GIF 格式的图片')
     expect(attachmentErrorText(t, 'TOO_MANY_IMAGES', limits)).toBe('一条消息最多添加 20 张图片')
-    expect(attachmentErrorText(t, 'IMAGE_TOO_LARGE', limits)).toBe('单张图片不能超过 5MB')
-    expect(attachmentErrorText(t, 'IMAGES_TOO_LARGE', limits)).toBe('图片总大小超过 100MB，请移除部分图片')
+    expect(attachmentErrorText(t, 'IMAGE_TOO_LARGE', limits)).toBe('图片超出可处理范围，请换用较小的原图')
+    expect(attachmentErrorText(t, 'IMAGES_TOO_LARGE', limits)).toBe('图片总量超出可处理范围，请减少图片数量或换用较小的原图')
     expect(attachmentErrorText(t, 'IMAGE_DIMENSION_TOO_LARGE', limits)).toBe('图片宽高不能超过 2000px，请缩小后重试')
     expect(attachmentErrorText(enT, 'TOO_MANY_IMAGES', limits)).toBe('A message can include up to 20 images')
+    expect(attachmentErrorText(enT, 'IMAGE_TOO_LARGE', limits)).toBe('This image exceeds processing limits; choose a smaller original')
+    expect(attachmentErrorText(enT, 'IMAGES_TOO_LARGE', limits)).toBe('The images exceed processing limits; remove some or choose smaller originals')
+    expect(attachmentErrorText(enT, 'IMAGE_TOO_MANY_PIXELS')).toBe('The decoded image exceeds safety limits; choose an original with smaller dimensions or fewer frames')
   })
 
-  it('folds unknown reasons and limit reasons without projected limits into the send-failed line', () => {
+  it('folds unknown reasons and exact-limit reasons without projected limits into the send-failed line', () => {
     expect(attachmentErrorText(t, 'INVALID_IMAGE_BASE64')).toBe('图片发送失败（INVALID_IMAGE_BASE64），请重新添加图片后再试')
     expect(attachmentErrorText(t, 'TOO_MANY_IMAGES')).toBe('图片发送失败（TOO_MANY_IMAGES），请重新添加图片后再试')
-    expect(attachmentErrorText(t, 'IMAGE_TOO_LARGE')).toBe('图片发送失败（IMAGE_TOO_LARGE），请重新添加图片后再试')
-    expect(attachmentErrorText(t, 'IMAGES_TOO_LARGE')).toBe('图片发送失败（IMAGES_TOO_LARGE），请重新添加图片后再试')
+    expect(attachmentErrorText(t, 'IMAGE_TOO_LARGE')).toBe('图片超出可处理范围，请换用较小的原图')
+    expect(attachmentErrorText(t, 'IMAGES_TOO_LARGE')).toBe('图片总量超出可处理范围，请减少图片数量或换用较小的原图')
     expect(attachmentErrorText(t, 'IMAGE_DIMENSION_TOO_LARGE')).toBe('图片发送失败（IMAGE_DIMENSION_TOO_LARGE），请重新添加图片后再试')
   })
 })

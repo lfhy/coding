@@ -103,6 +103,25 @@ describe('connection node half', () => {
     expect(routes).toHaveLength(0)
   })
 
+  it('sizes the HTTP body cap for source bytes even when normalized output is smaller', () => {
+    const ctx = new Context()
+    const routes: WebRoute[] = []
+    ctx.provide('webServer', fakeHttpServer(routes, []) as WebServer)
+    ctx.provide('attachments', {
+      imageLimits: {
+        maxMessageImageBytes: 2 * 1024 * 1024,
+        maxSourceMessageImageBytes: 100 * 1024 * 1024,
+      },
+    } as AttachmentStore)
+    ctx.provide('apiProxy', {} as ApiProxy)
+    const required = Math.ceil(100 * 1024 * 1024 * 4 / 3) + 1024 * 1024
+    expect(() => { apply(ctx, { maxRequestBodyBytes: required - 1 }) })
+      .toThrow(/must be at least .* aggregate image limit/)
+    expect(routes).toHaveLength(0)
+    apply(ctx, { maxRequestBodyBytes: required })
+    expect(routes).toHaveLength(1)
+  })
+
   it('fails the load on a trustedHosts entry that is not a bare authority', async () => {
     const routes: WebRoute[] = []
     const upgrades: WebUpgradeRoute[] = []

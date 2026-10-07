@@ -1,13 +1,13 @@
-/** Attachment error and limit copy owned by the conversation input flow. */
+/** 对话输入负责将附件拒绝原因映射为可操作的提示。 */
 
 import type { ImageAttachmentLimits } from '@deepseek-ai/dsh-attachment'
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ConversationKey } from './locales.ts'
 
 /**
- * Byte count as user-facing megabytes (`10MB`, `2.5MB`).
- * @param bytes - the byte count.
- * @returns the rounded megabyte text.
+ * 将字节数格式化为面向用户的 MB 数值（`10MB`、`2.5MB`）。
+ * @param bytes - 字节数。
+ * @returns 四舍五入后的 MB 文本。
  */
 export function imageSizeText(bytes: number): string {
   const mb = bytes / (1024 * 1024)
@@ -15,14 +15,12 @@ export function imageSizeText(bytes: number): string {
 }
 
 /**
- * Product copy for a host attachment rejection (the `attachment-error`
- * `details.reason`). User-solvable reasons name the limit and the way out;
- * reasons the user cannot act on fold into one send-failed line carrying the
- * reason code for a bug report.
- * @param t - the conversation-namespace translate.
- * @param reason - the wire `details.reason` code.
- * @param limits - projected limits interpolated into count/size copy, when known.
- * @returns the banner text.
+ * 将 Host 的 `attachment-error` 原因映射为用户提示。源文件与归一化结果复用
+ * 字节超限原因码，因此该两项不展示可能错误的具体限额；未知原因保留原因码。
+ * @param t - 对话命名空间翻译器。
+ * @param reason - wire `details.reason` 原因码。
+ * @param limits - 已投影的数量和尺寸限制；缺席时回退为带原因码的提示。
+ * @returns 可显示的错误提示。
  */
 export function attachmentErrorText(
   t: Translate<ConversationKey>,
@@ -44,12 +42,8 @@ export function attachmentErrorText(
     case 'TOO_MANY_IMAGES':
       if (limits !== undefined) return t('image.tooMany', { count: limits.maxImagesPerMessage })
       break
-    case 'IMAGE_TOO_LARGE':
-      if (limits !== undefined) return t('image.fileTooLarge', { size: imageSizeText(limits.maxImageBytes) })
-      break
-    case 'IMAGES_TOO_LARGE':
-      if (limits !== undefined) return t('image.totalTooLarge', { size: imageSizeText(limits.maxMessageImageBytes) })
-      break
+    case 'IMAGE_TOO_LARGE': return t('image.hostImageTooLarge')
+    case 'IMAGES_TOO_LARGE': return t('image.hostImagesTooLarge')
     default: break
   }
   return t('image.sendFailed', { reason })

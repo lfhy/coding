@@ -5,10 +5,11 @@
  * the regression that `read` keeps its text-only contract.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { crc32 } from 'node:zlib'
 import { Context } from '@deepseek-ai/cordis'
 import { CodeRuntime } from '@deepseek-ai/dsh-code-runtime'
 import type { CodeRunRequest, CodeRunResult } from '@deepseek-ai/dsh-code-runtime'
@@ -32,8 +33,19 @@ import {
 
 /** 1x1 red PNG (valid signature, IHDR, IDAT). */
 const PNG_1X1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC', 'base64')
-/** 3x3 red PNG used to trip a tiny configured pixel limit. */
+/** 3x3 红色 PNG，用于验证缩放后的尺寸。 */
 const PNG_3X3 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAMAAAADCAIAAADZSiLoAAAAEElEQVR4nGP4z8AAQQxYWACPjgj4kWPEuQAAAABJRU5ErkJggg==', 'base64')
+
+/** 在 IEND 前插入有效但可丢弃的 PNG 文本块，以测试源字节与输出字节的独立限额。 */
+function pngWithTextChunk(image: Buffer, textLength: number): Buffer {
+  const type = Buffer.from('tEXt')
+  const payload = Buffer.from(`Comment\0${'x'.repeat(textLength)}`)
+  const length = Buffer.alloc(4)
+  length.writeUInt32BE(payload.length)
+  const checksum = Buffer.alloc(4)
+  checksum.writeUInt32BE(crc32(Buffer.concat([type, payload])))
+  return Buffer.concat([image.subarray(0, -12), length, type, payload, checksum, image.subarray(-12)])
+}
 
 const testToolSignal = new AbortController().signal
 
@@ -93,7 +105,14 @@ interface SetupOptions {
   resolvedModels?: LlmModelInfo[]
   attachments?: boolean
   llm?: boolean
-  storeConfig?: { maxImageBytes?: number; maxImagePixels?: number; maxImageDimension?: number; maxMessageImageBytes?: number }
+  storeConfig?: {
+    maxImageBytes?: number
+    maxSourceImageBytes?: number
+    maxImagePixels?: number
+    maxImageDimension?: number
+    maxMessageImageBytes?: number
+    maxSourceMessageImageBytes?: number
+  }
   toolMode?: ToolConfig['mode']
 }
 
@@ -173,6 +192,35 @@ describe('imageRefFromValue', () => {
 })
 
 describe('read_image happy path', () => {
+  it('normalizes a source larger than the output limit and reads only up to the tighter source bound', async () => {
+    const source = pngWithTextChunk(PNG_1X1, 2048)
+    await writeFile(join(dir, 'padded.png'), source)
+    const ctx = await setup({ storeConfig: {
+      maxImageBytes: 128,
+      maxMessageImageBytes: 120,
+      maxSourceImageBytes: 4096,
+      maxSourceMessageImageBytes: 3072,
+    } })
+    const readBytes = vi.spyOn(ctx.fs, 'readBytes')
+    const result = await readImage(ctx, { file_path: 'padded.png' }, agentOn('vision-model'))
+
+    expect(source.byteLength).toBeGreaterThan(128)
+    expect(readBytes).toHaveBeenCalledOnce()
+    expect(readBytes.mock.calls[0]?.[2]).toBe(3072)
+    expect(result.isError).toBe(false)
+    const image = result.content[1] as { type: string; attachment: ImageAttachmentRef }
+    expect(image.type).toBe('image')
+    expect(image.attachment).toMatchObject({ mediaType: 'image/png', width: 1, height: 1, name: 'padded.png' })
+    expect(image.attachment.bytes).toBeLessThanOrEqual(120)
+    expect(image.attachment.bytes).toBeLessThan(source.byteLength)
+    const attachments = ctx.get('attachments')
+    if (attachments === undefined) throw new Error('expected the attachment service')
+    const stored = await attachments.readImage(image.attachment)
+    expect(stored.data.byteLength).toBe(image.attachment.bytes)
+    expect(Buffer.from(stored.data)).not.toEqual(source)
+    expect(text(result)).toContain(`image/png image, 1x1 px, ${image.attachment.bytes} bytes`)
+  })
+
   it('commits the bytes durably and renders the envelope beside an image block', async () => {
     await writeFile(join(dir, 'red.png'), PNG_1X1)
     const ctx = await setup()
@@ -370,38 +418,51 @@ describe('image admission failures', () => {
     expect(text(result)).toContain('rename the file to match its actual format if it is PNG/JPEG/WebP/GIF, or convert it to one of those formats')
   })
 
-  it('fails with FS_TOO_LARGE before reading a file past maxImageBytes', async () => {
+  it('fails with FS_TOO_LARGE before reading a file past maxSourceImageBytes', async () => {
     await writeFile(join(dir, 'red.png'), PNG_1X1)
-    const ctx = await setup({ storeConfig: { maxImageBytes: PNG_1X1.length - 1 } })
+    const ctx = await setup({ storeConfig: { maxSourceImageBytes: PNG_1X1.length - 1 } })
     const result = await readImage(ctx, { file_path: 'red.png' }, agentOn('vision-model'))
     expect(result.isError).toBe(true)
     expect(text(result)).toContain('exceeds')
   })
 
-  it('honors the tighter per-message aggregate byte bound', async () => {
+  it('honors the tighter per-message source byte bound', async () => {
     await writeFile(join(dir, 'red.png'), PNG_1X1)
-    const ctx = await setup({ storeConfig: { maxMessageImageBytes: PNG_1X1.length - 1 } })
+    const ctx = await setup({ storeConfig: { maxSourceMessageImageBytes: PNG_1X1.length - 1 } })
     const result = await readImage(ctx, { file_path: 'red.png' }, agentOn('vision-model'))
     expect(result.isError).toBe(true)
     expect(text(result)).toContain('exceeds')
   })
 
-  it('surfaces the pixel limit from the attachment admission', async () => {
+  it('returns normalized dimensions when the source exceeds the output pixel limit', async () => {
     await writeFile(join(dir, 'big.png'), PNG_3X3)
     const ctx = await setup({ storeConfig: { maxImagePixels: 4 } })
     const result = await readImage(ctx, { file_path: 'big.png' }, agentOn('vision-model'))
-    expect(result.isError).toBe(true)
-    expect(text(result)).toContain('exceeds the 4-pixel decoded-size limit')
-    expect(text(result)).toContain('downscale the image and read the smaller copy')
+    expect(result.isError).toBe(false)
+    const image = result.content[1] as { attachment: ImageAttachmentRef }
+    expect(image.attachment).toMatchObject({ mediaType: 'image/png', width: 2, height: 2 })
+    expect(text(result)).toContain('image/png image, 2x2 px')
   })
 
-  it('surfaces the per-side limit from attachment admission', async () => {
+  it('returns normalized dimensions when the source exceeds the output side limit', async () => {
     await writeFile(join(dir, 'wide.png'), PNG_3X3)
     const ctx = await setup({ storeConfig: { maxImageDimension: 2 } })
     const result = await readImage(ctx, { file_path: 'wide.png' }, agentOn('vision-model'))
+    expect(result.isError).toBe(false)
+    const image = result.content[1] as { attachment: ImageAttachmentRef }
+    expect(image.attachment).toMatchObject({ mediaType: 'image/png', width: 2, height: 2 })
+    expect(text(result)).toContain('image/png image, 2x2 px')
+  })
+
+  it('rejects malformed image bytes after the bounded source read', async () => {
+    const malformed = Buffer.from(PNG_1X1)
+    malformed[0] = 0
+    await writeFile(join(dir, 'broken.png'), malformed)
+    const ctx = await setup()
+    const result = await readImage(ctx, { file_path: 'broken.png' }, agentOn('vision-model'))
     expect(result.isError).toBe(true)
-    expect(text(result)).toContain('at least one image side exceeds the 2px limit')
-    expect(text(result)).toContain('downscale the image and read the smaller copy')
+    expect(text(result)).toContain('Unsupported or malformed image data.')
+    expect(result.content).toHaveLength(1)
   })
 
   it('passes storage faults and non-attachment failures through unchanged', async () => {
@@ -465,7 +526,7 @@ describe('image admission failures', () => {
       readonly imageLimits: ImageAttachmentLimits = Object.freeze({
         maxImageBytes: 1024,
         maxImagesPerMessage: 1,
-        maxMessageImageBytes: 1024,
+        maxMessageImageBytes: 512,
         maxImagePixels: 100,
         maxImageDimension: 2000,
         mediaTypes: Object.freeze(['image/png'] as const),
@@ -486,8 +547,10 @@ describe('image admission failures', () => {
     await writeFile(join(dir, 'red.png'), PNG_1X1)
     const ctx = await setup({ attachments: false })
     await ctx.plugin(NamelessStore)
+    const readBytes = vi.spyOn(ctx.fs, 'readBytes')
     const result = await readImage(ctx, { file_path: 'red.png' }, agentOn('vision-model'))
     expect(result.isError).toBe(false)
+    expect(readBytes.mock.calls[0]?.[2]).toBe(512)
     const image = result.content[1] as { attachment: ImageAttachmentRef }
     expect(image.attachment.name).toBeUndefined()
   })

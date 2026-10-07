@@ -1,8 +1,13 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { existsSync } from 'node:fs'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { Context } from '@deepseek-ai/cordis'
 import AttachmentStore, { AttachmentError, AttachmentId } from '@deepseek-ai/dsh-attachment'
+import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import type { ImageAttachmentLimits, ImageAttachmentRef, SaveImageAttachment, StoredImageAttachment } from '@deepseek-ai/dsh-attachment'
 import { CallId, LlmAdapter, LlmRuntime } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
@@ -600,8 +605,50 @@ describe('tool execution', () => {
     expect(rich.attachments.saved).toEqual([])
     expect(result.content).toHaveLength(3)
     expect(textAt(result.content, 0)).toContain('not PNG, JPEG, WebP, or GIF')
-    expect(textAt(result.content, 1)).toContain('not canonical base64')
+    expect(textAt(result.content, 1)).toContain('another image in the same result was invalid')
     expect(textAt(result.content, 2)).toContain('not canonical base64')
+  })
+
+  it('keeps raw MCP images while refusing oversized sources before storage', async () => {
+    const rich = await mountRichRegistry()
+    const encoded = Buffer.alloc(1025).toString('base64')
+    const blocks = [{ type: 'image', mimeType: 'image/png', data: encoded }] satisfies JsonValue[]
+    const client = createMockClient([{ name: 'large', inputSchema: { type: 'object' } }], { content: blocks })
+    await syncTools(client as never, rich.ctx, defaultOpts, new Map())
+    const result = await rich.ctx.tools.execute({
+      signal: testToolSignal, callId: CallId('large'), name: 'mcp__srv__large', arguments: {}, agent: agentOn() as never,
+    })
+    expect(textAt(result.content)).toContain('configured source-byte limit')
+    expect(rich.attachments.saved).toEqual([])
+    expect(result.value).toEqual({ content: blocks })
+    expect(JSON.stringify(result.content)).not.toContain(encoded)
+  })
+
+  it('refuses a real store output that remains too large after normalization', async () => {
+    const dshHome = await mkdtemp(join(tmpdir(), 'mcp-normalized-cap-'))
+    try {
+      const rich = await mountRegistry()
+      await rich.plugin(LocalAttachmentStore, {
+        dshHome, maxImageBytes: 1, maxSourceImageBytes: 1024,
+        maxMessageImageBytes: 1, maxSourceMessageImageBytes: 1024,
+      })
+      await rich.plugin(LlmRuntime)
+      rich.llm.registerAdapter(['visual'], new ImageCatalogAdapter())
+      const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC'
+      const blocks = [{ type: 'image', mimeType: 'image/png', data: png }] satisfies JsonValue[]
+      const client = createMockClient([{ name: 'normalized', inputSchema: { type: 'object' } }], { content: blocks })
+      await syncTools(client as never, rich, defaultOpts, new Map())
+      const result = await rich.tools.execute({
+        signal: testToolSignal, callId: CallId('normalized'), name: 'mcp__srv__normalized',
+        arguments: {}, agent: agentOn() as never,
+      })
+      expect(textAt(result.content)).toContain('image admission rejected the result')
+      expect(textAt(result.content)).toContain('encoded-byte limit')
+      expect(result.value).toEqual({ content: blocks })
+      expect(existsSync((rich.attachments as LocalAttachmentStore).root)).toBe(false)
+    } finally {
+      await rm(dshHome, { recursive: true, force: true })
+    }
   })
 
   it('does not admit images for a route without declared image input', async () => {
