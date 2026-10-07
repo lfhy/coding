@@ -49,12 +49,14 @@ export function parseBrowserState(value: unknown): BrowserState {
     const tab = object(value)
     if (!tabId(tab.id) || ids.has(tab.id) || !text(tab.generation, 128)
       || !/^[a-zA-Z0-9._~-]+$/.test(tab.generation) || !text(tab.url, 4096) || !pageUrl(tab.url)
-      || !text(tab.title, 4096) || typeof tab.canGoBack !== 'boolean' || typeof tab.canGoForward !== 'boolean') {
+      || !text(tab.title, 4096) || typeof tab.canGoBack !== 'boolean' || typeof tab.canGoForward !== 'boolean'
+      || (tab.loading !== undefined && typeof tab.loading !== 'boolean')) {
       throw new Error('浏览器标签字段无效')
     }
     ids.add(tab.id)
     return { id: tab.id, generation: tab.generation, url: tab.url, title: tab.title,
-      canGoBack: tab.canGoBack, canGoForward: tab.canGoForward }
+      canGoBack: tab.canGoBack, canGoForward: tab.canGoForward,
+      ...(tab.loading === undefined ? {} : { loading: tab.loading }) }
   })
   if ((tabs.length === 0) !== (data.activeTabId === null) || (data.activeTabId !== null && !ids.has(data.activeTabId))) {
     throw new Error('浏览器活动标签无效')

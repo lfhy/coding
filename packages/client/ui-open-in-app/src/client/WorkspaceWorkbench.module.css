@@ -27,6 +27,10 @@
 
 /* 顶栏右侧常驻视图控制；它随工作台本身可见，因此单独占列而不随会话页头渲染。 */
 .topbar {
+  --workbench-tab-width: 184px;
+  --workbench-tab-min-width: 120px;
+  --workbench-tab-height: 34px;
+  --workbench-tab-gap: 4px;
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -79,8 +83,6 @@
 .toolButton:hover,
 .toolButton:focus-visible,
 .toolButton[aria-pressed='true'],
-.tabSelect:hover,
-.tabSelect:focus-visible,
 .tabClose:hover,
 .tabClose:focus-visible,
 .treeRow:hover,
@@ -120,22 +122,30 @@
 }
 
 .browserTabs {
-  flex: none;
+  flex: 0 1 var(--workbench-tab-width);
   display: flex;
   align-items: center;
-  min-width: 0;
+  min-width: var(--workbench-tab-min-width);
+  max-width: 220px;
   height: 100%;
+  margin-right: var(--workbench-tab-gap);
 }
 
 .tab {
   display: flex;
   align-items: center;
-  min-width: 120px;
+  flex: 0 1 var(--workbench-tab-width);
+  min-width: var(--workbench-tab-min-width);
   max-width: 220px;
-  height: 34px;
-  margin-right: 4px;
+  height: var(--workbench-tab-height);
+  margin-right: var(--workbench-tab-gap);
   border-radius: 9px;
   color: var(--dsw-alias-label-secondary);
+}
+
+.tab:not(.tabActive):hover:has(> button:enabled),
+.tab:not(.tabActive):focus-within {
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .tabActive {
@@ -147,7 +157,7 @@
   display: flex;
   align-items: center;
   min-width: 0;
-  height: 30px;
+  height: 100%;
   flex: 1;
   gap: 7px;
   padding: 0 4px 0 10px;
@@ -155,7 +165,8 @@
   cursor: pointer;
 }
 
-.tabSelect span:last-child {
+.tabName,
+.externalTitle {
   min-width: 0;
   overflow: hidden;
   font-size: 13px;
@@ -163,6 +174,17 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.tabGlyph {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--dsw-alias-state-business-primary);
+}
+
+.tabGlyph svg { display: block; }
 
 .externalTitle {
   display: block;
@@ -178,8 +200,9 @@
   justify-content: center;
   width: 26px;
   height: 26px;
+  padding: 0;
   flex: none;
-  border-radius: 7px;
+  border-radius: 8px;
   cursor: pointer;
 }
 
@@ -612,9 +635,7 @@ div.treeRow {
     grid-template-columns: minmax(0, 1fr) 260px;
   }
 
-  .tab {
-    min-width: 104px;
-  }
+  .topbar { --workbench-tab-min-width: 104px; }
 
   .treeSize {
     display: none;

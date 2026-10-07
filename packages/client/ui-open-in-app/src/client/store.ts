@@ -42,6 +42,13 @@ export interface WorkbenchPendingBrowserTab {
   error?: string
 }
 
+/** 仅在 Client 中打开功能菜单；不占用 Host 浏览器页面。 */
+export interface WorkbenchLauncherTab {
+  type: 'launcher'
+  id: string
+  number: number
+}
+
 /** 第三方标签的导航参数只接受可序列化的 JSON 值。 */
 export type WorkbenchExternalParams = string | number | boolean | null
   | readonly WorkbenchExternalParams[] | { readonly [key: string]: WorkbenchExternalParams }
@@ -60,7 +67,7 @@ export interface WorkbenchExternalTab {
 
 /** 标签类型决定工作台内容和关闭行为。 */
 export type WorkbenchTab = WorkbenchFileTab | WorkbenchFileManagerTab | WorkbenchTerminalTab
-  | WorkbenchBrowserTab | WorkbenchPendingBrowserTab | WorkbenchExternalTab
+  | WorkbenchBrowserTab | WorkbenchPendingBrowserTab | WorkbenchExternalTab | WorkbenchLauncherTab
 
 /** 一层目录的读取状态。 */
 export interface WorkbenchFileLevel {
@@ -75,6 +82,7 @@ export type WorkbenchState = {
   tabs: WorkbenchTab[]
   activeId: string | null
   nextTerminalNumber: number
+  nextLauncherNumber: number
   nextExternalNumber: number
   activeBrowserTabId: string | null
   interactionEpoch: number
@@ -114,6 +122,7 @@ type WorkbenchActions = {
   openFile: (draft: WorkbenchState, file: OpenFileInput) => void
   openFileManager: (draft: WorkbenchState) => void
   openTerminal: (draft: WorkbenchState) => void
+  openLauncher: (draft: WorkbenchState) => void
   openExternalTab: (draft: WorkbenchState, input: OpenExternalTabInput) => void
   updateExternalTab: (draft: WorkbenchState, tabId: string, update: UpdateExternalTabInput) => void
   closeExternalTab: (draft: WorkbenchState, tabId: string) => void
@@ -164,6 +173,7 @@ function initialWorkbenchState(): WorkbenchState {
     tabs: [],
     activeId: null,
     nextTerminalNumber: 1,
+    nextLauncherNumber: 1,
     nextExternalNumber: 1,
     activeBrowserTabId: null,
     interactionEpoch: 0,
@@ -174,15 +184,29 @@ function initialWorkbenchState(): WorkbenchState {
   }
 }
 
-function viewForTab(tab: WorkbenchTab): Exclude<WorkbenchState['view'], 'menu'> {
+function viewForTab(tab: WorkbenchTab): WorkbenchState['view'] {
   return tab.type === 'file' || tab.type === 'file-manager' ? 'files'
-    : tab.type === 'browser-pending' ? 'browser' : tab.type
+    : tab.type === 'browser-pending' ? 'browser' : tab.type === 'launcher' ? 'menu' : tab.type
 }
 
 function selectTab(draft: WorkbenchState, tab: WorkbenchTab): void {
   draft.activeId = tab.id
   draft.view = viewForTab(tab)
   if (tab.type === 'browser') draft.activeBrowserTabId = tab.browserTabId
+}
+
+function consumeLauncher(draft: WorkbenchState): number | undefined {
+  const index = draft.tabs.findIndex(tab => tab.id === draft.activeId && tab.type === 'launcher')
+  if (index < 0) return undefined
+  draft.tabs.splice(index, 1)
+  draft.activeId = null
+  return index
+}
+
+function addTab(draft: WorkbenchState, tab: WorkbenchTab, index: number | undefined): void {
+  if (index === undefined) draft.tabs.push(tab)
+  else draft.tabs.splice(index, 0, tab)
+  selectTab(draft, tab)
 }
 
 function retainLevel(
@@ -201,6 +225,7 @@ const workbenchActions: WorkbenchActions = {
   setView: (draft, view) => {
     draft.interactionEpoch++
     draft.browserAutoRevealed = false
+    if (view !== 'menu') consumeLauncher(draft)
     draft.view = view
     if (view === 'menu') return
     const active = draft.tabs.find(tab => tab.id === draft.activeId && viewForTab(tab) === view)
@@ -221,23 +246,34 @@ const workbenchActions: WorkbenchActions = {
   },
   openFileManager: (draft) => {
     draft.interactionEpoch++
+    const launcherIndex = consumeLauncher(draft)
     let tab = draft.tabs.find((candidate): candidate is WorkbenchFileManagerTab => candidate.type === 'file-manager')
     if (tab === undefined) {
       tab = { type: 'file-manager', id: 'file-manager' }
-      draft.tabs.push(tab)
+      addTab(draft, tab, launcherIndex)
+      return
     }
     selectTab(draft, tab)
   },
   openTerminal: (draft) => {
     draft.interactionEpoch++
+    const launcherIndex = consumeLauncher(draft)
     const number = draft.nextTerminalNumber++
     const tab: WorkbenchTerminalTab = { type: 'terminal', id: `terminal:${String(number)}`, number }
+    addTab(draft, tab, launcherIndex)
+  },
+  openLauncher: (draft) => {
+    draft.interactionEpoch++
+    draft.browserAutoRevealed = false
+    const number = draft.nextLauncherNumber++
+    const tab: WorkbenchLauncherTab = { type: 'launcher', id: `launcher:${String(number)}`, number }
     draft.tabs.push(tab)
     selectTab(draft, tab)
   },
   openExternalTab: (draft, input) => {
     draft.interactionEpoch++
     draft.browserAutoRevealed = false
+    const launcherIndex = consumeLauncher(draft)
     const existing = !input.multiple
       ? draft.tabs.find((tab): tab is WorkbenchExternalTab => tab.type === 'external' && tab.kind === input.kind)
       : undefined
@@ -258,8 +294,7 @@ const workbenchActions: WorkbenchActions = {
       name: input.name, address: input.address, revision: 0,
       ...(input.params === undefined ? {} : { params: input.params }),
     }
-    draft.tabs.push(tab)
-    selectTab(draft, tab)
+    addTab(draft, tab, launcherIndex)
   },
   updateExternalTab: (draft, tabId, update) => {
     const tab = draft.tabs.find((candidate): candidate is WorkbenchExternalTab => candidate.type === 'external' && candidate.id === tabId)
@@ -466,6 +501,7 @@ export function createRetainedWorkbenchStore(): EngineStoreHandle<RetainedWorkbe
       },
       openFileManager: (draft, id: SessionId) => { workbenchActions.openFileManager(sessionState(draft, id)) },
       openTerminal: (draft, id: SessionId) => { workbenchActions.openTerminal(sessionState(draft, id)) },
+      openLauncher: (draft, id: SessionId) => { workbenchActions.openLauncher(sessionState(draft, id)) },
       openExternalTab: (draft, id: SessionId, input: OpenExternalTabInput) => {
         workbenchActions.openExternalTab(sessionState(draft, id), input)
       },

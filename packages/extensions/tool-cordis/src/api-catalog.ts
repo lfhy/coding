@@ -2960,7 +2960,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BrowserTabSummary',
-    declaration: 'export interface BrowserTabSummary {\n    readonly id: BrowserTabId;\n    readonly generation: string;\n    readonly url: string;\n    readonly title: string;\n    readonly canGoBack: boolean;\n    readonly canGoForward: boolean;\n}',
+    declaration: 'export interface BrowserTabSummary {\n    readonly id: BrowserTabId;\n    readonly generation: string;\n    readonly url: string;\n    readonly title: string;\n    readonly canGoBack: boolean;\n    readonly canGoForward: boolean;\n    readonly loading?: boolean;\n}',
   },
   {
     name: 'BrowserUseErrorCode',

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useEffect } from 'react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { createWorkbenchStore, createRetainedWorkbenchStore } from '../src/client/store.ts'
@@ -21,10 +21,16 @@ vi.mock('../src/client/TerminalPanel.tsx', () => ({
 
 import type { WorkspaceFileEntry, WorkspaceFilePayload, WorkspaceFilesPayload } from '../src/client/wire.ts'
 
+const browserScrollIntoView = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView')
+beforeEach(() => {
+  Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, value: vi.fn() })
+})
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
+  if (browserScrollIntoView === undefined) Reflect.deleteProperty(Element.prototype, 'scrollIntoView')
+  else Object.defineProperty(Element.prototype, 'scrollIntoView', browserScrollIntoView)
 })
 
 const SESSION = 'workbench-session' as SessionId
@@ -137,6 +143,9 @@ describe('WorkspaceWorkbench shell', () => {
     expect(b.openSidebarTab).toHaveBeenCalledExactlyOnceWith(SESSION, 'notes')
     expect(screen.getByRole('tab', { name: 'Notes' }).getAttribute('aria-selected')).toBe('true')
     expect(screen.getByRole('tabpanel', { name: 'Notes' })).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: zh['tabs.add'] }))
+    expect(screen.getByRole('tab', { name: 'Notes' }).tabIndex).toBe(-1)
+    expect(screen.getByRole('tab', { name: zh['tabs.new'] }).tabIndex).toBe(0)
   })
 
   it('isolates throwing third-party guide labels without breaking built-in menu actions', () => {
@@ -160,6 +169,7 @@ describe('WorkspaceWorkbench shell', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Healthy entry' }))
     expect(b.openSidebarTab).toHaveBeenCalledExactlyOnceWith(SESSION, 'healthy')
     expect(screen.getByRole('tab', { name: 'Healthy' }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.queryByRole('tab', { name: zh['tabs.new'] })).toBeNull()
     expect(screen.getByRole('tab', { name: zh['files.tab'] })).toBeDefined()
   })
 
@@ -556,7 +566,7 @@ describe('WorkspaceWorkbench shell', () => {
     expect(b.renderSlot).toHaveBeenLastCalledWith('workbench.browser', expect.objectContaining({ shown: true }))
   })
 
-  it('uses one shared add action to reopen the feature menu without discarding existing tabs', () => {
+  it('uses one shared add action to create a launcher tab without discarding existing tabs', () => {
     const b = bench()
     b.instance.actions.openFile({ name: 'note.txt', segments: ['note.txt'] })
     b.instance.actions.syncBrowserTabs([{ id: 'page', name: 'Page' }], 'page')
@@ -564,10 +574,18 @@ describe('WorkspaceWorkbench shell', () => {
     const add = screen.getByRole('button', { name: zh['tabs.add'] })
     expect(screen.getAllByRole('button', { name: zh['tabs.add'] })).toHaveLength(1)
     fireEvent.click(add)
-    expect(b.instance.getSnapshot()).toMatchObject({ view: 'menu', activeId: '["note.txt"]' })
+    expect(b.instance.getSnapshot()).toMatchObject({ view: 'menu', activeId: 'launcher:1' })
+    const launcher = screen.getByRole('tab', { name: zh['tabs.new'] })
+    expect(launcher.getAttribute('aria-selected')).toBe('true')
+    const launcherPanel = document.getElementById(launcher.getAttribute('aria-controls')!)
+    expect(launcherPanel?.getAttribute('aria-labelledby')).toBe(launcher.id)
+    expect(launcherPanel?.contains(screen.getByRole('navigation', { name: zh['workbench.menu.label'] }))).toBe(true)
+    expect(screen.getByRole('tab', { name: 'note.txt' }).tabIndex).toBe(-1)
+    expect(launcher.tabIndex).toBe(0)
     expect(document.activeElement).toBe(screen.getByRole('button', { name: zh['workbench.menu.terminal'] }))
     expect(screen.getByRole('tab', { name: 'note.txt' })).toBeDefined()
     fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.terminal'] }))
+    expect(screen.queryByRole('tab', { name: zh['tabs.new'] })).toBeNull()
     expect(b.instance.getSnapshot().tabs.map(tab => tab.type)).toEqual(['file', 'browser', 'terminal'])
     fireEvent.click(add)
     fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.files'] }))
@@ -583,6 +601,53 @@ describe('WorkspaceWorkbench shell', () => {
     fireEvent.click(screen.getByRole('button', { name: zh['tabs.close'].replace('{name}', zh['files.tab']) }))
     expect(screen.queryByRole('tab', { name: zh['files.tab'] })).toBeNull()
     expect(screen.getByRole('tab', { name: 'note.txt' })).toBeDefined()
+  })
+
+  it('keeps multiple launcher tabs independent and keyboard-selectable, then closes locally', () => {
+    const b = bench()
+    render(<WorkspaceWorkbench {...b.props} />)
+    const add = screen.getByRole('button', { name: zh['tabs.add'] })
+    fireEvent.click(add)
+    fireEvent.click(add)
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: zh['workbench.menu.terminal'] }))
+    const launchers = screen.getAllByRole('tab', { name: zh['tabs.new'] })
+    expect(launchers).toHaveLength(2)
+    expect(launchers[0]?.getAttribute('aria-selected')).toBe('false')
+    expect(launchers[1]?.getAttribute('aria-selected')).toBe('true')
+    expect(document.getElementById(launchers[0]!.getAttribute('aria-controls')!)?.hasAttribute('hidden')).toBe(true)
+    fireEvent.keyDown(launchers[1]!, { key: 'Home' })
+    expect(launchers[0]?.getAttribute('aria-selected')).toBe('true')
+    expect(document.activeElement).toBe(launchers[0])
+    expect(document.getElementById(launchers[0]!.getAttribute('aria-controls')!)?.hasAttribute('hidden')).toBe(false)
+    expect(b.instance.getSnapshot().tabs.map(tab => tab.id)).toEqual(['launcher:1', 'launcher:2'])
+    fireEvent.click(screen.getAllByRole('button', { name: zh['tabs.close'].replace('{name}', zh['tabs.new']) })[0]!)
+    expect(b.instance.getSnapshot()).toMatchObject({ view: 'menu', activeId: 'launcher:2' })
+    fireEvent.click(screen.getByRole('button', { name: zh['tabs.close'].replace('{name}', zh['tabs.new']) }))
+    expect(b.instance.getSnapshot()).toMatchObject({ view: 'menu', activeId: null, tabs: [] })
+    expect(b.renderSlot).not.toHaveBeenCalledWith('workbench.browser', expect.objectContaining({ newTabRequest: 1 }))
+  })
+
+  it('scrolls the selected launcher into view without stealing focus from its menu', () => {
+    const previous = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView')
+    const scrolled: Array<{ target: Element; options: ScrollIntoViewOptions }> = []
+    Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true,
+      value: function (this: Element, options: ScrollIntoViewOptions) { scrolled.push({ target: this, options }) } })
+    try {
+      const b = bench()
+      b.instance.actions.openTerminal()
+      b.instance.actions.openFileManager()
+      render(<WorkspaceWorkbench {...b.props} />)
+      fireEvent.click(screen.getByRole('button', { name: zh['tabs.add'] }))
+      const launcher = screen.getByRole('tab', { name: zh['tabs.new'] })
+      const item = launcher.parentElement
+      expect(item?.contains(screen.getByRole('button', { name: zh['tabs.close'].replace('{name}', zh['tabs.new']) }))).toBe(true)
+      expect(scrolled.at(-1)).toEqual({ target: item,
+        options: { block: 'nearest', inline: 'nearest', behavior: 'instant' } })
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: zh['workbench.menu.terminal'] }))
+    } finally {
+      if (previous === undefined) Reflect.deleteProperty(Element.prototype, 'scrollIntoView')
+      else Object.defineProperty(Element.prototype, 'scrollIntoView', previous)
+    }
   })
 
   it('preserves the file manager while hidden and focuses the adjacent preview after closing it', () => {

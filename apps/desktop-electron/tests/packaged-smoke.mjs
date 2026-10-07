@@ -368,15 +368,22 @@ async function browserControlAfterTurn(page, sessionId, command) {
 
 async function browserFixture() {
   const pendingDocuments = new Set()
+  const pendingScripts = new Set()
   const pendingImages = new Set()
   const pixel = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg==', 'base64')
   let imageStartedAt = 0
+  let scriptStartedAt = 0
+  const releaseScripts = () => {
+    for (const response of pendingScripts) response.end(`const image = document.createElement('img');
+      image.src = '/held-assistant-image'; image.alt = 'Held image'; document.body.append(image)`)
+    pendingScripts.clear()
+  }
   const releaseDocument = () => {
     for (const response of pendingDocuments) {
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
       response.end(`<!doctype html><title>Packaged first assistant link</title>
         <h1>Packaged first link document</h1>
-        <img src="/held-assistant-image" alt="Held image">`)
+        <script src="/held-assistant-script"></script>`)
     }
     pendingDocuments.clear()
   }
@@ -384,6 +391,14 @@ async function browserFixture() {
     if (request.url === '/first-assistant-link') {
       pendingDocuments.add(response)
       response.once('close', () => pendingDocuments.delete(response))
+      return
+    }
+    if (request.url === '/held-assistant-script') {
+      scriptStartedAt = Date.now()
+      pendingScripts.add(response)
+      response.once('close', () => pendingScripts.delete(response))
+      response.writeHead(200, { 'content-type': 'application/javascript', 'cache-control': 'no-store' })
+      response.flushHeaders()
       return
     }
     if (request.url === '/held-assistant-image') {
@@ -411,15 +426,19 @@ async function browserFixture() {
   return { url: `http://127.0.0.1:${address.port}/`,
     firstLinkUrl: `http://127.0.0.1:${address.port}/first-assistant-link`,
     get pendingDocuments() { return pendingDocuments.size },
+    get pendingScripts() { return pendingScripts.size },
+    get scriptStartedAt() { return scriptStartedAt },
     get pendingImages() { return pendingImages.size },
     get imageStartedAt() { return imageStartedAt },
     releaseDocument,
+    releaseScripts,
     releaseImages: () => {
       for (const response of pendingImages) response.end(pixel)
       pendingImages.clear()
     },
     close: async () => {
       releaseDocument()
+      releaseScripts()
       for (const response of pendingImages) response.end(pixel)
       pendingImages.clear()
       fixture.closeAllConnections()
@@ -699,7 +718,14 @@ async function verifyFirstAssistantLink(page, app, fixture, model) {
       'the selected tab must remain UI-only until navigation finishes')
     assert.ok((await pendingTab.innerText()).includes(fixture.firstLinkUrl),
       'selected UI-only tab must display the destination before HTTP responds')
-    const loading = page.getByTestId('browser-link-loading')
+    const addressInput = page.getByRole('textbox', { name: '网址' })
+    const addressBar = addressInput.locator('..')
+    const pendingCanvas = page.getByTestId('browser-canvas')
+    assert.equal(await addressInput.inputValue(), fixture.firstLinkUrl,
+      'pending address bar must display the requested URL before HTTP responds')
+    assert.equal(await pendingCanvas.getAttribute('aria-busy'), 'true',
+      'pending browser content must expose its loading state')
+    const loading = addressBar.getByTestId('browser-link-loading')
     await loading.waitFor({ state: 'visible', timeout: 5_000 })
     const motion = await loading.evaluate(element => ({
       reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
@@ -707,28 +733,50 @@ async function verifyFirstAssistantLink(page, app, fixture, model) {
     }))
     if (!motion.reduced) assert.notEqual(motion.name, 'none', 'loading spinner must animate')
     const status = loading.locator('..')
-    assert.equal(await status.getAttribute('role'), 'status', 'loading animation must carry a status')
-    assert.ok((await status.innerText()).includes(fixture.firstLinkUrl),
-      'loading panel must display the destination URL')
+    assert.equal(await status.getAttribute('role'), 'status', 'address loading animation must carry a status')
+    assert.ok((await status.textContent()).trim().length > 0,
+      'address loading animation must have accessible loading text')
+    assert.equal(await pendingCanvas.locator('[role="status"]').count(), 0,
+      'pending page canvas must not repeat the address-bar loading status')
+    assert.equal((await pendingCanvas.innerText()).includes(fixture.firstLinkUrl), false,
+      'pending page canvas must not repeat the destination URL')
     assert.equal(fixture.pendingDocuments, 1, 'pending browser UI must precede the target document')
     assert.equal(fixture.pendingImages, 0, 'document must remain withheld through the initial UI assertion')
 
     fixture.releaseDocument()
-    await until(() => fixture.pendingImages === 1,
-      'packaged document requests held image', 10_000)
+    await until(() => fixture.pendingScripts === 1,
+      'packaged document requests its parser-blocking script', 10_000)
     await page.locator('#dsh-layout-workbench [role="tab"][data-browser-tab-id][aria-selected="true"]')
       .waitFor({ state: 'visible', timeout: 12_000 })
     assert.equal(await page.locator('#dsh-layout-workbench [role="tab"][data-browser-pending-id]').count(), 0,
-      'DOM-ready native tab must replace the UI-only pending tab')
+      'committed native tab must replace the UI-only tab before DOM ready')
     await page.getByTestId('browser-canvas').waitFor({ state: 'visible', timeout: 12_000 })
-    const firstState = await browserControlAfterTurn(page, sessionId, { kind: 'ensure-tab' })
-    assert.equal(firstState?.tabs.length, 1, 'DOM-ready first link must create one native tab')
-    assert.equal(firstState.tabs[0].url, fixture.firstLinkUrl)
     let firstGuest
     await until(async () => {
       firstGuest = (await inspectPackagedMain(app)).find(guest => guest.url === fixture.firstLinkUrl)
       return firstGuest?.title === 'Packaged first assistant link' && firstGuest.bounds.width >= 200
-    }, 'DOM-ready packaged native guest visible while its image is held', 12_000)
+    }, 'committed packaged native guest visible before DOM ready', 12_000)
+    await until(() => app.context().pages().some(candidate => !candidate.isClosed()
+      && candidate.url() === fixture.firstLinkUrl),
+    'committed packaged guest exposes a Chromium page while the parser is blocked', 12_000)
+    await loading.waitFor({ state: 'visible', timeout: 5_000 })
+    assert.equal(await pendingCanvas.getAttribute('aria-busy'), 'true',
+      'packaged browser content must keep loading after native navigation commits')
+    await until(() => Date.now() - fixture.scriptStartedAt > 10_000,
+      'packaged parser-blocking script remains pending beyond the former DOM-ready timeout', 12_000)
+    assert.equal(fixture.pendingScripts, 1, 'packaged document must remain blocked after navigation succeeds')
+    assert.equal(fixture.pendingImages, 0, 'parser must not request the later image before the script resolves')
+    assert.equal(await pendingCanvas.getAttribute('aria-busy'), 'true',
+      'packaged browser content must still be loading while the parser is blocked')
+    assert.equal(await loading.isVisible(), true, 'packaged native tab must retain its address spinner')
+    assert.deepEqual(failures, [], 'parser-blocking script must not cause the old DOM-ready timeout')
+
+    fixture.releaseScripts()
+    await until(() => fixture.pendingImages === 1,
+      'packaged document requests held image after parsing resumes', 10_000)
+    const firstState = await browserControlAfterTurn(page, sessionId, { kind: 'ensure-tab' })
+    assert.equal(firstState?.tabs.length, 1, 'committed first link must create one native tab')
+    assert.equal(firstState.tabs[0].url, fixture.firstLinkUrl)
     const guestPage = app.context().pages()
       .find(candidate => !candidate.isClosed() && candidate.url() === fixture.firstLinkUrl)
     assert.ok(guestPage, 'first assistant link must expose the real interactive native guest')
@@ -749,6 +797,14 @@ async function verifyFirstAssistantLink(page, app, fixture, model) {
     assert.equal(await app.evaluate(({ webContents }, id) =>
       webContents.fromId(id)?.isDestroyed() === false, firstGuest.id), true,
     'first native guest must survive detached after the independent follow-up navigation')
+    await page.locator(`[data-browser-tab-id="${firstState.activeTabId}"]`).click()
+    await loading.waitFor({ state: 'visible', timeout: 5_000 })
+    assert.equal(await pendingCanvas.getAttribute('aria-busy'), 'true',
+      'packaged first tab must still expose loading while its image is held')
+    fixture.releaseImages()
+    await loading.waitFor({ state: 'hidden', timeout: 12_000 })
+    assert.equal(await pendingCanvas.getAttribute('aria-busy'), 'false',
+      'packaged browser content must clear loading after script and image finish')
     const finalState = await browserControlAfterTurn(page, sessionId, { kind: 'ensure-tab' })
     for (const tab of finalState.tabs) {
       await browserRpc(page, 'browser.control', { sessionId, command: { kind: 'close-tab', tabId: tab.id } })
@@ -758,6 +814,7 @@ async function verifyFirstAssistantLink(page, app, fixture, model) {
   } finally {
     page.off('response', onControlResponse)
     fixture.releaseDocument()
+    fixture.releaseScripts()
     fixture.releaseImages()
   }
 }
@@ -855,7 +912,7 @@ async function main() {
         'packaged Electron/helper/Host and isolated desktop lock must all stop')
       console.log('PASS: signed macOS arm64 app.asar without a Playwright browser binary, packaged Electron Provider/protocol/transport, ' +
         'real Host Agent browser_navigate/snapshot/click on one interactive WebContentsView guest with human DOM continuity, ' +
-        'fresh assistant-link immediate loading UI and DOM-ready native guest with a held image, app.isPackaged, metadata/Host version, real Host page, both Host WebSockets, ' +
+        'fresh assistant-link immediate loading UI and native guest committed before DOM ready, parser-blocking script and held image beyond ten seconds with address spinner clearing after load, app.isPackaged, metadata/Host version, real Host page, both Host WebSockets, ' +
         'single instance, sandbox preload, Go helper/bridge, isolated desktop lock and cleanup')
       console.log('The local scripted model exercises three browser_* tools through the Host tool path and two persisted Agent turns; remaining browser tools are not exercised.')
       console.log('Not inspected by the Electron test channel: native menu/Tray and macOS window close/hide; ' +

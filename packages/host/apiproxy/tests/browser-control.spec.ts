@@ -115,7 +115,15 @@ describe('browser.control wire schemas', () => {
 
   it('requires a fully typed state or null in successful responses', () => {
     expect(browserControlValueSchema.parse(state)).toEqual(state)
+    for (const loading of [true, false]) {
+      const withLoading = { ...state, tabs: [{ ...state.tabs[0], loading }] }
+      expect(browserControlValueSchema.parse(withLoading)).toEqual(withLoading)
+    }
     expect(browserControlValueSchema.parse(null)).toBeNull()
+    for (const loading of ['yes', 0, null]) {
+      expect(browserControlValueSchema.safeParse({ ...state, tabs: [{ ...state.tabs[0], loading }] }).success).toBe(false)
+    }
+    expect(browserControlValueSchema.safeParse({ ...state, tabs: [{ ...state.tabs[0], extra: true }] }).success).toBe(false)
     expect(browserControlValueSchema.safeParse({ ...state, tabs: [{ ...state.tabs[0], id: 'not-uuid' }] }).success).toBe(false)
     expect(browserControlValueSchema.safeParse({ ...state, tabs: [{ id: tabId, url: 'https://example.com/', title: 'Example', canGoBack: false, canGoForward: false }] }).success).toBe(false)
     expect(browserControlValueSchema.safeParse({ ...state, extra: true }).success).toBe(false)

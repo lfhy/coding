@@ -237,6 +237,56 @@ async function expectPendingTab(page: Page, url: string, selected = true): Promi
   return pendingId
 }
 
+/** 对照共享工作台标签的外框、图标与关闭按钮几何，避免不同插件各自漂移。 */
+async function expectMatchingTabGeometry(page: Page, browserTabId: string): Promise<void> {
+  const tablist = page.locator('#dsh-layout-workbench [role="tablist"]')
+  const names = [
+    tablist.locator(`[role="tab"][data-browser-tab-id="${browserTabId}"]`),
+    tablist.getByRole('tab', { name: /^coding \d+$/ }),
+    tablist.getByRole('tab', { name: 'File manager' }),
+  ]
+  await expect.poll(() => Promise.all(names.map(tab => tab.count()))).toEqual([1, 1, 1])
+  const measurements = await Promise.all(names.map(tab => tab.evaluate((element) => {
+    const item = element.parentElement
+    const icon = element.querySelector('span:first-child')
+    const close = item?.querySelector('button:not([role="tab"])')
+    if (!item || !icon || !close) throw new Error('workbench tab geometry is incomplete')
+    const bounds = item.getBoundingClientRect()
+    const glyph = icon.getBoundingClientRect()
+    const closeBounds = close.getBoundingClientRect()
+    const label = element.querySelector('span:last-child')
+    return {
+      width: bounds.width, height: bounds.height, y: bounds.y,
+      iconX: glyph.x - bounds.x, iconY: glyph.y - bounds.y,
+      iconWidth: glyph.width, iconHeight: glyph.height,
+      closeX: closeBounds.x - bounds.x, closeY: closeBounds.y - bounds.y,
+      closeWidth: closeBounds.width, closeHeight: closeBounds.height,
+      fontSize: label === null ? '' : getComputedStyle(label).fontSize,
+      lineHeight: label === null ? '' : getComputedStyle(label).lineHeight,
+    }
+  })))
+  const first = measurements[0]!
+  for (const actual of measurements.slice(1)) {
+    for (const key of ['width', 'height', 'y', 'iconX', 'iconY', 'iconWidth', 'iconHeight',
+      'closeX', 'closeY', 'closeWidth', 'closeHeight'] as const) {
+      expect(Math.abs(actual[key] - first[key]), `${key} differs across workbench tabs`).toBeLessThanOrEqual(2)
+    }
+    expect(actual.fontSize).toBe(first.fontSize)
+    expect(actual.lineHeight).toBe(first.lineHeight)
+  }
+}
+
+/** 等待窄屏工作台真正从 rail 右侧接管视口，避免截到布局切换的中间帧。 */
+async function expectMobileWorkbenchGeometry(page: Page): Promise<void> {
+  const workbench = page.locator('#dsh-layout-workbench')
+  await expect.poll(() => page.locator('[data-workbench-fullscreen]').count()).toBe(1)
+  await expect.poll(async () => {
+    const box = await workbench.boundingBox()
+    return box !== null && box.x <= 60 && box.width >= 300 && box.x + box.width <= 376
+  }).toBe(true)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(376)
+}
+
 describe('web e2e: Markdown inline-code links', () => {
   let scaffold: WebScaffold
   let browser: Browser
@@ -350,8 +400,58 @@ describe('web e2e: Markdown inline-code links', () => {
       { timeout: 15_000 }).toBe(0)
     await page.screenshot({ path: '/tmp/dsh-chat-link-workbench.png' })
 
+    const tabs = workbench.getByRole('tablist')
+    await workbench.getByRole('button', { name: 'Add workbench tab' }).click()
+    const launcher = tabs.getByRole('tab', { name: 'New tab' })
+    await expect.poll(() => launcher.count()).toBe(1)
+    expect(await launcher.getAttribute('aria-selected')).toBe('true')
+    expect((await browserState(page, scaffold.baseUrl, REFERENCE_ID))?.tabs.length).toBe(1)
+    const menu = workbench.getByRole('navigation', { name: 'Workbench features' })
+    await expect.poll(() => menu.isVisible()).toBe(true)
+    await page.screenshot({ path: '/tmp/dsh-chat-link-new-tab.png' })
+    await menu.getByRole('button', { name: 'Terminal' }).click()
+    await expect.poll(() => launcher.count()).toBe(0)
+    await expect.poll(() => tabs.getByRole('tab', { name: /^coding \d+$/ }).count()).toBe(1)
+    await page.getByRole('button', { name: 'Back to features' }).click()
+    await menu.getByRole('button', { name: 'Files' }).click()
+    await expectMatchingTabGeometry(page, (await browserState(page, scaffold.baseUrl, REFERENCE_ID))!.activeTabId!)
+    await page.screenshot({ path: '/tmp/dsh-chat-link-mixed-tabs.png' })
+
     await page.setViewportSize({ width: 375, height: 812 })
-    await expect.poll(() => page.locator('[data-workbench-fullscreen]').count(), { timeout: 10_000 }).toBe(1)
+    await expectMobileWorkbenchGeometry(page)
+    await expectMatchingTabGeometry(page, (await browserState(page, scaffold.baseUrl, REFERENCE_ID))!.activeTabId!)
+    await page.mouse.click(180, 500)
+    await page.mouse.move(75, 500)
+    await page.screenshot({ path: '/tmp/dsh-chat-link-mixed-tabs-mobile.png' })
+    await workbench.getByRole('button', { name: 'Add workbench tab' }).click()
+    await expect.poll(() => launcher.getAttribute('aria-selected')).toBe('true')
+    await expect.poll(() => menu.isVisible()).toBe(true)
+    await expect.poll(async () => {
+      const selected = await launcher.evaluate((element) => {
+        const item = element.parentElement
+        const close = item?.querySelector<HTMLButtonElement>('button:not([role="tab"])')
+        if (!item || !close) return null
+        const itemBox = item.getBoundingClientRect()
+        const closeBox = close.getBoundingClientRect()
+        const hit = document.elementFromPoint(closeBox.x + closeBox.width / 2,
+          closeBox.y + closeBox.height / 2)
+        return {
+          x: itemBox.x, right: itemBox.right,
+          closeX: closeBox.x, closeRight: closeBox.right,
+          closeHit: hit === close || close.contains(hit),
+        }
+      })
+      const row = await tabs.boundingBox()
+      return selected !== null && row !== null && selected.x >= row.x - 1
+        && selected.right <= row.x + row.width + 1
+        && selected.closeX >= row.x - 1 && selected.closeRight <= row.x + row.width + 1
+        && selected.closeHit
+    }).toBe(true)
+    await page.screenshot({ path: '/tmp/dsh-chat-link-new-tab-mobile.png' })
+    await tabs.getByRole('button', { name: 'Close New tab' }).click()
+    await expect.poll(() => launcher.count()).toBe(0)
+    await tabs.locator('[role="tab"][data-browser-tab-id]').last().click()
+    await expect.poll(() => mirror.isVisible()).toBe(true)
     await expect.poll(async () => {
       const box = await mirror.boundingBox()
       return box === null ? Infinity : box.x + box.width
@@ -382,25 +482,30 @@ describe('web e2e: Markdown inline-code links', () => {
       expect(await page.locator('#dsh-layout-workbench [role="tab"][data-browser-tab-id]').count()).toBe(0)
       const mirror = page.getByRole('region', { name: 'Browser view' })
       await expect.poll(() => mirror.isVisible()).toBe(true)
-      await expect.poll(() => mirror.getByTestId('browser-link-loading').count()).toBe(1)
-      await expect.poll(() => mirror.getByRole('status').filter({ hasText: 'Opening page' }).count()).toBe(1)
-      expect(await mirror.getByRole('status').textContent()).toContain(url)
+      const address = mirror.getByRole('textbox', { name: 'Address' })
+      const addressForm = mirror.locator('form:has(#browser-address)')
+      const canvas = mirror.getByTestId('browser-canvas')
+      await expect.poll(() => canvas.getAttribute('aria-busy')).toBe('true')
+      await expect.poll(() => addressForm.getByTestId('browser-link-loading').count()).toBe(1)
+      await expect.poll(() => addressForm.getByRole('status').filter({ hasText: 'Opening page' }).count()).toBe(1)
+      expect(await address.inputValue()).toBe(url)
+      expect(await address.getAttribute('title')).toBe(url)
+      expect(await address.isDisabled()).toBe(true)
+      expect(await canvas.textContent()).not.toContain(url)
+      expect(await canvas.getByRole('status').count()).toBe(0)
       expect(await mirror.getByRole('img', { name: 'Browser page screenshot' }).count()).toBe(0)
       expect(await mirror.getByText('Start browsing').isVisible()).toBe(false)
       await page.screenshot({ path: '/tmp/dsh-chat-link-initial-loading.png' })
       expect(page.url()).toBe(shellUrl)
 
       await page.setViewportSize({ width: 375, height: 812 })
-      await expect.poll(() => page.locator('[data-workbench-fullscreen]').count()).toBe(1)
+      await expectMobileWorkbenchGeometry(page)
       await expectPendingTab(page, url)
-      await expect.poll(() => mirror.getByTestId('browser-link-loading').isVisible()).toBe(true)
-      const status = mirror.getByRole('status')
+      await expect.poll(() => addressForm.getByTestId('browser-link-loading').isVisible()).toBe(true)
+      const status = addressForm.getByRole('status').filter({ hasText: 'Opening page' })
       await expect.poll(() => status.isVisible()).toBe(true)
-      expect(await status.textContent()).toContain(url)
-      await expect.poll(() => status.locator('strong').evaluate((element) => {
-        const lineHeight = Number.parseFloat(getComputedStyle(element).lineHeight)
-        return element.getBoundingClientRect().height > lineHeight
-      })).toBe(true)
+      expect(await address.inputValue()).toBe(url)
+      expect(await canvas.textContent()).not.toContain(url)
       await expect.poll(async () => {
         const box = await mirror.boundingBox()
         return box === null ? Infinity : box.x + box.width
@@ -428,6 +533,7 @@ describe('web e2e: Markdown inline-code links', () => {
       expect(await page.locator('#dsh-layout-workbench [role="tab"][data-browser-tab-id]').count()).toBe(1)
       expect(await page.locator(`#dsh-layout-workbench [role="tab"][data-browser-tab-id="${hostId}"]`).count()).toBe(1)
       await expect.poll(() => mirror.getByTestId('browser-link-loading').count()).toBe(0)
+      expect(await canvas.getAttribute('aria-busy')).toBe('false')
       await page.screenshot({ path: '/tmp/dsh-chat-link-initial-loaded.png' })
       expect(tripwire.pageErrors).toEqual([])
     } finally {
@@ -556,9 +662,30 @@ describe('web e2e: Markdown inline-code links', () => {
       const mirror = page.getByRole('region', { name: 'Browser view' })
       await expect.poll(() => mirror.getByRole('alert').count()).toBe(1)
       expect(await mirror.getByRole('alert').textContent()).toContain('BROWSER_FAILED')
-      expect(await mirror.getByRole('alert').textContent()).toContain(failureUrl)
+      expect(await mirror.getByRole('alert').textContent()).not.toContain(failureUrl)
+      const address = mirror.getByRole('textbox', { name: 'Address' })
+      expect(await address.inputValue()).toBe(failureUrl)
+      expect(await address.getAttribute('title')).toBe(failureUrl)
+      expect(await address.isDisabled()).toBe(true)
+      const retry = mirror.getByRole('button', { name: 'Retry' })
+      expect(await retry.evaluate((element) => {
+        const style = getComputedStyle(element)
+        return {
+          width: style.borderTopWidth, style: style.borderTopStyle,
+          radius: style.borderTopLeftRadius, fontSize: style.fontSize,
+          lineHeight: style.lineHeight, height: style.height,
+        }
+      })).toEqual({ width: '1px', style: 'solid', radius: '14px', fontSize: '12px',
+        lineHeight: '18px', height: '28px' })
+      await page.screenshot({ path: '/tmp/dsh-chat-link-retry.png' })
+      await page.setViewportSize({ width: 375, height: 812 })
+      await expectMobileWorkbenchGeometry(page)
+      expect(await address.inputValue()).toBe(failureUrl)
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(376)
+      await page.screenshot({ path: '/tmp/dsh-chat-link-retry-mobile.png' })
+      await page.setViewportSize({ width: 1680, height: 1000 })
       allowFailureRetry()
-      await mirror.getByRole('button', { name: 'Retry' }).click()
+      await retry.click()
       await expect.poll(async () => (await browserState(page, scaffold.baseUrl, RAPID_ID))?.tabs.length,
         { timeout: 20_000 }).toBe(6)
       await expect.poll(() => failedTab.count()).toBe(0)

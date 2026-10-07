@@ -18,6 +18,8 @@ import {
   IconFolderOpen16,
   IconFolderOpenOutline16,
   IconBrowseOutline16,
+  IconGlobeOutline14,
+  IconCordisPluginOutline14,
   IconChecklistOutline14,
   IconNewChatOutline16,
   IconFullscreenOutline16,
@@ -447,6 +449,7 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
         setFocusRequest(previous => (previous ?? 0) + 1)
         props.actions.openTerminal(sessionId)
       },
+      openLauncher: () => { props.actions.openLauncher(sessionId) },
       openExternalTab: (input) => { props.actions.openExternalTab(sessionId, input) },
       updateExternalTab: (tabId, update) => { props.actions.updateExternalTab(sessionId, tabId, update) },
       closeExternalTab: (tabId) => { props.actions.closeExternalTab(sessionId, tabId) },
@@ -570,6 +573,11 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
     setGuideError(null)
     actions.setView('menu')
   }, [actions])
+  const showLauncher = useCallback((): void => {
+    pendingFocus.current = 'menu'
+    setGuideError(null)
+    actions.openLauncher()
+  }, [actions])
   useEffect(() => {
     if (view === 'menu' && previousView.current !== 'menu') menuTerminalButton.current?.focus()
     previousView.current = view
@@ -580,7 +588,15 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
       returnButton.current?.focus()
       pendingFocus.current = null
     }
-  }, [view])
+  }, [view, activeId])
+  useLayoutEffect(() => {
+    if (!shown) return
+    const selected = tablist.current?.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')
+    const item = selected?.parentElement
+    if (item !== undefined && item !== null && typeof item.scrollIntoView === 'function') {
+      item.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' })
+    }
+  }, [activeId, view, shown])
   useLayoutEffect(() => {
     if (!focusAfterClose.current) return
     focusAfterClose.current = false
@@ -694,7 +710,7 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
     <>
       <header className={css.topbar} data-window-drag-region="">
         <div ref={tablist} className={css.tabs} role="tablist" aria-label={t('tabs.label')}
-          tabIndex={view === 'menu' && tabs.length > 0 ? 0 : undefined}
+          tabIndex={view === 'menu' && active?.type !== 'launcher' && tabs.length > 0 ? 0 : undefined}
           onKeyDown={(event) => {
             const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]:not(:disabled)'))
             const index = buttons.indexOf(event.target as HTMLButtonElement)
@@ -708,6 +724,25 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
             buttons[next]?.focus()
           }}>
           {tabs.map((tab, index) => {
+            if (tab.type === 'launcher') {
+              const selected = view === 'menu' && activeId === tab.id
+              const name = t('tabs.new')
+              return <div className={clsx(css.tab, selected && css.tabActive)} role="presentation" key={tab.id}>
+                <button type="button" className={css.tabSelect} role="tab" aria-selected={selected}
+                  tabIndex={selected || (view === 'menu' && active?.type !== 'launcher' && index === 0) ? 0 : -1}
+                  aria-controls={tabDomId(panelPrefix, props.sessionId, tab.id, 'panel')}
+                  id={tabDomId(panelPrefix, props.sessionId, tab.id, 'tab')} title={name}
+                  onClick={(event) => { selectTab(tab.id, event.detail !== 0) }}>
+                  <span className={css.tabGlyph} aria-hidden="true"><IconGlobeOutline14 /></span>
+                  <span className={css.tabName}>{name}</span>
+                </button>
+                <button type="button" className={css.tabClose} aria-label={t('tabs.close', { name })}
+                  title={t('tabs.close', { name })} onClick={() => {
+                    focusAfterClose.current = true
+                    actions.closeTab(tab.id)
+                  }}><IconCloseOutline16 size={12} /></button>
+              </div>
+            }
             if (tab.type === 'browser' || tab.type === 'browser-pending') return <div key={tab.id} className={css.browserTabs}>
               {renderSlot('workbench.browser.tabs', { ...browserOwner, shown,
                 ...tab.type === 'browser' ? { tabId: tab.browserTabId, tabName: tab.name } : {
@@ -723,9 +758,10 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
                 () => { selectTab(tab.id, true) }, () => { actions.closeExternalTab(tab.id) })
               return <div className={clsx(css.tab, selected && css.tabActive)} role="presentation" key={tab.id}>
                 <button type="button" className={css.tabSelect} role="tab" aria-selected={selected}
-                  tabIndex={selected || (view === 'menu' && index === 0) ? 0 : -1}
+                  tabIndex={selected || (view === 'menu' && active?.type !== 'launcher' && index === 0) ? 0 : -1}
                   aria-controls={owner.panelDomId} id={owner.tabDomId} title={tab.name}
                   onClick={(event) => { selectTab(tab.id, event.detail !== 0) }}>
+                  <span className={css.tabGlyph} aria-hidden="true"><IconCordisPluginOutline14 /></span>
                   <span className={css.externalTitle}>
                     {renderSlot('sidebar.right.pane.tab.title', owner, {
                       entryKey: definitionId, hookContext: owner, fallback: tab.name,
@@ -748,13 +784,15 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
               ? 'files' : 'terminal')
             return <div className={clsx(css.tab, selected && css.tabActive)} role="presentation" key={tab.id}>
               <button type="button" className={css.tabSelect} role="tab" aria-selected={selected}
-                tabIndex={selected || (view === 'menu' && index === 0) ? 0 : -1}
+                tabIndex={selected || (view === 'menu' && active?.type !== 'launcher' && index === 0) ? 0 : -1}
                 aria-controls={tabDomId(panelPrefix, props.sessionId, tab.id, 'panel')}
                 id={tabDomId(panelPrefix, props.sessionId, tab.id, 'tab')} title={name}
                 onClick={(event) => { selectTab(tab.id, event.detail !== 0) }}>
-                {tab.type === 'terminal' ? <Icon name="terminal-menu" size={14} />
-                  : tab.type === 'file-manager' ? <IconFolderOpenOutline16 size={14} /> : <FileGlyph />}
-                <span>{name}</span>
+                <span className={css.tabGlyph} aria-hidden="true">
+                  {tab.type === 'terminal' ? <Icon name="terminal-menu" size={14} />
+                    : tab.type === 'file-manager' ? <IconFolderOpenOutline16 size={14} /> : <FileGlyph />}
+                </span>
+                <span className={css.tabName}>{name}</span>
               </button>
               <button type="button" className={css.tabClose} aria-label={t('tabs.close', { name })}
                 title={t('tabs.close', { name })} onClick={() => {
@@ -765,7 +803,7 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
               </button>
             </div>
           })}
-          <ToolbarButton label={t('tabs.add')} onClick={showMenu} icon={<IconPlusOutline16 size={14} />} />
+          <ToolbarButton label={t('tabs.add')} onClick={showLauncher} icon={<IconPlusOutline16 size={14} />} />
         </div>
         <div className={css.viewControls}>
           {view !== 'menu' && (
@@ -800,7 +838,12 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
       <div className={clsx(css.body, !treeVisible && css.filesClosed)}
         data-file-manager={view === 'files' && active?.type === 'file-manager' || undefined}>
         <main className={css.previewStack}>
-          <div className={css.menuView} hidden={view !== 'menu'} {...view !== 'menu' ? { inert: '' } : {}}>
+          <div className={css.menuView} hidden={view !== 'menu'} {...view !== 'menu' ? { inert: '' } : {}}
+            {...view === 'menu' && active?.type === 'launcher' ? {
+              id: tabDomId(panelPrefix, props.sessionId, active.id, 'panel'),
+              role: 'tabpanel',
+              'aria-labelledby': tabDomId(panelPrefix, props.sessionId, active.id, 'tab'),
+            } : {}}>
             <nav className={css.functionMenu} aria-label={t('workbench.menu.label')}>
               <button type="button" className={css.functionItem} disabled title={t('workbench.menu.unavailable')}>
                 <IconChecklistOutline14 size={18} />
@@ -861,6 +904,10 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
               {guideError !== null && <p className={css.guideError} role="alert">{guideError}</p>}
             </nav>
           </div>
+          {tabs.filter(tab => tab.type === 'launcher' && tab.id !== activeId).map(tab => (
+            <div key={tab.id} id={tabDomId(panelPrefix, props.sessionId, tab.id, 'panel')}
+              role="tabpanel" aria-labelledby={tabDomId(panelPrefix, props.sessionId, tab.id, 'tab')} hidden />
+          ))}
           <div className={css.fileView} hidden={view !== 'files'} {...view !== 'files' ? { inert: '' } : {}}>
             {tabs.filter(tab => tab.type === 'file-manager' && !narrow).map(tab => (
               <div id={tabDomId(panelPrefix, props.sessionId, tab.id, 'panel')}

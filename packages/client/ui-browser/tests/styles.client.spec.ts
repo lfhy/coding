@@ -17,7 +17,7 @@ function rule(selector: string): string {
 describe('browser responsive styles', () => {
   it('joins the workbench tab row and scales image/cursor without clipping narrow controls', () => {
     expect(css).toContain('.tabs { display: flex')
-    expect(rule('.tabs {')).toContain('flex: none')
+    expect(rule('.tabs {')).toContain('flex: 1')
     expect(rule('.tabs {')).not.toContain('overflow-x')
     expect(css).toContain('width: 100%')
     expect(rule('.viewport')).toContain('max-width: 100%')
@@ -26,6 +26,10 @@ describe('browser responsive styles', () => {
     expect(css).toContain('@media (max-width: 768px)')
     expect(css).toContain('@media (max-width: 375px)')
     expect(css).toContain('@media (prefers-reduced-motion: reduce)')
+    expect(rule('.tab {')).toContain('--workbench-tab-height')
+    expect(rule('.addressStatus')).toContain('width: 24px')
+    expect(rule('.linkSpinner')).toContain('width: 14px')
+    expect(rule('.address input')).toContain('min-width: 0')
   })
 
   it('paints tab hover and selection on the item, keeping the close button inside the tab box', () => {
@@ -34,6 +38,8 @@ describe('browser responsive styles', () => {
       .toContain('--dsw-alias-interactive-bg-hover')
     expect(rule(".tab[data-active='true']")).toContain('--dsw-alias-interactive-bg-active')
     expect(rule('.tabClose:hover:not(:disabled)')).toContain('--dsw-alias-interactive-bg-hover')
+    expect(rule('.tabs button:focus-visible')).toContain('box-shadow: inset 0 0 0 2px')
     expect(css).not.toContain('.tab button:hover')
+    expect(css).not.toContain('.message button:hover')
   })
 })

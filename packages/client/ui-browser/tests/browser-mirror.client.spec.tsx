@@ -107,7 +107,7 @@ function navigated(url: string, revision: number): BrowserView {
 }
 
 describe('browser UI', () => {
-  it('shows destination and an accessible page-level loading state before the first Host result', () => {
+  it('shows the destination and loading status in the address bar before the first Host result', () => {
     const browser = mount(ready())
     const pendingBrowserLink = { id: 'browser-link:1', url: 'https://slow.example/' }
     browser.rerender(<>
@@ -116,8 +116,14 @@ describe('browser UI', () => {
       <BrowserMirror {...browser.props} pendingBrowserLink={pendingBrowserLink} />
     </>)
     expect(screen.getByRole('tab', { selected: true }).getAttribute('data-browser-pending-id')).toBe('browser-link:1')
-    expect(screen.getByRole('status').textContent).toContain('https://slow.example/')
-    expect(screen.getByTestId('browser-link-loading')).not.toBeNull()
+    const address = screen.getByRole('textbox', { name: 'Address' }) as HTMLInputElement
+    expect(address.value).toBe('https://slow.example/')
+    expect(address.title).toBe('https://slow.example/')
+    expect(screen.getByTestId('browser-canvas').getAttribute('aria-busy')).toBe('true')
+    expect(screen.getByRole('status').closest('form')).toBe(address.closest('form'))
+    expect(screen.getByRole('status').closest('[aria-busy="true"]')).toBeNull()
+    expect(screen.getByTestId('browser-link-loading').closest('form')).toBe(address.closest('form'))
+    expect(screen.getByTestId('browser-canvas').textContent).not.toContain('https://slow.example/')
     expect(screen.queryByAltText('Browser page screenshot')).toBeNull()
     expect(browser.ensureTab).not.toHaveBeenCalled()
     expect(browser.command).not.toHaveBeenCalled()
@@ -125,6 +131,10 @@ describe('browser UI', () => {
     browser.rerender(<BrowserMirror {...browser.props} pendingBrowserLink={{ ...pendingBrowserLink,
       error: 'HTTP 503' }} />)
     expect(screen.getByRole('alert').textContent).toContain('HTTP 503')
+    expect(screen.getByRole('alert').textContent).not.toContain('https://slow.example/')
+    expect(screen.getByRole<HTMLInputElement>('textbox', { name: 'Address' }).value).toBe('https://slow.example/')
+    expect(screen.getByTestId('browser-canvas').getAttribute('aria-busy')).toBe('false')
+    expect(screen.queryByTestId('browser-link-loading')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
     expect(browser.props.retryLink).toHaveBeenCalledExactlyOnceWith('https://slow.example/', 'browser-link:1')
     browser.retryLink.mockRejectedValueOnce(new Error('Too many pending links'))
@@ -212,6 +222,8 @@ describe('browser UI', () => {
     expect(screen.getByRole('tab', { name: 'Example' }).getAttribute('aria-selected')).toBe('true')
     expect(screen.getByRole('tabpanel', { name: 'Selected browser panel' })
       .querySelector('[role="status"]')?.textContent).toBe('Loading browser state…')
+    expect(screen.getByRole('status').closest('form')).not.toBeNull()
+    expect(screen.getByTestId('browser-canvas').querySelector('[role="status"]')).toBeNull()
     expect(screen.queryByAltText('Browser page screenshot')).toBeNull()
     expect(browser.command).not.toHaveBeenCalled()
     await act(async () => { finish(firstState as never); await opening })
@@ -395,7 +407,8 @@ describe('browser UI', () => {
     result.rerender(<BrowserMirror {...result.props} useBrowserMirror={viewHook({ ...ready(), pending: true })} />)
     const pending = screen.getByRole('status', { name: '' })
     expect(pending.textContent).toBe('Opening page…')
-    expect(pending.parentElement).toBe(error.parentElement)
+    expect(pending.closest('form')).toBe(address.closest('form'))
+    expect(screen.getByTestId('browser-canvas').querySelector('[role="status"]')).toBeNull()
     result.unmount()
     bounds.mockRestore()
     vi.unstubAllGlobals()
@@ -980,12 +993,54 @@ describe('browser UI', () => {
   it('disables controls while pending and displays actionable error', () => {
     const pending = mount({ ...ready(), pending: true })
     expect(screen.getByRole('status').textContent).toContain('Opening')
+    expect(screen.getByTestId('browser-canvas').getAttribute('aria-busy')).toBe('true')
+    expect(screen.getByRole('status').closest('[aria-busy="true"]')).toBeNull()
+    expect(screen.getByTestId('browser-canvas').querySelector('[role="status"]')).toBeNull()
     expect(screen.getByRole('button', { name: 'Back' }).hasAttribute('disabled')).toBe(true)
     pending.unmount()
     const error = mount({ phase: 'error', state: null, frameUrl: null, pending: false, message: 'HTTP 503' })
     expect(screen.getByRole('alert').textContent).toContain('503')
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
     expect(error.props.retry).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps manual navigation, reload and initial loading feedback in the address bar', () => {
+    const browser = mount(ready())
+    const address = screen.getByRole<HTMLInputElement>('textbox', { name: 'Address' })
+    fireEvent.focus(address)
+    fireEvent.change(address, { target: { value: 'https://next.example/long/path' } })
+    fireEvent.submit(address.closest('form')!)
+    expect(browser.command).toHaveBeenCalledWith({ kind: 'navigate', url: 'https://next.example/long/path' })
+    browser.rerender(<BrowserMirror {...browser.props} useBrowserMirror={viewHook({ ...ready(), pending: true })} />)
+    expect(address.value).toBe('https://next.example/long/path')
+    expect(screen.getByRole('status').closest('form')).toBe(address.closest('form'))
+    expect(screen.getByTestId('browser-canvas').querySelector('[role="status"]')).toBeNull()
+    browser.rerender(<BrowserMirror {...browser.props} useBrowserMirror={viewHook(ready())} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Reload' }))
+    expect(browser.command).toHaveBeenCalledWith({ kind: 'reload' })
+    browser.rerender(<BrowserMirror {...browser.props} useBrowserMirror={viewHook({ ...ready(), pending: true })} />)
+    expect(screen.getByRole('status').closest('form')).toBe(address.closest('form'))
+    browser.rerender(<BrowserMirror {...browser.props} useBrowserMirror={viewHook(loading)} />)
+    expect(screen.getByRole('status').textContent).toBe('Loading browser state…')
+    expect(screen.getByRole('status').closest('form')).toBe(address.closest('form'))
+    expect(screen.getByTestId('browser-canvas').querySelector('[role="status"]')).toBeNull()
+  })
+
+  it('tracks native page loading after the navigation command settles until the page stops loading', () => {
+    vi.stubGlobal('codingDesktop', { browser: { available: true, present: vi.fn(async () => {}) } })
+    const tabLoading = { ...state(), tabs: state().tabs.map(tab => ({ ...tab, loading: tab.id === id })) }
+    const browser = mount({ phase: 'ready', state: tabLoading as never, frameUrl: null, pending: false })
+    const address = screen.getByRole('textbox', { name: 'Address' })
+    expect(screen.getByTestId('browser-canvas').getAttribute('aria-busy')).toBe('true')
+    expect(screen.getByRole('status').closest('form')).toBe(address.closest('form'))
+    expect(screen.getByTestId('browser-canvas').querySelector('[role="status"]')).toBeNull()
+
+    const stopped = { ...tabLoading, tabs: tabLoading.tabs.map(tab => ({ ...tab, loading: false })) }
+    browser.rerender(<BrowserMirror {...browser.props}
+      useBrowserMirror={viewHook({ phase: 'ready', state: stopped as never, frameUrl: null, pending: false })} />)
+    expect(screen.getByTestId('browser-canvas').getAttribute('aria-busy')).toBe('false')
+    expect(screen.queryByTestId('browser-link-loading')).toBeNull()
+    expect(screen.queryByRole('status')).toBeNull()
   })
 
   it('selects and closes pages through their individual workbench contributions', async () => {

@@ -37,6 +37,7 @@ describe('file workbench store', () => {
       tabs: [],
       activeId: null,
       nextTerminalNumber: 1,
+      nextLauncherNumber: 1,
       nextExternalNumber: 1,
       activeBrowserTabId: null,
       interactionEpoch: 8,
@@ -97,6 +98,47 @@ describe('file workbench store', () => {
 })
 
 describe('统一工作台标签', () => {
+  it('为每次新增保留独立启动标签，并以新功能替换活动启动项', () => {
+    const instance = createWorkbenchStore().create()
+    instance.actions.openTerminal()
+    instance.actions.openLauncher()
+    instance.actions.openLauncher()
+    expect(instance.getSnapshot()).toMatchObject({ view: 'menu', activeId: 'launcher:2',
+      tabs: [{ type: 'terminal' }, { type: 'launcher', id: 'launcher:1' }, { type: 'launcher', id: 'launcher:2' }] })
+    instance.actions.openTerminal()
+    expect(instance.getSnapshot()).toMatchObject({ view: 'terminal', activeId: 'terminal:2',
+      tabs: [{ type: 'terminal', id: 'terminal:1' }, { type: 'launcher', id: 'launcher:1' },
+        { type: 'terminal', id: 'terminal:2' }] })
+    instance.actions.activateTab('launcher:1')
+    instance.actions.openFileManager()
+    expect(instance.getSnapshot()).toMatchObject({ view: 'files', activeId: 'file-manager' })
+    expect(instance.getSnapshot().tabs.map(tab => tab.type)).toEqual(['terminal', 'file-manager', 'terminal'])
+    instance.actions.openLauncher()
+    instance.actions.openFileManager()
+    expect(instance.getSnapshot().tabs.map(tab => tab.type)).toEqual(['terminal', 'file-manager', 'terminal'])
+    instance.actions.openLauncher()
+    instance.actions.openExternalTab({ definitionId: 'plugin:notes', kind: 'notes', name: 'Notes', address: '/notes' })
+    expect(instance.getSnapshot().tabs.map(tab => tab.type)).toEqual(['terminal', 'file-manager', 'terminal', 'external'])
+    instance.actions.openLauncher()
+    instance.actions.setView('browser')
+    expect(instance.getSnapshot().tabs.some(tab => tab.type === 'launcher')).toBe(false)
+    expect(instance.getSnapshot().view).toBe('browser')
+  })
+
+  it('关闭启动标签仅修改本地状态，选择邻项或返回空菜单；返回菜单不创建启动项', () => {
+    const instance = createWorkbenchStore().create()
+    instance.actions.openLauncher()
+    instance.actions.openLauncher()
+    instance.actions.activateTab('launcher:1')
+    expect(instance.getSnapshot()).toMatchObject({ view: 'menu', activeId: 'launcher:1' })
+    instance.actions.closeTab('launcher:1')
+    expect(instance.getSnapshot()).toMatchObject({ view: 'menu', activeId: 'launcher:2' })
+    instance.actions.setView('menu')
+    expect(instance.getSnapshot().tabs.map(tab => tab.id)).toEqual(['launcher:2'])
+    instance.actions.closeTab('launcher:2')
+    expect(instance.getSnapshot()).toMatchObject({ view: 'menu', activeId: null, tabs: [] })
+  })
+
   it('第三方标签按 kind 去重，保留初始 definitionId 并使每次导航递增 revision', () => {
     const instance = createWorkbenchStore().create()
     const first = { definitionId: 'plugin:issues', kind: 'issue', name: '问题', address: '/issues/1', params: { id: 1 } }

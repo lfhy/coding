@@ -9,6 +9,14 @@ describe('browser state wire', () => {
     expect(normalizeBrowserUrl('example.com:8080')).toBe('https://example.com:8080/')
     expect(normalizeBrowserUrl('http://localhost:3000/')).toBe('http://localhost:3000/')
   })
+  it('projects optional loading while preserving explicit false and existing unknown-field policy', () => {
+    for (const loading of [true, false]) {
+      const tab = { ...state().tabs[0], loading, extra: 'ignored' }
+      expect(parseBrowserState({ ...state(), tabs: [tab] }).tabs[0]).toEqual({ ...state().tabs[0], loading })
+    }
+    expect(parseBrowserState(state()).tabs[0]).not.toHaveProperty('loading')
+    expect(() => parseBrowserState({ ...state(), tabs: [{ ...state().tabs[0], loading: 'yes' }] })).toThrow('浏览器标签字段无效')
+  })
   it('accepts only the exact lock-only response and validates the full-state operation flag', () => {
     expect(parseBrowserStateOrLock({ operationActive: true })).toEqual({ operationActive: true })
     expect(() => parseBrowserStateOrLock({ operationActive: true, tabs: [] })).toThrow()

@@ -11,13 +11,14 @@
 }
 .root[hidden], .tabs[hidden] { display: none; }
 .root[data-native-notice='true'] { grid-template-rows: 48px auto minmax(0, 1fr); }
-.tabs { display: flex; align-items: center; flex: none; gap: 4px; min-width: 0; white-space: nowrap; }
-/* 标签条目是一整块：选中与悬停都画在这一层，关闭键才落在标签内部，形状沿用工作台文件标签。 */
+.tabs { display: flex; align-items: center; flex: 1; width: 100%; min-width: 0; white-space: nowrap; }
+/* 标签宽度由工作台外层统一分配，内部仅填满一个条目。 */
 .tab {
-  display: flex; align-items: center; flex: 0 1 184px; min-width: 88px; max-width: 220px;
-  height: 34px; border-radius: 9px; color: var(--dsw-alias-label-secondary);
+  display: flex; align-items: center; width: 100%; min-width: 0;
+  height: var(--workbench-tab-height, 34px); border-radius: 9px; color: var(--dsw-alias-label-secondary);
 }
 .tab:not([data-active='true']):hover:has(> button:enabled) { background: var(--dsw-alias-interactive-bg-hover); }
+.tab:not([data-active='true']):focus-within { background: var(--dsw-alias-interactive-bg-hover); }
 .tab[data-active='true'] { color: var(--dsw-alias-label-primary); background: var(--dsw-alias-interactive-bg-active); }
 .tabSelect {
   display: flex; align-items: center; gap: 7px; min-width: 0; flex: 1; height: 100%;
@@ -29,18 +30,21 @@
 .tabName { min-width: 0; overflow: hidden; font: var(--dsw-font-xs-13); text-overflow: ellipsis; }
 .tabClose { display: grid; place-items: center; flex: none; width: 26px; height: 26px; padding: 0; }
 .addTab { display: grid; place-items: center; flex: none; width: 32px; height: 32px; padding: 0; }
-.tab button, .addTab, .history button, .address button, .message button, .typeMode, .typeOverlay button {
+.tab button, .addTab, .history button, .address button, .typeMode, .typeOverlay button {
   border: 0; border-radius: 8px; background: transparent; color: inherit;
   font: inherit; cursor: pointer;
 }
 /* 关闭键的高亮收在标签块内部，读作标签里的一枚按钮。 */
 .tabClose:hover:not(:disabled), .addTab:hover:not(:disabled), .history button:hover:not(:disabled),
-.address button:hover:not(:disabled), .message button:hover:not(:disabled), .typeMode:hover:not(:disabled),
+.address button:hover:not(:disabled), .typeMode:hover:not(:disabled),
 .typeOverlay button:hover:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover);
 }
-.root button:focus-visible, .tabs button:focus-visible, .message button:focus-visible {
+.root button:focus-visible {
   outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: -2px;
+}
+.tabs button:focus-visible {
+  outline: none; box-shadow: inset 0 0 0 2px var(--dsw-alias-state-business-primary);
 }
 .root button:disabled, .tabs button:disabled { opacity: .45; cursor: default; }
 .toolbar {
@@ -65,6 +69,7 @@
 }
 .address input:focus { outline: none; }
 .address button { display: grid; place-items: center; flex: none; width: 28px; height: 26px; padding: 0; }
+.addressStatus { display: grid; place-items: center; flex: none; width: 24px; height: 24px; }
 .typeMode { flex: none; height: 30px; padding: 0 8px; font: var(--dsw-font-xs-13); }
 .typeMode[data-active='true'] { background: var(--dsw-alias-interactive-bg-active); }
 .nativeNotice { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; min-width: 0;
@@ -86,18 +91,14 @@
   gap: 12px; min-width: 0; padding: 20px; color: var(--dsw-alias-label-secondary);
   text-align: center; overflow-wrap: anywhere; font-size: 13px; line-height: 20px;
 }
-.message button { padding: 6px 10px; }
-.linkStatus {
+.linkError {
   display: flex; align-items: center; justify-content: center; flex-direction: column;
   gap: 12px; min-width: 0; min-height: 0; padding: 24px; text-align: center;
   overflow-wrap: anywhere; color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xs-13);
 }
-.linkStatus strong { color: var(--dsw-alias-label-primary); font: var(--dsw-font-xs-strong-13); }
-.linkStatus[role='alert'] { color: var(--dsw-alias-state-error-primary); }
-.linkStatus button { padding: 6px 10px; border-radius: 8px; }
-.linkUrl { max-width: 100%; }
+.linkError span { color: var(--dsw-alias-state-error-primary); }
 .linkSpinner {
-  width: 28px; height: 28px; border: 2px solid var(--dsw-alias-border-l2);
+  display: block; width: 14px; height: 14px; border: 2px solid var(--dsw-alias-border-l2);
   border-top-color: var(--dsw-alias-state-business-primary); border-radius: 50%;
   animation: link-spin 900ms linear infinite;
 }
@@ -121,7 +122,6 @@
   border-radius: 50%; animation: cursor-pulse 850ms ease-out both;
 }
 @keyframes cursor-pulse { from { opacity: 1; transform: scale(.35); } to { opacity: 0; transform: scale(1.25); } }
-.pending { position: absolute; z-index: 1; top: 8px; right: 12px; margin: 0; font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-secondary); }
 .busyNotice { position: absolute; z-index: 2; top: 8px; right: 12px; margin: 0; padding: 4px 8px;
   border-radius: 8px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary);
   font: var(--dsw-font-xs-13); pointer-events: none; }

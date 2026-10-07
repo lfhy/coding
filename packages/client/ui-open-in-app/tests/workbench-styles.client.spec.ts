@@ -12,6 +12,18 @@ describe('workbench desktop titlebar', () => {
     expect(css).toMatch(/\.topbar button,\s*\.topbar input\s*\{[^}]*-webkit-app-region:\s*no-drag/)
     expect(css).toMatch(/\.topbar::before\s*\{[^}]*width:\s*var\(--app-safe-area-inset-top, 0px\)[^}]*-webkit-app-region:\s*no-drag/)
   })
+
+  it('shares one tab width, height, spacing and selection treatment across tab types', () => {
+    expect(css).toMatch(/\.topbar\s*\{[^}]*--workbench-tab-width:\s*184px/)
+    expect(css).toMatch(/\.browserTabs\s*\{[^}]*flex:\s*0 1 var\(--workbench-tab-width\)/)
+    expect(css).toMatch(/\.tab\s*\{[^}]*flex:\s*0 1 var\(--workbench-tab-width\)/)
+    expect(css).toMatch(/\.tab\s*\{[^}]*height:\s*var\(--workbench-tab-height\)/)
+    expect(css).toMatch(/\.tab:not\(\.tabActive\):hover:has\(> button:enabled\)/)
+    expect(css).toMatch(/\.tab:not\(\.tabActive\):focus-within/)
+    expect(css).toMatch(/\.tabSelect\s*\{[^}]*height:\s*100%/)
+    expect(css).toMatch(/\.tabGlyph\s*\{[^}]*width:\s*16px;[^}]*height:\s*16px/)
+    expect(css).toMatch(/\.tabClose\s*\{[^}]*width:\s*26px;[^}]*height:\s*26px;[^}]*padding:\s*0;[^}]*border-radius:\s*8px/)
+  })
 })
 
 describe('workbench narrow files layout', () => {

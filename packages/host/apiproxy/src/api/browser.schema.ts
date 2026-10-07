@@ -71,6 +71,7 @@ const browserTabSummarySchema = z.strictObject({
   title: z.string(),
   canGoBack: z.boolean(),
   canGoForward: z.boolean(),
+  loading: z.boolean().optional(),
 }) satisfies z.ZodType<Wire<BrowserTabSummary>>
 
 const browserObservationSchema = z.strictObject({

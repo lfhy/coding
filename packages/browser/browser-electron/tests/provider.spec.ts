@@ -96,6 +96,21 @@ describe('desktop browser bridge', () => {
     expect(() => decodeBridgePng('a'.repeat(3_000_000))).toThrow()
   })
 
+  it('accepts optional native tab loading without admitting other tab fields', () => {
+    for (const loading of [true, false]) {
+      const withLoading = { ...state, tabs: [{ ...state.tabs[0], loading }] }
+      expect(parseBridgeEvent({ v: 1, type: 'state', sessionId: id, state: withLoading }).state)
+        .toEqual(withLoading)
+      expect(parseBridgeResponse({ v: 1, id: 'x', ok: true, value: withLoading }, 'control'))
+        .toMatchObject({ value: withLoading })
+    }
+    expect(parseBridgeEvent({ v: 1, type: 'state', sessionId: id, state }).state).toEqual(state)
+    for (const tab of [{ ...state.tabs[0], loading: 'yes' }, { ...state.tabs[0], extra: true }]) {
+      expect(() => parseBridgeEvent({ v: 1, type: 'state', sessionId: id,
+        state: { ...state, tabs: [tab] } })).toThrow()
+    }
+  })
+
   it('receives exact result after lease and revokes cached frame on spontaneous navigation', async () => {
     const { provider, socket, messages } = await fixture((request, peer) => {
       if (request.method === 'lease' || request.method === 'release' || request.method === 'close') {

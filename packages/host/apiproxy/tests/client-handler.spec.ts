@@ -163,6 +163,7 @@ describe('unary round trip', () => {
       operationActive: false,
       browserGeneration: 'g', stateRevision: 1, viewport: { width: 1280, height: 720 }, tabs: [{
         id: tabId as never, generation: 'tab-generation-1', url: 'https://example.com/', title: 'Example', canGoBack: true, canGoForward: false,
+        loading: false,
       }], activeTabId: tabId as never, observation: null, hasFrame: false,
     }
     const control = vi.fn<ApiProxy['browser']['control']>().mockImplementation(r => ok(r, state))

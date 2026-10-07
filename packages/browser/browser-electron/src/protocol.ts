@@ -92,10 +92,11 @@ function state(value: unknown): value is BrowserSessionState {
     'activeTabId', 'observation', 'hasFrame']) || typeof value.operationActive !== 'boolean' ||
     !bounded(value.browserGeneration, 128) || !integer(value.stateRevision) || !viewport(value.viewport) ||
     !Array.isArray(value.tabs) || value.tabs.length < 1 || value.tabs.length > 8 ||
-    !value.tabs.every((tab: unknown) => fields(tab, ['id', 'generation', 'url', 'title', 'canGoBack', 'canGoForward']) &&
+    !value.tabs.every((tab: unknown) => fields(tab, ['id', 'generation', 'url', 'title', 'canGoBack', 'canGoForward'], ['loading']) &&
       bounded(tab.id, 128) && bounded(tab.generation, 128) && bounded(tab.url, 4096) &&
       typeof tab.title === 'string' && tab.title.length <= 4096 &&
-      typeof tab.canGoBack === 'boolean' && typeof tab.canGoForward === 'boolean') ||
+      typeof tab.canGoBack === 'boolean' && typeof tab.canGoForward === 'boolean' &&
+      (tab.loading === undefined || typeof tab.loading === 'boolean')) ||
     !bounded(value.activeTabId, 128) || !value.tabs.some((tab: { id: string }) => tab.id === value.activeTabId) ||
     !(value.observation === null || observation(value.observation)) || typeof value.hasFrame !== 'boolean' ||
     value.hasFrame && value.observation === null) return false

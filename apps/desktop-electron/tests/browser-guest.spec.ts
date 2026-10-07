@@ -38,14 +38,16 @@ function fakeContents() {
     pageNavigate: (next: string) => { url = next; events.get('did-navigate-in-page')?.({} as never, next as never, true as never) },
     begin: (next: string) => {
       loading = true
-      events.get('did-start-navigation')?.({ isMainFrame: true } as never)
+      events.get('did-start-loading')?.()
+      events.get('did-start-navigation')?.({ isMainFrame: true, url: next } as never)
       url = next
     },
     commit: (next: string) => {
       contents.begin(next)
-      events.get('did-navigate')?.()
+      events.get('did-navigate')?.({} as never, next as never)
     },
     domReady: () => events.get('dom-ready')?.(),
+    finish: () => { loading = false; events.get('did-stop-loading')?.() },
     debugger: { isAttached: vi.fn(() => true), attach: vi.fn(), sendCommand },
     session: {
       setPermissionRequestHandler: vi.fn<(
@@ -74,10 +76,11 @@ function fakeContents() {
     getURL: vi.fn(() => url),
     loadURL: vi.fn(async (next: string) => {
       contents.commit(next)
-      loading = false
+      contents.finish()
     }),
     stop: vi.fn(() => { loading = false }),
     isLoadingMainFrame: vi.fn(() => loading),
+    isLoading: vi.fn(() => loading),
     reload: vi.fn(), sendInputEvent: vi.fn(), insertText: vi.fn(async () => undefined),
     isDestroyed: vi.fn(() => destroyed),
     close: vi.fn(() => { destroyed = true; events.get('destroyed')?.() }),
@@ -237,16 +240,16 @@ describe('Electron 实时浏览器 guest', () => {
     await manager.dispose()
   })
 
-  it('人工开页在主 frame DOM 就绪后返回，未完成的图片加载不阻塞原生标签', async () => {
+  it('人工开页在主 frame 提交后返回，脚本未就绪和图片加载不阻塞原生标签', async () => {
     vi.useFakeTimers()
     try {
-      const manager = createBrowserGuestManager(fixture())
+      const updates: unknown[] = []
+      const manager = createBrowserGuestManager(fixture(), { onState: (_id, current) => updates.push(current) })
       let finish!: () => void
       electron.WebContentsView.mockImplementationOnce(function () {
         const view = { webContents: fakeContents(), setBounds: vi.fn() }
         view.webContents.loadURL.mockImplementationOnce((url: string) => {
-          view.webContents.begin(url)
-          view.webContents.domReady()
+          view.webContents.commit(url)
           return new Promise<void>((resolve) => { finish = resolve })
         })
         view.webContents.debugger.sendCommand.mockRejectedValue(new Error('strict observation unavailable'))
@@ -257,17 +260,23 @@ describe('Electron 实时浏览器 guest', () => {
       await vi.advanceTimersByTimeAsync(0)
       const state = await pending
       expect(state).toMatchObject({ observation: null, hasFrame: false,
-        tabs: [{ url: 'https://example.com/slow-image' }] })
+        tabs: [{ url: 'https://example.com/slow-image', loading: true }] })
       expect(electron.views[0]!.webContents.debugger.sendCommand).not.toHaveBeenCalled()
       expect(electron.views[0]!.webContents.stop).not.toHaveBeenCalled()
-      await vi.advanceTimersByTimeAsync(10_000)
+      await vi.advanceTimersByTimeAsync(12_000)
       expect(electron.views[0]!.webContents.close).not.toHaveBeenCalled()
+      electron.views[0]!.webContents.finish()
+      expect(updates.at(-1)).toMatchObject({ tabs: [{ url: 'https://example.com/slow-image', loading: false }] })
+      expect((updates.at(-1) as { stateRevision: number }).stateRevision).toBeGreaterThan(state!.stateRevision)
+      const finished = await manager.control('s1', { kind: 'ensure-tab' })
+      expect(finished?.tabs[0]?.loading).toBe(false)
+      expect(finished!.stateRevision).toBeGreaterThan(state!.stateRevision)
       finish()
       await manager.dispose()
     } finally { vi.useRealTimers() }
   })
 
-  it('主 frame 虽触发 DOM 就绪但 loadURL 随即拒绝时不承认开页成功', async () => {
+  it('主 frame 已提交但 loadURL 随即拒绝时不承认开页成功', async () => {
     const manager = createBrowserGuestManager(fixture())
     electron.WebContentsView.mockImplementationOnce(function () {
       const view = { webContents: fakeContents(), setBounds: vi.fn() }
@@ -286,6 +295,37 @@ describe('Electron 实时浏览器 guest', () => {
     await manager.dispose()
   })
 
+  it('人工导航只承认本次主 frame 提交，允许受校验的重定向且不泄露被拒 URL', async () => {
+    const manager = createBrowserGuestManager(fixture(), { hostOrigin })
+    await manager.control('s1', { kind: 'ensure-tab' })
+    const wc = electron.views[0]!.webContents
+    wc.loadURL.mockImplementationOnce((url: string) => {
+      wc.begin(url)
+      wc.events.get('did-navigate')?.({} as never, 'https://example.com/old' as never)
+      wc.events.get('did-redirect-navigation')?.({ isMainFrame: true, url: 'https://example.org/landing' } as never)
+      wc.events.get('did-navigate')?.({} as never, 'https://example.org/landing' as never)
+      wc.getURL.mockReturnValue('https://example.org/landing')
+      wc.events.get('did-navigate')?.({} as never, 'https://example.org/landing' as never)
+      return new Promise<void>(() => {})
+    })
+    const landed = await manager.control('s1', { kind: 'navigate', url: 'https://example.com/start' })
+    expect(landed?.tabs[0]).toMatchObject({ url: 'https://example.org/landing', loading: true })
+
+    wc.getURL.mockRestore()
+    wc.loadURL.mockImplementationOnce((url: string) => {
+      wc.begin(url)
+      wc.events.get('did-redirect-navigation')?.({ isMainFrame: true, url: hostOrigin + '/private' } as never)
+      wc.getURL.mockReturnValue(hostOrigin + '/private')
+      wc.events.get('did-navigate')?.({} as never, (hostOrigin + '/private') as never)
+      return new Promise<void>(() => {})
+    })
+    const failed = await manager.control('s1', { kind: 'navigate', url: 'https://example.com/next' })
+      .then(() => null, (error: unknown) => error)
+    expect(failed).toMatchObject({ code: 'BROWSER_DENIED', message: 'browser URL denied' })
+    expect((failed as Error).message).not.toContain(hostOrigin)
+    await manager.dispose()
+  })
+
   it('旧页面迟到的 ERR_ABORTED 不会把正在加载的新人工导航误判为失败', async () => {
     vi.useFakeTimers()
     try {
@@ -294,8 +334,7 @@ describe('Electron 实时浏览器 guest', () => {
       const wc = electron.views[0]!.webContents
       let rejectOld!: (reason: Error) => void
       wc.loadURL.mockImplementationOnce((url: string) => {
-        wc.begin(url)
-        wc.domReady()
+        wc.commit(url)
         return new Promise<void>((_resolve, reject) => { rejectOld = reject })
       })
       const firstPending = manager.control('s1', { kind: 'navigate', url: 'https://example.com/first' })
@@ -306,8 +345,9 @@ describe('Electron 实时浏览器 guest', () => {
         wc.begin(url)
         wc.events.get('did-fail-load')?.({} as never, -3 as never,
           'ERR_ABORTED' as never, 'https://example.com/first' as never, true as never)
+        wc.events.get('did-navigate')?.({} as never, 'https://example.com/first' as never)
         rejectOld(new Error('ERR_ABORTED'))
-        wc.domReady()
+        wc.events.get('did-navigate')?.({} as never, url as never)
         return new Promise<void>(() => {})
       })
       const secondPending = manager.control('s1', { kind: 'navigate', url: 'https://example.com/second' })
@@ -317,7 +357,7 @@ describe('Electron 实时浏览器 guest', () => {
         tabs: [{ url: 'https://example.com/second' }] })
       expect(wc.stop).not.toHaveBeenCalled()
       expect(wc.events.get('did-fail-load')).toBeUndefined()
-      expect(wc.removeListener).toHaveBeenCalledWith('dom-ready', expect.any(Function))
+      expect(wc.removeListener).toHaveBeenCalledWith('did-navigate', expect.any(Function))
       await manager.dispose()
     } finally { vi.useRealTimers() }
   })

@@ -11,6 +11,7 @@
     { "path": "../runtime" },
     { "path": "../ui-icons" },
     { "path": "../ui-open-in-app" },
+    { "path": "../ui-primitives" },
     { "path": "../../core/session" },
     { "path": "../ui-slots" },
     { "path": "../../runtime-diagnostics/invariants" }

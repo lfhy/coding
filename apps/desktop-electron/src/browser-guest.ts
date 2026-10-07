@@ -240,7 +240,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     const id = randomUUID() as BrowserTabId
     const generation = randomUUID()
     const tab: Tab = { id, generation, view, revision: 0, navigation: 0, syntheticInput: false, everPresented: false,
-      summary: { id, generation, url: 'about:blank', title: '', canGoBack: false, canGoForward: false } }
+      summary: { id, generation, url: 'about:blank', title: '', canGoBack: false, canGoForward: false, loading: wc.isLoading() } }
     owner.tabs.set(id, tab)
     const isCurrent = (): boolean => owners.get(sessionId) === owner && owner.tabs.get(id) === tab
     view.setBounds({ x: 0, y: 0, ...owner.viewport })
@@ -259,6 +259,14 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
       emit(sessionId, owner)
     })
     wc.on('did-navigate', () => { if (isCurrent()) { refreshSummary(tab); emit(sessionId, owner) } })
+    const updateLoading = (): void => {
+      if (!isCurrent()) return
+      const previous = tab.summary.loading
+      refreshSummary(tab)
+      if (tab.summary.loading !== previous) { owner.revision++; emit(sessionId, owner) }
+    }
+    wc.on('did-start-loading', updateLoading)
+    wc.on('did-stop-loading', updateLoading)
     wc.on('did-navigate-in-page', (_event, _url, isMainFrame) => {
       if (!isMainFrame || !isCurrent()) return
       invalidate(owner, tab)
@@ -291,7 +299,8 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     const wc = tab.view.webContents
     const url = wc.getURL() || 'about:blank'
     tab.summary = { id: tab.id, generation: tab.generation, url: url.length <= MAX_URL_LENGTH ? url : OVERLONG_URL, title,
-      canGoBack: wc.navigationHistory.canGoBack(), canGoForward: wc.navigationHistory.canGoForward() }
+      canGoBack: wc.navigationHistory.canGoBack(), canGoForward: wc.navigationHistory.canGoForward(),
+      loading: wc.isLoading() }
   }
 
   function usableUrl(sessionId: string, owner: Owner, tab: Tab): string {
@@ -459,35 +468,39 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
   async function navigate(sessionId: string, owner: Owner, tab: Tab, url: string, human = false): Promise<void> {
     const wc = tab.view.webContents
     const destination = allowedUrl(url, options.hostOrigin)
-    let ready = false
     let started = false
-    let readyTask: ReturnType<typeof setImmediate> | undefined
-    let resolveReady!: (value: { timedOut: false; error?: unknown }) => void
-    const domReady = new Promise<{ timedOut: false; error?: unknown }>((resolve) => { resolveReady = resolve })
-    const onStart = (details: { isMainFrame: boolean }): void => {
+    let commitTask: ReturnType<typeof setImmediate> | undefined
+    const destinations = new Set([destination])
+    let resolveCommit!: (value: { timedOut: false; error?: unknown }) => void
+    const committed = new Promise<{ timedOut: false; error?: unknown }>((resolve) => { resolveCommit = resolve })
+    const onStart = (details: { isMainFrame: boolean; url: string }): void => {
       if (details.isMainFrame && owners.get(sessionId) === owner && owner.tabs.get(tab.id) === tab) {
-        if (readyTask) clearImmediate(readyTask)
-        readyTask = undefined
-        started = true; ready = false
+        if (commitTask) clearImmediate(commitTask)
+        commitTask = undefined
+        started = details.url === destination
       }
     }
-    const onDomReady = (): void => {
-      if (started && owners.get(sessionId) === owner && owner.tabs.get(tab.id) === tab) { ready = true; finishReady() }
+    const onRedirect = (details: { isMainFrame: boolean; url: string }): void => {
+      if (started && details.isMainFrame && owners.get(sessionId) === owner && owner.tabs.get(tab.id) === tab) {
+        destinations.add(details.url)
+      }
     }
-    function finishReady(): void {
-      if (!ready || owners.get(sessionId) !== owner || owner.tabs.get(tab.id) !== tab || wc.isDestroyed()) return
-      try { allowedUrl(wc.getURL(), options.hostOrigin) }
-      catch (error) { resolveReady({ timedOut: false, error }); return }
-      // 给本次 loadURL 拒绝一次先于 DOM 成功回执的机会；共享的失败事件可能属于上次加载。
-      readyTask ??= setImmediate(() => { resolveReady({ timedOut: false }) })
+    const onCommit = (_event: unknown, url: string): void => {
+      if (!started || !destinations.has(url) || url !== wc.getURL() ||
+        owners.get(sessionId) !== owner || owner.tabs.get(tab.id) !== tab || wc.isDestroyed()) return
+      try { allowedUrl(url, options.hostOrigin) }
+      catch (error) { resolveCommit({ timedOut: false, error }); return }
+      // 同一事件循环内本次 loadURL 的拒绝优先于提交回执；旧加载的异步拒绝不影响本次导航。
+      commitTask ??= setImmediate(() => { resolveCommit({ timedOut: false }) })
     }
     if (human) {
       wc.on('did-start-navigation', onStart)
-      wc.on('dom-ready', onDomReady)
+      wc.on('did-redirect-navigation', onRedirect)
+      wc.on('did-navigate', onCommit)
     }
     const completed = Promise.resolve().then(() => wc.loadURL(destination))
       .then(() => ({ timedOut: false as const }), (error: unknown) => ({ timedOut: false as const, error }))
-    const readiness = human ? Promise.race([completed, domReady]) : completed
+    const readiness = human ? Promise.race([completed, committed]) : completed
     let timer: ReturnType<typeof setTimeout> | undefined
     const deadline = new Promise<{ timedOut: true }>((resolve) => {
       timer = setTimeout(() => { resolve({ timedOut: true }) }, NAVIGATION_TIMEOUT_MS)
@@ -495,9 +508,10 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     const result = await Promise.race([readiness, deadline])
     if (timer) clearTimeout(timer)
     if (human) {
-      if (readyTask) clearImmediate(readyTask)
+      if (commitTask) clearImmediate(commitTask)
       wc.removeListener('did-start-navigation', onStart)
-      wc.removeListener('dom-ready', onDomReady)
+      wc.removeListener('did-redirect-navigation', onRedirect)
+      wc.removeListener('did-navigate', onCommit)
     }
     if (!result.timedOut) {
       // 保留 loadURL 的原始失败诊断，不能把被拒绝的导航当作已完成页面。

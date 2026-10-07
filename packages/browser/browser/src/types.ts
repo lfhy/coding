@@ -59,6 +59,8 @@ export interface BrowserTabSummary {
   readonly title: string
   readonly canGoBack: boolean
   readonly canGoForward: boolean
+  /** 原生 guest 的实时加载状态；Web 等提供方可以不提供。 */
+  readonly loading?: boolean
 }
 
 /** 只读会话状态；修订版使画面请求不能跨标签页使用旧截图。 */

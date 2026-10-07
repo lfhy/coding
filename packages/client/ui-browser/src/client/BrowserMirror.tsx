@@ -8,6 +8,7 @@ import type { BrowserHumanCommand, BrowserHumanTarget } from '@deepseek-ai/dsh-b
 import type { ToolCallBlock } from '@deepseek-ai/dsh-client-runtime/client'
 import type { HostObservable, InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-open-in-app/client'
+import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import { desktopBrowserPresentation, type BrowserView } from './controller.ts'
 import { fitBrowserViewport, type BrowserViewport } from './viewport.ts'
 import { pointOnFrame } from './interaction.ts'
@@ -356,13 +357,16 @@ export function BrowserMirror({ sessionId, shown, selectedTabId, newTabRequest, 
   const awaitingSelectedTab = shown && view.phase === 'ready' && selectedTabId !== undefined
     && active?.id !== selectedTabId
   const agentBusy = view.phase === 'busy' || view.state?.operationActive === true
+  const addressLoading = !agentBusy && (pendingBrowserLink !== undefined
+    ? pendingBrowserLink.error === undefined
+    : view.pending || view.phase === 'loading' || awaitingSelectedTab || active?.loading === true)
   const controlsDisabled = view.pending || agentBusy || awaitingSelectedTab || pendingBrowserLink !== undefined
   const tabId = active?.id ?? null
   const browserGeneration = view.state?.browserGeneration ?? null
   const canvasRef = useRef<HTMLDivElement>(null)
   const [inputError, setInputError] = useState<string | null>(null)
-  const nativeNotice = native && pendingBrowserLink === undefined && (inputError !== null || view.pending && !awaitingSelectedTab
-    || agentBusy && view.phase !== 'busy')
+  const nativeNotice = native && pendingBrowserLink === undefined
+    && (inputError !== null || agentBusy && view.phase !== 'busy')
   useLayoutEffect(() => {
     if (nativePresenter === null || tabId === null || !shown || view.phase !== 'ready'
       || awaitingSelectedTab || pendingBrowserLink !== undefined) return
@@ -527,8 +531,8 @@ export function BrowserMirror({ sessionId, shown, selectedTabId, newTabRequest, 
     setDraft(previous => previous.tabId === tabId && previous.submitted === address
       ? { ...previous, dirty: false, submitted: null } : previous)
   }, [ownDraft?.submitted, address, tabId])
-  const compactAddress = address !== '' && !addressFocused && !ownDraft?.dirty && inputError === null
-  const inputValue = ownDraft?.dirty
+  const compactAddress = pendingBrowserLink === undefined && address !== '' && !addressFocused && !ownDraft?.dirty && inputError === null
+  const inputValue = pendingBrowserLink !== undefined ? address : ownDraft?.dirty
     ? ownDraft.value : compactAddress ? new URL(address).hostname : address
   useLayoutEffect(() => {
     const input = addressRef.current
@@ -630,6 +634,7 @@ export function BrowserMirror({ sessionId, shown, selectedTabId, newTabRequest, 
       <form className={css.address} data-compact={compactAddress} onSubmit={navigate}>
         <label className={css.srOnly} htmlFor="browser-address">{t('address')}</label>
         <input id="browser-address" ref={addressRef} type="text" inputMode="url" autoComplete="url" spellCheck={false}
+          title={address}
           placeholder={t('addressPlaceholder')} disabled={controlsDisabled}
           onFocus={(event) => {
             // 先同步换成完整 URL，随后 fill/全选只操作原生 input；React 不争写正在输入的值。
@@ -645,6 +650,12 @@ export function BrowserMirror({ sessionId, shown, selectedTabId, newTabRequest, 
           }}
           onBlur={() => { setAddressFocused(false) }}
           aria-invalid={inputError !== null} aria-describedby={inputError ? 'browser-address-error' : undefined} />
+        {addressLoading &&
+          <span role="status" className={css.addressStatus}>
+            <span className={css.linkSpinner} data-testid="browser-link-loading" aria-hidden="true" />
+            <span className={css.srOnly}>{t(pendingBrowserLink === undefined
+              && (view.phase === 'loading' || awaitingSelectedTab) ? 'loading' : 'pending')}</span>
+          </span>}
         <button type="submit" disabled={controlsDisabled} aria-label={t('go')} title={agentBusy ? t('agentBusy') : t('go')}>
           <IconChevronRightOutline14 />
         </button>
@@ -656,33 +667,21 @@ export function BrowserMirror({ sessionId, shown, selectedTabId, newTabRequest, 
     </div>
     {nativeNotice && <div className={css.nativeNotice}>
       {inputError && <p id="browser-address-error" className={css.nativeError} role="alert">{inputError}</p>}
-      {view.pending && !awaitingSelectedTab && <p role="status">{t('pending')}</p>}
       {agentBusy && view.phase !== 'busy' && <p role="status">{t('agentBusy')}</p>}
     </div>}
-    <div className={css.body} ref={canvasRef} data-testid="browser-canvas">
-      {pendingBrowserLink !== undefined && <div className={css.linkStatus}
-        {...pendingBrowserLink.error === undefined ? { role: 'status' } : { role: 'alert' }}>
-        {pendingBrowserLink.error === undefined && <span className={css.linkSpinner}
-          data-testid="browser-link-loading" aria-hidden="true" />}
-        <span>{pendingBrowserLink.error === undefined ? t('pending') : t('linkError')}</span>
-        <strong className={css.linkUrl}>{pendingBrowserLink.url}</strong>
-        {pendingBrowserLink.error !== undefined && <>
-          <span>{pendingBrowserLink.error}</span>
-          <button type="button" onClick={() => {
-            void retryLink(pendingBrowserLink.url, pendingBrowserLink.id).catch((error: unknown) => {
-              failBrowserLink(pendingBrowserLink.id, error instanceof Error ? error.message : String(error))
-            })
-          }}>
-            {t('retry')}
-          </button>
-        </>}
+    <div className={css.body} ref={canvasRef} data-testid="browser-canvas" aria-busy={addressLoading}>
+      {pendingBrowserLink?.error !== undefined && <div className={css.linkError} role="alert">
+        <span>{t('linkError')}: {pendingBrowserLink.error}</span>
+        <Button variant="outline" size="sm" onClick={() => {
+          void retryLink(pendingBrowserLink.url, pendingBrowserLink.id).catch((error: unknown) => {
+            failBrowserLink(pendingBrowserLink.id, error instanceof Error ? error.message : String(error))
+          })
+        }}>
+          {t('retry')}
+        </Button>
       </div>}
       {pendingBrowserLink === undefined && !native && inputError && <p id="browser-address-error" className={css.inputError} role="alert">{inputError}</p>}
-      {pendingBrowserLink === undefined && !native && view.pending && !awaitingSelectedTab
-        && <p role="status" className={css.pending}>{t('pending')}</p>}
       {pendingBrowserLink === undefined && !native && agentBusy && view.phase !== 'busy' && <p role="status" className={css.busyNotice}>{t('agentBusy')}</p>}
-      {pendingBrowserLink === undefined && view.phase === 'loading' && <p role="status" className={css.message}>{t('loading')}</p>}
-      {pendingBrowserLink === undefined && awaitingSelectedTab && <p role="status" className={css.message}>{t('loading')}</p>}
       {pendingBrowserLink === undefined && view.phase === 'busy' && <p className={css.message} role="status">{t('agentBusy')}</p>}
       {pendingBrowserLink === undefined && (view.phase === 'empty' || view.phase === 'ready' && !awaitingSelectedTab
         && (!active || !native && active.url === 'about:blank')) && <div className={css.blank}>
@@ -690,13 +689,13 @@ export function BrowserMirror({ sessionId, shown, selectedTabId, newTabRequest, 
         <h2>{t('startBrowsing')}</h2><p>{t('emptyHint')}</p>
       </div>}
       {pendingBrowserLink === undefined && view.phase === 'error' && <div className={css.message} role="alert">
-        <span>{t('error')}: {view.message}</span><button type="button" onClick={() => {
+        <span>{t('error')}: {view.message}</span><Button variant="outline" size="sm" onClick={() => {
           clearViewportRetry()
           viewportRetryCount.current = 0
           lastViewportAttempt.current = null
           retry()
           setViewportRetryRevision(previous => previous + 1)
-        }}>{t('retry')}</button>
+        }}>{t('retry')}</Button>
       </div>}
       {pendingBrowserLink === undefined && view.phase === 'ready' && !awaitingSelectedTab && active && native
         && <div className={css.nativeCanvas} aria-label={t('nativePage')} />}
@@ -723,7 +722,7 @@ export function BrowserMirror({ sessionId, shown, selectedTabId, newTabRequest, 
           <button type="submit" disabled={!typeText || controlsDisabled}>{t('insertText')}</button>
           <button type="button" onClick={() => { setTypeTarget(null) }}>{t('cancel')}</button>
         </form>}
-        {view.frameUrl === null && <p className={css.message}>{t('noFrame')}</p>}
+        {view.frameUrl === null && !addressLoading && <p className={css.message}>{t('noFrame')}</p>}
       </div>}
     </div>
   </section>
