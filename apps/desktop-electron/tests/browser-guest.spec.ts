@@ -30,6 +30,9 @@ function fakeContents() {
   let destroyed = false
   let loading = false
   let domRevision = 0
+  let observerIncomplete = false
+  let targetVisible = true
+  let targetPosition = { x: 10, y: 10 }
   const sendCommand = vi.fn(async (command: string, params?: unknown): Promise<unknown> => {
     if (command === 'Page.getFrameTree') return { frameTree: { frame: { id: 'frame' } } }
     if (command === 'Page.createIsolatedWorld') return { executionContextId: 4 }
@@ -37,6 +40,12 @@ function fakeContents() {
     if (command === 'Runtime.evaluate') {
       if ((params as { expression: string }).expression === 'globalThis.__dshGuestReadMutationRevision()') {
         return { result: { value: domRevision } }
+      }
+      if ((params as { expression: string }).expression.startsWith('({ revision: globalThis.__dshGuestReadMutationRevision()')) {
+        return { result: { value: { revision: domRevision, incomplete: observerIncomplete } } }
+      }
+      if ((params as { expression: string }).expression.includes('__dshGuestRefs?.get')) {
+        return { result: { value: targetVisible ? targetPosition : null } }
       }
       return { result: { value: { text: 'Hello', entries: [], title: 'Example',
         href: url.length <= 4096 ? url || 'about:blank' : null, domRevision } } }
@@ -46,6 +55,10 @@ function fakeContents() {
   const contents = {
     events,
     mutate: () => { domRevision++ },
+    changeTarget: () => { targetVisible = false; domRevision++ },
+    truncateObserver: () => { observerIncomplete = true },
+    moveTarget: (x: number, y: number) => { targetPosition = { x, y } },
+    startLoading: () => { loading = true; events.get('did-start-loading')?.() },
     pageNavigate: (next: string) => { url = next; events.get('did-navigate-in-page')?.({} as never, next as never, true as never) },
     begin: (next: string) => {
       loading = true
@@ -539,14 +552,44 @@ describe('Electron 实时浏览器 guest', () => {
     await manager.dispose()
   })
 
-  it('同文档页面改变后，审批目标和元素引用都失效', async () => {
+  it('无关 DOM 更新不撤销审批目标和仍可验证的元素引用', async () => {
     const manager = createBrowserGuestManager(fixture())
     const capture = await manager.execute('s1', { kind: 'navigate', url: 'https://example.com/' })
     const target = await manager.prepare('s1')
-    electron.views[0]!.webContents.mutate()
-    await expect(manager.execute('s1', { kind: 'snapshot' }, target)).rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
-    await expect(manager.execute('s1', { kind: 'click', ref: 'e1', revision: capture.observation.revision }))
+    const wc = electron.views[0]!.webContents
+    wc.mutate()
+    await expect(manager.execute('s1', { kind: 'click', ref: 'e1', revision: capture.observation.revision }, target))
+      .resolves.toMatchObject({ observation: { cursor: { kind: 'click' } } })
+    expect(wc.sendInputEvent).toHaveBeenCalledTimes(2)
+    const later = await manager.prepare('s1')
+    wc.mutate()
+    await expect(manager.execute('s1', { kind: 'snapshot' }, later)).resolves.toMatchObject({
+      observation: { url: 'https://example.com/' },
+    })
+    await manager.dispose()
+  })
+
+  it('目标节点断连即使页面其他区域仍活跃也绝不发送点击', async () => {
+    const manager = createBrowserGuestManager(fixture())
+    const capture = await manager.execute('s1', { kind: 'navigate', url: 'https://example.com/' })
+    const wc = electron.views[0]!.webContents
+    const target = await manager.prepare('s1')
+    wc.changeTarget()
+    await expect(manager.execute('s1', { kind: 'click', ref: 'e1', revision: capture.observation.revision }, target))
       .rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
+    expect(wc.sendInputEvent).not.toHaveBeenCalled()
+    await manager.dispose()
+  })
+
+  it('加载指示变化不撤销仍为同标签同 URL 的审批目标', async () => {
+    const manager = createBrowserGuestManager(fixture())
+    const capture = await manager.execute('s1', { kind: 'navigate', url: 'https://example.com/' })
+    const target = await manager.prepare('s1')
+    const wc = electron.views[0]!.webContents
+    wc.startLoading()
+    wc.finish()
+    await expect(manager.execute('s1', { kind: 'click', ref: 'e1', revision: capture.observation.revision }, target))
+      .resolves.toMatchObject({ observation: { cursor: { kind: 'click' } } })
     await manager.dispose()
   })
 
@@ -596,16 +639,17 @@ describe('Electron 实时浏览器 guest', () => {
     await manager.dispose()
   })
 
-  it('人工链接导航后的页面标题事件刷新标签页并撤销旧审批', async () => {
+  it('标题事件刷新标签页但不撤销同页审批和元素引用', async () => {
     const updates: Array<{ state: unknown }> = []
     const manager = createBrowserGuestManager(fixture(), { onState: (_id, state) => updates.push({ state }) })
     await manager.control('s1', { kind: 'navigate', url: 'https://example.com/' })
     const before = await manager.prepare('s1')
     const wc = electron.views[0]!.webContents
     wc.events.get('page-title-updated')?.({} as never, 'New title' as never)
-    expect(updates.at(-1)?.state).toMatchObject({ tabs: [{ title: 'New title' }],
-      observation: null, hasFrame: false })
-    await expect(manager.execute('s1', { kind: 'snapshot' }, before)).rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
+    expect(updates.at(-1)?.state).toMatchObject({ tabs: [{ title: 'New title' }] })
+    await expect(manager.execute('s1', { kind: 'snapshot' }, before)).resolves.toMatchObject({
+      observation: { url: 'https://example.com/' },
+    })
     await manager.dispose()
   })
 
@@ -626,6 +670,26 @@ describe('Electron 实时浏览器 guest', () => {
     await expect(manager.control('s1', command)).rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
     expect(wc.sendInputEvent).not.toHaveBeenCalled()
     expect(wc.insertText).not.toHaveBeenCalled()
+    await manager.dispose()
+  })
+
+  it('观测器扫描不完整时不接受人工截图坐标输入', async () => {
+    const manager = createBrowserGuestManager(fixture())
+    const capture = await manager.execute('s1', { kind: 'navigate', url: 'https://example.com/' })
+    const wc = electron.views[0]!.webContents
+    manager.present({ sessionId: 's1', tabId: capture.observation.tabId, visible: true,
+      bounds: { x: 0, y: 0, width: 500, height: 400 } })
+    const current = await manager.execute('s1', { kind: 'snapshot' })
+    const approved = await manager.prepare('s1')
+    if (approved.kind !== 'tab') throw new Error('expected active tab')
+    wc.truncateObserver()
+    const target = { browserGeneration: approved.browserGeneration, stateRevision: (await manager.control('s1', {
+      kind: 'ensure-tab',
+    }))!.stateRevision, tabId: approved.tabId, generation: approved.generation,
+    revision: current.observation.revision, viewport: current.observation.viewport }
+    await expect(manager.control('s1', { kind: 'click', target, x: 10, y: 10 }))
+      .rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
+    expect(wc.sendInputEvent).not.toHaveBeenCalled()
     await manager.dispose()
   })
 
@@ -655,7 +719,7 @@ describe('Electron 实时浏览器 guest', () => {
       takeRecords() { return [] }
       fire() { this.callback() }
     }
-    const context = { document, MutationObserver, NodeFilter: { SHOW_ELEMENT: 1 },
+    const context = { document, MutationObserver, Node: { ELEMENT_NODE: 1 }, NodeFilter: { SHOW_ELEMENT: 1 },
       location: { href: 'https://example.com/' }, innerWidth: 800, innerHeight: 600 }
     const snapshot = runInNewContext(expression.expression, context) as { domRevision: number }
     const root = context as typeof context & { __dshGuestReadMutationRevision(): number }
@@ -668,7 +732,202 @@ describe('Electron 实时浏览器 guest', () => {
     await manager.dispose()
   })
 
-  it('元素位置查询期间的 DOM 变化阻止 Agent 点击', async () => {
+  it('隔离世界引用允许旁支更新和目标移动，却拒绝目标改址、断连与遮挡', async () => {
+    const manager = createBrowserGuestManager(fixture())
+    const capture = await manager.execute('s1', { kind: 'navigate', url: 'https://example.com/' })
+    const wc = electron.views[0]!.webContents
+    const snapshot = wc.debugger.sendCommand.mock.calls.find(([command, params]) =>
+      command === 'Runtime.evaluate' && (params as { expression: string }).expression.includes('const scanRoots'))?.[1] as
+      { expression: string }
+    await manager.execute('s1', { kind: 'click', ref: 'e1', revision: capture.observation.revision })
+    const action = wc.debugger.sendCommand.mock.calls.find(([command, params]) =>
+      command === 'Runtime.evaluate' && (params as { expression: string }).expression.includes('const ref = globalThis.__dshGuestRefs?.get'))?.[1] as
+      { expression: string }
+    const attrs = new Map([['href', '/weather']])
+    let connected = true
+    let covered = false
+    let left = 10
+    let base = 'https://example.com/'
+    const parentAttrs = new Map<string, string>()
+    const parent = { nodeType: 1, parentNode: null as unknown, get attributes() {
+      return [...parentAttrs].map(([name, value]) => ({ name, value }))
+    } }
+    const childAttrs = new Map<string, string>()
+    const child = { get attributes() { return [...childAttrs].map(([name, value]) => ({ name, value })) } }
+    const sibling = {}
+    const element = { nodeType: 1, parentNode: parent as unknown, tagName: 'A', innerText: 'Fuzhou weather', value: '', readOnly: false,
+      disabled: false, shadowRoot: null,
+      form: undefined as undefined | {
+        id: string
+        action: string
+        method: string
+        target: string
+        enctype: string
+        noValidate: boolean
+      },
+      get href() { return attrs.has('href') ? new URL(attrs.get('href')!, base).href : undefined },
+      get formAction() { return attrs.has('formaction') ? new URL(attrs.get('formaction')!, base).href : undefined },
+      get formMethod() { return attrs.get('formmethod') },
+      get formTarget() { return attrs.get('formtarget') },
+      get formEnctype() { return attrs.get('formenctype') },
+      get formNoValidate() { return attrs.has('formnovalidate') },
+      get attributes() { return [...attrs].map(([name, value]) => ({ name, value })) },
+      hasAttribute: (key: string) => attrs.has(key),
+      matches: (selector: string) => selector !== ':disabled', closest: () => null,
+      focus: () => {},
+      getAttribute: (key: string) => attrs.get(key) ?? null,
+      getBoundingClientRect: () => ({ x: left, y: 10, left, right: left + 60, top: 10, bottom: 30,
+        width: 60, height: 20 }), getRootNode: () => document,
+      contains: (hit: unknown) => hit === element || hit === child, get isConnected() { return connected } }
+    const document = { title: 'Weather', body: { innerText: 'Fuzhou weather' }, activeElement: sibling as unknown,
+      createTreeWalker: () => { let visited = false; return { currentNode: element,
+        nextNode() { if (visited) return false; visited = true; return true } } },
+      elementFromPoint: () => covered ? {} : child }
+    parent.parentNode = document
+    const observers: MutationObserver[] = []
+    class MutationObserver {
+      readonly targets: unknown[] = []
+      private records: unknown[] = []
+      constructor(readonly callback: () => void) { observers.push(this) }
+      observe(target: unknown) { this.targets.push(target) }
+      disconnect() { this.targets.length = 0 }
+      takeRecords() { return this.records.splice(0) }
+      fire(target: unknown) { this.records.push({ target }); this.callback() }
+    }
+    const context = { document, MutationObserver, Node: { ELEMENT_NODE: 1 }, NodeFilter: { SHOW_ELEMENT: 1 },
+      HTMLInputElement: class { type = 'text' }, location: { href: 'https://example.com/' },
+      getComputedStyle: () => ({ display: 'block', visibility: 'visible', pointerEvents: 'auto' }),
+      innerWidth: 100, innerHeight: 100 }
+    const observed = runInNewContext(snapshot.expression, context) as { entries: string[] }
+    expect(observed.entries).toHaveLength(1)
+    const ref = observed.entries[0]!.split(' ')[0]!
+    const expression = action.expression.replace(JSON.stringify('e1'), JSON.stringify(ref))
+    const evaluate = () => runInNewContext(expression, context) as { x: number; y: number } | null
+    observers[0]!.fire(sibling)
+    expect((context as typeof context & { __dshGuestReadMutationRevision(): number })
+      .__dshGuestReadMutationRevision()).toBeGreaterThan(0)
+    expect(evaluate()).toEqual({ x: 40, y: 20 })
+    parentAttrs.set('onclick', 'submit()')
+    expect(evaluate()).toBeNull()
+    parentAttrs.delete('onclick')
+    observers[0]!.fire(sibling)
+    expect(evaluate()).toEqual({ x: 40, y: 20 })
+    base = 'https://other.example/'
+    expect(evaluate()).toBeNull()
+    base = 'https://example.com/'
+    left = 80
+    expect(evaluate()).toEqual({ x: 90, y: 20 })
+    attrs.set('href', '/different')
+    expect(evaluate()).toBeNull()
+    attrs.set('href', '/weather')
+    attrs.set('ping', 'https://example.com/track')
+    expect(evaluate()).toBeNull()
+    attrs.delete('ping')
+    attrs.set('data-action', 'submit')
+    expect(evaluate()).toBeNull()
+    attrs.delete('data-action')
+    covered = true
+    expect(evaluate()).toBeNull()
+    covered = false
+    connected = false
+    expect(evaluate()).toBeNull()
+    connected = true
+    childAttrs.set('data-action', 'submit')
+    observers.find(observer => observer.targets.includes(element))!.fire(child)
+    expect(evaluate()).toBeNull()
+    childAttrs.delete('data-action')
+    element.tagName = 'BUTTON'
+    element.form = { id: 'search', action: 'https://example.com/parent', method: 'post', target: '',
+      enctype: 'application/x-www-form-urlencoded', noValidate: false }
+    attrs.delete('href')
+    attrs.set('formaction', '/override')
+    const button = runInNewContext(snapshot.expression, context) as { entries: string[] }
+    const buttonRef = button.entries[0]!.split(' ')[0]!
+    const buttonExpression = action.expression.replace(JSON.stringify('e1'), JSON.stringify(buttonRef))
+    const evaluateButton = () => runInNewContext(buttonExpression, context) as { x: number; y: number } | null
+    expect(evaluateButton()).toEqual({ x: 90, y: 20 })
+    element.form.action = 'https://example.com/new-parent'
+    expect(evaluateButton()).toEqual({ x: 90, y: 20 })
+    attrs.set('formaction', '/changed-override')
+    expect(evaluateButton()).toBeNull()
+    attrs.set('formaction', '/override')
+    element.form.enctype = 'multipart/form-data'
+    expect(evaluateButton()).toBeNull()
+    element.form.enctype = 'application/x-www-form-urlencoded'
+    attrs.set('formenctype', 'text/plain')
+    expect(evaluateButton()).toBeNull()
+    attrs.delete('formenctype')
+    attrs.set('formnovalidate', '')
+    expect(evaluateButton()).toBeNull()
+    attrs.delete('formnovalidate')
+    const originalForm = element.form
+    element.form = { ...originalForm }
+    expect(evaluateButton()).toBeNull()
+    element.form = originalForm
+    Object.assign(originalForm, { onsubmit: 'return false' })
+    observers.find(observer => observer.targets.includes(originalForm))!.fire(originalForm)
+    expect(evaluateButton()).toBeNull()
+    attrs.set('formenctype', 'text/plain')
+    const overridden = runInNewContext(snapshot.expression, context) as { entries: string[] }
+    const overriddenRef = overridden.entries[0]!.split(' ')[0]!
+    const overriddenExpression = action.expression.replace(JSON.stringify('e1'), JSON.stringify(overriddenRef))
+    const evaluateOverridden = () => runInNewContext(overriddenExpression, context) as { x: number; y: number } | null
+    element.form.enctype = 'multipart/form-data'
+    expect(evaluateOverridden()).toEqual({ x: 90, y: 20 })
+    attrs.set('formenctype', 'multipart/form-data')
+    expect(evaluateOverridden()).toBeNull()
+    const inputCapture = await manager.execute('s1', { kind: 'snapshot' })
+    await manager.execute('s1', { kind: 'fill', ref: 'e1', revision: inputCapture.observation.revision, text: 'x' })
+    const fillAction = wc.debugger.sendCommand.mock.calls.find(([command, params]) =>
+      command === 'Runtime.evaluate' && (params as { expression: string }).expression.includes('if (true && (el.disabled'))?.[1] as
+      { expression: string }
+    element.tagName = 'INPUT'
+    element.form = undefined
+    element.readOnly = true
+    attrs.delete('formaction')
+    attrs.set('type', 'text')
+    const input = runInNewContext(snapshot.expression, context) as { entries: string[] }
+    const inputRef = input.entries[0]!.split(' ')[0]!
+    const inputExpression = fillAction.expression.replace(JSON.stringify('e1'), JSON.stringify(inputRef))
+    expect(runInNewContext(inputExpression, context)).toBeNull()
+    element.readOnly = false
+    const focusSnapshot = runInNewContext(snapshot.expression, context) as { entries: string[] }
+    const focusRef = focusSnapshot.entries[0]!.split(' ')[0]!
+    const focusAction = wc.debugger.sendCommand.mock.calls.find(([command, params]) =>
+      command === 'Runtime.evaluate' && (params as { expression: string }).expression.includes('el.focus();'))?.[1] as
+      { expression: string }
+    const focusExpression = focusAction.expression.replace(JSON.stringify('e1'), JSON.stringify(focusRef))
+    expect(runInNewContext(focusExpression, context)).toBe(false)
+    expect(element.value).toBe('')
+    await manager.dispose()
+  })
+
+  it('超出扫描上限的静止 DOM 不会在每次读取时自行改变修订', async () => {
+    const manager = createBrowserGuestManager(fixture())
+    await manager.execute('s1', { kind: 'navigate', url: 'https://example.com/' })
+    const wc = electron.views[0]!.webContents
+    const expression = (wc.debugger.sendCommand.mock.calls.find(([command, params]) =>
+      command === 'Runtime.evaluate' && (params as { expression: string }).expression.includes('const scanRoots'))?.[1] as
+      { expression: string }).expression
+    const node = { shadowRoot: null, matches: () => false }
+    const document = { title: '', body: { innerText: '' }, createTreeWalker: () => {
+      let scanned = 0
+      return { currentNode: node, nextNode() { return scanned++ < 50_002 } }
+    } }
+    class MutationObserver {
+      observe() {}
+      disconnect() {}
+      takeRecords() { return [] }
+    }
+    const context = { document, MutationObserver, Node: { ELEMENT_NODE: 1 }, NodeFilter: { SHOW_ELEMENT: 1 },
+      location: { href: 'https://example.com/' } }
+    const snapshot = runInNewContext(expression, context) as { domRevision: number }
+    const root = context as typeof context & { __dshGuestReadMutationRevision(): number }
+    expect(root.__dshGuestReadMutationRevision()).toBe(snapshot.domRevision)
+    await manager.dispose()
+  })
+
+  it('位置查询期间的无关 DOM 更新不会阻止仍可验证的 Agent 点击', async () => {
     const manager = createBrowserGuestManager(fixture())
     const capture = await manager.execute('s1', { kind: 'navigate', url: 'https://example.com/' })
     const wc = electron.views[0]!.webContents
@@ -681,8 +940,8 @@ describe('Electron 实时浏览器 guest', () => {
       return original(command, params)
     })
     await expect(manager.execute('s1', { kind: 'click', ref: 'e1', revision: capture.observation.revision }))
-      .rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
-    expect(wc.sendInputEvent).not.toHaveBeenCalled()
+      .resolves.toMatchObject({ observation: { cursor: { kind: 'click' } } })
+    expect(wc.sendInputEvent).toHaveBeenCalledTimes(2)
     await manager.dispose()
   })
 
@@ -697,6 +956,24 @@ describe('Electron 实时浏览器 guest', () => {
     await expect(manager.control('s1', { kind: 'ensure-tab' })).rejects.toMatchObject({ code: 'BROWSER_BUSY' })
     await manager.release('s1')
     expect(window.contentView.children).toHaveLength(1)
+    await manager.dispose()
+  })
+
+  it('租约期间的呈现尺寸先应用到观测，释放时不撤销刚生成的引用', async () => {
+    const manager = createBrowserGuestManager(fixture())
+    await manager.lease('s1')
+    const first = await manager.execute('s1', { kind: 'navigate', url: 'https://example.com/' })
+    manager.present({ sessionId: 's1', tabId: first.observation.tabId, visible: true,
+      bounds: { x: 0, y: 0, width: 500, height: 400 } })
+    const target = await manager.prepare('s1')
+    const capture = await manager.execute('s1', { kind: 'snapshot' }, target)
+    expect(capture.observation.viewport).toEqual({ width: 500, height: 400 })
+    await manager.release('s1')
+    await manager.lease('s1')
+    const next = await manager.prepare('s1')
+    await expect(manager.execute('s1', { kind: 'click', ref: 'e1', revision: capture.observation.revision }, next))
+      .resolves.toMatchObject({ observation: { cursor: { kind: 'click' } } })
+    await manager.release('s1')
     await manager.dispose()
   })
 
@@ -752,6 +1029,31 @@ describe('Electron 实时浏览器 guest', () => {
     expect(capture.png?.byteLength).toBeLessThanOrEqual(2 * 1024 * 1024)
     expect(capture.png?.byteLength).toBeGreaterThan(33)
     expect(Buffer.from(capture.png!).subarray(0, 8)).toEqual(png().subarray(0, 8))
+    await manager.dispose()
+  })
+
+  it('截图期间旁支 DOM 更新不使同一文档观测无限失败', async () => {
+    const updates: unknown[] = []
+    const manager = createBrowserGuestManager(fixture(), { onState: (_id, value) => updates.push(value) })
+    const state = await manager.control('s1', { kind: 'ensure-tab' })
+    manager.present({ sessionId: 's1', tabId: state!.activeTabId!, visible: true,
+      bounds: { x: 0, y: 0, width: 500, height: 400 } })
+    const wc = electron.views[0]!.webContents
+    const original = wc.debugger.sendCommand.getMockImplementation()!
+    wc.debugger.sendCommand.mockImplementation((command: string, params?: unknown) => {
+      if (command === 'Page.captureScreenshot') wc.mutate()
+      return original(command, params)
+    })
+    const capture = await manager.execute('s1', { kind: 'snapshot' })
+    expect(capture.observation.viewport).toEqual({ width: 500, height: 400 })
+    expect(capture.png).toBeInstanceOf(Uint8Array)
+    const current = updates.at(-1) as NonNullable<Awaited<ReturnType<typeof manager.control>>>
+    const target = { browserGeneration: current.browserGeneration, stateRevision: current.stateRevision,
+      tabId: capture.observation.tabId, generation: capture.observation.generation,
+      revision: capture.observation.revision, viewport: capture.observation.viewport }
+    await expect(manager.control('s1', { kind: 'click', target, x: 10, y: 10 }))
+      .rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
+    expect(wc.sendInputEvent).not.toHaveBeenCalled()
     await manager.dispose()
   })
 

@@ -34,6 +34,7 @@ interface Owner {
   tabs: Map<BrowserTabId, Tab>
   active: BrowserTabId
   revision: number
+  targetRevision: number
   viewport: { width: number; height: number }
   lease: boolean
   partition: string
@@ -114,6 +115,7 @@ function invalidate(owner: Owner, tab: Tab): void {
   delete tab.domRevision
   tab.navigation++
   owner.revision++
+  owner.targetRevision++
 }
 
 // 仅隔离世界保存元素引用；页面脚本无法获取 Map 或伪造跨观测版本的 ref。
@@ -142,13 +144,38 @@ const snapshotScript = `(function () {
     for (const observer of observers.values()) {
       if (observer.takeRecords().length) root.__dshGuestMutationRevision++;
     }
-    if (truncated) root.__dshGuestMutationRevision++;
+    root.__dshGuestObserverIncomplete = truncated;
     return root.__dshGuestMutationRevision;
   };
   root.__dshGuestObservers = observers;
   root.__dshGuestReadMutationRevision = scanRoots;
   scanRoots();
+  root.__dshGuestRefs?.forEach(ref => ref.observer.disconnect());
   const refs = new Map(); const entries = [];
+  const attributes = el => Array.from(el.attributes, attr => [attr.name, attr.value])
+    .sort((left, right) => left[0].localeCompare(right[0]));
+  const path = el => {
+    const entries = [];
+    for (let node = el; node && node !== document; node = node.parentNode || node.host) {
+      if (node.nodeType === Node.ELEMENT_NODE) entries.push({ node, parent: node.parentNode, attributes: attributes(node) });
+    }
+    return entries;
+  };
+  const identity = el => ({ tag: el.tagName,
+    attributes: attributes(el),
+    role: el.getAttribute('role'), id: el.getAttribute('id'),
+    name: el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.innerText || el.value || el.getAttribute('title') || '',
+    href: el.href || el.getAttribute('href'), form: el.form?.id,
+    action: el.hasAttribute('formaction') ? el.formAction : el.form?.action,
+    method: el.hasAttribute('formmethod') ? el.formMethod : el.form?.method,
+    target: el.hasAttribute('formtarget') ? el.formTarget : el.form?.target || el.getAttribute('target'),
+    enctype: el.hasAttribute('formenctype') ? el.formEnctype : el.form?.enctype,
+    noValidate: !!(el.form?.noValidate || el.formNoValidate),
+    type: el.getAttribute('type'),
+    disabled: !!el.disabled || el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true',
+    readOnly: !!el.readOnly });
+  root.__dshGuestIdentity = identity;
+  root.__dshGuestPath = path;
   const walker = document.createTreeWalker(document, NodeFilter.SHOW_ELEMENT);
   let scanned = 0;
   while (walker.nextNode() && scanned++ < 50000 && entries.length < 150) {
@@ -158,7 +185,12 @@ const snapshotScript = `(function () {
     if (!box.width || !box.height || style.display === 'none' || style.visibility === 'hidden' ||
       box.right <= 0 || box.bottom <= 0 || box.left >= innerWidth || box.top >= innerHeight) continue;
     const ref = 'e' + (entries.length + 1) + '-' + Date.now() + '-' + Math.random();
-    refs.set(ref, el);
+    const entry = { el, form: el.form ?? null, identity: identity(el), path: path(el), changed: false };
+    const observer = new MutationObserver(() => { entry.changed = true; });
+    observer.observe(el, { subtree: true, childList: true, attributes: true, characterData: true });
+    if (entry.form) observer.observe(entry.form, { subtree: true, childList: true, attributes: true, characterData: true });
+    entry.observer = observer;
+    refs.set(ref, entry);
     const password = el instanceof HTMLInputElement && el.type === 'password';
     const name = password ? (el.getAttribute('aria-label') || el.getAttribute('placeholder') || 'Password') :
       (el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.innerText || el.value || el.getAttribute('title') || '');
@@ -278,7 +310,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
       if (!isCurrent()) return
       const current = title.slice(0, 4096).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ' ')
       if (current === tab.summary.title) return
-      invalidate(owner, tab)
+      owner.revision++
       refreshSummary(tab, current)
       emit(sessionId, owner)
     })
@@ -327,7 +359,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     if (owner) return owner
     if (owners.size >= MAX_SESSIONS) fail('browser session limit reached', 'BROWSER_UNAVAILABLE')
     owner = { generation: randomUUID(), tabs: new Map(), active: '' as BrowserTabId,
-      revision: 0, viewport: { ...INITIAL_VIEWPORT }, lease: leases.has(sessionId),
+      revision: 0, targetRevision: 0, viewport: { ...INITIAL_VIEWPORT }, lease: leases.has(sessionId),
       partition: `dsh-guest-${randomUUID()}` }
     owners.set(sessionId, owner)
     try { owner.active = createTab(owner, sessionId).id }
@@ -420,14 +452,8 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     }
     assertStable(sessionId, owner, tab, navigation)
     if (page.href !== usableUrl(sessionId, owner, tab)) staleObservation(sessionId, owner, tab)
-    const domRevision = await evaluate<number>(tab, 'globalThis.__dshGuestReadMutationRevision()')
-    assertStable(sessionId, owner, tab, navigation)
-    if (page.href !== usableUrl(sessionId, owner, tab)) staleObservation(sessionId, owner, tab)
-    if (domRevision !== page.domRevision) {
-      invalidate(owner, tab)
-      emit(sessionId, owner)
-      fail('browser document changed during observation', 'BROWSER_STALE_REF')
-    }
+    // 页面其他区域可以在截图期间更新；引用在输入时逐一复核节点身份和命中位置。
+    // 人工坐标输入仍以观测开始时的修订版复核，截图期间的任何变更会在输入前拒绝。
     refreshSummary(tab, page.title.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ' '))
     const observation: BrowserObservation = { tabId: tab.id, generation: tab.generation,
       revision: ++tab.revision, url: page.href, title: tab.summary.title, snapshot,
@@ -446,7 +472,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
       if (owner) fail('browser target changed after approval', 'BROWSER_STALE_REF')
       return
     }
-    if (!owner || expected.browserGeneration !== owner.generation || expected.stateRevision !== owner.revision ||
+    if (!owner || expected.browserGeneration !== owner.generation || expected.stateRevision !== owner.targetRevision ||
       expected.tabId !== owner.active || expected.generation !== active(owner).generation ||
       expected.url !== undefined && expected.url !== (active(owner).view.webContents.getURL() || 'about:blank')) {
       fail('browser target changed after approval', 'BROWSER_STALE_REF')
@@ -456,9 +482,10 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
   async function refreshMutation(sessionId: string, owner: Owner, tab: Tab): Promise<void> {
     if (tab.domRevision === undefined) return
     const navigation = tab.navigation
-    const revision = await evaluate<number>(tab, 'globalThis.__dshGuestReadMutationRevision()')
+    const current = await evaluate<{ revision: number; incomplete: boolean }>(tab,
+      '({ revision: globalThis.__dshGuestReadMutationRevision(), incomplete: !!globalThis.__dshGuestObserverIncomplete })')
     assertStable(sessionId, owner, tab, navigation)
-    if (revision !== tab.domRevision) {
+    if (current.incomplete || current.revision !== tab.domRevision) {
       invalidate(owner, tab)
       emit(sessionId, owner)
     }
@@ -579,7 +606,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     const { sessionId, tabId, bounds, visible } = presentation
     const owner = owners.get(sessionId)
     const tab = owner?.tabs.get(tabId)
-    if (!visible || !tab || owner?.active !== tabId || owner.lease) {
+    if (!visible || !tab || owner?.active !== tabId) {
       if (presented) {
         const old = owners.get(presented.sessionId)?.tabs.get(presented.tabId)
         if (old) detach(old)
@@ -597,6 +624,16 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     const boundedWidth = Math.min(width, 1920, Math.floor(1_800_000 / Math.min(height, 1400)))
     const boundedHeight = Math.min(height, 1400)
     const effective = { x, y, width: boundedWidth, height: boundedHeight }
+    if (owner.lease) {
+      // 租约期间先确定真实视口，下一次观测直接以呈现尺寸生成引用。
+      if (owner.viewport.width !== boundedWidth || owner.viewport.height !== boundedHeight) {
+        tab.view.setBounds(effective)
+        owner.viewport = { width: boundedWidth, height: boundedHeight }
+        invalidate(owner, tab)
+        emit(sessionId, owner)
+      }
+      return
+    }
     const same = presented?.sessionId === sessionId && presented.tabId === tabId
     if (presented && !same) {
       const old = owners.get(presented.sessionId)?.tabs.get(presented.tabId)
@@ -618,23 +655,18 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
   }
 
   return {
-    prepare: sessionId => enqueue(sessionId, async () => {
+    prepare: sessionId => enqueue(sessionId, () => {
       const owner = owners.get(sessionId)
       if (!owner) return { kind: 'none' }
       const tab = active(owner)
-      await refreshMutation(sessionId, owner, tab)
       const url = usableUrl(sessionId, owner, tab)
       if (tab.summary.url !== url) { invalidate(owner, tab); refreshSummary(tab); emit(sessionId, owner) }
-      return { kind: 'tab', browserGeneration: owner.generation, stateRevision: owner.revision,
+      return { kind: 'tab', browserGeneration: owner.generation, stateRevision: owner.targetRevision,
         tabId: tab.id, generation: tab.generation, url }
     }),
     execute: (sessionId, command, expectedTarget) => enqueue(sessionId, async () => {
       const previous = owners.get(sessionId)
       assertTarget(previous, expectedTarget)
-      if (previous && expectedTarget?.kind === 'tab') {
-        await refreshMutation(sessionId, previous, active(previous))
-        assertTarget(previous, expectedTarget)
-      }
       if (command.kind === 'close') {
         const tab = previous && active(previous)
         const capture: BrowserCapture = tab?.capture ?? { observation: {
@@ -656,33 +688,64 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
         case 'click':
         case 'fill': {
           if (command.revision !== tab.revision || !tab.capture) fail('stale browser element revision', 'BROWSER_STALE_REF')
-          await refreshMutation(sessionId, owner, tab)
           const latest = tab.capture as BrowserCapture | undefined
           if (latest?.observation.revision !== command.revision) fail('stale browser element revision', 'BROWSER_STALE_REF')
           const documentEpoch = tab.navigation
           const escaped = JSON.stringify(command.ref)
-          const box = await evaluate<{ x: number; y: number; width: number; height: number } | null>(tab,
-            `(() => { const el = globalThis.__dshGuestRefs?.get(${escaped}); if (!el || !el.isConnected) return null;
-              const b = el.getBoundingClientRect(); return { x: b.x, y: b.y, width: b.width, height: b.height }; })()`)
-          if (!box || !box.width || !box.height || box.x + box.width <= 0 || box.y + box.height <= 0 ||
-            box.x >= owner.viewport.width || box.y >= owner.viewport.height) fail('browser element no longer visible', 'BROWSER_STALE_REF')
+          const box = await evaluate<{ x: number; y: number } | null>(tab,
+            `(() => { const ref = globalThis.__dshGuestRefs?.get(${escaped}); const el = ref?.el;
+              if (!el || !el.isConnected || ref.form !== (el.form ?? null)) return null;
+              if (ref.observer.takeRecords().length) ref.changed = true;
+              const path = globalThis.__dshGuestPath(el);
+              if (ref.changed || path.length !== ref.path.length || path.some((part, i) =>
+                part.node !== ref.path[i].node || part.parent !== ref.path[i].parent ||
+                JSON.stringify(part.attributes) !== JSON.stringify(ref.path[i].attributes)) ||
+                JSON.stringify(ref.identity) !== JSON.stringify(globalThis.__dshGuestIdentity(el))) return null;
+              if (${command.kind === 'fill'} && (el.disabled || el.readOnly ||
+                (!('value' in el) && !el.isContentEditable))) return null;
+              const b = el.getBoundingClientRect(), style = getComputedStyle(el);
+              if (!b.width || !b.height || style.display === 'none' || style.visibility === 'hidden' ||
+                style.pointerEvents === 'none' || ref.identity.disabled || el.matches(':disabled') ||
+                el.closest('[aria-disabled="true"], [inert]')) return null;
+              const left = Math.max(0, b.left), top = Math.max(0, b.top);
+              const right = Math.min(innerWidth, b.right), bottom = Math.min(innerHeight, b.bottom);
+              if (left >= right || top >= bottom) return null;
+              const x = Math.max(0, Math.min(innerWidth - 1, Math.floor((left + right) / 2)));
+              const y = Math.max(0, Math.min(innerHeight - 1, Math.floor((top + bottom) / 2)));
+              let root = el.getRootNode(); const hit = root.elementFromPoint?.(x, y);
+              if (!hit || (hit !== el && !el.contains(hit))) return null;
+              while (root !== document) {
+                const host = root.host; if (!host) return null;
+                root = host.getRootNode();
+                if (root.elementFromPoint?.(x, y) !== host) return null;
+              }
+              return { x, y }; })()`)
+          if (!box || box.x >= owner.viewport.width || box.y >= owner.viewport.height) {
+            fail('browser element no longer visible or changed', 'BROWSER_STALE_REF')
+          }
           assertStable(sessionId, owner, tab, documentEpoch)
-          await refreshMutation(sessionId, owner, tab)
           const current = tab.capture as BrowserCapture | undefined
           if (current?.observation.revision !== command.revision) {
             fail('browser element changed before input', 'BROWSER_STALE_REF')
           }
-          const x = Math.round(Math.max(0, box.x + box.width / 2))
-          const y = Math.round(Math.max(0, box.y + box.height / 2))
+          const { x, y } = box
           cursor = { x, y, kind: command.kind, at: Date.now() }
           mutated = true
           sendInput(tab, { type: 'mouseDown', x, y, button: 'left', clickCount: 1 })
           sendInput(tab, { type: 'mouseUp', x, y, button: 'left', clickCount: 1 })
           if (command.kind === 'fill') {
             assertStable(sessionId, owner, tab, documentEpoch)
-            const focused = await evaluate<boolean>(tab, `(() => { const el = globalThis.__dshGuestRefs?.get(${escaped});
-              if (!el || !el.isConnected || (!('value' in el) && !el.isContentEditable)) return false;
-              el.focus(); if (el.isContentEditable) el.textContent = '';
+            const focused = await evaluate<boolean>(tab, `(() => { const ref = globalThis.__dshGuestRefs?.get(${escaped}); const el = ref?.el;
+              if (!el || !el.isConnected || ref.form !== (el.form ?? null)) return false;
+              if (ref.observer.takeRecords().length) ref.changed = true;
+              const path = globalThis.__dshGuestPath(el);
+              if (ref.changed || path.length !== ref.path.length || path.some((part, i) =>
+                part.node !== ref.path[i].node || part.parent !== ref.path[i].parent ||
+                JSON.stringify(part.attributes) !== JSON.stringify(ref.path[i].attributes)) ||
+                JSON.stringify(ref.identity) !== JSON.stringify(globalThis.__dshGuestIdentity(el)) ||
+                el.disabled || el.readOnly || (!('value' in el) && !el.isContentEditable)) return false;
+              el.focus(); if (el.getRootNode().activeElement !== el) return false;
+              if (el.isContentEditable) el.textContent = '';
               else { const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value')?.set;
                 if (setter) setter.call(el, ''); else el.value = ''; }
               el.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`)
@@ -734,6 +797,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
           if (existing) {
             owner.active = tab.id
             owner.revision++
+            owner.targetRevision++
             if (oldPresentation && oldTab) { detach(oldTab); presented = undefined }
           }
           try {
@@ -748,6 +812,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
                 owner.tabs.delete(tab.id)
                 owner.active = oldTabId
                 owner.revision++
+                owner.targetRevision++
                 destroyTab(tab)
                 if (oldPresentation && !presented && requestedPresentation?.sessionId === sessionId &&
                   requestedPresentation.tabId === oldTabId && requestedPresentation.visible) show(requestedPresentation)
@@ -765,10 +830,10 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
         const tab = active(owner)
         switch (command.kind) {
           case 'ensure-tab': break
-          case 'new-tab': owner.active = createTab(owner, sessionId).id; owner.revision++; break
+          case 'new-tab': owner.active = createTab(owner, sessionId).id; owner.revision++; owner.targetRevision++; break
           case 'select-tab':
             if (!owner.tabs.has(command.tabId)) fail('browser tab is closed', 'BROWSER_CLOSED')
-            owner.active = command.tabId; owner.revision++; break
+            owner.active = command.tabId; owner.revision++; owner.targetRevision++; break
           case 'close-tab': {
             const closing = owner.tabs.get(command.tabId)
             if (!closing) fail('browser tab is closed', 'BROWSER_CLOSED')
@@ -776,6 +841,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
             owner.tabs.delete(command.tabId)
             if (owner.active === command.tabId) owner.active = owner.tabs.keys().next().value as BrowserTabId
             owner.revision++
+            owner.targetRevision++
             destroyTab(closing)
             break
           }
@@ -799,6 +865,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
             if (owner.viewport.width !== command.width || owner.viewport.height !== command.height) {
               owner.viewport = { width: command.width, height: command.height }
               owner.revision++
+              owner.targetRevision++
               for (const item of owner.tabs.values()) {
                 delete item.capture
                 if (presented?.sessionId !== sessionId || presented.tabId !== item.id) {

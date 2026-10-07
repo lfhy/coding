@@ -514,6 +514,7 @@ async function verifyOnboardingFocus(page, afterScreenshot) {
 
 async function browserFixture() {
   let stalledRequests = 0
+  let dynamicLateLoads = 0
   let pendingAssistantImages = 0
   const pendingAssistantResponses = new Set()
   let heldFreshAssistantImages = 0
@@ -541,6 +542,53 @@ async function browserFixture() {
     freshAssistantDocuments.clear()
   }
   const server = createServer((request, response) => {
+    if (request.url?.startsWith('/dynamic-late-image?')) {
+      setTimeout(() => {
+        if (response.destroyed) return
+        dynamicLateLoads++
+        response.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'no-store' })
+        response.end(pixel)
+      }, 75)
+      return
+    }
+    if (request.url === '/dynamic-result') {
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
+      response.end('<!doctype html><title>Local detail destination</title><h1>Opened local detail</h1>')
+      return
+    }
+    if (request.url === '/dynamic-results') {
+      // 点击后延迟离页，让工具先返回点击观测；随后仍须由该真实链接进入详情页。
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
+      response.end(`<!doctype html><title>Dynamic results 0</title>
+        <style>body{font:18px sans-serif;padding:24px}a{display:inline-block;padding:16px}</style>
+        <h1>Local dynamic search results</h1>
+        <a id="stable-result" href="/dynamic-result">Open the local detail result</a>
+        <div id="unrelated"><span>New results are arriving</span></div>
+        <img id="late-image" alt="Late search image">
+        <script>
+          let tick = 0
+          window.__nativeDynamicTick = 0
+          window.__nativeLateLoaded = 0
+          const image = document.querySelector('#late-image')
+          image.addEventListener('load', () => {
+            window.__nativeLateLoaded++
+          })
+          document.querySelector('#stable-result').addEventListener('click', event => {
+            event.preventDefault()
+            const destination = event.currentTarget.href
+            setTimeout(() => location.assign(destination), 3000)
+          })
+          setInterval(() => {
+            tick++
+            document.title = 'Dynamic results ' + tick
+            document.querySelector('#unrelated').replaceChildren(
+              Object.assign(document.createElement('span'), { textContent: 'Result refresh ' + tick }))
+            window.__nativeDynamicTick = tick
+            if (tick % 8 === 0) image.src = '/dynamic-late-image?tick=' + tick
+          }, 20)
+        </script>`)
+      return
+    }
     if (request.url === '/stalled-image') {
       stalledRequests++
       response.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'no-store' })
@@ -630,6 +678,9 @@ async function browserFixture() {
   const address = server.address()
   assert.ok(address && typeof address !== 'string', 'native guest fixture must bind locally')
   return { url: `http://127.0.0.1:${address.port}/`,
+    dynamicResultsUrl: `http://127.0.0.1:${address.port}/dynamic-results`,
+    dynamicResultUrl: `http://127.0.0.1:${address.port}/dynamic-result`,
+    get dynamicLateLoads() { return dynamicLateLoads },
     largeScreenshotUrl: `http://127.0.0.1:${address.port}/large-screenshot`,
     assistantLinkUrl: `http://127.0.0.1:${address.port}/assistant-link`,
     pendingAssistantLinkUrl: `http://127.0.0.1:${address.port}/assistant-link-pending`,
@@ -749,9 +800,111 @@ async function scriptedModel() {
     } }
 }
 
+async function scriptedDynamicResultModel() {
+  let phase = 'snapshot'
+  let step = 0
+  let target
+  const failures = []
+  const observations = []
+  const server = createServer((request, response) => {
+    if (request.url !== '/chat/completions' || request.method !== 'POST' ||
+      request.socket.remoteAddress !== '127.0.0.1') {
+      response.writeHead(404).end()
+      return
+    }
+    let body = ''
+    request.on('data', chunk => { body += chunk.toString('utf8') })
+    request.on('end', () => {
+      try {
+        const payload = JSON.parse(body)
+        const tools = (payload.tools ?? []).map(tool => tool.function?.name)
+        let frames
+        if (!tools.includes('browser_snapshot')) {
+          frames = [{ choices: [{ delta: { content: 'Dynamic search smoke' }, finish_reason: 'stop' }] }]
+        } else {
+          assert.ok(tools.includes('browser_click'), 'real Agent must advertise the click tool')
+          const results = payload.messages.filter(message => message.role === 'tool')
+          let name
+          let args
+          if (phase === 'snapshot' && step === 0) {
+            name = 'browser_snapshot'
+            args = '{}'
+          } else if (phase === 'snapshot' && step === 1) {
+            const result = JSON.parse(results.at(-1)?.content)
+            assert.equal(result.action, 'snapshot', 'model must receive a real native snapshot')
+            const observation = result.observation
+            assert.ok(observation.snapshot.includes('Local dynamic search results'))
+            assert.ok(observation.snapshot.includes('Result refresh '),
+              'native snapshot must see the updating results page')
+            const ref = observation.snapshot.match(/(e\d+-\S+) a "Open the local detail result"/)?.[1]
+            assert.ok(ref, 'model must find the live result link in Elements')
+            assert.ok(Number.isSafeInteger(observation.revision) && observation.revision > 0)
+            target = { ref, revision: observation.revision }
+            observations.push(observation)
+          } else if (phase === 'click' && step === 0) {
+            assert.ok(payload.messages.some(message => message.role === 'user' &&
+              JSON.stringify(message.content).includes('点进去')),
+            'second user turn must request the observed result')
+            assert.ok(results.some(message => message.content?.includes(target.ref)),
+              'original tool observation must survive into the next model turn')
+            name = 'browser_click'
+            args = JSON.stringify(target)
+          } else if (phase === 'click' && step === 1) {
+            const content = results.at(-1)?.content
+            if (!content?.startsWith('{')) failures.push(`dynamic native click failed: ${content}`)
+            else {
+              const result = JSON.parse(content)
+              assert.equal(result.action, 'click', 'model must receive the actual native click result')
+              assert.equal(result.observation.tabId, observations[0].tabId,
+                'separate tool leases must keep the same native tab')
+              observations.push(result.observation)
+            }
+          } else throw new Error(`unexpected dynamic result model step: ${phase}/${step}`)
+          step++
+          frames = name === undefined
+            ? [{ choices: [{ delta: { content: 'LOCAL_RESULT_OPENED' }, finish_reason: 'stop' }] }]
+            : [
+              { choices: [{ delta: { tool_calls: [{ index: 0, id: `dynamic-${phase}-${step}`, type: 'function',
+                function: { name, arguments: args } }] } }] },
+              { choices: [{ delta: {}, finish_reason: 'tool_calls' }],
+                usage: { prompt_tokens: 10, completion_tokens: 5 } },
+            ]
+        }
+        response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store' })
+        for (const frame of frames) response.write(`data: ${JSON.stringify(frame)}\n\n`)
+        response.end('data: [DONE]\n\n')
+      } catch (error) {
+        failures.push(error instanceof Error ? error.message : String(error))
+        response.writeHead(500).end('invalid dynamic result model step')
+      }
+    })
+  })
+  await new Promise((resolveListen, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', resolveListen)
+  })
+  const address = server.address()
+  assert.ok(address && typeof address !== 'string', 'dynamic model must bind locally')
+  return { url: `http://127.0.0.1:${address.port}`, failures, observations,
+    get step() { return step },
+    get target() { return target },
+    startClick() {
+      assert.equal(phase, 'snapshot')
+      assert.equal(step, 2, 'first snapshot turn must complete before a fresh click lease')
+      phase = 'click'
+      step = 0
+    },
+    close: async () => {
+      server.closeAllConnections()
+      await new Promise(resolveClose => server.close(resolveClose))
+    } }
+}
+
 async function scriptedNavigateModel(fixtureUrl) {
   let phase = 'navigate'
   let step = 0
+  let snapshotAttempts = 0
+  const snapshotErrors = []
   const observations = []
   const failures = []
   const server = createServer((request, response) => {
@@ -774,6 +927,7 @@ async function scriptedNavigateModel(fixtureUrl) {
           const results = payload.messages.filter(message => message.role === 'tool')
           let name
           let args
+          let advance = true
           if (phase === 'navigate' && step === 0) {
             assert.equal(results.length, 0, 'fresh Session must start before browser tools')
             name = 'browser_navigate'
@@ -788,18 +942,32 @@ async function scriptedNavigateModel(fixtureUrl) {
           } else if (phase === 'snapshot' && step === 0) {
             name = 'browser_snapshot'
             args = '{}'
+            snapshotAttempts++
           } else if (phase === 'snapshot' && step === 1) {
-            const snapshot = JSON.parse(results.at(-1)?.content)
-            assert.equal(snapshot.action, 'snapshot', 'second model turn must receive browser_snapshot output')
-            assert.ok(snapshot.observation.snapshot.includes('Human clicked'),
-              'second model turn must see the human mutation in the native guest')
-            observations.push(snapshot.observation)
+            const content = results.at(-1)?.content
+            if (content?.startsWith('Error: browser_snapshot: BROWSER_STALE_REF: document changed during observation')) {
+              snapshotErrors.push(content)
+              if (snapshotAttempts < 3) {
+                name = 'browser_snapshot'
+                args = '{}'
+                snapshotAttempts++
+                advance = false
+              } else failures.push(`three fresh native snapshots remained stale: ${content}`)
+            } else if (!content?.startsWith('{')) {
+              failures.push(`second native snapshot failed: ${content}`)
+            } else {
+              const snapshot = JSON.parse(content)
+              assert.equal(snapshot.action, 'snapshot', 'second model turn must receive browser_snapshot output')
+              assert.ok(snapshot.observation.snapshot.includes('Human clicked'),
+                'second model turn must see the human mutation in the native guest')
+              observations.push(snapshot.observation)
+            }
           } else throw new Error(`unexpected native navigate model request: ${phase}/${step}`)
-          step++
+          if (advance) step++
           frames = name === undefined
             ? [{ choices: [{ delta: { content: 'NATIVE_NAVIGATE_OK' }, finish_reason: 'stop' }] }]
             : [
-              { choices: [{ delta: { tool_calls: [{ index: 0, id: `native-${phase}-${step}`, type: 'function',
+              { choices: [{ delta: { tool_calls: [{ index: 0, id: `native-${phase}-${step}-${snapshotAttempts}`, type: 'function',
                 function: { name, arguments: args } }] } }] },
               { choices: [{ delta: {}, finish_reason: 'tool_calls' }],
                 usage: { prompt_tokens: 10, completion_tokens: 5 } },
@@ -820,8 +988,9 @@ async function scriptedNavigateModel(fixtureUrl) {
   })
   const address = server.address()
   assert.ok(address && typeof address !== 'string', 'navigate model must bind locally')
-  return { url: `http://127.0.0.1:${address.port}`, observations, failures,
+  return { url: `http://127.0.0.1:${address.port}`, observations, failures, snapshotErrors,
     get step() { return step },
+    get snapshotAttempts() { return snapshotAttempts },
     startSnapshot() {
       assert.equal(phase, 'navigate')
       assert.equal(step, 2, 'navigate turn must have completed before second model prompt')
@@ -958,8 +1127,9 @@ async function scriptedTimeoutRecoveryModel(timeoutUrl) {
             name = 'browser_navigate'
             args = JSON.stringify({ url: timeoutUrl })
           } else if (step === 1) {
-            assert.ok(results.at(-1)?.content.includes('browser navigation timed out; loading stopped'),
-              'model must receive the safe navigation timeout diagnostic')
+            assert.equal(results.at(-1)?.content,
+              'Error: browser navigation timed out; loading stopped, take a new snapshot of the current page',
+              'model must receive the canonical safe navigation timeout diagnostic')
             name = 'browser_snapshot'
             args = '{}'
           } else if (step === 2) {
@@ -1389,11 +1559,22 @@ async function verifyAgentNavigateAutoReveal(page, app, fixtureUrl, model) {
   }
   assert.deepEqual(model.failures, [], 'second scripted model request must receive the human mutation')
   assert.equal(model.step, 2, 'Agent must snapshot and complete its second turn')
+  assert.ok(model.snapshotAttempts >= 1 && model.snapshotAttempts <= 3,
+    'a transient stale observation permits at most two new snapshot calls')
+  assert.equal(model.snapshotErrors.length, model.snapshotAttempts - 1,
+    'only stale observations may trigger another native snapshot')
   assert.deepEqual(model.observations.map(observation => observation.tabId), [tabId, tabId],
     'second Agent snapshot must observe the same browser tab')
   assert.deepEqual(history.events.filter(({ event }) => event.type === 'tool/call')
-    .map(({ event }) => event.data.name), ['browser_navigate', 'browser_snapshot'],
-  'session log must record navigation and the later snapshot in order')
+    .map(({ event }) => event.data.name), ['browser_navigate',
+      ...Array(model.snapshotAttempts).fill('browser_snapshot')],
+  'session log must record navigation and each bounded fresh snapshot in order')
+  assert.deepEqual(history.events.filter(({ event }) => event.type === 'tool/result')
+    .map(({ event }) => event.data.message.content[0]?.isError), [false,
+      ...Array(model.snapshotAttempts - 1).fill(true), false],
+  'each stale read and the final successful read must be recorded separately')
+  console.log(`Native auto-reveal second snapshot: ${model.snapshotAttempts} attempt(s), ` +
+    `${model.snapshotErrors.length} stale read(s)`)
   assert.equal(await app.evaluate(({ webContents }, id) => {
     const current = webContents.fromId(id)
     return current && !current.isDestroyed() ? current.id : null
@@ -1952,6 +2133,115 @@ async function verifyAgentTimeoutRecovery(page, app, sessionId, fixture, model) 
   'closing recovered tab must release its browser resources')
 }
 
+async function verifyDynamicNativeResultClick(page, app, fixture, model) {
+  const closeSidebar = page.getByRole('button', { name: '收起右侧边栏' }).first()
+  if (await closeSidebar.isVisible()) await closeSidebar.click()
+  const previous = (await browserRpc(page, 'session.list', {})).items.map(item => item.sessionId)
+  await page.getByRole('button', { name: '新建会话' }).first().click()
+  await page.getByRole('button', { name: '打开右侧边栏' }).first().click()
+  let sessionId
+  await until(async () => {
+    const sessions = await browserRpc(page, 'session.list', {})
+    sessionId = sessions.items.find(item => !previous.includes(item.sessionId))?.sessionId
+    return sessionId !== undefined
+  }, 'fresh Session for dynamic native result')
+  const menu = page.getByRole('navigation', { name: '工作台功能' })
+  await menu.getByRole('button', { name: '浏览器' }).click()
+  await page.getByTestId('browser-canvas').waitFor({ state: 'visible' })
+  const address = page.getByRole('textbox', { name: '网址' })
+  await address.fill(fixture.dynamicResultsUrl)
+  await address.press('Enter')
+  let state
+  await until(async () => {
+    state = await browserRpc(page, 'browser.control', { sessionId, command: { kind: 'ensure-tab' } })
+    return state.tabs.find(tab => tab.id === state.activeTabId)?.url === fixture.dynamicResultsUrl
+  }, 'dynamic results loaded in a real native guest')
+  const tabId = state.activeTabId
+  let guest
+  await until(async () => {
+    guest = await nativeGuest(app, undefined, fixture.dynamicResultsUrl)
+    return guest?.attached && guest.url === fixture.dynamicResultsUrl
+  }, 'dynamic results guest visible')
+  const guestId = guest.id
+  assert.equal(await guestScript(app, guestId, 'document.querySelector("#stable-result").href'),
+    fixture.dynamicResultUrl, 'result target must be an actual local link')
+  await until(async () => Number(await guestScript(app, guestId,
+    'window.__nativeDynamicTick')) >= 5 && fixture.dynamicLateLoads > 0,
+  'dynamic guest child/title mutations and late image load')
+
+  const first = await browserRpc(page, 'session.prompt', { sessionId, mode: 'queue',
+    content: [{ type: 'text', text: 'Inspect the local dynamic results and remember the detail link.' }] })
+  assert.equal(first.accepted, true)
+  let history
+  try {
+    await until(async () => {
+      history = await browserRpc(page, 'session.history', { sessionId, maxMessages: 50 })
+      return history.events.filter(({ event }) => event.type === 'turn/end').length === 1
+    }, 'first dynamic snapshot turn completion', 45_000)
+  } catch (error) {
+    throw new Error(`${error.message}; dynamic model errors: ${model.failures.join(' | ') || 'none'}`)
+  }
+  assert.deepEqual(model.failures, [], 'first model turn must receive the native snapshot')
+  assert.equal(model.step, 2)
+  assert.ok(model.target?.ref, 'model must retain the link ref actually emitted by snapshot')
+  assert.equal(model.observations[0].tabId, tabId)
+  const firstEvents = history.events.map(({ event }) => event)
+  assert.deepEqual(firstEvents.filter(event => event.type === 'tool/call').map(event => event.data.name),
+    ['browser_snapshot'], 'first turn must actually call the shipped browser tool')
+  assert.deepEqual(firstEvents.filter(event => event.type === 'tool/result')
+    .map(event => event.data.message.content[0]?.isError), [false])
+
+  // 租约释放后持续更新无关节点和 title，并等待迟到图片；原 ref 仍指向同一链接。
+  await until(async () => {
+    const result = await browserRpcResponse(page, 'browser.control',
+      { sessionId, command: { kind: 'ensure-tab' } })
+    if (result.error?.details?.reason === 'BROWSER_BUSY') return false
+    assert.equal(result.ok, true, `dynamic lease release: ${JSON.stringify(result.error)}`)
+    return result.value.activeTabId === tabId
+  }, 'snapshot lease released before the next turn')
+  await until(async () => (await nativeGuest(app, guestId))?.attached,
+    'native dynamic guest reattached after snapshot lease')
+  const tickBefore = Number(await guestScript(app, guestId, 'window.__nativeDynamicTick'))
+  const lateBefore = Number(await guestScript(app, guestId, 'window.__nativeLateLoaded'))
+  await until(async () => Number(await guestScript(app, guestId,
+    'window.__nativeDynamicTick')) >= tickBefore + 8 &&
+    Number(await guestScript(app, guestId, 'window.__nativeLateLoaded')) > lateBefore,
+  'unrelated 20ms updates and late load cross the lease boundary')
+  assert.equal(await guestScript(app, guestId, 'document.querySelector("#stable-result").href'),
+    fixture.dynamicResultUrl, 'the observed link remains unchanged through unrelated updates')
+
+  model.startClick()
+  const second = await browserRpc(page, 'session.prompt', { sessionId, mode: 'queue',
+    content: [{ type: 'text', text: '点进去' }] })
+  assert.equal(second.accepted, true)
+  try {
+    await until(async () => {
+      history = await browserRpc(page, 'session.history', { sessionId, maxMessages: 50 })
+      return history.events.filter(({ event }) => event.type === 'turn/end').length === 2
+    }, 'dynamic observed-ref click turn completion', 45_000)
+  } catch (error) {
+    throw new Error(`${error.message}; dynamic model errors: ${model.failures.join(' | ') || 'none'}`)
+  }
+  assert.deepEqual(model.failures, [], 'second model turn must receive a successful native click')
+  assert.equal(model.step, 2)
+  assert.deepEqual(history.events.filter(({ event }) => event.type === 'tool/call')
+    .map(({ event }) => event.data.name), ['browser_snapshot', 'browser_click'],
+  'separate turns must record snapshot then model-issued click')
+  assert.deepEqual(history.events.filter(({ event }) => event.type === 'tool/result')
+    .map(({ event }) => event.data.message.content[0]?.isError), [false, false],
+  'unrelated DOM churn must not invalidate the unchanged result link')
+  assert.equal(history.events.findLast(({ event }) => event.type === 'turn/end')?.event.data.reason.kind,
+    'completed')
+  await until(async () => (await nativeGuest(app, guestId, fixture.dynamicResultUrl))?.url ===
+    fixture.dynamicResultUrl, 'model click navigates the same native guest to local destination', 12_000)
+  assert.equal(await guestScript(app, guestId, 'document.querySelector("h1").textContent'),
+    'Opened local detail', 'clicked link must render the verified local destination')
+  assert.equal((await browserRpc(page, 'browser.control',
+    { sessionId, command: { kind: 'ensure-tab' } })).activeTabId, tabId,
+  'the destination must retain the original tab')
+  await browserRpc(page, 'browser.control', { sessionId, command: { kind: 'close-tab', tabId } })
+}
+
 async function main() {
   assert.equal(process.platform, 'darwin', 'native smoke currently requires macOS')
   assert.ok(process.argv.length === 2 || (process.argv.length === 3 && process.argv[2] === '--focus-only'),
@@ -1981,6 +2271,7 @@ async function main() {
   let timeoutModel
   let assistantLinkModel
   let freshAssistantLinkModel
+  let dynamicResultModel
   let passed = false
   try {
     await Promise.all([home, tmp, workspace].map(path => mkdir(path, { recursive: true, mode: 0o700 })))
@@ -2099,6 +2390,10 @@ async function main() {
     await browserRpc(page, 'settings.update', { ns: 'llm-deepseek',
       patch: { baseURL: freshAssistantLinkModel.url, thinking: 'disabled', reasoningEffort: 'off' } })
     await verifyFreshAssistantLinkOpensNativeGuest(page, app, fixture, freshAssistantLinkModel)
+    dynamicResultModel = await scriptedDynamicResultModel()
+    await browserRpc(page, 'settings.update', { ns: 'llm-deepseek',
+      patch: { baseURL: dynamicResultModel.url, thinking: 'disabled', reasoningEffort: 'off' } })
+    await verifyDynamicNativeResultClick(page, app, fixture, dynamicResultModel)
     await verifyWindowBoundary(page, app, origin)
 
     const originalWindow = await app.evaluate(({ BrowserWindow }) => {
@@ -2140,6 +2435,7 @@ async function main() {
     console.log('PASS: assistant Markdown links reopened the hidden sidebar, preserved old native guests, and queued rapid repeated clicks as distinct tabs with the newest selected, without window.open or dialogs')
     console.log('PASS: fresh assistant link painted real native guest content while readyState=loading and the address spinner remained visible through a parser-blocking script and held image beyond ten seconds; a follow-up link opened another tab without BROWSER_FAILED')
     console.log('PASS: stalled local image timed out browser_navigate, stopped loading safely, and the same Electron guest/tab yielded a fresh Agent browser_snapshot')
+    console.log('PASS: a real native snapshot ref survived a released lease, 20ms unrelated DOM/title churn and late image loads; the next user turn clicked the observed link through the model and reached the local detail page in the same guest')
   } finally {
     if (!passed && existsSync(screenshot)) console.error(`Failure screenshot: ${screenshot}`)
     if (!passed && existsSync(afterScreenshot)) console.error(`Focus screenshot: ${afterScreenshot}`)
@@ -2155,6 +2451,7 @@ async function main() {
     if (timeoutModel !== undefined) await timeoutModel.close()
     if (assistantLinkModel !== undefined) await assistantLinkModel.close()
     if (freshAssistantLinkModel !== undefined) await freshAssistantLinkModel.close()
+    if (dynamicResultModel !== undefined) await dynamicResultModel.close()
     if (app !== undefined) await closeOwnApp(app)
     // 未能证明 Host 所有权或无法等到其退出时保留 HOME，避免删掉仍运行的 Host 的数据。
     let safeToClean = false

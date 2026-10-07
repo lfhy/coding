@@ -781,6 +781,7 @@ export class WorkerThreadCodeRuntime extends CodeRuntime {
           namespaces: [...bindings.values()].map(namespace => ({
             global: namespace.global,
             names: Object.keys(namespace.functions),
+            ...namespace.noArgsAsEmptyObject === undefined ? {} : { noArgsAsEmptyObject: namespace.noArgsAsEmptyObject },
             ...namespace.errorClass === undefined ? {} : { errorClass: namespace.errorClass },
           })),
           timeoutMs: Math.min(this.config.maxWallMs, REMOTE_CODE_MAX_TIMEOUT_MS),
@@ -978,6 +979,9 @@ export class WorkerThreadCodeRuntime extends CodeRuntime {
       if (bindings.has(namespace.global)) {
         throw new Error(`dsh-code-runtime-worker-thread: duplicate binding global ${JSON.stringify(namespace.global)}`)
       }
+      if (namespace.noArgsAsEmptyObject !== undefined && typeof namespace.noArgsAsEmptyObject !== 'boolean') {
+        throw new Error(`dsh-code-runtime-worker-thread: binding ${JSON.stringify(namespace.global)} noArgsAsEmptyObject must be a boolean`)
+      }
       bindings.set(namespace.global, namespace)
     }
 
@@ -1014,6 +1018,7 @@ export class WorkerThreadCodeRuntime extends CodeRuntime {
       namespaces: [...bindings].map(([global, namespace]) => ({
         global,
         names: Object.keys(namespace.functions),
+        ...namespace.noArgsAsEmptyObject === undefined ? {} : { noArgsAsEmptyObject: namespace.noArgsAsEmptyObject },
         ...namespace.errorClass ? { errorClass: namespace.errorClass } : {},
       })),
       maxOutputBytes: this.config.maxOutputBytes,

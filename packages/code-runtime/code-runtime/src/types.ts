@@ -60,6 +60,8 @@ export interface CodeBindingNamespace {
   global: string
   /** The callable members, keyed by the exact name the program calls. */
   functions: Record<string, CodeBindingFunction>
+  /** 仅在调用未传任何实参时向成员传入空对象；显式 undefined 仍由无损 JSON 校验拒绝。 */
+  noArgsAsEmptyObject?: boolean
   /** Optional program-visible typed rejection contract for this namespace. */
   errorClass?: CodeBindingErrorClass
 }

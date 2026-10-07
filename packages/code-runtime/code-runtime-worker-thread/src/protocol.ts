@@ -15,6 +15,7 @@ export interface WorkerBootData {
   namespaces: {
     global: string
     names: string[]
+    noArgsAsEmptyObject?: boolean
     errorClass?: { name: string; memberNameProperty: string }
   }[]
   /** Hard cap for the combined serialized outer logs plus completion value or failure diagnostic. */

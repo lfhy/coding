@@ -2,6 +2,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { BrowserCommand, BrowserExpectedTarget, BrowserObservation } from '@deepseek-ai/dsh-browser'
+import { BrowserUseError } from '@deepseek-ai/dsh-browser'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
@@ -22,6 +23,7 @@ const MAX_URL_CHARS = 2_048
 const MAX_GENERATION_CHARS = 128
 const MAX_FILL_CHARS = 2_000
 const MAX_APPROVAL_ORIGIN_CHARS = 256
+const STOPPED_NAVIGATION_DIAGNOSTIC = 'browser navigation timed out; loading stopped, take a new snapshot of the current page'
 
 function validateNavigationUrl(raw: string): void {
   const invalid = 'browser_navigate: url must be a plain absolute HTTP(S) URL (for example, https://example.com/), not a Markdown link; pass only the address'
@@ -154,6 +156,45 @@ function approvalReason(command: BrowserCommand, currentUrl: string | undefined)
   return `Browser ${command.kind}${ref} (current origin: ${approvalOrigin(currentUrl) ?? 'unknown'}; approval is for this call only)`
 }
 
+function browserFailure(command: BrowserCommand, error: BrowserUseError): BrowserUseError {
+  // 客户端以此固定句识别已安全停载的原生导航；只接受完全相等，避免透传提供方的 URL。
+  if (command.kind === 'navigate' && error.code === 'BROWSER_FAILED' && error.message === STOPPED_NAVIGATION_DIAGNOSTIC) {
+    return new BrowserUseError(STOPPED_NAVIGATION_DIAGNOSTIC, error.code, { cause: error })
+  }
+  const toolName = `browser_${command.kind}`
+  let guidance: string
+  switch (error.code) {
+    case 'BROWSER_STALE_REF':
+      if (command.kind === 'snapshot' && error.message.includes('document changed during observation')) {
+        guidance = 'document changed during observation; try at most two fresh browser_snapshot calls. If both fail, reopen the last successfully observed HTTP(S) URL once with browser_navigate only when still relevant, then inspect its observation; stop if that fails. The last observed URL may not be the current URL'
+      } else {
+        guidance = 'target or element changed; take a fresh browser_snapshot before acting. A click or fill may have taken effect: do not replay it without checking the new page'
+      }
+      break
+    case 'BROWSER_CLOSED':
+      guidance = 'active browser tab is closed; browser_navigate can open a page only with a user-provided or previously observed HTTP(S) URL'
+      break
+    case 'BROWSER_BUSY':
+      guidance = 'browser is busy; wait for the other operation, do not navigate to bypass it'
+      break
+    case 'BROWSER_DENIED':
+      guidance = 'browser operation denied; do not retry or navigate to bypass the denial'
+      break
+    case 'BROWSER_UNAVAILABLE':
+      guidance = 'browser unavailable; do not retry or navigate to bypass this failure'
+      break
+    case 'BROWSER_INVALID_URL':
+      guidance = 'invalid navigation URL; provide a plain absolute HTTP(S) address without credentials'
+      break
+    case 'BROWSER_FAILED':
+      guidance = error.message.includes('navigation timed out; loading stopped')
+        ? 'navigation timed out and loading stopped; take one fresh browser_snapshot before deciding whether another navigation is needed'
+        : 'browser operation failed; do not replay a click or fill without checking whether it took effect'
+      break
+  }
+  return new BrowserUseError(`${toolName}: ${error.code}: ${guidance}`, error.code, { cause: error })
+}
+
 /**
  * 注册七个动作工具；仅全权限且关闭审批提示的会话免于一次性审批，审批服务缺席仍拒绝。
  * @param ctx - 持有浏览器服务、附件存储和工具注册表的上下文。
@@ -234,8 +275,9 @@ async function executeBrowserCommand(ctx: Context, command: BrowserCommand, exec
   const approval = ctx.get('approval')
   if (approval === undefined) throw new Error(`${toolName}: approval service is unavailable`)
   const sessionId = agent.session.id
-  const release = await ctx.browserUse.acquireOperation(sessionId, exec.signal)
+  let release: (() => void) | undefined
   try {
+    release = await ctx.browserUse.acquireOperation(sessionId, exec.signal)
     const expectedTarget: BrowserExpectedTarget = await ctx.browserUse.prepareTarget(sessionId, exec.signal)
     if (expectedTarget.kind === 'none' && command.kind !== 'navigate') {
       throw new Error(`${toolName}: browser session is closed; use browser_navigate to open a page`)
@@ -270,5 +312,8 @@ async function executeBrowserCommand(ctx: Context, command: BrowserCommand, exec
       }
     }
     return { action: command.kind, observation: boundedObservation(capture.observation), image }
-  } finally { release() }
+  } catch (error) {
+    if (error instanceof BrowserUseError) throw browserFailure(command, error)
+    throw error
+  } finally { release?.() }
 }

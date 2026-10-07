@@ -65,7 +65,7 @@ interface CodeRunResult {
 
 ## 绑定：宿主函数作为程序全局变量
 
-每个 `CodeBindingNamespace` 在程序内成为一个由异步可调用函数组成的全局对象（Code Mode Consumer 传入一个：`tools`）。参数与返回值必须是无损 JSON，且跨越边界时不受 seam 层字节上限约束；运行时可以通过结构化克隆桥接它们。命名空间可以声明程序可见的错误类，而无需让运行时知道 Consumer 的名称：运行时会注入真实构造函数，并将被拒绝的调用转为该类的实例。运行时也将绑定名视为不可信输入（`__proto__` 是普通自有属性，绝不会发生原型碰撞）：
+每个 `CodeBindingNamespace` 在程序内成为一个由异步可调用函数组成的全局对象（Code Mode Consumer 传入一个：`tools`）。参数与返回值必须是无损 JSON，且跨越边界时不受 seam 层字节上限约束；运行时可以通过结构化克隆桥接它们。可选的 `noArgsAsEmptyObject` 只把真正没有实参的成员调用转为 `{}`，显式传入 `undefined` 仍由无损 JSON 校验拒绝；未启用此选项的命名空间保持原有参数规则。命名空间可以声明程序可见的错误类，而无需让运行时知道 Consumer 的名称：运行时会注入真实构造函数，并将被拒绝的调用转为该类的实例。运行时也将绑定名视为不可信输入（`__proto__` 是普通自有属性，绝不会发生原型碰撞）：
 
 ```ts type-equiv
 /**
@@ -110,6 +110,8 @@ interface CodeBindingNamespace {
   global: string
   /** The callable members, keyed by the exact name the program calls. */
   functions: Record<string, CodeBindingFunction>
+  /** 仅在调用未传任何实参时向成员传入空对象；显式 undefined 仍由无损 JSON 校验拒绝。 */
+  noArgsAsEmptyObject?: boolean
   /** Optional program-visible typed rejection contract for this namespace. */
   errorClass?: CodeBindingErrorClass
 }

@@ -86,9 +86,25 @@ type CodeBindingErrorClass struct {
 
 // CodeBindingNamespace 是一次代码执行可见的函数命名空间。
 type CodeBindingNamespace struct {
-	Global     string                 `json:"global"`
-	Names      []string               `json:"names"`
-	ErrorClass *CodeBindingErrorClass `json:"errorClass,omitempty"`
+	Global              string                 `json:"global"`
+	Names               []string               `json:"names"`
+	ErrorClass          *CodeBindingErrorClass `json:"errorClass,omitempty"`
+	NoArgsAsEmptyObject codeBindingStrictBool  `json:"noArgsAsEmptyObject,omitempty"`
+}
+
+// codeBindingStrictBool 防止 JSON null 绕过可选标记的布尔类型校验。
+type codeBindingStrictBool bool
+
+func (value *codeBindingStrictBool) UnmarshalJSON(raw []byte) error {
+	switch string(raw) {
+	case "true":
+		*value = true
+	case "false":
+		*value = false
+	default:
+		return errors.New("binding noArgsAsEmptyObject must be a boolean")
+	}
+	return nil
 }
 
 // CodeRunRequest 是一个 TypeScript async 函数体及其可见能力。
@@ -501,6 +517,9 @@ func installCodeBindings(
 			function := func(call goja.FunctionCall) goja.Value {
 				promise, resolve, reject := runtime.NewPromise()
 				arguments := call.Argument(0)
+				if len(call.Arguments) == 0 && bool(binding.NoArgsAsEmptyObject) {
+					arguments = runtime.NewObject()
+				}
 				encoded, present, err := snapshotCodeJSON(arguments)
 				if err != nil || !present {
 					_ = reject(runtime.NewTypeError("binding arguments must be lossless JSON"))

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { deflateSync } from 'node:zlib'
 import { Context } from '@deepseek-ai/cordis'
-import BrowserUseService from '../../browser/src/index.ts'
+import BrowserUseService, { BrowserUseError } from '../../browser/src/index.ts'
 import type { BrowserCapture, BrowserCommand, BrowserExpectedTarget, BrowserHumanCommand, BrowserSessionState, BrowserTabId } from '@deepseek-ai/dsh-browser'
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
@@ -275,6 +275,73 @@ describe('browser action tools', () => {
     expect(text(result)).toContain('active browser tab is closed')
     expect(request).not.toHaveBeenCalled()
     expect(browser.commands).not.toHaveBeenCalled()
+  })
+
+  it('explains a changing document without navigating or revealing an unobserved URL', async () => {
+    const { ctx, call } = await setup()
+    const browser = ctx.browserUse as FakeBrowser
+    browser.currentState = activeState()
+    const approval = vi.spyOn(ctx.approval, 'request')
+    ctx.on('approval/request', () => Promise.resolve('allowed-once' as const))
+    browser.commands.mockRejectedValueOnce(new BrowserUseError(
+      'browser document changed during observation at https://private.example/?token=secret', 'BROWSER_STALE_REF'))
+
+    const result = await call({ action: 'snapshot' })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('BROWSER_STALE_REF: document changed during observation')
+    expect(text(result)).toContain('at most two fresh browser_snapshot calls')
+    expect(text(result)).toContain('last successfully observed HTTP(S) URL once')
+    expect(text(result)).not.toMatch(/private\.example|token=secret/)
+    expect(browser.commands).toHaveBeenCalledTimes(1)
+    expect(browser.commands.mock.calls[0]?.[1]).toEqual({ kind: 'snapshot' })
+    expect(approval).toHaveBeenCalledTimes(1)
+  })
+
+  it('treats an invisible click target as uncertain without replaying it', async () => {
+    const { ctx, call } = await setup(true, { mode: 'danger-full-access', policy: 'never' })
+    const browser = ctx.browserUse as FakeBrowser
+    browser.currentState = activeState()
+    browser.commands.mockRejectedValueOnce(new BrowserUseError('browser element no longer visible', 'BROWSER_STALE_REF'))
+
+    const result = await call({ action: 'click', ref: 'e1', revision: 1 })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('BROWSER_STALE_REF: target or element changed')
+    expect(text(result)).toContain('A click or fill may have taken effect')
+    expect(text(result)).not.toContain('reopen')
+    expect(browser.commands).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not suggest stale-page recovery for a busy browser lease', async () => {
+    const { ctx, call } = await setup(true, { mode: 'danger-full-access', policy: 'never' })
+    const browser = ctx.browserUse as FakeBrowser
+    browser.currentState = activeState()
+    browser.acquireOperation.mockRejectedValueOnce(new BrowserUseError('already leased', 'BROWSER_BUSY'))
+
+    const result = await call({ action: 'snapshot' })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('BROWSER_BUSY: browser is busy')
+    expect(text(result)).toContain('do not navigate to bypass')
+    expect(browser.commands).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['browser navigation timed out; loading stopped, take a new snapshot of the current page', true],
+    ['browser navigation timed out; loading stopped, take a new snapshot of the current page at https://private.example/?token=secret', false],
+  ] as const)('retains only the exact safe stopped-navigation diagnostic for the client', async (providerMessage, canonical) => {
+    const { ctx, call } = await setup(true, { mode: 'danger-full-access', policy: 'never' })
+    const browser = ctx.browserUse as FakeBrowser
+    browser.currentState = activeState()
+    browser.commands.mockRejectedValueOnce(new BrowserUseError(providerMessage, 'BROWSER_FAILED'))
+
+    const result = await call({ action: 'navigate', url: 'https://example.com' })
+    expect(result.isError).toBe(true)
+    if (canonical) {
+      expect(text(result)).toBe(`Error: ${providerMessage}`)
+    } else {
+      expect(text(result)).toContain('browser_navigate: BROWSER_FAILED:')
+      expect(text(result)).not.toMatch(/private\.example|token=secret/)
+    }
+    expect(browser.commands).toHaveBeenCalledTimes(1)
   })
 
   it('requires a calling agent even under full access', async () => {

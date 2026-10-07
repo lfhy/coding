@@ -13,7 +13,7 @@ export type BrowserCommand =
   | { readonly kind: 'screenshot' }
   | { readonly kind: 'close' }
 
-/** 审批前目标；会话状态每次发布后递增，切离又切回也不能复用旧审批。 */
+/** 审批前目标；修订标记由提供方持有，不等同于 UI 状态发布次数，切离又切回也不能复用旧审批。 */
 export type BrowserExpectedTarget =
   | { readonly kind: 'none' }
   | {

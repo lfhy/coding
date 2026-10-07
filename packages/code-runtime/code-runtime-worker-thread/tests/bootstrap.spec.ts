@@ -286,6 +286,27 @@ describe('makeNamespaces', () => {
     expect(nextId.value).toBe(1)
   })
 
+  it('defaults only omitted arguments in opted-in namespaces', async () => {
+    const port = new FakePort()
+    port.respond = message => message.type === 'call'
+      ? { type: 'reply', id: message.id, ok: true, value: encodeWorkerJson(null) }
+      : undefined
+    const pending = new Map<number, PendingCall>()
+    wireReplies(port, pending)
+    const [tools, helpers] = makeNamespaces({ namespaces: [
+      { ...toolNamespace(['x']), noArgsAsEmptyObject: true },
+      { global: 'helpers', names: ['x'] },
+    ] }, port, pending, { value: 1 }) as Record<string, (...args: unknown[]) => Promise<unknown>>[]
+    await expect(tools!.x!()).resolves.toBeNull()
+    expect(port.sent.filter(message => message.type === 'call').map((message) => {
+      if (message.type !== 'call') throw new Error('expected binding call')
+      return decodeWorkerJson(message.args)
+    })).toEqual([{}])
+    await expect(tools!.x!(undefined)).rejects.toThrow('binding arguments must be lossless JSON')
+    await expect(helpers!.x!()).rejects.toThrow('binding arguments must be lossless JSON')
+    expect(port.sent.filter(message => message.type === 'call')).toHaveLength(1)
+  })
+
   it('uses ordinary Error for non-tools namespace failures', async () => {
     const deniedPort = new FakePort()
     deniedPort.respond = message => message.type === 'call'

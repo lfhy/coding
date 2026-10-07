@@ -197,6 +197,22 @@ func TestCodeRunRoutesPollReplyAndClassifyRecoverableErrors(t *testing.T) {
 	}
 }
 
+func TestCodeStartRejectsNonBooleanNoArgumentPolicy(t *testing.T) {
+	server, err := NewServer(strings.Repeat("a", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []string{"null", `"true"`, "1", `{}`} {
+		t.Run(value, func(t *testing.T) {
+			body := `{"program":"return 1","namespaces":[{"global":"tools","names":["echo"],"noArgsAsEmptyObject":` + value + `}]}`
+			response := agentRequest(server, http.MethodPost, "/v1/code/start", body)
+			if response.Code != http.StatusBadRequest || responseErrorCode(t, response) != "invalid-json" {
+				t.Fatalf("flag %s response = %d: %s", value, response.Code, response.Body.String())
+			}
+		})
+	}
+}
+
 func TestCodeRunRoutesCancelAndServerShutdownAbortRuns(t *testing.T) {
 	server, err := NewServer(strings.Repeat("a", 32))
 	if err != nil {

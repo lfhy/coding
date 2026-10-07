@@ -796,6 +796,48 @@ describe('the sub-dispatch scheduler (native concurrency contract)', () => {
 })
 
 describe('the run_code dispatch bridge', () => {
+  it('normalizes omitted tool arguments while leaving explicit undefined and required fields invalid', async () => {
+    const { ctx, runtime } = await setup({ mode: 'code' })
+    const { agent, events } = fakeAgent()
+    const calls: unknown[] = []
+    ctx.tools.register(defineTool({
+      name: 'snapshot',
+      description: 'Snapshot without parameters.',
+      parameters: {},
+      output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] },
+      execute(args) {
+        calls.push(args)
+        return Promise.resolve('ready')
+      },
+    }))
+    registerEcho(ctx)
+    runtime.behavior = async (request) => {
+      const bindings = request.bindings[0]!
+      expect(bindings.noArgsAsEmptyObject).toBe(true)
+      const snapshot = bindings.functions.snapshot!
+      const echo = bindings.functions.echo!
+      const noArgs = await Reflect.apply(snapshot, undefined, []) as JsonValue
+      const missing = await (Reflect.apply(echo, undefined, []) as Promise<JsonValue>).then(
+        () => 'unexpected success',
+        (error: unknown) => error instanceof Error ? error.message : String(error),
+      )
+      const explicit = await snapshot(undefined).then(
+        () => 'unexpected success',
+        (error: unknown) => error instanceof Error ? error.message : String(error),
+      )
+      return { logs: [], value: { noArgs, missing, explicit } }
+    }
+    const result = await runCode(ctx, 'program', { agent })
+    expect(result.isError).toBe(false)
+    expect(result.value).toMatchObject({ logs: [], result: { noArgs: 'ready' } })
+    const output = (result.value as { result: { missing: string; explicit: string } }).result
+    expect(output.missing).toContain('missing required property "value"')
+    expect(output.explicit).toContain('tool arguments must be lossless JSON')
+    expect(calls).toEqual([{}])
+    expect(events.filter(event => event.type === 'tool/code-dispatch').map(event => (event.data as SessionEventMap['tool/code-dispatch']).arguments))
+      .toEqual([{}, {}])
+  })
+
   it('bridges tool calls, returns only the curated output, and logs one event per dispatch', async () => {
     const { ctx, runtime } = await setup({ mode: 'code' })
     const calls = registerEcho(ctx)

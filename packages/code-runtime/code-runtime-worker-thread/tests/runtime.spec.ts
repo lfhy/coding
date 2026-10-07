@@ -105,6 +105,40 @@ describe('WorkerThreadCodeRuntime — programs and bindings (real workers)', () 
     })
   })
 
+  it('accepts omitted arguments only for opted-in bindings in a real worker', async () => {
+    const { runtime } = await setup()
+    const inputs: unknown[] = []
+    const result = await runtime.run({
+      program: `
+        const value = await tools.empty();
+        let explicit = '';
+        let helper = '';
+        try { await tools.empty(undefined) } catch (error) { explicit = error.message }
+        try { await helpers.empty() } catch (error) { helper = error.message }
+        return { value, explicit, helper };
+      `,
+      bindings: [
+        { global: 'tools', functions: { empty: async (args) => { inputs.push(args); return 'ok' } }, noArgsAsEmptyObject: true },
+        { global: 'helpers', functions: { empty: async (args) => { inputs.push(args); return 'unexpected' } } },
+      ],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toEqual({
+      value: 'ok',
+      explicit: 'binding arguments must be lossless JSON',
+      helper: 'binding arguments must be lossless JSON',
+    })
+    expect(inputs).toEqual([{}])
+  })
+
+  it('rejects a non-boolean omitted-argument policy before starting the worker', async () => {
+    const { runtime } = await setup()
+    await expect(runtime.run({
+      program: 'return 1',
+      bindings: [{ global: 'tools', functions: {}, noArgsAsEmptyObject: 'yes' as unknown as boolean }],
+    })).rejects.toThrow('binding "tools" noArgsAsEmptyObject must be a boolean')
+  })
+
   it('bridges a deeply nested lossless JSON argument, resolution, and completion', async () => {
     const { runtime } = await setup()
     const result = await runtime.run({

@@ -104,6 +104,97 @@ func TestCodeRunnerExecutesTypeScriptAndAsyncTool(t *testing.T) {
 	}
 }
 
+func TestCodeRunnerNoArgumentBindingPolicy(t *testing.T) {
+	tests := []struct {
+		name       string
+		program    string
+		optIn      bool
+		wantCall   bool
+		arguments  string
+		wantResult string
+	}{
+		{
+			name: "opted-in omitted arguments", program: `return await tools.echo()`, optIn: true,
+			wantCall: true, arguments: `{}`, wantResult: `"accepted"`,
+		},
+		{
+			name:       "default namespace rejects omitted arguments",
+			program:    `try { await tools.echo() } catch (error) { return error.message }`,
+			wantResult: `"binding arguments must be lossless JSON"`,
+		},
+		{
+			name: "opted-in namespace rejects explicit undefined", optIn: true,
+			program:    `try { await tools.echo(undefined) } catch (error) { return error.message }`,
+			wantResult: `"binding arguments must be lossless JSON"`,
+		},
+		{
+			name: "opted-in namespace preserves explicit null", program: `return await tools.echo(null)`,
+			optIn: true, wantCall: true, arguments: `null`, wantResult: `"accepted"`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			runner := newTestCodeRunner(t, time.Second)
+			run := runner.Start(context.Background(), CodeRunRequest{
+				Program: test.program,
+				Bindings: []CodeBindingNamespace{{
+					Global: "tools", Names: []string{"echo"}, NoArgsAsEmptyObject: codeBindingStrictBool(test.optIn),
+				}},
+			})
+			if test.wantCall {
+				event := waitForCodeEvent(t, run)
+				if event.ToolCall == nil {
+					t.Fatalf("event = %#v, want tool call", event)
+				}
+				requireCodeJSON(t, event.ToolCall.Arguments, test.arguments)
+				if err := event.ToolCall.ResolveJSON(json.RawMessage(`"accepted"`)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			result := waitForCodeResult(t, run)
+			if result.Error != nil {
+				t.Fatalf("result error = %#v", result.Error)
+			}
+			requireCodeJSON(t, result.Value, test.wantResult)
+		})
+	}
+}
+
+func TestCodeBindingNamespaceRequiresBooleanNoArgumentFlag(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		flag      string
+		wantError bool
+	}{
+		{name: "omitted"},
+		{name: "enabled", flag: `,"noArgsAsEmptyObject":true`},
+		{name: "disabled", flag: `,"noArgsAsEmptyObject":false`},
+		{name: "null", flag: `,"noArgsAsEmptyObject":null`, wantError: true},
+		{name: "string", flag: `,"noArgsAsEmptyObject":"true"`, wantError: true},
+		{name: "number", flag: `,"noArgsAsEmptyObject":1`, wantError: true},
+		{name: "object", flag: `,"noArgsAsEmptyObject":{}`, wantError: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var binding CodeBindingNamespace
+			err := json.Unmarshal([]byte(`{"global":"tools","names":["echo"]`+test.flag+`}`), &binding)
+			if (err != nil) != test.wantError {
+				t.Fatalf("binding flag %q decode error = %v, want error %t", test.flag, err, test.wantError)
+			}
+			if err == nil && bool(binding.NoArgsAsEmptyObject) != (test.name == "enabled") {
+				t.Fatalf("binding flag %q decoded as %t", test.flag, binding.NoArgsAsEmptyObject)
+			}
+		})
+	}
+	encoded, err := json.Marshal(CodeBindingNamespace{Global: "tools", Names: []string{"echo"}, NoArgsAsEmptyObject: true})
+	if err != nil || !strings.Contains(string(encoded), `"noArgsAsEmptyObject":true`) {
+		t.Fatalf("enabled namespace wire JSON = %s, %v", encoded, err)
+	}
+	encoded, err = json.Marshal(CodeBindingNamespace{Global: "tools", Names: []string{"echo"}})
+	if err != nil || strings.Contains(string(encoded), "noArgsAsEmptyObject") {
+		t.Fatalf("default namespace wire JSON = %s, %v", encoded, err)
+	}
+}
+
 func TestCodeRunnerSupportsPromiseAllAndReverseReplies(t *testing.T) {
 	runner := newTestCodeRunner(t, time.Second)
 	run := runner.Start(context.Background(), CodeRunRequest{

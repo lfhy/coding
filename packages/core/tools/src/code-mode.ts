@@ -470,10 +470,11 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
       // would be narrowed away by control flow analysis.
       const runOver = (): boolean => runController.signal.aborted
 
-      const binding = (name: string): CodeBindingFunction => async (rawArgs: unknown): Promise<JsonValue> => {
+      const binding = (name: string): CodeBindingFunction => async (...callArgs: unknown[]): Promise<JsonValue> => {
         if (runOver()) {
           throw new Error(`run_code run is over (${String(runController.signal.reason)}); ${name} not dispatched`)
         }
+        const rawArgs = callArgs.length === 0 ? {} : callArgs[0]
         const normalized = jsonNormalizeArgs(rawArgs)
         const n = ++dispatches
         const subCallId = CallId(`${String(exec.callId)}:code:${n}`)
@@ -633,6 +634,7 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
             bindings: [{
               global: 'tools',
               functions,
+              noArgsAsEmptyObject: true,
               errorClass: { name: 'ToolCallError', memberNameProperty: 'toolName' },
             }],
             signal: runController.signal,

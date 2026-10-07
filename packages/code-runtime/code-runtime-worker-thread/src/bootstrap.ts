@@ -319,13 +319,14 @@ export function makeNamespaces(
   nextId: { value: number },
   errorClasses: Map<string, BindingErrorConstructor> = makeBindingErrorClasses(data),
 ): Record<string, unknown>[] {
-  return data.namespaces.map(({ global, names }) => {
+  return data.namespaces.map(({ global, names, noArgsAsEmptyObject }) => {
     const errorClass = errorClasses.get(global)
     const namespace = Object.create(null) as Record<string, unknown>
     for (const name of names) {
       Object.defineProperty(namespace, name, {
         enumerable: true,
-        value: (args: unknown): Promise<unknown> => {
+        value: (...callArgs: unknown[]): Promise<unknown> => {
+          const args = callArgs.length === 0 && noArgsAsEmptyObject ? {} : callArgs[0]
           let detached: ReturnType<typeof snapshotCodeJsonValue>
           try {
             detached = snapshotCodeJsonValue(args)

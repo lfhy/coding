@@ -2984,7 +2984,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CodeBindingNamespace',
-    declaration: 'export interface CodeBindingNamespace {\n    global: string;\n    functions: Record<string, CodeBindingFunction>;\n    errorClass?: CodeBindingErrorClass;\n}',
+    declaration: 'export interface CodeBindingNamespace {\n    global: string;\n    functions: Record<string, CodeBindingFunction>;\n    noArgsAsEmptyObject?: boolean;\n    errorClass?: CodeBindingErrorClass;\n}',
   },
   {
     name: 'CodeDispatchLog',
