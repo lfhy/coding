@@ -427,6 +427,22 @@ describe('ConversationRoot resident composer', () => {
     expect(b.view.getByText('Selected Folder')).toBeTruthy()
   })
 
+  it('第二次点击工作区按钮会收起菜单，同一指针手势不会先关再重开', () => {
+    const b = mount(conversationSnapshot({ composerPhase: 'blank', blank: true }))
+    const button = b.view.getByRole('button', { name: '选择工作区' })
+    fireEvent.pointerDown(button)
+    fireEvent.click(button)
+    expect(button.getAttribute('aria-expanded')).toBe('true')
+    expect((b.pickerOwner() as { open: boolean }).open).toBe(true)
+    fireEvent.pointerDown(button)
+    fireEvent.click(button)
+    expect(button.getAttribute('aria-expanded')).toBe('false')
+    expect((b.pickerOwner() as { open: boolean }).open).toBe(false)
+    fireEvent.pointerDown(button)
+    fireEvent.click(button)
+    expect(button.getAttribute('aria-expanded')).toBe('true')
+  })
+
   it('hero row places the mode before the workspace chip', () => {
     const b = mount(conversationSnapshot({ composerPhase: 'blank', blank: true }))
     const workspace = b.view.getByRole('button', { name: '选择工作区' })
@@ -434,7 +450,8 @@ describe('ConversationRoot resident composer', () => {
     const row = workspace.parentElement
 
     expect(row?.firstElementChild).toBe(preset)
-    expect(row?.lastElementChild).toBe(workspace)
+    expect(row?.children[1]).toBe(workspace)
+    expect(b.slotCalls).toContain('conversation.hero.git')
   })
 
   it('settling phase: a summary that does not prove the session blank hides the composer while it opens', () => {

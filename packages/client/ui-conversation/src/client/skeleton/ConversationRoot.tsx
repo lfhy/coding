@@ -115,6 +115,8 @@ export function ConversationRoot({
             ? undefined
             : workspaceLabel(cwd)))
 
+  const workspaceGitSessionId = pendingWorkspace === undefined && sessionWorkspace !== undefined && sessionId !== undefined
+    ? sessionId : undefined
   const heroWorkspaceRow = (
     <div className={css.heroWorkspaceRow}>
       {renderSlot('conversation.hero.agentPreset', {})}
@@ -123,9 +125,13 @@ export function ConversationRoot({
         label={chipTitle}
         mode={noProject ? 'no-project' : undefined}
         menuOpen={pickerOpen}
+        // 菜单的 document pointerdown 会先于触发按钮 click 关闭菜单；阻止它
+        // 把这次点击当作外点后，再由按钮自身切换一次即可正确收起。
+        onPointerDown={(event) => { event.stopPropagation() }}
         onClick={() => { setPickerOpen(open => !open) }}
         t={t}
       />
+      {renderSlot('conversation.hero.git', { sessionId: workspaceGitSessionId })}
       {renderSlot('conversation.hero.workspace', {
         open: pickerOpen,
         anchorRef: pickerAnchor,

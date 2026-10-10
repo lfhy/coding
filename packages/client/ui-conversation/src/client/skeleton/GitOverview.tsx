@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
-import type { CSSProperties, FormEvent } from 'react'
+import type { CSSProperties, FormEvent, RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import {
   IconBranchOutline16, IconChevronRightOutline14, IconDownloadOutline16, IconListPenOutline16,
   IconRefreshOutline16, Modal, Toast,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import css from './GitOverview.module.css'
 
@@ -54,10 +54,21 @@ export interface GitOverviewInjected {
   resolveConflict: (sessionId: SessionId, prompt: string) => Promise<void>
 }
 
-type GitOverviewProps = PropsRuntime<'conversation.overview.git'> & PropsLocale<'conversation'> & GitOverviewInjected
+type GitOverviewProps = GitOverviewInjected & PropsLocale<'conversation'> & {
+  sessionId: SessionId
+  /** 行内分支入口提供锚点时，复用同一操作面板而不绘制概览摘要行。 */
+  triggerRef?: RefObject<HTMLButtonElement> | undefined
+  controlledOpen?: boolean | undefined
+  onControlledClose?: (() => void) | undefined
+  /** 分支切换或远端操作改变 HEAD 时，更新工作区行内名称。 */
+  onBranchChange?: ((branch: string | null) => void) | undefined
+}
 
-/** Git 摘要保持单行；操作、分支与错误在独立浮层中展示。 */
-export function GitOverview({ sessionId, status, branches, checkout, operate, forgetCredentials, resolveConflict, t }: GitOverviewProps) {
+/** 概览摘要行与 Hero 分支按钮共用 Git 浮层；任一入口只读取其目标会话。 */
+export function GitOverview({
+  sessionId, status, branches, checkout, operate, forgetCredentials, resolveConflict, t,
+  triggerRef, controlledOpen, onControlledClose, onBranchChange,
+}: GitOverviewProps) {
   const [git, setGit] = useState<GitStatusView | null>(null)
   const [branchList, setBranchList] = useState<GitBranchesView | null>(null)
   const [open, setOpen] = useState(false)
@@ -67,6 +78,8 @@ export function GitOverview({ sessionId, status, branches, checkout, operate, fo
   const usernameId = useId()
   const passwordId = useId()
   const trigger = useRef<HTMLButtonElement>(null)
+  const anchor = triggerRef ?? trigger
+  const isOpen = controlledOpen ?? open
   const popover = useRef<HTMLDivElement>(null)
   const branchTrigger = useRef<HTMLButtonElement>(null)
   const branchMenu = useRef<HTMLDivElement>(null)
@@ -102,22 +115,23 @@ export function GitOverview({ sessionId, status, branches, checkout, operate, fo
 
   const close = useCallback((restoreFocus: boolean) => {
     setOpen(false)
+    onControlledClose?.()
     setShowBranches(false)
-    if (restoreFocus) queueMicrotask(() => { trigger.current?.focus() })
-  }, [])
+    if (restoreFocus) queueMicrotask(() => { anchor.current?.focus() })
+  }, [anchor, onControlledClose])
 
   // 浮层脱离卡片滚动裁剪，并随滚动和窗口变化跟随触发行。
   useLayoutEffect(() => {
-    if (!open) return
+    if (!isOpen) return
     const place = () => {
-      const anchor = trigger.current
+      const triggerElement = anchor.current
       const layer = popover.current
-      if (!anchor || !layer) return
-      const rect = anchor.getBoundingClientRect()
+      if (!triggerElement || !layer) return
+      const rect = triggerElement.getBoundingClientRect()
       const margin = 12
       const gap = 4
       if (rect.width > 0 && (rect.bottom <= margin || rect.top >= window.innerHeight - margin)) {
-        setOpen(false)
+        close(false)
         return
       }
       const width = Math.min(288, Math.max(0, window.innerWidth - margin * 2))
@@ -162,12 +176,12 @@ export function GitOverview({ sessionId, status, branches, checkout, operate, fo
       window.removeEventListener('scroll', place, true)
       window.removeEventListener('resize', place)
     }
-  }, [open, showBranches, git, error, conflict, busy])
+  }, [isOpen, showBranches, git, error, conflict, busy, anchor, close])
 
   useEffect(() => {
-    if (!open || auth !== null) return
+    if (!isOpen || auth !== null) return
     const isOutside = (target: EventTarget | null): boolean => target instanceof Node
-      && !trigger.current?.contains(target) && !popover.current?.contains(target) && !branchMenu.current?.contains(target)
+      && !anchor.current?.contains(target) && !popover.current?.contains(target) && !branchMenu.current?.contains(target)
     const onPointerDown = (event: PointerEvent) => { if (isOutside(event.target)) close(false) }
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented || popover.current?.contains(event.target as Node)) return
@@ -184,7 +198,7 @@ export function GitOverview({ sessionId, status, branches, checkout, operate, fo
       document.removeEventListener('keydown', onKeyDown)
       document.removeEventListener('focusin', onFocusIn)
     }
-  }, [open, auth, close])
+  }, [isOpen, auth, close, anchor])
 
   if (git === null) return null
 
@@ -217,7 +231,9 @@ export function GitOverview({ sessionId, status, branches, checkout, operate, fo
     setError(null)
     setConflict(false)
     try {
-      setGit(await checkout(sessionId, branch))
+      const next = await checkout(sessionId, branch)
+      setGit(next)
+      onBranchChange?.(next.branch)
       setShowBranches(false)
       setBranchList(null)
     } catch (reason) {
@@ -248,7 +264,9 @@ export function GitOverview({ sessionId, status, branches, checkout, operate, fo
         setUsername('')
         setPassword('')
         setRemember(false)
-        setGit(await status(sessionId))
+        const next = await status(sessionId)
+        setGit(next)
+        onBranchChange?.(next?.branch ?? null)
         setToast(value => ({ seq: (value?.seq ?? 0) + 1, text: t('overview.git.done') }))
       }
     } catch (reason) {
@@ -282,7 +300,7 @@ export function GitOverview({ sessionId, status, branches, checkout, operate, fo
     setPassword('')
     setRemember(false)
     setError(null)
-    trigger.current?.focus()
+    anchor.current?.focus()
   }
 
   /** 清除被拒绝的本机凭据：弹窗留在原位，用户可接着输入新的一组。 */
@@ -314,15 +332,19 @@ export function GitOverview({ sessionId, status, branches, checkout, operate, fo
   }
 
   return (
-    <section data-overview-git className={css.root} aria-label={t('overview.git.title')}>
-      <button ref={trigger} type="button" className={css.row} aria-expanded={open} aria-controls={popoverId}
-        onClick={() => { if (open) close(false); else setOpen(true) }}>
+    <section
+      data-overview-git={triggerRef === undefined ? '' : undefined}
+      className={triggerRef === undefined ? css.root : undefined}
+      aria-label={triggerRef === undefined ? t('overview.git.title') : undefined}
+    >
+      {triggerRef === undefined && <button ref={trigger} type="button" className={css.row} aria-expanded={isOpen} aria-controls={popoverId}
+        onClick={() => { if (isOpen) close(false); else setOpen(true) }}>
         <span className={css.rowIcon} aria-hidden="true"><IconBranchOutline16 /></span>
         <span className={css.rowLabel}>{t('overview.git.title')}</span>
         <span className={css.rowSummary}>{changeSummary}</span>
-        <IconChevronRightOutline14 className={open ? css.chevronOpen : css.chevron} aria-hidden="true" />
-      </button>
-      {open && createPortal(
+        <IconChevronRightOutline14 className={isOpen ? css.chevronOpen : css.chevron} aria-hidden="true" />
+      </button>}
+      {isOpen && createPortal(
         <div ref={popover} id={popoverId} className={css.popover} role="region" aria-label={t('overview.git.title')}
           style={position ?? { visibility: 'hidden', left: 0, top: 0 }}
           onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(true) } }}>
@@ -382,11 +404,11 @@ export function GitOverview({ sessionId, status, branches, checkout, operate, fo
         closeLabel={t('overview.git.auth.cancel')} description={t('overview.git.auth.description', { remote: auth?.remote ?? '' })}
         footer={<div className={css.authActions}>
           <button type="button" disabled={busy !== null} onClick={cancelAuth}>{t('overview.git.auth.cancel')}</button>
-          <button type="submit" form="dsh-git-auth-form" disabled={busy !== null || !username || !password}>
+          <button type="submit" form={`dsh-git-auth-form-${usernameId}`} disabled={busy !== null || !username || !password}>
             {busy !== null ? t('overview.git.auth.running') : t('overview.git.auth.submit')}
           </button>
         </div>}>
-        <form id="dsh-git-auth-form" className={css.authForm} onSubmit={submitAuth}>
+        <form id={`dsh-git-auth-form-${usernameId}`} className={css.authForm} onSubmit={submitAuth}>
           <label htmlFor={usernameId}>{t('overview.git.auth.username')}</label>
           <input id={usernameId} autoComplete="username" value={username} onChange={(event) => { setUsername(event.target.value) }} />
           <label htmlFor={passwordId}>{t('overview.git.auth.password')}</label>

@@ -37,6 +37,7 @@ import { ConversationSession, ConversationSessionHeader } from './skeleton/Conve
 import { DetailsPanel } from './skeleton/DetailsPanel.tsx'
 import { OverviewCard } from './skeleton/OverviewCard.tsx'
 import { GitOverview, type GitOverviewInjected } from './skeleton/GitOverview.tsx'
+import { WorkspaceGitTrigger } from './skeleton/WorkspaceGitTrigger.tsx'
 import { en, NS, zh, type ConversationKey } from './locales.ts'
 import { registerConversationNodes } from './conversation-nodes/register.ts'
 import { registerChatNodeRenderers } from './chat/register-node-renderers.ts'
@@ -212,6 +213,7 @@ export function apply(ctx: Context): void {
       'conversation.input.right': { kind: 'list', scope: 'session' },
       'conversation.hero.brand.mark': { kind: 'single', scope: 'root' },
       'conversation.hero.workspace': { kind: 'single', scope: 'root' },
+      'conversation.hero.git': { kind: 'single', scope: 'root' },
       'conversation.hero.actions': { kind: 'list', scope: 'root' },
       'conversation.hero.agentPreset': { kind: 'single', scope: 'root' },
     },
@@ -285,52 +287,63 @@ export function apply(ctx: Context): void {
     },
   }, OverviewCard)
 
+  // Git 注入面：概览卡片行与工作区 Git 面板共用同一份动作实现，
+  // 因此两处的查询、认证与冲突处理不会各自漂移。
+  const gitAccess = (): GitOverviewInjected => ({
+    status: async (sessionId) => {
+      const response = await connection.api.workspace.gitStatus({ sessionId })
+      if (!response.result.ok) throw new Error(response.result.error.message)
+      return response.result.value
+    },
+    branches: async (sessionId) => {
+      const response = await connection.api.workspace.gitBranches({ sessionId })
+      if (!response.result.ok) throw new Error(response.result.error.message)
+      return response.result.value
+    },
+    checkout: async (sessionId, branch) => {
+      const response = await connection.api.workspace.gitCheckout({ sessionId, branch })
+      if (!response.result.ok) throw new Error(response.result.error.message)
+      return response.result.value
+    },
+    operate: async (sessionId, action, credentials) => {
+      const response = action === 'push'
+        ? await connection.api.workspace.gitPush({ sessionId, ...(credentials ? { credentials } : {}) })
+        : await connection.api.workspace.gitPull({ sessionId, ...(credentials ? { credentials } : {}) })
+      if (!response.result.ok) {
+        if (response.result.error.code === 'git-conflict') return 'conflict'
+        if (response.result.error.code === 'git-auth-required') {
+          return { authRequired: response.result.error.details.remote }
+        }
+        throw new Error(response.result.error.message)
+      }
+      return 'done'
+    },
+    forgetCredentials: async (ref) => {
+      const response = await connection.api.credentials.unset({ ref })
+      if (!response.result.ok) throw new Error(response.result.error.message)
+    },
+    resolveConflict: async (sessionId, prompt) => {
+      const id = await sessions.fork({ sessionId, increaseTitle: true })
+      sessions.open(id)
+      const binding = sessions.binding(id)
+      if (binding === undefined) throw new Error('New session is not available')
+      const result = await binding.session.prompt([{ type: 'text', text: prompt }], 'queue')
+      if (!result.ok) throw new Error(result.error.message)
+    },
+  })
+
   slots.register({
     name: 'conversation.overview.git',
     locale: NS,
-    inject: (): GitOverviewInjected => ({
-      status: async (sessionId) => {
-        const response = await connection.api.workspace.gitStatus({ sessionId })
-        if (!response.result.ok) throw new Error(response.result.error.message)
-        return response.result.value
-      },
-      branches: async (sessionId) => {
-        const response = await connection.api.workspace.gitBranches({ sessionId })
-        if (!response.result.ok) throw new Error(response.result.error.message)
-        return response.result.value
-      },
-      checkout: async (sessionId, branch) => {
-        const response = await connection.api.workspace.gitCheckout({ sessionId, branch })
-        if (!response.result.ok) throw new Error(response.result.error.message)
-        return response.result.value
-      },
-      operate: async (sessionId, action, credentials) => {
-        const response = action === 'push'
-          ? await connection.api.workspace.gitPush({ sessionId, ...(credentials ? { credentials } : {}) })
-          : await connection.api.workspace.gitPull({ sessionId, ...(credentials ? { credentials } : {}) })
-        if (!response.result.ok) {
-          if (response.result.error.code === 'git-conflict') return 'conflict'
-          if (response.result.error.code === 'git-auth-required') {
-            return { authRequired: response.result.error.details.remote }
-          }
-          throw new Error(response.result.error.message)
-        }
-        return 'done'
-      },
-      forgetCredentials: async (ref) => {
-        const response = await connection.api.credentials.unset({ ref })
-        if (!response.result.ok) throw new Error(response.result.error.message)
-      },
-      resolveConflict: async (sessionId, prompt) => {
-        const id = await sessions.fork({ sessionId, increaseTitle: true })
-        sessions.open(id)
-        const binding = sessions.binding(id)
-        if (binding === undefined) throw new Error('New session is not available')
-        const result = await binding.session.prompt([{ type: 'text', text: prompt }], 'queue')
-        if (!result.ok) throw new Error(result.error.message)
-      },
-    }),
+    inject: gitAccess,
   }, GitOverview)
+
+  // Hero 行内 Git 分支入口按当前会话读取仓库；不创建新会话。
+  slots.register({
+    name: 'conversation.hero.git',
+    locale: NS,
+    inject: gitAccess,
+  }, WorkspaceGitTrigger)
 
   // The default composer body: its own single slot inside the composer
   // chain's fallback. Public machine surface arrives via the

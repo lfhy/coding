@@ -168,6 +168,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * reads the global workspace list.
      */
     'conversation.hero.workspace': { kind: 'single'; scope: 'root'; owner: EmptyWorkspaceOwnerProps }
+    /** Hero 工作区行右侧的 Git 分支入口；非 Git 工作区不渲染。 */
+    'conversation.hero.git': { kind: 'single'; scope: 'root'; owner: { sessionId?: SessionId | undefined } }
     /** 欢迎页右上角的全局面板操作；由侧边栏和工作台插件各自注册。 */
     'conversation.hero.actions': { kind: 'list'; scope: 'root'; owner: HeroActionsOwnerProps }
     /**
@@ -661,6 +663,7 @@ export type ConversationSlotProps =
     | 'conversation.input.left' | 'conversation.input.right'
     | 'conversation.hero.brand.mark'
     | 'conversation.hero.workspace'
+    | 'conversation.hero.git'
     | 'conversation.hero.actions'
     | 'conversation.hero.agentPreset'
   >
@@ -824,6 +827,9 @@ export interface DetailsInjected {
 /** Full details-slot props: selection store, Tool output seat, injected close callback, and locale. */
 export type DetailsSlotProps = PropsRuntime<'details'> & PropsRenderSlots<'conversation.details.tool'>
   & PropsStore<ChatStore> & DetailsInjected & PropsLocale<'conversation'>
+
+/** Conversation owner locale seat; the hero chrome and picker components take it as a plain prop. */
+export type EmptyHeroTranslate = ConversationSlotProps['t']
 
 /** Owner share common to the hero / New-Session Workspace pickers. */
 export interface EmptyWorkspaceOwnerProps {

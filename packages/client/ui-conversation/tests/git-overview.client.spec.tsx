@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { GitOverview, type GitOverviewInjected } from '../src/client/skeleton/GitOverview.tsx'
+import { WorkspaceGitTrigger } from '../src/client/skeleton/WorkspaceGitTrigger.tsx'
 import { en, zh } from '../src/client/locales.ts'
 
 const sessionId = 'git-session' as Parameters<GitOverviewInjected['status']>[0]
@@ -37,6 +38,49 @@ async function openGit() {
 }
 
 describe('Git overview', () => {
+  it('空白工作区行展示 Git 分支，点击复用概览操作面板，第二次点击收起', async () => {
+    const actions = fixture().actions
+    cleanup()
+    render(<WorkspaceGitTrigger
+      sessionId={sessionId}
+      useSessions={vi.fn() as never}
+      useWorkspaces={vi.fn() as never}
+      {...actions}
+      t={t}
+    />)
+    const button = await screen.findByRole('button', { name: 'Git 分支' })
+    expect(button.textContent).toContain('main')
+    fireEvent.click(button)
+    const panel = (await screen.findAllByRole('region', { name: 'Git 变更', hidden: true }))
+      .find(element => element.parentElement === document.body)
+    expect(panel).toBeDefined()
+    expect(within(panel!).getByRole('button', { name: '推送' })).toBeTruthy()
+    expect(within(panel!).getByRole('button', { name: /切换分支/ }).textContent).toContain('main')
+    fireEvent.pointerDown(button)
+    fireEvent.click(button)
+    expect(button.getAttribute('aria-expanded')).toBe('false')
+    expect(document.body.contains(panel!)).toBe(false)
+  })
+
+  it('无 Git 仓库或无当前工作区会话时不渲染分支按钮', async () => {
+    const status = vi.fn(async () => null)
+    const view = render(<WorkspaceGitTrigger
+      sessionId={sessionId}
+      useSessions={vi.fn() as never} useWorkspaces={vi.fn() as never}
+      status={status} branches={vi.fn(async () => null)} checkout={vi.fn()} operate={vi.fn()}
+      forgetCredentials={vi.fn()} resolveConflict={vi.fn()} t={t}
+    />)
+    await waitFor(() => { expect(status).toHaveBeenCalledWith(sessionId) })
+    expect(screen.queryByRole('button', { name: 'Git 分支' })).toBeNull()
+    view.rerender(<WorkspaceGitTrigger
+      sessionId={undefined}
+      useSessions={vi.fn() as never} useWorkspaces={vi.fn() as never}
+      status={status} branches={vi.fn(async () => null)} checkout={vi.fn()} operate={vi.fn()}
+      forgetCredentials={vi.fn()} resolveConflict={vi.fn()} t={t}
+    />)
+    expect(screen.queryByRole('button', { name: 'Git 分支' })).toBeNull()
+  })
+
   it('hides non-Git directories; presents a full-width summary and a detached popup', async () => {
     const empty = fixture({ status: vi.fn(async () => null) })
     await waitFor(() => { expect(empty.actions.status).toHaveBeenCalledOnce() })

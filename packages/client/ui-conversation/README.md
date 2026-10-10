@@ -48,6 +48,8 @@ Host 带 placement 的 `session/queue` 快照也会携带待处理 steering。Qu
 
 会话概览中的 Git 区域按当前会话目录从 Host 读取状态：非仓库不显示；仓库以带图标的全宽“Git 变更”行展示变更文件数及增删行数（新增绿色、删除红色；无变更时显示 0 个文件），不显示分支名，与子代理、后台任务行保持相同间距，点击后在不改变卡片布局的锚定浮层中查看状态及操作。分支名只在浮层的“切换分支”行右侧显示；展开的本地分支列表单独锚定在该行并限制在视口内，不撑高浮层或卡片；存在未提交改动时切换会被拒绝，不会丢弃工作区内容。“变更”与“同步状态”作为带图标的信息行展示；浮层内仅在存在未提交文件时显示“变更”及其文件数、增删行数。“推送”和“拉取”是带图标的等宽按钮，各占操作行的一半宽度。推送是显式用户操作，会暂存当前仓库全部未忽略的变更、生成提交后推送；拉取只接受快进，遇到分支分叉或本地文件阻挡时显示冲突提示，并可从当前会话 fork 新会话协助解决，不自动覆盖文件。Git 成功操作通过页面 Toast 通知；HTTPS 远端需要认证时使用页面内遮罩对话框输入账户名与密码或令牌：认证先尝试宿主凭据助手与本机已保存的凭据，两者都给不出可用凭据才弹出该对话框，提交的凭据仅用于本次重试；密码框每次提交后清空。勾选「记住这组凭据，下次自动使用」后，Host 只在推送或拉取真正成功之后把这组凭据写进本机凭据存储（`$DSH_HOME/.credentials.yaml` 里按远端主机派生的引用）；远端拒绝已保存的凭据时，弹窗同时显示提示和「清除已保存的凭据」，清除后弹窗留在原位等待新的一组凭据。Git 操作仅在本机回环客户端可用，远端工作区不会回退到 Host 本机仓库。
 
+空白会话 Hero 的工作区 chip 再次点击会关闭选择菜单，而不会被菜单的外点监听器抢先关闭后立即重新打开。该行右侧在当前会话属于工作区且 Host 确认为本地 Git 仓库时显示分支名；无项目、非 Git、远程工作区或尚无当前会话时不显示，也不会仅为了探测分支创建会话。点击分支会打开与概览卡相同的 Git 操作浮层，包含切换本地分支、变更／同步状态、推送、拉取及认证流程；分支切换后行内名称同步更新。
+
 `src/client/` 按领域组织。`contract/` 是 slot 声明、组合 props 与跨领域类型的共享表层；`skeleton/`、`chat/`、`input/`、`queue/` 和 `settings/` 保持内部实现，`apply.ts` 是它们的组装点。`/client` 导出表层只包含 loader entry、service class 和 contract 类型；组件与 store factory 经 slot 注册抵达页面。
 
 完成的一轮会物化一个有序的 `turn-tail` Conversation Node。它由引擎维护的 `TurnLocation` 提供收尾 Assistant 和 Turn data；renderer 在该 Node 的 IconActions 之前渲染 `conversation.chat.turnTail` chain，并派发包含 Turn、收尾 seq 和 `openFile` 的 `TurnTailOwnerProps`。本包只拥有空位；`@deepseek-ai/dsh-client-ui-deliverables` 把改写工具的 `locations` 累积到 Turn data，并拥有产物行、chip 上限和文案，因此把该插件从 cordis.yml 中组合掉即可关闭该交互面，空位以零成本渲染为空。收尾正文经由同一个开关参与其中：chat 视图向可选的 `chatFileMentions` service（ctx.get；由同一插件提供）索取收尾消息的行内代码词表，并把结果接进 MarkdownText 的 `fileMentions` seam——service 缺席时正文保持死文本。
