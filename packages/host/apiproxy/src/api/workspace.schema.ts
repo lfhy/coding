@@ -36,7 +36,9 @@ const gitRequestSchema = z.strictObject({ sessionId: sessionIdSchema })
 export const workspaceGitStatusRequestSchema = gitRequestSchema satisfies z.ZodType<Wire<RequestPayload<'workspace.gitStatus'>>>
 export const workspaceGitBranchesRequestSchema = gitRequestSchema satisfies z.ZodType<Wire<RequestPayload<'workspace.gitBranches'>>>
 export const workspaceGitCheckoutRequestSchema = gitRequestSchema.extend({ branch: z.string().min(1) }) satisfies z.ZodType<Wire<RequestPayload<'workspace.gitCheckout'>>>
-const gitCredentialsSchema = z.strictObject({ username: z.string().min(1).max(1024), password: z.string().min(1).max(8192) })
+const gitCredentialsSchema = z.strictObject({
+  username: z.string().min(1).max(1024), password: z.string().min(1).max(8192), remember: z.boolean().optional(),
+})
 export const workspaceGitPushRequestSchema = gitRequestSchema.extend({ credentials: gitCredentialsSchema.optional() }) satisfies z.ZodType<Wire<RequestPayload<'workspace.gitPush'>>>
 export const workspaceGitPullRequestSchema = gitRequestSchema.extend({ credentials: gitCredentialsSchema.optional() }) satisfies z.ZodType<Wire<RequestPayload<'workspace.gitPull'>>>
 

@@ -310,3 +310,58 @@
   justify-content: flex-end;
   gap: 8px;
 }
+
+/* 复选框覆写 .authForm input 的整行输入样式：两者选择器同权重，靠声明顺序生效。 */
+.authRemember {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.authRemember input {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  accent-color: var(--dsw-alias-state-business-primary);
+  cursor: pointer;
+}
+
+.authStale {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.authStale p {
+  margin: 0;
+}
+
+.authStale button {
+  justify-self: start;
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-xs-13);
+  cursor: pointer;
+}
+
+.authStale button:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.authStale button:disabled {
+  opacity: .5;
+  cursor: default;
+}

@@ -116,6 +116,9 @@ import {
 } from '@deepseek-ai/dsh-api-remotes'
 import { canOpenNativePath, openNativePath, openNativeTextFile } from '@deepseek-ai/dsh-native-command'
 import { GitOperationError, workspaceGitStatus, workspaceGitBranches, workspaceGitCheckout, workspaceGitPush, workspaceGitPull } from './workspace-git.ts'
+import type { GitRemoteOptions } from './workspace-git.ts'
+import type { GitCredentials } from './api/workspace.ts'
+import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 
 /** Page size when history is called without maxMessages. */
 const DEFAULT_MAX_MESSAGES = 50
@@ -1662,6 +1665,27 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     return agent
   }
 
+  /**
+   * Git 远端操作的认证输入：本机凭据存储取自 credentials seam，未挂载凭据提供方时只剩
+   * 宿主凭据助手与本次显式凭据两级；非致命诊断统一进 Host 日志。
+   * @param credentials - 调用方本次显式提供的凭据。
+   * @returns 传给 workspace-git 的认证输入。
+   */
+  function gitRemoteOptions(credentials: GitCredentials | undefined): GitRemoteOptions {
+    const store = ctx.get('credentials')
+    return {
+      ...credentials === undefined ? {} : { credentials },
+      ...store === undefined ? {} : {
+        store: {
+          read: async (ref: CredentialRef) => (await store.resolve(ref))?.value,
+          writable: async (ref: CredentialRef) => (await store.describe(ref)).writable,
+          write: async (ref: CredentialRef, value: string) => { await store.set(ref, value) },
+        },
+      },
+      warn: (message: string) => { ctx.logger.warn('git: %s', message) },
+    }
+  }
+
   /** 仅会话记录能选中目录；不接纳客户端路径，也不恢复冷 Agent。 */
   async function gitForSession<T>(
     request: RpcRequest<{ sessionId: SessionId }>,
@@ -1685,7 +1709,11 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       })
       if (error instanceof GitOperationError && (error.code === 'GIT_AUTH_REQUIRED' || error.code === 'GIT_AUTH_FAILED')) return err(request, {
         code: error.code === 'GIT_AUTH_REQUIRED' ? 'git-auth-required' : 'git-auth-failed',
-        message: error.message, details: { sessionId, remote: error.remote ?? 'Git remote' },
+        message: error.message,
+        details: {
+          sessionId, remote: error.remote ?? 'Git remote',
+          ...(error.credentialRef === undefined ? {} : { credentialRef: error.credentialRef }),
+        },
       })
       if (error instanceof GitOperationError) return err(request, {
         code: error.code === 'GIT_CONFLICT' ? 'git-conflict'
@@ -2830,11 +2858,11 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       },
 
       async gitPush(request, signal) {
-        return gitForSession(request, signal, (cwd, abort) => workspaceGitPush(cwd, abort, request.payload.credentials))
+        return gitForSession(request, signal, (cwd, abort) => workspaceGitPush(cwd, abort, gitRemoteOptions(request.payload.credentials)))
       },
 
       async gitPull(request, signal) {
-        return gitForSession(request, signal, (cwd, abort) => workspaceGitPull(cwd, abort, request.payload.credentials))
+        return gitForSession(request, signal, (cwd, abort) => workspaceGitPull(cwd, abort, gitRemoteOptions(request.payload.credentials)))
       },
 
       list(request) {

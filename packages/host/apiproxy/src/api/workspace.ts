@@ -33,10 +33,12 @@ export interface GitBranches {
   current: string | null
 }
 
-/** 一次 Git 远端操作使用的临时凭据；不持久化、不回显。 */
+/** 一次 Git 远端操作的凭据；值绝不回显，只在请求方向上携带明文。 */
 export interface GitCredentials {
   username: string
   password: string
+  /** 远端操作成功后把这组凭据保存到本机凭据存储；省略时只用于本次请求。 */
+  remember?: boolean
 }
 
 export interface GitOperationResult {
@@ -83,11 +85,15 @@ export interface WorkspaceApi {
   /** 只切换已有本地分支；未提交改动阻止切换，成功后返回最新状态。 */
   gitCheckout(request: RpcRequest<{ sessionId: SessionId; branch: string }>, signal: AbortSignal): Promise<RpcResponse<GitStatus>>
 
-  /** 明确用户操作：提交该仓库全部未忽略的工作树改动，然后推送其当前上游分支。 */
+  /**
+   * 明确用户操作：提交该仓库全部未忽略的工作树改动，然后推送其当前上游分支。
+   * 认证依次尝试宿主凭据助手、本机已保存的凭据和本次显式凭据；前两级都失败时以
+   * git-auth-required 作答，调用方可带 credentials 重试，成功后按 remember 保存凭据。
+   */
   gitPush(request: RpcRequest<{ sessionId: SessionId; credentials?: GitCredentials }>, signal: AbortSignal):
   Promise<RpcResponse<GitOperationResult>>
 
-  /** 从当前上游拉取；冲突以 git-conflict 错误返回，保留 Git 的冲突现场。 */
+  /** 从当前上游拉取；冲突以 git-conflict 错误返回，保留 Git 的冲突现场。认证与 remember 同 gitPush。 */
   gitPull(request: RpcRequest<{ sessionId: SessionId; credentials?: GitCredentials }>, signal: AbortSignal):
   Promise<RpcResponse<GitOperationResult>>
 

@@ -18,6 +18,7 @@ function fixture(overrides: Partial<GitOverviewInjected> = {}) {
     branches: vi.fn(async () => ({ branches: ['main', 'feature/ui'], current: 'main' })),
     checkout: vi.fn<GitOverviewInjected['checkout']>(async (_sessionId, branch) => ({ ...git, branch })),
     operate: vi.fn(async () => 'done' as const),
+    forgetCredentials: vi.fn(async () => {}),
     resolveConflict: vi.fn(async () => {}),
     ...overrides,
   }
@@ -192,5 +193,80 @@ describe('Git overview', () => {
     expect((await within(layer).findByRole('alert')).textContent).toContain('no upstream')
     expect(within(layer).queryByRole('button', { name: '新建会话解决冲突' })).toBeNull()
     expect(makeTranslate(en)('overview.git.push')).toBe('Push')
+  })
+
+  it('remembers credentials only when the user asks, then resets the choice', async () => {
+    const operate = vi.fn<GitOverviewInjected['operate']>(async (_id, _action, credentials) =>
+      credentials ? 'done' as const : { authRequired: 'example.com' })
+    fixture({ operate })
+    const remember = (): HTMLInputElement => within(screen.getByRole('dialog', { name: 'Git 账户验证' }))
+      .getByRole('checkbox', { name: zh['overview.git.auth.remember'] }) as HTMLInputElement
+    const layer = await openGit()
+    fireEvent.click(within(layer).getByRole('button', { name: '推送' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Git 账户验证' })
+    expect(remember().checked).toBe(false)
+    fireEvent.change(within(dialog).getByRole('textbox', { name: '账户名' }), { target: { value: 'user' } })
+    fireEvent.change(within(dialog).getByLabelText('密码或访问令牌'), { target: { value: 'secret' } })
+    fireEvent.click(remember())
+    fireEvent.click(within(dialog).getByRole('button', { name: '继续' }))
+    await waitFor(() => {
+      expect(operate).toHaveBeenCalledWith(sessionId, 'push', { username: 'user', password: 'secret', remember: true })
+    })
+    await waitFor(() => { expect(screen.queryByRole('dialog', { name: 'Git 账户验证' })).toBeNull() })
+    // 成功之后开关回到默认值：下一轮认证不会顺手保存。
+    const reopened = await openGit()
+    fireEvent.click(within(reopened).getByRole('button', { name: '拉取' }))
+    await screen.findByRole('dialog', { name: 'Git 账户验证' })
+    expect(remember().checked).toBe(false)
+    // 取消同样重置。
+    fireEvent.click(remember())
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Git 账户验证' }))
+      .getAllByRole('button', { name: '取消' })[1]!)
+    const third = await openGit()
+    fireEvent.click(within(third).getByRole('button', { name: '推送' }))
+    await screen.findByRole('dialog', { name: 'Git 账户验证' })
+    expect(remember().checked).toBe(false)
+  })
+
+  it('offers to clear the stored credentials a remote rejected', async () => {
+    const ref = 'GIT_CREDENTIAL_EXAMPLE_COM'
+    let finish!: () => void
+    const forgetCredentials = vi.fn(() => new Promise<void>((resolve) => { finish = resolve }))
+    fixture({
+      operate: vi.fn<GitOverviewInjected['operate']>(async () => ({ authRequired: 'example.com', credentialRef: ref })),
+      forgetCredentials,
+    })
+    const layer = await openGit()
+    fireEvent.click(within(layer).getByRole('button', { name: '拉取' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Git 账户验证' })
+    expect(within(dialog).getByText(zh['overview.git.auth.stale'].replace('{remote}', 'example.com'))).toBeTruthy()
+    fireEvent.click(within(dialog).getByRole('button', { name: zh['overview.git.auth.forget'] }))
+    expect(within(dialog).getByRole('button', { name: zh['overview.git.auth.forgetting'] }).hasAttribute('disabled')).toBe(true)
+    await act(async () => { finish() })
+    await waitFor(() => { expect(forgetCredentials).toHaveBeenCalledWith(ref) })
+    // 提示消失，弹窗留在原位等待新的一组凭据。
+    await waitFor(() => {
+      expect(within(dialog).queryByRole('button', { name: zh['overview.git.auth.forget'] })).toBeNull()
+    })
+    expect(screen.getByRole('dialog', { name: 'Git 账户验证' })).toBeTruthy()
+  })
+
+  it('keeps the modal and reports rejected credential removal', async () => {
+    const forgetCredentials = vi.fn()
+      .mockRejectedValueOnce('credentials service is down')
+      .mockRejectedValueOnce(new Error('credentials service is absent'))
+    fixture({
+      operate: vi.fn<GitOverviewInjected['operate']>(async () => ({ authRequired: 'example.com', credentialRef: 'GIT_CREDENTIAL_EXAMPLE_COM' })),
+      forgetCredentials,
+    })
+    const layer = await openGit()
+    fireEvent.click(within(layer).getByRole('button', { name: '推送' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Git 账户验证' })
+    fireEvent.click(within(dialog).getByRole('button', { name: zh['overview.git.auth.forget'] }))
+    expect((await within(dialog).findByRole('alert')).textContent).toContain('credentials service is down')
+    fireEvent.click(within(dialog).getByRole('button', { name: zh['overview.git.auth.forget'] }))
+    await waitFor(() => {
+      expect(within(dialog).getByRole('alert').textContent).toContain('credentials service is absent')
+    })
   })
 })

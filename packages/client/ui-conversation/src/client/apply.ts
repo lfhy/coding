@@ -317,6 +317,10 @@ export function apply(ctx: Context): void {
         }
         return 'done'
       },
+      forgetCredentials: async (ref) => {
+        const response = await connection.api.credentials.unset({ ref })
+        if (!response.result.ok) throw new Error(response.result.error.message)
+      },
       resolveConflict: async (sessionId, prompt) => {
         const id = await sessions.fork({ sessionId, increaseTitle: true })
         sessions.open(id)

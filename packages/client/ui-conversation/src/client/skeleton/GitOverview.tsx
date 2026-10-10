@@ -26,23 +26,38 @@ interface GitBranchesView {
 interface GitCredentials {
   username: string
   password: string
+  /** 远端操作成功后由 Host 保存这组凭据；只在用户勾选时携带。 */
+  remember?: boolean
 }
 
-type GitOperationOutcome = 'done' | 'conflict' | { authRequired: string }
+type GitOperationOutcome = 'done' | 'conflict' | {
+  authRequired: string
+  /** 被拒绝的本机已存凭据引用；存在时界面提示并允许清除它。 */
+  credentialRef?: string
+}
 
-/** Git 概览只通过注入的动作访问当前会话的仓库与新会话。 */
+/** 认证弹窗当前正在处理的一次认证请求与它的已存凭据引用。 */
+interface SavedCredential {
+  action: 'push' | 'pull'
+  remote: string
+  credentialRef: string
+}
+
+/** Git 概览只通过注入的动作访问当前会话的仓库、本机凭据存储与新会话。 */
 export interface GitOverviewInjected {
   status: (sessionId: SessionId) => Promise<GitStatusView | null>
   branches: (sessionId: SessionId) => Promise<GitBranchesView | null>
   checkout: (sessionId: SessionId, branch: string) => Promise<GitStatusView>
   operate: (sessionId: SessionId, action: 'push' | 'pull', credentials?: GitCredentials) => Promise<GitOperationOutcome>
+  /** 清除本机为该远端保存的 Git 凭据；本就没有保存时同样成功。 */
+  forgetCredentials: (ref: string) => Promise<void>
   resolveConflict: (sessionId: SessionId, prompt: string) => Promise<void>
 }
 
 type GitOverviewProps = PropsRuntime<'conversation.overview.git'> & PropsLocale<'conversation'> & GitOverviewInjected
 
 /** Git 摘要保持单行；操作、分支与错误在独立浮层中展示。 */
-export function GitOverview({ sessionId, status, branches, checkout, operate, resolveConflict, t }: GitOverviewProps) {
+export function GitOverview({ sessionId, status, branches, checkout, operate, forgetCredentials, resolveConflict, t }: GitOverviewProps) {
   const [git, setGit] = useState<GitStatusView | null>(null)
   const [branchList, setBranchList] = useState<GitBranchesView | null>(null)
   const [open, setOpen] = useState(false)
@@ -57,13 +72,14 @@ export function GitOverview({ sessionId, status, branches, checkout, operate, re
   const branchMenu = useRef<HTMLDivElement>(null)
   const [position, setPosition] = useState<CSSProperties | null>(null)
   const [branchPosition, setBranchPosition] = useState<CSSProperties | null>(null)
-  const [busy, setBusy] = useState<'push' | 'pull' | 'resolve' | 'checkout' | null>(null)
+  const [busy, setBusy] = useState<'push' | 'pull' | 'resolve' | 'checkout' | 'forget' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [conflict, setConflict] = useState(false)
   const [toast, setToast] = useState<{ seq: number; text: string } | null>(null)
-  const [auth, setAuth] = useState<{ action: 'push' | 'pull'; remote: string } | null>(null)
+  const [auth, setAuth] = useState<{ action: 'push' | 'pull'; remote: string; credentialRef?: string } | null>(null)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [remember, setRemember] = useState(false)
   const [authError, setAuthError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -77,6 +93,7 @@ export function GitOverview({ sessionId, status, branches, checkout, operate, re
     setAuth(null)
     setAuthError(null)
     setPassword('')
+    setRemember(false)
     void status(sessionId).then((value) => { if (current) setGit(value) }).catch((reason: unknown) => {
       if (current) setError(reason instanceof Error ? reason.message : String(reason))
     })
@@ -218,7 +235,11 @@ export function GitOverview({ sessionId, status, branches, checkout, operate, re
     try {
       const outcome = await operate(sessionId, action, credentials)
       if (typeof outcome === 'object') {
-        setAuth({ action, remote: outcome.authRequired })
+        setAuth({
+          action,
+          remote: outcome.authRequired,
+          ...(outcome.credentialRef === undefined ? {} : { credentialRef: outcome.credentialRef }),
+        })
         close(false)
       } else if (outcome === 'conflict') {
         setConflict(true)
@@ -226,6 +247,7 @@ export function GitOverview({ sessionId, status, branches, checkout, operate, re
         setAuth(null)
         setUsername('')
         setPassword('')
+        setRemember(false)
         setGit(await status(sessionId))
         setToast(value => ({ seq: (value?.seq ?? 0) + 1, text: t('overview.git.done') }))
       }
@@ -258,17 +280,37 @@ export function GitOverview({ sessionId, status, branches, checkout, operate, re
     setAuthError(null)
     setUsername('')
     setPassword('')
+    setRemember(false)
     setError(null)
     trigger.current?.focus()
+  }
+
+  /** 清除被拒绝的本机凭据：弹窗留在原位，用户可接着输入新的一组。 */
+  const forget = async (saved: SavedCredential) => {
+    setBusy('forget')
+    setAuthError(null)
+    try {
+      await forgetCredentials(saved.credentialRef)
+      setAuth({ action: saved.action, remote: saved.remote })
+    } catch (reason) {
+      setAuthError(reason instanceof Error ? reason.message : String(reason))
+    } finally {
+      setBusy(null)
+    }
   }
 
   const submitAuth = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (auth === null || !username || !password || busy !== null) return
     setAuthError(null)
-    const credentials = { username, password }
+    const credentials = { username, password, ...(remember ? { remember: true } : {}) }
     setPassword('')
     void run(auth.action, credentials)
+  }
+
+  // 已存凭据引用只在被拒时存在；提前取出，回调里就不必再收窄可能为 null 的弹窗状态。
+  const saved = auth?.credentialRef === undefined ? null : {
+    action: auth.action, remote: auth.remote, credentialRef: auth.credentialRef,
   }
 
   return (
@@ -350,6 +392,17 @@ export function GitOverview({ sessionId, status, branches, checkout, operate, re
           <label htmlFor={passwordId}>{t('overview.git.auth.password')}</label>
           <input id={passwordId} type="password" autoComplete="current-password" value={password}
             onChange={(event) => { setPassword(event.target.value) }} />
+          <label className={css.authRemember}>
+            <input type="checkbox" checked={remember} disabled={busy !== null}
+              onChange={(event) => { setRemember(event.target.checked) }} />
+            <span>{t('overview.git.auth.remember')}</span>
+          </label>
+          {saved !== null && <div className={css.authStale}>
+            <p>{t('overview.git.auth.stale', { remote: saved.remote })}</p>
+            <button type="button" disabled={busy !== null} onClick={() => { void forget(saved) }}>
+              {busy === 'forget' ? t('overview.git.auth.forgetting') : t('overview.git.auth.forget')}
+            </button>
+          </div>}
           {authError && <p role="alert" className={css.error}>{authError}</p>}
         </form>
       </Modal>
