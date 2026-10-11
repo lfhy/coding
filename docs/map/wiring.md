@@ -266,6 +266,7 @@
 - `subagent-fork-in-process` → `@deepseek-ai/dsh-subagent-fork-in-process`
 - `tool-subagent-control` → `@deepseek-ai/dsh-tool-subagent-control`
 - `tool-subagent-list-agents` → `@deepseek-ai/dsh-tool-subagent-control/list-agents`
+- `tool-subagent-list-models` → `@deepseek-ai/dsh-tool-subagent-control/list-models`
 - `tool-subagent` → `@deepseek-ai/dsh-tool-subagent`
 - `tool-subagent-fork` → `@deepseek-ai/dsh-tool-subagent`
 - `tool-subagent-report` → `@deepseek-ai/dsh-tool-subagent-report`

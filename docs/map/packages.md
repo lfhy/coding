@@ -333,7 +333,7 @@ workspace 共 239 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/subagent/subagent-in-process-driver` — 本包是两个进程内提供方共用的运行驱动器 入口 `src/index.ts`（tests 4）
 - `packages/subagent/subagent-spawn-in-process` — spawn 提供方会在当前进程中创建一个全新的子 `Agent` 入口 `src/index.ts`（tests 1）
 - `packages/subagent/tool-subagent` — 基于一个已配置 `ctx.subagents` 提供方、面向模型的委派工具 入口 `src/index.ts`（tests 2）
-- `packages/subagent/tool-subagent-control` — 可选的全局具名 `send_message`、`interrupt_agent` 与 `list_agents` 工具是 `ctx.subage… 入口 `src/index.ts`（tests 2）
+- `packages/subagent/tool-subagent-control` — 可选的全局具名 `send_message`、`interrupt_agent`、`list_agents` 与 `list_subagent_… 入口 `src/index.ts`（tests 3）
 - `packages/subagent/tool-subagent-report` — 可选的子级作用域 `report` 工具是 `ctx.subagents.reportFrom()` 之上的轻量适配器 入口 `src/index.ts`（tests 1）
 
 ## packages/subprocess

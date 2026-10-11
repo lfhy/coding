@@ -26,6 +26,10 @@
       "types": "./lib/types/list-agents.d.ts",
       "default": "./lib/types/list-agents.js"
     },
+    "./list-models": {
+      "types": "./lib/types/list-models.d.ts",
+      "default": "./lib/types/list-models.js"
+    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },

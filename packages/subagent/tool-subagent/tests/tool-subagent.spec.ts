@@ -34,7 +34,11 @@ const testToolSignal = new AbortController().signal
 
 /** A minimal parent Agent passed through to the provider request. */
 function fakeAgent(id = 'parent-1'): Agent {
-  return { id: SessionId(id) } as unknown as Agent
+  return {
+    id: SessionId(id),
+    options: {},
+    session: { requestHeader: () => undefined },
+  } as unknown as Agent
 }
 
 async function setup(toolConfig: tool.Config, mockConfig: Partial<mock.Config> = {}) {
@@ -100,12 +104,12 @@ describe('dsh-tool-subagent', () => {
     expect(text(result)).toBe('child says hi')
   })
 
-  it('exposes description + prompt + run_in_background to the model (no provider/type parameter)', async () => {
+  it('exposes optional model and model_provider alongside delegation arguments', async () => {
     const ctx = await setup({ provider: 'mock' })
     const schema = ctx.tools.schemas().find(s => s.name === 'subagent')
     expect(schema).toBeDefined()
     const props = (schema!.parameters as { properties?: Record<string, unknown> }).properties ?? {}
-    expect(Object.keys(props).sort()).toEqual(['description', 'prompt', 'run_in_background'])
+    expect(Object.keys(props).sort()).toEqual(['description', 'model', 'model_provider', 'prompt', 'run_in_background'])
     expect(schema!.description).toContain('job_output')
   })
 
@@ -113,7 +117,7 @@ describe('dsh-tool-subagent', () => {
     const ctx = await setup({ provider: 'mock', enableRunInBackground: false })
     const schema = ctx.tools.schemas().find(s => s.name === 'subagent')
     const props = (schema!.parameters as { properties?: Record<string, unknown> }).properties ?? {}
-    expect(Object.keys(props).sort()).toEqual(['description', 'prompt'])
+    expect(Object.keys(props).sort()).toEqual(['description', 'model', 'model_provider', 'prompt'])
     expect(schema!.description).not.toContain('job_output')
   })
 
@@ -121,7 +125,7 @@ describe('dsh-tool-subagent', () => {
     // Schema omission is advertising, not enforcement: the arg validator
     // allows undeclared keys, so the opt-out must also hold in execute().
     const ctx = await setup({ provider: 'mock', enableRunInBackground: false })
-    const parent = { id: SessionId('sess-off'), inject: () => {}, options: {}, session: { header: { version: 0, id: 'sess-off', createdAt: 0 } } } as unknown as Agent
+    const parent = { id: SessionId('sess-off'), inject: () => {}, options: {}, session: { requestHeader: () => undefined, header: { version: 0, id: 'sess-off', createdAt: 0 } } } as unknown as Agent
 
     const forced = await callSubagent(ctx, { description: 'd', prompt: 'p', run_in_background: true }, { agent: parent })
     expect(forced.isError).toBe(true)
@@ -199,6 +203,27 @@ describe('dsh-tool-subagent', () => {
       + 'Diagnostic: Claude Code denied a tool request\n'
       + 'Partial output before the run ended:\npartial assistant text',
     )
+  })
+
+  it('uses the last routed request instead of stale creation options for a one-shot child', async () => {
+    let seen: SubagentStartRequest | undefined
+    const ctx = await setup({ provider: 'mock' }, {
+      onStart: (request) => { seen = request },
+    })
+    const parent = {
+      id: SessionId('parent-routed'),
+      options: { provider: 'old-provider', model: 'old-model' },
+      session: { requestHeader: () => ({ config: { provider: 'new-provider', model: 'new-model' } }) },
+    } as unknown as Agent
+    await callSubagent(ctx, { description: 'inherit route', prompt: 'work' }, { agent: parent })
+    expect(seen?.agentOptions).toMatchObject({ provider: 'new-provider', model: 'new-model' })
+  })
+
+  it('rejects a provider without a model before starting a child', async () => {
+    const ctx = await setup({ provider: 'mock' })
+    const result = await callSubagent(ctx, { description: 'invalid', prompt: 'work', model_provider: 'other' })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('model_provider requires model')
   })
 
   it('registers under a configurable toolName so multiple providers can coexist', async () => {
@@ -783,7 +808,7 @@ describe('dsh-tool-subagent background mode', () => {
       ctx: scopeFiber.ctx,
       inject,
       options: {},
-      session: { id, header: { version: 0, id, createdAt: 0 } },
+      session: { id, header: { version: 0, id, createdAt: 0 }, requestHeader: () => undefined },
     } as unknown as Agent
     ctx.agents.register(agent)
     return agent
@@ -1149,6 +1174,37 @@ describe('dsh-tool-subagent continuable background mode', () => {
     expect(loaded.events.some(event => event.type === 'assistant/message')).toBe(true)
   })
 
+  it('uses the initiating request model by default and honors an explicit provider/model pair', async () => {
+    const { ctx, parent } = await continuableSetup()
+    ctx.llm.registerAdapter(['alternate'], new MockAdapter([textResponse('alternate answer')]))
+    const first = await callSubagent(ctx, { description: 'default', prompt: 'work' }, { agent: parent })
+    expect(first.isError).toBe(false)
+    const firstId = SessionId((first.value as { subagentId: string }).subagentId)
+    await vi.waitFor(() => { expect(ctx.agents.get(firstId)).toBeUndefined() })
+    const firstSession = await ctx.sessionPersistence.load(firstId)
+    expect(firstSession.events.find(event => event.type === 'subagent/descriptor')?.data)
+      .toMatchObject({ agentProvider: 'mock', agentModel: 'mock' })
+
+    const selected = await callSubagent(ctx, {
+      description: 'selected', prompt: 'work', model_provider: 'alternate', model: 'other',
+    }, { agent: parent })
+    expect(selected.isError).toBe(false)
+    const selectedId = SessionId((selected.value as { subagentId: string }).subagentId)
+    await vi.waitFor(() => { expect(ctx.agents.get(selectedId)).toBeUndefined() })
+    const selectedSession = await ctx.sessionPersistence.load(selectedId)
+    expect(selectedSession.events.find(event => event.type === 'subagent/descriptor')?.data)
+      .toMatchObject({ agentProvider: 'alternate', agentModel: 'other' })
+  })
+
+  it('rejects an unavailable model before creating a continuable child', async () => {
+    const { ctx, parent } = await continuableSetup()
+    const result = await callSubagent(ctx, {
+      description: 'bad route', prompt: 'work', model_provider: 'missing', model: 'unknown',
+    }, { agent: parent })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('missing')
+  })
+
   it('hides continuable guidance when the current agent cannot see the tool', async () => {
     const { ctx, parent } = await continuableSetup()
     parent.ctx.tools.restrict({ deny: ['subagent'] })
@@ -1250,7 +1306,7 @@ describe('background preflight failure (no orphaned child, by construction)', ()
       ctx: scopeFiber.ctx,
       inject: () => {},
       options: {},
-      session: { id, header: { version: 0, id, createdAt: 0 } },
+      session: { id, header: { version: 0, id, createdAt: 0 }, requestHeader: () => undefined },
     } as unknown as Agent
     ctx.agents.register(parent)
 

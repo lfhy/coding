@@ -11,7 +11,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import type { AgentOptions } from '@deepseek-ai/dsh-agent'
+import type { Agent, AgentOptions } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { JsonValue } from '@deepseek-ai/dsh-session'
 import { assertSubagentMaxDepth, settleRun } from '@deepseek-ai/dsh-subagent'
@@ -97,6 +97,38 @@ export const Config: z<Config> = z.object({
   }).default(undefined as unknown as { allow: string[]; deny: string[] }),
   maxDepth: z.union([z.natural().max(Number.MAX_SAFE_INTEGER), z.const('provider-managed' as const)]).default(3),
 })
+
+/** 本次调用所选的完整模型路由；提供方与模型 ID 必须配对。 */
+interface ChildModelRoute {
+  provider: string
+  model: string
+}
+
+/** 从发起工具调用的模型请求读取路由，而非使用可能已过时的创建选项。 */
+function invokingModel(agent: Agent): ChildModelRoute | undefined {
+  const route = agent.session.requestHeader()?.config ?? agent.options
+  return route.provider && route.model ? { provider: route.provider, model: route.model } : undefined
+}
+
+/**
+ * 为子级合并调用时选择、插件默认值和本次实际推理路由。
+ * @param agent - 发起委派的在线 agent。
+ * @param configured - 插件的子级默认值。
+ * @param selected - 本次调用的显式模型选择。
+ * @returns 完整模型路由及继承的 token 上限。
+ */
+function childAgentOptions(
+  agent: Agent,
+  configured: AgentOptions | undefined,
+  selected: ChildModelRoute | undefined,
+): AgentOptions {
+  const current = selected ?? invokingModel(agent)
+  return {
+    ...agent.options.maxTokens === undefined ? {} : { maxTokens: agent.options.maxTokens },
+    ...configured,
+    ...current === undefined ? {} : { provider: current.provider, model: current.model },
+  }
+}
 
 /** Render text blocks from the canonical JSON block array without trusting arbitrary values. */
 function outputValueText(values: JsonValue[]): string {
@@ -324,6 +356,14 @@ export function apply(ctx: Context, config: Config): void {
           required: true,
           description: wording.promptDescription,
         },
+        model: {
+          type: 'string',
+          description: 'Model id for this child. Omit to use the model of the current request. Use list_subagent_models to discover available ids.',
+        },
+        model_provider: {
+          type: 'string',
+          description: 'Provider route for model. Omit to use the current provider; requires model when specified.',
+        },
         ...backgroundEnabled ? {
           run_in_background: {
             type: 'boolean' as const,
@@ -382,12 +422,27 @@ export function apply(ctx: Context, config: Config): void {
           throw new Error('subagent tool requires a calling agent (exec.agent was undefined)')
         }
 
+        if (args.model_provider !== undefined && args.model === undefined) {
+          throw new Error('subagent: model_provider requires model')
+        }
+        const selected = args.model === undefined ? undefined : {
+          provider: args.model_provider ?? invokingModel(parent)?.provider ?? config.agentOptions?.provider ?? '',
+          model: args.model,
+        }
+        if (args.model !== undefined && selected?.provider === '') {
+          throw new Error('subagent: model_provider is required when the calling agent has no provider')
+        }
+        const agentOptions = childAgentOptions(parent, config.agentOptions, selected)
+        const llm = ctx.get('llm')
+        if (llm !== undefined && agentOptions.provider !== undefined && agentOptions.model !== undefined) {
+          await llm.resolveCallConfig({ provider: agentOptions.provider, model: agentOptions.model }, exec.signal)
+        }
         const maxDepth = typeof config.maxDepth === 'number' ? config.maxDepth : undefined
         const request = {
           label: args.description,
           prompt: [{ type: 'text', text: args.prompt }] as ContentBlock[],
           parent,
-          ...config.agentOptions !== undefined ? { agentOptions: config.agentOptions } : {},
+          ...Object.keys(agentOptions).length === 0 ? {} : { agentOptions },
           ...config.persona !== undefined ? { persona: config.persona } : {},
           ...config.toolFilter !== undefined ? { toolFilter: config.toolFilter } : {},
           ...maxDepth !== undefined ? { maxDepth } : {},

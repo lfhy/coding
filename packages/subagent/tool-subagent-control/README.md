@@ -1,6 +1,6 @@
 # @deepseek-ai/dsh-tool-subagent-control
 
-可选的全局具名 `send_message`、`interrupt_agent` 与 `list_agents` 工具是 `ctx.subagents` 之上的轻量适配器。绑定提供方的 `@deepseek-ai/dsh-tool-subagent` 实例会为每种传输注册不同的委派工具；这个单独加载的包只注册一次共享控制工具，因此多个委派工具绝不会重复注册全局控制工具。根插件注册 `send_message` 与 `interrupt_agent`，且只要求 `subagents`；可单独加载的 `./list-agents` 插件注册 `list_agents`，并将 `subagents` 与 `agents` 声明为加载时依赖。其目录读取在调用时还要求会话存储与投影注册表，但不要求任何查询服务。部署可保留根插件工具并省略列表工具。是否加载这些工具不会决定委派工具是否启动可继续工作。这些工具只负责父到子的方向；单独安装的 [`@deepseek-ai/dsh-tool-subagent-report`](../tool-subagent-report/README.md) 负责子到父的方向。
+可选的全局具名 `send_message`、`interrupt_agent`、`list_agents` 与 `list_subagent_models` 工具分别提供可继续子级控制、目录和子级可选模型目录。根插件只注册前两个工具；独立的 `./list-agents` 使用 `subagents` 与 `agents`，调用时还需会话存储与投影；独立的 `./list-models` 使用 `llm` 的已注册模型路由。提供方绑定的 `@deepseek-ai/dsh-tool-subagent` 每个实例仍各自注册一个委派工具，多个实例不重复注册这些全局工具。模型目录不是路由权限表：未列出的模型仍可能被适配器接受。
 
 本工具不执行生命周期路由：驻留与冷恢复归 subagent 服务所有。它将 `exec.agent` 作为授权投递的确切在线父级传入，并把每条消息的来源记录为 `{ kind: 'coordinator', form: 'relay', senderSessionId: parent.id }`；服务会保留该来源，但绝不将其视为权限。`send_message` 的可选 `mode` 默认为 `next-step`：如果子 agent 正在工作，消息会在它的下一步骤被领取，不能打断正在执行的模型请求或工具调用；`next-turn` 则将消息作为后续 FIFO 轮次，在当前轮次结束后领取。子 agent 空闲时两种模式都会唤醒它。本工具会转发其执行信号，该信号只在 inbox 接受之前掌管准入；一旦接受便无法通过本工具撤回。调用结果仅确认消息已被接受，不表示子 agent 已读到消息，也不返回其回复；持久化子会话是详细输出的真源。拥有 `report` 的子 agent 会自行把内容作为一条单独的父级消息发回。投递失败会变为出错的工具结果，并明确说明消息未送达。
 
@@ -8,17 +8,19 @@
 
 `list_agents` 接受一个可选的 `scope` 参数，会从调用它的 agent 推导根 id，并且不使用 cursor，将服务目录投影为可继续 child。默认的 `children` scope 读取 `ctx.subagents.listChildren()`；`descendants` 读取 `ctx.subagents.listDescendants()`，其单份语料的遍历会穿过普通会话与一次性 child，并按稳定 pre-order 以 `parent=<id> depth=<n>` 渲染保留下来的条目。`send_message` 对可继续直接 child 默认在下一步骤投递；指定 `next-turn` 时才将繁忙 child 的消息排到后续轮次。`parent` 注释是持久化直接 parent 会话 id，可能指向输出中省略的普通会话。对于调用本工具的 agent，只有 depth-1 child 条目可作为 `send_message` 候选；更深的 child 条目只能作为 `interrupt_agent` 候选。状态来自在线 Agent 注册表：`running`（driver 活跃）、`idle`（驻留但处于轮次之间，可能在等待它启动的 agent）或 `ready`（仅存于存储，表示可恢复而非终态）。服务结果还包含由会话支撑的一次性 subagent，以供 UI 等消费方使用；但这些条目无法接受 `send_message`，因此会从这个模型工具中排除。diagnostic 仍然可见，并在 descendants scope 中带有位置。持久化身份和模式来自每个子 agent 的描述符，消息送达时的鉴权和 Activation 所有权检查仍归服务负责。
 
+`list_subagent_models` 读取 `ctx.llm.listProviders()`，逐个查询 `listModels(provider)`，返回每条路由公开的模型 ID 与名称；一个提供方的目录出错时仅该行返回错误，不隐藏其他路由。无须子级身份即可读取；结果只是调用时快照，既不表示凭据已配置，也不保证后续路由不会变化。子级创建时会另行验证精确路由。
+
 ## 模型体验
 
 ### 工具 schema
 
 #### 模型看到的内容
 
-已生成的 [schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-subagent-control)：`send_message` 包含 `subagent_id`、`message` 和可选的 `mode`（`next-step` 默认、`next-turn` 后续轮次），说明消息只在下一步骤或轮次被领取，本次调用仅确认接受、不返回 subagent 的回答，失败即未送达；`interrupt_agent` 包含 `agent_id`，说明只有当前轮次会停止、已排队消息保持暂停、后代继续运行，以及接受先于实际停止；`list_agents` 包含可选的 `scope` 枚举。
+已生成的 [schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-subagent-control)：`send_message` 包含 `subagent_id`、`message` 和可选的 `mode`（`next-step` 默认、`next-turn` 后续轮次），说明消息只在下一步骤或轮次被领取，本次调用仅确认接受、不返回 subagent 的回答，失败即未送达；`interrupt_agent` 包含 `agent_id`；`list_agents` 包含可选的 `scope`；`list_subagent_models` 无参数，按已注册的模型路由列出 ID。
 
 #### Token 影响
 
-每个父级请求支付固定的 schema 成本。
+每个父级请求支付固定的 schema 成本；模型目录结果随提供方及其模型数量增长。
 
 #### KV Cache 影响
 
@@ -51,6 +53,20 @@
 #### KV Cache 影响
 
 仅追加；新增可见内容位于可复用请求前缀之后，不会使现有 KV Cache 条目失效。
+
+### 模型目录结果
+
+#### 模型看到的内容
+
+每个已注册路由一行 `<provider> (<name>): <model-id> (<model-name>), …`；目录失败则只在该行显示 `catalog unavailable: <error>`，没有路由时返回 `(no registered model providers)`。结果不包含密钥或服务设置。
+
+#### Token 影响
+
+调用时按目录大小增长，后续请求仅追加结果。
+
+#### KV Cache 影响
+
+目录变化不改变工具 schema；结果追加在既有前缀之后。
 
 ### 列表结果
 
