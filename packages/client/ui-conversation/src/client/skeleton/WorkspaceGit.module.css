@@ -1,4 +1,4 @@
-/* 工作区行内的 Git 分支按钮，和工作区选择器沿用同一字号与焦点轮廓。 */
+/* 分支图标与名称沿用工作区 chip 的主文字色；点击仍有独立焦点反馈。 */
 
 .wrapper {
   display: inline-flex;
@@ -17,7 +17,7 @@
   border: none;
   border-radius: 16px;
   background: transparent;
-  color: var(--dsw-alias-label-caption);
+  color: var(--dsw-alias-label-primary);
   -webkit-app-region: no-drag;
   font-size: 13px;
   line-height: 20px;
@@ -45,5 +45,5 @@
 
 .triggerIcon {
   flex: none;
-  color: var(--dsw-alias-label-secondary);
+  color: var(--dsw-alias-label-primary);
 }
