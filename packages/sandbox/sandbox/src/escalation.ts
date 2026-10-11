@@ -35,7 +35,8 @@ export const ESCALATION_TARGETS: readonly SandboxMode[] = ['workspace-write', 'd
 
 /**
  * 校验工具 schema 无法表达的升权参数配对。本次已处于 `danger-full-access` 时，
- * 公开目标值的重复请求不需要理由；其他请求缺少理由或仅提供理由均在执行前失败。
+ * `sandbox_permissions` 无法再拓宽任何权限，因此整个字段（连同理由）一律忽略；
+ * 其他请求缺少理由或仅提供理由均在执行前失败。
  * @param sandboxPermissions - 原始 `sandbox_permissions` 参数。
  * @param justification - 原始 `justification` 参数。
  * @param effectiveMode - 本次调用已经生效的沙箱模式；未提供时严格校验配对。
@@ -45,7 +46,9 @@ export function validateEscalationArgs(
   justification: string | undefined,
   effectiveMode?: SandboxMode,
 ): void {
-  if (effectiveMode === 'danger-full-access' && ESCALATION_TARGETS.includes(sandboxPermissions as SandboxMode)) return
+  // 已持有全部权限：此时没有更宽的目标，字段写什么都不会改变本次调用的能力，
+  // 也无法降低它——因此拼写、理由是否成对都不再是待执行的请求，直接忽略。
+  if (effectiveMode === 'danger-full-access') return
   if (sandboxPermissions !== undefined && justification === undefined) {
     throw new Error('invalid escalation: sandbox_permissions requires a justification')
   }
@@ -138,22 +141,23 @@ export interface EscalationRequest {
 }
 
 /**
- * 已具备 `danger-full-access` 的调用不会因公开但较窄的目标值降低权限或请求审批；
- * 其他模式下，同档请求无需审批，只有严格拓宽才会请求审批。
- * 更窄或非法的请求、缺少审批服务、无 agent、拒绝、取消和无法应答都会以各自文案
- * 抛出，工具注册表会将其转成 `isError`，且操作尚未执行。
+ * 已具备 `danger-full-access` 的调用没有更宽的目标，其请求字段一律按无效请求忽略，
+ * 也不会被它降低权限或触发审批；其他模式下，同档请求无需审批，只有严格拓宽才会
+ * 请求审批。更窄或非法的请求、缺少审批服务、无 agent、拒绝、取消和无法应答都会
+ * 以各自文案抛出，工具注册表会将其转成 `isError`，且操作尚未执行。
  * @param request - 待判断的升权请求，见 {@link EscalationRequest}。
  * @param approval - 工具持有的审批原料，见 {@link EscalationApproval}。
  * @returns 仅供本次调用使用的目标模式。
  */
 export async function approveEscalation<A, C>(request: EscalationRequest, approval: EscalationApproval<A, C>): Promise<SandboxMode> {
   const { requestedMode: mode, effectiveMode, justification, subject } = request
-  // schema 无法按会话裁剪。全访问已经生效时，公开的目标字段不能降权或要求审批。
-  // 仅允许封闭词汇；未知值仍须在操作前失败。
-  if (effectiveMode === 'danger-full-access' && ESCALATION_TARGETS.includes(mode as SandboxMode)) {
+  if (mode === effectiveMode && ESCALATION_TARGETS.includes(mode)) {
     return effectiveMode
   }
-  if (mode === effectiveMode && ESCALATION_TARGETS.includes(mode)) {
+  // 全访问已经生效时没有任何更宽的目标：请求里的目标值（无论是否在封闭词汇内、
+  // 是否与理由成对）都无法增加或降低本次调用的权限，因此按无效请求忽略，仍返回
+  // 本次调用的生效模式；更窄的会话继续走下面的词汇与严格拓宽检查。
+  if (effectiveMode === 'danger-full-access') {
     return effectiveMode
   }
   // 真正的拓宽仍以逐调用生效模式为准，不能只依据注册时的组合默认值。

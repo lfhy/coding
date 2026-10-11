@@ -51,9 +51,26 @@ describe('validateEscalationArgs', () => {
       }
     }
     expect(() => { validateEscalationArgs('workspace-write', '', 'workspace-write') }).toThrow(/non-empty sentence/)
-    expect(() => { validateEscalationArgs('unknown-mode', '', 'danger-full-access') }).toThrow(/non-empty sentence/)
-    expect(() => { validateEscalationArgs('unknown-mode', undefined, 'danger-full-access') }).toThrow(/requires a justification/)
-    expect(() => { validateEscalationArgs(undefined, ' ', 'danger-full-access') }).toThrow(/only valid together/)
+  })
+
+  it('ignores the escalation field entirely once the call already holds full access', () => {
+    // 已持有全部权限时没有更宽的目标，字段（连同理由）不再是待执行的请求：任何拼写
+    // 都被忽略，且不改变本次调用的权限。
+    for (const value of ['require', 'full-access', 'yolo', 'workspace-write', 'danger-full-access', undefined]) {
+      for (const justification of ['', ' ', undefined, 'widen it']) {
+        expect(() => { validateEscalationArgs(value, justification, 'danger-full-access') }).not.toThrow()
+      }
+    }
+    // 放宽恰好只覆盖这一档：更窄的会话继续完整校验配对与拼写。`require` 不被识别，
+    // 因此在更窄会话里它是与理由成对的未知值，配对校验通过、真正的拒绝留给升权阶梯。
+    for (const value of ['full-access', 'yolo']) {
+      expect(() => { validateEscalationArgs(value, 'widen it', 'read-only') }).not.toThrow()
+      expect(() => { validateEscalationArgs(value, undefined, 'read-only') }).toThrow(/requires a justification/)
+    }
+    expect(() => { validateEscalationArgs('require', 'widen it', 'read-only') }).not.toThrow()
+    expect(() => { validateEscalationArgs('require', undefined, 'read-only') }).toThrow(/requires a justification/)
+    expect(() => { validateEscalationArgs('unknown-mode', undefined, 'danger-full-access') }).not.toThrow()
+    expect(() => { validateEscalationArgs(undefined, ' ', 'danger-full-access') }).not.toThrow()
   })
 })
 
@@ -117,10 +134,22 @@ describe('approveEscalation', () => {
     const spy = ingredients({ approver: approver('allowed-once', r => seen.push(r)) })
     await expect(approveEscalation(req({ requestedMode: 'read-only' }), spy))
       .rejects.toThrow(/not strictly wider than this call's current "read-only" mode/)
-    await expect(approveEscalation(req({ requestedMode: 'read-only', effectiveMode: 'danger-full-access' }), spy))
+    await expect(approveEscalation(req({ requestedMode: 'unknown-mode' }), spy))
       .rejects.toThrow(/not strictly wider/)
-    await expect(approveEscalation(req({ requestedMode: 'unknown-mode', effectiveMode: 'danger-full-access' }), spy))
+    await expect(approveEscalation(req({ requestedMode: 'unknown-mode', effectiveMode: 'read-only' }), spy))
       .rejects.toThrow(/not strictly wider/)
+    expect(seen).toEqual([])
+  })
+
+  it('ignores the requested target entirely once the call already holds full access', async () => {
+    // 没有更宽的目标可请求：字段写什么都无法增加或降低本次调用的权限，因此一律
+    // 按无效请求忽略，且不询问任何人。
+    const seen: unknown[] = []
+    const spy = ingredients({ approver: approver('allowed-once', r => seen.push(r)) })
+    for (const requestedMode of ['workspace-write', 'read-only', 'unknown-mode']) {
+      await expect(approveEscalation(req({ requestedMode, effectiveMode: 'danger-full-access' }), spy))
+        .resolves.toBe('danger-full-access')
+    }
     expect(seen).toEqual([])
   })
 
