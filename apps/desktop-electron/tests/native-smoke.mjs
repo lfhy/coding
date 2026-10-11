@@ -1327,22 +1327,20 @@ async function verifyNativeBrowser(page, app, fixtureUrl, hostOrigin, screenshot
   await until(async () => (await nativeGuest(app, guestId))?.attached, 'same guest restored')
   assert.equal((await nativeGuest(app, guestId)).id, guestId,
     'restoring the browser workbench must present the human/Agent guest')
-  // 人工入口和 Electron 的网络层均不得让 guest 访问承载 Client/RPC 的 Host 端口。
+  // Host 界面本身是合法目标：人工与模型都能把它导航到承载 Client/RPC 的地址。
   const hostAlias = `http://localhost:${new URL(hostOrigin).port}/`
-  for (const blockedUrl of [hostOrigin + '/', hostAlias]) {
-    const denied = await browserRpcResponse(page, 'browser.control',
-      { sessionId, command: { kind: 'navigate', url: blockedUrl } })
-    assert.deepEqual({ code: denied.error?.code, reason: denied.error?.details?.reason },
-      { code: 'browser-failed', reason: 'BROWSER_DENIED' }, 'guest navigation to Host origin must be denied')
-    assert.equal((await nativeGuest(app, guestId)).url, fixtureUrl,
-      'denied Host navigation must retain the live fixture in the same guest')
-  }
-  const subresource = await guestScript(app, guestId,
-    `fetch(${JSON.stringify(hostAlias)}, { mode: 'no-cors', cache: 'no-store' })
-      .then(() => 'loaded', error => error.name)`)
-  assert.equal(subresource, 'TypeError', 'guest subresource fetch to Host alias must be canceled')
-  assert.equal((await nativeGuest(app, guestId)).id, guestId,
-    'denied Host requests must retain the human/Agent guest identity')
+  const opened = await browserRpc(page, 'browser.control',
+    { sessionId, command: { kind: 'navigate', url: hostOrigin + '/' } })
+  assert.equal(opened?.activeTabId, firstId, 'Host navigation must reuse the live guest')
+  await until(async () => (await nativeGuest(app, guestId))?.url === hostOrigin + '/',
+    'guest navigation to Host origin must commit')
+  assert.equal(await guestScript(app, guestId, 'document.title.length > 0'), true,
+    'guest must render the Host page in its own partition')
+  const alias = await browserRpc(page, 'browser.control', { sessionId, command: { kind: 'navigate', url: hostAlias } })
+  assert.equal(alias?.activeTabId, firstId, 'the loopback alias is the same reachable Host origin')
+  // 回到夹具页面，让后续断言仍针对已知内容。
+  await browserRpc(page, 'browser.control', { sessionId, command: { kind: 'navigate', url: fixtureUrl } })
+  await until(async () => (await nativeGuest(app, guestId))?.url === fixtureUrl, 'fixture page restored')
   // Host 页截图不会合成 WebContentsView；直接截 guest target 作为真实页面画面证据。
   await guestPage.screenshot({ path: guestScreenshot })
   await page.screenshot({ path: screenshot })
@@ -2430,7 +2428,7 @@ async function main() {
       `close-hide and Dock restore, single-instance restore` +
       `${locked === true ? ' (foreground focus unverified: screen locked)' : ' and focus'}; ` +
       `screenshots: ${screenshot}, ${afterScreenshot}, ${remoteScreenshot}, ${terminalScreenshot}, ${browserScreenshot}, ${guestScreenshot}, ${restoredScreenshot}`)
-    console.log('PASS: scripted loopback model drove shipped Host browser_snapshot and browser_click on the human-operated native guest; Host origin/localhost navigation and guest subresource fetch denied; no external model API used')
+    console.log('PASS: scripted loopback model drove shipped Host browser_snapshot and browser_click on the human-operated native guest; the same guest also opened the Host origin in its isolated partition; no external model API used')
     console.log('PASS: separate fresh Session browser_navigate auto-revealed its native guest and selected tab; a human click persisted into the next model browser_snapshot on the same guest')
     console.log('PASS: assistant Markdown links reopened the hidden sidebar, preserved old native guests, and queued rapid repeated clicks as distinct tabs with the newest selected, without window.open or dialogs')
     console.log('PASS: fresh assistant link painted real native guest content while readyState=loading and the address spinner remained visible through a parser-blocking script and held image beyond ten seconds; a follow-up link opened another tab without BROWSER_FAILED')

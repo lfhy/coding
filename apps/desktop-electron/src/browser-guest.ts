@@ -59,7 +59,6 @@ export interface BrowserGuestManager {
 }
 
 export interface BrowserGuestOptions {
-  hostOrigin?: string
   onState?: (sessionId: string, state: BrowserSessionState | null, capture?: BrowserCapture) => void
 }
 
@@ -72,25 +71,14 @@ class GuestError extends Error {
 
 function fail(message: string, code: BrowserUseErrorCode): never { throw new GuestError(message, code) }
 
-function isHostControlUrl(raw: string, hostOrigin?: string): boolean {
-  if (!hostOrigin) return false
-  let target: URL
-  try { target = new URL(raw) }
-  catch { return false }
-  const port = new URL(hostOrigin).port
-  const hostname = target.hostname.toLowerCase().replace(/\.+$/, '')
-  return target.port === port && ['http:', 'https:', 'ws:', 'wss:'].includes(target.protocol) &&
-    ['127.0.0.1', 'localhost', '[::1]', '[::ffff:7f00:1]'].includes(hostname)
-}
-
-function allowedUrl(raw: string, hostOrigin?: string): string {
+function allowedUrl(raw: string): string {
   if (typeof raw !== 'string' || raw.length > MAX_URL_LENGTH) fail('browser URL exceeds 4096 characters', 'BROWSER_FAILED')
   let url: URL
   try { url = new URL(raw) }
   catch { return fail('invalid browser URL', 'BROWSER_INVALID_URL') }
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password ||
     !/^https?:\/\/[^/?#\\\s]+(?:[/?#]|$)/i.test(raw) ||
-    /^https?:\/\/[^/?#\\\s]*@/i.test(raw) || isHostControlUrl(url.href, hostOrigin)) {
+    /^https?:\/\/[^/?#\\\s]*@/i.test(raw)) {
     fail('browser URL denied', 'BROWSER_DENIED')
   }
   return url.href
@@ -262,12 +250,6 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
       wc.session.setPermissionRequestHandler((_contents, _permission, callback) => { callback(false) })
       wc.session.setPermissionCheckHandler(() => false)
       wc.session.on('will-download', (event) => { event.preventDefault() })
-      if (options.hostOrigin) {
-        // 按实际目标的规范化地址判定；WebSocket 与所有子资源同样不能访问 Host 端口。
-        wc.session.webRequest.onBeforeRequest({ urls: ['<all_urls>', 'ws://*/*', 'wss://*/*'] }, (details, callback) => {
-          callback({ cancel: isHostControlUrl(details.url, options.hostOrigin) })
-        })
-      }
     }
     wc.setWindowOpenHandler(() => ({ action: 'deny' }))
     const id = randomUUID() as BrowserTabId
@@ -279,7 +261,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     view.setBounds({ x: 0, y: 0, ...owner.viewport })
     const denyNavigation = (event: { url: string; isMainFrame?: boolean; preventDefault(): void }): void => {
       if (event.isMainFrame === false || event.url === 'about:blank') return
-      try { allowedUrl(event.url, options.hostOrigin) }
+      try { allowedUrl(event.url) }
       catch { event.preventDefault() }
     }
     wc.on('will-navigate', denyNavigation)
@@ -493,7 +475,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
 
   async function navigate(sessionId: string, owner: Owner, tab: Tab, url: string, human = false): Promise<void> {
     const wc = tab.view.webContents
-    const destination = allowedUrl(url, options.hostOrigin)
+    const destination = allowedUrl(url)
     let started = false
     let commitTask: ReturnType<typeof setImmediate> | undefined
     const destinations = new Set([destination])
@@ -514,7 +496,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     const onCommit = (_event: unknown, url: string): void => {
       if (!started || !destinations.has(url) || url !== wc.getURL() ||
         owners.get(sessionId) !== owner || owner.tabs.get(tab.id) !== tab || wc.isDestroyed()) return
-      try { allowedUrl(url, options.hostOrigin) }
+      try { allowedUrl(url) }
       catch (error) { resolveCommit({ timedOut: false, error }); return }
       // 同一事件循环内本次 loadURL 的拒绝优先于提交回执；旧加载的异步拒绝不影响本次导航。
       commitTask ??= setImmediate(() => { resolveCommit({ timedOut: false }) })
@@ -678,7 +660,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
         return capture
       }
       if (!previous && command.kind !== 'navigate') fail('browser session is closed', 'BROWSER_CLOSED')
-      if (command.kind === 'navigate') allowedUrl(command.url, options.hostOrigin)
+      if (command.kind === 'navigate') allowedUrl(command.url)
       const owner = previous ?? ensure(sessionId)
       const tab = active(owner)
       let cursor: BrowserObservation['cursor'] = null
@@ -786,7 +768,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
       if (leases.has(sessionId)) return Promise.reject(new GuestError('browser operation already active', 'BROWSER_BUSY'))
       return enqueue(sessionId, async () => {
         let owner = owners.get(sessionId)
-        if (command.kind === 'navigate' || command.kind === 'open-url') allowedUrl(command.url, options.hostOrigin)
+        if (command.kind === 'navigate' || command.kind === 'open-url') allowedUrl(command.url)
         if (command.kind === 'open-url') {
           const existing = owner
           owner ??= ensure(sessionId)

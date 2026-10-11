@@ -134,7 +134,6 @@ function openWindow(): Promise<void> {
     })
     mainWindow = window
     const manager = createBrowserGuestManager(window, {
-      hostOrigin: next.origin,
       onState: (sessionId, state, capture) => { bridge.publish(sessionId, state, capture) },
     })
     browserManager = manager

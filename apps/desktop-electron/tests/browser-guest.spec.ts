@@ -160,8 +160,8 @@ describe('Electron 实时浏览器 guest', () => {
     expect(native?.resize).not.toHaveBeenCalled()
   })
 
-  it('创建受限的内存 guest，并阻止弹窗、下载、权限和 Host 地址', async () => {
-    const manager = createBrowserGuestManager(fixture(), { hostOrigin })
+  it('创建受限的内存 guest，并阻止弹窗、下载与权限请求，同时放行 Host 自身地址', async () => {
+    const manager = createBrowserGuestManager(fixture())
     const state = await manager.control('s1', { kind: 'ensure-tab' })
     expect(state?.activeTabId).toBeTruthy()
     expect(electron.WebContentsView.mock.calls[0]?.[0]).toMatchObject({ webPreferences: {
@@ -179,38 +179,15 @@ describe('Electron 实时浏览器 guest', () => {
     const download = { preventDefault: vi.fn() }
     wc.session.on.mock.calls[0]?.[1]?.(download)
     expect(download.preventDefault).toHaveBeenCalledOnce()
-    const navigation = { url: hostOrigin + '/private', isMainFrame: true, preventDefault: vi.fn() }
-    wc.events.get('will-frame-navigate')?.(navigation as never)
-    expect(navigation.preventDefault).toHaveBeenCalledOnce()
-    const aliases = [
-      'http://localhost:12345/private', 'http://localhost.:12345/private',
-      'http://[::1]:12345/private', 'http://[::ffff:7f00:1]:12345/private',
-      'http://127.1:12345/private', 'http://0x7f000001:12345/private',
-      'http://2130706433:12345/private',
-    ]
-    for (const alias of aliases) {
-      const redirect = { url: alias, isMainFrame: true, preventDefault: vi.fn() }
-      wc.events.get('will-redirect')?.(redirect as never)
-      expect(redirect.preventDefault, alias).toHaveBeenCalledOnce()
-      await expect(manager.execute('s1', { kind: 'navigate', url: alias }), alias)
-        .rejects.toMatchObject({ code: 'BROWSER_DENIED' })
+    // Host 自身地址（含其回环别名）与普通地址一样可导航；非 HTTP(S) 仍被拒绝。
+    for (const reachable of [hostOrigin + '/private', 'http://localhost:12345/private']) {
+      const navigation = { url: reachable, isMainFrame: true, preventDefault: vi.fn() }
+      wc.events.get('will-frame-navigate')?.(navigation as never)
+      expect(navigation.preventDefault, reachable).not.toHaveBeenCalled()
+      const arrived = await manager.execute('s1', { kind: 'navigate', url: reachable })
+      expect(arrived.observation.url).toBe(reachable)
     }
-    const filter = wc.session.webRequest.onBeforeRequest.mock.calls[0]?.[0]
-    expect(filter?.urls).toContain('<all_urls>')
-    expect(filter?.urls).toContain('ws://*/*')
-    const onBeforeRequest = wc.session.webRequest.onBeforeRequest.mock.calls[0]?.[1]
-    for (const resource of [...aliases, 'ws://localhost:12345/socket', 'wss://[::1]:12345/socket']) {
-      const response = vi.fn()
-      onBeforeRequest?.({ url: resource }, response)
-      expect(response, resource).toHaveBeenCalledWith({ cancel: true })
-    }
-    for (const resource of ['http://localhost:12346/private', 'http://127.0.0.2:12345/private',
-      'https://example.com/private', 'ws://localhost:12346/socket']) {
-      const response = vi.fn()
-      onBeforeRequest?.({ url: resource }, response)
-      expect(response, resource).toHaveBeenCalledWith({ cancel: false })
-    }
-    await expect(manager.execute('s1', { kind: 'navigate', url: hostOrigin + '/private' })).rejects.toMatchObject({ code: 'BROWSER_DENIED' })
+    expect(wc.session.webRequest.onBeforeRequest).not.toHaveBeenCalled()
     await expect(manager.execute('s1', { kind: 'navigate', url: 'file:///etc/passwd' })).rejects.toMatchObject({ code: 'BROWSER_DENIED' })
     const permitted = await manager.execute('s1', { kind: 'navigate', url: 'http://localhost:12346/page' })
     expect(permitted.observation.url).toBe('http://localhost:12346/page')
@@ -336,8 +313,8 @@ describe('Electron 实时浏览器 guest', () => {
     await manager.dispose()
   })
 
-  it('人工导航只承认本次主 frame 提交，允许受校验的重定向且不泄露被拒 URL', async () => {
-    const manager = createBrowserGuestManager(fixture(), { hostOrigin })
+  it('人工导航只承认本次主 frame 提交，并接受受校验的重定向（含 Host 自身地址）', async () => {
+    const manager = createBrowserGuestManager(fixture())
     await manager.control('s1', { kind: 'ensure-tab' })
     const wc = electron.views[0]!.webContents
     wc.loadURL.mockImplementationOnce((url: string) => {
@@ -360,10 +337,8 @@ describe('Electron 实时浏览器 guest', () => {
       wc.events.get('did-navigate')?.({} as never, (hostOrigin + '/private') as never)
       return new Promise<void>(() => {})
     })
-    const failed = await manager.control('s1', { kind: 'navigate', url: 'https://example.com/next' })
-      .then(() => null, (error: unknown) => error)
-    expect(failed).toMatchObject({ code: 'BROWSER_DENIED', message: 'browser URL denied' })
-    expect((failed as Error).message).not.toContain(hostOrigin)
+    const committed = await manager.control('s1', { kind: 'navigate', url: 'https://example.com/next' })
+    expect(committed?.tabs[0]).toMatchObject({ url: hostOrigin + '/private', loading: true })
     await manager.dispose()
   })
 
@@ -420,7 +395,7 @@ describe('Electron 实时浏览器 guest', () => {
 
   it('原子开页复用空会话首个 guest，已有会话则创建独立标签并返回原生页面状态', async () => {
     const events: unknown[] = []
-    const manager = createBrowserGuestManager(fixture(), { hostOrigin, onState: (sessionId, state, capture) => {
+    const manager = createBrowserGuestManager(fixture(), { onState: (sessionId, state, capture) => {
       parseBridgeEvent({ v: 1, type: 'state', sessionId, state, ...(capture ? { capture: {
         observation: capture.observation, png: capture.png === null ? null : Buffer.from(capture.png).toString('base64'),
       } } : {}) })
@@ -441,7 +416,7 @@ describe('Electron 实时浏览器 guest', () => {
     expect(electron.views[1]!.webContents.setWindowOpenHandler.mock.calls[0]?.[0]()).toEqual({ action: 'deny' })
     const redirect = { url: hostOrigin + '/private', isMainFrame: true, preventDefault: vi.fn() }
     electron.views[1]!.webContents.events.get('will-redirect')?.(redirect as never)
-    expect(redirect.preventDefault).toHaveBeenCalledOnce()
+    expect(redirect.preventDefault).not.toHaveBeenCalled()
     expect(events.at(-1)).toMatchObject({ activeTabId: second!.activeTabId,
       observation: null, hasFrame: false })
     await manager.dispose()
@@ -526,14 +501,20 @@ describe('Electron 实时浏览器 guest', () => {
     } finally { vi.useRealTimers() }
   })
 
-  it('原子开页先拒绝非法与 Host URL，且租约或标签上限不产生多余 guest', async () => {
-    const manager = createBrowserGuestManager(fixture(), { hostOrigin })
-    await expect(manager.control('fresh', { kind: 'open-url', url: hostOrigin + '/private' }))
+  it('原子开页先拒绝非法 URL，且租约或标签上限不产生多余 guest', async () => {
+    const manager = createBrowserGuestManager(fixture())
+    await expect(manager.control('fresh', { kind: 'open-url', url: 'file:///tmp/unsafe' }))
       .rejects.toMatchObject({ code: 'BROWSER_DENIED' })
     expect(electron.views).toHaveLength(0)
+    // Host 自身地址与普通地址同样可开页，且不额外泄露会话。
+    const hostTab = await manager.control('fresh', { kind: 'open-url', url: hostOrigin + '/private' })
+    expect(hostTab).toMatchObject({ observation: null, hasFrame: false, tabs: [{ url: hostOrigin + '/private' }] })
+    await manager.close('fresh')
+    // 关闭会连 guest 一起销毁；后续断言只关心本用例自己开出的会话。
+    electron.views.length = 0
     const initial = await manager.control('s1', { kind: 'ensure-tab' })
     for (const [url, code] of [
-      ['file:///tmp/unsafe', 'BROWSER_DENIED'], [hostOrigin + '/private', 'BROWSER_DENIED'],
+      ['file:///tmp/unsafe', 'BROWSER_DENIED'],
       ['not a URL', 'BROWSER_INVALID_URL'],
     ] as const) {
       await expect(manager.control('s1', { kind: 'open-url', url })).rejects.toMatchObject({ code })
