@@ -6,6 +6,10 @@
 
 一个适配器注册表加单一流式调用接口，可通过 waterfall（瀑布式事件）拦截。
 
+### 共享 User-Agent 设置
+
+`llm` 插件将 `Config.userAgent` 注册为可实时编辑的 `settings.yaml` 中 `llm.userAgent` 设置。省略该字段时使用产品身份（`deepseek-harness/<version> (+https://github.com/deepseek-ai/deepseek-harness)`）；可设置长度为 1–256 的可打印 ASCII 标头值，首尾不得为空白，控制字符与非 ASCII 字符会在配置加载或设置写入时被拒绝。`ctx.llm.getUserAgent()` 返回当前有效值；DeepSeek 和 pi-ai 适配器在每次流调用开始时捕获它，模型发现则在每次查询开始时捕获，进行中的请求不会随设置变化更换标头。重置用户分节会恢复组合配置或产品默认值。
+
 ### 重试策略
 
 每个提供方适配器都会提供解析后的路由策略。省略提供方配置时使用有界 normal mode，在首次请求后最多重试五次。分层配置把 `mode` 改为 `always` 后可能残留 `maxRetries` 或 `retryableCodes`；解析过程会忽略这些不再生效的 normal-mode 字段，并捕获纯 always 策略。本服务存储有效策略，但不执行重试。
@@ -63,7 +67,7 @@
 
 ### 应用归因（`attribution.ts`）
 
-每个产品适配器都会在提供方 HTTP 请求上发送应用身份。`attributionHeaders(identity?)` 构建标准 `User-Agent`，默认为公开 `APP_IDENTITY`；白标部署可以替换它，但不能抑制它。适配器会直接验证 wire 标头，或通过自身库 hook 验证。详见 归因 设计记录。
+每个产品适配器都会在提供方 HTTP 请求上发送应用身份。`attributionHeaders(identity?)` 构建标准 `User-Agent`，默认为公开 `APP_IDENTITY`；共享 `llm.userAgent` 设置可覆盖 DeepSeek 和 pi-ai 的流式及发现请求，后者仍会覆盖 profile 中大小写不同的同名标头。适配器会直接验证 wire 标头，或通过自身库 hook 验证。详见 归因 设计记录。
 
 ### API 密钥校验（`api-key.ts`）
 

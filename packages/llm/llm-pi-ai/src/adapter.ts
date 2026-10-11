@@ -32,11 +32,11 @@ import type {
   ThinkingLevel,
 } from '@earendil-works/pi-ai'
 import {
-  attributionHeaders,
   contentHasImage,
   LlmAdapter,
   LlmError,
   ReasoningEffortId,
+  userAgent,
 } from '@deepseek-ai/dsh-llm'
 import type {
   GenerateOptions,
@@ -74,6 +74,8 @@ export interface PiAiAdapterOptions {
    * `MISSING_CREDENTIAL` rather than falling back.
    */
   resolveApiKey: (provider: string, profile: ResolvedPiAiProviderProfile) => Promise<string | undefined>
+  /** 当前共享 User-Agent，在流调用开始时捕获。 */
+  resolveUserAgent?: () => string
   /** Resolve the optional durable attachment service at request time. */
   resolveAttachments?: () => AttachmentStore | undefined
   /**
@@ -181,8 +183,8 @@ function reasoningInfo(
 }
 
 /** Merge deployment headers while removing case-insensitive attribution collisions. */
-function requestHeaders(headers: Readonly<Record<string, string>> | undefined): Record<string, string> {
-  const attribution = attributionHeaders()
+function requestHeaders(headers: Readonly<Record<string, string>> | undefined, requestUserAgent: string): Record<string, string> {
+  const attribution = { 'user-agent': requestUserAgent }
   const reserved = new Set(Object.keys(attribution).map(name => name.toLowerCase()))
   return {
     ...Object.fromEntries(Object.entries(headers ?? {}).filter(([name]) => !reserved.has(name.toLowerCase()))),
@@ -295,6 +297,7 @@ export class PiAiAdapter extends LlmAdapter {
     // mid-request builds a separate snapshot, so this request finishes under
     // the one it started with and the next call picks up the new one.
     const snapshot = this.current()
+    const requestUserAgent = this.config.resolveUserAgent?.() ?? userAgent()
     const profile = this.profileOf(snapshot, options.provider)
     const model = this.modelOf(snapshot, options.provider, options.model)
     const reasoning = resolveReasoningLevel(
@@ -333,7 +336,7 @@ export class PiAiAdapter extends LlmAdapter {
         signal: watchdog.signal,
         // Profile headers are deployment-owned; attribution names are
         // Harness-owned and therefore win collisions.
-        headers: requestHeaders(profile.headers),
+        headers: requestHeaders(profile.headers, requestUserAgent),
       })
       const iterator = toStreamChunks(events, model.contextWindow)[Symbol.asyncIterator]()
       let exhausted = false

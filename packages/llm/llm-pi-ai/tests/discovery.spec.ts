@@ -4,6 +4,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import LlmRuntime, { userAgent } from '@deepseek-ai/dsh-llm'
 import * as LlmPiAi from '@deepseek-ai/dsh-llm-pi-ai'
+import { settingsNamespace } from '@deepseek-ai/dsh-settings'
+import { FileSettingsProvider } from '@deepseek-ai/dsh-settings-file'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { discoverModels } from '../src/discovery.ts'
 
 const servers: Server[] = []
@@ -74,6 +79,25 @@ async function harness(): Promise<Context> {
 }
 
 describe('catalog-route model discovery', () => {
+  it('captures the live shared User-Agent for each query', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-pi-agent-'))
+    try {
+      const server = await listingServer({ body: JSON.stringify({ data: [] }) })
+      const ctx = new Context()
+      await ctx.plugin(LlmRuntime)
+      await ctx.plugin(FileSettingsProvider, { path: join(dir, 'settings.yaml'), watch: false })
+      await ctx.plugin(LlmPiAi, {})
+      await ctx.llm.discoverModels('llm-pi-ai', { baseURL: server.url })
+      expect(server.headers[0]?.['user-agent']).toBe(userAgent())
+      await ctx.settings.update(settingsNamespace('llm'), { userAgent: 'pi-discovery/2' })
+      await ctx.llm.discoverModels('llm-pi-ai', { baseURL: server.url })
+      expect(server.headers[1]?.['user-agent']).toBe('pi-discovery/2')
+      await ctx.fiber.dispose()
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
   it('asks the draft endpoint even for an installed provider', async () => {
     const server = await listingServer({ body: JSON.stringify({ data: [{ id: 'from-the-endpoint' }] }) })
     const ctx = await harness()

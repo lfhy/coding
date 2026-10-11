@@ -6,6 +6,9 @@
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
+import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
+import { userAgent } from './attribution.ts'
 import type {
   GenerateOptions,
   LlmConfigurableProvider,
@@ -41,6 +44,20 @@ export * from './retry-policy.ts'
 export { BlockAssembler } from './assembler.ts'
 export { callConfigEquals, deepFreeze, isAgentLoopRequest, markAgentLoopRequest } from './call-config.ts'
 export type { LlmCallConfig, LlmCallConfigAdapterDefaults } from './call-config.ts'
+
+/** 共享 LLM 设置分节；提供方的配置仍保留在各自的 namespace。 */
+export const LLM_SETTINGS_NAMESPACE = settingsNamespace('llm')
+
+/** 允许可打印 ASCII（含空格），但拒绝首尾空白和 HTTP 控制字符。 */
+export interface LlmSettingsConfig {
+  /** 所有模型 HTTP 请求的 User-Agent；省略时使用产品身份。 */
+  userAgent?: string
+}
+
+/** 插件配置与共享设置使用同一个可序列化校验 schema。 */
+export const Config: z<LlmSettingsConfig> = z.object({
+  userAgent: z.string().min(1).max(256).pattern(/^[\x21-\x7e](?:[\x20-\x7e]*[\x21-\x7e])?$/).default(userAgent()),
+})
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -278,6 +295,9 @@ export interface DirectoryRegistrationHandle {
  * API, interceptable via the `llm/stream` waterfall.
  */
 export class LlmRuntime extends Service {
+  static Config: z<LlmSettingsConfig> = Config
+
+  private userAgentSource: () => LlmSettingsConfig
   private adapters = new Map<string, AdapterRegistration>()
   private directory = new Map<string, LlmConfigurableProvider>()
   private discoveries = new Map<
@@ -285,8 +305,18 @@ export class LlmRuntime extends Service {
     (request: LlmModelDiscoveryRequest) => Promise<readonly LlmDiscoveredModel[]>
   >()
 
-  constructor(ctx: Context) {
+  constructor(ctx: Context, config: LlmSettingsConfig = {}) {
     super(ctx, 'llm')
+    this.userAgentSource = () => config
+    installSettingsSection(ctx, LLM_SETTINGS_NAMESPACE, Config, config, {
+      setSource: (source) => { this.userAgentSource = source },
+      onChange: () => {},
+    })
+  }
+
+  /** 每个请求在首次异步操作前读取一次，进行中的请求保留自己的标头。 */
+  getUserAgent(): string {
+    return this.userAgentSource().userAgent ?? userAgent()
   }
 
   /** Notify topology observers without letting one broken listener veto the commit. */

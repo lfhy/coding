@@ -7,6 +7,7 @@ import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply as settingsApply, inject as settingsInject } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { apply, inject, refreshIfLoaded } from '@deepseek-ai/dsh-client-ui-settings-models/client'
+import { ModelUserAgentRow } from '../src/client/ModelUserAgentRow.tsx'
 import { ModelsSection } from '../src/client/ModelsSection.tsx'
 import { VisionSection } from '../src/client/VisionSection.tsx'
 import { DeepSeekOnboardingDialog } from '../src/client/DeepSeekOnboardingDialog.tsx'
@@ -31,6 +32,14 @@ async function bench(isLoopback = true, settings?: object, services: object = {}
   return { ctx, slots: ctx.get('slots') as SlotRegistry, locale }
 }
 
+function declareGeneral(slots: SlotRegistry): () => void {
+  const dispose = slots.register({
+    name: 'root',
+    children: { 'settings.general.item': { kind: 'list', scope: 'root' } },
+  } as never, () => null)
+  return dispose
+}
+
 function declare(slots: SlotRegistry): () => void {
   return slots.register(
     {
@@ -45,6 +54,18 @@ function declare(slots: SlotRegistry): () => void {
 }
 
 describe('ui-settings-models apply', () => {
+  it('registers and disposes the general model UA row', async () => {
+    const b = await bench()
+    declareGeneral(b.slots)
+    const fiber = b.ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    const [row] = b.slots.entries('settings.general.item')
+    expect(row?.options).toMatchObject({ id: 'model-user-agent', order: 30 })
+    expect(row?.component).toBe(ModelUserAgentRow)
+    await fiber.dispose()
+    expect(b.slots.entries('settings.general.item')).toHaveLength(0)
+  })
+
   it('declares the services it uses', () => {
     expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'settingsScope', 'settingsSchema'])
   })

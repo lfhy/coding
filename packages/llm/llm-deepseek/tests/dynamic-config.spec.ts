@@ -3,7 +3,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import LlmRuntime, { createUserMessage, INVALID_CREDENTIAL_CODE } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { createUserMessage, INVALID_CREDENTIAL_CODE, userAgent } from '@deepseek-ai/dsh-llm'
 import AttachmentStore, { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type {
   ImageAttachmentLimits,
@@ -97,6 +97,43 @@ function prompt(ctx: Context) {
 }
 
 describe('request-level dynamic configuration', () => {
+  it('uses the shared editable User-Agent on consecutive requests', async () => {
+    const dir = await home()
+    await writeFile(join(dir, '.credentials.yaml'), 'DEEPSEEK_API_KEY: test-key\n', { mode: 0o600 })
+    const server = await mockServer([{ kind: 'sse', events: textEvents }, { kind: 'sse', events: textEvents }, { kind: 'sse', events: textEvents }])
+    const { ctx } = await boot(dir, { baseURL: server.url })
+    expect(ctx.settings.describe().some(entry => entry.ns === 'llm')).toBe(true)
+    expect(ctx.llm.getUserAgent()).toBe(userAgent())
+    await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
+    expect(server.headers[0]?.['user-agent']).toBe(userAgent())
+    await ctx.settings.update(settingsNamespace('llm'), { userAgent: 'custom-agent/1.0 (shared)' })
+    await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
+    expect(server.headers[1]?.['user-agent']).toBe('custom-agent/1.0 (shared)')
+    await ctx.settings.replace(settingsNamespace('llm'), {})
+    await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
+    expect(server.headers[2]?.['user-agent']).toBe(userAgent())
+  })
+
+  it('captures the shared User-Agent for each discovery query', async () => {
+    const dir = await home()
+    const { ctx } = await boot(dir, { baseURL: 'https://api.deepseek.com' })
+    const fetcher = vi.fn((_input: RequestInfo | URL, _init?: RequestInit) => Promise.resolve(Response.json({ data: [] })))
+    vi.stubGlobal('fetch', fetcher)
+    await ctx.llm.discoverModels('llm-deepseek', { baseURL: 'https://draft.example/v1' })
+    expect((fetcher.mock.calls[0]?.[1] as RequestInit).headers).toMatchObject({ 'user-agent': userAgent() })
+    await ctx.settings.update(settingsNamespace('llm'), { userAgent: 'discovery-agent/3' })
+    await ctx.llm.discoverModels('llm-deepseek', { baseURL: 'https://draft.example/v1' })
+    expect((fetcher.mock.calls[1]?.[1] as RequestInit).headers).toMatchObject({ 'user-agent': 'discovery-agent/3' })
+    vi.unstubAllGlobals()
+  })
+
+  it.each(['', '  ', ' leading', 'trailing ', 'bad\r\nheader', 'é', 'x'.repeat(257)])('rejects unsafe shared User-Agent %j', async (value) => {
+    const dir = await home()
+    const { ctx } = await boot(dir, { baseURL: 'http://127.0.0.1:1' })
+    await expect(ctx.settings.update(settingsNamespace('llm'), { userAgent: value })).rejects.toThrow()
+    expect(ctx.llm.getUserAgent()).toBe(userAgent())
+  })
+
   it.each(['团队 渠道', 'default', '  团队 渠道  '])('advertises the initial channel name %j unchanged', async (channelName) => {
     const dir = await home()
     const { ctx } = await boot(dir, { channelName, baseURL: 'http://127.0.0.1:1' })

@@ -157,7 +157,7 @@ pi-ai 依据提供方 id 与 baseURL 决定每个请求的形状：系统提示�
 
 ## 应用归因
 
-每个请求都携带 dsh-llm `attributionHeaders()` 的共享归因标头，并通过 pi-ai `headers` 流选项合并。不会合成提供方特定应用归因标头。详见 [dsh-llm § 应用归因](../llm/README.md#应用归因attributionts)。
+每个流式与模型发现请求均从共享 [`llm.userAgent` 设置](../llm/README.md#共享-user-agent-设置)捕获一次 `User-Agent`；默认值是产品身份，设置更新只影响下一个请求。流式请求通过 pi-ai `headers` 选项合并，并覆盖 profile 中大小写不同的同名标头；不会合成提供方特定应用归因标头。
 
 ## 依赖体量
 

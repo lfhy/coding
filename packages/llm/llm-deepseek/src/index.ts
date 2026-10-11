@@ -310,6 +310,7 @@ export function apply(ctx: Context, config: Config): void {
     resolveApiKey,
     providerName: () => current().channelName ?? DEFAULT_CHANNEL_NAME,
     resolveUserId,
+    resolveUserAgent: () => ctx.llm.getUserAgent(),
     resolveAttachments: () => ctx.get('attachments'),
   })
   let registeredName = current().channelName ?? DEFAULT_CHANNEL_NAME
@@ -324,7 +325,7 @@ export function apply(ctx: Context, config: Config): void {
     registeredName = displayName
   }
   ctx.llm.registerModelDiscovery(NS, (request: LlmModelDiscoveryRequest) =>
-    discoverModels(request, options(), resolveApiKey))
+    discoverModels(request, options(), resolveApiKey, ctx.llm.getUserAgent()))
   // Route effects bind to this apply fiber via the stable `ctx` reference,
   // even when a swap runs inside the scoped settings callback below.
   const registration = ctx.llm.registerAdapter([PROVIDER], adapter)

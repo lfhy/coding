@@ -50,6 +50,21 @@ async function boot(dir: string, config: LlmPiAi.Config): Promise<Context> {
 }
 
 describe('request-level dynamic profiles', () => {
+  it('uses the shared User-Agent after a live update without changing profile headers', async () => {
+    const dir = await home()
+    await writeFile(join(dir, '.credentials.yaml'), 'PI_DYNAMIC_KEY: test-key\n', { mode: 0o600 })
+    const server = await mockServer([{ events: textEvents }, { events: textEvents }])
+    const ctx = await boot(dir, {})
+    await ctx.settings.update(NS, {
+      providers: { deepseek: { apiKeyEnv: 'PI_DYNAMIC_KEY', baseURL: server.url, headers: { 'User-Agent': 'profile-agent' } } },
+    })
+    await assemble(ctx, { provider: 'deepseek', model: 'deepseek-v4-flash', messages: [] })
+    expect(server.headers[0]?.['user-agent']).toBe(ctx.llm.getUserAgent())
+    await ctx.settings.update(settingsNamespace('llm'), { userAgent: 'shared-agent/2' })
+    await assemble(ctx, { provider: 'deepseek', model: 'deepseek-v4-flash', messages: [] })
+    expect(server.headers[1]?.['user-agent']).toBe('shared-agent/2')
+  })
+
   it('mounts bare and dormant, then registers routes the moment settings supply providers', async () => {
     vi.stubEnv('PI_DYNAMIC_KEY', '')
     const dir = await home()

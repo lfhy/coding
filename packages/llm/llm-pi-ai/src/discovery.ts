@@ -14,7 +14,7 @@
 
 import { INVALID_CREDENTIAL_CODE, LlmError, normalizeApiKey } from '@deepseek-ai/dsh-llm'
 import type { LlmDiscoveredModel, LlmModelDiscoveryRequest } from '@deepseek-ai/dsh-llm'
-import { attributionHeaders } from '@deepseek-ai/dsh-llm'
+import { userAgent } from '@deepseek-ai/dsh-llm'
 import { catalogProvider } from './catalog.ts'
 
 /**
@@ -198,6 +198,7 @@ export async function discoverModels(
     hasStoredKey: boolean
     apiKey: () => Promise<string | undefined>
   } | undefined,
+  requestUserAgent: string = userAgent(),
 ): Promise<readonly LlmDiscoveredModel[]> {
   const saved = storedRoute?.()
   const baseURL = request.baseURL ?? saved?.baseURL ?? (
@@ -254,7 +255,7 @@ export async function discoverModels(
       headers: {
         accept: 'application/json',
         ...apiKey === undefined ? {} : { authorization: `Bearer ${apiKey}` },
-        ...attributionHeaders(),
+        'user-agent': requestUserAgent,
       },
       signal: controller.signal,
     })

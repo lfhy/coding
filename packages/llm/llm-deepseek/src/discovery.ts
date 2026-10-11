@@ -1,5 +1,5 @@
 /** DeepSeek 模型列表探测：草稿端点与凭据只用于本次请求，不写入设置。 */
-import { assertUsableApiKey, attributionHeaders, LlmError } from '@deepseek-ai/dsh-llm'
+import { assertUsableApiKey, userAgent, LlmError } from '@deepseek-ai/dsh-llm'
 import type { LlmDiscoveredModel, LlmModelDiscoveryRequest } from '@deepseek-ai/dsh-llm'
 import type { DeepSeekConnectionOptions } from './adapter.ts'
 
@@ -120,6 +120,7 @@ export async function discoverModels(
   request: LlmModelDiscoveryRequest,
   connection: DeepSeekConnectionOptions,
   resolveApiKey: (connection: DeepSeekConnectionOptions) => Promise<string>,
+  requestUserAgent: string = userAgent(),
 ): Promise<readonly LlmDiscoveredModel[]> {
   if (request.provider !== undefined && request.provider !== 'deepseek-official') {
     throw new LlmError(`DeepSeek discovery cannot query provider "${request.provider}"`, 'INVALID_DISCOVERY')
@@ -142,7 +143,7 @@ export async function discoverModels(
       redirect: 'manual',
       headers: {
         accept: 'application/json',
-        ...attributionHeaders(),
+        'user-agent': requestUserAgent,
         ...key === undefined ? {} : { authorization: `Bearer ${key}` },
       },
       signal,
