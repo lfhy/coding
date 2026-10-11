@@ -46,6 +46,10 @@ pnpm run typecheck
 
 ## 贡献者参考
 
+### Web 开发实例
+
+调试当前检出目录的界面时，先构建产物，再按 [Web 开发模式](api-gateway.md#开发模式)启动 Host 与 Client 插件 watcher。Host 使用不同于已运行应用的新端口（例如 `pnpm dsh web --port 0 --no-open`，由系统分配空闲端口）；只访问这个进程打印的 URL 验证本次代码。已有安装版或其他检出目录的 GUI 不会因为新构建而自动更新。
+
 ### TypeScript 项目布局
 
 仓库使用相互隔离的 Host 与 Client aggregate。普通包只登记进其中一个 aggregate；Host 包进入 `tsconfig.host.json`，Client 包进入 `tsconfig.client.json`。

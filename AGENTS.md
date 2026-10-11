@@ -44,6 +44,8 @@ pnpm run test:e2e            # 有 DEEPSEEK_API_KEY 时才运行真实 API 测�
 
 先安装依赖再运行脚本；仓库使用 `package.json` 固定的 pnpm 版本和 Node 引擎范围。普通变更选择覆盖改动的最小检查集；跨包、公开行为、构建产物或用户可见输出的变更补充相应的构建、快照或文档检查。不要因为本地缺少外部凭据而把 keyless 检查改成静默跳过。
 
+调试 Web 界面时，从当前检出目录启动开发 Host 并使用不同于已运行实例的新端口；以新进程实际输出的 URL 验证改动，不把另一个实例的 GUI 当作本次构建。`apps/web` 的 Vite 入口不单独提供完整应用，启动方式见[开发指南](docs/development.md)。
+
 ## CI 规则
 
 `.github/workflows/ci.yml` 是当前唯一的 GitHub Actions 工作流，仅在推送 `v<version>` 发版 tag（例如 `v0.0.1`）后使用 `ubuntu-latest` 执行 `pnpm install --frozen-lockfile`、`typecheck`、`lint`、`test` 和 `build`。它只验证 tag 指向的源码，必须保持无凭据、无自托管 runner、无发布和无真实 API 调用；需要 API、桌面打包或发布时另建独立工作流，并将凭据限制在实际使用步骤。

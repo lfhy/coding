@@ -1,13 +1,7 @@
 /**
- * @deepseek-ai/dsh-web-app — the browser-surface bundle's runtime glue plugin
- * plus the bundle patch (`cordis.patch.yml`, declared by the `dsh.bundle.patch`
- * manifest field). The plugin owns the browser-surface glue: it resolves
- * the built frontend dist (workspace knowledge of this bundle, never user
- * config), mounts the `frontend-static` fallback owner over it, registers the
- * harness-source and web-surface prompt sections, the bash-visible web runtime
- * variable, the URL line, and the default-browser handoff. App command-line
- * values arrive through the `webStartup` service expressions in the bundle
- * patch.
+ * Web 表层组合包的运行时粘合插件：解析已构建的前端产物并挂载静态
+ * 回退席位，注册 Harness 源码提示词，并在 Loader 完成后公告 URL、
+ * 交接默认浏览器。启动参数由 `webStartup` 服务提供。
  * @module @deepseek-ai/dsh-web-app
  */
 
@@ -25,7 +19,6 @@ import { startManagedHost } from './managed-host.ts'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-system-prompt'
-import type {} from '@deepseek-ai/dsh-shell-env'
 
 /** Stable Cordis plugin name. */
 export const name = 'web-app'
@@ -46,10 +39,7 @@ export interface Config {
   /** Print the URL line on activation; a non-interactive layer can turn it off. */
   printUrl: boolean
   /**
-   * Register the model-visible surface context (the `app:web-surface` prompt
-   * section and the `DSH_WEB_URL` bash variable). A one-shot non-interactive
-   * layer can turn it off when its user is not in the GUI, so the
-   * orientation text would be false.
+   * GUI 会话注册 Harness 源码定位；非交互式运行可关闭该段落。
    */
   surfaceContext: boolean
   /** Explicit `--trusted-host` authorities from this invocation. */
@@ -76,9 +66,6 @@ export interface WebRuntimeValues {
   /** LAN literals followed by explicit invocation authorities. */
   trustedHosts: string[]
 }
-
-/** Environment variable naming the canonical local URL of this Web GUI. */
-const DSH_WEB_URL = 'DSH_WEB_URL' as const
 
 // Display-only mirror of the webserver schema's loopback host: the address the
 // local URL always prints. Not a source of truth — the schema is.
@@ -134,20 +121,6 @@ export function resolveLanTrust(bindHost: string, extra: readonly string[]): Web
       .map(iface => iface.address)
     : []
   return { lanAddresses, trustedHosts: [...lanAddresses, ...extra] }
-}
-
-/** Model-visible orientation and acceptance boundary for sessions created through `dsh web`. */
-function webSurfacePrompt(webUrl: string): string {
-  const updateContract = 'The client-plugin HMR receiver is active, but client-plugin changes reload without a refresh only while '
-    + '`pnpm run dev:web` is also running from this same checkout to rebuild their bundles; verify that watcher before promising automatic updates. '
-    + 'Every other change — the apps/web shell and plain packages — requires rebuilding the affected Web artifacts and verifying this existing URL after a page refresh. '
-  return `You are interacting with the user through the Coding GUI at ${webUrl}. `
-    + 'When the user refers to "this page", "this GUI", or "this app" without naming another target, they mean this GUI. '
-    + 'The browser provides no implicit DOM, route, or screenshot context. '
-    + updateContract
-    + 'Starting another server does not update this GUI. '
-    + 'The apps/web Vite entry builds the shell but is not a standalone application because only dsh web injects window.__DSH_BOOT__. '
-    + 'Do not start a replacement server unless the user asks; if one is needed, use a managed background job and verify its exact URL.'
 }
 
 /** Resolve the canonical loopback URL from the active Web server. */
@@ -216,8 +189,8 @@ export const internals: {
 } = { resolveDistIndex, openBrowser }
 
 /**
- * Mount the Web runtime: dist serving, surface prompt, the bash runtime
- * variable, the URL line, and the default-browser handoff.
+ * Mount the Web runtime: dist serving, Harness source context, URL line,
+ * and default-browser handoff.
  * @param ctx - plugin context carrying the webServer service.
  * @param config - validated {@link Config}.
  */
@@ -232,20 +205,6 @@ export function apply(ctx: Context, config: Config): void {
   if (config.surfaceContext) {
     ctx.inject(['systemPrompt'], (promptCtx) => {
       addHarnessSourceSection(promptCtx, SOURCE_ROOT)
-      promptCtx.systemPrompt.section({
-        name: 'app:web-surface',
-        order: -98,
-        text: () => webSurfacePrompt(localWebUrl(promptCtx)),
-      })
-    })
-    ctx.inject(['shellEnv'], (runtimeCtx) => {
-      runtimeCtx.shellEnv.register({
-        name: 'web-runtime',
-        variables: {
-          [DSH_WEB_URL]: { description: 'Canonical local URL of the Coding GUI serving this session.' },
-        },
-        resolve: () => ({ [DSH_WEB_URL]: localWebUrl(runtimeCtx) }),
-      })
     })
   }
   if (config.printUrl || handoffBrowser || config.managedHost) {

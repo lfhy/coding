@@ -141,15 +141,9 @@
         host: !!js ctx.webStartup.host ?? '127.0.0.1'
         port: !!js ctx.webStartup.port ?? 3080
 
-    # Web glue owned by this bundle: resolves the built frontend dist (an
-    # assembly fact of dsh-web-app, never user config), mounts the
-    # frontend-static fallback owner, registers the web-surface prompt
-    # section and the bash runtime variable, prints the URL line, and opens the
-    # canonical local URL after the full tree settles. The webStartup provider
-    # supplies invocation-only values; after the server binds, this row samples
-    # LAN trust once and provides `webRuntime`. A complete agent-preset persona
-    # suppresses the prompt section for that agent while retaining the host-owned
-    # shell variable.
+    # 前端静态回退和 LAN 信任由本组合包持有；Loader 结算后才公告 URL
+    # 并交接浏览器。完整的 agent persona 可遮蔽 Harness 源码提示词，
+    # 但不影响 Host 对地址和浏览器的管理。
     - id: web-runtime
       name: '@deepseek-ai/dsh-web-app'
       inject: [webStartup]

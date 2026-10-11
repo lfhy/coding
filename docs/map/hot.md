@@ -125,7 +125,7 @@
 
 ## packages/bundle/web-app
 
-- **拥有**：浏览器表层的组合包：`cordis.patch.yml`（叠加在 dsh-base 之上的 host 行覆盖/禁用 + `dsh.client` 浏览器插件名录）与 `web-runtime` 粘合插件（解析已构建前端 dist、`webRuntime` 服务、URL 打印与浏览器交接、`DSH_WEB_URL`）。
+- **拥有**：浏览器表层的组合包：`cordis.patch.yml`（叠加在 dsh-base 之上的 host 行覆盖/禁用 + `dsh.client` 浏览器插件名录）与 `web-runtime` 粘合插件（解析已构建前端 dist、`webRuntime` 服务、URL 打印与浏览器交接、Harness 源码定位）。
 - **不拥有**：基础行（persona 基线、tools、session 层）由 `packages/bundle/base` 拥有，本包只覆盖或禁用；前端 dist 构建属于 `apps/web`；headless 表层属于 `packages/bundle/headless`。
 - **入口**：`packages/bundle/web-app/src/index.ts`（`name = 'web-app'`，提供 `webRuntime`）；`packages/bundle/web-app/src/startup.ts`（解析 `--host/--port/--trusted-host/--no-open`）。
 - **接线**：`apps/cli/src/profile-boot.ts` 按 `dsh.profile.bundles` 顺序叠加本包 patch；`dsh web` 别名在 `apps/cli/src/args.ts`。

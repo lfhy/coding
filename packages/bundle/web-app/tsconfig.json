@@ -48,9 +48,6 @@
       "path": "../../core/system-prompt"
     },
     {
-      "path": "../../shell/shell-env"
-    },
-    {
       "path": "../../subprocess/subprocess"
     },
     {
