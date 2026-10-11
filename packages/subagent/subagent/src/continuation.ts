@@ -150,6 +150,8 @@ export type SubagentInterruptAuthority =
 export interface SubagentFollowupOptions {
   /** Durable attribution retained on the delivered message; it grants no authority. */
   readonly source: MessageSource
+  /** 投递为后续轮次，或在活跃轮次的下一步骤前送达。 */
+  readonly mode?: 'next-turn' | 'next-step'
   /** Caller cancellation, owning the operation only until inbox acceptance. */
   readonly signal: AbortSignal
 }
@@ -483,11 +485,9 @@ export class SubagentContinuationManager {
   }
 
   /**
-   * Deliver one later message to a known continuable child as its next FIFO
-   * turn. Routing depends only on Activation residency: a `running` Activation
-   * enqueues, a `waiting` one wakes the same Agent, and an absent one
-   * cold-resumes a new Activation from the persisted Session. The Agent inbox
-   * is the only queue, so every accepted message has one observable order.
+   * 向可继续子级投递消息。默认的 `next-turn` 排在后续轮次；`next-step`
+   * 在活跃轮次的下一步骤送达，但不会打断正在执行的请求或工具。
+   * 驻留子级直接接收，未驻留子级从持久化会话恢复；Agent inbox 负责排序。
    *
    * The caller signal owns lookup, materialization, and admission only until
    * inbox acceptance; afterwards the accepted turn cannot be cancelled through
@@ -495,7 +495,7 @@ export class SubagentContinuationManager {
    * @param parent - the exact live direct parent authorizing this delivery.
    * @param childId - the durable child session id.
    * @param content - the user-role content to deliver.
-   * @param options - the message source fields and caller cancellation.
+   * @param options - 来源、投递模式和准入前取消信号。
    * @returns the accepted message's inbox id.
    * @throws when parent authority, availability, or admission rejects the delivery.
    */
@@ -519,7 +519,7 @@ export class SubagentContinuationManager {
         if (activation.disposal !== undefined) {
           return activation.disposal.then(() => undefined, () => undefined)
         }
-        return this.submitAdmitted(activation, content, options.source, parent, options.signal)
+        return this.submitAdmitted(activation, content, options.source, parent, options.signal, options.mode ?? 'next-turn')
       })
       /* v8 ignore start -- only the lost-cutoff arm above returns undefined, so only that
        * race reaches the retry below, which then cold-resumes a new Activation. */
@@ -990,7 +990,7 @@ export class SubagentContinuationManager {
       if (error instanceof SubagentError) throw error
       throw new SubagentError(`subagent "${childId}" is unavailable`, 'NOT_RESUMABLE', { cause: error })
     }
-    return this.submitMaterialized(activation, content, options.source, parent, options.signal)
+    return this.submitMaterialized(activation, content, options.source, parent, options.signal, options.mode ?? 'next-turn')
   }
 
   /**
@@ -999,7 +999,8 @@ export class SubagentContinuationManager {
    * @param content - the initial or resumed message content.
    * @param source - durable fields naming who supplied the accepted message.
    * @param parent - the live direct parent authorizing admission.
-   * @param signal - caller cancellation owning admission until acceptance.
+   * @param signal - 仅在 inbox 接受之前生效的调用方取消信号。
+   * @param mode - 投递目标；新建子级仍按初始轮次投递。
    * @returns the accepted inbox message id.
    */
   private async submitMaterialized(
@@ -1008,9 +1009,10 @@ export class SubagentContinuationManager {
     source: MessageSource,
     parent: Agent,
     signal: AbortSignal,
+    mode: 'next-turn' | 'next-step' = 'next-turn',
   ): Promise<MessageId> {
     try {
-      return this.submitAdmitted(activation, content, source, parent, signal)
+      return this.submitAdmitted(activation, content, source, parent, signal, mode)
     } catch (error: unknown) {
       /* v8 ignore next -- rollback disposal failures must not mask the
        * pre-acceptance signal, drain, or lifecycle failure. */
@@ -1185,22 +1187,22 @@ export class SubagentContinuationManager {
   }
 
   /**
-   * Submit one message as the child's next FIFO turn and return its accepted
-   * inbox id. Acceptance is the operation's success boundary; the manager owns
-   * the Activation independently afterwards.
+   * 将消息放入指定的 inbox 队列并返回已接受的 id；此后由管理器持有 Activation。
    */
   private submit(
     activation: Activation,
     content: ContentBlock[],
     source: MessageSource,
     parent: Agent,
+    mode: 'next-turn' | 'next-step',
   ): MessageId {
     // Parent-originated delivery keeps the parent live through ownership, so
     // establish it before the message can enter the child's inbox.
     this.acquireOwnership(parent, activation.childId)
     const message = createUserMessage({ content, source })
     const accepted = this.admitWaking(activation, message.id, () => {
-      activation.handle.agent.followup(message)
+      if (mode === 'next-step') activation.handle.agent.steer(message)
+      else activation.handle.agent.followup(message)
     })
     // Past this point the caller has an id for this child, so its eventual
     // settlement is something the parent is owed an account of.
@@ -1246,6 +1248,7 @@ export class SubagentContinuationManager {
     source: MessageSource,
     parent: Agent,
     signal: AbortSignal,
+    mode: 'next-turn' | 'next-step',
   ): MessageId {
     signal.throwIfAborted()
     this.assertAdmitting(parent)
@@ -1262,7 +1265,7 @@ export class SubagentContinuationManager {
       activation.childId,
       activation.handle.agent.session.header.parentSession,
     )
-    return this.submit(activation, content, source, parent)
+    return this.submit(activation, content, source, parent, mode)
   }
 
   /**

@@ -26,11 +26,11 @@ export function apply(ctx: Context): void {
   ctx.tools.register(defineTool({
     name: 'send_message',
     description:
-      'Send a message to a background subagent by its subagent id, continuing the same conversation. It '
-      + 'becomes the subagent\'s next turn: if it is still working, the message waits until its current turn '
-      + 'finishes, so it cannot redirect work already underway. This call returns no answer from the '
-      + 'subagent — only confirmation that the message was delivered — so use it to give it more work. A '
-      + 'failure means the message was NOT delivered.',
+      'Send a message to a background subagent by its subagent id. By default, deliver it at the next '
+      + 'step, so an agent still working can use it before its next model request; this cannot interrupt '
+      + 'an in-flight model request or tool call. Set mode to next-turn to defer it until the current turn '
+      + 'finishes. If the agent is idle, either mode wakes it. This call confirms acceptance, not that the '
+      + 'agent has read the message, and returns no answer. A failure means the message was NOT delivered.',
     parameters: {
       subagent_id: {
         type: 'string',
@@ -41,6 +41,11 @@ export function apply(ctx: Context): void {
         type: 'string',
         required: true,
         description: 'The message to deliver to the subagent.',
+      },
+      mode: {
+        type: 'string',
+        enum: ['next-step', 'next-turn'],
+        description: 'Delivery timing; defaults to next-step. Use next-turn to wait for the current turn to finish.',
       },
     },
     output: {
@@ -53,7 +58,7 @@ export function apply(ctx: Context): void {
       },
       render: (args, _value) => [{
         type: 'text',
-        text: `message queued as the next turn for subagent ${args.subagent_id}`,
+        text: `message accepted for ${args.mode ?? 'next-step'} delivery to subagent ${args.subagent_id}`,
       }],
     },
     async execute(args, exec) {
@@ -69,6 +74,7 @@ export function apply(ctx: Context): void {
         message,
         {
           source: { kind: 'coordinator', form: 'relay', senderSessionId: parent.id },
+          mode: args.mode ?? 'next-step',
           signal: exec.signal,
         },
       )

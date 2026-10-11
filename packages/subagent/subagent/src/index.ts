@@ -214,16 +214,13 @@ export class SubagentRuntime extends Service {
   }
 
   /**
-   * Deliver one later message to a continuable child as its next FIFO turn. A
-   * resident child's Agent inbox accepts it directly (waking a `waiting`
-   * Activation), while an absent one is cold-resumed from its persisted
-   * Session. The Agent inbox is the only queue, so every accepted message has
-   * one observable order.
+   * 向可继续子级投递消息。默认作为后续 FIFO 轮次；指定 `mode: 'next-step'`
+   * 可在活跃轮次的下一次模型请求前送达，不会打断正在执行的操作。
+   * 驻留子级直接接受，未驻留子级从持久化会话恢复。
    * @param parent - the exact live direct parent authorizing this delivery.
    * @param childId - durable child session id.
    * @param content - user-role content to deliver.
-   * @param options - the message source fields and caller cancellation, which stops the
-   *   operation only before inbox acceptance.
+   * @param options - 消息来源、可选投递模式及仅在接受前生效的取消信号。
    * @returns the accepted message's inbox id.
    * @throws when continuation services are unavailable, parent authority is
    *   rejected, or the message was not admitted.

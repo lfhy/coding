@@ -314,7 +314,10 @@ export class LlmRuntime extends Service {
     })
   }
 
-  /** 每个请求在首次异步操作前读取一次，进行中的请求保留自己的标头。 */
+  /**
+   * 每个请求在首次异步操作前读取一次，进行中的请求保留自己的标头。
+   * @returns 当前配置的 User-Agent，未配置时使用运行时默认值。
+   */
   getUserAgent(): string {
     return this.userAgentSource().userAgent ?? userAgent()
   }

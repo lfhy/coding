@@ -105,12 +105,10 @@ describe('dsh-tool-subagent-control', () => {
     const schemas = ctx.tools.schemas().filter(schema => schema.name === 'send_message')
     expect(schemas).toHaveLength(1)
     const props = (schemas[0]!.parameters as { properties?: Record<string, unknown> }).properties ?? {}
-    expect(Object.keys(props).sort()).toEqual(['message', 'subagent_id'])
-    // The continuable path has no Task, so the schema must not promise one.
-    expect(schemas[0]!.description).not.toContain('job_output')
-    expect(schemas[0]!.description).not.toContain('job id')
-    // Follow-up ordering is model-visible: it cannot redirect the open turn.
-    expect(schemas[0]!.description).toContain('next turn')
+    expect(Object.keys(props).sort()).toEqual(['message', 'mode', 'subagent_id'])
+    expect(schemas[0]!.description).toContain('next step')
+    expect(schemas[0]!.description).toContain('next-turn')
+    expect(schemas[0]!.description).toContain('in-flight')
   })
 
   it('cold-resumes a settled child and reports the queued next turn', async () => {
@@ -129,7 +127,7 @@ describe('dsh-tool-subagent-control', () => {
     }, parent)
 
     expect(result.isError).toBe(false)
-    expect(text(result)).toBe(`message queued as the next turn for subagent ${started.childId}`)
+    expect(text(result)).toBe(`message accepted for next-step delivery to subagent ${started.childId}`)
     await waitNoActivation(ctx, started.childId)
 
     const loaded = await ctx.sessionPersistence.load(started.childId)
@@ -155,8 +153,10 @@ describe('dsh-tool-subagent-control', () => {
     const result = await callTool(ctx, 'send_message', {
       subagent_id: started.childId,
       message: 'also consider Y',
+      mode: 'next-turn',
     }, parent)
     expect(result.isError).toBe(false)
+    expect(text(result)).toBe(`message accepted for next-turn delivery to subagent ${started.childId}`)
 
     await waitNoActivation(ctx, started.childId)
     const loaded = await ctx.sessionPersistence.load(started.childId)
@@ -165,6 +165,50 @@ describe('dsh-tool-subagent-control', () => {
       : [])
     // A follow-up is its own later turn, never steering inside the first one.
     expect(prompts).toEqual(['long work', 'also consider Y'])
+  })
+
+  it('defaults to steering the next step of an active turn without interrupting the current request', async () => {
+    const gate = Promise.withResolvers<undefined>()
+    const adapter = new GatedAdapter([
+      { chunks: textResponse('first'), gate: gate.promise },
+      { chunks: textResponse('second') },
+    ])
+    const { ctx, parent } = await setupWith(adapter)
+    const started = await ctx.subagents.startContinuable({
+      provider: 'spawn', label: 'long work',
+      request: { prompt: [{ type: 'text', text: 'long work' }], parent },
+      signal: testToolSignal,
+    })
+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
+    const child = ctx.agents.get(started.childId)!
+    const result = await callTool(ctx, 'send_message', {
+      subagent_id: started.childId, message: 'use begin/chunk/commit',
+    }, parent)
+    expect(result.isError).toBe(false)
+    expect(child.inbox.nextStep.map(message => message.content)).toEqual([
+      [{ type: 'text', text: 'use begin/chunk/commit' }],
+    ])
+    expect(child.inbox.nextTurn).toHaveLength(0)
+    expect(adapter.requests).toHaveLength(1)
+    gate.resolve(undefined)
+    await waitNoActivation(ctx, started.childId)
+    const loaded = await ctx.sessionPersistence.load(started.childId)
+    const turns = loaded.events.filter(event => event.type === 'turn/start')
+    expect(turns).toHaveLength(1)
+    const prompts = loaded.events.flatMap(event => event.type === 'user/message' && event.data.source.kind !== 'plugin'
+      ? event.data.content.flatMap(block => block.type === 'text' ? [block.text] : [])
+      : [])
+    expect(prompts).toEqual(['long work', 'use begin/chunk/commit'])
+    expect(adapter.requests).toHaveLength(2)
+  })
+
+  it('rejects an unsupported delivery mode without sending', async () => {
+    const { ctx, parent } = await setup([])
+    const result = await callTool(ctx, 'send_message', {
+      subagent_id: 'child', message: 'hello', mode: 'immediate',
+    }, parent)
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('mode')
   })
 
   it('reports a delivery failure as an errored, not-delivered result', async () => {
@@ -254,6 +298,7 @@ describe('dsh-tool-subagent-control interrupt_agent', () => {
     const queued = await callTool(ctx, 'send_message', {
       subagent_id: started.childId,
       message: 'parked follow-up',
+      mode: 'next-turn',
     }, parent)
     expect(queued.isError).toBe(false)
     const cancelSpy = vi.spyOn(child, 'cancel')
@@ -272,6 +317,7 @@ describe('dsh-tool-subagent-control interrupt_agent', () => {
     const waking = await callTool(ctx, 'send_message', {
       subagent_id: started.childId,
       message: 'wake up',
+      mode: 'next-turn',
     }, parent)
     expect(waking.isError).toBe(false)
     await waitNoActivation(ctx, started.childId)

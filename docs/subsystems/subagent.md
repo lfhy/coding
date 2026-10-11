@@ -133,11 +133,11 @@ persisted Session
 
 `running` 表示 Agent 拥有活跃的准入或轮次，或正在唤醒收件箱工作；`waiting` 表示它已完全停稳，但仍拥有至少一个尚未完成 dispose 的子 Activation；`settled` 表示已完全停稳且其拥有的每个子级都已 dispose，此时管理器会 dispose [`AgentHandle`](core.md#creation-and-ownership) 并移除该 Activation。管理器根据 Agent 的完全停稳状态与其拥有的子级集合推导这些内部条件，而非维护第二套执行状态机。
 
-Agent 收件箱是唯一的队列。每条继续执行消息都会成为一个 `Agent.followup()` FIFO 轮次，因此已接受的消息共享同一个可观测顺序，且后续消息无法改变已在进行中的轮次。投递成功会返回被接受的 `MessageId`；既有的 `agent/inbox/inserted`、`agent/inbox/claimed` 与 `agent/inbox/discarded` 事件仍是消息生命周期的观测点，继续执行层不定义任何 subagent 专属的投递路由。
+Agent 收件箱负责消息排序。服务 API 默认将继续执行消息交给 `Agent.followup()`，作为后续 FIFO 轮次；指定 `mode: 'next-step'` 时使用 `Agent.steer()`，让活跃子级在下一步骤读取消息，但不会打断已发出的模型请求或工具调用。面向模型的 `send_message` 工具默认指定 `next-step`，可显式选 `next-turn`。投递成功只表示收件箱已接受并返回 `MessageId`，不表示子级已读取；`agent/inbox/inserted`、`agent/inbox/claimed` 与 `agent/inbox/discarded` 是消息生命周期的观测点。
 
 后续操作的权限来自确切的在线 Agent 工具上下文。已认证的 Agent 必须是持久化子 agent 在 `SessionHeader.parentSession` 中记录的直接父级。`MessageSource` 与 `senderSessionId` 记录谁提供了已准入的消息，但不授予任何权限；可选的面向模型工具使用 `CoordinatorMessageSource`。
 
-对于这两种操作，调用方 signal 仅在收件箱接受之前掌管查找、物化与准入。此后管理器独立掌管该 Activation：之后的调用方取消既不会取消已接受的轮次，也不会 dispose 子 agent，并且该 seam 不对外暴露任何 steering（中途引导）操作。
+对于初始投递与后续投递，调用方 signal 仅在收件箱接受之前掌管查找、物化与准入。此后管理器独立掌管该 Activation：之后的调用方取消既不会取消已接受的消息，也不会 dispose 子 agent；`next-step` 仅改变消息被领取的时机，不会中断已经进行的操作。
 
 `SubagentRuntime.interrupt(targetSessionId, authority)` 是唯一的公开停止操作：它同步完成鉴权，对在线目标发出 `Agent.cancel(cause, { keepInbox: true })`，然后不等待完全停稳即返回。Activation、其尚未领取的待处理 inbox 工作与已发布的后代均不受影响；已被领取进入中断轮次的工作不会重新入队。被中断的 driver 进入 idle 后，一次唤醒发送会恢复被暂停的 FIFO 队列。不存在的目标——未知、一次性或已结算——以及未绑定管理器的组合是被接受的 no-op。对在线目标，错误的 parent 地址或不在其在线祖先链中的调用方会以 `UNAUTHORIZED` 拒绝；陈旧的 ancestor 对象和指向自身的 ancestor 请求会在查找目标前拒绝。
 
@@ -500,16 +500,13 @@ Named provider registry with one-shot runs, durable discovery, and continuable-c
 async startContinuable(spec: ContinuableStartSpec): Promise<ContinuableStart>
 
 /**
- * Deliver one later message to a continuable child as its next FIFO turn. A
- * resident child's Agent inbox accepts it directly (waking a `waiting`
- * Activation), while an absent one is cold-resumed from its persisted
- * Session. The Agent inbox is the only queue, so every accepted message has
- * one observable order.
+ * 向可继续子级投递消息。默认作为后续 FIFO 轮次；指定 `mode: 'next-step'`
+ * 可在活跃轮次的下一次模型请求前送达，不会打断正在执行的操作。
+ * 驻留子级直接接受，未驻留子级从持久化会话恢复。
  * @param parent - the exact live direct parent authorizing this delivery.
  * @param childId - durable child session id.
  * @param content - user-role content to deliver.
- * @param options - the message source fields and caller cancellation, which stops the
- *   operation only before inbox acceptance.
+ * @param options - 消息来源、可选投递模式及仅在接受前生效的取消信号。
  * @returns the accepted message's inbox id.
  * @throws when continuation services are unavailable, parent authority is
  *   rejected, or the message was not admitted.
