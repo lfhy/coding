@@ -29,6 +29,8 @@ import (
 type config struct {
 	home, cwd, repoRoot, runtimeRoot, hostVersion string
 	exclusiveDesktopInstance                      bool
+	// guiLaunch 由 Electron 主进程声明：本次由 launchd 启动，继承的 PATH 需要登录 shell 补全。
+	guiLaunch bool
 }
 
 type browserBridgeConfig struct{ origin, token string }
@@ -64,6 +66,7 @@ func parseConfig(args []string) (config, error) {
 	flags.StringVar(&cfg.runtimeRoot, "runtime-root", "", "packaged Resources directory")
 	flags.StringVar(&cfg.hostVersion, "host-version", "", "managed Host version")
 	flags.BoolVar(&cfg.exclusiveDesktopInstance, "exclusive-desktop-instance", false, "hold the installed desktop instance lock")
+	flags.BoolVar(&cfg.guiLaunch, "gui-launch", false, "Electron was started by launchd, so the Host needs the login shell PATH")
 	if err := flags.Parse(args); err != nil || len(flags.Args()) != 0 {
 		return config{}, errors.New("invalid helper arguments")
 	}
@@ -214,11 +217,7 @@ func run(args []string, stdin io.Reader, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	launcher, err := hostlaunch.New(hostlaunch.Options{
-		Home: cfg.home, CWD: cfg.cwd, Version: cfg.hostVersion, Command: command, RuntimeRoot: cfg.runtimeRoot,
-		ReplaceCompatibleHost: true,
-		Environment:           hostEnvironment(bridge.URL(), bridgeToken, agentsHome, browserBridge),
-	})
+	launcher, err := hostlaunch.New(hostLauncherOptions(cfg, command, hostEnvironment(bridge.URL(), bridgeToken, agentsHome, browserBridge)))
 	if err != nil {
 		return err
 	}
@@ -295,6 +294,18 @@ func prepareAgentsHome(home string) (string, error) {
 		}
 	}
 	return filepath.Join(home, "agents"), nil
+}
+
+// hostLauncherOptions 汇总 helper 交给启动器的 Host 描述。GuiLaunch 原样转发 Electron 主进程
+// 的判定：只有它是由 launchd 启动的那个进程，能区分 GUI 与终端启动，启动器据此决定是否用
+// 登录 shell 的 PATH 补全继承环境。
+func hostLauncherOptions(cfg config, command []string, environment map[string]string) hostlaunch.Options {
+	return hostlaunch.Options{
+		Home: cfg.home, CWD: cfg.cwd, Version: cfg.hostVersion, Command: command, RuntimeRoot: cfg.runtimeRoot,
+		ReplaceCompatibleHost: true,
+		Environment:           environment,
+		GuiLaunch:             cfg.guiLaunch,
+	}
 }
 
 func hostEnvironment(bridgeURL, bridgeToken, agentsHome string, browserBridge browserBridgeConfig) map[string]string {

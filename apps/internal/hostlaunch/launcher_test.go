@@ -396,36 +396,54 @@ func childEnvironmentValues(launcher *Launcher) map[string]string {
 	return values
 }
 
-func TestChildEnvironmentUsesGuiLoginShellPath(t *testing.T) {
-	stubGuiLoginShellPath(t, "/login-shell/bin:/usr/bin")
-	t.Setenv("PATH", "/usr/bin:/bin")
-	launcher, err := New(Options{Home: t.TempDir(), CWD: t.TempDir()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := childEnvironmentValues(launcher)["PATH"]; got != "/login-shell/bin:/usr/bin" {
-		t.Fatalf("PATH = %q, want the login shell PATH", got)
+// TestChildEnvironmentFollowsGuiLaunchMarker 逐格固定 GUI 启动标记与显式 PATH 的优先级：
+// 只有调用方声明 GUI 启动（桌面壳主进程判定）时才用登录 shell 的 PATH 替换继承值，显式
+// Options.Environment 的 PATH 始终优先，终端启动（未声明）保留继承的 PATH——即使探测本身
+// 能返回可用路径。
+func TestChildEnvironmentFollowsGuiLaunchMarker(t *testing.T) {
+	const probed = "/login-shell/bin:/usr/bin"
+	for _, testCase := range []struct {
+		name        string
+		guiLaunch   bool
+		environment map[string]string
+		inherited   string
+		want        string
+	}{
+		{name: "gui launch replaces inherited path", guiLaunch: true, inherited: "/usr/bin:/bin", want: probed},
+		{name: "terminal launch keeps inherited path", guiLaunch: false, inherited: "/usr/bin:/bin", want: "/usr/bin:/bin"},
+		{
+			name: "explicit path beats gui launch", guiLaunch: true, inherited: "/usr/bin:/bin",
+			environment: map[string]string{"PATH": "/caller/bin"}, want: "/caller/bin",
+		},
+		{
+			name: "explicit path beats terminal launch", guiLaunch: false, inherited: "/usr/bin:/bin",
+			environment: map[string]string{"PATH": "/caller/bin"}, want: "/caller/bin",
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			stubGuiLoginShellPath(t, probed)
+			t.Setenv("PATH", testCase.inherited)
+			launcher, err := New(Options{
+				Home: t.TempDir(), CWD: t.TempDir(),
+				GuiLaunch:   testCase.guiLaunch,
+				Environment: testCase.environment,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := childEnvironmentValues(launcher)["PATH"]; got != testCase.want {
+				t.Fatalf("PATH = %q, want %q", got, testCase.want)
+			}
+		})
 	}
 }
 
-func TestChildEnvironmentKeepsExplicitPathOverGuiLoginShellPath(t *testing.T) {
-	stubGuiLoginShellPath(t, "/login-shell/bin")
-	launcher, err := New(Options{
-		Home: t.TempDir(), CWD: t.TempDir(),
-		Environment: map[string]string{"PATH": "/caller/bin"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := childEnvironmentValues(launcher)["PATH"]; got != "/caller/bin" {
-		t.Fatalf("PATH = %q, want the explicit caller PATH", got)
-	}
-}
-
-func TestChildEnvironmentKeepsInheritedPathWithoutGuiLoginShellPath(t *testing.T) {
+// TestChildEnvironmentKeepsInheritedPathWithoutUsableLoginShell 覆盖 GUI 启动但探测不可用
+// 的回退：SHELL 缺失或探测失败时保留继承的 PATH，不写入空值。
+func TestChildEnvironmentKeepsInheritedPathWithoutUsableLoginShell(t *testing.T) {
 	stubGuiLoginShellPath(t, "")
 	t.Setenv("PATH", "/usr/bin:/bin")
-	launcher, err := New(Options{Home: t.TempDir(), CWD: t.TempDir()})
+	launcher, err := New(Options{Home: t.TempDir(), CWD: t.TempDir(), GuiLaunch: true})
 	if err != nil {
 		t.Fatal(err)
 	}

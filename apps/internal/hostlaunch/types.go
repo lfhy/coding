@@ -40,6 +40,11 @@ type Options struct {
 	// Environment 仅在本启动器创建 Host 进程时附加的环境变量。调用方用它把
 	// 窗口私有的本地 bridge 能力交给 Host；它不会写入 host.json。
 	Environment map[string]string
+	// GuiLaunch 表示调用方判定本次是 GUI 启动：继承的 PATH 来自 launchd 默认值，模型
+	// 执行的命令会找不到 Homebrew、Go 等用户目录，需要用登录 shell 的 PATH 补全后再
+	// 交给 Host。判据只能由真正由 launchd 启动的那个进程（桌面壳主进程）给出；从终端
+	// 启动时不设置，继承的 PATH 保持原值。
+	GuiLaunch bool
 	// ReplaceCompatibleHost 让 Ensure 在启动前停止已有兼容 Host。它只适用于
 	// Environment 含窗口私有、不可持久化的能力 token：附着旧进程会使 token
 	// 与当前 bridge 不匹配，必须由新进程继承当前环境。

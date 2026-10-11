@@ -36,11 +36,72 @@ func TestParseConfigRequiresExplicitIsolatedPaths(t *testing.T) {
 		{"packaged exclusive", []string{"--home", "/tmp/home", "--cwd", "/tmp/workspace", "--runtime-root", "/tmp/resources", "--host-version", "1.2.3", "--exclusive-desktop-instance"}, true},
 		{"development exclusive", []string{"--home", "/tmp/home", "--cwd", "/tmp/workspace", "--repo-root", "/tmp/source", "--host-version", "dev", "--exclusive-desktop-instance"}, false},
 		{"legacy exclusive flag", []string{"--home", "/tmp/home", "--cwd", "/tmp/workspace", "--runtime-root", "/tmp/resources", "--host-version", "1.2.3", "--exclusive-wails-instance"}, false},
+		{"packaged gui launch", []string{"--home", "/tmp/home", "--cwd", "/tmp/workspace", "--runtime-root", "/tmp/resources", "--host-version", "1.2.3", "--gui-launch"}, true},
+		{"invalid gui launch value", []string{"--home", "/tmp/home", "--cwd", "/tmp/workspace", "--runtime-root", "/tmp/resources", "--host-version", "1.2.3", "--gui-launch=maybe"}, false},
+		{"stray gui launch argument", []string{"--home", "/tmp/home", "--cwd", "/tmp/workspace", "--runtime-root", "/tmp/resources", "--host-version", "1.2.3", "--gui-launch", "yes"}, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			_, err := parseConfig(test.args)
 			if (err == nil) != test.valid {
 				t.Fatalf("parse valid = %v, error = %v", err == nil, err)
+			}
+		})
+	}
+}
+
+// TestParseConfigTracksGuiLaunchMarker 固定 Electron 主进程 → helper 的线协议：只有显式传入
+// `--gui-launch` 时配置才要求登录 shell 的 PATH 补全，终端启动默认不加。
+func TestParseConfigTracksGuiLaunchMarker(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		args []string
+		want bool
+	}{
+		{
+			name: "gui launch",
+			args: []string{"--home", "/tmp/home", "--cwd", "/tmp/workspace", "--runtime-root", "/tmp/resources", "--host-version", "1.2.3", "--gui-launch"},
+			want: true,
+		},
+		{
+			name: "terminal launch",
+			args: []string{"--home", "/tmp/home", "--cwd", "/tmp/workspace", "--repo-root", "/tmp/source", "--host-version", "dev"},
+			want: false,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cfg, err := parseConfig(test.args)
+			if err != nil {
+				t.Fatalf("parseConfig() error = %v", err)
+			}
+			if cfg.guiLaunch != test.want {
+				t.Fatalf("guiLaunch = %v, want %v", cfg.guiLaunch, test.want)
+			}
+		})
+	}
+}
+
+// TestHostLauncherOptionsForwardGuiLaunch 固定 helper → 启动器的边界：GUI 启动标记与其他 Host
+// 描述一起进入 hostlaunch，启动器据此替换继承的 PATH。
+func TestHostLauncherOptionsForwardGuiLaunch(t *testing.T) {
+	environment := map[string]string{"DSH_REMOTE_BRIDGE_URL": "http://127.0.0.1:1234"}
+	for _, test := range []struct {
+		name string
+		cfg  config
+		want bool
+	}{
+		{name: "gui launch", cfg: config{home: "/tmp/home", cwd: "/tmp/workspace", hostVersion: "dev", guiLaunch: true}, want: true},
+		{name: "terminal launch", cfg: config{home: "/tmp/home", cwd: "/tmp/workspace", hostVersion: "dev"}, want: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			options := hostLauncherOptions(test.cfg, []string{"node", "bin.js", "web", "--coding-host"}, environment)
+			if options.GuiLaunch != test.want {
+				t.Fatalf("GuiLaunch = %v, want %v", options.GuiLaunch, test.want)
+			}
+			if options.Home != test.cfg.home || options.CWD != test.cfg.cwd || options.Version != test.cfg.hostVersion {
+				t.Fatal("Host description changed")
+			}
+			if !options.ReplaceCompatibleHost || options.Environment["DSH_REMOTE_BRIDGE_URL"] != environment["DSH_REMOTE_BRIDGE_URL"] {
+				t.Fatal("Host environment or replacement policy changed")
 			}
 		})
 	}

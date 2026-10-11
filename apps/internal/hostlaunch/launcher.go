@@ -320,10 +320,13 @@ func (l *Launcher) childEnvironment() []string {
 		}
 	}
 	// macOS GUI 启动继承的 launchd PATH 只有系统目录，模型执行的命令会找不到
-	// Homebrew、nvm、Go 等用户目录，因此 GUI 启动时改用登录 shell 的 PATH；调用方
-	// 通过 Options.Environment 显式传入的 PATH 仍然优先。
-	if path := guiLoginShellPath(); path != "" {
-		values[environmentKey("PATH")] = variable{key: "PATH", value: path}
+	// Homebrew、nvm、Go 等用户目录，因此调用方声明 GUI 启动时改用登录 shell 的 PATH
+	// （判据由调用方给出，见 Options.GuiLaunch）；调用方通过 Options.Environment 显式
+	// 传入的 PATH 仍然优先。
+	if l.options.GuiLaunch {
+		if path := guiLoginShellPath(); path != "" {
+			values[environmentKey("PATH")] = variable{key: "PATH", value: path}
+		}
 	}
 	for key, value := range l.options.Environment {
 		values[environmentKey(key)] = variable{key: key, value: value}

@@ -22,14 +22,12 @@ const (
 	loginShellPathMarker = "__DSH_LOGIN_SHELL_PATH__"
 )
 
-// resolveGuiLoginShellPath 在 macOS GUI 启动（本进程由 launchd 直接启动）时返回
-// 登录 shell 的 PATH。GUI 启动继承的 launchd 默认 PATH 只有系统目录，模型执行的
-// 命令找不到 Homebrew、nvm、Go 等用户目录；从终端启动时继承的 PATH 已经来自用户
-// shell，保持原值。SHELL 缺失或探测失败时返回空字符串，调用方保留继承的 PATH。
+// resolveGuiLoginShellPath 返回交互式登录 shell 的 PATH，供调用方在 GUI 启动时替换继承
+// 环境。判据不由本函数推断：launchd 的子进程是桌面壳主进程，启动器是它的子进程，在启动器
+// 里观察父进程永远得不出结论，因此由桌面壳显式声明（Options.GuiLaunch）。展开出的 PATH 与
+// 用户终端一致：交互模式让 .zshrc 一类用户配置生效，登录模式让 /etc/zprofile 与 path_helper
+// 目录生效。SHELL 缺失、探测失败或超时返回空字符串，调用方保留继承的 PATH。
 func resolveGuiLoginShellPath() string {
-	if os.Getppid() != 1 {
-		return ""
-	}
 	shell := strings.TrimSpace(os.Getenv("SHELL"))
 	if shell == "" {
 		return ""

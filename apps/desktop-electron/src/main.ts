@@ -16,7 +16,7 @@ import { prepareDevelopmentDirectories } from './directories.ts'
 import { launchHelper, type HelperClient } from './helper-client.ts'
 import { createNativeChrome, type NativeChrome } from './native-chrome.ts'
 import { installRemoteIpc } from './remote-ipc.ts'
-import { resolveRuntimeConfig, type RuntimeConfig } from './runtime-config.ts'
+import { isGuiLaunch, resolveRuntimeConfig, type RuntimeConfig } from './runtime-config.ts'
 import { createHostWindow } from './window.ts'
 
 const repositoryRoot = resolve(fileURLToPath(new URL('../../..', import.meta.url)))
@@ -180,6 +180,7 @@ async function start(): Promise<void> {
     resourcesPath: process.resourcesPath,
     repoRoot: repositoryRoot,
     environment: process.env,
+    guiLaunch: isGuiLaunch(process.ppid),
   })
   if (app.isPackaged) {
     await mkdir(runtimeConfig.userData, { recursive: true, mode: 0o700 })

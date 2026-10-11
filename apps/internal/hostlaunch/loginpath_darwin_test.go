@@ -87,3 +87,30 @@ func TestProbeEnvironmentOmitsSecretsAndDshNames(t *testing.T) {
 		t.Fatalf("probeLoginShellPath() = %q, want scrubbed environment with PATH kept", got)
 	}
 }
+
+// TestResolveGuiLoginShellPathReadsLoginShell 固定探测语义：判据（本次是否 GUI 启动）由
+// 调用方声明，因此这里只验证 $SHELL 能决定探测结果、缺失或不可用时回退。是否使用该结果由
+// launcher_test.go 的 Options.GuiLaunch 用例覆盖。
+func TestResolveGuiLoginShellPathReadsLoginShell(t *testing.T) {
+	t.Run("interactive login shell result", func(t *testing.T) {
+		shell := writeProbeShell(t, fmt.Sprintf("printf '\\n%s/login-shell/bin:/usr/bin\\n'\n", loginShellPathMarker))
+		t.Setenv("SHELL", shell)
+		if got := resolveGuiLoginShellPath(); got != "/login-shell/bin:/usr/bin" {
+			t.Fatalf("resolveGuiLoginShellPath() = %q, want the probed PATH", got)
+		}
+	})
+	for _, testCase := range []struct {
+		name  string
+		shell string
+	}{
+		{name: "blank shell", shell: "  "},
+		{name: "absent shell", shell: filepath.Join(t.TempDir(), "absent-shell")},
+	} {
+		t.Run(testCase.name+" keeps the inherited path", func(t *testing.T) {
+			t.Setenv("SHELL", testCase.shell)
+			if got := resolveGuiLoginShellPath(); got != "" {
+				t.Fatalf("resolveGuiLoginShellPath() = %q, want empty", got)
+			}
+		})
+	}
+}

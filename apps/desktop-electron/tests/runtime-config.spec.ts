@@ -2,7 +2,7 @@ import { lstat, mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { resolveRuntimeConfig, type RuntimeConfigOptions } from '../src/runtime-config.ts'
+import { isGuiLaunch, resolveRuntimeConfig, type RuntimeConfigOptions } from '../src/runtime-config.ts'
 
 const fixtures: string[] = []
 
@@ -35,6 +35,7 @@ async function fixture(): Promise<RuntimeConfigOptions> {
   ])
   return {
     packaged: false, userHome, repoRoot, resourcesPath, platform: 'darwin', arch: 'arm64',
+    guiLaunch: false,
     environment: {
       PATH: '/bin', DEEPSEEK_API_KEY: 'local-key', DEEPSEEK_BASE_URL: 'https://example.test',
       DSH_REMOTE_BRIDGE_URL: 'old-origin', DSH_REMOTE_BRIDGE_TOKEN: 'old-token',
@@ -168,5 +169,26 @@ describe('Electron runtime configuration', () => {
     await symlink(join(options.userHome, '.dsh'), join(options.userHome, '.dsh-electron-dev'))
     await expect(resolveRuntimeConfig(options)).rejects.toThrow('symbolic link')
     await expect(resolveRuntimeConfig({ ...options, repoRoot: 'relative/repository' })).rejects.toThrow('absolute path')
+  })
+
+  it('只有 launchd 启动的主进程才判定为 GUI 启动', () => {
+    expect(isGuiLaunch(1)).toBe(true)
+    expect(isGuiLaunch(process.pid)).toBe(false)
+  })
+
+  it('GUI 启动给 helper 追加 --gui-launch，终端启动保持参数不变', async () => {
+    const options = await fixture()
+    expect((await resolveRuntimeConfig(options)).helper.args).not.toContain('--gui-launch')
+    expect((await resolveRuntimeConfig({ ...options, guiLaunch: true })).helper.args).toEqual([
+      '--home', join(options.userHome, '.dsh-electron-dev'),
+      '--cwd', join(options.userHome, '.dsh-electron-dev', 'workspace'),
+      '--host-version', 'dev', '--repo-root', options.repoRoot, '--gui-launch',
+    ])
+    const packaged = { ...options, packaged: true, guiLaunch: true }
+    expect((await resolveRuntimeConfig(packaged)).helper.args).toEqual([
+      '--home', join(options.userHome, '.dsh'), '--cwd', options.userHome,
+      '--host-version', '0.1.0-rc.8',
+      '--runtime-root', options.resourcesPath, '--exclusive-desktop-instance', '--gui-launch',
+    ])
   })
 })

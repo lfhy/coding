@@ -9,8 +9,23 @@ export interface RuntimeConfigOptions {
   resourcesPath: string
   repoRoot: string
   environment: NodeJS.ProcessEnv
+  /** 主进程判定本次是 GUI 启动；为 true 时 helper 会用登录 shell 的 PATH 补全 Host 环境。 */
+  guiLaunch: boolean
   platform?: NodeJS.Platform
   arch?: string
+}
+
+/**
+ * 报告 Electron 主进程是否由 launchd 启动（Finder、Dock 或 LaunchServices）：只有这种启动
+ * 继承的 PATH 是 launchd 默认值，模型执行的命令会找不到 Homebrew、Go 等用户目录，需要
+ * helper 用交互式登录 shell 的 PATH 补全；从终端启动时父进程是用户 shell，继承的 PATH 已经
+ * 正确，保持原值。判据必须在主进程求值：launchd 的子进程是主进程，Go helper 只是主进程的
+ * 子进程，在 Go 启动器里观察父进程永远得不出结论。
+ * @param ppid - 主进程的父进程 id（生产代码传 `process.ppid`）。
+ * @returns 本次启动是否需要登录 shell 的 PATH 补全。
+ */
+export function isGuiLaunch(ppid: number): boolean {
+  return ppid === 1
 }
 
 /** 供主进程设置 userData 和启动 Go helper 的配置，不负责创建目录。 */
@@ -120,7 +135,8 @@ export async function resolveRuntimeConfig(options: RuntimeConfigOptions): Promi
       helper: {
         executable,
         args: ['--home', home, '--cwd', cwd, '--host-version', version,
-          '--runtime-root', resourcesPath, '--exclusive-desktop-instance'],
+          '--runtime-root', resourcesPath, '--exclusive-desktop-instance',
+          ...options.guiLaunch ? ['--gui-launch'] : []],
         cwd, env,
       },
     }
@@ -139,7 +155,8 @@ export async function resolveRuntimeConfig(options: RuntimeConfigOptions): Promi
     home, cwd, userData, iconPath, version: 'dev',
     helper: {
       executable,
-      args: ['--home', home, '--cwd', cwd, '--host-version', 'dev', '--repo-root', repoRoot],
+      args: ['--home', home, '--cwd', cwd, '--host-version', 'dev', '--repo-root', repoRoot,
+        ...options.guiLaunch ? ['--gui-launch'] : []],
       cwd: repoRoot, env,
     },
   }
