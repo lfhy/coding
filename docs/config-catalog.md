@@ -961,7 +961,7 @@ Requires: `llm`
  * 插件配置也作为 `llm-deepseek` settings 分节的结构，所有字段在 yml 中均可省略。
  * 缺少密钥时，每次请求会通过 {@link Config.apiKeyEnv} 查找，仍未找到才以
  * `MISSING_CREDENTIAL` 失败；省略 thinking 使用提供方默认值，省略推理强度
- * 则使用 `high`。渠道目录使用有效设置中的名称，不改变提供方路由。
+ * 则采用所选模型支持的最高档位。渠道目录使用有效设置中的名称，不改变提供方路由。
  */
 export interface Config {
   /** 单一渠道的显示名称，默认 `DeepSeek`，最多 64 个字符；不用于路由、凭据引用或模型请求。 */
@@ -972,7 +972,7 @@ export interface Config {
   baseURL?: string
   /** Deployment thinking policy; `disabled` limits every conversation request to `off`. */
   thinking?: 'enabled' | 'disabled'
-  /** Default thinking effort (default `high`); `off` disables thinking per request. */
+  /** 默认思考档位；省略时使用所选模型支持的最高档位；`off` 关闭思考。 */
   reasoningEffort?: 'off' | 'low' | 'high' | 'max'
   /** Default per-request output cap (default 256,000); a model's own cap and explicit request values win. */
   maxTokens?: number

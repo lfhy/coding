@@ -152,23 +152,30 @@ function resolveReasoningLevel(
  * `off` selected. Omitting `reasoning` entirely is the seam's way of saying the
  * capability is unavailable, which leaves the surface offering only the
  * provider's default.
+ *
+ * With no deployment default configured, the default is the model's HIGHEST
+ * offered level. A configured level that this model cannot support still
+ * describes as no default and fails only when that route is used.
  * @param model - the resolved model descriptor.
- * @param defaultLevel - the profile's configured effort, already validated.
+ * @param defaultLevel - the profile's configured effort when this model supports it.
+ * @param configuredLevel - the profile's raw configured effort; unsupported values leave the descriptor without a default.
  * @returns the `reasoning` field, or an empty object when none can be offered.
  */
 function reasoningInfo(
   model: Model<Api>,
   defaultLevel: ModelThinkingLevel | undefined,
+  configuredLevel: ModelThinkingLevel | undefined,
 ): Pick<LlmResolvedModelInfo, 'reasoning'> | Record<string, never> {
   if (!model.reasoning) return {}
   const levels = getSupportedThinkingLevels(model)
+  const defaultEffort = defaultLevel ?? (configuredLevel === undefined ? levels.at(-1) : undefined)
   return {
     reasoning: {
       efforts: levels.map(level => ({
         id: ReasoningEffortId(level),
         name: `${level.charAt(0).toUpperCase()}${level.slice(1)}`,
       })),
-      ...defaultLevel === undefined ? {} : { defaultEffort: ReasoningEffortId(defaultLevel) },
+      ...defaultEffort === undefined ? {} : { defaultEffort: ReasoningEffortId(defaultEffort) },
     },
   }
 }
@@ -273,7 +280,7 @@ export class PiAiAdapter extends LlmAdapter {
         inputModalities: [...resolvedModel.input],
         context: { contextWindow: resolvedModel.contextWindow },
         ...configuredMaxTokens === undefined ? {} : { defaultMaxTokens: configuredMaxTokens },
-        ...reasoningInfo(resolvedModel, defaultLevel),
+        ...reasoningInfo(resolvedModel, defaultLevel, profile.reasoning),
       }
     })
   }
@@ -292,7 +299,7 @@ export class PiAiAdapter extends LlmAdapter {
     const model = this.modelOf(snapshot, options.provider, options.model)
     const reasoning = resolveReasoningLevel(
       model,
-      options.reasoningEffort ?? profile.reasoning,
+      options.reasoningEffort ?? profile.reasoning ?? (model.reasoning ? getSupportedThinkingLevels(model).at(-1) : undefined),
     )
     const apiKey = await this.config.resolveApiKey(options.provider, profile)
 

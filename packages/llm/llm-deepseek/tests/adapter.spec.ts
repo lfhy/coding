@@ -94,7 +94,7 @@ describe('DeepSeekAdapter against a mock server', () => {
     expect(server.requests[0]).toMatchObject({
       model: 'deepseek-v4-flash',
       max_tokens: 256_000,
-      reasoning_effort: 'high',
+      reasoning_effort: 'max',
       stream: true,
       stream_options: { include_usage: true },
     })
@@ -795,14 +795,24 @@ describe('plugin registration and config', () => {
             { id: ReasoningEffortId('high'), name: 'High' },
             { id: ReasoningEffortId('max'), name: 'Max' },
           ],
-          defaultEffort: ReasoningEffortId('high'),
+          defaultEffort: ReasoningEffortId('max'),
         },
       })
   })
 
+  it('chooses the highest offered effort for a constrained model when no default is configured', async () => {
+    const server = await mockServer([{ kind: 'sse', events: textEvents }])
+    const ctx = await harness(server.url, { models: [{ id: 'low-only', reasoningEfforts: ['off', 'low'] }] })
+    await expect(ctx.llm.resolveModelInfo('deepseek-official', 'low-only')).resolves.toMatchObject({
+      reasoning: { defaultEffort: ReasoningEffortId('low') },
+    })
+    await assemble(ctx, { model: 'low-only', messages: [] })
+    expect(server.requests[0]).toMatchObject({ model: 'low-only', reasoning_effort: 'low' })
+  })
+
   it('serializes the first supported model effort when the profile default is unavailable', async () => {
     const server = await mockServer([{ kind: 'sse', events: textEvents }])
-    const ctx = await harness(server.url, { models: [{ id: 'off-only', reasoningEfforts: ['off'] }] })
+    const ctx = await harness(server.url, { reasoningEffort: 'high', models: [{ id: 'off-only', reasoningEfforts: ['off'] }] })
     await assemble(ctx, { model: 'off-only', messages: [] })
     expect(server.requests[0]).toMatchObject({ model: 'off-only', thinking: { type: 'disabled' } })
     expect(server.requests[0]).not.toHaveProperty('reasoning_effort')

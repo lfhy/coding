@@ -206,7 +206,9 @@ export class DeepSeekAdapter extends LlmAdapter {
     const efforts = modelReasoningEfforts(configured, connection.defaults.thinking)
     const requestedDefault = connection.defaults.thinking === 'disabled'
       ? OFF_REASONING_EFFORT
-      : ReasoningEffortId(connection.defaults.reasoningEffort ?? 'high')
+      : connection.defaults.reasoningEffort === undefined
+        ? efforts.at(-1)?.id
+        : ReasoningEffortId(connection.defaults.reasoningEffort)
     const contextWindow = configured?.contextWindow
       ?? connection.defaultContextWindow
     return Promise.resolve({
@@ -228,10 +230,13 @@ export class DeepSeekAdapter extends LlmAdapter {
     const connection = this.config.options()
     const model = connection.models.find(entry => entry.id === options.model)
     const availableEfforts = modelReasoningEfforts(model, connection.defaults.thinking)
-    const defaultEffort = (availableEfforts.find(entry => entry.id === (connection.defaults.reasoningEffort ?? 'high'))
-      ?? availableEfforts.at(0) ?? REASONING_EFFORTS[0]).id as NonNullable<RequestDefaults['reasoningEffort']>
+    const defaultEffort = (connection.defaults.reasoningEffort === undefined
+      ? availableEfforts.at(-1)
+      : availableEfforts.find(entry => entry.id === connection.defaults.reasoningEffort))
+      ?? availableEfforts.at(0) ?? REASONING_EFFORTS[0]
+    const effectiveDefault = defaultEffort.id as NonNullable<RequestDefaults['reasoningEffort']>
     if (options.purpose !== 'session-title' && model?.reasoningEfforts !== undefined) {
-      const effort = options.reasoningEffort ?? defaultEffort
+      const effort = options.reasoningEffort ?? effectiveDefault
       if (!availableEfforts.some(entry => entry.id === effort)) {
         throw new LlmError(`DeepSeek model "${options.model}" does not support reasoning effort "${effort}"`, 'UNSUPPORTED_REASONING_EFFORT')
       }
@@ -265,7 +270,7 @@ export class DeepSeekAdapter extends LlmAdapter {
       watchdog.signal,
       model?.reasoningEfforts === undefined ? connection : {
         ...connection,
-        defaults: { ...connection.defaults, reasoningEffort: defaultEffort },
+        defaults: { ...connection.defaults, reasoningEffort: effectiveDefault },
       },
       apiKey,
       userId,

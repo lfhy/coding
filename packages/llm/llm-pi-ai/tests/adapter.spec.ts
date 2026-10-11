@@ -412,7 +412,7 @@ describe('provider profile lifecycle', () => {
     expect(typeof info.context?.contextWindow).toBe('number')
   })
 
-  it('exposes pi-ai model thinking levels verbatim without inventing a provider default', async () => {
+  it('uses the highest supported model effort when the profile has no default', async () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(LlmPiAi, {
@@ -427,6 +427,7 @@ describe('provider profile lifecycle', () => {
             { id: ReasoningEffortId('high'), name: 'High' },
             { id: ReasoningEffortId('max'), name: 'Max' },
           ],
+          defaultEffort: ReasoningEffortId('max'),
         },
       })
     const extended = await ctx.llm.resolveModelInfo('openai', 'gpt-5.6-sol')
@@ -438,6 +439,7 @@ describe('provider profile lifecycle', () => {
       ReasoningEffortId('xhigh'),
       ReasoningEffortId('max'),
     ])
+    expect(extended.reasoning?.defaultEffort).toBe(ReasoningEffortId('max'))
     // A catalog model without reasoning is the same case as a hand-declared
     // one: pi-ai reports the single level `off`, which translates to omitting
     // the reasoning option — exactly what naming no effort already does. The
