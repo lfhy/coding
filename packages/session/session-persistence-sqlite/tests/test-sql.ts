@@ -19,6 +19,7 @@ export type TestSqlName =
   | 'select-last-event'
   | 'select-event-rowids'
   | 'select-event-rows'
+  | 'select-session-id'
   | 'select-user-version'
   | 'set-application-id-12345'
   | 'set-user-version-15'
