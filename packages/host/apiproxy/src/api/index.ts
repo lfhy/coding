@@ -5,6 +5,7 @@
  */
 
 import type { SessionsApi } from './sessions.ts'
+import type { SideChatApi } from './side-chat.ts'
 import type { HostApi } from './host.ts'
 import type { WorkspaceApi } from './workspace.ts'
 import type { AgentPresetsApi } from './agent-presets.ts'
@@ -22,6 +23,7 @@ import type { ClientResponse, RpcReceipt } from './rpc.ts'
 /** Root interface of the unified API. New client-request domain = one new file pair + one field here + one map row. */
 export interface ApiProxy {
   sessions: SessionsApi
+  sideChat: SideChatApi
   subagents: SubagentsApi
   host: HostApi
   workspace: WorkspaceApi
@@ -49,6 +51,8 @@ export type {
   ModelReasoningEffort, ModelSelection, PromptContentPart, QueueAction, SessionModels,
   SessionListMetadata, SessionProjectionsBlock, SessionSearchItem, SessionsApi, SessionSummary,
 } from './sessions.ts'
+export type { SideChatApi, SideChatInteraction, SideChatState } from './side-chat.ts'
+export { SIDE_CHAT_STATE_MAX_BYTES, SIDE_CHAT_STATE_PAGE_EVENTS } from './side-chat.ts'
 export type { DirectoryEntry, DirectoryListing, HostApi } from './host.ts'
 export type {
   SubagentAddress, SubagentCatalog, SubagentInterruptReceipt, SubagentListEntry,

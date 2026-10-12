@@ -1092,6 +1092,18 @@ describe('Session', () => {
 
 
 describe('SessionStore', () => {
+  it('sets transient before announcing without adding it to the durable header', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    let seen: Session | undefined
+    ctx.on('session/created', (session) => { seen = session })
+    const session = ctx.sessions.create(SessionId('side-chat'), { transient: true })
+    expect(session.transient).toBe(true)
+    expect(seen?.transient).toBe(true)
+    expect('transient' in session.header).toBe(false)
+    expect(ctx.sessions.get(session.id)).toBe(session)
+  })
+
   it('creates sessions, emits session/created and session/event', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)

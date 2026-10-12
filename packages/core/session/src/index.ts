@@ -427,6 +427,9 @@ export class Session {
   /** Single incremental owner of surface acceptance and projection state. */
   private readonly surfaceManager = new SurfaceManager(this.log)
 
+  /** 会话创建时确定的进程内属性；不属于可序列化 SessionHeader。 */
+  readonly transient: boolean
+
   /** The ordered surface over this session's event log. */
   get surface(): SessionSurface {
     return this.surfaceManager
@@ -477,10 +480,11 @@ export class Session {
    * @param id - session identity.
    * @param seed - optional borrowed replay or fork events.
    * @param header - optional borrowed storage metadata.
+   * @param transient - process-local session marker; never part of the durable header.
    * @returns a detached session.
    */
-  static create(id: SessionId, seed?: readonly SessionEvent[], header?: SessionHeader): Session {
-    return new Session(id, seed, header)
+  static create(id: SessionId, seed?: readonly SessionEvent[], header?: SessionHeader, transient = false): Session {
+    return new Session(id, seed, header, 'snapshot', transient)
   }
 
   /**
@@ -501,7 +505,9 @@ export class Session {
     seed?: readonly SessionEvent[],
     header?: SessionHeader,
     mode: 'snapshot' | 'restore' = 'snapshot',
+    transient = false,
   ) {
+    this.transient = transient
     const restoredHeader = mode === 'restore'
       ? validateRestoredSessionHeader(id, header)
       : undefined
@@ -885,7 +891,7 @@ export class SessionStore extends Service {
       ...meta?.delegationDepth === undefined ? {} : { delegationDepth: meta.delegationDepth },
       ...meta?.agentPreset === undefined ? {} : { agentPreset: meta.agentPreset },
     }
-    return Session.create(sessionId, seed, header)
+    return Session.create(sessionId, seed, header, options?.transient === true)
   }
 
   /**

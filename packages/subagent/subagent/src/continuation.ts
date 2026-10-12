@@ -412,6 +412,12 @@ export class SubagentContinuationManager {
     const request = spec.request
     const parent = request.parent
     this.assertAdmitting(parent)
+    if (parent.session.transient) {
+      throw new SubagentError(
+        'continuable subagents cannot persist a child of a transient session; use a one-shot subagent instead',
+        'CONTINUATION_UNAVAILABLE',
+      )
+    }
     const persistence = this.requirePersistence()
     assertSubagentMaxDepth(request.maxDepth)
     const childId = spec.childId ?? SessionId(randomUUID())

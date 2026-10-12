@@ -228,6 +228,7 @@ async function prepareListing(
   const corpus = new Map<SessionId, CorpusRecord>()
   for (const header of persistedHeaders) corpus.set(header.id, { header, live: undefined })
   for (const session of sessions.list()) {
+    if (session.transient) continue
     corpus.set(session.header.id, { header: session.header, live: session })
   }
   const subagentParents = new Set<SessionId>()

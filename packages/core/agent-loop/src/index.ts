@@ -607,6 +607,7 @@ export class AgentLoop extends Service implements AgentFactory {
     const preparation = SessionPreparation.create(this.runtime.ctx.sessions.prepare(options.sessionId, {
       ...options.seed === undefined ? {} : { seed: options.seed },
       ...options.meta === undefined ? {} : { meta: options.meta },
+      ...options.transient === undefined ? {} : { transient: options.transient },
     }))
     const published = this.setupAndPublish(
       ownerCtx,

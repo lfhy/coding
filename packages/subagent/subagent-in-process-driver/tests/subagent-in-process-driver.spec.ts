@@ -54,6 +54,25 @@ function text(blocks: readonly { type: string; text?: string }[]): string {
 }
 
 describe('startInProcessRun', () => {
+  it('inherits transient status into a one-shot child without durable persistence', async () => {
+    const { ctx } = await setup([textResponse('private child answer')])
+    const parent = await ctx.agents.create({
+      sessionId: SessionId('private-parent'), transient: true,
+      agentOptions: { provider: 'mock', model: 'mock' },
+    })
+    try {
+      const run = await startInProcessRun(request(parent.agent), {})
+      const child = ctx.agents.get(run.id)
+      expect(child?.session.transient).toBe(true)
+      await expect(run.result).resolves.toMatchObject({ stopReason: 'completed' })
+      await run.dispose()
+      expect(ctx.sessions.get(run.id)).toBeUndefined()
+    } finally {
+      await parent.dispose()
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('returns only after publication, drives a fresh child, and disposes it', async () => {
     const { ctx, parent } = await setup([textResponse('driver answer')])
     const run = await startInProcessRun(request(parent), {})

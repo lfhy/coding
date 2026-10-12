@@ -88,6 +88,14 @@ function appendTurn(session: Session): void {
 }
 
 describe('SessionTelemetryCoordinator capture', () => {
+  it('never exports a transient session, including through the restart sweep and on-demand capture', async () => {
+    const { ctx, backend, coordinator } = await setup()
+    const transient = ctx.sessions.create(SessionId('transient-telemetry'), { transient: true })
+    appendTurn(transient)
+    coordinator.captureSession(transient)
+    expect(backend.records).toEqual([])
+  })
+
   it('hands every appended event over with envelope identity and cloned body', async () => {
     const { ctx, backend } = await setup()
     const session = liveSession(ctx, 'cap')

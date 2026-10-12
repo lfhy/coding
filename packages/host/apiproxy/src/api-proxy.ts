@@ -9,15 +9,15 @@ import { homedir } from 'node:os'
 import { dirname } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
-import type { Agent, ModelSelection, ModelSelectionRef, AgentOptions, AgentStatus } from '@deepseek-ai/dsh-agent'
+import type { Agent, AgentHandle, ModelSelection, ModelSelectionRef, AgentOptions, AgentStatus } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-presets/types'
 import { AttachmentError, admitEncodedImages } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { contentHasImage, createUserMessage, freezeMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { errorChain } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, MessageSource } from '@deepseek-ai/dsh-llm'
-import { isAppendSurfaceEvent, isJsonValue } from '@deepseek-ai/dsh-session'
-import type { JsonValue, Session, SessionEvent, SessionEventMap, SessionHeader, SessionId, UserMessage } from '@deepseek-ai/dsh-session'
+import { isAppendSurfaceEvent, isJsonValue, SessionId } from '@deepseek-ai/dsh-session'
+import type { JsonValue, Session, SessionEvent, SessionEventMap, SessionHeader, UserMessage } from '@deepseek-ai/dsh-session'
 import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
 import { SessionQueryError, type SessionSearchCursor } from '@deepseek-ai/dsh-session-query'
 import { SubagentError } from '@deepseek-ai/dsh-subagent'
@@ -43,6 +43,7 @@ import type {
   WorkspaceId, WorkspaceView,
 } from './api/index.ts'
 import { MANAGED_HOST_RECORD_TOKEN_ENV } from './api/host.ts'
+import { SIDE_CHAT_STATE_MAX_BYTES, SIDE_CHAT_STATE_PAGE_EVENTS } from './api/side-chat.ts'
 import {
   DEFAULT_SESSION_LOG_COMPRESSION_LEVEL,
   flushLiveSessionLog,
@@ -638,6 +639,8 @@ interface ToolCallData { callId: string; name: string; arguments: string }
 interface PendingApproval {
   rpcId: RpcId
   sessionId: SessionId
+  /** 该等待属于临时侧聊时存在；此时不进入 mux，只由 sideChat.state 暴露。 */
+  transient?: true
   approvalId: ApprovalRequestId
   toolName: string
   callId?: CallId
@@ -664,6 +667,7 @@ function requestedFrame(pending: PendingApproval): RpcRequest<MuxFrame> {
 interface PendingQuestion {
   rpcId: RpcId
   sessionId: SessionId
+  transient?: true
   questions: AskUserQuestionItem[]
   resolve: (answer: AskUserQuestionAnswer) => void
   reject: (error: UserQuestionError) => void
@@ -1082,6 +1086,58 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
    * not enforcement: the wire is reachable directly.
    */
   const presetSwitches = new Map<SessionId, Promise<unknown>>()
+  /** Host 独占的侧聊句柄；关闭和插件卸载都汇合到同一次停稳清理。 */
+  const sideChats = new Map<SessionId, AgentHandle>()
+  const closingSideChats = new Map<SessionId, Promise<void>>()
+  const sideChatDeadlines = new Map<SessionId, ReturnType<typeof setTimeout>>()
+  const sideChatIdleTimeoutMs = 30_000
+  const sideChatTouch = (id: SessionId): void => {
+    const previous = sideChatDeadlines.get(id)
+    if (previous !== undefined) clearTimeout(previous)
+    const timer = setTimeout(() => {
+      void closeSideChat(id).catch((error: unknown) => {
+        ctx.logger.warn(`side chat "${id}" disconnected cleanup failed: ${String(error)}`)
+      })
+    }, sideChatIdleTimeoutMs)
+    timer.unref()
+    sideChatDeadlines.set(id, timer)
+  }
+  ctx.effect(() => async () => {
+    for (const timer of sideChatDeadlines.values()) clearTimeout(timer)
+    sideChatDeadlines.clear()
+    await Promise.allSettled([...sideChats.keys()].map(id => closeSideChat(id)))
+    await Promise.allSettled([...closingSideChats.values()])
+  }, 'api-proxy: side-chat teardown')
+  function sideChatNotFound(sideChatId: SessionId): RpcError {
+    return { code: 'side-chat-not-found', message: `side chat "${sideChatId}" not found`, details: { sideChatId } }
+  }
+
+  function closeSideChat(sideChatId: SessionId): Promise<void> {
+    const pendingClose = closingSideChats.get(sideChatId)
+    if (pendingClose !== undefined) return pendingClose
+    const handle = sideChats.get(sideChatId)
+    if (handle === undefined) return Promise.resolve()
+    const timer = sideChatDeadlines.get(sideChatId)
+    if (timer !== undefined) clearTimeout(timer)
+    sideChatDeadlines.delete(sideChatId)
+    sideChats.delete(sideChatId)
+    const closing = (async () => {
+      // 先结算交互：工具可能正在等待人工批准或提问，dispose 等待工具退出。
+      for (const pending of [...pendingQuestions.values()]) {
+        if (pending.sessionId !== sideChatId) continue
+        claimQuestion(pending, 'cancelled')
+        pending.reject(new UserQuestionError('side chat closed', 'ASK_ABORTED'))
+      }
+      for (const pending of [...pendingApprovals.values()]) {
+        if (pending.sessionId === sideChatId) pending.resolve('cancelled')
+      }
+      await handle.dispose()
+    })()
+    closingSideChats.set(sideChatId, closing)
+    void closing.finally(() => { closingSideChats.delete(sideChatId) }).catch(() => undefined)
+    return closing
+  }
+
   /** Client-chosen identity creation/resume, deduplicated across concurrent retries. */
   const sessionCreations = new Map<SessionId, Promise<Agent>>()
   /** Serializes path ownership and explicit title checks with Workspace mutations. */
@@ -1229,7 +1285,15 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       (await composeAgent(resolveSessionPreset({ header: meta, events }))).setup,
   })
 
-  /** Send one transient frame to every connected mux consumer. */
+  /** 普通会话入口不能凭私有侧聊标识读取或恢复 Agent。 */
+  async function ordinaryAgentFor(sessionId: SessionId) {
+    if (ctx.sessions.get(sessionId)?.transient === true) {
+      return { error: { code: 'session-not-found' as const, message: `session "${sessionId}" not found`, details: { sessionId } } }
+    }
+    return agentFor(sessionId)
+  }
+
+  /** 不发送私有记录到公共帧流；侧聊待回复交互由 state 轮询独立读取。 */
   function broadcast(payload: MuxFrame): void {
     const envelope = frame(payload)
     for (const queue of muxQueues) queue.push(envelope)
@@ -1241,6 +1305,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   // subscription unwinds with this gateway's fiber.
   ctx.inject(['sessionProjections'], (projectionCtx) => {
     projectionCtx.sessionProjections.onChanged((session, key, value, seq) => {
+      if (session.transient) return
       broadcast({ type: 'session/projection', sessionId: session.id, key, value, seq })
     })
   })
@@ -1307,6 +1372,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   }
 
   ctx.on('session/event', (session, event) => {
+    if (session.transient) return
     if (event.type !== 'agent/inbox/spliced') return
     const agent = ctx.agents.get(session.id)
     if (agent?.session !== session) return
@@ -1319,7 +1385,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     if (pending.signal !== undefined && pending.onAbort !== undefined) {
       pending.signal.removeEventListener('abort', pending.onAbort)
     }
-    broadcast({
+    if (!pending.transient) broadcast({
       type: 'question/resolved', sessionId: pending.sessionId,
       questionRpcId: pending.rpcId, outcome,
     })
@@ -1336,6 +1402,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         const rpcId = RpcId(randomUUID())
         const pending: PendingQuestion = {
           rpcId, sessionId, questions: request.questions, resolve, reject,
+          ...request.agent?.session.transient === true ? { transient: true as const } : {},
           ...(request.signal === undefined ? {} : { signal: request.signal }),
         }
         const onAbort = (): void => {
@@ -1350,7 +1417,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           rpcId,
           payload: { type: 'question/requested', sessionId, questions: request.questions },
         }
-        for (const queue of muxQueues) queue.push(envelope)
+        if (!pending.transient) for (const queue of muxQueues) queue.push(envelope)
       })
     },
   })
@@ -1423,7 +1490,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
              reachable path settles twice; kept against future settle callers. */
           if (!pendingApprovals.delete(pending.rpcId)) return
           req.signal?.removeEventListener('abort', onAbort)
-          broadcast({ type: 'approval/resolved', sessionId: pending.sessionId, approvalId: id, outcome })
+          if (!pending.transient) broadcast({ type: 'approval/resolved', sessionId: pending.sessionId, approvalId: id, outcome })
           // A cancelled ask was already settled by the service's own signal
           // race, which discards this late resolution; resolving is a no-op
           // there and keeps this promise from dangling forever.
@@ -1433,6 +1500,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         const pending: PendingApproval = {
           rpcId: RpcId(randomUUID()),
           sessionId: req.agent.session.id,
+          ...(req.agent.session.transient ? { transient: true as const } : {}),
           approvalId: id,
           toolName: req.toolName,
           ...req.callId === undefined ? {} : { callId: req.callId },
@@ -1442,7 +1510,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         pendingApprovals.set(pending.rpcId, pending)
         req.signal?.addEventListener('abort', onAbort, { once: true })
         const envelope = requestedFrame(pending)
-        for (const queue of muxQueues) queue.push(envelope)
+        if (!pending.transient) for (const queue of muxQueues) queue.push(envelope)
       })
     })
   }
@@ -1456,13 +1524,14 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   /** Read one stable session prefix without acquiring an Agent owner. */
   async function readSessionState(sessionId: SessionId): Promise<SessionReadState> {
     const attached = ctx.sessions.get(sessionId)
-    if (attached !== undefined) {
+    if (attached !== undefined && !attached.transient) {
       return {
         id: attached.id,
         header: attached.header,
         events: [...attached.events],
       }
     }
+    if (attached?.transient) throw new SessionNotFound(`session "${sessionId}" not found`)
     const inspected = await inspectServable(sessionId)
     return { id: inspected.meta.id, header: inspected.meta, events: inspected.events }
   }
@@ -1491,7 +1560,8 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
    */
   async function historySourceFor(sessionId: SessionId): Promise<HistorySource> {
     const attached = ctx.sessions.get(sessionId)
-    if (attached !== undefined) return { kind: 'attached', session: attached }
+    if (attached !== undefined && !attached.transient) return { kind: 'attached', session: attached }
+    if (attached?.transient) throw new SessionNotFound(`session "${sessionId}" not found`)
     const inspected = await inspectServable(sessionId)
     return { kind: 'detached', header: inspected.meta, events: inspected.events }
   }
@@ -1584,6 +1654,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     if (creation === undefined) {
       creation = (async () => {
         const attached = ctx.sessions.get(sessionId)
+        if (attached?.transient) throw new SessionNotFound(`session "${sessionId}" not found`)
         const live = ctx.agents.get(sessionId)
         if (attached !== undefined && hasSubagentOwner(attached, live)) {
           throw new SubagentSessionOwnership(sessionId)
@@ -1753,7 +1824,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         ...projections === undefined ? {} : { projections },
       }
     }
-    const items = ctx.sessions.list().map(summarizeAttached)
+    const items = ctx.sessions.list().filter(session => !session.transient).map(summarizeAttached)
     signal?.throwIfAborted()
     const attached = new Set(items.map(item => item.sessionId))
     const persistence = ctx.get('sessionPersistence')
@@ -1834,7 +1905,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     request: RpcRequest<{ sessionId: SessionId }>,
     mutation: (goals: NonNullable<ReturnType<typeof ctx.get<'goals'>>>, agent: Agent) => CoreGoalRef,
   ): Promise<RpcResponse<{ ref: GoalRef }>> {
-    const found = await agentFor(request.payload.sessionId)
+    const found = await ordinaryAgentFor(request.payload.sessionId)
     if ('error' in found) return err(request, found.error)
     const goals = goalServiceFor(found.agent)
     if ('error' in goals) return err(request, goals.error)
@@ -1871,7 +1942,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   async function turnAgentFor<T>(
     request: RpcRequest<unknown>, sessionId: SessionId,
   ): Promise<{ agent: Agent } | { refused: RpcResponse<T> }> {
-    const found = await agentFor(sessionId)
+    const found = await ordinaryAgentFor(sessionId)
     if ('error' in found) return { refused: err(request, found.error) }
     const agent = found.agent
     const selection = selectionFor(agent).current
@@ -2020,7 +2091,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       async control(request, signal) {
         const { sessionId, command } = request.payload
         const session = ctx.sessions.get(sessionId)
-        if (session === undefined) {
+        if (session === undefined || session.transient) {
           return err(request, {
             code: 'session-not-found', message: 'browser control requires an attached session', details: { sessionId },
           })
@@ -2063,6 +2134,131 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             return err(request, { code: 'browser-failed', message: `browser control failed (${error.code})`, details: { reason: error.code } })
           }
           return err(request, { code: 'browser-failed', message: 'browser control failed', details: { reason: 'BROWSER_FAILED' } })
+        }
+      },
+    },
+    sideChat: {
+      async create(request) {
+        const sideChatId = SessionId(`side-chat-${randomUUID()}`)
+        const sourceId = request.payload.sourceSessionId
+        const source = sourceId === undefined ? undefined : ctx.sessions.get(sourceId)
+        const sourceAgent = sourceId === undefined ? undefined : ctx.agents.get(sourceId)
+        if (sourceId !== undefined && (
+          source === undefined || source.transient || sourceAgent?.session !== source || hasSubagentOwner(source, sourceAgent)
+        )) {
+          return err(request, { code: 'session-not-found', message: `session "${sourceId}" not found`, details: { sessionId: sourceId } })
+        }
+        const cwd = source?.header.cwd ?? defaults.cwd
+        const selected = sourceAgent === undefined ? undefined : { ...selectionFor(sourceAgent).current }
+        const requestedPreset = request.payload.agentPreset ?? (source === undefined ? undefined : resolveSessionPreset(source))
+        try {
+          const composition = await composeAgent(requestedPreset)
+          if (sourceId !== undefined && (
+            ctx.agents.get(sourceId)?.session !== source || ctx.sessions.get(sourceId) !== source
+          )) {
+            return err(request, { code: 'session-not-found', message: `session "${sourceId}" not found`, details: { sessionId: sourceId } })
+          }
+          const initialSelection = selected
+          const handle = await ctx.agents.create({
+            sessionId: sideChatId,
+            transient: true,
+            agentOptions: selected ?? agentOptions(),
+            // cwd 只由可信的实时 Session 或 Host 默认值提供；不继承其日志或工作区成员关系。
+            meta: { cwd, ...composition.agentPreset === undefined ? {} : { agentPreset: composition.agentPreset } },
+            setup: async (agentCtx) => {
+              await composition.setup(agentCtx)
+              if (initialSelection !== undefined && agentCtx.agent !== undefined) {
+                selectionFor(agentCtx.agent).current = initialSelection
+              }
+            },
+          })
+          sideChats.set(sideChatId, handle)
+          sideChatTouch(sideChatId)
+          return ok(request, { sideChatId, ...composition.agentPreset === undefined ? {} : { agentPreset: composition.agentPreset } })
+        } catch (error: unknown) {
+          const refused = presetFailure(request, error)
+          if (refused !== undefined) return refused
+          return err(request, { code: 'internal', message: `failed to create side chat: ${String(error)}`, details: {} })
+        }
+      },
+
+      send(request) {
+        const { sideChatId, text } = request.payload
+        const agent = sideChats.get(sideChatId)?.agent
+        if (agent === undefined) return Promise.resolve(err(request, sideChatNotFound(sideChatId)))
+        sideChatTouch(sideChatId)
+        const selection = selectionFor(agent).current
+        if (!routeServed(selection.provider)) return Promise.resolve(err(request, {
+          code: 'model-unavailable',
+          message: `no adapter serves provider "${selection.provider}"; select a model for this session`,
+          details: { provider: selection.provider, model: selection.model },
+        }))
+        try {
+          agent.followup(createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } }))
+          return Promise.resolve(ok(request, {}))
+        } catch (error: unknown) {
+          return Promise.resolve(err(request, { code: 'internal', message: `side chat delivery failed: ${String(error)}`, details: {} }))
+        }
+      },
+
+      state(request) {
+        const { sideChatId, afterSeq = 0 } = request.payload
+        const agent = sideChats.get(sideChatId)?.agent
+        if (agent === undefined) return Promise.resolve(err(request, sideChatNotFound(sideChatId)))
+        if (!Number.isSafeInteger(afterSeq) || afterSeq < 0) return Promise.resolve(err(request, {
+          code: 'bad-request', message: 'sideChat.state afterSeq must be a non-negative safe integer', details: { issues: [] },
+        }))
+        sideChatTouch(sideChatId)
+        const complete = agent.session.events
+        const candidates = complete.slice(afterSeq, afterSeq + SIDE_CHAT_STATE_PAGE_EVENTS)
+        const interactions = [
+          ...[...pendingApprovals.values()].filter(pending => pending.transient && pending.sessionId === sideChatId).map(pending => ({
+            type: 'approval/requested' as const, rpcId: pending.rpcId, sideChatId, approvalId: pending.approvalId,
+            toolName: pending.toolName, ...pending.callId === undefined ? {} : { callId: pending.callId },
+            ...pending.reason === undefined ? {} : { reason: pending.reason },
+          })),
+          ...[...pendingQuestions.values()].filter(pending => pending.transient && pending.sessionId === sideChatId).map(pending => ({
+            type: 'question/requested' as const, rpcId: pending.rpcId, sideChatId, questions: pending.questions,
+          })),
+        ]
+        const reserve = Buffer.byteLength(JSON.stringify({ interactions, status: agent.status, nextSeq: afterSeq, hasMore: true }), 'utf8')
+        if (reserve > SIDE_CHAT_STATE_MAX_BYTES) return Promise.resolve(err(request, {
+          code: 'internal', message: 'side chat pending interactions exceed the snapshot byte limit', details: {},
+        }))
+        // 文本和工具结果可能远超单条数限额；对完整响应再施加字节上限。
+        const selected: SessionEvent[] = []
+        const views: (ToolEventView | null)[] = []
+        let used = reserve
+        for (const event of candidates) {
+          const view = viewFor(ctx, event, callId => backscanArgs(complete, callId), agent) ?? null
+          const bytes = Buffer.byteLength(JSON.stringify({ event, view }), 'utf8')
+          if (used + bytes > SIDE_CHAT_STATE_MAX_BYTES) {
+            if (selected.length === 0) return Promise.resolve(err(request, {
+              code: 'internal', message: `side chat event ${event.seq} exceeds the snapshot byte limit`, details: {},
+            }))
+            break
+          }
+          selected.push(event)
+          views.push(view)
+          used += bytes
+        }
+        const nextSeq = Math.min(afterSeq + selected.length, complete.length)
+        return Promise.resolve(ok(request, {
+          status: agent.status,
+          events: selected,
+          views,
+          nextSeq,
+          hasMore: nextSeq < complete.length,
+          interactions,
+        }))
+      },
+
+      async close(request) {
+        try {
+          await closeSideChat(request.payload.sideChatId)
+          return ok(request, {})
+        } catch (error: unknown) {
+          return err(request, { code: 'internal', message: `side chat close failed: ${String(error)}`, details: {} })
         }
       },
     },
@@ -2208,6 +2404,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
       async create(request) {
         const sessionId = request.payload.sessionId ?? `session-${randomUUID()}` as SessionId
+        if (ctx.sessions.get(sessionId)?.transient) {
+          return err(request, { code: 'session-not-found', message: `session "${sessionId}" not found`, details: { sessionId } })
+        }
         let workspace: Workspace | undefined
         if (request.payload.workspaceId !== undefined) {
           workspace = ctx.workspaceRegistry.get(brandWorkspaceId(request.payload.workspaceId))
@@ -2313,7 +2512,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
       async models(request) {
         const { sessionId } = request.payload
-        const found = await agentFor(sessionId)
+        const found = await ordinaryAgentFor(sessionId)
         if ('error' in found) return err(request, found.error)
         const current = selectionFor(found.agent).current
         const { groups, failures } = await buildModelCatalog(ctx)
@@ -2323,7 +2522,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
       async selectModel(request) {
         const { sessionId, provider, model, reasoningEffort } = request.payload
-        const found = await agentFor(sessionId)
+        const found = await ordinaryAgentFor(sessionId)
         if ('error' in found) return err(request, found.error)
         return serializeImageAdmission(found.agent, async () => {
           try {
@@ -2375,7 +2574,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
       async rename(request) {
         const { sessionId, title } = request.payload
-        const found = await agentFor(sessionId)
+        const found = await ordinaryAgentFor(sessionId)
         if ('error' in found) return err(request, found.error)
         const titles = ctx.get('sessionTitle')
         if (titles === undefined) {
@@ -2619,6 +2818,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           }))
         }
         const agent = ctx.agents.get(sessionId)
+        if (agent?.session.transient) {
+          return Promise.resolve(err(request, { code: 'session-not-found', message: `session "${sessionId}" not found`, details: { sessionId } }))
+        }
         if (agent !== undefined && hasSubagentOwner(agent.session, agent)) {
           return Promise.resolve(err(request, subagentOwnershipError(sessionId)))
         }
@@ -2662,7 +2864,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       cancel(request) {
         const { sessionId } = request.payload
         const agent = ctx.agents.get(sessionId)
-        if (agent === undefined) {
+        if (agent === undefined || agent.session.transient) {
           return Promise.resolve(err(request, {
             code: 'session-not-found',
             message: `session "${sessionId}" not found (not attached)`,
@@ -2679,6 +2881,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
     subagents: {
       async list(request, signal) {
+        if (ctx.sessions.get(request.payload.parentSessionId)?.transient) {
+          return err(request, { code: 'subagent-parent-unavailable', message: 'parent session is not available', details: { parentSessionId: request.payload.parentSessionId } })
+        }
         try {
           const entries = await ctx.subagents.listChildren(request.payload.parentSessionId, signal)
           return ok(request, {
@@ -2713,6 +2918,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         const {
           parentSessionId, childSessionId, mode, beforeSeq, maxMessages,
         } = request.payload
+        if (ctx.sessions.get(parentSessionId)?.transient || ctx.sessions.get(childSessionId)?.transient) {
+          return err(request, { code: 'subagent-not-found', message: 'subagent not found', details: { parentSessionId, childSessionId } })
+        }
         const verified = await catalogChild(ctx, {
           parentSessionId, childSessionId, mode,
         }, signal)
@@ -2791,7 +2999,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           })
         }
         const parent = ctx.agents.get(parentSessionId)
-        if (parent === undefined) {
+        if (parent === undefined || ctx.sessions.get(parentSessionId)?.transient) {
           return err(request, {
             code: 'subagent-parent-unavailable',
             message: `parent session "${parentSessionId}" is not live`,
@@ -2823,6 +3031,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       // its parent Agent is offline. Absent targets are accepted no-ops there.
       interrupt(request) {
         const { parentSessionId, childSessionId } = request.payload
+        if (ctx.sessions.get(parentSessionId)?.transient || ctx.sessions.get(childSessionId)?.transient) {
+          return Promise.resolve(err(request, { code: 'subagent-not-found', message: 'subagent not found', details: { parentSessionId, childSessionId } }))
+        }
         try {
           ctx.subagents.interrupt(childSessionId, { kind: 'user', parentSessionId })
         } catch (error: unknown) {
@@ -3114,7 +3325,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       },
 
       async clear(request) {
-        const found = await agentFor(request.payload.sessionId)
+        const found = await ordinaryAgentFor(request.payload.sessionId)
         if ('error' in found) return err(request, found.error)
         const goals = goalServiceFor(found.agent)
         if ('error' in goals) return err(request, goals.error)
@@ -3154,6 +3365,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       // agent and the session survive, only the composition is swapped.
       async select(request) {
         const { sessionId, agentPreset } = request.payload
+        if (ctx.sessions.get(sessionId)?.transient) {
+          return err(request, { code: 'session-not-found', message: `session "${sessionId}" not found`, details: { sessionId } })
+        }
         const presets = ctx.get('agentPresets')
         if (presets === undefined) {
           return err(request, {
@@ -3162,7 +3376,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             details: { agentPreset, available: [] },
           })
         }
-        const found = await agentFor(sessionId)
+        const found = await ordinaryAgentFor(sessionId)
         if ('error' in found) return err(request, found.error)
         const { agent } = found
         const swap = async (): Promise<RpcResponse<{ agentPreset: string }>> => {
@@ -3278,7 +3492,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       async list(request) {
         const { sessionId } = request.payload
         const session = ctx.sessions.get(sessionId)
-        if (session === undefined) {
+        if (session === undefined || session.transient) {
           return err(request, {
             code: 'session-not-found',
             message: `session "${sessionId}" not found (not attached)`,
@@ -3497,9 +3711,11 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         const queue = new FrameQueue<RpcRequest<MuxFrame>>()
         muxQueues.add(queue)
         for (const session of ctx.sessions.list()) {
+          if (session.transient) continue
           subscribeSession(queue, session)
         }
         for (const pending of pendingQuestions.values()) {
+          if (pending.transient) continue
           queue.push({
             rpcId: pending.rpcId,
             payload: {
@@ -3510,11 +3726,14 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         }
         // Refresh recovery: still-pending approval questions replay with their
         // stable rpcId so a reconnecting client can still answer them.
-        for (const pending of pendingApprovals.values()) queue.push(requestedFrame(pending))
+        for (const pending of pendingApprovals.values()) {
+          if (!pending.transient) queue.push(requestedFrame(pending))
+        }
         // Queue snapshot baseline (pendingQuestions precedent): frames replayed
         // in arrival order per session; a reconnecting client rebuilds its
         // queue view from these alone.
         for (const session of ctx.sessions.list()) {
+          if (session.transient) continue
           const agent = ctx.agents.get(session.id)
           if (agent?.session === session && agent.inbox.hasPending) {
             queue.push(frame({ type: 'session/queue', sessionId: session.id, items: queueItems(agent) }))
@@ -3527,6 +3746,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         const jobs = ctx.get('jobs')
         if (jobs !== undefined) {
           for (const session of ctx.sessions.list()) {
+            if (session.transient) continue
             const views = jobViews(jobs.list(ctx.agents.get(session.id)))
             if (views.length > 0) {
               queue.push(frame({ type: 'session/jobs', sessionId: session.id, jobs: views }))
@@ -3539,6 +3759,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         const openCalls = new Map<SessionId, Map<string, { name: string; args: unknown }>>()
         const disposers = [
           ctx.on('session/event', (session: Session, event: SessionEvent) => {
+            if (session.transient) return
             if (event.type === 'tool/call') {
               const data = event.data as ToolCallData
               try {
@@ -3559,6 +3780,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             queue.push(frame({ type: 'session/event', sessionId: session.id, event, ...view === undefined ? {} : { view } }))
           }),
           ctx.on('session/created', (session: Session) => {
+            if (session.transient) return
             subscribeSession(queue, session)
             // The subscribe frame clears the client's task mirror, and a
             // session born after the stream opened missed the baseline loop.
@@ -3574,6 +3796,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           }),
           ...jobs === undefined ? [] : [jobs.onJobsChanged((owner) => {
             if (owner !== undefined) {
+              if (owner.session.transient) return
               // The exact owner instance the fence compares against, so the
               // push stays correct even while that Agent's scope is tearing
               // down and a lookup by id would already miss.
@@ -3583,6 +3806,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             // An unowned task is visible to every caller, so every subscribed
             // session's set changed with it.
             for (const session of ctx.sessions.list()) {
+              if (session.transient) continue
               queue.push(frame({
                 type: 'session/jobs',
                 sessionId: session.id,
@@ -3610,6 +3834,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         let archivedSessionIds = ctx.workspaceRegistry.archivedSessionIds
         const disposers = [
           ctx.on('session/created', (session: Session) => {
+            if (session.transient) return
             queue.push(frame({
               type: 'host/session-added',
               sessionId: session.id,
@@ -3621,12 +3846,15 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             }))
           }),
           ctx.on('session/disposed', (session: Session) => {
+            if (session.transient) return
             queue.push(frame({ type: 'host/session-removed', sessionId: session.id }))
           }),
           ctx.on('agent/status', ({ agent, status }: { agent: Agent; status: AgentStatus }) => {
+            if (agent.session.transient) return
             queue.push(frame({ type: 'host/session-status', sessionId: agent.id, running: status === 'running' }))
           }),
           ctx.on('agent/error', ({ agent, error }: { agent: Agent; error: unknown }) => {
+            if (agent.session.transient) return
             queue.push(frame({ type: 'host/agent-error', sessionId: agent.id, message: errorChain(error) }))
           }),
           ctx.on('domain/changed', (change) => {
@@ -3707,6 +3935,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         // Clean error path first: missing services answer 500 and a missing
         // root artifact 404 before any zip byte is produced. The root content
         // read here is reused as the first zip entry, so nothing is read twice.
+        if (ctx.get('sessions')?.get(request.sessionId)?.transient) {
+          return new Response('session not found', { status: 404 })
+        }
         const deps = sessionLogExportDeps(ctx)
         if (deps.sessionQuery === undefined || deps.sessionPersistence === undefined || deps.attachments === undefined) {
           return new Response(

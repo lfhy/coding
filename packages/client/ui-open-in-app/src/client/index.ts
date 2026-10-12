@@ -3,6 +3,7 @@
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { SideChatState } from '@deepseek-ai/dsh-host-apiproxy/api'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-connection/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
@@ -182,6 +183,30 @@ export function apply(ctx: ClientContext): void {
           hooks: { sidebarRightTabs: sidebarRightSource },
           listFiles: (sessionId, segments, signal) => controller.listFiles(sessionId, segments, signal),
           readFile: (sessionId, segments, signal) => controller.readFile(sessionId, segments, signal),
+          sideChat: {
+            create: async (sourceSessionId: SessionId, signal?: AbortSignal) => {
+              const response = await connection.api.sideChat.create({ sourceSessionId }, signal)
+              if (!response.result.ok) throw new Error(response.result.error.message)
+              return response.result.value.sideChatId
+            },
+            send: async (sideChatId: SessionId, text: string, signal?: AbortSignal) => {
+              const response = await connection.api.sideChat.send({ sideChatId, text }, signal)
+              if (!response.result.ok) throw new Error(response.result.error.message)
+            },
+            state: async (sideChatId: SessionId, afterSeq: number, signal?: AbortSignal): Promise<SideChatState> => {
+              const response = await connection.api.sideChat.state({ sideChatId, afterSeq }, signal)
+              if (!response.result.ok) throw new Error(response.result.error.message)
+              return response.result.value
+            },
+            close: async (sideChatId: SessionId) => {
+              const response = await connection.api.sideChat.close({ sideChatId })
+              if (!response.result.ok) throw new Error(response.result.error.message)
+            },
+            respond: async (message) => {
+              const receipt = await connection.api.respond(message)
+              return receipt.accepted
+            },
+          },
           gitHistory: async (sessionId, query, signal) => {
             const response = await connection.api.workspace.gitHistory({ sessionId, ...query }, signal)
             if (!response.result.ok) throw new Error(response.result.error.message)

@@ -65,6 +65,7 @@ export class SessionCorpus {
       records.set(header.id, { header: structuredClone(header), live: false, persisted: true })
     }
     for (const session of this._ctx.sessions.list()) {
+      if (session.transient) continue
       const durable = records.get(session.id)
       if (durable !== undefined) assertSessionHeadersCompatible(session.header, durable.header)
       records.set(session.id, {
@@ -88,6 +89,7 @@ export class SessionCorpus {
   async load(sessionId: SessionId, signal?: AbortSignal): Promise<LogicalSession> {
     signal?.throwIfAborted()
     const live = this._ctx.sessions.get(sessionId)
+    if (live?.transient) throw notFound(sessionId)
     if (live !== undefined) {
       const snapshot = snapshotLive(live)
       signal?.throwIfAborted()
@@ -101,6 +103,7 @@ export class SessionCorpus {
     const loaded = await inspectPersisted(persistence, sessionId, signal)
     signal?.throwIfAborted()
     const attached = this._ctx.sessions.get(sessionId)
+    if (attached?.transient) throw notFound(sessionId)
     if (attached !== undefined) {
       const snapshot = snapshotLive(attached)
       signal?.throwIfAborted()
@@ -136,7 +139,7 @@ export class SessionCorpus {
     const unresolved: SessionId[] = []
     for (const id of ids) {
       const session = this._ctx.sessions.get(id)
-      if (session === undefined) {
+      if (session === undefined || session.transient) {
         unresolved.push(id)
       } else {
         resolved.set(id, projectSource(id, sourceLive(session), project, signal))
@@ -168,7 +171,7 @@ export class SessionCorpus {
       const listed = persistedById.get(sessionId)
       if (listed === undefined) {
         const attached = this._ctx.sessions.get(sessionId)
-        resolved.set(sessionId, attached === undefined
+        resolved.set(sessionId, attached === undefined || attached.transient
           ? { sessionId, status: 'rejected', reason: notFound(sessionId) }
           : projectSource(sessionId, sourceLive(attached), project, signal))
         return
@@ -178,6 +181,10 @@ export class SessionCorpus {
         const loaded = await inspectPersisted(persistence, sessionId, signal)
         signal?.throwIfAborted()
         const attached = this._ctx.sessions.get(sessionId)
+        if (attached?.transient) {
+          resolved.set(sessionId, { sessionId, status: 'rejected', reason: notFound(sessionId) })
+          return
+        }
         if (attached !== undefined) {
           resolved.set(sessionId, projectSource(sessionId, sourceLive(attached), project, signal))
           return

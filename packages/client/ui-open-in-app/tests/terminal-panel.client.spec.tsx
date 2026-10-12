@@ -171,6 +171,11 @@ function rightWorkbench() {
     readFile: vi.fn(async () => ({ path: '/w/a.txt', content: { kind: 'text', text: 'file output' } })),
     openWorkbench: vi.fn(), closeWorkbench: vi.fn(), toggleWorkbenchFullscreen: vi.fn(),
     openSidebarTab: vi.fn(),
+    sideChat: {
+      create: async (_sourceSessionId: SessionId) => 'fixture-side-chat' as SessionId, send: async () => {},
+      state: async () => ({ status: 'idle' as const, events: [], views: [], interactions: [], nextSeq: 0, hasMore: false }),
+      close: async () => {}, respond: async () => true,
+    },
     toggleBottom: bottomToggle,
     renderSlot: vi.fn((name: string, owner: {
       shown: boolean

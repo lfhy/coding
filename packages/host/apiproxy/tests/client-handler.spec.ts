@@ -36,6 +36,12 @@ function scriptedApi(overrides: {
   const err = <T>(r: RpcRequest<unknown>): Promise<RpcResponse<T>> =>
     Promise.resolve({ rpcId: r.rpcId, result: { ok: false, error: { code: 'internal' as const, message: 'stub', details: {} } } })
   return {
+    sideChat: {
+      create: r => ok(r, { sideChatId: sid('side-new') }),
+      send: r => ok(r, {}),
+      state: r => ok(r, { status: 'idle', events: [], views: [], nextSeq: 0, hasMore: false, interactions: [] }),
+      close: r => ok(r, {}),
+    },
     browser: { control: r => ok(r, null), ...overrides.browser },
     sessions: {
       list: r => ok(r, { items: [] }),

@@ -4,7 +4,7 @@
 
 ## 读取
 
-- `listSessions(signal?)` 读取当前持久化元数据，以实时记录优先的方式合并它们，并按确定性的最新优先顺序返回克隆记录。
+- `listSessions(signal?)` 读取当前持久化元数据，以实时记录优先的方式合并它们，并按确定性的最新优先顺序返回克隆记录。带 `session.transient` 的实时 Session 不属于该语料库，直接历史与批量读取也将它视为不存在。
 - `readSession(sessionId)` 在执行与恢复相同的核心回放验证后，返回一份完整、脱离存储的原始日志；它绝不会将该会话放入实时存储。
 - `filterSessions(filters, signal?)` 对同一份克隆逻辑语料库应用与提供方无关的会话元数据和可用性谓词。
 - `filterEvents(sessionId, filters)` 提取第一方语义文档，并按 seq 升序应用与提供方无关的元数据和字面文本谓词。

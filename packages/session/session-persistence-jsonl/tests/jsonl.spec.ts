@@ -99,6 +99,26 @@ function appendClosedTurn(session: Session): void {
   session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
 }
 
+describe('transient JSONL exclusion', () => {
+  it('does not create an artifact, directory or listed record after events, flush and teardown', async () => {
+    const dir = await freshRoot()
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(JsonlSessionPersistence, { root: dir, compression: 'none' })
+    const id = SessionId('private-jsonl')
+    let session!: Session
+    const owner = await ctx.plugin(Object.assign((inner: Context) => {
+      session = inner.sessions.create(id, { transient: true, meta: { cwd: dir } })
+    }, { inject: ['sessions'] }))
+    appendClosedTurn(session)
+    await ctx.sessions.flush(session)
+    await owner.dispose()
+    await ctx.fiber.dispose()
+    await expect(stat(rawLogPath(dir, dir, id))).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(await readdir(dir)).toEqual([])
+  })
+})
+
 // Run the shared backend contract against the real JSONL backend.
 runPersistenceContract('jsonl-none', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'dsh-jsonl-'))

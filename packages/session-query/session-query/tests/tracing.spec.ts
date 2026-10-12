@@ -163,6 +163,23 @@ function appendTraceEvents(session: Session): void {
   )
 }
 
+describe('transient query isolation', () => {
+  it('excludes private live sessions from lists, direct history, and batched projections', async () => {
+    const ctx = await queryContext()
+    try {
+      const id = SessionId('transient-query')
+      const session = ctx.sessions.create(id, { transient: true })
+      session.append('turn/start', { turn: 1 })
+      expect(await ctx.sessionQuery.listSessions()).toEqual([])
+      await expect(ctx.sessionQuery.readSession(id)).rejects.toMatchObject({ code: 'SESSION_QUERY_SESSION_NOT_FOUND' })
+      const results = await ctx.sessionQuery.readTitleSnapshots([id])
+      expect(results[0]).toMatchObject({ status: 'rejected' })
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+})
+
 describe('session lineage tracing', () => {
   it('returns complete ancestry, deterministic descendant trees, and detached records', async () => {
     const ctx = await queryContext()

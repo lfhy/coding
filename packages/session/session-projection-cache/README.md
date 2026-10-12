@@ -21,7 +21,7 @@
 | 累计 `writeEveryEvents` 个已提交事件 | 配置节流（条数）。 |
 | 距首个脏事件 `writeIntervalMs` 毫秒 | 配置节流（间隔）。 |
 
-两个 `Config` 字段均必填（无默认值）：写入节奏是部署选择，没有普适正确值，由 cordis.yml 明示。
+两个 `Config` 字段均必填（无默认值）：写入节奏是部署选择，没有普适正确值，由 cordis.yml 明示。`session.transient` 的事件、强制检查点、释放和外部 `write(session)` 均不写缓存记录。
 
 ## 列表读（`cachedSnapshot(meta)`）
 

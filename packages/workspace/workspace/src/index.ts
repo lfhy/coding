@@ -261,7 +261,9 @@ export class WorkspaceRegistry extends Service {
    * masquerade as an unknown session.
    */
   private async sessionKnown(id: SessionId): Promise<boolean> {
-    if (this.ctx.get('sessions')?.get(id) !== undefined) return true
+    const live = this.ctx.get('sessions')?.get(id)
+    if (live?.transient) return false
+    if (live !== undefined) return true
     if (this.headers.has(id)) return true
     await this.indexHeaders(await this.ctx.sessionPersistence.list())
     return this.headers.has(id)
@@ -592,7 +594,7 @@ export class WorkspaceRegistry extends Service {
   private async indexLiveSessions(): Promise<void> {
     const sessions = this.ctx.get('sessions')
     if (sessions === undefined) return
-    await this.indexHeaders(sessions.list().map(session => session.header))
+    await this.indexHeaders(sessions.list().filter(session => !session.transient).map(session => session.header))
   }
 
   private reportFilteredCandidates(): void {
@@ -614,6 +616,7 @@ export class WorkspaceRegistry extends Service {
 
   private async readSessionHeader(id: SessionId): Promise<SessionHeader> {
     const live = this.ctx.get('sessions')?.get(id)
+    if (live?.transient) throw new Error(`cannot validate session '${id}': transient sessions cannot attach to a workspace`)
     if (live !== undefined) {
       this.headers.set(id, live.header)
       return live.header

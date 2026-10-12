@@ -1406,6 +1406,33 @@ describe('PersistenceCoordinator observation cancellation', () => {
   })
 })
 
+describe('PersistenceCoordinator transient sessions', () => {
+  it('skips creation, events, flush, disposal and HMR replay without registering an id', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    let session!: Session
+    const owner = await ctx.plugin(Object.assign((inner: Context) => {
+      session = inner.sessions.create(SessionId('transient-persistence'), { transient: true })
+    }, { inject: ['sessions'] }))
+    const backend = new ControlledBackend()
+    const persistence = await ctx.plugin(Object.assign((inner: Context) => {
+      new PersistenceCoordinator(inner, backend)
+    }, { inject: ['sessions'] }))
+    try {
+      session.append('turn/start', { turn: 1 })
+      session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+      await ctx.sessions.flush(session)
+      await owner.dispose()
+      await persistence.dispose()
+      expect(backend.loadAttempts).toBe(0)
+      expect(backend.appendAttempts).toBe(0)
+      expect(backend.store.has(session.id)).toBe(false)
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+})
+
 describe('PersistenceCoordinator retirement', () => {
   it('a retiring unmaterialized owner without buffered events releases its id', async () => {
     const ctx = new Context()

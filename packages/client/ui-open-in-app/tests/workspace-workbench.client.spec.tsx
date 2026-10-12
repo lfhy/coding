@@ -110,6 +110,12 @@ function bench(over: {
     listFiles: (_sessionId: SessionId, segments: readonly string[], signal?: AbortSignal) => listFiles(segments, signal),
     readFile: (_sessionId: SessionId, segments: readonly string[], signal?: AbortSignal) => readFile(segments, signal),
     gitHistory: (_sessionId: SessionId, query: { count: number }, signal: AbortSignal) => gitHistory(query, signal),
+    sideChat: {
+      create: async (_sourceSessionId: SessionId) => 'fixture-side-chat' as SessionId,
+      send: async () => {},
+      state: async () => ({ status: 'idle' as const, events: [], views: [], interactions: [], nextSeq: 0, hasMore: false }),
+      close: async () => {}, respond: async () => true,
+    },
     terminalUrl: (id: SessionId) => `ws://test/terminal?sessionId=${id}`,
     t,
   } as unknown as WorkspaceWorkbenchProps
@@ -574,10 +580,14 @@ describe('WorkspaceWorkbench shell', () => {
     expect(b.listFiles).not.toHaveBeenCalled()
     const items = within(menu).getAllByRole('button')
     expect(items.map(item => item.textContent)).toEqual([
-      '查看变更记录', '终端', '浏览器', '文件', '侧边聊天未接入',
+      '查看变更记录', '终端', '浏览器', '文件', '侧边聊天',
     ])
     expect(items[0]?.hasAttribute('disabled')).toBe(false)
-    expect(items[4]?.hasAttribute('disabled')).toBe(true)
+    expect(items[4]?.hasAttribute('disabled')).toBe(false)
+    fireEvent.click(items[4] as HTMLButtonElement)
+    expect(b.instance.store.getSnapshot()).toMatchObject({ view: 'side-chat', activeId: 'side-chat:1' })
+    expect(screen.getByRole('tab', { name: zh['sideChat.tab'].replace('{number}', '1') }).getAttribute('aria-selected')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.back'] }))
     fireEvent.click(items[0] as HTMLButtonElement)
     expect(b.instance.store.getSnapshot().view).toBe('history')
     expect(screen.getByRole('tab', { name: zh['workbench.menu.review'] }).getAttribute('aria-selected')).toBe('true')

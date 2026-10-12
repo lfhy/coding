@@ -230,6 +230,32 @@ runCoordinatorContract('sqlite', async (): Promise<CoordinatorFixture> => {
   }
 })
 
+describe('transient SQLite exclusion', () => {
+  it('does not insert a session row or event during creation, flush or disposal', async () => {
+    const path = await freshDbPath()
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(SessionPersistenceSqlite, { path })
+    const id = SessionId('private-sqlite')
+    let session!: ReturnType<typeof ctx.sessions.create>
+    const owner = await ctx.plugin(Object.assign((inner: Context) => {
+      session = inner.sessions.create(id, { transient: true })
+    }, { inject: ['sessions'] }))
+    session.append('turn/start', { turn: 1 })
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    await ctx.sessions.flush(session)
+    await owner.dispose()
+    expect(await ctx.sessionPersistence.list()).toEqual([])
+    await ctx.fiber.dispose()
+    const db = new DatabaseSync(path)
+    try {
+      expect(db.prepare(testSql('select-session-id')).get(id)).toBeUndefined()
+    } finally {
+      db.close()
+    }
+  })
+})
+
 describe('SessionPersistenceSqlite physical packing', () => {
   it('loads from cordis.yml and packs through the assembled service', async () => {
     const path = await freshDbPath('dsh-sqlite-loader-')

@@ -168,6 +168,23 @@ function observeCancel(agent: Agent, callback: () => void): void {
 }
 
 describe('SubagentRuntime.startContinuable', () => {
+  it('refuses a transient parent before reserving a durable child identity', async () => {
+    const { ctx } = await setup([])
+    const privateParent = await ctx.agents.create({
+      sessionId: SessionId('transient-parent'), transient: true,
+      agentOptions: { provider: 'mock', model: 'mock' },
+    })
+    try {
+      await expect(ctx.subagents.startContinuable(startSpec(privateParent.agent)))
+        .rejects.toMatchObject({ code: 'CONTINUATION_UNAVAILABLE' })
+      expect(ctx.agents.list()).toHaveLength(2)
+      expect(privateParent.agent.session.transient).toBe(true)
+    } finally {
+      await privateParent.dispose()
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('returns both identities at inbox acceptance, without waiting for the turn or the log', async () => {
     const { ctx, parent, adapter } = await setup([textResponse('first answer')])
     const enqueued: { id: MessageId; loggedYet: boolean }[] = []

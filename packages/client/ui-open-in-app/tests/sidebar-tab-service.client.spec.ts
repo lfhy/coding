@@ -38,7 +38,9 @@ async function bench() {
     current, byId: { [FIRST]: {}, [SECOND]: {} },
   }) } } as never)
   ctx.provide('workspaces', { list: { getSnapshot: () => ({ recentWorkspaceId: undefined }) } } as never)
-  ctx.provide('connection', { api: { workspace: { gitHistory: vi.fn() } } } as never)
+  ctx.provide('connection', { api: { workspace: { gitHistory: vi.fn() }, sideChat: {
+    create: vi.fn(), send: vi.fn(), state: vi.fn(), close: vi.fn(),
+  } } } as never)
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
   const entry = ctx.slots.entries('workbench')[0]

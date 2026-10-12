@@ -78,7 +78,7 @@ export class SessionTelemetryCoordinator {
   ) {
     if (capture === 'live') {
       ctx.on('session/created', (session) => {
-        this.adopt(session)
+        if (!session.transient) this.adopt(session)
       })
       // Capture the shutdown marker at the session's own termination edge,
       // then retire the only strong reference owned by this coordinator.
@@ -89,6 +89,7 @@ export class SessionTelemetryCoordinator {
         })
       })
       ctx.on('session/event', (session, event) => {
+        if (session.transient) return
         this.contain(() => {
           this.captureEvent(session, event)
         })
@@ -96,17 +97,19 @@ export class SessionTelemetryCoordinator {
       // Parallel listeners are awaited by the loop at turn end; returning void
       // (not the SDK's flush promise) is the turn-latency contract.
       ctx.on('session/flush', (session) => {
+        if (session.transient) return
         this.contain(() => {
           this.hintFlush(session)
         })
       })
       ctx.on('agent/error', ({ agent, turn, step, error }) => {
+        if (agent.session.transient) return
         this.contain(() => {
           this.relayAgentError(agent, turn, step, error)
         })
       })
       for (const session of ctx.sessions.list()) {
-        this.adopt(session)
+        if (!session.transient) this.adopt(session)
       }
     }
     ctx.effect(() => async () => {
@@ -136,6 +139,7 @@ export class SessionTelemetryCoordinator {
    * @param throughSeq - optional last sequence included in this capture.
    */
   captureSession(session: Session, throughSeq?: number): void {
+    if (session.transient) return
     const cursor = handoffCursor.get(session) ?? session.firstLiveSeq - 1
     // Containment is PER EVENT: one rejected record is withheld fail-closed
     // while the rest of the historical replay proceeds.

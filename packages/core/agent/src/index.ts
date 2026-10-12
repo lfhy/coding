@@ -107,6 +107,8 @@ export interface CreateAgentOptions {
    * validator/snapshot boundary before publication.
    */
   readonly seed?: readonly SessionEvent[]
+  /** 创建会话之前设定的进程内标志；不进入 SessionHeader 或存储。 */
+  readonly transient?: true
   /** Per-agent options (model, …). */
   readonly agentOptions?: AgentOptions
   /** Optional creation-only cancellation signal; detached before the returned handle becomes visible. */
@@ -410,8 +412,12 @@ export class AgentRegistry extends Service {
     // capability and need no Cordis tracker magic.
     const { target } = this.requireFactory()
     const receiver = getTraceable(ownerCtx, target)
+    // 子 Agent 不得将临时父会话的派生内容写入持久存储；传播在会话构造前完成。
+    const creation = ownerCtx.agent?.session.transient
+      ? { ...options, transient: true as const }
+      : options
     // oxlint-disable-next-line typescript/unbound-method -- Reflect.apply intentionally supplies the caller-traced receiver
-    return Reflect.apply(target.createAgent, receiver, [ownerCtx, options])
+    return Reflect.apply(target.createAgent, receiver, [ownerCtx, creation])
   }
 
   /**
@@ -423,6 +429,9 @@ export class AgentRegistry extends Service {
    */
   async resume(options: ResumeAgentOptions): Promise<AgentHandle> {
     const ownerCtx = this.ctx
+    if (ownerCtx.agent?.session.transient) {
+      throw new Error('transient agents cannot resume durable sessions')
+    }
     const { target } = this.requireFactory()
     const receiver = getTraceable(ownerCtx, target)
     // oxlint-disable-next-line typescript/unbound-method -- Reflect.apply intentionally supplies the caller-traced receiver

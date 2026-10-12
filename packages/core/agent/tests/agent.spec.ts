@@ -356,6 +356,25 @@ describe('explicit cancellation contract', () => {
 })
 
 describe('AgentRegistry factory seam', () => {
+  it('inherits transient classification through a scoped child and forbids durable resume', async () => {
+    const ctx = new Context()
+    await ctx.plugin(AgentRegistry)
+    const factoryCalls: CreateAgentOptions[] = []
+    const factory: AgentFactory = {
+      createAgent: (_owner, options) => {
+        factoryCalls.push(options)
+        return Promise.resolve({ agent: stubAgent(options.sessionId), dispose: () => Promise.resolve() })
+      },
+      resume: (_owner, options) => Promise.resolve({ agent: stubAgent(options.resumeSessionId), dispose: () => Promise.resolve() }),
+    }
+    ctx.agents.setFactory(factory)
+    const parent = stubAgent('private-parent', { session: Session.create(SessionId('private-parent'), undefined, undefined, true) })
+    const scoped = ctx.extend({ agent: parent })
+    await scoped.agents.create({ sessionId: SessionId('child') })
+    expect(factoryCalls[0]?.transient).toBe(true)
+    await expect(scoped.agents.resume({ resumeSessionId: SessionId('durable') })).rejects.toThrow(/cannot resume durable/)
+  })
+
   function stubFactory() {
     const calls: {
       create: Array<{ ownerCtx: Context; options: CreateAgentOptions }>

@@ -682,6 +682,16 @@ describe('Workspace session ordering', () => {
     expect(workspace.sessionIds).toEqual(['s1'])
   })
 
+  it('refuses even a cwd-bearing transient session without persisting membership', async () => {
+    const dir = await makeDir('transient')
+    const result = await harness({ sessionStore: true })
+    const session = result.ctx.sessions.create(SessionId('transient-workspace'), { transient: true, meta: { cwd: dir } })
+    const workspace = await result.registry.create(dir)
+    await expect(workspace.attachSession(session.id)).rejects.toThrow(/transient sessions cannot attach/)
+    await expect(result.registry.archiveSession(session.id)).rejects.toThrow(/no such session/)
+    expect(workspace.sessionIds).toEqual([])
+  })
+
   it('validates a lazy live session without requiring it in persistence.list()', async () => {
     const dir = await makeDir('live')
     const result = await harness({ sessions: [], liveSessions: [header('live', dir, 1)] })

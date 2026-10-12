@@ -73,13 +73,22 @@ async function bench() {
   const connectWorkspace = vi.fn(async () => SESSION)
   ctx.provide('workspaces', { list: workspaceList, connectHome, connectWorkspace } as never)
   const gitHistory = vi.fn(async () => ({ result: { ok: true as const, value: null } }))
-  ctx.provide('connection', { api: { workspace: { gitHistory } } } as never)
+  const createSideChat = vi.fn(async () => ({ result: { ok: true as const, value: { sideChatId: SESSION } } }))
+  const sideChat = { create: createSideChat,
+    send: vi.fn(async () => ({ result: { ok: true as const, value: {} } })),
+    state: vi.fn(async () => ({ result: { ok: true as const, value: {
+      status: 'idle', events: [], views: [], interactions: [], nextSeq: 0, hasMore: false,
+    } } })),
+    close: vi.fn(async () => ({ result: { ok: true as const, value: {} } })),
+  }
+  const respondSideChat = vi.fn(async () => ({ accepted: true }))
+  ctx.provide('connection', { api: { workspace: { gitHistory }, sideChat, respond: respondSideChat } } as never)
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
   return {
     ctx, fiber, openWorkbench, closeWorkbench, toggleWorkbench, toggleWorkbenchFullscreen,
     toggleWorkbenchBottom, closeWorkbenchBottom, toggleHeroPanel,
-    sessionList: list, open, connectHome, connectWorkspace, workspaceList, gitHistory,
+    sessionList: list, open, connectHome, connectWorkspace, workspaceList, gitHistory, sideChat, respondSideChat,
   }
 }
 
@@ -154,6 +163,7 @@ describe('open-in-app browser half', () => {
     vi.stubGlobal('location', { origin: 'http://dsh.example' })
     const {
       ctx, fiber, openWorkbench, closeWorkbench, toggleWorkbenchFullscreen, toggleWorkbenchBottom, closeWorkbenchBottom,
+      sideChat,
     } = await bench()
     const action = ctx.slots.entries('conversation.session.header.utilities')[0]
     const actionFace = (action?.inject as unknown as (id: SessionId) => OpenInAppActionInjected)(SESSION)
@@ -177,6 +187,8 @@ describe('open-in-app browser half', () => {
       path: '/w/README.md', content: { kind: 'markdown', text: '# Readme' },
     })
     await expect(workbenchFace.gitHistory(SESSION, { count: 60 }, new AbortController().signal)).resolves.toBeNull()
+    await expect(workbenchFace.sideChat.create(SESSION)).resolves.toBe(SESSION)
+    expect(sideChat.create).toHaveBeenCalledWith({ sourceSessionId: SESSION }, undefined)
     workbenchFace.closeWorkbench(SESSION)
     workbenchFace.openWorkbench(SESSION)
     workbenchFace.toggleWorkbenchFullscreen(SESSION)

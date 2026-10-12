@@ -64,6 +64,7 @@ import {
 } from '../api/credentials.schema.ts'
 import { llmDiscoverModelsValueSchema, llmModelsValueSchema, llmProvidersValueSchema } from '../api/llm.schema.ts'
 import { browserControlValueSchema } from '../api/browser.schema.ts'
+import { sideChatCloseValueSchema, sideChatCreateValueSchema, sideChatSendValueSchema, sideChatStateValueSchema } from '../api/side-chat.schema.ts'
 import {
   subagentHistoryValueSchema,
   subagentInterruptValueSchema,
@@ -104,6 +105,12 @@ export interface IApiClient {
     attachment(payload: RequestPayload<'session.attachment'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'session.attachment'>>>
     updateQueue(payload: RequestPayload<'session.updateQueue'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'session.updateQueue'>>>
     cancel(payload: RequestPayload<'session.cancel'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'session.cancel'>>>
+  }
+  sideChat: {
+    create(payload: RequestPayload<'sideChat.create'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'sideChat.create'>>>
+    send(payload: RequestPayload<'sideChat.send'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'sideChat.send'>>>
+    state(payload: RequestPayload<'sideChat.state'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'sideChat.state'>>>
+    close(payload: RequestPayload<'sideChat.close'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'sideChat.close'>>>
   }
   subagents: {
     list(payload: RequestPayload<'subagent.list'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'subagent.list'>>>
@@ -194,6 +201,10 @@ const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseV
   'session.attachment': sessionAttachmentValueSchema,
   'session.updateQueue': sessionUpdateQueueValueSchema,
   'session.cancel': sessionCancelValueSchema,
+  'sideChat.create': sideChatCreateValueSchema,
+  'sideChat.send': sideChatSendValueSchema,
+  'sideChat.state': sideChatStateValueSchema,
+  'sideChat.close': sideChatCloseValueSchema,
   'subagent.list': subagentListValueSchema,
   'subagent.history': subagentHistoryValueSchema,
   'subagent.prompt': subagentPromptValueSchema,
@@ -445,6 +456,13 @@ export abstract class AbstractApiClient implements IApiClient {
     attachment: (payload, signal) => this.callUnary('session.attachment', payload, signal),
     updateQueue: (payload, signal) => this.callUnary('session.updateQueue', payload, signal),
     cancel: (payload, signal) => this.callUnary('session.cancel', payload, signal),
+  }
+
+  readonly sideChat: IApiClient['sideChat'] = {
+    create: (payload, signal) => this.callUnary('sideChat.create', payload, signal),
+    send: (payload, signal) => this.callUnary('sideChat.send', payload, signal),
+    state: (payload, signal) => this.callUnary('sideChat.state', payload, signal),
+    close: (payload, signal) => this.callUnary('sideChat.close', payload, signal, 'caller-signal-only'),
   }
 
   readonly subagents: IApiClient['subagents'] = {

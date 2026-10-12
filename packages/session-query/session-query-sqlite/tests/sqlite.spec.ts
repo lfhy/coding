@@ -187,6 +187,25 @@ async function liveContext(config: ConstructorParameters<typeof SqliteSessionQue
 }
 
 describe('SQLite session search', () => {
+  it('never inserts transient live text into the index or search results', async () => {
+    const path = await temporaryPath('transient-index.db')
+    const ctx = await liveContext({ path })
+    const privateId = SessionId('private-index')
+    ctx.sessions.create(privateId, { transient: true, seed: messageEvents('private-index-token') })
+    ctx.sessions.create(SessionId('public-index'), { seed: messageEvents('public-index-token') })
+    expect((await ctx.sessionQuery.searchSessions({ query: 'private-index-token' })).items).toEqual([])
+    expect((await ctx.sessionQuery.searchSessions({ query: 'public-index-token' })).items).toHaveLength(1)
+    await expect(ctx.sessionQuery.searchEvents({ sessionId: privateId, query: 'private-index-token' }))
+      .rejects.toMatchObject({ code: 'SESSION_QUERY_SESSION_NOT_FOUND' })
+    const db = new DatabaseSync(path)
+    try {
+      expect(db.prepare('SELECT * FROM persisted_sessions WHERE id = ?').get(privateId)).toBeUndefined()
+    } finally {
+      db.close()
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('defaults and validates opening policy and persisted inspection concurrency through its Cordis config', async () => {
     const defaultCtx = await liveContext()
     expect((defaultCtx.sessionQuery as SqliteSessionQueryEngine).config.openAt).toBe('startup')

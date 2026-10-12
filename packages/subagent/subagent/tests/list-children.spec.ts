@@ -146,6 +146,21 @@ const hostileProjectionDefinition: ProjectionDefinition<'subagentListHostileProb
 }
 
 describe('SubagentRuntime.listChildren', () => {
+  it('never lists a transient one-shot child even with a descriptor and projection', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(SessionProjectionRegistry)
+    await ctx.plugin(SubagentRuntime)
+    const parent = ctx.sessions.create(SessionId('private-parent'), { transient: true })
+    const child = ctx.sessions.create(SessionId('private-child'), {
+      transient: true, meta: { parentSession: parent.id, origin: 'subagent' },
+    })
+    child.append('subagent/descriptor', { ...descriptorPayload('private child'), mode: 'one-shot' })
+    expect(await ctx.subagents.listChildren(parent.id)).toEqual([])
+    expect(await ctx.subagents.listDescendants(parent.id)).toEqual([])
+    await ctx.fiber.dispose()
+  })
+
   it('lists live children without persistence, query services, or the continuation runtime', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)

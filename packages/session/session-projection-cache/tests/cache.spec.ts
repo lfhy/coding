@@ -118,6 +118,21 @@ afterEach(async () => {
 })
 
 describe('SessionProjectionCache write policy', () => {
+  it('never writes a transient session at any checkpoint or detach', async () => {
+    const { ctx, pool, cache } = await harness({ config: { writeEveryEvents: 1, writeIntervalMs: 1 } })
+    let session: Session | undefined
+    const owner = await ctx.plugin(Object.assign((inner: Context) => {
+      session = inner.sessions.create(SessionId('transient-cache'), { transient: true })
+    }, { inject: ['sessions'] }))
+    if (session === undefined) throw new Error('transient session not created')
+    mark(session, ['secret'])
+    endTurn(session)
+    await cache.write(session)
+    await owner.dispose()
+    await settle()
+    expect(storedRecord(pool, session.id)).toBeUndefined()
+  })
+
   it('writes a durable checkpoint at turn/end (mandatory point)', async () => {
     const { ctx, pool } = await harness()
     const session = ctx.sessions.create(SessionId('turn-end'))

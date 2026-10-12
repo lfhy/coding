@@ -103,6 +103,8 @@ export interface SessionHeader {
  * store folds into a {@link SessionHeader}.
  */
 export interface CreateSessionOptions {
+  /** 仅在进程内存在；创建时标记，禁止将其日志交给持久化后端。 */
+  readonly transient?: true
   /** Initial replay or fork history supplied at construction. */
   readonly seed?: readonly SessionEvent[]
   /**
