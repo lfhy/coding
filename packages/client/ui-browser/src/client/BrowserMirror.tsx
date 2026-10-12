@@ -419,7 +419,7 @@ export function BrowserMirror({ sessionId, shown, selectedTabId, newTabRequest, 
       document.removeEventListener('visibilitychange', measure)
       send(false)
     }
-  }, [nativePresenter, sessionId, tabId, shown, view.phase, nativeNotice, awaitingSelectedTab, pendingBrowserLink])
+  }, [nativePresenter, sessionId, tabId, shown, view.phase, awaitingSelectedTab, pendingBrowserLink])
   const observerEpoch = useRef(0)
   const lastViewportAttempt = useRef<string | null>(null)
   const viewportRetryTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -664,11 +664,11 @@ export function BrowserMirror({ sessionId, shown, selectedTabId, newTabRequest, 
         disabled={!frameReady || controlsDisabled} aria-pressed={typeMode}
         title={agentBusy ? t('agentBusy') : t('typeModeHint')}
         onClick={() => { setTypeMode(previous => !previous); setTypeTarget(null) }}>{t('typeMode')}</button>}
+      {nativeNotice && <div className={css.nativeNotice}>
+        {inputError && <p id="browser-address-error" className={css.nativeError} role="alert" title={inputError}>{inputError}</p>}
+        {agentBusy && view.phase !== 'busy' && <p role="status" title={t('agentBusy')}>{t('agentBusy')}</p>}
+      </div>}
     </div>
-    {nativeNotice && <div className={css.nativeNotice}>
-      {inputError && <p id="browser-address-error" className={css.nativeError} role="alert">{inputError}</p>}
-      {agentBusy && view.phase !== 'busy' && <p role="status">{t('agentBusy')}</p>}
-    </div>}
     <div className={css.body} ref={canvasRef} data-testid="browser-canvas" aria-busy={addressLoading}>
       {pendingBrowserLink?.error !== undefined && <div className={css.linkError} role="alert">
         <span>{t('linkError')}: {pendingBrowserLink.error}</span>

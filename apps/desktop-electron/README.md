@@ -16,6 +16,8 @@ make dev
 
 开发 Host 使用 `~/.dsh-electron-dev`，默认工作目录为其中的 `workspace/`，Electron `userData` 位于 `electron-user-data/`；开发实例拒绝与安装版 `~/.dsh` 重叠。开发 Host 从仓库源码启动，需要 PATH 中的 Node，且不自动使用安装版设置与凭据。手动真实 API 测试须显式设置环境变量或只在隔离的 `workspace/.env` 中配置；Host 不读取仓库根目录 `.env`，不要将密钥写进仓库。
 
+`node apps/desktop-electron/tests/native-smoke.mjs --browser-only` 可在完成 Host/Web 与 Electron 构建后只运行浏览器定向原生验收（仍包含启动所需的无凭据向导设置）：真实 Host 模型工具快照、填入、上下滚动、跨租约引用点击与原生透明覆盖层焦点／DOM 隔离。物理鼠标、滚轮和键盘探针使用 macOS CGEvent，并要求未锁屏及辅助功能权限；不满足条件时明确输出未验证，不把程序化 guest 输入等同于原生命中测试。
+
 ## Host、Remote-SSH 与窗口
 
 桌面窗口启动时默认最大化，但不进入全屏。macOS 与 Windows 顶栏的空白区域支持拖动已还原的窗口；双击该区域在最大化和还原之间切换。顶栏按钮和输入框等交互区域不参与拖动，仍可正常点击或输入。
@@ -28,7 +30,7 @@ make dev
 
 七项[浏览器工具](../../packages/browser/tool-browser/README.md)在桌面 Host 中使用 [Electron 提供方](../../packages/browser/browser-electron/README.md)，Web/CLI 才使用 [Playwright 提供方](../../packages/browser/browser-playwright/README.md)。Electron 主进程按 Session 持有独立的临时 partition 和 `WebContentsView` 页面；工作台中的真人与 Host Agent 操作同一 guest，不是 renderer `<webview>`，也不是 PNG 镜像。人工打开链接或输入网址在目标主 frame 提交导航、核验目标 URL 后返回页面状态，不等待 DOM ready、缓慢子资源、截图或严格 DOM 观测；页面继续加载时，原生状态使地址栏持续显示加载状态，直到 guest 停止加载。模型导航仍等待完整加载并执行严格观测，模型操作仍遵守审批规则。预加载脚本只向受限 Host 主 frame 暴露定位和显隐 guest 的呈现方法，不向页面开放浏览器控制权或私有 bridge 令牌；主进程核验窗口、origin、frame 和位置，隐藏工作台或切换标签仅卸载视图，关闭标签、Session 或销毁窗口才释放相应资源。主进程截图通过共享尺寸／字节预算策略和原生 PNG 编码器满足桥接限额，不改变实时 guest 画面；模型显式截图另经附件服务归一化并持久保存，桌面 Client 无需轮询 PNG 显示。
 
-Host 经启动环境中的一次性令牌连接主进程私有回环 WebSocket；令牌不进入 URL 或 renderer。断线、超时或取消会使该 Host 的浏览器会话失效，当前 Host 进程不会自动重连，也不能静默改用 Playwright。Agent 操作从审批等待至结束独占 Session，期间人工命令被拒绝，原生 guest 暂时隐藏以免发生未授权输入。工作台在租约期间送来的呈现尺寸会先应用于未挂载的 guest，后续观测使用该视口；释放租约时挂回视图不会仅因附着而使新观测过期，真人之后调尺寸仍会使旧引用过期。同文档的无关兄弟分支内容更新不会仅因全局变化撤销模型元素引用；目标、表单和祖先路径变化仍可能使旧引用过期，详见 [Electron 提供方](../../packages/browser/browser-electron/README.md)。完全访问且关闭审批提示的会话无需逐次审批，其他组合仍遵循工具的会话权限规则；远程工作区不支持浏览器操作。guest 禁用下载、弹窗和页面权限请求，不提供任意页面脚本入口；它可以打开包括本机 Host 界面在内的任意 HTTP(S) 地址，其页面始终运行在独立的临时 partition 中，不共享 renderer 的会话、存储或桥接凭据。
+Host 经启动环境中的一次性令牌连接主进程私有回环 WebSocket；令牌不进入 URL 或 renderer。断线、超时或取消会使该 Host 的浏览器会话失效，当前 Host 进程不会自动重连，也不能静默改用 Playwright。Agent 操作从审批等待至结束独占 Session，期间人工命令被拒绝，已呈现的原生 guest 持续显示在主进程拥有的透明 `WebContentsView` 输入覆盖层下。覆盖层拥有原生鼠标命中与键盘焦点；guest 的可取消 `before-input-event` 钩子同时拒绝租约内人工键盘输入，模型通过 CDP 输入而非短暂放行原生输入。移动、点击、填入和滚动的虚拟鼠标及渐隐运动轨迹只在覆盖层绘制，不进入页面 DOM 或截图；移动动画完成后重新核验元素身份、祖先路径、位置和命中，再发送输入。覆盖层使用系统双色指针与短暂操作反馈，遵循减少动态效果偏好：关闭运动轨迹并保留静态操作标记。工作台呈现尺寸与真实 guest 视口同步；释放租约不会重新附着 guest 或仅因租约切换使新观测过期，真人之后调尺寸仍会使旧引用过期。隐藏工作台、切页或 modal 的调用方必须及时提交 `visible: false`；该调用销毁覆盖层并卸载 guest，恢复呈现会按当前租约重新保护。覆盖层加载失败、renderer 崩溃或意外销毁立即卸载 guest，不能降级为裸露页面；释放租约、关闭 Session 和管理器销毁均释放覆盖层。同文档的无关兄弟分支内容更新不会仅因全局变化撤销模型元素引用；目标、表单和祖先路径变化仍可能使旧引用过期，详见 [Electron 提供方](../../packages/browser/browser-electron/README.md)。完全访问且关闭审批提示的会话无需逐次审批，其他组合仍遵循工具的会话权限规则；远程工作区不支持浏览器操作。guest 禁用下载、弹窗和页面权限请求，不提供任意页面脚本入口；它可以打开包括本机 Host 界面在内的任意 HTTP(S) 地址，其页面始终运行在独立的临时 partition 中，不共享 renderer 的会话、存储或桥接凭据。
 
 ## 打包与安装边界
 

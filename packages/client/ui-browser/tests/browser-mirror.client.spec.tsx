@@ -384,13 +384,12 @@ describe('browser UI', () => {
     bounds.mockRestore()
   })
 
-  it('keeps native URL errors and pending status above the guest bounds while preserving Web placement', () => {
+  it('keeps native URL errors in the toolbar without hiding or resizing the guest', () => {
     const present = vi.fn(async () => {})
     vi.stubGlobal('codingDesktop', { browser: { available: true, present } })
-    const bounds = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(() => ({
-      left: 10, top: document.querySelector('[data-native-notice="true"]') ? 120 : 80,
-      right: 900, bottom: 680,
-    } as DOMRect))
+    const bounds = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      left: 10, top: 80, right: 900, bottom: 680,
+    } as DOMRect)
     const result = mount(ready())
     expect(present).toHaveBeenLastCalledWith(expect.objectContaining({ bounds: { x: 10, y: 80,
       width: 890, height: 600 }, visible: true }))
@@ -400,10 +399,10 @@ describe('browser UI', () => {
     fireEvent.submit(address.closest('form')!)
     const error = screen.getByRole('alert')
     expect(error.id).toBe('browser-address-error')
-    expect(present).toHaveBeenLastCalledWith(expect.objectContaining({ bounds: { x: 10, y: 120,
-      width: 890, height: 560 }, visible: true }))
-    expect(error.parentElement!.compareDocumentPosition(screen.getByTestId('browser-canvas'))
-      & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+    expect(present).toHaveBeenCalledTimes(1)
+    expect(present).toHaveBeenLastCalledWith(expect.objectContaining({ bounds: { x: 10, y: 80,
+      width: 890, height: 600 }, visible: true }))
+    expect(error.closest('div')!.parentElement).toBe(address.closest('form')!.parentElement)
     result.rerender(<BrowserMirror {...result.props} useBrowserMirror={viewHook({ ...ready(), pending: true })} />)
     const pending = screen.getByRole('status', { name: '' })
     expect(pending.textContent).toBe('Opening page…')
@@ -417,6 +416,29 @@ describe('browser UI', () => {
     fireEvent.submit(screen.getByRole('textbox', { name: 'Address' }).closest('form')!)
     expect(screen.getByRole('alert').parentElement).toBe(screen.getByTestId('browser-canvas'))
     web.unmount()
+  })
+
+  it('keeps the native page presented across agent lease and release without changing its viewport', () => {
+    const present = vi.fn(async () => {})
+    vi.stubGlobal('codingDesktop', { browser: { available: true, present } })
+    const bounds = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      left: 10, top: 80, right: 900, bottom: 680,
+    } as DOMRect)
+    const result = mount(ready())
+    const busy = ready(2)
+    result.rerender(<BrowserMirror {...result.props} useBrowserMirror={viewHook({ ...busy,
+      state: { ...busy.state, operationActive: true } as never })} />)
+    expect(screen.getByText('AI is using the browser. Manual controls resume when it finishes.')).toBeTruthy()
+    expect(screen.getByRole<HTMLInputElement>('textbox', { name: 'Address' }).disabled).toBe(true)
+    expect(present).toHaveBeenCalledTimes(1)
+    act(() => { window.dispatchEvent(new Event('resize')) })
+    expect(present).toHaveBeenCalledTimes(1)
+    result.rerender(<BrowserMirror {...result.props} useBrowserMirror={viewHook(ready(3))} />)
+    expect(screen.queryByText('AI is using the browser. Manual controls resume when it finishes.')).toBeNull()
+    expect(present).toHaveBeenCalledTimes(1)
+    result.unmount()
+    expect(present).toHaveBeenLastCalledWith(expect.objectContaining({ visible: false }))
+    bounds.mockRestore()
   })
 
   it('hides the native guest for a document modal and restores it when the modal closes', async () => {

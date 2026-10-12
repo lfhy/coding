@@ -565,9 +565,12 @@ async function browserFixture() {
         <a id="stable-result" href="/dynamic-result">Open the local detail result</a>
         <div id="unrelated"><span>New results are arriving</span></div>
         <img id="late-image" alt="Late search image">
+        <input id="native-fill" aria-label="Native input"><div style="height:3000px"></div>
         <script>
           let tick = 0
           window.__nativeDynamicTick = 0
+          window.__nativeScrollSamples = []
+          addEventListener('scroll',()=>window.__nativeScrollSamples.push(scrollY))
           window.__nativeLateLoaded = 0
           const image = document.querySelector('#late-image')
           image.addEventListener('load', () => {
@@ -841,6 +844,26 @@ async function scriptedDynamicResultModel() {
             assert.ok(Number.isSafeInteger(observation.revision) && observation.revision > 0)
             target = { ref, revision: observation.revision }
             observations.push(observation)
+            const inputRef = observation.snapshot.match(/(e\d+-\S+) input "Native input"/)?.[1]
+            assert.ok(inputRef, 'fill target must be observed in the native page')
+            name = 'browser_fill'
+            args = JSON.stringify({ ref: inputRef, revision: observation.revision, text: 'Native fill verified' })
+          } else if (phase === 'snapshot' && step === 2) {
+            assert.equal(JSON.parse(results.at(-1)?.content).action, 'fill')
+            name = 'browser_scroll'
+            args = JSON.stringify({ direction: 'down', pixels: 160 })
+          } else if (phase === 'snapshot' && step === 3) {
+            assert.equal(JSON.parse(results.at(-1)?.content).action, 'scroll')
+            name = 'browser_scroll'
+            args = JSON.stringify({ direction: 'up', pixels: 160 })
+          } else if (phase === 'snapshot' && step === 4) {
+            assert.equal(JSON.parse(results.at(-1)?.content).action, 'scroll')
+            name = 'browser_snapshot'
+            args = '{}'
+          } else if (phase === 'snapshot' && step === 5) {
+            const observation = JSON.parse(results.at(-1)?.content).observation
+            target = { ref: observation.snapshot.match(/(e\d+-\S+) a "Open the local detail result"/)?.[1], revision: observation.revision }
+            assert.ok(target.ref)
           } else if (phase === 'click' && step === 0) {
             assert.ok(payload.messages.some(message => message.role === 'user' &&
               JSON.stringify(message.content).includes('点进去')),
@@ -890,7 +913,7 @@ async function scriptedDynamicResultModel() {
     get target() { return target },
     startClick() {
       assert.equal(phase, 'snapshot')
-      assert.equal(step, 2, 'first snapshot turn must complete before a fresh click lease')
+      assert.equal(step, 6, 'first snapshot/fill/scroll turn must complete before a fresh click lease')
       phase = 'click'
       step = 0
     },
@@ -2180,14 +2203,19 @@ async function verifyDynamicNativeResultClick(page, app, fixture, model) {
     throw new Error(`${error.message}; dynamic model errors: ${model.failures.join(' | ') || 'none'}`)
   }
   assert.deepEqual(model.failures, [], 'first model turn must receive the native snapshot')
-  assert.equal(model.step, 2)
+  assert.equal(model.step, 6)
+  assert.equal(await guestScript(app, guestId, 'document.querySelector("#native-fill").value'), 'Native fill verified',
+    'CDP insertText must work while native keyboard input is isolated')
+  const scrollSamples = await guestScript(app, guestId, 'window.__nativeScrollSamples')
+  assert.ok(scrollSamples.some(y => y > 0), 'real CDP wheel must scroll the guest down')
+  assert.equal(await guestScript(app, guestId, 'scrollY'), 0, 'real opposite wheel returns guest to top')
   assert.ok(model.target?.ref, 'model must retain the link ref actually emitted by snapshot')
   assert.equal(model.observations[0].tabId, tabId)
   const firstEvents = history.events.map(({ event }) => event)
   assert.deepEqual(firstEvents.filter(event => event.type === 'tool/call').map(event => event.data.name),
-    ['browser_snapshot'], 'first turn must actually call the shipped browser tool')
+    ['browser_snapshot', 'browser_fill', 'browser_scroll', 'browser_scroll', 'browser_snapshot'], 'first turn must actually call the shipped browser tools')
   assert.deepEqual(firstEvents.filter(event => event.type === 'tool/result')
-    .map(event => event.data.message.content[0]?.isError), [false])
+    .map(event => event.data.message.content[0]?.isError), [false, false, false, false, false])
 
   // 租约释放后持续更新无关节点和 title，并等待迟到图片；原 ref 仍指向同一链接。
   await until(async () => {
@@ -2208,10 +2236,95 @@ async function verifyDynamicNativeResultClick(page, app, fixture, model) {
   assert.equal(await guestScript(app, guestId, 'document.querySelector("#stable-result").href'),
     fixture.dynamicResultUrl, 'the observed link remains unchanged through unrelated updates')
 
+  const probeDirectory = await mkdtemp(join(tmpdir(), 'dsh-native-input-'))
+  const probeSource = join(probeDirectory, 'input.swift')
+  const probeBinary = join(probeDirectory, 'input')
+  await writeFile(probeSource, `import Cocoa
+import ApplicationServices
+let x = Double(CommandLine.arguments[1])!, y = Double(CommandLine.arguments[2])!
+let p = CGPoint(x:x,y:y)
+CGEvent(mouseEventSource:nil,mouseType:.leftMouseDown,mouseCursorPosition:p,mouseButton:.left)?.post(tap:.cghidEventTap)
+CGEvent(mouseEventSource:nil,mouseType:.leftMouseUp,mouseCursorPosition:p,mouseButton:.left)?.post(tap:.cghidEventTap)
+CGEvent(scrollWheelEvent2Source:nil,units:.pixel,wheelCount:1,wheel1:-160,wheel2:0,wheel3:0)?.post(tap:.cghidEventTap)
+CGEvent(keyboardEventSource:nil,virtualKey:0,keyDown:true)?.post(tap:.cghidEventTap)
+CGEvent(keyboardEventSource:nil,virtualKey:0,keyDown:false)?.post(tap:.cghidEventTap)
+`)
+  const compileProbe = spawnSync('/usr/bin/swiftc', [probeSource, '-o', probeBinary], { encoding: 'utf8' })
+  assert.equal(compileProbe.status, 0, compileProbe.stderr)
+  const trusted = await app.evaluate(({ systemPreferences }) => systemPreferences.isTrustedAccessibilityClient(false))
+  await guestScript(app, guestId, `window.__nativeHumanInputs=0;
+    for(const type of ['mousedown','wheel','keydown']) document.addEventListener(type,()=>window.__nativeHumanInputs++,true);`)
   model.startClick()
+  // 仅测试延长覆盖 renderer 的动画 Promise，给原生输入探针保留确定性的租约窗口。
+  await app.evaluate(({ webContents }, id) => {
+    const prototype = Object.getPrototypeOf(webContents.fromId(id))
+    const original = prototype.executeJavaScript
+    globalThis.__nativeSmokeExecute = original
+    prototype.executeJavaScript = function (source, ...args) {
+      if (this.getURL().startsWith('data:text/html') && source.startsWith('globalThis.moveCursor(')) {
+        source = `(async()=>{ await ${source}; await new Promise(r=>setTimeout(r,1500)) })()`
+      }
+      return original.call(this, source, ...args)
+    }
+  }, guestId)
   const second = await browserRpc(page, 'session.prompt', { sessionId, mode: 'queue',
     content: [{ type: 'text', text: '点进去' }] })
   assert.equal(second.accepted, true)
+  await until(async () => app.evaluate(({ BrowserWindow, webContents }, id) => {
+    const window = BrowserWindow.getAllWindows()[0]
+    const children = window.contentView.children
+    const guest = webContents.fromId(id)
+    return children.some(view => view.webContents?.id === id) &&
+      children.some(view => view.webContents?.getURL().startsWith('data:text/html')) && !guest.isDestroyed()
+  }, guestId), 'click lease retains guest beneath native transparent input view', 10_000)
+  const protectedState = await app.evaluate(async ({ BrowserWindow, webContents }, id) => {
+    const guest = webContents.fromId(id)
+    const overlay = BrowserWindow.getAllWindows()[0].contentView.children.find(view =>
+      view.webContents?.getURL().startsWith('data:text/html'))
+    const result = { focused: overlay.webContents.isFocused(),
+      clear: await overlay.webContents.executeJavaScript('getComputedStyle(document.body).backgroundColor'),
+      guestNodes: await guest.executeJavaScript('document.querySelectorAll("#cursor, #pulse").length') }
+    return result
+  }, guestId)
+  if (screenLocked() === false) assert.equal(protectedState.focused, true, 'native input shield owns keyboard focus')
+  else console.log(`UNVERIFIED: native keyboard focus; screenLocked=${screenLocked()}`)
+  assert.equal(protectedState.clear, 'rgba(0, 0, 0, 0)', 'native shield leaves page continuously visible')
+  assert.equal(protectedState.guestNodes, 0, 'visual animation must not pollute guest observation DOM')
+  const compositionPath = join(tmpdir(), `dsh-native-overlay-${randomUUID()}.png`)
+  if (screenLocked() === false) {
+    const rect = await app.evaluate(({ BrowserWindow }) => {
+      const bounds = BrowserWindow.getAllWindows()[0].getBounds()
+      return `${bounds.x},${bounds.y},${bounds.width},${bounds.height}`
+    })
+    const capture = spawnSync('/usr/sbin/screencapture', ['-x', `-R${rect}`, compositionPath], { encoding: 'utf8' })
+    if (capture.status === 0) console.log(`Native composition screenshot: ${compositionPath}`)
+    else console.log(`UNVERIFIED: native composition capture: ${capture.stderr.trim()}`)
+  } else console.log('UNVERIFIED: native composition screenshot requires unlocked screen')
+  const point = await app.evaluate(({ BrowserWindow }, id) => {
+    const window = BrowserWindow.getAllWindows()[0]
+    const guestView = window.contentView.children.find(view => view.webContents?.id === id)
+    const content = window.getContentBounds(), bounds = guestView.getBounds()
+    return { x: content.x + bounds.x + 40, y: content.y + bounds.y + 40 }
+  }, guestId)
+  await app.evaluate(({ BrowserWindow }) => {
+    const shield = BrowserWindow.getAllWindows()[0].contentView.children.find(view =>
+      view.webContents?.getURL().startsWith('data:text/html'))
+    globalThis.__nativeShieldInputs = { mouse:0, key:0 }
+    shield.webContents.on('before-mouse-event', () => { globalThis.__nativeShieldInputs.mouse++ })
+    shield.webContents.on('before-input-event', () => { globalThis.__nativeShieldInputs.key++ })
+  })
+  if (trusted && screenLocked() === false) {
+    const input = spawnSync(probeBinary, [String(point.x), String(point.y)], { encoding: 'utf8' })
+    assert.equal(input.status, 0, input.stderr)
+    await until(async () => app.evaluate(() => globalThis.__nativeShieldInputs.mouse > 0 && globalThis.__nativeShieldInputs.key > 0),
+      'CGEvent positive control must reach shield mouse and keyboard hooks', 1000)
+    assert.equal(await guestScript(app, guestId, 'window.__nativeHumanInputs'), 0,
+      'physical click/wheel/keyboard over transparent native view cannot reach leased guest')
+    console.log('PASS: CGEvent native transparent-region click/wheel/keyboard isolated')
+  } else {
+    console.log(`UNVERIFIED: physical transparent-region hit-test requires unlocked screen and Accessibility permission; screenLocked=${screenLocked()}, accessibility=${trusted}`)
+  }
+  await rm(probeDirectory, { recursive: true, force: true })
   try {
     await until(async () => {
       history = await browserRpc(page, 'session.history', { sessionId, maxMessages: 50 })
@@ -2223,10 +2336,10 @@ async function verifyDynamicNativeResultClick(page, app, fixture, model) {
   assert.deepEqual(model.failures, [], 'second model turn must receive a successful native click')
   assert.equal(model.step, 2)
   assert.deepEqual(history.events.filter(({ event }) => event.type === 'tool/call')
-    .map(({ event }) => event.data.name), ['browser_snapshot', 'browser_click'],
+    .map(({ event }) => event.data.name), ['browser_snapshot', 'browser_fill', 'browser_scroll', 'browser_scroll', 'browser_snapshot', 'browser_click'],
   'separate turns must record snapshot then model-issued click')
   assert.deepEqual(history.events.filter(({ event }) => event.type === 'tool/result')
-    .map(({ event }) => event.data.message.content[0]?.isError), [false, false],
+    .map(({ event }) => event.data.message.content[0]?.isError), [false, false, false, false, false, false],
   'unrelated DOM churn must not invalidate the unchanged result link')
   assert.equal(history.events.findLast(({ event }) => event.type === 'turn/end')?.event.data.reason.kind,
     'completed')
@@ -2242,9 +2355,10 @@ async function verifyDynamicNativeResultClick(page, app, fixture, model) {
 
 async function main() {
   assert.equal(process.platform, 'darwin', 'native smoke currently requires macOS')
-  assert.ok(process.argv.length === 2 || (process.argv.length === 3 && process.argv[2] === '--focus-only'),
-    'only --focus-only is accepted')
+  assert.ok(process.argv.length === 2 || (process.argv.length === 3 && ['--focus-only', '--browser-only'].includes(process.argv[2])),
+    'only --focus-only or --browser-only is accepted')
   const focusOnly = process.argv[2] === '--focus-only'
+  const browserOnly = process.argv[2] === '--browser-only'
   assert.ok(existsSync(entry), 'first run pnpm run build && pnpm run build:electron')
 
   const isolated = await mkdtemp(join(tmpdir(), 'dsh-electron-native-'))
@@ -2287,6 +2401,7 @@ async function main() {
     }
     app = await _electron.launch({ executablePath: electronExecutable, args: [entry], cwd: repositoryRoot,
       env, timeout: timeoutMs })
+    app.process().stderr?.on('data', bytes => { if (String(bytes).includes('browser')) console.error(String(bytes)) })
     const firstPage = await deadline(app.firstWindow(), 'first Host window')
     const windowHistory = [`first=${firstPage.url()}`]
     firstPage.on('close', () => windowHistory.push('first closed'))
@@ -2361,6 +2476,16 @@ async function main() {
     }
     await browserRpc(page, 'settings.update', { ns: 'permission',
       patch: { defaultPreset: 'danger-full-access' } })
+    if (browserOnly) {
+      fixture = await browserFixture()
+      dynamicResultModel = await scriptedDynamicResultModel()
+      await browserRpc(page, 'settings.update', { ns: 'llm-deepseek',
+        patch: { baseURL: dynamicResultModel.url, thinking: 'disabled', reasoningEffort: 'off' } })
+      await verifyDynamicNativeResultClick(page, app, fixture, dynamicResultModel)
+      passed = true
+      console.log('PASS: native shared guest remains presented through fresh snapshot/click leases; observed ref navigates through real Host tool composition')
+      return
+    }
     const titlebarInteractionVerified = await verifyTitlebar(page, app)
     await verifyTerminalTabs(page, terminalScreenshot)
     fixture = await browserFixture()

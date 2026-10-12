@@ -10,7 +10,6 @@
   font-family: var(--dsw-font-family);
 }
 .root[hidden], .tabs[hidden] { display: none; }
-.root[data-native-notice='true'] { grid-template-rows: 48px auto minmax(0, 1fr); }
 .tabs { display: flex; align-items: center; flex: 1; width: 100%; min-width: 0; white-space: nowrap; }
 /* 标签宽度由工作台外层统一分配，内部仅填满一个条目。 */
 .tab {
@@ -72,10 +71,9 @@
 .addressStatus { display: grid; place-items: center; flex: none; width: 24px; height: 24px; }
 .typeMode { flex: none; height: 30px; padding: 0 8px; font: var(--dsw-font-xs-13); }
 .typeMode[data-active='true'] { background: var(--dsw-alias-interactive-bg-active); }
-.nativeNotice { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; min-width: 0;
-  padding: 6px 12px; border-bottom: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xxs-12); }
-.nativeNotice p { margin: 0; }
+.nativeNotice { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 35%;
+  color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xxs-12); }
+.nativeNotice p { margin: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .nativeError { color: var(--dsw-alias-state-error-primary); }
 .body { position: relative; display: grid; min-width: 0; min-height: 0; overflow: hidden; }
 .blank {

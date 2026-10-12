@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { BrowserWindow, WebContentsView } from 'electron'
 import type { BrowserCapture, BrowserCommand, BrowserExpectedTarget, BrowserHumanCommand, BrowserHumanTarget, BrowserObservation, BrowserSessionState, BrowserTabId, BrowserTabSummary, BrowserUseErrorCode } from '@deepseek-ai/dsh-browser'
 import { fitBrowserPng } from './browser-image.ts'
+import { createBrowserInputOverlay } from './browser-input-overlay.ts'
 
 const INITIAL_VIEWPORT = { width: 1280, height: 720 }
 const MAX_SESSIONS = 8
@@ -207,6 +208,37 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
   let disposed = false
   let presented: { sessionId: string; tabId: BrowserTabId; bounds: BrowserGuestPresentation['bounds'] } | undefined
   let requestedPresentation: BrowserGuestPresentation | undefined
+  let overlay: ReturnType<typeof createBrowserInputOverlay> | undefined
+
+  function clearOverlay(): void { overlay?.close(); overlay = undefined }
+
+  function protectPresentation(): void {
+    if (!presented || !owners.get(presented.sessionId)?.lease) { clearOverlay(); return }
+    try {
+      overlay ??= createBrowserInputOverlay(window, () => {
+        if (presented) {
+          const tab = owners.get(presented.sessionId)?.tabs.get(presented.tabId)
+          if (tab) detach(tab)
+          presented = undefined
+        }
+        clearOverlay()
+      })
+      overlay.attach(presented.bounds)
+    } catch (error) {
+      const tab = owners.get(presented.sessionId)?.tabs.get(presented.tabId)
+      if (tab) detach(tab)
+      presented = undefined
+      clearOverlay()
+      throw error
+    }
+  }
+
+  async function moveCursor(sessionId: string, tab: Tab, x: number, y: number): Promise<void> {
+    if (!overlay || presented?.sessionId !== sessionId || presented.tabId !== tab.id) return
+    const current = overlay
+    await current.move(x, y)
+    // 隐藏、modal 或切页可以终止可视动画；输入安全仍由租约及独立原生视图保证。
+  }
 
   function state(sessionId: string, owner: Owner): BrowserSessionState {
     const tab = active(owner)
@@ -234,7 +266,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     const owner = owners.get(sessionId)
     if (!owner) return
     owners.delete(sessionId)
-    if (presented?.sessionId === sessionId) presented = undefined
+    if (presented?.sessionId === sessionId) { clearOverlay(); presented = undefined }
     for (const tab of owner.tabs.values()) destroyTab(tab)
     emit(sessionId)
   }
@@ -298,10 +330,10 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     })
     wc.on('render-process-gone', () => { if (isCurrent()) { invalidate(owner, tab); emit(sessionId, owner) } })
     wc.on('destroyed', () => { if (isCurrent()) { invalidate(owner, tab); emit(sessionId, owner) } })
-    wc.on('input-event', (event, input) => {
-      if (!isCurrent()) return
-      if (tab.syntheticInput) return
-      if (owner.lease) { event.preventDefault(); return }
+    // 租约期间即使 guest 仍有焦点也拒绝人工键盘输入，不依赖 syntheticInput。
+    wc.on('before-input-event', (event) => { if (owner.lease) event.preventDefault() })
+    wc.on('input-event', (_event, input) => {
+      if (!isCurrent() || tab.syntheticInput || owner.lease) return
       if (['mouseDown', 'mouseUp', 'mouseWheel', 'keyDown', 'keyUp', 'char'].includes(input.type)) {
         invalidate(owner, tab)
         emit(sessionId, owner)
@@ -583,6 +615,8 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
   }
 
   function show(presentation: BrowserGuestPresentation): void {
+    if (!presentation.visible && requestedPresentation &&
+      (requestedPresentation.sessionId !== presentation.sessionId || requestedPresentation.tabId !== presentation.tabId)) return
     requestedPresentation = presentation
     if (disposed || window.isDestroyed()) return
     const { sessionId, tabId, bounds, visible } = presentation
@@ -590,6 +624,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     const tab = owner?.tabs.get(tabId)
     if (!visible || !tab || owner?.active !== tabId) {
       if (presented) {
+        clearOverlay()
         const old = owners.get(presented.sessionId)?.tabs.get(presented.tabId)
         if (old) detach(old)
         presented = undefined
@@ -606,18 +641,9 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     const boundedWidth = Math.min(width, 1920, Math.floor(1_800_000 / Math.min(height, 1400)))
     const boundedHeight = Math.min(height, 1400)
     const effective = { x, y, width: boundedWidth, height: boundedHeight }
-    if (owner.lease) {
-      // 租约期间先确定真实视口，下一次观测直接以呈现尺寸生成引用。
-      if (owner.viewport.width !== boundedWidth || owner.viewport.height !== boundedHeight) {
-        tab.view.setBounds(effective)
-        owner.viewport = { width: boundedWidth, height: boundedHeight }
-        invalidate(owner, tab)
-        emit(sessionId, owner)
-      }
-      return
-    }
     const same = presented?.sessionId === sessionId && presented.tabId === tabId
     if (presented && !same) {
+      clearOverlay()
       const old = owners.get(presented.sessionId)?.tabs.get(presented.tabId)
       if (old) detach(old)
     }
@@ -629,6 +655,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
       tab.everPresented = true
     }
     presented = { sessionId, tabId, bounds: effective }
+    protectPresentation()
     if (owner.viewport.width !== boundedWidth || owner.viewport.height !== boundedHeight) {
       owner.viewport = { width: boundedWidth, height: boundedHeight }
       invalidate(owner, tab)
@@ -665,6 +692,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
       const tab = active(owner)
       let cursor: BrowserObservation['cursor'] = null
       let mutated = false
+      let feedback: Promise<void> | undefined
       try { switch (command.kind) {
         case 'navigate': await navigate(sessionId, owner, tab, command.url); break
         case 'click':
@@ -674,8 +702,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
           if (latest?.observation.revision !== command.revision) fail('stale browser element revision', 'BROWSER_STALE_REF')
           const documentEpoch = tab.navigation
           const escaped = JSON.stringify(command.ref)
-          const box = await evaluate<{ x: number; y: number } | null>(tab,
-            `(() => { const ref = globalThis.__dshGuestRefs?.get(${escaped}); const el = ref?.el;
+          const targetExpression = `(() => { const ref = globalThis.__dshGuestRefs?.get(${escaped}); const el = ref?.el;
               if (!el || !el.isConnected || ref.form !== (el.form ?? null)) return null;
               if (ref.observer.takeRecords().length) ref.changed = true;
               const path = globalThis.__dshGuestPath(el);
@@ -701,7 +728,8 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
                 root = host.getRootNode();
                 if (root.elementFromPoint?.(x, y) !== host) return null;
               }
-              return { x, y }; })()`)
+              return { x, y }; })()`
+          const box = await evaluate<{ x: number; y: number } | null>(tab, targetExpression)
           if (!box || box.x >= owner.viewport.width || box.y >= owner.viewport.height) {
             fail('browser element no longer visible or changed', 'BROWSER_STALE_REF')
           }
@@ -710,11 +738,32 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
           if (current?.observation.revision !== command.revision) {
             fail('browser element changed before input', 'BROWSER_STALE_REF')
           }
-          const { x, y } = box
+          await moveCursor(sessionId, tab, box.x, box.y)
+          const verified = await evaluate<{ x: number; y: number } | null>(tab, targetExpression)
+          assertStable(sessionId, owner, tab, documentEpoch)
+          assertTarget(owner, expectedTarget)
+          const movedCapture = tab.capture as BrowserCapture | undefined
+          if (!verified || verified.x !== box.x || verified.y !== box.y ||
+            movedCapture?.observation.revision !== command.revision) {
+            fail('browser element changed during cursor movement', 'BROWSER_STALE_REF')
+          }
+          const { x, y } = verified
           cursor = { x, y, kind: command.kind, at: Date.now() }
           mutated = true
-          sendInput(tab, { type: 'mouseDown', x, y, button: 'left', clickCount: 1 })
-          sendInput(tab, { type: 'mouseUp', x, y, button: 'left', clickCount: 1 })
+          await tab.view.webContents.debugger.sendCommand('Input.dispatchMouseEvent', {
+            type: 'mousePressed', x, y, button: 'left', clickCount: 1,
+          })
+          try {
+            assertStable(sessionId, owner, tab, documentEpoch)
+            assertTarget(owner, expectedTarget)
+          } catch (error) {
+            // 已按下但文档变化时不能向新文档补 release；关闭会话收敛原生按键状态。
+            destroy(sessionId)
+            throw error
+          }
+          await tab.view.webContents.debugger.sendCommand('Input.dispatchMouseEvent', {
+            type: 'mouseReleased', x, y, button: 'left', clickCount: 1,
+          })
           if (command.kind === 'fill') {
             assertStable(sessionId, owner, tab, documentEpoch)
             const focused = await evaluate<boolean>(tab, `(() => { const ref = globalThis.__dshGuestRefs?.get(${escaped}); const el = ref?.el;
@@ -736,22 +785,41 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
             if (!focused || current?.observation.revision !== command.revision) {
               fail('browser element changed before fill', 'BROWSER_STALE_REF')
             }
-            await tab.view.webContents.insertText(command.text)
+            await tab.view.webContents.debugger.sendCommand('Input.insertText', { text: command.text })
+          }
+          if (presented?.sessionId === sessionId && presented.tabId === tab.id) {
+            feedback = overlay?.move(x, y, command.kind).catch(() => {})
           }
           break
         }
         case 'scroll': {
           const pixels = Math.min(Math.max(command.pixels, 0), owner.viewport.height)
+          const epoch = tab.navigation
+          const x = Math.floor(owner.viewport.width / 2), y = Math.floor(owner.viewport.height / 2)
+          await moveCursor(sessionId, tab, x, y)
+          assertStable(sessionId, owner, tab, epoch)
+          assertTarget(owner, expectedTarget)
           mutated = true
-          sendInput(tab, { type: 'mouseWheel', x: owner.viewport.width / 2,
-            y: owner.viewport.height / 2, deltaX: 0, deltaY: (command.direction === 'down' ? -1 : 1) * pixels })
-          cursor = { x: owner.viewport.width / 2, y: owner.viewport.height / 2, kind: 'scroll', at: Date.now() }
+          await evaluate(tab, 'true')
+          assertStable(sessionId, owner, tab, epoch)
+          assertTarget(owner, expectedTarget)
+          await tab.view.webContents.debugger.sendCommand('Input.dispatchMouseEvent', {
+            type: 'mouseWheel', x, y, deltaX: 0, deltaY: (command.direction === 'down' ? 1 : -1) * pixels,
+          })
+          // 为异步滚轮合成留出时间；隐藏页面不依赖 requestAnimationFrame。
+          await new Promise<void>(resolve => setTimeout(resolve, 100))
+          assertStable(sessionId, owner, tab, epoch)
+          if (presented?.sessionId === sessionId && presented.tabId === tab.id) {
+            feedback = overlay?.move(x, y, 'scroll').catch(() => {})
+          }
+          cursor = { x, y, kind: 'scroll', at: Date.now() }
           break
         }
         case 'snapshot': case 'screenshot': break
         default: { const never: never = command; throw new Error(`unknown browser command: ${String(never)}`) }
       }
       const capture = await observe(sessionId, owner, tab, cursor)
+      await feedback
       if (command.kind === 'screenshot' && capture.png === null) {
         fail('browser screenshot unavailable until the page is shown in the desktop workbench', 'BROWSER_FAILED')
       }
@@ -902,11 +970,8 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
       const owner = owners.get(sessionId)
       if (owner) {
         owner.lease = true
-        if (presented?.sessionId === sessionId) {
-          const tab = owner.tabs.get(presented.tabId)
-          if (tab) detach(tab)
-          presented = undefined
-        }
+        try { if (presented?.sessionId === sessionId) protectPresentation() }
+        catch (error) { leases.delete(sessionId); owner.lease = false; emit(sessionId, owner); throw error }
         emit(sessionId, owner)
       }
       return null

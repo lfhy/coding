@@ -32,6 +32,13 @@ describe('browser responsive styles', () => {
     expect(rule('.address input')).toContain('min-width: 0')
   })
 
+  it('keeps native operation feedback within the fixed toolbar instead of adding a viewport row', () => {
+    expect(rule('.root {')).toContain('grid-template-rows: 48px minmax(0, 1fr)')
+    expect(css).not.toContain(".root[data-native-notice='true']")
+    expect(rule('.nativeNotice {')).toContain('min-width: 0')
+    expect(rule('.nativeNotice p')).toContain('text-overflow: ellipsis')
+  })
+
   it('paints tab hover and selection on the item, keeping the close button inside the tab box', () => {
     // 整块标签承载选中与悬停背景：逐个按钮的盒子会把关闭键留在标签外。
     expect(rule(".tab:not([data-active='true']):hover:has(> button:enabled)"))

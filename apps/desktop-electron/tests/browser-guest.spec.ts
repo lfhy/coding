@@ -105,6 +105,7 @@ function fakeContents() {
     stop: vi.fn(() => { loading = false }),
     isLoadingMainFrame: vi.fn(() => loading),
     isLoading: vi.fn(() => loading),
+    focus: vi.fn(), executeJavaScript: vi.fn(async () => undefined),
     reload: vi.fn(), sendInputEvent: vi.fn(), insertText: vi.fn(async () => undefined),
     isDestroyed: vi.fn(() => destroyed),
     close: vi.fn(() => { destroyed = true; events.get('destroyed')?.() }),
@@ -144,7 +145,7 @@ beforeEach(() => {
       })) }
   })
   electron.WebContentsView.mockImplementation(function () {
-    const view = { webContents: fakeContents(), setBounds: vi.fn() }
+    const view = { webContents: fakeContents(), setBounds: vi.fn(), setBackgroundColor: vi.fn() }
     electron.views.push(view)
     return view
   })
@@ -214,7 +215,7 @@ describe('Electron 实时浏览器 guest', () => {
     await manager.dispose()
   })
 
-  it('租约阻挡人工命令，隐藏和切换标签页仅卸载视图', async () => {
+  it('租约保留页面呈现，原生覆盖视图阻挡人工输入，释放不改变视口', async () => {
     const window = fixture()
     const manager = createBrowserGuestManager(window)
     const initial = await manager.control('s1', { kind: 'ensure-tab' })
@@ -223,10 +224,11 @@ describe('Electron 实时浏览器 guest', () => {
       bounds: { x: 100, y: 50, width: 900, height: 900 } })
     expect(electron.views[0]!.setBounds).toHaveBeenLastCalledWith({ x: 100, y: 50, width: 700, height: 550 })
     await manager.lease('s1')
-    expect(window.contentView.children).toHaveLength(0)
+    expect(window.contentView.children).toHaveLength(2)
+    expect(window.contentView.children[0]).toBe(electron.views[0])
     await expect(manager.control('s1', { kind: 'new-tab' })).rejects.toMatchObject({ code: 'BROWSER_BUSY' })
     const directInput = { preventDefault: vi.fn() }
-    electron.views[0]!.webContents.events.get('input-event')?.(directInput as never, { type: 'mouseDown' } as never)
+    electron.views[0]!.webContents.events.get('before-input-event')?.(directInput as never, { type: 'keyDown' } as never)
     expect(directInput.preventDefault).toHaveBeenCalledOnce()
     await manager.release('s1')
     expect(window.contentView.children).toHaveLength(1)
@@ -243,6 +245,99 @@ describe('Electron 实时浏览器 guest', () => {
     expect(remaining!.activeTabId).toBe(next!.activeTabId)
     await manager.close('s1')
     expect(electron.views.every(view => view.webContents.close.mock.calls.length === 1)).toBe(true)
+  })
+
+  it('奇数视口滚动使用整型光标坐标，桥接观测仍合法', async () => {
+    const manager = createBrowserGuestManager(fixture())
+    const first = await manager.execute('s1', { kind: 'navigate', url: 'https://example.com/' })
+    manager.present({ sessionId: 's1', tabId: first.observation.tabId, visible: true,
+      bounds: { x: 0, y: 0, width: 501, height: 401 } })
+    await manager.lease('s1')
+    const capture = await manager.execute('s1', { kind: 'scroll', direction: 'down', pixels: 160 })
+    expect(capture.observation.cursor).toMatchObject({ x: 250, y: 200 })
+    parseBridgeResponse({ v: 1, id: 'scroll', ok: true, value: {
+      observation: capture.observation, png: Buffer.from(capture.png!).toString('base64'),
+    } }, 'execute')
+    await manager.release('s1')
+    await manager.dispose()
+  })
+
+  it('晚到旧会话隐藏不会撤下新会话的租约屏障', async () => {
+    const window = fixture()
+    const manager = createBrowserGuestManager(window)
+    const first = await manager.control('s1', { kind: 'ensure-tab' })
+    const second = await manager.control('s2', { kind: 'ensure-tab' })
+    const bounds = { x: 0, y: 0, width: 500, height: 400 }
+    manager.present({ sessionId: 's1', tabId: first!.activeTabId!, bounds, visible: true })
+    await manager.lease('s2')
+    manager.present({ sessionId: 's2', tabId: second!.activeTabId!, bounds, visible: true })
+    const children = [...window.contentView.children]
+    manager.present({ sessionId: 's1', tabId: first!.activeTabId!, bounds, visible: false })
+    expect(window.contentView.children).toEqual(children)
+    await manager.release('s2')
+    expect(window.contentView.children).toEqual([electron.views[1]])
+    await manager.dispose()
+  })
+
+  it('mousePressed 导航后不向新文档发送 release，并销毁会话收敛按下状态', async () => {
+    const manager = createBrowserGuestManager(fixture())
+    const first = await manager.execute('s1', { kind: 'navigate', url: 'https://example.com/' })
+    const wc = electron.views[0]!.webContents
+    const original = wc.debugger.sendCommand.getMockImplementation()!
+    wc.debugger.sendCommand.mockImplementation(async (method, params) => {
+      if (method === 'Input.dispatchMouseEvent' && (params as { type: string }).type === 'mousePressed') {
+        wc.begin('https://example.com/new-document')
+        return {}
+      }
+      return original(method, params)
+    })
+    await expect(manager.execute('s1', { kind: 'click', ref: 'e1', revision: first.observation.revision }))
+      .rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
+    expect(wc.debugger.sendCommand.mock.calls.filter(([method]) => method === 'Input.dispatchMouseEvent')).toHaveLength(1)
+    expect(wc.close).toHaveBeenCalledOnce()
+    await manager.dispose()
+  })
+
+  it('覆盖进程崩溃立即卸载 guest，隐藏与重复租约销毁屏障而不泄漏', async () => {
+    const window = fixture()
+    const manager = createBrowserGuestManager(window)
+    const first = await manager.control('s1', { kind: 'ensure-tab' })
+    const presentation = { sessionId: 's1', tabId: first!.activeTabId!, visible: true,
+      bounds: { x: 0, y: 0, width: 500, height: 400 } }
+    manager.present(presentation)
+    await manager.lease('s1')
+    const shield = electron.views[1]!
+    expect(shield.webContents.focus).toHaveBeenCalled()
+    shield.webContents.events.get('render-process-gone')?.()
+    expect(window.contentView.children).toHaveLength(0)
+    expect(shield.webContents.close).toHaveBeenCalledOnce()
+    await manager.release('s1')
+    expect(window.contentView.children).toHaveLength(1)
+    await manager.lease('s1')
+    const nextShield = electron.views[2]!
+    manager.present({ ...presentation, visible: false })
+    expect(window.contentView.children).toHaveLength(0)
+    expect(nextShield.webContents.close).toHaveBeenCalledOnce()
+    await manager.release('s1')
+    await manager.dispose()
+  })
+
+  it('移动动画后目标改位拒绝点击，覆盖视图不参与观测', async () => {
+    const window = fixture()
+    const manager = createBrowserGuestManager(window)
+    const first = await manager.execute('s1', { kind: 'navigate', url: 'https://example.com/' })
+    manager.present({ sessionId: 's1', tabId: first.observation.tabId, visible: true,
+      bounds: { x: 0, y: 0, width: 500, height: 400 } })
+    const snapshot = await manager.execute('s1', { kind: 'snapshot' })
+    await manager.lease('s1')
+    const wc = electron.views[0]!.webContents
+    electron.views[1]!.webContents.executeJavaScript.mockImplementationOnce(async () => { wc.moveTarget(80, 80) })
+    await expect(manager.execute('s1', { kind: 'click', ref: 'e1', revision: snapshot.observation.revision }))
+      .rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
+    expect(wc.debugger.sendCommand.mock.calls.some(([method]) => method === 'Input.dispatchMouseEvent')).toBe(false)
+    expect(electron.views[1]!.webContents.debugger.sendCommand).not.toHaveBeenCalled()
+    await manager.release('s1')
+    await manager.dispose()
   })
 
   it('原生页面人工输入撤销旧画面，人工导航可建立会话', async () => {
@@ -265,7 +360,7 @@ describe('Electron 实时浏览器 guest', () => {
       const manager = createBrowserGuestManager(fixture(), { onState: (_id, current) => updates.push(current) })
       let finish!: () => void
       electron.WebContentsView.mockImplementationOnce(function () {
-        const view = { webContents: fakeContents(), setBounds: vi.fn() }
+        const view = { webContents: fakeContents(), setBounds: vi.fn(), setBackgroundColor: vi.fn() }
         view.webContents.loadURL.mockImplementationOnce((url: string) => {
           view.webContents.commit(url)
           return new Promise<void>((resolve) => { finish = resolve })
@@ -297,7 +392,7 @@ describe('Electron 实时浏览器 guest', () => {
   it('主 frame 已提交但 loadURL 随即拒绝时不承认开页成功', async () => {
     const manager = createBrowserGuestManager(fixture())
     electron.WebContentsView.mockImplementationOnce(function () {
-      const view = { webContents: fakeContents(), setBounds: vi.fn() }
+      const view = { webContents: fakeContents(), setBounds: vi.fn(), setBackgroundColor: vi.fn() }
       view.webContents.loadURL.mockImplementationOnce(async (url: string) => {
         view.webContents.commit(url)
         view.webContents.domReady()
@@ -432,7 +527,7 @@ describe('Electron 实时浏览器 guest', () => {
     expect(window.contentView.children).toHaveLength(1)
     for (const failure of ['navigation', 'main-frame'] as const) {
       electron.WebContentsView.mockImplementationOnce(function () {
-        const view = { webContents: fakeContents(), setBounds: vi.fn() }
+        const view = { webContents: fakeContents(), setBounds: vi.fn(), setBackgroundColor: vi.fn() }
         if (failure === 'navigation') view.webContents.loadURL.mockRejectedValueOnce(new Error('navigation failed'))
         else view.webContents.loadURL.mockImplementationOnce(async () => {
           view.webContents.events.get('did-start-navigation')?.({ isMainFrame: true } as never)
@@ -465,7 +560,7 @@ describe('Electron 实时浏览器 guest', () => {
     try {
       const manager = createBrowserGuestManager(fixture())
       electron.WebContentsView.mockImplementationOnce(function () {
-        const view = { webContents: fakeContents(), setBounds: vi.fn() }
+        const view = { webContents: fakeContents(), setBounds: vi.fn(), setBackgroundColor: vi.fn() }
         view.webContents.loadURL.mockRejectedValueOnce(new Error('first navigation failed'))
         electron.views.push(view)
         return view
@@ -478,7 +573,7 @@ describe('Electron 实时浏览器 guest', () => {
       const first = await manager.control('s1', { kind: 'open-url', url: 'https://example.com/old' })
       const old = electron.views[1]!.webContents
       electron.WebContentsView.mockImplementationOnce(function () {
-        const view = { webContents: fakeContents(), setBounds: vi.fn() }
+        const view = { webContents: fakeContents(), setBounds: vi.fn(), setBackgroundColor: vi.fn() }
         let finish!: () => void
         view.webContents.loadURL.mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve }))
         view.webContents.isLoadingMainFrame.mockReturnValue(true)
@@ -541,7 +636,7 @@ describe('Electron 实时浏览器 guest', () => {
     wc.mutate()
     await expect(manager.execute('s1', { kind: 'click', ref: 'e1', revision: capture.observation.revision }, target))
       .resolves.toMatchObject({ observation: { cursor: { kind: 'click' } } })
-    expect(wc.sendInputEvent).toHaveBeenCalledTimes(2)
+    expect(wc.debugger.sendCommand.mock.calls.filter(([method]) => method === 'Input.dispatchMouseEvent')).toHaveLength(2)
     const later = await manager.prepare('s1')
     wc.mutate()
     await expect(manager.execute('s1', { kind: 'snapshot' }, later)).resolves.toMatchObject({
@@ -559,6 +654,7 @@ describe('Electron 实时浏览器 guest', () => {
     await expect(manager.execute('s1', { kind: 'click', ref: 'e1', revision: capture.observation.revision }, target))
       .rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
     expect(wc.sendInputEvent).not.toHaveBeenCalled()
+    expect(wc.debugger.sendCommand.mock.calls.some(([method]) => method === 'Input.dispatchMouseEvent')).toBe(false)
     await manager.dispose()
   })
 
@@ -650,6 +746,7 @@ describe('Electron 实时浏览器 guest', () => {
         : { kind, target, x: 10, y: 10 }
     await expect(manager.control('s1', command)).rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
     expect(wc.sendInputEvent).not.toHaveBeenCalled()
+    expect(wc.debugger.sendCommand.mock.calls.some(([method]) => method === 'Input.dispatchMouseEvent')).toBe(false)
     expect(wc.insertText).not.toHaveBeenCalled()
     await manager.dispose()
   })
@@ -671,6 +768,7 @@ describe('Electron 实时浏览器 guest', () => {
     await expect(manager.control('s1', { kind: 'click', target, x: 10, y: 10 }))
       .rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
     expect(wc.sendInputEvent).not.toHaveBeenCalled()
+    expect(wc.debugger.sendCommand.mock.calls.some(([method]) => method === 'Input.dispatchMouseEvent')).toBe(false)
     await manager.dispose()
   })
 
@@ -922,7 +1020,7 @@ describe('Electron 实时浏览器 guest', () => {
     })
     await expect(manager.execute('s1', { kind: 'click', ref: 'e1', revision: capture.observation.revision }))
       .resolves.toMatchObject({ observation: { cursor: { kind: 'click' } } })
-    expect(wc.sendInputEvent).toHaveBeenCalledTimes(2)
+    expect(wc.debugger.sendCommand.mock.calls.filter(([method]) => method === 'Input.dispatchMouseEvent')).toHaveLength(2)
     await manager.dispose()
   })
 
@@ -933,7 +1031,7 @@ describe('Electron 实时浏览器 guest', () => {
     const capture = await manager.execute('s1', { kind: 'navigate', url: 'https://example.com/' })
     manager.present({ sessionId: 's1', tabId: capture.observation.tabId, visible: true,
       bounds: { x: 0, y: 0, width: 500, height: 400 } })
-    expect(window.contentView.children).toHaveLength(0)
+    expect(window.contentView.children).toHaveLength(2)
     await expect(manager.control('s1', { kind: 'ensure-tab' })).rejects.toMatchObject({ code: 'BROWSER_BUSY' })
     await manager.release('s1')
     expect(window.contentView.children).toHaveLength(1)
@@ -1035,6 +1133,7 @@ describe('Electron 实时浏览器 guest', () => {
     await expect(manager.control('s1', { kind: 'click', target, x: 10, y: 10 }))
       .rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
     expect(wc.sendInputEvent).not.toHaveBeenCalled()
+    expect(wc.debugger.sendCommand.mock.calls.some(([method]) => method === 'Input.dispatchMouseEvent')).toBe(false)
     await manager.dispose()
   })
 
@@ -1100,11 +1199,11 @@ describe('Electron 实时浏览器 guest', () => {
     expect(window.contentView.children).toHaveLength(0)
     manager.present({ sessionId: 's1', tabId: first.observation.tabId, visible: true,
       bounds: { x: 0, y: 0, width: 500, height: 400 } })
-    expect(window.contentView.children).toHaveLength(0)
+    expect(window.contentView.children).toHaveLength(2)
     await manager.release('s1')
     expect(window.contentView.children).toHaveLength(1)
     await manager.lease('s1')
-    expect(window.contentView.children).toHaveLength(0)
+    expect(window.contentView.children).toHaveLength(2)
     const captured = await manager.execute('s1', { kind: 'snapshot' })
     expect(captured.observation.tabId).toBe(first.observation.tabId)
     expect(Buffer.from(captured.png!)).toEqual(png())
