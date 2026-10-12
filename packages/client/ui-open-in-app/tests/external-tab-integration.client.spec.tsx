@@ -33,6 +33,7 @@ async function bench() {
   const first = await runtime.sessions.add({ id: 'external-first' })
   const second = await runtime.sessions.add({ id: 'external-second' }, { current: false })
   await runtime.declare({ workbench: { kind: 'single', scope: 'root' } })
+  runtime.provide('connection', { api: { workspace: { gitHistory: vi.fn() } } })
   await runtime.mount({ inject: [...inject], apply })
   const workbench = runtime.renderSlot('workbench', {
     shown: true, fullscreen: false, bottomOpen: false,

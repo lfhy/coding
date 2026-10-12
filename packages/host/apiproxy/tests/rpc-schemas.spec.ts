@@ -26,6 +26,7 @@ import {
   workspaceInsertBeforeRequestSchema, workspaceInsertBeforeValueSchema,
   workspaceInsertSessionBeforeRequestSchema, workspaceInsertSessionBeforeValueSchema,
   workspaceListRequestSchema, workspaceListValueSchema,
+  workspaceGitHistoryRequestSchema, workspaceGitHistoryValueSchema,
   workspaceRenameRequestSchema, workspaceRenameValueSchema, workspaceViewSchema,
 } from '../src/api/workspace.schema.ts'
 import { skillEntrySchema, skillListRequestSchema, skillListValueSchema } from '../src/api/skills.schema.ts'
@@ -386,6 +387,26 @@ describe('workspace domain schemas', () => {
     expect(workspaceListRequestSchema.parse({})).toEqual({})
     expect(workspaceListValueSchema.parse({ items: [view], archivedSessionIds: ['s1'] }).items).toHaveLength(1)
     expect(() => workspaceListValueSchema.parse({ items: [view] })).toThrow()
+  })
+
+  it('requires session authority and bounded, hash-only history parameters', () => {
+    const id = 'a'.repeat(40)
+    expect(workspaceGitHistoryRequestSchema.parse({ sessionId: 's1', count: 60, from: id })).toEqual({ sessionId: 's1', count: 60, from: id })
+    expect(workspaceGitHistoryRequestSchema.parse({ sessionId: 's1' })).toEqual({ sessionId: 's1' })
+    for (const invalid of [{}, { sessionId: 's1', cwd: '/elsewhere' }, { sessionId: 's1', count: 0 },
+      { sessionId: 's1', count: 301 }, { sessionId: 's1', count: 1.5 }, { sessionId: 's1', from: '--all' },
+      { sessionId: 's1', from: 'HEAD~1' }, { sessionId: 's1', from: id + '\n' }]) {
+      expect(() => workspaceGitHistoryRequestSchema.parse(invalid)).toThrow()
+    }
+    const commit = { id, parents: ['b'.repeat(40)], subject: 'subject', author: 'Author', authoredAt: '2026-07-25T10:00:00+08:00', refs: ['main'] }
+    const history = { commits: [commit], truncated: true, current: 'main', branches: ['main'] }
+    expect(workspaceGitHistoryValueSchema.parse(history)).toEqual(history)
+    expect(workspaceGitHistoryValueSchema.parse(null)).toBeNull()
+    expect(() => workspaceGitHistoryValueSchema.parse({ ...history, commits: [{ ...commit, parents: ['broken'] }] })).toThrow()
+    expect(() => workspaceGitHistoryValueSchema.parse({ ...history, commits: [{ ...commit, authoredAt: 'not a date' }] })).toThrow()
+    expect(() => workspaceGitHistoryValueSchema.parse({ ...history, commits: [{ ...commit, subject: 'a'.repeat(4097) }] })).toThrow()
+    expect(() => workspaceGitHistoryValueSchema.parse({ ...history, commits: Array.from({ length: 301 }, () => commit) })).toThrow()
+    expect(() => workspaceGitHistoryValueSchema.parse({ ...history, truncated: 'yes' })).toThrow()
   })
 
   it('archiveSession request/value carry the id and the full updated set', () => {

@@ -115,7 +115,7 @@ import {
   inspectApiRemoteSession,
 } from '@deepseek-ai/dsh-api-remotes'
 import { canOpenNativePath, openNativePath, openNativeTextFile } from '@deepseek-ai/dsh-native-command'
-import { GitOperationError, workspaceGitStatus, workspaceGitBranches, workspaceGitCheckout, workspaceGitPush, workspaceGitPull } from './workspace-git.ts'
+import { GitOperationError, workspaceGitStatus, workspaceGitBranches, workspaceGitHistory, workspaceGitCheckout, workspaceGitPush, workspaceGitPull } from './workspace-git.ts'
 import type { GitRemoteOptions } from './workspace-git.ts'
 import type { GitCredentials } from './api/workspace.ts'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
@@ -2850,6 +2850,10 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
       async gitBranches(request, signal) {
         return gitForSession(request, signal, workspaceGitBranches)
+      },
+
+      async gitHistory(request, signal) {
+        return gitForSession(request, signal, (cwd, abort) => workspaceGitHistory(cwd, abort, request.payload))
       },
 
       async gitCheckout(request, signal) {

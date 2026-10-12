@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, mkdtempSync, realpathSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
@@ -338,6 +339,7 @@ describe('session-bound workspace Git RPC', () => {
     expectOk(await api.sessions.create(request({ cwd: stageDir(root, 'project'), sessionId })))
     expect(expectOk(await api.workspace.gitStatus(request({ sessionId }), new AbortController().signal))).toBeNull()
     expect(expectOk(await api.workspace.gitBranches(request({ sessionId }), new AbortController().signal))).toBeNull()
+    expect(expectOk(await api.workspace.gitHistory(request({ sessionId, count: 2 }), new AbortController().signal))).toBeNull()
     expect((await api.workspace.gitCheckout(request({ sessionId, branch: 'main' }), new AbortController().signal)).result).toMatchObject({
       ok: false, error: { code: 'git-unavailable', details: { reason: 'GIT_NO_REPOSITORY', sessionId } },
     })
@@ -346,6 +348,33 @@ describe('session-bound workspace Git RPC', () => {
     })
     expect((await api.workspace.gitStatus(request({ sessionId: SessionId('missing') }), new AbortController().signal)).result).toMatchObject({
       ok: false, error: { code: 'session-not-found' },
+    })
+    expect((await api.workspace.gitHistory(request({ sessionId: SessionId('missing') }), new AbortController().signal)).result).toMatchObject({
+      ok: false, error: { code: 'session-not-found' },
+    })
+  })
+
+  it('serves history from the session cwd and maps remote markers and aborts like status', async () => {
+    const { api, root } = await harness()
+    const cwd = stageDir(root, 'git-project')
+    execFileSync('git', ['init', '-q'], { cwd })
+    execFileSync('git', ['-c', 'user.email=test@example.org', '-c', 'user.name=Test', 'commit', '--allow-empty', '-qm', 'first'], { cwd })
+    const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8' }).trim()
+    const sessionId = SessionId('local-git-history')
+    expectOk(await api.sessions.create(request({ cwd, sessionId })))
+    const reply = await api.workspace.gitHistory(request({ sessionId, count: 1 }), new AbortController().signal)
+    expect(expectOk(reply)).toMatchObject({ current: 'master', branches: ['master'], commits: [{ id: head, parents: [], subject: 'first', refs: ['master'] }] })
+    expect(reply.rpcId).toBeDefined()
+    const aborted = new AbortController()
+    aborted.abort()
+    expect((await api.workspace.gitHistory(request({ sessionId }), aborted.signal)).result).toMatchObject({
+      ok: false, error: { code: 'cancelled' },
+    })
+    writeFileSync(join(cwd, '.coding-remote-workspace.json'), JSON.stringify({
+      version: 3, remoteRoot: '/srv/project', connectionId: 'connection-1', generation: 1, mode: 'agent',
+    }))
+    expect((await api.workspace.gitHistory(request({ sessionId }), new AbortController().signal)).result).toMatchObject({
+      ok: false, error: { code: 'git-unavailable', details: { sessionId, reason: 'GIT_REMOTE_UNAVAILABLE' } },
     })
   })
 })

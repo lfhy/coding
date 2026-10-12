@@ -38,7 +38,7 @@ import {
   workspaceInsertBeforeValueSchema,
   workspaceInsertSessionBeforeValueSchema,
   workspaceListValueSchema,
-  workspaceGitStatusValueSchema, workspaceGitBranchesValueSchema, workspaceGitCheckoutValueSchema,
+  workspaceGitStatusValueSchema, workspaceGitBranchesValueSchema, workspaceGitHistoryValueSchema, workspaceGitCheckoutValueSchema,
   workspaceGitPushValueSchema, workspaceGitPullValueSchema,
   workspaceRenameValueSchema,
 } from '../api/workspace.schema.ts'
@@ -122,6 +122,7 @@ export interface IApiClient {
     list(payload: RequestPayload<'workspace.list'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.list'>>>
     gitStatus(payload: RequestPayload<'workspace.gitStatus'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.gitStatus'>>>
     gitBranches(payload: RequestPayload<'workspace.gitBranches'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.gitBranches'>>>
+    gitHistory(payload: RequestPayload<'workspace.gitHistory'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.gitHistory'>>>
     gitCheckout(payload: RequestPayload<'workspace.gitCheckout'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.gitCheckout'>>>
     gitPush(payload: RequestPayload<'workspace.gitPush'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.gitPush'>>>
     gitPull(payload: RequestPayload<'workspace.gitPull'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.gitPull'>>>
@@ -205,6 +206,7 @@ const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseV
   'workspace.list': workspaceListValueSchema,
   'workspace.gitStatus': workspaceGitStatusValueSchema,
   'workspace.gitBranches': workspaceGitBranchesValueSchema,
+  'workspace.gitHistory': workspaceGitHistoryValueSchema,
   'workspace.gitCheckout': workspaceGitCheckoutValueSchema,
   'workspace.gitPush': workspaceGitPushValueSchema,
   'workspace.gitPull': workspaceGitPullValueSchema,
@@ -468,6 +470,7 @@ export abstract class AbstractApiClient implements IApiClient {
     list: (payload, signal) => this.callUnary('workspace.list', payload, signal),
     gitStatus: (payload, signal) => this.callUnary('workspace.gitStatus', payload, signal),
     gitBranches: (payload, signal) => this.callUnary('workspace.gitBranches', payload, signal),
+    gitHistory: (payload, signal) => this.callUnary('workspace.gitHistory', payload, signal),
     gitCheckout: (payload, signal) => this.callUnary('workspace.gitCheckout', payload, signal),
     gitPush: (payload, signal) => this.callUnary('workspace.gitPush', payload, signal, 'caller-signal-only'),
     gitPull: (payload, signal) => this.callUnary('workspace.gitPull', payload, signal, 'caller-signal-only'),

@@ -98,6 +98,23 @@ describe('file workbench store', () => {
 })
 
 describe('统一工作台标签', () => {
+  it('历史记录单实例标签消费启动项、切换后保留并在关闭时回退邻项', () => {
+    const instance = createWorkbenchStore().create()
+    instance.actions.openFileManager()
+    instance.actions.openLauncher()
+    instance.actions.openHistory()
+    expect(instance.getSnapshot()).toMatchObject({ view: 'history', activeId: 'git-history',
+      tabs: [{ type: 'file-manager' }, { type: 'history', id: 'git-history' }] })
+    instance.actions.openLauncher()
+    instance.actions.openHistory()
+    expect(instance.getSnapshot().tabs).toHaveLength(2)
+    instance.actions.activateTab('file-manager')
+    instance.actions.activateTab('git-history')
+    expect(instance.getSnapshot().view).toBe('history')
+    instance.actions.closeTab('git-history')
+    expect(instance.getSnapshot()).toMatchObject({ view: 'files', activeId: 'file-manager' })
+  })
+
   it('为每次新增保留独立启动标签，并以新功能替换活动启动项', () => {
     const instance = createWorkbenchStore().create()
     instance.actions.openTerminal()

@@ -1,8 +1,10 @@
 /** 工作区本地启动入口、功能工作台与底栏终端的浏览器插件。 */
 
+import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
+import type {} from '@deepseek-ai/dsh-client-connection/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
@@ -96,7 +98,7 @@ export interface WorkbenchBrowserOwnerProps {
 }
 
 /** locale、slot、布局、会话与工作区选择需要的服务。 */
-export const inject = ['slots', 'locale', 'layout', 'sessions', 'workspaces']
+export const inject = ['slots', 'locale', 'layout', 'sessions', 'workspaces', 'connection']
 
 /**
  * 读取可以操作工作台的当前会话：包括空白会话，只有当前会话尚不可寻址时返回 undefined。
@@ -115,6 +117,7 @@ function activeSessionId(ctx: ClientContext): SessionId | undefined {
  */
 export function apply(ctx: ClientContext): void {
   const controller = new OpenInAppController()
+  const connection = ctx.get('connection') as ConnectionHandle
   const workbench = createRetainedWorkbenchStore()
   const sidebarRightTabs = new SidebarRightTabRegistry()
   const sidebarRight = new SidebarRightController(sidebarRightTabs, ctx.layout, () => activeSessionId(ctx))
@@ -179,6 +182,11 @@ export function apply(ctx: ClientContext): void {
           hooks: { sidebarRightTabs: sidebarRightSource },
           listFiles: (sessionId, segments, signal) => controller.listFiles(sessionId, segments, signal),
           readFile: (sessionId, segments, signal) => controller.readFile(sessionId, segments, signal),
+          gitHistory: async (sessionId, query, signal) => {
+            const response = await connection.api.workspace.gitHistory({ sessionId, ...query }, signal)
+            if (!response.result.ok) throw new Error(response.result.error.message)
+            return response.result.value
+          },
           terminalUrl: sessionId => controller.terminalUrl(sessionId),
           closeWorkbench: (sessionId) => { ctx.layout.closeWorkbench(sessionId) },
           openWorkbench: (sessionId) => { ctx.layout.openWorkbench(sessionId) },

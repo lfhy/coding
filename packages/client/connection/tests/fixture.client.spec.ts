@@ -1065,6 +1065,7 @@ describe('FixtureApiClient (protocol-level fake carrier)', () => {
     expect((await client.sessions.cancel({ sessionId: id })).result.ok).toBe(true)
     expect((await client.host.describe({})).result.ok).toBe(true)
     expect((await client.workspace.list({})).result.ok).toBe(true)
+    expect((await client.workspace.gitHistory({ sessionId: id, count: 60 })).result).toEqual({ ok: true, value: null })
     const workspace = await client.workspace.create({ path: '/tmp/fixture-workspaces/via-client' })
     if (!workspace.result.ok) throw new Error('workspace create failed')
     expect(workspace.result.value.workspace.title).toBe('via-client')

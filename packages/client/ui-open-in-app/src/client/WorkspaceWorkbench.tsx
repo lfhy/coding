@@ -20,7 +20,7 @@ import {
   IconBrowseOutline16,
   IconGlobeOutline14,
   IconCordisPluginOutline14,
-  IconChecklistOutline14,
+  IconBranchOutline16,
   IconNewChatOutline16,
   IconFullscreenOutline16,
   Icon,
@@ -39,6 +39,7 @@ import type {
   PropsStore,
 } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { GitHistory } from '@deepseek-ai/dsh-host-apiproxy/api'
 import type { BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
 import type {
   createWorkbenchStore, createRetainedWorkbenchStore, WorkbenchExternalTab, WorkbenchFileTab, WorkbenchState,
@@ -46,6 +47,7 @@ import type {
 import type { SidebarRightTabDefinition } from './sidebar-tab-registry.ts'
 import type { SidebarRightTabOwnerProps } from './index.ts'
 import { TerminalPanel } from './TerminalPanel.tsx'
+import { GitHistoryPanel } from './GitHistoryPanel.tsx'
 import { tabIdForSegments } from './store.ts'
 import { NS } from './locales.ts'
 import type {
@@ -60,6 +62,7 @@ export interface WorkspaceWorkbenchInjected {
   hooks: { sidebarRightTabs: HostObservable<readonly SidebarRightTabDefinition[]> }
   listFiles: (sessionId: SessionId, segments: readonly string[], signal?: AbortSignal) => Promise<WorkspaceFilesPayload>
   readFile: (sessionId: SessionId, segments: readonly string[], signal?: AbortSignal) => Promise<WorkspaceFilePayload>
+  gitHistory: (sessionId: SessionId, query: { count: number }, signal: AbortSignal) => Promise<GitHistory | null>
   terminalUrl: (sessionId: SessionId) => string
   closeWorkbench: (sessionId: SessionId) => void
   openWorkbench: (sessionId: SessionId) => void
@@ -94,6 +97,7 @@ type WorkbenchViewProps = Pick<WorkspaceWorkbenchProps, 'shown' | 'fullscreen' |
   openSidebarTab: (kind: string) => void
   listFiles: (segments: readonly string[], signal?: AbortSignal) => Promise<WorkspaceFilesPayload>
   readFile: (segments: readonly string[], signal?: AbortSignal) => Promise<WorkspaceFilePayload>
+  gitHistory: (query: { count: number }, signal: AbortSignal) => Promise<GitHistory | null>
 }
 
 interface LevelState {
@@ -445,6 +449,7 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
       setView: (view) => { props.actions.setView(sessionId, view) },
       openFile: (file) => { props.actions.openFile(sessionId, file) },
       openFileManager: () => { props.actions.openFileManager(sessionId) },
+      openHistory: () => { props.actions.openHistory(sessionId) },
       openTerminal: () => {
         setFocusRequest(previous => (previous ?? 0) + 1)
         props.actions.openTerminal(sessionId)
@@ -480,6 +485,7 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
       },
       listFiles: (segments: readonly string[], signal?: AbortSignal) => props.listFiles(sessionId, segments, signal),
       readFile: (segments: readonly string[], signal?: AbortSignal) => props.readFile(sessionId, segments, signal),
+      gitHistory: (query: { count: number }, signal: AbortSignal) => props.gitHistory(sessionId, query, signal),
       closeWorkbench: () => {
         props.actions.recordInteraction(sessionId)
         props.closeWorkbench(sessionId)
@@ -489,7 +495,7 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
       toggleBottom: () => { props.toggleBottom(sessionId) },
       openSidebarTab: (kind: string) => { props.openSidebarTab(sessionId, kind) },
     }
-  }, [props.actions, props.listFiles, props.readFile, props.closeWorkbench, props.openWorkbench,
+  }, [props.actions, props.listFiles, props.readFile, props.gitHistory, props.closeWorkbench, props.openWorkbench,
     props.toggleWorkbenchFullscreen, props.toggleBottom, props.openSidebarTab, sessionId])
   const terminalShown = props.shown && state?.view === 'terminal'
   const tabDefinitions = props.useSidebarRightTabs(definitions => definitions)
@@ -519,7 +525,7 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
 
 function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
   const {
-    shown, fullscreen, bottomOpen, narrow, actions, readFile, listFiles, completedFocusTabId,
+    shown, fullscreen, bottomOpen, narrow, actions, readFile, listFiles, gitHistory, completedFocusTabId,
     closeWorkbench, openWorkbench, toggleWorkbenchFullscreen, toggleBottom, openSidebarTab, t, renderSlot,
     panelPrefix, selectTab, tabDefinitions,
   } = props
@@ -779,9 +785,10 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
               </div>
             }
             const name = tab.type === 'terminal' ? t('terminal.tab', { number: String(tab.number) })
-              : tab.type === 'file-manager' ? t('files.tab') : tab.name
+              : tab.type === 'file-manager' ? t('files.tab')
+                : tab.type === 'history' ? t('workbench.menu.review') : tab.name
             const selected = tab.id === activeId && view === (tab.type === 'file' || tab.type === 'file-manager'
-              ? 'files' : 'terminal')
+              ? 'files' : tab.type === 'history' ? 'history' : 'terminal')
             return <div className={clsx(css.tab, selected && css.tabActive)} role="presentation" key={tab.id}>
               <button type="button" className={css.tabSelect} role="tab" aria-selected={selected}
                 tabIndex={selected || (view === 'menu' && active?.type !== 'launcher' && index === 0) ? 0 : -1}
@@ -790,7 +797,8 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
                 onClick={(event) => { selectTab(tab.id, event.detail !== 0) }}>
                 <span className={css.tabGlyph} aria-hidden="true">
                   {tab.type === 'terminal' ? <Icon name="terminal-menu" size={14} />
-                    : tab.type === 'file-manager' ? <IconFolderOpenOutline16 size={14} /> : <FileGlyph />}
+                    : tab.type === 'history' ? <IconBranchOutline16 size={14} />
+                      : tab.type === 'file-manager' ? <IconFolderOpenOutline16 size={14} /> : <FileGlyph />}
                 </span>
                 <span className={css.tabName}>{name}</span>
               </button>
@@ -845,10 +853,12 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
               'aria-labelledby': tabDomId(panelPrefix, props.sessionId, active.id, 'tab'),
             } : {}}>
             <nav className={css.functionMenu} aria-label={t('workbench.menu.label')}>
-              <button type="button" className={css.functionItem} disabled title={t('workbench.menu.unavailable')}>
-                <IconChecklistOutline14 size={18} />
+              <button type="button" className={css.functionItem} onClick={() => {
+                pendingFocus.current = 'return'
+                actions.openHistory()
+              }}>
+                <IconBranchOutline16 size={18} />
                 <span>{t('workbench.menu.review')}</span>
-                <small>{t('workbench.menu.unavailable')}</small>
               </button>
               <button type="button" ref={menuTerminalButton} className={css.functionItem} onClick={() => {
                 actions.openTerminal()
@@ -934,6 +944,16 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
                 <span>{t('workbench.empty.detail')}</span>
               </div>
             )}
+          </div>
+          <div className={css.historyView} hidden={view !== 'history' || !shown}
+            {...view !== 'history' || !shown ? { inert: '' } : {}}>
+            {tabs.filter(tab => tab.type === 'history').map(tab => <div key={tab.id}
+              id={tabDomId(panelPrefix, props.sessionId, tab.id, 'panel')}
+              role="tabpanel" aria-labelledby={tabDomId(panelPrefix, props.sessionId, tab.id, 'tab')}
+              hidden={view !== 'history' || activeId !== tab.id}>
+              <GitHistoryPanel shown={shown && view === 'history' && activeId === tab.id}
+                history={gitHistory} t={t} />
+            </div>)}
           </div>
           <div className={css.browserView} hidden={view !== 'browser'} {...view !== 'browser' ? { inert: '' } : {}}>
             <div className={css.browserPanel}

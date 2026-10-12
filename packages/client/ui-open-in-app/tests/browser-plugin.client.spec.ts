@@ -72,18 +72,20 @@ async function bench() {
   const connectHome = vi.fn(async () => SESSION)
   const connectWorkspace = vi.fn(async () => SESSION)
   ctx.provide('workspaces', { list: workspaceList, connectHome, connectWorkspace } as never)
+  const gitHistory = vi.fn(async () => ({ result: { ok: true as const, value: null } }))
+  ctx.provide('connection', { api: { workspace: { gitHistory } } } as never)
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
   return {
     ctx, fiber, openWorkbench, closeWorkbench, toggleWorkbench, toggleWorkbenchFullscreen,
     toggleWorkbenchBottom, closeWorkbenchBottom, toggleHeroPanel,
-    sessionList: list, open, connectHome, connectWorkspace, workspaceList,
+    sessionList: list, open, connectHome, connectWorkspace, workspaceList, gitHistory,
   }
 }
 
 describe('open-in-app browser half', () => {
   it('declares only the services read by apply', () => {
-    expect(inject).toEqual(['slots', 'locale', 'layout', 'sessions', 'workspaces'])
+    expect(inject).toEqual(['slots', 'locale', 'layout', 'sessions', 'workspaces', 'connection'])
   })
 
   it('registers session-header and hero controls, workbench, and bottom without a sidebar action', async () => {
@@ -174,6 +176,7 @@ describe('open-in-app browser half', () => {
     await expect(workbenchFace.readFile(SESSION, ['README.md'])).resolves.toEqual({
       path: '/w/README.md', content: { kind: 'markdown', text: '# Readme' },
     })
+    await expect(workbenchFace.gitHistory(SESSION, { count: 60 }, new AbortController().signal)).resolves.toBeNull()
     workbenchFace.closeWorkbench(SESSION)
     workbenchFace.openWorkbench(SESSION)
     workbenchFace.toggleWorkbenchFullscreen(SESSION)

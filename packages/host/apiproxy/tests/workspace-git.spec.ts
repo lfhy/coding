@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { afterEach, describe, expect, it } from 'vitest'
-import { gitCredentialRef, workspaceGitBranches, workspaceGitCheckout, workspaceGitPull, workspaceGitPush, workspaceGitStatus } from '../src/workspace-git.ts'
+import { gitCredentialRef, parseGitHistory, parseGitHistoryRefs, workspaceGitBranches, workspaceGitCheckout, workspaceGitHistory, workspaceGitPull, workspaceGitPush, workspaceGitStatus } from '../src/workspace-git.ts'
 import type { GitCredentialStore } from '../src/workspace-git.ts'
 
 const roots: string[] = []
@@ -536,6 +536,101 @@ describe('standalone workspace Git', () => {
     // 记住凭据只对 HTTPS 远端有意义：其它协议在触碰远端之前就拒绝。
     await expect(workspaceGitPull(root, signal, { credentials: { ...credentials, remember: true } }))
       .rejects.toMatchObject({ code: 'GIT_REMOTE_UNAVAILABLE' })
+  })
+
+  it('reads a bounded commit DAG across local branches, merge parents, and decorated tags', async () => {
+    const root = repo()
+    const base = git(root, 'rev-parse', 'HEAD')
+    const branch = git(root, 'branch', '--show-current')
+    git(root, 'switch', '-qc', 'feature')
+    writeFileSync(join(root, 'feature.txt'), 'feature\n')
+    git(root, 'add', 'feature.txt')
+    git(root, 'commit', '-qm', 'feature work')
+    const feature = git(root, 'rev-parse', 'HEAD')
+    git(root, 'tag', '-a', 'release,v1', '-m', 'annotated tag')
+    git(root, 'switch', '-q', branch)
+    writeFileSync(join(root, 'main.txt'), 'main\n')
+    git(root, 'add', 'main.txt')
+    git(root, 'commit', '-qm', 'main work')
+    const main = git(root, 'rev-parse', 'HEAD')
+    git(root, 'merge', '--no-ff', '--no-edit', '-q', 'feature')
+    const merge = git(root, 'rev-parse', 'HEAD')
+    git(root, 'branch', 'unused', base)
+    git(root, 'update-ref', 'refs/remotes/origin/tracking', feature)
+    const nested = join(root, 'nested')
+    mkdirSync(nested)
+    const history = await workspaceGitHistory(nested, signal)
+    expect(history).toMatchObject({ current: branch, branches: ['feature', branch, 'unused'].sort((a, b) => a.localeCompare(b)), truncated: false })
+    expect(history?.commits.map(commit => commit.id).sort()).toEqual([merge, main, feature, base].sort())
+    const commitById = new Map(history?.commits.map(commit => [commit.id, commit]))
+    expect(commitById.get(merge)).toMatchObject({ parents: [main, feature], subject: "Merge branch 'feature'" })
+    expect(commitById.get(main)).toMatchObject({ parents: [base], subject: 'main work', refs: [] })
+    expect(commitById.get(feature)).toMatchObject({ parents: [base], subject: 'feature work', refs: ['feature', 'origin/tracking', 'tag: release,v1'] })
+    expect(commitById.get(merge)?.refs).toEqual([branch])
+    expect(commitById.get(base)?.refs).toEqual(['unused'])
+    expect(history?.commits.every(commit => /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d[+-]\d\d:\d\d$/u.test(commit.authoredAt))).toBe(true)
+    expect((await workspaceGitHistory(root, signal, { count: 2 }))?.commits).toHaveLength(2)
+    expect((await workspaceGitHistory(root, signal, { count: 2 }))?.truncated).toBe(true)
+    expect((await workspaceGitHistory(root, signal, { from: feature }))?.commits.map(commit => commit.id)).toEqual([feature, base])
+  })
+
+  it('returns empty commits for an unborn local repo and null outside a repository', async () => {
+    const empty = temp()
+    git(empty, 'init', '-q')
+    const history = await workspaceGitHistory(empty, signal)
+    expect(history).toEqual({ commits: [], truncated: false, current: git(empty, 'symbolic-ref', '--short', 'HEAD'), branches: [] })
+    expect(await workspaceGitHistory(temp(), signal)).toBeNull()
+  })
+
+  it('rejects unsafe revisions and count directly before Git interprets them', async () => {
+    const root = repo()
+    const head = git(root, 'rev-parse', 'HEAD')
+    const status = git(root, 'status', '--porcelain')
+    for (const from of ['--all', '-1', 'HEAD', `${head}..HEAD`, `${head}\n--all`, 'a'.repeat(39) + 'z']) {
+      await expect(workspaceGitHistory(root, signal, { from })).rejects.toMatchObject({ code: 'GIT_FAILED' })
+    }
+    for (const count of [0, -1, 301, 1.2, Number.NaN, Infinity]) {
+      await expect(workspaceGitHistory(root, signal, { count })).rejects.toMatchObject({ code: 'GIT_FAILED' })
+    }
+    await expect(workspaceGitHistory(root, signal, { from: 'a'.repeat(40) })).rejects.toMatchObject({ code: 'GIT_FAILED' })
+    expect(git(root, 'status', '--porcelain')).toBe(status)
+    expect(git(root, 'rev-parse', 'HEAD')).toBe(head)
+    expect((await workspaceGitHistory(root, signal, { count: 1 }))?.commits).toHaveLength(1)
+    expect((await workspaceGitHistory(root, signal, { count: 300 }))?.truncated).toBe(false)
+  })
+
+  it('rejects malformed and oversized history or ref records without partial data', () => {
+    const id = 'a'.repeat(40)
+    const date = '2025-02-03T04:05:06+00:00'
+    const line = [id, '', 'subject', 'Author', date].join('\0') + '\0'
+    expect(parseGitHistory(line)).toEqual([{ id, parents: [], subject: 'subject', author: 'Author', authoredAt: date, refs: [] }])
+    for (const raw of [line.slice(0, -1), `wrong${line.slice(5)}`, [id, 'bad', 'subject', 'Author', date].join('\0') + '\0',
+      [id, '', 'subject', 'Author', 'yesterday'].join('\0') + '\0', [id, '', 'a'.repeat(4097), 'Author', date].join('\0') + '\0',
+      'x'.repeat(2 * 1024 * 1024 + 1), line + 'garbage']) {
+      expect(() => parseGitHistory(raw)).toThrow()
+    }
+    expect(parseGitHistory('')).toEqual([])
+    expect(parseGitHistoryRefs('')).toEqual({ refs: new Map(), branches: [] })
+    expect(parseGitHistoryRefs(`refs/heads/feat,1\0${id}\0\0\nrefs/tags/v1\0${'b'.repeat(40)}\0${id}\0\n`))
+      .toEqual({ refs: new Map([[id, ['feat,1', 'tag: v1']]]), branches: ['feat,1'] })
+    for (const raw of [`refs/heads/feature\0${id}\0`, 'refs/heads/feature\0invalid\0\0\n',
+      'x'.repeat(256 * 1024 + 1), `refs/other/branch\0${id}\0\0\n`]) {
+      expect(() => parseGitHistoryRefs(raw)).toThrow()
+    }
+  })
+
+  it('rejects a remote marker before reading a colocated local Git repository', async () => {
+    const root = repo()
+    writeFileSync(join(root, '.coding-remote-workspace.json'), JSON.stringify({
+      version: 3, remoteRoot: '/srv/project', connectionId: 'connection-1', generation: 1, mode: 'agent',
+    }))
+    await expect(workspaceGitHistory(root, signal)).rejects.toMatchObject({ code: 'GIT_REMOTE_UNAVAILABLE' })
+  })
+
+  it('honors cancellation before launching Git history', async () => {
+    const abort = new AbortController()
+    abort.abort()
+    await expect(workspaceGitHistory(repo(), abort.signal)).rejects.toBeDefined()
   })
 
   it('honors cancellation before launching Git', async () => {

@@ -55,7 +55,11 @@ export type {
   SubagentPromptReceipt, SubagentsApi,
 } from './subagents.ts'
 export type { JobView } from './jobs.ts'
-export type { WorkspaceApi, WorkspaceId, WorkspaceView, GitChangedFile, GitStatus, GitBranches, GitOperationResult } from './workspace.ts'
+export {
+  GIT_HISTORY_DEFAULT_COUNT,
+  GIT_HISTORY_MAX_COUNT,
+} from './workspace.ts'
+export type { WorkspaceApi, WorkspaceId, WorkspaceView, GitChangedFile, GitStatus, GitBranches, GitCommit, GitHistory, GitHistoryQuery, GitOperationResult } from './workspace.ts'
 export type { SkillsApi, SkillEntry } from './skills.ts'
 export type { AgentPresetsApi, AgentPresetEntry } from './agent-presets.ts'
 export type { EventsApi, MuxFrame, HostFrame, QueuedInboxItem, ToolCallView, ToolEventView, ToolResultView } from './events.ts'

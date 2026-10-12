@@ -12,6 +12,7 @@
 }
 
 .root[hidden],
+.historyView[hidden],
 .filesPanel[hidden],
 .preview[hidden],
 .previewSlot[hidden],
@@ -259,8 +260,14 @@
 }
 
 .fileView,
+.historyView,
 .menuView,
 .browserView {
+  width: 100%;
+  height: 100%;
+}
+
+.historyView > div {
   width: 100%;
   height: 100%;
 }

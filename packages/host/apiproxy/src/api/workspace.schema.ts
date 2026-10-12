@@ -7,7 +7,8 @@
 import { z } from 'zod'
 import type { RequestPayload, ResponseValue } from './rpc-map.ts'
 import type { Wire } from './rpc.schema.ts'
-import type { WorkspaceView, GitChangedFile, GitStatus, GitBranches, GitOperationResult } from './workspace.ts'
+import { GIT_HISTORY_MAX_COUNT } from './workspace.ts'
+import type { WorkspaceView, GitChangedFile, GitStatus, GitBranches, GitOperationResult, GitCommit, GitHistory } from './workspace.ts'
 import { sessionIdSchema, workspaceIdSchema } from './sessions.schema.ts'
 
 export { workspaceIdSchema } from './sessions.schema.ts'
@@ -36,6 +37,10 @@ const gitRequestSchema = z.strictObject({ sessionId: sessionIdSchema })
 export const workspaceGitStatusRequestSchema = gitRequestSchema satisfies z.ZodType<Wire<RequestPayload<'workspace.gitStatus'>>>
 export const workspaceGitBranchesRequestSchema = gitRequestSchema satisfies z.ZodType<Wire<RequestPayload<'workspace.gitBranches'>>>
 export const workspaceGitCheckoutRequestSchema = gitRequestSchema.extend({ branch: z.string().min(1) }) satisfies z.ZodType<Wire<RequestPayload<'workspace.gitCheckout'>>>
+export const workspaceGitHistoryRequestSchema = gitRequestSchema.extend({
+  count: z.number().int().positive().max(GIT_HISTORY_MAX_COUNT).optional(),
+  from: z.string().regex(/^[0-9a-f]{40}$/u).optional(),
+}) satisfies z.ZodType<Wire<RequestPayload<'workspace.gitHistory'>>>
 const gitCredentialsSchema = z.strictObject({
   username: z.string().min(1).max(1024), password: z.string().min(1).max(8192), remember: z.boolean().optional(),
 })
@@ -57,6 +62,17 @@ const gitBranchesSchema = z.strictObject({
   branches: z.array(z.string()), current: z.string().nullable(),
 }) satisfies z.ZodType<Wire<GitBranches>>
 export const workspaceGitBranchesValueSchema = gitBranchesSchema.nullable() satisfies z.ZodType<Wire<ResponseValue<'workspace.gitBranches'>>>
+const gitCommitSchema = z.strictObject({
+  id: z.string().regex(/^[0-9a-f]{40}$/u),
+  parents: z.array(z.string().regex(/^[0-9a-f]{40}$/u)),
+  subject: z.string().max(4096), author: z.string().max(4096),
+  authoredAt: z.string().regex(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d[+-]\d\d:\d\d$/u), refs: z.array(z.string()),
+}) satisfies z.ZodType<Wire<GitCommit>>
+const gitHistorySchema = z.strictObject({
+  commits: z.array(gitCommitSchema).max(GIT_HISTORY_MAX_COUNT), truncated: z.boolean(),
+  current: z.string().nullable(), branches: z.array(z.string()),
+}) satisfies z.ZodType<Wire<GitHistory>>
+export const workspaceGitHistoryValueSchema = gitHistorySchema.nullable() satisfies z.ZodType<Wire<ResponseValue<'workspace.gitHistory'>>>
 export const workspaceGitCheckoutValueSchema = gitStatusSchema satisfies z.ZodType<Wire<ResponseValue<'workspace.gitCheckout'>>>
 export const workspaceGitPushValueSchema = gitOperationSchema satisfies z.ZodType<Wire<ResponseValue<'workspace.gitPush'>>>
 export const workspaceGitPullValueSchema = gitOperationSchema satisfies z.ZodType<Wire<ResponseValue<'workspace.gitPull'>>>

@@ -26,6 +26,12 @@ export interface WorkbenchTerminalTab {
   number: number
 }
 
+/** 当前 Session 的只读 Git 提交历史标签；重复打开只切回同一标签。 */
+export interface WorkbenchHistoryTab {
+  type: 'history'
+  id: 'git-history'
+}
+
 /** Host 浏览器标签在工作台中的投影。 */
 export interface WorkbenchBrowserTab {
   type: 'browser'
@@ -66,7 +72,7 @@ export interface WorkbenchExternalTab {
 }
 
 /** 标签类型决定工作台内容和关闭行为。 */
-export type WorkbenchTab = WorkbenchFileTab | WorkbenchFileManagerTab | WorkbenchTerminalTab
+export type WorkbenchTab = WorkbenchFileTab | WorkbenchFileManagerTab | WorkbenchHistoryTab | WorkbenchTerminalTab
   | WorkbenchBrowserTab | WorkbenchPendingBrowserTab | WorkbenchExternalTab | WorkbenchLauncherTab
 
 /** 一层目录的读取状态。 */
@@ -78,7 +84,7 @@ export interface WorkbenchFileLevel {
 
 /** 单个 Session 的标签、当前视图与文件树状态。 */
 export type WorkbenchState = {
-  view: 'menu' | 'files' | 'browser' | 'terminal' | 'external'
+  view: 'menu' | 'files' | 'history' | 'browser' | 'terminal' | 'external'
   tabs: WorkbenchTab[]
   activeId: string | null
   nextTerminalNumber: number
@@ -121,6 +127,7 @@ type WorkbenchActions = {
   setView: (draft: WorkbenchState, view: WorkbenchState['view']) => void
   openFile: (draft: WorkbenchState, file: OpenFileInput) => void
   openFileManager: (draft: WorkbenchState) => void
+  openHistory: (draft: WorkbenchState) => void
   openTerminal: (draft: WorkbenchState) => void
   openLauncher: (draft: WorkbenchState) => void
   openExternalTab: (draft: WorkbenchState, input: OpenExternalTabInput) => void
@@ -254,6 +261,14 @@ const workbenchActions: WorkbenchActions = {
       return
     }
     selectTab(draft, tab)
+  },
+  openHistory: (draft) => {
+    draft.interactionEpoch++
+    draft.browserAutoRevealed = false
+    const launcherIndex = consumeLauncher(draft)
+    const existing = draft.tabs.find((tab): tab is WorkbenchHistoryTab => tab.type === 'history')
+    if (existing !== undefined) { selectTab(draft, existing); return }
+    addTab(draft, { type: 'history', id: 'git-history' }, launcherIndex)
   },
   openTerminal: (draft) => {
     draft.interactionEpoch++
@@ -500,6 +515,7 @@ export function createRetainedWorkbenchStore(): EngineStoreHandle<RetainedWorkbe
         workbenchActions.openFile(sessionState(draft, id), file)
       },
       openFileManager: (draft, id: SessionId) => { workbenchActions.openFileManager(sessionState(draft, id)) },
+      openHistory: (draft, id: SessionId) => { workbenchActions.openHistory(sessionState(draft, id)) },
       openTerminal: (draft, id: SessionId) => { workbenchActions.openTerminal(sessionState(draft, id)) },
       openLauncher: (draft, id: SessionId) => { workbenchActions.openLauncher(sessionState(draft, id)) },
       openExternalTab: (draft, id: SessionId, input: OpenExternalTabInput) => {

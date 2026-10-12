@@ -41,7 +41,7 @@ import {
   workspaceInsertBeforeRequestSchema,
   workspaceInsertSessionBeforeRequestSchema,
   workspaceListRequestSchema,
-  workspaceGitStatusRequestSchema, workspaceGitBranchesRequestSchema, workspaceGitCheckoutRequestSchema,
+  workspaceGitStatusRequestSchema, workspaceGitBranchesRequestSchema, workspaceGitHistoryRequestSchema, workspaceGitCheckoutRequestSchema,
   workspaceGitPushRequestSchema, workspaceGitPullRequestSchema,
   workspaceRenameRequestSchema,
 } from '../api/workspace.schema.ts'
@@ -115,6 +115,7 @@ const UNARY_ROUTES: UnaryRoutes = {
   'workspace.list': { schema: workspaceListRequestSchema, invoke: (api, r) => api.workspace.list(r) },
   'workspace.gitStatus': { schema: workspaceGitStatusRequestSchema, invoke: (api, r, signal) => api.workspace.gitStatus(r, signal) },
   'workspace.gitBranches': { schema: workspaceGitBranchesRequestSchema, invoke: (api, r, signal) => api.workspace.gitBranches(r, signal) },
+  'workspace.gitHistory': { schema: workspaceGitHistoryRequestSchema, invoke: (api, r, signal) => api.workspace.gitHistory(r, signal) },
   'workspace.gitCheckout': { schema: workspaceGitCheckoutRequestSchema, invoke: (api, r, signal) => api.workspace.gitCheckout(r, signal) },
   'workspace.gitPush': { schema: workspaceGitPushRequestSchema, invoke: (api, r, signal) => api.workspace.gitPush(r, signal) },
   'workspace.gitPull': { schema: workspaceGitPullRequestSchema, invoke: (api, r, signal) => api.workspace.gitPull(r, signal) },

@@ -1478,6 +1478,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       'client-ui-agent-preset AgentPresetRow id \'agent-preset\'',
       'client-ui-conversation EnterBehaviorRow id \'composer-enter\'',
       'client-ui-permission-presets PermissionRow id \'permission\'',
+      'client-ui-settings-models ModelUserAgentRow id \'model-user-agent\'',
       'client-ui-theme AppearanceRow id \'appearance\'',
     ],
     replaceRisk: 'none',
@@ -1928,7 +1929,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     occupants: [],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.right.pane.tab\', () => ctx.slots.register(\n      { name: \'sidebar.right.pane.tab\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-open-in-app/src/client/index.ts:49',
+    source: 'packages/client/ui-open-in-app/src/client/index.ts:51',
   },
   {
     key: 'sidebar.right.pane.tab.title',
@@ -1966,7 +1967,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     occupants: [],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.right.pane.tab.title\', () => ctx.slots.register(\n      { name: \'sidebar.right.pane.tab.title\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-open-in-app/src/client/index.ts:57',
+    source: 'packages/client/ui-open-in-app/src/client/index.ts:59',
   },
   {
     key: 'sidebar.settings',
@@ -2224,7 +2225,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'workbench.browser\', () => ctx.slots.register(\n      { name: \'workbench.browser\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-open-in-app/src/client/index.ts:45',
+    source: 'packages/client/ui-open-in-app/src/client/index.ts:47',
   },
   {
     key: 'workbench.browser.tabs',
@@ -2255,7 +2256,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'workbench.browser.tabs\', () => ctx.slots.register(\n      { name: \'workbench.browser.tabs\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-open-in-app/src/client/index.ts:47',
+    source: 'packages/client/ui-open-in-app/src/client/index.ts:49',
   },
 ]
 /* jscpd:ignore-end */

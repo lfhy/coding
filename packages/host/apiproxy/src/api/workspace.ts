@@ -33,6 +33,42 @@ export interface GitBranches {
   current: string | null
 }
 
+export const GIT_HISTORY_DEFAULT_COUNT = 60
+export const GIT_HISTORY_MAX_COUNT = 300
+
+/** 一次 Git 历史读取的请求范围；from 必须是完整提交哈希。 */
+export interface GitHistoryQuery {
+  /** 省略时读取 60 条；最多 300 条。 */
+  count?: number
+  /** 从该提交（含）沿父边读取；省略时从全部 refs 与 HEAD 读取。 */
+  from?: string
+}
+
+/** 一个提交及其在 DAG 中的直接父提交（按父顺序）。 */
+export interface GitCommit {
+  /** 完整提交哈希。 */
+  id: string
+  parents: string[]
+  subject: string
+  author: string
+  /** 作者时间，ISO-8601 且保留作者自己的时区偏移。 */
+  authoredAt: string
+  /** 指向该提交的本地／远端跟踪分支短名及 `tag: <name>` 标签。 */
+  refs: string[]
+}
+
+/** 最近的提交，按 `git log --topo-order --all HEAD` 的拓扑顺序；非仓库时整个值为 null。 */
+export interface GitHistory {
+  /** 本次实际返回的提交，最多 300 条。 */
+  commits: GitCommit[]
+  /** 已有超过本次请求条数的提交，调用方可增加 count 重新请求。 */
+  truncated: boolean
+  /** 当前分支；游离 HEAD 为 null。 */
+  current: string | null
+  /** 全部 `refs/heads` 的短名（不只是已返回提交上的分支）。 */
+  branches: string[]
+}
+
 /** 一次 Git 远端操作的凭据；值绝不回显，只在请求方向上携带明文。 */
 export interface GitCredentials {
   username: string
@@ -81,6 +117,9 @@ export interface WorkspaceApi {
 
   /** 查询已有本地分支；非 Git 目录返回 null，远端工作区显式拒绝。 */
   gitBranches(request: RpcRequest<{ sessionId: SessionId }>, signal: AbortSignal): Promise<RpcResponse<GitBranches | null>>
+
+  /** 查询只读提交 DAG；非 Git 目录返回 null，远端工作区显式拒绝。 */
+  gitHistory(request: RpcRequest<{ sessionId: SessionId } & GitHistoryQuery>, signal: AbortSignal): Promise<RpcResponse<GitHistory | null>>
 
   /** 只切换已有本地分支；未提交改动阻止切换，成功后返回最新状态。 */
   gitCheckout(request: RpcRequest<{ sessionId: SessionId; branch: string }>, signal: AbortSignal): Promise<RpcResponse<GitStatus>>

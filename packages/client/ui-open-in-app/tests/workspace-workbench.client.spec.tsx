@@ -4,6 +4,7 @@ import { useEffect } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { GitHistory } from '@deepseek-ai/dsh-host-apiproxy/api'
 import { createWorkbenchStore, createRetainedWorkbenchStore } from '../src/client/store.ts'
 import type { SidebarRightTabDefinition } from '../src/client/sidebar-tab-registry.ts'
 import type { SidebarRightTabOwnerProps } from '../src/client/sidebar-tab-contract.ts'
@@ -58,7 +59,8 @@ function bench(over: {
   bottomOpen?: boolean
   listFiles?: (segments: readonly string[], signal?: AbortSignal) => Promise<WorkspaceFilesPayload>
   readFile?: (segments: readonly string[], signal?: AbortSignal) => Promise<WorkspaceFilePayload>
-  initialView?: 'menu' | 'files' | 'browser'
+  initialView?: 'menu' | 'files' | 'history' | 'browser'
+  gitHistory?: (query: { count: number }, signal: AbortSignal) => Promise<GitHistory | null>
   externalDefinitions?: readonly SidebarRightTabDefinition[]
 } = {}) {
   const rootInstance = createRetainedWorkbenchStore().create()
@@ -87,6 +89,7 @@ function bench(over: {
   const readFile = vi.fn(over.readFile ?? (async (): Promise<WorkspaceFilePayload> => ({
     path: '/workspace/file', content: { kind: 'text', text: '' },
   })))
+  const gitHistory = vi.fn(over.gitHistory ?? (async () => null))
   const props = {
     sessionId: SESSION,
     shown: over.shown ?? true,
@@ -106,11 +109,12 @@ function bench(over: {
     renderSlot,
     listFiles: (_sessionId: SessionId, segments: readonly string[], signal?: AbortSignal) => listFiles(segments, signal),
     readFile: (_sessionId: SessionId, segments: readonly string[], signal?: AbortSignal) => readFile(segments, signal),
+    gitHistory: (_sessionId: SessionId, query: { count: number }, signal: AbortSignal) => gitHistory(query, signal),
     terminalUrl: (id: SessionId) => `ws://test/terminal?sessionId=${id}`,
     t,
   } as unknown as WorkspaceWorkbenchProps
   return { instance, props, closeWorkbench, openWorkbench, openSidebarTab, renderSlot,
-    toggleWorkbenchFullscreen, toggleBottom, listFiles, readFile }
+    toggleWorkbenchFullscreen, toggleBottom, listFiles, readFile, gitHistory }
 }
 
 describe('workspace workbench helpers', () => {
@@ -530,6 +534,32 @@ describe('WorkspaceWorkbench shell', () => {
     expect(b.toggleBottom).not.toHaveBeenCalled()
   })
 
+  it('打开变更记录的单实例子标签并在文件、历史之间切换', async () => {
+    const commits = [{ id: 'a'.repeat(40), parents: [], subject: '实现工作台', author: 'Alice',
+      authoredAt: '2026-01-01T00:00:00Z', refs: ['main'] }]
+    const b = bench({ gitHistory: async () => ({ commits, current: 'main', branches: ['main'], truncated: false }) })
+    render(<WorkspaceWorkbench {...b.props} />)
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.review'] }))
+    const historyTab = screen.getByRole('tab', { name: zh['workbench.menu.review'] })
+    expect(historyTab.getAttribute('aria-selected')).toBe('true')
+    await screen.findByRole('button', { name: '实现工作台' })
+    expect(b.gitHistory).toHaveBeenCalledExactlyOnceWith({ count: 60 }, expect.any(AbortSignal))
+    expect(historyTab.getAttribute('aria-controls')).toBe(screen.getByRole('tabpanel', {
+      name: zh['workbench.menu.review'],
+    }).id)
+    fireEvent.click(screen.getByRole('button', { name: zh['tabs.add'] }))
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.files'] }))
+    expect(screen.getByRole('tab', { name: zh['files.tab'] }).getAttribute('aria-selected')).toBe('true')
+    fireEvent.click(historyTab)
+    expect(historyTab.getAttribute('aria-selected')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.back'] }))
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.review'] }))
+    expect(b.instance.getSnapshot().tabs.filter(tab => tab.type === 'history')).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: zh['tabs.close'].replace('{name}', zh['workbench.menu.review']) }))
+    expect(screen.queryByRole('tab', { name: zh['workbench.menu.review'] })).toBeNull()
+    expect(screen.getByRole('tab', { name: zh['files.tab'] }).getAttribute('aria-selected')).toBe('true')
+  })
+
   it('starts on a keyboard-operable function menu and only enters wired features', async () => {
     const b = bench()
     render(<WorkspaceWorkbench {...b.props} />)
@@ -544,12 +574,14 @@ describe('WorkspaceWorkbench shell', () => {
     expect(b.listFiles).not.toHaveBeenCalled()
     const items = within(menu).getAllByRole('button')
     expect(items.map(item => item.textContent)).toEqual([
-      '审查未接入', '终端', '浏览器', '文件', '侧边聊天未接入',
+      '查看变更记录', '终端', '浏览器', '文件', '侧边聊天未接入',
     ])
-    expect(items[0]?.hasAttribute('disabled')).toBe(true)
+    expect(items[0]?.hasAttribute('disabled')).toBe(false)
     expect(items[4]?.hasAttribute('disabled')).toBe(true)
     fireEvent.click(items[0] as HTMLButtonElement)
-    expect(b.instance.store.getSnapshot().view).toBe('menu')
+    expect(b.instance.store.getSnapshot().view).toBe('history')
+    expect(screen.getByRole('tab', { name: zh['workbench.menu.review'] }).getAttribute('aria-selected')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.menu.back'] }))
     fireEvent.click(items[1] as HTMLButtonElement)
     expect(b.toggleBottom).not.toHaveBeenCalled()
     expect(b.instance.store.getSnapshot().view).toBe('terminal')

@@ -6,7 +6,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
-import type { GitCredentials } from './api/workspace.ts'
+import { GIT_HISTORY_DEFAULT_COUNT, GIT_HISTORY_MAX_COUNT } from './api/workspace.ts'
+import type { GitCommit, GitCredentials, GitHistory, GitHistoryQuery } from './api/workspace.ts'
 import { remoteWorkspacePath } from '@deepseek-ai/dsh-subprocess'
 
 /** 工作区 Git 的文件变更及相对上游的提交差距。 */
@@ -106,6 +107,12 @@ function decodeGitCredential(host: string, value: string): GitCredentials | unde
 }
 
 const OUTPUT_LIMIT = 4 * 1024 * 1024
+const HISTORY_OUTPUT_LIMIT = 2 * 1024 * 1024
+const HISTORY_REFS_LIMIT = 256 * 1024
+const HISTORY_TEXT_LIMIT = 4096
+const HISTORY_SHA = /^[0-9a-f]{40}$/u
+const HISTORY_REF = /^refs\/(heads|remotes|tags)\/(.+)$/u
+const HISTORY_DATE = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d[+-]\d\d:\d\d$/u
 const COMMAND_TIMEOUT = 60_000
 
 type GitOutput = { stdout: string; stderr: string; code: number }
@@ -114,6 +121,8 @@ type GitRunOptions = {
   socket?: string
   /** 允许宿主配置的凭据助手（credential.helper）参与认证；默认禁用。 */
   helper?: boolean
+  /** 本次命令连同 stderr 的独立输出上限；历史读取使用更紧的预算。 */
+  outputLimit?: number
 }
 
 /**
@@ -155,7 +164,7 @@ function runGit(cwd: string, signal: AbortSignal, args: string[], options: GitRu
     const timer = setTimeout(() => { timedOut = true; child.kill() }, COMMAND_TIMEOUT)
     const append = (target: Buffer[], chunk: Buffer) => {
       bytes += chunk.length
-      if (bytes > OUTPUT_LIMIT) {
+      if (bytes > (options.outputLimit ?? OUTPUT_LIMIT)) {
         overflow = true
         child.kill()
       } else {
@@ -478,6 +487,113 @@ export async function workspaceGitBranches(cwd: string, signal: AbortSignal): Pr
   return {
     branches: raw.split('\n').filter(Boolean).sort((a, b) => a.localeCompare(b)),
     current: await branchName(cwd, signal),
+  }
+}
+
+function historyFailure(message: string): GitOperationError {
+  return new GitOperationError('GIT_FAILED', message)
+}
+
+/**
+ * 解析 git log 的 NUL 字段与记录；格式错误时拒绝整页，不返回部分提交。
+ * @param raw - `git log -z --format='%H%x00%P%x00%s%x00%an%x00%aI'` 的输出。
+ * @returns 严格检查过的提交数组；不推断 ref，引用由独立的 ref 列表按哈希附着。
+ */
+export function parseGitHistory(raw: string): GitCommit[] {
+  if (Buffer.byteLength(raw, 'utf8') > HISTORY_OUTPUT_LIMIT) throw historyFailure('Git history output exceeded the size limit')
+  if (raw === '') return []
+  const parts = raw.split('\0')
+  if (parts.pop() !== '' || (parts.length % 5) !== 0) throw historyFailure('Incomplete Git history output')
+  const commits: GitCommit[] = []
+  for (let index = 0; index < parts.length; index += 5) {
+    const [id, parentLine, subject, author, authoredAt] = parts.slice(index, index + 5)
+    if (id === undefined || !HISTORY_SHA.test(id) || parentLine === undefined
+      || parentLine !== '' && !parentLine.split(' ').every(parent => HISTORY_SHA.test(parent))
+      || subject === undefined || author === undefined || authoredAt === undefined || !HISTORY_DATE.test(authoredAt)
+      || Buffer.byteLength(subject, 'utf8') > HISTORY_TEXT_LIMIT || Buffer.byteLength(author, 'utf8') > HISTORY_TEXT_LIMIT) {
+      throw historyFailure('Malformed Git history output')
+    }
+    commits.push({ id, parents: parentLine === '' ? [] : parentLine.split(' '), subject, author, authoredAt, refs: [] })
+  }
+  return commits
+}
+
+/**
+ * 从独立的 NUL 字段反查分支和标签，确保带逗号或换行的合法引用不会打断日志解析。
+ * @param raw - `git for-each-ref` 的完整输出。
+ * @returns 完整哈希索引的引用名与全部本地分支名。
+ */
+export function parseGitHistoryRefs(raw: string): { refs: Map<string, string[]>; branches: string[] } {
+  if (Buffer.byteLength(raw, 'utf8') > HISTORY_REFS_LIMIT) throw historyFailure('Git refs output exceeded the size limit')
+  if (raw === '') return { refs: new Map(), branches: [] }
+  const lines = raw.split('\n')
+  if (lines.pop() !== '' || lines.some(line => !line.endsWith('\0'))) throw historyFailure('Incomplete Git refs output')
+  const refs = new Map<string, string[]>()
+  const branches: string[] = []
+  for (const line of lines) {
+    const parts = line.slice(0, -1).split('\0')
+    const [name, id, peeled] = parts
+    const parsed = name === undefined ? null : HISTORY_REF.exec(name)
+    if (parts.length !== 3 || parsed === null || id === undefined || !HISTORY_SHA.test(id)
+      || peeled === undefined || peeled !== '' && !HISTORY_SHA.test(peeled)) {
+      throw historyFailure('Malformed Git refs output')
+    }
+    const kind = parsed[1]
+    const short = parsed[2]
+    if (kind === undefined || short === undefined) throw historyFailure('Malformed Git refs output')
+    if (kind === 'heads') branches.push(short)
+    const target = peeled || id
+    refs.set(target, [...(refs.get(target) ?? []), kind === 'tags' ? `tag: ${short}` : short])
+  }
+  return { refs, branches: branches.sort((a, b) => a.localeCompare(b)) }
+}
+
+/**
+ * 只读查询最近提交及其父边和 ref 标签：读操作绝不 fetch、暂存或写仓库。
+ * @param cwd - 由会话头取得的仓库工作目录；远端 marker 拒绝使用本机 Git。
+ * @param signal - 请求取消信号。
+ * @param query - 最多 300 条及可选的完整 SHA-1 起点；无效参数拒绝而不传给 Git。
+ * @returns 非仓库为 null；无提交的仓库返回空列表与本地分支。
+ */
+export async function workspaceGitHistory(cwd: string, signal: AbortSignal, query: GitHistoryQuery = {}): Promise<GitHistory | null> {
+  if (!await guard(cwd, signal)) return null
+  const count = query.count ?? GIT_HISTORY_DEFAULT_COUNT
+  if (!Number.isSafeInteger(count) || count < 1 || count > GIT_HISTORY_MAX_COUNT
+    || query.from !== undefined && !HISTORY_SHA.test(query.from)) {
+    throw historyFailure('Invalid Git history request')
+  }
+  const current = await branchName(cwd, signal)
+  const refOutput = await runGit(cwd, signal, [
+    'for-each-ref', '--format=%(refname)%00%(objectname)%00%(*objectname)%00', 'refs/heads', 'refs/remotes', 'refs/tags',
+  ], { outputLimit: HISTORY_REFS_LIMIT })
+  if (refOutput.code !== 0) throw failure(refOutput)
+  const { refs, branches } = parseGitHistoryRefs(refOutput.stdout)
+  // from 仅接受完整哈希；末尾 SHA 实参绝不携带 Git 的 --option 前缀。
+  if (query.from !== undefined) {
+    const verified = await runGit(cwd, signal, ['rev-parse', '--verify', '--end-of-options', `${query.from}^{commit}`])
+    if (verified.code !== 0 || !HISTORY_SHA.test(verified.stdout.trim())) {
+      throw new GitOperationError('GIT_FAILED', 'Git history start commit was not found')
+    }
+  }
+  // ref 与 HEAD 均可缺席（尚无首次提交）；空库不用解析 HEAD。
+  const head = await runGit(cwd, signal, ['rev-parse', '--verify', 'HEAD^{commit}'])
+  if (head.code !== 0 && !/needed a single revision/i.test(head.stderr)) throw failure(head)
+  if (head.code !== 0 && query.from === undefined && refs.size === 0) {
+    return { commits: [], truncated: false, current, branches }
+  }
+  const args = [
+    'log', '-z', '--topo-order', '--no-patch', '--format=%H%x00%P%x00%s%x00%an%x00%aI',
+    '-n', String(count + 1),
+    ...(query.from === undefined ? ['--all', ...(head.code === 0 ? ['HEAD'] : [])] : [query.from]),
+  ]
+  const result = await runGit(cwd, signal, args, { outputLimit: HISTORY_OUTPUT_LIMIT })
+  if (result.code !== 0) throw failure(result)
+  const commits = parseGitHistory(result.stdout)
+  if (commits.length > count + 1) throw historyFailure('Unexpected Git history count')
+  const truncated = commits.length > count
+  return {
+    commits: commits.slice(0, count).map(commit => ({ ...commit, refs: refs.get(commit.id) ?? [] })),
+    truncated, current, branches,
   }
 }
 

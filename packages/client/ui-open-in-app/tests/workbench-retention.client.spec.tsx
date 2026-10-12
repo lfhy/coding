@@ -104,6 +104,7 @@ async function bench() {
     workbench: { kind: 'single', scope: 'root' },
     'workbench.bottom': { kind: 'single', scope: 'root' },
   })
+  runtime.provide('connection', { api: { workspace: { gitHistory: vi.fn() } } })
   const feature = await runtime.mount({ inject: [...inject], apply })
   const workbench = runtime.renderSlot('workbench', {
     shown: true, fullscreen: false, bottomOpen: true,

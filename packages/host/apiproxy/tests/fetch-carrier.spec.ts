@@ -172,6 +172,12 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
       async gitBranches(request) {
         return { rpcId: request.rpcId, result: { ok: true, value: { branches: ['feature', 'main'], current: 'main' } } }
       },
+      async gitHistory(request) {
+        return { rpcId: request.rpcId, result: { ok: true, value: {
+          commits: [{ id: 'a'.repeat(40), parents: [], subject: 'initial', author: 'Git Test', authoredAt: '2025-02-03T04:05:06+00:00', refs: ['main'] }],
+          truncated: false, current: 'main', branches: ['main'],
+        } } }
+      },
       async gitCheckout(request) {
         return {
           rpcId: request.rpcId,
@@ -345,6 +351,10 @@ describe('unary round trip (handler ⇄ client, no network)', () => {
     const payload = { sessionId: 's' as never }
     expect((await c.workspace.gitStatus(payload)).result).toEqual({ ok: true, value: null })
     expect((await c.workspace.gitBranches(payload)).result).toEqual({ ok: true, value: { branches: ['feature', 'main'], current: 'main' } })
+    expect((await c.workspace.gitHistory({ ...payload, count: 60 })).result).toEqual({ ok: true, value: {
+      commits: [{ id: 'a'.repeat(40), parents: [], subject: 'initial', author: 'Git Test', authoredAt: '2025-02-03T04:05:06+00:00', refs: ['main'] }],
+      truncated: false, current: 'main', branches: ['main'],
+    } })
     expect((await c.workspace.gitCheckout({ ...payload, branch: 'feature' })).result).toMatchObject({ ok: true, value: { branch: 'feature' } })
     expect((await c.workspace.gitPush(payload)).result).toEqual({ ok: true, value: { branch: 'main', commitCreated: true, commit: 'abc' } })
     const observed: unknown[] = []
@@ -366,6 +376,20 @@ describe('unary round trip (handler ⇄ client, no network)', () => {
       body: JSON.stringify({ type: 'client-request', rpcId: 'bad-branch', method: 'workspace.gitCheckout', payload: { sessionId: 's', branch: '', cwd: '/other' } }),
     }))
     expect(await invalidBranch.json()).toMatchObject({ result: { ok: false, error: { code: 'bad-request' } } })
+    for (const badPayload of [
+      { sessionId: 's', cwd: '/other' },
+      { sessionId: 's', count: 301 },
+      { sessionId: 's', count: 0 },
+      { sessionId: 's', from: '--all' },
+      { sessionId: 's', from: 'HEAD..' },
+      { sessionId: 's', from: 'a'.repeat(40) + '\n--all' },
+    ]) {
+      const invalid = await toFetchHandler(fakeApi()).fetch(new Request('http://dsh.internal/api/workspace.gitHistory', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ type: 'client-request', rpcId: 'bad-history', method: 'workspace.gitHistory', payload: badPayload }),
+      }))
+      expect(await invalid.json()).toMatchObject({ result: { ok: false, error: { code: 'bad-request' } } })
+    }
   })
 
   it('carries the tail-page projections block through the wire schema (Zod must not strip it)', async () => {

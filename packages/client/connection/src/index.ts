@@ -122,6 +122,7 @@ const PRIVILEGED_METHODS = new Set([
   // Git 读操作会披露本机仓库，写操作会修改仓库或联系远端；均限定回环同源。
   'workspace.gitStatus',
   'workspace.gitBranches',
+  'workspace.gitHistory',
   'workspace.gitCheckout',
   'workspace.gitPush',
   'workspace.gitPull',
