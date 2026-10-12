@@ -1270,6 +1270,40 @@ describe('ChatView', () => {
     expect(h.chatScroll.read()).toBeNull()
   })
 
+  it('hides conversation anchors when the conversation column narrows and restores them after widening', async () => {
+    const h = makeHarness({ nodes: [user(1, 'first'), assistant(2, 'answer'), user(3, 'second')] })
+    const view = render(<h.ChatView {...h.props} />)
+    const scroll = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
+    let width = 700
+    Object.defineProperty(scroll, 'clientWidth', { configurable: true, get: () => width })
+    Object.defineProperty(scroll, 'scrollHeight', { configurable: true, value: 1000 })
+    Object.defineProperty(scroll, 'clientHeight', { configurable: true, value: 300 })
+    vi.spyOn(scroll, 'getBoundingClientRect').mockReturnValue({ top: 0, bottom: 600 } as DOMRect)
+    const rows = view.container.querySelectorAll<HTMLElement>('[data-chat-anchor-key]')
+    rows.forEach((row, index) => {
+      vi.spyOn(row, 'getBoundingClientRect').mockReturnValue({ top: 80 + index * 120 } as DOMRect)
+    })
+    act(() => { fireEvent(window, new Event('resize')) })
+    expect(view.queryByRole('navigation', { name: zh['chat.anchors.label'] })).toBeNull()
+    expect(view.queryByRole('button', { name: /跳转到消息/ })).toBeNull()
+    expect(view.getByText('first')).toBeTruthy()
+    expect(view.getByText('second')).toBeTruthy()
+
+    width = 1000
+    act(() => { fireEvent(window, new Event('resize')) })
+    await waitFor(() => { expect(view.getByRole('navigation', { name: zh['chat.anchors.label'] })).toBeTruthy() })
+    width = 863
+    act(() => { fireEvent(window, new Event('resize')) })
+    await waitFor(() => { expect(view.queryByRole('navigation', { name: zh['chat.anchors.label'] })).toBeNull() })
+    width = 864
+    act(() => { fireEvent(window, new Event('resize')) })
+    await waitFor(() => { expect(view.getByRole('navigation', { name: zh['chat.anchors.label'] })).toBeTruthy() })
+    width = 700
+    act(() => { fireEvent(window, new Event('resize')) })
+    await waitFor(() => { expect(view.queryByRole('navigation', { name: zh['chat.anchors.label'] })).toBeNull() })
+    expect(view.getByText('first')).toBeTruthy()
+  })
+
   it('scrolling away disables follow and shows the back-to-bottom button; clicking returns', () => {
     const h = makeHarness({ nodes: [user(1, 'q'), assistant(2, 'a')] })
     const view = render(<h.ChatView {...h.props} />)

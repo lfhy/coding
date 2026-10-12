@@ -14,21 +14,18 @@ export interface ConversationAnchorRailProps {
   readonly activeKey: string | null
   /** 不包含底部 sticky 输入区的可见高度。 */
   readonly trackHeight: number
-  readonly compact: boolean
   readonly onJump: (key: string) => void
   readonly t: ChatViewSlotProps['t']
 }
 
 /** 使用父级标记及当前项；消息滚动与跳转仍归 ChatView 管理。 */
 export function ConversationAnchorRail({
-  marks, activeKey, trackHeight, compact, onJump, t,
+  marks, activeKey, trackHeight, onJump, t,
 }: ConversationAnchorRailProps) {
   const [previewKey, setPreviewKey] = useState<string | null>(null)
   const [previewAnchor, setPreviewAnchor] = useState<{ right: number; centerY: number } | null>(null)
   const [interactionKey, setInteractionKey] = useState<string | null>(null)
   const [rovingKey, setRovingKey] = useState<string | null>(null)
-  const [expanded, setExpanded] = useState(false)
-  const compactTrigger = useRef<HTMLButtonElement>(null)
   const railScroll = useRef<HTMLDivElement>(null)
   const previewCard = useRef<HTMLDivElement>(null)
   const activeIndex = marks.findIndex(mark => mark.key === activeKey)
@@ -38,11 +35,11 @@ export function ConversationAnchorRail({
   const previewMark = marks.find(mark => mark.key === previewKey) ?? null
 
   useLayoutEffect(() => {
-    if (compact || marks.length < 2 || activeIndex < 0) return
+    if (marks.length < 2 || activeIndex < 0) return
     const rail = railScroll.current
     if (rail === null) return
     rail.scrollTop = Math.max(0, activeIndex * 10 + 5 - rail.clientHeight / 2)
-  }, [activeIndex, compact, marks.length, trackHeight])
+  }, [activeIndex, marks.length, trackHeight])
 
   useLayoutEffect(() => {
     const card = previewCard.current
@@ -65,14 +62,7 @@ export function ConversationAnchorRail({
     setPreviewKey(current => current === key ? null : current)
   }
 
-  const closeCompact = (): void => {
-    setExpanded(false)
-    compactTrigger.current?.focus({ preventScroll: true })
-  }
-
   const jump = (key: string): void => {
-    if (compact) closeCompact()
-    else setExpanded(false)
     onJump(key)
     setPreviewKey(null)
     setInteractionKey(null)
@@ -82,52 +72,8 @@ export function ConversationAnchorRail({
     if (event.key === 'Escape') {
       setPreviewKey(null)
       setInteractionKey(null)
-      if (compact && expanded) closeCompact()
       event.stopPropagation()
     }
-  }
-
-  if (compact) {
-    return (
-      <div className={css.slot} onKeyDown={dismiss}>
-        <div className={css.compact}>
-          <button
-            ref={compactTrigger}
-            type="button"
-            className={css.compactTrigger}
-            aria-label={t('chat.anchors.compact')}
-            aria-expanded={expanded}
-            aria-controls="conversation-anchor-list"
-            onClick={() => { setExpanded(value => !value) }}
-          >
-            <span className={css.compactGlyph} aria-hidden="true">☰</span>
-          </button>
-          {expanded && (
-            <div id="conversation-anchor-list" className={css.compactPanel}>
-              <div className={css.compactHeading}>
-                <span>{t('chat.anchors.label')}</span>
-                <button type="button" className={css.close} aria-label={t('chat.anchors.close')} onClick={closeCompact}>×</button>
-              </div>
-              <div className={css.compactList}>
-                {marks.map((mark, index) => (
-                  <button
-                    key={mark.key}
-                    type="button"
-                    className={clsx(css.compactItem, mark.key === activeKey && css.compactItemActive)}
-                    aria-label={t('chat.anchors.position', { current: index + 1, total: marks.length, title: mark.title })}
-                    aria-current={mark.key === activeKey ? 'location' : undefined}
-                    onClick={() => { jump(mark.key) }}
-                  >
-                    <span className={css.compactTitle}>{mark.title}</span>
-                    <span className={css.compactPreview}>{mark.preview}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    )
   }
 
   if (marks.length < 2) return null

@@ -19,18 +19,17 @@ import { formatRunDuration } from './message-chrome.ts'
 import css from './ChatView.module.css'
 
 const FOLLOW_THRESHOLD = 24
-const ANCHOR_COMPACT_WIDTH = 864
+const ANCHOR_MIN_WIDTH = 864
 const ANCHOR_TARGET_TOP = 16
 
 interface AnchorRailLayout {
   readonly marks: readonly ConversationAnchor[]
   readonly activeKey: string | null
   readonly trackHeight: number
-  readonly compact: boolean
 }
 
 const EMPTY_ANCHOR_RAIL: AnchorRailLayout = {
-  marks: [], activeKey: null, trackHeight: 0, compact: false,
+  marks: [], activeKey: null, trackHeight: 0,
 }
 
 interface AnchorTarget {
@@ -356,6 +355,11 @@ export function ChatView({
       return
     }
     const scrollport = scrollerOf(local)
+    if (scrollport.clientWidth < ANCHOR_MIN_WIDTH) {
+      anchorTargetsRef.current = { targets: [], floor: 0, trackHeight: 0 }
+      setAnchorRail(EMPTY_ANCHOR_RAIL)
+      return
+    }
     const viewport = scrollport.getBoundingClientRect()
     const composer = scrollport.querySelector<HTMLElement>('[data-composer-seat]')
     const visibleBottom = Math.min(viewport.bottom, composer?.getBoundingClientRect().top ?? viewport.bottom)
@@ -385,10 +389,8 @@ export function ChatView({
     anchorTargetsRef.current = { targets, floor, trackHeight }
     const marks: readonly ConversationAnchor[] = measured
     const activeKey = activeAnchorKey(targets, readingTop)
-    const compact = scrollport.clientWidth < ANCHOR_COMPACT_WIDTH
     setAnchorRail(current => current.activeKey === activeKey
       && current.trackHeight === trackHeight
-      && current.compact === compact
       && current.marks.length === marks.length
       && current.marks.every((mark, index) => {
         const next = marks[index]
@@ -396,7 +398,7 @@ export function ChatView({
           && mark.preview === next.preview
       })
       ? current
-      : { marks, activeKey, trackHeight, compact })
+      : { marks, activeKey, trackHeight })
   }, [anchors])
 
   const updateActiveAnchor = useCallback(() => {
@@ -644,7 +646,6 @@ export function ChatView({
           marks={anchorRail.marks}
           activeKey={anchorRail.activeKey}
           trackHeight={anchorRail.trackHeight}
-          compact={anchorRail.compact}
           onJump={jumpToAnchor}
           t={t}
         />

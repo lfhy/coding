@@ -25,11 +25,7 @@ const marks = [
 
 const t = ((key: string, values?: Record<string, string | number>) => {
   if (key === 'chat.anchors.position') return `${values?.current}/${values?.total}: ${values?.title}`
-  return {
-    'chat.anchors.label': 'Conversation anchors',
-    'chat.anchors.compact': 'Browse conversation anchors',
-    'chat.anchors.close': 'Close anchors',
-  }[key] ?? key
+  return { 'chat.anchors.label': 'Conversation anchors' }[key] ?? key
 }) as ConversationAnchorRailProps['t']
 
 function rail(overrides: Partial<ConversationAnchorRailProps> = {}) {
@@ -38,7 +34,6 @@ function rail(overrides: Partial<ConversationAnchorRailProps> = {}) {
     marks={marks}
     activeKey="second"
     trackHeight={400}
-    compact={false}
     onJump={onJump}
     t={t}
     {...overrides}
@@ -52,12 +47,10 @@ describe('ConversationAnchorRail', () => {
     expect(container.innerHTML).toBe('')
   })
 
-  it('does not show a desktop rail for one mark, but keeps the compact list available', () => {
-    const { rerender } = rail({ marks: marks.slice(0, 1), activeKey: 'first' })
+  it('does not show a rail for zero or one mark', () => {
+    rail({ marks: marks.slice(0, 1), activeKey: 'first' })
     expect(screen.queryByRole('navigation')).toBeNull()
-    rerender(<ConversationAnchorRail marks={marks.slice(0, 1)} activeKey="first" trackHeight={400} compact onJump={vi.fn()} t={t} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Browse conversation anchors' }))
-    expect(screen.getByRole('button', { name: '1/1: First prompt' })).toBeTruthy()
+    expect(screen.queryByRole('button')).toBeNull()
   })
 
   it('shows a centered 10px-pitch rail with the current location and a viewport-clamped preview', () => {
@@ -148,36 +141,13 @@ describe('ConversationAnchorRail', () => {
     expect(screen.queryByRole('tooltip')).toBeNull()
   })
 
-  it('opens a compact touch list, jumps, and dismisses it with Escape or close', () => {
-    const { onJump } = rail({ compact: true })
-    expect(screen.queryByRole('navigation')).toBeNull()
-    const trigger = screen.getByRole('button', { name: 'Browse conversation anchors' })
-    expect(trigger.getAttribute('aria-expanded')).toBe('false')
-    fireEvent.click(trigger)
-    expect(trigger.getAttribute('aria-expanded')).toBe('true')
-    expect(screen.getByText('Review the second answer')).toBeTruthy()
-    expect(screen.getByRole('button', { name: '2/3: Second prompt' }).getAttribute('aria-current')).toBe('location')
-    const second = screen.getByRole('button', { name: '2/3: Second prompt' })
-    second.focus()
-    fireEvent.keyDown(second, { key: 'Escape' })
-    expect(screen.queryByText('Review the second answer')).toBeNull()
-    expect(document.activeElement).toBe(trigger)
-    fireEvent.click(trigger)
-    const close = screen.getByRole('button', { name: 'Close anchors' })
-    close.focus()
-    fireEvent.click(close)
-    expect(trigger.getAttribute('aria-expanded')).toBe('false')
-    expect(document.activeElement).toBe(trigger)
-    fireEvent.click(trigger)
-    const first = screen.getByRole('button', { name: '1/3: First prompt' })
-    first.focus()
-    fireEvent.click(first)
-    expect(onJump).toHaveBeenCalledExactlyOnceWith('first')
-    expect(trigger.getAttribute('aria-expanded')).toBe('false')
-    expect(document.activeElement).toBe(trigger)
+  it('keeps the desktop rail free of a compact overlay that can obscure history', () => {
+    rail()
+    expect(screen.queryByRole('button', { name: 'Browse conversation anchors' })).toBeNull()
+    expect(screen.getByRole('navigation', { name: 'Conversation anchors' })).toBeTruthy()
   })
 
-  it('scrolls only the narrow rail to the active dense mark and preserves navigation', () => {
+  it('scrolls only the rail to the active dense mark and preserves navigation', () => {
     const denseMarks = Array.from({ length: 88 }, (_, index) => ({
       key: `prompt-${index}`, title: `Prompt ${index}`, preview: `Preview ${index}`,
     }))
@@ -187,13 +157,13 @@ describe('ConversationAnchorRail', () => {
     Object.defineProperty(scroll, 'clientHeight', { configurable: true, value: 200 })
     rerender(<ConversationAnchorRail
       marks={denseMarks} activeKey={denseMarks[70]!.key} trackHeight={700}
-      compact={false} onJump={onJump} t={t}
+      onJump={onJump} t={t}
     />)
     expect(scroll.scrollTop).toBe(605)
     Object.defineProperty(scroll, 'clientHeight', { configurable: true, value: 120 })
     rerender(<ConversationAnchorRail
       marks={denseMarks} activeKey={denseMarks[70]!.key} trackHeight={400}
-      compact={false} onJump={onJump} t={t}
+      onJump={onJump} t={t}
     />)
     expect(scroll.scrollTop).toBe(645)
     expect(scroll.querySelectorAll('button')).toHaveLength(88)
