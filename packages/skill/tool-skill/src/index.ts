@@ -22,7 +22,7 @@ import {
 } from '@deepseek-ai/dsh-skill'
 
 export const name = 'tool-skill'
-export const inject = ['agents', 'tools', 'skills']
+export const inject = ['agents', 'tools', 'skills', 'systemPrompt']
 
 const DEFAULT_CATALOG_DESCRIPTION_MAX_LENGTH = 500
 const catalogToolDefinitions = new WeakSet<ToolDefinition>()
@@ -78,6 +78,14 @@ export const Config: z<Config> = z.object({
 export function apply(ctx: Context, config: Config = {}): void {
   const catalogDescriptionMaxLength = config.catalogDescriptionMaxLength ?? DEFAULT_CATALOG_DESCRIPTION_MAX_LENGTH
   assertPositiveInteger('catalogDescriptionMaxLength', catalogDescriptionMaxLength, 3)
+
+  // 目录本身是持久 user-role 消息，模型会把它当背景；路由规则因此还需要一段系统提示词指引，
+  // 它承担「先在目录里找，再动手」的时机，目录与工具 schema 只声明各自范围内的规则。
+  ctx.systemPrompt.section({
+    name: 'tool:skill',
+    order: 108,
+    text: 'Check the session skill catalog before acting, and load any skill that plausibly covers the task with the `skill` tool before your first action; follow the loaded instructions rather than the catalog summaries.',
+  })
 
   const skillTool = defineTool({
     name: 'skill',
@@ -251,7 +259,7 @@ function renderCatalogMessage(entries: SkillCatalogSource['entries']): UserMessa
         ...renderCatalogEntries(entries),
         '</available_skills>',
         '',
-        "If the user names a skill, or the task clearly matches a skill's description, call the `skill` tool with the exact skill name before taking task actions. Load all applicable skills, then follow their full instructions. This catalog contains summaries only; do not infer or follow a skill's instructions until it has been loaded.",
+        "If the user names a skill, or a skill plausibly covers the task, call the `skill` tool with the exact skill name before taking task actions. Load all applicable skills, then follow their full instructions. This catalog contains summaries only; do not infer or follow a skill's instructions until it has been loaded.",
         'A user may also invoke a skill directly; its <skill_content> block then appears in this conversation. Follow it, and do not call the `skill` tool again for that skill.',
         '</system-reminder>',
       ].join('\n'),
@@ -271,7 +279,7 @@ function renderCatalogUpdate(entries: SkillCatalogSource['entries']): UserMessag
       'A user may still invoke a skill directly; its <skill_content> block then appears in this conversation. Follow it, and do not call the `skill` tool for it.',
     ]
     : [
-      'Use only names in this replacement catalog. If the user names a listed skill, or the task clearly matches its description, call the `skill` tool with the exact name before acting.',
+      'Use only names in this replacement catalog. If the user names a listed skill, or a listed skill plausibly covers the task, call the `skill` tool with the exact name before acting.',
       'A user may also invoke a skill directly; its <skill_content> block then appears in this conversation. Follow it, and do not call the `skill` tool again for that skill.',
     ]
   return createUserMessage({

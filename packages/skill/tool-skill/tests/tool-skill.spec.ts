@@ -286,7 +286,7 @@ describe('dsh-tool-skill', () => {
             '- `z-skill`: Long description Long description Long descript...',
             '</available_skills>',
             '',
-            "If the user names a skill, or the task clearly matches a skill's description, call the `skill` tool with the exact skill name before taking task actions. Load all applicable skills, then follow their full instructions. This catalog contains summaries only; do not infer or follow a skill's instructions until it has been loaded.",
+            "If the user names a skill, or a skill plausibly covers the task, call the `skill` tool with the exact skill name before taking task actions. Load all applicable skills, then follow their full instructions. This catalog contains summaries only; do not infer or follow a skill's instructions until it has been loaded.",
             'A user may also invoke a skill directly; its <skill_content> block then appears in this conversation. Follow it, and do not call the `skill` tool again for that skill.',
             '</system-reminder>',
           ].join('\n'),
@@ -300,6 +300,21 @@ describe('dsh-tool-skill', () => {
     expect(rendered).not.toContain('Secret body')
     expect(rendered).not.toContain('user-only-skill')
     expect(renderPrompt(await ctx.systemPrompt.assemble({ agent: agentForCwd('/workspace') }))).not.toContain('<available_skills>')
+  })
+
+  it('contributes a standing routing section that its own fiber removes', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(SkillRegistry)
+    const fiber = await ctx.plugin(toolSkill)
+
+    const section = (await ctx.systemPrompt.assemble()).sections.find(item => item.name === 'tool:skill')
+    expect(section?.text).toBe('Check the session skill catalog before acting, and load any skill that plausibly covers the task with the `skill` tool before your first action; follow the loaded instructions rather than the catalog summaries.')
+
+    await fiber.dispose()
+    expect((await ctx.systemPrompt.assemble()).sections.some(item => item.name === 'tool:skill')).toBe(false)
   })
 
   it('does not inject a catalog when no model-invocable skills are available', async () => {

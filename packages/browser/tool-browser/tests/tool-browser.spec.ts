@@ -155,6 +155,15 @@ function text(result: { content: readonly { type: string; text?: string }[] }): 
 }
 
 describe('browser action tools', () => {
+  it('contributes the routing section that its own fiber removes', async () => {
+    const { ctx, fiber } = await setup()
+    const section = (await ctx.systemPrompt.assemble()).sections.find(item => item.name === 'tool:browser')
+    expect(section?.text).toBe('Use the browser tools, not a headless browser script run in bash, when a task needs a rendered page read, reproduced, verified, or driven, including your own app on localhost or a dev server.')
+
+    await fiber.dispose()
+    expect((await ctx.systemPrompt.assemble()).sections.some(item => item.name === 'tool:browser')).toBe(false)
+  })
+
   it.each([
     { action: 'navigate', url: 'https://example.com' },
     { action: 'snapshot' },

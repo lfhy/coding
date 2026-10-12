@@ -2,7 +2,9 @@
 
 面向模型的 skill（技能）目录和 `skill` 工具。
 
-需要 `ctx.agents`、`ctx.tools` 和 `ctx.skills`（`inject: ['agents', 'tools', 'skills']`）。
+需要 `ctx.agents`、`ctx.tools`、`ctx.skills` 和 `ctx.systemPrompt`（`inject: ['agents', 'tools', 'skills', 'systemPrompt']`）。
+
+插件以 order 108 贡献 `tool:skill` 系统提示词段，把「先查目录，再动手」的时机放进每个请求的稳定前缀。目录本身是持久用户角色消息，容易被当作背景，因此路由规则不只写在目录里。
 
 ## 目录生命周期
 
@@ -30,6 +32,24 @@
 
 ## 模型体验
 
+### 系统提示词指引
+
+#### 模型看到的内容
+
+`tool:skill` 段的文本固定为：
+
+> Check the session skill catalog before acting, and load any skill that plausibly covers the task with the `skill` tool before your first action; follow the loaded instructions rather than the catalog summaries.
+
+这一段承担目录之外的路由：它要求模型在动手之前主动查目录，并把加载时机放在第一个动作之前；目录按当前可见 skill 重新渲染，本段不随目录成员变化。`skill` 工具的 schema 说明只概述这个工具本身，「什么时候该加载」由本段与目录共同表述，两者使用同一个门槛措辞。
+
+#### Token 影响
+
+`skill` 工具可见时该段固定出现在每个请求的系统提示词中；未挂载本插件时该段随插件一起消失。作用域遮蔽只改变目录（该 agent 会收到空替换），不改变本段，因此本段描述的是部署提供的机制，不是该 agent 当下可见的工具。
+
+#### KV Cache 影响
+
+该段属于稳定请求前缀，不随目录成员、会话推进或工具结果变化；目录替换仍是前缀之后的追加消息。
+
 ### 会话目录
 
 #### 模型看到的内容
@@ -46,7 +66,7 @@ A skill is a reusable set of task-specific instructions. The following skills ar
 - `<name>`: <normalized-and-capped-description>
 </available_skills>
 
-If the user names a skill, or the task clearly matches a skill's description, call the `skill` tool with the exact skill name before taking task actions. Load all applicable skills, then follow their full instructions. This catalog contains summaries only; do not infer or follow a skill's instructions until it has been loaded.
+If the user names a skill, or a skill plausibly covers the task, call the `skill` tool with the exact skill name before taking task actions. Load all applicable skills, then follow their full instructions. This catalog contains summaries only; do not infer or follow a skill's instructions until it has been loaded.
 A user may also invoke a skill directly; its <skill_content> block then appears in this conversation. Follow it, and do not call the `skill` tool again for that skill.
 </system-reminder>
 ```
@@ -159,7 +179,8 @@ Load referenced resources only as needed.
 
 ## 已知限制与暂缓事项
 
-- **目录省略 `whenToUse`、来源和提供方元数据**：路由只基于名称和有长度上限的描述；`whenToUse` 仍是提供方元数据，加载后的包装层也不渲染它。
+- **目录省略 `whenToUse`、来源和提供方元数据**：路由只基于名称、有长度上限的描述和常驻的 `tool:skill` 段；`whenToUse` 仍是提供方元数据，加载后的包装层也不渲染它。
+- **提示词段跟随插件挂载，而非逐 agent 的工具可见性**：`tool:skill` 段在插件挂载期间对所有 agent 渲染，目录则按可见性逐 agent 发布或清空。已发布预设都不遮蔽 `skill` 工具；新增遮蔽该工具的预设时需同时考虑本段措辞。
 - **已加载指令正文没有大小上限**：提供方可返回足以占用大量下一步上下文的 skill；只有目录描述会被截断。
 - **资源是指引，而非附件**：工具报告基础目录/URL/不透明提示，但既不列举也不为模型获取引用文件。
 - **加载是一次性文本**：远程提供方缓慢或 skill 正文很大时，不提供部分内容、流式输出或缓存内容句柄。

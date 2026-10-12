@@ -14,8 +14,8 @@ import type {} from '@deepseek-ai/dsh-sandbox-policy'
 
 /** 插件名。 */
 export const name = 'tool-browser'
-/** 浏览器操作及持久截图所需服务；审批缺席时执行仍须明确拒绝。 */
-export const inject = ['tools', 'browserUse', 'attachments']
+/** 浏览器操作、提示词路由及持久截图所需服务；审批缺席时执行仍须明确拒绝。 */
+export const inject = ['tools', 'browserUse', 'attachments', 'systemPrompt']
 
 const MAX_SNAPSHOT_CHARS = 12_000
 const MAX_TITLE_CHARS = 512
@@ -196,11 +196,19 @@ function browserFailure(command: BrowserCommand, error: BrowserUseError): Browse
 }
 
 /**
- * 注册七个动作工具；仅全权限且关闭审批提示的会话免于一次性审批，审批服务缺席仍拒绝。
- * @param ctx - 持有浏览器服务、附件存储和工具注册表的上下文。
- * @returns 无返回值；工具注册随插件卸载撤销。
+ * 注册七个动作工具和它们的系统提示词路由；仅全权限且关闭审批提示的会话免于一次性审批，审批服务缺席仍拒绝。
+ * @param ctx - 持有浏览器服务、附件存储、工具注册表和系统提示词的上下文。
+ * @returns 无返回值；注册随插件卸载撤销。
  */
 export function apply(ctx: Context): void {
+  // 跨调用路由属于系统提示词：模型最容易走错的替代方案是在 bash 里自建无头浏览器脚本，
+  // 而七项工具的 schema 只在模型已决定调用浏览器后才生效。
+  ctx.systemPrompt.section({
+    name: 'tool:browser',
+    order: 107,
+    text: 'Use the browser tools, not a headless browser script run in bash, when a task needs a rendered page read, reproduced, verified, or driven, including your own app on localhost or a dev server.',
+  })
+
   function register(action: BrowserCommand['kind'], description: string, parameters: ParameterSchemaSpec): void {
     ctx.tools.register(defineTool({
       name: `browser_${action}`, description, parameters,

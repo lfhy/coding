@@ -1,6 +1,6 @@
 # @deepseek-ai/dsh-tool-browser
 
-`browser_navigate`、`browser_snapshot`、`browser_click`、`browser_fill`、`browser_scroll`、`browser_screenshot` 和 `browser_close` 是 `ctx.browserUse` 的面向模型消费方。部署需挂载工具注册表、浏览器服务和持久附件存储；执行时还需审批服务及活跃 Agent。只有调用会话的有效沙箱模式为 `danger-full-access`，且有效审批策略为 `never` 时，工具才不申请一次性审批并直接执行。有效权限结合该会话的覆盖与部署默认值解析，不受其他会话的选择影响。
+`browser_navigate`、`browser_snapshot`、`browser_click`、`browser_fill`、`browser_scroll`、`browser_screenshot` 和 `browser_close` 是 `ctx.browserUse` 的面向模型消费方。部署需挂载工具注册表、浏览器服务、持久附件存储和系统提示词；执行时还需审批服务及活跃 Agent。只有调用会话的有效沙箱模式为 `danger-full-access`，且有效审批策略为 `never` 时，工具才不申请一次性审批并直接执行。有效权限结合该会话的覆盖与部署默认值解析，不受其他会话的选择影响。
 
 其余组合保持一次性审批路径：`danger-full-access` 搭配 `ask` 仍对每次调用（包括快照与关闭）申请审批，只有 `allowed-once` 可以调用浏览器服务；较窄沙箱下的 `never` 会拒绝，而非授予浏览器访问。未挂载沙箱策略服务的部署也走审批路径。拒绝、取消或应答者缺席均不会执行浏览器命令；缺少审批服务时，即使沙箱模式为 `danger-full-access` 也不会执行。
 
@@ -13,6 +13,24 @@
 审批理由显示操作和目标或活跃标签页的 HTTP(S) origin；无会话、无效或过长的 origin 显示为未知。`navigate` 的目标解析失败时显示无效目标；目标 URL 的用户信息、路径、查询参数和片段不写入审批理由或审计事件，`fill` 文本、页面内容与截图也不写入。`click` 与 `fill` 仅展示简短的安全字符 ref，其余 ref 显示占位符。理由仅供判断这一次调用：导航可能重定向或加载子资源，批准不会自动授权后续工具调用，也不限制页面的网络目的地；导航输入与 ref 校验仍由浏览器提供方执行。
 
 ## Model Experience
+
+### 系统提示词指引
+
+#### What the model sees
+
+该插件以 order 107 贡献 `tool:browser` 段，其文本固定为：
+
+> Use the browser tools, not a headless browser script run in bash, when a task needs a rendered page read, reproduced, verified, or driven, including your own app on localhost or a dev server.
+
+这一段承担路由。七项工具的 schema 只在模型已经决定调用浏览器之后才生效，而任务要求复现或验证本机界面时，模型的默认路径是写一个无头浏览器脚本；跨过这一步的信号只有这一段常驻指引和按需加载的 [`browser-use` 技能](../../skill/skill-browser-use/README.md)。
+
+#### Token effect
+
+插件挂载期间该段固定出现在每个请求的系统提示词中，不跟随逐 agent 的工具遮蔽；加载 `browser-use` 正文是额外的一次性成本。
+
+#### KV Cache effect
+
+该段属于稳定请求前缀，不随页面观测或会话推进变化；插件启用状态或作用域变化才改变前缀。
 
 ### 浏览器操作工具 schema
 
