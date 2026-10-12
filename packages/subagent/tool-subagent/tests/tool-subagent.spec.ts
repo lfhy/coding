@@ -9,6 +9,7 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { TOOL_ABORTED_BEFORE_DISPATCH } from '@deepseek-ai/dsh-tools'
 import { assembleContextFor, type Agent } from '@deepseek-ai/dsh-agent'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
+import AgentDefaultModel from '@deepseek-ai/dsh-agent-default-model'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
@@ -223,7 +224,7 @@ describe('dsh-tool-subagent', () => {
     const ctx = await setup({ provider: 'mock' })
     const result = await callSubagent(ctx, { description: 'invalid', prompt: 'work', model_provider: 'other' })
     expect(result.isError).toBe(true)
-    expect(text(result)).toContain('model_provider requires model')
+    expect(text(result)).toContain('model_provider requires a non-empty model')
   })
 
   it('registers under a configurable toolName so multiple providers can coexist', async () => {
@@ -1193,6 +1194,114 @@ describe('dsh-tool-subagent continuable background mode', () => {
     await vi.waitFor(() => { expect(ctx.agents.get(selectedId)).toBeUndefined() })
     const selectedSession = await ctx.sessionPersistence.load(selectedId)
     expect(selectedSession.events.find(event => event.type === 'subagent/descriptor')?.data)
+      .toMatchObject({ agentProvider: 'alternate', agentModel: 'other' })
+  })
+
+  it('uses the routed request provider over stale agent options when model_provider is empty', async () => {
+    let seen: SubagentStartRequest | undefined
+    const ctx = await setup({ provider: 'mock' }, { onStart: (request) => { seen = request } })
+    const parent = {
+      id: SessionId('parent-switched'),
+      options: { provider: 'stale-provider', model: 'stale-model' },
+      session: { requestHeader: () => ({ config: { provider: 'active-provider', model: 'active-model' } }) },
+    } as unknown as Agent
+    const result = await callSubagent(ctx, {
+      description: 'inspect catalog', prompt: 'work', model: 'selected-model', model_provider: '',
+    }, { agent: parent })
+    expect(result.isError).toBe(false)
+    expect(seen?.agentOptions).toMatchObject({ provider: 'active-provider', model: 'selected-model' })
+  })
+
+  it('uses the parent model provider when model_provider is empty', async () => {
+    const { ctx, parent } = await continuableSetup()
+    const started = await callSubagent(ctx, {
+      description: 'inspect catalog', prompt: 'work', model: 'mock', model_provider: '',
+    }, { agent: parent })
+    expect(started.isError).toBe(false)
+    const childId = SessionId((started.value as { subagentId: string }).subagentId)
+    await vi.waitFor(() => { expect(ctx.agents.get(childId)).toBeUndefined() })
+    const loaded = await ctx.sessionPersistence.load(childId)
+    expect(loaded.events.find(event => event.type === 'subagent/descriptor')?.data)
+      .toMatchObject({ agentProvider: 'mock', agentModel: 'mock' })
+  })
+
+  it('treats an empty model_provider without a model as omitted', async () => {
+    const { ctx, parent } = await continuableSetup()
+    const started = await callSubagent(ctx, {
+      description: 'inspect catalog', prompt: 'work', model_provider: '',
+    }, { agent: parent })
+    expect(started.isError).toBe(false)
+    const childId = SessionId((started.value as { subagentId: string }).subagentId)
+    await vi.waitFor(() => { expect(ctx.agents.get(childId)).toBeUndefined() })
+    const loaded = await ctx.sessionPersistence.load(childId)
+    expect(loaded.events.find(event => event.type === 'subagent/descriptor')?.data)
+      .toMatchObject({ agentProvider: 'mock', agentModel: 'mock' })
+  })
+
+  it('rejects an empty model id instead of submitting an unroutable child', async () => {
+    const { ctx, parent } = await continuableSetup()
+    const result = await callSubagent(ctx, {
+      description: 'inspect catalog', prompt: 'work', model: ' ', model_provider: '',
+    }, { agent: parent })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('model must be a non-empty model id')
+  })
+
+  it('uses the sole registered model provider when the caller has no route', async () => {
+    const { ctx } = await continuableSetup()
+    const parent = ctx.agentLoop.create(SessionId('routeless-parent'), {})
+    const started = await callSubagent(ctx, {
+      description: 'inspect catalog', prompt: 'work', model: 'gpt-6-sol', model_provider: '',
+    }, { agent: parent })
+    expect(started.isError).toBe(false)
+    const childId = SessionId((started.value as { subagentId: string }).subagentId)
+    await vi.waitFor(() => { expect(ctx.agents.get(childId)).toBeUndefined() })
+    const loaded = await ctx.sessionPersistence.load(childId)
+    expect(loaded.events.find(event => event.type === 'subagent/descriptor')?.data)
+      .toMatchObject({ agentProvider: 'mock', agentModel: 'gpt-6-sol' })
+  })
+
+  it('uses the configured default model provider before guessing from a multi-route registry', async () => {
+    const { ctx } = await continuableSetup()
+    ctx.llm.registerAdapter(['alternate'], new MockAdapter([]))
+    await ctx.plugin(AgentDefaultModel, { provider: 'mock', model: 'mock' })
+    const parent = ctx.agentLoop.create(SessionId('default-provider-parent'), {})
+    const started = await callSubagent(ctx, {
+      description: 'inspect catalog', prompt: 'work', model: 'mock', model_provider: '',
+    }, { agent: parent })
+    expect(started.isError).toBe(false)
+    const childId = SessionId((started.value as { subagentId: string }).subagentId)
+    await vi.waitFor(() => { expect(ctx.agents.get(childId)).toBeUndefined() })
+    const loaded = await ctx.sessionPersistence.load(childId)
+    expect(loaded.events.find(event => event.type === 'subagent/descriptor')?.data)
+      .toMatchObject({ agentProvider: 'mock', agentModel: 'mock' })
+  })
+
+  it('requests a provider choice only when a routeless caller has multiple registered routes', async () => {
+    const { ctx } = await continuableSetup()
+    ctx.llm.registerAdapter(['alternate'], new MockAdapter([]))
+    const parent = ctx.agentLoop.create(SessionId('ambiguous-parent'), {})
+    const result = await callSubagent(ctx, {
+      description: 'inspect catalog', prompt: 'work', model: 'mock', model_provider: '',
+    }, { agent: parent })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('model_provider')
+    expect(text(result)).toContain('mock')
+    expect(text(result)).toContain('alternate')
+    expect(ctx.agents.list().some(agent => agent.session.header.parentSession === parent.id)).toBe(false)
+  })
+
+  it('still honors an explicit model_provider when an inherited route exists', async () => {
+    const { ctx, parent } = await continuableSetup()
+    ctx.llm.registerAdapter(['alternate'], new MockAdapter([textResponse('alternate answer')]))
+    const started = await callSubagent(ctx, {
+      description: 'inspect catalog', prompt: 'work', model: 'other', model_provider: 'alternate',
+    }, { agent: parent })
+    expect(started.isError).toBe(false)
+    const childId = SessionId((started.value as { subagentId: string }).subagentId)
+    await vi.waitFor(() => { expect(ctx.agents.get(childId)).toBeUndefined() })
+    const loaded = await ctx.sessionPersistence.load(childId)
+    expect(loaded.events.find(event => event.type === 'subagent/descriptor')?.data)
       .toMatchObject({ agentProvider: 'alternate', agentModel: 'other' })
   })
 

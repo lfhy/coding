@@ -11,6 +11,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import type {} from '@deepseek-ai/dsh-agent-default-model'
 import type { Agent, AgentOptions } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { JsonValue } from '@deepseek-ai/dsh-session'
@@ -362,7 +363,7 @@ export function apply(ctx: Context, config: Config): void {
         },
         model_provider: {
           type: 'string',
-          description: 'Provider route for model. Omit to use the current provider; requires model when specified.',
+          description: 'Optional LLM provider route, not the subagent transport provider. Omit or leave empty to inherit the current request provider; if none exists, the sole registered LLM provider is used. A non-empty value requires model.',
         },
         ...backgroundEnabled ? {
           run_in_background: {
@@ -422,18 +423,28 @@ export function apply(ctx: Context, config: Config): void {
           throw new Error('subagent tool requires a calling agent (exec.agent was undefined)')
         }
 
-        if (args.model_provider !== undefined && args.model === undefined) {
-          throw new Error('subagent: model_provider requires model')
+        if (args.model !== undefined && args.model.trim().length === 0) {
+          throw new Error('subagent: model must be a non-empty model id')
         }
-        const selected = args.model === undefined ? undefined : {
-          provider: args.model_provider ?? invokingModel(parent)?.provider ?? config.agentOptions?.provider ?? '',
-          model: args.model,
+        const modelProvider = args.model_provider?.trim() || undefined
+        if (modelProvider !== undefined && !args.model) {
+          throw new Error('subagent: model_provider requires a non-empty model')
         }
-        if (args.model !== undefined && selected?.provider === '') {
-          throw new Error('subagent: model_provider is required when the calling agent has no provider')
-        }
-        const agentOptions = childAgentOptions(parent, config.agentOptions, selected)
         const llm = ctx.get('llm')
+        const current = invokingModel(parent)
+        const configuredProvider = config.agentOptions?.provider
+        const defaultProvider = ctx.get('agentDefaultModel')?.currentSelection().provider
+        const registered = args.model === undefined ? [] : llm?.listProviders().map(route => route.id) ?? []
+        const provider = modelProvider || current?.provider || parent.options.provider
+          || configuredProvider || defaultProvider || (registered.length === 1 ? registered[0] : undefined)
+        if (args.model !== undefined && provider === undefined) {
+          throw new Error(registered.length === 0
+            ? 'subagent: no model provider route is available; configure an LLM provider or specify model_provider'
+            : `subagent: model_provider is required when the calling agent has no model route and multiple LLM providers are registered (${registered.join(', ')}); use list_subagent_models to choose one`)
+        }
+        const selected = args.model === undefined || provider === undefined
+          ? undefined : { provider, model: args.model }
+        const agentOptions = childAgentOptions(parent, config.agentOptions, selected)
         if (llm !== undefined && agentOptions.provider !== undefined && agentOptions.model !== undefined) {
           await llm.resolveCallConfig({ provider: agentOptions.provider, model: agentOptions.model }, exec.signal)
         }

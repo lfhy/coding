@@ -1677,7 +1677,7 @@ Delegate a self-contained task to a subagent (a separate agent that works in its
     },
     "model_provider": {
       "type": "string",
-      "description": "Provider route for model. Omit to use the current provider; requires model when specified."
+      "description": "Optional LLM provider route, not the subagent transport provider. Omit or leave empty to inherit the current request provider; if none exists, the sole registered LLM provider is used. A non-empty value requires model."
     },
     "run_in_background": {
       "type": "boolean",
