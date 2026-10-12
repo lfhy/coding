@@ -509,6 +509,8 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     const wc = tab.view.webContents
     const destination = allowedUrl(url)
     let started = false
+    let committedUrl: string | undefined
+    let committedNavigation: number | undefined
     let commitTask: ReturnType<typeof setImmediate> | undefined
     const destinations = new Set([destination])
     let resolveCommit!: (value: { timedOut: false; error?: unknown }) => void
@@ -517,6 +519,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
       if (details.isMainFrame && owners.get(sessionId) === owner && owner.tabs.get(tab.id) === tab) {
         if (commitTask) clearImmediate(commitTask)
         commitTask = undefined
+        committedUrl = undefined
         started = details.url === destination
       }
     }
@@ -530,34 +533,43 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
         owners.get(sessionId) !== owner || owner.tabs.get(tab.id) !== tab || wc.isDestroyed()) return
       try { allowedUrl(url) }
       catch (error) { resolveCommit({ timedOut: false, error }); return }
+      committedUrl = url
+      committedNavigation = tab.navigation
       // 同一事件循环内本次 loadURL 的拒绝优先于提交回执；旧加载的异步拒绝不影响本次导航。
+      if (human) commitTask ??= setImmediate(() => { resolveCommit({ timedOut: false }) })
+    }
+    const onDomReady = (): void => {
+      if (human || committedUrl === undefined || wc.getURL() !== committedUrl ||
+        owners.get(sessionId) !== owner || owner.tabs.get(tab.id) !== tab || wc.isDestroyed()) return
+      // DOM 已就绪即可观测；让同一事件循环中的 loadURL 拒绝先于成功回执。
       commitTask ??= setImmediate(() => { resolveCommit({ timedOut: false }) })
     }
-    if (human) {
-      wc.on('did-start-navigation', onStart)
-      wc.on('did-redirect-navigation', onRedirect)
-      wc.on('did-navigate', onCommit)
-    }
+    wc.on('did-start-navigation', onStart)
+    wc.on('did-redirect-navigation', onRedirect)
+    wc.on('did-navigate', onCommit)
+    if (!human) wc.on('dom-ready', onDomReady)
     const completed = Promise.resolve().then(() => wc.loadURL(destination))
       .then(() => ({ timedOut: false as const }), (error: unknown) => ({ timedOut: false as const, error }))
-    const readiness = human ? Promise.race([completed, committed]) : completed
+    const readiness = Promise.race([completed, committed])
     let timer: ReturnType<typeof setTimeout> | undefined
     const deadline = new Promise<{ timedOut: true }>((resolve) => {
       timer = setTimeout(() => { resolve({ timedOut: true }) }, NAVIGATION_TIMEOUT_MS)
     })
     const result = await Promise.race([readiness, deadline])
     if (timer) clearTimeout(timer)
-    if (human) {
-      if (commitTask) clearImmediate(commitTask)
-      wc.removeListener('did-start-navigation', onStart)
-      wc.removeListener('did-redirect-navigation', onRedirect)
-      wc.removeListener('did-navigate', onCommit)
-    }
+    if (commitTask) clearImmediate(commitTask)
+    wc.removeListener('did-start-navigation', onStart)
+    wc.removeListener('did-redirect-navigation', onRedirect)
+    wc.removeListener('did-navigate', onCommit)
+    if (!human) wc.removeListener('dom-ready', onDomReady)
     if (!result.timedOut) {
       // 保留 loadURL 的原始失败诊断，不能把被拒绝的导航当作已完成页面。
       if ('error' in result) throw result.error
       if (owners.get(sessionId) !== owner || owner.tabs.get(tab.id) !== tab || wc.isDestroyed()) {
         fail('browser navigation target changed', 'BROWSER_STALE_REF')
+      }
+      if (!human && committedNavigation !== undefined && committedNavigation !== tab.navigation) {
+        fail('browser document changed during navigation', 'BROWSER_STALE_REF')
       }
       refreshSummary(tab)
       return
@@ -593,6 +605,9 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     invalidate(owner, tab)
     refreshSummary(tab)
     emit(sessionId, owner)
+    // 主 frame 已提交且可观测时，模型导航仍可返回该页面；保留严格文档校验。
+    if (!human && committedUrl !== undefined && wc.getURL() === committedUrl &&
+      committedNavigation !== undefined && committedNavigation + 1 === tab.navigation) return
     fail('browser navigation timed out; loading stopped, take a new snapshot of the current page', 'BROWSER_FAILED')
   }
 

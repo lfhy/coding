@@ -1243,6 +1243,103 @@ describe('Electron 实时浏览器 guest', () => {
     } finally { vi.useRealTimers() }
   })
 
+  it('主 frame 已提交但随后拒绝的模型导航不会发布页面', async () => {
+    const manager = createBrowserGuestManager(fixture())
+    await manager.execute('s1', { kind: 'navigate', url: 'https://example.com/old' })
+    const wc = electron.views[0]!.webContents
+    wc.loadURL.mockImplementationOnce(async (url: string) => {
+      wc.commit(url)
+      wc.domReady()
+      throw new Error('navigation rejected')
+    })
+    await expect(manager.execute('s1', { kind: 'navigate', url: 'https://example.com/next' }))
+      .rejects.toThrow('navigation rejected')
+    await manager.dispose()
+  })
+
+  it('DOM 已就绪但页面自行换址时不把旧提交作为模型导航结果', async () => {
+    const manager = createBrowserGuestManager(fixture())
+    await manager.execute('s1', { kind: 'navigate', url: 'https://example.com/old' })
+    const wc = electron.views[0]!.webContents
+    wc.loadURL.mockImplementationOnce((url: string) => {
+      wc.commit(url)
+      wc.begin('https://other.example/changed')
+      wc.domReady()
+      return Promise.resolve()
+    })
+    await expect(manager.execute('s1', { kind: 'navigate', url: 'https://example.com/slow' }))
+      .rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
+    await manager.dispose()
+  })
+
+  it('模型导航在 DOM 就绪后观测，不等待缓慢子资源完成', async () => {
+    vi.useFakeTimers()
+    try {
+      const manager = createBrowserGuestManager(fixture())
+      await manager.execute('s1', { kind: 'navigate', url: 'https://example.com/old' })
+      const wc = electron.views[0]!.webContents
+      wc.loadURL.mockImplementationOnce((url: string) => {
+        wc.commit(url)
+        wc.domReady()
+        return new Promise<void>(() => {})
+      })
+      const pending = manager.execute('s1', { kind: 'navigate', url: 'https://example.com/slow' })
+      await vi.advanceTimersByTimeAsync(0)
+      const capture = await pending
+      expect(capture.observation.url).toBe('https://example.com/slow')
+      expect(wc.stop).not.toHaveBeenCalled()
+      await manager.dispose()
+    } finally { vi.useRealTimers() }
+  })
+
+  it('模型导航主 frame 已提交但资源加载卡住时停止加载并返回新页面观测', async () => {
+    vi.useFakeTimers()
+    try {
+      const manager = createBrowserGuestManager(fixture())
+      const first = await manager.execute('s1', { kind: 'navigate', url: 'https://example.com/old' })
+      const wc = electron.views[0]!.webContents
+      let finish!: () => void
+      wc.loadURL.mockImplementationOnce((url: string) => {
+        wc.commit(url)
+        return new Promise<void>((resolve) => { finish = resolve })
+      })
+      wc.stop.mockImplementationOnce(() => { wc.finish(); finish() })
+      const pending = manager.execute('s1', { kind: 'navigate', url: 'https://example.com/slow' })
+      await vi.advanceTimersByTimeAsync(0)
+      await vi.advanceTimersByTimeAsync(10_000)
+      const capture = await pending
+      expect(capture.observation.url).toBe('https://example.com/slow')
+      expect(capture.observation.snapshot).toContain('Hello')
+      expect(capture.observation.revision).toBeGreaterThan(first.observation.revision)
+      expect(wc.stop).toHaveBeenCalledOnce()
+      expect(wc.close).not.toHaveBeenCalled()
+      await manager.dispose()
+    } finally { vi.useRealTimers() }
+  })
+
+  it('主 frame 已提交后又换址时，超时停载不能返回后续页面', async () => {
+    vi.useFakeTimers()
+    try {
+      const manager = createBrowserGuestManager(fixture())
+      await manager.execute('s1', { kind: 'navigate', url: 'https://example.com/old' })
+      const wc = electron.views[0]!.webContents
+      let finish!: () => void
+      wc.loadURL.mockImplementationOnce((url: string) => {
+        wc.commit(url)
+        wc.begin('https://other.example/changed')
+        return new Promise<void>((resolve) => { finish = resolve })
+      })
+      wc.stop.mockImplementationOnce(() => { wc.finish(); finish() })
+      const pending = manager.execute('s1', { kind: 'navigate', url: 'https://example.com/slow' })
+      await vi.advanceTimersByTimeAsync(0)
+      await vi.advanceTimersByTimeAsync(10_000)
+      await expect(pending).rejects.toThrow('take a new snapshot')
+      expect(wc.stop).toHaveBeenCalledOnce()
+      expect(wc.close).not.toHaveBeenCalled()
+      await manager.dispose()
+    } finally { vi.useRealTimers() }
+  })
+
   it.each(['model', 'human'] as const)('%s 导航卡住但停止收敛后保留 guest，并撤销旧审批与画面', async (kind) => {
     vi.useFakeTimers()
     try {
