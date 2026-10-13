@@ -33,6 +33,9 @@
       "path": "../user-questions"
     },
     {
+      "path": "../../util/timeout"
+    },
+    {
       "path": "../../runtime-diagnostics/invariants"
     }
   ]

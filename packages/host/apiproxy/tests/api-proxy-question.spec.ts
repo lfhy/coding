@@ -1,6 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import { CallId } from '@deepseek-ai/dsh-llm'
 import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
+import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import ToolRuntime from '@deepseek-ai/dsh-tools'
+import * as toolAskUser from '@deepseek-ai/dsh-tool-ask-user'
 import SessionStore from '@deepseek-ai/dsh-session'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import type { ApiProxy, MuxFrame, RpcRequest } from '@deepseek-ai/dsh-host-apiproxy/api'
@@ -70,6 +74,8 @@ function answer(
 }
 
 describe('question response validation', () => {
+  afterEach(() => { vi.useRealTimers() })
+
   it('accepts selected options with custom text for multi-select questions', async () => {
     const { ctx, api } = await harness()
     const abort = new AbortController()
@@ -115,6 +121,45 @@ describe('question response validation', () => {
     await expect(asked).resolves.toEqual({
       answers: [{ id: 'target', selected: [], custom: 'Release notes' }],
     })
+    abort.abort()
+  })
+
+  it('withdraws a timed-out tool question from the host and rejects late replies', async () => {
+    vi.useFakeTimers()
+    const { ctx, api } = await harness()
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(toolAskUser)
+    const abort = new AbortController()
+    const mux = openMux(api, abort)
+    const resultPromise = ctx.tools.execute({
+      signal: new AbortController().signal,
+      callId: CallId('host-question-timeout'),
+      name: 'ask_user_question',
+      arguments: { questions: [{ id: 'choice', question: 'Proceed?', options: [{ label: 'Yes' }] }] },
+      agent: agent(ctx),
+    })
+    const envelope = await mux.waitForQuestion()
+    await vi.advanceTimersByTimeAsync(300_000)
+    await expect(resultPromise).resolves.toMatchObject({
+      isError: true,
+      error: { info: { code: 'ASK_TIMEOUT' } },
+      content: [{ type: 'text', text: 'Error: 用户未响应 需要自行决策' }],
+    })
+    expect(mux.envelopes).toContainEqual(expect.objectContaining({
+      payload: { type: 'question/resolved', sessionId: envelope.payload.sessionId,
+        questionRpcId: envelope.rpcId, outcome: 'cancelled' },
+    }))
+    expect(await api.respond(answer(envelope, ['Yes']))).toEqual({ accepted: false, reason: 'not-pending' })
+    const replayAbort = new AbortController()
+    // 此测试的 Agent 是手写桩；重连快照还会读取 inbox，因此只补足该无关字段。
+    const live = ctx.agents.get(envelope.payload.sessionId)
+    if (live === undefined) throw new Error('missing question agent')
+    live.inbox = { hasPending: false } as Agent['inbox']
+    const replay = openMux(api, replayAbort)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(replay.envelopes.some(item => item.payload.type === 'question/requested')).toBe(false)
+    replayAbort.abort()
     abort.abort()
   })
 })

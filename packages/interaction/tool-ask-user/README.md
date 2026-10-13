@@ -13,11 +13,11 @@
 - `options`：可选选项，包含 `label` 和 `description`。如需推荐某个选项，请将其置于首位，并在该标签末尾追加 `(Recommended)`。
 - `multi_select`：该问题是否可以返回多个选中的选项。
 
-工具调用 `ctx.userQuestions.ask()`，并返回规范的 `{ answers: [{ id, selected, custom? }] }`。`selected` 包含选项标签；`custom` 携带自由填写的回答，对于多选题会补充 `selected`，对于单选题则会覆盖它。Native 渲染器会保留紧凑的 JSON 文本形式 `{ "answers": [{ "id": "...", "selected": ["..."], "custom": "..." }] }`。
+工具调用 `ctx.userQuestions.ask()`，并返回规范的 `{ answers: [{ id, selected, custom? }] }`。`selected` 包含选项标签；`custom` 携带自由填写的回答，对于多选题会补充 `selected`，对于单选题则会覆盖它。Native 渲染器会保留紧凑的 JSON 文本形式 `{ "answers": [{ "id": "...", "selected": ["..."], "custom": "..." }] }`。从开始等待起五分钟仍未收到回答时，工具中止本次提问并返回 `ASK_TIMEOUT`；它不构造虚假的用户选择，也不会停止整个轮次。
 
 ## 职责
 
-此包是用户交互 seam 的Consumer 包。它不渲染 UI，也不了解输入的收集方式；它只将模型参数转换为 `AskUserQuestionRequest`，并把用户回答返回给 agent loop（智能体循环）。
+此包是用户交互 seam 的 Consumer 包。它不渲染 UI，也不了解输入的收集方式；它只将模型参数转换为 `AskUserQuestionRequest`，并把用户回答返回给 agent loop（智能体循环）。
 
 ## 模型体验
 
@@ -39,11 +39,11 @@
 
 #### 模型看到的内容
 
-模型提出的完整问题保留在 assistant 工具调用参数中。用户回答后，下一步会看到精确采用 `{"answers":[{"id":"<id>","selected":["<label>"],"custom":"<text>"}]}` 形式的紧凑 JSON；不使用 `custom` 时会省略该字段，`selected` 可以包含零个、一个或多个标签。调用等待期间的 UI 交互不属于模型上下文。
+模型提出的完整问题保留在 assistant 工具调用参数中。用户回答后，下一步会看到精确采用 `{"answers":[{"id":"<id>","selected":["<label>"],"custom":"<text>"}]}` 形式的紧凑 JSON；不使用 `custom` 时会省略该字段，`selected` 可以包含零个、一个或多个标签。五分钟无人回答时，模型会看到 `Error: 用户未响应 需要自行决策`（结构化代码 `ASK_TIMEOUT`），应在现有信息下自行决定如何继续；这不是用户回答。调用等待期间的 UI 交互不属于模型上下文。
 
 #### Token 影响
 
-参数和回答 JSON 是依数据而定的保留 token；等待用户时不会产生 token 开销。
+参数和回答 JSON 是依数据而定的保留 token；超时错误也会作为工具结果保留，等待用户时不会产生 token 开销。
 
 #### KV Cache 影响
 
@@ -51,6 +51,6 @@
 
 ## 已知限制与暂缓事项
 
-- **待处理问题会阻塞工具调用，直至用户作答**：该工具未声明 `timeout-policy` 预算；取消仅沿用当前轮次的 `exec.signal`。
+- **等待上限仅限 `ask_user_question`**：从工具开始等待起五分钟后会撤回问题；宿主提供方根据传入的中止信号移除待回答的 UI 请求，忽略该信号的第三方提供方可能留下过期的 UI 提示，但不再阻塞该工具或接受其迟到结果。`exit_plan_mode` 等直接调用 `ctx.userQuestions.ask()` 的能力不受此上限约束。上限由工具本身执行，不依赖额外挂载 `timeout-policy`。
 - **运行时中归属于其他 agent 的 subagent 不能向用户提问**：`ask_user_question` 会以 `DELEGATED_CALLER` 拒绝归属于另一个 agent 的存活子级；该子级必须在最终结果中包含尚未解决的问题或决策。持久谱系不能决定这一边界，因此带有谱系的会话恢复为运行时根后可以正常提问。
 - **Native 回答渲染为 JSON 文本**：规范值仍为结构化数据，但模型侧结果使用紧凑 JSON，而非更丰富的内容块词汇。

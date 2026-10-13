@@ -1,10 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
-import UserQuestionService, { type AskUserQuestionRequest } from '@deepseek-ai/dsh-user-questions'
+import UserQuestionService, { UserQuestionError, type AskUserQuestionRequest } from '@deepseek-ai/dsh-user-questions'
 import * as toolAskUser from '@deepseek-ai/dsh-tool-ask-user'
 
 const testToolSignal = new AbortController().signal
@@ -44,6 +44,8 @@ function stubAgent(id: string, delegationDepth = 0): Agent {
 }
 
 describe('ask_user_question tool', () => {
+  afterEach(() => { vi.useRealTimers() })
+
   it('registers a model-facing tool schema', async () => {
     const ctx = await setup()
     const schema = ctx.tools.schemas().find(tool => tool.name === 'ask_user_question')
@@ -213,7 +215,10 @@ describe('ask_user_question tool', () => {
       signal: controller.signal,
     })
 
-    expect(seen[0]?.signal).toBe(controller.signal)
+    expect(seen[0]?.signal).toBeDefined()
+    expect(seen[0]?.signal).not.toBe(controller.signal)
+    controller.abort()
+    expect(seen[0]?.signal?.aborted).toBe(true)
   })
 
   it('passes optional header and a resumed runtime root through to the user-questions request', async () => {
@@ -238,6 +243,156 @@ describe('ask_user_question tool', () => {
 
     expect(result.content).toEqual([{ type: 'text', text: '{"answers":[{"id":"continue","selected":["ok"]}]}' }])
     expect(seen[0]).toMatchObject({ questions: [{ id: 'continue', header: 'Confirm', question: 'Continue?' }], agent })
+  })
+
+  it('withdraws a pending question after five minutes and asks the model to decide', async () => {
+    vi.useFakeTimers()
+    const ctx = await setup()
+    const entered = Promise.withResolvers<AskUserQuestionRequest>()
+    ctx.userQuestions.registerProvider({
+      ask(request) {
+        entered.resolve(request)
+        return new Promise(() => {})
+      },
+    })
+    const resultPromise = ctx.tools.execute({
+      signal: testToolSignal,
+      callId: CallId('ask-timeout'),
+      name: 'ask_user_question',
+      arguments: { questions: [{ id: 'choice', question: 'Choose?' }] },
+    })
+    const request = await entered.promise
+    await vi.advanceTimersByTimeAsync(299_999)
+    expect(request.signal?.aborted).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(request.signal?.aborted).toBe(true)
+    await expect(resultPromise).resolves.toMatchObject({
+      isError: true,
+      error: { message: '用户未响应 需要自行决策', info: { name: 'UserQuestionError', code: 'ASK_TIMEOUT' } },
+      content: [{ type: 'text', text: 'Error: 用户未响应 需要自行决策' }],
+    })
+  })
+
+  it('preserves a caller cancellation instead of reporting user inactivity', async () => {
+    vi.useFakeTimers()
+    const ctx = await setup()
+    const entered = Promise.withResolvers<AskUserQuestionRequest>()
+    ctx.userQuestions.registerProvider({
+      ask(request) {
+        entered.resolve(request)
+        return new Promise(() => {})
+      },
+    })
+    const controller = new AbortController()
+    const resultPromise = ctx.tools.execute({
+      signal: controller.signal,
+      callId: CallId('ask-cancel'),
+      name: 'ask_user_question',
+      arguments: { questions: [{ id: 'choice', question: 'Choose?' }] },
+    })
+    const request = await entered.promise
+    controller.abort()
+    await expect(resultPromise).resolves.toMatchObject({
+      isError: true,
+      error: { info: { code: 'ASK_ABORTED' } },
+      content: [{ type: 'text', text: 'Error: ask_user_question was aborted before the user answered' }],
+    })
+    expect(request.signal?.aborted).toBe(true)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('clears its deadline after an answer arrives', async () => {
+    vi.useFakeTimers()
+    const ctx = await setup()
+    const entered = Promise.withResolvers<AskUserQuestionRequest>()
+    const answered = Promise.withResolvers<{ answers: { id: string; selected: string[] }[] }>()
+    ctx.userQuestions.registerProvider({
+      ask(request) {
+        entered.resolve(request)
+        return answered.promise
+      },
+    })
+    const resultPromise = ctx.tools.execute({
+      signal: testToolSignal,
+      callId: CallId('ask-answered'),
+      name: 'ask_user_question',
+      arguments: { questions: [{ id: 'choice', question: 'Choose?' }] },
+    })
+    const request = await entered.promise
+    answered.resolve({ answers: [{ id: 'choice', selected: ['yes'] }] })
+    await expect(resultPromise).resolves.toMatchObject({
+      isError: false,
+      content: [{ type: 'text', text: '{"answers":[{"id":"choice","selected":["yes"]}]}' }],
+    })
+    await vi.advanceTimersByTimeAsync(300_000)
+    expect(request.signal?.aborted).toBe(false)
+  })
+
+  it('does not convert a completed answer into a timeout after the caller cancels', async () => {
+    vi.useFakeTimers()
+    const ctx = await setup()
+    const entered = Promise.withResolvers<undefined>()
+    const answered = Promise.withResolvers<{ answers: { id: string; selected: string[] }[] }>()
+    ctx.userQuestions.registerProvider({
+      ask() {
+        entered.resolve(undefined)
+        return answered.promise
+      },
+    })
+    const controller = new AbortController()
+    const resultPromise = ctx.tools.execute({
+      signal: controller.signal,
+      callId: CallId('ask-cancel-after-answer'),
+      name: 'ask_user_question',
+      arguments: { questions: [{ id: 'choice', question: 'Choose?' }] },
+    })
+    await entered.promise
+    answered.resolve({ answers: [{ id: 'choice', selected: ['yes'] }] })
+    controller.abort()
+    const result = await resultPromise
+    expect(result.isError).toBe(true)
+    expect(result.content[0]).not.toMatchObject({ text: 'Error: 用户未响应 需要自行决策' })
+  })
+
+  it('keeps a timely answer when a provider resolves immediately before the deadline', async () => {
+    vi.useFakeTimers()
+    const ctx = await setup()
+    const entered = Promise.withResolvers<undefined>()
+    const answered = Promise.withResolvers<{ answers: { id: string; selected: string[] }[] }>()
+    ctx.userQuestions.registerProvider({
+      ask() {
+        entered.resolve(undefined)
+        return answered.promise
+      },
+    })
+    const resultPromise = ctx.tools.execute({
+      signal: testToolSignal,
+      callId: CallId('ask-near-timeout'),
+      name: 'ask_user_question',
+      arguments: { questions: [{ id: 'choice', question: 'Choose?' }] },
+    })
+    await entered.promise
+    await vi.advanceTimersByTimeAsync(299_999)
+    answered.resolve({ answers: [{ id: 'choice', selected: ['yes'] }] })
+    await expect(resultPromise).resolves.toMatchObject({ isError: false })
+    await vi.advanceTimersByTimeAsync(1)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('does not replace an early provider rejection with inactivity', async () => {
+    vi.useFakeTimers()
+    const ctx = await setup()
+    ctx.userQuestions.registerProvider({
+      ask: () => Promise.reject(new UserQuestionError('the user cancelled ask_user_question', 'ASK_CANCELLED')),
+    })
+    const result = await ctx.tools.execute({
+      signal: testToolSignal,
+      callId: CallId('ask-dismissed'),
+      name: 'ask_user_question',
+      arguments: { questions: [{ id: 'choice', question: 'Choose?' }] },
+    })
+    expect(result).toMatchObject({ isError: true, error: { info: { code: 'ASK_CANCELLED' } } })
+    expect(vi.getTimerCount()).toBe(0)
   })
 
   it('returns structured user-questions errors through tool execution', async () => {

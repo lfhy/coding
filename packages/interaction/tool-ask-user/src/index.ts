@@ -1,17 +1,21 @@
 /**
- * Model-facing Consumer of the `ctx.userQuestions` capability seam.
- * The tool pauses until a UI provider returns a human answer, then feeds that
- * answer back into the agent loop as an ordinary tool result.
+ * `ctx.userQuestions` 的模型侧 Consumer。等待真人回答期间仅暂停本次工具调用；
+ * 五分钟无人回答时撤回问题，并将需要自行决策的结果交给模型。
  *
  * @module @deepseek-ai/dsh-tool-ask-user
  */
 
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import '@deepseek-ai/dsh-user-questions'
+import { deadline, timeoutOf } from '@deepseek-ai/dsh-timeout'
+import { UserQuestionError, type AskUserQuestionAnswer } from '@deepseek-ai/dsh-user-questions'
 
 export const name = 'tool-ask-user'
 export const inject = ['tools', 'userQuestions']
+
+const ASK_TIMEOUT = 'ASK_TIMEOUT'
+const ASK_TIMEOUT_MS = 5 * 60_000
+const timeoutMessage = '用户未响应 需要自行决策'
 
 const description = 'Ask the user a concise question when you need confirmation, a choice, or missing information before proceeding. '
   + 'Send one or more questions, each with a stable id that will be echoed in the answer.'
@@ -78,17 +82,39 @@ export function apply(ctx: Context): void {
       render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
     },
     async execute(args, exec) {
-      const result = await ctx.userQuestions.ask({
-        questions: args.questions.map(question => ({
-          id: question.id,
-          question: question.question,
-          ...question.header !== undefined ? { header: question.header } : {},
-          ...question.options !== undefined ? { options: question.options } : {},
-          ...question.multi_select !== undefined ? { multiSelect: question.multi_select } : {},
-        })),
-        ...exec.agent !== undefined ? { agent: exec.agent } : {},
-        signal: exec.signal,
+      using d = deadline(exec.signal, ASK_TIMEOUT_MS, ASK_TIMEOUT)
+      let onAbort: (() => void) | undefined
+      const aborted = new Promise<never>((_resolve, reject) => {
+        onAbort = () => { reject(new UserQuestionError('ask_user_question was aborted before the user answered', 'ASK_ABORTED')) }
+        if (d.signal.aborted) onAbort()
+        else d.signal.addEventListener('abort', onAbort, { once: true })
       })
+      let result: AskUserQuestionAnswer
+      try {
+        // 将同一截止信号交给提供方以撤回界面等待；竞速防止不处理信号的提供方卡住工具。
+        result = await Promise.race([ctx.userQuestions.ask({
+          questions: args.questions.map(question => ({
+            id: question.id,
+            question: question.question,
+            ...question.header !== undefined ? { header: question.header } : {},
+            ...question.options !== undefined ? { options: question.options } : {},
+            ...question.multi_select !== undefined ? { multiSelect: question.multi_select } : {},
+          })),
+          ...exec.agent !== undefined ? { agent: exec.agent } : {},
+          signal: d.signal,
+        }), aborted])
+      } catch (error) {
+        if (timeoutOf(d.signal, ASK_TIMEOUT) !== undefined) {
+          throw new UserQuestionError(timeoutMessage, ASK_TIMEOUT)
+        }
+        throw error
+      } finally {
+        if (onAbort !== undefined) d.signal.removeEventListener('abort', onAbort)
+      }
+      // 同一时钟滴答内即使回答 Promise 先完成，也不能把过期回答作为真人选择提交。
+      if (timeoutOf(d.signal, ASK_TIMEOUT) !== undefined) {
+        throw new UserQuestionError(timeoutMessage, ASK_TIMEOUT)
+      }
       return {
         answers: result.answers.map(answer => ({
           id: answer.id,
