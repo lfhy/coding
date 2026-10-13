@@ -1,6 +1,7 @@
 import { createRequire } from 'node:module'
+import { arch, platform, release } from 'node:os'
 import { describe, expect, it } from 'vitest'
-import { APP_IDENTITY, attributionHeaders, userAgent } from '@deepseek-ai/dsh-llm'
+import { APP_IDENTITY, attributionHeaders, userAgent, userAgentOS } from '@deepseek-ai/dsh-llm'
 import type { AppIdentity } from '@deepseek-ai/dsh-llm'
 
 const manifest = createRequire(import.meta.url)('../package.json') as { version: string }
@@ -27,10 +28,19 @@ describe('APP_IDENTITY', () => {
 })
 
 describe('userAgent', () => {
-  it('renders product/version with the +url comment', () => {
-    expect(userAgent()).toBe(
-      `deepseek-harness/${manifest.version} (+https://github.com/deepseek-ai/deepseek-harness)`,
-    )
+  it('renders the Coding build and current host identity by default', () => {
+    const value = userAgent()
+    expect(value).toMatch(/^Coding\/\d{4}\.\d{4}\.[0-9a-f]{6} \([^;()]+;[^;()]+\)$/)
+    expect(value).toContain(`;${arch()})`)
+    if (platform() === 'darwin') expect(value).toContain('(MacOS ')
+    else expect(value).toContain(`(${userAgentOS(platform(), release())};`)
+  })
+
+  it('keeps the macOS product version distinct from the Darwin kernel', () => {
+    expect(userAgentOS('darwin', '26.0.0', '27.1.2')).toBe('MacOS 27')
+    expect(() => userAgentOS('darwin', '26.0.0')).toThrow('macOS product version')
+    expect(userAgentOS('linux', '6.10.1')).toBe('Linux 6.10.1')
+    expect(userAgentOS('win32', '10.0.0')).toBe('Windows 10.0.0')
   })
 
   it('renders a custom identity', () => {

@@ -8,7 +8,7 @@
 
 ### 共享 User-Agent 设置
 
-`llm` 插件将 `Config.userAgent` 注册为可实时编辑的 `settings.yaml` 中 `llm.userAgent` 设置。省略该字段时使用产品身份（`deepseek-harness/<version> (+https://github.com/deepseek-ai/deepseek-harness)`）；可设置长度为 1–256 的可打印 ASCII 标头值，首尾不得为空白，控制字符与非 ASCII 字符会在配置加载或设置写入时被拒绝。`ctx.llm.getUserAgent()` 返回当前有效值；DeepSeek 和 pi-ai 适配器在每次流调用开始时捕获它，模型发现则在每次查询开始时捕获，进行中的请求不会随设置变化更换标头。重置用户分节会恢复组合配置或产品默认值。
+`llm` 插件将 `Config.userAgent` 注册为可实时编辑的 `settings.yaml` 中 `llm.userAgent` 设置。省略该字段时，默认模型请求标头为 `Coding/<UTC 构建年>.<月日>.<Git 六位短哈希> (<操作系统及版本>;<CPU 架构>)`，例如 `Coding/2026.1014.aaaaaa (MacOS 27;arm64)`；构建时固定日期与修订号，运行时读取主机操作系统与 CPU 架构。源码直接运行时使用当前 UTC 日期和仓库 HEAD；正式构建的产物无需 Git。可设置长度为 1–256 的可打印 ASCII 标头值，首尾不得为空白，控制字符与非 ASCII 字符会在配置加载或设置写入时被拒绝。`ctx.llm.getUserAgent()` 返回当前有效值；DeepSeek 和 pi-ai 适配器在每次流调用开始时捕获它，模型发现则在每次查询开始时捕获，进行中的请求不会随设置变化更换标头。重置用户分节会恢复组合配置或产品默认值。
 
 ### 重试策略
 
@@ -67,7 +67,7 @@
 
 ### 应用归因（`attribution.ts`）
 
-每个产品适配器都会在提供方 HTTP 请求上发送应用身份。`attributionHeaders(identity?)` 构建标准 `User-Agent`，默认为公开 `APP_IDENTITY`；共享 `llm.userAgent` 设置可覆盖 DeepSeek 和 pi-ai 的流式及发现请求，后者仍会覆盖 profile 中大小写不同的同名标头。适配器会直接验证 wire 标头，或通过自身库 hook 验证。详见 归因 设计记录。
+每个产品适配器都会在提供方 HTTP 请求上发送应用身份。`attributionHeaders(identity?)` 构建标准 `User-Agent`，默认使用上述 Coding 构建标识；传入显式 `AppIdentity` 时保持 `product/version (+url)` 形式，公开 `APP_IDENTITY` 仍用于产品诊断和遥测。共享 `llm.userAgent` 设置可覆盖 DeepSeek 和 pi-ai 的流式及发现请求，后者仍会覆盖 profile 中大小写不同的同名标头。适配器会直接验证 wire 标头，或通过自身库 hook 验证。
 
 ### API 密钥校验（`api-key.ts`）
 
