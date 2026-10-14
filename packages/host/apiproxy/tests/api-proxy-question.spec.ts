@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { CallId } from '@deepseek-ai/dsh-llm'
-import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
+import AgentRegistry, { type Agent, Inbox } from '@deepseek-ai/dsh-agent'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import * as toolAskUser from '@deepseek-ai/dsh-tool-ask-user'
@@ -24,7 +24,13 @@ async function harness(): Promise<{ ctx: Context; api: ApiProxy }> {
 
 function agent(ctx: Context): Agent {
   const session = ctx.sessions.create()
-  const value = { id: session.id, session, status: 'idle', ctx } as Agent
+  const value = {
+    id: session.id,
+    session,
+    inbox: new Inbox(session, { inserted: () => {}, discarded: () => {}, claimed: () => {} }),
+    status: 'idle',
+    ctx,
+  } as Agent
   ctx.agents.register(value)
   return value
 }
@@ -152,10 +158,6 @@ describe('question response validation', () => {
     }))
     expect(await api.respond(answer(envelope, ['Yes']))).toEqual({ accepted: false, reason: 'not-pending' })
     const replayAbort = new AbortController()
-    // 此测试的 Agent 是手写桩；重连快照还会读取 inbox，因此只补足该无关字段。
-    const live = ctx.agents.get(envelope.payload.sessionId)
-    if (live === undefined) throw new Error('missing question agent')
-    live.inbox = { hasPending: false } as Agent['inbox']
     const replay = openMux(api, replayAbort)
     await vi.advanceTimersByTimeAsync(0)
     expect(replay.envelopes.some(item => item.payload.type === 'question/requested')).toBe(false)
