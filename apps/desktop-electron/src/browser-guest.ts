@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { BrowserWindow, WebContentsView } from 'electron'
 import type { BrowserCapture, BrowserCommand, BrowserExpectedTarget, BrowserHumanCommand, BrowserHumanTarget, BrowserObservation, BrowserSessionState, BrowserTabId, BrowserTabSummary, BrowserUseErrorCode } from '@deepseek-ai/dsh-browser'
 import { fitBrowserPng } from './browser-image.ts'
+import { createBrowserCursorOverlay } from './browser-cursor-overlay.ts'
 import { createBrowserInputOverlay } from './browser-input-overlay.ts'
 
 const INITIAL_VIEWPORT = { width: 1280, height: 720 }
@@ -209,11 +210,23 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
   let presented: { sessionId: string; tabId: BrowserTabId; bounds: BrowserGuestPresentation['bounds'] } | undefined
   let requestedPresentation: BrowserGuestPresentation | undefined
   let overlay: ReturnType<typeof createBrowserInputOverlay> | undefined
-  // 每个标签页的指针位置（CSS 像素，视图坐标）：覆盖层的虚拟指针按它续上
-  // 上一次动作，滚动等无目标动作也沿用同一位置，不再跳回视口中心。
+  let cursorOverlay: ReturnType<typeof createBrowserCursorOverlay> | undefined
+  // 指针位置归标签页所有；释放输入租约不清空它。
   const pointers = new Map<BrowserTabId, { x: number; y: number }>()
 
   function clearOverlay(): void { overlay?.close(); overlay = undefined }
+  function clearCursorOverlay(): void { cursorOverlay?.dispose(); cursorOverlay = undefined }
+
+  function showCursor(): void {
+    if (!presented || window.isDestroyed()) return
+    const point = pointers.get(presented.tabId)
+    if (!point) return
+    if (cursorOverlay && !cursorOverlay.alive) cursorOverlay = undefined
+    try {
+      cursorOverlay ??= createBrowserCursorOverlay(window)
+      cursorOverlay.show({ bounds: presented.bounds, point })
+    } catch { clearCursorOverlay() }
+  }
 
   function protectPresentation(): void {
     if (!presented || !owners.get(presented.sessionId)?.lease) { clearOverlay(); return }
@@ -226,6 +239,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
           presented = undefined
         }
         clearOverlay()
+        clearCursorOverlay()
       }, tab ? pointers.get(tab.id) : undefined)
       overlay.attach(presented.bounds)
     } catch (error) {
@@ -233,6 +247,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
       if (tab) detach(tab)
       presented = undefined
       clearOverlay()
+      clearCursorOverlay()
       throw error
     }
   }
@@ -273,7 +288,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     const owner = owners.get(sessionId)
     if (!owner) return
     owners.delete(sessionId)
-    if (presented?.sessionId === sessionId) { clearOverlay(); presented = undefined }
+    if (presented?.sessionId === sessionId) { clearOverlay(); clearCursorOverlay(); presented = undefined }
     for (const tab of owner.tabs.values()) destroyTab(tab)
     emit(sessionId)
   }
@@ -647,6 +662,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     if (!visible || !tab || owner?.active !== tabId) {
       if (presented) {
         clearOverlay()
+        clearCursorOverlay()
         const old = owners.get(presented.sessionId)?.tabs.get(presented.tabId)
         if (old) detach(old)
         presented = undefined
@@ -666,6 +682,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     const same = presented?.sessionId === sessionId && presented.tabId === tabId
     if (presented && !same) {
       clearOverlay()
+      clearCursorOverlay()
       const old = owners.get(presented.sessionId)?.tabs.get(presented.tabId)
       if (old) detach(old)
     }
@@ -678,6 +695,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     }
     presented = { sessionId, tabId, bounds: effective }
     protectPresentation()
+    if (!owner.lease) showCursor()
     if (owner.viewport.width !== boundedWidth || owner.viewport.height !== boundedHeight) {
       owner.viewport = { width: boundedWidth, height: boundedHeight }
       invalidate(owner, tab)
@@ -838,6 +856,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
           if (presented?.sessionId === sessionId && presented.tabId === tab.id) {
             feedback = overlay?.move(x, y, 'scroll').catch(() => {})
           }
+          pointers.set(tab.id, { x, y })
           cursor = { x, y, kind: 'scroll', at: Date.now() }
           break
         }
@@ -874,7 +893,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
             owner.active = tab.id
             owner.revision++
             owner.targetRevision++
-            if (oldPresentation && oldTab) { detach(oldTab); presented = undefined }
+            if (oldPresentation && oldTab) { clearCursorOverlay(); detach(oldTab); presented = undefined }
           }
           try {
             await navigate(sessionId, owner, tab, command.url, true)
@@ -978,6 +997,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
           default: { const never: never = command; throw new Error(`unknown browser command: ${String(never)}`) }
         }
         if (presented?.sessionId === sessionId && presented.tabId !== owner.active) {
+          clearCursorOverlay()
           const old = owner.tabs.get(presented.tabId)
           if (old) detach(old)
           presented = undefined
@@ -996,8 +1016,12 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
       const owner = owners.get(sessionId)
       if (owner) {
         owner.lease = true
-        try { if (presented?.sessionId === sessionId) protectPresentation() }
-        catch (error) { leases.delete(sessionId); owner.lease = false; emit(sessionId, owner); throw error }
+        try {
+          if (presented?.sessionId === sessionId) {
+            clearCursorOverlay()
+            protectPresentation()
+          }
+        } catch (error) { leases.delete(sessionId); owner.lease = false; emit(sessionId, owner); throw error }
         emit(sessionId, owner)
       }
       return null
@@ -1013,6 +1037,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     dispose: async () => {
       disposed = true
       for (const sessionId of [...owners.keys()]) destroy(sessionId)
+      clearCursorOverlay()
       await Promise.all([...tails.values()])
     },
   }

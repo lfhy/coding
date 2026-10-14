@@ -8,6 +8,7 @@ import { fitBrowserPng } from '../src/browser-image.ts'
 const electron = vi.hoisted(() => ({
   views: [] as Array<{ webContents: ReturnType<typeof fakeContents>; setBounds: ReturnType<typeof vi.fn> }>,
   WebContentsView: vi.fn<(options: Record<string, unknown>) => unknown>(),
+  BaseWindow: vi.fn<(options: Record<string, unknown>) => unknown>(),
   createFromBuffer: vi.fn(),
 }))
 
@@ -115,6 +116,7 @@ function fakeContents() {
 
 vi.mock('electron', () => ({
   WebContentsView: electron.WebContentsView,
+  BaseWindow: electron.BaseWindow,
   BrowserWindow: vi.fn(),
   nativeImage: { createFromBuffer: electron.createFromBuffer },
 }))
@@ -122,13 +124,20 @@ vi.mock('electron', () => ({
 function fixture() {
   const children: unknown[] = []
   const window = {
-    isDestroyed: vi.fn(() => false), getContentBounds: vi.fn(() => ({ x: 0, y: 0, width: 800, height: 600 })),
+    isDestroyed: vi.fn(() => false), isVisible: vi.fn(() => true),
+    getContentBounds: vi.fn(() => ({ x: 0, y: 0, width: 800, height: 600 })),
+    on: vi.fn<(event: string, listener: () => void) => void>(),
+    removeListener: vi.fn<(event: string, listener: () => void) => void>(),
     contentView: {
       children, addChildView: vi.fn((view: unknown) => { children.push(view) }),
       removeChildView: vi.fn((view: unknown) => { children.splice(children.indexOf(view), 1) }),
     },
   }
-  return window as unknown as BrowserWindow
+  return window as unknown as BrowserWindow & {
+    on: typeof window.on
+    removeListener: typeof window.removeListener
+    getContentBounds: typeof window.getContentBounds
+  }
 }
 
 const hostOrigin = 'http://127.0.0.1:12345'
@@ -136,6 +145,14 @@ const hostOrigin = 'http://127.0.0.1:12345'
 beforeEach(() => {
   vi.clearAllMocks()
   electron.views.length = 0
+  electron.BaseWindow.mockImplementation(function () {
+    return {
+      contentView: { addChildView: vi.fn() },
+      setIgnoreMouseEvents: vi.fn(), setBounds: vi.fn(), showInactive: vi.fn(), hide: vi.fn(),
+      isVisible: vi.fn(() => false), isDestroyed: vi.fn(() => false), destroy: vi.fn(),
+      on: vi.fn(), removeListener: vi.fn(),
+    }
+  })
   electron.createFromBuffer.mockImplementation((bytes: Buffer) => {
     const size = { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) }
     return { isEmpty: () => false, getSize: () => size,
@@ -268,6 +285,74 @@ describe('Electron 实时浏览器 guest', () => {
     expect(decodeURIComponent(second.webContents.loadURL.mock.calls[0]![0]))
       .toContain('let position={"x":10,"y":10}')
     await manager.release('s1')
+    await manager.dispose()
+  })
+
+  it('租约释放后指针留在页面且原生鼠标穿透，下一租约从它续接', async () => {
+    const window = fixture()
+    const on = window.on
+    const removeListener = window.removeListener
+    window.getContentBounds.mockReturnValue({ x: 20, y: 30, width: 800, height: 600 })
+    const manager = createBrowserGuestManager(window)
+    const navigated = await manager.execute('s1', { kind: 'navigate', url: 'https://example.com/' })
+    manager.present({ sessionId: 's1', tabId: navigated.observation.tabId, visible: true,
+      bounds: { x: 0, y: 0, width: 500, height: 400 } })
+    await manager.lease('s1')
+    const first = electron.views[1]!
+    expect(electron.BaseWindow).not.toHaveBeenCalled()
+    const capture = await manager.execute('s1', { kind: 'snapshot' })
+    await manager.execute('s1', { kind: 'click', ref: 'e1', revision: capture.observation.revision })
+    const committed = await manager.execute('s1', { kind: 'snapshot' })
+    expect(committed.observation.cursor).toBeNull()
+    await manager.release('s1')
+    expect(first.webContents.close).toHaveBeenCalledOnce()
+    expect(window.contentView.children).toEqual([electron.views[0]])
+    expect(electron.BaseWindow).toHaveBeenCalledOnce()
+    const cursor = electron.BaseWindow.mock.results[0]!.value as {
+      setIgnoreMouseEvents: ReturnType<typeof vi.fn>
+      setBounds: ReturnType<typeof vi.fn>
+      showInactive: ReturnType<typeof vi.fn>
+      destroy: ReturnType<typeof vi.fn>
+    }
+    expect(electron.BaseWindow.mock.calls[0]?.[0]).toMatchObject({
+      parent: window, transparent: true, frame: false, focusable: false, show: false,
+    })
+    expect(cursor.setIgnoreMouseEvents).toHaveBeenCalledWith(true)
+    expect(cursor.setBounds).toHaveBeenCalledWith({ x: 30, y: 40, width: 36, height: 36 })
+    await vi.waitFor(() => { expect(cursor.showInactive).toHaveBeenCalledOnce() })
+    window.getContentBounds.mockReturnValue({ x: 45, y: 65, width: 800, height: 600 })
+    const moved = on.mock.calls.find(([name]) => name === 'move')?.[1]
+    if (!moved) throw new Error('cursor move listener missing')
+    moved()
+    expect(cursor.setBounds).toHaveBeenLastCalledWith({ x: 55, y: 75, width: 36, height: 36 })
+    await manager.lease('s1')
+    const second = electron.views.at(-1)!
+    expect(second).not.toBe(first)
+    expect(decodeURIComponent(second.webContents.loadURL.mock.calls[0]![0]))
+      .toContain('let position={"x":10,"y":10}')
+    expect(cursor.destroy).toHaveBeenCalledOnce()
+    await manager.release('s1')
+    expect(electron.BaseWindow).toHaveBeenCalledTimes(2)
+    manager.present({ sessionId: 's1', tabId: navigated.observation.tabId, visible: false,
+      bounds: { x: 0, y: 0, width: 0, height: 0 } })
+    const finalCursor = electron.BaseWindow.mock.results[1]!.value as { destroy: ReturnType<typeof vi.fn> }
+    expect(finalCursor.destroy).toHaveBeenCalledOnce()
+    await manager.dispose()
+    expect(removeListener).toHaveBeenCalledWith('move', moved)
+  })
+
+  it('仅滚动的首个动作也在租约释放后留下指针', async () => {
+    const manager = createBrowserGuestManager(fixture())
+    const initial = await manager.execute('s1', { kind: 'navigate', url: 'https://example.com/' })
+    manager.present({ sessionId: 's1', tabId: initial.observation.tabId, visible: true,
+      bounds: { x: 0, y: 0, width: 501, height: 401 } })
+    await manager.lease('s1')
+    const scroll = await manager.execute('s1', { kind: 'scroll', direction: 'down', pixels: 160 })
+    expect(scroll.observation.cursor).toMatchObject({ x: 250, y: 200 })
+    await manager.release('s1')
+    expect(electron.BaseWindow).toHaveBeenCalledOnce()
+    const pointer = electron.BaseWindow.mock.results[0]!.value as { setBounds: ReturnType<typeof vi.fn> }
+    expect(pointer.setBounds).toHaveBeenCalledWith({ x: 250, y: 200, width: 36, height: 36 })
     await manager.dispose()
   })
 
