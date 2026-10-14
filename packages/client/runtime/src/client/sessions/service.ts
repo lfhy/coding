@@ -539,6 +539,12 @@ export class SessionRuntime implements ISessions {
     return childId
   }
 
+  /** Retry loading a session whose previous open failed. */
+  async retry(id: SessionId): Promise<void> {
+    if (this.binding(id) === undefined) throw new Error(`session "${id}" is not available`)
+    await this.manager.get(id).open()
+  }
+
   /**
    * Resolve an Agent-scoped context view (use-and-discard).
    * @param id - session id (the agent identity — 1:1 same axis).

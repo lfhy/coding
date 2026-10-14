@@ -20,6 +20,7 @@ function fixture(overrides: Partial<GitOverviewInjected> = {}) {
     checkout: vi.fn<GitOverviewInjected['checkout']>(async (_sessionId, branch) => ({ ...git, branch })),
     operate: vi.fn(async () => 'done' as const),
     forgetCredentials: vi.fn(async () => {}),
+    archiveSession: vi.fn(async () => {}),
     resolveConflict: vi.fn(async () => {}),
     ...overrides,
   }
@@ -68,7 +69,7 @@ describe('Git overview', () => {
       sessionId={sessionId}
       useSessions={vi.fn() as never} useWorkspaces={vi.fn() as never}
       status={status} branches={vi.fn(async () => null)} checkout={vi.fn()} operate={vi.fn()}
-      forgetCredentials={vi.fn()} resolveConflict={vi.fn()} t={t}
+      forgetCredentials={vi.fn()} archiveSession={vi.fn()} resolveConflict={vi.fn()} t={t}
     />)
     await waitFor(() => { expect(status).toHaveBeenCalledWith(sessionId) })
     expect(screen.queryByRole('button', { name: 'Git 分支' })).toBeNull()
@@ -76,7 +77,7 @@ describe('Git overview', () => {
       sessionId={undefined}
       useSessions={vi.fn() as never} useWorkspaces={vi.fn() as never}
       status={status} branches={vi.fn(async () => null)} checkout={vi.fn()} operate={vi.fn()}
-      forgetCredentials={vi.fn()} resolveConflict={vi.fn()} t={t}
+      forgetCredentials={vi.fn()} archiveSession={vi.fn()} resolveConflict={vi.fn()} t={t}
     />)
     expect(screen.queryByRole('button', { name: 'Git 分支' })).toBeNull()
   })

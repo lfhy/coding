@@ -51,6 +51,8 @@ export interface GitOverviewInjected {
   operate: (sessionId: SessionId, action: 'push' | 'pull', credentials?: GitCredentials) => Promise<GitOperationOutcome>
   /** 清除本机为该远端保存的 Git 凭据；本就没有保存时同样成功。 */
   forgetCredentials: (ref: string) => Promise<void>
+  /** 将冲突来源会话归档，保留日志用于恢复。 */
+  archiveSession: (sessionId: SessionId) => Promise<void>
   /** 在当前 Workspace 或 Host HOME 创建新会话并发送冲突说明。 */
   resolveConflict: (sessionId: SessionId, prompt: string) => Promise<void>
 }

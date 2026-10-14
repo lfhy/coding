@@ -16,7 +16,7 @@ export type WorkspaceGitTriggerProps = PropsRuntime<'conversation.hero.git'> & P
  * @returns 分支按钮与（打开时的）共享 Git 面板。
  */
 export function WorkspaceGitTrigger({
-  sessionId, status, branches, checkout, operate, forgetCredentials, resolveConflict, t,
+  sessionId, status, branches, checkout, operate, forgetCredentials, archiveSession, resolveConflict, t,
 }: WorkspaceGitTriggerProps) {
   const button = useRef<HTMLButtonElement>(null)
   const [gitSessionId, setGitSessionId] = useState<SessionId | undefined>()
@@ -65,6 +65,7 @@ export function WorkspaceGitTrigger({
         operate={operate}
         forgetCredentials={forgetCredentials}
         resolveConflict={resolveConflict}
+        archiveSession={async (id) => { await archiveSession(id) }}
         t={t}
         triggerRef={button}
         controlledOpen={open}

@@ -773,7 +773,12 @@ export interface ChatViewInjected {
    * hand the path off (the chat view shows that reason and a retry).
    */
   openFile: (path: string) => Promise<void>
-  /** 点击时惰性查找可选服务；缺席或打开失败都拒绝，由视图显示重试。 */
+  /** Retry opening this session's history after an open failure. */
+  retryHistory: () => Promise<void>
+  /** Start a new session using the shared Workspace selection policy. */
+  startSession: () => void
+  /** Archive the failed session while retaining its durable log. */
+  archiveSession: (sessionId: SessionId) => Promise<void>
   openBrowserUrl: (url: string) => Promise<void>
   loadOlder: () => void
   /** Resolve a session-authorized historical image for inline display. */

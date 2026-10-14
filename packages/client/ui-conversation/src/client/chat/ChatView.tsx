@@ -181,7 +181,7 @@ function TurnStatus({ startTime, t }: {
  */
 export function ChatView({
   useSession, useSessions, useStore, renderSlot, sessionId, openFile, loadOlder, loadImage, inspectCall, chatScroll, forkAt,
-  fileMentions, openBrowserUrl, t,
+  retryHistory, startSession, archiveSession,  fileMentions, openBrowserUrl, t,
 }: ChatViewSlotProps) {
   const order = useSession(s => s.chat.order)
   const nodeStore = useSession(s => s.chat.nodes)
@@ -195,6 +195,10 @@ export function ChatView({
   const hasMore = useSession(s => s.hasMore)
   const loadingOlder = useSession(s => s.loadingOlder)
   const selectedCallId = useStore(s => s.selection?.callId)
+  const historyErrorDialog = openState === 'error' && openError !== null
+  const archiveFailedSession = useCallback(() => {
+    void archiveSession(sessionId).catch(() => undefined)
+  }, [archiveSession, sessionId])
   const [fileOpenError, setFileOpenError] = useState<{ path: string; message: string } | null>(null)
   const [fileOpenBusy, setFileOpenBusy] = useState(false)
   // Close/retry must ignore a settlement that started before the latest
@@ -725,6 +729,22 @@ export function ChatView({
           onClose={closeFileOpenError}
           onRetry={() => { requestOpenFile(fileOpenError.path) }}
           t={t}
+        />
+      )}
+      {historyErrorDialog && openError !== null && (
+        <Modal
+          open
+          onClose={() => {}}
+          closeLabel={t('close')}
+          title={t('chat.loadError.title')}
+          description={t('chat.loadError.description')}
+          footer={(
+            <>
+              <Button variant="outline" className={css.modalAction} onClick={archiveFailedSession}>{t('chat.loadError.archive')}</Button>
+              <Button variant="outline" className={css.modalAction} onClick={startSession}>{t('chat.loadError.newSession')}</Button>
+              <Button variant="primary" className={css.modalAction} onClick={() => { void retryHistory() }}>{t('chat.loadError.retry')}</Button>
+            </>
+          )}
         />
       )}
       {browserOpenError?.sessionId === sessionId && (

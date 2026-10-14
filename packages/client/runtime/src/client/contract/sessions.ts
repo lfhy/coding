@@ -95,6 +95,8 @@ export interface ISessions {
    * @throws when the fork fails, or when a requested child-title rename fails after creation.
    */
   fork(opts: { sessionId: SessionId; atSeq?: number; increaseTitle?: boolean }): Promise<SessionId>
+  /** Retry loading the current session's history after a failed open. */
+  retry(id: SessionId): Promise<void>
   /**
    * Register a per-session standard-props provider (hooks become `use<Name>`
    * selector hooks on the render side; props spread verbatim).

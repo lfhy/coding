@@ -322,6 +322,7 @@ export function apply(ctx: Context): void {
       const response = await connection.api.credentials.unset({ ref })
       if (!response.result.ok) throw new Error(response.result.error.message)
     },
+    archiveSession: async (sessionId) => { await workspaces.archiveSession(sessionId) },
     resolveConflict: async (sessionId, prompt) => {
       const workspace = workspaces.list.getSnapshot().items.find(item => item.sessionIds.includes(sessionId))
       const id = workspace === undefined
@@ -481,6 +482,9 @@ export function apply(ctx: Context): void {
           const cwd = sessions.list.getSnapshot().byId[sessionId]?.cwd
           return workspaces.openPath(resolveWorkspacePath(cwd, path))
         },
+        retryHistory: () => sessions.retry(sessionId),
+        startSession: () => { workspaces.startSession() },
+        archiveSession: async (id) => { await workspaces.archiveSession(id) },
         loadOlder: () => { void scoped.loadOlder() },
         loadImage: attachment => conversation.resolveImage(sessionId, attachment),
         // Unregistered 'trajectory' id is safe: the tab ring falls back to

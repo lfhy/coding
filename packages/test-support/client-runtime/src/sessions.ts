@@ -489,6 +489,12 @@ export class TestSessions implements ISessions {
     return Promise.resolve(opts.sessionId)
   }
 
+  /** Retry a fixture session's history (recorded). */
+  retry(id: SessionId): Promise<void> {
+    this.calls.push({ method: 'open', args: [id] })
+    return Promise.resolve()
+  }
+
   /**
    * The session face of a fixture (typed view for assertions; fixture
    * behavior methods are grafted onto it).
