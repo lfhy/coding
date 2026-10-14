@@ -217,10 +217,8 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
   function clearOverlay(): void { overlay?.close(); overlay = undefined }
   function clearCursorOverlay(): void { cursorOverlay?.dispose(); cursorOverlay = undefined }
 
-  function showCursor(): void {
-    if (!presented || window.isDestroyed()) return
-    const point = pointers.get(presented.tabId)
-    if (!point) return
+  function showCursor(point = presented && pointers.get(presented.tabId)): void {
+    if (!presented || !point || window.isDestroyed()) return
     if (cursorOverlay && !cursorOverlay.alive) cursorOverlay = undefined
     try {
       cursorOverlay ??= createBrowserCursorOverlay(window)
@@ -231,7 +229,6 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
   function protectPresentation(): void {
     if (!presented || !owners.get(presented.sessionId)?.lease) { clearOverlay(); return }
     try {
-      const tab = owners.get(presented.sessionId)?.tabs.get(presented.tabId)
       overlay ??= createBrowserInputOverlay(window, () => {
         if (presented) {
           const tab = owners.get(presented.sessionId)?.tabs.get(presented.tabId)
@@ -240,7 +237,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
         }
         clearOverlay()
         clearCursorOverlay()
-      }, tab ? pointers.get(tab.id) : undefined)
+      })
       overlay.attach(presented.bounds)
     } catch (error) {
       const tab = owners.get(presented.sessionId)?.tabs.get(presented.tabId)
@@ -253,12 +250,12 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
   }
 
   async function moveCursor(sessionId: string, tab: Tab, x: number, y: number): Promise<void> {
-    // 位置先记录：会话重新呈现或标签页再次可见时，指针从最后一次移动续上。
+    if (presented?.sessionId === sessionId && presented.tabId === tab.id) {
+      // 已知位置连续移动；首次无起点时只在目标出现，不凭空从视口中心飞来。
+      showCursor(pointers.get(tab.id) ?? { x, y })
+      await cursorOverlay?.move({ x, y })
+    }
     pointers.set(tab.id, { x, y })
-    if (!overlay || presented?.sessionId !== sessionId || presented.tabId !== tab.id) return
-    const current = overlay
-    await current.move(x, y)
-    // 隐藏、modal 或切页可以终止可视动画；输入安全仍由租约及独立原生视图保证。
   }
 
   function state(sessionId: string, owner: Owner): BrowserSessionState {
@@ -828,7 +825,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
             await tab.view.webContents.debugger.sendCommand('Input.insertText', { text: command.text })
           }
           if (presented?.sessionId === sessionId && presented.tabId === tab.id) {
-            feedback = overlay?.move(x, y, command.kind).catch(() => {})
+            feedback = cursorOverlay?.move({ x, y }, command.kind).catch(() => {})
           }
           pointers.set(tab.id, { x, y })
           break
@@ -853,10 +850,11 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
           // 为异步滚轮合成留出时间；隐藏页面不依赖 requestAnimationFrame。
           await new Promise<void>(resolve => setTimeout(resolve, 100))
           assertStable(sessionId, owner, tab, epoch)
-          if (presented?.sessionId === sessionId && presented.tabId === tab.id) {
-            feedback = overlay?.move(x, y, 'scroll').catch(() => {})
-          }
           pointers.set(tab.id, { x, y })
+          if (presented?.sessionId === sessionId && presented.tabId === tab.id) {
+            showCursor()
+            feedback = cursorOverlay?.move({ x, y }, 'scroll').catch(() => {})
+          }
           cursor = { x, y, kind: 'scroll', at: Date.now() }
           break
         }
@@ -1017,10 +1015,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
       if (owner) {
         owner.lease = true
         try {
-          if (presented?.sessionId === sessionId) {
-            clearCursorOverlay()
-            protectPresentation()
-          }
+          if (presented?.sessionId === sessionId) protectPresentation()
         } catch (error) { leases.delete(sessionId); owner.lease = false; emit(sessionId, owner); throw error }
         emit(sessionId, owner)
       }

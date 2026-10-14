@@ -272,8 +272,7 @@ describe('Electron 实时浏览器 guest', () => {
       bounds: { x: 0, y: 0, width: 500, height: 400 } })
     await manager.lease('s1')
     const first = electron.views[1]!
-    // 首次租约还没有任何指针记录，覆盖层按视口中心兜底。
-    expect(decodeURIComponent(first.webContents.loadURL.mock.calls[0]![0])).toContain('let position=null')
+    expect(decodeURIComponent(first.webContents.loadURL.mock.calls[0]![0])).not.toContain('id="pointer"')
     const capture = await manager.execute('s1', { kind: 'snapshot' })
     // fixture 的目标位置是 (10,10)，点击后成为该标签页的逻辑指针位置。
     await manager.execute('s1', { kind: 'click', ref: 'e1', revision: capture.observation.revision })
@@ -282,8 +281,7 @@ describe('Electron 实时浏览器 guest', () => {
     await manager.lease('s1')
     const second = electron.views.at(-1)!
     expect(second).not.toBe(first)
-    expect(decodeURIComponent(second.webContents.loadURL.mock.calls[0]![0]))
-      .toContain('let position={"x":10,"y":10}')
+    expect(decodeURIComponent(second.webContents.loadURL.mock.calls[0]![0])).not.toContain('id="pointer"')
     await manager.release('s1')
     await manager.dispose()
   })
@@ -302,6 +300,7 @@ describe('Electron 实时浏览器 guest', () => {
     expect(electron.BaseWindow).not.toHaveBeenCalled()
     const capture = await manager.execute('s1', { kind: 'snapshot' })
     await manager.execute('s1', { kind: 'click', ref: 'e1', revision: capture.observation.revision })
+    expect(electron.BaseWindow).toHaveBeenCalledOnce()
     const committed = await manager.execute('s1', { kind: 'snapshot' })
     expect(committed.observation.cursor).toBeNull()
     await manager.release('s1')
@@ -318,25 +317,26 @@ describe('Electron 实时浏览器 guest', () => {
       parent: window, transparent: true, frame: false, focusable: false, show: false,
     })
     expect(cursor.setIgnoreMouseEvents).toHaveBeenCalledWith(true)
-    expect(cursor.setBounds).toHaveBeenCalledWith({ x: 30, y: 40, width: 36, height: 36 })
+    expect(cursor.setBounds).toHaveBeenCalledWith({ x: 20, y: 30, width: 500, height: 400 })
     await vi.waitFor(() => { expect(cursor.showInactive).toHaveBeenCalledOnce() })
     window.getContentBounds.mockReturnValue({ x: 45, y: 65, width: 800, height: 600 })
     const moved = on.mock.calls.find(([name]) => name === 'move')?.[1]
     if (!moved) throw new Error('cursor move listener missing')
     moved()
-    expect(cursor.setBounds).toHaveBeenLastCalledWith({ x: 55, y: 75, width: 36, height: 36 })
+    expect(cursor.setBounds).toHaveBeenLastCalledWith({ x: 45, y: 65, width: 500, height: 400 })
     await manager.lease('s1')
     const second = electron.views.at(-1)!
     expect(second).not.toBe(first)
-    expect(decodeURIComponent(second.webContents.loadURL.mock.calls[0]![0]))
-      .toContain('let position={"x":10,"y":10}')
-    expect(cursor.destroy).toHaveBeenCalledOnce()
+    expect(decodeURIComponent(second.webContents.loadURL.mock.calls[0]![0])).not.toContain('id="pointer"')
+    expect(cursor.destroy).not.toHaveBeenCalled()
+    expect(electron.BaseWindow).toHaveBeenCalledOnce()
+    expect(cursor.showInactive).toHaveBeenCalledOnce()
     await manager.release('s1')
-    expect(electron.BaseWindow).toHaveBeenCalledTimes(2)
+    expect(electron.BaseWindow).toHaveBeenCalledOnce()
+    expect(cursor.showInactive).toHaveBeenCalledOnce()
     manager.present({ sessionId: 's1', tabId: navigated.observation.tabId, visible: false,
       bounds: { x: 0, y: 0, width: 0, height: 0 } })
-    const finalCursor = electron.BaseWindow.mock.results[1]!.value as { destroy: ReturnType<typeof vi.fn> }
-    expect(finalCursor.destroy).toHaveBeenCalledOnce()
+    expect(cursor.destroy).toHaveBeenCalledOnce()
     await manager.dispose()
     expect(removeListener).toHaveBeenCalledWith('move', moved)
   })
@@ -352,7 +352,7 @@ describe('Electron 实时浏览器 guest', () => {
     await manager.release('s1')
     expect(electron.BaseWindow).toHaveBeenCalledOnce()
     const pointer = electron.BaseWindow.mock.results[0]!.value as { setBounds: ReturnType<typeof vi.fn> }
-    expect(pointer.setBounds).toHaveBeenCalledWith({ x: 250, y: 200, width: 36, height: 36 })
+    expect(pointer.setBounds).toHaveBeenCalledWith({ x: 0, y: 0, width: 501, height: 401 })
     await manager.dispose()
   })
 
@@ -437,13 +437,22 @@ describe('Electron 实时浏览器 guest', () => {
     const first = await manager.execute('s1', { kind: 'navigate', url: 'https://example.com/' })
     manager.present({ sessionId: 's1', tabId: first.observation.tabId, visible: true,
       bounds: { x: 0, y: 0, width: 500, height: 400 } })
-    const snapshot = await manager.execute('s1', { kind: 'snapshot' })
+    await manager.execute('s1', { kind: 'snapshot' })
     await manager.lease('s1')
     const wc = electron.views[0]!.webContents
-    electron.views[1]!.webContents.executeJavaScript.mockImplementationOnce(async () => { wc.moveTarget(80, 80) })
-    await expect(manager.execute('s1', { kind: 'click', ref: 'e1', revision: snapshot.observation.revision }))
+    const precursor = await manager.execute('s1', { kind: 'scroll', direction: 'down', pixels: 40 })
+    const refreshed = await manager.execute('s1', { kind: 'snapshot' })
+    expect(precursor.observation.cursor).toMatchObject({ kind: 'scroll' })
+    const cursor = electron.views.at(-1)!.webContents
+    const original = cursor.executeJavaScript.getMockImplementation()!
+    cursor.executeJavaScript.mockImplementation(async () => {
+      wc.moveTarget(80, 80)
+      return original()
+    })
+    await expect(manager.execute('s1', { kind: 'click', ref: 'e1', revision: refreshed.observation.revision }))
       .rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
-    expect(wc.debugger.sendCommand.mock.calls.some(([method]) => method === 'Input.dispatchMouseEvent')).toBe(false)
+    expect(wc.debugger.sendCommand.mock.calls.some(([method, params]) =>
+      method === 'Input.dispatchMouseEvent' && (params as { type: string }).type === 'mousePressed')).toBe(false)
     expect(electron.views[1]!.webContents.debugger.sendCommand).not.toHaveBeenCalled()
     await manager.release('s1')
     await manager.dispose()

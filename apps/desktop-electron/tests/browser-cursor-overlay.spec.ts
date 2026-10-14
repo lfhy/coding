@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
+import { JSDOM } from 'jsdom'
 import type { BrowserWindow } from 'electron'
 import { createBrowserCursorOverlay } from '../src/browser-cursor-overlay.ts'
+import { POINTER_PATH, POINTER_TIP } from '../src/browser-pointer-shape.ts'
 
 const native = vi.hoisted(() => ({
   windows: [] as Array<ReturnType<typeof createWindow>>,
@@ -33,6 +35,7 @@ function createView() {
     session,
     setWindowOpenHandler: vi.fn(),
     loadURL: vi.fn<(url: string) => Promise<undefined>>(async () => undefined),
+    executeJavaScript: vi.fn<(script: string) => Promise<undefined>>(async () => undefined),
     close: vi.fn(() => { destroyed = true; emitter.emit('destroyed') }),
     isDestroyed: vi.fn(() => destroyed),
   })
@@ -91,15 +94,36 @@ describe('独立原生指针显示层', () => {
     expect(uri).toContain('data:text/html')
     const html = decodeURIComponent(uri.split(',').slice(1).join(','))
     expect(html).toContain("default-src 'none'")
-    expect(html).not.toContain('<script')
+    expect(html).toContain('<script')
+    const dom = new JSDOM(html, { runScripts: 'outside-only' })
+    const path = dom.window.document.querySelector('#pointer path')!
+    expect(path.getAttribute('d')).toBe(POINTER_PATH)
+    expect(path.hasAttribute('transform')).toBe(false)
+    expect(html).toContain('drop-shadow(0 0 3px rgba(68,175,255,.95))')
+    expect(html).toContain('stroke-width:36')
+    const x = POINTER_TIP.x * 32 / 1024, y = POINTER_TIP.y * 32 / 1024
+    expect(html).toContain(`point.x-${x}`)
+    expect(html).toContain(`point.y-${y}`)
     pointer.show({ bounds: { x: 40, y: 50, width: 300, height: 240 }, point: { x: 20, y: 30 } })
     await vi.waitFor(() => { expect(win.showInactive).toHaveBeenCalledOnce() })
-    expect(win.setBounds).toHaveBeenLastCalledWith({ x: 160, y: 280, width: 36, height: 36 })
+    expect(win.setBounds).toHaveBeenLastCalledWith({ x: 140, y: 250, width: 300, height: 240 })
     host.move(300, 400)
-    expect(win.setBounds).toHaveBeenLastCalledWith({ x: 360, y: 480, width: 36, height: 36 })
+    expect(win.setBounds).toHaveBeenLastCalledWith({ x: 340, y: 450, width: 300, height: 240 })
     pointer.show({ bounds: { x: 40, y: 50, width: 300, height: 240 }, point: { x: 299, y: 239 } })
-    expect(win.setBounds).toHaveBeenLastCalledWith({ x: 639, y: 689, width: 1, height: 1 })
-    expect(view.setBounds).toHaveBeenLastCalledWith({ x: 0, y: 0, width: 1, height: 1 })
+    expect(win.setBounds).toHaveBeenLastCalledWith({ x: 340, y: 450, width: 300, height: 240 })
+    expect(view.setBounds).toHaveBeenLastCalledWith({ x: 0, y: 0, width: 300, height: 240 })
+    const script = dom.window.document.querySelector('script')!.textContent
+    Object.defineProperty(dom.window, 'matchMedia', { value: () => ({ matches: true }) })
+    dom.window.eval(script)
+    await (dom.window as unknown as { moveCursor(x: number, y: number): Promise<void> }).moveCursor(299, 239)
+    const arrow = dom.window.document.querySelector<HTMLElement>('#cursor')!
+    expect(arrow.style.display).toBe('block')
+    expect(arrow.style.transform).toBe(`translate(${299 - x}px,${239 - y}px)`)
+    expect(dom.window.document.querySelector('#pointer path')!.getAttribute('d')).toBe(POINTER_PATH)
+    await (dom.window as unknown as { moveCursor(x: number, y: number): Promise<void> }).moveCursor(20, 30)
+    expect(arrow.style.transform).toBe(`translate(${20 - x}px,${30 - y}px)`)
+    expect(arrow.style.display).toBe('block')
+    dom.window.close()
     pointer.dispose()
     pointer.dispose()
     expect(view.webContents.close).toHaveBeenCalledOnce()
