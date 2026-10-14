@@ -13,9 +13,9 @@
     - button "联网搜索":
       - img
       - text: 联网搜索
-    - button "图片识别 Fallback":
+    - button "图片识别":
       - img
-      - text: 图片识别 Fallback
+      - text: 图片识别
     - button "插件":
       - img
       - text: 插件
@@ -24,7 +24,7 @@
       - text: Agent 预设
   - button "打开配置文件"
   - region "视觉理解工具":
-    - heading "图片识别 Fallback" [level=1]
+    - heading "图片识别" [level=1]
     - heading "视觉理解工具" [level=2]
     - paragraph: 纯文本模型收到图片时，先由选定的视觉模型生成描述；未配置时将提示不支持图片。
     - text: 视觉模型

@@ -82,7 +82,7 @@ describe('ui-settings-models apply', () => {
     expect(entry.options).toMatchObject({ id: 'models', order: 10 })
     expect(vision.component).toBe(VisionSection)
     expect(vision.options).toMatchObject({ id: 'vision-understanding', order: 15 })
-    expect(resolveSlotLabel(vision.options.label)).toBe('图片识别 Fallback')
+    expect(resolveSlotLabel(vision.options.label)).toBe('图片识别')
     // The nav label is a locale-following thunk; owners resolve at read time.
     expect(resolveSlotLabel(entry.options.label)).toBe('模型')
     const injected = (entry.inject as unknown as () => import('../src/client/ModelsSection.tsx').ModelsSectionInjected)()
@@ -124,12 +124,12 @@ describe('ui-settings-models apply', () => {
     await b.ctx.plugin({ inject: [...inject], apply }).await()
     b.locale.setLocale('en')
     expect(resolveSlotLabel(b.slots.entries('settings.section')[0]!.options.label)).toBe('Models')
-    expect(resolveSlotLabel(b.slots.entries('settings.section')[1]!.options.label)).toBe('Image recognition fallback')
+    expect(resolveSlotLabel(b.slots.entries('settings.section')[1]!.options.label)).toBe('Image recognition')
     const injected = b.slots.entries('settings.section')[0]!.inject as unknown as () => import('../src/client/ModelsSection.tsx').ModelsSectionInjected
     expect(injected().t('deleteTitle')).toBe('Delete {provider}?')
     b.locale.setLocale('zh')
     expect(resolveSlotLabel(b.slots.entries('settings.section')[0]!.options.label)).toBe('模型')
-    expect(resolveSlotLabel(b.slots.entries('settings.section')[1]!.options.label)).toBe('图片识别 Fallback')
+    expect(resolveSlotLabel(b.slots.entries('settings.section')[1]!.options.label)).toBe('图片识别')
     expect(injected().t('deleteTitle')).toBe('删除 {provider}？')
   })
 

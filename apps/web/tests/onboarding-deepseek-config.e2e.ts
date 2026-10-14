@@ -131,9 +131,9 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
       () => configuredInput.getAttribute('placeholder'),
       { timeout: 10_000 },
     ).toBe('已配置——输入新值可替换')
-    await settings.getByRole('navigation').getByRole('button', { name: '图片识别 Fallback' }).click()
+    await settings.getByRole('navigation').getByRole('button', { name: '图片识别' }).click()
     await settings.getByRole('region', { name: '视觉理解工具' }).waitFor({ timeout: 10_000 })
-    expect(await settings.getByRole('navigation').getByRole('button', { name: '图片识别 Fallback' }).getAttribute('aria-current')).toBe('true')
+    expect(await settings.getByRole('navigation').getByRole('button', { name: '图片识别' }).getAttribute('aria-current')).toBe('true')
     await settings.getByRole('navigation').getByRole('button', { name: '模型' }).click()
     await settings.getByRole('complementary', { name: '提供方' }).getByRole('button', { name: /^DeepSeek/ }).click()
     await configuredInput.waitFor({ timeout: 10_000 })

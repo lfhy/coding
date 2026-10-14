@@ -117,8 +117,8 @@ describe('web e2e: settings page and General preferences', () => {
     expect(navBox.x + navBox.width).toBeLessThanOrEqual(channelsBox.x + 1)
     expect(channelsBox.x + channelsBox.width).toBeLessThanOrEqual(detailBox.x + 1)
     expect(detailBox.x + detailBox.width).toBeLessThanOrEqual(dialogBox.x + dialogBox.width + 1)
-    expect(await channels.getByRole('button', { name: '图片识别 Fallback' }).count()).toBe(0)
-    const visionNav = navigation.getByRole('button', { name: '图片识别 Fallback' })
+    expect(await channels.getByRole('button', { name: '图片识别' }).count()).toBe(0)
+    const visionNav = navigation.getByRole('button', { name: '图片识别' })
     await visionNav.click()
     await dialog.getByRole('region', { name: '视觉理解工具' }).waitFor({ timeout: 10_000 })
     expect(await visionNav.getAttribute('aria-current')).toBe('true')
@@ -197,7 +197,7 @@ describe('web e2e: settings page and General preferences', () => {
       await page.getByRole('button', { name: '设置', exact: true }).click()
       const navigation = dialog.getByRole('navigation')
       const general = navigation.getByRole('button', { name: '通用设置', exact: true })
-      const sections = ['通用设置', '模型', '图片识别 Fallback', '联网搜索', '插件', 'Agent 预设']
+      const sections = ['通用设置', '模型', '图片识别', '联网搜索', '插件', 'Agent 预设']
       for (const viewport of [
         { width: 1920, height: 1080 }, { width: 1024, height: 768 },
         { width: 768, height: 1024 }, { width: 375, height: 812 },

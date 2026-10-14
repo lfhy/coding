@@ -13,9 +13,9 @@
     - button "联网搜索":
       - img
       - text: 联网搜索
-    - button "图片识别 Fallback":
+    - button "图片识别":
       - img
-      - text: 图片识别 Fallback
+      - text: 图片识别
     - button "插件":
       - img
       - text: 插件

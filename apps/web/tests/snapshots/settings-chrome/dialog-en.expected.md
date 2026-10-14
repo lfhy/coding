@@ -13,9 +13,9 @@
     - button "Web search":
       - img
       - text: Web search
-    - button "Image recognition fallback":
+    - button "Image recognition":
       - img
-      - text: Image recognition fallback
+      - text: Image recognition
     - button "Plugins":
       - img
       - text: Plugins
