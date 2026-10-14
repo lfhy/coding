@@ -14,8 +14,8 @@ vi.mock('electron', () => ({
   },
 }))
 
-function fixture(reduce = false) {
-  createBrowserInputOverlay({} as BrowserWindow, () => {})
+function fixture(reduce = false, initialPosition?: { x: number; y: number }) {
+  createBrowserInputOverlay({} as BrowserWindow, () => {}, initialPosition)
   const dom = new JSDOM(native.html, { runScripts: 'outside-only' })
   const callbacks: FrameRequestCallback[] = []
   Object.defineProperty(dom.window, 'matchMedia', { value: () => ({ matches: reduce }) })
@@ -68,6 +68,25 @@ describe('原生覆盖层的逐帧鼠标轨迹', () => {
     await move(120, 80, 'click')
     expect(dom.window.document.querySelector<HTMLElement>('#cursor')!.dataset.action).toBe('click')
     expect(native.html).toContain('animation:none; opacity:.65')
+    dom.window.close()
+  })
+
+  it('新覆盖层从传入的上次位置开始，不在首次移动前闪现到中心', async () => {
+    const { dom, move, frame } = fixture(false, { x: 40, y: 50 })
+    const pending = move(120, 80)
+    const cursor = dom.window.document.querySelector<HTMLElement>('#cursor')!
+    // 显示与就位在首个渲染帧之前同步完成，用户不会先看到视口中心的指针。
+    expect(cursor.style.display).toBe('block')
+    expect(cursor.style.transform).toBe('translate(40px,50px)')
+    expect(cursor.style.transform).not.toBe('translate(400px,300px)')
+    await frame(0)
+    expect(cursor.style.transform).toBe('translate(40px,50px)')
+    await frame(150)
+    await frame(300)
+    await frame(316)
+    await frame(366)
+    await frame(432)
+    await pending
     dom.window.close()
   })
 

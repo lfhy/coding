@@ -247,6 +247,30 @@ describe('Electron 实时浏览器 guest', () => {
     expect(electron.views.every(view => view.webContents.close.mock.calls.length === 1)).toBe(true)
   })
 
+  it('覆盖层重建时按上次指针位置续接，点击不再从视口中心重新出现', async () => {
+    const window = fixture()
+    const manager = createBrowserGuestManager(window)
+    const navigated = await manager.execute('s1', { kind: 'navigate', url: 'https://example.com/' })
+    manager.present({ sessionId: 's1', tabId: navigated.observation.tabId, visible: true,
+      bounds: { x: 0, y: 0, width: 500, height: 400 } })
+    await manager.lease('s1')
+    const first = electron.views[1]!
+    // 首次租约还没有任何指针记录，覆盖层按视口中心兜底。
+    expect(decodeURIComponent(first.webContents.loadURL.mock.calls[0]![0])).toContain('let position=null')
+    const capture = await manager.execute('s1', { kind: 'snapshot' })
+    // fixture 的目标位置是 (10,10)，点击后成为该标签页的逻辑指针位置。
+    await manager.execute('s1', { kind: 'click', ref: 'e1', revision: capture.observation.revision })
+    await manager.release('s1')
+    expect(first.webContents.close).toHaveBeenCalledOnce()
+    await manager.lease('s1')
+    const second = electron.views.at(-1)!
+    expect(second).not.toBe(first)
+    expect(decodeURIComponent(second.webContents.loadURL.mock.calls[0]![0]))
+      .toContain('let position={"x":10,"y":10}')
+    await manager.release('s1')
+    await manager.dispose()
+  })
+
   it('奇数视口滚动使用整型光标坐标，桥接观测仍合法', async () => {
     const manager = createBrowserGuestManager(fixture())
     const first = await manager.execute('s1', { kind: 'navigate', url: 'https://example.com/' })

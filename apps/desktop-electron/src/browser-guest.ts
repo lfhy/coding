@@ -218,6 +218,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
   function protectPresentation(): void {
     if (!presented || !owners.get(presented.sessionId)?.lease) { clearOverlay(); return }
     try {
+      const tab = owners.get(presented.sessionId)?.tabs.get(presented.tabId)
       overlay ??= createBrowserInputOverlay(window, () => {
         if (presented) {
           const tab = owners.get(presented.sessionId)?.tabs.get(presented.tabId)
@@ -225,7 +226,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
           presented = undefined
         }
         clearOverlay()
-      })
+      }, tab ? pointers.get(tab.id) : undefined)
       overlay.attach(presented.bounds)
     } catch (error) {
       const tab = owners.get(presented.sessionId)?.tabs.get(presented.tabId)
@@ -264,6 +265,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
 
   function destroyTab(tab: Tab): void {
     detach(tab)
+    pointers.delete(tab.id)
     if (!tab.view.webContents.isDestroyed()) tab.view.webContents.close()
   }
 
