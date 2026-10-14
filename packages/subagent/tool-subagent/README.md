@@ -4,7 +4,7 @@
 
 ## 提供方选择与生命周期
 
-每个插件实例把一个 `provider` 绑定到一个 `toolName`；该配置选择子代理传输（例如 `spawn`），不是模型调用参数 `model_provider`，也不会交给模型当作 LLM 路由。如需公开另一种传输，请加载另一个名称不同的实例。调用时可用 `model` 指定子级模型 ID，跨 LLM 提供方时可同时指定 `model_provider`。`model_provider` 省略或为空字符串时，先沿用发起此次委派的父级请求路由，再尝试父级创建选项与子级配置；都没有时，若仅注册了一个 LLM 提供方就采用它，否则报错并列出可选路由。非空 `model_provider` 必须与非空 `model` 同时指定；省略 `model` 时沿用父级模型。目录工具 `list_subagent_models` 列出当前已注册 LLM 路由公开的模型 ID；目录并非可路由模型的穷举，未列出的 ID 仍由具体适配器判断。插件配置的 `agentOptions` 只提供未显式改写的子级选项（例如 token 上限）；在有父级请求路由的情况下不会覆盖其模型。工具只在其子代理提供方存在时注册，从而避免对同级加载顺序和提供方重新加载的依赖。工具描述遵循 `provider.inheritsParentContext`：新建子 agent（智能体）需要独立提示词，而 fork 子 agent 已能看到父级已完成轮次。
+每个插件实例把一个 `provider` 绑定到一个 `toolName`；该配置选择子代理传输（例如 `spawn`），不是模型调用参数 `model_provider`，也不会交给模型当作 LLM 路由。如需公开另一种传输，请加载另一个名称不同的实例。调用时可用 `model` 指定子级模型 ID；省略或传入空白 `model` 时沿用父级当前推理模型，跨 LLM 提供方时可同时指定 `model_provider`。`model_provider` 省略或为空字符串时，先沿用发起此次委派的父级请求路由，再尝试父级创建选项与子级配置；都没有时，若仅注册了一个 LLM 提供方就采用它，否则报错并列出可选路由。非空 `model_provider` 必须与非空 `model` 同时指定；省略 `model` 时沿用父级模型。目录工具 `list_subagent_models` 列出当前已注册 LLM 路由公开的模型 ID；目录并非可路由模型的穷举，未列出的 ID 仍由具体适配器判断。插件配置的 `agentOptions` 只提供未显式改写的子级选项（例如 token 上限）；在有父级请求路由的情况下不会覆盖其模型。工具只在其子代理提供方存在时注册，从而避免对同级加载顺序和提供方重新加载的依赖。工具描述遵循 `provider.inheritsParentContext`：新建子 agent（智能体）需要独立提示词，而 fork 子 agent 已能看到父级已完成轮次。
 
 前台调用会让执行信号贯穿启动和执行，等待 `run.result`，并且在返回前总会等待 `run.dispose()`。只有 `completed` 会返回规范值 `{ kind: 'foreground', runId, output: JsonValue[] }`，并渲染为相同的最终文本。中止、拒绝、token 上限和其他失败都会变成出错的工具结果，其消息依次包含终止原因标题、可选的提供方 `SubagentResult.diagnostic`，以及子 agent 保留下来的部分 assistant 文本。诊断与 `SubagentResult.output` 保持分离，因此被截断的回答不会被报告为成功，也不会与基础设施说明混淆。如果结果收集与 dispose（资源释放）都 reject，出错结果会保留两项失败。
 
@@ -35,7 +35,7 @@
 
 #### 模型看到的内容
 
-当提供方存在时，以当前实例配置的名称公开已生成的默认 [`subagent` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-subagent)。`model` 与 `model_provider` 为可选调用参数：只指定 `model` 时沿用父级 LLM 路由的提供方；调用方没有路由但只注册了一个 LLM 提供方时使用该提供方。空字符串 `model_provider` 等同省略；非空值必须与非空 `model` 配对。若运行时具备 LLM 服务，启动前按精确路由验证模型，未知路由失败而不创建子级。提供方是否继承上下文会改变工具描述和提示词描述。启用后台模式会添加 `run_in_background`：可继续模式会记录其默认值为 `true`、运行时结算通知与显式前台覆盖；一次性模式会记录其默认值为 `false`，以及用 `job_output` 收集或用 `job_kill` 停止的 job id。当工具在本次组装的作用域中可见时，一个 `tool:<toolName>` 系统提示词 section 会指示模型同时启动相互独立的可继续委派、在它们运行时继续工作，并且仅当下一步动作依赖结果时选择前台；工具限制会同时移除其 schema 和这段指引。
+当提供方存在时，以当前实例配置的名称公开已生成的默认 [`subagent` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-subagent)。`model` 与 `model_provider` 为可选调用参数：省略或传入空白 `model` 时沿用父级当前请求模型；只指定非空 `model` 时沿用父级 LLM 路由的提供方；调用方没有路由但只注册了一个 LLM 提供方时使用该提供方。空字符串 `model_provider` 等同省略；非空值必须与非空 `model` 配对。若运行时具备 LLM 服务，启动前按精确路由验证模型，未知路由失败而不创建子级。提供方是否继承上下文会改变工具描述和提示词描述。启用后台模式会添加 `run_in_background`：可继续模式会记录其默认值为 `true`、运行时结算通知与显式前台覆盖；一次性模式会记录其默认值为 `false`，以及用 `job_output` 收集或用 `job_kill` 停止的 job id。当工具在本次组装的作用域中可见时，一个 `tool:<toolName>` 系统提示词 section 会指示模型同时启动相互独立的可继续委派、在它们运行时继续工作，并且仅当下一步动作依赖结果时选择前台；工具限制会同时移除其 schema 和这段指引。
 
 #### Token 影响
 

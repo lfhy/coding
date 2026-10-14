@@ -359,11 +359,11 @@ export function apply(ctx: Context, config: Config): void {
         },
         model: {
           type: 'string',
-          description: 'Model id for this child. Omit to use the model of the current request. Use list_subagent_models to discover available ids.',
+          description: 'Model id for this child. Omit or leave empty to use the model of the current request. Use list_subagent_models to discover available ids.',
         },
         model_provider: {
           type: 'string',
-          description: 'Optional LLM provider route, not the subagent transport provider. Omit or leave empty to inherit the current request provider; if none exists, the sole registered LLM provider is used. A non-empty value requires model.',
+          description: 'Optional LLM provider route, not the subagent transport provider. Omit or leave empty to inherit the current request provider; if none exists, the sole registered LLM provider is used. A non-empty value requires a non-empty model.',
         },
         ...backgroundEnabled ? {
           run_in_background: {
@@ -423,27 +423,25 @@ export function apply(ctx: Context, config: Config): void {
           throw new Error('subagent tool requires a calling agent (exec.agent was undefined)')
         }
 
-        if (args.model !== undefined && args.model.trim().length === 0) {
-          throw new Error('subagent: model must be a non-empty model id')
-        }
+        const model = args.model?.trim() || undefined
         const modelProvider = args.model_provider?.trim() || undefined
-        if (modelProvider !== undefined && !args.model) {
+        if (modelProvider !== undefined && model === undefined) {
           throw new Error('subagent: model_provider requires a non-empty model')
         }
         const llm = ctx.get('llm')
         const current = invokingModel(parent)
         const configuredProvider = config.agentOptions?.provider
         const defaultProvider = ctx.get('agentDefaultModel')?.currentSelection().provider
-        const registered = args.model === undefined ? [] : llm?.listProviders().map(route => route.id) ?? []
+        const registered = model === undefined ? [] : llm?.listProviders().map(route => route.id) ?? []
         const provider = modelProvider || current?.provider || parent.options.provider
           || configuredProvider || defaultProvider || (registered.length === 1 ? registered[0] : undefined)
-        if (args.model !== undefined && provider === undefined) {
+        if (model !== undefined && provider === undefined) {
           throw new Error(registered.length === 0
             ? 'subagent: no model provider route is available; configure an LLM provider or specify model_provider'
             : `subagent: model_provider is required when the calling agent has no model route and multiple LLM providers are registered (${registered.join(', ')}); use list_subagent_models to choose one`)
         }
-        const selected = args.model === undefined || provider === undefined
-          ? undefined : { provider, model: args.model }
+        const selected = model === undefined || provider === undefined
+          ? undefined : { provider, model }
         const agentOptions = childAgentOptions(parent, config.agentOptions, selected)
         if (llm !== undefined && agentOptions.provider !== undefined && agentOptions.model !== undefined) {
           await llm.resolveCallConfig({ provider: agentOptions.provider, model: agentOptions.model }, exec.signal)

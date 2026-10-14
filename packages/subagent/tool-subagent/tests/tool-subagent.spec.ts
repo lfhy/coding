@@ -1238,13 +1238,17 @@ describe('dsh-tool-subagent continuable background mode', () => {
       .toMatchObject({ agentProvider: 'mock', agentModel: 'mock' })
   })
 
-  it('rejects an empty model id instead of submitting an unroutable child', async () => {
+  it('treats an empty model id as omitted and inherits the current request model', async () => {
     const { ctx, parent } = await continuableSetup()
-    const result = await callSubagent(ctx, {
-      description: 'inspect catalog', prompt: 'work', model: ' ', model_provider: '',
+    const started = await callSubagent(ctx, {
+      description: 'inspect catalog', prompt: 'work', model: '  ', model_provider: '',
     }, { agent: parent })
-    expect(result.isError).toBe(true)
-    expect(text(result)).toContain('model must be a non-empty model id')
+    expect(started.isError).toBe(false)
+    const childId = SessionId((started.value as { subagentId: string }).subagentId)
+    await vi.waitFor(() => { expect(ctx.agents.get(childId)).toBeUndefined() })
+    const loaded = await ctx.sessionPersistence.load(childId)
+    expect(loaded.events.find(event => event.type === 'subagent/descriptor')?.data)
+      .toMatchObject({ agentProvider: 'mock', agentModel: 'mock' })
   })
 
   it('uses the sole registered model provider when the caller has no route', async () => {

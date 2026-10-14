@@ -1673,11 +1673,11 @@ Delegate a self-contained task to a subagent (a separate agent that works in its
     },
     "model": {
       "type": "string",
-      "description": "Model id for this child. Omit to use the model of the current request. Use list_subagent_models to discover available ids."
+      "description": "Model id for this child. Omit or leave empty to use the model of the current request. Use list_subagent_models to discover available ids."
     },
     "model_provider": {
       "type": "string",
-      "description": "Optional LLM provider route, not the subagent transport provider. Omit or leave empty to inherit the current request provider; if none exists, the sole registered LLM provider is used. A non-empty value requires model."
+      "description": "Optional LLM provider route, not the subagent transport provider. Omit or leave empty to inherit the current request provider; if none exists, the sole registered LLM provider is used. A non-empty value requires a non-empty model."
     },
     "run_in_background": {
       "type": "boolean",
