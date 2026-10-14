@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session/types'
 import { SideChatPanel, type SideChatTransport } from '../src/client/SideChatPanel.tsx'
-import { zh } from '../src/client/locales.ts'
+import { zh, en } from '../src/client/locales.ts'
 
 const SID = 'temporary-1' as SessionId
 const PARENT = 'ordinary-session' as SessionId
@@ -42,6 +42,41 @@ describe('侧边临时 Agent 聊天', () => {
     await waitFor(() => { expect(api.send).toHaveBeenCalledExactlyOnceWith(SID, '再问一次') })
     mounted.unmount()
     expect(api.close).toHaveBeenCalledExactlyOnceWith(SID)
+  })
+
+  it('用户原文不解析 Markdown，助手正文仍渲染 Markdown', async () => {
+    const api = transport({ state: async () => ({ ...empty, nextSeq: 2, events: [
+      event(0, 'user/message', { content: [{ type: 'text', text: '**原样文字**' }], source: { kind: 'user' } }),
+      event(1, 'assistant/message', { message: { content: [{ type: 'text', text: '**加粗回答**' }] } }),
+    ], views: [null, null] }) })
+    render(<SideChatPanel shown sourceSessionId={PARENT} transport={api} t={t} />)
+    await screen.findByText('加粗回答')
+    expect(screen.getByText('**原样文字**').querySelector('strong')).toBeNull()
+    expect(screen.getByText('加粗回答').tagName).toBe('STRONG')
+  })
+
+  it('发送仅到临时会话，失败保留草稿，换行与输入法选择不触发发送', async () => {
+    const api = transport({ send: async () => { throw new Error('暂时失败') } })
+    render(<SideChatPanel shown sourceSessionId={PARENT} transport={api} t={t} />)
+    const textarea = await screen.findByRole('textbox', { name: zh['sideChat.placeholder'] }) as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: '  再试一次  ' } })
+    fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: true })
+    fireEvent.keyDown(textarea, { key: 'Enter', isComposing: true })
+    expect(api.send).not.toHaveBeenCalled()
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+    await screen.findByText('临时聊天不可用：暂时失败')
+    expect(api.send).toHaveBeenCalledExactlyOnceWith(SID, '再试一次')
+    expect(textarea.value).toBe('  再试一次  ')
+    expect(screen.getByRole('button', { name: zh['sideChat.send'] }).querySelector('svg')).not.toBeNull()
+  })
+
+  it('英文模式保留同一发送动作的可访问名称', async () => {
+    const api = transport()
+    render(<SideChatPanel shown sourceSessionId={PARENT} transport={api} t={makeTranslate(en)} />)
+    const textarea = await screen.findByRole('textbox', { name: en['sideChat.placeholder'] })
+    fireEvent.change(textarea, { target: { value: 'hello' } })
+    fireEvent.click(screen.getByRole('button', { name: en['sideChat.send'] }))
+    await waitFor(() => { expect(api.send).toHaveBeenCalledExactlyOnceWith(SID, 'hello') })
   })
 
   it('显示 Agent 轮次失败，不把失败误认为仍在生成', async () => {

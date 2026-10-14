@@ -1,21 +1,4 @@
-/* Assistant flow body: full-width narration (figma 16/28), block gap 16.
-   IconActions sit below the body with an explicit 16px top margin (figma
-   43:32997) — separate from the body's internal gap so the footer spacing
-   stays fixed when the body is a single block. */
-
-.root {
-  display: flex;
-  flex-direction: column;
-  font-size: 16px;
-  line-height: 28px;
-  color: var(--dsw-alias-label-primary);
-}
-
-.body {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
+/* 中断标记与最终回复操作仍由主对话持有，正文排版复用共享组件。 */
 
 /* Interrupted-turn terminal marker: quiet inline tag, no animation. */
 .stopped {

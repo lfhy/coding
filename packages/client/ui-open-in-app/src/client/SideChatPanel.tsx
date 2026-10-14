@@ -1,6 +1,6 @@
 /** 右侧独立临时 Agent 对话：只展示该会话日志，关闭标签即撤销其 Host handle。 */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, ChatAssistantBody, ChatComposerAction, ChatComposerCard, ChatUserBubble, MarkdownText, MessageText, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ClientResponse, SideChatInteraction, SideChatState } from '@deepseek-ai/dsh-host-apiproxy/api'
 import type { WorkspaceWorkbenchProps } from './WorkspaceWorkbench.tsx'
@@ -179,8 +179,14 @@ export function SideChatPanel({ shown, sourceSessionId, transport, t }: SideChat
     <div className={css.messages} role="log" aria-live="polite">
       {rows.length === 0 && <p className={css.empty}>{t('sideChat.empty')}</p>}
       {rows.map(row => <article className={css.row} data-role={row.role} key={row.id}>
-        <strong>{t(`sideChat.${row.role}`)}</strong>
-        <MarkdownText text={row.text} />
+        {row.role === 'user'
+          ? <ChatUserBubble><MessageText text={row.text} /></ChatUserBubble>
+          : row.role === 'assistant'
+            ? <ChatAssistantBody><MarkdownText text={row.text} /></ChatAssistantBody>
+            : <div className={css.toolResult}>
+              <strong>{t('sideChat.tool')}</strong>
+              <MessageText text={row.text} />
+            </div>}
       </article>)}
       {running && <p className={css.working} role="status">{t('sideChat.working')}</p>}
       {turnError !== null && <p className={css.error} role="alert">{t('sideChat.failed', { message: turnError })}</p>}
@@ -188,8 +194,8 @@ export function SideChatPanel({ shown, sourceSessionId, transport, t }: SideChat
         {interaction.type === 'approval/requested' ? <>
           <p>{t('sideChat.approval', { tool: interaction.toolName })}</p>
           {interaction.reason && <p>{interaction.reason}</p>}
-          <button type="button" onClick={() => { void answer(interaction, 'allowed-once') }}>{t('sideChat.allow')}</button>
-          <button type="button" onClick={() => { void answer(interaction, 'rejected') }}>{t('sideChat.reject')}</button>
+          <Button size="sm" variant="outline" onClick={() => { void answer(interaction, 'allowed-once') }}>{t('sideChat.allow')}</Button>
+          <Button size="sm" variant="outline" onClick={() => { void answer(interaction, 'rejected') }}>{t('sideChat.reject')}</Button>
         </> : <div>
           {interaction.questions.map(question => <fieldset key={question.id}>
             <legend>{question.question}</legend>
@@ -211,28 +217,36 @@ export function SideChatPanel({ shown, sourceSessionId, transport, t }: SideChat
               onChange={(event) => { setAnswers(previous => ({ ...previous,
                 [question.id]: event.currentTarget.value })) }} />
           </fieldset>)}
-          <button type="button" onClick={() => { void answer(interaction) }}>{t('sideChat.answer')}</button>
+          <Button size="sm" variant="primary" onClick={() => { void answer(interaction) }}>{t('sideChat.answer')}</Button>
         </div>}
       </section>)}
       <div ref={tail} />
     </div>
     <div className={css.composer}>
       {error !== null && <div className={css.error} role="alert">{t('sideChat.error', { message: error })}
-        {id === null && <button type="button" onClick={start}>{t('sideChat.retry')}</button>}
+        {id === null && <Button size="sm" variant="outline" onClick={start}>{t('sideChat.retry')}</Button>}
       </div>}
-      <label className={css.label}>
-        <span className={css.visuallyHidden}>{t('sideChat.placeholder')}</span>
-        <textarea value={draft} disabled={id === null || sending} placeholder={t('sideChat.placeholder')}
-          onChange={(event) => { setDraft(event.currentTarget.value) }}
-          onKeyDown={(event) => {
-            if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return
-            event.preventDefault()
-            void send()
-          }} />
-      </label>
-      <button type="button" disabled={id === null || sending || draft.trim() === ''} onClick={() => { void send() }}>
-        {sending ? t('sideChat.sending') : t('sideChat.send')}
-      </button>
+      <ChatComposerCard>
+        <label className={css.label}>
+          <span className={css.visuallyHidden}>{t('sideChat.placeholder')}</span>
+          <textarea value={draft} disabled={id === null || sending} placeholder={t('sideChat.placeholder')}
+            onChange={(event) => { setDraft(event.currentTarget.value) }}
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return
+              event.preventDefault()
+              void send()
+            }} />
+        </label>
+        <div className={css.composerRow}>
+          <Tooltip label={sending ? t('sideChat.sending') : t('sideChat.send')} side="top" delayMs={500}>
+            <ChatComposerAction
+              aria-label={sending ? t('sideChat.sending') : t('sideChat.send')}
+              disabled={id === null || sending || draft.trim() === ''}
+              onClick={() => { void send() }}
+            />
+          </Tooltip>
+        </div>
+      </ChatComposerCard>
     </div>
   </section>
 }

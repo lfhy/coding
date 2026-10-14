@@ -66,7 +66,7 @@ describe('输入控件焦点样式', () => {
       ['../../ui-directory-picker-browse/src/client/DirectoryBrowser.module.css', '.crumbBar:has(.pathInput:focus-visible)'],
       ['../../ui-directory-picker-browse/src/client/DirectoryBrowser.module.css', '.createInput:focus-visible'],
       ['../../ui-commands/src/client/PopupSelectView.module.css', '.search:focus-visible'],
-      ['../../ui-conversation/src/client/skeleton/InputBar.module.css', '.card:focus-within'],
+      ['../../ui-primitives/src/ChatSurfaces.module.css', '.composerCard:focus-within'],
       ['../../ui-conversation/src/client/skeleton/HeroShell.module.css', '.modalInput:focus-visible'],
       ['../../ui-workspace/src/client/rows/Rows.module.css', '.renameInput:focus-visible'],
       ['../../ui-open-in-app/src/client/WorkspaceWorkbench.module.css', '.search:focus-within'],

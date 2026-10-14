@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Button, ConnectionBanner, Input, Menu, Modal, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
+import {
+  Button, ChatAssistantBody, ChatComposerAction, ChatComposerCard, ChatUserBubble,
+  ConnectionBanner, Input, Menu, Modal, Pill,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import { POINTER_GRACE_MS } from '../src/pointer-grace.ts'
 
 afterEach(cleanup)
@@ -26,6 +29,38 @@ describe('Button', () => {
   it('outline variant renders a bordered cancel-style button', () => {
     render(<Button variant="outline">Cancel</Button>)
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeDefined()
+  })
+})
+
+describe('ChatSurfaces', () => {
+  it('renders the same message shapes without assuming a session owner', () => {
+    const { container } = render(<>
+      <ChatUserBubble>原样用户文字</ChatUserBubble>
+      <ChatAssistantBody streaming>助手正文</ChatAssistantBody>
+    </>)
+    expect(screen.getByText('原样用户文字')).toBeTruthy()
+    expect(screen.getByText('助手正文').closest('[data-streaming="true"]')).not.toBeNull()
+    expect(container.querySelectorAll('[data-streaming]')).toHaveLength(1)
+  })
+
+  it('forwards the card anchor and action ref while keeping native button behavior', () => {
+    const card = { current: null as HTMLDivElement | null }
+    const button = { current: null as HTMLButtonElement | null }
+    const onClick = vi.fn()
+    const view = render(<ChatComposerCard ref={card} data-composer-card>
+      <ChatComposerAction ref={button} aria-label="发送消息" onClick={onClick} />
+    </ChatComposerCard>)
+    expect(card.current).toBe(view.container.firstElementChild)
+    expect(button.current).toBe(screen.getByRole('button', { name: '发送消息' }))
+    expect(button.current?.querySelector('svg')).not.toBeNull()
+    fireEvent.click(button.current!)
+    expect(onClick).toHaveBeenCalledOnce()
+    view.rerender(<ChatComposerCard ref={card} data-composer-card>
+      <ChatComposerAction ref={button} kind="stop" disabled aria-label="停止生成" onClick={onClick} />
+    </ChatComposerCard>)
+    expect(screen.getByRole('button', { name: '停止生成' }).hasAttribute('disabled')).toBe(true)
+    fireEvent.click(button.current!)
+    expect(onClick).toHaveBeenCalledOnce()
   })
 })
 

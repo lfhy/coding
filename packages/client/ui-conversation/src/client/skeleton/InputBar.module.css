@@ -38,46 +38,7 @@
   line-height: 18px;
 }
 
-.card {
-  box-sizing: border-box;
-  position: relative; /* overlay anchor positioning context */
-  display: flex;
-  flex-direction: column;
-  /* figma Input 75:8208: 12px between the text area and the button row; 10px
-     top pad on the card before .InputText. */
-  gap: 12px;
-  width: 100%;
-  max-width: var(--dsh-composer-card-max-width);
-  padding-top: 10px;
-  /* Input stroke: black/0.10 light, white/0.06 dark (figma darkmode note says
-     the input border is one notch weaker than buttons) — exactly the
-     l2-darkmode-thin pair. Fill: the input surface token (elevated in dark). */
-  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
-  border-radius: 22px;
-  background: var(--dsw-specific-input-major);
-  box-shadow: var(--dsw-shadow-lv2);
-  font-size: 16px;
-  line-height: 24px;
-  /* Elevated surface in dark, same as the menus: the draft scrollport inside
-     scrolls once the composer hits its height cap, so the thumb takes the l2
-     pair. Declared on the card because the elevation belongs to the surface,
-     and the custom properties inherit down to the box that actually scrolls
-     (see ui-theme styles/scrollbar.css for the rebinding contract). */
-  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
-  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
-}
-
-.card:focus-within {
-  border-color: var(--dsw-alias-state-business-primary);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 18%, transparent);
-}
-
-/* No-workspace trigger state: dashed l4 stroke marks the card as a pick-a-
-   workspace affordance rather than a live composer; hover answers in the
-   business blue to invite the click. Native `dashed` has a fixed browser
-   pattern, so the stroke is an ::after overlay: theme-token background masked
-   by an SVG dash ring (stroke-width 2 centered on the box edge = 1px visible
-   inside), which keeps the 22px radius and both themes. */
+/* 无工作区触发态以虚线提示选择；普通卡片由共享 ChatComposerCard 绘制。 */
 .cardWorkspaceTrigger {
   border-color: transparent;
   cursor: pointer;
@@ -131,6 +92,9 @@
 .scroll {
   max-height: var(--dsh-composer-text-max-height);
   overflow-y: auto;
+  /* 主会话滚动区落在抬升的输入卡片内，沿用其 l2 滑块配对。 */
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
 /* Mirror-div auto-grow stack: the hidden mirror is in normal flow and sets the FULL draft
@@ -371,49 +335,6 @@
 .select:disabled {
   opacity: 0.5;
   cursor: default;
-}
-
-/* Primary send (figma IconButton 34:10465): 34px circle, #3964FE light /
-   #679EFE dark — the info-fill pair (500→400), NOT button-primary (ink);
-   white glyph; empty text = 0.4 opacity. */
-.primary {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 34px;
-  height: 34px;
-  border: none;
-  border-radius: 999px;
-  background: var(--dsw-alias-button-info-fill);
-  /* Static white, not the foreground token: the arrow stays white on the blue
-     fill in both themes (design 34:10465). */
-  color: #fff;
-  cursor: pointer;
-  transition: background-color 100ms ease;
-  /* Opts out of the row's 2px downward shift (.row top pad): the send circle
-     keeps its original seat while the smaller chips sit lower. Transform, not
-     margin, so flex centering math is untouched. */
-  transform: translateY(-2px);
-}
-
-.primary:hover:not(:disabled) {
-  background: var(--dsw-alias-button-info-hover);
-}
-
-.primary:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.retry {
-  margin-left: 8px;
-  padding: 1px 8px;
-  border: 1px solid currentColor;
-  border-radius: 4px;
-  background: transparent;
-  color: inherit;
-  font-size: 12px;
-  cursor: pointer;
 }
 
 /* Plain-text reference highlight: a pure range mark over the

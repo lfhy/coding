@@ -1,6 +1,8 @@
 # @deepseek-ai/dsh-client-ui-primitives
 
-纯 React 原子组件（零 cordis）：StateDot、DisclosureRow、ic_ds_* 图标、Button/Pill/Menu/Modal/Input、Toast 短时横幅、OnboardingSurface 首次使用接管层（portal 到 body 的遮罩加不透明展示层，在且仅在自身生命周期内保持 `#root` 为 `inert`）、markdown 家族（MessageText/MarkdownText/JsonBlock）、只读 JsonTree 检查器、`useAnchoredMaxHeight` 钩子（把底部锚定的浮层高度收敛到锚点上方的视口空间，并在 resize、scroll 与调用方提供的依赖变化时重新测量）、`useAnchoredPosition` 钩子（让固定定位的浮动面板跟住锚点：测量、偏移、按视口边距钳制，并在捕获阶段滚动、窗口缩放与面板自身尺寸变化时重新定位）、TerminalBlock、DiffBlock、ReadBlock、SearchBlock，以及 WebBlock。
+纯 React 原子组件（零 cordis）：StateDot、DisclosureRow、ic_ds_* 图标、Button/Pill/Menu/Modal/Input、Toast 短时横幅、OnboardingSurface 首次使用接管层（portal 到 body 的遮罩加不透明展示层，在且仅在自身生命周期内保持 `#root` 为 `inert`）、markdown 家族（MessageText/MarkdownText/JsonBlock）、主对话与临时侧聊共用的纯展示气泡／助手正文／输入卡片／发送按钮、只读 JsonTree 检查器、`useAnchoredMaxHeight` 钩子（把底部锚定的浮层高度收敛到锚点上方的视口空间，并在 resize、scroll 与调用方提供的依赖变化时重新测量）、`useAnchoredPosition` 钩子（让固定定位的浮动面板跟住锚点：测量、偏移、按视口边距钳制，并在捕获阶段滚动、窗口缩放与面板自身尺寸变化时重新定位）、TerminalBlock、DiffBlock、ReadBlock、SearchBlock，以及 WebBlock。
+
+`ChatUserBubble`、`ChatAssistantBody`、`ChatComposerCard` 和 `ChatComposerAction` 共用主对话的消息与输入几何；调用方各自提供原文／Markdown、草稿、发送状态、无障碍名称和动作。卡片转发 DOM 属性与 ref，供会话输入栏锚定菜单和焦点；发送按钮转发原生按钮属性与 ref，供 Tooltip 锚定。它们不持有 Agent、会话或传输。
 
 图标的实现与新语义入口位于 [`ui-icons`](../ui-icons/README.md)；本包只转发其已有具名图标和统一 `Icon` 组件，供既有使用者逐步迁移。
 
