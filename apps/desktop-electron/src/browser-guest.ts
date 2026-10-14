@@ -209,6 +209,9 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
   let presented: { sessionId: string; tabId: BrowserTabId; bounds: BrowserGuestPresentation['bounds'] } | undefined
   let requestedPresentation: BrowserGuestPresentation | undefined
   let overlay: ReturnType<typeof createBrowserInputOverlay> | undefined
+  // 每个标签页的指针位置（CSS 像素，视图坐标）：覆盖层的虚拟指针按它续上
+  // 上一次动作，滚动等无目标动作也沿用同一位置，不再跳回视口中心。
+  const pointers = new Map<BrowserTabId, { x: number; y: number }>()
 
   function clearOverlay(): void { overlay?.close(); overlay = undefined }
 
@@ -234,6 +237,8 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
   }
 
   async function moveCursor(sessionId: string, tab: Tab, x: number, y: number): Promise<void> {
+    // 位置先记录：会话重新呈现或标签页再次可见时，指针从最后一次移动续上。
+    pointers.set(tab.id, { x, y })
     if (!overlay || presented?.sessionId !== sessionId || presented.tabId !== tab.id) return
     const current = overlay
     await current.move(x, y)
@@ -805,13 +810,17 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
           if (presented?.sessionId === sessionId && presented.tabId === tab.id) {
             feedback = overlay?.move(x, y, command.kind).catch(() => {})
           }
+          pointers.set(tab.id, { x, y })
           break
         }
         case 'scroll': {
           const pixels = Math.min(Math.max(command.pixels, 0), owner.viewport.height)
           const epoch = tab.navigation
-          const x = Math.floor(owner.viewport.width / 2), y = Math.floor(owner.viewport.height / 2)
-          await moveCursor(sessionId, tab, x, y)
+          // 滚轮落在指针当前位置；没有指针时（会话内首个动作）才退回视口中心。
+          const pointer = pointers.get(tab.id) ?? {
+            x: Math.floor(owner.viewport.width / 2), y: Math.floor(owner.viewport.height / 2),
+          }
+          const x = pointer.x, y = pointer.y
           assertStable(sessionId, owner, tab, epoch)
           assertTarget(owner, expectedTarget)
           mutated = true

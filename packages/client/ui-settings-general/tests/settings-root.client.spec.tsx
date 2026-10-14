@@ -110,7 +110,16 @@ describe('SettingsRoot page', () => {
     expect(screen.getByRole('main')).toBe(page)
     expect(screen.getByRole('navigation')).toBe(nav)
     expect(nav.contains(back)).toBe(true)
-    expect(screen.getByTestId('section-models')).toBeTruthy()
+    const modelsSection = screen.getByTestId('section-models')
+    // 模型分区自绘宽度，普通分区的 800px 阅读列不得套在它外面。
+    expect(modelsSection.parentElement?.className).toMatch(/optionsFill/)
+  })
+
+  it('wraps ordinary sections in the centered reading column', () => {
+    mount()
+    openPage()
+    const general = screen.getByTestId('section-general')
+    expect(general.parentElement?.className).toMatch(/optionsContent/)
   })
 
   it('returns by the top-left back button and restores focus and app interactivity', () => {

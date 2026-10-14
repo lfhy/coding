@@ -37,8 +37,11 @@ const frame=()=>new Promise(resolve=>{
 globalThis.moveCursor=async(x,y,action)=>{
   const token=++epoch;
   cursor.style.display='block';
+  // 首次出现才从中心就位；之后每次动作都从指针当前所在处开始，
+  // 点击或输入不再先跳回中心再画轨迹。
   if(!position) place({x:innerWidth/2,y:innerHeight/2});
   if(action) {
+    place({x,y});
     cursor.removeAttribute('data-action'); void cursor.offsetWidth; cursor.dataset.action=action;
     await new Promise(resolve=>setTimeout(resolve,reduced()?100:160));
     return;

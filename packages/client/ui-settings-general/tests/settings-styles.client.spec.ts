@@ -64,6 +64,14 @@ describe('SettingsRoot.module.css', () => {
     expect(declarations('.modelsPanel .options')?.get('overflow')).toBe('hidden')
   })
 
+  it('holds ordinary sections at the modal-era reading width inside the full-screen page', () => {
+    expect(declarations('.optionsContent')?.get('max-width')).toBe('800px')
+    expect(declarations('.optionsContent')?.get('margin')).toBe('0 auto')
+    // 只有自绘宽度的分区铺满内容列，其余分区不能被外框宽度直接拉长。
+    expect(declarations('.modelsPanel .optionsFill')?.get('max-width')).toBe('none')
+    expect(declarations('.modelsPanel .optionsFill')?.get('height')).toBe('100%')
+  })
+
   it('puts navigation above scrollable content on narrow screens', () => {
     const narrow = css.slice(css.indexOf('@media (max-width: 620px)'))
     expect(declarations('.panel', narrow)?.get('flex-direction')).toBe('column')

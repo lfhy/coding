@@ -96,7 +96,10 @@ function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose, trigger 
             <div className={css.actions}>{renderSlot('settings.action', {})}</div>
           </div>
           <div className={css.options}>
-            {active !== undefined && renderSlot('settings.section', { close: onClose }, { only: active })}
+            {/* 分区内容自持宽度：模型分区铺满整列，普通分区由内容列居中约束。 */}
+            <div className={active === 'models' ? css.optionsFill : css.optionsContent}>
+              {active !== undefined && renderSlot('settings.section', { close: onClose }, { only: active })}
+            </div>
           </div>
         </div>
       </div>

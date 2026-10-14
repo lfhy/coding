@@ -204,6 +204,21 @@
   overflow-y: auto;
 }
 
+/* 普通分区的阅读列：全屏后仍保留模态框时期的内容宽度，并把滚动条、右侧
+   内边距和阅读起点收在同一条边上。仅模型分区等内容自绘宽度的分区铺满。 */
+.optionsContent {
+  width: 100%;
+  max-width: 800px;
+  min-width: 0;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+.optionsFill {
+  width: 100%;
+  min-width: 0;
+}
+
 /* 返回按钮的可访问名称由设置文案 slot 提供。 */
 .hiddenLabel {
   position: absolute;
@@ -218,6 +233,12 @@
 .modelsPanel .options {
   padding: 0;
   overflow: hidden;
+}
+
+.modelsPanel .optionsContent,
+.modelsPanel .optionsFill {
+  max-width: none;
+  height: 100%;
 }
 
 @media (max-width: 620px) {
