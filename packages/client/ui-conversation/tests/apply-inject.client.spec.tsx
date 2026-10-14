@@ -24,6 +24,7 @@ import type {
   ChatViewInjected, ComposerBarInjected, ConversationInjected, ConversationSessionHeaderInjected,
   ConversationSessionInjected, DetailsInjected,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { GitOverviewInjected } from '../src/client/skeleton/GitOverview.tsx'
 import type { createChatStore } from '../src/client/stores.ts'
 
 const ROOT = 'root-1' as SessionId
@@ -143,6 +144,23 @@ describe('conversation slot inject API', () => {
     expect(b.runtime.sessions.calls).toContainEqual({
       method: 'fork', args: [{ sessionId: ROOT, atSeq: 17, increaseTitle: true }],
     })
+    await b.runtime.dispose()
+  })
+
+  it('resolves Git conflicts in a fresh session instead of forking an uncompleted source', async () => {
+    const b = await bench()
+    const injected = (b.entryOf('conversation.overview.git' as never).inject as unknown as (sessionId: SessionId) => GitOverviewInjected)(ROOT)
+    b.runtime.workspaces.stub('connectHome', async () => {
+      await b.runtime.sessions.add({
+        id: 'created-home' as SessionId,
+        session: { prompt: async () => ({ ok: true as const, value: { accepted: true as const } }) },
+      }, { current: false })
+      return 'created-home' as SessionId
+    })
+    await injected.resolveConflict(ROOT, '解决冲突')
+    expect(b.runtime.workspaces.calls).toContainEqual({ method: 'connectHome', args: [] })
+    expect(b.runtime.sessions.calls).not.toContainEqual(expect.objectContaining({ method: 'fork' }))
+    expect(b.runtime.sessions.calls).toContainEqual({ method: 'open', args: ['created-home'] })
     await b.runtime.dispose()
   })
 

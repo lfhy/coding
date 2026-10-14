@@ -323,7 +323,10 @@ export function apply(ctx: Context): void {
       if (!response.result.ok) throw new Error(response.result.error.message)
     },
     resolveConflict: async (sessionId, prompt) => {
-      const id = await sessions.fork({ sessionId, increaseTitle: true })
+      const workspace = workspaces.list.getSnapshot().items.find(item => item.sessionIds.includes(sessionId))
+      const id = workspace === undefined
+        ? await workspaces.connectHome()
+        : await workspaces.connectWorkspace(workspace.workspaceId)
       sessions.open(id)
       const binding = sessions.binding(id)
       if (binding === undefined) throw new Error('New session is not available')
