@@ -574,7 +574,7 @@ describe('WorkspaceWorkbench shell', () => {
     expect(b.listFiles).not.toHaveBeenCalled()
     const items = within(menu).getAllByRole('button')
     expect(items.map(item => item.textContent)).toEqual([
-      '查看变更记录', '终端', '浏览器', '文件',
+      '变更记录', '终端', '浏览器', '文件',
     ])
     expect(items[0]?.hasAttribute('disabled')).toBe(false)
     expect(items[3]?.hasAttribute('disabled')).toBe(false)
