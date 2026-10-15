@@ -46,7 +46,9 @@ function fakeContents() {
         return { result: { value: { revision: domRevision, incomplete: observerIncomplete } } }
       }
       if ((params as { expression: string }).expression.includes('__dshGuestRefs?.get')) {
-        return { result: { value: targetVisible ? targetPosition : null } }
+        return { result: { value: targetVisible
+          ? { ok: true, ...targetPosition }
+          : { reason: 'element_covered', blocker: 'div "overlay"' } } }
       }
       return { result: { value: { text: 'Hello', entries: [], title: 'Example',
         href: url.length <= 4096 ? url || 'about:blank' : null, domRevision } } }
@@ -431,7 +433,7 @@ describe('Electron 实时浏览器 guest', () => {
     await manager.dispose()
   })
 
-  it('移动动画后目标改位拒绝点击，覆盖视图不参与观测', async () => {
+  it('移动动画后按目标当前位置点击，覆盖视图不参与观测', async () => {
     const window = fixture()
     const manager = createBrowserGuestManager(window)
     const first = await manager.execute('s1', { kind: 'navigate', url: 'https://example.com/' })
@@ -449,10 +451,12 @@ describe('Electron 实时浏览器 guest', () => {
       wc.moveTarget(80, 80)
       return original()
     })
-    await expect(manager.execute('s1', { kind: 'click', ref: 'e1', revision: refreshed.observation.revision }))
-      .rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
-    expect(wc.debugger.sendCommand.mock.calls.some(([method, params]) =>
-      method === 'Input.dispatchMouseEvent' && (params as { type: string }).type === 'mousePressed')).toBe(false)
+    // 目标移动本身不是过期：输入前重新命中同一元素，落点取当前位置。
+    const clicked = await manager.execute('s1', { kind: 'click', ref: 'e1', revision: refreshed.observation.revision })
+    expect(clicked.observation.cursor).toMatchObject({ kind: 'click', x: 80, y: 80 })
+    expect(wc.debugger.sendCommand.mock.calls.find(([method, params]) =>
+      method === 'Input.dispatchMouseEvent' && (params as { type: string }).type === 'mousePressed')?.[1])
+      .toMatchObject({ x: 80, y: 80 })
     expect(electron.views[1]!.webContents.debugger.sendCommand).not.toHaveBeenCalled()
     await manager.release('s1')
     await manager.dispose()
@@ -763,6 +767,17 @@ describe('Electron 实时浏览器 guest', () => {
     await manager.dispose()
   })
 
+  it('拒绝点击时把遮挡原因交给模型，而不是只说过期', async () => {
+    const manager = createBrowserGuestManager(fixture())
+    const capture = await manager.execute('s1', { kind: 'navigate', url: 'https://example.com/' })
+    const wc = electron.views[0]!.webContents
+    wc.changeTarget()
+    await expect(manager.execute('s1', { kind: 'click', ref: 'e1', revision: capture.observation.revision }))
+      .rejects.toMatchObject({ code: 'BROWSER_STALE_REF',
+        message: 'browser element e1 is covered by another element (div "overlay")' })
+    await manager.dispose()
+  })
+
   it('目标节点断连即使页面其他区域仍活跃也绝不发送点击', async () => {
     const manager = createBrowserGuestManager(fixture())
     const capture = await manager.execute('s1', { kind: 'navigate', url: 'https://example.com/' })
@@ -950,7 +965,8 @@ describe('Electron 实时浏览器 guest', () => {
       return [...parentAttrs].map(([name, value]) => ({ name, value }))
     } }
     const childAttrs = new Map<string, string>()
-    const child = { get attributes() { return [...childAttrs].map(([name, value]) => ({ name, value })) } }
+    const child = { get attributes() { return [...childAttrs].map(([name, value]) => ({ name, value })) },
+      matches: () => false }
     const sibling = {}
     const element = { nodeType: 1, parentNode: parent as unknown, tagName: 'A', innerText: 'Fuzhou weather', value: '', readOnly: false,
       disabled: false, shadowRoot: null,
@@ -961,6 +977,7 @@ describe('Electron 实时浏览器 guest', () => {
         target: string
         enctype: string
         noValidate: boolean
+        attributes: Array<{ name: string; value: string }>
       },
       get href() { return attrs.has('href') ? new URL(attrs.get('href')!, base).href : undefined },
       get formAction() { return attrs.has('formaction') ? new URL(attrs.get('formaction')!, base).href : undefined },
@@ -977,8 +994,9 @@ describe('Electron 实时浏览器 guest', () => {
         width: 60, height: 20 }), getRootNode: () => document,
       contains: (hit: unknown) => hit === element || hit === child, get isConnected() { return connected } }
     const document = { title: 'Weather', body: { innerText: 'Fuzhou weather' }, activeElement: sibling as unknown,
-      createTreeWalker: () => { let visited = false; return { currentNode: element,
-        nextNode() { if (visited) return false; visited = true; return true } } },
+      createTreeWalker: () => { let index = -1; const nodes = [element, child]
+        return { currentNode: undefined as unknown,
+          nextNode() { index++; this.currentNode = nodes[index]; return index < nodes.length } } },
       elementFromPoint: () => covered ? {} : child }
     parent.parentNode = document
     const observers: MutationObserver[] = []
@@ -999,80 +1017,99 @@ describe('Electron 实时浏览器 guest', () => {
     expect(observed.entries).toHaveLength(1)
     const ref = observed.entries[0]!.split(' ')[0]!
     const expression = action.expression.replace(JSON.stringify('e1'), JSON.stringify(ref))
-    const evaluate = () => runInNewContext(expression, context) as { x: number; y: number } | null
+    const evaluate = () => runInNewContext(expression, context) as
+      { ok: true; x: number; y: number } | { reason: string; blocker?: string }
     observers[0]!.fire(sibling)
     expect((context as typeof context & { __dshGuestReadMutationRevision(): number })
       .__dshGuestReadMutationRevision()).toBeGreaterThan(0)
-    expect(evaluate()).toEqual({ x: 40, y: 20 })
+    expect(evaluate()).toEqual({ ok: true, x: 40, y: 20 })
     parentAttrs.set('onclick', 'submit()')
-    expect(evaluate()).toBeNull()
+    expect(evaluate()).toEqual({ reason: 'ancestors_changed' })
     parentAttrs.delete('onclick')
+    // 包装层的 class/style 随动画与主题抖动，不再是过期信号。
+    parentAttrs.set('class', 'is-busy')
+    expect(evaluate()).toEqual({ ok: true, x: 40, y: 20 })
+    parentAttrs.delete('class')
     observers[0]!.fire(sibling)
-    expect(evaluate()).toEqual({ x: 40, y: 20 })
+    expect(evaluate()).toEqual({ ok: true, x: 40, y: 20 })
     base = 'https://other.example/'
-    expect(evaluate()).toBeNull()
+    expect(evaluate()).toEqual({ reason: 'element_changed' })
     base = 'https://example.com/'
     left = 80
-    expect(evaluate()).toEqual({ x: 90, y: 20 })
+    expect(evaluate()).toEqual({ ok: true, x: 90, y: 20 })
     attrs.set('href', '/different')
-    expect(evaluate()).toBeNull()
+    expect(evaluate()).toEqual({ reason: 'element_changed' })
     attrs.set('href', '/weather')
     attrs.set('ping', 'https://example.com/track')
-    expect(evaluate()).toBeNull()
+    expect(evaluate()).toEqual({ reason: 'element_changed' })
     attrs.delete('ping')
+    // 应用自己的数据属性与展示性属性不改变点击含义。
     attrs.set('data-action', 'submit')
-    expect(evaluate()).toBeNull()
+    expect(evaluate()).toEqual({ ok: true, x: 90, y: 20 })
     attrs.delete('data-action')
+    attrs.set('class', 'btn-primary')
+    expect(evaluate()).toEqual({ ok: true, x: 90, y: 20 })
+    attrs.delete('class')
     covered = true
-    expect(evaluate()).toBeNull()
+    expect(evaluate()).toEqual({ reason: 'element_covered', blocker: '' })
     covered = false
     connected = false
-    expect(evaluate()).toBeNull()
+    expect(evaluate()).toEqual({ reason: 'element_left_document' })
     connected = true
     childAttrs.set('data-action', 'submit')
-    observers.find(observer => observer.targets.includes(element))!.fire(child)
-    expect(evaluate()).toBeNull()
+    expect(evaluate()).toEqual({ ok: true, x: 90, y: 20 })
     childAttrs.delete('data-action')
+    // 子树里新增事件处理器会改变冒泡含义，仍然作废引用。
+    childAttrs.set('onclick', 'track()')
+    expect(evaluate()).toEqual({ reason: 'element_changed' })
+    childAttrs.delete('onclick')
     element.tagName = 'BUTTON'
+    const formAttrs = new Map<string, string>([['id', 'search']])
     element.form = { id: 'search', action: 'https://example.com/parent', method: 'post', target: '',
-      enctype: 'application/x-www-form-urlencoded', noValidate: false }
+      enctype: 'application/x-www-form-urlencoded', noValidate: false,
+      get attributes() { return [...formAttrs].map(([name, value]) => ({ name, value })) } }
     attrs.delete('href')
     attrs.set('formaction', '/override')
     const button = runInNewContext(snapshot.expression, context) as { entries: string[] }
     const buttonRef = button.entries[0]!.split(' ')[0]!
     const buttonExpression = action.expression.replace(JSON.stringify('e1'), JSON.stringify(buttonRef))
-    const evaluateButton = () => runInNewContext(buttonExpression, context) as { x: number; y: number } | null
-    expect(evaluateButton()).toEqual({ x: 90, y: 20 })
+    const evaluateButton = () => runInNewContext(buttonExpression, context) as
+      { ok: true; x: number; y: number } | { reason: string; blocker?: string }
+    expect(evaluateButton()).toEqual({ ok: true, x: 90, y: 20 })
     element.form.action = 'https://example.com/new-parent'
-    expect(evaluateButton()).toEqual({ x: 90, y: 20 })
+    expect(evaluateButton()).toEqual({ ok: true, x: 90, y: 20 })
     attrs.set('formaction', '/changed-override')
-    expect(evaluateButton()).toBeNull()
+    expect(evaluateButton()).toEqual({ reason: 'element_changed' })
     attrs.set('formaction', '/override')
     element.form.enctype = 'multipart/form-data'
-    expect(evaluateButton()).toBeNull()
+    expect(evaluateButton()).toEqual({ reason: 'element_changed' })
     element.form.enctype = 'application/x-www-form-urlencoded'
     attrs.set('formenctype', 'text/plain')
-    expect(evaluateButton()).toBeNull()
+    expect(evaluateButton()).toEqual({ reason: 'element_changed' })
     attrs.delete('formenctype')
     attrs.set('formnovalidate', '')
-    expect(evaluateButton()).toBeNull()
+    expect(evaluateButton()).toEqual({ reason: 'element_changed' })
     attrs.delete('formnovalidate')
     const originalForm = element.form
     element.form = { ...originalForm }
-    expect(evaluateButton()).toBeNull()
+    expect(evaluateButton()).toEqual({ reason: 'element_form_changed' })
     element.form = originalForm
-    Object.assign(originalForm, { onsubmit: 'return false' })
-    observers.find(observer => observer.targets.includes(originalForm))!.fire(originalForm)
-    expect(evaluateButton()).toBeNull()
+    formAttrs.set('onsubmit', 'return false')
+    expect(evaluateButton()).toEqual({ reason: 'element_changed' })
+    formAttrs.delete('onsubmit')
+    formAttrs.set('class', 'is-submitting')
+    expect(evaluateButton()).toEqual({ ok: true, x: 90, y: 20 })
+    formAttrs.delete('class')
     attrs.set('formenctype', 'text/plain')
     const overridden = runInNewContext(snapshot.expression, context) as { entries: string[] }
     const overriddenRef = overridden.entries[0]!.split(' ')[0]!
     const overriddenExpression = action.expression.replace(JSON.stringify('e1'), JSON.stringify(overriddenRef))
-    const evaluateOverridden = () => runInNewContext(overriddenExpression, context) as { x: number; y: number } | null
+    const evaluateOverridden = () => runInNewContext(overriddenExpression, context) as
+      { ok: true; x: number; y: number } | { reason: string; blocker?: string }
     element.form.enctype = 'multipart/form-data'
-    expect(evaluateOverridden()).toEqual({ x: 90, y: 20 })
+    expect(evaluateOverridden()).toEqual({ ok: true, x: 90, y: 20 })
     attrs.set('formenctype', 'multipart/form-data')
-    expect(evaluateOverridden()).toBeNull()
+    expect(evaluateOverridden()).toEqual({ reason: 'element_changed' })
     const inputCapture = await manager.execute('s1', { kind: 'snapshot' })
     await manager.execute('s1', { kind: 'fill', ref: 'e1', revision: inputCapture.observation.revision, text: 'x' })
     const fillAction = wc.debugger.sendCommand.mock.calls.find(([command, params]) =>
@@ -1086,7 +1123,7 @@ describe('Electron 实时浏览器 guest', () => {
     const input = runInNewContext(snapshot.expression, context) as { entries: string[] }
     const inputRef = input.entries[0]!.split(' ')[0]!
     const inputExpression = fillAction.expression.replace(JSON.stringify('e1'), JSON.stringify(inputRef))
-    expect(runInNewContext(inputExpression, context)).toBeNull()
+    expect(runInNewContext(inputExpression, context)).toEqual({ reason: 'element_not_editable' })
     element.readOnly = false
     const focusSnapshot = runInNewContext(snapshot.expression, context) as { entries: string[] }
     const focusRef = focusSnapshot.entries[0]!.split(' ')[0]!
@@ -1132,7 +1169,7 @@ describe('Electron 实时浏览器 guest', () => {
     wc.debugger.sendCommand.mockImplementation((command: string, params?: unknown) => {
       if (command === 'Runtime.evaluate' && (params as { expression: string }).expression.includes('__dshGuestRefs?.get')) {
         wc.mutate()
-        return Promise.resolve({ result: { value: { x: 10, y: 10, width: 40, height: 20 } } })
+        return Promise.resolve({ result: { value: { ok: true, x: 10, y: 10 } } })
       }
       return original(command, params)
     })

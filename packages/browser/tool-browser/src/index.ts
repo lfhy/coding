@@ -23,6 +23,7 @@ const MAX_URL_CHARS = 2_048
 const MAX_GENERATION_CHARS = 128
 const MAX_FILL_CHARS = 2_000
 const MAX_APPROVAL_ORIGIN_CHARS = 256
+const MAX_STALE_REASON_CHARS = 200
 const STOPPED_NAVIGATION_DIAGNOSTIC = 'browser navigation timed out; loading stopped, take a new snapshot of the current page'
 
 function validateNavigationUrl(raw: string): void {
@@ -156,6 +157,18 @@ function approvalReason(command: BrowserCommand, currentUrl: string | undefined)
   return `Browser ${command.kind}${ref} (current origin: ${approvalOrigin(currentUrl) ?? 'unknown'}; approval is for this call only)`
 }
 
+/**
+ * 提供方对过期引用的具体诊断（遮挡、禁用、移出视口、结构变化）。模型只有拿到原因才
+ * 能决定是重拍快照、滚动，还是换目标；统一成一句「元素变了」会让它原地循环。
+ * 仅用于点击与填写，且限长并去掉控制字符：文本可能夹带页面内容。
+ * @param error 提供方拒绝的原因。
+ * @returns 可拼接的原因前缀，空原因返回空串。
+ */
+function staleTargetReason(error: BrowserUseError): string {
+  const reason = error.message.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim()
+  return reason === '' ? '' : `${reason.slice(0, MAX_STALE_REASON_CHARS)}; `
+}
+
 function browserFailure(command: BrowserCommand, error: BrowserUseError): BrowserUseError {
   // 客户端以此固定句识别已安全停载的原生导航；只接受完全相等，避免透传提供方的 URL。
   if (command.kind === 'navigate' && error.code === 'BROWSER_FAILED' && error.message === STOPPED_NAVIGATION_DIAGNOSTIC) {
@@ -167,6 +180,11 @@ function browserFailure(command: BrowserCommand, error: BrowserUseError): Browse
     case 'BROWSER_STALE_REF':
       if (command.kind === 'snapshot' && error.message.includes('document changed during observation')) {
         guidance = 'document changed during observation; try at most two fresh browser_snapshot calls. If both fail, reopen the last successfully observed HTTP(S) URL once with browser_navigate only when still relevant, then inspect its observation; stop if that fails. The last observed URL may not be the current URL'
+      } else if (command.kind === 'click' || command.kind === 'fill') {
+        const reason = staleTargetReason(error)
+        guidance = reason === ''
+          ? 'target or element changed; take a fresh browser_snapshot before acting. A click or fill may have taken effect: do not replay it without checking the new page'
+          : `${reason}take a fresh browser_snapshot for the current state, or pick a different element. A click or fill may have taken effect: do not replay it without checking the new page`
       } else {
         guidance = 'target or element changed; take a fresh browser_snapshot before acting. A click or fill may have taken effect: do not replay it without checking the new page'
       }

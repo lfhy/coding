@@ -17,6 +17,19 @@ const NAVIGATION_TIMEOUT_MS = 10_000
 const NAVIGATION_STOP_TIMEOUT_MS = 3_000
 const SCREENSHOT_TIMEOUT_MS = 5_000
 
+/** 引用在输入前被发现不可用时的原因：模型按原因决定重拍快照、滚动还是换目标。 */
+const STALE_TARGET_REASONS: Record<string, string> = {
+  element_left_document: 'left the document',
+  element_form_changed: 'changed its form',
+  ancestors_changed: 'changed its ancestor chain',
+  element_changed: 'changed since the snapshot',
+  element_not_editable: 'is not editable',
+  element_hidden: 'is hidden',
+  element_disabled: 'is disabled or inert',
+  element_offscreen: 'is outside the visible viewport',
+  element_covered: 'is covered by another element',
+}
+
 interface Tab {
   id: BrowserTabId
   generation: string
@@ -109,6 +122,11 @@ function invalidate(owner: Owner, tab: Tab): void {
 }
 
 // 仅隔离世界保存元素引用；页面脚本无法获取 Map 或伪造跨观测版本的 ref。
+// 引用是否过期只取决于「这次点击的含义」：节点身份、事件处理器、导航与表单语义、
+// 以及点击点的命中结果。class/style/data-* 等展示性属性和子树文本的更新不再作废
+// 引用：实时页面一直在重渲染，按整棵属性快照比较会让引用几乎永远过期；这些变化
+// 由点击时刻的命中测试兜底。观测只列出此刻真的可点击的元素，被遮挡或禁用的目标
+// 不再进入 Elements，模型不必靠反复快照去猜为什么点不动。
 const snapshotScript = `(function () {
   const root = globalThis;
   root.__dshGuestMutationRevision ??= 0;
@@ -140,21 +158,47 @@ const snapshotScript = `(function () {
   root.__dshGuestObservers = observers;
   root.__dshGuestReadMutationRevision = scanRoots;
   scanRoots();
-  root.__dshGuestRefs?.forEach(ref => ref.observer.disconnect());
+  root.__dshGuestRefs?.forEach(ref => ref.observer?.disconnect());
   const refs = new Map(); const entries = [];
-  const attributes = el => Array.from(el.attributes, attr => [attr.name, attr.value])
-    .sort((left, right) => left[0].localeCompare(right[0]));
+  const ACTIONABLE = 'button, a[href], input, textarea, select, [role="button"], [role="link"], [role="textbox"]';
+  const BLOCKING = '[inert], [aria-disabled="true"]';
+  // 语义属性：改变它们可能改变点击的后果（提交目标、下载、导航、禁用状态）。
+  const SEMANTIC = ['role', 'id', 'type', 'name', 'value', 'href', 'ping', 'target', 'rel', 'download', 'hreflang',
+    'disabled', 'readonly', 'required', 'tabindex', 'contenteditable', 'inert', 'placeholder', 'title', 'for',
+    'accept', 'multiple', 'checked', 'selected', 'form', 'formaction', 'formmethod', 'formtarget', 'formenctype',
+    'formnovalidate', 'autocomplete', 'inputmode', 'spellcheck', 'dir', 'lang'];
+  const sortAttributes = attributes => attributes.sort((left, right) => left[0].localeCompare(right[0]));
+  const semantic = el => sortAttributes(Array.from(el.attributes, attr => [attr.name, attr.value])
+    .filter(([name]) => name.startsWith('on') || name.startsWith('aria-') || SEMANTIC.includes(name)));
+  // 祖先只比事件处理器与 inert：包装层的 class/style 会随动画和主题抖动。
+  const handlers = node => sortAttributes(Array.from(node.attributes, attr => [attr.name, attr.value])
+    .filter(([name]) => name.startsWith('on') || name === 'inert'));
   const path = el => {
-    const entries = [];
+    const chain = [];
     for (let node = el; node && node !== document; node = node.parentNode || node.host) {
-      if (node.nodeType === Node.ELEMENT_NODE) entries.push({ node, parent: node.parentNode, attributes: attributes(node) });
+      if (node.nodeType === Node.ELEMENT_NODE) chain.push({ node, parent: node.parentNode, attributes: handlers(node) });
     }
-    return entries;
+    return chain;
+  };
+  // 子树里新增的事件处理器会改变冒泡行为，其余子树更新与点击含义无关。
+  const subtreeHandlers = el => {
+    const found = []; let nodes = 0;
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_ELEMENT);
+    while (walker.nextNode()) {
+      if (++nodes > 200) return null;
+      const node = walker.currentNode;
+      for (const attr of Array.from(node.attributes)) {
+        if (attr.name.startsWith('on')) found.push(node.tagName + ':' + attr.name + '=' + attr.value);
+      }
+    }
+    return found.sort();
   };
   const identity = el => ({ tag: el.tagName,
-    attributes: attributes(el),
+    attributes: semantic(el),
     role: el.getAttribute('role'), id: el.getAttribute('id'),
-    name: el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.innerText || el.value || el.getAttribute('title') || '',
+    // 名称只取属性来源：按钮里的计数、徽标或加载文案会随轮询变化，不代表目标换了含义。
+    name: el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('title') || '',
+    value: 'value' in el && typeof el.value === 'string' ? el.value : undefined,
     href: el.href || el.getAttribute('href'), form: el.form?.id,
     action: el.hasAttribute('formaction') ? el.formAction : el.form?.action,
     method: el.hasAttribute('formmethod') ? el.formMethod : el.form?.method,
@@ -163,27 +207,57 @@ const snapshotScript = `(function () {
     noValidate: !!(el.form?.noValidate || el.formNoValidate),
     type: el.getAttribute('type'),
     disabled: !!el.disabled || el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true',
-    readOnly: !!el.readOnly });
+    readOnly: !!el.readOnly,
+    handlers: subtreeHandlers(el),
+    // 关联表单可能不在祖先链上（form 属性指向别处），它自己的处理器同样会截获提交。
+    formHandlers: el.form ? handlers(el.form) : undefined });
+  const clean = value => String(value).replace(/[\\u0000-\\u001f]/g, ' ').slice(0, 60);
+  const describe = node => {
+    if (!node || node.nodeType !== Node.ELEMENT_NODE) return '';
+    return clean(node.getAttribute('role') || node.tagName.toLowerCase()) + ' ' +
+      JSON.stringify(clean(node.getAttribute('aria-label') || node.getAttribute('title') || node.tagName.toLowerCase()));
+  };
   root.__dshGuestIdentity = identity;
   root.__dshGuestPath = path;
+  root.__dshGuestDescribe = describe;
+  const centre = (start, end, limit) => Math.max(0, Math.min(limit - 1, Math.floor((start + end) / 2)));
+  // 命中测试是引用仍然有效的最终依据；被遮挡时回报遮挡者，便于模型换目标或先关掉浮层。
+  const hit = el => {
+    const box = el.getBoundingClientRect();
+    const left = Math.max(0, box.left), top = Math.max(0, box.top);
+    const right = Math.min(innerWidth, box.right), bottom = Math.min(innerHeight, box.bottom);
+    if (left >= right || top >= bottom) return { reason: 'element_offscreen' };
+    const x = centre(left, right, innerWidth), y = centre(top, bottom, innerHeight);
+    let scope = el.getRootNode();
+    const covered = () => ({ reason: 'element_covered',
+      blocker: describe(scope.elementFromPoint ? scope.elementFromPoint(x, y) : null) });
+    const found = scope.elementFromPoint ? scope.elementFromPoint(x, y) : null;
+    if (!found || (found !== el && !el.contains(found))) return covered();
+    while (scope !== document) {
+      const host = scope.host; if (!host) return { reason: 'element_covered' };
+      scope = host.getRootNode();
+      if (!scope.elementFromPoint || scope.elementFromPoint(x, y) !== host) return covered();
+    }
+    return { ok: true, x: x, y: y };
+  };
+  root.__dshGuestHit = hit;
   const walker = document.createTreeWalker(document, NodeFilter.SHOW_ELEMENT);
   let scanned = 0;
   while (walker.nextNode() && scanned++ < 50000 && entries.length < 150) {
     const el = walker.currentNode;
-    if (!el.matches('button, a[href], input, textarea, select, [role="button"], [role="link"], [role="textbox"]')) continue;
+    if (!el.matches(ACTIONABLE)) continue;
     const box = el.getBoundingClientRect(); const style = getComputedStyle(el);
     if (!box.width || !box.height || style.display === 'none' || style.visibility === 'hidden' ||
-      box.right <= 0 || box.bottom <= 0 || box.left >= innerWidth || box.top >= innerHeight) continue;
+      style.pointerEvents === 'none' || box.right <= 0 || box.bottom <= 0 ||
+      box.left >= innerWidth || box.top >= innerHeight) continue;
+    if (el.closest(BLOCKING)) continue;
+    if (!hit(el).ok) continue;
     const ref = 'e' + (entries.length + 1) + '-' + Date.now() + '-' + Math.random();
-    const entry = { el, form: el.form ?? null, identity: identity(el), path: path(el), changed: false };
-    const observer = new MutationObserver(() => { entry.changed = true; });
-    observer.observe(el, { subtree: true, childList: true, attributes: true, characterData: true });
-    if (entry.form) observer.observe(entry.form, { subtree: true, childList: true, attributes: true, characterData: true });
-    entry.observer = observer;
-    refs.set(ref, entry);
+    const entry = { el, form: el.form ?? null, identity: identity(el), path: path(el) };
     const password = el instanceof HTMLInputElement && el.type === 'password';
     const name = password ? (el.getAttribute('aria-label') || el.getAttribute('placeholder') || 'Password') :
       (el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.innerText || el.value || el.getAttribute('title') || '');
+    refs.set(ref, entry);
     entries.push(ref + ' ' + (el.getAttribute('role') || el.tagName.toLowerCase()) + ' ' +
       JSON.stringify(String(name).trim().slice(0, 160)) + ' (' + [box.x, box.y, box.width, box.height].map(Math.round).join(',') + ')');
   }
@@ -194,6 +268,9 @@ const snapshotScript = `(function () {
 })()`
 
 type Snapshot = { text: string; entries: string[]; title: string; href: string | null; domRevision: number }
+
+/** 引用复核结果：命中点，或无法点击的具体原因与遮挡者。 */
+type TargetOutcome = { ok: true; x: number; y: number } | { ok?: false; reason?: string; blocker?: string }
 
 /**
  * 创建主进程持有的浏览器；隐藏工作台仅卸载视图，不停止页面或释放会话。
@@ -446,6 +523,26 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
       owner.tabs.get(tab.id) !== tab || tab.navigation !== navigation || tab.view.webContents.isDestroyed()) {
       fail('browser document changed during observation', 'BROWSER_STALE_REF')
     }
+  }
+
+  /**
+   * 把引用复核结果变成模型可读的失败原因：只说「元素变了」会让模型反复重拍快照，
+   * 遮挡、禁用与移出视口这类原因则指向重拍之外的动作。
+   * @param outcome 隔离世界给出的复核结果或原因。
+   * @param ref 模型使用的引用，仅用于定位。
+   * @param owner 会话页面，提供当前视口上限。
+   * @returns 可点击坐标。
+   */
+  function requireTarget(outcome: TargetOutcome, ref: string, owner: Owner): { x: number; y: number } {
+    if (outcome.ok === true) {
+      if (outcome.x >= owner.viewport.width || outcome.y >= owner.viewport.height) {
+        fail(`browser element ${ref} is outside the visible viewport`, 'BROWSER_STALE_REF')
+      }
+      return { x: outcome.x, y: outcome.y }
+    }
+    const reason = STALE_TARGET_REASONS[outcome.reason ?? ''] ?? 'is no longer usable'
+    const blocker = outcome.blocker === undefined || outcome.blocker === '' ? '' : ` (${outcome.blocker})`
+    return fail(`browser element ${ref} ${reason}${blocker}`, 'BROWSER_STALE_REF')
   }
 
   async function observe(sessionId: string, owner: Owner, tab: Tab, cursor: BrowserObservation['cursor']): Promise<BrowserCapture> {
@@ -739,49 +836,41 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
           if (latest?.observation.revision !== command.revision) fail('stale browser element revision', 'BROWSER_STALE_REF')
           const documentEpoch = tab.navigation
           const escaped = JSON.stringify(command.ref)
+          // 引用复核只判断点击含义：节点身份、事件处理器、导航与表单语义、命中位置。
+          // 展示性属性与子树文本的更新不再单独判过期，由点击时刻的命中测试兜底。
           const targetExpression = `(() => { const ref = globalThis.__dshGuestRefs?.get(${escaped}); const el = ref?.el;
-              if (!el || !el.isConnected || ref.form !== (el.form ?? null)) return null;
-              if (ref.observer.takeRecords().length) ref.changed = true;
+              if (!el || !el.isConnected) return { reason: 'element_left_document' };
+              if (ref.form !== (el.form ?? null)) return { reason: 'element_form_changed' };
               const path = globalThis.__dshGuestPath(el);
-              if (ref.changed || path.length !== ref.path.length || path.some((part, i) =>
+              if (path.length !== ref.path.length || path.some((part, i) =>
                 part.node !== ref.path[i].node || part.parent !== ref.path[i].parent ||
-                JSON.stringify(part.attributes) !== JSON.stringify(ref.path[i].attributes)) ||
-                JSON.stringify(ref.identity) !== JSON.stringify(globalThis.__dshGuestIdentity(el))) return null;
-              if (${command.kind === 'fill'} && (el.disabled || el.readOnly ||
-                (!('value' in el) && !el.isContentEditable))) return null;
-              const b = el.getBoundingClientRect(), style = getComputedStyle(el);
-              if (!b.width || !b.height || style.display === 'none' || style.visibility === 'hidden' ||
-                style.pointerEvents === 'none' || ref.identity.disabled || el.matches(':disabled') ||
-                el.closest('[aria-disabled="true"], [inert]')) return null;
-              const left = Math.max(0, b.left), top = Math.max(0, b.top);
-              const right = Math.min(innerWidth, b.right), bottom = Math.min(innerHeight, b.bottom);
-              if (left >= right || top >= bottom) return null;
-              const x = Math.max(0, Math.min(innerWidth - 1, Math.floor((left + right) / 2)));
-              const y = Math.max(0, Math.min(innerHeight - 1, Math.floor((top + bottom) / 2)));
-              let root = el.getRootNode(); const hit = root.elementFromPoint?.(x, y);
-              if (!hit || (hit !== el && !el.contains(hit))) return null;
-              while (root !== document) {
-                const host = root.host; if (!host) return null;
-                root = host.getRootNode();
-                if (root.elementFromPoint?.(x, y) !== host) return null;
+                JSON.stringify(part.attributes) !== JSON.stringify(ref.path[i].attributes))) {
+                return { reason: 'ancestors_changed' };
               }
-              return { x, y }; })()`
-          const box = await evaluate<{ x: number; y: number } | null>(tab, targetExpression)
-          if (!box || box.x >= owner.viewport.width || box.y >= owner.viewport.height) {
-            fail('browser element no longer visible or changed', 'BROWSER_STALE_REF')
-          }
+              if (JSON.stringify(ref.identity) !== JSON.stringify(globalThis.__dshGuestIdentity(el))) {
+                return { reason: 'element_changed' };
+              }
+              if (${command.kind === 'fill'} && (el.disabled || el.readOnly ||
+                (!('value' in el) && !el.isContentEditable))) return { reason: 'element_not_editable' };
+              const style = getComputedStyle(el), box = el.getBoundingClientRect();
+              if (!box.width || !box.height || style.display === 'none' || style.visibility === 'hidden' ||
+                style.pointerEvents === 'none') return { reason: 'element_hidden' };
+              if (ref.identity.disabled || el.matches(':disabled') ||
+                el.closest('[aria-disabled="true"], [inert]')) return { reason: 'element_disabled' };
+              return globalThis.__dshGuestHit(el); })()`
+          const box = requireTarget(await evaluate<TargetOutcome>(tab, targetExpression), command.ref, owner)
           assertStable(sessionId, owner, tab, documentEpoch)
           const current = tab.capture as BrowserCapture | undefined
           if (current?.observation.revision !== command.revision) {
             fail('browser element changed before input', 'BROWSER_STALE_REF')
           }
           await moveCursor(sessionId, tab, box.x, box.y)
-          const verified = await evaluate<{ x: number; y: number } | null>(tab, targetExpression)
+          // 目标移动本身不是过期：第二次复核用当前命中点决定落点。
+          const verified = requireTarget(await evaluate<TargetOutcome>(tab, targetExpression), command.ref, owner)
           assertStable(sessionId, owner, tab, documentEpoch)
           assertTarget(owner, expectedTarget)
           const movedCapture = tab.capture as BrowserCapture | undefined
-          if (!verified || verified.x !== box.x || verified.y !== box.y ||
-            movedCapture?.observation.revision !== command.revision) {
+          if (movedCapture?.observation.revision !== command.revision) {
             fail('browser element changed during cursor movement', 'BROWSER_STALE_REF')
           }
           const { x, y } = verified
@@ -805,9 +894,8 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
             assertStable(sessionId, owner, tab, documentEpoch)
             const focused = await evaluate<boolean>(tab, `(() => { const ref = globalThis.__dshGuestRefs?.get(${escaped}); const el = ref?.el;
               if (!el || !el.isConnected || ref.form !== (el.form ?? null)) return false;
-              if (ref.observer.takeRecords().length) ref.changed = true;
               const path = globalThis.__dshGuestPath(el);
-              if (ref.changed || path.length !== ref.path.length || path.some((part, i) =>
+              if (path.length !== ref.path.length || path.some((part, i) =>
                 part.node !== ref.path[i].node || part.parent !== ref.path[i].parent ||
                 JSON.stringify(part.attributes) !== JSON.stringify(ref.path[i].attributes)) ||
                 JSON.stringify(ref.identity) !== JSON.stringify(globalThis.__dshGuestIdentity(el)) ||

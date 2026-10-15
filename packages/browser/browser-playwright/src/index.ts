@@ -59,6 +59,23 @@ function fail(message: string, code: 'BROWSER_FAILED' | 'BROWSER_STALE_REF' | 'B
   return new BrowserUseError(message, code)
 }
 
+/**
+ * Playwright 可用性失败的最短可读原因；调用方据此把点击失败报成带原因的过期引用。
+ * @param error 点击或填写抛出的原始错误。
+ * @returns 面向模型的一句话原因。
+ */
+function actionabilityReason(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error)
+  if (/intercepts pointer events/i.test(message)) return 'is covered by another element'
+  if (/outside of the viewport/i.test(message)) return 'is outside the visible viewport'
+  if (/not visible/i.test(message)) return 'is hidden'
+  if (/not stable/i.test(message)) return 'keeps moving'
+  if (/not enabled|disabled/i.test(message)) return 'is disabled'
+  if (/not editable|cannot be filled|not an <input>|not a form control/i.test(message)) return 'is not editable'
+  if (/does not receive events/i.test(message)) return 'does not receive pointer events'
+  return 'did not become actionable'
+}
+
 /** 已知的画面限额不会使页面执行状态失控；其余 BROWSER_FAILED 仍销毁会话。 */
 class OversizedFrameError extends BrowserUseError {
   constructor() { super(`browser screenshot exceeds ${FRAME_LIMIT} bytes`, 'BROWSER_FAILED') }
@@ -386,7 +403,11 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
         const item = await handle.evaluate((element: Element) => {
           const box = element.getBoundingClientRect()
           const style = getComputedStyle(element)
-          if (!box.width || !box.height || style.visibility === 'hidden' || style.display === 'none') return null
+          if (!box.width || !box.height || style.visibility === 'hidden' || style.display === 'none' ||
+            style.pointerEvents === 'none') return null
+          // 观测只列出此刻真能点的元素：被禁用或 pointer-events 关闭的目标列出来只会让
+          // 模型白点一轮。遮挡交给点击时的可用性检查，那里能报出具体原因。
+          if (element.closest('[inert], [aria-disabled="true"]')) return null
           const html = element as HTMLElement
           const password = html instanceof HTMLInputElement && html.type === 'password'
           const name = password
@@ -493,8 +514,15 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
         cursor = { x: Math.round((Math.max(0, box.x) + Math.min(owner.viewport.width, box.x + box.width)) / 2),
           y: Math.round((Math.max(0, box.y) + Math.min(owner.viewport.height, box.y + box.height)) / 2),
           kind: command.kind, at: Date.now() }
-        if (command.kind === 'click') await handle.click({ timeout: 10_000 })
-        else await handle.fill(command.text, { timeout: 10_000 })
+        try {
+          if (command.kind === 'click') await handle.click({ timeout: 10_000 })
+          else await handle.fill(command.text, { timeout: 10_000 })
+        } catch (error) {
+          if (error instanceof BrowserUseError) throw error
+          // Playwright 的可用性检查失败表示元素当下点不动；报成过期引用并带上原因，
+          // 模型才知道该关掉遮挡、滚动还是换目标，而不是收到一句笼统的操作失败。
+          throw fail(`browser element ${command.ref} ${actionabilityReason(error)}`, 'BROWSER_STALE_REF')
+        }
         break
       }
       case 'scroll':

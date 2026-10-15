@@ -455,6 +455,67 @@ describe('Playwright browser owner', () => {
     await ctx.fiber.dispose()
   })
 
+  it.each([
+    ['a toast intercepts pointer events', 'is covered by another element'],
+    ['element is outside of the viewport', 'is outside the visible viewport'],
+    ['element is not visible', 'is hidden'],
+    ['element is not stable', 'keeps moving'],
+    ['element is not enabled', 'is disabled'],
+    ['something new went wrong', 'did not become actionable'],
+  ])('reports an actionable reason when Playwright cannot click (%s)', async (failure, reason) => {
+    const { ctx, service } = await headlessProvider()
+    const id = SessionId('click-reason')
+    const signal = new AbortController().signal
+    const first = await service.execute(id, { kind: 'navigate', url: 'http://localhost/' }, signal)
+    handle.boundingBox.mockResolvedValueOnce({ x: 10, y: 20, width: 30, height: 40 })
+    handle.click.mockRejectedValueOnce(new Error(failure))
+    const rejection = await service.execute(id, { kind: 'click', ref: ref(first.observation.snapshot), revision: 1 }, signal)
+      .then(() => null, (error: unknown) => error)
+    expect(rejection).toMatchObject({ code: 'BROWSER_STALE_REF' })
+    expect(rejection instanceof Error ? rejection.message : '').toContain(reason)
+    await ctx.fiber.dispose()
+  })
+
+  it('omits elements that are inert or have pointer events disabled', async () => {
+    const dom = new JSDOM('<body></body>', { pretendToBeVisual: true })
+    for (const key of ['document', 'NodeFilter', 'HTMLInputElement', 'getComputedStyle']) {
+      vi.stubGlobal(key, Reflect.get(dom.window, key))
+    }
+    const doc = dom.window.document
+    const add = (label: string, style: string, parent: HTMLElement): HTMLElement => {
+      const element = doc.createElement('button')
+      element.setAttribute('aria-label', label)
+      if (style !== '') element.setAttribute('style', style)
+      element.getBoundingClientRect = () => ({ x: 10, y: 20, width: 30, height: 40,
+        top: 20, left: 10, right: 40, bottom: 60, toJSON: () => ({}) })
+      parent.append(element)
+      return element
+    }
+    add('listed', '', doc.body)
+    add('transparent', 'pointer-events:none', doc.body)
+    const inert = doc.createElement('div')
+    inert.setAttribute('inert', '')
+    doc.body.append(inert)
+    add('inert-child', '', inert)
+    const evaluateHandle = async (evaluate: unknown, options: Parameters<typeof page.evaluateHandle>[1]) => {
+      if (options === undefined) return documentHandle
+      const elements = (evaluate as (options: Parameters<typeof page.evaluateHandle>[1]) => Element[])(options)
+      return { getProperties: async () => new Map(elements.map((element, index) => [String(index), {
+        asElement: () => ({ evaluate: async (run: (element: Element) => unknown) => run(element),
+          dispose: async () => {} }), dispose: async () => {},
+      }])), dispose: async () => {} }
+    }
+    page.evaluateHandle.mockImplementation(
+      evaluateHandle as unknown as Parameters<typeof page.evaluateHandle.mockImplementation>[0])
+    const { ctx, service } = await headlessProvider()
+    const capture = await service.execute(SessionId('inert'), { kind: 'navigate', url: 'http://localhost/' },
+      new AbortController().signal)
+    expect(capture.observation.snapshot).toContain('listed')
+    expect(capture.observation.snapshot).not.toContain('transparent')
+    expect(capture.observation.snapshot).not.toContain('inert-child')
+    await ctx.fiber.dispose()
+  })
+
   it('rejects absent tabs and closes the active tab while preserving another', async () => {
     const { ctx, service } = await headlessProvider()
     const id = SessionId('active-close')

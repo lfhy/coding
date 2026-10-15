@@ -314,9 +314,38 @@ describe('browser action tools', () => {
 
     const result = await call({ action: 'click', ref: 'e1', revision: 1 })
     expect(result.isError).toBe(true)
-    expect(text(result)).toContain('BROWSER_STALE_REF: target or element changed')
+    expect(text(result)).toContain('BROWSER_STALE_REF: browser element no longer visible;')
+    expect(text(result)).toContain('take a fresh browser_snapshot for the current state')
     expect(text(result)).toContain('A click or fill may have taken effect')
     expect(text(result)).not.toContain('reopen')
+    expect(browser.commands).toHaveBeenCalledTimes(1)
+  })
+
+  it('bounds and cleans the provider reason for a stale click target', async () => {
+    const { ctx, call } = await setup(true, { mode: 'danger-full-access', policy: 'never' })
+    const browser = ctx.browserUse as FakeBrowser
+    browser.currentState = activeState()
+    browser.commands.mockRejectedValueOnce(new BrowserUseError(
+      `browser element e9 is covered by another element (div ${'x'.repeat(400)})\u0000\u001b`, 'BROWSER_STALE_REF'))
+
+    const result = await call({ action: 'fill', ref: 'e9', revision: 1, text: 'hello' })
+    expect(result.isError).toBe(true)
+    const message = text(result)
+    expect(message).toContain('BROWSER_STALE_REF: browser element e9 is covered by another element')
+    expect(message).not.toMatch(/[\u0000-\u001f\u007f]/)
+    expect(message.length).toBeLessThan(500)
+    expect(browser.commands).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the generic stale-target guidance when the provider reports no reason', async () => {
+    const { ctx, call } = await setup(true, { mode: 'danger-full-access', policy: 'never' })
+    const browser = ctx.browserUse as FakeBrowser
+    browser.currentState = activeState()
+    browser.commands.mockRejectedValueOnce(new BrowserUseError('   ', 'BROWSER_STALE_REF'))
+
+    const result = await call({ action: 'click', ref: 'e1', revision: 1 })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('BROWSER_STALE_REF: target or element changed; take a fresh browser_snapshot before acting')
     expect(browser.commands).toHaveBeenCalledTimes(1)
   })
 
