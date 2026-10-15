@@ -105,9 +105,8 @@ describe('dsh-tool-subagent-control', () => {
     const schemas = ctx.tools.schemas().filter(schema => schema.name === 'send_message')
     expect(schemas).toHaveLength(1)
     const props = (schemas[0]!.parameters as { properties?: Record<string, unknown> }).properties ?? {}
-    expect(Object.keys(props).sort()).toEqual(['message', 'mode', 'subagent_id'])
-    expect(schemas[0]!.description).toContain('next step')
-    expect(schemas[0]!.description).toContain('next-turn')
+    expect(Object.keys(props).sort()).toEqual(['message', 'subagent_id'])
+    expect(schemas[0]!.description).toContain('next available step')
     expect(schemas[0]!.description).toContain('in-flight')
   })
 
@@ -138,33 +137,6 @@ describe('dsh-tool-subagent-control', () => {
       form: 'relay',
       senderSessionId: parent.id,
     })
-  })
-
-  it('queues behind an open turn instead of joining it', async () => {
-    const { ctx, parent, adapter } = await setup([textResponse('first'), textResponse('second')])
-    const started = await ctx.subagents.startContinuable({
-      provider: 'spawn',
-      label: 'long work',
-      request: { prompt: [{ type: 'text', text: 'long work' }], parent },
-      signal: testToolSignal,
-    })
-    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
-
-    const result = await callTool(ctx, 'send_message', {
-      subagent_id: started.childId,
-      message: 'also consider Y',
-      mode: 'next-turn',
-    }, parent)
-    expect(result.isError).toBe(false)
-    expect(text(result)).toBe(`message accepted for next-turn delivery to subagent ${started.childId}`)
-
-    await waitNoActivation(ctx, started.childId)
-    const loaded = await ctx.sessionPersistence.load(started.childId)
-    const prompts = loaded.events.flatMap(event => event.type === 'user/message' && event.data.source.kind !== 'plugin'
-      ? event.data.content.flatMap(block => block.type === 'text' ? [block.text] : [])
-      : [])
-    // A follow-up is its own later turn, never steering inside the first one.
-    expect(prompts).toEqual(['long work', 'also consider Y'])
   })
 
   it('defaults to steering the next step of an active turn without interrupting the current request', async () => {
@@ -200,15 +172,6 @@ describe('dsh-tool-subagent-control', () => {
       : [])
     expect(prompts).toEqual(['long work', 'use begin/chunk/commit'])
     expect(adapter.requests).toHaveLength(2)
-  })
-
-  it('rejects an unsupported delivery mode without sending', async () => {
-    const { ctx, parent } = await setup([])
-    const result = await callTool(ctx, 'send_message', {
-      subagent_id: 'child', message: 'hello', mode: 'immediate',
-    }, parent)
-    expect(result.isError).toBe(true)
-    expect(text(result)).toContain('mode')
   })
 
   it('reports a delivery failure as an errored, not-delivered result', async () => {
@@ -298,7 +261,6 @@ describe('dsh-tool-subagent-control interrupt_agent', () => {
     const queued = await callTool(ctx, 'send_message', {
       subagent_id: started.childId,
       message: 'parked follow-up',
-      mode: 'next-turn',
     }, parent)
     expect(queued.isError).toBe(false)
     const cancelSpy = vi.spyOn(child, 'cancel')
@@ -312,12 +274,11 @@ describe('dsh-tool-subagent-control interrupt_agent', () => {
     await child.whenIdle()
     // Parked, not resumed: the queued follow-up waits for a waking send.
     expect(adapter.requests).toHaveLength(1)
-    expect(child.inbox.nextTurn).toHaveLength(1)
+    expect(child.inbox.nextTurn.length + child.inbox.nextStep.length).toBe(1)
 
     const waking = await callTool(ctx, 'send_message', {
       subagent_id: started.childId,
       message: 'wake up',
-      mode: 'next-turn',
     }, parent)
     expect(waking.isError).toBe(false)
     await waitNoActivation(ctx, started.childId)

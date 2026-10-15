@@ -1744,7 +1744,7 @@ Source: [`packages/subagent/tool-subagent-control/src/list-agents.ts`](../packag
 
 ### `send_message`
 
-Send a message to a background subagent by its subagent id. By default, deliver it at the next step, so an agent still working can use it before its next model request; this cannot interrupt an in-flight model request or tool call. Set mode to next-turn to defer it until the current turn finishes. If the agent is idle, either mode wakes it. This call confirms acceptance, not that the agent has read the message, and returns no answer. A failure means the message was NOT delivered.
+Send a message to a background subagent by its subagent id. The message is inserted into the next available step, so an agent still working can use it before its next model request; this cannot interrupt an in-flight model request or tool call. If the agent is idle, the message wakes it. This call confirms acceptance, not that the agent has read the message, and returns no answer. A failure means the message was NOT delivered.
 
 ```json
 {
@@ -1757,14 +1757,6 @@ Send a message to a background subagent by its subagent id. By default, deliver 
     "message": {
       "type": "string",
       "description": "The message to deliver to the subagent."
-    },
-    "mode": {
-      "type": "string",
-      "description": "Delivery timing; defaults to next-step. Use next-turn to wait for the current turn to finish.",
-      "enum": [
-        "next-step",
-        "next-turn"
-      ]
     }
   },
   "required": [

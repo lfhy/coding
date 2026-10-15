@@ -133,7 +133,7 @@ persisted Session
 
 `running` 表示 Agent 拥有活跃的准入或轮次，或正在唤醒收件箱工作；`waiting` 表示它已完全停稳，但仍拥有至少一个尚未完成 dispose 的子 Activation；`settled` 表示已完全停稳且其拥有的每个子级都已 dispose，此时管理器会 dispose [`AgentHandle`](core.md#creation-and-ownership) 并移除该 Activation。管理器根据 Agent 的完全停稳状态与其拥有的子级集合推导这些内部条件，而非维护第二套执行状态机。
 
-Agent 收件箱负责消息排序。服务 API 默认将继续执行消息交给 `Agent.followup()`，作为后续 FIFO 轮次；指定 `mode: 'next-step'` 时使用 `Agent.steer()`，让活跃子级在下一步骤读取消息，但不会打断已发出的模型请求或工具调用。面向模型的 `send_message` 工具默认指定 `next-step`，可显式选 `next-turn`。投递成功只表示收件箱已接受并返回 `MessageId`，不表示子级已读取；`agent/inbox/inserted`、`agent/inbox/claimed` 与 `agent/inbox/discarded` 是消息生命周期的观测点。
+Agent 收件箱负责消息排序。服务 API 默认将继续执行消息交给 `Agent.followup()`，作为后续 FIFO 轮次；指定 `mode: 'next-step'` 时使用 `Agent.steer()`，让活跃子级在下一步骤读取消息，但不会打断已发出的模型请求或工具调用。面向模型的 `send_message` 工具固定使用 `next-step`。投递成功只表示收件箱已接受并返回 `MessageId`，不表示子级已读取；`agent/inbox/inserted`、`agent/inbox/claimed` 与 `agent/inbox/discarded` 是消息生命周期的观测点。
 
 后续操作的权限来自确切的在线 Agent 工具上下文。已认证的 Agent 必须是持久化子 agent 在 `SessionHeader.parentSession` 中记录的直接父级。`MessageSource` 与 `senderSessionId` 记录谁提供了已准入的消息，但不授予任何权限；可选的面向模型工具使用 `CoordinatorMessageSource`。
 
