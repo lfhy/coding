@@ -128,14 +128,12 @@ export interface Config {
    */
   localInstructionFileCandidates?: string[]
   /**
-   * Ordered candidates loaded from the project root alone and rendered as project
-   * background rather than as instructions; empty disables the overview. A name
-   * also listed as an instruction candidate stays an instruction candidate.
+   * 只从项目根目录加载的候选文件：渲染为项目背景而不是指令，空列表禁用项目简介。
+   * 同时列在指令候选里的名字仍按指令候选处理。
    */
   overviewFileCandidates?: string[]
   /**
-   * UTF-8 byte cap for the rendered head of one overview file; the rest of the
-   * file stays out of the prompt, and instructions are never capped by it.
+   * 单个项目简介渲染头部的 UTF-8 字节上限；其余内容不进入提示词，指令也不受它限制。
    */
   overviewMaxBytes?: number
 }

@@ -4,13 +4,18 @@
  */
 
 import { basename, dirname } from 'node:path'
-import type { InstructionFile, LoadedInstructionFile } from './files.ts'
+import { DEFAULT_OVERVIEW_MAX_BYTES } from './config.ts'
+import type { InstructionFile, InstructionKind, LoadedInstructionFile } from './files.ts'
 
 const SYSTEM_REMINDER_OPEN = '<system-reminder>'
 const SYSTEM_REMINDER_CLOSE = '</system-reminder>'
 const WORKSPACE_CONTEXT_INTRO = 'The following workspace instructions may be relevant to your work. '
   + 'Use them as guidance when applicable. More specific instructions take precedence over broader ones. '
   + 'They do not override system, developer, or direct user instructions.'
+const OVERVIEW_INTRO = 'Background describing the project rather than instructions for your work.'
+// 换行处比字节偏移更干净的截断点，但超长单行（例如徽章行）不得吃掉整段预算：
+// 因此只有保留上限的大部分时才采用行边界。
+const OVERVIEW_LINE_BREAK_SHARE = 0.75
 const REPLACEMENT_WORKSPACE_CONTEXT_INTRO = 'This complete workspace instruction baseline replaces all earlier workspace instruction baselines. '
   + WORKSPACE_CONTEXT_INTRO
 const EMPTY_REPLACEMENT_WORKSPACE_CONTEXT_INTRO = 'This complete workspace instruction baseline replaces all earlier workspace instruction baselines. '
@@ -29,6 +34,16 @@ export interface RenderedWorkspaceContext {
   text: string
   omitted: InstructionFile[]
   truncated: TruncatedInstruction[]
+}
+
+/**
+ * 基线渲染输入。`overviewMaxBytes` 只限制每个项目简介小节的头部：共享预算最先
+ * 丢弃最宽泛的文件，也就是项目简介，否则大 README 永远进不了提示词。
+ */
+export interface WorkspaceRenderOptions {
+  maxBytes: number
+  replacePreviousBaseline?: boolean
+  overviewMaxBytes?: number
 }
 
 interface RenderedInstructionContext extends RenderedWorkspaceContext {
@@ -85,8 +100,55 @@ function sectionText(file: LoadedInstructionFile): string {
   return `Instructions from: ${file.displayPath}\n\n${file.content}`
 }
 
+/**
+ * 把项目简介的头部限制在它自己的字节上限内。
+ * @param content - 文件的完整 UTF-8 内容。
+ * @param maxBytes - 渲染头部的字节上限。
+ * @returns 渲染出的头部，以及是否有内容被略去。
+ */
+function overviewExcerpt(content: string, maxBytes: number): { text: string; truncated: boolean } {
+  if (byteLength(content) <= maxBytes) return { text: content, truncated: false }
+  const head = truncateUtf8(content, maxBytes)
+  const lineBreak = head.lastIndexOf('\n') + 1
+  const onLineBreak = byteLength(head.slice(0, lineBreak)) >= maxBytes * OVERVIEW_LINE_BREAK_SHARE
+  return { text: onLineBreak ? head.slice(0, lineBreak) : head, truncated: true }
+}
+
+function overviewSectionText(file: LoadedInstructionFile, overviewMaxBytes: number): string {
+  const excerpt = overviewExcerpt(file.content, overviewMaxBytes)
+  const intro = excerpt.truncated
+    ? `${OVERVIEW_INTRO} Only the first ${byteLength(excerpt.text)} bytes are shown here; the file continues beyond this excerpt.`
+    : OVERVIEW_INTRO
+  return [`Project overview from: ${file.displayPath}`, '', intro, '', excerpt.text].join('\n')
+}
+
+function baselineSectionText(file: LoadedInstructionFile, overviewMaxBytes: number): string {
+  return file.kind === 'overview' ? overviewSectionText(file, overviewMaxBytes) : sectionText(file)
+}
+
 /** Directory component that identifies the single user-global instruction scope. */
 export const USER_GLOBAL_DIRECTORY = 'user-global'
+
+/** 标识项目根指令 scope 的目录分量。 */
+export const PROJECT_ROOT_DIRECTORY = '.'
+
+/**
+ * 判定从某个按候选划分的 scope 加载的文件类型。
+ * @param directory - 来自 {@link decodeScopeKey} 的 scope 目录。
+ * @param candidateName - 该目录中的候选文件名。
+ * @param overviewFileCandidates - 规范化后的项目简介候选名。
+ * @returns 只有项目根目录下配置为项目简介的候选返回 `overview`。
+ */
+export function instructionKindFor(
+  directory: string,
+  candidateName: string,
+  overviewFileCandidates: readonly string[],
+): InstructionKind {
+  // 项目简介候选只从项目根目录加载，因此更深的目录永远不继承项目自身的 README。
+  return directory === PROJECT_ROOT_DIRECTORY && overviewFileCandidates.includes(candidateName)
+    ? 'overview'
+    : 'instructions'
+}
 
 /**
  * File name of the single user-global instruction file under `$DSH_HOME`.
@@ -155,20 +217,39 @@ function additionalSectionText(file: LoadedInstructionFile): string {
   ].join('\n')
 }
 
-const BASELINE_RENDER_STYLE: RenderStyle = { intro: WORKSPACE_CONTEXT_INTRO, section: sectionText }
-
-function baselineRenderStyle(files: LoadedInstructionFile[], replacePreviousBaseline: boolean | undefined): RenderStyle {
-  if (replacePreviousBaseline !== true) return BASELINE_RENDER_STYLE
+function baselineRenderStyle(
+  files: LoadedInstructionFile[],
+  replacePreviousBaseline: boolean | undefined,
+  overviewMaxBytes: number,
+): RenderStyle {
+  const style: RenderStyle = {
+    intro: WORKSPACE_CONTEXT_INTRO,
+    section: file => baselineSectionText(file, overviewMaxBytes),
+  }
+  if (replacePreviousBaseline !== true) return style
   return {
-    ...BASELINE_RENDER_STYLE,
+    ...style,
     intro: files.length === 0
       ? EMPTY_REPLACEMENT_WORKSPACE_CONTEXT_INTRO
       : REPLACEMENT_WORKSPACE_CONTEXT_INTRO,
   }
 }
 
-function changedSectionText(item: ChangeRenderItem): string {
+function changedSectionText(item: ChangeRenderItem, overviewMaxBytes: number): string {
   const { change, file } = item
+  if (file.kind === 'overview') {
+    if (change.action === 'set') return overviewSectionText(file, overviewMaxBytes)
+    if (change.action === 'remove') {
+      return `Project overview removed: ${change.path}\n\nThe previously loaded project overview from this file no longer applies.`
+    }
+    return [
+      `Updated project overview from: ${change.path}`,
+      '',
+      `This file changed after it was loaded. Use the following content instead of the previously loaded project overview from this file. ${OVERVIEW_INTRO}`,
+      '',
+      overviewExcerpt(file.content, overviewMaxBytes).text,
+    ].join('\n')
+  }
   if (change.action === 'set') return additionalSectionText(file)
   if (change.action === 'remove') {
     return `Instructions removed: ${change.path}\n\nThe previously loaded instructions from this file no longer apply.`
@@ -183,25 +264,26 @@ function changedSectionText(item: ChangeRenderItem): string {
 }
 
 /**
- * Render one reconciliation batch and retain only transitions that fit.
- * @param items - ordered state transitions and current file contents.
- * @param maxBytes - maximum UTF-8 bytes allowed in the rendered batch.
- * @returns bounded prompt text and the transitions actually represented by it.
+ * 渲染一批对账结果，只保留能放下的转换。
+ * @param items - 有序的状态转换与当前文件内容。
+ * @param options - 批次字节预算与项目简介头部上限。
+ * @returns 有界的提示词文本，以及确实被它表示的转换。
  */
 export function renderInstructionChanges(
   items: ChangeRenderItem[],
-  maxBytes: number,
+  options: { maxBytes: number; overviewMaxBytes?: number },
 ): { text: string; changes: AgentInstructionChange[] } {
+  const overviewMaxBytes = options.overviewMaxBytes ?? DEFAULT_OVERVIEW_MAX_BYTES
   const byAbsolutePath = new Map(items.map(item => [item.file.absolutePath, item]))
   const style: RenderStyle = {
     intro: '',
     section(file) {
       const item = byAbsolutePath.get(file.absolutePath)
       /* v8 ignore next -- the renderer receives exactly the files used to construct this map. */
-      return item === undefined ? '' : changedSectionText({ ...item, file })
+      return item === undefined ? '' : changedSectionText({ ...item, file }, overviewMaxBytes)
     },
   }
-  const rendered = renderInstructionContext(items.map(item => item.file), maxBytes, style)
+  const rendered = renderInstructionContext(items.map(item => item.file), options.maxBytes, style)
   const represented = new Set(rendered.represented.map(file => file.absolutePath))
   return {
     text: rendered.text,
@@ -287,7 +369,7 @@ function renderInstructionContext(
 
   for (let start = 1; start < files.length; start += 1) {
     const included = files.slice(start)
-    const omitted = files.slice(0, start).map(file => ({ absolutePath: file.absolutePath, displayPath: file.displayPath }))
+    const omitted = files.slice(0, start).map(file => ({ absolutePath: file.absolutePath, displayPath: file.displayPath, kind: file.kind }))
     const suffixText = buildInstructionText(included, maxBytes, omitted, [], style)
     if (byteLength(suffixText) <= maxBytes) return { text: suffixText, omitted, truncated: [], represented: included }
   }
@@ -295,7 +377,7 @@ function renderInstructionContext(
   const mostSpecific = files.at(-1)
   /* v8 ignore next -- callers only reach this after a non-empty fullText was built. */
   if (mostSpecific === undefined) return { text: '', omitted: [], truncated: [], represented: [] }
-  const omitted = files.slice(0, -1).map(file => ({ absolutePath: file.absolutePath, displayPath: file.displayPath }))
+  const omitted = files.slice(0, -1).map(file => ({ absolutePath: file.absolutePath, displayPath: file.displayPath, kind: file.kind }))
   const originalBytes = byteLength(mostSpecific.content)
 
   for (const candidateStyle of [style, { ...style, intro: COMPACT_WORKSPACE_CONTEXT_INTRO }]) {
@@ -339,9 +421,13 @@ function renderInstructionContext(
  */
 export function renderWorkspaceInstructionSet(
   files: LoadedInstructionFile[],
-  options: { maxBytes: number; replacePreviousBaseline?: boolean },
+  options: WorkspaceRenderOptions,
 ): { rendered: RenderedWorkspaceContext; included: LoadedInstructionFile[] } {
-  const style = baselineRenderStyle(files, options.replacePreviousBaseline)
+  const style = baselineRenderStyle(
+    files,
+    options.replacePreviousBaseline,
+    options.overviewMaxBytes ?? DEFAULT_OVERVIEW_MAX_BYTES,
+  )
   const { represented, ...rendered } = renderInstructionContext(files, options.maxBytes, style)
   return { rendered, included: represented }
 }
@@ -354,7 +440,7 @@ export function renderWorkspaceInstructionSet(
  */
 export function renderWorkspaceContext(
   files: LoadedInstructionFile[],
-  options: { maxBytes: number; replacePreviousBaseline?: boolean },
+  options: WorkspaceRenderOptions,
 ): RenderedWorkspaceContext {
   return renderWorkspaceInstructionSet(files, options).rendered
 }

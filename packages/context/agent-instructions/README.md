@@ -1,12 +1,12 @@
 # @deepseek-ai/dsh-agent-instructions
 
-为每个会话加载与 `AGENTS.md` 兼容的工作区指令文件。该插件会将初始的用户全局指令与项目指令链注入持久历史，随后发现嵌套文件，并在成功的文件系统工具调用后报告后续变更或移除。
+为每个会话加载与 `AGENTS.md` 兼容的工作区指令文件，并把项目根目录的 README 头部作为项目简介一并注入。该插件会将初始的用户全局指令、项目简介与项目指令链注入持久历史，随后发现嵌套文件，并在成功的文件系统工具调用后报告后续变更或移除。
 
 ## 生命周期
 
-每个实时会话第一次符合条件的 `agent/pre-step` 会组合基线。当下游决策让非空的第一步批次进入时，插件会将基线折入最终批次、紧随已领取的直接提示词之后，使直接提示词与持久基线一同进入步骤 1，并共同抵达第一次请求。被拒绝或为空的第一步决策会将基线留在 agent（智能体）的 `next-step` inbox，等待后续唤醒。loader 先读取 `$DSH_HOME/AGENTS.md`，随后针对项目根目录到 `agent.session.header.cwd` 的每个目录，先读取每个现有基础候选文件，再读取每个现有本地 overlay 候选文件。同一目录中，如果候选文件在去除首尾空白后字节完全一致，就会按已配置顺序折叠到最早候选文件，因此 `CLAUDE.md` 若只是复制同级 `AGENTS.md`，只会渲染一次。若之前排队的 workspace 上下文仍在等待，插件会删除并替换该确切 inbox 条目，而不会不断累积副本。恢复后的会话会保留一条兼容的可见基线，并只追加当前文件的转换；如果发现、优先级、项目根目录或预算标识发生变化，则会将一条明确取代旧基线的完整基线折入进入步骤的批次。
+每个实时会话第一次符合条件的 `agent/pre-step` 会组合基线。当下游决策让非空的第一步批次进入时，插件会将基线折入最终批次、紧随已领取的直接提示词之后，使直接提示词与持久基线一同进入步骤 1，并共同抵达第一次请求。被拒绝或为空的第一步决策会将基线留在 agent（智能体）的 `next-step` inbox，等待后续唤醒。loader 先读取 `$DSH_HOME/AGENTS.md`，随后针对项目根目录到 `agent.session.header.cwd` 的每个目录，先读取每个现有基础候选文件，再读取每个现有本地 overlay 候选文件。项目简介候选只在项目根目录探测，因此子目录的 README 永不进入基线；它渲染在该目录指令之前，因为它是最宽泛、也最先被预算丢弃的一节。同一目录中，如果候选文件在去除首尾空白后字节完全一致，就会按已配置顺序折叠到最早候选文件，因此 `CLAUDE.md` 若只是复制同级 `AGENTS.md`，只会渲染一次；项目简介候选最后参与这次判定，所以复制或 symlink 到同级 `AGENTS.md` 的 README 仍会保留真正的指令。若之前排队的 workspace 上下文仍在等待，插件会删除并替换该确切 inbox 条目，而不会不断累积副本。恢复后的会话会保留一条兼容的可见基线，并只追加当前文件的转换；如果发现、优先级、项目根目录或预算标识发生变化，则会将一条明确取代旧基线的完整基线折入进入步骤的批次。
 
-该插件还会观察第一方 `read`、`write` 和 `edit` 调用成功后产生的不可变 `tools/result`。每个已接受的 touch 都会检查新达到的后代 scope 以及之前加载的每个 scope。每个已配置候选名称都是所在目录中的独立 scope：新出现的文件会在 agent inbox 中排入一项新增；已改变文件会排入一项替换；文件消失或成为同一目录中较早候选文件的重复项时，会排入一则移除通知。原生调用与 Code Mode 子分派共享该路径：嵌套 touch 会沿不透明的父级执行 token 逐层上浮，直到顶层结果落定；在 agent loop（智能体循环）步骤内产生的 touch，须等持久 `step/end` 后才开始异步投影。打开的步骤之外直接执行工具时，则立即投影。这样无需依赖文件系统时序，也能保持工具调用／结果／步骤的相邻关系。这种发现跟随结构化文件系统活动，而不是 shell `cd`，因为每次本地 bash 调用都启动新 shell，解析任意 shell 语法也不可靠。
+该插件还会观察第一方 `read`、`write` 和 `edit` 调用成功后产生的不可变 `tools/result`。每个已接受的 touch 都会检查新达到的后代 scope 以及之前加载的每个 scope。每个已配置候选名称都是所在目录中的独立 scope：新出现的文件会在 agent inbox 中排入一项新增；已改变文件会排入一项替换；文件消失或成为同一目录中较早候选文件的重复项时，会排入一则移除通知。项目简介候选只在项目根 scope 参与该对账，因此子目录 touch 从不枚举它，根 README 的变更或消失仍与指令文件一样上报。原生调用与 Code Mode 子分派共享该路径：嵌套 touch 会沿不透明的父级执行 token 逐层上浮，直到顶层结果落定；在 agent loop（智能体循环）步骤内产生的 touch，须等持久 `step/end` 后才开始异步投影。打开的步骤之外直接执行工具时，则立即投影。这样无需依赖文件系统时序，也能保持工具调用／结果／步骤的相邻关系。这种发现跟随结构化文件系统活动，而不是 shell `cd`，因为每次本地 bash 调用都启动新 shell，解析任意 shell 语法也不可靠。
 
 指令读取使用可选 `ctx.fs` 提供方。该插件不会静态注入 `fs`，因此没有提供方的产品树仍可启动，指令加载在提供方出现前不执行任何操作。它会解析每个候选文件并对解析结果执行 stat，因此会跟随路径最后一段的 symlink 到其目标：指向常规文件的链接会加载目标内容，缺失路径或非文件目标（包括指向目录的链接）则已确认不存在。resolve 或 stat 异常会改为将该候选文件的 scope 标记为暂时不可用。前缀取消与动态工具取消会传播到解析、元数据探测与流式读取。文件加载后的提供方失败会视为暂时不可用，而非文件已删除的证据。
 
@@ -18,6 +18,12 @@
 <system-reminder>
 The following workspace instructions may be relevant to your work. Use them as guidance when applicable. More specific instructions take precedence over broader ones. They do not override system, developer, or direct user instructions.
 
+Project overview from: README.md
+
+Background describing the project rather than instructions for your work.
+
+...
+
 Instructions from: ~/.dsh/AGENTS.md
 
 ...
@@ -27,6 +33,8 @@ Instructions from: AGENTS.md
 ...
 </system-reminder>
 ```
+
+项目简介一节只在项目根 README 存在时出现；它的头部超过 `overviewMaxBytes` 时，该行改为 `Background describing the project rather than instructions for your work. Only the first <bytes> bytes are shown here; the file continues beyond this excerpt.`
 
 新达到的 scope 使用持久的带来源 `user/message`：
 
@@ -40,7 +48,7 @@ These instructions apply to work under `packages/app`. Use them as guidance when
 </system-reminder>
 ```
 
-同一文件的编辑以 `Updated instructions from: <path>` 开头，并说明使用新内容替代之前加载的内容。候选文件消失或成为同一目录中较早候选文件的重复项时，消息是 `Instructions removed: <path>`，后跟 `The previously loaded instructions from this file no longer apply.`。指令内容或模型可见的路径、scope 与预算元数据中出现的字面 `</system-reminder>` 文本都会转义，因此仓库控制的文本无法关闭插件控制的框架。
+同一文件的编辑以 `Updated instructions from: <path>` 开头，并说明使用新内容替代之前加载的内容。候选文件消失或成为同一目录中较早候选文件的重复项时，消息是 `Instructions removed: <path>`，后跟 `The previously loaded instructions from this file no longer apply.`。项目简介使用同样的三种转换，但改为 `Updated project overview from: <path>` 与 `Project overview removed: <path>`，移除通知后跟 `The previously loaded project overview from this file no longer applies.`，新增与替换都重申它是项目背景而非指令。指令内容或模型可见的路径、scope 与预算元数据中出现的字面 `</system-reminder>` 文本都会转义，因此仓库控制的文本无法关闭插件控制的框架。
 
 该插件控制完整的 `<system-reminder>` 框架，每个注入的 `user/message` 都不经核心包装便原样传给模型。
 
@@ -62,16 +70,22 @@ export interface Config {
   maxSourceBytes?: number
   instructionFileCandidates?: string[]
   localInstructionFileCandidates?: string[]
+  overviewFileCandidates?: string[]
+  overviewMaxBytes?: number
 }
 ```
 
-`maxBytes` 必填，因此每个部署都必须显式选择提示词预算。`maxSourceBytes` 在渲染前限制每个源指令文件，默认为 1 MiB。`projectRootMarkers` 默认为 `['.git']`，`instructionFileCandidates` 默认为 `['AGENTS.md', 'CLAUDE.md']`。每个项目目录中的所有现有候选文件都会加载，在去除周围空白后与较早候选文件内容匹配的文件会被丢弃。因此，使用默认设置时，内容相同的 `AGENTS.md` 与 `CLAUDE.md` 只渲染一次（作为 `AGENTS.md`），真正不同的同级文件则同时应用。`localInstructionFileCandidates` 默认为 `['AGENTS.local.md', 'CLAUDE.local.md']`，会与同一目录的基础文件一起加载其现有 overlay（渲染在它们之后），并应用同一个每目录去重；空列表会禁用 overlay。两个列表中的候选项都必须是同一目录下的文件名，因此会忽略空项、`.`／`..` 以及包含 `/` 或 `\` 的项。
+`maxBytes` 必填，因此每个部署都必须显式选择提示词预算。`maxSourceBytes` 在渲染前限制每个源指令文件，默认为 1 MiB。`projectRootMarkers` 默认为 `['.git']`，`instructionFileCandidates` 默认为 `['AGENTS.md', 'CLAUDE.md']`。每个项目目录中的所有现有候选文件都会加载，在去除周围空白后与较早候选文件内容匹配的文件会被丢弃。因此，使用默认设置时，内容相同的 `AGENTS.md` 与 `CLAUDE.md` 只渲染一次（作为 `AGENTS.md`），真正不同的同级文件则同时应用。`localInstructionFileCandidates` 默认为 `['AGENTS.local.md', 'CLAUDE.local.md']`，会与同一目录的基础文件一起加载其现有 overlay（渲染在它们之后），并应用同一个每目录去重；空列表会禁用 overlay。这些列表中的候选项都必须是同一目录下的文件名，因此会忽略空项、`.`／`..` 以及包含 `/` 或 `\` 的项。
 
-用户全局文件始终是 `$DSH_HOME/AGENTS.md`，没有本地 overlay；两个候选列表只控制项目 scope。`$DSH_HOME` 默认为 `~/.dsh`，已配置的 `~`、`~/...` 与 Windows 风格 `~\...` 前缀会基于操作系统 home 目录展开。非正数或非有限渲染预算会同时禁用基线与动态加载；已配置 `maxSourceBytes` 必须是正整数。
+`overviewFileCandidates` 默认为 `['README.md']`，只在项目根目录加载，并渲染为项目背景而不是指令；空列表禁用项目简介。同一个名字若也出现在指令候选列表中，就按指令候选处理：显式把 `README.md` 声明为指令文件，不会被悄悄降级成模型可以忽略的背景。`overviewMaxBytes` 默认为 4096，限制单个项目简介渲染出的头部字节数；指令内容不受该上限影响。
+
+用户全局文件始终是 `$DSH_HOME/AGENTS.md`，没有本地 overlay，也没有项目简介；上述候选列表只控制项目 scope。`$DSH_HOME` 默认为 `~/.dsh`，已配置的 `~`、`~/...` 与 Windows 风格 `~\...` 前缀会基于操作系统 home 目录展开。非正数或非有限渲染预算会同时禁用基线与动态加载；已配置 `maxSourceBytes` 与 `overviewMaxBytes` 必须是正整数。
 
 ## 预算与有界读取
 
 渲染会优先保留最具体的指令文件。它会先丢弃完整的较宽泛文件，再截断最具体文件，并发出可见 `Workspace instruction budget ...` 通知，其中指名已省略与已截断路径。渲染后字节数绝不超过 `maxBytes`。
+
+项目简介先在自己的 `overviewMaxBytes` 内截成头部，再作为最宽泛的一节参与同一条消息的预算：由于它已被限制在几千字节，只有指令本身接近 `maxBytes` 时它才会被整节省略。截断优先落在换行处，但仅在保留至少四分之三上限时才采用行边界，以免超长单行（例如徽章行）吃掉整段预算；无论是否截断，`included` 与持久 digest 都按完整文件内容记录，因此摘要截断不会伪装成内容变更。
 
 即使提供方元数据省略大小，或文件在元数据探测后增长，指令内容仍会通过 `streamText()` 在 `maxSourceBytes` 下读取。超大文件会被忽略；在动态对账期间，它会暂时不可用，而不是被移除。该插件不保留进程级 cache，绝不缓存指令文本。其会话本地 scope cache 只将提供方版本用作快速失效信号；失效后，对有界读取计算的 SHA-1 仍是存储在结构化消息来源中的跨提供方内容标识。
 
@@ -81,13 +95,19 @@ export interface Config {
 
 #### 模型看到的内容
 
-第一次请求的派生历史中包含一条持久 user 角色消息，其中按从宽泛到具体的顺序包含有界用户全局指令与项目指令链。可见基线兼容时，恢复会复用该消息。
+第一次请求的派生历史中包含一条持久 user 角色消息，其中按从宽泛到具体的顺序包含项目根 README 的有界头部（若存在）、有界用户全局指令与项目指令链。项目简介以 `Project overview from: <path>` 开头，紧随的说明句声明它是项目背景而非指令。可见基线兼容时，恢复会复用该消息。
 
 ##### 基线指令模板
 
 ```markdown
 <system-reminder>
 The following workspace instructions may be relevant to your work. Use them as guidance when applicable. More specific instructions take precedence over broader ones. They do not override system, developer, or direct user instructions.
+
+Project overview from: README.md
+
+Background describing the project rather than instructions for your work.
+
+<overview-head>
 
 Instructions from: ~/.dsh/AGENTS.md
 
@@ -101,11 +121,11 @@ Instructions from: AGENTS.md
 
 #### Token 影响
 
-渲染后基线只追加一次，并保留在派生历史中直到压缩。`maxBytes` 会限制完整消息，较宽泛文件在最具体文件截断之前被省略，空指令链不产生 token。
+渲染后基线只追加一次，并保留在派生历史中直到压缩。`maxBytes` 会限制完整消息，较宽泛文件在最具体文件截断之前被省略，空指令链不产生 token。项目简介最多贡献 `overviewMaxBytes` 字节加上其固定说明句。
 
 #### KV Cache 影响
 
-仅追加，位于现有可复用前缀之后。可见基线标识兼容时，恢复会保持复用；不兼容的标识会追加一条完整的替代基线，因此发现、优先级、项目根目录或预算变更只会从该历史位置起影响复用。
+仅追加，位于现有可复用前缀之后。可见基线标识兼容时，恢复会保持复用；不兼容的标识会追加一条完整的替代基线，因此发现、优先级、项目根目录、项目简介配置或预算变更只会从该历史位置起影响复用。
 
 ### 新发现的 scope 上下文
 
@@ -137,7 +157,7 @@ These instructions apply to work under `packages/app`. Use them as guidance when
 
 #### 模型看到的内容
 
-已改变文件会产生 `Updated instructions from: <path>` 加替换内容。消失或成为同一目录中较早候选文件重复项的候选文件会产生下方移除通知。
+已改变文件会产生 `Updated instructions from: <path>` 加替换内容。消失或成为同一目录中较早候选文件重复项的候选文件会产生下方移除通知。项目简介产生对应的 `Project overview from: <path>`、`Updated project overview from: <path>` 与 `Project overview removed: <path>` 措辞，替换与新增内容同样只取 `overviewMaxBytes` 以内的头部。
 
 ##### 移除通知
 
@@ -162,6 +182,8 @@ The previously loaded instructions from this file no longer apply.
 - **发现跟随结构化 fs 工具，而非 shell 导航**：更改目录的 `bash` 命令不会触发嵌套指令发现，因为 shell 语法与每次调用 shell 状态不是可靠的文件系统 seam。
 - **刷新由 touch 驱动**：没有 watcher；外部编辑会在下一次成功的第一方 `read`、`write` 或 `edit` 时、恢复过程对账可见基线时，或进入步骤的 pre-step 恢复被遮蔽的基线时可见。
 - **候选语义有意保持简单**：不解释小写名称、`.claude/rules/` 与 `@path` import；项目 scope 默认加载 `AGENTS.local.md`／`CLAUDE.local.md` overlay，但用户全局 `$DSH_HOME` scope 没有本地 overlay，其他自定义名称需要显式候选配置。
-- **每目录去重基于内容**：只有在去除首尾空白后字节完全一致时，才折叠同级候选文件。`CLAUDE.md` 若 symlink 到同级 `AGENTS.md`，会解析为相同内容，并像任何重复项一样折叠；从 `AGENTS.md` 漂移的独立实体副本则会与它一起完整加载。
+- **每目录去重基于内容**：只有在去除首尾空白后字节完全一致时，才折叠同级候选文件。`CLAUDE.md` 若 symlink 到同级 `AGENTS.md`，会解析为相同内容，并像任何重复项一样折叠；从 `AGENTS.md` 漂移的独立实体副本则会与它一起完整加载。项目简介候选最后参与该判定，因此与同级指令内容相同的 README 会被折叠，保留下来的是指令。
+- **项目简介只取项目根的头部**：只有项目根的 overview 候选进入提示词，子目录（包括 monorepo 各包）的 README 仍靠 `read` 按需获取；被截断时模型只看到 `overviewMaxBytes` 以内的头部与一句提示，插件绝不下载或摘要其余部分。
+- **项目简介是背景，不是权限或规范**：说明句声明它不覆盖 system、developer 或用户指令，因此 README 里的“必须”“禁止”等措辞不获得 workspace instructions 的优先级；需要模型遵守的项目规则仍应写进 `AGENTS.md`。
 - **Symlink 指令文件会跨越信任边界跟随**：最终组件是 symlink 的候选文件会被解析并加载其目标，因此克隆仓库可以将树外文件内容呈现为较低优先级的工作区指引（它绝不会覆盖 system、developer 或用户直接下达的指令）。加载不受信任仓库时，请用文件系统策略门禁或 OS 沙箱限制 `ctx.fs`。
 - **指令内容受限但不会被摘要**：超出预算的宽泛文件会被省略，最具体文件可能被截断；该插件绝不请求模型压缩指令文本。

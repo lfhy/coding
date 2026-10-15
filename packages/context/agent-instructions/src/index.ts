@@ -35,10 +35,11 @@ export {
 } from './files.ts'
 export type {
   InstructionFile,
+  InstructionKind,
   LoadedInstructionFile,
 } from './files.ts'
 export { renderWorkspaceContext } from './render.ts'
-export type { RenderedWorkspaceContext, TruncatedInstruction } from './render.ts'
+export type { RenderedWorkspaceContext, TruncatedInstruction, WorkspaceRenderOptions } from './render.ts'
 
 function visibleBaselineSource(
   agent: Agent,
@@ -142,6 +143,8 @@ export function apply(ctx: Context, config: Config): void {
         maxSourceBytes: resolved.maxSourceBytes,
         instructionFileCandidates: resolved.instructionFileCandidates,
         localInstructionFileCandidates: resolved.localInstructionFileCandidates,
+        overviewFileCandidates: resolved.overviewFileCandidates,
+        overviewMaxBytes: resolved.overviewMaxBytes,
         projectRoot,
         replacePreviousBaseline,
         signal,

@@ -59,6 +59,7 @@ async function seedVisibleBaseline(
   const baseline = renderWorkspaceContext(files.map(file => ({
     absolutePath: join(cwd, file.name),
     displayPath: file.name,
+    kind: 'instructions',
     content: file.content,
   })), { maxBytes: 65536 })
   const config = resolveConfig({

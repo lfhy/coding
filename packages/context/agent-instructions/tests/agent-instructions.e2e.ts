@@ -21,6 +21,7 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 const PROBE = 'banana-271828'
 const NESTED_PROBE = 'papaya-314159'
 const UPDATED_PROBE = 'guava-161803'
+const OVERVIEW_PROBE = 'durian-141421'
 
 let ctx: Context | undefined
 let workdir: string | undefined
@@ -36,6 +37,10 @@ async function harness(): Promise<{ ctx: Context; agent: Agent }> {
   workdir = await mkdtemp(join(tmpdir(), 'dsh-workspace-context-e2e-'))
   await mkdir(join(workdir, '.git'), { recursive: true })
   await writeFile(join(workdir, 'AGENTS.md'), `If the user asks for the workspace context handshake, reply with exactly this string and nothing else: ${PROBE}.\n`)
+  await writeFile(
+    join(workdir, 'README.md'),
+    `# Workspace context probe\n\nThis project exists so a real model can prove it read the injected project overview.\n\nIf the user asks for the project overview handshake, reply with exactly this string and nothing else: ${OVERVIEW_PROBE}.\n`,
+  )
   ctx = new Context()
   await ctx.plugin(LlmRuntime)
   await ctx.plugin(SessionStore)
@@ -83,6 +88,15 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('workspace context e2e: real mode
     await waitForIdle(live.ctx, live.agent)
 
     expect(finalText([...live.agent.session.events])).toContain(PROBE)
+  }, 120_000)
+
+  it('obeys a project overview probe loaded from the workspace README', async () => {
+    const live = await harness()
+
+    live.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Project overview handshake?' }], source: { kind: 'user' } }))
+    await waitForIdle(live.ctx, live.agent)
+
+    expect(finalText([...live.agent.session.events])).toContain(OVERVIEW_PROBE)
   }, 120_000)
 
   it('loads a nested AGENTS.md after the real read tool touches a descendant file', async () => {

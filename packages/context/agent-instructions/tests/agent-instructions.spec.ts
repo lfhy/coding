@@ -32,6 +32,7 @@ import {
   discoverBaselineInstructionFiles,
   loadBaselineInstructions,
   renderWorkspaceContext,
+  type LoadedInstructionFile,
 } from '@deepseek-ai/dsh-agent-instructions'
 import {
   applyInstructionVersionUpdates,
@@ -39,7 +40,7 @@ import {
   reconcileInstructionContext,
   type InstructionVersionCache,
 } from '../src/state.ts'
-import { resolveConfig } from '../src/config.ts'
+import { resolveConfig, workspaceBaselineIdentity } from '../src/config.ts'
 import { candidateScopeKey, renderInstructionChanges, renderWorkspaceInstructionSet, USER_GLOBAL_DIRECTORY, USER_GLOBAL_FILE } from '../src/render.ts'
 import { MockAdapter, textResponse, toolCallResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 
@@ -611,7 +612,7 @@ describe('workspace context instruction discovery', () => {
 
       const files = await discoverBaselineInstructionFiles({ cwd: root })
 
-      expect(files).toEqual([{ absolutePath: join(envHome, 'AGENTS.md'), displayPath: '$DSH_HOME/AGENTS.md' }])
+      expect(files).toEqual([{ absolutePath: join(envHome, 'AGENTS.md'), displayPath: '$DSH_HOME/AGENTS.md', kind: 'instructions' }])
     } finally {
       vi.unstubAllEnvs()
       await rm(root, { recursive: true, force: true })
@@ -653,7 +654,7 @@ describe('workspace context instruction discovery', () => {
       const isolated = await import('@deepseek-ai/dsh-agent-instructions')
       const files = await isolated.discoverBaselineInstructionFiles({ cwd: root, dshHome: '~/.dsh' })
 
-      expect(files).toEqual([{ absolutePath: join(home, '.dsh/AGENTS.md'), displayPath: '~/.dsh/AGENTS.md' }])
+      expect(files).toEqual([{ absolutePath: join(home, '.dsh/AGENTS.md'), displayPath: '~/.dsh/AGENTS.md', kind: 'instructions' }])
     } finally {
       vi.doUnmock('node:os')
       vi.resetModules()
@@ -670,7 +671,7 @@ describe('workspace context instruction discovery', () => {
 
       const files = await discoverBaselineInstructionFiles({ cwd: root, dshHome: root })
 
-      expect(files).toEqual([{ absolutePath: join(root, 'AGENTS.md'), displayPath: '$DSH_HOME/AGENTS.md' }])
+      expect(files).toEqual([{ absolutePath: join(root, 'AGENTS.md'), displayPath: '$DSH_HOME/AGENTS.md', kind: 'instructions' }])
     } finally {
       await rm(root, { recursive: true, force: true })
     }
@@ -693,11 +694,280 @@ describe('workspace context instruction discovery', () => {
   })
 })
 
+describe('workspace context project overview', () => {
+  it('discovers the project-root README as background ahead of that directory\'s instructions', async () => {
+    const root = await tempRepo()
+    const home = await tempRepo()
+    try {
+      const cwd = join(root, 'packages/app')
+      await mkdir(join(root, '.git'), { recursive: true })
+      await mkdir(cwd, { recursive: true })
+      await write(join(root, 'README.md'), '# Widget\n\nWidget builds gadgets.\n')
+      await write(join(root, 'AGENTS.md'), 'repo rule')
+
+      const files = await discoverBaselineInstructionFiles({ cwd, dshHome: home })
+
+      expect(files.map(file => [file.displayPath, file.kind])).toEqual([
+        ['README.md', 'overview'],
+        ['AGENTS.md', 'instructions'],
+      ])
+    } finally {
+      await rm(root, { recursive: true, force: true })
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
+  it('leaves a nested README to ordinary file exploration', async () => {
+    const root = await tempRepo()
+    const home = await tempRepo()
+    try {
+      const cwd = join(root, 'pkg')
+      await mkdir(join(root, '.git'), { recursive: true })
+      await mkdir(cwd, { recursive: true })
+      await write(join(root, 'README.md'), 'root overview')
+      await write(join(cwd, 'README.md'), 'package overview must not load')
+
+      const files = await discoverBaselineInstructionFiles({ cwd, dshHome: home })
+
+      expect(files).toEqual([{
+        absolutePath: join(root, 'README.md'),
+        displayPath: 'README.md',
+        kind: 'overview',
+      }])
+    } finally {
+      await rm(root, { recursive: true, force: true })
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
+  it('injects the overview as background that is explicitly not an instruction', async () => {
+    const root = await tempRepo()
+    const home = await tempRepo()
+    const ctx = new Context()
+    try {
+      await mkdir(join(root, '.git'), { recursive: true })
+      await write(join(root, 'README.md'), '# Widget\n\nWidget builds gadgets.\n')
+      await write(join(root, 'AGENTS.md'), 'repo rule')
+      await mountWorkspaceContext(ctx, { dshHome: home, maxBytes: 65536 })
+      const agent = stubAgent(root)
+
+      await composeBaselinePrefix(ctx, agent)
+
+      const text = derivedText(agent)
+      expect(text).toContain('Project overview from: README.md')
+      expect(text).toContain('Background describing the project rather than instructions for your work.')
+      expect(text).toContain('Widget builds gadgets.')
+      expect(text).toContain('Instructions from: AGENTS.md')
+      expect(text.indexOf('Project overview from:')).toBeLessThan(text.indexOf('Instructions from: AGENTS.md'))
+      expect(baselineEvents(agent)[0]).toMatchObject({
+        data: {
+          source: {
+            changes: [
+              { action: 'set', scope: sk('.', 'README.md'), path: 'README.md' },
+              { action: 'set', scope: sk('.', 'AGENTS.md'), path: 'AGENTS.md' },
+            ],
+          },
+        },
+      })
+    } finally {
+      await ctx.fiber.dispose()
+      await rm(root, { recursive: true, force: true })
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
+  it('caps the overview head at its own budget while instruction content stays whole', async () => {
+    const root = await tempRepo()
+    const home = await tempRepo()
+    try {
+      await mkdir(join(root, '.git'), { recursive: true })
+      await write(join(root, 'README.md'), `# Widget\n\n${'overview filler\n'.repeat(40)}OVERVIEW-TAIL-MARKER\n`)
+      await write(join(root, 'AGENTS.md'), `repo rule ${'instruction filler\n'.repeat(40)}INSTRUCTION-TAIL-MARKER\n`)
+
+      const rendered = await loadBaselineInstructions({
+        cwd: root,
+        dshHome: home,
+        maxBytes: 65536,
+        overviewMaxBytes: 128,
+      })
+
+      const text = rendered?.text ?? ''
+      expect(text).toContain('# Widget')
+      expect(text).toContain('Only the first ')
+      expect(text).toContain('the file continues beyond this excerpt.')
+      expect(text).not.toContain('OVERVIEW-TAIL-MARKER')
+      expect(text).toContain('INSTRUCTION-TAIL-MARKER')
+    } finally {
+      await rm(root, { recursive: true, force: true })
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
+  it('renders the whole overview when it fits inside its budget', async () => {
+    const root = await tempRepo()
+    const home = await tempRepo()
+    try {
+      await mkdir(join(root, '.git'), { recursive: true })
+      await write(join(root, 'README.md'), '# Widget\n\nWidget builds gadgets.\n')
+
+      const rendered = await loadBaselineInstructions({ cwd: root, dshHome: home, maxBytes: 65536 })
+
+      expect(rendered?.text).toContain('Widget builds gadgets.')
+      expect(rendered?.text).not.toContain('the file continues beyond this excerpt.')
+    } finally {
+      await rm(root, { recursive: true, force: true })
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
+  it('disables the overview when no overview candidate is configured', async () => {
+    const root = await tempRepo()
+    const home = await tempRepo()
+    try {
+      await mkdir(join(root, '.git'), { recursive: true })
+      await write(join(root, 'README.md'), 'must not reach the prompt')
+      await write(join(root, 'AGENTS.md'), 'repo rule')
+
+      const rendered = await loadBaselineInstructions({
+        cwd: root,
+        dshHome: home,
+        maxBytes: 65536,
+        overviewFileCandidates: [],
+      })
+
+      expect(rendered?.text).toContain('Instructions from: AGENTS.md')
+      expect(rendered?.text).not.toContain('Project overview')
+      expect(rendered?.text).not.toContain('must not reach the prompt')
+    } finally {
+      await rm(root, { recursive: true, force: true })
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps a name configured as an instruction candidate out of the overview', async () => {
+    const root = await tempRepo()
+    const home = await tempRepo()
+    try {
+      await mkdir(join(root, '.git'), { recursive: true })
+      await write(join(root, 'README.md'), 'readme as instructions')
+
+      const resolved = resolveConfig({
+        maxBytes: 65536,
+        instructionFileCandidates: ['README.md', 'AGENTS.md'],
+      })
+      const files = await discoverBaselineInstructionFiles({
+        cwd: root,
+        dshHome: home,
+        instructionFileCandidates: ['README.md', 'AGENTS.md'],
+      })
+
+      expect(resolved.overviewFileCandidates).toEqual([])
+      expect(files.map(file => [file.displayPath, file.kind])).toEqual([['README.md', 'instructions']])
+    } finally {
+      await rm(root, { recursive: true, force: true })
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps real instructions when a symlinked README duplicates its sibling AGENTS.md', async () => {
+    const root = await tempRepo()
+    const home = await tempRepo()
+    try {
+      await mkdir(join(root, '.git'), { recursive: true })
+      await write(join(root, 'AGENTS.md'), 'shared repo rule')
+      await symlink(join(root, 'AGENTS.md'), join(root, 'README.md'))
+
+      const rendered = await loadBaselineInstructions({ cwd: root, dshHome: home, maxBytes: 65536 })
+
+      expect(rendered?.text).toContain('Instructions from: AGENTS.md')
+      expect(rendered?.text).not.toContain('Project overview from:')
+      expect(rendered?.text.match(/shared repo rule/g)).toHaveLength(1)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
+  it('changes the baseline identity when the overview configuration changes', () => {
+    const identity = (config: workspaceContext.Config): string =>
+      workspaceBaselineIdentity(resolveConfig(config), '/repo', '/repo')
+    // 用普通字面量而不是 `Config` 注解的绑定：只变项目简介两项时，不会被误判成
+    // 展开 schema 实例。
+    const baseOptions = { dshHome: '/repo/.dsh', maxBytes: 65536 }
+
+    expect(identity(baseOptions)).toBe(identity({ ...baseOptions }))
+    expect(identity(baseOptions)).not.toBe(identity({ ...baseOptions, overviewFileCandidates: [] }))
+    expect(identity(baseOptions)).not.toBe(identity({ ...baseOptions, overviewMaxBytes: 1024 }))
+  })
+
+  it('replaces a changed project overview after a successful read touch', async () => {
+    const root = await tempRepo()
+    const home = await tempRepo()
+    const ctx = new Context()
+    try {
+      await mkdir(join(root, '.git'), { recursive: true })
+      await write(join(root, 'README.md'), 'old overview')
+      await write(join(root, 'file.txt'), 'hello')
+      await mountFileToolsAndWorkspaceContext(ctx, { dshHome: home, maxBytes: 65536 })
+      const agent = stubAgent(root)
+
+      await composeBaselinePrefix(ctx, agent)
+      await write(join(root, 'README.md'), 'new overview')
+      await ctx.tools.execute({
+        signal: testToolSignal,
+        callId: CallId('read-after-overview-change'), name: 'read', arguments: { file_path: 'file.txt' }, agent,
+      })
+
+      expect((await syncedWorkspaceContext(ctx, agent)).source).toMatchObject({
+        changes: [{ action: 'replace', scope: sk('.', 'README.md'), path: 'README.md' }],
+      })
+      const text = blocksText((await syncedWorkspaceContext(ctx, agent)).content)
+      expect(text).toContain('Updated project overview from: README.md')
+      expect(text).toContain('new overview')
+    } finally {
+      await ctx.fiber.dispose()
+      await rm(root, { recursive: true, force: true })
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
+  it('reports a deleted project overview through its own removal notice', async () => {
+    const root = await tempRepo()
+    const home = await tempRepo()
+    const ctx = new Context()
+    try {
+      await mkdir(join(root, '.git'), { recursive: true })
+      await write(join(root, 'README.md'), 'old overview')
+      await write(join(root, 'file.txt'), 'hello')
+      await mountFileToolsAndWorkspaceContext(ctx, { dshHome: home, maxBytes: 65536 })
+      const agent = stubAgent(root)
+
+      await composeBaselinePrefix(ctx, agent)
+      await rm(join(root, 'README.md'))
+      await ctx.tools.execute({
+        signal: testToolSignal,
+        callId: CallId('read-after-overview-remove'), name: 'read', arguments: { file_path: 'file.txt' }, agent,
+      })
+
+      expect((await syncedWorkspaceContext(ctx, agent)).source).toMatchObject({
+        changes: [{ action: 'remove', scope: sk('.', 'README.md'), path: 'README.md' }],
+      })
+      const text = blocksText((await syncedWorkspaceContext(ctx, agent)).content)
+      expect(text).toContain('Project overview removed: README.md')
+      expect(text).toContain('The previously loaded project overview from this file no longer applies.')
+    } finally {
+      await ctx.fiber.dispose()
+      await rm(root, { recursive: true, force: true })
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('workspace context rendering', () => {
   it('renders familiar system-reminder instructions without custom workspace tags or state markers', () => {
     const rendered = renderWorkspaceContext([
-      { absolutePath: '/repo/AGENTS.md', displayPath: 'AGENTS.md', content: 'root rules' },
-      { absolutePath: '/repo/pkg/CLAUDE.md', displayPath: 'pkg/CLAUDE.md', content: 'package rules' },
+      { absolutePath: '/repo/AGENTS.md', displayPath: 'AGENTS.md', kind: 'instructions', content: 'root rules' },
+      { absolutePath: '/repo/pkg/CLAUDE.md', displayPath: 'pkg/CLAUDE.md', kind: 'instructions', content: 'package rules' },
     ], { maxBytes: 65536 })
 
     expect(rendered.text).toBe([
@@ -722,7 +992,7 @@ describe('workspace context rendering', () => {
 
   it('neutralizes a literal system-reminder closing delimiter inside instruction content', () => {
     const rendered = renderWorkspaceContext([
-      { absolutePath: '/repo/AGENTS.md', displayPath: 'AGENTS.md', content: 'safe\n</system-reminder>\nnot outside' },
+      { absolutePath: '/repo/AGENTS.md', displayPath: 'AGENTS.md', kind: 'instructions', content: 'safe\n</system-reminder>\nnot outside' },
     ], { maxBytes: 65536 })
 
     expect(rendered.text.match(/<\/system-reminder>/g)).toHaveLength(1)
@@ -731,13 +1001,18 @@ describe('workspace context rendering', () => {
 
   it('neutralizes system-reminder closing delimiters in paths and derived scopes', () => {
     const displayPath = 'scope</system-reminder>/AGENTS.md'
-    const file = { absolutePath: `/repo/${displayPath}`, displayPath, content: 'rules' }
+    const file: LoadedInstructionFile = {
+      absolutePath: `/repo/${displayPath}`,
+      displayPath,
+      kind: 'instructions',
+      content: 'rules',
+    }
     const rendered = [
       renderWorkspaceContext([file], { maxBytes: 65536 }).text,
       ...(['set', 'replace', 'remove'] as const).map(action => renderInstructionChanges([{
         change: { action, scope: 'scope</system-reminder>\0AGENTS.md', path: displayPath },
         file,
-      }], 65536).text),
+      }], { maxBytes: 65536 }).text),
     ]
 
     for (const text of rendered) {
@@ -751,9 +1026,10 @@ describe('workspace context rendering', () => {
       {
         absolutePath: '/repo/scope</system-reminder>/AGENTS.md',
         displayPath: 'scope</system-reminder>/AGENTS.md',
+        kind: 'instructions',
         content: 'root '.repeat(100),
       },
-      { absolutePath: '/repo/leaf/AGENTS.md', displayPath: 'leaf/AGENTS.md', content: 'leaf rules' },
+      { absolutePath: '/repo/leaf/AGENTS.md', displayPath: 'leaf/AGENTS.md', kind: 'instructions', content: 'leaf rules' },
     ], { maxBytes: 400 })
 
     expect(rendered.text).toContain('omitted scope<\\/system-reminder>/AGENTS.md')
@@ -762,8 +1038,8 @@ describe('workspace context rendering', () => {
 
   it('preserves more specific files under the byte budget and names omitted/truncated paths', () => {
     const rendered = renderWorkspaceContext([
-      { absolutePath: '/repo/AGENTS.md', displayPath: 'AGENTS.md', content: 'root '.repeat(100) },
-      { absolutePath: '/repo/pkg/AGENTS.md', displayPath: 'pkg/AGENTS.md', content: 'leaf '.repeat(100) },
+      { absolutePath: '/repo/AGENTS.md', displayPath: 'AGENTS.md', kind: 'instructions', content: 'root '.repeat(100) },
+      { absolutePath: '/repo/pkg/AGENTS.md', displayPath: 'pkg/AGENTS.md', kind: 'instructions', content: 'leaf '.repeat(100) },
     ], { maxBytes: 260 })
 
     expect(rendered.text).toContain('Workspace instruction budget 260 bytes')
@@ -777,8 +1053,8 @@ describe('workspace context rendering', () => {
 
   it('keeps the rendered block within the byte budget when files are both omitted and truncated', () => {
     const rendered = renderWorkspaceContext([
-      { absolutePath: '/repo/AGENTS.md', displayPath: 'AGENTS.md', content: 'root '.repeat(100) },
-      { absolutePath: '/repo/pkg/AGENTS.md', displayPath: 'pkg/AGENTS.md', content: 'leaf '.repeat(100) },
+      { absolutePath: '/repo/AGENTS.md', displayPath: 'AGENTS.md', kind: 'instructions', content: 'root '.repeat(100) },
+      { absolutePath: '/repo/pkg/AGENTS.md', displayPath: 'pkg/AGENTS.md', kind: 'instructions', content: 'leaf '.repeat(100) },
     ], { maxBytes: 260 })
 
     expect(Buffer.byteLength(rendered.text, 'utf8')).toBeLessThanOrEqual(260)
@@ -789,8 +1065,8 @@ describe('workspace context rendering', () => {
 
   it('drops a parent file while keeping a specific child file intact when the child fits', () => {
     const rendered = renderWorkspaceContext([
-      { absolutePath: '/repo/AGENTS.md', displayPath: 'AGENTS.md', content: 'root '.repeat(200) },
-      { absolutePath: '/repo/pkg/AGENTS.md', displayPath: 'pkg/AGENTS.md', content: 'leaf rule' },
+      { absolutePath: '/repo/AGENTS.md', displayPath: 'AGENTS.md', kind: 'instructions', content: 'root '.repeat(200) },
+      { absolutePath: '/repo/pkg/AGENTS.md', displayPath: 'pkg/AGENTS.md', kind: 'instructions', content: 'leaf rule' },
     ], { maxBytes: 700 })
 
     expect(rendered.text).toContain('omitted AGENTS.md')
@@ -802,9 +1078,9 @@ describe('workspace context rendering', () => {
 
   it('keeps the longest most-specific suffix that fits under the byte budget', () => {
     const rendered = renderWorkspaceContext([
-      { absolutePath: '/repo/AGENTS.md', displayPath: 'AGENTS.md', content: 'root '.repeat(200) },
-      { absolutePath: '/repo/pkg/AGENTS.md', displayPath: 'pkg/AGENTS.md', content: 'package rule' },
-      { absolutePath: '/repo/pkg/app/AGENTS.md', displayPath: 'pkg/app/AGENTS.md', content: 'app rule' },
+      { absolutePath: '/repo/AGENTS.md', displayPath: 'AGENTS.md', kind: 'instructions', content: 'root '.repeat(200) },
+      { absolutePath: '/repo/pkg/AGENTS.md', displayPath: 'pkg/AGENTS.md', kind: 'instructions', content: 'package rule' },
+      { absolutePath: '/repo/pkg/app/AGENTS.md', displayPath: 'pkg/app/AGENTS.md', kind: 'instructions', content: 'app rule' },
     ], { maxBytes: 760 })
 
     expect(rendered.text).toContain('omitted AGENTS.md')
@@ -817,7 +1093,7 @@ describe('workspace context rendering', () => {
 
   it('truncates a single oversized file to the largest content slice that fits', () => {
     const rendered = renderWorkspaceContext([
-      { absolutePath: '/repo/AGENTS.md', displayPath: 'AGENTS.md', content: 'x'.repeat(1000) },
+      { absolutePath: '/repo/AGENTS.md', displayPath: 'AGENTS.md', kind: 'instructions', content: 'x'.repeat(1000) },
     ], { maxBytes: 700 })
 
     expect(rendered.text).toContain('truncated AGENTS.md')
@@ -830,19 +1106,19 @@ describe('workspace context rendering', () => {
 
   it('omits all text when the render budget is disabled', () => {
     const rendered = renderWorkspaceContext([
-      { absolutePath: '/repo/AGENTS.md', displayPath: 'AGENTS.md', content: 'root rules' },
+      { absolutePath: '/repo/AGENTS.md', displayPath: 'AGENTS.md', kind: 'instructions', content: 'root rules' },
     ], { maxBytes: 0 })
 
     expect(rendered).toEqual({
       text: '',
-      omitted: [{ absolutePath: '/repo/AGENTS.md', displayPath: 'AGENTS.md', content: 'root rules' }],
+      omitted: [{ absolutePath: '/repo/AGENTS.md', displayPath: 'AGENTS.md', kind: 'instructions', content: 'root rules' }],
       truncated: [],
     })
   })
 
   it('falls back to a compact truncation notice when even the empty heading cannot fit', () => {
     const rendered = renderWorkspaceContext([
-      { absolutePath: '/repo/pkg/AGENTS.md', displayPath: 'pkg/AGENTS.md', content: 'x'.repeat(1000) },
+      { absolutePath: '/repo/pkg/AGENTS.md', displayPath: 'pkg/AGENTS.md', kind: 'instructions', content: 'x'.repeat(1000) },
     ], { maxBytes: 100 })
 
     expect(rendered.text).toBe('Workspace instruction budget 100 bytes: truncated pkg/AGENTS.md from 1000 to 0 bytes')
@@ -852,7 +1128,7 @@ describe('workspace context rendering', () => {
 
   it('keeps the empty instruction heading when it fits beside the compact notice', () => {
     const rendered = renderWorkspaceContext([
-      { absolutePath: '/repo/pkg/AGENTS.md', displayPath: 'pkg/AGENTS.md', content: 'x'.repeat(1000) },
+      { absolutePath: '/repo/pkg/AGENTS.md', displayPath: 'pkg/AGENTS.md', kind: 'instructions', content: 'x'.repeat(1000) },
     ], { maxBytes: 120 })
 
     expect(rendered.text).toBe([
@@ -866,7 +1142,7 @@ describe('workspace context rendering', () => {
   })
 
   it('represents a genuinely empty instruction when its compact heading fits', () => {
-    const file = { absolutePath: '/repo/pkg/AGENTS.md', displayPath: 'pkg/AGENTS.md', content: '' }
+    const file: LoadedInstructionFile = { absolutePath: '/repo/pkg/AGENTS.md', displayPath: 'pkg/AGENTS.md', kind: 'instructions', content: '' }
     const rendered = renderWorkspaceInstructionSet([file], { maxBytes: 117 })
 
     expect(rendered.rendered.text).toContain('truncated pkg/AGENTS.md from 0 to 0 bytes')
@@ -875,9 +1151,10 @@ describe('workspace context rendering', () => {
   })
 
   it('represents a genuinely empty instruction through the framed compact-intro path', () => {
-    const file = {
+    const file: LoadedInstructionFile = {
       absolutePath: '/repo/pkg/AGENTS.md',
       displayPath: 'pkg/AGENTS.md',
+      kind: 'instructions',
       content: '',
     }
 
@@ -894,7 +1171,7 @@ describe('workspace context rendering', () => {
 
   it('truncates the compact notice itself when the render budget is smaller than the notice', () => {
     const rendered = renderWorkspaceContext([
-      { absolutePath: '/repo/pkg/AGENTS.md', displayPath: 'pkg/AGENTS.md', content: 'x'.repeat(1000) },
+      { absolutePath: '/repo/pkg/AGENTS.md', displayPath: 'pkg/AGENTS.md', kind: 'instructions', content: 'x'.repeat(1000) },
     ], { maxBytes: 20 })
 
     expect(rendered.text).toBe('Workspace instructio')
@@ -911,8 +1188,8 @@ describe('workspace context rendering', () => {
     }
     const rendered = renderInstructionChanges([{
       change,
-      file: { absolutePath: '/repo/pkg/AGENTS.md', displayPath: 'pkg/AGENTS.md', content: 'x'.repeat(1000) },
-    }], 20)
+      file: { absolutePath: '/repo/pkg/AGENTS.md', displayPath: 'pkg/AGENTS.md', kind: 'instructions', content: 'x'.repeat(1000) },
+    }], { maxBytes: 20 })
 
     expect(rendered.text).toBe('Workspace instructio')
     expect(rendered.changes).toEqual([])
@@ -927,8 +1204,8 @@ describe('workspace context rendering', () => {
     }
     const rendered = renderInstructionChanges([{
       change,
-      file: { absolutePath: '/repo/pkg/AGENTS.md', displayPath: 'pkg/AGENTS.md', content: 'x'.repeat(1000) },
-    }], 400)
+      file: { absolutePath: '/repo/pkg/AGENTS.md', displayPath: 'pkg/AGENTS.md', kind: 'instructions', content: 'x'.repeat(1000) },
+    }], { maxBytes: 400 })
 
     expect(rendered.text).toContain('Updated instructions from: pkg/AGENTS.md')
     expect(rendered.changes).toEqual([change])
@@ -947,8 +1224,8 @@ describe('workspace context rendering', () => {
     }
     const rendered = renderInstructionChanges([{
       change,
-      file: { absolutePath: '/repo/pkg/AGENTS.md', displayPath: 'pkg/AGENTS.md', content: 'x'.repeat(1000) },
-    }], maxBytes)
+      file: { absolutePath: '/repo/pkg/AGENTS.md', displayPath: 'pkg/AGENTS.md', kind: 'instructions', content: 'x'.repeat(1000) },
+    }], { maxBytes })
 
     expect(rendered.text).toContain(heading)
     expect(rendered.text).toContain('from 1000 to 0 bytes')
@@ -964,8 +1241,8 @@ describe('workspace context rendering', () => {
     }
     const rendered = renderInstructionChanges([{
       change,
-      file: { absolutePath: '/repo/pkg/AGENTS.md', displayPath: 'pkg/AGENTS.md', content: '😀'.repeat(100) },
-    }], 366)
+      file: { absolutePath: '/repo/pkg/AGENTS.md', displayPath: 'pkg/AGENTS.md', kind: 'instructions', content: '😀'.repeat(100) },
+    }], { maxBytes: 366 })
 
     expect(rendered.text).not.toContain('�')
     expect(rendered.text).not.toContain('😀')
@@ -974,7 +1251,7 @@ describe('workspace context rendering', () => {
 
   it('keeps compact truncation notices within budget when a multibyte display path is cut', () => {
     const rendered = renderWorkspaceContext([
-      { absolutePath: '/repo/路径/AGENTS.md', displayPath: '路径/AGENTS.md', content: 'x'.repeat(1000) },
+      { absolutePath: '/repo/路径/AGENTS.md', displayPath: '路径/AGENTS.md', kind: 'instructions', content: 'x'.repeat(1000) },
     ], { maxBytes: 51 })
 
     expect(Buffer.byteLength(rendered.text, 'utf8')).toBeLessThanOrEqual(51)
@@ -2553,6 +2830,7 @@ describe('dynamic nested workspace context injection', () => {
     const state = baselineInstructionState([{
       absolutePath: '/repo/AGENTS.md',
       displayPath: 'AGENTS.md',
+      kind: 'instructions',
       content: 'root rule',
     }])
 
@@ -3087,6 +3365,7 @@ describe('dynamic nested workspace context injection', () => {
         const loaded = baselineInstructionState([{
           absolutePath: join(root, 'pkg/AGENTS.md'),
           displayPath: join('pkg', 'AGENTS.md'),
+          kind: 'instructions',
           content: 'nested rule',
           version: FsVersion('loaded-agents'),
         }])
@@ -3157,6 +3436,7 @@ describe('dynamic nested workspace context injection', () => {
       const loaded = baselineInstructionState([{
         absolutePath: join(root, 'AGENTS.md'),
         displayPath: 'AGENTS.md',
+        kind: 'instructions',
         content: 'repo rule',
         version: FsVersion('loaded-agents'),
       }])

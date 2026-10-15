@@ -23,7 +23,9 @@ import {
 import {
   candidateScopeKey,
   decodeScopeKey,
+  instructionKindFor,
   instructionScopeKey,
+  PROJECT_ROOT_DIRECTORY,
   renderInstructionChanges,
   USER_GLOBAL_DIRECTORY,
   USER_GLOBAL_FILE,
@@ -231,7 +233,7 @@ export function applyInstructionVersionUpdates(
 
 function relativeScope(projectRoot: string, dir: string): string {
   const scope = relativeDisplay(projectRoot, dir)
-  return scope.length === 0 ? '.' : scope
+  return scope.length === 0 ? PROJECT_ROOT_DIRECTORY : scope
 }
 
 /**
@@ -271,6 +273,10 @@ export async function reconcileInstructionContext(
   const addDirScopes = (target: Set<string>, directory: string): void => {
     for (const candidate of resolved.instructionFileCandidates) target.add(candidateScopeKey(directory, candidate))
     for (const candidate of resolved.localInstructionFileCandidates) target.add(candidateScopeKey(directory, candidate))
+    // 项目简介只存在于项目根 scope，因此后代目录与用户全局 scope 从不枚举它。
+    if (directory === PROJECT_ROOT_DIRECTORY) {
+      for (const candidate of resolved.overviewFileCandidates) target.add(candidateScopeKey(directory, candidate))
+    }
   }
   const addProjectScopes = (target: Set<string>, dir: string): void => {
     addDirScopes(target, relativeScope(projectRoot, dir))
@@ -318,7 +324,17 @@ export async function reconcileInstructionContext(
   const versionUpdates: InstructionVersionUpdate[] = []
   const pushRemoval = (scope: string, path: string): void => {
     const change: AgentInstructionChange = { action: 'remove', scope, path }
-    items.push({ change, file: { absolutePath: `removed:${scope}`, displayPath: path, content: '' } })
+    const { directory, candidateName } = decodeScopeKey(scope)
+    items.push({
+      change,
+      file: {
+        absolutePath: `removed:${scope}`,
+        displayPath: path,
+        // 移除通知不携带内容，类型只用于说明移除的是什么：项目简介不是指令。
+        kind: instructionKindFor(directory, candidateName, resolved.overviewFileCandidates),
+        content: '',
+      },
+    })
     versionUpdates.push({ change })
   }
   const scopesByDirectory = new Map<string, string[]>()
@@ -421,7 +437,10 @@ export async function reconcileInstructionContext(
     }
   }
   if (items.length === 0) return undefined
-  const rendered = renderInstructionChanges(items, resolved.maxBytes)
+  const rendered = renderInstructionChanges(items, {
+    maxBytes: resolved.maxBytes,
+    overviewMaxBytes: resolved.overviewMaxBytes,
+  })
   // When no transition survived rendering (tiny budgets render notice-only
   // text), emit nothing and commit nothing — the uncommitted versions make the
   // next pass retry instead of spamming notice-only contexts.

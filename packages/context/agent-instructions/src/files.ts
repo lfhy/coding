@@ -14,16 +14,25 @@ import { resolveConfig, resolveDiscoveryConfig, type ResolvedConfig } from './co
 import { trimmedInstructionDigest } from './digest.ts'
 import {
   decodeScopeKey,
+  instructionKindFor,
+  PROJECT_ROOT_DIRECTORY,
   renderWorkspaceInstructionSet,
   type RenderedWorkspaceContext,
   USER_GLOBAL_DIRECTORY,
   USER_GLOBAL_FILE,
 } from './render.ts'
 
+/**
+ * 已加载文件渲染为工作区指令还是项目背景。项目简介候选只从项目根目录加载，
+ * 因此子目录永远不会继承项目自身的 README。
+ */
+export type InstructionKind = 'instructions' | 'overview'
+
 /** An instruction candidate identified by absolute and model-facing paths. */
 export interface InstructionFile {
   absolutePath: string
   displayPath: string
+  kind: InstructionKind
 }
 
 /** An instruction file whose UTF-8 content was read successfully. */
@@ -52,6 +61,7 @@ interface DiscoverOptions {
   projectRootMarkers?: string[]
   instructionFileCandidates?: string[]
   localInstructionFileCandidates?: string[]
+  overviewFileCandidates?: string[]
   projectRoot?: string
   signal?: AbortSignal
 }
@@ -59,6 +69,7 @@ interface DiscoverOptions {
 interface LoadOptions extends DiscoverOptions {
   maxBytes: number
   maxSourceBytes?: number
+  overviewMaxBytes?: number
   replacePreviousBaseline?: boolean
 }
 
@@ -236,23 +247,24 @@ export function relativeDisplay(root: string, path: string): string {
   return relative(root, path)
 }
 
-async function allExistingInstructionFiles(
+async function existingInstructionFiles(
   dir: string,
   root: string,
-  instructionFileCandidates: readonly string[],
+  candidateNames: readonly string[],
+  kind: InstructionKind,
   fileSystem?: FileSystem,
   signal?: AbortSignal,
 ): Promise<DiscoveredInstructionFile[]> {
   const found: DiscoveredInstructionFile[] = []
-  for (const candidate of instructionFileCandidates) {
+  for (const candidate of candidateNames) {
     const path = join(dir, candidate)
     const probe = await statFile(path, fileSystem, signal)
     switch (probe.kind) {
       case 'present':
-        found.push({ absolutePath: path, displayPath: relativeDisplay(root, path), ...probe.info })
+        found.push({ absolutePath: path, displayPath: relativeDisplay(root, path), kind, ...probe.info })
         continue
-      // A missing candidate is skipped; a transient provider failure skips only
-      // that candidate so the remaining independent candidates still load.
+      // 缺失的候选文件直接跳过；提供方暂时失败也只跳过该候选文件，其余彼此
+      // 独立的候选仍会加载。
       case 'absent':
       case 'unavailable':
         continue
@@ -284,6 +296,7 @@ async function discoverInstructionFiles(
       addFile({
         absolutePath: userGlobal,
         displayPath: userGlobalDisplayPath(config.dshHome),
+        kind: 'instructions',
         ...userGlobalProbe.info,
       })
       break
@@ -299,8 +312,24 @@ async function discoverInstructionFiles(
   const projectRoot = options.projectRoot
     ?? await findProjectRoot(cwd, config.projectRootMarkers, fileSystem, options.signal)
   for (const dir of ancestorChain(projectRoot, cwd)) {
-    for (const candidates of [config.instructionFileCandidates, config.localInstructionFileCandidates]) {
-      for (const file of await allExistingInstructionFiles(dir, projectRoot, candidates, fileSystem, options.signal)) {
+    // 项目简介只在项目根目录发现，并渲染在该目录指令之前：它是背景，基线溢出时
+    // 共享预算最先丢弃最宽泛的一节。
+    const groups: { candidateNames: readonly string[]; kind: InstructionKind }[] = [
+      ...dir === projectRoot
+        ? [{ candidateNames: config.overviewFileCandidates, kind: 'overview' as const }]
+        : [],
+      { candidateNames: config.instructionFileCandidates, kind: 'instructions' },
+      { candidateNames: config.localInstructionFileCandidates, kind: 'instructions' },
+    ]
+    for (const group of groups) {
+      for (const file of await existingInstructionFiles(
+        dir,
+        projectRoot,
+        group.candidateNames,
+        group.kind,
+        fileSystem,
+        options.signal,
+      )) {
         addFile(file)
       }
     }
@@ -309,14 +338,14 @@ async function discoverInstructionFiles(
 }
 
 /**
- * Discover host-visible user-global and root-to-cwd instruction candidates.
- * All present candidates in each directory are returned; trimmed-content
- * duplicates are collapsed later, once content is read.
- * @param options - cwd, home, root marker, and candidate configuration.
- * @returns path-deduplicated instruction candidates in model precedence order.
+ * 发现宿主可见的用户全局、项目简介与项目根到 cwd 的指令候选。
+ * 每个目录中所有存在的候选都会返回；去除空白后内容重复的文件在读取后折叠。
+ * @param options - cwd、home、项目根标记与候选配置。
+ * @returns 按模型优先级去重的候选，每项带自己的渲染类型。
  */
 export async function discoverBaselineInstructionFiles(options: DiscoverOptions): Promise<InstructionFile[]> {
-  return (await discoverInstructionFiles(options)).map(({ absolutePath, displayPath }) => ({ absolutePath, displayPath }))
+  return (await discoverInstructionFiles(options))
+    .map(({ absolutePath, displayPath, kind }) => ({ absolutePath, displayPath, kind }))
 }
 
 async function* nodeTextChunks(path: string, signal?: AbortSignal): AsyncIterable<string> {
@@ -357,30 +386,35 @@ async function readBounded(
 }
 
 /**
- * Drop later candidates whose trimmed content duplicates an earlier sibling in
- * the same directory. Different directories never collapse even when identical;
- * within one directory the earliest candidate in discovery order is kept and its
- * original bytes are rendered. A candidate that symlinks a sibling resolves to
- * the same content and collapses here like any byte-identical real file.
- * @param files - loaded files in discovery order.
- * @returns the retained files in the same order.
+ * 丢弃同一目录中与更早同级候选内容（去除首尾空白后）重复的候选。不同目录即使内容
+ * 完全一致也不折叠；同一目录内保留发现顺序最早的候选并渲染其原始字节。symlink 到
+ * 同级文件的候选会解析出相同内容，因此和任何字节一致的真实文件一样在此折叠。
+ * @param files - 按发现顺序排列的已加载文件。
+ * @returns 按发现顺序保留的文件。
  */
 export function dedupInstructionFilesByDirectory(files: LoadedInstructionFile[]): LoadedInstructionFile[] {
   const keptDigestsByDir = new Map<string, Set<string>>()
-  const kept: LoadedInstructionFile[] = []
-  for (const file of files) {
-    const dir = dirname(file.displayPath)
+  const kept: { index: number; file: LoadedInstructionFile }[] = []
+  const entries = files.map((file, index) => ({ index, file }))
+  // 指令先于项目简介认领同一目录的重复身份，尽管简介渲染在前：复制或 symlink 到
+  // 同级 AGENTS.md 的 README 不能让真正的指令降级成背景文字。
+  const claimOrder = [...entries].sort((left, right) => {
+    const byKind = Number(left.file.kind === 'overview') - Number(right.file.kind === 'overview')
+    return byKind === 0 ? left.index - right.index : byKind
+  })
+  for (const entry of claimOrder) {
+    const dir = dirname(entry.file.displayPath)
     let digests = keptDigestsByDir.get(dir)
     if (digests === undefined) {
       digests = new Set()
       keptDigestsByDir.set(dir, digests)
     }
-    const digest = trimmedInstructionDigest(file.content)
+    const digest = trimmedInstructionDigest(entry.file.content)
     if (digests.has(digest)) continue
     digests.add(digest)
-    kept.push(file)
+    kept.push(entry)
   }
-  return kept
+  return kept.sort((left, right) => left.index - right.index).map(entry => entry.file)
 }
 
 /**
@@ -417,16 +451,21 @@ export async function loadBaselineInstructionSet(
       loaded.push({
         absolutePath: file.absolutePath,
         displayPath: file.displayPath,
+        kind: file.kind,
         content,
         ...file.version === undefined ? {} : { version: file.version },
       })
     }
   }
   const deduped = dedupInstructionFilesByDirectory(loaded)
+  const renderOptions = {
+    maxBytes: config.maxBytes,
+    overviewMaxBytes: config.overviewMaxBytes,
+  }
   if (deduped.length === 0) {
     if (options.replacePreviousBaseline !== true) return undefined
     const { rendered, included } = renderWorkspaceInstructionSet([], {
-      maxBytes: config.maxBytes,
+      ...renderOptions,
       replacePreviousBaseline: true,
     })
     return {
@@ -436,7 +475,7 @@ export async function loadBaselineInstructionSet(
     }
   }
   const { rendered, included } = renderWorkspaceInstructionSet(deduped, {
-    maxBytes: config.maxBytes,
+    ...renderOptions,
     ...options.replacePreviousBaseline === undefined
       ? {}
       : { replacePreviousBaseline: options.replacePreviousBaseline },
@@ -467,11 +506,10 @@ export async function probeScopeInstruction(
   const { directory, candidateName } = decodeScopeKey(scope)
   const dir = directory === USER_GLOBAL_DIRECTORY
     ? resolved.dshHome
-    : directory === '.' ? projectRoot : join(projectRoot, directory)
+    : directory === PROJECT_ROOT_DIRECTORY ? projectRoot : join(projectRoot, directory)
   const absolutePath = join(dir, candidateName)
-  // resolve() follows a final-component symlink; stat then classifies the target.
-  // A non-file target (missing, or a link to a directory) is a confirmed absence;
-  // only a provider exception is reported as unavailable.
+  // resolve() 会跟随最后一段 symlink，stat 随后判定目标类型：非文件目标（缺失或
+  // 指向目录的链接）是已确认不存在，只有提供方异常才报告为不可用。
   let target: FsTarget
   let info: FsInfo | undefined
   try {
@@ -485,6 +523,7 @@ export async function probeScopeInstruction(
   const file: ProbedInstructionFile = {
     absolutePath,
     displayPath: directory === USER_GLOBAL_DIRECTORY ? userGlobalDisplayPath(resolved.dshHome) : relativeDisplay(projectRoot, absolutePath),
+    kind: instructionKindFor(directory, candidateName, resolved.overviewFileCandidates),
     target,
     version: info.version,
     ...info.size === undefined ? {} : { size: info.size },
@@ -511,6 +550,7 @@ export async function readScopeInstruction(
   return {
     absolutePath: file.absolutePath,
     displayPath: file.displayPath,
+    kind: file.kind,
     content,
     version: file.version,
   }
