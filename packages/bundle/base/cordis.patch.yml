@@ -58,11 +58,14 @@
 
     # The transport-independent default for Agents created by entry points.
     # Settings may supply a saved selection; consumers read it at creation time.
+    # The composition default is the built-in OpenCode Zen free route, which
+    # needs no stored credential — a deployment that means to require its own
+    # key overrides this row (or the user's saved selection wins over it).
     - id: agent-default-model
       name: '@deepseek-ai/dsh-agent-default-model'
       config:
-        provider: deepseek-official
-        model: deepseek-v4-flash
+        provider: opencode-zen
+        model: mimo-v2.6-flash-free
 
     - id: jobs
       name: '@deepseek-ai/dsh-jobs-local'
@@ -96,6 +99,17 @@
     # document.
     - id: llm-pi-ai
       name: '@deepseek-ai/dsh-llm-pi-ai'
+
+    # The built-in OpenCode Zen route: registers live from the start, so a fresh
+    # install has a usable model without anyone storing a key — the free lane's
+    # credential is the literal `public`, resolved inside the adapter rather than
+    # through the credential store. Requests carry the OpenCode CLI fingerprint
+    # (user-agent plus session-correlation headers) the upstream free tier
+    # requires. `llm-opencode:` settings override this row's endpoint, credential,
+    # and model list without a restart. The channel name is language-neutral on
+    # purpose: it is a product name, not a translation.
+    - id: llm-opencode
+      name: '@deepseek-ai/dsh-llm-opencode'
 
     - id: session-persistence-jsonl
       name: '@deepseek-ai/dsh-session-persistence-jsonl'
