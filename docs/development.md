@@ -134,7 +134,7 @@ vendor manifest 守卫检查 `vendor/*/src` 下的改动是否连同对应的 `v
 
 `make build` 和 `make dev` 下载 Electron 与 Playwright Chromium 时使用 [Makefile](../Makefile) 中的国内镜像地址；pnpm 包依赖使用根目录 [`.npmrc`](../.npmrc) 配置的国内 registry。
 
-macOS arm64 上测试原生桌面窗口，从仓库根目录执行 `make dev`，启动[默认的 Electron 壳](../apps/desktop-electron/README.md)。开发入口依次构建 Host、Client、Web、远端 agent 资源、Go helper 和 Electron 壳；开发态使用独立的 `~/.dsh-electron-dev`，不读取安装版 `~/.dsh` 设置和凭据。`pnpm run dev:electron` 可直接运行相同的壳；`pnpm run build:electron-helper` 仅构建 Go helper，`pnpm run build:electron` 仅构建 Electron 壳。Linux 和 Windows 的 Electron 原生运行尚未验收。
+macOS arm64 上测试原生桌面窗口，从仓库根目录执行 `make dev`，启动[默认的 Electron 壳](../apps/desktop-electron/README.md)。开发入口依次构建 Host、Client、Web、远端 agent 资源、Go helper 和 Electron 壳；开发态使用独立的 `~/.dsh-electron-dev`，不读取安装版 `~/.coding` 设置和凭据。`pnpm run dev:electron` 可直接运行相同的壳；`pnpm run build:electron-helper` 仅构建 Go helper，`pnpm run build:electron` 仅构建 Electron 壳。Linux 和 Windows 的 Electron 原生运行尚未验收。
 
 `pnpm run build:desktop` 组装 macOS arm64 的 `dist/Coding.app`，不会安装；只有执行 `make install` 才会用该 Electron 应用替换 `/Applications/Coding.app` 中的已有应用。开发态原生冒烟、回环 SSH fixture 与打包版分别验收，具体命令和限制见[Electron 应用 README](../apps/desktop-electron/README.md)。
 

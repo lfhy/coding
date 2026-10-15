@@ -9,6 +9,7 @@ import { homedir } from 'node:os'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { app, BrowserWindow, dialog } from 'electron'
+import { defaultCodingHome } from '@deepseek-ai/dsh-home-paths'
 import { createBrowserBridge, type BrowserBridge } from './browser-bridge.ts'
 import { createBrowserGuestManager, type BrowserGuestManager } from './browser-guest.ts'
 import { installBrowserIpc } from './browser-ipc.ts'
@@ -104,7 +105,7 @@ function openWindow(): Promise<void> {
       const home = runtimeConfig.home
       await prepareDevelopmentDirectories({
         hostHome: home,
-        installedHome: resolve(homedir(), '.dsh'),
+        installedHome: defaultCodingHome(),
         legacyDevelopmentHome: resolve(homedir(), '.dsh-dev'),
         userData: runtimeConfig.userData,
         workspace: runtimeConfig.cwd,
@@ -187,7 +188,7 @@ async function start(): Promise<void> {
   } else {
     await prepareDevelopmentDirectories({
       hostHome: runtimeConfig.home,
-      installedHome: resolve(homedir(), '.dsh'),
+      installedHome: defaultCodingHome(),
       legacyDevelopmentHome: resolve(homedir(), '.dsh-dev'),
       userData: runtimeConfig.userData,
       workspace: runtimeConfig.cwd,

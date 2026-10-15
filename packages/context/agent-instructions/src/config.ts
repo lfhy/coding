@@ -20,7 +20,7 @@ export const DEFAULT_OVERVIEW_MAX_BYTES = 4096
 
 /** User-facing workspace instruction loader configuration. */
 export interface Config {
-  /** Harness home containing the fixed user-global `AGENTS.md`; defaults to `$DSH_HOME` or `~/.dsh`. */
+  /** 存放用户全局 `AGENTS.md` 的主目录；省略时按 `$CODING_HOME`、`$DSH_HOME`、`~/.coding`（回退遗留 `~/.dsh`）解析。 */
   dshHome?: string
   /** Directory entries that identify the project root while walking upward from the session cwd. */
   projectRootMarkers?: string[]

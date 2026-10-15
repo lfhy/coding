@@ -1,12 +1,12 @@
 # `@deepseek-ai/dsh`
 
-`dsh` 是 DeepSeek Harness 中用于启动 profile 的命令；profile 由多个插件组合包 patch 层按顺序叠加而成，其上再应用用户自己的覆盖配置。[`src/args.ts`](src/args.ts) 负责命令语法，[`src/bin.ts`](src/bin.ts) 只加载选中的运行器。无效命令、来自其他模式的选项、配置错误和启动失败都会以非零状态退出。
+`dsh` 是 DeepSeek Harness 中用于启动 profile 的命令；profile 由多个插件组合包 patch 层按顺序叠加而成，其上再应用用户自己的覆盖配置。[`src/args.ts`](src/args.ts) 负责命令语法，[`src/bin.ts`](src/bin.ts) 只加载选中的运行器。无效命令、来自其他模式的选项、配置错误和启动失败都会以非零状态退出。下文的主目录默认为 `~/.coding`，可由 `$CODING_HOME` 或仍受支持的 `$DSH_HOME` 覆盖。
 
 ## 入口模式
 
 | 命令 | 用途 |
 |---|---|
-| `dsh --profile <name>` | 启动位于 `$DSH_HOME/profiles/<name>` 的指定 profile。 |
+| `dsh --profile <name>` | 启动位于主目录下 `profiles/<name>` 的指定 profile。 |
 | `dsh --profile headless "job"` | 运行一个全新的持久化会话，打印最终答案并退出。 |
 | `dsh web` | `--profile web` 的别名。 |
 | `dsh plugin --profile <name> <pnpm args>` | 通过在 profile 目录中转发给 pnpm 来管理该 profile 的插件。 |
@@ -31,7 +31,7 @@ profile 目录包含一个 `package.json`，其中记录树外插件依赖，以
 
 配置树以空根为起点，依次叠加以下配置层：
 - `dsh.profile.bundles` 中各组合包的 patch
-- profile 自身的 `cordis.patch.yml`，然后是 home 级的 `$DSH_HOME/cordis.patch.yml`
+- profile 自身的 `cordis.patch.yml`，然后是主目录下的 `cordis.patch.yml`
 - `--patch` 指定的覆盖层
 
 `dsh.profile.bundles` 中列出的组合包先从 dsh 安装目录解析（`@deepseek-ai/dsh-base`、`@deepseek-ai/dsh-web-app`、`@deepseek-ai/dsh-headless`），再从 profile 自身的 `node_modules` 解析；pnpm 会将树外插件安装到该目录。

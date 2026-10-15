@@ -4,7 +4,7 @@
 
 ## 生命周期
 
-每个实时会话第一次符合条件的 `agent/pre-step` 会组合基线。当下游决策让非空的第一步批次进入时，插件会将基线折入最终批次、紧随已领取的直接提示词之后，使直接提示词与持久基线一同进入步骤 1，并共同抵达第一次请求。被拒绝或为空的第一步决策会将基线留在 agent（智能体）的 `next-step` inbox，等待后续唤醒。loader 先读取 `$DSH_HOME/AGENTS.md`，随后针对项目根目录到 `agent.session.header.cwd` 的每个目录，先读取每个现有基础候选文件，再读取每个现有本地 overlay 候选文件。项目简介候选只在项目根目录探测，因此子目录的 README 永不进入基线；它渲染在该目录指令之前，因为它是最宽泛、也最先被预算丢弃的一节。同一目录中，如果候选文件在去除首尾空白后字节完全一致，就会按已配置顺序折叠到最早候选文件，因此 `CLAUDE.md` 若只是复制同级 `AGENTS.md`，只会渲染一次；项目简介候选最后参与这次判定，所以复制或 symlink 到同级 `AGENTS.md` 的 README 仍会保留真正的指令。若之前排队的 workspace 上下文仍在等待，插件会删除并替换该确切 inbox 条目，而不会不断累积副本。恢复后的会话会保留一条兼容的可见基线，并只追加当前文件的转换；如果发现、优先级、项目根目录或预算标识发生变化，则会将一条明确取代旧基线的完整基线折入进入步骤的批次。
+每个实时会话第一次符合条件的 `agent/pre-step` 会组合基线。当下游决策让非空的第一步批次进入时，插件会将基线折入最终批次、紧随已领取的直接提示词之后，使直接提示词与持久基线一同进入步骤 1，并共同抵达第一次请求。被拒绝或为空的第一步决策会将基线留在 agent（智能体）的 `next-step` inbox，等待后续唤醒。loader 先读取用户全局的 `$CODING_HOME/AGENTS.md`，随后针对项目根目录到 `agent.session.header.cwd` 的每个目录，先读取每个现有基础候选文件，再读取每个现有本地 overlay 候选文件。项目简介候选只在项目根目录探测，因此子目录的 README 永不进入基线；它渲染在该目录指令之前，因为它是最宽泛、也最先被预算丢弃的一节。同一目录中，如果候选文件在去除首尾空白后字节完全一致，就会按已配置顺序折叠到最早候选文件，因此 `CLAUDE.md` 若只是复制同级 `AGENTS.md`，只会渲染一次；项目简介候选最后参与这次判定，所以复制或 symlink 到同级 `AGENTS.md` 的 README 仍会保留真正的指令。若之前排队的 workspace 上下文仍在等待，插件会删除并替换该确切 inbox 条目，而不会不断累积副本。恢复后的会话会保留一条兼容的可见基线，并只追加当前文件的转换；如果发现、优先级、项目根目录或预算标识发生变化，则会将一条明确取代旧基线的完整基线折入进入步骤的批次。
 
 该插件还会观察第一方 `read`、`write` 和 `edit` 调用成功后产生的不可变 `tools/result`。每个已接受的 touch 都会检查新达到的后代 scope 以及之前加载的每个 scope。每个已配置候选名称都是所在目录中的独立 scope：新出现的文件会在 agent inbox 中排入一项新增；已改变文件会排入一项替换；文件消失或成为同一目录中较早候选文件的重复项时，会排入一则移除通知。项目简介候选只在项目根 scope 参与该对账，因此子目录 touch 从不枚举它，根 README 的变更或消失仍与指令文件一样上报。原生调用与 Code Mode 子分派共享该路径：嵌套 touch 会沿不透明的父级执行 token 逐层上浮，直到顶层结果落定；在 agent loop（智能体循环）步骤内产生的 touch，须等持久 `step/end` 后才开始异步投影。打开的步骤之外直接执行工具时，则立即投影。这样无需依赖文件系统时序，也能保持工具调用／结果／步骤的相邻关系。这种发现跟随结构化文件系统活动，而不是 shell `cd`，因为每次本地 bash 调用都启动新 shell，解析任意 shell 语法也不可靠。
 
@@ -24,7 +24,7 @@ Background describing the project rather than instructions for your work.
 
 ...
 
-Instructions from: ~/.dsh/AGENTS.md
+Instructions from: ~/.coding/AGENTS.md
 
 ...
 
@@ -79,7 +79,7 @@ export interface Config {
 
 `overviewFileCandidates` 默认为 `['README.md']`，只在项目根目录加载，并渲染为项目背景而不是指令；空列表禁用项目简介。同一个名字若也出现在指令候选列表中，就按指令候选处理：显式把 `README.md` 声明为指令文件，不会被悄悄降级成模型可以忽略的背景。`overviewMaxBytes` 默认为 4096，限制单个项目简介渲染出的头部字节数；指令内容不受该上限影响。
 
-用户全局文件始终是 `$DSH_HOME/AGENTS.md`，没有本地 overlay，也没有项目简介；上述候选列表只控制项目 scope。`$DSH_HOME` 默认为 `~/.dsh`，已配置的 `~`、`~/...` 与 Windows 风格 `~\...` 前缀会基于操作系统 home 目录展开。非正数或非有限渲染预算会同时禁用基线与动态加载；已配置 `maxSourceBytes` 与 `overviewMaxBytes` 必须是正整数。
+用户全局文件始终是主目录下的 `AGENTS.md`（模型看到的写法是 `~/.coding/AGENTS.md`、`$CODING_HOME/AGENTS.md`，主目录回退到遗留 `~/.dsh` 时是 `~/.dsh/AGENTS.md`、`$DSH_HOME/AGENTS.md`），没有本地 overlay，也没有项目简介；上述候选列表只控制项目 scope。主目录默认 `~/.coding`，已配置的 `~`、`~/...` 与 Windows 风格 `~\...` 前缀会基于操作系统 home 目录展开。非正数或非有限渲染预算会同时禁用基线与动态加载；已配置 `maxSourceBytes` 与 `overviewMaxBytes` 必须是正整数。
 
 ## 预算与有界读取
 
@@ -109,7 +109,7 @@ Background describing the project rather than instructions for your work.
 
 <overview-head>
 
-Instructions from: ~/.dsh/AGENTS.md
+Instructions from: ~/.coding/AGENTS.md
 
 <user-global-instructions>
 

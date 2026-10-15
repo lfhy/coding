@@ -372,7 +372,7 @@ workspace 共 240 个包，按 group 分节。每行给出包目录、职责（R
 
 - `packages/util/atomic-write` — 零依赖的原子文件替换，供绝不允许在磁盘上留下不完整、被符号链接劫持或权限过宽内容的文件型存储共用：用户设置文档… 入口 `src/index.ts`（tests 2）
 - `packages/util/brand` — 品牌使 `SessionId` 和 `CallId` 这样结构相同的字符串在类型层面不可互换，尽管两者在运行时都是普通 `string` 入口 `src/index.ts`
-- `packages/util/home-paths` — DeepSeek Harness 用户数据的共享文件系统路径辅助工具 入口 `src/index.ts`（tests 1）
+- `packages/util/home-paths` — Coding 用户数据的共享文件系统路径辅助工具：主目录解析、环境变量优先级… 入口 `src/index.ts`（tests 1）
 - `packages/util/launch-environment` — 把本次运行的环境冻结为一份不可变快照，并记住**每个值来自哪一层** 入口 `src/index.ts`（tests 1）
 - `packages/util/native-command` — 一个**零依赖、免 Shell 的原生命令与路径打开库** 入口 `src/index.ts`（tests 2）
 - `packages/util/output-retention` — 一个轻依赖的**保留**库：为必须限制返回上下文量的工具提供有界的面向模型输出 入口 `src/index.ts`（tests 1）

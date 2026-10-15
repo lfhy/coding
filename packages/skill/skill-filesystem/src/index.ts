@@ -51,7 +51,7 @@ export interface Config {
   providerName?: string
   /** Whether project and user roots are included around custom roots. */
   includeDefaultRoots?: boolean
-  /** DeepSeek Harness config root. Defaults to `$DSH_HOME` or `~/.dsh`. */
+  /** 配置根目录；按 `$CODING_HOME`、`$DSH_HOME`、`~/.coding`（回退遗留 `~/.dsh`）解析。 */
   dshHome?: string
   /** Shared agent config root. Defaults to `$DSH_AGENTS_HOME` or `~/.agents`. */
   agentsHome?: string

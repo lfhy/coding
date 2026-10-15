@@ -322,7 +322,7 @@ describe('workspace context instruction discovery', () => {
       const files = await discoverBaselineInstructionFiles({ cwd, dshHome: home })
 
       expect(files.map(file => file.displayPath)).toEqual([
-        '$DSH_HOME/AGENTS.md',
+        '$CODING_HOME/AGENTS.md',
         'AGENTS.md',
         'CLAUDE.md',
         join('packages', 'CLAUDE.md'),
@@ -671,7 +671,7 @@ describe('workspace context instruction discovery', () => {
 
       const files = await discoverBaselineInstructionFiles({ cwd: root, dshHome: root })
 
-      expect(files).toEqual([{ absolutePath: join(root, 'AGENTS.md'), displayPath: '$DSH_HOME/AGENTS.md', kind: 'instructions' }])
+      expect(files).toEqual([{ absolutePath: join(root, 'AGENTS.md'), displayPath: '$CODING_HOME/AGENTS.md', kind: 'instructions' }])
     } finally {
       await rm(root, { recursive: true, force: true })
     }
@@ -2684,14 +2684,14 @@ describe('workspace context request injection', () => {
     }
   })
 
-  it('labels a custom dshHome as DSH_HOME instead of pretending it is ~/.dsh', async () => {
+  it('labels a custom dshHome as CODING_HOME instead of pretending it is a default home', async () => {
     const root = await tempRepo()
     const home = await tempRepo()
     try {
       await write(join(home, 'AGENTS.md'), 'global custom rule')
       const files = await discoverBaselineInstructionFiles({ cwd: root, dshHome: home })
 
-      expect(files.map(file => file.displayPath)).toEqual(['$DSH_HOME/AGENTS.md'])
+      expect(files.map(file => file.displayPath)).toEqual(['$CODING_HOME/AGENTS.md'])
     } finally {
       await rm(root, { recursive: true, force: true })
       await rm(home, { recursive: true, force: true })

@@ -36,7 +36,7 @@ export const DEFAULT_MAX_IMAGE_DIMENSION = 2000
 
 /** Local attachment backend configuration. */
 export interface Config {
-  /** Explicit harness home; omitted follows `DSH_HOME`, then `~/.dsh`. */
+  /** 显式主目录；省略时依次跟随 `$CODING_HOME`、`$DSH_HOME` 与 `~/.coding`（回退遗留 `~/.dsh`）。 */
   dshHome?: string
   /** 单张归一化图片允许的最大编码字节数。 */
   maxImageBytes?: number

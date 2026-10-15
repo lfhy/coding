@@ -1,6 +1,7 @@
 /** Electron helper 启动前的只读路径与环境配置。 */
 import { lstat, readFile } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
+import { migrateCodingHome } from '@deepseek-ai/dsh-home-paths'
 
 /** Electron 的两种运行模式共用的输入；平台注入仅用于验证打包限制。 */
 export interface RuntimeConfigOptions {
@@ -126,7 +127,9 @@ export async function resolveRuntimeConfig(options: RuntimeConfigOptions): Promi
       requireEntry(join(resourcesPath, 'runtime', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js'), 'file'),
       requireEntry(join(resourcesPath, 'remote-agent'), 'directory'),
     ])
-    const home = join(userHome, '.dsh')
+    // 主目录在这里定案：helper 会把它作为 DSH_HOME 交给 Host，因此首次启动的
+    // `~/.dsh` → `~/.coding` 迁移必须在传递之前完成，否则 Host 只看到显式环境变量。
+    const { home } = await migrateCodingHome({ homeDir: userHome, env })
     const cwd = userHome
     const userData = join(userHome, '.dsh-electron-user-data')
     await requireEntry(userData, 'directory', true)

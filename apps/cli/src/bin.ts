@@ -13,6 +13,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { loadLayeredEnv } from '@deepseek-ai/dsh-app-boot'
+import { migrateCodingHome } from '@deepseek-ai/dsh-home-paths'
 import { parseDshArgs } from './args.ts'
 
 // Both the source tree (apps/cli/src) and the bundled bin (apps/cli/lib) sit
@@ -44,6 +45,15 @@ if (managedCwd !== undefined && managedCwd.trim() !== '') {
   }
 }
 const invocation = parseDshArgs(process.argv.slice(2), version)
+
+// 首次启动把遗留的 ~/.dsh 数据搬到 ~/.coding。必须在任何主目录解析之前完成：
+// 一旦某个模式先解析出旧路径，同一进程里的会话、设置与记忆就会分叉到两个根。
+const migration = await migrateCodingHome()
+if (migration.status === 'migrated') {
+  console.error(`coding: moved ${migration.legacyHome} to ${migration.home} (${migration.entries ?? 0} entries)`)
+} else if (migration.status === 'too-large' || migration.status === 'failed') {
+  console.error(`coding: ${migration.detail}`)
+}
 
 switch (invocation.mode) {
   case 'profile': {

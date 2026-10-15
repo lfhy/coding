@@ -14,7 +14,7 @@
 
 ## 开发隔离与打包
 
-[hostlaunch](../apps/internal/hostlaunch/launcher.go)独占写入 `DSH_HOME`、`DSH_CWD`、`DSH_APP_VERSION`；桌面壳声明 GUI 启动（`--gui-launch`）时，它还用交互式登录 shell 的 PATH 替换继承的 PATH，调用方显式传入的 `PATH` 优先。开发态使用独立 `~/.dsh-electron-dev`，不自动读取安装版设置和凭据；Host 在隔离工作目录读取 `.env`，不会读取仓库根目录的 `.env`。生产配置使用已有 `~/.dsh`，Chromium `userData` 使用 `~/.dsh-electron-user-data`；Go helper 先取得安装版单实例锁，获锁失败不得碰共享 Home。API key、SSH 密码和 bridge token 不得进入 URL、renderer 可读持久存储、日志或打包资源。
+[hostlaunch](../apps/internal/hostlaunch/launcher.go)独占写入 `DSH_HOME`、`DSH_CWD`、`DSH_APP_VERSION`；桌面壳声明 GUI 启动（`--gui-launch`）时，它还用交互式登录 shell 的 PATH 替换继承的 PATH，调用方显式传入的 `PATH` 优先。开发态使用独立 `~/.dsh-electron-dev`，不自动读取安装版设置和凭据；Host 在隔离工作目录读取 `.env`，不会读取仓库根目录的 `.env`。生产配置使用已有 `~/.coding`，Chromium `userData` 使用 `~/.dsh-electron-user-data`；Go helper 先取得安装版单实例锁，获锁失败不得碰共享 Home。API key、SSH 密码和 bridge token 不得进入 URL、renderer 可读持久存储、日志或打包资源。
 
 [打包脚本](../scripts/package-electron-macos-app.ts)组装 `dist/Coding.app`，包含 Electron Framework、Host runtime、Go helper 和 remote-agent，不交付或下载单独的 Playwright Chromium shell。包使用 `com.coding.desktop` bundle identifier；`pnpm run build:desktop` 不触碰 `/Applications/Coding.app`，`make install` 才会替换该路径上的已有应用。macOS 包经本机 ad-hoc 深签名；正式分发公证另行决定。
 

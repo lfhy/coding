@@ -19,7 +19,7 @@
 ## 桌面壳与 Host 启动
 
 - **路线**：Electron 壳在 `apps/desktop-electron/src/main.ts`、`window.ts`、`native-chrome.ts`；Go helper `apps/desktop/cmd/electron-helper/main.go` 经 `apps/internal/hostlaunch/launcher.go` 启动 Host，并复用 `apps/desktop/internal/desktopremote/service.go` 与 `bridge.go`。helper stdio、远程连接 preload/main 授权分别在 `helper-client.ts`、`preload.ts`、`remote-ipc.ts`；桌面浏览器 guest、私有 Host 桥与受限呈现 IPC 在 `browser-guest.ts`、`browser-bridge.ts`、`browser-ipc.ts`。
-- **技术与边界**：`make dev` 启动 Electron 开发态，`make install` 安装由 `pnpm run build:desktop` 组装的 `dist/Coding.app`。Web UI、RPC 和会话由共享 Client/Host 包拥有；开发 home 独立，生产配置共享 `~/.dsh` 且先取得安装版单实例锁。壳与 Host 边界见[桌面原生验收](../desktop-shell-comparison.md)，运行限制见 [Electron README](../../apps/desktop-electron/README.md)。
+- **技术与边界**：`make dev` 启动 Electron 开发态，`make install` 安装由 `pnpm run build:desktop` 组装的 `dist/Coding.app`。Web UI、RPC 和会话由共享 Client/Host 包拥有；开发 home 独立，生产配置共享 `~/.coding`（首次启动自动从 `~/.dsh` 迁移）且先取得安装版单实例锁。壳与 Host 边界见[桌面原生验收](../desktop-shell-comparison.md)，运行限制见 [Electron README](../../apps/desktop-electron/README.md)。
 - **连带与验证**：Host 就绪记录或所有权改动核对 `packages/bundle/web-app/src/managed-host.ts`、`apps/internal/hostlaunch` 与 Go helper；远程连接协议改动核对 `desktopremote`、`helperwire`、Electron IPC 和 Client 工作区。打包资源同步 `scripts/build-electron-helper.ts`、`scripts/package-electron-macos-app.ts` 与对应测试。开发态、SSH 和打包版分别做原生验证，命令见[应用条目](#appsdesktop-electron)。
 
 ## 远程连接模式与能力
@@ -240,7 +240,7 @@
 - **入口**：`apps/desktop-electron/src/main.ts`；Go 进程入口在 `apps/desktop/cmd/electron-helper/main.go`。`make dev` 与 `pnpm run dev:electron` 启动开发态；`build:desktop` 经 `scripts/package-electron-macos-app.ts` 组装生产包，`make install` 才将其安装到 `/Applications/Coding.app`。
 - **关键文件**：`apps/desktop-electron/src/window.ts`、`native-chrome.ts`、`preload.ts`、`remote-ipc.ts`、`browser-guest.ts`、`browser-bridge.ts`、`browser-ipc.ts`、`helper-client.ts`、`runtime-config.ts`、`apps/desktop/internal/helperwire/`。
 - **改这里要同步**：Remote-SSH 输入与状态同步 `packages/client/ui-workspace/src/client/remote.ts`、`apps/desktop/internal/desktopremote` 与 `apps/desktop/cmd/electron-helper`；生产路径及资源（Electron 原生 guest 与共享 Host 的 Playwright JS 依赖，不含独立 Chromium 浏览器）同步 `scripts/build-electron-helper.ts`、`scripts/package-electron-macos-app.ts` 和 `apps/desktop-electron/README.md`。
-- **不变量**：main 对每次 IPC 核验窗口、主 frame、精确 Host origin 和输入；同源重载期间暂停授权，窗口丢失即撤权；helper 不经 renderer 转交 SSH 凭据或浏览器 bridge token。浏览器桥断开后失效并清理 guest，不切换到 Playwright；按 Session 临时 partition 隔离，隐藏页面仅卸载视图。生产配置使用共享 `~/.dsh`，Go helper 在操作前取得安装版单实例锁；Chromium `userData` 使用独立目录。
+- **不变量**：main 对每次 IPC 核验窗口、主 frame、精确 Host origin 和输入；同源重载期间暂停授权，窗口丢失即撤权；helper 不经 renderer 转交 SSH 凭据或浏览器 bridge token。浏览器桥断开后失效并清理 guest，不切换到 Playwright；按 Session 临时 partition 隔离，隐藏页面仅卸载视图。生产配置使用共享 `~/.coding`，Go helper 在操作前取得安装版单实例锁；Chromium `userData` 使用独立目录。
 - **测试**：定向运行 `pnpm exec vitest run apps/desktop-electron/tests scripts/build-electron-helper.spec.ts scripts/package-electron-macos-app.spec.ts` 和 `cd apps/desktop && go test ./cmd/electron-helper ./internal/desktopremote ./internal/helperwire`；开发窗口另跑 `pnpm run test:electron:smoke`，回环 SSH fixture 分别运行 `pnpm run test:electron:remote-basic` 与 `pnpm run test:electron:remote-ssh`，打包版启动用 `pnpm run test:electron:packaged` 单独验证。
 
 ## packages/bundle/base
@@ -292,7 +292,7 @@
 - **拥有**：两个对称的 Service Definition seam——`SettingsProvider`（`ctx.settings`：namespace schema 注册、`schema 默认 → 组合 base → 用户分节` 三层解析、`describe({redactSecrets})`、`update`/`replace`/`mutate` 深合并与 `expectedRevision` 冲突拒绝）与 `CredentialProvider`（`ctx.credentials`：`credentialRef` 品牌化引用、`resolve`/`describe`/`set`/`unset`，配置只带引用不带机密）。
 - **不拥有**：文档存储与热重载（归 `packages/settings/settings-file` 与 `packages/credentials/credentials-local`）；各消费方 namespace（例如 `llm-deepseek` 分节归适配器包）；设置 UI（归 `packages/client/ui-settings`、`packages/client/ui-settings-models`）。
 - **入口**：`packages/settings/settings/src/index.ts`（`SettingsProvider` 抽象类）与 `packages/credentials/credentials/src/index.ts`（`CredentialProvider` 抽象类，`notifyUpdated` 扇出 `credentials/updated`）。
-- **接线**：base 组合的行 `settings` → `@deepseek-ai/dsh-settings-file`、行 `credentials` → `@deepseek-ai/dsh-credentials-local`（`$DSH_HOME/settings.yaml` 热重载，`$DSH_HOME/.credentials.yaml` 受管存储）。
+- **接线**：base 组合的行 `settings` → `@deepseek-ai/dsh-settings-file`、行 `credentials` → `@deepseek-ai/dsh-credentials-local`（主目录下的 `settings.yaml` 热重载，`.credentials.yaml` 受管存储）。
 - **关键文件**：`packages/settings/settings/src/index.ts`、`packages/settings/settings/src/redact.ts`、`packages/credentials/credentials/src/index.ts`、`packages/settings/settings-file/src/index.ts`、`packages/credentials/credentials-local/src/index.ts`。
 - **改这里要同步**：两个 provider 包的 README 与测试（写锁、原子写、watcher 语义成对演化）、消费方适配器（`apiKeyEnv` 引用按操作解析）、`./types` 子路径的事件声明与 client 投影。
 - **不变量**：配置只携带对机密的引用（例如 `apiKeyEnv: DEEPSEEK_API_KEY`），值只在 provider 处；消费方按操作 `resolve`，绝不跨操作缓存；空存储值处处等于不存在；`set`/`unset` 被只读来源遮蔽时明确拒绝而不是表面成功；单个 listener 抛错不影响其余。

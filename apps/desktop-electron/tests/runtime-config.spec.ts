@@ -80,7 +80,7 @@ describe('Electron runtime configuration', () => {
 
   it('无需打包 Chromium 即可读取生产版本，并清理继承的浏览器路径且不触碰安装版 Home', async () => {
     const options = { ...await fixture(), packaged: true }
-    const installedHome = join(options.userHome, '.dsh')
+    const installedHome = join(options.userHome, '.coding')
     await symlink(join(options.userHome, 'missing-installed-target'), installedHome)
     await expect(lstat(join(options.resourcesPath, 'playwright-browsers')))
       .rejects.toMatchObject({ code: 'ENOENT' })
@@ -186,7 +186,7 @@ describe('Electron runtime configuration', () => {
     ])
     const packaged = { ...options, packaged: true, guiLaunch: true }
     expect((await resolveRuntimeConfig(packaged)).helper.args).toEqual([
-      '--home', join(options.userHome, '.dsh'), '--cwd', options.userHome,
+      '--home', join(options.userHome, '.coding'), '--cwd', options.userHome,
       '--host-version', '0.1.0-rc.8',
       '--runtime-root', options.resourcesPath, '--exclusive-desktop-instance', '--gui-launch',
     ])

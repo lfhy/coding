@@ -4,6 +4,7 @@
  */
 
 import { basename, dirname } from 'node:path'
+import { isHomeDisplayPath } from '@deepseek-ai/dsh-home-paths'
 import { DEFAULT_OVERVIEW_MAX_BYTES } from './config.ts'
 import type { InstructionFile, InstructionKind, LoadedInstructionFile } from './files.ts'
 
@@ -164,8 +165,9 @@ export const USER_GLOBAL_FILE = 'AGENTS.md'
  * @returns `user-global`, `.`, or the containing project-relative directory.
  */
 export function scopeForDisplayPath(displayPath: string): string {
-  if (displayPath === '~/.dsh/AGENTS.md' || displayPath === '$DSH_HOME/AGENTS.md') return USER_GLOBAL_DIRECTORY
-  return dirname(displayPath)
+  // 主目录的展示写法由 dsh-home-paths 拥有（默认 `~/.coding`、遗留 `~/.dsh`，
+  // 以及两个环境变量形式），因此这里问它，而不是硬编码某一种拼写。
+  return isHomeDisplayPath(displayPath) ? USER_GLOBAL_DIRECTORY : dirname(displayPath)
 }
 
 const SCOPE_SEPARATOR = '\u0000'

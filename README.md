@@ -16,7 +16,7 @@ Coding 目前处于 _开发者预览_ 阶段，正在快速迭代。**未来将�
 | Windows amd64 | 由本地 Node Host 驱动的 Coding 原生 GUI | 计划中 |
 | Linux amd64 | 由本地 Node Host 驱动的交互式 `coding` 终端 UI | 计划中 |
 
-桌面 GUI 会在原生 WebView 中复用现有 Web 界面。终端 UI 和 GUI 通过 `$DSH_HOME`（通常为 `~/.dsh`）共享会话、设置和凭据，并在可用时连接同一个本地 Host。发布产物会包含 Host 运行时，最终用户无需单独安装 Node。
+桌面 GUI 会在原生 WebView 中复用现有 Web 界面。终端 UI 和 GUI 通过 `$CODING_HOME`（通常为 `~/.coding`，老安装首次启动自动从 `~/.dsh` 迁移，`$DSH_HOME` 仍可覆盖）共享会话、设置和凭据，并在可用时连接同一个本地 Host。发布产物会包含 Host 运行时，最终用户无需单独安装 Node。
 
 原生桌面窗口启动时默认最大化。双击顶部空白窗口区域可切换最大化状态，侧边栏控件会避开 macOS 交通灯安全区。
 

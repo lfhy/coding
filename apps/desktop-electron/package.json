@@ -13,6 +13,7 @@
     "@deepseek-ai/dsh-attachment": "workspace:^",
     "@deepseek-ai/dsh-browser": "workspace:^",
     "@deepseek-ai/dsh-browser-electron": "workspace:^",
+    "@deepseek-ai/dsh-home-paths": "workspace:^",
     "ws": "^8.21.0"
   },
   "devDependencies": {

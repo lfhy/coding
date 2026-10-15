@@ -14,7 +14,7 @@ make dev
 
 `pnpm run test:electron:remote-ssh` 的 Agent 模式已通过单独 opt-in 的 macOS 图形验收：在隔离 HOME 中经真实向导确认未知主机、连接 agent、选择目录和创建工作区，再由 Host 验证远程文件列表与读取、PTY resize、同目录 generation 重绑、旧连接拒绝、取消和退出。`pnpm run test:electron:remote-basic` 使用禁止 TCP 转发的回环 SSH fixture 验证默认基础模式、主机密钥确认、无远端 agent、Host 文件列表与读取、PTY 输入及 resize、本地隔离和退出清理；命令也构建 Code Mode 所需的本机隔离程序，但该原生脚本不调用模型或 Code Mode。两项测试只使用 fixture 一次性密码，不依赖用户 SSH agent、`~/.ssh` 或模型 API key；失败时保留并报告本次临时目录，成功且 Host 退出后删除。它们不属于默认测试，也不验证真实远端服务器、模型调用或安装版 SSH。`pnpm run package:electron` 与 `pnpm run build:desktop` 组装同一个生产包；`pnpm run test:electron:packaged` 则另行验收已有包。
 
-开发 Host 使用 `~/.dsh-electron-dev`，默认工作目录为其中的 `workspace/`，Electron `userData` 位于 `electron-user-data/`；开发实例拒绝与安装版 `~/.dsh` 重叠。开发 Host 从仓库源码启动，需要 PATH 中的 Node，且不自动使用安装版设置与凭据。手动真实 API 测试须显式设置环境变量或只在隔离的 `workspace/.env` 中配置；Host 不读取仓库根目录 `.env`，不要将密钥写进仓库。
+开发 Host 使用 `~/.dsh-electron-dev`，默认工作目录为其中的 `workspace/`，Electron `userData` 位于 `electron-user-data/`；开发实例拒绝与安装版主目录（`~/.coding`）重叠。开发 Host 从仓库源码启动，需要 PATH 中的 Node，且不自动使用安装版设置与凭据。手动真实 API 测试须显式设置环境变量或只在隔离的 `workspace/.env` 中配置；Host 不读取仓库根目录 `.env`，不要将密钥写进仓库。
 
 `node apps/desktop-electron/tests/native-smoke.mjs --browser-only` 可在完成 Host/Web 与 Electron 构建后只运行浏览器定向原生验收（仍包含启动所需的无凭据向导设置）：真实 Host 模型工具快照、填入、上下滚动、跨租约引用点击与原生透明覆盖层焦点／DOM 隔离。物理鼠标、滚轮和键盘探针使用 macOS CGEvent，并要求未锁屏及辅助功能权限；不满足条件时明确输出未验证，不把程序化 guest 输入等同于原生命中测试。
 
@@ -36,4 +36,4 @@ Host 经启动环境中的一次性令牌连接主进程私有回环 WebSocket�
 
 `pnpm run build:desktop` 组装 `dist/Coding.app` macOS arm64 包，使用 `com.coding.desktop` bundle identifier。打包不会触碰 `/Applications/Coding.app`；只有调用 `make install` 才将新包安装到该路径，并替换已有应用。打包资源包含 Electron Framework、独立 Host runtime、Go helper 和 remote-agent；桌面浏览器使用 Electron 自带的原生 guest，包不交付或下载单独的 Playwright Chromium headless shell，也不需要 `PLAYWRIGHT_BROWSERS_PATH` 指向包内浏览器。
 
-本机包经 ad-hoc 深签名；`pnpm run test:electron:packaged` 在隔离 HOME 中直接运行 `.app`，验证 `app.isPackaged`、`app.asar`、真实 Host 页面与两条 WebSocket，以及回环脚本模型通过 Host 执行 `browser_navigate`、`browser_snapshot`、`browser_click` 并与真人共用原生 guest。该冒烟还覆盖 preload 到 Go helper/bridge 的无凭据取消、单实例及退出清理，不安装或公证。生产配置使用已有 `~/.dsh` 与单独的 `~/.dsh-electron-user-data`；helper 在操作共享 Home 前取得安装版单实例锁，获锁失败时不得碰共享 Home。原生菜单/托盘点击、关窗隐藏、远程连接、真实外部模型请求和安装后运行不在该冒烟覆盖范围；Windows/Linux 原生运行尚未验证。
+本机包经 ad-hoc 深签名；`pnpm run test:electron:packaged` 在隔离 HOME 中直接运行 `.app`，验证 `app.isPackaged`、`app.asar`、真实 Host 页面与两条 WebSocket，以及回环脚本模型通过 Host 执行 `browser_navigate`、`browser_snapshot`、`browser_click` 并与真人共用原生 guest。该冒烟还覆盖 preload 到 Go helper/bridge 的无凭据取消、单实例及退出清理，不安装或公证。生产配置使用已有 `~/.coding`（首次启动自动从 `~/.dsh` 迁移）与单独的 `~/.dsh-electron-user-data`；helper 在操作共享 Home 前取得安装版单实例锁，获锁失败时不得碰共享 Home。原生菜单/托盘点击、关窗隐藏、远程连接、真实外部模型请求和安装后运行不在该冒烟覆盖范围；Windows/Linux 原生运行尚未验证。

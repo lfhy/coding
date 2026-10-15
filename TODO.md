@@ -6,7 +6,7 @@ This file is the cross-session implementation record for Coding. Update it when 
 
 - Product and application name: `Coding`.
 - Public Linux command: `coding`; do not add a `dsh` alias.
-- Internal package names, plugin identifiers, wire protocol names, `$DSH_HOME`, and the `~/.dsh` default stay compatible with DeepSeek Harness (`dsh`) for this program of work.
+- Internal package names, plugin identifiers, wire protocol names, and the `DSH_HOME` environment variable stay compatible with DeepSeek Harness (`dsh`) for this program of work; the default data home is `~/.coding` (`$CODING_HOME` takes precedence, while a populated `~/.dsh` is migrated automatically on first start and remains the fallback).
 - macOS arm64 has an Electron desktop GUI; Windows amd64 desktop packaging and native verification remain planned. Linux ships the interactive terminal UI. The target release matrix is macOS arm64, Windows amd64, and Linux amd64.
 
 ## Architecture decisions
@@ -14,10 +14,10 @@ This file is the cross-session implementation record for Coding. Update it when 
 - The TypeScript/Cordis Node Host remains the sole owner of agents, sessions, tools, settings, credentials, plugins, and persistence. Electron owns desktop windows and menus, Go owns the desktop Host/SSH helper and Linux terminal presentation; neither duplicates Host business rules.
 - `apps/desktop-electron` navigates directly to the verified loopback URL served by the existing Web profile. It does not add a proxy or replace the `/api` transport; `apps/desktop` contains the Go helper and remote services.
 - `apps/tui` uses Bubble Tea and Lip Gloss. It consumes the existing unary HTTP plus `events.mux` and `events.host` WebSocket protocol, including reconnect generations. First-party Host features reach feature parity with the Web GUI; third-party browser-only client plugins render a non-executable placeholder with their id and JSON projection.
-- GUI and TUI share `$DSH_HOME`. At most one same-version Host owns that home. Clients read `$DSH_HOME/host.json`, verify loopback reachability and protocol/version compatibility, and attach to a live Host; stale records are replaced only after the recorded PID is no longer alive or the endpoint is unreachable.
+- GUI and TUI share one home directory. At most one same-version Host owns that home. Clients read its `host.json`, verify loopback reachability and protocol/version compatibility, and attach to a live Host; stale records are replaced only after the recorded PID is no longer alive or the endpoint is unreachable.
 - The Host binds `127.0.0.1:0` for Go-managed launches and emits one machine-readable readiness line after the complete Web tree settles. The record contains port, pid, version, and protocol. A Host with no connected clients and no running Agent or background task exits after five minutes and removes its own record.
 - The packaged desktop Host uses the user's home directory as cwd; development uses `~/.dsh-electron-dev/workspace`. The Host's existing `session.create` fallback applies this value to new sessions.
-- macOS `Coding.app` contains a raw Node executable at `Contents/Resources/coding-host` and a pre-expanded, symlink-free Host closure at `Contents/Resources/runtime`; the Electron Go helper launches its `bin.js` directly and leaves `$DSH_HOME` for user data. Linux embeds a Node SEA bootstrapper in the `coding` executable. Its first run materializes the verified Host closure and native sidecars into `$DSH_HOME/runtime/<sha256>`; the content-hash directory is reused across product versions with identical bytes, and a successful current-archive startup removes older runtime directories.
+- macOS `Coding.app` contains a raw Node executable at `Contents/Resources/coding-host` and a pre-expanded, symlink-free Host closure at `Contents/Resources/runtime`; the Electron Go helper launches its `bin.js` directly and leaves the home directory for user data. Linux embeds a Node SEA bootstrapper in the `coding` executable. Its first run materializes the verified Host closure and native sidecars into `$DSH_HOME/runtime/<sha256>`; the content-hash directory is reused across product versions with identical bytes, and a successful current-archive startup removes older runtime directories.
 - Initial distribution is manual installation only: macOS `.app`/`.dmg`, Windows installer, and one Linux executable. Signing and notarization hooks are prepared but do not block development; automatic update is excluded.
 - Mobile clients will be mobile Web clients of the same Web GUI, not native shells: phones never run the Host; they reach a Host on the user's desktop or a server. The enabling work is Host-side remote-access security (token auth exists; TLS and LAN discovery remain), plus responsive Web GUI adaptation. If a store app is ever needed, package the existing Web GUI with Capacitor rather than introducing another desktop shell.
 
@@ -35,7 +35,7 @@ Status: implemented; verification below is the current record.
 
 - [x] Add a Go-launchable Web-profile mode: loopback host, port zero, no browser handoff, no human-only readiness dependency. (`apps/cli` `web --coding-host`, `packages/bundle/web-app/src/startup.ts`)
 - [x] Emit a one-line JSON readiness record only after the complete loader tree has settled. (`managed-host.ts`, frame `coding-host-ready`)
-- [x] Write and atomically replace `$DSH_HOME/host.json`; remove it only when its owning Host exits (token-guarded cleanup).
+- [x] Write and atomically replace the shared home's `host.json`; remove it only when its owning Host exits (token-guarded cleanup).
 - [x] Implement stale-record validation with PID liveness, version/protocol comparison, and loopback health probing. (`apps/internal/hostlaunch`)
 - [x] Track WebSocket client attachment plus active Agent/background-task state; stop after five idle minutes. (`packages/client/connection/src/web-client-connections.ts`)
 - [x] Cover readiness, record ownership, stale takeover, idle termination, and `--cwd` with Host tests and update the GUI prompt snapshot. (`packages/bundle/web-app/tests/managed-host.spec.ts`; live `SIGTERM` smoke passed)
@@ -78,7 +78,7 @@ Status: in progress (panels wired for workspaces/skills/presets/settings/models/
 - [x] Implement session list/create/resume, prompt send, streamed replies, Ctrl+C interrupt, and approval/question answering via `POST /api/respond`. (approvals y/n; questions submit first option, cancel via Esc)
 - [x] Implement workspace management, tool summary, jobs, subagents, goals, skills and slash commands, model/credential settings, agent presets, plugin/settings inventory, session ZIP export, and token/context displays. (read-only panels: `internal/tui/panels.go` Ctrl+P; export helper `ExportSessionZIP`; write interactions pending)
 - [x] Show unsupported third-party Web client plugin UI as a non-executable placeholder with plugin id and default JSON projection. (plugins panel placeholder)
-- [x] Keep all settings, credentials, and session data under the shared `$DSH_HOME`. (launcher/Host mechanism; no TUI-local storage)
+- [x] Keep all settings, credentials, and session data under the shared home. (launcher/Host mechanism; no TUI-local storage)
 - [ ] End-to-end keyless mock-LLM session test through the TUI transport.
 
 ### TUI initial key map
