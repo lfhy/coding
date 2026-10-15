@@ -66,6 +66,18 @@
       "path": "../../llm/llm-retry"
     },
     {
+      "path": "../../memory/memory"
+    },
+    {
+      "path": "../../memory/memory-context"
+    },
+    {
+      "path": "../../memory/memory-local"
+    },
+    {
+      "path": "../../memory/tool-memory"
+    },
+    {
       "path": "../../runtime-diagnostics/invariants"
     },
     {

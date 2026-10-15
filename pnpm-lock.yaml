@@ -4404,6 +4404,18 @@ importers:
 
   packages/examples/agent-spine-demo:
     dependencies:
+      '@deepseek-ai/dsh-memory':
+        specifier: workspace:^
+        version: link:../../memory/memory
+      '@deepseek-ai/dsh-memory-context':
+        specifier: workspace:^
+        version: link:../../memory/memory-context
+      '@deepseek-ai/dsh-memory-local':
+        specifier: workspace:^
+        version: link:../../memory/memory-local
+      '@deepseek-ai/dsh-tool-memory':
+        specifier: workspace:^
+        version: link:../../memory/tool-memory
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery

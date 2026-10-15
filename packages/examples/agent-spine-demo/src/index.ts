@@ -24,6 +24,10 @@ import * as goalSession from '@deepseek-ai/dsh-goal-round-driver'
 import * as toolGoal from '@deepseek-ai/dsh-tool-goal'
 import LocalJobRegistry, { type Config as JobsConfig } from '@deepseek-ai/dsh-jobs-local'
 import InvariantRegistry, { type Config as InvariantConfig } from '@deepseek-ai/dsh-invariants'
+import * as memory from '@deepseek-ai/dsh-memory'
+import LocalMemory from '@deepseek-ai/dsh-memory-local'
+import * as memoryContext from '@deepseek-ai/dsh-memory-context'
+import * as toolMemory from '@deepseek-ai/dsh-tool-memory'
 import * as sessionInvariant from '@deepseek-ai/dsh-session/invariant'
 import * as agentInvariant from '@deepseek-ai/dsh-agent/invariant'
 import * as scopeInvariant from '@deepseek-ai/dsh-scope/invariant'
@@ -111,6 +115,11 @@ export interface Config {
   /** Workspace-context loader controls with an explicit byte budget; set `false` for hermetic prompts. */
   workspaceContext: workspaceContext.Config | false
   /**
+   * 项目记忆（Provider + 基线注入 + 四个工具）。省略即不挂载：示例与兼容组合默认拿不到
+   * 记忆工具，验证记忆行为的场景显式传配置打开。
+   */
+  memory?: memory.MemoryConfig | false
+  /**
    * Skill registry, local provider, and model-facing consumer config.
    * Skills use `enabled` because one nested config controls a provider stack;
    * single model-tool plugins use `Config | false` to disable that one consumer.
@@ -166,12 +175,13 @@ export const Config = z.intersect([
     sessionTitle: SessionTitleConfigSchema,
     skills: SkillConfigSchema,
     workspaceContext: z.union([z.const(false), workspaceContext.Config]).required(),
+    memory: z.union([z.const(false), memory.MemoryConfig]),
     toolBash: ToolBashConfigSchema,
     jobs: JobsConfigSchema,
     toolJobs: z.union([z.const(false), ToolJobsConfigSchema]),
     invariants: InvariantRegistry.Config,
     goals: z.union([z.const(false), GoalConfigSchema]),
-  }) as unknown as z<Pick<Config, 'tools' | 'dshHome' | 'sessionTitle' | 'skills' | 'workspaceContext' | 'toolBash' | 'jobs' | 'toolJobs' | 'invariants' | 'goals'>>,
+  }) as unknown as z<Pick<Config, 'tools' | 'dshHome' | 'sessionTitle' | 'skills' | 'workspaceContext' | 'memory' | 'toolBash' | 'jobs' | 'toolJobs' | 'invariants' | 'goals'>>,
 ]) as unknown as z<Config>
 
 /**
@@ -253,6 +263,13 @@ export function apply(ctx: Context, config: Config): void {
   }
   if (config.workspaceContext !== false) {
     ctx.plugin(workspaceContext, config.workspaceContext)
+  }
+  // 记忆整组开关：Provider 提供 `ctx.memory`，注入与工具都声明了它，三者必须同时在场。
+  // 省略即关闭，避免示例组合默默多出四个工具段。
+  if (config.memory !== undefined && config.memory !== false) {
+    ctx.plugin(LocalMemory, config.memory ?? {})
+    ctx.plugin(memoryContext)
+    ctx.plugin(toolMemory)
   }
   // Both plugins prepend session-prefix messages. Registration order is the
   // rendered order, so workspace instructions must precede the skill catalog.
