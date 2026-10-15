@@ -41,12 +41,20 @@ Status: landed in this branch as four commits' worth of work; two follow-ups sta
 - `packages/boot/app-boot/src/coding-prompt.ts` owns `coding:identity` (order −100) and `coding:guidelines` (order −98: working style, code organization, TODO handoff, memory, communication, workspace conventions, boundaries, review, final answer). Independent names and an order before the persona mean a preset persona cannot shadow them.
 - The product composition disables the harness opener (`includeHarnessIdentity: false` in `packages/bundle/base`) and the web-app bundle no longer injects the source-checkout section; the `surfaceContext` config that existed only for it is gone.
 
-### Open follow-ups
+### Follow-ups
 
-- [ ] Refresh `apps/web/tests/snapshots/fresh-round-trip/system-prompt.expected.md` with `pnpm run test:web:refresh` (build-based). Example trees (`examples/acp-agent`, `examples/headless-agent`) mount their own system prompt, so they keep the harness opener and need no refresh.
-- [ ] Decide whether every Coding-launched tree should drop the English opener: either opt those example trees out too, or change the default text in `packages/core/system-prompt` and let `includeHarnessIdentity` become a pure opt-out.
-- [ ] Add the real-composition test the package policy asks for: a Loader-booted test-only `cordis.yml` where one session saves a memory point and a second session on the same project reads it from the injected baseline.
-- [ ] `pnpm run verify-cordis-config` currently fails on stale `dist/` copies that name the removed `@deepseek-ai/dsh-tool-subagent-control/list-models` subpath; rebuild or clean `dist/` to clear it.
+Done since the first record: the default identity text itself is now Coding's
+(`packages/core/system-prompt`), so every tree started from this repository — product
+composition, examples, SDK — shows the same single Chinese identity and
+`includeHarnessIdentity` is a pure opt-out; the web prompt fixture was refreshed with
+`DSH_SNAPSHOT=refresh npx vitest run --config vitest.web.config.ts apps/web/tests/replay-round-trip.e2e.ts`;
+and the memory real-composition scenario `memory` in `examples/acp-agent` boots the acp-demo
+composition through the Loader, seeds one memory point by `md5(realpath(cwd))`, and pins both
+the injected baseline block and the `memory_save` tool result.
+
+- [ ] `examples/acp-agent` pwsh scenarios (`pwsh-tool-turn`, `persistent-pwsh-tool-turn`) and one child pin under `subagent-continuable` still carry the old English identity line: they do not run on macOS, so the keyless refresh cannot rewrite them. Re-record or refresh them on the platform that runs them.
+- [ ] Four snapshot scenarios fail before and after this work (`subagent-continuable`, `advanced toolchain`, `continuable child result`, `subagent inheritance`): replay binds fewer model calls than recorded. Unrelated to the identity/memory work; worth a separate look.
+- [ ] `pnpm run verify-cordis-config` still fails on stale `dist/` copies that name the removed `@deepseek-ai/dsh-tool-subagent-control/list-models` subpath; rebuild or clean `dist/` to clear it.
 
 ## Phase 0: identity and design record
 
