@@ -17,6 +17,7 @@ import z from '@deepseek-ai/schemastery'
 import * as acp from '@deepseek-ai/dsh-acp'
 import * as agentCore from '@deepseek-ai/dsh-agent-spine-demo'
 import * as workspaceContext from '@deepseek-ai/dsh-agent-instructions'
+import * as memoryConfig from '@deepseek-ai/dsh-memory'
 import ToolRuntime, { type Config as ToolsConfig } from '@deepseek-ai/dsh-tools'
 import JsonlSessionPersistence, {
   JsonlCompressionSchema,
@@ -61,6 +62,10 @@ export interface Config {
   persistenceCompression?: JsonlCompression
   /** Controls automatic AGENTS.md/CLAUDE.md loading; configure a byte budget or set `false`. */
   workspaceContext: agentCore.Config['workspaceContext']
+  /**
+   * 项目记忆组（Provider + 基线注入 + 四个工具）；省略即不挂载，验证记忆行为的场景显式打开。
+   */
+  memory?: NonNullable<agentCore.Config['memory']>
   /** Skill registry, local-provider, and model-facing consumer config forwarded to agent-spine-demo. */
   skills?: agentCore.SkillConfig
   /** Model-facing bash tool config forwarded through agent-core. */
@@ -92,6 +97,7 @@ export const Config: z<Config> = z.object({
   packChunks: z.boolean().default(true),
   persistenceCompression: JsonlCompressionSchema,
   workspaceContext: z.union([z.const(false), workspaceContext.Config]).required(),
+  memory: z.union([z.const(false), memoryConfig.MemoryConfig]),
   skills: agentCore.SkillConfigSchema,
   toolBash: agentCore.ToolBashConfigSchema,
   jobs: agentCore.JobsConfigSchema,

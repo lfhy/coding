@@ -3,7 +3,8 @@ import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { createServer } from 'node:http'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { copyFile, mkdir, utimes, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, realpath, utimes, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 import { expect, it } from 'vitest'
@@ -48,6 +49,7 @@ const CODE_MODE_IMAGE_CONFIG = fileURLToPath(new URL('../code-mode-image.cordis.
 const CODE_MODE_WORKSPACE_CONTEXT_CONFIG = fileURLToPath(new URL('../code-mode-workspace-context.cordis.yml', import.meta.url))
 const BOTH_MODE_CONFIG = fileURLToPath(new URL('../both-mode.cordis.yml', import.meta.url))
 const WORKSPACE_CONTEXT_CONFIG = fileURLToPath(new URL('../agent-instructions.cordis.yml', import.meta.url))
+const MEMORY_CONFIG = fileURLToPath(new URL('../memory.cordis.yml', import.meta.url))
 const ADVANCED_CONFIG = fileURLToPath(new URL('../advanced.cordis.yml', import.meta.url))
 const FS_CONFIG = fileURLToPath(new URL('../fs.cordis.yml', import.meta.url))
 const SESSION_QUERY_CONFIG = fileURLToPath(new URL('../session-query.cordis.yml', import.meta.url))
@@ -100,6 +102,21 @@ async function prepareDelimiterPathWorkspace(cwd: string): Promise<void> {
     writeFile(join(dir, 'AGENTS.md'), 'Delimiter path snapshot instruction.\n'),
     writeFile(join(dir, 'task.txt'), 'delimiter path snapshot task\n'),
   ])
+}
+
+/**
+ * 预置一条项目记忆：记忆键是 `md5(项目根真实路径)`，而 cwd 是每次运行新建的临时目录，
+ * 只能在准备阶段算出键再写文件。这样第一次请求的基线里必然带着这条记忆，快照同时钉住
+ * “注入发生了什么”和“注入文本长什么样”。
+ */
+async function prepareMemoryWorkspace(cwd: string): Promise<void> {
+  const key = createHash('md5').update(await realpath(cwd)).digest('hex')
+  const dir = join(cwd, '.memory', key)
+  await mkdir(dir, { recursive: true })
+  await writeFile(
+    join(dir, 'notes.md'),
+    '# 交付约定\n\n## 要点\n\n- 记忆注入探针：snapshot-memory-probe\n',
+  )
 }
 
 /**
@@ -443,6 +460,19 @@ const SCENARIOS: Scenario[] = [
     configPath: WORKSPACE_CONTEXT_CONFIG,
     prepareWorkspace: prepareDelimiterPathWorkspace,
     posixOnly: true,
+  },
+  // 项目记忆的真组合场景：预置一条记忆 → 第一次请求的基线里出现注入块；模型（回放）
+  // 调一次 `memory_save` → 工具经真实注册表执行并把结果写进会话日志。
+  {
+    name: 'memory',
+    hasModelTurn: true,
+    recorded: false,
+    overridden: true,
+    // 记忆注入与四个工具的 schema 都会改变请求前缀，因此该场景有自己的 pinned header。
+    pinsHeader: true,
+    headerClass: 'memory',
+    configPath: MEMORY_CONFIG,
+    prepareWorkspace: prepareMemoryWorkspace,
   },
   { name: 'cancel', hasModelTurn: true, recorded: false, overridden: true },
   // Cancelling a live bash call relies on POSIX process-group termination;

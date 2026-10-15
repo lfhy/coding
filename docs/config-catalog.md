@@ -69,6 +69,10 @@ export interface Config {
   persistenceCompression?: JsonlCompression
   /** Controls automatic AGENTS.md/CLAUDE.md loading; configure a byte budget or set `false`. */
   workspaceContext: agentCore.Config['workspaceContext']
+  /**
+   * 项目记忆组（Provider + 基线注入 + 四个工具）；省略即不挂载，验证记忆行为的场景显式打开。
+   */
+  memory?: NonNullable<agentCore.Config['memory']>
   /** Skill registry, local-provider, and model-facing consumer config forwarded to agent-spine-demo. */
   skills?: agentCore.SkillConfig
   /** Model-facing bash tool config forwarded through agent-core. */
@@ -84,7 +88,7 @@ export interface Config {
 
 Depends on: [`agentCore`](../packages/examples/agent-spine-demo/src/index.ts) · [`JsonlCompression`](../packages/session/session-persistence-jsonl/src/index.ts) · [`ToolsConfig`](#deepseek-aidsh-tools)
 
-Source: [`packages/examples/acp-demo/src/index.ts:39`](../packages/examples/acp-demo/src/index.ts)
+Source: [`packages/examples/acp-demo/src/index.ts:40`](../packages/examples/acp-demo/src/index.ts)
 
 <a id="deepseek-aidsh-agent-default-model"></a>
 

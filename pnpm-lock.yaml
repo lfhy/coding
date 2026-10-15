@@ -4383,6 +4383,9 @@ importers:
       '@deepseek-ai/dsh-invariants':
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
+      '@deepseek-ai/dsh-memory':
+        specifier: workspace:^
+        version: link:../../memory/memory
       '@deepseek-ai/dsh-session-checkpoint-policy':
         specifier: workspace:^
         version: link:../../session/session-checkpoint-policy

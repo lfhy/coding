@@ -45,6 +45,9 @@
       "path": "../../session/session-persistence-jsonl"
     },
     {
+      "path": "../../memory/memory"
+    },
+    {
       "path": "../../runtime-diagnostics/invariants"
     }
   ]

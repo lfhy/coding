@@ -200,6 +200,7 @@ export function pickSpineConfig(config: Omit<Config, 'agents'>): Omit<Config, 'a
     ...config.dshHome !== undefined ? { dshHome: config.dshHome } : {},
     ...config.sessionTitle !== undefined ? { sessionTitle: config.sessionTitle } : {},
     workspaceContext: config.workspaceContext,
+    ...config.memory !== undefined ? { memory: config.memory } : {},
     ...config.skills !== undefined ? { skills: config.skills } : {},
     ...config.toolBash !== undefined ? { toolBash: config.toolBash } : {},
     ...config.jobs !== undefined ? { jobs: config.jobs } : {},
