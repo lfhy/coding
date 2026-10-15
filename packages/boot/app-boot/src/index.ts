@@ -32,8 +32,6 @@ export {
   addCodingPromptSections,
   CODING_GUIDELINES,
   CODING_GUIDELINES_SECTION,
-  CODING_IDENTITY,
-  CODING_IDENTITY_SECTION,
 } from './coding-prompt.ts'
 
 export {

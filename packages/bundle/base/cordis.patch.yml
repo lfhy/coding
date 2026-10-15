@@ -478,9 +478,6 @@
     - id: system-prompt
       name: '@deepseek-ai/dsh-system-prompt'
       config:
-        # Coding 拥有自己的身份段（`coding:identity`），关闭 harness 的英文开场白，
-        # 免得两句身份同时出现。
-        includeHarnessIdentity: false
         persona: ''
 
     # Agents created at startup. The base stays empty; raw overlays may create

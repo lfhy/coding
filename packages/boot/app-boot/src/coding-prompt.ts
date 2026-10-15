@@ -8,17 +8,8 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 
-/** 身份段名称；顺序 −100，与它所替代的 harness 开场白同位。 */
-export const CODING_IDENTITY_SECTION = 'coding:identity'
-
 /** 工作方式段名称；顺序 −98，排在 persona 之前，因此预设无法遮蔽它。 */
 export const CODING_GUIDELINES_SECTION = 'coding:guidelines'
-
-/**
- * 身份：只说明「你在 Coding 里工作」。产品定位（DSH 的 fork、客户端矩阵）写在仓库
- * README，不进提示词；模型运行在哪个模型上、工作目录在哪，由预设 persona 给出。
- */
-export const CODING_IDENTITY = '你是 Coding 的编程 agent，在用户自己的电脑上工作。'
 
 /** 工作方式、交接、记忆、边界与答复要求；模型可见文本，改动需同步快照。 */
 export const CODING_GUIDELINES = `# 工作方式
@@ -85,19 +76,18 @@ export const CODING_GUIDELINES = `# 工作方式
 - 说明跑过哪些检查、哪些没跑以及原因；有自然的下一步（跑测试、提交、扩到下一个模块）就简短提一句。`
 
 /**
- * 注册 Coding 的身份与工作方式段。两段都是全局段：预设的 agent 作用域 persona
- * 只遮蔽同名段，因此每个会话都拿得到工作方式。
+ * 注册 Coding 的工作方式段。它是全局段且顺序在 persona 之前：预设的 agent 作用域
+ * persona 只遮蔽同名段，因此每个会话都拿得到工作方式。身份文案由
+ * `dsh-system-prompt` 的默认身份段提供，这里不再重复一句身份。
  * @param ctx - 已启动的宿主上下文，需带 `systemPrompt` 服务。
- * @returns 两段的 disposer；没有该服务时返回 undefined。
+ * @returns 该段的 disposer；没有该服务时返回 undefined。
  */
 export function addCodingPromptSections(ctx: Context): (() => void) | undefined {
   const systemPrompt = ctx.get('systemPrompt')
   if (systemPrompt === undefined) return undefined
-  const disposers = [
-    systemPrompt.section({ name: CODING_IDENTITY_SECTION, order: -100, text: CODING_IDENTITY }),
-    systemPrompt.section({ name: CODING_GUIDELINES_SECTION, order: -98, text: CODING_GUIDELINES }),
-  ]
-  return () => {
-    for (const dispose of disposers) dispose()
-  }
+  return systemPrompt.section({
+    name: CODING_GUIDELINES_SECTION,
+    order: -98,
+    text: CODING_GUIDELINES,
+  })
 }

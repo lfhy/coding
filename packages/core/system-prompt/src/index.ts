@@ -358,7 +358,7 @@ export class SystemPrompt extends Service {
       this.section({
         name: 'harness:identity',
         order: -100,
-        text: 'You are an AI agent powered by DeepSeek Harness.',
+        text: '你是 Coding 的编程 agent，在用户自己的电脑上工作。',
       })
     }
     this.section({

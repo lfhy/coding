@@ -9,7 +9,7 @@ import SystemPrompt, { AssembleContext, PromptAssembly, renderContextSnapshot, r
  * their own sections; the built-ins' behavior is pinned by its own describe.
  */
 const BUILT_IN = ['harness:identity', 'deployment:persona']
-const IDENTITY = 'You are an AI agent powered by DeepSeek Harness.'
+const IDENTITY = '你是 Coding 的编程 agent，在用户自己的电脑上工作。'
 function contributed(assembly: PromptAssembly): PromptAssembly['sections'] {
   return assembly.sections.filter(section => !BUILT_IN.includes(section.name))
 }

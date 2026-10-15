@@ -136,7 +136,7 @@ describe('web-app runtime glue', () => {
     ])
     // Coding 自己的身份与工作方式进入提示词；GUI 地址不进入提示词或受管 Bash 环境。
     const assembly = await ctx.systemPrompt.assemble()
-    expect(assembly.sections.find(entry => entry.name === 'coding:identity')?.text).toContain('你是 Coding 的编程 agent')
+    expect(assembly.sections.find(entry => entry.name === 'harness:identity')?.text).toContain('你是 Coding 的编程 agent')
     expect(assembly.sections.find(entry => entry.name === 'coding:guidelines')?.text).toContain('# 工作方式')
     expect(assembly.sections.some(entry => entry.name === 'harness:source')).toBe(false)
     expect(assembly.sections.some(entry => entry.name === 'app:web-surface')).toBe(false)
@@ -160,7 +160,7 @@ describe('web-app runtime glue', () => {
     expect(openBrowser).not.toHaveBeenCalled()
     const assembly = await ctx.systemPrompt.assemble()
     expect(assembly.sections.some(entry => entry.name === 'app:web-surface')).toBe(false)
-    expect(assembly.sections.some(entry => entry.name === 'coding:identity')).toBe(true)
+    expect(assembly.sections.some(entry => entry.name === 'harness:identity')).toBe(true)
     await ctx.fiber.dispose()
   })
 
@@ -181,7 +181,7 @@ describe('web-app runtime glue', () => {
     await ctx.plugin(SystemPrompt, { persona: '' })
     await new Promise(resolve => setTimeout(resolve, 0))
     const assembly = await ctx.systemPrompt.assemble()
-    expect(assembly.sections.find(entry => entry.name === 'coding:identity')?.text).toBe('你是 Coding 的编程 agent，在用户自己的电脑上工作。')
+    expect(assembly.sections.find(entry => entry.name === 'harness:identity')?.text).toBe('你是 Coding 的编程 agent，在用户自己的电脑上工作。')
     expect(assembly.sections.some(entry => entry.name === 'coding:guidelines')).toBe(true)
     expect(assembly.sections.some(entry => entry.name === 'harness:source')).toBe(false)
     expect(contributions).toEqual([])
@@ -289,7 +289,7 @@ describe('web-app runtime glue', () => {
     await ctx.plugin(SystemPrompt, { persona: '' })
     await new Promise(resolve => setTimeout(resolve, 0))
     const assembly = await ctx.systemPrompt.assemble()
-    expect(assembly.sections.some(entry => entry.name === 'coding:identity')).toBe(true)
+    expect(assembly.sections.some(entry => entry.name === 'harness:identity')).toBe(true)
     await ctx.fiber.dispose()
   })
 
