@@ -44,6 +44,8 @@ flowchart LR
   cfg --> plugin_dsh_base_credentials
   plugin_dsh_base_llm_pi_ai["llm-pi-ai<br/>@deepseek-ai/dsh-llm-pi-ai"]
   cfg --> plugin_dsh_base_llm_pi_ai
+  plugin_dsh_base_llm_opencode["llm-opencode<br/>@deepseek-ai/dsh-llm-opencode"]
+  cfg --> plugin_dsh_base_llm_opencode
   plugin_dsh_base_session_persistence_jsonl["session-persistence-jsonl<br/>@deepseek-ai/dsh-session-persistence-jsonl"]
   cfg --> plugin_dsh_base_session_persistence_jsonl
   plugin_dsh_base_attachment_local["attachment-local<br/>@deepseek-ai/dsh-attachment-local"]
@@ -120,6 +122,8 @@ flowchart LR
   cfg --> plugin_dsh_base_tool_subagent_control
   plugin_dsh_base_tool_subagent_list_agents["tool-subagent-list-agents<br/>@deepseek-ai/dsh-tool-subagent-control/list-agents"]
   cfg --> plugin_dsh_base_tool_subagent_list_agents
+  plugin_dsh_base_tool_subagent_list_models["tool-subagent-list-models<br/>@deepseek-ai/dsh-tool-subagent-control/list-models"]
+  cfg --> plugin_dsh_base_tool_subagent_list_models
   plugin_dsh_base_tool_subagent["tool-subagent<br/>@deepseek-ai/dsh-tool-subagent"]
   cfg --> plugin_dsh_base_tool_subagent
   plugin_dsh_base_tool_subagent_fork["tool-subagent-fork<br/>@deepseek-ai/dsh-tool-subagent"]
@@ -196,6 +200,7 @@ flowchart LR
 | `settings` | `@deepseek-ai/dsh-settings-file` |
 | `credentials` | `@deepseek-ai/dsh-credentials-local` |
 | `llm-pi-ai` | `@deepseek-ai/dsh-llm-pi-ai` |
+| `llm-opencode` | `@deepseek-ai/dsh-llm-opencode` |
 | `session-persistence-jsonl` | `@deepseek-ai/dsh-session-persistence-jsonl` |
 | `attachment-local` | `@deepseek-ai/dsh-attachment-local` |
 | `session-query-sqlite` | `@deepseek-ai/dsh-session-query-sqlite` |
@@ -234,6 +239,7 @@ flowchart LR
 | `subagent-fork-in-process` | `@deepseek-ai/dsh-subagent-fork-in-process` |
 | `tool-subagent-control` | `@deepseek-ai/dsh-tool-subagent-control` |
 | `tool-subagent-list-agents` | `@deepseek-ai/dsh-tool-subagent-control/list-agents` |
+| `tool-subagent-list-models` | `@deepseek-ai/dsh-tool-subagent-control/list-models` |
 | `tool-subagent` | `@deepseek-ai/dsh-tool-subagent` |
 | `tool-subagent-fork` | `@deepseek-ai/dsh-tool-subagent` |
 | `tool-subagent-report` | `@deepseek-ai/dsh-tool-subagent-report` |

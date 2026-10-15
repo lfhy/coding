@@ -104,7 +104,7 @@ const SERVICE_ROLES: ServiceRole[] = [
     title: 'Durable binary attachment storage',
     mode: 'seam',
     implementations: ['attachment-local'],
-    consumers: ['host-runtime', 'llm-pi-ai'],
+    consumers: ['host-runtime', 'llm-pi-ai', 'llm-opencode'],
     note: 'The host commits accepted images before session events; provider adapters resolve authorized durable references into provider-native content.',
   },
   {
@@ -112,7 +112,7 @@ const SERVICE_ROLES: ServiceRole[] = [
     pkg: 'llm',
     title: 'LLM adapter registry',
     mode: 'seam',
-    implementations: ['llm-deepseek', 'llm-pi-ai', 'llm-replay'],
+    implementations: ['llm-deepseek', 'llm-pi-ai', 'llm-opencode', 'llm-replay'],
     consumers: ['agent-loop', 'compaction-basic'],
     note: 'Adapters register provider implementations; the loop and compaction call the provider-neutral stream service.',
   },
@@ -186,7 +186,7 @@ const SERVICE_ROLES: ServiceRole[] = [
     title: 'User-settings seam',
     mode: 'seam',
     implementations: ['settings-file'],
-    consumers: ['llm-deepseek', 'llm-pi-ai', 'apiproxy'],
+    consumers: ['llm-deepseek', 'llm-pi-ai', 'llm-opencode', 'apiproxy'],
     note: 'Plugins register namespace schemas and resolve layered values; providers store the raw document. The LLM adapters register their entry config as the composition base under the user section; the web gateway serves redacted layered descriptors and writes the user layer.',
   },
   {
@@ -195,7 +195,7 @@ const SERVICE_ROLES: ServiceRole[] = [
     title: 'Credential seam',
     mode: 'seam',
     implementations: ['credentials-local'],
-    consumers: ['llm-deepseek', 'llm-pi-ai', 'apiproxy'],
+    consumers: ['llm-deepseek', 'llm-pi-ai', 'llm-opencode', 'apiproxy'],
     note: 'Configuration carries references to secrets; providers own the values. Consumers resolve per operation, so a rotated credential reaches the very next request; the web gateway exposes value-free views and write-only storage.',
   },
   {

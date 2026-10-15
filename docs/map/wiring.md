@@ -228,6 +228,7 @@
 - `settings` → `@deepseek-ai/dsh-settings-file`
 - `credentials` → `@deepseek-ai/dsh-credentials-local`
 - `llm-pi-ai` → `@deepseek-ai/dsh-llm-pi-ai`
+- `llm-opencode` → `@deepseek-ai/dsh-llm-opencode`
 - `session-persistence-jsonl` → `@deepseek-ai/dsh-session-persistence-jsonl`
 - `attachment-local` → `@deepseek-ai/dsh-attachment-local`
 - `session-query-sqlite` → `@deepseek-ai/dsh-session-query-sqlite`

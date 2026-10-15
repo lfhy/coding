@@ -41,6 +41,18 @@ function otherRow(overrides: Partial<ProviderRow> = {}): ProviderRow {
   }
 }
 
+/** The shipped built-in route: registered from composition, with no settings address and no credential reference. */
+function builtinRow(overrides: Partial<ProviderRow> = {}): ProviderRow {
+  return {
+    entry: { provider: 'opencode-zen', displayName: 'OpenCode Zen', settingsNs: '', settingsPath: [], active: true },
+    configured: false,
+    removable: false,
+    apiKeyEnv: undefined,
+    credential: undefined,
+    ...overrides,
+  }
+}
+
 function state(overrides: Partial<ModelsSettingsState> = {}): ModelsSettingsState {
   return {
     status: 'ready',
@@ -134,6 +146,32 @@ describe('onboardingReadiness', () => {
     expect(onboardingReadiness({ ...selectable(), onboardingModelFailures: [
       { id: 'deepseek-official', name: 'DeepSeek', message: 'timeout' },
     ] })).toEqual({ kind: 'needs-selection' })
+  })
+
+  it('is ready out of the box on the built-in credential-free route', () => {
+    // 内置免费渠道从组合里注册、没有设置地址、也没有凭据引用，因此它天然可用：
+    // 默认模型已在组合层指向它，首次引导不该再要求任何人填 key。
+    const builtIn = state({
+      rows: [row(), builtinRow()],
+      namespaces: new Map([['agent-default-model', {} as never]]),
+      onboardingModels: [
+        { provider: 'opencode-zen', providerName: 'OpenCode Zen', model: 'mimo-v2.6-flash-free', modelName: 'Mimo V2.6 Flash' },
+      ],
+      onboardingDefault: { provider: 'opencode-zen', model: 'mimo-v2.6-flash-free' },
+    })
+    expect(onboardingReadiness(builtIn)).toEqual({ kind: 'ready' })
+  })
+
+  it('keeps a built-in route with an unresolved default at needs-selection', () => {
+    // 组合默认模型与渠道目录不一致时仍要用户确认，不能仅因为渠道可用就放行。
+    expect(onboardingReadiness(state({
+      rows: [builtinRow()],
+      namespaces: new Map([['agent-default-model', {} as never]]),
+      onboardingModels: [
+        { provider: 'opencode-zen', providerName: 'OpenCode Zen', model: 'other-free', modelName: 'Other' },
+      ],
+      onboardingDefault: { provider: 'opencode-zen', model: 'mimo-v2.6-flash-free' },
+    }))).toEqual({ kind: 'needs-selection' })
   })
 
   it('shows failures or read-only settings without marking onboarding complete', () => {

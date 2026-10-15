@@ -127,10 +127,21 @@ export interface Config {
    * under the same per-directory trimmed-content dedup; empty disables the overlay.
    */
   localInstructionFileCandidates?: string[]
+  /**
+   * Ordered candidates loaded from the project root alone and rendered as project
+   * background rather than as instructions; empty disables the overview. A name
+   * also listed as an instruction candidate stays an instruction candidate.
+   */
+  overviewFileCandidates?: string[]
+  /**
+   * UTF-8 byte cap for the rendered head of one overview file; the rest of the
+   * file stays out of the prompt, and instructions are never capped by it.
+   */
+  overviewMaxBytes?: number
 }
 ```
 
-Source: [`packages/context/agent-instructions/src/config.ts:18`](../packages/context/agent-instructions/src/config.ts)
+Source: [`packages/context/agent-instructions/src/config.ts:22`](../packages/context/agent-instructions/src/config.ts)
 
 <a id="deepseek-aidsh-agent-loop"></a>
 
@@ -1024,6 +1035,58 @@ export interface DeepSeekCatalogModel {
 Depends on: [`ModelModality`](subsystems/llm-streaming.md) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
 
 Source: [`packages/llm/llm-deepseek/src/index.ts:67`](../packages/llm/llm-deepseek/src/index.ts)
+
+<a id="deepseek-aidsh-llm-opencode"></a>
+
+## `@deepseek-ai/dsh-llm-opencode`
+
+Requires: `llm`
+
+```ts config-catalog
+/**
+ * 插件配置，同时也是 `llm-opencode` settings 分节的结构。
+ * 省略字段使用内置默认值，因此默认安装无需任何分节即可工作；
+ * 用户改 key、改端点、增删模型都写在这一节里。
+ */
+export interface Config {
+  /** 界面显示名称，默认 `OpenCode Zen`。 */
+  channelName?: string
+  /** 凭据；省略时为匿名通道的 `public`。填自己的 key 时请求走该凭据。 */
+  apiKey?: string
+  /** 端点基址，默认官方 Zen；可改为自建网关。 */
+  baseURL?: string
+  /** 目录；省略时使用内置三个免费模型。 */
+  models?: OpencodeModelConfig[]
+  /** 模型未给出容量时的回退上下文容量。 */
+  defaultContextWindow?: number
+  /** 模型未给出输出上限时的回退值。 */
+  defaultMaxTokens?: number
+  /** 提供商空闲超时，覆盖未完成的流读取。 */
+  streamIdleTimeoutMs?: number
+  /** 单次请求 base64 图片载荷上限。 */
+  maxRequestImageBytes?: number
+  /** 提供商自有的重试策略；省略时使用 normal 模式重试五次。 */
+  retryPolicy?: RetryPolicyConfig
+}
+
+/** 一个内置模型的配置。 */
+export interface OpencodeModelConfig {
+  /** 线协议上的模型 id。 */
+  id: string
+  /** 选择器显示名称；省略时用 id。 */
+  name?: string
+  /** 上下文容量；省略时用路由的 `defaultContextWindow`。 */
+  contextWindow?: number
+  /** 单次请求输出上限；省略时用提供方自身的值。 */
+  maxTokens?: number
+  /** 该模型提供的推理档位；省略时按不具备推理能力处理。 */
+  reasoningEfforts?: string[]
+}
+```
+
+Depends on: [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
+
+Source: [`packages/llm/llm-opencode/src/config.ts:68`](../packages/llm/llm-opencode/src/config.ts)
 
 <a id="deepseek-aidsh-llm-pi-ai"></a>
 
@@ -2812,7 +2875,7 @@ Source: [`packages/session-query/tool-session-query/src/index.ts:29`](../package
 
 ## `@deepseek-ai/dsh-tool-skill`
 
-Requires: `agents` · `tools` · `skills`
+Requires: `agents` · `tools` · `skills` · `systemPrompt`
 
 ```ts config-catalog
 /** Model-facing skill catalog configuration. */
@@ -2905,7 +2968,7 @@ export interface Config {
 
 Depends on: [`AgentOptions`](subsystems/core.md)
 
-Source: [`packages/subagent/tool-subagent/src/index.ts:29`](../packages/subagent/tool-subagent/src/index.ts)
+Source: [`packages/subagent/tool-subagent/src/index.ts:30`](../packages/subagent/tool-subagent/src/index.ts)
 
 <a id="deepseek-aidsh-tool-subagent-report"></a>
 
@@ -3391,7 +3454,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-subprocess-local` ([`packages/subprocess/subprocess-local/src/index.ts`](../packages/subprocess/subprocess-local/src/index.ts))
 - `@deepseek-ai/dsh-terminal` ([`packages/terminal/terminal/src/index.ts`](../packages/terminal/terminal/src/index.ts))
 - `@deepseek-ai/dsh-tool-ask-user` — requires `tools` · `userQuestions` ([`packages/interaction/tool-ask-user/src/index.ts`](../packages/interaction/tool-ask-user/src/index.ts))
-- `@deepseek-ai/dsh-tool-browser` — requires `tools` · `browserUse` · `attachments` ([`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts))
+- `@deepseek-ai/dsh-tool-browser` — requires `tools` · `browserUse` · `attachments` · `systemPrompt` ([`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts))
 - `@deepseek-ai/dsh-tool-call-timeout-policy` — requires `tools` ([`packages/guard/timeout-policy/src/index.ts`](../packages/guard/timeout-policy/src/index.ts))
 - `@deepseek-ai/dsh-tool-cordis` — requires `tools` · `systemPrompt` · `dynamicCordisRunner` · `cordisInspect` ([`packages/extensions/tool-cordis/src/index.ts`](../packages/extensions/tool-cordis/src/index.ts))
 - `@deepseek-ai/dsh-tool-subagent-control` — requires `tools` · `subagents` ([`packages/subagent/tool-subagent-control/src/index.ts`](../packages/subagent/tool-subagent-control/src/index.ts))

@@ -12,6 +12,7 @@ flowchart LR
   pkg_attachment_local["attachment-local"]
   pkg_host_runtime["host-runtime"]
   pkg_llm_pi_ai["llm-pi-ai"]
+  pkg_llm_opencode["llm-opencode"]
   pkg_llm["llm"]
   svc_llm["ctx.llm<br/>LLM adapter registry"]
   pkg_llm_deepseek["llm-deepseek"]
@@ -251,6 +252,7 @@ flowchart LR
   pkg_jobs_local --> svc_jobs
   pkg_llm --> svc_llm
   pkg_llm_deepseek --> svc_llm
+  pkg_llm_opencode --> svc_llm
   pkg_llm_pi_ai --> svc_llm
   pkg_llm_replay --> svc_llm
   pkg_llm_vision_fallback --> svc_visionUnderstanding
@@ -331,6 +333,7 @@ flowchart LR
   svc_approval --> pkg_tool_bash
   svc_approval --> pkg_tools
   svc_attachments --> pkg_host_runtime
+  svc_attachments --> pkg_llm_opencode
   svc_attachments --> pkg_llm_pi_ai
   svc_browserUse --> pkg_tool_browser
   svc_clientModules --> pkg_hmr
@@ -339,6 +342,7 @@ flowchart LR
   svc_cordisInspect --> pkg_tool_cordis
   svc_credentials --> pkg_apiproxy
   svc_credentials --> pkg_llm_deepseek
+  svc_credentials --> pkg_llm_opencode
   svc_credentials --> pkg_llm_pi_ai
   svc_directoryPicker --> pkg_apiproxy
   svc_dynamicCordisRunner --> pkg_tool_cordis
@@ -384,6 +388,7 @@ flowchart LR
   svc_sessions --> pkg_subagent_inprocess
   svc_settings --> pkg_apiproxy
   svc_settings --> pkg_llm_deepseek
+  svc_settings --> pkg_llm_opencode
   svc_settings --> pkg_llm_pi_ai
   svc_shell --> pkg_hooks_claude_code
   svc_shell --> pkg_hooks_codex
@@ -440,8 +445,8 @@ flowchart LR
 
 | ctx key | Role | Owner | Implementations | Direct consumers | Companion plugins | Note |
 | --- | --- | --- | --- | --- | --- | --- |
-| `ctx.attachments` | `seam` | [`attachment`](../packages/attachment/attachment) | [`attachment-local`](../packages/attachment/attachment-local) | `host-runtime`, [`llm-pi-ai`](../packages/llm/llm-pi-ai) | - | The host commits accepted images before session events; provider adapters resolve authorized durable references into provider-native content. |
-| `ctx.llm` | `seam` | [`llm`](../packages/llm/llm) | [`llm-deepseek`](../packages/llm/llm-deepseek), [`llm-pi-ai`](../packages/llm/llm-pi-ai), [`llm-replay`](../packages/test-support/llm-replay) | [`agent-loop`](../packages/core/agent-loop), [`compaction-basic`](../packages/compaction/compaction-basic) | - | Adapters register provider implementations; the loop and compaction call the provider-neutral stream service. |
+| `ctx.attachments` | `seam` | [`attachment`](../packages/attachment/attachment) | [`attachment-local`](../packages/attachment/attachment-local) | `host-runtime`, [`llm-pi-ai`](../packages/llm/llm-pi-ai), [`llm-opencode`](../packages/llm/llm-opencode) | - | The host commits accepted images before session events; provider adapters resolve authorized durable references into provider-native content. |
+| `ctx.llm` | `seam` | [`llm`](../packages/llm/llm) | [`llm-deepseek`](../packages/llm/llm-deepseek), [`llm-pi-ai`](../packages/llm/llm-pi-ai), [`llm-opencode`](../packages/llm/llm-opencode), [`llm-replay`](../packages/test-support/llm-replay) | [`agent-loop`](../packages/core/agent-loop), [`compaction-basic`](../packages/compaction/compaction-basic) | - | Adapters register provider implementations; the loop and compaction call the provider-neutral stream service. |
 | `ctx.visionUnderstanding` | `core` | [`llm-vision-fallback`](../packages/llm/llm-vision-fallback) | - | `apiproxy` | - | An explicit image-capable route describes durable attachment references before a text-only request; apiproxy reads only whether that route is configured, while the request-history listener owns validation and replayable replacements. |
 | `ctx.tokenMeter` | `core` | [`token-meter`](../packages/llm/token-meter) | - | [`compaction-basic`](../packages/compaction/compaction-basic) | - | Owns isolated per-session replay folds; pressure consumers share immutable revisioned measurements. |
 | `ctx.toolResultPruner` | `core` | [`compaction-tool-result-pruner`](../packages/compaction/compaction-tool-result-pruner) | - | [`compaction-basic`](../packages/compaction/compaction-basic) | - | Rewrites oversized current tool results through replayable single-node surface replacements before summary compaction. |
@@ -450,8 +455,8 @@ flowchart LR
 | `ctx.typert` | `core` | [`typert-registry`](../packages/typert/registry) | - | [`typert-loader`](../packages/typert/loader), [`api-gateway`](../packages/api/gateway) | - | Plugins register live zod contributions directly or through dsh-typert-loader; the API gateway consumes invocation descriptors and providers, while other runtime consumers query schemas and reflection metadata at their own edges. |
 | `ctx.typertGateway` | `core` | [`api-gateway`](../packages/api/gateway) | - | - | - | Associates generated Remote descriptors with live Cordis services, resolves registered identities, and exposes unary calls through the shared Connection RPC carrier. |
 | `ctx.sessionPersistence` | `seam` | [`session-persistence`](../packages/session/session-persistence) | [`session-persistence-jsonl`](../packages/session/session-persistence-jsonl), [`session-persistence-sqlite`](../packages/session/session-persistence-sqlite) | [`agent-loop`](../packages/core/agent-loop), [`tool-bash`](../packages/shell/tool-bash), [`hooks-claude-code`](../packages/hooks/hooks-claude-code), [`hooks-codex`](../packages/hooks/hooks-codex), [`session-query`](../packages/session-query/session-query), [`session-query-sqlite`](../packages/session-query/session-query-sqlite), [`message-feedback`](../packages/feedback/message-feedback) | - | Backends persist the same SessionEvent vocabulary; apps choose a backend at composition time. |
-| `ctx.settings` | `seam` | [`settings`](../packages/settings/settings) | [`settings-file`](../packages/settings/settings-file) | [`llm-deepseek`](../packages/llm/llm-deepseek), [`llm-pi-ai`](../packages/llm/llm-pi-ai), `apiproxy` | - | Plugins register namespace schemas and resolve layered values; providers store the raw document. The LLM adapters register their entry config as the composition base under the user section; the web gateway serves redacted layered descriptors and writes the user layer. |
-| `ctx.credentials` | `seam` | [`credentials`](../packages/credentials/credentials) | [`credentials-local`](../packages/credentials/credentials-local) | [`llm-deepseek`](../packages/llm/llm-deepseek), [`llm-pi-ai`](../packages/llm/llm-pi-ai), `apiproxy` | - | Configuration carries references to secrets; providers own the values. Consumers resolve per operation, so a rotated credential reaches the very next request; the web gateway exposes value-free views and write-only storage. |
+| `ctx.settings` | `seam` | [`settings`](../packages/settings/settings) | [`settings-file`](../packages/settings/settings-file) | [`llm-deepseek`](../packages/llm/llm-deepseek), [`llm-pi-ai`](../packages/llm/llm-pi-ai), [`llm-opencode`](../packages/llm/llm-opencode), `apiproxy` | - | Plugins register namespace schemas and resolve layered values; providers store the raw document. The LLM adapters register their entry config as the composition base under the user section; the web gateway serves redacted layered descriptors and writes the user layer. |
+| `ctx.credentials` | `seam` | [`credentials`](../packages/credentials/credentials) | [`credentials-local`](../packages/credentials/credentials-local) | [`llm-deepseek`](../packages/llm/llm-deepseek), [`llm-pi-ai`](../packages/llm/llm-pi-ai), [`llm-opencode`](../packages/llm/llm-opencode), `apiproxy` | - | Configuration carries references to secrets; providers own the values. Consumers resolve per operation, so a rotated credential reaches the very next request; the web gateway exposes value-free views and write-only storage. |
 | `ctx.sessionTelemetry` | `seam` | [`session-telemetry`](../packages/session/session-telemetry) | [`session-telemetry-otel`](../packages/session/session-telemetry-otel) | - | - | The seam captures, redacts, and hands session records to one backend; nothing else consumes the service — its output leaves the process. |
 | `ctx.storage` | `seam` | [`storage`](../packages/storage/storage) | [`storage-json`](../packages/storage/storage-json), [`storage-sqlite`](../packages/storage/storage-sqlite) | [`storage-domain`](../packages/storage/storage-domain) | - | Backends register side by side under names; data forms (domain first) mount on the hub and translate typed operations into opaque KV-unit primitives. |
 | `ctx.storageDomain` | `core` | [`storage-domain`](../packages/storage/storage-domain) | - | [`workspace`](../packages/workspace/workspace), [`message-feedback`](../packages/feedback/message-feedback) | - | Waits for every configured backend, then publishes the domain form as one lifecycle-bound service for typed durable state. |
