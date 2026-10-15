@@ -34,7 +34,6 @@ export interface RpcErrorDetailsMap {
   'bad-request': { issues: ZodIssue[] }
   'cancelled': {}
   'session-not-found': { sessionId: SessionId }
-  'side-chat-not-found': { sideChatId: SessionId }
   'browser-failed': { reason: BrowserUseErrorCode }
   'model-unavailable': { provider: string; model: string; reason?: 'MODEL_DOES_NOT_SUPPORT_IMAGES' }
   'session-conflict': { sessionId: SessionId; requestedCwd: string; existingCwd?: string }

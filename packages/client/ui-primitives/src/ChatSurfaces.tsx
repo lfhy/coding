@@ -1,4 +1,4 @@
-/** 主对话与临时侧聊共用的纯展示控件；会话状态与提交动作由调用方持有。 */
+/** 主对话复用的纯展示控件；会话状态与提交动作由调用方持有。 */
 import { forwardRef } from 'react'
 import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from 'react'
 import clsx from 'clsx'

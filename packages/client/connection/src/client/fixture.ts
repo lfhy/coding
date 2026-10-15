@@ -2668,12 +2668,6 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       },
       openPath: request => ok(request, { opened: true as const }),
     },
-    sideChat: {
-      create: request => err(request, { code: 'side-chat-not-found', message: 'Temporary chat is unavailable in fixture mode', details: { sideChatId: 'fixture' as SessionId } }),
-      send: request => err(request, { code: 'side-chat-not-found', message: 'Temporary chat is unavailable in fixture mode', details: { sideChatId: request.payload.sideChatId } }),
-      state: request => err(request, { code: 'side-chat-not-found', message: 'Temporary chat is unavailable in fixture mode', details: { sideChatId: request.payload.sideChatId } }),
-      close: request => ok(request, {}),
-    },
     workspace: {
       gitStatus: request => ok(request, null),
       gitBranches: request => ok(request, null),
@@ -3232,10 +3226,6 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'workspace.gitStatus': return this.api.workspace.gitStatus(request, signal)
       case 'workspace.gitBranches': return this.api.workspace.gitBranches(request, signal)
       case 'workspace.gitHistory': return this.api.workspace.gitHistory(request, signal)
-      case 'sideChat.create': return this.api.sideChat.create(request)
-      case 'sideChat.send': return this.api.sideChat.send(request)
-      case 'sideChat.state': return this.api.sideChat.state(request)
-      case 'sideChat.close': return this.api.sideChat.close(request)
       case 'workspace.gitCheckout': return this.api.workspace.gitCheckout(request, signal)
       case 'workspace.gitPush': return this.api.workspace.gitPush(request, signal)
       case 'workspace.gitPull': return this.api.workspace.gitPull(request, signal)

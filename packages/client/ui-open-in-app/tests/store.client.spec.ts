@@ -37,7 +37,6 @@ describe('file workbench store', () => {
       tabs: [],
       activeId: null,
       nextTerminalNumber: 1,
-      nextSideChatNumber: 1,
       nextLauncherNumber: 1,
       nextExternalNumber: 1,
       activeBrowserTabId: null,
@@ -99,21 +98,6 @@ describe('file workbench store', () => {
 })
 
 describe('统一工作台标签', () => {
-  it('为每个临时侧聊创建独立标签，关闭仅移除该标签', () => {
-    const instance = createWorkbenchStore().create()
-    instance.actions.openFileManager()
-    instance.actions.openSideChat()
-    instance.actions.openSideChat()
-    expect(instance.store.getSnapshot()).toMatchObject({
-      view: 'side-chat', activeId: 'side-chat:2', nextSideChatNumber: 3,
-      tabs: [{ type: 'file-manager' }, { type: 'side-chat', id: 'side-chat:1' }, { type: 'side-chat', id: 'side-chat:2' }],
-    })
-    instance.actions.closeTab('side-chat:1')
-    expect(instance.store.getSnapshot().activeId).toBe('side-chat:2')
-    instance.actions.closeTab('side-chat:2')
-    expect(instance.store.getSnapshot()).toMatchObject({ view: 'files', activeId: 'file-manager' })
-  })
-
   it('历史记录单实例标签消费启动项、切换后保留并在关闭时回退邻项', () => {
     const instance = createWorkbenchStore().create()
     instance.actions.openFileManager()

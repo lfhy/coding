@@ -80,7 +80,6 @@ export class ApiProxyService extends Service implements ApiProxy {
   })
 
   readonly sessions: ApiProxy['sessions']
-  readonly sideChat: ApiProxy['sideChat']
   readonly browser: ApiProxy['browser']
   readonly subagents: ApiProxy['subagents']
   readonly workspace: ApiProxy['workspace']
@@ -110,7 +109,6 @@ export class ApiProxyService extends Service implements ApiProxy {
         : { coldBlankProbeMaxBytes: config.coldBlankProbeMaxBytes }),
     })
     this.sessions = api.sessions
-    this.sideChat = api.sideChat
     this.browser = api.browser
     this.subagents = api.subagents
     this.workspace = api.workspace

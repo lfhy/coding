@@ -16,14 +16,6 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
     }
   }
   return {
-    sideChat: {
-      create: request => Promise.resolve({ rpcId: request.rpcId, result: { ok: true, value: { sideChatId: 'side-new' as never } } }),
-      send: request => Promise.resolve({ rpcId: request.rpcId, result: { ok: true, value: {} } }),
-      state: request => Promise.resolve({ rpcId: request.rpcId, result: { ok: true, value: {
-        status: 'idle', events: [], views: [], nextSeq: 0, hasMore: false, interactions: [],
-      } } }),
-      close: request => Promise.resolve({ rpcId: request.rpcId, result: { ok: true, value: {} } }),
-    },
     browser: {
       async control(request) {
         return { rpcId: request.rpcId, result: { ok: true, value: null } }

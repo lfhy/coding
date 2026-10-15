@@ -9,7 +9,7 @@ import { homedir } from 'node:os'
 import { dirname } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
-import type { Agent, AgentHandle, ModelSelection, ModelSelectionRef, AgentOptions, AgentStatus } from '@deepseek-ai/dsh-agent'
+import type { Agent, ModelSelection, ModelSelectionRef, AgentOptions, AgentStatus } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-presets/types'
 import { AttachmentError, admitEncodedImages } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
@@ -43,7 +43,6 @@ import type {
   WorkspaceId, WorkspaceView,
 } from './api/index.ts'
 import { MANAGED_HOST_RECORD_TOKEN_ENV } from './api/host.ts'
-import { SIDE_CHAT_STATE_MAX_BYTES, SIDE_CHAT_STATE_PAGE_EVENTS } from './api/side-chat.ts'
 import {
   DEFAULT_SESSION_LOG_COMPRESSION_LEVEL,
   flushLiveSessionLog,
@@ -639,7 +638,7 @@ interface ToolCallData { callId: string; name: string; arguments: string }
 interface PendingApproval {
   rpcId: RpcId
   sessionId: SessionId
-  /** 该等待属于临时侧聊时存在；此时不进入 mux，只由 sideChat.state 暴露。 */
+  /** 临时会话的该等待存在时标记；它不进入 mux，也不回放给普通订阅者。 */
   transient?: true
   approvalId: ApprovalRequestId
   toolName: string
@@ -1086,57 +1085,6 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
    * not enforcement: the wire is reachable directly.
    */
   const presetSwitches = new Map<SessionId, Promise<unknown>>()
-  /** Host 独占的侧聊句柄；关闭和插件卸载都汇合到同一次停稳清理。 */
-  const sideChats = new Map<SessionId, AgentHandle>()
-  const closingSideChats = new Map<SessionId, Promise<void>>()
-  const sideChatDeadlines = new Map<SessionId, ReturnType<typeof setTimeout>>()
-  const sideChatIdleTimeoutMs = 30_000
-  const sideChatTouch = (id: SessionId): void => {
-    const previous = sideChatDeadlines.get(id)
-    if (previous !== undefined) clearTimeout(previous)
-    const timer = setTimeout(() => {
-      void closeSideChat(id).catch((error: unknown) => {
-        ctx.logger.warn(`side chat "${id}" disconnected cleanup failed: ${String(error)}`)
-      })
-    }, sideChatIdleTimeoutMs)
-    timer.unref()
-    sideChatDeadlines.set(id, timer)
-  }
-  ctx.effect(() => async () => {
-    for (const timer of sideChatDeadlines.values()) clearTimeout(timer)
-    sideChatDeadlines.clear()
-    await Promise.allSettled([...sideChats.keys()].map(id => closeSideChat(id)))
-    await Promise.allSettled([...closingSideChats.values()])
-  }, 'api-proxy: side-chat teardown')
-  function sideChatNotFound(sideChatId: SessionId): RpcError {
-    return { code: 'side-chat-not-found', message: `side chat "${sideChatId}" not found`, details: { sideChatId } }
-  }
-
-  function closeSideChat(sideChatId: SessionId): Promise<void> {
-    const pendingClose = closingSideChats.get(sideChatId)
-    if (pendingClose !== undefined) return pendingClose
-    const handle = sideChats.get(sideChatId)
-    if (handle === undefined) return Promise.resolve()
-    const timer = sideChatDeadlines.get(sideChatId)
-    if (timer !== undefined) clearTimeout(timer)
-    sideChatDeadlines.delete(sideChatId)
-    sideChats.delete(sideChatId)
-    const closing = (async () => {
-      // 先结算交互：工具可能正在等待人工批准或提问，dispose 等待工具退出。
-      for (const pending of [...pendingQuestions.values()]) {
-        if (pending.sessionId !== sideChatId) continue
-        claimQuestion(pending, 'cancelled')
-        pending.reject(new UserQuestionError('side chat closed', 'ASK_ABORTED'))
-      }
-      for (const pending of [...pendingApprovals.values()]) {
-        if (pending.sessionId === sideChatId) pending.resolve('cancelled')
-      }
-      await handle.dispose()
-    })()
-    closingSideChats.set(sideChatId, closing)
-    void closing.finally(() => { closingSideChats.delete(sideChatId) }).catch(() => undefined)
-    return closing
-  }
 
   /** Client-chosen identity creation/resume, deduplicated across concurrent retries. */
   const sessionCreations = new Map<SessionId, Promise<Agent>>()
@@ -1285,7 +1233,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       (await composeAgent(resolveSessionPreset({ header: meta, events }))).setup,
   })
 
-  /** 普通会话入口不能凭私有侧聊标识读取或恢复 Agent。 */
+  /** 临时会话不得经普通会话入口读取或恢复；它只属于创建它的插件。 */
   async function ordinaryAgentFor(sessionId: SessionId) {
     if (ctx.sessions.get(sessionId)?.transient === true) {
       return { error: { code: 'session-not-found' as const, message: `session "${sessionId}" not found`, details: { sessionId } } }
@@ -1293,7 +1241,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     return agentFor(sessionId)
   }
 
-  /** 不发送私有记录到公共帧流；侧聊待回复交互由 state 轮询独立读取。 */
+  /** 不把临时会话的记录发到公共帧流。 */
   function broadcast(payload: MuxFrame): void {
     const envelope = frame(payload)
     for (const queue of muxQueues) queue.push(envelope)
@@ -2134,131 +2082,6 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             return err(request, { code: 'browser-failed', message: `browser control failed (${error.code})`, details: { reason: error.code } })
           }
           return err(request, { code: 'browser-failed', message: 'browser control failed', details: { reason: 'BROWSER_FAILED' } })
-        }
-      },
-    },
-    sideChat: {
-      async create(request) {
-        const sideChatId = SessionId(`side-chat-${randomUUID()}`)
-        const sourceId = request.payload.sourceSessionId
-        const source = sourceId === undefined ? undefined : ctx.sessions.get(sourceId)
-        const sourceAgent = sourceId === undefined ? undefined : ctx.agents.get(sourceId)
-        if (sourceId !== undefined && (
-          source === undefined || source.transient || sourceAgent?.session !== source || hasSubagentOwner(source, sourceAgent)
-        )) {
-          return err(request, { code: 'session-not-found', message: `session "${sourceId}" not found`, details: { sessionId: sourceId } })
-        }
-        const cwd = source?.header.cwd ?? defaults.cwd
-        const selected = sourceAgent === undefined ? undefined : { ...selectionFor(sourceAgent).current }
-        const requestedPreset = request.payload.agentPreset ?? (source === undefined ? undefined : resolveSessionPreset(source))
-        try {
-          const composition = await composeAgent(requestedPreset)
-          if (sourceId !== undefined && (
-            ctx.agents.get(sourceId)?.session !== source || ctx.sessions.get(sourceId) !== source
-          )) {
-            return err(request, { code: 'session-not-found', message: `session "${sourceId}" not found`, details: { sessionId: sourceId } })
-          }
-          const initialSelection = selected
-          const handle = await ctx.agents.create({
-            sessionId: sideChatId,
-            transient: true,
-            agentOptions: selected ?? agentOptions(),
-            // cwd 只由可信的实时 Session 或 Host 默认值提供；不继承其日志或工作区成员关系。
-            meta: { cwd, ...composition.agentPreset === undefined ? {} : { agentPreset: composition.agentPreset } },
-            setup: async (agentCtx) => {
-              await composition.setup(agentCtx)
-              if (initialSelection !== undefined && agentCtx.agent !== undefined) {
-                selectionFor(agentCtx.agent).current = initialSelection
-              }
-            },
-          })
-          sideChats.set(sideChatId, handle)
-          sideChatTouch(sideChatId)
-          return ok(request, { sideChatId, ...composition.agentPreset === undefined ? {} : { agentPreset: composition.agentPreset } })
-        } catch (error: unknown) {
-          const refused = presetFailure(request, error)
-          if (refused !== undefined) return refused
-          return err(request, { code: 'internal', message: `failed to create side chat: ${String(error)}`, details: {} })
-        }
-      },
-
-      send(request) {
-        const { sideChatId, text } = request.payload
-        const agent = sideChats.get(sideChatId)?.agent
-        if (agent === undefined) return Promise.resolve(err(request, sideChatNotFound(sideChatId)))
-        sideChatTouch(sideChatId)
-        const selection = selectionFor(agent).current
-        if (!routeServed(selection.provider)) return Promise.resolve(err(request, {
-          code: 'model-unavailable',
-          message: `no adapter serves provider "${selection.provider}"; select a model for this session`,
-          details: { provider: selection.provider, model: selection.model },
-        }))
-        try {
-          agent.followup(createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } }))
-          return Promise.resolve(ok(request, {}))
-        } catch (error: unknown) {
-          return Promise.resolve(err(request, { code: 'internal', message: `side chat delivery failed: ${String(error)}`, details: {} }))
-        }
-      },
-
-      state(request) {
-        const { sideChatId, afterSeq = 0 } = request.payload
-        const agent = sideChats.get(sideChatId)?.agent
-        if (agent === undefined) return Promise.resolve(err(request, sideChatNotFound(sideChatId)))
-        if (!Number.isSafeInteger(afterSeq) || afterSeq < 0) return Promise.resolve(err(request, {
-          code: 'bad-request', message: 'sideChat.state afterSeq must be a non-negative safe integer', details: { issues: [] },
-        }))
-        sideChatTouch(sideChatId)
-        const complete = agent.session.events
-        const candidates = complete.slice(afterSeq, afterSeq + SIDE_CHAT_STATE_PAGE_EVENTS)
-        const interactions = [
-          ...[...pendingApprovals.values()].filter(pending => pending.transient && pending.sessionId === sideChatId).map(pending => ({
-            type: 'approval/requested' as const, rpcId: pending.rpcId, sideChatId, approvalId: pending.approvalId,
-            toolName: pending.toolName, ...pending.callId === undefined ? {} : { callId: pending.callId },
-            ...pending.reason === undefined ? {} : { reason: pending.reason },
-          })),
-          ...[...pendingQuestions.values()].filter(pending => pending.transient && pending.sessionId === sideChatId).map(pending => ({
-            type: 'question/requested' as const, rpcId: pending.rpcId, sideChatId, questions: pending.questions,
-          })),
-        ]
-        const reserve = Buffer.byteLength(JSON.stringify({ interactions, status: agent.status, nextSeq: afterSeq, hasMore: true }), 'utf8')
-        if (reserve > SIDE_CHAT_STATE_MAX_BYTES) return Promise.resolve(err(request, {
-          code: 'internal', message: 'side chat pending interactions exceed the snapshot byte limit', details: {},
-        }))
-        // 文本和工具结果可能远超单条数限额；对完整响应再施加字节上限。
-        const selected: SessionEvent[] = []
-        const views: (ToolEventView | null)[] = []
-        let used = reserve
-        for (const event of candidates) {
-          const view = viewFor(ctx, event, callId => backscanArgs(complete, callId), agent) ?? null
-          const bytes = Buffer.byteLength(JSON.stringify({ event, view }), 'utf8')
-          if (used + bytes > SIDE_CHAT_STATE_MAX_BYTES) {
-            if (selected.length === 0) return Promise.resolve(err(request, {
-              code: 'internal', message: `side chat event ${event.seq} exceeds the snapshot byte limit`, details: {},
-            }))
-            break
-          }
-          selected.push(event)
-          views.push(view)
-          used += bytes
-        }
-        const nextSeq = Math.min(afterSeq + selected.length, complete.length)
-        return Promise.resolve(ok(request, {
-          status: agent.status,
-          events: selected,
-          views,
-          nextSeq,
-          hasMore: nextSeq < complete.length,
-          interactions,
-        }))
-      },
-
-      async close(request) {
-        try {
-          await closeSideChat(request.payload.sideChatId)
-          return ok(request, {})
-        } catch (error: unknown) {
-          return err(request, { code: 'internal', message: `side chat close failed: ${String(error)}`, details: {} })
         }
       },
     },

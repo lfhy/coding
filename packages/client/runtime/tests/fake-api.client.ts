@@ -217,15 +217,6 @@ export class FakeApiClient implements IApiClient {
   onWorkspaceArchiveSession: (payload: unknown) => Promise<RpcResponse<{ archivedSessionIds: SessionId[] }>> =
     payload => Promise.resolve(ok({ archivedSessionIds: [(payload as { sessionId: SessionId }).sessionId] }))
 
-  readonly sideChat: IApiClient['sideChat'] = {
-    create: (payload: unknown) => this.record('sideChat.create', payload, Promise.resolve(ok({ sideChatId: 'fixture-side-chat' as SessionId }))),
-    send: (payload: unknown) => this.record('sideChat.send', payload, Promise.resolve(ok({}))),
-    state: (payload: unknown) => this.record('sideChat.state', payload, Promise.resolve(ok({
-      status: 'idle' as const, events: [], views: [], interactions: [], nextSeq: 0, hasMore: false,
-    }))),
-    close: (payload: unknown) => this.record('sideChat.close', payload, Promise.resolve(ok({}))),
-  }
-
   readonly workspace: IApiClient['workspace'] = {
     gitStatus: (payload: unknown) => this.record('workspace.gitStatus', payload, Promise.resolve(ok(null))),
     gitBranches: (payload: unknown) => this.record('workspace.gitBranches', payload, Promise.resolve(ok(null))),

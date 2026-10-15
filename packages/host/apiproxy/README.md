@@ -2,11 +2,11 @@
 
 所有客户端共用的 API 网关由三部分组成：TypeScript API 约定（`src/api/`，不依赖 Node，可从浏览器导入）、fetch 载体对（`src/fetch/`：宿主侧的 `toFetchHandler`，以及客户端侧的 `AbstractApiClient` 与平台子类）和宿主侧实现（`src/api-proxy.ts`：`createApiProxy` 加上默认导出的 `ApiProxyService` 网关插件，其配置为 `{nativeOpen?, sessionExportCompressionLevel?, coldBlankProbeMaxBytes?}`，提供 `ctx.apiProxy`）。该包不注册任何路由；HTTP 等载体自行包装 `ctx.apiProxy`。随发行版交付的 Web 组合位于 [`packages/bundle/web-app/cordis.patch.yml`](../../bundle/web-app/cordis.patch.yml)，其默认 Agent（智能体）模型选择属于 base 组合包中的 [`@deepseek-ai/dsh-agent-default-model`](../../core/agent-default-model/README.md)。
 
-## 临时独立侧聊
+## 临时（transient）会话
 
-`sideChat.create({sourceSessionId?,agentPreset?})` 创建 Host 独占的 AgentHandle 与内存 Session；会话在发布前被标为 `transient`。提供 `sourceSessionId` 时，它必须是当前已附着、非子代理、非临时的普通会话及 Agent；Host 从该会话读取可信 cwd、当前模型选择和生效 preset，显式 `agentPreset` 可以覆盖 preset，但不复制聊天历史或加入 Workspace。不提供来源时使用 Host 的默认 cwd、默认模型选择和默认 preset；不接受浏览器提交的路径。`sideChat.send({sideChatId,text})` 排入真实 Agent inbox；`sideChat.state({sideChatId,afterSeq?})` 返回 `{status,events,views,nextSeq,hasMore,interactions}`：事件从零或给定 seq（包含）读，最多 100 条且整个响应限 2 MiB，`nextSeq` 是继续读取的起始 seq，`views` 与事件对齐，待审批/提问只在 `interactions` 中返回并由现有 `respond` 处理。单条事件或待回复交互超过预算会明确报错，不跳过历史。`sideChat.close({sideChatId})` 幂等地取消并等待活跃轮次和工具结束，再移除 Agent/Session；后续读取以 `side-chat-not-found` 拒绝。
+`ctx.agents.create({transient:true})` 建立的会话只存在于内存：持久化协调器、投影缓存、全文索引和遥测都不复制其内容，也不会创建日志工件；`session.list`、`session.search` 与共享帧流不显示这些会话，`ordinaryAgentFor`、`readSessionState`、`historySourceFor`、`ensureSession` 等普通入口以 `session-not-found` 拒绝按该标识读取、恢复或驱动 Agent，其待审批与提问同样不进入 mux、不回放给订阅者。创建这类会话的插件自行持有 `AgentHandle`，并在结束时 dispose 以丢弃记录。
 
-普通 session、workspace、search/query 和共享事件流不显示这些会话；持久化协调器、投影缓存、全文索引和遥测均不复制其内容，也不会创建日志工件。每次 create/send/state 刷新 30 秒租约，丢失连接或关闭标签后停止轮询将触发 Host 清理；客户端在标签存活期间即使隐藏也应不超过 10 秒轮询一次，显式关闭不等待租约。子 Agent 沿创建方作用域继承 transient 标志，不能恢复持久会话；可继续子 Agent 的创建在父会话为 transient 时直接拒绝，并说明可改用一次性委派。Agent 工具使用上述可信 cwd 和原权限体系，仍可能对外部文件、网络或后台任务产生副作用；临时性只约束会话记录。目前 Client 侧聊只显示 `tool/result` 文本与审批控件，虽然 Host 已在 `views` 返回工具展示意图，专用工具卡片尚未接入该侧聊界面。
+子 Agent 沿创建方作用域继承 transient 标志，不能恢复持久会话；可继续子 Agent 的创建在父会话为 transient 时直接拒绝，并说明可改用一次性委派。临时性只约束会话记录：Agent 工具仍按原权限体系使用外部文件、网络或后台任务，可能产生不受该标志约束的副作用。
 
 ## 共享 Agent 默认值（`agent-default-model` Settings 分节）
 

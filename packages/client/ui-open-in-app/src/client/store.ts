@@ -32,13 +32,6 @@ export interface WorkbenchHistoryTab {
   id: 'git-history'
 }
 
-/** 当前主会话的临时聊天标签；编号仅在会话的页面内有效。 */
-export interface WorkbenchSideChatTab {
-  type: 'side-chat'
-  id: string
-  number: number
-}
-
 /** Host 浏览器标签在工作台中的投影。 */
 export interface WorkbenchBrowserTab {
   type: 'browser'
@@ -80,7 +73,7 @@ export interface WorkbenchExternalTab {
 
 /** 标签类型决定工作台内容和关闭行为。 */
 export type WorkbenchTab = WorkbenchFileTab | WorkbenchFileManagerTab | WorkbenchHistoryTab | WorkbenchTerminalTab
-  | WorkbenchSideChatTab | WorkbenchBrowserTab | WorkbenchPendingBrowserTab | WorkbenchExternalTab | WorkbenchLauncherTab
+  | WorkbenchBrowserTab | WorkbenchPendingBrowserTab | WorkbenchExternalTab | WorkbenchLauncherTab
 
 /** 一层目录的读取状态。 */
 export interface WorkbenchFileLevel {
@@ -91,11 +84,10 @@ export interface WorkbenchFileLevel {
 
 /** 单个 Session 的标签、当前视图与文件树状态。 */
 export type WorkbenchState = {
-  view: 'menu' | 'files' | 'history' | 'browser' | 'terminal' | 'side-chat' | 'external'
+  view: 'menu' | 'files' | 'history' | 'browser' | 'terminal' | 'external'
   tabs: WorkbenchTab[]
   activeId: string | null
   nextTerminalNumber: number
-  nextSideChatNumber: number
   nextLauncherNumber: number
   nextExternalNumber: number
   activeBrowserTabId: string | null
@@ -137,7 +129,6 @@ type WorkbenchActions = {
   openFileManager: (draft: WorkbenchState) => void
   openHistory: (draft: WorkbenchState) => void
   openTerminal: (draft: WorkbenchState) => void
-  openSideChat: (draft: WorkbenchState) => void
   openLauncher: (draft: WorkbenchState) => void
   openExternalTab: (draft: WorkbenchState, input: OpenExternalTabInput) => void
   updateExternalTab: (draft: WorkbenchState, tabId: string, update: UpdateExternalTabInput) => void
@@ -189,7 +180,6 @@ function initialWorkbenchState(): WorkbenchState {
     tabs: [],
     activeId: null,
     nextTerminalNumber: 1,
-    nextSideChatNumber: 1,
     nextLauncherNumber: 1,
     nextExternalNumber: 1,
     activeBrowserTabId: null,
@@ -286,13 +276,6 @@ const workbenchActions: WorkbenchActions = {
     const number = draft.nextTerminalNumber++
     const tab: WorkbenchTerminalTab = { type: 'terminal', id: `terminal:${String(number)}`, number }
     addTab(draft, tab, launcherIndex)
-  },
-  openSideChat: (draft) => {
-    draft.interactionEpoch++
-    draft.browserAutoRevealed = false
-    const launcherIndex = consumeLauncher(draft)
-    const number = draft.nextSideChatNumber++
-    addTab(draft, { type: 'side-chat', id: `side-chat:${String(number)}`, number }, launcherIndex)
   },
   openLauncher: (draft) => {
     draft.interactionEpoch++
@@ -534,7 +517,6 @@ export function createRetainedWorkbenchStore(): EngineStoreHandle<RetainedWorkbe
       openFileManager: (draft, id: SessionId) => { workbenchActions.openFileManager(sessionState(draft, id)) },
       openHistory: (draft, id: SessionId) => { workbenchActions.openHistory(sessionState(draft, id)) },
       openTerminal: (draft, id: SessionId) => { workbenchActions.openTerminal(sessionState(draft, id)) },
-      openSideChat: (draft, id: SessionId) => { workbenchActions.openSideChat(sessionState(draft, id)) },
       openLauncher: (draft, id: SessionId) => { workbenchActions.openLauncher(sessionState(draft, id)) },
       openExternalTab: (draft, id: SessionId, input: OpenExternalTabInput) => {
         workbenchActions.openExternalTab(sessionState(draft, id), input)

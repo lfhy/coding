@@ -13,7 +13,6 @@
 
 .root[hidden],
 .historyView[hidden],
-.sideChatView[hidden],
 .filesPanel[hidden],
 .preview[hidden],
 .previewSlot[hidden],
@@ -244,7 +243,6 @@
 .previewStack,
 .fileView,
 .historyView,
-.sideChatView,
 .browserView,
 .browserPanel,
 .externalPanel,
@@ -264,20 +262,16 @@
 
 .fileView,
 .historyView,
-.sideChatView,
 .menuView,
 .browserView {
   width: 100%;
   height: 100%;
 }
 
-.historyView > div,
-.sideChatView > div {
+.historyView > div {
   width: 100%;
   height: 100%;
 }
-
-.sideChatView > div[hidden] { display: none; }
 
 .browserPanel {
   width: 100%;

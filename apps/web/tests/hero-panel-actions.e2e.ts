@@ -83,12 +83,11 @@ describe('web e2e: no-session Hero panel actions', () => {
     const menu = page.getByRole('navigation', { name: 'Workbench features' })
     await expect.poll(() => menu.isVisible()).toBe(true)
     await expect.poll(async () => (await workbench.boundingBox())?.width ?? 0).toBeGreaterThan(300)
-    expect(await menu.getByRole('button').count()).toBe(5)
-    for (const name of ['Review', 'Terminal', 'Browser', 'Files', 'Side chat']) {
+    expect(await menu.getByRole('button').count()).toBe(4)
+    for (const name of ['Review', 'Terminal', 'Browser', 'Files']) {
       expect(await menu.getByRole('button', { name: new RegExp(name) }).count()).toBe(1)
     }
     expect(await menu.getByRole('button', { name: /Review/ }).isDisabled()).toBe(true)
-    expect(await menu.getByRole('button', { name: /Side chat/ }).isDisabled()).toBe(true)
     expect(await page.getByRole('complementary', { name: 'Workspace files' }).count()).toBe(0)
     await page.mouse.move(900, 300)
     await page.screenshot({ path: '/tmp/dsh-hero-panel-menu.png' })

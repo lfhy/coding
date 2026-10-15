@@ -310,7 +310,7 @@ describe('web e2e: browser-use mirror over the shipped Loader', () => {
     if (replayDir !== undefined) await rm(replayDir, { recursive: true, force: true })
   })
 
-  it.skipIf(MODE === 'record')('opens the five-action menu, drives real browser tabs, then mirrors an Agent click per session', async () => {
+  it.skipIf(MODE === 'record')('opens the four-action menu, drives real browser tabs, then mirrors an Agent click per session', async () => {
     onTestFailed(async () => { await page.screenshot({ path: '/tmp/dsh-browser-mirror-failed.png', fullPage: true }) })
     expect(new URL(page.url()).origin).toBe(new URL(scaffold.baseUrl).origin)
     expect(await page.title()).toContain('Coding')
@@ -327,11 +327,10 @@ describe('web e2e: browser-use mirror over the shipped Loader', () => {
     await expect.poll(() => menu.isVisible()).toBe(true)
     await expect.poll(async () => (await page.locator('#dsh-layout-workbench').boundingBox())?.width ?? 0)
       .toBeGreaterThan(300)
-    for (const label of ['Review', 'Terminal', 'Browser', 'Files', 'Side chat']) {
+    for (const label of ['Review', 'Terminal', 'Browser', 'Files']) {
       await expect.poll(() => menu.getByRole('button', { name: new RegExp(label) }).count()).toBe(1)
     }
     expect(await menu.getByRole('button', { name: /Review/ }).isDisabled()).toBe(true)
-    expect(await menu.getByRole('button', { name: /Side chat/ }).isDisabled()).toBe(true)
     await page.mouse.move(900, 300)
     await page.screenshot({ path: '/tmp/dsh-browser-menu-desktop.png' })
     await page.emulateMedia({ colorScheme: 'dark' })

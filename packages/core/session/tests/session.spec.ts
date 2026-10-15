@@ -1097,7 +1097,7 @@ describe('SessionStore', () => {
     await ctx.plugin(SessionStore)
     let seen: Session | undefined
     ctx.on('session/created', (session) => { seen = session })
-    const session = ctx.sessions.create(SessionId('side-chat'), { transient: true })
+    const session = ctx.sessions.create(SessionId('ephemeral'), { transient: true })
     expect(session.transient).toBe(true)
     expect(seen?.transient).toBe(true)
     expect('transient' in session.header).toBe(false)

@@ -21,7 +21,6 @@ import {
   IconGlobeOutline14,
   IconCordisPluginOutline14,
   IconBranchOutline16,
-  IconNewChatOutline16,
   IconFullscreenOutline16,
   Icon,
   IconRefreshOutline16,
@@ -48,7 +47,6 @@ import type { SidebarRightTabDefinition } from './sidebar-tab-registry.ts'
 import type { SidebarRightTabOwnerProps } from './index.ts'
 import { TerminalPanel } from './TerminalPanel.tsx'
 import { GitHistoryPanel } from './GitHistoryPanel.tsx'
-import { SideChatPanel, type SideChatTransport } from './SideChatPanel.tsx'
 import { tabIdForSegments } from './store.ts'
 import { NS } from './locales.ts'
 import type {
@@ -64,7 +62,6 @@ export interface WorkspaceWorkbenchInjected {
   listFiles: (sessionId: SessionId, segments: readonly string[], signal?: AbortSignal) => Promise<WorkspaceFilesPayload>
   readFile: (sessionId: SessionId, segments: readonly string[], signal?: AbortSignal) => Promise<WorkspaceFilePayload>
   gitHistory: (sessionId: SessionId, query: { count: number }, signal: AbortSignal) => Promise<GitHistory | null>
-  sideChat: SideChatTransport
   terminalUrl: (sessionId: SessionId) => string
   closeWorkbench: (sessionId: SessionId) => void
   openWorkbench: (sessionId: SessionId) => void
@@ -88,7 +85,6 @@ type WorkbenchViewProps = Pick<WorkspaceWorkbenchProps, 'shown' | 'fullscreen' |
   narrow: boolean
   state: WorkbenchState
   tabDefinitions: readonly SidebarRightTabDefinition[]
-  sideChat: SideChatTransport
   actions: WorkbenchActions
   completedFocusTabId: string | null
   panelPrefix: string
@@ -457,7 +453,6 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
         setFocusRequest(previous => (previous ?? 0) + 1)
         props.actions.openTerminal(sessionId)
       },
-      openSideChat: () => { props.actions.openSideChat(sessionId) },
       openLauncher: () => { props.actions.openLauncher(sessionId) },
       openExternalTab: (input) => { props.actions.openExternalTab(sessionId, input) },
       updateExternalTab: (tabId, update) => { props.actions.updateExternalTab(sessionId, tabId, update) },
@@ -490,7 +485,6 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
       listFiles: (segments: readonly string[], signal?: AbortSignal) => props.listFiles(sessionId, segments, signal),
       readFile: (segments: readonly string[], signal?: AbortSignal) => props.readFile(sessionId, segments, signal),
       gitHistory: (query: { count: number }, signal: AbortSignal) => props.gitHistory(sessionId, query, signal),
-      sideChat: props.sideChat,
       closeWorkbench: () => {
         props.actions.recordInteraction(sessionId)
         props.closeWorkbench(sessionId)
@@ -500,7 +494,7 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
       toggleBottom: () => { props.toggleBottom(sessionId) },
       openSidebarTab: (kind: string) => { props.openSidebarTab(sessionId, kind) },
     }
-  }, [props.actions, props.listFiles, props.readFile, props.gitHistory, props.sideChat, props.closeWorkbench, props.openWorkbench,
+  }, [props.actions, props.listFiles, props.readFile, props.gitHistory, props.closeWorkbench, props.openWorkbench,
     props.toggleWorkbenchFullscreen, props.toggleBottom, props.openSidebarTab, sessionId])
   const terminalShown = props.shown && state?.view === 'terminal'
   const tabDefinitions = props.useSidebarRightTabs(definitions => definitions)
@@ -530,7 +524,7 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
 
 function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
   const {
-    shown, fullscreen, bottomOpen, narrow, actions, readFile, listFiles, gitHistory, sideChat, completedFocusTabId,
+    shown, fullscreen, bottomOpen, narrow, actions, readFile, listFiles, gitHistory, completedFocusTabId,
     closeWorkbench, openWorkbench, toggleWorkbenchFullscreen, toggleBottom, openSidebarTab, t, renderSlot,
     panelPrefix, selectTab, tabDefinitions,
   } = props
@@ -790,11 +784,10 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
               </div>
             }
             const name = tab.type === 'terminal' ? t('terminal.tab', { number: String(tab.number) })
-              : tab.type === 'side-chat' ? t('sideChat.tab', { number: String(tab.number) })
-                : tab.type === 'file-manager' ? t('files.tab')
-                  : tab.type === 'history' ? t('workbench.menu.review') : tab.name
+              : tab.type === 'file-manager' ? t('files.tab')
+                : tab.type === 'history' ? t('workbench.menu.review') : tab.name
             const selected = tab.id === activeId && view === (tab.type === 'file' || tab.type === 'file-manager'
-              ? 'files' : tab.type === 'history' ? 'history' : tab.type === 'side-chat' ? 'side-chat' : 'terminal')
+              ? 'files' : tab.type === 'history' ? 'history' : 'terminal')
             return <div className={clsx(css.tab, selected && css.tabActive)} role="presentation" key={tab.id}>
               <button type="button" className={css.tabSelect} role="tab" aria-selected={selected}
                 tabIndex={selected || (view === 'menu' && active?.type !== 'launcher' && index === 0) ? 0 : -1}
@@ -803,9 +796,8 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
                 onClick={(event) => { selectTab(tab.id, event.detail !== 0) }}>
                 <span className={css.tabGlyph} aria-hidden="true">
                   {tab.type === 'terminal' ? <Icon name="terminal-menu" size={14} />
-                    : tab.type === 'side-chat' ? <IconNewChatOutline16 size={14} />
-                      : tab.type === 'history' ? <IconBranchOutline16 size={14} />
-                        : tab.type === 'file-manager' ? <IconFolderOpenOutline16 size={14} /> : <FileGlyph />}
+                    : tab.type === 'history' ? <IconBranchOutline16 size={14} />
+                      : tab.type === 'file-manager' ? <IconFolderOpenOutline16 size={14} /> : <FileGlyph />}
                 </span>
                 <span className={css.tabName}>{name}</span>
               </button>
@@ -885,13 +877,6 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
                 <IconFolderOpenOutline16 size={18} />
                 <span>{t('workbench.menu.files')}</span>
               </button>
-              <button type="button" className={css.functionItem} onClick={() => {
-                pendingFocus.current = 'return'
-                actions.openSideChat()
-              }}>
-                <IconNewChatOutline16 size={18} />
-                <span>{t('workbench.menu.chat')}</span>
-              </button>
               {guideEntries.map(({ definition, entry }) => {
                 let title: string
                 let description: string | undefined
@@ -962,16 +947,6 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
               hidden={view !== 'history' || activeId !== tab.id}>
               <GitHistoryPanel shown={shown && view === 'history' && activeId === tab.id}
                 history={gitHistory} t={t} />
-            </div>)}
-          </div>
-          <div className={css.sideChatView} hidden={view !== 'side-chat' || !shown}
-            {...view !== 'side-chat' || !shown ? { inert: '' } : {}}>
-            {tabs.filter(tab => tab.type === 'side-chat').map(tab => <div key={tab.id}
-              id={tabDomId(panelPrefix, props.sessionId, tab.id, 'panel')}
-              role="tabpanel" aria-labelledby={tabDomId(panelPrefix, props.sessionId, tab.id, 'tab')}
-              hidden={view !== 'side-chat' || activeId !== tab.id}>
-              <SideChatPanel shown={shown && view === 'side-chat' && activeId === tab.id}
-                sourceSessionId={props.sessionId} transport={sideChat} t={t} />
             </div>)}
           </div>
           <div className={css.browserView} hidden={view !== 'browser'} {...view !== 'browser' ? { inert: '' } : {}}>

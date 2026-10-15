@@ -67,7 +67,6 @@ import {
 } from '../api/credentials.schema.ts'
 import { llmDiscoverModelsRequestSchema, llmModelsRequestSchema, llmProvidersRequestSchema } from '../api/llm.schema.ts'
 import { browserControlRequestSchema } from '../api/browser.schema.ts'
-import { sideChatCloseRequestSchema, sideChatCreateRequestSchema, sideChatSendRequestSchema, sideChatStateRequestSchema } from '../api/side-chat.schema.ts'
 import {
   subagentHistoryRequestSchema,
   subagentInterruptRequestSchema,
@@ -104,10 +103,6 @@ const UNARY_ROUTES: UnaryRoutes = {
   'session.attachment': { schema: sessionAttachmentRequestSchema, invoke: (api, r) => api.sessions.attachment(r) },
   'session.updateQueue': { schema: sessionUpdateQueueRequestSchema, invoke: (api, r) => api.sessions.updateQueue(r) },
   'session.cancel': { schema: sessionCancelRequestSchema, invoke: (api, r) => api.sessions.cancel(r) },
-  'sideChat.create': { schema: sideChatCreateRequestSchema, invoke: (api, r) => api.sideChat.create(r) },
-  'sideChat.send': { schema: sideChatSendRequestSchema, invoke: (api, r) => api.sideChat.send(r) },
-  'sideChat.state': { schema: sideChatStateRequestSchema, invoke: (api, r) => api.sideChat.state(r) },
-  'sideChat.close': { schema: sideChatCloseRequestSchema, invoke: (api, r) => api.sideChat.close(r) },
   'subagent.list': { schema: subagentListRequestSchema, invoke: (api, r, signal) => api.subagents.list(r, signal) },
   'subagent.history': { schema: subagentHistoryRequestSchema, invoke: (api, r, signal) => api.subagents.history(r, signal) },
   'subagent.prompt': { schema: subagentPromptRequestSchema, invoke: (api, r, signal) => api.subagents.prompt(r, signal) },
