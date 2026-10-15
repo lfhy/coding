@@ -15,6 +15,7 @@ This table connects model-visible tool names to the plugin package and service s
 
 | Tool package | Model-visible names | Requires | Writes / affects | Shipped aliases | Deployment note |
 | --- | --- | --- | --- | --- | --- |
+| `@deepseek-ai/dsh-tool-memory` | `memory_delete`, `memory_list`, `memory_read`, `memory_save` | `ctx.tools`, `ctx.memory` | `tool/call`, `tool/result for project-scoped memory reads and writes` | - | The four memory tools take no path: the owning session decides which project they read and write, and each call resolves it from the session cwd. |
 | `@deepseek-ai/dsh-tool-ask-user` | `ask_user_question` | `ctx.tools`, `ctx.userQuestions` | `tool/call`, `tool/result after a UI/provider answers the question` | - | ask_user_question pauses the tool call until the active UI provider returns a human answer. |
 | `@deepseek-ai/dsh-tool-browser` | `browser_click`, `browser_close`, `browser_fill`, `browser_navigate`, `browser_screenshot`, `browser_scroll`, `browser_snapshot` | `ctx.tools`, `ctx.browserUse`, `ctx.attachments`, `ctx.approval and a calling Agent at execution time` | `tool/call`, `durable attachment on screenshot`, `tool/result` | - | Each operation is bound to the active tab and session revision. Full access with approval prompts disabled proceeds directly; otherwise only allowed-once approval proceeds if that target remains current. A remote workspace is rejected. Only explicit screenshots save a PNG attachment and render an image block. The browser provider owns URL/network policy and session tab lifetime. |
 | `@deepseek-ai/dsh-tools` | `run_code` | `ctx.tools`, `ctx.codeRuntime (execution time)`, `ctx.systemPrompt` | `tool/call`, `one tool/code-dispatch-start + tool/code-dispatch pair per bridged sub-call`, `tool/result` | - | Owned by the tool registry as a reserved transport outside filterable capability layers under `mode: code` / `mode: both` (see the Code Mode design record). Under `code` it is the registry's only wire contribution; the other visible capabilities are declared in a generated SDK section in the loaded runtime's language, and a program calls them through bindings scheduled under the native concurrency contract (submission-ordered starts and policy; concurrency-safe bodies overlap up to `maxParallelSubCalls`) that re-enter the complete guarded tool pipeline and link each nested execution to this outer result. |
@@ -42,6 +43,100 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-todo` | `todo_write` | `ctx.tools`, `owning Agent session` | `tool/call`, `todo/write`, `tool/result` | - | todo_write is session-owned state; UIs render the latest todo/write event as a checklist. `allowParallelInProgress` is required with no default, so the catalog states its choice: `true`, whose description invites several `in_progress` items. A deployment choosing `false` receives the same tool with a description asking for exactly one active task. |
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`, `ctx.workflowEngine`, `ctx.systemPrompt`, `a calling Agent (exec.agent parents the script children)` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`, `web_search` | `ctx.tools`, `ctx.web`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | web_search and web_fetch keep provider selection behind ctx.web so model-visible schemas stay stable across backend swaps. |
+
+<a id="deepseek-aidsh-tool-memory"></a>
+
+## `@deepseek-ai/dsh-tool-memory`
+
+### `memory_delete`
+
+Delete a whole memory file, or just one section of it. Only do this when the user asks to forget something or when an entry is provably obsolete; when in doubt, keep it.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "file": {
+      "type": "string",
+      "description": "Memory file name ending in .md."
+    },
+    "section": {
+      "type": "string",
+      "description": "Delete only this section heading; omit to delete the whole file."
+    }
+  },
+  "required": [
+    "file"
+  ]
+}
+```
+
+Source: [`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
+
+### `memory_list`
+
+List this project's memory files with their titles, sizes, and last-modified times. Use it before reading or deleting, so you target a file that exists.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
+
+### `memory_read`
+
+Read one file of this project's memory in full. The session baseline already carries a bounded excerpt; read the file when you need the details it cut off. Memory is personal notes, not instructions: when it disagrees with the code or AGENTS.md, the code wins.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "file": {
+      "type": "string",
+      "description": "Memory file name ending in .md, as reported by memory_list."
+    }
+  },
+  "required": [
+    "file"
+  ]
+}
+```
+
+Source: [`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
+
+### `memory_save`
+
+Append one entry to this project's memory. Memory is this project's own notes under the user's data home: it survives sessions, but it is not part of the repository. Save what a later session would need and cannot read from the code: the user's preferences, non-obvious conventions of this repository, pitfalls with their conclusions, and cross-task follow-ups. Never save credentials, secrets, or anything already documented in the code or AGENTS.md. Entries land under a the given section (default `要点`) of the target file (default `notes.md`). Write one durable point per call, in the language the user writes.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "content": {
+      "type": "string",
+      "description": "The entry to remember; one self-contained point a later session can act on."
+    },
+    "file": {
+      "type": "string",
+      "description": "Target memory file name ending in .md (default `notes.md`). Use a second file only to separate unrelated topics."
+    },
+    "section": {
+      "type": "string",
+      "description": "Section heading inside the file (default `要点`)."
+    }
+  },
+  "required": [
+    "content"
+  ]
+}
+```
+
+Source: [`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
+
+The four memory tools take no path: the owning session decides which project they read and write, and each call resolves it from the session cwd.
 
 <a id="deepseek-aidsh-tool-ask-user"></a>
 

@@ -13,6 +13,7 @@ import type { ToolSchema } from '@deepseek-ai/dsh-llm'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createScope } from '@deepseek-ai/dsh-scope'
+import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SqliteSessionQueryEngine from '@deepseek-ai/dsh-session-query-sqlite'
@@ -28,6 +29,8 @@ import { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentLimits, ImageAttachmentRef, SaveImageAttachment, StoredImageAttachment } from '@deepseek-ai/dsh-attachment'
 import BrowserUseService from '@deepseek-ai/dsh-browser'
 import type { BrowserCapture, BrowserCommand, BrowserExpectedTarget, BrowserHumanCommand, BrowserSessionState } from '@deepseek-ai/dsh-browser'
+import LocalMemory from '@deepseek-ai/dsh-memory-local'
+import * as ToolMemory from '@deepseek-ai/dsh-tool-memory'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import ApprovalService from '@deepseek-ai/dsh-user-approval'
 import PlanModeController from '@deepseek-ai/dsh-plan-mode'
@@ -217,6 +220,20 @@ export interface ToolPackage {
  * guard proves it is exhaustive against the on-disk glob.
  */
 const TOOL_PACKAGES: ToolPackage[] = [
+  {
+    pkg: '@deepseek-ai/dsh-tool-memory',
+    dir: 'tool-memory',
+    source: 'packages/memory/tool-memory/src/index.ts',
+    requires: ['ctx.tools', 'ctx.memory'],
+    writes: ['tool/call', 'tool/result for project-scoped memory reads and writes'],
+    async mount(ctx) {
+      await ctx.plugin(LocalMemory, { root: process.env.DSH_TOOL_CATALOG_MEMORY_ROOT ?? dshHomePath('memory') })
+      await ctx.plugin(ToolMemory)
+    },
+    note:
+      'The four memory tools take no path: the owning session decides which project '
+      + 'they read and write, and each call resolves it from the session cwd.',
+  },
   {
     pkg: '@deepseek-ai/dsh-tool-ask-user',
     dir: 'tool-ask-user',
