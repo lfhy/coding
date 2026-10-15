@@ -3,7 +3,7 @@
 
 # 包清单
 
-workspace 共 240 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
+workspace 共 241 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
 
 模型可见工具的名称与 schema 见 [tool-catalog.md](../tool-catalog.md)，插件可配置项见 [config-catalog.md](../config-catalog.md)，依赖边见 [module-graph.md](../module-graph.md)。
 
@@ -230,6 +230,10 @@ workspace 共 240 个包，按 group 分节。每行给出包目录、职责（R
 ## packages/mcp
 
 - `packages/mcp/mcp-client` — MCP 客户端桥接插件：连接外部 Model Context Protocol 服务器，把它们的工具注册到 `ctx.tools`… 入口 `src/index.ts`（tests 4）
+
+## packages/memory
+
+- `packages/memory/memory` — 项目隔离的跨会话记忆服务定义：把会话 cwd 解析成一个稳定的项目键，为每个项目维护若干 Markdown 记忆文件… 入口 `src/index.ts`（tests 1）
 
 ## packages/plan
 
