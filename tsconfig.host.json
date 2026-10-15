@@ -305,6 +305,7 @@
     { "path": "./packages/mcp/mcp-client" },
     { "path": "./packages/memory/memory" },
     { "path": "./packages/memory/memory-local" },
+    { "path": "./packages/memory/memory-context" },
     { "path": "./packages/memory/tool-memory" },
     { "path": "./packages/host/apiproxy" },
     { "path": "./packages/host/directory-picker" },

@@ -3,7 +3,7 @@
 
 # 包清单
 
-workspace 共 243 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
+workspace 共 244 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
 
 模型可见工具的名称与 schema 见 [tool-catalog.md](../tool-catalog.md)，插件可配置项见 [config-catalog.md](../config-catalog.md)，依赖边见 [module-graph.md](../module-graph.md)。
 
@@ -234,6 +234,7 @@ workspace 共 243 个包，按 group 分节。每行给出包目录、职责（R
 ## packages/memory
 
 - `packages/memory/memory` — 项目隔离的跨会话记忆服务定义：把会话 cwd 解析成一个稳定的项目键，为每个项目维护若干 Markdown 记忆文件… 入口 `src/index.ts`（tests 1）
+- `packages/memory/memory-context` — 把会话所属项目的记忆作为有界上下文注入第一次请求：新会话不必重新问一遍用户偏好、这个仓库里非显然的约定和踩过的坑 入口 `src/index.ts`（tests 1）
 - `packages/memory/memory-local` — 宿主文件系统上的 `ctx.memory` Provider：每个项目一个目录，记忆写成本地 Markdown 入口 `src/index.ts`（tests 1）
 - `packages/memory/tool-memory` — 把当前会话所属项目的记忆交给模型读写的四个工具 入口 `src/index.ts`（tests 1）
 
