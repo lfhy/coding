@@ -47,6 +47,13 @@ export const DEFAULT_PROJECT_ROOT_MARKERS = ['.git'] as const
 
 const RESERVED_FILE_CHARACTERS = /[^a-z0-9._-]/
 
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /** 项目隔离的跨会话记忆；未挂载 Provider 的树里没有这个服务。 */
+    memory: Memory
+  }
+}
+
 /** 记忆条目策略；Provider 追加自己的存储位置配置后交给服务。 */
 export interface MemoryConfig {
   /** 从会话 cwd 向上寻找项目根时接受的目录条目。 */
