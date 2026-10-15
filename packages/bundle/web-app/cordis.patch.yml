@@ -150,7 +150,6 @@
       config:
         openBrowser: !!js ctx.webStartup.openBrowser
         printUrl: !!js ctx.webStartup.printUrl
-        surfaceContext: true
         trustedHosts: !!js ctx.webStartup.trustedHosts
         managedHost: !!js ctx.webStartup.managedHost
         idleTimeoutMs: 300000

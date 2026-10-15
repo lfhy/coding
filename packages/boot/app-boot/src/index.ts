@@ -29,6 +29,14 @@ declare module '@deepseek-ai/cordis' {
 }
 
 export {
+  addCodingPromptSections,
+  CODING_GUIDELINES,
+  CODING_GUIDELINES_SECTION,
+  CODING_IDENTITY,
+  CODING_IDENTITY_SECTION,
+} from './coding-prompt.ts'
+
+export {
   composeEntries,
   DEFAULT_PROFILE_BUNDLES,
   healProfilesModuleFallback,

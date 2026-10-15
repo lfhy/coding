@@ -115,7 +115,7 @@ describe('web-app runtime glue', () => {
     const log = vi.spyOn(console, 'log').mockImplementation((message) => { lifecycle.push(String(message)) })
     const openBrowser = vi.fn(async (url: string) => { lifecycle.push(`open:${url}`) })
     internals.openBrowser = openBrowser
-    apply(ctx, new Config({ openBrowser: true, printUrl: true, surfaceContext: true, trustedHosts: ['lab.internal'],
+    apply(ctx, new Config({ openBrowser: true, printUrl: true, trustedHosts: ['lab.internal'],
       managedHost: false, idleTimeoutMs: 300_000 }))
     await ctx.plugin(SystemPrompt, { persona: '' })
     // Settle the injected registrations.
@@ -134,9 +134,11 @@ describe('web-app runtime glue', () => {
       'dsh web: opening the default browser; pass --no-open to disable',
       'open:http://127.0.0.1:4567',
     ])
-    // 源码定位仍供模型使用；GUI 地址不进入提示词或受管 Bash 环境。
+    // Coding 自己的身份与工作方式进入提示词；GUI 地址不进入提示词或受管 Bash 环境。
     const assembly = await ctx.systemPrompt.assemble()
-    expect(assembly.sections.find(entry => entry.name === 'harness:source')?.text).toContain('DeepSeek Harness implementation checkout')
+    expect(assembly.sections.find(entry => entry.name === 'coding:identity')?.text).toContain('你是 Coding 的编程 agent')
+    expect(assembly.sections.find(entry => entry.name === 'coding:guidelines')?.text).toContain('# 工作方式')
+    expect(assembly.sections.some(entry => entry.name === 'harness:source')).toBe(false)
     expect(assembly.sections.some(entry => entry.name === 'app:web-surface')).toBe(false)
     expect(assembly.sections.map(entry => entry.text).join('\n')).not.toContain('http://127.0.0.1:4567')
     expect(contributions).toEqual([])
@@ -150,7 +152,7 @@ describe('web-app runtime glue', () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {})
     const openBrowser = vi.fn(async () => {})
     internals.openBrowser = openBrowser
-    apply(ctx, new Config({ openBrowser: false, printUrl: false, surfaceContext: true, trustedHosts: [],
+    apply(ctx, new Config({ openBrowser: false, printUrl: false, trustedHosts: [],
       managedHost: false, idleTimeoutMs: 300_000 }))
     await ctx.plugin(SystemPrompt, { persona: '' })
     await new Promise(resolve => setTimeout(resolve, 0))
@@ -158,11 +160,12 @@ describe('web-app runtime glue', () => {
     expect(openBrowser).not.toHaveBeenCalled()
     const assembly = await ctx.systemPrompt.assemble()
     expect(assembly.sections.some(entry => entry.name === 'app:web-surface')).toBe(false)
-    expect(assembly.sections.some(entry => entry.name === 'harness:source')).toBe(true)
+    expect(assembly.sections.some(entry => entry.name === 'coding:identity')).toBe(true)
     await ctx.fiber.dispose()
   })
 
-  it('skips the source prompt section when disabled (the one-shot layer)', async () => {
+  // 提示词段不再有开关：身份与工作方式永远在，源码检出段已完全移除。
+  it('registers the Coding prompt sections with no configuration gate', async () => {
     stageDist()
     const ctx = new Context()
     ctx.provide('webServer', fakeHttpServer().server)
@@ -173,11 +176,13 @@ describe('web-app runtime glue', () => {
         return () => {}
       },
     } as never)
-    apply(ctx, new Config({ openBrowser: false, printUrl: false, surfaceContext: false, trustedHosts: [],
+    apply(ctx, new Config({ openBrowser: false, printUrl: false, trustedHosts: [],
       managedHost: false, idleTimeoutMs: 300_000 }))
     await ctx.plugin(SystemPrompt, { persona: '' })
     await new Promise(resolve => setTimeout(resolve, 0))
     const assembly = await ctx.systemPrompt.assemble()
+    expect(assembly.sections.find(entry => entry.name === 'coding:identity')?.text).toBe('你是 Coding 的编程 agent，在用户自己的电脑上工作。')
+    expect(assembly.sections.some(entry => entry.name === 'coding:guidelines')).toBe(true)
     expect(assembly.sections.some(entry => entry.name === 'harness:source')).toBe(false)
     expect(contributions).toEqual([])
     await ctx.fiber.dispose()
@@ -188,7 +193,7 @@ describe('web-app runtime glue', () => {
     const ctx = new Context()
     ctx.provide('webServer', fakeHttpServer().server)
     const log = vi.spyOn(console, 'log').mockImplementation(() => {})
-    apply(ctx, new Config({ openBrowser: false, printUrl: true, surfaceContext: true, trustedHosts: [],
+    apply(ctx, new Config({ openBrowser: false, printUrl: true, trustedHosts: [],
       managedHost: false, idleTimeoutMs: 300_000 }))
     await new Promise(resolve => setTimeout(resolve, 0))
     expect(log).toHaveBeenCalledWith('dsh web: http://127.0.0.1:4567')
@@ -206,7 +211,7 @@ describe('web-app runtime glue', () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {})
     const openBrowser = vi.fn(async () => {})
     internals.openBrowser = openBrowser
-    apply(ctx, new Config({ openBrowser: true, printUrl: true, surfaceContext: false, trustedHosts: [],
+    apply(ctx, new Config({ openBrowser: true, printUrl: true, trustedHosts: [],
       managedHost: false, idleTimeoutMs: 300_000 }))
     await new Promise(resolve => setTimeout(resolve, 0))
     expect(log).toHaveBeenCalledWith('dsh web: http://127.0.0.1:4567')
@@ -226,7 +231,7 @@ describe('web-app runtime glue', () => {
     const settlement = new Promise<void>((resolve) => { release = resolve })
     provideLoader(settled, () => settlement)
     const log = vi.spyOn(console, 'log').mockImplementation(() => {})
-    apply(settled, new Config({ openBrowser: true, printUrl: true, surfaceContext: true, trustedHosts: [],
+    apply(settled, new Config({ openBrowser: true, printUrl: true, trustedHosts: [],
       managedHost: false, idleTimeoutMs: 300_000 }))
     await new Promise(resolve => setTimeout(resolve, 0))
     expect(log).not.toHaveBeenCalled()
@@ -244,7 +249,7 @@ describe('web-app runtime glue', () => {
     const failed = new Context()
     failed.provide('webServer', fakeHttpServer().server)
     provideLoader(failed, async () => { throw new Error('boot failed') })
-    apply(failed, new Config({ openBrowser: true, printUrl: true, surfaceContext: true, trustedHosts: [],
+    apply(failed, new Config({ openBrowser: true, printUrl: true, trustedHosts: [],
       managedHost: false, idleTimeoutMs: 300_000 }))
     await new Promise(resolve => setTimeout(resolve, 0))
     expect(log).not.toHaveBeenCalled()
@@ -263,7 +268,7 @@ describe('web-app runtime glue', () => {
     let releaseTorn: () => void
     const tornSettlement = new Promise<void>((resolve) => { releaseTorn = resolve })
     provideLoader(torn, () => tornSettlement)
-    apply(torn, new Config({ openBrowser: true, printUrl: true, surfaceContext: true, trustedHosts: [],
+    apply(torn, new Config({ openBrowser: true, printUrl: true, trustedHosts: [],
       managedHost: false, idleTimeoutMs: 300_000 }))
     await child.dispose() // the webServer service goes away
     releaseTorn!()
@@ -273,18 +278,18 @@ describe('web-app runtime glue', () => {
     await torn.fiber.dispose()
   })
 
-  it('does not need a bound Web port to assemble the Harness source section', async () => {
+  it('does not need a bound Web port to assemble the Coding prompt sections', async () => {
     stageDist()
     const ctx = new Context()
     const { server } = fakeHttpServer()
     Object.defineProperty(server, 'port', { get: () => undefined })
     ctx.provide('webServer', server)
-    apply(ctx, new Config({ openBrowser: false, printUrl: false, surfaceContext: true, trustedHosts: [],
+    apply(ctx, new Config({ openBrowser: false, printUrl: false, trustedHosts: [],
       managedHost: false, idleTimeoutMs: 300_000 }))
     await ctx.plugin(SystemPrompt, { persona: '' })
     await new Promise(resolve => setTimeout(resolve, 0))
     const assembly = await ctx.systemPrompt.assemble()
-    expect(assembly.sections.some(entry => entry.name === 'harness:source')).toBe(true)
+    expect(assembly.sections.some(entry => entry.name === 'coding:identity')).toBe(true)
     await ctx.fiber.dispose()
   })
 
@@ -310,7 +315,7 @@ describe('web-app runtime glue', () => {
     internals.openBrowser = vi.fn(async () => { throw failure })
     const log = vi.spyOn(console, 'log').mockImplementation(() => {})
     const diagnostic = vi.spyOn(console, 'error').mockImplementation(() => {})
-    apply(ctx, new Config({ openBrowser: true, printUrl: false, surfaceContext: false, trustedHosts: [],
+    apply(ctx, new Config({ openBrowser: true, printUrl: false, trustedHosts: [],
       managedHost: false, idleTimeoutMs: 300_000 }))
     await new Promise(resolve => setTimeout(resolve, 0))
     expect(log).toHaveBeenCalledWith('dsh web: opening the default browser; pass --no-open to disable')

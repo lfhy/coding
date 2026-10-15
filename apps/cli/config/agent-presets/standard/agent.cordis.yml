@@ -25,7 +25,7 @@
   name: '@deepseek-ai/dsh-persona'
   config:
     text: >-
-      You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.
+      你运行在 {{model}} 模型上，当前工作目录是 {{cwd}}。
 
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'

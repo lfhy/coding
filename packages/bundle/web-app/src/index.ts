@@ -8,10 +8,9 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { networkInterfaces } from 'node:os'
-import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { addHarnessSourceSection } from '@deepseek-ai/dsh-app-boot'
+import { addCodingPromptSections } from '@deepseek-ai/dsh-app-boot'
 import * as FrontendStatic from '@deepseek-ai/dsh-host-frontend-static'
 import { launchedThroughSsh, launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
 import { scrubbedParentEnv } from '@deepseek-ai/dsh-subprocess'
@@ -22,9 +21,6 @@ import type {} from '@deepseek-ai/dsh-system-prompt'
 
 /** Stable Cordis plugin name. */
 export const name = 'web-app'
-
-/** This dsh installation's root, from either this package's source or built entry. */
-const SOURCE_ROOT = fileURLToPath(new URL('../../../..', import.meta.url))
 
 /** Runtime service that releases Web rows after bind-dependent values resolve. */
 const WEB_RUNTIME_SERVICE = 'webRuntime'
@@ -38,10 +34,6 @@ export interface Config {
   openBrowser: boolean
   /** Print the URL line on activation; a non-interactive layer can turn it off. */
   printUrl: boolean
-  /**
-   * GUI 会话注册 Harness 源码定位；非交互式运行可关闭该段落。
-   */
-  surfaceContext: boolean
   /** Explicit `--trusted-host` authorities from this invocation. */
   trustedHosts: string[]
   /** Publish local discovery and let Coding native clients own this Host's lifetime. */
@@ -53,7 +45,6 @@ export interface Config {
 export const Config: z<Config> = z.object({
   openBrowser: z.boolean().default(true),
   printUrl: z.boolean().default(true),
-  surfaceContext: z.boolean().default(true),
   trustedHosts: z.array(String).default([]),
   managedHost: z.boolean().default(false),
   idleTimeoutMs: z.natural().min(1).default(300_000),
@@ -202,11 +193,11 @@ export function apply(ctx: Context, config: Config): void {
   // Release dependent rows only after bind-dependent trust has been sampled once.
   ctx.provide(WEB_RUNTIME_SERVICE, runtime)
   ctx.plugin(FrontendStatic, { distIndex: internals.resolveDistIndex() })
-  if (config.surfaceContext) {
-    ctx.inject(['systemPrompt'], (promptCtx) => {
-      addHarnessSourceSection(promptCtx, SOURCE_ROOT)
-    })
-  }
+  // Coding 自己的身份与工作方式段；源码检出路径不再进提示词——工作目录由预设
+  // persona 给出，检出位置对模型的任务没有帮助。
+  ctx.inject(['systemPrompt'], (promptCtx) => {
+    addCodingPromptSections(promptCtx)
+  })
   if (config.printUrl || handoffBrowser || config.managedHost) {
     // The URL line and browser handoff are readiness signals: supervisors RPC
     // as soon as they observe the line, while a browser requests the page as

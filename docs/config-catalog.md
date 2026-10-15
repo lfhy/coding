@@ -3193,10 +3193,6 @@ export interface Config {
   openBrowser: boolean
   /** Print the URL line on activation; a non-interactive layer can turn it off. */
   printUrl: boolean
-  /**
-   * GUI 会话注册 Harness 源码定位；非交互式运行可关闭该段落。
-   */
-  surfaceContext: boolean
   /** Explicit `--trusted-host` authorities from this invocation. */
   trustedHosts: string[]
   /** Publish local discovery and let Coding native clients own this Host's lifetime. */
@@ -3206,7 +3202,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/bundle/web-app/src/index.ts:36`](../packages/bundle/web-app/src/index.ts)
+Source: [`packages/bundle/web-app/src/index.ts:32`](../packages/bundle/web-app/src/index.ts)
 
 <a id="deepseek-aidsh-web-fetch-http"></a>
 
