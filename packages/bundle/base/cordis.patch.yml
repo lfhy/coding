@@ -250,6 +250,17 @@
       config:
         maxBytes: 65536
 
+    # 项目记忆：Provider + 基线摘要 + 四个项目隔离工具。记忆在用户数据主目录下，
+    # 不进仓库，也不随会话消失；注入的摘要明确说明它与代码冲突时以代码为准。
+    - id: memory-local
+      name: '@deepseek-ai/dsh-memory-local'
+
+    - id: memory-context
+      name: '@deepseek-ai/dsh-memory-context'
+
+    - id: tool-memory
+      name: '@deepseek-ai/dsh-tool-memory'
+
     - id: skill
       name: '@deepseek-ai/dsh-skill'
 

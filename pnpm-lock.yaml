@@ -1267,6 +1267,12 @@ importers:
       '@deepseek-ai/dsh-llm-vision-fallback':
         specifier: workspace:^
         version: link:../../llm/llm-vision-fallback
+      '@deepseek-ai/dsh-memory-context':
+        specifier: workspace:^
+        version: link:../../memory/memory-context
+      '@deepseek-ai/dsh-memory-local':
+        specifier: workspace:^
+        version: link:../../memory/memory-local
       '@deepseek-ai/dsh-permission-presets':
         specifier: workspace:^
         version: link:../../interaction/permission-presets
@@ -1369,6 +1375,9 @@ importers:
       '@deepseek-ai/dsh-tool-jobs':
         specifier: workspace:^
         version: link:../../jobs/tool-jobs
+      '@deepseek-ai/dsh-tool-memory':
+        specifier: workspace:^
+        version: link:../../memory/tool-memory
       '@deepseek-ai/dsh-tool-pwsh':
         specifier: workspace:^
         version: link:../../shell/tool-pwsh
