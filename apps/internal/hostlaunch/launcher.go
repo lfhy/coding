@@ -40,6 +40,55 @@ var AppVersion = "dev"
 // 保留继承环境。每个进程只探测一次；测试替换该变量以注入固定路径。
 var guiLoginShellPath = sync.OnceValue(resolveGuiLoginShellPath)
 
+// DataHomeDirName 是产品默认数据主目录名；LegacyDataHomeDirName 是 DeepSeek Harness
+// 遗留目录名，只作为回退位置。
+const (
+	DataHomeDirName       = ".coding"
+	LegacyDataHomeDirName = ".dsh"
+)
+
+// dataHome 选出与 Host 解析结果一致的数据主目录：`$CODING_HOME`、兼容的 `$DSH_HOME`、
+// 已有数据的 `~/.coding`、已有数据的遗留 `~/.dsh`，最后回到 `~/.coding`。
+//
+// 启动器必须在拉起 Host 之前定案：它要用这个路径写 host.json 与启动锁，而一旦把路径
+// 作为显式环境变量交给 Host，Host 就不会再自行迁移。因此首次启动的 `~/.dsh` 迁移只由
+// Host 侧（`dsh web`／桌面端）完成：遗留 Linux 终端用户在别处跑过一次新版本后，这里才会
+// 看到有数据的 `~/.coding` 并切过去。
+func dataHome(userHome string) string {
+	for _, key := range []string{"CODING_HOME", "DSH_HOME"} {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			return expandTilde(value, userHome)
+		}
+	}
+	coding := filepath.Join(userHome, DataHomeDirName)
+	if directoryHasEntries(coding) {
+		return coding
+	}
+	legacy := filepath.Join(userHome, LegacyDataHomeDirName)
+	if directoryHasEntries(legacy) {
+		return legacy
+	}
+	return coding
+}
+
+// expandTilde 展开 `~`、`~/...` 与 Windows 风格的 `~\...` 前缀，其余路径原样返回。
+func expandTilde(path, userHome string) string {
+	if path == "~" {
+		return userHome
+	}
+	if strings.HasPrefix(path, "~/") || strings.HasPrefix(path, "~\\") {
+		return filepath.Join(userHome, path[2:])
+	}
+	return path
+}
+
+// directoryHasEntries 报告目录是否存在且至少有一个条目；空目录不算“有数据”，
+// 因此初始化中断留下的空 `~/.coding` 不会遮住 `~/.dsh` 里的真实数据。
+func directoryHasEntries(path string) bool {
+	entries, err := os.ReadDir(path)
+	return err == nil && len(entries) > 0
+}
+
 // New 填充平台默认值并校验由调用方附加的 Host 环境。
 func New(options Options) (*Launcher, error) {
 	seenEnvironmentKeys := make(map[string]string, len(options.Environment))
@@ -58,7 +107,7 @@ func New(options Options) (*Launcher, error) {
 		if err != nil {
 			return nil, fmt.Errorf("coding: resolve user home: %w", err)
 		}
-		options.Home = filepath.Join(home, ".dsh")
+		options.Home = dataHome(home)
 	}
 	absoluteHome, err := filepath.Abs(options.Home)
 	if err != nil {

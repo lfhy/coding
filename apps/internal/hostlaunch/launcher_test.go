@@ -451,3 +451,62 @@ func TestChildEnvironmentKeepsInheritedPathWithoutUsableLoginShell(t *testing.T)
 		t.Fatalf("PATH = %q, want the inherited PATH", got)
 	}
 }
+
+func TestDataHomeFollowsProductPrecedence(t *testing.T) {
+	// 宿主环境本身可能带着 DSH_HOME（受管 Host 就是这么启动的），先清空再逐项验证。
+	t.Setenv("CODING_HOME", "")
+	t.Setenv("DSH_HOME", "")
+	userHome := t.TempDir()
+	coding := filepath.Join(userHome, DataHomeDirName)
+	legacy := filepath.Join(userHome, LegacyDataHomeDirName)
+
+	// 全新安装：既没有环境变量也没有数据时落到 ~/.coding。
+	if got := dataHome(userHome); got != coding {
+		t.Fatalf("fresh dataHome = %q, want %q", got, coding)
+	}
+
+	writeEntry := func(dir, name string) {
+		t.Helper()
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("a"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// 只有遗留目录有数据：回退到 ~/.dsh，落在别处的迁移仍未发生时不能凭空换根。
+	writeEntry(legacy, "settings.yaml")
+	if got := dataHome(userHome); got != legacy {
+		t.Fatalf("legacy-only dataHome = %q, want %q", got, legacy)
+	}
+
+	// 空 ~/.coding 不算有数据，仍回退到遗留目录。
+	if err := os.MkdirAll(coding, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if got := dataHome(userHome); got != legacy {
+		t.Fatalf("empty coding home dataHome = %q, want %q", got, legacy)
+	}
+
+	// 有数据的 ~/.coding 优先于遗留目录。
+	writeEntry(coding, "settings.yaml")
+	if got := dataHome(userHome); got != coding {
+		t.Fatalf("populated coding home dataHome = %q, want %q", got, coding)
+	}
+
+	// DSH_HOME 仍然受支持，CODING_HOME 优先于它。
+	t.Setenv("DSH_HOME", filepath.Join(userHome, "env-dsh"))
+	if got := dataHome(userHome); got != filepath.Join(userHome, "env-dsh") {
+		t.Fatalf("DSH_HOME dataHome = %q", got)
+	}
+	t.Setenv("CODING_HOME", "~/env-coding")
+	if got := dataHome(userHome); got != filepath.Join(userHome, "env-coding") {
+		t.Fatalf("CODING_HOME dataHome = %q", got)
+	}
+	// 空白取值视为未设置，不能让主目录变成当前工作目录。
+	t.Setenv("CODING_HOME", "   ")
+	if got := dataHome(userHome); got != filepath.Join(userHome, "env-dsh") {
+		t.Fatalf("blank CODING_HOME dataHome = %q", got)
+	}
+}

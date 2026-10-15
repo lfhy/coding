@@ -43,8 +43,8 @@ install -m 0755 dist/coding-runtime/coding-host-linux-x64 "$HOME/.local/bin/codi
 
 确保 `$HOME/.local/bin` 在 `PATH` 中，然后运行 `coding`；`coding --cwd <dir>` 可指定默认工作目录。Linux 上的 `make install` 只把客户端放在 `$(HOME)/.local/bin`（可用 `PREFIX` 或 `BINDIR` 覆盖），不会安装 Host；若使用该命令，仍需另行把构建好的 `coding-host` 放进 `PATH`。
 
-Linux Host 首次启动时把内嵌的运行时归档解压到 `~/.dsh/runtime/<sha256>`；归档内容相同时复用该目录。`coding` 启动器从固定的 `~/.dsh` 查找 Host，单独设置 `DSH_HOME` 不会迁移客户端的发现目录。
+Linux Host 首次启动时把内嵌的运行时归档解压到主目录下的 `runtime/<sha256>`；归档内容相同时复用该目录。`coding` 启动器按与 Host 相同的优先级挑选主目录（`$CODING_HOME`、兼容的 `$DSH_HOME`、有数据的 `~/.coding`、有数据的 `~/.dsh`，否则 `~/.coding`）并从中查找 Host；它自己不做迁移，所以只跑终端客户端的遗留用户会继续留在 `~/.dsh`，在别处用新版本启动过一次 Host（例如 `dsh web`）之后才会切到 `~/.coding`。
 
 ## 本地 Host 与数据
 
-客户端通过各自 Host 数据目录中的 `host.json` 查找仅监听本机回环地址的 Host。不要把主目录当作可随意清理的构建缓存：它包含会话、设置和凭据（macOS 桌面应用为 `~/.coding`，Linux 终端客户端为 `~/.dsh`）。macOS 桌面应用的 Electron 浏览器数据位于单独的 `~/.dsh-electron-user-data`。
+客户端通过各自 Host 数据目录中的 `host.json` 查找仅监听本机回环地址的 Host。不要把主目录当作可随意清理的构建缓存：它包含会话、设置和凭据（macOS 桌面应用为 `~/.coding`；Linux 终端客户端为 `~/.coding`，只有迁移尚未发生的遗留安装才仍是 `~/.dsh`）。macOS 桌面应用的 Electron 浏览器数据位于单独的 `~/.dsh-electron-user-data`。
