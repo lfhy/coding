@@ -38,6 +38,14 @@ describe('workbench narrow files layout', () => {
   })
 })
 
+describe('workbench file tree scrolling', () => {
+  it('constrains the tree panel and lets the tree own vertical overflow', () => {
+    expect(css).toMatch(/\.treeView\s*\{[^}]*display:\s*grid[^}]*min-height:\s*0[^}]*overflow:\s*hidden/)
+    expect(css).toMatch(/\.filesPanel\s*\{[^}]*height:\s*100%/)
+    expect(css).toMatch(/\.tree\s*\{[^}]*min-height:\s*0[^}]*overflow:\s*auto/)
+  })
+})
+
 describe('terminal tabs', () => {
   it('places new tabs alongside existing tabs and keeps panel close at the right edge', () => {
     expect(terminalCss).toMatch(/\.tabs\s*\{[^}]*flex:\s*0 1 auto/)
