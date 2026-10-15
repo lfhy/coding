@@ -21,6 +21,33 @@ This file is the cross-session implementation record for Coding. Update it when 
 - Initial distribution is manual installation only: macOS `.app`/`.dmg`, Windows installer, and one Linux executable. Signing and notarization hooks are prepared but do not block development; automatic update is excluded.
 - Mobile clients will be mobile Web clients of the same Web GUI, not native shells: phones never run the Host; they reach a Host on the user's desktop or a server. The enabling work is Host-side remote-access security (token auth exists; TLS and LAN discovery remain), plus responsive Web GUI adaptation. If a store app is ever needed, package the existing Web GUI with Capacitor rather than introducing another desktop shell.
 
+## Data home, memory, and the Coding prompt
+
+Status: landed in this branch as four commits' worth of work; two follow-ups stay open.
+
+### Data home
+
+- Default data home is `~/.coding`; `$CODING_HOME` outranks the compatible `$DSH_HOME`, a populated `~/.coding` wins over a populated `~/.dsh`, and a fresh setup creates `~/.coding`. An empty directory never counts as data, so an interrupted setup cannot hide `~/.dsh`.
+- First start copies a populated `~/.dsh` to `~/.coding`: staging directory beside the target, entry/byte verification, atomic rename, `migration.json`, source left untouched, and a fallback to `~/.dsh` when the copy fails or the source exceeds 2 GiB / 20000 entries. Migration runs before any home resolution — in the CLI dispatcher and in the Electron main process before it hands `--home` to the Go helper.
+- The Linux launcher picks the same home but never migrates itself (it must fix `host.json` and the launch lock before the Host exists, and an explicit home suppresses Host-side migration). Documented in `docs/user/guide/install.md`.
+
+### Project memory
+
+- `packages/memory/{memory,memory-local,tool-memory,memory-context}`: scope key `md5(realpath(project root))`, files under `<home>/memory/<key>/*.md` (`project.json` beside them records the real path and is not a memory entry), four project-isolated tools with no path parameters, and a bounded excerpt injected once into the first entering step.
+- Wired into `packages/bundle/base` (Provider, injection, tools) with source-path mappings in `tsconfig.base.json`. The memory dir is user data, never repository content.
+
+### The Coding prompt
+
+- `packages/boot/app-boot/src/coding-prompt.ts` owns `coding:identity` (order −100) and `coding:guidelines` (order −98: working style, code organization, TODO handoff, memory, communication, workspace conventions, boundaries, review, final answer). Independent names and an order before the persona mean a preset persona cannot shadow them.
+- The product composition disables the harness opener (`includeHarnessIdentity: false` in `packages/bundle/base`) and the web-app bundle no longer injects the source-checkout section; the `surfaceContext` config that existed only for it is gone.
+
+### Open follow-ups
+
+- [ ] Refresh `apps/web/tests/snapshots/fresh-round-trip/system-prompt.expected.md` with `pnpm run test:web:refresh` (build-based). Example trees (`examples/acp-agent`, `examples/headless-agent`) mount their own system prompt, so they keep the harness opener and need no refresh.
+- [ ] Decide whether every Coding-launched tree should drop the English opener: either opt those example trees out too, or change the default text in `packages/core/system-prompt` and let `includeHarnessIdentity` become a pure opt-out.
+- [ ] Add the real-composition test the package policy asks for: a Loader-booted test-only `cordis.yml` where one session saves a memory point and a second session on the same project reads it from the injected baseline.
+- [ ] `pnpm run verify-cordis-config` currently fails on stale `dist/` copies that name the removed `@deepseek-ai/dsh-tool-subagent-control/list-models` subpath; rebuild or clean `dist/` to clear it.
+
 ## Phase 0: identity and design record
 
 Status: done.
