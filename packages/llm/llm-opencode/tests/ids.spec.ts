@@ -11,6 +11,7 @@ import {
   disguiseHeaders,
   invertedTimestampHex,
   opencodeUserAgent,
+  projectId,
 } from '../src/ids.ts'
 
 const CANONICAL = /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/
@@ -94,24 +95,40 @@ describe('deriveRequestIds', () => {
 })
 
 describe('disguiseHeaders', () => {
-  it('把会话 id 同时放在三个关联头上，并带上请求与项目头', () => {
+  it('把会话 id 放在四个关联头上，项目头是裸 hex，且不发请求头', () => {
     const ids = deriveRequestIds([{ role: 'user', content: 'hi' }])
     expect(disguiseHeaders(ids)).toEqual({
       'user-agent': opencodeUserAgent(),
       'x-opencode-client': 'cli',
       'x-opencode-session': ids.session,
+      'x-opencode-session-id': ids.session,
       'x-session-affinity': ids.session,
       'X-Session-Id': ids.session,
-      'x-opencode-request': ids.request,
       'x-opencode-project': ids.project,
     })
+    // 上游自 2026-10-14 起拒绝请求级关联头，因此它只留在本进程内。
+    expect(disguiseHeaders(ids)).not.toHaveProperty('x-opencode-request')
   })
 
-  it('User-Agent 以 opencode/ 开头并携带运行时事实', () => {
-    const agent = opencodeUserAgent()
-    expect(agent.startsWith('opencode/')).toBe(true)
-    expect(agent).toContain(process.platform)
-    expect(agent).toContain(process.arch)
-    expect(agent).toContain(`node${process.versions.node}`)
+  it('User-Agent 是官方 CLI 的形态：opencode/ 前缀加通道、版本与客户端名', () => {
+    expect(opencodeUserAgent()).toMatch(/^opencode\/[^/]+\/[^/]+\/cli$/)
+  })
+
+  it('项目头是裸 40 位小写 hex，同一个信号稳定', () => {
+    expect(projectId('dsh-opencode:default-project')).toMatch(/^[0-9a-f]{40}$/)
+    expect(projectId('dsh-opencode:default-project')).toBe(projectId('dsh-opencode:default-project'))
+    expect(projectId('other')).not.toBe(projectId('dsh-opencode:default-project'))
+  })
+})
+
+describe('canonicalSessionId', () => {
+  it('只原样通过带真实降序时钟段的会话 id', () => {
+    const minted = `ses_${invertedTimestampHex(1_700_000_000_000)}${'A'.repeat(14)}`
+    expect(invertedTimestampHex(1_700_000_000_000).slice(9)).toMatch(/^f[c-f][0-9a-f]$/)
+    expect(canonicalSessionId(minted)).toBe(minted)
+    // 形状对但时钟段是摘要与升序值时，同样按信号重新铸造。
+    const hashed = `ses_${'0'.repeat(9)}0a1${'A'.repeat(4)}`
+    expect(canonicalSessionId(hashed)).not.toBe(hashed)
+    expect(canonicalSessionId(hashed)).toMatch(CANONICAL)
   })
 })

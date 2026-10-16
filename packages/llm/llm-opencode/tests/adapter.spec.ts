@@ -112,13 +112,19 @@ describe('adapter wire shape', () => {
     const call = calls[0]!
     const options = call.options
     const headers = options.headers as Record<string, string>
-    // 会话头必须是官方形状；请求头与项目头把同一次调用串起来。
-    expect(headers['x-opencode-session']).toMatch(/^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/)
-    expect(headers['x-session-affinity']).toBe(headers['x-opencode-session'])
-    expect(headers['X-Session-Id']).toBe(headers['x-opencode-session'])
+    // 会话头必须是官方形状且时钟段来自真实时钟；四个关联头同值。
+    const session = headers['x-opencode-session']!
+    expect(session).toMatch(/^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/)
+    expect(session.slice(4, 16)).toMatch(/^[0-9a-f]{9}f[c-f][0-9a-f]$/)
+    expect(headers['x-opencode-session-id']).toBe(session)
+    expect(headers['x-session-affinity']).toBe(session)
+    expect(headers['X-Session-Id']).toBe(session)
     expect(headers['x-opencode-client']).toBe('cli')
-    expect(headers['x-opencode-project']).toMatch(/^prj_/)
-    expect(headers['x-opencode-request']).toMatch(/^req_/)
+    expect(headers['x-opencode-project']).toMatch(/^[0-9a-f]{40}$/)
+    // 上游会拒收请求级关联头，因此它不能出现在线上头里。
+    expect(headers).not.toHaveProperty('x-opencode-request')
+    // 指纹 UA 是这条路由的最终值：换成 harness 归因 UA 会被上游 403。
+    expect(headers['user-agent']).toMatch(/^opencode\//)
     expect(options.apiKey).toBe('public')
     expect(call.model.baseUrl).toBe('https://opencode.ai/zen/v1')
     // 能力声明进入 pi-ai 的模型描述符：模态决定图片是否内联。
@@ -169,17 +175,17 @@ describe('adapter wire shape', () => {
     expect(calls[0]?.model.thinkingLevelMap).toBeUndefined()
   })
 
-  it('同一会话的两次调用复用同一个会话 id，请求 id 各不相同', async () => {
+  it('同一会话的两次调用复用同一个会话 id 与项目头', async () => {
     const calls: Call[] = []
     const ctx = await harness(textEvents('hi'), calls)
     const messages = [createUserMessage({ content: [{ type: 'text', text: 'stable' }], source: { kind: 'user' } })]
     for (let index = 0; index < 2; index += 1) {
       for await (const _chunk of ctx.llm.stream({ provider: 'fake-route', model: 'mimo-v2.6-flash-free', messages })) { /* drain */ }
     }
-    const sessions = calls.map(call => (call.options.headers as Record<string, string>)['x-opencode-session'])
-    const requests = calls.map(call => (call.options.headers as Record<string, string>)['x-opencode-request'])
-    expect(sessions[1]).toBe(sessions[0])
-    expect(requests[1]).not.toBe(requests[0])
+    const headerAt = (index: number, name: string): string | undefined =>
+      (calls[index]?.options.headers as Record<string, string>)[name]
+    expect(headerAt(1, 'x-opencode-session')).toBe(headerAt(0, 'x-opencode-session'))
+    expect(headerAt(1, 'x-opencode-project')).toBe(headerAt(0, 'x-opencode-project'))
   })
 
   it('把工具 schema 与历史里的工具调用/结果投影到 pi-ai 词汇', async () => {

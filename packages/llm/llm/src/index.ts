@@ -190,7 +190,9 @@ export interface PreparedLlmCall {
  * Provider-wire adapter for the harness message and stream vocabulary. Register implementations
  * with `ctx.llm.registerAdapter(providers, adapter)`. Every provider HTTP request must include
  * `attributionHeaders()`; prove the headers are added in the wire request or library header hook. The direct-fetch
- * DeepSeek and library-backed pi-ai adapters meet this contract through different internals.
+ * DeepSeek and library-backed pi-ai adapters meet this contract through different internals. An adapter whose upstream
+ * mandates a client identity of its own sends that identity instead and documents the deviation: the built-in OpenCode
+ * Zen route must present the OpenCode CLI User-Agent, and the harness attribution UA makes its free lane answer 403.
  */
 export abstract class LlmAdapter {
   /**

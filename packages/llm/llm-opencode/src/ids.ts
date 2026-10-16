@@ -1,10 +1,12 @@
 /**
  * OpenCode CLI 同形标识派生：会话/项目关联头与请求头集合。
  *
- * 上游免费通道按客户端指纹丢弃请求，`Authorization: Bearer public` 本身不是门，
- * 真正的门是 `ses_` 会话 id 的形状与派生方式。本模块把这套派生固化下来，
- * 使本适配器的流量与官方 CLI 同形。算法来自 opencode2dsh 的 live 校准结果
- * （issue #62，2026-10-13），此处逐条保留其约束而不重新发明。
+ * 上游免费通道按客户端指纹丢弃请求，`Authorization: Bearer public` 本身不是门。
+ * 2026-10-16 的 live 复测（对着仿官方 CLI 的 opencode2api 参考实现逐项对照）确认
+ * 两道硬门：User-Agent 必须以 `opencode/` 开头（harness 自己的 UA 会 403），
+ * `ses_` 会话 id 的 12 位 hex 时间段必须是真实降序时钟——随机 hex 会 403。
+ * 其余头（双会话头、裸 40 位 hex 项目头、以及不带 `x-opencode-request`）沿用
+ * 参考实现在 2026-10-14 更严的门下验证过的形态，即使当前放宽也照旧发送。
  *
  * @module @deepseek-ai/dsh-llm-opencode/ids
  */
@@ -15,16 +17,10 @@ import { createHash, randomBytes } from 'node:crypto'
 export interface RequestIds {
   /** 会话标识：上游按它归组免费额度与 prompt cache。 */
   session: string
-  /** 本次请求的随机标识。 */
+  /** 本进程内的请求关联标识；上游自 2026-10-14 起拒绝这个头，因此不上线。 */
   request: string
-  /** 稳定的项目标识。 */
+  /** 项目标识：裸 40 位小写 hex，与官方客户端同形。 */
   project: string
-}
-
-/** `sha256("<prefix>\0<value>")` 截断到 12 字节：稳定且不可逆推。 */
-function stableId(prefix: string, value: string): string {
-  const sum = createHash('sha256').update(`${prefix}\x00${value}`).digest()
-  return `${prefix}_${sum.subarray(0, 12).toString('hex')}`
 }
 
 /** `<prefix>_<随机 hex>`；仅用于每请求一次的标识。 */
@@ -34,6 +30,14 @@ function randomId(prefix: string, bytes: number): string {
 
 /** 官方会话 id 的形状：`ses_` + 12 位小写 hex + 14 位 base62。 */
 const CANONICAL_SESSION_PATTERN = /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/
+
+/**
+ * 官方客户端 `Identifier.descending()` 铸造的时间段：低 12 位是毫秒内序号，
+ * 取反后落在 `0xFC0`–`0xFFF`（序号 1–63）。上游只在这段窗口内放行，
+ * 与摘要派生的 hex 段无法区分开，因此必须真的来自时钟。
+ */
+const DESCENDING_TIME_PART_PATTERN = /^[0-9a-f]{9}f[c-f][0-9a-f]$/
+
 
 const BASE62_ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
 
@@ -73,13 +77,16 @@ const SESSION_MEMO_LIMIT = 1024
 const sessionMemo = new Map<string, string>()
 
 /**
- * 把任意会话信号展开成官方形状的会话 id。已经是官方形状的信号原样通过，
+ * 把任意会话信号展开成官方形状的会话 id。已经带官方降序时钟段的信号原样通过，
  * 其余把会话身份折进 14 位 base62 尾段，因此不同会话不会碰撞。
  * @param signal - 会话身份信号；同一会话必须稳定，不同会话必须不同。
  * @returns 官方形状的 `ses_` id。
  */
 export function canonicalSessionId(signal: string): string {
-  if (CANONICAL_SESSION_PATTERN.test(signal)) return signal
+  // 形状对但时钟段是摘要或升序值时同样要被拒，因此两条都在才原样通过。
+  if (CANONICAL_SESSION_PATTERN.test(signal) && DESCENDING_TIME_PART_PATTERN.test(signal.slice(4, 16))) {
+    return signal
+  }
 
   const memoized = sessionMemo.get(signal)
   if (memoized !== undefined) return memoized
@@ -112,6 +119,16 @@ export function conversationSeed(messages: ReadonlyArray<{ role: string; content
 }
 
 /**
+ * 项目头：官方客户端发的是裸 40 位小写 hex，本适配器把固定的本地项目身份摘要成
+ * 同一形状。上游只校验形状，但这个值让同一部署的流量始终归到同一个项目。
+ * @param signal - 本地项目身份的稳定信号。
+ * @returns 40 位小写 hex。
+ */
+export function projectId(signal: string): string {
+  return createHash('sha256').update(`project\x00${signal}`).digest('hex').slice(0, 40)
+}
+
+/**
  * 派生一次上游请求的关联标识。
  * @param messages - 本次请求的消息，用于给会话身份信号。
  * @returns 会话、请求与项目标识；每次调用都产生一个新的请求标识。
@@ -121,22 +138,27 @@ export function deriveRequestIds(messages: ReadonlyArray<{ role: string; content
   return {
     session: canonicalSessionId(seed === '' || seed === '{}' ? randomId('fallback', 16) : seed),
     request: randomId('req', 16),
-    project: stableId('prj', 'dsh-opencode:default-project'),
+    project: projectId('dsh-opencode:default-project'),
   }
 }
 
+/** 官方 CLI 的 User-Agent 前缀与通道段；上游只认 `opencode/` 开头的形态。 */
+const OPENCODE_CLI_VERSION = '2.0.29'
+
 /**
- * CLI 同形的 User-Agent。上游按 `opencode/<version>` 识别客户端，
- * 括号内的运行时事实与官方 CLI 发出的形态一致。
+ * CLI 同形的 User-Agent。上游免费通道按它识别客户端：harness 自己的
+ * `Coding/...` 归因 UA 会被 403，因此本路由只发这一个形态
+ * （`opencode/latest/<version>/cli`，与官方 CLI 2.x 一致）。
  * @returns 本进程使用的 User-Agent。
  */
 export function opencodeUserAgent(): string {
-  return `opencode/1.18.31 (${process.platform} ${process.arch}; node${process.versions.node})`
+  return `opencode/latest/${OPENCODE_CLI_VERSION}/cli`
 }
 
 /**
- * 每个上游请求都携带的伪装头集合。会话 id 同时出现在三个关联头上，
- * 与官方 CLI 的行为一致；请求头与项目头把同一次调用串起来。
+ * 每个上游请求都携带的伪装头集合。会话 id 同时出现在四个关联头上（官方 CLI 自
+ * 2026-10-14 起要求前两个都带），项目头是同形的裸 hex；请求级关联头不再上线，
+ * 上游会拒绝它，本进程仍保留该标识用于本地诊断。
  * @param ids - 本次请求的关联标识。
  * @returns 合并进 pi-ai 请求的标头字典。
  */
@@ -145,9 +167,9 @@ export function disguiseHeaders(ids: RequestIds): Record<string, string> {
     'user-agent': opencodeUserAgent(),
     'x-opencode-client': 'cli',
     'x-opencode-session': ids.session,
+    'x-opencode-session-id': ids.session,
     'x-session-affinity': ids.session,
     'X-Session-Id': ids.session,
-    'x-opencode-request': ids.request,
     'x-opencode-project': ids.project,
   }
 }

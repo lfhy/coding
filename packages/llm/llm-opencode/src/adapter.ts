@@ -18,7 +18,6 @@ import {
   LlmAdapter,
   LlmError,
   ReasoningEffortId,
-  userAgent,
 } from '@deepseek-ai/dsh-llm'
 import type {
   ContentBlock,
@@ -68,24 +67,10 @@ export const FREE_LANE_RETRY_POLICY = Object.freeze({
 export interface OpencodeZenAdapterOptions {
   /** 当前连接事实；每次操作读取一次。 */
   options: () => ResolvedOpencodeOptions
-  /** 当前共享 User-Agent 之外的兜底值，仅在未挂载 llm 服务时使用。 */
-  resolveUserAgent?: () => string
   /** 解析当前持久化附件服务；缺席时拒绝图片输入。 */
   resolveAttachments?: () => AttachmentStore | undefined
   /** 可注入的 pi-ai 提供商，供测试替换线协议层。 */
   providerOverride?: Provider
-}
-
-/** 合并部署标头与 Harness 应用归因，归因名冲突时以 Harness 为准。 */
-function requestHeaders(
-  headers: Readonly<Record<string, string>>,
-  requestUserAgent: string,
-): Record<string, string> {
-  const reserved = new Set(['user-agent'])
-  return {
-    ...Object.fromEntries(Object.entries(headers).filter(([name]) => !reserved.has(name.toLowerCase()))),
-    'user-agent': requestUserAgent,
-  }
 }
 
 /** 把一条已解析的目录条目投影成 seam 的模型信息。 */
@@ -102,10 +87,12 @@ function modelInfo(provider: string, model: ResolvedOpencodeModel): LlmModelInfo
  * @returns pi-ai 读档位的映射。
  */
 function thinkingLevelMap(efforts: readonly string[]): ThinkingLevelMap {
-  return Object.fromEntries(REASONING_EFFORT_LEVELS.map(level => [
-    level,
-    efforts.includes(level) ? (level === 'off' ? undefined : level) : null,
-  ]).filter(([, wire]) => wire !== undefined))
+  const map: ThinkingLevelMap = {}
+  for (const level of REASONING_EFFORT_LEVELS) {
+    if (!efforts.includes(level)) map[level] = null
+    else if (level !== 'off') map[level] = level
+  }
+  return map
 }
 
 /** 自由文本内容：把 harness 文本块摊平，图片另行处理。 */
@@ -336,7 +323,6 @@ export class OpencodeZenAdapter extends LlmAdapter {
     const attachments = containsImage ? this.config.resolveAttachments?.() : undefined
     const ids = deriveRequestIds(options.messages)
     const context = await toPiContext(options, attachments)
-    const requestUserAgent = this.config.resolveUserAgent?.() ?? userAgent()
 
     const consumer = new AbortController()
     const upstream = options.signal === undefined
@@ -347,7 +333,9 @@ export class OpencodeZenAdapter extends LlmAdapter {
     try {
       const events = this.provider(connection).streamSimple(model, context, {
         apiKey: connection.apiKey,
-        headers: requestHeaders(disguiseHeaders(ids), requestUserAgent),
+        // 上游只接受 OpenCode CLI 形态的 User-Agent：harness 归因 UA 会 403，
+        // 因此本路由的指纹头是最终值，不再叠加共享的模型请求 UA。
+        headers: disguiseHeaders(ids),
         // 上游免费通道只在请求体带上 agent 形状的工具表时才放行；
         // pi-ai 没有对应选项，因此改写在序列化后的请求体上进行。
         onPayload: (payload: unknown) => ensureFreeLaneShape(payload),

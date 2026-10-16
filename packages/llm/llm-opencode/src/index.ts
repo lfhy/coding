@@ -91,7 +91,6 @@ export function apply(ctx: Context, config: Config): void {
 
   const adapter = new OpencodeZenAdapter({
     options,
-    resolveUserAgent: () => ctx.llm.getUserAgent(),
     resolveAttachments: () => ctx.get('attachments'),
   })
   const registration = ctx.llm.registerAdapter([PROVIDER_ID], adapter)
