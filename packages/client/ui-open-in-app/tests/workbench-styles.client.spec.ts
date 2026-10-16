@@ -8,9 +8,18 @@ const terminalCss = readFileSync(fileURLToPath(new URL('../src/client/TerminalPa
 describe('workbench desktop titlebar', () => {
   it('allows dragging empty topbar space while controls remain interactive', () => {
     expect(css).toMatch(/\.topbar\s*\{[^}]*-webkit-app-region:\s*no-drag/)
-    expect(css).toMatch(/\.topbar\s*\{[^}]*padding:\s*0 calc\(8px \+ var\(--app-safe-area-inset-right, 0px\)\)/)
+    expect(css).toMatch(/\.topbar\s*\{[^}]*padding:\s*0 calc\(8px \+ var\(--app-safe-area-inset-right, 0px\)\) 0 8px/)
     expect(css).toMatch(/\.topbar button,\s*\.topbar input\s*\{[^}]*-webkit-app-region:\s*no-drag/)
-    expect(css).toMatch(/\.topbar::before\s*\{[^}]*width:\s*var\(--app-safe-area-inset-top, 0px\)[^}]*-webkit-app-region:\s*no-drag/)
+  })
+
+  it('reserves the macOS control band only while the workbench owns the main area', () => {
+    // 停靠右栏时工作台列左缘已在会话列之后，避让内边距与避让带都只挂在全屏条件下。
+    const gate = ':global([data-workbench-fullscreen][data-sidebar-collapsed]) .topbar'
+    expect(css).toContain(`${gate} {`)
+    expect(css).toContain(`${gate}::before {`)
+    expect(css).toMatch(/padding-left:\s*calc\(8px \+ var\(--app-safe-area-inset-top, 0px\)\)/)
+    // 避让带排在标签之前，宽度必须跟着同一条件走，否则停靠右栏时它会吃掉标签左端的点击。
+    expect(css).toMatch(/\.topbar::before\s*\{[^}]*width:\s*0;[^}]*-webkit-app-region:\s*no-drag/)
   })
 
   it('shares one tab width, height, spacing and selection treatment across tab types', () => {

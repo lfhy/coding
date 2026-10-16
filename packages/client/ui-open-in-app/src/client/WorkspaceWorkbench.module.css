@@ -38,18 +38,30 @@
   align-items: center;
   gap: 6px;
   min-width: 0;
-  padding: 0 calc(8px + var(--app-safe-area-inset-right, 0px)) 0 calc(8px + var(--app-safe-area-inset-top, 0px));
+  padding: 0 calc(8px + var(--app-safe-area-inset-right, 0px)) 0 8px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-layer-1);
   -webkit-app-region: no-drag;
 }
 
+/* 只有工作台独占主区域、左侧只剩 56px rail 时，顶栏左缘才落在 macOS 交通灯
+   （x 16..68）下方；停靠右栏时列左缘已在会话列之后，不必为窗口控件留白。 */
+:global([data-workbench-fullscreen][data-sidebar-collapsed]) .topbar {
+  padding-left: calc(8px + var(--app-safe-area-inset-top, 0px));
+}
+
+/* 左缘避让带同时挡住窗口拖拽和命中，宽度必须与上面的内边距同源：它排在标签之前，
+   覆盖到的标签按钮收不到点击。 */
 .topbar::before {
   position: absolute;
   inset: 0 auto 0 0;
-  width: var(--app-safe-area-inset-top, 0px);
+  width: 0;
   content: '';
   -webkit-app-region: no-drag;
+}
+
+:global([data-workbench-fullscreen][data-sidebar-collapsed]) .topbar::before {
+  width: var(--app-safe-area-inset-top, 0px);
 }
 
 .topbar button,
