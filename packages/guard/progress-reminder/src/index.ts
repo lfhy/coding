@@ -38,6 +38,9 @@ export const Config: z<Config> = z.object({
 
 /**
  * 渲染提醒文本。数量取实际未汇报的调用数，因此一次并行批次跨过阈值时模型看到的是真实值。
+ *
+ * 文本点名"正文"并说明用户看不到思考过程：实测里模型会把整段进度写在推理块中，
+ * 而推理块在客户端默认折叠，用户读不到。
  * @param toolCalls - 本插件这条提醒之前、当前轮次内已完成的工具调用数。
  * @returns 带 system-reminder 框架的注入文本。
  */
@@ -45,7 +48,8 @@ export function renderProgressReminder(toolCalls: number): string {
   return [
     '<system-reminder>',
     `你已连续执行 ${toolCalls} 次工具调用，其间没有向用户汇报过进展。`,
-    '先发一条简短的进度说明：已完成什么、还剩什么、有没有需要用户拍板的地方；然后继续执行剩余任务。',
+    '用户看不到你的思考过程，只能看到回复正文。',
+    '现在先在正文里写一段简短的进度说明：已完成什么、还剩什么、有没有需要用户拍板的地方；然后继续执行剩余任务。',
     '</system-reminder>',
   ].join('\n')
 }
