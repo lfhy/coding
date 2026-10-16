@@ -113,7 +113,7 @@ export interface BackendHealth {
 
 /** Platform backend used by the provider-independent Service implementation. */
 export interface ComputerUseBackend {
-  readonly name: 'macos-ax' | 'unsupported'
+  readonly name: 'macos-ax' | 'cua-driver' | 'unsupported'
   readonly helperPath: string
   resolveApp(selector: ComputerAppSelector, signal: AbortSignal): Promise<ComputerAppIdentity>
   listApps(signal: AbortSignal): Promise<ComputerAppSummary[]>

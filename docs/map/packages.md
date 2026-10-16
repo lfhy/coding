@@ -101,7 +101,7 @@ workspace 共 247 个包，按 group 分节。每行给出包目录、职责（R
 
 ## packages/computer-use
 
-- `packages/computer-use/computer-use` — 本机 macOS 界面的观察与操作能力：在宿主层提供 `ctx.computerUse`… 入口 `src/index.ts`（tests 2）
+- `packages/computer-use/computer-use` — 本机 macOS 界面的观察与操作能力：在宿主层提供 `ctx.computerUse`… 入口 `src/index.ts`（tests 3）
 - `packages/computer-use/tool-computer-use` — Computer Use 的模型可见消费方：登记一份技能、一个全局引导工具，并在 agent 加载该技能之后，把执行工具只暴露给这个 agent 入口 `src/index.ts`（tests 2）
 
 ## packages/context

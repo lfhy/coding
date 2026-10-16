@@ -5,3 +5,7 @@
 拆成宿主层的服务提供方与 agent 预设层的工具消费方两个包、接入 `ctx.computerUse`、
 去掉其 Web 设置面板与诊断路由、服务方法改为中文 JSDoc、托管 helper 允许按仓库内源码重建。
 上游原样保留的部分继续适用其 MIT 条款，见同目录的 `LICENSE`。
+
+`src/providers/cua-driver.ts` 的驱动调用形状与坐标语义参考同样 MIT 许可的
+[`988hj7tczd-oss/dsh-computer-use`](https://github.com/988hj7tczd-oss/dsh-computer-use)，
+底层引擎是 [trycua/cua 的 cua-driver](https://github.com/trycua/cua)（MIT）。

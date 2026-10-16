@@ -29,6 +29,9 @@
 | `maxNodes` / `maxDepth` / `maxTextBytes` | `500` / `14` / `64000` | 可访问性遍历与模型可见文本上限 |
 | `maxScreenshotBytes` | `33554432` | PNG 产物字节上限 |
 | `artifactRoot` | `.dsh-computer-use/artifacts` | 会话工作区内的截图目录 |
+| `provider` | `native` | 后端选择：`native` 用包内 Swift helper，`cua-driver` 用 trycua/cua 的驱动 CLI |
+| `cuaDriver.bin` | 省略 | `cua-driver` 可执行文件路径；省略时依次看环境变量 `CUA_DRIVER_BIN` 与官方安装器路径 |
+| `cuaDriver.session` | `dsh-computer-use` | 传给驱动的会话名，驱动用它保持同一套虚拟光标会话 |
 | `helper.path` | 省略 | 显式外部 helper 可执行文件；省略时使用包内托管 helper |
 | `helper.allowSourceBuild` | `false` | 托管 helper 缺失时是否允许按仓库内 Swift 源码重建 |
 | `interaction.focusPolicy` | `preserve` | `preserve` 不激活目标应用；`activate` 允许为键盘输入激活 |
@@ -40,6 +43,12 @@
 | `grants[].bundleId` / `read` / `control` | — | 精确、无通配符的按应用授权；`control` 隐含读取 |
 
 配置在设置服务可用时按命名空间 `computer-use` 注册为可实时更新；替换提供方代次会使既有观察与待用确认令牌失效。
+
+## 后端选择
+
+`provider: 'cua-driver'` 把同一组工具接到 [trycua/cua 的 `cua-driver`](https://github.com/trycua/cua)：每次调用都是一次固定 argv 的子进程（`cua-driver call <tool> <json>`），驱动负责可访问性观察、截图与后台投递，本包只做接缝映射与失败收窄。
+该后端要求驱动已按官方安装器装好（`cua-driver doctor` 可查权限与守护进程状态），缺失时工具以带安装指引的提供方失败结束，不会退回内置 helper。
+驱动的能力边界就是该后端的能力边界：元素点击、坐标点击、拖拽、滚动、输入、按键、观察与截图可用；设置元素值、执行可访问性动作没有对应驱动调用，会明确拒绝；驱动不画独立 Agent 光标，因此该后端下 `interaction.cursorVisualization` 默认为 `hidden`，显式要求 `visible` 会在配置校验时被拒绝。
 
 ## 权限、租约与确认
 
@@ -79,3 +88,5 @@ Indirectly, through [`@deepseek-ai/dsh-tool-computer-use`](../tool-computer-use/
 - **源码重建替代了上游的固定二进制校验**：manifest 的哈希在本地构建时写入，信任锚是仓库内容而不是签名的发行产物；需要防篡改发行时需要另行设计签名链路。
 - **定向指针依赖平台行为**：目标进程拒绝定向事件时坐标回退失败关闭，不会退化成全局输入。
 - **没有暂停与人工接管协议**：多控制器争用的语义只有本进程内的租约，跨设备的接管尚未定义。
+- **cua-driver 后端未在真实驱动上复测**：`provider: 'cua-driver'` 的调用形状、参数名与坐标换算是按驱动 CLI 的既有集成实现推导的，本仓库只在可执行替身上验证过程序路径；装好驱动后需要按真实回包复测一次再依赖它。
+- **驱动后端缺三类动作**：设置元素值、执行元素声明的可访问性动作、独立 Agent 光标都没有驱动侧支持，只能明确拒绝而不是另找技术路线。

@@ -3291,7 +3291,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ComputerUseStatus',
-    declaration: 'export interface ComputerUseStatus {\n    platform: NodeJS.Platform;\n    provider: \'macos-ax\' | \'unsupported\';\n    generation: number;\n    ready: boolean;\n    helperPath: string;\n    helperVersion?: string;\n    helperSha256?: string;\n    accessibility: ComputerPermissionState;\n    screenRecording: ComputerPermissionState;\n    lastError?: string;\n}',
+    declaration: 'export interface ComputerUseStatus {\n    platform: NodeJS.Platform;\n    provider: \'macos-ax\' | \'cua-driver\' | \'unsupported\';\n    generation: number;\n    ready: boolean;\n    helperPath: string;\n    helperVersion?: string;\n    helperSha256?: string;\n    accessibility: ComputerPermissionState;\n    screenRecording: ComputerPermissionState;\n    lastError?: string;\n}',
   },
   {
     name: 'ComputerWaitAction',

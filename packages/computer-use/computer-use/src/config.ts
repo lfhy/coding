@@ -50,9 +50,18 @@ export interface ComputerUseConfig {
   maxTextBytes?: number
   maxScreenshotBytes?: number
   artifactRoot?: string
+  /**
+   * 后端选择：内置 Swift helper（`native`，默认）或 trycua/cua 的 `cua-driver` CLI。
+   * 驱动后端按后台投递工作、没有独立 Agent 光标，因此要求 `cursorVisualization: 'hidden'`。
+   */
+  provider?: 'native' | 'cua-driver'
   helper?: {
     path?: string
     allowSourceBuild?: boolean
+  }
+  cuaDriver?: {
+    bin?: string
+    session?: string
   }
   interaction?: ComputerUseInteractionConfig
   allowAllApps?: boolean
@@ -106,9 +115,14 @@ export const Config: Schema<ComputerUseConfig> = z.object({
   maxTextBytes: live(z.number().default(64000)),
   maxScreenshotBytes: live(z.number().default(33554432)),
   artifactRoot: live(z.string().default('.dsh-computer-use/artifacts')),
+  provider: live(z.union(['native', 'cua-driver']).default('native')),
   helper: live(z.object({
     path: z.string(),
     allowSourceBuild: z.boolean().default(false),
+  })),
+  cuaDriver: live(z.object({
+    bin: z.string(),
+    session: z.string().default('dsh-computer-use'),
   })),
   interaction: live(z.object({
     focusPolicy: z.union(['preserve', 'activate']).default('preserve'),
@@ -140,9 +154,14 @@ export interface ResolvedComputerUseConfig {
   maxTextBytes: number
   maxScreenshotBytes: number
   artifactRoot: string
+  provider: 'native' | 'cua-driver'
   helper: {
     path?: string
     allowSourceBuild: boolean
+  }
+  cuaDriver: {
+    bin?: string
+    session: string
   }
   interaction: {
     focusPolicy: 'preserve' | 'activate'
@@ -196,10 +215,28 @@ export function resolveConfig(config: ComputerUseConfig = {}): ResolvedComputerU
     throw new ComputerUseError('COMPUTER_PROVIDER_FAILURE', 'artifactRoot must be a non-empty workspace-relative path without ..')
   }
   const helperPath = config.helper?.path?.trim() || undefined
+  const provider = option('provider', config.provider ?? 'native', ['native', 'cua-driver'] as const)
+  const cuaDriverBin = config.cuaDriver?.bin?.trim() || undefined
+  const cuaDriverSession = (config.cuaDriver?.session ?? 'dsh-computer-use').trim()
+  if (cuaDriverSession.length === 0) {
+    throw new ComputerUseError('COMPUTER_PROVIDER_FAILURE', 'cuaDriver.session must be non-empty')
+  }
   const focusPolicy = option('interaction.focusPolicy', config.interaction?.focusPolicy ?? 'preserve', ['preserve', 'activate'] as const)
   const keyboardPolicy = option('interaction.keyboardPolicy', config.interaction?.keyboardPolicy ?? 'preserve', ['preserve', 'activate'] as const)
   const pointerInputPolicy = option('interaction.pointerInputPolicy', config.interaction?.pointerInputPolicy ?? 'targeted', ['deny', 'targeted'] as const)
-  const cursorVisualization = option('interaction.cursorVisualization', config.interaction?.cursorVisualization ?? 'visible', ['hidden', 'visible'] as const)
+  // cua-driver 不画独立 Agent 光标：该后端下默认隐藏，显式要求可见则直接拒绝而不是静默失效。
+  const cursorVisualizationDefault = provider === 'cua-driver' ? 'hidden' : 'visible'
+  if (provider === 'cua-driver' && config.interaction?.cursorVisualization === 'visible') {
+    throw new ComputerUseError(
+      'COMPUTER_PROVIDER_FAILURE',
+      "provider 'cua-driver' has no agent cursor overlay; set interaction.cursorVisualization to 'hidden'",
+    )
+  }
+  const cursorVisualization = option(
+    'interaction.cursorVisualization',
+    config.interaction?.cursorVisualization ?? cursorVisualizationDefault,
+    ['hidden', 'visible'] as const,
+  )
   const cursorSpeedPxPerSecond = integer('interaction.cursorSpeedPxPerSecond', config.interaction?.cursorSpeedPxPerSecond ?? 1600, 100, 50000)
   const cursorAccelerationPxPerSecondSquared = integer('interaction.cursorAccelerationPxPerSecondSquared', config.interaction?.cursorAccelerationPxPerSecondSquared ?? 6000, 100, 500000)
   const cursorClickDelayMs = integer('interaction.cursorClickDelayMs', config.interaction?.cursorClickDelayMs ?? 90, 0, 1000)
@@ -229,9 +266,14 @@ export function resolveConfig(config: ComputerUseConfig = {}): ResolvedComputerU
     maxTextBytes,
     maxScreenshotBytes,
     artifactRoot,
+    provider,
     helper: {
       ...(helperPath === undefined ? {} : { path: helperPath }),
       allowSourceBuild: config.helper?.allowSourceBuild ?? false,
+    },
+    cuaDriver: {
+      ...(cuaDriverBin === undefined ? {} : { bin: cuaDriverBin }),
+      session: cuaDriverSession,
     },
     interaction: {
       focusPolicy,

@@ -28,6 +28,7 @@ import {
 } from '../config.ts'
 import { ComputerUseService } from '../service.ts'
 import type { ComputerAppIdentity, ComputerAppSelector, ComputerAppSummary } from '../types.ts'
+import { CuaDriverBackend } from './cua-driver.ts'
 import { NativeHelperClient } from './native-helper.ts'
 import { UnsupportedPlatformBackend } from './unsupported.ts'
 
@@ -45,6 +46,10 @@ interface NativeCursorActivation {
 }
 
 function createBackend(ctx: Context, config: ResolvedComputerUseConfig): ComputerUseBackend {
+  if (config.provider === 'cua-driver') {
+    // 驱动自带平台判定与安装器；这里不按平台拒绝，让它的错误成为可操作的诊断。
+    return new CuaDriverBackend(ctx, config)
+  }
   return process.platform === 'darwin'
     ? new MacOSBackend(ctx, config)
     : new UnsupportedPlatformBackend(process.platform)

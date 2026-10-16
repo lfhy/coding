@@ -303,7 +303,7 @@ export interface ComputerUseContext {
 /** Provider and permission diagnostics exposed to Settings. */
 export interface ComputerUseStatus {
   platform: NodeJS.Platform
-  provider: 'macos-ax' | 'unsupported'
+  provider: 'macos-ax' | 'cua-driver' | 'unsupported'
   generation: number
   ready: boolean
   helperPath: string
