@@ -1202,3 +1202,35 @@ select.input {
   }
   .channelHeading { padding: 24px 28px 0 0; }
 }
+
+/* 内置渠道的只读目录：没有行操作，因此列比可编辑表格少两个按钮列。 */
+.builtinModelRow {
+  --model-columns: minmax(140px, 1.3fr) minmax(120px, 1fr) 56px minmax(120px, 1.2fr);
+}
+.builtinChannelNote {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
+}
+.builtinModelId,
+.builtinModelName {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary);
+}
+.builtinModelName { color: var(--dsw-alias-label-secondary); }
+.builtinReasoning {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+  justify-content: center;
+}
+.builtinMuted {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}

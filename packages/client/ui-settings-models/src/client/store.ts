@@ -7,7 +7,8 @@
  */
 
 import type {
-  ConfigurableProviderView, CredentialView, IApiClient, ModelCatalogFailure, SettingsNamespaceView,
+  ConfigurableProviderView, CredentialView, IApiClient, ModelCatalogFailure, ModelProviderGroup,
+  SettingsNamespaceView,
 } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
@@ -34,6 +35,9 @@ export interface ProviderRow {
   credential: CredentialView | undefined
 }
 
+/** `llm.models` 给出的一条模型条目：能力字段缺席表示提供方未声明。 */
+export type CatalogModel = ModelProviderGroup['models'][number]
+
 /** 目录中的渠道模型；视觉候选另按显式图片输入能力筛选。 */
 export interface VisionModelChoice {
   provider: string
@@ -57,6 +61,8 @@ export interface ModelsSettingsState {
   rows: readonly ProviderRow[]
   /** Namespace views by ns, for the editor's schema/layers/secrets. */
   namespaces: ReadonlyMap<string, SettingsNamespaceView>
+  /** 每条路由当前服务的模型目录，按路由 id 归组；内置渠道的只读卡片读它。 */
+  catalog: ReadonlyMap<string, readonly CatalogModel[]>
   visionModels: readonly VisionModelChoice[]
   /** 视觉模型目录读取失败；与成功返回空候选分开。 */
   visionModelsError: string | null
@@ -130,6 +136,7 @@ export class ModelsSettingsStore {
   /** The snapshot the section renders from (uSES-safe store). */
   readonly store: SnapshotStore<ModelsSettingsState> = createSnapshotStore<ModelsSettingsState>({
     status: 'idle', hasLoaded: false, error: null, credentialError: null, writable: false, rows: [], namespaces: new Map(),
+    catalog: new Map(),
     visionModels: [], visionModelsError: null,
     onboardingModels: [], onboardingModelsError: null, onboardingModelFailures: [], onboardingDefault: null,
   })
@@ -303,14 +310,17 @@ export class ModelsSettingsStore {
     let onboardingModels: VisionModelChoice[] = []
     let onboardingModelsError: string | null = null
     let onboardingModelFailures: ModelCatalogFailure[] = []
+    let catalog: ReadonlyMap<string, readonly CatalogModel[]> = new Map()
     try {
       const response = await this.api.llm.models({})
       if (!response.result.ok) {
         onboardingModelsError = response.result.error.message
       } else {
+        catalog = new Map(response.result.value.groups.map(group => [group.id, group.models]))
         const usable = new Set(joinedRows.filter(row => routeAvailable(row) && providerUsable(row))
           .map(row => row.entry.provider))
-        const visionUsable = new Set(joinedRows.filter(row => row.configured && providerUsable(row))
+        // 内置渠道（无设置分节的存活路由）也服务图片模型，因此按可用性而不是配置状态筛选。
+        const visionUsable = new Set(joinedRows.filter(row => routeAvailable(row) && providerUsable(row))
           .map(row => row.entry.provider))
         onboardingModelFailures = response.result.value.failures.filter(failure => usable.has(failure.id))
         onboardingModels = response.result.value.groups.flatMap(group => usable.has(group.id)
@@ -343,6 +353,7 @@ export class ModelsSettingsStore {
       s.writable = writable
       s.rows = joinedRows
       s.namespaces = namespaces
+      s.catalog = catalog
       s.visionModels = visionModels
       s.visionModelsError = visionModelsError
       s.onboardingModels = onboardingModels
@@ -364,9 +375,18 @@ export function providerUsable(row: ProviderRow): boolean {
   return row.credential?.configured === true
 }
 
+/**
+ * 内置渠道：Host 注册的存活路由，没有设置分节，因此没有任何可供用户编辑的 profile。
+ * @param row - 已联接凭据的渠道行。
+ * @returns 该行是否为内置渠道。
+ */
+export function isBuiltinChannel(row: ProviderRow): boolean {
+  return row.entry.settingsNs === '' && row.entry.settingsPath.length === 0
+}
+
 /** Host 附加的已注册无配置地址渠道不需要 settings profile。 */
 function routeAvailable(row: ProviderRow): boolean {
-  return row.configured || (row.entry.settingsNs === '' && row.entry.settingsPath.length === 0)
+  return row.configured || isBuiltinChannel(row)
 }
 
 /** 首次引导只从本代 Models 联接结果计算完成状态。 */

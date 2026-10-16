@@ -39,16 +39,11 @@ interface ModelFamily {
   arrayEfforts: boolean
   /** 模型设置窗口提供的档位。 */
   levels: readonly string[]
-  /**
-   * 声明“具备推理能力”的布尔字段名。opencode 的模型可以恒推理而没有档位可选，
-   * 因此它的能力与档位是两个独立声明；其余家族只按档位列表回答。
-   */
-  reasoningFlag?: 'reasoning'
 }
 
 /** DeepSeek 目录的推理档位。 */
 const DEEPSEEK_REASONING_LEVELS = ['off', 'low', 'high', 'max'] as const
-/** OpenAI 兼容端点的推理档位；pi-ai 与 opencode 都在这个词汇里取值。 */
+/** OpenAI 兼容端点的推理档位；pi-ai 家族的模型行在这个词汇里取值。 */
 const PI_AI_REASONING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
 
 /**
@@ -61,20 +56,12 @@ function familyOf(settingsNs: string): ModelFamily {
   if (settingsNs === 'llm-deepseek') {
     return { modalityKey: 'inputModalities', arrayEfforts: true, levels: DEEPSEEK_REASONING_LEVELS }
   }
-  if (settingsNs === 'llm-opencode') {
-    return {
-      modalityKey: 'inputModalities',
-      arrayEfforts: true,
-      levels: PI_AI_REASONING_LEVELS,
-      reasoningFlag: 'reasoning',
-    }
-  }
   return { modalityKey: 'input', arrayEfforts: false, levels: PI_AI_REASONING_LEVELS }
 }
 
 /**
- * 一行声明的推理能力。opencode 行先看能力标记：恒推理的模型只写 `reasoning: true`
- * 而没有档位，未声明的行仍然显示为未指定而不是不支持。
+ * 一行声明的推理能力：档位列表里有非 off 项就是支持，显式声明无档位就是不支持，
+ * 没有该字段的行仍显示为未指定。
  */
 function reasoningCapability(
   model: ModelDraft,
@@ -82,11 +69,6 @@ function reasoningCapability(
   inheritedReasoningEfforts: readonly string[] | undefined,
 ): Capability {
   const declared = model['reasoningEfforts']
-  if (family.reasoningFlag !== undefined) {
-    if (Array.isArray(declared) && declared.some(level => level !== 'off')) return 'supported'
-    if (model[family.reasoningFlag] === true) return 'supported'
-    return model[family.reasoningFlag] === false ? 'unsupported' : 'unknown'
-  }
   if (family.arrayEfforts) {
     return Array.isArray(declared)
       ? declared.some(level => level !== 'off') ? 'supported' : 'unsupported'
@@ -232,13 +214,10 @@ function adopt(candidate: DiscoveredModelView, namespace: string, reasoningDisab
     ...candidate.name === undefined ? {} : { name: candidate.name },
     ...candidate.contextWindow === undefined ? {} : { contextWindow: candidate.contextWindow },
     ...candidate.maxTokens === undefined ? {} : { maxTokens: candidate.maxTokens },
-    // opencode 的模型行只有推理档位这一个能力字段，而发现协议不带能力元数据：
-    // 导入的行保持未声明，由用户在模型设置窗口里显式打开。
-    ...namespace === 'llm-opencode'
-      ? {}
-      : namespace === 'llm-deepseek'
-        ? { inputModalities: ['text', 'image'], reasoningEfforts: reasoningDisabled ? ['off'] : ['off', 'low', 'high', 'max'] }
-        : { input: ['text', 'image'], reasoningEfforts: { off: null, low: 'low', high: 'high', max: 'max' } },
+    // 发现协议不带能力元数据：导入的行按家族声明默认能力，用户可在模型设置窗口里改。
+    ...namespace === 'llm-deepseek'
+      ? { inputModalities: ['text', 'image'], reasoningEfforts: reasoningDisabled ? ['off'] : ['off', 'low', 'high', 'max'] }
+      : { input: ['text', 'image'], reasoningEfforts: { off: null, low: 'low', high: 'high', max: 'max' } },
   }
 }
 
@@ -319,10 +298,9 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
       || invalidCapacity('contextWindow') || invalidCapacity('maxTokens')) return
     if (draftDirty) {
       // 行 ID／名称仍可在窗口打开期间编辑；提交只覆盖模型设置窗口拥有的字段。
-      const { modalityKey, reasoningFlag } = familyOf(probe.settingsNs)
+      const { modalityKey } = familyOf(probe.settingsNs)
       const fields = {
         ...modalityKey === undefined ? {} : { [modalityKey]: draft[modalityKey] },
-        ...reasoningFlag === undefined ? {} : { [reasoningFlag]: draft[reasoningFlag] },
         reasoningEfforts: draft['reasoningEfforts'],
         contextWindow: draft['contextWindow'],
         maxTokens: draft['maxTokens'],
@@ -339,7 +317,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
 
   useEffect(() => {
     if (openedIndex === null) return
-    // 没有模态开关的家族（opencode）把首个焦点交给推理开关；两个都没有时焦点落在窗口本体。
+    // 首个可聚焦的开关胜出；都没有时焦点落在窗口本体。
     const first = firstFieldRef.current ?? reasoningToggleRef.current
     if (first?.disabled === false) first.focus({ preventScroll: true })
     else modalBodyRef.current?.focus({ preventScroll: true })
@@ -590,16 +568,12 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
             const model = draft
             if (model === null) return null
             const family = familyOf(probe.settingsNs)
-            const flagField = family.reasoningFlag
             const declared = model['reasoningEfforts']
             const declaredLevels = family.arrayEfforts
               ? effortsOf(model)
               : typeof declared === 'object' && declared !== null && !Array.isArray(declared)
                 ? Object.keys(declared) : []
-            // 能力标记与档位各自独立：标记为真时即使没有档位，这一行也算声明了推理能力。
-            const reasoningOn = flagField === undefined
-              ? declaredLevels.some(level => level !== 'off')
-              : model[flagField] === true || declaredLevels.some(level => level !== 'off')
+            const reasoningOn = declaredLevels.some(level => level !== 'off')
             const selectedLevels = family.arrayEfforts ? effortsOf(model)
               : typeof declared === 'object' && declared !== null && !Array.isArray(declared)
                 ? Object.keys(declared) : ['off']
@@ -619,14 +593,6 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                   aria-label={t('reasoningSupport')} aria-pressed={reasoningOn}
                   disabled={disabled || props.reasoningDisabled === true}
                   onClick={() => {
-                    if (flagField !== undefined) {
-                      // 关掉能力标记时同时撤掉档位：留下不会转发的档位只会误导选择器。
-                      setLevelsOpen(false)
-                      patchDraft(reasoningOn
-                        ? { [flagField]: false, reasoningEfforts: undefined }
-                        : { [flagField]: true })
-                      return
-                    }
                     if (!reasoningOn) {
                       const restored = family.arrayEfforts
                         ? Array.isArray(rememberedReasoning) && rememberedReasoning.some(level => level !== 'off')

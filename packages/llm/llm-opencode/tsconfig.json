@@ -15,16 +15,10 @@
       "path": "../../../vendor/cordis"
     },
     {
-      "path": "../../../vendor/schemastery"
-    },
-    {
       "path": "../../llm/llm"
     },
     {
       "path": "../../attachment/attachment"
-    },
-    {
-      "path": "../../settings/settings"
     },
     {
       "path": "../../runtime-diagnostics/invariants"

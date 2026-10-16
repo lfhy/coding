@@ -3,7 +3,7 @@
 
 # 包清单
 
-workspace 共 245 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
+workspace 共 246 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
 
 模型可见工具的名称与 schema 见 [tool-catalog.md](../tool-catalog.md)，插件可配置项见 [config-catalog.md](../config-catalog.md)，依赖边见 [module-graph.md](../module-graph.md)。
 
@@ -98,6 +98,10 @@ workspace 共 245 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/compaction/compaction` — **`CompactionEngine`**（`ctx.compaction`）定义压缩（compaction）做什么，即判定历史记录是否过大… 入口 `src/index.ts`（tests 3）
 - `packages/compaction/compaction-basic` — **基础压缩（compaction）后端**：`BasicCompactionEngine` 实现 `@deepseek-ai/dsh-comp… 入口 `src/index.ts`（tests 4）
 - `packages/compaction/compaction-tool-result-pruner` — 可安全回放、不依赖模型的剪枝服务（`ctx.toolResultPruner`） 入口 `src/index.ts`（tests 2）
+
+## packages/computer-use
+
+- `packages/computer-use/computer-use` — （README 缺首段） 入口 `src/index.ts`
 
 ## packages/context
 
@@ -216,7 +220,7 @@ workspace 共 245 个包，按 group 分节。每行给出包目录、职责（R
 
 - `packages/llm/llm` — 提供方无关的 LLM（大语言模型）词汇与抽象服务 入口 `src/index.ts`（tests 12）
 - `packages/llm/llm-deepseek` — harness LLM（大语言模型）seam 的 DeepSeek chat-completions 适配器：直接 `fetch` + SSE… 入口 `src/index.ts`（tests 7）
-- `packages/llm/llm-opencode` — 内置的 OpenCode Zen 免费渠道适配器：把该通道的匿名免费模型 入口 `src/index.ts`（tests 4）
+- `packages/llm/llm-opencode` — 内置 **Free** 渠道适配器：把本项目维护的免费模型注册成 harness 的一个原生 LLM 提供方 入口 `src/index.ts`（tests 4）
 - `packages/llm/llm-pi-ai` — 基于 `@earendil-works/pi-ai` 的 harness LLM（大语言模型）seam 通用多提供方适配器 入口 `src/index.ts`（tests 9）
 - `packages/llm/llm-retry` — 一个函数插件，通过 agent loop（智能体循环）在已关闭步骤上触发的 `agent/request-error` waterfall… 入口 `src/index.ts`（tests 5）
 - `packages/llm/llm-vision-fallback` — 本插件在 `agent/request-history` 中处理主模型明确不支持图片输入、而当前会话 surface 包含图片的请求 入口 `src/index.ts`（tests 1）

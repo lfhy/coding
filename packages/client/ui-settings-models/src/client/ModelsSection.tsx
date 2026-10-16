@@ -10,7 +10,8 @@ import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import { IconChevronLeftOutline14, IconPlusOutline16, IconSearchOutline16 } from '@deepseek-ai/dsh-client-ui-icons'
 import type { InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 import { CustomProviderCard } from './CustomProviderCard.tsx'
-import { deriveKeyRef, messageOf, protocolChoices } from './store.ts'
+import { BuiltinChannelCard } from './BuiltinChannelCard.tsx'
+import { deriveKeyRef, isBuiltinChannel, messageOf, protocolChoices } from './store.ts'
 import type { ModelsSettingsStore, ProviderRow } from './store.ts'
 import type { SettingsSchemaOperations } from './schema-operations.ts'
 import { ProviderEditor } from './ProviderEditor.tsx'
@@ -280,6 +281,10 @@ function Loaded({ injected, hideHeader }: { injected: ModelsSectionFace; hideHea
   const directory = state.rows.filter(row => row.entry.settingsNs !== '' && state.namespaces.has(row.entry.settingsNs))
   // 主列表只显示已有 profile；未配置目录路由不能在此创建。
   const channels = directory.filter(row => row.configured)
+  // 内置渠道（提供方插件注册的存活路由）没有设置 profile，因此只能只读展示；
+  // 它们是应用自带的默认渠道，排在用户渠道之前。
+  const builtin = state.rows.filter(row => isBuiltinChannel(row) && row.entry.active)
+  const listed = [...builtin, ...channels]
   // 自定义渠道由 pi-ai 分节持有；未挂载该分节时不能声明渠道。
   const protocols = protocolChoices(state.namespaces.get('llm-pi-ai'), schema)
   // 目录可能尚未联接新 profile；生成 ID 时同时保留所有设置层已占用的键。
@@ -293,10 +298,14 @@ function Loaded({ injected, hideHeader }: { injected: ModelsSectionFace; hideHea
     }
   }
 
-  const current = channels.find(row => row.entry.provider === selected) ?? channels[0]
+  const current = listed.find(row => row.entry.provider === selected) ?? listed[0]
   const currentTarget = current === undefined ? undefined : targetOf(current)
   const currentNamespace = currentTarget === undefined ? undefined : state.namespaces.get(currentTarget.settingsNs)
-  const visibleProviders = channels.filter(row =>
+  // 内置渠道没有可编辑字段，目录读取失败的诊断按路由取；其余路由由编辑器自行处理。
+  const currentCatalogFailure = current === undefined || !isBuiltinChannel(current)
+    ? undefined
+    : state.onboardingModelFailures.find(failure => failure.id === current.entry.provider)?.message
+  const visibleProviders = listed.filter(row =>
     `${row.entry.displayName} ${row.entry.provider}`.toLocaleLowerCase().includes(providerQuery.toLocaleLowerCase()))
   return (
     <div className={styles['modelsSurface']}>
@@ -350,7 +359,15 @@ function Loaded({ injected, hideHeader }: { injected: ModelsSectionFace; hideHea
           </button>
           {savedIdentity === undefined ? null : <p role="status" className={styles['savedNotice']}>{providerCopy(t('savedProvider'), savedIdentity)}</p>}
           {!state.writable ? <p className={styles['notice']}>{t('readOnly')}</p> : null}
-          {currentTarget !== undefined && currentNamespace !== undefined ? (
+          {current !== undefined && isBuiltinChannel(current) ? (
+            <div className={styles['channelEditor']}>
+              <div className={styles['channelHeading']}>
+                <h2>{current.entry.displayName}</h2>
+              </div>
+              <BuiltinChannelCard models={state.catalog.get(current.entry.provider) ?? []}
+                {...currentCatalogFailure === undefined ? {} : { failure: currentCatalogFailure }} t={t} />
+            </div>
+          ) : currentTarget !== undefined && currentNamespace !== undefined ? (
             <div className={styles['channelEditor']}>
               <div className={styles['channelHeading']}>
                 <h2>{currentTarget.displayName}</h2>

@@ -16,7 +16,6 @@ import { afterEach, describe, expect, it } from 'vitest'
 import * as LlmOpencode from '@deepseek-ai/dsh-llm-opencode'
 import { ensureFreeLaneShape } from '../src/free-lane.ts'
 import { disguiseHeaders, deriveRequestIds } from '../src/ids.ts'
-import { resolveOpencodeOptions } from '../src/config.ts'
 
 /** 一次 streamSimple 调用的记录。 */
 interface Call {
@@ -83,13 +82,12 @@ afterEach(async () => {
 })
 
 /** 组装一个只挂 LLM 服务与假提供商的上下文。 */
-async function harness(events: AssistantMessageEvent[], calls: Call[], config: object = {}): Promise<Context> {
+async function harness(events: AssistantMessageEvent[], calls: Call[]): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(LlmRuntime)
-  await ctx.plugin(LlmOpencode, config)
+  await ctx.plugin(LlmOpencode)
   // 注入假提供商：真实提供商由插件在请求时构造，测试观察的是它的调用参数。
-  const adapter = new LlmOpencode.OpencodeZenAdapter({
-    options: () => resolveOpencodeOptions(config),
+  const adapter = new LlmOpencode.FreeChannelAdapter({
     providerOverride: fakeProvider(events, calls) as never,
   })
   const registration = ctx.llm.registerAdapter(['fake-route'], adapter)
@@ -235,7 +233,7 @@ describe('adapter wire shape', () => {
   })
 
   it('适配器自身的选项拒绝保持为适配器契约里的抛出', async () => {
-    const adapter = new LlmOpencode.OpencodeZenAdapter({ options: () => resolveOpencodeOptions({}) })
+    const adapter = new LlmOpencode.FreeChannelAdapter({})
     const rejected = adapter.stream({
       provider: 'fake-route',
       model: 'mimo-v2.6-flash-free',
@@ -246,10 +244,26 @@ describe('adapter wire shape', () => {
       for await (const _chunk of rejected) { /* drain */ }
     }).rejects.toThrow(/does not support GenerateOptions.stop/)
   })
+
+  it('目录未收录的模型被拒绝：没有可用的上游就无法发出请求', async () => {
+    const calls: Call[] = []
+    const ctx = await harness(textEvents('hi'), calls)
+    const chunks = []
+    for await (const chunk of ctx.llm.stream({
+      provider: 'fake-route',
+      model: 'unlisted-model',
+      messages: [createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' } })],
+    })) chunks.push(chunk)
+    expect(chunks.at(-1)).toMatchObject({
+      type: 'finish',
+      reason: { kind: 'error', failure: { code: 'UNKNOWN_MODEL' } },
+    })
+    expect(calls).toEqual([])
+  })
 })
 
 describe('wire helpers stay used', () => {
-  it('导出面覆盖指纹、门与配置解析', () => {
+  it('导出面覆盖指纹与门', () => {
     const ids = deriveRequestIds([{ role: 'user', content: 'x' }])
     expect(disguiseHeaders(ids)['x-opencode-client']).toBe('cli')
     expect(ensureFreeLaneShape({ messages: [], stream: true })).toBeDefined()

@@ -1043,72 +1043,6 @@ Depends on: [`ModelModality`](subsystems/llm-streaming.md) · [`RetryPolicyConfi
 
 Source: [`packages/llm/llm-deepseek/src/index.ts:67`](../packages/llm/llm-deepseek/src/index.ts)
 
-<a id="deepseek-aidsh-llm-opencode"></a>
-
-## `@deepseek-ai/dsh-llm-opencode`
-
-Requires: `llm`
-
-```ts config-catalog
-/**
- * 插件配置，同时也是 `llm-opencode` settings 分节的结构。
- * 省略字段使用内置默认值，因此默认安装无需任何分节即可工作；
- * 用户改 key、改端点、增删模型都写在这一节里。
- */
-export interface Config {
-  /** 界面显示名称，默认 `OpenCode Zen`。 */
-  channelName?: string
-  /**
-   * 凭据；省略时为匿名通道的 `public`，填自己的 key 时整份凭据被替换。
-   * 它是 `role('secret')` 字段：设置描述从不携带它的值，只有持有完整配置的
-   * 宿主能读到，设置页因此只能写入、不能回显（包括内置的 `public`）。
-   */
-  apiKey?: string
-  /** 端点基址，默认官方 Zen；可改为自建网关。 */
-  baseURL?: string
-  /** 目录；省略时使用内置三个免费模型。 */
-  models?: OpencodeModelConfig[]
-  /** 模型未给出容量时的回退上下文容量。 */
-  defaultContextWindow?: number
-  /** 模型未给出输出上限时的回退值。 */
-  defaultMaxTokens?: number
-  /** 提供商空闲超时，覆盖未完成的流读取。 */
-  streamIdleTimeoutMs?: number
-  /** 单次请求 base64 图片载荷上限。 */
-  maxRequestImageBytes?: number
-  /** 提供商自有的重试策略；省略时使用 normal 模式重试五次。 */
-  retryPolicy?: RetryPolicyConfig
-}
-
-/** 一个内置模型的配置。 */
-export interface OpencodeModelConfig {
-  /** 线协议上的模型 id。 */
-  id: string
-  /** 选择器显示名称；省略时用 id。 */
-  name?: string
-  /** 上下文容量；省略时用路由的 `defaultContextWindow`。 */
-  contextWindow?: number
-  /** 单次请求输出上限；省略时用提供方自身的值。 */
-  maxTokens?: number
-  /** 模型接受的输入模态；省略时按纯文本处理。 */
-  inputModalities?: ModelModality[]
-  /** 模型是否具备推理能力；省略时按不具备处理。 */
-  reasoning?: boolean
-  /**
-   * 该模型暴露的推理档位；省略时不给选择器提供档位（模型自身的推理行为不变）。
-   * 档位必须是 {@link REASONING_EFFORT_LEVELS} 里的值，否则无法转发成上游参数。
-   */
-  reasoningEfforts?: ReasoningEffortLevel[]
-}
-
-/** 可声明的推理档位。 */
-export type ReasoningEffortLevel = (typeof REASONING_EFFORT_LEVELS)[number]
-```
-
-Depends on: [`ModelModality`](subsystems/llm-streaming.md) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
-
-Source: [`packages/llm/llm-opencode/src/config.ts:115`](../packages/llm/llm-opencode/src/config.ts)
-
 <a id="deepseek-aidsh-llm-pi-ai"></a>
 
 ## `@deepseek-ai/dsh-llm-pi-ai`
@@ -3473,6 +3407,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-host-directory-picker-auto` — requires `webServer` · `loader` ([`packages/host/directory-picker-auto/src/index.ts`](../packages/host/directory-picker-auto/src/index.ts))
 - `@deepseek-ai/dsh-host-directory-picker-native` ([`packages/host/directory-picker-native/src/index.ts`](../packages/host/directory-picker-native/src/index.ts))
 - `@deepseek-ai/dsh-host-plugin-inventory` — requires `loader` ([`packages/host/plugin-inventory/src/index.ts`](../packages/host/plugin-inventory/src/index.ts))
+- `@deepseek-ai/dsh-llm-opencode` — requires `llm` ([`packages/llm/llm-opencode/src/index.ts`](../packages/llm/llm-opencode/src/index.ts))
 - `@deepseek-ai/dsh-lsp` ([`packages/lsp/lsp/src/index.ts`](../packages/lsp/lsp/src/index.ts))
 - `@deepseek-ai/dsh-memory-context` — requires `agents` · `memory` ([`packages/memory/memory-context/src/index.ts`](../packages/memory/memory-context/src/index.ts))
 - `@deepseek-ai/dsh-memory-local` ([`packages/memory/memory-local/src/index.ts`](../packages/memory/memory-local/src/index.ts))

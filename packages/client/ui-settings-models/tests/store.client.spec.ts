@@ -53,7 +53,16 @@ function api(overrides: {
   describeSettings?: () => Promise<RpcResponse<{ writable: boolean; namespaces: typeof NAMESPACES }>>
   describeCredentials?: (refs: string[]) => Promise<RpcResponse<{ credentials: Record<string, unknown> }>>
   models?: () => Promise<RpcResponse<{
-    groups: Array<{ id: string; name: string; models: Array<{ id: string; name: string }> }>
+    groups: Array<{
+      id: string
+      name: string
+      models: Array<{
+        id: string
+        name: string
+        inputModalities?: ('text' | 'image')[]
+        reasoning?: { efforts: Array<{ id: string; name: string }> }
+      }>
+    }>
     failures: Array<{ id: string; name: string; message: string }>
   }>>
   mutate?: (payload: unknown) => Promise<unknown>
@@ -243,6 +252,32 @@ describe('ModelsSettingsStore', () => {
     expect(state.status).toBe('ready')
     expect(state.credentialError).toBe('no provider')
     expect(state.rows.every(row => row.credential === undefined)).toBe(true)
+  })
+
+  it('carries each route catalog and offers Host-attached routes to the vision picker', async () => {
+    const vision = {
+      ns: 'vision-understanding', schema: {}, value: {}, user: {},
+      applies: 'live' as const, secrets: [], revision: 0,
+    }
+    const { face, mirror } = api({
+      describeSettings: async () => ok({ writable: true, namespaces: [...NAMESPACES, vision] as never }),
+      models: async () => ok({ groups: [
+        { id: 'ghost', name: 'Ghost', models: [
+          { id: 'ghost-image', name: 'Ghost image', inputModalities: ['text', 'image'] },
+          { id: 'ghost-text', name: 'Ghost text', inputModalities: ['text'] },
+        ] },
+      ], failures: [] }),
+    })
+    const store = new ModelsSettingsStore(face, settingsSchema, mirror)
+    await store.load()
+    const state = store.store.getSnapshot()
+    // 只读卡片按路由读这份目录，因此它必须原样带上提供方声明的能力。
+    expect(state.catalog.get('ghost')?.map(model => model.id)).toEqual(['ghost-image', 'ghost-text'])
+    expect(state.catalog.get('ghost')?.[0]?.inputModalities).toEqual(['text', 'image'])
+    // 内置路由没有设置 profile，但它服务图片模型，因此同样是视觉候选。
+    expect(state.visionModels).toEqual([
+      { provider: 'ghost', providerName: 'Ghost', model: 'ghost-image', modelName: 'Ghost image' },
+    ])
   })
 
   it('settles a credential transport rejection without leaving the store loading', async () => {

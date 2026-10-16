@@ -186,7 +186,7 @@ const SERVICE_ROLES: ServiceRole[] = [
     title: 'User-settings seam',
     mode: 'seam',
     implementations: ['settings-file'],
-    consumers: ['llm-deepseek', 'llm-pi-ai', 'llm-opencode', 'apiproxy'],
+    consumers: ['llm-deepseek', 'llm-pi-ai', 'apiproxy'],
     note: 'Plugins register namespace schemas and resolve layered values; providers store the raw document. The LLM adapters register their entry config as the composition base under the user section; the web gateway serves redacted layered descriptors and writes the user layer.',
   },
   {
