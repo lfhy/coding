@@ -875,7 +875,7 @@ async prepareCall(config: LlmCallConfig, signal?: AbortSignal): Promise<Prepared
 stream(options: GenerateOptions): AsyncIterable<StreamChunk>
 ```
 
-Source: [`packages/llm/llm/src/index.ts:297`](../../packages/llm/llm/src/index.ts)
+Source: [`packages/llm/llm/src/index.ts:299`](../../packages/llm/llm/src/index.ts)
 
 <a id="llm-events"></a>
 

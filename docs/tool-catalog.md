@@ -18,6 +18,7 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-memory` | `memory_delete`, `memory_list`, `memory_read`, `memory_save` | `ctx.tools`, `ctx.memory` | `tool/call`, `tool/result for project-scoped memory reads and writes` | - | The four memory tools take no path: the owning session decides which project they read and write, and each call resolves it from the session cwd. |
 | `@deepseek-ai/dsh-tool-ask-user` | `ask_user_question` | `ctx.tools`, `ctx.userQuestions` | `tool/call`, `tool/result after a UI/provider answers the question` | - | ask_user_question pauses the tool call until the active UI provider returns a human answer. |
 | `@deepseek-ai/dsh-tool-browser` | `browser_click`, `browser_close`, `browser_fill`, `browser_navigate`, `browser_screenshot`, `browser_scroll`, `browser_snapshot` | `ctx.tools`, `ctx.browserUse`, `ctx.attachments`, `ctx.approval and a calling Agent at execution time` | `tool/call`, `durable attachment on screenshot`, `tool/result` | - | Each operation is bound to the active tab and session revision. Full access with approval prompts disabled proceeds directly; otherwise only allowed-once approval proceeds if that target remains current. A remote workspace is rejected. Only explicit screenshots save a PNG attachment and render an image block. The browser provider owns URL/network policy and session tab lifetime. |
+| `@deepseek-ai/dsh-tool-computer-use` | `computer_click`, `computer_confirm`, `computer_drag`, `computer_list_apps`, `computer_observe`, `computer_perform_action`, `computer_press_key`, `computer_scroll`, `computer_set_value`, `computer_type_text`, `computer_wait` | `ctx.tools`, `ctx.skills`, `ctx.computerUse and a calling Agent at execution time` | `tool/call`, `tool/result`, `workspace screenshot Artifact on request`, `one computer_use_state read/control lease decision after an approval or a configured grant` | - | The only globally visible tool is computer_use_activate; loading the Skill replaces it with the execution vocabulary for that Agent alone. Every action binds to a fresh observation, so a stale element index fails closed, and a coordinate target is only accepted after a screenshot delivered the raster it was chosen from. Accessibility actions are preferred over pointer input, and pointer input is routed to the selected process instead of the global cursor. |
 | `@deepseek-ai/dsh-tools` | `run_code` | `ctx.tools`, `ctx.codeRuntime (execution time)`, `ctx.systemPrompt` | `tool/call`, `one tool/code-dispatch-start + tool/code-dispatch pair per bridged sub-call`, `tool/result` | - | Owned by the tool registry as a reserved transport outside filterable capability layers under `mode: code` / `mode: both` (see the Code Mode design record). Under `code` it is the registry's only wire contribution; the other visible capabilities are declared in a generated SDK section in the loaded runtime's language, and a program calls them through bindings scheduled under the native concurrency contract (submission-ordered starts and policy; concurrency-safe bodies overlap up to `maxParallelSubCalls`) that re-enter the complete guarded tool pipeline and link each nested execution to this outer result. |
 | `@deepseek-ai/dsh-plan-mode` | `exit_plan_mode` | `ctx.tools`, `ctx.systemPrompt`, `ctx.userQuestions (execution time, opportunistic)` | `tool/call`, `plan/mode inactive on an approved review`, `tool/result` | - | exit_plan_mode stays in the model-facing schema while planning is inactive so transitions add no tool-catalog churn on top of the plan-policy change. Its execute path rejects calls outside plan mode; in plan mode it presents the plan over the user-questions seam (approve / keep planning with feedback), and approval logs plan mode inactive at the step boundary. |
 | `@deepseek-ai/dsh-tool-bash` | `bash` | `ctx.tools`, `ctx.shell`, `ctx.systemPrompt`, `ctx.shellEnv`, `ctx.jobs at call time for run_in_background` | `tool/call`, `tool/result` | - | The bash tool is the model-facing consumer of the bash executor seam. A `run_in_background` run registers with the generic `ctx.jobs` runtime and is collected/stopped through the `job_*` tools from `@deepseek-ai/dsh-tool-jobs`; the `enableRunInBackground` config (default true) removes the parameter entirely when disabled. |
@@ -364,6 +365,868 @@ Read the current page. Load the browser-use skill first when available; use an o
 Source: [`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts)
 
 Each operation is bound to the active tab and session revision. Full access with approval prompts disabled proceeds directly; otherwise only allowed-once approval proceeds if that target remains current. A remote workspace is rejected. Only explicit screenshots save a PNG attachment and render an image block. The browser provider owns URL/network policy and session tab lifetime.
+
+<a id="deepseek-aidsh-tool-computer-use"></a>
+
+## `@deepseek-ai/dsh-tool-computer-use`
+
+### `computer_click`
+
+Click an observed element, preferring AXPress without foreground activation, or use a window-relative or screen-global coordinate when host pointer policy allows it. For safe recovery after harmless tree reordering, pass the element targetHandle and allowRebind=true; elementIndex remains exact-observation compatibility. The successful result includes deterministic resolution metadata and a fresh post-click observation.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "observationId": {
+      "type": "string"
+    },
+    "elementIndex": {
+      "type": "integer"
+    },
+    "targetHandle": {
+      "type": "string",
+      "description": "Opaque handle returned on the selected observation element."
+    },
+    "allowRebind": {
+      "type": "boolean",
+      "description": "Allow fail-closed native-identifier or unique semantic rebinding. Requires targetHandle."
+    },
+    "x": {
+      "type": "number"
+    },
+    "y": {
+      "type": "number"
+    },
+    "coordinateSpace": {
+      "type": "string",
+      "description": "Default window interprets x/y inside the observed window frame; screen uses Quartz screen-global coordinates.",
+      "enum": [
+        "window",
+        "screen"
+      ]
+    },
+    "button": {
+      "type": "string",
+      "enum": [
+        "left",
+        "right",
+        "middle"
+      ]
+    },
+    "clickCount": {
+      "type": "integer"
+    },
+    "allowCoordinateFallback": {
+      "type": "boolean"
+    },
+    "sensitive": {
+      "type": "boolean",
+      "description": "Set true for an action classified by the Skill as high impact or sensitive."
+    },
+    "confirmationToken": {
+      "type": "string",
+      "description": "One-use token from computer_confirm for this exact action."
+    }
+  },
+  "required": [
+    "observationId"
+  ]
+}
+```
+
+Source: [`packages/computer-use/tool-computer-use/src/index.ts`](../packages/computer-use/tool-computer-use/src/index.ts)
+
+### `computer_confirm`
+
+Request just-in-time approval for one exact sensitive action. Call immediately before the action, then repeat the same action with sensitive=true and the returned token.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "action": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "click"
+            },
+            "observationId": {
+              "type": "string"
+            },
+            "elementIndex": {
+              "type": "integer"
+            },
+            "targetHandle": {
+              "type": "string"
+            },
+            "allowRebind": {
+              "type": "boolean"
+            },
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            },
+            "coordinateSpace": {
+              "type": "string",
+              "enum": [
+                "window",
+                "screen"
+              ]
+            },
+            "button": {
+              "type": "string",
+              "enum": [
+                "left",
+                "right",
+                "middle"
+              ]
+            },
+            "clickCount": {
+              "type": "integer"
+            },
+            "allowCoordinateFallback": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "kind",
+            "observationId"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "set-value"
+            },
+            "observationId": {
+              "type": "string"
+            },
+            "elementIndex": {
+              "type": "integer"
+            },
+            "targetHandle": {
+              "type": "string"
+            },
+            "allowRebind": {
+              "type": "boolean"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "observationId",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "type-text"
+            },
+            "observationId": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "observationId",
+            "text"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "press-key"
+            },
+            "observationId": {
+              "type": "string"
+            },
+            "key": {
+              "type": "string",
+              "enum": [
+                "a",
+                "s",
+                "d",
+                "f",
+                "h",
+                "g",
+                "z",
+                "x",
+                "c",
+                "v",
+                "b",
+                "q",
+                "w",
+                "e",
+                "r",
+                "y",
+                "t",
+                "1",
+                "2",
+                "3",
+                "4",
+                "6",
+                "5",
+                "=",
+                "9",
+                "7",
+                "-",
+                "8",
+                "0",
+                "]",
+                "o",
+                "u",
+                "[",
+                "i",
+                "p",
+                "return",
+                "l",
+                "j",
+                "'",
+                "k",
+                ";",
+                "\\",
+                ",",
+                "/",
+                "n",
+                "m",
+                ".",
+                "tab",
+                "space",
+                "delete",
+                "escape",
+                "home",
+                "pageup",
+                "forwarddelete",
+                "end",
+                "pagedown",
+                "left",
+                "right",
+                "down",
+                "up"
+              ]
+            },
+            "modifiers": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "command",
+                  "control",
+                  "option",
+                  "shift"
+                ]
+              }
+            }
+          },
+          "required": [
+            "kind",
+            "observationId",
+            "key"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "scroll"
+            },
+            "observationId": {
+              "type": "string"
+            },
+            "elementIndex": {
+              "type": "integer"
+            },
+            "targetHandle": {
+              "type": "string"
+            },
+            "allowRebind": {
+              "type": "boolean"
+            },
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            },
+            "coordinateSpace": {
+              "type": "string",
+              "enum": [
+                "window",
+                "screen"
+              ]
+            },
+            "direction": {
+              "type": "string",
+              "enum": [
+                "up",
+                "down",
+                "left",
+                "right"
+              ]
+            },
+            "pages": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "observationId",
+            "direction"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "drag"
+            },
+            "observationId": {
+              "type": "string"
+            },
+            "fromX": {
+              "type": "number"
+            },
+            "fromY": {
+              "type": "number"
+            },
+            "toX": {
+              "type": "number"
+            },
+            "toY": {
+              "type": "number"
+            },
+            "coordinateSpace": {
+              "type": "string",
+              "enum": [
+                "window",
+                "screen"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "observationId",
+            "fromX",
+            "fromY",
+            "toX",
+            "toY"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "perform-action"
+            },
+            "observationId": {
+              "type": "string"
+            },
+            "elementIndex": {
+              "type": "integer"
+            },
+            "targetHandle": {
+              "type": "string"
+            },
+            "allowRebind": {
+              "type": "boolean"
+            },
+            "action": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "observationId",
+            "action"
+          ]
+        }
+      ]
+    },
+    "reason": {
+      "type": "string"
+    },
+    "target": {
+      "type": "string"
+    },
+    "dataSummary": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "action",
+    "reason",
+    "target"
+  ]
+}
+```
+
+Source: [`packages/computer-use/tool-computer-use/src/index.ts`](../packages/computer-use/tool-computer-use/src/index.ts)
+
+### `computer_drag`
+
+Drag by routing mouse events only to the selected app process between two points in the observed-window or screen-global coordinate space. The system cursor is not moved.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "observationId": {
+      "type": "string"
+    },
+    "fromX": {
+      "type": "number"
+    },
+    "fromY": {
+      "type": "number"
+    },
+    "toX": {
+      "type": "number"
+    },
+    "toY": {
+      "type": "number"
+    },
+    "coordinateSpace": {
+      "type": "string",
+      "description": "Default window interprets the points inside the observed window frame; screen uses Quartz screen-global coordinates.",
+      "enum": [
+        "window",
+        "screen"
+      ]
+    },
+    "sensitive": {
+      "type": "boolean",
+      "description": "Set true for an action classified by the Skill as high impact or sensitive."
+    },
+    "confirmationToken": {
+      "type": "string",
+      "description": "One-use token from computer_confirm for this exact action."
+    }
+  },
+  "required": [
+    "observationId",
+    "fromX",
+    "fromY",
+    "toX",
+    "toY"
+  ]
+}
+```
+
+Source: [`packages/computer-use/tool-computer-use/src/index.ts`](../packages/computer-use/tool-computer-use/src/index.ts)
+
+### `computer_list_apps`
+
+List bounded running user-facing macOS applications. Use this only when the task does not already identify a unique bundle id.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/computer-use/tool-computer-use/src/index.ts`](../packages/computer-use/tool-computer-use/src/index.ts)
+
+### `computer_observe`
+
+Read a fresh Accessibility observation for one exact running app. Element indexes belong only to the returned observationId. Prefer the tree; request a screenshot for pixel-only facts. When a screenshot needs OCR, visual grounding, or pixel inspection, load the vision-tools Skill and pass the returned Artifact path to its native tools instead of using bash, tesseract, screencapture, or an ad hoc OCR script.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "app": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "bundleId": {
+          "type": "string",
+          "description": "Preferred exact macOS bundle identifier."
+        },
+        "pid": {
+          "type": "integer",
+          "description": "Exact current process id when already observed."
+        },
+        "name": {
+          "type": "string",
+          "description": "Display name accepted only when it resolves uniquely."
+        }
+      }
+    },
+    "screenshot": {
+      "type": "string",
+      "description": "Default optional. Required fails when Screen Recording is unavailable.",
+      "enum": [
+        "none",
+        "optional",
+        "required"
+      ]
+    },
+    "full": {
+      "type": "boolean",
+      "description": "Return a full tree instead of a diff from the previous observation."
+    }
+  },
+  "required": [
+    "app"
+  ]
+}
+```
+
+Source: [`packages/computer-use/tool-computer-use/src/index.ts`](../packages/computer-use/tool-computer-use/src/index.ts)
+
+### `computer_perform_action`
+
+Perform one Accessibility action advertised by an observed element. Supply elementIndex or targetHandle; targetHandle plus allowRebind=true permits deterministic fail-closed recovery after harmless tree reordering.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "observationId": {
+      "type": "string"
+    },
+    "elementIndex": {
+      "type": "integer"
+    },
+    "targetHandle": {
+      "type": "string"
+    },
+    "allowRebind": {
+      "type": "boolean"
+    },
+    "action": {
+      "type": "string"
+    },
+    "sensitive": {
+      "type": "boolean",
+      "description": "Set true for an action classified by the Skill as high impact or sensitive."
+    },
+    "confirmationToken": {
+      "type": "string",
+      "description": "One-use token from computer_confirm for this exact action."
+    }
+  },
+  "required": [
+    "observationId",
+    "action"
+  ]
+}
+```
+
+Source: [`packages/computer-use/tool-computer-use/src/index.ts`](../packages/computer-use/tool-computer-use/src/index.ts)
+
+### `computer_press_key`
+
+Press one validated key or chord by routing it to the selected app process. The default host policy preserves the current foreground app; use documented key names and read the returned fresh observation.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "observationId": {
+      "type": "string"
+    },
+    "key": {
+      "type": "string",
+      "enum": [
+        "a",
+        "s",
+        "d",
+        "f",
+        "h",
+        "g",
+        "z",
+        "x",
+        "c",
+        "v",
+        "b",
+        "q",
+        "w",
+        "e",
+        "r",
+        "y",
+        "t",
+        "1",
+        "2",
+        "3",
+        "4",
+        "6",
+        "5",
+        "=",
+        "9",
+        "7",
+        "-",
+        "8",
+        "0",
+        "]",
+        "o",
+        "u",
+        "[",
+        "i",
+        "p",
+        "return",
+        "l",
+        "j",
+        "'",
+        "k",
+        ";",
+        "\\",
+        ",",
+        "/",
+        "n",
+        "m",
+        ".",
+        "tab",
+        "space",
+        "delete",
+        "escape",
+        "home",
+        "pageup",
+        "forwarddelete",
+        "end",
+        "pagedown",
+        "left",
+        "right",
+        "down",
+        "up"
+      ]
+    },
+    "modifiers": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "command",
+          "control",
+          "option",
+          "shift"
+        ]
+      }
+    },
+    "sensitive": {
+      "type": "boolean",
+      "description": "Set true for an action classified by the Skill as high impact or sensitive."
+    },
+    "confirmationToken": {
+      "type": "string",
+      "description": "One-use token from computer_confirm for this exact action."
+    }
+  },
+  "required": [
+    "observationId",
+    "key"
+  ]
+}
+```
+
+Source: [`packages/computer-use/tool-computer-use/src/index.ts`](../packages/computer-use/tool-computer-use/src/index.ts)
+
+### `computer_scroll`
+
+Scroll by routing a wheel event only to the selected app process at an observed element or window-relative/screen-global coordinate. The system cursor is not moved.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "observationId": {
+      "type": "string"
+    },
+    "elementIndex": {
+      "type": "integer"
+    },
+    "targetHandle": {
+      "type": "string"
+    },
+    "allowRebind": {
+      "type": "boolean"
+    },
+    "x": {
+      "type": "number"
+    },
+    "y": {
+      "type": "number"
+    },
+    "coordinateSpace": {
+      "type": "string",
+      "description": "Default window interprets x/y inside the observed window frame; screen uses Quartz screen-global coordinates.",
+      "enum": [
+        "window",
+        "screen"
+      ]
+    },
+    "direction": {
+      "type": "string",
+      "enum": [
+        "up",
+        "down",
+        "left",
+        "right"
+      ]
+    },
+    "pages": {
+      "type": "integer"
+    },
+    "sensitive": {
+      "type": "boolean",
+      "description": "Set true for an action classified by the Skill as high impact or sensitive."
+    },
+    "confirmationToken": {
+      "type": "string",
+      "description": "One-use token from computer_confirm for this exact action."
+    }
+  },
+  "required": [
+    "observationId",
+    "direction"
+  ]
+}
+```
+
+Source: [`packages/computer-use/tool-computer-use/src/index.ts`](../packages/computer-use/tool-computer-use/src/index.ts)
+
+### `computer_set_value`
+
+Set one observed editable Accessibility value without using the clipboard. Supply elementIndex or targetHandle; targetHandle plus allowRebind=true permits deterministic fail-closed recovery after harmless tree reordering.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "observationId": {
+      "type": "string"
+    },
+    "elementIndex": {
+      "type": "integer"
+    },
+    "targetHandle": {
+      "type": "string"
+    },
+    "allowRebind": {
+      "type": "boolean"
+    },
+    "value": {
+      "type": "string"
+    },
+    "sensitive": {
+      "type": "boolean",
+      "description": "Set true for an action classified by the Skill as high impact or sensitive."
+    },
+    "confirmationToken": {
+      "type": "string",
+      "description": "One-use token from computer_confirm for this exact action."
+    }
+  },
+  "required": [
+    "observationId",
+    "value"
+  ]
+}
+```
+
+Source: [`packages/computer-use/tool-computer-use/src/index.ts`](../packages/computer-use/tool-computer-use/src/index.ts)
+
+### `computer_type_text`
+
+Type Unicode into the currently focused control without reading or replacing the clipboard. Focus a control using fresh state first; keyboard fallback may require host-authorized foreground activation. The result does not echo the supplied text.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "observationId": {
+      "type": "string"
+    },
+    "text": {
+      "type": "string"
+    },
+    "sensitive": {
+      "type": "boolean",
+      "description": "Set true for an action classified by the Skill as high impact or sensitive."
+    },
+    "confirmationToken": {
+      "type": "string",
+      "description": "One-use token from computer_confirm for this exact action."
+    }
+  },
+  "required": [
+    "observationId",
+    "text"
+  ]
+}
+```
+
+Source: [`packages/computer-use/tool-computer-use/src/index.ts`](../packages/computer-use/tool-computer-use/src/index.ts)
+
+### `computer_wait`
+
+Wait for one bounded Accessibility condition and return fresh state without mutating the app.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "observationId": {
+      "type": "string"
+    },
+    "condition": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "elementRole": {
+          "type": "string"
+        },
+        "elementTitle": {
+          "type": "string"
+        }
+      }
+    },
+    "timeoutMs": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "observationId",
+    "condition"
+  ]
+}
+```
+
+Source: [`packages/computer-use/tool-computer-use/src/index.ts`](../packages/computer-use/tool-computer-use/src/index.ts)
+
+The only globally visible tool is computer_use_activate; loading the Skill replaces it with the execution vocabulary for that Agent alone. Every action binds to a fresh observation, so a stale element index fails closed, and a coordinate target is only accepted after a screenshot delivered the raster it was chosen from. Accessibility actions are preferred over pointer input, and pointer input is routed to the selected process instead of the global cursor.
 
 <a id="deepseek-aidsh-tools"></a>
 

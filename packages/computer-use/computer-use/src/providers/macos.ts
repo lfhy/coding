@@ -1,0 +1,311 @@
+/** macOS Accessibility/CoreGraphics/ScreenCaptureKit provider for `ctx.computerUse`. */
+
+import { setTimeout as delay } from 'node:timers/promises'
+import { Service, type Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-agent'
+import type {} from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-subprocess'
+import type {} from '@deepseek-ai/dsh-user-approval'
+import type {
+  BackendActionRequest,
+  BackendActionResult,
+  BackendCursorActivation,
+  BackendTrackedDragResult,
+  BackendCursorAction,
+  BackendHealth,
+  BackendObservation,
+  BackendObserveOptions,
+  ComputerUseBackend,
+  CursorVisibility,
+} from '../backend.ts'
+import {
+  Config,
+  COMPUTER_USE_SETTINGS_NAMESPACE,
+  readComputerUseConfig,
+  resolveConfig,
+  type ComputerUseConfig,
+  type ResolvedComputerUseConfig,
+} from '../config.ts'
+import { ComputerUseService } from '../service.ts'
+import type { ComputerAppIdentity, ComputerAppSelector, ComputerAppSummary } from '../types.ts'
+import { NativeHelperClient } from './native-helper.ts'
+import { UnsupportedPlatformBackend } from './unsupported.ts'
+
+interface NativeHealth {
+  helperVersion: string
+  accessibility: BackendHealth['accessibility']
+  screenRecording: BackendHealth['screenRecording']
+}
+
+interface NativeObservation extends BackendObservation {}
+
+interface NativeCursorActivation {
+  observation: NativeObservation
+  activation: BackendCursorActivation['activation']
+}
+
+function createBackend(ctx: Context, config: ResolvedComputerUseConfig): ComputerUseBackend {
+  return process.platform === 'darwin'
+    ? new MacOSBackend(ctx, config)
+    : new UnsupportedPlatformBackend(process.platform)
+}
+
+/** Fixed-command native backend. */
+export class MacOSBackend implements ComputerUseBackend {
+  readonly name = 'macos-ax' as const
+  readonly client: NativeHelperClient
+
+  constructor(ctx: Context, private readonly config: ResolvedComputerUseConfig) {
+    this.client = new NativeHelperClient(ctx, config)
+  }
+
+  get helperPath(): string {
+    return this.client.helperPath
+  }
+
+  async resolveApp(selector: ComputerAppSelector, signal: AbortSignal): Promise<ComputerAppIdentity> {
+    return await this.client.invoke<ComputerAppIdentity>({ command: 'resolve-app', selector }, signal)
+  }
+
+  async listApps(signal: AbortSignal): Promise<ComputerAppSummary[]> {
+    return await this.client.invoke<ComputerAppSummary[]>({ command: 'list-apps' }, signal)
+  }
+
+  async observe(app: ComputerAppIdentity, options: BackendObserveOptions, signal: AbortSignal): Promise<BackendObservation> {
+    return await this.client.invoke<NativeObservation>({
+      command: 'observe',
+      app,
+      options,
+    }, signal)
+  }
+
+  async activateForCursor(
+    app: ComputerAppIdentity,
+    expectedStateHash: string,
+    options: BackendObserveOptions,
+    signal: AbortSignal,
+  ): Promise<BackendCursorActivation> {
+    return await this.client.invoke<NativeCursorActivation>({
+      command: 'activate-for-cursor',
+      app,
+      expectedStateHash,
+      options,
+      actionTimeoutMs: this.config.actionTimeoutMs,
+    }, signal)
+  }
+
+  async act(request: BackendActionRequest, signal: AbortSignal): Promise<BackendActionResult> {
+    if (request.action.kind === 'drag') {
+      const execution = await this.prepareNativeDrag(request, signal)
+      await execution.start()
+      return await execution.result
+    }
+    return await this.client.invoke<BackendActionResult>({
+      command: 'act',
+      request: {
+        ...request,
+        actionTimeoutMs: this.config.actionTimeoutMs,
+        limits: {
+          maxNodes: this.config.maxNodes,
+          maxDepth: this.config.maxDepth,
+          maxTextBytes: this.config.maxTextBytes,
+        },
+      },
+    }, signal)
+  }
+
+  async actDragWithCursor(
+    request: BackendActionRequest,
+    cursor: BackendCursorAction & { kind: 'drag' },
+    signal: AbortSignal,
+  ): Promise<BackendTrackedDragResult> {
+    const execution = await this.prepareNativeDrag(request, signal)
+    // 是否已真正按下鼠标由回调写入，因此用可变盒子承接：局部 let 会被控制流分析
+    // 窄化成字面量 false，让并发取消路径的检查看起来恒假。
+    const progress: { started: boolean } = { started: false }
+    let cursorResult: CursorVisibility
+    try {
+      cursorResult = await this.visualizeCursorPhase(cursor, 'during', signal, async () => {
+        await execution.start()
+        progress.started = true
+      })
+    } catch (error) {
+      if (!progress.started) {
+        execution.cancel()
+        await execution.result.catch(() => undefined)
+        throw error
+      }
+      cursorResult = {
+        visible: false,
+        reason: `the agent cursor could not track the drag action: ${error instanceof Error ? error.message : String(error)}`,
+      }
+    }
+    return { action: await execution.result, cursor: cursorResult }
+  }
+
+  private async prepareNativeDrag(request: BackendActionRequest, signal: AbortSignal) {
+    return await this.client.prepareDrag<BackendActionResult>({
+      command: 'act',
+      request: {
+        ...request,
+        actionTimeoutMs: this.config.actionTimeoutMs,
+        limits: {
+          maxNodes: this.config.maxNodes,
+          maxDepth: this.config.maxDepth,
+          maxTextBytes: this.config.maxTextBytes,
+        },
+      },
+    }, signal, this.config.actionTimeoutMs + 2_000)
+  }
+
+  async visualizeCursor(action: BackendCursorAction, phase: 'before' | 'during' | 'after', signal: AbortSignal): Promise<CursorVisibility> {
+    return await this.visualizeCursorPhase(action, phase, signal)
+  }
+
+  private async visualizeCursorPhase(
+    action: BackendCursorAction,
+    phase: 'before' | 'during' | 'after',
+    signal: AbortSignal,
+    onMoveWritten?: () => void | Promise<void>,
+  ): Promise<CursorVisibility> {
+    if (this.config.interaction.cursorVisualization !== 'visible') return { visible: false, reason: 'the agent cursor is disabled by configuration' }
+    // The overlay answers per command; the least visible outcome wins, because
+    // a cursor that vanished partway through is a cursor the user cannot follow.
+    let outcome: CursorVisibility = { visible: true }
+    const record = (response: CursorVisibility): void => {
+      if (!response.visible && outcome.visible) outcome = response
+    }
+    const autoHideMs = this.config.interaction.cursorAutoHideMs
+    const move = async (point: { x: number; y: number }, onWritten?: () => void | Promise<void>): Promise<void> => {
+      const command = {
+        op: 'move',
+        x: point.x,
+        y: point.y,
+        speedPxPerSecond: this.config.interaction.cursorSpeedPxPerSecond,
+        accelerationPxPerSecondSquared: this.config.interaction.cursorAccelerationPxPerSecondSquared,
+        // The after phase arms the configured timeout once native input has
+        // completed. Hiding during travel or dwell would invalidate press.
+        autoHideMs: 0,
+        targetPid: action.targetPid,
+        targetWindowNumber: action.targetWindowNumber,
+        targetWindowFrame: action.targetWindowFrame,
+      }
+      record(await (onWritten === undefined
+        ? this.client.cursorCommand(command, signal)
+        : this.client.cursorCommand(command, signal, onWritten)))
+    }
+    if (phase === 'after') {
+      // Every action validates the bound target after native input. Only drag
+      // needs release semantics; click and scroll use a side-effect-free check.
+      record(await this.client.cursorCommand({
+        op: action.kind === 'drag' ? 'release' : 'validate',
+        autoHideMs,
+        targetPid: action.targetPid,
+        targetWindowNumber: action.targetWindowNumber,
+        targetWindowFrame: action.targetWindowFrame,
+      }, signal))
+      return outcome
+    }
+    if (phase === 'during') {
+      if (action.kind !== 'drag') return { visible: false, reason: 'only drag has a during-action cursor phase' }
+      await move(action.to, onMoveWritten)
+      return outcome
+    }
+    const start = action.kind === 'drag' ? action.from : action.to
+    if (start === undefined) return { visible: false, reason: 'this action has no cursor position to show' }
+    // A move response means the native overlay reached its destination. Keep
+    // the configurable dwell after arrival and before the visual/native press.
+    await move(start)
+    if (!outcome.visible || action.kind === 'scroll') return outcome
+    if (this.config.interaction.cursorClickDelayMs > 0) {
+      await delay(this.config.interaction.cursorClickDelayMs, undefined, { signal })
+    }
+    record(await this.client.cursorCommand({
+      op: 'press',
+      autoHideMs: 0,
+      targetPid: action.targetPid,
+      targetWindowNumber: action.targetWindowNumber,
+      targetWindowFrame: action.targetWindowFrame,
+      sustainedPress: action.kind === 'drag',
+    }, signal))
+    return outcome
+  }
+
+  async dispose(): Promise<void> {
+    await this.client.dispose()
+  }
+
+  async health(signal: AbortSignal): Promise<BackendHealth> {
+    const prepared = await this.client.prepare(signal)
+    const health = await this.client.invoke<NativeHealth>({ command: 'health' }, signal)
+    return {
+      helperVersion: health.helperVersion || prepared.version,
+      helperSha256: prepared.sha256,
+      accessibility: health.accessibility,
+      screenRecording: health.screenRecording,
+    }
+  }
+
+  async openSettings(kind: 'accessibility' | 'screen-recording', signal: AbortSignal): Promise<void> {
+    await this.client.invoke<null>({ command: 'open-settings', kind }, signal)
+  }
+}
+
+/** Cordis Service provider loaded by the Bundle before the model-facing consumer. */
+export class MacOSComputerUseProvider extends ComputerUseService {
+  static inject = ['subprocess', 'approval', 'settings', 'sessions', 'agents']
+  static Config = Config
+
+  constructor(ctx: Context, config: ComputerUseConfig = {}) {
+    const legacySettings = ctx.settings as typeof ctx.settings & {
+      register?: (ns: typeof COMPUTER_USE_SETTINGS_NAMESPACE, schema: typeof Config, options: object) => {
+        get(): ComputerUseConfig
+        watch(listener: (value: ComputerUseConfig) => Promise<void>): () => void
+      }
+    }
+    const settings = typeof legacySettings.register === 'function'
+      ? legacySettings.register(COMPUTER_USE_SETTINGS_NAMESPACE, Config, {
+        base: config,
+        applies: 'live',
+        validate: (value: ComputerUseConfig) => { resolveConfig(value) },
+      })
+      : undefined
+    const resolved = resolveConfig(settings?.get() ?? readComputerUseConfig(config))
+    super(ctx, createBackend(ctx, resolved), resolved)
+    if (process.platform !== 'darwin') {
+      ctx.logger.warn('dsh-computer-use: supports macOS only; Computer Use Tools are disabled on %s', process.platform)
+    }
+    const reconfigure = async (next: ComputerUseConfig): Promise<void> => {
+      const candidate = resolveConfig(next)
+      const backend = createBackend(ctx, candidate)
+      try {
+        await this.reconfigure(backend, candidate)
+      } catch (error) {
+        await backend.dispose()
+        throw error
+      }
+    }
+    if (settings) {
+      ctx.effect(() => settings.watch(reconfigure), 'dsh-computer-use: Settings watch')
+    } else {
+      // DSH 0.1.7 由 Config 投影 Settings 并就地提交 volatile 字段；Loader 在引用变化后
+      // 发出该事件。事件不在 Cordis 的类型事件表里，因此先绑定 ctx 再按同步监听器注册。
+      ctx.effect(() => {
+        const onVolatileUpdate = (ctx.on as unknown as (name: string, listener: () => void) => () => void).bind(ctx)
+        return onVolatileUpdate('loader/volatile-update', () => {
+          void reconfigure(readComputerUseConfig(config)).catch((error: unknown) => {
+            ctx.logger.warn('dsh-computer-use: live config update failed: %s', error)
+          })
+        })
+      }, 'dsh-computer-use: Loader volatile update')
+    }
+    ctx.effect(() => ctx.on('agent/disposed', ({ agent }) => { this.releaseAgent(agent) }), 'dsh-computer-use: Agent cleanup')
+  }
+
+  /** Verify helper integrity and permissions before the service is injectable. */
+  protected async [Service.init](): Promise<void> {
+    await this.initialize()
+  }
+}
+
+export default MacOSComputerUseProvider

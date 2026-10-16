@@ -166,6 +166,9 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-skill-badge': ['assets'],
   '@deepseek-ai/dsh-skill-browser-use': ['assets'],
   '@deepseek-ai/dsh-subprocess-local': ['scripts/ensure-spawn-helper.mjs'],
+  // Computer Use runs a locally built Swift helper, so the package ships the helper
+  // sources plus the build script the provider invokes when the pinned binary is absent.
+  '@deepseek-ai/dsh-computer-use': ['native', 'scripts'],
 }
 
 function sameStringList(actual: readonly string[] | undefined, expected: readonly string[]): boolean {

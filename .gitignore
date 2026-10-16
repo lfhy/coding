@@ -43,3 +43,7 @@ apps/web/dist/
 worktrees/
 .agents/worktrees/
 .typert-*/
+
+# Computer Use helper：本地用 native/macos 的 Swift 源码编译，产物与它的哈希清单不入库。
+packages/computer-use/computer-use/native/macos/bin/
+packages/computer-use/computer-use/native/macos/manifest.json

@@ -631,6 +631,59 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'computerUse',
+    summary: 'Complete Service Definition plus provider-independent implementation.',
+    description: 'Complete Service Definition plus provider-independent implementation.',
+    methods: [
+      {
+        signature: 'status(): ComputerUseStatus',
+        description: '读取当前提供方与权限诊断，不触发任何探测。',
+        parameters: [],
+        returns: '平台、后端名、代次、helper 路径与最近一次健康结果。',
+      },
+      {
+        signature: 'async health(signal: AbortSignal): Promise<ComputerUseStatus>',
+        description: '重新执行不修改任何权限与 UI 的提供方健康检查。',
+        parameters: [{ name: 'signal', description: '调用方取消信号；与服务生命周期信号合并后传给后端。' }],
+        returns: '检查后的最新状态；后端失败时抛出并把原因记入状态。',
+      },
+      {
+        signature: 'async openPermissionSettings(kind: \'accessibility\' | \'screen-recording\', signal: AbortSignal): Promise<void>',
+        description: '响应用户的显式设置操作，打开对应的 macOS 隐私面板；插件不自行授予权限。',
+        parameters: [{ name: 'kind', description: '要打开的面板：辅助功能或屏幕录制。' }, { name: 'signal', description: '调用方取消信号。' }],
+      },
+      {
+        signature: 'async listApps(context: ComputerUseContext): Promise<ComputerAppSummary[]>',
+        description: '列出有界的运行中用户应用；不读取任何应用的界面内容，因此不需要读取租约。',
+        parameters: [{ name: 'context', description: '发起调用的 agent、工作区、可选的调用 id 与取消信号。' }],
+        returns: '按后端顺序返回的应用摘要，含 bundle id、pid、前台状态与权限状态。',
+      },
+      {
+        signature: 'async observe(request: ComputerObserveRequest, context: ComputerUseContext): Promise<ComputerObservation>',
+        description: '在读取租约通过后取得一份新鲜观察；观察冻结元素索引与目标句柄，后续动作只能引用它。',
+        parameters: [{ name: 'request', description: '目标应用、截图模式与是否强制整树。' }, { name: 'context', description: '发起调用的 agent、工作区、可选的调用 id 与取消信号。' }],
+        returns: '新的观察，包含观察 id、有界树文本、元素表与可选截图产物。',
+      },
+      {
+        signature: 'async confirm(request: ComputerConfirmRequest, context: ComputerUseContext): Promise<ComputerConfirmation>',
+        description: '为一个精确的高影响动作申请一次性确认令牌；申请本身不执行任何动作。',
+        parameters: [{ name: 'request', description: '拟执行的动作、影响说明、目标与数据摘要。' }, { name: 'context', description: '发起调用的 agent、工作区、可选的调用 id 与取消信号。' }],
+        returns: '绑定该应用、观察、目标与动作的令牌及其过期时间。',
+      },
+      {
+        signature: 'async act(action: ComputerActionRequest, context: ComputerUseContext): Promise<ComputerActionResult>',
+        description: '执行一个绑定到既有观察的动作，并始终返回动作之后的新观察。',
+        parameters: [{ name: 'action', description: '封闭联合中的动作，携带观察 id、目标与可选的一次性确认令牌。' }, { name: 'context', description: '发起调用的 agent、工作区、可选的调用 id 与取消信号。' }],
+        returns: '动作通道、激活与指针路由事实、结构变化摘要与新观察。',
+      },
+      {
+        signature: 'releaseAgent(agent: Agent): void',
+        description: '释放一个已销毁 agent 的全部观察、租约与确认令牌；由服务的 `agent/disposed` 监听调用。',
+        parameters: [{ name: 'agent', description: '已结束的 agent。' }],
+      },
+    ],
+  },
+  {
     key: 'credentials',
     summary: 'Abstract credential service.',
     description: 'Abstract credential service. Providers implement the four operations over their source layers; one seam-wide rule binds them all: an empty stored value is absent everywhere — `resolve` skips it, `describe` reports it unconfigured — so a blank never masquerades as a configured secret.',
@@ -1037,6 +1090,50 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Select a provider by the file\'s extension and run one query. Selection is per-query and order-independent; no match throws `LspError` `LSP_UNAVAILABLE`.',
         parameters: [{ name: 'request', description: 'the normalized query.' }, { name: 'signal', description: 'optional cancellation forwarded to the selected provider.' }],
         returns: 'the normalized, closed-union result.',
+      },
+    ],
+  },
+  {
+    key: 'memory',
+    summary: '项目记忆服务。Provider 实现四个存储原语，本类负责校验、限额与渲染，因此工具与 提示词两个消费方共享同一套语义。',
+    description: '项目记忆服务。Provider 实现四个存储原语，本类负责校验、限额与渲染，因此工具与 提示词两个消费方共享同一套语义。',
+    methods: [
+      {
+        signature: 'projectFor(cwd: string): MemoryProject',
+        description: '把会话 cwd 解析成项目身份。',
+        parameters: [{ name: 'cwd', description: '会话工作目录。' }],
+        returns: '项目真实路径、目录键与记忆目录。',
+      },
+      {
+        signature: 'async list(project: MemoryProject): Promise<MemoryFileSummary[]>',
+        description: '列出项目的记忆文件，最近修改的在前。',
+        parameters: [{ name: 'project', description: '{@link projectFor} 返回的项目身份。' }],
+        returns: '文件元数据。',
+      },
+      {
+        signature: 'async read(project: MemoryProject, name: string): Promise<MemoryReadResult | undefined>',
+        description: '读取一个记忆文件，超出单文件上限时只返回头部。',
+        parameters: [{ name: 'project', description: '项目身份。' }, { name: 'name', description: '记忆文件名。' }],
+        returns: '读取结果；文件不存在时返回 undefined。',
+      },
+      {
+        signature: 'async save(project: MemoryProject, request: MemorySaveRequest): Promise<MemoryFileSummary>',
+        description: '追加一条记忆，并在此处执行单条、单文件、总量与文件数限额。',
+        parameters: [{ name: 'project', description: '项目身份。' }, { name: 'request', description: '条目内容与目标文件／小节。' }],
+        returns: '写入后的文件元数据。',
+        throws: ['条目为空、或越过任一限额时抛出，诊断里带上实际数值。'],
+      },
+      {
+        signature: 'async remove(project: MemoryProject, name: string, section?: string): Promise<boolean>',
+        description: '删除整个记忆文件，或只删除其中一个小节。',
+        parameters: [{ name: 'project', description: '项目身份。' }, { name: 'name', description: '记忆文件名。' }, { name: 'section', description: '省略时删除整个文件。' }],
+        returns: '是否确实删除了内容。',
+      },
+      {
+        signature: 'async excerpt(project: MemoryProject): Promise<MemoryExcerpt>',
+        description: '渲染注入提示词的有界摘要：按最近修改排序，逐个文件给出标题与开头，直到用完 `injectBytes`；被截断或省略的文件列在结果里，让消费方提示模型去读全文。',
+        parameters: [{ name: 'project', description: '项目身份。' }],
+        returns: '摘要文本与文件清单；没有记忆时返回 {@link EMPTY_EXCERPT}。',
       },
     ],
   },
@@ -3061,6 +3158,146 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type CompactionTrigger = \'pressure\' | \'context-overflow\';',
   },
   {
+    name: 'ComputerActionBase',
+    declaration: 'export interface ComputerActionBase {\n    observationId: ComputerObservationId;\n    sensitive?: boolean;\n    confirmationToken?: ComputerConfirmationToken;\n}',
+  },
+  {
+    name: 'ComputerActionEffect',
+    declaration: 'export interface ComputerActionEffect {\n    observedStateChanged: boolean;\n    observedForMs: number;\n    note?: string;\n}',
+  },
+  {
+    name: 'ComputerActionRequest',
+    declaration: 'export type ComputerActionRequest = ComputerClickAction | ComputerSetValueAction | ComputerTypeTextAction | ComputerPressKeyAction | ComputerScrollAction | ComputerDragAction | ComputerPerformAction | ComputerWaitAction;',
+  },
+  {
+    name: 'ComputerActionResult',
+    declaration: 'export interface ComputerActionResult {\n    action: ComputerActionRequest[\'kind\'];\n    channel: \'accessibility\' | \'coordinates\' | \'keyboard\' | \'wait\';\n    activation: \'not-requested\' | \'already-frontmost\' | \'activated\';\n    pointerInput: boolean;\n    pointerRouting: \'none\' | \'target-process\';\n    resolution?: ComputerTargetResolutionResult;\n    agentCursor?: {\n        visible: false;\n        reason?: string;\n    };\n    effect: ComputerActionEffect;\n    observation: ComputerObservation;\n}',
+  },
+  {
+    name: 'ComputerAppIdentity',
+    declaration: 'export interface ComputerAppIdentity {\n    bundleId: string;\n    pid: number;\n    name: string;\n}',
+  },
+  {
+    name: 'ComputerAppSelector',
+    declaration: 'export interface ComputerAppSelector {\n    bundleId?: string;\n    pid?: number;\n    name?: string;\n}',
+  },
+  {
+    name: 'ComputerAppSummary',
+    declaration: 'export interface ComputerAppSummary extends ComputerAppIdentity {\n    frontmost: boolean;\n    accessibility: ComputerPermissionState;\n    screenRecording: ComputerPermissionState;\n}',
+  },
+  {
+    name: 'ComputerArtifact',
+    declaration: 'export interface ComputerArtifact {\n    path: string;\n    filename: string;\n    mimeType: \'image/png\';\n    kind: \'image\';\n    description: string;\n    sourceTool: \'computer_observe\' | \'computer_action\';\n    previewIntent: \'image\';\n    bytes: number;\n    width: number;\n    height: number;\n}',
+  },
+  {
+    name: 'ComputerClickAction',
+    declaration: 'export interface ComputerClickAction extends ComputerActionBase, ComputerElementTarget {\n    kind: \'click\';\n    x?: number;\n    y?: number;\n    coordinateSpace?: ComputerCoordinateSpace;\n    button?: ComputerMouseButton;\n    clickCount?: number;\n    allowCoordinateFallback?: boolean;\n}',
+  },
+  {
+    name: 'ComputerConfirmation',
+    declaration: 'export interface ComputerConfirmation {\n    token: ComputerConfirmationToken;\n    observationId: ComputerObservationId;\n    app: ComputerAppIdentity;\n    expiresAt: string;\n}',
+  },
+  {
+    name: 'ComputerConfirmationToken',
+    declaration: 'export type ComputerConfirmationToken = Branded<\'ComputerConfirmationToken\'>;',
+  },
+  {
+    name: 'ComputerConfirmRequest',
+    declaration: 'export interface ComputerConfirmRequest {\n    action: Omit<ComputerActionRequest, \'confirmationToken\'>;\n    reason: string;\n    target: string;\n    dataSummary?: string;\n}',
+  },
+  {
+    name: 'ComputerCoordinateSpace',
+    declaration: 'export type ComputerCoordinateSpace = \'window\' | \'screen\';',
+  },
+  {
+    name: 'ComputerDragAction',
+    declaration: 'export interface ComputerDragAction extends ComputerActionBase {\n    kind: \'drag\';\n    fromX: number;\n    fromY: number;\n    toX: number;\n    toY: number;\n    coordinateSpace?: ComputerCoordinateSpace;\n}',
+  },
+  {
+    name: 'ComputerElement',
+    declaration: 'export interface ComputerElement {\n    index: number;\n    targetHandle: ComputerTargetHandle;\n    role: string;\n    subrole?: string;\n    title?: string;\n    label?: string;\n    value?: string;\n    enabled?: boolean;\n    focused?: boolean;\n    selected?: boolean;\n    frame?: ComputerRect;\n    actions: string[];\n}',
+  },
+  {
+    name: 'ComputerElementTarget',
+    declaration: 'export interface ComputerElementTarget {\n    elementIndex?: number;\n    targetHandle?: ComputerTargetHandle;\n    allowRebind?: boolean;\n}',
+  },
+  {
+    name: 'ComputerKeyModifier',
+    declaration: 'export type ComputerKeyModifier = \'command\' | \'control\' | \'option\' | \'shift\';',
+  },
+  {
+    name: 'ComputerMouseButton',
+    declaration: 'export type ComputerMouseButton = \'left\' | \'right\' | \'middle\';',
+  },
+  {
+    name: 'ComputerObservation',
+    declaration: 'export interface ComputerObservation {\n    observationId: ComputerObservationId;\n    app: ComputerAppIdentity;\n    createdAt: string;\n    expiresAt: string;\n    frontmost: boolean;\n    window?: {\n        title?: string;\n        frame: ComputerRect;\n        id?: number;\n    };\n    tree: {\n        mode: \'full\' | \'diff\';\n        text: string;\n        truncated: boolean;\n    };\n    elements: ComputerElement[];\n    screenshot?: ComputerArtifact;\n    permissions: {\n        accessibility: ComputerPermissionState;\n        screenRecording: ComputerPermissionState;\n    };\n}',
+  },
+  {
+    name: 'ComputerObservationId',
+    declaration: 'export type ComputerObservationId = Branded<\'ComputerObservationId\'>;',
+  },
+  {
+    name: 'ComputerObserveRequest',
+    declaration: 'export interface ComputerObserveRequest {\n    app: ComputerAppSelector;\n    screenshot?: ComputerScreenshotMode;\n    full?: boolean;\n}',
+  },
+  {
+    name: 'ComputerPerformAction',
+    declaration: 'export interface ComputerPerformAction extends ComputerActionBase, ComputerElementTarget {\n    kind: \'perform-action\';\n    action: string;\n}',
+  },
+  {
+    name: 'ComputerPermissionState',
+    declaration: 'export type ComputerPermissionState = \'granted\' | \'denied\' | \'not-determined\' | \'unavailable\';',
+  },
+  {
+    name: 'ComputerPressKeyAction',
+    declaration: 'export interface ComputerPressKeyAction extends ComputerActionBase {\n    kind: \'press-key\';\n    key: string;\n    modifiers?: ComputerKeyModifier[];\n}',
+  },
+  {
+    name: 'ComputerRect',
+    declaration: 'export interface ComputerRect {\n    x: number;\n    y: number;\n    width: number;\n    height: number;\n}',
+  },
+  {
+    name: 'ComputerScreenshotMode',
+    declaration: 'export type ComputerScreenshotMode = \'none\' | \'optional\' | \'required\';',
+  },
+  {
+    name: 'ComputerScrollAction',
+    declaration: 'export interface ComputerScrollAction extends ComputerActionBase, ComputerElementTarget {\n    kind: \'scroll\';\n    x?: number;\n    y?: number;\n    coordinateSpace?: ComputerCoordinateSpace;\n    direction: \'up\' | \'down\' | \'left\' | \'right\';\n    pages?: number;\n}',
+  },
+  {
+    name: 'ComputerSetValueAction',
+    declaration: 'export interface ComputerSetValueAction extends ComputerActionBase, ComputerElementTarget {\n    kind: \'set-value\';\n    value: string;\n}',
+  },
+  {
+    name: 'ComputerTargetHandle',
+    declaration: 'export type ComputerTargetHandle = Branded<\'ComputerTargetHandle\'>;',
+  },
+  {
+    name: 'ComputerTargetResolutionMode',
+    declaration: 'export type ComputerTargetResolutionMode = \'exact-locator\' | \'native-identifier\' | \'semantic-rebind\';',
+  },
+  {
+    name: 'ComputerTargetResolutionResult',
+    declaration: 'export interface ComputerTargetResolutionResult {\n    mode: ComputerTargetResolutionMode;\n    confidence: number;\n    candidateCount: number;\n    targetChanged: boolean;\n}',
+  },
+  {
+    name: 'ComputerTypeTextAction',
+    declaration: 'export interface ComputerTypeTextAction extends ComputerActionBase {\n    kind: \'type-text\';\n    text: string;\n}',
+  },
+  {
+    name: 'ComputerUseContext',
+    declaration: 'export interface ComputerUseContext {\n    agent: Agent;\n    workspace: string;\n    callId?: CallId;\n    signal: AbortSignal;\n}',
+  },
+  {
+    name: 'ComputerUseStatus',
+    declaration: 'export interface ComputerUseStatus {\n    platform: NodeJS.Platform;\n    provider: \'macos-ax\' | \'unsupported\';\n    generation: number;\n    ready: boolean;\n    helperPath: string;\n    helperVersion?: string;\n    helperSha256?: string;\n    accessibility: ComputerPermissionState;\n    screenRecording: ComputerPermissionState;\n    lastError?: string;\n}',
+  },
+  {
+    name: 'ComputerWaitAction',
+    declaration: 'export interface ComputerWaitAction extends ComputerActionBase {\n    kind: \'wait\';\n    condition: {\n        text?: string;\n        elementRole?: string;\n        elementTitle?: string;\n    };\n    timeoutMs?: number;\n}',
+  },
+  {
     name: 'ConfinedArgv',
     declaration: 'export interface ConfinedArgv {\n    argv: string[];\n    enforcement: SandboxEnforcement;\n    denialSignatures: readonly string[];\n    runnerFailureRules: readonly RunnerFailureRule[];\n}',
   },
@@ -3615,6 +3852,26 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ManualCompactAgentContext',
     declaration: 'export interface ManualCompactAgentContext extends CompactionAgentContext {\n    runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>): Promise<T>;\n}',
+  },
+  {
+    name: 'MemoryExcerpt',
+    declaration: 'export interface MemoryExcerpt {\n    text: string;\n    files: string[];\n    omitted: string[];\n    truncated: boolean;\n}',
+  },
+  {
+    name: 'MemoryFileSummary',
+    declaration: 'export interface MemoryFileSummary {\n    name: string;\n    title: string;\n    bytes: number;\n    updatedAt: string;\n}',
+  },
+  {
+    name: 'MemoryProject',
+    declaration: 'export interface MemoryProject {\n    path: string;\n    key: string;\n    directory: string;\n}',
+  },
+  {
+    name: 'MemoryReadResult',
+    declaration: 'export interface MemoryReadResult {\n    name: string;\n    content: string;\n    truncated: boolean;\n}',
+  },
+  {
+    name: 'MemorySaveRequest',
+    declaration: 'export interface MemorySaveRequest {\n    content: string;\n    file?: string;\n    section?: string;\n}',
   },
   {
     name: 'Message',

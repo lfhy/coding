@@ -241,6 +241,8 @@
     { "path": "./packages/compaction/command-compact" },
     { "path": "./packages/compaction/compaction-tool-result-pruner" },
     { "path": "./packages/web/web" },
+    { "path": "./packages/computer-use/computer-use" },
+    { "path": "./packages/computer-use/tool-computer-use" },
     { "path": "./packages/browser/browser" },
     { "path": "./packages/browser/browser-electron" },
     { "path": "./packages/browser/browser-playwright" },

@@ -86,6 +86,12 @@ flowchart LR
   cfg --> plugin_dsh_base_tool_fs_search
   plugin_dsh_base_agent_instructions["agent-instructions<br/>@deepseek-ai/dsh-agent-instructions"]
   cfg --> plugin_dsh_base_agent_instructions
+  plugin_dsh_base_memory_local["memory-local<br/>@deepseek-ai/dsh-memory-local"]
+  cfg --> plugin_dsh_base_memory_local
+  plugin_dsh_base_memory_context["memory-context<br/>@deepseek-ai/dsh-memory-context"]
+  cfg --> plugin_dsh_base_memory_context
+  plugin_dsh_base_tool_memory["tool-memory<br/>@deepseek-ai/dsh-tool-memory"]
+  cfg --> plugin_dsh_base_tool_memory
   plugin_dsh_base_skill["skill<br/>@deepseek-ai/dsh-skill"]
   cfg --> plugin_dsh_base_skill
   plugin_dsh_base_skill_filesystem["skill-filesystem<br/>@deepseek-ai/dsh-skill-filesystem"]
@@ -154,6 +160,8 @@ flowchart LR
   cfg --> plugin_dsh_base_tool_str_replace_editor
   plugin_dsh_base_repeat_tool_reminder["repeat-tool-reminder<br/>@deepseek-ai/dsh-repeat-tool-reminder"]
   cfg --> plugin_dsh_base_repeat_tool_reminder
+  plugin_dsh_base_progress_reminder["progress-reminder<br/>@deepseek-ai/dsh-progress-reminder"]
+  cfg --> plugin_dsh_base_progress_reminder
   plugin_dsh_base_web["web<br/>@deepseek-ai/dsh-web"]
   cfg --> plugin_dsh_base_web
   plugin_dsh_base_web_search_duckduckgo["web-search-duckduckgo<br/>@deepseek-ai/dsh-web-search-duckduckgo"]
@@ -168,6 +176,8 @@ flowchart LR
   cfg --> plugin_dsh_base_browser_electron
   plugin_dsh_base_tool_web["tool-web<br/>@deepseek-ai/dsh-tool-web"]
   cfg --> plugin_dsh_base_tool_web
+  plugin_dsh_base_computer_use["computer-use<br/>@deepseek-ai/dsh-computer-use"]
+  cfg --> plugin_dsh_base_computer_use
   plugin_dsh_base_tools["tools<br/>@deepseek-ai/dsh-tools"]
   cfg --> plugin_dsh_base_tools
   plugin_dsh_base_system_prompt["system-prompt<br/>@deepseek-ai/dsh-system-prompt"]
@@ -221,6 +231,9 @@ flowchart LR
 | `tool-fs` | `@deepseek-ai/dsh-tool-fs` |
 | `tool-fs-search` | `@deepseek-ai/dsh-tool-fs-search` |
 | `agent-instructions` | `@deepseek-ai/dsh-agent-instructions` |
+| `memory-local` | `@deepseek-ai/dsh-memory-local` |
+| `memory-context` | `@deepseek-ai/dsh-memory-context` |
+| `tool-memory` | `@deepseek-ai/dsh-tool-memory` |
 | `skill` | `@deepseek-ai/dsh-skill` |
 | `skill-filesystem` | `@deepseek-ai/dsh-skill-filesystem` |
 | `skill-badge` | `@deepseek-ai/dsh-skill-badge` |
@@ -255,6 +268,7 @@ flowchart LR
 | `tool-ralph` | `@deepseek-ai/dsh-tool-ralph` |
 | `tool-str-replace-editor` | `@deepseek-ai/dsh-tool-str-replace-editor` |
 | `repeat-tool-reminder` | `@deepseek-ai/dsh-repeat-tool-reminder` |
+| `progress-reminder` | `@deepseek-ai/dsh-progress-reminder` |
 | `web` | `@deepseek-ai/dsh-web` |
 | `web-search-duckduckgo` | `@deepseek-ai/dsh-web-search-duckduckgo` |
 | `web-search-deepseek` | `@deepseek-ai/dsh-web-search-deepseek` |
@@ -262,6 +276,7 @@ flowchart LR
 | `browser-playwright` | `@deepseek-ai/dsh-browser-playwright` |
 | `browser-electron` | `@deepseek-ai/dsh-browser-electron` |
 | `tool-web` | `@deepseek-ai/dsh-tool-web` |
+| `computer-use` | `@deepseek-ai/dsh-computer-use` |
 | `tools` | `@deepseek-ai/dsh-tools` |
 | `system-prompt` | `@deepseek-ai/dsh-system-prompt` |
 | `agent-loop` | `@deepseek-ai/dsh-agent-loop` |

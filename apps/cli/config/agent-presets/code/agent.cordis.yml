@@ -256,6 +256,13 @@
 - id: tool-browser
   name: '@deepseek-ai/dsh-tool-browser'
 
+# 电脑控制是本机 UI 操作：服务、helper 进程与租约都在宿主层，这里只装配模型可见的
+# Skill、引导工具与按 agent 暴露的执行工具。与浏览器工具一样，标准和 PTC 两种预设
+# 提供同一套工具名；非 macOS 宿主上宿主服务缺席，本行会按缺依赖报错，preset 需覆盖。
+- id: tool-computer-use
+  name: '@deepseek-ai/dsh-tool-computer-use'
+  disabled: !!js process.platform !== 'darwin'
+
 # ── presentation ────────────────────────────────────────────────────────────
 
 # Code Mode for this agent alone. The row waits for the host's `codeRuntime`

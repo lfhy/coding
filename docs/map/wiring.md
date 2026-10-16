@@ -38,6 +38,7 @@
 - `tool-todo` → `@deepseek-ai/dsh-tool-todo`
 - `tool-web` → `@deepseek-ai/dsh-tool-web`
 - `tool-browser` → `@deepseek-ai/dsh-tool-browser`
+- `tool-computer-use` → `@deepseek-ai/dsh-tool-computer-use`
 - `tool-presentation` → `@deepseek-ai/dsh-agent-tool-presentation`
 
 ## `apps/cli/config/agent-presets/cordis/agent.cordis.yml`
@@ -119,6 +120,7 @@
 - `tool-todo` → `@deepseek-ai/dsh-tool-todo`
 - `tool-web` → `@deepseek-ai/dsh-tool-web`
 - `tool-browser` → `@deepseek-ai/dsh-tool-browser`
+- `tool-computer-use` → `@deepseek-ai/dsh-tool-computer-use`
 
 ## `examples/acp-agent/cordis.yml`
 
@@ -294,6 +296,7 @@
 - `browser-playwright` → `@deepseek-ai/dsh-browser-playwright`
 - `browser-electron` → `@deepseek-ai/dsh-browser-electron`
 - `tool-web` → `@deepseek-ai/dsh-tool-web`
+- `computer-use` → `@deepseek-ai/dsh-computer-use`
 - `tools` → `@deepseek-ai/dsh-tools`
 - `system-prompt` → `@deepseek-ai/dsh-system-prompt`
 - `agent-loop` → `@deepseek-ai/dsh-agent-loop`

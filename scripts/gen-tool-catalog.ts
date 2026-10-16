@@ -46,6 +46,9 @@ import SkillRegistry from '@deepseek-ai/dsh-skill'
 import * as SkillFileSystem from '@deepseek-ai/dsh-skill-filesystem'
 import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
 import * as ToolAskUser from '@deepseek-ai/dsh-tool-ask-user'
+import { ComputerUseService, resolveConfig } from '@deepseek-ai/dsh-computer-use'
+import * as ToolComputerUse from '@deepseek-ai/dsh-tool-computer-use'
+import { createComputerUseTools } from '@deepseek-ai/dsh-tool-computer-use'
 import * as ToolBrowser from '@deepseek-ai/dsh-tool-browser'
 import * as ToolBash from '@deepseek-ai/dsh-tool-bash'
 import * as ToolPwsh from '@deepseek-ai/dsh-tool-pwsh'
@@ -123,6 +126,32 @@ class CatalogBrowserUseService extends BrowserUseService {
 
   override closeSession(_sessionId: SessionId): Promise<void> {
     return Promise.reject(new Error('gen-tool-catalog: browser closing is unreachable during schema harvest'))
+  }
+}
+
+/**
+ * Computer Use 的 schema 采集替身：只提供 `ctx.computerUse` 这个键，
+ * 任何真正到达 native helper 的调用都是采集期的缺陷，因此一律拒绝。
+ */
+class CatalogComputerUseService extends ComputerUseService {
+  constructor(ctx: Context) {
+    super(ctx, undefined as never, resolveConfig({}))
+  }
+
+  override listApps(): Promise<never> {
+    return Promise.reject(new Error('gen-tool-catalog: app discovery is unreachable during schema harvest'))
+  }
+
+  override observe(): Promise<never> {
+    return Promise.reject(new Error('gen-tool-catalog: observation is unreachable during schema harvest'))
+  }
+
+  override confirm(): Promise<never> {
+    return Promise.reject(new Error('gen-tool-catalog: confirmation is unreachable during schema harvest'))
+  }
+
+  override act(): Promise<never> {
+    return Promise.reject(new Error('gen-tool-catalog: UI input is unreachable during schema harvest'))
   }
 }
 
@@ -261,6 +290,22 @@ const TOOL_PACKAGES: ToolPackage[] = [
     },
     note:
       'Each operation is bound to the active tab and session revision. Full access with approval prompts disabled proceeds directly; otherwise only allowed-once approval proceeds if that target remains current. A remote workspace is rejected. Only explicit screenshots save a PNG attachment and render an image block. The browser provider owns URL/network policy and session tab lifetime.',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tool-computer-use',
+    dir: 'tool-computer-use',
+    source: 'packages/computer-use/tool-computer-use/src/index.ts',
+    requires: ['ctx.tools', 'ctx.skills', 'ctx.computerUse and a calling Agent at execution time'],
+    writes: ['tool/call', 'tool/result', 'workspace screenshot Artifact on request', 'one computer_use_state read/control lease decision after an approval or a configured grant'],
+    async mount(ctx) {
+      await ctx.plugin(CatalogComputerUseService)
+      await ctx.plugin(ToolComputerUse)
+      // 执行工具只在 Agent 加载 Skill 之后按 agent 暴露；目录仍要登记它们的 schema，
+      // 因此在采集期把它们注册到全局视图，串行地照实记录。
+      for (const definition of createComputerUseTools(ctx.computerUse)) ctx.tools.register(definition)
+    },
+    note:
+      'The only globally visible tool is computer_use_activate; loading the Skill replaces it with the execution vocabulary for that Agent alone. Every action binds to a fresh observation, so a stale element index fails closed, and a coordinate target is only accepted after a screenshot delivered the raster it was chosen from. Accessibility actions are preferred over pointer input, and pointer input is routed to the selected process instead of the global cursor.',
   },
   {
     pkg: '@deepseek-ai/dsh-tools',

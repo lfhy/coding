@@ -514,6 +514,23 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Web and CLI sessions use isolated Playwright pages; the managed Electron Host uses a live native guest shared by human and model operations. Both retain session-scoped approval and target checks; the desktop bridge fails closed, while Web shows read-only captured frames.',
   },
   {
+    key: 'memory',
+    pkg: 'memory',
+    title: 'Project-scoped cross-session memory',
+    mode: 'seam',
+    implementations: ['memory-local'],
+    consumers: ['memory-context', 'tool-memory'],
+    note: 'The service owns project-key resolution, file-name and size policy, the Markdown entry format and the injected excerpt; memory-local only implements the four storage primitives on the host filesystem.',
+  },
+  {
+    key: 'computerUse',
+    pkg: 'computer-use',
+    title: 'Host-owned macOS computer control',
+    mode: 'core',
+    consumers: ['tool-computer-use'],
+    note: 'One host-plane provider owns the fixed-argv Swift helper, observation cache, per-app leases and confirmation tokens for every Session; tool-computer-use contributes the Skill-gated model surface in the agent presets.',
+  },
+  {
     key: 'web',
     pkg: 'web',
     title: 'Web access provider registry',

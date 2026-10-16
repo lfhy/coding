@@ -3,7 +3,7 @@
 
 # 包清单
 
-workspace 共 246 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
+workspace 共 247 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
 
 模型可见工具的名称与 schema 见 [tool-catalog.md](../tool-catalog.md)，插件可配置项见 [config-catalog.md](../config-catalog.md)，依赖边见 [module-graph.md](../module-graph.md)。
 
@@ -101,7 +101,8 @@ workspace 共 246 个包，按 group 分节。每行给出包目录、职责（R
 
 ## packages/computer-use
 
-- `packages/computer-use/computer-use` — （README 缺首段） 入口 `src/index.ts`
+- `packages/computer-use/computer-use` — 本机 macOS 界面的观察与操作能力：在宿主层提供 `ctx.computerUse`… 入口 `src/index.ts`（tests 2）
+- `packages/computer-use/tool-computer-use` — Computer Use 的模型可见消费方：登记一份技能、一个全局引导工具，并在 agent 加载该技能之后，把执行工具只暴露给这个 agent 入口 `src/index.ts`（tests 2）
 
 ## packages/context
 

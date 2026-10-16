@@ -473,6 +473,26 @@
         fetch: false
         searchTimeoutMs: 60000
 
+    # 电脑控制归宿主所有：一个进程一份 helper、观察缓存、应用租约与确认令牌，所有会话共享；
+    # 模型可见的工具与 Skill 由各 agent 预设装配 `dsh-tool-computer-use`。
+    # 只在本地 macOS 宿主装载，其他平台保持 profile 与今天完全一致。
+    # 本仓库不提交编译产物，因此托管 helper 缺失时允许按仓库内的 Swift 源码在本地重建。
+    - id: computer-use
+      name: '@deepseek-ai/dsh-computer-use'
+      disabled: !!js process.platform !== 'darwin'
+      config:
+        helper:
+          allowSourceBuild: true
+        interaction:
+          focusPolicy: preserve
+          keyboardPolicy: activate
+          pointerInputPolicy: targeted
+          cursorVisualization: visible
+          cursorSpeedPxPerSecond: 1600
+          cursorAccelerationPxPerSecondSquared: 6000
+          cursorClickDelayMs: 90
+          cursorAutoHideMs: 0
+
     # ── rows every mode mounts, whose values each overlay may state ──────────────
 
     # The tool registry. Presentation mode is a deployment choice; omitting it here
