@@ -1,8 +1,9 @@
 /**
  * 按适配器家族编辑单个提供方。API 密钥只写入凭据服务，页面不询问环境变量名；
- * DeepSeek 渠道名称与密钥并列显示，只作为设置元数据，不改变固定路由和凭据引用。
- * 自定义设置区承载端点、模型目录和手工声明的 pi-ai 路由身份字段。
- * 推理等级属于单个模型能力，不提供可能被部分模型拒绝的提供方级输入。
+ * OpenCode Zen 的密钥是它自己分节里的 `role('secret')` 字段，因此那一族的密钥随
+ * 设置写入提交且从不回显。DeepSeek 渠道名称与密钥并列显示，只作为设置元数据，
+ * 不改变固定路由和凭据引用。自定义设置区承载端点、模型目录和手工声明的 pi-ai
+ * 路由身份字段。推理等级属于单个模型能力，不提供可能被部分模型拒绝的提供方级输入。
  * 配置修改只对编辑器可见字段发出 `settings.mutate` 路径操作，不重建脱敏分节。
  */
 
@@ -21,7 +22,7 @@ import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
 
 /** Per-adapter-family curated field sets (unknown namespaces get the hint alone). */
-type EditorLayout = 'deepseek' | 'pi-ai' | 'unknown'
+type EditorLayout = 'deepseek' | 'opencode' | 'pi-ai' | 'unknown'
 
 /** DeepSeek 地址输入框展示的公共端点占位值。 */
 const DEEPSEEK_PUBLIC_BASE_URL = 'https://api.deepseek.com'
@@ -120,6 +121,7 @@ export function pathOps(
 /** The editor layout the owning namespace selects. */
 function layoutOf(ns: string): EditorLayout {
   if (ns === 'llm-deepseek') return 'deepseek'
+  if (ns === 'llm-opencode') return 'opencode'
   if (ns === 'llm-pi-ai') return 'pi-ai'
   return 'unknown'
 }
@@ -164,13 +166,17 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   const disabled = props.readOnly || busy
   const layout = layoutOf(namespace.ns)
   const keyRef = refFor(schema, namespace, settingsPath, props.provider)
+  // opencode 的凭据是它自己分节里的 `role('secret')` 字段：设置描述从不返回它的值，
+  // 因此这里没有可点名的凭据引用，密钥随同一次设置写入落到分节里。
+  const keyInSection = layout === 'opencode'
   // 未编辑时与列表、标题共用目录的生效名称；只在本字段被编辑后写入名称覆盖。
   const channelName = channelNameDraft ?? props.displayName
-  const channelNameFailure = layout === 'deepseek' && props.credentialOnly !== true
+  const channelNameFailure = (layout === 'deepseek' || layout === 'opencode') && props.credentialOnly !== true
     && channelNameDraft !== undefined
     && (channelName.trim().length === 0 || channelName.trim().length > MAX_CHANNEL_NAME_LENGTH)
     ? 'channelNameInvalid' as const
     : undefined
+
   // The same schema read the create card makes, so the choices offered here
   // and there cannot drift apart: both come from the adapter's own `Config`.
   // Only the pi-ai layout has a per-route protocol for the read to find, and
@@ -181,6 +187,8 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   )
 
   useEffect(() => {
+    // 凭据服务只管引用式凭据；分节内密钥的状态由 schema 的 secret 槽回答。
+    if (keyInSection) return
     let stale = false
     setKeyState(undefined)
     // The key state is a placeholder hint, not a precondition for editing:
@@ -195,7 +203,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
       () => undefined,
     )
     return () => { stale = true }
-  }, [api.credentials, keyRef])
+  }, [api.credentials, keyRef, keyInSection])
 
   const stringAt = (source: unknown, key: string): string | undefined => {
     const value = schema.getPath(source, [key])
@@ -247,14 +255,18 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
    */
   const applyOnce = async (): Promise<string | undefined> => {
     const ns = namespace.ns
-    const withChannelName = layout === 'deepseek' && channelNameDraft !== undefined
+    const withChannelName = (layout === 'deepseek' || layout === 'opencode') && channelNameDraft !== undefined
       ? schema.setPath(draft, ['channelName'], channelNameDraft.trim())
       : draft
     // pi-ai 仅在存储密钥时记录约定引用，留空仍可使用提供方原生认证。
-    const next = layout === 'pi-ai' && stringAt(draft, 'apiKeyEnv') === undefined
+    const withKeyRef = layout === 'pi-ai' && stringAt(draft, 'apiKeyEnv') === undefined
       && stringAt(fallback, 'apiKeyEnv') === undefined && keyValue.length > 0
       ? schema.setPath(withChannelName, ['apiKeyEnv'], keyRef)
       : withChannelName
+    // opencode 的密钥是分节自己的 secret 字段，因此它只走设置写入，不进凭据服务。
+    const next = keyInSection && keyValue.length > 0
+      ? schema.setPath(withKeyRef, ['apiKey'], keyValue)
+      : withKeyRef
     if (props.credentialOnly !== true) {
       // The same checker gates the submit button, so a card cannot reach this
       // with a bad row; it stays because the schema check below would refuse
@@ -290,9 +302,10 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
       props.onSettingsCommitted?.(response.result.value)
       setCommittedOriginal(schema.getPath(response.result.value.user, settingsPath))
       setExpectedRevision(response.result.value.revision)
-      setDraft(next)
+      // 已写入的密钥不留在草稿里：描述从不返回它，保留只会让下一次提交重写同一个值。
+      setDraft(keyInSection ? schema.deletePath(next, ['apiKey']) : next)
     }
-    if (keyValue.length > 0) {
+    if (keyValue.length > 0 && !keyInSection) {
       const stored = await api.credentials.set({ ref: keyRef, value: keyValue })
       if (!stored.result.ok) return stored.result.error.message
     }
@@ -345,7 +358,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
    * narrowed so the per-family branches below are total: an unknown namespace
    * renders the hint instead and never reaches this body.
    */
-  const curatedFields = (family: 'deepseek' | 'pi-ai'): ReactNode => {
+  const curatedFields = (family: 'deepseek' | 'opencode' | 'pi-ai'): ReactNode => {
     // What a hand-declared route names for itself and nothing else can supply.
     // A whole-section `llm-deepseek` profile is a composition fact with no
     // per-route identity for its schema to carry, hence the family test.
@@ -359,7 +372,8 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
       ? t('keyEnvLocked')
       : keyState?.configured === true && props.credentialRequired !== true
         ? t('keyStored')
-        : family === 'pi-ai' ? t('keyPlaceholderNative') : t('keyPlaceholder')
+        : family === 'opencode' ? t('keyPlaceholderPublic')
+          : family === 'pi-ai' ? t('keyPlaceholderNative') : t('keyPlaceholder')
     /** What both family editors take: the rows, whose layer owns them, and the two writes. */
     const catalogProps = {
       models,
@@ -391,7 +405,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
           />
           {shownKeyFailure === undefined ? null : <p className={styles['error']}>{t(shownKeyFailure)}</p>}
         </div>
-        {family === 'deepseek' && props.credentialOnly !== true ? (
+        {family !== 'pi-ai' && props.credentialOnly !== true ? (
           <div className={styles['field']}>
             <label className={styles['fieldLabel']} htmlFor={channelNameId}>{t('channelName')}</label>
             <input

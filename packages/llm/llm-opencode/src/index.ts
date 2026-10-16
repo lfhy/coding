@@ -20,8 +20,9 @@
  *         contextWindow: 1048576
  * ```
  *
- * 用户可以在设置页改端点、换成自己的 key，或增删模型；改动在下一次请求生效，
- * 不需要重启。
+ * 用户可以在设置页改端点、渠道名称、换成自己的 key，或增删模型；改动在下一次
+ * 请求生效，不需要重启。该路由同时声明在可配置提供方目录里，因此**设置 → 模型**
+ * 直接列出这条渠道，无需先在 `settings.yaml` 里写分节。
  *
  * @module @deepseek-ai/dsh-llm-opencode
  */
@@ -29,7 +30,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { OpencodeZenAdapter } from './adapter.ts'
-import { Config, PROVIDER_ID, resolveOpencodeOptions } from './config.ts'
+import { Config, DEFAULT_CHANNEL_NAME, PROVIDER_ID, resolveOpencodeOptions } from './config.ts'
 import type { ResolvedOpencodeOptions } from './config.ts'
 
 export { OpencodeZenAdapter } from './adapter.ts'
@@ -93,14 +94,26 @@ export function apply(ctx: Context, config: Config): void {
     resolveUserAgent: () => ctx.llm.getUserAgent(),
     resolveAttachments: () => ctx.get('attachments'),
   })
-  ctx.effect(
-    () => ctx.llm.registerAdapter([PROVIDER_ID], adapter),
-    'llm-opencode: provider route',
-  )
+  const registration = ctx.llm.registerAdapter([PROVIDER_ID], adapter)
+
+  // 本路由自带可用的默认端点、匿名凭据与目录，因此它在设置页里是一条已配置的
+  // 可编辑渠道：整节即 profile，名称跟随生效设置。注册表会捕获渠道名称，因此
+  // 名称变化时原地替换路由与目录条目，保留同一条路由与卸载时的清理责任。
+  let registeredName = current().channelName ?? DEFAULT_CHANNEL_NAME
+  const directory = ctx.llm.registerConfigurableProviders([
+    { provider: PROVIDER_ID, displayName: registeredName, settingsNs: NS, settingsPath: [] },
+  ])
+  const ensureRegistrationFacts = (): void => {
+    const displayName = current().channelName ?? DEFAULT_CHANNEL_NAME
+    if (displayName === registeredName) return
+    registration.replace([PROVIDER_ID])
+    directory.replace([{ provider: PROVIDER_ID, displayName, settingsNs: NS, settingsPath: [] }])
+    registeredName = displayName
+  }
 
   installSettingsSection(ctx, NS, Config, config, {
     setSource: (source) => { current = source },
-    // 消费者每次操作都经 options() 读取，因此设置变化不需要重建注册级事实。
-    onChange: () => {},
+    // 消费者每次操作都经 options() 读取连接事实，因此设置变化只需要同步注册级名称。
+    onChange: () => { ensureRegistrationFacts() },
   })
 }

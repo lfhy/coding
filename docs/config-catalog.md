@@ -1058,7 +1058,11 @@ Requires: `llm`
 export interface Config {
   /** 界面显示名称，默认 `OpenCode Zen`。 */
   channelName?: string
-  /** 凭据；省略时为匿名通道的 `public`。填自己的 key 时请求走该凭据。 */
+  /**
+   * 凭据；省略时为匿名通道的 `public`，填自己的 key 时整份凭据被替换。
+   * 它是 `role('secret')` 字段：设置描述从不携带它的值，只有持有完整配置的
+   * 宿主能读到，设置页因此只能写入、不能回显（包括内置的 `public`）。
+   */
   apiKey?: string
   /** 端点基址，默认官方 Zen；可改为自建网关。 */
   baseURL?: string
@@ -1086,14 +1090,24 @@ export interface OpencodeModelConfig {
   contextWindow?: number
   /** 单次请求输出上限；省略时用提供方自身的值。 */
   maxTokens?: number
-  /** 该模型提供的推理档位；省略时按不具备推理能力处理。 */
-  reasoningEfforts?: string[]
+  /** 模型接受的输入模态；省略时按纯文本处理。 */
+  inputModalities?: ModelModality[]
+  /** 模型是否具备推理能力；省略时按不具备处理。 */
+  reasoning?: boolean
+  /**
+   * 该模型暴露的推理档位；省略时不给选择器提供档位（模型自身的推理行为不变）。
+   * 档位必须是 {@link REASONING_EFFORT_LEVELS} 里的值，否则无法转发成上游参数。
+   */
+  reasoningEfforts?: ReasoningEffortLevel[]
 }
+
+/** 可声明的推理档位。 */
+export type ReasoningEffortLevel = (typeof REASONING_EFFORT_LEVELS)[number]
 ```
 
-Depends on: [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
+Depends on: [`ModelModality`](subsystems/llm-streaming.md) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
 
-Source: [`packages/llm/llm-opencode/src/config.ts:68`](../packages/llm/llm-opencode/src/config.ts)
+Source: [`packages/llm/llm-opencode/src/config.ts:115`](../packages/llm/llm-opencode/src/config.ts)
 
 <a id="deepseek-aidsh-llm-pi-ai"></a>
 

@@ -10,7 +10,7 @@
 
 import z from '@deepseek-ai/schemastery'
 import { resolveRetryPolicy, RetryPolicySchema } from '@deepseek-ai/dsh-llm'
-import type { ResolvedRetryPolicy, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
+import type { ModelModality, ResolvedRetryPolicy, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
 
 /**
  * 提供商空闲超时默认值：覆盖未完成的流读取，不包含消费方思考时间。
@@ -37,6 +37,21 @@ export const PROVIDER_ID = 'opencode-zen'
 /** 内置渠道在界面上的显示名称。 */
 export const DEFAULT_CHANNEL_NAME = 'OpenCode Zen'
 
+/** 本适配器声明的输入模态：上游的多模态能力按这个子集声明。 */
+const MODEL_MODALITIES = ['text', 'image'] as const satisfies readonly ModelModality[]
+
+/** 未声明模态的模型按纯文本处理，与提供方默认一致。 */
+export const DEFAULT_MODEL_MODALITIES: readonly ModelModality[] = ['text']
+
+/**
+ * 可转发给上游的推理档位词汇，与 pi-ai 的思考档位一致；`off` 表示省略该参数，
+ * 让模型按自身默认行为推理。声明之外的拼写无法映射成请求参数，因此在 schema 处拒绝。
+ */
+export const REASONING_EFFORT_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
+
+/** 可声明的推理档位。 */
+export type ReasoningEffortLevel = (typeof REASONING_EFFORT_LEVELS)[number]
+
 /** 一个内置模型的配置。 */
 export interface OpencodeModelConfig {
   /** 线协议上的模型 id。 */
@@ -47,17 +62,49 @@ export interface OpencodeModelConfig {
   contextWindow?: number
   /** 单次请求输出上限；省略时用提供方自身的值。 */
   maxTokens?: number
-  /** 该模型提供的推理档位；省略时按不具备推理能力处理。 */
-  reasoningEfforts?: string[]
+  /** 模型接受的输入模态；省略时按纯文本处理。 */
+  inputModalities?: ModelModality[]
+  /** 模型是否具备推理能力；省略时按不具备处理。 */
+  reasoning?: boolean
+  /**
+   * 该模型暴露的推理档位；省略时不给选择器提供档位（模型自身的推理行为不变）。
+   * 档位必须是 {@link REASONING_EFFORT_LEVELS} 里的值，否则无法转发成上游参数。
+   */
+  reasoningEfforts?: ReasoningEffortLevel[]
 }
 
 /**
- * 内置默认目录：三个免费模型。菜单里显示的名称是固定的，不随上游元数据漂移。
+ * 内置默认目录：三个免费模型。菜单里显示的名称是固定的，不随上游元数据漂移；
+ * 模态、推理能力与档位取自 models.dev 的提供方元数据：
+ * MiMo 与 DeepSeek V4.1 Flash 接受图片，Nemotron 3.5 Lightning 只接受文本；
+ * 三者都会推理，但只有 DeepSeek V4.1 Flash 暴露可选档位。
  */
 export const DEFAULT_MODELS: readonly OpencodeModelConfig[] = [
-  { id: 'mimo-v2.6-flash-free', name: 'Mimo V2.6 Flash', contextWindow: 1_048_576, maxTokens: 32_768 },
-  { id: 'deepseek-v4.1-flash-free', name: 'Deepseek V4.1 Flash', contextWindow: 262_144, maxTokens: 32_768 },
-  { id: 'nemotron-3.5-lightning-free', name: 'Nemotron 3.5 Lightning', contextWindow: 262_144, maxTokens: 32_768 },
+  {
+    id: 'mimo-v2.6-flash-free',
+    name: 'Mimo V2.6 Flash',
+    contextWindow: 1_048_576,
+    maxTokens: 32_768,
+    inputModalities: ['text', 'image'],
+    reasoning: true,
+  },
+  {
+    id: 'deepseek-v4.1-flash-free',
+    name: 'Deepseek V4.1 Flash',
+    contextWindow: 262_144,
+    maxTokens: 32_768,
+    inputModalities: ['text', 'image'],
+    reasoning: true,
+    reasoningEfforts: ['low', 'high', 'max'],
+  },
+  {
+    id: 'nemotron-3.5-lightning-free',
+    name: 'Nemotron 3.5 Lightning',
+    contextWindow: 262_144,
+    maxTokens: 32_768,
+    inputModalities: ['text'],
+    reasoning: true,
+  },
 ]
 
 /**
@@ -68,7 +115,11 @@ export const DEFAULT_MODELS: readonly OpencodeModelConfig[] = [
 export interface Config {
   /** 界面显示名称，默认 `OpenCode Zen`。 */
   channelName?: string
-  /** 凭据；省略时为匿名通道的 `public`。填自己的 key 时请求走该凭据。 */
+  /**
+   * 凭据；省略时为匿名通道的 `public`，填自己的 key 时整份凭据被替换。
+   * 它是 `role('secret')` 字段：设置描述从不携带它的值，只有持有完整配置的
+   * 宿主能读到，设置页因此只能写入、不能回显（包括内置的 `public`）。
+   */
   apiKey?: string
   /** 端点基址，默认官方 Zen；可改为自建网关。 */
   baseURL?: string
@@ -91,13 +142,17 @@ const modelConfig: z<OpencodeModelConfig> = z.object({
   name: z.string(),
   contextWindow: z.number().step(1).min(1),
   maxTokens: z.number().step(1).min(1),
-  reasoningEfforts: z.array(z.string()),
+  // 数组字段会被 Schema 物化：省略写的模型回来的是 []，因此“没声明”也按空数组表达，
+  // 长度约束交给 resolver（空模态回退纯文本，空档位就是不给选择器提供档位）。
+  inputModalities: z.array(z.union(MODEL_MODALITIES)),
+  reasoning: z.boolean(),
+  reasoningEfforts: z.array(z.union(REASONING_EFFORT_LEVELS)),
 })
 
 /** 运行时 schema；同时是设置分节的校验结构。 */
 export const Config: z<Config> = z.object({
   channelName: z.string().min(1).max(64).pattern(/\S/u).default(DEFAULT_CHANNEL_NAME),
-  apiKey: z.string().default(DEFAULT_API_KEY),
+  apiKey: z.string().role('secret').default(DEFAULT_API_KEY),
   baseURL: z.string().default(DEFAULT_BASE_URL),
   models: z.array(modelConfig).default(DEFAULT_MODELS.map(model => ({ ...model }))),
   defaultContextWindow: z.number().step(1).min(1).default(262_144),
@@ -109,12 +164,17 @@ export const Config: z<Config> = z.object({
   retryPolicy: RetryPolicySchema,
 })
 
-/** 解析后的一条目录条目，容量与显示名都已定型。 */
+/** 解析后的一条目录条目，容量、模态与推理能力都已定型。 */
 export interface ResolvedOpencodeModel {
   id: string
   name: string
   contextWindow: number
   maxTokens: number
+  /** 该模型接受的输入模态；省略字段的条目按纯文本处理。 */
+  inputModalities: readonly ModelModality[]
+  /** 该模型是否具备推理能力。 */
+  reasoning: boolean
+  /** 选择器提供的推理档位；空表示不提供档位。 */
   reasoningEfforts: readonly string[]
 }
 
@@ -165,12 +225,21 @@ export function resolveOpencodeOptions(config: Config): ResolvedOpencodeOptions 
     if (model.id.length === 0) throw new Error('llm-opencode: model ids must be non-empty')
     if (seen.has(model.id)) throw new Error(`llm-opencode: lists model "${model.id}" more than once`)
     seen.add(model.id)
+    const reasoning = model.reasoning ?? false
+    const efforts = model.reasoningEfforts ?? []
+    const modalities = model.inputModalities ?? []
+    // 声明了档位却不具备推理能力是自相矛盾的分节：选择器会给出无法转发的档位。
+    if (!reasoning && efforts.length > 0) {
+      throw new Error(`llm-opencode: model "${model.id}" lists reasoningEfforts without reasoning`)
+    }
     return {
       id: model.id,
       name: model.name ?? model.id,
       contextWindow: model.contextWindow ?? config.defaultContextWindow ?? 262_144,
       maxTokens: model.maxTokens ?? config.defaultMaxTokens ?? 32_768,
-      reasoningEfforts: model.reasoningEfforts ?? [],
+      inputModalities: [...(modalities.length > 0 ? modalities : DEFAULT_MODEL_MODALITIES)],
+      reasoning,
+      reasoningEfforts: [...efforts],
     }
   })
   const apiKey = config.apiKey ?? DEFAULT_API_KEY

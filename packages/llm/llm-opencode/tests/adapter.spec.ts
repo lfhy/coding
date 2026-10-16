@@ -20,7 +20,14 @@ import { resolveOpencodeOptions } from '../src/config.ts'
 
 /** 一次 streamSimple 调用的记录。 */
 interface Call {
-  model: { id: string; baseUrl: string; contextWindow: number }
+  model: {
+    id: string
+    baseUrl: string
+    contextWindow: number
+    input: readonly string[]
+    reasoning: boolean
+    thinkingLevelMap?: Readonly<Record<string, string | null>>
+  }
   context: unknown
   options: Record<string, unknown>
 }
@@ -114,6 +121,11 @@ describe('adapter wire shape', () => {
     expect(headers['x-opencode-request']).toMatch(/^req_/)
     expect(options.apiKey).toBe('public')
     expect(call.model.baseUrl).toBe('https://opencode.ai/zen/v1')
+    // 能力声明进入 pi-ai 的模型描述符：模态决定图片是否内联。
+    expect(call.model.input).toEqual(['text', 'image'])
+    expect(call.model.reasoning).toBe(true)
+    expect(call.model.thinkingLevelMap).toBeUndefined()
+    expect(options.reasoning).toBeUndefined()
 
     // onPayload 是 pi-ai 在序列化后改写请求体的钩子：这里断言它确实补了门工具。
     const shape = options.onPayload as (payload: unknown) => unknown
@@ -122,6 +134,39 @@ describe('adapter wire shape', () => {
 
     expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
     expect(chunks.at(-2)).toMatchObject({ type: 'usage', usage: { inputTokens: 5, outputTokens: 2 } })
+  })
+
+  it('把选中的推理档位转发给 pi-ai，并把未声明的档位钉成不支持', async () => {
+    const calls: Call[] = []
+    const ctx = await harness(textEvents('hi'), calls)
+    for await (const _chunk of ctx.llm.stream({
+      provider: 'fake-route',
+      model: 'deepseek-v4.1-flash-free',
+      messages: [createUserMessage({ content: [{ type: 'text', text: 'think' }], source: { kind: 'user' } })],
+      reasoningEffort: ReasoningEffortId('high'),
+    })) { /* drain */ }
+
+    const call = calls[0]!
+    expect(call.options.reasoning).toBe('high')
+    // 声明的档位带上自身拼写（pi-ai 据此发出 reasoning_effort），未声明的档位钉成 null，
+    // 因此选择器给出的档位都能真正转发。
+    expect(call.model.thinkingLevelMap).toEqual({
+      off: null, minimal: null, low: 'low', medium: null, high: 'high', xhigh: null, max: 'max',
+    })
+    expect(call.model.input).toEqual(['text', 'image'])
+  })
+
+  it('没有档位声明的模型不携带档位映射，选择器只留提供方默认', async () => {
+    const calls: Call[] = []
+    const ctx = await harness(textEvents('hi'), calls)
+    for await (const _chunk of ctx.llm.stream({
+      provider: 'fake-route',
+      model: 'nemotron-3.5-lightning-free',
+      messages: [createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' } })],
+    })) { /* drain */ }
+    expect(calls[0]?.model.input).toEqual(['text'])
+    expect(calls[0]?.model.reasoning).toBe(true)
+    expect(calls[0]?.model.thinkingLevelMap).toBeUndefined()
   })
 
   it('同一会话的两次调用复用同一个会话 id，请求 id 各不相同', async () => {

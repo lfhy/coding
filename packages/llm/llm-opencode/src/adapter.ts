@@ -11,7 +11,7 @@
  */
 
 import { createProvider } from '@earendil-works/pi-ai'
-import type { Api, Model, Provider } from '@earendil-works/pi-ai'
+import type { Api, Model, Provider, ThinkingLevel, ThinkingLevelMap } from '@earendil-works/pi-ai'
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy'
 import {
   contentHasImage,
@@ -42,7 +42,7 @@ import type {
   ToolCall as PiToolCall,
 } from '@earendil-works/pi-ai'
 import type { ResolvedOpencodeOptions, ResolvedOpencodeModel } from './config.ts'
-import { PROVIDER_ID } from './config.ts'
+import { DEFAULT_MODEL_MODALITIES, PROVIDER_ID, REASONING_EFFORT_LEVELS } from './config.ts'
 import { deriveRequestIds, disguiseHeaders } from './ids.ts'
 import { ensureFreeLaneShape } from './free-lane.ts'
 import { toStreamChunks } from './stream.ts'
@@ -90,7 +90,22 @@ function requestHeaders(
 
 /** 把一条已解析的目录条目投影成 seam 的模型信息。 */
 function modelInfo(provider: string, model: ResolvedOpencodeModel): LlmModelInfo {
-  return { provider, id: model.id, name: model.name, inputModalities: ['text'] }
+  return { provider, id: model.id, name: model.name, inputModalities: [...model.inputModalities] }
+}
+
+/**
+ * 声明的档位映射成 pi-ai 的 `thinkingLevelMap`：声明过的档位带上自身拼写，
+ * 未声明的档位钉成 `null`（不支持），因此选择器给出的档位与真正能转发的
+ * `reasoning_effort` 一一对应。`off` 是唯一不进映射的档位——它的语义是省略参数，
+ * 由 pi-ai 按“支持但不发值”处理。
+ * @param efforts - 该模型声明的档位。
+ * @returns pi-ai 读档位的映射。
+ */
+function thinkingLevelMap(efforts: readonly string[]): ThinkingLevelMap {
+  return Object.fromEntries(REASONING_EFFORT_LEVELS.map(level => [
+    level,
+    efforts.includes(level) ? (level === 'off' ? undefined : level) : null,
+  ]).filter(([, wire]) => wire !== undefined))
 }
 
 /** 自由文本内容：把 harness 文本块摊平，图片另行处理。 */
@@ -282,7 +297,7 @@ export class OpencodeZenAdapter extends LlmAdapter {
   ): Promise<LlmResolvedModelInfo> {
     const options = this.config.options()
     const configured = options.models.find(entry => entry.id === model)
-    // 未列出的模型按纯文本处理：不把未经验证的视觉输入持久写进会话。
+    // 未列出的模型按纯文本、无推理档位处理：不把未经验证的能力持久写进会话。
     const efforts = (configured?.reasoningEfforts ?? []).map(effort => ({
       id: ReasoningEffortId(effort),
       name: `${effort.charAt(0).toUpperCase()}${effort.slice(1)}`,
@@ -314,6 +329,9 @@ export class OpencodeZenAdapter extends LlmAdapter {
         )
       }
     }
+    // `off` 与“未选择档位”都表示不点名档位：pi-ai 会直接省略 `reasoning_effort`，
+    // 让模型按自身默认行为推理。
+    const reasoning = effort === undefined || effort === 'off' ? undefined : effort as ThinkingLevel
     const containsImage = options.messages.some(message => contentHasImage(message.content))
     const attachments = containsImage ? this.config.resolveAttachments?.() : undefined
     const ids = deriveRequestIds(options.messages)
@@ -334,6 +352,7 @@ export class OpencodeZenAdapter extends LlmAdapter {
         // pi-ai 没有对应选项，因此改写在序列化后的请求体上进行。
         onPayload: (payload: unknown) => ensureFreeLaneShape(payload),
         maxRetries: 0,
+        ...reasoning === undefined ? {} : { reasoning },
         ...options.temperature === undefined ? {} : { temperature: options.temperature },
         ...options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens },
         signal: watchdog.signal,
@@ -405,8 +424,14 @@ export class OpencodeZenAdapter extends LlmAdapter {
       api: 'openai-completions',
       provider: PROVIDER_ID,
       baseUrl: connection.baseURL,
-      reasoning: (configured?.reasoningEfforts ?? []).length > 0,
-      input: ['text'],
+      // 能力声明决定 pi-ai 的请求形状：模态决定图片是否内联，档位映射决定
+      // `reasoning_effort` 能否发出。恒推理但没有档位的模型仍然声明 reasoning，
+      // 这样它的推理增量不会被当成普通文本丢弃。
+      reasoning: configured?.reasoning ?? false,
+      ...configured === undefined || configured.reasoningEfforts.length === 0
+        ? {}
+        : { thinkingLevelMap: thinkingLevelMap(configured.reasoningEfforts) },
+      input: [...(configured?.inputModalities ?? DEFAULT_MODEL_MODALITIES)],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       contextWindow: configured?.contextWindow ?? 262_144,
       maxTokens: configured?.maxTokens ?? 32_768,

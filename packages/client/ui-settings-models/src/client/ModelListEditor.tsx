@@ -28,29 +28,91 @@ export type ModelDraft = DeepSeekModelDraft
 
 type Capability = 'supported' | 'unsupported' | 'unknown'
 
+/**
+ * 精选家族在模型行上的形态差异。缺席的模态字段表示该家族的 schema 根本没有
+ * 这个字段——那种情况下页面不推断输入模态，也不会写一个 schema 不认识的值。
+ */
+interface ModelFamily {
+  /** 声明输入模态的字段名；缺席表示该家族没有模态字段。 */
+  modalityKey?: 'inputModalities' | 'input'
+  /** 推理档位以字符串数组存储；false 表示 pi-ai 的档位映射对象。 */
+  arrayEfforts: boolean
+  /** 模型设置窗口提供的档位。 */
+  levels: readonly string[]
+  /**
+   * 声明“具备推理能力”的布尔字段名。opencode 的模型可以恒推理而没有档位可选，
+   * 因此它的能力与档位是两个独立声明；其余家族只按档位列表回答。
+   */
+  reasoningFlag?: 'reasoning'
+}
+
+/** DeepSeek 目录的推理档位。 */
+const DEEPSEEK_REASONING_LEVELS = ['off', 'low', 'high', 'max'] as const
+/** OpenAI 兼容端点的推理档位；pi-ai 与 opencode 都在这个词汇里取值。 */
+const PI_AI_REASONING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
+
+/**
+ * 按 settings namespace 选择模型行的字段形态：未知 namespace 沿用 pi-ai 形态，
+ * 它同时也是 `llm-pi-ai` 之外的默认。
+ * @param settingsNs - 拥有该模型目录的设置 namespace。
+ * @returns 该家族的行字段、档位存储形态与可选档位。
+ */
+function familyOf(settingsNs: string): ModelFamily {
+  if (settingsNs === 'llm-deepseek') {
+    return { modalityKey: 'inputModalities', arrayEfforts: true, levels: DEEPSEEK_REASONING_LEVELS }
+  }
+  if (settingsNs === 'llm-opencode') {
+    return {
+      modalityKey: 'inputModalities',
+      arrayEfforts: true,
+      levels: PI_AI_REASONING_LEVELS,
+      reasoningFlag: 'reasoning',
+    }
+  }
+  return { modalityKey: 'input', arrayEfforts: false, levels: PI_AI_REASONING_LEVELS }
+}
+
+/**
+ * 一行声明的推理能力。opencode 行先看能力标记：恒推理的模型只写 `reasoning: true`
+ * 而没有档位，未声明的行仍然显示为未指定而不是不支持。
+ */
+function reasoningCapability(
+  model: ModelDraft,
+  family: ModelFamily,
+  inheritedReasoningEfforts: readonly string[] | undefined,
+): Capability {
+  const declared = model['reasoningEfforts']
+  if (family.reasoningFlag !== undefined) {
+    if (Array.isArray(declared) && declared.some(level => level !== 'off')) return 'supported'
+    if (model[family.reasoningFlag] === true) return 'supported'
+    return model[family.reasoningFlag] === false ? 'unsupported' : 'unknown'
+  }
+  if (family.arrayEfforts) {
+    return Array.isArray(declared)
+      ? declared.some(level => level !== 'off') ? 'supported' : 'unsupported'
+      : inheritedReasoningEfforts === undefined
+        ? 'unknown'
+        : inheritedReasoningEfforts.some(level => level !== 'off') ? 'supported' : 'unsupported'
+  }
+  return declared === false
+    ? 'unsupported'
+    : typeof declared === 'object' && declared !== null && !Array.isArray(declared)
+      ? Object.keys(declared).some(level => level !== 'off') ? 'supported' : 'unsupported'
+      : 'unknown'
+}
+
 /** 只投影显式声明或已知渠道继承的模型能力；缺失的 pi-ai catalog 元数据不等于不支持。 */
 export function modelCapabilities(
   model: ModelDraft,
   settingsNs: string,
   inheritedReasoningEfforts?: readonly string[],
 ): { vision: Capability; reasoning: Capability } {
-  const input = model[settingsNs === 'llm-deepseek' ? 'inputModalities' : 'input']
+  const family = familyOf(settingsNs)
+  const input = family.modalityKey === undefined ? undefined : model[family.modalityKey]
   const vision: Capability = Array.isArray(input) && input.length > 0
     ? input.includes('image') ? 'supported' : 'unsupported'
     : 'unknown'
-  const declared = model['reasoningEfforts']
-  const reasoning: Capability = settingsNs === 'llm-deepseek'
-    ? Array.isArray(declared)
-      ? declared.some(level => level !== 'off') ? 'supported' : 'unsupported'
-      : inheritedReasoningEfforts === undefined
-        ? 'unknown'
-        : inheritedReasoningEfforts.some(level => level !== 'off') ? 'supported' : 'unsupported'
-    : declared === false
-      ? 'unsupported'
-      : typeof declared === 'object' && declared !== null && !Array.isArray(declared)
-        ? Object.keys(declared).some(level => level !== 'off') ? 'supported' : 'unsupported'
-        : 'unknown'
-  return { vision, reasoning }
+  return { vision, reasoning: reasoningCapability(model, family, inheritedReasoningEfforts) }
 }
 
 /** A row's text field, or the empty string when unset or not a string. */
@@ -152,10 +214,6 @@ const CAPACITY_HINT: Readonly<Record<CapacityField, string>> = {
   maxTokens: '32K',
 }
 
-/** 只提供各适配器接受的档位；pi-ai 的映射值仍保留在模型草稿中。 */
-const DEEPSEEK_REASONING_LEVELS = ['off', 'low', 'high', 'max'] as const
-const PI_AI_REASONING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
-
 /**
  * Spell a stored count for a field that may be unset. The spelling itself is
  * {@link formatCapacity}, shared with the DeepSeek catalog editor so both
@@ -174,9 +232,13 @@ function adopt(candidate: DiscoveredModelView, namespace: string, reasoningDisab
     ...candidate.name === undefined ? {} : { name: candidate.name },
     ...candidate.contextWindow === undefined ? {} : { contextWindow: candidate.contextWindow },
     ...candidate.maxTokens === undefined ? {} : { maxTokens: candidate.maxTokens },
-    ...namespace === 'llm-deepseek'
-      ? { inputModalities: ['text', 'image'], reasoningEfforts: reasoningDisabled ? ['off'] : ['off', 'low', 'high', 'max'] }
-      : { input: ['text', 'image'], reasoningEfforts: { off: null, low: 'low', high: 'high', max: 'max' } },
+    // opencode 的模型行只有推理档位这一个能力字段，而发现协议不带能力元数据：
+    // 导入的行保持未声明，由用户在模型设置窗口里显式打开。
+    ...namespace === 'llm-opencode'
+      ? {}
+      : namespace === 'llm-deepseek'
+        ? { inputModalities: ['text', 'image'], reasoningEfforts: reasoningDisabled ? ['off'] : ['off', 'low', 'high', 'max'] }
+        : { input: ['text', 'image'], reasoningEfforts: { off: null, low: 'low', high: 'high', max: 'max' } },
   }
 }
 
@@ -257,9 +319,14 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
       || invalidCapacity('contextWindow') || invalidCapacity('maxTokens')) return
     if (draftDirty) {
       // 行 ID／名称仍可在窗口打开期间编辑；提交只覆盖模型设置窗口拥有的字段。
-      const inputKey = probe.settingsNs === 'llm-deepseek' ? 'inputModalities' : 'input'
-      const fields = { [inputKey]: draft[inputKey], reasoningEfforts: draft['reasoningEfforts'],
-        contextWindow: draft['contextWindow'], maxTokens: draft['maxTokens'] }
+      const { modalityKey, reasoningFlag } = familyOf(probe.settingsNs)
+      const fields = {
+        ...modalityKey === undefined ? {} : { [modalityKey]: draft[modalityKey] },
+        ...reasoningFlag === undefined ? {} : { [reasoningFlag]: draft[reasoningFlag] },
+        reasoningEfforts: draft['reasoningEfforts'],
+        contextWindow: draft['contextWindow'],
+        maxTokens: draft['maxTokens'],
+      }
       onChange(models.map((model, index) => index === openedIndex ? withModelFields(model, fields) : model))
     }
     closeSettings()
@@ -272,7 +339,9 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
 
   useEffect(() => {
     if (openedIndex === null) return
-    if (firstFieldRef.current?.disabled === false) firstFieldRef.current.focus({ preventScroll: true })
+    // 没有模态开关的家族（opencode）把首个焦点交给推理开关；两个都没有时焦点落在窗口本体。
+    const first = firstFieldRef.current ?? reasoningToggleRef.current
+    if (first?.disabled === false) first.focus({ preventScroll: true })
     else modalBodyRef.current?.focus({ preventScroll: true })
   }, [openedIndex])
 
@@ -520,41 +589,57 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
             const index = openedIndex
             const model = draft
             if (model === null) return null
-            const deepseek = probe.settingsNs === 'llm-deepseek'
+            const family = familyOf(probe.settingsNs)
+            const flagField = family.reasoningFlag
             const declared = model['reasoningEfforts']
-            const reasoningOn = deepseek ? effortsOf(model).some(level => level !== 'off')
+            const declaredLevels = family.arrayEfforts
+              ? effortsOf(model)
               : typeof declared === 'object' && declared !== null && !Array.isArray(declared)
-                  && Object.keys(declared).some(level => level !== 'off')
-            const selectedLevels = deepseek ? effortsOf(model)
+                ? Object.keys(declared) : []
+            // 能力标记与档位各自独立：标记为真时即使没有档位，这一行也算声明了推理能力。
+            const reasoningOn = flagField === undefined
+              ? declaredLevels.some(level => level !== 'off')
+              : model[flagField] === true || declaredLevels.some(level => level !== 'off')
+            const selectedLevels = family.arrayEfforts ? effortsOf(model)
               : typeof declared === 'object' && declared !== null && !Array.isArray(declared)
                 ? Object.keys(declared) : ['off']
-            const visionOn = Array.isArray(model[deepseek ? 'inputModalities' : 'input'])
-                && (model[deepseek ? 'inputModalities' : 'input'] as string[]).includes('image')
+            const visionField = family.modalityKey
+            const visionOn = visionField !== undefined && Array.isArray(model[visionField])
+              && (model[visionField] as string[]).includes('image')
             return <>
               <div className={styles['capabilityControls']}>
-                <button type="button" ref={firstFieldRef} className={styles['capabilityToggle']}
-                  aria-label={t('visionSupport')} aria-pressed={visionOn} disabled={disabled}
-                  onClick={() => { patchDraft({ [deepseek ? 'inputModalities' : 'input']:
-                      visionOn ? ['text'] : ['text', 'image'] }) }}>
-                  <Icon name="model-vision" size={16} /><span>{t('visionSupport')}</span>
-                </button>
+                {visionField === undefined ? null : (
+                  <button type="button" ref={firstFieldRef} className={styles['capabilityToggle']}
+                    aria-label={t('visionSupport')} aria-pressed={visionOn} disabled={disabled}
+                    onClick={() => { patchDraft({ [visionField]: visionOn ? ['text'] : ['text', 'image'] }) }}>
+                    <Icon name="model-vision" size={16} /><span>{t('visionSupport')}</span>
+                  </button>
+                )}
                 <button type="button" ref={reasoningToggleRef} className={styles['capabilityToggle']}
                   aria-label={t('reasoningSupport')} aria-pressed={reasoningOn}
                   disabled={disabled || props.reasoningDisabled === true}
                   onClick={() => {
+                    if (flagField !== undefined) {
+                      // 关掉能力标记时同时撤掉档位：留下不会转发的档位只会误导选择器。
+                      setLevelsOpen(false)
+                      patchDraft(reasoningOn
+                        ? { [flagField]: false, reasoningEfforts: undefined }
+                        : { [flagField]: true })
+                      return
+                    }
                     if (!reasoningOn) {
-                      const restored = deepseek
+                      const restored = family.arrayEfforts
                         ? Array.isArray(rememberedReasoning) && rememberedReasoning.some(level => level !== 'off')
-                          ? rememberedReasoning : ['off', 'low', 'high', 'max']
+                          ? rememberedReasoning : [...family.levels]
                         : typeof rememberedReasoning === 'object' && rememberedReasoning !== null
                             && !Array.isArray(rememberedReasoning)
                             && Object.keys(rememberedReasoning).some(level => level !== 'off')
                           ? rememberedReasoning : { off: null, low: 'low', high: 'high', max: 'max' }
                       patchDraft({ reasoningEfforts: restored })
                     } else {
-                      setRememberedReasoning(deepseek ? effortsOf(model) : declared)
+                      setRememberedReasoning(family.arrayEfforts ? effortsOf(model) : declared)
                       setLevelsOpen(false)
-                      patchDraft({ reasoningEfforts: deepseek ? ['off'] : false })
+                      patchDraft({ reasoningEfforts: family.arrayEfforts ? ['off'] : false })
                     }
                   }}>
                   <Icon name="model-reasoning" size={16} /><span>{t('reasoningSupport')}</span>
@@ -566,11 +651,11 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                   portalContainer={levelsTriggerRef.current?.closest('[role="dialog"]') ?? null}
                   className={styles['reasoningDropdown'] ?? ''}
                   selectedIds={selectedLevels}
-                  items={(deepseek ? DEEPSEEK_REASONING_LEVELS : PI_AI_REASONING_LEVELS)
+                  items={family.levels
                     .map(level => ({ id: level, label: level === 'off' ? t('reasoningNone') : level }))}
                   onClose={() => { setLevelsOpen(false) }}
                   onSelect={(level) => {
-                    if (deepseek) {
+                    if (family.arrayEfforts) {
                       const next = selectedLevels.includes(level)
                         ? selectedLevels.filter(value => value !== level) : [...selectedLevels, level]
                       if (next.every(value => value === 'off')) {

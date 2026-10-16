@@ -14,7 +14,9 @@
 | `deepseek-v4.1-flash-free` | Deepseek V4.1 Flash |
 | `nemotron-3.5-lightning-free` | Nemotron 3.5 Lightning |
 
-在**设置 → 模型**里选中该渠道后，可以像其他渠道一样改**渠道名称**、**API 地址**、**API 密钥**和模型：填自己的 key 就换成你自己的凭据，改地址就指向自建网关，模型列表也可以增删。这些字段都写在 `$DSH_HOME/settings.yaml` 的 `llm-opencode` 分节里，改动在下一次请求生效。
+三款模型都会推理：DeepSeek V4.1 Flash 可以在设置里选 `low`、`high`、`max` 档位，另外两款按模型自身的默认行为推理、没有档位可选。MiMo V2.6 Flash 与 DeepSeek V4.1 Flash 接受图片输入，Nemotron 3.5 Lightning 只接受文本；模型设置窗口里的视觉与推理开关改的就是这些声明。
+
+在**设置 → 模型**里选中该渠道后，可以像其他渠道一样改**渠道名称**、**API 地址**、**API 密钥**和模型：填自己的 key 就换成你自己的凭据，改地址就指向自建网关，模型列表也可以增删。这些字段都写在 `$DSH_HOME/settings.yaml` 的 `llm-opencode` 分节里，改动在下一次请求生效。密钥字段只写不回显（包括内置的 `public`），留空表示保持当前值。
 
 该通道由上游按出口 IP 限流并按地区提供：当前网络被地区封锁时请求会以 `REGION_BLOCKED` 失败，上游不再接受本客户端指纹时以 `FREE_TIER_RESTRICTED` 失败。两种失败都不重试；换一个当前地区可用的模型或换用其他渠道即可。
 

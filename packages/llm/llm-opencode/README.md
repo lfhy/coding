@@ -8,6 +8,10 @@
 每个请求都与官方 OpenCode CLI 同形：相同的 User-Agent、按会话派生的关联头，以及该通道
 要求的 agent 形状工具表。这三样都在本包内，不依赖进程环境或外部 sidecar。
 
+本插件同时把 `opencode-zen` 声明进可配置提供方目录，且声明时整节即 profile，因此
+**设置 → 模型**无需先在 `settings.yaml` 里写分节就会列出这条已配置渠道，并允许改渠道名称、
+端点、密钥与模型；渠道名称变化会同时刷新路由名与目录名，路由本身保持同一条。
+
 ## 配置
 
 插件配置同时也是 `llm-opencode` 设置分节的结构。所有字段都可省略，省略时使用内置默认值，
@@ -25,30 +29,39 @@
         name: Mimo V2.6 Flash
         contextWindow: 1048576
         maxTokens: 32768
+        inputModalities: [text, image]
+        reasoning: true
 ```
 
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
 | `channelName` | `OpenCode Zen` | 选择器与设置页显示的渠道名称。 |
-| `apiKey` | `public` | 匿名通道的凭据字面量；填自己的 key 时整份凭据被替换。 |
+| `apiKey` | `public` | 匿名通道的凭据字面量；填自己的 key 时整份凭据被替换。它是 `role('secret')` 字段：设置描述从不携带它的值，设置页只能写入、不能回显。 |
 | `baseURL` | `https://opencode.ai/zen/v1` | 端点基址，可改指自建网关。 |
-| `models` | 见下 | 目录；每个模型可写 `name`、`contextWindow`、`maxTokens`、`reasoningEfforts`。 |
+| `models` | 见下 | 目录；每个模型可写 `name`、`contextWindow`、`maxTokens`、`inputModalities`、`reasoning`、`reasoningEfforts`。 |
 | `defaultContextWindow` | `262144` | 模型未写容量时的回退。 |
 | `defaultMaxTokens` | `32768` | 模型未写输出上限时的回退。 |
 | `streamIdleTimeoutMs` | `300000` | 未完成的流读取允许的空闲时长。 |
 | `maxRequestImageBytes` | 20 MiB | 单次请求 base64 图片载荷上限。 |
 | `retryPolicy` | normal / 5 次 | 提供方自有的重试策略，由 `dsh-llm-retry` 执行。 |
 
-内置目录是三个免费模型，显示名固定，不随上游元数据漂移：
+模型的三个能力字段决定请求怎么发：
 
-| 模型 id | 显示名 | 上下文 | 输出上限 |
-| --- | --- | --- | --- |
-| `mimo-v2.6-flash-free` | Mimo V2.6 Flash | 1,048,576 | 32,768 |
-| `deepseek-v4.1-flash-free` | Deepseek V4.1 Flash | 262,144 | 32,768 |
-| `nemotron-3.5-lightning-free` | Nemotron 3.5 Lightning | 262,144 | 32,768 |
+- `inputModalities`（`text` / `image`）声明该模型接受什么输入；含 `image` 时图片才会内联进请求，否则图片按纯文本模型的常规处理被拒绝或降级。省略时按纯文本处理。
+- `reasoning` 声明该模型是否具备推理能力；具备时它的推理增量会作为推理内容解析，而不是混进正文。
+- `reasoningEfforts` 列出可以选择的档位，取值来自 `off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`；选中的档位换算成请求体里的 `reasoning_effort`，`off` 表示省略该参数。省略该字段的模型不提供档位选择，只有提供方默认这一项。声明了档位却没有声明 `reasoning` 的分节在写入处被拒绝，因为那些档位无法转发。
+
+内置目录是三个免费模型，显示名固定、能力取自 models.dev 的提供方元数据：
+
+| 模型 id | 显示名 | 上下文 | 输出上限 | 图片输入 | 推理 |
+| --- | --- | --- | --- | --- | --- |
+| `mimo-v2.6-flash-free` | Mimo V2.6 Flash | 1,048,576 | 32,768 | 是 | 恒开，无档位 |
+| `deepseek-v4.1-flash-free` | Deepseek V4.1 Flash | 262,144 | 32,768 | 是 | `low` / `high` / `max` |
+| `nemotron-3.5-lightning-free` | Nemotron 3.5 Lightning | 262,144 | 32,768 | 否 | 恒开，无档位 |
 
 模型 id、渠道名称、凭据与端点都可以在设置页改；改动在下一次请求生效，不需要重启。
-模型未声明 `reasoningEfforts` 时不报告推理能力，选择器只提供提供方默认一项。
+密钥字段只写不回显：描述从不返回 `apiKey`（包括内置的 `public`），输入留空即继续使用当前值。
+没有档位声明的模型不报告推理档位，选择器只提供提供方默认一项。
 
 ## 与上游的协议约定
 
@@ -120,7 +133,10 @@ tokenization 计入视觉 token；被降级为占位的图片不计视觉 token�
   不再接受本客户端的指纹，需要跟随上游更新指纹而不仅是改配置。
 - **只支持 `openai-completions` 一种线协议**：Zen 上少数模型只在 `/responses` 上服务，
   本适配器不为它们切换协议；这类模型不在内置目录里。
-- **图片能力按模型声明**：内置三个模型都只声明文本输入。要向它们发送图片需要一个声明了
-  `image` 的模型条目，并自行确认上游接受。
+- **图片能力按模型声明**：只有声明了 `image` 输入的模型（内置目录里是 MiMo 与 DeepSeek V4.1 Flash）会内联图片；未声明的模型按纯文本处理，图片不会发给它。
 - **目录不自我刷新**：服务的模型始终来自 `models` 配置；上游新增或下架的免费模型不会
-  自动进入选择器，需要用户显式编辑。
+  自动进入选择器，需要用户显式编辑。本适配器没有注册模型发现，因此设置页的
+  **获取可用模型**在这条渠道上报“没有为 `llm-opencode` 注册模型发现”，模型需手工增删。
+- **设置页的模型行没有模态字段**：本适配器的模型只声明 `reasoningEfforts`，所以那里的
+  模型设置窗口不提供视觉开关；要声明图片输入需直接在 `settings.yaml` 里写该模型条目，
+  并自行确认上游接受。
