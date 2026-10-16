@@ -478,7 +478,10 @@ export function ModelSelect(
                     onChange={(event) => { setQuery(event.currentTarget.value) }}
                   />
                 </label>
-                {state.status === 'loading' && <div role="status" className={css.status}>{t('status.loading')}</div>}
+                {/* 只有还没有目录可显示时才报“正在刷新”：每次展开都会刷新一次，
+                    在已加载的列表上方再压一行状态只会读成卡住。 */}
+                {state.status === 'loading' && state.groups.length === 0
+                  && <div role="status" className={css.status}>{t('status.loading')}</div>}
                 {state.error !== null && lastActionRef.current === 'load' && (
                   <div role="alert" className={css.error}>
                     <span>{t('error.action', { message: state.error })}</span>

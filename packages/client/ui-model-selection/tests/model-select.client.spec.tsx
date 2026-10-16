@@ -56,6 +56,29 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+describe('ModelSelect 刷新状态', () => {
+  const openMenu = (): HTMLElement => {
+    fireEvent.click(screen.getByRole('button', { name: /选择模型|Select model/ }))
+    return screen.getByRole('dialog')
+  }
+
+  it('冷启动没有目录时报告正在刷新', () => {
+    const directory = createSnapshotStore<ModelDirectoryState>(state({
+      current: null, groups: [], status: 'loading', routable: null,
+    }))
+    render(<ModelSelect locked={false} available directory={directory} load={vi.fn()} select={vi.fn()} t={t} />)
+    expect(within(openMenu()).getByText(zh['status.loading'])).toBeTruthy()
+  })
+
+  it('刷新已有列表时不压状态行，列表照常可选', () => {
+    const directory = createSnapshotStore<ModelDirectoryState>(state({ status: 'loading' }))
+    render(<ModelSelect locked={false} available directory={directory} load={vi.fn()} select={vi.fn()} t={t} />)
+    const menu = openMenu()
+    expect(within(menu).queryByText(zh['status.loading'])).toBeNull()
+    expect(within(menu).getByRole('button', { name: /DeepSeek-V4-Flash/ })).toBeTruthy()
+  })
+})
+
 describe('ModelSelect reasoning effort', () => {
   it('opens compact effort controls, submits discrete adapter values, and resets to model default', async () => {
     const directory = createSnapshotStore<ModelDirectoryState>(state())

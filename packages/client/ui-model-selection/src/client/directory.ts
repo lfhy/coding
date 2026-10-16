@@ -33,6 +33,11 @@ export interface ModelDirectoryState {
   error: string | null
 }
 
+/** 传输层拒绝的文本；错误结果与异常都落到同一面状态上。 */
+function failureText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
 /** One session's shared directory controller; disposed with the session scope. */
 export class ModelDirectory {
   /** The shared snapshot both entries render from (uSES-safe store). */
@@ -64,7 +69,17 @@ export class ModelDirectory {
     this.assertAvailable()
     const generation = ++this.generation
     this.store.update((s) => { s.status = 'loading'; s.error = null })
-    const { result } = await this.sessions.models({ sessionId: this.sessionId })
+    let result: Awaited<ReturnType<Pick<IApiClient['sessions'], 'models'>['models']>>['result']
+    try {
+      ({ result } = await this.sessions.models({ sessionId: this.sessionId }))
+    } catch (error: unknown) {
+      // 传输层拒绝（连接换代、请求中止、Host 已退出）不会回结果，因此这里必须自己
+      // 落到错误态：状态机会停在 loading，选择器会一直显示「正在刷新模型列表」。
+      if (!this.disposed && generation === this.generation) {
+        this.store.update((s) => { s.status = 'error'; s.error = failureText(error) })
+      }
+      throw error
+    }
     if (this.disposed || generation !== this.generation) {
       if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
       return result.value
@@ -95,14 +110,23 @@ export class ModelDirectory {
     this.assertAvailable()
     const generation = ++this.generation
     this.store.update((s) => { s.status = 'selecting'; s.error = null })
-    const { result } = await this.sessions.selectModel({
-      sessionId: this.sessionId,
-      provider: selection.provider,
-      model: selection.model,
-      ...selection.reasoningEffort === undefined
-        ? {}
-        : { reasoningEffort: selection.reasoningEffort },
-    })
+    let result: Awaited<ReturnType<Pick<IApiClient['sessions'], 'selectModel'>['selectModel']>>['result']
+    try {
+      ({ result } = await this.sessions.selectModel({
+        sessionId: this.sessionId,
+        provider: selection.provider,
+        model: selection.model,
+        ...selection.reasoningEffort === undefined
+          ? {}
+          : { reasoningEffort: selection.reasoningEffort },
+      }))
+    } catch (error: unknown) {
+      // 同 load：被拒绝的调用不清状态，输入区会一直停在“选择中”而不能再次提交。
+      if (!this.disposed && generation === this.generation) {
+        this.store.update((s) => { s.status = 'error'; s.error = failureText(error) })
+      }
+      throw error
+    }
     if (this.disposed || generation !== this.generation) {
       if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
       return

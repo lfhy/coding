@@ -59,15 +59,19 @@ async function bench() {
   let current: ModelSelection = { provider: 'deepseek-official', model: 'deepseek-v4-flash' }
   let groups = GROUPS
   const calls = { models: 0, select: 0 }
+  // 传输层拒绝（连接换代、请求中止）不会回结果，因此假宿主也要能表现这一态。
+  const transport = { models: false, select: false }
   ctx.provide('connection', { api: { sessions: {
     models: () => {
       calls.models += 1
+      if (transport.models) return Promise.reject(new Error('connection closed'))
       return Promise.resolve({
         result: { ok: true as const, value: { current, routable, groups, failures: [] } },
       })
     },
     selectModel: (payload: { provider: string; model: string; reasoningEffort?: string }) => {
       calls.select += 1
+      if (transport.select) return Promise.reject(new Error('connection closed'))
       current = {
         provider: payload.provider,
         model: payload.model,
@@ -126,7 +130,7 @@ async function bench() {
     return handle
   }
   return {
-    ctx, fiber, mint, calls,
+    ctx, fiber, mint, calls, transport,
     contribution: () => contribution!,
     seat: () => seats.get('conversation.input.model')!,
     hostCurrent: () => current,
@@ -195,6 +199,36 @@ describe('ui-model-selection dual entry', () => {
     // The POPUP's next options pass reflects it without a seat-side reload.
     const options = await b.contribution().ui.options(projection('s1'), new AbortController().signal)
     expect(options.find((o: SelectOption) => o.label === 'DeepSeek-V4-Pro')).toMatchObject({ active: true })
+  })
+
+  it('a rejected refresh leaves the directory in an error state instead of a permanent loading state', async () => {
+    const b = await bench()
+    b.mint('s1')
+    const face = b.seat().inject!(sid('s1'))
+    b.transport.models = true
+    face.load()
+    await Promise.resolve()
+    await Promise.resolve()
+    // 被拒绝的 RPC 不会回结果；状态必须落到 error，否则选择器会一直显示“正在刷新模型列表”。
+    expect(face.directory.getSnapshot()).toMatchObject({ status: 'error', error: 'connection closed' })
+    // 恢复后下一次加载重新给出目录。
+    b.transport.models = false
+    face.load()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(face.directory.getSnapshot()).toMatchObject({ status: 'ready', error: null })
+  })
+
+  it('a rejected selection clears the in-flight state so the seat can submit again', async () => {
+    const b = await bench()
+    b.mint('s1')
+    const face = b.seat().inject!(sid('s1'))
+    b.transport.select = true
+    expect(await face.select({ provider: 'deepseek-official', model: 'deepseek-v4-pro' })).toBe(false)
+    expect(face.directory.getSnapshot().status).not.toBe('selecting')
+    b.transport.select = false
+    expect(await face.select({ provider: 'deepseek-official', model: 'deepseek-v4-pro' })).toBe(true)
+    expect(face.directory.getSnapshot().status).toBe('ready')
   })
 
   it('a popup selection lands on the seat store — the reverse direction of the same state', async () => {
