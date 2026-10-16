@@ -45,6 +45,8 @@ const DRIVER_RESPONSE_MAX_BYTES = 8 * 1024 * 1024
 const INSTALLED_DRIVER_PATH = join('.cua-driver', 'packages', 'current', 'cua-driver')
 /** 驱动的 CLI 不回传 TCC 状态，未知就是未知，不能当成已授权。 */
 const NOT_DETERMINED: ComputerPermissionState = 'not-determined'
+/** 驱动上游默认上报匿名遥测；本客户端默认关掉，用户在环境里显式设置时以用户为准。 */
+const TELEMETRY_ENV = 'CUA_DRIVER_RS_TELEMETRY_ENABLED'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -172,7 +174,11 @@ export class CuaDriverBackend implements ComputerUseBackend {
       },
       graceMs: 1000,
       signal: combined,
-      env: { LANG: process.env.LANG ?? 'en_US.UTF-8', LC_ALL: process.env.LC_ALL ?? 'en_US.UTF-8' },
+      env: {
+        LANG: process.env.LANG ?? 'en_US.UTF-8',
+        LC_ALL: process.env.LC_ALL ?? 'en_US.UTF-8',
+        [TELEMETRY_ENV]: process.env[TELEMETRY_ENV] ?? '0',
+      },
     })
     let outcome
     try {

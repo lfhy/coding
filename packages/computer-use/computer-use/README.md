@@ -48,6 +48,7 @@
 
 `provider: 'cua-driver'` 把同一组工具接到 [trycua/cua 的 `cua-driver`](https://github.com/trycua/cua)：每次调用都是一次固定 argv 的子进程（`cua-driver call <tool> <json>`），驱动负责可访问性观察、截图与后台投递，本包只做接缝映射与失败收窄。
 该后端要求驱动已按官方安装器装好（`cua-driver doctor` 可查权限与守护进程状态），缺失时工具以带安装指引的提供方失败结束，不会退回内置 helper。
+驱动上游默认上报匿名遥测，本客户端在每次调用时把 `CUA_DRIVER_RS_TELEMETRY_ENABLED` 设为 `0`，用户在自己的环境里显式设置该变量时以用户为准。
 驱动的能力边界就是该后端的能力边界：元素点击、坐标点击、拖拽、滚动、输入、按键、观察与截图可用；设置元素值、执行可访问性动作没有对应驱动调用，会明确拒绝；驱动不画独立 Agent 光标，因此该后端下 `interaction.cursorVisualization` 默认为 `hidden`，显式要求 `visible` 会在配置校验时被拒绝。
 
 ## 权限、租约与确认
