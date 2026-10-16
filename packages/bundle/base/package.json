@@ -73,6 +73,7 @@
     "@deepseek-ai/dsh-memory-local": "workspace:^",
     "@deepseek-ai/dsh-permission-presets": "workspace:^",
     "@deepseek-ai/dsh-plan-mode": "workspace:^",
+    "@deepseek-ai/dsh-progress-reminder": "workspace:^",
     "@deepseek-ai/dsh-pwsh-sandbox": "workspace:^",
     "@deepseek-ai/dsh-repeat-tool-reminder": "workspace:^",
     "@deepseek-ai/dsh-sandbox-local": "workspace:^",

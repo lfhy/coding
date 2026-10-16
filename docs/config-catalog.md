@@ -1664,6 +1664,22 @@ export interface PlanModeConfig {
 
 Source: [`packages/plan/plan-mode/src/index.ts:67`](../packages/plan/plan-mode/src/index.ts)
 
+<a id="deepseek-aidsh-progress-reminder"></a>
+
+## `@deepseek-ai/dsh-progress-reminder`
+
+Requires: `agents`
+
+```ts config-catalog
+/** 进度提醒节奏。非法值在插件加载时失败。 */
+export interface Config {
+  /** 一个轮次内连续完成这么多次工具调用而仍无进展汇报时提醒一次；默认 {@link DEFAULT_TOOL_CALLS_PER_REMINDER}。 */
+  toolCallsPerReminder?: number
+}
+```
+
+Source: [`packages/guard/progress-reminder/src/index.ts:29`](../packages/guard/progress-reminder/src/index.ts)
+
 <a id="deepseek-aidsh-pwsh-local"></a>
 
 ## `@deepseek-ai/dsh-pwsh-local`

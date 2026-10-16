@@ -3,7 +3,7 @@
 
 # 包清单
 
-workspace 共 244 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
+workspace 共 245 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
 
 模型可见工具的名称与 schema 见 [tool-catalog.md](../tool-catalog.md)，插件可配置项见 [config-catalog.md](../config-catalog.md)，依赖边见 [module-graph.md](../module-graph.md)。
 
@@ -70,7 +70,7 @@ workspace 共 244 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/client/ui-renderer` — 负责 React 渲染层的浏览器 Cordis 插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 9）
 - `packages/client/ui-settings` — 设置领域的底座，本身不含任何呈现内容 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 5）
 - `packages/client/ui-settings-general` — 设置外壳与无特定功能归属文案 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 7）
-- `packages/client/ui-settings-models` — 模型设置、视觉理解目标与首次使用模型配置引导插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 15）
+- `packages/client/ui-settings-models` — 模型设置、视觉理解目标与首次使用模型配置引导插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 16）
 - `packages/client/ui-settings-plugin-inventory` — Web 设置中的只读**插件列表**标签页 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 3）
 - `packages/client/ui-settings-plugins` — **插件**设置分区及其**插件配置**标签页 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 5）
 - `packages/client/ui-settings-search` — 独立的「联网搜索」设置分区 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 3）
@@ -172,6 +172,7 @@ workspace 共 244 个包，按 group 分节。每行给出包目录、职责（R
 
 ## packages/guard
 
+- `packages/guard/progress-reminder` — 长任务的进度提醒上下文 入口 `src/index.ts`（tests 2）
 - `packages/guard/repeat-tool-reminder` — 这是一个仅提供建议的循环中断器，而非面向模型的工具：它不会出现在工具列表中，不会否决或改写调用，只增加一种行为 入口 `src/index.ts`（tests 1）
 - `packages/guard/timeout-policy` — 工具调用超时强制执行器：单个 `tools/execute` 环绕分发监听器，会在 `exec.signal` 上设置单次调用的协作式截止时间… 入口 `src/index.ts`（tests 1）
 

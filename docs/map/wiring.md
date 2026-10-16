@@ -286,6 +286,7 @@
 - `tool-ralph` → `@deepseek-ai/dsh-tool-ralph`
 - `tool-str-replace-editor` → `@deepseek-ai/dsh-tool-str-replace-editor`
 - `repeat-tool-reminder` → `@deepseek-ai/dsh-repeat-tool-reminder`
+- `progress-reminder` → `@deepseek-ai/dsh-progress-reminder`
 - `web` → `@deepseek-ai/dsh-web`
 - `web-search-duckduckgo` → `@deepseek-ai/dsh-web-search-duckduckgo`
 - `web-search-deepseek` → `@deepseek-ai/dsh-web-search-deepseek`

@@ -5,6 +5,7 @@
 | 包 | 职责 | ctx key |
 |---|---|---|
 | [`repeat-tool-reminder/`](repeat-tool-reminder/README.md) | 针对重复工具调用的建议性提醒 | 监听工具和 agent 事件 |
+| [`progress-reminder/`](progress-reminder/README.md) | 连续工具调用后的进度汇报提醒 | 监听 `agent/pre-step` |
 | [`timeout-policy/`](timeout-policy/README.md) | 以部署策略形式设置单次工具调用截止时间 | 注册 `tools/execute` 监听器 |
 
 提醒作为 `additionalContexts` 随 `tools/post-execute` 决策传递，并作为来源于插件的 `user/message` 事件追加记录（[工具](../../docs/subsystems/tools.md)）；跨 `dsh-timeout`、能力终止与本策略层的超时拆分记录在超时库 设计记录。

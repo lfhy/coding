@@ -423,6 +423,13 @@
         thresholds: [3, 5, 8]
         argumentsPreviewChars: 500
 
+    # 长任务里的进度汇报提醒：一个轮次内连续 15 次工具调用没有向用户说话时，
+    # 先提醒 agent 汇报已完成与剩余的工作，再继续执行。
+    - id: progress-reminder
+      name: '@deepseek-ai/dsh-progress-reminder'
+      config:
+        toolCallsPerReminder: 15
+
     # 各模式都提供 web_search：默认匿名 DuckDuckGo；明确选 DeepSeek 或 Tavily 后
     # 逐次解析各自的搜索密钥，认证失败不会切换后端。
     # DeepSeek Messages 搜索地址独立于 chat-completions。
