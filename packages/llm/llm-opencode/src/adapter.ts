@@ -44,10 +44,21 @@ import type {
   ToolCall as PiToolCall,
 } from '@earendil-works/pi-ai'
 import type { FreeChannelModel, ReasoningEffortLevel } from './channel.ts'
-import { CHANNEL_NAME, CHANNEL_RETRY_POLICY, freeChannelModel, FREE_CHANNEL_MODELS, PROVIDER_ID, REASONING_EFFORT_LEVELS, STREAM_IDLE_TIMEOUT_MS } from './channel.ts'
+import {
+  AUTO_MODEL_CANDIDATES,
+  AUTO_MODEL_ID,
+  AUTO_MODEL_NAME,
+  CHANNEL_NAME,
+  CHANNEL_RETRY_POLICY,
+  freeChannelModel,
+  FREE_CHANNEL_MODELS,
+  PROVIDER_ID,
+  REASONING_EFFORT_LEVELS,
+  STREAM_IDLE_TIMEOUT_MS,
+} from './channel.ts'
 import { deriveRequestIds, disguiseHeaders } from './ids.ts'
 import { ensureFreeLaneShape } from './free-lane.ts'
-import { toStreamChunks } from './stream.ts'
+import { isFailoverCode, isFailoverError, toStreamChunks } from './stream.ts'
 
 /** 空闲超时使用的稳定错误码。 */
 const STREAM_IDLE_TIMEOUT_CODE = 'LLM_STREAM_IDLE_TIMEOUT'
@@ -63,6 +74,15 @@ export interface FreeChannelAdapterOptions {
 /** 把一条目录条目投影成 seam 的模型信息。 */
 function modelInfo(provider: string, model: FreeChannelModel): LlmModelInfo {
   return { provider, id: model.id, name: model.name, inputModalities: [...model.inputModalities] }
+}
+
+/**
+ * Auto 的模型信息投影：模态与容量取候选表的并集/最小值，让带图片的请求
+ * 不会被选择器提前拒绝；真正路由到的候选仍按各自的目录事实约束。
+ */
+function autoModelInfo(provider: string): LlmModelInfo {
+  const modalities = new Set(FREE_CHANNEL_MODELS.flatMap(model => model.inputModalities))
+  return { provider, id: AUTO_MODEL_ID, name: AUTO_MODEL_NAME, inputModalities: [...modalities] }
 }
 
 /**
@@ -261,7 +281,8 @@ export class FreeChannelAdapter extends LlmAdapter {
   }
 
   override listModels(provider: string): Promise<readonly LlmModelInfo[]> {
-    return Promise.resolve(FREE_CHANNEL_MODELS.map(model => modelInfo(provider, model)))
+    const catalog = FREE_CHANNEL_MODELS.map(model => modelInfo(provider, model))
+    return Promise.resolve([autoModelInfo(provider), ...catalog])
   }
 
   override resolveModel(
@@ -269,6 +290,17 @@ export class FreeChannelAdapter extends LlmAdapter {
     model: string,
     _signal?: AbortSignal,
   ): Promise<LlmResolvedModelInfo> {
+    if (model === AUTO_MODEL_ID) {
+      // Auto 是虚拟条目：容量取候选里最紧的约束，避免把某个候选放不下的
+      // 历史当成一定能发；档位不透出，路由到的候选各自按目录事实校验。
+      const contextWindow = Math.min(...AUTO_MODEL_CANDIDATES.map(entry => entry.contextWindow))
+      const maxTokens = Math.min(...AUTO_MODEL_CANDIDATES.map(entry => entry.maxTokens))
+      return Promise.resolve({
+        ...autoModelInfo(provider),
+        context: { contextWindow },
+        defaultMaxTokens: maxTokens,
+      })
+    }
     const served = freeChannelModel(model)
     // 未列出的模型按纯文本、无推理档位处理：不把未经验证的能力持久写进会话。
     const efforts = (served?.reasoningEfforts ?? []).map(effort => ({
@@ -286,8 +318,42 @@ export class FreeChannelAdapter extends LlmAdapter {
   }
 
   async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
-    if (options.stop !== undefined) {
-      throw new LlmError('the Free channel does not support GenerateOptions.stop', 'UNSUPPORTED_OPTION')
+    if (options.model === AUTO_MODEL_ID) {
+      // Auto 不指向任何上游：按候选表逐个尝试，直到一个候选真正产出内容分片。
+      // 已经产出分片的候选不再转移——中途换模型会把半截回复拼成两种风格。
+      let opened = false
+      let lastFailure: LlmError | undefined
+      for (const candidate of AUTO_MODEL_CANDIDATES) {
+        // transferred 为 true 表示本候选以可转移错误收场、需要试下一个；
+        // 其余路径（成功 finish、不可转移错误、抛出）都到此为止。
+        let transferred = false
+        try {
+          for await (const chunk of this.streamModel({ ...options, model: candidate.id }, candidate)) {
+            if (chunk.type === 'finish') {
+              // 候选的失败以错误 finish 分片到达而不是抛出：可转移的码换下一个
+              // 候选，其余（含成功 finish）原样交付并结束。
+              const reason = chunk.reason
+              if (reason.kind === 'error' && !opened && isFailoverCode(reason.failure.code)) {
+                lastFailure = new LlmError(reason.failure.message, reason.failure.code)
+                transferred = true
+                break
+              }
+              yield chunk
+              return
+            }
+            if (chunk.type !== 'usage') opened = true
+            yield chunk
+          }
+          if (!transferred) return
+          continue
+        } catch (error: unknown) {
+          if (error instanceof LlmError) lastFailure = error
+          if (opened || !isFailoverError(error)) throw error
+        }
+      }
+      // 最后一个候选的失败原样上抛：它就是本次请求的最终诊断。
+      if (lastFailure !== undefined) throw lastFailure
+      throw new LlmError('the Free channel has no Auto candidate', 'UNKNOWN_MODEL')
     }
     const served = freeChannelModel(options.model)
     // 目录是渠道服务的唯一来源：没收录的 id 没有可用的端点与凭据，不能猜一个上游发出去。
@@ -296,6 +362,17 @@ export class FreeChannelAdapter extends LlmAdapter {
         `the Free channel serves no model "${options.model}"`,
         'UNKNOWN_MODEL',
       )
+    }
+    yield* this.streamModel(options, served)
+  }
+
+  /**
+   * 向一条具体目录条目发起流式请求。Auto 与直选模型最终都走到这里；
+   * 端点、凭据与请求形状全部按该条目所属上游决定。
+   */
+  private async * streamModel(options: GenerateOptions, served: FreeChannelModel): AsyncIterable<StreamChunk> {
+    if (options.stop !== undefined) {
+      throw new LlmError('the Free channel does not support GenerateOptions.stop', 'UNSUPPORTED_OPTION')
     }
     const model = this.piModel(served)
     const effort = options.reasoningEffort
@@ -320,14 +397,25 @@ export class FreeChannelAdapter extends LlmAdapter {
     using watchdog = idleWatchdog(upstream, STREAM_IDLE_TIMEOUT_MS, STREAM_IDLE_TIMEOUT_CODE)
 
     try {
+      // 上游差异只落在请求形状上：Zen 要 CLI 伪装头与工具门，OVH 要空 Bearer。
+      // 两者的注释都描述上游事实，改写逻辑分别在 ids.ts 与 free-lane.ts。
+      const shape = served.upstream.disguise
+        ? {
+          // 上游只接受 OpenCode CLI 形态的 User-Agent：harness 归因 UA 会 403，
+          // 因此本路由的指纹头是最终值，不再叠加共享的模型请求 UA。
+          headers: disguiseHeaders(ids),
+          // 上游免费通道只在请求体带上 agent 形状的工具表时才放行；
+          // pi-ai 没有对应选项，因此改写在序列化后的请求体上进行。
+          onPayload: (payload: unknown) => ensureFreeLaneShape(payload),
+        }
+        : {
+          // OVH 的匿名层把空 Bearer 读作免费通道；OpenAI SDK 要求非空 key，
+          // 因此经 headers 显式携带空 Authorization 覆盖 SDK 的默认拼接。
+          headers: { Authorization: 'Bearer ' },
+        }
       const events = this.provider(served).streamSimple(model, context, {
         apiKey: served.upstream.apiKey,
-        // 上游只接受 OpenCode CLI 形态的 User-Agent：harness 归因 UA 会 403，
-        // 因此本路由的指纹头是最终值，不再叠加共享的模型请求 UA。
-        headers: disguiseHeaders(ids),
-        // 上游免费通道只在请求体带上 agent 形状的工具表时才放行；
-        // pi-ai 没有对应选项，因此改写在序列化后的请求体上进行。
-        onPayload: (payload: unknown) => ensureFreeLaneShape(payload),
+        ...shape,
         maxRetries: 0,
         ...reasoning === undefined ? {} : { reasoning },
         ...options.temperature === undefined ? {} : { temperature: options.temperature },

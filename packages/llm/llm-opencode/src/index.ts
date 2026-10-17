@@ -23,6 +23,9 @@ import { PROVIDER_ID } from './channel.ts'
 export { FreeChannelAdapter } from './adapter.ts'
 export type { FreeChannelAdapterOptions } from './adapter.ts'
 export {
+  AUTO_MODEL_CANDIDATES,
+  AUTO_MODEL_ID,
+  AUTO_MODEL_NAME,
   CHANNEL_NAME,
   CHANNEL_RETRY_POLICY,
   FREE_CHANNEL_MODELS,
@@ -40,6 +43,7 @@ export type {
 } from './channel.ts'
 export { disguiseHeaders, deriveRequestIds, opencodeUserAgent } from './ids.ts'
 export { ensureFreeLaneShape, FREE_LANE_GATE_TOOL_NAMES } from './free-lane.ts'
+export { isFailoverError, isFailoverCode, FAILOVER_CODES } from './stream.ts'
 
 /** Cordis 插件名。 */
 export const name = 'llm-opencode'

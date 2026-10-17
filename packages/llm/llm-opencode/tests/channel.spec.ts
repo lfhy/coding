@@ -7,7 +7,7 @@ import { Context } from '@deepseek-ai/cordis'
 import LlmRuntime from 'coding-llm'
 import { describe, expect, it } from 'vitest'
 import * as LlmOpencode from 'coding-llm-opencode'
-import { CHANNEL_NAME, FREE_CHANNEL_MODELS, FREE_UPSTREAMS, freeChannelModel, PROVIDER_ID } from '../src/channel.ts'
+import { AUTO_MODEL_CANDIDATES, AUTO_MODEL_ID, CHANNEL_NAME, FREE_CHANNEL_MODELS, FREE_UPSTREAMS, freeChannelModel, PROVIDER_ID } from '../src/channel.ts'
 
 /** 挂载只带 LLM 服务的上下文，再装上本插件。 */
 async function mounted(): Promise<Context> {
@@ -23,12 +23,28 @@ describe('built-in catalog', () => {
     expect(CHANNEL_NAME).toBe('Free')
     expect(FREE_CHANNEL_MODELS.map(model => model.id)).toEqual([
       'mimo-v2.6-flash-free', 'deepseek-v4.1-flash-free', 'nemotron-3.5-lightning-free',
+      'gpt-oss-120b', 'Qwen3.5-397B-A17B', 'Qwen2.5-VL-72B-Instruct',
     ])
     expect(FREE_CHANNEL_MODELS.map(model => model.name)).toEqual([
       'Mimo V2.6 Flash', 'Deepseek V4.1 Flash', 'Nemotron 3.5 Lightning',
+      'GPT-OSS 120B (OVH)', 'Qwen3.5 397B A17B (OVH)', 'Qwen2.5 VL 72B (OVH)',
     ])
     // 每个模型都记得自己属于哪条上游记录，端点与凭据由它携带。
     expect(FREE_CHANNEL_MODELS.every(model => FREE_UPSTREAMS.includes(model.upstream))).toBe(true)
+  })
+
+  it('上游伪装标志与端点一一对应：Zen 伪装，OVH 匿名直连', () => {
+    const upstreams = new Map(FREE_UPSTREAMS.map(upstream => [upstream.id, upstream]))
+    expect(upstreams.get('opencode-zen')).toMatchObject({
+      baseURL: 'https://opencode.ai/zen/v1',
+      apiKey: 'public',
+      disguise: true,
+    })
+    expect(upstreams.get('ovh-ai-endpoints')).toMatchObject({
+      baseURL: 'https://oai.endpoints.kepler.ai.cloud.ovh.net/v1',
+      apiKey: '',
+      disguise: false,
+    })
   })
 
   it('内置模型声明上游元数据里的模态与推理能力', () => {
@@ -37,19 +53,38 @@ describe('built-in catalog', () => {
     expect(models.get('mimo-v2.6-flash-free')?.inputModalities).toEqual(['text', 'image'])
     expect(models.get('deepseek-v4.1-flash-free')?.inputModalities).toEqual(['text', 'image'])
     expect(models.get('nemotron-3.5-lightning-free')?.inputModalities).toEqual(['text'])
-    // 三者都会推理，但只有 DeepSeek V4.1 Flash 暴露可选档位。
-    expect([...models.values()].map(model => model.reasoning)).toEqual([true, true, true])
+    // OVH 侧：gpt-oss 与 Qwen3.5 只收文本，Qwen2.5 VL 收图片且不推理。
+    expect(models.get('gpt-oss-120b')?.inputModalities).toEqual(['text'])
+    expect(models.get('Qwen2.5-VL-72B-Instruct')?.inputModalities).toEqual(['text', 'image'])
+    expect(models.get('Qwen2.5-VL-72B-Instruct')?.reasoning).toBe(false)
+    // 五个目录模型都会推理，但只有 DeepSeek V4.1 Flash 与 GPT-OSS 暴露可选档位。
+    expect(FREE_CHANNEL_MODELS.map(model => model.reasoning)).toEqual([true, true, true, true, true, false])
     expect(models.get('deepseek-v4.1-flash-free')?.reasoningEfforts).toEqual(['low', 'high', 'max'])
+    expect(models.get('gpt-oss-120b')?.reasoningEfforts).toEqual(['low', 'medium', 'high'])
     expect(models.get('mimo-v2.6-flash-free')?.reasoningEfforts).toEqual([])
   })
 
-  it('上游表自身完整：端点可用、凭据非空、模型 id 全局唯一', () => {
+  it('Auto 候选表非空、按序展开且都指向已收录目录条目', () => {
+    expect(AUTO_MODEL_ID).toBe('auto')
+    expect(AUTO_MODEL_CANDIDATES.map(model => model.id)).toEqual([
+      'mimo-v2.6-flash-free',
+      'deepseek-v4.1-flash-free',
+      'gpt-oss-120b',
+      'Qwen3.5-397B-A17B',
+      'nemotron-3.5-lightning-free',
+    ])
+    // 候选跨两家上游：单上游整段不可用时仍有可转移的后备。
+    expect(new Set(AUTO_MODEL_CANDIDATES.map(model => model.upstream.id))).toEqual(new Set(['opencode-zen', 'ovh-ai-endpoints']))
+  })
+
+  it('上游表自身完整：端点可用、凭据形状合法、模型 id 全局唯一', () => {
     for (const upstream of FREE_UPSTREAMS) {
       const baseURL = new URL(upstream.baseURL)
       expect(baseURL.protocol).toBe('https:')
       // 适配器直接拼 `{baseURL}/chat/completions`，尾斜杠会拼出双斜杠地址。
       expect(upstream.baseURL.endsWith('/')).toBe(false)
-      expect(upstream.apiKey.length).toBeGreaterThan(0)
+      // 凭据允许空串：OVH 匿名层把空 Bearer 读作免费通道。
+      expect(typeof upstream.apiKey).toBe('string')
       expect(upstream.models.length).toBeGreaterThan(0)
     }
     const ids = FREE_CHANNEL_MODELS.map(model => model.id)
@@ -77,7 +112,8 @@ describe('plugin apply', () => {
     const ctx = await mounted()
     expect(ctx.llm.listProviders()).toEqual([{ id: PROVIDER_ID, name: CHANNEL_NAME }])
     const models = await ctx.llm.listModels(PROVIDER_ID)
-    expect(models.map(model => model.id)).toEqual(FREE_CHANNEL_MODELS.map(model => model.id))
+    // Auto 是目录首位：它是渠道的默认推荐选择。
+    expect(models.map(model => model.id)).toEqual(['auto', ...FREE_CHANNEL_MODELS.map(model => model.id)])
     await ctx.fiber.dispose()
   })
 

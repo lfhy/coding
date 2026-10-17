@@ -29,6 +29,40 @@ export const FREE_TIER_RESTRICTED_CODE = 'FREE_TIER_RESTRICTED'
 export const REGION_BLOCKED_CODE = 'REGION_BLOCKED'
 
 /**
+ * Auto 路由允许转移到下一候选的错误码集合：确定性拒绝（地区封锁、通道
+ * 受限、鉴权无效）与暂时性耗尽（限流、上游故障）。其余失败（调用方中止、
+ * 上下文溢出、非法请求）换候选也救不回来，直接原样抛出。
+ */
+export const FAILOVER_CODES: ReadonlySet<string> = new Set([
+  REGION_BLOCKED_CODE,
+  FREE_TIER_RESTRICTED_CODE,
+  'AUTH',
+  'RATE_LIMIT',
+  'QUOTA_EXCEEDED',
+  'SERVER',
+  'TIMEOUT',
+  'TRANSPORT',
+])
+
+/**
+ * 判定一次失败是否允许 Auto 换下一个候选。
+ * @param error - 候选请求抛出的错误。
+ * @returns 错误码在转移集合内时为 true。
+ */
+export function isFailoverError(error: unknown): boolean {
+  return error instanceof LlmError && FAILOVER_CODES.has(error.failure.code)
+}
+
+/**
+ * 按稳定错误码判定是否允许 Auto 转移；错误 finish 分片携带的就是码本身。
+ * @param code - 候选以错误 finish 交付的稳定错误码。
+ * @returns 在转移集合内时为 true。
+ */
+export function isFailoverCode(code: string): boolean {
+  return FAILOVER_CODES.has(code)
+}
+
+/**
  * 把 pi-ai 的用量折算成 harness 计数（pi-ai 已把推理 token 并入输出）。
  * @param usage - 终止事件上的累计用量。
  * @returns harness 计数；缓存字段仅在非零时出现。

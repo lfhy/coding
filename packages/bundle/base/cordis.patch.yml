@@ -58,14 +58,15 @@
 
     # The transport-independent default for Agents created by entry points.
     # Settings may supply a saved selection; consumers read it at creation time.
-    # The composition default is the built-in Free channel, which needs no
-    # stored credential — a deployment that means to require its own key
-    # overrides this row (or the user's saved selection wins over it).
+    # The composition default is the Free channel's Auto route, which needs no
+    # stored credential and fails over across the channel's free upstreams —
+    # a deployment that means to require its own key overrides this row (or
+    # the user's saved selection wins over it).
     - id: agent-default-model
       name: 'coding-agent-default-model'
       config:
         provider: free
-        model: mimo-v2.6-flash-free
+        model: auto
 
     - id: jobs
       name: 'coding-jobs-local'

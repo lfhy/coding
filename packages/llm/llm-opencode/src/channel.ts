@@ -75,6 +75,12 @@ export interface FreeUpstream {
    * 因此不进凭据存储，也不出现在任何设置描述里。
    */
   apiKey: string
+  /**
+   * 该上游是否要求 OpenCode CLI 同形伪装：User-Agent 指纹头与请求体工具门。
+   * Zen 按客户端指纹过滤免费流量因此必须伪装；OVH 的匿名免费层对任何客户端
+   * 开放，伪装反而会干扰其正常的匿名鉴权。
+   */
+  disguise: boolean
   models: readonly FreeUpstreamModel[]
 }
 
@@ -86,12 +92,16 @@ export interface FreeUpstream {
  * OpenCode Zen 的模型显示名固定、能力取自 models.dev 的提供方元数据：
  * MiMo 与 DeepSeek V4.1 Flash 接受图片，Nemotron 3.5 Lightning 只接受文本；
  * 三者都会推理，但只有 DeepSeek V4.1 Flash 暴露可选档位。
+ * OVHcloud AI Endpoints 提供持久的匿名免费层（按出口 IP 限流），模型能力
+ * 取自其 `/v1/models` 目录的提供方元数据；凭据是空 Bearer——上游把空凭据
+ * 读作匿名免费层，任何非空值都会被当成失效的 OAuth 令牌而 403。
  */
 export const FREE_UPSTREAMS: readonly FreeUpstream[] = [
   {
     id: 'opencode-zen',
     baseURL: 'https://opencode.ai/zen/v1',
     apiKey: 'public',
+    disguise: true,
     models: [
       {
         id: 'mimo-v2.6-flash-free',
@@ -122,6 +132,41 @@ export const FREE_UPSTREAMS: readonly FreeUpstream[] = [
       },
     ],
   },
+  {
+    id: 'ovh-ai-endpoints',
+    baseURL: 'https://oai.endpoints.kepler.ai.cloud.ovh.net/v1',
+    apiKey: '',
+    disguise: false,
+    models: [
+      {
+        id: 'gpt-oss-120b',
+        name: 'GPT-OSS 120B (OVH)',
+        contextWindow: 131_072,
+        maxTokens: 32_768,
+        inputModalities: ['text'],
+        reasoning: true,
+        reasoningEfforts: ['low', 'medium', 'high'],
+      },
+      {
+        id: 'Qwen3.5-397B-A17B',
+        name: 'Qwen3.5 397B A17B (OVH)',
+        contextWindow: 262_144,
+        maxTokens: 32_768,
+        inputModalities: ['text'],
+        reasoning: true,
+        reasoningEfforts: [],
+      },
+      {
+        id: 'Qwen2.5-VL-72B-Instruct',
+        name: 'Qwen2.5 VL 72B (OVH)',
+        contextWindow: 32_768,
+        maxTokens: 8_192,
+        inputModalities: ['text', 'image'],
+        reasoning: false,
+        reasoningEfforts: [],
+      },
+    ],
+  },
 ]
 
 /** 渠道目录里的一条模型：上游模型事实加上它所属的上游。 */
@@ -145,3 +190,30 @@ export const FREE_CHANNEL_MODELS: readonly FreeChannelModel[] = FREE_UPSTREAMS.f
 export function freeChannelModel(id: string): FreeChannelModel | undefined {
   return FREE_CHANNEL_MODELS.find(model => model.id === id)
 }
+
+/**
+ * `Auto` 虚拟模型的 id：不出现在上游目录里，由适配器按候选表逐个转发，
+ * 是渠道的默认推荐选择。
+ */
+export const AUTO_MODEL_ID = 'auto'
+
+/** `Auto` 在选择器上的显示名；与渠道名一样是不随语言变化的产品名。 */
+export const AUTO_MODEL_NAME = 'Auto'
+
+/**
+ * Auto 的候选顺序即尝试顺序：一次请求按序尝试，命中确定性失败（地区封锁、
+ * 通道受限、鉴权无效）或最后一个候选时停止。顺序是可用性优先：能力最强、
+ * 最常用的模型在前；Zen 与 OVH 交替，单上游整段限流时尽快切到另一家。
+ */
+const AUTO_CANDIDATE_IDS = [
+  'mimo-v2.6-flash-free',
+  'deepseek-v4.1-flash-free',
+  'gpt-oss-120b',
+  'Qwen3.5-397B-A17B',
+  'nemotron-3.5-lightning-free',
+] as const
+
+/** Auto 的候选条目表；目录里不存在的 id 在这里会直接被过滤掉。 */
+export const AUTO_MODEL_CANDIDATES: readonly FreeChannelModel[] = AUTO_CANDIDATE_IDS
+  .map(id => freeChannelModel(id))
+  .filter((model): model is FreeChannelModel => model !== undefined)
