@@ -7,6 +7,11 @@
 
 import type { z } from 'zod'
 import type { ApiProxy, HostFrame, MuxFrame } from '../api/index.ts'
+// 域视图类型经 client 入口转发给 connection/remotes 的类型链（type-only，不进运行时产物）。
+export type {
+  ConfigurableProviderView, DiscoveredModelView, OutboundModeView,
+  ProxyGroupView, ProxyHealthView, ProxyNodeView, ProxyPoolApi,
+} from '../api/index.ts'
 import type { RequestPayload, ResponseValue, RpcMethodMap } from '../api/rpc-map.ts'
 import type { ClientRequest, ClientResponse, RpcMessage, RpcReceipt, RpcRequest, RpcResponse, ServerRequest } from '../api/rpc.ts'
 import { RpcId } from '../api/rpc.ts'
@@ -63,6 +68,13 @@ import {
   credentialsDescribeValueSchema, credentialsSetValueSchema, credentialsUnsetValueSchema,
 } from '../api/credentials.schema.ts'
 import { llmDiscoverModelsValueSchema, llmModelsValueSchema, llmProvidersValueSchema } from '../api/llm.schema.ts'
+import {
+  proxyPoolDescribeValueSchema,
+  proxyPoolImportLinksValueSchema,
+  proxyPoolRemoveNodeValueSchema,
+  proxyPoolSetOutboundValueSchema,
+  proxyPoolTestNodeValueSchema,
+} from '../api/proxy-pool.schema.ts'
 import { browserControlValueSchema } from '../api/browser.schema.ts'
 import {
   subagentHistoryValueSchema,
@@ -173,6 +185,13 @@ export interface IApiClient {
     models(payload: RequestPayload<'llm.models'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'llm.models'>>>
     discoverModels(payload: RequestPayload<'llm.discoverModels'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'llm.discoverModels'>>>
   }
+  proxyPool: {
+    describe(payload: RequestPayload<'proxyPool.describe'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'proxyPool.describe'>>>
+    importLinks(payload: RequestPayload<'proxyPool.importLinks'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'proxyPool.importLinks'>>>
+    removeNode(payload: RequestPayload<'proxyPool.removeNode'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'proxyPool.removeNode'>>>
+    testNode(payload: RequestPayload<'proxyPool.testNode'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'proxyPool.testNode'>>>
+    setOutbound(payload: RequestPayload<'proxyPool.setOutbound'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'proxyPool.setOutbound'>>>
+  }
   /** client-response passthrough (rpcId is a backfill of the server-request's id — never minted here). */
   respond(message: ClientResponse, signal?: AbortSignal): Promise<RpcReceipt>
 }
@@ -240,6 +259,11 @@ const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseV
   'llm.providers': llmProvidersValueSchema,
   'llm.models': llmModelsValueSchema,
   'llm.discoverModels': llmDiscoverModelsValueSchema,
+  'proxyPool.describe': proxyPoolDescribeValueSchema,
+  'proxyPool.importLinks': proxyPoolImportLinksValueSchema,
+  'proxyPool.removeNode': proxyPoolRemoveNodeValueSchema,
+  'proxyPool.testNode': proxyPoolTestNodeValueSchema,
+  'proxyPool.setOutbound': proxyPoolSetOutboundValueSchema,
   'browser.control': browserControlValueSchema,
 }
 
@@ -527,6 +551,14 @@ export abstract class AbstractApiClient implements IApiClient {
     providers: (payload, signal) => this.callUnary('llm.providers', payload, signal),
     models: (payload, signal) => this.callUnary('llm.models', payload, signal),
     discoverModels: (payload, signal) => this.callUnary('llm.discoverModels', payload, signal),
+  }
+
+  readonly proxyPool: IApiClient['proxyPool'] = {
+    describe: (payload, signal) => this.callUnary('proxyPool.describe', payload, signal),
+    importLinks: (payload, signal) => this.callUnary('proxyPool.importLinks', payload, signal),
+    removeNode: (payload, signal) => this.callUnary('proxyPool.removeNode', payload, signal),
+    testNode: (payload, signal) => this.callUnary('proxyPool.testNode', payload, signal),
+    setOutbound: (payload, signal) => this.callUnary('proxyPool.setOutbound', payload, signal),
   }
 
   readonly events: IApiClient['events'] = {

@@ -213,6 +213,8 @@
 
     - id: ui-settings-models
       name: 'coding-client-ui-settings-models'
+    - id: ui-settings-proxy-pool
+      name: 'coding-client-ui-settings-proxy-pool'
 
     - id: ui-settings-plugin-inventory
       name: 'coding-client-ui-settings-plugin-inventory'

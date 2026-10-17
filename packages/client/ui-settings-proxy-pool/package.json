@@ -1,0 +1,77 @@
+{
+  "name": "coding-client-ui-settings-proxy-pool",
+  "description": "Proxy pool settings section: node import/list/test/remove plus the Free channel outbound selection",
+  "version": "0.1.0-rc.8",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/client/ui-settings-proxy-pool"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./invariant": {
+      "types": "./lib/types/invariant.d.ts",
+      "default": "./lib/invariant.js"
+    },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "inject": [
+        "coding-client-connection",
+        "coding-client-locale",
+        "coding-client-ui-settings"
+      ],
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "bundle": "tsdown",
+    "watch": "tsdown --watch"
+  },
+  "license": "MIT",
+  "dependencies": {},
+  "peerDependencies": {
+    "coding-client-connection": "workspace:^",
+    "coding-client-locale": "workspace:^",
+    "coding-client-ui-settings": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "@deepseek-ai/cordis": "workspace:^",
+    "coding-api-remotes": "workspace:^",
+    "coding-client-runtime": "workspace:^",
+    "coding-client-ui-slots": "workspace:^"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
+    "@testing-library/react": "^16.3.2",
+    "@types/react": "~18.3.1",
+    "coding-api-remotes": "workspace:^",
+    "coding-client-connection": "workspace:^",
+    "coding-client-locale": "workspace:^",
+    "coding-client-runtime": "workspace:^",
+    "coding-client-ui-settings": "workspace:^",
+    "coding-client-ui-slots": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "react": "^18.2.0"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/invariant.js",
+    "lib/client.js",
+    "lib/types/**/*.d.ts"
+  ]
+}

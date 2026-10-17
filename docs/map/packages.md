@@ -3,7 +3,7 @@
 
 # 包清单
 
-workspace 共 248 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
+workspace 共 249 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
 
 模型可见工具的名称与 schema 见 [tool-catalog.md](../tool-catalog.md)，插件可配置项见 [config-catalog.md](../config-catalog.md)，依赖边见 [module-graph.md](../module-graph.md)。
 
@@ -73,6 +73,7 @@ workspace 共 248 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/client/ui-settings-models` — 模型设置、视觉理解目标与首次使用模型配置引导插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 16）
 - `packages/client/ui-settings-plugin-inventory` — Web 设置中的只读**插件列表**标签页 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 3）
 - `packages/client/ui-settings-plugins` — **插件**设置分区及其**插件配置**标签页 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 5）
+- `packages/client/ui-settings-proxy-pool` — 代理池设置分区：向 `settings.section` 注册一页（`proxy-pool`，模型分区之后）， [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 1）
 - `packages/client/ui-settings-search` — 独立的「联网搜索」设置分区 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 3）
 - `packages/client/ui-sidebar` — 侧边栏外壳插件：负责品牌行、New Session 操作、布局持有的折叠控件、可感知滚动的区域 seat… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 7）
 - `packages/client/ui-skill` — skill（技能）调用 source 的浏览器端：把 `/` 触发的 `skill` source 注册进 `ctx.inputTriggers… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 2）
@@ -189,7 +190,7 @@ workspace 共 248 个包，按 group 分节。每行给出包目录、职责（R
 
 ## packages/host
 
-- `packages/host/apiproxy` — 所有客户端共用的 API 网关由三部分组成：TypeScript API 约定（`src/api/`，不依赖 Node… [client] 入口 `src/index.ts`（tests 21）
+- `packages/host/apiproxy` — 所有客户端共用的 API 网关由三部分组成：TypeScript API 约定（`src/api/`，不依赖 Node… [client] 入口 `src/index.ts`（tests 22）
 - `packages/host/directory-picker` — web GUI 宿主的工作区目录选择是一项能力 seam 入口 `src/index.ts`（tests 1）
 - `packages/host/directory-picker-auto` — 目录选择 seam 的**自适应选择器**：一个只有 node 半侧的插件，在启动时一次性判定宿主处境… 入口 `src/index.ts`（tests 2）
 - `packages/host/directory-picker-browse` — 目录选择 seam 的**应用内浏览后端**：`BrowseDirectoryPicker` 以 `browse` 能力注册 `ctx.dire… 入口 `src/index.ts`（tests 1）
@@ -246,7 +247,7 @@ workspace 共 248 个包，按 group 分节。每行给出包目录、职责（R
 
 ## packages/net
 
-- `packages/net/proxy-pool` — 出站代理池：把一组代理节点（HTTP/SOCKS5/VLESS/VMess/Hysteria2 分享链接导入）聚合成 入口 `src/index.ts`（tests 1）
+- `packages/net/proxy-pool` — 出站代理池：把一组代理节点（HTTP/SOCKS5/VLESS/VMess/Hysteria2 分享链接导入）聚合成 入口 `src/index.ts`（tests 2）
 
 ## packages/plan
 

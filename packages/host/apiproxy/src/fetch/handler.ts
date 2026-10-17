@@ -66,6 +66,13 @@ import {
   credentialsDescribeRequestSchema, credentialsSetRequestSchema, credentialsUnsetRequestSchema,
 } from '../api/credentials.schema.ts'
 import { llmDiscoverModelsRequestSchema, llmModelsRequestSchema, llmProvidersRequestSchema } from '../api/llm.schema.ts'
+import {
+  proxyPoolDescribeRequestSchema,
+  proxyPoolImportLinksRequestSchema,
+  proxyPoolRemoveNodeRequestSchema,
+  proxyPoolSetOutboundRequestSchema,
+  proxyPoolTestNodeRequestSchema,
+} from '../api/proxy-pool.schema.ts'
 import { browserControlRequestSchema } from '../api/browser.schema.ts'
 import {
   subagentHistoryRequestSchema,
@@ -149,6 +156,11 @@ const UNARY_ROUTES: UnaryRoutes = {
   'llm.providers': { schema: llmProvidersRequestSchema, invoke: (api, r) => api.llm.providers(r) },
   'llm.models': { schema: llmModelsRequestSchema, invoke: (api, r) => api.llm.models(r) },
   'llm.discoverModels': { schema: llmDiscoverModelsRequestSchema, invoke: (api, r, signal) => api.llm.discoverModels(r, signal) },
+  'proxyPool.describe': { schema: proxyPoolDescribeRequestSchema, invoke: (api, r) => api.proxyPool.describe(r) },
+  'proxyPool.importLinks': { schema: proxyPoolImportLinksRequestSchema, invoke: (api, r) => api.proxyPool.importLinks(r) },
+  'proxyPool.removeNode': { schema: proxyPoolRemoveNodeRequestSchema, invoke: (api, r) => api.proxyPool.removeNode(r) },
+  'proxyPool.testNode': { schema: proxyPoolTestNodeRequestSchema, invoke: (api, r) => api.proxyPool.testNode(r) },
+  'proxyPool.setOutbound': { schema: proxyPoolSetOutboundRequestSchema, invoke: (api, r) => api.proxyPool.setOutbound(r) },
   'browser.control': { schema: browserControlRequestSchema, invoke: (api, r, signal) => api.browser.control(r, signal) },
 }
 

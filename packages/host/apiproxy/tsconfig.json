@@ -109,6 +109,12 @@
     },
     {
       "path": "../../util/native-command"
+    },
+    {
+      "path": "../../net/proxy-pool"
+    },
+    {
+      "path": "../../llm/llm-opencode"
     }
   ]
 }

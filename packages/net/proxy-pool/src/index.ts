@@ -15,6 +15,7 @@ import { createServer, type Server } from 'node:http'
 import type { Duplex } from 'node:stream'
 import type { Socket } from 'node:net'
 import { dialThrough } from './dialer.ts'
+import { mirrorPoolNodes } from './persist.ts'
 import type { ProxyGroup, ProxyHealth, ProxyNode, ProxyPoolNodeEvent } from './types.ts'
 import { ProxyPoolError } from './types.ts'
 
@@ -42,6 +43,12 @@ export {
   parseProxyLink,
   parseProxyLinks,
 } from './links.ts'
+export {
+  mirrorPoolNodes,
+  serializeNodes,
+  PROXY_POOL_NODES_SETTINGS_NAMESPACE,
+} from './persist.ts'
+export type { ProxyPoolNodesSettings } from './persist.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -152,6 +159,21 @@ export class ProxyPoolService extends Service {
       this.health.delete(node.id)
       this.ctx.emit('proxy-pool/node', { kind: 'node-removed', nodeId: node.id } satisfies ProxyPoolNodeEvent)
     }
+  }
+
+  /**
+   * 按注销一个节点；未知 id 返回 false。管理面（RPC `proxyPool.removeNode`）
+   * 与设置持久化的重放都用它，不需要先取出描述符再注册取 disposer。
+   * @param nodeId - 节点 id。
+   * @returns 节点存在并被移除时为 true。
+   */
+  unregisterNode(nodeId: string): boolean {
+    const node = this.nodes.get(nodeId)
+    if (node === undefined) return false
+    this.nodes.delete(nodeId)
+    this.health.delete(nodeId)
+    this.ctx.emit('proxy-pool/node', { kind: 'node-removed', nodeId } satisfies ProxyPoolNodeEvent)
+    return true
   }
 
   /**
@@ -393,3 +415,19 @@ function parseAuthority(authority: string): { host: string; port: number } | und
 }
 
 export default ProxyPoolService
+
+/** Cordis 插件名。 */
+export const name = 'proxy-pool'
+
+/** 插件需要的服务：无——池独立于 LLM 与设置运行。 */
+export const inject: string[] = []
+
+/**
+ * 函数插件入口：挂载池服务并在设置可用时镜像节点注册表（持久化）。
+ * base 组合以此装载；没有设置提供方时池照常工作，只是节点不落盘。
+ * @param ctx - 宿主上下文。
+ */
+export function apply(ctx: Context): void {
+  const pool = new ProxyPoolService(ctx, {})
+  mirrorPoolNodes(ctx, pool, node => pool.registerNode(node))
+}

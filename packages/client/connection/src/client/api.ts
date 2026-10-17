@@ -34,6 +34,9 @@ export {
 } from 'coding-host-apiproxy/api'
 export { AbstractApiClient } from 'coding-host-apiproxy/client'
 export type { IApiClient } from 'coding-host-apiproxy/client'
+export type {
+  OutboundModeView, ProxyPoolApi, ProxyNodeView, ProxyHealthView, ProxyGroupView,
+} from 'coding-host-apiproxy/client'
 export type { SessionId, SessionEvent } from 'coding-session/types'
 export type { MessageId } from 'coding-llm/brand'
 export type { ContentBlock, StreamChunk } from 'coding-llm/types'

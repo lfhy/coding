@@ -38,7 +38,9 @@ import type {} from 'coding-tools'
 import type {
   ApiProxy, ConfigurableProviderView, CredentialView, GoalRef, HistoryEntry, HostFrame,
   ModelCatalogFailure, ModelProviderGroup,
-  ModelReasoning, MuxFrame, PromptContentPart, QuestionResponsePayload, SessionListMetadata, SessionProjectionsBlock, SessionSearchItem,
+  ModelReasoning, MuxFrame, OutboundModeView, PromptContentPart, QuestionResponsePayload,
+  SessionListMetadata, SessionProjectionsBlock, SessionSearchItem,
+  ProxyGroupView, ProxyHealthView, ProxyNodeView,
   QueuedInboxItem, SessionSummary, SettingsNamespaceView, SubagentAddress, JobView, ToolEventView,
   WorkspaceId, WorkspaceView,
 } from './api/index.ts'
@@ -82,6 +84,10 @@ import type {} from 'coding-skill'
 // service reads stay optional (`ctx.get`) so a composition without either
 // provider still serves every other domain.
 import { SettingsConflictError, settingsNamespace } from 'coding-settings'
+import type {} from 'coding-proxy-pool'
+import { FREE_OUTBOUND_SETTINGS_NAMESPACE } from 'coding-llm-opencode'
+import { parseProxyLinks } from 'coding-proxy-pool'
+import type { ProxyHealth, ProxyNode } from 'coding-proxy-pool'
 import type { SettingsDescriptor, SettingsNamespace, SettingsPathOp } from 'coding-settings'
 import { credentialRef } from 'coding-credentials'
 // Value edge: the rename impl narrows the title service's validation failure; the import also resolves `ctx.get('sessionTitle')`.
@@ -275,6 +281,30 @@ function paginate(
 /** Wrap an ok result echoing the request's rpcId. */
 function ok<T>(request: RpcRequest<unknown>, value: T): RpcResponse<T> {
   return { rpcId: request.rpcId, result: { ok: true, value } }
+}
+
+/** 代理池节点的线视图：凭据只投影存在性，值不出宿主。 */
+function nodeView(node: ProxyNode): ProxyNodeView {
+  return {
+    id: node.id,
+    name: node.name,
+    protocol: node.protocol,
+    address: node.address,
+    port: node.port,
+    hasUsername: node.username !== undefined,
+    hasSecret: node.secret !== undefined,
+  }
+}
+
+/** 代理池健康记录的线视图。 */
+function healthView(health: ProxyHealth): ProxyHealthView {
+  return {
+    nodeId: health.nodeId,
+    alive: health.alive,
+    ...health.latencyMs !== undefined ? { latencyMs: health.latencyMs } : {},
+    ...health.failure !== undefined ? { failure: health.failure } : {},
+    checkedAt: health.checkedAt,
+  }
 }
 
 /**
@@ -3526,6 +3556,80 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             details: { settingsNs, ...baseURL === undefined ? {} : { baseURL } },
           })
         }
+      },
+    },
+
+    proxyPool: {
+      describe(request) {
+        const pool = ctx.get('proxyPool')
+        if (pool === undefined) {
+          return Promise.resolve(err(request, { code: 'proxy-pool-unavailable', message: 'the proxy pool service is not installed in this deployment', details: { capability: 'proxy-pool' } }))
+        }
+        const nodes = pool.listNodes().map(node => nodeView(node))
+        const groups: ProxyGroupView[] = pool.listGroups().map(group => ({
+          id: group.id,
+          name: group.name,
+          strategy: group.strategy,
+          members: [...group.members],
+        }))
+        const health = pool.snapshotHealth().map(entry => healthView(entry))
+        const scope = ctx.get('settings')
+        const section = scope?.get(FREE_OUTBOUND_SETTINGS_NAMESPACE) as OutboundModeView | undefined
+        return Promise.resolve(ok(request, {
+          nodes,
+          groups,
+          health,
+          outbound: section ?? { mode: 'direct' },
+          frontendURL: pool.proxyURL({ kind: 'pool' }) ?? '',
+        }))
+      },
+
+      importLinks(request) {
+        const pool = ctx.get('proxyPool')
+        if (pool === undefined) {
+          return Promise.resolve(err(request, { code: 'proxy-pool-unavailable', message: 'the proxy pool service is not installed in this deployment', details: { capability: 'proxy-pool' } }))
+        }
+        const { nodes, skipped } = parseProxyLinks(request.payload.text)
+        const imported = nodes
+          .map((node) => {
+            try {
+              pool.registerNode(node)
+              return nodeView(node)
+            } catch {
+              return undefined
+            }
+          })
+          .filter((entry): entry is ProxyNodeView => entry !== undefined)
+        return Promise.resolve(ok(request, { imported, skipped }))
+      },
+
+      removeNode(request) {
+        const pool = ctx.get('proxyPool')
+        if (pool === undefined) {
+          return Promise.resolve(err(request, { code: 'proxy-pool-unavailable', message: 'the proxy pool service is not installed in this deployment', details: { capability: 'proxy-pool' } }))
+        }
+        const removed = pool.unregisterNode(request.payload.id)
+        return Promise.resolve(ok(request, { removed }))
+      },
+
+      async testNode(request) {
+        const pool = ctx.get('proxyPool')
+        if (pool === undefined) {
+          return err(request, { code: 'proxy-pool-unavailable', message: 'the proxy pool service is not installed in this deployment', details: { capability: 'proxy-pool' } })
+        }
+        const health = await pool.checkNode(request.payload.id)
+        return ok(request, health === undefined ? undefined : healthView(health))
+      },
+
+      async setOutbound(request) {
+        const scope = ctx.get('settings')
+        if (scope === undefined) {
+          return err(request, { code: 'proxy-pool-unavailable', message: 'the settings service is not installed in this deployment', details: { capability: 'settings' } })
+        }
+        const view = request.payload.mode
+        const section = { mode: view.mode, ...view.customUrl === undefined ? {} : { customUrl: view.customUrl } }
+        await scope.update(settingsNamespace('llm-opencode'), section)
+        return ok(request, { outbound: view })
       },
     },
 

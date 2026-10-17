@@ -2275,6 +2275,23 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         code: 'browser-failed', message: 'fixture browser service is unavailable', details: { reason: 'BROWSER_UNAVAILABLE' },
       }),
     },
+    proxyPool: {
+      describe: request => err(request, {
+        code: 'proxy-pool-unavailable', message: 'fixture proxy pool is unavailable', details: { capability: 'proxy-pool' },
+      }),
+      importLinks: request => err(request, {
+        code: 'proxy-pool-unavailable', message: 'fixture proxy pool is unavailable', details: { capability: 'proxy-pool' },
+      }),
+      removeNode: request => err(request, {
+        code: 'proxy-pool-unavailable', message: 'fixture proxy pool is unavailable', details: { capability: 'proxy-pool' },
+      }),
+      testNode: request => err(request, {
+        code: 'proxy-pool-unavailable', message: 'fixture proxy pool is unavailable', details: { capability: 'proxy-pool' },
+      }),
+      setOutbound: request => err(request, {
+        code: 'proxy-pool-unavailable', message: 'fixture proxy pool is unavailable', details: { capability: 'proxy-pool' },
+      }),
+    },
     sessions: {
       list: request => ok(request, { items: [...sessions].sort((a, b) => b.updatedAt - a.updatedAt) }),
       search: (request, signal) => {
@@ -3259,6 +3276,11 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'llm.providers': return this.api.llm.providers(request)
       case 'llm.models': return this.api.llm.models(request)
       case 'llm.discoverModels': return this.api.llm.discoverModels(request, signal)
+      case 'proxyPool.describe': return this.api.proxyPool.describe(request)
+      case 'proxyPool.importLinks': return this.api.proxyPool.importLinks(request)
+      case 'proxyPool.removeNode': return this.api.proxyPool.removeNode(request)
+      case 'proxyPool.testNode': return this.api.proxyPool.testNode(request)
+      case 'proxyPool.setOutbound': return this.api.proxyPool.setOutbound(request)
     }
   }
 

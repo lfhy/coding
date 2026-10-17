@@ -27,8 +27,9 @@ export type {
   ClientRequest, ServerResponse, ServerRequest, ClientResponse, RpcMessage, RpcReceipt,
   HostDescription, IApiClient, SessionId, SessionEvent, ContentBlock, StreamChunk,
   GoalsApi, GoalRef,
-  SettingsApi, SettingsNamespaceView, SettingsPathOpView, SettingsSecretView,
+  SettingsApi, SettingsNamespaceView, SettingsPathOpView, SettingsSecretView, OutboundModeView,
   CredentialsApi, CredentialView, ConfigurableProviderView, DiscoveredModelView, LlmApi,
+  ProxyPoolApi, ProxyNodeView, ProxyHealthView, ProxyGroupView,
 } from './api.ts'
 export {
   RpcId,

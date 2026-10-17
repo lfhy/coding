@@ -87,6 +87,12 @@ export interface RpcErrorDetailsMap {
    * details name the endpoint asked, never the credential offered.
    */
   'model-discovery-failed': { settingsNs: string; baseURL?: string }
+  /**
+   * The proxy pool (or settings) service this method needs is not present in
+   * the deployment: the proxy-pool plugin or the settings provider was never
+   * mounted. Details carry no secrets — only which capability is missing.
+   */
+  'proxy-pool-unavailable': { capability: 'proxy-pool' | 'settings' }
   'title-invalid': { sessionId: SessionId }
   'fork-unavailable': { sessionId: SessionId }
   'subagent-parent-unavailable': { parentSessionId: SessionId }

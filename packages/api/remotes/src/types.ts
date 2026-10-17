@@ -10,6 +10,8 @@
  */
 
 import type { API_REMOTE_FORWARDED_EVENTS } from './remote-events.ts'
+// 类型面的 Events 合并：proxy-pool/node 事件由池包声明，这里引入以进入本编译面。
+import type {} from 'coding-proxy-pool'
 
 /** Type projection of the allowlist; the consumer and the Host read this one. */
 export type ApiRemoteForwardedEvent = typeof API_REMOTE_FORWARDED_EVENTS[number]

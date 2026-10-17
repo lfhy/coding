@@ -247,6 +247,16 @@ export class FakeApiClient implements IApiClient {
     discoverModels: payload => this.record('llm.discoverModels', payload, Promise.resolve(ok({ models: [] }))),
   }
 
+  readonly proxyPool: IApiClient['proxyPool'] = {
+    describe: payload => this.record('proxyPool.describe', payload, Promise.resolve(ok({
+      nodes: [], groups: [], health: [], outbound: { mode: 'direct' }, frontendURL: '',
+    }))),
+    importLinks: payload => this.record('proxyPool.importLinks', payload, Promise.resolve(ok({ imported: [], skipped: 0 }))),
+    removeNode: payload => this.record('proxyPool.removeNode', payload, Promise.resolve(ok({ removed: false }))),
+    testNode: payload => this.record('proxyPool.testNode', payload, Promise.resolve(ok(undefined))),
+    setOutbound: payload => this.record('proxyPool.setOutbound', payload, Promise.resolve(ok({ outbound: payload.mode }))),
+  }
+
   /** When true, streams never fire onOpen (misbehaving-carrier material for the handshake timeout guard). */
   suppressStreamOpen = false
 

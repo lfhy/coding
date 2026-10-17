@@ -21,6 +21,23 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
         return { rpcId: request.rpcId, result: { ok: true, value: null } }
       },
     },
+    proxyPool: {
+      async describe(request) {
+        return { rpcId: request.rpcId, result: { ok: false, error: { code: 'proxy-pool-unavailable' as const, message: 'stub', details: { capability: 'proxy-pool' as const } } } }
+      },
+      async importLinks(request) {
+        return { rpcId: request.rpcId, result: { ok: false, error: { code: 'proxy-pool-unavailable' as const, message: 'stub', details: { capability: 'proxy-pool' as const } } } }
+      },
+      async removeNode(request) {
+        return { rpcId: request.rpcId, result: { ok: false, error: { code: 'proxy-pool-unavailable' as const, message: 'stub', details: { capability: 'proxy-pool' as const } } } }
+      },
+      async testNode(request) {
+        return { rpcId: request.rpcId, result: { ok: false, error: { code: 'proxy-pool-unavailable' as const, message: 'stub', details: { capability: 'proxy-pool' as const } } } }
+      },
+      async setOutbound(request) {
+        return { rpcId: request.rpcId, result: { ok: false, error: { code: 'proxy-pool-unavailable' as const, message: 'stub', details: { capability: 'proxy-pool' as const } } } }
+      },
+    },
     sessions: {
       async list(request) {
         if (overrides.crashOn === 'session.list') throw new Error('impl crashed')

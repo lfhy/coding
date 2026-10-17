@@ -81,7 +81,9 @@
     "coding-agent-presets": "workspace:^",
     "coding-llm-vision-fallback": "workspace:^",
     "coding-cordis-host-runner": "workspace:^",
-    "coding-invariants": "workspace:^"
+    "coding-invariants": "workspace:^",
+    "coding-proxy-pool": "workspace:^",
+    "coding-llm-opencode": "workspace:^"
   },
   "peerDependenciesMeta": {
     "coding-llm-vision-fallback": {
@@ -98,6 +100,7 @@
     "coding-storage-domain": "workspace:^",
     "coding-typert-protocol": "workspace:^",
     "coding-typert-registry": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^"
+    "coding-proxy-pool": "workspace:^",
+    "coding-llm-opencode": "workspace:^"
   }
 }

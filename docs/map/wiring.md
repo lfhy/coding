@@ -345,6 +345,7 @@
 - `ui-settings` → `coding-client-ui-settings`
 - `ui-settings-general` → `coding-client-ui-settings-general`
 - `ui-settings-models` → `coding-client-ui-settings-models`
+- `ui-settings-proxy-pool` → `coding-client-ui-settings-proxy-pool`
 - `ui-settings-plugin-inventory` → `coding-client-ui-settings-plugin-inventory`
 - `ui-conversation` → `coding-client-ui-conversation`
 - `ui-brand-official` → `coding-client-ui-brand-official`

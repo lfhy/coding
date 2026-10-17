@@ -1605,6 +1605,9 @@ importers:
       coding-client-ui-settings-plugins:
         specifier: workspace:^
         version: link:../../client/ui-settings-plugins
+      coding-client-ui-settings-proxy-pool:
+        specifier: workspace:^
+        version: link:../../client/ui-settings-proxy-pool
       coding-client-ui-settings-search:
         specifier: workspace:^
         version: link:../../client/ui-settings-search
@@ -3156,6 +3159,42 @@ importers:
       coding-client-ui-primitives:
         specifier: workspace:^
         version: link:../ui-primitives
+      coding-client-ui-settings:
+        specifier: workspace:^
+        version: link:../ui-settings
+      coding-client-ui-slots:
+        specifier: workspace:^
+        version: link:../ui-slots
+      coding-invariants:
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      react:
+        specifier: ^18.2.0
+        version: 18.3.1
+
+  packages/client/ui-settings-proxy-pool:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@testing-library/react':
+        specifier: ^16.3.2
+        version: 16.3.2(@testing-library/dom@10.4.2)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@types/react':
+        specifier: ~18.3.1
+        version: 18.3.31
+      coding-api-remotes:
+        specifier: workspace:^
+        version: link:../../api/remotes
+      coding-client-connection:
+        specifier: workspace:^
+        version: link:../connection
+      coding-client-locale:
+        specifier: workspace:^
+        version: link:../locale
+      coding-client-runtime:
+        specifier: workspace:^
+        version: link:../runtime
       coding-client-ui-settings:
         specifier: workspace:^
         version: link:../ui-settings
@@ -5652,9 +5691,15 @@ importers:
       coding-invariants:
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
+      coding-llm-opencode:
+        specifier: workspace:^
+        version: link:../../llm/llm-opencode
       coding-llm-vision-fallback:
         specifier: workspace:^
         version: link:../../llm/llm-vision-fallback
+      coding-proxy-pool:
+        specifier: workspace:^
+        version: link:../../net/proxy-pool
       coding-storage:
         specifier: workspace:^
         version: link:../../storage/storage
@@ -6605,6 +6650,9 @@ importers:
       coding-invariants:
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
+      coding-settings:
+        specifier: workspace:^
+        version: link:../../settings/settings
 
   packages/plan/plan-mode:
     dependencies:

@@ -37,6 +37,13 @@ function scriptedApi(overrides: {
     Promise.resolve({ rpcId: r.rpcId, result: { ok: false, error: { code: 'internal' as const, message: 'stub', details: {} } } })
   return {
     browser: { control: r => ok(r, null), ...overrides.browser },
+    proxyPool: {
+      describe: r => err(r),
+      importLinks: r => err(r),
+      removeNode: r => err(r),
+      testNode: r => err(r),
+      setOutbound: r => err(r),
+    },
     sessions: {
       list: r => ok(r, { items: [] }),
       search: r => ok(r, { items: [], hasMore: false }),

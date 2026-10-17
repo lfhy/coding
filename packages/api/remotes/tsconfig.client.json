@@ -22,7 +22,6 @@
     },
     {
       "path": "../../credentials/credentials"
-
     },
     {
       "path": "../../context/file-reference"
@@ -56,6 +55,9 @@
     },
     {
       "path": "../../typert/protocol"
+    },
+    {
+      "path": "../../net/proxy-pool"
     }
   ]
 }

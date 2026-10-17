@@ -16,6 +16,14 @@ export interface SettingsSecretView {
   set: boolean
 }
 
+/** Wire view of the Free channel's outbound selection (settings ns `llm-opencode`). */
+export interface OutboundModeView {
+  /** `direct` (default), `pool` (proxy-pool frontend), or `custom`. */
+  mode: 'direct' | 'pool' | 'custom'
+  /** The http(s) proxy URL for `custom`; absent otherwise. */
+  customUrl?: string
+}
+
 /** Wire view of one registered settings namespace. */
 export interface SettingsNamespaceView {
   /** Namespace key (`llm-deepseek`, `llm-pi-ai`, …). */
