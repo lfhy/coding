@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-progress-reminder
+# coding-progress-reminder
 
 长任务的进度提醒上下文。一个轮次内连续完成的工具调用达到阈值而模型始终没有向用户说话时，循环在下一次模型请求前注入一条系统提醒，要求先汇报进度再继续执行。Coding 组合默认启用它，节奏由 `toolCallsPerReminder` 控制。
 
@@ -6,7 +6,7 @@
 
 ```yaml
 - id: progress-reminder
-  name: '@deepseek-ai/dsh-progress-reminder'
+  name: 'coding-progress-reminder'
   config:
     toolCallsPerReminder: 15 # optional; omit for the shipped default
 ```

@@ -32,7 +32,7 @@
 
 ```yaml
 # Local execution
-- name: '@deepseek-ai/dsh-bash-local'
+- name: 'coding-bash-local'
 
 # Replace this row with another package that provides the same service.
 ```
@@ -90,7 +90,7 @@ export interface MyCapResult {
 ```ts ignore-check
 // packages/my-cap/my-cap-local/src/index.ts
 import type { Context } from '@deepseek-ai/cordis'
-import { MyCapService, type MyCapRequest, type MyCapResult } from '@deepseek-ai/dsh-my-cap'
+import { MyCapService, type MyCapRequest, type MyCapResult } from 'coding-my-cap'
 
 class MyCapLocal extends MyCapService {
   async execute(request: MyCapRequest): Promise<MyCapResult> {
@@ -111,7 +111,7 @@ export function apply(ctx: Context) {
 ```ts ignore-check
 // packages/my-cap/tool-my-cap/src/index.ts
 import type { Context } from '@deepseek-ai/cordis'
-import { defineTool } from '@deepseek-ai/dsh-tools'
+import { defineTool } from 'coding-tools'
 
 export const name = 'tool-my-cap'
 export const inject = ['tools', 'myCap']
@@ -138,8 +138,8 @@ export function apply(ctx: Context) {
 ### 在 cordis.yml 中组合
 
 ```yaml
-- name: '@deepseek-ai/dsh-my-cap-local'
-- name: '@deepseek-ai/dsh-tool-my-cap'
+- name: 'coding-my-cap-local'
+- name: 'coding-tool-my-cap'
 ```
 
 ## 设计要点

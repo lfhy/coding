@@ -5,25 +5,25 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { CallId } from '@deepseek-ai/dsh-llm'
-import { ShellExecutor } from '@deepseek-ai/dsh-shell'
-import type { ShellExecRequest, ShellExecSpec, ShellProcess, ShellProcessRead, ShellRunResult } from '@deepseek-ai/dsh-shell'
-import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime, { TOOL_ABORTED, TOOL_ABORTED_BEFORE_DISPATCH } from '@deepseek-ai/dsh-tools'
-import AgentRegistry from '@deepseek-ai/dsh-agent'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
-import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
-import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
-import * as ToolTasks from '@deepseek-ai/dsh-tool-jobs'
-import ApprovalService from '@deepseek-ai/dsh-user-approval'
-import type { ApprovalOutcome } from '@deepseek-ai/dsh-user-approval'
-import { LocalBashExecutor } from '@deepseek-ai/dsh-bash-local'
-import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
-import { REMOTE_WORKSPACE_MARKER } from '@deepseek-ai/dsh-subprocess'
-import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
-import * as ToolBash from '@deepseek-ai/dsh-tool-bash'
-import * as BashEnvPlugin from '@deepseek-ai/dsh-shell-env'
+import { CallId } from 'coding-llm'
+import { ShellExecutor } from 'coding-shell'
+import type { ShellExecRequest, ShellExecSpec, ShellProcess, ShellProcessRead, ShellRunResult } from 'coding-shell'
+import SystemPrompt from 'coding-system-prompt'
+import ToolRuntime, { TOOL_ABORTED, TOOL_ABORTED_BEFORE_DISPATCH } from 'coding-tools'
+import AgentRegistry from 'coding-agent'
+import type { Agent } from 'coding-agent'
+import SessionStore, { SessionId } from 'coding-session'
+import JsonlSessionPersistence from 'coding-session-persistence-jsonl'
+import LocalJobRegistry from 'coding-jobs-local'
+import * as ToolTasks from 'coding-tool-jobs'
+import ApprovalService from 'coding-user-approval'
+import type { ApprovalOutcome } from 'coding-user-approval'
+import { LocalBashExecutor } from 'coding-bash-local'
+import LocalSubprocessRuntime from 'coding-subprocess-local'
+import { REMOTE_WORKSPACE_MARKER } from 'coding-subprocess'
+import SandboxPolicyService from 'coding-sandbox-policy'
+import * as ToolBash from 'coding-tool-bash'
+import * as BashEnvPlugin from 'coding-shell-env'
 import { processOutcome } from '../src/background.ts'
 import { renderProcessRead, renderResult } from '../src/render.ts'
 
@@ -564,7 +564,7 @@ describe('background execution through the job runtime', () => {
     const ctx = await setup() // no LocalJobRegistry / ToolTasks
     const result = await call(ctx, 'bash', { command: 'sleep 60', description: 'test command', run_in_background: true })
     expect(result.isError).toBe(true)
-    expect(text(result)).toContain('background jobs unavailable: load @deepseek-ai/dsh-jobs and @deepseek-ai/dsh-tool-jobs')
+    expect(text(result)).toContain('background jobs unavailable: load coding-jobs and coding-tool-jobs')
   })
 
   it('a pre-aborted call is skipped before the process starts', async () => {

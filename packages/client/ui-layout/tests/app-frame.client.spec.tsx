@@ -6,8 +6,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
-import { AppFrame } from '@deepseek-ai/dsh-client-ui-layout/src/client/AppFrame.tsx'
-import type { AppFrameProps } from '@deepseek-ai/dsh-client-ui-layout/src/client/AppFrame.tsx'
+import { AppFrame } from 'coding-client-ui-layout/src/client/AppFrame.tsx'
+import type { AppFrameProps } from 'coding-client-ui-layout/src/client/AppFrame.tsx'
 import {
   DETAILS_MAX,
   DETAILS_MIN,
@@ -18,11 +18,11 @@ import {
   WORKBENCH_BOTTOM_MIN,
   WORKBENCH_MAX,
   WORKBENCH_MIN,
-} from '@deepseek-ai/dsh-client-ui-layout/src/client/columns.ts'
-import { createLayoutStore } from '@deepseek-ai/dsh-client-ui-layout/src/client/stores.ts'
+} from 'coding-client-ui-layout/src/client/columns.ts'
+import { createLayoutStore } from 'coding-client-ui-layout/src/client/stores.ts'
 import type {
   SessionId, SessionListState, WorkspaceListState,
-} from '@deepseek-ai/dsh-client-runtime/client'
+} from 'coding-client-runtime/client'
 
 // SessionProvider 与 useSessions stub 共用的会话选择状态。
 const selectedSession = { current: 's-test' as SessionId | undefined }

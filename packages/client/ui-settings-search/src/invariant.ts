@@ -1,9 +1,9 @@
-/** @module @deepseek-ai/dsh-client-ui-settings-search/invariant */
+/** @module coding-client-ui-settings-search/invariant */
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
-import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
+import type { InvariantInstaller } from 'coding-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-client-ui-settings-search'
+const PACKAGE_NAME = 'coding-client-ui-settings-search'
 
 /** Cordis companion 插件名。 */
 export const name = 'client-ui-settings-search-invariant'

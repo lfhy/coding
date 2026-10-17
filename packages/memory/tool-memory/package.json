@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-tool-memory",
+  "name": "coding-tool-memory",
   "description": "Project-isolated memory tools: save, read, list, and delete notes for the session's project",
   "version": "0.1.0-rc.8",
   "publishConfig": {
@@ -36,21 +36,21 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-memory": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-system-prompt": "workspace:^",
-    "@deepseek-ai/dsh-tools": "workspace:^"
+    "coding-agent": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-memory": "workspace:^",
+    "coding-session": "workspace:^",
+    "coding-system-prompt": "workspace:^",
+    "coding-tools": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-memory": "workspace:^",
-    "@deepseek-ai/dsh-memory-local": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-system-prompt": "workspace:^",
-    "@deepseek-ai/dsh-tools": "workspace:^"
+    "coding-agent": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-memory": "workspace:^",
+    "coding-memory-local": "workspace:^",
+    "coding-session": "workspace:^",
+    "coding-system-prompt": "workspace:^",
+    "coding-tools": "workspace:^"
   }
 }

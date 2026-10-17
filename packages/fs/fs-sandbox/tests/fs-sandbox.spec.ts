@@ -14,12 +14,12 @@ import { existsSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join, parse } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import { FsError, FsTargetKey } from '@deepseek-ai/dsh-fs'
-import type { FsTarget } from '@deepseek-ai/dsh-fs'
-import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
-import type { SandboxMode } from '@deepseek-ai/dsh-sandbox'
-import { SandboxedFileSystem } from '@deepseek-ai/dsh-fs-sandbox'
-import { REMOTE_WORKSPACE_MARKER, remoteWorkspaceTargetKey } from '@deepseek-ai/dsh-subprocess'
+import { FsError, FsTargetKey } from 'coding-fs'
+import type { FsTarget } from 'coding-fs'
+import SandboxPolicyService from 'coding-sandbox-policy'
+import type { SandboxMode } from 'coding-sandbox'
+import { SandboxedFileSystem } from 'coding-fs-sandbox'
+import { REMOTE_WORKSPACE_MARKER, remoteWorkspaceTargetKey } from 'coding-subprocess'
 
 let base: string
 let workspace: string

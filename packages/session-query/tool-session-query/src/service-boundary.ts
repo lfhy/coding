@@ -1,15 +1,15 @@
 /**
  * Session-query service error containment and model-safe translation.
  *
- * @module @deepseek-ai/dsh-tool-session-query/service-boundary
+ * @module coding-tool-session-query/service-boundary
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { HarnessError } from '@deepseek-ai/dsh-llm'
+import { HarnessError } from 'coding-llm'
 import {
   SessionQueryError,
   type SessionQueryErrorCode,
-} from '@deepseek-ai/dsh-session-query'
+} from 'coding-session-query'
 
 interface ModelSafeServiceFailure {
   readonly code: SessionQueryErrorCode | 'SESSION_QUERY_TOOL_FAILED'

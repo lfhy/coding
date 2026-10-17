@@ -16,7 +16,7 @@ vi.mock('node:child_process', () => ({ execFile: execFileMock }))
 
 import { release as osRelease } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
-import { canOpenNativePath, openNativePath, openNativeTextFile, type PathOpenerRunner } from '@deepseek-ai/dsh-native-command'
+import { canOpenNativePath, openNativePath, openNativeTextFile, type PathOpenerRunner } from 'coding-native-command'
 
 const signal = () => new AbortController().signal
 

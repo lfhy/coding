@@ -3,7 +3,7 @@ description: "Host 工作区协议：提供跨平台本地应用启动、Session
 kind: "package-reference"
 ---
 
-# @deepseek-ai/dsh-host-open-in-app
+# coding-host-open-in-app
 
 ## 概述
 
@@ -27,7 +27,7 @@ kind: "package-reference"
 把本包挂进携带 `webServer`、`connection`、`subprocess` 与 `fs` 的组合，通常与 [`dsh-client-ui-open-in-app`](../../client/ui-open-in-app/README.md) 并排。
 
 ```yaml
-- name: '@deepseek-ai/dsh-host-open-in-app'
+- name: 'coding-host-open-in-app'
   config:
     probeTimeoutMs: 10000
     iconTimeoutMs: 10000

@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-tool-bash-persistent",
+  "name": "coding-tool-bash-persistent",
   "description": "Model-facing owner-scoped persistent Bash tool backed by the Harness PTY service",
   "version": "0.1.0-rc.8",
   "publishConfig": {
@@ -31,11 +31,11 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-terminal": "workspace:^",
-    "@deepseek-ai/dsh-timeout": "workspace:^",
-    "@deepseek-ai/dsh-tools": "workspace:^",
+    "coding-agent": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-terminal": "workspace:^",
+    "coding-timeout": "workspace:^",
+    "coding-tools": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "dependencies": {
@@ -44,18 +44,18 @@
   "devDependencies": {
     "@deepseek-ai/cordis-plugin-include": "workspace:^",
     "@deepseek-ai/cordis-plugin-loader": "workspace:^",
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-terminal": "workspace:^",
-    "@deepseek-ai/dsh-terminal-bash": "workspace:^",
-    "@deepseek-ai/dsh-sandbox": "workspace:^",
-    "@deepseek-ai/dsh-sandbox-policy": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-subprocess-local": "workspace:^",
-    "@deepseek-ai/dsh-system-prompt": "workspace:^",
-    "@deepseek-ai/dsh-timeout": "workspace:^",
-    "@deepseek-ai/dsh-tools": "workspace:^",
+    "coding-agent": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-llm": "workspace:^",
+    "coding-terminal": "workspace:^",
+    "coding-terminal-bash": "workspace:^",
+    "coding-sandbox": "workspace:^",
+    "coding-sandbox-policy": "workspace:^",
+    "coding-session": "workspace:^",
+    "coding-subprocess-local": "workspace:^",
+    "coding-system-prompt": "workspace:^",
+    "coding-timeout": "workspace:^",
+    "coding-tools": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   }
 }

@@ -1,13 +1,13 @@
 /**
- * Package-owned invariant companion for `@deepseek-ai/dsh-typert-registry`.
- * @module @deepseek-ai/dsh-typert-registry/invariant
+ * Package-owned invariant companion for `coding-typert-registry`.
+ * @module coding-typert-registry/invariant
  */
 
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
-import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
+import type { InvariantInstaller } from 'coding-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-typert-registry'
+const PACKAGE_NAME = 'coding-typert-registry'
 
 /** Cordis companion plugin name. */
 export const name = 'typert-registry-invariant'

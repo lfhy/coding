@@ -2,14 +2,14 @@
  * Bash 执行器：本地及 agent 模式使用受管 subprocess；basic 模式前台通过
  * bridge 运行一次 SSH exec，后台使用 bridge 的受管进程。命令默认值、环境与输出处理属于本模块，
  * 执行审批属于 `tools/pre-execute` 或沙箱执行器。
- * @module @deepseek-ai/dsh-bash-local
+ * @module coding-bash-local
  */
 
 import { constants } from 'node:os'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { SHELL_SETTINGS_NAMESPACE, ShellExecutor } from '@deepseek-ai/dsh-shell'
-import type { ShellExecRequest, ShellExecSpec, ShellProcess, ShellProcessRead, ShellRunResult, CollectedOutput } from '@deepseek-ai/dsh-shell'
+import { SHELL_SETTINGS_NAMESPACE, ShellExecutor } from 'coding-shell'
+import type { ShellExecRequest, ShellExecSpec, ShellProcess, ShellProcessRead, ShellRunResult, CollectedOutput } from 'coding-shell'
 import {
   callRemoteWorkspaceBridge,
   RemoteWorkspaceError,
@@ -17,10 +17,10 @@ import {
   remoteWorkspacePathSync,
   scrubbedParentEnv,
   verifyRemoteWorkspaceTarget,
-} from '@deepseek-ai/dsh-subprocess'
-import type { SubprocessCollect, SubprocessHandle, SubprocessOutputReader, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { installSettingsSection } from '@deepseek-ai/dsh-settings'
-import { clampTimeout, deadline, MAX_TIMER_DELAY_MS, timeoutOf } from '@deepseek-ai/dsh-timeout'
+} from 'coding-subprocess'
+import type { SubprocessCollect, SubprocessHandle, SubprocessOutputReader, SubprocessSpawnSpec } from 'coding-subprocess'
+import { installSettingsSection } from 'coding-settings'
+import { clampTimeout, deadline, MAX_TIMER_DELAY_MS, timeoutOf } from 'coding-timeout'
 
 /**
  * 关闭颜色、分页器与交互式终端特性；显式调用方环境可以覆盖这些默认值。

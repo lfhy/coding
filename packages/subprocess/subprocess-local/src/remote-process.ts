@@ -3,9 +3,9 @@
 import { Buffer } from 'node:buffer'
 import { randomBytes } from 'node:crypto'
 import { PassThrough, Writable } from 'node:stream'
-import type { RemoteWorkspaceTarget, SubprocessCollect, SubprocessHandle, SubprocessOutcome, SubprocessOutputMode, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { callRemoteWorkspaceBridge, RemoteWorkspaceError, verifyRemoteWorkspaceTarget } from '@deepseek-ai/dsh-subprocess'
-import { deadline, MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
+import type { RemoteWorkspaceTarget, SubprocessCollect, SubprocessHandle, SubprocessOutcome, SubprocessOutputMode, SubprocessSpawnSpec } from 'coding-subprocess'
+import { callRemoteWorkspaceBridge, RemoteWorkspaceError, verifyRemoteWorkspaceTarget } from 'coding-subprocess'
+import { deadline, MAX_TIMER_DELAY_MS } from 'coding-timeout'
 import { RemoteOutputReader } from './remote-output.ts'
 
 const REMOTE_READ_CHUNK_BYTES = 64 * 1024

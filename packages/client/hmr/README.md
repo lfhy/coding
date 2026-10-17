@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-client-hmr
+# coding-client-hmr
 
 为通过脚本加载的客户端插件提供热重载。web 组合包无条件挂载该行；没有重建 watcher（`pnpm run dev:web`）改写客户端 bundle 时，轮询观察不到变化，链路保持空闲。
 

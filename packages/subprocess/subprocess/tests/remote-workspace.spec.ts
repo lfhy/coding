@@ -15,8 +15,8 @@ import {
   remoteWorkspacePathSync,
   remoteWorkspaceTargetKey,
   verifyRemoteWorkspaceTarget,
-} from '@deepseek-ai/dsh-subprocess'
-import type { RemoteWorkspaceCapability, RemoteWorkspaceMode } from '@deepseek-ai/dsh-subprocess'
+} from 'coding-subprocess'
+import type { RemoteWorkspaceCapability, RemoteWorkspaceMode } from 'coding-subprocess'
 
 const originalBridgeUrl = process.env.DSH_REMOTE_BRIDGE_URL
 const originalBridgeToken = process.env.DSH_REMOTE_BRIDGE_TOKEN

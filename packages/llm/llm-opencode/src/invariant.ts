@@ -1,13 +1,13 @@
 /**
- * Package-owned invariant companion for `@deepseek-ai/dsh-llm-opencode`.
- * @module @deepseek-ai/dsh-llm-opencode/invariant
+ * Package-owned invariant companion for `coding-llm-opencode`.
+ * @module coding-llm-opencode/invariant
  */
 
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
-import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
+import type { InvariantInstaller } from 'coding-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-llm-opencode'
+const PACKAGE_NAME = 'coding-llm-opencode'
 
 /** Cordis companion plugin name. */
 export const name = 'llm-opencode-invariant'

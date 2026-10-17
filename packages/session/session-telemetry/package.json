@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-session-telemetry",
+  "name": "coding-session-telemetry",
   "description": "SessionTelemetryBackend seam for the DeepSeek Harness: session-event capture, projection, redaction, and handoff to a reporting backend",
   "version": "0.1.0-rc.8",
   "publishConfig": {
@@ -32,15 +32,15 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
+    "coding-agent": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-session": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
+    "coding-agent": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-session": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   }
 }

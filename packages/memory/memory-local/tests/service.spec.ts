@@ -3,8 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { PROJECT_META_FILE } from '@deepseek-ai/dsh-memory'
-import LocalMemory from '@deepseek-ai/dsh-memory-local'
+import { PROJECT_META_FILE } from 'coding-memory'
+import LocalMemory from 'coding-memory-local'
 
 const cleanups: string[] = []
 

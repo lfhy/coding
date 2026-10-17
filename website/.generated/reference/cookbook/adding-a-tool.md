@@ -11,7 +11,7 @@ editSource: "docs/cookbook/adding-a-tool.md"
 ```ts
 import { readFile } from 'node:fs/promises'
 import type { Context } from '@deepseek-ai/cordis'
-import { defineTool } from '@deepseek-ai/dsh-tools'
+import { defineTool } from 'coding-tools'
 
 export const name = 'my-tool'
 export const inject = ['tools']

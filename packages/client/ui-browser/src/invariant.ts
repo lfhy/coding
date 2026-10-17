@@ -1,10 +1,10 @@
-/** 浏览器画面插件的 invariant companion。 @module @deepseek-ai/dsh-client-ui-browser/invariant */
+/** 浏览器画面插件的 invariant companion。 @module coding-client-ui-browser/invariant */
 
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
-import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
+import type { InvariantInstaller } from 'coding-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-client-ui-browser'
+const PACKAGE_NAME = 'coding-client-ui-browser'
 
 /** Cordis companion 插件名。 */
 export const name = 'client-ui-browser-invariant'

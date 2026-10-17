@@ -140,15 +140,15 @@ async function validatePlaywright(paths: PackagingPaths): Promise<void> {
     await readVersion(join(runtimeModules, 'playwright-core', 'package.json')) !== playwrightVersion) {
     throw new Error(`package: expected Host runtime Playwright ${playwrightVersion}`)
   }
-  await requireFile(join(runtimeModules, '@deepseek-ai', 'dsh-browser-playwright', 'lib', 'index.js'))
+  await requireFile(join(runtimeModules, 'coding-browser-playwright', 'lib', 'index.js'))
 }
 
 async function validateElectronBrowser(paths: PackagingPaths): Promise<void> {
   const modules = join(paths.runtime, 'runtime', 'node_modules')
-  const provider = join(modules, '@deepseek-ai', 'dsh-browser-electron')
+  const provider = join(modules, 'coding-browser-electron')
   const manifest: unknown = JSON.parse(await readFile(join(provider, 'package.json'), 'utf8'))
   const record = manifest as { name?: unknown; exports?: { './protocol'?: { default?: unknown } } }
-  if (typeof manifest !== 'object' || manifest === null || record.name !== '@deepseek-ai/dsh-browser-electron' ||
+  if (typeof manifest !== 'object' || manifest === null || record.name !== 'coding-browser-electron' ||
     record.exports?.['./protocol']?.default !== './lib/types/protocol.js') {
     throw new Error('package: invalid Host runtime Electron browser protocol export')
   }
@@ -195,7 +195,7 @@ async function validate(paths: PackagingPaths, run: Run): Promise<string> {
     type?: unknown
     devDependencies?: { electron?: unknown }
   }
-  if (manifest.name !== '@deepseek-ai/dsh-desktop-electron' || typeof manifest.version !== 'string'
+  if (manifest.name !== 'coding-desktop-electron' || typeof manifest.version !== 'string'
     || manifest.type !== 'module' || manifest.main !== 'lib/main.js'
     || manifest.devDependencies?.electron !== electronVersion) {
     throw new Error('package: unexpected Electron application manifest')
@@ -210,7 +210,7 @@ async function validate(paths: PackagingPaths, run: Run): Promise<string> {
   await assertArm64(join(paths.runtime, 'coding-node-darwin-arm64'), run)
   await requireDirectory(join(paths.runtime, 'runtime'))
   await rejectSymlinks(join(paths.runtime, 'runtime'))
-  const cliPackage = join(paths.runtime, 'runtime', 'node_modules', '@deepseek-ai', 'dsh')
+  const cliPackage = join(paths.runtime, 'runtime', 'node_modules', 'coding')
   await requireFile(join(cliPackage, 'lib', 'bin.js'))
   const metadataPath = join(paths.runtime, 'metadata.json')
   const version = await readVersion(metadataPath)

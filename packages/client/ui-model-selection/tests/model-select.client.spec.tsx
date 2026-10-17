@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ModelSelection } from 'coding-api-remotes/client'
+import { createSnapshotStore } from 'coding-client-runtime/client'
 import type { ComponentProps } from 'react'
 import type { ModelDirectoryState } from '../src/client/directory.ts'
 import { ModelSelect } from '../src/client/ModelSelect.tsx'
 import { en, zh } from '../src/client/locales.ts'
-import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
+import { zh as commonZh } from 'coding-client-locale/src/locales/zh.ts'
 
 // 测试翻译按包字典、公共字典、键名的实际顺序回退。
 function translator(dictionary: Record<string, string>): ComponentProps<typeof ModelSelect>['t'] {

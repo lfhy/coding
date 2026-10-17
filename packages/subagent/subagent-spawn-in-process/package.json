@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-subagent-spawn-in-process",
+  "name": "coding-subagent-spawn-in-process",
   "description": "In-process spawn subagent backend: runs a fresh child agent on ctx.agents",
   "version": "0.1.0-rc.8",
   "publishConfig": {
@@ -32,9 +32,9 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-subagent": "workspace:^",
-    "@deepseek-ai/dsh-subagent-in-process-driver": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-subagent": "workspace:^",
+    "coding-subagent-in-process-driver": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "dependencies": {
@@ -42,19 +42,19 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis-plugin-loader": "workspace:^",
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-agent-loop": "workspace:^",
-    "@deepseek-ai/dsh-agent-loop-testkit": "workspace:^",
-    "@deepseek-ai/dsh-bash-local": "workspace:^",
-    "@deepseek-ai/dsh-subprocess-local": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-llm-deepseek": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-subagent": "workspace:^",
-    "@deepseek-ai/dsh-subagent-in-process-driver": "workspace:^",
-    "@deepseek-ai/dsh-tool-bash": "workspace:^",
-    "@deepseek-ai/dsh-tool-subagent": "workspace:^",
+    "coding-agent": "workspace:^",
+    "coding-agent-loop": "workspace:^",
+    "coding-agent-loop-testkit": "workspace:^",
+    "coding-bash-local": "workspace:^",
+    "coding-subprocess-local": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-llm": "workspace:^",
+    "coding-llm-deepseek": "workspace:^",
+    "coding-session": "workspace:^",
+    "coding-subagent": "workspace:^",
+    "coding-subagent-in-process-driver": "workspace:^",
+    "coding-tool-bash": "workspace:^",
+    "coding-tool-subagent": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   }
 }

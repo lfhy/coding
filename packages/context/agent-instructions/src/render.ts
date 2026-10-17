@@ -1,10 +1,10 @@
 /**
  * Model-facing workspace instruction rendering within an explicit byte budget.
- * @module @deepseek-ai/dsh-agent-instructions/render
+ * @module coding-agent-instructions/render
  */
 
 import { basename, dirname } from 'node:path'
-import { isHomeDisplayPath } from '@deepseek-ai/dsh-home-paths'
+import { isHomeDisplayPath } from 'coding-home-paths'
 import { DEFAULT_OVERVIEW_MAX_BYTES } from './config.ts'
 import type { InstructionFile, InstructionKind, LoadedInstructionFile } from './files.ts'
 

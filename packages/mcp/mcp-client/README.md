@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-mcp-client
+# coding-mcp-client
 
 MCP 客户端桥接插件：连接外部 [Model Context Protocol](https://modelcontextprotocol.io/) 服务器，把它们的工具注册到 `ctx.tools`，使模型能够通过服务器限定名称（`mcp__<serverName>__<rawName>`）将其作为原生工具使用。
 
@@ -8,7 +8,7 @@ MCP 客户端桥接插件：连接外部 [Model Context Protocol](https://modelc
 
 ```yaml
 - id: mcp-github
-  name: '@deepseek-ai/dsh-mcp-client'
+  name: 'coding-mcp-client'
   config:
     serverName: github
     transport: stdio
@@ -18,7 +18,7 @@ MCP 客户端桥接插件：连接外部 [Model Context Protocol](https://modelc
       GITHUB_TOKEN: !!js process.env.GITHUB_TOKEN
 
 - id: mcp-web
-  name: '@deepseek-ai/dsh-mcp-client'
+  name: 'coding-mcp-client'
   config:
     serverName: web
     transport: streamable-http

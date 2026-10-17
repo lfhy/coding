@@ -16,7 +16,7 @@ import {
   openNativeTextFile,
   runNativeCommand,
   type NativeCommandRunner,
-} from '@deepseek-ai/dsh-native-command'
+} from 'coding-native-command'
 ```
 
 ## 模型体验

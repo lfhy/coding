@@ -12,11 +12,11 @@
 import {
   ItemRetainer, TextRetainer,
   describeOmitted, formatRetentionNotice,
-} from '@deepseek-ai/dsh-output-retention'
+} from 'coding-output-retention'
 import type {
   Omitted, PushDecision, RetainedItems, RetainedText,
   ItemRetentionStrategy, TextRetentionStrategy, RetentionNotice,
-} from '@deepseek-ai/dsh-output-retention'
+} from 'coding-output-retention'
 ```
 
 | 导出项 | 职责 |

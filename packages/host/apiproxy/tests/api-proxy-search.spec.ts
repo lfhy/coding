@@ -7,19 +7,19 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { stat } from 'node:fs/promises'
-import AgentRegistry from '@deepseek-ai/dsh-agent'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import SessionStore from '@deepseek-ai/dsh-session'
-import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
-import UserQuestionService from '@deepseek-ai/dsh-user-questions'
+import AgentRegistry from 'coding-agent'
+import { createUserMessage } from 'coding-llm'
+import SessionStore from 'coding-session'
+import type { SessionHeader, SessionId } from 'coding-session'
+import UserQuestionService from 'coding-user-questions'
 import {
   SessionQueryError,
   type SessionSearchHit,
   type SessionSearchRequest,
-} from '@deepseek-ai/dsh-session-query'
-import type { RpcRequest } from '@deepseek-ai/dsh-host-apiproxy/api'
-import { RpcId } from '@deepseek-ai/dsh-host-apiproxy/api'
-import { createApiProxy } from '@deepseek-ai/dsh-host-apiproxy'
+} from 'coding-session-query'
+import type { RpcRequest } from 'coding-host-apiproxy/api'
+import { RpcId } from 'coding-host-apiproxy/api'
+import { createApiProxy } from 'coding-host-apiproxy'
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()

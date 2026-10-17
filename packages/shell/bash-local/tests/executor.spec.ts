@@ -5,12 +5,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { LocalBashExecutor } from '@deepseek-ai/dsh-bash-local'
-import { REMOTE_WORKSPACE_MARKER, RemoteWorkspaceError } from '@deepseek-ai/dsh-subprocess'
-import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
-import type { SubprocessHandle, SubprocessOutputReader } from '@deepseek-ai/dsh-subprocess'
-import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
-import type { ShellProcess } from '@deepseek-ai/dsh-shell'
+import { LocalBashExecutor } from 'coding-bash-local'
+import { REMOTE_WORKSPACE_MARKER, RemoteWorkspaceError } from 'coding-subprocess'
+import LocalSubprocessRuntime from 'coding-subprocess-local'
+import type { SubprocessHandle, SubprocessOutputReader } from 'coding-subprocess'
+import { MAX_TIMER_DELAY_MS } from 'coding-timeout'
+import type { ShellProcess } from 'coding-shell'
 
 const spillDir = mkdtempSync(join(tmpdir(), 'dsh-bash-exec-spec-'))
 

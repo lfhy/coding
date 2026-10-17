@@ -12,11 +12,11 @@ import {
   type SessionNotification,
   type Stream,
 } from '@agentclientprotocol/sdk'
-import AttachmentStore, { AttachmentError, AttachmentId } from '@deepseek-ai/dsh-attachment'
-import type { ImageAttachmentLimits, ImageAttachmentRef, SaveImageAttachment, StoredImageAttachment } from '@deepseek-ai/dsh-attachment'
-import { type GenerateOptions, LlmAdapter, type LlmResolvedModelInfo, type StreamChunk } from '@deepseek-ai/dsh-llm'
-import AgentLoop from '@deepseek-ai/dsh-agent-loop'
-import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
+import AttachmentStore, { AttachmentError, AttachmentId } from 'coding-attachment'
+import type { ImageAttachmentLimits, ImageAttachmentRef, SaveImageAttachment, StoredImageAttachment } from 'coding-attachment'
+import { type GenerateOptions, LlmAdapter, type LlmResolvedModelInfo, type StreamChunk } from 'coding-llm'
+import AgentLoop from 'coding-agent-loop'
+import { mountAgentLoopTestDependencies } from 'coding-agent-loop-testkit'
 import * as AcpPlugin from '../src/index.ts'
 import type { AcpConfig } from '../src/index.ts'
 

@@ -1,4 +1,4 @@
-# `@deepseek-ai/dsh-agent-loop-testkit`
+# `coding-agent-loop-testkit`
 
 为运行具体 `AgentLoop` 的测试共享挂载先决依赖。`mountAgentLoopTestDependencies(ctx, options?)` 按依赖顺序安装 LLM（大语言模型）、会话、系统提示词、工具和 agent（智能体）服务，然后在 agent loop 挂载前返回。
 
@@ -6,8 +6,8 @@
 
 ```ts
 import { Context } from '@deepseek-ai/cordis'
-import AgentLoop from '@deepseek-ai/dsh-agent-loop'
-import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
+import AgentLoop from 'coding-agent-loop'
+import { mountAgentLoopTestDependencies } from 'coding-agent-loop-testkit'
 
 const ctx = new Context()
 

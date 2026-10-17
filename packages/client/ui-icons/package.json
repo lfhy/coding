@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-client-ui-icons",
+  "name": "coding-client-ui-icons",
   "description": "Unified client icon components backed by existing glyphs and Semi Icons",
   "version": "0.1.0-rc.8",
   "publishConfig": {
@@ -31,7 +31,7 @@
     "react": "^18.2.0"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-invariants": "workspace:^",
+    "coding-invariants": "workspace:^",
     "@types/react": "~18.3.1",
     "@deepseek-ai/cordis": "workspace:^"
   },
@@ -41,7 +41,7 @@
     "lib/types/**/*.d.ts"
   ],
   "peerDependencies": {
-    "@deepseek-ai/dsh-invariants": "workspace:^",
+    "coding-invariants": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   }
 }

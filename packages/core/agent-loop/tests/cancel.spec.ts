@@ -1,4 +1,4 @@
-import { CallId, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { CallId, createUserMessage } from 'coding-llm'
 /**
  * Tests for the queue-aware `Agent.cancel()` primitive. The default clears
  * queued and steering work, while `keepInbox` preserves pending input for a
@@ -9,12 +9,12 @@ import { CallId, createUserMessage } from '@deepseek-ai/dsh-llm'
 
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import LlmRuntime from '@deepseek-ai/dsh-llm'
-import SessionStore, { SessionId, TurnEndReason } from '@deepseek-ai/dsh-session'
-import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime, { defineContentToolFixture, TOOL_ABORTED_BEFORE_DISPATCH } from '@deepseek-ai/dsh-tools'
-import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
-import AgentLoop from '@deepseek-ai/dsh-agent-loop'
+import LlmRuntime from 'coding-llm'
+import SessionStore, { SessionId, TurnEndReason } from 'coding-session'
+import SystemPrompt from 'coding-system-prompt'
+import ToolRuntime, { defineContentToolFixture, TOOL_ABORTED_BEFORE_DISPATCH } from 'coding-tools'
+import AgentRegistry, { type Agent } from 'coding-agent'
+import AgentLoop from 'coding-agent-loop'
 import { MockAdapter, textResponse, toolCallResponse } from './mock-adapter.ts'
 
 function driverDone(agent: Agent): Promise<void> {

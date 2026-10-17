@@ -4,13 +4,13 @@ import type { IncomingMessage } from 'node:http'
 import type { Duplex } from 'node:stream'
 import { TextDecoder } from 'node:util'
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import { SessionId } from '@deepseek-ai/dsh-session'
+import type { Agent } from 'coding-agent'
+import { SessionId } from 'coding-session'
 import {
   remoteWorkspacePath,
   type SubprocessRuntime,
   type SubprocessTerminalHandle,
-} from '@deepseek-ai/dsh-subprocess'
+} from 'coding-subprocess'
 import WebSocket, { type RawData, WebSocketServer } from 'ws'
 import type {
   OpenInAppTerminalClientFrame,

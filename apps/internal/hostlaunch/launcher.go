@@ -454,7 +454,7 @@ func runtimeHostExecutableName() string {
 
 // packagedHostEntry 返回桌面应用内预展开闭包的 Node 入口。
 func packagedHostEntry(root string) string {
-	return filepath.Join(root, "runtime", "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js")
+	return filepath.Join(root, "runtime", "node_modules", "coding", "lib", "bin.js")
 }
 
 func repoRoot() string {

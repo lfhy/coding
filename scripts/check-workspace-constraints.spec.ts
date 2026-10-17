@@ -10,16 +10,16 @@ import {
 
 const experimental: WorkspaceManifest = {
   dir: 'packages/experimental/prototype',
-  manifest: { name: '@deepseek-ai/dsh-experimental-prototype', private: true },
+  manifest: { name: 'coding-experimental-prototype', private: true },
 }
 
 describe('experimental workspace constraints', () => {
   it('requires the experimental package-name prefix', () => {
     expect(checkExperimentalManifest({
       ...experimental,
-      manifest: { ...experimental.manifest, name: '@deepseek-ai/dsh-prototype' },
+      manifest: { ...experimental.manifest, name: 'coding-prototype' },
     })).toEqual([
-      '@deepseek-ai/dsh-prototype: experimental package name must start with "@deepseek-ai/dsh-experimental-"',
+      'coding-prototype: experimental package name must start with "coding-experimental-"',
     ])
   })
 
@@ -29,8 +29,8 @@ describe('experimental workspace constraints', () => {
       ...experimental,
       manifest: { ...experimental.manifest, private: false, publishConfig: { access: 'public' } },
     })).toEqual([
-      '@deepseek-ai/dsh-experimental-prototype: experimental package must set "private": true',
-      '@deepseek-ai/dsh-experimental-prototype: experimental package must omit publishConfig',
+      'coding-experimental-prototype: experimental package must set "private": true',
+      'coding-experimental-prototype: experimental package must omit publishConfig',
     ])
   })
 
@@ -40,11 +40,11 @@ describe('experimental workspace constraints', () => {
       expect(checkExperimentalDependencyIsolation([experimental, {
         dir: 'packages/core/consumer',
         manifest: {
-          name: '@deepseek-ai/dsh-consumer',
-          [section]: { '@deepseek-ai/dsh-experimental-prototype': 'workspace:^' },
+          name: 'coding-consumer',
+          [section]: { 'coding-experimental-prototype': 'workspace:^' },
         },
       }])).toEqual([
-        `@deepseek-ai/dsh-consumer: ${section}.@deepseek-ai/dsh-experimental-prototype must not reference an experimental package`,
+        `coding-consumer: ${section}.coding-experimental-prototype must not reference an experimental package`,
       ])
     },
   )
@@ -53,25 +53,25 @@ describe('experimental workspace constraints', () => {
     const manifests: WorkspaceManifest[] = [experimental, {
       dir: 'packages/core/test-only',
       manifest: {
-        name: '@deepseek-ai/dsh-test-only',
-        devDependencies: { '@deepseek-ai/dsh-experimental-prototype': 'workspace:^' },
+        name: 'coding-test-only',
+        devDependencies: { 'coding-experimental-prototype': 'workspace:^' },
       },
     }, {
       dir: 'packages/experimental/consumer',
       manifest: {
-        name: '@deepseek-ai/dsh-experimental-consumer',
-        dependencies: { '@deepseek-ai/dsh-experimental-prototype': 'workspace:^' },
+        name: 'coding-experimental-consumer',
+        dependencies: { 'coding-experimental-prototype': 'workspace:^' },
       },
     }, {
       dir: 'python/sdk-runtime',
       manifest: {
-        name: '@deepseek-ai/dsh-python-runtime',
-        dependencies: { '@deepseek-ai/dsh-experimental-prototype': 'workspace:^' },
+        name: 'coding-python-runtime',
+        dependencies: { 'coding-experimental-prototype': 'workspace:^' },
       },
     }]
 
     expect(checkExperimentalDependencyIsolation(manifests)).toEqual([
-      '@deepseek-ai/dsh-python-runtime: dependencies.@deepseek-ai/dsh-experimental-prototype must not reference an experimental package',
+      'coding-python-runtime: dependencies.coding-experimental-prototype must not reference an experimental package',
     ])
   })
 })
@@ -79,7 +79,7 @@ describe('experimental workspace constraints', () => {
 describe('private Electron workspace constraints', () => {
   const shell: WorkspaceManifest = {
     dir: 'apps/desktop-electron',
-    manifest: { name: '@deepseek-ai/dsh-desktop-electron', private: true },
+    manifest: { name: 'coding-desktop-electron', private: true },
   }
 
   it('requires the expected identity and excludes publication metadata', () => {
@@ -88,7 +88,7 @@ describe('private Electron workspace constraints', () => {
       ...shell,
       manifest: { name: '@deepseek-ai/unrelated', private: false, publishConfig: { access: 'public' } },
     })).toEqual([
-      '@deepseek-ai/unrelated: Electron shell must use @deepseek-ai/dsh-desktop-electron',
+      '@deepseek-ai/unrelated: Electron shell must use coding-desktop-electron',
       '@deepseek-ai/unrelated: Electron shell must set "private": true',
       '@deepseek-ai/unrelated: Electron shell must omit publishConfig',
     ])

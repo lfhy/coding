@@ -1,9 +1,9 @@
 /** 独立搜索设置分区；所有浏览器读取都来自两个 settingsScope。 */
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ConnectionHandle } from '@deepseek-ai/dsh-api-remotes/client'
-import type {} from '@deepseek-ai/dsh-client-locale/client'
-import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
-import type {} from '@deepseek-ai/dsh-api-remotes/client'
+import type { ClientContext } from 'coding-client-runtime/client'
+import type { ConnectionHandle } from 'coding-api-remotes/client'
+import type {} from 'coding-client-locale/client'
+import type {} from 'coding-client-ui-settings/client'
+import type {} from 'coding-api-remotes/client'
 import { SearchSettingsSection } from './SearchSettingsSection.tsx'
 import { SearchSettingsController, decodeWeb, decodeDuckDuckGo, decodeDeepSeek, decodeTavily } from './controller.ts'
 import { zh, en, type SearchSettingsKey } from './locales.ts'
@@ -12,7 +12,7 @@ export type { SearchSettingsFace } from './controller.ts'
 export const inject = ['slots', 'locale', 'connection', 'remote', 'settingsScope']
 const NS = 'settings.search'
 
-declare module '@deepseek-ai/dsh-client-ui-slots' {
+declare module 'coding-client-ui-slots' {
   interface LocaleNamespaceMap {
     /** 联网搜索分区文案。 */
     'settings.search': SearchSettingsKey

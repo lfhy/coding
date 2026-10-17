@@ -1,13 +1,13 @@
 /**
- * Package-owned invariant companion for `@deepseek-ai/dsh-subagent-fork-in-process`.
- * @module @deepseek-ai/dsh-subagent-fork-in-process/invariant
+ * Package-owned invariant companion for `coding-subagent-fork-in-process`.
+ * @module coding-subagent-fork-in-process/invariant
  */
 
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
-import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
+import type { InvariantInstaller } from 'coding-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-subagent-fork-in-process'
+const PACKAGE_NAME = 'coding-subagent-fork-in-process'
 
 /** Cordis companion plugin name. */
 export const name = 'subagent-fork-in-process-invariant'

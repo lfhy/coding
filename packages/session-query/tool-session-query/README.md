@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-tool-session-query
+# coding-tool-session-query
 
 位于 `ctx.sessionQuery` 之上、经工作区授权的模型工具。该 opt-in 包只依赖统一接口，并注册 `session_search`、`session_event_search`、`session_trace`、`session_event_trace` 和 `session_event_read`；已发布的宿主组合默认不挂载它。
 
@@ -15,7 +15,7 @@
 
 每个可信 `ctx.sessionQuery` 调用都会经过一个模型边界净化器。首先检查调用方取消，并精确保留。可获取的语料库诊断信息和提供方诊断信息（包括可安全检查的嵌套原因）会尽力记录到内部日志；不可打印的失败使用固定日志占位符。诊断格式化和错误分类各自独立受保护，因此不可打印的原因无法逃逸，也无法阻止已安全分类的外层错误；不安全的分类或日志记录则回退到固定 `SESSION_QUERY_TOOL_FAILED` 代码和消息。本地参数验证和授权错误保留精确的工具自有消息。
 
-该包刻意不执行字节或字符截断，也不导入 spill 后端。需要限制内联输出的部署应挂载 `@deepseek-ai/dsh-spill-policy`，它可在执行后替换已渲染文本，同时保留完整结果。
+该包刻意不执行字节或字符截断，也不导入 spill 后端。需要限制内联输出的部署应挂载 `coding-spill-policy`，它可在执行后替换已渲染文本，同时保留完整结果。
 
 ## 模型体验
 

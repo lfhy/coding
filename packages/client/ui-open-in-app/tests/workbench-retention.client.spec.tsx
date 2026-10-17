@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
-import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import { SlotTestRuntime } from 'coding-client-test-runtime'
+import { LocaleRuntime } from 'coding-client-locale/client'
+import { createSnapshotStore } from 'coding-client-runtime/client'
 import { apply, inject } from '../src/client/index.ts'
 
 const terminals = vi.hoisted(() => ({ instances: [] as Array<{

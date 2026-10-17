@@ -19,7 +19,7 @@ workspace 共 247 个包，按 group 分节。每行给出包目录、职责（R
 ## packages/attachment
 
 - `packages/attachment/attachment` — 持久附件服务边界 入口 `src/index.ts`（tests 3）
-- `packages/attachment/attachment-local` — 这是 `@deepseek-ai/dsh-attachment` 的私有本地实现 入口 `src/index.ts`（tests 3）
+- `packages/attachment/attachment-local` — 这是 `coding-attachment` 的私有本地实现 入口 `src/index.ts`（tests 3）
 
 ## packages/boot
 
@@ -89,14 +89,14 @@ workspace 共 247 个包，按 group 分节。每行给出包目录、职责（R
 ## packages/code-runtime
 
 - `packages/code-runtime/code-runtime` — **`CodeRuntime`**（`ctx.codeRuntime`）定义代码运行时做什么… 入口 `src/index.ts`（tests 2）
-- `packages/code-runtime/code-runtime-python` — `@deepseek-ai/dsh-code-runtime` seam 的 CPython 子进程实现 入口 `src/index.ts`（tests 1）
-- `packages/code-runtime/code-runtime-worker-thread` — 这是 `@deepseek-ai/dsh-code-runtime` seam 的 worker 线程实现 入口 `src/index.ts`（tests 6）
+- `packages/code-runtime/code-runtime-python` — `coding-code-runtime` seam 的 CPython 子进程实现 入口 `src/index.ts`（tests 1）
+- `packages/code-runtime/code-runtime-worker-thread` — 这是 `coding-code-runtime` seam 的 worker 线程实现 入口 `src/index.ts`（tests 6）
 
 ## packages/compaction
 
 - `packages/compaction/command-compact` — 通过 `ctx.compaction` 提供面向用户的 `/compact` 压缩（compaction）控制 入口 `src/index.ts`（tests 3）
 - `packages/compaction/compaction` — **`CompactionEngine`**（`ctx.compaction`）定义压缩（compaction）做什么，即判定历史记录是否过大… 入口 `src/index.ts`（tests 3）
-- `packages/compaction/compaction-basic` — **基础压缩（compaction）后端**：`BasicCompactionEngine` 实现 `@deepseek-ai/dsh-comp… 入口 `src/index.ts`（tests 4）
+- `packages/compaction/compaction-basic` — **基础压缩（compaction）后端**：`BasicCompactionEngine` 实现 `coding-compaction` Se… 入口 `src/index.ts`（tests 4）
 - `packages/compaction/compaction-tool-result-pruner` — 可安全回放、不依赖模型的剪枝服务（`ctx.toolResultPruner`） 入口 `src/index.ts`（tests 2）
 
 ## packages/computer-use
@@ -132,8 +132,8 @@ workspace 共 247 个包，按 group 分节。每行给出包目录、职责（R
 ## packages/e2b
 
 - `packages/e2b/e2b` — 一个 E2B 沙箱的共享生命周期所有者 入口 `src/index.ts`（tests 1）
-- `packages/e2b/fs-e2b` — `@deepseek-ai/dsh-fs` 提供方约定的 E2B 实现 入口 `src/index.ts`（tests 1）
-- `packages/e2b/subprocess-e2b` — `@deepseek-ai/dsh-subprocess` seam 的 E2B 实现 入口 `src/index.ts`（tests 2）
+- `packages/e2b/fs-e2b` — `coding-fs` 提供方约定的 E2B 实现 入口 `src/index.ts`（tests 1）
+- `packages/e2b/subprocess-e2b` — `coding-subprocess` seam 的 E2B 实现 入口 `src/index.ts`（tests 2）
 
 ## packages/examples
 
@@ -161,7 +161,7 @@ workspace 共 247 个包，按 group 分节。每行给出包目录、职责（R
 ## packages/fs
 
 - `packages/fs/fs` — **`FileSystem`**（`ctx.fs`）定义同一个执行世界中的存储原语… 入口 `src/index.ts`（tests 2）
-- `packages/fs/fs-local` — import { LocalFileSystem } from '@deepseek-ai/dsh-fs-local' 入口 `src/index.ts`（tests 4）
+- `packages/fs/fs-local` — import { LocalFileSystem } from 'coding-fs-local' 入口 `src/index.ts`（tests 4）
 - `packages/fs/fs-observation-policy` — **fs-observation-policy 插件**：它记录观测到的存在或缺失状态，并在 `ctx.fs` 提供方约定… 入口 `src/index.ts`（tests 1）
 - `packages/fs/fs-sandbox` — 它原样复用本地后端配置：`cwd` 仍是相对路径的解析默认值，`diffBasisMaxBytes` 则限制可选的覆写上下文 diff 基础 入口 `src/index.ts`（tests 2）
 - `packages/fs/tool-fs` — **面向模型的文件系统工具**（`read`、`read_image`、`write`、`edit`）及其**执行器** 入口 `src/index.ts`（tests 6）
@@ -214,7 +214,7 @@ workspace 共 247 个包，按 group 分节。每行给出包目录、职责（R
 ## packages/jobs
 
 - `packages/jobs/jobs` — 后台任务注册表约定（`ctx.jobs`） 入口 `src/index.ts`（tests 2）
-- `packages/jobs/jobs-local` — `@deepseek-ai/dsh-jobs` 注册表约定的进程本地实现：`LocalJobRegistry` 把每条记录保存在内存中… 入口 `src/index.ts`（tests 2）
+- `packages/jobs/jobs-local` — `coding-jobs` 注册表约定的进程本地实现：`LocalJobRegistry` 把每条记录保存在内存中… 入口 `src/index.ts`（tests 2）
 - `packages/jobs/tool-jobs` — 三个工具都使用通用 UI 卡片：output 和 list 使用 `read`，kill 使用 `execute` 入口 `src/index.ts`（tests 1）
 
 ## packages/llm
@@ -305,7 +305,7 @@ workspace 共 247 个包，按 group 分节。每行给出包目录、职责（R
 ## packages/shell
 
 - `packages/shell/bash-local` — 包根目录导出默认与具名的 `LocalBashExecutor` 插件及其 `Config` 入口 `src/index.ts`（tests 2）
-- `packages/shell/bash-sandbox` — 这是使用沙箱能力的 `@deepseek-ai/dsh-shell` 执行器 seam 的 Service Provider 入口 `src/index.ts`（tests 2）
+- `packages/shell/bash-sandbox` — 这是使用沙箱能力的 `coding-shell` 执行器 seam 的 Service Provider 入口 `src/index.ts`（tests 2）
 - `packages/shell/pwsh-local` — 命令字符串作为单个 argv 元素传给 `-Command`：由 PowerShell 自己解析文本，不存在中间 shell… 入口 `src/index.ts`（tests 2）
 - `packages/shell/pwsh-sandbox` — 沙盒消费型的 `ctx.shell` 执行器 seam 的 PowerShell 实现：每条命令以 `pwsh -NoLogo -NoProfi… 入口 `src/index.ts`（tests 1）
 - `packages/shell/shell` — **`ShellExecutor`**（`ctx.shell`）定义 bash 后端做什么，即运行前台命令与启动后台进程，但不规定如何实现 入口 `src/index.ts`（tests 2）
@@ -326,7 +326,7 @@ workspace 共 247 个包，按 group 分节。每行给出包目录、职责（R
 ## packages/spill
 
 - `packages/spill/spill` — **`SpillStore`**（`ctx.spillStore`）定义 spill 后端做什么，即持久化某个工具过大的文本… 入口 `src/index.ts`（tests 1）
-- `packages/spill/spill-local` — `@deepseek-ai/dsh-spill` 存储 seam 的**本地文件系统**实现 入口 `src/index.ts`（tests 1）
+- `packages/spill/spill-local` — `coding-spill` 存储 seam 的**本地文件系统**实现 入口 `src/index.ts`（tests 1）
 - `packages/spill/spill-policy` — **工具结果 spill 策略**：一个 `tools/post-execute` 转换器，用于防止过大的纯文本工具结果进入模型上下文 入口 `src/index.ts`（tests 1）
 
 ## packages/storage
@@ -353,7 +353,7 @@ workspace 共 247 个包，按 group 分节。每行给出包目录、职责（R
 ## packages/subprocess
 
 - `packages/subprocess/subprocess` — 子进程 seam（`ctx.subprocess`）是一个执行世界的进程部分 入口 `src/index.ts`（tests 2）
-- `packages/subprocess/subprocess-local` — `@deepseek-ai/dsh-subprocess` seam 的 Service Provider 入口 `src/index.ts`（tests 11）
+- `packages/subprocess/subprocess-local` — `coding-subprocess` seam 的 Service Provider 入口 `src/index.ts`（tests 11）
 
 ## packages/terminal
 

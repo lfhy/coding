@@ -1,8 +1,8 @@
 /** 联网搜索设置从提供方各自命名空间派生；凭据读取只有存在性与可写性。 */
-import type { IApiClient } from '@deepseek-ai/dsh-api-remotes/client'
+import type { IApiClient } from 'coding-api-remotes/client'
 import {
   createSnapshotStore, type SettingsScope, type SettingsScopeSnapshot, type SnapshotStore,
-} from '@deepseek-ai/dsh-client-runtime/client'
+} from 'coding-client-runtime/client'
 
 /** Web 搜索提供方的持久选择。 */
 export type SearchProvider = 'duckduckgo' | 'deepseek-official' | 'tavily'

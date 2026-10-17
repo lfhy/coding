@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-storage
+# coding-storage
 
 非会话数据的存储中心（`ctx.storage`）：具名后端注册表加已挂载的数据形式设施。中心自身不执行 IO：后端拥有介质，数据形式拥有语义。[存储家族概述](../README.md)列出了这些包；领域 KV 存储 设计记录记录了设计理由。
 

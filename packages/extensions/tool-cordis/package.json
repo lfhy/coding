@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-tool-cordis",
+  "name": "coding-tool-cordis",
   "description": "Self-referential cordis toolset: inspect the live runtime, mount and dispose model-written plugins",
   "version": "0.1.0-rc.8",
   "publishConfig": {
@@ -32,26 +32,26 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-cordis-host-runner": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-scope": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-system-prompt": "workspace:^",
-    "@deepseek-ai/dsh-tools": "workspace:^",
+    "coding-agent": "workspace:^",
+    "coding-cordis-host-runner": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-llm": "workspace:^",
+    "coding-scope": "workspace:^",
+    "coding-session": "workspace:^",
+    "coding-system-prompt": "workspace:^",
+    "coding-tools": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis-plugin-loader": "workspace:^",
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-cordis-host-runner": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-scope": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-system-prompt": "workspace:^",
-    "@deepseek-ai/dsh-tools": "workspace:^",
+    "coding-agent": "workspace:^",
+    "coding-cordis-host-runner": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-llm": "workspace:^",
+    "coding-scope": "workspace:^",
+    "coding-session": "workspace:^",
+    "coding-system-prompt": "workspace:^",
+    "coding-tools": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   }
 }

@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-client-ui-attachment
+# coding-client-ui-attachment
 
 对话 UI 的动态附件呈现插件。它通过 `ctx.slots.inject` 等待 conversation 包声明 `conversation.input.attachments` 与 `conversation.message.images`，随后注册输入框草稿图片栏、文档拖放目标、聊天历史图片画廊和原图灯箱。conversation slot 持有方提供附件数据、图片加载、回调及其命名空间翻译器；呈现组件保持纯 props，且不从包入口导出。
 

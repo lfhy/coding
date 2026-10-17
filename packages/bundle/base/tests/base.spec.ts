@@ -40,7 +40,7 @@ function browserRows(): BrowserRow[] {
   const selected = rows.filter(row => row.id === 'browser-playwright' || row.id === 'browser-electron')
   expect(selected.map(row => row.id)).toEqual(['browser-playwright', 'browser-electron'])
   expect(selected.map(row => row.name)).toEqual([
-    '@deepseek-ai/dsh-browser-playwright', '@deepseek-ai/dsh-browser-electron',
+    'coding-browser-playwright', 'coding-browser-electron',
   ])
   for (const mode of ['web-app', 'headless']) {
     const modePatch = yaml.load(readFileSync(resolve(baseRoot, `../${mode}/cordis.patch.yml`), 'utf8'),
@@ -124,8 +124,8 @@ describe('dsh-base bundle', () => {
     })
     expect(rows.filter(row => row.id === 'subagent-codex')).toHaveLength(0)
     expect(rows.filter(row => row.id === 'subagent-claude-code')).toHaveLength(0)
-    expect(manifest.dependencies).not.toHaveProperty('@deepseek-ai/dsh-subagent-codex')
-    expect(manifest.dependencies).not.toHaveProperty('@deepseek-ai/dsh-subagent-claude-code')
+    expect(manifest.dependencies).not.toHaveProperty('coding-subagent-codex')
+    expect(manifest.dependencies).not.toHaveProperty('coding-subagent-claude-code')
   })
 
   it('gates each shell stack by platform with a symmetric disabled expression', () => {

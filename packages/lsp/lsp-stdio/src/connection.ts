@@ -7,11 +7,11 @@
  * fatal close, and exposes tree-scoped termination through the handle so the
  * instance owns teardown; group/tree mechanics live in the subprocess
  * Service Provider.
- * @module @deepseek-ai/dsh-lsp-stdio/connection
+ * @module coding-lsp-stdio/connection
  */
 
 import type { Writable } from 'node:stream'
-import type { RemoteWorkspaceTarget, SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
+import type { RemoteWorkspaceTarget, SubprocessHandle, SubprocessSpawnSpec } from 'coding-subprocess'
 import { encodeMessage, MessageDecoder } from './framing.ts'
 
 /** How to launch the server and answer its config requests. */

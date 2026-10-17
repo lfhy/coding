@@ -1,5 +1,5 @@
 /** 模型请求 UA 行的派生状态；持久值由 llm 设置分节拥有。 */
-import { createSnapshotStore, type SettingsScope, type SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import { createSnapshotStore, type SettingsScope, type SnapshotStore } from 'coding-client-runtime/client'
 
 /** 通用设置中的模型请求 UA 状态。 */
 export interface ModelUserAgentState {

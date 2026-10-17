@@ -1,7 +1,7 @@
 /** 文件、终端与浏览器共用的工作台标签状态；根 store 按 Session 保留各自内容。 */
 
-import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { defineStore, type EngineStoreHandle } from 'coding-client-runtime/client'
+import type { SessionId } from 'coding-session/types'
 import type { WorkspaceFilesPayload } from './wire.ts'
 
 /** 已打开文件；segments 原样来自 Host provider。 */

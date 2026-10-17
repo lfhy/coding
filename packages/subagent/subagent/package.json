@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-subagent",
+  "name": "coding-subagent",
   "description": "Abstract subagent seam (ctx.subagents): named-provider registry for delegating to child agents",
   "version": "0.1.0-rc.8",
   "publishConfig": {
@@ -40,67 +40,67 @@
     "zod": "^4.4.3"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-agent-presets": "workspace:^",
-    "@deepseek-ai/dsh-brand": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-sandbox": "workspace:^",
-    "@deepseek-ai/dsh-sandbox-policy": "workspace:^",
-    "@deepseek-ai/dsh-scope": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-session-persistence": "workspace:^",
-    "@deepseek-ai/dsh-session-projection": "workspace:^",
-    "@deepseek-ai/dsh-session-projection-cache": "workspace:^",
-    "@deepseek-ai/dsh-jobs": "workspace:^",
-    "@deepseek-ai/dsh-tools": "workspace:^",
-    "@deepseek-ai/dsh-user-approval": "workspace:^",
+    "coding-agent": "workspace:^",
+    "coding-agent-presets": "workspace:^",
+    "coding-brand": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-llm": "workspace:^",
+    "coding-sandbox": "workspace:^",
+    "coding-sandbox-policy": "workspace:^",
+    "coding-scope": "workspace:^",
+    "coding-session": "workspace:^",
+    "coding-session-persistence": "workspace:^",
+    "coding-session-projection": "workspace:^",
+    "coding-session-projection-cache": "workspace:^",
+    "coding-jobs": "workspace:^",
+    "coding-tools": "workspace:^",
+    "coding-user-approval": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "peerDependenciesMeta": {
-    "@deepseek-ai/dsh-agent-presets": {
+    "coding-agent-presets": {
       "optional": true
     },
-    "@deepseek-ai/dsh-sandbox": {
+    "coding-sandbox": {
       "optional": true
     },
-    "@deepseek-ai/dsh-sandbox-policy": {
+    "coding-sandbox-policy": {
       "optional": true
     },
-    "@deepseek-ai/dsh-session-persistence": {
+    "coding-session-persistence": {
       "optional": true
     },
-    "@deepseek-ai/dsh-session-projection": {
+    "coding-session-projection": {
       "optional": true
     },
-    "@deepseek-ai/dsh-session-projection-cache": {
+    "coding-session-projection-cache": {
       "optional": true
     },
-    "@deepseek-ai/dsh-jobs": {
+    "coding-jobs": {
       "optional": true
     },
-    "@deepseek-ai/dsh-user-approval": {
+    "coding-user-approval": {
       "optional": true
     }
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-agent-presets": "workspace:^",
-    "@deepseek-ai/dsh-brand": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-sandbox": "workspace:^",
-    "@deepseek-ai/dsh-sandbox-policy": "workspace:^",
-    "@deepseek-ai/dsh-scope": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-session-persistence": "workspace:^",
-    "@deepseek-ai/dsh-session-projection": "workspace:^",
-    "@deepseek-ai/dsh-session-projection-cache": "workspace:^",
-    "@deepseek-ai/dsh-storage": "workspace:^",
-    "@deepseek-ai/dsh-storage-domain": "workspace:^",
-    "@deepseek-ai/dsh-jobs": "workspace:^",
-    "@deepseek-ai/dsh-tools": "workspace:^",
-    "@deepseek-ai/dsh-user-approval": "workspace:^",
+    "coding-agent": "workspace:^",
+    "coding-agent-presets": "workspace:^",
+    "coding-brand": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-llm": "workspace:^",
+    "coding-sandbox": "workspace:^",
+    "coding-sandbox-policy": "workspace:^",
+    "coding-scope": "workspace:^",
+    "coding-session": "workspace:^",
+    "coding-session-persistence": "workspace:^",
+    "coding-session-projection": "workspace:^",
+    "coding-session-projection-cache": "workspace:^",
+    "coding-storage": "workspace:^",
+    "coding-storage-domain": "workspace:^",
+    "coding-jobs": "workspace:^",
+    "coding-tools": "workspace:^",
+    "coding-user-approval": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   }
 }

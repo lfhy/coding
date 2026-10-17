@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-client-ui-theme",
+  "name": "coding-client-ui-theme",
   "description": "Theme plugin: Host bootstrap for the pre-plugin palette; DOM-free ThemeRuntime for light/dark/system state; --dsw-* token styles and Appearance settings row",
   "version": "0.1.0-rc.8",
   "publishConfig": {
@@ -32,11 +32,11 @@
   "dsh": {
     "client": {
       "inject": [
-        "@deepseek-ai/dsh-client-connection",
-        "@deepseek-ai/dsh-client-runtime",
-        "@deepseek-ai/dsh-client-locale",
-        "@deepseek-ai/dsh-client-ui-settings",
-        "@deepseek-ai/dsh-api-remotes"
+        "coding-client-connection",
+        "coding-client-runtime",
+        "coding-client-locale",
+        "coding-client-ui-settings",
+        "coding-api-remotes"
       ],
       "platform": "web",
       "immediately": true
@@ -45,30 +45,30 @@
   "license": "MIT",
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-api-remotes": "workspace:^",
-    "@deepseek-ai/dsh-client-connection": "workspace:^",
-    "@deepseek-ai/dsh-client-locale": "workspace:^",
-    "@deepseek-ai/dsh-client-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-settings": "workspace:^",
-    "@deepseek-ai/dsh-host-webserver": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-settings": "workspace:^"
+    "coding-api-remotes": "workspace:^",
+    "coding-client-connection": "workspace:^",
+    "coding-client-locale": "workspace:^",
+    "coding-client-runtime": "workspace:^",
+    "coding-client-ui-settings": "workspace:^",
+    "coding-host-webserver": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-settings": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-api-remotes": "workspace:^",
-    "@deepseek-ai/dsh-client-locale": "workspace:^",
-    "@deepseek-ai/dsh-client-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-test-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-primitives": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-settings": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-slots": "workspace:^",
-    "@deepseek-ai/dsh-host-webserver": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
+    "coding-api-remotes": "workspace:^",
+    "coding-client-locale": "workspace:^",
+    "coding-client-runtime": "workspace:^",
+    "coding-client-test-runtime": "workspace:^",
+    "coding-client-ui-primitives": "workspace:^",
+    "coding-client-ui-settings": "workspace:^",
+    "coding-client-ui-slots": "workspace:^",
+    "coding-host-webserver": "workspace:^",
+    "coding-invariants": "workspace:^",
     "@types/react": "~18.3.1",
     "react": "^18.2.0",
-    "@deepseek-ai/dsh-settings": "workspace:^",
-    "@deepseek-ai/dsh-client-connection": "workspace:^"
+    "coding-settings": "workspace:^",
+    "coding-client-connection": "workspace:^"
   },
   "files": [
     "lib/index.js",

@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-goal",
+  "name": "coding-goal",
   "description": "Event-sourced same-session goal state and lifecycle service for the DeepSeek Harness",
   "version": "0.1.0-rc.8",
   "publishConfig": {
@@ -53,14 +53,14 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-session-projection": "workspace:^",
-    "@deepseek-ai/dsh-brand": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-scope": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-typert-protocol": "workspace:^",
+    "coding-agent": "workspace:^",
+    "coding-session-projection": "workspace:^",
+    "coding-brand": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-llm": "workspace:^",
+    "coding-scope": "workspace:^",
+    "coding-session": "workspace:^",
+    "coding-typert-protocol": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "dependencies": {
@@ -68,15 +68,15 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-session-projection": "workspace:^",
-    "@deepseek-ai/dsh-brand": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-loader-smoke": "workspace:^",
-    "@deepseek-ai/dsh-scope": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-typert-protocol": "workspace:^",
+    "coding-agent": "workspace:^",
+    "coding-session-projection": "workspace:^",
+    "coding-brand": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-llm": "workspace:^",
+    "coding-loader-smoke": "workspace:^",
+    "coding-scope": "workspace:^",
+    "coding-session": "workspace:^",
+    "coding-typert-protocol": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   }
 }

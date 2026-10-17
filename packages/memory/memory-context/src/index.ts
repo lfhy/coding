@@ -5,15 +5,15 @@
  * 记忆是个人笔记而不是指令，因此注入文本明确写出这一点：与代码或 `AGENTS.md` 冲突时
  * 以后者为准。
  *
- * @module @deepseek-ai/dsh-memory-context
+ * @module coding-memory-context
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage } from 'coding-llm'
 // 类型专用导入：让 `agent/pre-step` 落在 `Context['on']` 的已知事件上。
-import type {} from '@deepseek-ai/dsh-agent'
-import type { Session } from '@deepseek-ai/dsh-session'
-import type { MemoryExcerpt } from '@deepseek-ai/dsh-memory'
+import type {} from 'coding-agent'
+import type { Session } from 'coding-session'
+import type { MemoryExcerpt } from 'coding-memory'
 
 export const name = 'memory-context'
 export const inject = ['agents', 'memory']

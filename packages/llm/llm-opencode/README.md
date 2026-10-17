@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-llm-opencode
+# coding-llm-opencode
 
 内置 **Free** 渠道适配器：把本项目维护的免费模型注册成 harness 的一个原生 LLM 提供方
 路由（`free`），**不需要任何凭据配置**即可开箱使用。

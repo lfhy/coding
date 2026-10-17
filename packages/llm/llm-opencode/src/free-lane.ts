@@ -6,7 +6,7 @@
  * 缺少时本模块补上调用被禁用的占位定义，而不是改客户端自己的工具——
  * 客户端已注册的同名工具一律原样保留，绝不复写其 schema。
  *
- * @module @deepseek-ai/dsh-llm-opencode/free-lane
+ * @module coding-llm-opencode/free-lane
  */
 
 /** 上游强制出现在 `tools` 里的工具名；缺任一个则请求被拒。 */

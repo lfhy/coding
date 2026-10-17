@@ -1,6 +1,6 @@
 /**
  * 宿主原生命令执行与路径打开工具。
- * @module @deepseek-ai/dsh-native-command
+ * @module coding-native-command
  */
 
 export { runNativeCommand } from './runner.ts'

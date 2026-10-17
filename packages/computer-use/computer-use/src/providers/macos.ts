@@ -2,10 +2,10 @@
 
 import { setTimeout as delay } from 'node:timers/promises'
 import { Service, type Context } from '@deepseek-ai/cordis'
-import type {} from '@deepseek-ai/dsh-agent'
-import type {} from '@deepseek-ai/dsh-settings'
-import type {} from '@deepseek-ai/dsh-subprocess'
-import type {} from '@deepseek-ai/dsh-user-approval'
+import type {} from 'coding-agent'
+import type {} from 'coding-settings'
+import type {} from 'coding-subprocess'
+import type {} from 'coding-user-approval'
 import type {
   BackendActionRequest,
   BackendActionResult,

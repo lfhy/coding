@@ -2,7 +2,7 @@
  * Coding 用户数据的共享路径辅助：主目录解析、环境变量优先级，以及首次启动从
  * `~/.dsh` 到 `~/.coding` 的自动迁移。
  *
- * @module @deepseek-ai/dsh-home-paths
+ * @module coding-home-paths
  */
 
 import { existsSync, readdirSync, statSync } from 'node:fs'

@@ -1,6 +1,6 @@
 # 第三方记忆 MCP 示例
 
-这三份**默认关闭的参考配置**通过 [`@deepseek-ai/dsh-mcp-client`](../../packages/mcp/mcp-client/README.md) 将一个记忆系统连接到 DSH。请选择其中一份，或复制相同的通用 MCP 配置项来连接其他服务器。
+这三份**默认关闭的参考配置**通过 [`coding-mcp-client`](../../packages/mcp/mcp-client/README.md) 将一个记忆系统连接到 DSH。请选择其中一份，或复制相同的通用 MCP 配置项来连接其他服务器。
 
 这些第三方配置仅作为互操作参考；收录不代表 DeepSeek 的认可、推荐、合作关系或持续支持承诺。
 
@@ -86,7 +86,7 @@ Engram 负责存储和项目选择：它默认使用 `~/.engram`，从 DSH 工�
 ```yaml
 - insert:
     - id: memory-my-server
-      name: '@deepseek-ai/dsh-mcp-client'
+      name: 'coding-mcp-client'
       config:
         serverName: my-memory
         transport: stdio

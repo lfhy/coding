@@ -10,7 +10,7 @@ import {
   REMOTE_BRIDGE_URL_ENV,
   REMOTE_WORKSPACE_MARKER,
   remoteWorkspacePath,
-} from '@deepseek-ai/dsh-subprocess'
+} from 'coding-subprocess'
 import { spawnRemoteTerminal } from '../src/remote-terminal.ts'
 
 const initialBridgeURL = process.env[REMOTE_BRIDGE_URL_ENV]

@@ -1,9 +1,9 @@
 /** 图片写入时完整解码与归一化，已校验对象读取时仅探测头部。 */
 
 import sharp, { type Metadata, type Sharp } from 'sharp'
-import { AttachmentError } from '@deepseek-ai/dsh-attachment'
-import { fitImage, ImageFitError } from '@deepseek-ai/dsh-attachment/image-processing'
-import type { ImageMediaType } from '@deepseek-ai/dsh-attachment'
+import { AttachmentError } from 'coding-attachment'
+import { fitImage, ImageFitError } from 'coding-attachment/image-processing'
+import type { ImageMediaType } from 'coding-attachment'
 
 /** 已识别图片的逻辑画布尺寸与格式。 */
 export interface DetectedImage {

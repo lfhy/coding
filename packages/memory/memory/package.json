@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-memory",
+  "name": "coding-memory",
   "description": "Project-scoped cross-session memory: scope keys, entry limits, and the ctx.memory service definition",
   "version": "0.1.0-rc.8",
   "publishConfig": {
@@ -35,13 +35,13 @@
     "@deepseek-ai/schemastery": "workspace:^"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-home-paths": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
+    "coding-home-paths": "workspace:^",
+    "coding-invariants": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-home-paths": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
+    "coding-home-paths": "workspace:^",
+    "coding-invariants": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   }
 }

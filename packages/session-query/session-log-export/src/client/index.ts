@@ -1,9 +1,9 @@
 /** 浏览器插件：持有会话导出下载状态、`/export` 命令的下载副作用，以及共用的结果弹窗。 */
 
-import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import type {} from '@deepseek-ai/dsh-client-locale/client'
-import type {} from '@deepseek-ai/dsh-client-ui-commands/client'
-import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { ClientContext, SessionId } from 'coding-client-runtime/client'
+import type {} from 'coding-client-locale/client'
+import type {} from 'coding-client-ui-commands/client'
+import type {} from 'coding-client-ui-conversation/client'
 import { SessionLogDownloadContribution } from './Contribution.tsx'
 import { SessionLogDownloadController } from './controller.ts'
 import type { SessionLogDownloadDialogInjected } from './Dialog.tsx'
@@ -15,7 +15,7 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-declare module '@deepseek-ai/dsh-client-ui-slots' {
+declare module 'coding-client-ui-slots' {
   interface LocaleNamespaceMap {
     'session-log-download': SessionLogDownloadKey
   }

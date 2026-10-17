@@ -1,6 +1,6 @@
 /** Generic unary RPC contracts shared by the Host and Client Connection halves. */
 
-import type { RpcResult } from '@deepseek-ai/dsh-host-apiproxy/api'
+import type { RpcResult } from 'coding-host-apiproxy/api'
 
 /** Host 信任检查只读取的跨运行时请求头形状。 */
 export interface ConnectionTrustRequest {

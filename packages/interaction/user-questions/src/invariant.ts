@@ -1,13 +1,13 @@
 /**
- * Package-owned invariant companion for `@deepseek-ai/dsh-user-questions`.
- * @module @deepseek-ai/dsh-user-questions/invariant
+ * Package-owned invariant companion for `coding-user-questions`.
+ * @module coding-user-questions/invariant
  */
 
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
-import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
+import type { InvariantInstaller } from 'coding-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-user-questions'
+const PACKAGE_NAME = 'coding-user-questions'
 
 /** Cordis companion plugin name. */
 export const name = 'user-questions-invariant'

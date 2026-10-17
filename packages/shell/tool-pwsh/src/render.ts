@@ -6,12 +6,12 @@
  * exits are reported, not errored — the model decides how to react; only
  * infrastructure failures (spawn errors, aborts) surface as isError
  * results.
- * @module @deepseek-ai/dsh-tool-pwsh/render
+ * @module coding-tool-pwsh/render
  */
 
-import type { ShellProcessRead, ShellSandboxInfo, CollectedOutput } from '@deepseek-ai/dsh-shell'
-import type { SandboxMode } from '@deepseek-ai/dsh-sandbox'
-import { escalationHintMarker, sandboxDenialMarker } from '@deepseek-ai/dsh-sandbox'
+import type { ShellProcessRead, ShellSandboxInfo, CollectedOutput } from 'coding-shell'
+import type { SandboxMode } from 'coding-sandbox'
+import { escalationHintMarker, sandboxDenialMarker } from 'coding-sandbox'
 
 /* jscpd:ignore-start -- deliberate twin of dsh-tool-bash/render.ts (design record). */
 

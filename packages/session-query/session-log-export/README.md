@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-session-log-export
+# coding-session-log-export
 
 Web Session 日志下载控制，使用 `dsh-host-apiproxy` 拥有的 Host 流式 ZIP 端点。Host 半包注册 `/export`；浏览器半包持有该命令的下载控制器和结果弹窗，Session Header 不再提供导出控件。ZIP 生成、原始 JSONL/zstd 读取、子 Session、附件、背压和 HTTP 错误语义仍由 [ApiProxy 下载实现](../../host/apiproxy/README.md)负责。
 
@@ -19,7 +19,7 @@ Host 下载端点会在 `readRaw` 前 flush 活动的根 Session，因此斜杠�
 
 ```yaml
 - id: session-log-download
-  name: '@deepseek-ai/dsh-session-log-export'
+  name: 'coding-session-log-export'
 ```
 
 Web bundle 将本包与 `dsh-host-apiproxy`、`dsh-commands`、`dsh-client-ui-commands` 和 `dsh-client-ui-conversation` 一起挂载。本包只把结果弹窗贡献到最右侧的 `conversation.session.header.utilities` 列表，页头因此不会在标题旁 `conversation.session.header.actions` 的模式、Subagent 和 Task 配置项之外渲染导出控件。

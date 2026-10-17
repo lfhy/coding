@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-session-projection-cache
+# coding-session-projection-cache
 
 持久投影缓存（`ctx.sessionProjectionCache`）：把每个已注册投影单元的状态持久化为检查点，基于域数据形态（domain data form）每会话一条记录（`session_projcache` 域——出厂 JSON 后端将其落在配置的存储根目录下、`workspace.json` 旁边）。设计权威：session-projection RFC（persisted projection cache 一节）。
 
@@ -37,7 +37,7 @@
 
 ```yaml
 - id: session-projection-cache
-  name: '@deepseek-ai/dsh-session-projection-cache'
+  name: 'coding-session-projection-cache'
   config:
     writeEveryEvents: 200
     writeIntervalMs: 5000

@@ -1,7 +1,7 @@
 /** One-use just-in-time confirmation tokens for sensitive Computer Use actions. */
 
 import { createHash, randomUUID } from 'node:crypto'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { Agent } from 'coding-agent'
 import type { Context } from '@deepseek-ai/cordis'
 import { approvalPolicy } from './approval-policy.ts'
 import type { ResolvedComputerUseConfig } from './config.ts'
@@ -48,7 +48,7 @@ export class ComputerConfirmationManager {
     agent: Agent,
     app: ComputerAppIdentity,
     request: ComputerConfirmRequest,
-    callId: import('@deepseek-ai/dsh-tools').ToolRunContext['callId'] | undefined,
+    callId: import('coding-tools').ToolRunContext['callId'] | undefined,
     signal: AbortSignal,
   ): Promise<ComputerConfirmation> {
     if (approvalPolicy(this.ctx, agent) === 'never') {

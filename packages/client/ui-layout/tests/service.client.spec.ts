@@ -2,9 +2,9 @@
  * LayoutController 只转发跨插件动作；几何和值域由 store 测试覆盖。
  */
 import { describe, expect, it, vi } from 'vitest'
-import { LayoutController } from '@deepseek-ai/dsh-client-ui-layout/src/client/service.ts'
-import type { PanelActions } from '@deepseek-ai/dsh-client-ui-layout/src/client/service.ts'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { LayoutController } from 'coding-client-ui-layout/src/client/service.ts'
+import type { PanelActions } from 'coding-client-ui-layout/src/client/service.ts'
+import type { SessionId } from 'coding-session/types'
 
 const SESSION = 'layout-session' as SessionId
 

@@ -1,11 +1,11 @@
 /** 浏览器观测独立占用 workbench.browser；Host 页面不进入 Client DOM。 */
 
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { ChatBrowserLinks } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type {} from '@deepseek-ai/dsh-client-locale/client'
-import type {} from '@deepseek-ai/dsh-client-ui-open-in-app/client'
+import type { ClientContext } from 'coding-client-runtime/client'
+import type { ConnectionHandle } from 'coding-client-connection/client'
+import type { SessionId } from 'coding-session/types'
+import type { ChatBrowserLinks } from 'coding-client-ui-conversation/client'
+import type {} from 'coding-client-locale/client'
+import type {} from 'coding-client-ui-open-in-app/client'
 import { BrowserMirrorController, desktopBrowserPresentation } from './controller.ts'
 import { BrowserMirror, BrowserTabs, type BrowserMirrorInjected } from './BrowserMirror.tsx'
 import { en, NS, zh, type BrowserMirrorKey } from './locales.ts'
@@ -30,7 +30,7 @@ type LinkQueue = { owner: LinkOwner; jobs: LinkJob[]; running: boolean; cancelle
 // 每次点击均有独立任务；上限限制长时间 Host 无响应时的内存与待执行导航数量。
 const MAX_QUEUED_LINKS = 32
 
-declare module '@deepseek-ai/dsh-client-ui-slots' {
+declare module 'coding-client-ui-slots' {
   interface LocaleNamespaceMap {
     /** 浏览器画面区的展示文案。 */
     'browser-mirror': BrowserMirrorKey

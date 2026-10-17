@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-storage-sqlite
+# coding-storage-sqlite
 
 [存储中心](../storage/README.md)的 SQLite 后端：注册为后端 `sqlite`，通过一个数据库提供 `kv` facet；该数据库由 `node:sqlite` 操作，可以是单个文件，也可以是 `:memory:`。设计与取舍见领域 KV 存储 设计记录。
 

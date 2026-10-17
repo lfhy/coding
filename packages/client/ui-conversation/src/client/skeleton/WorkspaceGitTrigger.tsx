@@ -1,9 +1,9 @@
 // 空白会话工作区行右侧的 Git 分支入口：仅当前会话所属工作区进入探测，
 // 非仓库或远程工作区不显示按钮；浮层复用概览里的 Git 操作面板。
 import { useEffect, useRef, useState } from 'react'
-import { IconBranchOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import { IconBranchOutline16 } from 'coding-client-ui-primitives'
+import type { PropsLocale, PropsRuntime } from 'coding-client-ui-slots'
+import type { SessionId } from 'coding-client-runtime/client'
 import { GitOverview, type GitOverviewInjected } from './GitOverview.tsx'
 import css from './WorkspaceGit.module.css'
 

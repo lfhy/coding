@@ -1,6 +1,6 @@
-# @deepseek-ai/dsh-tool-cordis
+# coding-tool-cordis
 
-自引用 Cordis 工具集：五个面向模型的工具，操作当前 DSH 进程中的实时运行时。注册表、vm 沙箱与浏览器广播属于 [`@deepseek-ai/dsh-cordis-host-runner`](../cordis-host-runner/README.md)（`ctx.dynamic`），本工具集注入它——只装这些工具而不装 runner 的组合永远不会激活它们。沙箱语义、动态包生命周期与组合及既定决策详见工具集 设计记录。
+自引用 Cordis 工具集：五个面向模型的工具，操作当前 DSH 进程中的实时运行时。注册表、vm 沙箱与浏览器广播属于 [`coding-cordis-host-runner`](../cordis-host-runner/README.md)（`ctx.dynamic`），本工具集注入它——只装这些工具而不装 runner 的组合永远不会激活它们。沙箱语义、动态包生命周期与组合及既定决策详见工具集 设计记录。
 
 ## 功能
 
@@ -22,7 +22,7 @@
 
 ## 配置
 
-无。vm 求值边界（`vmTimeoutMs`）与浏览器确认窗口（`ackTimeoutMs`）属于拥有沙箱与广播的 runner 服务——见 [`@deepseek-ai/dsh-cordis-host-runner`](../cordis-host-runner/README.md#config)。
+无。vm 求值边界（`vmTimeoutMs`）与浏览器确认窗口（`ackTimeoutMs`）属于拥有沙箱与广播的 runner 服务——见 [`coding-cordis-host-runner`](../cordis-host-runner/README.md#config)。
 
 ## 生成的 client 槽目录
 
@@ -45,7 +45,7 @@
 
 ## 渲染
 
-每个工具都渲染 `generic` 卡片（`read`／`execute`／`delete`）；`cordis_define` 以 `rawInput` 携带提交的两个半，并用标签与用途作为卡片标题。presenter 是 args 的纯函数，结果保留默认文本渲染。Web 客户端注册自己的 keyed `cordis_define` 行（`@deepseek-ai/dsh-client-ui-cordis`），从调用参数与结果元数据里取标签、用途和铸出的标识；没有该注册的界面则退回到这张 generic 卡片。
+每个工具都渲染 `generic` 卡片（`read`／`execute`／`delete`）；`cordis_define` 以 `rawInput` 携带提交的两个半，并用标签与用途作为卡片标题。presenter 是 args 的纯函数，结果保留默认文本渲染。Web 客户端注册自己的 keyed `cordis_define` 行（`coding-client-ui-cordis`），从调用参数与结果元数据里取标签、用途和铸出的标识；没有该注册的界面则退回到这张 generic 卡片。
 
 ## 导出形式
 

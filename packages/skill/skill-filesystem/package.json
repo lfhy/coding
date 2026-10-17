@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-skill-filesystem",
+  "name": "coding-skill-filesystem",
   "description": "Local filesystem skill provider for the DeepSeek Harness",
   "version": "0.1.0-rc.8",
   "publishConfig": {
@@ -32,10 +32,10 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-fs": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-home-paths": "workspace:^",
-    "@deepseek-ai/dsh-skill": "workspace:^",
+    "coding-fs": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-home-paths": "workspace:^",
+    "coding-skill": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "dependencies": {
@@ -44,10 +44,10 @@
     "yaml": "^2.4.2"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-fs": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-home-paths": "workspace:^",
-    "@deepseek-ai/dsh-skill": "workspace:^",
+    "coding-fs": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-home-paths": "workspace:^",
+    "coding-skill": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   }
 }

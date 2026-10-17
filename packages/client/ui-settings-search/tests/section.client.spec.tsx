@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import { bindSnapshotSelector } from 'coding-client-test-runtime'
+import { createSnapshotStore } from 'coding-client-runtime/client'
 import { SearchSettingsSection, type SearchSettingsSectionProps } from '../src/client/SearchSettingsSection.tsx'
 import type { SearchSettingsState } from '../src/client/controller.ts'
 import { zh } from '../src/client/locales.ts'

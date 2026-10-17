@@ -3,7 +3,7 @@
  * dsh — command-line entry. Dynamic imports per mode keep unrelated modes out
  * of each dispatch path; the adapter prints and exits for
  * `--help`/`--version`/a parse error, so only a valid mode reaches the switch.
- * @module @deepseek-ai/dsh/bin
+ * @module coding/bin
  */
 
 /* v8 ignore file -- built-bin acceptance exercises this self-executing dispatch. */
@@ -12,8 +12,8 @@ import { chdir } from 'node:process'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { loadLayeredEnv } from '@deepseek-ai/dsh-app-boot'
-import { migrateCodingHome } from '@deepseek-ai/dsh-home-paths'
+import { loadLayeredEnv } from 'coding-app-boot'
+import { migrateCodingHome } from 'coding-home-paths'
 import { parseDshArgs } from './args.ts'
 
 // Both the source tree (apps/cli/src) and the bundled bin (apps/cli/lib) sit

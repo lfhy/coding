@@ -7,7 +7,7 @@ import { globSync, readFileSync } from 'node:fs'
 import { resolve, sep } from 'node:path'
 
 const ROOT = resolve(import.meta.dirname, '..')
-const DSH_PACKAGE_NAME = /^@deepseek-ai\/dsh(?:-|$)/
+const DSH_PACKAGE_NAME = /^coding(?:-|$)/
 
 /** Result of checking every DSH package reachable through the root workspace list. */
 export interface DshPackageLicenseReport {
@@ -62,6 +62,7 @@ export function inspectDshPackageLicenses(root: string): DshPackageLicenseReport
     const manifest = readManifest(root, file)
     const name = manifest.name
     if (typeof name !== 'string' || !DSH_PACKAGE_NAME.test(name)) continue
+    if (manifest.private === true && file !== 'package.json') continue
 
     packageCount++
     if (manifest.license !== 'MIT') {

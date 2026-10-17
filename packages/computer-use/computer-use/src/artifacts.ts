@@ -3,7 +3,7 @@
 import { randomUUID } from 'node:crypto'
 import { lstat, mkdir, realpath, stat } from 'node:fs/promises'
 import { basename, isAbsolute, relative, resolve, sep } from 'node:path'
-import type { SessionId } from '@deepseek-ai/dsh-session'
+import type { SessionId } from 'coding-session'
 import { ComputerUseError } from './errors.ts'
 import type { ComputerArtifact } from './types.ts'
 

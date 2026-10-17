@@ -6,8 +6,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
-import SkillRegistry, { renderSkillContent } from '@deepseek-ai/dsh-skill'
-import * as SkillBrowserUse from '@deepseek-ai/dsh-skill-browser-use'
+import SkillRegistry, { renderSkillContent } from 'coding-skill'
+import * as SkillBrowserUse from 'coding-skill-browser-use'
 
 const bodyUrl = new URL('../assets/browser-use.md', import.meta.url)
 const resourcePath = fileURLToPath(new URL('../assets/', import.meta.url))
@@ -26,8 +26,8 @@ async function boot(): Promise<Context> {
   root = await mkdtemp(join(tmpdir(), 'dsh-browser-skill-loader-'))
   const configPath = join(root, 'cordis.yml')
   await writeFile(configPath, [
-    "- name: '@deepseek-ai/dsh-skill'",
-    "- name: '@deepseek-ai/dsh-skill-browser-use'",
+    "- name: 'coding-skill'",
+    "- name: 'coding-skill-browser-use'",
     '',
   ].join('\n'))
 
@@ -36,8 +36,8 @@ async function boot(): Promise<Context> {
   await ctx.plugin(Loader)
   ctx.loader.builtins.include = Include
   const modules = new Map<string, unknown>([
-    ['@deepseek-ai/dsh-skill', SkillRegistry],
-    ['@deepseek-ai/dsh-skill-browser-use', SkillBrowserUse],
+    ['coding-skill', SkillRegistry],
+    ['coding-skill-browser-use', SkillBrowserUse],
   ])
   ctx.loader.internal = {
     version: 'v2',

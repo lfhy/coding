@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-client-ui-primitives",
+  "name": "coding-client-ui-primitives",
   "description": "Pure React atoms for the dsh web UI: controls, icons, markdown, and JSON inspectors (zero cordis)",
   "version": "0.1.0-rc.8",
   "publishConfig": {
@@ -27,7 +27,7 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@deepseek-ai/dsh-client-ui-icons": "workspace:^",
+    "coding-client-ui-icons": "workspace:^",
     "@shikijs/langs": "^4.3.1",
     "@types/mdast": "^4.0.4",
     "anser": "^2.3.5",
@@ -50,7 +50,7 @@
     "shiki": "^4.3.1"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-invariants": "workspace:^",
+    "coding-invariants": "workspace:^",
     "@types/react": "~18.3.1",
     "@types/react-dom": "~18.3.0",
     "@deepseek-ai/cordis": "workspace:^"
@@ -62,7 +62,7 @@
     "lib/types/**/*.d.ts"
   ],
   "peerDependencies": {
-    "@deepseek-ai/dsh-invariants": "workspace:^",
+    "coding-invariants": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   }
 }

@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-memory-local
+# coding-memory-local
 
 宿主文件系统上的 [`ctx.memory`](../memory/README.md) Provider：每个项目一个目录，记忆写成本地 Markdown。
 
@@ -12,7 +12,7 @@
     decisions.md      # 需要分主题时的其他文件
 ```
 
-目录以 `0700` 创建、文件以 `0600` 写入，写入走原子替换（`@deepseek-ai/dsh-atomic-write`），因此中断不会留下半个文件。`project.json` 记录项目真实路径，方便人确认这份记忆属于哪个项目；它是唯一的非 `.md` 文件，也不会出现在模型可见的文件列表里。
+目录以 `0700` 创建、文件以 `0600` 写入，写入走原子替换（`coding-atomic-write`），因此中断不会留下半个文件。`project.json` 记录项目真实路径，方便人确认这份记忆属于哪个项目；它是唯一的非 `.md` 文件，也不会出现在模型可见的文件列表里。
 
 ## 配置
 
@@ -20,7 +20,7 @@
 export type Config = MemoryConfig
 ```
 
-字段与默认值全部来自 [`@deepseek-ai/dsh-memory`](../memory/README.md)：`root` 省略时为 `<数据主目录>/memory`，其余是条目、单文件、每项目与文件数限额，以及注入预算。
+字段与默认值全部来自 [`coding-memory`](../memory/README.md)：`root` 省略时为 `<数据主目录>/memory`，其余是条目、单文件、每项目与文件数限额，以及注入预算。
 
 ## 边界
 
@@ -30,7 +30,7 @@ export type Config = MemoryConfig
 
 ## 模型体验
 
-Indirectly, through [`@deepseek-ai/dsh-tool-memory`](../tool-memory/README.md) and [`@deepseek-ai/dsh-memory-context`](../memory-context/README.md)：本 Provider 不注册工具、不贡献提示词段，模型可见的只是它读写出来的记忆内容。
+Indirectly, through [`coding-tool-memory`](../tool-memory/README.md) and [`coding-memory-context`](../memory-context/README.md)：本 Provider 不注册工具、不贡献提示词段，模型可见的只是它读写出来的记忆内容。
 
 ### KV Cache 影响
 

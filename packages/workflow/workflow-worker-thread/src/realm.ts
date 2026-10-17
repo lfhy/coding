@@ -5,7 +5,7 @@
  * run, and the vm is not a security boundary. The worker provides host-loop isolation and
  * forced termination, not hostile-value containment. See
  *  for the isolation rationale.
- * @module @deepseek-ai/dsh-workflow-worker-thread/realm
+ * @module coding-workflow-worker-thread/realm
  */
 
 /** Thrown by {@link materializeFromRealm}; the caller wraps it into the right `WorkflowError` code. */

@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-typert-loader
+# coding-typert-loader
 
 生成的 Typert 产物所用的 Loader 集成，仅支持 Node。该插件需要 `ctx.loader` 和 `ctx.typert`；它本身不提供注册表。
 

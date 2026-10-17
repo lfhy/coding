@@ -5,9 +5,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { FsVersion } from '@deepseek-ai/dsh-fs'
-import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
-import { REMOTE_WORKSPACE_MARKER } from '@deepseek-ai/dsh-subprocess'
+import { FsVersion } from 'coding-fs'
+import LocalFileSystem from 'coding-fs-local'
+import { REMOTE_WORKSPACE_MARKER } from 'coding-subprocess'
 
 const localFsAccess = vi.hoisted(() => vi.fn())
 vi.mock('../src/fsio.ts', async (importOriginal) => {

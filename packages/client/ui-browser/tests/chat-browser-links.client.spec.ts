@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
-import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { ChatBrowserLinks } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import { SlotRegistry } from 'coding-client-runtime/client'
+import { LocaleRuntime } from 'coding-client-locale/client'
+import type { SessionId } from 'coding-session/types'
+import type { ChatBrowserLinks } from 'coding-client-ui-conversation/client'
 import { apply, inject } from '../src/client/index.ts'
 import type { BrowserMirrorInjected } from '../src/client/BrowserMirror.tsx'
 

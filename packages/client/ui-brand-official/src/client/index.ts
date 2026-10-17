@@ -1,7 +1,7 @@
 /** 为通用浏览器品牌 slot 提供官方 Coding 占用者。 */
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
-import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
+import type { ClientContext } from 'coding-client-runtime/client'
+import type {} from 'coding-client-ui-conversation/client'
+import type {} from 'coding-client-ui-sidebar/client'
 import { OfficialBrandMark, OfficialBrandName } from './Brand.tsx'
 
 /** 所需服务：UI slot 注册表。 */

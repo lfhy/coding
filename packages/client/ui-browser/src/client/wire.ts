@@ -1,5 +1,5 @@
 /** Host 状态跨网络边界的严格校验。 */
-import type { BrowserOperationOnlyState, BrowserSessionState, BrowserTabId } from '@deepseek-ai/dsh-browser/types'
+import type { BrowserOperationOnlyState, BrowserSessionState, BrowserTabId } from 'coding-browser/types'
 export type BrowserState = BrowserSessionState
 function object(value: unknown): Record<string, unknown> {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error('浏览器观测格式无效')

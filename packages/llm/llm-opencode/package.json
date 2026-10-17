@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-llm-opencode",
+  "name": "coding-llm-opencode",
   "description": "Built-in Free channel adapter for the DeepSeek Harness LLM seam",
   "version": "0.1.0-rc.8",
   "publishConfig": {
@@ -33,10 +33,10 @@
   "license": "MIT",
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-attachment": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-timeout": "workspace:^",
+    "coding-attachment": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-llm": "workspace:^",
+    "coding-timeout": "workspace:^",
     "@earendil-works/pi-ai": "^0.82.1"
   },
   "dependencies": {
@@ -44,9 +44,9 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-attachment": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-timeout": "workspace:^"
+    "coding-attachment": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-llm": "workspace:^",
+    "coding-timeout": "workspace:^"
   }
 }

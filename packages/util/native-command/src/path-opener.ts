@@ -3,7 +3,7 @@
  *
  * 默认意图会优先用平台可识别的默认浏览器打开可渲染文档，再回退到默认应用。
  * WSL 会先把所有路径转换给 Windows 桌面，不假设 Linux 图形环境；文本编辑意图不查询浏览器。
- * @module @deepseek-ai/dsh-native-command/path-opener
+ * @module coding-native-command/path-opener
  */
 
 import { release as osRelease } from 'node:os'

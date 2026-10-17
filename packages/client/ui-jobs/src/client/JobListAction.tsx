@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState, type KeyboardEvent } from 'react'
-import type { JobView } from '@deepseek-ai/dsh-client-runtime/client'
-import { StateDot, type StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
+import type { JobView } from 'coding-client-runtime/client'
+import { StateDot, type StateDotState } from 'coding-client-ui-primitives'
+import type { PropsLocale, PropsRuntime, TranslateNS } from 'coding-client-ui-slots'
 import { NS } from './locales.ts'
-import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type {} from 'coding-client-ui-conversation/client'
 import css from './JobListAction.module.css'
 
 /** 概览后台任务子 slot 的会话 props 与本地化接口。 */

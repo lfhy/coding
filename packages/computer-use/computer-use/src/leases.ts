@@ -1,12 +1,12 @@
 /** Session-sidecar read leases, durable denials, and per-turn control leases. */
 
 import { z } from 'zod'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
+import type { Agent } from 'coding-agent'
+import type { ToolRunContext } from 'coding-tools'
 type CallId = ToolRunContext['callId']
-import type { SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
-import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
-import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
+import type { SessionEvent, SessionHeader, SessionId } from 'coding-session'
+import { defineDomain, domainTable } from 'coding-storage-domain'
+import type { KvTable } from 'coding-storage-domain'
 import type { Context, Fiber } from '@deepseek-ai/cordis'
 import { approvalPolicy } from './approval-policy.ts'
 import type { ResolvedComputerUseConfig } from './config.ts'
@@ -299,7 +299,7 @@ export class ComputerLeaseManager {
       if (error instanceof ComputerUseError) throw error
       throw new ComputerUseError(
         'COMPUTER_PERMISSION_REQUIRED',
-        `${purpose} for ${app.name} could not be persisted after the approval audit: ${boundedFailure(error)}; configure working Session persistence and @deepseek-ai/dsh-storage-domain before retrying`,
+        `${purpose} for ${app.name} could not be persisted after the approval audit: ${boundedFailure(error)}; configure working Session persistence and coding-storage-domain before retrying`,
         { cause: error },
       )
     }
@@ -312,7 +312,7 @@ export class ComputerLeaseManager {
   ): ComputerUseError {
     return new ComputerUseError(
       'COMPUTER_PERMISSION_REQUIRED',
-      `${scope} access for ${app.name} requires ctx.storageDomain to persist ${purpose}; compose @deepseek-ai/dsh-storage-domain or add an exact static grant for "${app.bundleId}" before retrying`,
+      `${scope} access for ${app.name} requires ctx.storageDomain to persist ${purpose}; compose coding-storage-domain or add an exact static grant for "${app.bundleId}" before retrying`,
     )
   }
 

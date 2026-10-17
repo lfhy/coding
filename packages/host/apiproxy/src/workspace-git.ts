@@ -4,11 +4,11 @@ import { lstat, mkdtemp, writeFile, rm, chmod } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { credentialRef } from '@deepseek-ai/dsh-credentials'
-import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
+import { credentialRef } from 'coding-credentials'
+import type { CredentialRef } from 'coding-credentials'
 import { GIT_HISTORY_DEFAULT_COUNT, GIT_HISTORY_MAX_COUNT } from './api/workspace.ts'
 import type { GitCommit, GitCredentials, GitHistory, GitHistoryQuery } from './api/workspace.ts'
-import { remoteWorkspacePath } from '@deepseek-ai/dsh-subprocess'
+import { remoteWorkspacePath } from 'coding-subprocess'
 
 /** 工作区 Git 的文件变更及相对上游的提交差距。 */
 export interface GitStatus {

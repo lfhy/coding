@@ -4,22 +4,22 @@ import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import { boot, healProfilesModuleFallback, loadOverlayPatches, loadProfile } from '@deepseek-ai/dsh-app-boot'
-import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
-import { SessionId } from '@deepseek-ai/dsh-session'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import { boot, healProfilesModuleFallback, loadOverlayPatches, loadProfile } from 'coding-app-boot'
+import { provideCmdline } from 'coding-cmdline'
+import { SessionId } from 'coding-session'
+import type { Agent } from 'coding-agent'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
-import { resolveSessionPreset, SETTINGS_NAMESPACE } from '@deepseek-ai/dsh-agent-presets'
-import { applyChildComposition, childSessionMeta } from '@deepseek-ai/dsh-subagent'
-import { CallId } from '@deepseek-ai/dsh-llm'
-import type {} from '@deepseek-ai/dsh-compaction-basic'
-import type {} from '@deepseek-ai/dsh-skill'
-import type {} from '@deepseek-ai/dsh-tools'
+import { settingsNamespace } from 'coding-settings'
+import { resolveSessionPreset, SETTINGS_NAMESPACE } from 'coding-agent-presets'
+import { applyChildComposition, childSessionMeta } from 'coding-subagent'
+import { CallId } from 'coding-llm'
+import type {} from 'coding-compaction-basic'
+import type {} from 'coding-skill'
+import type {} from 'coding-tools'
 // Type-only: resolves `ctx.get('sessionProjections')` and `ctx.get('tokenMeter')`.
-import type {} from '@deepseek-ai/dsh-session-projection'
-import type {} from '@deepseek-ai/dsh-token-meter'
+import type {} from 'coding-session-projection'
+import type {} from 'coding-token-meter'
 
 const CONFIG_DIR = fileURLToPath(new URL('../config/', import.meta.url))
 const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
@@ -476,8 +476,8 @@ describe('product Bundle and user-preset intersection', () => {
     )
     const packageName = (product: Product): string => (
       product === 'codex'
-        ? '@deepseek-ai/dsh-subagent-codex'
-        : '@deepseek-ai/dsh-subagent-claude-code'
+        ? 'coding-subagent-codex'
+        : 'coding-subagent-claude-code'
     )
     return await bootWeb(settingsFile, [
       {
@@ -492,8 +492,8 @@ describe('product Bundle and user-preset intersection', () => {
         },
       },
     ], installed.map(packageDir), [
-      '@deepseek-ai/dsh-base',
-      '@deepseek-ai/dsh-web-app',
+      'coding-base',
+      'coding-web-app',
       ...installed.map(packageName),
     ])
   }
@@ -718,7 +718,7 @@ describe('a launcher that configures no writable root', () => {
     await mkdir(join(home, '.agent-presets', 'derived-mine'), { recursive: true })
     await writeFile(
       join(home, '.agent-presets', 'derived-mine', 'agent.cordis.yml'),
-      '- id: tool-todo\n  name: \'@deepseek-ai/dsh-tool-todo\'\n  config:\n    allowParallelInProgress: true\n',
+      '- id: tool-todo\n  name: \'coding-tool-todo\'\n  config:\n    allowParallelInProgress: true\n',
     )
     const settingsFile = join(await mkdtemp(join(tmpdir(), 'dsh-preset-derived-settings-')), 'settings.yaml')
     await writeFile(settingsFile, '{}\n')

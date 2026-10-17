@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-hooks-codex",
+  "name": "coding-hooks-codex",
   "description": "Bridge plugin: run a Codex hooks.json hook config on the DeepSeek Harness interception seams",
   "version": "0.1.0-rc.8",
   "publishConfig": {
@@ -35,29 +35,29 @@
     "@deepseek-ai/schemastery": "workspace:^"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-hook-protocol": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-session-persistence": "workspace:^",
-    "@deepseek-ai/dsh-tools": "workspace:^",
+    "coding-agent": "workspace:^",
+    "coding-hook-protocol": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-llm": "workspace:^",
+    "coding-session": "workspace:^",
+    "coding-session-persistence": "workspace:^",
+    "coding-tools": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-agent-loop": "workspace:^",
-    "@deepseek-ai/dsh-agent-loop-testkit": "workspace:^",
-    "@deepseek-ai/dsh-shell": "workspace:^",
-    "@deepseek-ai/dsh-bash-local": "workspace:^",
-    "@deepseek-ai/dsh-subprocess-local": "workspace:^",
-    "@deepseek-ai/dsh-hook-protocol": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-session-persistence": "workspace:^",
-    "@deepseek-ai/dsh-session-persistence-jsonl": "workspace:^",
-    "@deepseek-ai/dsh-tools": "workspace:^",
+    "coding-agent": "workspace:^",
+    "coding-agent-loop": "workspace:^",
+    "coding-agent-loop-testkit": "workspace:^",
+    "coding-shell": "workspace:^",
+    "coding-bash-local": "workspace:^",
+    "coding-subprocess-local": "workspace:^",
+    "coding-hook-protocol": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-llm": "workspace:^",
+    "coding-session": "workspace:^",
+    "coding-session-persistence": "workspace:^",
+    "coding-session-persistence-jsonl": "workspace:^",
+    "coding-tools": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   }
 }

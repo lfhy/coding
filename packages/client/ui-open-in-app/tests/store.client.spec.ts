@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { SessionId } from 'coding-session/types'
 import { createRetainedWorkbenchStore, createWorkbenchStore, tabIdForSegments } from '../src/client/store.ts'
 
 describe('file workbench store', () => {

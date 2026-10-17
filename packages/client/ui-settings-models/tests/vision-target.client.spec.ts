@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import Schema from '@deepseek-ai/schemastery'
-import { SettingsDescribeMirror } from '@deepseek-ai/dsh-client-ui-settings/src/client/settings-mirror.ts'
+import { SettingsDescribeMirror } from 'coding-client-ui-settings/src/client/settings-mirror.ts'
 import { ModelsSettingsStore } from '../src/client/store.ts'
 import { settingsSchema } from './settings-schema.client.ts'
 

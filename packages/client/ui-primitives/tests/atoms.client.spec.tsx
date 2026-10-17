@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   Button, ChatAssistantBody, ChatComposerAction, ChatComposerCard, ChatUserBubble,
   ConnectionBanner, Input, Menu, Modal, Pill,
-} from '@deepseek-ai/dsh-client-ui-primitives'
+} from 'coding-client-ui-primitives'
 import { POINTER_GRACE_MS } from '../src/pointer-grace.ts'
 
 afterEach(cleanup)

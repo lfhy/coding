@@ -1,13 +1,13 @@
 /**
- * Package-owned invariant companion for `@deepseek-ai/dsh-llm-replay`.
- * @module @deepseek-ai/dsh-llm-replay/invariant
+ * Package-owned invariant companion for `coding-llm-replay`.
+ * @module coding-llm-replay/invariant
  */
 
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
-import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
+import type { InvariantInstaller } from 'coding-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-llm-replay'
+const PACKAGE_NAME = 'coding-llm-replay'
 
 /** Cordis companion plugin name. */
 export const name = 'llm-replay-invariant'

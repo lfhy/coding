@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-tool-bash-persistent
+# coding-tool-bash-persistent
 
 模型可见的 `bash(command)`，底层复用一个按所有者隔离的 `ctx.terminals` shell。该包拥有工具约定和 shell 复用；PTY 后端与沙箱策略由部署选择。
 

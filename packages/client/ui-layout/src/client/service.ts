@@ -6,9 +6,9 @@ import {
   createSnapshotStore,
   type ObservableSnapshot,
   type SnapshotStore,
-} from '@deepseek-ai/dsh-client-runtime/client'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
+} from 'coding-client-runtime/client'
+import type { SessionId } from 'coding-session/types'
+import type { BoundActions } from 'coding-client-ui-slots'
 import type { createLayoutStore } from './stores.ts'
 
 /** 框架从布局 store 绑定出的 action 集合。 */

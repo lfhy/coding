@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-shell-env",
+  "name": "coding-shell-env",
   "description": "Tool-independent managed DSH_* shell environment registry",
   "version": "0.1.0-rc.8",
   "publishConfig": {
@@ -32,24 +32,24 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-shell": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-home-paths": "workspace:^",
-    "@deepseek-ai/dsh-session-persistence": "workspace:^",
-    "@deepseek-ai/dsh-tools": "workspace:^",
+    "coding-shell": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-home-paths": "workspace:^",
+    "coding-session-persistence": "workspace:^",
+    "coding-tools": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "workspace:^"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-shell": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-home-paths": "workspace:^",
-    "@deepseek-ai/dsh-session-persistence": "workspace:^",
-    "@deepseek-ai/dsh-tools": "workspace:^",
+    "coding-agent": "workspace:^",
+    "coding-shell": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-llm": "workspace:^",
+    "coding-home-paths": "workspace:^",
+    "coding-session-persistence": "workspace:^",
+    "coding-tools": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   }
 }

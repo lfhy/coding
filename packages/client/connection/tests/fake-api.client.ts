@@ -6,7 +6,7 @@ import type {
   ResponseValue, RpcRequest, RpcResponse, SessionId, SessionModels, SessionSearchItem, SkillEntry, WorkspaceId,
 } from '../src/client/api.ts'
 import { RpcId } from '../src/client/api.ts'
-import type { RequestPayload } from '@deepseek-ai/dsh-host-apiproxy/api'
+import type { RequestPayload } from 'coding-host-apiproxy/api'
 
 export interface Deferred<T> {
   promise: Promise<T>

@@ -1,6 +1,6 @@
 /** 面向本机用户的会话浏览器控制，不借用 Agent 的模型工具审批。 */
-import type { BrowserHumanCommand, BrowserSessionState } from '@deepseek-ai/dsh-browser/types'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { BrowserHumanCommand, BrowserSessionState } from 'coding-browser/types'
+import type { SessionId } from 'coding-session/types'
 import type { RpcRequest, RpcResponse } from './rpc.ts'
 
 /** 只作用于已附着的本地 Session；关闭最后一个标签页返回 null。 */

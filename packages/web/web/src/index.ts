@@ -3,12 +3,12 @@
  * fetch. Duplicate ids are rejected. At execution time, a configured provider must exist and
  * be usable; without one, exactly one usable provider is required, so selection never depends
  * on registration order.
- * @module @deepseek-ai/dsh-web
+ * @module coding-web
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
+import { installSettingsSection, settingsNamespace } from 'coding-settings'
 import type {
   WebFetchProvider,
   WebFetchRequest,

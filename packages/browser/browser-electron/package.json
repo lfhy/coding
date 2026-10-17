@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-browser-electron",
+  "name": "coding-browser-electron",
   "description": "Desktop Electron guest browser provider for the DeepSeek Harness Host",
   "version": "0.1.0-rc.8",
   "publishConfig": { "access": "public" },
@@ -21,21 +21,21 @@
   "files": ["lib/index.js", "lib/invariant.js", "lib/types/**/*.js", "lib/types/**/*.d.ts"],
   "license": "MIT",
   "dependencies": {
-    "@deepseek-ai/dsh-browser": "workspace:^",
+    "coding-browser": "workspace:^",
     "@deepseek-ai/schemastery": "workspace:^",
     "ws": "^8.21.0"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-host-webserver": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^"
+    "coding-host-webserver": "workspace:^",
+    "coding-session": "workspace:^",
+    "coding-invariants": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-host-webserver": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
+    "coding-host-webserver": "workspace:^",
+    "coding-session": "workspace:^",
+    "coding-invariants": "workspace:^",
     "@types/ws": "^8.18.1"
   }
 }

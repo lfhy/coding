@@ -1,7 +1,7 @@
 /** Shared DSH approval-policy read for Computer Use permission paths. */
 
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { ApprovalPolicy } from '@deepseek-ai/dsh-user-approval'
+import type { Agent } from 'coding-agent'
+import type { ApprovalPolicy } from 'coding-user-approval'
 import type { Context } from '@deepseek-ai/cordis'
 
 /**

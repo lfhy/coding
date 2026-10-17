@@ -10,9 +10,9 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, waitFor } from '@testing-library/react'
-import { SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
-import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
-import { apply, inject } from '@deepseek-ai/dsh-client-ui-sidebar/client'
+import { SlotTestRuntime } from 'coding-client-test-runtime'
+import { LocaleRuntime } from 'coding-client-locale/client'
+import { apply, inject } from 'coding-client-ui-sidebar/client'
 
 afterEach(() => {
   cleanup()

@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-client-ui-renderer",
+  "name": "coding-client-ui-renderer",
   "description": "Browser UI renderer: React slot bindings, ctx.uiRenderer, and the assembled application root",
   "version": "0.1.0-rc.8",
   "publishConfig": {
@@ -32,8 +32,8 @@
   "dsh": {
     "client": {
       "inject": [
-        "@deepseek-ai/dsh-client-runtime",
-        "@deepseek-ai/dsh-client-ui-layout"
+        "coding-client-runtime",
+        "coding-client-ui-layout"
       ],
       "platform": "web",
       "immediately": true
@@ -48,17 +48,17 @@
     "use-sync-external-store": "1.2.0"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-client-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-layout": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
+    "coding-client-runtime": "workspace:^",
+    "coding-client-ui-layout": "workspace:^",
+    "coding-invariants": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-client-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-layout": "workspace:^",
-    "@deepseek-ai/dsh-client-test-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-slots": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
+    "coding-client-runtime": "workspace:^",
+    "coding-client-ui-layout": "workspace:^",
+    "coding-client-test-runtime": "workspace:^",
+    "coding-client-ui-slots": "workspace:^",
+    "coding-invariants": "workspace:^",
     "@types/react": "~18.3.1",
     "@types/react-dom": "~18.3.0",
     "@deepseek-ai/cordis": "workspace:^",

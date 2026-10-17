@@ -17,7 +17,7 @@ import {
   legacyDshHome,
   migrateCodingHome,
   resolveDshHome,
-} from '@deepseek-ai/dsh-home-paths'
+} from 'coding-home-paths'
 
 const cleanups: string[] = []
 

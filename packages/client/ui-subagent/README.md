@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-client-ui-subagent
+# coding-client-ui-subagent
 
 Web subagent 功能 owner：向 `conversation.overview.subagents` 贡献按需展开的目录树，向会话编辑器链贡献按原因区分的只读替代呈现，并保留注册到 `ctx.inputTriggers` 的既有 `@` 引用 source。
 

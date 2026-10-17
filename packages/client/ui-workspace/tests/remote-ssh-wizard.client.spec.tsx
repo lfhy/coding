@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import type { WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-client-runtime/client'
-import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
-import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
+import type { WorkspaceId, WorkspaceView } from 'coding-client-runtime/client'
+import { makeTranslate } from 'coding-client-test-runtime'
+import { zh as commonZh } from 'coding-client-locale/src/locales/zh.ts'
 import type { WorkspacePickerProps } from '../src/client/contract/slots.ts'
 import { en, zh } from '../src/client/locales.ts'
-import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
+import { en as commonEn } from 'coding-client-locale/src/locales/en.ts'
 import { RemoteSshWizard } from '../src/client/WorkspacePicker.tsx'
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks() })

@@ -2,8 +2,8 @@
 
 import z from '@deepseek-ai/schemastery'
 import type Schema from '@deepseek-ai/schemastery'
-import * as SettingsModule from '@deepseek-ai/dsh-settings'
-import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
+import * as SettingsModule from 'coding-settings'
+import type { SettingsNamespace } from 'coding-settings'
 import { ComputerUseError } from './errors.ts'
 
 /**

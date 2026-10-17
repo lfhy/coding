@@ -1,9 +1,9 @@
-/** Computer Use 的模型可见消费方：Skill、引导工具与按 agent 暴露的执行工具。 @module @deepseek-ai/dsh-tool-computer-use */
+/** Computer Use 的模型可见消费方：Skill、引导工具与按 agent 暴露的执行工具。 @module coding-tool-computer-use */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type {} from '@deepseek-ai/dsh-computer-use'
-import type {} from '@deepseek-ai/dsh-skill'
-import type {} from '@deepseek-ai/dsh-tools'
+import type {} from 'coding-computer-use'
+import type {} from 'coding-skill'
+import type {} from 'coding-tools'
 import { ComputerUseExposure } from './exposure.ts'
 import { COMPUTER_USE_SKILL, LEGACY_COMPUTER_USE_SKILL } from './skill.ts'
 import { createComputerUseTools } from './tools.ts'

@@ -1,9 +1,9 @@
 /** DuckDuckGo 提供方没有独立于 Web 注册表的事件或可变数据关系。 */
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
-import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
+import type { InvariantInstaller } from 'coding-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-web-search-duckduckgo'
+const PACKAGE_NAME = 'coding-web-search-duckduckgo'
 /** Cordis companion 插件名称。 */
 export const name = 'web-search-duckduckgo-invariant'
 /** 注册不变量时需要的服务。 */

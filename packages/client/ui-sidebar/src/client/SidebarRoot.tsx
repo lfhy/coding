@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
   Icon, IconNewChatOutline16, Tooltip,
-} from '@deepseek-ai/dsh-client-ui-primitives'
+} from 'coding-client-ui-primitives'
 import type { SidebarRootComponentProps } from './contract/slots.ts'
 import css from './SidebarRoot.module.css'
 

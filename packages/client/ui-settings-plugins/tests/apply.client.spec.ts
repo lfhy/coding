@@ -2,15 +2,15 @@
 
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
-import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
-import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
-import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
-import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
-import { apply as settingsApply, inject as settingsInject } from '@deepseek-ai/dsh-client-ui-settings/client'
-import { apply, inject } from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
+import { resolveSlotLabel } from 'coding-client-ui-slots'
+import { SlotRegistry } from 'coding-client-runtime/client'
+import { LocaleRuntime } from 'coding-client-locale/client'
+import { TestRemote } from 'coding-client-test-runtime'
+import { apply as settingsApply, inject as settingsInject } from 'coding-client-ui-settings/client'
+import { apply, inject } from 'coding-client-ui-settings-plugins/client'
 import type {
   ConfigurablePluginsTabFace, PluginsSettingsSectionInjected,
-} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
+} from 'coding-client-ui-settings-plugins/client'
 
 /**
  * @param served - namespaces the Host describes; omitted answers a failed read,

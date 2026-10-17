@@ -3,7 +3,7 @@ description: "客户端固定布局壳：导航、对话、详情、会话工作
 kind: "package-reference"
 ---
 
-# @deepseek-ai/dsh-client-ui-layout
+# coding-client-ui-layout
 
 ## 概述
 

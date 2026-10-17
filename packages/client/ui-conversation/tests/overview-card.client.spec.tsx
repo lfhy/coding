@@ -2,13 +2,13 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, within } from '@testing-library/react'
-import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { bindSnapshotSelector, makeTranslate } from 'coding-client-test-runtime'
 import {
   createSnapshotStore, EMPTY_CHAT_SNAPSHOT, EMPTY_CONVERSATION_VIEWS,
   type ConversationSnapshot, type JobView, type SessionId, type SessionListState,
   type WorkspaceListState,
-} from '@deepseek-ai/dsh-client-runtime/client'
-import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
+} from 'coding-client-runtime/client'
+import { zh as commonZh } from 'coding-client-locale/src/locales/zh.ts'
 import { OverviewCard, type OverviewCardProps } from '../src/client/skeleton/OverviewCard.tsx'
 import { zh } from '../src/client/locales.ts'
 

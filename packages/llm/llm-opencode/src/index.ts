@@ -10,10 +10,10 @@
  *
  * ```yaml
  * - id: llm-opencode
- *   name: '@deepseek-ai/dsh-llm-opencode'
+ *   name: 'coding-llm-opencode'
  * ```
  *
- * @module @deepseek-ai/dsh-llm-opencode
+ * @module coding-llm-opencode
  */
 
 import type { Context } from '@deepseek-ai/cordis'

@@ -6,12 +6,12 @@
 
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { DiscoveredModelView, IApiClient } from '@deepseek-ai/dsh-api-remotes/client'
-import { Button, Menu, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { DiscoveredModelView, IApiClient } from 'coding-api-remotes/client'
+import { Button, Menu, Modal } from 'coding-client-ui-primitives'
 import {
   Icon, IconCheckOutline14, IconChevronDownOutline14, IconCloseOutline16, IconPlusOutline16, IconRefreshOutline16,
   IconQuestionOutline14, IconSearchOutline16, IconTrashOutline16,
-} from '@deepseek-ai/dsh-client-ui-icons'
+} from 'coding-client-ui-icons'
 import { formatCapacity, parseCapacity } from './DeepSeekModelsEditor.tsx'
 import type { DeepSeekModelDraft } from './DeepSeekModelsEditor.tsx'
 import { messageOf } from './store.ts'

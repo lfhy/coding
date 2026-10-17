@@ -1,6 +1,6 @@
 /**
  * 模型提供方请求共用的非秘密应用标识和 User-Agent。
- * @module @deepseek-ai/dsh-llm/attribution
+ * @module coding-llm/attribution
  */
 
 import { execFileSync } from 'node:child_process'

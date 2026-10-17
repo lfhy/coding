@@ -1,6 +1,6 @@
 /** DeepSeek 模型列表探测：草稿端点与凭据只用于本次请求，不写入设置。 */
-import { assertUsableApiKey, userAgent, LlmError } from '@deepseek-ai/dsh-llm'
-import type { LlmDiscoveredModel, LlmModelDiscoveryRequest } from '@deepseek-ai/dsh-llm'
+import { assertUsableApiKey, userAgent, LlmError } from 'coding-llm'
+import type { LlmDiscoveredModel, LlmModelDiscoveryRequest } from 'coding-llm'
 import type { DeepSeekConnectionOptions } from './adapter.ts'
 
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024

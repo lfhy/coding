@@ -3,12 +3,12 @@ import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type Mous
 import {
   IconChevronLeftOutline14, IconChevronRightOutline14, IconCloseOutline16,
   IconGlobeOutline14, IconRefreshOutline16,
-} from '@deepseek-ai/dsh-client-ui-icons'
-import type { BrowserHumanCommand, BrowserHumanTarget } from '@deepseek-ai/dsh-browser/types'
-import type { ToolCallBlock } from '@deepseek-ai/dsh-client-runtime/client'
-import type { HostObservable, InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type {} from '@deepseek-ai/dsh-client-ui-open-in-app/client'
-import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+} from 'coding-client-ui-icons'
+import type { BrowserHumanCommand, BrowserHumanTarget } from 'coding-browser/types'
+import type { ToolCallBlock } from 'coding-client-runtime/client'
+import type { HostObservable, InjectFace, PropsLocale, PropsRuntime } from 'coding-client-ui-slots'
+import type {} from 'coding-client-ui-open-in-app/client'
+import { Button } from 'coding-client-ui-primitives'
 import { desktopBrowserPresentation, type BrowserView } from './controller.ts'
 import { fitBrowserViewport, type BrowserViewport } from './viewport.ts'
 import { pointOnFrame } from './interaction.ts'

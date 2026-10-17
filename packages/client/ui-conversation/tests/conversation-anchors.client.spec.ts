@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { ChatConversationViewNode, UserMessageNode } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ChatConversationViewNode, UserMessageNode } from 'coding-client-runtime/client'
 import { buildConversationAnchors } from '../src/client/chat/conversation-anchors.ts'
 
 const fallback = { image: '图片', empty: '空消息' }

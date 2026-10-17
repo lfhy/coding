@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-tool-browser",
+  "name": "coding-tool-browser",
   "description": "Approval-gated model-facing browser action tools over the session browser service",
   "version": "0.1.0-rc.8",
   "publishConfig": { "access": "public" },
@@ -21,30 +21,30 @@
   "license": "MIT",
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-attachment": "workspace:^",
-    "@deepseek-ai/dsh-browser": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-sandbox-policy": "workspace:^",
-    "@deepseek-ai/dsh-subprocess": "workspace:^",
-    "@deepseek-ai/dsh-tools": "workspace:^",
-    "@deepseek-ai/dsh-user-approval": "workspace:^"
+    "coding-attachment": "workspace:^",
+    "coding-browser": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-llm": "workspace:^",
+    "coding-sandbox-policy": "workspace:^",
+    "coding-subprocess": "workspace:^",
+    "coding-tools": "workspace:^",
+    "coding-user-approval": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/cordis-plugin-include": "workspace:^",
     "@deepseek-ai/cordis-plugin-loader": "workspace:^",
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-attachment": "workspace:^",
-    "@deepseek-ai/dsh-attachment-local": "workspace:^",
-    "@deepseek-ai/dsh-browser": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-sandbox-policy": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-system-prompt": "workspace:^",
-    "@deepseek-ai/dsh-subprocess": "workspace:^",
-    "@deepseek-ai/dsh-tools": "workspace:^",
-    "@deepseek-ai/dsh-user-approval": "workspace:^"
+    "coding-agent": "workspace:^",
+    "coding-attachment": "workspace:^",
+    "coding-attachment-local": "workspace:^",
+    "coding-browser": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-llm": "workspace:^",
+    "coding-sandbox-policy": "workspace:^",
+    "coding-session": "workspace:^",
+    "coding-system-prompt": "workspace:^",
+    "coding-subprocess": "workspace:^",
+    "coding-tools": "workspace:^",
+    "coding-user-approval": "workspace:^"
   }
 }

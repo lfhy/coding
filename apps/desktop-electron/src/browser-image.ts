@@ -1,7 +1,7 @@
 /** 将 CDP 的 PNG 截图送入共享图片限额策略；原生解码仅在 Electron 主进程进行。 */
 
 import { nativeImage } from 'electron'
-import { fitImage } from '@deepseek-ai/dsh-attachment/image-processing'
+import { fitImage } from 'coding-attachment/image-processing'
 
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])
 const MAX_SOURCE_BYTES = 100 * 1024 * 1024

@@ -2,14 +2,14 @@
 
 import { isDeepStrictEqual } from 'node:util'
 import type { Context } from '@deepseek-ai/cordis'
-import { contentHasImage } from '@deepseek-ai/dsh-llm'
-import { isReplacementSurfaceEvent } from '@deepseek-ai/dsh-session'
-import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
-import type { InvariantFailure, InvariantInstaller } from '@deepseek-ai/dsh-invariants'
+import { contentHasImage } from 'coding-llm'
+import { isReplacementSurfaceEvent } from 'coding-session'
+import type { Session, SessionEvent } from 'coding-session'
+import type { InvariantFailure, InvariantInstaller } from 'coding-invariants'
 import { collectImages, substituteImages } from './content.ts'
 import type {} from './index.ts'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-llm-vision-fallback'
+const PACKAGE_NAME = 'coding-llm-vision-fallback'
 
 /** Cordis 不变量伴生插件名称。 */
 export const name = 'llm-vision-fallback-invariant'

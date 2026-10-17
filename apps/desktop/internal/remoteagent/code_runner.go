@@ -48,7 +48,7 @@ func validateCodeMemoryLimit(limit int64) error {
 	return nil
 }
 
-// 远端 runner 与 @deepseek-ai/dsh-code-runtime 共享可移植绑定命名空间；不能只
+// 远端 runner 与 coding-code-runtime 共享可移植绑定命名空间；不能只
 // 按 Goja/JavaScript 的宽松规则接收 `$` 或某个语言独有的关键字。
 var codeIdentifier = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 

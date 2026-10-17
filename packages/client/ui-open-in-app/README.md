@@ -3,7 +3,7 @@ description: "会话页头的本地打开入口、按类型渲染标签的右侧
 kind: "package-reference"
 ---
 
-# @deepseek-ai/dsh-client-ui-open-in-app
+# coding-client-ui-open-in-app
 
 ## 概述
 

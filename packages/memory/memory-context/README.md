@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-memory-context
+# coding-memory-context
 
 把会话所属项目的记忆作为有界上下文注入第一次请求：新会话不必重新问一遍用户偏好、这个仓库里非显然的约定和踩过的坑。
 

@@ -1,4 +1,4 @@
-import type { ImageAttachmentLimits } from '@deepseek-ai/dsh-attachment'
+import type { ImageAttachmentLimits } from 'coding-attachment'
 
 /**
  * 客户端仅检查原始字节安全额度；尺寸、帧和输出字节由 Host 归一化。

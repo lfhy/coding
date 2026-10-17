@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-web-search-duckduckgo
+# coding-web-search-duckduckgo
 
 无密钥的 DuckDuckGo 搜索提供方，向 [`ctx.web`](../web/README.md) 注册 id `duckduckgo`。默认组合通过 `web.searchProvider: duckduckgo` 选择它；将该设置改为 `deepseek-official` 后，本提供方不会承接后者的凭据或认证错误。
 

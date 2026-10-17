@@ -1,15 +1,15 @@
 /** Filesystem-seam source access for the generic stdio LSP provider. */
 
 import { Buffer } from 'node:buffer'
-import type { FileSystem, FsTarget } from '@deepseek-ai/dsh-fs'
+import type { FileSystem, FsTarget } from 'coding-fs'
 import {
   isRemoteAbsolutePath,
   isRemotePathWithin,
   parseRemoteWorkspaceTargetKey,
   remoteWorkspaceLocalPath,
   verifyRemoteWorkspaceTarget,
-} from '@deepseek-ai/dsh-subprocess'
-import type { RemoteWorkspaceTarget } from '@deepseek-ai/dsh-subprocess'
+} from 'coding-subprocess'
+import type { RemoteWorkspaceTarget } from 'coding-subprocess'
 import { throwIfAborted } from './abort.ts'
 
 /** A canonical workspace in the filesystem/subprocess execution world. */

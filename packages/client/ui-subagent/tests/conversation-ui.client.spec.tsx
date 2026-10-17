@@ -1,16 +1,16 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
-import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { makeTranslate } from 'coding-client-test-runtime'
 import type {
   SessionId, SessionListState, SessionSummary, SubagentCatalogSnapshot,
-} from '@deepseek-ai/dsh-client-runtime/client'
+} from 'coding-client-runtime/client'
 import {
   SubagentCatalogAction, type SubagentCatalogActionProps,
 } from '../src/client/SubagentCatalogAction.tsx'
 import { SubagentReadOnlyComposer } from '../src/client/SubagentReadOnlyComposer.tsx'
-import type {} from '@deepseek-ai/dsh-subagent/client'
-import type {} from '@deepseek-ai/dsh-token-meter/client'
+import type {} from 'coding-subagent/client'
+import type {} from 'coding-token-meter/client'
 import { zh } from '../src/client/locales.ts'
 
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks() })

@@ -1,6 +1,6 @@
 # browser-electron
 
-`@deepseek-ai/dsh-browser-electron` 仅在桌面 Host 中替换 `ctx.browserUse`；同一个 Electron guest 同时承接工作台人工操作和 Agent 命令。Web/CLI 仍由 [Playwright 提供方](../browser-playwright/README.md)拥有。桌面主进程先在 `127.0.0.1` 绑定私有 WebSocket，再启动 Host；插件配置 `originEnv` 和 `tokenEnv` 是环境变量的名称，不含端口或凭据。Host 通过 `Authorization: Bearer` 连接，令牌不会进入 URL、插件配置或只读画面。
+`coding-browser-electron` 仅在桌面 Host 中替换 `ctx.browserUse`；同一个 Electron guest 同时承接工作台人工操作和 Agent 命令。Web/CLI 仍由 [Playwright 提供方](../browser-playwright/README.md)拥有。桌面主进程先在 `127.0.0.1` 绑定私有 WebSocket，再启动 Host；插件配置 `originEnv` 和 `tokenEnv` 是环境变量的名称，不含端口或凭据。Host 通过 `Authorization: Bearer` 连接，令牌不会进入 URL、插件配置或只读画面。
 
 模型操作从审批到执行结束独占会话；人工操作按会话排队，并在命令发送前执行准入复核。审批目标由主进程即时刷新；页面自行导航通过状态事件撤销旧截图与审批修订版。人工 `open-url` 和 `navigate` 在本次目标主 frame 的 `did-navigate` 提交并核验目标 URL 后即可返回，不等待顶层 DOM ready、严格 DOM 观测或截图；`loadURL` 完成也可作为就绪结果，缓慢子资源不会单独阻塞。主进程从原生加载事件发布可选的 `BrowserTabSummary.loading`，使地址栏在人工命令返回后仍显示加载状态，直到 guest 停止加载；Web 等提供方可不提供该字段。模型 `execute` 的导航在顶层 DOM 就绪后进行严格观测，不等待缓慢子资源完全加载；如果页面或 CDP 尚未就绪，仍按导航超时处理。原生导航在各自就绪条件下超过 10 秒仍未完成时，主进程尝试停止加载，并在 3 秒内确认旧导航停稳。停稳后，如果模型导航的目标主 frame 已提交且仍是当前页面，返回新的严格观测；否则保持失败，使旧观测与审批失效：已有页面的人工 `navigate` 或模型导航保留 guest，下一次单独获批的 `browser_snapshot` 可读取当前页面；`open-url` 则回滚并关闭本次新建的标签。无法安全停稳只关闭受影响的 Session。Host 私有桥的 20 秒请求超时、取消或连接断开仍终止整个连接并清除会话缓存；当前 Host 进程不自动重连，也不改道至另一提供方。每次连接最多保留八个会话，每会话最多八个标签页，PNG 最多 2 MiB；跨进程字段均受校验。主进程在协议的 `lease`/`release` 期间阻止未经授权的人工变更，并在 `execute` 时再次校验 `expectedTarget`。
 

@@ -1,10 +1,10 @@
-/** 浏览器技能包的运行时不变量登记。 @module @deepseek-ai/dsh-skill-browser-use/invariant */
+/** 浏览器技能包的运行时不变量登记。 @module coding-skill-browser-use/invariant */
 
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
-import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
+import type { InvariantInstaller } from 'coding-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-skill-browser-use'
+const PACKAGE_NAME = 'coding-skill-browser-use'
 
 /** Cordis 配套插件名。 */
 export const name = 'skill-browser-use-invariant'

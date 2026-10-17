@@ -50,7 +50,7 @@ const publishedRepositoryUrl = 'git+https://github.com/deepseek-ai/deepseek-harn
 /** Private packages that participate in workspace checks but not releases. */
 const experimentalPackageDirectory = /^packages\/experimental\/[^/]+$/
 /** npm namespace reserved for private experimental packages. */
-const experimentalPackageNamePrefix = '@deepseek-ai/dsh-experimental-'
+const experimentalPackageNamePrefix = 'coding-experimental-'
 /** 原型 Electron 壳只用于本地开发，不属于 npm 发布包。 */
 const privateElectronShellDirectory = 'apps/desktop-electron'
 /** Directories whose packages this repository publishes: one release member each. */
@@ -60,10 +60,10 @@ const deploymentManifestDirectory = /^apps\/runtime$/
 
 const localArtifactDirs = new Set(['node_modules'])
 const appPackageFiles: Readonly<Record<string, readonly string[]>> = {
-  '@deepseek-ai/dsh': ['lib/*.js', 'config'],
+  'coding': ['lib/*.js', 'config'],
   // The Web build emits sourcemaps for browser debugging; publishing them is
   // what the payload policy forbids, so the bundle ships without them.
-  '@deepseek-ai/dsh-web-frontend': ['dist', '!dist/**/*.map'],
+  'coding-web-frontend': ['dist', '!dist/**/*.map'],
 }
 
 /** The subset of package.json fields this constraint check cares about. */
@@ -149,30 +149,37 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   // them through its own CSS pipeline, so the sheets are published artifacts.
   // The glob covers whichever sheets a package emits; sourcemaps stay
   // unpublished, as everywhere else in the repository.
-  '@deepseek-ai/dsh-client-ui-primitives': ['lib/**/*.css'],
-  '@deepseek-ai/dsh-client-web': ['lib/**/*.css'],
-  '@deepseek-ai/dsh-client-ui-theme': ['lib/styles'],
+  'coding-client-ui-primitives': ['lib/**/*.css'],
+  'coding-client-web': ['lib/**/*.css'],
+  'coding-client-ui-theme': ['lib/styles'],
+  'coding-attachment': ['lib/image-processing.js'],
+  'coding-llm-vision-fallback': ['lib/content-*.js'],
   // The CPython side ships as source .py files, published as-is rather than built.
-  '@deepseek-ai/dsh-code-runtime-python': ['py/**/*.py'],
+  'coding-code-runtime-python': ['py/**/*.py'],
   // The Python runtime uses a distinct closed-resolution bin; the public CLI
   // keeps config-owned bare-package resolution through lib/bin.js.
-  '@deepseek-ai/dsh-sdk-jsonrpc-demo': ['lib/packaged-bin.js'],
+  'coding-sdk-jsonrpc-demo': ['lib/packaged-bin.js'],
   // The argv-prefix runner entry ships beside the lib as its own bundle;
   // sandbox-local resolves it through the package's ./runner export. tsdown
   // also shares its generated FFI code through a hashed runtime chunk.
-  '@deepseek-ai/dsh-sandbox-windows-acl': ['lib/runner.js', 'lib/types-*.js'],
+  'coding-sandbox-windows-acl': ['lib/runner.js', 'lib/types-*.js'],
   // SQLite loads every statement from immutable package resources at runtime.
-  '@deepseek-ai/dsh-session-persistence-sqlite': ['resources/sql/**/*.sql'],
-  '@deepseek-ai/dsh-skill-badge': ['assets'],
-  '@deepseek-ai/dsh-skill-browser-use': ['assets'],
-  '@deepseek-ai/dsh-subprocess-local': ['scripts/ensure-spawn-helper.mjs'],
+  'coding-session-persistence-sqlite': ['resources/sql/**/*.sql'],
+  'coding-skill-badge': ['assets'],
+  'coding-skill-browser-use': ['assets'],
+  'coding-subprocess-local': ['scripts/ensure-spawn-helper.mjs'],
   // Computer Use runs a locally built Swift helper, so the package ships the helper
   // sources plus the build script the provider invokes when the pinned binary is absent.
-  '@deepseek-ai/dsh-computer-use': ['native', 'scripts'],
+  'coding-computer-use': ['native', 'scripts'],
 }
 
 function sameStringList(actual: readonly string[] | undefined, expected: readonly string[]): boolean {
   return !!actual && actual.length === expected.length && actual.every((value, index) => value === expected[index])
+}
+
+/** 判断 workspace 名称是否属于项目发布包或 vendored 包族。 */
+function isPublishedPackageName(name: string | undefined): name is string {
+  return name === 'coding' || name?.startsWith('coding-') === true || name?.startsWith('@deepseek-ai/') === true
 }
 
 function expectedDshPackageFiles(manifest: PackageManifest): readonly string[] {
@@ -270,8 +277,8 @@ export function checkPrivateElectronShellManifest({ dir, manifest }: WorkspaceMa
   if (dir !== privateElectronShellDirectory) return []
   const label = manifest.name ?? dir
   const errors: string[] = []
-  if (manifest.name !== '@deepseek-ai/dsh-desktop-electron') {
-    errors.push(`${label}: Electron shell must use @deepseek-ai/dsh-desktop-electron`)
+  if (manifest.name !== 'coding-desktop-electron') {
+    errors.push(`${label}: Electron shell must use coding-desktop-electron`)
   }
   if (manifest.private !== true) errors.push(`${label}: Electron shell must set "private": true`)
   if (manifest.publishConfig !== undefined) errors.push(`${label}: Electron shell must omit publishConfig`)
@@ -331,7 +338,7 @@ function checkWorkspace({ dir, manifest }: WorkspaceManifest): string[] {
     return errors
   }
 
-  if (manifest.name?.startsWith('@deepseek-ai/')) {
+  if (isPublishedPackageName(manifest.name)) {
     const allowedSources = publicationSourceAllowlist[manifest.name] ?? []
     for (const file of manifest.files ?? []) {
       if (isForbiddenPublicationFile(file) && !allowedSources.includes(file)) {
@@ -340,7 +347,8 @@ function checkWorkspace({ dir, manifest }: WorkspaceManifest): string[] {
     }
   }
 
-  if (dir.startsWith('apps/') && dir !== privateElectronShellDirectory && manifest.name?.startsWith('@deepseek-ai/')) {
+  if (dir.startsWith('apps/') && dir !== privateElectronShellDirectory
+    && !deploymentManifestDirectory.test(dir) && isPublishedPackageName(manifest.name)) {
     const expectedFiles = appPackageFiles[manifest.name]
     if (expectedFiles === undefined) {
       errors.push(`${label}: app package has no publication files policy`)
@@ -358,7 +366,7 @@ function checkWorkspace({ dir, manifest }: WorkspaceManifest): string[] {
     }
   }
 
-  if (dir.startsWith('packages/') && manifest.name?.startsWith('@deepseek-ai/dsh-')) {
+  if (dir.startsWith('packages/') && manifest.name?.startsWith('coding-')) {
     const peer = manifest.peerDependencies?.['@deepseek-ai/cordis']
     const dev = manifest.devDependencies?.['@deepseek-ai/cordis']
 

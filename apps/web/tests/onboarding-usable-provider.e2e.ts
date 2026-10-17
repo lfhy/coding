@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { load } from 'js-yaml'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
+import { settingsNamespace } from 'coding-settings'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
@@ -133,7 +133,7 @@ describe.skipIf(MODE === 'record')('web e2e: another usable provider ends first-
     if (created === undefined) throw new Error('新渠道 profile 未保存')
     const [customRoute, profile] = created
     expect(customRoute).toMatch(/^channel-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
-    // import { deriveKeyRef } from '@deepseek-ai/dsh-client-ui-settings-models/src/client/store.ts'
+    // import { deriveKeyRef } from 'coding-client-ui-settings-models/src/client/store.ts'
     // 不引入 Client 图；镜像约定并同时验证 Host 落盘的引用。
     const keyRef = `${customRoute.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}_API_KEY`
     expect(profile.apiKeyEnv).toBe(keyRef)

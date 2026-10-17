@@ -187,7 +187,7 @@ export const en: Record<OpenInAppKey, string> = {
 /** `open-in-app` 命名空间的 key 域。 */
 export type OpenInAppKey = keyof typeof zh
 
-declare module '@deepseek-ai/dsh-client-ui-slots' {
+declare module 'coding-client-ui-slots' {
   interface LocaleNamespaceMap {
     /** 工作区打开、功能工作台与终端文案。 */
     'open-in-app': OpenInAppKey

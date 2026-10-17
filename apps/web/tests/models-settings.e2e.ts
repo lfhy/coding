@@ -6,8 +6,8 @@ import { createServer, type Server } from 'node:http'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { load } from 'js-yaml'
-import { credentialRef } from '@deepseek-ai/dsh-credentials'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
+import { credentialRef } from 'coding-credentials'
+import { settingsNamespace } from 'coding-settings'
 import type { Browser, Locator, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
@@ -29,7 +29,7 @@ const DELETE_EXPECTED = join(SNAPSHOT_DIR, 'delete.expected.md')
 const VISION_CONFIGURED_EXPECTED = join(SNAPSHOT_DIR, 'vision-configured.expected.md')
 const MODE = webSnapshotMode()
 const STALE_EDITOR_CONFLICT = '这张卡片打开期间，这些设置已被其他地方改动。请关闭后重新打开，在当前值上编辑。'
-// import { deriveKeyRef } from '@deepseek-ai/dsh-client-ui-settings-models/src/client/store.ts'
+// import { deriveKeyRef } from 'coding-client-ui-settings-models/src/client/store.ts'
 // 浏览器 lane 属于 Host 图；仅镜像渠道 ID 到凭据引用的规则，避免引入 Client 工程。
 const channelKeyRef = (route: string): string => `${route.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}_API_KEY`
 

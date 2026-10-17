@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-e2b
+# coding-e2b
 
 一个 E2B 沙箱的共享生命周期所有者。文件系统与进程管理适配器注入 `ctx.e2b`，等待其唯一的 SDK 句柄，因此处于同一个远程 Linux 工作树与进程环境中。本包固定使用 `e2b@2.29.1`；可选组合见[包族索引](../README.md)。
 
@@ -6,16 +6,16 @@
 
 ```yaml
 - id: e2b
-  name: '@deepseek-ai/dsh-e2b'
+  name: 'coding-e2b'
   config:
     cwd: /home/user/workspace
     timeoutMs: 300000
 
 - id: subprocess-e2b
-  name: '@deepseek-ai/dsh-subprocess-e2b'
+  name: 'coding-subprocess-e2b'
 
 - id: fs-e2b
-  name: '@deepseek-ai/dsh-fs-e2b'
+  name: 'coding-fs-e2b'
 ```
 
 `apiKey` 可省略；省略时读取 `E2B_API_KEY`。该密钥只配置宿主 SDK 连接，绝不会安装进沙箱。`cwd` 默认为 `/home/user/workspace`，并且必须是绝对 POSIX 路径。`timeoutMs` 默认为 5 分钟并控制沙箱生命周期；超时会删除沙箱。

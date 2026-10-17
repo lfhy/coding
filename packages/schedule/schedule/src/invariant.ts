@@ -1,14 +1,14 @@
 /**
  * Package-owned strict Schedule stream invariant.
- * @module @deepseek-ai/dsh-schedule/invariant
+ * @module coding-schedule/invariant
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
-import type { InvariantFailure, InvariantInstaller } from '@deepseek-ai/dsh-invariants'
+import type { Session, SessionEvent } from 'coding-session'
+import type { InvariantFailure, InvariantInstaller } from 'coding-invariants'
 import { foldScheduleEvents, ScheduleLogError } from './domain.ts'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-schedule'
+const PACKAGE_NAME = 'coding-schedule'
 
 /** Cordis invariant-companion plugin name. */
 export const name = 'tool-schedule-invariant'

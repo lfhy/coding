@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-acp
+# coding-acp
 
 通过 JSON-RPC stdio 提供的仅面向自动化的 [ACP（Agent Client Protocol）](https://agentclientprotocol.com) 服务器。程序化客户端可以创建新 harness agent（智能体）、发送文本／图片提示词、收集已提交的 assistant 文本／图片、按策略响应一次性权限请求并取消工作。仓库中的主要客户端是 [`dsh-subagent-acp`](../../subagent/subagent-acp/README.md)。
 
@@ -39,7 +39,7 @@ ACP 要求每个提示词响应都携带 `stopReason`，但桥接层不声称它
 
 ## 运行
 
-`pnpm --dir /path/to/deepseek-harness run demo:acp` 启动仓库的自动化服务器组合。父 harness 可以通过 [`@deepseek-ai/dsh-subagent-acp`](../../subagent/subagent-acp/README.md) spawn 它；其他 ACP 客户端只需上述核心方法。
+`pnpm --dir /path/to/deepseek-harness run demo:acp` 启动仓库的自动化服务器组合。父 harness 可以通过 [`coding-subagent-acp`](../../subagent/subagent-acp/README.md) spawn 它；其他 ACP 客户端只需上述核心方法。
 
 ## 模型体验
 

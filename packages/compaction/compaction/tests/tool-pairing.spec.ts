@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { createUserMessage, CallId , createMessage, createToolResultMessage } from '@deepseek-ai/dsh-llm'
-import { toolPairingBalancedAfter, toolPairingBalancedBefore } from '@deepseek-ai/dsh-compaction'
-import { Session, SessionId } from '@deepseek-ai/dsh-session'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import { createUserMessage, CallId , createMessage, createToolResultMessage } from 'coding-llm'
+import { toolPairingBalancedAfter, toolPairingBalancedBefore } from 'coding-compaction'
+import { Session, SessionId } from 'coding-session'
+import type { SessionEvent } from 'coding-session'
 
 const SURFACE = { surfaceOp: 'append' as const }
 

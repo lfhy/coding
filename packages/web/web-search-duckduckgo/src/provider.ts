@@ -3,8 +3,8 @@ import { parse } from 'parse5'
 import type { DefaultTreeAdapterMap } from 'parse5'
 import { ProxyAgent, fetch as undiciFetch } from 'undici'
 import type { Response as UndiciResponse } from 'undici'
-import { WebError } from '@deepseek-ai/dsh-web'
-import type { WebSearchProvider, WebSearchRequest, WebSearchResult, WebSearchSource } from '@deepseek-ai/dsh-web'
+import { WebError } from 'coding-web'
+import type { WebSearchProvider, WebSearchRequest, WebSearchResult, WebSearchSource } from 'coding-web'
 
 /** 用户可选的稳定后端 id。 */
 export const DUCKDUCKGO_PROVIDER_ID = 'duckduckgo'

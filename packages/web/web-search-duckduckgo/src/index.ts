@@ -1,7 +1,7 @@
 /** 注册无需凭据的 DuckDuckGo HTML 搜索提供方。 */
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
+import { installSettingsSection, settingsNamespace } from 'coding-settings'
 import { DuckDuckGoSearchProvider } from './provider.ts'
 import { isValidProxyURL } from './provider.ts'
 

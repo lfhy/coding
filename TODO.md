@@ -53,7 +53,7 @@ the injected baseline block and the `memory_save` tool result.
 
 - [ ] `examples/acp-agent` pwsh scenarios (`pwsh-tool-turn`, `persistent-pwsh-tool-turn`) and one child pin under `subagent-continuable` still carry the old English identity line: they do not run on macOS, so the keyless refresh cannot rewrite them. Re-record or refresh them on the platform that runs them.
 - [ ] Four snapshot scenarios fail before and after this work (`subagent-continuable`, `advanced toolchain`, `continuable child result`, `subagent inheritance`): replay binds fewer model calls than recorded. Unrelated to the identity/memory work; worth a separate look.
-- [ ] `pnpm run verify-cordis-config` still fails on stale `dist/` copies that name the removed `@deepseek-ai/dsh-tool-subagent-control/list-models` subpath; rebuild or clean `dist/` to clear it.
+- [ ] `pnpm run verify-cordis-config` still fails on stale `dist/` copies that name the removed `coding-tool-subagent-control/list-models` subpath; rebuild or clean `dist/` to clear it.
 
 ## Phase 0: identity and design record
 
@@ -93,7 +93,7 @@ Acceptance: macOS arm64 and Windows amd64 launch the unchanged Web GUI through a
 
 Status: macOS arm64 runtime and Electron assembly verified in isolated-HOME smoke; Windows/Linux platform runs pending.
 
-- [x] Produce the production `@deepseek-ai/dsh` dependency closure with `pnpm deploy` or an equivalent locked manifest. (`apps/runtime` + `scripts/build-coding-runtime.ts`; full run verified on darwin-arm64)
+- [x] Produce the production `coding` dependency closure with `pnpm deploy` or an equivalent locked manifest. (`apps/runtime` + `scripts/build-coding-runtime.ts`; full run verified on darwin-arm64)
 - [x] Build a CommonJS SEA bootstrapper with `createRequire(__filename)`, `useCodeCache: false`, and `useSnapshot: false` for the Linux terminal asset. (`scripts/sea/bootstrap.cjs`)
 - [x] Embed the compressed closure, manifest version, and SHA-256; the Linux bootstrapper materializes it atomically and rebuilds damaged runtime directories. (verified: cold start materializes and serves)
 - [x] Package the macOS Node executable and pre-expanded closure under `Coding.app/Contents/Resources`; the Go helper runs its `bin.js` without a first-run extraction. (`scripts/build-coding-runtime.ts`, `scripts/package-electron-macos-app.ts`)

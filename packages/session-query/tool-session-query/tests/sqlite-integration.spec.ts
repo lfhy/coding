@@ -3,18 +3,18 @@ import { Context } from '@deepseek-ai/cordis'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import { createUserMessage, CallId  } from '@deepseek-ai/dsh-llm'
+import type { Agent } from 'coding-agent'
+import { createUserMessage, CallId  } from 'coding-llm'
 import SessionStore, {
   SESSION_FORMAT_VERSION,
   SessionId,
   type Session,
-} from '@deepseek-ai/dsh-session'
-import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
-import SqliteSessionQueryEngine from '@deepseek-ai/dsh-session-query-sqlite'
-import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime from '@deepseek-ai/dsh-tools'
-import * as ToolSessionQuery from '@deepseek-ai/dsh-tool-session-query'
+} from 'coding-session'
+import JsonlSessionPersistence from 'coding-session-persistence-jsonl'
+import SqliteSessionQueryEngine from 'coding-session-query-sqlite'
+import SystemPrompt from 'coding-system-prompt'
+import ToolRuntime from 'coding-tools'
+import * as ToolSessionQuery from 'coding-tool-session-query'
 
 const temporaryDirectories: string[] = []
 const contexts: Context[] = []

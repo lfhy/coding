@@ -3,10 +3,10 @@ import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { createServer } from 'node:http'
 import type { Socket } from 'node:net'
 import WebSocket, { WebSocketServer } from 'ws'
-import type { BrowserCapture, BrowserSessionState, BrowserUseErrorCode } from '@deepseek-ai/dsh-browser'
+import type { BrowserCapture, BrowserSessionState, BrowserUseErrorCode } from 'coding-browser'
 import { MAX_BRIDGE_FRAME_BYTES, MAX_PNG_BYTES, parseBridgeEvent, parseBridgeFrame,
   parseBridgeRequest, parseBridgeResponse, type BridgeResponse, type BridgeStateEvent } from
-  '@deepseek-ai/dsh-browser-electron/protocol'
+  'coding-browser-electron/protocol'
 import type { BrowserGuestManager } from './browser-guest.ts'
 
 const PATH = '/browser-bridge'

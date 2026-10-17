@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-desktop-electron",
+  "name": "coding-desktop-electron",
   "version": "0.1.0-rc.8",
   "private": true,
   "type": "module",
@@ -10,10 +10,10 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@deepseek-ai/dsh-attachment": "workspace:^",
-    "@deepseek-ai/dsh-browser": "workspace:^",
-    "@deepseek-ai/dsh-browser-electron": "workspace:^",
-    "@deepseek-ai/dsh-home-paths": "workspace:^",
+    "coding-attachment": "workspace:^",
+    "coding-browser": "workspace:^",
+    "coding-browser-electron": "workspace:^",
+    "coding-home-paths": "workspace:^",
     "ws": "^8.21.0"
   },
   "devDependencies": {

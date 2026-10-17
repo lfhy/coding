@@ -1,7 +1,7 @@
 /**
  * 工作区打开能力的 Host 半边：探测本机应用、提供应用图标与启动端点，并为
  * Remote-SSH 或无宿主桌面的工作区提供 Session 绑定的文件预览与用户终端。浏览器侧配套包是
- * `@deepseek-ai/dsh-client-ui-open-in-app`。
+ * `coding-client-ui-open-in-app`。
  *
  * 安全边界集中在本模块。每条路由都先调用 composition 的 connection
  * `requestRejection`，统一执行 Host/Origin 防护与浏览器认证。所有 POST
@@ -18,15 +18,15 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { stat } from 'node:fs/promises'
 import { isAbsolute } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
-import type {} from '@deepseek-ai/dsh-agent'
-import type {} from '@deepseek-ai/dsh-fs'
-import type {} from '@deepseek-ai/dsh-host-webserver'
-import type {} from '@deepseek-ai/dsh-session'
+import type {} from 'coding-agent'
+import type {} from 'coding-fs'
+import type {} from 'coding-host-webserver'
+import type {} from 'coding-session'
 import {
   remoteWorkspacePath,
-} from '@deepseek-ai/dsh-subprocess'
-import type {} from '@deepseek-ai/dsh-subprocess'
-import { launchedThroughSsh, launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
+} from 'coding-subprocess'
+import type {} from 'coding-subprocess'
+import { launchedThroughSsh, launchEnvironmentOf } from 'coding-launch-environment'
 import z from '@deepseek-ai/schemastery'
 import { OPEN_IN_APP_CATALOG, type OpenInAppApp } from './catalog.ts'
 import {

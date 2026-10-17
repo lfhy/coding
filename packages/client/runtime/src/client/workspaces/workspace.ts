@@ -2,8 +2,8 @@
 
 import type {
   IApiClient, RpcResult, WorkspaceView,
-} from '@deepseek-ai/dsh-api-remotes/client'
-import { transportError } from '@deepseek-ai/dsh-host-apiproxy/api'
+} from 'coding-api-remotes/client'
+import { transportError } from 'coding-host-apiproxy/api'
 import type { ObservableSnapshot } from '../contract/store.ts'
 import { Notifier } from '../sessions/notifier.ts'
 

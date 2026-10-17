@@ -1,9 +1,9 @@
-/** 浏览器服务定义包的不变量注册。 @module @deepseek-ai/dsh-browser/invariant */
+/** 浏览器服务定义包的不变量注册。 @module coding-browser/invariant */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
+import type { InvariantInstaller } from 'coding-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-browser'
+const PACKAGE_NAME = 'coding-browser'
 
 /** Cordis 附属插件名称。 */
 export const name = 'browser-invariant'

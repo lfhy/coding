@@ -1,7 +1,7 @@
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage } from 'coding-llm'
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
-import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
+import SessionStore, { Session, SessionId } from 'coding-session'
 import SessionTitleService, {
   SessionTitleProviderId,
   collectSessionTitleMessages,
@@ -9,7 +9,7 @@ import SessionTitleService, {
   foldSessionTitle,
   normalizeSessionTitle,
   truncateTitleUtf8,
-} from '@deepseek-ai/dsh-session-title'
+} from 'coding-session-title'
 
 const CONFIG = {
   fallbackMaxWords: 5,

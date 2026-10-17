@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { renderProgressReminder } from '@deepseek-ai/dsh-progress-reminder'
-import * as ProgressInvariant from '@deepseek-ai/dsh-progress-reminder/invariant'
-import InvariantRegistry from '@deepseek-ai/dsh-invariants'
-import { CallId, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
-import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
+import { renderProgressReminder } from 'coding-progress-reminder'
+import * as ProgressInvariant from 'coding-progress-reminder/invariant'
+import InvariantRegistry from 'coding-invariants'
+import { CallId, createToolResultMessage, createUserMessage } from 'coding-llm'
+import SessionStore, { Session, SessionId } from 'coding-session'
 
 async function setup(): Promise<Context> {
   const ctx = new Context()

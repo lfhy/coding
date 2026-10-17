@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-command-compact
+# coding-command-compact
 
 通过 [`ctx.compaction`](../compaction/README.md) 提供面向用户的 `/compact` 压缩（compaction）控制。该插件通过 [`ctx.commands`](../../interaction/commands/README.md) 注册一个全局命令，因此组合中的每个命令适配器都能发现并执行它，无需模型轮次。排队手动压缩 设计记录拥有接纳、锁与持久性决策。
 
@@ -32,11 +32,11 @@ busy 结果有意限定在进程范围内：活动的未匹配标记会阻塞，
 
 ```yaml
 - id: commands
-  name: '@deepseek-ai/dsh-commands'
+  name: 'coding-commands'
 - id: compaction-basic
-  name: '@deepseek-ai/dsh-compaction-basic'
+  name: 'coding-compaction-basic'
 - id: command-compact
-  name: '@deepseek-ai/dsh-command-compact'
+  name: 'coding-command-compact'
 ```
 
 随附 `dsh` 基础配置将它挂载在 `compaction-basic` 旁，Web 客户端提供命令适配器。未组合命令适配器的自动化接口只保留自动压缩。

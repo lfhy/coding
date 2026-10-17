@@ -6,7 +6,7 @@
  * 形状不符或拒绝语义都按 `COMPUTER_PROVIDER_FAILURE` 失败关闭，不做猜测性重试。
  * 驱动自身按 element token 判定快照过期，本地再用观察时的状态哈希挡一次窗口身份变化。
  *
- * @module @deepseek-ai/dsh-computer-use/providers/cua-driver
+ * @module coding-computer-use/providers/cua-driver
  */
 
 import { createHash } from 'node:crypto'

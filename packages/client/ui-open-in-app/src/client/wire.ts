@@ -4,11 +4,11 @@ import {
   OPEN_IN_APP_FILES_ROUTE,
   OPEN_IN_APP_READ_ROUTE,
   OPEN_IN_APP_TERMINAL_ROUTE,
-} from '@deepseek-ai/dsh-host-open-in-app/shared'
+} from 'coding-host-open-in-app/shared'
 import type {
   OpenInAppTerminalClientFrame,
   OpenInAppTerminalServerFrame,
-} from '@deepseek-ai/dsh-host-open-in-app/shared'
+} from 'coding-host-open-in-app/shared'
 
 /** 本包所有 Host 请求使用的集中路由表。 */
 export interface OpenInAppRoutes {

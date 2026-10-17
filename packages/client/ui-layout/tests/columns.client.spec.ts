@@ -4,7 +4,7 @@ import {
   DETAILS_DEFAULT, DETAILS_MIN, SIDEBAR_COLLAPSED, SIDEBAR_DEFAULT, SIDEBAR_MIN,
   WORKBENCH_BOTTOM_DEFAULT, WORKBENCH_BOTTOM_MAX, WORKBENCH_BOTTOM_MIN,
   WORKBENCH_DEFAULT, WORKBENCH_MAX, WORKBENCH_MIN, WORKBENCH_TOP_MIN,
-} from '@deepseek-ai/dsh-client-ui-layout/src/client/columns.ts'
+} from 'coding-client-ui-layout/src/client/columns.ts'
 
 // 数字偏好中 0 表示关闭；辅助函数让场景名称保持易读。
 const open = (width: number) => width

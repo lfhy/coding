@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-client-web
+# coding-client-web
 
 Web 启动内核：`new AppWebEntry(el, seams?).run()` 分两个阶段挂载客户端。模块阶段调用 Host 安装的 `window.__ModuleLoader__.create()`，传入 `window.__DSH_BOOT__`、外壳静态模块以及可选测试传输覆盖；facade 接纳 parser 预载的 registration 后返回构造好的模块系统与已解析 manifest。本包随后预取 `immediately` 层级。插件阶段挂载仓库内置的 Cordis Loader，通过 Loader 的 `internal` 接口注入该模块系统，统一创建全部图 entry，并等待每个 fiber 进入 ACTIVE。随后它把带标记的启动 DOM 交给动态 UI 渲染器的 `ctx.uiRenderer.mount(el)` 操作；渲染器先 hydrate 该 DOM，再切换到完整 UI。Graph、parser preload 与 facade 归 Host 所有；AppWebEntry 不感知 bootstrap package id，也不解析 wire 格式。
 

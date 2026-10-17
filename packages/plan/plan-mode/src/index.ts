@@ -16,23 +16,23 @@
  * catalog.
  * design record:
  * -
- * @module @deepseek-ai/dsh-plan-mode
+ * @module coding-plan-mode
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import { z as zod } from 'zod'
 import type { ZodType } from 'zod'
-import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { Session, SessionEvent, UserMessage } from '@deepseek-ai/dsh-session'
-import { defineTool } from '@deepseek-ai/dsh-tools'
-import type {} from '@deepseek-ai/dsh-system-prompt'
-import { UserQuestionError } from '@deepseek-ai/dsh-user-questions'
+import type { Agent, PreStepDecision } from 'coding-agent'
+import { createUserMessage } from 'coding-llm'
+import type { Session, SessionEvent, UserMessage } from 'coding-session'
+import { defineTool } from 'coding-tools'
+import type {} from 'coding-system-prompt'
+import { UserQuestionError } from 'coding-user-questions'
 // Type-only edge: resolves `ctx.commands` for the optional command child.
-import type {} from '@deepseek-ai/dsh-commands'
-import type { CommandId } from '@deepseek-ai/dsh-commands/brand'
+import type {} from 'coding-commands'
+import type { CommandId } from 'coding-commands/brand'
 // Type-only: resolves ctx.sessionProjections for the optional unit child.
-import type {} from '@deepseek-ai/dsh-session-projection'
+import type {} from 'coding-session-projection'
 import type { PlanProjection } from './types.ts'
 // The `plan` projection-key declaration lives in src/types.ts (its one home);
 // this re-export projects the type face onto the package root AND keeps the
@@ -40,7 +40,7 @@ import type { PlanProjection } from './types.ts'
 // declarations still receive the SessionProjectionMap merge.
 export type * from './types.ts'
 
-declare module '@deepseek-ai/dsh-session/types' {
+declare module 'coding-session/types' {
   interface SessionEventMap {
     /**
      * Whether plan mode is in force from this point on: log-only, non-surface,

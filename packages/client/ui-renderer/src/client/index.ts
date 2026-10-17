@@ -7,8 +7,8 @@ import { createElement, useLayoutEffect, useState, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot, hydrateRoot, type Root } from 'react-dom/client'
 import type { Context } from '@deepseek-ai/cordis'
-import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
-import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import type { SnapshotSelectorHook } from 'coding-client-ui-slots'
+import type {} from 'coding-client-ui-layout/client'
 import { createSlotRenderer } from './scoped-slots.tsx'
 import { buildRenderApp } from './app.tsx'
 
@@ -18,7 +18,7 @@ export type UseSession<Snap extends object = object> = SnapshotSelectorHook<Snap
 export type {
   ChainRenderOpts, HostObservable, RenderOpts, SessionProvideInfo, SnapshotSelectorHook,
   SlotRenderer, SlotRendererHost, StoreInstanceLike,
-} from '@deepseek-ai/dsh-client-ui-slots'
+} from 'coding-client-ui-slots'
 export type { SessionProviderProps } from './session-provider.tsx'
 
 /** Mount operation exposed to the framework-free boot kernel. */

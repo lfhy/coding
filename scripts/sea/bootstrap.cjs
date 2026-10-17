@@ -26,7 +26,7 @@ function materialized() {
   if (!existsSync(marker)) return false
   try {
     const current = JSON.parse(readFileSync(marker, 'utf8'))
-    return current.sha256 === metadata.sha256 && existsSync(join(runtime, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js'))
+    return current.sha256 === metadata.sha256 && existsSync(join(runtime, 'node_modules', 'coding', 'lib', 'bin.js'))
   } catch {
     return false
   }
@@ -154,7 +154,7 @@ function ensureRuntime() {
 }
 
 ensureRuntime()
-const entry = join(runtime, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
+const entry = join(runtime, 'node_modules', 'coding', 'lib', 'bin.js')
 process.env.DSH_APP_VERSION = metadata.version
 process.chdir(process.env.DSH_CWD && process.env.DSH_CWD.trim() ? process.env.DSH_CWD : runtime)
 void import(pathToFileURL(entry).href).then(() => {

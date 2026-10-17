@@ -8,19 +8,19 @@
  * itself parses the text, and no intermediate shell exists, so there is no
  * shell-quoting layer to escape (the `bash -c` string domain has no
  * equivalent here). Native Win32 paths (`C:\...`) pass through unchanged.
- * @module @deepseek-ai/dsh-pwsh-local
+ * @module coding-pwsh-local
  */
 
 /* jscpd:ignore-start -- this executor mirrors dsh-bash-local call-for-call by
    design (see this package's README), so the two import the same seam surface */
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { SHELL_SETTINGS_NAMESPACE, ShellExecutor } from '@deepseek-ai/dsh-shell'
-import type { ShellExecRequest, ShellExecSpec, ShellProcess, ShellProcessRead, ShellRunResult, CollectedOutput } from '@deepseek-ai/dsh-shell'
-import { RemoteWorkspaceError, remoteWorkspacePathSync, requireRemoteWorkspaceCapability } from '@deepseek-ai/dsh-subprocess'
-import type { SubprocessCollect, SubprocessHandle, SubprocessOutputReader, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { installSettingsSection } from '@deepseek-ai/dsh-settings'
-import { clampTimeout, deadline, MAX_TIMER_DELAY_MS, timeoutOf } from '@deepseek-ai/dsh-timeout'
+import { SHELL_SETTINGS_NAMESPACE, ShellExecutor } from 'coding-shell'
+import type { ShellExecRequest, ShellExecSpec, ShellProcess, ShellProcessRead, ShellRunResult, CollectedOutput } from 'coding-shell'
+import { RemoteWorkspaceError, remoteWorkspacePathSync, requireRemoteWorkspaceCapability } from 'coding-subprocess'
+import type { SubprocessCollect, SubprocessHandle, SubprocessOutputReader, SubprocessSpawnSpec } from 'coding-subprocess'
+import { installSettingsSection } from 'coding-settings'
+import { clampTimeout, deadline, MAX_TIMER_DELAY_MS, timeoutOf } from 'coding-timeout'
 /* jscpd:ignore-end */
 import { resolvePwshPath } from './resolve.ts'
 
@@ -214,7 +214,7 @@ export class PwshLocalExecutor extends ShellExecutor {
    * The pwsh invocation argv for one resolved spec — the argv-level seam a
    * confining subclass wraps through `ctx.sandbox.confine` (the pwsh twin of
    * `dsh-bash-local`'s `runArgv`/`startArgv` hooks; see
-   * `@deepseek-ai/dsh-pwsh-sandbox`).
+   * `coding-pwsh-sandbox`).
    */
   protected argv(spec: ShellExecSpec): string[] {
     // 远端不能使用本机解析出的绝对 pwsh 路径。显式配置仍是调用者的
@@ -366,7 +366,7 @@ export class PwshLocalExecutor extends ShellExecutor {
   /**
    * 供子类在进程上附加执行事实的结算钩子。基类刻意不处理；与
    * `dsh-bash-local` 的对应钩子保持镜像，使用者是
-   * `@deepseek-ai/dsh-pwsh-sandbox`。
+   * `coding-pwsh-sandbox`。
    * @param _proc - 已结算的进程句柄。
    * @param _stderr - 子类用于结算分类的进程保留 stderr 尾部。
    * @param _providerRejected - subprocess promise 是否在没有直接结果时 reject。

@@ -9,10 +9,10 @@
 import type {
   ConfigurableProviderView, CredentialView, IApiClient, ModelCatalogFailure, ModelProviderGroup,
   SettingsNamespaceView,
-} from '@deepseek-ai/dsh-api-remotes/client'
-import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
-import type { SettingsDescribeFace } from '@deepseek-ai/dsh-client-ui-settings/client'
+} from 'coding-api-remotes/client'
+import type { SnapshotStore } from 'coding-client-runtime/client'
+import { createSnapshotStore } from 'coding-client-runtime/client'
+import type { SettingsDescribeFace } from 'coding-client-ui-settings/client'
 import type { SettingsSchemaOperations } from './schema-operations.ts'
 
 /**

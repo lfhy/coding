@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-client-ui-plan",
+  "name": "coding-client-ui-plan",
   "description": "Plan-mode composer control: the conversation.input.plan seat over the plan projection and the /plan command channel",
   "version": "0.1.0-rc.8",
   "publishConfig": {
@@ -32,9 +32,9 @@
   "dsh": {
     "client": {
       "inject": [
-        "@deepseek-ai/dsh-api-remotes",
-        "@deepseek-ai/dsh-client-locale",
-        "@deepseek-ai/dsh-client-ui-conversation"
+        "coding-api-remotes",
+        "coding-client-locale",
+        "coding-client-ui-conversation"
       ],
       "platform": "web"
     }
@@ -45,24 +45,24 @@
   },
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-api-remotes": "workspace:^",
-    "@deepseek-ai/dsh-client-locale": "workspace:^",
-    "@deepseek-ai/dsh-client-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-conversation": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-plan-mode": "workspace:^",
+    "coding-api-remotes": "workspace:^",
+    "coding-client-locale": "workspace:^",
+    "coding-client-runtime": "workspace:^",
+    "coding-client-ui-conversation": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-plan-mode": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-api-remotes": "workspace:^",
-    "@deepseek-ai/dsh-client-locale": "workspace:^",
-    "@deepseek-ai/dsh-client-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-test-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-conversation": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-primitives": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-slots": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-plan-mode": "workspace:^",
+    "coding-api-remotes": "workspace:^",
+    "coding-client-locale": "workspace:^",
+    "coding-client-runtime": "workspace:^",
+    "coding-client-test-runtime": "workspace:^",
+    "coding-client-ui-conversation": "workspace:^",
+    "coding-client-ui-primitives": "workspace:^",
+    "coding-client-ui-slots": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-plan-mode": "workspace:^",
     "@types/react": "~18.3.1",
     "@deepseek-ai/cordis": "workspace:^",
     "react": "^18.2.0"

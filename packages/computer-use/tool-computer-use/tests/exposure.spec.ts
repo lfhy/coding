@@ -2,9 +2,9 @@
 
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { CallId, createUserMessage } from '@deepseek-ai/dsh-llm'
-import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
-import type { Session } from '@deepseek-ai/dsh-session'
+import { CallId, createUserMessage } from 'coding-llm'
+import SessionStore, { SessionId } from 'coding-session'
+import type { Session } from 'coding-session'
 import { COMPUTER_USE_SKILL_CONTENT, COMPUTER_USE_SKILL_NAME } from '../src/skill.ts'
 import { hasLoadedComputerUseSkill } from '../src/exposure.ts'
 

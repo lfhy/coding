@@ -1,10 +1,10 @@
 /** 浏览器后台任务插件将当前会话的任务镜像注册到概览子 slot；列表展开由概览卡片持有。 */
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ClientContext } from 'coding-client-runtime/client'
 import { JobListAction } from './JobListAction.tsx'
-import type {} from '@deepseek-ai/dsh-client-locale/client'
+import type {} from 'coding-client-locale/client'
 import { en, NS, zh, type JobKey } from './locales.ts'
 
-declare module '@deepseek-ai/dsh-client-ui-slots' {
+declare module 'coding-client-ui-slots' {
   interface LocaleNamespaceMap {
     /** Background-job list copy. */
     'job': JobKey

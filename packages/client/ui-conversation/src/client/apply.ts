@@ -1,16 +1,16 @@
 /** Registers the conversation components, shared store, and service callbacks. */
 import type { Context } from '@deepseek-ai/cordis'
-import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
-import { resolveSlotLabel, type BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
+import type { ConnectionHandle } from 'coding-client-connection/client'
+import { resolveSlotLabel, type BoundActions } from 'coding-client-ui-slots'
 import {
   resolveWorkspacePath, type ISessions, type SessionId,
-} from '@deepseek-ai/dsh-client-runtime/client'
+} from 'coding-client-runtime/client'
 // Type-only: the ctx.settingsScope Context merge. Cross-plugin collaboration
 // goes through the service, never a value import (client bundle purity gate).
-import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
-import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import type {} from 'coding-client-ui-settings/client'
+import type {} from 'coding-client-ui-layout/client'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
-import type {} from '@deepseek-ai/dsh-client-locale/client'
+import type {} from 'coding-client-locale/client'
 import type { ViewTab } from './contract/views.ts'
 import type {
   ApprovalWait, ChatNodeTurnDataInjected, ChatScrollPosition, ChatViewInjected, ComposerBarInjected,
@@ -43,7 +43,7 @@ import { registerConversationNodes } from './conversation-nodes/register.ts'
 import { registerChatNodeRenderers } from './chat/register-node-renderers.ts'
 import { CONVERSATION_SETTINGS_NAMESPACE, type ConversationSettings } from '../submission-settings.ts'
 
-declare module '@deepseek-ai/dsh-client-ui-slots' {
+declare module 'coding-client-ui-slots' {
   interface LocaleNamespaceMap {
     /** The conversation skeleton, chat flow, commands, details, and docks copy. */
     conversation: ConversationKey

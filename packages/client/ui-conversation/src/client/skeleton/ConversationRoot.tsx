@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
-import type { SessionId, WorkspaceId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId, WorkspaceId } from 'coding-client-runtime/client'
 import type { ConversationSlotProps, InputZone } from '../contract/slots.ts'
 import { HeroGlow, HeroShell, WorkspaceChip, workspaceLabel } from './EmptyHero.tsx'
 import css from './ConversationRoot.module.css'

@@ -8,13 +8,13 @@ import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react
 import { useSyncExternalStore } from 'react'
 import {
   EMPTY_CHAT_SNAPSHOT, EMPTY_CONVERSATION_VIEWS,
-} from '@deepseek-ai/dsh-client-runtime/client'
+} from 'coding-client-runtime/client'
 import type {
   ConversationSnapshot, QueuedMessage, SessionId, SessionListState,
-} from '@deepseek-ai/dsh-client-runtime/client'
-import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
-import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
-import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
+} from 'coding-client-runtime/client'
+import type { SnapshotSelectorHook } from 'coding-client-ui-slots'
+import { makeTranslate } from 'coding-client-test-runtime'
+import { zh as commonZh } from 'coding-client-locale/src/locales/zh.ts'
 import type { QueueItemId } from '../src/client/contract/queue.ts'
 import type { InputState } from '../src/client/input/contract.ts'
 import { zh } from '../src/client/locales.ts'

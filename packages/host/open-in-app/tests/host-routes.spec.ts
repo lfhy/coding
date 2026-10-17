@@ -10,13 +10,13 @@ import WebSocket from 'ws'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
-import FsLocal from '@deepseek-ai/dsh-fs-local'
-import WebServer from '@deepseek-ai/dsh-host-webserver'
-import type { NativeCommandRunner } from '@deepseek-ai/dsh-native-command'
-import { REMOTE_WORKSPACE_MARKER } from '@deepseek-ai/dsh-subprocess'
+import FsLocal from 'coding-fs-local'
+import WebServer from 'coding-host-webserver'
+import type { NativeCommandRunner } from 'coding-native-command'
+import { REMOTE_WORKSPACE_MARKER } from 'coding-subprocess'
 import {
   createLaunchEnvironmentSnapshot, DSH_LAUNCH_ENVIRONMENT_KEY, type LaunchEnvironmentLayerInput,
-} from '@deepseek-ai/dsh-launch-environment'
+} from 'coding-launch-environment'
 import * as OpenInApp from '../src/index.ts'
 import { internals } from '../src/internals.ts'
 import type { OpenInAppLauncher } from '../src/resolver.ts'
@@ -77,15 +77,15 @@ async function boot(layers: readonly LaunchEnvironmentLayerInput[] = [], filesys
   const configPath = join(root, 'cordis.yml')
   await writeFile(configPath, [
     ...filesystem === undefined ? [
-      "- name: '@deepseek-ai/dsh-fs-local'",
+      "- name: 'coding-fs-local'",
       '  config:',
       `    cwd: ${JSON.stringify(root)}`,
     ] : [],
-    "- name: '@deepseek-ai/dsh-host-webserver'",
+    "- name: 'coding-host-webserver'",
     '  config:',
     "    host: '127.0.0.1'",
     '    port: 0',
-    "- name: '@deepseek-ai/dsh-host-open-in-app'",
+    "- name: 'coding-host-open-in-app'",
     '  config:',
     '    probeTimeoutMs: 5000',
     '    iconTimeoutMs: 5000',
@@ -107,9 +107,9 @@ async function boot(layers: readonly LaunchEnvironmentLayerInput[] = [], filesys
   await context.plugin(Loader)
   context.loader.builtins.include = Include
   const modules = new Map<string, unknown>([
-    ['@deepseek-ai/dsh-fs-local', FsLocal],
-    ['@deepseek-ai/dsh-host-webserver', WebServer],
-    ['@deepseek-ai/dsh-host-open-in-app', OpenInApp],
+    ['coding-fs-local', FsLocal],
+    ['coding-host-webserver', WebServer],
+    ['coding-host-open-in-app', OpenInApp],
   ])
   context.loader.internal = {
     version: 'v2',
@@ -686,7 +686,7 @@ describe('open-in-app host routes (real Loader composition)', () => {
     const base = await boot()
     expect((await fetch(`${base}/open-in-app/apps`)).status).toBe(200)
     const entry = [...(context as Context).loader.entries()]
-      .find(candidate => candidate.options.name === '@deepseek-ai/dsh-host-open-in-app')
+      .find(candidate => candidate.options.name === 'coding-host-open-in-app')
     await entry?.fiber?.dispose()
     expect((await fetch(`${base}/open-in-app/apps`)).status).toBe(404)
     expect((await fetch(`${base}/open-in-app/icon/cursor`)).status).toBe(404)

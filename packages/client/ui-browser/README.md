@@ -3,7 +3,7 @@ description: "在 Session 工作台中呈现受控浏览器并提供人工导航
 kind: "package-reference"
 ---
 
-# @deepseek-ai/dsh-client-ui-browser
+# coding-client-ui-browser
 
 ## 用法与行为
 

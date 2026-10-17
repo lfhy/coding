@@ -1,23 +1,23 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import AgentRegistry, { agentEvents, Inbox, type Agent } from '@deepseek-ai/dsh-agent'
-import AgentLoop from '@deepseek-ai/dsh-agent-loop'
-import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
+import AgentRegistry, { agentEvents, Inbox, type Agent } from 'coding-agent'
+import AgentLoop from 'coding-agent-loop'
+import { mountAgentLoopTestDependencies } from 'coding-agent-loop-testkit'
 import {
   CallId,
   createToolResultMessage,
   createUserMessage,
   LlmAdapter,
-} from '@deepseek-ai/dsh-llm'
-import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
-import { Session, SessionId } from '@deepseek-ai/dsh-session'
-import { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
-import * as progressReminder from '@deepseek-ai/dsh-progress-reminder'
+} from 'coding-llm'
+import type { GenerateOptions, StreamChunk } from 'coding-llm'
+import { Session, SessionId } from 'coding-session'
+import { defineContentToolFixture } from 'coding-tools'
+import * as progressReminder from 'coding-progress-reminder'
 import {
   renderProgressReminder,
   unreportedToolCalls,
   type Config,
-} from '@deepseek-ai/dsh-progress-reminder'
+} from 'coding-progress-reminder'
 
 const SIGNAL = new AbortController().signal
 

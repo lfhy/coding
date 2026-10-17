@@ -1,14 +1,14 @@
-/** 桌面 Host 的 BrowserUseService：仅经私有 WS 控制 Electron guest，保留同步只读镜像。 @module @deepseek-ai/dsh-browser-electron */
+/** 桌面 Host 的 BrowserUseService：仅经私有 WS 控制 Electron guest，保留同步只读镜像。 @module coding-browser-electron */
 
 import { randomUUID } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { BrowserUseError, BrowserUseService } from '@deepseek-ai/dsh-browser'
-import type { BrowserCapture, BrowserCommand, BrowserExpectedTarget, BrowserHumanCommand, BrowserSessionState } from '@deepseek-ai/dsh-browser'
-import type {} from '@deepseek-ai/dsh-host-webserver'
-import type {} from '@deepseek-ai/dsh-session'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { BrowserUseError, BrowserUseService } from 'coding-browser'
+import type { BrowserCapture, BrowserCommand, BrowserExpectedTarget, BrowserHumanCommand, BrowserSessionState } from 'coding-browser'
+import type {} from 'coding-host-webserver'
+import type {} from 'coding-session'
+import type { SessionId } from 'coding-session/types'
 import WebSocket, { type RawData } from 'ws'
 import { decodeBridgeCapture, MAX_BRIDGE_FRAME_BYTES, parseBridgeEvent, parseBridgeFrame, parseBridgeResponse } from './protocol.ts'
 import type { BridgeMethod, BridgeRequest, BridgeResponse, BridgeStateEvent } from './protocol.ts'

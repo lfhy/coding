@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import WebSocket, { type RawData } from 'ws'
-import { MAX_BRIDGE_FRAME_BYTES } from '@deepseek-ai/dsh-browser-electron/protocol'
+import { MAX_BRIDGE_FRAME_BYTES } from 'coding-browser-electron/protocol'
 import { createBrowserBridge, type BrowserBridge } from '../src/browser-bridge.ts'
 import type { BrowserGuestManager } from '../src/browser-guest.ts'
 

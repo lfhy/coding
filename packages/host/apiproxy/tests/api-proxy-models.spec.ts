@@ -7,22 +7,22 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import AgentRegistry, { agentEvents } from '@deepseek-ai/dsh-agent'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import AttachmentStore from '@deepseek-ai/dsh-attachment'
-import type { ImageAttachmentLimits, ImageAttachmentRef, SaveImageAttachment } from '@deepseek-ai/dsh-attachment'
-import LlmRuntime, { LlmAdapter, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import AgentRegistry, { agentEvents } from 'coding-agent'
+import type { Agent } from 'coding-agent'
+import AttachmentStore from 'coding-attachment'
+import type { ImageAttachmentLimits, ImageAttachmentRef, SaveImageAttachment } from 'coding-attachment'
+import LlmRuntime, { LlmAdapter, ReasoningEffortId } from 'coding-llm'
 import type {
   GenerateOptions, LlmCallConfig, LlmModelInfo, LlmModelReasoningInfo, LlmProviderInfo,
   LlmResolvedModelInfo, ModelModality, StreamChunk,
   UserMessage,
-} from '@deepseek-ai/dsh-llm'
-import SessionStore from '@deepseek-ai/dsh-session'
-import type { SessionId } from '@deepseek-ai/dsh-session'
-import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import UserQuestionService from '@deepseek-ai/dsh-user-questions'
-import type { RpcRequest } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
-import { RpcId } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
+} from 'coding-llm'
+import SessionStore from 'coding-session'
+import type { SessionId } from 'coding-session'
+import SystemPrompt from 'coding-system-prompt'
+import UserQuestionService from 'coding-user-questions'
+import type { RpcRequest } from 'coding-host-apiproxy/api/rpc'
+import { RpcId } from 'coding-host-apiproxy/api/rpc'
 import { createApiProxy } from '../src/api-proxy.ts'
 
 let nextRpc = 1

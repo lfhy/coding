@@ -1,25 +1,25 @@
 /**
- * @deepseek-ai/dsh-headless — one-shot direct Agent driver. The bundle patch
+ * coding-headless — one-shot direct Agent driver. The bundle patch
  * rides over dsh-base without Host, HTTP, or browser plugins; this runner
  * creates one Agent through the core registry, drives the task to quiescence,
  * flushes its Session, prints the final assistant text, and exits.
  *
- * @module @deepseek-ai/dsh-headless
+ * @module coding-headless
  */
 
 import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { installModelSelection } from '@deepseek-ai/dsh-agent'
-import type { ModelSelectionRef } from '@deepseek-ai/dsh-agent'
-import type {} from '@deepseek-ai/dsh-agent-default-model'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import { SessionId } from '@deepseek-ai/dsh-session'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import { installModelSelection } from 'coding-agent'
+import type { ModelSelectionRef } from 'coding-agent'
+import type {} from 'coding-agent-default-model'
+import { createUserMessage } from 'coding-llm'
+import { SessionId } from 'coding-session'
+import type { SessionEvent } from 'coding-session'
 // Empty type imports carry the loader Context merge for the settlement await
 // and the cmdline Context merge for the appExit host value.
 import type {} from '@deepseek-ai/cordis-plugin-loader'
-import type {} from '@deepseek-ai/dsh-cmdline'
+import type {} from 'coding-cmdline'
 
 /** Stable Cordis plugin name. */
 export const name = 'headless-runner'
@@ -107,7 +107,7 @@ async function run(ctx: Context, task: string, io: HeadlessIo): Promise<void> {
   // This bundle composes no preset roster, so the model-facing rows sit in the
   // host plane and the agent reads them from the global layer. A deployment
   // that DOES configure one has to join it here first
-  // (@deepseek-ai/dsh-agent-presets README, "Composing a child agent").
+  // (coding-agent-presets README, "Composing a child agent").
   const { agent } = await agents.create({
     sessionId: SessionId(`session-${randomUUID()}`),
     meta: { cwd: process.cwd() },

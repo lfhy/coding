@@ -1,5 +1,5 @@
 /**
- * 所有沙箱工具家族（`@deepseek-ai/dsh-tool-bash`、`@deepseek-ai/dsh-tool-fs`）
+ * 所有沙箱工具家族（`coding-tool-bash`、`coding-tool-fs`）
  * 共用的升权词汇与流程：严格拓宽阶梯、参数配对校验、模型可见的拒绝／提示标记，
  * 以及 {@link approveEscalation}。后者会在执行前处理重复目标或经用户审批通道解析
  * `sandbox_permissions` 请求；单一归属可防止两个家族的审批顺序和错误文案漂移。
@@ -11,7 +11,7 @@
  * @module dsh-sandbox/escalation
  */
 
-import { assertNever } from '@deepseek-ai/dsh-llm'
+import { assertNever } from 'coding-llm'
 import type { SandboxMode } from './index.ts'
 
 /**

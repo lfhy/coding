@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-browser-playwright",
+  "name": "coding-browser-playwright",
   "description": "Isolated Chromium browser-use provider for the DeepSeek Harness Host",
   "version": "0.1.0-rc.8",
   "publishConfig": { "access": "public" },
@@ -20,22 +20,22 @@
   "files": ["lib/index.js", "lib/invariant.js", "lib/types/**/*.d.ts"],
   "license": "MIT",
   "dependencies": {
-    "@deepseek-ai/dsh-attachment": "workspace:^",
-    "@deepseek-ai/dsh-attachment-local": "workspace:^",
-    "@deepseek-ai/dsh-browser": "workspace:^",
+    "coding-attachment": "workspace:^",
+    "coding-attachment-local": "workspace:^",
+    "coding-browser": "workspace:^",
     "playwright": "1.61.1"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-host-webserver": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^"
+    "coding-host-webserver": "workspace:^",
+    "coding-session": "workspace:^",
+    "coding-invariants": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-host-webserver": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
+    "coding-host-webserver": "workspace:^",
+    "coding-session": "workspace:^",
+    "coding-invariants": "workspace:^",
     "sharp": "^0.35.3"
   }
 }

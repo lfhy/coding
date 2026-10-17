@@ -5,8 +5,8 @@ import { useEffect, useId, useState } from 'react'
 import type { PointerEvent, ReactNode, RefObject } from 'react'
 import {
   BrandMark, IconChevronDownOutline14, IconFolderClose16, IconFolderOpen16, IconNewChatOutline16,
-} from '@deepseek-ai/dsh-client-ui-primitives'
-import { workspaceTitleOf } from '@deepseek-ai/dsh-client-runtime/client'
+} from 'coding-client-ui-primitives'
+import { workspaceTitleOf } from 'coding-client-runtime/client'
 import type { ConversationSlotProps } from '../contract/slots.ts'
 import css from './HeroShell.module.css'
 

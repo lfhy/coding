@@ -7,12 +7,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
-import { CallId } from '@deepseek-ai/dsh-llm'
-import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime from '@deepseek-ai/dsh-tools'
-import WebRuntime from '@deepseek-ai/dsh-web'
-import * as DuckDuckGo from '@deepseek-ai/dsh-web-search-duckduckgo'
-import * as ToolWeb from '@deepseek-ai/dsh-tool-web'
+import { CallId } from 'coding-llm'
+import SystemPrompt from 'coding-system-prompt'
+import ToolRuntime from 'coding-tools'
+import WebRuntime from 'coding-web'
+import * as DuckDuckGo from 'coding-web-search-duckduckgo'
+import * as ToolWeb from 'coding-tool-web'
 
 let root: string | undefined
 let context: Context | undefined
@@ -29,13 +29,13 @@ async function boot(): Promise<Context> {
   root = await mkdtemp(join(tmpdir(), 'dsh-duckduckgo-loader-'))
   const configPath = join(root, 'cordis.yml')
   await writeFile(configPath, [
-    "- name: '@deepseek-ai/dsh-system-prompt'",
-    "- name: '@deepseek-ai/dsh-tools'",
-    "- name: '@deepseek-ai/dsh-web'",
+    "- name: 'coding-system-prompt'",
+    "- name: 'coding-tools'",
+    "- name: 'coding-web'",
     '  config:',
     '    searchProvider: duckduckgo',
-    "- name: '@deepseek-ai/dsh-web-search-duckduckgo'",
-    "- name: '@deepseek-ai/dsh-tool-web'",
+    "- name: 'coding-web-search-duckduckgo'",
+    "- name: 'coding-tool-web'",
     '  config:',
     '    fetch: false',
     '',
@@ -46,11 +46,11 @@ async function boot(): Promise<Context> {
   await ctx.plugin(Loader)
   ctx.loader.builtins.include = Include
   const modules = new Map<string, unknown>([
-    ['@deepseek-ai/dsh-system-prompt', SystemPrompt],
-    ['@deepseek-ai/dsh-tools', ToolRuntime],
-    ['@deepseek-ai/dsh-web', WebRuntime],
-    ['@deepseek-ai/dsh-web-search-duckduckgo', DuckDuckGo],
-    ['@deepseek-ai/dsh-tool-web', ToolWeb],
+    ['coding-system-prompt', SystemPrompt],
+    ['coding-tools', ToolRuntime],
+    ['coding-web', WebRuntime],
+    ['coding-web-search-duckduckgo', DuckDuckGo],
+    ['coding-tool-web', ToolWeb],
   ])
   ctx.loader.internal = {
     version: 'v2',

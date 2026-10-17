@@ -7,12 +7,12 @@ import { execFile } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
 import { Context } from '@deepseek-ai/cordis'
-import { FsTargetKey } from '@deepseek-ai/dsh-fs'
-import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
-import { deadline } from '@deepseek-ai/dsh-timeout'
-import { REMOTE_WORKSPACE_MARKER } from '@deepseek-ai/dsh-subprocess'
-import { canonicalizeWorkspace, readHostSource } from '@deepseek-ai/dsh-lsp-stdio'
-import type { FileSystem } from '@deepseek-ai/dsh-fs'
+import { FsTargetKey } from 'coding-fs'
+import LocalFileSystem from 'coding-fs-local'
+import { deadline } from 'coding-timeout'
+import { REMOTE_WORKSPACE_MARKER } from 'coding-subprocess'
+import { canonicalizeWorkspace, readHostSource } from 'coding-lsp-stdio'
+import type { FileSystem } from 'coding-fs'
 
 const execFileAsync = promisify(execFile)
 

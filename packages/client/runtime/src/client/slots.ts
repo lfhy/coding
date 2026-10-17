@@ -16,13 +16,13 @@
  * redundancy. */
 import { Service } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
-import { SlotCore } from '@deepseek-ai/dsh-client-ui-slots'
+import { SlotCore } from 'coding-client-ui-slots'
 import type {
   LiveSlotNode, LocaleFace, OwnerOf, SlotEntryDef, SlotMap, SlotRenderer, SlotRendererHost,
   SlotScope, SlotSpec, StoreDecl, StoreFactory, StoredEntry, StoreInstanceLike,
-} from '@deepseek-ai/dsh-client-ui-slots'
+} from 'coding-client-ui-slots'
 
-declare module '@deepseek-ai/dsh-client-ui-slots' {
+declare module 'coding-client-ui-slots' {
   interface SlotMap {
     /**
      * The built-in render-tree root hole (seeded by SlotCore): the one slot the

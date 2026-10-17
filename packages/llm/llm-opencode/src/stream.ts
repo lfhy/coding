@@ -6,7 +6,7 @@
  * 用 403 表达两种不同含义（客户端受限与地区封锁），因此这里的分类必须先把它们
  * 从通用的 AUTH 里分出来——否则用户会看到「API 密钥无效」这种误导性诊断。
  *
- * @module @deepseek-ai/dsh-llm-opencode/stream
+ * @module coding-llm-opencode/stream
  */
 
 import {
@@ -17,8 +17,8 @@ import {
   isQuotaExceededError,
   LlmError,
   QUOTA_EXCEEDED_CODE,
-} from '@deepseek-ai/dsh-llm'
-import type { FinishReason, StreamChunk, TokenUsage } from '@deepseek-ai/dsh-llm'
+} from 'coding-llm'
+import type { FinishReason, StreamChunk, TokenUsage } from 'coding-llm'
 import { isContextOverflow } from '@earendil-works/pi-ai'
 import type { AssistantMessage, AssistantMessageEvent, Usage as PiUsage } from '@earendil-works/pi-ai'
 

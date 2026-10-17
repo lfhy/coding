@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-agent-instructions",
+  "name": "coding-agent-instructions",
   "description": "Workspace context loader for AGENTS.md/CLAUDE.md instruction files",
   "version": "0.1.0-rc.8",
   "publishConfig": {
@@ -32,13 +32,13 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-fs": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-home-paths": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-tools": "workspace:^",
+    "coding-agent": "workspace:^",
+    "coding-fs": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-llm": "workspace:^",
+    "coding-home-paths": "workspace:^",
+    "coding-session": "workspace:^",
+    "coding-tools": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "dependencies": {
@@ -46,18 +46,18 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis-plugin-loader": "workspace:^",
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-agent-loop": "workspace:^",
-    "@deepseek-ai/dsh-fs": "workspace:^",
-    "@deepseek-ai/dsh-fs-local": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-llm-deepseek": "workspace:^",
-    "@deepseek-ai/dsh-home-paths": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-system-prompt": "workspace:^",
-    "@deepseek-ai/dsh-tool-fs": "workspace:^",
-    "@deepseek-ai/dsh-tools": "workspace:^",
+    "coding-agent": "workspace:^",
+    "coding-agent-loop": "workspace:^",
+    "coding-fs": "workspace:^",
+    "coding-fs-local": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-llm": "workspace:^",
+    "coding-llm-deepseek": "workspace:^",
+    "coding-home-paths": "workspace:^",
+    "coding-session": "workspace:^",
+    "coding-system-prompt": "workspace:^",
+    "coding-tool-fs": "workspace:^",
+    "coding-tools": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   }
 }

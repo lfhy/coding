@@ -1,9 +1,9 @@
-/** macOS Computer Use 服务提供方：可访问性观察、语义元素动作、定向指针输入与截图产物。 @module @deepseek-ai/dsh-computer-use */
+/** macOS Computer Use 服务提供方：可访问性观察、语义元素动作、定向指针输入与截图产物。 @module coding-computer-use */
 
-import type {} from '@deepseek-ai/dsh-agent'
-import type {} from '@deepseek-ai/dsh-settings'
-import type {} from '@deepseek-ai/dsh-subprocess'
-import type {} from '@deepseek-ai/dsh-user-approval'
+import type {} from 'coding-agent'
+import type {} from 'coding-settings'
+import type {} from 'coding-subprocess'
+import type {} from 'coding-user-approval'
 import { MacOSComputerUseProvider } from './providers/macos.ts'
 
 export { Config, readComputerUseConfig, resolveConfig } from './config.ts'

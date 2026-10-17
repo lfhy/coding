@@ -1,10 +1,10 @@
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
-import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
-import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
-import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
-import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
-import { apply as settingsApply, inject as settingsInject } from '@deepseek-ai/dsh-client-ui-settings/client'
+import { resolveSlotLabel } from 'coding-client-ui-slots'
+import { SlotRegistry } from 'coding-client-runtime/client'
+import { LocaleRuntime } from 'coding-client-locale/client'
+import { TestRemote } from 'coding-client-test-runtime'
+import { apply as settingsApply, inject as settingsInject } from 'coding-client-ui-settings/client'
 import { apply, inject } from '../src/client/index.ts'
 
 describe('search settings registration', () => {

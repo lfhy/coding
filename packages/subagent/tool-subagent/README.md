@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-tool-subagent
+# coding-tool-subagent
 
 基于一个已配置 `ctx.subagents` 提供方、面向模型的委派工具。更换提供方只会改变传输，不会改变执行约定。
 

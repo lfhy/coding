@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-goal-round-driver
+# coding-goal-round-driver
 
 [`ctx.goals`](../goal/README.md) 的同会话续行驱动器。它通过公开 `Agent` 与会话服务，把 phase 为 active 且已启用续行的目标转换为连续的 [Goal Round](../../../docs/glossary.md#goal-round)；同会话驱动器 设计记录 记载竞态与生命周期方面的设计理由。
 
@@ -6,13 +6,13 @@
 
 ```yaml
 - id: goal
-  name: '@deepseek-ai/dsh-goal'
+  name: 'coding-goal'
 
 - id: tool-goal
-  name: '@deepseek-ai/dsh-tool-goal'
+  name: 'coding-tool-goal'
 
 - id: goal-round-driver
-  name: '@deepseek-ai/dsh-goal-round-driver'
+  name: 'coding-goal-round-driver'
 ```
 
 该插件没有可调配置。`maxGoalRounds` 属于目标定义，面向模型的阻塞阈值则属于 [`dsh-tool-goal`](../tool-goal/README.md)；在驱动器中重复任一数值都可能产生分歧策略。

@@ -4,16 +4,16 @@
  * surface events; a separate replacement `user/message` carries the summary.
  * Backend packages own configuration and retention policy; see
  * ``.
- * @module @deepseek-ai/dsh-compaction/types
+ * @module coding-compaction/types
  */
 
-import type { ContentBlock, TokenUsage } from '@deepseek-ai/dsh-llm'
-import type { CommandId } from '@deepseek-ai/dsh-commands/brand'
+import type { ContentBlock, TokenUsage } from 'coding-llm'
+import type { CommandId } from 'coding-commands/brand'
 import type { CompactionId } from './brand.ts'
 
 export type { CompactionId }
 
-declare module '@deepseek-ai/dsh-session/types' {
+declare module 'coding-session/types' {
   interface SessionEventMap {
     /**
      * Marks the start of a compaction — log-only, holds the lock until

@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { makeTranslate } from 'coding-client-test-runtime'
 import { GitOverview, type GitOverviewInjected } from '../src/client/skeleton/GitOverview.tsx'
 import { WorkspaceGitTrigger } from '../src/client/skeleton/WorkspaceGitTrigger.tsx'
 import { en, zh } from '../src/client/locales.ts'

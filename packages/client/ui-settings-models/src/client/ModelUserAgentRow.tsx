@@ -1,7 +1,7 @@
 /** 通用设置中的模型提供方请求 UA 输入行。 */
 import { useEffect, useRef, useState } from 'react'
-import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
-import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { SnapshotStore } from 'coding-client-runtime/client'
+import type { InjectFace, PropsLocale, PropsRuntime } from 'coding-client-ui-slots'
 import type { ModelUserAgentState } from './model-user-agent.ts'
 import css from './ModelUserAgentRow.module.css'
 

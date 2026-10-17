@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-tool-ask-user",
+  "name": "coding-tool-ask-user",
   "description": "Model-facing ask_user_question tool over the ctx.userQuestions seam",
   "version": "0.1.0-rc.8",
   "publishConfig": {
@@ -32,21 +32,21 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-tools": "workspace:^",
-    "@deepseek-ai/dsh-timeout": "workspace:^",
-    "@deepseek-ai/dsh-user-questions": "workspace:^",
+    "coding-agent": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-tools": "workspace:^",
+    "coding-timeout": "workspace:^",
+    "coding-user-questions": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-system-prompt": "workspace:^",
-    "@deepseek-ai/dsh-tools": "workspace:^",
-    "@deepseek-ai/dsh-timeout": "workspace:^",
-    "@deepseek-ai/dsh-user-questions": "workspace:^",
+    "coding-agent": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-llm": "workspace:^",
+    "coding-system-prompt": "workspace:^",
+    "coding-tools": "workspace:^",
+    "coding-timeout": "workspace:^",
+    "coding-user-questions": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   }
 }

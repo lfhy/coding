@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-storage-json
+# coding-storage-json
 
 [存储中心](../storage/README.md)的 JSON 后端：配置根目录下每个单元使用一个人类可读的 `<unit>.json` 文件，注册为后端 `json`。设计见领域 KV 存储 设计记录。
 

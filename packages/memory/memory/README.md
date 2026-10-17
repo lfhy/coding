@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-memory
+# coding-memory
 
 项目隔离的跨会话记忆服务定义：把会话 cwd 解析成一个稳定的项目键，为每个项目维护若干 Markdown 记忆文件，并给消费方一套带限额的读写与摘要接口。
 
@@ -34,12 +34,12 @@
 
 ## 消费方
 
-- `@deepseek-ai/dsh-tool-memory`：`memory_save`／`memory_read`／`memory_list`／`memory_delete` 四个工具，参数里没有任何路径，目标目录由会话项目根决定。
-- `@deepseek-ai/dsh-memory-context`：把 `excerpt()` 的摘要注入会话基线。
+- `coding-tool-memory`：`memory_save`／`memory_read`／`memory_list`／`memory_delete` 四个工具，参数里没有任何路径，目标目录由会话项目根决定。
+- `coding-memory-context`：把 `excerpt()` 的摘要注入会话基线。
 
 ## 模型体验
 
-Indirectly, through `@deepseek-ai/dsh-tool-memory` and `@deepseek-ai/dsh-memory-context`：本包自身不注册工具、不贡献提示词段，因此没有直接的模型可见文本。
+Indirectly, through `coding-tool-memory` and `coding-memory-context`：本包自身不注册工具、不贡献提示词段，因此没有直接的模型可见文本。
 
 ### KV Cache 影响
 

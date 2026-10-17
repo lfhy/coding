@@ -1,6 +1,6 @@
 /** `/export` 命令使用的浏览器下载状态与结果弹窗数据。 */
 
-import { createSnapshotStore, type SessionId, type SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import { createSnapshotStore, type SessionId, type SnapshotStore } from 'coding-client-runtime/client'
 
 /** Download phases presented by the shared modal. */
 export type SessionLogDownloadStatus = 'downloading' | 'success' | 'error'

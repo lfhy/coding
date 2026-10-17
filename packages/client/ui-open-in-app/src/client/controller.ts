@@ -1,7 +1,7 @@
 /** 浏览器侧的目标探测、本地应用启动与 provider-neutral 工作台请求。 */
 
-import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { createSnapshotStore, type SnapshotStore } from 'coding-client-runtime/client'
+import type { SessionId } from 'coding-session/types'
 import {
   OPEN_IN_APP_OPEN_ROUTE,
   OPEN_IN_APP_TARGET_ROUTE,
@@ -9,7 +9,7 @@ import {
   type OpenInAppOpenResult,
   type OpenInAppTargetPayload,
   type OpenInAppTargetRequest,
-} from '@deepseek-ai/dsh-host-open-in-app/shared'
+} from 'coding-host-open-in-app/shared'
 import {
   OPEN_IN_APP_ROUTES,
   type OpenInAppRoutes,

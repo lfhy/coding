@@ -8,7 +8,7 @@ import clsx from 'clsx'
 import {
   IconAgentPresetOutline16, IconChevronLeftOutline14, IconDataOutline16,
   IconPersonalizationOutline16, IconSettingsOutline16, IconSparkle16,
-} from '@deepseek-ai/dsh-client-ui-icons'
+} from 'coding-client-ui-icons'
 import type { SettingsRootComponentProps, SettingsSectionRow } from './shell-contract.ts'
 import css from './SettingsRoot.module.css'
 

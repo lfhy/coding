@@ -1,13 +1,13 @@
 /**
- * Package-owned invariant companion for `@deepseek-ai/dsh-file-reference`.
- * @module @deepseek-ai/dsh-file-reference/invariant
+ * Package-owned invariant companion for `coding-file-reference`.
+ * @module coding-file-reference/invariant
  */
 
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
-import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
+import type { InvariantInstaller } from 'coding-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-file-reference'
+const PACKAGE_NAME = 'coding-file-reference'
 
 /** Cordis companion plugin name. */
 export const name = 'file-reference-invariant'

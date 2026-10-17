@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-fs-local",
+  "name": "coding-fs-local",
   "description": "Local-filesystem implementation of the DeepSeek Harness filesystem seam (ctx.fs)",
   "version": "0.1.0-rc.8",
   "publishConfig": {
@@ -32,9 +32,9 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-fs": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-subprocess": "workspace:^",
+    "coding-fs": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-subprocess": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "dependencies": {
@@ -42,10 +42,10 @@
     "@deepseek-ai/schemastery": "workspace:^"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-fs": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-subprocess": "workspace:^",
+    "coding-fs": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-llm": "workspace:^",
+    "coding-subprocess": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   }
 }

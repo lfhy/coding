@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-api-gateway",
+  "name": "coding-api-gateway",
   "description": "Typert Remote Host dispatcher and Client API endpoint",
   "version": "0.1.0-rc.8",
   "publishConfig": {
@@ -36,8 +36,8 @@
   "dsh": {
     "client": {
       "inject": [
-        "@deepseek-ai/dsh-typert-registry",
-        "@deepseek-ai/dsh-client-connection"
+        "coding-typert-registry",
+        "coding-client-connection"
       ],
       "platform": "web",
       "immediately": true
@@ -56,19 +56,19 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "@deepseek-ai/dsh-typert-protocol": "workspace:^"
+    "coding-typert-protocol": "workspace:^"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-client-connection": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-typert-registry": "workspace:^",
+    "coding-client-connection": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-typert-registry": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-client-connection": "workspace:^",
-    "@deepseek-ai/dsh-host-webserver": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-typert-registry": "workspace:^",
+    "coding-client-connection": "workspace:^",
+    "coding-host-webserver": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-typert-registry": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^",
     "zod": "^4.4.3"
   }

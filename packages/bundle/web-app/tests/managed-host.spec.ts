@@ -4,9 +4,9 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import { WebClientConnections } from '@deepseek-ai/dsh-client-connection'
+import { WebClientConnections } from 'coding-client-connection'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { MANAGED_HOST_RECORD_TOKEN_ENV } from '@deepseek-ai/dsh-host-apiproxy/api/host'
+import { MANAGED_HOST_RECORD_TOKEN_ENV } from 'coding-host-apiproxy/api/host'
 import {
   CODING_HOST_PROTOCOL,
   codingHostRecordPath,

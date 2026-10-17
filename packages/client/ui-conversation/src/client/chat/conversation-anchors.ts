@@ -1,6 +1,6 @@
 import type {
   ChatConversationViewNode, ChatNodeStore, SteeringMessageNode, UserMessageNode,
-} from '@deepseek-ai/dsh-client-runtime/client'
+} from 'coding-client-runtime/client'
 
 const MAX_BLOCKS = 32
 const MAX_SOURCE_LENGTH = 512

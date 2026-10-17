@@ -1,7 +1,7 @@
 /** 面向模型列出当前已注册路由提供的模型 ID，不把目录当作路由权限表。 */
 import type { Context } from '@deepseek-ai/cordis'
-import { defineTool } from '@deepseek-ai/dsh-tools'
-import type {} from '@deepseek-ai/dsh-llm'
+import { defineTool } from 'coding-tools'
+import type {} from 'coding-llm'
 
 export const name = 'tool-subagent-models'
 export const inject = ['tools', 'llm']

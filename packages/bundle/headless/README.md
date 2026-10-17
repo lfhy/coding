@@ -1,4 +1,4 @@
-# `@deepseek-ai/dsh-headless`
+# `coding-headless`
 
 dsh 一次性任务组合包。[`cordis.patch.yml`](cordis.patch.yml) 直接叠加在 [`dsh-base`](../base/README.md) 之上：提供编码 persona 和工具模式、禁用 HMR（热模块替换）、将 Code Mode 的 worker 作为核心执行能力挂载，并插入本包的 `headless-runner` 插件（配置为 `{task}`，从注入的 `headlessStartup` 提供方解析）。它不挂载 Web Host、HTTP server 或 Web runtime，但继承 base 中的 Host [Playwright 浏览器提供方](../../browser/browser-playwright/README.md)。标准和 Code Mode agent preset 的[七项浏览器工具](../../browser/tool-browser/README.md)按会话权限操作本地浏览器，并可按需加载 [`browser-use` 技能](../../skill/skill-browser-use/README.md)；需要审批的调用逐次申请一次性许可。这里没有 Web Client 的只读画面和 HTTP 预览路由，运行环境须提供匹配的 Chromium。远程工作区不支持这些工具。
 

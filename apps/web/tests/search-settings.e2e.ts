@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
-import { credentialRef } from '@deepseek-ai/dsh-credentials'
+import { credentialRef } from 'coding-credentials'
 import { launchWebScaffold, watchConsole, type WebScaffold } from './scaffold.ts'
 import { ZH_BROWSER_LOCALE } from './support.ts'
 

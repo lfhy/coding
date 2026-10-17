@@ -1,4 +1,4 @@
-# `@deepseek-ai/dsh-computer-use`
+# `coding-computer-use`
 
 本机 macOS 界面的观察与操作能力：在宿主层提供 `ctx.computerUse`，由包内 macOS 提供方驱动一个固定协议的 Swift helper，供[模型可见的工具消费方](../tool-computer-use/README.md)使用。默认 profile 不装载本包，需要时由显式 profile/patch opt-in。
 能力属于宿主平面：一个进程只有一份提供方，因此 helper 进程、观察缓存、按应用的租约与一次性确认令牌在全部会话之间共享；会话、agent 与 turn 的归属在服务内裁决，helper 自身不做会话隔离。
@@ -61,12 +61,12 @@
 
 helper 是一个只接受固定 argv 与 JSON 行协议的 Swift 可执行文件，源码位于 [`native/macos/`](native/macos)，构建脚本为 [`scripts/build-native.mjs`](scripts/build-native.mjs)。
 托管 helper 在使用前必须通过文件类型、可执行位与 `native/macos/manifest.json` 中的 SHA-256 校验；manifest 缺失或不匹配都按失败处理，不会退回未校验的二进制。
-`pnpm --filter @deepseek-ai/dsh-computer-use run build:native` 重建 helper 并写入新的 manifest，`run check:native` 复核二进制只做目标进程指针路由、不做系统光标 warp 或全局指针注入。
+`pnpm --filter coding-computer-use run build:native` 重建 helper 并写入新的 manifest，`run check:native` 复核二进制只做目标进程指针路由、不做系统光标 warp 或全局指针注入。
 helper 只被普通进程启动，模型不能提供 shell 片段、脚本、原生 selector 或任意可访问性常量。
 
 ## Model Experience
 
-Indirectly, through [`@deepseek-ai/dsh-tool-computer-use`](../tool-computer-use/README.md)：本包不注册工具、不贡献提示词段，因此没有直接的模型可见文本。
+Indirectly, through [`coding-tool-computer-use`](../tool-computer-use/README.md)：本包不注册工具、不贡献提示词段，因此没有直接的模型可见文本。
 
 ### 提供方失败诊断
 

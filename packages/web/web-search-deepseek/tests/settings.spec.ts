@@ -7,11 +7,11 @@ import type { AddressInfo } from 'node:net'
 import type { Duplex } from 'node:stream'
 import { ProxyAgent } from 'undici'
 import type { Fiber } from '@deepseek-ai/cordis'
-import { SettingsProvider } from '@deepseek-ai/dsh-settings'
-import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
-import WebRuntime from '@deepseek-ai/dsh-web'
-import * as deepseekPlugin from '@deepseek-ai/dsh-web-search-deepseek'
-import { WEB_SEARCH_DEEPSEEK_SETTINGS_NAMESPACE } from '@deepseek-ai/dsh-web-search-deepseek'
+import { SettingsProvider } from 'coding-settings'
+import type { SettingsNamespace } from 'coding-settings'
+import WebRuntime from 'coding-web'
+import * as deepseekPlugin from 'coding-web-search-deepseek'
+import { WEB_SEARCH_DEEPSEEK_SETTINGS_NAMESPACE } from 'coding-web-search-deepseek'
 
 /** The smallest real provider: one in-memory document, always writable. */
 class MemorySettings extends SettingsProvider {

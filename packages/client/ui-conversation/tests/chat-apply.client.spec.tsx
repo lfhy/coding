@@ -6,11 +6,11 @@
 // entries. Tool composition belongs to ui-tool and its machinery spec.
 
 import { describe, expect, it, vi } from 'vitest'
-import { SlotTestRuntime, stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
-import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
-import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import { apply, inject } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import { SlotTestRuntime, stubSettingsScope } from 'coding-client-test-runtime'
+import { resolveSlotLabel } from 'coding-client-ui-slots'
+import { LocaleRuntime } from 'coding-client-locale/client'
+import type { SessionId } from 'coding-client-runtime/client'
+import { apply, inject } from 'coding-client-ui-conversation/client'
 
 const ROOT = 'root-1' as SessionId
 const CHILD = 'child-1' as SessionId

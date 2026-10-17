@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-command-goal",
+  "name": "coding-command-goal",
   "description": "Human-facing slash command for persisted same-session goals",
   "version": "0.1.0-rc.8",
   "publishConfig": {
@@ -32,20 +32,20 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-commands": "workspace:^",
-    "@deepseek-ai/dsh-goal": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
+    "coding-commands": "workspace:^",
+    "coding-goal": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-llm": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis-plugin-loader": "workspace:^",
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-commands": "workspace:^",
-    "@deepseek-ai/dsh-goal": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
+    "coding-agent": "workspace:^",
+    "coding-commands": "workspace:^",
+    "coding-goal": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-llm": "workspace:^",
+    "coding-session": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   }
 }

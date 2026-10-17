@@ -1,7 +1,7 @@
-# `@deepseek-ai/dsh-tool-computer-use`
+# `coding-tool-computer-use`
 
 Computer Use 的模型可见消费方：登记一份技能、一个全局引导工具，并在 agent 加载该技能之后，把执行工具只暴露给这个 agent。
-本包由显式 opt-in 的 agent 预设装配；默认 profile 不装载它。提供方、helper 进程与租约属于宿主层的 [`@deepseek-ai/dsh-computer-use`](../computer-use/README.md)。
+本包由显式 opt-in 的 agent 预设装配；默认 profile 不装载它。提供方、helper 进程与租约属于宿主层的 [`coding-computer-use`](../computer-use/README.md)。
 
 ## 渐进式暴露
 

@@ -110,14 +110,14 @@ describe('browser capability diagrams', () => {
 
   it('shows the Host browser provider in the shared base composition', () => {
     const composition = readFileSync(resolve(import.meta.dirname, '../apps/cli/composition.md'), 'utf8')
-    expect(composition).toContain('plugin_dsh_base_browser_playwright["browser-playwright<br/>@deepseek-ai/dsh-browser-playwright"]')
-    expect(composition).toContain('| `browser-playwright` | `@deepseek-ai/dsh-browser-playwright` |')
-    expect(composition).not.toContain('| `tool-browser` | `@deepseek-ai/dsh-tool-browser` |')
+    expect(composition).toContain('plugin_dsh_base_browser_playwright["browser-playwright<br/>coding-browser-playwright"]')
+    expect(composition).toContain('| `browser-playwright` | `coding-browser-playwright` |')
+    expect(composition).not.toContain('| `tool-browser` | `coding-tool-browser` |')
   })
 
   it.each(['standard', 'code'])('mounts the model-facing tool in the %s session preset', (preset) => {
     const config = readFileSync(resolve(import.meta.dirname, `../apps/cli/config/agent-presets/${preset}/agent.cordis.yml`), 'utf8')
-    expect(config).toMatch(/- id: tool-browser\n  name: '@deepseek-ai\/dsh-tool-browser'/)
-    expect(config).not.toContain("name: '@deepseek-ai/dsh-browser-playwright'")
+    expect(config).toMatch(/- id: tool-browser\n  name: 'coding-tool-browser'/)
+    expect(config).not.toContain("name: 'coding-browser-playwright'")
   })
 })

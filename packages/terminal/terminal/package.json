@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-terminal",
+  "name": "coding-terminal",
   "description": "Persistent PTY session seam for the DeepSeek Harness — owner-scoped ids, backend registry, interactive sends, reads, signals, and awaited cleanup",
   "version": "0.1.0-rc.8",
   "publishConfig": {
@@ -32,16 +32,16 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-brand": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
+    "coding-agent": "workspace:^",
+    "coding-brand": "workspace:^",
+    "coding-invariants": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-brand": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
+    "coding-agent": "workspace:^",
+    "coding-brand": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-session": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   }
 }

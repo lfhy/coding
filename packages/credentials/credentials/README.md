@@ -12,7 +12,7 @@
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
-import { credentialRef } from '@deepseek-ai/dsh-credentials'
+import { credentialRef } from 'coding-credentials'
 
 declare const ctx: Context
 

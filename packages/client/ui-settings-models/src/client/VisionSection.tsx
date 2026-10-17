@@ -1,7 +1,7 @@
 /** 图片识别目标设置独占普通分区内容，沿用模型分区的设置镜像与目录快照。 */
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-icons'
+import { IconChevronDownOutline14 } from 'coding-client-ui-icons'
 import type { ModelsSectionInjected, ModelsSectionProps } from './ModelsSection.tsx'
 import styles from './VisionSection.module.css'
 

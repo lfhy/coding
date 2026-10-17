@@ -1,11 +1,11 @@
-/** 将 Tavily 的专用搜索端点注册为 `ctx.web` 搜索提供方。@module @deepseek-ai/dsh-web-search-tavily */
+/** 将 Tavily 的专用搜索端点注册为 `ctx.web` 搜索提供方。@module coding-web-search-tavily */
 
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { credentialRef } from '@deepseek-ai/dsh-credentials'
-import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
-import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
-import type {} from '@deepseek-ai/dsh-web'
+import { credentialRef } from 'coding-credentials'
+import { launchEnvironmentOf } from 'coding-launch-environment'
+import { installSettingsSection, settingsNamespace } from 'coding-settings'
+import type {} from 'coding-web'
 import {
   TavilySearchProvider,
   TAVILY_DEFAULT_BASE_URL,

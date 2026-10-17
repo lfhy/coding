@@ -1,10 +1,10 @@
-/** computer-use 包的运行时不变式登记。 @module @deepseek-ai/dsh-computer-use/invariant */
+/** computer-use 包的运行时不变式登记。 @module coding-computer-use/invariant */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { InvariantFailure, InvariantInstaller } from '@deepseek-ai/dsh-invariants'
-import type { ToolRuntime } from '@deepseek-ai/dsh-tools'
+import type { InvariantFailure, InvariantInstaller } from 'coding-invariants'
+import type { ToolRuntime } from 'coding-tools'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-tool-computer-use'
+const PACKAGE_NAME = 'coding-tool-computer-use'
 
 /** 全局可见的唯一 Computer Use 工具；其余工具只按 agent 暴露。 */
 const ACTIVATION_TOOL = 'computer_use_activate'

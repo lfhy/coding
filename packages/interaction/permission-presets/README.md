@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-permission-presets
+# coding-permission-presets
 
 通过 `ctx.permissionPresets`（[`PermissionPresetService`](src/index.ts)）提供面向用户的权限预设。每个配置名称都会将 `sandbox/mode` 与 `approval/policy` 组成一组；默认项为 `workspace-write`（`workspace-write` + `ask`）和 `danger-full-access`（`danger-full-access` + `never`）。UI 适配器可以将该表作为单个选择器公开，而沙箱执行与审批仍分别消费各自的调节项。
 

@@ -3,7 +3,7 @@
 
 # Session Persistence Event Catalog
 
-Every event type that can appear in a session's durable event log: the complete persisted `SessionEvent` envelope and each member of the merge-extensible `SessionEventMap` — the owning vocabulary in `@deepseek-ai/dsh-session` plus every plugin declaration merge into `@deepseek-ai/dsh-session/types` in this repo — with source JSDoc, full payload declaration, surface badge, and declaration site. It complements [session.md](subsystems/session.md) (surface ordering and the `deriveMessages()` projection), [persistence.md](subsystems/persistence.md) (how the log is made durable), and the generated region of [session.md](subsystems/session.md#cordis-surface) (the live bus wiring — a log event is NOT a cordis event; it reaches listeners via the single `session/event` emit).
+Every event type that can appear in a session's durable event log: the complete persisted `SessionEvent` envelope and each member of the merge-extensible `SessionEventMap` — the owning vocabulary in `coding-session` plus every plugin declaration merge into `coding-session/types` in this repo — with source JSDoc, full payload declaration, surface badge, and declaration site. It complements [session.md](subsystems/session.md) (surface ordering and the `deriveMessages()` projection), [persistence.md](subsystems/persistence.md) (how the log is made durable), and the generated region of [session.md](subsystems/session.md#cordis-surface) (the live bus wiring — a log event is NOT a cordis event; it reaches listeners via the single `session/event` emit).
 
 This file is GENERATED from source (`scripts/gen-persistence-catalog.ts`) and verified fresh by `pnpm run verify-persistence-catalog` — do not edit it by hand. Declaration blocks retain the source declaration and nested property JSDoc, removing only the indentation imposed by a containing interface/module, and use a `ts persistence-catalog` fence (declarations reference types from their owning modules). Type names in a payload link to the page that documents them. See the persistence-log-catalog design record.
 
@@ -87,7 +87,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }[T]
 ```
 
-Sources: [`packages/core/session/src/types.ts:335`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:342`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:369`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:399`](../packages/core/session/src/types.ts)
+Sources: [`packages/core/session/src/types.ts:337`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:344`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:371`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:401`](../packages/core/session/src/types.ts)
 
 ## Events
 
@@ -212,7 +212,7 @@ Source: [`packages/interaction/user-approval/src/index.ts:67`](../packages/inter
 
 Types: [StreamChunk](subsystems/llm-streaming.md)
 
-Source: [`packages/core/session/src/types.ts:264`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:266`](../packages/core/session/src/types.ts)
 
 <a id="assistantmessage--surface"></a>
 
@@ -234,7 +234,7 @@ Source: [`packages/core/session/src/types.ts:264`](../packages/core/session/src/
 
 Types: [TokenUsage](subsystems/llm-streaming.md)
 
-Source: [`packages/core/session/src/types.ts:275`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:277`](../packages/core/session/src/types.ts)
 
 ### `command/*`
 
@@ -544,7 +544,7 @@ Source: [`packages/plan/plan-mode/src/index.ts:50`](../packages/plan/plan-mode/s
 'request/context': RequestContext
 ```
 
-Source: [`packages/core/session/src/types.ts:311`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:313`](../packages/core/session/src/types.ts)
 
 <a id="requestheader--log-only"></a>
 
@@ -558,7 +558,7 @@ Source: [`packages/core/session/src/types.ts:311`](../packages/core/session/src/
 'request/header': { header: EpochHeader; reason: RequestHeaderReason }
 ```
 
-Source: [`packages/core/session/src/types.ts:306`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:308`](../packages/core/session/src/types.ts)
 
 ### `sandbox/*`
 
@@ -630,7 +630,7 @@ Source: [`packages/schedule/schedule/src/types.ts:219`](../packages/schedule/sch
 'session/end-seed': Record<string, never>
 ```
 
-Source: [`packages/core/session/src/types.ts:331`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:333`](../packages/core/session/src/types.ts)
 
 <a id="sessiontitle--log-only"></a>
 
@@ -672,7 +672,7 @@ Source: [`packages/session/session-title-llm/src/index.ts:43`](../packages/sessi
 'step/end': { turn: number; step: number }
 ```
 
-Source: [`packages/core/session/src/types.ts:254`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:256`](../packages/core/session/src/types.ts)
 
 <a id="stepstart--log-only"></a>
 
@@ -683,7 +683,7 @@ Source: [`packages/core/session/src/types.ts:254`](../packages/core/session/src/
 'step/start': { turn: number; step: number }
 ```
 
-Source: [`packages/core/session/src/types.ts:252`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:254`](../packages/core/session/src/types.ts)
 
 ### `subagent/*`
 
@@ -776,7 +776,7 @@ Source: [`packages/experimental/agent-team/src/types.ts:208`](../packages/experi
 
 Types: [TodoItem](subsystems/session.md)
 
-Source: [`packages/core/session/src/types.ts:301`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:303`](../packages/core/session/src/types.ts)
 
 ### `tool/*`
 
@@ -795,7 +795,7 @@ Source: [`packages/core/session/src/types.ts:301`](../packages/core/session/src/
 
 Types: [CallId](subsystems/core.md)
 
-Source: [`packages/core/session/src/types.ts:281`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:283`](../packages/core/session/src/types.ts)
 
 <a id="toolcode-dispatch--log-only"></a>
 
@@ -870,7 +870,7 @@ Source: [`packages/core/tools/src/types.ts:40`](../packages/core/tools/src/types
 }
 ```
 
-Source: [`packages/core/session/src/types.ts:293`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:295`](../packages/core/session/src/types.ts)
 
 ### `tool-workflow/*`
 
@@ -950,7 +950,7 @@ Source: [`packages/workflow/tool-workflow/src/types.ts:47`](../packages/workflow
 
 Types: [TurnEndReason](subsystems/session.md)
 
-Source: [`packages/core/session/src/types.ts:250`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:252`](../packages/core/session/src/types.ts)
 
 <a id="turnstart--log-only"></a>
 
@@ -966,7 +966,7 @@ Source: [`packages/core/session/src/types.ts:250`](../packages/core/session/src/
 'turn/start': { turn: number }
 ```
 
-Source: [`packages/core/session/src/types.ts:241`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:243`](../packages/core/session/src/types.ts)
 
 ### `user/*`
 
@@ -985,7 +985,7 @@ Source: [`packages/core/session/src/types.ts:241`](../packages/core/session/src/
 'user/message': UserMessage
 ```
 
-Source: [`packages/core/session/src/types.ts:262`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:264`](../packages/core/session/src/types.ts)
 
 ### `vision/*`
 
@@ -1026,4 +1026,4 @@ Source: [`packages/llm/llm-vision-fallback/src/index.ts:65`](../packages/llm/llm
 'web/deepseek-search-llm-request': DeepSeekSearchLlmRequest
 ```
 
-Source: [`packages/web/web-search-deepseek/src/provider.ts:83`](../packages/web/web-search-deepseek/src/provider.ts)
+Source: [`packages/web/web-search-deepseek/src/provider.ts:133`](../packages/web/web-search-deepseek/src/provider.ts)

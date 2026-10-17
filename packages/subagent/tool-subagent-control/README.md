@@ -1,6 +1,6 @@
-# @deepseek-ai/dsh-tool-subagent-control
+# coding-tool-subagent-control
 
-可选的全局具名 `send_message`、`interrupt_agent`、`list_agents` 与 `list_subagent_models` 工具分别提供可继续子级控制、目录和子级可选模型目录。根插件只注册前两个工具；独立的 `./list-agents` 使用 `subagents` 与 `agents`，调用时还需会话存储与投影；独立的 `./list-models` 使用 `llm` 的已注册模型路由。提供方绑定的 `@deepseek-ai/dsh-tool-subagent` 每个实例仍各自注册一个委派工具，多个实例不重复注册这些全局工具。模型目录不是路由权限表：未列出的模型仍可能被适配器接受。
+可选的全局具名 `send_message`、`interrupt_agent`、`list_agents` 与 `list_subagent_models` 工具分别提供可继续子级控制、目录和子级可选模型目录。根插件只注册前两个工具；独立的 `./list-agents` 使用 `subagents` 与 `agents`，调用时还需会话存储与投影；独立的 `./list-models` 使用 `llm` 的已注册模型路由。提供方绑定的 `coding-tool-subagent` 每个实例仍各自注册一个委派工具，多个实例不重复注册这些全局工具。模型目录不是路由权限表：未列出的模型仍可能被适配器接受。
 
 本工具不执行生命周期路由：驻留与冷恢复归 subagent 服务所有。它将 `exec.agent` 作为授权投递的确切在线父级传入，并把每条消息的来源记录为 `{ kind: 'coordinator', form: 'relay', senderSessionId: parent.id }`；服务会保留该来源，但绝不将其视为权限。`send_message` 始终把消息放入子级下一步骤的收件箱：如果子 agent 正在工作，消息会在下一步骤被领取，但不能打断正在执行的模型请求或工具调用；子 agent 空闲时会被唤醒。本工具会转发其执行信号，该信号只在 inbox 接受之前掌管准入；一旦接受便无法通过本工具撤回。调用结果仅确认消息已被接受，不表示子 agent 已读到消息，也不返回其回复；持久化子会话是详细输出的真源。拥有 `report` 的子 agent 会自行把内容作为一条单独的父级消息发回。投递失败会变为出错的工具结果，并明确说明消息未送达。
 

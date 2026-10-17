@@ -2,7 +2,7 @@
  * Surface retention selection and the shared log-recorded compaction
  * transaction for automatic open-turn and manual idle-session compaction.
  *
- * @module @deepseek-ai/dsh-compaction-basic/region
+ * @module coding-compaction-basic/region
  */
 
 import { randomUUID } from 'node:crypto'
@@ -13,14 +13,14 @@ import {
   compactCheckpointSource,
   toolPairingBalancedAfter,
   toolPairingBalancedBefore,
-} from '@deepseek-ai/dsh-compaction'
-import type { CompactionResult } from '@deepseek-ai/dsh-compaction'
-import type { CommandId } from '@deepseek-ai/dsh-commands/brand'
-import { createUserMessage, errorChain } from '@deepseek-ai/dsh-llm'
-import type { Message, UserMessage } from '@deepseek-ai/dsh-llm'
-import type { TokenMeasurement, TokenMeter } from '@deepseek-ai/dsh-token-meter'
-import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+} from 'coding-compaction'
+import type { CompactionResult } from 'coding-compaction'
+import type { CommandId } from 'coding-commands/brand'
+import { createUserMessage, errorChain } from 'coding-llm'
+import type { Message, UserMessage } from 'coding-llm'
+import type { TokenMeasurement, TokenMeter } from 'coding-token-meter'
+import type { Session, SessionEvent } from 'coding-session'
+import type { Agent } from 'coding-agent'
 import { frameSummary } from './summarizer.ts'
 import type { SummarizationInput, SummaryResult } from './summarizer.ts'
 

@@ -9,8 +9,8 @@ export default defineConfig([
     platform: 'node',
     target: 'node22',
     deps: {
-      alwaysBundle: ['ws', '@deepseek-ai/dsh-home-paths', /^@deepseek-ai\/dsh-browser-electron(?:\/|$)/u,
-        /^@deepseek-ai\/dsh-attachment\/image-processing$/u],
+      alwaysBundle: ['ws', 'coding-home-paths', /^coding-browser-electron(?:\/|$)/u,
+        /^coding-attachment\/image-processing$/u],
       neverBundle: ['electron'],
     },
     dts: false,

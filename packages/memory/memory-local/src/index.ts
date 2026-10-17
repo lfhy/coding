@@ -2,13 +2,13 @@
  * 宿主文件系统上的 `ctx.memory` Provider：每个项目一个目录，记忆写成本地 Markdown，
  * 项目真实路径记在同目录的 `project.json` 里。
  *
- * @module @deepseek-ai/dsh-memory-local
+ * @module coding-memory-local
  */
 
 import { open, mkdir, readdir, realpath, rm, stat } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import z from '@deepseek-ai/schemastery'
-import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
+import { writeFileAtomic } from 'coding-atomic-write'
 import {
   Memory,
   MemoryConfig,
@@ -17,7 +17,7 @@ import {
   type MemoryConfig as MemoryConfigShape,
   type MemoryFileSummary,
   type MemoryProject,
-} from '@deepseek-ai/dsh-memory'
+} from 'coding-memory'
 
 const DIRECTORY_MODE = 0o700
 const FILE_MODE = 0o600

@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-subagent-claude-code",
+  "name": "coding-subagent-claude-code",
   "description": "One-shot Claude Code subagent provider over the official Agent SDK",
   "version": "0.1.0-rc.8",
   "publishConfig": {
@@ -38,12 +38,12 @@
     }
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-subagent": "workspace:^",
-    "@deepseek-ai/dsh-subprocess": "workspace:^",
-    "@deepseek-ai/dsh-timeout": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-llm": "workspace:^",
+    "coding-session": "workspace:^",
+    "coding-subagent": "workspace:^",
+    "coding-subprocess": "workspace:^",
+    "coding-timeout": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "dependencies": {
@@ -54,15 +54,15 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-loader-smoke": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-subagent": "workspace:^",
-    "@deepseek-ai/dsh-subprocess": "workspace:^",
-    "@deepseek-ai/dsh-subprocess-local": "workspace:^",
-    "@deepseek-ai/dsh-timeout": "workspace:^",
+    "coding-agent": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-llm": "workspace:^",
+    "coding-loader-smoke": "workspace:^",
+    "coding-session": "workspace:^",
+    "coding-subagent": "workspace:^",
+    "coding-subprocess": "workspace:^",
+    "coding-subprocess-local": "workspace:^",
+    "coding-timeout": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   }
 }

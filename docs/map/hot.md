@@ -183,7 +183,7 @@
 - **拥有**：工作区打开能力的浏览器半：会话页头分体入口（`OpenInAppAction`）及右侧边栏、终端底栏开关（`WorkbenchPanelToggles`），均占用 `conversation.session.header.utilities`；欢迎页开关占用 `conversation.hero.actions`；内置工作台（`WorkspaceWorkbench`，占用 root scope `workbench`）按 Session 持有功能菜单、唯一共享新增入口、统一的文件管理器／文件预览／浏览器页面／终端／外部标签、文件视图及右侧终端，声明 `workbench.browser`／`workbench.browser.tabs` 与 keyed `sidebar.right.pane.tab`／`.title` 子 slot；保留式底栏终端（`RetainedTerminalPanel`）独立占用 `workbench.bottom`；另有 `OpenInAppController`。
 - **不拥有**：浏览器画面、人工导航和标签操作属于 `packages/client/ui-browser`；Host 路由（应用启动、文件 list/read、终端 WebSocket）属于 `packages/host/open-in-app`；workbench 壳层几何与 `ctx.layout` 属于 `packages/client/ui-layout`；`conversation.session.header.utilities` 与 `conversation.hero.actions` 座位声明属于 `packages/client/ui-conversation`。
 - **入口**：`packages/client/ui-open-in-app/src/client/index.ts`（注入 `slots`、`locale`、`layout`、`sessions`、`workspaces`；通过 `ctx.slots.inject(...)` 在各座位注册）；node 半是空 apply。
-- **接线**：`packages/bundle/web-app/cordis.patch.yml` 的 `ui-open-in-app` 行与 host 行 `open-in-app` 并排挂载；共享常量经 `@deepseek-ai/dsh-host-open-in-app/shared`。
+- **接线**：`packages/bundle/web-app/cordis.patch.yml` 的 `ui-open-in-app` 行与 host 行 `open-in-app` 并排挂载；共享常量经 `coding-host-open-in-app/shared`。
 - **关键文件**：`packages/client/ui-open-in-app/src/client/index.ts`、`packages/client/ui-open-in-app/src/client/controller.ts`、`packages/client/ui-open-in-app/src/client/store.ts`、`packages/client/ui-open-in-app/src/client/WorkspaceWorkbench.tsx`、`packages/client/ui-open-in-app/src/client/sidebar-tab-registry.ts`、`packages/client/ui-open-in-app/src/client/sidebar-tab-service.ts`、`packages/client/ui-open-in-app/src/client/TerminalPanel.tsx`、`packages/client/ui-open-in-app/src/client/RetainedTerminalPanel.tsx`。
 - **改这里要同步**：路由或帧协议改动同步 `packages/host/open-in-app`；工作台或底栏显隐语义改动同步 `packages/client/ui-layout`（owner prop `bottomOpen`），页头与欢迎页入口变动核对 `packages/client/ui-conversation` 的座位；外部标签定义、实例状态或 keyed slot 变动同步本包 README 和对应插件贡献。
 - **不变量**：文件树只回传当前 Session id 与 Host 返回的 provider segment 数组，绝不提交工作区根或自行拼接 Windows/POSIX/UNC 路径；菜单终端新建右侧标签，底栏入口显示独立底栏，两处标签分别独占 WebSocket 与 PTY；切换标签或 Session、隐藏底栏或工作台均不释放已激活终端，关闭对应标签释放该终端；外部标签按 Session 隔离，定义卸载时清理该定义的已打开实例。
@@ -248,7 +248,7 @@
 - **拥有**：所有 profile 共享的第一层 patch：`cordis.patch.yml` 的单一 insert（timer/hmr/llm/session/工具/持久化/沙箱/subagent/settings/credentials/telemetry），以及 bash/pwsh 双 shell 栈的平台门控。包本身没有运行时 API（`src/index.ts` 只有 `export {}`）。
 - **不拥有**：模式专属配置值（归 `packages/bundle/web-app`、`packages/bundle/headless`——patch 整行替换 `config`，没有深度合并）；各行插件的实现（归行 `name` 指向的包）；可选的 Codex/Claude Code provider（明确排除在依赖闭包外）。
 - **入口**：`packages/bundle/base/cordis.patch.yml`（经 `package.json` 的 `dsh.bundle.patch` 声明，组合器只按该字段解析，绝不 import 代码）。
-- **接线**：`packages/boot/app-boot/src/profile.ts` 的 `PROFILE_TEMPLATES`（web/headless 都以 `@deepseek-ai/dsh-base` 开头）；`apps/cli/src/profile-boot.ts` 的 `composeProfile` 按 `dsh.profile.bundles` 顺序叠加。
+- **接线**：`packages/boot/app-boot/src/profile.ts` 的 `PROFILE_TEMPLATES`（web/headless 都以 `coding-base` 开头）；`apps/cli/src/profile-boot.ts` 的 `composeProfile` 按 `dsh.profile.bundles` 顺序叠加。
 - **关键文件**：`packages/bundle/base/cordis.patch.yml`、`packages/bundle/base/package.json`、`packages/bundle/base/src/invariant.ts`、`packages/bundle/base/tests/base.spec.ts`。
 - **改这里要同步**：`apps/cli/package.json` 依赖；生成的 `apps/cli/composition.md`（`pnpm run gen-doc-graphs`）与 `docs/map/wiring.md`（`pnpm run gen-code-map`）；受影响行的包 README。
 - **不变量**：patch 替换目标行的整个 `config`，模式差异值不放这里；`bash-sandbox`/`tool-bash` 与 `pwsh-sandbox`/`tool-pwsh` 用互逆的 `disabled: !!js process.platform === 'win32'` 门控，每宿主恰好挂一个 shell 栈。
@@ -270,7 +270,7 @@
 - **拥有**：目录选择能力全家——`directory-picker` 是 Service Definition（抽象类 `DirectoryPicker` 注册 `ctx.directoryPicker`，能力联合类型 `DirectoryPickerCapabilities` 可声明合并扩展，`DirectoryPickerError` 带封闭错误码）；`-native` 是原生 OS 面板后端（macOS JXA/osascript、Linux Zenity/KDialog、Windows koffi 驱动的 `IFileOpenDialog`）；`-browse` 是应用内浏览后端（Node 标准库单层列举与建目录，服务远程客户端）；`-auto` 在启动时一次性判定后端，并把匹配后端作为内存根树 Loader 条目挂载（`BACKEND_PACKAGES`/`SURFACE_PACKAGES` 是固定组合词汇）。
 - **不拥有**：客户端交互流（归 `packages/client/ui-directory-picker-browse`、`packages/client/ui-directory-picker-native`）；目录流 slot 定义（归 `packages/client/ui-workspace`）；免 shell 命令运行器（归 `packages/util/native-command`）。
 - **入口**：`packages/host/directory-picker/src/index.ts`（`DirectoryPicker` 默认导出与 `ctx.directoryPicker` 声明）。
-- **接线**：随包 web 组合在 `packages/bundle/web-app/cordis.patch.yml` 的行 `directory-picker` → `@deepseek-ai/dsh-host-directory-picker-browse`（配 `ui-directory-picker-browse`）；`-native` 与 `-auto` 由覆盖层显式选择。
+- **接线**：随包 web 组合在 `packages/bundle/web-app/cordis.patch.yml` 的行 `directory-picker` → `coding-host-directory-picker-browse`（配 `ui-directory-picker-browse`）；`-native` 与 `-auto` 由覆盖层显式选择。
 - **关键文件**：`packages/host/directory-picker/src/index.ts`、`packages/host/directory-picker-browse/src/index.ts`、`packages/host/directory-picker-native/src/index.ts`、`packages/host/directory-picker-native/src/native-picker.ts`、`packages/host/directory-picker-auto/src/index.ts`。
 - **改这里要同步**：对应的 client 包、`packages/client/ui-workspace` 的 slot 契约、web-app 组合行、各 README 的限制一节、`docs/map/wiring.md`。
 - **不变量**：一个组合只挂一个后端——第二个会因为重复 `directoryPicker` 服务与 `single` slot 在加载期直接失败；能力对象在服务生命周期内必须稳定（消费方可跨调用捕获）；`-auto` 挂载的条目只进内存根树，绝不持久化进配置文件。
@@ -292,7 +292,7 @@
 - **拥有**：两个对称的 Service Definition seam——`SettingsProvider`（`ctx.settings`：namespace schema 注册、`schema 默认 → 组合 base → 用户分节` 三层解析、`describe({redactSecrets})`、`update`/`replace`/`mutate` 深合并与 `expectedRevision` 冲突拒绝）与 `CredentialProvider`（`ctx.credentials`：`credentialRef` 品牌化引用、`resolve`/`describe`/`set`/`unset`，配置只带引用不带机密）。
 - **不拥有**：文档存储与热重载（归 `packages/settings/settings-file` 与 `packages/credentials/credentials-local`）；各消费方 namespace（例如 `llm-deepseek` 分节归适配器包）；设置 UI（归 `packages/client/ui-settings`、`packages/client/ui-settings-models`）。
 - **入口**：`packages/settings/settings/src/index.ts`（`SettingsProvider` 抽象类）与 `packages/credentials/credentials/src/index.ts`（`CredentialProvider` 抽象类，`notifyUpdated` 扇出 `credentials/updated`）。
-- **接线**：base 组合的行 `settings` → `@deepseek-ai/dsh-settings-file`、行 `credentials` → `@deepseek-ai/dsh-credentials-local`（主目录下的 `settings.yaml` 热重载，`.credentials.yaml` 受管存储）。
+- **接线**：base 组合的行 `settings` → `coding-settings-file`、行 `credentials` → `coding-credentials-local`（主目录下的 `settings.yaml` 热重载，`.credentials.yaml` 受管存储）。
 - **关键文件**：`packages/settings/settings/src/index.ts`、`packages/settings/settings/src/redact.ts`、`packages/credentials/credentials/src/index.ts`、`packages/settings/settings-file/src/index.ts`、`packages/credentials/credentials-local/src/index.ts`。
 - **改这里要同步**：两个 provider 包的 README 与测试（写锁、原子写、watcher 语义成对演化）、消费方适配器（`apiKeyEnv` 引用按操作解析）、`./types` 子路径的事件声明与 client 投影。
 - **不变量**：配置只携带对机密的引用（例如 `apiKeyEnv: DEEPSEEK_API_KEY`），值只在 provider 处；消费方按操作 `resolve`，绝不跨操作缓存；空存储值处处等于不存在；`set`/`unset` 被只读来源遮蔽时明确拒绝而不是表面成功；单个 listener 抛错不影响其余。
@@ -303,7 +303,7 @@
 - **拥有**：宿主层的 macOS 电脑控制能力——`computer-use` 定义 `ctx.computerUse`（`ComputerUseService` 默认导出）并用 `providers/macos.ts` 驱动包内固定协议 Swift helper（观察、语义元素动作、定向指针输入、一次性确认令牌、按应用租约、截图产物），非 macOS 平台由 `providers/unsupported.ts` 报告不支持；`tool-computer-use` 是 agent 预设层的模型可见消费方（`dsh-computer-use` 技能、全局引导工具 `computer_use_activate`、技能加载后按 agent 暴露的 `computer_*` 执行工具）。
 - **不拥有**：审批语义与权限预设（归 `packages/interaction/user-approval` 与 `packages/sandbox/sandbox-policy`）；截图之后的理解与 OCR（本包只交付栅格与文件路径）；浏览器与网页任务（归 `packages/browser/*`）；会话与事件日志（归 `packages/core/session`）。
 - **入口**：`packages/computer-use/computer-use/src/index.ts`（服务提供方默认导出，接缝类型在 `src/backend.ts`）与 `packages/computer-use/tool-computer-use/src/index.ts`（函数插件，`name`/`inject`/`apply`）。
-- **接线**：默认组合不装载这两个插件；需要使用时由显式 profile/patch 同时装配 `@deepseek-ai/dsh-computer-use` 与 `@deepseek-ai/dsh-tool-computer-use`。
+- **接线**：默认组合不装载这两个插件；需要使用时由显式 profile/patch 同时装配 `coding-computer-use` 与 `coding-tool-computer-use`。
 - **关键文件**：`packages/computer-use/computer-use/src/service.ts`（观察、租约、确认与动作流水线）、`src/providers/native-helper.ts`（helper 完整性、固定 argv 协议、Agent 光标）、`src/leases.ts`、`native/macos/Sources/Helper/*.swift`、`packages/computer-use/tool-computer-use/src/exposure.ts`、`src/tools.ts`、`src/skill.ts`。
 - **改这里要同步**：工具名或结果形状变动同步生成的[工具目录](../../docs/tool-catalog.md)与 `docs/subsystems/computer-use.md`；服务键或方法签名变动同步 `scripts/gen-cordis-catalog.ts` 的 `SERVICE_PAGE`/`LINK_MAP` 与 `scripts/gen-doc-graphs.ts` 的 `SERVICE_ROLES`；新增非 `lib` 运行时产物同步 `scripts/check-workspace-constraints.ts` 的 `packageFileExtras`；helper 版本改动同步 `native/macos/Sources/Helper/main.swift` 的 `helperVersion`（必须等于包版本）。
 - **不变量**：执行工具只在 Skill 加载后按 agent 暴露，全局视图里只有 `computer_use_activate`（`tool-computer-use/src/invariant.ts` 复查）；每次动作绑定一份未过期的观察，元素消失或坐标越界都在派发前失败关闭；密码等安全输入只以 `[secure]` 出现，绝不进入树文本或目标描述；指针输入只定向到选定进程，不移动系统光标、不进入全局事件流；`danger-full-access` 配 `never` 审批时不弹提示而是明确拒绝。

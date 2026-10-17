@@ -1,7 +1,7 @@
-# @deepseek-ai/dsh-subprocess-local
+# coding-subprocess-local
 
 
-[`@deepseek-ai/dsh-subprocess`](../subprocess/README.md) seam 的 Service Provider。`LocalSubprocessRuntime` 对普通本地工作解析本地可执行文件，以显式 stdio spawn detached 进程树，并通过 `node-pty` 加平台进程检查实现终端进程。在 Windows 上，非终端子进程会隐藏其控制台窗口，因此后台命令不会抢占焦点。对于已验证的桌面 Remote-SSH marker，`agent` 和 `basic` 模式都将进程与 PTY 请求转发给远端 bridge；`basic` 由直接 SSH 后端承接。该实现没有任何配置：每项处置方式、限制、终端尺寸、宽限期与目录都来自调用方能力 seam（[`dsh-bash-local`](../../shell/bash-local/README.md)、[`dsh-lsp-stdio`](../../lsp/lsp-stdio/README.md) 和 [`dsh-terminal-bash`](../../terminal/terminal-bash/README.md)）。
+[`coding-subprocess`](../subprocess/README.md) seam 的 Service Provider。`LocalSubprocessRuntime` 对普通本地工作解析本地可执行文件，以显式 stdio spawn detached 进程树，并通过 `node-pty` 加平台进程检查实现终端进程。在 Windows 上，非终端子进程会隐藏其控制台窗口，因此后台命令不会抢占焦点。对于已验证的桌面 Remote-SSH marker，`agent` 和 `basic` 模式都将进程与 PTY 请求转发给远端 bridge；`basic` 由直接 SSH 后端承接。该实现没有任何配置：每项处置方式、限制、终端尺寸、宽限期与目录都来自调用方能力 seam（[`dsh-bash-local`](../../shell/bash-local/README.md)、[`dsh-lsp-stdio`](../../lsp/lsp-stdio/README.md) 和 [`dsh-terminal-bash`](../../terminal/terminal-bash/README.md)）。
 
 ## 行为
 

@@ -4,12 +4,12 @@
  * {@link CompactionEngine}. This interface necessarily depends on session and LLM
  * vocabulary; the rationale is in the
  * compaction design record.
- * @module @deepseek-ai/dsh-compaction
+ * @module coding-compaction
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'
-import type { Session } from '@deepseek-ai/dsh-session'
-import type { CommandId } from '@deepseek-ai/dsh-commands/brand'
+import type { Session } from 'coding-session'
+import type { CommandId } from 'coding-commands/brand'
 import type { CompactionResult } from './types.ts'
 
 export type { CompactionResult } from './types.ts'

@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-agent",
+  "name": "coding-agent",
   "description": "Agent interface, registry, initiator scope, and event vocabulary for the DeepSeek Harness",
   "version": "0.1.0-rc.8",
   "publishConfig": {
@@ -37,22 +37,22 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-scope": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-system-prompt": "workspace:^",
-    "@deepseek-ai/dsh-typert-protocol": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-llm": "workspace:^",
+    "coding-scope": "workspace:^",
+    "coding-session": "workspace:^",
+    "coding-system-prompt": "workspace:^",
+    "coding-typert-protocol": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-scope": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-system-prompt": "workspace:^",
-    "@deepseek-ai/dsh-typert-protocol": "workspace:^",
-    "@deepseek-ai/dsh-typert-registry": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-llm": "workspace:^",
+    "coding-scope": "workspace:^",
+    "coding-session": "workspace:^",
+    "coding-system-prompt": "workspace:^",
+    "coding-typert-protocol": "workspace:^",
+    "coding-typert-registry": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   }
 }

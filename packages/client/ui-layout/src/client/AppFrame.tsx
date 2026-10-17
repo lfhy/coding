@@ -5,8 +5,8 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, KeyboardEvent, PointerEvent, ReactNode } from 'react'
-import type { InjectFace, PropsRenderSlots, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { InjectFace, PropsRenderSlots, PropsRuntime, PropsStore } from 'coding-client-ui-slots'
+import type { SessionId } from 'coding-session/types'
 import type { WorkbenchLayoutSnapshot } from './service.ts'
 import {
   computeColumns,

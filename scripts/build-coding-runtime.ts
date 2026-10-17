@@ -135,7 +135,7 @@ async function normalizeStaging(staging: string): Promise<void> {
     if (existsSync(destination)) continue
     // vendor 根目录的包名与目录名不同：目录名按依赖名映射。
     const vendorName = dependency.replace(/^@deepseek-ai\//u, '').replace(/^cordis-plugin-/u, '')
-    // 工作区包的目录与 scoped 名不对应（@deepseek-ai/dsh-timeout 在
+    // 工作区包的目录与 scoped 名不对应（coding-timeout 在
     // packages/util/timeout）：直接遍历 packages 二级目录按 name 匹配。
     const workspaceDir = workspacePackageDirs.get(dependency)
     const workspaceCandidates = workspaceDir === undefined ? [] : [workspaceDir]
@@ -231,13 +231,13 @@ async function main(): Promise<void> {
   await mkdir(staging, { recursive: true })
   await mkdir(dist, { recursive: true })
   await deployProductionClosure(staging)
-  const stagedBin = join(staging, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
+  const stagedBin = join(staging, 'node_modules', 'coding', 'lib', 'bin.js')
   if (!existsSync(stagedBin)) {
     throw new Error(`build:runtime: deploy omitted ${stagedBin}`)
   }
   await normalizeStaging(staging)
   await cp(staging, desktopRuntime, { recursive: true, dereference: true })
-  const desktopBin = join(desktopRuntime, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
+  const desktopBin = join(desktopRuntime, 'node_modules', 'coding', 'lib', 'bin.js')
   if (!existsSync(desktopBin)) {
     throw new Error(`build:runtime: desktop runtime omitted ${desktopBin}`)
   }

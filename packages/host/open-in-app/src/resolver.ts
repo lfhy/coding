@@ -13,8 +13,8 @@ import { homedir, platform as osPlatform } from 'node:os'
 import { dirname, isAbsolute, join } from 'node:path'
 import {
   canOpenNativePath, openNativePath, runNativeCommand, type NativeCommandRunner,
-} from '@deepseek-ai/dsh-native-command'
-import { scrubbedParentEnv } from '@deepseek-ai/dsh-subprocess'
+} from 'coding-native-command'
+import { scrubbedParentEnv } from 'coding-subprocess'
 import {
   OPEN_IN_APP_CATALOG, PATH_TOKEN,
   type OpenInAppApp, type OpenInAppLaunch, type OpenInAppLocator, type OpenInAppPlatformSpec,

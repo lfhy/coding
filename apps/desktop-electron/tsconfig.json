@@ -8,7 +8,7 @@
     "strict": true,
     "noEmit": true,
     "paths": {
-      "@deepseek-ai/dsh-attachment/image-processing": ["../../packages/attachment/attachment/src/image-processing.ts"]
+      "coding-attachment/image-processing": ["../../packages/attachment/attachment/src/image-processing.ts"]
     },
     "allowImportingTsExtensions": true,
     "skipLibCheck": true,

@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-client-ui-settings
+# coding-client-ui-settings
 
 设置领域的底座，本身不含任何呈现内容。它提供 `ctx.settingsScope`——每个偏好设置行绑定自己那份持久化命名空间分区所用的宿主传输层；`ctx.settingsSchema`——设置插件使用的同步 schema 重建、校验与不可变路径编辑服务；并声明由注册方填充的设置 slot 类型：`settings.trigger`／`settings.header`／`settings.close`（设置模态框内容）、`settings.action`（内容标题栏中的有序操作）、`settings.section`（每项功能一个分区）、`settings.plugins.tab`（“插件”分区内由各功能持有的页面）和 `settings.onboarding`（由各功能持有的有序页面）。模型和图片识别是两个独立的 `settings.section` 注册项：普通模型设置由外壳提供三列几何，图片识别沿用普通分区几何；欢迎引导由 onboarding 注册方持有独立的提供方与模型两列弹窗。底座不判断模型是否可用，也不决定引导可否完成。它不依赖任何 `ui-*` 呈现包，因此任何持有偏好设置的功能都能够到它；设置**外壳**——`sidebar.settings` 占位方、它的导航与模态框——位于 ui-settings-general，因为外壳一旦依赖 ui-sidebar，就会经 ui-layout 与 ui-theme 闭合出一条引用图环路。外壳自身的契约类型出于同一原因与外壳放在一起。
 

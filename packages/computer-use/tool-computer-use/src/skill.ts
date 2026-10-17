@@ -1,6 +1,6 @@
 /** Portable Computer Use Skill registration. */
 
-import type { SkillRegistration } from '@deepseek-ai/dsh-skill'
+import type { SkillRegistration } from 'coding-skill'
 
 /** Namespaced entry avoids collisions with filesystem Skills in Agent presets. */
 export const COMPUTER_USE_SKILL_NAME = 'dsh-computer-use'

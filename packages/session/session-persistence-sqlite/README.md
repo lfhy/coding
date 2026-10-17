@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-session-persistence-sqlite
+# coding-session-persistence-sqlite
 
 一个可选启用的 SQLite `SessionPersistence` 提供方。它将符合条件的 `assistant/chunk` 连续段存入打包后的物理行，对大型 payload 选择性应用 Zstandard 压缩，并对来源序列进行 delta 编码，同时恢复完全一致的逻辑 `SessionEvent[]`。随产品交付的组合均不选择它；部署方需显式挂载本包并提供数据库路径。
 

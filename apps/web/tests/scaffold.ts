@@ -32,21 +32,21 @@ import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include, { type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import Group from '@deepseek-ai/cordis-plugin-group'
-import { scrubRequestHeaders, stabilizeFixtureMessageIds } from '@deepseek-ai/dsh-acp-snapshot'
+import { scrubRequestHeaders, stabilizeFixtureMessageIds } from 'coding-acp-snapshot'
 import {
   assertEntriesLoaded,
   composeEntries,
   healProfilesModuleFallback,
   loadOverlayPatches,
-} from '@deepseek-ai/dsh-app-boot'
-import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
-import { LlmAdapter } from '@deepseek-ai/dsh-llm'
+} from 'coding-app-boot'
+import { dshHomePath } from 'coding-home-paths'
+import { settingsNamespace } from 'coding-settings'
+import { LlmAdapter } from 'coding-llm'
 import type {
   LlmModelInfo, LlmProviderInfo, LlmResolvedModelInfo, StreamChunk,
-} from '@deepseek-ai/dsh-llm'
-import type { ReplayHandle } from '@deepseek-ai/dsh-llm-replay'
-import { installLlmReplay, parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
+} from 'coding-llm'
+import type { ReplayHandle } from 'coding-llm-replay'
+import { installLlmReplay, parseSessionLog } from 'coding-llm-replay'
 import SessionStore, {
   packChunkRuns,
   SESSION_FORMAT_VERSION,
@@ -54,12 +54,12 @@ import SessionStore, {
   type Session,
   type SessionEvent,
   type SessionHeader,
-} from '@deepseek-ai/dsh-session'
-import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+} from 'coding-session'
+import JsonlSessionPersistence from 'coding-session-persistence-jsonl'
 // Empty type imports carry the webServer/agents/sessionPersistence Context merges.
-import type {} from '@deepseek-ai/dsh-host-webserver'
-import type {} from '@deepseek-ai/dsh-agent'
-import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
+import type {} from 'coding-host-webserver'
+import type {} from 'coding-agent'
+import { provideCmdline } from 'coding-cmdline'
 import { REPO_ROOT, requireDist } from './support.ts'
 
 /** Snapshot mode for the lane, from $DSH_SNAPSHOT (same vocabulary as the other snapshot suites). */
@@ -438,7 +438,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       config: { host: '127.0.0.1', port: 0 },
     },
     // The bundle's web-runtime row resolves the same built dist under test
-    // (apps/web IS @deepseek-ai/dsh-web-frontend); native browser opening and the
+    // (apps/web IS coding-web-frontend); native browser opening and the
     // URL line are disabled because this scaffold owns its Playwright browser.
     // Preserve the composed surface-context choice because a patch replaces
     // the row's complete config.
@@ -460,7 +460,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     // scenario adds only the model-facing tools that exercise those services.
     ...options.cordisTools === true
       ? [{ insert: [
-        { id: 'tool-cordis', name: '@deepseek-ai/dsh-tool-cordis' },
+        { id: 'tool-cordis', name: 'coding-tool-cordis' },
       ] }]
       : [],
     ...options.deepSeekSearch === undefined

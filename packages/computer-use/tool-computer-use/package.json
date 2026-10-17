@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-tool-computer-use",
+  "name": "coding-tool-computer-use",
   "description": "Skill-gated model-facing Computer Use tools over the macOS Computer Use service",
   "version": "0.1.0-rc.8",
   "publishConfig": {
@@ -32,24 +32,24 @@
   "license": "MIT",
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-computer-use": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-skill": "workspace:^",
-    "@deepseek-ai/dsh-tools": "workspace:^"
+    "coding-agent": "workspace:^",
+    "coding-computer-use": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-llm": "workspace:^",
+    "coding-session": "workspace:^",
+    "coding-skill": "workspace:^",
+    "coding-tools": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/cordis-plugin-include": "workspace:^",
     "@deepseek-ai/cordis-plugin-loader": "workspace:^",
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-computer-use": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-skill": "workspace:^",
-    "@deepseek-ai/dsh-tools": "workspace:^"
+    "coding-agent": "workspace:^",
+    "coding-computer-use": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-llm": "workspace:^",
+    "coding-session": "workspace:^",
+    "coding-skill": "workspace:^",
+    "coding-tools": "workspace:^"
   }
 }

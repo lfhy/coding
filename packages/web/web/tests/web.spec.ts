@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { SettingsProvider, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
+import { SettingsProvider, type SettingsNamespace } from 'coding-settings'
 import WebRuntime, {
   WebError,
   WEB_SETTINGS_NAMESPACE,
@@ -9,7 +9,7 @@ import WebRuntime, {
   type WebSearchProvider,
   type WebSearchRequest,
   type WebSearchResult,
-} from '@deepseek-ai/dsh-web'
+} from 'coding-web'
 
 /** A scripted search provider for contract tests. */
 function makeSearchProvider(

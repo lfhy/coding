@@ -17,8 +17,8 @@ import type {
   DynamicCordisResolveAck,
   DynamicCordisRunResolution,
   DynamicCordisRunResponse,
-} from '@deepseek-ai/dsh-api-remotes/client'
-import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
+} from 'coding-api-remotes/client'
+import type { SessionId } from 'coding-client-connection/client'
 import { errorDetails } from './runtime.ts'
 import type { CordisErrorDetails, CordisObservable, DynamicCordisPackageRunner } from './runtime.ts'
 

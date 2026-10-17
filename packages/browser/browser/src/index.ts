@@ -1,7 +1,7 @@
-/** 按会话隔离的浏览器使用能力定义；页面与资源生命周期由提供方实现。 @module @deepseek-ai/dsh-browser */
+/** 按会话隔离的浏览器使用能力定义；页面与资源生命周期由提供方实现。 @module coding-browser */
 
 import { Context, Service } from '@deepseek-ai/cordis'
-import type { SessionId } from '@deepseek-ai/dsh-session'
+import type { SessionId } from 'coding-session'
 import type { BrowserCapture, BrowserCommand, BrowserExpectedTarget, BrowserHumanCommand, BrowserSessionState, BrowserUseErrorCode } from './types.ts'
 
 export type { BrowserCapture, BrowserCommand, BrowserExpectedTarget, BrowserHumanCommand, BrowserHumanTarget, BrowserObservation, BrowserOperationOnlyState, BrowserSessionState, BrowserTabId, BrowserTabSummary, BrowserUseErrorCode } from './types.ts'

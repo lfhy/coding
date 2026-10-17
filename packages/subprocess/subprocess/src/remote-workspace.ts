@@ -2,7 +2,7 @@
  * 桌面端 Remote-SSH 工作区的无凭据 marker 和本地 bridge 调用约定。
  * marker 只把一个本地目录映射到远端根目录；认证 token 只从 Node Host
  * 进程环境读取，绝不写入 marker、目标键或诊断。
- * @module @deepseek-ai/dsh-subprocess/remote-workspace
+ * @module coding-subprocess/remote-workspace
  */
 
 import { open, realpath, stat } from 'node:fs/promises'

@@ -7,17 +7,17 @@
  * 输入区 chip 使用同一风险门控，弹层机制归共享 popup 外壳。General 设置行另行通过
  * host Settings API 写入后续会话的默认预设。
  */
-import type { ConnectionHandle } from '@deepseek-ai/dsh-api-remotes/client'
+import type { ConnectionHandle } from 'coding-api-remotes/client'
 // 仅类型：把 locale 插件的 Context 合并（ctx.locale）带入当前程序。
-import type {} from '@deepseek-ai/dsh-client-locale/client'
+import type {} from 'coding-client-locale/client'
 // 仅类型：设置 slot 类型，本包会注册一个 General 行。
-import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+import type {} from 'coding-client-ui-settings/client'
 // 仅类型：带入 ctx.remote 合并和转发事件键接口，设置失效通知经其 allowlist 传递。
-import type {} from '@deepseek-ai/dsh-api-remotes/client'
-import type { ClientContext, SessionFace } from '@deepseek-ai/dsh-client-runtime/client'
-import type { CommandUiContract, SelectOption } from '@deepseek-ai/dsh-client-ui-commands/client'
-import type { ClientSessionContext } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
-import type { PermissionSelect } from '@deepseek-ai/dsh-permission-presets/client'
+import type {} from 'coding-api-remotes/client'
+import type { ClientContext, SessionFace } from 'coding-client-runtime/client'
+import type { CommandUiContract, SelectOption } from 'coding-client-ui-commands/client'
+import type { ClientSessionContext } from 'coding-client-ui-input-trigger/client'
+import type { PermissionSelect } from 'coding-permission-presets/client'
 import { PermissionRow } from './PermissionRow.tsx'
 import type { PermissionRowInjected } from './PermissionRow.tsx'
 import {

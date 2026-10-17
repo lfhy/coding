@@ -1,7 +1,7 @@
 /** 对话输入负责将附件拒绝原因映射为可操作的提示。 */
 
-import type { ImageAttachmentLimits } from '@deepseek-ai/dsh-attachment'
-import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
+import type { ImageAttachmentLimits } from 'coding-attachment'
+import type { Translate } from 'coding-client-ui-slots'
 import type { ConversationKey } from './locales.ts'
 
 /**

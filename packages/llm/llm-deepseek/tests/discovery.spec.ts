@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import LlmRuntime, { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
-import * as DeepSeek from '@deepseek-ai/dsh-llm-deepseek'
+import LlmRuntime, { ReasoningEffortId } from 'coding-llm'
+import * as DeepSeek from 'coding-llm-deepseek'
 import { discoverModels } from '../src/discovery.ts'
 
 afterEach(() => {

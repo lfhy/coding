@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-client-ui-permission-presets",
+  "name": "coding-client-ui-permission-presets",
   "description": "Permission surfaces: a new-session default in General settings and a current-session /permission popup over the permissions projection",
   "version": "0.1.0-rc.8",
   "publishConfig": {
@@ -32,12 +32,12 @@
   "dsh": {
     "client": {
       "inject": [
-        "@deepseek-ai/dsh-client-connection",
-        "@deepseek-ai/dsh-client-locale",
-        "@deepseek-ai/dsh-client-runtime",
-        "@deepseek-ai/dsh-client-ui-commands",
-        "@deepseek-ai/dsh-api-remotes",
-        "@deepseek-ai/dsh-client-ui-settings"
+        "coding-client-connection",
+        "coding-client-locale",
+        "coding-client-runtime",
+        "coding-client-ui-commands",
+        "coding-api-remotes",
+        "coding-client-ui-settings"
       ],
       "platform": "web"
     }
@@ -49,30 +49,30 @@
   "license": "MIT",
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-api-remotes": "workspace:^",
-    "@deepseek-ai/dsh-client-connection": "workspace:^",
-    "@deepseek-ai/dsh-client-locale": "workspace:^",
-    "@deepseek-ai/dsh-client-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-commands": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-settings": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-input-trigger": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-permission-presets": "workspace:^"
+    "coding-api-remotes": "workspace:^",
+    "coding-client-connection": "workspace:^",
+    "coding-client-locale": "workspace:^",
+    "coding-client-runtime": "workspace:^",
+    "coding-client-ui-commands": "workspace:^",
+    "coding-client-ui-settings": "workspace:^",
+    "coding-client-ui-input-trigger": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-permission-presets": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-api-remotes": "workspace:^",
-    "@deepseek-ai/dsh-client-connection": "workspace:^",
-    "@deepseek-ai/dsh-client-locale": "workspace:^",
-    "@deepseek-ai/dsh-client-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-test-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-commands": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-primitives": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-settings": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-input-trigger": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-slots": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-permission-presets": "workspace:^",
+    "coding-api-remotes": "workspace:^",
+    "coding-client-connection": "workspace:^",
+    "coding-client-locale": "workspace:^",
+    "coding-client-runtime": "workspace:^",
+    "coding-client-test-runtime": "workspace:^",
+    "coding-client-ui-commands": "workspace:^",
+    "coding-client-ui-primitives": "workspace:^",
+    "coding-client-ui-settings": "workspace:^",
+    "coding-client-ui-input-trigger": "workspace:^",
+    "coding-client-ui-slots": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-permission-presets": "workspace:^",
     "@types/react": "~18.3.1",
     "react": "^18.2.0"
   },

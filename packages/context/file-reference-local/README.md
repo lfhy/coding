@@ -1,4 +1,4 @@
-# `@deepseek-ai/dsh-file-reference-local`
+# `coding-file-reference-local`
 
 `ctx.fileReferences` 的本地文件系统实现。它为每个 agent（智能体）维护一个有界的 `WorkspaceFileSearch`，以该会话的 `cwd` 为根目录；缺少该值时回退到宿主进程的 cwd。查询包含 `/` 时，索引会对直接列出的目录项排序；否则会对有界递归索引进行模糊排序。索引永远不会跟随目录符号链接。
 

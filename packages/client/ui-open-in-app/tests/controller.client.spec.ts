@@ -1,7 +1,7 @@
 /** Controller 的目标缓存、本地启动和工作台 wire 校验。 */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { SessionId } from 'coding-session/types'
 import {
   OpenInAppController,
   WORKBENCH_CHOICE_ID,

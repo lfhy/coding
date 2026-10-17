@@ -26,12 +26,12 @@ Conversation Node 组装决策记录完整的引擎模型和设计理由；本�
 
 ```ts ignore-check
 import { createElement } from 'react'
-import type { Branded } from '@deepseek-ai/dsh-brand'
+import type { Branded } from 'coding-brand'
 import type {
   ClientContext, ConversationLocation, ConversationNodeContext,
   ConversationNodeDefinition,
-} from '@deepseek-ai/dsh-client-runtime/client'
-import type { ChatNodeViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
+} from 'coding-client-runtime/client'
+import type { ChatNodeViewProps } from 'coding-client-ui-conversation/client'
 
 type ReviewId = Branded<'ReviewId'>
 
@@ -56,7 +56,7 @@ interface ReviewEndData {
   readonly summary: string
 }
 
-declare module '@deepseek-ai/dsh-session/types' {
+declare module 'coding-session/types' {
   interface SessionEventMap {
     /**
      * Opens one durable review job.
@@ -86,13 +86,13 @@ interface ReviewChatData {
   readonly summary?: string
 }
 
-declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
+declare module 'coding-client-ui-conversation/client' {
   interface ChatNodeDataMap {
     'review-job': ReviewChatData
   }
 }
 
-declare module '@deepseek-ai/dsh-client-runtime/client' {
+declare module 'coding-client-runtime/client' {
   interface ConversationStepDataMap {
     'review-job': ReviewChatData
   }

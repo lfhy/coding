@@ -1,13 +1,13 @@
-# @deepseek-ai/dsh-tool-fs-search
+# coding-tool-fs-search
 
 **面向模型的文件系统发现工具**（`glob`、`grep`）在普通本地 Workspace 中使用打包的 ripgrep 二进制，而不是 `ctx.fs` 提供方方法或系统 `rg` 安装。普通 Node 部署从 `@vscode/ripgrep` 解析平台二进制；pkg 单文件运行时解析与可执行程序共置的 `-rg` 伴随文件，伴随文件缺失时回退到依赖中的二进制。两种载体均打包 ripgrep，因此注册是无条件的，没有加载期可用性探针。本地调用都通过 `ctx.subprocess` seam 以固定 argv 向量 spawn 解析出的二进制（前缀 `--no-config`，使宿主的 `RIPGREP_CONFIG_PATH` 无法向不受约束的 spawn 注入 `--pre` 预处理器；模型控制的值是普通 argv 元素——不存在 shell 层，因此不涉及 shell 引号处理），解析原始 `rg` 输出，并返回相对于工作目录的规范值。Remote-SSH marker 调用通过远端 bridge 的 `/v1/search` 搜索；`basic` 模式使用有界 SFTP 搜索，`agent` 模式使用所选 Go agent 的原生搜索，两者都不针对本地 marker 别名运行 `rg`。本包注入 `tools`、`systemPrompt` 和 `subprocess`，有意**不**注入 `fs`；格式化结果 spill 为可选功能，因此机会性读取 `ctx.spillStore`，调用方式为 `ctx.get()`。
 
 ```ts ignore-check
 // A deployment chooses how over-cap glob pages are selected.
-await ctx.plugin(LocalSubprocessRuntime)                     // @deepseek-ai/dsh-subprocess-local
+await ctx.plugin(LocalSubprocessRuntime)                     // coding-subprocess-local
 await ctx.plugin(ToolFsSearch, { sampleOverCapGlobResults: false })
 // Optional: a spill backend makes capped results fully recoverable.
-await ctx.plugin(LocalSpillStore)                           // @deepseek-ai/dsh-spill-local
+await ctx.plugin(LocalSpillStore)                           // coding-spill-local
 ```
 
 采用 spawn 支持的原因：本地工作区发现天然是由进程支持的 `rg` 工作流；如果把搜索放到 `ctx.fs` 上，就会迫使每个文件系统后端扩展搜索 API。subprocess seam 负责本地 spawn 执行、进程树终止、环境清理和有界输出捕获；本包负责 schema、参数校验、argv 构造、解析、保留、格式化结果 spill 和超时声明。对于 Remote-SSH marker，远端搜索实现负责 glob／正则匹配、VCS 排除及其根目录／响应上限，本包仍保留相同的面向模型 schema 和结果保留行为。工具绝不暴露后台任务——只有在本地 `rg` 或远程搜索完成、被中止或失败后，调用才会返回。
@@ -27,7 +27,7 @@ Node 部署在受支持的 macOS、Linux 与 Windows x64/arm64 目标上获得 `
 | `grepMaxMatches` | `250` | 一次 `grep` 调用内联保留的最大平铺匹配数（与 Claude Code 的 `GrepTool` `head_limit` 相同）；后续匹配写入格式化 spill 产物。 |
 | `grepMaxLineBytes` | `2000` | 每条匹配行预览的字节上限；截断会保留 UTF-8 边界，并标记为 `(line truncated)`。 |
 | `rawOutputMaxBytes` | `20000000` | 搜索可接受的完整本地 `rg` stdout 或远端搜索响应上限（与 Claude Code 的 ripgrep 原始 buffer 相同）；更大的结果以 `SEARCH_RAW_OUTPUT_OVERFLOW` 失败。 |
-| `timeoutMs` | `30000` | 附加到两个工具定义上的协作式工具调用预算，由 `@deepseek-ai/dsh-tool-call-timeout-policy` 通过 `exec.signal` 强制执行；subprocess seam 的终止升级提供硬终止。 |
+| `timeoutMs` | `30000` | 附加到两个工具定义上的协作式工具调用预算，由 `coding-tool-call-timeout-policy` 通过 `exec.signal` 强制执行；subprocess seam 的终止升级提供硬终止。 |
 | `graceMs` | `3000` | subprocess seam 在 `timeoutMs` 之外授予的终止升级宽限期须为正值；超过后搜索以 `SEARCH_ABORTED` 失败；该宽限期不得大于 [`MAX_TIMER_DELAY_MS`](../../util/timeout/README.md)。 |
 | `stderrMaxBytes` | `65536` | `rg` stderr 的诊断尾部预算，经 subprocess seam 的 collect 形态捕获；lossy 读取只保留尾部（标记 `[stderr truncated]`）。 |
 

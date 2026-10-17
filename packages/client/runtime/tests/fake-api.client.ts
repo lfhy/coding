@@ -5,9 +5,9 @@ import type {
   ClientResponse, HostFrame, IApiClient, ModelSelection, MuxFrame,
   RpcError, RpcReceipt, RpcRequest, RpcResponse, SessionId, SessionModels, SessionSearchItem, SkillEntry,
   WorkspaceId, WorkspaceView,
-} from '@deepseek-ai/dsh-api-remotes/client'
-import { RpcId } from '@deepseek-ai/dsh-client-connection/client'
-import type { RequestPayload, ResponseValue } from '@deepseek-ai/dsh-host-apiproxy/api'
+} from 'coding-api-remotes/client'
+import { RpcId } from 'coding-client-connection/client'
+import type { RequestPayload, ResponseValue } from 'coding-host-apiproxy/api'
 import type { SessionRemotes } from '../src/client/sessions/remotes.ts'
 
 /** Programmable-default workspace row (branded id, ISO-ish times). */

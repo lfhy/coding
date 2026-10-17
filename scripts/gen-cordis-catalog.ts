@@ -24,8 +24,8 @@ import {
   renderPageRegion,
   REGION_BEGIN,
   REGION_END,
-} from '@deepseek-ai/dsh-typert-generator'
-import type { CordisCatalogPolicy } from '@deepseek-ai/dsh-typert-generator'
+} from 'coding-typert-generator'
+import type { CordisCatalogPolicy } from 'coding-typert-generator'
 import { renderCordisCoreApiPages } from './cordis-core-api.ts'
 import { contextKeyMap, contextMergeFiles, eventNameList } from './cordis-walk.ts'
 

@@ -2,7 +2,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { BrowserWindow, WebContentsView } from 'electron'
-import type { BrowserCapture, BrowserCommand, BrowserExpectedTarget, BrowserHumanCommand, BrowserHumanTarget, BrowserObservation, BrowserSessionState, BrowserTabId, BrowserTabSummary, BrowserUseErrorCode } from '@deepseek-ai/dsh-browser'
+import type { BrowserCapture, BrowserCommand, BrowserExpectedTarget, BrowserHumanCommand, BrowserHumanTarget, BrowserObservation, BrowserSessionState, BrowserTabId, BrowserTabSummary, BrowserUseErrorCode } from 'coding-browser'
 import { fitBrowserPng } from './browser-image.ts'
 import { createBrowserCursorOverlay } from './browser-cursor-overlay.ts'
 import { createBrowserInputOverlay } from './browser-input-overlay.ts'

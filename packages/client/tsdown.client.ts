@@ -58,7 +58,7 @@ function styleInjectionModule(
  * Everything else under @deepseek-ai/* is either a module-table entry
  * (external) or a leak the purity gate rejects.
  */
-export const INLINE_SAFE = /^(?:@deepseek-ai\/dsh-(host-apiproxy|file-reference|session|llm|tools|brand)(\/|$)|@deepseek-ai\/dsh-host-open-in-app\/shared$)/
+export const INLINE_SAFE = /^(?:coding-(host-apiproxy|file-reference|session|llm|tools|brand)(\/|$)|coding-host-open-in-app\/shared$)/
 
 /**
  * Vendored framework libraries: rescoped into @deepseek-ai, so the gate below
@@ -69,7 +69,7 @@ export const INLINE_SAFE = /^(?:@deepseek-ai\/dsh-(host-apiproxy|file-reference|
 const VENDORED_LIBRARY = /^@deepseek-ai\/(cosmokit|schemastery)(\/|$)/
 
 /** Generated descriptor/codec contribution with no shared runtime identity. */
-const GENERATED_REMOTE = /^@deepseek-ai\/dsh-[a-z0-9]+(?:-[a-z0-9]+)*\/remote$/
+const GENERATED_REMOTE = /^coding-[a-z0-9]+(?:-[a-z0-9]+)*\/remote$/
 
 /**
  * Workspace mode replaces an empty config array with the root defaults. A

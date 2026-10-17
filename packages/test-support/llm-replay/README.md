@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-llm-replay
+# coding-llm-replay
 
 用于无密钥快照测试的 LLM（大语言模型）回放插件。它根据已记录的**会话 JSONL** fixture（测试前置数据）重建模型流，使测试无需 API 密钥即可针对固定的模型 transcript（文本记录）启动真实 agent（智能体）。配置 `providers` 后，它会注册仅用于回放的适配器，其模型目录可供测试模型发现功能的场景使用；未配置 `providers` 时，它会安装无需模型发现功能的测试所用 catch-all `llm/stream` waterfall（瀑布式事件）。
 
@@ -32,7 +32,7 @@ fixture 就是持久化的会话日志（`<scenario>/session.jsonl`）。其 `as
 
 ```yaml
 - id: llm-replay
-  name: '@deepseek-ai/dsh-llm-replay'
+  name: 'coding-llm-replay'
   config:
     providers:
       - id: deepseek-official

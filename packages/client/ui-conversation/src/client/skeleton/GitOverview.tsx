@@ -4,9 +4,9 @@ import { createPortal } from 'react-dom'
 import {
   IconBranchOutline16, IconChevronRightOutline14, IconDownloadOutline16, IconListPenOutline16,
   IconRefreshOutline16, Modal, Toast,
-} from '@deepseek-ai/dsh-client-ui-primitives'
-import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+} from 'coding-client-ui-primitives'
+import type { PropsLocale } from 'coding-client-ui-slots'
+import type { SessionId } from 'coding-client-runtime/client'
 import css from './GitOverview.module.css'
 
 interface GitStatusView {

@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-terminal-bash",
+  "name": "coding-terminal-bash",
   "description": "Persistent shell PTY backend over the DeepSeek Harness subprocess terminal primitive",
   "version": "0.1.0-rc.8",
   "publishConfig": {
@@ -32,29 +32,29 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-terminal": "workspace:^",
-    "@deepseek-ai/dsh-sandbox": "workspace:^",
-    "@deepseek-ai/dsh-sandbox-policy": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-subprocess": "workspace:^",
+    "coding-agent": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-terminal": "workspace:^",
+    "coding-sandbox": "workspace:^",
+    "coding-sandbox-policy": "workspace:^",
+    "coding-session": "workspace:^",
+    "coding-subprocess": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "dependencies": {
-    "@deepseek-ai/dsh-pwsh-local": "workspace:^",
+    "coding-pwsh-local": "workspace:^",
     "@deepseek-ai/schemastery": "workspace:^",
     "@xterm/headless": "^6.0.0"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-terminal": "workspace:^",
-    "@deepseek-ai/dsh-sandbox": "workspace:^",
-    "@deepseek-ai/dsh-sandbox-policy": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-subprocess": "workspace:^",
-    "@deepseek-ai/dsh-subprocess-local": "workspace:^",
+    "coding-agent": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-terminal": "workspace:^",
+    "coding-sandbox": "workspace:^",
+    "coding-sandbox-policy": "workspace:^",
+    "coding-session": "workspace:^",
+    "coding-subprocess": "workspace:^",
+    "coding-subprocess-local": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   }
 }

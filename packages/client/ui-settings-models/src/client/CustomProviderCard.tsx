@@ -5,7 +5,7 @@
 
 import { useId, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { IApiClient, SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
+import type { IApiClient, SettingsNamespaceView } from 'coding-api-remotes/client'
 import { apiKeyFailure } from './apiKey.ts'
 import { generateChannelId } from './channel-id.ts'
 import { EditorFooter } from './EditorFooter.tsx'

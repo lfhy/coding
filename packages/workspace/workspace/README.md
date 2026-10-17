@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-workspace
+# coding-workspace
 
 DeepSeek Harness 的 Workspace 实体注册表（`ctx.workspaceRegistry`）：通过领域数据形式存储持久 workspace 记录、稳定 workspace 顺序和按新到旧排列的候选会话索引。消费方看到 `Workspace` 接口；实体实现保持包私有。
 

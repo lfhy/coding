@@ -3,9 +3,9 @@
 import { readFile, readdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { normalizeSessionLog, normalizeStdout } from '@deepseek-ai/dsh-acp-snapshot'
-import { LOADER_SMOKE_TEST_TIMEOUT_MS, runLoaderSmoke } from '@deepseek-ai/dsh-loader-smoke'
-import { decodeStorageRecord, packChunkRuns } from '@deepseek-ai/dsh-session'
+import { normalizeSessionLog, normalizeStdout } from 'coding-acp-snapshot'
+import { LOADER_SMOKE_TEST_TIMEOUT_MS, runLoaderSmoke } from 'coding-loader-smoke'
+import { decodeStorageRecord, packChunkRuns } from 'coding-session'
 import { describe, expect, it } from 'vitest'
 
 const fixtureDir = fileURLToPath(new URL('./snapshots/browser-unrestricted-network', import.meta.url))

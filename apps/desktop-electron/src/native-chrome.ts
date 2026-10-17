@@ -1,6 +1,6 @@
 /**
  * 桌面原生菜单与 macOS 状态栏入口；只对主进程持有的 Host 窗口执行固定动作。
- * @module @deepseek-ai/dsh-desktop-electron/native-chrome
+ * @module coding-desktop-electron/native-chrome
  */
 
 import { app, dialog, Menu, nativeImage, Tray } from 'electron'

@@ -50,15 +50,15 @@ async function fixture(): Promise<PackagingPaths> {
     await file(join(contents, 'MacOS', `Electron Helper${suffix}`), Buffer.from('cffaedfe', 'hex'))
   }
   await file(join(paths.shell, 'package.json'), `${JSON.stringify({
-    name: '@deepseek-ai/dsh-desktop-electron', version, type: 'module', main: 'lib/main.js',
+    name: 'coding-desktop-electron', version, type: 'module', main: 'lib/main.js',
     devDependencies: { electron: '44.0.0' },
   })}\n`)
   await file(join(paths.shell, 'lib', 'main.js'), 'console.log("test")\n')
   await file(join(paths.shell, 'lib', 'preload.cjs'))
   await file(join(paths.runtime, 'coding-node-darwin-arm64'), Buffer.from('cffaedfe', 'hex'))
   await file(join(paths.runtime, 'metadata.json'), `${JSON.stringify({ version, sha256: '0'.repeat(64) })}\n`)
-  await file(join(paths.runtime, 'runtime', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js'))
-  await file(join(paths.runtime, 'runtime', 'node_modules', '@deepseek-ai', 'dsh', 'package.json'), `${JSON.stringify({ version })}\n`)
+  await file(join(paths.runtime, 'runtime', 'node_modules', 'coding', 'lib', 'bin.js'))
+  await file(join(paths.runtime, 'runtime', 'node_modules', 'coding', 'package.json'), `${JSON.stringify({ version })}\n`)
   await file(paths.helper, Buffer.from('cffaedfe', 'hex'))
   await file(paths.icon)
   await file(paths.nativeIcon, 'png-fixture')
@@ -70,10 +70,10 @@ async function fixture(): Promise<PackagingPaths> {
   const runtimeModules = join(paths.runtime, 'runtime', 'node_modules')
   await file(join(runtimeModules, 'playwright', 'package.json'), '{"version":"1.61.1"}\n')
   await file(join(runtimeModules, 'playwright-core', 'package.json'), '{"version":"1.61.1"}\n')
-  await file(join(runtimeModules, '@deepseek-ai', 'dsh-browser-playwright', 'lib', 'index.js'))
-  const electronProvider = join(runtimeModules, '@deepseek-ai', 'dsh-browser-electron')
+  await file(join(runtimeModules, 'coding-browser-playwright', 'lib', 'index.js'))
+  const electronProvider = join(runtimeModules, 'coding-browser-electron')
   await file(join(electronProvider, 'package.json'), `${JSON.stringify({
-    name: '@deepseek-ai/dsh-browser-electron',
+    name: 'coding-browser-electron',
     exports: { './protocol': { default: './lib/types/protocol.js' } },
   })}\n`)
   await file(join(electronProvider, 'lib', 'index.js'))
@@ -140,7 +140,7 @@ describe('macOS Electron application packaging', () => {
 
   it.each([
     'import WebSocket from "ws"',
-    'import { parseBridgeFrame } from "@deepseek-ai/dsh-browser-electron/protocol"',
+    'import { parseBridgeFrame } from "coding-browser-electron/protocol"',
     'import "./unpacked-chunk.js"',
     'await import("ws")',
   ])('rejects an unresolved main-process import before replacing an existing app: %s', async (source) => {
@@ -252,9 +252,9 @@ describe('macOS Electron application packaging', () => {
     expect(extractFile(archive, 'lib/main.js').toString('utf8')).toBe('console.log("test")\n')
     expect(listPackage(archive, { isPack: false })).toContain('/lib/preload.cjs')
     for (const item of ['coding-host', 'coding-electron-helper', 'metadata.json',
-      'runtime/node_modules/@deepseek-ai/dsh/lib/bin.js',
-      'runtime/node_modules/@deepseek-ai/dsh-browser-electron/lib/index.js',
-      'runtime/node_modules/@deepseek-ai/dsh-browser-electron/lib/types/protocol.js',
+      'runtime/node_modules/coding/lib/bin.js',
+      'runtime/node_modules/coding-browser-electron/lib/index.js',
+      'runtime/node_modules/coding-browser-electron/lib/types/protocol.js',
       'runtime/node_modules/ws/index.js', 'runtime/node_modules/playwright/package.json',
       'runtime/node_modules/playwright-core/package.json', 'remote-agent/manifest.json', 'CodingIcon.png']) {
       expect((await stat(join(resources, item))).isFile()).toBe(true)
@@ -317,7 +317,7 @@ describe('macOS Electron application packaging', () => {
     await file(join(paths.output, 'previous.txt'), 'preserved')
     const { run, calls } = fakeCommands()
     const modules = join(paths.runtime, 'runtime', 'node_modules')
-    const provider = join(modules, '@deepseek-ai', 'dsh-browser-electron')
+    const provider = join(modules, 'coding-browser-electron')
     const required = [join(provider, 'lib', 'index.js'), join(provider, 'lib', 'types', 'protocol.js'),
       join(modules, 'ws', 'index.js')]
     for (const path of required) {
@@ -327,7 +327,7 @@ describe('macOS Electron application packaging', () => {
       await file(path)
     }
     await file(join(provider, 'package.json'), JSON.stringify({
-      name: '@deepseek-ai/dsh-browser-electron',
+      name: 'coding-browser-electron',
       exports: { './protocol': { default: './lib/protocol.js' } },
     }))
     await expect(packageElectronMacosApp(paths, { run, platform: 'darwin', arch: 'arm64' }))

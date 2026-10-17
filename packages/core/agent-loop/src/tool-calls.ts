@@ -12,9 +12,9 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { assertNever, createToolResultMessage, type ToolCallBlock } from '@deepseek-ai/dsh-llm'
-import type { Session, UserMessage } from '@deepseek-ai/dsh-session'
-import { TOOL_ABORTED_BEFORE_DISPATCH, TOOL_RUNTIME_SCHEDULER, type ToolExecutionInput, type ToolExecutionMode, type ToolExecutionResult, type ToolRunContext } from '@deepseek-ai/dsh-tools'
+import { assertNever, createToolResultMessage, type ToolCallBlock } from 'coding-llm'
+import type { Session, UserMessage } from 'coding-session'
+import { TOOL_ABORTED_BEFORE_DISPATCH, TOOL_RUNTIME_SCHEDULER, type ToolExecutionInput, type ToolExecutionMode, type ToolExecutionResult, type ToolRunContext } from 'coding-tools'
 
 /** One tool call after argument parsing, ready to schedule. */
 interface PlannedCall {

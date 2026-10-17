@@ -6,15 +6,15 @@
  * `turn/end` 就停。因此恢复、fork、压缩遮蔽后的计数都一致，插件不持有顺序敏感的
  * 内存状态，也不会因为漏记一次事件而少提醒或多提醒。
  *
- * @module @deepseek-ai/dsh-progress-reminder
+ * @module coding-progress-reminder
  */
 
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import type { PreStepDecision } from '@deepseek-ai/dsh-agent'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { UserMessage } from '@deepseek-ai/dsh-llm'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import type { PreStepDecision } from 'coding-agent'
+import { createUserMessage } from 'coding-llm'
+import type { UserMessage } from 'coding-llm'
+import type { SessionEvent } from 'coding-session'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'progress-reminder'

@@ -1,7 +1,7 @@
 /**
  * Electron 桌面入口：Go helper 独占受管 Host 和 Remote-SSH，主进程拥有
  * 窗口、浏览器 guest、托盘及逐调用授权的最小 preload IPC。
- * @module @deepseek-ai/dsh-desktop-electron/main
+ * @module coding-desktop-electron/main
  */
 
 import { mkdir } from 'node:fs/promises'
@@ -9,7 +9,7 @@ import { homedir } from 'node:os'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { app, BrowserWindow, dialog } from 'electron'
-import { defaultCodingHome } from '@deepseek-ai/dsh-home-paths'
+import { defaultCodingHome } from 'coding-home-paths'
 import { createBrowserBridge, type BrowserBridge } from './browser-bridge.ts'
 import { createBrowserGuestManager, type BrowserGuestManager } from './browser-guest.ts'
 import { installBrowserIpc } from './browser-ipc.ts'

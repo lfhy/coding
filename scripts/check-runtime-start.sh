@@ -11,7 +11,7 @@ for candidate in dist/coding-runtime/coding-node-*; do
     break
   fi
 done
-entry=dist/coding-runtime/runtime/node_modules/@deepseek-ai/dsh/lib/bin.js
+entry=dist/coding-runtime/runtime/node_modules/coding/lib/bin.js
 if [ -z "$host" ] || [ ! -f "$entry" ]; then
   echo "check-runtime-start: 缺少预展开桌面运行时，先运行 make runtime" >&2
   exit 1

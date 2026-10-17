@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-client-ui-open-in-app",
+  "name": "coding-client-ui-open-in-app",
   "description": "Session workspace launcher, file workbench, and retained browser terminal",
   "version": "0.1.0-rc.8",
   "publishConfig": {
@@ -43,11 +43,11 @@
   "dsh": {
     "client": {
       "inject": [
-        "@deepseek-ai/dsh-client-locale",
-        "@deepseek-ai/dsh-client-connection",
-        "@deepseek-ai/dsh-client-runtime",
-        "@deepseek-ai/dsh-client-ui-conversation",
-        "@deepseek-ai/dsh-client-ui-layout"
+        "coding-client-locale",
+        "coding-client-connection",
+        "coding-client-runtime",
+        "coding-client-ui-conversation",
+        "coding-client-ui-layout"
       ],
       "platform": "web"
     }
@@ -60,30 +60,30 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-client-connection": "workspace:^",
-    "@deepseek-ai/dsh-client-locale": "workspace:^",
-    "@deepseek-ai/dsh-client-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-conversation": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-layout": "workspace:^",
-    "@deepseek-ai/dsh-host-apiproxy": "workspace:^",
-    "@deepseek-ai/dsh-host-open-in-app": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^"
+    "coding-client-connection": "workspace:^",
+    "coding-client-locale": "workspace:^",
+    "coding-client-runtime": "workspace:^",
+    "coding-client-ui-conversation": "workspace:^",
+    "coding-client-ui-layout": "workspace:^",
+    "coding-host-apiproxy": "workspace:^",
+    "coding-host-open-in-app": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-session": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-client-connection": "workspace:^",
-    "@deepseek-ai/dsh-client-locale": "workspace:^",
-    "@deepseek-ai/dsh-client-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-test-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-conversation": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-layout": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-primitives": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-slots": "workspace:^",
-    "@deepseek-ai/dsh-host-apiproxy": "workspace:^",
-    "@deepseek-ai/dsh-host-open-in-app": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
+    "coding-client-connection": "workspace:^",
+    "coding-client-locale": "workspace:^",
+    "coding-client-runtime": "workspace:^",
+    "coding-client-test-runtime": "workspace:^",
+    "coding-client-ui-conversation": "workspace:^",
+    "coding-client-ui-layout": "workspace:^",
+    "coding-client-ui-primitives": "workspace:^",
+    "coding-client-ui-slots": "workspace:^",
+    "coding-host-apiproxy": "workspace:^",
+    "coding-host-open-in-app": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-session": "workspace:^",
     "@testing-library/react": "^16.1.0",
     "@types/react": "~18.3.1",
     "@types/react-dom": "~18.3.0",

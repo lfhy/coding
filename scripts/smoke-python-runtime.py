@@ -84,9 +84,9 @@ MINIMAL_SNAPSHOT_FILENAMES = ("model-visible.json",)
 RUNTIME_CONTEXT_PREFIX = "Current runtime context"
 CUSTOM_CORDIS = """\
 - id: sdk-jsonrpc-server
-  name: '@deepseek-ai/dsh-sdk-jsonrpc-server'
+  name: 'coding-sdk-jsonrpc-server'
 - id: agent-core
-  name: '@deepseek-ai/dsh-agent-spine-demo'
+  name: 'coding-agent-spine-demo'
   config:
     workspaceContext: false
     skills:
@@ -95,38 +95,38 @@ CUSTOM_CORDIS = """\
     tools:
       mode: both
 - id: sessions
-  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  name: 'coding-session-persistence-jsonl'
   config:
     root: !!js process.env.DSH_SESSION_ROOT
     compression: 'none'
 - id: code-runtime
-  name: '@deepseek-ai/dsh-code-runtime-worker-thread'
+  name: 'coding-code-runtime-worker-thread'
 - id: subagents
-  name: '@deepseek-ai/dsh-subagent'
+  name: 'coding-subagent'
 - id: subagent-spawn-in-process
-  name: '@deepseek-ai/dsh-subagent-spawn-in-process'
+  name: 'coding-subagent-spawn-in-process'
   config:
     providerName: spawn
 - id: subagent-tool
-  name: '@deepseek-ai/dsh-tool-subagent'
+  name: 'coding-tool-subagent'
   config:
     provider: spawn
 - id: workflow-engine
-  name: '@deepseek-ai/dsh-workflow-worker-thread'
+  name: 'coding-workflow-worker-thread'
   config:
     provider: spawn
 - id: workflow-tool
-  name: '@deepseek-ai/dsh-tool-workflow'
+  name: 'coding-tool-workflow'
 - id: cordis-host-runner
-  name: '@deepseek-ai/dsh-cordis-host-runner'
+  name: 'coding-cordis-host-runner'
 - id: cordis-tool
-  name: '@deepseek-ai/dsh-tool-cordis'
+  name: 'coding-tool-cordis'
 """
 FS_SEARCH_CORDIS = """\
 - id: sdk-jsonrpc-server
-  name: '@deepseek-ai/dsh-sdk-jsonrpc-server'
+  name: 'coding-sdk-jsonrpc-server'
 - id: agent-core
-  name: '@deepseek-ai/dsh-agent-spine-demo'
+  name: 'coding-agent-spine-demo'
   config:
     workspaceContext: false
     skills:
@@ -134,14 +134,14 @@ FS_SEARCH_CORDIS = """\
     toolBash: false
     toolJobs: false
 - id: sessions
-  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  name: 'coding-session-persistence-jsonl'
   config:
     root: !!js process.env.DSH_SESSION_ROOT
     compression: 'none'
 - id: subprocess
-  name: '@deepseek-ai/dsh-subprocess-local'
+  name: 'coding-subprocess-local'
 - id: fs-search
-  name: '@deepseek-ai/dsh-tool-fs-search'
+  name: 'coding-tool-fs-search'
   config:
     sampleOverCapGlobResults: false
 """
@@ -228,11 +228,11 @@ def mcp_cordis(server_script: Path) -> str:
     return json.dumps([
         {
             "id": "sdk-jsonrpc-server",
-            "name": "@deepseek-ai/dsh-sdk-jsonrpc-server",
+            "name": "coding-sdk-jsonrpc-server",
         },
         {
             "id": "agent-core",
-            "name": "@deepseek-ai/dsh-agent-spine-demo",
+            "name": "coding-agent-spine-demo",
             "config": {
                 "workspaceContext": False,
                 "skills": {"enabled": False},
@@ -241,12 +241,12 @@ def mcp_cordis(server_script: Path) -> str:
         },
         {
             "id": "sessions",
-            "name": "@deepseek-ai/dsh-session-persistence-jsonl",
+            "name": "coding-session-persistence-jsonl",
             "config": {"root": "./sessions", "compression": "none"},
         },
         {
             "id": "mcp-fixture",
-            "name": "@deepseek-ai/dsh-mcp-client",
+            "name": "coding-mcp-client",
             "config": {
                 "serverName": "fixture",
                 "transport": "stdio",

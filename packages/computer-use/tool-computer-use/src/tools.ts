@@ -1,7 +1,7 @@
 /** Focused model-facing Computer Use Tool definitions. */
 
-import { createUserMessage, type ContentBlock } from '@deepseek-ai/dsh-llm'
-import { defineTool, type JsonValue, type ToolDefinition, type ToolRunContext, type ValueSchemaSpec } from '@deepseek-ai/dsh-tools'
+import { createUserMessage, type ContentBlock } from 'coding-llm'
+import { defineTool, type JsonValue, type ToolDefinition, type ToolRunContext, type ValueSchemaSpec } from 'coding-tools'
 import {
   ComputerConfirmationToken,
   ComputerObservationId,
@@ -9,7 +9,7 @@ import {
   type ComputerArtifact,
   type ComputerUseContext,
   type ComputerUseService,
-} from '@deepseek-ai/dsh-computer-use'
+} from 'coding-computer-use'
 
 function renderJson(_args: unknown, value: unknown): ContentBlock[] {
   return [{ type: 'text', text: JSON.stringify(value, null, 2) }]

@@ -7,10 +7,10 @@
 
 import type { z as zCore } from 'zod'
 type ZodIssue = zCore.core.$ZodIssue
-import type { Branded } from '@deepseek-ai/dsh-brand'
-import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { BrowserUseErrorCode } from '@deepseek-ai/dsh-browser/types'
+import type { Branded } from 'coding-brand'
+import type { MessageId } from 'coding-llm/brand'
+import type { SessionId } from 'coding-session/types'
+import type { BrowserUseErrorCode } from 'coding-browser/types'
 
 /**
  * Message correlation id: the initiator mints it on a request; a response

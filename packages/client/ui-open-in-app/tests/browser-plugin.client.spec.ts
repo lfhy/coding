@@ -2,10 +2,10 @@
 
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createSnapshotStore, SlotRegistry, type SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
-import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import { createSnapshotStore, SlotRegistry, type SessionListState } from 'coding-client-runtime/client'
+import { LocaleRuntime } from 'coding-client-locale/client'
+import type { SessionId } from 'coding-session/types'
+import type {} from 'coding-client-ui-conversation/client'
 
 import { apply, inject, type OpenInAppActionInjected } from '../src/client/index.ts'
 import { apply as nodeApply } from '../src/index.ts'

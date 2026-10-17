@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-client-ui-commands
+# coding-client-ui-commands
 
 客户端命令 API（`ctx.commandUi`）：以会话为 key 的命令目录缓存、带 `matchSpace`／`matchEnter` 决策钩子的 `/` 命令 source、三类派发（`execute`／`popupSelect`／`leadingInput`），以及面向业务包的 popupSelect 注册。Web 命令 设计记录 记录了这项决策。
 

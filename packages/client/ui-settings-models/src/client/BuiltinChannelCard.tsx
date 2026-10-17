@@ -6,7 +6,7 @@
 
 import type { ReactNode } from 'react'
 import type { CatalogModel } from './store.ts'
-import { IconCheckOutline14, IconCloseOutline16, IconQuestionOutline14 } from '@deepseek-ai/dsh-client-ui-icons'
+import { IconCheckOutline14, IconCloseOutline16, IconQuestionOutline14 } from 'coding-client-ui-icons'
 import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
 

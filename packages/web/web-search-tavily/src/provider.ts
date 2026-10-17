@@ -1,10 +1,10 @@
-/** Tavily `/search` 的 Host HTTP 适配器；响应在映射为 web 来源前逐字段校验。@module @deepseek-ai/dsh-web-search-tavily/provider */
+/** Tavily `/search` 的 Host HTTP 适配器；响应在映射为 web 来源前逐字段校验。@module coding-web-search-tavily/provider */
 
 import { isIP } from 'node:net'
 import { fetch as proxyFetch, ProxyAgent } from 'undici'
-import { WebError } from '@deepseek-ai/dsh-web'
-import type { WebSearchProvider, WebSearchRequest, WebSearchResult, WebSearchSource } from '@deepseek-ai/dsh-web'
-import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
+import { WebError } from 'coding-web'
+import type { WebSearchProvider, WebSearchRequest, WebSearchResult, WebSearchSource } from 'coding-web'
+import type { CredentialRef } from 'coding-credentials'
 
 /** 稳定的搜索提供方 id。 */
 export const TAVILY_PROVIDER_ID = 'tavily'

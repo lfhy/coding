@@ -1,13 +1,13 @@
 /**
- * Package-owned invariant companion for `@deepseek-ai/dsh-spill`.
- * @module @deepseek-ai/dsh-spill/invariant
+ * Package-owned invariant companion for `coding-spill`.
+ * @module coding-spill/invariant
  */
 
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
-import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
+import type { InvariantInstaller } from 'coding-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-spill'
+const PACKAGE_NAME = 'coding-spill'
 
 /** Cordis companion plugin name. */
 export const name = 'spill-invariant'

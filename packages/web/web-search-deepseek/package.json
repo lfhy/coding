@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-web-search-deepseek",
+  "name": "coding-web-search-deepseek",
   "description": "DeepSeek-backed search provider (native web_search via the Anthropic-compatible API) for the DeepSeek Harness web capability seam (ctx.web)",
   "version": "0.1.0-rc.8",
   "publishConfig": {
@@ -32,28 +32,28 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-credentials": "workspace:^",
-    "@deepseek-ai/dsh-launch-environment": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-web": "workspace:^",
+    "coding-agent": "workspace:^",
+    "coding-credentials": "workspace:^",
+    "coding-launch-environment": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-session": "workspace:^",
+    "coding-web": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-settings": "workspace:^"
+    "coding-settings": "workspace:^"
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "workspace:^",
     "undici": "^8.10.2"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-credentials": "workspace:^",
-    "@deepseek-ai/dsh-credentials-local": "workspace:^",
-    "@deepseek-ai/dsh-launch-environment": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-web": "workspace:^",
+    "coding-agent": "workspace:^",
+    "coding-credentials": "workspace:^",
+    "coding-credentials-local": "workspace:^",
+    "coding-launch-environment": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-session": "workspace:^",
+    "coding-web": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-settings": "workspace:^"
+    "coding-settings": "workspace:^"
   }
 }

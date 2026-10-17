@@ -9,16 +9,16 @@
 
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import SessionStore from '@deepseek-ai/dsh-session'
-import AgentRegistry from '@deepseek-ai/dsh-agent'
-import type { Agent, AgentHandle, CreateAgentOptions } from '@deepseek-ai/dsh-agent'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import SessionTitleService from '@deepseek-ai/dsh-session-title'
-import UserQuestionService from '@deepseek-ai/dsh-user-questions'
-import type { Session, SessionId } from '@deepseek-ai/dsh-session'
-import type { RpcRequest } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
-import { RpcId } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
-import { createApiProxy } from '@deepseek-ai/dsh-host-apiproxy'
+import SessionStore from 'coding-session'
+import AgentRegistry from 'coding-agent'
+import type { Agent, AgentHandle, CreateAgentOptions } from 'coding-agent'
+import { createUserMessage } from 'coding-llm'
+import SessionTitleService from 'coding-session-title'
+import UserQuestionService from 'coding-user-questions'
+import type { Session, SessionId } from 'coding-session'
+import type { RpcRequest } from 'coding-host-apiproxy/api/rpc'
+import { RpcId } from 'coding-host-apiproxy/api/rpc'
+import { createApiProxy } from 'coding-host-apiproxy'
 
 const sid = (id: string): SessionId => id as SessionId
 

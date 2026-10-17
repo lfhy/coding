@@ -1,9 +1,9 @@
 /** 图标包只渲染 React 组件，没有独立的 Cordis 状态。 */
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
-import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
+import type { InvariantInstaller } from 'coding-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-client-ui-icons'
+const PACKAGE_NAME = 'coding-client-ui-icons'
 
 /** Cordis companion 插件名。 */
 export const name = 'client-ui-icons-invariant'

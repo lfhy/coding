@@ -8,7 +8,7 @@
  * 其余头（双会话头、裸 40 位 hex 项目头、以及不带 `x-opencode-request`）沿用
  * 参考实现在 2026-10-14 更严的门下验证过的形态，即使当前放宽也照旧发送。
  *
- * @module @deepseek-ai/dsh-llm-opencode/ids
+ * @module coding-llm-opencode/ids
  */
 
 import { createHash, randomBytes } from 'node:crypto'

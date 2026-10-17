@@ -1,6 +1,6 @@
 # Coding
 
-Coding 是构建在 [DeepSeek AI](https://deepseek.com) 开发的 DeepSeek Harness（`dsh`）运行时之上的个人 AI 编程客户端。产品名、应用名和 Linux 命令均为 `Coding` / `coding`；内部 `@deepseek-ai/dsh` 包、插件、协议标识和 `$DSH_HOME` 数据保持与 DeepSeek Harness 运行时兼容。
+Coding 是构建在 [DeepSeek AI](https://deepseek.com) 开发的 DeepSeek Harness（`dsh`）运行时之上的个人 AI 编程客户端。产品名、应用名和 Linux 命令均为 `Coding` / `coding`；内部 `coding` 包、插件、协议标识和 `$DSH_HOME` 数据保持与 DeepSeek Harness 运行时兼容。
 
 它采用**一切皆插件**的架构，并由 [Cordis](https://github.com/cordiverse/cordis) 驱动，其设计参见论文 [_A Programming Paradigm for Spatiotemporal Composability_](https://github.com/cordiverse/paper)。
 
@@ -27,7 +27,7 @@ Coding 目前处于 _开发者预览_ 阶段，正在快速迭代。**未来将�
 安装 `Node.js`，然后运行：
 
 ```sh
-npx @deepseek-ai/dsh web
+npx coding web
 ```
 
 当前运行时命令默认会在 `http://127.0.0.1:3080` 启动 Web UI，本机启动时还会用默认浏览器打开页面。通过 SSH 启动时只打印宿主机 URL，因为本地转发地址由 SSH 客户端或编辑器持有。传入 `--no-open` 可仅运行服务器而不打开浏览器。详见 [Web UI 指南](docs/user/guide/index.md)。

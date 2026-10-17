@@ -37,7 +37,7 @@ import {
   LlmError,
   ReasoningEffortId,
   userAgent,
-} from '@deepseek-ai/dsh-llm'
+} from 'coding-llm'
 import type {
   GenerateOptions,
   LlmModelInfo,
@@ -46,9 +46,9 @@ import type {
   ReasoningEffortId as ReasoningEffortIdType,
   ResolvedRetryPolicy,
   StreamChunk,
-} from '@deepseek-ai/dsh-llm'
-import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
-import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
+} from 'coding-llm'
+import type { AttachmentStore } from 'coding-attachment'
+import { idleWatchdog, timeoutOf } from 'coding-timeout'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
 import { toPiContext } from './context.ts'
 import { toStreamChunks } from './stream.ts'

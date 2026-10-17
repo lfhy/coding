@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-tool-todo
+# coding-tool-todo
 
 面向模型的 `todo_write` 工具：agent（智能体）的完整任务列表，每次调用都会整体替换。
 
@@ -28,7 +28,7 @@
 
 ## 会话投影
 
-当组合挂载了 `ctx.sessionProjections`（[`@deepseek-ai/dsh-session-projection`](../../session/session-projection/README.md)）时，本包在一个注入的子插件中注册 `todos` 投影单元：`init` = `null`（尚无写入）、`apply` = 从每个 `todo/write` 取整表，并在每个 `turn/start` 清为 `null`（当前有效计划；`turn/end` 保留刚完成的清单；其余事件都返回同一个状态引用）、`view` = 恒等、`stateVersion` = 2。该键在本包中合并进 `SessionProjectionMap`（经 Service Definition 包的 `/types` 出口）；框架驱动该单元，载体通过历史尾页与 `session/projection` 推送帧提供该值。未挂载注册表的组合不受影响。生命周期理由见 在下一轮次清空 todo 计划。
+当组合挂载了 `ctx.sessionProjections`（[`coding-session-projection`](../../session/session-projection/README.md)）时，本包在一个注入的子插件中注册 `todos` 投影单元：`init` = `null`（尚无写入）、`apply` = 从每个 `todo/write` 取整表，并在每个 `turn/start` 清为 `null`（当前有效计划；`turn/end` 保留刚完成的清单；其余事件都返回同一个状态引用）、`view` = 恒等、`stateVersion` = 2。该键在本包中合并进 `SessionProjectionMap`（经 Service Definition 包的 `/types` 出口）；框架驱动该单元，载体通过历史尾页与 `session/projection` 推送帧提供该值。未挂载注册表的组合不受影响。生命周期理由见 在下一轮次清空 todo 计划。
 
 ## 导出形状
 

@@ -8,7 +8,7 @@
  * {@link SessionTelemetryBackend.emit} — batching, retry, queueing, and loss policy — is the
  * reporting SDK's territory and is deliberately not modelled here. The
  * design and its trade-offs are pinned in
- * @module @deepseek-ai/dsh-session-telemetry
+ * @module coding-session-telemetry
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'

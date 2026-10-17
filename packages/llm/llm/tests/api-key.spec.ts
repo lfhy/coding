@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { assertUsableApiKey, INVALID_CREDENTIAL_CODE, normalizeApiKey } from '@deepseek-ai/dsh-llm'
+import { assertUsableApiKey, INVALID_CREDENTIAL_CODE, normalizeApiKey } from 'coding-llm'
 
 describe('normalizeApiKey', () => {
   it('accepts a printable-ASCII key unchanged', () => {

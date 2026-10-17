@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-settings-file",
+  "name": "coding-settings-file",
   "description": "File-backed settings provider (settings.yaml) for the DeepSeek Harness",
   "version": "0.1.0-rc.8",
   "publishConfig": {
@@ -32,10 +32,10 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-atomic-write": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-home-paths": "workspace:^",
-    "@deepseek-ai/dsh-settings": "workspace:^",
+    "coding-atomic-write": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-home-paths": "workspace:^",
+    "coding-settings": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "dependencies": {
@@ -44,10 +44,10 @@
     "yaml": "^2.9.0"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-atomic-write": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-home-paths": "workspace:^",
-    "@deepseek-ai/dsh-settings": "workspace:^",
+    "coding-atomic-write": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-home-paths": "workspace:^",
+    "coding-settings": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   }
 }

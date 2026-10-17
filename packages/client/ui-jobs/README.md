@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-client-ui-jobs
+# coding-client-ui-jobs
 
 Web 后台任务特性的归属方：向 `conversation.overview.jobs` 贡献一个会话作用域列表，展示当前会话可见的 `ctx.jobs` 记录。数据完全来自 [`dsh-client-runtime`](../runtime/README.md) 从 `session/jobs` 帧折叠出的 `jobsBySession` 列表镜像，因此本包不发任何 RPC；列表展开状态由概览卡片持有。
 

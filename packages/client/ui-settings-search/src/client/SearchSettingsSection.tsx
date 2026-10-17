@@ -1,6 +1,6 @@
 /** 搜索设置只保存非机密草稿；密钥文本停留在组件私有状态。 */
 import { useEffect, useRef, useState } from 'react'
-import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { InjectFace, PropsLocale, PropsRuntime } from 'coding-client-ui-slots'
 import type { SearchProvider, SearchSettingsFace } from './controller.ts'
 import { DEFAULT_KEY_REF, DEFAULT_TAVILY_KEY_REF, validField } from './controller.ts'
 import css from './SearchSettingsSection.module.css'

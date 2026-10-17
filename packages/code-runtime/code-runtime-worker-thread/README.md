@@ -1,12 +1,12 @@
-# @deepseek-ai/dsh-code-runtime-worker-thread
+# coding-code-runtime-worker-thread
 
-这是 [`@deepseek-ai/dsh-code-runtime`](../code-runtime/README.md) seam 的 worker 线程实现。对于普通 Workspace，`WorkerThreadCodeRuntime` 会在每次运行中使用一个全新的 Node `worker_threads.Worker`，输入 TypeScript，由宿主侧剥离类型，通过消息端口桥接 binding，输出 `{ value, logs, error? }`。当 `CodeRunRequest.cwd` 解析为存活的 Remote-SSH marker 时，两种模式都经 `/v1/code/*` bridge 运行受限 Goja：agent 模式由远程 Go agent 执行，basic 模式由桌面端在本机启动独立的 Goja isolate（不是远端 agent，也不是本地 Node worker）。编排程序的工具 binding 仍在本地 Node Host 执行，按工作区模式走对应的远端能力。**这是隔离措施，而非安全边界**：其信任立场有意与 bash 等价（参见 Code Mode 设计记录 的 Trust posture 章节），但提供本地 worker 有、bash 没有的隔离：独立 isolate、空环境、堆上限与强制终止。
+这是 [`coding-code-runtime`](../code-runtime/README.md) seam 的 worker 线程实现。对于普通 Workspace，`WorkerThreadCodeRuntime` 会在每次运行中使用一个全新的 Node `worker_threads.Worker`，输入 TypeScript，由宿主侧剥离类型，通过消息端口桥接 binding，输出 `{ value, logs, error? }`。当 `CodeRunRequest.cwd` 解析为存活的 Remote-SSH marker 时，两种模式都经 `/v1/code/*` bridge 运行受限 Goja：agent 模式由远程 Go agent 执行，basic 模式由桌面端在本机启动独立的 Goja isolate（不是远端 agent，也不是本地 Node worker）。编排程序的工具 binding 仍在本地 Node Host 执行，按工作区模式走对应的远端能力。**这是隔离措施，而非安全边界**：其信任立场有意与 bash 等价（参见 Code Mode 设计记录 的 Trust posture 章节），但提供本地 worker 有、bash 没有的隔离：独立 isolate、空环境、堆上限与强制终止。
 
 ## 配置
 
 ```yaml
 - id: code-runtime
-  name: '@deepseek-ai/dsh-code-runtime-worker-thread'
+  name: 'coding-code-runtime-worker-thread'
   config:
     computeMs: 60000              # busy-time budget (measured event-loop active time)
     maxWallMs: 600000             # wall-clock ceiling; never pauses for anything

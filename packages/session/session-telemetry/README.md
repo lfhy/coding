@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-session-telemetry
+# coding-session-telemetry
 
 遥测（telemetry）Service Definition 声明 `SessionTelemetrySink` 后端约定，捕获协调器把会话记录传给实现该约定的任意上报 SDK 后端。捕获侧可跟随实时会话事件，也可按需回放权威会话日志前缀。本包调用 `emit()` 后就停止处理：批处理、重试、排队与丢失策略都属于后端自身的 SDK，本包既不规定也不包装。设计依据与被否决的替代方案见复活 设计记录、反馈门控投递与无缓冲反馈回放。
 

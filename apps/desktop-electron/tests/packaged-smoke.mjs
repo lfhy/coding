@@ -21,7 +21,7 @@ const resources = join(bundle, 'Contents/Resources')
 const helperExecutable = join(resources, 'coding-electron-helper')
 const browserRoot = join(resources, 'playwright-browsers')
 const packagedElectronBrowser = join(resources, 'runtime', 'node_modules',
-  '@deepseek-ai', 'dsh-browser-electron')
+  'coding-browser-electron')
 const packagedElectronProtocol = join(packagedElectronBrowser, 'lib', 'types', 'protocol.js')
 const packagedBrowserTransport = join(resources, 'runtime', 'node_modules', 'ws', 'index.js')
 const expectedVersion = JSON.parse(await readFile(join(root, 'apps/desktop-electron/package.json'), 'utf8')).version
@@ -67,7 +67,7 @@ async function preflight() {
   assert.equal(existsSync(browserRoot), false,
     'packaged native browser must not ship a Playwright browser binary')
   const providerManifest = JSON.parse(await readFile(join(packagedElectronBrowser, 'package.json'), 'utf8'))
-  assert.equal(providerManifest.name, '@deepseek-ai/dsh-browser-electron', 'packaged native browser provider')
+  assert.equal(providerManifest.name, 'coding-browser-electron', 'packaged native browser provider')
   assert.equal(providerManifest.exports?.['./protocol']?.default, './lib/types/protocol.js',
     'packaged main-process browser bridge must resolve the shipped protocol')
   const metadata = JSON.parse(await readFile(join(resources, 'metadata.json'), 'utf8'))

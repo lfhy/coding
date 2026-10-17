@@ -1,7 +1,7 @@
 /** 以现有单面板工作台的会话级 store 为后端的外部标签动作。 */
 
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
+import type { SessionId } from 'coding-session/types'
+import type { BoundActions } from 'coding-client-ui-slots'
 import type { SidebarRightTabRegistry } from './sidebar-tab-registry.ts'
 import type { WorkbenchExternalParams, createRetainedWorkbenchStore } from './store.ts'
 

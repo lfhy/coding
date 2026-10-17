@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-agent-instructions
+# coding-agent-instructions
 
 为每个会话加载与 `AGENTS.md` 兼容的工作区指令文件，并把项目根目录的 README 头部作为项目简介一并注入。该插件会将初始的用户全局指令、项目简介与项目指令链注入持久历史，随后发现嵌套文件，并在成功的文件系统工具调用后报告后续变更或移除。
 

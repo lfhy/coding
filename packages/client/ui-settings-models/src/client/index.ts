@@ -6,15 +6,15 @@
  * Export discipline:
  * packages/client/AGENTS.md.
  */
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ConnectionHandle } from '@deepseek-ai/dsh-api-remotes/client'
+import type { ClientContext } from 'coding-client-runtime/client'
+import type { ConnectionHandle } from 'coding-api-remotes/client'
 // Type-only: pulls the shell's SlotMap merge (the 'settings.section' entry).
-import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+import type {} from 'coding-client-ui-settings/client'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
-import type {} from '@deepseek-ai/dsh-client-locale/client'
+import type {} from 'coding-client-locale/client'
 // Type-only: pulls the ctx.remote merge and the forwarded-event key face
 // (settings/credentials invalidations ride the allowlist) into this program.
-import type {} from '@deepseek-ai/dsh-api-remotes/client'
+import type {} from 'coding-api-remotes/client'
 import { ModelsSection } from './ModelsSection.tsx'
 import type { ModelsSectionInjected } from './ModelsSection.tsx'
 import { VisionSection } from './VisionSection.tsx'
@@ -30,7 +30,7 @@ import { en, zh, type ModelsKey } from './locales.ts'
 export type { ModelsSectionInjected, ModelsSectionProps } from './ModelsSection.tsx'
 export type { ModelsKey } from './locales.ts'
 
-declare module '@deepseek-ai/dsh-client-ui-slots' {
+declare module 'coding-client-ui-slots' {
   interface LocaleNamespaceMap {
     /** The Models page + product-onboarding copy. */
     'settings.models': ModelsKey

@@ -1,8 +1,8 @@
 /** Session 绑定的工作区路径解析、目录列表与有界文件预览。 */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { FsDirEntry, FsTarget } from '@deepseek-ai/dsh-fs'
-import { SessionId } from '@deepseek-ai/dsh-session'
+import type { FsDirEntry, FsTarget } from 'coding-fs'
+import { SessionId } from 'coding-session'
 import type {
   OpenInAppFileEntry,
   OpenInAppFilesPayload,

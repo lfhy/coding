@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-session-title",
+  "name": "coding-session-title",
   "description": "Log-backed session title service and provider registry for the DeepSeek Harness",
   "version": "0.1.0-rc.8",
   "publishConfig": {
@@ -41,11 +41,11 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-brand": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-session-projection": "workspace:^",
+    "coding-brand": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-llm": "workspace:^",
+    "coding-session": "workspace:^",
+    "coding-session-projection": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "dependencies": {
@@ -53,13 +53,13 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-brand": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-session-persistence-jsonl": "workspace:^",
-    "@deepseek-ai/dsh-session-persistence-sqlite": "workspace:^",
-    "@deepseek-ai/dsh-session-projection": "workspace:^",
+    "coding-brand": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-llm": "workspace:^",
+    "coding-session": "workspace:^",
+    "coding-session-persistence-jsonl": "workspace:^",
+    "coding-session-persistence-sqlite": "workspace:^",
+    "coding-session-projection": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   }
 }

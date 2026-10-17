@@ -1,4 +1,4 @@
-# `@deepseek-ai/dsh-client-ui-reference`
+# `coding-client-ui-reference`
 
 统一的 Web `@file` 与 `@session` source。对于未加引号的 token，浏览器会同时启动 `fileReferences/list` 和 `sessionReferenceResolver/candidates` Remote 调用，以确定性顺序把文件排在会话之前，并使用注册在 locale 字典中的文件夹、文件与会话标签；各行分别渲染在不可选择的文件与会话分组标题下，不显示重复的原始 `reference` source 标题。任一候选领域的失败都会独立降级。尚未闭合的 `@"…` token 只搜索文件。
 
@@ -10,7 +10,7 @@
 
 ## 模型体验
 
-间接影响模型体验：路径指引由 `@deepseek-ai/dsh-file-reference-local` 提供，准备后的会话快照由 `@deepseek-ai/dsh-session-reference` 提供。
+间接影响模型体验：路径指引由 `coding-file-reference-local` 提供，准备后的会话快照由 `coding-session-reference` 提供。
 
 #### KV 缓存影响
 

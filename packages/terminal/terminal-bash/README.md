@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-terminal-bash
+# coding-terminal-bash
 
 这是一个基于 `ctx.subprocess.spawnTerminal`、为 `ctx.terminals` 提供的持久 shell 后端。它在共享 `ctx.sandboxPolicy` 下启动交互式 shell，保留有界的逐行输出并检测就绪状态；进程管理提供方则负责 PTY 分配、环境清理、前台进程组、信号发送和完整终端会话清理。因此，同一个 PTY 后端可以与本地或远程执行世界提供方组合。
 
@@ -20,7 +20,7 @@
 
 #### 模型看到的内容
 
-策略归属方会贡献与具体能力无关的 `sandbox:policy` 上下文。模型通过 `@deepseek-ai/dsh-tool-terminal` 或其他 PTY 消费方还可能收到有界的 MOTD、发送增量、scrollback 页、就绪原因和清理错误。
+策略归属方会贡献与具体能力无关的 `sandbox:policy` 上下文。模型通过 `coding-tool-terminal` 或其他 PTY 消费方还可能收到有界的 MOTD、发送增量、scrollback 页、就绪原因和清理错误。
 
 #### Token 影响
 

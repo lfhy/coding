@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-fs
+# coding-fs
 
 **`FileSystem`**（`ctx.fs`）定义同一个执行世界中的存储原语，包括解析路径、公开规范化进程路径与文件 URI、检查包含关系、完整或流式读取文本、有界读取原始字节、检查／列出元数据、原子写入和应用字面量编辑，但不规定实现方式。两个变更操作都**可选** 接收版本防护，因此 `ctx.fs` 本身就是完整且不受约束的存储 seam。本包还拥有由工具分派、政策插件监听的 `fs/*` 政策事件词汇。
 
@@ -6,10 +6,10 @@
 
 | 层 | 包 | 角色 |
 |---|---|---|
-| 工具/执行器 | `@deepseek-ai/dsh-tool-fs` | 面向模型的 `read`/`write`/`edit` schema、读取窗口和文本渲染；通过 `ctx.fs` 读取/写入/编辑，并分派 `fs/*` 事件 |
-| 政策 | `@deepseek-ai/dsh-fs-observation-policy` | 已观察状态、编辑前读取和版本防护的写入/编辑，通过 `fs/*` 事件门禁贡献（无服务） |
-| 提供方约定 | `@deepseek-ai/dsh-fs`（本包） | `ctx.fs`：执行世界路径、文本 I/O 与原子变更原语（可选版本防护）；拥有 `fs/*` 事件词汇 |
-| 提供方 | `@deepseek-ai/dsh-fs-local` | 宿主文件系统实现 |
+| 工具/执行器 | `coding-tool-fs` | 面向模型的 `read`/`write`/`edit` schema、读取窗口和文本渲染；通过 `ctx.fs` 读取/写入/编辑，并分派 `fs/*` 事件 |
+| 政策 | `coding-fs-observation-policy` | 已观察状态、编辑前读取和版本防护的写入/编辑，通过 `fs/*` 事件门禁贡献（无服务） |
+| 提供方约定 | `coding-fs`（本包） | `ctx.fs`：执行世界路径、文本 I/O 与原子变更原语（可选版本防护）；拥有 `fs/*` 事件词汇 |
+| 提供方 | `coding-fs-local` | 宿主文件系统实现 |
 
 `fs-sandbox` 与 `fs-e2b` 实现该接口，无需更改政策层和工具层。
 
@@ -36,11 +36,11 @@
 
 ## `fs/*` 政策事件
 
-本包声明三个事件（见 [filesystem.md](../../../docs/subsystems/filesystem.md#cordis-surface) 的生成区块），使发出方（`@deepseek-ai/dsh-tool-fs`）和政策监听器（`@deepseek-ai/dsh-fs-observation-policy`）共享词汇，而无需让发出方依赖政策插件。`fs/write-intent` 和 `fs/edit-intent` 是单槽决策 waterfall（瀑布式事件）（监听器完整决策，绝不调用 `next()`）；`fs/observed` 是发后即忘的记录事件，携带 `FsObservation` 可辨识联合：存在并带有版本，或确认缺失。它们只携带 `dsh-fs` 词汇和一个不透明 `object` 参与者，不含面向模型的概念或 agent（智能体）/会话所有者结构。
+本包声明三个事件（见 [filesystem.md](../../../docs/subsystems/filesystem.md#cordis-surface) 的生成区块），使发出方（`coding-tool-fs`）和政策监听器（`coding-fs-observation-policy`）共享词汇，而无需让发出方依赖政策插件。`fs/write-intent` 和 `fs/edit-intent` 是单槽决策 waterfall（瀑布式事件）（监听器完整决策，绝不调用 `next()`）；`fs/observed` 是发后即忘的记录事件，携带 `FsObservation` 可辨识联合：存在并带有版本，或确认缺失。它们只携带 `dsh-fs` 词汇和一个不透明 `object` 参与者，不含面向模型的概念或 agent（智能体）/会话所有者结构。
 
 ## 提供方约定，不是政策层
 
-`ctx.fs` 有意接近 fsspec 风格的存储原语，比字节级 `cat`/`open` 高半层，因为它会解码文本并拒绝二进制，使政策层绝不接触原始字节。它负责 UTF-8 解码、二进制拒绝、原子写入和字面量编辑临界区。它**不** 负责行窗口、编号行、渲染 footer 或已观察状态。已观察状态、编辑前读取和版本防护的写入/编辑属于插件（`@deepseek-ai/dsh-fs-observation-policy`）通过提供可选防护而添加的政策，并非提供方行为，因此沙箱化/远程后端不会继承任何面向模型的观察政策。
+`ctx.fs` 有意接近 fsspec 风格的存储原语，比字节级 `cat`/`open` 高半层，因为它会解码文本并拒绝二进制，使政策层绝不接触原始字节。它负责 UTF-8 解码、二进制拒绝、原子写入和字面量编辑临界区。它**不** 负责行窗口、编号行、渲染 footer 或已观察状态。已观察状态、编辑前读取和版本防护的写入/编辑属于插件（`coding-fs-observation-policy`）通过提供可选防护而添加的政策，并非提供方行为，因此沙箱化/远程后端不会继承任何面向模型的观察政策。
 
 `editText` 留在该 seam 上，不由政策层通过读取加写入组合，因为版本防护、字面量匹配和原子重写必须处于同一临界区内，才能正确归因错误并实现一方胜出/一方陈旧的并发；远程后端也可以将其实现为原生比较并编辑操作。
 

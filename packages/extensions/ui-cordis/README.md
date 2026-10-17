@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-client-ui-cordis
+# coding-client-ui-cordis
 
 Cordis 动态插件的浏览器半：一个覆盖整个框架的面板，操作 host 持有的全部定义；以及一张只读的 `cordis_define` 卡片，记录某个会话定义了什么。
 

@@ -6,18 +6,18 @@
  * `updatedInput` is logged and warned but not honored. Bespoke behavior should
  * use typed native plugins on the same extension points; see the
  * hook-bridges design record.
- * @module @deepseek-ai/dsh-hooks-claude-code
+ * @module coding-hooks-claude-code
  */
 
 import { readFileSync } from 'node:fs'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock, MessageSource } from '@deepseek-ai/dsh-llm'
-import type { UserMessage } from '@deepseek-ai/dsh-session'
-import type {} from '@deepseek-ai/dsh-session-persistence'
-import type { PostToolDecision, PreToolDecision, ToolExecution, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
+import type { Agent, PreStepDecision } from 'coding-agent'
+import { createUserMessage } from 'coding-llm'
+import type { ContentBlock, MessageSource } from 'coding-llm'
+import type { UserMessage } from 'coding-session'
+import type {} from 'coding-session-persistence'
+import type { PostToolDecision, PreToolDecision, ToolExecution, ToolExecutionResult } from 'coding-tools'
 import {
   appendHookInvoked,
   appendHookResult,
@@ -30,10 +30,10 @@ import {
   type HookOutput,
   type MatcherGroup,
   type MergedHookOutcome,
-} from '@deepseek-ai/dsh-hook-protocol'
+} from 'coding-hook-protocol'
 // Pulls in the declaration-merged subagent events and the identity pairing their
 // start/end edges.
-import type { SubagentRunId } from '@deepseek-ai/dsh-subagent'
+import type { SubagentRunId } from 'coding-subagent'
 import { parseClaudeCodeConfig, type ClaudeCodeHookConfig } from './config.ts'
 
 export const name = 'hooks-claude-code'

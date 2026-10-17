@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-web-search-duckduckgo",
+  "name": "coding-web-search-duckduckgo",
   "description": "Anonymous DuckDuckGo HTML search provider for the web capability seam",
   "version": "0.1.0-rc.8",
   "publishConfig": { "access": "public" },
@@ -21,21 +21,21 @@
   "license": "MIT",
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-web": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-settings": "workspace:^"
+    "coding-web": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-settings": "workspace:^"
   },
   "dependencies": { "@deepseek-ai/schemastery": "workspace:^", "parse5": "^8.0.1", "undici": "^8.10.2" },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/cordis-plugin-loader": "workspace:^",
     "@deepseek-ai/cordis-plugin-include": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-system-prompt": "workspace:^",
-    "@deepseek-ai/dsh-tools": "workspace:^",
-    "@deepseek-ai/dsh-tool-web": "workspace:^",
-    "@deepseek-ai/dsh-web": "workspace:^",
-    "@deepseek-ai/dsh-settings": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^"
+    "coding-llm": "workspace:^",
+    "coding-system-prompt": "workspace:^",
+    "coding-tools": "workspace:^",
+    "coding-tool-web": "workspace:^",
+    "coding-web": "workspace:^",
+    "coding-settings": "workspace:^",
+    "coding-invariants": "workspace:^"
   }
 }

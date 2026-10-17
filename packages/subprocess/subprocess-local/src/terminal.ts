@@ -9,7 +9,7 @@ import type {
   SubprocessTerminalForeground,
   SubprocessTerminalHandle,
   SubprocessTerminalSignal,
-} from '@deepseek-ai/dsh-subprocess'
+} from 'coding-subprocess'
 import type { ProcessIdentity, ProcessInspector } from './process-inspector.ts'
 import { validateTerminalSize } from './terminal-size.ts'
 

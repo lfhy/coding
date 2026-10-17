@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-web-search-tavily
+# coding-web-search-tavily
 
 Tavily 的专用搜索端点提供 `WebSearchProvider`，以 `tavily` 登记到 [web 能力](../web/README.md)（`ctx.web`）。仅在 `web.searchProvider` 显式选择或唯一可用时执行；选择失败、密钥缺失或请求失败都不自动切换其他提供方。此包只提供搜索，不注册面向模型的工具，也不改变 LLM 端点或代理。
 

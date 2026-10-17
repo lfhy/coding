@@ -1,10 +1,10 @@
-/** Tavily 搜索提供方的包级不变量登记。@module @deepseek-ai/dsh-web-search-tavily/invariant */
+/** Tavily 搜索提供方的包级不变量登记。@module coding-web-search-tavily/invariant */
 
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
-import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
+import type { InvariantInstaller } from 'coding-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-web-search-tavily'
+const PACKAGE_NAME = 'coding-web-search-tavily'
 
 /** Cordis 伴随插件名称。 */
 export const name = 'web-search-tavily-invariant'

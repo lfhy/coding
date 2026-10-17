@@ -1,6 +1,6 @@
 /** 人工浏览器 RPC 的严格输入及会话状态响应。 */
 import { z } from 'zod'
-import type { BrowserHumanTarget, BrowserObservation, BrowserTabId, BrowserTabSummary } from '@deepseek-ai/dsh-browser/types'
+import type { BrowserHumanTarget, BrowserObservation, BrowserTabId, BrowserTabSummary } from 'coding-browser/types'
 import type { RequestPayload, ResponseValue } from './rpc-map.ts'
 import type { Wire } from './rpc.schema.ts'
 import { sessionIdSchema } from './sessions.schema.ts'

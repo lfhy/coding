@@ -10,9 +10,9 @@ import type {
   SubprocessTerminalHandle,
   SubprocessTerminalSignal,
   SubprocessTerminalSpawnSpec,
-} from '@deepseek-ai/dsh-subprocess'
-import { callRemoteWorkspaceBridge, RemoteWorkspaceError, verifyRemoteWorkspaceTarget } from '@deepseek-ai/dsh-subprocess'
-import { deadline } from '@deepseek-ai/dsh-timeout'
+} from 'coding-subprocess'
+import { callRemoteWorkspaceBridge, RemoteWorkspaceError, verifyRemoteWorkspaceTarget } from 'coding-subprocess'
+import { deadline } from 'coding-timeout'
 import { validateTerminalSize } from './terminal-size.ts'
 
 const TERMINAL_READ_WAIT_MS = 25_000

@@ -11,7 +11,7 @@
 
 import { useEffect, useId, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { CredentialView, IApiClient, SettingsNamespaceView, SettingsPathOpView } from '@deepseek-ai/dsh-api-remotes/client'
+import type { CredentialView, IApiClient, SettingsNamespaceView, SettingsPathOpView } from 'coding-api-remotes/client'
 import {
   DeepSeekModelsEditor, modelDrafts, validateDeepSeekModels,
 } from './DeepSeekModelsEditor.tsx'

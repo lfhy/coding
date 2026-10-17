@@ -2,7 +2,7 @@
  * Web 表层组合包的运行时粘合插件：解析已构建的前端产物并挂载静态
  * 回退席位，注册 Harness 源码提示词，并在 Loader 完成后公告 URL、
  * 交接默认浏览器。启动参数由 `webStartup` 服务提供。
- * @module @deepseek-ai/dsh-web-app
+ * @module coding-web-app
  */
 
 import { spawn, type ChildProcess } from 'node:child_process'
@@ -10,14 +10,14 @@ import { createRequire } from 'node:module'
 import { networkInterfaces } from 'node:os'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { addCodingPromptSections } from '@deepseek-ai/dsh-app-boot'
-import * as FrontendStatic from '@deepseek-ai/dsh-host-frontend-static'
-import { launchedThroughSsh, launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
-import { scrubbedParentEnv } from '@deepseek-ai/dsh-subprocess'
+import { addCodingPromptSections } from 'coding-app-boot'
+import * as FrontendStatic from 'coding-host-frontend-static'
+import { launchedThroughSsh, launchEnvironmentOf } from 'coding-launch-environment'
+import { scrubbedParentEnv } from 'coding-subprocess'
 import { startManagedHost } from './managed-host.ts'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
-import type {} from '@deepseek-ai/dsh-host-webserver'
-import type {} from '@deepseek-ai/dsh-system-prompt'
+import type {} from 'coding-host-webserver'
+import type {} from 'coding-system-prompt'
 
 /** Stable Cordis plugin name. */
 export const name = 'web-app'
@@ -125,7 +125,7 @@ function localWebUrl(ctx: Context): string {
 function resolveDistIndex(): string {
   const require = createRequire(import.meta.url)
   try {
-    return require.resolve('@deepseek-ai/dsh-web-frontend/dist/index.html')
+    return require.resolve('coding-web-frontend/dist/index.html')
   } catch {
     /* v8 ignore next 2 -- reachable only on a checkout without a built dist; the test tree builds it */
     throw new Error('web-app: frontend dist not built; run pnpm run build from the repository root first')

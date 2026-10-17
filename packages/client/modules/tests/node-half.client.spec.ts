@@ -8,13 +8,13 @@ import { pathToFileURL } from 'node:url'
 import { runInNewContext } from 'node:vm'
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it } from 'vitest'
-import type { WebServer, WebRoute } from '@deepseek-ai/dsh-host-webserver'
+import type { WebServer, WebRoute } from 'coding-host-webserver'
 import * as modulesClient from '../src/client/index.ts'
 import { ClientModuleRegistry, injectBootManifest, orderByModuleGraph } from '../src/index.ts'
 import type { ClientModuleLoaderTarget, WebBootEntry, WebBootGraph } from '../src/client/index.ts'
 
-const MODULES_ID = '@deepseek-ai/dsh-client-modules'
-const RUNTIME_ID = '@deepseek-ai/dsh-client-runtime'
+const MODULES_ID = 'coding-client-modules'
+const RUNTIME_ID = 'coding-client-runtime'
 
 let root: string | undefined
 

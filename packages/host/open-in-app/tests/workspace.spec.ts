@@ -2,7 +2,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
-import type { FsDirEntry, FsInfo, FsTarget } from '@deepseek-ai/dsh-fs'
+import type { FsDirEntry, FsInfo, FsTarget } from 'coding-fs'
 import {
   listWorkspaceFiles,
   parseFilesRequest,

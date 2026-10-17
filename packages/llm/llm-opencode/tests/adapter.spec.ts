@@ -10,10 +10,10 @@ import LlmRuntime, {
   createToolResultMessage,
   createUserMessage,
   ReasoningEffortId,
-} from '@deepseek-ai/dsh-llm'
+} from 'coding-llm'
 import type { AssistantMessageEvent } from '@earendil-works/pi-ai'
 import { afterEach, describe, expect, it } from 'vitest'
-import * as LlmOpencode from '@deepseek-ai/dsh-llm-opencode'
+import * as LlmOpencode from 'coding-llm-opencode'
 import { ensureFreeLaneShape } from '../src/free-lane.ts'
 import { disguiseHeaders, deriveRequestIds } from '../src/ids.ts'
 

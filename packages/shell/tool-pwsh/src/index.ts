@@ -1,7 +1,7 @@
 /**
  * Model-facing PowerShell Consumer of the `ctx.shell` capability seam. Intended for
  * Windows compositions where a PowerShell executor (e.g.
- * `@deepseek-ai/dsh-pwsh-local`) backs `ctx.shell`; the tool contract is
+ * `coding-pwsh-local`) backs `ctx.shell`; the tool contract is
  * PowerShell-dialect: native `C:\...` paths and `$env:NAME` variables.
  * Behavior mirrors `dsh-tool-bash` call-for-call: foreground and
  * `run_in_background` execution (background handles register with the
@@ -13,31 +13,31 @@
  * `ctx.approval`), and the bash marker/truncation rendering story. UI
  * presentation mirrors the bash tool's too: a completed foreground call is
  * a terminal card with the parsed exit-status pill, using the shared
- * exit-status parse from `@deepseek-ai/dsh-shell`.
- * @module @deepseek-ai/dsh-tool-pwsh
+ * exit-status parse from `coding-shell`.
+ * @module coding-tool-pwsh
  */
 
 import { isAbsolute, resolve as resolvePath } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { defineTool, TOOL_ABORTED } from '@deepseek-ai/dsh-tools'
-import type { GenericCallView, TerminalCallView, ToolExecution, ToolResult, ToolResultView } from '@deepseek-ai/dsh-tools'
-import { HarnessError } from '@deepseek-ai/dsh-llm'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import type {} from '@deepseek-ai/dsh-system-prompt'
-import type {} from '@deepseek-ai/dsh-jobs'
-import type {} from '@deepseek-ai/dsh-shell-env'
-import type {} from '@deepseek-ai/dsh-user-approval'
-import type { SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
-import { ESCALATION_TARGETS, approveEscalation, validateEscalationArgs } from '@deepseek-ai/dsh-sandbox'
-import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
-import type { ShellRunResult } from '@deepseek-ai/dsh-shell'
-import { parseExitStatus } from '@deepseek-ai/dsh-shell'
+import { defineTool, TOOL_ABORTED } from 'coding-tools'
+import type { GenericCallView, TerminalCallView, ToolExecution, ToolResult, ToolResultView } from 'coding-tools'
+import { HarnessError } from 'coding-llm'
+import type { Agent } from 'coding-agent'
+import type {} from 'coding-system-prompt'
+import type {} from 'coding-jobs'
+import type {} from 'coding-shell-env'
+import type {} from 'coding-user-approval'
+import type { SandboxExecutionPolicy, SandboxMode } from 'coding-sandbox'
+import { ESCALATION_TARGETS, approveEscalation, validateEscalationArgs } from 'coding-sandbox'
+import type { SandboxPolicyService } from 'coding-sandbox-policy'
+import type { ShellRunResult } from 'coding-shell'
+import { parseExitStatus } from 'coding-shell'
 import { processOutcome } from './background.ts'
 import { renderPwshProcessRead, renderPwshResult } from './render.ts'
 import type { RenderablePwshResult } from './render.ts'
 
-declare module '@deepseek-ai/dsh-jobs' {
+declare module 'coding-jobs' {
   interface JobKindMap {
     pwsh: 'pwsh'
   }
@@ -366,7 +366,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         }
         const jobs = ctx.get('jobs')
         if (jobs === undefined) {
-          throw new Error('background jobs unavailable: load @deepseek-ai/dsh-jobs and @deepseek-ai/dsh-tool-jobs')
+          throw new Error('background jobs unavailable: load coding-jobs and coding-tool-jobs')
         }
         // 后台任务发布前由当前调用持有取消权。
         if (exec.signal.aborted) {

@@ -1,4 +1,4 @@
-# `@deepseek-ai/dsh-cmdline`
+# `coding-cmdline`
 
 dsh 启动器交给它所引导应用的那条命令行。启动器只解析属于自己的 flag（`--profile`、`--patch`、配置 dump），并把**其后的一切**原样交给配置树，因此 flag 家族、`--help` 文本和解析错误都由应用自己持有，启动器不必知道它们。
 
@@ -30,14 +30,14 @@ export function apply(ctx: Context): void {
 
 ```yaml
 - id: web-startup
-  name: '@deepseek-ai/dsh-web-app/startup'
+  name: 'coding-web-app/startup'
 ```
 
 所有由这些取值配置的行都使用普通服务注入，并在惰性配置中直接访问该服务：
 
 ```yaml
 - id: webserver
-  name: '@deepseek-ai/dsh-host-webserver'
+  name: 'coding-host-webserver'
   inject: [webStartup]
   config:
     host: !!js ctx.webStartup.host ?? '127.0.0.1'

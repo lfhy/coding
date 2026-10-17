@@ -2,9 +2,9 @@
  * 布局插件的浏览器入口。一次 root 注册同时声明子 slot、创建布局 store，
  * 并将绑定 actions 接到 `ctx.layout`；独立 effect 负责主题 DOM 投影。
  */
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
+import type { ClientContext } from 'coding-client-runtime/client'
+import type { SessionId } from 'coding-session/types'
+import type {} from 'coding-client-ui-theme/client'
 import type { AppFrameInjected } from './AppFrame.tsx'
 import type { PanelActions } from './service.ts'
 import { AppFrame } from './AppFrame.tsx'
@@ -22,7 +22,7 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-declare module '@deepseek-ai/dsh-client-ui-slots' {
+declare module 'coding-client-ui-slots' {
   interface SlotMap {
     /** 整个左侧导航栏；占用者负责展开态和紧凑 rail。 */
     'sidebar': { kind: 'single'; scope: 'root'; owner: SidebarOwnerProps }

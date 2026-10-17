@@ -21,7 +21,7 @@ async function fixture(): Promise<RuntimeConfigOptions> {
     mkdir(join(repoRoot, 'dist'), { recursive: true }),
     mkdir(join(repoRoot, 'apps', 'desktop', 'packaging', 'icon.iconset'), { recursive: true }),
     mkdir(resourcesPath, { recursive: true }),
-    mkdir(join(resourcesPath, 'runtime', 'node_modules', '@deepseek-ai', 'dsh', 'lib'), { recursive: true }),
+    mkdir(join(resourcesPath, 'runtime', 'node_modules', 'coding', 'lib'), { recursive: true }),
     mkdir(join(resourcesPath, 'remote-agent'), { recursive: true }),
   ])
   await Promise.all([
@@ -29,7 +29,7 @@ async function fixture(): Promise<RuntimeConfigOptions> {
     writeFile(join(repoRoot, 'apps', 'desktop', 'packaging', 'icon.iconset', 'icon_512x512@2x.png'), ''),
     writeFile(join(resourcesPath, 'coding-electron-helper'), ''),
     writeFile(join(resourcesPath, 'coding-host'), ''),
-    writeFile(join(resourcesPath, 'runtime', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js'), ''),
+    writeFile(join(resourcesPath, 'runtime', 'node_modules', 'coding', 'lib', 'bin.js'), ''),
     writeFile(join(resourcesPath, 'CodingIcon.png'), ''),
     writeFile(join(resourcesPath, 'metadata.json'), '{"version":"0.1.0-rc.8","sha256":"secret-sha"}\n'),
   ])
@@ -153,7 +153,7 @@ describe('Electron runtime configuration', () => {
 
   it('拒绝生产 userData 链接和缺失的 Host 入口', async () => {
     const options = { ...await fixture(), packaged: true }
-    const entry = join(options.resourcesPath, 'runtime', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
+    const entry = join(options.resourcesPath, 'runtime', 'node_modules', 'coding', 'lib', 'bin.js')
     await rm(entry)
     await expect(resolveRuntimeConfig(options)).rejects.toThrow('required file is unavailable')
     await writeFile(entry, '')

@@ -4,9 +4,9 @@
  */
 
 import { Context } from '@deepseek-ai/cordis'
-import LlmRuntime from '@deepseek-ai/dsh-llm'
+import LlmRuntime from 'coding-llm'
 import { describe, expect, it } from 'vitest'
-import * as LlmOpencode from '@deepseek-ai/dsh-llm-opencode'
+import * as LlmOpencode from 'coding-llm-opencode'
 import { CHANNEL_NAME, FREE_CHANNEL_MODELS, FREE_UPSTREAMS, freeChannelModel, PROVIDER_ID } from '../src/channel.ts'
 
 /** 挂载只带 LLM 服务的上下文，再装上本插件。 */

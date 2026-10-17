@@ -1,16 +1,16 @@
-/** 面向模型的浏览器操作；调用会话的权限决定是否审批，页面、安全策略及资源生命周期属于提供方。 @module @deepseek-ai/dsh-tool-browser */
+/** 面向模型的浏览器操作；调用会话的权限决定是否审批，页面、安全策略及资源生命周期属于提供方。 @module coding-tool-browser */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { BrowserCommand, BrowserExpectedTarget, BrowserObservation } from '@deepseek-ai/dsh-browser'
-import { BrowserUseError } from '@deepseek-ai/dsh-browser'
-import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import { AttachmentId } from '@deepseek-ai/dsh-attachment'
-import { remoteWorkspacePath } from '@deepseek-ai/dsh-subprocess'
-import { defineTool } from '@deepseek-ai/dsh-tools'
-import type { ParameterSchemaSpec, ToolRunContext } from '@deepseek-ai/dsh-tools'
-import type {} from '@deepseek-ai/dsh-user-approval'
-import type {} from '@deepseek-ai/dsh-sandbox-policy'
+import type { BrowserCommand, BrowserExpectedTarget, BrowserObservation } from 'coding-browser'
+import { BrowserUseError } from 'coding-browser'
+import type { ImageAttachmentRef } from 'coding-attachment'
+import type { ContentBlock } from 'coding-llm'
+import { AttachmentId } from 'coding-attachment'
+import { remoteWorkspacePath } from 'coding-subprocess'
+import { defineTool } from 'coding-tools'
+import type { ParameterSchemaSpec, ToolRunContext } from 'coding-tools'
+import type {} from 'coding-user-approval'
+import type {} from 'coding-sandbox-policy'
 
 /** 插件名。 */
 export const name = 'tool-browser'

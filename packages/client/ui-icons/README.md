@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-client-ui-icons
+# coding-client-ui-icons
 
 本包是浏览器客户端图标的独立组件边界。`Icon` 按产品语义名称选取图形，调用方只提供 `name`、可选的 `size`（默认 16px）与 `className`，颜色继承 `currentColor`，按钮的可访问名称仍由按钮自身提供。`sidebar` 映射到 Semi 的侧边栏图形，`files-panel` 使用该图形的右侧变体，`bottom-panel` 映射到终端图形。具体的 Semi 组件、旋转和尺寸适配仅在本包；业务组件不直接引用 `@douyinfe/semi-icons`。
 

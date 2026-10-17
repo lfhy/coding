@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-client-web",
+  "name": "coding-client-web",
   "description": "Web boot kernel: static module table, Cordis loader, framework-free boot page, and UI-renderer handoff",
   "version": "0.1.0-rc.8",
   "publishConfig": {
@@ -28,12 +28,12 @@
   "license": "MIT",
   "devDependencies": {
     "@deepseek-ai/cordis-plugin-loader": "workspace:^",
-    "@deepseek-ai/dsh-client-modules": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-renderer": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-icons": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-primitives": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-slots": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
+    "coding-client-modules": "workspace:^",
+    "coding-client-ui-renderer": "workspace:^",
+    "coding-client-ui-icons": "workspace:^",
+    "coding-client-ui-primitives": "workspace:^",
+    "coding-client-ui-slots": "workspace:^",
+    "coding-invariants": "workspace:^",
     "@types/react": "~18.3.1",
     "@types/react-dom": "~18.3.0",
     "@deepseek-ai/cordis": "workspace:^",
@@ -42,7 +42,7 @@
     "typescript": "^6.0.3"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-invariants": "workspace:^",
+    "coding-invariants": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "files": [

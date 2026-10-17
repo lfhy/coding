@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
-import { AttachmentId } from '@deepseek-ai/dsh-attachment'
-import type { AttachmentStore, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import { CallId, createMessage, createUserMessage, OFFLOADED_IMAGE_TEXT } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock, GenerateOptions, Message } from '@deepseek-ai/dsh-llm'
+import { AttachmentId } from 'coding-attachment'
+import type { AttachmentStore, ImageAttachmentRef } from 'coding-attachment'
+import { CallId, createMessage, createUserMessage, OFFLOADED_IMAGE_TEXT } from 'coding-llm'
+import type { ContentBlock, GenerateOptions, Message } from 'coding-llm'
 import { toPiContext } from '../src/context.ts'
 import { toPiAssistant } from '../src/replay.ts'
 

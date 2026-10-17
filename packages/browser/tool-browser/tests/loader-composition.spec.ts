@@ -8,15 +8,15 @@ import Include from '@deepseek-ai/cordis-plugin-include'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import BrowserUseService from '../../browser/src/index.ts'
 import type { BrowserCapture, BrowserCommand, BrowserHumanCommand, BrowserSessionState, BrowserTabId } from '../../browser/src/index.ts'
-import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
-import { CallId } from '@deepseek-ai/dsh-llm'
-import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
-import type { Session } from '@deepseek-ai/dsh-session'
-import SandboxPolicy, { setSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
-import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime from '@deepseek-ai/dsh-tools'
-import ApprovalService, { setApprovalPolicy } from '@deepseek-ai/dsh-user-approval'
-import type { ApprovalPolicy } from '@deepseek-ai/dsh-user-approval'
+import LocalAttachmentStore from 'coding-attachment-local'
+import { CallId } from 'coding-llm'
+import SessionStore, { SessionId } from 'coding-session'
+import type { Session } from 'coding-session'
+import SandboxPolicy, { setSandboxMode } from 'coding-sandbox-policy'
+import SystemPrompt from 'coding-system-prompt'
+import ToolRuntime from 'coding-tools'
+import ApprovalService, { setApprovalPolicy } from 'coding-user-approval'
+import type { ApprovalPolicy } from 'coding-user-approval'
 import * as ToolBrowser from '../src/index.ts'
 
 class FixtureBrowser extends BrowserUseService {
@@ -62,23 +62,23 @@ async function boot(options: { sandboxMode?: SandboxPolicy['defaultMode']; appro
   root = await mkdtemp(join(tmpdir(), 'dsh-browser-loader-'))
   const configPath = join(root, 'cordis.yml')
   await writeFile(configPath, [
-    "- name: '@deepseek-ai/dsh-session'",
-    "- name: '@deepseek-ai/dsh-system-prompt'",
-    "- name: '@deepseek-ai/dsh-tools'",
+    "- name: 'coding-session'",
+    "- name: 'coding-system-prompt'",
+    "- name: 'coding-tools'",
     '  config:',
     '    mode: native',
-    "- name: '@deepseek-ai/dsh-browser'",
-    "- name: '@deepseek-ai/dsh-attachment-local'",
+    "- name: 'coding-browser'",
+    "- name: 'coding-attachment-local'",
     '  config:',
     `    dshHome: ${JSON.stringify(root)}`,
-    "- name: '@deepseek-ai/dsh-user-approval'",
+    "- name: 'coding-user-approval'",
     ...options.approvalPolicy === undefined ? [] : ['  config:', `    policy: ${options.approvalPolicy}`],
     ...options.sandboxMode === undefined ? [] : [
-      "- name: '@deepseek-ai/dsh-sandbox-policy'",
+      "- name: 'coding-sandbox-policy'",
       '  config:',
       `    mode: ${options.sandboxMode}`,
     ],
-    "- name: '@deepseek-ai/dsh-tool-browser'",
+    "- name: 'coding-tool-browser'",
     '',
   ].join('\n'))
 
@@ -87,14 +87,14 @@ async function boot(options: { sandboxMode?: SandboxPolicy['defaultMode']; appro
   await ctx.plugin(Loader)
   ctx.loader.builtins.include = Include
   const modules = new Map<string, unknown>([
-    ['@deepseek-ai/dsh-session', SessionStore],
-    ['@deepseek-ai/dsh-system-prompt', SystemPrompt],
-    ['@deepseek-ai/dsh-tools', ToolRuntime],
-    ['@deepseek-ai/dsh-browser', FixtureBrowser],
-    ['@deepseek-ai/dsh-attachment-local', LocalAttachmentStore],
-    ['@deepseek-ai/dsh-user-approval', ApprovalService],
-    ['@deepseek-ai/dsh-sandbox-policy', SandboxPolicy],
-    ['@deepseek-ai/dsh-tool-browser', ToolBrowser],
+    ['coding-session', SessionStore],
+    ['coding-system-prompt', SystemPrompt],
+    ['coding-tools', ToolRuntime],
+    ['coding-browser', FixtureBrowser],
+    ['coding-attachment-local', LocalAttachmentStore],
+    ['coding-user-approval', ApprovalService],
+    ['coding-sandbox-policy', SandboxPolicy],
+    ['coding-tool-browser', ToolBrowser],
   ])
   ctx.loader.internal = {
     version: 'v2',

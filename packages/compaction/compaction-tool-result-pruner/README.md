@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-compaction-tool-result-pruner
+# coding-compaction-tool-result-pruner
 
 可安全回放、不依赖模型的剪枝服务（`ctx.toolResultPruner`）。它会将超出预算的 `tool/result` 表层节点改写为长度受限的头部、固定省略标记和长度受限的尾部，同时在仅追加会话日志中保留完整原始事件。
 
@@ -30,7 +30,7 @@
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
-import ToolResultPruner from '@deepseek-ai/dsh-compaction-tool-result-pruner'
+import ToolResultPruner from 'coding-compaction-tool-result-pruner'
 
 export function apply(ctx: Context): void {
   ctx.plugin(ToolResultPruner)

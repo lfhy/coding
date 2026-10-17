@@ -1,9 +1,9 @@
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
-import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import { SlotRegistry } from 'coding-client-runtime/client'
+import type { SessionId } from 'coding-client-runtime/client'
+import { LocaleRuntime } from 'coding-client-locale/client'
+import type {} from 'coding-client-ui-conversation/client'
 import { SessionLogDownloadContribution } from '../src/client/Contribution.tsx'
 import { apply, inject } from '../src/client/index.ts'
 

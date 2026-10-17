@@ -2,10 +2,10 @@
 
 import type { ContentBlock as AcpContentBlock } from '@agentclientprotocol/sdk'
 import type { Context } from '@deepseek-ai/cordis'
-import { admitEncodedImages, isImageAdmissionError } from '@deepseek-ai/dsh-attachment'
-import type { EncodedImageAttachment, ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import { admitEncodedImages, isImageAdmissionError } from 'coding-attachment'
+import type { EncodedImageAttachment, ImageAttachmentRef, ImageMediaType } from 'coding-attachment'
+import type { Agent } from 'coding-agent'
+import type { ContentBlock } from 'coding-llm'
 
 /** Raster formats shared by ACP image blocks and the core attachment vocabulary. */
 const IMAGE_MEDIA_TYPES: readonly ImageMediaType[] = [

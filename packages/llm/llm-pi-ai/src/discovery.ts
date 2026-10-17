@@ -12,9 +12,9 @@
  * @module dsh-llm-pi-ai/discovery
  */
 
-import { INVALID_CREDENTIAL_CODE, LlmError, normalizeApiKey } from '@deepseek-ai/dsh-llm'
-import type { LlmDiscoveredModel, LlmModelDiscoveryRequest } from '@deepseek-ai/dsh-llm'
-import { userAgent } from '@deepseek-ai/dsh-llm'
+import { INVALID_CREDENTIAL_CODE, LlmError, normalizeApiKey } from 'coding-llm'
+import type { LlmDiscoveredModel, LlmModelDiscoveryRequest } from 'coding-llm'
+import { userAgent } from 'coding-llm'
 import { catalogProvider } from './catalog.ts'
 
 /**

@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-command-feedback",
+  "name": "coding-command-feedback",
   "description": "Log-only session feedback producer and human-facing slash command",
   "version": "0.1.0-rc.8",
   "publishConfig": {
@@ -32,23 +32,23 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-commands": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-session-telemetry": "workspace:^",
-    "@deepseek-ai/dsh-anonymous-user-id": "workspace:^",
+    "coding-commands": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-session": "workspace:^",
+    "coding-session-telemetry": "workspace:^",
+    "coding-anonymous-user-id": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis-plugin-include": "workspace:^",
     "@deepseek-ai/cordis-plugin-loader": "workspace:^",
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-commands": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-session-telemetry": "workspace:^",
-    "@deepseek-ai/dsh-anonymous-user-id": "workspace:^",
+    "coding-agent": "workspace:^",
+    "coding-commands": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-llm": "workspace:^",
+    "coding-session": "workspace:^",
+    "coding-session-telemetry": "workspace:^",
+    "coding-anonymous-user-id": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   }
 }

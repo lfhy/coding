@@ -10,7 +10,7 @@
  * shutdown flush. The pure normalizers in ./normalize.ts turn the captured
  * stdout frames and the session-log events into stable, snapshot-able text.
  * See
- * @module @deepseek-ai/dsh-acp-snapshot/harness
+ * @module coding-acp-snapshot/harness
  */
 
 import { cp, mkdtemp, readFile, readdir, rm } from 'node:fs/promises'

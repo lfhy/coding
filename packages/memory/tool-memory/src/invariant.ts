@@ -1,13 +1,13 @@
 /**
- * Package-owned invariant companion for `@deepseek-ai/dsh-tool-memory`.
- * @module @deepseek-ai/dsh-tool-memory/invariant
+ * Package-owned invariant companion for `coding-tool-memory`.
+ * @module coding-tool-memory/invariant
  */
 
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
-import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
+import type { InvariantInstaller } from 'coding-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-tool-memory'
+const PACKAGE_NAME = 'coding-tool-memory'
 
 /** Cordis companion plugin name. */
 export const name = 'tool-memory-invariant'

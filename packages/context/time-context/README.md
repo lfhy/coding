@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-time-context
+# coding-time-context
 
 可选的持久上下文，包含当前带时区时间、附加到当前开放请求的浏览器时区，以及在模型请求准备期间采样的经过时长。默认组合不启用它；Schedule Web overlay 会挂载它，使模型可以按用户的浏览器时区解释未明确限定时区的日期和时间。决策记录：持久 time-context 设计记录。
 
@@ -6,7 +6,7 @@
 
 ```yaml
 - id: time-context
-  name: '@deepseek-ai/dsh-time-context'
+  name: 'coding-time-context'
   config:
     timeZone: Asia/Shanghai  # optional fallback when the request has no unique browser zone
     refreshIntervalMs: 60000 # optional; omit or set to 0 for every eligible attempt

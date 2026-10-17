@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-experimental-agent-team
+# coding-experimental-agent-team
 
 隐式 Root Agent Teams 领域。`ctx.agentTeams` 在 Lead Session 日志中维护扁平的 Lead／teammate roster、持久 peer mailbox 与共享任务 DAG。Agent Teams 设计记录负责协作和隔离决策；[Team 子系统目录](../../../docs/subsystems/agent-team.md)记录持久数据的字面形态与服务 API。
 
@@ -6,7 +6,7 @@
 
 ```yaml
 - id: agent-team
-  name: '@deepseek-ai/dsh-experimental-agent-team'
+  name: 'coding-experimental-agent-team'
   config:
     maxMembers: 8
     maxTasks: 256
@@ -59,7 +59,7 @@ roster 同时报告持久 provisioning／failed phase 与实时 `running`／`idl
 
 #### Token 影响
 
-每次 peer 投递都会把发送者前缀与消息内容加入 target 历史。任务和 roster 变更不增加模型 token；其面向模型的呈现属于 `@deepseek-ai/dsh-experimental-tool-agent-team` 结果。
+每次 peer 投递都会把发送者前缀与消息内容加入 target 历史。任务和 roster 变更不增加模型 token；其面向模型的呈现属于 `coding-experimental-tool-agent-team` 结果。
 
 #### KV Cache 影响
 

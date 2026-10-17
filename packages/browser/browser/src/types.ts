@@ -1,4 +1,4 @@
-/** 浏览器命令与观测的数据约定。实时页面及访问策略属于提供方。 @module @deepseek-ai/dsh-browser/types */
+/** 浏览器命令与观测的数据约定。实时页面及访问策略属于提供方。 @module coding-browser/types */
 
 /** 会话内标签页的稳定身份；关闭后不可复用。 */
 export type BrowserTabId = string & { readonly __browserTabId: unique symbol }

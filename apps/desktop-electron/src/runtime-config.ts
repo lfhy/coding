@@ -1,7 +1,7 @@
 /** Electron helper 启动前的只读路径与环境配置。 */
 import { lstat, readFile } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
-import { migrateCodingHome } from '@deepseek-ai/dsh-home-paths'
+import { migrateCodingHome } from 'coding-home-paths'
 
 /** Electron 的两种运行模式共用的输入；平台注入仅用于验证打包限制。 */
 export interface RuntimeConfigOptions {
@@ -121,10 +121,9 @@ export async function resolveRuntimeConfig(options: RuntimeConfigOptions): Promi
       requireEntry(join(resourcesPath, 'coding-host'), 'file'),
       requireEntry(join(resourcesPath, 'runtime'), 'directory'),
       requireEntry(join(resourcesPath, 'runtime', 'node_modules'), 'directory'),
-      requireEntry(join(resourcesPath, 'runtime', 'node_modules', '@deepseek-ai'), 'directory'),
-      requireEntry(join(resourcesPath, 'runtime', 'node_modules', '@deepseek-ai', 'dsh'), 'directory'),
-      requireEntry(join(resourcesPath, 'runtime', 'node_modules', '@deepseek-ai', 'dsh', 'lib'), 'directory'),
-      requireEntry(join(resourcesPath, 'runtime', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js'), 'file'),
+      requireEntry(join(resourcesPath, 'runtime', 'node_modules', 'coding'), 'directory'),
+      requireEntry(join(resourcesPath, 'runtime', 'node_modules', 'coding', 'lib'), 'directory'),
+      requireEntry(join(resourcesPath, 'runtime', 'node_modules', 'coding', 'lib', 'bin.js'), 'file'),
       requireEntry(join(resourcesPath, 'remote-agent'), 'directory'),
     ])
     // 主目录在这里定案：helper 会把它作为 DSH_HOME 交给 Host，因此首次启动的

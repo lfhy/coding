@@ -5,12 +5,12 @@ import {
   Menu,
   Tooltip,
   type MenuItem,
-} from '@deepseek-ai/dsh-client-ui-primitives'
-import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
-import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { WorkbenchLayoutSnapshot } from '@deepseek-ai/dsh-client-ui-layout/client'
-import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type { OpenInAppOpenResult } from '@deepseek-ai/dsh-host-open-in-app/shared'
+} from 'coding-client-ui-primitives'
+import type { ObservableSnapshot } from 'coding-client-runtime/client'
+import type { InjectFace, PropsLocale, PropsRuntime } from 'coding-client-ui-slots'
+import type { WorkbenchLayoutSnapshot } from 'coding-client-ui-layout/client'
+import type {} from 'coding-client-ui-conversation/client'
+import type { OpenInAppOpenResult } from 'coding-host-open-in-app/shared'
 import { NS, type OpenInAppKey } from './locales.ts'
 import {
   WORKBENCH_CHOICE_ID,

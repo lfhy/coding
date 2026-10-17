@@ -1,19 +1,19 @@
 /**
  * Coding 管理的本地 Host 发现、就绪和空闲退出。该模块属于 Web bundle，
  * 因为 Web profile 拥有回环服务器和两条客户端下行 socket。
- * @module @deepseek-ai/dsh-web-app/managed-host
+ * @module coding-web-app/managed-host
  */
 
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
-import type {} from '@deepseek-ai/dsh-agent'
-import type { WebClientConnections } from '@deepseek-ai/dsh-client-connection'
-import type {} from '@deepseek-ai/dsh-cmdline'
-import { MANAGED_HOST_RECORD_TOKEN_ENV } from '@deepseek-ai/dsh-host-apiproxy/api/host'
-import type {} from '@deepseek-ai/dsh-jobs'
-import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
+import type {} from 'coding-agent'
+import type { WebClientConnections } from 'coding-client-connection'
+import type {} from 'coding-cmdline'
+import { MANAGED_HOST_RECORD_TOKEN_ENV } from 'coding-host-apiproxy/api/host'
+import type {} from 'coding-jobs'
+import { resolveDshHome } from 'coding-home-paths'
 
 /** 所有 Coding 原生客户端都能识别的本地发现协议。 */
 export const CODING_HOST_PROTOCOL = 1

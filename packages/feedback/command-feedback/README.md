@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-command-feedback
+# coding-command-feedback
 
 与触发方式无关的会话反馈，以及面向用户的 `/feedback` 采集。本包导出 `recordFeedback(session, text)`；该函数会追加一个仅写入日志的 `feedback/record` 事件。该插件通过 [`ctx.commands`](../../interaction/commands/README.md) 注册一个全局命令，因此每个已组合的命令适配器都能发现它；随附的 Web 客户端无需模型轮次即可执行。
 
@@ -38,9 +38,9 @@
 
 ```yaml
 - id: commands
-  name: '@deepseek-ai/dsh-commands'
+  name: 'coding-commands'
 - id: command-feedback
-  name: '@deepseek-ai/dsh-command-feedback'
+  name: 'coding-command-feedback'
 ```
 
 随附的 `dsh` 基础组合无条件挂载此命令；它没有配置，也不依赖持久化 goal 栈。Web 客户端通过命令适配器暴露该命令。无头模式、ACP（Agent Client Protocol）自动化和 JSON-RPC 不提供命令适配器，因此不会暴露它。

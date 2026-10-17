@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-tool-pwsh-persistent
+# coding-tool-pwsh-persistent
 
 模型侧 `pwsh(command)`，由一个 owner 作用域的 `ctx.terminals` shell 支撑。本包拥有工具契约与 shell 复用；部署方选择 terminal backend（配置 `shellDialect: pwsh` 的 `terminal-bash` 实例）与沙箱策略。它是 `tool-bash-persistent` 的 Windows 对应物：相同的持久状态契约，PowerShell 方言。
 

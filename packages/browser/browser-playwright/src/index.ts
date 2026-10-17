@@ -1,15 +1,15 @@
-/** 隔离的 Chromium 页面提供方；每个会话只拥有一个内存上下文和只读画面。 @module @deepseek-ai/dsh-browser-playwright */
+/** 隔离的 Chromium 页面提供方；每个会话只拥有一个内存上下文和只读画面。 @module coding-browser-playwright */
 
 import { randomUUID } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { Context } from '@deepseek-ai/cordis'
-import { DEFAULT_MAX_SOURCE_IMAGE_BYTES, DEFAULT_MAX_SOURCE_IMAGE_PIXELS, normalizeImage } from '@deepseek-ai/dsh-attachment-local'
-import { AttachmentError } from '@deepseek-ai/dsh-attachment'
-import { BrowserUseError, BrowserUseService } from '@deepseek-ai/dsh-browser'
-import type { BrowserCapture, BrowserCommand, BrowserExpectedTarget, BrowserHumanCommand, BrowserHumanTarget, BrowserObservation, BrowserSessionState, BrowserTabId, BrowserTabSummary } from '@deepseek-ai/dsh-browser'
-import type {} from '@deepseek-ai/dsh-host-webserver'
-import type {} from '@deepseek-ai/dsh-session'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { DEFAULT_MAX_SOURCE_IMAGE_BYTES, DEFAULT_MAX_SOURCE_IMAGE_PIXELS, normalizeImage } from 'coding-attachment-local'
+import { AttachmentError } from 'coding-attachment'
+import { BrowserUseError, BrowserUseService } from 'coding-browser'
+import type { BrowserCapture, BrowserCommand, BrowserExpectedTarget, BrowserHumanCommand, BrowserHumanTarget, BrowserObservation, BrowserSessionState, BrowserTabId, BrowserTabSummary } from 'coding-browser'
+import type {} from 'coding-host-webserver'
+import type {} from 'coding-session'
+import type { SessionId } from 'coding-session/types'
 import { chromium } from 'playwright'
 import type { Browser, BrowserContext, ElementHandle, JSHandle, Page } from 'playwright'
 import { validateBrowserUrl } from './url.ts'

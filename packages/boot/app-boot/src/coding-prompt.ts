@@ -2,11 +2,11 @@
  * Coding 自己的提示词段：身份与工作方式。它们是产品文案，不是 harness 机制，因此
  * 独立于 `dsh-system-prompt` 的通用开场白，并在部署里关闭后者以避免两句身份并存。
  *
- * @module @deepseek-ai/dsh-app-boot/coding-prompt
+ * @module coding-app-boot/coding-prompt
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type {} from '@deepseek-ai/dsh-system-prompt'
+import type {} from 'coding-system-prompt'
 
 /** 工作方式段名称；顺序 −98，排在 persona 之前，因此预设无法遮蔽它。 */
 export const CODING_GUIDELINES_SECTION = 'coding:guidelines'

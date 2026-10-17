@@ -1,4 +1,4 @@
-/** 随发行包提供浏览器操作技能正文，并把资源目录交给技能注册表。 @module @deepseek-ai/dsh-skill-browser-use */
+/** 随发行包提供浏览器操作技能正文，并把资源目录交给技能注册表。 @module coding-skill-browser-use */
 
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
@@ -8,7 +8,7 @@ import {
   type SkillCandidate,
   type SkillDefinition,
   type SkillProvider,
-} from '@deepseek-ai/dsh-skill'
+} from 'coding-skill'
 
 const PROVIDER_NAME = 'browser-use'
 const SKILL_BODY_URL = new URL('../assets/browser-use.md', import.meta.url)

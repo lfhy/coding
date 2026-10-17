@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-client-ui-brand-official
+# coding-client-ui-brand-official
 
 仅当 `DSH_CLIENT_BUILD_PROFILE` 为 `official` 时，本包才使用 Coding 的字标与图标填充 `sidebar.brand.name` 和 `conversation.hero.brand.mark`。其他构建仍会加载插件，但不注册 occupant，因此显示 shell fallback。
 

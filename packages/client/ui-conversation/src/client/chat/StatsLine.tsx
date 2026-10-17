@@ -2,12 +2,12 @@
 // 旧内联行仍保留独立组件测试，但默认装配不再挂载它。
 
 import { Fragment, memo, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { ConversationSnapshot, UseProjection } from '@deepseek-ai/dsh-client-runtime/client'
-import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
+import { Tooltip } from 'coding-client-ui-primitives'
+import type { ConversationSnapshot, UseProjection } from 'coding-client-runtime/client'
+import type { SnapshotSelectorHook } from 'coding-client-ui-slots'
 // Type-only: merges the sessionStats key into SessionProjectionMap for useProjection.
-import type {} from '@deepseek-ai/dsh-session-stats/client'
-import type { ContextPressureProjection, TokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
+import type {} from 'coding-session-stats/client'
+import type { ContextPressureProjection, TokenUsageProjection } from 'coding-token-meter/client'
 import type { ComposerBarProps } from '../contract/slots.ts'
 import { formatTokensPerSecond } from './message-chrome.ts'
 import { assistantStepReading } from './turn-metrics.ts'

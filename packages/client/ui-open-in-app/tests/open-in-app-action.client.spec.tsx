@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createSnapshotStore, type SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
-import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { createSnapshotStore, type SessionListState } from 'coding-client-runtime/client'
+import { bindSnapshotSelector, makeTranslate } from 'coding-client-test-runtime'
+import type { SessionId } from 'coding-session/types'
 import {
   WORKBENCH_CHOICE_ID,
   type WorkspaceOpenTarget,

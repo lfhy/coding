@@ -7,13 +7,13 @@
  * `sidebar.settings` registrant's (ui-settings), followed by optional footer
  * actions in `sidebar.footer.action`.
  */
-import type { PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PropsLocale, PropsRenderSlots, PropsRuntime } from 'coding-client-ui-slots'
 // Type-only: pulls ui-layout's SlotMap merge (the 'sidebar' entry) into every
 // program that sees this contract, so PropsRuntime<'sidebar'> resolves.
-import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
-import type { WorkspaceId } from '@deepseek-ai/dsh-client-runtime/client'
+import type {} from 'coding-client-ui-layout/client'
+import type { WorkspaceId } from 'coding-client-runtime/client'
 
-declare module '@deepseek-ai/dsh-client-ui-slots' {
+declare module 'coding-client-ui-slots' {
   interface SlotMap {
     /**
      * 宽侧边栏中渲染的品牌名称。由本包的 `sidebar` 条目声明；壳层提供通用文本兜底。

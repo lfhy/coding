@@ -3,7 +3,7 @@
  * 一次完整 DNS 结果，并通过自定义 lookup 固定地址，避免连接再次把 hostname
  * 解析到私有地址。
  *
- * @module @deepseek-ai/dsh-web-fetch-http/network
+ * @module coding-web-fetch-http/network
  */
 
 import { lookup as systemLookup } from 'node:dns/promises'
@@ -12,7 +12,7 @@ import { isIP } from 'node:net'
 import { Agent, fetch } from 'undici'
 import type { Response } from 'undici'
 import ipaddr from 'ipaddr.js'
-import { WebError } from '@deepseek-ai/dsh-web'
+import { WebError } from 'coding-web'
 
 /** 已解析并为后续固定连接保留的地址。 */
 export interface PublicAddress {

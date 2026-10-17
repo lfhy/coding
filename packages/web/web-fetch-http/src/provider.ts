@@ -1,13 +1,13 @@
 /**
  * `ctx.web` 的安全 HTTP(S) 获取：校验并固定公开 IP 目的地，只跟随同源重定向，
- * 强制执行时间与大小限制，分类并解码文本，展示交给 `@deepseek-ai/dsh-tool-web`。
+ * 强制执行时间与大小限制，分类并解码文本，展示交给 `coding-tool-web`。
  * 请求不携带浏览器 cookie 或环境凭据。
- * @module @deepseek-ai/dsh-web-fetch-http/provider
+ * @module coding-web-fetch-http/provider
  */
 
-import { WebError } from '@deepseek-ai/dsh-web'
-import type { WebFetchBody, WebFetchProvider, WebFetchRequest, WebFetchResult } from '@deepseek-ai/dsh-web'
-import { deadline, timeoutOf } from '@deepseek-ai/dsh-timeout'
+import { WebError } from 'coding-web'
+import type { WebFetchBody, WebFetchProvider, WebFetchRequest, WebFetchResult } from 'coding-web'
+import { deadline, timeoutOf } from 'coding-timeout'
 import type { Response } from 'undici'
 import { publicHttpNetwork } from './network.ts'
 import { classifyContentType, decoderForCharset, isSameOrigin, parseCharset, validateFetchUrl } from './policy.ts'

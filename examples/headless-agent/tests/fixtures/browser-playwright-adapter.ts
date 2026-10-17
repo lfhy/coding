@@ -78,7 +78,7 @@ export const name = 'browser-playwright-adapter-fixture'
  * @returns 无返回值；不替换 browserUse 服务或提供方逻辑。
  */
 export function apply(ctx: Context): void {
-  const require = createRequire(import.meta.resolve('@deepseek-ai/dsh-browser-playwright'))
+  const require = createRequire(import.meta.resolve('coding-browser-playwright'))
   const { chromium } = require('playwright') as { chromium: FixtureChromium }
   ctx.effect(() => {
     const original = chromium.launch

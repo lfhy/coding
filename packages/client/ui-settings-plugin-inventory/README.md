@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-client-ui-settings-plugin-inventory
+# coding-client-ui-settings-plugin-inventory
 
 Web 设置中的只读**插件列表**标签页。浏览器插件注册一个 id 为 `all` 的本地化 `settings.plugins.tab` 贡献；“插件”分区拥有导航入口与标签栏。插件激活期间不会读取 Remote；首次选择该标签页时才挂载组件，并通过 [`api-remotes`](../../api/remotes/README.md) 懒调用 `ctx.remote.pluginInventory.list()`。
 

@@ -2,12 +2,12 @@
  * LLM service: adapter registry with a waterfall-interceptable streaming call
  * API. Exports the `LlmRuntime` default, the abstract `LlmAdapter` for
  * provider backends, and `BlockAssembler` for chunk assembly.
- * @module @deepseek-ai/dsh-llm
+ * @module coding-llm
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
+import { installSettingsSection, settingsNamespace } from 'coding-settings'
 import { userAgent } from './attribution.ts'
 import type {
   GenerateOptions,

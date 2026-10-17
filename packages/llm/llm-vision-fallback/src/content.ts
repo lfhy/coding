@@ -1,6 +1,6 @@
 /** 视觉降级唯一的图片替换规则，运行时与持久日志校验共用。 */
 
-import type { ContentBlock, ImageBlock } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, ImageBlock } from 'coding-llm'
 
 /**
  * 收集嵌套工具结果中的图片引用，顺序与模型内容一致。

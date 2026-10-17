@@ -1,6 +1,6 @@
 /**
  * 运行宿主原生命令的无 Shell 边界：捕获 UTF-8 标准流、传递取消，并隐藏 Windows 控制台窗口。
- * @module @deepseek-ai/dsh-native-command/runner
+ * @module coding-native-command/runner
  */
 
 import { execFile } from 'node:child_process'

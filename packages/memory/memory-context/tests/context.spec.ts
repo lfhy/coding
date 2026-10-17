@@ -3,11 +3,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import AgentRegistry, { Inbox, agentEvents, type Agent } from '@deepseek-ai/dsh-agent'
-import { Session, SessionId, SESSION_FORMAT_VERSION, type SessionEvent } from '@deepseek-ai/dsh-session'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import LocalMemory from '@deepseek-ai/dsh-memory-local'
-import * as MemoryContext from '@deepseek-ai/dsh-memory-context'
+import AgentRegistry, { Inbox, agentEvents, type Agent } from 'coding-agent'
+import { Session, SessionId, SESSION_FORMAT_VERSION, type SessionEvent } from 'coding-session'
+import { createUserMessage } from 'coding-llm'
+import LocalMemory from 'coding-memory-local'
+import * as MemoryContext from 'coding-memory-context'
 
 const cleanups: string[] = []
 const testToolSignal = new AbortController().signal

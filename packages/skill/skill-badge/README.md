@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-skill-badge
+# coding-skill-badge
 
 可选的内置 skill（技能）提供方，向 `ctx.skills` 贡献 `dsh-badge`。该 skill 提供官方「powered by dsh」Markdown 片段和随包分发的 PNG，供无法可靠导入远程图片的系统使用。
 
@@ -8,7 +8,7 @@
 
 ## 模型体验
 
-通过 `@deepseek-ai/dsh-tool-skill` 间接影响模型；该包会渲染目录条目和所选 skill 的正文。
+通过 `coding-tool-skill` 间接影响模型；该包会渲染目录条目和所选 skill 的正文。
 
 #### KV Cache 影响
 

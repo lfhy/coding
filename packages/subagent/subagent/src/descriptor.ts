@@ -18,14 +18,14 @@
  * durable descriptor, so it neither restores the prior budget nor inherits
  * the parent's current one; the resumed route's defaults apply instead.
  *
- * @module @deepseek-ai/dsh-subagent/descriptor
+ * @module coding-subagent/descriptor
  */
 
-import { snapshotJsonValue } from '@deepseek-ai/dsh-session'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import type { ToolRestriction } from '@deepseek-ai/dsh-tools'
+import { snapshotJsonValue } from 'coding-session'
+import type { SessionEvent } from 'coding-session'
+import type { ToolRestriction } from 'coding-tools'
 
-declare module '@deepseek-ai/dsh-session/types' {
+declare module 'coding-session/types' {
   interface SessionEventMap {
     /**
      * Durable identity and lifecycle mode of a session-backed subagent child,

@@ -6,10 +6,10 @@
  * @module dsh-llm-deepseek/serialize
  */
 
-import { contentHasImage, LlmError, offloadRequestImages } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock, GenerateOptions, Message } from '@deepseek-ai/dsh-llm'
-import { AttachmentError } from '@deepseek-ai/dsh-attachment'
-import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
+import { contentHasImage, LlmError, offloadRequestImages } from 'coding-llm'
+import type { ContentBlock, GenerateOptions, Message } from 'coding-llm'
+import { AttachmentError } from 'coding-attachment'
+import type { AttachmentStore } from 'coding-attachment'
 import type {
   WireImageContentPart,
   WireMessage,

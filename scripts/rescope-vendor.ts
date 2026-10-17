@@ -10,7 +10,7 @@
  * scalar. A match needs a quote (or `name: `) immediately left and the matching
  * quote — optionally after a `/subpath` — immediately right, which excludes
  * `cordis.yml`, the Loader's `cordis:` builtin prefix, `cordis-config-entry`,
- * `@deepseek-ai/dsh-tool-cordis`, and `cordiverse/cordis`, and makes the
+ * `coding-tool-cordis`, and `cordiverse/cordis`, and makes the
  * rewrite idempotent because the scoped name's `cordis` is preceded by `/`.
  * Markdown follows the rename inside every fence, and in `docs/` prose too:
  * a tutorial that teaches an unresolvable name is wrong, while prose elsewhere
@@ -155,7 +155,7 @@ const POSTCONDITIONS: readonly PostCondition[] = [
   { file: 'packages/client/ui-agent-preset/tests/locales.client.spec.ts', text: '[\'cordis\', \'presetCordisName\'', count: 1 },
   // The preset id the shipped composition documents to its own model.
   { file: 'apps/cli/config/agent-presets/cordis/agent.cordis.yml', text: 'The `cordis` agent preset', count: 1 },
-  { file: 'apps/cli/config/agent-presets/cordis/agent.cordis.yml', text: 'corrupting the `cordis` preset', count: 1 },
+  { file: 'apps/cli/config/agent-presets/cordis/agent.cordis.yml', text: '弄坏 `cordis` preset', count: 1 },
   { file: 'packages/examples/acp-demo/tests/built-bin.e2e.ts', text: '\'cordis\', \'loader\', \'include\', \'timer\', \'hmr\', \'logger-console\',', count: 1 },
 ]
 
@@ -192,16 +192,18 @@ const EXACT_EDITS: readonly ExactEdit[] = [
     expect: 1,
   },
   {
-    // The rescoped name is already covered by the `@deepseek-ai/.+` pattern beside it.
+    // The rescoped name is already covered by the `coding-.+` pattern beside it.
     id: 'knip-logger-console',
     file: 'knip.json',
     find: `      "ignoreDependencies": [
         "@cordisjs/plugin-logger-console",
+        "coding-.+",
         "@deepseek-ai/.+"
       ]
     },
     "packages/util/home": {`,
     replace: `      "ignoreDependencies": [
+        "coding-.+",
         "@deepseek-ai/.+"
       ]
     },
@@ -213,11 +215,13 @@ const EXACT_EDITS: readonly ExactEdit[] = [
     file: 'knip.json',
     find: `    "packages/bundle/base": {
       "ignoreDependencies": [
+        "coding-.+",
         "@deepseek-ai/.+",
         "@cordisjs/.+"
       ]`,
     replace: `    "packages/bundle/base": {
       "ignoreDependencies": [
+        "coding-.+",
         "@deepseek-ai/.+"
       ]`,
     expect: 1,
@@ -233,15 +237,6 @@ const EXACT_EDITS: readonly ExactEdit[] = [
   - cordis@4.0.0-rc.7
 `,
     replace: 'minimumReleaseAgeExclude:\n',
-    expect: 1,
-  },
-  {
-    id: 'publication-set-scope-assertion',
-    file: 'scripts/publish-npm-baseline.ts',
-    find: '      if (!isVendored && !name.startsWith(\'@deepseek-ai/\')) {',
-    replace: `      // Vendored packages are rescoped too (vendor/README.md), so publication
-      // never carries an upstream name that would squat it on the registry.
-      if (!name.startsWith('@deepseek-ai/')) {`,
     expect: 1,
   },
   {
@@ -458,6 +453,7 @@ const VENDORED_LIBRARY = /^@deepseek-ai\\/(cosmokit|schemastery)(\\/|$)/
 /** Files the rescope must never rewrite. */
 function excluded(file: string): boolean {
   if (file === 'scripts/rescope-vendor.ts') return true // the mapping itself
+  if (file.startsWith('website/.dist/')) return true // 生成的网站 bundle
   // Recorded model payloads quote documentation verbatim, so they must mirror the
   // sources on disk — including the notes this rescope leaves alone.
   if (file.startsWith('scripts/snapshots/')) return true

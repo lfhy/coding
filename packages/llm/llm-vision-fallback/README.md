@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-llm-vision-fallback
+# coding-llm-vision-fallback
 
 本插件在 `agent/request-history` 中处理主模型明确不支持图片输入、而当前会话 surface 包含图片的请求。主模型输入能力未知时不启用降级，由主模型适配器决定是否接受；这是既有未知能力的路由语义。插件只在 `vision-understanding` 设置分节或组合配置中显式提供非空的 `provider` 与 `model` 成对值时工作；否则拒绝已知文本模型的图片请求，原始图片不被丢弃，主模型也不会收到图片。设置通过现有 LLM 路由和凭据提供方生效；目标视觉模型必须针对该精确路由声明 `image` 输入能力，未知能力视为不可用。Host 可读取 `ctx.visionUnderstanding.status().configured` 作为配置存在性判断，它不代表凭据或模型调用已经成功。
 

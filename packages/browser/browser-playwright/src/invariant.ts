@@ -1,7 +1,7 @@
-/** Playwright 提供方的会话资源不变量登记。 @module @deepseek-ai/dsh-browser-playwright/invariant */
+/** Playwright 提供方的会话资源不变量登记。 @module coding-browser-playwright/invariant */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
+import type { InvariantInstaller } from 'coding-invariants'
 
 export const name = 'browser-playwright-invariant'
 export const inject = ['invariants']
@@ -14,4 +14,4 @@ const install: InvariantInstaller = () => {}
  * @returns 可撤销登记的 disposer。
  */
 export const apply = (ctx: Context): Promise<() => void> =>
-  Promise.resolve(ctx.invariants.register('@deepseek-ai/dsh-browser-playwright', install))
+  Promise.resolve(ctx.invariants.register('coding-browser-playwright', install))

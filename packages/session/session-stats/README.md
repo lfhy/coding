@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-session-stats
+# coding-session-stats
 
 注册 `sessionStats` projection 单元的函数插件：从步边界、流式 chunk、工具配对与已组装的 assistant 消息折叠出全日志会话数字——轮/步计数以及 LLM、工具、首 token、解码墙钟时间——经 session-projection 缝对外提供（registry 快照、变更流，以及每一个 projection 载体：history 尾页、`session/projection` 推送帧、会话列表行）。客户端由此渲染分页与压缩都无法改变的全会话数字；参考消费者是 Web 聊天统计条，其窗口折叠以相同字段名充当无单元时的回退。
 
@@ -16,7 +16,7 @@
 
 ```yaml
 - id: session-stats
-  name: '@deepseek-ai/dsh-session-stats'
+  name: 'coding-session-stats'
 ```
 
 注入 `sessionProjections`——这是插件的全部用途；在没有 registry 的装配中 fiber 保持挂起，不注册任何内容。

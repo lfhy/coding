@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
-import { summarizeVisibleSubagents, type JobView } from '@deepseek-ai/dsh-client-runtime/client'
-import { IconAgentPresetOutline16, IconChecklistOutline14, IconChevronRightOutline14, IconCloseOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import { summarizeVisibleSubagents, type JobView } from 'coding-client-runtime/client'
+import { IconAgentPresetOutline16, IconChecklistOutline14, IconChevronRightOutline14, IconCloseOutline16 } from 'coding-client-ui-primitives'
+import type { PropsLocale, PropsRenderSlots, PropsRuntime } from 'coding-client-ui-slots'
 // 投影键由各自能力包声明，卡片只消费现有会话数据。
-import type {} from '@deepseek-ai/dsh-session-stats/client'
-import type {} from '@deepseek-ai/dsh-token-meter/client'
+import type {} from 'coding-session-stats/client'
+import type {} from 'coding-token-meter/client'
 import { formatTokensPerSecond } from '../chat/message-chrome.ts'
 import {
   billedInputTokens, cacheHitPercent, deriveStats, formatDuration, formatTokens,

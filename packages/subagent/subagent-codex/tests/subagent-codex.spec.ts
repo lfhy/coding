@@ -6,17 +6,17 @@ import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import * as yaml from 'js-yaml'
 import { describe, expect, it, vi } from 'vitest'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
-import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import SubagentRuntime from '@deepseek-ai/dsh-subagent'
-import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
+import type { Agent } from 'coding-agent'
+import type { InvariantInstaller } from 'coding-invariants'
+import type { ContentBlock } from 'coding-llm'
+import SubagentRuntime from 'coding-subagent'
+import { MAX_TIMER_DELAY_MS } from 'coding-timeout'
 import type {
   SubprocessHandle,
   SubprocessOutcome,
   SubprocessSpawnSpec,
-} from '@deepseek-ai/dsh-subprocess'
-import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
+} from 'coding-subprocess'
+import LocalSubprocessRuntime from 'coding-subprocess-local'
 import * as codex from '../src/index.ts'
 import * as invariant from '../src/invariant.ts'
 import {
@@ -368,11 +368,11 @@ describe('task admission and package contracts', () => {
     expect(manifest.dsh?.bundle?.patch).toBe('./cordis.patch.yml')
     expect(manifest.files).toContain('cordis.patch.yml')
     expect(manifest.dependencies).toHaveProperty(
-      '@deepseek-ai/dsh-sdk-protocol',
+      'coding-sdk-protocol',
       'workspace:^',
     )
     expect(manifest.dependencies).toHaveProperty('@openai/codex', CODEX_VERSION)
-    expect(manifest.dependencies).not.toHaveProperty('@deepseek-ai/dsh-subagent-claude-code')
+    expect(manifest.dependencies).not.toHaveProperty('coding-subagent-claude-code')
 
     const codexPackageJson = fileURLToPath(import.meta.resolve('@openai/codex/package.json'))
     const codexManifest = JSON.parse(readFileSync(codexPackageJson, 'utf8')) as {
@@ -410,7 +410,7 @@ describe('task admission and package contracts', () => {
       : []
     expect(rows).toEqual([{
       id: 'subagent-codex',
-      name: '@deepseek-ai/dsh-subagent-codex',
+      name: 'coding-subagent-codex',
     }])
     expect(JSON.stringify(rows)).not.toContain('tool-subagent')
   })
@@ -665,7 +665,7 @@ describe('task admission and package contracts', () => {
     const ctx = { invariants: { register } } as unknown as Context
     await expect(invariant.apply(ctx)).resolves.toBe(dispose)
     expect(register).toHaveBeenCalledWith(
-      '@deepseek-ai/dsh-subagent-codex',
+      'coding-subagent-codex',
       expect.any(Function),
     )
     const install = register.mock.calls[0]![1]

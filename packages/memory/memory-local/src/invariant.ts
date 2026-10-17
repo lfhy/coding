@@ -1,13 +1,13 @@
 /**
- * Package-owned invariant companion for `@deepseek-ai/dsh-memory-local`.
- * @module @deepseek-ai/dsh-memory-local/invariant
+ * Package-owned invariant companion for `coding-memory-local`.
+ * @module coding-memory-local/invariant
  */
 
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
-import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
+import type { InvariantInstaller } from 'coding-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-memory-local'
+const PACKAGE_NAME = 'coding-memory-local'
 
 /** Cordis companion plugin name. */
 export const name = 'memory-local-invariant'

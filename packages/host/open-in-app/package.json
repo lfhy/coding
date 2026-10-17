@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-host-open-in-app",
+  "name": "coding-host-open-in-app",
   "description": "Host workspace opening, Session-scoped file previews, and connection-owned interactive terminals",
   "version": "0.1.0-rc.8",
   "publishConfig": {
@@ -41,29 +41,29 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@deepseek-ai/dsh-launch-environment": "workspace:^",
-    "@deepseek-ai/dsh-native-command": "workspace:^",
-    "@deepseek-ai/dsh-subprocess": "workspace:^",
+    "coding-launch-environment": "workspace:^",
+    "coding-native-command": "workspace:^",
+    "coding-subprocess": "workspace:^",
     "@deepseek-ai/schemastery": "workspace:^",
     "ws": "^8.21.0"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-fs": "workspace:^",
-    "@deepseek-ai/dsh-host-webserver": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^"
+    "coding-agent": "workspace:^",
+    "coding-fs": "workspace:^",
+    "coding-host-webserver": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-session": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/cordis-plugin-loader": "workspace:^",
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-fs": "workspace:^",
-    "@deepseek-ai/dsh-fs-local": "workspace:^",
-    "@deepseek-ai/dsh-host-webserver": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^",
+    "coding-agent": "workspace:^",
+    "coding-fs": "workspace:^",
+    "coding-fs-local": "workspace:^",
+    "coding-host-webserver": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-session": "workspace:^",
     "@types/ws": "^8.18.1"
   }
 }

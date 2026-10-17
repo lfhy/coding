@@ -28,7 +28,7 @@ import {
   IconSearchOutline16,
   MarkdownText,
   Tooltip,
-} from '@deepseek-ai/dsh-client-ui-primitives'
+} from 'coding-client-ui-primitives'
 import type {
   InjectFace,
   HostObservable,
@@ -36,10 +36,10 @@ import type {
   PropsRuntime,
   PropsRenderSlots,
   PropsStore,
-} from '@deepseek-ai/dsh-client-ui-slots'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { GitHistory } from '@deepseek-ai/dsh-host-apiproxy/api'
-import type { BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
+} from 'coding-client-ui-slots'
+import type { SessionId } from 'coding-session/types'
+import type { GitHistory } from 'coding-host-apiproxy/api'
+import type { BoundActions } from 'coding-client-ui-slots'
 import type {
   createWorkbenchStore, createRetainedWorkbenchStore, WorkbenchExternalTab, WorkbenchFileTab, WorkbenchState,
 } from './store.ts'

@@ -9,13 +9,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
-import { REMOTE_WORKSPACE_MARKER } from '@deepseek-ai/dsh-subprocess'
+import { REMOTE_WORKSPACE_MARKER } from 'coding-subprocess'
 import type {
   SubprocessOutcome,
   SubprocessRuntime,
   SubprocessTerminalHandle,
   SubprocessTerminalSpawnSpec,
-} from '@deepseek-ai/dsh-subprocess'
+} from 'coding-subprocess'
 import WebSocket, { type RawData } from 'ws'
 import {
   OpenInAppTerminalGateway,

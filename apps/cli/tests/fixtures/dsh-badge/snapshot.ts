@@ -1,11 +1,11 @@
 import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
-import { agentEvents, Inbox, type Agent } from '@deepseek-ai/dsh-agent'
-import { CallId } from '@deepseek-ai/dsh-llm'
-import { boot, loadOverlayPatches } from '@deepseek-ai/dsh-app-boot'
-import { SessionId } from '@deepseek-ai/dsh-session'
-import type {} from '@deepseek-ai/dsh-skill'
-import type {} from '@deepseek-ai/dsh-tools'
+import { agentEvents, Inbox, type Agent } from 'coding-agent'
+import { CallId } from 'coding-llm'
+import { boot, loadOverlayPatches } from 'coding-app-boot'
+import { SessionId } from 'coding-session'
+import type {} from 'coding-skill'
+import type {} from 'coding-tools'
 
 const overlayPath = process.argv[2]
 if (overlayPath === undefined) throw new Error('dsh-badge snapshot requires an overlay path')

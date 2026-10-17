@@ -8,7 +8,7 @@
  * @module dsh-llm-deepseek/adapter
  */
 
-import { contentHasImage, CONTEXT_WINDOW_EXCEEDED_CODE, isContextWindowExceededError, isQuotaExceededError, LlmAdapter, LlmError, ProviderRequestId, QUOTA_EXCEEDED_CODE, ReasoningEffortId, userAgent } from '@deepseek-ai/dsh-llm'
+import { contentHasImage, CONTEXT_WINDOW_EXCEEDED_CODE, isContextWindowExceededError, isQuotaExceededError, LlmAdapter, LlmError, ProviderRequestId, QUOTA_EXCEEDED_CODE, ReasoningEffortId, userAgent } from 'coding-llm'
 import type {
   GenerateOptions,
   LlmModelInfo,
@@ -17,11 +17,11 @@ import type {
   ModelModality,
   ResolvedRetryPolicy,
   StreamChunk,
-} from '@deepseek-ai/dsh-llm'
-import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
-import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
-import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
-import type { AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
+} from 'coding-llm'
+import type { AttachmentStore } from 'coding-attachment'
+import type { CredentialRef } from 'coding-credentials'
+import { idleWatchdog, timeoutOf } from 'coding-timeout'
+import type { AnonymousUserId } from 'coding-anonymous-user-id'
 import { serializeRequest, serializeRequestWithImages } from './serialize.ts'
 import type { RequestDefaults } from './serialize.ts'
 import { parseSse } from './sse.ts'

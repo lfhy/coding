@@ -2,17 +2,17 @@
 // 客户端接线测试覆盖 root 的单次注册、服务生命周期和主题呈现器。
 
 import { Context } from '@deepseek-ai/cordis'
-import { stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
+import { stubSettingsScope } from 'coding-client-test-runtime'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
-import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import { apply as themeApply, inject as themeInject, ThemeRuntime } from '@deepseek-ai/dsh-client-ui-theme/client'
-import { apply, inject, LayoutController } from '@deepseek-ai/dsh-client-ui-layout/client'
-import type { AppFrameInjected } from '@deepseek-ai/dsh-client-ui-layout/src/client/AppFrame.tsx'
-import type { PanelActions } from '@deepseek-ai/dsh-client-ui-layout/src/client/service.ts'
-import { apply as nodeApply } from '@deepseek-ai/dsh-client-ui-layout'
-import * as invariant from '@deepseek-ai/dsh-client-ui-layout/invariant'
+import { SlotRegistry } from 'coding-client-runtime/client'
+import { LocaleRuntime } from 'coding-client-locale/client'
+import type { SessionId } from 'coding-session/types'
+import { apply as themeApply, inject as themeInject, ThemeRuntime } from 'coding-client-ui-theme/client'
+import { apply, inject, LayoutController } from 'coding-client-ui-layout/client'
+import type { AppFrameInjected } from 'coding-client-ui-layout/src/client/AppFrame.tsx'
+import type { PanelActions } from 'coding-client-ui-layout/src/client/service.ts'
+import { apply as nodeApply } from 'coding-client-ui-layout'
+import * as invariant from 'coding-client-ui-layout/invariant'
 
 beforeEach(() => {
   document.head.querySelectorAll('meta[name="theme-color"]').forEach((node) => { node.remove() })
@@ -126,7 +126,7 @@ describe('node half + invariant companion', () => {
     const ctx = { invariants: { register } } as never
     // /invariant 类型位于构建产物；这里收窄 API，避免 lint 依赖预构建。
     const dispose = await (invariant as { apply: (ctx: never) => Promise<() => void> }).apply(ctx)
-    expect(register).toHaveBeenCalledWith('@deepseek-ai/dsh-client-ui-layout', expect.any(Function))
+    expect(register).toHaveBeenCalledWith('coding-client-ui-layout', expect.any(Function))
     // 声明的空 installer 必须可安全调用。
     expect(() => { (register.mock.calls[0]![1] as (c: never) => void)(undefined as never) }).not.toThrow()
     expect(dispose).toBeTypeOf('function')

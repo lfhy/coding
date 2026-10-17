@@ -10,7 +10,7 @@
  * 连接事实按模型取自 {@link FREE_CHANNEL_MODELS}：同一个渠道下的模型可以来自
  * 不同上游，端点与凭据因此是每条请求按模型解析的，而不是整条路由共用一个。
  *
- * @module @deepseek-ai/dsh-llm-opencode/adapter
+ * @module coding-llm-opencode/adapter
  */
 
 import { createProvider } from '@earendil-works/pi-ai'
@@ -21,7 +21,7 @@ import {
   LlmAdapter,
   LlmError,
   ReasoningEffortId,
-} from '@deepseek-ai/dsh-llm'
+} from 'coding-llm'
 import type {
   ContentBlock,
   GenerateOptions,
@@ -31,9 +31,9 @@ import type {
   Message,
   ResolvedRetryPolicy,
   StreamChunk,
-} from '@deepseek-ai/dsh-llm'
-import type { AttachmentStore, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
+} from 'coding-llm'
+import type { AttachmentStore, ImageAttachmentRef } from 'coding-attachment'
+import { idleWatchdog, timeoutOf } from 'coding-timeout'
 import type {
   Context as PiContext,
   ImageContent as PiImageContent,

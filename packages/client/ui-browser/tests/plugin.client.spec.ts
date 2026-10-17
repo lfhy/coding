@@ -1,7 +1,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
-import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
-import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
+import { SlotRegistry } from 'coding-client-runtime/client'
+import { LocaleRuntime } from 'coding-client-locale/client'
 import { apply, inject } from '../src/client/index.ts'
 import { BrowserMirror, BrowserTabs, type BrowserMirrorInjected } from '../src/client/BrowserMirror.tsx'
 

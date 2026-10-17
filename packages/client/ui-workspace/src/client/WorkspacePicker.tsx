@@ -7,11 +7,11 @@ import {
   IconDataOutline16, IconFolderOpenOutline16, IconProjectAddOutline16,
   IconNewChatOutline16, IconSearchOutline16, IconSettingsOutline16, Input,
   Menu, Modal, type MenuEntry,
-} from '@deepseek-ai/dsh-client-ui-primitives'
+} from 'coding-client-ui-primitives'
 import type {
   WorkspaceId, WorkspaceListState, WorkspaceView,
-} from '@deepseek-ai/dsh-client-runtime/client'
-import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
+} from 'coding-client-runtime/client'
+import type { SnapshotSelectorHook } from 'coding-client-ui-slots'
 import type { DirectoryFlowOwnerProps, WorkspacePickerProps } from './contract/slots.ts'
 import css from './WorkspacePicker.module.css'
 import remoteCss from './RemoteSshWizard.module.css'

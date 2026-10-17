@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-client-ui-model-selection
+# coding-client-ui-model-selection
 
 模型选择插件（浏览器侧）：**两个入口共用一份会话级目录**，由 `ModelDirectoryResolver`（`ctx.modelDirectories`）持有。对于普通会话，`/model` popupSelect 贡献项（经 `ctx.commandUi` 注册）与 composer 的具名 `conversation.input.model` slot 都通过同一个 `ModelDirectory` 实例，经 `session.models` 加载会话的建议目录，并经 `session.selectModel` 提交。composer 入口收起时回显当前模型名称及已公布的推理等级；展开后底部入口显示「选择强度」，紧凑弹层在视觉上仅显示当前档位、模型名称和滑轨，其表面与未填充轨道随亮色／暗色主题切换。拖动时预览档位名称与颜色，松开或键盘操作结束后提交适配器为确切模型公布的离散等级，右上角可重置为默认值。适配器公布的档位说明保留为滑块的辅助描述。点击模型名称打开并排的渠道与模型选择器：左侧列出 Host 公布的渠道，右侧只展示当前渠道的模型，并可按名称或 ID 搜索。当前模型没有可调等级或不在目录中时，入口直接打开模型选择器。选择器受视口和对话区裁切边界约束。`/model` 应用所选模型的默认推理强度。
 

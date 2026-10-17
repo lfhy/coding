@@ -1,14 +1,14 @@
 /** 工作区本地启动入口、功能工作台与底栏终端的浏览器插件。 */
 
-import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
-import type {} from '@deepseek-ai/dsh-client-connection/client'
-import type {} from '@deepseek-ai/dsh-client-locale/client'
-import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
-import { OPEN_IN_APP_ICON_PREFIX } from '@deepseek-ai/dsh-host-open-in-app/shared'
+import type { ConnectionHandle } from 'coding-client-connection/client'
+import type { ClientContext } from 'coding-client-runtime/client'
+import type { SessionId } from 'coding-session/types'
+import type { HostObservable } from 'coding-client-ui-slots'
+import type {} from 'coding-client-connection/client'
+import type {} from 'coding-client-locale/client'
+import type {} from 'coding-client-ui-conversation/client'
+import type {} from 'coding-client-ui-layout/client'
+import { OPEN_IN_APP_ICON_PREFIX } from 'coding-host-open-in-app/shared'
 import { OpenInAppController } from './controller.ts'
 import { OpenInAppAction, type OpenInAppActionInjected } from './OpenInAppAction.tsx'
 import { WorkspaceWorkbench, type WorkspaceWorkbenchInjected } from './WorkspaceWorkbench.tsx'
@@ -41,7 +41,7 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-declare module '@deepseek-ai/dsh-client-ui-slots' {
+declare module 'coding-client-ui-slots' {
   interface SlotMap {
     /** 工作台右侧预览区的会话级浏览器；隐藏时条目仍保持挂载。 */
     'workbench.browser': { kind: 'single'; scope: 'session'; owner: WorkbenchBrowserOwnerProps }

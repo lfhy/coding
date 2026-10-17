@@ -43,7 +43,7 @@ const webRoot = join(repoRoot, 'apps/web')
 const CLIENT_TYPE_PROGRAM = 'tsconfig.client.json'
 
 /** Compile-shell workspace whose dist `dsh web` serves. */
-const SHELL_PACKAGE = '@deepseek-ai/dsh-web-frontend'
+const SHELL_PACKAGE = 'coding-web-frontend'
 
 /**
  * Test infrastructure builds through the client preset but never enters the

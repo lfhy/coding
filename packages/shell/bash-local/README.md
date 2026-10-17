@@ -1,6 +1,6 @@
-# @deepseek-ai/dsh-bash-local
+# coding-bash-local
 
-`@deepseek-ai/dsh-shell` 执行器 seam 的 Service Provider。本地与 Remote-SSH agent 模式通过 [`@deepseek-ai/dsh-subprocess`](../../subprocess/subprocess/README.md) 把 `bash -c <command>` 作为受管进程 spawn；Remote-SSH basic 模式的前台命令通过 bridge 发起一次 `/v1/exec`，后台命令通过 bridge 的受管进程接口运行。执行器负责命令默认值、超时和取消分类、终端环境，以及后台读取时的 stdout/stderr 合并。spill 文件、凭据清除、kill 升级和 dispose（资源释放）是受管 subprocess 路径的机制。
+`coding-shell` 执行器 seam 的 Service Provider。本地与 Remote-SSH agent 模式通过 [`coding-subprocess`](../../subprocess/subprocess/README.md) 把 `bash -c <command>` 作为受管进程 spawn；Remote-SSH basic 模式的前台命令通过 bridge 发起一次 `/v1/exec`，后台命令通过 bridge 的受管进程接口运行。执行器负责命令默认值、超时和取消分类、终端环境，以及后台读取时的 stdout/stderr 合并。spill 文件、凭据清除、kill 升级和 dispose（资源释放）是受管 subprocess 路径的机制。
 
 包根目录导出默认与具名的 `LocalBashExecutor` 插件及其 `Config`。
 
@@ -8,7 +8,7 @@
 
 ```yaml
 - id: bash
-  name: '@deepseek-ai/dsh-bash-local'
+  name: 'coding-bash-local'
   config:
     cwd: /path/to/workspace   # default: process.cwd()
     timeoutMs: 120000          # default foreground timeout

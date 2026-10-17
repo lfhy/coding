@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-tool-browser
+# coding-tool-browser
 
 `browser_navigate`、`browser_snapshot`、`browser_click`、`browser_fill`、`browser_scroll`、`browser_screenshot` 和 `browser_close` 是 `ctx.browserUse` 的面向模型消费方。部署需挂载工具注册表、浏览器服务、持久附件存储和系统提示词；执行时还需审批服务及活跃 Agent。只有调用会话的有效沙箱模式为 `danger-full-access`，且有效审批策略为 `never` 时，工具才不申请一次性审批并直接执行。有效权限结合该会话的覆盖与部署默认值解析，不受其他会话的选择影响。
 

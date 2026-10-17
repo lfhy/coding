@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-cordis-client-runner
+# coding-cordis-client-runner
 
 动态双半插件包的浏览器半。host 侧 runner 把每个定义的代码留在进程内存里，并经一条 `cordis/request-run` 事件向打开的页面发问「要不要运行它」；本包回答这个请求、把定义变成活的浏览器插件，并把 `dynamicCordisRunner/retract` 事件变回干净的页面。
 

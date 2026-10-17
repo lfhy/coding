@@ -3,7 +3,7 @@
 import { randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
 import { Context, Service } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { Agent } from 'coding-agent'
 import type { BackendActionResult, BackendCursorAction, BackendHealth, BackendObservation, ComputerUseBackend, CursorVisibility } from './backend.ts'
 import { allocateScreenshotPath, describeScreenshot } from './artifacts.ts'
 import type { ResolvedComputerUseConfig } from './config.ts'

@@ -1,5 +1,5 @@
-import { BrandMark, BrandWordmark } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { HeroBrandMarkOwnerProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import { BrandMark, BrandWordmark } from 'coding-client-ui-primitives'
+import type { HeroBrandMarkOwnerProps } from 'coding-client-ui-conversation/client'
 
 /**
  * 按宿主表面提供的尺寸渲染 Coding 品牌图标。

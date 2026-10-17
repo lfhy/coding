@@ -13,11 +13,11 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, waitFor, within } from '@testing-library/react'
-import type { ISession, SessionId, WorkspaceId } from '@deepseek-ai/dsh-client-runtime/client'
-import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
-import { SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
-import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
-import { apply, inject } from '@deepseek-ai/dsh-client-ui-workspace/client'
+import type { ISession, SessionId, WorkspaceId } from 'coding-client-runtime/client'
+import type { PropsRenderSlots } from 'coding-client-ui-slots'
+import { SlotTestRuntime } from 'coding-client-test-runtime'
+import { LocaleRuntime } from 'coding-client-locale/client'
+import { apply, inject } from 'coding-client-ui-workspace/client'
 
 const SID = 's1' as SessionId
 

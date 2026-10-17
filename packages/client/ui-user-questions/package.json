@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-client-ui-user-questions",
+  "name": "coding-client-ui-user-questions",
   "description": "Web ask_user_question feature: host tool mount plus composer-takeover question UI",
   "version": "0.1.0-rc.8",
   "publishConfig": {
@@ -32,8 +32,8 @@
   "dsh": {
     "client": {
       "inject": [
-        "@deepseek-ai/dsh-client-locale",
-        "@deepseek-ai/dsh-client-ui-conversation"
+        "coding-client-locale",
+        "coding-client-ui-conversation"
       ],
       "platform": "web"
     }
@@ -48,28 +48,28 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-api-remotes": "workspace:^",
-    "@deepseek-ai/dsh-client-locale": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-client-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-conversation": "workspace:^"
+    "coding-api-remotes": "workspace:^",
+    "coding-client-locale": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-client-runtime": "workspace:^",
+    "coding-client-ui-conversation": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-api-remotes": "workspace:^",
-    "@deepseek-ai/dsh-client-locale": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-system-prompt": "workspace:^",
-    "@deepseek-ai/dsh-tools": "workspace:^",
-    "@deepseek-ai/dsh-user-questions": "workspace:^",
+    "coding-agent": "workspace:^",
+    "coding-api-remotes": "workspace:^",
+    "coding-client-locale": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-system-prompt": "workspace:^",
+    "coding-tools": "workspace:^",
+    "coding-user-questions": "workspace:^",
     "@types/react": "~18.3.1",
-    "@deepseek-ai/dsh-client-ui-primitives": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-slots": "workspace:^",
+    "coding-client-ui-primitives": "workspace:^",
+    "coding-client-ui-slots": "workspace:^",
     "react": "^18.2.0",
-    "@deepseek-ai/dsh-client-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-conversation": "workspace:^",
-    "@deepseek-ai/dsh-client-connection": "workspace:^"
+    "coding-client-runtime": "workspace:^",
+    "coding-client-ui-conversation": "workspace:^",
+    "coding-client-connection": "workspace:^"
   },
   "files": [
     "lib/index.js",

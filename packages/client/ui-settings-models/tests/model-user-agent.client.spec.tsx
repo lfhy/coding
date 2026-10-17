@@ -2,8 +2,8 @@
 /** 模型 UA 行在草稿校验、保存和恢复默认时的可见行为。 */
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import { bindSnapshotSelector } from 'coding-client-test-runtime'
+import { createSnapshotStore } from 'coding-client-runtime/client'
 import type { ModelUserAgentRowProps } from '../src/client/ModelUserAgentRow.tsx'
 import { ModelUserAgentRow, validModelUserAgent } from '../src/client/ModelUserAgentRow.tsx'
 import type { ModelUserAgentState } from '../src/client/model-user-agent.ts'

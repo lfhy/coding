@@ -1,13 +1,13 @@
 /**
- * Package-owned invariant companion for `@deepseek-ai/dsh-client-web`.
- * @module @deepseek-ai/dsh-client-web/invariant
+ * Package-owned invariant companion for `coding-client-web`.
+ * @module coding-client-web/invariant
  */
 
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
-import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
+import type { InvariantInstaller } from 'coding-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-client-web'
+const PACKAGE_NAME = 'coding-client-web'
 
 /** Cordis companion plugin name. */
 export const name = 'client-web-invariant'

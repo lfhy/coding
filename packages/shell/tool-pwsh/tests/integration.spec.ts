@@ -1,5 +1,5 @@
 /**
- * Integration tests: the REAL `@deepseek-ai/dsh-pwsh-local` executor plus the
+ * Integration tests: the REAL `coding-pwsh-local` executor plus the
  * `pwsh` tool, exercised through `ctx.tools.execute()` with a real PowerShell
  * process. These verify the world — actual commands run, stdout/stderr come
  * back, exit codes render, timeouts abort, background jobs settle through the
@@ -15,15 +15,15 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { Context } from '@deepseek-ai/cordis'
-import { CallId } from '@deepseek-ai/dsh-llm'
-import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime, { TOOL_ABORTED } from '@deepseek-ai/dsh-tools'
-import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
-import * as ToolTasks from '@deepseek-ai/dsh-tool-jobs'
-import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
-import { PwshLocalExecutor, resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
-import * as ToolPwsh from '@deepseek-ai/dsh-tool-pwsh'
-import * as BashEnvPlugin from '@deepseek-ai/dsh-shell-env'
+import { CallId } from 'coding-llm'
+import SystemPrompt from 'coding-system-prompt'
+import ToolRuntime, { TOOL_ABORTED } from 'coding-tools'
+import LocalJobRegistry from 'coding-jobs-local'
+import * as ToolTasks from 'coding-tool-jobs'
+import LocalSubprocessRuntime from 'coding-subprocess-local'
+import { PwshLocalExecutor, resolvePwshPath } from 'coding-pwsh-local'
+import * as ToolPwsh from 'coding-tool-pwsh'
+import * as BashEnvPlugin from 'coding-shell-env'
 
 const testToolSignal = new AbortController().signal
 

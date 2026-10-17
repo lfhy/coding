@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { BrowserMirror, BrowserTabs, type BrowserMirrorProps } from '../src/client/BrowserMirror.tsx'
 import type { BrowserView } from '../src/client/controller.ts'
-import type { ToolCallBlock } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ToolCallBlock } from 'coding-client-runtime/client'
 import { en } from '../src/client/locales.ts'
 import { id, otherId, state } from './browser-fixtures.ts'
 

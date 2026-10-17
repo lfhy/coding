@@ -2,7 +2,7 @@
 import { forwardRef } from 'react'
 import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from 'react'
 import clsx from 'clsx'
-import { IconSendOutline16, IconStopFill16 } from '@deepseek-ai/dsh-client-ui-icons'
+import { IconSendOutline16, IconStopFill16 } from 'coding-client-ui-icons'
 import css from './ChatSurfaces.module.css'
 
 /** 用户消息的共同气泡，不解析用户输入中的 Markdown。 */

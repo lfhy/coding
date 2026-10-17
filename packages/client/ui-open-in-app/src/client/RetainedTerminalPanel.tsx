@@ -1,9 +1,9 @@
 /** 终端第一次显示时才挂载；标签切换或底栏收起都不释放已有 PTY。 */
 
 import { useEffect, useId, useLayoutEffect, useReducer, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
-import { Icon } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import { Icon } from 'coding-client-ui-primitives'
+import type { SessionId } from 'coding-session/types'
+import type { InjectFace, PropsLocale, PropsRuntime } from 'coding-client-ui-slots'
 import { TerminalPanel, type TerminalPanelProps } from './TerminalPanel.tsx'
 import { NS } from './locales.ts'
 import css from './TerminalPanel.module.css'

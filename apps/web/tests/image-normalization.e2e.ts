@@ -6,9 +6,9 @@ import { join } from 'node:path'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import type { ReplayOverrideDoc } from '@deepseek-ai/dsh-llm-replay'
-import type {} from '@deepseek-ai/dsh-session'
+import type { ImageAttachmentRef } from 'coding-attachment'
+import type { ReplayOverrideDoc } from 'coding-llm-replay'
+import type {} from 'coding-session'
 import {
   launchWebScaffold,
   watchConsole,

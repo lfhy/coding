@@ -2,8 +2,8 @@
  * 设置外壳的触发器和标题 slot 内容。外壳负责绘制按钮和导航标题行，
  * 并从注册项的 `label` 取得可访问文案。
  */
-import { IconSettingsOutline14, IconSettingsOutline16 } from '@deepseek-ai/dsh-client-ui-icons'
-import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import { IconSettingsOutline14, IconSettingsOutline16 } from 'coding-client-ui-icons'
+import type { PropsLocale, PropsRuntime } from 'coding-client-ui-slots'
 import css from './chrome.module.css'
 
 /** Trigger content props: the sidebar column state + the standard locale seat. */

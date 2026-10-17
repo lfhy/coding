@@ -4,15 +4,15 @@
  * `descendants` scope, `ctx.subagents.listDescendants()`. It stays separately
  * loadable from the root `send_message` plugin so a deployment can register
  * continuation delivery without exposing discovery.
- * @module @deepseek-ai/dsh-tool-subagent-control/list-agents
+ * @module coding-tool-subagent-control/list-agents
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { defineTool } from '@deepseek-ai/dsh-tools'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { SessionId } from '@deepseek-ai/dsh-session'
-import { assertNever } from '@deepseek-ai/dsh-llm'
-import type { SubagentDescendantListEntry, SubagentListEntry } from '@deepseek-ai/dsh-subagent'
+import { defineTool } from 'coding-tools'
+import type { Agent } from 'coding-agent'
+import type { SessionId } from 'coding-session'
+import { assertNever } from 'coding-llm'
+import type { SubagentDescendantListEntry, SubagentListEntry } from 'coding-subagent'
 
 export const name = 'tool-subagent-list-agents'
 export const inject = ['tools', 'subagents', 'agents']

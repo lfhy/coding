@@ -7,14 +7,14 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
-import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
+import { bindSnapshotSelector } from 'coding-client-test-runtime'
 import {
   createSnapshotStore, EMPTY_CHAT_SNAPSHOT, EMPTY_CONVERSATION_VIEWS,
-} from '@deepseek-ai/dsh-client-runtime/client'
-import type { ClientContext, ConversationSnapshot, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import type { SubmitImageAttachment, SubmitOutcome } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
-import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
-import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
+} from 'coding-client-runtime/client'
+import type { ClientContext, ConversationSnapshot, SessionId } from 'coding-client-runtime/client'
+import type { SubmitImageAttachment, SubmitOutcome } from 'coding-client-ui-input-trigger/client'
+import { makeTranslate } from 'coding-client-test-runtime'
+import { zh as commonZh } from 'coding-client-locale/src/locales/zh.ts'
 import type { DraftAttachmentId } from '../src/client/input/contract.ts'
 import { SessionInputShell } from '../src/client/input/facade.ts'
 import { InputBar } from '../src/client/skeleton/InputBar.tsx'

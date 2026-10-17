@@ -5,7 +5,7 @@
  * any trees the service still owns. It has no config: every disposition and
  * limit arrives on the spec, so the deployment-varying choices stay with the
  * caller's config (the bash executor's, the LSP host's, …).
- * @module @deepseek-ai/dsh-subprocess-local
+ * @module coding-subprocess-local
  */
 
 import { constants } from 'node:fs'
@@ -19,14 +19,14 @@ import {
   remoteWorkspacePathSync,
   SubprocessRuntime,
   verifyRemoteWorkspaceTarget,
-} from '@deepseek-ai/dsh-subprocess'
+} from 'coding-subprocess'
 import type {
   RemoteWorkspaceTarget,
   SubprocessHandle,
   SubprocessSpawnSpec,
   SubprocessTerminalHandle,
   SubprocessTerminalSpawnSpec,
-} from '@deepseek-ai/dsh-subprocess'
+} from 'coding-subprocess'
 import { childEnv, spawnSubprocess } from './spawn.ts'
 import type { LocalSubprocessHandle, SpawnInternals } from './spawn.ts'
 import { createProcessInspector } from './process-inspector.ts'

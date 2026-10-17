@@ -1,7 +1,7 @@
 /**
  * Host-filesystem implementation of `ctx.fs`. Realpath-derived target identity makes aliases
  * share stale guards, and writes through a symlink update its target without replacing the link.
- * @module @deepseek-ai/dsh-fs-local
+ * @module coding-fs-local
  */
 
 import { Context } from '@deepseek-ai/cordis'
@@ -18,9 +18,9 @@ import {
   remoteWorkspaceTargetKey,
   verifyRemoteWorkspaceTarget,
   RemoteWorkspaceError,
-} from '@deepseek-ai/dsh-subprocess'
-import type { RemoteWorkspacePath, RemoteWorkspaceTarget } from '@deepseek-ai/dsh-subprocess'
-import { FileSystem, FsError, FsTargetKey, FsVersion } from '@deepseek-ai/dsh-fs'
+} from 'coding-subprocess'
+import type { RemoteWorkspacePath, RemoteWorkspaceTarget } from 'coding-subprocess'
+import { FileSystem, FsError, FsTargetKey, FsVersion } from 'coding-fs'
 import type {
   FsDirEntry,
   FsEditOutcome,
@@ -30,7 +30,7 @@ import type {
   FsTarget,
   FsWriteIntent,
   FsWriteOutcome,
-} from '@deepseek-ai/dsh-fs'
+} from 'coding-fs'
 import {
   applyLiteralEdit,
   listDirectory,

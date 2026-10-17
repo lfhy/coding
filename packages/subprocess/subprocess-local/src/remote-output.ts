@@ -1,7 +1,7 @@
 /** 远端进程字节流在 Node Host 上的有界、同步可读投影。 */
 
 import { Buffer } from 'node:buffer'
-import type { SubprocessOutputRead, SubprocessOutputReader } from '@deepseek-ai/dsh-subprocess'
+import type { SubprocessOutputRead, SubprocessOutputReader } from 'coding-subprocess'
 
 /**
  * 保存一个远端 collect 流的末尾字节窗口。

@@ -1,16 +1,16 @@
 /** 浏览器子代理目录、导航与已寻址会话编辑器的注册方。 */
 import type {
   ClientContext, SessionId, SubagentAddress,
-} from '@deepseek-ai/dsh-client-runtime/client'
-import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
+} from 'coding-client-runtime/client'
+import type { ComposerChainProps } from 'coding-client-ui-conversation/client'
 import { SubagentCatalogAction, type SubagentCatalogInjected } from './SubagentCatalogAction.tsx'
 import {
   SubagentReadOnlyComposer, type SubagentReadOnlyMatch,
 } from './SubagentReadOnlyComposer.tsx'
-import type {} from '@deepseek-ai/dsh-client-locale/client'
+import type {} from 'coding-client-locale/client'
 import { en, NS, zh, type SubagentKey } from './locales.ts'
 
-declare module '@deepseek-ai/dsh-client-ui-slots' {
+declare module 'coding-client-ui-slots' {
   interface LocaleNamespaceMap {
     /** Subagent catalog and read-only composer copy. */
     'subagent': SubagentKey

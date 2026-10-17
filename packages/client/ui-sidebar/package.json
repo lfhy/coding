@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-client-ui-sidebar",
+  "name": "coding-client-ui-sidebar",
   "description": "Sidebar plugin: session multi-level tree, search, grouping, state dots",
   "version": "0.1.0-rc.8",
   "publishConfig": {
@@ -32,10 +32,10 @@
   "dsh": {
     "client": {
       "inject": [
-        "@deepseek-ai/dsh-client-runtime",
-        "@deepseek-ai/dsh-client-ui-layout",
-        "@deepseek-ai/dsh-client-ui-conversation",
-        "@deepseek-ai/dsh-client-locale"
+        "coding-client-runtime",
+        "coding-client-ui-layout",
+        "coding-client-ui-conversation",
+        "coding-client-locale"
       ],
       "platform": "web"
     }
@@ -49,22 +49,22 @@
     "clsx": "^2.0.0"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-client-locale": "workspace:^",
-    "@deepseek-ai/dsh-client-runtime": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
+    "coding-client-locale": "workspace:^",
+    "coding-client-runtime": "workspace:^",
+    "coding-invariants": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-layout": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-conversation": "workspace:^"
+    "coding-client-ui-layout": "workspace:^",
+    "coding-client-ui-conversation": "workspace:^"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-client-locale": "workspace:^",
-    "@deepseek-ai/dsh-client-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-test-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-layout": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-conversation": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-primitives": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-slots": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
+    "coding-client-locale": "workspace:^",
+    "coding-client-runtime": "workspace:^",
+    "coding-client-test-runtime": "workspace:^",
+    "coding-client-ui-layout": "workspace:^",
+    "coding-client-ui-conversation": "workspace:^",
+    "coding-client-ui-primitives": "workspace:^",
+    "coding-client-ui-slots": "workspace:^",
+    "coding-invariants": "workspace:^",
     "@types/react": "~18.3.1",
     "@deepseek-ai/cordis": "workspace:^",
     "react": "^18.2.0"

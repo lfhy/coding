@@ -1,10 +1,10 @@
 /** 会话页头与欢迎页的右侧边栏、终端底栏开关。 */
 import { useMemo, useState, useCallback, useSyncExternalStore } from 'react'
-import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { WorkbenchLayoutSnapshot } from '@deepseek-ai/dsh-client-ui-layout/client'
-import { Icon, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { ObservableSnapshot } from 'coding-client-runtime/client'
+import type { SessionId } from 'coding-session/types'
+import type { WorkbenchLayoutSnapshot } from 'coding-client-ui-layout/client'
+import { Icon, Tooltip } from 'coding-client-ui-primitives'
+import type { InjectFace, PropsLocale, PropsRuntime } from 'coding-client-ui-slots'
 import { NS } from './locales.ts'
 import css from './WorkbenchPanelToggles.module.css'
 

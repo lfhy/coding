@@ -2,13 +2,13 @@
  * `ctx.userQuestions` 的模型侧 Consumer。等待真人回答期间仅暂停本次工具调用；
  * 五分钟无人回答时撤回问题，并将需要自行决策的结果交给模型。
  *
- * @module @deepseek-ai/dsh-tool-ask-user
+ * @module coding-tool-ask-user
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { defineTool } from '@deepseek-ai/dsh-tools'
-import { deadline, timeoutOf } from '@deepseek-ai/dsh-timeout'
-import { UserQuestionError, type AskUserQuestionAnswer } from '@deepseek-ai/dsh-user-questions'
+import { defineTool } from 'coding-tools'
+import { deadline, timeoutOf } from 'coding-timeout'
+import { UserQuestionError, type AskUserQuestionAnswer } from 'coding-user-questions'
 
 export const name = 'tool-ask-user'
 export const inject = ['tools', 'userQuestions']

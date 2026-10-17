@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-memory-local",
+  "name": "coding-memory-local",
   "description": "Host-filesystem ctx.memory provider: one directory per project under the data home",
   "version": "0.1.0-rc.8",
   "publishConfig": {
@@ -35,15 +35,15 @@
     "@deepseek-ai/schemastery": "workspace:^"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-atomic-write": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-memory": "workspace:^",
+    "coding-atomic-write": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-memory": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-atomic-write": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-memory": "workspace:^",
+    "coding-atomic-write": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-memory": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   }
 }

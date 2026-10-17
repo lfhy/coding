@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-client-ui-workspace
+# coding-client-ui-workspace
 
 共享 Workspace 浏览器与选择器插件。`WorkspaceBrowser` 填充侧边栏的 `sidebar.workspaces` slot，`WorkspacePicker` 则填充页面局部 Session Intent 主视觉区的 `conversation.hero.workspace` slot；两个界面使用同一套 Workspace 菜单和添加流程。
 

@@ -1,8 +1,8 @@
 import { createRequire } from 'node:module'
 import { arch, platform, release } from 'node:os'
 import { describe, expect, it } from 'vitest'
-import { APP_IDENTITY, attributionHeaders, userAgent, userAgentOS } from '@deepseek-ai/dsh-llm'
-import type { AppIdentity } from '@deepseek-ai/dsh-llm'
+import { APP_IDENTITY, attributionHeaders, userAgent, userAgentOS } from 'coding-llm'
+import type { AppIdentity } from 'coding-llm'
 
 const manifest = createRequire(import.meta.url)('../package.json') as { version: string }
 

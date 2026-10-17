@@ -18,7 +18,7 @@
  * disposed by then, and the release that wakes the parent's own settlement
  * watcher has already run. See {@link SubagentContinuationManager.notifySettlement}.
  *
- * @module @deepseek-ai/dsh-subagent
+ * @module coding-subagent
  */
 
 import { randomUUID } from 'node:crypto'
@@ -29,13 +29,13 @@ import type {
   AgentOptions,
   AgentSetupCommit,
   CreateAgentOptions,
-} from '@deepseek-ai/dsh-agent'
-import { boundContextSummary, createUserMessage, errorChain } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock, MessageId, MessageSource } from '@deepseek-ai/dsh-llm'
-import { SessionId } from '@deepseek-ai/dsh-session'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
-import type { ToolRestriction } from '@deepseek-ai/dsh-tools'
+} from 'coding-agent'
+import { boundContextSummary, createUserMessage, errorChain } from 'coding-llm'
+import type { ContentBlock, MessageId, MessageSource } from 'coding-llm'
+import { SessionId } from 'coding-session'
+import type { SessionEvent } from 'coding-session'
+import type { SessionPersistence } from 'coding-session-persistence'
+import type { ToolRestriction } from 'coding-tools'
 import { foldSubagentDescriptor, snapshotSubagentDescriptor } from './descriptor.ts'
 import type { SubagentDescriptorData } from './descriptor.ts'
 import {
@@ -89,7 +89,7 @@ export interface SubagentSettledMessageSource {
   readonly senderSessionId: SessionId
 }
 
-declare module '@deepseek-ai/dsh-llm' {
+declare module 'coding-llm' {
   interface MessageSourceMap {
     coordinator: CoordinatorMessageSource
     'subagent-report': SubagentReportMessageSource

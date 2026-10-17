@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-goal
+# coding-goal
 
 事件溯源的同会话目标状态。该服务在 agent（智能体）的现有会话中保留一个当前待完成目标，同时将继续执行的权限作为进程本地续行启用状态。goal 领域 设计记录 负责设计理由；[goal 类型目录](../../../docs/subsystems/goal.md)记录具体的数据形状。
 
@@ -6,7 +6,7 @@
 
 ```yaml
 - id: goal
-  name: '@deepseek-ai/dsh-goal'
+  name: 'coding-goal'
   config:
     defaultMaxGoalRounds: 256
 ```

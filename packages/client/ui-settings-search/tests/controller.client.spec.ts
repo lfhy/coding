@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
+import { stubSettingsScope } from 'coding-client-test-runtime'
 import {
   SearchSettingsController, decodeDeepSeek, decodeDuckDuckGo, decodeTavily, decodeWeb, validField,
   type DeepSeekSearchSettings, type DuckDuckGoSearchSettings, type TavilySearchSettings, type SearchProvider, type WebSettings,

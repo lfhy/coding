@@ -3,8 +3,8 @@
  * Session 隔离的工作台开关和尺寸偏好；响应式让步只影响 AppFrame 的实际
  * 几何，不改写这些偏好。模块只导出工厂，避免热重载之间共享实例。
  */
-import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { defineStore, type EngineStoreHandle } from 'coding-client-runtime/client'
+import type { SessionId } from 'coding-session/types'
 import {
   clampWidth,
   DETAILS_DEFAULT,

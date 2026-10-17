@@ -1,6 +1,6 @@
 // 已结算轮次页脚和会话概览共用延迟／吞吐折算。
 
-import type { AssistantMessageNode, ConversationNode } from '@deepseek-ai/dsh-client-runtime/client'
+import type { AssistantMessageNode, ConversationNode } from 'coding-client-runtime/client'
 
 /** Latency and decode-throughput readings for one turn's footer. */
 export interface TurnMetrics {

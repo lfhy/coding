@@ -1,6 +1,6 @@
-/** Electron 主进程与 Host 的私有、逐字段校验的浏览器协议。 @module @deepseek-ai/dsh-browser-electron/protocol */
+/** Electron 主进程与 Host 的私有、逐字段校验的浏览器协议。 @module coding-browser-electron/protocol */
 
-import type { BrowserCapture, BrowserCommand, BrowserExpectedTarget, BrowserHumanCommand, BrowserObservation, BrowserSessionState, BrowserTabId, BrowserUseErrorCode } from '@deepseek-ai/dsh-browser'
+import type { BrowserCapture, BrowserCommand, BrowserExpectedTarget, BrowserHumanCommand, BrowserObservation, BrowserSessionState, BrowserTabId, BrowserUseErrorCode } from 'coding-browser'
 
 export const MAX_PNG_BYTES = 2 * 1024 * 1024
 export const MAX_BRIDGE_FRAME_BYTES = 3 * 1024 * 1024

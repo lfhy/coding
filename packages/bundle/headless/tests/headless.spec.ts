@@ -2,12 +2,12 @@
 
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import AgentRegistry, { Inbox } from '@deepseek-ai/dsh-agent'
-import type { Agent, AgentHandle, CreateAgentOptions } from '@deepseek-ai/dsh-agent'
-import AgentDefaultModelConfig from '@deepseek-ai/dsh-agent-default-model'
-import { createAssistantMessage } from '@deepseek-ai/dsh-llm'
-import SessionStore from '@deepseek-ai/dsh-session'
-import type { Session, UserMessage } from '@deepseek-ai/dsh-session'
+import AgentRegistry, { Inbox } from 'coding-agent'
+import type { Agent, AgentHandle, CreateAgentOptions } from 'coding-agent'
+import AgentDefaultModelConfig from 'coding-agent-default-model'
+import { createAssistantMessage } from 'coding-llm'
+import SessionStore from 'coding-session'
+import type { Session, UserMessage } from 'coding-session'
 import { apply, Config, internals } from '../src/index.ts'
 
 const originalInternals = { ...internals }

@@ -2,11 +2,11 @@
 /** 会话页头面板开关跟随当前 Session 的布局投影，欢迎页维持独立入口。 */
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ObservableSnapshot, SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
-import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { WorkbenchLayoutSnapshot } from '@deepseek-ai/dsh-client-ui-layout/client'
+import { createSnapshotStore } from 'coding-client-runtime/client'
+import type { ObservableSnapshot, SessionListState } from 'coding-client-runtime/client'
+import { bindSnapshotSelector, makeTranslate } from 'coding-client-test-runtime'
+import type { SessionId } from 'coding-session/types'
+import type { WorkbenchLayoutSnapshot } from 'coding-client-ui-layout/client'
 import {
   HeroPanelToggle, WorkbenchPanelToggles,
   type WorkbenchPanelTogglesProps,

@@ -119,7 +119,7 @@ export function apply(ctx: Context) {
   isolate:
     shell: true
   config:
-    - name: '@deepseek-ai/dsh-bash-local'
+    - name: 'coding-bash-local'
       config:
         timeoutMs: 5000
     - name: './src/plugin-a.ts'
@@ -130,7 +130,7 @@ export function apply(ctx: Context) {
   isolate:
     shell: true
   config:
-    - name: '@deepseek-ai/dsh-bash-local'
+    - name: 'coding-bash-local'
       config:
         timeoutMs: 60000
     - name: './src/plugin-b.ts'

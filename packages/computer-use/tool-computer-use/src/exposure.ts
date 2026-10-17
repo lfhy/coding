@@ -1,9 +1,9 @@
 /** Agent-scoped progressive exposure for Computer Use execution Tools. */
 
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
-import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
+import type { Agent } from 'coding-agent'
+import type { ContentBlock } from 'coding-llm'
+import type { Session, SessionEvent } from 'coding-session'
+import { defineTool, type ToolDefinition } from 'coding-tools'
 import type { Context } from '@deepseek-ai/cordis'
 import { COMPUTER_USE_SKILL_CONTENT, COMPUTER_USE_SKILL_NAME, COMPUTER_USE_SKILL_NAMES } from './skill.ts'
 

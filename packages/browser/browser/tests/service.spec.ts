@@ -1,5 +1,5 @@
 import { Context } from '@deepseek-ai/cordis'
-import { SessionId } from '@deepseek-ai/dsh-session'
+import { SessionId } from 'coding-session'
 import { describe, expect, it, vi } from 'vitest'
 import BrowserUseService, { BrowserUseError, type BrowserCapture, type BrowserCommand, type BrowserHumanCommand, type BrowserSessionState } from '../src/index.ts'
 import type { BrowserObservation } from '../src/types.ts'

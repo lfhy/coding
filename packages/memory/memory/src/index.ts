@@ -1,11 +1,11 @@
 /**
  * 项目隔离的跨会话记忆：scope 键、条目限额，以及 `ctx.memory` 的服务定义。
  *
- * 存储由 Provider 实现（见 `@deepseek-ai/dsh-memory-local`）：本包拥有键计算、
+ * 存储由 Provider 实现（见 `coding-memory-local`）：本包拥有键计算、
  * 文件名与限额策略、Markdown 条目格式，以及给提示词的摘要渲染；Provider 只管
  * 「列出／读取／原子写入／删除」四个原语。
  *
- * @module @deepseek-ai/dsh-memory
+ * @module coding-memory
  */
 
 import { createHash } from 'node:crypto'
@@ -13,7 +13,7 @@ import { existsSync, realpathSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { Service, type Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
+import { dshHomePath } from 'coding-home-paths'
 
 /** 记忆目录在数据主目录下的位置。 */
 export const MEMORY_DIR = 'memory'

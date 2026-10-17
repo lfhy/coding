@@ -46,13 +46,13 @@ describe('tierExternalDeps', () => {
     const { manifests, names } = workspace({
       // 根目录工具和测试基础设施不交付，声明字段不影响其分层。
       'package.json': { dependencies: { 'root-runtime-looking': '^1' }, devDependencies: { 'lint-tool': '^1' } },
-      'packages/test-support/loader-smoke/package.json': { name: '@deepseek-ai/dsh-loader-smoke', dependencies: { 'smoke-helper': '^1' } },
-      'packages/test-support/client-runtime/package.json': { name: '@deepseek-ai/dsh-client-test-runtime', dependencies: { 'test-lib': '^1' } },
-      'apps/web/package.json': { name: '@deepseek-ai/dsh-web-frontend', devDependencies: { vite: '^6' } },
-      'apps/desktop-electron/package.json': { name: '@deepseek-ai/dsh-desktop-electron', devDependencies: { electron: '^44' } },
+      'packages/test-support/loader-smoke/package.json': { name: 'coding-loader-smoke', dependencies: { 'smoke-helper': '^1' } },
+      'packages/test-support/client-runtime/package.json': { name: 'coding-client-test-runtime', dependencies: { 'test-lib': '^1' } },
+      'apps/web/package.json': { name: 'coding-web-frontend', devDependencies: { vite: '^6' } },
+      'apps/desktop-electron/package.json': { name: 'coding-desktop-electron', devDependencies: { electron: '^44' } },
       // 插件的运行时依赖即使默认未挂载，也属于交付依赖。
-      'packages/mcp/mcp-client/package.json': { name: '@deepseek-ai/dsh-mcp-client', dependencies: { 'protocol-sdk': '^1' }, devDependencies: { 'protocol-fixture-server': '^1' } },
-      'apps/cli/package.json': { name: '@deepseek-ai/dsh-cli', dependencies: { 'cli-lib': '^1', '@deepseek-ai/dsh-mcp-client': 'workspace:^' } },
+      'packages/mcp/mcp-client/package.json': { name: 'coding-mcp-client', dependencies: { 'protocol-sdk': '^1' }, devDependencies: { 'protocol-fixture-server': '^1' } },
+      'apps/cli/package.json': { name: 'coding-cli', dependencies: { 'cli-lib': '^1', 'coding-mcp-client': 'workspace:^' } },
     })
 
     expect(tierExternalDeps(manifests, names)).toEqual(new Map([
@@ -72,12 +72,12 @@ describe('tierExternalDeps', () => {
   it('keeps a package runtime when any shipping area declares it, and excludes workspace links', () => {
     const { manifests, names } = workspace({
       'package.json': { devDependencies: { shared: '^1' } },
-      'packages/interaction/tui/package.json': { name: '@deepseek-ai/dsh-tui', dependencies: { shared: '^1', '@deepseek-ai/dsh-cli': 'workspace:^' } },
-      'apps/cli/package.json': { name: '@deepseek-ai/dsh-cli' },
+      'packages/interaction/tui/package.json': { name: 'coding-tui', dependencies: { shared: '^1', 'coding-cli': 'workspace:^' } },
+      'apps/cli/package.json': { name: 'coding-cli' },
     })
 
     expect(tierExternalDeps(manifests, names).get('shared')).toBe(true)
-    expect(tierExternalDeps(manifests, names).has('@deepseek-ai/dsh-cli')).toBe(false)
+    expect(tierExternalDeps(manifests, names).has('coding-cli')).toBe(false)
   })
 })
 

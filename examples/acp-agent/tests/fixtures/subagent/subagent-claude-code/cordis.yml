@@ -4,26 +4,26 @@
   name: './fixture.ts'
 
 - id: subagent
-  name: '@deepseek-ai/dsh-subagent'
+  name: 'coding-subagent'
 
 - id: subprocess
-  name: '@deepseek-ai/dsh-subprocess-local'
+  name: 'coding-subprocess-local'
 
 - id: subagent-codex
-  name: '@deepseek-ai/dsh-subagent-codex'
+  name: 'coding-subagent-codex'
 
 - id: subagent-claude-primary
-  name: '@deepseek-ai/dsh-subagent-claude-code'
+  name: 'coding-subagent-claude-code'
   config:
     providerName: claude-primary
 
 - id: subagent-claude-secondary
-  name: '@deepseek-ai/dsh-subagent-claude-code'
+  name: 'coding-subagent-claude-code'
   config:
     providerName: claude-secondary
 
 - id: tool-subagent-codex
-  name: '@deepseek-ai/dsh-tool-subagent'
+  name: 'coding-tool-subagent'
   config:
     provider: codex
     toolName: subagent_codex
@@ -31,7 +31,7 @@
     maxDepth: 'provider-managed'
 
 - id: tool-subagent-claude-code
-  name: '@deepseek-ai/dsh-tool-subagent'
+  name: 'coding-tool-subagent'
   config:
     provider: claude-code
     toolName: subagent_claude_code
@@ -39,7 +39,7 @@
     maxDepth: 'provider-managed'
 
 - id: tool-subagent-claude-primary
-  name: '@deepseek-ai/dsh-tool-subagent'
+  name: 'coding-tool-subagent'
   config:
     provider: claude-primary
     toolName: subagent_claude_primary
@@ -47,7 +47,7 @@
     maxDepth: 'provider-managed'
 
 - id: tool-subagent-claude-secondary
-  name: '@deepseek-ai/dsh-tool-subagent'
+  name: 'coding-tool-subagent'
   config:
     provider: claude-secondary
     toolName: subagent_claude_secondary
@@ -55,7 +55,7 @@
     maxDepth: 'provider-managed'
 
 - id: agent-spine
-  name: '@deepseek-ai/dsh-agent-spine-demo'
+  name: 'coding-agent-spine-demo'
   config:
     agents:
       - id: main
@@ -66,9 +66,9 @@
     workspaceContext: false
 
 - id: persistence
-  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  name: 'coding-session-persistence-jsonl'
   config:
     root: './.sessions'
 
 - id: checkpoint-policy
-  name: '@deepseek-ai/dsh-session-checkpoint-policy'
+  name: 'coding-session-checkpoint-policy'

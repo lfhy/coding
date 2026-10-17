@@ -2,9 +2,9 @@
 
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
-import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
-import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { SlotRegistry } from 'coding-client-runtime/client'
+import { LocaleRuntime } from 'coding-client-locale/client'
+import type { SessionId } from 'coding-session/types'
 import type { createRetainedWorkbenchStore, WorkbenchExternalTab } from '../src/client/store.ts'
 import { apply, inject } from '../src/client/index.ts'
 import type { SidebarRightTabDefinition } from '../src/client/sidebar-tab-registry.ts'

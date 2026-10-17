@@ -1,13 +1,13 @@
 /**
- * `@deepseek-ai/dsh-client-ui-open-in-app` 的包级 invariant companion。
- * @module @deepseek-ai/dsh-client-ui-open-in-app/invariant
+ * `coding-client-ui-open-in-app` 的包级 invariant companion。
+ * @module coding-client-ui-open-in-app/invariant
  */
 
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
-import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
+import type { InvariantInstaller } from 'coding-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-client-ui-open-in-app'
+const PACKAGE_NAME = 'coding-client-ui-open-in-app'
 
 /** Cordis companion 插件名。 */
 export const name = 'client-ui-open-in-app-invariant'

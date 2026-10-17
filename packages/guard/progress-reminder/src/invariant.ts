@@ -2,16 +2,16 @@
  * 本包自有的不变式配套入口：提醒文本声明的工具调用数必须等于日志中该提醒之前、
  * 最近一次计数边界之后真正完成的 `tool/result` 数，且消息确实归本包所有。
  *
- * @module @deepseek-ai/dsh-progress-reminder/invariant
+ * @module coding-progress-reminder/invariant
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { InvariantFailure, InvariantInstaller } from '@deepseek-ai/dsh-invariants'
-import type { UserMessage } from '@deepseek-ai/dsh-llm'
-import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
+import type { InvariantFailure, InvariantInstaller } from 'coding-invariants'
+import type { UserMessage } from 'coding-llm'
+import type { Session, SessionEvent } from 'coding-session'
 import { renderProgressReminder, unreportedToolCalls } from './index.ts'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-progress-reminder'
+const PACKAGE_NAME = 'coding-progress-reminder'
 const SOURCE_NAME = 'progress-reminder'
 const DECLARED_TOOL_CALLS = /^<system-reminder>\n你已连续执行 (\d+) 次工具调用，其间没有向用户汇报过进展。\n/
 

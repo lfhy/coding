@@ -5,13 +5,13 @@
  * This plugin answers `shutdown`, disposes the complete root runtime, and exits 0; the app bin
  * owns EOF and signal exits. Keep named plugin exports with no default export so
  * Loader `unwrapExports` preserves `name`, `inject`, `Config`, and `apply`.
- * @module @deepseek-ai/dsh-sdk-jsonrpc-server
+ * @module coding-sdk-jsonrpc-server
  */
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Readable, Writable } from 'node:stream'
 import Schema from '@deepseek-ai/schemastery'
-import { JsonRpcLineTransport } from '@deepseek-ai/dsh-sdk-protocol'
+import { JsonRpcLineTransport } from 'coding-sdk-protocol'
 import { HarnessSdkJsonRpcServer } from './server.ts'
 
 export * from './server.ts'

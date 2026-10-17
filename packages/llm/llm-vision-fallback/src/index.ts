@@ -1,15 +1,15 @@
 /**
  * 文本模型的持久图片描述路由；原图仍由附件服务和追加来源事件持有。
- * @module @deepseek-ai/dsh-llm-vision-fallback
+ * @module coding-llm-vision-fallback
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import type {} from '@deepseek-ai/dsh-agent'
-import { BlockAssembler, contentHasImage, createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock, GenerateOptions, ImageBlock, LlmCallConfig, StreamChunk } from '@deepseek-ai/dsh-llm'
-import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
-import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
+import type {} from 'coding-agent'
+import { BlockAssembler, contentHasImage, createUserMessage } from 'coding-llm'
+import type { ContentBlock, GenerateOptions, ImageBlock, LlmCallConfig, StreamChunk } from 'coding-llm'
+import type { Session, SessionEvent } from 'coding-session'
+import { installSettingsSection, settingsNamespace } from 'coding-settings'
 import { collectImages, substituteImages } from './content.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -59,7 +59,7 @@ export interface VisionDescriptionEventData {
   readonly descriptions: string[]
 }
 
-declare module '@deepseek-ai/dsh-session/types' {
+declare module 'coding-session/types' {
   interface SessionEventMap {
     /** 非 surface 的视觉请求输入事实；即使调用失败也保留。 */
     'vision/request': VisionRequestEventData

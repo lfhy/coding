@@ -5,9 +5,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import type { CodeJsonValue } from '@deepseek-ai/dsh-code-runtime'
-import { WorkerThreadCodeRuntime } from '@deepseek-ai/dsh-code-runtime-worker-thread'
-import { REMOTE_WORKSPACE_MARKER, remoteWorkspacePath, RemoteWorkspaceError } from '@deepseek-ai/dsh-subprocess'
+import type { CodeJsonValue } from 'coding-code-runtime'
+import { WorkerThreadCodeRuntime } from 'coding-code-runtime-worker-thread'
+import { REMOTE_WORKSPACE_MARKER, remoteWorkspacePath, RemoteWorkspaceError } from 'coding-subprocess'
 
 const initialBridgeURL = process.env.DSH_REMOTE_BRIDGE_URL
 const initialBridgeToken = process.env.DSH_REMOTE_BRIDGE_TOKEN

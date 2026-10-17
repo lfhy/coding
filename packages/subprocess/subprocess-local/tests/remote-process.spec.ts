@@ -6,8 +6,8 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import * as nodePty from 'node-pty'
-import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
-import { RemoteWorkspaceError, REMOTE_WORKSPACE_MARKER, remoteWorkspacePath } from '@deepseek-ai/dsh-subprocess'
+import LocalSubprocessRuntime from 'coding-subprocess-local'
+import { RemoteWorkspaceError, REMOTE_WORKSPACE_MARKER, remoteWorkspacePath } from 'coding-subprocess'
 
 const initialBridgeURL = process.env.DSH_REMOTE_BRIDGE_URL
 const initialBridgeToken = process.env.DSH_REMOTE_BRIDGE_TOKEN

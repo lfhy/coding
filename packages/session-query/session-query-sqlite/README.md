@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-session-query-sqlite
+# coding-session-query-sqlite
 
 具体 `ctx.sessionQuery` 提供方。`SqliteSessionQueryEngine` 从 Service Definition 包继承精确读取、跟踪和提供方无关的过滤，并使用 SQLite FTS5 实现其两个全文方法。搜索使用实时优先的逻辑会话语料库，并按每个会话中匹配度最高的事件对跨会话结果分组。
 

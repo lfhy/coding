@@ -1,7 +1,7 @@
 /** 当前会话的只读 Git 提交树；受限条数来自 Host，切换标签不发起后台轮询。 */
 import { useEffect, useState, type CSSProperties } from 'react'
-import { IconRefreshOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { GitCommit, GitHistory } from '@deepseek-ai/dsh-host-apiproxy/api'
+import { IconRefreshOutline16 } from 'coding-client-ui-primitives'
+import type { GitCommit, GitHistory } from 'coding-host-apiproxy/api'
 import type { WorkspaceWorkbenchProps } from './WorkspaceWorkbench.tsx'
 import css from './GitHistoryPanel.module.css'
 

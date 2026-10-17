@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /** 使用真实 store 引擎覆盖布局初值、完整 action 集合和非持久化语义。 */
 import { beforeEach, describe, expect, it } from 'vitest'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import { createLayoutStore } from '@deepseek-ai/dsh-client-ui-layout/src/client/stores.ts'
+import type { SessionId } from 'coding-session/types'
+import { createLayoutStore } from 'coding-client-ui-layout/src/client/stores.ts'
 import {
   DETAILS_DEFAULT,
   SIDEBAR_DEFAULT,
@@ -10,7 +10,7 @@ import {
   WORKBENCH_BOTTOM_MIN,
   WORKBENCH_MAX,
   WORKBENCH_MIN,
-} from '@deepseek-ai/dsh-client-ui-layout/src/client/columns.ts'
+} from 'coding-client-ui-layout/src/client/columns.ts'
 
 const PERSIST_KEY = 'dsh.layout.panels'
 

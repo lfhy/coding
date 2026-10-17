@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-client-ui-conversation
+# coding-client-ui-conversation
 
 会话领域：骨架（标题栏／标签页／编辑器／空状态）、聊天视图（分组步骤摘要流、流式尾部隔离与轮次状态）、输入区 dock（队列行加 todo 计划条）、对话页内的会话概览卡片、工具详情壳层，以及按 scope 寻址的 ConversationController。工具展示属于 [`ui-tool`](../ui-tool/README.md)。用户气泡、助手正文、输入卡片与发送图标由 [`ui-primitives`](../ui-primitives/README.md) 的纯展示组件绘制；本包仍拥有会话输入状态、命令和各项 slot。
 
@@ -52,7 +52,7 @@ Host 带 placement 的 `session/queue` 快照也会携带待处理 steering。Qu
 
 `src/client/` 按领域组织。`contract/` 是 slot 声明、组合 props 与跨领域类型的共享表层；`skeleton/`、`chat/`、`input/`、`queue/` 和 `settings/` 保持内部实现，`apply.ts` 是它们的组装点。`/client` 导出表层只包含 loader entry、service class 和 contract 类型；组件与 store factory 经 slot 注册抵达页面。
 
-完成的一轮会物化一个有序的 `turn-tail` Conversation Node。它由引擎维护的 `TurnLocation` 提供收尾 Assistant 和 Turn data；renderer 在该 Node 的 IconActions 之前渲染 `conversation.chat.turnTail` chain，并派发包含 Turn、收尾 seq 和 `openFile` 的 `TurnTailOwnerProps`。本包只拥有空位；`@deepseek-ai/dsh-client-ui-deliverables` 把改写工具的 `locations` 累积到 Turn data，并拥有产物行、chip 上限和文案，因此把该插件从 cordis.yml 中组合掉即可关闭该交互面，空位以零成本渲染为空。收尾正文经由同一个开关参与其中：chat 视图向可选的 `chatFileMentions` service（ctx.get；由同一插件提供）索取收尾消息的行内代码词表，并把结果接进 MarkdownText 的 `fileMentions` seam——service 缺席时正文保持死文本。
+完成的一轮会物化一个有序的 `turn-tail` Conversation Node。它由引擎维护的 `TurnLocation` 提供收尾 Assistant 和 Turn data；renderer 在该 Node 的 IconActions 之前渲染 `conversation.chat.turnTail` chain，并派发包含 Turn、收尾 seq 和 `openFile` 的 `TurnTailOwnerProps`。本包只拥有空位；`coding-client-ui-deliverables` 把改写工具的 `locations` 累积到 Turn data，并拥有产物行、chip 上限和文案，因此把该插件从 cordis.yml 中组合掉即可关闭该交互面，空位以零成本渲染为空。收尾正文经由同一个开关参与其中：chat 视图向可选的 `chatFileMentions` service（ctx.get；由同一插件提供）索取收尾消息的行内代码词表，并把结果接进 MarkdownText 的 `fileMentions` seam——service 缺席时正文保持死文本。
 
 Assistant 正文中的 Markdown 链接仅在用户无修饰键主键点击时交给可选的 `chatBrowserLinks` 服务，按点击所属的 `SessionId` 在浏览器工作台打开；渲染正文不会自动打开链接，用户消息、文件词条和其他插件内容不走这一路径。连续点击的每个链接独立请求，工作台接纳并展示加载标签后服务即可兑现 Promise；Chat 的非阻断待完成数量只统计接纳前的请求，不等待导航。服务缺席、容量限制或会话不可用等接纳前失败会显示可关闭、可重试的页面内对话框；已接纳链接的导航失败留在工作台占位标签内显示错误与重试，不回传 Chat 弹窗。切换会话或关闭后，先前请求的迟到结果不会重新显示错误。
 

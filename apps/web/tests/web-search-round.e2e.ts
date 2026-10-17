@@ -5,8 +5,8 @@ import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
-import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
-import { WEB_SEARCH_MAX_RESULTS } from '@deepseek-ai/dsh-tool-web'
+import type { SessionEvent, SessionId } from 'coding-session'
+import { WEB_SEARCH_MAX_RESULTS } from 'coding-tool-web'
 import {
   assertFixtureInventory, captureStableAria, compareOrRefreshGolden, fixtureUserPrompts,
   launchWebScaffold, recordFixture, watchConsole, webSnapshotMode, type WebScaffold,

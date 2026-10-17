@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
-import { REMOTE_WORKSPACE_MARKER } from '@deepseek-ai/dsh-subprocess'
+import LocalSubprocessRuntime from 'coding-subprocess-local'
+import { REMOTE_WORKSPACE_MARKER } from 'coding-subprocess'
 
 const initialBridgeURL = process.env.DSH_REMOTE_BRIDGE_URL
 const initialBridgeToken = process.env.DSH_REMOTE_BRIDGE_TOKEN

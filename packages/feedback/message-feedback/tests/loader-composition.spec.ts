@@ -6,12 +6,12 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
-import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
-import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
-import Storage from '@deepseek-ai/dsh-storage'
-import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
-import * as StorageJson from '@deepseek-ai/dsh-storage-json'
-import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
+import SessionStore, { SessionId } from 'coding-session'
+import JsonlSessionPersistence from 'coding-session-persistence-jsonl'
+import Storage from 'coding-storage'
+import * as StorageDomain from 'coding-storage-domain'
+import * as StorageJson from 'coding-storage-json'
+import { remoteMethods } from 'coding-typert-protocol'
 import MessageFeedbackService from '../src/index.ts'
 import { appendMessageFixture } from './helpers.ts'
 
@@ -30,12 +30,12 @@ async function loadComposition(configPath: string): Promise<Context> {
   await ctx.plugin(Loader)
   ctx.loader.builtins.include = Include
   const modules = new Map<string, unknown>([
-    ['@deepseek-ai/dsh-session', SessionStore],
-    ['@deepseek-ai/dsh-session-persistence-jsonl', JsonlSessionPersistence],
-    ['@deepseek-ai/dsh-storage', Storage],
-    ['@deepseek-ai/dsh-storage-json', StorageJson],
-    ['@deepseek-ai/dsh-storage-domain', StorageDomain],
-    ['@deepseek-ai/dsh-message-feedback', MessageFeedbackService],
+    ['coding-session', SessionStore],
+    ['coding-session-persistence-jsonl', JsonlSessionPersistence],
+    ['coding-storage', Storage],
+    ['coding-storage-json', StorageJson],
+    ['coding-storage-domain', StorageDomain],
+    ['coding-message-feedback', MessageFeedbackService],
   ])
   ctx.loader.internal = {
     version: 'v2',
@@ -61,20 +61,20 @@ describe('message feedback through a real Loader composition', () => {
     root = await mkdtemp(join(tmpdir(), 'dsh-message-feedback-loader-'))
     const configPath = join(root, 'cordis.yml')
     await writeFile(configPath, [
-      "- name: '@deepseek-ai/dsh-session'",
-      "- name: '@deepseek-ai/dsh-session-persistence-jsonl'",
+      "- name: 'coding-session'",
+      "- name: 'coding-session-persistence-jsonl'",
       '  config:',
       `    root: ${JSON.stringify(join(root, 'sessions'))}`,
       '    compression: none',
       '    writeBatchMaxDelayMs: 1',
-      "- name: '@deepseek-ai/dsh-storage'",
-      "- name: '@deepseek-ai/dsh-storage-json'",
+      "- name: 'coding-storage'",
+      "- name: 'coding-storage-json'",
       '  config:',
       `    root: ${JSON.stringify(join(root, 'storage'))}`,
-      "- name: '@deepseek-ai/dsh-storage-domain'",
+      "- name: 'coding-storage-domain'",
       '  config:',
       '    backend: json',
-      "- name: '@deepseek-ai/dsh-message-feedback'",
+      "- name: 'coding-message-feedback'",
       '  config:',
       '    maxNoteBytes: 32',
       '',

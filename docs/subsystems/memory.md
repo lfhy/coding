@@ -1,6 +1,6 @@
 # 记忆
 
-记忆能力由 [`@deepseek-ai/dsh-memory`](../../packages/memory/memory/README.md) 定义 `ctx.memory`，由 [`memory-local`](../../packages/memory/memory-local/README.md) 在宿主文件系统上实现，并由 [`memory-context`](../../packages/memory/memory-context/README.md) 与 [`tool-memory`](../../packages/memory/tool-memory/README.md) 消费。
+记忆能力由 [`coding-memory`](../../packages/memory/memory/README.md) 定义 `ctx.memory`，由 [`memory-local`](../../packages/memory/memory-local/README.md) 在宿主文件系统上实现，并由 [`memory-context`](../../packages/memory/memory-context/README.md) 与 [`tool-memory`](../../packages/memory/tool-memory/README.md) 消费。
 它把会话 cwd 解析成一个稳定的项目键，为每个项目维护若干 Markdown 记忆文件，让「同一个项目、不同会话之间不要忘事」，同时不把记忆写进仓库、不随提交共享。
 服务拥有键计算、文件名与限额策略、Markdown 条目格式和注入摘要渲染；Provider 只实现列表、读、写、删四个存储原语，不决定语义。
 

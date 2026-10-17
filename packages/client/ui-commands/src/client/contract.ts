@@ -2,8 +2,8 @@
  * 客户端命令界面的冻结约定，仅含类型。CommandUiRuntime（`ctx.commandUi`）实现该接口；
  * 业务包只消费注册能力。
  */
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ClientSessionContext } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
+import type { ClientContext } from 'coding-client-runtime/client'
+import type { ClientSessionContext } from 'coding-client-ui-input-trigger/client'
 
 /** 选项在执行 onSelect 前必须确认时所需的完整文案。 */
 export interface SelectConfirmation {

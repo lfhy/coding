@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-client-ui-renderer
+# coding-client-ui-renderer
 
 负责 React 渲染层的浏览器 Cordis 插件。[`dsh-client-web`](../web/README.md) 渲染不依赖框架的启动页并加载完整的客户端插件名册；所有 entry 激活后，它调用 `ctx.uiRenderer.mount(container)`。本包提供该服务、安装 slot 渲染器、hydrate 现有启动 DOM、在下一次绘制前切换到组装完成的应用，并返回 React 根的卸载 disposer。
 

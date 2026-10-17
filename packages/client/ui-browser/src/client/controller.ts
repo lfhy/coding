@@ -1,8 +1,8 @@
 /** 会话浏览器轮询、人工命令和截图 URL 的唯一所有者。 */
-import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
-import type { BrowserHumanCommand } from '@deepseek-ai/dsh-browser/types'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
+import { createSnapshotStore, type SnapshotStore } from 'coding-client-runtime/client'
+import type { BrowserHumanCommand } from 'coding-browser/types'
+import type { SessionId } from 'coding-session/types'
+import type { ConnectionHandle } from 'coding-client-connection/client'
 import { parseBrowserState, parseBrowserStateOrLock, type BrowserState } from './wire.ts'
 
 export type BrowserView =

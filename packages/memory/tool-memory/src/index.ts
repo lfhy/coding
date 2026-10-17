@@ -4,18 +4,18 @@
  * 四个工具的参数里没有任何路径——目标永远是会话项目根对应的记忆目录，因此模型无法
  * 读写别的项目的记忆。命名导出保留 Loader 注入元数据。
  *
- * @module @deepseek-ai/dsh-tool-memory
+ * @module coding-tool-memory
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { defineTool } from '@deepseek-ai/dsh-tools'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import { defineTool } from 'coding-tools'
+import type { Agent } from 'coding-agent'
 import {
   DEFAULT_MEMORY_FILE,
   DEFAULT_MEMORY_SECTION,
   type MemoryProject,
   type MemorySaveRequest,
-} from '@deepseek-ai/dsh-memory'
+} from 'coding-memory'
 
 export const name = 'tool-memory'
 export const inject = ['tools', 'memory']

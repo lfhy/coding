@@ -1,9 +1,9 @@
-/** computer-use 服务包的不变量登记。 @module @deepseek-ai/dsh-computer-use/invariant */
+/** computer-use 服务包的不变量登记。 @module coding-computer-use/invariant */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
+import type { InvariantInstaller } from 'coding-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-computer-use'
+const PACKAGE_NAME = 'coding-computer-use'
 
 /** Cordis 附属插件名称。 */
 export const name = 'computer-use-invariant'
@@ -13,7 +13,7 @@ export const inject = ['invariants']
 /**
  * No runtime invariant: 提供方只通过 native helper 的固定 argv 协议持有状态，
  * 观察缓存、租约与确认令牌的生命周期由 `service.spec.ts` 与 `native-helper.spec.ts` 覆盖；
- * 面向模型的可见性不变量属于 `@deepseek-ai/dsh-tool-computer-use`。
+ * 面向模型的可见性不变量属于 `coding-tool-computer-use`。
  */
 const install: InvariantInstaller = () => {}
 

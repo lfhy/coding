@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest'
 import { existsSync, readFileSync } from 'node:fs'
 import { Context } from '@deepseek-ai/cordis'
-import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
+import LocalSubprocessRuntime from 'coding-subprocess-local'
 import { resolveConfig } from '../src/config.ts'
 import type { ComputerPermissionState } from '../src/types.ts'
 import { NativeHelperClient } from '../src/providers/native-helper.ts'

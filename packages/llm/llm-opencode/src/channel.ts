@@ -7,11 +7,11 @@
  * 记得自己属于哪个上游，适配器按请求里的模型 id 选择端点与凭据。接入新的免费上游
  * 只需在这里加一条记录，选择器与设置页会随目录一起看到它。
  *
- * @module @deepseek-ai/dsh-llm-opencode/channel
+ * @module coding-llm-opencode/channel
  */
 
-import { resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
-import type { ModelModality, ResolvedRetryPolicy } from '@deepseek-ai/dsh-llm'
+import { resolveRetryPolicy } from 'coding-llm'
+import type { ModelModality, ResolvedRetryPolicy } from 'coding-llm'
 
 /**
  * 渠道的提供方路由。它同时是会话、默认模型与设置引用模型的键，

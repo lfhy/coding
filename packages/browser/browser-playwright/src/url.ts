@@ -1,6 +1,6 @@
-/** 浏览器导航命令输入的 URL 结构校验；不解析 DNS 或限制目标地址。 @module @deepseek-ai/dsh-browser-playwright/url */
+/** 浏览器导航命令输入的 URL 结构校验；不解析 DNS 或限制目标地址。 @module coding-browser-playwright/url */
 
-import { BrowserUseError } from '@deepseek-ai/dsh-browser'
+import { BrowserUseError } from 'coding-browser'
 
 /**
  * 导航命令接受至多 4096 字符的无凭据绝对 HTTP(S) URL，结构无效时抛出 BrowserUseError。

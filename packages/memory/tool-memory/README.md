@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-tool-memory
+# coding-tool-memory
 
 把当前会话所属项目的记忆交给模型读写的四个工具。参数里没有任何路径：目标永远是会话项目根对应的记忆目录，因此模型读写不到别的项目的记忆。
 
@@ -19,7 +19,7 @@
 
 ## 配置
 
-无配置项：限额、默认文件与默认小节都属于 [`@deepseek-ai/dsh-memory`](../memory/README.md) 的策略，部署在那里调整。
+无配置项：限额、默认文件与默认小节都属于 [`coding-memory`](../memory/README.md) 的策略，部署在那里调整。
 
 ## 模型体验
 

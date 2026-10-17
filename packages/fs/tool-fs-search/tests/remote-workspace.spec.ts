@@ -5,12 +5,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { CallId } from '@deepseek-ai/dsh-llm'
-import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import { REMOTE_WORKSPACE_MARKER, SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
-import type { SubprocessHandle, SubprocessSpawnSpec, SubprocessTerminalHandle, SubprocessTerminalSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import ToolRuntime from '@deepseek-ai/dsh-tools'
-import * as ToolFsSearch from '@deepseek-ai/dsh-tool-fs-search'
+import { CallId } from 'coding-llm'
+import SystemPrompt from 'coding-system-prompt'
+import { REMOTE_WORKSPACE_MARKER, SubprocessRuntime } from 'coding-subprocess'
+import type { SubprocessHandle, SubprocessSpawnSpec, SubprocessTerminalHandle, SubprocessTerminalSpawnSpec } from 'coding-subprocess'
+import ToolRuntime from 'coding-tools'
+import * as ToolFsSearch from 'coding-tool-fs-search'
 
 const initialBridgeURL = process.env.DSH_REMOTE_BRIDGE_URL
 const initialBridgeToken = process.env.DSH_REMOTE_BRIDGE_TOKEN

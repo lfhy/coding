@@ -15,15 +15,15 @@
 // chat-toolview-slot.spec.tsx.
 
 import { describe, expect, it, vi } from 'vitest'
-import { SlotTestRuntime, stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
-import type { SessionBehaviorOverrides } from '@deepseek-ai/dsh-client-test-runtime'
-import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
-import type { ISession, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import { apply, inject } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import { SlotTestRuntime, stubSettingsScope } from 'coding-client-test-runtime'
+import type { SessionBehaviorOverrides } from 'coding-client-test-runtime'
+import { LocaleRuntime } from 'coding-client-locale/client'
+import type { ISession, SessionId } from 'coding-client-runtime/client'
+import { apply, inject } from 'coding-client-ui-conversation/client'
 import type {
   ChatViewInjected, ComposerBarInjected, ConversationInjected, ConversationSessionHeaderInjected,
   ConversationSessionInjected, DetailsInjected,
-} from '@deepseek-ai/dsh-client-ui-conversation/client'
+} from 'coding-client-ui-conversation/client'
 import type { GitOverviewInjected } from '../src/client/skeleton/GitOverview.tsx'
 import type { createChatStore } from '../src/client/stores.ts'
 

@@ -1,7 +1,7 @@
-/** 浏览器工具包的不变量登记。 @module @deepseek-ai/dsh-tool-browser/invariant */
+/** 浏览器工具包的不变量登记。 @module coding-tool-browser/invariant */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
+import type { InvariantInstaller } from 'coding-invariants'
 
 /** Cordis 插件名称。 */
 export const name = 'tool-browser-invariant'
@@ -17,4 +17,4 @@ const install: InvariantInstaller = () => {}
  * @returns 登记的释放函数。
  */
 export const apply = (ctx: Context): Promise<() => void> =>
-  Promise.resolve(ctx.invariants.register('@deepseek-ai/dsh-tool-browser', install))
+  Promise.resolve(ctx.invariants.register('coding-tool-browser', install))

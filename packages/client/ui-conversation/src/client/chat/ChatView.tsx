@@ -8,8 +8,8 @@
 // order 仅在行增删或移动时变化；各 ChatNodeSeat 按节点 key 订阅，流式更新不重挂载行。
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { ConversationTimelineSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
-import { Button, IconChevronDownOutline14, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { ConversationTimelineSnapshot } from 'coding-client-runtime/client'
+import { Button, IconChevronDownOutline14, Modal } from 'coding-client-ui-primitives'
 import type { ChatViewSlotProps, RenderMessageImages } from '../contract/slots.ts'
 import { buildConversationAnchors, type ConversationAnchor } from './conversation-anchors.ts'
 import { ConversationAnchorRail } from './ConversationAnchorRail.tsx'

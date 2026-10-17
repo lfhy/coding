@@ -13,12 +13,12 @@ import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { LAUNCHER_FAILURE_EXIT } from '@deepseek-ai/node-addon-landlock-run'
-import { SANDBOX_UNAVAILABLE, SandboxUnavailableError } from '@deepseek-ai/dsh-sandbox'
-import type { SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
+import { SANDBOX_UNAVAILABLE, SandboxUnavailableError } from 'coding-sandbox'
+import type { SandboxPolicy } from 'coding-sandbox'
 import {
   LocalSandboxProvider,
-} from '@deepseek-ai/dsh-sandbox-local'
-import type { Config } from '@deepseek-ai/dsh-sandbox-local'
+} from 'coding-sandbox-local'
+import type { Config } from 'coding-sandbox-local'
 import { bwrapProfileArgs, landlockProfileArgs, seatbeltProfileArgs } from '../src/profiles.ts'
 
 const RO: SandboxPolicy = { mode: 'read-only', workspaceRoot: '/ws' }

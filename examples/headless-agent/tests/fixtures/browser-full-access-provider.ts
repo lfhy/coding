@@ -1,12 +1,12 @@
 /** 固定外部页面观测，不启动 Chromium；真实工具的调用另写入工作区供进程外核对。 */
 
 import { appendFile } from 'node:fs/promises'
-import BrowserUseService, { BrowserUseError } from '@deepseek-ai/dsh-browser'
+import BrowserUseService, { BrowserUseError } from 'coding-browser'
 import type {
   BrowserCapture, BrowserCommand, BrowserExpectedTarget, BrowserHumanCommand,
   BrowserSessionState, BrowserTabId,
-} from '@deepseek-ai/dsh-browser'
-import type { SessionId } from '@deepseek-ai/dsh-session'
+} from 'coding-browser'
+import type { SessionId } from 'coding-session'
 
 const fixtureUrl = 'https://browser.example.invalid/full-access'
 

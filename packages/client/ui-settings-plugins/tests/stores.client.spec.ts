@@ -4,13 +4,13 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { stubSettingsScope, type StubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
+import { stubSettingsScope, type StubSettingsScope } from 'coding-client-test-runtime'
 import { CardForm, numberField, textField } from '../src/client/card-form.ts'
 import { AgentLoopCardController, type AgentLoopSettings } from '../src/client/agent-loop-card-controller.ts'
 import { BashCardController, type BashSettings } from '../src/client/bash-card-controller.ts'
 import {
   SettingsDescribeMirror, type SettingsMirrorSnapshot,
-} from '@deepseek-ai/dsh-client-ui-settings/src/client/settings-mirror.ts'
+} from 'coding-client-ui-settings/src/client/settings-mirror.ts'
 import { ConfigurablePluginsTabController } from '../src/client/tab-store.ts'
 
 /** Make the stub behave like a Host that accepts every write. */

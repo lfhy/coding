@@ -11,17 +11,17 @@ import { pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
-import AgentRegistry from '@deepseek-ai/dsh-agent'
-import { CallId, createUserMessage } from '@deepseek-ai/dsh-llm'
-import { createScope } from '@deepseek-ai/dsh-scope'
-import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
-import type { Session } from '@deepseek-ai/dsh-session'
-import SkillRegistry from '@deepseek-ai/dsh-skill'
-import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime from '@deepseek-ai/dsh-tools'
-import * as ToolSkill from '@deepseek-ai/dsh-tool-skill'
-import ApprovalService from '@deepseek-ai/dsh-user-approval'
-import { ComputerUseService, resolveConfig } from '@deepseek-ai/dsh-computer-use'
+import AgentRegistry from 'coding-agent'
+import { CallId, createUserMessage } from 'coding-llm'
+import { createScope } from 'coding-scope'
+import SessionStore, { SessionId } from 'coding-session'
+import type { Session } from 'coding-session'
+import SkillRegistry from 'coding-skill'
+import SystemPrompt from 'coding-system-prompt'
+import ToolRuntime from 'coding-tools'
+import * as ToolSkill from 'coding-tool-skill'
+import ApprovalService from 'coding-user-approval'
+import { ComputerUseService, resolveConfig } from 'coding-computer-use'
 import type {
   BackendActionResult,
   BackendCursorAction,
@@ -34,7 +34,7 @@ import type {
   ComputerAppSelector,
   ComputerAppSummary,
   CursorVisibility,
-} from '@deepseek-ai/dsh-computer-use'
+} from 'coding-computer-use'
 import { COMPUTER_USE_SKILL_CONTENT, COMPUTER_USE_SKILL_NAME } from '../src/skill.ts'
 import * as ToolComputerUse from '../src/index.ts'
 
@@ -120,17 +120,17 @@ async function boot(): Promise<Context> {
   root = await mkdtemp(join(tmpdir(), 'dsh-computer-use-loader-'))
   const configPath = join(root, 'cordis.yml')
   await writeFile(configPath, [
-    "- name: '@deepseek-ai/dsh-session'",
-    "- name: '@deepseek-ai/dsh-agent'",
-    "- name: '@deepseek-ai/dsh-system-prompt'",
-    "- name: '@deepseek-ai/dsh-tools'",
+    "- name: 'coding-session'",
+    "- name: 'coding-agent'",
+    "- name: 'coding-system-prompt'",
+    "- name: 'coding-tools'",
     '  config:',
     '    mode: native',
-    "- name: '@deepseek-ai/dsh-skill'",
-    "- name: '@deepseek-ai/dsh-tool-skill'",
-    "- name: '@deepseek-ai/dsh-user-approval'",
-    "- name: '@deepseek-ai/dsh-computer-use'",
-    "- name: '@deepseek-ai/dsh-tool-computer-use'",
+    "- name: 'coding-skill'",
+    "- name: 'coding-tool-skill'",
+    "- name: 'coding-user-approval'",
+    "- name: 'coding-computer-use'",
+    "- name: 'coding-tool-computer-use'",
     '',
   ].join('\n'))
 
@@ -139,15 +139,15 @@ async function boot(): Promise<Context> {
   await ctx.plugin(Loader)
   ctx.loader.builtins.include = Include
   const modules = new Map<string, unknown>([
-    ['@deepseek-ai/dsh-session', SessionStore],
-    ['@deepseek-ai/dsh-agent', AgentRegistry],
-    ['@deepseek-ai/dsh-system-prompt', SystemPrompt],
-    ['@deepseek-ai/dsh-tools', ToolRuntime],
-    ['@deepseek-ai/dsh-skill', SkillRegistry],
-    ['@deepseek-ai/dsh-tool-skill', ToolSkill],
-    ['@deepseek-ai/dsh-user-approval', ApprovalService],
-    ['@deepseek-ai/dsh-computer-use', FixtureComputerUse],
-    ['@deepseek-ai/dsh-tool-computer-use', ToolComputerUse],
+    ['coding-session', SessionStore],
+    ['coding-agent', AgentRegistry],
+    ['coding-system-prompt', SystemPrompt],
+    ['coding-tools', ToolRuntime],
+    ['coding-skill', SkillRegistry],
+    ['coding-tool-skill', ToolSkill],
+    ['coding-user-approval', ApprovalService],
+    ['coding-computer-use', FixtureComputerUse],
+    ['coding-tool-computer-use', ToolComputerUse],
   ])
   ctx.loader.internal = {
     version: 'v2',
