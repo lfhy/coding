@@ -95,6 +95,13 @@ describe('resolveBundleDir', () => {
     expect(() => resolveBundleDir('t', 'absent', anchor, profileDir)).toThrow('cannot resolve profile bundle')
   })
 
+  it('resolves the old scoped project name to the current Coding bundle', () => {
+    const anchor = stageInstallation({ 'coding-base': { patch: '[]\n' } })
+    const profileDir = tmp()
+    writeFileSync(join(profileDir, 'package.json'), '{}')
+    expect(resolveBundleDir('t', '@deepseek-ai/dsh-base', anchor, profileDir)).toContain('coding-base')
+  })
+
   it('resolves a package whose exports map omits ./package.json', () => {
     // Common on npm: an exports map without "./package.json" makes
     // require.resolve('<pkg>/package.json') throw ERR_PACKAGE_PATH_NOT_EXPORTED;
@@ -141,6 +148,20 @@ describe('loadProfile', () => {
     writeProfileManifest(dir, { name: 'bare' })
     const bare = loadProfile('t', 'demo', anchor, home)
     expect(bare.layers).toEqual([])
+  })
+
+  it('normalizes legacy scoped bundle names in an existing profile manifest', () => {
+    const anchor = stageInstallation({
+      'coding-base': { patch: '[]\n' },
+      'coding-web-app': { patch: '[]\n' },
+    })
+    const home = tmp()
+    const dir = resolveProfileDir('demo', home)
+    initProfile(dir, ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'])
+    const profile = loadProfile('t', 'demo', anchor, home)
+    expect(profile.layers.map(layer => layer.packageName)).toEqual(['coding-base', 'coding-web-app'])
+    expect(readProfileManifest('t', dir).dsh?.profile?.bundles)
+      .toEqual(['coding-base', 'coding-web-app'])
   })
 
   it('auto-initializes only shipped templates and fails loud otherwise', () => {

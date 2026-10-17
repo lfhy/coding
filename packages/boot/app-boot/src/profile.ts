@@ -290,6 +290,55 @@ function sameBundles(left: readonly string[], right: readonly string[]): boolean
   return left.length === right.length && left.every((value, index) => value === right[index])
 }
 
+/** 将旧版安装留下的项目包名映射到当前 Coding 包名。 */
+function canonicalPackageName(packageName: string): string {
+  if (packageName === '@deepseek-ai/dsh') return 'coding'
+  if (packageName.startsWith('@deepseek-ai/dsh-')) return `coding-${packageName.slice('@deepseek-ai/dsh-'.length)}`
+  return packageName
+}
+
+/** 归一化 profile manifest 中的依赖键，并保留已存在的新键优先级。 */
+function canonicalPackageMap(values: Record<string, string> | undefined): Record<string, string> | undefined {
+  if (values === undefined) return undefined
+  const entries = Object.entries(values)
+  const normalized: Record<string, string> = {}
+  for (const [name, value] of entries) {
+    const canonical = canonicalPackageName(name)
+    if (canonical === name) normalized[canonical] = value
+  }
+  for (const [name, value] of entries) {
+    const canonical = canonicalPackageName(name)
+    if (!Object.hasOwn(normalized, canonical)) normalized[canonical] = value
+  }
+  return entries.some(([name]) => canonicalPackageName(name) !== name) ? normalized : values
+}
+
+/**
+ * 让从旧版安装迁移来的 profile 继续可启动，并把归一化结果持久化回 manifest。
+ * 只改项目自有包名；Cordis 等第三方包名保持原样。
+ */
+function normalizeLegacyProfile(dir: string, manifest: ProfileManifest): ProfileManifest {
+  const bundles = manifest.dsh?.profile?.bundles
+  const normalizedBundles = bundles === undefined ? [] : bundles.map(canonicalPackageName)
+  const dependencies = canonicalPackageMap(manifest.dependencies)
+  const peerDependencies = canonicalPackageMap(manifest.peerDependencies)
+  const bundlesChanged = bundles !== undefined && normalizedBundles.some((name, index) => name !== bundles[index])
+  const dependenciesChanged = dependencies !== manifest.dependencies
+  const peerDependenciesChanged = peerDependencies !== manifest.peerDependencies
+  if (!bundlesChanged && !dependenciesChanged && !peerDependenciesChanged) return manifest
+  const normalized: ProfileManifest = { ...manifest }
+  if (dependenciesChanged && dependencies !== undefined) normalized.dependencies = dependencies
+  if (peerDependenciesChanged && peerDependencies !== undefined) normalized.peerDependencies = peerDependencies
+  if (bundlesChanged) {
+    normalized.dsh = {
+      ...manifest.dsh,
+      profile: { ...manifest.dsh.profile, bundles: normalizedBundles },
+    }
+  }
+  writeProfileManifest(dir, normalized)
+  return normalized
+}
+
 /**
  * Normalize an exact installation-owned bundle tuple to its shipped template
  * while preserving every other manifest field. Any other list is user-owned.
@@ -344,9 +393,13 @@ function packageDirFromAnchor(anchor: string, packageName: string): string | und
 export function resolveBundleDir(
   binName: string, packageName: string, installAnchor: string, profileDir: string,
 ): string {
-  for (const anchor of [installAnchor, join(profileDir, 'package.json')]) {
-    const dir = packageDirFromAnchor(anchor, packageName)
-    if (dir !== undefined) return dir
+  const canonical = canonicalPackageName(packageName)
+  const candidates = canonical === packageName ? [packageName] : [canonical, packageName]
+  for (const candidate of candidates) {
+    for (const anchor of [installAnchor, join(profileDir, 'package.json')]) {
+      const dir = packageDirFromAnchor(anchor, candidate)
+      if (dir !== undefined) return dir
+    }
   }
   throw new Error(
     `${binName}: cannot resolve profile bundle ${JSON.stringify(packageName)} from the dsh installation or ${profileDir}; `
@@ -382,7 +435,7 @@ export function loadProfile(
     }
     initProfile(dir, template)
   }
-  const manifest = normalizeShippedProfile(name, dir, readProfileManifest(binName, dir))
+  const manifest = normalizeShippedProfile(name, dir, normalizeLegacyProfile(dir, readProfileManifest(binName, dir)))
   // A hand-written profile manifest may omit the dsh section entirely.
   const bundles = manifest.dsh?.profile?.bundles ?? []
   const layers = bundles.map((packageName): ProfileLayer => {
