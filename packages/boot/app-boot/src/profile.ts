@@ -332,7 +332,7 @@ function normalizeLegacyProfile(dir: string, manifest: ProfileManifest): Profile
   if (bundlesChanged) {
     normalized.dsh = {
       ...manifest.dsh,
-      profile: { ...manifest.dsh.profile, bundles: normalizedBundles },
+      profile: { ...manifest.dsh?.profile, bundles: normalizedBundles },
     }
   }
   writeProfileManifest(dir, normalized)
