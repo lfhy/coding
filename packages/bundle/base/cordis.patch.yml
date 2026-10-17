@@ -101,6 +101,13 @@
     - id: llm-pi-ai
       name: 'coding-llm-pi-ai'
 
+    # Outbound proxy pool: node registry (share-link import of HTTP/SOCKS5/VLESS/
+    # VMess/Hysteria2), fallback/url-test groups, and a loopback HTTP CONNECT
+    # frontend that consumers (the Free channel, custom channels) can point at.
+    # Starts with the host and stops with it; no proxy leaves the process.
+    - id: proxy-pool
+      name: 'coding-proxy-pool'
+
     # The built-in Free channel: registers live from the start, so a fresh
     # install has a usable model without anyone storing a key — each free
     # upstream's credential is a literal resolved inside the adapter rather than

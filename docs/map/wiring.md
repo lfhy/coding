@@ -228,6 +228,7 @@
 - `settings` → `coding-settings-file`
 - `credentials` → `coding-credentials-local`
 - `llm-pi-ai` → `coding-llm-pi-ai`
+- `proxy-pool` → `coding-proxy-pool`
 - `llm-opencode` → `coding-llm-opencode`
 - `session-persistence-jsonl` → `coding-session-persistence-jsonl`
 - `attachment-local` → `coding-attachment-local`

@@ -411,7 +411,7 @@ describe('Auto failover route', () => {
     disposers.push(ctx)
     const info = await ctx.llm.resolveModelInfo('free', 'auto')
     expect(info).toMatchObject({ id: 'auto', name: 'Auto' })
-    expect(info.context.contextWindow).toBe(Math.min(...LlmOpencode.AUTO_MODEL_CANDIDATES.map(m => m.contextWindow)))
+    expect(info.context?.contextWindow).toBe(Math.min(...LlmOpencode.AUTO_MODEL_CANDIDATES.map(m => m.contextWindow)))
     const models = await ctx.llm.listModels('free')
     expect(models.map(model => model.id)).toContain('auto')
     await ctx.fiber.dispose()

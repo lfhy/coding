@@ -1288,6 +1288,9 @@ importers:
       coding-progress-reminder:
         specifier: workspace:^
         version: link:../../guard/progress-reminder
+      coding-proxy-pool:
+        specifier: workspace:^
+        version: link:../../net/proxy-pool
       coding-pwsh-sandbox:
         specifier: workspace:^
         version: link:../../shell/pwsh-sandbox
@@ -6166,6 +6169,15 @@ importers:
       '@earendil-works/pi-ai':
         specifier: ^0.82.1
         version: 0.82.1(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(ws@8.21.0)(zod@4.4.3)
+      coding-proxy-pool:
+        specifier: workspace:^
+        version: link:../../net/proxy-pool
+      coding-settings:
+        specifier: workspace:^
+        version: link:../../settings/settings
+      undici:
+        specifier: ^8.10.2
+        version: 8.10.2
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -6580,6 +6592,19 @@ importers:
       coding-tools:
         specifier: workspace:^
         version: link:../../core/tools
+
+  packages/net/proxy-pool:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      coding-invariants:
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
 
   packages/plan/plan-mode:
     dependencies:

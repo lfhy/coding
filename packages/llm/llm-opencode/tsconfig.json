@@ -25,6 +25,12 @@
     },
     {
       "path": "../../util/timeout"
+    },
+    {
+      "path": "../../settings/settings"
+    },
+    {
+      "path": "../../net/proxy-pool"
     }
   ]
 }

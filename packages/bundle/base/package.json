@@ -67,6 +67,7 @@
     "coding-llm": "workspace:^",
     "coding-llm-deepseek": "workspace:^",
     "coding-llm-opencode": "workspace:^",
+    "coding-proxy-pool": "workspace:^",
     "coding-llm-pi-ai": "workspace:^",
     "coding-llm-retry": "workspace:^",
     "coding-llm-vision-fallback": "workspace:^",

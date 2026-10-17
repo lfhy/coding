@@ -8,6 +8,9 @@
  * 同一个 User-Agent、同一套按会话派生的关联头、同一个工具形状门——因此无需登录、
  * 无需注册即可使用该通道。接入更多免费上游见 `channel.ts` 的上游表。
  *
+ * 出站路径可经设置分节选择：直连（缺省）、代理池（`ctx.proxyPool` 的本地入站）
+ * 或自定义代理地址。选择只影响传输，不改渠道目录与请求形状。
+ *
  * ```yaml
  * - id: llm-opencode
  *   name: 'coding-llm-opencode'
@@ -17,11 +20,15 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
+import type { ProxyPoolService } from 'coding-proxy-pool'
+import { installSettingsSection, settingsNamespace } from 'coding-settings'
 import { FreeChannelAdapter } from './adapter.ts'
 import { PROVIDER_ID } from './channel.ts'
+import type { OutboundMode } from './adapter.ts'
 
 export { FreeChannelAdapter } from './adapter.ts'
-export type { FreeChannelAdapterOptions } from './adapter.ts'
+export type { FreeChannelAdapterOptions, OutboundMode } from './adapter.ts'
 export {
   AUTO_MODEL_CANDIDATES,
   AUTO_MODEL_ID,
@@ -47,17 +54,61 @@ export { isFailoverError, isFailoverCode, FAILOVER_CODES } from './stream.ts'
 
 /** Cordis 插件名。 */
 export const name = 'llm-opencode'
-/** LLM 注册表是本插件唯一必需的服务。 */
+/** LLM 注册表是本插件必需的服务；代理池可选，缺席时代理池模式给出明确错误。 */
 export const inject = ['llm']
 
+/** Free 渠道出站选择的设置命名空间。 */
+export const FREE_OUTBOUND_SETTINGS_NAMESPACE = settingsNamespace('llm-opencode')
+
+/** 设置分节里可持久化的出站选择。 */
+export interface FreeOutboundSettings {
+  /** 出站模式：`direct`（缺省）、`pool` 或 `custom`。 */
+  mode: 'direct' | 'pool' | 'custom'
+  /** 自定义模式的代理地址（`http://` 开头）。 */
+  customUrl?: string
+}
+
+/** 出站设置的 schema；自定义地址只在 custom 模式下有意义。 */
+const FREE_OUTBOUND_SCHEMA: z<FreeOutboundSettings> = z.object({
+  mode: z.union([z.const('direct'), z.const('pool'), z.const('custom')]).required(),
+  customUrl: z.string(),
+})
+
 /**
- * 注册 Free 渠道。目录、端点与凭据都是包内事实，因此这里不安装设置分节，
- * 也没有随设置变化需要重建的注册级事实；路由本身随插件卸载撤销。
+ * 注册 Free 渠道并安装出站选择分节。目录与凭据是包内事实；出站路径是用户
+ * 设置，经 `resolveOutbound` 在每次请求时读取，设置变化不需要重建注册。
  * @param ctx - 持有适配器注册生命周期的插件上下文。
  * @returns 无返回值。
  */
 export function apply(ctx: Context): void {
+  const entry: FreeOutboundSettings = { mode: 'direct' }
+  const outboundRef: { current: () => FreeOutboundSettings } = { current: () => entry }
+  installSettingsSection(ctx, FREE_OUTBOUND_SETTINGS_NAMESPACE, FREE_OUTBOUND_SCHEMA, entry, {
+    setSource: (source) => { outboundRef.current = source },
+    onChange: () => {},
+  })
   ctx.llm.registerAdapter([PROVIDER_ID], new FreeChannelAdapter({
     resolveAttachments: () => ctx.get('attachments'),
+    resolveOutbound: () => {
+      const settings = outboundRef.current()
+      if (settings.mode === 'pool') {
+        const pool: ProxyPoolService | undefined = ctx.get('proxyPool')
+        if (pool === undefined) {
+          throw new Error('the proxy pool service is not available; install coding-proxy-pool or switch the Free channel to direct/custom outbound')
+        }
+        const url = pool.proxyURL({ kind: 'pool' })
+        if (url === undefined) {
+          throw new Error('the proxy pool frontend is not running')
+        }
+        return { kind: 'pool', url } satisfies OutboundMode
+      }
+      if (settings.mode === 'custom') {
+        if (settings.customUrl === undefined || !/^https?:\/\//.test(settings.customUrl)) {
+          throw new Error('the Free channel custom outbound requires an http(s) proxy URL')
+        }
+        return { kind: 'custom', url: settings.customUrl } satisfies OutboundMode
+      }
+      return { kind: 'direct' } satisfies OutboundMode
+    },
   }))
 }

@@ -58,15 +58,24 @@ import {
 } from './channel.ts'
 import { deriveRequestIds, disguiseHeaders } from './ids.ts'
 import { ensureFreeLaneShape } from './free-lane.ts'
+import { applyOutbound } from './outbound.ts'
 import { isFailoverCode, isFailoverError, toStreamChunks } from './stream.ts'
 
 /** 空闲超时使用的稳定错误码。 */
 const STREAM_IDLE_TIMEOUT_CODE = 'LLM_STREAM_IDLE_TIMEOUT'
 
+/** 一次请求的出站路径：直连、代理池（本地入站）或自定义代理地址。 */
+export type OutboundMode =
+  | { kind: 'direct' }
+  | { kind: 'pool'; url: string }
+  | { kind: 'custom'; url: string }
+
 /** 适配器构造参数。 */
 export interface FreeChannelAdapterOptions {
   /** 解析当前持久化附件服务；缺席时拒绝图片输入。 */
   resolveAttachments?: () => AttachmentStore | undefined
+  /** 解析本次请求的出站模式；缺席时直连。抛出的错误按适配器错误交付。 */
+  resolveOutbound?: () => OutboundMode
   /** 可注入的 pi-ai 提供商，供测试替换线协议层。 */
   providerOverride?: Provider
 }
@@ -374,9 +383,14 @@ export class FreeChannelAdapter extends LlmAdapter {
     if (options.stop !== undefined) {
       throw new LlmError('the Free channel does not support GenerateOptions.stop', 'UNSUPPORTED_OPTION')
     }
+    // 出站路径按请求解析一次：代理池/自定义代理经 undici 全局 dispatcher 的
+    // 请求级替换生效（见 outbound.ts），请求结束后恢复原 dispatcher。
+    const outbound = this.config.resolveOutbound?.() ?? { kind: 'direct' } satisfies OutboundMode
+    const restore = applyOutbound(outbound)
     const model = this.piModel(served)
     const effort = options.reasoningEffort
     if (effort !== undefined && !served.reasoningEfforts.includes(effort as ReasoningEffortLevel)) {
+      restore()
       throw new LlmError(
         `Free channel model "${options.model}" does not support reasoning effort "${effort}"`,
         'UNSUPPORTED_REASONING_EFFORT',
@@ -388,7 +402,13 @@ export class FreeChannelAdapter extends LlmAdapter {
     const containsImage = options.messages.some(message => contentHasImage(message.content))
     const attachments = containsImage ? this.config.resolveAttachments?.() : undefined
     const ids = deriveRequestIds(options.messages)
-    const context = await toPiContext(options, attachments)
+    let context: PiContext
+    try {
+      context = await toPiContext(options, attachments)
+    } catch (error) {
+      restore()
+      throw error
+    }
 
     const consumer = new AbortController()
     const upstream = options.signal === undefined
@@ -458,6 +478,7 @@ export class FreeChannelAdapter extends LlmAdapter {
       }
       throw error
     } finally {
+      restore()
       consumer.abort('free channel stream consumer stopped')
     }
   }
