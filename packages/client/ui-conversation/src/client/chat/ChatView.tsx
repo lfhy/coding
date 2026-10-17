@@ -731,7 +731,7 @@ export function ChatView({
           t={t}
         />
       )}
-      {historyErrorDialog && openError !== null && (
+      {historyErrorDialog && (
         <Modal
           open
           onClose={() => {}}

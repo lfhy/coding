@@ -152,10 +152,10 @@ describe('conversation slot inject API', () => {
     const injected = (b.entryOf('conversation.overview.git' as never).inject as unknown as (sessionId: SessionId) => GitOverviewInjected)(ROOT)
     b.runtime.workspaces.stub('connectHome', async () => {
       await b.runtime.sessions.add({
-        id: 'created-home' as SessionId,
+        id: 'created-home',
         session: { prompt: async () => ({ ok: true as const, value: { accepted: true as const } }) },
       }, { current: false })
-      return 'created-home' as SessionId
+      return 'created-home'
     })
     await injected.resolveConflict(ROOT, '解决冲突')
     expect(b.runtime.workspaces.calls).toContainEqual({ method: 'connectHome', args: [] })

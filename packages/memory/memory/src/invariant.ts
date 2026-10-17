@@ -15,7 +15,7 @@ export const name = 'memory-invariant'
 export const inject = ['invariants']
 
 /**
- * 无运行时不变式：本包只提供键计算、限额与渲染策略，没有跨事件的关系可以断言；
+ * No runtime invariant: 本包只提供键计算、限额与渲染策略，没有跨事件的关系可以断言；
  * 策略本身由包内单元测试直接覆盖。
  */
 const install: InvariantInstaller = () => {}

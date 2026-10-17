@@ -253,6 +253,7 @@ declare module '@deepseek-ai/cordis' {
      * @param payload.turn - 当前轮次编号。
      * @param payload.step - 当前步骤编号。
      * @param payload.signal - 当前轮次的取消信号。
+     * Scope-filtered dispatch（`coding-scope`）：带作用域的监听器只接收其所属 agent。
      * 按 agent 作用域筛选分发：带作用域的监听器只接收其所属 agent。
      * @mode waterfall
      */

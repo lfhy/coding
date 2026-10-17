@@ -15,7 +15,7 @@ export const name = 'memory-local-invariant'
 export const inject = ['invariants']
 
 /**
- * 无运行时不变式：本 Provider 只把服务策略映射到文件系统，读写行为由服务测试直接
+ * No runtime invariant: 本 Provider 只把服务策略映射到文件系统，读写行为由服务测试直接
  * 观察，没有跨事件的关系可以断言。
  */
 const install: InvariantInstaller = () => {}
