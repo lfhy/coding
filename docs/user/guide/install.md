@@ -21,7 +21,7 @@ make install
 
 应用只使用本机 ad-hoc 签名，未经 Apple 公证，也没有 `.dmg`。从其他机器复制或下载应用后，macOS Gatekeeper 可能阻止打开；签名校验通过不等于获准在其他机器运行。当前的打包版验证是在隔离的用户目录中直接运行构建产物，不能视为 `/Applications` 安装后运行或真实模型请求已经验收。
 
-桌面应用从自身 `Contents/Resources/coding-host` 和预展开的 `Contents/Resources/runtime` 启动 Host，使用时无需单独安装 Node。它把会话、设置和凭据保存在主目录（默认 `~/.coding`，首次启动自动把有数据的 `~/.dsh` 迁移过来），将 Electron 浏览器数据保存在 `~/.dsh-electron-user-data`；桌面应用的主目录由 Electron 主进程定案，`$CODING_HOME` 可覆盖，`$DSH_HOME` 对它无效。开发态 `make dev` 使用独立的 `~/.dsh-electron-dev`，不读取上述安装版设置与凭据；开发入口另见 [Electron 桌面壳说明](../../../apps/desktop-electron/README.md#开发运行)。
+桌面应用从自身 `Contents/Resources/coding-host` 和预展开的 `Contents/Resources/runtime` 启动 Host，使用时无需单独安装 Node。它把会话、设置和凭据保存在主目录（默认 `~/.coding`，首次启动自动把有数据的 `~/.dsh` 迁移过来），将 Electron 浏览器数据保存在 `~/.dsh-electron-user-data`；迁移只受 2 GiB 总字节上限约束，不会因旧运行时的小文件数量过多而跳过。桌面应用的主目录由 Electron 主进程定案，`$CODING_HOME` 可覆盖，`$DSH_HOME` 对它无效。开发态 `make dev` 使用独立的 `~/.dsh-electron-dev`，不读取上述安装版设置与凭据；开发入口另见 [Electron 桌面壳说明](../../../apps/desktop-electron/README.md#开发运行)。
 
 ## Linux 终端客户端
 

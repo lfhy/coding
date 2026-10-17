@@ -35,7 +35,6 @@ export const MIGRATION_MARKER_FILE = 'migration.json'
 export const MIGRATION_TEMP_PREFIX = `${CODING_HOME_DIR_NAME}-migrating-`
 
 const DEFAULT_MAX_MIGRATION_BYTES = 2 * 1024 * 1024 * 1024
-const DEFAULT_MAX_MIGRATION_ENTRIES = 20_000
 
 /** 模型可见路径中所有已知的主目录展示前缀。 */
 const HOME_DISPLAY_PREFIXES = [
@@ -218,22 +217,14 @@ export interface MigrateCodingHomeOptions {
   homeDir?: string
   /** Byte cap above which the legacy home is left for a manual migration. */
   maxBytes?: number
-  /** Entry cap above which the legacy home is left for a manual migration. */
-  maxEntries?: number
 }
 
 /**
- * Copy a populated legacy `~/.dsh` to `~/.coding` on first start.
- *
- * The legacy home is never modified or removed: the copy lands in a staging
- * directory beside the target, is verified against the source's entry and byte
- * counts, and is then renamed into place, so an interrupted or failed migration
- * leaves no partial home for the resolver to prefer. Every failure returns
- * `failed` with the legacy home as {@link CodingHomeMigration.home}; callers
- * that only need a usable home can therefore keep using {@link resolveDshHome},
- * whose own precedence already falls back to a populated `~/.dsh`.
- * @param options - environment, operating-system home, and migration caps.
- * @returns the migration outcome, including the home the caller should use.
+ * 首次启动把有数据的遗留 `~/.dsh` 复制到 `~/.coding`。
+ * 旧目录只读不删；副本先写入同级暂存目录，按条目数和字节数校验后原子改名就位，因此中断或失败不会留下会被解析器优先选中的半成品目录。
+ * 迁移只受字节上限约束，不会因为旧目录包含大量小文件而拒绝，也会复制可重建的运行时缓存。
+ * @param options - 环境变量、操作系统主目录和迁移字节上限。
+ * @returns 迁移结果，包括调用方应继续使用的主目录。
  */
 export async function migrateCodingHome(
   options: MigrateCodingHomeOptions = {},
@@ -266,14 +257,12 @@ export async function migrateCodingHome(
 
   const measured = await measureTree(legacy)
   const maxBytes = options.maxBytes ?? DEFAULT_MAX_MIGRATION_BYTES
-  const maxEntries = options.maxEntries ?? DEFAULT_MAX_MIGRATION_ENTRIES
-  const oversized = measured.bytes > maxBytes || measured.entries > maxEntries
-  if (oversized) {
+  if (measured.bytes > maxBytes) {
     return {
       ...resolved(
         'too-large',
         legacy,
-        `${LEGACY_DSH_HOME_DISPLAY} holds ${measured.entries} entries / ${measured.bytes} bytes, above the automatic migration cap; set $${CODING_HOME_ENV} or move it to ${DEFAULT_CODING_HOME_DISPLAY} manually`,
+        `${LEGACY_DSH_HOME_DISPLAY} holds ${measured.bytes} bytes, above the automatic migration cap; set $${CODING_HOME_ENV} or move it to ${DEFAULT_CODING_HOME_DISPLAY} manually`,
       ),
       ...measured,
     }
@@ -312,22 +301,6 @@ export async function migrateCodingHome(
   }
 }
 
-function firstSetHomeEnv(env: Record<string, string | undefined>): string | undefined {
-  for (const key of [CODING_HOME_ENV, DSH_HOME_ENV]) {
-    const value = env[key]
-    if (value !== undefined && value.trim().length > 0) return value
-  }
-  return undefined
-}
-
-function matchesEnvHome(home: string, value: string | undefined): boolean {
-  return value !== undefined && value.trim().length > 0 && resolve(expandHomePath(value)) === home
-}
-
-function describeError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
-
 async function measureTree(root: string): Promise<{ entries: number; bytes: number }> {
   let entries = 0
   let bytes = 0
@@ -344,4 +317,20 @@ async function measureTree(root: string): Promise<{ entries: number; bytes: numb
     }
   }
   return { entries, bytes }
+}
+
+function firstSetHomeEnv(env: Record<string, string | undefined>): string | undefined {
+  for (const key of [CODING_HOME_ENV, DSH_HOME_ENV]) {
+    const value = env[key]
+    if (value !== undefined && value.trim().length > 0) return value
+  }
+  return undefined
+}
+
+function matchesEnvHome(home: string, value: string | undefined): boolean {
+  return value !== undefined && value.trim().length > 0 && resolve(expandHomePath(value)) === home
+}
+
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }

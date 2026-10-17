@@ -20,7 +20,7 @@ Coding 用户数据的共享文件系统路径辅助工具：主目录解析、�
 
 `migrateCodingHome()` 在首次启动时把有数据的 `~/.dsh` 复制到 `~/.coding`，让老用户不用手工搬数据。它只读旧目录，绝不修改或删除：副本先落在同级暂存目录，按源目录的条目数与字节数校验后原子改名就位，因此中断或失败不会留下一个会被解析器优先选中的半成品主目录。成功后写入 `migration.json`（`migratedFrom`／`migratedAt`／`entries`／`bytes`）。
 
-返回状态：`migrated`、`not-needed`（新目录已有数据或旧目录为空）、`explicit-home`（`$CODING_HOME`／`$DSH_HOME` 已指定主目录，本函数不插手）、`too-large`（旧目录超过自动迁移上限，留给你手动搬）、`failed`。除 `migrated` 外，`home` 都指向调用方现在应当使用的主目录；失败与超限都会回落到遗留目录，`resolveDshHome()` 的优先级本身也保证这一点。默认上限是 2 GiB 或 20000 个条目，可用 `maxBytes`／`maxEntries` 调整。
+返回状态：`migrated`、`not-needed`（新目录已有数据或旧目录为空）、`explicit-home`（`$CODING_HOME`／`$DSH_HOME` 已指定主目录，本函数不插手）、`too-large`（旧目录超过 2 GiB 的自动迁移上限，留给手动迁移）、`failed`。除 `migrated` 外，`home` 都指向调用方现在应当使用的主目录；失败与超限都会回落到遗留目录，`resolveDshHome()` 的优先级本身也保证这一点。迁移不按条目数拒绝，旧目录中的运行时缓存、会话和设置会随一次迁移复制。
 
 ## 监听路径
 

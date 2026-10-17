@@ -3,7 +3,6 @@
 This file is the cross-session implementation record for Coding. Update it when a decision, phase boundary, shipped behavior, or verification status changes.
 
 ## Product boundary
-
 - Product and application name: `Coding`.
 - Public Linux command: `coding`; do not add a `dsh` alias.
 - Internal package names, plugin identifiers, wire protocol names, and the `DSH_HOME` environment variable stay compatible with DeepSeek Harness (`dsh`) for this program of work; the default data home is `~/.coding` (`$CODING_HOME` takes precedence, while a populated `~/.dsh` is migrated automatically on first start and remains the fallback).
@@ -28,7 +27,7 @@ Status: landed in this branch as four commits' worth of work; two follow-ups sta
 ### Data home
 
 - Default data home is `~/.coding`; `$CODING_HOME` outranks the compatible `$DSH_HOME`, a populated `~/.coding` wins over a populated `~/.dsh`, and a fresh setup creates `~/.coding`. An empty directory never counts as data, so an interrupted setup cannot hide `~/.dsh`.
-- First start copies a populated `~/.dsh` to `~/.coding`: staging directory beside the target, entry/byte verification, atomic rename, `migration.json`, source left untouched, and a fallback to `~/.dsh` when the copy fails or the source exceeds 2 GiB / 20000 entries. Migration runs before any home resolution — in the CLI dispatcher and in the Electron main process before it hands `--home` to the Go helper.
+- First start copies a populated `~/.dsh` to `~/.coding`: staging directory beside the target, entry/byte verification, atomic rename, `migration.json`, source left untouched, and a fallback to `~/.dsh` when the copy fails or the source exceeds 2 GiB. Migration runs before any home resolution — in the CLI dispatcher and in the Electron main process before it hands `--home` to the Go helper.
 - The Linux launcher picks the same home but never migrates itself (it must fix `host.json` and the launch lock before the Host exists, and an explicit home suppresses Host-side migration). Documented in `docs/user/guide/install.md`.
 
 ### Project memory
@@ -153,3 +152,12 @@ Status: not started (decision recorded; revisit after desktop stabilizes).
 - [ ] Optional store shell: package the adapted Web GUI with Capacitor only if a native app becomes necessary.
 
 Acceptance: a phone browser can open the Host URL, complete a keyless mock session end to end, and the Host rejects unauthenticated access.
+
+## 进行中
+
+- **Free 渠道：内置只读、按上游聚合与免费通道 403 都已落地。**
+  - 渠道形态：`packages/llm/llm-opencode` 把这条渠道改名 **Free**（路由 `free`），渠道名、端点、匿名凭据与模型目录都是包内事实（`src/channel.ts` 的 `FREE_UPSTREAMS`），不安装设置分节、也不声明可配置提供方目录，用户改不到端点与密钥；一条渠道可聚合多条免费上游，适配器按模型 id 选择端点与凭据。`packages/client/ui-settings-models` 把没有设置 profile 的存活路由作为**内置渠道**只读展示（`BuiltinChannelCard`，目录取自 `llm.models`），排在用户渠道之前并默认选中，不渲染端点、密钥、名称、目录或删除入口。模型能力取自 models.dev（MiMo 与 DeepSeek V4.1 Flash 收图，Nemotron 3.5 Lightning 只有文本；三者都会推理，只有 DeepSeek V4.1 Flash 有 `low`/`high`/`max` 档位），选中的档位换算成 `reasoning_effort` 随请求发出。
+  - 后续：接入更多免费上游＝在 `FREE_UPSTREAMS` 加一条记录（请求形状不同时再加对应的指纹改写）；既有会话/`settings.yaml` 里指向 `opencode-zen` 的模型引用不再解析，需要重选模型。
+  - 403 根因（对着 `../opencode2api` 的实现逐项 live 复测）：**User-Agent 必须是 `opencode/` 开头的 CLI 形态**——适配器原本用 harness 的 `Coding/…` 归因 UA 覆盖了伪装 UA，因此每次请求都被 `FreeTierError` 拒绝；另外 `ses_` 会话 id 的 12 位 hex 时间段必须是真实降序时钟（随机 hex 同样 403），完全不带工具表也 403。修复内容：`ids.ts` 改用 `opencode/latest/2.0.29/cli`、补 `x-opencode-session-id`、项目头改裸 40 位 hex、不再上线 `x-opencode-request`、会话快路径同时校验时钟段；`adapter.ts` 不再用共享 UA 覆盖指纹。`https://opencode.ai/zen/v1` 与 `https://opencode.ai/inference/v1` 当前都能用，默认保留前者。
+  - 已知风险：上游 2026-10-14 曾逐字节比对被识别工具的定义，本适配器的占位工具在该策略下会被拒；真发生时要么携带官方工具定义，要么让用户另建一条自定义渠道用自己的凭据。
+- **模型选择器卡在「正在刷新模型列表」：已修（`b101a501cd`）。** 两个成因：（1）`ui-model-selection` 的目录状态机只处理「有应答但失败」，RPC 被拒绝（连接换代、请求中止、Host 已退出）时状态永远停在 `loading`，现在 `load`/`select` 的拒绝路径都落到 `error` 并带文本；（2）模型面板在每次展开触发的刷新期间，会在已加载的列表上方压一行状态，现已与档位面板一致——只有还没有目录可显示时才报。复现/验收：空目录 → 显示状态行；已有列表刷新 → 不显示（开发 Host 实测 + 单测）。

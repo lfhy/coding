@@ -185,6 +185,23 @@ describe('first-start home migration', () => {
     await expect(migrateCodingHome({ homeDir: home, env: {} })).resolves.toMatchObject({ status: 'not-needed' })
   })
 
+  it('migrates a home with many small runtime entries without an entry-count cutoff', async () => {
+    const home = await tempHome()
+    await mkdir(join(home, LEGACY_DSH_HOME_DIR_NAME, 'runtime'), { recursive: true })
+    await writeFile(join(home, LEGACY_DSH_HOME_DIR_NAME, 'settings.yaml'), 'a')
+    for (let index = 0; index < 500; index++) {
+      await writeFile(join(home, LEGACY_DSH_HOME_DIR_NAME, 'runtime', `entry-${index}`), 'x')
+    }
+
+    await expect(migrateCodingHome({ homeDir: home, env: {} })).resolves.toMatchObject({
+      status: 'migrated',
+      home: join(home, CODING_HOME_DIR_NAME),
+      entries: 502,
+      bytes: 501,
+    })
+    await expect(readFile(join(home, CODING_HOME_DIR_NAME, 'settings.yaml'), 'utf8')).resolves.toBe('a')
+  }, 60_000)
+
   it('leaves an oversized legacy home for a manual migration', async () => {
     const home = await tempHome()
     await seedLegacyHome(home)
