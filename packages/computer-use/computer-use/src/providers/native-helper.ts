@@ -2,7 +2,7 @@
 
 import { createHash } from 'node:crypto'
 import { access, chmod, lstat, readFile, realpath, stat } from 'node:fs/promises'
-import { constants, type Stats } from 'node:fs'
+import { constants, existsSync, type Stats } from 'node:fs'
 import type { Writable } from 'node:stream'
 import { dirname, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
@@ -117,7 +117,38 @@ function isAborted(signal: AbortSignal): boolean {
 }
 
 function nativeRoot(): string {
-  return fileURLToPath(new URL('../../native/macos/', import.meta.url))
+  const fallback = new URL('../native/macos/', import.meta.url)
+  const candidates = [
+    fallback,
+    new URL('../../native/macos/', import.meta.url),
+  ]
+  const selected = candidates.find(candidate => existsSync(fileURLToPath(candidate))) ?? fallback
+  return fileURLToPath(selected)
+}
+
+/**
+ * 找到托管 helper 的源码构建脚本。
+ *
+ * 源码入口位于 `src/providers/`，打包后的单文件入口位于 `lib/`；两者
+ * 相对包根的层级不同，不能只保留一个相对路径。候选路径按打包产物
+ * 优先，避免发布包把脚本解析到错误的 scoped 父目录。
+ * @returns 当前模块对应包内的构建脚本绝对路径。
+ */
+async function nativeBuildScript(): Promise<string> {
+  const candidates = [
+    new URL('../scripts/build-native.mjs', import.meta.url),
+    new URL('../../scripts/build-native.mjs', import.meta.url),
+  ]
+  for (const candidate of candidates) {
+    const path = fileURLToPath(candidate)
+    try {
+      await access(path)
+      return path
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
+  }
+  throw new ComputerUseError('COMPUTER_PROVIDER_FAILURE', 'native source build script is unavailable')
 }
 
 function cursorErrorMessage(error: unknown): string | undefined {
@@ -545,7 +576,7 @@ export class NativeHelperClient {
   }
 
   private async buildManaged(signal: AbortSignal): Promise<void> {
-    const script = fileURLToPath(new URL('../../scripts/build-native.mjs', import.meta.url))
+    const script = await nativeBuildScript()
     const handle = this.ctx.subprocess.spawn({
       argv: [process.execPath, script, '--helper-only'],
       cwd: dirname(script),

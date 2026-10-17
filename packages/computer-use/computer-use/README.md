@@ -1,6 +1,6 @@
 # `@deepseek-ai/dsh-computer-use`
 
-本机 macOS 界面的观察与操作能力：在宿主层提供 `ctx.computerUse`，由包内 macOS 提供方驱动一个固定协议的 Swift helper，供[模型可见的工具消费方](../tool-computer-use/README.md)使用。
+本机 macOS 界面的观察与操作能力：在宿主层提供 `ctx.computerUse`，由包内 macOS 提供方驱动一个固定协议的 Swift helper，供[模型可见的工具消费方](../tool-computer-use/README.md)使用。默认 profile 不装载本包，需要时由显式 profile/patch opt-in。
 能力属于宿主平面：一个进程只有一份提供方，因此 helper 进程、观察缓存、按应用的租约与一次性确认令牌在全部会话之间共享；会话、agent 与 turn 的归属在服务内裁决，helper 自身不做会话隔离。
 只有本地 macOS 宿主装载它，其他平台由组合层禁用该行；[基本组合包](../../bundle/base/README.md)默认启用托管 helper 的源码重建，因为本仓库不提交编译产物。
 

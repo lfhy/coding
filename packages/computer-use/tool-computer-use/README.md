@@ -1,7 +1,7 @@
 # `@deepseek-ai/dsh-tool-computer-use`
 
 Computer Use 的模型可见消费方：登记一份技能、一个全局引导工具，并在 agent 加载该技能之后，把执行工具只暴露给这个 agent。
-本包在 agent 预设层装配，标准预设与 PTC／Code Mode 预设各装配一份，两者提供同一套工具名；提供方、helper 进程与租约属于宿主层的 [`@deepseek-ai/dsh-computer-use`](../computer-use/README.md)。
+本包由显式 opt-in 的 agent 预设装配；默认 profile 不装载它。提供方、helper 进程与租约属于宿主层的 [`@deepseek-ai/dsh-computer-use`](../computer-use/README.md)。
 
 ## 渐进式暴露
 
@@ -65,7 +65,7 @@ schema 仅在技能加载后对该 agent 可见并占用固定请求 token；每
 
 ## Known Limitations and Deferred Work
 
-- **只有主 agent 应当获得执行工具**：暴露按 agent 生效，但把本插件装配到子 agent 预设同样会生效；当前组合只把它挂在标准与 Code 两个预设上。
+- **只有主 agent 应当获得执行工具**：暴露按 agent 生效，但把本插件装配到子 agent 预设同样会生效；需要使用时由显式 profile 选择装配。
 - **引导工具依赖会话日志**：技能事实完全来自持久证据，日志被裁剪或改写后需要重新加载技能。
 - **没有面向模型的设置入口**：应用级静态授权写在配置里，权限状态与授权界面由宿主层组合决定，本包不贡献设置 UI。
 - **不判断动作语义**：是否属于高影响动作由模型依技能要求调用 `computer_confirm` 决定，工具不代替模型分类。

@@ -1,8 +1,8 @@
 # 电脑控制
 
-电脑控制能力由 [`@deepseek-ai/dsh-computer-use`](../../packages/computer-use/computer-use/README.md) 在宿主层提供 `ctx.computerUse`，由该包的 macOS 提供方实现；模型可见的 Skill、引导工具与执行工具由 [`@deepseek-ai/dsh-tool-computer-use`](../../packages/computer-use/tool-computer-use/README.md) 在 agent 预设层贡献，标准预设与 PTC／Code Mode 预设提供同一套工具名。
-一个进程只有一份提供方：它持有随包构建的 Swift helper 进程、观察缓存、按应用的租约与一次确认令牌，所有会话共享这些对象；会话之间通过 `SessionId`、agent 与 turn 归属区分授权，helper 自身不做会话隔离。
-只有本地 macOS 宿主装载这一能力，其他平台在组合层禁用该行，profile 的其余部分不变；helper 只接受固定 argv 与 JSON 行协议，模型不能提供 shell 片段、脚本或原生 selector。
+电脑控制能力由 [`@deepseek-ai/dsh-computer-use`](../../packages/computer-use/computer-use/README.md) 在宿主层提供 `ctx.computerUse`，由该包的 macOS 提供方实现；模型可见的 Skill、引导工具与执行工具由 [`@deepseek-ai/dsh-tool-computer-use`](../../packages/computer-use/tool-computer-use/README.md) 在显式 opt-in 的 agent 预设层贡献。默认 profile 不装载这两个插件。
+显式装配后一个进程只有一份提供方：它持有 Swift helper 进程、观察缓存、按应用的租约与一次确认令牌，所有会话共享这些对象；会话之间通过 `SessionId`、agent 与 turn 归属区分授权，helper 自身不做会话隔离。
+显式装配这一能力时只有本地 macOS 宿主提供实现，其他平台不会装载对应插件；helper 只接受固定 argv 与 JSON 行协议，模型不能提供 shell 片段、脚本或原生 selector。
 
 ## 观察与目标
 
