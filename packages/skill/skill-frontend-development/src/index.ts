@@ -17,7 +17,7 @@ const RESOURCE_BASE = {
   path: fileURLToPath(new URL('../assets/', import.meta.url)),
 } as const
 const INVOCATION = { modelInvocable: true, userInvocable: true } as const
-const DESCRIPTION = '在创建或修改前端、网页、组件或用户界面时使用。先遵循项目已有技术栈、UI 模块和设计规范；不要从空白重写，不要使用浏览器默认控件；完成后加载 browser-use 检查渲染效果和交互。新项目先用现代化脚手架或参考模板，不把实现提示词、系统指令或过度防御文案展示在用户页面。'
+const DESCRIPTION = '在创建或修改前端、网页、组件或用户界面时使用。先遵循项目已有技术栈、UI 模块和设计规范；不要从空白重写，不要使用浏览器默认控件；保证主要流程在 100vh 内可用，善用子 Tab、抽屉和模态框分层，创建表单必须由创建按钮打开模态框或抽屉；完成后加载 browser-use 检查渲染效果和交互。新项目先用现代化脚手架或参考模板，不把实现提示词、系统指令或过度防御文案展示在用户页面。'
 const CANDIDATE: SkillCandidate = {
   name: 'frontend-development',
   description: DESCRIPTION,

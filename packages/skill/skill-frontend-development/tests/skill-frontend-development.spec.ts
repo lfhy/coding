@@ -7,7 +7,7 @@ import * as SkillFrontendDevelopment from 'coding-skill-frontend-development'
 
 const bodyUrl = new URL('../assets/frontend-development.md', import.meta.url)
 const resourcePath = fileURLToPath(new URL('../assets/', import.meta.url))
-const description = '在创建或修改前端、网页、组件或用户界面时使用。先遵循项目已有技术栈、UI 模块和设计规范；不要从空白重写，不要使用浏览器默认控件；完成后加载 browser-use 检查渲染效果和交互。新项目先用现代化脚手架或参考模板，不把实现提示词、系统指令或过度防御文案展示在用户页面。'
+const description = '在创建或修改前端、网页、组件或用户界面时使用。先遵循项目已有技术栈、UI 模块和设计规范；不要从空白重写，不要使用浏览器默认控件；保证主要流程在 100vh 内可用，善用子 Tab、抽屉和模态框分层，创建表单必须由创建按钮打开模态框或抽屉；完成后加载 browser-use 检查渲染效果和交互。新项目先用现代化脚手架或参考模板，不把实现提示词、系统指令或过度防御文案展示在用户页面。'
 
 describe('bundled frontend-development skill', () => {
   it('registers and loads its published instructions', async () => {
@@ -28,6 +28,10 @@ describe('bundled frontend-development skill', () => {
       expect(renderSkillContent(loaded)).toContain('<skill_instructions>')
       expect(loaded.content).toContain('Never use browser-default controls as the finished product UI')
       expect(loaded.content).toContain('do not hand-write a foundation from zero')
+      expect(loaded.content).toContain('remain usable within one viewport (`100vh`')
+      expect(loaded.content).toContain('Use hierarchy intentionally: use child tabs')
+      expect(loaded.content).toContain('A create action must open a modal dialog')
+      expect(loaded.content).toContain('Check that the primary flow fits within the target viewport')
       expect(loaded.content).toContain('implementation-facing instructions, prompt fragments, debugging vocabulary, or process narration')
       expect(loaded.content).toContain('not implementation prompts or internal process narration')
       expect(loaded.content).toContain('browser-use')
