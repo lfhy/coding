@@ -1,6 +1,6 @@
 {
   "name": "coding-progress-reminder",
-  "description": "Injects a system reminder asking the agent to report progress after a run of tool calls",
+  "description": "Injects a progress report reminder after a run of tool calls without forcing unnecessary user questions",
   "version": "0.1.0-rc.8",
   "publishConfig": {
     "access": "public"

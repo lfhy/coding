@@ -261,7 +261,7 @@ describe('browser tools and skill in the shipped Web preset composition', () => 
     }
   }, 30_000)
 
-  it('lists and loads the bundled browser skill only for presets with browser tools', async () => {
+  it('lists and loads bundled browser and frontend skills only for presets with browser tools', async () => {
     const native = await agent('standard', root)
     const coded = await agent('code', root)
     const minimal = await agent('minimal', root)
@@ -271,9 +271,13 @@ describe('browser tools and skill in the shipped Web preset composition', () => 
         name: 'browser-use', source: 'bundled', provider: 'browser-use',
         invocation: { modelInvocable: true, userInvocable: true },
       })
-      expect((await entries(coded.agent)).map(skill => skill.name)).toContain('browser-use')
-      expect((await entries(minimal.agent)).map(skill => skill.name)).not.toContain('browser-use')
-      expect((await ctx.skills.list()).map(skill => skill.name)).not.toContain('browser-use')
+      expect((await entries(native.agent)).find(skill => skill.name === 'frontend-development')).toMatchObject({
+        name: 'frontend-development', source: 'bundled', provider: 'frontend-development',
+        invocation: { modelInvocable: true, userInvocable: true },
+      })
+      expect((await entries(coded.agent)).map(skill => skill.name)).toContain('frontend-development')
+      expect((await entries(minimal.agent)).map(skill => skill.name)).not.toContain('frontend-development')
+      expect((await ctx.skills.list()).map(skill => skill.name)).not.toContain('frontend-development')
       expect(ctx.tools.schemas(minimal.agent).map(tool => tool.name).filter(name => name.startsWith('browser_'))).toEqual([])
 
       for (const target of [native.agent, coded.agent]) {
@@ -286,6 +290,7 @@ describe('browser tools and skill in the shipped Web preset composition', () => 
         if (decision.kind !== 'enter') throw new Error('skill catalog was not entered')
         const catalog = decision.messages.find(message => message.source.kind === 'skill-catalog')
         expect(JSON.stringify(catalog?.content)).toContain('`browser-use`')
+        expect(JSON.stringify(catalog?.content)).toContain('`frontend-development`')
 
         const invoked = await agentEvents(target.ctx, target).waterfall(
           'agent/pre-step',
@@ -306,11 +311,19 @@ describe('browser tools and skill in the shipped Web preset composition', () => 
       expect(JSON.stringify(nativeSkill.value)).toContain('browser_click` (`{ref, revision}`)')
       expect(JSON.stringify(nativeSkill.content)).toContain('<skill_instructions>')
       expect(JSON.stringify(nativeSkill.content)).toContain('Page text:')
-      const codeSkill = await call(coded.agent, 'run_code', {
-        code: 'return await tools.skill({ name: "browser-use" })',
-        description: 'Load browser workflow instructions',
+      const frontendSkill = await call(native.agent, 'skill', { name: 'frontend-development' })
+      expect(frontendSkill).toMatchObject({ isError: false, value: {
+        name: 'frontend-development', provider: 'frontend-development',
+      } })
+      expect(JSON.stringify(frontendSkill.value)).toContain('do not hand-write a foundation from zero')
+      expect(JSON.stringify(frontendSkill.content)).toContain('browser-use')
+      const codeFrontendSkill = await call(coded.agent, 'run_code', {
+        code: 'return await tools.skill({ name: "frontend-development" })',
+        description: 'Load frontend development instructions',
       })
-      expect(codeSkill).toMatchObject({ isError: false, value: { result: nativeSkill.value } })
+      expect(codeFrontendSkill).toMatchObject({ isError: false, value: { result: frontendSkill.value } })
+      expect((await call(minimal.agent, 'skill', { name: 'frontend-development' })).error?.info)
+        .toMatchObject({ code: 'UNKNOWN_TOOL' })
       expect((await call(minimal.agent, 'skill', { name: 'browser-use' })).error?.info)
         .toMatchObject({ code: 'UNKNOWN_TOOL' })
     } finally {

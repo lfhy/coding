@@ -121,6 +121,16 @@ describe('counting completed tool calls', () => {
   })
 })
 
+describe('reminder wording', () => {
+  it('asks for a concise user-facing report without inventing a decision', () => {
+    const text = renderProgressReminder(3)
+    expect(text).toContain('请先在回复正文用几句话说明已完成什么、还剩什么，再继续执行。')
+    expect(text).toContain('没有需要用户决定的事项就直接继续，不要为了汇报而停下或询问。')
+    expect(text).not.toContain('计划工具')
+    expect(text).not.toContain('拍板')
+  })
+})
+
 describe('pre-step injection', () => {
   it('leaves the proposed batch alone below the threshold', async () => {
     const { ctx } = await mount({ toolCallsPerReminder: 3 })

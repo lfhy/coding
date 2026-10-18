@@ -53,6 +53,7 @@
     "coding-time-context": "workspace:^",
     "coding-skill": "workspace:^",
     "coding-skill-browser-use": "workspace:^",
+    "coding-skill-frontend-development": "workspace:^",
     "coding-skill-filesystem": "workspace:^",
     "coding-jobs-local": "workspace:^",
     "coding-tmux-context": "workspace:^",

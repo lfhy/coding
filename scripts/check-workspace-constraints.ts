@@ -167,6 +167,7 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   'coding-session-persistence-sqlite': ['resources/sql/**/*.sql'],
   'coding-skill-badge': ['assets'],
   'coding-skill-browser-use': ['assets'],
+  'coding-skill-frontend-development': ['assets'],
   'coding-subprocess-local': ['scripts/ensure-spawn-helper.mjs'],
   // Computer Use runs a locally built Swift helper, so the package ships the helper
   // sources plus the build script the provider invokes when the pinned binary is absent.

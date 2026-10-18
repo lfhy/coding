@@ -85,6 +85,7 @@
     "coding-settings": "workspace:^",
     "coding-skill": "workspace:^",
     "coding-skill-browser-use": "workspace:^",
+    "coding-skill-frontend-development": "workspace:^",
     "coding-skill-filesystem": "workspace:^",
     "coding-spill": "workspace:^",
     "coding-subagent": "workspace:^",

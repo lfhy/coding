@@ -225,6 +225,9 @@ importers:
       coding-skill-filesystem:
         specifier: workspace:^
         version: link:../../packages/skill/skill-filesystem
+      coding-skill-frontend-development:
+        specifier: workspace:^
+        version: link:../../packages/skill/skill-frontend-development
       coding-terminal:
         specifier: workspace:^
         version: link:../../packages/terminal/terminal
@@ -8017,6 +8020,18 @@ importers:
         specifier: workspace:^
         version: link:../skill
 
+  packages/skill/skill-frontend-development:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      coding-invariants:
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      coding-skill:
+        specifier: workspace:^
+        version: link:../skill
+
   packages/skill/tool-skill:
     dependencies:
       '@deepseek-ai/schemastery':
@@ -9913,6 +9928,9 @@ importers:
       coding-skill-filesystem:
         specifier: workspace:^
         version: link:../../packages/skill/skill-filesystem
+      coding-skill-frontend-development:
+        specifier: workspace:^
+        version: link:../../packages/skill/skill-frontend-development
       coding-spill:
         specifier: workspace:^
         version: link:../../packages/spill/spill

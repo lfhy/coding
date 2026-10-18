@@ -76,13 +76,16 @@
 # ── skills ──────────────────────────────────────────────────────────────────
 
 # 技能注册表属于宿主组合，并按 agent 作用域分层；这些提供方注册到本预设层，无需独立 realm。
-# 文件系统提供方发现本地技能，随包提供方贡献浏览器技能；`tool-skill` 发布目录和按需加载工具。
+# 文件系统提供方发现本地技能，随包提供方贡献浏览器和前端开发技能；`tool-skill` 发布目录和按需加载工具。
 # 合并后的目录也包含部署在全局注册的技能。
 - id: skill-filesystem
   name: 'coding-skill-filesystem'
 
 - id: skill-browser-use
   name: 'coding-skill-browser-use'
+
+- id: skill-frontend-development
+  name: 'coding-skill-frontend-development'
 
 - id: tool-skill
   name: 'coding-tool-skill'

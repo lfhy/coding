@@ -3419,6 +3419,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `coding-session-stats` — requires `sessionProjections` ([`packages/session/session-stats/src/index.ts`](../packages/session/session-stats/src/index.ts))
 - `coding-skill-badge` — requires `skills` ([`packages/skill/skill-badge/src/index.ts`](../packages/skill/skill-badge/src/index.ts))
 - `coding-skill-browser-use` — requires `skills` ([`packages/skill/skill-browser-use/src/index.ts`](../packages/skill/skill-browser-use/src/index.ts))
+- `coding-skill-frontend-development` — requires `skills` ([`packages/skill/skill-frontend-development/src/index.ts`](../packages/skill/skill-frontend-development/src/index.ts))
 - `coding-storage` ([`packages/storage/storage/src/index.ts`](../packages/storage/storage/src/index.ts))
 - `coding-subagent` ([`packages/subagent/subagent/src/index.ts`](../packages/subagent/subagent/src/index.ts))
 - `coding-subprocess-local` ([`packages/subprocess/subprocess-local/src/index.ts`](../packages/subprocess/subprocess-local/src/index.ts))
