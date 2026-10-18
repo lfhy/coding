@@ -34,7 +34,8 @@
       "inject": [
         "coding-client-connection",
         "coding-client-locale",
-        "coding-client-ui-settings"
+        "coding-client-ui-settings",
+        "coding-api-remotes"
       ],
       "platform": "web"
     }

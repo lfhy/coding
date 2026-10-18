@@ -30,6 +30,8 @@ export type {} from 'coding-credentials/types'
 export type {} from 'coding-llm/types'
 export type {} from 'coding-agent-presets/types'
 export type {} from 'coding-settings/types'
+// 池的 Events 合并（proxy-pool/node）进入本编译面，转发键的合法集由此可见。
+import type {} from 'coding-proxy-pool'
 
 /**
  * The carrier's Client-facing types, re-exported so a business package names one

@@ -12,6 +12,11 @@ import type { ClientContext } from 'coding-client-runtime/client'
 import type {} from 'coding-client-locale/client'
 import type {} from 'coding-client-ui-settings/client'
 import type {} from 'coding-client-connection/client'
+// remotes 的 Selection 合并（proxy-pool/node 转发键的面）。
+import type {} from 'coding-api-remotes/client'
+import type {} from 'coding-api-remotes/types'
+// 池的 Events 声明（proxy-pool/node 的载荷形状）进入本编译面。
+import type {} from 'coding-proxy-pool'
 import { createProxyPoolStore } from './store.ts'
 import { ProxyPoolSection } from './ProxyPoolSection.tsx'
 import type { ProxyPoolSectionText } from './ProxyPoolSection.tsx'
@@ -89,7 +94,7 @@ const en: ProxyPoolSectionText = {
 export const name = 'ui-settings-proxy-pool'
 
 /** 必需服务：slot 体系、文案与连接。 */
-export const inject = ['slots', 'locale', 'connection']
+export const inject = ['slots', 'locale', 'connection', 'remote']
 
 /**
  * 注册代理池分区：store 由 connection 的 wire 客户端构造，分区经
@@ -106,6 +111,13 @@ export function apply(ctx: ClientContext): void {
   const connection = ctx.get('connection') as import('coding-client-connection/client').ConnectionHandle
   const store = createProxyPoolStore(connection.api.proxyPool)
   const { store: _store, ...actions } = store
+
+  // Host 把 proxy-pool/node 转发到远端事件；分区据此自动重拉快照——
+  // 订阅刷新换血、健康翻转都会实时反映在列表上，无需手动刷新。
+  ctx.effect(
+    () => ctx.remote.$on('proxy-pool/node', () => { void store.load() }),
+    'ui-settings-proxy-pool: pool node invalidations',
+  )
 
   ctx.slots.inject('settings.section', () => {
     const t = dictionaries[ctx.locale.getLocale().active] ?? zh
