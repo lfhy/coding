@@ -373,12 +373,25 @@ export interface ChatBrowserLinks {
   open(sessionId: SessionId, url: string): Promise<void>
 }
 
+/** 可选的工作台文件打开服务；不可映射到工作区标签时返回 undefined 交给 Host 回退。 */
+export interface ChatFileOpener {
+  /**
+   * 在指定 Session 的右侧工作台打开文件或工作区目录。
+   * @param sessionId - 目标会话。
+   * @param path - 工作区相对路径、工作区内绝对路径或 `.`。
+   * @returns 已交给工作台时的 Promise；服务未就绪或路径不属于工作区时返回 undefined。
+   */
+  open(sessionId: SessionId, path: string): Promise<void> | undefined
+}
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     /** Prose file-mention provider (ui-deliverables); reach via ctx.get — optional. */
     chatFileMentions: ChatFileMentions
     /** Assistant 正文链接打开服务；通过 ctx.get 可选获取。 */
     chatBrowserLinks: ChatBrowserLinks
+    /** 产物与正文文件引用的右侧工作台打开服务；通过 ctx.get 可选获取。 */
+    chatFileOpener: ChatFileOpener
   }
 }
 

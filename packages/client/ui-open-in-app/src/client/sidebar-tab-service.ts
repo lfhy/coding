@@ -73,6 +73,27 @@ export class SidebarRightController implements ISidebarRight {
     this.openResourceForSession(sessionId, `sidebar://${encodeURIComponent(kind)}`, { kind, ...options })
   }
 
+  /** 在指定 Session 的工作台打开或激活一个文件标签；工作台未挂载时返回 false。 */
+  openFileForSession(
+    sessionId: SessionId,
+    file: { readonly name: string; readonly segments: readonly string[] },
+  ): boolean {
+    const actions = this.actions
+    if (actions === undefined) return false
+    actions.openFile(sessionId, file)
+    this.layout.openWorkbench(sessionId)
+    return true
+  }
+
+  /** 在指定 Session 打开或激活文件管理器标签；工作台未挂载时返回 false。 */
+  openFileManagerForSession(sessionId: SessionId): boolean {
+    const actions = this.actions
+    if (actions === undefined) return false
+    actions.openFileManager(sessionId)
+    this.layout.openWorkbench(sessionId)
+    return true
+  }
+
   /** 根据地址或显式 kind 路由并选中标签，随后展示该 Session 的工作台。 */
   openResourceForSession(sessionId: SessionId, address: string, options: SidebarRightOpenOptions = {}): void {
     const claim = this.registry.claim(address, options.kind)

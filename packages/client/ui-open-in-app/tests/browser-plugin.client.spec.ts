@@ -16,6 +16,7 @@ import {
   type HeroPanelToggleInjected, type WorkbenchPanelTogglesInjected,
 } from '../src/client/WorkbenchPanelToggles.tsx'
 import { RetainedTerminalPanel } from '../src/client/RetainedTerminalPanel.tsx'
+import { createRetainedWorkbenchStore } from '../src/client/store.ts'
 import { en, NS, zh } from '../src/client/locales.ts'
 
 afterEach(() => {
@@ -59,7 +60,7 @@ async function bench() {
   // 欢迎页入口从当前会话列表定位可操作的 Session。
   const list = createSnapshotStore<SessionListState>({
     ids: [SESSION],
-    byId: { [SESSION]: { id: SESSION, blank: false } },
+    byId: { [SESSION]: { id: SESSION, blank: false, cwd: '/w' } },
     current: SESSION as SessionId | undefined,
     phase: 'ready',
     subagentsByParent: {},
@@ -169,12 +170,26 @@ describe('open-in-app browser half', () => {
     expect(openWorkbench).toHaveBeenCalledWith(SESSION)
 
     const workbench = ctx.slots.entries('workbench')[0]
-    const workbenchFace = (workbench?.inject as unknown as () => WorkspaceWorkbenchInjected)()
-    await expect(workbenchFace.listFiles(SESSION, [])).resolves.toEqual({
-      path: '/w', entries: [{ name: 'README.md', type: 'file', segments: ['README.md'] }], truncated: false,
+    const workbenchStore = (workbench?.store as ReturnType<typeof createRetainedWorkbenchStore>).create()
+    const workbenchActions = workbenchStore.actions
+    const workbenchFace = (workbench?.inject as unknown as (
+      actions: typeof workbenchActions,
+    ) => WorkspaceWorkbenchInjected)(workbenchActions)
+    const chatFileOpener = ctx.get('chatFileOpener') as {
+      open: (sessionId: SessionId, path: string) => Promise<void> | undefined
+    }
+    const opened = chatFileOpener.open(SESSION, 'README.md')
+    expect(opened).toBeInstanceOf(Promise)
+    await opened
+    expect(workbenchStore.getSnapshot().sessions[SESSION]).toMatchObject({
+      view: 'files', tabs: [{ type: 'file', name: 'README.md', segments: ['README.md'] }],
     })
+    expect(openWorkbench).toHaveBeenCalledWith(SESSION)
     await expect(workbenchFace.readFile(SESSION, ['README.md'])).resolves.toEqual({
       path: '/w/README.md', content: { kind: 'markdown', text: '# Readme' },
+    })
+    await expect(workbenchFace.listFiles(SESSION, [])).resolves.toEqual({
+      path: '/w', entries: [{ name: 'README.md', type: 'file', segments: ['README.md'] }], truncated: false,
     })
     await expect(workbenchFace.gitHistory(SESSION, { count: 60 }, new AbortController().signal)).resolves.toBeNull()
     workbenchFace.closeWorkbench(SESSION)
@@ -182,7 +197,7 @@ describe('open-in-app browser half', () => {
     workbenchFace.toggleWorkbenchFullscreen(SESSION)
     workbenchFace.toggleBottom(SESSION)
     expect(closeWorkbench).toHaveBeenCalledWith(SESSION)
-    expect(openWorkbench).toHaveBeenCalledTimes(2)
+    expect(openWorkbench).toHaveBeenCalledTimes(3)
     expect(toggleWorkbenchFullscreen).toHaveBeenCalledWith(SESSION)
     expect(toggleWorkbenchBottom).toHaveBeenCalledWith(SESSION)
 
@@ -197,6 +212,7 @@ describe('open-in-app browser half', () => {
     expect(closeWorkbenchBottom).toHaveBeenCalledExactlyOnceWith(SESSION)
     expect(toggleWorkbenchBottom).toHaveBeenCalledTimes(1)
     await fiber.dispose()
+    expect(ctx.get('chatFileOpener')).toBeUndefined()
   })
 
   it('injects session-bound panel toggles independently of later selection', async () => {

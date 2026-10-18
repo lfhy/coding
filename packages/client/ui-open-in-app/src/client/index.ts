@@ -6,7 +6,7 @@ import type { SessionId } from 'coding-session/types'
 import type { HostObservable } from 'coding-client-ui-slots'
 import type {} from 'coding-client-connection/client'
 import type {} from 'coding-client-locale/client'
-import type {} from 'coding-client-ui-conversation/client'
+import type { ChatFileOpener } from 'coding-client-ui-conversation/client'
 import type {} from 'coding-client-ui-layout/client'
 import { OPEN_IN_APP_ICON_PREFIX } from 'coding-host-open-in-app/shared'
 import { OpenInAppController } from './controller.ts'
@@ -22,6 +22,7 @@ import type { SidebarRightTabDefinition } from './sidebar-tab-registry.ts'
 import { SidebarRightTabRegistry } from './sidebar-tab-registry.ts'
 import { SidebarRightController } from './sidebar-tab-service.ts'
 import { tabInfoInject, type SidebarRightTabOwnerProps, type SidebarRightTabSlotInject } from './sidebar-tab-contract.ts'
+import { workspaceFileName, workspaceFileSegments } from './workspace-path.ts'
 import { en, NS, zh } from './locales.ts'
 
 export type { OpenInAppActionInjected, OpenInAppActionProps } from './OpenInAppAction.tsx'
@@ -121,6 +122,18 @@ export function apply(ctx: ClientContext): void {
   const workbench = createRetainedWorkbenchStore()
   const sidebarRightTabs = new SidebarRightTabRegistry()
   const sidebarRight = new SidebarRightController(sidebarRightTabs, ctx.layout, () => activeSessionId(ctx))
+  const chatFileOpener: ChatFileOpener = {
+    open: (sessionId, path) => {
+      if (path === '.') return sidebarRight.openFileManagerForSession(sessionId) ? Promise.resolve() : undefined
+      const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd
+      const segments = workspaceFileSegments(cwd, path)
+      if (segments === undefined) return undefined
+      return sidebarRight.openFileForSession(sessionId, {
+        name: workspaceFileName(path), segments,
+      }) ? Promise.resolve() : undefined
+    },
+  }
+  ctx.provide('chatFileOpener', chatFileOpener)
   const sidebarRightSource: HostObservable<readonly SidebarRightTabDefinition[]> = {
     getSnapshot: () => sidebarRightTabs.entries(),
     subscribe: listener => sidebarRightTabs.subscribe(listener),

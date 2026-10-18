@@ -257,6 +257,22 @@ describe('conversation slot inject API', () => {
     await b.runtime.dispose()
   })
 
+  it('opens files through the right workbench opener before falling back to Host openPath', async () => {
+    const b = await bench()
+    const opener = vi.fn(() => Promise.resolve())
+    b.runtime.provide('chatFileOpener', { open: opener })
+    const { injected } = b.chatViewApi(ROOT)
+    await injected.openFile('src/a.ts')
+    expect(opener).toHaveBeenCalledWith(ROOT, 'src/a.ts')
+    expect(b.runtime.workspaces.calls).not.toContainEqual(expect.objectContaining({ method: 'openPath' }))
+
+    opener.mockReturnValueOnce(undefined as unknown as Promise<void>)
+    await injected.openFile('outside.txt')
+    expect(opener).toHaveBeenLastCalledWith(ROOT, 'outside.txt')
+    expect(b.runtime.workspaces.calls).toContainEqual({ method: 'openPath', args: ['/proj/outside.txt'] })
+    await b.runtime.dispose()
+  })
+
   it('openFile rejects when the Host cannot open the path', async () => {
     const b = await bench()
     b.runtime.workspaces.stub('openPath', () => Promise.reject(new Error('xdg-open is not available')))

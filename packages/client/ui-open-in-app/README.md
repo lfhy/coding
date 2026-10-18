@@ -37,7 +37,7 @@ Git 历史标签仅在可见时向 `workspace.gitHistory` 请求当前 Session �
 
 桌面壳在工作台顶栏空白区域提供窗口拖拽，标签和最大化、关闭按钮保持可点击；浏览器没有拖拽区域。
 
-文件树只把当前 Session id 与 Host 返回的 provider segment 数组回传给 list/read 路由，不提交工作区根，也不拼接 Windows、POSIX 或 UNC 路径。工作台视觉关闭时不请求目录；首次显示后才读取根目录，避免隐藏 entry 在 Session 尚未就绪时留下错误状态。目录按文件夹优先排序，展开时才读取下一层；筛选只作用于已加载层，点击文件会打开或激活中间标签。Markdown 使用共享 `MarkdownText`，代码和普通文本保留换行，图片使用 Host 校验后的 MIME 与 base64 内容，其它类型显示明确的 unsupported 状态。
+文件树只把当前 Session id 与 Host 返回的 provider segment 数组回传给 list/read 路由，不提交工作区根，也不拼接 Windows、POSIX 或 UNC 路径。来自聊天产物或正文文件引用的工作区内路径先由 Client 按当前 Session cwd 安全转换为 provider segments，再写入同一 Session 的 retained workbench store、展示右侧工作台并创建或激活预览标签；无法安全映射、工作台未挂载或路径位于工作区外时由对话层回退到 Host 的系统打开器。工作台视觉关闭时不请求目录；首次显示后才读取根目录，避免隐藏 entry 在 Session 尚未就绪时留下错误状态。目录按文件夹优先排序，展开时才读取下一层；筛选只作用于已加载层，点击文件会打开或激活中间标签。Markdown 使用共享 `MarkdownText`，代码和普通文本保留换行，图片使用 Host 校验后的 MIME 与 base64 内容，其它类型显示明确的 unsupported 状态。
 
 右侧与底栏均使用 `@xterm/xterm` 与 `@xterm/addon-fit`。右侧菜单每次选择终端都会新建一个终端标签；底栏首次显示时才建立首个终端，底栏自己的 `+` 可继续新建。两处标签及选中状态独立，每个终端标签独占 WebSocket、PTY、xterm 和滚屏；右侧菜单不会打开底栏，页头、欢迎页与工作台顶栏的底栏入口继续显示底栏终端。根 scope 的两个占用者按 Session 保留已激活的终端树；切换标签、切换 Session 或隐藏所属面板只改变可见性，切回时沿用原连接与进程。关闭对应标签释放其连接，Host 随 socket 生命周期终止对应 PTY；会话从列表移除、插件卸载或页面关闭时释放对应终端树。
 

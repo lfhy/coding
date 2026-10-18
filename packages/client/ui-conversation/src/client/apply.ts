@@ -480,7 +480,8 @@ export function apply(ctx: Context): void {
           ?? Promise.reject(new Error(t('browserOpen.unavailable'))),
         openFile: (path) => {
           const cwd = sessions.list.getSnapshot().byId[sessionId]?.cwd
-          return workspaces.openPath(resolveWorkspacePath(cwd, path))
+          return ctx.get('chatFileOpener')?.open(sessionId, path)
+            ?? workspaces.openPath(resolveWorkspacePath(cwd, path))
         },
         retryHistory: () => sessions.retry(sessionId),
         startSession: () => { workspaces.startSession() },
