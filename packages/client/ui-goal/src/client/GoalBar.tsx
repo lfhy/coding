@@ -1,8 +1,8 @@
 /**
  * GoalBar: the goal indicator docked above the message composer (input dock
- * strip). A present goal shows a goal glyph, a phase label, the truncated
- * objective, and icon actions — resume when paused, edit (inline form in the
- * same strip), and clear. Goal creation lives on the `/goal` command, not
+ * strip). A present goal shows a goal glyph, a phase label, the objective (one line by default,
+ * expandable when it does not fit), and icon actions — resume when paused, edit (inline form in
+ * the same strip), and clear. Goal creation lives on the `/goal` command, not
  * here: loading (undefined), no goal (null), and complete goals render
  * nothing. Live state arrives as the projected whole snapshot; the verbs are
  * the injected face.
@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { GoalSnapshot } from 'coding-goal/client'
 import {
-  IconCheckOutline16, IconCloseOutline16, IconEditOutline16, IconGoalOutline16,
+  IconCheckOutline16, IconChevronDownOutline14, IconChevronUpOutline14, IconCloseOutline16, IconEditOutline16, IconGoalOutline16,
   IconPauseOutline16, IconPlayOutline16, IconTrashOutline16, Tooltip,
 } from 'coding-client-ui-primitives'
 import type { PropsLocale } from 'coding-client-ui-slots'
@@ -35,6 +35,7 @@ export function GoalBar({ goal, onEdit, onPause, onResume, onClear, t }: GoalBar
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
   const [pending, setPending] = useState(false)
+  const [expanded, setExpanded] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [clearedGoalId, setClearedGoalId] = useState<GoalSnapshot['id'] | null>(null)
   const pendingRef = useRef(false)
@@ -44,6 +45,7 @@ export function GoalBar({ goal, onEdit, onPause, onResume, onClear, t }: GoalBar
   const goalId = goal?.id
   useEffect(() => {
     setEditing(false)
+    setExpanded(false)
     setActionError(null)
     setClearedGoalId(null)
   }, [goalId])
@@ -124,14 +126,27 @@ export function GoalBar({ goal, onEdit, onPause, onResume, onClear, t }: GoalBar
   }
 
   const title = goal.phase === 'blocked' ? goal.blockedReason?.message : undefined
+  const expandLabel = expanded ? t('action.collapse') : t('action.expand')
   return (
     <div className={css.dock} data-goal-bar>
-      <div className={css.bar} title={title}>
+      <div className={css.bar} title={title} data-expanded={expanded || undefined}>
         <span className={css.goalGlyph}><IconGoalOutline16 size={14} /></span>
         <span className={css.label}>{t(PHASE_LABELS[goal.phase])}</span>
-        <span className={css.objective}>{goal.objective}</span>
+        <span className={expanded ? css.objectiveExpanded : css.objective}>{goal.objective}</span>
         {actionError !== null && <span className={css.error} role="alert">{actionError}</span>}
         <div className={css.actions}>
+          <Tooltip label={expandLabel} side="bottom" delayMs={500}>
+            <button
+              type="button"
+              className={css.iconBtn}
+              disabled={pending}
+              onClick={() => { setExpanded(value => !value) }}
+              aria-label={expandLabel}
+              aria-expanded={expanded}
+            >
+              {expanded ? <IconChevronUpOutline14 size={14} /> : <IconChevronDownOutline14 size={14} />}
+            </button>
+          </Tooltip>
           {goal.phase === 'active' && (
             <Tooltip label={t('action.pause')} side="bottom" delayMs={500}>
               <button type="button" className={css.iconBtn} disabled={pending} onClick={() => { void runAction(onPause) }} aria-label={t('action.pause')}>

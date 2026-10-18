@@ -13,6 +13,8 @@ export const zh = {
   'action.resume': '恢复目标',
   'action.edit': '编辑目标',
   'action.clear': '清除目标',
+  'action.expand': '展开目标',
+  'action.collapse': '收起目标',
 } satisfies Record<string, string>
 
 /** The goal namespace key union. */
@@ -31,4 +33,6 @@ export const en = {
   'action.resume': 'Resume goal',
   'action.edit': 'Edit goal',
   'action.clear': 'Clear goal',
+  'action.expand': 'Expand goal',
+  'action.collapse': 'Collapse goal',
 } satisfies Record<GoalKey, string>

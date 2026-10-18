@@ -57,8 +57,24 @@ describe('GoalBar', () => {
     render(<GoalBar goal={makeGoal()} {...actions} t={t} />)
     expect(screen.getByText('进行中的目标')).toBeTruthy()
     expect(screen.getByText('Ship the redesign')).toBeTruthy()
+    expect(screen.getByRole('button', { name: '展开目标' }).getAttribute('aria-expanded')).toBe('false')
     fireEvent.click(screen.getByRole('button', { name: '清除目标' }))
     expect(actions.onClear).toHaveBeenCalledTimes(1)
+  })
+
+  it('expands a long objective into a wrapped row and collapses it again', () => {
+    const actions = makeActions()
+    const objective = 'Ship the redesign with a long detailed objective that should remain readable in the composer'
+    render(<GoalBar goal={makeGoal({ objective })} {...actions} t={t} />)
+
+    const expand = screen.getByRole('button', { name: '展开目标' })
+    expect(expand.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(expand)
+    expect(screen.getByRole('button', { name: '收起目标' }).getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByText(objective).className).toContain('objectiveExpanded')
+
+    fireEvent.click(screen.getByRole('button', { name: '收起目标' }))
+    expect(screen.getByRole('button', { name: '展开目标' }).getAttribute('aria-expanded')).toBe('false')
   })
 
   it('single-flights rapid clear clicks and hides the committed goal before its projection catches up', async () => {

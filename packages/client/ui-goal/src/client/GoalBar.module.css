@@ -23,12 +23,22 @@
   gap: 10px;
   width: 100%;
   max-width: calc(var(--dsh-composer-card-max-width) - 4 * var(--dsh-composer-dock-inset));
-  height: 36px;
+  min-height: 36px;
   margin: 0 auto;
   padding: 4px 5px 4px 12px;
   border: 1px solid var(--dsw-alias-border-l1);
   border-radius: 12px;
   background: var(--dsw-specific-tip);
+}
+
+.bar[data-expanded] {
+  align-items: flex-start;
+}
+
+.bar[data-expanded] .goalGlyph,
+.bar[data-expanded] .label,
+.bar[data-expanded] .actions {
+  margin-top: 2px;
 }
 
 .goalGlyph {
@@ -56,6 +66,15 @@
   color: var(--dsw-alias-label-primary-dimmed);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.objectiveExpanded {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary-dimmed);
 }
 
 .error {
