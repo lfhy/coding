@@ -68,6 +68,7 @@ import {
 import { llmDiscoverModelsRequestSchema, llmModelsRequestSchema, llmProvidersRequestSchema } from '../api/llm.schema.ts'
 import {
   proxyPoolDescribeRequestSchema,
+  proxyPoolRefreshRequestSchema,
   proxyPoolImportLinksRequestSchema,
   proxyPoolRemoveNodeRequestSchema,
   proxyPoolSetOutboundRequestSchema,
@@ -160,6 +161,7 @@ const UNARY_ROUTES: UnaryRoutes = {
   'proxyPool.importLinks': { schema: proxyPoolImportLinksRequestSchema, invoke: (api, r) => api.proxyPool.importLinks(r) },
   'proxyPool.removeNode': { schema: proxyPoolRemoveNodeRequestSchema, invoke: (api, r) => api.proxyPool.removeNode(r) },
   'proxyPool.testNode': { schema: proxyPoolTestNodeRequestSchema, invoke: (api, r) => api.proxyPool.testNode(r) },
+  'proxyPool.refresh': { schema: proxyPoolRefreshRequestSchema, invoke: (api, r) => api.proxyPool.refresh(r) },
   'proxyPool.setOutbound': { schema: proxyPoolSetOutboundRequestSchema, invoke: (api, r) => api.proxyPool.setOutbound(r) },
   'browser.control': { schema: browserControlRequestSchema, invoke: (api, r, signal) => api.browser.control(r, signal) },
 }

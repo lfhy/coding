@@ -34,6 +34,9 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
       async testNode(request) {
         return { rpcId: request.rpcId, result: { ok: false, error: { code: 'proxy-pool-unavailable' as const, message: 'stub', details: { capability: 'proxy-pool' as const } } } }
       },
+      async refresh(request) {
+        return { rpcId: request.rpcId, result: { ok: false, error: { code: 'proxy-pool-unavailable' as const, message: 'stub', details: { capability: 'proxy-pool' as const } } } }
+      },
       async setOutbound(request) {
         return { rpcId: request.rpcId, result: { ok: false, error: { code: 'proxy-pool-unavailable' as const, message: 'stub', details: { capability: 'proxy-pool' as const } } } }
       },

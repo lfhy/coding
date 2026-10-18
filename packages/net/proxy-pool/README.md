@@ -7,6 +7,11 @@
 
 ## 能力
 
+- **订阅自动刷新**：免费节点寿命只有分钟级，静态导入几分钟就过期。池默认每 5 分钟
+  从内置公开目录（proxifly、monosans）拉取候选，**先探测再入池**（8 并发、5s 超时，
+  通过者以 `feed:` 前缀入池并携带探测健康记录），并移除候选集里已消失的旧 `feed:` 节点；
+  用户手工导入的节点绝不触碰。拉取经镜像回退链（直连 → gh-proxy.com），单源失败只记
+  入摘要不中断整轮。`pool.refresh()` 手动触发同一动作。
 - **节点注册表**：`registerNode` / `registerGroup` 注册节点与组，重复 id 抛
   `PROXY_NODE_DUPLICATE` / `PROXY_GROUP_DUPLICATE`；变更经 `proxy-pool/node` 事件发布。
 - **分享链接导入**：`parseProxyLink` / `parseProxyLinks` 解析

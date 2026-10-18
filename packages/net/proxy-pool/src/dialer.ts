@@ -78,15 +78,19 @@ async function dialHttp(node: ProxyNode, target: DialTarget): Promise<DialedStre
     ? `Proxy-Authorization: Basic ${Buffer.from(`${node.username}:${node.secret ?? ''}`).toString('base64')}\r\n`
     : ''
   socket.write(`CONNECT ${target.host}:${target.port} HTTP/1.1\r\nHost: ${target.host}:${target.port}\r\n${auth}\r\n`)
-  return await settleConnect(socket, node)
+  return await settleConnect(socket, node, target.signal)
 }
 
 /** 等待 CONNECT 的 2xx 应答行；非 2xx 按代理错误失败。 */
-function settleConnect(socket: Socket, node: ProxyNode): Promise<DialedStream> {
+function settleConnect(socket: Socket, node: ProxyNode, signal?: AbortSignal): Promise<DialedStream> {
   return new Promise((resolve, reject) => {
     let head = ''
     const chunks: Buffer[] = []
     let received = 0
+    // TCP 连上但永远不应答 CONNECT 的「半死」节点必须被 abort 信号割断，
+    // 否则一次探测就永久占住一个并发槽。
+    const onAbort = () => { cleanup(new Error('aborted while awaiting the proxy response')) }
+    signal?.addEventListener('abort', onAbort, { once: true })
     const onData = (chunk: Buffer) => {
       chunks.push(chunk)
       received += chunk.length
@@ -103,6 +107,7 @@ function settleConnect(socket: Socket, node: ProxyNode): Promise<DialedStream> {
         const extra = consumed.subarray(end + 4)
         socket.off('data', onData)
         socket.off('error', onErr)
+        signal?.removeEventListener('abort', onAbort)
         if (extra.length > 0) socket.unshift(extra)
         resolve(socket)
       } else {
@@ -113,6 +118,7 @@ function settleConnect(socket: Socket, node: ProxyNode): Promise<DialedStream> {
     const cleanup = (error: Error | null) => {
       socket.off('data', onData)
       socket.off('error', onErr)
+      signal?.removeEventListener('abort', onAbort)
       if (error !== null) {
         socket.destroy()
         reject(new ProxyPoolError(`HTTP proxy ${node.address}:${node.port} handshake failed: ${error.message}`, 'PROXY_DIAL_FAILED'))
@@ -133,14 +139,14 @@ async function dialSocks5(node: ProxyNode, target: DialTarget): Promise<DialedSt
   }
   const hasAuth = node.username !== undefined
   socket.write(hasAuth ? Buffer.from([0x05, 0x02, 0x00, 0x02]) : Buffer.from([0x05, 0x01, 0x00]))
-  const greeting = await readExact(socket, 2)
+  const greeting = await readExact(socket, 2, target.signal)
   if (greeting[0] !== 0x05) fail(`unexpected version ${greeting[0]}`)
   if (greeting[1] === 0x02) {
     if (!hasAuth) fail('proxy demanded auth but none configured')
     const user = Buffer.from(node.username ?? '', 'utf8')
     const pass = Buffer.from(node.secret ?? '', 'utf8')
     socket.write(Buffer.concat([Buffer.from([0x01, user.length]), user, Buffer.from([pass.length]), pass]))
-    const auth = await readExact(socket, 2)
+    const auth = await readExact(socket, 2, target.signal)
     if (auth[1] !== 0x00) fail('auth rejected')
   } else if (greeting[1] !== 0x00) {
     fail('no acceptable auth method')
@@ -150,24 +156,32 @@ async function dialSocks5(node: ProxyNode, target: DialTarget): Promise<DialedSt
     Buffer.from([0x05, 0x01, 0x00, 0x03, host.length]), host,
     Buffer.from([(target.port >> 8) & 0xff, target.port & 0xff]),
   ]))
-  const head = await readExact(socket, 5)
+  const head = await readExact(socket, 5, target.signal)
   if (head[1] !== 0x00) fail(`connect rejected with ${head[1]}`)
   const rest = head[3] === 0x01 ? 5 : head[3] === 0x04 ? 17 : head[3] === 0x03 ? (head[4] ?? 0) + 2 : -1
-  if (rest > 0) await readExact(socket, rest)
+  if (rest > 0) await readExact(socket, rest, target.signal)
   return socket
 }
 
-/** 从流里读满 n 字节；提前结束按失败处理。 */
-function readExact(socket: Socket, n: number): Promise<Buffer> {
+/** 从流里读满 n 字节；提前结束或被中止按失败处理（中止同时销毁套接字）。 */
+function readExact(socket: Socket, n: number, signal?: AbortSignal): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = []
     let received = 0
+    const onAbort = () => {
+      socket.off('data', onData)
+      socket.off('error', onErr)
+      socket.destroy()
+      reject(new ProxyPoolError('aborted while awaiting proxy bytes', 'PROXY_DIAL_FAILED'))
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
     const onData = (chunk: Buffer) => {
       chunks.push(chunk)
       received += chunk.length
       if (received >= n) {
         socket.off('data', onData)
         socket.off('error', onErr)
+        signal?.removeEventListener('abort', onAbort)
         const all = Buffer.concat(chunks)
         // 多余字节放回读取队列并恢复流动，交给后续消费者（如 pipe）。
         if (all.length > n) socket.unshift(all.subarray(n))
@@ -177,6 +191,7 @@ function readExact(socket: Socket, n: number): Promise<Buffer> {
     }
     const onErr = (error: Error) => {
       socket.off('data', onData)
+      signal?.removeEventListener('abort', onAbort)
       reject(error)
     }
     socket.on('data', onData)
@@ -196,7 +211,7 @@ async function dialVless(node: ProxyNode, target: DialTarget): Promise<DialedStr
     Buffer.from([0x03, host.length]), host,
   ])
   socket.write(header)
-  const response = await readExact(socket, 2)
+  const response = await readExact(socket, 2, target.signal)
   if (response[0] !== 0x00) {
     socket.destroy()
     throw new ProxyPoolError(`VLESS node rejected the request with version ${response[0]}`, 'PROXY_DIAL_FAILED')
@@ -247,7 +262,7 @@ async function dialVmess(node: ProxyNode, target: DialTarget): Promise<DialedStr
   const sealedLength = await sealChaCha20Poly1305(lengthKey, lengthPlain)
   socket.write(Buffer.concat([authId, sealedLength, sealed]))
   // 响应头：1 字节版本 + 1 字节选项；服务端随后开始转发。
-  await readExact(socket, 2)
+  await readExact(socket, 2, target.signal)
   return socket
 }
 

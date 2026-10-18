@@ -18,9 +18,14 @@ function newNodeId(): string {
   return randomUUID()
 }
 
-/** 查询参数里的整数端口。 */
-function portOf(value: string | undefined, source: string): number {
-  const port = Number(value)
+/** 查询参数里的整数端口；空串按协议默认端口（http/https 80/443）处理。 */
+function portOf(value: string | undefined, protocol: string, source: string): number {
+  // URL 会把显式的默认端口归一化为空串（`http://h:80` 的 port 是 ""），
+  // 订阅源的地址常带冗余的 :80/:443——按协议补回，而不是判为非法。
+  const raw = value === undefined || value.length === 0
+    ? (protocol === 'https:' ? '443' : '80')
+    : value
+  const port = Number(raw)
   if (!Number.isInteger(port) || port < 1 || port > 65_535) {
     throw new ProxyPoolError(`invalid port in proxy link: ${source}`, 'PROXY_LINK_INVALID')
   }
@@ -84,7 +89,7 @@ function parseVless(source: string): ProxyNode {
     name: decodeURIComponent(url.hash.slice(1)) || `${url.hostname}:${url.port}`,
     protocol: 'vless',
     address: url.hostname,
-    port: portOf(url.port || undefined, source),
+    port: portOf(url.port || undefined, url.protocol, source),
     secret,
     ...tlsOf(params, url.hostname) !== undefined || flagOf(params, 'tls') || flagOf(params, 'security')
       ? { tls: tlsOf(params, url.hostname) ?? { serverName: url.hostname } }
@@ -146,7 +151,7 @@ function parseHysteria2(source: string): ProxyNode {
     name: decodeURIComponent(url.hash.slice(1)) || `${url.hostname}:${url.port}`,
     protocol: 'hysteria2',
     address: url.hostname,
-    port: portOf(url.port || undefined, source),
+    port: portOf(url.port || undefined, url.protocol, source),
     ...(secret !== undefined ? { secret } : {}),
     tls: { serverName: sni ?? url.hostname, ...allowInsecure ? { allowInsecure } : {} },
   }
@@ -161,7 +166,7 @@ function parseClassic(source: string): ProxyNode {
     name: decodeURIComponent(url.hash.slice(1)) || `${url.hostname}:${url.port}`,
     protocol,
     address: url.hostname,
-    port: portOf(url.port || undefined, source),
+    port: portOf(url.port || undefined, url.protocol, source),
     ...url.username.length > 0 ? { username: decodeURIComponent(url.username) } : {},
     ...url.password.length > 0 ? { secret: decodeURIComponent(url.password) } : {},
   }

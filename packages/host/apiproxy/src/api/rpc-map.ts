@@ -86,6 +86,7 @@ export interface RpcMethodMap {
   'proxyPool.importLinks': ProxyPoolApi['importLinks']
   'proxyPool.removeNode': ProxyPoolApi['removeNode']
   'proxyPool.testNode': ProxyPoolApi['testNode']
+  'proxyPool.refresh': ProxyPoolApi['refresh']
   'proxyPool.setOutbound': ProxyPoolApi['setOutbound']
   'browser.control': BrowserApi['control']
 }

@@ -84,6 +84,14 @@ export interface ProxyPoolApi {
   /** Trigger one health probe now; resolves with that probe's record. */
   testNode(request: RpcRequest<{ id: string }>): Promise<RpcResponse<ProxyHealthView | undefined>>
 
+  /**
+   * Trigger one subscription refresh now (the same action the periodic
+   * refresh loop runs): fetch the feeds, probe candidates, replace stale
+   * `feed:` nodes. Resolves with the summary; feed-level failures ride
+   * `failures` without failing the call.
+   */
+  refresh(request: RpcRequest<{}>): Promise<RpcResponse<{ admitted: number; evicted: number; failures: string[] }>>
+
   /** Replace the outbound mode selection (persisted via the settings section). */
   setOutbound(request: RpcRequest<{ mode: OutboundModeView }>): Promise<RpcResponse<{ outbound: OutboundModeView }>>
 }

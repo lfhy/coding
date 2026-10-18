@@ -43,6 +43,13 @@ const INITIAL: PoolSnapshot = {
 /** 载波客户端的 proxyPool 域（payload 形态，rpcId 由载波铸造）。 */
 type PoolWire = IApiClient['proxyPool']
 
+/** 一次手动订阅刷新的摘要。 */
+export interface RefreshSummary {
+  admitted: number
+  evicted: number
+  failures: string[]
+}
+
 export function createProxyPoolStore(api: PoolWire) {
   const store: SnapshotStore<PoolSnapshot> = createSnapshotStore<PoolSnapshot>(structuredClone(INITIAL))
   /** 只保留最新一次加载；旧响应不覆盖新状态。 */
@@ -99,6 +106,17 @@ export function createProxyPoolStore(api: PoolWire) {
     else await load()
   }
 
+  /** 手动触发一次订阅刷新并重载快照。 */
+  const refresh = async (): Promise<RefreshSummary> => {
+    const response = await api.refresh({})
+    if (!response.result.ok) {
+      fail(response.result.error.message)
+      return { admitted: 0, evicted: 0, failures: [] }
+    }
+    await load()
+    return response.result.value
+  }
+
   /** 写入出站选择并刷新。 */
   const setOutbound = async (mode: OutboundModeView): Promise<void> => {
     const response = await api.setOutbound({ mode })
@@ -106,7 +124,7 @@ export function createProxyPoolStore(api: PoolWire) {
     else await load()
   }
 
-  return { store, load, importLinks, removeNode, testNode, setOutbound }
+  return { store, load, importLinks, removeNode, testNode, refresh, setOutbound }
 }
 
 /** store 工厂的实例类型（组件只以类型引用它）。 */

@@ -16,6 +16,8 @@ import type { Duplex } from 'node:stream'
 import type { Socket } from 'node:net'
 import { dialThrough } from './dialer.ts'
 import { mirrorPoolNodes } from './persist.ts'
+import { refreshPoolNodes } from './refresh.ts'
+import type { RefreshResult } from './refresh.ts'
 import type { ProxyGroup, ProxyHealth, ProxyNode, ProxyPoolNodeEvent } from './types.ts'
 import { ProxyPoolError } from './types.ts'
 
@@ -49,6 +51,12 @@ export {
   PROXY_POOL_NODES_SETTINGS_NAMESPACE,
 } from './persist.ts'
 export type { ProxyPoolNodesSettings } from './persist.ts'
+export {
+  refreshPoolNodes,
+  fetchFeed,
+  DEFAULT_FEEDS,
+} from './refresh.ts'
+export type { ProxyFeed, RefreshOptions, RefreshResult } from './refresh.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -74,6 +82,16 @@ export interface HealthCheckOptions {
   timeoutMs?: number
 }
 
+/** 订阅刷新配置。 */
+export interface RefreshConfig {
+  /** 启用周期订阅刷新；缺省 true（免费节点分钟级寿命，静态池没有意义）。 */
+  enabled?: boolean
+  /** 刷新间隔毫秒；缺省 300_000（5 分钟，与免费目录的更新节奏匹配）。 */
+  intervalMs?: number
+  /** 每次刷新维持的订阅节点数；缺省 5。 */
+  targetCount?: number
+}
+
 /** 服务配置：入站监听与健康检查节奏。 */
 export interface Config {
   /** 本地 HTTP 代理监听端口；0（缺省）表示选一个空闲端口。 */
@@ -82,6 +100,8 @@ export interface Config {
   loopbackOnly?: boolean
   /** 健康检查节奏。 */
   health?: HealthCheckOptions
+  /** 订阅刷新节奏。 */
+  refresh?: RefreshConfig
 }
 
 /**
@@ -95,12 +115,20 @@ export class ProxyPoolService extends Service {
   private health = new Map<string, ProxyHealth>()
   private server: Server | undefined
   private readonly healthOptions: Required<HealthCheckOptions>
+  private readonly refreshOptions: Required<RefreshConfig>
+  /** 进行中的订阅刷新（手动触发与周期触发共享，避免并发放大探测流量）。 */
+  private refreshing: Promise<RefreshResult> | undefined
 
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'proxyPool')
     this.healthOptions = {
       intervalMs: config.health?.intervalMs ?? 60_000,
       timeoutMs: config.health?.timeoutMs ?? 8_000,
+    }
+    this.refreshOptions = {
+      enabled: config.refresh?.enabled ?? true,
+      intervalMs: config.refresh?.intervalMs ?? 300_000,
+      targetCount: config.refresh?.targetCount ?? 5,
     }
     ctx.effect(() => this.start(config), 'proxyPool.start')
   }
@@ -120,8 +148,20 @@ export class ProxyPoolService extends Service {
     })
     const timer = setInterval(() => void this.checkAll(), this.healthOptions.intervalMs)
     void timer
+    // 订阅刷新循环：免费节点分钟级寿命，周期拉新替换才能维持可用池。
+    // 首轮延迟一个刷新周期（手工导入或持久化重放先就位，不抢启动窗口）。
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined
+    const scheduleRefresh = (): void => {
+      refreshTimer = setTimeout(() => {
+        void this.refresh().finally(() => {
+          if (this.refreshOptions.enabled) scheduleRefresh()
+        })
+      }, this.refreshOptions.intervalMs)
+    }
+    if (this.refreshOptions.enabled) scheduleRefresh()
     return () => {
       clearInterval(timer)
+      if (refreshTimer !== undefined) clearTimeout(refreshTimer)
       for (const socket of this.tracked) socket.destroy()
       this.tracked.clear()
       server.close()
@@ -159,6 +199,19 @@ export class ProxyPoolService extends Service {
       this.health.delete(node.id)
       this.ctx.emit('proxy-pool/node', { kind: 'node-removed', nodeId: node.id } satisfies ProxyPoolNodeEvent)
     }
+  }
+
+  /**
+   * 原地改节点显示名：订阅刷新把探测通过的候选改成 `feed:` 前缀时使用，
+   * id 与健康记录保持不变（重注册会两者皆失）。
+   * @param nodeId - 节点 id。
+   * @param name - 新显示名。
+   */
+  renameNode(nodeId: string, name: string): void {
+    const node = this.nodes.get(nodeId)
+    if (node === undefined) return
+    this.nodes.set(nodeId, { ...node, name })
+    this.ctx.emit('proxy-pool/node', { kind: 'node-updated', nodeId } satisfies ProxyPoolNodeEvent)
   }
 
   /**
@@ -370,10 +423,24 @@ export class ProxyPoolService extends Service {
   }
 
   /**
+   * 触发一次订阅刷新（手动与周期共用；进行中时复用同一个 Promise）。
+   * 失败不抛出——摘要里的 `failures` 承载每个源的错误，管理面据此展示。
+   * @returns 本次刷新的摘要。
+   */
+  async refresh(): Promise<RefreshResult> {
+    this.refreshing ??= refreshPoolNodes(this, {
+      targetCount: this.refreshOptions.targetCount,
+    }).finally(() => { this.refreshing = undefined })
+    return this.refreshing
+  }
+
+  /**
    * 探测单个节点：经该节点拨号到公网目标并立即关闭。
    * @param nodeId - 节点 id。
+   * @param timeoutMs - 本次探测的超时；缺省用健康检查配置的值（订阅刷新
+   *   用更紧的值轮询海量候选，避免单个死节点占满探测窗口）。
    */
-  async checkNode(nodeId: string): Promise<ProxyHealth | undefined> {
+  async checkNode(nodeId: string, timeoutMs?: number): Promise<ProxyHealth | undefined> {
     const node = this.nodes.get(nodeId)
     if (node === undefined) return undefined
     const started = Date.now()
@@ -381,7 +448,7 @@ export class ProxyPoolService extends Service {
     let failure: string | undefined
     try {
       const controller = new AbortController()
-      const timeout = setTimeout(() => { controller.abort() }, this.healthOptions.timeoutMs)
+      const timeout = setTimeout(() => { controller.abort() }, timeoutMs ?? this.healthOptions.timeoutMs)
       const stream = await dialThrough(node, { host: '1.1.1.1', port: 80, signal: controller.signal })
       clearTimeout(timeout)
       stream.destroy()

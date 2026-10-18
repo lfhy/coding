@@ -21,6 +21,8 @@ export interface ProxyPoolSectionText {
   nodes: string
   test: string
   remove: string
+  refreshFeed: string
+  refreshed: (summary: { admitted: number; evicted: number }) => string
   alive: string
   dead: string
   latency: (ms: number) => string
@@ -114,6 +116,7 @@ function Loaded({ actions, state, t }: {
         onChange={(event) => { setImportText(event.target.value) }}
       />
       <button type="button" disabled={importText.trim().length === 0} onClick={onImport}>{t.importButton}</button>
+      <button type="button" onClick={() => { void actions.refresh().then((r) => { setSummary(t.refreshed(r)) }) }}>{t.refreshFeed}</button>
       {summary !== null ? <span>{summary}</span> : null}
       <ul>
         {state.nodes.map((node) => {

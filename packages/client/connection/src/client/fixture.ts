@@ -2288,6 +2288,9 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       testNode: request => err(request, {
         code: 'proxy-pool-unavailable', message: 'fixture proxy pool is unavailable', details: { capability: 'proxy-pool' },
       }),
+      refresh: request => err(request, {
+        code: 'proxy-pool-unavailable', message: 'fixture proxy pool is unavailable', details: { capability: 'proxy-pool' },
+      }),
       setOutbound: request => err(request, {
         code: 'proxy-pool-unavailable', message: 'fixture proxy pool is unavailable', details: { capability: 'proxy-pool' },
       }),
@@ -3280,6 +3283,7 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'proxyPool.importLinks': return this.api.proxyPool.importLinks(request)
       case 'proxyPool.removeNode': return this.api.proxyPool.removeNode(request)
       case 'proxyPool.testNode': return this.api.proxyPool.testNode(request)
+      case 'proxyPool.refresh': return this.api.proxyPool.refresh(request)
       case 'proxyPool.setOutbound': return this.api.proxyPool.setOutbound(request)
     }
   }

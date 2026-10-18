@@ -3612,6 +3612,19 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         return Promise.resolve(ok(request, { removed }))
       },
 
+      async refresh(request) {
+        const pool = ctx.get('proxyPool')
+        if (pool === undefined) {
+          return err(request, { code: 'proxy-pool-unavailable', message: 'the proxy pool service is not installed in this deployment', details: { capability: 'proxy-pool' } })
+        }
+        const result = await pool.refresh()
+        return ok(request, {
+          admitted: result.admitted.length,
+          evicted: result.evicted.length,
+          failures: result.failures,
+        })
+      },
+
       async testNode(request) {
         const pool = ctx.get('proxyPool')
         if (pool === undefined) {

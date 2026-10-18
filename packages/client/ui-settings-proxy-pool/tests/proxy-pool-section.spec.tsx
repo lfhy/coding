@@ -29,6 +29,8 @@ const t: ProxyPoolSectionText = {
   nodes: '节点',
   test: '测试',
   remove: '删除',
+  refreshFeed: '刷新订阅',
+  refreshed: summary => `新入 ${summary.admitted} 个，移除 ${summary.evicted} 个`,
   alive: '可用',
   dead: '不可用',
   latency: ms => `${ms} ms`,

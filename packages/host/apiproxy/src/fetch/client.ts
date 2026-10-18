@@ -70,6 +70,7 @@ import {
 import { llmDiscoverModelsValueSchema, llmModelsValueSchema, llmProvidersValueSchema } from '../api/llm.schema.ts'
 import {
   proxyPoolDescribeValueSchema,
+  proxyPoolRefreshValueSchema,
   proxyPoolImportLinksValueSchema,
   proxyPoolRemoveNodeValueSchema,
   proxyPoolSetOutboundValueSchema,
@@ -190,6 +191,7 @@ export interface IApiClient {
     importLinks(payload: RequestPayload<'proxyPool.importLinks'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'proxyPool.importLinks'>>>
     removeNode(payload: RequestPayload<'proxyPool.removeNode'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'proxyPool.removeNode'>>>
     testNode(payload: RequestPayload<'proxyPool.testNode'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'proxyPool.testNode'>>>
+    refresh(payload: RequestPayload<'proxyPool.refresh'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'proxyPool.refresh'>>>
     setOutbound(payload: RequestPayload<'proxyPool.setOutbound'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'proxyPool.setOutbound'>>>
   }
   /** client-response passthrough (rpcId is a backfill of the server-request's id — never minted here). */
@@ -263,6 +265,7 @@ const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseV
   'proxyPool.importLinks': proxyPoolImportLinksValueSchema,
   'proxyPool.removeNode': proxyPoolRemoveNodeValueSchema,
   'proxyPool.testNode': proxyPoolTestNodeValueSchema,
+  'proxyPool.refresh': proxyPoolRefreshValueSchema,
   'proxyPool.setOutbound': proxyPoolSetOutboundValueSchema,
   'browser.control': browserControlValueSchema,
 }
@@ -558,6 +561,7 @@ export abstract class AbstractApiClient implements IApiClient {
     importLinks: (payload, signal) => this.callUnary('proxyPool.importLinks', payload, signal),
     removeNode: (payload, signal) => this.callUnary('proxyPool.removeNode', payload, signal),
     testNode: (payload, signal) => this.callUnary('proxyPool.testNode', payload, signal),
+    refresh: (payload, signal) => this.callUnary('proxyPool.refresh', payload, signal),
     setOutbound: (payload, signal) => this.callUnary('proxyPool.setOutbound', payload, signal),
   }
 

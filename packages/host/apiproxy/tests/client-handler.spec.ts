@@ -42,6 +42,7 @@ function scriptedApi(overrides: {
       importLinks: r => err(r),
       removeNode: r => err(r),
       testNode: r => err(r),
+      refresh: r => err(r),
       setOutbound: r => err(r),
     },
     sessions: {

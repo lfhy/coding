@@ -247,7 +247,7 @@ workspace 共 249 个包，按 group 分节。每行给出包目录、职责（R
 
 ## packages/net
 
-- `packages/net/proxy-pool` — 出站代理池：把一组代理节点（HTTP/SOCKS5/VLESS/VMess/Hysteria2 分享链接导入）聚合成 入口 `src/index.ts`（tests 2）
+- `packages/net/proxy-pool` — 出站代理池：把一组代理节点（HTTP/SOCKS5/VLESS/VMess/Hysteria2 分享链接导入）聚合成 入口 `src/index.ts`（tests 3）
 
 ## packages/plan
 

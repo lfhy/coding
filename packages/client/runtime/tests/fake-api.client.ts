@@ -303,6 +303,7 @@ export class FakeApiClient implements IApiClient {
     importLinks: payload => this.record('proxyPool.importLinks', payload, Promise.resolve(ok({ imported: [], skipped: 0 }))),
     removeNode: payload => this.record('proxyPool.removeNode', payload, Promise.resolve(ok({ removed: false }))),
     testNode: payload => this.record('proxyPool.testNode', payload, Promise.resolve(ok(undefined))),
+    refresh: payload => this.record('proxyPool.refresh', payload, Promise.resolve(ok({ admitted: 0, evicted: 0, failures: [] }))),
     setOutbound: payload => this.record('proxyPool.setOutbound', payload, Promise.resolve(ok({ outbound: payload.mode }))),
   }
 

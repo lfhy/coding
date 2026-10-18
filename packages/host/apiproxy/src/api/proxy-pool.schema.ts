@@ -85,6 +85,16 @@ export const proxyPoolTestNodeRequestSchema = z.object({
 export const proxyPoolTestNodeValueSchema = proxyHealthViewSchema.optional()
   .describe('one probe record; absent when the node no longer exists') satisfies z.ZodType<Wire<ResponseValue<'proxyPool.testNode'>>>
 
+/** proxyPool.refresh request payload. */
+export const proxyPoolRefreshRequestSchema = z.object({}) satisfies z.ZodType<Wire<RequestPayload<'proxyPool.refresh'>>>
+
+/** proxyPool.refresh response value. */
+export const proxyPoolRefreshValueSchema = z.object({
+  admitted: z.number().int().nonnegative(),
+  evicted: z.number().int().nonnegative(),
+  failures: z.array(z.string()),
+}) satisfies z.ZodType<Wire<ResponseValue<'proxyPool.refresh'>>>
+
 /** proxyPool.setOutbound request payload. */
 export const proxyPoolSetOutboundRequestSchema = z.object({
   mode: outboundModeViewSchema,
