@@ -1,32 +1,41 @@
-/** 代理池分区组件：节点导入/列表/测试/删除与 Free 渠道出站选择，纯 props 呈现。 */
+/** 代理池分区组件：出站选择、订阅导入与节点状态表，纯 props 呈现（样式走项目 token）。 */
 import { useState } from 'react'
 import type { ReactNode } from 'react'
 import type { SnapshotStore } from 'coding-client-runtime/client'
 import type { InjectFace } from 'coding-client-ui-slots'
 import type { ProxyPoolStoreHandle, PoolSnapshot } from './store.ts'
+import styles from './ProxyPoolSection.module.css'
 
 /** 分区文案（apply 侧由 locale 绑定注入）。 */
 export interface ProxyPoolSectionText {
   title: string
+  intro: string
   outbound: string
   outboundDirect: string
   outboundPool: string
   outboundCustom: string
   customUrlLabel: string
+  applyCustomUrl: string
   importLabel: string
   importPlaceholder: string
   importButton: string
+  refreshFeed: string
+  refreshed: (summary: { admitted: number; evicted: number }) => string
   imported: (count: number) => string
   skipped: (count: number) => string
   nodes: string
+  nodeName: string
+  nodeAddress: string
+  nodeStatus: string
+  nodeActions: string
   test: string
   remove: string
-  refreshFeed: string
-  refreshed: (summary: { admitted: number; evicted: number }) => string
   alive: string
   dead: string
+  unknown: string
   latency: (ms: number) => string
   frontend: string
+  emptyNodes: string
   loadFailed: string
   retry: string
 }
@@ -62,18 +71,24 @@ function Loaded({ actions, state, t }: {
   t: ProxyPoolSectionText
 }): ReactNode {
   const [importText, setImportText] = useState('')
-  const [customUrl, setCustomUrl] = useState('')
+  const [customUrl, setCustomUrl] = useState(state.outbound.mode === 'custom' ? state.outbound.customUrl ?? '' : '')
   const [summary, setSummary] = useState<string | null>(null)
 
   if (state.status === 'idle') void actions.load()
   if (state.status === 'error') {
-    return <section aria-label={t.title}>
-      <h1>{t.title}</h1>
-      <p role="alert">{`${t.loadFailed}: ${state.error ?? ''}`}</p>
-      <button type="button" onClick={() => { void actions.load() }}>{t.retry}</button>
+    return <section className={styles['poolSection']} aria-label={t.title}>
+      <h1 className={styles['title']}>{t.title}</h1>
+      <p role="alert" className={styles['error']}>{`${t.loadFailed}: ${state.error ?? ''}`}</p>
+      <div>
+        <button type="button" className={styles['secondaryButton']} onClick={() => { void actions.load() }}>{t.retry}</button>
+      </div>
     </section>
   }
 
+  const outbound = state.outbound.mode
+  const applyCustom = (): void => {
+    void actions.setOutbound({ mode: 'custom', customUrl: customUrl || 'http://127.0.0.1:1' })
+  }
   const onImport = (): void => {
     void actions.importLinks(importText).then((result) => {
       setSummary(`${t.imported(result.imported)} · ${t.skipped(result.skipped)}`)
@@ -81,57 +96,89 @@ function Loaded({ actions, state, t }: {
     })
   }
 
-  return <section aria-label={t.title}>
-    <h1>{t.title}</h1>
+  return <section className={styles['poolSection']} aria-label={t.title}>
+    <h1 className={styles['title']}>{t.title}</h1>
+    <p className={styles['intro']}>{t.intro}</p>
+    {state.error !== null ? <p role="alert" className={styles['error']}>{state.error}</p> : null}
 
-    <fieldset>
-      <legend>{t.outbound}</legend>
-      <label>
-        <input type="radio" name="proxy-outbound" checked={state.outbound.mode === 'direct'} onChange={() => { void actions.setOutbound({ mode: 'direct' }) }} />
-        {t.outboundDirect}
-      </label>
-      <label>
-        <input type="radio" name="proxy-outbound" checked={state.outbound.mode === 'pool'} onChange={() => { void actions.setOutbound({ mode: 'pool' }) }} />
-        {t.outboundPool}
-      </label>
-      <label>
-        <input type="radio" name="proxy-outbound" checked={state.outbound.mode === 'custom'} onChange={() => {
-          void actions.setOutbound({ mode: 'custom', customUrl: customUrl || 'http://127.0.0.1:1' })
-        }} />
-        {t.outboundCustom}
-        <input value={customUrl} placeholder="http://proxy.example:8080" aria-label={t.customUrlLabel} onChange={(event) => { setCustomUrl(event.target.value) }} />
-      </label>
-    </fieldset>
+    <div className={styles['outboundCard']}>
+      <h2 className={styles['cardTitle']}>{t.outbound}</h2>
+      <div className={styles['segmented']} role="group" aria-label={t.outbound}>
+        <button type="button" className={styles['segment']} aria-pressed={outbound === 'direct'}
+          onClick={() => { void actions.setOutbound({ mode: 'direct' }) }}>{t.outboundDirect}</button>
+        <button type="button" className={styles['segment']} aria-pressed={outbound === 'pool'}
+          onClick={() => { void actions.setOutbound({ mode: 'pool' }) }}>{t.outboundPool}</button>
+        <button type="button" className={styles['segment']} aria-pressed={outbound === 'custom'}
+          onClick={applyCustom}>{t.outboundCustom}</button>
+      </div>
+      {outbound === 'custom' ? (
+        <div className={styles['customUrlRow']}>
+          <input className={styles['input']} value={customUrl} placeholder="http://proxy.example:8080"
+            aria-label={t.customUrlLabel} onChange={(event) => { setCustomUrl(event.target.value) }} />
+          <button type="button" className={styles['primaryButton']} onClick={applyCustom}>{t.applyCustomUrl}</button>
+        </div>
+      ) : null}
+      {state.frontendURL.length > 0 ? (
+        <p className={styles['frontend']}>{t.frontend}: <code className={styles['frontendCode']}>{state.frontendURL}</code></p>
+      ) : null}
+    </div>
 
-    {state.frontendURL.length > 0 ? <p>{t.frontend}: <code>{state.frontendURL}</code></p> : null}
-    {state.error !== null ? <p role="alert">{state.error}</p> : null}
-
-    <div>
-      <h2>{t.nodes}</h2>
-      <textarea
-        value={importText}
-        rows={4}
-        placeholder={t.importPlaceholder}
-        aria-label={t.importLabel}
-        onChange={(event) => { setImportText(event.target.value) }}
-      />
-      <button type="button" disabled={importText.trim().length === 0} onClick={onImport}>{t.importButton}</button>
-      <button type="button" onClick={() => { void actions.refresh().then((r) => { setSummary(t.refreshed(r)) }) }}>{t.refreshFeed}</button>
-      {summary !== null ? <span>{summary}</span> : null}
-      <ul>
-        {state.nodes.map((node) => {
-          const health = state.health.get(node.id)
-          return <li key={node.id}>
-            <span>{node.name}</span>
-            <span>{`${node.protocol} ${node.address}:${node.port}`}</span>
-            {health === undefined ? null : health.alive
-              ? <span>{`${t.alive}${health.latencyMs === undefined ? '' : ` ${t.latency(health.latencyMs)}`}`}</span>
-              : <span>{`${t.dead} ${health.failure ?? ''}`}</span>}
-            <button type="button" onClick={() => { void actions.testNode(node.id) }}>{t.test}</button>
-            <button type="button" onClick={() => { void actions.removeNode(node.id) }}>{t.remove}</button>
-          </li>
-        })}
-      </ul>
+    <div className={styles['nodesCard']}>
+      <h2 className={styles['cardTitle']}>{t.nodes}</h2>
+      <div className={styles['feedCard']}>
+        <textarea className={styles['textarea']} value={importText} placeholder={t.importPlaceholder}
+          aria-label={t.importLabel} onChange={(event) => { setImportText(event.target.value) }} />
+        <div className={styles['customUrlRow']}>
+          <button type="button" className={styles['primaryButton']} disabled={importText.trim().length === 0} onClick={onImport}>
+            {t.importButton}
+          </button>
+          <button type="button" className={styles['secondaryButton']}
+            onClick={() => { void actions.refresh().then((r) => { setSummary(t.refreshed(r)) }) }}>
+            {t.refreshFeed}
+          </button>
+          {summary !== null ? <span className={styles['summary']}>{summary}</span> : null}
+        </div>
+      </div>
+      {state.nodes.length === 0 ? <p className={styles['empty']}>{t.emptyNodes}</p> : (
+        <table className={styles['nodeTable']}>
+          <thead>
+            <tr>
+              <th scope="col">{t.nodeName}</th>
+              <th scope="col">{t.nodeAddress}</th>
+              <th scope="col">{t.nodeStatus}</th>
+              <th scope="col">{t.nodeActions}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {state.nodes.map((node) => {
+              const health = state.health.get(node.id)
+              const status = health === undefined ? t.unknown : health.alive ? t.alive : t.dead
+              return <tr key={node.id}>
+                <td className={styles['nodeName']}>{node.name}</td>
+                <td className={styles['nodeAddress']}>{`${node.protocol} ${node.address}:${node.port}`}</td>
+                <td>
+                  <span className={styles['statusBadge']}>
+                    <span className={styles['statusDot']} data-alive={health === undefined ? undefined : String(health.alive)} />
+                    {status}
+                    {health?.alive === true && health.latencyMs !== undefined ? (
+                      <span className={styles['latency']}>{t.latency(health.latencyMs)}</span>
+                    ) : null}
+                  </span>
+                  {health?.alive === false && health.failure !== undefined ? (
+                    <span className={styles['failure']} title={health.failure}>{health.failure}</span>
+                  ) : null}
+                </td>
+                <td>
+                  <span className={styles['rowActions']}>
+                    <button type="button" className={styles['secondaryButton']} onClick={() => { void actions.testNode(node.id) }}>{t.test}</button>
+                    <button type="button" className={styles['secondaryButton']} onClick={() => { void actions.removeNode(node.id) }}>{t.remove}</button>
+                  </span>
+                </td>
+              </tr>
+            })}
+          </tbody>
+        </table>
+      )}
     </div>
   </section>
 }

@@ -16,19 +16,27 @@ afterEach(cleanup)
 
 const t: ProxyPoolSectionText = {
   title: '代理池',
+  intro: '免费节点分钟级寿命，池每 5 分钟自动刷新订阅。',
   outbound: '出站方式',
   outboundDirect: '直连',
   outboundPool: '代理池',
   outboundCustom: '自定义代理',
   customUrlLabel: '自定义代理地址',
+  applyCustomUrl: '应用地址',
   importLabel: '导入代理链接',
   importPlaceholder: '每行一条',
   importButton: '导入',
   imported: count => `已导入 ${count} 个`,
   skipped: count => `跳过 ${count} 行`,
   nodes: '节点',
+  nodeName: '名称',
+  nodeAddress: '地址',
+  nodeStatus: '状态',
+  nodeActions: '操作',
   test: '测试',
   remove: '删除',
+  unknown: '未探测',
+  emptyNodes: '池内还没有节点。',
   refreshFeed: '刷新订阅',
   refreshed: summary => `新入 ${summary.admitted} 个，移除 ${summary.evicted} 个`,
   alive: '可用',
@@ -82,7 +90,7 @@ describe('ProxyPoolSection', () => {
     expect(await screen.findByText(/127.0.0.1:52000/)).toBeTruthy()
     expect(screen.getByText('节点A')).toBeTruthy()
     expect(screen.getByText('socks5 1.2.3.4:1080')).toBeTruthy()
-    expect(screen.getByText(/可用.*42 ms/)).toBeTruthy()
+    expect(screen.getByText('42 ms')).toBeTruthy()
   })
 
   it('加载失败展示错误与重试入口', async () => {
