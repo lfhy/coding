@@ -49,7 +49,7 @@ export interface MessageImagesOwnerProps {
   /** Consecutive image blocks rendered as one gallery. */
   images: readonly { readonly attachment: ImageAttachmentRef }[]
   /** Session-authorized durable image loader. */
-  loadImage: (attachment: ImageAttachmentRef) => Promise<string>
+  loadImage?: ((attachment: ImageAttachmentRef) => Promise<string>) | undefined
   /** Message-side alignment. */
   align: 'start' | 'end'
 }
@@ -447,6 +447,9 @@ export interface ChatNodeOwnerProps {
   forkAt: (seq: number) => void
   /** Render a historical image group through the attachment slot. */
   renderMessageImages: RenderMessageImages
+  /** Resolve one session-authorized image for tool-result previews. */
+  loadImage?: ((attachment: ImageAttachmentRef) => Promise<string>) | undefined
+  /** Prose file mention resolver for the closing assistant node. */
   fileMentions: (owner: TurnTailOwnerProps) => MarkdownFileMentions | undefined
 }
 
@@ -460,6 +463,8 @@ export interface DetailsToolOwnerProps {
   block: ToolCallBlock
   /** Session workspace root for card cwd and relative-path display. */
   cwd?: string | undefined
+  /** Session-authorized image loader forwarded to the details renderer. */
+  loadImage?: ((attachment: ImageAttachmentRef) => Promise<string>) | undefined
 }
 
 /**
@@ -794,7 +799,6 @@ export interface ChatViewInjected {
   archiveSession: (sessionId: SessionId) => Promise<void>
   openBrowserUrl: (url: string) => Promise<void>
   loadOlder: () => void
-  /** Resolve a session-authorized historical image for inline display. */
   loadImage: (attachment: ImageAttachmentRef) => Promise<string>
   /** Hand a call off to the trajectory view: write the one-shot inspect target and switch tabs. */
   inspectCall: (callId: CallId) => void
@@ -840,6 +844,8 @@ export type MessageImagesProps = PropsRuntime<'conversation.message.images'> & P
 export interface DetailsInjected {
   /** Close the details panel (layout geometry stays with ctx.layout). */
   closeDetails: () => void
+  /** Resolve one session-authorized image for tool-result previews. */
+  loadImage: (attachment: ImageAttachmentRef) => Promise<string>
 }
 
 /** Full details-slot props: selection store, Tool output seat, injected close callback, and locale. */

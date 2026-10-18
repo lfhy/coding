@@ -532,8 +532,9 @@ export function apply(ctx: Context): void {
       'conversation.details.tool': { kind: 'single', scope: 'session' },
     },
     store: chatStore,
-    inject: (): DetailsInjected => ({
+    inject: (sessionId: SessionId): DetailsInjected => ({
       closeDetails: () => { layout.closeDetails() },
+      loadImage: attachment => concreteConversation(ctx).resolveImage(sessionId, attachment),
     }),
   }, DetailsPanel)
 

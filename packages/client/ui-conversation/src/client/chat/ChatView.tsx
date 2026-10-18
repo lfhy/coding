@@ -675,6 +675,7 @@ export function ChatView({
               selectedCallId={selectedCallId}
               cwd={cwd}
               openFile={requestOpenFile}
+              loadImage={loadImage}
               openBrowserUrl={requestOpenBrowserUrl}
               inspectCall={inspectCall}
               forkAt={forkAt}

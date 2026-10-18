@@ -3459,6 +3459,9 @@ importers:
       coding-api-remotes:
         specifier: workspace:^
         version: link:../../api/remotes
+      coding-attachment:
+        specifier: workspace:^
+        version: link:../../attachment/attachment
       coding-client-connection:
         specifier: workspace:^
         version: link:../connection

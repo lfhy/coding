@@ -33,7 +33,7 @@ export interface GenericToolCardProps extends ToolCallOwnerProps {
   t: ToolTreeProps['t']
 }
 
-export function GenericToolCard({ toolName, block, cwd, home, openFile, inspect, t }: GenericToolCardProps) {
+export function GenericToolCard({ toolName, block, cwd, home, openFile, loadImage, inspect, t }: GenericToolCardProps) {
   const model = toolRowModel(toolName, block, cwd, home)
   const terminal = terminalCardModel(block, cwd)
   const read = readCardModel(block, cwd, home)
@@ -62,6 +62,8 @@ export function GenericToolCard({ toolName, block, cwd, home, openFile, inspect,
       // single-file AND carries a card, so the card expands under the path link.
       body={singleFile ? null : model.body}
       output={model.output}
+      images={model.images}
+      loadImage={loadImage}
       errorSummary={model.errorSummary}
       terminal={terminal}
       diff={diff}

@@ -49,6 +49,7 @@
     "clsx": "^2.0.0"
   },
   "peerDependencies": {
+    "coding-attachment": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^",
     "coding-api-remotes": "workspace:^",
     "coding-client-connection": "workspace:^",
@@ -58,6 +59,7 @@
     "coding-invariants": "workspace:^"
   },
   "devDependencies": {
+    "coding-attachment": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^",
     "coding-api-remotes": "workspace:^",
     "coding-client-connection": "workspace:^",

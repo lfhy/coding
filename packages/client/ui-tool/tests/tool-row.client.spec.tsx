@@ -1,14 +1,13 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render } from '@testing-library/react'
-
-import type { RunningToolCall, ToolResultNode } from 'coding-client-runtime/client'
 import { makeTranslate } from 'coding-client-test-runtime'
+import type { RunningToolCall, ToolResultNode } from 'coding-client-runtime/client'
+import { zh } from 'coding-client-ui-conversation/src/client/locales.ts'
 import { zh as commonZh } from 'coding-client-locale/src/locales/zh.ts'
 import { classifyTool, resultText, toolRowModel } from '../src/client/tool/models/tool-call-model.ts'
-import { ToolRow } from '../src/client/tool/components/ToolRow.tsx'
 import { GenericToolCard, type GenericToolCardProps } from '../src/client/tool/toolviews/GenericToolCard.tsx'
-import { zh } from 'coding-client-ui-conversation/src/client/locales.ts'
+import { ToolRow } from '../src/client/tool/components/ToolRow.tsx'
 
 afterEach(() => {
   cleanup()
@@ -181,6 +180,19 @@ describe('tool-call-model', () => {
     expect(resultText(result({ content: [], isError: true, error: { name: 'ToolError', code: 'denied' } })))
       .toBe('ToolError: denied')
     expect(resultText(result({ content: [] }))).toBe('')
+  })
+
+  it('extracts returned image blocks into the row model', () => {
+    const attachment: ImageAttachmentRef = {
+      attachmentId: 'img-1' as never,
+      mediaType: 'image/png',
+      bytes: 4,
+      width: 2,
+      height: 2,
+    }
+    const attachmentBlock = { type: 'image', attachment: attachment as never } as never
+    expect(toolRowModel('browser_screenshot', result({ content: [attachmentBlock] })).images)
+      .toEqual([attachment])
   })
 
   it('derives output from the settled result and null while running or blank', () => {
@@ -418,6 +430,30 @@ describe('GenericToolCard', () => {
     expect(view.getByText('Tool call')).toBeTruthy()
     expect(view.container.querySelector('[data-variant="others"]')).not.toBeNull()
     expect(view.container.querySelector('[data-state="running"]')).not.toBeNull()
+  })
+
+  it('renders returned images only after expanding and opens the original preview', async () => {
+    const attachment: ImageAttachmentRef = {
+      attachmentId: 'img-1' as never, mediaType: 'image/png', bytes: 4, width: 2, height: 2,
+    }
+    const loadImage = vi.fn(async () => 'blob:image')
+    const view = render(
+      <GenericToolCard
+        callId="c1" toolName="browser_screenshot"
+        block={result({
+          call: { name: 'browser_screenshot', argsRaw: '{}' },
+          content: [{ type: 'image', attachment: attachment as never } as never],
+        })}
+        openFile={vi.fn()} loadImage={loadImage} t={t}
+      />,
+    )
+    expect(view.queryByRole('img', { name: '图片' })).toBeNull()
+    fireEvent.click(view.getByRole('button', { name: /Tool call/ }))
+    const image = await view.findByRole('img', { name: '图片' })
+    expect(loadImage).toHaveBeenCalledWith(attachment)
+    fireEvent.click(image)
+    expect(view.getByRole('dialog', { name: '原图预览' })).toBeTruthy()
+    expect(view.getByRole('button', { name: '关闭原图预览' })).toBeTruthy()
   })
 
   it('renders edit with its dedicated title, icon variant, and path summary', () => {

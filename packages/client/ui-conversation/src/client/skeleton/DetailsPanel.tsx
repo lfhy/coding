@@ -63,7 +63,7 @@ function rawResultText(block: ToolCallBlock): string {
   return parts.join('\n')
 }
 
-export function DetailsPanel({ useSession, useSessions, sessionId, useStore, renderSlot, closeDetails, t }: DetailsPanelProps) {
+export function DetailsPanel({ useSession, useSessions, sessionId, useStore, renderSlot, closeDetails, loadImage, t }: DetailsPanelProps) {
   const selection = useStore(s => s.selection)
   // Session workspace root: an omitted or relative terminal cwd resolves
   // against it, which the pure presenter cannot see.
@@ -110,7 +110,7 @@ export function DetailsPanel({ useSession, useSessions, sessionId, useStore, ren
                       would otherwise carry into the next selection because the
                       panel does not unmount between calls. */}
                   <Fragment key={callId}>
-                    {renderSlot('conversation.details.tool', { block: material.block, cwd: sessionCwd }, {
+                    {renderSlot('conversation.details.tool', { block: material.block, cwd: sessionCwd, loadImage }, {
                       fallback: 'kind' in material.block
                         ? (
                           <pre className={css.code} data-error={material.block.isError || undefined}>

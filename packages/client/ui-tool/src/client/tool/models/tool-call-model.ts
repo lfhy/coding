@@ -9,8 +9,10 @@
 // The block union's defining home is runtime (fold-product types); this
 // contract only forwards it (type-definition authority stays with the layer
 // that produces the values).
+import type { ImageAttachmentRef } from 'coding-attachment'
 import { abbreviateHomePath } from 'coding-client-runtime/client'
 import type { ToolCallBlock, ToolResultNode } from 'coding-client-runtime/client'
+import { imageAttachmentsIn } from './tool-result-images.ts'
 
 export type { ToolCallBlock } from 'coding-client-runtime/client'
 
@@ -93,6 +95,8 @@ export interface ToolRowModel {
   body: string | null
   /** Flattened result text ({@link resultText}); null while running or when the result carries no text. */
   output: string | null
+  /** Images returned by the settled tool result. */
+  images: readonly ImageAttachmentRef[]
   /** First line of the result text on an error row; null for every other state. */
   errorSummary: string | null
   state: ToolRowState
@@ -242,6 +246,7 @@ export function toolRowModel(toolName: string, block: ToolCallBlock, cwd?: strin
     filePath: deriveFilePath(variant, argsRaw),
     body: deriveBody(variant, argsRaw),
     output,
+    images: done ? imageAttachmentsIn(block.content) : [],
     errorSummary,
     state,
   }

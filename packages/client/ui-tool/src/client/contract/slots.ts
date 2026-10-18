@@ -1,4 +1,5 @@
 /** Tool UI slot declarations and their composed component props. */
+import type { ImageAttachmentRef } from 'coding-attachment'
 import type { HostDescriptionSource } from 'coding-client-connection/client'
 import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime } from 'coding-client-ui-slots'
 import type { ToolCallBlock } from 'coding-client-runtime/client'
@@ -41,6 +42,8 @@ export interface ToolCallOwnerProps {
   openFile: (path: string) => void
   /** Inspect this call in the trajectory view when available. */
   inspect?: (() => void) | undefined
+  /** Session-authorized loader for returned image blocks. */
+  loadImage?: ((attachment: ImageAttachmentRef) => Promise<string>) | undefined
 }
 
 /** Full props of a registered atomic Tool view. */

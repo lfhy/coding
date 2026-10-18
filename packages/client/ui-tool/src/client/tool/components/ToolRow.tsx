@@ -29,6 +29,7 @@ import { CHAT_READ_MAX_LINES, type ReadCardModel } from '../models/read-card-mod
 import { CHAT_SEARCH_MAX_LINES, type SearchCardModel } from '../models/search-card-model.ts'
 import { terminalBlockLabels, type TerminalCardModel } from '../models/terminal-card-model.ts'
 import type { ToolRowState, ToolRowVariant } from '../models/tool-call-model.ts'
+import { ToolResultImages } from './ToolResultImages.tsx'
 import css from './ToolRow.module.css'
 
 export interface ToolRowProps {
@@ -98,6 +99,8 @@ export interface ToolRowProps {
    * Jump to this call in the trajectory view: a hover-revealed Inspect pill
    * over the expanded body. Absent = no affordance.
    */
+  images?: readonly import('coding-attachment').ImageAttachmentRef[] | undefined
+  loadImage?: ((attachment: import('coding-attachment').ImageAttachmentRef) => Promise<string>) | undefined
   inspect?: (() => void) | undefined
 }
 
@@ -144,6 +147,8 @@ export function ToolRow({
   state,
   filePath,
   onOpenFile,
+  images,
+  loadImage,
   inspect,
 }: ToolRowProps) {
   const [expanded, setExpanded] = useState(false)
@@ -187,6 +192,8 @@ export function ToolRow({
   }
   // The code variant's program renders through CodeBlock (shiki), so only its
   // output joins the IN/OUT card; every other variant's input does too.
+  const imageContent = images !== undefined && images.length > 0 && loadImage !== undefined
+    ? <ToolResultImages images={images} loadImage={loadImage} t={t} /> : null
   const cardBody = variant === 'code' ? null : body
   // The state substitution rides the idle icon slot, so an expandable error
   // row keeps DisclosureRow's icon→chevron hover preview (its default) instead
@@ -234,6 +241,7 @@ export function ToolRow({
         {/* The wrapper (sibling of the header row, so clicks inside never
             toggle it) carries the expanded body and the Inspect pill below. */}
         <div className={css.bodyWrap}>
+          {imageContent}
           {terminalBody !== null
             ? (
               <TerminalBlock
