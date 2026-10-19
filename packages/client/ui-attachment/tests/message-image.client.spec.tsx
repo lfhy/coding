@@ -210,4 +210,14 @@ describe('ImageGallery', () => {
     expect(view.getByRole('button', { name: 'history.png，点击查看原图' })).toBeTruthy()
     expect(view.container.querySelector('[data-align="end"]')).not.toBeNull()
   })
+
+  it('renders nothing when the conversation slot has no image loader', () => {
+    const view = render(<MessageImages {...{
+      images: [{ attachment }],
+      loadImage: undefined,
+      align: 'end',
+      t: vi.fn(),
+    } as unknown as MessageImagesProps} />)
+    expect(view.container.firstChild).toBeNull()
+  })
 })
