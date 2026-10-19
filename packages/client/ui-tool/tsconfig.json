@@ -27,6 +27,9 @@
       "path": "../locale"
     },
     {
+      "path": "../../llm/llm"
+    },
+    {
       "path": "../ui-conversation"
     },
     {

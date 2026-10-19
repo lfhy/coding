@@ -357,7 +357,7 @@ describe('session-bound workspace Git RPC', () => {
   it('serves history from the session cwd and maps remote markers and aborts like status', async () => {
     const { api, root } = await harness()
     const cwd = stageDir(root, 'git-project')
-    execFileSync('git', ['init', '-q'], { cwd })
+    execFileSync('git', ['-c', 'init.defaultBranch=master', 'init', '-q'], { cwd })
     execFileSync('git', ['-c', 'user.email=test@example.org', '-c', 'user.name=Test', 'commit', '--allow-empty', '-qm', 'first'], { cwd })
     const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8' }).trim()
     const sessionId = SessionId('local-git-history')

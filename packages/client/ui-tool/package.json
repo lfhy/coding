@@ -55,6 +55,7 @@
     "coding-client-connection": "workspace:^",
     "coding-client-locale": "workspace:^",
     "coding-client-runtime": "workspace:^",
+    "coding-llm": "workspace:^",
     "coding-client-ui-conversation": "workspace:^",
     "coding-invariants": "workspace:^"
   },
@@ -66,6 +67,7 @@
     "coding-client-locale": "workspace:^",
     "coding-client-runtime": "workspace:^",
     "coding-client-test-runtime": "workspace:^",
+    "coding-llm": "workspace:^",
     "coding-client-ui-conversation": "workspace:^",
     "coding-client-ui-primitives": "workspace:^",
     "coding-client-ui-slots": "workspace:^",

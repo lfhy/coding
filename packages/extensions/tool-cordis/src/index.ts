@@ -9,6 +9,7 @@ import {
   CordisDynamicPackageId, CordisDynamicPluginId,
 } from 'coding-cordis-host-runner'
 import type { DynamicCordisReference } from 'coding-cordis-host-runner'
+import type { CordisDynamicPluginId as CordisDynamicPluginIdType } from 'coding-cordis-host-runner/src/types.ts'
 import { createUserMessage } from 'coding-llm'
 import type { JsonValue } from 'coding-session'
 import type { UserMessage } from 'coding-session'
@@ -29,6 +30,21 @@ export const inject = ['tools', 'systemPrompt', 'dynamicCordisRunner', 'cordisIn
 function requireAgent(exec: ToolExecution): Agent {
   if (exec.agent === undefined) throw new Error('Cordis dynamic tools require an Agent-backed session')
   return exec.agent
+}
+
+function parseCordisPluginArgument(value: unknown): { kind: 'new'; idPrefix: string } | { kind: 'existing'; pluginId: CordisDynamicPluginIdType } {
+  const parsed = typeof value === 'string' ? JSON.parse(value) as unknown : value
+  if (typeof parsed !== 'object' || parsed === null || !Object.hasOwn(parsed, 'kind')) {
+    throw new Error('cordis_define plugin must be an object with kind "new" or "existing"')
+  }
+  const kind = (parsed as { kind?: unknown }).kind
+  if (kind === 'new' && typeof (parsed as { idPrefix?: unknown }).idPrefix === 'string') {
+    return { kind, idPrefix: (parsed as { idPrefix: string }).idPrefix }
+  }
+  if (kind === 'existing' && typeof (parsed as { pluginId?: unknown }).pluginId === 'string') {
+    return { kind, pluginId: CordisDynamicPluginId((parsed as { pluginId: string }).pluginId) }
+  }
+  throw new Error(`cordis_define plugin fields are invalid for kind ${JSON.stringify(kind)}`)
 }
 
 /** Register the Cordis tools and explicit `@pluginId` context injection. */
@@ -180,6 +196,10 @@ export function apply(ctx: Context): void {
               pluginId: { type: 'string', required: true, description: 'Exact ID of an existing Plugin; the new Package is appended to that instance.' },
             },
           },
+          {
+            type: 'string',
+            description: 'JSON-encoded plugin selector; accepted for compatibility with model tool-call serializers.',
+          },
         ],
       },
       name: { type: 'string', required: true, description: 'Short, readable Package name.' },
@@ -215,9 +235,7 @@ export function apply(ctx: Context): void {
       presentationMeta: (_args, value) => ({ pluginId: value.pluginId, packageId: value.packageId }),
     },
     execute(args, exec) {
-      const plugin = args.plugin.kind === 'new'
-        ? { kind: 'new' as const, idPrefix: args.plugin.idPrefix }
-        : { kind: 'existing' as const, pluginId: CordisDynamicPluginId(args.plugin.pluginId) }
+      const plugin = parseCordisPluginArgument(args.plugin)
       const receipt = ctx.dynamicCordisRunner.define({
         sessionId: requireAgent(exec).id,
         plugin,

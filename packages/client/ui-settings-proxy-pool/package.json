@@ -54,7 +54,7 @@
     "@deepseek-ai/cordis": "workspace:^",
     "coding-api-remotes": "workspace:^",
     "coding-client-runtime": "workspace:^",
-    "coding-client-ui-slots": "workspace:^"
+    "coding-proxy-pool": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
@@ -64,9 +64,11 @@
     "coding-client-connection": "workspace:^",
     "coding-client-locale": "workspace:^",
     "coding-client-runtime": "workspace:^",
+    "coding-client-ui-primitives": "workspace:^",
     "coding-client-ui-settings": "workspace:^",
     "coding-client-ui-slots": "workspace:^",
     "coding-invariants": "workspace:^",
+    "coding-proxy-pool": "workspace:^",
     "react": "^18.2.0"
   },
   "files": [

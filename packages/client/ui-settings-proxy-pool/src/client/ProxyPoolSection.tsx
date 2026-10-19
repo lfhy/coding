@@ -1,6 +1,7 @@
 /** 代理池分区组件：出站选择、订阅导入与节点状态表，纯 props 呈现（样式走项目 token）。 */
 import { useState } from 'react'
 import type { ReactNode } from 'react'
+import { Button, IconWarningOutline16, Modal, Tooltip } from 'coding-client-ui-primitives'
 import type { SnapshotStore } from 'coding-client-runtime/client'
 import type { InjectFace } from 'coding-client-ui-slots'
 import type { ProxyPoolStoreHandle, PoolSnapshot } from './store.ts'
@@ -17,8 +18,10 @@ export interface ProxyPoolSectionText {
   customUrlLabel: string
   applyCustomUrl: string
   importLabel: string
+  importTitle: string
   importPlaceholder: string
   importButton: string
+  cancel: string
   refreshFeed: string
   refreshed: (summary: { admitted: number; evicted: number }) => string
   imported: (count: number) => string
@@ -71,6 +74,7 @@ function Loaded({ actions, state, t }: {
   t: ProxyPoolSectionText
 }): ReactNode {
   const [importText, setImportText] = useState('')
+  const [importOpen, setImportOpen] = useState(false)
   const [customUrl, setCustomUrl] = useState(state.outbound.mode === 'custom' ? state.outbound.customUrl ?? '' : '')
   const [summary, setSummary] = useState<string | null>(null)
 
@@ -89,10 +93,14 @@ function Loaded({ actions, state, t }: {
   const applyCustom = (): void => {
     void actions.setOutbound({ mode: 'custom', customUrl: customUrl || 'http://127.0.0.1:1' })
   }
+  const closeImport = (): void => {
+    setImportOpen(false)
+    setImportText('')
+  }
   const onImport = (): void => {
     void actions.importLinks(importText).then((result) => {
       setSummary(`${t.imported(result.imported)} · ${t.skipped(result.skipped)}`)
-      setImportText('')
+      closeImport()
     })
   }
 
@@ -124,61 +132,70 @@ function Loaded({ actions, state, t }: {
     </div>
 
     <div className={styles['nodesCard']}>
-      <h2 className={styles['cardTitle']}>{t.nodes}</h2>
-      <div className={styles['feedCard']}>
-        <textarea className={styles['textarea']} value={importText} placeholder={t.importPlaceholder}
-          aria-label={t.importLabel} onChange={(event) => { setImportText(event.target.value) }} />
-        <div className={styles['customUrlRow']}>
-          <button type="button" className={styles['primaryButton']} disabled={importText.trim().length === 0} onClick={onImport}>
-            {t.importButton}
-          </button>
-          <button type="button" className={styles['secondaryButton']}
+      <div className={styles['cardHeading']}>
+        <h2 className={styles['cardTitle']}>{t.nodes}</h2>
+        <div className={styles['headingActions']}>
+          <Button variant="outline" size="sm" onClick={() => { setImportOpen(true) }}>{t.importButton}</Button>
+          <Button variant="outline" size="sm"
             onClick={() => { void actions.refresh().then((r) => { setSummary(t.refreshed(r)) }) }}>
             {t.refreshFeed}
-          </button>
-          {summary !== null ? <span className={styles['summary']}>{summary}</span> : null}
+          </Button>
         </div>
       </div>
+      {summary !== null ? <p role="status" className={styles['summary']}>{summary}</p> : null}
       {state.nodes.length === 0 ? <p className={styles['empty']}>{t.emptyNodes}</p> : (
-        <table className={styles['nodeTable']}>
-          <thead>
-            <tr>
-              <th scope="col">{t.nodeName}</th>
-              <th scope="col">{t.nodeAddress}</th>
-              <th scope="col">{t.nodeStatus}</th>
-              <th scope="col">{t.nodeActions}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {state.nodes.map((node) => {
-              const health = state.health.get(node.id)
-              const status = health === undefined ? t.unknown : health.alive ? t.alive : t.dead
-              return <tr key={node.id}>
-                <td className={styles['nodeName']}>{node.name}</td>
-                <td className={styles['nodeAddress']}>{`${node.protocol} ${node.address}:${node.port}`}</td>
-                <td>
-                  <span className={styles['statusBadge']}>
-                    <span className={styles['statusDot']} data-alive={health === undefined ? undefined : String(health.alive)} />
-                    {status}
-                    {health?.alive === true && health.latencyMs !== undefined ? (
-                      <span className={styles['latency']}>{t.latency(health.latencyMs)}</span>
-                    ) : null}
-                  </span>
-                  {health?.alive === false && health.failure !== undefined ? (
-                    <span className={styles['failure']} title={health.failure}>{health.failure}</span>
-                  ) : null}
-                </td>
-                <td>
-                  <span className={styles['rowActions']}>
-                    <button type="button" className={styles['secondaryButton']} onClick={() => { void actions.testNode(node.id) }}>{t.test}</button>
-                    <button type="button" className={styles['secondaryButton']} onClick={() => { void actions.removeNode(node.id) }}>{t.remove}</button>
-                  </span>
-                </td>
+        <div className={styles['tableScroller']} tabIndex={0} role="region" aria-label={t.nodes}>
+          <table className={styles['nodeTable']}>
+            <thead>
+              <tr>
+                <th scope="col">{t.nodeName}</th>
+                <th scope="col">{t.nodeAddress}</th>
+                <th scope="col">{t.nodeStatus}</th>
+                <th scope="col">{t.nodeActions}</th>
               </tr>
-            })}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {state.nodes.map((node) => {
+                const health = state.health.get(node.id)
+                const status = health === undefined ? t.unknown : health.alive ? t.alive : t.dead
+                return <tr key={node.id}>
+                  <td className={styles['nodeName']}>{node.name}</td>
+                  <td className={styles['nodeAddress']}>{`${node.protocol} ${node.address}:${node.port}`}</td>
+                  <td>
+                    <span className={styles['statusBadge']}>
+                      <span className={styles['statusDot']} data-alive={health === undefined ? undefined : String(health.alive)} />
+                      {status}
+                      {health?.alive === true && health.latencyMs !== undefined ? (
+                        <span className={styles['latency']}>{t.latency(health.latencyMs)}</span>
+                      ) : null}
+                    </span>
+                    {health?.alive === false && health.failure !== undefined ? (
+                      <Tooltip label={health.failure} side="top" maxWidth={360}>
+                        <span className={styles['failureIndicator']} role="img" aria-label={health.failure}>
+                          <IconWarningOutline16 size={14} />
+                        </span>
+                      </Tooltip>
+                    ) : null}
+                  </td>
+                  <td>
+                    <span className={styles['rowActions']}>
+                      <Button variant="outline" size="sm" onClick={() => { void actions.testNode(node.id) }}>{t.test}</Button>
+                      <Button variant="outline" size="sm" onClick={() => { void actions.removeNode(node.id) }}>{t.remove}</Button>
+                    </span>
+                  </td>
+                </tr>
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
+      <Modal open={importOpen} trapFocus onClose={closeImport} title={t.importTitle} closeLabel={t.cancel}
+        className={styles['importDialog'] as string}
+        footer={<><Button variant="outline" autoFocus onClick={closeImport}>{t.cancel}</Button>
+          <Button variant="primary" disabled={importText.trim().length === 0} onClick={onImport}>{t.importButton}</Button></>}>
+        <textarea className={styles['textarea']} value={importText} placeholder={t.importPlaceholder}
+          aria-label={t.importLabel} onChange={(event) => { setImportText(event.target.value) }} />
+      </Modal>
     </div>
   </section>
 }

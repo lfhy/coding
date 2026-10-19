@@ -4,7 +4,9 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+  width: 100%;
   max-width: 720px;
+  min-width: 0;
   color: var(--dsw-alias-label-primary);
 }
 
@@ -44,14 +46,30 @@
 
 /* 出站方式：一行一组分段选择，替代原生 radio 的视觉。 */
 .outboundCard,
-.feedCard,
 .nodesCard {
+  min-width: 0;
+  box-sizing: border-box;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 12px;
   padding: 12px 14px;
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.cardHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.headingActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .cardTitle {
@@ -97,7 +115,14 @@
 .customUrlRow {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
+  min-width: 0;
+}
+
+.customUrlRow .input {
+  flex: 1 1 240px;
+  min-width: 0;
 }
 
 .input {
@@ -199,6 +224,11 @@
   box-shadow: 0 0 0 2px var(--dsw-alias-border-l3);
 }
 
+.importDialog {
+  box-sizing: border-box;
+  width: min(560px, calc(100vw - 48px));
+}
+
 .summary {
   font-size: 12px;
   line-height: 18px;
@@ -206,8 +236,18 @@
 }
 
 /* 节点表：地址列用等宽字体，状态用色点徽标。 */
+.tableScroller {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
 .nodeTable {
   width: 100%;
+  min-width: 620px;
   border-collapse: collapse;
   font-size: 13px;
   line-height: 20px;
@@ -265,27 +305,20 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-.failure {
+.failureIndicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
   color: var(--dsw-alias-state-error-primary);
-  font-size: 12px;
-  max-width: 220px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  cursor: help;
 }
 
 .rowActions {
   display: inline-flex;
   gap: 8px;
   justify-content: flex-end;
-}
-
-.rowActions .secondaryButton {
-  height: 26px;
-  padding: 0 10px;
-  border-radius: 13px;
-  font-size: 12px;
-  line-height: 18px;
 }
 
 .empty {

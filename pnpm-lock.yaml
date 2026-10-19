@@ -3198,6 +3198,9 @@ importers:
       coding-client-runtime:
         specifier: workspace:^
         version: link:../runtime
+      coding-client-ui-primitives:
+        specifier: workspace:^
+        version: link:../ui-primitives
       coding-client-ui-settings:
         specifier: workspace:^
         version: link:../ui-settings
@@ -3207,6 +3210,9 @@ importers:
       coding-invariants:
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
+      coding-proxy-pool:
+        specifier: workspace:^
+        version: link:../../net/proxy-pool
       react:
         specifier: ^18.2.0
         version: 18.3.1
@@ -3486,6 +3492,9 @@ importers:
       coding-invariants:
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
+      coding-llm:
+        specifier: workspace:^
+        version: link:../../llm/llm
       react:
         specifier: ^18.2.0
         version: 18.3.1

@@ -56,12 +56,14 @@ export function presentPackageInspectCall(args: { pluginId: string; packageId: s
  * @returns replay-safe generic call presentation with source in raw input.
  */
 export function presentDefineCall(args: {
-  plugin: { kind: 'new'; idPrefix: string } | { kind: 'existing'; pluginId: string }
+  plugin: string | { kind: 'new'; idPrefix: string } | { kind: 'existing'; pluginId: string }
   name: string
   purpose: string
   code: { host?: string; client?: string }
 }): GenericCallView {
-  const target = args.plugin.kind === 'new' ? `new ${args.plugin.idPrefix}-*` : args.plugin.pluginId
+  const target = typeof args.plugin === 'string'
+    ? 'plugin selector'
+    : args.plugin.kind === 'new' ? `new ${args.plugin.idPrefix}-*` : args.plugin.pluginId
   return {
     card: 'generic',
     kind: 'execute',

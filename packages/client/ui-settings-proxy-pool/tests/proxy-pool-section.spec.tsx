@@ -4,7 +4,7 @@
  * bindSnapshotSelector 绑定自建 store，断言用户可见行为。
  */
 
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { bindSnapshotSelector } from 'coding-client-test-runtime'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ProxyPoolSection } from '../src/client/ProxyPoolSection.tsx'
@@ -24,8 +24,10 @@ const t: ProxyPoolSectionText = {
   customUrlLabel: '自定义代理地址',
   applyCustomUrl: '应用地址',
   importLabel: '导入代理链接',
+  importTitle: '导入代理节点',
   importPlaceholder: '每行一条',
   importButton: '导入',
+  cancel: '取消',
   imported: count => `已导入 ${count} 个`,
   skipped: count => `跳过 ${count} 行`,
   nodes: '节点',
@@ -109,6 +111,28 @@ describe('ProxyPoolSection', () => {
     expect(screen.getByText('重试')).toBeTruthy()
   })
 
+  it('节点失败只展示警告图标，悬停时显示完整错误浮窗', async () => {
+    const store = createProxyPoolStore(fakeApi({
+      describe: async () => ({ result: { ok: true, value: {
+        ...POOL_VALUE,
+        health: [{ nodeId: 'a', alive: false, failure: '连接超时：上游没有响应', checkedAt: 1 }],
+      } } }),
+    }))
+    const actions = { ...store, hooksStore: store.store }
+    delete (actions as { store?: unknown }).store
+    render(
+      <ProxyPoolSection
+        actions={actions as never}
+        t={t}
+        useSnapshot={bindSnapshotSelector(store.store)}
+      />,
+    )
+    const warning = await screen.findByRole('img', { name: '连接超时：上游没有响应' })
+    expect(screen.queryByText('连接超时：上游没有响应')).toBeNull()
+    fireEvent.mouseEnter(warning)
+    expect((await screen.findByRole('tooltip')).textContent).toContain('连接超时：上游没有响应')
+  })
+
   it('导入动作携带输入文本并回显摘要', async () => {
     const importLinks = vi.fn(async () => ({ result: { ok: true as const, value: { imported: [{ id: 'b', name: 'n', protocol: 'http' as const, address: '5.6.7.8', port: 8080, hasUsername: false, hasSecret: false }], skipped: 1 } } }))
     const store = createProxyPoolStore(fakeApi({ importLinks }))
@@ -121,9 +145,12 @@ describe('ProxyPoolSection', () => {
         useSnapshot={bindSnapshotSelector(store.store)}
       />,
     )
-    const textarea = screen.getByLabelText('导入代理链接')
+    const openImport = screen.getByRole('button', { name: '导入' })
+    fireEvent.click(openImport)
+    const dialog = await screen.findByRole('dialog', { name: '导入代理节点' })
+    const textarea = within(dialog).getByLabelText('导入代理链接')
     fireEvent.change(textarea, { target: { value: 'http://5.6.7.8:8080\nbad' } })
-    fireEvent.click(screen.getByText('导入'))
+    fireEvent.click(within(dialog).getByRole('button', { name: '导入' }))
     await vi.waitFor(() => {
       expect(importLinks).toHaveBeenCalledWith({ text: 'http://5.6.7.8:8080\nbad' })
     })
