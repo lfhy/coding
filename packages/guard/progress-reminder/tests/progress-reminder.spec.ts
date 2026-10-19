@@ -122,12 +122,11 @@ describe('counting completed tool calls', () => {
 })
 
 describe('reminder wording', () => {
-  it('asks for a concise user-facing report without inventing a decision', () => {
+  it('limits the report to this trigger instead of every following step', () => {
     const text = renderProgressReminder(3)
-    expect(text).toContain('请先在回复正文用几句话说明已完成什么、还剩什么，再继续执行。')
-    expect(text).toContain('没有需要用户决定的事项就直接继续，不要为了汇报而停下或询问。')
-    expect(text).not.toContain('计划工具')
-    expect(text).not.toContain('拍板')
+    expect(text).toContain('这是一次性提示，只对紧邻的下一次助手回复生效；它不是持续规则，也不是每个步骤的固定要求。')
+    expect(text).toContain('处理完这条提示后，即使历史中仍能看到它，也不要在每次工具调用或后续步骤前重复汇报。')
+    expect(text).toContain('除非之后再次收到一条新的本提醒')
   })
 })
 
