@@ -187,6 +187,7 @@ describe('Electron 实时浏览器 guest', () => {
     expect(electron.WebContentsView.mock.calls[0]?.[0]).toMatchObject({ webPreferences: {
       sandbox: true, contextIsolation: true,
       nodeIntegration: false, webSecurity: true, webviewTag: false, devTools: false,
+      backgroundThrottling: false,
     } })
     const guestPreferences = electron.WebContentsView.mock.calls[0]?.[0].webPreferences as { partition: string }
     expect(guestPreferences.partition).toMatch(/^dsh-guest-/)
@@ -1334,7 +1335,33 @@ describe('Electron 实时浏览器 guest', () => {
     await manager.dispose()
   })
 
-  it('从未呈现的租约页面导航与快照仅发布 DOM，呈现后恢复原生画面', async () => {
+  it('未呈现的后台会话仍可读取页面、点击引用并取得显式截图，另一会话不受影响', async () => {
+    const window = fixture()
+    const manager = createBrowserGuestManager(window)
+    await manager.lease('worker-a')
+    await manager.lease('worker-b')
+    const first = await manager.execute('worker-a', { kind: 'navigate', url: 'https://example.com/a' }, { kind: 'none' })
+    const other = await manager.execute('worker-b', { kind: 'navigate', url: 'https://example.com/b' }, { kind: 'none' })
+    const snapshot = await manager.execute('worker-a', { kind: 'snapshot' })
+    expect(snapshot.observation.url).toBe('https://example.com/a')
+    expect(snapshot.observation.snapshot).toContain('Hello')
+    const clicked = await manager.execute('worker-a', { kind: 'click', ref: 'e1', revision: snapshot.observation.revision })
+    expect(clicked.observation.cursor).toMatchObject({ kind: 'click', x: 10, y: 10 })
+    const screenshot = await manager.execute('worker-a', { kind: 'screenshot' })
+    expect(Buffer.from(screenshot.png!)).toEqual(png())
+    expect((await manager.execute('worker-b', { kind: 'snapshot' })).observation.url).toBe(other.observation.url)
+    expect(electron.views[0]!.webContents.debugger.sendCommand.mock.calls.some(([method]) =>
+      method === 'Page.captureScreenshot')).toBe(true)
+    expect(window.contentView.children).toHaveLength(0)
+    expect(electron.views[0]!.setBounds).toHaveBeenLastCalledWith({ x: 801, y: 0, width: 1280, height: 720 })
+    expect(electron.views[0]!.webContents.close).not.toHaveBeenCalled()
+    expect(first.png).toBeNull()
+    await manager.release('worker-a')
+    await manager.release('worker-b')
+    await manager.dispose()
+  })
+
+  it('从未呈现的租约页面导航与快照仅发布 DOM，显式截图可在后台取得画面', async () => {
     const window = fixture()
     const updates: unknown[] = []
     const manager = createBrowserGuestManager(window, { onState: (_id, state, capture) => updates.push({ state, capture }) })
@@ -1350,7 +1377,8 @@ describe('Electron 实时浏览器 guest', () => {
     expect(second.observation.tabId).toBe(first.observation.tabId)
     expect(second.observation.revision).toBeGreaterThan(first.observation.revision)
     expect(second.png).toBeNull()
-    await expect(manager.execute('s1', { kind: 'screenshot' })).rejects.toThrow('shown in the desktop workbench')
+    const hiddenCapture = await manager.execute('s1', { kind: 'screenshot' })
+    expect(Buffer.from(hiddenCapture.png!)).toEqual(png())
     expect(window.contentView.children).toHaveLength(0)
     manager.present({ sessionId: 's1', tabId: first.observation.tabId, visible: true,
       bounds: { x: 0, y: 0, width: 500, height: 400 } })

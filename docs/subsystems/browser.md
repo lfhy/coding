@@ -114,7 +114,7 @@ export interface BrowserCapture {
 
 ## 失败与生命周期
 
-`BrowserUseError.code` 供消费方区分无效 URL、过期引用、已关闭会话、策略拒绝、浏览器不可用与其他操作失败；调用方取消则保留 `AbortSignal` 的原因。`closeSession(sessionId)` 等待资源停稳，不存在资源时正常完成。页面与最近捕获只存在于提供方运行期间，不定义重启恢复或跨会话共享。桌面原生导航超时若能停止并证明停稳，已有页面的人工或模型导航失败仍保留同一 guest，后续模型快照须作为新调用重新取得审批；人工 `open-url` 失败回滚新建标签，无法停稳只关闭该 Session。未呈现的 guest 可发布不含 PNG 的 DOM 观测，显式截图不可用；已呈现页面截图超时也只关闭该 Session。私有桥请求超时、取消及连接断开仍使桌面连接与全部 guest 失效，不会改道到 Playwright；具体时限与限制见[Electron 提供方](../../packages/browser/browser-electron/README.md)。
+`BrowserUseError.code` 供消费方区分无效 URL、过期引用、已关闭会话、策略拒绝、浏览器不可用与其他操作失败；调用方取消则保留 `AbortSignal` 的原因。`closeSession(sessionId)` 等待资源停稳，不存在资源时正常完成。页面与最近捕获只存在于提供方运行期间，不定义重启恢复或跨会话共享。桌面原生导航超时若能停止并证明停稳，已有页面的人工或模型导航失败仍保留同一 guest，后续模型快照须作为新调用重新取得审批；人工 `open-url` 失败回滚新建标签，无法停稳只关闭该 Session。未呈现的 guest 可发布不含 PNG 的 DOM 观测；模型操作期间页面会保持非零布局视口并临时停靠到窗口内容区外，因此显式截图、元素命中与交互仍可执行；操作结束后恢复为后台停靠状态。截图超时只关闭该 Session。私有桥请求超时、取消及连接断开仍使桌面连接与全部 guest 失效，不会改道到 Playwright；具体时限与限制见[Electron 提供方](../../packages/browser/browser-electron/README.md)。
 
 ```ts type-equiv
 /** 可供消费方识别的浏览器失败种类；调用方取消保留 AbortSignal 的原因。 */

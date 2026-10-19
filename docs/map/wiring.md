@@ -360,6 +360,7 @@
 - `ui-input-trigger` → `coding-client-ui-input-trigger`
 - `ui-commands` → `coding-client-ui-commands`
 - `ui-skill` → `coding-client-ui-skill`
+- `genui-client` → `coding-genui`
 - `ui-subagent` → `coding-client-ui-subagent`
 - `ui-reference` → `coding-client-ui-reference`
 - `ui-jobs` → `coding-client-ui-jobs`

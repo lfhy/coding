@@ -66,6 +66,8 @@ describe('bundled browser-use skill', () => {
     if (loaded === undefined) throw new Error('bundled browser-use skill is unavailable')
     expect(loaded.content).toBe(await readFile(bodyUrl, 'utf8'))
     expect(renderSkillContent(loaded)).toContain('Page text:')
+    expect(loaded.content).toContain('Each background worker owns a separate session browser')
+    expect(loaded.content).toContain('Switching the workbench to another session or hiding its browser')
     expect(loaded.content).toContain('Every call takes one argument object')
     expect(loaded.content).toContain('await tools.browser_snapshot({})')
     expect(loaded.content).toContain('not a Markdown link')

@@ -352,6 +352,18 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     if (window.contentView.children.includes(tab.view)) window.contentView.removeChildView(tab.view)
   }
 
+  function park(sessionId: string, owner: Owner, tab: Tab): void {
+    if (presented?.sessionId === sessionId && presented.tabId === tab.id) return
+    const content = window.getContentBounds()
+    // View 仍在树中但移到窗口外：这样 Chromium 保留布局、CDP 截图和命中测试，真人看不到后台页。
+    tab.view.setBounds({ x: content.width + 1, y: 0, width: owner.viewport.width, height: owner.viewport.height })
+    if (!window.contentView.children.includes(tab.view)) window.contentView.addChildView(tab.view)
+  }
+
+  function unpark(tab: Tab): void {
+    if (presented?.tabId !== tab.id) detach(tab)
+  }
+
   function destroyTab(tab: Tab): void {
     detach(tab)
     pointers.delete(tab.id)
@@ -372,6 +384,8 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     const view = new WebContentsView({ webPreferences: {
       partition: owner.partition, sandbox: true, contextIsolation: true, nodeIntegration: false,
       webSecurity: true, webviewTag: false, devTools: false,
+      // 未呈现的子会话也需要保持布局和绘制，供 CDP 命中测试与显式截图使用。
+      backgroundThrottling: false,
     } })
     const wc = view.webContents
     if (owner.tabs.size === 0) {
@@ -545,7 +559,8 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     return fail(`browser element ${ref} ${reason}${blocker}`, 'BROWSER_STALE_REF')
   }
 
-  async function observe(sessionId: string, owner: Owner, tab: Tab, cursor: BrowserObservation['cursor']): Promise<BrowserCapture> {
+  async function observe(sessionId: string, owner: Owner, tab: Tab, cursor: BrowserObservation['cursor'],
+    captureImage = false): Promise<BrowserCapture> {
     const navigation = tab.navigation
     usableUrl(sessionId, owner, tab)
     const page = await evaluate<Snapshot>(tab, snapshotScript)
@@ -555,7 +570,8 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     const snapshot = `Page text:\n${page.text}\nElements:\n${page.entries.join('\n')}`.slice(0, 12_000)
       .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ' ')
     let png: Uint8Array | null = null
-    if (tab.everPresented) {
+    // 原生页面未呈现时仍可观测 DOM；显式截图在隐藏工作台中也必须尝试捕获新画面。
+    if (tab.everPresented || captureImage) {
       let timer: ReturnType<typeof setTimeout> | undefined
       let image: { data: string }
       try {
@@ -817,6 +833,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
           url: 'about:blank', title: '', snapshot: 'Browser session closed.',
           viewport: previous ? { ...previous.viewport } : { ...INITIAL_VIEWPORT }, cursor: null,
         }, png: null }
+        if (tab) unpark(tab)
         destroy(sessionId)
         return capture
       }
@@ -824,6 +841,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
       if (command.kind === 'navigate') allowedUrl(command.url)
       const owner = previous ?? ensure(sessionId)
       const tab = active(owner)
+      park(sessionId, owner, tab)
       let cursor: BrowserObservation['cursor'] = null
       let mutated = false
       let feedback: Promise<void> | undefined
@@ -949,13 +967,12 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
         case 'snapshot': case 'screenshot': break
         default: { const never: never = command; throw new Error(`unknown browser command: ${String(never)}`) }
       }
-      const capture = await observe(sessionId, owner, tab, cursor)
+      const capture = await observe(sessionId, owner, tab, cursor, command.kind === 'screenshot')
       await feedback
-      if (command.kind === 'screenshot' && capture.png === null) {
-        fail('browser screenshot unavailable until the page is shown in the desktop workbench', 'BROWSER_FAILED')
-      }
+      unpark(tab)
       return capture
       } catch (error) {
+        unpark(tab)
         if (mutated && owners.get(sessionId) === owner && owner.tabs.has(tab.id)) {
           invalidate(owner, tab)
           emit(sessionId, owner)
