@@ -22,5 +22,6 @@ Node 侧会扫描已启用的 Loader 配置项以发现 web `dsh.client` 包，�
 
 ## 已知限制与暂缓事项
 
+- **客户端 bundle 不拆包**：每个 `dsh.client` 包的浏览器半通过共享 `clientBundle` 产出单个 classic `client.js`，只登记一个 factory；同步 `require` 只解析平台种子与已登记的包模块，不能加载相对文件 chunk，因此插件内部动态 `import` 必须内联。插件单独构建的 IIFE engine 资产可由自身路由懒加载，不属于模块表的拆包。
 - **有意采用扁平模块图**：每个 bundle 是一个模块节点，其边只指向表中的叶节点；接口（`loadCache`/`edges`/`invalidate`）已经支持通用模块图，因此可以改变 externalization 粒度而不更改接口。
 - **自身不维护卸载记录**：样式移除与 fiber 拆卸顺序属于 HMR 驱动器（`coding-client-hmr`）；loader 只在每条记录中登记其拥有的样式标签 id。

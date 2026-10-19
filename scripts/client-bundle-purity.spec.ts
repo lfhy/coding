@@ -1,8 +1,12 @@
 /**
- * Pins shared client-bundle preset rules: the module-edge purity gate and
- * the physical watch dependencies hidden behind virtual CSS Modules.
+ * 固定 clientBundle 的单 factory 输出、模块请求限制与虚拟 CSS 的物理文件监听。
  */
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { runInNewContext } from 'node:vm'
+import { build } from 'tsdown'
 import { describe, expect, it, vi } from 'vitest'
 import { clientBundle, requestedExternals } from '../packages/client/tsdown.client.ts'
 
@@ -211,4 +215,78 @@ describe('client bundle CSS Modules watch graph', () => {
 
     expect(addWatchFile).toHaveBeenCalledExactlyOnceWith(stylesheet)
   })
+})
+
+type ClientFactory = (require: (id: string) => never) => {
+  staticAsset: string
+  loadScene: () => Promise<string>
+}
+
+describe('client bundle single factory', () => {
+  it('disables code splitting for development and Client build faces', () => {
+    const bundle = clientBundle(REQUESTING_PACKAGE, ['lib/types/index.js'])
+    for (const face of [undefined, 'client'] as const) {
+      const configs = bundle({ env: face === undefined ? {} : { DSH_BUILD_FACE: face } })
+      const outputOptions = configs.find(config => config.platform === 'browser')?.outputOptions
+      if (typeof outputOptions !== 'object' || outputOptions === null) {
+        throw new Error('client output options missing')
+      }
+      expect(outputOptions.codeSplitting).toBe(false)
+    }
+  })
+
+  it('inlines a module shared by static and dynamic imports into the loader factory', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-client-single-factory-'))
+    try {
+      await writeFile(join(root, 'asset-loader.js'), 'export const asset = "shared asset"\n')
+      await writeFile(join(root, 'scene3d-lazy.js'), `
+import { asset } from './asset-loader.js'
+export const scene = 'lazy ' + asset
+`)
+      await writeFile(join(root, 'index.js'), `
+import { asset } from './asset-loader.js'
+export const staticAsset = asset
+export async function loadScene() {
+  return (await import('./scene3d-lazy.js')).scene
+}
+`)
+
+      const browser = clientConfigs()[0]
+      if (browser === undefined) throw new Error('client config missing')
+      const bundles = await build({
+        ...browser,
+        config: false,
+        cwd: root,
+        entry: { client: join(root, 'index.js') },
+        outDir: join(root, 'lib'),
+      })
+      try {
+        expect((await readdir(join(root, 'lib'))).sort()).toEqual(['client.js', 'client.js.map'])
+        const source = await readFile(join(root, 'lib/client.js'), 'utf8')
+        let factory: ClientFactory | undefined
+        let registrations = 0
+        runInNewContext(source, {
+          window: {
+            __ModuleLoader__: {
+              load: (module: { id: string; factory: ClientFactory }) => {
+                registrations += 1
+                expect(module.id).toBe(REQUESTING_PACKAGE)
+                factory = module.factory
+              },
+            },
+          },
+        })
+        expect(registrations).toBe(1)
+        if (factory === undefined) throw new Error('client bundle did not register its factory')
+        const unknownModule = (id: string): never => { throw new Error(`unknown module-table request: ${id}`) }
+        const exports = factory(unknownModule)
+        expect(exports.staticAsset).toBe('shared asset')
+        await expect(exports.loadScene()).resolves.toBe('lazy shared asset')
+      } finally {
+        for (const bundle of bundles) await bundle[Symbol.asyncDispose]()
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  }, 20_000)
 })

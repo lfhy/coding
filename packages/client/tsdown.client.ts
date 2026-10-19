@@ -553,11 +553,12 @@ function clientConfig(id: string, entry: string): UserConfig {
       },
     }],
     outputOptions: {
+      // 模块表只接收每个插件的一份 factory，无法解析拆包后的相对 require。
+      // 插件内部动态 import 必须内联；显式 companion 资产仍由独立配置构建。
+      codeSplitting: false,
       entryFileNames: 'client.js',
-      // The map is served from /plugins/<scoped-package>/client.js.map. The
-      // browser resolves its local sources back into URLs that mirror the
-      // /packages/<group>/<package>/src directories; sourcesContent keeps them usable
-      // without exposing that tree as an HTTP route.
+      // map 由 /plugins/<id>/client.js.map 提供；源码 URL 对齐
+      // /packages/<group>/<package>/src，sourcesContent 使调试无需暴露源码路由。
       sourcemapPathTransform: browserSourcePath,
       banner: `window.__ModuleLoader__.load({ id: ${JSON.stringify(id)}, factory: (require) => {`,
       footer: 'return module.exports; } });',
