@@ -18,16 +18,48 @@ export function ToolDetails({ block, cwd, useHostDescription, loadImage, t }: Pi
   const toolImages = loadImage !== undefined && images.length > 0 ? <ToolResultImages images={images} loadImage={loadImage} t={t} /> : null
   const terminal = terminalCardModel(block, cwd)
   if (terminal !== null) {
-    return <>{toolImages}<TerminalBlock {...terminal.card} labels={terminalBlockLabels(t)} className={css.cardBody} /></>
+    return (
+      <>
+        {terminal.description !== undefined ? (
+          <div className={css.description}>{terminal.description}</div>
+        ) : null}
+        {toolImages}
+        <TerminalBlock {...terminal.card} labels={terminalBlockLabels(t)} className={css.cardBody} />
+      </>
+    )
   }
   const read = readCardModel(block, cwd, home)
   if (read !== null) return <>{toolImages}<ReadBlock {...read} className={css.read} /></>
   const diff = diffCardModel(block)
   if (diff !== null) return <>{toolImages}<DiffBlock {...diff.card} className={css.cardBody} /></>
   const search = searchCardModel(block)
-  if (search !== null) return <>{toolImages}<SearchBlock {...search.card} className={css.cardBody} /></>
+  if (search !== null) {
+    return (
+      <>
+        {toolImages}
+        <SearchBlock {...search.card} className={css.cardBody} />
+        {search.recovery !== undefined ? <div className={css.recovery}>{search.recovery}</div> : null}
+      </>
+    )
+  }
   const web = webCardModel(block)
-  if (web !== null) return <>{toolImages}<WebBlock {...web} className={css.web} /></>
+  if (web !== null) {
+    const body = 'kind' in block ? resultText(block) : ''
+    return (
+      <>
+        {toolImages}
+        <WebBlock {...web} className={css.web} />
+        {body !== '' ? <pre className={css.code}>{body}</pre> : null}
+      </>
+    )
+  }
   if (!('kind' in block)) return <>{toolImages}<div className={css.empty}>{t('details.running')}</div></>
-  return <>{toolImages}<pre className={css.code}>{resultText(block)}</pre></>
+  return (
+    <>
+      {toolImages}
+      <pre className={css.code} data-error={block.isError || undefined}>
+        {resultText(block)}
+      </pre>
+    </>
+  )
 }
