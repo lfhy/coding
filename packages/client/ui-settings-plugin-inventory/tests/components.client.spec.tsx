@@ -72,7 +72,7 @@ describe('PluginInventorySettingsTab', () => {
       target: { value: 'disabled-entry' },
     })
     expect(view.container.querySelector('[data-loader-entry]')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'directory-picker-native, Disabled' }))
+    fireEvent.click(screen.getByRole('button', { name: 'coding-host-directory-picker-native, Disabled' }))
     expect(screen.getAllByText(en.disabledTag)).toHaveLength(2)
     expect(screen.queryByText(en.cordis)).toBeNull()
     expect(screen.queryByText(en.unobserved)).toBeNull()
@@ -84,7 +84,7 @@ describe('PluginInventorySettingsTab', () => {
 
     fireEvent.change(search, { target: { value: 'disabled-entry' } })
     expect(screen.getAllByRole('listitem')).toHaveLength(1)
-    expect(screen.getByText('directory-picker-native')).toBeTruthy()
+    expect(screen.getByText('coding-host-directory-picker-native')).toBeTruthy()
 
     fireEvent.change(search, { target: { value: 'cordis-plugin-hmr' } })
     expect(screen.getAllByRole('listitem')).toHaveLength(1)
