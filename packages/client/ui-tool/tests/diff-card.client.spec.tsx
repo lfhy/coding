@@ -344,6 +344,7 @@ describe('DetailsPanel diff Output section', () => {
         useStore={bindSnapshotSelector(chat)}
         actions={chat.actions}
         closeDetails={vi.fn()}
+        loadImage={vi.fn(async () => 'blob:image')}
         t={t}
       />,
     )

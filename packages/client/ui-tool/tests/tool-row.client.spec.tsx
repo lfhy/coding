@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render } from '@testing-library/react'
 import { makeTranslate } from 'coding-client-test-runtime'
+import type { ImageAttachmentRef } from 'coding-attachment'
 import type { RunningToolCall, ToolResultNode } from 'coding-client-runtime/client'
 import { zh } from 'coding-client-ui-conversation/src/client/locales.ts'
 import { zh as commonZh } from 'coding-client-locale/src/locales/zh.ts'
