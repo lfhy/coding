@@ -166,6 +166,22 @@ describe('proxyPool domain', () => {
     await ctx.fiber.dispose()
   })
 
+  it('importLinks/removeNode 经镜像落盘到设置分节', async () => {
+    const ctx = await mounted()
+    const api = createApiProxy(ctx, DEFAULTS)
+    const imported = expectOk(await api.proxyPool.importLinks(request({ text: 'http://1.2.3.4:8080#x' })))
+    await new Promise((resolve) => { setTimeout(resolve, 0) })
+    const settings = ctx.get('settings') as MemorySettings
+    const saved = settings.doc['proxy-pool-nodes'] as { links: string[] } | undefined
+    expect(saved?.links).toEqual(['http://1.2.3.4:8080#x'])
+    // 删除后写回同步为空集。
+    expectOk(await api.proxyPool.removeNode(request({ id: imported.imported[0]!.id })))
+    await new Promise((resolve) => { setTimeout(resolve, 0) })
+    const afterRemove = settings.doc['proxy-pool-nodes'] as { links: string[] } | undefined
+    expect(afterRemove?.links).toEqual([])
+    await ctx.fiber.dispose()
+  })
+
   it('导入重复链接时后到者被跳过而不是报错', async () => {
     const ctx = await mounted()
     const api = createApiProxy(ctx, DEFAULTS)

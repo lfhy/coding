@@ -131,6 +131,10 @@ export class ProxyPoolService extends Service {
       targetCount: config.refresh?.targetCount ?? 5,
     }
     ctx.effect(() => this.start(config), 'proxyPool.start')
+    // 节点持久化随服务生命周期安装：设置提供方可用时镜像注册表（重放 +
+    // 写回），缺席时为 no-op。挂在构造里而不是单独的 apply 入口，因为
+    // Loader 取 .default 类导出构造服务，命名导出的 apply 不会运行。
+    mirrorPoolNodes(ctx, this, node => this.registerNode(node))
   }
 
   /** 启动入站服务器与健康循环；返回 disposer 一并停止两者。 */
@@ -490,11 +494,11 @@ export const name = 'proxy-pool'
 export const inject: string[] = []
 
 /**
- * 函数插件入口：挂载池服务并在设置可用时镜像节点注册表（持久化）。
- * base 组合以此装载；没有设置提供方时池照常工作，只是节点不落盘。
+ * Cordis 插件入口（`ctx.plugin(ProxyPoolService)` 与 Loader 装载共用）：
+ * 类默认导出经构造挂载池服务并安装节点持久化；没有设置提供方时池照常
+ * 工作，只是节点不落盘。
  * @param ctx - 宿主上下文。
  */
 export function apply(ctx: Context): void {
-  const pool = new ProxyPoolService(ctx, {})
-  mirrorPoolNodes(ctx, pool, node => pool.registerNode(node))
+  new ProxyPoolService(ctx, {})
 }
