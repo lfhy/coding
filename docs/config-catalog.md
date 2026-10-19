@@ -1626,7 +1626,45 @@ export interface Config {
 }
 ```
 
-Source: [`packages/guard/progress-reminder/src/index.ts:29`](../packages/guard/progress-reminder/src/index.ts)
+Source: [`packages/guard/progress-reminder/src/index.ts:30`](../packages/guard/progress-reminder/src/index.ts)
+
+<a id="coding-proxy-pool"></a>
+
+## `coding-proxy-pool`
+
+```ts config-catalog
+/** 服务配置：入站监听与健康检查节奏。 */
+export interface Config {
+  /** 本地 HTTP 代理监听端口；0（缺省）表示选一个空闲端口。 */
+  listenPort?: number
+  /** 仅接受回环连接；缺省 true。 */
+  loopbackOnly?: boolean
+  /** 健康检查节奏。 */
+  health?: HealthCheckOptions
+  /** 订阅刷新节奏。 */
+  refresh?: RefreshConfig
+}
+
+/** 健康检查配置。 */
+export interface HealthCheckOptions {
+  /** 探测间隔毫秒；缺省 60_000。 */
+  intervalMs?: number
+  /** 探测超时毫秒；缺省 8_000。 */
+  timeoutMs?: number
+}
+
+/** 订阅刷新配置。 */
+export interface RefreshConfig {
+  /** 启用周期订阅刷新；缺省 true（免费节点分钟级寿命，静态池没有意义）。 */
+  enabled?: boolean
+  /** 刷新间隔毫秒；缺省 300_000（5 分钟，与免费目录的更新节奏匹配）。 */
+  intervalMs?: number
+  /** 每次刷新维持的订阅节点数；缺省 5。 */
+  targetCount?: number
+}
+```
+
+Source: [`packages/net/proxy-pool/src/index.ts:96`](../packages/net/proxy-pool/src/index.ts)
 
 <a id="coding-pwsh-local"></a>
 
@@ -3386,6 +3424,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `coding-client-ui-settings-models` ([`packages/client/ui-settings-models/src/index.ts`](../packages/client/ui-settings-models/src/index.ts))
 - `coding-client-ui-settings-plugin-inventory` ([`packages/client/ui-settings-plugin-inventory/src/index.ts`](../packages/client/ui-settings-plugin-inventory/src/index.ts))
 - `coding-client-ui-settings-plugins` ([`packages/client/ui-settings-plugins/src/index.ts`](../packages/client/ui-settings-plugins/src/index.ts))
+- `coding-client-ui-settings-proxy-pool` ([`packages/client/ui-settings-proxy-pool/src/index.ts`](../packages/client/ui-settings-proxy-pool/src/index.ts))
 - `coding-client-ui-settings-search` ([`packages/client/ui-settings-search/src/index.ts`](../packages/client/ui-settings-search/src/index.ts))
 - `coding-client-ui-sidebar` ([`packages/client/ui-sidebar/src/index.ts`](../packages/client/ui-sidebar/src/index.ts))
 - `coding-client-ui-skill` ([`packages/client/ui-skill/src/index.ts`](../packages/client/ui-skill/src/index.ts))
@@ -3475,6 +3514,7 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
 - `coding-cmdline` ([`packages/boot/cmdline/src/index.ts`](../packages/boot/cmdline/src/index.ts))
 - `coding-code-runtime-python` ([`packages/code-runtime/code-runtime-python/src/index.ts`](../packages/code-runtime/code-runtime-python/src/index.ts))
 - `coding-computer-use` ([`packages/computer-use/computer-use/src/index.ts`](../packages/computer-use/computer-use/src/index.ts))
+- `coding-genui` ([`packages/genui/genui/src/index.ts`](../packages/genui/genui/src/index.ts))
 - `coding-home-paths` ([`packages/util/home-paths/src/index.ts`](../packages/util/home-paths/src/index.ts))
 - `coding-hook-protocol` ([`packages/hooks/hook-protocol/src/index.ts`](../packages/hooks/hook-protocol/src/index.ts))
 - `coding-launch-environment` ([`packages/util/launch-environment/src/index.ts`](../packages/util/launch-environment/src/index.ts))

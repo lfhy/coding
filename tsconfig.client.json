@@ -17,6 +17,9 @@
     // Source-subpath test imports can arrive through workspace links whose
     // realpath semantics vary by host. Load package CSS declarations directly.
     "packages/client/*/src/css-modules.d.ts",
+    "packages/genui/genui/src/css-modules.d.ts",
+    "packages/genui/genui/tests/**/*.ts",
+    "packages/genui/genui/tests/**/*.tsx",
     "packages/client/*/tests/**/*.ts",
     "packages/client/*/tests/**/*.tsx",
     "packages/*/*/tests/**/*.client.spec.ts",
@@ -35,7 +38,8 @@
   // belongs to the host aggregate, which excludes this program's `*.client.*`
   // in turn. `exclude` wins over `include`, so the test glob above stays broad.
   "exclude": [
-    "packages/client/*/tests/**/*.host.spec.ts"
+    "packages/client/*/tests/**/*.host.spec.ts",
+    "packages/genui/genui/tests/**/*.host.spec.ts"
   ],
   "references": [
     // Shared leaf: web e2e boots the real host webserver (fixture + real-host
@@ -74,6 +78,7 @@
     { "path": "./packages/client/ui-input-trigger" },
     { "path": "./packages/client/ui-commands" },
     { "path": "./packages/client/ui-skill" },
+    { "path": "./packages/genui/genui" },
     { "path": "./packages/client/ui-reference" },
     { "path": "./packages/client/ui-subagent" },
     { "path": "./packages/client/ui-jobs" },

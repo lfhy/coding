@@ -261,6 +261,11 @@
     - id: ui-skill
       name: 'coding-client-ui-skill'
 
+    # GenUI 浏览器半：DOM 围栏渲染器、render_ui 工具行视图与会话面板 dock。
+    # 宿主半（coding-genui）同包双面，经 dsh.client 行同时装载。
+    - id: genui-client
+      name: 'coding-genui'
+
     - id: ui-subagent
       name: 'coding-client-ui-subagent'
 

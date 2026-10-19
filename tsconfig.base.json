@@ -241,6 +241,7 @@
       "coding-client-ui-settings": ["./packages/client/ui-settings/src"],
       "coding-client-ui-settings-general": ["./packages/client/ui-settings-general/src"],
       "coding-client-ui-settings-models": ["./packages/client/ui-settings-models/src"],
+      "coding-client-ui-settings-proxy-pool": ["./packages/client/ui-settings-proxy-pool/src"],
       "coding-client-ui-settings-search": ["./packages/client/ui-settings-search/src"],
       "coding-client-ui-settings-plugin-inventory": ["./packages/client/ui-settings-plugin-inventory/src"],
       "coding-client-locale": ["./packages/client/locale/src"],
@@ -303,7 +304,8 @@
         "./packages/identity/*/src",
         "./packages/test-support/*/src",
         "./packages/host/*/src",
-        "./packages/client/*/src"
+        "./packages/client/*/src",
+        "./packages/genui/*/src"
       ]
     }
   }

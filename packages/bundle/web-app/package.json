@@ -97,6 +97,7 @@
     "coding-cordis-host-runner": "workspace:^",
     "coding-file-reference": "workspace:^",
     "coding-file-reference-local": "workspace:^",
+    "coding-genui": "workspace:^",
     "coding-host-apiproxy": "workspace:^",
     "coding-host-directory-picker-auto": "workspace:^",
     "coding-host-directory-picker-browse": "workspace:^",

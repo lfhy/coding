@@ -104,6 +104,8 @@
   // 无需逐个列出文件；两个 aggregate 分别排除对方的测试。
   "exclude": [
     "packages/client/*/src/**",
+    "packages/genui/genui/src/**",
+    "packages/genui/genui/tests/**",
     "packages/*/*/tests/**/*.client.ts",
     "packages/*/*/tests/**/*.client.tsx",
     "packages/*/*/tests/**/*.client.spec.ts",

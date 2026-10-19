@@ -1,0 +1,108 @@
+{
+  "name": "coding-genui",
+  "description": "Generative UI for assistant replies: the ```dsh-ui fence language, the render_ui/validate_dsh_ui tools, the browser renderer with lazy chart engines, and the session panel dock",
+  "version": "0.1.0-rc.8",
+  "private": true,
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/genui/genui"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./invariant": {
+      "types": "./lib/types/invariant.d.ts",
+      "default": "./lib/invariant.js"
+    },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/invariant.js",
+    "lib/client.js",
+    "lib/*.cjs",
+    "lib/assets/*.js",
+    "lib/types/**/*.d.ts",
+    "SKILL.md"
+  ],
+  "dsh": {
+    "client": {
+      "inject": [
+        "coding-client-locale",
+        "coding-client-runtime",
+        "coding-client-ui-conversation",
+        "coding-client-ui-input-trigger",
+        "coding-client-ui-tool"
+      ],
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "bundle": "tsdown",
+    "watch": "tsdown --watch"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@deepseek-ai/schemastery": "workspace:^"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
+    "coding-agent": "workspace:^",
+    "coding-client-locale": "workspace:^",
+    "coding-client-runtime": "workspace:^",
+    "coding-client-ui-conversation": "workspace:^",
+    "coding-client-ui-input-trigger": "workspace:^",
+    "coding-client-ui-primitives": "workspace:^",
+    "coding-client-ui-tool": "workspace:^",
+    "coding-host-webserver": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-llm": "workspace:^",
+    "coding-session": "workspace:^",
+    "coding-skill": "workspace:^",
+    "coding-system-prompt": "workspace:^",
+    "coding-tools": "workspace:^",
+    "react": "^18.0.0 || ^19.0.0"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
+    "@types/react": "~18.3.1",
+    "@types/react-dom": "~18.3.0",
+    "@types/three": "^0.180.0",
+    "coding-agent": "workspace:^",
+    "coding-client-locale": "workspace:^",
+    "coding-client-runtime": "workspace:^",
+    "coding-client-ui-conversation": "workspace:^",
+    "coding-client-ui-input-trigger": "workspace:^",
+    "coding-client-ui-primitives": "workspace:^",
+    "coding-client-ui-tool": "workspace:^",
+    "coding-host-webserver": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-llm": "workspace:^",
+    "coding-session": "workspace:^",
+    "coding-skill": "workspace:^",
+    "coding-system-prompt": "workspace:^",
+    "coding-tools": "workspace:^",
+    "echarts": "^5.6.0",
+    "echarts-wordcloud": "2.1.0",
+    "katex": "^0.16.47",
+    "mdast-util-from-markdown": "^2.0.3",
+    "mermaid": "11.16.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "three": "^0.180.0"
+  }
+}

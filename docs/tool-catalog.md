@@ -1424,6 +1424,10 @@ Define an immutable Cordis Package. For a new Plugin, use kind:"new" and provide
             "kind",
             "pluginId"
           ]
+        },
+        {
+          "type": "string",
+          "description": "JSON-encoded plugin selector; accepted for compatibility with model tool-call serializers."
         }
       ]
     },
