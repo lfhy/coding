@@ -1,0 +1,42 @@
+/* 仅占据原围栏位置；加载状态在有限高度中水平、垂直居中。 */
+.block {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  min-width: 0;
+  margin: 16px 0;
+  padding: 24px;
+  border-radius: 12px;
+  background: var(--dsw-alias-markdown-code-block);
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-xs-13);
+  text-align: center;
+}
+
+.spinner {
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border: 2px solid var(--dsw-alias-border-l2);
+  border-top-color: var(--dsw-alias-state-business-primary);
+  border-radius: 50%;
+  animation: spin calc(var(--ds-transition-duration) * 4) linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation: none; }
+}

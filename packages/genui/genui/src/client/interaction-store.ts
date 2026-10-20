@@ -121,11 +121,6 @@ export function fenceStateKey(sessionId: string, fenceKey: number | string, raw:
   return `f:${sessionId}:${String(fenceKey)}:${fingerprint(raw)}`
 }
 
-/** Build the durable state key for a panel publish (content-keyed). */
-export function panelStateKey(sessionId: string, raw: string): string {
-  return `p:${sessionId}:${fingerprint(raw)}`
-}
-
 /** Build the durable state key for a render_ui tool card (call-keyed). */
 export function toolStateKey(sessionId: string, callId: string): string {
   return `t:${sessionId}:${callId}`

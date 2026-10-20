@@ -1,5 +1,5 @@
 /**
- * Fence feedback loop (issue #160): a reply whose ```dsh-ui fence the guard
+ * Fence feedback loop (issue #160): a reply whose ```gen-ui fence the guard
  * cannot render should not stay broken for the reader. The host's
  * `agent/turn-stopping` boundary lets a plugin steer input into the SAME turn —
  * the machine re-reads its inbox and runs another step instead of closing
@@ -13,8 +13,8 @@
  * - **仅含 reasoning 的恢复。** 已验证的 GenUI 回合若只以 reasoning block 结束，使用宿主的
  *   `EMPTY_RESPONSE` retry policy。
  * - **Never for subagents.** A child session's fence belongs to a parent reply.
- * - **Exact fence matching.** Only an info string of exactly `dsh-ui` opens a
- *   fence, so ` ```dsh-ui-dark `, indented prose, or a mention of the name is
+ * - **Exact fence matching.** Only an info string of exactly `gen-ui` opens a
+ *   fence, so ` ```gen-ui-dark `, indented prose, or a mention of the name is
  *   never rewritten.
  * - **Accounted before sending.** The fingerprint is recorded before `steer`,
  *   so a re-entrant boundary cannot deliver the same correction twice.
@@ -30,7 +30,7 @@ import type {} from 'coding-agent'
 import type { GenerateOptions, StreamChunk } from 'coding-llm'
 import type { SessionEvent } from 'coding-session/types'
 import type { UserMessage } from 'coding-llm'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 
 /** fence-feedback 消费的会话最小面：事件日志 + 头部（含 parentSession 判子代理）。 */
 interface SessionLike {
@@ -43,8 +43,11 @@ interface SessionLike {
 interface SessionStoreLike {
   list(): readonly SessionLike[]
 }
-import { droppedNodeFailure } from './genui-diagnostic.ts'
-import { resolveFence } from '../shared/fence-resolve.ts'
+import type { FenceFailure } from './fence-diagnostics.ts'
+import { fenceFailures } from './fence-diagnostics.ts'
+import { extractDshUiFences } from './fence-extraction.ts'
+export { fenceFailures } from './fence-diagnostics.ts'
+export { extractDshUiFences, extractGenuiFences, fenceFingerprint } from './fence-extraction.ts'
 
 /** Plugin name recorded on every message this loop steers. */
 export const FEEDBACK_PLUGIN_NAME = 'coding-genui'
@@ -59,92 +62,6 @@ export const MAX_CORRECTIONS_PER_TURN = 2
 
 /** Marker prefix written by older plugin versions. */
 const LEGACY_MARKER_PREFIX = '[genui 自修 #'
-
-/** A fence opener is an info string of exactly `dsh-ui` (≤3 spaces indent). */
-const FENCE_OPEN = /^ {0,3}```[ \t]*dsh-ui[ \t]*$/u
-/** Any fence closer (the renderer never nests fences in one body). */
-const FENCE_CLOSE = /^ {0,3}```[ \t]*$/u
-/** Upper bound on fences inspected per reply — a reply is text, not a corpus. */
-const MAX_FENCES = 40
-
-/** One ```dsh-ui fence found in an assistant reply. */
-export interface ExtractedFence {
-  /** Raw body between the fences (no delimiters). */
-  readonly raw: string
-  /** False when the reply ended before the closing fence. */
-  readonly closed: boolean
-  /** 1-based position among this reply's fences. */
-  readonly index: number
-}
-
-/**
- * Extract every ```dsh-ui fence from one assistant reply.
- *
- * @param text - the assistant message text.
- * @returns the fences in document order (at most {@link MAX_FENCES}).
- */
-export function extractDshUiFences(text: string): ExtractedFence[] {
-  const lines = text.split('\n')
-  const fences: ExtractedFence[] = []
-  let open: { start: number; index: number } | null = null
-  for (let line = 0; line < lines.length; line++) {
-    const current = lines[line] ?? ''
-    if (open === null) {
-      if (FENCE_OPEN.test(current)) open = { start: line + 1, index: fences.length + 1 }
-      continue
-    }
-    if (!FENCE_CLOSE.test(current)) continue
-    fences.push({ raw: lines.slice(open.start, line).join('\n'), closed: true, index: open.index })
-    open = null
-    if (fences.length >= MAX_FENCES) return fences
-  }
-  if (open !== null && fences.length < MAX_FENCES) {
-    fences.push({ raw: lines.slice(open.start).join('\n'), closed: false, index: open.index })
-  }
-  return fences
-}
-
-/** Stable, log-safe identity of one fence body (same body → same fingerprint). */
-export function fenceFingerprint(raw: string): string {
-  return createHash('sha256').update(raw.trim()).digest('hex').slice(0, 12)
-}
-
-/** One fence the guard refuses to render, with its model-facing reason. */
-export interface FenceFailure {
-  readonly index: number
-  readonly fingerprint: string
-  /** Actionable diagnosis, in the same wording the validator tool uses. */
-  readonly detail: string
-}
-
-/**
- * Validate every fence in a reply the way the DOM channel would render it.
- *
- * @param text - the assistant message text.
- * @returns the fences that would stay a raw code block, in document order.
- */
-export function fenceFailures(text: string): FenceFailure[] {
-  const failures: FenceFailure[] = []
-  for (const fence of extractDshUiFences(text)) {
-    const detail = fenceFailureDetail(fence)
-    if (detail !== null) failures.push({ index: fence.index, fingerprint: fenceFingerprint(fence.raw), detail })
-  }
-  return failures
-}
-
-/** `null` when this fence renders; otherwise the reason it does not. */
-function fenceFailureDetail(fence: ExtractedFence): string | null {
-  const resolution = resolveFence(fence.raw, { settled: true })
-  if (resolution.spec !== null) return null
-  // 缺少 Markdown 收尾不等于渲染失败；先复用 renderer 判断，避免把已显示的卡片重发（#288）。
-  if (!fence.closed) return 'error=unterminated_fence\nrequired=closing_fence'
-  if (resolution.processed !== null) {
-    const dropped = droppedNodeFailure(resolution.processed, resolution.value)
-    return dropped?.join('\n')
-      ?? ['error=invalid_spec', ...resolution.processed.errors.map(error => `diagnostic=${JSON.stringify(error)}`)].join('\n')
-  }
-  return 'error=invalid_json\nrepair=failed'
-}
 
 /**
  * Build the correction input for a reply with unrenderable fences.
@@ -327,7 +244,7 @@ export function missingBodyCorrectionText(turn: number, attempt = 1, renderUiToo
   const head = `${MARKER_PREFIX}turn-${turn}]\n\n[genui-fence-repair]\nstatus=nothing_delivered\nfences=0\nnext=emit_fence_in_body\nrepeat_rendered_content=false\nreply_language=conversation\n\n`
   const emphasis = attempt <= 1 ? '' : `（第 ${attempt} 次提醒）`
   const renderUiInstruction = renderUiToolEnabled ? '，或明确调用 render_ui' : ''
-  return `${head}本轮尚未产生正式回答，也没有通过支持的通道交付结果${emphasis}。请根据用户当前请求完成正式答复；需要 UI 时，在回答正文输出你最终选定的 dsh-ui 围栏${renderUiInstruction}。可以修改或放弃此前候选；不能完成时，请在正文说明原因。\n`
+  return `${head}本轮尚未产生正式回答，也没有通过支持的通道交付结果${emphasis}。请根据用户当前请求完成正式答复；需要 UI 时，在回答正文输出你最终选定的 gen-ui 围栏${renderUiInstruction}。可以修改或放弃此前候选；不能完成时，请在正文说明原因。\n`
 }
 
 /**

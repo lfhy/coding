@@ -1,15 +1,15 @@
 ---
 name: genui
-description: "Render structured interactive UI inline through the dsh-ui fence. Use for key points, emphasis, comparisons, flows, steps, status, data, demos, and interactions whenever structured presentation would be clearer than prose. Preserve conversation language for all user-visible text."
+description: "Render structured interactive UI inline through the gen-ui fence. Use for key points, emphasis, comparisons, flows, steps, status, data, demos, and interactions whenever structured presentation would be clearer than prose. Preserve conversation language for all user-visible text."
 ---
 
 # GenUI — 生成式 UI 输出规范
 
 **Language:** Match the user's requested language (otherwise the language of their message) in both surrounding prose and all user-visible UI text: titles, labels, content, options, and explanations. Chinese examples below illustrate the schema only; do not switch the conversation to Chinese after loading this skill. Keep JSON keys, component types, IDs, and actions unchanged. An English request gets English prose and UI text; a Chinese request gets Chinese prose and UI text. `<user-language ...>` tokens are meta-placeholders only. Replace every one with actual content in the conversation language; never emit these placeholders literally.
 
-你可以**在回答正文中间**输出可交互 UI 组件：写一个 `dsh-ui` 围栏（fenced block with language tag `dsh-ui`），内含 JSON 规格，渲染器会把这一整块画成真实组件，文字照常穿插在前后。组件**就是回答的一部分**，不是工具调用。
+你可以**在回答正文中间**输出可交互 UI 组件：写一个 `gen-ui` 围栏（fenced block with language tag `gen-ui`），内含 JSON 规格，渲染器会把这一整块画成真实组件，文字照常穿插在前后。组件**就是回答的一部分**，不是工具调用。
 
-```dsh-ui
+```gen-ui
 {"title":"<user-language text>","gap":14,"items":[...]}
 ```
 
@@ -81,8 +81,8 @@ description: "Render structured interactive UI inline through the dsh-ui fence. 
 **卷子模式（多道选择题）**：每题一个 radio（带唯一 `group` + `answer` + `explanation`），最后放一个 submit（`groups` 列出全部题号）——用户全部选完点交卷，**分数和对错当场在 UI 里出现**，不用等你。只有换新题/进阶建议才发 action。不要每题单独发 action（会刷屏）。
 
 ### 高级
-- svg: `{"type":"svg","title":"<user-language title>","height":300,"code":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 200 100\"><rect width=\"200\" height=\"100\" fill=\"#534ab7\"/></svg>"}` — 独立 SVG 图片预览；`title`/`height` 可省略，height 为 100–800，code 最多 12,000 字符。必须提供完整 SVG 文档（含 xmlns），建议带 viewBox。使用隔离图片模式，不支持脚本、宿主 CSS 或外部资源；图形无法加载时显示源码和提示。**放在 dsh-ui 围栏中；这不是 ECharts renderer 配置。**
-- 也可以直接输出 ```svg 代码围栏（不带 dsh-ui 包装）：会自动显示为「预览/源码」切换的图形预览，源码可复制；无法解析时保留源码并提示。
+- svg: `{"type":"svg","title":"<user-language title>","height":300,"code":"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 200 100\"><rect width=\"200\" height=\"100\" fill=\"#534ab7\"/></svg>"}` — 独立 SVG 图片预览；`title`/`height` 可省略，height 为 100–800，code 最多 12,000 字符。必须提供完整 SVG 文档（含 xmlns），建议带 viewBox。使用隔离图片模式，不支持脚本、宿主 CSS 或外部资源；图形无法加载时显示源码和提示。**放在 gen-ui 围栏中；这不是 ECharts renderer 配置。**
+- 也可以直接输出 ```svg 代码围栏（不带 gen-ui 包装）：会自动显示为「预览/源码」切换的图形预览，源码可复制；无法解析时保留源码并提示。
 - mermaid: `{"type":"mermaid","code":"graph TD\\nA-->B"}` — flowchart/sequence/class/gantt/pie/er/state/journey；主题自动跟随宿主（暗/浅）
 - diagram: `{"type":"diagram","kind":"architecture","title":"<user-language title>","variant":"light|dark|editorial","nodes":[...],"edges":[...],"theme":{...}}` — **编辑级品牌图**（移植自 diagram-design 的 27 种视觉类型）。节点: `{"id":"a","label":"<user-language label>","type":"focal|backend|store|external|input|optional|security","x":40,"y":40,"w":128,"h":48,"sub":"<user-language text>","tag":"<user-language text>"}`；边: `{"from":"a","to":"b","label":"<user-language label>","kind":"solid|dashed|accent|link"}`。**规则由渲染器强制**: 正交连接器（r=8 弯折、禁止斜线）、4px 网格、语义 token（paper/ink/muted/accent）、焦点色 ≤2 个、复杂度预算（≤9 节点/≤12 边）、z-order（箭头在节点后）、边标签 6-10px 间隙。27 种 kind：architecture / it-state / flowchart / sequence / state / er / timeline / swimlane / quadrant / radar / loop / nested / tree / org-chart / layers / venn / pyramid / bar / line / gantt / scatter / high-level / process / medallion / data-flow / dp-integration / dp-security-matrix。**坐标类 kind**（architecture/it-state/high-level/process/medallion/data-flow/dp-integration）用 x/y/w/h 精确定位；**规则类 kind** 只给数据自动排版。架构/流程/层次结构优先用 diagram 而非 mermaid（自动布局用 mermaid，编辑级排版用 diagram）。
 - scene3d: `{"type":"scene3d","title":"...","meshes":[{"shape":"box|sphere|cone|cylinder|torus","color":"#hex?","size":n|[w,h,d]?,"position":[x,y,z]?,"rotation":[rx,ry,rz]?,"scale":n?|[...]?}],"ambient":0-2?,"background":"#hex?"}` — 3D WebGL，可拖拽旋转、滚轮缩放；mesh 数量 1–5 个
@@ -123,7 +123,7 @@ description: "Render structured interactive UI inline through the dsh-ui fence. 
 
 多项风险需要统一底色时，复用 `card` 包含 `list`；普通要点直接用 `list`。卡片的严重风险色是 `danger`，提示框对应的是 `error`。
 
-```json dsh-ui
+```json gen-ui
 {"items":[{"type":"card","tone":"warning","title":"<user-language risk summary>","items":[{"type":"list","items":[{"title":"<user-language item title>","desc":"<user-language description>"},{"title":"<user-language item title>","desc":"<user-language description>"},{"title":"<user-language item title>","desc":"<user-language description>"}]}]}]}
 ```
 
@@ -189,7 +189,7 @@ description: "Render structured interactive UI inline through the dsh-ui fence. 
 
 ### 1. 状态汇报（多点 + 有构图）
 
-```json dsh-ui
+```json gen-ui
 {"items":[{"type":"grid","cols":4,"items":[{"type":"stat","label":"<user-language metric>","value":"26","delta":"#123–#148"},{"type":"stat","label":"<user-language metric>","value":"0"},{"type":"stat","label":"<user-language metric>","value":"556","delta":"<user-language status>"},{"type":"stat","label":"<user-language metric>","value":"45"}]},{"type":"table","columns":["<user-language column>","<user-language column>","<user-language column>"],"types":["text","badge","text"],"rows":[["<user-language text>","<user-language status>","<user-language text>"],["<user-language text>","<user-language status>","<user-language text>"]]},{"type":"callout","tone":"info","title":"<user-language title>","content":"<user-language text>"}]}
 ```
 
@@ -197,7 +197,7 @@ description: "Render structured interactive UI inline through the dsh-ui fence. 
 
 ### 2. 解释/教学（文字为主，一个点睛组件）
 
-```json dsh-ui
+```json gen-ui
 {"items":[{"type":"text","size":"body","content":"<user-language text>"},{"type":"list","items":[{"title":"<user-language title>","desc":"<user-language description>"},{"title":"<user-language title>","desc":"<user-language description>"}]},{"type":"callout","tone":"warning","title":"<user-language title>","content":"<user-language text>"}]}
 ```
 
@@ -205,7 +205,7 @@ description: "Render structured interactive UI inline through the dsh-ui fence. 
 
 ### 3. 对比选型
 
-```json dsh-ui
+```json gen-ui
 {"items":[{"type":"table","columns":["<user-language column>","<user-language column>","<user-language column>"],"types":["text","text","badge"],"rows":[["<user-language text>","<user-language text>","<user-language status>"],["<user-language text>","<user-language text>","<user-language status>"]]},{"type":"callout","tone":"success","title":"<user-language title>","content":"<user-language text>"}]}
 ```
 
@@ -213,7 +213,7 @@ description: "Render structured interactive UI inline through the dsh-ui fence. 
 
 反例（这条会被围栏校验直接拒绝，所以别抄）：
 
-```json dsh-ui-bad
+```json gen-ui-bad
 {"items":[{"type":"chart","kind":"donut","data":[{"label":"A","value":1}],"series":[{"label":"B","data":[{"label":"B","value":2}]}]}]}
 ```
 
@@ -221,7 +221,7 @@ description: "Render structured interactive UI inline through the dsh-ui fence. 
 
 ### 4. 排查诊断（顺序即叙事）
 
-```json dsh-ui
+```json gen-ui
 {"items":[{"type":"steps","current":1,"steps":[{"title":"<user-language step>","desc":"<user-language description>"},{"title":"<user-language step>","desc":"<user-language description>"},{"title":"<user-language step>","desc":"<user-language description>"}]},{"type":"diff","diffs":[{"path":"PlotBlock.tsx","oldText":"e.preventDefault()","newText":"if (!e.metaKey && !e.ctrlKey) return"}]},{"type":"callout","tone":"info","title":"<user-language title>","content":"<user-language text>"}]}
 ```
 
@@ -229,7 +229,7 @@ description: "Render structured interactive UI inline through the dsh-ui fence. 
 
 ### 5. 数据结论（一个主图 + 明细）
 
-```json dsh-ui
+```json gen-ui
 {"items":[{"type":"chart","kind":"line","data":[],"series":[{"label":"<user-language series>","data":[{"label":"<user-language point>","value":8},{"label":"<user-language point>","value":12},{"label":"<user-language point>","value":9}]}]},{"type":"table","columns":["<user-language column>","<user-language column>","<user-language column>"],"types":["text","num","delta"],"rows":[["<user-language text>","8","-4%"],["<user-language text>","12","+50%"]]}]}
 ```
 
@@ -249,7 +249,7 @@ description: "Render structured interactive UI inline through the dsh-ui fence. 
 
 适用：用户问的数据要「先看总量 → 再筛 → 再钻某一行」。
 
-```json dsh-ui
+```json gen-ui
 {"items":[{"type":"grid","cols":2,"items":[{"type":"stat","label":"<user-language metric>","value":"<user-language value>","delta":"+3.1%"},{"type":"stat","label":"<user-language metric>","value":"<user-language value>"}]},{"type":"input","label":"<user-language filter>","placeholder":"<user-language hint>","id":"master-filter"},{"type":"table","filter":"master-filter","columns":["<user-language column>","<user-language column>","<user-language column>"],"types":["text","num","badge"],"rows":[["<user-language text>","128","<user-language status>"],["<user-language text>","190","<user-language status>"],["<user-language text>","250","<user-language status>"]],"details":[[{"type":"keyvalue","pairs":[{"key":"<user-language key>","value":"<user-language value>"}]}],null,[{"type":"progress","value":91,"target":80,"label":"<user-language metric>"}]]}]}
 ```
 
@@ -259,7 +259,7 @@ description: "Render structured interactive UI inline through the dsh-ui fence. 
 
 适用：指标 + 一个明确判断 + 可执行的下一步（周报结论、复盘、健康度检查）。
 
-```json dsh-ui
+```json gen-ui
 {"items":[{"type":"grid","cols":3,"items":[{"type":"stat","label":"<user-language metric>","value":"<user-language value>","delta":"+2.4%"},{"type":"stat","label":"<user-language metric>","value":"<user-language value>"},{"type":"stat","label":"<user-language metric>","value":"<user-language value>","delta":"-1.2%"}]},{"type":"card","tone":"success","title":"<user-language title>","items":[{"type":"text","size":"body","content":"<user-language text>"},{"type":"progress","value":72,"target":80,"label":"<user-language metric>","valueLabel":"72%"}]},{"type":"row","items":[{"type":"button","label":"<user-language action>","tone":"primary","action":"<action-name>"},{"type":"button","label":"<user-language action>","tone":"ghost","action":"<action-name>"}]}]}
 ```
 
@@ -269,7 +269,7 @@ description: "Render structured interactive UI inline through the dsh-ui fence. 
 
 适用：正式报告/复盘/评审材料的**第一屏**——一个大数字定调，一句引言点题，三张摘要卡预告正文。
 
-```json dsh-ui
+```json gen-ui
 {"items":[{"type":"hero","label":"<user-language metric>","value":"99.96%","delta":"+0.02%","tone":"accent","title":"<user-language title>","subtitle":"<user-language text>"},{"type":"text","size":"display","content":"<user-language statement>"},{"type":"divider","label":"<user-language chapter>"},{"type":"grid","cols":3,"items":[{"type":"card","title":"<user-language title>","items":[{"type":"stat","label":"<user-language metric>","value":"<user-language value>"}]},{"type":"card","title":"<user-language title>","items":[{"type":"stat","label":"<user-language metric>","value":"<user-language value>"}]},{"type":"card","title":"<user-language title>","items":[{"type":"stat","label":"<user-language metric>","value":"<user-language value>"}]}]}]}
 ```
 
@@ -279,7 +279,7 @@ description: "Render structured interactive UI inline through the dsh-ui fence. 
 
 适用：两个（至多三个）方案/版本/选型的正面对决——定性取舍进卡，定量差异进表。
 
-```json dsh-ui
+```json gen-ui
 {"items":[{"type":"grid","cols":2,"items":[{"type":"card","tone":"success","title":"<user-language option>","items":[{"type":"list","items":["<user-language text>","<user-language text>"]}]},{"type":"card","tone":"warning","title":"<user-language option>","items":[{"type":"list","items":["<user-language text>","<user-language text>"]}]}]},{"type":"table","columns":["<user-language column>","<user-language column>","<user-language column>"],"types":["text","num","num"],"rows":[["<user-language text>","8","12"],["<user-language text>","5","9"]]}]}
 ```
 
@@ -289,7 +289,7 @@ description: "Render structured interactive UI inline through the dsh-ui fence. 
 
 适用：有先后顺序的过程/事故/迭代叙事——时间线主叙事，收尾一张卡给汇总结论。
 
-```json dsh-ui
+```json gen-ui
 {"items":[{"type":"timeline","items":[{"title":"<user-language milestone>","desc":"<user-language description>","time":"<user-language date>"},{"title":"<user-language milestone>","desc":"<user-language description>","time":"<user-language date>"},{"title":"<user-language milestone>","desc":"<user-language description>","time":"<user-language date>"}]},{"type":"card","title":"<user-language title>","items":[{"type":"keyvalue","pairs":[{"key":"<user-language key>","value":"<user-language value>"},{"key":"<user-language key>","value":"<user-language value>"}]}]}]}
 ```
 
@@ -299,7 +299,7 @@ description: "Render structured interactive UI inline through the dsh-ui fence. 
 
 适用：教学/检查理解——两题以上的成组测验，radio 组带答案与解析，`submit` 聚合交卷本地判卷。
 
-```json dsh-ui
+```json gen-ui
 {"items":[{"type":"radio","label":"<user-language question>","group":"q1","options":["<user-language option>","<user-language option>","<user-language option>"],"answer":1,"explanation":"<user-language explanation>"},{"type":"radio","label":"<user-language question>","group":"q2","options":["<user-language option>","<user-language option>"],"answer":0,"explanation":"<user-language explanation>"},{"type":"submit","label":"<user-language action>","action":"grade","groups":["q1","q2"]}]}
 ```
 
@@ -311,7 +311,7 @@ description: "Render structured interactive UI inline through the dsh-ui fence. 
 2. **组合优先**：复杂界面用 `grid`+`card`+`stat`+`table` 拼，不要追求单一巨型组件
 3. **JSON 必须严格合法，发出前完成 4 步自检**：插件**只**修标点级小错（字符串内半角引号、尾随逗号）；**缺括号/错括号等结构错误一律不修**，直接红横幅退化成代码块——写错就重发，别指望兜底。**最容易犯的错：字符串值里用了半角引号 `"`**——中文引语一律写 `“”` 或 `「」`。发出围栏前自检 4 条：① 括号配对：`{` 与 `}`、`[` 与 `]` 数量相等，**收尾序列逐个核对**（长表格最易在最后几行错位：把 `]]}]}` 写成 `]}]}]}`）② 无尾随逗号 ③ 值内引号用中文引号 ④ 最后一个字符必须是 `}`（**`}` 之后不要再写任何字符**——实测常见错误是习惯性追加 `</p>` 或一句解释，整条围栏就解析不了）。不要在 JSON 字符串里放 markdown；超长表格/列表拆成多个组件分开发，宁短勿长
 3.5. **字段名逐个核对（写错一个 = 整条围栏降级为代码块）**：某个组件的必填字段写错 / 缺失 → 该组件被丢弃 → 整份 spec 判定不可渲染 → 用户只看到一段裸 JSON。高频误写：`callout` 正文是 `content`（不是 text/body）；`table` 要 `columns` + `rows`（不是 data，只给二维 rows 时首行会当表头）；`keyvalue` 要 `pairs:[{key,value}]`（不是 items）；`diff` 是 `diffs`；图片/音视频是 `src`；`code` 是 `code`、`copy` 是 `text`。拿不准就调 `validate_dsh_ui`，不要凭直觉命名
-4. **不要嵌套围栏**：dsh-ui 里不要再包 ``` 代码围栏
+4. **不要嵌套围栏**：gen-ui 里不要再包 ``` 代码围栏
 5. **深色主题友好**：配色选深底亮色；UI 主题跟随应用
 6. **场景判断**：先查上面的映射表 —— 内容类型命中就上对应组件；只有纯文字问答、一句话能说清时才不用
 7. **图表范围**：`plot` 给合理 xMin/xMax（如 -3.14 到 3.14）；3D 场景 mesh 少而精
@@ -330,4 +330,4 @@ description: "Render structured interactive UI inline through the dsh-ui fence. 
     ````
 
     同理：需要用户执行的脚本放进 `code` 节点（`lang`: `bash`/`python`）或正文围栏，并保证**从第一行到最后一行一次粘进终端就能跑**。
-11. **先验后发（复杂 UI）**：发出 ```dsh-ui 围栏前，若 spec ≥3 个组件或含 `table`（长表格最易括号错位），先调用 `validate_dsh_ui` 工具（参数 `spec` 传围栏内的 JSON 文本）验证；返回 `next=fix_and_revalidate` 就按诊断修正后重新验证；返回 `next=emit_fence` 再发出；返回 `next=emit_repaired_fence` 时直接照抄 `repaired_json` 发出，无需再次验证；简单 UI（≤2 个组件）不必验证，渲染器会自动修复大部分标点/括号错误
+11. **先验后发（复杂 UI）**：发出 ```gen-ui 围栏前，若 spec ≥3 个组件或含 `table`（长表格最易括号错位），先调用 `validate_dsh_ui` 工具（参数 `spec` 传围栏内的 JSON 文本）验证；返回 `next=fix_and_revalidate` 就按诊断修正后重新验证；返回 `next=emit_fence` 再发出；返回 `next=emit_repaired_fence` 时直接照抄 `repaired_json` 发出，无需再次验证；简单 UI（≤2 个组件）不必验证，渲染器会自动修复大部分标点/括号错误

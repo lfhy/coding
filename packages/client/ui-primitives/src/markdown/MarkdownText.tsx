@@ -45,7 +45,8 @@ function renderSettled(
     footnoteCounts: new Map(),
   }
   const blocks = wrapBlockChildren(
-    renderBlocks(root.children.map((node, index) => ({ node, key: index })), context),
+    // 与流式分片使用同一源码偏移 key，定稿不能重挂载代码表面或丢失扩展组件状态。
+    renderBlocks(root.children.map((node, index) => ({ node, key: node.position?.start.offset ?? -(index + 1) })), context),
     false,
   )
   const section = renderFootnoteSection(context)

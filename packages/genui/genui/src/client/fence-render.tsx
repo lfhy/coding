@@ -1,49 +1,37 @@
 /**
- * The dsh-ui fence render pipeline used by the DOM observer and renderer tests.
- * An unrepairable body returns `null` so the stock code block stays visible,
- * with {@link FenceDiagnostic} mounted above it (issue #158).
+ * GenUI 围栏解析与定稿诊断；旧 panel/append 字段只作历史数据兼容。
+ * 流式渲染仅使用已闭合的组件，不会将不完整 JSON 补成可交互界面。
  */
-import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type Key, type ReactNode } from 'react'
+import { useLayoutEffect, useRef, useState, type CSSProperties, type Key, type ReactNode } from 'react'
 import { CodeBlock } from 'coding-client-ui-primitives'
+import { GENUI_FENCE_LANGUAGE } from '../shared/fence-language.ts'
 import { codeBlockLabels } from './primitive-labels.ts'
 import { t, useT } from './i18n/index.ts'
 import { ErrorBoundary } from './ErrorBoundary.tsx'
 import { ExportableGenuiBlock } from './artifact/ExportableGenuiBlock.tsx'
 import { fenceStateKey } from './interaction-store.ts'
-import { applyPanelOperation, diagnosePanelBudget, type PanelOperationStatus } from './panel-store.ts'
 import type { GenuiSpec } from './spec.ts'
-import { describeJsonFailure, isCompleteJson } from '../shared/fence-repair.ts'
+import { describeJsonFailure } from '../shared/fence-repair.ts'
 import { resolveFence, resolveFenceSpec, type FenceResolution } from '../shared/fence-resolve.ts'
 
-/** Settled fence source identity (data shape, host-independent). */
+/** 完成态围栏稳定来源，用于每条消息的交互状态隔离。 */
 export interface GenuiFenceSource {
-  /** Stable structural id, e.g. `['assistant', seq, block, fence]` or `dom:<anchor>:<i>`. */
   readonly id: string
-  /** Three-part order: [messageSeq, textBlockIndex, fenceIndex]. */
   readonly order: readonly [number, number, number]
 }
 
-/** Context a fence renderer receives beside the raw source and React key. */
+/** 围栏所属的会话，以及仅在定稿后提供的稳定来源。 */
 export interface GenuiFenceContext {
-  /** Owning session route; absent outside a session-scoped render. */
   readonly sessionId?: string
-  /** Present only for settled/interrupted renders with a stable identity. */
   readonly source?: GenuiFenceSource
 }
 
 const FENCE_ERROR_STYLE: CSSProperties = {
-  margin: '0 0 6px',
-  padding: '6px 10px',
-  borderRadius: 6,
-  background: 'rgba(239, 68, 68, 0.14)',
-  border: '1px solid rgba(239, 68, 68, 0.4)',
-  color: '#f87171',
-  fontSize: 12,
-  lineHeight: 1.55,
-  whiteSpace: 'pre-wrap',
+  margin: '0 0 6px', padding: '6px 10px', borderRadius: 6,
+  background: 'var(--dsw-alias-bg-layer-1)', border: '1px solid var(--dsw-alias-state-error-primary)',
+  color: 'var(--dsw-alias-state-error-primary)', fontSize: 12, lineHeight: 1.55, whiteSpace: 'pre-wrap',
 }
 
-/** Format chart-specific process errors without maintaining a second validator. */
 const CHART_ERROR_PATTERN = new RegExp([
   'variant is unsupported',
   '|kind must be bars, line, or donut',
@@ -53,149 +41,72 @@ const CHART_ERROR_PATTERN = new RegExp([
   '|series is only supported for bars',
 ].join(''))
 
-function formatChartProcessErrors(errors: string[]): string | null {
-  const chartErrors = errors.filter(error => CHART_ERROR_PATTERN.test(error))
-  return chartErrors.length === 0 ? null : chartErrors.join('；')
-}
-
-/** Return a semantic/schema diagnostic from the unified fence resolution. */
 function processSemanticFailure(resolution: FenceResolution): string | null {
   if (resolution.spec !== null || resolution.processed === null) return null
-  const chartErrors = formatChartProcessErrors(resolution.processed.errors)
-  return chartErrors === null
+  const chartErrors = resolution.processed.errors.filter(error => CHART_ERROR_PATTERN.test(error))
+  return chartErrors.length === 0
     ? t('err.fieldValidation', { errors: resolution.processed.errors.join('；') })
-    : t('err.chartValidation', { errors: chartErrors })
+    : t('err.chartValidation', { errors: chartErrors.join('；') })
 }
 
 /**
- * Fallback for a ```dsh-ui fence whose body has no finished component yet.
- * Two very different situations land here and they must not be conflated:
- *
- * 1. **Streaming partial** — the reply is still being written and the JSON
- *    simply is not complete. The host marks the streaming message with
- *    `[data-streaming]` on the AssistantMarkdown root, which is an ancestor
- *    of every fence. While that marker is present, a plain code block is the
- *    correct rendering (partial JSON must never look like an error).
- *
- * 2. **Settled defect** — the message is finished but the body still does
- *    not parse as JSON (a malformed fence like a missing `}`) or violates the
- *    native chart contract. This used to fail silently: the fence degraded to
- *    a code block with no hint, and the author had no way to know the UI never
- *    rendered. Once the streaming marker is gone, surface a compact diagnostic
- *    so the defect is visible instead of silent.
- */
-/**
- * Explain why a ```dsh-ui body cannot render, as the one-line message both
- * channels show. Returns null when there is nothing to report (the body is
- * renderable, or it is an empty/streaming half).
- *
- * @param raw - the raw fence body.
- * @param options - whether settled-only structural repair may be used.
- * @returns the diagnostic text, or null.
+ * 提供定稿围栏不可渲染的原因；未完成的流式正文由 DOM 所有者抑制诊断。
+ * @param raw - 围栏原文。
+ * @param options - 只有定稿后才能采用结构补全。
+ * @returns 可渲染或空正文返回 null，其余为可见诊断。
  */
 export function describeFenceFailure(raw: string, options: { settled?: boolean } = {}): string | null {
   const resolution = resolveFence(raw, { settled: options.settled ?? true })
   if (resolution.spec !== null) return null
-  const processDiagnostic = processSemanticFailure(resolution)
-  if (processDiagnostic !== null) {
-    return t('err.fenceKeptAsCode', { diagnostic: processDiagnostic })
-  }
+  const semantic = processSemanticFailure(resolution)
+  if (semantic !== null) return t('err.fenceKeptAsCode', { diagnostic: semantic })
   if (raw.trim() === '') return null
   const parseDiagnostic = describeJsonFailure(raw)
-  if (parseDiagnostic === null) return null
-  return t('err.fenceParse', { diagnostic: parseDiagnostic })
+  return parseDiagnostic === null ? null : t('err.fenceParse', { diagnostic: parseDiagnostic })
 }
 
 /**
- * The visible diagnostic for a settled, unrenderable ```dsh-ui body.
- *
- * The DOM channel renders this above the host's stock code block. A
- * fence that keeps degrading to raw JSON must say why it degraded — the
- * console-only path left the defect invisible (issues #158/#172).
- *
- * @param raw - the raw fence body.
- * @returns the alert strip, or null when the body has nothing to report.
+ * 在恢复原始代码块时显示错误，避免无效围栏仅剩难以察觉的裸 JSON。
+ * @param props - 围栏原文及是否允许定稿修复。
+ * @returns 诊断提示；可渲染的正文返回 null。
  */
 export function FenceDiagnostic({ raw, settled = false }: { raw: string; settled?: boolean }): ReactNode {
-  // Subscribe so a language switch re-renders an already-visible diagnostic.
   useT()
   const message = describeFenceFailure(raw, { settled })
-  if (message === null) return null
-  return <div style={FENCE_ERROR_STYLE} role="alert">{message}</div>
+  return message === null ? null : <div style={FENCE_ERROR_STYLE} role="alert">{message}</div>
 }
 
 function FenceFallback({ raw, fenceKey }: { raw: string; fenceKey: Key }) {
-  // Subscribed for the CodeBlock copy labels below.
   useT()
   const ref = useRef<HTMLDivElement | null>(null)
   const [settled, setSettled] = useState(false)
   useLayoutEffect(() => {
-    const node = ref.current
-    if (node !== null && node.closest('[data-streaming]') === null) setSettled(true)
+    if (ref.current !== null && ref.current.closest('[data-streaming]') === null) setSettled(true)
   })
-  const diagnostic = settled ? <FenceDiagnostic raw={raw} /> : null
   return (
     <div ref={ref}>
-      {diagnostic}
-      <CodeBlock key={fenceKey} {...codeBlockLabels()} code={`${raw}\n`} lang="dsh-ui" />
+      {settled && <FenceDiagnostic raw={raw} />}
+      <CodeBlock key={fenceKey} {...codeBlockLabels()} code={`${raw}\n`} lang={GENUI_FENCE_LANGUAGE} />
     </div>
   )
 }
 
 /**
- * Keyed publisher for a settled `panel:true` fence: submits ONE panel
- * operation from the host-provided stable source (id + order), in an
- * effect — never inside the render function. StrictMode's duplicate effects
- * are absorbed by the operation map's per-source dedup, so the panel folds
- * and notifies exactly once per source. Renders nothing.
- */
-function FencePanelPublisher({ sessionId, sourceId, order, spec }: {
-  sessionId: string
-  sourceId: string
-  order: readonly [number, number, number]
-  spec: GenuiSpec
-}) {
-  useEffect(() => {
-    const status: PanelOperationStatus = applyPanelOperation(sessionId, {
-      sourceId,
-      order,
-      mode: spec.append === true ? 'append' : 'replace',
-      spec,
-    })
-    if (status === 'overflow') diagnosePanelBudget(sessionId, sourceId)
-  }, [sessionId, sourceId, order, spec])
-  return null
-}
-
-/**
- * Resolve a raw fence body to a guarded spec.
- *
- * - Tier-1 repair (quote escape + trailing commas): safe at any time —
- *   adopted only when the whole body parses, so a still-growing streaming
- *   half keeps falling back to the code block, never flashing a banner.
- * - Tier-2 completion (missing quotes/brackets): settled renders only —
- *   `context.source` exists exclusively once the message finished, so
- *   streaming halves are never completed early.
- * - Native chart semantics are checked before repair on every candidate so
- *   aliases, empty collections, or line/donut series cannot repair into a
- *   default/blank chart.
+ * 在流式阶段只解析已完成的组件；完整结构的补全仅允许在定稿后进行。
+ * @param raw - 围栏正文。
+ * @param context - 会话归属与可选的定稿来源。
+ * @returns 通过校验的规格，否则返回 null。
  */
 export function resolveGenuiSpec(raw: string, context?: GenuiFenceContext): GenuiSpec | null {
   return resolveFenceSpec(raw, { settled: context?.source !== undefined })
 }
 
-/** The inline GenuiBlock tree for a resolved non-panel spec. */
 function renderInlineFence(key: Key, context: GenuiFenceContext | undefined, spec: GenuiSpec): ReactNode {
   const sessionId = context?.sessionId
   const stateKey = sessionId === undefined || context?.source === undefined
     ? undefined
     : fenceStateKey(sessionId, context.source.id, JSON.stringify(spec))
   return (
-    // Keep the document slot mounted across streaming→settled; GenuiBlock
-    // owns durable-state changes, while a session change resets the tree.
-    // Repaired specs render SILENTLY: once the UI renders, no amber note
-    // tells the user something was wrong — only an unrecoverable body keeps
-    // the red diagnostic.
     <ErrorBoundary key={JSON.stringify([sessionId, key])} label={t('err.boundary.fence')}>
       <ExportableGenuiBlock
         spec={spec}
@@ -208,57 +119,24 @@ function renderInlineFence(key: Key, context: GenuiFenceContext | undefined, spe
 }
 
 /**
- * The resolved fence render for the DOM channel: `null` when the body is
- * unrepairable (the stock code block stays visible), otherwise the panel
- * publisher (`panel:true`; renders nothing in the flow — mounted as an empty
- * root so the taken-over block is hidden) or the inline GenuiBlock tree.
- * Shared verbatim by both channels.
+ * DOM 接管成功时提供内联界面；任何 panel/append 历史字段均不再产生面板副作用。
+ * @param raw - 围栏原文。
+ * @param key - 稳定 DOM 身份。
+ * @param context - 所属会话及定稿来源。
+ * @returns 完整组件或 null（由 DOM 通道显示加载态/恢复原文）。
  */
 export function renderResolvedFenceNode(raw: string, key: Key, context?: GenuiFenceContext): ReactNode | null {
   const spec = resolveGenuiSpec(raw, context)
-  if (spec === null) return null
-  if (spec.panel === true) {
-    // Publish only with a settled stable source — streaming/identity-less
-    // renders keep the panel untouched. Appends additionally gate on a
-    // complete body (a settled-but-malformed append never merges partial
-    // content).
-    if (context !== undefined && context.sessionId !== undefined && context.source !== undefined) {
-      if (spec.append === true && !isCompleteJson(raw)) return <Fragment key={key} />
-      return (
-        <FencePanelPublisher
-          key={key}
-          sessionId={context.sessionId}
-          sourceId={context.source.id}
-          order={context.source.order}
-          spec={spec}
-        />
-      )
-    }
-    return <Fragment key={key} />
-  }
-  return renderInlineFence(key, context, spec)
+  return spec === null ? null : renderInlineFence(key, context, spec)
 }
 
 /**
- * Render a complete fence body for renderer-level tests.
+ * 组件级渲染入口；解析失败时保留可复制的原始代码块。
+ * @param raw - 围栏原文。
+ * @param key - 稳定渲染身份。
+ * @param context - 所属会话及定稿来源。
+ * @returns 内联界面或源码降级块。
  */
 export function renderGenuiFence(raw: string, key: Key, context?: GenuiFenceContext): ReactNode {
-  const spec = resolveGenuiSpec(raw, context)
-  if (spec === null) return <FenceFallback key={key} fenceKey={key} raw={raw} />
-  if (spec.panel === true) {
-    if (context !== undefined && context.sessionId !== undefined && context.source !== undefined) {
-      if (spec.append === true && !isCompleteJson(raw)) return null
-      return (
-        <FencePanelPublisher
-          key={key}
-          sessionId={context.sessionId}
-          sourceId={context.source.id}
-          order={context.source.order}
-          spec={spec}
-        />
-      )
-    }
-    return null
-  }
-  return renderInlineFence(key, context, spec)
+  return renderResolvedFenceNode(raw, key, context) ?? <FenceFallback key={key} fenceKey={key} raw={raw} />
 }

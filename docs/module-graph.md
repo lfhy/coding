@@ -227,6 +227,9 @@ flowchart TD
     pkg_command_feedback["command-feedback"]
     pkg_message_feedback["message-feedback"]
   end
+  subgraph group_genui["packages/genui"]
+    pkg_genui["genui"]
+  end
   subgraph group_guard["packages/guard"]
     pkg_progress_reminder["progress-reminder"]
     pkg_repeat_tool_reminder["repeat-tool-reminder"]
@@ -1601,6 +1604,19 @@ flowchart TD
   pkg_client_ui_cordis --> pkg_invariants
   pkg_client_ui_directory_picker_browse --> pkg_client_locale
   pkg_client_ui_directory_picker_browse --> pkg_client_runtime
+  pkg_genui --> pkg_agent
+  pkg_genui --> pkg_client_locale
+  pkg_genui --> pkg_client_runtime
+  pkg_genui --> pkg_client_ui_conversation
+  pkg_genui --> pkg_client_ui_primitives
+  pkg_genui --> pkg_client_ui_tool
+  pkg_genui --> pkg_host_webserver
+  pkg_genui --> pkg_invariants
+  pkg_genui --> pkg_llm
+  pkg_genui --> pkg_session
+  pkg_genui --> pkg_skill
+  pkg_genui --> pkg_system_prompt
+  pkg_genui --> pkg_tools
   pkg_client_ui_directory_picker_browse --> pkg_client_ui_workspace
   pkg_client_ui_directory_picker_browse --> pkg_invariants
   pkg_client_ui_directory_picker_native --> pkg_client_runtime
@@ -1865,4 +1881,5 @@ flowchart TD
 | [`client-ui-cordis`](../packages/extensions/ui-cordis) | `extensions` | [`api-remotes`](../packages/api/remotes), [`client-connection`](../packages/client/connection), [`client-locale`](../packages/client/locale), [`client-runtime`](../packages/client/runtime), [`client-ui-input-trigger`](../packages/client/ui-input-trigger), [`client-ui-sidebar`](../packages/client/ui-sidebar), [`client-ui-tool`](../packages/client/ui-tool), [`cordis-client-runner`](../packages/extensions/cordis-client-runner), [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`client-ui-directory-picker-browse`](../packages/client/ui-directory-picker-browse) | `client` | [`client-locale`](../packages/client/locale), [`client-runtime`](../packages/client/runtime), [`client-ui-workspace`](../packages/client/ui-workspace), [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`client-ui-directory-picker-native`](../packages/client/ui-directory-picker-native) | `client` | [`client-runtime`](../packages/client/runtime), [`client-ui-workspace`](../packages/client/ui-workspace), [`invariants`](../packages/runtime-diagnostics/invariants) |
+| [`genui`](../packages/genui/genui) | `genui` | [`agent`](../packages/core/agent), [`client-locale`](../packages/client/locale), [`client-runtime`](../packages/client/runtime), [`client-ui-conversation`](../packages/client/ui-conversation), [`client-ui-primitives`](../packages/client/ui-primitives), [`client-ui-tool`](../packages/client/ui-tool), [`host-webserver`](../packages/host/webserver), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`skill`](../packages/skill/skill), [`system-prompt`](../packages/core/system-prompt), [`tools`](../packages/core/tools) |
 | [`host-directory-picker-auto`](../packages/host/directory-picker-auto) | `host` | [`client-ui-directory-picker-browse`](../packages/client/ui-directory-picker-browse), [`client-ui-directory-picker-native`](../packages/client/ui-directory-picker-native), [`host-directory-picker-browse`](../packages/host/directory-picker-browse), [`host-directory-picker-native`](../packages/host/directory-picker-native), [`host-webserver`](../packages/host/webserver), [`invariants`](../packages/runtime-diagnostics/invariants) |

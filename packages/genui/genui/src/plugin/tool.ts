@@ -1,7 +1,7 @@
 /**
  * The `render_ui` tool: a model-facing channel that renders a GenUI spec as
  * an interactive card in the conversation TOOL ROW (route A of the design
- * doc). The ```dsh-ui fence channel renders inline in the reply; this tool
+ * doc). The ```gen-ui fence channel renders inline in the reply; this tool
  * renders in the tool row and rides the harness's result `meta` projection:
  * `presentationMeta` stores the repaired spec, the browser toolview
  * (`src/client/toolview.tsx`) reads it from the result node and renders.
@@ -49,7 +49,7 @@ const RENDER_UI_PARAMETERS: Record<string, unknown> = {
       type: 'object',
       description: [
         'Render structured UI for the user (tool-row card). USE THIS whenever the answer contains ≥3 parallel points, a comparison, numbers/metrics, a step sequence, a flow, or a status/report — do NOT write those as markdown bullets or a markdown table.',
-        'Same white-listed vocabulary as the ```dsh-ui fence (see the GenUI system-prompt section). Pick the fence when the UI belongs in the message body; pick this tool when the deliverable is a self-contained card.',
+        'Same white-listed vocabulary as the ```gen-ui fence (see the GenUI system-prompt section). Pick the fence when the UI belongs in the message body; pick this tool when the deliverable is a self-contained card.',
         'Deep-validated and repaired by the renderer. Pass the spec as a JSON OBJECT — never as a serialized JSON string (a string fails argument validation).',
       ].join(' '),
       // Structural hints for the tool-call bridge. A bare `object` here was
@@ -62,7 +62,6 @@ const RENDER_UI_PARAMETERS: Record<string, unknown> = {
       properties: {
         title: { type: 'string', description: 'Short title shown as the card banner.' },
         gap: { type: 'number', description: 'Vertical gap between root items in px.' },
-        panel: { type: 'boolean', description: 'Panel-only: renders into the session panel dock instead of the message flow.' },
         items: {
           type: 'array',
           description: 'Root component list (white-listed vocabulary).',
@@ -222,7 +221,7 @@ export function createRenderUiTool(): ToolDefinition {
   return {
     name: 'render_ui',
     description:
-      'Render an interactive UI card in the conversation tool row by passing a GenUI spec (a white-listed component tree; the same vocabulary as the ```dsh-ui fence, see the system prompt). '
+      'Render an interactive UI card in the conversation tool row by passing a GenUI spec (a white-listed component tree; the same vocabulary as the ```gen-ui fence, see the system prompt). '
       + 'Use it when the user asks for a structured panel, dashboard, or form that belongs in the tool row rather than inline in the reply. '
       + 'The card is interactive client-side (tabs, buttons, inputs, switches); components carrying an "action" field send [genui-action] back to you when the user interacts, and you should re-render the updated UI.',
     parameters: RENDER_UI_PARAMETERS,
@@ -273,7 +272,7 @@ export function createRenderUiTool(): ToolDefinition {
 
 /**
  * The `validate_dsh_ui` tool: a model-facing pre-flight check for the
- * ```dsh-ui fence channel. The model calls it with the JSON text it is about
+ * ```gen-ui fence channel. The model calls it with the JSON text it is about
  * to put inside a fence; it reports whether the body parses as a valid GenUI
  * spec, and when it does not, WHERE it breaks and WHAT is likely wrong
  * (bracket counts, common typo classes) so the model can fix and re-validate
@@ -281,7 +280,7 @@ export function createRenderUiTool(): ToolDefinition {
  * "verify before you send". Purely local: no LLM, no network, no DOM.
  */
 const VALIDATE_DESCRIPTION =
-  'Validate the JSON body of a ```dsh-ui fence BEFORE emitting it — use for non-trivial specs (≥3 nodes or containing a table); skip for trivial ones (≤2 nodes). '
+  'Validate the JSON body of a ```gen-ui fence BEFORE emitting it — use for non-trivial specs (≥3 nodes or containing a table); skip for trivial ones (≤2 nodes). '
   + 'Pass the exact JSON text you are about to put inside the fence as the "spec" argument (a string). '
   + 'Returns a [genui-validation] protocol block with status, diagnostics, next action, and reply_language=conversation. '
   + 'When invalid JSON is repairable, repaired_json contains the fixed body; emit it only with next=emit_repaired_fence. '
@@ -296,7 +295,7 @@ const VALIDATE_PARAMETERS: Record<string, unknown> = {
         { type: 'string', description: 'The exact JSON text of the fence body.' },
         { type: 'object', description: 'The spec object (serialized before validation).' },
       ],
-      description: 'The dsh-ui fence body to validate: pass the JSON as a string for an exact check, or as the spec object.',
+      description: 'The gen-ui fence body to validate: pass the JSON as a string for an exact check, or as the spec object.',
     },
   },
   required: ['spec'],
@@ -445,10 +444,10 @@ export function createValidateDshUiTool(): ToolDefinition {
       ])
     },
     presentCall(): GenericCallView | undefined {
-      return { card: 'generic', title: '验证 dsh-ui 围栏', kind: 'other' }
+      return { card: 'generic', title: '验证 gen-ui 围栏', kind: 'other' }
     },
     presentResult(): GenericResultView | undefined {
-      return { card: 'generic', title: '验证 dsh-ui 围栏' }
+      return { card: 'generic', title: '验证 gen-ui 围栏' }
     },
   }
 }

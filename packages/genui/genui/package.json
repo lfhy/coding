@@ -1,6 +1,6 @@
 {
   "name": "coding-genui",
-  "description": "Generative UI for assistant replies: the ```dsh-ui fence language, the render_ui/validate_dsh_ui tools, the browser renderer with lazy chart engines, and the session panel dock",
+  "description": "Generative UI for assistant replies: the ```gen-ui fence language with legacy dsh-ui compatibility, render_ui/validate_dsh_ui tools, and browser tool-row rendering",
   "version": "0.1.0-rc.8",
   "private": true,
   "publishConfig": {
@@ -45,7 +45,6 @@
         "coding-client-locale",
         "coding-client-runtime",
         "coding-client-ui-conversation",
-        "coding-client-ui-input-trigger",
         "coding-client-ui-tool"
       ],
       "platform": "web"
@@ -65,7 +64,6 @@
     "coding-client-locale": "workspace:^",
     "coding-client-runtime": "workspace:^",
     "coding-client-ui-conversation": "workspace:^",
-    "coding-client-ui-input-trigger": "workspace:^",
     "coding-client-ui-primitives": "workspace:^",
     "coding-client-ui-tool": "workspace:^",
     "coding-host-webserver": "workspace:^",
@@ -86,7 +84,6 @@
     "coding-client-locale": "workspace:^",
     "coding-client-runtime": "workspace:^",
     "coding-client-ui-conversation": "workspace:^",
-    "coding-client-ui-input-trigger": "workspace:^",
     "coding-client-ui-primitives": "workspace:^",
     "coding-client-ui-tool": "workspace:^",
     "coding-host-webserver": "workspace:^",

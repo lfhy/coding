@@ -15,7 +15,7 @@ type RoutedChatNodeOwner = {
   [Kind in ChatNode['kind']]: ChatNodeOwnerProps & { readonly node: ChatNode<Kind> }
 }[ChatNode['kind']]
 
-/** Subscribe and dispatch one stable Context key without observing sibling Nodes. */
+/** 按稳定 Context key 订阅和派发单行业务节点；DOM key 供扩展按同一身份读取源码。 */
 export const ChatNodeSeat = memo(function ChatNodeSeat({
   nodeKey, selectedCallId, cwd, openFile, loadImage, openBrowserUrl, inspectCall, forkAt,
   renderMessageImages, fileMentions, useSession, renderSlot, t,
@@ -38,9 +38,8 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
     node, selectedCallId, cwd, openFile, loadImage, openBrowserUrl, inspectCall, forkAt, renderMessageImages, fileMentions,
   ])
   if (routedNode === undefined || owner === null) return null
-  // Runtime dispatch owns the correlation: every Node's discriminant is the
-  // keyed-slot entry passed alongside that same Node. TypeScript does not
-  // distribute an object containing a union into a union of objects itself.
+  // keyed slot 与节点判别字段使用同一份运行时身份；TypeScript 不会自动把
+  // 含联合字段的对象分配为相关的对象联合，因此只在分派点收窄。
   const routedOwner = { ...owner, node: routedNode } as RoutedChatNodeOwner
   return (
     <div
@@ -48,6 +47,7 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
       data-chat-anchor-key={routedNode.key}
       data-chat-flow-key={routedNode.key}
       data-chat-flow-kind={routedNode.kind}
+      data-chat-node-key={nodeKey}
     >
       {renderSlot('conversation.chat.node', routedOwner, {
         entryKey: routedNode.kind,

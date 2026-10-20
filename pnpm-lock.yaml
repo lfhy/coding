@@ -5307,9 +5307,6 @@ importers:
       coding-client-ui-conversation:
         specifier: workspace:^
         version: link:../../client/ui-conversation
-      coding-client-ui-input-trigger:
-        specifier: workspace:^
-        version: link:../../client/ui-input-trigger
       coding-client-ui-primitives:
         specifier: workspace:^
         version: link:../../client/ui-primitives

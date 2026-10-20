@@ -1,5 +1,5 @@
 /**
- * GenUI 宿主半：向系统提示词登记 ```dsh-ui 围栏语言说明、注册
+ * GenUI 宿主半：向系统提示词登记 ```gen-ui 围栏语言说明、注册
  * render_ui／validate_dsh_ui 模型工具、以 bundled provider 注册 genui 技能，
  * 并在 webserver 上挂懒引擎资产路由（mermaid／three／echarts 按需下发）。
  * 浏览器半（`src/client`）负责围栏渲染；没有浏览器半时围栏只是普通代码块。
@@ -77,14 +77,14 @@ async function serveGenuiAsset(req: IncomingMessage, res: ServerResponse): Promi
   }
 }
 
-const RENDER_UI_TOOL_GUIDANCE = '- Tool channel: render_ui 工具把同一 spec 渲染为工具行卡片；围栏用于回答内联 UI。'
+const RENDER_UI_TOOL_GUIDANCE = '- Tool channel: render_ui 工具把同一 spec 渲染为工具行卡片；gen-ui 围栏用于回答内联 UI。'
 
 /** 注入每个组装后系统提示词的围栏语言说明。
  *  刻意保持精简：`genui` 技能携带完整组件→字段映射；本段只保留必须
  *  常驻的契约（围栏语法、类型白名单与关键行为规则）。 */
-export const GENUI_SECTION_TEXT = `You can render interactive UI components INSIDE your reply — between paragraphs — by emitting a fenced block with the language tag \`dsh-ui\` containing a JSON spec:
+export const GENUI_SECTION_TEXT = `You can render interactive UI components INSIDE your reply — between paragraphs — by emitting a fenced block with the language tag \`gen-ui\` containing a JSON spec:
 
-\`\`\`dsh-ui
+\`\`\`gen-ui
 {"title":"<user-language text>","gap":14,"items":[...]}
 \`\`\`
 
@@ -120,8 +120,7 @@ Rules:
 - 卷子模式: 每题一个 radio（group+answer+explanation）+ 一个 submit（groups 全列），本地判分。
 - Secrets ban: 不索取密码、API Key、Token、恢复码；需要时拒绝并解释。
 ${RENDER_UI_TOOL_GUIDANCE}
-- 围栏位置：\`dsh-ui\` 只写在**回答正文**；写在 reasoning/思考块里不渲染、用户看不到——思考里验证好 spec，正文再输出同一份。
-- Panel: "panel":true 只渲染进会话面板 dock 并原地更新；"append":true 追加合并；上限 200 节点/200 次追加，满了发 replace 重建。面板来的 [genui-action] 只回一个 panel:true 围栏 + 至多一行 10 字内确认。`
+- 围栏位置：\`gen-ui\` 只写在**回答正文**；写在 reasoning/思考块里不渲染、用户看不到——思考里验证好 spec，正文再输出同一份。`
 
 /** 围栏语言段在系统提示词中的落位：工具段（order 150）之前、code-only 折叠规则（99）之后。 */
 const GENUI_SECTION_ORDER = 120
@@ -129,7 +128,7 @@ const GENUI_SECTION_ORDER = 120
 /** 注册 bundled genui 技能；宿主半启动时同步读取 SKILL.md。 */
 const BUNDLED_SKILL_RANK = 600
 const BUNDLED_SKILL_PROVIDER = 'coding-genui'
-const BUNDLED_SKILL_DESCRIPTION = 'GenUI dsh-ui component/schema reference. Preserve conversation language for all user-visible text.'
+const BUNDLED_SKILL_DESCRIPTION = 'GenUI gen-ui component/schema reference. Preserve conversation language for all user-visible text.'
 const BUNDLED_SKILL_INVOCATION = { modelInvocable: true, userInvocable: true } as const
 
 /** 经 provider 路径注册，使 source=bundled 的技能获得 bundled 优先级。 */
@@ -172,7 +171,7 @@ function bundledSkillProvider(): SkillProvider {
  */
 export interface GenuiPluginConfig {
   /**
-   * 在最终 dsh-ui 围栏无法渲染的回合中请求模型发送一次修正版。
+   * 在最终 gen-ui 围栏无法渲染的回合中请求模型发送一次修正版。
    * 默认开启，设置为 false 可以关闭同回合围栏修正。GenUI 回合的
    * reasoning-only 响应仍会交给宿主重试策略处理。每回合和每个围栏正文
    * 最多请求一次，子代理不触发，每次修正请求会消耗模型步数。
@@ -181,7 +180,7 @@ export interface GenuiPluginConfig {
 
   /**
    * 是否注册 render_ui 模型工具。默认开启，设置为 false 时关闭；
-   * 不影响 validate_dsh_ui 和 dsh-ui 围栏渲染。
+   * 不影响 validate_dsh_ui 和 gen-ui 围栏渲染。
    */
   renderUiTool?: boolean
 }
