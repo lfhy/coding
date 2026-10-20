@@ -8,6 +8,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { createUserMessage, BlockAssembler, deepFreeze } from 'coding-llm'
 import type { FinishReason, GenerateOptions, Message } from 'coding-llm'
+import { installSettingsSection, settingsNamespace } from 'coding-settings'
 import { deadline, MAX_TIMER_DELAY_MS } from 'coding-timeout'
 import {
   normalizeSessionTitle,
@@ -47,6 +48,58 @@ declare module 'coding-session/types' {
 /** Capability-owned timeout reason code for auxiliary title requests. */
 export const SESSION_TITLE_TIMEOUT_CODE = 'SESSION_TITLE_TIMEOUT'
 
+/**
+ * 会话标题生成模型的三种模式。
+ *
+ * - `inherit`：沿用会话已记录的主请求路由，标题与对话消耗同一个模型。
+ * - `custom`：使用设置里单独指定的标题模型，标题请求不再等待对话请求。
+ * - `off`：不发起任何模型标题请求，只保留本地确定性回退标题。
+ */
+export type SessionTitleModelMode = 'inherit' | 'custom' | 'off'
+
+/**
+ * 设置分节 `session-title` 的取值：模式决定路由来源，`custom` 才读路由字段。
+ */
+export interface SessionTitleModelSettings {
+  /** 标题模型模式。 */
+  readonly mode: SessionTitleModelMode
+  /** 自定义模式的提供方路由；其他模式下被忽略。 */
+  readonly provider?: string
+  /** 自定义模式的模型 id；其他模式下被忽略。 */
+  readonly model?: string
+}
+
+/** 标题模型设置所在的用户设置命名空间。 */
+export const SESSION_TITLE_MODEL_SETTINGS_NAMESPACE = settingsNamespace('session-title')
+
+/** 标题模型设置的 schema：模式有默认值，路由字段可同时缺席。 */
+export const SessionTitleModelSettingsSchema: z<SessionTitleModelSettings> = z.object({
+  mode: z.union(['inherit', 'custom', 'off'] as const).default('inherit'),
+  provider: z.string(),
+  model: z.string(),
+})
+
+/**
+ * 校验标题模型设置的跨字段约束：路由字段必须成对且非空，自定义模式必须带路由。
+ * @param settings - 合并后的设置取值。
+ * @throws {Error} 当路由不成对、为空或自定义模式缺少路由时。
+ */
+function validateTitleModelSettings(settings: SessionTitleModelSettings): void {
+  const provider = settings.provider
+  const model = settings.model
+  if ((provider === undefined) !== (model === undefined)) {
+    throw new Error('session-title: provider and model must be set together')
+  }
+  for (const [name, value] of [['provider', provider], ['model', model]] as const) {
+    if (value !== undefined && (value.length === 0 || value.trim() !== value)) {
+      throw new Error(`session-title: ${name} must be a non-empty identifier without surrounding spaces`)
+    }
+  }
+  if (settings.mode === 'custom' && provider === undefined) {
+    throw new Error('session-title: the custom title model requires provider and model')
+  }
+}
+
 /** Required deployment policy for one model-backed title plugin. */
 export interface SessionTitleLlmConfig {
   /** Target word count for non-CJK titles. */
@@ -59,6 +112,8 @@ export interface SessionTitleLlmConfig {
   readonly maxOutputTokens: number
   /** End-to-end auxiliary request deadline in milliseconds. */
   readonly timeoutMs: number
+  /** Title model mode; absent means the deployment default derived from the route pair. */
+  readonly mode?: SessionTitleModelMode
   /** Optional explicit provider route; must be paired with `model`. */
   readonly provider?: string
   /** Optional explicit model id; must be paired with `provider`. */
@@ -75,6 +130,7 @@ export const SessionTitleLlmConfigFields = {
   maxInputBytes: z.number().step(1).min(1).required(),
   maxOutputTokens: z.number().step(1).min(1).required(),
   timeoutMs: z.number().step(1).min(1).max(MAX_TIMER_DELAY_MS).required(),
+  mode: z.union(['inherit', 'custom', 'off'] as const),
   provider: z.string(),
   model: z.string(),
 }
@@ -89,6 +145,7 @@ const CONFIG_KEYS: ReadonlySet<string> = new Set([
   'maxInputBytes',
   'maxOutputTokens',
   'timeoutMs',
+  'mode',
   'provider',
   'model',
 ])
@@ -103,7 +160,7 @@ function assertPositiveInteger(name: string, value: number): void {
 /**
  * Validate and detach required model-provider configuration.
  * @param config - untrusted plugin configuration.
- * @returns immutable policy with optional route absence preserved.
+ * @returns immutable policy with the optional route pair preserved.
  */
 export function resolveSessionTitleLlmConfig(
   config: SessionTitleLlmConfig,
@@ -124,6 +181,11 @@ export function resolveSessionTitleLlmConfig(
   if (value.timeoutMs > MAX_TIMER_DELAY_MS) {
     throw new Error(`session-title-llm: timeoutMs must not exceed ${MAX_TIMER_DELAY_MS}`)
   }
+  // 组合层配置来自 Loader 之外的调用方，模式值按运行时事实校验。
+  const mode: unknown = value.mode
+  if (mode !== undefined && mode !== 'inherit' && mode !== 'custom' && mode !== 'off') {
+    throw new Error('session-title-llm: mode must be "inherit", "custom", or "off"')
+  }
   const hasProvider = value.provider !== undefined
   const hasModel = value.model !== undefined
   if (hasProvider !== hasModel) {
@@ -134,7 +196,21 @@ export function resolveSessionTitleLlmConfig(
       || typeof value.model !== 'string' || value.model.length === 0)) {
     throw new Error('session-title-llm: provider and model overrides must be non-empty strings')
   }
+  if (value.mode === 'custom' && !hasProvider) {
+    throw new Error('session-title-llm: the custom title model requires provider and model')
+  }
   return deepFreeze({ ...value })
+}
+
+/**
+ * 组合层给出的标题模型模式：显式模式优先，否则成对路由视为自定义模式，
+ * 其余继承主模型。部署因此可以在 Loader 里钉住一个标题模型。
+ * @param config - 已校验的组合层配置。
+ * @returns 组合层标题模型模式。
+ */
+function compositionMode(config: ResolvedSessionTitleLlmConfig): SessionTitleModelMode {
+  if (config.mode !== undefined) return config.mode
+  return config.provider !== undefined ? 'custom' : 'inherit'
 }
 
 /** Select the provider-owned message subset from one fixed service revision. */
@@ -159,27 +235,34 @@ export function registerSessionTitleLlmProvider(
 ): void {
   const resolved = resolveSessionTitleLlmConfig(config)
   const titleProvider = SessionTitleProviderId(id)
+  // 组合层是用户设置分节的基底：部署可以钉住标题模型，用户设置再逐字段覆盖它。
+  const base: SessionTitleModelSettings = {
+    mode: compositionMode(resolved),
+    ...resolved.provider === undefined ? {} : { provider: resolved.provider },
+    ...resolved.model === undefined ? {} : { model: resolved.model },
+  }
+  let source: () => SessionTitleModelSettings = () => base
   ctx.sessionTitle.register({
     id: titleProvider,
     automatic,
+    // 关闭模式下不安排任何模型标题请求；确定性回退标题不受影响。
+    enabled: () => source().mode !== 'off',
+    // 自定义模式自带路由，因此不必等会话记录主请求路由。
+    ownRoute: () => {
+      const { mode, provider, model } = source()
+      if (mode !== 'custom') return undefined
+      return provider === undefined || model === undefined ? undefined : { provider, model }
+    },
     async generate(request) {
       return generateSessionTitleWithLlm(ctx, resolved, request, selectMessages(request.messages), titleProvider)
     },
   })
-}
-
-/** Resolve the explicit pair or the exact route captured from `request/header`. */
-function resolveRoute(
-  config: ResolvedSessionTitleLlmConfig,
-  request: SessionTitleProviderRequest,
-): SessionTitleModelProvenance {
-  if (config.provider !== undefined && config.model !== undefined) {
-    return { provider: config.provider, model: config.model }
-  }
-  if (request.route === undefined) {
-    throw new Error('session-title-llm: no logged request route is available; configure provider and model together')
-  }
-  return request.route
+  installSettingsSection(ctx, SESSION_TITLE_MODEL_SETTINGS_NAMESPACE, SessionTitleModelSettingsSchema, base, {
+    validate: validateTitleModelSettings,
+    setSource: (current) => { source = current },
+    // 每次排期与生成都读取当前设置，无需重建任何注册级事实。
+    onChange: () => {},
+  })
 }
 
 /** Stable language-aware system instruction shared by both provider plugins. */
@@ -242,7 +325,11 @@ export async function generateSessionTitleWithLlm(
   if (inputBytes > config.maxInputBytes) {
     throw new Error(`session-title-llm: input is ${inputBytes} bytes, exceeding maxInputBytes ${config.maxInputBytes}`)
   }
-  const route = resolveRoute(config, request)
+  // 路由由服务解析后随请求给出：自定义标题模型，或会话已记录的主请求路由。
+  const route = request.route
+  if (route === undefined) {
+    throw new Error('session-title-llm: no model route is available for this title revision')
+  }
   const messages: Message[] = [createUserMessage({
     content: [{ type: 'text', text: framedInput }],
     source: { kind: 'plugin', plugin: 'dsh-session-title-llm' },

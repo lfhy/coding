@@ -128,7 +128,10 @@ export interface SessionTitleProviderRequest {
   readonly session: Session
   /** All eligible human messages through this generation revision. */
   readonly messages: readonly SessionTitleUserMessage[]
-  /** Exact current logged main-request route, when one has been recorded. */
+  /**
+   * Exact model route used by this revision: the provider's own route when it
+   * names one, otherwise the session's latest logged main-request route.
+   */
   readonly route?: SessionTitleModelProvenance
   /** Cancellation for supersession, disposal, timeout composition, or the explicit caller. */
   readonly signal: AbortSignal
@@ -150,6 +153,24 @@ export interface SessionTitleProvider {
   readonly id: SessionTitleProviderId
   /** When new human prompts start automatic generation. */
   readonly automatic: SessionTitleAutomaticMode
+  /**
+   * Whether this provider currently generates model titles at all. A user
+   * switch that turns title generation off is answered here, so the service
+   * schedules no revision and issues no model request. The provider owns the
+   * switch; the service only asks before every scheduling decision.
+   * @returns false when title generation is switched off; true otherwise.
+   */
+  readonly enabled?: () => boolean
+  /**
+   * The model route this provider names for itself — typically the title
+   * model the user selected separately from the conversation model. A
+   * provider without one inherits the session's logged main-request route.
+   * The service asks before scheduling, so a settings change takes effect on
+   * the next title revision, and a self-routed provider does not have to wait
+   * for the conversation's first request header.
+   * @returns the provider's own route, or undefined when it inherits one.
+   */
+  readonly ownRoute?: () => SessionTitleModelProvenance | undefined
   /**
    * Produce one title revision.
    * @param request - message snapshot, current route, session, and cancellation.
@@ -398,6 +419,12 @@ export class SessionTitleService extends Service {
     const registration = this.registration
     const messages = collectSessionTitleMessages(session.events)
     const latest = messages.at(-1)
+    if (registration !== undefined && registration.provider.enabled?.() === false) {
+      // 标题生成已关闭：显式刷新只回落到确定性回退标题，不解除用户钉住的标题。
+      const fallback = await this.ensureFallback(session)
+      signal?.throwIfAborted()
+      return fallback
+    }
     if (registration === undefined || registration.closing || latest === undefined) {
       // Explicit refresh is the unpin even without a provider: a standing
       // user title must not short-circuit ensureFallback into a no-op, so
@@ -421,7 +448,8 @@ export class SessionTitleService extends Service {
       throughSeq: latest.seq,
     }, state, signal)
     const config = session.requestHeader()?.config
-    const route = config === undefined ? undefined : { provider: config.provider, model: config.model }
+    const own = registration.provider.ownRoute?.()
+    const route = own ?? (config === undefined ? undefined : { provider: config.provider, model: config.model })
     return this.startProvider(session, work, route)
   }
 
@@ -465,14 +493,21 @@ export class SessionTitleService extends Service {
     // A user rename pins the title: no automatic revision may override it.
     if (this.get(session)?.source.kind === 'user') return
     const registration = this.registration
-    if (registration !== undefined && !registration.closing) {
+    if (registration !== undefined
+      && !registration.closing
+      && registration.provider.enabled?.() !== false) {
       const messages = collectSessionTitleMessages(session.events, event.seq)
       const shouldSchedule = registration.provider.automatic === 'all-prompts'
         || (session.header.parentSession === undefined && messages.length === 1 && this.get(session) === undefined)
       if (shouldSchedule) {
         const state = this.stateFor(session)
         const revision = this.supersede(state, 'newer user message superseded title generation')
-        state.pending = { registration, revision, throughSeq: event.seq }
+        const pending: PendingAutomaticWork = { registration, revision, throughSeq: event.seq }
+        state.pending = pending
+        // 自带路由的提供方不必等主请求头落日志：标题修订立即开始，
+        // 主模型尚未发出请求或不可用都不影响标题生成。
+        const own = registration.provider.ownRoute?.()
+        if (own !== undefined) this.startPending(session, state, pending, own)
       }
     }
     this.defer(async () => {

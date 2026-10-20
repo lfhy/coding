@@ -10,6 +10,7 @@ import { apply, inject, refreshIfLoaded } from 'coding-client-ui-settings-models
 import { ModelUserAgentRow } from '../src/client/ModelUserAgentRow.tsx'
 import { ModelsSection } from '../src/client/ModelsSection.tsx'
 import { VisionSection } from '../src/client/VisionSection.tsx'
+import { TitleSection } from '../src/client/TitleSection.tsx'
 import { DeepSeekOnboardingDialog } from '../src/client/DeepSeekOnboardingDialog.tsx'
 
 async function bench(isLoopback = true, settings?: object, services: object = {}) {
@@ -75,7 +76,7 @@ describe('ui-settings-models apply', () => {
     declare(before.slots)
     await before.ctx.plugin({ inject: [...inject], apply }).await()
     const sections = before.slots.entries('settings.section')
-    expect(sections).toHaveLength(2)
+    expect(sections).toHaveLength(3)
     const entry = sections.find(candidate => candidate.options.id === 'models')!
     const vision = sections.find(candidate => candidate.options.id === 'vision-understanding')!
     expect(entry.component).toBe(ModelsSection)
@@ -83,6 +84,10 @@ describe('ui-settings-models apply', () => {
     expect(vision.component).toBe(VisionSection)
     expect(vision.options).toMatchObject({ id: 'vision-understanding', order: 15 })
     expect(resolveSlotLabel(vision.options.label)).toBe('图片识别')
+    const title = sections.find(candidate => candidate.options.id === 'session-title')!
+    expect(title.component).toBe(TitleSection)
+    expect(title.options).toMatchObject({ id: 'session-title', order: 20 })
+    expect(resolveSlotLabel(title.options.label)).toBe('会话标题')
     // The nav label is a locale-following thunk; owners resolve at read time.
     expect(resolveSlotLabel(entry.options.label)).toBe('模型')
     const injected = (entry.inject as unknown as () => import('../src/client/ModelsSection.tsx').ModelsSectionInjected)()
@@ -113,9 +118,10 @@ describe('ui-settings-models apply', () => {
     await Promise.resolve()
     expect(after.slots.entries('settings.section')[0]!.component).toBe(ModelsSection)
     expect(after.slots.entries('settings.section')[1]!.component).toBe(VisionSection)
+    expect(after.slots.entries('settings.section')[2]!.component).toBe(TitleSection)
     expect(after.slots.entries('settings.onboarding')).toHaveLength(1)
     // The self-inflicted ledger notifications hit the duplicate guard.
-    expect(after.slots.entries('settings.section')).toHaveLength(2)
+    expect(after.slots.entries('settings.section')).toHaveLength(3)
   })
 
   it('the label thunk follows the active locale without re-registration', async () => {
@@ -125,11 +131,13 @@ describe('ui-settings-models apply', () => {
     b.locale.setLocale('en')
     expect(resolveSlotLabel(b.slots.entries('settings.section')[0]!.options.label)).toBe('Models')
     expect(resolveSlotLabel(b.slots.entries('settings.section')[1]!.options.label)).toBe('Image recognition')
+    expect(resolveSlotLabel(b.slots.entries('settings.section')[2]!.options.label)).toBe('Session title')
     const injected = b.slots.entries('settings.section')[0]!.inject as unknown as () => import('../src/client/ModelsSection.tsx').ModelsSectionInjected
     expect(injected().t('deleteTitle')).toBe('Delete {provider}?')
     b.locale.setLocale('zh')
     expect(resolveSlotLabel(b.slots.entries('settings.section')[0]!.options.label)).toBe('模型')
     expect(resolveSlotLabel(b.slots.entries('settings.section')[1]!.options.label)).toBe('图片识别')
+    expect(resolveSlotLabel(b.slots.entries('settings.section')[2]!.options.label)).toBe('会话标题')
     expect(injected().t('deleteTitle')).toBe('删除 {provider}？')
   })
 
@@ -145,7 +153,7 @@ describe('ui-settings-models apply', () => {
     const b = await bench()
     const redeclare = declare(b.slots)
     await b.ctx.plugin({ inject: [...inject], apply }).await()
-    expect(b.slots.entries('settings.section')).toHaveLength(2)
+    expect(b.slots.entries('settings.section')).toHaveLength(3)
     // Declarer unload: the cascade removes our entry while our local
     // disposer variable goes stale.
     redeclare()
@@ -155,6 +163,7 @@ describe('ui-settings-models apply', () => {
     await Promise.resolve()
     expect(b.slots.entries('settings.section')[0]!.component).toBe(ModelsSection)
     expect(b.slots.entries('settings.section')[1]!.component).toBe(VisionSection)
+    expect(b.slots.entries('settings.section')[2]!.component).toBe(TitleSection)
     expect(b.slots.entries('settings.onboarding')).toHaveLength(1)
     // The locale path also recovers through the same ledger re-check.
     b.locale.setLocale('en')

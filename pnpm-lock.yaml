@@ -7601,6 +7601,9 @@ importers:
       coding-session-title:
         specifier: workspace:^
         version: link:../session-title
+      coding-settings:
+        specifier: workspace:^
+        version: link:../../settings/settings
       coding-timeout:
         specifier: workspace:^
         version: link:../../util/timeout

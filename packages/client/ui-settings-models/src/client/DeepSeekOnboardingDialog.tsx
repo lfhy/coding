@@ -41,7 +41,7 @@ export function DeepSeekOnboardingDialog(props: DeepSeekOnboardingDialogProps): 
   const [selection, setSelection] = useState('')
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | undefined>()
-  const choices = state.onboardingModels
+  const choices = state.usableModels
   const selected = choices.find(choice => `${choice.provider}\u0000${choice.model}` === selection)
   const canAddProvider = state.namespaces.has('llm-pi-ai') || state.rows.some(row =>
     row.entry.active && row.entry.settingsNs !== '' && state.namespaces.has(row.entry.settingsNs))

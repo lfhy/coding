@@ -108,7 +108,10 @@ interface SessionTitleProviderRequest {
   readonly session: Session
   /** All eligible human messages through this generation revision. */
   readonly messages: readonly SessionTitleUserMessage[]
-  /** Exact current logged main-request route, when one has been recorded. */
+  /**
+   * Exact model route used by this revision: the provider's own route when it
+   * names one, otherwise the session's latest logged main-request route.
+   */
   readonly route?: SessionTitleModelProvenance
   /** Cancellation for supersession, disposal, timeout composition, or the explicit caller. */
   readonly signal: AbortSignal
@@ -134,6 +137,24 @@ interface SessionTitleProvider {
   readonly id: SessionTitleProviderId
   /** When new human prompts start automatic generation. */
   readonly automatic: SessionTitleAutomaticMode
+  /**
+   * Whether this provider currently generates model titles at all. A user
+   * switch that turns title generation off is answered here, so the service
+   * schedules no revision and issues no model request. The provider owns the
+   * switch; the service only asks before every scheduling decision.
+   * @returns false when title generation is switched off; true otherwise.
+   */
+  readonly enabled?: () => boolean
+  /**
+   * The model route this provider names for itself — typically the title
+   * model the user selected separately from the conversation model. A
+   * provider without one inherits the session's logged main-request route.
+   * The service asks before scheduling, so a settings change takes effect on
+   * the next title revision, and a self-routed provider does not have to wait
+   * for the conversation's first request header.
+   * @returns the provider's own route, or undefined when it inherits one.
+   */
+  readonly ownRoute?: () => SessionTitleModelProvenance | undefined
   /**
    * Produce one title revision.
    * @param request - message snapshot, current route, session, and cancellation.

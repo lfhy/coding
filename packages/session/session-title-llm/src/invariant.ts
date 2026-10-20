@@ -15,8 +15,9 @@ export const name = 'session-title-llm-invariant'
 export const inject = ['invariants']
 
 /**
- * No runtime invariant: this stateless helper validates and freezes each auxiliary request before
- * dispatch; deadline, stream, cited message seqs, and provider/model fields are checked synchronously and by tests.
+ * No runtime invariant: this helper installs the title-model settings section and validates each
+ * auxiliary request before dispatch; the settings merge, route choice, deadline, stream, and cited
+ * message seqs are checked synchronously and by tests.
  */
 const install: InvariantInstaller = () => {}
 

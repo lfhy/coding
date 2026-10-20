@@ -65,8 +65,8 @@ function state(overrides: Partial<ModelsSettingsState> = {}): ModelsSettingsStat
     catalog: new Map(),
     visionModels: [],
     visionModelsError: null,
-    onboardingModels: [],
-    onboardingModelsError: null,
+    usableModels: [],
+    usableModelsError: null,
     onboardingModelFailures: [],
     onboardingDefault: null,
     ...overrides,
@@ -91,12 +91,12 @@ describe('onboardingReadiness', () => {
   const selectable = () => state({
     rows: [row(), otherRow()],
     namespaces: new Map([['agent-default-model', {} as never]]),
-    onboardingModels: [choice],
+    usableModels: [choice],
   })
 
   it('waits for every join even when old rows and choices remain visible', () => {
     expect(onboardingReadiness(state({ status: 'idle', rows: [] }))).toEqual({ kind: 'loading' })
-    expect(onboardingReadiness(state({ status: 'loading', rows: [], onboardingModels: [choice] }))).toEqual({ kind: 'loading' })
+    expect(onboardingReadiness(state({ status: 'loading', rows: [], usableModels: [choice] }))).toEqual({ kind: 'loading' })
     expect(onboardingReadiness({ ...selectable(), status: 'loading', onboardingDefault: { provider: 'hfai', model: 'chat' } }))
       .toEqual({ kind: 'loading' })
   })
@@ -133,15 +133,15 @@ describe('onboardingReadiness', () => {
     expect(onboardingReadiness(bare)).toEqual({ kind: 'needs-setup', reason: 'no-models' })
     expect(onboardingReadiness({
       ...bare,
-      onboardingModels: [{ provider: 'deepseek-official', providerName: 'DeepSeek', model: 'deepseek-v4-flash', modelName: 'Flash' }],
+      usableModels: [{ provider: 'deepseek-official', providerName: 'DeepSeek', model: 'deepseek-v4-flash', modelName: 'Flash' }],
       onboardingDefault: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
     })).toEqual({ kind: 'ready' })
   })
 
   it('keeps whole and provider-local catalog failures distinct from an empty catalog', () => {
-    expect(onboardingReadiness({ ...selectable(), onboardingModelsError: 'RPC down' }))
+    expect(onboardingReadiness({ ...selectable(), usableModelsError: 'RPC down' }))
       .toEqual({ kind: 'unavailable', reason: 'catalog-unavailable', detail: 'RPC down' })
-    expect(onboardingReadiness({ ...selectable(), onboardingModels: [], onboardingModelFailures: [
+    expect(onboardingReadiness({ ...selectable(), usableModels: [], onboardingModelFailures: [
       { id: 'hfai', name: 'HFAI', message: 'timeout' },
     ] })).toEqual({ kind: 'unavailable', reason: 'catalog-provider-failed', detail: 'HFAI (hfai): timeout' })
     expect(onboardingReadiness({ ...selectable(), onboardingModelFailures: [
@@ -155,7 +155,7 @@ describe('onboardingReadiness', () => {
     const builtIn = state({
       rows: [row(), builtinRow()],
       namespaces: new Map([['agent-default-model', {} as never]]),
-      onboardingModels: [
+      usableModels: [
         { provider: 'opencode-zen', providerName: 'OpenCode Zen', model: 'mimo-v2.6-flash-free', modelName: 'Mimo V2.6 Flash' },
       ],
       onboardingDefault: { provider: 'opencode-zen', model: 'mimo-v2.6-flash-free' },
@@ -168,7 +168,7 @@ describe('onboardingReadiness', () => {
     expect(onboardingReadiness(state({
       rows: [builtinRow()],
       namespaces: new Map([['agent-default-model', {} as never]]),
-      onboardingModels: [
+      usableModels: [
         { provider: 'opencode-zen', providerName: 'OpenCode Zen', model: 'other-free', modelName: 'Other' },
       ],
       onboardingDefault: { provider: 'opencode-zen', model: 'mimo-v2.6-flash-free' },

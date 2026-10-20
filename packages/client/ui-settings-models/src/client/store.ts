@@ -39,12 +39,18 @@ export interface ProviderRow {
 export type CatalogModel = ModelProviderGroup['models'][number]
 
 /** 目录中的渠道模型；视觉候选另按显式图片输入能力筛选。 */
-export interface VisionModelChoice {
+export interface ModelChoice {
   provider: string
   providerName: string
   model: string
   modelName: string
 }
+
+/** 会话标题生成模型的三种模式，与宿主设置分节 `session-title` 的取值一致。 */
+export type TitleModelMode = 'inherit' | 'custom' | 'off'
+
+/** 宿主登记标题生成模型设置的命名空间。 */
+export const TITLE_MODEL_SETTINGS_NAMESPACE = 'session-title'
 
 /** 模型设置页面与首次引导共用的快照。 */
 export interface ModelsSettingsState {
@@ -63,14 +69,13 @@ export interface ModelsSettingsState {
   namespaces: ReadonlyMap<string, SettingsNamespaceView>
   /** 每条路由当前服务的模型目录，按路由 id 归组；内置渠道的只读卡片读它。 */
   catalog: ReadonlyMap<string, readonly CatalogModel[]>
-  visionModels: readonly VisionModelChoice[]
+  visionModels: readonly ModelChoice[]
   /** 视觉模型目录读取失败；与成功返回空候选分开。 */
   visionModelsError: string | null
   /** 已配置或无配置地址、存活且凭据可用的渠道从成功目录返回的模型。 */
-  onboardingModels: readonly VisionModelChoice[]
+  usableModels: readonly ModelChoice[]
   /** 模型目录整体失败；不能将其解释为空模型列表。 */
-  onboardingModelsError: string | null
-  /** 单个渠道的目录失败；其他渠道的成功候选仍可选择。 */
+  usableModelsError: string | null  /** 单个渠道的目录失败；其他渠道的成功候选仍可选择。 */
   onboardingModelFailures: readonly ModelCatalogFailure[]
   /** agent-default-model 分节经 schema 路径解析出的当前选择。 */
   onboardingDefault: { provider: string; model: string } | null
@@ -138,7 +143,7 @@ export class ModelsSettingsStore {
     status: 'idle', hasLoaded: false, error: null, credentialError: null, writable: false, rows: [], namespaces: new Map(),
     catalog: new Map(),
     visionModels: [], visionModelsError: null,
-    onboardingModels: [], onboardingModelsError: null, onboardingModelFailures: [], onboardingDefault: null,
+    usableModels: [], usableModelsError: null, onboardingModelFailures: [], onboardingDefault: null,
   })
 
   /** Latest load wins; an older response never overwrites a newer one. */
@@ -198,13 +203,52 @@ export class ModelsSettingsStore {
   }
 
   /**
+   * 原子设置标题生成模型：模式与自定义路由在一次写入里落盘，
+   * 避免中间出现「自定义模式却没有路由」的无效状态。
+   * @param mode - 标题模型模式：继承主模型、自定义模型或关闭。
+   * @param target - 自定义模式的渠道与模型；其他模式省略并清除已存路由。
+   * @returns 写入失败的诊断，成功时为 undefined。
+   */
+  async setTitleModel(
+    mode: TitleModelMode,
+    target?: { provider: string; model: string },
+  ): Promise<string | undefined> {
+    const namespace = this.store.getSnapshot().namespaces.get(TITLE_MODEL_SETTINGS_NAMESPACE)
+    if (namespace === undefined) return 'session-title settings unavailable'
+    const custom = mode === 'custom' && target !== undefined
+    try {
+      const response = await this.api.settings.mutate({
+        ns: namespace.ns,
+        expectedRevision: namespace.revision,
+        ops: custom
+          ? [
+            { op: 'set', path: ['mode'], value: 'custom' },
+            { op: 'set', path: ['provider'], value: target.provider },
+            { op: 'set', path: ['model'], value: target.model },
+          ]
+          : [
+            { op: 'set', path: ['mode'], value: mode },
+            { op: 'unset', path: ['provider'] },
+            { op: 'unset', path: ['model'] },
+          ],
+      })
+      if (!response.result.ok) return response.result.error.message
+      this.describeFace.acceptView(response.result.value)
+      await this.load()
+      return undefined
+    } catch (error) {
+      return messageOf(error)
+    }
+  }
+
+  /**
    * 将当前目录中可启动的模型设为 agent 默认模型，并清除旧模型的推理档位。
    * @param target - 同一代联接产出的渠道与模型。
    * @returns 写入失败或选择失效的诊断；成功时为 undefined。
    */
   async selectOnboardingModel(target: { provider: string; model: string }): Promise<string | undefined> {
     const state = this.store.getSnapshot()
-    if (state.status !== 'ready' || !state.onboardingModels.some(choice =>
+    if (state.status !== 'ready' || !state.usableModels.some(choice =>
       choice.provider === target.provider && choice.model === target.model)) {
       return '所选模型不在当前可用目录中，请重试加载后选择。'
     }
@@ -305,16 +349,16 @@ export class ModelsSettingsStore {
         ? { credential: credentials[row.apiKeyEnv] }
         : {},
     }))
-    let visionModels: VisionModelChoice[] = []
+    let visionModels: ModelChoice[] = []
     let visionModelsError: string | null = null
-    let onboardingModels: VisionModelChoice[] = []
-    let onboardingModelsError: string | null = null
+    let usableModels: ModelChoice[] = []
+    let usableModelsError: string | null = null
     let onboardingModelFailures: ModelCatalogFailure[] = []
     let catalog: ReadonlyMap<string, readonly CatalogModel[]> = new Map()
     try {
       const response = await this.api.llm.models({})
       if (!response.result.ok) {
-        onboardingModelsError = response.result.error.message
+        usableModelsError = response.result.error.message
       } else {
         catalog = new Map(response.result.value.groups.map(group => [group.id, group.models]))
         const usable = new Set(joinedRows.filter(row => routeAvailable(row) && providerUsable(row))
@@ -323,7 +367,7 @@ export class ModelsSettingsStore {
         const visionUsable = new Set(joinedRows.filter(row => routeAvailable(row) && providerUsable(row))
           .map(row => row.entry.provider))
         onboardingModelFailures = response.result.value.failures.filter(failure => usable.has(failure.id))
-        onboardingModels = response.result.value.groups.flatMap(group => usable.has(group.id)
+        usableModels = response.result.value.groups.flatMap(group => usable.has(group.id)
           ? group.models.map(model => ({
             provider: group.id, providerName: group.name, model: model.id, modelName: model.name,
           })) : [])
@@ -339,10 +383,10 @@ export class ModelsSettingsStore {
         }
       }
     } catch (error) {
-      onboardingModelsError = messageOf(error)
+      usableModelsError = messageOf(error)
     }
-    if (namespaces.has('vision-understanding') && onboardingModelsError !== null) {
-      visionModelsError = onboardingModelsError
+    if (namespaces.has('vision-understanding') && usableModelsError !== null) {
+      visionModelsError = usableModelsError
     }
     if (generation !== this.generation) return
     this.store.update((s) => {
@@ -356,8 +400,8 @@ export class ModelsSettingsStore {
       s.catalog = catalog
       s.visionModels = visionModels
       s.visionModelsError = visionModelsError
-      s.onboardingModels = onboardingModels
-      s.onboardingModelsError = onboardingModelsError
+      s.usableModels = usableModels
+      s.usableModelsError = usableModelsError
       s.onboardingModelFailures = onboardingModelFailures
       s.onboardingDefault = onboardingDefault
     })
@@ -417,17 +461,17 @@ export function onboardingReadiness(state: ModelsSettingsState): OnboardingReadi
   if (state.status === 'error') {
     return { kind: 'unavailable', reason: 'load-failed', ...state.error === null ? {} : { detail: state.error } }
   }
-  if (state.onboardingModelsError !== null) {
-    return { kind: 'unavailable', reason: 'catalog-unavailable', detail: state.onboardingModelsError }
+  if (state.usableModelsError !== null) {
+    return { kind: 'unavailable', reason: 'catalog-unavailable', detail: state.usableModelsError }
   }
-  if (state.onboardingDefault !== null && state.onboardingModels.some(choice =>
+  if (state.onboardingDefault !== null && state.usableModels.some(choice =>
     choice.provider === state.onboardingDefault?.provider && choice.model === state.onboardingDefault.model)) {
     return { kind: 'ready' }
   }
   if (!state.writable || !state.namespaces.has('agent-default-model')) {
     return { kind: 'unavailable', reason: 'settings-read-only' }
   }
-  if (state.onboardingModels.length > 0) return { kind: 'needs-selection' }
+  if (state.usableModels.length > 0) return { kind: 'needs-selection' }
   if (state.onboardingModelFailures.length > 0) {
     return { kind: 'unavailable', reason: 'catalog-provider-failed', detail: state.onboardingModelFailures
       .map(failure => `${failure.name} (${failure.id}): ${failure.message}`).join('; ') }

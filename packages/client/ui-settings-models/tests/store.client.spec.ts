@@ -99,7 +99,7 @@ describe('ModelsSettingsStore', () => {
     const { face, mirror } = api()
     const store = new ModelsSettingsStore(face, settingsSchema, mirror)
     await store.load()
-    expect(store.store.getSnapshot().onboardingModels).toEqual([])
+    expect(store.store.getSnapshot().usableModels).toEqual([])
     expect(onboardingReadiness(store.store.getSnapshot())).toEqual({ kind: 'needs-setup', reason: 'credential-missing' })
     const configured = api({ describeCredentials: async refs => ok({ credentials: Object.fromEntries(refs.map(ref => [
       ref, { configured: true, writable: true },
@@ -117,7 +117,7 @@ describe('ModelsSettingsStore', () => {
     ], failures: [] }) })
     const store = new ModelsSettingsStore(face, settingsSchema, mirror)
     await store.load()
-    expect(store.store.getSnapshot().onboardingModels).toEqual([
+    expect(store.store.getSnapshot().usableModels).toEqual([
       { provider: 'openai', providerName: 'OpenAI', model: 'chat', modelName: 'Chat' },
       { provider: 'ghost', providerName: 'Ghost', model: 'ghost', modelName: 'Ghost' },
     ])
@@ -142,7 +142,7 @@ describe('ModelsSettingsStore', () => {
     await store.load()
     expect(seenRefs).toEqual([])
     expect(store.store.getSnapshot().rows.map(row => row.configured)).toEqual([false, false])
-    expect(store.store.getSnapshot().onboardingModels).toEqual([
+    expect(store.store.getSnapshot().usableModels).toEqual([
       { provider: 'deepseek-official', providerName: 'DeepSeek', model: 'deepseek-v4-flash', modelName: 'DeepSeek-V4-Flash' },
     ])
     expect(onboardingReadiness(store.store.getSnapshot())).toEqual({ kind: 'ready' })
@@ -367,7 +367,7 @@ describe('ModelsSettingsStore', () => {
     expect(await store.selectOnboardingModel({ provider: 'openai', model: 'chat' })).toContain('不在当前可用目录')
     release?.()
     await pending
-    expect(store.store.getSnapshot().onboardingModels).toEqual([])
+    expect(store.store.getSnapshot().usableModels).toEqual([])
   })
 })
 

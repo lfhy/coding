@@ -18,6 +18,7 @@ import type {} from 'coding-api-remotes/client'
 import { ModelsSection } from './ModelsSection.tsx'
 import type { ModelsSectionInjected } from './ModelsSection.tsx'
 import { VisionSection } from './VisionSection.tsx'
+import { TitleSection } from './TitleSection.tsx'
 import { DeepSeekOnboardingDialog } from './DeepSeekOnboardingDialog.tsx'
 import { ModelUserAgentRow } from './ModelUserAgentRow.tsx'
 import type { ModelUserAgentRowInjected } from './ModelUserAgentRow.tsx'
@@ -131,6 +132,13 @@ export function apply(ctx: ClientContext): void {
     label: () => t('visionFallback'),
     inject: injected,
   }, VisionSection))
+  ctx.slots.inject('settings.section', () => ctx.slots.register({
+    name: 'settings.section',
+    id: 'session-title',
+    order: 20,
+    label: () => t('titleModelSection'),
+    inject: injected,
+  }, TitleSection))
   ctx.slots.inject('settings.onboarding', () => ctx.slots.register({
     name: 'settings.onboarding',
     id: 'deepseek-official',

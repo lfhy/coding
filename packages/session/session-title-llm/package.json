@@ -36,6 +36,7 @@
     "coding-llm": "workspace:^",
     "coding-session": "workspace:^",
     "coding-session-title": "workspace:^",
+    "coding-settings": "workspace:^",
     "coding-timeout": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
@@ -47,6 +48,7 @@
     "coding-llm": "workspace:^",
     "coding-session": "workspace:^",
     "coding-session-title": "workspace:^",
+    "coding-settings": "workspace:^",
     "coding-timeout": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   }

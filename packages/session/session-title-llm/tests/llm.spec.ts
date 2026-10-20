@@ -77,6 +77,14 @@ const TITLE_PROVIDER = SessionTitleProviderId('test-title-provider')
 let nextSession = 0
 
 function request(ctx: Context, signal = new AbortController().signal): SessionTitleProviderRequest {
+  return requestWithRoute(ctx, { provider: 'current-route', model: 'current-model' }, signal)
+}
+
+function requestWithRoute(
+  ctx: Context,
+  route: { provider: string; model: string } | undefined,
+  signal = new AbortController().signal,
+): SessionTitleProviderRequest {
   const session = ctx.sessions.create(SessionId(`title-call-${++nextSession}`))
   session.append('turn/start', {
     turn: 1,
@@ -96,14 +104,13 @@ function request(ctx: Context, signal = new AbortController().signal): SessionTi
       { seq: first.seq, text: 'first prompt' },
       { seq: second.seq, text: '第二个问题' },
     ],
-    route: { provider: 'current-route', model: 'current-model' },
+    ...route === undefined ? {} : { route },
     signal,
   }
 }
 
 function requestWithoutRoute(ctx: Context, signal = new AbortController().signal): SessionTitleProviderRequest {
-  const routed = request(ctx, signal)
-  return { session: routed.session, messages: routed.messages, signal }
+  return requestWithRoute(ctx, undefined, signal)
 }
 
 async function withScript(script: readonly StreamChunk[]): Promise<{
@@ -173,20 +180,18 @@ describe('generateSessionTitleWithLlm', () => {
       })
   })
 
-  it('uses paired explicit overrides and bounds the final framed input before model dispatch', async () => {
+  it('uses the route carried by the request and bounds the final framed input before model dispatch', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
     await ctx.plugin(LlmRuntime)
     const adapter = new RecordingAdapter(SCRIPT)
     ctx.llm.registerAdapter(['explicit-route'], adapter)
-    const oversized = request(ctx)
+    const oversized = requestWithRoute(ctx, { provider: 'explicit-route', model: 'explicit-model' })
     const [selected] = oversized.messages
     if (selected === undefined) throw new Error('expected one selected message')
     const rawInputBytes = Buffer.byteLength(selected.text, 'utf8')
     const config = resolveSessionTitleLlmConfig({
       ...CONFIG,
-      provider: 'explicit-route',
-      model: 'explicit-model',
       maxInputBytes: rawInputBytes,
     })
 
@@ -196,7 +201,7 @@ describe('generateSessionTitleWithLlm', () => {
     expect(oversized.session.events.some(event => event.type === 'session/title-llm-request')).toBe(false)
 
     const withinLimit = resolveSessionTitleLlmConfig({ ...config, maxInputBytes: 1_000 })
-    const within = request(ctx)
+    const within = requestWithRoute(ctx, { provider: 'explicit-route', model: 'explicit-model' })
     await generateSessionTitleWithLlm(ctx, withinLimit, within, [within.messages[0]!], TITLE_PROVIDER)
     expect(adapter.requests[0]).toMatchObject({
       provider: 'explicit-route',
@@ -228,6 +233,12 @@ describe('generateSessionTitleWithLlm', () => {
       .toThrow(/overrides must be non-empty strings/)
     expect(() => resolveSessionTitleLlmConfig({ ...CONFIG, timeoutMs: MAX_TIMER_DELAY_MS + 1 }))
       .toThrow(/timeoutMs must not exceed/)
+    expect(() => resolveSessionTitleLlmConfig({ ...CONFIG, mode: 'bogus' as never }))
+      .toThrow(/mode must be/)
+    expect(() => resolveSessionTitleLlmConfig({ ...CONFIG, mode: 'custom' }))
+      .toThrow(/custom title model requires provider and model/)
+    expect(() => resolveSessionTitleLlmConfig({ ...CONFIG, mode: 'custom', provider: 'p', model: 'm' })).not.toThrow()
+    expect(() => resolveSessionTitleLlmConfig({ ...CONFIG, mode: 'off' })).not.toThrow()
     expect(() => resolveSessionTitleLlmConfig(CONFIG)).not.toThrow()
   })
 
@@ -236,7 +247,7 @@ describe('generateSessionTitleWithLlm', () => {
     const config = resolveSessionTitleLlmConfig(CONFIG)
     const unrouted = requestWithoutRoute(ctx)
     await expect(generateSessionTitleWithLlm(ctx, config, unrouted, unrouted.messages, TITLE_PROVIDER))
-      .rejects.toThrow(/no logged request route/)
+      .rejects.toThrow(/no model route is available/)
     const empty = request(ctx)
     await expect(generateSessionTitleWithLlm(ctx, config, empty, [], TITLE_PROVIDER))
       .rejects.toThrow(/at least one source message/)
