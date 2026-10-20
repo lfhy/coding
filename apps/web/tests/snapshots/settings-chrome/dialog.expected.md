@@ -49,3 +49,11 @@
   - button "排队发送":
     - text: 排队发送
     - img
+  - text: 会话标题 选择由哪个模型为新会话命名：继承主模型会与对话共用同一个模型；自定义模型会单独为会话生成标题；关闭后不再生成模型标题，只保留本地回退标题。
+  - status: 当前部署未提供标题模型配置。
+  - text: 模型请求 User-Agent
+  - paragraph: 发送给模型提供方的对话及模型发现请求均使用此值。
+  - textbox "模型请求 User-Agent": Coding/2026.1020.1d3d86 (MacOS 27;arm64)
+  - paragraph: 默认使用产品标识；只有网关要求时才需修改。
+  - button "恢复默认" [disabled]
+  - button "保存" [disabled]

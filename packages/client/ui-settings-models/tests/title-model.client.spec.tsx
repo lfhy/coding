@@ -2,13 +2,29 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { bindSnapshotSelector } from 'coding-client-test-runtime'
+import { createSnapshotStore, type SessionListState, type WorkspaceListState } from 'coding-client-runtime/client'
 import { SettingsDescribeMirror } from 'coding-client-ui-settings/src/client/settings-mirror.ts'
 import { ModelsSettingsStore } from '../src/client/store.ts'
-import { TitleSection } from '../src/client/TitleSection.tsx'
-import { en } from '../src/client/locales.ts'
+import { TitleRow, type TitleRowProps } from '../src/client/TitleRow.tsx'
+import { en, type ModelsKey } from '../src/client/locales.ts'
 import { settingsSchema } from './settings-schema.client.ts'
 
 afterEach(cleanup)
+
+/** 通用设置行不读全局会话/工作区钩子，这里只补齐占位实现。 */
+function emptySessions() {
+  const store = createSnapshotStore<SessionListState>(
+    { ids: [], byId: {}, current: undefined, phase: 'ready', subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined })
+  return bindSnapshotSelector(store)
+}
+
+function emptyWorkspaces() {
+  const store = createSnapshotStore<WorkspaceListState>({
+    items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
+    baselinesReady: true, recentWorkspaceId: undefined,
+  })
+  return bindSnapshotSelector(store)
+}
 
 /** 标题模型分节的默认取值；调用方可以覆盖模式与路由。 */
 const title = {
@@ -55,15 +71,17 @@ async function mount(value: Record<string, unknown> = { mode: 'inherit' }, writa
   const { api, mutate } = wire(value, writable)
   const controller = new ModelsSettingsStore(api as never, settingsSchema, new SettingsDescribeMirror(api as never))
   await controller.load()
-  render(<TitleSection controller={controller} useSnapshot={bindSnapshotSelector(controller.store)}
-    schema={settingsSchema} api={api as never} t={key => en[key]} />)
+  render(<TitleRow controller={controller} useSnapshot={bindSnapshotSelector(controller.store)}
+    schema={settingsSchema} api={api as never}
+    t={((key: ModelsKey) => en[key]) as TitleRowProps['t']}
+    useSessions={emptySessions()} useWorkspaces={emptyWorkspaces()} />)
   return { controller, mutate }
 }
 
 describe('session-title model settings', () => {
   it('offers the three title model modes and inherits the conversation model by default', async () => {
     const { mutate } = await mount()
-    expect(screen.getByRole('heading', { name: en.titleModelSection, level: 1 })).toBeTruthy()
+    expect(screen.getByText(en.titleModelSection)).toBeTruthy()
     const picker = screen.getByRole<HTMLSelectElement>('combobox', { name: en.titleModelMode })
     expect(picker.value).toBe('inherit')
     expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual([
@@ -119,8 +137,10 @@ describe('session-title model settings', () => {
     } } }))
     const controller = new ModelsSettingsStore(api as never, settingsSchema, new SettingsDescribeMirror(api as never))
     await controller.load()
-    render(<TitleSection controller={controller} useSnapshot={bindSnapshotSelector(controller.store)}
-      schema={settingsSchema} api={api as never} t={key => en[key]} />)
+    render(<TitleRow controller={controller} useSnapshot={bindSnapshotSelector(controller.store)}
+      schema={settingsSchema} api={api as never}
+      t={((key: ModelsKey) => en[key]) as TitleRowProps['t']}
+      useSessions={emptySessions()} useWorkspaces={emptyWorkspaces()} />)
     expect(screen.getByText(en.titleModelUnavailable)).toBeTruthy()
     expect(screen.queryByRole('combobox', { name: en.titleModelMode })).toBeNull()
 

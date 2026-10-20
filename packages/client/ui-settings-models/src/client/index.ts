@@ -18,7 +18,7 @@ import type {} from 'coding-api-remotes/client'
 import { ModelsSection } from './ModelsSection.tsx'
 import type { ModelsSectionInjected } from './ModelsSection.tsx'
 import { VisionSection } from './VisionSection.tsx'
-import { TitleSection } from './TitleSection.tsx'
+import { TitleRow } from './TitleRow.tsx'
 import { DeepSeekOnboardingDialog } from './DeepSeekOnboardingDialog.tsx'
 import { ModelUserAgentRow } from './ModelUserAgentRow.tsx'
 import type { ModelUserAgentRowInjected } from './ModelUserAgentRow.tsx'
@@ -132,13 +132,14 @@ export function apply(ctx: ClientContext): void {
     label: () => t('visionFallback'),
     inject: injected,
   }, VisionSection))
-  ctx.slots.inject('settings.section', () => ctx.slots.register({
-    name: 'settings.section',
+  // 会话标题是单条偏好，与模型请求 UA 一样走通用设置行，不再独占一个分区。
+  ctx.slots.inject('settings.general.item', () => ctx.slots.register({
+    name: 'settings.general.item',
     id: 'session-title',
-    order: 20,
-    label: () => t('titleModelSection'),
+    order: 25,
+    locale: NS,
     inject: injected,
-  }, TitleSection))
+  }, TitleRow))
   ctx.slots.inject('settings.onboarding', () => ctx.slots.register({
     name: 'settings.onboarding',
     id: 'deepseek-official',
