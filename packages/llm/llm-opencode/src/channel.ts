@@ -34,8 +34,10 @@ export const CHANNEL_RETRY_POLICY: ResolvedRetryPolicy = resolveRetryPolicy(unde
 /**
  * 可转发给上游的推理档位词汇，与 pi-ai 的思考档位一致；`off` 表示省略该参数，
  * 让模型按自身默认行为推理。声明之外的拼写无法映射成请求参数。
+ * `none` 是 OVH 上游认得的「关推理」档位：pi-ai 的词汇里没有它，声明时在
+ * 适配器里折算成 `off` 语义（省略不发由上游默认，显式关闭见映射注释）。
  */
-export const REASONING_EFFORT_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
+export const REASONING_EFFORT_LEVELS = ['off', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
 
 /** 可声明的推理档位。 */
 export type ReasoningEffortLevel = (typeof REASONING_EFFORT_LEVELS)[number]
@@ -56,7 +58,9 @@ export interface FreeUpstreamModel {
   reasoning: boolean
   /**
    * 该模型暴露的推理档位；空表示不给选择器提供档位（模型自身的推理行为不变）。
-   * 档位必须是 {@link REASONING_EFFORT_LEVELS} 里的值，否则无法转发成上游参数。
+   * 档位必须是 {@link REASONING_EFFORT_LEVELS} 里的值；pi-ai 词汇内的档位按
+   * 自身拼写转发 `reasoning_effort`，`off` 折算成 `none`、`none` 折算成 `off`
+   * 互补语义（`off`＝上游默认，`none`＝显式关闭）。
    */
   reasoningEfforts: readonly ReasoningEffortLevel[]
 }
@@ -92,9 +96,12 @@ export interface FreeUpstream {
  * OpenCode Zen 的模型显示名固定、能力取自 models.dev 的提供方元数据：
  * MiMo 与 DeepSeek V4.1 Flash 接受图片，Nemotron 3.5 Lightning 只接受文本；
  * 三者都会推理，但只有 DeepSeek V4.1 Flash 暴露可选档位。
- * OVHcloud AI Endpoints 提供持久的匿名免费层（按出口 IP 限流），模型能力
- * 取自其 `/v1/models` 目录的提供方元数据；凭据是空 Bearer——上游把空凭据
- * 读作匿名免费层，任何非空值都会被当成失效的 OAuth 令牌而 403。
+ * OVHcloud AI Endpoints 提供持久的匿名免费层（按出口 IP 限流），凭据是
+ * 空 Bearer——上游把空凭据读作匿名免费层，任何非空值都会被当成失效的
+ * OAuth 令牌而 403。OVH 的能力事实以 2026-10-22 的线协议实测为准（对照
+ * models.dev 的 `ovhcloud` 提供方元数据）：Qwen3.5 397B 实际接受图片并
+ * 按档位调节推理深度（none 到 xhigh 都被接受且确实改变推理量），gpt-oss
+ * 120B 是纯文本（附图请求被静默丢弃，模型自述看不到图片）。
  */
 export const FREE_UPSTREAMS: readonly FreeUpstream[] = [
   {
@@ -152,9 +159,9 @@ export const FREE_UPSTREAMS: readonly FreeUpstream[] = [
         name: 'Qwen3.5 397B A17B (OVH)',
         contextWindow: 262_144,
         maxTokens: 32_768,
-        inputModalities: ['text'],
+        inputModalities: ['text', 'image'],
         reasoning: true,
-        reasoningEfforts: [],
+        reasoningEfforts: ['none', 'low', 'medium', 'high', 'xhigh'],
       },
       {
         id: 'Qwen2.5-VL-72B-Instruct',

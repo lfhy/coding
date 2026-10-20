@@ -29,7 +29,8 @@ Zen 的每个请求都与官方 OpenCode CLI 同形：相同的 User-Agent、按
 | `opencode-zen` | `https://opencode.ai/zen/v1` | 字面量 `public` | OpenCode CLI 伪装 + 工具门 |
 | `ovh-ai-endpoints` | `https://oai.endpoints.kepler.ai.cloud.ovh.net/v1` | 空 Bearer | 匿名直连，不伪装 |
 
-目录（显示名固定；Zen 能力取自 models.dev 的提供方元数据，OVH 能力取自其 `/v1/models`）：
+目录（显示名固定；Zen 能力取自 models.dev 的提供方元数据，OVH 能力以 2026-10-22
+的线协议实测为准并对照 models.dev 的 `ovhcloud` 提供方元数据）：
 
 | 模型 id | 显示名 | 上下文 | 输出上限 | 图片输入 | 推理 |
 | --- | --- | --- | --- | --- | --- |
@@ -38,7 +39,7 @@ Zen 的每个请求都与官方 OpenCode CLI 同形：相同的 User-Agent、按
 | `deepseek-v4.1-flash-free` | Deepseek V4.1 Flash | 262,144 | 32,768 | 是 | `low` / `high` / `max` |
 | `nemotron-3.5-lightning-free` | Nemotron 3.5 Lightning | 262,144 | 32,768 | 否 | 恒开，无档位 |
 | `gpt-oss-120b` | GPT-OSS 120B (OVH) | 131,072 | 32,768 | 否 | `low` / `medium` / `high` |
-| `Qwen3.5-397B-A17B` | Qwen3.5 397B A17B (OVH) | 262,144 | 32,768 | 否 | 恒开，无档位 |
+| `Qwen3.5-397B-A17B` | Qwen3.5 397B A17B (OVH) | 262,144 | 32,768 | 是 | `none` / `low` / `medium` / `high` / `xhigh` |
 | `Qwen2.5-VL-72B-Instruct` | Qwen2.5 VL 72B (OVH) | 32,768 | 8,192 | 是 | 不推理 |
 
 Auto 的候选顺序（即失败时的转移顺序）是：`mimo-v2.6-flash-free` →
@@ -49,7 +50,8 @@ Auto 的候选顺序（即失败时的转移顺序）是：`mimo-v2.6-flash-free
 
 - `inputModalities`（`text` / `image`）声明该模型接受什么输入；含 `image` 时图片才会内联进请求，否则图片按纯文本模型的常规处理被拒绝或降级。
 - `reasoning` 声明该模型是否具备推理能力；具备时它的推理增量会作为推理内容解析，而不是混进正文。
-- `reasoningEfforts` 列出可以选择的档位，取值来自 `off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`；选中的档位换算成请求体里的 `reasoning_effort`，`off` 表示省略该参数。省略档位的模型不提供档位选择，只有提供方默认这一项；没有档位声明的模型在选择器里不报告推理档位。
+- `reasoningEfforts` 列出可以选择的档位，取值来自 `off`、`none`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`；选中的档位换算成请求体里的 `reasoning_effort`。`off` 通常表示省略该参数（模型默认行为）；声明了 `none` 的模型（Qwen3.5）把省略读作默认深推理，`off`／`none` 因此都显式发 `reasoning_effort: "none"` 关闭推理。省略档位的模型不提供档位选择，只有提供方默认这一项；没有档位声明的模型在选择器里不报告推理档位。
+- **OVH 图片能力以实测为准**：Qwen3.5 397B 接受 `image_url` 输入并真实读图（2026-10-22 线协议验证）；gpt-oss 120B 对附图请求不报错但把图片静默丢弃（模型自述看不到图片），因此目录仍声明纯文本。附图发给不声明 `image` 的模型是上游层面的丢弃，不是本适配器的拒绝。
 
 ## 与上游的协议约定
 
@@ -146,5 +148,6 @@ Auto 的候选顺序（即失败时的转移顺序）是：`mimo-v2.6-flash-free
   渠道不提供「获取可用模型」。Zen 目录里还存在其他 `-free` 后缀模型（2026-10-17 的
   实测它们对当前出口返回 400/403 或地区封锁），因此暂不收录。
 - **图片能力按模型声明**：只有声明了 `image` 输入的模型（目录里是 MiMo、DeepSeek
-  V4.1 Flash 与 Qwen2.5 VL 72B）会内联图片；未声明的模型按纯文本处理，图片不会发给它。
-  Auto 的图片能力是候选并集，带图片的请求在纯文本候选上按各自上游的行为失败并转移。
+  V4.1 Flash、Qwen3.5 397B 与 Qwen2.5 VL 72B）会内联图片；未声明的模型按纯文本处理，
+  图片不会发给它。Auto 的图片能力是候选并集，带图片的请求在纯文本候选上按各自上游的
+  行为失败并转移。

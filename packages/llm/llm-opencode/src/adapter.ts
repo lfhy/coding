@@ -95,18 +95,29 @@ function autoModelInfo(provider: string): LlmModelInfo {
 }
 
 /**
- * 声明的档位映射成 pi-ai 的 `thinkingLevelMap`：声明过的档位带上自身拼写，
+ * 声明的档位映射成 pi-ai 的 `thinkingLevelMap`：声明过的档位带上要发出的拼写，
  * 未声明的档位钉成 `null`（不支持），因此选择器给出的档位与真正能转发的
- * `reasoning_effort` 一一对应。`off` 是唯一不进映射的档位——它的语义是省略参数，
- * 由 pi-ai 按“支持但不发值”处理。
+ * `reasoning_effort` 一一对应。`off` 不在任何模型的声明表里（它表达「不点名
+ * 档位」）；声明了 `none` 的模型例外——pi-ai 词汇里没有 `none`，`off`／`none`
+ * 都折算成线上的关闭值，`off` 因此映射为 `'none'`。
  * @param efforts - 该模型声明的档位。
  * @returns pi-ai 读档位的映射。
  */
 function thinkingLevelMap(efforts: readonly string[]): ThinkingLevelMap {
   const map: ThinkingLevelMap = {}
   for (const level of REASONING_EFFORT_LEVELS) {
+    // `off` 是「不点名档位」，不在任何模型的声明表里：模型声明了 `none` 时它
+    // 折算成显式关闭值，其余模型钉成 null（省略参数）。
+    if (level === 'off') {
+      if (efforts.includes('none')) map.off = 'none'
+      else map.off = null
+      continue
+    }
+    // `none` 不在 pi-ai 的思考档位词汇里（ModelThinkingLevel 没有它），因此
+    // 无法作为键映射：它只经上面的 off 分支生效，这里不再占位。
+    if (level === 'none') continue
     if (!efforts.includes(level)) map[level] = null
-    else if (level !== 'off') map[level] = level
+    else map[level] = level
   }
   return map
 }
@@ -312,9 +323,16 @@ export class FreeChannelAdapter extends LlmAdapter {
     }
     const served = freeChannelModel(model)
     // 未列出的模型按纯文本、无推理档位处理：不把未经验证的能力持久写进会话。
-    const efforts = (served?.reasoningEfforts ?? []).map(effort => ({
+    // `off` 表达「不点名档位」而不是某个模型的声明档位，但对它开放的模型都
+    // 可以选；这里补成选择器可见的第一项，让 defaultEffort 校验总能命中。
+    const declaredEfforts = served?.reasoningEfforts ?? []
+    const selectorEfforts = declaredEfforts.length > 0
+      ? (declaredEfforts.includes('off') ? declaredEfforts : ['off' as const, ...declaredEfforts])
+      : declaredEfforts
+    const efforts = selectorEfforts.map(effort => ({
       id: ReasoningEffortId(effort),
-      name: `${effort.charAt(0).toUpperCase()}${effort.slice(1)}`,
+      // `none` 在选择器上仍叫 Off：两者都表达关闭推理，只是线上拼写不同。
+      name: effort === 'off' || effort === 'none' ? 'Off' : `${effort.charAt(0).toUpperCase()}${effort.slice(1)}`,
     }))
     return Promise.resolve({
       ...served === undefined
@@ -389,16 +407,22 @@ export class FreeChannelAdapter extends LlmAdapter {
     const restore = applyOutbound(outbound)
     const model = this.piModel(served)
     const effort = options.reasoningEffort
-    if (effort !== undefined && !served.reasoningEfforts.includes(effort as ReasoningEffortLevel)) {
+    // `off` 是全局词汇而不是某个模型的声明档位：任何模型选它都表示「不点名」，
+    // 由下方 explicitNone 分支决定发什么，不进未声明拒绝。
+    if (effort !== undefined && effort !== 'off' && !served.reasoningEfforts.includes(effort as ReasoningEffortLevel)) {
       restore()
       throw new LlmError(
         `Free channel model "${options.model}" does not support reasoning effort "${effort}"`,
         'UNSUPPORTED_REASONING_EFFORT',
       )
     }
-    // `off` 与“未选择档位”都表示不点名档位：pi-ai 会直接省略 `reasoning_effort`，
-    // 让模型按自身默认行为推理。
-    const reasoning = effort === undefined || effort === 'off' ? undefined : effort as ThinkingLevel
+    // `off` 与“未选择档位”默认都表示不点名档位：pi-ai 直接省略 `reasoning_effort`，
+    // 模型按自身默认行为推理。声明了 `none` 的模型（Qwen3.5）例外：上游把省略
+    // 读作默认深推理，因此此时 `off`/`none` 都显式发 `reasoning_effort: "none"`。
+    const explicitNone = served.reasoningEfforts.includes('none')
+    const reasoning = effort === undefined || effort === 'off' || effort === 'none'
+      ? explicitNone ? 'none' as ThinkingLevel : undefined
+      : effort as ThinkingLevel
     const containsImage = options.messages.some(message => contentHasImage(message.content))
     const attachments = containsImage ? this.config.resolveAttachments?.() : undefined
     const ids = deriveRequestIds(options.messages)

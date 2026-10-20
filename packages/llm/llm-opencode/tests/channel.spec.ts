@@ -53,14 +53,18 @@ describe('built-in catalog', () => {
     expect(models.get('mimo-v2.6-flash-free')?.inputModalities).toEqual(['text', 'image'])
     expect(models.get('deepseek-v4.1-flash-free')?.inputModalities).toEqual(['text', 'image'])
     expect(models.get('nemotron-3.5-lightning-free')?.inputModalities).toEqual(['text'])
-    // OVH 侧：gpt-oss 与 Qwen3.5 只收文本，Qwen2.5 VL 收图片且不推理。
+    // OVH 侧：Qwen3.5 397B 实测接受图片（2026-10-22 线协议验证），gpt-oss 是
+    // 纯文本（附图被上游静默丢弃），Qwen2.5 VL 收图片且不推理。
+    expect(models.get('Qwen3.5-397B-A17B')?.inputModalities).toEqual(['text', 'image'])
     expect(models.get('gpt-oss-120b')?.inputModalities).toEqual(['text'])
     expect(models.get('Qwen2.5-VL-72B-Instruct')?.inputModalities).toEqual(['text', 'image'])
     expect(models.get('Qwen2.5-VL-72B-Instruct')?.reasoning).toBe(false)
-    // 五个目录模型都会推理，但只有 DeepSeek V4.1 Flash 与 GPT-OSS 暴露可选档位。
+    // 五个目录模型都会推理，但只有 DeepSeek V4.1 Flash、GPT-OSS 与 Qwen3.5 暴露可选档位。
     expect(FREE_CHANNEL_MODELS.map(model => model.reasoning)).toEqual([true, true, true, true, true, false])
     expect(models.get('deepseek-v4.1-flash-free')?.reasoningEfforts).toEqual(['low', 'high', 'max'])
     expect(models.get('gpt-oss-120b')?.reasoningEfforts).toEqual(['low', 'medium', 'high'])
+    // Qwen3.5 的档位含 `none`：OVH 线协议认得的显式关闭值，其余档位逐一实测接受。
+    expect(models.get('Qwen3.5-397B-A17B')?.reasoningEfforts).toEqual(['none', 'low', 'medium', 'high', 'xhigh'])
     expect(models.get('mimo-v2.6-flash-free')?.reasoningEfforts).toEqual([])
   })
 

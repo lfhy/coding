@@ -153,11 +153,46 @@ describe('adapter wire shape', () => {
     const call = calls[0]!
     expect(call.options.reasoning).toBe('high')
     // 声明的档位带上自身拼写（pi-ai 据此发出 reasoning_effort），未声明的档位钉成 null，
-    // 因此选择器给出的档位都能真正转发。
+    // 因此选择器给出的档位都能真正转发。`none` 不在 pi-ai 词汇里，不出现为键。
     expect(call.model.thinkingLevelMap).toEqual({
       off: null, minimal: null, low: 'low', medium: null, high: 'high', xhigh: null, max: 'max',
     })
     expect(call.model.input).toEqual(['text', 'image'])
+  })
+
+  it('声明 none 档位的模型把 off/none 折算成显式关闭值', async () => {
+    const calls: Call[] = []
+    const ctx = await harness(textEvents('hi'), calls)
+    const messages = [createUserMessage({ content: [{ type: 'text', text: 'think' }], source: { kind: 'user' } })]
+    // 选择器先折算：off/none 都落到已声明的档位 id 再进适配器。
+    for (const effort of ['none', 'off']) {
+      for await (const _chunk of ctx.llm.stream({
+        provider: 'fake-route',
+        model: 'Qwen3.5-397B-A17B',
+        messages,
+        reasoningEffort: ReasoningEffortId(effort),
+      })) { /* drain */ }
+    }
+    // OVH 的 Qwen3.5 把省略参数读作默认深推理，关闭必须显式发 `none`。
+    expect(calls.map(call => call.options.reasoning)).toEqual(['none', 'none'])
+    // `off` 在声明了 none 的模型上映射成关闭值；none 不在 pi-ai 词汇里，不出现为键。
+    expect(calls[0]!.model.thinkingLevelMap).toEqual({
+      off: 'none', minimal: null, low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: null,
+    })
+  })
+
+  it('选择器里 off 与 none 都显示为 Off，其余档位按拼写大写', async () => {
+    const ctx = await harness(textEvents('hi'), [])
+    const qwen = await ctx.llm.resolveModelInfo('fake-route', 'Qwen3.5-397B-A17B')
+    // off（适配器补的「不点名」档位）与 none（线上的显式关闭值）同名展示，
+    // 避免选择器出现两个语义相同的关闭项。
+    expect(qwen.reasoning?.efforts.map(effort => effort.name)).toEqual(
+      ['Off', 'Low', 'Medium', 'High', 'Xhigh'],
+    )
+    const deepseek = await ctx.llm.resolveModelInfo('fake-route', 'deepseek-v4.1-flash-free')
+    expect(deepseek.reasoning?.efforts.map(effort => effort.name)).toEqual(
+      ['Off', 'Low', 'High', 'Max'],
+    )
   })
 
   it('没有档位声明的模型不携带档位映射，选择器只留提供方默认', async () => {
@@ -294,6 +329,18 @@ describe('OVH anonymous upstream', () => {
     })) { /* drain */ }
     expect(calls[0]!.options.reasoning).toBe('low')
     expect(calls[0]!.model.thinkingLevelMap).toMatchObject({ low: 'low', high: 'high', medium: 'medium', max: null })
+  })
+
+  it('Qwen3.5 声明图片输入：视觉请求会内联图片', async () => {
+    const calls: Call[] = []
+    const ctx = await harness(textEvents('hi'), calls)
+    for await (const _chunk of ctx.llm.stream({
+      provider: 'fake-route',
+      model: 'Qwen3.5-397B-A17B',
+      messages: [createUserMessage({ content: [{ type: 'text', text: 'look' }], source: { kind: 'user' } })],
+    })) { /* drain */ }
+    expect(calls[0]!.model.input).toEqual(['text', 'image'])
+    expect(calls[0]!.model.baseUrl).toBe('https://oai.endpoints.kepler.ai.cloud.ovh.net/v1')
   })
 })
 
