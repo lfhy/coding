@@ -2,58 +2,16 @@
 
 import { randomUUID } from 'node:crypto'
 import { BrowserWindow, WebContentsView } from 'electron'
-import type { BrowserCapture, BrowserCommand, BrowserExpectedTarget, BrowserHumanCommand, BrowserHumanTarget, BrowserObservation, BrowserSessionState, BrowserTabId, BrowserTabSummary, BrowserUseErrorCode } from 'coding-browser'
-import { fitBrowserPng } from './browser-image.ts'
+import type { BrowserCapture, BrowserCommand, BrowserExpectedTarget, BrowserHumanCommand, BrowserHumanTarget, BrowserSessionState, BrowserTabId } from 'coding-browser'
 import { createBrowserCursorOverlay } from './browser-cursor-overlay.ts'
 import { createBrowserInputOverlay } from './browser-input-overlay.ts'
-
-const INITIAL_VIEWPORT = { width: 1280, height: 720 }
-const MAX_SESSIONS = 8
-const MAX_TABS = 8
-const FRAME_LIMIT = 2 * 1024 * 1024
-const MAX_URL_LENGTH = 4096
-const OVERLONG_URL = 'about:blank#browser-url-exceeds-limit'
-const NAVIGATION_TIMEOUT_MS = 10_000
-const NAVIGATION_STOP_TIMEOUT_MS = 3_000
-const SCREENSHOT_TIMEOUT_MS = 5_000
-
-/** 引用在输入前被发现不可用时的原因：模型按原因决定重拍快照、滚动还是换目标。 */
-const STALE_TARGET_REASONS: Record<string, string> = {
-  element_left_document: 'left the document',
-  element_form_changed: 'changed its form',
-  ancestors_changed: 'changed its ancestor chain',
-  element_changed: 'changed since the snapshot',
-  element_not_editable: 'is not editable',
-  element_hidden: 'is hidden',
-  element_disabled: 'is disabled or inert',
-  element_offscreen: 'is outside the visible viewport',
-  element_covered: 'is covered by another element',
-}
-
-interface Tab {
-  id: BrowserTabId
-  generation: string
-  view: WebContentsView
-  revision: number
-  capture?: BrowserCapture
-  summary: BrowserTabSummary
-  navigation: number
-  worldContextId?: number
-  syntheticInput: boolean
-  domRevision?: number
-  everPresented: boolean
-}
-
-interface Owner {
-  generation: string
-  tabs: Map<BrowserTabId, Tab>
-  active: BrowserTabId
-  revision: number
-  targetRevision: number
-  viewport: { width: number; height: number }
-  lease: boolean
-  partition: string
-}
+import { createGuestObserver } from './browser-guest-observation.ts'
+import { createBackgroundStage } from './browser-guest-stage.ts'
+import { performModelOperation } from './browser-guest-model.ts'
+import { navigateGuest } from './browser-guest-navigation.ts'
+import type { TargetOutcome } from './browser-guest-snapshot.ts'
+import { INITIAL_VIEWPORT, MAX_SESSIONS, MAX_TABS, GuestError, STALE_TARGET_REASONS, active, allowedUrl, fail, invalidate,
+  refreshSummary, validateViewport, type Owner, type Tab } from './browser-guest-state.ts'
 
 export interface BrowserGuestPresentation {
   sessionId: string
@@ -77,201 +35,6 @@ export interface BrowserGuestOptions {
   onState?: (sessionId: string, state: BrowserSessionState | null, capture?: BrowserCapture) => void
 }
 
-class GuestError extends Error {
-  constructor(message: string, readonly code: BrowserUseErrorCode) {
-    super(message)
-    this.name = 'BrowserUseError'
-  }
-}
-
-function fail(message: string, code: BrowserUseErrorCode): never { throw new GuestError(message, code) }
-
-function allowedUrl(raw: string): string {
-  if (typeof raw !== 'string' || raw.length > MAX_URL_LENGTH) fail('browser URL exceeds 4096 characters', 'BROWSER_FAILED')
-  let url: URL
-  try { url = new URL(raw) }
-  catch { return fail('invalid browser URL', 'BROWSER_INVALID_URL') }
-  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password ||
-    !/^https?:\/\/[^/?#\\\s]+(?:[/?#]|$)/i.test(raw) ||
-    /^https?:\/\/[^/?#\\\s]*@/i.test(raw)) {
-    fail('browser URL denied', 'BROWSER_DENIED')
-  }
-  return url.href
-}
-
-function validateViewport(width: number, height: number): void {
-  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 200 || width > 1920 ||
-    height < 240 || height > 1400 || width * height > 1_800_000) {
-    fail('browser viewport must be 200..1920 by 240..1400 pixels with area at most 1800000', 'BROWSER_FAILED')
-  }
-}
-
-function active(owner: Owner): Tab {
-  const tab = owner.tabs.get(owner.active)
-  if (!tab) fail('active browser tab is closed', 'BROWSER_CLOSED')
-  return tab
-}
-
-function invalidate(owner: Owner, tab: Tab): void {
-  delete tab.capture
-  delete tab.worldContextId
-  delete tab.domRevision
-  tab.navigation++
-  owner.revision++
-  owner.targetRevision++
-}
-
-// 仅隔离世界保存元素引用；页面脚本无法获取 Map 或伪造跨观测版本的 ref。
-// 引用是否过期只取决于「这次点击的含义」：节点身份、事件处理器、导航与表单语义、
-// 以及点击点的命中结果。class/style/data-* 等展示性属性和子树文本的更新不再作废
-// 引用：实时页面一直在重渲染，按整棵属性快照比较会让引用几乎永远过期；这些变化
-// 由点击时刻的命中测试兜底。观测只列出此刻真的可点击的元素，被遮挡或禁用的目标
-// 不再进入 Elements，模型不必靠反复快照去猜为什么点不动。
-const snapshotScript = `(function () {
-  const root = globalThis;
-  root.__dshGuestMutationRevision ??= 0;
-  root.__dshGuestObservers?.forEach(observer => observer.disconnect());
-  const observers = new Map();
-  const scanRoots = () => {
-    const pending = [document]; let scanned = 0; let truncated = false;
-    while (pending.length && scanned < 50000) {
-      const tree = pending.pop();
-      if (!observers.has(tree)) {
-        const observer = new MutationObserver(() => { root.__dshGuestMutationRevision++; });
-        observer.observe(tree, { subtree: true, childList: true, attributes: true, characterData: true });
-        observers.set(tree, observer);
-        if (tree !== document) root.__dshGuestMutationRevision++;
-      }
-      const walker = document.createTreeWalker(tree, NodeFilter.SHOW_ELEMENT);
-      while (walker.nextNode()) {
-        if (++scanned > 50000) { truncated = true; break; }
-        if (walker.currentNode.shadowRoot) pending.push(walker.currentNode.shadowRoot);
-      }
-    }
-    if (pending.length) truncated = true;
-    for (const observer of observers.values()) {
-      if (observer.takeRecords().length) root.__dshGuestMutationRevision++;
-    }
-    root.__dshGuestObserverIncomplete = truncated;
-    return root.__dshGuestMutationRevision;
-  };
-  root.__dshGuestObservers = observers;
-  root.__dshGuestReadMutationRevision = scanRoots;
-  scanRoots();
-  root.__dshGuestRefs?.forEach(ref => ref.observer?.disconnect());
-  const refs = new Map(); const entries = [];
-  const ACTIONABLE = 'button, a[href], input, textarea, select, [role="button"], [role="link"], [role="textbox"]';
-  const BLOCKING = '[inert], [aria-disabled="true"]';
-  // 语义属性：改变它们可能改变点击的后果（提交目标、下载、导航、禁用状态）。
-  const SEMANTIC = ['role', 'id', 'type', 'name', 'value', 'href', 'ping', 'target', 'rel', 'download', 'hreflang',
-    'disabled', 'readonly', 'required', 'tabindex', 'contenteditable', 'inert', 'placeholder', 'title', 'for',
-    'accept', 'multiple', 'checked', 'selected', 'form', 'formaction', 'formmethod', 'formtarget', 'formenctype',
-    'formnovalidate', 'autocomplete', 'inputmode', 'spellcheck', 'dir', 'lang'];
-  const sortAttributes = attributes => attributes.sort((left, right) => left[0].localeCompare(right[0]));
-  const semantic = el => sortAttributes(Array.from(el.attributes, attr => [attr.name, attr.value])
-    .filter(([name]) => name.startsWith('on') || name.startsWith('aria-') || SEMANTIC.includes(name)));
-  // 祖先只比事件处理器与 inert：包装层的 class/style 会随动画和主题抖动。
-  const handlers = node => sortAttributes(Array.from(node.attributes, attr => [attr.name, attr.value])
-    .filter(([name]) => name.startsWith('on') || name === 'inert'));
-  const path = el => {
-    const chain = [];
-    for (let node = el; node && node !== document; node = node.parentNode || node.host) {
-      if (node.nodeType === Node.ELEMENT_NODE) chain.push({ node, parent: node.parentNode, attributes: handlers(node) });
-    }
-    return chain;
-  };
-  // 子树里新增的事件处理器会改变冒泡行为，其余子树更新与点击含义无关。
-  const subtreeHandlers = el => {
-    const found = []; let nodes = 0;
-    const walker = document.createTreeWalker(el, NodeFilter.SHOW_ELEMENT);
-    while (walker.nextNode()) {
-      if (++nodes > 200) return null;
-      const node = walker.currentNode;
-      for (const attr of Array.from(node.attributes)) {
-        if (attr.name.startsWith('on')) found.push(node.tagName + ':' + attr.name + '=' + attr.value);
-      }
-    }
-    return found.sort();
-  };
-  const identity = el => ({ tag: el.tagName,
-    attributes: semantic(el),
-    role: el.getAttribute('role'), id: el.getAttribute('id'),
-    // 名称只取属性来源：按钮里的计数、徽标或加载文案会随轮询变化，不代表目标换了含义。
-    name: el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('title') || '',
-    value: 'value' in el && typeof el.value === 'string' ? el.value : undefined,
-    href: el.href || el.getAttribute('href'), form: el.form?.id,
-    action: el.hasAttribute('formaction') ? el.formAction : el.form?.action,
-    method: el.hasAttribute('formmethod') ? el.formMethod : el.form?.method,
-    target: el.hasAttribute('formtarget') ? el.formTarget : el.form?.target || el.getAttribute('target'),
-    enctype: el.hasAttribute('formenctype') ? el.formEnctype : el.form?.enctype,
-    noValidate: !!(el.form?.noValidate || el.formNoValidate),
-    type: el.getAttribute('type'),
-    disabled: !!el.disabled || el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true',
-    readOnly: !!el.readOnly,
-    handlers: subtreeHandlers(el),
-    // 关联表单可能不在祖先链上（form 属性指向别处），它自己的处理器同样会截获提交。
-    formHandlers: el.form ? handlers(el.form) : undefined });
-  const clean = value => String(value).replace(/[\\u0000-\\u001f]/g, ' ').slice(0, 60);
-  const describe = node => {
-    if (!node || node.nodeType !== Node.ELEMENT_NODE) return '';
-    return clean(node.getAttribute('role') || node.tagName.toLowerCase()) + ' ' +
-      JSON.stringify(clean(node.getAttribute('aria-label') || node.getAttribute('title') || node.tagName.toLowerCase()));
-  };
-  root.__dshGuestIdentity = identity;
-  root.__dshGuestPath = path;
-  root.__dshGuestDescribe = describe;
-  const centre = (start, end, limit) => Math.max(0, Math.min(limit - 1, Math.floor((start + end) / 2)));
-  // 命中测试是引用仍然有效的最终依据；被遮挡时回报遮挡者，便于模型换目标或先关掉浮层。
-  const hit = el => {
-    const box = el.getBoundingClientRect();
-    const left = Math.max(0, box.left), top = Math.max(0, box.top);
-    const right = Math.min(innerWidth, box.right), bottom = Math.min(innerHeight, box.bottom);
-    if (left >= right || top >= bottom) return { reason: 'element_offscreen' };
-    const x = centre(left, right, innerWidth), y = centre(top, bottom, innerHeight);
-    let scope = el.getRootNode();
-    const covered = () => ({ reason: 'element_covered',
-      blocker: describe(scope.elementFromPoint ? scope.elementFromPoint(x, y) : null) });
-    const found = scope.elementFromPoint ? scope.elementFromPoint(x, y) : null;
-    if (!found || (found !== el && !el.contains(found))) return covered();
-    while (scope !== document) {
-      const host = scope.host; if (!host) return { reason: 'element_covered' };
-      scope = host.getRootNode();
-      if (!scope.elementFromPoint || scope.elementFromPoint(x, y) !== host) return covered();
-    }
-    return { ok: true, x: x, y: y };
-  };
-  root.__dshGuestHit = hit;
-  const walker = document.createTreeWalker(document, NodeFilter.SHOW_ELEMENT);
-  let scanned = 0;
-  while (walker.nextNode() && scanned++ < 50000 && entries.length < 150) {
-    const el = walker.currentNode;
-    if (!el.matches(ACTIONABLE)) continue;
-    const box = el.getBoundingClientRect(); const style = getComputedStyle(el);
-    if (!box.width || !box.height || style.display === 'none' || style.visibility === 'hidden' ||
-      style.pointerEvents === 'none' || box.right <= 0 || box.bottom <= 0 ||
-      box.left >= innerWidth || box.top >= innerHeight) continue;
-    if (el.closest(BLOCKING)) continue;
-    if (!hit(el).ok) continue;
-    const ref = 'e' + (entries.length + 1) + '-' + Date.now() + '-' + Math.random();
-    const entry = { el, form: el.form ?? null, identity: identity(el), path: path(el) };
-    const password = el instanceof HTMLInputElement && el.type === 'password';
-    const name = password ? (el.getAttribute('aria-label') || el.getAttribute('placeholder') || 'Password') :
-      (el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.innerText || el.value || el.getAttribute('title') || '');
-    refs.set(ref, entry);
-    entries.push(ref + ' ' + (el.getAttribute('role') || el.tagName.toLowerCase()) + ' ' +
-      JSON.stringify(String(name).trim().slice(0, 160)) + ' (' + [box.x, box.y, box.width, box.height].map(Math.round).join(',') + ')');
-  }
-  root.__dshGuestRefs = refs;
-  return { text: (document.body?.innerText || '').slice(0, 6000), entries,
-    title: document.title.slice(0, 4096), href: location.href.length <= 4096 ? location.href : null,
-    domRevision: scanRoots() };
-})()`
-
-type Snapshot = { text: string; entries: string[]; title: string; href: string | null; domRevision: number }
-
-/** 引用复核结果：命中点，或无法点击的具体原因与遮挡者。 */
-type TargetOutcome = { ok: true; x: number; y: number } | { ok?: false; reason?: string; blocker?: string }
-
 /**
  * 创建主进程持有的浏览器；隐藏工作台仅卸载视图，不停止页面或释放会话。
  * 调用方在窗口关闭前调用 dispose；操作错误以 code 区分拒绝、过期与不可用。
@@ -284,12 +47,14 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
   const tails = new Map<string, Promise<void>>()
   const leases = new Set<string>()
   let disposed = false
+  const backgroundStage = createBackgroundStage()
   let presented: { sessionId: string; tabId: BrowserTabId; bounds: BrowserGuestPresentation['bounds'] } | undefined
   let requestedPresentation: BrowserGuestPresentation | undefined
   let overlay: ReturnType<typeof createBrowserInputOverlay> | undefined
   let cursorOverlay: ReturnType<typeof createBrowserCursorOverlay> | undefined
   // 指针位置归标签页所有；释放输入租约不清空它。
   const pointers = new Map<BrowserTabId, { x: number; y: number }>()
+  const { usableUrl, evaluate, assertStable, observe, refreshMutation } = createGuestObserver({ owners, destroy, emit })
 
   function clearOverlay(): void { overlay?.close(); overlay = undefined }
   function clearCursorOverlay(): void { cursorOverlay?.dispose(); cursorOverlay = undefined }
@@ -307,21 +72,11 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     if (!presented || !owners.get(presented.sessionId)?.lease) { clearOverlay(); return }
     try {
       overlay ??= createBrowserInputOverlay(window, () => {
-        if (presented) {
-          const tab = owners.get(presented.sessionId)?.tabs.get(presented.tabId)
-          if (tab) detach(tab)
-          presented = undefined
-        }
-        clearOverlay()
-        clearCursorOverlay()
+        concealPresentation()
       })
       overlay.attach(presented.bounds)
     } catch (error) {
-      const tab = owners.get(presented.sessionId)?.tabs.get(presented.tabId)
-      if (tab) detach(tab)
-      presented = undefined
-      clearOverlay()
-      clearCursorOverlay()
+      concealPresentation()
       throw error
     }
   }
@@ -350,18 +105,16 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
 
   function detach(tab: Tab): void {
     if (window.contentView.children.includes(tab.view)) window.contentView.removeChildView(tab.view)
+    backgroundStage.detach(tab.view)
   }
 
   function park(sessionId: string, owner: Owner, tab: Tab): void {
     if (presented?.sessionId === sessionId && presented.tabId === tab.id) return
-    const content = window.getContentBounds()
-    // View 仍在树中但移到窗口外：这样 Chromium 保留布局、CDP 截图和命中测试，真人看不到后台页。
-    tab.view.setBounds({ x: content.width + 1, y: 0, width: owner.viewport.width, height: owner.viewport.height })
-    if (!window.contentView.children.includes(tab.view)) window.contentView.addChildView(tab.view)
+    backgroundStage.attach(tab.view, owner.viewport)
   }
 
   function unpark(tab: Tab): void {
-    if (presented?.tabId !== tab.id) detach(tab)
+    if (presented?.tabId !== tab.id) backgroundStage.detach(tab.view)
   }
 
   function destroyTab(tab: Tab): void {
@@ -452,32 +205,6 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     return tab
   }
 
-  function refreshSummary(tab: Tab, title = tab.summary.title): void {
-    const wc = tab.view.webContents
-    const url = wc.getURL() || 'about:blank'
-    tab.summary = { id: tab.id, generation: tab.generation, url: url.length <= MAX_URL_LENGTH ? url : OVERLONG_URL, title,
-      canGoBack: wc.navigationHistory.canGoBack(), canGoForward: wc.navigationHistory.canGoForward(),
-      loading: wc.isLoading() }
-  }
-
-  function usableUrl(sessionId: string, owner: Owner, tab: Tab): string {
-    const url = tab.view.webContents.getURL() || 'about:blank'
-    if (url.length <= MAX_URL_LENGTH) return url
-    if (tab.summary.url !== OVERLONG_URL || tab.capture) {
-      invalidate(owner, tab)
-      refreshSummary(tab)
-      emit(sessionId, owner)
-    }
-    fail('browser page URL exceeds 4096 characters', 'BROWSER_FAILED')
-  }
-
-  function staleObservation(sessionId: string, owner: Owner, tab: Tab): never {
-    invalidate(owner, tab)
-    refreshSummary(tab)
-    emit(sessionId, owner)
-    fail('browser document changed during observation', 'BROWSER_STALE_REF')
-  }
-
   function ensure(sessionId: string): Owner {
     let owner = owners.get(sessionId)
     if (owner) return owner
@@ -515,30 +242,6 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     return pending
   }
 
-  async function evaluate<T>(tab: Tab, expression: string): Promise<T> {
-    const debuggerApi = tab.view.webContents.debugger
-    if (!debuggerApi.isAttached()) debuggerApi.attach('1.3')
-    if (tab.worldContextId === undefined) {
-      const frame = await debuggerApi.sendCommand('Page.getFrameTree') as { frameTree: { frame: { id: string } } }
-      const world = await debuggerApi.sendCommand('Page.createIsolatedWorld', {
-        frameId: frame.frameTree.frame.id, worldName: 'dsh-guest', grantUniveralAccess: false,
-      }) as { executionContextId: number }
-      tab.worldContextId = world.executionContextId
-    }
-    const result = await debuggerApi.sendCommand('Runtime.evaluate', {
-      expression, contextId: tab.worldContextId, returnByValue: true, awaitPromise: true,
-    }) as { result?: { value?: T }; exceptionDetails?: unknown }
-    if (result.exceptionDetails || result.result?.value === undefined) fail('browser document evaluation failed', 'BROWSER_FAILED')
-    return result.result.value
-  }
-
-  function assertStable(sessionId: string, owner: Owner, tab: Tab, navigation: number): void {
-    if (owners.get(sessionId) !== owner ||
-      owner.tabs.get(tab.id) !== tab || tab.navigation !== navigation || tab.view.webContents.isDestroyed()) {
-      fail('browser document changed during observation', 'BROWSER_STALE_REF')
-    }
-  }
-
   /**
    * 把引用复核结果变成模型可读的失败原因：只说「元素变了」会让模型反复重拍快照，
    * 遮挡、禁用与移出视口这类原因则指向重拍之外的动作。
@@ -559,59 +262,6 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     return fail(`browser element ${ref} ${reason}${blocker}`, 'BROWSER_STALE_REF')
   }
 
-  async function observe(sessionId: string, owner: Owner, tab: Tab, cursor: BrowserObservation['cursor'],
-    captureImage = false): Promise<BrowserCapture> {
-    const navigation = tab.navigation
-    usableUrl(sessionId, owner, tab)
-    const page = await evaluate<Snapshot>(tab, snapshotScript)
-    assertStable(sessionId, owner, tab, navigation)
-    const wc = tab.view.webContents
-    if (page.href === null || page.href !== usableUrl(sessionId, owner, tab)) staleObservation(sessionId, owner, tab)
-    const snapshot = `Page text:\n${page.text}\nElements:\n${page.entries.join('\n')}`.slice(0, 12_000)
-      .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ' ')
-    let png: Uint8Array | null = null
-    // 原生页面未呈现时仍可观测 DOM；显式截图在隐藏工作台中也必须尝试捕获新画面。
-    if (tab.everPresented || captureImage) {
-      let timer: ReturnType<typeof setTimeout> | undefined
-      let image: { data: string }
-      try {
-        image = await Promise.race([
-          wc.debugger.sendCommand('Page.captureScreenshot', {
-            format: 'png', captureBeyondViewport: false, fromSurface: true,
-          }) as Promise<{ data: string }>,
-          new Promise<never>((_resolve, reject) => {
-            timer = setTimeout(() => {
-              destroy(sessionId)
-              reject(new GuestError('browser screenshot timed out; browser session closed', 'BROWSER_FAILED'))
-            }, SCREENSHOT_TIMEOUT_MS)
-          }),
-        ])
-      } finally { if (timer) clearTimeout(timer) }
-      try { png = await fitBrowserPng(image.data, FRAME_LIMIT) }
-      catch (error) {
-        assertStable(sessionId, owner, tab, navigation)
-        invalidate(owner, tab)
-        emit(sessionId, owner)
-        fail(error instanceof Error ? `browser screenshot processing failed: ${error.message}` :
-          'browser screenshot processing failed', 'BROWSER_FAILED')
-      }
-    }
-    assertStable(sessionId, owner, tab, navigation)
-    if (page.href !== usableUrl(sessionId, owner, tab)) staleObservation(sessionId, owner, tab)
-    // 页面其他区域可以在截图期间更新；引用在输入时逐一复核节点身份和命中位置。
-    // 人工坐标输入仍以观测开始时的修订版复核，截图期间的任何变更会在输入前拒绝。
-    refreshSummary(tab, page.title.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ' '))
-    const observation: BrowserObservation = { tabId: tab.id, generation: tab.generation,
-      revision: ++tab.revision, url: page.href, title: tab.summary.title, snapshot,
-      viewport: { ...owner.viewport }, cursor }
-    const capture: BrowserCapture = { observation, png: png === null ? null : new Uint8Array(png) }
-    tab.capture = capture
-    tab.domRevision = page.domRevision
-    owner.revision++
-    emit(sessionId, owner, capture.png === null ? undefined : capture)
-    return capture
-  }
-
   function assertTarget(owner: Owner | undefined, expected: BrowserExpectedTarget | undefined): void {
     if (!expected) return
     if (expected.kind === 'none') {
@@ -625,122 +275,11 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     }
   }
 
-  async function refreshMutation(sessionId: string, owner: Owner, tab: Tab): Promise<void> {
-    if (tab.domRevision === undefined) return
-    const navigation = tab.navigation
-    const current = await evaluate<{ revision: number; incomplete: boolean }>(tab,
-      '({ revision: globalThis.__dshGuestReadMutationRevision(), incomplete: !!globalThis.__dshGuestObserverIncomplete })')
-    assertStable(sessionId, owner, tab, navigation)
-    if (current.incomplete || current.revision !== tab.domRevision) {
-      invalidate(owner, tab)
-      emit(sessionId, owner)
-    }
-  }
-
-  async function navigate(sessionId: string, owner: Owner, tab: Tab, url: string, human = false): Promise<void> {
-    const wc = tab.view.webContents
-    const destination = allowedUrl(url)
-    let started = false
-    let committedUrl: string | undefined
-    let committedNavigation: number | undefined
-    let commitTask: ReturnType<typeof setImmediate> | undefined
-    const destinations = new Set([destination])
-    let resolveCommit!: (value: { timedOut: false; error?: unknown }) => void
-    const committed = new Promise<{ timedOut: false; error?: unknown }>((resolve) => { resolveCommit = resolve })
-    const onStart = (details: { isMainFrame: boolean; url: string }): void => {
-      if (details.isMainFrame && owners.get(sessionId) === owner && owner.tabs.get(tab.id) === tab) {
-        if (commitTask) clearImmediate(commitTask)
-        commitTask = undefined
-        committedUrl = undefined
-        started = details.url === destination
-      }
-    }
-    const onRedirect = (details: { isMainFrame: boolean; url: string }): void => {
-      if (started && details.isMainFrame && owners.get(sessionId) === owner && owner.tabs.get(tab.id) === tab) {
-        destinations.add(details.url)
-      }
-    }
-    const onCommit = (_event: unknown, url: string): void => {
-      if (!started || !destinations.has(url) || url !== wc.getURL() ||
-        owners.get(sessionId) !== owner || owner.tabs.get(tab.id) !== tab || wc.isDestroyed()) return
-      try { allowedUrl(url) }
-      catch (error) { resolveCommit({ timedOut: false, error }); return }
-      committedUrl = url
-      committedNavigation = tab.navigation
-      // 同一事件循环内本次 loadURL 的拒绝优先于提交回执；旧加载的异步拒绝不影响本次导航。
-      if (human) commitTask ??= setImmediate(() => { resolveCommit({ timedOut: false }) })
-    }
-    const onDomReady = (): void => {
-      if (human || committedUrl === undefined || wc.getURL() !== committedUrl ||
-        owners.get(sessionId) !== owner || owner.tabs.get(tab.id) !== tab || wc.isDestroyed()) return
-      // DOM 已就绪即可观测；让同一事件循环中的 loadURL 拒绝先于成功回执。
-      commitTask ??= setImmediate(() => { resolveCommit({ timedOut: false }) })
-    }
-    wc.on('did-start-navigation', onStart)
-    wc.on('did-redirect-navigation', onRedirect)
-    wc.on('did-navigate', onCommit)
-    if (!human) wc.on('dom-ready', onDomReady)
-    const completed = Promise.resolve().then(() => wc.loadURL(destination))
-      .then(() => ({ timedOut: false as const }), (error: unknown) => ({ timedOut: false as const, error }))
-    const readiness = Promise.race([completed, committed])
-    let timer: ReturnType<typeof setTimeout> | undefined
-    const deadline = new Promise<{ timedOut: true }>((resolve) => {
-      timer = setTimeout(() => { resolve({ timedOut: true }) }, NAVIGATION_TIMEOUT_MS)
-    })
-    const result = await Promise.race([readiness, deadline])
-    if (timer) clearTimeout(timer)
-    if (commitTask) clearImmediate(commitTask)
-    wc.removeListener('did-start-navigation', onStart)
-    wc.removeListener('did-redirect-navigation', onRedirect)
-    wc.removeListener('did-navigate', onCommit)
-    if (!human) wc.removeListener('dom-ready', onDomReady)
-    if (!result.timedOut) {
-      // 保留 loadURL 的原始失败诊断，不能把被拒绝的导航当作已完成页面。
-      if ('error' in result) throw result.error
-      if (owners.get(sessionId) !== owner || owner.tabs.get(tab.id) !== tab || wc.isDestroyed()) {
-        fail('browser navigation target changed', 'BROWSER_STALE_REF')
-      }
-      if (!human && committedNavigation !== undefined && committedNavigation !== tab.navigation) {
-        fail('browser document changed during navigation', 'BROWSER_STALE_REF')
-      }
-      refreshSummary(tab)
-      return
-    }
-
-    // 停止之后仍须等待原 loadURL 收敛，并确认主 frame 与 CDP 均可响应。
-    // 超时的旧调用不再有任何继续观察或写回状态的机会。
-    let stopTimer: ReturnType<typeof setTimeout> | undefined
-    let quiescent = false
-    const recovery = { expired: false }
-    const stillRecovering = (): boolean => !recovery.expired
-    try {
-      wc.stop()
-      quiescent = await Promise.race([
-        (async () => {
-          await completed
-          if (recovery.expired || wc.isDestroyed() || wc.isLoadingMainFrame()) return false
-          const debuggerApi = wc.debugger
-          if (!debuggerApi.isAttached()) debuggerApi.attach('1.3')
-          await debuggerApi.sendCommand('Page.getFrameTree')
-          return stillRecovering() && !wc.isDestroyed() && !wc.isLoadingMainFrame()
-        })().catch(() => false),
-        new Promise<false>((resolve) => {
-          stopTimer = setTimeout(() => { recovery.expired = true; resolve(false) }, NAVIGATION_STOP_TIMEOUT_MS)
-        }),
-      ])
-    } catch { /* 无法证明导航停稳时只销毁当前 Session。 */ }
-    finally { if (stopTimer) clearTimeout(stopTimer) }
-    if (!quiescent) {
-      destroy(sessionId)
-      fail('browser navigation timed out and could not be stopped safely; browser session closed', 'BROWSER_FAILED')
-    }
-    invalidate(owner, tab)
-    refreshSummary(tab)
-    emit(sessionId, owner)
-    // 主 frame 已提交且可观测时，模型导航仍可返回该页面；保留严格文档校验。
-    if (!human && committedUrl !== undefined && wc.getURL() === committedUrl &&
-      committedNavigation !== undefined && committedNavigation + 1 === tab.navigation) return
-    fail('browser navigation timed out; loading stopped, take a new snapshot of the current page', 'BROWSER_FAILED')
+  function navigate(sessionId: string, owner: Owner, tab: Tab, url: string, human = false): Promise<void> {
+    return navigateGuest(sessionId, owner, tab, url, {
+      isCurrent: () => owners.get(sessionId) === owner && owner.tabs.get(tab.id) === tab,
+      destroy: () => { destroy(sessionId) }, emit: () => { emit(sessionId, owner) },
+    }, human)
   }
 
   function checkHumanTarget(owner: Owner, tab: Tab, target: BrowserHumanTarget, x: number, y: number): void {
@@ -761,6 +300,17 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     finally { tab.syntheticInput = false }
   }
 
+  /** 正在执行或等待审批时撤下前台呈现，仍为同一 guest 保留可观测的隐藏承载。 */
+  function concealPresentation(): void {
+    if (!presented) return
+    const owner = owners.get(presented.sessionId)
+    const tab = owner?.tabs.get(presented.tabId)
+    clearOverlay(); clearCursorOverlay(); presented = undefined
+    if (!tab || !owner) return
+    detach(tab)
+    if (owner.lease) backgroundStage.attach(tab.view, owner.viewport)
+  }
+
   function show(presentation: BrowserGuestPresentation): void {
     if (!presentation.visible && requestedPresentation &&
       (requestedPresentation.sessionId !== presentation.sessionId || requestedPresentation.tabId !== presentation.tabId)) return
@@ -770,13 +320,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     const owner = owners.get(sessionId)
     const tab = owner?.tabs.get(tabId)
     if (!visible || !tab || owner?.active !== tabId) {
-      if (presented) {
-        clearOverlay()
-        clearCursorOverlay()
-        const old = owners.get(presented.sessionId)?.tabs.get(presented.tabId)
-        if (old) detach(old)
-        presented = undefined
-      }
+      concealPresentation()
       return
     }
     const content = window.getContentBounds()
@@ -790,12 +334,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     const boundedHeight = Math.min(height, 1400)
     const effective = { x, y, width: boundedWidth, height: boundedHeight }
     const same = presented?.sessionId === sessionId && presented.tabId === tabId
-    if (presented && !same) {
-      clearOverlay()
-      clearCursorOverlay()
-      const old = owners.get(presented.sessionId)?.tabs.get(presented.tabId)
-      if (old) detach(old)
-    }
+    if (presented && !same) concealPresentation()
     const oldBounds = presented?.bounds
     if (!same || !oldBounds || Object.keys(effective).some(key => effective[key as keyof typeof effective] !==
       oldBounds[key as keyof typeof effective])) tab.view.setBounds(effective)
@@ -842,138 +381,30 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
       const owner = previous ?? ensure(sessionId)
       const tab = active(owner)
       park(sessionId, owner, tab)
-      let cursor: BrowserObservation['cursor'] = null
-      let mutated = false
-      let feedback: Promise<void> | undefined
-      try { switch (command.kind) {
-        case 'navigate': await navigate(sessionId, owner, tab, command.url); break
-        case 'click':
-        case 'fill': {
-          if (command.revision !== tab.revision || !tab.capture) fail('stale browser element revision', 'BROWSER_STALE_REF')
-          const latest = tab.capture as BrowserCapture | undefined
-          if (latest?.observation.revision !== command.revision) fail('stale browser element revision', 'BROWSER_STALE_REF')
-          const documentEpoch = tab.navigation
-          const escaped = JSON.stringify(command.ref)
-          // 引用复核只判断点击含义：节点身份、事件处理器、导航与表单语义、命中位置。
-          // 展示性属性与子树文本的更新不再单独判过期，由点击时刻的命中测试兜底。
-          const targetExpression = `(() => { const ref = globalThis.__dshGuestRefs?.get(${escaped}); const el = ref?.el;
-              if (!el || !el.isConnected) return { reason: 'element_left_document' };
-              if (ref.form !== (el.form ?? null)) return { reason: 'element_form_changed' };
-              const path = globalThis.__dshGuestPath(el);
-              if (path.length !== ref.path.length || path.some((part, i) =>
-                part.node !== ref.path[i].node || part.parent !== ref.path[i].parent ||
-                JSON.stringify(part.attributes) !== JSON.stringify(ref.path[i].attributes))) {
-                return { reason: 'ancestors_changed' };
-              }
-              if (JSON.stringify(ref.identity) !== JSON.stringify(globalThis.__dshGuestIdentity(el))) {
-                return { reason: 'element_changed' };
-              }
-              if (${command.kind === 'fill'} && (el.disabled || el.readOnly ||
-                (!('value' in el) && !el.isContentEditable))) return { reason: 'element_not_editable' };
-              const style = getComputedStyle(el), box = el.getBoundingClientRect();
-              if (!box.width || !box.height || style.display === 'none' || style.visibility === 'hidden' ||
-                style.pointerEvents === 'none') return { reason: 'element_hidden' };
-              if (ref.identity.disabled || el.matches(':disabled') ||
-                el.closest('[aria-disabled="true"], [inert]')) return { reason: 'element_disabled' };
-              return globalThis.__dshGuestHit(el); })()`
-          const box = requireTarget(await evaluate<TargetOutcome>(tab, targetExpression), command.ref, owner)
-          assertStable(sessionId, owner, tab, documentEpoch)
-          const current = tab.capture as BrowserCapture | undefined
-          if (current?.observation.revision !== command.revision) {
-            fail('browser element changed before input', 'BROWSER_STALE_REF')
-          }
-          await moveCursor(sessionId, tab, box.x, box.y)
-          // 目标移动本身不是过期：第二次复核用当前命中点决定落点。
-          const verified = requireTarget(await evaluate<TargetOutcome>(tab, targetExpression), command.ref, owner)
-          assertStable(sessionId, owner, tab, documentEpoch)
-          assertTarget(owner, expectedTarget)
-          const movedCapture = tab.capture as BrowserCapture | undefined
-          if (movedCapture?.observation.revision !== command.revision) {
-            fail('browser element changed during cursor movement', 'BROWSER_STALE_REF')
-          }
-          const { x, y } = verified
-          cursor = { x, y, kind: command.kind, at: Date.now() }
-          mutated = true
-          await tab.view.webContents.debugger.sendCommand('Input.dispatchMouseEvent', {
-            type: 'mousePressed', x, y, button: 'left', clickCount: 1,
-          })
-          try {
-            assertStable(sessionId, owner, tab, documentEpoch)
-            assertTarget(owner, expectedTarget)
-          } catch (error) {
-            // 已按下但文档变化时不能向新文档补 release；关闭会话收敛原生按键状态。
-            destroy(sessionId)
-            throw error
-          }
-          await tab.view.webContents.debugger.sendCommand('Input.dispatchMouseEvent', {
-            type: 'mouseReleased', x, y, button: 'left', clickCount: 1,
-          })
-          if (command.kind === 'fill') {
-            assertStable(sessionId, owner, tab, documentEpoch)
-            const focused = await evaluate<boolean>(tab, `(() => { const ref = globalThis.__dshGuestRefs?.get(${escaped}); const el = ref?.el;
-              if (!el || !el.isConnected || ref.form !== (el.form ?? null)) return false;
-              const path = globalThis.__dshGuestPath(el);
-              if (path.length !== ref.path.length || path.some((part, i) =>
-                part.node !== ref.path[i].node || part.parent !== ref.path[i].parent ||
-                JSON.stringify(part.attributes) !== JSON.stringify(ref.path[i].attributes)) ||
-                JSON.stringify(ref.identity) !== JSON.stringify(globalThis.__dshGuestIdentity(el)) ||
-                el.disabled || el.readOnly || (!('value' in el) && !el.isContentEditable)) return false;
-              el.focus(); if (el.getRootNode().activeElement !== el) return false;
-              if (el.isContentEditable) el.textContent = '';
-              else { const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value')?.set;
-                if (setter) setter.call(el, ''); else el.value = ''; }
-              el.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`)
-            assertStable(sessionId, owner, tab, documentEpoch)
-            const current = tab.capture as BrowserCapture | undefined
-            if (!focused || current?.observation.revision !== command.revision) {
-              fail('browser element changed before fill', 'BROWSER_STALE_REF')
-            }
-            await tab.view.webContents.debugger.sendCommand('Input.insertText', { text: command.text })
-          }
-          if (presented?.sessionId === sessionId && presented.tabId === tab.id) {
-            feedback = cursorOverlay?.move({ x, y }, command.kind).catch(() => {})
-          }
-          pointers.set(tab.id, { x, y })
-          break
-        }
-        case 'scroll': {
-          const pixels = Math.min(Math.max(command.pixels, 0), owner.viewport.height)
-          const epoch = tab.navigation
-          // 滚轮落在指针当前位置；没有指针时（会话内首个动作）才退回视口中心。
-          const pointer = pointers.get(tab.id) ?? {
-            x: Math.floor(owner.viewport.width / 2), y: Math.floor(owner.viewport.height / 2),
-          }
-          const x = pointer.x, y = pointer.y
-          assertStable(sessionId, owner, tab, epoch)
-          assertTarget(owner, expectedTarget)
-          mutated = true
-          await evaluate(tab, 'true')
-          assertStable(sessionId, owner, tab, epoch)
-          assertTarget(owner, expectedTarget)
-          await tab.view.webContents.debugger.sendCommand('Input.dispatchMouseEvent', {
-            type: 'mouseWheel', x, y, deltaX: 0, deltaY: (command.direction === 'down' ? 1 : -1) * pixels,
-          })
-          // 为异步滚轮合成留出时间；隐藏页面不依赖 requestAnimationFrame。
-          await new Promise<void>(resolve => setTimeout(resolve, 100))
-          assertStable(sessionId, owner, tab, epoch)
-          pointers.set(tab.id, { x, y })
-          if (presented?.sessionId === sessionId && presented.tabId === tab.id) {
-            showCursor()
-            feedback = cursorOverlay?.move({ x, y }, 'scroll').catch(() => {})
-          }
-          cursor = { x, y, kind: 'scroll', at: Date.now() }
-          break
-        }
-        case 'snapshot': case 'screenshot': break
-        default: { const never: never = command; throw new Error(`unknown browser command: ${String(never)}`) }
-      }
-      const capture = await observe(sessionId, owner, tab, cursor, command.kind === 'screenshot')
-      await feedback
-      unpark(tab)
-      return capture
+      const mutation = { occurred: false }
+      try {
+        const { cursor, feedback } = await performModelOperation({
+          command, owner, tab, evaluate, requireTarget, pointers,
+          assertStable: (navigation) => { assertStable(sessionId, owner, tab, navigation) },
+          assertTarget: () => { assertTarget(owner, expectedTarget) },
+          destroy: () => { destroy(sessionId) },
+          moveCursor: (x, y) => moveCursor(sessionId, tab, x, y),
+          feedback: (x, y, kind) => {
+            if (presented?.sessionId !== sessionId || presented.tabId !== tab.id) return undefined
+            if (kind === 'scroll') showCursor()
+            return cursorOverlay?.move({ x, y }, kind).catch(() => {})
+          },
+          mutate: () => { mutation.occurred = true },
+          navigate: url => navigate(sessionId, owner, tab, url),
+          fail: message => fail(message, 'BROWSER_STALE_REF'),
+        })
+        const capture = await observe(sessionId, owner, tab, cursor, command.kind === 'screenshot')
+        await feedback
+        unpark(tab)
+        return capture
       } catch (error) {
         unpark(tab)
-        if (mutated && owners.get(sessionId) === owner && owner.tabs.has(tab.id)) {
+        if (mutation.occurred && owners.get(sessionId) === owner && owner.tabs.has(tab.id)) {
           invalidate(owner, tab)
           emit(sessionId, owner)
         }
@@ -1129,7 +560,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     release: (sessionId) => {
       leases.delete(sessionId)
       const owner = owners.get(sessionId)
-      if (owner) { owner.lease = false; emit(sessionId, owner) }
+      if (owner) { owner.lease = false; if (presented?.sessionId !== sessionId) unpark(active(owner)); emit(sessionId, owner) }
       if (requestedPresentation) show(requestedPresentation)
       return Promise.resolve(null)
     },
@@ -1137,6 +568,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     dispose: async () => {
       disposed = true
       for (const sessionId of [...owners.keys()]) destroy(sessionId)
+      backgroundStage.dispose()
       clearCursorOverlay()
       await Promise.all([...tails.values()])
     },

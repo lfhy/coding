@@ -76,6 +76,7 @@ function fakeContents() {
     domReady: () => events.get('dom-ready')?.(),
     finish: () => { loading = false; events.get('did-stop-loading')?.() },
     debugger: { isAttached: vi.fn(() => true), attach: vi.fn(), sendCommand },
+    setBackgroundThrottling: vi.fn(),
     session: {
       setPermissionRequestHandler: vi.fn<(
         handler: (contents: unknown, permission: string, callback: (allowed: boolean) => void) => void,
@@ -148,8 +149,10 @@ beforeEach(() => {
   vi.clearAllMocks()
   electron.views.length = 0
   electron.BaseWindow.mockImplementation(function () {
+    const children: unknown[] = []
     return {
-      contentView: { addChildView: vi.fn() },
+      contentView: { children, addChildView: vi.fn((view: unknown) => { children.push(view) }),
+        removeChildView: vi.fn((view: unknown) => { const index = children.indexOf(view); if (index >= 0) children.splice(index, 1) }) },
       setIgnoreMouseEvents: vi.fn(), setBounds: vi.fn(), showInactive: vi.fn(), hide: vi.fn(),
       isVisible: vi.fn(() => false), isDestroyed: vi.fn(() => false), destroy: vi.fn(),
       on: vi.fn(), removeListener: vi.fn(),
@@ -296,6 +299,7 @@ describe('Electron 实时浏览器 guest', () => {
     window.getContentBounds.mockReturnValue({ x: 20, y: 30, width: 800, height: 600 })
     const manager = createBrowserGuestManager(window)
     const navigated = await manager.execute('s1', { kind: 'navigate', url: 'https://example.com/' })
+    electron.BaseWindow.mockClear()
     manager.present({ sessionId: 's1', tabId: navigated.observation.tabId, visible: true,
       bounds: { x: 0, y: 0, width: 500, height: 400 } })
     await manager.lease('s1')
@@ -347,6 +351,7 @@ describe('Electron 实时浏览器 guest', () => {
   it('仅滚动的首个动作也在租约释放后留下指针', async () => {
     const manager = createBrowserGuestManager(fixture())
     const initial = await manager.execute('s1', { kind: 'navigate', url: 'https://example.com/' })
+    electron.BaseWindow.mockClear()
     manager.present({ sessionId: 's1', tabId: initial.observation.tabId, visible: true,
       bounds: { x: 0, y: 0, width: 501, height: 401 } })
     await manager.lease('s1')
@@ -1353,7 +1358,7 @@ describe('Electron 实时浏览器 guest', () => {
     expect(electron.views[0]!.webContents.debugger.sendCommand.mock.calls.some(([method]) =>
       method === 'Page.captureScreenshot')).toBe(true)
     expect(window.contentView.children).toHaveLength(0)
-    expect(electron.views[0]!.setBounds).toHaveBeenLastCalledWith({ x: 801, y: 0, width: 1280, height: 720 })
+    expect(electron.views[0]!.setBounds).toHaveBeenLastCalledWith({ x: 0, y: 0, width: 1280, height: 720 })
     expect(electron.views[0]!.webContents.close).not.toHaveBeenCalled()
     expect(first.png).toBeNull()
     await manager.release('worker-a')
