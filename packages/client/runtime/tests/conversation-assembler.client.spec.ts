@@ -1,9 +1,12 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, expectTypeOf, it, vi } from 'vitest'
 import type { SessionEvent } from 'coding-session/types'
+import type {
+  ConversationLocationDataStore, ConversationStepDataMap, ConversationTurnDataMap,
+} from 'coding-client-runtime/client'
 import { ConversationNodeAssembler } from '../src/client/sessions/conversation-assembler.ts'
 import type {
   ConversationEventInput, ConversationMatch, ConversationNodeContext,
-  ConversationNodeDefinition, ConversationViewDefinition, ConversationViewNode,
+  ConversationNodeDefinition, ConversationViewDefinition, ConversationViewNode, StepLocation, TurnLocation,
 } from '../src/client/contract/conversation.ts'
 
 interface ScopeProbeStepData {
@@ -14,7 +17,7 @@ interface ScopeProbeTurnData {
   readonly valueSeenFromStep: number
 }
 
-declare module '../src/client/contract/conversation.ts' {
+declare module 'coding-client-runtime/client' {
   interface ConversationStepDataMap {
     'scope-probe': ScopeProbeStepData
   }
@@ -597,6 +600,13 @@ describe('ConversationNodeAssembler', () => {
   })
 
   it('lets one Context publish Step and Turn data in phase order', () => {
+    expectTypeOf<ConversationStepDataMap['scope-probe']>().toEqualTypeOf<ScopeProbeStepData>()
+    expectTypeOf<ConversationTurnDataMap['scope-probe']>().toEqualTypeOf<ScopeProbeTurnData>()
+    expectTypeOf<StepLocation['data']>()
+      .toEqualTypeOf<ConversationLocationDataStore<ConversationStepDataMap>>()
+    expectTypeOf<TurnLocation['data']>()
+      .toEqualTypeOf<ConversationLocationDataStore<ConversationTurnDataMap>>()
+
     interface State {
       readonly turn: number
       readonly step: number
