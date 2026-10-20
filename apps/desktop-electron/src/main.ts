@@ -21,6 +21,7 @@ import { isGuiLaunch, resolveRuntimeConfig, type RuntimeConfig } from './runtime
 import { createHostWindow } from './window.ts'
 
 const repositoryRoot = resolve(fileURLToPath(new URL('../../..', import.meta.url)))
+const BROWSER_STOP_MS = 3_000
 
 let mainWindow: BrowserWindow | undefined
 let nativeChrome: NativeChrome | undefined
@@ -39,7 +40,7 @@ let startupAbort: AbortController | undefined
 let quitting = false
 let quitCompleted = false
 
-/** 先撤销 renderer 与 Host 通道，再释放同一窗口拥有的所有 guest。 */
+/** 撤销通道并立即销毁 guest；有界等待旧实例清理，不阻塞 helper 退出。 */
 function stopBrowser(): Promise<void> {
   if (browserClosing) return browserClosing
   disposeBrowserIpc?.()
@@ -49,8 +50,17 @@ function stopBrowser(): Promise<void> {
   browserBridge = undefined
   browserManager = undefined
   browserClosing = (async () => {
-    try { await bridge?.dispose() } catch { /* helper 关闭不依赖桥清理成功。 */ }
-    try { await manager?.dispose() } catch { /* 窗口和 helper 仍须关闭。 */ }
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      // manager 同步销毁 guest，打断桥中尚未完成的操作；迟到清理只持有旧实例。
+      await Promise.race([
+        Promise.allSettled([
+          (async () => { await bridge?.dispose() })(),
+          (async () => { await manager?.dispose() })(),
+        ]),
+        new Promise<void>((resolve) => { timer = setTimeout(resolve, BROWSER_STOP_MS) }),
+      ])
+    } finally { clearTimeout(timer) }
   })().finally(() => { browserClosing = undefined })
   return browserClosing
 }
@@ -90,6 +100,7 @@ function scheduleHelperStop(): void {
 
 /** 再次打开窗口时重新发现 Host；原 Host 可按自己的空闲策略独立退出。 */
 function openWindow(): Promise<void> {
+  if (quitting) return Promise.resolve()
   if (mainWindow !== undefined && !mainWindow.isDestroyed()) {
     nativeChrome?.showWindow()
     return Promise.resolve()
@@ -123,7 +134,7 @@ function openWindow(): Promise<void> {
       await stopBrowser()
       throw error
     }
-    if (quitting || controller.signal.aborted) {
+    if (controller.signal.aborted) {
       await next.close()
       await stopBrowser()
       return
@@ -204,6 +215,8 @@ async function start(): Promise<void> {
   app.on('before-quit', (event) => {
     if (quitCompleted) return
     event.preventDefault()
+    // 所有退出入口共用当前清理，不能让重入请求提前放行 app.quit。
+    if (quitting) return
     quitting = true
     startupAbort?.abort()
     nativeChrome?.dispose()
