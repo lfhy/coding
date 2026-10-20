@@ -1,0 +1,38 @@
+# 仅替换模型边界；真实 Loader、agent loop、todo_write 与持久化共同验证提醒位置。
+- id: replay
+  name: 'coding-llm-replay'
+
+- id: progress-reminder
+  name: 'coding-progress-reminder'
+  config:
+    toolCallsPerReminder: 3
+
+- id: tool-todo
+  name: 'coding-tool-todo'
+  config:
+    allowParallelInProgress: true
+
+- id: agent
+  name: 'coding-agent-spine-demo'
+  config:
+    agents:
+      - id: main
+        provider: deepseek-official
+        model: deepseek-v4-flash
+        cwd: !!js process.cwd()
+    tools:
+      mode: native
+    includeHarnessIdentity: false
+    includeRuntimeContext: false
+    persona: 'Track the work with todo_write and report progress while continuing the task.'
+    workspaceContext: false
+    skills:
+      enabled: false
+    toolBash: false
+    toolJobs: false
+
+- id: persistence
+  name: 'coding-session-persistence-jsonl'
+  config:
+    root: './.sessions'
+    compression: none

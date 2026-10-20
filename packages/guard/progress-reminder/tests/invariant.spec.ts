@@ -3,7 +3,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { renderProgressReminder } from 'coding-progress-reminder'
 import * as ProgressInvariant from 'coding-progress-reminder/invariant'
 import InvariantRegistry from 'coding-invariants'
-import { CallId, createToolResultMessage, createUserMessage } from 'coding-llm'
+import { CallId, createAssistantMessage, createToolResultMessage, createUserMessage } from 'coding-llm'
 import SessionStore, { Session, SessionId } from 'coding-session'
 
 async function setup(): Promise<Context> {
@@ -69,6 +69,29 @@ describe('progress-reminder invariants', () => {
     appendReminder(session, renderProgressReminder(4))
 
     expect(() => { emitLastEvent(ctx, session) }).toThrow(/声明 4 次调用，日志中该边界之后为 2 次/)
+  })
+
+  it.each([1, 3])('validates only calls after visible assistant text, not the preceding calls (%i)', async (declared) => {
+    const ctx = await setup()
+    const session = Session.create(SessionId(`after-report-${String(declared)}`))
+    openTurn(session, 1)
+    appendToolResults(session, 2, 1)
+    session.append('assistant/message', {
+      turn: 1,
+      step: 2,
+      message: createAssistantMessage({
+        content: [{ type: 'text', text: '已经定位问题，继续修复。' }],
+        source: { provider: 'mock', model: 'mock' },
+      }),
+    }, { surfaceOp: 'append' })
+    appendToolResults(session, 1, 1, 2)
+    appendReminder(session, renderProgressReminder(declared))
+
+    if (declared === 1) {
+      expect(() => { emitLastEvent(ctx, session) }).not.toThrow()
+    } else {
+      expect(() => { emitLastEvent(ctx, session) }).toThrow(/声明 3 次调用，日志中该边界之后为 1 次/)
+    }
   })
 
   it('rejects a reminder whose text was altered', async () => {

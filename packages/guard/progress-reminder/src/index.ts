@@ -3,9 +3,9 @@
  * 循环在下一步骤前注入一条系统提醒，要求先在回复正文汇报进度，再继续执行。
  * 只有确实需要用户选择或确认时才提出问题；没有用户决策时不打断任务。
  *
- * 计数完全从会话日志派生：从尾部回扫，遇到本插件上一次注入的提醒或上一个轮次的
- * `turn/end` 就停。因此恢复、fork、压缩遮蔽后的计数都一致，插件不持有顺序敏感的
- * 内存状态，也不会因为漏记一次事件而少提醒或多提醒。
+ * 计数完全从会话日志派生：从尾部回扫，遇到最近的非空助手正文、本插件上一次提醒或
+ * 上一个轮次的 `turn/end` 就停。因此恢复、fork、压缩遮蔽后的计数都一致，插件不持有
+ * 顺序敏感的内存状态，也不会因为漏记一次事件而少提醒或多提醒。
  *
  * @module coding-progress-reminder
  */
@@ -17,10 +17,10 @@ import { createUserMessage } from 'coding-llm'
 import type { UserMessage } from 'coding-llm'
 import type { SessionEvent } from 'coding-session'
 
-/** Cordis plugin name used by loader diagnostics. */
+/** Cordis 插件名，用于加载器诊断与提醒来源。 */
 export const name = 'progress-reminder'
 
-/** The agent registry that owns pre-step processing. */
+/** 提供 pre-step 事件的 agent 注册表。 */
 export const inject = ['agents']
 
 /** 省略 `toolCallsPerReminder` 时一个轮次内允许连续完成的工具调用数。 */
@@ -32,7 +32,7 @@ export interface Config {
   toolCallsPerReminder?: number
 }
 
-/** Schemastery validation for {@link Config}. */
+/** 提醒节奏配置的 Schemastery 校验入口。 */
 export const Config: z<Config> = z.object({
   toolCallsPerReminder: z.number().default(DEFAULT_TOOL_CALLS_PER_REMINDER),
 })
@@ -41,7 +41,7 @@ export const Config: z<Config> = z.object({
  * 渲染提醒文本。数量取实际未汇报的调用数，因此一次并行批次跨过阈值时模型看到的是真实值。
  * 提醒只要求模型在当前触发点汇报一次；汇报完成后不要求逐步重复，并把用户决策限制在确实存在选择或确认时。
  * 没有需要用户决定的事项时，模型应直接继续执行，不为了满足提醒而额外询问。
- * @param toolCalls - 本插件这条提醒之前、当前轮次内已完成的工具调用数。
+ * @param toolCalls - 最近一次计数边界之后、这条提醒之前完成的工具调用数。
  * @returns 带 system-reminder 框架的注入文本。
  */
 export function renderProgressReminder(toolCalls: number): string {
@@ -61,9 +61,10 @@ function isProgressReminder(message: UserMessage): boolean {
 }
 
 /**
- * 统计当前轮次内、本插件上一次提醒之后完成的工具调用数。
+ * 统计当前轮次内、最近一次正文或提醒之后完成的工具调用数。
+ * 只有 trim 后非空的 text 块算正文；推理、工具调用和空白文本不重置计数。
  * @param events - 目标会话的全量日志；调用方可传 `session.events`。
- * @returns 尚未汇报的 `tool/result` 数；上一个 `turn/end` 或本插件的提醒消息都是计数边界。
+ * @returns 尚未汇报的 `tool/result` 数；最近的非空正文、本插件提醒或 `turn/end` 为计数边界。
  */
 export function unreportedToolCalls(events: readonly SessionEvent[]): number {
   let completed = 0
@@ -75,6 +76,8 @@ export function unreportedToolCalls(events: readonly SessionEvent[]): number {
       continue
     }
     if (event.type === 'turn/end') break
+    if (event.type === 'assistant/message'
+      && event.data.message.content.some(block => block.type === 'text' && block.text.trim().length > 0)) break
     if (event.type === 'user/message' && isProgressReminder(event.data)) break
   }
   return completed

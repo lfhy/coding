@@ -611,6 +611,9 @@ importers:
       coding-plan-mode:
         specifier: workspace:*
         version: link:../packages/plan/plan-mode
+      coding-progress-reminder:
+        specifier: workspace:*
+        version: link:../packages/guard/progress-reminder
       coding-pwsh-local:
         specifier: workspace:*
         version: link:../packages/shell/pwsh-local

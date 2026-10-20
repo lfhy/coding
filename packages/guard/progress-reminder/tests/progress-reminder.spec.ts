@@ -5,11 +5,12 @@ import AgentLoop from 'coding-agent-loop'
 import { mountAgentLoopTestDependencies } from 'coding-agent-loop-testkit'
 import {
   CallId,
+  createAssistantMessage,
   createToolResultMessage,
   createUserMessage,
   LlmAdapter,
 } from 'coding-llm'
-import type { GenerateOptions, StreamChunk } from 'coding-llm'
+import type { ContentBlock, GenerateOptions, StreamChunk } from 'coding-llm'
 import { Session, SessionId } from 'coding-session'
 import { defineContentToolFixture } from 'coding-tools'
 import * as progressReminder from 'coding-progress-reminder'
@@ -69,6 +70,14 @@ function appendToolResults(session: Session, count: number, turn: number, step =
   }
 }
 
+function appendAssistant(session: Session, content: ContentBlock[]): void {
+  session.append('assistant/message', {
+    turn: 1,
+    step: 2,
+    message: createAssistantMessage({ content, source: { provider: 'mock', model: 'mock' } }),
+  }, { surfaceOp: 'append' })
+}
+
 function reminderTexts(session: Session): string[] {
   const texts: string[] = []
   for (const event of session.events) {
@@ -118,6 +127,40 @@ describe('counting completed tool calls', () => {
     expect(unreportedToolCalls(session.events)).toBe(0)
     appendToolResults(session, 2, 2)
     expect(unreportedToolCalls(session.events)).toBe(2)
+  })
+
+  it('restarts after visible text even when the message also calls a tool', () => {
+    const session = Session.create(SessionId('visible-text'))
+    openTurn(session, 1)
+    appendToolResults(session, 3, 1)
+    appendAssistant(session, [
+      { type: 'reasoning', text: '先整理已完成的工作' },
+      { type: 'text', text: '已经定位到根因，接下来修复并补测试。' },
+      { type: 'tool-call', id: CallId('after-report'), name: 'tick', arguments: '{}' },
+    ])
+    expect(unreportedToolCalls(session.events)).toBe(0)
+
+    appendToolResults(session, 1, 1, 2)
+    expect(unreportedToolCalls(session.events)).toBe(1)
+    const restored = Session.create(SessionId('visible-text-restored'), session.events)
+    expect(unreportedToolCalls(restored.events)).toBe(1)
+  })
+
+  it.each<[ContentBlock[]]>([
+    [[]],
+    [[{ type: 'text', text: '' }]],
+    [[{ type: 'text', text: ' \n\t　' }]],
+    [[{ type: 'reasoning', text: '只在推理里记录进展' }]],
+    [[{ type: 'tool-call', id: CallId('silent-call'), name: 'tick', arguments: '{}' }]],
+    [[{ type: 'text', text: '\n' }, { type: 'reasoning', text: '仍然没有正文' }]],
+  ])('does not restart for assistant content without visible text: %j', (content) => {
+    const session = Session.create(SessionId('no-visible-text'))
+    openTurn(session, 1)
+    appendToolResults(session, 2, 1)
+    appendAssistant(session, content)
+    appendToolResults(session, 1, 1, 2)
+
+    expect(unreportedToolCalls(session.events)).toBe(3)
   })
 })
 
@@ -184,6 +227,29 @@ describe('pre-step injection', () => {
     appendToolResults(session, 1, 1, 5)
     await fire(ctx, agent, 1, 6)
     expect(reminderTexts(session)).toEqual([renderProgressReminder(2), renderProgressReminder(2)])
+  })
+
+  it('does not remind immediately after a progress report and counts subsequent calls afresh', async () => {
+    const { ctx } = await mount({ toolCallsPerReminder: 3 })
+    const session = Session.create(SessionId('progress-report'))
+    const agent = sessionAgent(session)
+    openTurn(session, 1)
+    appendToolResults(session, 2, 1)
+    appendAssistant(session, [{ type: 'text', text: '已经找到根因，继续修复。' }])
+    appendToolResults(session, 1, 1, 2)
+
+    await fire(ctx, agent, 1, 3)
+    expect(reminderTexts(session)).toHaveLength(0)
+
+    appendToolResults(session, 2, 1, 3)
+    await fire(ctx, agent, 1, 4)
+    expect(reminderTexts(session)).toEqual([renderProgressReminder(3)])
+
+    appendToolResults(session, 2, 1, 4)
+    appendAssistant(session, [{ type: 'text', text: '修复完成，正在验证。' }])
+    appendToolResults(session, 1, 1, 5)
+    await fire(ctx, agent, 1, 6)
+    expect(reminderTexts(session)).toHaveLength(1)
   })
 
   it('restarts counting at a new turn', async () => {
@@ -300,12 +366,18 @@ class ScriptedAdapter extends LlmAdapter {
   }
 }
 
-function toolCallResponse(callId: string): StreamChunk[] {
+function toolCallResponse(callId: string, text?: string): StreamChunk[] {
+  const toolIndex = text === undefined ? 0 : 1
+  const chunks: StreamChunk[] = text === undefined ? [] : [
+    { type: 'block-start', index: 0, blockType: 'text' },
+    { type: 'block-end', index: 0, block: { type: 'text', text } },
+  ]
   return [
-    { type: 'block-start', index: 0, blockType: 'tool-call' },
+    ...chunks,
+    { type: 'block-start', index: toolIndex, blockType: 'tool-call' },
     {
       type: 'block-end',
-      index: 0,
+      index: toolIndex,
       block: { type: 'tool-call', id: CallId(callId), name: 'tick', arguments: '{}' },
     },
     { type: 'finish', reason: { kind: 'tool-calls' } },
@@ -329,12 +401,27 @@ function requestText(request: GenerateOptions): string {
 }
 
 describe('real agent-loop request history', () => {
-  it('adds the reminder to the request that follows the threshold tool call', async () => {
-    const adapter = new ScriptedAdapter([
-      toolCallResponse('tick-1'),
-      toolCallResponse('tick-2'),
-      textResponse('done'),
-    ])
+  it.each([
+    {
+      description: 'adds the reminder to the request that follows the threshold tool call',
+      script: [toolCallResponse('tick-1'), toolCallResponse('tick-2'), textResponse('done')],
+      reminderCounts: [0, 0, 1],
+    },
+    {
+      description: 'restarts after voluntary and prompted reports in text plus tool responses',
+      script: [
+        toolCallResponse('tick-1'),
+        toolCallResponse('tick-2', '已经定位根因，继续修复。'),
+        toolCallResponse('tick-3'),
+        toolCallResponse('tick-4', '修复完成，继续验证。'),
+        toolCallResponse('tick-5'),
+        toolCallResponse('tick-6'),
+        textResponse('done'),
+      ],
+      reminderCounts: [0, 0, 0, 1, 1, 2, 2],
+    },
+  ])('$description', async ({ script, reminderCounts }) => {
+    const adapter = new ScriptedAdapter(script)
     const ctx = new Context()
     await mountAgentLoopTestDependencies(ctx)
     await ctx.plugin(AgentLoop, { agents: [] })
@@ -350,17 +437,22 @@ describe('real agent-loop request history', () => {
     }))
     const agent = ctx.agentLoop.create(SessionId('loop'), { provider: 'mock', model: 'mock' })
 
-    agent.followup(createUserMessage({
-      content: [{ type: 'text', text: 'start ticking' }],
-      source: { kind: 'user' },
-    }))
-    await agent.whenIdle()
+    try {
+      agent.followup(createUserMessage({
+        content: [{ type: 'text', text: 'start ticking' }],
+        source: { kind: 'user' },
+      }))
+      await agent.whenIdle()
 
-    expect(adapter.requests).toHaveLength(3)
-    expect(requestText(adapter.requests[0]!)).not.toContain('<system-reminder>')
-    expect(requestText(adapter.requests[1]!)).not.toContain('你已连续执行')
-    expect(requestText(adapter.requests[2]!)).toContain(renderProgressReminder(2))
-    expect(reminderTexts(agent.session)).toEqual([renderProgressReminder(2)])
-    await ctx.fiber.dispose()
+      expect(adapter.requests).toHaveLength(reminderCounts.length)
+      for (const [index, request] of adapter.requests.entries()) {
+        expect(requestText(request).split(renderProgressReminder(2)).length - 1).toBe(reminderCounts[index])
+      }
+      expect(reminderTexts(agent.session)).toEqual(
+        Array.from({ length: reminderCounts.at(-1)! }, () => renderProgressReminder(2)),
+      )
+    } finally {
+      await ctx.fiber.dispose()
+    }
   })
 })

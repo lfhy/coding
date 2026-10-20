@@ -50,6 +50,7 @@
     "coding-lsp-stdio": "workspace:*",
     "coding-permission-presets": "workspace:*",
     "coding-plan-mode": "workspace:*",
+    "coding-progress-reminder": "workspace:*",
     "coding-terminal": "workspace:*",
     "coding-terminal-bash": "workspace:*",
     "coding-pwsh-local": "workspace:*",

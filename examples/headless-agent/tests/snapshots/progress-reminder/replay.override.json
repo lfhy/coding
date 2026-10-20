@@ -1,0 +1,94 @@
+[
+  {
+    "kind": "chunks",
+    "chunks": [
+      { "type": "block-start", "index": 0, "blockType": "tool-call" },
+      { "type": "tool-call-delta", "index": 0, "id": "call_before_report_1", "name": "todo_write", "argumentsDelta": "{\"todos\":[{\"content\":\"Finish the progress reminder proof\",\"status\":\"in_progress\"}]}" },
+      { "type": "block-end", "index": 0, "block": { "type": "tool-call", "id": "call_before_report_1", "name": "todo_write", "arguments": "{\"todos\":[{\"content\":\"Finish the progress reminder proof\",\"status\":\"in_progress\"}]}" } },
+      { "type": "block-start", "index": 1, "blockType": "tool-call" },
+      { "type": "tool-call-delta", "index": 1, "id": "call_before_report_2", "name": "todo_write", "argumentsDelta": "{\"todos\":[{\"content\":\"Finish the progress reminder proof\",\"status\":\"in_progress\"}]}" },
+      { "type": "block-end", "index": 1, "block": { "type": "tool-call", "id": "call_before_report_2", "name": "todo_write", "arguments": "{\"todos\":[{\"content\":\"Finish the progress reminder proof\",\"status\":\"in_progress\"}]}" } },
+      { "type": "usage", "usage": { "inputTokens": 20, "outputTokens": 10 } },
+      { "type": "finish", "reason": { "kind": "tool-calls" } }
+    ]
+  },
+  {
+    "kind": "chunks",
+    "chunks": [
+      { "type": "block-start", "index": 0, "blockType": "text" },
+      { "type": "text-delta", "index": 0, "text": "Initial checks are complete; I am continuing the remaining verification." },
+      { "type": "block-end", "index": 0, "block": { "type": "text", "text": "Initial checks are complete; I am continuing the remaining verification." } },
+      { "type": "block-start", "index": 1, "blockType": "tool-call" },
+      { "type": "tool-call-delta", "index": 1, "id": "call_after_report_1", "name": "todo_write", "argumentsDelta": "{\"todos\":[{\"content\":\"Finish the progress reminder proof\",\"status\":\"in_progress\"}]}" },
+      { "type": "block-end", "index": 1, "block": { "type": "tool-call", "id": "call_after_report_1", "name": "todo_write", "arguments": "{\"todos\":[{\"content\":\"Finish the progress reminder proof\",\"status\":\"in_progress\"}]}" } },
+      { "type": "usage", "usage": { "inputTokens": 30, "outputTokens": 10 } },
+      { "type": "finish", "reason": { "kind": "tool-calls" } }
+    ]
+  },
+  {
+    "kind": "chunks",
+    "chunks": [
+      { "type": "block-start", "index": 0, "blockType": "text" },
+      { "type": "text-delta", "index": 0, "text": " \n\t " },
+      { "type": "block-end", "index": 0, "block": { "type": "text", "text": " \n\t " } },
+      { "type": "block-start", "index": 1, "blockType": "reasoning" },
+      { "type": "reasoning-delta", "index": 1, "text": "Continue the remaining checks without another user-facing report." },
+      { "type": "block-end", "index": 1, "block": { "type": "reasoning", "text": "Continue the remaining checks without another user-facing report." } },
+      { "type": "block-start", "index": 2, "blockType": "tool-call" },
+      { "type": "tool-call-delta", "index": 2, "id": "call_after_report_2", "name": "todo_write", "argumentsDelta": "{\"todos\":[{\"content\":\"Finish the progress reminder proof\",\"status\":\"in_progress\"}]}" },
+      { "type": "block-end", "index": 2, "block": { "type": "tool-call", "id": "call_after_report_2", "name": "todo_write", "arguments": "{\"todos\":[{\"content\":\"Finish the progress reminder proof\",\"status\":\"in_progress\"}]}" } },
+      { "type": "usage", "usage": { "inputTokens": 40, "outputTokens": 10 } },
+      { "type": "finish", "reason": { "kind": "tool-calls" } }
+    ]
+  },
+  {
+    "kind": "chunks",
+    "chunks": [
+      { "type": "block-start", "index": 0, "blockType": "tool-call" },
+      { "type": "tool-call-delta", "index": 0, "id": "call_after_report_3", "name": "todo_write", "argumentsDelta": "{\"todos\":[{\"content\":\"Finish the progress reminder proof\",\"status\":\"in_progress\"}]}" },
+      { "type": "block-end", "index": 0, "block": { "type": "tool-call", "id": "call_after_report_3", "name": "todo_write", "arguments": "{\"todos\":[{\"content\":\"Finish the progress reminder proof\",\"status\":\"in_progress\"}]}" } },
+      { "type": "usage", "usage": { "inputTokens": 50, "outputTokens": 5 } },
+      { "type": "finish", "reason": { "kind": "tool-calls" } }
+    ]
+  },
+  {
+    "kind": "chunks",
+    "chunks": [
+      { "type": "block-start", "index": 0, "blockType": "tool-call" },
+      { "type": "tool-call-delta", "index": 0, "id": "call_after_reminder_1", "name": "todo_write", "argumentsDelta": "{\"todos\":[{\"content\":\"Finish the progress reminder proof\",\"status\":\"in_progress\"}]}" },
+      { "type": "block-end", "index": 0, "block": { "type": "tool-call", "id": "call_after_reminder_1", "name": "todo_write", "arguments": "{\"todos\":[{\"content\":\"Finish the progress reminder proof\",\"status\":\"in_progress\"}]}" } },
+      { "type": "usage", "usage": { "inputTokens": 60, "outputTokens": 5 } },
+      { "type": "finish", "reason": { "kind": "tool-calls" } }
+    ]
+  },
+  {
+    "kind": "chunks",
+    "chunks": [
+      { "type": "block-start", "index": 0, "blockType": "tool-call" },
+      { "type": "tool-call-delta", "index": 0, "id": "call_after_reminder_2", "name": "todo_write", "argumentsDelta": "{\"todos\":[{\"content\":\"Finish the progress reminder proof\",\"status\":\"in_progress\"}]}" },
+      { "type": "block-end", "index": 0, "block": { "type": "tool-call", "id": "call_after_reminder_2", "name": "todo_write", "arguments": "{\"todos\":[{\"content\":\"Finish the progress reminder proof\",\"status\":\"in_progress\"}]}" } },
+      { "type": "usage", "usage": { "inputTokens": 70, "outputTokens": 5 } },
+      { "type": "finish", "reason": { "kind": "tool-calls" } }
+    ]
+  },
+  {
+    "kind": "chunks",
+    "chunks": [
+      { "type": "block-start", "index": 0, "blockType": "tool-call" },
+      { "type": "tool-call-delta", "index": 0, "id": "call_after_reminder_3", "name": "todo_write", "argumentsDelta": "{\"todos\":[{\"content\":\"Finish the progress reminder proof\",\"status\":\"completed\"}]}" },
+      { "type": "block-end", "index": 0, "block": { "type": "tool-call", "id": "call_after_reminder_3", "name": "todo_write", "arguments": "{\"todos\":[{\"content\":\"Finish the progress reminder proof\",\"status\":\"completed\"}]}" } },
+      { "type": "usage", "usage": { "inputTokens": 80, "outputTokens": 5 } },
+      { "type": "finish", "reason": { "kind": "tool-calls" } }
+    ]
+  },
+  {
+    "kind": "chunks",
+    "chunks": [
+      { "type": "block-start", "index": 0, "blockType": "text" },
+      { "type": "text-delta", "index": 0, "text": "PROGRESS_REMINDER_OK" },
+      { "type": "block-end", "index": 0, "block": { "type": "text", "text": "PROGRESS_REMINDER_OK" } },
+      { "type": "usage", "usage": { "inputTokens": 90, "outputTokens": 3 } },
+      { "type": "finish", "reason": { "kind": "stop" } }
+    ]
+  }
+]
