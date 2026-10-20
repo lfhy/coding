@@ -27,9 +27,11 @@ const MAX_STALE_REASON_CHARS = 200
 const STOPPED_NAVIGATION_DIAGNOSTIC = 'browser navigation timed out; loading stopped, take a new snapshot of the current page'
 
 function validateNavigationUrl(raw: string): void {
-  const invalid = 'browser_navigate: url must be a plain absolute HTTP(S) URL (for example, https://example.com/), not a Markdown link; pass only the address'
+  const invalid = 'browser_navigate: url must be a plain absolute HTTP(S) or local file:/// URL, not a Markdown link; pass only the address'
   let url: URL
   try { url = new URL(raw) } catch { throw new Error(invalid) }
+  if (/^file:\/\/\/(?!\/)/i.test(raw) && url.protocol === 'file:' && url.hostname === ''
+    && !/\\|%(?:2f|5c|00)/i.test(raw)) return
   const authority = raw.match(/^https?:\/\/([^/?#\\\s]+)(?:[/?#]|$)/i)?.[1]
   if (!authority || !['http:', 'https:'].includes(url.protocol)) throw new Error(invalid)
   if (authority.includes('@') || url.username || url.password) {
@@ -139,7 +141,8 @@ function approvalOrigin(url: string | undefined): string | undefined {
   if (url === undefined || url.length > MAX_URL_CHARS) return undefined
   try {
     const parsed = new URL(url)
-    // 最近观测只供审批提示；不展示可能包含凭据或页面数据的其余 URL 部分。
+    // 最近观测只供审批提示；本地文件仅标明来源，不泄露路径和查询参数。
+    if (parsed.protocol === 'file:' && parsed.hostname === '') return 'local file (path hidden)'
     if (!['http:', 'https:'].includes(parsed.protocol) || parsed.origin.length > MAX_APPROVAL_ORIGIN_CHARS) return undefined
     return parsed.origin
   } catch {
@@ -179,7 +182,7 @@ function browserFailure(command: BrowserCommand, error: BrowserUseError): Browse
   switch (error.code) {
     case 'BROWSER_STALE_REF':
       if (command.kind === 'snapshot' && error.message.includes('document changed during observation')) {
-        guidance = 'document changed during observation; try at most two fresh browser_snapshot calls. If both fail, reopen the last successfully observed HTTP(S) URL once with browser_navigate only when still relevant, then inspect its observation; stop if that fails. The last observed URL may not be the current URL'
+        guidance = 'document changed during observation; try at most two fresh browser_snapshot calls. If both fail, reopen the last successfully observed HTTP(S) or local file:/// URL once with browser_navigate only when still relevant, then inspect its observation; stop if that fails. The last observed URL may not be the current URL'
       } else if (command.kind === 'click' || command.kind === 'fill') {
         const reason = staleTargetReason(error)
         guidance = reason === ''
@@ -190,7 +193,7 @@ function browserFailure(command: BrowserCommand, error: BrowserUseError): Browse
       }
       break
     case 'BROWSER_CLOSED':
-      guidance = 'active browser tab is closed; browser_navigate can open a page only with a user-provided or previously observed HTTP(S) URL'
+      guidance = 'active browser tab is closed; browser_navigate can open a page only with a user-provided or previously observed HTTP(S) or local file:/// URL'
       break
     case 'BROWSER_BUSY':
       guidance = 'browser is busy; wait for the other operation, do not navigate to bypass it'
@@ -202,7 +205,7 @@ function browserFailure(command: BrowserCommand, error: BrowserUseError): Browse
       guidance = 'browser unavailable; do not retry or navigate to bypass this failure'
       break
     case 'BROWSER_INVALID_URL':
-      guidance = 'invalid navigation URL; provide a plain absolute HTTP(S) address without credentials'
+      guidance = 'invalid navigation URL; provide a plain absolute HTTP(S) address without credentials or a local file:/// URL'
       break
     case 'BROWSER_FAILED':
       guidance = error.message.includes('navigation timed out; loading stopped')
@@ -271,8 +274,8 @@ export function apply(ctx: Context): void {
   }
   const ref = { type: 'string', required: true, description: 'Opaque ref from the current observation, not a selector.' } as const
   const revision = { type: 'integer', required: true, description: 'Positive revision paired with the current observation ref.' } as const
-  register('navigate', 'Open an absolute HTTP(S) URL. Load the browser-use skill first when available; inspect the returned observation before acting.', {
-    url: { type: 'string', required: true, description: 'Plain absolute HTTP(S) address, such as https://example.com/. Do not pass a Markdown link like [label](https://example.com/). No credentials; at most 2048 characters.' },
+  register('navigate', 'Open an absolute HTTP(S) or local file:/// URL. Load the browser-use skill first when available; inspect the returned observation before acting.', {
+    url: { type: 'string', required: true, description: 'Plain absolute HTTP(S) address (https://example.com/) or local file:/// URL. Do not pass a Markdown link like [label](https://example.com/). No credentials or remote file hosts; at most 2048 characters.' },
   })
   register('snapshot', 'Read the current page. Load the browser-use skill first when available; use an observed ref and revision for browser_click or browser_fill.', {})
   register('click', 'Click an element using its ref and revision from the current browser observation; never use selectors.', {

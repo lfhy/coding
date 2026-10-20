@@ -181,11 +181,22 @@ describe('unary round trip', () => {
     const valid = await browser.control({ sessionId: sid('s1'), command: { kind: 'navigate', url: 'https://example.com/' } })
     expect(valid.result).toEqual({ ok: true, value: state })
     expect(control).toHaveBeenCalledOnce()
+    const localFile = 'file:///tmp/%E4%B8%AD%E6%96%87%20index.html'
+    const localState = { ...state, tabs: [{ ...state.tabs[0]!, url: localFile }],
+      observation: { tabId: tabId as never, generation: 'tab-generation-1', revision: 1,
+        url: localFile, title: 'Local file', snapshot: '', viewport: state.viewport, cursor: null } }
+    control.mockImplementationOnce(r => ok(r, localState))
+    const navigated = await browser.control({ sessionId: sid('s1'), command: { kind: 'navigate', url: localFile } })
+    expect(navigated.result).toEqual({ ok: true, value: localState })
+    expect(control).toHaveBeenLastCalledWith(expect.objectContaining({ payload: {
+      sessionId: sid('s1'), command: { kind: 'navigate', url: localFile },
+    } }), expect.any(AbortSignal))
     const resized = await browser.control({ sessionId: sid('s1'), command: { kind: 'set-viewport', width: 1280, height: 720 } })
     expect(resized.result).toEqual({ ok: true, value: state })
-    expect(control).toHaveBeenCalledTimes(2)
+    expect(control).toHaveBeenCalledTimes(3)
     for (const command of [
-      { kind: 'navigate', url: 'file:///etc/passwd' },
+      { kind: 'navigate', url: 'file://remote.example/etc/passwd' },
+      { kind: 'open-url', url: 'file:///tmp/%2fsecret.html' },
       { kind: 'navigate', url: 'http://secret@example.com/' },
       { kind: 'select-tab', tabId: 'not-uuid' },
       { kind: 'reload', injected: true },
@@ -195,7 +206,7 @@ describe('unary round trip', () => {
       const response = await browser.control({ sessionId: sid('s1'), command } as never)
       expect(response.result).toMatchObject({ ok: false, error: { code: 'bad-request' } })
     }
-    expect(control).toHaveBeenCalledTimes(2)
+    expect(control).toHaveBeenCalledTimes(3)
     control.mockImplementationOnce(r => ok(r, { ...state, stateRevision: 'corrupt' } as never))
     await expect(browser.control({ sessionId: sid('s1'), command: { kind: 'ensure-tab' } })).rejects.toThrow()
     const missingOperationActive: Partial<typeof state> = { ...state }

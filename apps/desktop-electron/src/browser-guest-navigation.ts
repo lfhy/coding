@@ -11,7 +11,7 @@ const NAVIGATION_STOP_TIMEOUT_MS = 3_000
  * @param _sessionId - 所属会话标识；具体所有权与资源释放由 lifecycle 闭包持有。
  * @param owner - 当前会话状态，停载恢复时撤销旧观测与审批目标。
  * @param tab - 本次导航的原生标签页，不得在等待期间替换。
- * @param url - 待校验的 HTTP(S) 导航地址。
+ * @param url - 待校验的 HTTP(S) 或本地绝对 file:/// 导航地址。
  * @param lifecycle - 核验会话及标签归属、销毁当前会话和发布状态的调用方回调。
  * @param human - 人工导航只等待主 frame 提交；模型导航等待 DOM 就绪。
  * @returns 导航已就绪，或模型目标提交后已安全停载；其余失败保留原始诊断或浏览器错误码。

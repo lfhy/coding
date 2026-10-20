@@ -3,7 +3,7 @@
 import { BrowserUseError } from 'coding-browser'
 
 /**
- * 导航命令接受至多 4096 字符的无凭据绝对 HTTP(S) URL，结构无效时抛出 BrowserUseError。
+ * 导航命令接受至多 4096 字符的无凭据绝对 HTTP(S) 或本机 file:/// URL；不访问文件或网络。
  * @param raw - 模型或人工导航命令输入的 URL。
  * @returns 解析后的 URL；不产生网络请求。
  */
@@ -11,6 +11,8 @@ export function validateBrowserUrl(raw: string): URL {
   if (raw.length > 4096) throw new BrowserUseError('browser URL exceeds 4096 characters', 'BROWSER_FAILED')
   let url: URL
   try { url = new URL(raw) } catch { throw new BrowserUseError(`invalid browser URL: ${raw}`, 'BROWSER_INVALID_URL') }
+  if (url.protocol === 'file:' && /^file:\/\/\/(?!\/)/i.test(raw) && url.hostname === ''
+    && !/\\|%(?:2f|5c|00)/i.test(raw)) return url
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
     throw new BrowserUseError(`browser URL denied: ${raw}`, 'BROWSER_DENIED')
   }

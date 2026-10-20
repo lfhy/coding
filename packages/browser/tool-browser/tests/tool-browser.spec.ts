@@ -299,7 +299,7 @@ describe('browser action tools', () => {
     expect(result.isError).toBe(true)
     expect(text(result)).toContain('BROWSER_STALE_REF: document changed during observation')
     expect(text(result)).toContain('at most two fresh browser_snapshot calls')
-    expect(text(result)).toContain('last successfully observed HTTP(S) URL once')
+    expect(text(result)).toContain('last successfully observed HTTP(S) or local file:/// URL once')
     expect(text(result)).not.toMatch(/private\.example|token=secret/)
     expect(browser.commands).toHaveBeenCalledTimes(1)
     expect(browser.commands.mock.calls[0]?.[1]).toEqual({ kind: 'snapshot' })
@@ -481,7 +481,7 @@ describe('browser action tools', () => {
   it.each([
     '[private](https://example.com/?token=secret)',
     'not a URL with secret', 'http:example.com/private?token=secret',
-    'file:///private?token=secret', 'https://user:password@example.com/private?token=secret',
+    'https://user:password@example.com/private?token=secret',
   ])('rejects non-plain or invalid navigation before approval and provider execution', async (url) => {
     const { ctx, call, agent } = await setup()
     const browser = ctx.browserUse as FakeBrowser
@@ -498,6 +498,39 @@ describe('browser action tools', () => {
     expect(browser.commands).not.toHaveBeenCalled()
     expect(agent.session.append).not.toHaveBeenCalled()
     expect(browser.currentState).toEqual(activeState())
+  })
+
+  it('passes a local file URL to the provider without showing its path in the approval reason', async () => {
+    const { ctx, call, agent } = await setup()
+    const browser = ctx.browserUse as FakeBrowser
+    const url = 'file:///private/project/My%20Page/index.html?token=secret'
+    const reasons: string[] = []
+    ctx.on('approval/request', ({ reason }) => {
+      reasons.push(reason ?? '')
+      return Promise.resolve('allowed-once' as const)
+    })
+    const result = await call({ action: 'navigate', url })
+    expect(result.isError).toBe(false)
+    expect(result.value).toMatchObject({ observation: { url } })
+    expect(browser.commands.mock.calls[0]?.[1]).toEqual({ kind: 'navigate', url })
+    expect(reasons).toEqual(['Browser navigate (target origin: local file (path hidden); may redirect or load subresources; approval is for this call only)'])
+    expect(JSON.stringify(agent.session.append.mock.calls)).not.toMatch(/private|project|index\.html|secret/)
+    browser.currentState = activeState({ ...observation, url }, null)
+    await call({ action: 'snapshot' })
+    expect(reasons.at(-1)).toBe('Browser snapshot (current origin: local file (path hidden); approval is for this call only)')
+  })
+
+  it.each(['file://server/share/index.html', 'file:////server/share/index.html',
+    'file:///private/project/%2fsecret', 'file:///private/project/%5csecret'])
+  ('rejects non-local or ambiguous file URLs before approval and provider execution', async (url) => {
+    const { ctx, call } = await setup()
+    const request = vi.spyOn(ctx.approval, 'request')
+    const result = await call({ action: 'navigate', url })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('browser_navigate: url must be a plain absolute HTTP(S) or local file:/// URL')
+    expect(text(result)).not.toContain('project')
+    expect(request).not.toHaveBeenCalled()
+    expect((ctx.browserUse as FakeBrowser).commands).not.toHaveBeenCalled()
   })
 
   it('accepts a plain Unicode query URL without normalizing the provider command', async () => {

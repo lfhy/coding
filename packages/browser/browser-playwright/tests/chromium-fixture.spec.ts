@@ -1,9 +1,13 @@
 /** 手动 opt-in：以真实 Chromium 和环回页面验收隔离、元素交互与生命周期。 */
 
 import { existsSync } from 'node:fs'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import type { Duplex } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
 import { SessionId } from 'coding-session/types'
@@ -123,6 +127,32 @@ describe.skipIf(process.env.DSH_BROWSER_E2E !== '1' || !existsSync(chromium.exec
           expect(capture.observation.snapshot).toContain('Waiting')
         }
       } finally { await close() }
+    })
+
+    it('opens a local HTML file and interacts with its elements', { timeout: 40_000 }, async () => {
+      const root = await mkdtemp(join(tmpdir(), 'dsh-browser-file-'))
+      const path = join(root, 'index.html')
+      const url = pathToFileURL(path).href
+      const ctx = new Context()
+      try {
+        await writeFile(path, page)
+        await ctx.plugin(PlaywrightBrowserUse).await()
+        const id = SessionId('local-file')
+        const signal = new AbortController().signal
+        const first = await ctx.browserUse.execute(id, { kind: 'navigate', url }, signal)
+        expect(first.observation).toMatchObject({ url, title: 'Fixture' })
+        expect(first.observation.snapshot).toContain('Waiting')
+        const input = element(first.observation.snapshot, 'input', 'Search')
+        const filled = await ctx.browserUse.execute(id, { kind: 'fill', ref: input,
+          revision: first.observation.revision, text: 'From file' }, signal)
+        const button = element(filled.observation.snapshot, 'button', 'Go')
+        const clicked = await ctx.browserUse.execute(id, { kind: 'click', ref: button,
+          revision: filled.observation.revision }, signal)
+        expect(clicked.observation.snapshot).toContain('From file')
+      } finally {
+        await ctx.fiber.dispose()
+        await rm(root, { recursive: true, force: true })
+      }
     })
 
     it('follows a cross-origin loopback redirect and loads secondary-origin script and image', { timeout: 40_000 }, async () => {

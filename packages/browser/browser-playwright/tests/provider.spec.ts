@@ -789,11 +789,25 @@ describe('Playwright browser owner', () => {
     await ctx.fiber.dispose()
   })
 
+  it('navigates local file URLs through the provider without an HTTP server', async () => {
+    const { ctx, service } = await headlessProvider()
+    const signal = new AbortController().signal
+    const url = 'file:///tmp/My%20Page/index.html'
+    page.url.mockReturnValue(url)
+    const capture = await service.execute(SessionId('model-local-file'), { kind: 'navigate', url }, signal)
+    const state = await service.control(SessionId('human-local-file'), { kind: 'navigate', url }, signal)
+    expect(capture.observation.url).toBe(url)
+    expect(state?.observation?.url).toBe(url)
+    expect(page.goto).toHaveBeenNthCalledWith(1, url, { waitUntil: 'domcontentloaded', timeout: 15_000 })
+    expect(page.goto).toHaveBeenNthCalledWith(2, url, { waitUntil: 'domcontentloaded', timeout: 15_000 })
+    await ctx.fiber.dispose()
+  })
+
   it.each([
     { url: 'not a URL', code: 'BROWSER_INVALID_URL' },
     { url: 'http:localhost', code: 'BROWSER_INVALID_URL' },
     { url: 'https://user:password@localhost/', code: 'BROWSER_DENIED' },
-    { url: 'file:///etc/passwd', code: 'BROWSER_DENIED' },
+    { url: 'file://server/share/secret', code: 'BROWSER_DENIED' },
     { url: `http://localhost/${'a'.repeat(4096)}`, code: 'BROWSER_FAILED' },
   ])('rejects invalid navigation before creating a context: $code', async ({ url, code }) => {
     const { ctx, service } = await headlessProvider()
@@ -957,7 +971,7 @@ describe('Playwright browser owner', () => {
     const id = SessionId('open-url-invalid')
     const first = await service.control(id, { kind: 'ensure-tab' }, signal)
     const allocated = browserContext.newPage.mock.calls.length
-    await expect(service.control(id, { kind: 'open-url', url: 'file:///tmp/private' }, signal))
+    await expect(service.control(id, { kind: 'open-url', url: 'file://server/share/private' }, signal))
       .rejects.toMatchObject({ code: 'BROWSER_DENIED' })
     expect(browserContext.newPage).toHaveBeenCalledTimes(allocated)
     expect(service.state(id)).toEqual(first)

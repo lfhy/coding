@@ -17,16 +17,23 @@ const browserViewportSchema = z.strictObject({
   message: 'browser viewport area exceeds the supported limit',
 })
 
+function localFileUrl(value: string, url: URL): boolean {
+  // URL 解析器会把 file://localhost 和反斜杠改写为本地路径，必须核验原始字面量。
+  return /^file:\/\/\/(?!\/)/i.test(value) && url.hostname === '' && url.username === '' && url.password === ''
+    && !/\\|%(?:2f|5c|00)/i.test(value) && !/%(?![0-9a-f]{2})/i.test(value)
+}
+
 const safeUrlSchema = z.string().min(1).max(2048).refine((value) => {
   if (value.trim() !== value || /[\u0000-\u001f\u007f]/.test(value)) return false
   try {
     const url = new URL(value)
+    if (url.protocol === 'file:') return localFileUrl(value, url) && url.href === value
     return (url.protocol === 'http:' || url.protocol === 'https:')
       && url.hostname !== '' && url.username === '' && url.password === ''
   } catch {
     return false
   }
-}, { message: 'browser URL must be an absolute HTTP(S) URL without credentials' })
+}, { message: 'browser URL must be an absolute HTTP(S) or local file:/// URL without credentials' })
 
 const humanTargetSchema = z.strictObject({
   browserGeneration: z.string().min(1).max(128), stateRevision: z.number().int().nonnegative(),

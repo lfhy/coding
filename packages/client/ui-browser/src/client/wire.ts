@@ -16,11 +16,18 @@ function snapshotText(value: unknown): value is string {
 function integer(value: unknown, min: number, max = Number.MAX_SAFE_INTEGER): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= min && value <= max
 }
+function localFileUrl(value: string, url: URL): boolean {
+  // 原始三斜杠是本地文件的必要条件；URL 解析器会把 file://localhost 和反斜杠改写为本地路径。
+  return /^file:\/\/\/(?!\/)/i.test(value) && url.protocol === 'file:' && url.hostname === ''
+    && url.username === '' && url.password === '' && !/\\|%(?:2f|5c|00)/i.test(value)
+    && !/%(?![0-9a-f]{2})/i.test(value)
+}
 function pageUrl(value: string): boolean {
   if (value === 'about:blank') return true
   if (/\s/.test(value)) return false
   try {
     const url = new URL(value)
+    if (url.protocol === 'file:') return localFileUrl(value, url) && url.href === value
     return (url.protocol === 'http:' || url.protocol === 'https:') && url.hostname !== ''
       && url.username === '' && url.password === ''
   } catch { return false }
@@ -103,18 +110,22 @@ export function parseBrowserStateOrLock(value: unknown): BrowserState | BrowserO
   return parseBrowserState(data)
 }
 /**
- * 地址栏支持带协议网址和域名，拒绝凭据与非 HTTP(S) 输入。
+ * 地址栏接受无凭据 HTTP(S) 网址、域名和绝对本地 file:/// URL；不读取文件。
  * @param draft - 输入草稿。
- * @returns 标准化绝对 URL。
+ * @returns 标准化绝对 URL；畸形或非本地文件地址会抛错。
  */
 export function normalizeBrowserUrl(draft: string): string {
-  if (/[\u0000-\u001f\u007f]/.test(draft)) throw new Error('请输入有效的 HTTP(S) 网址')
+  const invalid = '请输入有效的 HTTP(S) 或本地文件网址'
+  if (/[\u0000-\u001f\u007f]/.test(draft)) throw new Error(invalid)
   const value = draft.trim()
-  if (!value || value.length > 2048 || /\s/.test(value)) throw new Error('请输入有效的 HTTP(S) 网址')
-  const candidate = /^[a-zA-Z][a-zA-Z\d+.-]*:\/\//.test(value) ? value : `https://${value}`
+  if (!value || value.length > 2048 || /\s/.test(value)) throw new Error(invalid)
+  const candidate = /^(?:[a-z][a-z\d+.-]*:\/\/|file:)/i.test(value) ? value : `https://${value}`
   try {
     const url = new URL(candidate)
-    if (!pageUrl(url.href) || (!url.hostname.includes('.') && url.hostname !== 'localhost')) throw new Error('invalid')
+    if (url.protocol === 'file:') {
+      if (!localFileUrl(value, url) || url.href.length > 2048) throw new Error('invalid')
+    } else if (!pageUrl(url.href) || (!url.hostname.includes('.') && url.hostname !== 'localhost')
+      || url.href.length > 2048) throw new Error('invalid')
     return url.href
-  } catch { throw new Error('请输入有效的 HTTP(S) 网址') }
+  } catch { throw new Error(invalid) }
 }

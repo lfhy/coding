@@ -289,7 +289,7 @@ Source: [`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-
 
 ### `browser_navigate`
 
-Open an absolute HTTP(S) URL. Load the browser-use skill first when available; inspect the returned observation before acting.
+Open an absolute HTTP(S) or local file:/// URL. Load the browser-use skill first when available; inspect the returned observation before acting.
 
 ```json
 {
@@ -297,7 +297,7 @@ Open an absolute HTTP(S) URL. Load the browser-use skill first when available; i
   "properties": {
     "url": {
       "type": "string",
-      "description": "Plain absolute HTTP(S) address, such as https://example.com/. Do not pass a Markdown link like [label](https://example.com/). No credentials; at most 2048 characters."
+      "description": "Plain absolute HTTP(S) address (https://example.com/) or local file:/// URL. Do not pass a Markdown link like [label](https://example.com/). No credentials or remote file hosts; at most 2048 characters."
     }
   },
   "required": [

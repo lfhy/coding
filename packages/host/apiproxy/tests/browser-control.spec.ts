@@ -86,7 +86,12 @@ describe('browser.control wire schemas', () => {
 
   it('refuses unsafe, credential-bearing and oversized URLs', () => {
     for (const url of [
-      'javascript:alert(1)', 'file:///etc/passwd', 'http://user@example.com/',
+      'javascript:alert(1)', 'file://remote.example/etc/passwd', 'file://localhost/etc/passwd',
+      'file:////remote.example/etc/passwd', 'file:/etc/passwd', 'file:///tmp\\passwd',
+      'file:///tmp/%2fpasswd', 'file:///tmp/%5cpasswd', 'file:///tmp/%00passwd',
+      'file:///tmp/%GGpasswd', 'file:///tmp/a b.html', 'file:///tmp/../etc/passwd',
+      'file:///tmp/%2e%2e/etc/passwd', 'file://user@remote.example/tmp/index.html',
+      'http://user@example.com/',
       'https://user:pass@example.com/', '//example.com/', 'not a url', ' https://example.com/',
       'https://example.com/\n', 'https://example.com/' + 'a'.repeat(2048),
     ]) for (const kind of ['navigate', 'open-url']) {
@@ -95,9 +100,21 @@ describe('browser.control wire schemas', () => {
     for (const kind of ['navigate', 'open-url']) {
       expect(browserControlRequestSchema.safeParse({ sessionId: 's', command: { kind, url: 'http://example.com/' } }).success).toBe(true)
       expect(browserControlRequestSchema.safeParse({ sessionId: 's', command: { kind, url: 'https://example.com/搜索?q=中文' } }).success).toBe(true)
+      for (const file of ['file:///tmp/index.html', 'file:///tmp/%E4%B8%AD%E6%96%87%20document.html']) {
+        expect(browserControlRequestSchema.safeParse({ sessionId: 's', command: { kind, url: file } }).success).toBe(true)
+      }
       expect(browserControlRequestSchema.safeParse({ sessionId: 's', command: {
         kind, url: 'https://example.com/'.padEnd(2048, 'a'),
       } }).success).toBe(true)
+    }
+  })
+
+  it('retains provider-owned tab and observation URLs without restricting response strings', () => {
+    for (const url of ['file:///tmp/index.html', 'file:///tmp/%E4%B8%AD%E6%96%87%20document.html',
+      'data:text/html,ok', 'file://remote.example/tmp/index.html', 'file:///tmp/%2findex.html']) {
+      const response = { ...state, tabs: [{ ...state.tabs[0], url }],
+        observation: { ...state.observation!, url } }
+      expect(browserControlValueSchema.parse(response)).toEqual(response)
     }
   })
 

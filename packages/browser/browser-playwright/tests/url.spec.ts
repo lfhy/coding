@@ -20,7 +20,18 @@ describe('browser navigation URL', () => {
     expect(() => validateBrowserUrl(raw)).toThrow(expect.objectContaining({ code: 'BROWSER_INVALID_URL' }))
   })
 
-  it.each(['file:///etc/passwd', 'about:blank', 'data:text/plain,hi', 'ftp://localhost/',
+  it.each(['file:///tmp/index.html', 'file:///tmp/My%20Page/%E4%B8%AD%E6%96%87.html'])
+  ('accepts local file URLs %s', (raw) => {
+    expect(validateBrowserUrl(raw).href).toBe(raw)
+  })
+
+  it.each(['file://server/share/index.html', 'file:////server/share/index.html',
+    'file:///tmp/other\\index.html', 'file:///tmp/%2fsecret', 'file:///tmp/%5csecret', 'file:///tmp/%00secret'])
+  ('rejects non-local or ambiguous file URLs %s', (raw) => {
+    expect(() => validateBrowserUrl(raw)).toThrow(expect.objectContaining({ code: 'BROWSER_DENIED' }))
+  })
+
+  it.each(['about:blank', 'data:text/plain,hi', 'ftp://localhost/',
     'ws://localhost/', 'http://user@example.com/', 'https://user:password@localhost/', 'http://@localhost/'])
   ('rejects unsupported protocols and credentials in %s', (raw) => {
     expect(() => validateBrowserUrl(raw)).toThrow(expect.objectContaining({ code: 'BROWSER_DENIED' }))

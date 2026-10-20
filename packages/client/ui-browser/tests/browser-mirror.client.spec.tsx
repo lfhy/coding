@@ -835,7 +835,7 @@ describe('browser UI', () => {
   it('navigates a domain with Enter and rejects unsafe input explicitly', () => {
     const result = mount(ready())
     const address = screen.getByRole('textbox', { name: 'Address' })
-    expect(address.getAttribute('placeholder')).toBe('Enter URL or domain')
+    expect(address.getAttribute('placeholder')).toBe('Enter URL, domain or local file address')
     fireEvent.focus(address)
     fireEvent.change(address, { target: { value: 'deepseek.com' } })
     fireEvent.submit(address.closest('form')!)
@@ -845,6 +845,20 @@ describe('browser UI', () => {
     fireEvent.submit(address.closest('form')!)
     expect(screen.getByRole('alert').textContent).toContain('valid HTTP(S)')
     expect(result.command).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the local file address visible after blur and submits it directly', () => {
+    const fileUrl = 'file:///tmp/My%20Page/index.html'
+    const result = mount(navigated(fileUrl, 1))
+    const address = screen.getByRole('textbox', { name: 'Address' }) as HTMLInputElement
+    expect(address.value).toBe(fileUrl)
+    fireEvent.focus(address)
+    expect(address.value).toBe(fileUrl)
+    fireEvent.blur(address)
+    expect(address.value).toBe(fileUrl)
+    fireEvent.focus(address)
+    fireEvent.submit(address.closest('form')!)
+    expect(result.command).toHaveBeenCalledWith({ kind: 'navigate', url: fileUrl })
   })
 
   it('compacts a submitted URL after pending and Host reconciliation without prefixing the next fill', () => {

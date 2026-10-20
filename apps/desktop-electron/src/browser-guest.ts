@@ -155,9 +155,12 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     const isCurrent = (): boolean => owners.get(sessionId) === owner && owner.tabs.get(id) === tab
     view.setBounds({ x: 0, y: 0, ...owner.viewport })
     const denyNavigation = (event: { url: string; isMainFrame?: boolean; preventDefault(): void }): void => {
-      if (event.isMainFrame === false || event.url === 'about:blank') return
-      try { allowedUrl(event.url) }
-      catch { event.preventDefault() }
+      if (event.url === 'about:blank') return
+      try {
+        // loadURL 发起的显式导航不触发 will-navigate；页面及子 frame 不得自行读取其他本地文件。
+        if (new URL(event.url).protocol === 'file:') { event.preventDefault(); return }
+        if (event.isMainFrame !== false) allowedUrl(event.url)
+      } catch { if (event.isMainFrame !== false) event.preventDefault() }
     }
     wc.on('will-navigate', denyNavigation)
     wc.on('will-frame-navigate', denyNavigation)

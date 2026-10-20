@@ -80,7 +80,7 @@ export function fail(message: string, code: BrowserUseErrorCode): never {
 }
 
 /**
- * 校验并规范化可访问的浏览器地址；只允许无凭据的 HTTP(S) 地址。
+ * 校验并规范化可访问的浏览器地址；只允许无凭据的 HTTP(S) 与无 authority 的本地绝对文件 URL。
  * @param raw - 外部传入的原始地址。
  * @returns URL 构造器规范化后的地址。
  */
@@ -91,6 +91,12 @@ export function allowedUrl(raw: string): string {
   let url: URL
   try { url = new URL(raw) }
   catch { return fail('invalid browser URL', 'BROWSER_INVALID_URL') }
+  if (url.protocol === 'file:') {
+    // URL 会规范化 localhost、反斜杠与编码分隔符；文件准入必须先检查原始写法。
+    if (!/^file:\/\/\/(?!\/)/i.test(raw) || url.hostname || url.username || url.password ||
+      /\\|%(?:2f|5c|00)/i.test(raw)) fail('browser URL denied', 'BROWSER_DENIED')
+    return url.href
+  }
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password ||
     !/^https?:\/\/[^/?#\\\s]+(?:[/?#]|$)/i.test(raw) ||
     /^https?:\/\/[^/?#\\\s]*@/i.test(raw)) {

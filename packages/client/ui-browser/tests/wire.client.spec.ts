@@ -9,6 +9,49 @@ describe('browser state wire', () => {
     expect(normalizeBrowserUrl('example.com:8080')).toBe('https://example.com:8080/')
     expect(normalizeBrowserUrl('http://localhost:3000/')).toBe('http://localhost:3000/')
   })
+  it('normalizes local file addresses without treating domains as file paths', () => {
+    expect(normalizeBrowserUrl('file:///tmp/index.html')).toBe('file:///tmp/index.html')
+    expect(normalizeBrowserUrl(' file:///tmp/中文%20文档.html '))
+      .toBe('file:///tmp/%E4%B8%AD%E6%96%87%20%E6%96%87%E6%A1%A3.html')
+    expect(normalizeBrowserUrl('file:///tmp/a%20b.html')).toBe('file:///tmp/a%20b.html')
+    expect(normalizeBrowserUrl('example.com/guide')).toBe('https://example.com/guide')
+  })
+  it('preserves local file URLs in both the tab and its observation', () => {
+    const file = 'file:///tmp/%E4%B8%AD%E6%96%87%20document.html'
+    const current = state()
+    const parsed = parseBrowserState({ ...current,
+      tabs: current.tabs.map(tab => tab.id === current.activeTabId ? { ...tab, url: file } : tab),
+      observation: { ...current.observation, url: file },
+    })
+    expect(parsed.tabs[0]?.url).toBe(file)
+    expect(parsed.observation?.url).toBe(file)
+  })
+  it.each([
+    'file://remote.example/tmp/index.html', 'file://localhost/tmp/index.html', 'file:////remote.example/tmp/index.html',
+    'file:/tmp/index.html', 'file:///tmp\\index.html', 'file:///tmp/%2findex.html',
+    'file:///tmp/%5Cindex.html', 'file:///tmp/%00index.html', 'file:///tmp/%GGindex.html',
+    'file:///tmp/index.html\n', 'file:///tmp/' + 'a'.repeat(4096),
+    'file://user@remote.example/index.html', 'ftp://example.com/x', 'data:text/html,hi',
+  ])('rejects ambiguous or nonlocal file navigation %#', (url) => {
+    expect(() => normalizeBrowserUrl(url)).toThrow()
+    for (const field of ['tab', 'observation'] as const) {
+      const current = state()
+      const incoming = field === 'tab'
+        ? { ...current, tabs: [{ ...current.tabs[0], url }, current.tabs[1]] }
+        : { ...current, observation: { ...current.observation, url } }
+      expect(() => parseBrowserState(incoming)).toThrow()
+    }
+  })
+  it.each([
+    'file:///tmp/../etc/index.html', 'file:///tmp/%2e%2e/index.html',
+  ])('normalizes address bar input while rejecting unnormalized state %#', (input) => {
+    const canonical = normalizeBrowserUrl(input)
+    const current = state()
+    expect(() => parseBrowserState({ ...current, tabs: [{ ...current.tabs[0], url: input }, current.tabs[1]] })).toThrow()
+    expect(parseBrowserState({ ...current, tabs: [{ ...current.tabs[0], url: canonical }, current.tabs[1]] })
+      .tabs[0]?.url).toBe(canonical)
+  })
+
   it('projects optional loading while preserving explicit false and existing unknown-field policy', () => {
     for (const loading of [true, false]) {
       const tab = { ...state().tabs[0], loading, extra: 'ignored' }
@@ -48,7 +91,7 @@ describe('browser state wire', () => {
   ])('rejects malformed Host JSON %#', (value) => {
     expect(() => parseBrowserState(value)).toThrow()
   })
-  it.each(['javascript:alert(1)', 'https://user:pass@example.com', 'file:///tmp/x', 'not a domain', 'https://example.com/\n'])(
+  it.each(['javascript:alert(1)', 'https://user:pass@example.com', 'not a domain', 'https://example.com/\n'])(
     'rejects unsafe address input %s', (input) => { expect(() => normalizeBrowserUrl(input)).toThrow() },
   )
 })

@@ -533,7 +533,7 @@ export function BrowserMirror({ sessionId, shown, selectedTabId, newTabRequest, 
   }, [ownDraft?.submitted, address, tabId])
   const compactAddress = pendingBrowserLink === undefined && address !== '' && !addressFocused && !ownDraft?.dirty && inputError === null
   const inputValue = pendingBrowserLink !== undefined ? address : ownDraft?.dirty
-    ? ownDraft.value : compactAddress ? new URL(address).hostname : address
+    ? ownDraft.value : compactAddress && !address.toLowerCase().startsWith('file:') ? new URL(address).hostname : address
   useLayoutEffect(() => {
     const input = addressRef.current
     if (input === null || addressFocused && input === document.activeElement && !view.pending) return
