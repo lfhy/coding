@@ -28,13 +28,13 @@ package storage
 
 import "github.com/lfhy/morm"
 
-// OpenSQLite 通过 morm 的类型化配置打开本地 SQLite 数据库。
+// OpenSQLite 将配置写入 morm 的全局配置后初始化 SQLite；该 API 不适用于并发隔离的多实例。
 func OpenSQLite(config *morm.SQLiteConfig) (morm.ORM, error) {
     return morm.InitSQLiteWithDBConfigWithError(config)
 }
 ```
 
-`morm.DBConfig`、`morm.SQLiteConfig` 等是其公开配置类型别名。`InitSQLiteWithDBConfigWithError` 会先把配置写入 morm 的全局配置，再调用 SQLite 初始化；它不是支持多套配置并发隔离的独立连接构造器。需要多实例、调用方取消或独立生命周期时，先核对当前 morm 版本是否提供对应的 context/配置 API，不要自行假设全局配置可并发切换。也可以使用 `InitWithError(configPath...)` 或 `UseViperConfig`，但应用已经用 `github.com/lfhy/flag` 合并配置时，优先把已校验的类型化数据库配置交给 morm，避免同一个文件被两套来源规则重复解释。`morm` 的 README 示例和源码版本可能不同，提交前以 `go doc`、锁定版本源码和测试确认字段。
+`morm.DBConfig`、`morm.SQLiteConfig` 等是其公开配置类型别名。`InitSQLiteWithDBConfigWithError` 会先把配置写入 morm 的全局 Viper，再由 SQLite 后端读取；它不是独立连接构造器，不能在并发中切换多套配置。需要独立实例、调用方 context 或独立生命周期时，当前公开 main 只明确提供 MongoDB 的 context 配置入口；不要把 SQLite/MySQL 当作已有的独立实例能力。也可以使用 `InitWithError(configPath...)` 或 `UseViperConfig`，但应用已经用 `github.com/lfhy/flag` 合并配置时，优先把已校验的类型化数据库配置交给 morm，避免同一个文件被两套来源规则重复解释。`morm` 的 README 示例和源码版本可能不同，提交前以 `go doc`、锁定版本源码和测试确认字段。
 
 数据库配置仍归 `conf` 所有：文件路径、环境变量、命令行参数和默认值在配置层完成来源合并与校验；数据库包只接收已解析的数据库配置并负责连接生命周期。不要把密码写入日志、错误文本、测试快照或提交。
 

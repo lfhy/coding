@@ -33,7 +33,7 @@ func Load(args []string) (*Config, error) {
 
 ## 配置文件路径
 
-`Parse` 会自动注册隐藏的配置路径参数 `-c`。显式传入 `-c path.toml` 时，文件不存在或无法解析应返回错误；通过 `fs.ConfigFile("config.toml")` 设置默认文件后，默认文件不存在可以跳过读取。配置路径可以在解析前改名或增加别名：
+`Parse` 会自动注册隐藏的配置路径参数 `-c`。调用 `fs.ConfigFile(...)` 后，显式传入配置路径时文件不存在或解析失败会返回错误；默认路径不存在会跳过读取。未调用 `ConfigFile` 时不要依赖该“显式路径失败”保证，应按锁定版本行为核对。以下 `Name`、`Alias` 和 `SetConfigFlagName` 都必须在 `Parse` 前调用；`Name` 设置 canonical 名称，`Alias` 仅增加别名；若同时调用 `SetConfigFlagName` 和 `Name`，以最后一次执行的设置为准：
 
 ```go
 fs.ConfigFile("config.toml").Name("config")       // 只使用 -config
@@ -88,7 +88,7 @@ fs.Var(&flag.FlagVar{
 })
 ```
 
-`FlagVar` 还支持参数别名、环境变量、配置节/键和隐藏标记。源码确认基础类型覆盖布尔、字符串、整数、无符号整数、浮点数和 `time.Duration`；切片只应按源码确认的字符串、有符号整数和无符号整数使用。不要宣传任意结构体、map、struct tag 或任意基础类型切片自动解码。
+`FlagVar` 还支持参数别名、环境变量、配置节/键和隐藏标记。源码确认基础类型覆盖布尔、字符串、整数、无符号整数、浮点数和 `time.Duration`；命名切片 API 目前是 `StringsVar`、`IntsVar`、`Int64sVar`、`UintsVar`、`Uint64sVar`，`FlagVar` 反射切片按源码支持 `string`、`int*` 和 `uint*` 元素。不要宣传 `float`、`bool`、`Duration` 或任意结构体/map 切片自动解码。
 
 ## 子命令分发
 
