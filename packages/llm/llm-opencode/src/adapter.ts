@@ -323,16 +323,17 @@ export class FreeChannelAdapter extends LlmAdapter {
     }
     const served = freeChannelModel(model)
     // 未列出的模型按纯文本、无推理档位处理：不把未经验证的能力持久写进会话。
-    // `off` 表达「不点名档位」而不是某个模型的声明档位，但对它开放的模型都
-    // 可以选；这里补成选择器可见的第一项，让 defaultEffort 校验总能命中。
+    // `off` 表达「不点名档位」，对有档位的模型始终可选；`none` 与它语义相同
+    // （关闭推理，只是线上拼写不同），选择器上只保留 off 一项，避免两个
+    // 同名的关闭档位。
     const declaredEfforts = served?.reasoningEfforts ?? []
-    const selectorEfforts = declaredEfforts.length > 0
-      ? (declaredEfforts.includes('off') ? declaredEfforts : ['off' as const, ...declaredEfforts])
-      : declaredEfforts
+    const selectorEfforts: ReasoningEffortLevel[] = declaredEfforts.length > 0 ? ['off'] : []
+    for (const level of declaredEfforts) {
+      if (level !== 'none' && level !== 'off') selectorEfforts.push(level)
+    }
     const efforts = selectorEfforts.map(effort => ({
       id: ReasoningEffortId(effort),
-      // `none` 在选择器上仍叫 Off：两者都表达关闭推理，只是线上拼写不同。
-      name: effort === 'off' || effort === 'none' ? 'Off' : `${effort.charAt(0).toUpperCase()}${effort.slice(1)}`,
+      name: effort === 'off' ? 'Off' : `${effort.charAt(0).toUpperCase()}${effort.slice(1)}`,
     }))
     return Promise.resolve({
       ...served === undefined

@@ -34,8 +34,8 @@ export const CHANNEL_RETRY_POLICY: ResolvedRetryPolicy = resolveRetryPolicy(unde
 /**
  * 可转发给上游的推理档位词汇，与 pi-ai 的思考档位一致；`off` 表示省略该参数，
  * 让模型按自身默认行为推理。声明之外的拼写无法映射成请求参数。
- * `none` 是 OVH 上游认得的「关推理」档位：pi-ai 的词汇里没有它，声明时在
- * 适配器里折算成 `off` 语义（省略不发由上游默认，显式关闭见映射注释）。
+ * `none` 是 OVH 线协议认得的「显式关闭推理」值，不在 pi-ai 的词汇里：声明了
+ * 它的模型由适配器把选择器的 `off` 折算成线上的 `none`（见 adapter 的映射）。
  */
 export const REASONING_EFFORT_LEVELS = ['off', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
 
@@ -58,9 +58,9 @@ export interface FreeUpstreamModel {
   reasoning: boolean
   /**
    * 该模型暴露的推理档位；空表示不给选择器提供档位（模型自身的推理行为不变）。
-   * 档位必须是 {@link REASONING_EFFORT_LEVELS} 里的值；pi-ai 词汇内的档位按
-   * 自身拼写转发 `reasoning_effort`，`off` 折算成 `none`、`none` 折算成 `off`
-   * 互补语义（`off`＝上游默认，`none`＝显式关闭）。
+   * 档位必须是 {@link REASONING_EFFORT_LEVELS} 里的值。pi-ai 词汇内的档位按
+   * 自身拼写转发 `reasoning_effort`；`none` 不进选择器（与 `off` 同义），声明
+   * 它的模型把选择器的 `off` 发成线上的显式关闭值。
    */
   reasoningEfforts: readonly ReasoningEffortLevel[]
 }

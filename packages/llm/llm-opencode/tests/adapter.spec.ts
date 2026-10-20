@@ -160,20 +160,27 @@ describe('adapter wire shape', () => {
     expect(call.model.input).toEqual(['text', 'image'])
   })
 
-  it('声明 none 档位的模型把 off/none 折算成显式关闭值', async () => {
+  it('声明 none 档位的模型把 off 与未选档位都折算成显式关闭值', async () => {
     const calls: Call[] = []
     const ctx = await harness(textEvents('hi'), calls)
     const messages = [createUserMessage({ content: [{ type: 'text', text: 'think' }], source: { kind: 'user' } })]
-    // 选择器先折算：off/none 都落到已声明的档位 id 再进适配器。
-    for (const effort of ['none', 'off']) {
-      for await (const _chunk of ctx.llm.stream({
-        provider: 'fake-route',
-        model: 'Qwen3.5-397B-A17B',
-        messages,
-        reasoningEffort: ReasoningEffortId(effort),
-      })) { /* drain */ }
-    }
+    // 选择器只暴露 off：none 与它同义（关闭推理）。`none` 不在目录折算后的
+    // 选择器词汇里，直接以它发起会走 resolveCallFor 的未声明拒绝，因此这里
+    // 验证的是真正能走通的路径：选 off 与完全不选档位。
+    for await (const _chunk of ctx.llm.stream({
+      provider: 'fake-route',
+      model: 'Qwen3.5-397B-A17B',
+      messages,
+      reasoningEffort: ReasoningEffortId('off'),
+    })) { /* drain */ }
     // OVH 的 Qwen3.5 把省略参数读作默认深推理，关闭必须显式发 `none`。
+    expect(calls.map(call => call.options.reasoning)).toEqual(['none'])
+    // 未点名档位同样显式关闭：省略参数会被上游读作默认深推理。
+    for await (const _chunk of ctx.llm.stream({
+      provider: 'fake-route',
+      model: 'Qwen3.5-397B-A17B',
+      messages,
+    })) { /* drain */ }
     expect(calls.map(call => call.options.reasoning)).toEqual(['none', 'none'])
     // `off` 在声明了 none 的模型上映射成关闭值；none 不在 pi-ai 词汇里，不出现为键。
     expect(calls[0]!.model.thinkingLevelMap).toEqual({
@@ -181,11 +188,11 @@ describe('adapter wire shape', () => {
     })
   })
 
-  it('选择器里 off 与 none 都显示为 Off，其余档位按拼写大写', async () => {
+  it('选择器里关闭档位只有一项 Off，其余档位按拼写大写', async () => {
     const ctx = await harness(textEvents('hi'), [])
     const qwen = await ctx.llm.resolveModelInfo('fake-route', 'Qwen3.5-397B-A17B')
-    // off（适配器补的「不点名」档位）与 none（线上的显式关闭值）同名展示，
-    // 避免选择器出现两个语义相同的关闭项。
+    // off（「不点名档位」）与 none（线上的显式关闭值）语义相同，选择器只保留
+    // off 一项；线上按模型声明折算成 none。
     expect(qwen.reasoning?.efforts.map(effort => effort.name)).toEqual(
       ['Off', 'Low', 'Medium', 'High', 'Xhigh'],
     )
