@@ -2,6 +2,7 @@ package hostlaunch
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -24,13 +25,59 @@ import (
 var (
 	ErrHostUnavailable    = errors.New("coding: no compatible local Host is available")
 	ErrHostNotReplaceable = errors.New("coding: a live Coding Host could not be replaced in the shared home")
+	// ErrHostNotOwned 表示 Endpoint 并非由接收停机请求的 Launcher 创建。
+	ErrHostNotOwned = errors.New("coding: this launcher does not own the Host endpoint")
+	// ErrHostIdentityChanged 表示首次停机信号前无法确认原 Host 身份。
+	ErrHostIdentityChanged = errors.New("coding: owned Host identity no longer matches its discovery record or health response")
 )
 
-// Launcher 串行执行 Host 发现和启动；Host 就绪后独立运行，不归 Launcher 所有。
+// Launcher 串行执行 Host 发现和启动，并保留由本实例启动的子进程用于安全停机。
 type Launcher struct {
 	options Options
 	client  *http.Client
 	mu      sync.Mutex
+	ownedMu sync.Mutex
+	owned   map[Endpoint]*ownedHost
+}
+
+type ownedHost struct {
+	process  *os.Process
+	done     chan struct{}
+	stopGate chan struct{}
+	stopping bool // 只在持有 stopGate 时读写。
+	signalMu sync.Mutex
+	exited   bool
+	exitErr  error // 只在 done 关闭后读取。
+}
+
+func (owned *ownedHost) signal(signal os.Signal) error {
+	owned.signalMu.Lock()
+	defer owned.signalMu.Unlock()
+	if owned.exited {
+		return os.ErrProcessDone
+	}
+	return owned.process.Signal(signal)
+}
+
+func (owned *ownedHost) hasExited() bool {
+	owned.signalMu.Lock()
+	defer owned.signalMu.Unlock()
+	return owned.exited
+}
+
+func (owned *ownedHost) wait(ctx context.Context) error {
+	if hostExited(owned.done) {
+		return nil
+	}
+	select {
+	case <-owned.done:
+		return nil
+	case <-ctx.Done():
+		if hostExited(owned.done) {
+			return nil
+		}
+		return ctx.Err()
+	}
 }
 
 // AppVersion 是发行启动器编译进来的产品版本；开发构建使用 dev 连接当前源码 Host。
@@ -291,6 +338,164 @@ func (l *Launcher) probe(ctx context.Context, endpoint Endpoint) bool {
 		envelope.Result.Value.ManagedHostToken == endpoint.Record.Token
 }
 
+// StopOwned 仅停止此 Launcher 启动并返回的原始 Host 子进程。附着的 Host 和已被
+// 新记录替代的 Host 都不会因旧 Endpoint 或 host.json 里的 PID 被误停。
+// 停机在调用方截止时间与内部上限中较早的一项返回；超时后仍由唯一的 Wait 回收子进程。
+func (l *Launcher) StopOwned(ctx context.Context, endpoint Endpoint) error {
+	if !endpoint.Started {
+		return nil
+	}
+	l.ownedMu.Lock()
+	owned := l.owned[endpoint]
+	l.ownedMu.Unlock()
+	if owned == nil {
+		return ErrHostNotOwned
+	}
+	if hostExited(owned.done) {
+		return nil
+	}
+	stopCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	select {
+	case owned.stopGate <- struct{}{}:
+	case <-owned.done:
+		return nil
+	case <-stopCtx.Done():
+		if hostExited(owned.done) {
+			return nil
+		}
+		return stopCtx.Err()
+	}
+	defer func() { <-owned.stopGate }()
+	if hostExited(owned.done) {
+		return nil
+	}
+	if owned.hasExited() {
+		return owned.wait(stopCtx)
+	}
+	if !owned.stopping {
+		if err := stopCtx.Err(); err != nil {
+			return err
+		}
+		data, err := os.ReadFile(l.RecordPath())
+		if err != nil {
+			if owned.hasExited() {
+				return owned.wait(stopCtx)
+			}
+			return fmt.Errorf("%w: read discovery record: %v", ErrHostIdentityChanged, err)
+		}
+		var record Record
+		if json.Unmarshal(data, &record) != nil || record != endpoint.Record ||
+			endpoint.Record.PID != owned.process.Pid || endpoint.BaseURL != baseURL(record.Port) ||
+			!l.probe(stopCtx, endpoint) {
+			if owned.hasExited() {
+				return owned.wait(stopCtx)
+			}
+			if err := stopCtx.Err(); err != nil {
+				return err
+			}
+			return ErrHostIdentityChanged
+		}
+		if hostExited(owned.done) {
+			return nil
+		}
+		// 探针等待期间另一个启动器可能已发布新记录；首次信号前再确认一次。
+		data, err = os.ReadFile(l.RecordPath())
+		var latestRecord Record
+		if err != nil || json.Unmarshal(data, &latestRecord) != nil || latestRecord != endpoint.Record {
+			if owned.hasExited() {
+				return owned.wait(stopCtx)
+			}
+			return ErrHostIdentityChanged
+		}
+		if err := stopCtx.Err(); err != nil {
+			return err
+		}
+		if err := owned.signal(ownedStopSignal()); err != nil {
+			if errors.Is(err, os.ErrProcessDone) {
+				return owned.wait(stopCtx)
+			}
+			return fmt.Errorf("coding: stop owned Host: %w", err)
+		}
+		owned.stopping = true
+	}
+
+	// 首次 TERM 已提交后，Host 可以自行删除记录或关闭健康端点；后续操作
+	// 只能针对原 os.Process；本包在 Darwin 上先封闭信号入口再回收 child，
+	// 其他受支持平台则由原进程句柄或运行时的 Wait/Signal 同步保护后继 PID。
+	grace := time.NewTimer(6 * time.Second)
+	defer grace.Stop()
+	select {
+	case <-owned.done:
+		return nil
+	case <-stopCtx.Done():
+		return stopCtx.Err()
+	case <-grace.C:
+	}
+	if err := stopCtx.Err(); err != nil {
+		return err
+	}
+	if err := owned.signal(os.Kill); err != nil && !errors.Is(err, os.ErrProcessDone) && !hostExited(owned.done) {
+		return fmt.Errorf("coding: force-stop owned Host: %w", err)
+	}
+	return owned.wait(stopCtx)
+}
+
+func hostExited(done <-chan struct{}) bool {
+	select {
+	case <-done:
+		return true
+	default:
+		return false
+	}
+}
+
+// hostOutput 在 exec 的唯一 stdout 拷贝 goroutine 内解析就绪行，之后持续丢弃
+// 输出以避免子进程写满 pipe；命令的唯一 Wait 等待该拷贝结束。
+type hostOutput struct {
+	pending  []byte
+	ready    chan Record
+	failed   chan error
+	progress func(done, total int)
+	found    bool
+}
+
+func (output *hostOutput) Write(data []byte) (int, error) {
+	length := len(data)
+	if output.found {
+		return length, nil
+	}
+	output.pending = append(output.pending, data...)
+	for {
+		index := bytes.IndexByte(output.pending, '\n')
+		if index < 0 {
+			if len(output.pending) > bufio.MaxScanTokenSize {
+				err := fmt.Errorf("coding: Host readiness line exceeds scanner limit")
+				output.failed <- err
+				return 0, err
+			}
+			return length, nil
+		}
+		line := output.pending[:index]
+		var record Record
+		if json.Unmarshal(line, &record) == nil && record.Type == "coding-host-ready" {
+			output.found = true
+			output.pending = nil
+			output.ready <- record
+			return length, nil
+		}
+		var progress struct {
+			Type  string `json:"type"`
+			Done  int    `json:"done"`
+			Total int    `json:"total"`
+		}
+		if json.Unmarshal(line, &progress) == nil && progress.Type == "coding-runtime-progress" && output.progress != nil {
+			output.progress(progress.Done, progress.Total)
+		}
+		output.pending = output.pending[index+1:]
+	}
+}
+
 func (l *Launcher) start(ctx context.Context) (Endpoint, error) {
 	command, err := l.command()
 	if err != nil {
@@ -302,55 +507,89 @@ func (l *Launcher) start(ctx context.Context) (Endpoint, error) {
 	child := exec.Command(command[0], command[1:]...)
 	child.Dir = l.commandWorkingDirectory()
 	child.Env = l.childEnvironment()
-	stdout, err := child.StdoutPipe()
-	if err != nil {
-		return Endpoint{}, fmt.Errorf("coding: capture Host stdout: %w", err)
-	}
+	output := &hostOutput{ready: make(chan Record, 1), failed: make(chan error, 1), progress: l.options.OnProgress}
+	child.Stdout = output
 	child.Stderr = os.Stderr
+	child.WaitDelay = time.Second
 	if err := child.Start(); err != nil {
 		return Endpoint{}, fmt.Errorf("coding: start Host: %w", err)
 	}
-	readyCtx, cancel := context.WithTimeout(ctx, l.options.StartupTimeout)
-	defer cancel()
-	scanner := bufio.NewScanner(stdout)
-	ready := make(chan Record, 1)
-	readErr := make(chan error, 1)
+	observeExit, err := observeOwnedProcessExit(child.Process)
+	if err != nil {
+		// 尚未向调用方发布所有权，且没有并发 Wait，此时可以直接清理启动失败的 child。
+		_ = child.Process.Kill()
+		done := make(chan struct{})
+		go func() { _ = child.Wait(); close(done) }()
+		waitForChildCleanup(ctx, done)
+		return Endpoint{}, fmt.Errorf("coding: observe Host process exit: %w", err)
+	}
+	owned := &ownedHost{process: child.Process, done: make(chan struct{}), stopGate: make(chan struct{}, 1)}
 	go func() {
-		for scanner.Scan() {
-			var record Record
-			if json.Unmarshal(scanner.Bytes(), &record) == nil && record.Type == "coding-host-ready" {
-				ready <- record
-				return
-			}
-			var progress struct {
-				Type  string `json:"type"`
-				Done  int    `json:"done"`
-				Total int    `json:"total"`
-			}
-			if json.Unmarshal(scanner.Bytes(), &progress) == nil && progress.Type == "coding-runtime-progress" && l.options.OnProgress != nil {
-				l.options.OnProgress(progress.Done, progress.Total)
-			}
+		if observeExit != nil {
+			observeExit()
+			// Darwin 的 Go Wait 尚不提供 Wait/Signal 的 PID 复用保护；先在同一把
+			// 信号锁内标记退出，再交给唯一的 Cmd.Wait 回收，避免回收后信号命中后继 PID。
+			owned.signalMu.Lock()
+			owned.exited = true
+			owned.signalMu.Unlock()
 		}
-		if err := scanner.Err(); err != nil {
-			readErr <- err
-		} else {
-			readErr <- ErrHostUnavailable
+		owned.exitErr = child.Wait()
+		owned.signalMu.Lock()
+		owned.exited = true
+		owned.signalMu.Unlock()
+		close(owned.done)
+	}()
+	started := false
+	defer func() {
+		if !started {
+			_ = owned.signal(os.Kill)
+			waitForChildCleanup(ctx, owned.done)
 		}
 	}()
+	readyCtx, cancel := context.WithTimeout(ctx, l.options.StartupTimeout)
+	defer cancel()
 	select {
-	case record := <-ready:
-		if record.Protocol != Protocol || record.Port < 1 || record.Port > 65535 || record.Version != l.options.Version || record.Token == "" {
+	case record := <-output.ready:
+		if record.Protocol != Protocol || record.Port < 1 || record.Port > 65535 || record.Version != l.options.Version || record.Token == "" || record.PID != child.Process.Pid {
 			return Endpoint{}, fmt.Errorf("coding: invalid Host readiness record")
 		}
 		endpoint := Endpoint{Record: record, BaseURL: baseURL(record.Port), Started: true}
 		if !l.probe(readyCtx, endpoint) {
 			return Endpoint{}, fmt.Errorf("coding: Host announced readiness but host.describe health check failed")
 		}
+		if err := readyCtx.Err(); err != nil {
+			return Endpoint{}, fmt.Errorf("coding: Host readiness timeout: %w", err)
+		}
+		if hostExited(owned.done) || owned.hasExited() {
+			return Endpoint{}, ErrHostUnavailable
+		}
+		l.ownedMu.Lock()
+		if l.owned == nil {
+			l.owned = make(map[Endpoint]*ownedHost)
+		}
+		l.owned[endpoint] = owned
+		l.ownedMu.Unlock()
+		started = true
 		return endpoint, nil
-	case err := <-readErr:
-		return Endpoint{}, fmt.Errorf("coding: Host exited before readiness: %w", err)
+	case <-owned.done:
+		if owned.exitErr != nil {
+			return Endpoint{}, fmt.Errorf("coding: Host exited before readiness: %w", owned.exitErr)
+		}
+		return Endpoint{}, fmt.Errorf("coding: Host exited before readiness: %w", ErrHostUnavailable)
+	case err := <-output.failed:
+		return Endpoint{}, fmt.Errorf("coding: read Host readiness: %w", err)
 	case <-readyCtx.Done():
 		return Endpoint{}, fmt.Errorf("coding: Host readiness timeout: %w", readyCtx.Err())
+	}
+}
+
+// waitForChildCleanup 给已经发出的强停有限回收时间，不能继承已取消的启动 context。
+func waitForChildCleanup(ctx context.Context, done <-chan struct{}) {
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+	defer cancel()
+	select {
+	case <-done:
+	case <-cleanupCtx.Done():
 	}
 }
 

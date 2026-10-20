@@ -17,7 +17,9 @@ import (
 	"regexp"
 	"runtime"
 	"strconv"
+	"sync"
 	"syscall"
+	"time"
 
 	"github.com/deepseek-ai/coding/apps/desktop/internal/desktopremote"
 	"github.com/deepseek-ai/coding/apps/desktop/internal/helperwire"
@@ -123,6 +125,21 @@ func run(args []string, stdin io.Reader, stdout io.Writer) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	return runHost(ctx, cfg, browserBridge, stdin, stdout, func(options hostlaunch.Options) (hostLauncher, error) {
+		return hostlaunch.New(options)
+	})
+}
+
+type hostLauncher interface {
+	hostStopper
+	Ensure(context.Context) (hostlaunch.Endpoint, error)
+}
+
+func runHost(ctx context.Context, cfg config, browserBridge browserBridgeConfig, stdin io.Reader, stdout io.Writer,
+	newLauncher func(hostlaunch.Options) (hostLauncher, error),
+) (result error) {
+	ctx, stop := context.WithCancel(ctx)
+	defer stop()
 	// 获锁失败时不得创建 manager、bridge 或操作共享 Home。
 	lock, err := acquireExclusiveInstance(cfg)
 	if err != nil {
@@ -217,7 +234,7 @@ func run(args []string, stdin io.Reader, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	launcher, err := hostlaunch.New(hostLauncherOptions(cfg, command, hostEnvironment(bridge.URL(), bridgeToken, agentsHome, browserBridge)))
+	launcher, err := newLauncher(hostLauncherOptions(cfg, command, hostEnvironment(bridge.URL(), bridgeToken, agentsHome, browserBridge)))
 	if err != nil {
 		return err
 	}
@@ -225,13 +242,22 @@ func run(args []string, stdin io.Reader, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if endpoint.Started {
+		// Ensure 成功后即由 helper 持有原始 Host；父进程未接管 ready、EOF 或信号
+		// 也必须收尾。此 defer 后注册，先于可能慢速的 SSH 清理执行。
+		defer func() {
+			stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownTimeout)
+			defer cancel()
+			result = errors.Join(result, launcher.StopOwned(stopCtx, endpoint))
+		}()
+	}
 	if err := emitter.WriteReady(endpoint.BaseURL); err != nil {
 		return err
 	}
 	if ready != nil {
 		close(ready)
 	}
-	return helperwire.ServeWithEmitter(ctx, requestInput, emitter, &handler{service: service})
+	return helperwire.ServeWithEmitter(ctx, requestInput, emitter, &handler{service: service, host: launcher, endpoint: endpoint})
 }
 
 func pumpInput(ctx context.Context, input io.Reader, cancel context.CancelFunc) *io.PipeReader {
@@ -352,7 +378,20 @@ type remoteService interface {
 	RemoteSSHRejectHostKey(string) error
 	CloseAll(context.Context) error
 }
-type handler struct{ service remoteService }
+type hostStopper interface {
+	StopOwned(context.Context, hostlaunch.Endpoint) error
+}
+
+type handler struct {
+	service      remoteService
+	host         hostStopper
+	endpoint     hostlaunch.Endpoint
+	shutdownOnce sync.Once
+	shutdownErr  error
+}
+
+// Electron 等待 shutdown 至多十三秒；为响应传输和 helper 终止保留两秒。
+const shutdownTimeout = 11 * time.Second
 
 // Handle 对每种 IPC 输入做严格结构校验；service 再校验领域字段。
 func (h *handler) Handle(ctx context.Context, method string, payload json.RawMessage) (any, error) {
@@ -457,10 +496,39 @@ func (h *handler) dispatch(ctx context.Context, method string, payload json.RawM
 		if err := decode(payload, &input); err != nil {
 			return nil, err
 		}
-		return struct{}{}, h.service.CloseAll(ctx)
+		return struct{}{}, h.shutdown(ctx)
 	default:
 		return nil, errors.New("unsupported helper method")
 	}
+}
+
+// shutdown 在显式请求返回前停止 Host；runHost 的退出兜底独立重试原始 Endpoint。
+// 两项清理独立执行，慢速 SSH 后端不能占尽 Host 停止预算；并发请求共享失败结果。
+func (h *handler) shutdown(ctx context.Context) error {
+	h.shutdownOnce.Do(func() {
+		// 已接受的退出请求不随父管道断开取消，但仍受本地总预算限制。
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownTimeout)
+		defer cancel()
+		completed := make(chan error, 2)
+		go func() { completed <- h.service.CloseAll(ctx) }()
+		go func() {
+			if !h.endpoint.Started {
+				completed <- nil
+				return
+			}
+			completed <- h.host.StopOwned(ctx, h.endpoint)
+		}()
+		for range 2 {
+			select {
+			case err := <-completed:
+				h.shutdownErr = errors.Join(h.shutdownErr, err)
+			case <-ctx.Done():
+				h.shutdownErr = errors.Join(h.shutdownErr, ctx.Err())
+				return
+			}
+		}
+	})
+	return h.shutdownErr
 }
 
 func decode(payload json.RawMessage, value any) error {

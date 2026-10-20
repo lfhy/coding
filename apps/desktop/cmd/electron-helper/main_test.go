@@ -4,18 +4,23 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/deepseek-ai/coding/apps/desktop/internal/desktopremote"
 	"github.com/deepseek-ai/coding/apps/desktop/internal/helperwire"
 	"github.com/deepseek-ai/coding/apps/desktop/internal/instance"
+	"github.com/deepseek-ai/coding/apps/internal/hostlaunch"
 )
 
 func TestParseConfigRequiresExplicitIsolatedPaths(t *testing.T) {
@@ -176,6 +181,171 @@ func TestDevelopmentHelperAllowsAbsentBrowserBridge(t *testing.T) {
 	}
 	if _, err := os.Stat(home); !os.IsNotExist(err) {
 		t.Fatalf("helper touched home before Host entry check: %v", err)
+	}
+}
+
+type lifecycleLauncher struct {
+	endpoint  hostlaunch.Endpoint
+	ensureErr error
+	stop      stopHostFunc
+}
+
+func (l *lifecycleLauncher) Ensure(context.Context) (hostlaunch.Endpoint, error) {
+	return l.endpoint, l.ensureErr
+}
+
+func (l *lifecycleLauncher) StopOwned(ctx context.Context, endpoint hostlaunch.Endpoint) error {
+	return l.stop(ctx, endpoint)
+}
+
+type outputWriterFunc func([]byte) (int, error)
+
+func (f outputWriterFunc) Write(data []byte) (int, error) { return f(data) }
+
+func TestRunHostStopsOriginalOwnedHostOnExit(t *testing.T) {
+	ensureFailure := errors.New("test Host startup failed")
+	readyFailure := errors.New("test ready delivery failed")
+	stopFailure := errors.New("test Host exit cleanup failed")
+	for _, test := range []struct {
+		name      string
+		started   bool
+		ensureErr error
+		stopErr   error
+		stopCalls int32
+	}{
+		{name: "EOF after ready", started: true, stopCalls: 1},
+		{name: "EOF Host stop fails", started: true, stopCalls: 1, stopErr: stopFailure},
+		{name: "signal context canceled after ready", started: true, stopCalls: 1},
+		{name: "ready delivery fails", started: true, stopCalls: 1},
+		{name: "ready delivery fails and Host stop fails", started: true, stopCalls: 1, stopErr: stopFailure},
+		{name: "replacement record before EOF", started: true, stopCalls: 1},
+		{name: "explicit shutdown fails then EOF retries", started: true, stopCalls: 2},
+		{name: "repeated explicit shutdown then EOF is idempotent", started: true, stopCalls: 2},
+		{name: "attached Host EOF", started: false},
+		{name: "Ensure fails before ownership", started: true, ensureErr: ensureFailure},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			stdin, input := io.Pipe()
+			defer stdin.Close()
+			defer input.Close()
+			cfg := config{home: t.TempDir(), cwd: t.TempDir(), runtimeRoot: t.TempDir(), hostVersion: "dev"}
+			original := hostlaunch.Endpoint{
+				Record:  hostlaunch.Record{Type: "coding-host-ready", PID: 42, Port: 49152, Token: "original-test-token"},
+				BaseURL: "http://127.0.0.1:49152", Started: test.started,
+			}
+			var stopped atomic.Int32
+			var stopSignals atomic.Int32
+			var hostStopped atomic.Bool
+			var responses atomic.Int32
+			var failedResponse atomic.Bool
+			var bridgeAddress string
+			launcher := &lifecycleLauncher{endpoint: original, ensureErr: test.ensureErr, stop: func(ctx context.Context, got hostlaunch.Endpoint) error {
+				calls := stopped.Add(1)
+				if got != original {
+					t.Errorf("stopped endpoint = %#v, want original %#v", got, original)
+				}
+				if ctx.Err() != nil {
+					t.Errorf("cleanup inherited canceled run context: %v", ctx.Err())
+				}
+				if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) > shutdownTimeout {
+					t.Error("exit cleanup has no bounded deadline")
+				}
+				if test.stopCalls == 1 {
+					connection, err := net.DialTimeout("tcp", bridgeAddress, time.Second)
+					if err != nil {
+						t.Errorf("Host cleanup ran after bridge cleanup: %v", err)
+					} else {
+						_ = connection.Close()
+					}
+				}
+				if test.name == "explicit shutdown fails then EOF retries" && calls == 1 {
+					return errors.New("test first Host stop failed")
+				}
+				if test.stopErr != nil {
+					return test.stopErr
+				}
+				if hostStopped.CompareAndSwap(false, true) {
+					stopSignals.Add(1)
+				}
+				return nil
+			}}
+			output := outputWriterFunc(func(data []byte) (int, error) {
+				var frame struct {
+					Type string `json:"type"`
+					OK   bool   `json:"ok"`
+				}
+				if err := json.Unmarshal(data, &frame); err != nil {
+					return 0, err
+				}
+				if frame.Type == "response" {
+					failedResponse.Store(!frame.OK)
+					if responses.Add(1) == 1 && test.name == "repeated explicit shutdown then EOF is idempotent" {
+						go func() {
+							_, _ = io.WriteString(input, `{"type":"request","protocol":1,"id":"shutdown-2","method":"shutdown","payload":{}}`+"\n")
+						}()
+						return len(data), nil
+					}
+					_ = input.Close()
+					return len(data), nil
+				}
+				switch test.name {
+				case "signal context canceled after ready":
+					cancel()
+				case "ready delivery fails", "ready delivery fails and Host stop fails":
+					return 0, readyFailure
+				case "replacement record before EOF":
+					replacement := original.Record
+					replacement.PID, replacement.Token = 43, "replacement-test-token"
+					record, err := json.Marshal(replacement)
+					if err != nil {
+						return 0, err
+					}
+					if err := os.WriteFile(filepath.Join(cfg.home, "host.json"), record, 0o600); err != nil {
+						return 0, err
+					}
+					_ = input.Close()
+				case "explicit shutdown fails then EOF retries", "repeated explicit shutdown then EOF is idempotent":
+					go func() {
+						_, _ = io.WriteString(input, `{"type":"request","protocol":1,"id":"shutdown-1","method":"shutdown","payload":{}}`+"\n")
+					}()
+				default:
+					_ = input.Close()
+				}
+				return len(data), nil
+			})
+			err := runHost(ctx, cfg, browserBridgeConfig{}, stdin, output, func(options hostlaunch.Options) (hostLauncher, error) {
+				bridgeAddress = strings.TrimPrefix(options.Environment["DSH_REMOTE_BRIDGE_URL"], "http://")
+				return launcher, nil
+			})
+			if test.ensureErr != nil && !errors.Is(err, test.ensureErr) {
+				t.Errorf("run startup error = %v, want %v", err, test.ensureErr)
+			}
+			if strings.HasPrefix(test.name, "ready delivery fails") && !errors.Is(err, readyFailure) {
+				t.Errorf("run ready error = %v", err)
+			}
+			if test.stopErr != nil && !errors.Is(err, test.stopErr) {
+				t.Errorf("run cleanup error = %v, want %v", err, test.stopErr)
+			}
+			if calls := stopped.Load(); calls != test.stopCalls {
+				t.Fatalf("StopOwned called %d times, want %d", calls, test.stopCalls)
+			}
+			if test.name == "explicit shutdown fails then EOF retries" && !failedResponse.Load() {
+				t.Fatal("failed explicit shutdown returned a success response")
+			}
+			if test.name == "repeated explicit shutdown then EOF is idempotent" &&
+				(responses.Load() != 2 || failedResponse.Load() || stopSignals.Load() != 1) {
+				t.Fatalf("repeated shutdown = %d responses, failure %v, %d signals", responses.Load(), failedResponse.Load(), stopSignals.Load())
+			}
+			if test.name == "replacement record before EOF" {
+				record, err := os.ReadFile(filepath.Join(cfg.home, "host.json"))
+				if err != nil || !bytes.Contains(record, []byte("replacement-test-token")) {
+					t.Fatal("exit cleanup changed replacement discovery record")
+				}
+			}
+		})
 	}
 }
 
@@ -589,5 +759,252 @@ func TestHandlerRoutesStrictPayloads(t *testing.T) {
 	}
 	if _, err := h.Handle(context.Background(), "arbitrary", json.RawMessage(`{}`)); err == nil || strings.Contains(err.Error(), "example-secret") {
 		t.Fatalf("unsupported method error = %v", err)
+	}
+}
+
+type shutdownService struct {
+	*fakeService
+	closeAll func(context.Context) error
+}
+
+func (s *shutdownService) CloseAll(ctx context.Context) error { return s.closeAll(ctx) }
+
+type stopHostFunc func(context.Context, hostlaunch.Endpoint) error
+
+func (f stopHostFunc) StopOwned(ctx context.Context, endpoint hostlaunch.Endpoint) error {
+	return f(ctx, endpoint)
+}
+
+func TestShutdownAttemptsBothCleanupsAndCachesResult(t *testing.T) {
+	closeFailure := errors.New("service cleanup failed")
+	stopFailure := errors.New("Host stop failed")
+	for _, test := range []struct {
+		name     string
+		closeErr error
+		stopErr  error
+	}{
+		{name: "success"},
+		{name: "service fails", closeErr: closeFailure},
+		{name: "Host fails", stopErr: stopFailure},
+		{name: "both fail", closeErr: closeFailure, stopErr: stopFailure},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			var closed, stopped atomic.Int32
+			endpoint := hostlaunch.Endpoint{Record: hostlaunch.Record{PID: 42, Token: "test-owned-token"}, Started: true}
+			h := &handler{
+				service: &shutdownService{fakeService: &fakeService{}, closeAll: func(context.Context) error {
+					closed.Add(1)
+					return test.closeErr
+				}},
+				host: stopHostFunc(func(ctx context.Context, got hostlaunch.Endpoint) error {
+					stopped.Add(1)
+					if got != endpoint {
+						t.Errorf("stopped endpoint = %#v, want %#v", got, endpoint)
+					}
+					if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) > shutdownTimeout {
+						t.Error("Host stop has no bounded deadline")
+					}
+					return test.stopErr
+				}),
+				endpoint: endpoint,
+			}
+			for range 2 {
+				value, err := h.Handle(t.Context(), "shutdown", json.RawMessage(`{}`))
+				if value == nil || (err == nil) != (test.closeErr == nil && test.stopErr == nil) {
+					t.Fatalf("shutdown = %v, %v", value, err)
+				}
+				for _, want := range []error{test.closeErr, test.stopErr} {
+					if want != nil && !errors.Is(err, want) {
+						t.Fatalf("shutdown error = %v, missing %v", err, want)
+					}
+				}
+			}
+			if closed.Load() != 1 || stopped.Load() != 1 {
+				t.Fatalf("cleanup calls = %d service, %d Host", closed.Load(), stopped.Load())
+			}
+		})
+	}
+}
+
+func TestConcurrentShutdownStopsOwnedHostOnce(t *testing.T) {
+	t.Parallel()
+	var closed, stopped atomic.Int32
+	started, release := make(chan struct{}), make(chan struct{})
+	t.Cleanup(func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	})
+	h := &handler{
+		service: &shutdownService{fakeService: &fakeService{}, closeAll: func(context.Context) error {
+			closed.Add(1)
+			return nil
+		}},
+		host: stopHostFunc(func(context.Context, hostlaunch.Endpoint) error {
+			stopped.Add(1)
+			close(started)
+			<-release
+			return nil
+		}),
+		endpoint: hostlaunch.Endpoint{Started: true},
+	}
+	results := make(chan error, 16)
+	for range 16 {
+		go func() {
+			_, err := h.Handle(t.Context(), "shutdown", json.RawMessage(`{}`))
+			results <- err
+		}()
+	}
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("Host stop was not attempted")
+	}
+	close(release)
+	for range 16 {
+		if err := <-results; err != nil {
+			t.Fatalf("concurrent shutdown = %v", err)
+		}
+	}
+	if closed.Load() != 1 || stopped.Load() != 1 {
+		t.Fatalf("cleanup calls = %d service, %d Host", closed.Load(), stopped.Load())
+	}
+}
+
+func TestShutdownLeavesUnownedHostRunning(t *testing.T) {
+	t.Parallel()
+	var closed, stopped atomic.Int32
+	h := &handler{
+		service: &shutdownService{fakeService: &fakeService{}, closeAll: func(context.Context) error {
+			closed.Add(1)
+			return nil
+		}},
+		host: stopHostFunc(func(context.Context, hostlaunch.Endpoint) error {
+			stopped.Add(1)
+			return nil
+		}),
+		endpoint: hostlaunch.Endpoint{Started: false},
+	}
+	if _, err := h.Handle(t.Context(), "shutdown", json.RawMessage(`{}`)); err != nil {
+		t.Fatalf("shutdown = %v", err)
+	}
+	if closed.Load() != 1 || stopped.Load() != 0 {
+		t.Fatalf("cleanup calls = %d service, %d unowned Host", closed.Load(), stopped.Load())
+	}
+}
+
+func TestShutdownPayloadValidationDoesNotStopHost(t *testing.T) {
+	t.Parallel()
+	for _, payload := range []string{`null`, `[]`, `{"force":true}`} {
+		t.Run(payload, func(t *testing.T) {
+			var closed, stopped atomic.Int32
+			h := &handler{
+				service: &shutdownService{fakeService: &fakeService{}, closeAll: func(context.Context) error {
+					closed.Add(1)
+					return nil
+				}},
+				host: stopHostFunc(func(context.Context, hostlaunch.Endpoint) error {
+					stopped.Add(1)
+					return nil
+				}),
+				endpoint: hostlaunch.Endpoint{Started: true},
+			}
+			if _, err := h.Handle(t.Context(), "shutdown", json.RawMessage(payload)); err == nil {
+				t.Fatal("invalid shutdown payload accepted")
+			}
+			if closed.Load() != 0 || stopped.Load() != 0 {
+				t.Fatal("invalid shutdown request performed cleanup")
+			}
+		})
+	}
+}
+
+func TestShutdownBoundsStubbornServiceAndStillStopsHost(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		release, finished := make(chan struct{}), make(chan struct{})
+		var stopped atomic.Int32
+		h := &handler{
+			service: &shutdownService{fakeService: &fakeService{}, closeAll: func(context.Context) error {
+				defer close(finished)
+				<-release
+				return nil
+			}},
+			host: stopHostFunc(func(context.Context, hostlaunch.Endpoint) error {
+				stopped.Add(1)
+				return nil
+			}),
+			endpoint: hostlaunch.Endpoint{Started: true},
+		}
+		start := time.Now()
+		_, err := h.Handle(t.Context(), "shutdown", json.RawMessage(`{}`))
+		close(release)
+		<-finished
+		if !errors.Is(err, context.DeadlineExceeded) || time.Since(start) != shutdownTimeout {
+			t.Fatalf("stubborn cleanup result = %v after %v", err, time.Since(start))
+		}
+		if stopped.Load() != 1 {
+			t.Fatalf("Host stop calls = %d", stopped.Load())
+		}
+		if _, retryErr := h.Handle(t.Context(), "shutdown", json.RawMessage(`{}`)); !errors.Is(retryErr, context.DeadlineExceeded) {
+			t.Fatalf("repeated shutdown lost timeout result: %v", retryErr)
+		}
+	})
+}
+
+func TestShutdownContinuesAfterRequestCancellation(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		started, release := make(chan struct{}), make(chan struct{})
+		var stopped atomic.Int32
+		h := &handler{
+			service: &shutdownService{fakeService: &fakeService{}, closeAll: func(context.Context) error { return nil }},
+			host: stopHostFunc(func(ctx context.Context, _ hostlaunch.Endpoint) error {
+				stopped.Add(1)
+				close(started)
+				<-release
+				return ctx.Err()
+			}),
+			endpoint: hostlaunch.Endpoint{Started: true},
+		}
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		result := make(chan error, 1)
+		go func() {
+			_, err := h.Handle(ctx, "shutdown", json.RawMessage(`{}`))
+			result <- err
+		}()
+		<-started
+		cancel()
+		if err := <-result; !errors.Is(err, context.Canceled) {
+			t.Fatalf("canceled request = %v", err)
+		}
+		close(release)
+		if _, err := h.Handle(t.Context(), "shutdown", json.RawMessage(`{}`)); err != nil {
+			t.Fatalf("accepted shutdown was canceled with the request: %v", err)
+		}
+		if stopped.Load() != 1 {
+			t.Fatalf("Host stop calls = %d", stopped.Load())
+		}
+	})
+}
+
+func TestHandlerEOFLeavesOwnedHostToRunCleanup(t *testing.T) {
+	t.Parallel()
+	var stopped atomic.Int32
+	h := &handler{
+		service: &fakeService{},
+		host: stopHostFunc(func(context.Context, hostlaunch.Endpoint) error {
+			stopped.Add(1)
+			return nil
+		}),
+		endpoint: hostlaunch.Endpoint{Started: true},
+	}
+	if err := helperwire.ServeWithEmitter(t.Context(), strings.NewReader(""), helperwire.NewEmitter(io.Discard), h); err != nil {
+		t.Fatalf("serve EOF = %v", err)
+	}
+	if stopped.Load() != 0 {
+		t.Fatal("handler EOF stopped Host instead of leaving cleanup to runHost")
 	}
 }

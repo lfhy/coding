@@ -22,6 +22,7 @@ import { createHostWindow } from './window.ts'
 
 const repositoryRoot = resolve(fileURLToPath(new URL('../../..', import.meta.url)))
 const BROWSER_STOP_MS = 3_000
+const HELPER_SHUTDOWN_MS = 13_000
 
 let mainWindow: BrowserWindow | undefined
 let nativeChrome: NativeChrome | undefined
@@ -82,7 +83,7 @@ async function stopHelper(): Promise<void> {
     await Promise.race([
       current.request('shutdown', {}),
       new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => { reject(new Error('Helper shutdown timed out')) }, 10_000)
+        timer = setTimeout(() => { reject(new Error('Helper shutdown timed out')) }, HELPER_SHUTDOWN_MS)
       }),
     ])
   } catch {
@@ -134,12 +135,12 @@ function openWindow(): Promise<void> {
       await stopBrowser()
       throw error
     }
+    helper = next
     if (controller.signal.aborted) {
-      await next.close()
-      await stopBrowser()
+      // ready 已交付的 helper 持有本次 Host；退出必须先发送显式 shutdown。
+      await stopHelper()
       return
     }
-    helper = next
     const window = createHostWindow(next.origin, {
       devTools: !app.isPackaged && process.env.DSH_ELECTRON_DEVTOOLS === '1',
       iconPath: runtimeConfig.iconPath,

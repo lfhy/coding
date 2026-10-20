@@ -21,6 +21,8 @@ const (
 	MaxConcurrentRequests = 16
 	maxIDBytes            = 128
 	maxRequests           = 65536
+	maxBusinessRequests   = maxRequests - 1
+	maxBusinessConcurrent = MaxConcurrentRequests - 1
 )
 
 // Handler 只接收经过传输层验证的请求；业务方法及 payload 仍须由实现方校验。
@@ -34,6 +36,40 @@ type request struct {
 	ID       string          `json:"id"`
 	Method   string          `json:"method"`
 	Payload  json.RawMessage `json:"payload"`
+}
+
+// requestBudget 由读循环独占；为 shutdown 保留最后一个并发槽和请求 id。
+type requestBudget struct {
+	seen           map[string]struct{}
+	active         map[string]bool
+	activeBusiness int
+}
+
+func (b *requestBudget) admit(req request) (busy bool, err error) {
+	shutdown := req.Method == "shutdown"
+	if _, exists := b.seen[req.ID]; exists || len(b.seen) >= maxRequests || !shutdown && len(b.seen) >= maxBusinessRequests {
+		return false, errors.New("helperwire: duplicate or exhausted request id")
+	}
+	b.seen[req.ID] = struct{}{}
+	if !shutdown && (b.activeBusiness >= maxBusinessConcurrent || len(b.active) >= MaxConcurrentRequests) {
+		// 响应已被客户端消费时，完成通知仍可能尚未回收槽位；业务过载不能取消待处理的 shutdown。
+		return true, nil
+	}
+	if len(b.active) >= MaxConcurrentRequests {
+		return false, errors.New("helperwire: too many concurrent requests")
+	}
+	b.active[req.ID] = !shutdown
+	if !shutdown {
+		b.activeBusiness++
+	}
+	return false, nil
+}
+
+func (b *requestBudget) release(id string) {
+	if b.active[id] {
+		b.activeBusiness--
+	}
+	delete(b.active, id)
 }
 
 type wireError struct {
@@ -133,6 +169,7 @@ func Serve(ctx context.Context, in io.Reader, out io.Writer, handler Handler) er
 
 // ServeWithEmitter 持续读取请求直到 EOF；EOF 或取消会取消并等待所有请求。
 // 取消时若 reader 实现 io.Closer，Serve 会关闭它以打断阻塞读取。
+// 最后一个并发槽和请求 id 保留给 shutdown；业务并发超额返回 request_limit，不取消已有请求。
 // Handler 必须响应 ctx 取消，且调用者必须提供可中断的 reader。
 func ServeWithEmitter(ctx context.Context, in io.Reader, emitter *Emitter, handler Handler) error {
 	if ctx == nil || in == nil || emitter == nil || emitter.out == nil || handler == nil {
@@ -145,8 +182,7 @@ func ServeWithEmitter(ctx context.Context, in io.Reader, emitter *Emitter, handl
 		defer stop()
 	}
 	reader := bufio.NewReaderSize(in, 64<<10)
-	seen := make(map[string]struct{})
-	active := make(map[string]struct{})
+	budget := requestBudget{seen: make(map[string]struct{}), active: make(map[string]bool)}
 	var group sync.WaitGroup
 	done := make(chan string, MaxConcurrentRequests)
 	var resultMu sync.Mutex
@@ -170,22 +206,25 @@ loop:
 			readErr = err
 			break
 		}
-		if _, exists := seen[req.ID]; exists || len(seen) >= maxRequests {
-			readErr = errors.New("helperwire: duplicate or exhausted request id")
-			break
-		}
-		seen[req.ID] = struct{}{}
-		// 仅由读循环更新 active；完成通道释放槽位。
+		// 仅由读循环更新预算；完成通道释放槽位。
 		for {
 			select {
 			case id := <-done:
-				delete(active, id)
+				budget.release(id)
 			default:
-				if len(active) >= MaxConcurrentRequests {
-					readErr = errors.New("helperwire: too many concurrent requests")
+				busy, err := budget.admit(req)
+				if err != nil {
+					readErr = err
 					break loop
 				}
-				active[req.ID] = struct{}{}
+				if busy {
+					// 同步写固定错误，避免过载请求额外创建无界 goroutine 或占用控制槽。
+					if err := emitter.failure(req.ID, "request_limit", "Helper request limit reached"); err != nil {
+						readErr = err
+						break loop
+					}
+					continue loop
+				}
 				group.Go(func() {
 					defer func() { done <- req.ID }()
 					if err := handle(serveCtx, emitter, handler, req); err != nil {

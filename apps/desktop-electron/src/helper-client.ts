@@ -7,6 +7,8 @@ const MAX_PENDING = 16
 const MAX_REQUESTS = 65_536
 const STARTUP_MS = 45_000
 const STOP_MS = 1_000
+// 启动取消时 helper 可能已持有 Host；为其 11 秒所有权清理兜底留出宽限。
+const STARTUP_CANCEL_STOP_MS = 12_000
 const METHODS = new Set([
   'RemoteSSHConnect', 'RemoteSSHListDirectories', 'RemoteSSHSelectDirectory',
   'RemoteSSHClose', 'RemoteSSHCancelConnect', 'RemoteSSHRejectHostKey', 'shutdown',
@@ -16,7 +18,10 @@ const METHODS = new Set([
 /** 已就绪 helper 的主进程私有句柄；不得传给 renderer。 */
 export interface HelperClient {
   readonly origin: string
-  /** 取消只停止等待，不证明 helper 尚未执行请求；调用方应以业务 id 核对结果。 */
+  /**
+   * 业务请求为 shutdown 预留并发与累计槽位。
+   * 取消只停止等待，不证明 helper 尚未执行请求；调用方应以业务 id 核对结果。
+   */
   request(method: string, payload: unknown, signal?: AbortSignal): Promise<unknown>
   /** 订阅不含诊断文字的进度，关闭或调用 disposer 后停止通知。 */
   onProgress(listener: (progress: { attemptId: string; phase: string; message: '' }) => void): () => void
@@ -34,6 +39,7 @@ export interface HelperLaunchOptions {
   args: string[]
   cwd: string
   env: NodeJS.ProcessEnv
+  /** 仅取消 ready 前的启动；已就绪句柄由调用方显式 shutdown 或 close。 */
   signal?: AbortSignal
 }
 
@@ -75,7 +81,7 @@ function cancelledError(): Error {
   return new Error('Helper request cancelled; it may still execute')
 }
 
-function stopChild(child: ChildProcessWithoutNullStreams): Promise<void> {
+function stopChild(child: ChildProcessWithoutNullStreams, terminateGraceMS: number): Promise<void> {
   if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve()
   return new Promise((resolveStop) => {
     let stage = 0
@@ -94,14 +100,14 @@ function stopChild(child: ChildProcessWithoutNullStreams): Promise<void> {
     }
     child.once('exit', finish)
     child.kill('SIGTERM')
-    if (child.exitCode === null && child.signalCode === null) timer = setTimeout(advance, STOP_MS)
+    if (child.exitCode === null && child.signalCode === null) timer = setTimeout(advance, terminateGraceMS)
     if (child.exitCode !== null || child.signalCode !== null) finish()
   })
 }
 
 /**
  * 启动唯一的 helper 子进程，等待严格的第一帧 ready；失败或取消时有界停止该子进程。
- * @param options - helper 的可执行文件、参数、目录、显式环境和可选生命周期信号。
+ * @param options - helper 的可执行文件、参数、目录、显式环境和可选启动取消信号。
  * @returns 持有 stdio 的客户端；使用完必须调用 close，origin 不包含授权信息。
  */
 export async function launchHelper(options: HelperLaunchOptions): Promise<HelperClient> {
@@ -127,7 +133,7 @@ export async function launchHelper(options: HelperLaunchOptions): Promise<Helper
   const startup = new Promise<void>((resolve, reject) => { resolveReady = resolve; rejectReady = reject })
   const timer = setTimeout(() => { void fail(new Error('Helper readiness timed out')) }, STARTUP_MS)
 
-  function fail(error: Error, reason: 'exited' | 'protocol' | 'closed' = 'exited'): Promise<void> {
+  function fail(error: Error, reason: 'exited' | 'protocol' | 'closed' = 'exited', terminateGraceMS = STOP_MS): Promise<void> {
     if (closed) return closePromise ?? Promise.resolve()
     closed = true
     closeReason = reason
@@ -141,7 +147,7 @@ export async function launchHelper(options: HelperLaunchOptions): Promise<Helper
     pending.clear()
     listeners.clear()
     activateListeners.clear()
-    closePromise = stopChild(child)
+    closePromise = stopChild(child, terminateGraceMS)
     for (const listener of closeListeners) {
       try { listener(reason) } catch { /* 观察者异常不能改变子进程清理。 */ }
     }
@@ -156,6 +162,7 @@ export async function launchHelper(options: HelperLaunchOptions): Promise<Helper
       announcedOrigin = value.origin
       ready = true
       clearTimeout(timer)
+      options.signal?.removeEventListener('abort', onAbort)
       resolveReady()
       return
     }
@@ -222,7 +229,7 @@ export async function launchHelper(options: HelperLaunchOptions): Promise<Helper
   child.stderr.on('data', () => {})
   child.stderr.on('error', () => { void fail(stoppedError()) })
   options.signal?.addEventListener('abort', onAbort, { once: true })
-  function onAbort(): void { void fail(ready ? stoppedError() : new Error('Helper launch cancelled'), 'closed') }
+  function onAbort(): void { void fail(new Error('Helper launch cancelled'), 'closed', STARTUP_CANCEL_STOP_MS) }
   if (options.signal?.aborted) onAbort()
 
   const client: HelperClient = {
@@ -231,7 +238,11 @@ export async function launchHelper(options: HelperLaunchOptions): Promise<Helper
       if (closed) return Promise.reject(stoppedError())
       if (!METHODS.has(method)) return Promise.reject(new Error('Unsupported helper method'))
       if (signal?.aborted) return Promise.reject(cancelledError())
-      if (pending.size >= MAX_PENDING || requestCount >= MAX_REQUESTS) return Promise.reject(new Error('Helper request capacity exhausted'))
+      // 与 Go wire 的硬上限一致；普通请求不能耗尽最后一个优雅退出槽位。
+      const reserved = method === 'shutdown' ? 0 : 1
+      if (pending.size >= MAX_PENDING - reserved || requestCount >= MAX_REQUESTS - reserved) {
+        return Promise.reject(new Error('Helper request capacity exhausted'))
+      }
       let body: string
       const id = randomUUID()
       try {

@@ -2,7 +2,13 @@
 
 package hostlaunch
 
-import "golang.org/x/sys/windows"
+import (
+	"os"
+
+	"golang.org/x/sys/windows"
+)
+
+func ownedStopSignal() os.Signal { return os.Kill }
 
 // terminateProcess 请求 Host 进程退出；权限不足或进程已消失时静默返回。
 func terminateProcess(pid int) {

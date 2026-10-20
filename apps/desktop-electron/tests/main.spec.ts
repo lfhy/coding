@@ -139,7 +139,7 @@ describe('Electron 主进程退出', () => {
       requestQuit()
       await flush()
       requestQuit()
-      await vi.advanceTimersByTimeAsync(9_999)
+      await vi.advanceTimersByTimeAsync(12_999)
       expect(mocks.helper.close).not.toHaveBeenCalled()
       expect(mocks.app.quit).not.toHaveBeenCalled()
 
@@ -170,6 +170,8 @@ describe('Electron 主进程退出', () => {
     ready.resolve(mocks.helper)
     await flush()
     expect(mocks.createHostWindow).toHaveBeenCalledOnce()
+    expect(mocks.helper.request).toHaveBeenCalledTimes(2)
+    expect(mocks.helper.request).toHaveBeenLastCalledWith('shutdown', {})
     expect(mocks.helper.close).toHaveBeenCalledTimes(2)
     expect(mocks.app.quit).toHaveBeenCalledOnce()
   })

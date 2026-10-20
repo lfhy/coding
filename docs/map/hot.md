@@ -224,18 +224,18 @@
 
 ## apps/desktop Go helper 与远程连接
 
-- **拥有**：Electron helper、远程 SSH 服务和回环 bridge，以及供安装版使用的单实例锁。纯 Go 源码，没有 `package.json`，虽在 `apps/*` 通配下但不是 pnpm workspace 包。
+- **拥有**：Electron helper、远程 SSH 服务和回环 bridge、显式退出时的 Host 清理编排，以及供安装版使用的单实例锁。纯 Go 源码，没有 `package.json`，虽在 `apps/*` 通配下但不是 pnpm workspace 包。
 - **不拥有**：Host 发现、启动与停止协议（归 `apps/internal/hostlaunch`）；窗口、菜单与托盘（归 `apps/desktop-electron`）；Host 与 UI 业务（归 `packages/*`、`apps/web`）；Electron 打包（归 `scripts/package-electron-macos-app.ts`）。
 - **入口**：`apps/desktop/cmd/electron-helper/main.go`，由 Electron 主进程启动；helper 经 `hostlaunch` 启动 Host，Web 窗口导航至核验的回环 URL。
 - **接线**：Host 侧以 `web --coding-host` 启动，该 flag 由 `packages/bundle/web-app/src/startup.ts` 解析，`packages/bundle/web-app/src/managed-host.ts` 发 `coding-host-ready` 记录。
 - **关键文件**：`apps/desktop/internal/desktopremote/service.go`、`apps/desktop/internal/desktopremote/bridge.go`、`apps/desktop/internal/remoteagent/manager.go`、`apps/desktop/internal/instance/instance.go`、`apps/internal/hostlaunch/launcher.go`。
 - **改这里要同步**：`apps/internal/hostlaunch`（启动与就绪记录契约）、Electron main/IPC（远程连接与进程协议）、`scripts/package-electron-macos-app.ts`（包资源）、`packages/bundle/web-app/src/managed-host.ts`（ready 记录格式）。
-- **不变量**：开发版使用独立单实例锁与 `~/.dsh-electron-dev`，不得替换安装版的 Host；`DSH_HOME`/`DSH_CWD`/`DSH_APP_VERSION` 由 hostlaunch 独占写入；回环 origin 不是 bridge 授权。
+- **不变量**：开发版使用独立单实例锁与 `~/.dsh-electron-dev`，不得替换安装版的 Host；显式 `shutdown {}` 与 helper 异常退出都只经 hostlaunch 尝试停止本次启动且身份仍匹配的 Host，不扫描共享 Home 终止替代 Host；`DSH_HOME`/`DSH_CWD`/`DSH_APP_VERSION` 由 hostlaunch 独占写入；回环 origin 不是 bridge 授权。
 - **测试**：`cd apps/desktop && go test ./cmd/electron-helper ./internal/desktopremote ./internal/helperwire ./internal/remoteagent ./internal/instance`
 
 ## apps/desktop-electron
 
-- **拥有**：Electron 窗口、macOS 菜单和托盘、受限 preload/main IPC、Go helper 客户端、按 Session 管理的实时浏览器 guest 与 Host 私有回环桥，以及开发与生产运行路径校验。
+- **拥有**：Electron 窗口、macOS 菜单和托盘、受限 preload/main IPC、Go helper 客户端与应用退出清理、按 Session 管理的实时浏览器 guest 与 Host 私有回环桥，以及开发与生产运行路径校验。
 - **不拥有**：Remote-SSH 实现与 bridge（归 `apps/desktop/internal/desktopremote`）、Host 生命周期协议（归 `apps/internal/hostlaunch`）、UI 和会话（归 Client/Host 插件）；七项浏览器工具归 [浏览器工具包](../../packages/browser/tool-browser/README.md)，桌面 Host 能力契约归 [Electron 提供方](../../packages/browser/browser-electron/README.md)，Web/CLI 的 Playwright 页面归其[提供方](../../packages/browser/browser-playwright/README.md)，工作台标签与呈现请求归 [ui-browser](../../packages/client/ui-browser/README.md)。
 - **入口**：`apps/desktop-electron/src/main.ts`；Go 进程入口在 `apps/desktop/cmd/electron-helper/main.go`。`make dev` 与 `pnpm run dev:electron` 启动开发态；`build:desktop` 经 `scripts/package-electron-macos-app.ts` 组装生产包，`make install` 才将其安装到 `/Applications/Coding.app`。
 - **关键文件**：`apps/desktop-electron/src/window.ts`、`native-chrome.ts`、`preload.ts`、`remote-ipc.ts`、`browser-guest.ts`、`browser-bridge.ts`、`browser-ipc.ts`、`helper-client.ts`、`runtime-config.ts`、`apps/desktop/internal/helperwire/`。

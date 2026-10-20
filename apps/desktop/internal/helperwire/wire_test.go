@@ -236,28 +236,185 @@ func TestServeWithEmitterRejectsMalformedInput(t *testing.T) {
 	}
 }
 
+func TestRequestBudgetReservesShutdownCapacity(t *testing.T) {
+	t.Parallel()
+	budget := requestBudget{seen: make(map[string]struct{}), active: make(map[string]bool)}
+	for i := 0; i < maxBusinessConcurrent; i++ {
+		if busy, err := budget.admit(request{ID: strconv.Itoa(i), Method: "connect"}); busy || err != nil {
+			t.Fatalf("business admission %d = %v, %v", i, busy, err)
+		}
+	}
+	if busy, err := budget.admit(request{ID: "overflow", Method: "connect"}); !busy || err != nil {
+		t.Fatalf("business overflow = %v, %v", busy, err)
+	}
+	if len(budget.active) != maxBusinessConcurrent || len(budget.seen) != MaxConcurrentRequests {
+		t.Fatalf("overload changed active capacity or lost id: %+v", budget)
+	}
+	if busy, err := budget.admit(request{ID: "stop", Method: "shutdown"}); busy || err != nil {
+		t.Fatalf("reserved shutdown = %v, %v", busy, err)
+	}
+	if busy, err := budget.admit(request{ID: "overflow-with-stop", Method: "connect"}); !busy || err != nil {
+		t.Fatalf("business overload during shutdown = %v, %v", busy, err)
+	}
+	if _, err := budget.admit(request{ID: "extra-stop", Method: "shutdown"}); err == nil {
+		t.Fatal("shutdown bypassed total concurrency limit")
+	}
+	budget.release("0")
+	if busy, err := budget.admit(request{ID: "replacement", Method: "connect"}); busy || err != nil {
+		t.Fatalf("released business capacity = %v, %v", busy, err)
+	}
+	budget.release("stop")
+	if busy, err := budget.admit(request{ID: "next-stop", Method: "shutdown"}); busy || err != nil {
+		t.Fatalf("released shutdown capacity = %v, %v", busy, err)
+	}
+	if _, err := budget.admit(request{ID: "overflow", Method: "connect"}); err == nil {
+		t.Fatal("overloaded request id was reusable")
+	}
+}
+
+func TestRequestBudgetBoundsRepeatedShutdowns(t *testing.T) {
+	t.Parallel()
+	budget := requestBudget{seen: make(map[string]struct{}), active: make(map[string]bool)}
+	for i := 0; i < MaxConcurrentRequests; i++ {
+		if busy, err := budget.admit(request{ID: strconv.Itoa(i), Method: "shutdown"}); busy || err != nil {
+			t.Fatalf("shutdown admission %d = %v, %v", i, busy, err)
+		}
+	}
+	if _, err := budget.admit(request{ID: "overflow", Method: "shutdown"}); err == nil {
+		t.Fatal("repeated shutdowns bypassed total concurrency limit")
+	}
+}
+
+func TestRequestBudgetReservesFinalID(t *testing.T) {
+	t.Parallel()
+	for _, method := range []string{"connect", "shutdown"} {
+		t.Run(method, func(t *testing.T) {
+			t.Parallel()
+			budget := requestBudget{seen: make(map[string]struct{}), active: make(map[string]bool)}
+			for i := 0; i < maxBusinessRequests; i++ {
+				id := strconv.Itoa(i)
+				if busy, err := budget.admit(request{ID: id, Method: method}); busy || err != nil {
+					t.Fatalf("admission %d = %v, %v", i, busy, err)
+				}
+				budget.release(id)
+			}
+			if _, err := budget.admit(request{ID: "business-overflow", Method: "connect"}); err == nil {
+				t.Fatal("business consumed the reserved final id")
+			}
+			if busy, err := budget.admit(request{ID: "final-stop", Method: "shutdown"}); busy || err != nil {
+				t.Fatalf("final shutdown = %v, %v", busy, err)
+			}
+			budget.release("final-stop")
+			if _, err := budget.admit(request{ID: "shutdown-overflow", Method: "shutdown"}); err == nil {
+				t.Fatal("shutdown bypassed total request id limit")
+			}
+			if len(budget.seen) != maxRequests {
+				t.Fatalf("tracked ids = %d, want %d", len(budget.seen), maxRequests)
+			}
+		})
+	}
+}
+
+type frameWriter struct {
+	frames chan string
+}
+
+func (w frameWriter) Write(data []byte) (int, error) {
+	w.frames <- string(data)
+	return len(data), nil
+}
+
 func TestServeWithEmitterConcurrencyLimit(t *testing.T) {
 	t.Parallel()
 	in, input := io.Pipe()
-	started := make(chan struct{}, MaxConcurrentRequests)
+	defer input.Close()
+	started := make(chan string, MaxConcurrentRequests)
+	frames := make(chan string, 1)
 	handler := handlerFunc(func(ctx context.Context, method string, payload json.RawMessage) (any, error) {
-		started <- struct{}{}
+		started <- method
 		<-ctx.Done()
 		return nil, ctx.Err()
 	})
 	finished := make(chan error, 1)
-	go func() { finished <- Serve(context.Background(), in, io.Discard, handler) }()
-	for i := 0; i < MaxConcurrentRequests; i++ {
+	go func() { finished <- Serve(context.Background(), in, frameWriter{frames}, handler) }()
+	for i := 0; i < maxBusinessConcurrent; i++ {
 		writeRequest(t, input, "req-"+strconv.Itoa(i))
-	}
-	for i := 0; i < MaxConcurrentRequests; i++ {
 		<-started
 	}
 	writeRequest(t, input, "overflow")
+	if frame := <-frames; !strings.Contains(frame, `"id":"overflow","ok":false`) || !strings.Contains(frame, `"code":"request_limit"`) {
+		t.Fatalf("business overload response = %q", frame)
+	}
+	writeMethodRequest(t, input, "stop", "shutdown")
+	if method := <-started; method != "shutdown" {
+		t.Fatalf("overloaded business reached handler: %q", method)
+	}
+	writeMethodRequest(t, input, "extra-stop", "shutdown")
 	if err := waitResult(t, finished); err == nil || !strings.Contains(err.Error(), "concurrent") {
 		t.Fatalf("concurrency error = %v", err)
 	}
-	input.Close()
+}
+
+type pausedResponseWriter struct {
+	frames chan string
+	resume chan struct{}
+}
+
+func (w pausedResponseWriter) Write(data []byte) (int, error) {
+	w.frames <- string(data)
+	if strings.Contains(string(data), `"id":"complete"`) {
+		<-w.resume
+	}
+	return len(data), nil
+}
+
+func TestServeWithEmitterShutdownAfterVisibleResponseBeforeSlotRelease(t *testing.T) {
+	t.Parallel()
+	t.Run("response writer has not released the completed business slot", func(t *testing.T) {
+		in, input := io.Pipe()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		defer input.Close()
+		frames := make(chan string, 2)
+		resume := make(chan struct{})
+		defer func() {
+			select {
+			case <-resume:
+			default:
+				close(resume)
+			}
+		}()
+		started := make(chan string, MaxConcurrentRequests)
+		finished := make(chan error, 1)
+		go func() {
+			finished <- Serve(ctx, in, pausedResponseWriter{frames, resume}, handlerFunc(func(ctx context.Context, method string, _ json.RawMessage) (any, error) {
+				if method == "complete" {
+					return "done", nil
+				}
+				started <- method
+				<-ctx.Done()
+				return nil, ctx.Err()
+			}))
+		}()
+		writeMethodRequest(t, input, "complete", "complete")
+		if frame := <-frames; !strings.Contains(frame, `"ok":true`) {
+			t.Fatalf("visible response = %q", frame)
+		}
+		for i := 1; i < maxBusinessConcurrent; i++ {
+			writeRequest(t, input, "req-"+strconv.Itoa(i))
+			<-started
+		}
+		// stdout 已交付响应，但 Write 尚未返回；控制请求不能依赖业务完成通知回收槽位。
+		writeMethodRequest(t, input, "stop", "shutdown")
+		if method := <-started; method != "shutdown" {
+			t.Fatalf("next handler = %q, want shutdown", method)
+		}
+		close(resume)
+		input.Close()
+		if err := waitResult(t, finished); err != nil {
+			t.Fatal(err)
+		}
+	})
 }
 
 type failingWriter struct {
@@ -377,7 +534,12 @@ func TestServeDoesNotEchoHandlerErrorOrPanic(t *testing.T) {
 
 func writeRequest(t *testing.T, writer io.Writer, id string) {
 	t.Helper()
-	_, err := io.WriteString(writer, `{"type":"request","protocol":1,"id":"`+id+`","method":"connect","payload":{}}`+"\n")
+	writeMethodRequest(t, writer, id, "connect")
+}
+
+func writeMethodRequest(t *testing.T, writer io.Writer, id, method string) {
+	t.Helper()
+	_, err := io.WriteString(writer, `{"type":"request","protocol":1,"id":"`+id+`","method":"`+method+`","payload":{}}`+"\n")
 	if err != nil {
 		t.Fatal(err)
 	}

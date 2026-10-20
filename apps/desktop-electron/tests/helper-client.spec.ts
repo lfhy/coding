@@ -205,6 +205,72 @@ describe('Electron Go helper stdio', () => {
     await expect(helper.request('shutdown', {})).rejects.toThrow('Helper exited')
   })
 
+  it('reserves the sixteenth concurrent wire slot for shutdown', async () => {
+    const helper = await launch()
+    const requests = Array.from({ length: 15 }, () => {
+      const result = helper.request('RemoteSSHConnect', {})
+      return { result, id: child.sent().id }
+    })
+    await expect(helper.request('RemoteSSHConnect', {})).rejects.toThrow('Helper request capacity exhausted')
+    expect(child.stdin.read()).toBeNull()
+    const shutdown = helper.request('shutdown', {})
+    const sent = child.sent()
+    expect(sent).toMatchObject({ method: 'shutdown', payload: {} })
+    await expect(helper.request('shutdown', {})).rejects.toThrow('Helper request capacity exhausted')
+    expect(child.stdin.read()).toBeNull()
+    child.send({ type: 'response', protocol: 1, id: sent.id, ok: true, value: null })
+    await expect(shutdown).resolves.toBeNull()
+    for (const request of requests) {
+      child.send({ type: 'response', protocol: 1, id: request.id, ok: true, value: null })
+    }
+    await expect(Promise.all(requests.map(request => request.result))).resolves.toHaveLength(15)
+  })
+
+  it('keeps cancelled business slots occupied while preserving shutdown capacity', async () => {
+    const helper = await launch()
+    const controller = new AbortController()
+    const requests = Array.from({ length: 15 }, () => {
+      const result = helper.request('RemoteSSHConnect', {}, controller.signal).catch((error: unknown) => error)
+      return { result, id: child.sent().id }
+    })
+    controller.abort()
+    for (const request of requests) {
+      expect(await request.result).toMatchObject({ message: 'Helper request cancelled; it may still execute' })
+    }
+    await expect(helper.request('RemoteSSHConnect', {})).rejects.toThrow('Helper request capacity exhausted')
+    expect(child.stdin.read()).toBeNull()
+    const shutdown = helper.request('shutdown', {})
+    const { id } = child.sent()
+    child.send({ type: 'response', protocol: 1, id, ok: true, value: null })
+    await expect(shutdown).resolves.toBeNull()
+    for (const request of requests) {
+      child.send({ type: 'response', protocol: 1, id: request.id, ok: true, value: null })
+    }
+    const next = helper.request('RemoteSSHConnect', {})
+    const nextID = child.sent().id
+    child.send({ type: 'response', protocol: 1, id: nextID, ok: true, value: null })
+    await expect(next).resolves.toBeNull()
+  })
+
+  it('reserves the final cumulative wire request id for shutdown without exceeding 65536', async () => {
+    const helper = await launch()
+    for (let count = 0; count < 65_535; count++) {
+      const request = helper.request('RemoteSSHClose', {})
+      const { id } = child.sent()
+      child.send({ type: 'response', protocol: 1, id, ok: true, value: null })
+      await request
+    }
+    await expect(helper.request('RemoteSSHClose', {})).rejects.toThrow('Helper request capacity exhausted')
+    expect(child.stdin.read()).toBeNull()
+    const shutdown = helper.request('shutdown', {})
+    const sent = child.sent()
+    expect(sent).toMatchObject({ method: 'shutdown', payload: {} })
+    child.send({ type: 'response', protocol: 1, id: sent.id, ok: true, value: null })
+    await expect(shutdown).resolves.toBeNull()
+    await expect(helper.request('shutdown', {})).rejects.toThrow('Helper request capacity exhausted')
+    expect(child.stdin.read()).toBeNull()
+  })
+
   it.each(['RemoteSSHSelectUnclaimed', 'RemoteSSHRevokeUnclaimed', 'RemoteSSHClaimSelection'])(
     'allows only main to send internal helper method %s', async (method) => {
       const helper = await launch()
@@ -241,16 +307,62 @@ describe('Electron Go helper stdio', () => {
     expect(child.kill).toHaveBeenCalledWith('SIGTERM')
   })
 
-  it('rejects pending work without claiming non-execution when lifetime aborts', async () => {
+  it('allows Host cleanup grace on startup cancellation and waits for bounded child cleanup', async () => {
+    vi.useFakeTimers()
+    try {
+      child.kill.mockImplementation(() => true)
+      const controller = new AbortController()
+      const waiting = launchHelper({ ...options, signal: controller.signal })
+      const rejected = expect(waiting).rejects.toThrow('Helper launch cancelled')
+      let settled = false
+      void waiting.catch(() => { settled = true })
+      controller.abort()
+      expect(child.kill).toHaveBeenCalledExactlyOnceWith('SIGTERM')
+      await vi.advanceTimersByTimeAsync(11_999)
+      expect(child.kill).toHaveBeenCalledTimes(1)
+      expect(settled).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(child.kill).toHaveBeenLastCalledWith('SIGKILL')
+      expect(settled).toBe(false)
+      await vi.advanceTimersByTimeAsync(999)
+      expect(settled).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      await rejected
+      expect(settled).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('detaches startup cancellation as soon as ready arrives, before launch resolves', async () => {
+    const controller = new AbortController()
+    const waiting = launchHelper({ ...options, signal: controller.signal })
+    child.ready()
+    controller.abort()
+    client = await waiting
+    expect(child.kill).not.toHaveBeenCalled()
+    const shutdown = client.request('shutdown', {})
+    const { id } = child.sent()
+    child.send({ type: 'response', protocol: 1, id, ok: true, value: null })
+    await expect(shutdown).resolves.toBeNull()
+    expect(child.kill).not.toHaveBeenCalled()
+  })
+
+  it('does not cancel pending work when the startup signal aborts after readiness', async () => {
     const controller = new AbortController()
     const waiting = launchHelper({ ...options, signal: controller.signal })
     child.ready()
     client = await waiting
     const pending = client.request('RemoteSSHConnect', {})
-    child.sent()
+    const { id } = child.sent()
     controller.abort()
-    await expect(pending).rejects.toThrow('may have executed')
-    expect(child.kill).toHaveBeenCalledWith('SIGTERM')
+    expect(child.kill).not.toHaveBeenCalled()
+    child.send({ type: 'response', protocol: 1, id, ok: true, value: null })
+    await expect(pending).resolves.toBeNull()
+    const shutdown = client.request('shutdown', {})
+    const shutdownID = child.sent().id
+    child.send({ type: 'response', protocol: 1, id: shutdownID, ok: true, value: null })
+    await expect(shutdown).resolves.toBeNull()
   })
 
   it('escalates an unresponsive child to SIGKILL within bounded time', async () => {

@@ -20,8 +20,8 @@ type Record struct {
 	Token    string `json:"token"`
 }
 
-// Endpoint 标识存活的本地 Host，并记录是否由本 Launcher 启动；客户端关闭时
-// 不终止该进程，空闲退出由 Host 自己负责。
+// Endpoint 标识存活的本地 Host。Started 仅表示此 Endpoint 由返回它的 Launcher
+// 实际启动；需要与调用方共生命周期的客户端应调用同一实例的 StopOwned。
 type Endpoint struct {
 	Record  Record
 	BaseURL string
@@ -52,6 +52,6 @@ type Options struct {
 	// RuntimeRoot 是桌面应用 Resources 目录。设置后，从其中的 Node 可执行文件
 	// 和预展开闭包启动 Host，不回退到开发环境命令。
 	RuntimeRoot string
-	// OnProgress 接收 Host 在就绪前写到 stdout 的可选启动进度；nil 会忽略它。
+	// OnProgress 同步接收 Host 在就绪前写到 stdout 的可选启动进度，必须及时返回；nil 会忽略它。
 	OnProgress func(done, total int)
 }
