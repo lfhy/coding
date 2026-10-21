@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => {
   }
   const window = {
     isDestroyed: vi.fn(() => false),
-    destroy: vi.fn(),
+    hide: vi.fn(), destroy: vi.fn(),
     on: vi.fn((name: string, listener: (...args: unknown[]) => void) => { windowListeners.set(name, listener) }),
   }
   const bridge = {
@@ -90,10 +90,17 @@ describe('Electron 主进程退出', () => {
     mocks.helper.request.mockReturnValue(shutdown.promise)
     mocks.helper.close.mockReturnValue(closed.promise)
     expect(requestQuit()).toHaveBeenCalledOnce()
+    expect(mocks.window.hide).toHaveBeenCalledOnce()
+    expect(mocks.window.destroy).toHaveBeenCalledOnce()
+    expect(mocks.window.hide.mock.invocationCallOrder[0]).toBeLessThan(mocks.window.destroy.mock.invocationCallOrder[0]!)
+    expect(mocks.manager.dispose.mock.invocationCallOrder[0]).toBeLessThan(mocks.window.destroy.mock.invocationCallOrder[0]!)
     await flush()
     expect(mocks.helper.request).toHaveBeenCalledExactlyOnceWith('shutdown', {})
+    expect(mocks.window.destroy.mock.invocationCallOrder[0]).toBeLessThan(mocks.helper.request.mock.invocationCallOrder[0]!)
     expect(requestQuit()).toHaveBeenCalledOnce()
     await flush()
+    expect(mocks.window.hide).toHaveBeenCalledOnce()
+    expect(mocks.window.destroy).toHaveBeenCalledOnce()
     expect(mocks.app.quit).not.toHaveBeenCalled()
     expect(mocks.helper.close).not.toHaveBeenCalled()
 
@@ -183,6 +190,8 @@ describe('Electron 主进程退出', () => {
     if (owner !== 'bridge') mocks.manager.dispose.mockReturnValue(disposed.promise)
     try {
       requestQuit()
+      expect(mocks.window.hide).toHaveBeenCalledOnce()
+      expect(mocks.window.destroy).toHaveBeenCalledOnce()
       await flush()
       expect(mocks.bridge.dispose).toHaveBeenCalledOnce()
       expect(mocks.manager.dispose).toHaveBeenCalledOnce()
@@ -196,6 +205,8 @@ describe('Electron 主进程退出', () => {
       expect(mocks.helper.close).not.toHaveBeenCalled()
       expect(mocks.app.quit).not.toHaveBeenCalled()
       requestQuit()
+      expect(mocks.window.hide).toHaveBeenCalledOnce()
+      expect(mocks.window.destroy).toHaveBeenCalledOnce()
       await vi.advanceTimersByTimeAsync(1)
       expect(mocks.helper.request).toHaveBeenCalledExactlyOnceWith('shutdown', {})
       expect(mocks.helper.close).toHaveBeenCalledOnce()

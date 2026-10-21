@@ -219,6 +219,11 @@ async function start(): Promise<void> {
     // 所有退出入口共用当前清理，不能让重入请求提前放行 app.quit。
     if (quitting) return
     quitting = true
+    const window = mainWindow
+    if (window !== undefined && !window.isDestroyed()) window.hide()
+    // guest 在窗口销毁前同步撤下；不等远程连接或 Host 停止才关闭可见窗口。
+    void stopBrowser()
+    if (window !== undefined && !window.isDestroyed()) window.destroy()
     startupAbort?.abort()
     nativeChrome?.dispose()
     void (async () => {
