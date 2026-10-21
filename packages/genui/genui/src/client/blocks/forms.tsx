@@ -42,7 +42,6 @@ export function RadioNode({ node, onAction, answers }: {
       const preset = options[node.selected]
       if (preset !== undefined) answers?.setAnswer(group, preset)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [group, node.label, node.answer, node.explanation, node.options, node.selected])
   return (
     <div className={css.fieldGroup} role="radiogroup" aria-label={node.label}>
@@ -245,7 +244,6 @@ export function SliderNode({ node, onAction, answers }: {
     if (mounted.current) return
     mounted.current = true
     if (id !== undefined) answers?.setField(id, String(initial))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   const send = (v: number): void => {
     if (action !== undefined && onAction !== undefined) {
@@ -347,7 +345,6 @@ export function SelectNode({ node, onAction, answers }: {
     if (id !== undefined && defaultValue !== null) {
       answers?.setField(id, defaultValue)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   const send = (v: string): void => {
     if (action !== undefined && onAction !== undefined) {
@@ -420,12 +417,10 @@ export function InputNode({ node, onAction, answers }: {
     if (!secret && id !== undefined && value.trim() !== '') {
       answers?.setField(id, value)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   // Secret fields are filtered from persistence and submit collection.
   useEffect(() => {
     if (secret && id !== undefined) answers?.registerSecretField(id)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [secret, id])
   return (
     <label className={css.field}>
@@ -498,7 +493,6 @@ export function TextareaNode({ node, onAction, answers }: {
     if (id !== undefined && value.trim() !== '') {
       answers?.setField(id, value)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   return (
     <label className={css.field}>

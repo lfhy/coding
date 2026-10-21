@@ -430,7 +430,6 @@ export function EChartNode({ node }: { node: GenuiEChart }) {
       instanceRef.current?.dispose()
       instanceRef.current = null
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Resize observer: keep the chart responsive.
@@ -455,7 +454,6 @@ export function EChartNode({ node }: { node: GenuiEChart }) {
     if (status !== 'ready' || instanceRef.current === null) return
     const option = node.option ?? presetOption(node, ref.current)
     instanceRef.current.setOption(option, true)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [node, status])
 
   if (status === 'error') {

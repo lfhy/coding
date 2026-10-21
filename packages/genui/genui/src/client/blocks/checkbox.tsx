@@ -36,7 +36,6 @@ export function CheckboxNode({ node, onAction, answers }: {
     answers?.setMultiAnswer(group, node.label, true)
     // answers is intentionally omitted: the callbacks are stable and a
     // registry update should not re-register the same default.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [group, node.checked, node.label, hasRecordedGroup])
 
   return (
