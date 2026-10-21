@@ -22,7 +22,7 @@ Coding 是面向个人开发的开源 AI 编程桌面客户端。它将模型对
 | 长任务与协作 | 维护计划、待办和目标，运行后台命令、委派可继续的子代理，按需使用工作流；进度提醒帮助 Agent 在长任务中汇报进展。 |
 | GenUI 交互回答 | 将回答中的数据与结论呈现为表格、图表、表单、流程图等可交互内容，而不只有纯文本。 |
 
-操作方式见[界面指南](docs/user/guide/index.md)，项目记忆与交互回答的具体行为分别见[记忆说明](packages/memory/memory/README.md)和 [GenUI 说明](packages/genui/genui/README.md)。
+操作方式见[界面指南](docs/user/guide/index.md)，项目记忆与交互回答的具体行为分别见[记忆说明](packages/memory/memory/README.md)和 [GenUI 说明](packages/genui/genui/README.md)。内置 GenUI 移植自 MIT 许可的 [omdsh-dev/dsh-genui](https://github.com/omdsh-dev/dsh-genui)，版权与改造范围见[来源说明](packages/genui/genui/NOTICE.md)。
 
 ## 内置 Skills：让 Agent 按任务采用合适的做法
 

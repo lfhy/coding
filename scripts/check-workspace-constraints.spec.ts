@@ -1,10 +1,13 @@
-/** Experimental-package publication and dependency constraints. */
+/** 发布约束覆盖私有包与内嵌 GenUI 的运行时资源。 */
 
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   checkExperimentalDependencyIsolation,
   checkExperimentalManifest,
   checkPrivateElectronShellManifest,
+  expectedDshPackageFiles,
   type WorkspaceManifest,
 } from './check-workspace-constraints.ts'
 
@@ -73,6 +76,19 @@ describe('experimental workspace constraints', () => {
     expect(checkExperimentalDependencyIsolation(manifests)).toEqual([
       'coding-python-runtime: dependencies.coding-experimental-prototype must not reference an experimental package',
     ])
+  })
+})
+
+describe('GenUI 发布清单', () => {
+  it('把随应用分发的内嵌插件作为非私有包发布，并保留懒引擎和技能', () => {
+    const manifestPath = fileURLToPath(new URL('../packages/genui/genui/package.json', import.meta.url))
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as WorkspaceManifest['manifest']
+    expect(manifest.private).not.toBe(true)
+    expect(manifest.publishConfig?.access).toBe('public')
+    expect(manifest.files).toEqual(expectedDshPackageFiles(manifest))
+    expect(manifest.files).toContain('lib/*.cjs')
+    expect(manifest.files).toContain('lib/assets/*.js')
+    expect(manifest.files).toContain('SKILL.md')
   })
 })
 

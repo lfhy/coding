@@ -2,7 +2,6 @@
   "name": "coding-genui",
   "description": "Generative UI for assistant replies: the ```gen-ui fence language with legacy dsh-ui compatibility, render_ui/validate_dsh_ui tools, and browser tool-row rendering",
   "version": "0.1.0-rc.8",
-  "private": true,
   "publishConfig": {
     "access": "public"
   },
@@ -36,8 +35,8 @@
     "lib/client.js",
     "lib/*.cjs",
     "lib/assets/*.js",
-    "lib/types/**/*.d.ts",
-    "SKILL.md"
+    "SKILL.md",
+    "lib/types/**/*.d.ts"
   ],
   "dsh": {
     "client": {

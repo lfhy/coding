@@ -152,6 +152,9 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   'coding-client-ui-primitives': ['lib/**/*.css'],
   'coding-client-web': ['lib/**/*.css'],
   'coding-client-ui-theme': ['lib/styles'],
+  // GenUI 的 Host 资产路由按需读取引擎，bundled skill 从包根同步读取技能正文；
+  // 浏览器 bundle 的懒加载 CJS chunk 也必须随 npm 包交付。
+  'coding-genui': ['lib/*.cjs', 'lib/assets/*.js', 'SKILL.md'],
   'coding-attachment': ['lib/image-processing.js'],
   'coding-llm-vision-fallback': ['lib/content-*.js'],
   // The CPython side ships as source .py files, published as-is rather than built.
@@ -183,7 +186,12 @@ function isPublishedPackageName(name: string | undefined): name is string {
   return name === 'coding' || name?.startsWith('coding-') === true || name?.startsWith('@deepseek-ai/') === true
 }
 
-function expectedDshPackageFiles(manifest: PackageManifest): readonly string[] {
+/**
+ * 按运行时入口推导 npm 包所需文件；GenUI 懒引擎和技能由包内路径读取。
+ * @param manifest - 包的发布入口与附加资源声明。
+ * @returns 精确的发布文件列表，供约束检查与测试使用。
+ */
+export function expectedDshPackageFiles(manifest: PackageManifest): readonly string[] {
   const declaredPatch = manifest.dsh?.bundle?.patch
   const bundleFiles = declaredPatch === undefined ? [] : [declaredPatch.replace(/^\.\//, '')]
   const extras = [
