@@ -33,8 +33,9 @@ Coding 是面向个人开发的开源 AI 编程桌面客户端。它将模型对
 | [`browser-use`](packages/skill/skill-browser-use/README.md) | 指导 Agent 先观察页面，再使用有效的元素引用操作网页，完成页面阅读、交互、截图和界面验收。 |
 | [`frontend-development`](packages/skill/skill-frontend-development/README.md) | 指导前端实现遵循项目已有技术栈、组件和设计规范，关注布局与交互，并结合浏览器检查实际效果。 |
 | [`genui`](packages/genui/genui/README.md) | 提供交互式回答的组件与语法指引，用于生成表格、图表、表单和流程图等内容。 |
+| [`stylekit`](packages/skill/skill-stylekit/README.md) | 为界面选定具名视觉风格（玻璃拟态、新野兽派、赛博朋克、Apple／Stripe 风格等），给出配色、设计令牌与 do／don't 规则，并在项目现有技术栈内落地和验收。 |
 
-你可以直接描述任务，让 Agent 按技能指引工作；也可以在输入框输入 `/` 查看技能候选，或在消息中写入 `/frontend-development`、`/browser-use`、`/genui` 显式调用。
+你可以直接描述任务，让 Agent 按技能指引工作；也可以在输入框输入 `/` 查看技能候选，或在消息中写入 `/frontend-development`、`/browser-use`、`/stylekit`、`/genui` 显式调用。
 
 自有规范也能接入：将技能放入项目的 `.agents/skills/<name>/SKILL.md`，或数据主目录的 `skills/<name>/SKILL.md`，即可由本地技能发现机制读取。格式、发现范围与优先级见[本地 Skills 说明](packages/skill/skill-filesystem/README.md)。本仓库还随源码提供 [Go 项目约定](.agents/skills/go-project-conventions/SKILL.md)、[CLI 配置](.agents/skills/go-cli-config/SKILL.md)、[数据库](.agents/skills/go-database/SKILL.md)与[质量检查](.agents/skills/go-quality/SKILL.md)等项目级技能，供在本仓库开发时使用；它们不属于安装版面向所有项目的内置技能。
 

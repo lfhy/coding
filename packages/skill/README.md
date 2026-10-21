@@ -9,6 +9,7 @@
 | [`skill-browser-use/`](skill-browser-use/README.md) | 为浏览器工具提供内置操作指引 | 注册到 `ctx.skills` |
 | [`skill-frontend-development/`](skill-frontend-development/README.md) | 为前端实现提供技术栈、组件复用、用户体验和浏览器验收指引 | 注册到 `ctx.skills` |
 | [`skill-filesystem/`](skill-filesystem/README.md) | 从本地文件系统发现 skill | 注册到 `ctx.skills` |
+| [`skill-stylekit/`](skill-stylekit/README.md) | 提供 StyleKit 视觉风格目录与落地、验收指引 | 注册到 `ctx.skills` |
 | [`tool-skill/`](tool-skill/README.md) | 发布 skill 目录和面向模型的 loader | 注册到 `ctx.tools` |
 
 该能力位于核心控制主干之外，可以使用本地、嵌入式或远程提供方，而无需更改面向模型的约定。

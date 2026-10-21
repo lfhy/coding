@@ -35,6 +35,8 @@ describe('bundled frontend-development skill', () => {
       expect(loaded.content).toContain('implementation-facing instructions, prompt fragments, debugging vocabulary, or process narration')
       expect(loaded.content).toContain('not implementation prompts or internal process narration')
       expect(loaded.content).toContain('browser-use')
+      expect(loaded.content).toContain('load the `stylekit` skill')
+      expect(loaded.content).toContain('followed a `stylekit` style spec')
     } finally {
       await fiber.dispose()
     }
