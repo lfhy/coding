@@ -171,6 +171,8 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   'coding-skill-badge': ['assets'],
   'coding-skill-browser-use': ['assets'],
   'coding-skill-frontend-development': ['assets'],
+  // StyleKit 技能的随包目录快照与上游 MIT 来源说明都要随 npm 包交付。
+  'coding-skill-stylekit': ['assets', 'NOTICE.md'],
   'coding-subprocess-local': ['scripts/ensure-spawn-helper.mjs'],
   // Computer Use runs a locally built Swift helper, so the package ships the helper
   // sources plus the build script the provider invokes when the pinned binary is absent.

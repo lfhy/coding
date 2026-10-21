@@ -275,8 +275,14 @@ describe('browser tools and skill in the shipped Web preset composition', () => 
         name: 'frontend-development', source: 'bundled', provider: 'frontend-development',
         invocation: { modelInvocable: true, userInvocable: true },
       })
+      expect((await entries(native.agent)).find(skill => skill.name === 'stylekit')).toMatchObject({
+        name: 'stylekit', source: 'bundled', provider: 'stylekit',
+        invocation: { modelInvocable: true, userInvocable: true },
+      })
       expect((await entries(coded.agent)).map(skill => skill.name)).toContain('frontend-development')
+      expect((await entries(coded.agent)).map(skill => skill.name)).toContain('stylekit')
       expect((await entries(minimal.agent)).map(skill => skill.name)).not.toContain('frontend-development')
+      expect((await entries(minimal.agent)).map(skill => skill.name)).not.toContain('stylekit')
       expect((await ctx.skills.list()).map(skill => skill.name)).not.toContain('frontend-development')
       expect(ctx.tools.schemas(minimal.agent).map(tool => tool.name).filter(name => name.startsWith('browser_'))).toEqual([])
 
@@ -291,6 +297,7 @@ describe('browser tools and skill in the shipped Web preset composition', () => 
         const catalog = decision.messages.find(message => message.source.kind === 'skill-catalog')
         expect(JSON.stringify(catalog?.content)).toContain('`browser-use`')
         expect(JSON.stringify(catalog?.content)).toContain('`frontend-development`')
+        expect(JSON.stringify(catalog?.content)).toContain('`stylekit`')
 
         const invoked = await agentEvents(target.ctx, target).waterfall(
           'agent/pre-step',

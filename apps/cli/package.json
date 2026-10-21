@@ -54,6 +54,7 @@
     "coding-skill": "workspace:^",
     "coding-skill-browser-use": "workspace:^",
     "coding-skill-frontend-development": "workspace:^",
+    "coding-skill-stylekit": "workspace:^",
     "coding-skill-filesystem": "workspace:^",
     "coding-jobs-local": "workspace:^",
     "coding-tmux-context": "workspace:^",

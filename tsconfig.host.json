@@ -196,6 +196,7 @@
     { "path": "./packages/skill/skill-badge" },
     { "path": "./packages/skill/skill-browser-use" },
     { "path": "./packages/skill/skill-frontend-development" },
+    { "path": "./packages/skill/skill-stylekit" },
     { "path": "./packages/skill/skill-filesystem" },
     { "path": "./packages/skill/tool-skill" },
     { "path": "./packages/interaction/tool-ask-user" },

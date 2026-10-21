@@ -106,6 +106,8 @@
     "verify-persistence-catalog": "tsx scripts/gen-persistence-catalog.ts --check",
     "gen-third-party-notices": "tsx scripts/gen-third-party-notices.ts",
     "verify-third-party-notices": "tsx scripts/gen-third-party-notices.ts --check",
+    "gen-stylekit-catalog": "tsx scripts/gen-stylekit-catalog.ts",
+    "verify-stylekit-catalog": "tsx scripts/gen-stylekit-catalog.ts --check",
     "gen-module-graph": "tsx scripts/gen-module-graph.ts",
     "gen-code-map": "tsx scripts/gen-code-map.ts",
     "verify-code-map": "tsx scripts/gen-code-map.ts --check",
