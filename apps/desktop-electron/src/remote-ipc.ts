@@ -1,6 +1,6 @@
 /** Electron Remote-SSH IPC 仅接受当前 Host 主 frame 的六个固定操作。 */
 import { randomUUID } from 'node:crypto'
-import { ipcMain, type BrowserWindow, type IpcMainInvokeEvent } from 'electron'
+import { ipcMain, type BrowserWindow, type IpcMainInvokeEvent, type WebContents } from 'electron'
 
 const CHANNEL = 'coding:remote-ssh'
 const PROGRESS_CHANNEL = 'coding:remote-ssh-progress'
@@ -93,9 +93,9 @@ function hostURL(target: string, origin: string): boolean {
   }
 }
 
-function currentFrame(window: BrowserWindow, origin: string): boolean {
-  if (window.isDestroyed() || window.webContents.isDestroyed()) return false
-  const frame = window.webContents.mainFrame
+function currentFrame(window: BrowserWindow, contents: WebContents, origin: string): boolean {
+  if (window.isDestroyed() || contents.isDestroyed()) return false
+  const frame = contents.mainFrame
   return !frame.isDestroyed() && hostURL(frame.url, origin)
 }
 
@@ -140,14 +140,15 @@ export function installRemoteIpc(options: {
   const { window, origin, helper } = options
   if (!validOrigin(origin)) throw new Error('Invalid Remote-SSH Host origin')
   activeInstallation?.()
+  // 窗口销毁后不能再读取 window.webContents；清理仍需访问原有 EventEmitter。
+  const contents = window.webContents
   const installationEpoch = ++epoch
   let disposed = false
   let ready = true
   let navigationGeneration = 0
   const pending = new Set<PendingRequest>()
   const authorized = (event: IpcMainInvokeEvent): boolean => !disposed && ready && epoch === installationEpoch
-    && event.sender === window.webContents && event.senderFrame === window.webContents.mainFrame
-    && currentFrame(window, origin)
+    && currentFrame(window, contents, origin) && event.sender === contents && event.senderFrame === contents.mainFrame
 
   const onNavigation = (details: { isMainFrame: boolean; isSameDocument: boolean; url: string }): void => {
     if (!details.isMainFrame || details.isSameDocument) return
@@ -156,17 +157,17 @@ export function installRemoteIpc(options: {
     for (const entry of pending) entry.invalidate()
     if (!hostURL(details.url, origin)) dispose()
   }
-  const onLoaded = (): void => { if (!disposed && currentFrame(window, origin)) ready = true }
+  const onLoaded = (): void => { if (!disposed && currentFrame(window, contents, origin)) ready = true }
   const onDestroyed = (): void => { dispose() }
   const onProgress = (value: Progress): void => {
-    if (disposed || !ready || epoch !== installationEpoch || !currentFrame(window, origin)) return
+    if (disposed || !ready || epoch !== installationEpoch || !currentFrame(window, contents, origin)) return
     if (!record(value) || !fields(value, ['attemptId', 'phase', 'message'])
       || !id(value.attemptId) || !PHASES.has(value.phase) || value.message !== '') return
-    window.webContents.send(PROGRESS_CHANNEL, value)
+    contents.send(PROGRESS_CHANNEL, value)
   }
-  window.webContents.on('did-start-navigation', onNavigation)
-  window.webContents.on('did-finish-load', onLoaded)
-  window.webContents.on('destroyed', onDestroyed)
+  contents.on('did-start-navigation', onNavigation)
+  contents.on('did-finish-load', onLoaded)
+  contents.on('destroyed', onDestroyed)
   window.on('closed', onDestroyed)
   const stopProgress = helper.onProgress(onProgress)
 
@@ -180,9 +181,9 @@ export function installRemoteIpc(options: {
     }
     stopProgress()
     for (const entry of pending) entry.invalidate()
-    window.webContents.removeListener('did-start-navigation', onNavigation)
-    window.webContents.removeListener('did-finish-load', onLoaded)
-    window.webContents.removeListener('destroyed', onDestroyed)
+    contents.removeListener('did-start-navigation', onNavigation)
+    contents.removeListener('did-finish-load', onLoaded)
+    contents.removeListener('destroyed', onDestroyed)
     window.removeListener('closed', onDestroyed)
   }
 

@@ -32,10 +32,10 @@ function fixture() {
     request,
     onProgress(listener) { progress = listener; return stopProgress },
   }
-  installRemoteIpc({ window, origin, helper })
+  const dispose = installRemoteIpc({ window, origin, helper })
   const handler = electron.ipcMain.handle.mock.lastCall?.[1] as
     (event: IpcMainInvokeEvent, method: unknown, payload: unknown) => Promise<unknown>
-  return { window, contents, frame, event, handler, request, stopProgress, emitProgress: (value: unknown) => {
+  return { window, contents, frame, event, handler, request, stopProgress, dispose, emitProgress: (value: unknown) => {
     progress?.(value as { attemptId: string; phase: string; message: string })
   } }
 }
@@ -298,6 +298,38 @@ describe('Remote-SSH Electron 主进程 IPC', () => {
     ;(current.window as unknown as EventEmitter).emit('closed')
     expect(current.stopProgress).toHaveBeenCalledOnce()
     await expect(current.handler(current.event, 'close', { connectionId: 'connection-1' })).rejects.toThrow('unauthorized')
+  })
+
+  it.each(['closed', 'destroyed'] as const)('窗口 webContents 已不可访问时收到 %s 仍同步安全撤权', async (eventName) => {
+    const { window, contents, event, handler, request, stopProgress, dispose, emitProgress } = fixture()
+    const removedBeforeClose = electron.ipcMain.removeHandler.mock.calls.length
+    Object.defineProperty(window, 'webContents', {
+      get() { throw new Error('Object has been destroyed') },
+    })
+
+    expect(() => {
+      if (eventName === 'closed') (window as unknown as EventEmitter).emit('closed')
+      else contents.emit('destroyed')
+    }).not.toThrow()
+    expect(electron.ipcMain.removeHandler).toHaveBeenCalledTimes(removedBeforeClose + 1)
+    expect(electron.ipcMain.removeHandler).toHaveBeenLastCalledWith('coding:remote-ssh')
+    expect(stopProgress).toHaveBeenCalledOnce()
+    for (const name of ['did-start-navigation', 'did-finish-load', 'destroyed']) {
+      expect(contents.listenerCount(name)).toBe(0)
+    }
+    expect((window as unknown as EventEmitter).listenerCount('closed')).toBe(0)
+    emitProgress({ attemptId: 'attempt-1', phase: 'ready', message: '' })
+    expect(contents.send).not.toHaveBeenCalled()
+    await expect(handler(event, 'close', { connectionId: 'connection-1' })).rejects.toThrow('unauthorized')
+    expect(request).not.toHaveBeenCalled()
+
+    expect(() => {
+      dispose()
+      contents.emit('destroyed')
+      ;(window as unknown as EventEmitter).emit('closed')
+    }).not.toThrow()
+    expect(electron.ipcMain.removeHandler).toHaveBeenCalledTimes(removedBeforeClose + 1)
+    expect(stopProgress).toHaveBeenCalledOnce()
   })
 
   it('拒绝未验证的 Host origin，不替换现有 handler', () => {

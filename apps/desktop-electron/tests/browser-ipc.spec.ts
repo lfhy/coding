@@ -101,4 +101,35 @@ describe('desktop browser presentation IPC', () => {
     dispose()
     expect(present).toHaveBeenCalledTimes(2)
   })
+
+  it.each(['closed', 'destroyed'] as const)('窗口 webContents 已不可访问时收到 %s 仍同步安全撤销呈现', (eventName) => {
+    const { window, contents, event, handler, present, dispose } = fixture()
+    handler(event, input)
+    const removedBeforeClose = electron.ipcMain.removeHandler.mock.calls.length
+    Object.defineProperty(window, 'webContents', {
+      get() { throw new Error('Object has been destroyed') },
+    })
+
+    expect(() => {
+      if (eventName === 'closed') (window as unknown as EventEmitter).emit('closed')
+      else contents.emit('destroyed')
+    }).not.toThrow()
+    expect(present).toHaveBeenLastCalledWith({ ...input, visible: false })
+    expect(present).toHaveBeenCalledTimes(2)
+    expect(electron.ipcMain.removeHandler).toHaveBeenCalledTimes(removedBeforeClose + 1)
+    expect(electron.ipcMain.removeHandler).toHaveBeenLastCalledWith('coding:browser-present')
+    for (const name of ['did-start-navigation', 'render-process-gone', 'did-finish-load', 'destroyed']) {
+      expect(contents.listenerCount(name)).toBe(0)
+    }
+    expect((window as unknown as EventEmitter).listenerCount('closed')).toBe(0)
+    expect(() => { handler(event, input) }).toThrow('unauthorized')
+
+    expect(() => {
+      dispose()
+      contents.emit('destroyed')
+      ;(window as unknown as EventEmitter).emit('closed')
+    }).not.toThrow()
+    expect(electron.ipcMain.removeHandler).toHaveBeenCalledTimes(removedBeforeClose + 1)
+    expect(present).toHaveBeenCalledTimes(2)
+  })
 })

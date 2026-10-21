@@ -46,6 +46,8 @@ export function installBrowserIpc(options: { window: BrowserWindow; origin: stri
   const { window, origin, manager } = options
   if (!validOrigin(origin)) throw new Error('Invalid browser presentation Host origin')
   activeInstallation?.()
+  // 窗口销毁回调清理监听时，BrowserWindow 的 webContents getter 已不可用。
+  const contents = window.webContents
   const installationEpoch = ++epoch
   let disposed = false
   let ready = true
@@ -57,10 +59,10 @@ export function installBrowserIpc(options: { window: BrowserWindow; origin: stri
     // Host 重载或崩溃后 renderer 已失去 IPC 授权；由主进程直接移开旧原生视图。
     try { manager.present({ ...previous, visible: false }) } catch { /* guest 可能已经关闭。 */ }
   }
-  const current = (): boolean => !window.isDestroyed() && !window.webContents.isDestroyed() &&
-    !window.webContents.mainFrame.isDestroyed() && hostURL(window.webContents.mainFrame.url, origin)
+  const current = (): boolean => !window.isDestroyed() && !contents.isDestroyed() &&
+    !contents.mainFrame.isDestroyed() && hostURL(contents.mainFrame.url, origin)
   const authorized = (event: IpcMainInvokeEvent): boolean => !disposed && ready && epoch === installationEpoch &&
-    event.sender === window.webContents && event.senderFrame === window.webContents.mainFrame && current()
+    current() && event.sender === contents && event.senderFrame === contents.mainFrame
   const onNavigation = (details: { isMainFrame: boolean; isSameDocument: boolean; url: string }): void => {
     if (!details.isMainFrame || details.isSameDocument) return
     ready = false
@@ -77,16 +79,16 @@ export function installBrowserIpc(options: { window: BrowserWindow; origin: stri
     disposed = true
     hidePresented()
     if (epoch === installationEpoch) { ++epoch; activeInstallation = undefined; ipcMain.removeHandler(CHANNEL) }
-    window.webContents.removeListener('did-start-navigation', onNavigation)
-    window.webContents.removeListener('render-process-gone', onRendererGone)
-    window.webContents.removeListener('did-finish-load', onLoaded)
-    window.webContents.removeListener('destroyed', dispose)
+    contents.removeListener('did-start-navigation', onNavigation)
+    contents.removeListener('render-process-gone', onRendererGone)
+    contents.removeListener('did-finish-load', onLoaded)
+    contents.removeListener('destroyed', dispose)
     window.removeListener('closed', dispose)
   }
-  window.webContents.on('did-start-navigation', onNavigation)
-  window.webContents.on('render-process-gone', onRendererGone)
-  window.webContents.on('did-finish-load', onLoaded)
-  window.webContents.on('destroyed', dispose)
+  contents.on('did-start-navigation', onNavigation)
+  contents.on('render-process-gone', onRendererGone)
+  contents.on('did-finish-load', onLoaded)
+  contents.on('destroyed', dispose)
   window.on('closed', dispose)
   ipcMain.handle(CHANNEL, (event, input: unknown) => {
     if (!authorized(event)) throw new Error('Browser presentation IPC unauthorized')
