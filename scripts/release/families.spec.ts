@@ -249,6 +249,20 @@ describe('release families', () => {
     expect(() => { vendor.validatePayload(vendored, []) }).toThrow(/empty tarball/)
   })
 
+  it('要求 GenUI 发布包带上运行时资源和来源说明', () => {
+    const dsh = releaseFamily('dsh')
+    const genui = member('packages/genui/genui', 'coding-genui')
+    const required = [
+      'lib/index.js', 'lib/invariant.js', 'lib/client.js', 'SKILL.md', 'NOTICE.md', 'LICENSE',
+      'lib/assets/mermaid.js', 'lib/assets/three.js', 'lib/assets/echarts-core.js', 'lib/assets/echarts-full.js',
+    ].map(file => `package/${file}`)
+    expect(() => { dsh.validatePayload(genui, required) }).not.toThrow()
+    for (const missing of required) {
+      expect(() => { dsh.validatePayload(genui, required.filter(file => file !== missing)) })
+        .toThrow(`coding-genui tarball is missing ${missing.slice('package/'.length)}`)
+    }
+  })
+
   it('drives the installed entry only for the family that publishes one', () => {
     expect(releaseFamily('dsh').installedEntry).toEqual({ packageName: 'coding', binPath: 'lib/bin.js' })
     expect(releaseFamily('vendor').installedEntry).toBeUndefined()

@@ -36,6 +36,7 @@
     "lib/*.cjs",
     "lib/assets/*.js",
     "SKILL.md",
+    "NOTICE.md",
     "lib/types/**/*.d.ts"
   ],
   "dsh": {

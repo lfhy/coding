@@ -80,7 +80,7 @@ describe('experimental workspace constraints', () => {
 })
 
 describe('GenUI 发布清单', () => {
-  it('把随应用分发的内嵌插件作为非私有包发布，并保留懒引擎和技能', () => {
+  it('把随应用分发的内嵌插件作为非私有包发布，并保留懒引擎、技能和许可说明', () => {
     const manifestPath = fileURLToPath(new URL('../packages/genui/genui/package.json', import.meta.url))
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as WorkspaceManifest['manifest']
     expect(manifest.private).not.toBe(true)
@@ -89,6 +89,7 @@ describe('GenUI 发布清单', () => {
     expect(manifest.files).toContain('lib/*.cjs')
     expect(manifest.files).toContain('lib/assets/*.js')
     expect(manifest.files).toContain('SKILL.md')
+    expect(manifest.files).toContain('NOTICE.md')
   })
 })
 

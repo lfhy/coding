@@ -348,12 +348,24 @@ class DshFamily extends ReleaseFamily {
   }
 
   /**
-   * Reject source and declaration-map members, the repository's publication policy.
-   * @param member - the packed member.
-   * @param files - every path inside its tarball.
+   * 禁止源码与声明映射随包发布；GenUI 还必须携带技能、图形引擎及上游许可。
+   * @param member - 被打包的成员。
+   * @param files - tarball 中的实际文件路径。
    */
   validatePayload(member: ReleaseMember, files: readonly string[]): void {
     validateTarballPayload(files, member.name)
+    if (member.name === 'coding-genui') {
+      const required = [
+        'lib/index.js', 'lib/invariant.js', 'lib/client.js',
+        'SKILL.md', 'NOTICE.md', 'LICENSE',
+        'lib/assets/mermaid.js', 'lib/assets/three.js',
+        'lib/assets/echarts-core.js', 'lib/assets/echarts-full.js',
+      ]
+      const packed = new Set(files.map(file => file.replace(/^package\//, '')))
+      for (const file of required) {
+        if (!packed.has(file)) throw new Error(`${member.name} tarball is missing ${file}`)
+      }
+    }
   }
 
   readonly installedEntry = { packageName: 'coding', binPath: 'lib/bin.js' }

@@ -153,8 +153,8 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   'coding-client-web': ['lib/**/*.css'],
   'coding-client-ui-theme': ['lib/styles'],
   // GenUI 的 Host 资产路由按需读取引擎，bundled skill 从包根同步读取技能正文；
-  // 浏览器 bundle 的懒加载 CJS chunk 也必须随 npm 包交付。
-  'coding-genui': ['lib/*.cjs', 'lib/assets/*.js', 'SKILL.md'],
+  // 浏览器 bundle 的懒加载 CJS chunk 也必须随 npm 包交付；上游许可说明不能仅依赖仓库文档。
+  'coding-genui': ['lib/*.cjs', 'lib/assets/*.js', 'SKILL.md', 'NOTICE.md'],
   'coding-attachment': ['lib/image-processing.js'],
   'coding-llm-vision-fallback': ['lib/content-*.js'],
   // The CPython side ships as source .py files, published as-is rather than built.
