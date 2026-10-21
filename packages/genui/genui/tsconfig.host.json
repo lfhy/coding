@@ -1,0 +1,20 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "lib/host-tests",
+    "tsBuildInfoFile": "lib/tsconfig.host.tsbuildinfo",
+    "emitDeclarationOnly": true,
+    "rewriteRelativeImportExtensions": false
+  },
+  "include": [
+    "tests/fence-feedback-persistence.host.spec.ts"
+  ],
+  "references": [
+    { "path": "../../../vendor/cordis" },
+    { "path": "../../core/session" },
+    { "path": "../../llm/llm" },
+    { "path": "../../core/agent" },
+    { "path": "./tsconfig.json" }
+  ]
+}

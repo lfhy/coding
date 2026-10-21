@@ -314,6 +314,7 @@
     { "path": "./packages/memory/memory-local" },
     { "path": "./packages/memory/memory-context" },
     { "path": "./packages/memory/tool-memory" },
+    { "path": "./packages/genui/genui/tsconfig.host.json" },
     { "path": "./packages/host/apiproxy" },
     { "path": "./packages/host/directory-picker" },
     { "path": "./packages/host/directory-picker-auto" },

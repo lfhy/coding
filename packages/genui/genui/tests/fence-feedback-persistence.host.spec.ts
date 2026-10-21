@@ -1,11 +1,12 @@
 // 上游 fence-feedback 持久化生命周期测试：跨插件重载的修正次数恢复、
-// 会话种子恢复与 delivery 提醒共享。依赖宿主 SessionStore（coding-session
-// 的值导入），因此按仓库规约放 Host aggregate（*.host.spec.ts）。
+// 会话种子恢复与 delivery 提醒共享。宿主 SessionStore 仅属于 Host 编译面，
+// 因此用独立的 Host 测试工程检查本文件，不能放入 Client aggregate。
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import { createAssistantMessage, createUserMessage, markAgentLoopRequest } from 'coding-llm'
 import type { GenerateOptions, StreamChunk } from 'coding-llm'
 import SessionStore, { SessionId } from 'coding-session'
+import type {} from 'coding-agent'
 import { installFenceFeedback } from '../src/plugin/fence-feedback.ts'
 
 
@@ -48,8 +49,8 @@ async function persistedFeedbackHarness() {
   const applyFeedback = (feedbackCtx: Context) =>{  installFenceFeedback(feedbackCtx, true) }
   let feedback = await ctx.plugin(applyFeedback)
   let turn = 7
-  const steer = vi.fn((message: { content: unknown[] }) => {
-    session.append('user/message', message as never, { surfaceOp: 'append' })
+  const steer = vi.fn((message: Parameters<typeof session.append<'user/message'>>[1]) => {
+    session.append('user/message', message, { surfaceOp: 'append' })
   })
   const agent = { session, steer }
   return {
