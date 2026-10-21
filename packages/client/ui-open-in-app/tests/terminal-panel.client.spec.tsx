@@ -153,6 +153,8 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   document.body.style.removeProperty('color')
+  document.body.removeAttribute('data-ds-dark-theme')
+  document.head.querySelector('[data-test-terminal-theme]')?.remove()
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
@@ -389,19 +391,66 @@ describe('terminal frame parser', () => {
 })
 
 describe('TerminalPanel', () => {
+  it('亮色与暗色主题都以反转的终端前景和背景绘制选区', async () => {
+    const theme = document.createElement('style')
+    theme.dataset.testTerminalTheme = ''
+    theme.textContent = `
+      .screen { color: rgb(15, 17, 21); background-color: rgb(255, 255, 255); }
+      body[data-ds-dark-theme] .screen { color: rgb(249, 250, 251); background-color: rgb(21, 21, 23); }
+    `
+    document.head.append(theme)
+    const mounted = render(<TerminalPanel {...props()} />)
+    const terminal = terminalMocks.instances[0]
+    const node = terminal?.node as HTMLElement
+    // jsdom 不加载 CSS Modules，用相同的局部类名模拟终端屏幕的主题颜色。
+    node.classList.add('screen')
+    document.body.style.color = 'rgb(15, 17, 21)'
+    await waitFor(() => {
+      expect(terminal?.options.theme).toMatchObject({
+        background: 'rgb(255, 255, 255)',
+        foreground: 'rgb(15, 17, 21)',
+        selectionBackground: 'rgb(15, 17, 21)',
+        selectionInactiveBackground: 'rgb(15, 17, 21)',
+        selectionForeground: 'rgb(255, 255, 255)',
+      })
+    })
+    document.body.setAttribute('data-ds-dark-theme', '')
+    await waitFor(() => {
+      expect(terminal?.options.theme).toMatchObject({
+        background: 'rgb(21, 21, 23)',
+        foreground: 'rgb(249, 250, 251)',
+        selectionBackground: 'rgb(249, 250, 251)',
+        selectionInactiveBackground: 'rgb(249, 250, 251)',
+        selectionForeground: 'rgb(21, 21, 23)',
+      })
+    })
+    mounted.unmount()
+  })
+
   it('carries output, input, resize, visibility, and cleanup through one retained socket', async () => {
     const mounted = render(<TerminalPanel {...props()} />)
     const connection = FakeWebSocket.instances[0] as FakeWebSocket
     const terminal = terminalMocks.instances[0]
     expect(connection.url).toContain('terminal-session')
     expect(terminal?.options).toMatchObject({ cursorStyle: 'block', cursorInactiveStyle: 'outline' })
+    const palette = getComputedStyle(terminal?.node as HTMLElement)
     expect(terminal?.options.theme).toMatchObject({
-      cursor: getComputedStyle(terminal?.node as HTMLElement).color,
-      cursorAccent: getComputedStyle(terminal?.node as HTMLElement).backgroundColor,
+      background: palette.backgroundColor,
+      foreground: palette.color,
+      cursor: palette.color,
+      cursorAccent: palette.backgroundColor,
+      selectionBackground: palette.color,
+      selectionInactiveBackground: palette.color,
+      selectionForeground: palette.backgroundColor,
     })
     document.body.style.color = 'rgb(23, 45, 67)'
     await waitFor(() => {
-      expect((terminal?.options.theme as { cursor: string }).cursor).toBe('rgb(23, 45, 67)')
+      expect(terminal?.options.theme).toMatchObject({
+        cursor: 'rgb(23, 45, 67)',
+        selectionBackground: 'rgb(23, 45, 67)',
+        selectionInactiveBackground: 'rgb(23, 45, 67)',
+        selectionForeground: getComputedStyle(terminal?.node as HTMLElement).backgroundColor,
+      })
     })
     expect(screen.getByRole('status').textContent).toBe(zh['terminal.connecting'])
 
