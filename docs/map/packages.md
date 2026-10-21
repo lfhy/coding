@@ -23,7 +23,7 @@ workspace 共 251 个包，按 group 分节。每行给出包目录、职责（R
 
 ## packages/boot
 
-- `packages/boot/app-boot` — 供 app bin（`dsh` 与 `dsh-acp-demo`）共用的启动粘合层：每个 bin 都是在这些辅助函数之上构建的精简自执行组合… 入口 `src/index.ts`（tests 6）
+- `packages/boot/app-boot` — 供 app bin（`dsh` 与 `dsh-acp-demo`）共用的启动粘合层：每个 bin 都是在这些辅助函数之上构建的精简自执行组合… 入口 `src/index.ts`（tests 7）
 - `packages/boot/cmdline` — dsh 启动器交给它所引导应用的那条命令行 入口 `src/index.ts`（tests 1）
 
 ## packages/browser
