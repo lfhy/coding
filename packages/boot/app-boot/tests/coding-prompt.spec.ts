@@ -28,6 +28,9 @@ describe('addCodingPromptSections', () => {
       expect(guidelinesAt).toBeGreaterThan(identityAt)
       expect(personaAt).toBeGreaterThan(guidelinesAt)
       expect(rendered).toContain('# 新项目初始化')
+      expect(rendered).toContain('docs/codemap/README.md')
+      expect(rendered).toContain('总入口，再按任务读相关模块地图与专项文档')
+      expect(rendered).toContain('仓库内相对链接')
       expect(rendered).toContain('# Git 工作')
       expect(rendered).not.toContain('未经要求不提交')
     } finally {
