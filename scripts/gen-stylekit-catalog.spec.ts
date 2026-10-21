@@ -1,10 +1,13 @@
-/** StyleKit 目录快照生成器的字段校验、排序与 JSONL 往返行为。 */
+/** StyleKit 快照生成器的字段裁剪、校验、排序与序列化往返行为。 */
 
 import { describe, expect, it } from 'vitest'
 import {
   buildStylekitCatalog,
+  buildStylekitSpec,
+  compareSpecSlugs,
   parseStylekitCatalog,
   serializeStylekitCatalog,
+  serializeStylekitSpec,
 } from './gen-stylekit-catalog.ts'
 
 /** 构造一条最小可用的上游风格记录；测试只覆盖目录层需要的字段。 */
@@ -28,6 +31,36 @@ function upstream(slug: string, overrides: Record<string, unknown> = {}): Record
 /** 构造满足最小条目数的上游响应。 */
 function payload(count: number, override?: (index: number) => Record<string, unknown>): unknown {
   return { total: count, styles: Array.from({ length: count }, (_, index) => override?.(index) ?? upstream(`style-${String(index).padStart(3, '0')}`)) }
+}
+
+/** 构造一条完整的上游单风格响应；`tags` 只在目录层，规格不带。 */
+function specRecord(slug: string, overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    source: 'static',
+    slug,
+    name: `名称${slug}`,
+    nameEn: `Name ${slug}`,
+    description: '一句话描述',
+    styleType: 'visual',
+    keywords: ['关键词'],
+    colors: { primary: '#18181B', secondary: '#ffffff', accent: ['#3B82F6'] },
+    philosophy: '设计哲学',
+    doList: ['必须做'],
+    dontList: ['禁止做'],
+    aiRules: '# 规则',
+    globalCss: ':root { --x: 1 }',
+    examplePrompts: [{ title: '示例', prompt: '做一个页面' }],
+    tokens: { border: { radius: 'rounded-none' } },
+    recipes: { button: { id: 'button' } },
+    components: { button: { code: '<button />' } },
+    // 站点自用的看板与图片地址不进入随包规格。
+    readiness: { styleSlug: slug },
+    accessibility: { overall: 65 },
+    changelog: [{ version: '1.0.0' }],
+    version: '1.0.0',
+    cover: `/styles/${slug}.svg`,
+    ...overrides,
+  }
 }
 
 describe('stylekit catalog generator', () => {
@@ -79,5 +112,46 @@ describe('stylekit catalog generator', () => {
       .toThrow(/colors.primary must be a #rrggbb or rgb\(\)\/hsl\(\) color/)
     expect(() => buildStylekitCatalog(payload(99))).toThrow(/expected at least 100/)
     expect(() => buildStylekitCatalog({})).toThrow(/must be an object with a styles array/)
+  })
+})
+
+describe('stylekit spec snapshot', () => {
+  it('keeps implementation fields, drops site dashboards, and serializes canonically', () => {
+    const spec = buildStylekitSpec(specRecord('glassmorphism'), 'glassmorphism', ['brand-inspired'])
+    const parsed = JSON.parse(serializeStylekitSpec(spec)) as Record<string, unknown>
+    expect(Object.keys(parsed)).toEqual([
+      'slug', 'name', 'nameEn', 'description', 'styleType', 'tags', 'keywords', 'colors',
+      'philosophy', 'doList', 'dontList', 'aiRules', 'globalCss', 'examplePrompts',
+      'tokens', 'recipes', 'components',
+    ])
+    expect(parsed.tags).toEqual(['brand-inspired'])
+    expect(parsed).not.toHaveProperty('readiness')
+    expect(parsed).not.toHaveProperty('accessibility')
+    expect(parsed).not.toHaveProperty('changelog')
+    expect(parsed).not.toHaveProperty('cover')
+    // 同一输入必须产出同一份文本，--check 才可能比对成功。
+    expect(serializeStylekitSpec(buildStylekitSpec(specRecord('glassmorphism'), 'glassmorphism', ['brand-inspired'])))
+      .toBe(serializeStylekitSpec(spec))
+  })
+
+  it('fills the fields the single-style endpoint omits', () => {
+    const record = specRecord('apple-style')
+    delete record.examplePrompts
+    const spec = buildStylekitSpec(record, 'apple-style')
+    expect(spec.examplePrompts).toEqual([])
+    expect(spec.tags).toEqual([])
+  })
+
+  it('rejects a slug mismatch and malformed required fields', () => {
+    expect(() => buildStylekitSpec(specRecord('bauhaus'), 'apple-style')).toThrow(/expected slug "apple-style", got "bauhaus"/)
+    expect(() => buildStylekitSpec({ ...specRecord('bauhaus'), philosophy: '' })).toThrow(/philosophy must be a non-empty string/)
+    expect(() => buildStylekitSpec({ ...specRecord('bauhaus'), tokens: [] })).toThrow(/tokens must be an object/)
+    expect(() => buildStylekitSpec({ ...specRecord('bauhaus'), examplePrompts: [1] })).toThrow(/examplePrompts\[0\] must be an object/)
+  })
+
+  it('pairs index slugs with spec files', () => {
+    expect(compareSpecSlugs(['a', 'b'], ['a.json', 'b.json'])).toEqual({ missing: [], orphaned: [] })
+    expect(compareSpecSlugs(['a', 'b'], ['b.json'])).toEqual({ missing: ['a'], orphaned: [] })
+    expect(compareSpecSlugs(['a'], ['a.json', 'c.json'])).toEqual({ missing: [], orphaned: ['c'] })
   })
 })

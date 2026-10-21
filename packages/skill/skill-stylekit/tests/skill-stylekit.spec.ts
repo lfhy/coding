@@ -1,4 +1,5 @@
-import { readFile } from 'node:fs/promises'
+import { readFile, readdir } from 'node:fs/promises'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
@@ -7,6 +8,7 @@ import * as SkillStylekit from 'coding-skill-stylekit'
 
 const bodyUrl = new URL('../assets/stylekit.md', import.meta.url)
 const catalogUrl = new URL('../assets/styles.jsonl', import.meta.url)
+const specDir = fileURLToPath(new URL('../assets/styles/', import.meta.url))
 const resourcePath = fileURLToPath(new URL('../assets/', import.meta.url))
 const description = '在需要给网页或界面一个具名视觉风格时使用：玻璃拟态、新野兽派、赛博朋克、包豪斯、瑞士网格、便当盒布局、Apple／Stripe／Notion／Linear 风格、日式极简、复古 Y2K 等 StyleKit 风格目录。用来把“做得好看点”落成可执行的配色、设计令牌与 do／don\'t 规则，并在项目现有技术栈内实现；风格指南不覆盖产品行为、无障碍与项目已有组件。'
 
@@ -57,6 +59,20 @@ describe('bundled stylekit skill', () => {
     const examples = named.map(token => token.slice(1, -1)).filter(token => token !== 'slug')
     expect(examples.length).toBeGreaterThanOrEqual(8)
     for (const slug of examples) expect(slugs).toContain(slug)
+  })
+
+  it('ships a complete offline spec for every catalogued style', async () => {
+    const lines = (await readFile(catalogUrl, 'utf8')).trimEnd().split('\n')
+    const slugs = lines.map(line => readCatalogEntry(line).slug)
+    const files = (await readdir(specDir)).filter(name => name.endsWith('.json')).map(name => name.slice(0, -5))
+    expect(files.sort()).toEqual([...slugs].sort())
+    // 抽查一个主流风格，确认离线规格真的带着实现需要的字段。
+    const spec = JSON.parse(await readFile(join(specDir, 'glassmorphism.json'), 'utf8')) as Record<string, unknown>
+    for (const key of ['philosophy', 'aiRules', 'globalCss', 'doList', 'dontList', 'tokens', 'recipes', 'components']) {
+      expect(spec).toHaveProperty(key)
+    }
+    expect(Array.isArray(spec.doList)).toBe(true)
+    expect(typeof spec.aiRules === 'string' && spec.aiRules.includes('玻璃')).toBe(true)
   })
 })
 

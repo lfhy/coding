@@ -17,17 +17,23 @@ grep -inE "极简|留白|minimal" "<skill-assets>/styles.jsonl" | head -5
 - `styles.jsonl` 命中行就是完整条目，可直接读出配色与说明；挑 1–3 个候选后再决定，只有在候选之间的取舍会实质改变结果时才向用户提问。
 - 目录里没有匹配项、或用户要的是新风格时，如实说明并回到项目既有视觉语言，不要凭空编一个 slug。
 
-## 二、取得完整规格
+## 二、读取完整规格（随包、离线）
 
-目录只固化到「配色 + 一句话方向」。完整规格（设计哲学、do/don't 规则、令牌、组件配方、全局 CSS）需要在线获取：
+每个风格的完整规格都随包分发：`<skill-assets>/styles/<slug>.json`，约 20 KB 一个文件。直接读文件即可，不需要联网：
 
-```bash
-curl -sS "https://www.stylekit.top/api/styles/<slug>" -o "<work-dir>/spec.json"
-```
+- `philosophy`：设计哲学与核心理念，决定整体气质。
+- `doList`／`dontList`：必须做与禁止做，最硬的部分。
+- `aiRules`：上游整理的完整设计系统规则（Markdown），细节最多，冲突时以 `doList`／`dontList` 为准。
+- `colors`：主色、底色与强调色。
+- `tokens`：设计令牌（边框、阴影、字体、间距、颜色类名）。
+- `recipes`：组件配方（基础类名 + 参数化尺寸/变体）。
+- `components`：可参考的组件代码片段。
+- `examplePrompts`：上游给出的示例需求，用来说明这种风格适合做成什么样。
+- `globalCss`：全局 CSS（变量与基础样式）。
 
-按需读取其中的字段：`philosophy`（设计哲学）、`doList`／`dontList`（必须做／禁止做）、`colors`、`tokens`（设计令牌）、`recipes`（组件配方）、`globalCss`。只取用得到的部分，不要把整份规格贴进回答或写进代码注释。
+按需读取：先读 `philosophy`、`doList`、`dontList`、`colors`、`tokens`，需要更细再读 `recipes`／`components`／`aiRules`。只取用得到的部分，不要把整份规格贴进回答或写进代码注释。
 
-Tailwind／shadcn 项目可以直接把风格装成主题（会改动 `globals.css` 的亮暗 `cssVars`）：
+Tailwind／shadcn 项目可以把风格装成主题（会改动 `globals.css` 的亮暗 `cssVars`；这一步需要联网，装不上就按规格手写同样变量）：
 
 ```bash
 npx shadcn add "https://www.stylekit.top/r/<slug>.json"
@@ -35,7 +41,7 @@ npx shadcn add "https://www.stylekit.top/r/<slug>.json"
 
 目标项目需要 `tsconfig.json`；安装后复查 diff，只保留与本次视觉改造相关的改动。
 
-**抓取失败时**（离线、超时、404）：用目录里的 `colors`／`keywords`／`description` 建立方向，并明确告诉用户没有取得上游完整规则；不要编造规则，也不要声称抓取成功。
+**规格文件缺失时**（旧版本包、slug 拼错）：用 `styles.jsonl` 里的 `colors`／`keywords`／`description` 建立方向，并明确告诉用户手上没有该风格的完整规则；不要编造规则。上游若有更新，需要最新规则时重新拉取 `https://www.stylekit.top/api/styles/<slug>`，并在回答里说明那是联网获取的当前版本。
 
 ## 三、在项目里落地
 
@@ -50,10 +56,10 @@ npx shadcn add "https://www.stylekit.top/r/<slug>.json"
 
 1. 跑改动所属包的类型、lint、测试和构建。
 2. 加载 `browser-use` 技能，在真实运行的应用里检查：计算后的颜色、字体、间距、圆角、边框与阴影是否符合所选风格；hover／active／focus 与键盘焦点行为；主要流程在单屏内可用。
-3. 把「已实现」和「实际验证过」分开报告；在线规格取不到或运行时无法启动时，说明哪一项没验证。
+3. 把「已实现」和「实际验证过」分开报告；运行时无法启动或某项检查没跑时，说明哪一项没验证。
 
 ## 五、边界
 
-- `styles.jsonl` 是随包快照，上游目录可能已经更新；需要最新目录时重新拉取 `https://www.stylekit.top/api/styles`，不要凭记忆补 slug。
+- `styles.jsonl` 与 `styles/<slug>.json` 都是随包快照，上游可能已经更新；需要最新目录或规则时重新拉取 `https://www.stylekit.top/api/styles`，不要凭记忆补 slug 或规则。
 - 不安装 MCP 服务、不改客户端配置、不替用户迁移框架。
 - 上游来源与许可见本技能所在包的 `NOTICE.md`；目录与规格的版权归 StyleKit 作者。
