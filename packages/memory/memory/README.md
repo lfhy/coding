@@ -13,6 +13,7 @@
 - `list(project)`：列出记忆文件（名称、首个标题、字节数、最近修改时间），最近修改的在前。
 - `read(project, name)`：读取一个文件，超过单文件上限时只返回头部并置 `truncated`。
 - `save(project, { content, file?, section? })`：把小节内容追加进目标文件（默认 `notes.md` 的 `要点` 小节），小节不存在时在文件末尾新建；写入前执行单条、单文件、每项目总量与文件数四项限额，任何一项越界都抛错，诊断里带实际数值。
+- `update(project, { match, content, file?, section? })`：替换一条已有条目。`match` 必须在目标文件（或 `section` 指定的小节）内唯一命中，命中零条或多条都抛错并说明实际数量；替换同样执行单条、单文件与每项目总量限额，文件数不变。
 - `remove(project, name, section?)`：删除整个文件，或只删除一个小节；删掉最后一个小节后只剩标题的空壳文件同样算清空并删除。
 - `excerpt(project)`：渲染注入提示词的有界摘要（默认 4096 字节）：按最近修改排序，每个文件给 `### <文件名>` 与开头内容，用完预算为止；被截断或省略的文件列在返回值里，让消费方提示模型去读全文。
 
@@ -34,7 +35,7 @@
 
 ## 消费方
 
-- `coding-tool-memory`：`memory_save`／`memory_read`／`memory_list`／`memory_delete` 四个工具，参数里没有任何路径，目标目录由会话项目根决定。
+- `coding-tool-memory`：`memory_save`／`memory_update`／`memory_read`／`memory_list`／`memory_delete` 五个工具，参数里没有任何路径，目标目录由会话项目根决定。
 - `coding-memory-context`：把 `excerpt()` 的摘要注入会话基线。
 
 ## 模型体验
@@ -48,6 +49,7 @@ Indirectly, through `coding-tool-memory` and `coding-memory-context`：本包自
 ## 已知限制与暂缓事项
 
 - **键是路径的函数**：项目改名或移动后 `md5` 会变，旧记忆不再命中；目录里的 `project.json`（由 Provider 写）记录真实路径，便于人工辨认与迁移，但不会自动重键。
-- **不做并发合并**：`save` 是「读—改—写」，两个会话同时写同一个文件时后者覆盖前者；记忆是笔记而不是事务存储。
+- **不做并发合并**：`save` 与 `update` 都是「读—改—写」，两个会话同时写同一个文件时后者覆盖前者；记忆是笔记而不是事务存储。
+- **替换按字面子串匹配**：`update` 不解析 Markdown 语义，也不做模糊匹配；片段命中多条时要求调用方给出更长片段或限定小节，不会替调用方挑选。
 - **记忆不是安全边界**：所有项目的记忆同处一个用户主目录下，同机同用户的进程都读得到；不要往记忆里写凭据、密钥或个人隐私。
 - **项目根探测用宿主文件系统**：这里用同步 `existsSync` 向上找标记，与工作区指令发现各自持有自己的走法——后者必须跟随 `ctx.fs` Provider，而记忆键只需要宿主可见路径。

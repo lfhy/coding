@@ -15,7 +15,7 @@ This table connects model-visible tool names to the plugin package and service s
 
 | Tool package | Model-visible names | Requires | Writes / affects | Shipped aliases | Deployment note |
 | --- | --- | --- | --- | --- | --- |
-| `coding-tool-memory` | `memory_delete`, `memory_list`, `memory_read`, `memory_save` | `ctx.tools`, `ctx.memory` | `tool/call`, `tool/result for project-scoped memory reads and writes` | - | The four memory tools take no path: the owning session decides which project they read and write, and each call resolves it from the session cwd. |
+| `coding-tool-memory` | `memory_delete`, `memory_list`, `memory_read`, `memory_save`, `memory_update` | `ctx.tools`, `ctx.memory` | `tool/call`, `tool/result for project-scoped memory reads and writes` | - | The five memory tools take no path: the owning session decides which project they read and write, and each call resolves it from the session cwd. |
 | `coding-tool-ask-user` | `ask_user_question` | `ctx.tools`, `ctx.userQuestions` | `tool/call`, `tool/result after a UI/provider answers the question` | - | ask_user_question pauses the tool call until the active UI provider returns a human answer. |
 | `coding-tool-browser` | `browser_click`, `browser_close`, `browser_fill`, `browser_navigate`, `browser_screenshot`, `browser_scroll`, `browser_snapshot` | `ctx.tools`, `ctx.browserUse`, `ctx.attachments`, `ctx.approval and a calling Agent at execution time` | `tool/call`, `durable attachment on screenshot`, `tool/result` | - | Each operation is bound to the active tab and session revision. Full access with approval prompts disabled proceeds directly; otherwise only allowed-once approval proceeds if that target remains current. A remote workspace is rejected. Only explicit screenshots save a PNG attachment and render an image block. The browser provider owns URL/network policy and session tab lifetime. |
 | `coding-tool-computer-use` | `computer_click`, `computer_confirm`, `computer_drag`, `computer_list_apps`, `computer_observe`, `computer_perform_action`, `computer_press_key`, `computer_scroll`, `computer_set_value`, `computer_type_text`, `computer_wait` | `ctx.tools`, `ctx.skills`, `ctx.computerUse and a calling Agent at execution time` | `tool/call`, `tool/result`, `workspace screenshot Artifact on request`, `one computer_use_state read/control lease decision after an approval or a configured grant` | - | The only globally visible tool is computer_use_activate; loading the Skill replaces it with the execution vocabulary for that Agent alone. Every action binds to a fresh observation, so a stale element index fails closed, and a coordinate target is only accepted after a screenshot delivered the raster it was chosen from. Accessibility actions are preferred over pointer input, and pointer input is routed to the selected process instead of the global cursor. |
@@ -137,7 +137,41 @@ Append one entry to this project's memory. Memory is this project's own notes un
 
 Source: [`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
 
-The four memory tools take no path: the owning session decides which project they read and write, and each call resolves it from the session cwd.
+### `memory_update`
+
+Replace exactly one existing entry in this project's memory. Use it when an entry has become wrong, stale, or needs a correction: `match` must select a single entry, and `content` is the rewritten entry. Add new points with memory_save and drop obsolete ones with memory_delete. Never store credentials, secrets, or anything already documented in the code or AGENTS.md.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "match": {
+      "type": "string",
+      "description": "A snippet of the entry to replace. It must match exactly one entry; read the file first when unsure."
+    },
+    "content": {
+      "type": "string",
+      "description": "The rewritten entry; one self-contained point a later session can act on."
+    },
+    "file": {
+      "type": "string",
+      "description": "Target memory file name ending in .md (default `notes.md`)."
+    },
+    "section": {
+      "type": "string",
+      "description": "Only match inside this section heading; omit to match across the whole file."
+    }
+  },
+  "required": [
+    "match",
+    "content"
+  ]
+}
+```
+
+Source: [`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
+
+The five memory tools take no path: the owning session decides which project they read and write, and each call resolves it from the session cwd.
 
 <a id="coding-tool-ask-user"></a>
 

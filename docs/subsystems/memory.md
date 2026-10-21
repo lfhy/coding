@@ -21,7 +21,7 @@
 ## 注入与消费
 
 `excerpt` 按最近修改排序渲染有界摘要（默认 4096 字节），每个文件给标题与开头内容，被截断或省略的文件列在返回值里，由消费方提示模型去读全文。
-`memory-context` 把这份摘要注入会话基线；`tool-memory` 提供 `memory_save`、`memory_read`、`memory_list`、`memory_delete` 四个工具，参数里没有任何路径，目标目录由会话项目根决定。
+`memory-context` 把这份摘要注入会话基线；`tool-memory` 提供 `memory_save`、`memory_update`、`memory_read`、`memory_list`、`memory_delete` 五个工具，参数里没有任何路径，目标目录由会话项目根决定。
 
 以下跨包类型声明来自 [`packages/memory/memory/src/index.ts`](../../packages/memory/memory/src/index.ts)。服务方法的完整签名与 JSDoc 由下方 Cordis API 区域生成。
 

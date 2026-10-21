@@ -1,7 +1,7 @@
 /**
  * 项目隔离的记忆工具：把当前会话所属项目的记忆交给模型读写。
  *
- * 四个工具的参数里没有任何路径——目标永远是会话项目根对应的记忆目录，因此模型无法
+ * 五个工具的参数里没有任何路径——目标永远是会话项目根对应的记忆目录，因此模型无法
  * 读写别的项目的记忆。命名导出保留 Loader 注入元数据。
  *
  * @module coding-tool-memory
@@ -15,6 +15,7 @@ import {
   DEFAULT_MEMORY_SECTION,
   type MemoryProject,
   type MemorySaveRequest,
+  type MemoryUpdateRequest,
 } from 'coding-memory'
 
 export const name = 'tool-memory'
@@ -44,7 +45,7 @@ function projectOf(agent: Agent | undefined, projectFor: (cwd: string) => Memory
 }
 
 /**
- * Register the four project-scoped memory tools on `ctx.tools`.
+ * Register the five project-scoped memory tools on `ctx.tools`.
  * @param ctx - registrant context carrying the tool registry and the memory service.
  */
 export function apply(ctx: Context): void {
@@ -98,6 +99,62 @@ export function apply(ctx: Context): void {
       }))
     },
     presentCall: args => ({ card: 'generic', title: 'Save project memory', kind: 'other', rawInput: args.content }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'memory_update',
+    description:
+      'Replace exactly one existing entry in this project\'s memory. Use it when an entry has become wrong, '
+      + 'stale, or needs a correction: `match` must select a single entry, and `content` is the rewritten entry. '
+      + 'Add new points with memory_save and drop obsolete ones with memory_delete. '
+      + 'Never store credentials, secrets, or anything already documented in the code or AGENTS.md.',
+    parameters: {
+      match: {
+        type: 'string',
+        required: true,
+        description: 'A snippet of the entry to replace. It must match exactly one entry; read the file first when unsure.',
+      },
+      content: {
+        type: 'string',
+        required: true,
+        description: 'The rewritten entry; one self-contained point a later session can act on.',
+      },
+      file: {
+        type: 'string',
+        description: `Target memory file name ending in .md (default \`${DEFAULT_MEMORY_FILE}\`).`,
+      },
+      section: {
+        type: 'string',
+        description: 'Only match inside this section heading; omit to match across the whole file.',
+      },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          file: { type: 'string', required: true },
+          bytes: { type: 'integer', required: true },
+          previous: { type: 'string', required: true },
+        },
+      },
+      render: (_args, value) => [{
+        type: 'text',
+        text: `Updated one entry in project memory: ${value.file} (now ${value.bytes} bytes). `
+          + `It previously read:\n\n${value.previous}`,
+      }],
+    },
+    execute(args, exec) {
+      const request: MemoryUpdateRequest = { match: args.match, content: args.content }
+      if (args.file !== undefined) request.file = args.file
+      if (args.section !== undefined) request.section = args.section
+      return ctx.memory.update(projectOf(exec.agent, projectFor), request).then(({ summary, previous }) => ({
+        file: summary.name,
+        bytes: summary.bytes,
+        previous,
+      }))
+    },
+    presentCall: args => ({ card: 'generic', title: 'Update project memory', kind: 'other', rawInput: args.content }),
   }))
 
   ctx.tools.register(defineTool({

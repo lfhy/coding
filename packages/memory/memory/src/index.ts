@@ -115,7 +115,19 @@ export interface MemorySaveRequest {
   section?: string
 }
 
-/** 一次注入摘要。 */
+/** 一条记忆替换请求。 */
+export interface MemoryUpdateRequest {
+  /** 要替换的现有条目：必须在目标文件（或指定小节）内唯一命中。 */
+  match: string
+  /** 替换后的条目正文。 */
+  content: string
+  /** 目标文件，默认 `notes.md`。 */
+  file?: string
+  /** 限定在同名小节内匹配；省略时在整个文件内匹配。 */
+  section?: string
+}
+
+/** 一条注入摘要。 */
 export interface MemoryExcerpt {
   text: string
   /** 摘要里出现的文件。 */
@@ -196,6 +208,34 @@ function byteLength(value: string): number {
 }
 
 /**
+ * 把条目渲染成 Markdown 列表项：首行带 `- `，其余行缩进两格保持同一条目。
+ * @param entry - 条目正文。
+ * @returns 逐行渲染结果。
+ */
+export function memoryBullet(entry: string): string[] {
+  return entry.trimEnd().split('\n').map((line, index) => index === 0 ? `- ${line}` : `  ${line}`)
+}
+
+/**
+ * 找到小节标题到下一个同级或更高级标题之间的行范围。
+ * @param lines - 文件按行拆分的结果。
+ * @param section - 小节标题。
+ * @returns `start` 是标题行、`end` 是结束行（不含）；没有该小节时返回 undefined。
+ */
+function sectionExtent(lines: readonly string[], section: string): { start: number; end: number } | undefined {
+  const start = lines.indexOf(`## ${section}`)
+  if (start < 0) return undefined
+  let end = lines.length
+  for (let index = start + 1; index < lines.length; index += 1) {
+    if (/^#{1,2}\s/.test(lines[index] ?? '')) {
+      end = index
+      break
+    }
+  }
+  return { start, end }
+}
+
+/**
  * 把一条记忆追加到指定小节：小节不存在时在文件末尾新建，其余内容原样保留。
  * 条目按 Markdown 列表项写入，多行内容缩进续行。
  * @param content - 文件当前内容，空串表示新建文件。
@@ -205,21 +245,13 @@ function byteLength(value: string): number {
  * @returns 写入后的完整文件内容。
  */
 export function appendMemoryEntry(content: string, projectTitle: string, section: string, entry: string): string {
-  const bullet = entry.trimEnd().split('\n')
-    .map((line, index) => index === 0 ? `- ${line}` : `  ${line}`)
-    .join('\n')
+  const bullet = memoryBullet(entry).join('\n')
   if (content.trim().length === 0) return `# ${projectTitle} 记忆\n\n## ${section}\n\n${bullet}\n`
   const heading = `## ${section}`
   const lines = content.replace(/\n*$/, '\n').split('\n')
-  const start = lines.indexOf(heading)
-  if (start < 0) return `${lines.join('\n')}\n${heading}\n\n${bullet}\n`
-  let end = lines.length
-  for (let index = start + 1; index < lines.length; index += 1) {
-    if (/^#{1,2}\s/.test(lines[index] ?? '')) {
-      end = index
-      break
-    }
-  }
+  const extent = sectionExtent(lines, section)
+  if (extent === undefined) return `${lines.join('\n')}\n${heading}\n\n${bullet}\n`
+  const { start, end } = extent
   const before = lines.slice(0, end)
   while (before.length > start + 1 && (before[before.length - 1] ?? '').trim().length === 0) before.pop()
   const after = lines.slice(end)
@@ -234,19 +266,59 @@ export function appendMemoryEntry(content: string, projectTitle: string, section
  * @returns 删除后的内容，以及是否确实删掉了该小节。
  */
 export function removeMemorySection(content: string, section: string): { content: string; removed: boolean } {
-  const heading = `## ${section}`
   const lines = content.split('\n')
-  const start = lines.indexOf(heading)
-  if (start < 0) return { content, removed: false }
-  let end = lines.length
-  for (let index = start + 1; index < lines.length; index += 1) {
-    if (/^#{1,2}\s/.test(lines[index] ?? '')) {
-      end = index
-      break
-    }
-  }
+  const extent = sectionExtent(lines, section)
+  if (extent === undefined) return { content, removed: false }
+  const { start, end } = extent
   const remaining = [...lines.slice(0, start), ...lines.slice(end)].join('\n').replace(/\n{3,}/g, '\n\n')
   return { content: remaining.trimEnd().length === 0 ? '' : `${remaining.replace(/\n*$/, '')}\n`, removed: true }
+}
+
+/** 一条记忆条目的位置与正文。 */
+export interface MemoryEntryRange {
+  /** 条目起始行（含）。 */
+  start: number
+  /** 条目结束行（不含），续行也算在同一条目里。 */
+  end: number
+  /** 条目正文：去掉 `- ` 列表符号与续行缩进。 */
+  text: string
+}
+
+/**
+ * 列出含 `match` 的条目。条目是 `- ` 开头的一段，紧随其后的两空格缩进行属于同一条；
+ * 空行或其它行结束该条目。
+ * @param content - 记忆文件内容。
+ * @param match - 要匹配的文本片段，按字面子串比较。
+ * @param section - 只在该小节内匹配；省略时匹配整个文件。
+ * @returns 命中的条目范围，按文件顺序排列。
+ */
+export function findMemoryEntries(content: string, match: string, section?: string): MemoryEntryRange[] {
+  const lines = content.split('\n')
+  const extent = section === undefined ? { start: -1, end: lines.length } : sectionExtent(lines, section)
+  if (extent === undefined) return []
+  const hits: MemoryEntryRange[] = []
+  for (let index = extent.start + 1; index < extent.end; index += 1) {
+    const first = lines[index]
+    if (first === undefined || !first.startsWith('- ')) continue
+    let end = index + 1
+    while (end < extent.end && (lines[end] ?? '').startsWith('  ')) end += 1
+    const text = [first.slice(2), ...lines.slice(index + 1, end).map(line => line.slice(2))].join('\n').trimEnd()
+    if (text.includes(match)) hits.push({ start: index, end, text })
+    index = end - 1
+  }
+  return hits
+}
+
+/**
+ * 用新条目替换一条已定位的条目，其余内容原样保留。
+ * @param content - 文件当前内容。
+ * @param target - {@link findMemoryEntries} 命中的条目。
+ * @param entry - 替换后的条目正文。
+ * @returns 替换后的完整文件内容。
+ */
+export function replaceMemoryEntry(content: string, target: MemoryEntryRange, entry: string): string {
+  const lines = content.split('\n')
+  return [...lines.slice(0, target.start), ...memoryBullet(entry), ...lines.slice(target.end)].join('\n')
 }
 
 /**
@@ -342,6 +414,62 @@ export abstract class Memory extends Service {
     /* v8 ignore next -- the provider just wrote the file it is asked to describe. */
     if (written === undefined) throw new Error(`memory: ${file} disappeared after writing`)
     return written
+  }
+
+  /**
+   * 替换一条已有记忆：命中必须在目标文件（或指定小节）内唯一，其余内容原样保留。
+   *
+   * 与 {@link save} 共用单条、单文件与每项目总量三项限额；文件数不变，因此不检查
+   * 文件数上限。命中零条或多条都抛错，避免模型改错条目。
+   * @param project - 项目身份。
+   * @param request - 匹配片段、新条目内容与目标文件／小节。
+   * @returns 写入后的文件元数据与被替换掉的原文。
+   * @throws 目标文件不存在、未唯一命中或越过任一限额时抛出，诊断里带上实际数值。
+   */
+  async update(
+    project: MemoryProject,
+    request: MemoryUpdateRequest,
+  ): Promise<{ summary: MemoryFileSummary; previous: string }> {
+    const entry = request.content.trim()
+    if (entry.length === 0) throw new Error('memory: refusing to save an empty entry')
+    const entryBytes = byteLength(entry)
+    if (entryBytes > this.config.maxEntryBytes) {
+      throw new Error(`memory: entry is ${entryBytes} bytes, above the ${this.config.maxEntryBytes}-byte limit`)
+    }
+    const file = memoryFileName(request.file)
+    const content = await this.readFile(project, file)
+    if (content === undefined) throw new Error(`memory: ${file} does not exist in this project's memory`)
+    const match = request.match.trim()
+    if (match.length === 0) {
+      throw new Error('memory: refusing to update without a match; pass a snippet of the entry to replace')
+    }
+    const section = request.section?.trim()
+    const scope = section === undefined ? file : `${file} section "${section}"`
+    const hits = findMemoryEntries(content, match, section)
+    if (hits.length === 0) {
+      throw new Error(`memory: no entry in ${scope} matches ${JSON.stringify(match)}; read the file before updating an entry`)
+    }
+    if (hits.length > 1) {
+      throw new Error(`memory: ${hits.length} entries in ${scope} match ${JSON.stringify(match)}; pass a longer match or narrow it with section`)
+    }
+    const target = hits[0]
+    /* v8 ignore next -- `hits.length === 1` was just checked. */
+    if (target === undefined) throw new Error(`memory: no entry in ${scope} matches ${JSON.stringify(match)}`)
+    const next = replaceMemoryEntry(content, target, entry)
+    const nextBytes = byteLength(next)
+    if (nextBytes > this.config.maxFileBytes) {
+      throw new Error(`memory: ${file} would grow to ${nextBytes} bytes, above the ${this.config.maxFileBytes}-byte file limit`)
+    }
+    const existingFiles = await this.listFiles(project)
+    const projectBytes = existingFiles.reduce((total, item) => total + (item.name === file ? 0 : item.bytes), 0) + nextBytes
+    if (projectBytes > this.config.maxProjectBytes) {
+      throw new Error(`memory: project memory would grow to ${projectBytes} bytes, above the ${this.config.maxProjectBytes}-byte limit`)
+    }
+    await this.writeFile(project, file, next)
+    const written = (await this.listFiles(project)).find(item => item.name === file)
+    /* v8 ignore next -- the provider just wrote the file it is asked to describe. */
+    if (written === undefined) throw new Error(`memory: ${file} disappeared after writing`)
+    return { summary: written, previous: target.text }
   }
 
   /**

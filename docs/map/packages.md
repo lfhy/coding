@@ -247,7 +247,7 @@ workspace 共 252 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/memory/memory` — 项目隔离的跨会话记忆服务定义：把会话 cwd 解析成一个稳定的项目键，为每个项目维护若干 Markdown 记忆文件… 入口 `src/index.ts`（tests 1）
 - `packages/memory/memory-context` — 把会话所属项目的记忆作为有界上下文注入第一次请求：新会话不必重新问一遍用户偏好、这个仓库里非显然的约定和踩过的坑 入口 `src/index.ts`（tests 1）
 - `packages/memory/memory-local` — 宿主文件系统上的 `ctx.memory` Provider：每个项目一个目录，记忆写成本地 Markdown 入口 `src/index.ts`（tests 1）
-- `packages/memory/tool-memory` — 把当前会话所属项目的记忆交给模型读写的四个工具 入口 `src/index.ts`（tests 1）
+- `packages/memory/tool-memory` — 把当前会话所属项目的记忆交给模型读写的五个工具 入口 `src/index.ts`（tests 1）
 
 ## packages/net
 

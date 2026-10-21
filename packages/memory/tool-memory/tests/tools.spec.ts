@@ -58,11 +58,35 @@ describe('project memory tools', () => {
       expect(read.isError).toBe(false)
       expect(read.content).toMatchObject([{ type: 'text', text: expect.stringContaining('测试用 pnpm') as unknown as string }])
 
+      const updated = await call(live.ctx, agent, 'memory_update', { match: '测试用 pnpm', content: '测试用 vitest' })
+      expect(updated.isError).toBe(false)
+      expect(updated.content).toMatchObject([{ type: 'text', text: expect.stringContaining('测试用 pnpm') as unknown as string }])
+      const afterUpdate = await call(live.ctx, agent, 'memory_read', { file: 'notes.md' })
+      expect(afterUpdate.content).toMatchObject([{ type: 'text', text: expect.stringContaining('测试用 vitest') as unknown as string }])
+
       const removed = await call(live.ctx, agent, 'memory_delete', { file: 'notes.md' })
       expect(removed.isError).toBe(false)
       expect(removed.content).toMatchObject([{ type: 'text', text: expect.stringContaining('Removed the file') as unknown as string }])
       const afterDelete = await call(live.ctx, agent, 'memory_list', {})
       expect(afterDelete.content).toMatchObject([{ type: 'text', text: 'This project has no memory yet.' }])
+    } finally {
+      await live.ctx.fiber.dispose()
+    }
+  })
+
+  it('reports an ambiguous match instead of guessing which entry to rewrite', async () => {
+    const live = await mount()
+    const agent = stubAgent(live.project)
+    try {
+      await call(live.ctx, agent, 'memory_save', { content: '重复条目一' })
+      await call(live.ctx, agent, 'memory_save', { content: '重复条目二' })
+
+      const ambiguous = await call(live.ctx, agent, 'memory_update', { match: '重复条目', content: '合并为一条' })
+
+      expect(ambiguous.isError).toBe(true)
+      expect(ambiguous.content).toMatchObject([{ type: 'text', text: expect.stringContaining('2 entries in notes.md match') as unknown as string }])
+      const read = await call(live.ctx, agent, 'memory_read', { file: 'notes.md' })
+      expect(read.content).toMatchObject([{ type: 'text', text: expect.stringContaining('重复条目一') as unknown as string }])
     } finally {
       await live.ctx.fiber.dispose()
     }

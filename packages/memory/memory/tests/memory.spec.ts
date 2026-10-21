@@ -8,9 +8,11 @@ import {
   Memory,
   MemoryConfig,
   appendMemoryEntry,
+  findMemoryEntries,
   memoryFileName,
   memoryProjectKey,
   removeMemorySection,
+  replaceMemoryEntry,
   resolveMemoryProject,
   type MemoryFileSummary,
   type MemoryProject,
@@ -200,5 +202,79 @@ describe('memory service limits', () => {
     const memory = mountMemory()
 
     await expect(memory.excerpt(project)).resolves.toMatchObject({ text: '', files: [] })
+  })
+})
+
+describe('memory entry replacement', () => {
+  const project: MemoryProject = { path: '/repo', key: 'k', directory: '/repo-memory' }
+
+  /** 两小节各两条的记忆文件，覆盖「限定小节」与「续行条目」两种形态。 */
+  function seededContent(): string {
+    return '# app 记忆\n\n## 要点\n\n- 第一条\n- 第二条\n  续行\n\n## 决策\n\n- 第二条\n'
+  }
+
+  it('locates entries, their continuation lines, and honors the section filter', () => {
+    const content = seededContent()
+
+    expect(findMemoryEntries(content, '第一条')).toHaveLength(1)
+    expect(findMemoryEntries(content, '第二条')).toHaveLength(2)
+    expect(findMemoryEntries(content, '第二条', '要点')).toHaveLength(1)
+    expect(findMemoryEntries(content, '第二条', '要点')?.[0]?.text).toBe('第二条\n续行')
+    expect(findMemoryEntries(content, '不存在')).toEqual([])
+    expect(findMemoryEntries(content, '第一条', '没有的小节')).toEqual([])
+  })
+
+  it('replaces one entry and leaves the rest of the file intact', async () => {
+    const memory = mountMemory()
+    await memory.save(project, { content: '旧约定：用 npm' })
+    await memory.save(project, { content: '别的条目' })
+
+    const updated = await memory.update(project, { match: '旧约定', content: '新约定：用 pnpm' })
+
+    expect(updated.summary.name).toBe(DEFAULT_MEMORY_FILE)
+    expect(updated.previous).toBe('旧约定：用 npm')
+    const read = await memory.read(project, DEFAULT_MEMORY_FILE)
+    expect(read?.content).toContain('- 新约定：用 pnpm')
+    expect(read?.content).not.toContain('旧约定')
+    expect(read?.content).toContain('- 别的条目')
+  })
+
+  it('rewrites a multi-line entry and keeps it as one bullet', async () => {
+    const memory = mountMemory()
+    await memory.save(project, { content: '标题\n正文' })
+
+    await memory.update(project, { match: '标题', content: '改写标题\n改写正文' })
+
+    const read = await memory.read(project, DEFAULT_MEMORY_FILE)
+    expect(read?.content).toContain('- 改写标题\n  改写正文\n')
+  })
+
+  it('rejects missing, ambiguous, and empty matches', async () => {
+    const memory = mountMemory()
+    await memory.save(project, { content: '重复条目' })
+    await memory.save(project, { content: '另一条重复条目' })
+
+    await expect(memory.update(project, { match: '不存在', content: '新' })).rejects.toThrow(/no entry in notes\.md matches/)
+    await expect(memory.update(project, { match: '重复条目', content: '新' })).rejects.toThrow(/2 entries in notes\.md match/)
+    await expect(memory.update(project, { match: '  ', content: '新' })).rejects.toThrow(/refusing to update without a match/)
+    await expect(memory.update(project, { match: '条目', content: '新', file: 'missing.md' }))
+      .rejects.toThrow(/missing\.md does not exist/)
+  })
+
+  it('shares the entry, file, and project limits with save', async () => {
+    const oversized = mountMemory({ maxEntryBytes: 8 })
+    await expect(oversized.update(project, { match: 'x', content: 'y'.repeat(9) })).rejects.toThrow(/above the 8-byte limit/)
+
+    const perFile = mountMemory({ maxFileBytes: 80 })
+    await perFile.save(project, { content: 'x'.repeat(4) })
+    await expect(perFile.update(project, { match: 'xxxx', content: 'y'.repeat(60) })).rejects.toThrow(/above the 80-byte file limit/)
+  })
+
+  it('replaces a located entry without touching surrounding lines', () => {
+    const lines = ['# app 记忆', '', '## 要点', '', '- 保留', '- 替换我', '', '## 决策', '', '- 保留2', '']
+
+    const next = replaceMemoryEntry(lines.join('\n'), { start: 5, end: 6, text: '替换我' }, '已替换\n两行')
+
+    expect(next).toBe('# app 记忆\n\n## 要点\n\n- 保留\n- 已替换\n  两行\n\n## 决策\n\n- 保留2\n')
   })
 })

@@ -260,7 +260,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
       await ctx.plugin(ToolMemory)
     },
     note:
-      'The four memory tools take no path: the owning session decides which project '
+      'The five memory tools take no path: the owning session decides which project '
       + 'they read and write, and each call resolves it from the session cwd.',
   },
   {
