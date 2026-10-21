@@ -62,6 +62,14 @@
   transform: translateY(-2px);
 }
 
+/* 图标包装层自身也要是居中盒：它作为 grid item 已居中于圆钮，但内部的内联
+   SVG 仍按基线排版，行盒的 descender 空间把图形顶高约 1.5px，圆钮里看着就
+   没居中。居中后 span 收缩到图形尺寸，圆心与图形中心重合。 */
+.composerActionIcon {
+  display: grid;
+  place-items: center;
+}
+
 .composerAction:hover:not(:disabled) {
   background: var(--dsw-alias-button-info-hover);
 }

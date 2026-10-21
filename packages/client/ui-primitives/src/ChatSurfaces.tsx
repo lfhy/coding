@@ -31,6 +31,8 @@ export const ChatComposerAction = forwardRef<HTMLButtonElement, {
   { kind = 'send', className, ...props }, ref,
 ) {
   return <button ref={ref} type="button" className={clsx(css.composerAction, className)} {...props}>
-    <span aria-hidden="true">{kind === 'send' ? <IconSendOutline16 /> : <IconStopFill16 />}</span>
+    <span className={css.composerActionIcon} aria-hidden="true">
+      {kind === 'send' ? <IconSendOutline16 /> : <IconStopFill16 />}
+    </span>
   </button>
 })
