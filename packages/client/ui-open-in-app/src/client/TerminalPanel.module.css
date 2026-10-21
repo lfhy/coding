@@ -256,6 +256,12 @@
   cursor: crosshair;
 }
 
+.screen :global(.xterm .xterm-decoration-top) {
+  /* xterm 把选中文字标为顶层；否则选区的不透明背景会盖住字符。 */
+  position: relative;
+  z-index: 2;
+}
+
 .screen :global(.xterm .xterm-accessibility:not(.debug)),
 .screen :global(.xterm .xterm-message) {
   position: absolute;

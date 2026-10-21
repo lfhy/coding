@@ -56,6 +56,11 @@ describe('workbench file tree scrolling', () => {
 })
 
 describe('terminal tabs', () => {
+  it('keeps the selected glyph above xterm’s opaque selection layer', () => {
+    // 本包自行实现 xterm 样式，需保留其为选中字符提供的顶层堆叠规则。
+    expect(terminalCss).toMatch(/\.screen :global\(\.xterm \.xterm-decoration-top\)\s*\{[^}]*position:\s*relative;[^}]*z-index:\s*2;/)
+  })
+
   it('places new tabs alongside existing tabs and keeps panel close at the right edge', () => {
     expect(terminalCss).toMatch(/\.tabs\s*\{[^}]*flex:\s*0 1 auto/)
     expect(terminalCss).toMatch(/\.iconButton:last-child\s*\{[^}]*margin-left:\s*auto/)

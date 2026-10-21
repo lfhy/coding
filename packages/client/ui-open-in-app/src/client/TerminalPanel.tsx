@@ -140,7 +140,7 @@ export function TerminalPanel({ shown, terminalUrl, t, panelId, tabId, focusRequ
         foreground: style.color,
         cursor: style.color,
         cursorAccent: style.backgroundColor,
-        // xterm 的默认半透明浅色选区不适合亮色画布；覆盖前景与背景以保留反差。
+        // xterm 用不透明背景盖住选区，选中字符依靠样式中的顶层规则保持可见。
         selectionBackground: style.color,
         selectionInactiveBackground: style.color,
         selectionForeground: style.backgroundColor,
