@@ -1,4 +1,4 @@
-/** 通过真实 Loader 和 Web runtime 固定模型收到的 Git 工作规则。 */
+/** 通过真实 Loader 和 Web runtime 固定新项目初始化及 Git 工作规则。 */
 
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -45,6 +45,16 @@ it('Web 默认提示词指导本地初始化与分步提交，但启动本身不
     const guidelines = assembly.sections.find(section => section.name === 'coding:guidelines')
     expect(guidelines).toBeDefined()
     const text = guidelines!.text
+    const initializationAt = text.indexOf('# 新项目初始化\n\n')
+    const organizationAt = text.indexOf('\n# 代码组织', initializationAt)
+    expect(initializationAt).toBeGreaterThanOrEqual(0)
+    expect(organizationAt).toBeGreaterThan(initializationAt)
+    const initializationGuidance = text.slice(initializationAt, organizationAt)
+    expect(renderPrompt(assembly)).toContain(initializationGuidance)
+    expect(initializationGuidance).toContain('README.md')
+    expect(initializationGuidance).toContain('AGENTS.md')
+    expect(initializationGuidance).toContain('实现业务代码前')
+    expect(initializationGuidance).toMatchSnapshot('新项目跨 harness 约定')
     const gitAt = text.indexOf('# Git 工作\n\n')
     const boundaryAt = text.indexOf('\n# 边界', gitAt)
     expect(gitAt).toBeGreaterThanOrEqual(0)

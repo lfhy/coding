@@ -27,6 +27,7 @@ describe('addCodingPromptSections', () => {
       expect(identityAt).toBeGreaterThanOrEqual(0)
       expect(guidelinesAt).toBeGreaterThan(identityAt)
       expect(personaAt).toBeGreaterThan(guidelinesAt)
+      expect(rendered).toContain('# 新项目初始化')
       expect(rendered).toContain('# Git 工作')
       expect(rendered).not.toContain('未经要求不提交')
     } finally {
