@@ -6,9 +6,6 @@
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'
-import z from '@deepseek-ai/schemastery'
-import { installSettingsSection, settingsNamespace } from 'coding-settings'
-import { userAgent } from './attribution.ts'
 import type {
   GenerateOptions,
   LlmConfigurableProvider,
@@ -44,20 +41,6 @@ export * from './retry-policy.ts'
 export { BlockAssembler } from './assembler.ts'
 export { callConfigEquals, deepFreeze, isAgentLoopRequest, markAgentLoopRequest } from './call-config.ts'
 export type { LlmCallConfig, LlmCallConfigAdapterDefaults } from './call-config.ts'
-
-/** 共享 LLM 设置分节；提供方的配置仍保留在各自的 namespace。 */
-export const LLM_SETTINGS_NAMESPACE = settingsNamespace('llm')
-
-/** 允许可打印 ASCII（含空格），但拒绝首尾空白和 HTTP 控制字符。 */
-export interface LlmSettingsConfig {
-  /** 所有模型 HTTP 请求的 User-Agent；省略时使用产品身份。 */
-  userAgent?: string
-}
-
-/** 插件配置与共享设置使用同一个可序列化校验 schema。 */
-export const Config: z<LlmSettingsConfig> = z.object({
-  userAgent: z.string().min(1).max(256).pattern(/^[\x21-\x7e](?:[\x20-\x7e]*[\x21-\x7e])?$/).default(userAgent()),
-})
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -187,12 +170,13 @@ export interface PreparedLlmCall {
 }
 
 /**
- * Provider-wire adapter for the harness message and stream vocabulary. Register implementations
- * with `ctx.llm.registerAdapter(providers, adapter)`. Every provider HTTP request must include
- * `attributionHeaders()`; prove the headers are added in the wire request or library header hook. The direct-fetch
- * DeepSeek and library-backed pi-ai adapters meet this contract through different internals. An adapter whose upstream
- * mandates a client identity of its own sends that identity instead and documents the deviation: the built-in OpenCode
- * Zen route must present the OpenCode CLI User-Agent, and the harness attribution UA makes its free lane answer 403.
+ * 提供方线路协议适配器基类，桥接 harness 的消息与流式词汇表。用
+ * `ctx.llm.registerAdapter(providers, adapter)` 注册实现。每个提供方 HTTP 请求
+ * 都必须携带模型请求 User-Agent：它按渠道配置解析，省略时由 `resolveUserAgent()`
+ * 填入产品默认值，并且必须在发出的线路请求或所用库的标头钩子里可验证；直连 fetch
+ * 的 DeepSeek 适配器与基于 pi-ai 的适配器内部机制不同，但都履行这一约定。上游
+ * 要求专用客户端身份的路由改发那个身份，并记录这处偏差：内置 OpenCode Zen 路由
+ * 必须呈现 OpenCode CLI 的 User-Agent，harness 的归因 UA 会让它的免费通道回 403。
  */
 export abstract class LlmAdapter {
   /**
@@ -295,11 +279,11 @@ export interface DirectoryRegistrationHandle {
 /**
  * The abstract `llm` service: an adapter registry plus a streaming model-call
  * API, interceptable via the `llm/stream` waterfall.
+ *
+ * 模型请求 User-Agent 不是本服务的设置：它属于每个提供方渠道自己的配置，
+ * 由该渠道连同端点、凭据一起按请求解析。
  */
 export class LlmRuntime extends Service {
-  static Config: z<LlmSettingsConfig> = Config
-
-  private userAgentSource: () => LlmSettingsConfig
   private adapters = new Map<string, AdapterRegistration>()
   private directory = new Map<string, LlmConfigurableProvider>()
   private discoveries = new Map<
@@ -307,21 +291,8 @@ export class LlmRuntime extends Service {
     (request: LlmModelDiscoveryRequest) => Promise<readonly LlmDiscoveredModel[]>
   >()
 
-  constructor(ctx: Context, config: LlmSettingsConfig = {}) {
+  constructor(ctx: Context) {
     super(ctx, 'llm')
-    this.userAgentSource = () => config
-    installSettingsSection(ctx, LLM_SETTINGS_NAMESPACE, Config, config, {
-      setSource: (source) => { this.userAgentSource = source },
-      onChange: () => {},
-    })
-  }
-
-  /**
-   * 每个请求在首次异步操作前读取一次，进行中的请求保留自己的标头。
-   * @returns 当前配置的 User-Agent，未配置时使用运行时默认值。
-   */
-  getUserAgent(): string {
-    return this.userAgentSource().userAgent ?? userAgent()
   }
 
   /** Notify topology observers without letting one broken listener veto the commit. */

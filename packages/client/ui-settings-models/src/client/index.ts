@@ -20,9 +20,6 @@ import type { ModelsSectionInjected } from './ModelsSection.tsx'
 import { VisionSection } from './VisionSection.tsx'
 import { TitleRow } from './TitleRow.tsx'
 import { DeepSeekOnboardingDialog } from './DeepSeekOnboardingDialog.tsx'
-import { ModelUserAgentRow } from './ModelUserAgentRow.tsx'
-import type { ModelUserAgentRowInjected } from './ModelUserAgentRow.tsx'
-import { ModelUserAgentController } from './model-user-agent.ts'
 import type { DeepSeekOnboardingInjected } from './DeepSeekOnboardingDialog.tsx'
 import { ModelsSettingsStore } from './store.ts'
 import { createSettingsSchemaOperations } from './schema-operations.ts'
@@ -71,10 +68,6 @@ export function apply(ctx: ClientContext): void {
   const connection = ctx.get('connection') as ConnectionHandle
   const schema = createSettingsSchemaOperations(ctx.settingsSchema)
   const controller = new ModelsSettingsStore(connection.api, schema, ctx.settingsScope.describe())
-  const userAgentController = new ModelUserAgentController(
-    ctx.settingsScope.bind<{ userAgent?: string }>({ namespace: 'llm' }),
-  )
-  ctx.effect(() => () => { userAgentController.dispose() }, 'ui-settings-models: user-agent row')
   // Registration-time text (the nav label thunk) and the inject faces share
   // one bound translate; copy freshness rides the locale revision.
   const t = ctx.locale.bind(NS) as ModelsSectionInjected['t']
@@ -107,17 +100,6 @@ export function apply(ctx: ClientContext): void {
     }
   }, 'ui-settings-models: pushed invalidations')
 
-  ctx.slots.inject('settings.general.item', () => ctx.slots.register({
-    name: 'settings.general.item',
-    id: 'model-user-agent',
-    order: 30,
-    locale: NS,
-    inject: (): ModelUserAgentRowInjected => ({
-      hooks: { userAgent: userAgentController.store },
-      save: value => userAgentController.save(value),
-    }),
-  }, ModelUserAgentRow))
-
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',
     id: 'models',
@@ -132,7 +114,7 @@ export function apply(ctx: ClientContext): void {
     label: () => t('visionFallback'),
     inject: injected,
   }, VisionSection))
-  // 会话标题是单条偏好，与模型请求 UA 一样走通用设置行，不再独占一个分区。
+  // 会话标题是单条偏好，走通用设置行，不再独占一个分区。
   ctx.slots.inject('settings.general.item', () => ctx.slots.register({
     name: 'settings.general.item',
     id: 'session-title',

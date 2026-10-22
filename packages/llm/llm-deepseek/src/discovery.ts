@@ -1,5 +1,5 @@
 /** DeepSeek 模型列表探测：草稿端点与凭据只用于本次请求，不写入设置。 */
-import { assertUsableApiKey, userAgent, LlmError } from 'coding-llm'
+import { assertUsableApiKey, LlmError } from 'coding-llm'
 import type { LlmDiscoveredModel, LlmModelDiscoveryRequest } from 'coding-llm'
 import type { DeepSeekConnectionOptions } from './adapter.ts'
 import { dispatcherOf } from './outbound.ts'
@@ -114,9 +114,8 @@ function awaitWithSignal<T>(signal: AbortSignal, operation: () => Promise<T>): P
 /**
  * 读取草稿端点的官方模型列表；改动端点时绝不复用原端点存储的密钥。
  * @param request - 本次发现的草稿地址、可选临时密钥与取消信号。
- * @param connection - 同一有效设置快照中的端点和凭据引用。
+ * @param connection - 同一有效设置快照中的端点、凭据引用与 User-Agent。
  * @param resolveApiKey - 从该快照解析受管理的凭据。
- * @param requestUserAgent - 本次请求的 User-Agent。
  * @param resolveOutbound - 渠道出站的解析钩子；缺省按直连。
  * @returns 端点报告的有效模型条目。
  */
@@ -124,7 +123,6 @@ export async function discoverModels(
   request: LlmModelDiscoveryRequest,
   connection: DeepSeekConnectionOptions,
   resolveApiKey: (connection: DeepSeekConnectionOptions) => Promise<string>,
-  requestUserAgent: string = userAgent(),
   resolveOutbound?: (selection: DeepSeekOutboundConfig) => DeepSeekOutbound,
 ): Promise<readonly LlmDiscoveredModel[]> {
   if (request.provider !== undefined && request.provider !== 'deepseek-official') {
@@ -150,7 +148,8 @@ export async function discoverModels(
       redirect: 'manual',
       headers: {
         accept: 'application/json',
-        'user-agent': requestUserAgent,
+        // 与对话请求取自同一份快照，因此发现请求不会跑在另一个 UA 上。
+        'user-agent': connection.userAgent,
         ...key === undefined ? {} : { authorization: `Bearer ${key}` },
       },
       signal,

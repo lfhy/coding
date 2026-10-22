@@ -19,7 +19,7 @@ import z from '@deepseek-ai/schemastery'
 import { credentialRef } from 'coding-credentials'
 import type { CredentialRef } from 'coding-credentials'
 import { MAX_TIMER_DELAY_MS } from 'coding-timeout'
-import { resolveRetryPolicy, RetryPolicySchema } from 'coding-llm'
+import { MODEL_USER_AGENT_PATTERN, resolveRetryPolicy, RetryPolicySchema } from 'coding-llm'
 import type { ResolvedRetryPolicy, RetryPolicyConfig } from 'coding-llm'
 import {
   CACHE_CONTROL_FORMATS,
@@ -140,6 +140,12 @@ export interface PiAiProviderProfile {
    * to answer instead.
    */
   defaultInput?: PiAiModality[]
+  /**
+   * 本渠道模型请求的 User-Agent，只影响这条路由的对话与模型发现请求；省略时使用
+   * 产品默认值。取值须为 1–256 个可打印 ASCII 字符，首尾不留空白。它只设定归因
+   * 基线的 `user-agent`，不改变 {@link headers} 的语义。
+   */
+  userAgent?: string
   /** Provider request headers; Harness attribution wins reserved names. */
   headers?: Record<string, string>
   /** Provider-neutral pi-ai reasoning level. */
@@ -303,6 +309,7 @@ const profile = z.object({
   defaultContextWindow: z.number().step(1).min(1).default(DEFAULT_CONTEXT_WINDOW),
   defaultMaxTokens: z.number().step(1).min(1).default(DEFAULT_MAX_TOKENS),
   defaultInput: z.array(z.union(MODALITIES)).default([...DEFAULT_INPUT]),
+  userAgent: z.string().min(1).max(256).pattern(MODEL_USER_AGENT_PATTERN),
   headers: z.dict(z.string()),
   reasoning: z.union(THINKING_LEVELS),
   thinkingBudgets,
@@ -378,6 +385,15 @@ export function resolveProfiles(
     }
     if (source.displayName !== undefined && source.displayName.length === 0) {
       throw new Error(`llm-pi-ai: provider "${provider}" has an empty displayName`)
+    }
+    if (source.userAgent !== undefined
+      && (source.userAgent.length === 0
+        || source.userAgent.length > 256
+        || !MODEL_USER_AGENT_PATTERN.test(source.userAgent))) {
+      throw new Error(
+        `llm-pi-ai: provider "${provider}" userAgent must be 1–256 printable ASCII characters`
+        + ' with no leading or trailing whitespace',
+      )
     }
     const streamIdleTimeoutMs = source.streamIdleTimeoutMs ?? DEFAULT_STREAM_IDLE_TIMEOUT_MS
     if (!Number.isFinite(streamIdleTimeoutMs)

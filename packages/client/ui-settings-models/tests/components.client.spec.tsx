@@ -541,6 +541,31 @@ describe('ModelsSection', () => {
     })
   })
 
+  it('writes the channel User-Agent only when it changes and refuses unprintable values', async () => {
+    const { mutate } = await mountDeepSeekCard({
+      mutate: vi.fn(() => Promise.resolve(ok(wireNamespaces()[0]))),
+    })
+    openAdvanced()
+    const ua = screen.getByLabelText<HTMLInputElement>(en.userAgent)
+    // 留空就是跟随产品默认，因此字段初始为空并显示占位说明。
+    expect(ua.value).toBe('')
+    expect(ua.placeholder).toBe(en.userAgentPlaceholder)
+    // 单行输入会剥掉折行，因此用非 ASCII 字符验证「不符 HTTP 标头值」这一类拒绝。
+    fireEvent.change(ua, { target: { value: '编码/2' } })
+    expect(screen.getByRole('alert').textContent).toBe(en.userAgentInvalid)
+    fireEvent.click(screen.getByText(en.apply))
+    expect(mutate).not.toHaveBeenCalled()
+
+    fireEvent.change(ua, { target: { value: 'acme-gateway/2 (+https://acme.test)' } })
+    fireEvent.click(screen.getByText(en.apply))
+    await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(1) })
+    expect(mutate.mock.calls[0]?.[0]).toEqual({
+      ns: 'llm-deepseek',
+      ops: [{ op: 'set', path: ['userAgent'], value: 'acme-gateway/2 (+https://acme.test)' }],
+      expectedRevision: 0,
+    })
+  })
+
   it('edits and reloads the DeepSeek channel name without changing route or credential', async () => {
     const original = wireNamespaces()[0]!
     const profile = { ...original.user as object, reasoningEffort: 'high', models: DEFAULT_DEEPSEEK_MODELS }

@@ -7,7 +7,6 @@ import { LocaleRuntime } from 'coding-client-locale/client'
 import { TestRemote } from 'coding-client-test-runtime'
 import { apply as settingsApply, inject as settingsInject } from 'coding-client-ui-settings/client'
 import { apply, inject, refreshIfLoaded } from 'coding-client-ui-settings-models/client'
-import { ModelUserAgentRow } from '../src/client/ModelUserAgentRow.tsx'
 import { ModelsSection } from '../src/client/ModelsSection.tsx'
 import { VisionSection } from '../src/client/VisionSection.tsx'
 import { TitleRow } from '../src/client/TitleRow.tsx'
@@ -55,18 +54,16 @@ function declare(slots: SlotRegistry): () => void {
 }
 
 describe('ui-settings-models apply', () => {
-  it('registers and disposes the general model UA and session-title rows', async () => {
+  it('registers and disposes the session-title row and the two sections', async () => {
     const b = await bench()
     declareGeneral(b.slots)
     const fiber = b.ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
+    // 模型请求 UA 是渠道级字段，通用设置只剩会话标题一行。
     const rows = b.slots.entries('settings.general.item')
-    expect(rows.map(row => row.options.id)).toEqual(['session-title', 'model-user-agent'])
-    const [titleRow, uaRow] = rows
-    expect(titleRow?.options).toMatchObject({ id: 'session-title', order: 25 })
-    expect(titleRow?.component).toBe(TitleRow)
-    expect(uaRow?.options).toMatchObject({ id: 'model-user-agent', order: 30 })
-    expect(uaRow?.component).toBe(ModelUserAgentRow)
+    expect(rows.map(row => row.options.id)).toEqual(['session-title'])
+    expect(rows[0]?.options).toMatchObject({ id: 'session-title', order: 25 })
+    expect(rows[0]?.component).toBe(TitleRow)
     await fiber.dispose()
     expect(b.slots.entries('settings.general.item')).toHaveLength(0)
   })

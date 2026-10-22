@@ -97,41 +97,53 @@ function prompt(ctx: Context) {
 }
 
 describe('request-level dynamic configuration', () => {
-  it('uses the shared editable User-Agent on consecutive requests', async () => {
+  it('uses the channel User-Agent on the next request and falls back to the product default when cleared', async () => {
     const dir = await home()
     await writeFile(join(dir, '.credentials.yaml'), 'DEEPSEEK_API_KEY: test-key\n', { mode: 0o600 })
-    const server = await mockServer([{ kind: 'sse', events: textEvents }, { kind: 'sse', events: textEvents }, { kind: 'sse', events: textEvents }])
+    const server = await mockServer([
+      { kind: 'sse', events: textEvents },
+      { kind: 'sse', events: textEvents },
+      { kind: 'sse', events: textEvents },
+    ])
     const { ctx } = await boot(dir, { baseURL: server.url })
-    expect(ctx.settings.describe().some(entry => entry.ns === 'llm')).toBe(true)
-    expect(ctx.llm.getUserAgent()).toBe(userAgent())
+    // User-Agent 只属于渠道自己的分节：没有共享的 llm 设置分节可写。
+    expect(ctx.settings.describe().some(entry => entry.ns === 'llm')).toBe(false)
     await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
     expect(server.headers[0]?.['user-agent']).toBe(userAgent())
-    await ctx.settings.update(settingsNamespace('llm'), { userAgent: 'custom-agent/1.0 (shared)' })
+    await ctx.settings.update(NS, { userAgent: 'channel-agent/1.0 (team)' })
     await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
-    expect(server.headers[1]?.['user-agent']).toBe('custom-agent/1.0 (shared)')
-    await ctx.settings.replace(settingsNamespace('llm'), {})
+    expect(server.headers[1]?.['user-agent']).toBe('channel-agent/1.0 (team)')
+    await ctx.settings.replace(NS, {})
     await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
     expect(server.headers[2]?.['user-agent']).toBe(userAgent())
   })
 
-  it('captures the shared User-Agent for each discovery query', async () => {
+  it('gives model discovery the channel User-Agent of the same resolved snapshot', async () => {
     const dir = await home()
     const { ctx } = await boot(dir, { baseURL: 'https://api.deepseek.com' })
     const fetcher = vi.fn((_input: RequestInfo | URL, _init?: RequestInit) => Promise.resolve(Response.json({ data: [] })))
     vi.stubGlobal('fetch', fetcher)
-    await ctx.llm.discoverModels('llm-deepseek', { baseURL: 'https://draft.example/v1' })
-    expect((fetcher.mock.calls[0]?.[1] as RequestInit).headers).toMatchObject({ 'user-agent': userAgent() })
-    await ctx.settings.update(settingsNamespace('llm'), { userAgent: 'discovery-agent/3' })
-    await ctx.llm.discoverModels('llm-deepseek', { baseURL: 'https://draft.example/v1' })
-    expect((fetcher.mock.calls[1]?.[1] as RequestInit).headers).toMatchObject({ 'user-agent': 'discovery-agent/3' })
-    vi.unstubAllGlobals()
+    try {
+      await ctx.llm.discoverModels('llm-deepseek', { baseURL: 'https://draft.example/v1' })
+      expect((fetcher.mock.calls[0]?.[1] as RequestInit).headers).toMatchObject({ 'user-agent': userAgent() })
+      await ctx.settings.update(NS, { userAgent: 'channel-discovery/3' })
+      await ctx.llm.discoverModels('llm-deepseek', { baseURL: 'https://draft.example/v1' })
+      expect((fetcher.mock.calls[1]?.[1] as RequestInit).headers).toMatchObject({ 'user-agent': 'channel-discovery/3' })
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
-  it.each(['', '  ', ' leading', 'trailing ', 'bad\r\nheader', 'é', 'x'.repeat(257)])('rejects unsafe shared User-Agent %j', async (value) => {
+  it.each(['', '  ', ' leading', 'trailing ', 'bad\r\nheader', 'é', 'x'.repeat(257)])('rejects an unsafe channel User-Agent %j at write time', async (value) => {
     const dir = await home()
-    const { ctx } = await boot(dir, { baseURL: 'http://127.0.0.1:1' })
-    await expect(ctx.settings.update(settingsNamespace('llm'), { userAgent: value })).rejects.toThrow()
-    expect(ctx.llm.getUserAgent()).toBe(userAgent())
+    await writeFile(join(dir, '.credentials.yaml'), 'DEEPSEEK_API_KEY: test-key\n', { mode: 0o600 })
+    const server = await mockServer([{ kind: 'sse', events: textEvents }])
+    const { ctx } = await boot(dir, { baseURL: server.url })
+    await expect(ctx.settings.update(NS, { userAgent: value })).rejects.toThrow()
+    expect(ctx.settings.get(NS)).not.toHaveProperty('userAgent')
+    // 被拒绝的值从不生效：下一次请求仍是产品默认值。
+    await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
+    expect(server.headers[0]?.['user-agent']).toBe(userAgent())
   })
 
   it.each(['团队 渠道', 'default', '  团队 渠道  '])('advertises the initial channel name %j unchanged', async (channelName) => {

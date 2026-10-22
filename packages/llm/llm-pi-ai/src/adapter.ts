@@ -36,7 +36,7 @@ import {
   LlmAdapter,
   LlmError,
   ReasoningEffortId,
-  userAgent,
+  resolveUserAgent,
 } from 'coding-llm'
 import type {
   GenerateOptions,
@@ -74,8 +74,6 @@ export interface PiAiAdapterOptions {
    * `MISSING_CREDENTIAL` rather than falling back.
    */
   resolveApiKey: (provider: string, profile: ResolvedPiAiProviderProfile) => Promise<string | undefined>
-  /** 当前共享 User-Agent，在流调用开始时捕获。 */
-  resolveUserAgent?: () => string
   /** Resolve the optional durable attachment service at request time. */
   resolveAttachments?: () => AttachmentStore | undefined
   /**
@@ -297,8 +295,9 @@ export class PiAiAdapter extends LlmAdapter {
     // mid-request builds a separate snapshot, so this request finishes under
     // the one it started with and the next call picks up the new one.
     const snapshot = this.current()
-    const requestUserAgent = this.config.resolveUserAgent?.() ?? userAgent()
     const profile = this.profileOf(snapshot, options.provider)
+    // 归因基线也来自同一份快照：渠道配置了 User-Agent 就用它，否则用产品默认值。
+    const requestUserAgent = resolveUserAgent(profile.userAgent)
     const model = this.modelOf(snapshot, options.provider, options.model)
     const reasoning = resolveReasoningLevel(
       model,

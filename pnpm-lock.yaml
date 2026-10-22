@@ -6258,9 +6258,6 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
-      coding-settings:
-        specifier: workspace:^
-        version: link:../../settings/settings
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^

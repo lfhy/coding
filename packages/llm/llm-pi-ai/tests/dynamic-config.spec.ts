@@ -3,7 +3,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import LlmRuntime, { LlmAdapter } from 'coding-llm'
+import LlmRuntime, { LlmAdapter, userAgent } from 'coding-llm'
 import { credentialRef } from 'coding-credentials'
 import { LocalCredentialProvider } from 'coding-credentials-local'
 import { settingsNamespace } from 'coding-settings'
@@ -50,19 +50,43 @@ async function boot(dir: string, config: LlmPiAi.Config): Promise<Context> {
 }
 
 describe('request-level dynamic profiles', () => {
-  it('uses the shared User-Agent after a live update without changing profile headers', async () => {
+  it('uses the route User-Agent on the next request without changing profile headers', async () => {
     const dir = await home()
     await writeFile(join(dir, '.credentials.yaml'), 'PI_DYNAMIC_KEY: test-key\n', { mode: 0o600 })
     const server = await mockServer([{ events: textEvents }, { events: textEvents }])
     const ctx = await boot(dir, {})
     await ctx.settings.update(NS, {
-      providers: { deepseek: { apiKeyEnv: 'PI_DYNAMIC_KEY', baseURL: server.url, headers: { 'User-Agent': 'profile-agent' } } },
+      providers: {
+        deepseek: {
+          apiKeyEnv: 'PI_DYNAMIC_KEY',
+          baseURL: server.url,
+          userAgent: 'profile-agent/2',
+          // 归因基线仍压过同名标头；渠道值只经 userAgent 设置。
+          headers: { 'User-Agent': 'header-agent', 'x-company': 'private' },
+        },
+      },
     })
     await assemble(ctx, { provider: 'deepseek', model: 'deepseek-v4-flash', messages: [] })
-    expect(server.headers[0]?.['user-agent']).toBe(ctx.llm.getUserAgent())
-    await ctx.settings.update(settingsNamespace('llm'), { userAgent: 'shared-agent/2' })
+    expect(server.headers[0]?.['user-agent']).toBe('profile-agent/2')
+    expect(server.headers[0]?.['x-company']).toBe('private')
+    // 清空渠道值：同一份 profile 的其余字段继续生效，UA 回落产品默认值。
+    await ctx.settings.mutate(NS, [{ op: 'unset', path: ['providers', 'deepseek', 'userAgent'] }])
     await assemble(ctx, { provider: 'deepseek', model: 'deepseek-v4-flash', messages: [] })
-    expect(server.headers[1]?.['user-agent']).toBe('shared-agent/2')
+    expect(server.headers[1]?.['user-agent']).toBe(userAgent())
+  })
+
+  it.each(['', '  ', ' leading', 'trailing ', 'bad\r\nheader', 'é', 'x'.repeat(257)])('rejects an unsafe route User-Agent %j at write time', async (value) => {
+    const dir = await home()
+    await writeFile(join(dir, '.credentials.yaml'), 'PI_DYNAMIC_KEY: test-key\n', { mode: 0o600 })
+    const server = await mockServer([{ events: textEvents }])
+    const ctx = await boot(dir, {
+      providers: { deepseek: { apiKeyEnv: 'PI_DYNAMIC_KEY', baseURL: server.url } },
+    })
+    await expect(ctx.settings.update(NS, { providers: { deepseek: { userAgent: value } } })).rejects.toThrow()
+    expect(ctx.settings.get(NS)).not.toHaveProperty('providers.deepseek.userAgent')
+    // 被拒绝的值从不生效：下一次请求仍是产品默认值。
+    await assemble(ctx, { provider: 'deepseek', model: 'deepseek-v4-flash', messages: [] })
+    expect(server.headers[0]?.['user-agent']).toBe(userAgent())
   })
 
   it('mounts bare and dormant, then registers routes the moment settings supply providers', async () => {

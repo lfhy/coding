@@ -187,6 +187,8 @@ function usableProbeKey(raw: string): string {
  * 读取草稿端点公布的模型，不保存候选结果。
  * @param request - 草稿端点、协议、一次性凭据及取消信号。
  * @param storedRoute - 已保存的端点及其凭据解析器，仅在草稿端点与之相同时读取凭据。
+ * @param requestUserAgent - 本次请求的 User-Agent；调用方的渠道级配置解析在这里，
+ *   缺省用产品默认值。
  * @returns 端点返回顺序的候选模型。
  * @throws LlmError 协议不支持、端点无效或失败、响应无效、超时及调用方取消时抛出。
  */

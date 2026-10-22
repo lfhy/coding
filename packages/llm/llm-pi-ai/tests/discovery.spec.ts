@@ -79,7 +79,7 @@ async function harness(): Promise<Context> {
 }
 
 describe('catalog-route model discovery', () => {
-  it('captures the live shared User-Agent for each query', async () => {
+  it('takes each query User-Agent from the stored profile of its route', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'dsh-pi-agent-'))
     try {
       const server = await listingServer({ body: JSON.stringify({ data: [] }) })
@@ -87,10 +87,13 @@ describe('catalog-route model discovery', () => {
       await ctx.plugin(LlmRuntime)
       await ctx.plugin(FileSettingsProvider, { path: join(dir, 'settings.yaml'), watch: false })
       await ctx.plugin(LlmPiAi, {})
+      // 草稿没有已存 profile，因此用产品默认值。
       await ctx.llm.discoverModels('llm-pi-ai', { baseURL: server.url })
       expect(server.headers[0]?.['user-agent']).toBe(userAgent())
-      await ctx.settings.update(settingsNamespace('llm'), { userAgent: 'pi-discovery/2' })
-      await ctx.llm.discoverModels('llm-pi-ai', { baseURL: server.url })
+      await ctx.settings.update(settingsNamespace('llm-pi-ai'), {
+        providers: { deepseek: { userAgent: 'pi-discovery/2' } },
+      })
+      await ctx.llm.discoverModels('llm-pi-ai', { provider: 'deepseek', baseURL: server.url })
       expect(server.headers[1]?.['user-agent']).toBe('pi-discovery/2')
       await ctx.fiber.dispose()
     } finally {

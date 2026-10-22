@@ -101,8 +101,10 @@ describe('内置渠道的只读卡片', () => {
     expect(screen.getByRole('heading', { level: 2, name: 'Free' })).toBeTruthy()
     const detail = screen.getByRole('main')
     const outbound = within(detail).getByRole('group', { name: en.channelOutbound })
-    const catalog = within(detail).getByRole('region', { name: en.models })
+    // 只读目录与用户渠道共用「模型目录」标题，出站位于它上方。
+    const catalog = within(detail).getAllByRole('region', { name: en.models })[0]!
     expect(outbound.compareDocumentPosition(catalog) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(within(catalog).getByText(en.models)).toBeTruthy()
 
     const table = screen.getAllByRole('region', { name: en.models }).find(node => node.hasAttribute('tabindex'))
     expect(table).toBeDefined()

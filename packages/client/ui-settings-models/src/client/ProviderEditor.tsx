@@ -16,6 +16,7 @@ import {
   DeepSeekModelsEditor, modelDrafts, validateDeepSeekModels,
 } from './DeepSeekModelsEditor.tsx'
 import { apiKeyFailure } from './apiKey.ts'
+import { MAX_USER_AGENT_LENGTH, validChannelUserAgent } from './user-agent.ts'
 import { EditorFooter } from './EditorFooter.tsx'
 import { ModelListEditor } from './ModelListEditor.tsx'
 import { deriveKeyRef, messageOf, protocolChoices } from './store.ts'
@@ -185,6 +186,12 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   const outboundDraft = schema.getPath(draft, ['outbound'])
   const outboundFailure = layout === 'deepseek' && props.credentialOnly !== true
     ? outboundDraftFailure(outboundDraft)
+    : undefined
+  // 渠道级 UA：留空表示跟随产品默认，因此只有键入过才校验。
+  const draftUserAgent = schema.getPath(draft, ['userAgent'])
+  const userAgentFailure = props.credentialOnly !== true
+    && typeof draftUserAgent === 'string' && !validChannelUserAgent(draftUserAgent)
+    ? 'userAgentInvalid' as const
     : undefined
   const channelNameFailure = layout === 'deepseek' && props.credentialOnly !== true
     && channelNameDraft !== undefined
@@ -550,6 +557,28 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
                 </div>
               )
               : null}
+            {/* 渠道级 UA 只覆盖这一条路由的对话与模型发现请求；留空时两个请求
+                都走产品默认值，因此清空字段就是恢复默认。 */}
+            <div className={styles['field']}>
+              <span className={styles['fieldLabel']}>{t('userAgent')}</span>
+              <input
+                className={styles['input']}
+                type="text"
+                value={typeof draftUserAgent === 'string' ? draftUserAgent : ''}
+                placeholder={t('userAgentPlaceholder')}
+                aria-label={t('userAgent')}
+                aria-invalid={userAgentFailure !== undefined}
+                aria-describedby={userAgentFailure === undefined ? undefined : `${channelNameId}-user-agent-error`}
+                disabled={disabled}
+                maxLength={MAX_USER_AGENT_LENGTH}
+                spellCheck={false}
+                autoComplete="off"
+                onChange={(event) => { setField('userAgent', event.target.value) }}
+              />
+              {userAgentFailure === undefined
+                ? <p className={styles['advancedHint']}>{t('userAgentHint')}</p>
+                : <p id={`${channelNameId}-user-agent-error`} className={styles['error']} role="alert">{t(userAgentFailure)}</p>}
+            </div>
             {/* Both families edit the same rows through the same contract; only
                 the extras differ — DeepSeek's inherited capacities, pi-ai's
                 endpoint interrogation. */}
@@ -604,6 +633,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
           || (props.credentialOnly !== true && modelFailure !== undefined)
           || channelNameFailure !== undefined
           || outboundFailure !== undefined
+          || userAgentFailure !== undefined
           || shownKeyFailure !== undefined
           || (props.credentialRequired === true && keyValue.length === 0)}
         submitLabel={props.submitLabel ?? 'apply'}

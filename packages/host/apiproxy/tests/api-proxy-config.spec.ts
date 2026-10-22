@@ -253,7 +253,7 @@ describe('settings domain', () => {
     const value = expectOk(await api.settings.describe(request({})))
     expect(value.writable).toBe(true)
     expect(value.hasDocument).toBe(true)
-    expect(value.namespaces.map(view => view.ns)).toEqual(['llm', NS])
+    expect(value.namespaces.map(view => view.ns)).toEqual([NS])
     const view = value.namespaces.find(view => view.ns === NS)!
     expect(view.ns).toBe('llm-deepseek')
     expect(view.applies).toBe('live')
@@ -356,7 +356,7 @@ describe('settings domain', () => {
 
     const value = expectOk(await api.settings.describe(request({})))
     expect(value.namespaces.map(view => view.ns)).toEqual([
-      'llm', 'llm-deepseek', 'some-other-plugin', 'permission', 'ui-theme', 'locale',
+      'llm-deepseek', 'some-other-plugin', 'permission', 'ui-theme', 'locale',
       'ui-conversation', 'shell', 'agent-loop', 'web-search-deepseek',
     ])
     const permission = expectOk(await api.settings.mutate(request({
@@ -412,7 +412,7 @@ describe('settings domain', () => {
     }))
     const api = createApiProxy(ctx, DEFAULTS)
     expect(expectOk(await api.settings.describe(request({}))).namespaces.map(view => view.ns))
-      .toEqual(['llm', 'ui-conversation', 'ui-theme'])
+      .toEqual(['ui-conversation', 'ui-theme'])
     const frames = await collectHost(api, ['host/remote-event'], 2, async () => {
       expectOk(await api.settings.mutate(request({
         ns: 'ui-conversation',
@@ -449,7 +449,7 @@ describe('settings domain', () => {
     ctx.settings.register(NS, AdapterConfig)
     const api = createApiProxy(ctx, DEFAULTS)
     expect(expectOk(await api.settings.describe(request({}))).namespaces.map(view => view.ns))
-      .toEqual(['llm', 'llm-deepseek'])
+      .toEqual(['llm-deepseek'])
     expect(expectOk(await api.settings.update(request({ ns: 'llm-deepseek', patch: { baseURL: 'https://x' } }))).value)
       .toMatchObject({ baseURL: 'https://x' })
   })

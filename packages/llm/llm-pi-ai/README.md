@@ -119,7 +119,7 @@ pi-ai 依据提供方 id 与 baseURL 决定每个请求的形状：系统提示�
 
 **没有**这份元数据的模型——条目未声明 `reasoningEfforts` 的手工声明模型，以及 pi-ai 标记为不具备推理能力的 catalog 模型——完全不公开 `reasoning`。pi-ai 会把这类模型报告为只支持 `off` 一档，但 `off` 会被翻译成*省略* reasoning 选项，而那与「不点名任何档位」产出的请求逐字节相同：选它关不掉任何东西，于是自身默认就在思考的提供方，会在界面显示 `off` 被选中的同时继续思考。把该能力报告为不可用，界面就只剩提供方默认这一项，不会再出现自相矛盾的控件。配置 profile 的 `reasoning` 值（包括 `off`）存在时是部署默认值；省略时，具备推理元数据的模型默认选择自身提供的最高档位（包括 `xhigh` 或 `max`），非推理模型仍保留提供方默认值。每次请求的 `GenerateOptions.reasoningEffort` 优先；未出现在确切模型能力中的档位会让**请求**在网络 I/O 前以 `UNSUPPORTED_REASONING_EFFORT` 失败，而不会被自动调整。**描述**一个模型则从不这样失败：同一提供方下各模型接受的档位并不一致，因此 `resolveModel` 对该模型拿不下的 profile 档位报告为「没有默认值」，而不是抛错。在那里抛错会让整个提供方从任何基于它构建的模型目录中消失——一个配错的 profile 字段连支持该档位的模型也一并藏起来——所以坏配置暴露在被执行处，而不是被描述处。pi-ai 的通用流选项通过省略 `reasoning` 表示 `off`。
 
-受支持的 profile 字段是 `apiKeyEnv`、`displayName`、`api`、`baseURL`、`models`、`modelOverrides`、`compat`、`defaultContextWindow`、`defaultMaxTokens`、`defaultInput`、`headers`、`reasoning`、`thinkingBudgets`、`cacheRetention`、`transport`、`timeoutMs`、`websocketConnectTimeoutMs`、`streamIdleTimeoutMs`、`maxRequestImageBytes` 和 `retryPolicy`。每条 profile 解析后的重试策略会随该提供方路由一同捕获；省略时使用共享的有界 normal 默认值并重试五次。流空闲间隔必须是正的有限 Node 定时器延迟，默认为五分钟，且只覆盖未完成提供方读取，不包括消费方思考时间。`maxRequestImageBytes` 约束单个请求的 base64 编码图片载荷（默认 20MiB，正整数）：历史中的每张图片都会重新编码进每个请求，累积载荷超过上限时，从最老的图片开始替换为固定文本占位，直到请求装得下，使图片较多的会话保持可用，而不是被网关请求体上限永久拒绝。默认值为系统提示词、历史、工具与 JSON 保留请求容量；网关更严格的部署按路由调低该值。若已配置标头中有同名项，则以 Harness 应用归因为准。
+受支持的 profile 字段是 `apiKeyEnv`、`displayName`、`api`、`baseURL`、`models`、`modelOverrides`、`compat`、`defaultContextWindow`、`defaultMaxTokens`、`defaultInput`、`userAgent`、`headers`、`reasoning`、`thinkingBudgets`、`cacheRetention`、`transport`、`timeoutMs`、`websocketConnectTimeoutMs`、`streamIdleTimeoutMs`、`maxRequestImageBytes` 和 `retryPolicy`。`userAgent` 是本路由模型请求的 User-Agent，取值 1–256 个可打印 ASCII 字符且首尾不留空白，省略时使用产品默认值。每条 profile 解析后的重试策略会随该提供方路由一同捕获；省略时使用共享的有界 normal 默认值并重试五次。流空闲间隔必须是正的有限 Node 定时器延迟，默认为五分钟，且只覆盖未完成提供方读取，不包括消费方思考时间。`maxRequestImageBytes` 约束单个请求的 base64 编码图片载荷（默认 20MiB，正整数）：历史中的每张图片都会重新编码进每个请求，累积载荷超过上限时，从最老的图片开始替换为固定文本占位，直到请求装得下，使图片较多的会话保持可用，而不是被网关请求体上限永久拒绝。默认值为系统提示词、历史、工具与 JSON 保留请求容量；网关更严格的部署按路由调低该值。若已配置标头中有同名项，则以 Harness 应用归因为准。
 
 适配器强制 pi-ai SDK `maxRetries` 为零，因此一次 `stream()` 调用只会发起一次提供方请求。已移除 profile 字段 `maxRetries` 和 `maxRetryDelayMs` 会使加载失败，而不是静默倍增或隐藏单独组合的 agent（智能体）级重试预算。空闲超时会 abort SDK 的稳定请求信号，并以 `TIMEOUT` 呈现；较早的调用方 abort 仍为 `ABORTED`。
 
@@ -157,7 +157,7 @@ pi-ai 依据提供方 id 与 baseURL 决定每个请求的形状：系统提示�
 
 ## 应用归因
 
-每个流式与模型发现请求均从共享 [`llm.userAgent` 设置](../llm/README.md#共享-user-agent-设置)捕获一次 `User-Agent`；默认值是产品身份，设置更新只影响下一个请求。流式请求通过 pi-ai `headers` 选项合并，并覆盖 profile 中大小写不同的同名标头；不会合成提供方特定应用归因标头。
+每个流式请求都用所属路由 profile 的 `userAgent`，省略时使用产品默认值（见 [coding-llm](../llm/README.md#模型请求-user-agent)）。它在流调用开始时随该路由的 profile 一起捕获，进行中的请求不会随设置变化更换标头。流式请求通过 pi-ai `headers` 选项合并，归因标头仍压过 profile 中大小写不同的同名项，因此改 User-Agent 只走 `userAgent` 字段；不会合成提供方特定应用归因标头。模型发现按查询所属路由的已存 profile 取同一个值，草稿还没有已存 profile 时回落产品默认值。
 
 ## 依赖体量
 

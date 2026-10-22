@@ -55,15 +55,20 @@ function CapabilityBadge(props: { capability: Capability; t: (key: keyof typeof 
 }
 
 /**
- * 绘制一条内置渠道的只读目录。外层间距由调用方的渠道字段容器提供，
- * 因此这里只返回字段内容本身。
+ * 绘制一条内置渠道的只读模型目录。标题与用户渠道的模型目录共用同一组类名，
+ * 因此两者在渠道详情里的位置和排版一致；这里没有获取、添加或编辑模型的入口。
  * @param props - Host 当前服务的模型、可选失败诊断与文案。
- * @returns 带诊断与空状态的只读模型表格。
+ * @returns 带标题、诊断与空状态的只读模型表格。
  */
 export function BuiltinChannelCard(props: BuiltinChannelCardProps): ReactNode {
   const { models, failure, t } = props
   return (
-    <>
+    <section className={styles['modelCatalog']} aria-label={t('models')}>
+      <div className={styles['modelListHead']}>
+        <div className={styles['modelCatalogHeading']}>
+          <span className={styles['modelCatalogTitle']}>{t('models')}</span>
+        </div>
+      </div>
       {failure === undefined ? null : <p className={styles['error']}>
         {`${t('builtinChannelCatalogFailed')}: ${failure}`}
       </p>}
@@ -94,6 +99,6 @@ export function BuiltinChannelCard(props: BuiltinChannelCardProps): ReactNode {
             })}</div>
           </div>
         )}
-    </>
+    </section>
   )
 }

@@ -968,20 +968,6 @@ export interface Config {
 
 Source: [`packages/jobs/jobs-local/src/index.ts:31`](../packages/jobs/jobs-local/src/index.ts)
 
-<a id="coding-llm"></a>
-
-## `coding-llm`
-
-```ts config-catalog
-/** 允许可打印 ASCII（含空格），但拒绝首尾空白和 HTTP 控制字符。 */
-export interface LlmSettingsConfig {
-  /** 所有模型 HTTP 请求的 User-Agent；省略时使用产品身份。 */
-  userAgent?: string
-}
-```
-
-Source: [`packages/llm/llm/src/index.ts:52`](../packages/llm/llm/src/index.ts)
-
 <a id="coding-llm-deepseek"></a>
 
 ## `coding-llm-deepseek`
@@ -1018,6 +1004,11 @@ export interface Config {
   maxRequestImageBytes?: number
   /** Provider-owned model-request retry policy; omission uses normal mode with five retries. */
   retryPolicy?: RetryPolicyConfig
+  /**
+   * 本渠道模型请求的 User-Agent，只影响这条渠道的对话与模型发现请求；省略时使用
+   * 产品默认值。取值须为 1–256 个可打印 ASCII 字符，首尾不留空白。
+   */
+  userAgent?: string
   /**
    * 渠道级出站：直连（缺省）、内置代理池或自定义代理。选择只影响传输；选择内置
    * 代理池时使用池自己的出站控制（直连/本地池/自定义代理）。
@@ -1133,6 +1124,12 @@ export interface PiAiProviderProfile {
    * to answer instead.
    */
   defaultInput?: PiAiModality[]
+  /**
+   * 本渠道模型请求的 User-Agent，只影响这条路由的对话与模型发现请求；省略时使用
+   * 产品默认值。取值须为 1–256 个可打印 ASCII 字符，首尾不留空白。它只设定归因
+   * 基线的 `user-agent`，不改变 {@link headers} 的语义。
+   */
+  userAgent?: string
   /** Provider request headers; Harness attribution wins reserved names. */
   headers?: Record<string, string>
   /** Provider-neutral pi-ai reasoning level. */
@@ -1304,7 +1301,7 @@ export type PiAiThinkingFormat = NonNullable<OpenAICompletionsCompat['thinkingFo
 
 Depends on: `Api` (`@earendil-works/pi-ai`) · `CacheRetention` (`@earendil-works/pi-ai`) · `Model` (`@earendil-works/pi-ai`) · `ModelThinkingLevel` (`@earendil-works/pi-ai`) · `OpenAICompletionsCompat` (`@earendil-works/pi-ai`) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · `ThinkingBudgets` (`@earendil-works/pi-ai`) · `Transport` (`@earendil-works/pi-ai`)
 
-Source: [`packages/llm/llm-pi-ai/src/config.ts:201`](../packages/llm/llm-pi-ai/src/config.ts)
+Source: [`packages/llm/llm-pi-ai/src/config.ts:207`](../packages/llm/llm-pi-ai/src/config.ts)
 
 <a id="coding-llm-replay"></a>
 
@@ -3459,6 +3456,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `coding-host-directory-picker-auto` — requires `webServer` · `loader` ([`packages/host/directory-picker-auto/src/index.ts`](../packages/host/directory-picker-auto/src/index.ts))
 - `coding-host-directory-picker-native` ([`packages/host/directory-picker-native/src/index.ts`](../packages/host/directory-picker-native/src/index.ts))
 - `coding-host-plugin-inventory` — requires `loader` ([`packages/host/plugin-inventory/src/index.ts`](../packages/host/plugin-inventory/src/index.ts))
+- `coding-llm` ([`packages/llm/llm/src/index.ts`](../packages/llm/llm/src/index.ts))
 - `coding-llm-opencode` — requires `llm` ([`packages/llm/llm-opencode/src/index.ts`](../packages/llm/llm-opencode/src/index.ts))
 - `coding-lsp` ([`packages/lsp/lsp/src/index.ts`](../packages/lsp/lsp/src/index.ts))
 - `coding-memory-context` — requires `agents` · `memory` ([`packages/memory/memory-context/src/index.ts`](../packages/memory/memory-context/src/index.ts))

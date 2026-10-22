@@ -82,3 +82,21 @@ export function userAgent(identity?: AppIdentity): string {
 export function attributionHeaders(identity?: AppIdentity): Record<string, string> {
   return { 'user-agent': userAgent(identity) }
 }
+
+/**
+ * 渠道级模型请求 User-Agent 的字符形态：可打印 ASCII（允许内部空格），
+ * 但首尾不得为空白，也不接受 HTTP 控制字符。长度限制（1–256）由引用它的
+ * 配置 schema 声明，本常量只约束字符集。
+ */
+export const MODEL_USER_AGENT_PATTERN = /^[\x21-\x7e](?:[\x20-\x7e]*[\x21-\x7e])?$/
+
+/**
+ * 解析一次模型请求使用的 User-Agent：渠道配置了值就用它，否则落到产品默认。
+ * 校验不过的值不会到这里 —— 形态与长度由引用 {@link MODEL_USER_AGENT_PATTERN}
+ * 的配置 schema 在写入或加载时拒绝，因此这里只做取值选择，不再重复校验。
+ * @param value 渠道配置的 User-Agent；省略时使用产品默认值。
+ * @returns 可直接放进 HTTP 标头的 User-Agent。
+ */
+export function resolveUserAgent(value: string | undefined): string {
+  return value ?? userAgent()
+}

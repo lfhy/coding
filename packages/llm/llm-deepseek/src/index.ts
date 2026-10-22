@@ -13,7 +13,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { assertUsableApiKey, LlmError, resolveRetryPolicy, RetryPolicySchema } from 'coding-llm'
+import { assertUsableApiKey, LlmError, MODEL_USER_AGENT_PATTERN, resolveRetryPolicy, resolveUserAgent, RetryPolicySchema } from 'coding-llm'
 import type { LlmModelDiscoveryRequest, ModelModality, RetryPolicyConfig } from 'coding-llm'
 import { credentialRef } from 'coding-credentials'
 import { launchEnvironmentOf, type LaunchEnvironmentSnapshot } from 'coding-launch-environment'
@@ -91,6 +91,11 @@ export interface Config {
   /** Provider-owned model-request retry policy; omission uses normal mode with five retries. */
   retryPolicy?: RetryPolicyConfig
   /**
+   * 本渠道模型请求的 User-Agent，只影响这条渠道的对话与模型发现请求；省略时使用
+   * 产品默认值。取值须为 1–256 个可打印 ASCII 字符，首尾不留空白。
+   */
+  userAgent?: string
+  /**
    * 渠道级出站：直连（缺省）、内置代理池或自定义代理。选择只影响传输；选择内置
    * 代理池时使用池自己的出站控制（直连/本地池/自定义代理）。
    */
@@ -126,6 +131,7 @@ export const Config: z<Config> = z.object({
   streamIdleTimeoutMs: z.number().min(Number.MIN_VALUE).max(MAX_TIMER_DELAY_MS).default(DEFAULT_STREAM_IDLE_TIMEOUT_MS),
   maxRequestImageBytes: z.number().step(1).min(1).default(DEFAULT_MAX_REQUEST_IMAGE_BYTES),
   retryPolicy: RetryPolicySchema,
+  userAgent: z.string().min(1).max(256).pattern(MODEL_USER_AGENT_PATTERN),
   outbound: outboundSchema,
 })
 
@@ -262,12 +268,23 @@ export function resolveAdapterOptions(config: Config, environment?: LaunchEnviro
   if (!Number.isSafeInteger(maxRequestImageBytes) || maxRequestImageBytes <= 0) {
     throw new Error('llm-deepseek: maxRequestImageBytes must be a positive safe integer')
   }
+  if (config.userAgent !== undefined
+    && (config.userAgent.length === 0
+      || config.userAgent.length > 256
+      || !MODEL_USER_AGENT_PATTERN.test(config.userAgent))) {
+    throw new Error(
+      'llm-deepseek: userAgent must be 1–256 printable ASCII characters with no leading or trailing whitespace',
+    )
+  }
   return {
     outbound: resolveOutboundConfig(config.outbound),
     apiKeyEnv: credentialRef(config.apiKeyEnv ?? DEFAULT_API_KEY_ENV),
     baseURL: config.baseURL
       ?? environment?.get(BASE_URL_ENV)?.value
       ?? PUBLIC_BASE_URL,
+    // 本代解析出的 User-Agent：对话与模型发现共用这一个值，进行中的请求不会
+    // 被后续设置世代改写。
+    userAgent: resolveUserAgent(config.userAgent),
     defaults: {
       thinking: config.thinking,
       reasoningEffort: config.reasoningEffort,
@@ -354,7 +371,6 @@ export function apply(ctx: Context, config: Config): void {
     resolveApiKey,
     providerName: () => current().channelName ?? DEFAULT_CHANNEL_NAME,
     resolveUserId,
-    resolveUserAgent: () => ctx.llm.getUserAgent(),
     resolveAttachments: () => ctx.get('attachments'),
     resolveOutbound,
   })
@@ -370,7 +386,7 @@ export function apply(ctx: Context, config: Config): void {
     registeredName = displayName
   }
   ctx.llm.registerModelDiscovery(NS, (request: LlmModelDiscoveryRequest) =>
-    discoverModels(request, options(), resolveApiKey, ctx.llm.getUserAgent(), resolveOutbound))
+    discoverModels(request, options(), resolveApiKey, resolveOutbound))
   // Route effects bind to this apply fiber via the stable `ctx` reference,
   // even when a swap runs inside the scoped settings callback below.
   const registration = ctx.llm.registerAdapter([PROVIDER], adapter)

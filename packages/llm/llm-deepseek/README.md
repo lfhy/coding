@@ -27,6 +27,7 @@ harness LLM（大语言模型）seam 的 DeepSeek chat-completions 适配器：�
         maxDelayMs: 10000
         jitterRatio: 0.1
     defaultContextWindow: 1000000 # optional positive-integer fallback; this is the default
+    userAgent: Coding/2026.1014.aaaaaa (MacOS 27;arm64) # 可选；本渠道模型请求的 User-Agent，省略用产品默认值
     models:                  # optional; defaults to V4 Flash and V4 Pro
       - id: deepseek-v4-flash
         name: DeepSeek-V4-Flash
@@ -59,7 +60,7 @@ harness LLM（大语言模型）seam 的 DeepSeek chat-completions 适配器：�
 
 ## 动态配置（settings + credentials）
 
-连接事实不在加载时冻结。`resolveAdapterOptions` 是从原始配置到已校验事实的唯一显式 resolve 步骤，适配器经由一个 thunk **每操作重读一次**：base URL、catalog、请求默认值、图片上限与 idle 预算都在下一次请求生效，进行中的流则保持其起始事实。三个可选 seam 供给该 thunk：
+连接事实不在加载时冻结。`resolveAdapterOptions` 是从原始配置到已校验事实的唯一显式 resolve 步骤，适配器经由一个 thunk **每操作重读一次**：base URL、catalog、请求默认值、图片上限、User-Agent 与 idle 预算都在下一次请求生效，进行中的流则保持其起始事实。三个可选 seam 供给该 thunk：
 
 - **`ctx.settings`**——插件用同一份 `Config` schema 注册 `llm-deepseek` namespace，并以其 `cordis.yml` 条目为组合 `base`，因此用户设置文档中的 `llm-deepseek:` 分节可以免重启覆盖任何字段。未挂载 settings 服务时，仅由 entry 配置驱动适配器，行为不变。存活 settings 快照若通过 schema 却违反 schema 之外的约束（重复的 catalog id、无法成立的 thinking／推理强度组合），则保留最后可用事实并记录失败；entry 配置本身仍会使插件加载失败。
 - **`ctx.credentials`**——API 密钥按每次 stream 调用解析，取自与端点*同一*份解析后的快照。配置只携带 `apiKeyEnv`，从不携带字面密钥：该引用经凭据 seam 解析，未挂载 seam 时则经受信环境层解析。由于凭据事实与连接事实同行，被 resolver 拒绝的 settings 快照既不贡献自己的端点，也不贡献自己的密钥：整个先前世代继续服务。每个解析出的密钥在使用前都会被校验格式，因此 HTTP 标头无法承载的值会以 `LlmError('INVALID_CREDENTIAL')` 被拒绝，点名失败的入口，但绝不透露密钥的任何部分，而不是以语义不明的 `fetch` `TypeError` 形式浮现。任何地方都没有密钥的请求以 `MISSING_CREDENTIAL` 失败，并点名每个配置入口，同时路由保持注册、catalog 保持可浏览——首次运行的上手流程就是「浏览模型、存入密钥、再次发起提示」，中间无需任何重启。
@@ -73,7 +74,7 @@ harness LLM（大语言模型）seam 的 DeepSeek chat-completions 适配器：�
 
 ## 应用归因
 
-每个流式与模型发现请求均从共享 [`llm.userAgent` 设置](../llm/README.md#共享-user-agent-设置)捕获一次 `User-Agent`；默认值是产品身份，设置更新只影响下一个请求。在该适配器约定（adapter contract）下，直接 DeepSeek 请求与 OpenAI 兼容 gateway 请求都不会获得提供方特定应用归因标头；OpenRouter 应用归因暂缓到未来的显式 OpenRouter 适配器或模式。`GenerateOptions.purpose` 为 `compaction` 的请求（dsh-compaction-basic 的辅助摘要调用）还会携带 `x-deepseek-harness-compact: 1`，让宿主可以将压缩流量与会话请求分开。
+每个流式与模型发现请求都使用本渠道分节的 `userAgent`；省略时使用产品默认值（见 [coding-llm](../llm/README.md#模型请求-user-agent)）。渠道值随端点、凭据一起进入每个请求解析出的连接快照，因此对话请求与模型发现永远取同一个已解析值，进行中的请求不会更换标头。写入或加载时按 1–256 个可打印 ASCII 字符校验，首尾空白、控制字符与非 ASCII 字符会被拒绝，被拒绝的值不会生效。在该适配器约定（adapter contract）下，直接 DeepSeek 请求与 OpenAI 兼容 gateway 请求都不会获得提供方特定应用归因标头；OpenRouter 应用归因暂缓到未来的显式 OpenRouter 适配器或模式。`GenerateOptions.purpose` 为 `compaction` 的请求（dsh-compaction-basic 的辅助摘要调用）还会携带 `x-deepseek-harness-compact: 1`，让宿主可以将压缩流量与会话请求分开。
 
 DeepSeek 请求身份独立于应用归因。凭据解析成功后，每个提供方请求都会通过 `x-deepseek-harness-user-id` 携带来自 [`coding-anonymous-user-id`](../../identity/anonymous-user-id/README.md) 的稳定匿名 id；携带 `GenerateOptions.sessionId` 的请求还会通过 `x-deepseek-harness-session-id` 发送该确切值，缺少会话的直接调用则省略会话标头。两个标头都会发送至解析后的 `baseURL`（包括已配置的 gateway），且不会进入请求正文或模型可见内容。
 

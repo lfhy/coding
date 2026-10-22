@@ -140,7 +140,8 @@ describe('llm-deepseek real dynamic composition', () => {
     const serverB = await mockServer([{ kind: 'sse', events: textEvents }])
     const { ctx, settingsPath, credentialsPath } = await loadComposition({ withDynamic: true, baseURL: serverA.url })
 
-    expect(ctx.get('settings')!.describe().map(entry => entry.ns)).toEqual(['llm', NS])
+    // 组合只有一个设置分节：User-Agent 属于渠道自己的分节，没有共享的 llm 分节。
+    expect(ctx.get('settings')!.describe().map(entry => entry.ns)).toEqual([NS])
     await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
     expect(serverA.headers[0]?.authorization).toBe('Bearer boot-key')
     expect(serverA.headers[0]?.['x-deepseek-harness-user-id']).toBe(getOrCreateAnonymousUserId())

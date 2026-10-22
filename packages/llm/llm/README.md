@@ -6,9 +6,11 @@
 
 一个适配器注册表加单一流式调用接口，可通过 waterfall（瀑布式事件）拦截。
 
-### 共享 User-Agent 设置
+### 模型请求 User-Agent
 
-`llm` 插件将 `Config.userAgent` 注册为可实时编辑的 `settings.yaml` 中 `llm.userAgent` 设置。省略该字段时，默认模型请求标头为 `Coding/<UTC 构建年>.<月日>.<Git 六位短哈希> (<操作系统及版本>;<CPU 架构>)`，例如 `Coding/2026.1014.aaaaaa (MacOS 27;arm64)`；构建时固定日期与修订号，运行时读取主机操作系统与 CPU 架构。源码直接运行时使用当前 UTC 日期和仓库 HEAD；正式构建的产物无需 Git。可设置长度为 1–256 的可打印 ASCII 标头值，首尾不得为空白，控制字符与非 ASCII 字符会在配置加载或设置写入时被拒绝。`ctx.llm.getUserAgent()` 返回当前有效值；DeepSeek 和 pi-ai 适配器在每次流调用开始时捕获它，模型发现则在每次查询开始时捕获，进行中的请求不会随设置变化更换标头。重置用户分节会恢复组合配置或产品默认值。
+模型请求 User-Agent 是渠道级配置，不属于本服务：每条提供方渠道在自己的设置分节里声明 `userAgent`，只影响该渠道的对话与模型发现请求。本包提供三个共用件：`userAgent()` 生成产品默认值，`MODEL_USER_AGENT_PATTERN` 约束渠道值的字符形态（可打印 ASCII，首尾不得为空白；1–256 的长度上限由各渠道 schema 声明），`resolveUserAgent(value)` 在有渠道值时用它、否则回落 `userAgent()`——校验不过的值不会到达这里，因为 schema 已在写入或加载时拒绝。
+
+默认标头为 `Coding/<UTC 构建年>.<月日>.<Git 六位短哈希> (<操作系统及版本>;<CPU 架构>)`，例如 `Coding/2026.1014.aaaaaa (MacOS 27;arm64)`；构建时固定日期与修订号，运行时读取主机操作系统与 CPU 架构。源码直接运行时使用当前 UTC 日期和仓库 HEAD；正式构建的产物无需 Git。DeepSeek 与 pi-ai 适配器在每次流调用开始时读取所属渠道的已解析值，模型发现则在每次查询开始时读取，进行中的请求不会随设置变化更换标头。
 
 ### 重试策略
 
@@ -67,7 +69,7 @@
 
 ### 应用归因（`attribution.ts`）
 
-每个产品适配器都会在提供方 HTTP 请求上发送应用身份。`attributionHeaders(identity?)` 构建标准 `User-Agent`，默认使用上述 Coding 构建标识；传入显式 `AppIdentity` 时保持 `product/version (+url)` 形式，公开 `APP_IDENTITY` 仍用于产品诊断和遥测。共享 `llm.userAgent` 设置可覆盖 DeepSeek 和 pi-ai 的流式及发现请求，后者仍会覆盖 profile 中大小写不同的同名标头。适配器会直接验证 wire 标头，或通过自身库 hook 验证。
+每个产品适配器都会在提供方 HTTP 请求上发送应用身份。`attributionHeaders(identity?)` 构建标准 `User-Agent`，默认使用上述 Coding 构建标识；传入显式 `AppIdentity` 时保持 `product/version (+url)` 形式，公开 `APP_IDENTITY` 仍用于产品诊断和遥测。渠道级 `userAgent` 决定 DeepSeek 和 pi-ai 的流式及发现请求实际携带的值，`resolveUserAgent()` 与 `MODEL_USER_AGENT_PATTERN` 就是这两个适配器共用的解析与校验件；pi-ai 在合并 profile 的 `headers` 时仍以自己的归因标头胜出同名项。适配器会直接验证 wire 标头，或通过自身库 hook 验证。
 
 ### API 密钥校验（`api-key.ts`）
 

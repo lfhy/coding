@@ -8,7 +8,7 @@
  * @module dsh-llm-deepseek/adapter
  */
 
-import { contentHasImage, CONTEXT_WINDOW_EXCEEDED_CODE, isContextWindowExceededError, isQuotaExceededError, LlmAdapter, LlmError, ProviderRequestId, QUOTA_EXCEEDED_CODE, ReasoningEffortId, userAgent } from 'coding-llm'
+import { contentHasImage, CONTEXT_WINDOW_EXCEEDED_CODE, isContextWindowExceededError, isQuotaExceededError, LlmAdapter, LlmError, ProviderRequestId, QUOTA_EXCEEDED_CODE, ReasoningEffortId } from 'coding-llm'
 import type {
   GenerateOptions,
   LlmModelInfo,
@@ -78,6 +78,11 @@ export interface DeepSeekConnectionOptions {
   maxRequestImageBytes: number
   /** Provider-owned model-request retry policy, already resolved. */
   retryPolicy: ResolvedRetryPolicy
+  /**
+   * 本渠道模型请求的 User-Agent，本代解析已完成：配置了渠道值就用它，否则填入
+   * 产品默认值。对话请求与模型发现请求都从这里取值，因此两者永远一致。
+   */
+  userAgent: string
   /** 渠道级出站选择（直连／内置代理池／自定义代理），与端点同代解析。 */
   outbound: DeepSeekOutboundConfig
 }
@@ -97,8 +102,6 @@ export interface DeepSeekAdapterOptions {
   providerName?: () => string
   /** Resolve the harness-home anonymous id shared with telemetry and feedback. */
   resolveUserId: () => AnonymousUserId
-  /** 当前共享 User-Agent，在流调用开始时捕获。 */
-  resolveUserAgent?: () => string
   /** Resolve the current durable attachment service; absence rejects image input. */
   resolveAttachments?: () => AttachmentStore | undefined
   /**
@@ -237,9 +240,9 @@ export class DeepSeekAdapter extends LlmAdapter {
   }
 
   async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
-    // 每次流调用只解析一次连接和凭据；进行中的请求不混用其他设置世代的端点或密钥。
+    // 每次流调用只解析一次连接和凭据；进行中的请求不混用其他设置世代的端点、
+    // 密钥或 User-Agent。
     const connection = this.config.options()
-    const requestUserAgent = this.config.resolveUserAgent?.() ?? userAgent()
     const model = connection.models.find(entry => entry.id === options.model)
     const availableEfforts = modelReasoningEfforts(model, connection.defaults.thinking)
     const defaultEffort = (connection.defaults.reasoningEffort === undefined
@@ -286,7 +289,6 @@ export class DeepSeekAdapter extends LlmAdapter {
       },
       apiKey,
       userId,
-      requestUserAgent,
       attachments,
       () => { watchdog.pulse() },
     )[Symbol.asyncIterator]()
@@ -331,7 +333,6 @@ export class DeepSeekAdapter extends LlmAdapter {
     connection: DeepSeekConnectionOptions,
     apiKey: string,
     userId: AnonymousUserId,
-    requestUserAgent: string,
     attachments: AttachmentStore | undefined,
     onComment: () => void,
   ): AsyncIterable<StreamChunk> {
@@ -349,7 +350,7 @@ export class DeepSeekAdapter extends LlmAdapter {
       'authorization': `Bearer ${apiKey}`,
       'content-type': 'application/json',
       'accept': 'text/event-stream',
-      'user-agent': requestUserAgent,
+      'user-agent': connection.userAgent,
       'x-deepseek-harness-user-id': String(userId),
       ...options.sessionId !== undefined
         ? { 'x-deepseek-harness-session-id': String(options.sessionId) }

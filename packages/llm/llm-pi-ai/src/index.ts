@@ -57,7 +57,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { launchEnvironmentOf } from 'coding-launch-environment'
-import { assertUsableApiKey, LlmError } from 'coding-llm'
+import { assertUsableApiKey, LlmError, resolveUserAgent } from 'coding-llm'
 import type { AdapterRegistrationHandle, DirectoryRegistrationHandle, LlmConfigurableProvider } from 'coding-llm'
 import { deepEqualJson, installSettingsSection, settingsNamespace } from 'coding-settings'
 import { PiAiAdapter } from './adapter.ts'
@@ -200,7 +200,6 @@ export function apply(ctx: Context, config: Config): void {
   const adapter = new PiAiAdapter({
     profiles,
     resolveApiKey,
-    resolveUserAgent: () => ctx.llm.getUserAgent(),
     resolveAttachments: () => ctx.get('attachments'),
     onReplayDegrade: ({ provider, model, reason }) => {
       ctx.logger.warn(
@@ -247,7 +246,12 @@ export function apply(ctx: Context, config: Config): void {
     }
   }
   // 新建路由尚未注册，因此查询面向整个 namespace；草稿密钥不进入设置存储。
-  ctx.llm.registerModelDiscovery(NS, request => discoverModels(request, () => storedRoute(request.provider), ctx.llm.getUserAgent()))
+  ctx.llm.registerModelDiscovery(NS, (request) => {
+    // 发现请求的 User-Agent 与该路由的对话请求同源：已存 profile 的渠道值优先，
+    // 草稿还没有已存 profile 时回落产品默认值。
+    const stored = request.provider === undefined ? undefined : profiles().get(request.provider)
+    return discoverModels(request, () => storedRoute(request.provider), resolveUserAgent(stored?.userAgent))
+  })
   // Route effects bind to this apply fiber via the stable `ctx` reference,
   // even when a swap runs inside the scoped settings callback below. A bare
   // mount (zero routes) is the dormant posture: nothing registers until a

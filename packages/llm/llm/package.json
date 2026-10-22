@@ -52,8 +52,7 @@
     "@deepseek-ai/cordis": "workspace:^"
   },
   "dependencies": {
-    "@deepseek-ai/schemastery": "workspace:^",
-    "coding-settings": "workspace:^"
+    "@deepseek-ai/schemastery": "workspace:^"
   },
   "devDependencies": {
     "coding-attachment": "workspace:^",
