@@ -249,8 +249,8 @@ export class OpenInAppController {
   /**
    * 生成当前 Session 的 Host 终端 WebSocket URL。
    * @param sessionId - 当前工作台 Session。
-   * @param cols - PTY 初始列数，连接就绪后会由 xterm fit 更新。
-   * @param rows - PTY 初始行数，连接就绪后会由 xterm fit 更新。
+   * @param cols - PTY 初始列数；可见终端由 xterm fit 提供实测值。
+   * @param rows - PTY 初始行数；可见终端由 xterm fit 提供实测值。
    * @returns 同源 ws/wss URL；Host 决定本地、Windows 或 Remote-SSH 后端。
    */
   terminalUrl(sessionId: SessionId, cols = 80, rows = 24): string {

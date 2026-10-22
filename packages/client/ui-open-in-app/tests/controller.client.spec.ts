@@ -221,8 +221,8 @@ describe('OpenInAppController terminal URL and shared routes', () => {
     expect(new OpenInAppController(async () => jsonResponse({}), ROUTES).terminalUrl(SESSION))
       .toBe('wss://dsh.example:9443/open-in-app/terminal?sessionId=session-1&cols=80&rows=24')
     vi.stubGlobal('location', { origin: 'null' })
-    expect(new OpenInAppController(async () => jsonResponse({}), ROUTES).terminalUrl(SESSION))
-      .toBe('ws://dsh.internal/open-in-app/terminal?sessionId=session-1&cols=80&rows=24')
+    expect(new OpenInAppController(async () => jsonResponse({}), ROUTES).terminalUrl(SESSION, 68, 9))
+      .toBe('ws://dsh.internal/open-in-app/terminal?sessionId=session-1&cols=68&rows=9')
   })
 
   it('fails loudly when Host shared omits a required route', async () => {

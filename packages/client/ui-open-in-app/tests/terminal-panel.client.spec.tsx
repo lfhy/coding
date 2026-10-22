@@ -26,6 +26,7 @@ const terminalMocks = vi.hoisted(() => ({
     inputDispose: ReturnType<typeof vi.fn>
   }>,
   fitCount: 0,
+  fitSize: undefined as { cols: number; rows: number } | undefined,
 }))
 
 vi.mock('@xterm/xterm', () => ({
@@ -46,7 +47,7 @@ vi.mock('@xterm/xterm', () => ({
       terminalMocks.instances.push(this)
     }
 
-    loadAddon(): void {}
+    loadAddon(addon: { activate(terminal: { cols: number; rows: number }): void }): void { addon.activate(this) }
     open(node: HTMLElement): void {
       this.node = node
       this.textarea = document.createElement('textarea')
@@ -62,7 +63,12 @@ vi.mock('@xterm/xterm', () => ({
 
 vi.mock('@xterm/addon-fit', () => ({
   FitAddon: class {
-    fit(): void { terminalMocks.fitCount += 1 }
+    private terminal: { cols: number; rows: number } | undefined
+    activate(terminal: { cols: number; rows: number }): void { this.terminal = terminal }
+    fit(): void {
+      terminalMocks.fitCount += 1
+      if (this.terminal && terminalMocks.fitSize) Object.assign(this.terminal, terminalMocks.fitSize)
+    }
   },
 }))
 
@@ -135,7 +141,7 @@ function props(shown = true): TerminalPanelProps {
   return {
     sessionId: SESSION,
     shown,
-    terminalUrl: 'ws://dsh.internal/open-in-app/terminal?sessionId=terminal-session&cols=80&rows=24',
+    terminalUrl: (cols: number, rows: number) => `ws://dsh.internal/open-in-app/terminal?sessionId=terminal-session&cols=${cols}&rows=${rows}`,
     closeBottom: vi.fn(),
     t,
   }
@@ -144,6 +150,7 @@ function props(shown = true): TerminalPanelProps {
 beforeEach(() => {
   terminalMocks.instances.length = 0
   terminalMocks.fitCount = 0
+  terminalMocks.fitSize = undefined
   FakeResizeObserver.instances.length = 0
   FakeWebSocket.instances.length = 0
   vi.stubGlobal('ResizeObserver', FakeResizeObserver)
@@ -391,6 +398,38 @@ describe('terminal frame parser', () => {
 })
 
 describe('TerminalPanel', () => {
+  it('用可见终端实测尺寸建连，ready 前后的 resize 保持同一 PTY 和历史输出', () => {
+    terminalMocks.fitSize = { cols: 68, rows: 9 }
+    const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(680)
+    const height = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(180)
+    try {
+      const mounted = render(<TerminalPanel {...props()} />)
+      const terminal = terminalMocks.instances[0]!
+      const socket = FakeWebSocket.instances[0]!
+      expect(socket.url).toContain('cols=68&rows=9')
+      expect(terminalMocks.fitCount).toBeGreaterThan(0)
+      terminalMocks.fitSize = { cols: 62, rows: 8 }
+      act(() => { FakeResizeObserver.instances[0]?.trigger() })
+      expect(terminal).toMatchObject({ cols: 62, rows: 8 })
+      expect(socket.sent).toEqual([])
+      socket.open()
+      act(() => { socket.message('{"type":"ready","pid":123,"shell":{"name":"zsh","path":"/bin/zsh"},"cwd":"/w","cols":68,"rows":9}') })
+      expect(socket.sent.map(value => JSON.parse(value) as unknown)).toContainEqual({ type: 'resize', cols: 62, rows: 8 })
+      act(() => { socket.message('{"type":"output","data":"history remains"}') })
+      terminalMocks.fitSize = { cols: 60, rows: 7 }
+      act(() => { FakeResizeObserver.instances[0]?.trigger() })
+      expect(socket.sent.map(value => JSON.parse(value) as unknown)).toContainEqual({ type: 'resize', cols: 60, rows: 7 })
+      expect(terminal.writes).toEqual(['history remains'])
+      expect(FakeWebSocket.instances).toHaveLength(1)
+      mounted.rerender(<TerminalPanel {...props()} />)
+      expect(FakeWebSocket.instances).toHaveLength(1)
+      mounted.unmount()
+    } finally {
+      width.mockRestore()
+      height.mockRestore()
+    }
+  })
+
   it('亮色与暗色主题都以反转的终端前景和背景绘制选区', async () => {
     const theme = document.createElement('style')
     theme.dataset.testTerminalTheme = ''
@@ -424,6 +463,29 @@ describe('TerminalPanel', () => {
         selectionForeground: 'rgb(21, 21, 23)',
       })
     })
+    mounted.unmount()
+  })
+
+  it('上、下方向键原样送到同一连接，历史重绘不创建新终端', () => {
+    const mounted = render(<TerminalPanel {...props()} />)
+    const socket = FakeWebSocket.instances[0]!
+    const terminal = terminalMocks.instances[0]!
+    socket.open()
+    act(() => { socket.message('{"type":"ready","pid":123,"shell":{"name":"zsh","path":"/bin/zsh"},"cwd":"/w","cols":80,"rows":24}') })
+    act(() => {
+      socket.message('{"type":"output","data":"completed command\\r\\nnext prompt"}')
+      terminal.data?.('\u001b[A')
+      socket.message('{"type":"output","data":"\\rhistory entry"}')
+      terminal.data?.('\u001b[B')
+      socket.message('{"type":"output","data":"\\rnext prompt"}')
+    })
+    expect(socket.sent.map(value => JSON.parse(value) as unknown)).toEqual(expect.arrayContaining([
+      { type: 'input', data: '\u001b[A' },
+      { type: 'input', data: '\u001b[B' },
+    ]))
+    expect(terminal.writes).toEqual(['completed command\r\nnext prompt', '\rhistory entry', '\rnext prompt'])
+    expect(FakeWebSocket.instances).toHaveLength(1)
+    expect(terminal.dispose).not.toHaveBeenCalled()
     mounted.unmount()
   })
 

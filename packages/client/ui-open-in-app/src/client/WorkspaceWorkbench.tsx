@@ -62,7 +62,7 @@ export interface WorkspaceWorkbenchInjected {
   listFiles: (sessionId: SessionId, segments: readonly string[], signal?: AbortSignal) => Promise<WorkspaceFilesPayload>
   readFile: (sessionId: SessionId, segments: readonly string[], signal?: AbortSignal) => Promise<WorkspaceFilePayload>
   gitHistory: (sessionId: SessionId, query: { count: number }, signal: AbortSignal) => Promise<GitHistory | null>
-  terminalUrl: (sessionId: SessionId) => string
+  terminalUrl: (sessionId: SessionId, cols: number, rows: number) => string
   closeWorkbench: (sessionId: SessionId) => void
   openWorkbench: (sessionId: SessionId) => void
   toggleWorkbenchFullscreen: (sessionId: SessionId) => void
@@ -508,7 +508,7 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
         ? completedFocus.tabId : null} />}
     <div className={css.terminalStack} hidden={!terminalShown} {...!terminalShown ? { inert: '' } : {}}>
       {Object.entries(sessions).flatMap(([id, session]) => session.tabs.filter(tab => tab.type === 'terminal').map(tab => (
-        <TerminalPanel key={`${id}:${tab.id}`} terminalUrl={props.terminalUrl(id as SessionId)} t={props.t}
+        <TerminalPanel key={`${id}:${tab.id}`} terminalUrl={(cols, rows) => props.terminalUrl(id as SessionId, cols, rows)} t={props.t}
           shown={terminalShown && id === sessionId && tab.id === state.activeId} focusRequest={focusRequest}
           panelId={tabDomId(panelPrefix, id, tab.id, 'panel')} tabId={tabDomId(panelPrefix, id, tab.id, 'tab')}
           onCompleted={() => {

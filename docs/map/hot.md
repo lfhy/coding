@@ -187,6 +187,7 @@
 - **关键文件**：`packages/client/ui-open-in-app/src/client/index.ts`、`packages/client/ui-open-in-app/src/client/controller.ts`、`packages/client/ui-open-in-app/src/client/store.ts`、`packages/client/ui-open-in-app/src/client/WorkspaceWorkbench.tsx`、`packages/client/ui-open-in-app/src/client/sidebar-tab-registry.ts`、`packages/client/ui-open-in-app/src/client/sidebar-tab-service.ts`、`packages/client/ui-open-in-app/src/client/TerminalPanel.tsx`、`packages/client/ui-open-in-app/src/client/RetainedTerminalPanel.tsx`。
 - **改这里要同步**：路由或帧协议改动同步 `packages/host/open-in-app`；工作台或底栏显隐语义改动同步 `packages/client/ui-layout`（owner prop `bottomOpen`），页头与欢迎页入口变动核对 `packages/client/ui-conversation` 的座位；外部标签定义、实例状态或 keyed slot 变动同步本包 README 和对应插件贡献。
 - **不变量**：文件树只回传当前 Session id 与 Host 返回的 provider segment 数组，绝不提交工作区根或自行拼接 Windows/POSIX/UNC 路径；菜单终端新建右侧标签，底栏入口显示独立底栏，两处标签分别独占 WebSocket 与 PTY；切换标签或 Session、隐藏底栏或工作台均不释放已激活终端，关闭对应标签释放该终端；外部标签按 Session 隔离，定义卸载时清理该定义的已打开实例。
+- **终端尺寸**：可见终端在建连前 fit，以实测 cols/rows 分配 PTY；尺寸在建连期间及 ready 后变化时同步到同一 PTY。右侧与底栏均走 `TerminalPanel`，隐藏/切换不重连。
 - **测试**：`pnpm exec vitest run packages/client/ui-open-in-app/tests`
 
 ## packages/client/ui-browser

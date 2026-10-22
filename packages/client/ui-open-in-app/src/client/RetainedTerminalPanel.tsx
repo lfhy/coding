@@ -9,7 +9,7 @@ import { NS } from './locales.ts'
 import css from './TerminalPanel.module.css'
 
 type RetainedTerminalProps = PropsRuntime<'workbench.bottom'> & PropsLocale<typeof NS> & InjectFace<{
-  terminalUrl: (sessionId: SessionId) => string
+  terminalUrl: (sessionId: SessionId, cols: number, rows: number) => string
   closeBottom: (sessionId: SessionId) => void
 }>
 
@@ -166,6 +166,6 @@ export function RetainedTerminalPanel(props: RetainedTerminalProps): ReactNode {
   }, [sessionIds, sessionId, shown])
   return activated.map(id => (
     <TerminalTabs key={id} {...rest} sessionId={id} shown={shown && sessionId === id}
-      terminalUrl={terminalUrl(id)} closeBottom={() => { closeBottom(id) }} />
+      terminalUrl={(cols, rows) => terminalUrl(id, cols, rows)} closeBottom={() => { closeBottom(id) }} />
   ))
 }

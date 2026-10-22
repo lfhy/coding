@@ -9,7 +9,7 @@ import css from './TerminalPanel.module.css'
 
 /** 单个 Session 终端的 Host URL 与布局隐藏动作。 */
 export interface TerminalPanelInjected {
-  terminalUrl: string
+  terminalUrl: (cols: number, rows: number) => string
   closeBottom: () => void
 }
 
@@ -109,8 +109,13 @@ export function TerminalPanel({ shown, terminalUrl, t, panelId, tabId, focusRequ
   const shownRef = useRef(shown)
   const tRef = useRef(t)
   const onCompletedRef = useRef(onCompleted)
+  // URL 工厂来自父级注入，引用变化不应关闭已有 PTY；仅重连时读取最新工厂。
+  const terminalUrlRef = useRef(terminalUrl)
+  terminalUrlRef.current = terminalUrl
   /* v8 ignore next -- React 先执行初始化 layout effect，WebSocket／ResizeObserver 才能调用此 ref。 */
   const resize = useRef<() => void>(() => {})
+  // 初次挂载要在 WebSocket effect 前同步 fit；显示后的 resize 保持同一个终端实例。
+  const initialSize = useRef<{ cols: number; rows: number }>()
   const [generation, setGeneration] = useState(0)
   const [status, setStatus] = useState<TerminalStatus>({ phase: 'connecting' })
   shownRef.current = shown
@@ -133,6 +138,10 @@ export function TerminalPanel({ shown, terminalUrl, t, panelId, tabId, focusRequ
     const addon = new FitAddon()
     instance.loadAddon(addon)
     instance.open(node)
+    if (shownRef.current && node.clientWidth > 0 && node.clientHeight > 0) {
+      addon.fit()
+      initialSize.current = { cols: instance.cols, rows: instance.rows }
+    }
     const updateTheme = () => {
       const style = getComputedStyle(node)
       instance.options.theme = {
@@ -153,9 +162,10 @@ export function TerminalPanel({ shown, terminalUrl, t, panelId, tabId, focusRequ
     terminal.current = instance
 
     resize.current = () => {
-      if (!ready.current || !shownRef.current || node.clientWidth === 0 || node.clientHeight === 0) return
+      if (!shownRef.current || node.clientWidth === 0 || node.clientHeight === 0) return
       addon.fit()
-      if (instance.cols >= 2 && instance.rows >= 1) {
+      // 首帧前只更新 xterm 几何；ready 时再把建连期间的尺寸变化交给 PTY。
+      if (ready.current && instance.cols >= 2 && instance.rows >= 1) {
         send(socket.current, { type: 'resize', cols: instance.cols, rows: instance.rows })
       }
     }
@@ -195,7 +205,9 @@ export function TerminalPanel({ shown, terminalUrl, t, panelId, tabId, focusRequ
     setStatus({ phase: 'connecting' })
     let next: WebSocket
     try {
-      next = new WebSocket(terminalUrl)
+      const size = initialSize.current ?? { cols: terminal.current?.cols ?? 80, rows: terminal.current?.rows ?? 24 }
+      next = new WebSocket(terminalUrlRef.current(size.cols, size.rows))
+      initialSize.current = undefined
     } catch (error) {
       setStatus({ phase: 'error', message: error instanceof Error ? error.message : String(error) })
       return
@@ -248,7 +260,7 @@ export function TerminalPanel({ shown, terminalUrl, t, panelId, tabId, focusRequ
       if (socket.current === next) socket.current = undefined
       if (next.readyState === WebSocket.CONNECTING || next.readyState === WebSocket.OPEN) next.close()
     }
-  }, [generation, terminalUrl])
+  }, [generation])
 
   const reconnectable = status.phase === 'disconnected' || status.phase === 'error' || status.phase === 'exited'
   return (

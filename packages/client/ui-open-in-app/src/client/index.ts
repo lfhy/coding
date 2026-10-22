@@ -200,7 +200,7 @@ export function apply(ctx: ClientContext): void {
             if (!response.result.ok) throw new Error(response.result.error.message)
             return response.result.value
           },
-          terminalUrl: sessionId => controller.terminalUrl(sessionId),
+          terminalUrl: (sessionId, cols, rows) => controller.terminalUrl(sessionId, cols, rows),
           closeWorkbench: (sessionId) => { ctx.layout.closeWorkbench(sessionId) },
           openWorkbench: (sessionId) => { ctx.layout.openWorkbench(sessionId) },
           toggleWorkbenchFullscreen: (sessionId) => { ctx.layout.toggleWorkbenchFullscreen(sessionId) },
@@ -275,7 +275,7 @@ export function apply(ctx: ClientContext): void {
     name: 'workbench.bottom',
     locale: NS,
     inject: () => ({
-      terminalUrl: (sessionId: SessionId) => controller.terminalUrl(sessionId),
+      terminalUrl: (sessionId: SessionId, cols: number, rows: number) => controller.terminalUrl(sessionId, cols, rows),
       closeBottom: (sessionId: SessionId) => { ctx.layout.closeWorkbenchBottom(sessionId) },
     }),
   }, RetainedTerminalPanel))
