@@ -186,6 +186,52 @@ describe('LocalSubprocessRuntime', () => {
     await fiber.dispose()
   })
 
+  it('preserves the caller TERM in the local PTY name for interactive shells', async () => {
+    const terminal = {
+      pid: 123,
+      onData: () => ({ dispose: () => {} }),
+      onExit: () => ({ dispose: () => {} }),
+      write: () => {},
+      kill: () => {},
+    }
+    const spawn = vi.fn(() => terminal)
+    vi.resetModules()
+    vi.doMock('node-pty', () => ({ spawn }))
+    try {
+      const { default: IsolatedLocalSubprocessRuntime } = await import('../src/index.ts')
+      const ctx = new Context()
+      const fiber = await ctx.plugin(IsolatedLocalSubprocessRuntime)
+      try {
+        const runtime = ctx.subprocess as InstanceType<typeof IsolatedLocalSubprocessRuntime>
+        runtime.terminalInspector = {
+          foregroundPgid: () => undefined,
+          isStdinWaiting: () => false,
+          processTree: () => [],
+          processSession: () => [],
+          isAlive: () => false,
+          signalGroup: () => {},
+          signalProcess: () => {},
+        }
+        const base: SubprocessTerminalSpawnSpec = {
+          argv: ['/bin/zsh', '-i'], cwd: process.cwd(), cols: 80, rows: 24, graceMs: 1,
+        }
+        for (const term of ['xterm-256color', 'dumb']) {
+          await runtime.spawnTerminal({ ...base, env: { TERM: term } })
+          expect(spawn.mock.calls.at(-1)?.[2]).toMatchObject({
+            name: term, env: { TERM: term },
+          })
+        }
+        await runtime.spawnTerminal(base)
+        expect(spawn).toHaveBeenLastCalledWith('/bin/zsh', ['-i'], expect.objectContaining({ name: 'dumb' }))
+      } finally {
+        await fiber.dispose()
+      }
+    } finally {
+      vi.doUnmock('node-pty')
+      vi.resetModules()
+    }
+  })
+
   it('terminates and joins an owned terminal during disposal', async () => {
     const ctx = new Context()
     const fiber = await ctx.plugin(LocalSubprocessRuntime)

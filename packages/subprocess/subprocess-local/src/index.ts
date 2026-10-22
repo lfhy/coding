@@ -203,7 +203,8 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
       return terminal
     }
     const options: IPtyForkOptions = {
-      name: 'dumb',
+      // node-pty 会用 name 覆盖 env.TERM；交互终端须保留调用方声明的终端能力。
+      name: spec.env?.TERM ?? 'dumb',
       rows: spec.rows,
       cols: spec.cols,
       cwd: spec.cwd,
