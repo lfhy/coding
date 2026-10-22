@@ -668,6 +668,10 @@ img.mediaPlayer { aspect-ratio: 16 / 9; object-fit: cover; background: var(--dsl
   overscroll-behavior-x: contain;
   max-width: 100%;
   min-width: 0;
+  /* 表格所在的卡片表面是 l2 elevation；滚动条随表面重绑，深色主题下才不会
+     沿用 l1 的拇指色。 */
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 .table { width: 100%; border-collapse: collapse; font-size: var(--dsl-g-font-title); }
 .table th {

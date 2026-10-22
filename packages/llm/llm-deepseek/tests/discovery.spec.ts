@@ -149,7 +149,7 @@ describe('DeepSeek official model discovery', () => {
     await ctx.plugin(DeepSeek, { models: [{ id: 'vision', inputModalities: ['text', 'image'], reasoningEfforts: ['off', 'low'] }] })
     await expect(ctx.llm.resolveModelInfo('deepseek-official', 'vision')).resolves.toMatchObject({
       inputModalities: ['text', 'image'],
-      reasoning: { efforts: [{ id: ReasoningEffortId('off') }, { id: ReasoningEffortId('low') }], defaultEffort: ReasoningEffortId('off') },
+      reasoning: { efforts: [{ id: ReasoningEffortId('off') }, { id: ReasoningEffortId('low') }], defaultEffort: ReasoningEffortId('low') },
     })
     await expect(ctx.llm.resolveModelInfo('deepseek-official', 'unlisted')).resolves.toMatchObject({
       inputModalities: ['text'], reasoning: { efforts: [{ id: ReasoningEffortId('off') }, { id: ReasoningEffortId('low') }, { id: ReasoningEffortId('high') }, { id: ReasoningEffortId('max') }] },
