@@ -53,6 +53,9 @@ describe('project memory tools', () => {
       const listed = await call(live.ctx, agent, 'memory_list', {})
       expect(listed.isError).toBe(false)
       expect(listed.content).toMatchObject([{ type: 'text', text: expect.stringContaining('notes.md') as unknown as string }])
+      // 目录由工具报告，调用方无需再去文件系统里查找记忆位置。
+      expect((listed.content[0] as { text: string }).text)
+        .toMatch(new RegExp(`^Memory directory: ${join(live.root, 'home', 'memory')}/[0-9a-f]{32}$`, 'm'))
 
       const read = await call(live.ctx, agent, 'memory_read', { file: 'notes.md' })
       expect(read.isError).toBe(false)
@@ -68,7 +71,7 @@ describe('project memory tools', () => {
       expect(removed.isError).toBe(false)
       expect(removed.content).toMatchObject([{ type: 'text', text: expect.stringContaining('Removed the file') as unknown as string }])
       const afterDelete = await call(live.ctx, agent, 'memory_list', {})
-      expect(afterDelete.content).toMatchObject([{ type: 'text', text: 'This project has no memory yet.' }])
+      expect((afterDelete.content[0] as { text: string }).text).toContain('This project has no memory yet.')
     } finally {
       await live.ctx.fiber.dispose()
     }
@@ -98,7 +101,7 @@ describe('project memory tools', () => {
       await call(live.ctx, stubAgent(live.project), 'memory_save', { content: '属于这个项目' })
 
       const otherList = await call(live.ctx, stubAgent(live.other), 'memory_list', {})
-      expect(otherList.content).toMatchObject([{ type: 'text', text: 'This project has no memory yet.' }])
+      expect((otherList.content[0] as { text: string }).text).toContain('This project has no memory yet.')
       const otherRead = await call(live.ctx, stubAgent(live.other), 'memory_read', { file: 'notes.md' })
       expect(otherRead.isError).toBe(true)
     } finally {

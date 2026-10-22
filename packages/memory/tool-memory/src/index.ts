@@ -201,6 +201,7 @@ export function apply(ctx: Context): void {
     name: 'memory_list',
     description:
       'List this project\'s memory files with their titles, sizes, and last-modified times. '
+      + 'The result also names the memory directory, so nobody has to look for it in the filesystem. '
       + 'Use it before reading or deleting, so you target a file that exists.',
     parameters: {},
     output: {
@@ -208,6 +209,7 @@ export function apply(ctx: Context): void {
         type: 'object',
         additionalProperties: false,
         properties: {
+          directory: { type: 'string', required: true },
           files: {
             type: 'array',
             required: true,
@@ -227,14 +229,17 @@ export function apply(ctx: Context): void {
       render: (_args, value) => [{
         type: 'text',
         text: value.files.length === 0
-          ? 'This project has no memory yet.'
-          : value.files
-            .map(file => `${file.file} — ${file.title} (${file.bytes} bytes, updated ${file.updatedAt})`)
-            .join('\n'),
+          ? `This project has no memory yet. Its memory directory is ${value.directory}.`
+          : `Memory directory: ${value.directory}\n`
+            + value.files
+              .map(file => `${file.file} — ${file.title} (${file.bytes} bytes, updated ${file.updatedAt})`)
+              .join('\n'),
       }],
     },
     execute(_args, exec) {
-      return ctx.memory.list(projectOf(exec.agent, projectFor)).then(files => ({
+      const project = projectOf(exec.agent, projectFor)
+      return ctx.memory.list(project).then(files => ({
+        directory: project.directory,
         files: files.map(file => ({
           file: file.name,
           title: file.title,

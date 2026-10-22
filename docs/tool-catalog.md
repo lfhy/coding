@@ -76,7 +76,7 @@ Source: [`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-mem
 
 ### `memory_list`
 
-List this project's memory files with their titles, sizes, and last-modified times. Use it before reading or deleting, so you target a file that exists.
+List this project's memory files with their titles, sizes, and last-modified times. The result also names the memory directory, so nobody has to look for it in the filesystem. Use it before reading or deleting, so you target a file that exists.
 
 ```json
 {
