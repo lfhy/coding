@@ -75,7 +75,6 @@ export function ChannelOutboundRow(props: ChannelOutboundRowProps): ReactNode {
         disabled={disabled || busy || customUrl.trim().length === 0}
         onClick={applyCustom}>{t('channelOutboundApply')}</button>
     </div> : null}
-    <p className={styles['advancedHint']}>{t('channelOutboundPoolHint')}</p>
     {failure === undefined ? null : <p role="alert" className={styles['error']}>{failure}</p>}
   </div>
 }

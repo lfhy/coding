@@ -365,11 +365,14 @@ function Loaded({ injected, hideHeader }: { injected: ModelsSectionFace; hideHea
               <div className={styles['channelHeading']}>
                 <h2>{current.entry.displayName}</h2>
               </div>
-              <BuiltinChannelCard models={state.catalog.get(current.entry.provider) ?? []}
-                {...currentCatalogFailure === undefined ? {} : { failure: currentCatalogFailure }} t={t} />
-              <ChannelOutboundRow value={channelOutboundOf(state.namespaces, schema, current.entry.provider)}
-                disabled={!state.writable || state.status !== 'ready'} t={t}
-                onSave={mode => controller.setChannelOutbound(current.entry.provider, mode)} />
+              <div className={styles['channelFields']}>
+                <ChannelOutboundRow key={current.entry.provider}
+                  value={channelOutboundOf(state.namespaces, schema, current.entry.provider)}
+                  disabled={!state.writable || state.status !== 'ready'} t={t}
+                  onSave={mode => controller.setChannelOutbound(current.entry.provider, mode)} />
+                <BuiltinChannelCard models={state.catalog.get(current.entry.provider) ?? []}
+                  {...currentCatalogFailure === undefined ? {} : { failure: currentCatalogFailure }} t={t} />
+              </div>
             </div>
           ) : currentTarget !== undefined && currentNamespace !== undefined ? (
             <div className={styles['channelEditor']}>

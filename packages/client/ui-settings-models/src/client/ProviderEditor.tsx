@@ -425,7 +425,6 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
             aria-invalid={outboundFailure !== undefined}
             onChange={(event) => { write({ mode: 'custom', customUrl: event.target.value }) }} />
         </div> : null}
-        <p className={styles['advancedHint']}>{t('channelOutboundPoolHint')}</p>
         {outboundFailure === undefined ? null : <p className={styles['error']} role="alert">{t(outboundFailure)}</p>}
       </div>
     }

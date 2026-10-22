@@ -99,7 +99,10 @@ describe('内置渠道的只读卡片', () => {
     expect(railButtons[1]?.textContent).toContain('My gateway')
     expect(railButtons.at(-1)?.textContent).toContain(en.add)
     expect(screen.getByRole('heading', { level: 2, name: 'Free' })).toBeTruthy()
-    expect(screen.getByText(en.builtinChannelNote)).toBeTruthy()
+    const detail = screen.getByRole('main')
+    const outbound = within(detail).getByRole('group', { name: en.channelOutbound })
+    const catalog = within(detail).getByRole('region', { name: en.models })
+    expect(outbound.compareDocumentPosition(catalog) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 
     const table = screen.getAllByRole('region', { name: en.models }).find(node => node.hasAttribute('tabindex'))
     expect(table).toBeDefined()
@@ -118,6 +121,8 @@ describe('内置渠道的只读卡片', () => {
 
   it('不提供端点、密钥、名称、目录或删除的写入入口', async () => {
     const controller = await mount()
+    // 出站是唯一可写字段；只读卡片不再用说明段落占位。
+    expect(screen.getByRole('group', { name: en.channelOutbound })).toBeTruthy()
     expect(screen.queryByLabelText(en.keyInput)).toBeNull()
     expect(screen.queryByLabelText(en.baseUrl)).toBeNull()
     expect(screen.queryByLabelText(en.channelName)).toBeNull()
@@ -145,6 +150,7 @@ describe('内置渠道与用户渠道并存', () => {
     expect(screen.getByRole('heading', { level: 2, name: 'My gateway' })).toBeTruthy()
     expect(screen.getByLabelText<HTMLInputElement>(en.baseUrl).value).toBe('https://gateway.example/v1')
     expect(screen.getByRole('button', { name: en.apply })).toBeTruthy()
-    expect(screen.queryByText(en.builtinChannelNote)).toBeNull()
+    // 内置渠道的只读目录不再出现。
+    expect(screen.queryByText('mimo-v2.6-flash-free')).toBeNull()
   })
 })
