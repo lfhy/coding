@@ -515,7 +515,6 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
                 </div>
               )
               : null}
-            {family === 'deepseek' ? outboundField() : null}
             <div className={styles['field']}>
               <span className={styles['fieldLabel']}>{t('baseUrl')}</span>
               <input
@@ -557,28 +556,34 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
                 </div>
               )
               : null}
-            {/* 渠道级 UA 只覆盖这一条路由的对话与模型发现请求；留空时两个请求
-                都走产品默认值，因此清空字段就是恢复默认。 */}
-            <div className={styles['field']}>
-              <span className={styles['fieldLabel']}>{t('userAgent')}</span>
-              <input
-                className={styles['input']}
-                type="text"
-                value={typeof draftUserAgent === 'string' ? draftUserAgent : ''}
-                placeholder={t('userAgentPlaceholder')}
-                aria-label={t('userAgent')}
-                aria-invalid={userAgentFailure !== undefined}
-                aria-describedby={userAgentFailure === undefined ? undefined : `${channelNameId}-user-agent-error`}
-                disabled={disabled}
-                maxLength={MAX_USER_AGENT_LENGTH}
-                spellCheck={false}
-                autoComplete="off"
-                onChange={(event) => { setField('userAgent', event.target.value) }}
-              />
-              {userAgentFailure === undefined
-                ? <p className={styles['advancedHint']}>{t('userAgentHint')}</p>
-                : <p id={`${channelNameId}-user-agent-error`} className={styles['error']} role="alert">{t(userAgentFailure)}</p>}
-            </div>
+            {/* 出站与渠道级 UA 只在特定网关或网络环境下需要，默认收起，避免挤压
+                端点与模型目录这类常用字段。 */}
+            <details className={styles['advanced']}>
+              <summary className={styles['customizedSummary']}>{t('advancedSettings')}</summary>
+              <div className={styles['customizedBody']}>
+                {family === 'deepseek' ? outboundField() : null}
+                <div className={styles['field']}>
+                  <span className={styles['fieldLabel']}>{t('userAgent')}</span>
+                  <input
+                    className={styles['input']}
+                    type="text"
+                    value={typeof draftUserAgent === 'string' ? draftUserAgent : ''}
+                    placeholder={t('userAgentPlaceholder')}
+                    aria-label={t('userAgent')}
+                    aria-invalid={userAgentFailure !== undefined}
+                    aria-describedby={userAgentFailure === undefined ? undefined : `${channelNameId}-user-agent-error`}
+                    disabled={disabled}
+                    maxLength={MAX_USER_AGENT_LENGTH}
+                    spellCheck={false}
+                    autoComplete="off"
+                    onChange={(event) => { setField('userAgent', event.target.value) }}
+                  />
+                  {userAgentFailure === undefined
+                    ? <p className={styles['advancedHint']}>{t('userAgentHint')}</p>
+                    : <p id={`${channelNameId}-user-agent-error`} className={styles['error']} role="alert">{t(userAgentFailure)}</p>}
+                </div>
+              </div>
+            </details>
             {/* Both families edit the same rows through the same contract; only
                 the extras differ — DeepSeek's inherited capacities, pi-ai's
                 endpoint interrogation. */}

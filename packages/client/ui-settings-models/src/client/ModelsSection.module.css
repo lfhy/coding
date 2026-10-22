@@ -429,7 +429,9 @@
   transition: transform 120ms ease;
 }
 
-.customized[open] > .customizedSummary::before {
+.customized[open] > .customizedSummary::before,
+/* 高级设置默认收起：出站与渠道级 UA 平时不占详情版面。 */
+.advanced[open] > .customizedSummary::before {
   transform: rotate(45deg) translate(-1px, -1px);
 }
 

@@ -127,8 +127,9 @@ describe('channel settings layout', () => {
     expect(within(rail).queryByRole('button', { name: 'Dormant' })).toBeNull()
     expect(within(rail).queryByRole('button', { name: 'Reserve' })).toBeNull()
     expect(screen.getByRole('textbox', { name: en.baseUrl })).toBeTruthy()
-    expect(document.querySelector('details')).toBeNull()
-    expect(document.body.textContent).not.toContain('Details')
+    // 详情常显端点与模型目录；出站和渠道级 UA 收在默认收起的高级设置里。
+    expect(document.querySelector('details')?.hasAttribute('open')).toBe(false)
+    expect(document.body.textContent).toContain(en.advancedSettings)
 
     fireEvent.change(within(rail).getByRole('textbox', { name: en.searchProviders }), { target: { value: 'Dormant' } })
     expect(within(rail).queryByRole('button', { name: /Ready/ })).toBeNull()

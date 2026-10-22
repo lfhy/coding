@@ -268,6 +268,11 @@ function openAdvanced(): void {
   if (summary !== null) fireEvent.click(summary)
 }
 
+/** 出站与渠道级 UA 收在默认收起的高级设置里。 */
+function openAdvancedSettings(): void {
+  fireEvent.click(screen.getByText(en.advancedSettings))
+}
+
 describe('ModelsSection', () => {
   it('opens the custom route form without installed catalog choices', async () => {
     await mountSection()
@@ -546,6 +551,7 @@ describe('ModelsSection', () => {
       mutate: vi.fn(() => Promise.resolve(ok(wireNamespaces()[0]))),
     })
     openAdvanced()
+    openAdvancedSettings()
     const ua = screen.getByLabelText<HTMLInputElement>(en.userAgent)
     // 留空就是跟随产品默认，因此字段初始为空并显示占位说明。
     expect(ua.value).toBe('')
