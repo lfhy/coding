@@ -40,11 +40,13 @@
     "coding-settings": "workspace:^",
     "coding-timeout": "workspace:^",
     "coding-anonymous-user-id": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^"
+    "@deepseek-ai/cordis": "workspace:^",
+    "coding-proxy-pool": "workspace:^"
   },
   "dependencies": {
     "eventsource-parser": "^3.1.0",
-    "@deepseek-ai/schemastery": "workspace:^"
+    "@deepseek-ai/schemastery": "workspace:^",
+    "undici": "^8.10.2"
   },
   "devDependencies": {
     "coding-attachment": "workspace:^",
@@ -55,6 +57,7 @@
     "coding-settings": "workspace:^",
     "coding-timeout": "workspace:^",
     "coding-anonymous-user-id": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^"
+    "@deepseek-ai/cordis": "workspace:^",
+    "coding-proxy-pool": "workspace:^"
   }
 }

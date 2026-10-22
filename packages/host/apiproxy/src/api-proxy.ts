@@ -38,7 +38,7 @@ import type {} from 'coding-tools'
 import type {
   ApiProxy, ConfigurableProviderView, CredentialView, GoalRef, HistoryEntry, HostFrame,
   ModelCatalogFailure, ModelProviderGroup,
-  ModelReasoning, MuxFrame, OutboundModeView, PromptContentPart, QuestionResponsePayload,
+  ModelReasoning, MuxFrame, PromptContentPart, QuestionResponsePayload,
   SessionListMetadata, SessionProjectionsBlock, SessionSearchItem,
   ProxyGroupView, ProxyHealthView, ProxyNodeView,
   QueuedInboxItem, SessionSummary, SettingsNamespaceView, SubagentAddress, JobView, ToolEventView,
@@ -85,7 +85,7 @@ import type {} from 'coding-skill'
 // provider still serves every other domain.
 import { SettingsConflictError, settingsNamespace } from 'coding-settings'
 import type {} from 'coding-proxy-pool'
-import { FREE_OUTBOUND_SETTINGS_NAMESPACE } from 'coding-llm-opencode'
+import { PROXY_POOL_SETTINGS_NAMESPACE } from 'coding-proxy-pool'
 import { parseProxyLinks } from 'coding-proxy-pool'
 import type { ProxyHealth, ProxyNode } from 'coding-proxy-pool'
 import type { SettingsDescriptor, SettingsNamespace, SettingsPathOp } from 'coding-settings'
@@ -3573,13 +3573,11 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           members: [...group.members],
         }))
         const health = pool.snapshotHealth().map(entry => healthView(entry))
-        const scope = ctx.get('settings')
-        const section = scope?.get(FREE_OUTBOUND_SETTINGS_NAMESPACE) as OutboundModeView | undefined
         return Promise.resolve(ok(request, {
           nodes,
           groups,
           health,
-          outbound: section ?? { mode: 'direct' },
+          outbound: pool.outbound,
           frontendURL: pool.proxyURL({ kind: 'pool' }) ?? '',
         }))
       },
@@ -3640,8 +3638,11 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           return err(request, { code: 'proxy-pool-unavailable', message: 'the settings service is not installed in this deployment', details: { capability: 'settings' } })
         }
         const view = request.payload.mode
-        const section = { mode: view.mode, ...view.customUrl === undefined ? {} : { customUrl: view.customUrl } }
-        await scope.update(settingsNamespace('llm-opencode'), section)
+        // 整体替换池分节：从自定义代理切回直连/本地池时不留下旧地址。
+        await scope.replace(PROXY_POOL_SETTINGS_NAMESPACE, {
+          mode: view.mode,
+          ...view.customUrl === undefined ? {} : { customUrl: view.customUrl },
+        })
         return ok(request, { outbound: view })
       },
     },

@@ -2,6 +2,8 @@
 import { assertUsableApiKey, userAgent, LlmError } from 'coding-llm'
 import type { LlmDiscoveredModel, LlmModelDiscoveryRequest } from 'coding-llm'
 import type { DeepSeekConnectionOptions } from './adapter.ts'
+import { dispatcherOf } from './outbound.ts'
+import type { DeepSeekOutbound, DeepSeekOutboundConfig } from './outbound.ts'
 
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 const TIMEOUT_MS = 10_000
@@ -114,6 +116,8 @@ function awaitWithSignal<T>(signal: AbortSignal, operation: () => Promise<T>): P
  * @param request - 本次发现的草稿地址、可选临时密钥与取消信号。
  * @param connection - 同一有效设置快照中的端点和凭据引用。
  * @param resolveApiKey - 从该快照解析受管理的凭据。
+ * @param requestUserAgent - 本次请求的 User-Agent。
+ * @param resolveOutbound - 渠道出站的解析钩子；缺省按直连。
  * @returns 端点报告的有效模型条目。
  */
 export async function discoverModels(
@@ -121,6 +125,7 @@ export async function discoverModels(
   connection: DeepSeekConnectionOptions,
   resolveApiKey: (connection: DeepSeekConnectionOptions) => Promise<string>,
   requestUserAgent: string = userAgent(),
+  resolveOutbound?: (selection: DeepSeekOutboundConfig) => DeepSeekOutbound,
 ): Promise<readonly LlmDiscoveredModel[]> {
   if (request.provider !== undefined && request.provider !== 'deepseek-official') {
     throw new LlmError(`DeepSeek discovery cannot query provider "${request.provider}"`, 'INVALID_DISCOVERY')
@@ -138,6 +143,8 @@ export async function discoverModels(
       ? base.href === storedBase.href
         ? await awaitWithSignal(signal, () => resolveApiKey(connection)) : undefined
       : assertUsableApiKey(request.apiKey, 'llm-deepseek discovery', connection.apiKeyEnv)
+    // 目录探测与对话请求走同一条渠道出站：自定义代理或内置代理池同样生效。
+    const dispatcher = dispatcherOf(resolveOutbound?.(connection.outbound) ?? { kind: 'direct' })
     const response = await awaitWithSignal(signal, () => fetch(url, {
       method: 'GET',
       redirect: 'manual',
@@ -147,6 +154,7 @@ export async function discoverModels(
         ...key === undefined ? {} : { authorization: `Bearer ${key}` },
       },
       signal,
+      ...dispatcher === undefined ? {} : { dispatcher },
     }))
     if (!response.ok) {
       await response.body?.cancel()

@@ -1,4 +1,4 @@
-/** 代理池分区的数据层：describe 拉取与导入/删除/测试/出站写入动作。 */
+/** 代理池分区的数据层：describe 拉取与导入/删除/测试/池出站写入动作。 */
 
 import type { IApiClient, OutboundModeView } from 'coding-api-remotes/client'
 import { createSnapshotStore } from 'coding-client-runtime/client'
@@ -12,7 +12,7 @@ export interface PoolSnapshot {
   nodes: { id: string; name: string; protocol: string; address: string; port: number }[]
   /** 按节点 id 索引的健康记录。 */
   health: Map<string, { alive: boolean; latencyMs?: number; failure?: string }>
-  /** Free 渠道出站选择。 */
+  /** 池自己的出站控制：直连、经本地池或经自定义代理。 */
   outbound: OutboundModeView
   /** 本地入站地址；前端未运行时为空串。 */
   frontendURL: string
@@ -117,7 +117,7 @@ export function createProxyPoolStore(api: PoolWire) {
     return response.result.value
   }
 
-  /** 写入出站选择并刷新。 */
+  /** 写入池自己的出站控制并刷新。 */
   const setOutbound = async (mode: OutboundModeView): Promise<void> => {
     const response = await api.setOutbound({ mode })
     if (!response.result.ok) fail(response.result.error.message)

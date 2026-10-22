@@ -75,8 +75,13 @@ const FREE_OUTBOUND_SCHEMA: z<FreeOutboundSettings> = z.object({
 })
 
 /**
- * 注册 Free 渠道并安装出站选择分节。目录与凭据是包内事实；出站路径是用户
- * 设置，经 `resolveOutbound` 在每次请求时读取，设置变化不需要重建注册。
+ * 注册 Free 渠道并安装该渠道自己的出站选择分节。目录与凭据是包内事实；出站
+ * 路径是渠道级用户设置（直连／内置代理池／自定义代理），经 `resolveOutbound`
+ * 在每次请求时读取，设置变化不需要重建注册。
+ *
+ * 选择内置代理池时使用池自己的出站控制（`proxy-pool` 分节）：池为直连时
+ * `proxyURL({ kind: 'pool' })` 返回 undefined，本渠道随之回落直连；池为自定义
+ * 代理时返回池配置的地址；池服务缺席时同样按直连处理，不让请求失败。
  * @param ctx - 持有适配器注册生命周期的插件上下文。
  * @returns 无返回值。
  */
@@ -93,13 +98,9 @@ export function apply(ctx: Context): void {
       const settings = outboundRef.current()
       if (settings.mode === 'pool') {
         const pool: ProxyPoolService | undefined = ctx.get('proxyPool')
-        if (pool === undefined) {
-          throw new Error('the proxy pool service is not available; install coding-proxy-pool or switch the Free channel to direct/custom outbound')
-        }
-        const url = pool.proxyURL({ kind: 'pool' })
-        if (url === undefined) {
-          throw new Error('the proxy pool frontend is not running')
-        }
+        const url = pool?.proxyURL({ kind: 'pool' })
+        // 池规则为直连、池前端未运行或池服务缺席：渠道选择内置池也走直连。
+        if (url === undefined) return { kind: 'direct' } satisfies OutboundMode
         return { kind: 'pool', url } satisfies OutboundMode
       }
       if (settings.mode === 'custom') {

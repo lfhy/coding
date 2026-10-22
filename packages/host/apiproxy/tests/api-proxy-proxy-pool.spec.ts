@@ -85,7 +85,7 @@ async function mounted(): Promise<Context> {
 }
 
 describe('proxyPool domain', () => {
-  it('describe 返回空注册表、直连出站与非空前端地址', async () => {
+  it('describe 返回空注册表、直连池规则与非空前端地址', async () => {
     const ctx = await mounted()
     const api = createApiProxy(ctx, DEFAULTS)
     const view = expectOk(await api.proxyPool.describe(request({})))
@@ -93,7 +93,8 @@ describe('proxyPool domain', () => {
     expect(view.groups).toEqual([])
     expect(view.health).toEqual([])
     expect(view.outbound).toEqual({ mode: 'direct' })
-    expect(view.frontendURL).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/)
+    // 直连规则下池不对外提供地址：消费方选择内置代理池也回落直连。
+    expect(view.frontendURL).toBe('')
     await ctx.fiber.dispose()
   })
 
@@ -143,12 +144,20 @@ describe('proxyPool domain', () => {
     await ctx.fiber.dispose()
   })
 
-  it('setOutbound 写入设置分节，describe 读回同一选择', async () => {
+  it('setOutbound 写入池出站分节，describe 读回同一选择', async () => {
     const ctx = await mounted()
     const api = createApiProxy(ctx, DEFAULTS)
+    const settings = ctx.get('settings') as MemorySettings
     expectOk(await api.proxyPool.setOutbound(request({ mode: { mode: 'custom', customUrl: 'http://10.0.0.1:8080' } })))
     const view = expectOk(await api.proxyPool.describe(request({})))
     expect(view.outbound).toEqual({ mode: 'custom', customUrl: 'http://10.0.0.1:8080' })
+    expect(settings.doc['proxy-pool']).toEqual({ mode: 'custom', customUrl: 'http://10.0.0.1:8080' })
+    // 切回直连后不残留旧地址，且前端地址不再对外提供。
+    expectOk(await api.proxyPool.setOutbound(request({ mode: { mode: 'direct' } })))
+    const direct = expectOk(await api.proxyPool.describe(request({})))
+    expect(direct.outbound).toEqual({ mode: 'direct' })
+    expect(settings.doc['proxy-pool']).toEqual({ mode: 'direct' })
+    expect(direct.frontendURL).toBe('')
     await ctx.fiber.dispose()
   })
 

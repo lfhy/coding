@@ -282,6 +282,57 @@
   color: var(--dsw-alias-label-secondary);
 }
 
+/* 渠道级出站：一行分段选择，自定义代理额外显示地址输入。 */
+.outboundSegmented {
+  display: inline-flex;
+  gap: 4px;
+  padding: 2px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  width: fit-content;
+}
+
+.outboundSegment {
+  border: none;
+  border-radius: 8px;
+  padding: 4px 14px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+  background: transparent;
+  cursor: pointer;
+}
+
+.outboundSegment[aria-pressed='true'] {
+  background: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-foreground);
+}
+
+.outboundSegment:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.outboundSegment:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--dsw-alias-border-l3);
+}
+
+.outboundCustomRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.outboundCustomRow .input {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
 .advancedHint {
   margin: 0;
   font-size: 12px;

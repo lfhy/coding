@@ -16,7 +16,7 @@ export interface SettingsSecretView {
   set: boolean
 }
 
-/** Wire view of the Free channel's outbound selection (settings ns `llm-opencode`). */
+/** 渠道级出站选择：渠道自己的设置分节保存（Free 渠道是 `llm-opencode`）。 */
 export interface OutboundModeView {
   /** `direct` (default), `pool` (proxy-pool frontend), or `custom`. */
   mode: 'direct' | 'pool' | 'custom'

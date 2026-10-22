@@ -1,11 +1,12 @@
 /**
  * proxyPool domain contract: host-scoped proxy pool management for the
  * settings surface. `proxyPool.describe` returns the node/group registry with
- * live health snapshots; `proxyPool.importLinks` parses share-link text into
- * candidate nodes; `proxyPool.removeNode` drops one; `proxyPool.testNode`
- * triggers one health probe; `proxyPool.outbound` reads and writes the
- * outbound-mode settings section shared with the Free channel. Clients
- * invalidate from the forwarded `proxy-pool/node` owner events.
+ * live health snapshots and the pool's own outbound control; `proxyPool.importLinks`
+ * parses share-link text into candidate nodes; `proxyPool.removeNode` drops one;
+ * `proxyPool.testNode` triggers one health probe; `proxyPool.setOutbound` writes
+ * the pool's outbound. Channel-level outbound choices live in each channel's own
+ * settings section, not here. Clients invalidate from the forwarded
+ * `proxy-pool/node` owner events.
  */
 
 import type { RpcRequest, RpcResponse } from './rpc.ts'
@@ -58,9 +59,9 @@ export interface ProxyGroupView {
 /** ProxyPool-domain unary methods (the map keys proxyPool.* of RpcMethodMap). */
 export interface ProxyPoolApi {
   /**
-   * List registered nodes, groups, health snapshots, and the active outbound
-   * mode. The local frontend URL, or an empty string when the frontend is
-   * not running, so surfaces can show the address consumers should point at.
+   * List registered nodes, groups, health snapshots, and the pool's own outbound
+   * control. The local frontend URL, or an empty string when the frontend is not
+   * running, so surfaces can show the address consumers should point at.
    */
   describe(request: RpcRequest<{}>): Promise<RpcResponse<{
     nodes: ProxyNodeView[]
@@ -92,6 +93,12 @@ export interface ProxyPoolApi {
    */
   refresh(request: RpcRequest<{}>): Promise<RpcResponse<{ admitted: number; evicted: number; failures: string[] }>>
 
-  /** Replace the outbound mode selection (persisted via the settings section). */
+  /**
+   * Replace the pool's own outbound control: `pool` runs the background health
+   * checks and feed refresh and serves the local frontend, `direct` stops both
+   * and makes channels that select the built-in pool connect directly, `custom`
+   * stops the loops and serves the configured proxy address instead. Persisted
+   * through the `proxy-pool` settings section.
+   */
   setOutbound(request: RpcRequest<{ mode: OutboundModeView }>): Promise<RpcResponse<{ outbound: OutboundModeView }>>
 }

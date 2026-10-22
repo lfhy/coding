@@ -10,19 +10,20 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ProxyPoolSection } from '../src/client/ProxyPoolSection.tsx'
 import type { ProxyPoolSectionText } from '../src/client/ProxyPoolSection.tsx'
 import { createProxyPoolStore } from '../src/client/store.ts'
-import type { IApiClient, ProxyHealthView, ProxyNodeView, OutboundModeView } from 'coding-api-remotes/client'
+import type { IApiClient, OutboundModeView, ProxyHealthView, ProxyNodeView } from 'coding-api-remotes/client'
 
 afterEach(cleanup)
 
 const t: ProxyPoolSectionText = {
   title: '代理池',
   intro: '免费节点分钟级寿命，池每 5 分钟自动刷新订阅。',
-  outbound: '出站方式',
-  outboundDirect: '直连',
-  outboundPool: '代理池',
-  outboundCustom: '自定义代理',
-  customUrlLabel: '自定义代理地址',
-  applyCustomUrl: '应用地址',
+  poolOutbound: '池的出站',
+  poolOutboundDirect: '直连',
+  poolOutboundPool: '代理池',
+  poolOutboundCustom: '自定义代理',
+  poolCustomUrl: '自定义代理地址',
+  poolApplyCustomUrl: '应用地址',
+  poolOutboundHint: '渠道选择内置代理池时使用这里的出站。',
   importLabel: '导入代理链接',
   importTitle: '导入代理节点',
   importPlaceholder: '每行一条',
@@ -77,7 +78,7 @@ describe('ProxyPoolSection', () => {
     expect(container.innerHTML).toBe('')
   })
 
-  it('就绪态展示出站选择、前端地址、节点与健康延迟', async () => {
+  it('就绪态展示池的出站、前端地址、节点与健康延迟', async () => {
     const store = createProxyPoolStore(fakeApi())
     const actions = { ...store, hooksStore: store.store }
     delete (actions as { store?: unknown }).store
@@ -89,10 +90,31 @@ describe('ProxyPoolSection', () => {
       />,
     )
     expect(await screen.findByRole('heading', { name: '代理池' })).toBeTruthy()
+    expect(await screen.findByRole('button', { name: '代理池' })).toHaveProperty('ariaPressed', 'true')
     expect(await screen.findByText(/127.0.0.1:52000/)).toBeTruthy()
     expect(screen.getByText('节点A')).toBeTruthy()
     expect(screen.getByText('socks5 1.2.3.4:1080')).toBeTruthy()
     expect(screen.getByText('42 ms')).toBeTruthy()
+  })
+
+  it('切换池的出站写入直连并重载快照', async () => {
+    const setOutbound = vi.fn(async () => ({ result: { ok: true as const, value: { outbound: { mode: 'direct' as const } } } }))
+    const store = createProxyPoolStore(fakeApi({ setOutbound }))
+    const actions = { ...store, hooksStore: store.store }
+    delete (actions as { store?: unknown }).store
+    render(
+      <ProxyPoolSection
+        actions={actions as never}
+        t={t}
+        useSnapshot={bindSnapshotSelector(store.store)}
+      />,
+    )
+    fireEvent.click(await screen.findByRole('button', { name: '直连' }))
+    await vi.waitFor(() => {
+      expect(setOutbound).toHaveBeenCalledWith({ mode: { mode: 'direct' } })
+    })
+    // 快照由下一次 describe 提供；本桩固定返回 pool，因此只断言写入载荷。
+
   })
 
   it('加载失败展示错误与重试入口', async () => {

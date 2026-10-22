@@ -22,6 +22,8 @@ import type { AttachmentStore } from 'coding-attachment'
 import type { CredentialRef } from 'coding-credentials'
 import { idleWatchdog, timeoutOf } from 'coding-timeout'
 import type { AnonymousUserId } from 'coding-anonymous-user-id'
+import { dispatcherOf } from './outbound.ts'
+import type { DeepSeekOutbound, DeepSeekOutboundConfig } from './outbound.ts'
 import { serializeRequest, serializeRequestWithImages } from './serialize.ts'
 import type { RequestDefaults } from './serialize.ts'
 import { parseSse } from './sse.ts'
@@ -76,6 +78,8 @@ export interface DeepSeekConnectionOptions {
   maxRequestImageBytes: number
   /** Provider-owned model-request retry policy, already resolved. */
   retryPolicy: ResolvedRetryPolicy
+  /** 渠道级出站选择（直连／内置代理池／自定义代理），与端点同代解析。 */
+  outbound: DeepSeekOutboundConfig
 }
 
 /** Constructor options for {@link DeepSeekAdapter}: the operation-local resolution hooks the plugin owns. */
@@ -97,6 +101,11 @@ export interface DeepSeekAdapterOptions {
   resolveUserAgent?: () => string
   /** Resolve the current durable attachment service; absence rejects image input. */
   resolveAttachments?: () => AttachmentStore | undefined
+  /**
+   * 把渠道级出站选择解析成一次请求的传输。缺省按直连；插件在场时向代理池取
+   * 地址，池规则为直连则同样返回直连。每次请求调用一次，选择变化无需重注册。
+   */
+  resolveOutbound?: (selection: DeepSeekOutboundConfig) => DeepSeekOutbound
 }
 
 /** Default maximum idle interval while an adapter stream read is outstanding. */
@@ -350,8 +359,10 @@ export class DeepSeekAdapter extends LlmAdapter {
         : {},
     }
 
-    // TODO(http): adopt the Cordis HTTP service when shared transport configuration
-    // outweighs its additional runtime dependencies.
+    // 出站按渠道选择逐请求解析：直连不注入 dispatcher，代理池或自定义代理走
+    // 该地址的 ProxyAgent。TODO(http): 需要共享传输配置时改用 Cordis HTTP 服务。
+    const outbound = this.config.resolveOutbound?.(connection.outbound) ?? { kind: 'direct' }
+    const dispatcher = dispatcherOf(outbound)
     let response: Response
     try {
       response = await fetch(`${connection.baseURL}/chat/completions`, {
@@ -359,6 +370,7 @@ export class DeepSeekAdapter extends LlmAdapter {
         headers,
         body: payload,
         signal,
+        ...dispatcher === undefined ? {} : { dispatcher },
       })
     } catch (error: unknown) {
       // The outer stream distinguishes caller cancellation and watchdog expiry.

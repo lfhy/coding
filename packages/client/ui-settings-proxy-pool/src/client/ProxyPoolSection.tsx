@@ -11,12 +11,13 @@ import styles from './ProxyPoolSection.module.css'
 export interface ProxyPoolSectionText {
   title: string
   intro: string
-  outbound: string
-  outboundDirect: string
-  outboundPool: string
-  outboundCustom: string
-  customUrlLabel: string
-  applyCustomUrl: string
+  poolOutbound: string
+  poolOutboundDirect: string
+  poolOutboundPool: string
+  poolOutboundCustom: string
+  poolCustomUrl: string
+  poolApplyCustomUrl: string
+  poolOutboundHint: string
   importLabel: string
   importTitle: string
   importPlaceholder: string
@@ -110,23 +111,24 @@ function Loaded({ actions, state, t }: {
     {state.error !== null ? <p role="alert" className={styles['error']}>{state.error}</p> : null}
 
     <div className={styles['outboundCard']}>
-      <h2 className={styles['cardTitle']}>{t.outbound}</h2>
-      <div className={styles['segmented']} role="group" aria-label={t.outbound}>
+      <h2 className={styles['cardTitle']}>{t.poolOutbound}</h2>
+      <div className={styles['segmented']} role="group" aria-label={t.poolOutbound}>
         <button type="button" className={styles['segment']} aria-pressed={outbound === 'direct'}
-          onClick={() => { void actions.setOutbound({ mode: 'direct' }) }}>{t.outboundDirect}</button>
+          onClick={() => { void actions.setOutbound({ mode: 'direct' }) }}>{t.poolOutboundDirect}</button>
         <button type="button" className={styles['segment']} aria-pressed={outbound === 'pool'}
-          onClick={() => { void actions.setOutbound({ mode: 'pool' }) }}>{t.outboundPool}</button>
+          onClick={() => { void actions.setOutbound({ mode: 'pool' }) }}>{t.poolOutboundPool}</button>
         <button type="button" className={styles['segment']} aria-pressed={outbound === 'custom'}
-          onClick={applyCustom}>{t.outboundCustom}</button>
+          onClick={applyCustom}>{t.poolOutboundCustom}</button>
       </div>
       {outbound === 'custom' ? (
         <div className={styles['customUrlRow']}>
           <input className={styles['input']} value={customUrl} placeholder="http://proxy.example:8080"
-            aria-label={t.customUrlLabel} onChange={(event) => { setCustomUrl(event.target.value) }} />
-          <button type="button" className={styles['primaryButton']} onClick={applyCustom}>{t.applyCustomUrl}</button>
+            aria-label={t.poolCustomUrl} onChange={(event) => { setCustomUrl(event.target.value) }} />
+          <button type="button" className={styles['primaryButton']} onClick={applyCustom}>{t.poolApplyCustomUrl}</button>
         </div>
       ) : null}
-      {state.frontendURL.length > 0 ? (
+      <p className={styles['intro']}>{t.poolOutboundHint}</p>
+      {outbound === 'pool' && state.frontendURL.length > 0 ? (
         <p className={styles['frontend']}>{t.frontend}: <code className={styles['frontendCode']}>{state.frontendURL}</code></p>
       ) : null}
     </div>

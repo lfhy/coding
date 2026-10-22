@@ -8,8 +8,13 @@
 import { Context } from '@deepseek-ai/cordis'
 import { createServer, type Server } from 'node:http'
 import { connect as tcpConnect } from 'node:net'
-import { afterEach, describe, expect, it } from 'vitest'
-import ProxyPoolService, { parseProxyLink, parseProxyLinks } from '../src/index.ts'
+import { SettingsProvider } from 'coding-settings'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import ProxyPoolService, {
+  parseProxyLink,
+  parseProxyLinks,
+  PROXY_POOL_SETTINGS_NAMESPACE,
+} from '../src/index.ts'
 import { dialThrough } from '../src/dialer.ts'
 
 const contexts: Context[] = []
@@ -24,6 +29,35 @@ async function mounted(): Promise<ProxyPoolService> {
   const pool = new ProxyPoolService(ctx)
   await pool.ready()
   return pool
+}
+
+/** 无盘设置提供方：池规则与节点分节的读写都留在内存里。 */
+class MemorySettings extends SettingsProvider {
+  doc: Record<string, unknown> = {}
+
+  get writable(): boolean { return true }
+
+  override get documentPath(): string | undefined { return '/tmp/proxy-pool-settings.yaml' }
+
+  override prepareDocument(): Promise<string | undefined> { return Promise.resolve(this.documentPath) }
+
+  protected load(): Promise<Record<string, unknown>> { return Promise.resolve(structuredClone(this.doc)) }
+
+  protected persist(ns: import('coding-settings').SettingsNamespace, section: Record<string, unknown>): Promise<void> {
+    this.doc[ns] = structuredClone(section)
+    return Promise.resolve()
+  }
+}
+
+/** 挂一个带设置服务的代理池，池规则可经设置改写。 */
+async function mountedWithSettings(): Promise<{ pool: ProxyPoolService; settings: MemorySettings }> {
+  const ctx = new Context()
+  contexts.push(ctx)
+  await ctx.plugin(MemorySettings)
+  const pool = new ProxyPoolService(ctx)
+  await pool.ready()
+  const settings = ctx.get('settings') as MemorySettings
+  return { pool, settings }
 }
 
 describe('parseProxyLink', () => {
@@ -202,8 +236,9 @@ describe('ProxyPoolService', () => {
     const pool = await mounted()
     const ctx = contexts[0]!
     expect(pool.port).toBeGreaterThan(0)
-    const url = pool.proxyURL({ kind: 'pool' })
-    expect(url).toBe(`http://127.0.0.1:${pool.port}`)
+    // 缺省出站为直连：池地址不对外提供，消费方因此回落直连。
+    expect(pool.outbound).toEqual({ mode: 'direct' })
+    expect(pool.proxyURL({ kind: 'pool' })).toBeUndefined()
     expect(pool.proxyURL({ kind: 'direct' })).toBeUndefined()
     expect(pool.proxyURL({ kind: 'custom', url: 'http://10.0.0.1:8080' })).toBe('http://10.0.0.1:8080')
     // 没有节点时 CONNECT 返回 502。
@@ -220,6 +255,33 @@ describe('ProxyPoolService', () => {
     expect(pool.port).toBe(0)
   })
 
+  it('池的出站为直连时不排期刷新，切到代理池后才开始拉取订阅', async () => {
+    vi.useFakeTimers()
+    const fetchStub = vi.fn(async () => new Response('', { status: 200 }))
+    vi.stubGlobal('fetch', fetchStub)
+    try {
+      const { pool, settings } = await mountedWithSettings()
+      expect(pool.outbound).toEqual({ mode: 'direct' })
+      await vi.advanceTimersByTimeAsync(300_000)
+      expect(fetchStub).not.toHaveBeenCalled()
+      await settings.update(PROXY_POOL_SETTINGS_NAMESPACE, { mode: 'pool' })
+      expect(pool.outbound).toEqual({ mode: 'pool' })
+      expect(pool.proxyURL({ kind: 'pool' })).toBe(`http://127.0.0.1:${pool.port}`)
+      await vi.advanceTimersByTimeAsync(300_000)
+      expect(fetchStub).toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('池的出站为自定义代理时，选内置代理池的渠道使用池配置的地址', async () => {
+    const { pool, settings } = await mountedWithSettings()
+    await settings.update(PROXY_POOL_SETTINGS_NAMESPACE, { mode: 'custom', customUrl: 'http://10.0.0.1:8080' })
+    expect(pool.outbound).toEqual({ mode: 'custom', customUrl: 'http://10.0.0.1:8080' })
+    expect(pool.proxyURL({ kind: 'pool' })).toBe('http://10.0.0.1:8080')
+  })
+
   it('节点注册事件按序发布，重复 id 被拒', async () => {
     const pool = await mounted()
     const ctx = contexts[0]!
@@ -233,7 +295,8 @@ describe('ProxyPoolService', () => {
   })
 
   it('fallback 组优先返回健康节点；无健康信息时回落首位', async () => {
-    const pool = await mounted()
+    const { pool, settings } = await mountedWithSettings()
+    await settings.update(PROXY_POOL_SETTINGS_NAMESPACE, { mode: 'pool' })
     const a = parseProxyLink('socks5://1.2.3.4:1080#a')
     const b = parseProxyLink('socks5://5.6.7.8:1080#b')
     const disposeA = pool.registerNode(a)

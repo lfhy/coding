@@ -8,7 +8,7 @@
 
 import type {
   ConfigurableProviderView, CredentialView, IApiClient, ModelCatalogFailure, ModelProviderGroup,
-  SettingsNamespaceView,
+  OutboundModeView, SettingsNamespaceView, SettingsPathOpView,
 } from 'coding-api-remotes/client'
 import type { SnapshotStore } from 'coding-client-runtime/client'
 import { createSnapshotStore } from 'coding-client-runtime/client'
@@ -44,6 +44,14 @@ export interface ModelChoice {
   providerName: string
   model: string
   modelName: string
+}
+
+/**
+ * 内置渠道的渠道级出站设置分节。内置渠道没有可编辑的 profile，出站选择由
+ * 渠道插件自己的分节承载（Free 渠道是 `llm-opencode`），模型页按路由 id 找到它。
+ */
+const CHANNEL_OUTBOUND_NAMESPACES: Readonly<Record<string, string>> = {
+  free: 'llm-opencode',
 }
 
 /** 会话标题生成模型的三种模式，与宿主设置分节 `session-title` 的取值一致。 */
@@ -242,6 +250,40 @@ export class ModelsSettingsStore {
   }
 
   /**
+   * 保存内置渠道自己的出站选择（直连／内置代理池／自定义代理）。
+   *
+   * 出站属于渠道，不属于代理池：这里只写渠道插件拥有的分节（Free 渠道是
+   * `llm-opencode`），内置代理池的启用规则仍由代理池自己的分节回答。
+   * @param provider - 渠道路由 id。
+   * @param mode - 本次选择；自定义模式必须带 http(s) 地址。
+   * @returns 写入失败的诊断，成功时为 undefined。
+   */
+  async setChannelOutbound(provider: string, mode: OutboundModeView): Promise<string | undefined> {
+    const state = this.store.getSnapshot()
+    if (!state.writable) return 'settings are read-only'
+    const ns = CHANNEL_OUTBOUND_NAMESPACES[provider]
+    const namespace = ns === undefined ? undefined : state.namespaces.get(ns)
+    if (namespace === undefined) return `${provider} outbound settings unavailable`
+    const ops: SettingsPathOpView[] = [{ op: 'set', path: ['mode'], value: mode.mode }]
+    ops.push(mode.mode === 'custom' && mode.customUrl !== undefined
+      ? { op: 'set', path: ['customUrl'], value: mode.customUrl }
+      : { op: 'unset', path: ['customUrl'] })
+    try {
+      const response = await this.api.settings.mutate({
+        ns: namespace.ns,
+        expectedRevision: namespace.revision,
+        ops,
+      })
+      if (!response.result.ok) return response.result.error.message
+      this.describeFace.acceptView(response.result.value)
+      await this.load()
+      return undefined
+    } catch (error) {
+      return messageOf(error)
+    }
+  }
+
+  /**
    * 将当前目录中可启动的模型设为 agent 默认模型，并清除旧模型的推理档位。
    * @param target - 同一代联接产出的渠道与模型。
    * @returns 写入失败或选择失效的诊断；成功时为 undefined。
@@ -405,6 +447,28 @@ export class ModelsSettingsStore {
       s.onboardingModelFailures = onboardingModelFailures
       s.onboardingDefault = onboardingDefault
     })
+  }
+}
+
+/**
+ * 从设置镜像读出内置渠道的渠道级出站选择；未配置或分节缺席时按直连。
+ * @param namespaces - 设置镜像里的命名空间视图。
+ * @param schema - 设置 schema 读取器。
+ * @param provider - 渠道路由 id。
+ * @returns 该渠道当前的出站选择。
+ */
+export function channelOutboundOf(
+  namespaces: ReadonlyMap<string, SettingsNamespaceView>,
+  schema: SettingsSchemaOperations,
+  provider: string,
+): OutboundModeView {
+  const ns = CHANNEL_OUTBOUND_NAMESPACES[provider]
+  const namespace = ns === undefined ? undefined : namespaces.get(ns)
+  const mode = namespace === undefined ? undefined : schema.getPath(namespace.value, ['mode'])
+  const customUrl = namespace === undefined ? undefined : schema.getPath(namespace.value, ['customUrl'])
+  return {
+    mode: mode === 'pool' || mode === 'custom' ? mode : 'direct',
+    ...(typeof customUrl === 'string' && customUrl.length > 0 ? { customUrl } : {}),
   }
 }
 

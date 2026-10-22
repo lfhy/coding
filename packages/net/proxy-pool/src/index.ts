@@ -2,10 +2,14 @@
  * 代理池服务：节点/组注册表、健康检查循环、fallback/url-test 组选择与本地
  * HTTP 代理入站（伴随宿主生命周期启动与停止）。
  *
- * 消费方（Free 渠道适配器等）只依赖 `ctx.proxyPool`：
- * - `proxyURL()` 取一个可注入 undici `ProxyAgent` 的本地代理地址；
- * - `directURL()` 返回 `undefined` 表示直连；
+ * 消费方（Free 渠道、DeepSeek 渠道等）只依赖 `ctx.proxyPool`：
+ * - `proxyURL({ kind: 'pool' })` 按**池自己的出站控制**返回地址：直连规则返回
+ *   `undefined`（消费方回落直连），自定义代理规则返回池配置的代理地址，本地池
+ *   规则返回本地入站地址；
+ * - `outbound` 报告池出站规则（`direct` / `pool` / `custom`）；
  * - 节点/组变更经 `ctx.on('proxy-pool/node', ...)` 发布。
+ *
+ * 后台循环（健康探测与订阅刷新）只在池出站规则为 `pool` 时运行。
  *
  * @module coding-proxy-pool
  */
@@ -18,6 +22,8 @@ import { dialThrough } from './dialer.ts'
 import { mirrorPoolNodes } from './persist.ts'
 import { refreshPoolNodes } from './refresh.ts'
 import type { RefreshResult } from './refresh.ts'
+import { installPoolOutbound } from './settings.ts'
+import type { ProxyPoolSettings } from './settings.ts'
 import type { ProxyGroup, ProxyHealth, ProxyNode, ProxyPoolNodeEvent } from './types.ts'
 import { ProxyPoolError } from './types.ts'
 
@@ -57,6 +63,12 @@ export {
   DEFAULT_FEEDS,
 } from './refresh.ts'
 export type { ProxyFeed, RefreshOptions, RefreshResult } from './refresh.ts'
+export {
+  installPoolOutbound,
+  PROXY_POOL_SETTINGS_NAMESPACE,
+  resolvePoolOutbound,
+} from './settings.ts'
+export type { ProxyPoolMode, ProxyPoolSettings } from './settings.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -84,7 +96,7 @@ export interface HealthCheckOptions {
 
 /** 订阅刷新配置。 */
 export interface RefreshConfig {
-  /** 启用周期订阅刷新；缺省 true（免费节点分钟级寿命，静态池没有意义）。 */
+  /** 池启用时是否自动刷新订阅；缺省 true（免费节点分钟级寿命，静态池没有意义）。 */
   enabled?: boolean
   /** 刷新间隔毫秒；缺省 300_000（5 分钟，与免费目录的更新节奏匹配）。 */
   intervalMs?: number
@@ -105,8 +117,12 @@ export interface Config {
 }
 
 /**
- * 代理池服务。一个实例伴随宿主存活：构造后启动本地 HTTP 入站与健康检查
- * 循环，fiber 释放时两者一并停止，不留下监听端口或悬挂定时器。
+ * 代理池服务。一个实例伴随宿主存活：构造后启动本地 HTTP 入站，fiber 释放时
+ * 停止监听与后台循环，不留下端口或悬挂定时器。
+ *
+ * 池规则（`proxy-pool` 设置分节的 `mode`）决定后台是否工作：`direct` 时既
+ * 不探测节点也不拉订阅，`proxyURL({ kind: 'pool' })` 返回 undefined，消费方
+ * 据此回落直连；`pool` 时才启动健康检查与周期刷新。
  */
 export class ProxyPoolService extends Service {
 
@@ -118,6 +134,12 @@ export class ProxyPoolService extends Service {
   private readonly refreshOptions: Required<RefreshConfig>
   /** 进行中的订阅刷新（手动触发与周期触发共享，避免并发放大探测流量）。 */
   private refreshing: Promise<RefreshResult> | undefined
+  /** 当前池出站控制；设置到达前保持直连。 */
+  private poolOutbound: ProxyPoolSettings = { mode: 'direct' }
+  /** 后台循环是否在运行；与 {@link poolOutbound} 一起构成停启的幂等判据。 */
+  private backgroundActive = false
+  private healthTimer: ReturnType<typeof setInterval> | undefined
+  private refreshTimer: ReturnType<typeof setTimeout> | undefined
 
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'proxyPool')
@@ -131,13 +153,15 @@ export class ProxyPoolService extends Service {
       targetCount: config.refresh?.targetCount ?? 5,
     }
     ctx.effect(() => this.start(config), 'proxyPool.start')
+    // 池出站随设置变化停启后台循环；没有设置提供方时保持直连，不发任何后台请求。
+    installPoolOutbound(ctx, (outbound) => { this.applyOutbound(outbound) })
     // 节点持久化随服务生命周期安装：设置提供方可用时镜像注册表（重放 +
     // 写回），缺席时为 no-op。挂在构造里而不是单独的 apply 入口，因为
     // Loader 取 .default 类导出构造服务，命名导出的 apply 不会运行。
     mirrorPoolNodes(ctx, this, node => this.registerNode(node))
   }
 
-  /** 启动入站服务器与健康循环；返回 disposer 一并停止两者。 */
+  /** 启动入站服务器；返回 disposer 一并停止后台循环与监听。 */
   private start(config: Config): () => void {
     const loopback = config.loopbackOnly !== false
     const server = createServer()
@@ -150,27 +174,62 @@ export class ProxyPoolService extends Service {
     this.listening = new Promise<void>((resolve) => {
       server.once('listening', () => { resolve() })
     })
-    const timer = setInterval(() => void this.checkAll(), this.healthOptions.intervalMs)
-    void timer
-    // 订阅刷新循环：免费节点分钟级寿命，周期拉新替换才能维持可用池。
-    // 首轮延迟一个刷新周期（手工导入或持久化重放先就位，不抢启动窗口）。
-    let refreshTimer: ReturnType<typeof setTimeout> | undefined
-    const scheduleRefresh = (): void => {
-      refreshTimer = setTimeout(() => {
-        void this.refresh().finally(() => {
-          if (this.refreshOptions.enabled) scheduleRefresh()
-        })
-      }, this.refreshOptions.intervalMs)
-    }
-    if (this.refreshOptions.enabled) scheduleRefresh()
     return () => {
-      clearInterval(timer)
-      if (refreshTimer !== undefined) clearTimeout(refreshTimer)
+      this.stopBackground()
       for (const socket of this.tracked) socket.destroy()
       this.tracked.clear()
       server.close()
       this.server = undefined
     }
+  }
+
+  /** 池当前出站控制：`direct` / `pool` / `custom`。 */
+  get outbound(): ProxyPoolSettings {
+    return { ...this.poolOutbound }
+  }
+
+  /**
+   * 应用池出站控制：只有 `pool` 启动健康检查与订阅刷新，其余规则停止后台循环。
+   *
+   * 首轮刷新延迟一个周期，手工导入或持久化重放先就位；重复通知同一规则是
+   * 幂等的，不会重置正在进行的刷新或定时器。
+   * @param outbound - 设置分节解析出的池出站规则。
+   */
+  private applyOutbound(outbound: ProxyPoolSettings): void {
+    const active = outbound.mode === 'pool'
+    if (outbound.mode === this.poolOutbound.mode
+      && outbound.customUrl === this.poolOutbound.customUrl
+      && this.backgroundActive === active) return
+    this.poolOutbound = outbound
+    if (active) {
+      this.backgroundActive = true
+      this.healthTimer = setInterval(() => void this.checkAll(), this.healthOptions.intervalMs)
+      this.scheduleRefresh()
+      return
+    }
+    this.stopBackground()
+  }
+
+  /** 停止全部后台循环；进行中的一轮刷新自然结束，其收尾不再排期。 */
+  private stopBackground(): void {
+    this.backgroundActive = false
+    if (this.healthTimer !== undefined) {
+      clearInterval(this.healthTimer)
+      this.healthTimer = undefined
+    }
+    if (this.refreshTimer !== undefined) {
+      clearTimeout(this.refreshTimer)
+      this.refreshTimer = undefined
+    }
+  }
+
+  /** 排下一轮订阅刷新；池停用或关闭周期刷新时不再排期。 */
+  private scheduleRefresh(): void {
+    if (!this.backgroundActive || !this.refreshOptions.enabled) return
+    this.refreshTimer = setTimeout(() => {
+      this.refreshTimer = undefined
+      void this.refresh().finally(() => { this.scheduleRefresh() })
+    }, this.refreshOptions.intervalMs)
   }
 
   /** 入站监听就绪的 Promise；消费方在发请求前 await 它。 */
@@ -265,12 +324,18 @@ export class ProxyPoolService extends Service {
 
   /**
    * 按出站模式解析出 undici 可用的代理 URL。
+   *
+   * 渠道选择「内置代理池」时使用池自己的出站控制：直连规则返回 undefined
+   * （消费方回落直连），自定义代理规则返回池配置的地址，本地池规则返回入站地址。
+   * 渠道自己的自定义代理不受池规则影响。
    * @param mode - 消费方声明的出站模式。
-   * @returns `direct` 返回 undefined（直连），其余返回本地入站地址或自定义地址。
+   * @returns 可注入 ProxyAgent 的地址，或直连时的 undefined。
    */
   proxyURL(mode: ProxyMode): string | undefined {
     if (mode.kind === 'direct') return undefined
     if (mode.kind === 'custom') return mode.url
+    if (this.poolOutbound.mode === 'direct') return undefined
+    if (this.poolOutbound.mode === 'custom') return this.poolOutbound.customUrl
     if (this.server === undefined) {
       throw new ProxyPoolError('proxy pool frontend is not running', 'PROXY_POOL_NOT_READY')
     }

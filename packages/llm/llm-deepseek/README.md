@@ -120,10 +120,23 @@ DeepSeek 请求身份独立于应用归因。凭据解析成功后，每个提�
 
 loop 保留的响应块会追加到下一个请求，并保留其较早可复用前缀；已丢弃块不会影响后续 cache。更改提供方或模型会选择不同 cache 域。
 
+## 出站
+
+渠道级出站保存在 `llm-deepseek` 设置分节的 `outbound` 字段：`direct`（缺省）、`pool`
+（内置代理池）或 `custom`（`customUrl` 为 `http://` / `https://` 代理地址）。它在
+**设置 → 模型**的 DeepSeek 渠道详情里编辑，随该分节一起保存。
+
+对话请求与模型目录探测都在每次请求时解析一次出站：选择内置代理池时使用池自己的出站
+控制（`ctx.proxyPool.outbound`），**池为直连或池服务缺席时回落直连**，池为自定义代理时
+使用池配置的地址；代理地址经 `ProxyAgent` 作为
+`fetch` 的 `dispatcher` 注入，同一地址复用连接池，不修改进程全局 dispatcher，因此并发
+请求互不干扰。`custom` 模式缺少合法地址会在设置解析阶段被拒绝。
+
 ## 已知限制与暂缓事项
 
 - **settings 的 `models` 列表会整体替换组合列表**：settings 层按字段合并，而数组是单个字段；按条目合并 catalog 需要带键的形状。
 - **未映射 `tool_choice`**：它不属于核心词汇（MVP 取舍，与 pi-ai twin 共享）。
-- **请求使用原始 `fetch`，而非 `@cordisjs/plugin-http`**：没有共享 proxy／拦截配置；采用暂缓到第二个适配器需要该功能时（`TODO(http)`）。
+- **请求使用原始 `fetch`，而非 `@cordisjs/plugin-http`**：没有共享的拦截配置；渠道级出站
+  经逐请求的 undici `dispatcher` 注入实现（见「出站」），暂不引入 HTTP 服务（`TODO(http)`）。
 - **会跳过插件添加的内容块类型**：核心文本与支持的图片块会被序列化，空工具输出会以字面 `(no output)` 通过协议发送。
 - **图片是仅输入的持久附件**：不支持直接外部 URL、Files API 和 assistant 图片输出。

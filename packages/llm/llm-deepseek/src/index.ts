@@ -29,6 +29,8 @@ import {
 } from './adapter.ts'
 import type { DeepSeekCatalogModel, DeepSeekConnectionOptions } from './adapter.ts'
 import { discoverModels } from './discovery.ts'
+import type {} from 'coding-proxy-pool'
+import type { DeepSeekOutbound, DeepSeekOutboundConfig } from './outbound.ts'
 
 export {
   DEFAULT_CONTEXT_WINDOW,
@@ -39,6 +41,7 @@ export {
 } from './adapter.ts'
 export type { DeepSeekAdapterOptions, DeepSeekCatalogModel, DeepSeekConnectionOptions } from './adapter.ts'
 export type { RequestDefaults } from './serialize.ts'
+export type { DeepSeekOutbound, DeepSeekOutboundConfig } from './outbound.ts'
 export type * from './types.ts'
 
 export const name = 'llm-deepseek'
@@ -87,7 +90,18 @@ export interface Config {
   maxRequestImageBytes?: number
   /** Provider-owned model-request retry policy; omission uses normal mode with five retries. */
   retryPolicy?: RetryPolicyConfig
+  /**
+   * 渠道级出站：直连（缺省）、内置代理池或自定义代理。选择只影响传输；选择内置
+   * 代理池时使用池自己的出站控制（直连/本地池/自定义代理）。
+   */
+  outbound?: DeepSeekOutboundConfig
 }
+
+/** 渠道级出站的 schema：自定义模式必须带 http(s) 地址。 */
+const outboundSchema: z<DeepSeekOutboundConfig> = z.object({
+  mode: z.union([z.const('direct'), z.const('pool'), z.const('custom')]).default('direct'),
+  customUrl: z.string(),
+})
 
 const catalogModel: z<DeepSeekCatalogModel> = z.object({
   id: z.string().required(),
@@ -112,6 +126,7 @@ export const Config: z<Config> = z.object({
   streamIdleTimeoutMs: z.number().min(Number.MIN_VALUE).max(MAX_TIMER_DELAY_MS).default(DEFAULT_STREAM_IDLE_TIMEOUT_MS),
   maxRequestImageBytes: z.number().step(1).min(1).default(DEFAULT_MAX_REQUEST_IMAGE_BYTES),
   retryPolicy: RetryPolicySchema,
+  outbound: outboundSchema,
 })
 
 /** Public API default; the internal endpoint comes from $DEEPSEEK_BASE_URL. */
@@ -184,6 +199,22 @@ function resolveModels(models: readonly DeepSeekCatalogModel[] | undefined): Dee
 }
 
 /**
+ * 校验渠道级出站选择：未知模式、自定义模式缺少合法 http(s) 地址都在这里拒绝，
+ * 与端点、密钥同代进入连接快照。池地址不在这里解析——它随池规则与端口变化，
+ * 由请求期的解析钩子读取。
+ * @param outbound - 原始配置里的出站选择。
+ * @returns 归一化后的出站选择。
+ */
+function resolveOutboundConfig(outbound: DeepSeekOutboundConfig | undefined): DeepSeekOutboundConfig {
+  if (outbound === undefined) return { mode: 'direct' }
+  if (outbound.mode !== 'custom') return { mode: outbound.mode }
+  if (outbound.customUrl === undefined || !/^https?:\/\//.test(outbound.customUrl)) {
+    throw new Error('llm-deepseek: outbound.customUrl must be an http(s) proxy URL')
+  }
+  return { mode: 'custom', customUrl: outbound.customUrl }
+}
+
+/**
  * The one explicit resolve step from raw config to validated connection
  * facts. Programmatic construction may bypass Schemastery normalization, so
  * every default and bound is re-judged here — for the composition entry at
@@ -232,6 +263,7 @@ export function resolveAdapterOptions(config: Config, environment?: LaunchEnviro
     throw new Error('llm-deepseek: maxRequestImageBytes must be a positive safe integer')
   }
   return {
+    outbound: resolveOutboundConfig(config.outbound),
     apiKeyEnv: credentialRef(config.apiKeyEnv ?? DEFAULT_API_KEY_ENV),
     baseURL: config.baseURL
       ?? environment?.get(BASE_URL_ENV)?.value
@@ -305,6 +337,18 @@ export function apply(ctx: Context, config: Config): void {
 
   let userId: AnonymousUserId | undefined
   const resolveUserId = (): AnonymousUserId => userId ??= getOrCreateAnonymousUserId()
+  // 渠道级出站逐请求解析：内置代理池按池自己的出站控制取地址，池为直连（或
+  // 池服务缺席）时回落直连；渠道自定义代理直接使用渠道设置里的地址。
+  const resolveOutbound = (selection: DeepSeekOutboundConfig): DeepSeekOutbound => {
+    if (selection.mode === 'pool') {
+      const url = ctx.get('proxyPool')?.proxyURL({ kind: 'pool' })
+      return url === undefined ? { kind: 'direct' } : { kind: 'proxy', url }
+    }
+    if (selection.mode === 'custom' && selection.customUrl !== undefined) {
+      return { kind: 'proxy', url: selection.customUrl }
+    }
+    return { kind: 'direct' }
+  }
   const adapter = new DeepSeekAdapter({
     options,
     resolveApiKey,
@@ -312,6 +356,7 @@ export function apply(ctx: Context, config: Config): void {
     resolveUserId,
     resolveUserAgent: () => ctx.llm.getUserAgent(),
     resolveAttachments: () => ctx.get('attachments'),
+    resolveOutbound,
   })
   let registeredName = current().channelName ?? DEFAULT_CHANNEL_NAME
   const directory = ctx.llm.registerConfigurableProviders([
@@ -325,7 +370,7 @@ export function apply(ctx: Context, config: Config): void {
     registeredName = displayName
   }
   ctx.llm.registerModelDiscovery(NS, (request: LlmModelDiscoveryRequest) =>
-    discoverModels(request, options(), resolveApiKey, ctx.llm.getUserAgent()))
+    discoverModels(request, options(), resolveApiKey, ctx.llm.getUserAgent(), resolveOutbound))
   // Route effects bind to this apply fiber via the stable `ctx` reference,
   // even when a swap runs inside the scoped settings callback below.
   const registration = ctx.llm.registerAdapter([PROVIDER], adapter)

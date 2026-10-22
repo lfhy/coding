@@ -70,7 +70,7 @@ workspace 共 252 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/client/ui-renderer` — 负责 React 渲染层的浏览器 Cordis 插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 9）
 - `packages/client/ui-settings` — 设置领域的底座，本身不含任何呈现内容 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 5）
 - `packages/client/ui-settings-general` — 设置外壳与无特定功能归属文案 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 7）
-- `packages/client/ui-settings-models` — 模型设置、视觉理解目标与首次使用模型配置引导插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 17）
+- `packages/client/ui-settings-models` — 模型设置、视觉理解目标与首次使用模型配置引导插件 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 18）
 - `packages/client/ui-settings-plugin-inventory` — Web 设置中的只读**插件列表**标签页 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 3）
 - `packages/client/ui-settings-plugins` — **插件**设置分区及其**插件配置**标签页 [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 5）
 - `packages/client/ui-settings-proxy-pool` — 代理池设置分区：向 `settings.section` 注册一页（`proxy-pool`，模型分区之后），管理代理池节点… [client] 入口 `src/index.ts`、`src/client/index.ts`（tests 1）

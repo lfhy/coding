@@ -1018,6 +1018,11 @@ export interface Config {
   maxRequestImageBytes?: number
   /** Provider-owned model-request retry policy; omission uses normal mode with five retries. */
   retryPolicy?: RetryPolicyConfig
+  /**
+   * 渠道级出站：直连（缺省）、内置代理池或自定义代理。选择只影响传输；选择内置
+   * 代理池时使用池自己的出站控制（直连/本地池/自定义代理）。
+   */
+  outbound?: DeepSeekOutboundConfig
 }
 
 /** One optional model entry advertised by the direct-fetch adapter. */
@@ -1037,11 +1042,19 @@ export interface DeepSeekCatalogModel {
   /** 该模型允许的推理档位；省略时使用渠道级能力。 */
   reasoningEfforts?: Array<'off' | 'low' | 'high' | 'max'>
 }
+
+/** 渠道级出站选择（设置分节里保存的形态）。 */
+export interface DeepSeekOutboundConfig {
+  /** 直连、内置代理池或自定义代理。 */
+  mode: 'direct' | 'pool' | 'custom'
+  /** 自定义模式的 http(s) 代理地址；其余模式省略。 */
+  customUrl?: string
+}
 ```
 
 Depends on: [`ModelModality`](subsystems/llm-streaming.md) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
 
-Source: [`packages/llm/llm-deepseek/src/index.ts:67`](../packages/llm/llm-deepseek/src/index.ts)
+Source: [`packages/llm/llm-deepseek/src/index.ts:70`](../packages/llm/llm-deepseek/src/index.ts)
 
 <a id="coding-llm-pi-ai"></a>
 
@@ -1655,7 +1668,7 @@ export interface HealthCheckOptions {
 
 /** 订阅刷新配置。 */
 export interface RefreshConfig {
-  /** 启用周期订阅刷新；缺省 true（免费节点分钟级寿命，静态池没有意义）。 */
+  /** 池启用时是否自动刷新订阅；缺省 true（免费节点分钟级寿命，静态池没有意义）。 */
   enabled?: boolean
   /** 刷新间隔毫秒；缺省 300_000（5 分钟，与免费目录的更新节奏匹配）。 */
   intervalMs?: number
@@ -1664,7 +1677,7 @@ export interface RefreshConfig {
 }
 ```
 
-Source: [`packages/net/proxy-pool/src/index.ts:96`](../packages/net/proxy-pool/src/index.ts)
+Source: [`packages/net/proxy-pool/src/index.ts:108`](../packages/net/proxy-pool/src/index.ts)
 
 <a id="coding-pwsh-local"></a>
 

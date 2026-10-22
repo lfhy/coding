@@ -44,7 +44,7 @@
   color: var(--dsw-alias-label-secondary);
 }
 
-/* 出站方式：一行一组分段选择，替代原生 radio 的视觉。 */
+/* 池出站：一行一组分段选择，替代原生 radio 的视觉。 */
 .outboundCard,
 .nodesCard {
   min-width: 0;

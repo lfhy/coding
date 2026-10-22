@@ -11,7 +11,8 @@ import { IconChevronLeftOutline14, IconPlusOutline16, IconSearchOutline16 } from
 import type { InjectFace } from 'coding-client-ui-slots'
 import { CustomProviderCard } from './CustomProviderCard.tsx'
 import { BuiltinChannelCard } from './BuiltinChannelCard.tsx'
-import { deriveKeyRef, isBuiltinChannel, messageOf, protocolChoices } from './store.ts'
+import { ChannelOutboundRow } from './ChannelOutboundRow.tsx'
+import { channelOutboundOf, deriveKeyRef, isBuiltinChannel, messageOf, protocolChoices } from './store.ts'
 import type { ModelsSettingsStore, ProviderRow } from './store.ts'
 import type { SettingsSchemaOperations } from './schema-operations.ts'
 import { ProviderEditor } from './ProviderEditor.tsx'
@@ -366,6 +367,9 @@ function Loaded({ injected, hideHeader }: { injected: ModelsSectionFace; hideHea
               </div>
               <BuiltinChannelCard models={state.catalog.get(current.entry.provider) ?? []}
                 {...currentCatalogFailure === undefined ? {} : { failure: currentCatalogFailure }} t={t} />
+              <ChannelOutboundRow value={channelOutboundOf(state.namespaces, schema, current.entry.provider)}
+                disabled={!state.writable || state.status !== 'ready'} t={t}
+                onSave={mode => controller.setChannelOutbound(current.entry.provider, mode)} />
             </div>
           ) : currentTarget !== undefined && currentNamespace !== undefined ? (
             <div className={styles['channelEditor']}>

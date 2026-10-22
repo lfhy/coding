@@ -6,7 +6,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { SettingsProvider } from 'coding-settings'
 import type { SettingsNamespace } from 'coding-settings'
 import { afterEach, describe, expect, it } from 'vitest'
-import ProxyPoolService, { mirrorPoolNodes, parseProxyLink, serializeNodes, PROXY_POOL_NODES_SETTINGS_NAMESPACE } from '../src/index.ts'
+import ProxyPoolService, { parseProxyLink, serializeNodes, PROXY_POOL_NODES_SETTINGS_NAMESPACE } from '../src/index.ts'
 
 const contexts: Context[] = []
 afterEach(async () => {
@@ -59,9 +59,7 @@ describe('pool node persistence', () => {
     await ctx.plugin(MemorySettings)
     const pool = new ProxyPoolService(ctx, {})
     await pool.ready()
-    // 先装镜像（分节随之注册），再写入保存的链接：安装时一次 onChange、
-    // 写入后又一次，两次都会走到追加重放。
-    mirrorPoolNodes(ctx, pool, node => pool.registerNode(node))
+    // 服务构造时已安装镜像（分节随之注册）；写入保存的链接会再走一次重放。
     // ctx.inject 的回调在设置服务就绪的微任务后注册分节；等它完成再写。
     await new Promise((resolve) => { setTimeout(resolve, 0) })
     await ctx.settings.update(PROXY_POOL_NODES_SETTINGS_NAMESPACE, { links: ['http://1.2.3.4:8080#a', 'not-a-link'] })
@@ -77,7 +75,6 @@ describe('pool node persistence', () => {
     const settings = ctx.get('settings') as InstanceType<typeof MemorySettings>
     const pool = new ProxyPoolService(ctx, {})
     await pool.ready()
-    mirrorPoolNodes(ctx, pool, node => pool.registerNode(node))
     await new Promise((resolve) => { setTimeout(resolve, 0) })
 
     const disposeA = pool.registerNode(parseProxyLink('socks5://u:p@1.2.3.4:1080#a'))
@@ -105,7 +102,6 @@ describe('pool node persistence', () => {
     })
     const rebooted = new ProxyPoolService(next, {})
     await rebooted.ready()
-    mirrorPoolNodes(next, rebooted, node => rebooted.registerNode(node))
     await new Promise((resolve) => { setTimeout(resolve, 0) })
     expect(rebooted.listNodes().map(node => node.name)).toEqual(['b'])
     await next.fiber.dispose()
@@ -118,7 +114,6 @@ describe('pool node persistence', () => {
     const settings = ctx.get('settings') as InstanceType<typeof MemorySettings>
     const pool = new ProxyPoolService(ctx, {})
     await pool.ready()
-    mirrorPoolNodes(ctx, pool, node => pool.registerNode(node))
     await new Promise((resolve) => { setTimeout(resolve, 0) })
 
     pool.registerNode(parseProxyLink('http://5.6.7.8:8080#手工'))
@@ -153,7 +148,6 @@ describe('pool node persistence', () => {
     await pool.ready()
     // mirror 的注册分节挂在 inject(['settings']) 上；没有设置服务时它静默
     // 不注册（这正是 no-op 语义），不给 root 留下会被误读的悬空状态。
-    mirrorPoolNodes(ctx, pool, node => pool.registerNode(node))
     await new Promise((resolve) => { setTimeout(resolve, 0) })
     pool.registerNode(parseProxyLink('http://5.6.7.8:8080#b'))
     expect(pool.listNodes().map(node => node.name)).toEqual(['b'])

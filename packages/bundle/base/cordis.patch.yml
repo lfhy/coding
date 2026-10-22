@@ -103,8 +103,10 @@
 
     # Outbound proxy pool: node registry (share-link import of HTTP/SOCKS5/VLESS/
     # VMess/Hysteria2), fallback/url-test groups, and a loopback HTTP CONNECT
-    # frontend that consumers (the Free channel, custom channels) can point at.
-    # Starts with the host and stops with it; no proxy leaves the process.
+    # frontend that channels select in their own outbound settings. Its own
+    # `proxy-pool` settings rule defaults to direct: background health checks and
+    # feed refresh only run once the user enables the pool. Starts and stops with
+    # the host; no proxy leaves the process.
     - id: proxy-pool
       name: 'coding-proxy-pool'
 

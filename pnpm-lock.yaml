@@ -6286,6 +6286,9 @@ importers:
       eventsource-parser:
         specifier: ^3.1.0
         version: 3.1.0
+      undici:
+        specifier: ^8.10.2
+        version: 8.10.2
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -6308,6 +6311,9 @@ importers:
       coding-llm:
         specifier: workspace:^
         version: link:../llm
+      coding-proxy-pool:
+        specifier: workspace:^
+        version: link:../../net/proxy-pool
       coding-settings:
         specifier: workspace:^
         version: link:../../settings/settings

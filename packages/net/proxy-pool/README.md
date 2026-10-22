@@ -1,9 +1,15 @@
 # coding-proxy-pool
 
 出站代理池：把一组代理节点（HTTP/SOCKS5/VLESS/VMess/Hysteria2 分享链接导入）聚合成
-一个**本地 HTTP 代理入站**，消费方（Free 渠道、任意 OpenAI 兼容渠道）只需指向
-`http://127.0.0.1:<port>` 即可获得跨节点故障转移能力。服务伴随宿主进程启动与停止，
-不落任何外部进程或文件。
+一个**本地 HTTP 代理入站**，消费方（Free 渠道、DeepSeek 渠道等）在自己设置里选择
+「内置代理池」后指向 `http://127.0.0.1:<port>` 即可获得跨节点故障转移能力。服务伴随
+宿主进程启动与停止，不落任何外部进程或文件。
+
+池有自己的**出站控制**（`proxy-pool` 设置分节的 `mode`）：`direct`（缺省）、`pool`
+或 `custom`（`customUrl`）。渠道级出站选择属于各渠道自己的设置分节，渠道选择
+「内置代理池」时使用这里的出站——直连规则下 `proxyURL({ kind: 'pool' })` 返回
+`undefined`，渠道回落直连；自定义代理规则返回池配置的地址；只有 `pool` 规则启动
+后台健康检查与订阅刷新并提供本地入站地址。
 
 ## 能力
 
@@ -12,11 +18,14 @@
   不落盘。链接行覆盖各协议字段（vless 的 TLS/ws 参数、vmess 的 base64 JSON、
   hysteria2 的 sni/insecure），往返无损。没有设置提供方时为 no-op，池照常
   运行只是节点随进程结束。
-- **订阅自动刷新**：免费节点寿命只有分钟级，静态导入几分钟就过期。池默认每 5 分钟
-  从内置公开目录（proxifly、monosans）拉取候选，**先探测再入池**（8 并发、5s 超时，
-  通过者以 `feed:` 前缀入池并携带探测健康记录），并移除候选集里已消失的旧 `feed:` 节点；
-  用户手工导入的节点绝不触碰。拉取经镜像回退链（直连 → gh-proxy.com），单源失败只记
-  入摘要不中断整轮。`pool.refresh()` 手动触发同一动作。
+- **池的出站控制**：`proxy-pool` 分节的 `mode` 是池自己的出站。`direct`（缺省）与
+  `custom` 都不经本地入站，因此不启动后台循环；只有 `pool` 启动健康检查与订阅刷新
+  并向消费方提供本地地址。手动 `pool.refresh()` 与 `pool.checkNode()` 在所有规则下都可用。
+- **订阅自动刷新**：免费节点寿命只有分钟级，静态导入几分钟就过期。池规则为 `pool`
+  时每 5 分钟从内置公开目录（proxifly、monosans）拉取候选，**先探测再入池**（8 并发、
+  5s 超时，通过者以 `feed:` 前缀入池并携带探测健康记录），并移除候选集里已消失的旧
+  `feed:` 节点；用户手工导入的节点绝不触碰。拉取经镜像回退链（直连 → gh-proxy.com），
+  单源失败只记入摘要不中断整轮。`pool.refresh()` 手动触发同一动作。
 - **节点注册表**：`registerNode` / `registerGroup` 注册节点与组，重复 id 抛
   `PROXY_NODE_DUPLICATE` / `PROXY_GROUP_DUPLICATE`；变更经 `proxy-pool/node` 事件发布。
 - **分享链接导入**：`parseProxyLink` / `parseProxyLinks` 解析
@@ -26,10 +35,10 @@
   （明文 http 目标——undici 的 ProxyAgent 对 http 目标不发 CONNECT，这是它的设计）。
 - **组选择**：`fallback`（按序取第一个健康节点）与 `url-test`（取延迟最低的健康节点），
   无健康数据时回落首位候选。
-- **健康检查**：周期经每节点拨号探测（间隔/超时可配），结果记入 `ProxyHealth` 并以
-  `node-health` 事件发布；`checkNode` 也可手动触发。
-- **生命周期**：`ctx.effect` 持有入站监听、探测定时器与活跃连接表；fiber 释放时
-  全部销毁，不留端口与悬挂句柄。
+- **健康检查**：池的出站为 `pool` 时周期经每节点拨号探测（间隔/超时可配），结果记入
+  `ProxyHealth` 并以 `node-health` 事件发布；`checkNode` 也可手动触发。
+- **生命周期**：`ctx.effect` 持有入站监听、后台定时器与活跃连接表；fiber 释放或池
+  出站切到直连/自定义代理时全部停止，不留悬挂定时器与进行中的后台刷新排期。
 
 ## 协议实现说明
 
@@ -52,6 +61,8 @@
 
 const pool = ctx.proxyPool
 await pool.ready()
+// 池的出站由 `proxy-pool` 设置分节驱动；直连时 proxyURL 返回 undefined。
+pool.outbound // { mode: 'direct' | 'pool' | 'custom', customUrl?: string }
 const dispose = pool.registerNode(parseProxyLink('socks5://1.2.3.4:1080#node-a'))
 pool.registerGroup({ id: 'g', name: '主组', members: ['<node-a-id>'], strategy: 'fallback' })
 pool.useGroup('g')
@@ -95,6 +106,7 @@ None — 代理池是纯传输层能力，模型可见内容不因出站路径�
 - **Hysteria2 需要 QUIC 栈**：引入 QUIC 实现前该协议明确拒绝。
 - **节点凭据是明文链接行**：持久化分节按分享链接原文（含凭据）存放在本机
   设置文档里；接入凭据存储前由设置层决定是否加密。
-- **并发代理请求共享全局 dispatcher**：`llm-opencode` 的出站切换按请求替换 undici
-  全局 dispatcher；两个真正并发的代理请求会互相覆盖，Free 渠道的串行请求模式不受
-  影响，见 `llm-opencode/src/outbound.ts` 的说明。
+- **Free 渠道并发请求共享全局 dispatcher**：`llm-opencode` 的出站切换按请求替换
+  undici 全局 dispatcher；两个真正并发的代理请求会互相覆盖，Free 渠道的串行请求模式
+  不受影响，见 `llm-opencode/src/outbound.ts` 的说明。DeepSeek 渠道改为逐请求注入
+  dispatcher，不受此限制。

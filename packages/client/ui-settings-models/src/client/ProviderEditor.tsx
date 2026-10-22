@@ -127,6 +127,19 @@ function layoutOf(ns: string): EditorLayout {
   return 'unknown'
 }
 
+/** DeepSeek 渠道的出站草稿；未配置时 undefined。 */
+type DeepSeekOutboundDraft = { mode: 'direct' | 'pool' | 'custom'; customUrl?: string }
+
+/** 出站草稿里唯一会阻止保存的情况：自定义模式缺少合法 http(s) 地址。 */
+function outboundDraftFailure(value: unknown): 'channelOutboundInvalid' | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const record = value as { mode?: unknown; customUrl?: unknown }
+  if (record.mode !== 'custom') return undefined
+  return typeof record.customUrl === 'string' && /^https?:\/\//.test(record.customUrl)
+    ? undefined
+    : 'channelOutboundInvalid'
+}
+
 /** The credential reference this profile resolves keys through. */
 function refFor(
   schema: SettingsSchemaOperations,
@@ -169,6 +182,10 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   const keyRef = refFor(schema, namespace, settingsPath, props.provider)
   // 未编辑时与列表、标题共用目录的生效名称；只在本字段被编辑后写入名称覆盖。
   const channelName = channelNameDraft ?? props.displayName
+  const outboundDraft = schema.getPath(draft, ['outbound'])
+  const outboundFailure = layout === 'deepseek' && props.credentialOnly !== true
+    ? outboundDraftFailure(outboundDraft)
+    : undefined
   const channelNameFailure = layout === 'deepseek' && props.credentialOnly !== true
     && channelNameDraft !== undefined
     && (channelName.trim().length === 0 || channelName.trim().length > MAX_CHANNEL_NAME_LENGTH)
@@ -376,6 +393,42 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
       },
       onReset: () => { setDraft(current => schema.deletePath(current, ['models'])) },
     }
+    /**
+     * 渠道级出站：直连／内置代理池／自定义代理。写入草稿的 `outbound` 路径，
+     * 与端点、模型一起随保存提交；池规则为直连时选择内置池也按直连处理。
+     */
+    const outboundField = (): ReactNode => {
+      const record = typeof outboundDraft === 'object' && outboundDraft !== null
+        ? outboundDraft as Record<string, unknown>
+        : {}
+      const storedMode = record['mode']
+      const mode = storedMode === 'pool' || storedMode === 'custom' ? storedMode : 'direct'
+      const customUrl = typeof record['customUrl'] === 'string' ? record['customUrl'] : ''
+      const write = (next: DeepSeekOutboundDraft): void => {
+        setDraft(current => schema.setPath(current, ['outbound'], next))
+      }
+      return <div className={styles['field']}>
+        <span className={styles['fieldLabel']}>{t('channelOutbound')}</span>
+        <div className={styles['outboundSegmented']} role="group" aria-label={t('channelOutbound')}>
+          {(['direct', 'pool', 'custom'] as const).map(choice => (
+            <button key={choice} type="button" className={styles['outboundSegment']} aria-pressed={mode === choice}
+              disabled={disabled}
+              onClick={() => { write(choice === 'custom' ? { mode: 'custom', customUrl } : { mode: choice }) }}>
+              {t(choice === 'direct' ? 'channelOutboundDirect'
+                : choice === 'pool' ? 'channelOutboundPool' : 'channelOutboundCustom')}
+            </button>
+          ))}
+        </div>
+        {mode === 'custom' ? <div className={styles['outboundCustomRow']}>
+          <input className={styles['input']} value={customUrl} aria-label={t('channelOutboundUrl')}
+            placeholder="http://proxy.example:8080" disabled={disabled}
+            aria-invalid={outboundFailure !== undefined}
+            onChange={(event) => { write({ mode: 'custom', customUrl: event.target.value }) }} />
+        </div> : null}
+        <p className={styles['advancedHint']}>{t('channelOutboundPoolHint')}</p>
+        {outboundFailure === undefined ? null : <p className={styles['error']} role="alert">{t(outboundFailure)}</p>}
+      </div>
+    }
     const Customized = props.channelLayout === true ? 'div' : 'details'
     return (
       <>
@@ -456,6 +509,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
                 </div>
               )
               : null}
+            {family === 'deepseek' ? outboundField() : null}
             <div className={styles['field']}>
               <span className={styles['fieldLabel']}>{t('baseUrl')}</span>
               <input
@@ -550,6 +604,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
         submitDisabled={disabled || layout === 'unknown'
           || (props.credentialOnly !== true && modelFailure !== undefined)
           || channelNameFailure !== undefined
+          || outboundFailure !== undefined
           || shownKeyFailure !== undefined
           || (props.credentialRequired === true && keyValue.length === 0)}
         submitLabel={props.submitLabel ?? 'apply'}
