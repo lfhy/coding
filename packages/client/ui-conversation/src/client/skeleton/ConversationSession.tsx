@@ -116,6 +116,8 @@ export function ConversationSessionHeader({
                 <IconNewChatOutline16 size={14} />
               </button>
             </div>
+            {/* DOM 顺序沿用“标题 → 工具 → 视图切换”，与无障碍和页头快照
+                一致；网格列把切换器放到视觉居中位置。 */}
             <div className={css.headerUtilities}>
               <button
                 type="button"
@@ -131,23 +133,23 @@ export function ConversationSessionHeader({
               </button>
               {renderSlot('conversation.session.header.utilities', {})}
             </div>
+            {tabs.length > 1 && (
+              <div className={css.tabs} role="tablist" data-window-drag-region>
+                {tabs.map(viewTab => (
+                  <button
+                    key={viewTab.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={viewTab.id === active?.id}
+                    className={clsx(css.tab, viewTab.id === active?.id && css.tabActive)}
+                    onClick={() => { actions.setView(viewTab.id) }}
+                  >
+                    {viewTab.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-          {tabs.length > 1 && (
-            <div className={css.tabs} role="tablist" data-window-drag-region>
-              {tabs.map(viewTab => (
-                <button
-                  key={viewTab.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={viewTab.id === active?.id}
-                  className={clsx(css.tab, viewTab.id === active?.id && css.tabActive)}
-                  onClick={() => { actions.setView(viewTab.id) }}
-                >
-                  {viewTab.label}
-                </button>
-              ))}
-            </div>
-          )}
         </>
       )}
     </header>

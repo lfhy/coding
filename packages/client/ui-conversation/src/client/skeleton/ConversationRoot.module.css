@@ -1,7 +1,8 @@
-/* Conversation column skeleton: header (breadcrumb row only for subagents not fork + tabs) over the view
-   area, composer InputBar at the bottom. Column width/squeeze is layout's;
-   this fills its cell. Figma: Header 39:27730 (83px two-row), tabs 13px with
-   a 2px active bar. */
+/* Conversation column skeleton: one-row header (breadcrumbs / centered view
+   switch / utilities) over the view area, composer InputBar at the bottom.
+   Column width/squeeze is layout's; this fills its cell. Figma: Header 39:27730;
+   the view switch is a centered segmented control rather than an underline tab
+   strip. */
 
 .root {
   position: relative;
@@ -70,8 +71,9 @@
 .header {
   position: relative;
   flex: none;
-  padding: 12px 28px 0 20px;
+  padding: 12px 28px 10px 20px;
   border-bottom: 1px solid transparent;
+  container-type: inline-size;
 }
 
 /* 页头顶部单独命中窗口，避免把整块页头划成交通灯背后的拖拽区域。 */
@@ -121,9 +123,11 @@
 }
 
 .titleRow {
-  display: flex;
+  display: grid;
+  grid-template-areas: 'title tabs utilities';
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  gap: 0;
+  gap: 12px;
   min-height: 32px;
   -webkit-app-region: no-drag;
 }
@@ -135,10 +139,11 @@
 
 .titleCluster {
   display: flex;
-  flex: 1;
+  grid-area: title;
   align-items: center;
   gap: 10px;
   min-width: 0;
+  overflow: hidden;
 }
 
 .crumbs {
@@ -218,10 +223,11 @@
 
 .headerUtilities {
   display: flex;
+  grid-area: utilities;
   flex: none;
   align-items: center;
+  justify-self: end;
   gap: 8px;
-  margin-left: 20px;
 }
 
 .headerUtilities:empty {
@@ -259,50 +265,69 @@
   display: none;
 }
 
-/* figma Tab_Group 34:11441: 35px strip, gap 36, pad-left 8, tabs bottom-aligned. */
+/* 顶栏视图切换：居中于标题行的胶囊分段控件；选中项用浮起的表面标识，
+   不再使用下方 2px 指示条。网格中列固定为 auto，标题与工具区各自截断。 */
 .tabs {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  gap: 36px;
-  margin-top: 4px;
-  padding-left: 8px;
+  display: inline-flex;
+  grid-area: tabs;
+  align-items: center;
+  justify-self: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 10px;
+  background: var(--dsw-alias-interactive-bg-hover);
   -webkit-app-region: no-drag;
 }
 
-/* figma .Tab 34:11442: 13/16 text (figma wt510, rendered 500), gap 8 to the 2px bar. */
+/* 与相邻顶栏控件同一 13/16 排版；不换行，窄列由网格侧列先让位。 */
 .tab {
-  position: relative;
-  padding: 0 0 11px;
+  padding: 5px 12px;
   border: none;
+  border-radius: 8px;
   background: transparent;
   font-size: 13px;
   line-height: 16px;
   font-weight: 500;
   color: var(--dsw-alias-label-tertiary);
+  white-space: nowrap;
   cursor: pointer;
+  transition:
+    color var(--ds-transition-duration-fast) var(--ds-ease-in-out),
+    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);
 }
 
-.tab::after {
-  content: '';
-  position: absolute;
-  right: 0;
-  bottom: 1px;
-  left: 0;
-  height: 2px;
-  border-radius: 2px;
-  background: transparent;
+.tab:hover:not(.tabActive) {
+  color: var(--dsw-alias-label-secondary);
 }
 
-/* Selected tab is blue, not ink: brand-primary resolves to neutral black in
-   this token sheet, so the selected state rides the business blue — the
-   nearest semantic token that stays blue in both themes. */
+/* 选中项用抬升表面而不是品牌蓝填色：亮色白底、暗色 layer-750，都浮在轨道上。 */
 .tabActive {
-  color: var(--dsw-alias-state-business-primary);
+  background: var(--dsw-alias-button-elevated-fill);
+  color: var(--dsw-alias-label-primary);
+  box-shadow: var(--dsw-shadow-lv1);
 }
 
-.tabActive::after {
-  background: var(--dsw-alias-state-business-primary);
+.tab:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tab {
+    transition: none;
+  }
+}
+
+/* 窄列（右列工作台或窄窗口）放不下三段并排时，切换器独占第二行并继续居中，
+   标题与工具区留在第一行；容器查询按会话列宽度而不是视口宽度判断。 */
+@container (max-width: 560px) {
+  .titleRow {
+    grid-template-areas:
+      'title utilities'
+      'tabs tabs';
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: 8px;
+  }
 }
 
 .viewArea {

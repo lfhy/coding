@@ -60,4 +60,23 @@ describe('Hero action titlebar clearance', () => {
     expect(details).toContain('padding: 14px calc(12px + var(--app-safe-area-inset-right, 0px)) 12px 12px;')
     expect(details).toMatch(/\.header :is\([^)]*button[^)]*\)\s*\{\s*-webkit-app-region: no-drag;/)
   })
+
+  it('centers the view switch inside the draggable title row', () => {
+    const titleRow = css.match(/\.titleRow\s*\{([^}]*)\}/)?.[1] ?? ''
+    expect(titleRow).toMatch(/display:\s*grid;/)
+    expect(titleRow).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\) auto minmax\(0, 1fr\);/)
+    const tabs = css.match(/\.tabs\s*\{([^}]*)\}/)?.[1] ?? ''
+    expect(tabs).toMatch(/grid-area:\s*tabs;/)
+    expect(tabs).toMatch(/justify-self:\s*center;/)
+    // 分段控件使用浅色轨道与抬升的选中表面，不再绘制下划线指示条。
+    expect(tabs).toMatch(/background:\s*var\(--dsw-alias-interactive-bg-hover\);/)
+    expect(css).toMatch(/\.tabActive\s*\{[^}]*background:\s*var\(--dsw-alias-button-elevated-fill\);/)
+    expect(css).not.toContain('.tabActive::after')
+    // 窄列回退：切换器独占第二行并保持居中，按会话列宽度而不是视口宽度判断。
+    expect(css).toMatch(/@container \(max-width: 560px\) \{\s*\.titleRow \{[\s\S]*'tabs tabs';/)
+    const titleRowAt = session.indexOf('<div className={css.titleRow} data-window-drag-region>')
+    const tabsAt = session.indexOf('<div className={css.tabs} role="tablist" data-window-drag-region>')
+    expect(titleRowAt).toBeGreaterThanOrEqual(0)
+    expect(tabsAt).toBeGreaterThan(titleRowAt)
+  })
 })
