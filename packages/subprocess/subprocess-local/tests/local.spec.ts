@@ -194,7 +194,7 @@ describe('LocalSubprocessRuntime', () => {
       write: () => {},
       kill: () => {},
     }
-    const spawn = vi.fn(() => terminal)
+    const spawn = vi.fn((_file: string, _args: string[], _options: { name: string; env: NodeJS.ProcessEnv }) => terminal)
     vi.resetModules()
     vi.doMock('node-pty', () => ({ spawn }))
     try {
