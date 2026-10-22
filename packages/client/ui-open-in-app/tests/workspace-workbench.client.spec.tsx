@@ -16,8 +16,13 @@ import {
 } from '../src/client/WorkspaceWorkbench.tsx'
 import { zh } from '../src/client/locales.ts'
 vi.mock('../src/client/TerminalPanel.tsx', () => ({
-  TerminalPanel: ({ shown, panelId }: { shown: boolean; panelId: string }) =>
-    <section hidden={!shown} id={panelId} data-testid="right-terminal" />,
+  TerminalPanel: ({ shown, panelId, onCompleted }: {
+    shown: boolean
+    panelId: string
+    onCompleted?: () => void
+  }) => <section hidden={!shown} id={panelId} data-testid="right-terminal">
+    {onCompleted !== undefined && <button type="button" onClick={onCompleted}>模拟 Shell 退出</button>}
+  </section>,
 }))
 
 import type { WorkspaceFileEntry, WorkspaceFilePayload, WorkspaceFilesPayload } from '../src/client/wire.ts'
@@ -698,6 +703,52 @@ describe('WorkspaceWorkbench shell', () => {
     const preview = screen.getByRole('tab', { name: 'note.txt' })
     expect(preview.getAttribute('aria-selected')).toBe('true')
     expect(document.activeElement).toBe(preview)
+  })
+
+  it('closes the right sidebar when the last tab goes away, keeping it for earlier tabs', () => {
+    const b = bench()
+    b.instance.actions.openFileManager()
+    b.instance.actions.openFile({ name: 'note.txt', segments: ['note.txt'] })
+    render(<WorkspaceWorkbench {...b.props} />)
+    fireEvent.click(screen.getByRole('button', { name: zh['tabs.close'].replace('{name}', 'note.txt') }))
+    expect(b.closeWorkbench).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: zh['tabs.close'].replace('{name}', zh['files.tab']) }))
+    expect(b.closeWorkbench).toHaveBeenCalledOnce()
+    expect(b.instance.getSnapshot()).toMatchObject({ view: 'menu', activeId: null, tabs: [] })
+  })
+
+  it('closes the right sidebar when the last external tab is closed', () => {
+    const definition: SidebarRightTabDefinition = { id: 'plugin:notes', kind: 'notes', title: () => 'Notes' }
+    const b = bench({ externalDefinitions: [definition] })
+    b.instance.actions.openExternalTab({ definitionId: definition.id, kind: 'notes',
+      name: 'Notes', address: 'sidebar://notes' })
+    render(<WorkspaceWorkbench {...b.props} />)
+    fireEvent.click(screen.getByRole('button', { name: zh['tabs.close'].replace('{name}', 'Notes') }))
+    expect(b.closeWorkbench).toHaveBeenCalledOnce()
+    expect(b.instance.getSnapshot().tabs).toEqual([])
+  })
+
+  it('closes the right sidebar when the last browser page closes but not on an empty browser sync', () => {
+    const b = bench()
+    render(<WorkspaceWorkbench {...b.props} />)
+    const browserOwner = () => b.renderSlot.mock.calls.findLast(([name]) => name === 'workbench.browser')?.[1] as {
+      syncBrowserTabs: (tabs: readonly { id: string; name: string }[], activeId: string | null) => void
+    }
+    act(() => { browserOwner().syncBrowserTabs([], null) })
+    expect(b.closeWorkbench).not.toHaveBeenCalled()
+    act(() => { browserOwner().syncBrowserTabs([{ id: 'page', name: 'Page' }], 'page') })
+    act(() => { browserOwner().syncBrowserTabs([], null) })
+    expect(b.closeWorkbench).toHaveBeenCalledOnce()
+    expect(b.instance.getSnapshot().tabs).toEqual([])
+  })
+
+  it('closes the right sidebar when a shell exit removes the last terminal tab', () => {
+    const b = bench()
+    b.instance.actions.openTerminal()
+    render(<WorkspaceWorkbench {...b.props} />)
+    fireEvent.click(screen.getByRole('button', { name: '模拟 Shell 退出' }))
+    expect(b.closeWorkbench).toHaveBeenCalledOnce()
+    expect(b.instance.getSnapshot().tabs).toEqual([])
   })
 
   it('窄屏预览独占内容，返回文件管理器仍保留目录筛选与展开', async () => {

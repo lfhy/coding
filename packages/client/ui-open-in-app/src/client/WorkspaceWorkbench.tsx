@@ -514,7 +514,10 @@ export function WorkspaceWorkbench(props: WorkspaceWorkbenchProps): React.JSX.El
           onCompleted={() => {
             const wasActive = props.shown && id === sessionId && state?.activeId === tab.id
             if (wasActive) setFocusRequest(null)
+            const closing = sessions[id]
             props.actions.closeTab(id as SessionId, tab.id)
+            // Shell 退出关闭最后一个右侧终端标签时，右侧边栏同样收起。
+            if (closing !== undefined && closing.tabs.length === 1) props.closeWorkbench(id as SessionId)
             if (wasActive) setCompletedFocus({ sessionId: id as SessionId, tabId: tab.id })
           }} />
       )))}
@@ -687,6 +690,25 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
     if (opening && filesLevels[key]?.phase !== 'ready') load(entry.segments)
   }, [actions, expanded, filesLevels, load])
 
+  /**
+   * 关闭顶栏标签；它是最后一个标签时右侧边栏已无内容，直接收起而不是停在功能菜单。
+   * 只覆盖用户的关闭动作，插件卸载等被动清理不经过这里。
+   */
+  const closeTab = useCallback((id: string, close: (id: string) => void): void => {
+    if (!tabs.some(tab => tab.id === id)) return
+    close(id)
+    if (tabs.length === 1) closeWorkbench()
+  }, [closeWorkbench, tabs])
+  const tabsRef = useRef(tabs)
+  tabsRef.current = tabs
+  // 关闭最后一个浏览器页面后工作台没有标签；浏览器处于空状态时的同步不经过标签关闭。
+  const syncBrowserTabs = useCallback<WorkbenchActions['syncBrowserTabs']>((incoming, activeId) => {
+    const current = tabsRef.current
+    const closesLastTab = current.length === 1 && current[0]?.type === 'browser' && incoming.length === 0
+    actions.syncBrowserTabs(incoming, activeId)
+    if (closesLastTab) closeWorkbench()
+  }, [actions, closeWorkbench])
+
   const browserOwner = {
     shown: browserShown,
     interactionEpoch: props.state.interactionEpoch,
@@ -699,7 +721,7 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
     focusBrowserTab,
     focusPendingBrowserTab,
     openBrowser: showBrowser,
-    syncBrowserTabs: actions.syncBrowserTabs,
+    syncBrowserTabs,
     beginBrowserLink: (id: string, url: string) => {
       actions.beginBrowserLink(id, url)
       openWorkbench()
@@ -708,7 +730,7 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
     failBrowserLink: actions.failBrowserLink,
     clearBrowserLinks: actions.clearBrowserLinks,
     selectPendingBrowserLink: (id: string) => { actions.activateTab(id) },
-    closePendingBrowserLink: (id: string) => { actions.closeTab(id) },
+    closePendingBrowserLink: (id: string) => { closeTab(id, actions.closeTab) },
     ...view === 'browser' && active?.type === 'browser' ? { selectedTabId: active.browserTabId } : {},
   }
   return (
@@ -744,7 +766,7 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
                 <button type="button" className={css.tabClose} aria-label={t('tabs.close', { name })}
                   title={t('tabs.close', { name })} onClick={() => {
                     focusAfterClose.current = true
-                    actions.closeTab(tab.id)
+                    closeTab(tab.id, actions.closeTab)
                   }}><IconCloseOutline16 size={12} /></button>
               </div>
             }
@@ -760,7 +782,7 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
               const selected = view === 'external' && activeId === tab.id
               const definitionId = tabDefinitions.find(candidate => candidate.kind === tab.kind)?.id ?? tab.definitionId
               const owner = externalTabOwner(tab, shown && selected, panelPrefix, props.sessionId,
-                () => { selectTab(tab.id, true) }, () => { actions.closeExternalTab(tab.id) })
+                () => { selectTab(tab.id, true) }, () => { closeTab(tab.id, actions.closeExternalTab) })
               return <div className={clsx(css.tab, selected && css.tabActive)} role="presentation" key={tab.id}>
                 <button type="button" className={css.tabSelect} role="tab" aria-selected={selected}
                   tabIndex={selected || (view === 'menu' && active?.type !== 'launcher' && index === 0) ? 0 : -1}
@@ -777,7 +799,7 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
                   aria-label={t('tabs.close', { name: tab.name })}
                   title={t('tabs.close', { name: tab.name })} onClick={() => {
                     focusAfterClose.current = true
-                    actions.closeExternalTab(tab.id)
+                    closeTab(tab.id, actions.closeExternalTab)
                   }}>
                   <IconCloseOutline16 size={12} />
                 </button>
@@ -804,7 +826,7 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
               <button type="button" className={css.tabClose} aria-label={t('tabs.close', { name })}
                 title={t('tabs.close', { name })} onClick={() => {
                   focusAfterClose.current = true
-                  actions.closeTab(tab.id)
+                  closeTab(tab.id, actions.closeTab)
                 }}>
                 <IconCloseOutline16 size={12} />
               </button>
@@ -971,7 +993,7 @@ function WorkbenchView(props: WorkbenchViewProps): React.JSX.Element {
             const definition = tabDefinitions.find(candidate => candidate.kind === tab.kind)
             if (!visible && definition?.keepMounted !== true) return null
             const owner = externalTabOwner(tab, visible, panelPrefix, props.sessionId,
-              () => { selectTab(tab.id, true) }, () => { actions.closeExternalTab(tab.id) })
+              () => { selectTab(tab.id, true) }, () => { closeTab(tab.id, actions.closeExternalTab) })
             return <div className={css.externalPanel} key={tab.id} id={owner.panelDomId}
               role="tabpanel" aria-labelledby={owner.tabDomId} hidden={!visible}
               {...!visible ? { inert: '' } : {}}>
