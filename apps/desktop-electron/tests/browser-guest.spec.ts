@@ -125,10 +125,11 @@ vi.mock('electron', () => ({
   nativeImage: { createFromBuffer: electron.createFromBuffer },
 }))
 
-function fixture() {
+function fixture(hostState: { focused: boolean } = { focused: true }) {
   const children: unknown[] = []
   const window = {
     isDestroyed: vi.fn(() => false), isVisible: vi.fn(() => true),
+    isFocused: vi.fn(() => hostState.focused),
     getContentBounds: vi.fn(() => ({ x: 0, y: 0, width: 800, height: 600 })),
     on: vi.fn<(event: string, listener: () => void) => void>(),
     removeListener: vi.fn<(event: string, listener: () => void) => void>(),
@@ -470,6 +471,30 @@ describe('Electron 实时浏览器 guest', () => {
     expect(window.contentView.children).toHaveLength(0)
     expect(nextShield.webContents.close).toHaveBeenCalledOnce()
     await manager.release('s1')
+    await manager.dispose()
+  })
+
+  it('宿主在后台时租约不移交键盘焦点，切回前台才由屏障接管', async () => {
+    const hostState = { focused: false }
+    const window = fixture(hostState)
+    const manager = createBrowserGuestManager(window)
+    const first = await manager.control('s1', { kind: 'ensure-tab' })
+    const presentation = { sessionId: 's1', tabId: first!.activeTabId!, visible: true,
+      bounds: { x: 0, y: 0, width: 500, height: 400 } }
+    manager.present(presentation)
+    await manager.lease('s1')
+    const shield = electron.views[1]!
+    // 后台 Agent 操作不得让宿主窗口 makeKeyAndOrderFront：把整个客户端弹到前台。
+    expect(shield.webContents.focus).not.toHaveBeenCalled()
+    expect(window.contentView.children).toEqual([electron.views[0], shield])
+    hostState.focused = true
+    const gained = window.on.mock.calls.find(([name]) => name === 'focus')?.[1]
+    if (!gained) throw new Error('host focus listener missing')
+    gained()
+    expect(shield.webContents.focus).toHaveBeenCalledOnce()
+    await manager.release('s1')
+    expect(shield.webContents.close).toHaveBeenCalledOnce()
+    expect(window.removeListener).toHaveBeenCalledWith('focus', gained)
     await manager.dispose()
   })
 

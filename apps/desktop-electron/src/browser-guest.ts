@@ -68,6 +68,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     } catch { clearCursorOverlay() }
   }
 
+  // 屏障在宿主窗口处于后台时只做原生 hit-test，不移交键盘焦点也不激活应用。
   function protectPresentation(): void {
     if (!presented || !owners.get(presented.sessionId)?.lease) { clearOverlay(); return }
     try {

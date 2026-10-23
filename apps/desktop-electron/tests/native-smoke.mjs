@@ -2279,15 +2279,18 @@ CGEvent(keyboardEventSource:nil,virtualKey:0,keyDown:false)?.post(tap:.cghidEven
   }, guestId), 'click lease retains guest beneath native transparent input view', 10_000)
   const protectedState = await app.evaluate(async ({ BrowserWindow, webContents }, id) => {
     const guest = webContents.fromId(id)
-    const overlay = BrowserWindow.getAllWindows()[0].contentView.children.find(view =>
+    const window = BrowserWindow.getAllWindows()[0]
+    const overlay = window.contentView.children.find(view =>
       view.webContents?.getURL().startsWith('data:text/html'))
-    const result = { focused: overlay.webContents.isFocused(),
+    const result = { focused: overlay.webContents.isFocused(), hostFocused: window.isFocused(),
       clear: await overlay.webContents.executeJavaScript('getComputedStyle(document.body).backgroundColor'),
       guestNodes: await guest.executeJavaScript('document.querySelectorAll("#cursor, #pulse").length') }
     return result
   }, guestId)
-  if (screenLocked() === false) assert.equal(protectedState.focused, true, 'native input shield owns keyboard focus')
-  else console.log(`UNVERIFIED: native keyboard focus; screenLocked=${screenLocked()}`)
+  // 屏障只在前台窗口接管键盘焦点；窗口不在前台时不得激活应用，因此不要求焦点。
+  if (screenLocked() === false && protectedState.hostFocused) {
+    assert.equal(protectedState.focused, true, 'foreground host window hands keyboard focus to the native input shield')
+  } else console.log(`UNVERIFIED: native keyboard focus; screenLocked=${screenLocked()}, hostFocused=${protectedState.hostFocused}`)
   assert.equal(protectedState.clear, 'rgba(0, 0, 0, 0)', 'native shield leaves page continuously visible')
   assert.equal(protectedState.guestNodes, 0, 'visual animation must not pollute guest observation DOM')
   const compositionPath = join(tmpdir(), `dsh-native-overlay-${randomUUID()}.png`)
