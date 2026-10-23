@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { stubSettingsScope } from 'coding-client-test-runtime'
 import {
   SearchSettingsController, decodeBing, decodeDeepSeek, decodeDuckDuckGo, decodeTavily, decodeWeb, validField, validOutbound,
-  type BingSearchSettings, type DeepSeekSearchSettings, type DuckDuckGoSearchSettings, type TavilySearchSettings,
+  type BingSearchSettings, type DeepSeekSearchSettings, type DuckDuckGoSearchSettings, type EnvKeyedSearchSettings,
+  type FreeSearchSettings, type TavilySearchSettings,
   type SearchProvider, type WebSettings, type OutboundSettings,
 } from '../src/client/controller.ts'
 
@@ -25,7 +26,19 @@ function bench(provider: SearchProvider = 'duckduckgo') {
   } } }))
   const set = vi.fn(async () => ({ rpcId: 's' as never, result: { ok: true as const, value: {} } }))
   const controller = new SearchSettingsController(
-    web.scope, duckDuckGo.scope, bing.scope, deepSeek.scope, tavily.scope, { credentials: { describe, set } } as never,
+    web.scope,
+    {
+      duckDuckGo: duckDuckGo.scope,
+      bing: bing.scope,
+      searxng: stubSettingsScope<FreeSearchSettings>().scope,
+      anysearch: stubSettingsScope<EnvKeyedSearchSettings>().scope,
+      firecrawl: stubSettingsScope<EnvKeyedSearchSettings>().scope,
+      keenable: stubSettingsScope<EnvKeyedSearchSettings>().scope,
+      parallel: stubSettingsScope<EnvKeyedSearchSettings>().scope,
+      deepSeek: deepSeek.scope,
+      tavily: tavily.scope,
+    },
+    { credentials: { describe, set } } as never,
   )
   return { web, duckDuckGo, bing, deepSeek, tavily, describe, set, controller, state: () => controller.store.getSnapshot() }
 }

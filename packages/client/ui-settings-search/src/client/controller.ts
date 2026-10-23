@@ -10,10 +10,24 @@ import {
   createSnapshotStore, type SettingsScope, type SettingsScopeSnapshot, type SnapshotStore,
 } from 'coding-client-runtime/client'
 
-/** 设置页可选的搜索提供方；`bing` 与 DuckDuckGo 都是免费无需密钥的来源。 */
-export type SearchProvider = 'duckduckgo' | 'bing' | 'deepseek-official' | 'tavily'
+/**
+ * 设置页可选的搜索提供方。
+ *
+ * `duckduckgo`／`bing`／`searxng` 完全免密钥；`anysearch`／`firecrawl`／`keenable`／
+ * `parallel` 有匿名额度、密钥从环境变量读取；`deepseek-official`／`tavily` 用凭据服务。
+ */
+export type SearchProvider =
+  | 'duckduckgo'
+  | 'bing'
+  | 'searxng'
+  | 'anysearch'
+  | 'firecrawl'
+  | 'keenable'
+  | 'parallel'
+  | 'deepseek-official'
+  | 'tavily'
 /** 需要单独凭据的搜索提供方。 */
-export type KeyedSearchProvider = Exclude<SearchProvider, 'duckduckgo' | 'bing'>
+export type KeyedSearchProvider = Extract<SearchProvider, 'deepseek-official' | 'tavily'>
 /** 搜索工具所属命名空间。 */
 export interface WebSettings { searchProvider: SearchProvider }
 /** 渠道级出站选择，与模型渠道同形。 */
@@ -26,6 +40,31 @@ export interface DuckDuckGoSearchSettings { outbound?: OutboundSettings }
 export interface BingSearchSettings { market?: string; outbound?: OutboundSettings }
 /** Tavily 搜索提供方所属命名空间。 */
 export interface TavilySearchSettings { baseURL?: string; outbound?: OutboundSettings; apiKeyEnv?: string }
+/** 只带出站选择的免费来源（DuckDuckGo／SearXNG）。 */
+export interface FreeSearchSettings { outbound?: OutboundSettings }
+/** 有匿名额度、可覆盖基址的免费来源（AnySearch／Firecrawl／Keenable／Parallel）。 */
+export interface EnvKeyedSearchSettings { baseURL?: string; outbound?: OutboundSettings }
+
+/** 每个来源暴露给表单的文本字段。 */
+export const SOURCE_FIELDS: Record<SearchProvider, readonly ('baseURL' | 'market' | 'model' | 'apiKeyEnv')[]> = {
+  duckduckgo: [],
+  bing: ['market'],
+  searxng: [],
+  anysearch: ['baseURL'],
+  firecrawl: ['baseURL'],
+  keenable: ['baseURL'],
+  parallel: ['baseURL'],
+  'deepseek-official': ['baseURL', 'model', 'apiKeyEnv'],
+  tavily: ['baseURL', 'apiKeyEnv'],
+}
+
+/** 从环境变量取密钥的来源，面板提示用。 */
+export const SOURCE_KEY_ENV: Partial<Record<SearchProvider, string>> = {
+  anysearch: 'ANYSEARCH_API_KEY',
+  firecrawl: 'FIRECRAWL_API_KEY',
+  keenable: 'KEENABLE_API_KEY',
+  parallel: 'PARALLEL_API_KEY',
+}
 /** 一次表单提交的草稿：字符串字段为空表示清除覆盖，出站是整体对象。 */
 export type SearchDraft = Record<string, string | OutboundSettings>
 
@@ -78,9 +117,30 @@ export function validOutbound(value: OutboundSettings): boolean {
 export function decodeWeb(value: unknown): WebSettings | undefined {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
   const provider = (value as Record<string, unknown>).searchProvider
-  return provider === 'duckduckgo' || provider === 'bing' || provider === 'deepseek-official' || provider === 'tavily'
-    ? { searchProvider: provider }
-    : undefined
+  return Object.hasOwn(SOURCE_FIELDS, provider as string) ? { searchProvider: provider as SearchProvider } : undefined
+}
+
+/**
+ * 收窄只带出站选择的免费来源（DuckDuckGo／SearXNG）。
+ * @param value - Host 返回的来源设置分节。
+ * @returns 合法的设置；出站形状不符时为 undefined。
+ */
+export function decodeFree(value: unknown): FreeSearchSettings | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+  const outbound = decodeOutbound((value as Record<string, unknown>).outbound)
+  if ((value as Record<string, unknown>).outbound !== undefined && outbound === undefined) return undefined
+  return outbound === undefined ? {} : { outbound }
+}
+
+/** 收窄一个免费来源的基址与出站选择（AnySearch／Firecrawl／Keenable／Parallel）。 */
+export function decodeEnvKeyed(value: unknown): EnvKeyedSearchSettings | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+  const fields = value as Record<string, unknown>
+  if (fields.baseURL !== undefined && typeof fields.baseURL !== 'string') return undefined
+  const outbound = decodeOutbound(fields.outbound)
+  if (fields.outbound !== undefined && outbound === undefined) return undefined
+  return { ...(fields.baseURL === undefined ? {} : { baseURL: fields.baseURL }),
+    ...(outbound === undefined ? {} : { outbound }) }
 }
 
 /**
@@ -154,11 +214,15 @@ export function decodeTavily(value: unknown): TavilySearchSettings | undefined {
  * @param provider - 地址所属提供方；默认沿用公网域名校验。
  * @returns 字段可提交时为 true。
  */
-export function validField(field: 'baseURL' | 'model' | 'apiKeyEnv', value: string, provider: SearchProvider = 'tavily'): boolean {
+export function validField(
+  field: 'baseURL' | 'market' | 'model' | 'apiKeyEnv',
+  value: string,
+  provider: SearchProvider = 'tavily',
+): boolean {
   const text = value.trim()
   if (text === '') return true
   if (field === 'apiKeyEnv') return KEY_REF.test(text)
-  if (field === 'model') return true
+  if (field === 'model' || field === 'market') return true
   if (!/^https:\/\//i.test(text)) return false
   try {
     const url = new URL(text)
@@ -180,6 +244,11 @@ export interface SearchSettingsState {
   web: SettingsScopeSnapshot<WebSettings>
   duckDuckGo: SettingsScopeSnapshot<DuckDuckGoSearchSettings>
   bing: SettingsScopeSnapshot<BingSearchSettings>
+  searxng: SettingsScopeSnapshot<FreeSearchSettings>
+  anysearch: SettingsScopeSnapshot<EnvKeyedSearchSettings>
+  firecrawl: SettingsScopeSnapshot<EnvKeyedSearchSettings>
+  keenable: SettingsScopeSnapshot<EnvKeyedSearchSettings>
+  parallel: SettingsScopeSnapshot<EnvKeyedSearchSettings>
   deepSeek: SettingsScopeSnapshot<DeepSeekSearchSettings>
   tavily: SettingsScopeSnapshot<TavilySearchSettings>
   credential: { provider?: KeyedSearchProvider; ref: string; status: 'loading' | 'ready' | 'error'; configured: boolean; writable: boolean }
@@ -204,6 +273,15 @@ export class SearchSettingsController {
   private credentialGeneration = 0
   private disposed = false
   private readonly subscriptions: Array<() => void>
+  private readonly duckDuckGo: SettingsScope<DuckDuckGoSearchSettings>
+  private readonly bing: SettingsScope<BingSearchSettings>
+  private readonly searxng: SettingsScope<FreeSearchSettings>
+  private readonly anysearch: SettingsScope<EnvKeyedSearchSettings>
+  private readonly firecrawl: SettingsScope<EnvKeyedSearchSettings>
+  private readonly keenable: SettingsScope<EnvKeyedSearchSettings>
+  private readonly parallel: SettingsScope<EnvKeyedSearchSettings>
+  private readonly deepSeek: SettingsScope<DeepSeekSearchSettings>
+  private readonly tavily: SettingsScope<TavilySearchSettings>
 
   /**
    * @param web - `web` 命名空间派生 scope。
@@ -215,14 +293,33 @@ export class SearchSettingsController {
    */
   constructor(
     private readonly web: SettingsScope<WebSettings>,
-    private readonly duckDuckGo: SettingsScope<DuckDuckGoSearchSettings>,
-    private readonly bing: SettingsScope<BingSearchSettings>,
-    private readonly deepSeek: SettingsScope<DeepSeekSearchSettings>,
-    private readonly tavily: SettingsScope<TavilySearchSettings>,
+    scopes: {
+      duckDuckGo: SettingsScope<DuckDuckGoSearchSettings>
+      bing: SettingsScope<BingSearchSettings>
+      searxng: SettingsScope<FreeSearchSettings>
+      anysearch: SettingsScope<EnvKeyedSearchSettings>
+      firecrawl: SettingsScope<EnvKeyedSearchSettings>
+      keenable: SettingsScope<EnvKeyedSearchSettings>
+      parallel: SettingsScope<EnvKeyedSearchSettings>
+      deepSeek: SettingsScope<DeepSeekSearchSettings>
+      tavily: SettingsScope<TavilySearchSettings>
+    },
     private readonly api: Pick<IApiClient, 'credentials'>,
   ) {
+    const { duckDuckGo, bing, searxng, anysearch, firecrawl, keenable, parallel, deepSeek, tavily } = scopes
+    this.duckDuckGo = duckDuckGo
+    this.bing = bing
+    this.searxng = searxng
+    this.anysearch = anysearch
+    this.firecrawl = firecrawl
+    this.keenable = keenable
+    this.parallel = parallel
+    this.deepSeek = deepSeek
+    this.tavily = tavily
     this.store = createSnapshotStore<SearchSettingsState>({
       web: web.getSnapshot(), duckDuckGo: duckDuckGo.getSnapshot(), bing: bing.getSnapshot(),
+      searxng: searxng.getSnapshot(), anysearch: anysearch.getSnapshot(), firecrawl: firecrawl.getSnapshot(),
+      keenable: keenable.getSnapshot(), parallel: parallel.getSnapshot(),
       deepSeek: deepSeek.getSnapshot(), tavily: tavily.getSnapshot(),
       credential: { ref: '', status: 'loading', configured: false, writable: false },
       saving: false, keySaving: false, failed: false, keyFailed: false,
@@ -242,6 +339,11 @@ export class SearchSettingsController {
       }),
       duckDuckGo.subscribe(() => { this.store.update((draft) => { draft.duckDuckGo = duckDuckGo.getSnapshot() }) }),
       bing.subscribe(() => { this.store.update((draft) => { draft.bing = bing.getSnapshot() }) }),
+      searxng.subscribe(() => { this.store.update((draft) => { draft.searxng = searxng.getSnapshot() }) }),
+      anysearch.subscribe(() => { this.store.update((draft) => { draft.anysearch = anysearch.getSnapshot() }) }),
+      firecrawl.subscribe(() => { this.store.update((draft) => { draft.firecrawl = firecrawl.getSnapshot() }) }),
+      keenable.subscribe(() => { this.store.update((draft) => { draft.keenable = keenable.getSnapshot() }) }),
+      parallel.subscribe(() => { this.store.update((draft) => { draft.parallel = parallel.getSnapshot() }) }),
       tavily.subscribe(() => {
         this.store.update((draft) => { draft.tavily = tavily.getSnapshot() })
         if (web.getSnapshot().value?.searchProvider === 'tavily') void this.readCredential()
@@ -271,25 +373,26 @@ export class SearchSettingsController {
   private async readCredential(): Promise<void> {
     const provider = this.web.getSnapshot().value?.searchProvider
     const generation = ++this.credentialGeneration
-    if (provider === undefined || provider === 'duckduckgo' || provider === 'bing') {
+    if (provider !== 'deepseek-official' && provider !== 'tavily') {
       this.store.update((draft) => { draft.credential = { ref: '', status: 'ready', configured: false, writable: false } })
       return
     }
-    const ref = provider === 'tavily'
+    const keyed = provider
+    const ref = keyed === 'tavily'
       ? this.tavily.getSnapshot().value?.apiKeyEnv ?? DEFAULT_TAVILY_KEY_REF
       : this.deepSeek.getSnapshot().value?.apiKeyEnv ?? DEFAULT_KEY_REF
     if (!KEY_REF.test(ref)) {
-      this.store.update((draft) => { draft.credential = { provider, ref, status: 'error', configured: false, writable: false } })
+      this.store.update((draft) => { draft.credential = { provider: keyed, ref, status: 'error', configured: false, writable: false } })
       return
     }
-    this.store.update((draft) => { draft.credential = { provider, ref, status: 'loading', configured: false, writable: false } })
+    this.store.update((draft) => { draft.credential = { provider: keyed, ref, status: 'loading', configured: false, writable: false } })
     try {
       const response = await this.api.credentials.describe({ refs: [ref] })
       if (this.disposed || generation !== this.credentialGeneration) return
       if (!response.result.ok) throw new Error('credentials.describe refused')
       const view = response.result.value.credentials[ref]
       this.store.update((draft) => {
-        draft.credential = { provider, ref, status: 'ready', configured: view?.configured ?? false, writable: view?.writable ?? true }
+        draft.credential = { provider: keyed, ref, status: 'ready', configured: view?.configured ?? false, writable: view?.writable ?? true }
       })
     } catch {
       if (this.disposed || generation !== this.credentialGeneration) return
@@ -325,17 +428,23 @@ export class SearchSettingsController {
    * @returns 所有字段被 Host 接受后为 true。
    */
   async saveFields(provider: SearchProvider, fields: SearchDraft): Promise<boolean> {
-    const scope: SettingsScope<DeepSeekSearchSettings | TavilySearchSettings | DuckDuckGoSearchSettings | BingSearchSettings> = provider === 'tavily'
+    const scope: SettingsScope<DeepSeekSearchSettings | TavilySearchSettings | DuckDuckGoSearchSettings
+    | BingSearchSettings | FreeSearchSettings | EnvKeyedSearchSettings> = provider === 'tavily'
       ? this.tavily
       : provider === 'duckduckgo'
         ? this.duckDuckGo
-        : provider === 'bing' ? this.bing : this.deepSeek
+        : provider === 'bing'
+          ? this.bing
+          : provider === 'searxng'
+            ? this.searxng
+            : provider === 'anysearch'
+              ? this.anysearch
+              : provider === 'firecrawl'
+                ? this.firecrawl
+                : provider === 'keenable' ? this.keenable : provider === 'parallel' ? this.parallel : this.deepSeek
     const snapshot = scope.getSnapshot()
     if (this.store.getSnapshot().saving || snapshot.status !== 'ready' || !snapshot.writable) return false
-    const order = provider === 'duckduckgo'
-      ? ['outbound']
-      : provider === 'bing' ? ['market', 'outbound']
-        : provider === 'tavily' ? ['baseURL', 'outbound', 'apiKeyEnv'] : ['baseURL', 'outbound', 'model', 'apiKeyEnv']
+    const order = ['outbound', ...SOURCE_FIELDS[provider]]
     const acceptable = order.every((field) => {
       const raw = fields[field]
       if (raw === undefined) return false

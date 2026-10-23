@@ -3,7 +3,9 @@ import { useEffect, useRef, useState } from 'react'
 import { IconChevronDownOutline14, Menu, OutboundSelect } from 'coding-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from 'coding-client-ui-slots'
 import type { OutboundSettings, SearchProvider, SearchSettingsFace } from './controller.ts'
-import { DEFAULT_KEY_REF, DEFAULT_TAVILY_KEY_REF, validField, validOutbound } from './controller.ts'
+import {
+  DEFAULT_KEY_REF, DEFAULT_TAVILY_KEY_REF, SOURCE_FIELDS, SOURCE_KEY_ENV, validField, validOutbound,
+} from './controller.ts'
 import css from './SearchSettingsSection.module.css'
 
 export type SearchSettingsSectionProps = PropsRuntime<'settings.section'>
@@ -13,9 +15,51 @@ export type SearchSettingsSectionProps = PropsRuntime<'settings.section'>
 const PROVIDERS: readonly { id: SearchProvider; badge: 'free' | 'key' }[] = [
   { id: 'duckduckgo', badge: 'free' },
   { id: 'bing', badge: 'free' },
+  { id: 'searxng', badge: 'free' },
+  { id: 'anysearch', badge: 'free' },
+  { id: 'firecrawl', badge: 'free' },
+  { id: 'keenable', badge: 'free' },
+  { id: 'parallel', badge: 'free' },
   { id: 'deepseek-official', badge: 'key' },
   { id: 'tavily', badge: 'key' },
 ]
+
+/** 来源在文案字典里的名字键。 */
+type ProviderLabelKey = 'duckduckgo' | 'bing' | 'searxng' | 'anysearch' | 'firecrawl' | 'keenable' | 'parallel' | 'deepseek' | 'tavily'
+
+/**
+ * 取来源的文案键；`deepseek-official` 在字典里叫 `deepseek`。
+ * @param provider - 来源 id。
+ * @returns 字典键。
+ */
+function labelKey(provider: SearchProvider): ProviderLabelKey {
+  return provider === 'deepseek-official' ? 'deepseek' : provider
+}
+
+/**
+ * 取来源的说明段落键。
+ * @param provider - 来源 id。
+ * @returns 字典键。
+ */
+function hintKey(provider: SearchProvider): `${ProviderLabelKey}Hint` {
+  return `${labelKey(provider)}Hint` as const
+}
+
+/** 来源对应的状态快照键；与 `SearchSettingsState` 的字段一致。 */
+function scopeKeyOf(provider: SearchProvider): 'duckDuckGo' | 'bing' | 'searxng' | 'anysearch'
+  | 'firecrawl' | 'keenable' | 'parallel' | 'deepSeek' | 'tavily' {
+  if (provider === 'deepseek-official') return 'deepSeek'
+  if (provider === 'duckduckgo') return 'duckDuckGo'
+  return provider
+}
+
+/** 每个文本字段的文案键与错误键。 */
+const FIELD_COPY = {
+  baseURL: { label: 'endpoint', hint: 'endpointHint', error: 'invalidEndpoint' },
+  market: { label: 'market', hint: 'marketHint', error: 'invalidRef' },
+  model: { label: 'model', hint: 'modelHint', error: 'invalidModel' },
+  apiKeyEnv: { label: 'keyRef', hint: 'keyRefHint', error: 'invalidRef' },
+} as const
 
 /** 未保存草稿：文本字段与出站选择分开存，出站整体替换。 */
 type Draft = { text: Record<string, string>; outbound?: OutboundSettings }
@@ -39,13 +83,13 @@ export function SearchSettingsSection(props: SearchSettingsSectionProps) {
   const provider = web.value?.searchProvider ?? 'duckduckgo'
   const keyOwner = `${provider}:${credential.ref}`
   const key = keyDraft.owner === keyOwner ? keyDraft.value : ''
-  const scope = provider === 'tavily'
-    ? state.tavily
-    : provider === 'deepseek-official' ? state.deepSeek : provider === 'bing' ? state.bing : state.duckDuckGo
+  // 每个来源一份快照；选择即决定面板读哪一份。
+  const scope = state[scopeKeyOf(provider)]
   const values = scope.value as Record<string, unknown> | undefined
   const draft = drafts[provider] ?? { text: {} }
   const defaultRef = provider === 'tavily' ? DEFAULT_TAVILY_KEY_REF : DEFAULT_KEY_REF
-  const keyRefPending = provider !== 'duckduckgo' && provider !== 'bing' && draft.text['apiKeyEnv'] !== undefined
+  const keyRefPending = (provider === 'deepseek-official' || provider === 'tavily')
+    && draft.text['apiKeyEnv'] !== undefined
     && (draft.text['apiKeyEnv'].trim() || defaultRef) !== ((values?.['apiKeyEnv'] as string | undefined) ?? defaultRef)
   useEffect(() => { keyVersion.current++; setKeyDraft({ owner: '', value: '' }) }, [provider, credential.ref])
   const valueOf = (field: string) => draft.text[field] ?? (typeof values?.[field] === 'string' ? values[field] : '')
@@ -53,7 +97,7 @@ export function SearchSettingsSection(props: SearchSettingsSectionProps) {
     ?? (typeof values?.['outbound'] === 'object' && values['outbound'] !== null
       ? values['outbound'] as OutboundSettings
       : { mode: 'direct' })
-  const invalid = (field: 'baseURL' | 'model' | 'apiKeyEnv') => !validField(field, valueOf(field), provider)
+  const invalid = (field: 'baseURL' | 'model' | 'apiKeyEnv' | 'market') => !validField(field, valueOf(field), provider)
   const outboundInvalid = !validOutbound(outbound)
   const dirty = Object.keys(draft.text).length > 0 || draft.outbound !== undefined
   const disabled = scope.status !== 'ready' || !scope.writable || state.saving
@@ -70,6 +114,15 @@ export function SearchSettingsSection(props: SearchSettingsSectionProps) {
     fieldVersion.current++
     setDrafts(old => ({ ...old, [provider]: { text: { ...old[provider]?.text }, outbound: next } }))
   }
+  const fieldOf = (name: 'baseURL' | 'model' | 'apiKeyEnv' | 'market') => {
+    const copy = FIELD_COPY[name]
+    const hint = name === 'baseURL'
+      ? t(provider === 'tavily' ? 'tavilyEndpointHint' : provider === 'deepseek-official'
+        ? 'deepseekEndpointHint' : 'endpointHint')
+      : t(copy.hint)
+    const error = t(copy.error)
+    return field(name, t(copy.label), hint, error)
+  }
   const field = (name: 'baseURL' | 'model' | 'apiKeyEnv' | 'market', label: string, hint: string, error: string) => (
     <div className={css.field}>
       <div className={css.fieldHeading}>
@@ -80,12 +133,12 @@ export function SearchSettingsSection(props: SearchSettingsSectionProps) {
       </div>
       <input
         id={`search-${provider}-${name}`} type="text" className={css.input} value={valueOf(name)}
-        disabled={disabled} aria-invalid={(name !== 'market' && invalid(name)) || undefined}
+        disabled={disabled} aria-invalid={invalid(name) || undefined}
         aria-describedby={`search-${provider}-${name}-hint`}
         onChange={(event) => { editField(name, event.target.value) }}
       />
-      <p id={`search-${provider}-${name}-hint`} className={name !== 'market' && invalid(name) ? css.error : css.hint}>
-        {name !== 'market' && invalid(name) ? error : hint}
+      <p id={`search-${provider}-${name}-hint`} className={invalid(name) ? css.error : css.hint}>
+        {invalid(name) ? error : hint}
       </p>
     </div>
   )
@@ -110,7 +163,7 @@ export function SearchSettingsSection(props: SearchSettingsSectionProps) {
             portal
             items={PROVIDERS.map(entry => ({
               id: entry.id,
-              label: `${t(entry.id === 'deepseek-official' ? 'deepseek' : entry.id)} · ${t(entry.badge === 'free' ? 'badgeFree' : 'badgeKey')}`,
+              label: `${t(labelKey(entry.id))} · ${t(entry.badge === 'free' ? 'badgeFree' : 'badgeKey')}`,
             }))}
             onSelect={(id) => {
               setMenuOpen(false)
@@ -119,7 +172,7 @@ export function SearchSettingsSection(props: SearchSettingsSectionProps) {
             anchor={(
               <button type="button" className={css.selector} aria-haspopup="menu" aria-expanded={menuOpen}
                 disabled={!web.writable || state.saving} onClick={() => { setMenuOpen(!menuOpen) }}>
-                {t(provider === 'deepseek-official' ? 'deepseek' : provider)}
+                {t(labelKey(provider))}
                 <IconChevronDownOutline14 className={css.chevron} />
               </button>
             )}
@@ -128,11 +181,9 @@ export function SearchSettingsSection(props: SearchSettingsSectionProps) {
       ) : null}
       {web.status === 'ready' && scope.status === 'ready' ? (
         <div className={css.configuration}>
-          <h3 className={css.subheading}>{t(provider === 'deepseek-official' ? 'deepseek' : provider)}</h3>
-          {provider === 'deepseek-official' ? field('baseURL', t('endpoint'), t('endpointHint'), t('invalidEndpoint')) : null}
-          {provider === 'tavily' ? field('baseURL', t('endpoint'), t('tavilyEndpointHint'), t('invalidEndpoint')) : null}
-          {provider === 'deepseek-official' ? field('model', t('model'), t('modelHint'), t('invalidModel')) : null}
-          {provider === 'bing' ? field('market', t('market'), t('marketHint'), '') : null}
+          <h3 className={css.subheading}>{t(labelKey(provider))}</h3>
+          <p className={css.hint}>{t(hintKey(provider))}</p>
+          {SOURCE_FIELDS[provider].map(fieldOf)}
           <div className={css.field}>
             <span className={css.fieldHeading}>{t('outbound')}</span>
             <OutboundSelect
@@ -151,14 +202,13 @@ export function SearchSettingsSection(props: SearchSettingsSectionProps) {
               {outboundInvalid ? t('invalidProxy') : t('outboundHint')}
             </p>
           </div>
-          {provider !== 'duckduckgo' && provider !== 'bing'
-            ? field('apiKeyEnv', t('keyRef'), t(provider === 'tavily' ? 'tavilyKeyRefHint' : 'keyRefHint'), t('invalidRef'))
-            : null}
+          {SOURCE_KEY_ENV[provider] === undefined
+            ? null
+            : <p className={css.hint}>{t('keyFromEnvironment').replace('{name}', SOURCE_KEY_ENV[provider] ?? '')}</p>}
           {!scope.writable ? <p role="status" className={css.hint}>{t('readOnly')}</p> : null}
           <div className={css.actions}>
             <button type="button" disabled={!dirty || disabled || outboundInvalid
-              || (provider !== 'duckduckgo' && provider !== 'bing'
-                && (invalid('baseURL') || invalid('apiKeyEnv') || (provider === 'deepseek-official' && invalid('model'))))}
+              || SOURCE_FIELDS[provider].some(invalid)}
             onClick={() => {
               const fields: Record<string, string | OutboundSettings> = { outbound }
               if (provider === 'bing') fields['market'] = valueOf('market')
@@ -177,7 +227,7 @@ export function SearchSettingsSection(props: SearchSettingsSectionProps) {
             </button>
           </div>
           {state.failed ? <p role="alert" className={css.error}>{t('failed')}</p> : null}
-          {provider !== 'duckduckgo' && provider !== 'bing' ? <div className={css.secret}>
+          {provider === 'deepseek-official' || provider === 'tavily' ? <div className={css.secret}>
             <div className={css.fieldHeading}><label htmlFor="search-api-key">{t('apiKey')}</label></div>
             <p className={css.hint} role="status">{keyRefPending ? t('keyRefPending') : credential.status === 'loading' ? t('keyLoading') : credential.status === 'error' ? t('keyError') : credential.configured ? t('keySet') : t(provider === 'tavily' ? 'tavilyKeyMissing' : 'keyMissing')}</p>
             <input id="search-api-key" className={css.input} type="password" autoComplete="off"

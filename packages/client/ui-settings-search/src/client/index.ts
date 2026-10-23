@@ -5,7 +5,10 @@ import type {} from 'coding-client-locale/client'
 import type {} from 'coding-client-ui-settings/client'
 import type {} from 'coding-api-remotes/client'
 import { SearchSettingsSection } from './SearchSettingsSection.tsx'
-import { SearchSettingsController, decodeWeb, decodeDuckDuckGo, decodeBing, decodeDeepSeek, decodeTavily } from './controller.ts'
+import {
+  SearchSettingsController, decodeBing, decodeDeepSeek, decodeDuckDuckGo, decodeEnvKeyed, decodeFree,
+  decodeTavily, decodeWeb,
+} from './controller.ts'
 import { zh, en, type SearchSettingsKey } from './locales.ts'
 
 export type { SearchSettingsFace } from './controller.ts'
@@ -28,10 +31,17 @@ export function apply(ctx: ClientContext): void {
   const api = (ctx.get('connection') as ConnectionHandle).api
   const controller = new SearchSettingsController(
     ctx.settingsScope.bind({ namespace: 'web', decode: decodeWeb }),
-    ctx.settingsScope.bind({ namespace: 'web-search-duckduckgo', decode: decodeDuckDuckGo }),
-    ctx.settingsScope.bind({ namespace: 'web-search-bing', decode: decodeBing }),
-    ctx.settingsScope.bind({ namespace: 'web-search-deepseek', decode: decodeDeepSeek }),
-    ctx.settingsScope.bind({ namespace: 'web-search-tavily', decode: decodeTavily }),
+    {
+      duckDuckGo: ctx.settingsScope.bind({ namespace: 'web-search-duckduckgo', decode: decodeDuckDuckGo }),
+      bing: ctx.settingsScope.bind({ namespace: 'web-search-bing', decode: decodeBing }),
+      searxng: ctx.settingsScope.bind({ namespace: 'web-search-searxng', decode: decodeFree }),
+      anysearch: ctx.settingsScope.bind({ namespace: 'web-search-anysearch', decode: decodeEnvKeyed }),
+      firecrawl: ctx.settingsScope.bind({ namespace: 'web-search-firecrawl', decode: decodeEnvKeyed }),
+      keenable: ctx.settingsScope.bind({ namespace: 'web-search-keenable', decode: decodeEnvKeyed }),
+      parallel: ctx.settingsScope.bind({ namespace: 'web-search-parallel', decode: decodeEnvKeyed }),
+      deepSeek: ctx.settingsScope.bind({ namespace: 'web-search-deepseek', decode: decodeDeepSeek }),
+      tavily: ctx.settingsScope.bind({ namespace: 'web-search-tavily', decode: decodeTavily }),
+    },
     api,
   )
   ctx.effect(() => () => { controller.dispose() }, 'ui-settings-search: controller')

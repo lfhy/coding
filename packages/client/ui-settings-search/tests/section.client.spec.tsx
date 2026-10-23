@@ -14,6 +14,11 @@ function bench(overrides: Partial<SearchSettingsState> = {}, provider: 'duckduck
     web: { status: 'ready', value: { searchProvider: provider }, base: {}, user: {}, revision: 1, writable: true, mode: 'host' },
     duckDuckGo: { status: 'ready', value: {}, base: {}, user: {}, revision: 4, writable: true, mode: 'host' },
     bing: { status: 'ready', value: {}, base: {}, user: {}, revision: 2, writable: true, mode: 'host' },
+    searxng: { status: 'ready', value: {}, base: {}, user: {}, revision: 3, writable: true, mode: 'host' },
+    anysearch: { status: 'ready', value: {}, base: {}, user: {}, revision: 3, writable: true, mode: 'host' },
+    firecrawl: { status: 'ready', value: {}, base: {}, user: {}, revision: 3, writable: true, mode: 'host' },
+    keenable: { status: 'ready', value: {}, base: {}, user: {}, revision: 3, writable: true, mode: 'host' },
+    parallel: { status: 'ready', value: {}, base: {}, user: {}, revision: 3, writable: true, mode: 'host' },
     deepSeek: { status: 'ready', value: { model: 'deepseek-v4-flash', apiKeyEnv: 'DEEPSEEK_SEARCH_API_KEY' }, base: {}, user: {}, revision: 1, writable: true, mode: 'host' },
     tavily: { status: 'ready', value: { baseURL: 'https://api.tavily.com', apiKeyEnv: 'TAVILY_API_KEY' }, base: {}, user: {}, revision: 7, writable: true, mode: 'host' },
     credential: provider === 'duckduckgo' ? { ref: '', status: 'ready', configured: false, writable: false }
@@ -46,7 +51,8 @@ describe('search settings section', () => {
   it('lists every shipped source with its cost badge in the switcher menu', () => {
     bench()
     fireEvent.click(screen.getByRole('button', { name: /DuckDuckGo/ }))
-    for (const name of [/DuckDuckGo · 免费/, /Bing · 免费/, /DeepSeek 官方 · 需要密钥/, /Tavily · 需要密钥/]) {
+    for (const name of [/DuckDuckGo · 免费/, /Bing · 免费/, /SearXNG · 免费/, /AnySearch · 免费/,
+      /Firecrawl · 免费/, /Keenable · 免费/, /Parallel · 免费/, /DeepSeek 官方 · 需要密钥/, /Tavily · 需要密钥/]) {
       expect(screen.getByRole('menuitem', { name })).toBeTruthy()
     }
   })

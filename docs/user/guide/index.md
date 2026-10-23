@@ -20,7 +20,7 @@ macOS 桌面窗口打开时默认最大化，不会进入全屏。双击顶栏�
 
 ## 配置联网搜索
 
-`web_search` 默认使用免费的 DuckDuckGo 搜索，不需要 API 密钥。在**设置 → 联网搜索**可选择 DuckDuckGo、Bing、Tavily（`tavily`）或 DeepSeek（`deepseek-official`）；列表用「免费」「需要密钥」标出各自代价，该选择只影响联网搜索，不改变对话模型。选择 Tavily 时，在该页保存独立的 `TAVILY_API_KEY` 凭据；DeepSeek 搜索使用独立的 `DEEPSEEK_SEARCH_API_KEY`，不使用对话模型的 `DEEPSEEK_API_KEY`。所选提供方缺少凭据或搜索失败时会直接报告错误，不自动切换到其他提供方。Bing 可填 `zh-CN` 之类的搜索市场，留空则由 Bing 按 `Accept-Language` 本地化。
+`web_search` 默认使用免费的 DuckDuckGo 搜索，不需要 API 密钥。**设置 → 联网搜索**的来源菜单列出九条已装配的来源：免费的 DuckDuckGo、Bing、SearXNG（公共实例自动切换）、AnySearch、Firecrawl、Keenable、Parallel，以及需要密钥的 Tavily（`tavily`）与 DeepSeek（`deepseek-official`）；菜单用「免费」「需要密钥」标出各自代价，该选择只影响联网搜索，不改变对话模型。有匿名额度的免费来源用环境变量提供密钥（`ANYSEARCH_API_KEY`／`FIRECRAWL_API_KEY`／`KEENABLE_API_KEY`／`PARALLEL_API_KEY`），不设置时按其匿名额度运行。选择 Tavily 时，在该页保存独立的 `TAVILY_API_KEY` 凭据；DeepSeek 搜索使用独立的 `DEEPSEEK_SEARCH_API_KEY`，不使用对话模型的 `DEEPSEEK_API_KEY`。所选提供方缺少凭据或搜索失败时会直接报告错误，不自动切换到其他提供方。Bing 可填 `zh-CN` 之类的搜索市场，留空则由 Bing 按 `Accept-Language` 本地化。
 
 每个搜索提供方各自的**出站**在**设置 → 联网搜索**分别配置，互不共享，规则与模型渠道一致：**直连**、**内置代理池**（实际路径由**设置 → 代理池**的池出站决定：池为直连即直连，池为本地池则经池入站，池为自定义代理则经池地址）或**自定义代理**（只影响这一条搜索来源，不受池规则影响）。Tavily 还可修改默认 `https://api.tavily.com` 的 API 基址；DeepSeek 还可修改 Anthropic 兼容 Messages API 的基址，默认 `https://api.deepseek.com/anthropic/v1`。端点、出站和凭据的详细配置见 [DuckDuckGo](../../../packages/web/web-search-duckduckgo/README.md)、[Bing](../../../packages/web/web-search-bing/README.md)、[Tavily](../../../packages/web/web-search-tavily/README.md)和 [DeepSeek](../../../packages/web/web-search-deepseek/README.md) 搜索提供方。
 
