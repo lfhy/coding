@@ -234,6 +234,7 @@ func (s *Service) RemoteSSHClaimSelection(operationID string) (UnclaimedActionRe
 		operation.marker.Generation = generation
 		operation.publishedFile = publishedFile
 		s.remoteMarkers[operation.marker.MarkerRoot] = operation.connectionID
+		s.rememberRemoteTargetLocked(operation.connectionID, operation.marker.MarkerRoot, operation.marker.RemoteRoot)
 		verifyCtx, verifyCancel := context.WithTimeout(context.WithoutCancel(s.bindingContext()), remoteSelectionTimeout)
 		defer verifyCancel()
 		if !s.remoteBridge.CurrentMarker(verifyCtx, operation.marker, func() bool { return publishedMarkerMatches(operation) }) {

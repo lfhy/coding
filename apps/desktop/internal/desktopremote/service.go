@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/deepseek-ai/coding/apps/desktop/internal/remoteagent"
+	"github.com/deepseek-ai/coding/apps/desktop/internal/sshprofile"
 )
 
 // MarkerPublisher 串行发布 marker 文件和同代路由，失败时保持旧路由。
@@ -42,6 +43,7 @@ type Options struct {
 	Context        context.Context
 	Manager        Manager
 	Bridge         MarkerPublisher
+	Profiles       *sshprofile.Store
 	OnProgress     func(ProgressEvent)
 	OnCleanupError func(error)
 }
@@ -63,7 +65,10 @@ type Service struct {
 	remoteConnectWG     sync.WaitGroup
 	remoteMarkerMu      sync.Mutex
 	remoteMarkers       map[string]string
-	unclaimed           map[string]*unclaimedOperation
+	// 连接 id → 档案 id；只有本次连接带 remember 时才登记。
+	remoteProfiles map[string]string
+	profiles       *sshprofile.Store
+	unclaimed      map[string]*unclaimedOperation
 	// 测试钩子固定选择事务解锁到外层收尾之间的竞态窗口。
 	afterUnclaimedSelect func()
 	remoteStopping       bool
@@ -84,7 +89,8 @@ func NewService(options Options) (*Service, error) {
 		bridge.connection = options.Manager.Connection
 	}
 	return &Service{home: options.Home, ctx: ctx, cancel: cancel, remoteManager: options.Manager, remoteBridge: options.Bridge,
-		onProgress: options.OnProgress, onCleanupError: options.OnCleanupError, remoteMarkers: make(map[string]string)}, nil
+		profiles: options.Profiles, onProgress: options.OnProgress, onCleanupError: options.OnCleanupError,
+		remoteMarkers: make(map[string]string), remoteProfiles: make(map[string]string)}, nil
 }
 
 // CloseAll 撤销握手，归还 SSH 连接，再停止回环 bridge；重复调用无副作用。
@@ -129,6 +135,7 @@ const (
 	remoteDirectoryTimeout                    = 15 * time.Second
 	remoteSelectionTimeout                    = 20 * time.Second
 	remoteCloseTimeout                        = 8 * time.Second
+	remoteReconnectTimeout                    = 60 * time.Second
 	remoteCancelledAttemptTTL                 = 5 * time.Minute
 	maxRemoteCancelledAttempts                = 64
 )
@@ -143,6 +150,8 @@ type RemoteSSHConnectInput struct {
 	Auth                     RemoteSSHAuthInput         `json:"auth"`
 	ConfirmationID           string                     `json:"confirmationId,omitempty"`
 	AcceptHostKeyFingerprint string                     `json:"acceptHostKeyFingerprint,omitempty"`
+	// Remember 表示把这次连接的凭据加密保存，供之后重新打开工作区时自动重连。
+	Remember bool `json:"remember,omitempty"`
 }
 
 // RemoteSSHAuthInput 只在一次调用期间持有密码或私钥。
@@ -249,6 +258,14 @@ func (s *Service) RemoteSSHConnect(input RemoteSSHConnectInput) (RemoteSSHConnec
 		_ = s.remoteManager.Close(closeCtx, info.ID)
 		cancel()
 		return remoteSSHFailure(errors.New("Remote-SSH connection attempt was replaced")), nil
+	}
+	if input.Remember {
+		if err := s.rememberRemoteProfile(info, input.Auth.Kind, input.Auth.Secret); err != nil {
+			closeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), remoteCloseTimeout)
+			_ = s.remoteManager.Close(closeCtx, info.ID)
+			cancel()
+			return remoteSSHFailure(fmt.Errorf("save SSH connection profile: %w", err)), nil
+		}
 	}
 	return RemoteSSHConnectResult{Kind: "ready", ConnectionID: info.ID, Mode: info.Mode, HomePath: info.RemoteHome}, nil
 }
@@ -436,6 +453,7 @@ func (s *Service) selectDirectory(connectionID, remotePath string, operation *un
 		s.remoteMarkers = make(map[string]string)
 	}
 	s.remoteMarkers[markerRoot] = connectionID
+	s.rememberRemoteTargetLocked(connectionID, markerRoot, resolved.Path)
 	if operation != nil {
 		operation.state = unclaimedPublished
 		operation.marker = MarkerIdentity{MarkerRoot: markerRoot, RemoteRoot: marker.RemoteRoot, ConnectionID: connectionID, Generation: generation}

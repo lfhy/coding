@@ -696,6 +696,20 @@ func (s *fakeService) RemoteSSHSelectUnclaimed(operationID, id, path string) (de
 	s.remotePath = path
 	return desktopremote.UnclaimedSelectionResult{Kind: "selected", MarkerPath: operationID}, nil
 }
+func (s *fakeService) RemoteSSHProfiles() ([]desktopremote.RemoteSSHProfileView, error) {
+	s.method = "profiles"
+	return nil, nil
+}
+func (s *fakeService) RemoteSSHForgetProfile(id string) error {
+	s.method = "forget-profile"
+	s.connectionID = id
+	return nil
+}
+func (s *fakeService) RemoteSSHReconnectWorkspace(markerPath string) (desktopremote.RemoteSSHConnectResult, error) {
+	s.method = "reconnect"
+	s.remotePath = markerPath
+	return desktopremote.RemoteSSHConnectResult{Kind: "ready", ConnectionID: "reconnected"}, nil
+}
 func (s *fakeService) RemoteSSHRevokeUnclaimed(operationID, id string) (desktopremote.UnclaimedActionResult, error) {
 	s.method = "revoke-unclaimed"
 	s.connectionID = id

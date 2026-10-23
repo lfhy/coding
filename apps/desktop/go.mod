@@ -19,6 +19,7 @@ require (
 	github.com/kr/fs v0.1.0 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
 	golang.org/x/text v0.39.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 replace github.com/deepseek-ai/coding/apps/internal/hostlaunch => ../internal/hostlaunch

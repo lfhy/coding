@@ -25,6 +25,7 @@ import (
 	"github.com/deepseek-ai/coding/apps/desktop/internal/helperwire"
 	"github.com/deepseek-ai/coding/apps/desktop/internal/instance"
 	"github.com/deepseek-ai/coding/apps/desktop/internal/remoteagent"
+	"github.com/deepseek-ai/coding/apps/desktop/internal/sshprofile"
 	"github.com/deepseek-ai/coding/apps/internal/hostlaunch"
 )
 
@@ -225,8 +226,12 @@ func runHost(ctx context.Context, cfg config, browserBridge browserBridgeConfig,
 			}
 		}()
 	}
+	profiles, err := sshprofile.Open(cfg.home)
+	if err != nil {
+		return err
+	}
 	service, err = desktopremote.NewService(desktopremote.Options{
-		Home: cfg.home, Context: ctx, Manager: manager, Bridge: bridge,
+		Home: cfg.home, Context: ctx, Manager: manager, Bridge: bridge, Profiles: profiles,
 		OnProgress: func(progress desktopremote.ProgressEvent) {
 			_ = emitter.EmitProgress(progress.AttemptID, progress.Phase, "")
 		},
@@ -376,6 +381,9 @@ type remoteService interface {
 	RemoteSSHClose(string) error
 	RemoteSSHCancelConnect(string) error
 	RemoteSSHRejectHostKey(string) error
+	RemoteSSHProfiles() ([]desktopremote.RemoteSSHProfileView, error)
+	RemoteSSHForgetProfile(string) error
+	RemoteSSHReconnectWorkspace(string) (desktopremote.RemoteSSHConnectResult, error)
 	CloseAll(context.Context) error
 }
 type hostStopper interface {
@@ -491,6 +499,28 @@ func (h *handler) dispatch(ctx context.Context, method string, payload json.RawM
 			return nil, err
 		}
 		return struct{}{}, h.service.RemoteSSHRejectHostKey(input.ConfirmationID)
+	case "RemoteSSHProfiles":
+		var input struct{}
+		if err := decode(payload, &input); err != nil {
+			return nil, err
+		}
+		return h.service.RemoteSSHProfiles()
+	case "RemoteSSHForgetProfile":
+		var input struct {
+			ProfileID string `json:"profileId"`
+		}
+		if err := decode(payload, &input); err != nil {
+			return nil, err
+		}
+		return struct{}{}, h.service.RemoteSSHForgetProfile(input.ProfileID)
+	case "RemoteSSHReconnectWorkspace":
+		var input struct {
+			MarkerPath string `json:"markerPath"`
+		}
+		if err := decode(payload, &input); err != nil {
+			return nil, err
+		}
+		return h.service.RemoteSSHReconnectWorkspace(input.MarkerPath)
 	case "shutdown":
 		var input struct{}
 		if err := decode(payload, &input); err != nil {
