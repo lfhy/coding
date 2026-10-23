@@ -288,6 +288,7 @@ type FsErrorCode =
 - 工作区绑定以**显式记录**为准：工作区创建时决定后端（本地、Remote-SSH、将来的 Git 只读视图），把后端 id 记在该工作区的持久化记录上，并由注册表维护一张 `cwd → 后端` 表；打开工作区、恢复会话时按记录装配，而不是每次调用重新推断。`SessionHeader.cwd` 仍是工作区键，后端 id 跟着工作区记录走，因此同一目录可以拥有不同后端的两个工作区。
 - 注册表只在**没有记录**时回退到后端的 `matches(cwd)`（本地兜底、Remote-SSH 占位目录），用于迁移旧工作区与无会话调用（Host API、LSP、open-in-app）。两者都缺失时使用本地后端，保持单后端部署的现有行为。
 - 同步方法没有 cwd 可用，因此后端身份在 `resolve()` 时就写进 `FsTargetKey` 的前缀，`processPath`／`fileUrl`／`contains` 按该前缀分派；这是第二处“逻辑记录”，与工作区记录互相独立。
+- 不把绑定放进 `SessionHeader`：它是不可变、版本化且在加载时拒绝其他版本的存储格式（`SESSION_FORMAT_VERSION`，无迁移），加字段会让既有会话不可读；后端绑定属于工作区而不是单个会话。同一 cwd 对应多个工作区时，精确消歧使用 workspace id（会话记录里有归属），`cwd → 后端` 表只服务无会话调用。
 - `dsh-fs-sandbox` 从“继承 `LocalFileSystem`”改为“注册时包装选中的后端”：写入围栏仍按会话策略判断，读取直通。
 - 备选方案（每会话 `ctx.isolate('fs')`）：Cordis 支持在子上下文隔离同名服务，但工具执行不在 agent 作用域下解析 `ctx.fs`，需要改动三十余处消费方取服务的方式，因此不作为首选。
 
