@@ -7,6 +7,7 @@
  */
 
 import { useEffect, useState } from 'react'
+import { OutboundSelect } from 'coding-client-ui-primitives'
 import type { ReactNode } from 'react'
 import type { OutboundModeView } from 'coding-api-remotes/client'
 import type { en } from './locales.ts'
@@ -59,18 +60,26 @@ export function ChannelOutboundRow(props: ChannelOutboundRowProps): ReactNode {
 
   return <div className={styles['field']}>
     <span className={styles['fieldLabel']}>{t('channelOutbound')}</span>
-    <div className={styles['outboundSegmented']} role="group" aria-label={t('channelOutbound')}>
-      <button type="button" className={styles['outboundSegment']} aria-pressed={mode === 'direct'}
-        disabled={disabled || busy} onClick={() => { selectSegment('direct') }}>{t('channelOutboundDirect')}</button>
-      <button type="button" className={styles['outboundSegment']} aria-pressed={mode === 'pool'}
-        disabled={disabled || busy} onClick={() => { selectSegment('pool') }}>{t('channelOutboundPool')}</button>
-      <button type="button" className={styles['outboundSegment']} aria-pressed={mode === 'custom'}
-        disabled={disabled || busy} onClick={() => { setMode('custom'); setFailure(undefined) }}>{t('channelOutboundCustom')}</button>
-    </div>
-    {mode === 'custom' ? <div className={styles['outboundCustomRow']}>
-      <input className={styles['input']} value={customUrl} placeholder="http://proxy.example:8080"
-        aria-label={t('channelOutboundUrl')} disabled={disabled || busy}
-        onChange={(event) => { setCustomUrl(event.target.value) }} />
+    <OutboundSelect
+      value={{ mode, customUrl }}
+      disabled={disabled || busy}
+      urlPlaceholder="http://proxy.example:8080"
+      labels={{
+        group: t('channelOutbound'), direct: t('channelOutboundDirect'),
+        pool: t('channelOutboundPool'), custom: t('channelOutboundCustom'), url: t('channelOutboundUrl'),
+      }}
+      onChange={(next) => {
+        if (next.mode === 'custom') {
+          // 切到自定义代理只展开地址输入，应用仍由下方按钮显式提交。
+          setMode('custom')
+          setFailure(undefined)
+          return
+        }
+        selectSegment(next.mode)
+      }}
+      onCustomUrlChange={(next) => { setCustomUrl(next) }}
+    />
+    {mode === 'custom' ? <div className={styles['outboundActions']}>
       <button type="button" className={styles['secondaryButton']}
         disabled={disabled || busy || customUrl.trim().length === 0}
         onClick={applyCustom}>{t('channelOutboundApply')}</button>

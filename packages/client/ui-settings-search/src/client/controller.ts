@@ -1,29 +1,74 @@
-/** 联网搜索设置从提供方各自命名空间派生；凭据读取只有存在性与可写性。 */
+/**
+ * 联网搜索设置从各提供方自己的命名空间派生；凭据读取只有存在性与可写性。
+ *
+ * 出站与模型渠道共用同一套语义（直连／内置代理池／自定义代理）：这里镜像 Host 侧
+ * `coding-proxy-pool` 的 `OutboundConfig` 形状，只负责表单校验与写入，真正的地址
+ * 解析由各搜索提供方在请求期向代理池询问。
+ */
 import type { IApiClient } from 'coding-api-remotes/client'
 import {
   createSnapshotStore, type SettingsScope, type SettingsScopeSnapshot, type SnapshotStore,
 } from 'coding-client-runtime/client'
 
-/** Web 搜索提供方的持久选择。 */
-export type SearchProvider = 'duckduckgo' | 'deepseek-official' | 'tavily'
+/** 设置页可选的搜索提供方；`bing` 与 DuckDuckGo 都是免费无需密钥的来源。 */
+export type SearchProvider = 'duckduckgo' | 'bing' | 'deepseek-official' | 'tavily'
 /** 需要单独凭据的搜索提供方。 */
-export type KeyedSearchProvider = Exclude<SearchProvider, 'duckduckgo'>
+export type KeyedSearchProvider = Exclude<SearchProvider, 'duckduckgo' | 'bing'>
 /** 搜索工具所属命名空间。 */
 export interface WebSettings { searchProvider: SearchProvider }
+/** 渠道级出站选择，与模型渠道同形。 */
+export interface OutboundSettings { mode: 'direct' | 'pool' | 'custom'; customUrl?: string }
 /** DeepSeek 搜索提供方所属命名空间。 */
-export interface DeepSeekSearchSettings { baseURL?: string; proxyURL?: string; model?: string; apiKeyEnv?: string }
+export interface DeepSeekSearchSettings { baseURL?: string; outbound?: OutboundSettings; model?: string; apiKeyEnv?: string }
 /** DuckDuckGo 搜索提供方所属命名空间。 */
-export interface DuckDuckGoSearchSettings { proxyURL?: string }
+export interface DuckDuckGoSearchSettings { outbound?: OutboundSettings }
+/** Bing 搜索提供方所属命名空间。 */
+export interface BingSearchSettings { market?: string; outbound?: OutboundSettings }
 /** Tavily 搜索提供方所属命名空间。 */
-export interface TavilySearchSettings { baseURL?: string; proxyURL?: string; apiKeyEnv?: string }
-/** 表单提交的字符串；空值表示继承部署值。 */
-export type DeepSeekSearchDraft = Record<keyof DeepSeekSearchSettings, string>
-/** DuckDuckGo 草稿；空值清除专用代理。 */
-export type DuckDuckGoSearchDraft = Record<keyof DuckDuckGoSearchSettings, string>
-/** Tavily 草稿；空值继承部署值。 */
-export type TavilySearchDraft = Record<keyof TavilySearchSettings, string>
-/** 各提供方表单向所属设置 scope 提交的草稿。 */
-export type SearchDraft = DeepSeekSearchDraft | DuckDuckGoSearchDraft | TavilySearchDraft
+export interface TavilySearchSettings { baseURL?: string; outbound?: OutboundSettings; apiKeyEnv?: string }
+/** 一次表单提交的草稿：字符串字段为空表示清除覆盖，出站是整体对象。 */
+export type SearchDraft = Record<string, string | OutboundSettings>
+
+/** DeepSeek 搜索默认的凭据引用。 */
+export const DEFAULT_KEY_REF = 'DEEPSEEK_SEARCH_API_KEY'
+/** Tavily 搜索默认的凭据引用。 */
+export const DEFAULT_TAVILY_KEY_REF = 'TAVILY_API_KEY'
+const KEY_REF = /^[A-Za-z_][A-Za-z0-9_]*$/
+
+/**
+ * 收窄出站选择；形状不符时返回 undefined，避免把坏值写回设置。
+ * @param value - Host 返回的出站字段。
+ * @returns 合法的出站选择；缺失或形状不符时为 undefined。
+ */
+export function decodeOutbound(value: unknown): OutboundSettings | undefined {
+  if (value === undefined) return undefined
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+  const record = value as Record<string, unknown>
+  const mode = record.mode
+  if (mode !== 'direct' && mode !== 'pool' && mode !== 'custom') return undefined
+  if (record.customUrl !== undefined && typeof record.customUrl !== 'string') return undefined
+  return { mode, ...record.customUrl === undefined ? {} : { customUrl: record.customUrl } }
+}
+
+/**
+ * 判断一次出站选择能否保存：自定义模式要求不含凭据、查询与片段的 http(s) 地址。
+ * @param value - 表单里的出站选择。
+ * @returns 可提交时为 true；直连与内置代理池总是可提交。
+ */
+export function validOutbound(value: OutboundSettings): boolean {
+  if (value.mode !== 'custom') return true
+  const text = value.customUrl?.trim() ?? ''
+  if (!/^https?:\/\//i.test(text)) return false
+  try {
+    const url = new URL(text)
+    const authority = text.slice(text.indexOf('//') + 2).split(/[/?#]/, 1)[0]
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return false
+    if (url.hostname === '' || authority?.includes('@') || url.username !== '' || url.password !== '') return false
+    return !text.includes('?') && !text.includes('#')
+  } catch {
+    return false
+  }
+}
 
 /**
  * 明确拒绝跨边界不认识的提供方。
@@ -33,13 +78,13 @@ export type SearchDraft = DeepSeekSearchDraft | DuckDuckGoSearchDraft | TavilySe
 export function decodeWeb(value: unknown): WebSettings | undefined {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
   const provider = (value as Record<string, unknown>).searchProvider
-  return provider === 'duckduckgo' || provider === 'deepseek-official' || provider === 'tavily'
+  return provider === 'duckduckgo' || provider === 'bing' || provider === 'deepseek-official' || provider === 'tavily'
     ? { searchProvider: provider }
     : undefined
 }
 
 /**
- * 严格收窄 Host 返回的地址、模型与凭据引用。
+ * 严格收窄 Host 返回的地址、模型、出站与凭据引用。
  * @param value - Host 返回的 DeepSeek 设置分节。
  * @returns 字段类型合法的设置；格式不符时为 undefined。
  */
@@ -47,28 +92,46 @@ export function decodeDeepSeek(value: unknown): DeepSeekSearchSettings | undefin
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
   const fields = value as Record<string, unknown>
   if (fields.baseURL !== undefined && typeof fields.baseURL !== 'string') return undefined
-  if (fields.proxyURL !== undefined && typeof fields.proxyURL !== 'string') return undefined
   if (fields.model !== undefined && typeof fields.model !== 'string') return undefined
   if (fields.apiKeyEnv !== undefined && typeof fields.apiKeyEnv !== 'string') return undefined
+  const outbound = decodeOutbound(fields.outbound)
+  if (fields.outbound !== undefined && outbound === undefined) return undefined
   return { ...(fields.baseURL === undefined ? {} : { baseURL: fields.baseURL }),
-    ...(fields.proxyURL === undefined ? {} : { proxyURL: fields.proxyURL }),
+    ...(outbound === undefined ? {} : { outbound }),
     ...(fields.model === undefined ? {} : { model: fields.model }),
     ...(fields.apiKeyEnv === undefined ? {} : { apiKeyEnv: fields.apiKeyEnv }) }
 }
 
 /**
- * 严格收窄 DuckDuckGo 的代理地址。
+ * 严格收窄 DuckDuckGo 的出站选择。
  * @param value - Host 返回的 DuckDuckGo 设置分节。
  * @returns 字段类型合法的设置；格式不符时为 undefined。
  */
 export function decodeDuckDuckGo(value: unknown): DuckDuckGoSearchSettings | undefined {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
-  const { proxyURL } = value as Record<string, unknown>
-  return proxyURL === undefined ? {} : typeof proxyURL === 'string' ? { proxyURL } : undefined
+  const record = value as Record<string, unknown>
+  const outbound = decodeOutbound(record.outbound)
+  if (record.outbound !== undefined && outbound === undefined) return undefined
+  return outbound === undefined ? {} : { outbound }
 }
 
 /**
- * 严格收窄 Tavily 的地址、代理和凭据引用。
+ * 严格收窄 Bing 的 market 与出站选择。
+ * @param value - Host 返回的 Bing 设置分节。
+ * @returns 字段类型合法的设置；格式不符时为 undefined。
+ */
+export function decodeBing(value: unknown): BingSearchSettings | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+  const fields = value as Record<string, unknown>
+  if (fields.market !== undefined && typeof fields.market !== 'string') return undefined
+  const outbound = decodeOutbound(fields.outbound)
+  if (fields.outbound !== undefined && outbound === undefined) return undefined
+  return { ...(fields.market === undefined ? {} : { market: fields.market }),
+    ...(outbound === undefined ? {} : { outbound }) }
+}
+
+/**
+ * 严格收窄 Tavily 的地址、出站与凭据引用。
  * @param value - Host 返回的 Tavily 设置分节。
  * @returns 字段类型合法的设置；格式不符时为 undefined。
  */
@@ -76,41 +139,33 @@ export function decodeTavily(value: unknown): TavilySearchSettings | undefined {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
   const fields = value as Record<string, unknown>
   if (fields.baseURL !== undefined && typeof fields.baseURL !== 'string') return undefined
-  if (fields.proxyURL !== undefined && typeof fields.proxyURL !== 'string') return undefined
   if (fields.apiKeyEnv !== undefined && typeof fields.apiKeyEnv !== 'string') return undefined
+  const outbound = decodeOutbound(fields.outbound)
+  if (fields.outbound !== undefined && outbound === undefined) return undefined
   return { ...(fields.baseURL === undefined ? {} : { baseURL: fields.baseURL }),
-    ...(fields.proxyURL === undefined ? {} : { proxyURL: fields.proxyURL }),
+    ...(outbound === undefined ? {} : { outbound }),
     ...(fields.apiKeyEnv === undefined ? {} : { apiKeyEnv: fields.apiKeyEnv }) }
 }
 
-/** DeepSeek 搜索默认的凭据引用。 */
-export const DEFAULT_KEY_REF = 'DEEPSEEK_SEARCH_API_KEY'
-/** Tavily 搜索默认的凭据引用。 */
-export const DEFAULT_TAVILY_KEY_REF = 'TAVILY_API_KEY'
-const KEY_REF = /^[A-Za-z_][A-Za-z0-9_]*$/
-type SearchSettingsField = keyof DeepSeekSearchSettings | keyof TavilySearchSettings | keyof DuckDuckGoSearchSettings
-
 /**
- * 校验用户草稿；空字段表示清除用户覆盖，代理允许本机地址但不能包含凭据。
+ * 校验用户键入的文本字段；空字段表示清除用户覆盖。
  * @param field - 提供方字段名。
  * @param value - 尚未提交的文本。
  * @param provider - 地址所属提供方；默认沿用公网域名校验。
  * @returns 字段可提交时为 true。
  */
-export function validField(field: SearchSettingsField, value: string, provider: SearchProvider = 'tavily'): boolean {
+export function validField(field: 'baseURL' | 'model' | 'apiKeyEnv', value: string, provider: SearchProvider = 'tavily'): boolean {
   const text = value.trim()
   if (text === '') return true
   if (field === 'apiKeyEnv') return KEY_REF.test(text)
   if (field === 'model') return true
-  if (!(field === 'proxyURL' ? /^https?:\/\//i : /^https:\/\//i).test(text)) return false
+  if (!/^https:\/\//i.test(text)) return false
   try {
     const url = new URL(text)
     const hostname = url.hostname.toLowerCase().replace(/\.+$/, '')
     const authority = text.slice(text.indexOf('//') + 2).split(/[/?#]/, 1)[0]
-    if ((field === 'proxyURL' ? url.protocol !== 'http:' && url.protocol !== 'https:' : url.protocol !== 'https:')
-      || hostname === '' || authority?.includes('@') || url.username !== '' || url.password !== ''
-      || text.includes('?') || text.includes('#')) return false
-    if (field === 'proxyURL') return true
+    if (url.protocol !== 'https:' || hostname === '' || authority?.includes('@')
+      || url.username !== '' || url.password !== '' || text.includes('?') || text.includes('#')) return false
     return (provider === 'deepseek-official' || hostname.includes('.')) && !hostname.split('.').includes('')
       && !/^\d+\.\d+\.\d+\.\d+$/.test(hostname) && !hostname.includes(':')
       && hostname !== 'localhost' && !hostname.endsWith('.localhost')
@@ -124,6 +179,7 @@ export function validField(field: SearchSettingsField, value: string, provider: 
 export interface SearchSettingsState {
   web: SettingsScopeSnapshot<WebSettings>
   duckDuckGo: SettingsScopeSnapshot<DuckDuckGoSearchSettings>
+  bing: SettingsScopeSnapshot<BingSearchSettings>
   deepSeek: SettingsScopeSnapshot<DeepSeekSearchSettings>
   tavily: SettingsScopeSnapshot<TavilySearchSettings>
   credential: { provider?: KeyedSearchProvider; ref: string; status: 'loading' | 'ready' | 'error'; configured: boolean; writable: boolean }
@@ -152,6 +208,7 @@ export class SearchSettingsController {
   /**
    * @param web - `web` 命名空间派生 scope。
    * @param duckDuckGo - DuckDuckGo 提供方派生 scope。
+   * @param bing - Bing 提供方派生 scope。
    * @param deepSeek - DeepSeek 提供方派生 scope。
    * @param tavily - Tavily 提供方派生 scope。
    * @param api - 只用于凭据描述与单向写入的 API。
@@ -159,12 +216,14 @@ export class SearchSettingsController {
   constructor(
     private readonly web: SettingsScope<WebSettings>,
     private readonly duckDuckGo: SettingsScope<DuckDuckGoSearchSettings>,
+    private readonly bing: SettingsScope<BingSearchSettings>,
     private readonly deepSeek: SettingsScope<DeepSeekSearchSettings>,
     private readonly tavily: SettingsScope<TavilySearchSettings>,
     private readonly api: Pick<IApiClient, 'credentials'>,
   ) {
     this.store = createSnapshotStore<SearchSettingsState>({
-      web: web.getSnapshot(), duckDuckGo: duckDuckGo.getSnapshot(), deepSeek: deepSeek.getSnapshot(), tavily: tavily.getSnapshot(),
+      web: web.getSnapshot(), duckDuckGo: duckDuckGo.getSnapshot(), bing: bing.getSnapshot(),
+      deepSeek: deepSeek.getSnapshot(), tavily: tavily.getSnapshot(),
       credential: { ref: '', status: 'loading', configured: false, writable: false },
       saving: false, keySaving: false, failed: false, keyFailed: false,
     })
@@ -182,6 +241,7 @@ export class SearchSettingsController {
         if (web.getSnapshot().value?.searchProvider === 'deepseek-official') void this.readCredential()
       }),
       duckDuckGo.subscribe(() => { this.store.update((draft) => { draft.duckDuckGo = duckDuckGo.getSnapshot() }) }),
+      bing.subscribe(() => { this.store.update((draft) => { draft.bing = bing.getSnapshot() }) }),
       tavily.subscribe(() => {
         this.store.update((draft) => { draft.tavily = tavily.getSnapshot() })
         if (web.getSnapshot().value?.searchProvider === 'tavily') void this.readCredential()
@@ -211,7 +271,7 @@ export class SearchSettingsController {
   private async readCredential(): Promise<void> {
     const provider = this.web.getSnapshot().value?.searchProvider
     const generation = ++this.credentialGeneration
-    if (provider === 'duckduckgo' || provider === undefined) {
+    if (provider === undefined || provider === 'duckduckgo' || provider === 'bing') {
       this.store.update((draft) => { draft.credential = { ref: '', status: 'ready', configured: false, writable: false } })
       return
     }
@@ -261,31 +321,58 @@ export class SearchSettingsController {
   /**
    * 依次提交所属提供方有变化的字段；每次写入由 scope 使用新的 revision。
    * @param provider - 草稿所属提供方。
-   * @param fields - 文本草稿，空值清除用户覆盖。
+   * @param fields - 文本或出站草稿；空字符串清除用户覆盖。
    * @returns 所有字段被 Host 接受后为 true。
    */
   async saveFields(provider: SearchProvider, fields: SearchDraft): Promise<boolean> {
-    const scope: SettingsScope<DeepSeekSearchSettings | TavilySearchSettings | DuckDuckGoSearchSettings> = provider === 'tavily'
-      ? this.tavily : provider === 'duckduckgo' ? this.duckDuckGo : this.deepSeek
+    const scope: SettingsScope<DeepSeekSearchSettings | TavilySearchSettings | DuckDuckGoSearchSettings | BingSearchSettings> = provider === 'tavily'
+      ? this.tavily
+      : provider === 'duckduckgo'
+        ? this.duckDuckGo
+        : provider === 'bing' ? this.bing : this.deepSeek
     const snapshot = scope.getSnapshot()
     if (this.store.getSnapshot().saving || snapshot.status !== 'ready' || !snapshot.writable) return false
-    if (!Object.entries(fields).every(([field, value]) => validField(field as keyof DeepSeekSearchSettings, value, provider))) return false
+    const order = provider === 'duckduckgo'
+      ? ['outbound']
+      : provider === 'bing' ? ['market', 'outbound']
+        : provider === 'tavily' ? ['baseURL', 'outbound', 'apiKeyEnv'] : ['baseURL', 'outbound', 'model', 'apiKeyEnv']
+    const acceptable = order.every((field) => {
+      const raw = fields[field]
+      if (raw === undefined) return false
+      return typeof raw === 'string'
+        ? validField(field as 'baseURL' | 'model' | 'apiKeyEnv', raw, provider)
+        : validOutbound(raw)
+    })
+    if (!acceptable) return false
     this.store.update((draft) => { draft.saving = true; draft.failed = false })
     let accepted = true
     try {
-      for (const field of (provider === 'duckduckgo' ? ['proxyURL'] : provider === 'tavily'
-        ? ['baseURL', 'proxyURL', 'apiKeyEnv'] : ['baseURL', 'proxyURL', 'model', 'apiKeyEnv'])) {
-        const raw = (fields as Record<string, string>)[field]
+      for (const field of order) {
+        const raw = fields[field]
         if (raw === undefined) { accepted = false; break }
-        const value = raw.trim()
         const current = scope.getSnapshot()
         const user = current.user as Record<string, unknown> | undefined
-        if (value === '') {
-          if (user !== undefined && Object.hasOwn(user, field)) await scope.unset(field)
-          if (Object.hasOwn(scope.getSnapshot().user ?? {}, field)) accepted = false
-        } else if (value !== (current.value as Record<string, string> | undefined)?.[field]) {
-          await scope.set(field, value)
-          if ((scope.getSnapshot().value as Record<string, string> | undefined)?.[field] !== value) accepted = false
+        if (typeof raw === 'string') {
+          const value = raw.trim()
+          if (value === '') {
+            if (user !== undefined && Object.hasOwn(user, field)) await scope.unset(field)
+            if (Object.hasOwn(scope.getSnapshot().user ?? {}, field)) accepted = false
+          } else if (value !== (current.value as Record<string, unknown> | undefined)?.[field]) {
+            await scope.set(field, value)
+            if ((scope.getSnapshot().value as Record<string, unknown> | undefined)?.[field] !== value) accepted = false
+          }
+        } else {
+          const next = raw.mode === 'custom'
+            ? { mode: 'custom', customUrl: raw.customUrl?.trim() ?? '' }
+            : { mode: raw.mode }
+          // 未保存出站即直连：草稿仍是直连时不写一条冗余覆盖。
+          const stored = decodeOutbound((current.value as Record<string, unknown> | undefined)?.outbound)
+            ?? { mode: 'direct' }
+          if (JSON.stringify(stored) !== JSON.stringify(next)) {
+            await scope.set(field, next)
+            const after = decodeOutbound((scope.getSnapshot().value as Record<string, unknown> | undefined)?.[field])
+            if (JSON.stringify(after) !== JSON.stringify(next)) accepted = false
+          }
         }
         if (!accepted) break
       }

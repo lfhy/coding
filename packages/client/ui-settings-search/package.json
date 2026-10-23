@@ -46,6 +46,7 @@
     "coding-client-locale": "workspace:^",
     "coding-client-runtime": "workspace:^",
     "coding-client-test-runtime": "workspace:^",
+    "coding-client-ui-primitives": "workspace:^",
     "coding-client-ui-settings": "workspace:^",
     "coding-client-ui-slots": "workspace:^",
     "coding-invariants": "workspace:^",

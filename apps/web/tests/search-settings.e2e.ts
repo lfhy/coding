@@ -87,7 +87,7 @@ describe('web e2e: independent search settings', () => {
     const visibleInput = (label: string) => section.getByLabel(label, { exact: true }).and(section.locator('input:visible'))
     const endpoint = visibleInput('接口地址')
     const model = visibleInput('搜索模型')
-    const proxy = visibleInput('HTTP 代理地址')
+    const customProxy = visibleInput('代理地址')
     const keyRef = visibleInput('密钥环境变量名')
     const key = visibleInput('专用搜索密钥')
     await expect.poll(() => duckduckgo.isChecked()).toBe(true)
@@ -99,14 +99,17 @@ describe('web e2e: independent search settings', () => {
     expect(await model.isVisible()).toBe(false)
     expect(await keyRef.isVisible()).toBe(false)
     expect(await key.isVisible()).toBe(false)
-    expect(await proxy.isVisible()).toBe(true)
+    // 出站默认为直连，自定义地址输入只在选中自定义代理时出现。
+    expect(await section.getByRole('group', { name: '出站', exact: true }).isVisible()).toBe(true)
+    expect(await customProxy.isVisible()).toBe(false)
     expect(await section.getByText('免费，无需配置密钥。', { exact: true }).count()).toBe(1)
     await expect(readFile(settingsPath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
 
-    await proxy.fill(DUCKDUCKGO_PROXY)
+    await section.getByRole('button', { name: '自定义代理', exact: true }).click()
+    await customProxy.fill(DUCKDUCKGO_PROXY)
     await section.getByRole('button', { name: '保存', exact: true }).click()
     await expect.poll(async () => namespaceSettings(await readFile(settingsPath, 'utf8'), 'web-search-duckduckgo'))
-      .toContain(`proxyURL: ${DUCKDUCKGO_PROXY}`)
+      .toContain(`customUrl: ${DUCKDUCKGO_PROXY}`)
     expect(await readFile(settingsPath, 'utf8')).not.toContain('web-search-deepseek:')
     expect(await readFile(settingsPath, 'utf8')).not.toContain('web-search-tavily:')
 
@@ -117,10 +120,11 @@ describe('web e2e: independent search settings', () => {
       .toMatch(/web:\n\s+searchProvider: deepseek-official/)
     await section.getByText('此引用没有密钥；选用 DeepSeek 官方时搜索不可用。', { exact: true })
       .waitFor({ timeout: 10_000 })
-    expect(await proxy.inputValue()).toBe('')
+    expect(await customProxy.count()).toBe(0)
     await endpoint.fill(ENDPOINT)
     await model.fill(MODEL)
-    await proxy.fill(DEEPSEEK_PROXY)
+    await section.getByRole('button', { name: '自定义代理', exact: true }).click()
+    await customProxy.fill(DEEPSEEK_PROXY)
     await keyRef.fill(SEARCH_REF)
     await section.getByRole('button', { name: '保存', exact: true }).click()
     await expect.poll(async () => readFile(settingsPath, 'utf8'), { timeout: 10_000 })
@@ -129,8 +133,8 @@ describe('web e2e: independent search settings', () => {
     const deepSeekSettings = namespaceSettings(configured, 'web-search-deepseek')
     expect(deepSeekSettings).toContain(`baseURL: ${ENDPOINT}`)
     expect(deepSeekSettings).toContain(`model: ${MODEL}`)
-    expect(deepSeekSettings).toContain(`proxyURL: ${DEEPSEEK_PROXY}`)
-    expect(namespaceSettings(configured, 'web-search-duckduckgo')).toContain(`proxyURL: ${DUCKDUCKGO_PROXY}`)
+    expect(deepSeekSettings).toContain(`customUrl: ${DEEPSEEK_PROXY}`)
+    expect(namespaceSettings(configured, 'web-search-duckduckgo')).toContain(`customUrl: ${DUCKDUCKGO_PROXY}`)
     expect(configured).not.toContain(SEARCH_KEY)
     await expect.poll(() => keyRef.inputValue(), { timeout: 10_000 }).toBe(SEARCH_REF)
     await section.getByText('此引用没有密钥；选用 DeepSeek 官方时搜索不可用。', { exact: true })
@@ -159,7 +163,7 @@ describe('web e2e: independent search settings', () => {
       .toMatch(/web:\n\s+searchProvider: tavily/)
     expect(await model.isVisible()).toBe(false)
     expect(await endpoint.inputValue()).toBe('https://api.tavily.com')
-    expect(await proxy.inputValue()).toBe('')
+    expect(await customProxy.count()).toBe(0)
     expect(await keyRef.inputValue()).toBe(TAVILY_REF)
     await section.getByText('此引用没有密钥；选用 Tavily 时搜索不可用。', { exact: true })
       .waitFor({ timeout: 10_000 })
@@ -167,7 +171,8 @@ describe('web e2e: independent search settings', () => {
       .toMatchObject({ configured: false })
 
     await endpoint.fill(TAVILY_ENDPOINT)
-    await proxy.fill(TAVILY_PROXY)
+    await section.getByRole('button', { name: '自定义代理', exact: true }).click()
+    await customProxy.fill(TAVILY_PROXY)
     await keyRef.fill(CUSTOM_TAVILY_REF)
     await section.getByRole('button', { name: '保存', exact: true }).click()
     await expect.poll(async () => namespaceSettings(await readFile(settingsPath, 'utf8'), 'web-search-tavily'), { timeout: 10_000 })
@@ -179,10 +184,10 @@ describe('web e2e: independent search settings', () => {
     const withTavily = await readFile(settingsPath, 'utf8')
     const tavilySettings = namespaceSettings(withTavily, 'web-search-tavily')
     expect(tavilySettings).toContain(`baseURL: ${TAVILY_ENDPOINT}`)
-    expect(tavilySettings).toContain(`proxyURL: ${TAVILY_PROXY}`)
+    expect(tavilySettings).toContain(`customUrl: ${TAVILY_PROXY}`)
     expect(tavilySettings).not.toContain('model:')
-    expect(namespaceSettings(withTavily, 'web-search-deepseek')).toContain(`proxyURL: ${DEEPSEEK_PROXY}`)
-    expect(namespaceSettings(withTavily, 'web-search-duckduckgo')).toContain(`proxyURL: ${DUCKDUCKGO_PROXY}`)
+    expect(namespaceSettings(withTavily, 'web-search-deepseek')).toContain(`customUrl: ${DEEPSEEK_PROXY}`)
+    expect(namespaceSettings(withTavily, 'web-search-duckduckgo')).toContain(`customUrl: ${DUCKDUCKGO_PROXY}`)
     await expect.poll(() => key.isEnabled(), { timeout: 10_000 }).toBe(true)
     await key.fill(TAVILY_KEY)
     await section.getByRole('button', { name: '保存密钥', exact: true }).click()
@@ -205,7 +210,7 @@ describe('web e2e: independent search settings', () => {
     expect(await section.getByText('免费，无需配置密钥。', { exact: true }).count()).toBe(1)
     expect(await scaffold.ctx.credentials.describe(SEARCH_REF)).toMatchObject({ configured: true })
     expect(await scaffold.ctx.credentials.describe(TAVILY_REF)).toMatchObject({ configured: true })
-    expect(await proxy.inputValue()).toBe(DUCKDUCKGO_PROXY)
+    expect(await customProxy.inputValue()).toBe(DUCKDUCKGO_PROXY)
     expect(await endpoint.isVisible()).toBe(false)
     expect(await model.isVisible()).toBe(false)
     expect(await keyRef.isVisible()).toBe(false)
@@ -218,25 +223,25 @@ describe('web e2e: independent search settings', () => {
     expect(pageBox.x + pageBox.width).toBeLessThanOrEqual(375)
     expect(await settingsPage.evaluate(node => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(1)
     for (const [provider, fields] of [
-      [duckduckgo, [proxy]],
-      [deepseek, [endpoint, model, proxy, keyRef, key]],
-      [tavily, [endpoint, proxy, keyRef, key]],
+      [duckduckgo, [customProxy]],
+      [deepseek, [endpoint, model, customProxy, keyRef, key]],
+      [tavily, [endpoint, customProxy, keyRef, key]],
     ] as const) {
       await provider.click()
       await expect.poll(() => provider.isChecked(), { timeout: 10_000 }).toBe(true)
       if (provider !== duckduckgo) await expect.poll(() => key.isEnabled(), { timeout: 10_000 }).toBe(true)
       if (provider === duckduckgo) {
-        expect(await proxy.inputValue()).toBe(DUCKDUCKGO_PROXY)
+        expect(await customProxy.inputValue()).toBe(DUCKDUCKGO_PROXY)
         expect(await endpoint.isVisible()).toBe(false)
         expect(await key.isVisible()).toBe(false)
       } else if (provider === deepseek) {
         expect(await endpoint.inputValue()).toBe(ENDPOINT)
         expect(await model.inputValue()).toBe(MODEL)
-        expect(await proxy.inputValue()).toBe(DEEPSEEK_PROXY)
+        expect(await customProxy.inputValue()).toBe(DEEPSEEK_PROXY)
         expect(await keyRef.inputValue()).toBe(SEARCH_REF)
       } else {
         expect(await endpoint.inputValue()).toBe(TAVILY_ENDPOINT)
-        expect(await proxy.inputValue()).toBe(TAVILY_PROXY)
+        expect(await customProxy.inputValue()).toBe(TAVILY_PROXY)
         expect(await keyRef.inputValue()).toBe(TAVILY_REF)
         expect(await model.isVisible()).toBe(false)
       }

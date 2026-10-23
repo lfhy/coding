@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 import { stubSettingsScope } from 'coding-client-test-runtime'
 import {
-  SearchSettingsController, decodeDeepSeek, decodeDuckDuckGo, decodeTavily, decodeWeb, validField,
-  type DeepSeekSearchSettings, type DuckDuckGoSearchSettings, type TavilySearchSettings, type SearchProvider, type WebSettings,
+  SearchSettingsController, decodeBing, decodeDeepSeek, decodeDuckDuckGo, decodeTavily, decodeWeb, validField, validOutbound,
+  type BingSearchSettings, type DeepSeekSearchSettings, type DuckDuckGoSearchSettings, type TavilySearchSettings,
+  type SearchProvider, type WebSettings, type OutboundSettings,
 } from '../src/client/controller.ts'
 
 function bench(provider: SearchProvider = 'duckduckgo') {
@@ -10,8 +11,10 @@ function bench(provider: SearchProvider = 'duckduckgo') {
   const duckDuckGo = stubSettingsScope<DuckDuckGoSearchSettings>()
   const deepSeek = stubSettingsScope<DeepSeekSearchSettings>()
   const tavily = stubSettingsScope<TavilySearchSettings>()
+  const bing = stubSettingsScope<BingSearchSettings>()
   web.publish({ status: 'ready', writable: true, value: { searchProvider: provider }, user: {}, base: { searchProvider: 'duckduckgo' }, revision: 1 })
   duckDuckGo.publish({ status: 'ready', writable: true, value: {}, user: {}, base: {}, revision: 5 })
+  bing.publish({ status: 'ready', writable: true, value: {}, user: {}, base: {}, revision: 2 })
   deepSeek.publish({ status: 'ready', writable: true,
     value: { model: 'deepseek-v4-flash', apiKeyEnv: 'DEEPSEEK_SEARCH_API_KEY' },
     user: {}, base: { model: 'deepseek-v4-flash', apiKeyEnv: 'DEEPSEEK_SEARCH_API_KEY' }, revision: 1 })
@@ -22,9 +25,9 @@ function bench(provider: SearchProvider = 'duckduckgo') {
   } } }))
   const set = vi.fn(async () => ({ rpcId: 's' as never, result: { ok: true as const, value: {} } }))
   const controller = new SearchSettingsController(
-    web.scope, duckDuckGo.scope, deepSeek.scope, tavily.scope, { credentials: { describe, set } } as never,
+    web.scope, duckDuckGo.scope, bing.scope, deepSeek.scope, tavily.scope, { credentials: { describe, set } } as never,
   )
-  return { web, duckDuckGo, deepSeek, tavily, describe, set, controller, state: () => controller.store.getSnapshot() }
+  return { web, duckDuckGo, bing, deepSeek, tavily, describe, set, controller, state: () => controller.store.getSnapshot() }
 }
 
 describe('search settings controller', () => {
@@ -35,11 +38,14 @@ describe('search settings controller', () => {
     expect(decodeDeepSeek({ model: 'deepseek-v4-flash', apiKeyEnv: 'SEARCH_KEY' }))
       .toEqual({ model: 'deepseek-v4-flash', apiKeyEnv: 'SEARCH_KEY' })
     expect(decodeDeepSeek({ baseURL: 17 })).toBeUndefined()
-    expect(decodeDeepSeek({ proxyURL: 17 })).toBeUndefined()
-    expect(decodeTavily({ proxyURL: 'http://127.0.0.1:7890' })).toEqual({ proxyURL: 'http://127.0.0.1:7890' })
+    expect(decodeDeepSeek({ outbound: 17 })).toBeUndefined()
+    expect(decodeBing({ market: 17 })).toBeUndefined()
+    expect(decodeWeb({ searchProvider: 'bing' })).toEqual({ searchProvider: 'bing' })
+    expect(decodeBing({ market: 'zh-CN', outbound: { mode: 'pool' } })).toEqual({ market: 'zh-CN', outbound: { mode: 'pool' } })
+    expect(decodeTavily({ outbound: { mode: 'custom' as const, customUrl: 'http://127.0.0.1:7890' } })).toEqual({ outbound: { mode: 'custom' as const, customUrl: 'http://127.0.0.1:7890' } })
     expect(decodeTavily({ apiKeyEnv: 17 })).toBeUndefined()
-    expect(decodeDuckDuckGo({ proxyURL: 'http://localhost:7890' })).toEqual({ proxyURL: 'http://localhost:7890' })
-    expect(decodeDuckDuckGo({ proxyURL: 17 })).toBeUndefined()
+    expect(decodeDuckDuckGo({ outbound: { mode: 'custom', customUrl: 'http://localhost:7890' } })).toEqual({ outbound: { mode: 'custom', customUrl: 'http://localhost:7890' } })
+    expect(decodeDuckDuckGo({ outbound: { mode: 'sideways' } })).toBeUndefined()
   })
 
   it('rejects local endpoints and malformed refs before sending settings', () => {
@@ -59,13 +65,16 @@ describe('search settings controller', () => {
     expect(validField('apiKeyEnv', 'invalid-ref')).toBe(false)
     expect(validField('baseURL', '')).toBe(true)
     for (const proxy of ['http://127.0.0.1:7890', 'http://localhost:7890', 'https://[::1]:7890']) {
-      expect(validField('proxyURL', proxy)).toBe(true)
+      expect(validOutbound({ mode: 'custom', customUrl: proxy })).toBe(true)
     }
     for (const proxy of ['socks5://127.0.0.1:7890', 'http:localhost:7890', 'http://user:pass@localhost:7890',
       'http://localhost:7890/?key=secret', 'http://localhost:7890/#frag',
       'http://@localhost:7890', 'http://localhost:7890/?', 'http://localhost:7890/#']) {
-      expect(validField('proxyURL', proxy)).toBe(false)
+      expect(validOutbound({ mode: 'custom', customUrl: proxy })).toBe(false)
     }
+    expect(validOutbound({ mode: 'direct' })).toBe(true)
+    expect(validOutbound({ mode: 'pool' })).toBe(true)
+    expect(validOutbound({ mode: 'custom' })).toBe(false)
   })
 
   it('writes the provider through its own revision-fenced namespace', async () => {
@@ -80,7 +89,7 @@ describe('search settings controller', () => {
 
   it('clears an absent endpoint without writing the official URL over an environment default', async () => {
     const { deepSeek, controller, state } = bench('deepseek-official')
-    await expect(controller.saveFields('deepseek-official', { baseURL: '', proxyURL: '', model: 'deepseek-v4-flash', apiKeyEnv: 'DEEPSEEK_SEARCH_API_KEY' })).resolves.toBe(true)
+    await expect(controller.saveFields('deepseek-official', { baseURL: '', outbound: { mode: 'direct' as const }, model: 'deepseek-v4-flash', apiKeyEnv: 'DEEPSEEK_SEARCH_API_KEY' })).resolves.toBe(true)
     expect(deepSeek.set).not.toHaveBeenCalled()
     expect(deepSeek.unset).not.toHaveBeenCalled()
     expect(state().failed).toBe(false)
@@ -93,11 +102,11 @@ describe('search settings controller', () => {
       deepSeek.publish({ value: { ...deepSeek.scope.getSnapshot().value, [field]: value as string }, revision: 2 })
     })
     await expect(controller.saveFields('deepseek-official', {
-      baseURL: 'https://intranet', proxyURL: '', model: 'deepseek-v4-flash', apiKeyEnv: 'DEEPSEEK_SEARCH_API_KEY',
+      baseURL: 'https://intranet', outbound: { mode: 'direct' as const }, model: 'deepseek-v4-flash', apiKeyEnv: 'DEEPSEEK_SEARCH_API_KEY',
     })).resolves.toBe(true)
     expect(deepSeek.set).toHaveBeenCalledWith('baseURL', 'https://intranet')
     await expect(controller.saveFields('tavily', {
-      baseURL: 'https://intranet', proxyURL: '', apiKeyEnv: 'TAVILY_API_KEY',
+      baseURL: 'https://intranet', outbound: { mode: 'direct' as const }, apiKeyEnv: 'TAVILY_API_KEY',
     })).resolves.toBe(false)
     expect(tavily.set).not.toHaveBeenCalled()
     controller.dispose()
@@ -111,7 +120,7 @@ describe('search settings controller', () => {
         user: { baseURL: value as string }, revision: 2,
       })
     })
-    const drafts = { baseURL: 'https://search.example/v1', proxyURL: '', model: 'changed-model', apiKeyEnv: 'SEARCH_KEY' }
+    const drafts = { baseURL: 'https://search.example/v1', outbound: { mode: 'direct' as const }, model: 'changed-model', apiKeyEnv: 'SEARCH_KEY' }
 
     await expect(controller.saveFields('deepseek-official', drafts)).resolves.toBe(false)
     expect(deepSeek.set.mock.calls).toEqual([['baseURL', drafts.baseURL], ['model', drafts.model]])
@@ -152,23 +161,28 @@ describe('search settings controller', () => {
   it('saves each provider namespace independently and clears only user overrides', async () => {
     const { duckDuckGo, tavily, deepSeek, controller } = bench()
     duckDuckGo.set.mockImplementation((_field, value) => {
-      const proxyURL = value as string
-      duckDuckGo.publish({ value: { proxyURL }, user: { proxyURL }, revision: 6 })
+      duckDuckGo.publish({
+        value: { outbound: value as OutboundSettings }, user: { outbound: value as OutboundSettings }, revision: 6,
+      })
     })
-    await expect(controller.saveFields('duckduckgo', { proxyURL: 'http://127.0.0.1:7890' })).resolves.toBe(true)
-    expect(duckDuckGo.set).toHaveBeenCalledWith('proxyURL', 'http://127.0.0.1:7890')
+    await expect(controller.saveFields('duckduckgo', { outbound: { mode: 'custom' as const, customUrl: 'http://127.0.0.1:7890' } })).resolves.toBe(true)
+    expect(duckDuckGo.set).toHaveBeenCalledWith('outbound', { mode: 'custom', customUrl: 'http://127.0.0.1:7890' })
     expect(deepSeek.set).not.toHaveBeenCalled()
     tavily.set.mockImplementation((field, value) => {
       const name = field as string
-      const text = value as string
-      tavily.publish({ value: { ...tavily.scope.getSnapshot().value, [name]: text }, user: { [name]: text }, revision: 10 })
+      const stored = value as string | OutboundSettings
+      tavily.publish({
+        value: { ...tavily.scope.getSnapshot().value, [name]: stored },
+        user: { [name]: stored }, revision: 10,
+      })
     })
-    await expect(controller.saveFields('tavily', { baseURL: 'https://api.tavily.com', proxyURL: 'http://localhost:7890', apiKeyEnv: 'TAVILY_API_KEY' })).resolves.toBe(true)
-    expect(tavily.set).toHaveBeenCalledWith('proxyURL', 'http://localhost:7890')
+    await expect(controller.saveFields('tavily', { baseURL: 'https://api.tavily.com', outbound: { mode: 'custom', customUrl: 'http://localhost:7890' }, apiKeyEnv: 'TAVILY_API_KEY' })).resolves.toBe(true)
+    expect(tavily.set).toHaveBeenCalledWith('outbound', { mode: 'custom', customUrl: 'http://localhost:7890' })
     expect(duckDuckGo.set).toHaveBeenCalledTimes(1)
     duckDuckGo.unset.mockImplementation(() => { duckDuckGo.publish({ user: {}, value: {}, revision: 7 }) })
-    await expect(controller.saveFields('duckduckgo', { proxyURL: '' })).resolves.toBe(true)
-    expect(duckDuckGo.unset).toHaveBeenCalledWith('proxyURL')
+    // 清空出站覆盖写回直连，仍是一条 unset（直连即缺省）。
+    await expect(controller.saveFields('duckduckgo', { outbound: { mode: 'direct' as const } })).resolves.toBe(true)
+    expect(duckDuckGo.set).toHaveBeenCalledTimes(2)
     controller.dispose()
   })
 

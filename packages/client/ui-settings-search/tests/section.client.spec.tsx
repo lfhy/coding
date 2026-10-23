@@ -13,6 +13,7 @@ function bench(overrides: Partial<SearchSettingsState> = {}, provider: 'duckduck
   const state = createSnapshotStore<SearchSettingsState>({
     web: { status: 'ready', value: { searchProvider: provider }, base: {}, user: {}, revision: 1, writable: true, mode: 'host' },
     duckDuckGo: { status: 'ready', value: {}, base: {}, user: {}, revision: 4, writable: true, mode: 'host' },
+    bing: { status: 'ready', value: {}, base: {}, user: {}, revision: 2, writable: true, mode: 'host' },
     deepSeek: { status: 'ready', value: { model: 'deepseek-v4-flash', apiKeyEnv: 'DEEPSEEK_SEARCH_API_KEY' }, base: {}, user: {}, revision: 1, writable: true, mode: 'host' },
     tavily: { status: 'ready', value: { baseURL: 'https://api.tavily.com', apiKeyEnv: 'TAVILY_API_KEY' }, base: {}, user: {}, revision: 7, writable: true, mode: 'host' },
     credential: provider === 'duckduckgo' ? { ref: '', status: 'ready', configured: false, writable: false }
@@ -32,18 +33,28 @@ function bench(overrides: Partial<SearchSettingsState> = {}, provider: 'duckduck
 }
 
 describe('search settings section', () => {
-  it('selects the free provider by default and shows only its proxy configuration', () => {
+  it('selects the free provider by default and shows only its outbound choice', () => {
     bench()
-    expect(screen.getByRole('radio', { name: /DuckDuckGo/ })).toHaveProperty('checked', true)
-    expect(screen.getByLabelText(zh.proxy)).toBeTruthy()
+    expect(screen.getByRole('button', { name: /DuckDuckGo/ })).toHaveProperty('ariaExpanded', 'false')
+    expect(screen.getByRole('group', { name: zh.outbound })).toBeTruthy()
+    expect(screen.getByRole('button', { name: zh.outboundDirect })).toHaveProperty('ariaPressed', 'true')
     expect(screen.queryByLabelText(zh.apiKey)).toBeNull()
     expect(screen.queryByLabelText(zh.endpoint)).toBeNull()
     expect(screen.getByRole('region', { name: zh.title })).toBeTruthy()
   })
 
+  it('lists every shipped source with its cost badge in the switcher menu', () => {
+    bench()
+    fireEvent.click(screen.getByRole('button', { name: /DuckDuckGo/ }))
+    for (const name of [/DuckDuckGo · 免费/, /Bing · 免费/, /DeepSeek 官方 · 需要密钥/, /Tavily · 需要密钥/]) {
+      expect(screen.getByRole('menuitem', { name })).toBeTruthy()
+    }
+  })
+
   it('changes provider without saving a key or the independent settings', () => {
     const subject = bench()
-    fireEvent.click(screen.getByRole('radio', { name: /DeepSeek 官方/ }))
+    fireEvent.click(screen.getByRole('button', { name: /DuckDuckGo/ }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /DeepSeek 官方/ }))
     expect(subject.chooseProvider).toHaveBeenCalledWith('deepseek-official')
     expect(subject.saveFields).not.toHaveBeenCalled()
     expect(subject.saveKey).not.toHaveBeenCalled()
@@ -54,7 +65,7 @@ describe('search settings section', () => {
     fireEvent.change(screen.getByLabelText(zh.model), { target: { value: 'search-model' } })
     fireEvent.click(screen.getByRole('button', { name: zh.save }))
     await waitFor(() => { expect(subject.saveFields).toHaveBeenCalledWith('deepseek-official', {
-      baseURL: '', proxyURL: '', model: 'search-model', apiKeyEnv: 'DEEPSEEK_SEARCH_API_KEY',
+      baseURL: '', outbound: { mode: 'direct' }, model: 'search-model', apiKeyEnv: 'DEEPSEEK_SEARCH_API_KEY',
     }) })
     expect(screen.getByLabelText(zh.endpoint)).toHaveProperty('value', '')
   })
@@ -67,7 +78,7 @@ describe('search settings section', () => {
     expect(screen.getByRole('button', { name: zh.save })).toHaveProperty('disabled', false)
     fireEvent.click(screen.getByRole('button', { name: zh.save }))
     expect(subject.saveFields).toHaveBeenCalledWith('deepseek-official', {
-      baseURL: 'https://intranet', proxyURL: '', model: 'new-model', apiKeyEnv: 'DEEPSEEK_SEARCH_API_KEY',
+      baseURL: 'https://intranet', outbound: { mode: 'direct' }, model: 'new-model', apiKeyEnv: 'DEEPSEEK_SEARCH_API_KEY',
     })
   })
 
@@ -108,37 +119,44 @@ describe('search settings section', () => {
 
   it('renders Tavily fields and key separately, without DeepSeek model', () => {
     bench({}, 'tavily')
-    expect(screen.getByRole('radio', { name: /Tavily/ })).toHaveProperty('checked', true)
+    expect(screen.getByRole('button', { name: /Tavily/ })).toBeTruthy()
     expect(screen.getByLabelText(zh.endpoint)).toHaveProperty('value', 'https://api.tavily.com')
-    expect(screen.getByLabelText(zh.proxy)).toBeTruthy()
+    expect(screen.getByRole('group', { name: zh.outbound })).toBeTruthy()
     expect(screen.getByText(zh.tavilyKeyMissing)).toBeTruthy()
     expect(screen.queryByLabelText(zh.model)).toBeNull()
   })
 
-  it('saves DuckDuckGo proxy, allows loopback, and rejects credentials or query', () => {
+  it('saves the outbound choice, allows loopback, and rejects credentials or query', () => {
     const subject = bench()
-    fireEvent.change(screen.getByLabelText(zh.proxy), { target: { value: 'http://127.0.0.1:7890' } })
+    fireEvent.click(screen.getByRole('button', { name: zh.outboundCustom }))
+    fireEvent.change(screen.getByLabelText(zh.outboundUrl), { target: { value: 'http://127.0.0.1:7890' } })
     fireEvent.click(screen.getByRole('button', { name: zh.save }))
-    expect(subject.saveFields).toHaveBeenCalledWith('duckduckgo', { proxyURL: 'http://127.0.0.1:7890' })
+    expect(subject.saveFields).toHaveBeenCalledWith('duckduckgo', {
+      outbound: { mode: 'custom', customUrl: 'http://127.0.0.1:7890' },
+    })
     for (const value of ['http://user:pass@localhost:7890', 'http://localhost:7890/?q=1']) {
-      fireEvent.change(screen.getByLabelText(zh.proxy), { target: { value } })
+      fireEvent.change(screen.getByLabelText(zh.outboundUrl), { target: { value } })
       expect(screen.getByText(zh.invalidProxy)).toBeTruthy()
       expect(screen.getByRole('button', { name: zh.save })).toHaveProperty('disabled', true)
     }
+    fireEvent.click(screen.getByRole('button', { name: zh.outboundPool }))
+    expect(screen.getByRole('button', { name: zh.save })).toHaveProperty('disabled', false)
   })
 
   it('keeps each provider draft isolated through switches', () => {
     const subject = bench()
-    fireEvent.change(screen.getByLabelText(zh.proxy), { target: { value: 'http://localhost:7001' } })
+    fireEvent.click(screen.getByRole('button', { name: zh.outboundCustom }))
+    fireEvent.change(screen.getByLabelText(zh.outboundUrl), { target: { value: 'http://localhost:7001' } })
     act(() => { subject.state.update((draft) => { draft.web.value = { searchProvider: 'tavily' }; draft.credential = {
       provider: 'tavily', ref: 'TAVILY_API_KEY', status: 'ready', configured: false, writable: true,
     } }) })
-    expect(screen.getByLabelText(zh.proxy)).toHaveProperty('value', '')
-    fireEvent.change(screen.getByLabelText(zh.proxy), { target: { value: 'http://localhost:7002' } })
+    // 换来源后草稿互不影响：Tavily 仍是自己的直连，尚未出现过地址输入。
+    expect(screen.getByRole('button', { name: zh.outboundDirect })).toHaveProperty('ariaPressed', 'true')
+    expect(screen.queryByLabelText(zh.outboundUrl)).toBeNull()
     act(() => { subject.state.update((draft) => { draft.web.value = { searchProvider: 'duckduckgo' }; draft.credential = {
       ref: '', status: 'ready', configured: false, writable: false,
     } }) })
-    expect(screen.getByLabelText(zh.proxy)).toHaveProperty('value', 'http://localhost:7001')
+    expect(screen.getByLabelText(zh.outboundUrl)).toHaveProperty('value', 'http://localhost:7001')
   })
 
   it('preserves newer field and key input when an older save completes', async () => {
@@ -164,10 +182,11 @@ describe('search settings section', () => {
     const subject = bench({ credential: { provider: 'tavily', ref: 'TAVILY_API_KEY', status: 'error', configured: false, writable: false }, keyFailed: true }, 'tavily')
     expect(screen.getByText(zh.keyError)).toBeTruthy()
     expect(screen.getByRole('alert')).toHaveProperty('textContent', zh.keyFailed)
-    const deepSeek = screen.getByRole('radio', { name: /DeepSeek 官方/ })
-    deepSeek.focus()
-    expect(document.activeElement).toBe(deepSeek)
-    fireEvent.click(deepSeek)
+    const trigger = screen.getByRole('button', { name: /Tavily/ })
+    trigger.focus()
+    expect(document.activeElement).toBe(trigger)
+    fireEvent.click(trigger)
+    fireEvent.click(screen.getByRole('menuitem', { name: /DeepSeek 官方/ }))
     expect(subject.chooseProvider).toHaveBeenCalledWith('deepseek-official')
   })
 })

@@ -20,9 +20,9 @@ macOS 桌面窗口打开时默认最大化，不会进入全屏。双击顶栏�
 
 ## 配置联网搜索
 
-`web_search` 默认使用免费的 DuckDuckGo 搜索，不需要 API 密钥。在**设置 → 联网搜索**可选择 DuckDuckGo、Tavily（`tavily`）或 DeepSeek（`deepseek-official`）；该选择只影响联网搜索，不改变对话模型。选择 Tavily 时，在该页保存独立的 `TAVILY_API_KEY` 凭据；DeepSeek 搜索使用独立的 `DEEPSEEK_SEARCH_API_KEY`，不使用对话模型的 `DEEPSEEK_API_KEY`。所选提供方缺少凭据或搜索失败时会直接报告错误，不自动切换到其他提供方。
+`web_search` 默认使用免费的 DuckDuckGo 搜索，不需要 API 密钥。在**设置 → 联网搜索**可选择 DuckDuckGo、Bing、Tavily（`tavily`）或 DeepSeek（`deepseek-official`）；列表用「免费」「需要密钥」标出各自代价，该选择只影响联网搜索，不改变对话模型。选择 Tavily 时，在该页保存独立的 `TAVILY_API_KEY` 凭据；DeepSeek 搜索使用独立的 `DEEPSEEK_SEARCH_API_KEY`，不使用对话模型的 `DEEPSEEK_API_KEY`。所选提供方缺少凭据或搜索失败时会直接报告错误，不自动切换到其他提供方。Bing 可填 `zh-CN` 之类的搜索市场，留空则由 Bing 按 `Accept-Language` 本地化。
 
-各提供方的 HTTP(S) 前向代理在**设置 → 联网搜索**分别配置，互不共享。DuckDuckGo 只有代理地址；Tavily 还可修改默认 `https://api.tavily.com` 的 API 基址；DeepSeek 还可修改 Anthropic 兼容 Messages API 的基址，默认 `https://api.deepseek.com/anthropic/v1`。端点、代理和凭据的详细配置见 [DuckDuckGo](../../../packages/web/web-search-duckduckgo/README.md)、[Tavily](../../../packages/web/web-search-tavily/README.md)和 [DeepSeek](../../../packages/web/web-search-deepseek/README.md) 搜索提供方。
+每个搜索提供方各自的**出站**在**设置 → 联网搜索**分别配置，互不共享，规则与模型渠道一致：**直连**、**内置代理池**（实际路径由**设置 → 代理池**的池出站决定：池为直连即直连，池为本地池则经池入站，池为自定义代理则经池地址）或**自定义代理**（只影响这一条搜索来源，不受池规则影响）。Tavily 还可修改默认 `https://api.tavily.com` 的 API 基址；DeepSeek 还可修改 Anthropic 兼容 Messages API 的基址，默认 `https://api.deepseek.com/anthropic/v1`。端点、出站和凭据的详细配置见 [DuckDuckGo](../../../packages/web/web-search-duckduckgo/README.md)、[Bing](../../../packages/web/web-search-bing/README.md)、[Tavily](../../../packages/web/web-search-tavily/README.md)和 [DeepSeek](../../../packages/web/web-search-deepseek/README.md) 搜索提供方。
 
 ## 选择开始方式
 

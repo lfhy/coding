@@ -9,15 +9,27 @@
 .title { margin: 0; font-size: 20px; line-height: 28px; font-weight: 600; }
 .intro { margin: 8px 0 24px; font-size: 13px; line-height: 20px; color: var(--dsw-alias-label-secondary); }
 .subheading { margin: 0 0 12px; font-size: 15px; line-height: 22px; font-weight: 600; }
-.sources { min-width: 0; margin: 0 0 24px; padding: 0; border: 0; }
-.source { display: flex; align-items: flex-start; gap: 12px; padding: 12px; border-radius: 8px; cursor: pointer; }
-.source:hover { background: var(--dsw-alias-interactive-bg-hover); }
-.source:focus-within { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: -2px; }
-.source input { margin: 4px 0 0; accent-color: var(--dsw-alias-state-business-primary); }
-.source span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.source strong { font-size: 13px; line-height: 20px; font-weight: 600; }
-.source small { font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-secondary); }
-.configuration { border-top: 1px solid var(--dsw-alias-border-l2); padding-top: 24px; }
+/* 来源切换与「Agent 预设」同构：一行说明加一个当前值胶囊。 */
+.selectorRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0 20px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+.selectorText { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; padding-right: 48px; }
+.selectorTitle { font-size: 14px; line-height: 22px; color: var(--dsw-alias-label-primary); }
+.selectorDesc { font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-tertiary); }
+.selector {
+  display: inline-flex; align-items: center; gap: 12px; height: 36px; padding: 0 14px;
+  border: none; border-radius: 18px; background: var(--dsw-alias-bg-module-platform);
+  font: inherit; font-size: 14px; line-height: 22px; color: var(--dsw-alias-label-primary); cursor: pointer;
+}
+.selector:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+.selector:disabled { cursor: default; opacity: .6; }
+.selector:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 2px; }
+.chevron { flex: none; }
+.configuration { padding-top: 24px; }
 .field { margin: 0 0 16px; }
 .fieldHeading { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 13px; line-height: 20px; font-weight: 500; }
 .input { display: block; width: 100%; height: 36px; box-sizing: border-box; padding: 0 12px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-3); color: var(--dsw-alias-label-primary); font: inherit; font-size: 13px; line-height: 20px; }

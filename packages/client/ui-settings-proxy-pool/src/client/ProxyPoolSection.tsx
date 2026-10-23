@@ -1,7 +1,7 @@
 /** 代理池分区组件：出站选择、订阅导入与节点状态表，纯 props 呈现（样式走项目 token）。 */
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import { Button, IconWarningOutline16, Modal, Tooltip } from 'coding-client-ui-primitives'
+import { Button, IconWarningOutline16, Modal, OutboundSelect, Tooltip } from 'coding-client-ui-primitives'
 import type { SnapshotStore } from 'coding-client-runtime/client'
 import type { InjectFace } from 'coding-client-ui-slots'
 import type { ProxyPoolStoreHandle, PoolSnapshot } from './store.ts'
@@ -112,18 +112,21 @@ function Loaded({ actions, state, t }: {
 
     <div className={styles['outboundCard']}>
       <h2 className={styles['cardTitle']}>{t.poolOutbound}</h2>
-      <div className={styles['segmented']} role="group" aria-label={t.poolOutbound}>
-        <button type="button" className={styles['segment']} aria-pressed={outbound === 'direct'}
-          onClick={() => { void actions.setOutbound({ mode: 'direct' }) }}>{t.poolOutboundDirect}</button>
-        <button type="button" className={styles['segment']} aria-pressed={outbound === 'pool'}
-          onClick={() => { void actions.setOutbound({ mode: 'pool' }) }}>{t.poolOutboundPool}</button>
-        <button type="button" className={styles['segment']} aria-pressed={outbound === 'custom'}
-          onClick={applyCustom}>{t.poolOutboundCustom}</button>
-      </div>
+      <OutboundSelect
+        value={{ mode: outbound, customUrl }}
+        labels={{
+          group: t.poolOutbound, direct: t.poolOutboundDirect,
+          pool: t.poolOutboundPool, custom: t.poolOutboundCustom, url: t.poolCustomUrl,
+        }}
+        urlPlaceholder="http://proxy.example:8080"
+        onChange={(next) => {
+          if (next.mode === 'custom') { applyCustom(); return }
+          void actions.setOutbound({ mode: next.mode })
+        }}
+        onCustomUrlChange={(next) => { setCustomUrl(next) }}
+      />
       {outbound === 'custom' ? (
-        <div className={styles['customUrlRow']}>
-          <input className={styles['input']} value={customUrl} placeholder="http://proxy.example:8080"
-            aria-label={t.poolCustomUrl} onChange={(event) => { setCustomUrl(event.target.value) }} />
+        <div className={styles['customActions']}>
           <button type="button" className={styles['primaryButton']} onClick={applyCustom}>{t.poolApplyCustomUrl}</button>
         </div>
       ) : null}
