@@ -12,6 +12,7 @@ import z from '@deepseek-ai/schemastery'
 import {
   callRemoteWorkspaceBridge,
   isRemoteAbsolutePath,
+  resolveRemotePathAgainst,
   isRemotePathWithin,
   parseRemoteWorkspaceTargetKey,
   remoteWorkspacePath,
@@ -114,9 +115,13 @@ function bridgeInfo(value: unknown, allowSymlink = false): RemotePathInfo {
   return { path, type, version, ...size === undefined ? {} : { size } }
 }
 
-function bridgePathWithin(workspace: Pick<RemoteWorkspaceTarget, 'remoteRoot'>, path: string): string {
-  if (!isRemotePathWithin(workspace.remoteRoot, path)) {
-    throw new RemoteWorkspaceError('REMOTE_BRIDGE_RESPONSE_INVALID', 'remote workspace bridge returned a path outside its marker')
+/**
+ * 校验 bridge 返回的远端路径。远端工作区可以访问整台远端主机，因此不再要求
+ * 落在 workspace 根内；仍拒绝非绝对路径和含 `.`／`..` 片段的路径。
+ */
+function bridgeRemotePath(path: string): string {
+  if (!isRemoteAbsolutePath(path) || path.replace(/\\/gu, '/').split('/').some(part => part === '.' || part === '..')) {
+    throw new RemoteWorkspaceError('REMOTE_BRIDGE_RESPONSE_INVALID', 'remote workspace bridge returned an invalid path')
   }
   return path
 }
@@ -301,27 +306,25 @@ export class LocalFileSystem extends FileSystem {
     try {
       const workspace = await remoteWorkspacePath('.', cwd, signal)
       if (workspace === undefined) return await remoteWorkspacePath(path, cwd, signal)
+      const sameWorkspace = (candidate: RemoteWorkspacePath): boolean => candidate.markerRoot === workspace.markerRoot
+        && candidate.remoteRoot === workspace.remoteRoot && candidate.connectionId === workspace.connectionId
+        && candidate.markerGeneration === workspace.markerGeneration && candidate.mode === workspace.mode
       if (isAbsolute(path)) {
+        // 宿主绝对路径先按本地语义解析：仍落在同一 marker 内时沿用占位目录映射。
         const localAbsolute = await remoteWorkspacePath(path, cwd, signal)
-        if (localAbsolute !== undefined && localAbsolute.markerRoot === workspace.markerRoot
-          && localAbsolute.remoteRoot === workspace.remoteRoot && localAbsolute.connectionId === workspace.connectionId
-          && localAbsolute.markerGeneration === workspace.markerGeneration && localAbsolute.mode === workspace.mode) {
-          return localAbsolute
-        }
+        if (localAbsolute !== undefined && sameWorkspace(localAbsolute)) return localAbsolute
       }
-      // 在 marker 会话中，模型常会复用上次结果里的远端绝对路径（例如
-      // str_replace_editor 的绝对 path 参数）。它必须仍受同一 remoteRoot
-      // 限制，绝不能因本地解析失败而落回桌面文件系统。
-      if (isRemoteAbsolutePath(path) && isRemotePathWithin(workspace.remoteRoot, path)) {
-        return { ...workspace, remotePath: path }
-      }
+      // 远端工作区可以访问整台远端主机：绝对路径按远端路径解释，`c:\` 与 UNC
+      // 形式在非 Windows 宿主上也一样。
+      if (isRemoteAbsolutePath(path)) return { ...workspace, remotePath: path }
       const mapped = await remoteWorkspacePath(path, cwd, signal)
-      if (mapped !== undefined && mapped.markerRoot === workspace.markerRoot
-        && mapped.remoteRoot === workspace.remoteRoot && mapped.connectionId === workspace.connectionId
-        && mapped.markerGeneration === workspace.markerGeneration && mapped.mode === workspace.mode) {
-        return mapped
+      if (mapped !== undefined) {
+        // 落到另一个 marker 的路径属于另一条 SSH 工作区，不能借用当前连接。
+        if (sameWorkspace(mapped)) return mapped
+        throw new FsError(`cannot ${operation} "${path}": path is outside the remote workspace`, 'FS_NOT_FOUND')
       }
-      throw new FsError(`cannot ${operation} "${path}": path is outside the remote workspace`, 'FS_NOT_FOUND')
+      // 相对路径按远端根解析，因此 `../x` 指向远端父目录，而不是本地占位目录的父目录。
+      return { ...workspace, remotePath: resolveRemotePathAgainst(workspace.remoteRoot, path) }
     } catch (error: unknown) {
       throw fsRemoteError(error, operation, path)
     }
@@ -346,10 +349,10 @@ export class LocalFileSystem extends FileSystem {
     try {
       const remotePath = await callRemoteWorkspaceBridge(workspace, '/v1/resolve', 'POST', { path: workspace.remotePath }, (value) => {
         const record = bridgeRecord(value)
-        const path = bridgePathWithin(workspace, bridgeString(record, 'path'))
+        const path = bridgeRemotePath(bridgeString(record, 'path'))
         if (record.info !== undefined) {
           const info = bridgeInfo(record.info)
-          if (!sameRemotePath(info.path, path) || !isRemotePathWithin(workspace.remoteRoot, info.path)) {
+          if (!sameRemotePath(info.path, path)) {
             throw new RemoteWorkspaceError('REMOTE_BRIDGE_RESPONSE_INVALID', 'remote workspace bridge returned an invalid response')
           }
         }
@@ -433,7 +436,7 @@ export class LocalFileSystem extends FileSystem {
           const record = bridgeRecord(value)
           if (record.info === undefined) return undefined
           const response = bridgeInfo(record.info)
-          if (!sameRemotePath(bridgePathWithin(remote, response.path), remote.remotePath)) {
+          if (!sameRemotePath(bridgeRemotePath(response.path), remote.remotePath)) {
             throw new RemoteWorkspaceError('REMOTE_BRIDGE_RESPONSE_INVALID', 'remote workspace bridge returned metadata for a different path')
           }
           return response
@@ -465,7 +468,7 @@ export class LocalFileSystem extends FileSystem {
           const record = bridgeRecord(value)
           if (record.info === undefined) return undefined
           const response = bridgeInfo(record.info, true)
-          if (!sameRemotePath(bridgePathWithin(remote, response.path), remote.remotePath)) {
+          if (!sameRemotePath(bridgeRemotePath(response.path), remote.remotePath)) {
             throw new RemoteWorkspaceError('REMOTE_BRIDGE_RESPONSE_INVALID', 'remote workspace bridge returned metadata for a different path')
           }
           return response
@@ -495,7 +498,7 @@ export class LocalFileSystem extends FileSystem {
           maxBytes: REMOTE_READ_MAX_BYTES,
         }, (value) => {
           const record = bridgeRecord(value)
-          const path = bridgePathWithin(remote, bridgeString(record, 'path'))
+          const path = bridgeRemotePath(bridgeString(record, 'path'))
           const content = bridgeString(record, 'content')
           const version = bridgeString(record, 'version')
           if (!sameRemotePath(path, remote.remotePath) || version.length === 0) {
@@ -530,7 +533,7 @@ export class LocalFileSystem extends FileSystem {
           maxBytes: Math.min(maxBytes, REMOTE_READ_MAX_BYTES),
         }, (value) => {
           const record = bridgeRecord(value)
-          const path = bridgePathWithin(remote, bridgeString(record, 'path'))
+          const path = bridgeRemotePath(bridgeString(record, 'path'))
           const version = bridgeString(record, 'version')
           if (!sameRemotePath(path, remote.remotePath) || version.length === 0) {
             throw new RemoteWorkspaceError('REMOTE_BRIDGE_RESPONSE_INVALID', 'remote workspace bridge returned an invalid response')
@@ -550,7 +553,7 @@ export class LocalFileSystem extends FileSystem {
       try {
         return await callRemoteWorkspaceBridge(remote, '/v1/directories', 'POST', { path: remote.remotePath }, (value) => {
           const record = bridgeRecord(value)
-          const path = bridgePathWithin(remote, bridgeString(record, 'path'))
+          const path = bridgeRemotePath(bridgeString(record, 'path'))
           if (!sameRemotePath(path, remote.remotePath) || !Array.isArray(record.entries)) {
             throw new RemoteWorkspaceError('REMOTE_BRIDGE_RESPONSE_INVALID', 'remote workspace bridge returned an invalid response')
           }

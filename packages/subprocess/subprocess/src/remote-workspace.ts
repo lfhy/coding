@@ -439,6 +439,43 @@ export function isRemotePathWithin(remoteRoot: string, candidate: string): boole
 }
 
 /**
+ * 以远端根为基准词法解析一个相对路径，允许越过根目录。远端工作区可以访问
+ * 整台远端主机，因此 `../x` 指向远端父目录，而不是本地占位目录的父目录；
+ * 越过文件系统根时停在根上。
+ * @param remoteRoot - 已验证的远端工作区根目录。
+ * @param relativePath - 以该根为基准的相对路径。
+ * @returns 规范化后的远端绝对路径，不含 `.`／`..` 片段。
+ */
+export function resolveRemotePathAgainst(remoteRoot: string, relativePath: string): string {
+  const separator = remoteSeparator(remoteRoot)
+  const normalized = remoteRoot.replace(/\\/gu, '/')
+  let prefix: string
+  let segments: string[]
+  if (normalized.startsWith('//')) {
+    const [host, share, ...rest] = normalized.slice(2).split('/')
+    prefix = `${separator}${separator}${host}${separator}${share}`
+    segments = rest.filter(part => part !== '')
+  } else if (/^[A-Za-z]:/u.test(normalized)) {
+    prefix = normalized.slice(0, 2)
+    segments = normalized.slice(2).split('/').filter(part => part !== '')
+  } else {
+    prefix = separator
+    segments = normalized.split('/').filter(part => part !== '')
+  }
+  const parts = [...segments]
+  for (const segment of relativePath.replace(/\\/gu, '/').split('/')) {
+    if (segment === '' || segment === '.') continue
+    if (segment === '..') {
+      parts.pop()
+      continue
+    }
+    parts.push(segment)
+  }
+  if (prefix === separator) return `${separator}${parts.join(separator)}`
+  return parts.length === 0 ? prefix : `${prefix}${separator}${parts.join(separator)}`
+}
+
+/**
  * 把同一 marker 内的远端绝对路径映射回 marker 本地占位目录。该路径仅用于把
  * Shell 请求继续路由到 bridge，不能交给本地进程读取。
  * @param workspace - 已验证的 marker 工作区。
@@ -533,8 +570,8 @@ export function remoteWorkspacePathSync(path: string, cwd = process.cwd()): Remo
 export function remoteWorkspaceTargetKey(target: RemoteWorkspaceTarget): string {
   if (!isAbsolute(target.markerRoot) || !Number.isSafeInteger(target.markerGeneration) || target.markerGeneration <= 0
     || !CONNECTION_ID.test(target.connectionId) || !isRemoteWorkspaceMode(target.mode)
-    || !isRemoteAbsolutePath(target.remoteRoot) || !isRemoteAbsolutePath(target.remotePath)
-    || !isRemotePathWithin(target.remoteRoot, target.remotePath)) {
+    || !isRemoteAbsolutePath(target.remoteRoot) || hasRemoteTraversal(target.remoteRoot)
+    || !isRemoteAbsolutePath(target.remotePath) || hasRemoteTraversal(target.remotePath)) {
     throw new RemoteWorkspaceError('REMOTE_WORKSPACE_TARGET_INVALID', 'remote workspace target is invalid')
   }
   const payload = JSON.stringify({
@@ -572,7 +609,8 @@ export function parseRemoteWorkspaceTargetKey(targetKey: string): RemoteWorkspac
     || typeof record.markerRoot !== 'string' || typeof record.remoteRoot !== 'string' || typeof record.remotePath !== 'string'
     || typeof record.connectionId !== 'string' || typeof markerGeneration !== 'number' || !Number.isSafeInteger(markerGeneration) || markerGeneration <= 0
     || !isAbsolute(record.markerRoot) || !isRemoteAbsolutePath(record.remoteRoot) || !isRemoteAbsolutePath(record.remotePath)
-    || !isRemotePathWithin(record.remoteRoot, record.remotePath) || (record.mode !== undefined && !isRemoteWorkspaceMode(record.mode))) {
+    || hasRemoteTraversal(record.remoteRoot) || hasRemoteTraversal(record.remotePath)
+    || (record.mode !== undefined && !isRemoteWorkspaceMode(record.mode))) {
     throw new RemoteWorkspaceError('REMOTE_WORKSPACE_TARGET_INVALID', 'remote workspace target is invalid')
   }
   if (!CONNECTION_ID.test(record.connectionId)) {
@@ -605,7 +643,6 @@ export async function verifyRemoteWorkspaceTarget(
     || current.connectionId !== target.connectionId
     || current.markerGeneration !== target.markerGeneration
     || current.mode !== target.mode
-    || !isRemotePathWithin(current.remoteRoot, target.remotePath)
   ) {
     throw new RemoteWorkspaceError('REMOTE_WORKSPACE_TARGET_INVALID', 'remote workspace target no longer matches its marker')
   }

@@ -142,11 +142,18 @@ func TestDirectSFTPWriteAndEdit(t *testing.T) {
 	}
 	call("/v1/update_file", WriteRequest{Root: root, Path: "new.txt", Content: "bad\x00text"}, http.StatusUnprocessableEntity, nil)
 	call("/v1/update_file", WriteRequest{Root: root, Path: "new.txt", Content: strings.Repeat("x", maxFileBytes+1)}, http.StatusRequestEntityTooLarge, nil)
-	call("/v1/update_file", WriteRequest{Root: root, Path: "../escaped", Content: "secret"}, http.StatusForbidden, nil)
-	escapeBody, _ := json.Marshal(WriteRequest{Root: root, Path: "escape/file", Content: "secret"})
+	// 工作区外的路径不再由客户端按根拒绝，改由远端 SFTP 服务器裁决；fixture
+	// 把 SFTP 关在临时目录内，因此越界写入以非 200 失败，但不是 outside-root。
+	outside := t.TempDir()
+	outsideBody, _ := json.Marshal(WriteRequest{Root: root, Path: filepath.Join(outside, "outside.txt"), Content: "allowed"})
+	outsideResponse, outsideErr := backend.Proxy(context.Background(), http.MethodPost, "/v1/update_file", outsideBody)
+	if outsideErr != nil || outsideResponse.Status == http.StatusOK {
+		t.Fatalf("outside write = %+v, %v", outsideResponse, outsideErr)
+	}
+	escapeBody, _ := json.Marshal(WriteRequest{Root: root, Path: "escape/file", Content: "allowed"})
 	escapeResponse, escapeErr := backend.Proxy(context.Background(), http.MethodPost, "/v1/update_file", escapeBody)
 	if escapeErr != nil || escapeResponse.Status == http.StatusOK {
-		t.Fatalf("symlink escape = %+v, %v", escapeResponse, escapeErr)
+		t.Fatalf("symlink target write = %+v, %v", escapeResponse, escapeErr)
 	}
 	backend.hasHardlink = false
 	call("/v1/update_file", WriteRequest{Root: root, Path: "unsupported", Content: "secret", Expected: &WriteExpectation{Kind: "createIfAbsent"}}, http.StatusNotImplemented, nil)

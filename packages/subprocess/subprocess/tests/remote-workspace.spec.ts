@@ -14,6 +14,7 @@ import {
   remoteWorkspacePath,
   remoteWorkspacePathSync,
   remoteWorkspaceTargetKey,
+  resolveRemotePathAgainst,
   verifyRemoteWorkspaceTarget,
 } from 'coding-subprocess'
 import type { RemoteWorkspaceCapability, RemoteWorkspaceMode } from 'coding-subprocess'
@@ -277,6 +278,40 @@ describe('Remote-SSH workspace marker', () => {
     await expect(remoteWorkspacePath('file.txt', root)).rejects.toMatchObject({
       code: 'REMOTE_WORKSPACE_MARKER_INVALID',
     })
+  })
+})
+
+describe('Remote-SSH whole-host paths', () => {
+  it('resolves relative paths against the remote root and allows escaping it', () => {
+    expect(resolveRemotePathAgainst('/opt/project', 'src/app.ts')).toBe('/opt/project/src/app.ts')
+    expect(resolveRemotePathAgainst('/opt/project', '../qtrans.md')).toBe('/opt/qtrans.md')
+    expect(resolveRemotePathAgainst('/opt/project', '../../etc/hosts')).toBe('/etc/hosts')
+    expect(resolveRemotePathAgainst('/opt/project', './a/./b')).toBe('/opt/project/a/b')
+    // 越过文件系统根时停在根上，不产生 `..` 片段。
+    expect(resolveRemotePathAgainst('/opt/project', '../../../..')).toBe('/')
+    expect(resolveRemotePathAgainst(String.raw`C:\project`, String.raw`..\shared\x.txt`))
+      .toBe(String.raw`C:\shared\x.txt`)
+    expect(resolveRemotePathAgainst(String.raw`\\server\share\project`, '../other/x.txt'))
+      .toBe(String.raw`\\server\share\other\x.txt`)
+  })
+
+  it('encodes targets outside the workspace root and still rejects traversal', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'coding-remote-'))
+    try {
+      await writeFile(join(root, REMOTE_WORKSPACE_MARKER), JSON.stringify({
+        version: 3, remoteRoot: '/srv/project', connectionId: 'connection-1', generation: 1, mode: 'basic',
+      }))
+      const mapped = await remoteWorkspacePath('file.txt', root)
+      const outside = { ...mapped!, remotePath: '/etc/hosts' }
+      const key = remoteWorkspaceTargetKey(outside)
+      expect(parseRemoteWorkspaceTargetKey(key)).toMatchObject({ remotePath: '/etc/hosts' })
+      await expect(verifyRemoteWorkspaceTarget(parseRemoteWorkspaceTargetKey(key)!))
+        .resolves.toMatchObject({ remotePath: '/etc/hosts' })
+      expect(() => remoteWorkspaceTargetKey({ ...mapped!, remotePath: '/etc/../hosts' }))
+        .toThrow(expect.objectContaining({ code: 'REMOTE_WORKSPACE_TARGET_INVALID' }))
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
   })
 })
 

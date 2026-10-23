@@ -278,7 +278,8 @@ describe('LocalFileSystem Remote-SSH marker routing', () => {
       const target = await fs.resolve('source.ts')
       expect(target.displayPath).toBe('/srv/project/source.ts')
       expect((await fs.resolve('/srv/project/absolute.ts', { cwd: root })).displayPath).toBe('/srv/project/absolute.ts')
-      await expect(fs.resolve('/etc/passwd', { cwd: root })).rejects.toMatchObject({ code: 'FS_NOT_FOUND' })
+      // 远端工作区可以访问整台远端主机：根外的绝对路径照常解析为远端目标。
+      expect((await fs.resolve('/etc/passwd', { cwd: root })).displayPath).toBe('/etc/passwd')
       await expect(fs.lstat('link.ts', { cwd: root })).resolves.toMatchObject({ type: 'symlink', version: 'link-v1' })
       expect(await fs.readText(target)).toBe('hello')
       expect(await fs.readBytes(target, undefined, 2)).toEqual(Buffer.from([0, 0xff]))
@@ -298,6 +299,7 @@ describe('LocalFileSystem Remote-SSH marker routing', () => {
       expect(calls.map(call => call.path)).toEqual([
         '/v1/resolve',
         '/v1/resolve',
+        '/v1/resolve',
         '/v1/stat',
         '/v1/read_file',
         '/v1/read_bytes',
@@ -306,8 +308,8 @@ describe('LocalFileSystem Remote-SSH marker routing', () => {
         '/v1/resolve',
         '/v1/directories',
       ])
-      expect(calls[5]?.body.expected).toEqual({ kind: 'replaceIfVersion', version: 'v1' })
-      expect(calls[6]?.body.expected).toEqual({ kind: 'replaceIfVersion', version: 'v2' })
+      expect(calls[6]?.body.expected).toEqual({ kind: 'replaceIfVersion', version: 'v1' })
+      expect(calls[7]?.body.expected).toEqual({ kind: 'replaceIfVersion', version: 'v2' })
     } finally {
       await ctx.fiber.dispose()
     }

@@ -471,7 +471,8 @@ func TestResolveCanonicalizesExistingPathsAndAcceptsRoot(t *testing.T) {
 	}
 }
 
-func TestScopedRoutesRejectSymlinkEscapes(t *testing.T) {
+// 远端工作区可以访问整台远端主机：经符号链接到达工作区之外仍是合法目标。
+func TestScopedRoutesAllowPathsOutsideRoot(t *testing.T) {
 	server, err := NewServer(strings.Repeat("a", 32))
 	if err != nil {
 		t.Fatal(err)
@@ -489,18 +490,19 @@ func TestScopedRoutesRejectSymlinkEscapes(t *testing.T) {
 	read := agentJSONRequest(t, server, "/v1/read_file", ReadRequest{
 		Root: root, Path: filepath.Join(link, "secret.bin"),
 	})
-	if read.Code != http.StatusForbidden || responseErrorCode(t, read) != "outside-root" {
-		t.Fatalf("escape read = %d %s", read.Code, read.Body.String())
+	if read.Code != http.StatusOK {
+		t.Fatalf("outside read = %d %s", read.Code, read.Body.String())
 	}
 	created := filepath.Join(outside, "created.txt")
 	write := agentJSONRequest(t, server, "/v1/update_file", WriteRequest{
-		Root: root, Path: filepath.Join(link, "created.txt"), Content: "blocked",
+		Root: root, Path: filepath.Join(link, "created.txt"), Content: "allowed",
 	})
-	if write.Code != http.StatusForbidden || responseErrorCode(t, write) != "outside-root" {
-		t.Fatalf("escape write = %d %s", write.Code, write.Body.String())
+	if write.Code != http.StatusOK {
+		t.Fatalf("outside write = %d %s", write.Code, write.Body.String())
 	}
-	if _, err := os.Stat(created); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("escaped write created %q", created)
+	data, err := os.ReadFile(created)
+	if err != nil || string(data) != "allowed" {
+		t.Fatalf("outside write stored %q, %v", data, err)
 	}
 }
 
@@ -681,11 +683,18 @@ func TestSearchRejectsEscapesInvalidPatternsAndCancellation(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(root, "escape")); err != nil {
 		t.Skipf("symlink unavailable: %v", err)
 	}
-	escape := agentJSONRequest(t, server, "/v1/search", SearchRequest{
+	outsideSearch := agentJSONRequest(t, server, "/v1/search", SearchRequest{
 		Root: root, Path: "escape", Kind: "glob", Pattern: "*",
 	})
-	if escape.Code != http.StatusForbidden || responseErrorCode(t, escape) != "outside-root" {
-		t.Fatalf("escaped search = %d %s", escape.Code, escape.Body.String())
+	if outsideSearch.Code != http.StatusOK {
+		t.Fatalf("outside search = %d %s", outsideSearch.Code, outsideSearch.Body.String())
+	}
+	var outsideResult SearchResponse
+	if err := json.Unmarshal(outsideSearch.Body.Bytes(), &outsideResult); err != nil {
+		t.Fatal(err)
+	}
+	if outsideResult.Root == "" || len(outsideResult.Paths) != 0 {
+		t.Fatalf("outside search result = %#v", outsideResult)
 	}
 	missingRoot := agentJSONRequest(t, server, "/v1/search", SearchRequest{Kind: "glob", Pattern: "*"})
 	if missingRoot.Code != http.StatusBadRequest || responseErrorCode(t, missingRoot) != "invalid-root" {

@@ -14,7 +14,7 @@ await ctx.plugin(LocalSpillStore)                           // coding-spill-loca
 
 ## 部署要求：无需宿主 rg，但工作目录与文件系统处于同一执行世界
 
-Node 部署在受支持的 macOS、Linux 与 Windows x64/arm64 目标上获得 `@vscode/ripgrep` 平台包。Python SDK 的 Linux 与 macOS wheel 将目标原生二进制复制到单文件运行时旁，命名为 `<runtime>-rg`；`deepseek_harness_runtime.bundled_runtime_path()` 会在启动前拒绝不完整的 wheel。本地载体不要求宿主安装 `rg`。返回路径会相对于解析后的工作目录显示（调用方 agent（智能体）有会话 cwd 时使用该 cwd，否则使用 `process.cwd()`）；只有该工作目录与文件系统根目录是同一工作区时，才能用 `read` 继续读取。桌面 Remote-SSH `basic` marker 通过有界 SFTP 搜索，无需远端 `rg` 或 Go agent；`agent` marker 在所选 Go agent 根目录上原生搜索，无需远端 `rg` 或 Node。远端结果被截断时会失败，不会返回部分搜索结果；两种模式都不会回退本地搜索。其他远程或虚拟文件系统 Provider 仍需要执行世界内的搜索实现。
+Node 部署在受支持的 macOS、Linux 与 Windows x64/arm64 目标上获得 `@vscode/ripgrep` 平台包。Python SDK 的 Linux 与 macOS wheel 将目标原生二进制复制到单文件运行时旁，命名为 `<runtime>-rg`；`deepseek_harness_runtime.bundled_runtime_path()` 会在启动前拒绝不完整的 wheel。本地载体不要求宿主安装 `rg`。返回路径会相对于解析后的工作目录显示（调用方 agent（智能体）有会话 cwd 时使用该 cwd，否则使用 `process.cwd()`）；只有该工作目录与文件系统根目录是同一工作区时，才能用 `read` 继续读取。桌面 Remote-SSH `basic` marker 通过有界 SFTP 搜索，无需远端 `rg` 或 Go agent；`agent` marker 在所选 Go agent 根目录上原生搜索，无需远端 `rg` 或 Node。远端搜索的 `path` 可以是整台远端主机上的任意绝对路径或相对远端根的路径，结果以实际搜索目标为基准返回；远端结果被截断时会失败，不会返回部分搜索结果；两种模式都不会回退本地搜索。其他远程或虚拟文件系统 Provider 仍需要执行世界内的搜索实现。
 
 ## 配置
 

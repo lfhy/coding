@@ -313,9 +313,6 @@ func (backend *directSFTPBackend) resolve(ctx context.Context, root, raw string,
 			return "", fail(http.StatusBadRequest, "not-directory", "root is not a directory")
 		}
 	}
-	if root != "" && path.IsAbs(value) && !directWithin(path.Clean(root), path.Clean(value)) {
-		return "", fail(http.StatusForbidden, "outside-root", "path is outside the requested root")
-	}
 	if !path.IsAbs(value) {
 		if root == "" {
 			home, err := backend.Home(ctx)
@@ -326,9 +323,6 @@ func (backend *directSFTPBackend) resolve(ctx context.Context, root, raw string,
 		} else {
 			value = path.Join(root, value)
 		}
-	}
-	if root != "" && !directWithin(path.Clean(root), path.Clean(value)) {
-		return "", fail(http.StatusForbidden, "outside-root", "path is outside the requested root")
 	}
 	name := path.Clean(value)
 	var err error
@@ -343,9 +337,6 @@ func (backend *directSFTPBackend) resolve(ctx context.Context, root, raw string,
 		if err != nil {
 			return "", err
 		}
-	}
-	if root != "" && !directWithin(canonicalRoot, name) {
-		return "", fail(http.StatusForbidden, "outside-root", "path is outside the requested root")
 	}
 	return name, nil
 }
@@ -473,9 +464,11 @@ func (backend *directSFTPBackend) list(ctx context.Context, name, root string) (
 			if len(entries) >= maxDirectoryItems {
 				return nil, fail(http.StatusRequestEntityTooLarge, "too-many-entries", "directory exceeds the item limit")
 			}
+			// root 只是相对路径的基准，不再是访问边界；子项路径由 SFTP 服务器
+			// 的账户权限决定是否可读。
 			child := path.Join(name, entry.name)
-			if len(child) > maxRemotePathBytes || root != "" && !directWithin(root, child) {
-				return nil, fail(http.StatusForbidden, "outside-root", "path is outside the requested root")
+			if len(child) > maxRemotePathBytes {
+				return nil, fail(http.StatusBadRequest, "invalid-path", "directory entry path exceeds the byte limit")
 			}
 			// 符号链接不跟随；读取目标时另行解析并验证根范围。
 			item, err := backend.sftp.Lstat(child)
@@ -563,12 +556,9 @@ func (backend *directSFTPBackend) recheck(ctx context.Context, root, name string
 	if err != nil {
 		return err
 	}
-	rootPath, err := backend.canonical(ctx, path.Clean(root))
-	if err != nil {
-		return err
-	}
-	if canonical != name || !directWithin(rootPath, canonical) {
-		return fail(http.StatusForbidden, "outside-root", "file path changed outside the requested root")
+	// 读取期间路径必须仍是同一个规范化目标；root 只用于解析，不构成边界。
+	if canonical != name {
+		return fail(http.StatusForbidden, "outside-root", "file path changed during read")
 	}
 	current, err := backend.sftp.Stat(name)
 	if err != nil {

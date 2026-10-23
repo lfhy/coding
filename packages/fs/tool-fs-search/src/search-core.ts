@@ -25,7 +25,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import {
   callRemoteWorkspaceBridge,
   isRemoteAbsolutePath,
-  isRemotePathWithin,
+  resolveRemotePathAgainst,
   requireRemoteWorkspaceCapability,
   remoteWorkspacePath,
   RemoteWorkspaceError,
@@ -339,10 +339,11 @@ function bridgeSearchResponse(
     ? new Set(['root', 'paths', 'truncated', 'truncatedBy'])
     : new Set(['root', 'matches', 'truncated', 'truncatedBy'])
   if (Object.keys(record).some(key => !expectedKeys.has(key))) throw new Error('response has an unknown field')
-  if (typeof record.root !== 'string'
-    || !isRemotePathWithin(workspace.remoteRoot, record.root)
-    || !isRemotePathWithin(record.root, workspace.remoteRoot)) {
-    throw new Error('response root is outside the workspace')
+  // 远端工作区可以搜索整台远端主机：回显的 root 是本次搜索的展示基准，
+  // 结果路径相对它返回，因此只要求它是合法的远端绝对路径。
+  if (typeof record.root !== 'string' || !isRemoteAbsolutePath(record.root)
+    || record.root.replace(/\\/gu, '/').split('/').some(part => part === '.' || part === '..')) {
+    throw new Error('response root is not an absolute remote path')
   }
   if (typeof record.truncated !== 'boolean') throw new Error('response truncation state is invalid')
   const truncatedBy = record.truncatedBy === undefined ? [] : (() => {
@@ -414,15 +415,21 @@ export async function runRemoteSearch(
     requireRemoteWorkspaceCapability(workspace, 'search')
     let target = workspace
     if (input.path !== undefined) {
-      if (isRemoteAbsolutePath(input.path) && isRemotePathWithin(workspace.remoteRoot, input.path)) {
+      if (isRemoteAbsolutePath(input.path)) {
+        // 绝对路径按远端路径解释：整台远端主机都可搜索。
         target = { ...workspace, remotePath: input.path }
       } else {
         const mapped = await remoteWorkspacePath(input.path, cwd, exec.signal)
-        if (mapped === undefined || mapped.markerRoot !== workspace.markerRoot
-          || mapped.remoteRoot !== workspace.remoteRoot || mapped.connectionId !== workspace.connectionId) {
-          throw new Error('search path is outside the remote workspace')
+        if (mapped !== undefined) {
+          if (mapped.markerRoot !== workspace.markerRoot || mapped.remoteRoot !== workspace.remoteRoot
+            || mapped.connectionId !== workspace.connectionId) {
+            throw new Error('search path is outside the remote workspace')
+          }
+          target = mapped
+        } else {
+          // 相对路径按远端根解析，允许越过根目录指向远端父目录。
+          target = { ...workspace, remotePath: resolveRemotePathAgainst(workspace.remoteRoot, input.path) }
         }
-        target = mapped
       }
     }
     // 解析参数路径期间 marker 可能被重绑；把根目录和连接身份交给 bridge 前必须

@@ -84,6 +84,11 @@ func searchWorkspace(ctx context.Context, request SearchRequest) (SearchResponse
 	if err != nil {
 		return SearchResponse{}, err
 	}
+	// 目标可以在工作区之外：此时以目标自身作为结果路径的展示基准，
+	// 保证返回的路径仍是相对且不含 `..` 的片段。
+	if !pathWithin(root, target) {
+		root = target
+	}
 	if err := activeRequest(ctx); err != nil {
 		return SearchResponse{}, err
 	}

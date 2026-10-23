@@ -100,13 +100,19 @@ func (backend *directSFTPBackend) searchWithFiles(ctx context.Context, request S
 	raw := request.Path
 	if strings.TrimSpace(raw) == "" {
 		raw = root
+	} else if path.IsAbs(raw) && !directWithin(path.Clean(request.Root), path.Clean(raw)) {
+		// 绝对目标在工作区之外：以目标自身为展示基准，仍拒绝链接遍历。
+		if err := backend.rejectSearchSymlink(ctx, raw, raw); err != nil {
+			return SearchResponse{}, err
+		}
+		root = path.Clean(raw)
 	} else if err := backend.rejectSearchSymlink(ctx, request.Root, raw); err != nil {
 		return SearchResponse{}, err
 	}
 	if len(raw) > maxRemotePathBytes {
 		return SearchResponse{}, fail(http.StatusBadRequest, "invalid-path", "search path exceeds the byte limit")
 	}
-	target, err := backend.resolve(ctx, request.Root, raw, false)
+	target, err := backend.resolve(ctx, "", raw, false)
 	if err != nil {
 		return SearchResponse{}, err
 	}

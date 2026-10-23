@@ -12,7 +12,7 @@
 
 - `read-only`：以结构化 `FS_SANDBOX_DENIED` 拒绝所有变更；
 - `workspace-write`：本地变更只有在目标规范化后位于可写根目录下时才会被允许。可写根包括工作区根目录和平台临时区域（`/tmp`、`os.tmpdir()`），与 Seatbelt profile 授权的集合相同；该集合由唯一的 [`writableRoots`](../../sandbox/README.md) 函数派生，使 fs 围栏与 bash runner 不会漂移。规范拼写使用词法快速路径；基于身份的祖先回退可以识别 Windows 长名称和 8.3 名称等别名等价根目录，而不会把无关前缀视为包含关系。委托前会立即重新规范化目标，因此工具解析后被替换的祖先符号链接也会被发现。对于 Remote-SSH，可写根只有调用 Session cwd 在 marker 远程根下映射出的目录；本地临时目录不会投影到远程执行世界；
-- `danger-full-access`：不经过策略围栏直接委托。Remote-SSH 变更仍受该 marker 所选目录约束，因为远程 agent 会独立实施根目录限制。
+- `danger-full-access`：不经过策略围栏直接委托。Remote-SSH 变更可以落在远端主机任意路径，仍以 SSH 账户权限为最终边界；`workspace-write` 下根外变更依旧被本围栏拒绝。
 
 ## 威胁模型：策略围栏，而非内核边界
 

@@ -850,8 +850,10 @@ func resolvePath(raw string) (string, error) {
 	return filepath.Clean(abs), nil
 }
 
-// resolveScopedPath 在跟随已存在的符号链接后执行根目录包含检查。noFollow
-// 仅保留最后一个路径项，供 lstat 与拒绝符号链接写入的 mutation 使用。
+// resolveScopedPath 在跟随已存在的符号链接后返回规范化路径。root 是相对路径
+// 的基准目录，不是访问边界：远端工作区可以访问整台远端主机，文件操作最终受
+// SSH 账户权限约束。noFollow 仅保留最后一个路径项，供 lstat 与拒绝符号链接
+// 写入的 mutation 使用。
 func resolveScopedPath(root, raw string, noFollow bool) (string, error) {
 	if strings.TrimSpace(root) == "" {
 		path, err := resolvePath(raw)
@@ -909,9 +911,6 @@ func resolveScopedPath(root, raw string, noFollow bool) (string, error) {
 		if err != nil {
 			return "", err
 		}
-	}
-	if !pathWithin(canonicalRoot, canonicalPath) {
-		return "", fail(http.StatusForbidden, "outside-root", "path is outside the requested root")
 	}
 	return filepath.Clean(canonicalPath), nil
 }

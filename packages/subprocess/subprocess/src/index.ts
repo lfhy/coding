@@ -30,6 +30,7 @@ export {
   remoteWorkspacePath,
   remoteWorkspacePathSync,
   remoteWorkspaceTargetKey,
+  resolveRemotePathAgainst,
   verifyRemoteWorkspaceTarget,
 } from './remote-workspace.ts'
 export type {
