@@ -225,7 +225,7 @@ export class FirecrawlSearchProvider implements WebSearchProvider {
    * @param resolveProxyURL - 单次搜索开始时解析出站（提供方选择 + 池规则）；返回 `undefined` 即直连，同时作为冷却的出口指纹。
    */
   constructor(
-    private readonly resolveApiKey: () => string | undefined = () => undefined,
+    private readonly resolveApiKey: () => string | undefined | Promise<string | undefined> = () => undefined,
     private readonly resolveBaseURL: () => string = () => FIRECRAWL_DEFAULT_BASE_URL,
     private readonly resolveProxyURL: () => string | undefined = () => undefined,
   ) {}
@@ -252,7 +252,7 @@ export class FirecrawlSearchProvider implements WebSearchProvider {
     if (!isSafeBaseUrl(baseURL)) {
       throw new WebError('Firecrawl base URL must be an absolute HTTP(S) URL without credentials, query, or fragment', 'WEB_PROVIDER_ERROR')
     }
-    const apiKey = this.resolveApiKey()?.trim() ?? ''
+    const apiKey = (await this.resolveApiKey())?.trim() ?? ''
     const proxyURL = this.resolveProxyURL()
     const egress = egressFingerprint(proxyURL)
     // keyless 档按出口 IP 判定：本出口已被拒时直接给诊断，不再白等一次往返。

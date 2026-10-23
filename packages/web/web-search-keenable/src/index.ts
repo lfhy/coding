@@ -1,10 +1,10 @@
 /** 注册 Keenable 搜索提供方：MCP JSON-RPC 调用，匿名额度可用，配置密钥后提额。 */
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { launchEnvironmentOf } from 'coding-launch-environment'
 import { assertUsableOutbound, OutboundConfigSchema, resolveOutboundURL } from 'coding-proxy-pool'
 import type { OutboundConfig } from 'coding-proxy-pool'
 import { installSettingsSection, settingsNamespace } from 'coding-settings'
+import { credentialRef } from 'coding-credentials'
 import { KEENABLE_DEFAULT_BASE_URL, KeenableSearchProvider, isValidBaseURL, isValidProxyURL } from './provider.ts'
 
 export { KeenableSearchProvider, KEENABLE_DEFAULT_BASE_URL, KEENABLE_PROVIDER_ID } from './provider.ts'
@@ -16,8 +16,10 @@ export const inject = ['web']
 
 /** Keenable 搜索的配置：可选密钥与端点，加上共享出站选择。 */
 export interface Config {
-  /** Keenable API key；省略时读取 `$KEENABLE_API_KEY`，两者都没有或为空时使用匿名额度。 */
+  /** 密钥字面值（部署层）；页面与设置文件用 `apiKeyEnv` 指向凭据服务。 */
   apiKey?: string
+  /** 凭据引用，默认 `KEENABLE_API_KEY`；密钥只存在凭据服务里，由设置页写入。 */
+  apiKeyEnv?: string
   /** MCP 端点；默认 `https://api.keenable.ai/mcp`，必须是不带凭据、查询串与片段的 HTTPS 地址。 */
   baseURL?: string
   /** 下次搜索的出站；缺省直连，选择内置代理池时按池自己的出站规则走。 */
@@ -26,6 +28,7 @@ export interface Config {
 
 export const Config: z<Config> = z.object({
   apiKey: z.string().role('secret'),
+  apiKeyEnv: z.string().role('credential-ref').default('KEENABLE_API_KEY'),
   baseURL: z.string(),
   outbound: OutboundConfigSchema,
 })
@@ -56,7 +59,6 @@ function checkConfig(config: Config): void {
  */
 export function apply(ctx: Context, config: Config = {}): void {
   checkConfig(config)
-  const environment = launchEnvironmentOf(ctx)
   let current: () => Config = () => config
   installSettingsSection(ctx, WEB_SEARCH_KEENABLE_SETTINGS_NAMESPACE, Config, config, {
     validate: checkConfig,
@@ -64,7 +66,14 @@ export function apply(ctx: Context, config: Config = {}): void {
     onChange: () => {},
   })
   ctx.web.registerSearchProvider(new KeenableSearchProvider({
-    resolveApiKey: () => current().apiKey ?? environment.get('KEENABLE_API_KEY')?.value ?? '',
+    // 密钥按字面值 → 凭据服务解析；两者都没有时按匿名额度请求。
+    resolveApiKey: async () => {
+      const config = current()
+      const literal = config.apiKey !== undefined && config.apiKey.length > 0 ? config.apiKey : undefined
+      if (literal !== undefined) return literal
+      const apiKeyEnv = credentialRef(config.apiKeyEnv ?? 'KEENABLE_API_KEY')
+      return (await ctx.get('credentials')?.resolve(apiKeyEnv))?.value
+    },
     resolveBaseURL: () => current().baseURL ?? KEENABLE_DEFAULT_BASE_URL,
     resolveProxyURL: () => resolveOutboundURL(ctx.get('proxyPool'), current().outbound ?? { mode: 'direct' }),
   }))

@@ -485,19 +485,20 @@ describe('web-search-deepseek plugin registration', () => {
     await fiber.dispose()
   })
 
-  it('falls back to the env key and defaults when config omits them', async () => {
+  it('uses the documented defaults when config omits them and ignores the environment key', async () => {
     const prev = process.env.DEEPSEEK_SEARCH_API_KEY
+    // 环境变量不再作为密钥来源：设置它也不应发出密钥头。
     process.env.DEEPSEEK_SEARCH_API_KEY = 'env-key'
     try {
       const fetchMock = vi.fn(async () => jsonResponse(searchResponse()))
       vi.stubGlobal('fetch', fetchMock)
       const ctx = new Context()
       await ctx.plugin(WebRuntime, { searchProvider: DEEPSEEK_PROVIDER_ID })
-      deepseekPlugin.apply(ctx, {})
+      deepseekPlugin.apply(ctx, { apiKey: 'literal-key' })
       await ctx.web.search({ query: 'q' })
       const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
       expect(url).toBe('https://api.deepseek.com/anthropic/v1/messages')
-      expect((init.headers as Record<string, string>)['x-api-key']).toBe('env-key')
+      expect((init.headers as Record<string, string>)['x-api-key']).toBe('literal-key')
       expect(JSON.parse(init.body as string)).toMatchObject({ model: 'deepseek-v4-flash' })
       await ctx.fiber.dispose()
     } finally {
@@ -537,7 +538,7 @@ describe('web-search-deepseek plugin registration', () => {
     }
   })
 
-  it('reports an actionable credential error when neither config nor env supplies a key', async () => {
+  it('reports an actionable credential error when no key is configured', async () => {
     const prev = process.env.DEEPSEEK_SEARCH_API_KEY
     delete process.env.DEEPSEEK_SEARCH_API_KEY
     try {
@@ -552,7 +553,7 @@ describe('web-search-deepseek plugin registration', () => {
       }
       expect(caught).toMatchObject({ code: 'WEB_PROVIDER_CREDENTIAL_MISSING' })
       if (!(caught instanceof Error)) throw new Error('search did not throw an Error')
-      expect(caught.message).toMatch(/store it through the credentials service.*Search settings page/s)
+      expect(caught.message).toMatch(/store it with the Search settings page/s)
     } finally {
       if (prev !== undefined) process.env.DEEPSEEK_SEARCH_API_KEY = prev
     }

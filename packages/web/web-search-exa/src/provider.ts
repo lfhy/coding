@@ -34,8 +34,8 @@ const USER_AGENT = 'deepseek-harness/0.0.1'
 
 /** Resolved provider options (the plugin's `apply` supplies env-var and constant defaults). */
 export interface ExaSearchProviderOptions {
-  /** Exa API key. Empty/absent makes the provider unavailable. */
-  apiKey: string
+  /** 每次搜索开始时解析的 Exa 密钥；配置了凭据引用时用它，返回空即不可用。 */
+  resolveApiKey?: () => Promise<string | undefined>
   /** Endpoint base; `/search` is appended. */
   baseURL: string
   /** Retrieval mode sent as Exa's `type`. */
@@ -93,7 +93,7 @@ export class ExaSearchProvider implements WebSearchProvider {
   constructor(private readonly options: ExaSearchProviderOptions) {}
 
   available(): boolean {
-    return this.options.apiKey.length > 0
+    return (this.options.resolveApiKey !== undefined)
       && isValidBaseUrl(this.options.baseURL)
       && isPositiveInteger(this.options.highlightsPerResult)
       && (this.options.numResults === undefined || isPositiveInteger(this.options.numResults))
@@ -128,11 +128,13 @@ export class ExaSearchProvider implements WebSearchProvider {
   ): Promise<WebSearchResult> {
     // A per-request bound wins over the configured default; either may be absent.
     const numResults = request.maxResults ?? this.options.numResults
+    const apiKey = (await this.options.resolveApiKey?.())?.trim() ?? ''
+    if (apiKey === '') throw new WebError('web-search-exa: no API key configured', 'WEB_PROVIDER_UNAVAILABLE')
     const init = {
       method: 'POST',
       redirect: 'error',
       headers: {
-        'authorization': `Bearer ${this.options.apiKey}`,
+        'authorization': `Bearer ${apiKey}`,
         'content-type': 'application/json',
         'accept': 'application/json',
         'user-agent': USER_AGENT,

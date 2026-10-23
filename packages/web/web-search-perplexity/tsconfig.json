@@ -8,6 +8,7 @@
     "src"
   ],
   "references": [
+    { "path": "../../credentials/credentials" },
     {
       "path": "../../util/launch-environment"
     },

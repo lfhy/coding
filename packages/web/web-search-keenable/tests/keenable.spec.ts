@@ -326,7 +326,7 @@ describe('Keenable provider', () => {
 })
 
 describe('Keenable plugin registration', () => {
-  it('registers live settings, falls back to the environment and unloads cleanly', async () => {
+  it('registers live settings, reads keys from settings only, and unloads cleanly', async () => {
     process.env.KEENABLE_API_KEY = 'env-key'
     const fetchMock = vi.fn(async () => toolResult(TEXT_PAYLOAD))
     vi.stubGlobal('fetch', fetchMock)
@@ -338,7 +338,8 @@ describe('Keenable plugin registration', () => {
       await fiber.await()
       const first = await ctx.web.search({ query: 'cordis plugin' })
       expect(first.sources[0]?.url).toBe('https://example.com/cordis')
-      expect((callOf(fetchMock, 0)[1].headers as Record<string, string>).authorization).toBe('Bearer env-key')
+      // 环境变量不再作为密钥来源：未配置密钥时按匿名额度请求。
+      expect((callOf(fetchMock, 0)[1].headers as Record<string, string>).authorization).toBeUndefined()
 
       await ctx.settings.update(WEB_SEARCH_KEENABLE_SETTINGS_NAMESPACE, {
         baseURL: 'https://keenable.gateway.test/mcp',

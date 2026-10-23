@@ -1,10 +1,10 @@
 /** 注册 Firecrawl 搜索提供方：有 API key 走账号档，无 key 走官方 keyless 匿名额度。 */
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { launchEnvironmentOf } from 'coding-launch-environment'
 import { assertUsableOutbound, OutboundConfigSchema, resolveOutboundURL } from 'coding-proxy-pool'
 import type { OutboundConfig } from 'coding-proxy-pool'
 import { installSettingsSection, settingsNamespace } from 'coding-settings'
+import { credentialRef } from 'coding-credentials'
 import { FIRECRAWL_DEFAULT_BASE_URL, FirecrawlSearchProvider, isSafeBaseUrl, isValidProxyURL } from './provider.ts'
 
 export { FIRECRAWL_DEFAULT_BASE_URL, FIRECRAWL_PROVIDER_ID, FirecrawlSearchProvider } from './provider.ts'
@@ -19,8 +19,10 @@ const API_KEY_ENV = 'FIRECRAWL_API_KEY'
 
 /** Firecrawl 搜索的配置：可选密钥、可选端点基址与共享出站选择。 */
 export interface Config {
-  /** Firecrawl API key；省略时读 `FIRECRAWL_API_KEY`，再为空则走 keyless 匿名额度。 */
+  /** 密钥字面值（部署层）；页面与设置文件用 `apiKeyEnv` 指向凭据服务。 */
   apiKey?: string
+  /** 凭据引用，默认 `FIRECRAWL_API_KEY`；密钥只存在凭据服务里，由设置页写入。 */
+  apiKeyEnv?: string
   /** 搜索端点基址（追加 `/v2/search`）；缺省为官方 API。 */
   baseURL?: string
   /** 下次搜索的出站；缺省直连，选择内置代理池时按池自己的出站规则走。 */
@@ -29,6 +31,7 @@ export interface Config {
 
 export const Config: z<Config> = z.object({
   apiKey: z.string().role('secret'),
+  apiKeyEnv: z.string().role('credential-ref').default('FIRECRAWL_API_KEY'),
   baseURL: z.string(),
   outbound: OutboundConfigSchema,
 })
@@ -43,11 +46,12 @@ export const WEB_SEARCH_FIRECRAWL_SETTINGS_NAMESPACE = settingsNamespace('web-se
  * @param literal - 设置分节里的 `apiKey`。
  * @returns 非空密钥，或表示 keyless 的 `undefined`。
  */
-function resolveApiKey(ctx: Context, literal: string | undefined): string | undefined {
-  const explicit = literal?.trim()
+async function resolveApiKey(ctx: Context, config: Config): Promise<string | undefined> {
+  const explicit = config.apiKey?.trim()
   if (explicit !== undefined && explicit !== '') return explicit
-  const ambient = launchEnvironmentOf(ctx).get(API_KEY_ENV)?.value.trim()
-  return ambient === undefined || ambient === '' ? undefined : ambient
+  const apiKeyEnv = credentialRef(config.apiKeyEnv ?? API_KEY_ENV)
+  const resolved = (await ctx.get('credentials')?.resolve(apiKeyEnv))?.value.trim()
+  return resolved === undefined || resolved === '' ? undefined : resolved
 }
 
 /**
@@ -73,7 +77,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     onChange: () => {},
   })
   ctx.web.registerSearchProvider(new FirecrawlSearchProvider(
-    () => resolveApiKey(ctx, current().apiKey),
+    () => resolveApiKey(ctx, current()),
     () => current().baseURL ?? FIRECRAWL_DEFAULT_BASE_URL,
     () => resolveOutboundURL(ctx.get('proxyPool'), current().outbound ?? { mode: 'direct' }),
   ))

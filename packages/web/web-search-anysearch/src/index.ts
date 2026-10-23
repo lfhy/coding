@@ -1,10 +1,10 @@
 /** 注册 AnySearch 搜索提供方：匿名免费额度开箱可用，配置 Bearer 密钥时提额。 */
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { launchEnvironmentOf } from 'coding-launch-environment'
 import { assertUsableOutbound, OutboundConfigSchema, resolveOutboundURL } from 'coding-proxy-pool'
 import type { OutboundConfig } from 'coding-proxy-pool'
 import { installSettingsSection, settingsNamespace } from 'coding-settings'
+import { credentialRef } from 'coding-credentials'
 import {
   ANYSEARCH_DEFAULT_BASE_URL,
   AnySearchProvider,
@@ -26,8 +26,10 @@ const API_KEY_ENV = 'ANYSEARCH_API_KEY'
 
 /** AnySearch 搜索的配置：可选密钥、可选端点与共享出站选择。 */
 export interface Config {
-  /** Bearer 密钥字面值；省略时读 `$ANYSEARCH_API_KEY`，两者都为空则匿名请求。 */
+  /** 密钥字面值（部署层）；页面与设置文件用 `apiKeyEnv` 指向凭据服务。 */
   apiKey?: string
+  /** 凭据引用，默认 `ANYSEARCH_API_KEY`；密钥只存在凭据服务里，由设置页写入。 */
+  apiKeyEnv?: string
   /** 搜索端点基址，请求追加 `/v1/search`；缺省 AnySearch 官方端点。 */
   baseURL?: string
   /** 下次搜索的出站；缺省直连，选择内置代理池时按池自己的出站规则走。 */
@@ -36,6 +38,7 @@ export interface Config {
 
 export const Config: z<Config> = z.object({
   apiKey: z.string().role('secret'),
+  apiKeyEnv: z.string().role('credential-ref').default('ANYSEARCH_API_KEY'),
   baseURL: z.string(),
   outbound: OutboundConfigSchema,
 })
@@ -49,14 +52,15 @@ export const WEB_SEARCH_ANYSEARCH_SETTINGS_NAMESPACE = settingsNamespace('web-se
  * @param config - 当前设置分节快照。
  * @returns 同一次请求共用的端点、密钥与出站解析。
  */
-function resolveOptions(ctx: Context, config: Config): AnySearchProviderOptions {
+async function resolveOptions(ctx: Context, config: Config): Promise<AnySearchProviderOptions> {
   const literal = config.apiKey?.trim()
-  const ambient = launchEnvironmentOf(ctx).get(API_KEY_ENV)?.value.trim()
-  const apiKey = literal !== undefined && literal !== ''
+  const apiKeyEnv = credentialRef(config.apiKeyEnv ?? API_KEY_ENV)
+  // 密钥按字面值 → 凭据服务解析；两者都没有时按匿名额度请求。
+  const resolved = literal !== undefined && literal !== ''
     ? literal
-    : ambient !== undefined && ambient !== '' ? ambient : undefined
+    : (await ctx.get('credentials')?.resolve(apiKeyEnv))?.value
   return {
-    ...apiKey === undefined ? {} : { apiKey },
+    ...resolved === undefined || resolved === '' ? {} : { apiKey: resolved },
     baseURL: config.baseURL ?? ANYSEARCH_DEFAULT_BASE_URL,
     ...config.outbound === undefined ? {} : { outbound: config.outbound },
     // 池服务在请求期读取：池未装配、池规则为直连时都回落直连。

@@ -332,7 +332,7 @@ describe('Firecrawl provider', () => {
     }
   })
 
-  it('maps caller cancellation and the request timeout to WEB_ABORTED', async () => {
+  it('maps caller cancellation and the request timeout to WEB_ABORTED', { timeout: 25_000 }, async () => {
     const controller = new AbortController()
     controller.abort(new Error('cancelled before the request'))
     const cancelled = vi.fn(async () => json(PAYLOAD))
@@ -341,16 +341,13 @@ describe('Firecrawl provider', () => {
       .rejects.toThrow(expect.objectContaining({ code: 'WEB_ABORTED' }))
     expect(cancelled).not.toHaveBeenCalled()
 
-    vi.useFakeTimers()
+    // 真实计时器：12 秒请求超时后映射为 WEB_ABORTED（该用例自带更长超时）。
     vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) =>
       new Promise((_resolve, reject) => {
         init?.signal?.addEventListener('abort', () => { reject(new DOMException('Aborted', 'AbortError')) })
       })))
-    const pending = provider().search({ query: 'q' })
-    const assertion = expect(pending).rejects.toThrow(expect.objectContaining({ code: 'WEB_ABORTED' }))
-    await vi.advanceTimersByTimeAsync(12_000)
-    await assertion
-    vi.useRealTimers()
+    await expect(provider().search({ query: 'q' }))
+      .rejects.toThrow(expect.objectContaining({ code: 'WEB_ABORTED' }))
 
     // 等待响应期间由调用方取消：取消标志让任何网络层错误都报告 WEB_ABORTED。
     const midway = new AbortController()
@@ -435,7 +432,7 @@ describe('Firecrawl provider', () => {
 })
 
 describe('Firecrawl plugin', () => {
-  it('registers through the plugin with settings validation, env fallback, and unload', async () => {
+  it('registers through the plugin with settings validation, settings-only keys, and unload', async () => {
     const previous = process.env.FIRECRAWL_API_KEY
     delete process.env.FIRECRAWL_API_KEY
     const ctx = new Context()
@@ -454,9 +451,10 @@ describe('Firecrawl plugin', () => {
       // 未配置 baseURL 时回落官方端点。
       expect((fetchMock.mock.calls[0] as unknown as [string])[0]).toBe('https://api.firecrawl.dev/v2/search')
 
+      // 环境变量不再作为密钥来源：仍是匿名请求。
       process.env.FIRECRAWL_API_KEY = 'ambient-key'
       await ctx.web.search({ query: 'ambient' })
-      expect(headersOf(1).authorization).toBe('Bearer ambient-key')
+      expect(headersOf(1)).not.toHaveProperty('authorization')
 
       await ctx.settings.update(WEB_SEARCH_FIRECRAWL_SETTINGS_NAMESPACE, { apiKey: 'stored-key' })
       await ctx.web.search({ query: 'stored' })

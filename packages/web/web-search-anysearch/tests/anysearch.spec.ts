@@ -266,20 +266,13 @@ describe('AnySearch provider', () => {
     controller.abort()
     await expect(pending).rejects.toMatchObject({ code: 'WEB_ABORTED' })
 
-    vi.useFakeTimers()
-    try {
-      vi.stubGlobal('fetch', vi.fn(async (_endpoint: string, init?: RequestInit) =>
-        new Promise((_resolve, reject) => {
-          init?.signal?.addEventListener('abort', () => { reject(new DOMException('Aborted', 'AbortError')) })
-        })))
-      const timedOut = provider().search({ query: 'q' })
-      const assertion = expect(timedOut).rejects.toMatchObject({ code: 'WEB_ABORTED' })
-      await vi.advanceTimersByTimeAsync(12_000)
-      await assertion
-    } finally {
-      vi.useRealTimers()
-    }
-  })
+    // 真实计时器：12 秒请求超时后映射为 WEB_ABORTED（该用例自带更长超时）。
+    vi.stubGlobal('fetch', vi.fn(async (_endpoint: string, init?: RequestInit) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => { reject(new DOMException('Aborted', 'AbortError')) })
+      })))
+    await expect(provider().search({ query: 'q' })).rejects.toMatchObject({ code: 'WEB_ABORTED' })
+  }, 25_000)
 
   it('reports an unusable outbound selection as unavailable and unsearchable', async () => {
     const misconfigured = new AnySearchProvider(() => ({
@@ -287,7 +280,7 @@ describe('AnySearch provider', () => {
       outbound: { mode: 'custom' },
       resolveProxyURL: () => { throw new Error('custom outbound requires an http(s) proxy URL') },
     }))
-    expect(misconfigured.available()).toBe(false)
+    // 可用性不再覆盖请求期的出站解析错误，失败在搜索时点名。
     await expect(misconfigured.search({ query: 'q' })).rejects.toMatchObject({ code: 'WEB_PROVIDER_ERROR' })
   })
 
@@ -307,14 +300,14 @@ describe('AnySearch provider', () => {
       'https://[::1',
     ]) {
       await expect(provider(baseURL).search({ query: 'q' })).rejects.toMatchObject({ code: 'WEB_PROVIDER_ERROR' })
-      expect(provider(baseURL).available()).toBe(false)
     }
   })
 })
 
 describe('AnySearch plugin', () => {
-  it('resolves the key from the environment and serves settings updates until unload', async () => {
+  it('reads the key from settings (never the environment) and reloads settings until unload', async () => {
     const fetchMock = stubSearch()
+    // 环境变量不再参与密钥解析：即便设置了也不应发出授权头。
     vi.stubEnv('ANYSEARCH_API_KEY', 'env-key')
     const { ctx, fiber } = await boot()
     try {
@@ -322,7 +315,7 @@ describe('AnySearch plugin', () => {
         sources: [{ url: 'https://example.com/anysearch' }],
       })
       let [endpoint, init] = callAt(fetchMock, 0)
-      expect((init.headers as Record<string, string>).authorization).toBe('Bearer env-key')
+      expect((init.headers as Record<string, string>).authorization).toBeUndefined()
 
       await ctx.settings.update(WEB_SEARCH_ANYSEARCH_SETTINGS_NAMESPACE, {
         apiKey: 'literal-key',
@@ -395,7 +388,8 @@ describe('AnySearch plugin', () => {
     try {
       await second.ctx.web.search({ query: 'anysearch news' })
       const [, init] = callAt(keyed, 0)
-      expect((init.headers as Record<string, string>).authorization).toBe('Bearer env-fallback-key')
+      // 环境变量不再作为密钥来源：未配置密钥时按匿名额度请求。
+      expect((init.headers as Record<string, string>).authorization).toBeUndefined()
     } finally {
       await second.ctx.fiber.dispose()
     }

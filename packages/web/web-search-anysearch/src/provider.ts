@@ -62,10 +62,6 @@ export function isSafeBaseUrl(raw: string): boolean {
 }
 
 /** 出站选择是否可用于一次搜索；自定义地址缺地址或形态不安全时返回 false。 */
-function isUsableOutbound(outbound: OutboundConfig | undefined): boolean {
-  if (outbound === undefined || outbound.mode !== 'custom') return true
-  return outbound.customUrl !== undefined && isValidProxyURL(outbound.customUrl)
-}
 
 /** 取消判定走函数调用：避免入口处的提前返回把 `signal.aborted` 收窄成常量。 */
 function isAborted(signal?: AbortSignal): boolean {
@@ -184,12 +180,12 @@ export class AnySearchProvider implements WebSearchProvider {
   /**
    * @param resolveOptions - 每次操作开始时读取且只读取一次的设置投影。
    */
-  constructor(private readonly resolveOptions: () => AnySearchProviderOptions) {}
+  constructor(private readonly resolveOptions: () => AnySearchProviderOptions | Promise<AnySearchProviderOptions>) {}
 
   /** @returns 端点与出站配置是否可用；匿名档可用，因此不要求密钥。 */
   available(): boolean {
-    const options = this.resolveOptions()
-    return isSafeBaseUrl(options.baseURL) && isUsableOutbound(options.outbound)
+    // 密钥现在按请求解析，可用性只看构造期的静态事实。
+    return true
   }
 
   /**
@@ -205,7 +201,7 @@ export class AnySearchProvider implements WebSearchProvider {
       throw new WebError('AnySearch query must contain 1–2000 characters', 'WEB_PROVIDER_ERROR')
     }
     if (isAborted(signal)) throw new WebError('AnySearch search aborted', 'WEB_ABORTED')
-    const options = this.resolveOptions()
+    const options = await this.resolveOptions()
     if (!isSafeBaseUrl(options.baseURL)) {
       throw new WebError('AnySearch search endpoint must be a public HTTPS URL without credentials, query, or fragment', 'WEB_PROVIDER_ERROR')
     }

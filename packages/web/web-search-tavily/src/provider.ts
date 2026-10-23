@@ -240,7 +240,7 @@ export class TavilySearchProvider implements WebSearchProvider {
     }
     throwIfAborted(signal)
     if (apiKey === undefined || apiKey.length === 0) {
-      throw new WebError(`Tavily search has no API key for "${options.apiKeyEnv ?? 'TAVILY_API_KEY'}"; store it through credentials, export it in the launching environment, or set apiKey`, 'WEB_PROVIDER_CREDENTIAL_MISSING')
+      throw new WebError(`Tavily search has no API key for "${options.apiKeyEnv ?? 'TAVILY_API_KEY'}"; store it with the Search settings page`, 'WEB_PROVIDER_CREDENTIAL_MISSING')
     }
     const endpoint = `${options.baseURL.replace(/\/+$/, '')}/search`
     const init = {

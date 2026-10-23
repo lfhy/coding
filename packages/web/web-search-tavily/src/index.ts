@@ -3,7 +3,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { credentialRef } from 'coding-credentials'
-import { launchEnvironmentOf } from 'coding-launch-environment'
 import { assertUsableOutbound, OutboundConfigSchema, resolveOutboundURL } from 'coding-proxy-pool'
 import type { OutboundConfig } from 'coding-proxy-pool'
 import { installSettingsSection, settingsNamespace } from 'coding-settings'
@@ -59,12 +58,8 @@ function resolveOptions(ctx: Context, config: Config): TavilySearchProviderOptio
   const literal = config.apiKey !== undefined && config.apiKey.length > 0 ? config.apiKey : undefined
   return {
     ...literal === undefined ? {} : { apiKey: literal },
-    resolveApiKey: async () => {
-      const credentials = ctx.get('credentials')
-      if (credentials !== undefined) return (await credentials.resolve(apiKeyEnv))?.value
-      const ambient = launchEnvironmentOf(ctx).get(apiKeyEnv)
-      return ambient !== undefined && ambient.value.length > 0 ? ambient.value : undefined
-    },
+    // 密钥按字面值 → 凭据服务解析；不读取进程环境变量。
+    resolveApiKey: async () => literal ?? (await ctx.get('credentials')?.resolve(apiKeyEnv))?.value,
     apiKeyEnv,
     baseURL: config.baseURL ?? TAVILY_DEFAULT_BASE_URL,
     ...config.outbound === undefined ? {} : { outbound: config.outbound },

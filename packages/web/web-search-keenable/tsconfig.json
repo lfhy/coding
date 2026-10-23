@@ -3,6 +3,7 @@
   "compilerOptions": { "rootDir": "src", "outDir": "lib/types" },
   "include": ["src"],
   "references": [
+    { "path": "../../credentials/credentials" },
     { "path": "../../../vendor/cordis" },
     { "path": "../web" },
     { "path": "../../util/launch-environment" },

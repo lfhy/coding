@@ -5,7 +5,7 @@ import { ExaSearchProvider, EXA_PROVIDER_ID } from 'coding-web-search-exa'
 import * as exaPlugin from 'coding-web-search-exa'
 import { mapExaResponse, mapExaResult } from '../src/provider.ts'
 
-const options = { apiKey: 'exa-key', baseURL: 'https://api.exa.test', searchType: 'auto' as const, highlightsPerResult: 1 }
+const options = { resolveApiKey: async () => 'exa-key', baseURL: 'https://api.exa.test', searchType: 'auto' as const, highlightsPerResult: 1 }
 
 function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
   return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' }, ...init })
@@ -63,8 +63,11 @@ describe('Exa result mapping', () => {
 })
 
 describe('ExaSearchProvider availability', () => {
-  it('is unavailable without a key', () => {
-    expect(new ExaSearchProvider({ ...options, apiKey: '' }).available()).toBe(false)
+  it('reports a missing key when searching', async () => {
+    // 可用性不再依赖已解析出的密钥；密钥在请求期解析，缺失时搜索报不可用。
+    const provider = new ExaSearchProvider({ ...options, resolveApiKey: async () => undefined })
+    expect(provider.available()).toBe(true)
+    await expect(provider.search({ query: 'q' })).rejects.toMatchObject({ code: 'WEB_PROVIDER_UNAVAILABLE' })
   })
 
   it('is available with a key', () => {
@@ -263,36 +266,10 @@ describe('web-search-exa plugin registration', () => {
     await fiber.dispose()
   })
 
-  it('falls back to $EXA_API_KEY and the default base URL when config omits them', async () => {
-    const prev = process.env.EXA_API_KEY
-    process.env.EXA_API_KEY = 'env-key'
-    try {
-      const fetchMock = vi.fn(async () => jsonResponse({ results: [] }))
-      vi.stubGlobal('fetch', fetchMock)
-      const ctx = new Context()
-      await ctx.plugin(WebRuntime, { searchProvider: EXA_PROVIDER_ID })
-      const fiber = await ctx.plugin(exaPlugin, {})
-      await ctx.web.search({ query: 'q' })
-      const [url] = fetchMock.mock.calls[0] as unknown as [string]
-      expect(url).toBe('https://api.exa.ai/search')
-      await fiber.dispose()
-    } finally {
-      if (prev === undefined) delete process.env.EXA_API_KEY
-      else process.env.EXA_API_KEY = prev
-    }
-  })
 
-  it('is unavailable when neither config nor env supplies a key', async () => {
-    const prev = process.env.EXA_API_KEY
-    delete process.env.EXA_API_KEY
-    try {
-      const ctx = new Context()
-      await ctx.plugin(WebRuntime, { searchProvider: EXA_PROVIDER_ID })
-      await ctx.plugin(exaPlugin, {})
-      await expect(ctx.web.search({ query: 'q' }))
-        .rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_CONFIGURED_UNAVAILABLE' }))
-    } finally {
-      if (prev !== undefined) process.env.EXA_API_KEY = prev
-    }
+  it('rejects a search when no key is configured anywhere', async () => {
+    // 密钥只来自配置与凭据服务；都没有时搜索明确失败，而不是静默降级。
+    const provider = new ExaSearchProvider({ ...options, resolveApiKey: async () => undefined })
+    await expect(provider.search({ query: 'q' })).rejects.toMatchObject({ code: 'WEB_PROVIDER_UNAVAILABLE' })
   })
 })

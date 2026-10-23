@@ -9,8 +9,8 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { launchEnvironmentOf } from 'coding-launch-environment'
 import z from '@deepseek-ai/schemastery'
+import { credentialRef } from 'coding-credentials'
 import { assertUsableOutbound, OutboundConfigSchema, resolveOutboundURL } from 'coding-proxy-pool'
 import type { OutboundConfig } from 'coding-proxy-pool'
 import type {} from 'coding-web'
@@ -38,8 +38,10 @@ export const inject = ['web']
 
 /** Plugin config (all optional — `apply` fills env-var and constant defaults). */
 export interface Config {
-  /** Exa API key. Falls back to `$EXA_API_KEY`. Empty → provider unavailable. */
+  /** 密钥字面值（部署层）；页面与设置文件用 `apiKeyEnv` 指向凭据服务。 */
   apiKey?: string
+  /** 凭据引用，默认 `EXA_API_KEY`；密钥只存在凭据服务里，由设置页写入。 */
+  apiKeyEnv?: string
   /** Endpoint base; `/search` is appended. Defaults to the public API. */
   baseURL?: string
   /** Retrieval mode sent as Exa's `type`. Defaults to `auto`. */
@@ -53,7 +55,8 @@ export interface Config {
 }
 
 export const Config: z<Config> = z.object({
-  apiKey: z.string(),
+  apiKey: z.string().role('secret'),
+  apiKeyEnv: z.string().role('credential-ref').default('EXA_API_KEY'),
   baseURL: z.string(),
   searchType: z.union(['auto', 'keyword', 'neural'] as const),
   numResults: z.number().step(1).min(1),
@@ -65,10 +68,11 @@ export const Config: z<Config> = z.object({
 export function apply(ctx: Context, config: Config): void {
   // 出站选择在装载时先判一次，坏配置立即失败而不是等到第一次搜索。
   assertUsableOutbound('web-search-exa.outbound', config.outbound)
+  const apiKeyEnv = credentialRef(config.apiKeyEnv ?? 'EXA_API_KEY')
+  const literal = config.apiKey !== undefined && config.apiKey.length > 0 ? config.apiKey : undefined
   ctx.web.registerSearchProvider(new ExaSearchProvider({
-    // Every environment layer may name this key: the product trusts the
-    // project it is launched in, and the managed store is not involved here.
-    apiKey: config.apiKey ?? launchEnvironmentOf(ctx).get('EXA_API_KEY')?.value ?? '',
+    // 密钥按字面值 → 凭据服务解析；不再读取进程环境变量。
+    resolveApiKey: async () => literal ?? (await ctx.get('credentials')?.resolve(apiKeyEnv))?.value,
     baseURL: config.baseURL ?? EXA_DEFAULT_BASE_URL,
     searchType: config.searchType ?? EXA_DEFAULT_SEARCH_TYPE,
     highlightsPerResult: config.highlightsPerResult ?? EXA_DEFAULT_HIGHLIGHTS_PER_RESULT,

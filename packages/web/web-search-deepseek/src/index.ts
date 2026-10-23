@@ -12,7 +12,6 @@ import { credentialRef } from 'coding-credentials'
 import { assertUsableOutbound, OutboundConfigSchema, resolveOutboundURL } from 'coding-proxy-pool'
 import type { OutboundConfig } from 'coding-proxy-pool'
 import { installSettingsSection, settingsNamespace } from 'coding-settings'
-import { launchEnvironmentOf } from 'coding-launch-environment'
 import type {} from 'coding-session'
 import type {} from 'coding-web'
 import {
@@ -83,7 +82,6 @@ export const Config: z<Config> = z.object({
  * search speaks the Anthropic-compatible Messages API, so one variable cannot
  * serve both.
  */
-const SEARCH_BASE_URL_ENV = 'DEEPSEEK_SEARCH_BASE_URL'
 
 /** Settings namespace carrying this provider's endpoint, model, and key reference. */
 export const WEB_SEARCH_DEEPSEEK_SETTINGS_NAMESPACE = settingsNamespace('web-search-deepseek')
@@ -103,17 +101,10 @@ function resolveOptions(ctx: Context, config: Config): DeepSeekSearchProviderOpt
     : undefined
   return {
     ...literalApiKey === undefined ? {} : { apiKey: literalApiKey },
-    resolveApiKey: async () => {
-      const credentials = ctx.get('credentials')
-      if (credentials !== undefined) return (await credentials.resolve(apiKeyEnv))?.value
-      // 未装载凭据服务时，启动环境是唯一的凭据来源。
-      const ambient = launchEnvironmentOf(ctx).get(apiKeyEnv)
-      return ambient !== undefined && ambient.value.length > 0 ? ambient.value : undefined
-    },
+    // 密钥按字面值 → 凭据服务解析；不读取进程环境变量。
+    resolveApiKey: async () => literalApiKey ?? (await ctx.get('credentials')?.resolve(apiKeyEnv))?.value,
     apiKeyEnv,
-    baseURL: config.baseURL
-      ?? launchEnvironmentOf(ctx).get(SEARCH_BASE_URL_ENV)?.value
-      ?? DEEPSEEK_DEFAULT_BASE_URL,
+    baseURL: config.baseURL ?? DEEPSEEK_DEFAULT_BASE_URL,
     ...config.outbound === undefined ? {} : { outbound: config.outbound },
     // 池服务在请求期读取：池未装配、池规则为直连时都回落直连。
     resolveProxyURL: () => resolveOutboundURL(ctx.get('proxyPool'), config.outbound ?? { mode: 'direct' }),

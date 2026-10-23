@@ -4,7 +4,7 @@ import { IconChevronDownOutline14, Menu, OutboundSelect } from 'coding-client-ui
 import type { InjectFace, PropsLocale, PropsRuntime } from 'coding-client-ui-slots'
 import type { OutboundSettings, SearchProvider, SearchSettingsFace } from './controller.ts'
 import {
-  DEFAULT_KEY_REF, DEFAULT_TAVILY_KEY_REF, SOURCE_FIELDS, SOURCE_KEY_ENV, validField, validOutbound,
+  DEFAULT_KEY_REF, DEFAULT_TAVILY_KEY_REF, SOURCE_FIELDS, validField, validOutbound,
 } from './controller.ts'
 import css from './SearchSettingsSection.module.css'
 
@@ -87,7 +87,12 @@ export function SearchSettingsSection(props: SearchSettingsSectionProps) {
   const scope = state[scopeKeyOf(provider)]
   const values = scope.value as Record<string, unknown> | undefined
   const draft = drafts[provider] ?? { text: {} }
-  const defaultRef = provider === 'tavily' ? DEFAULT_TAVILY_KEY_REF : DEFAULT_KEY_REF
+  // 每个来源默认的凭据引用与 Host 侧保持一致。
+  const defaultRef = provider === 'tavily'
+    ? DEFAULT_TAVILY_KEY_REF
+    : provider === 'deepseek-official'
+      ? DEFAULT_KEY_REF
+      : `${provider.toUpperCase().replaceAll('-', '_')}_API_KEY`
   const keyRefPending = (provider === 'deepseek-official' || provider === 'tavily')
     && draft.text['apiKeyEnv'] !== undefined
     && (draft.text['apiKeyEnv'].trim() || defaultRef) !== ((values?.['apiKeyEnv'] as string | undefined) ?? defaultRef)
@@ -202,9 +207,6 @@ export function SearchSettingsSection(props: SearchSettingsSectionProps) {
               {outboundInvalid ? t('invalidProxy') : t('outboundHint')}
             </p>
           </div>
-          {SOURCE_KEY_ENV[provider] === undefined
-            ? null
-            : <p className={css.hint}>{t('keyFromEnvironment').replace('{name}', SOURCE_KEY_ENV[provider] ?? '')}</p>}
           {!scope.writable ? <p role="status" className={css.hint}>{t('readOnly')}</p> : null}
           <div className={css.actions}>
             <button type="button" disabled={!dirty || disabled || outboundInvalid
@@ -227,9 +229,9 @@ export function SearchSettingsSection(props: SearchSettingsSectionProps) {
             </button>
           </div>
           {state.failed ? <p role="alert" className={css.error}>{t('failed')}</p> : null}
-          {provider === 'deepseek-official' || provider === 'tavily' ? <div className={css.secret}>
+          {SOURCE_FIELDS[provider].includes('apiKeyEnv') ? <div className={css.secret}>
             <div className={css.fieldHeading}><label htmlFor="search-api-key">{t('apiKey')}</label></div>
-            <p className={css.hint} role="status">{keyRefPending ? t('keyRefPending') : credential.status === 'loading' ? t('keyLoading') : credential.status === 'error' ? t('keyError') : credential.configured ? t('keySet') : t(provider === 'tavily' ? 'tavilyKeyMissing' : 'keyMissing')}</p>
+            <p className={css.hint} role="status">{keyRefPending ? t('keyRefPending') : credential.status === 'loading' ? t('keyLoading') : credential.status === 'error' ? t('keyError') : credential.configured ? t('keySet') : t('keyMissing')}</p>
             <input id="search-api-key" className={css.input} type="password" autoComplete="off"
               value={key} disabled={keyRefPending || credential.status !== 'ready' || !credential.writable || state.keySaving}
               onChange={(event) => { keyVersion.current++; setKeyDraft({ owner: keyOwner, value: event.target.value }) }} aria-describedby="search-api-key-hint" />

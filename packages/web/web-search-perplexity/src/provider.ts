@@ -37,8 +37,8 @@ const USER_AGENT = 'deepseek-harness/0.0.1'
 
 /** Resolved provider options (the plugin's `apply` supplies env-var and constant defaults). */
 export interface PerplexitySearchProviderOptions {
-  /** Perplexity API key. Empty/absent makes the provider unavailable. */
-  apiKey: string
+  /** 每次搜索开始时解析的 Perplexity 密钥；返回空即不可用。 */
+  resolveApiKey?: () => Promise<string | undefined>
   /** Endpoint base; `/chat/completions` is appended. */
   baseURL: string
   /** Search model name. */
@@ -98,7 +98,7 @@ export class PerplexitySearchProvider implements WebSearchProvider {
   // a shared base class would obscure which fields make this backend usable.
   /* jscpd:ignore-start */
   available(): boolean {
-    return this.options.apiKey.length > 0
+    return this.options.resolveApiKey !== undefined
       && URL.canParse(this.options.baseURL)
       && isPositiveInteger(this.options.maxTokens)
   }
@@ -131,11 +131,13 @@ export class PerplexitySearchProvider implements WebSearchProvider {
     dispatcher: ProxyAgent | undefined,
     signal?: AbortSignal,
   ): Promise<WebSearchResult> {
+    const apiKey = (await this.options.resolveApiKey?.())?.trim() ?? ''
+    if (apiKey === '') throw new WebError('web-search-perplexity: no API key configured', 'WEB_PROVIDER_UNAVAILABLE')
     const init = {
       method: 'POST',
       redirect: 'error',
       headers: {
-        'authorization': `Bearer ${this.options.apiKey}`,
+        'authorization': `Bearer ${apiKey}`,
         'content-type': 'application/json',
         'accept': 'application/json',
         'user-agent': USER_AGENT,

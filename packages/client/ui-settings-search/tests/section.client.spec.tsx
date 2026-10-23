@@ -128,7 +128,7 @@ describe('search settings section', () => {
     expect(screen.getByRole('button', { name: /Tavily/ })).toBeTruthy()
     expect(screen.getByLabelText(zh.endpoint)).toHaveProperty('value', 'https://api.tavily.com')
     expect(screen.getByRole('group', { name: zh.outbound })).toBeTruthy()
-    expect(screen.getByText(zh.tavilyKeyMissing)).toBeTruthy()
+    expect(screen.getByText(zh.keyMissing)).toBeTruthy()
     expect(screen.queryByLabelText(zh.model)).toBeNull()
   })
 

@@ -11,7 +11,7 @@ const maybe = apiKey !== undefined && apiKey.length > 0 ? describe : describe.sk
 maybe('PerplexitySearchProvider real API', () => {
   it('returns a generated answer and sources for a live query', async () => {
     const provider = new PerplexitySearchProvider({
-      apiKey: apiKey!,
+      resolveApiKey: async () => apiKey!,
       baseURL: process.env.PERPLEXITY_BASE_URL ?? PERPLEXITY_DEFAULT_BASE_URL,
       model: process.env.PERPLEXITY_MODEL ?? PERPLEXITY_DEFAULT_MODEL,
       maxTokens: PERPLEXITY_DEFAULT_MAX_TOKENS,

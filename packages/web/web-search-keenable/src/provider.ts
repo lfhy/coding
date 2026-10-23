@@ -35,7 +35,8 @@ const USER_AGENT = 'deepseek-harness/0.0.1'
 /** 本提供方在每次搜索开始时读取的配置来源。 */
 export interface KeenableSearchProviderOptions {
   /** 本次搜索的密钥；空串表示匿名访问。 */
-  resolveApiKey?: () => string
+  /** 每次搜索开始时解析的密钥；返回空即按匿名额度请求。 */
+  resolveApiKey?: () => string | Promise<string | undefined>
   /** 本次搜索的 MCP 端点；必须是通过校验的 HTTPS 地址。 */
   resolveBaseURL?: () => string
   /** 本次搜索的出站地址（提供方选择 + 代理池规则）；返回 `undefined` 即直连。 */
@@ -355,7 +356,7 @@ export class KeenableSearchProvider implements WebSearchProvider {
     if (!isValidBaseURL(baseURL)) {
       throw new WebError('Keenable baseURL must be an HTTPS URL without credentials, query, or fragment', 'WEB_PROVIDER_ERROR')
     }
-    const apiKey = this.options.resolveApiKey?.().trim() ?? ''
+    const apiKey = ((await this.options.resolveApiKey?.()) ?? '').trim()
     // 出站地址由共享契约解析（提供方选择 + 池规则）；直连时保留原生 fetch 传输。
     const proxyURL = this.options.resolveProxyURL?.()
     const dispatcher = proxyURL === undefined ? undefined : new ProxyAgent(proxyURL)
