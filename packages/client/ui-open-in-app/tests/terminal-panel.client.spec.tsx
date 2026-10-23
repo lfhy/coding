@@ -134,6 +134,7 @@ function retainedProps(sessionId: SessionId | undefined = SESSION, shown = true)
     useSessions: (selector: (state: SessionListState) => unknown) => selector({ ids: RETAINED_IDS } as SessionListState),
     terminalUrl: (id: SessionId) => `ws://dsh.internal/open-in-app/terminal?sessionId=${id}`,
     closeBottom: vi.fn(),
+    workspaceKey: (id: SessionId) => id,
   } as unknown as Parameters<typeof RetainedTerminalPanel>[0]
 }
 
@@ -638,6 +639,22 @@ describe('TerminalPanel', () => {
     expect(terminalMocks.instances).toHaveLength(1)
     mounted.rerender(<RetainedTerminalPanel {...retainedProps(SESSION, false)} />)
     expect(FakeWebSocket.instances).toHaveLength(1)
+  })
+
+  it('shares one terminal tab set across sessions of the same workspace', async () => {
+    const shared = (id: SessionId) => ({
+      ...retainedProps(id),
+      workspaceKey: () => 'workspace-1',
+    })
+    const mounted = render(<RetainedTerminalPanel {...shared(SESSION)} />)
+    await waitFor(() => { expect(FakeWebSocket.instances).toHaveLength(1) })
+    const first = FakeWebSocket.instances[0] as FakeWebSocket
+
+    // 同工作区切到另一个会话：不新建 PTY，原终端保持挂载。
+    mounted.rerender(<RetainedTerminalPanel {...shared(OTHER_SESSION)} />)
+    await waitFor(() => { expect(FakeWebSocket.instances).toHaveLength(1) })
+    expect(first.close).not.toHaveBeenCalled()
+    mounted.unmount()
   })
 
   it('preserves each session PTY across conversation switches and releases removed sessions', async () => {

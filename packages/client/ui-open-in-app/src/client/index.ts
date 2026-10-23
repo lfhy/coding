@@ -159,6 +159,11 @@ export function apply(ctx: ClientContext): void {
   }, 'open-in-app: close unloaded tab definitions')
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'open-in-app: dictionaries')
 
+  // 底栏终端与工作台偏好按工作区共享；没有 workspaces 服务的部署退回会话 id。
+  const workspaceKey = (sessionId: SessionId): string =>
+    (ctx.get('workspaces') as { workspaceKeyOf?: (id: SessionId) => string } | undefined)
+      ?.workspaceKeyOf?.(sessionId) ?? sessionId
+
   ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
     name: 'conversation.session.header.utilities',
     id: 'open-in-app',
@@ -168,7 +173,7 @@ export function apply(ctx: ClientContext): void {
       hooks: {
         openInAppTargets: controller.targets,
         openInAppChoice: controller.choice,
-        workbenchLayout: ctx.layout.workbench(sessionId),
+        workbenchLayout: ctx.layout.workbench(workspaceKey(sessionId)),
       },
       load: path => controller.load(path),
       launch: (appId, path) => controller.launch(appId, path),
@@ -203,8 +208,8 @@ export function apply(ctx: ClientContext): void {
           terminalUrl: (sessionId, cols, rows) => controller.terminalUrl(sessionId, cols, rows),
           closeWorkbench: (sessionId) => { ctx.layout.closeWorkbench(sessionId) },
           openWorkbench: (sessionId) => { ctx.layout.openWorkbench(sessionId) },
-          toggleWorkbenchFullscreen: (sessionId) => { ctx.layout.toggleWorkbenchFullscreen(sessionId) },
-          toggleBottom: (sessionId) => { ctx.layout.toggleWorkbenchBottom(sessionId) },
+          toggleWorkbenchFullscreen: (sessionId) => { ctx.layout.toggleWorkbenchFullscreen(workspaceKey(sessionId)) },
+          toggleBottom: (sessionId) => { ctx.layout.toggleWorkbenchBottom(workspaceKey(sessionId)) },
           openSidebarTab: (sessionId, kind) => { sidebarRight.openTabForSession(sessionId, kind) },
         }
       },
@@ -221,9 +226,9 @@ export function apply(ctx: ClientContext): void {
     order: 20,
     locale: NS,
     inject: (sessionId: SessionId): WorkbenchPanelTogglesInjected => ({
-      hooks: { workbenchLayout: ctx.layout.workbench(sessionId) },
-      toggleWorkbench: () => { ctx.layout.toggleWorkbench(sessionId) },
-      toggleBottom: () => { ctx.layout.toggleWorkbenchBottom(sessionId) },
+      hooks: { workbenchLayout: ctx.layout.workbench(workspaceKey(sessionId)) },
+      toggleWorkbench: () => { ctx.layout.toggleWorkbench(workspaceKey(sessionId)) },
+      toggleBottom: () => { ctx.layout.toggleWorkbenchBottom(workspaceKey(sessionId)) },
     }),
   }, WorkbenchPanelToggles))
 
@@ -255,7 +260,7 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: (): HeroPanelToggleInjected => ({
       panel: 'bottom',
-      workbenchSource: sessionId => ctx.layout.workbench(sessionId),
+      workbenchSource: sessionId => ctx.layout.workbench(workspaceKey(sessionId)),
       togglePanel: () => toggleHeroPanel('bottom'),
     }),
   }, HeroPanelToggle))
@@ -266,7 +271,7 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: (): HeroPanelToggleInjected => ({
       panel: 'files',
-      workbenchSource: sessionId => ctx.layout.workbench(sessionId),
+      workbenchSource: sessionId => ctx.layout.workbench(workspaceKey(sessionId)),
       togglePanel: () => toggleHeroPanel('files'),
     }),
   }, HeroPanelToggle))
@@ -276,7 +281,8 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: () => ({
       terminalUrl: (sessionId: SessionId, cols: number, rows: number) => controller.terminalUrl(sessionId, cols, rows),
-      closeBottom: (sessionId: SessionId) => { ctx.layout.closeWorkbenchBottom(sessionId) },
+      workspaceKey,
+      closeBottom: (sessionId: SessionId) => { ctx.layout.closeWorkbenchBottom(workspaceKey(sessionId)) },
     }),
   }, RetainedTerminalPanel))
 }

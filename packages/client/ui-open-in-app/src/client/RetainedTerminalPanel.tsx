@@ -11,6 +11,8 @@ import css from './TerminalPanel.module.css'
 type RetainedTerminalProps = PropsRuntime<'workbench.bottom'> & PropsLocale<typeof NS> & InjectFace<{
   terminalUrl: (sessionId: SessionId, cols: number, rows: number) => string
   closeBottom: (sessionId: SessionId) => void
+  /** 解析会话所属的工作区键；底栏标签按工作区共享。 */
+  workspaceKey: (sessionId: SessionId) => string
 }>
 
 type Tab = { readonly id: number }
@@ -151,21 +153,24 @@ function TerminalTabs(props: TerminalPanelProps): React.JSX.Element {
  * @returns 已启用会话保持挂载的终端树。
  */
 export function RetainedTerminalPanel(props: RetainedTerminalProps): ReactNode {
-  const { sessionId, shown, useSessions, terminalUrl, closeBottom, ...rest } = props
+  const { sessionId, shown, useSessions, workspaceKey, terminalUrl, closeBottom, ...rest } = props
   const sessionIds = useSessions(state => state.ids)
-  const [activated, setActivated] = useState<readonly SessionId[]>(() =>
-    shown && sessionId !== undefined ? [sessionId] : [])
+  const currentKey = sessionId === undefined ? undefined : workspaceKey(sessionId)
+  // 每个工作区一组标签：同工作区切换会话复用同一组，PTY 仍属于首次打开它的会话。
+  const [activated, setActivated] = useState<ReadonlyMap<string, SessionId>>(() => new Map())
   useEffect(() => {
     setActivated((current) => {
-      const retained = current.filter(id => sessionIds.includes(id))
-      if (!shown || sessionId === undefined || !sessionIds.includes(sessionId) || retained.includes(sessionId)) {
-        return retained.length === current.length ? current : retained
+      const next = new Map([...current].filter(([, id]) => sessionIds.includes(id)))
+      if (shown && sessionId !== undefined && currentKey !== undefined && sessionIds.includes(sessionId)) {
+        next.set(currentKey, sessionId)
       }
-      return [...retained, sessionId]
+      const unchanged = next.size === current.size
+        && [...next].every(([key, id]) => current.get(key) === id)
+      return unchanged ? current : next
     })
-  }, [sessionIds, sessionId, shown])
-  return activated.map(id => (
-    <TerminalTabs key={id} {...rest} sessionId={id} shown={shown && sessionId === id}
+  }, [sessionIds, sessionId, shown, currentKey])
+  return [...activated].map(([key, id]) => (
+    <TerminalTabs key={key} {...rest} sessionId={id} shown={shown && currentKey === key}
       terminalUrl={(cols, rows) => terminalUrl(id, cols, rows)} closeBottom={() => { closeBottom(id) }} />
   ))
 }

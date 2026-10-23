@@ -150,6 +150,18 @@ export class WorkspaceRuntime implements IWorkspaces {
   }
 
   /**
+   * 解析会话所属的工作区键，供按工作区共享的界面状态（底栏终端、布局偏好）使用。
+   * @param sessionId - 当前会话。
+   * @returns 工作区 id；会话没有归属工作区时退回它的 cwd，再退回 `'home'`。
+   */
+  workspaceKeyOf(sessionId: SessionId): string {
+    const workspace = this.list.getSnapshot().items.find(item => item.sessionIds.includes(sessionId))
+    if (workspace !== undefined) return workspace.workspaceId
+    const summary = this.sessions.list.getSnapshot().byId[sessionId]
+    return summary?.cwd ?? 'home'
+  }
+
+  /**
    * Follow the first complete Workspace/Session baseline and select a default
    * session exactly once. A restored current session wins; otherwise the most
    * recent Workspace is connected (reusing or creating its blank session).

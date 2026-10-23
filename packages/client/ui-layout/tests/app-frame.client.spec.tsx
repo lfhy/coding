@@ -105,6 +105,7 @@ function mountFrame() {
       SessionProvider={SessionProviderStub}
       publishWorkbench={publishWorkbench}
       retainWorkbenchViews={retainWorkbenchViews}
+      workspaceKeyOf={(id: string) => id}
     />
   )
   const utils = render(element())

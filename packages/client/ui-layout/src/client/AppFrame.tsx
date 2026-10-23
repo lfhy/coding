@@ -35,6 +35,8 @@ export interface AppFrameInjected {
   publishWorkbench: (sessionId: SessionId, state: WorkbenchLayoutSnapshot) => void
   /** 清理已离开会话列表的工作台投影。 */
   retainWorkbenchViews: (sessionIds: readonly SessionId[]) => void
+  /** 解析会话所属的工作区键；工作台偏好按它保存。 */
+  workspaceKeyOf: (sessionId: SessionId) => string
 }
 
 /** AppFrame 的框架派生 props。 */
@@ -265,6 +267,7 @@ export function AppFrame({
   renderSlot,
   publishWorkbench,
   retainWorkbenchViews,
+  workspaceKeyOf,
 }: AppFrameProps) {
   const rootPanels = useStore(state => state)
   const activeSession = useSessions((state) => {
@@ -276,10 +279,11 @@ export function AppFrame({
     return current === undefined || state.byId[current]?.blank === true
   })
   const liveSessionIds = useSessions(state => state.ids)
+  const activeKey = activeSession === undefined ? undefined : workspaceKeyOf(activeSession)
   const panels = useMemo(() => {
-    const current = activeSession === undefined ? undefined : rootPanels.workbench[activeSession]
+    const current = activeKey === undefined ? undefined : rootPanels.workbench[activeKey]
     return current ?? WORKBENCH_FALLBACK
-  }, [activeSession, rootPanels.workbench])
+  }, [activeKey, rootPanels.workbench])
   const frameRef = useRef<HTMLDivElement | null>(null)
   const [viewport, setViewport] = useState(() => ({ width: window.innerWidth, height: window.innerHeight }))
 
@@ -292,9 +296,9 @@ export function AppFrame({
 
   // 工作台布局与 Session 生命周期绑定；离开会话列表时同步释放瞬时状态与页头投影。
   useEffect(() => {
-    actions.retainWorkbenchSessions(liveSessionIds)
+    actions.retainWorkbenchSessions(liveSessionIds.map(workspaceKeyOf))
     retainWorkbenchViews(liveSessionIds)
-  }, [actions, liveSessionIds, retainWorkbenchViews])
+  }, [actions, liveSessionIds, retainWorkbenchViews, workspaceKeyOf])
 
   useLayoutEffect(() => {
     const element = frameRef.current
@@ -385,7 +389,7 @@ export function AppFrame({
     if (activeSession !== undefined) actions.setWorkbench(activeSession, workbenchBase.current - delta)
   }, [actions, activeSession])
   const onBottomDrag = useCallback((delta: number) => {
-    if (activeSession !== undefined) actions.setWorkbenchBottom(activeSession, bottomBase.current - delta)
+    if (activeKey !== undefined) actions.setWorkbenchBottom(activeKey, bottomBase.current - delta)
   }, [actions, activeSession])
   const nudgeSidebar = useCallback((delta: number) => { actions.setSidebar(geometry.current.sidebarWidth + delta) }, [actions])
   const nudgeDetails = useCallback((delta: number) => { actions.setDetails(geometry.current.detailsWidth - delta) }, [actions])
@@ -393,7 +397,7 @@ export function AppFrame({
     if (activeSession !== undefined) actions.setWorkbench(activeSession, geometry.current.workbenchWidth + delta)
   }, [actions, activeSession])
   const nudgeBottom = useCallback((delta: number) => {
-    if (activeSession !== undefined) actions.setWorkbenchBottom(activeSession, geometry.current.bottomHeight - delta)
+    if (activeKey !== undefined) actions.setWorkbenchBottom(activeKey, geometry.current.bottomHeight - delta)
   }, [actions, activeSession])
   const setWorkbench = useCallback((value: number) => {
     if (activeSession !== undefined) actions.setWorkbench(activeSession, value)

@@ -4,7 +4,6 @@
  * 几何，不改写这些偏好。模块只导出工厂，避免热重载之间共享实例。
  */
 import { defineStore, type EngineStoreHandle } from 'coding-client-runtime/client'
-import type { SessionId } from 'coding-session/types'
 import {
   clampWidth,
   DETAILS_DEFAULT,
@@ -38,11 +37,12 @@ type LayoutState = {
   details: number
   narrow: boolean
   narrowExpanded: boolean
-  workbench: Record<SessionId, WorkbenchState | undefined>
+  /** 工作台偏好按工作区键保存；会话 id 仍是合法的字符串键，单会话部署行为不变。 */
+  workbench: Record<string, WorkbenchState | undefined>
 }
 
-function workbench(draft: LayoutState, sessionId: SessionId): WorkbenchState {
-  return draft.workbench[sessionId] ??= {
+function workbench(draft: LayoutState, key: string): WorkbenchState {
+  return draft.workbench[key] ??= {
     open: false,
     fullscreen: false,
     width: WORKBENCH_DEFAULT,
@@ -56,20 +56,20 @@ function workbench(draft: LayoutState, sessionId: SessionId): WorkbenchState {
 type LayoutActions = {
   setSidebar: (draft: LayoutState, px: number) => void
   setDetails: (draft: LayoutState, px: number) => void
-  setWorkbench: (draft: LayoutState, sessionId: SessionId, px: number) => void
-  setWorkbenchBottom: (draft: LayoutState, sessionId: SessionId, px: number) => void
+  setWorkbench: (draft: LayoutState, key: string, px: number) => void
+  setWorkbenchBottom: (draft: LayoutState, key: string, px: number) => void
   toggleSidebar: (draft: LayoutState) => void
   setNarrow: (draft: LayoutState, narrow: boolean) => void
   openDetails: (draft: LayoutState) => void
   closeDetails: (draft: LayoutState) => void
-  openWorkbench: (draft: LayoutState, sessionId: SessionId) => void
-  closeWorkbench: (draft: LayoutState, sessionId: SessionId) => void
-  toggleWorkbench: (draft: LayoutState, sessionId: SessionId) => void
-  toggleWorkbenchFullscreen: (draft: LayoutState, sessionId: SessionId) => void
-  toggleWorkbenchBottom: (draft: LayoutState, sessionId: SessionId) => void
-  closeWorkbenchBottom: (draft: LayoutState, sessionId: SessionId) => void
-  toggleHeroPanel: (draft: LayoutState, sessionId: SessionId, panel: 'bottom' | 'files') => void
-  retainWorkbenchSessions: (draft: LayoutState, sessionIds: readonly SessionId[]) => void
+  openWorkbench: (draft: LayoutState, key: string) => void
+  closeWorkbench: (draft: LayoutState, key: string) => void
+  toggleWorkbench: (draft: LayoutState, key: string) => void
+  toggleWorkbenchFullscreen: (draft: LayoutState, key: string) => void
+  toggleWorkbenchBottom: (draft: LayoutState, key: string) => void
+  closeWorkbenchBottom: (draft: LayoutState, key: string) => void
+  toggleHeroPanel: (draft: LayoutState, key: string, panel: 'bottom' | 'files') => void
+  retainWorkbenchSessions: (draft: LayoutState, keys: readonly string[]) => void
 }
 
 /**
@@ -88,11 +88,11 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
     actions: {
       setSidebar: (d, px: number) => { d.sidebar = clampWidth(px, SIDEBAR_MIN, SIDEBAR_MAX) },
       setDetails: (d, px: number) => { d.details = clampWidth(px, DETAILS_MIN, DETAILS_MAX) },
-      setWorkbench: (d, sessionId: SessionId, px: number) => {
-        workbench(d, sessionId).width = clampWidth(px, WORKBENCH_MIN, WORKBENCH_MAX)
+      setWorkbench: (d, key: string, px: number) => {
+        workbench(d, key).width = clampWidth(px, WORKBENCH_MIN, WORKBENCH_MAX)
       },
-      setWorkbenchBottom: (d, sessionId: SessionId, px: number) => {
-        workbench(d, sessionId).bottomHeight = clampWidth(px, WORKBENCH_BOTTOM_MIN, WORKBENCH_BOTTOM_MAX)
+      setWorkbenchBottom: (d, key: string, px: number) => {
+        workbench(d, key).bottomHeight = clampWidth(px, WORKBENCH_BOTTOM_MIN, WORKBENCH_BOTTOM_MAX)
       },
       toggleSidebar: (d) => {
         if (d.narrow) d.narrowExpanded = !d.narrowExpanded
@@ -107,21 +107,21 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
         if (d.details === 0) d.details = DETAILS_DEFAULT
       },
       closeDetails: (d) => { d.details = 0 },
-      openWorkbench: (d, sessionId: SessionId) => {
+      openWorkbench: (d, key: string) => {
         d.details = 0
-        const state = workbench(d, sessionId)
+        const state = workbench(d, key)
         state.open = true
         state.bottomStandalone = false
         state.fullscreen = false
       },
-      closeWorkbench: (d, sessionId: SessionId) => {
-        const state = workbench(d, sessionId)
+      closeWorkbench: (d, key: string) => {
+        const state = workbench(d, key)
         state.bottomStandalone = state.bottomOpen && (state.open || state.bottomStandalone)
         state.open = false
         state.fullscreen = false
       },
-      toggleWorkbench: (d, sessionId: SessionId) => {
-        const state = workbench(d, sessionId)
+      toggleWorkbench: (d, key: string) => {
+        const state = workbench(d, key)
         if (state.open && d.details === 0) {
           state.bottomStandalone = state.bottomOpen
           state.open = false
@@ -136,13 +136,13 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
           }
         }
       },
-      toggleWorkbenchFullscreen: (d, sessionId: SessionId) => {
-        const state = d.workbench[sessionId]
+      toggleWorkbenchFullscreen: (d, key: string) => {
+        const state = d.workbench[key]
         if (state?.open) state.fullscreen = !state.fullscreen
       },
       // 底栏入口只改变底栏；显示时关闭暂时遮挡它的详情栏。
-      toggleWorkbenchBottom: (d, sessionId: SessionId) => {
-        const state = workbench(d, sessionId)
+      toggleWorkbenchBottom: (d, key: string) => {
+        const state = workbench(d, key)
         if (d.details === 0 && state.bottomOpen && (state.open || state.bottomStandalone)) {
           state.bottomOpen = false
           state.bottomStandalone = false
@@ -152,14 +152,14 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
         state.bottomOpen = true
         state.bottomStandalone = !state.open
       },
-      closeWorkbenchBottom: (d, sessionId: SessionId) => {
-        const state = d.workbench[sessionId]
+      closeWorkbenchBottom: (d, key: string) => {
+        const state = d.workbench[key]
         if (state === undefined) return
         state.bottomOpen = false
         state.bottomStandalone = false
       },
-      toggleHeroPanel: (d, sessionId: SessionId, panel: 'bottom' | 'files') => {
-        const state = workbench(d, sessionId)
+      toggleHeroPanel: (d, key: string, panel: 'bottom' | 'files') => {
+        const state = workbench(d, key)
         if (panel === 'bottom') {
           if (d.details === 0 && state.bottomOpen && (state.bottomStandalone || state.open)) {
             state.bottomOpen = false
@@ -183,12 +183,12 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
           state.bottomStandalone = false
         }
       },
-      retainWorkbenchSessions: (d, sessionIds: readonly SessionId[]) => {
-        const retained = new Set(sessionIds)
-        if (Object.keys(d.workbench).every(sessionId => retained.has(sessionId as SessionId))) return
-        const next: Record<SessionId, WorkbenchState | undefined> = {}
-        for (const [sessionId, state] of Object.entries(d.workbench)) {
-          if (retained.has(sessionId as SessionId)) next[sessionId as SessionId] = state
+      retainWorkbenchSessions: (d, keys: readonly string[]) => {
+        const retained = new Set(keys)
+        if (Object.keys(d.workbench).every(key => retained.has(key))) return
+        const next: Record<string, WorkbenchState | undefined> = {}
+        for (const [key, state] of Object.entries(d.workbench)) {
+          if (retained.has(key)) next[key] = state
         }
         d.workbench = next
       },
