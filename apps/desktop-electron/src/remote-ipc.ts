@@ -1,4 +1,4 @@
-/** Electron Remote-SSH IPC 仅接受当前 Host 主 frame 的六个固定操作。 */
+/** Electron Remote-SSH IPC 仅接受当前 Host 主 frame 的九个固定操作。 */
 import { randomUUID } from 'node:crypto'
 import { ipcMain, type BrowserWindow, type IpcMainInvokeEvent, type WebContents } from 'electron'
 
@@ -8,6 +8,7 @@ const ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u
 const PHASES = new Set(['authenticating', 'probing', 'uploading', 'starting', 'ready', 'failed'])
 
 type Method = 'connect' | 'cancelConnect' | 'listDirectories' | 'selectDirectory' | 'close' | 'rejectHostKey'
+  | 'profiles' | 'forgetProfile' | 'reconnectWorkspace'
 type Progress = { attemptId: string; phase: string; message: string }
 type PendingRequest = { invalidate(): void }
 
@@ -36,8 +37,9 @@ function nonempty(value: unknown, maxBytes: number): value is string {
 
 function connectPayload(value: unknown): boolean {
   if (!record(value) || !fields(value, ['attemptId', 'mode', 'host', 'port', 'username', 'auth'], [
-    'confirmationId', 'acceptHostKeyFingerprint',
+    'confirmationId', 'acceptHostKeyFingerprint', 'remember',
   ])) return false
+  if (value.remember !== undefined && typeof value.remember !== 'boolean') return false
   if (!id(value.attemptId) || (value.mode !== 'basic' && value.mode !== 'agent')
     || !nonempty(value.host, 255) || !nonempty(value.username, 255)
     || !Number.isInteger(value.port) || (value.port as number) < 1 || (value.port as number) > 65535
@@ -73,6 +75,14 @@ function payloadFor(method: unknown, payload: unknown): { method: string; payloa
     case 'rejectHostKey':
       return fields(payload, ['confirmationId']) && id(payload.confirmationId)
         ? { method: 'RemoteSSHRejectHostKey', payload } : undefined
+    case 'profiles':
+      return fields(payload, []) ? { method: 'RemoteSSHProfiles', payload: {} } : undefined
+    case 'forgetProfile':
+      return fields(payload, ['profileId']) && id(payload.profileId)
+        ? { method: 'RemoteSSHForgetProfile', payload } : undefined
+    case 'reconnectWorkspace':
+      return fields(payload, ['markerPath']) && nonempty(payload.markerPath, 4096)
+        ? { method: 'RemoteSSHReconnectWorkspace', payload } : undefined
     default:
       return undefined
   }

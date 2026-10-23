@@ -10,6 +10,9 @@ const remoteSSH = Object.freeze({
   selectDirectory: (connectionId: string, path: string) => invoke('selectDirectory', { connectionId, path }),
   close: (connectionId: string) => invoke('close', { connectionId }),
   rejectHostKey: (confirmationId: string) => invoke('rejectHostKey', { confirmationId }),
+  profiles: () => invoke('profiles', {}),
+  forgetProfile: (profileId: string) => invoke('forgetProfile', { profileId }),
+  reconnectWorkspace: (markerPath: string) => invoke('reconnectWorkspace', { markerPath }),
   subscribeProgress: (listener: (progress: unknown) => void): (() => void) => {
     if (typeof listener !== 'function') throw new TypeError('Invalid Remote-SSH progress listener')
     const forward = (_event: Electron.IpcRendererEvent, progress: unknown): void => { listener(progress) }

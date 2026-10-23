@@ -13,6 +13,7 @@ const METHODS = new Set([
   'RemoteSSHConnect', 'RemoteSSHListDirectories', 'RemoteSSHSelectDirectory',
   'RemoteSSHClose', 'RemoteSSHCancelConnect', 'RemoteSSHRejectHostKey', 'shutdown',
   'RemoteSSHSelectUnclaimed', 'RemoteSSHRevokeUnclaimed', 'RemoteSSHClaimSelection',
+  'RemoteSSHProfiles', 'RemoteSSHForgetProfile', 'RemoteSSHReconnectWorkspace',
 ])
 
 /** 已就绪 helper 的主进程私有句柄；不得传给 renderer。 */

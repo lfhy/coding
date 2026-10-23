@@ -681,6 +681,15 @@ export const IconFolderClose16 = ({ size = 16, className }: IconProps) => (
   </svg>
 )
 
+/** 云朵轮廓：标记远端工作区，区别于本地目录图标 */
+export const IconCloudOutline16 = ({ size = 16, className }: IconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none">
+    <path
+      d="M4.9 12.2h6.2a2.55 2.55 0 0 0 .36-5.075A3.85 3.85 0 0 0 4.3 6.05 2.95 2.95 0 0 0 4.9 12.2Z"
+      stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" strokeLinecap="round" />
+  </svg>
+)
+
 /** tree_corner_8x10 (figma extract; session-tree "L" connector, stroke geometry pre-expanded) */
 export const IconTreeCorner8x10 = ({ size = 10, className }: IconProps) => (
   <svg width={(size * 8) / 10} height={size} className={className} viewBox="-0.5 0 8.5 10.5" fill="none">

@@ -27,6 +27,8 @@ export interface RemoteSshConnectInput {
   confirmationId?: string | undefined
   /** 用户确认过的未知主机指纹；桌面端仍会重新精确比对后才写入 known_hosts。 */
   acceptHostKeyFingerprint?: string | undefined
+  /** 是否把本次连接的凭据加密保存，供之后重新打开工作区时自动重连。 */
+  remember?: boolean | undefined
 }
 
 /** Desktop bridge 在连接结束时给出的三个确定分支。 */
@@ -39,6 +41,18 @@ export type RemoteSshConnectResult =
     /** 仅已验证的分类可驱动专属指引；旧版桌面结果可省略。 */
     code?: 'port-forwarding-denied' | undefined
   }
+
+/** 已保存的连接档案；不含密码、私钥或密文。 */
+export interface RemoteSshProfile {
+  id: string
+  host: string
+  port: number
+  username: string
+  mode: RemoteSshMode
+  remoteRoot?: string | undefined
+  markerPath?: string | undefined
+  updatedAt: string
+}
 
 /** 远程目录列举项。只允许目录进入工作区选择器。 */
 export interface RemoteSshDirectoryEntry {
@@ -74,6 +88,12 @@ export interface RemoteSshBridge {
   selectDirectory: (connectionId: string, path: string) => Promise<RemoteSshDirectorySelection>
   close: (connectionId: string) => Promise<void>
   rejectHostKey: (confirmationId: string) => Promise<void>
+  /** 列出已保存的连接档案，供工作区与设置界面使用。 */
+  profiles: () => Promise<readonly RemoteSshProfile[]>
+  /** 删除一条已保存的连接档案及其密文。 */
+  forgetProfile: (profileId: string) => Promise<void>
+  /** 用已保存的凭据重连某个远端工作区，并重新发布它的 marker。 */
+  reconnectWorkspace: (markerPath: string) => Promise<RemoteSshConnectResult>
   subscribeProgress: (listener: (progress: RemoteSshProgress) => void) => () => void
 }
 
@@ -156,13 +176,17 @@ function optionalStringField(value: unknown): string | undefined {
   return stringField(value)
 }
 
-/** 验证 Connect 的封闭联合结果。 */
-function parseConnectResult(value: unknown, requestedMode: RemoteSshMode): RemoteSshConnectResult {
+/**
+ * 验证 Connect 的封闭联合结果。
+ * @param requestedMode - 发起连接时请求的模式；重连时省略，改由档案模式决定。
+ */
+function parseConnectResult(value: unknown, requestedMode?: RemoteSshMode): RemoteSshConnectResult {
   const result = record(value)
   switch (result.kind) {
     case 'ready': {
       exactFields(result, ['kind', 'mode', 'connectionId', 'homePath'])
-      if ((result.mode !== 'basic' && result.mode !== 'agent') || result.mode !== requestedMode) {
+      if ((result.mode !== 'basic' && result.mode !== 'agent')
+        || (requestedMode !== undefined && result.mode !== requestedMode)) {
         throw new RemoteSshBridgeError('桌面端返回了无效的远程连接响应。')
       }
       return {
@@ -174,7 +198,8 @@ function parseConnectResult(value: unknown, requestedMode: RemoteSshMode): Remot
     }
     case 'host-key-confirmation': {
       exactFields(result, ['kind', 'mode', 'confirmationId', 'fingerprint', 'algorithm'])
-      if ((result.mode !== 'basic' && result.mode !== 'agent') || result.mode !== requestedMode) {
+      if ((result.mode !== 'basic' && result.mode !== 'agent')
+        || (requestedMode !== undefined && result.mode !== requestedMode)) {
         throw new RemoteSshBridgeError('桌面端返回了无效的远程连接响应。')
       }
       return {
@@ -224,6 +249,29 @@ function parseDirectorySelection(value: unknown): RemoteSshDirectorySelection {
   const result = record(value)
   exactFields(result, ['markerPath', 'remotePath'])
   return { markerPath: stringField(result.markerPath), remotePath: stringField(result.remotePath) }
+}
+
+/** 验证连接档案列表，拒绝桌面端多给的字段。 */
+function parseProfiles(value: unknown): readonly RemoteSshProfile[] {
+  if (!Array.isArray(value)) throw new RemoteSshBridgeError('桌面端返回了无效的连接档案列表。')
+  return value.map((raw): RemoteSshProfile => {
+    const profile = record(raw)
+    exactFields(profile, ['id', 'host', 'port', 'username', 'mode', 'remoteRoot', 'markerPath', 'updatedAt'])
+    if ((profile.mode !== 'basic' && profile.mode !== 'agent')
+      || !Number.isInteger(profile.port) || typeof profile.updatedAt !== 'string') {
+      throw new RemoteSshBridgeError('桌面端返回了无效的连接档案列表。')
+    }
+    return {
+      id: stringField(profile.id),
+      host: stringField(profile.host),
+      port: profile.port as number,
+      username: stringField(profile.username),
+      mode: profile.mode,
+      remoteRoot: optionalStringField(profile.remoteRoot),
+      markerPath: optionalStringField(profile.markerPath),
+      updatedAt: profile.updatedAt,
+    }
+  })
 }
 
 /** 忽略未知进度事件，避免无效事件污染 Remote-SSH 状态。 */
@@ -279,6 +327,9 @@ function electronBridge(target: DesktopWindow): RemoteSshBridge | undefined {
     || typeof api.close !== 'function'
     || typeof api.rejectHostKey !== 'function'
     || typeof api.subscribeProgress !== 'function'
+    || typeof api.profiles !== 'function'
+    || typeof api.forgetProfile !== 'function'
+    || typeof api.reconnectWorkspace !== 'function'
   ) return undefined
 
   const connect = api.connect as (input: RemoteSshConnectInput) => Promise<unknown>
@@ -288,6 +339,9 @@ function electronBridge(target: DesktopWindow): RemoteSshBridge | undefined {
   const close = api.close as (connectionId: string) => Promise<unknown>
   const rejectHostKey = api.rejectHostKey as (confirmationId: string) => Promise<unknown>
   const subscribeProgress = api.subscribeProgress as (listener: (payload: unknown) => void) => unknown
+  const profiles = api.profiles as () => Promise<unknown>
+  const forgetProfile = api.forgetProfile as (profileId: string) => Promise<unknown>
+  const reconnectWorkspace = api.reconnectWorkspace as (markerPath: string) => Promise<unknown>
 
   return {
     connect: input => invokeBinding(() => connect(input), value => parseConnectResult(value, input.mode)),
@@ -300,6 +354,11 @@ function electronBridge(target: DesktopWindow): RemoteSshBridge | undefined {
     ),
     close: connectionId => invokeBindingEffect(() => close(connectionId)),
     rejectHostKey: confirmationId => invokeBindingEffect(() => rejectHostKey(confirmationId)),
+    profiles: () => invokeBinding(() => profiles(), parseProfiles),
+    forgetProfile: profileId => invokeBindingEffect(() => forgetProfile(profileId)),
+    reconnectWorkspace: markerPath => invokeBinding(
+      () => reconnectWorkspace(markerPath), value => parseConnectResult(value),
+    ),
     subscribeProgress: (listener) => {
       try {
         const dispose = subscribeProgress((payload) => {

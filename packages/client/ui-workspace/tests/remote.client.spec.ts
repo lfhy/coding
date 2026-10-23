@@ -29,6 +29,9 @@ function installElectronBridge(overrides: Partial<Record<string, unknown>> = {})
     selectDirectory: vi.fn(async () => ({ markerPath: '/local/marker', remotePath: '/home/coding/project' })),
     close: vi.fn(async () => {}),
     rejectHostKey: vi.fn(async () => {}),
+    profiles: vi.fn(async () => []),
+    forgetProfile: vi.fn(async () => {}),
+    reconnectWorkspace: vi.fn(async () => ({ kind: 'ready', mode: 'basic', connectionId: 'electron-2' })),
     subscribeProgress: vi.fn((listener: (value: unknown) => void) => {
       progressListener = listener
       return dispose

@@ -48,6 +48,27 @@ export class DirectoryBrowseError extends Error {
 }
 
 /** Real Workspace object layer and Host actions. */
+/**
+ * 远端工作区在打开前恢复 SSH 连接的能力。由桌面客户端提供；普通 Web 没有
+ * 这项能力，因此远端占位路径只有在注册了该服务时才能打开。
+ */
+export interface RemoteWorkspaceActivation {
+  /** @param path - 工作区的本地占位路径（marker 目录）。 */
+  activate(path: string): Promise<void>
+}
+
+/** 桌面端生成的远端工作区占位路径：remote-workspaces/<20 hex>/<label>-<20 hex>。 */
+const REMOTE_WORKSPACE_PATH = /(?:^|[\\/])remote-workspaces[\\/][a-f0-9]{20}[\\/][A-Za-z0-9_-]+-[a-f0-9]{20}$/u
+
+/**
+ * 判断工作区路径是否是桌面端生成的远端占位目录。
+ * @param path - 工作区的本地路径。
+ * @returns 属于远端工作区占位路径时为 true。
+ */
+export function isRemoteWorkspacePath(path: string): boolean {
+  return REMOTE_WORKSPACE_PATH.test(path)
+}
+
 export class WorkspaceRuntime implements IWorkspaces {
   /** UI-facing immutable projection; the manager remains wire truth. */
   readonly list: SnapshotStore<WorkspaceListState>
@@ -63,7 +84,7 @@ export class WorkspaceRuntime implements IWorkspaces {
    * @param api - shared wire client.
    * @param sessions - cross-domain sessions face used for recency and blank-session reuse.
    */
-  constructor(ctx: Context, private readonly api: IApiClient, private readonly sessions: SessionsPort) {
+  constructor(private readonly ctx: Context, private readonly api: IApiClient, private readonly sessions: SessionsPort) {
     this.manager = new WorkspaceManager(api)
     this.list = createSnapshotStore<WorkspaceListState>({
       items: [], archivedSessionIds: [], state: 'idle', phase: 'pending', error: null,
@@ -94,6 +115,7 @@ export class WorkspaceRuntime implements IWorkspaces {
     // would miss the reuse scan and mint another hidden blank session.
     const inflight = this.connecting.get(workspaceId)
     if (inflight !== undefined) return inflight
+    await this.activateRemoteWorkspace(workspace.path)
     // Reuse requires workspace membership (id in sessionIds AND same
     // canonical cwd — the host's own membership rule), never cwd alone:
     // a cwd match can belong to no account (sessions the CLI/TUI birthed at
@@ -113,6 +135,18 @@ export class WorkspaceRuntime implements IWorkspaces {
       .finally(() => { this.connecting.delete(workspaceId) })
     this.connecting.set(workspaceId, attempt)
     return attempt
+  }
+
+  /**
+   * 打开远端工作区前先让桌面端用已保存的凭据重连并重新发布 marker。
+   * 缺少连接能力时直接失败，避免进入一个所有工具都会报 stale-marker 的会话。
+   * @param path - 工作区的本地路径；非远端占位路径直接放行。
+   */
+  private async activateRemoteWorkspace(path: string): Promise<void> {
+    if (!isRemoteWorkspacePath(path)) return
+    const activation = this.ctx.get('remoteWorkspace') as RemoteWorkspaceActivation | undefined
+    if (activation === undefined) throw new Error('remote workspace activation is unavailable')
+    await activation.activate(path)
   }
 
   /**

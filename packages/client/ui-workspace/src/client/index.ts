@@ -17,6 +17,7 @@ import type { WorkspaceBrowserInjected, WorkspacePickerInjected } from './contra
 import { createWorkspaceViewStore } from './stores.ts'
 import { WorkspaceBrowser } from './WorkspaceBrowser.tsx'
 import { WorkspacePicker } from './WorkspacePicker.tsx'
+import { getRemoteSshBridge } from './remote.ts'
 import { en, zh, type WorkspaceKey } from './locales.ts'
 
 export type {
@@ -55,6 +56,20 @@ export function apply(ctx: ClientContext): void {
   const connection = ctx.get('connection') as ConnectionHandle
   const hostDescription = connection.hostDescription
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-workspace: dictionaries')
+
+  // 桌面端可用已保存的凭据恢复远端连接；普通 Web 没有 preload 桥，不注册该服务。
+  const remoteBridge = getRemoteSshBridge()
+  if (remoteBridge !== undefined) {
+    ctx.effect(() => ctx.reflect.provide('remoteWorkspace', {
+      activate: async (path: string): Promise<void> => {
+        const result = await remoteBridge.reconnectWorkspace(path)
+        if (result.kind === 'error') throw new Error(result.message)
+        if (result.kind === 'host-key-confirmation') {
+          throw new Error('远端主机密钥需要重新确认，请从连接向导重新连接。')
+        }
+      },
+    }), 'ui-workspace: remote workspace activation')
+  }
 
   const searchSessions: WorkspaceBrowserInjected['searchSessions'] = async (query, signal) => {
     const result = await ctx.sessions.search(query, signal)

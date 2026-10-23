@@ -47,6 +47,9 @@ function installDesktop(overrides: Partial<Record<string, unknown>> = {}) {
     })),
     close: vi.fn(async () => {}),
     rejectHostKey: vi.fn(async () => {}),
+    profiles: vi.fn(async () => []),
+    forgetProfile: vi.fn(async () => {}),
+    reconnectWorkspace: vi.fn(async () => ({ kind: 'ready', mode: 'basic', connectionId: 'connection-2' })),
     subscribeProgress: vi.fn((listener: (payload: unknown) => void) => {
       emitProgress = listener
       return () => { emitProgress = undefined }
@@ -277,6 +280,7 @@ describe('RemoteSshWizard', () => {
         mode: 'agent',
         host: 'dev.example.test', port: 22, username: 'coding',
         auth: { kind: 'password', secret: 'transient-only' },
+        remember: true,
         confirmationId: undefined,
         acceptHostKeyFingerprint: undefined,
       })
@@ -345,6 +349,7 @@ describe('RemoteSshWizard', () => {
         mode: 'agent',
         host: 'dev.example.test', port: 22, username: 'coding',
         auth: { kind: 'password', secret: 'transient-only' },
+        remember: true,
         confirmationId: 'confirmation-1',
         acceptHostKeyFingerprint: 'SHA256:verify-me',
       })

@@ -3,11 +3,12 @@ import type { ReactNode, RefObject } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
-  Button, IconCloseOutline16, IconCodeOutline16, IconFolderClose16,
+  Button, IconCloudOutline16, IconCloseOutline16, IconCodeOutline16, IconFolderClose16,
   IconDataOutline16, IconFolderOpenOutline16, IconProjectAddOutline16,
   IconNewChatOutline16, IconSearchOutline16, IconSettingsOutline16, Input,
   Menu, Modal, type MenuEntry,
 } from 'coding-client-ui-primitives'
+import { isRemoteWorkspacePath } from 'coding-client-runtime/client'
 import type {
   WorkspaceId, WorkspaceListState, WorkspaceView,
 } from 'coding-client-runtime/client'
@@ -156,7 +157,8 @@ export function WorkspacePickFlow({
   const workspaceEntries: MenuEntry[] = visibleWorkspaces.map(workspace => ({
     id: workspace.workspaceId,
     label: workspace.title,
-    icon: <IconFolderClose16 size={16} />,
+    // 远端工作区用云朵区分，避免和本地目录混淆。
+    icon: isRemoteWorkspacePath(workspace.path) ? <IconCloudOutline16 size={16} /> : <IconFolderClose16 size={16} />,
     disabled: actionBusy,
   }))
   if (!addOnly && normalizedQuery !== '' && workspaceEntries.length === 0 && workspaceSnapshot.phase === 'ready') {
@@ -450,6 +452,7 @@ export function RemoteSshWizard({ open, onClose, t, createWorkspace, onPick }: R
   const [secret, setSecret] = useState('')
   const [progress, setProgress] = useState<Omit<RemoteSshProgress, 'attemptId'>>({ phase: 'authenticating', message: '' })
   const [hostKey, setHostKey] = useState<HostKeyConfirmation | undefined>()
+  const [remember, setRemember] = useState(true)
   const [connection, setConnection] = useState<ConnectedRemote | undefined>()
   const [directory, setDirectory] = useState<RemoteSshDirectoryListing | undefined>()
   const [error, setError] = useState<string | undefined>()
@@ -587,6 +590,7 @@ export function RemoteSshWizard({ open, onClose, t, createWorkspace, onPick }: R
         port: Number(port),
         username: username.trim(),
         auth: { kind: authKind, secret },
+        remember,
         confirmationId: confirmation?.confirmationId,
         acceptHostKeyFingerprint: confirmation?.fingerprint,
       })
@@ -867,6 +871,10 @@ export function RemoteSshWizard({ open, onClose, t, createWorkspace, onPick }: R
                       <textarea id="remote-ssh-secret" className={remoteCss.privateKey} value={secret} spellCheck={false} onChange={(event) => { setSecret(event.target.value) }} />
                     )}
                   </div>
+                  <label className={remoteCss.remember}>
+                    <input type="checkbox" checked={remember} onChange={(event) => { setRemember(event.target.checked) }} />
+                    <span>{t('picker.remote.field.remember')}</span>
+                  </label>
                   {error !== undefined && <div className={remoteCss.error} role="alert">{error}</div>}
                 </form>
               )

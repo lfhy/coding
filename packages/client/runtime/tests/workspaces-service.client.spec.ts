@@ -275,6 +275,31 @@ describe('WorkspaceRuntime', () => {
     await expect(workspaces.connectWorkspace(wid('alpha'))).resolves.toBe('s-fresh-2')
   })
 
+  it('requires and runs remote workspace activation before opening its session', async () => {
+    const ctx = new Context()
+    const api = new FakeApiClient()
+    const sessions = new SessionRuntime(ctx, api, fakeRemote())
+    const workspaces = new WorkspaceRuntime(ctx, api, sessions)
+    const remotePath = '/home/me/.coding/remote-workspaces/509887000862b70a4669/project-0123456789abcdef0123'
+    api.onWorkspaceList = () => Promise.resolve(ok({
+      items: [{ ...workspace('remote'), path: remotePath }] as never[],
+    }))
+    api.onList = () => Promise.resolve(ok({ items: [] }))
+    await Promise.all([workspaces.refresh(), sessions.refresh()])
+    await Promise.resolve()
+
+    // 没有桌面端激活能力时直接失败，不进入所有工具都会报 stale-marker 的会话。
+    await expect(workspaces.connectWorkspace(wid('remote'))).rejects.toThrow(/activation is unavailable/u)
+    expect(api.callsOf('session.create')).toEqual([])
+
+    const activate = vi.fn(async () => {})
+    ctx.reflect.provide('remoteWorkspace', { activate })
+    api.onCreate = () => Promise.resolve(ok({ sessionId: sid('s-remote') }))
+    await expect(workspaces.connectWorkspace(wid('remote'))).resolves.toBe('s-remote')
+    expect(activate).toHaveBeenCalledWith(remotePath)
+    expect(api.callsOf('session.create')).toEqual([{ workspaceId: 'remote' }])
+  })
+
   it('a rejected first prompt keeps the blank session eligible for connectWorkspace reuse', async () => {
     const ctx = new Context()
     const api = new FakeApiClient()
