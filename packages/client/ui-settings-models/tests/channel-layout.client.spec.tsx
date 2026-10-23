@@ -212,7 +212,7 @@ describe('channel settings layout', () => {
     expect(set).not.toHaveBeenCalled()
     fireEvent.click(within(dialog).getByRole('button', { name: en.cancel }))
     expect(within(rail).getByRole('button', { name: /Ready/ }).getAttribute('aria-current')).toBe('true')
-    expect(screen.getByRole('heading', { name: 'Ready' })).toBeTruthy()
+    expect(screen.getByRole('main', { name: 'Ready' })).toBeTruthy()
     expect(mutate).not.toHaveBeenCalled()
     expect(set).not.toHaveBeenCalled()
   })
@@ -229,8 +229,9 @@ describe('channel settings layout', () => {
       await waitFor(() => { expect(screen.queryByRole('dialog', { name: en.add })).toBeNull() })
       expect(search.value).toBe('')
       expect(within(rail).getByRole('button', { name: 'Acme' }).getAttribute('aria-current')).toBe('true')
-      expect(screen.getByRole('heading', { name: 'Acme' })).toBeTruthy()
-      expect(document.activeElement).toBe(screen.getByLabelText(en.keyInput))
+      expect(screen.getByRole('main', { name: 'Acme' })).toBeTruthy()
+      // 详情的第一个可编辑字段现在是端点，创建后焦点落在那里。
+      expect(document.activeElement).toBe(screen.getByLabelText(en.baseUrl))
       expect(mutate).toHaveBeenCalledOnce()
       const route = mutate.mock.calls[0]?.[0].ops[0]?.path[1]
       expect(route).toMatch(/^channel-[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/)
@@ -270,8 +271,9 @@ describe('channel settings layout', () => {
     await waitFor(() => { expect(screen.queryByRole('dialog', { name: en.add })).toBeNull() })
     expect(within(screen.getByRole('complementary', { name: en.provider }))
       .getByRole('button', { name: 'Acme' }).getAttribute('aria-current')).toBe('true')
-    expect(screen.getByRole('heading', { name: 'Acme' })).toBeTruthy()
-    expect(document.activeElement).toBe(screen.getByLabelText(en.keyInput))
+    expect(screen.getByRole('main', { name: 'Acme' })).toBeTruthy()
+    // 详情的第一个可编辑字段现在是端点，创建后焦点落在那里。
+    expect(document.activeElement).toBe(screen.getByLabelText(en.baseUrl))
     expect(mutate).toHaveBeenCalledOnce()
     expect(set).toHaveBeenCalledOnce()
     const route = mutate.mock.calls[0]?.[0].ops[0]?.path[1]
@@ -295,7 +297,7 @@ describe('channel settings layout', () => {
     expect(set).toHaveBeenLastCalledWith({ ref: deriveKeyRef(route), value: 'sk-corrected' })
     expect(within(screen.getByRole('complementary', { name: en.provider }))
       .getByRole('button', { name: `Acme${en.configuredShort}` }).getAttribute('aria-current')).toBe('true')
-    expect(screen.getByRole('heading', { name: 'Acme' })).toBeTruthy()
+    expect(screen.getByRole('main', { name: 'Acme' })).toBeTruthy()
     expect(controller.store.getSnapshot().rows.find(row => row.entry.provider === route)?.credential?.configured).toBe(true)
   })
 
@@ -315,8 +317,9 @@ describe('channel settings layout', () => {
     expect(api.llm.providers).toHaveBeenCalledTimes(callsBeforeClose + 1)
     await act(async () => { release(providers) })
     await waitFor(() => { expect(screen.queryByRole('dialog', { name: en.add })).toBeNull() })
-    expect(screen.getByRole('heading', { name: 'Acme' })).toBeTruthy()
-    expect(document.activeElement).toBe(screen.getByLabelText(en.keyInput))
+    expect(screen.getByRole('main', { name: 'Acme' })).toBeTruthy()
+    // 详情的第一个可编辑字段现在是端点，创建后焦点落在那里。
+    expect(document.activeElement).toBe(screen.getByLabelText(en.baseUrl))
     expect(mutate).toHaveBeenCalledOnce()
     expect(set).toHaveBeenCalledOnce()
   })
@@ -324,7 +327,7 @@ describe('channel settings layout', () => {
   it('uses each local commit revision for the next key, URL, and model save without losing the current catalog', async () => {
     const { mutate, set, controller } = await mount({ dormantConfigured: true })
     fireEvent.click(within(screen.getByRole('complementary', { name: en.provider })).getByRole('button', { name: 'Dormant' }))
-    expect(screen.getByRole('heading', { name: 'Dormant' })).toBeTruthy()
+    expect(screen.getByRole('main', { name: 'Dormant' })).toBeTruthy()
     expect(within(screen.getByRole('complementary', { name: en.provider }))
       .getByRole('button', { name: 'Dormant' }).getAttribute('aria-current')).toBe('true')
 

@@ -290,7 +290,7 @@ describe('ModelsSection', () => {
     expect(screen.queryByRole('combobox', { name: en.provider })).toBeNull()
     expect(within(dialog).queryByRole('button', { name: /anthropic/i })).toBeNull()
     expect(within(dialog).queryByRole('textbox', { name: en.searchProviders })).toBeNull()
-    expect(screen.getByRole('heading', { name: 'DeepSeek' })).toBeTruthy()
+    expect(screen.getByRole('main', { name: 'DeepSeek' })).toBeTruthy()
   })
 
   it('allows a containing onboarding modal to own the models title', async () => {
@@ -309,7 +309,7 @@ describe('ModelsSection', () => {
 
   it('shows the first configured channel detail even when no credential is stored', async () => {
     await mountFirstRun()
-    expect(screen.getByRole('heading', { name: 'DeepSeek' })).toBeTruthy()
+    expect(screen.getByRole('main', { name: 'DeepSeek' })).toBeTruthy()
     expect(screen.getByLabelText(en.keyInput)).toBeTruthy()
     expect(within(screen.getByRole('complementary', { name: en.provider })).getByRole('button', { name: 'openai' })).toBeTruthy()
     expect(within(screen.getByRole('complementary', { name: en.provider })).queryByRole('button', { name: 'anthropic' })).toBeNull()
@@ -317,7 +317,7 @@ describe('ModelsSection', () => {
     const dialog = openCustomChannel()
     expect(within(dialog).queryByRole('button', { name: /anthropic/i })).toBeNull()
     expect(within(dialog).getByRole('textbox', { name: en.channelName })).toBeTruthy()
-    expect(screen.getByRole('heading', { name: 'DeepSeek' })).toBeTruthy()
+    expect(screen.getByRole('main', { name: 'DeepSeek' })).toBeTruthy()
   })
 
   it('shows only credential-confirmed badges and retains always-visible detail', async () => {
@@ -327,7 +327,7 @@ describe('ModelsSection', () => {
     expect(within(rail).getByRole('button', { name: 'DeepSeek' })).toBeTruthy()
     expect(screen.getByLabelText(en.keyInput)).toBeTruthy()
     selectChannel('openai')
-    expect(screen.getByRole('heading', { name: 'openai' })).toBeTruthy()
+    expect(screen.getByRole('main', { name: 'openai' })).toBeTruthy()
     await waitFor(() => { expect(screen.getByLabelText<HTMLInputElement>(en.keyInput).placeholder).toBe(en.keyStored) })
   })
 
@@ -462,7 +462,7 @@ describe('ModelsSection', () => {
       { provider: 'deepseek-official', displayName: 'DeepSeek' }))).toBeNull()
     const dialog = openCustomChannel()
     expect(within(dialog).getByRole('textbox', { name: en.channelName })).toBeTruthy()
-    expect(screen.getByRole('heading', { name: 'DeepSeek' })).toBeTruthy()
+    expect(screen.getByRole('main', { name: 'DeepSeek' })).toBeTruthy()
   })
 
   it('reuses the provider editor as a required credential-only onboarding form', async () => {
@@ -589,7 +589,7 @@ describe('ModelsSection', () => {
     selectChannel('DeepSeek')
     const name = screen.getByLabelText<HTMLInputElement>(en.channelName)
     expect(name.value).toBe('DeepSeek')
-    expect(screen.getByRole('heading', { name: name.value, level: 2 })).toBeTruthy()
+    expect(screen.getByRole('main', { name: name.value })).toBeTruthy()
     expect(screen.queryByLabelText(zh.channelName)).toBeNull()
     fireEvent.change(name, { target: { value: '  团队 渠道  ' } })
     fireEvent.click(screen.getByRole('button', { name: en.apply }))
@@ -604,7 +604,7 @@ describe('ModelsSection', () => {
     expect(credentialCalls.some(([payload]) => payload?.refs.includes('DEEPSEEK_API_KEY'))).toBe(true)
     const rail = screen.getByRole('complementary', { name: en.provider })
     await waitFor(() => { expect(within(rail).getByRole('button', { name: '团队 渠道' })).toBeTruthy() })
-    expect(screen.getByRole('heading', { name: '团队 渠道', level: 2 })).toBeTruthy()
+    expect(screen.getByRole('main', { name: '团队 渠道' })).toBeTruthy()
     fireEvent.change(within(rail).getByRole('textbox', { name: en.searchProviders }), { target: { value: '团队' } })
     expect(within(rail).getByRole('button', { name: '团队 渠道' })).toBeTruthy()
     expect(within(rail).queryByRole('button', { name: 'DeepSeek' })).toBeNull()
@@ -1415,13 +1415,13 @@ describe('ModelsSection', () => {
     await act(async () => { await controller.load() })
     const alert = screen.getByRole('alert')
     expect(alert.textContent).toContain('directory refresh unavailable')
-    expect(screen.getByRole('heading', { name: 'openai' })).toBeTruthy()
+    expect(screen.getByRole('main', { name: 'openai' })).toBeTruthy()
     expect(url.value).toBe('https://unsaved.test')
     expect(screen.getByRole<HTMLButtonElement>('button', { name: en.apply }).disabled).toBe(true)
 
     view.rerender(<ModelsSection {...injected} hideHeader />)
     expect(screen.queryByRole('alert')).toBeNull()
-    expect(screen.getByRole('heading', { name: 'openai' })).toBeTruthy()
+    expect(screen.getByRole('main', { name: 'openai' })).toBeTruthy()
     view.rerender(<ModelsSection {...injected} />)
     fireEvent.click(within(screen.getByRole('alert')).getByRole('button', { name: en.retry }))
     await waitFor(() => { expect(screen.queryByRole('alert')).toBeNull() })
@@ -1459,7 +1459,7 @@ describe('ModelsSection', () => {
     const url = screen.getByLabelText<HTMLInputElement>(en.baseUrl)
     fireEvent.change(url, { target: { value: 'https://discard' } })
     fireEvent.click(screen.getByText(en.cancel))
-    expect(screen.getByRole('heading', { name: 'openai' })).toBeTruthy()
+    expect(screen.getByRole('main', { name: 'openai' })).toBeTruthy()
     expect(screen.getByLabelText<HTMLInputElement>(en.baseUrl).value).toBe('https://proxy')
     expect(update).not.toHaveBeenCalled()
   })
@@ -1477,7 +1477,7 @@ describe('ModelsSection', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: en.cancel }))
     expect(screen.queryByRole('dialog', { name: en.add })).toBeNull()
     expect(document.activeElement).toBe(trigger)
-    expect(screen.getByRole('heading', { name: 'openai' })).toBeTruthy()
+    expect(screen.getByRole('main', { name: 'openai' })).toBeTruthy()
     expect(screen.getByRole<HTMLInputElement>('textbox', { name: en.baseUrl }).value).toBe('https://unsaved.test')
     dialog = openCustomChannel()
     expect(within(dialog).getByRole<HTMLInputElement>('textbox', { name: en.channelName }).value).toBe('')
@@ -1591,7 +1591,7 @@ describe('ModelsSection', () => {
       fireEvent.click(within(dialog).getByRole('button', { name: en.cancel }))
       expect(screen.queryByRole('dialog', { name: en.add })).toBeNull()
       expect(screen.getByRole('dialog', { name: en.onboardingTitle })).toBeTruthy()
-      expect(screen.getByRole('heading', { name: 'DeepSeek' })).toBeTruthy()
+      expect(screen.getByRole('main', { name: 'DeepSeek' })).toBeTruthy()
     } finally {
       Object.defineProperty(window, 'innerWidth', { configurable: true, value: oldWidth })
       fireEvent(window, new Event('resize'))
@@ -1608,7 +1608,7 @@ describe('ModelsSection', () => {
       schema={settingsSchema}
       t={t}
     />)
-    await screen.findByRole('heading', { name: 'DeepSeek' })
+    await screen.findByRole('main', { name: 'DeepSeek' })
   })
 
   it('removes by unsetting the profile path, never by rebuilding the section', async () => {

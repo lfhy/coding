@@ -353,7 +353,8 @@ function Loaded({ injected, hideHeader }: { injected: ModelsSectionFace; hideHea
             </button>
           </div>
         </aside>
-        <main ref={detailRef} tabIndex={-1} className={`${styles['channelDetail']} ${!mobileDetail ? styles['mobileHiddenDetail'] : ''}`}
+        <main ref={detailRef} tabIndex={-1} aria-label={current?.entry.displayName}
+          className={`${styles['channelDetail']} ${!mobileDetail ? styles['mobileHiddenDetail'] : ''}`}
           onChangeCapture={() => { setSavedTarget(undefined) }}>
           <button type="button" className={styles['channelBack']} onClick={() => { setMobileDetail(false) }}>
             <IconChevronLeftOutline14 size={16} />{t('provider')}
@@ -362,9 +363,6 @@ function Loaded({ injected, hideHeader }: { injected: ModelsSectionFace; hideHea
           {!state.writable ? <p className={styles['notice']}>{t('readOnly')}</p> : null}
           {current !== undefined && isBuiltinChannel(current) ? (
             <div className={styles['channelEditor']}>
-              <div className={styles['channelHeading']}>
-                <h2>{current.entry.displayName}</h2>
-              </div>
               <div className={styles['channelFields']}>
                 <ChannelOutboundRow key={current.entry.provider}
                   value={channelOutboundOf(state.namespaces, schema, current.entry.provider)}
@@ -376,11 +374,11 @@ function Loaded({ injected, hideHeader }: { injected: ModelsSectionFace; hideHea
             </div>
           ) : currentTarget !== undefined && currentNamespace !== undefined ? (
             <div className={styles['channelEditor']}>
-              <div className={styles['channelHeading']}>
-                <h2>{currentTarget.displayName}</h2>
-                {current?.removable ? <button type="button" className={styles['dangerButton']} disabled={!state.writable || state.status !== 'ready'}
-                  onClick={() => { setDeleteTarget(currentTarget) }}>{t('remove')}</button> : null}
-              </div>
+              {/* 渠道名已由中列选中项标出，详情不再重复标题；只保留无法撤销的删除入口。 */}
+              {current?.removable ? <div className={styles['channelActions']}>
+                <button type="button" className={styles['dangerButton']} disabled={!state.writable || state.status !== 'ready'}
+                  onClick={() => { setDeleteTarget(currentTarget) }}>{t('remove')}</button>
+              </div> : null}
               <ProviderEditor key={`${currentTarget.provider}:${editorEpoch}`} {...currentTarget} namespace={currentNamespace}
                 schema={schema} api={api} t={t} readOnly={!state.writable || state.status !== 'ready'} hideTitle channelLayout
                 onSettingsCommitted={(view) => { controller.acceptSettingsView(view) }}

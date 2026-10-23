@@ -98,7 +98,8 @@ describe('内置渠道的只读卡片', () => {
     expect(within(railButtons[0]!).getByText('Free')).toBeTruthy()
     expect(railButtons[1]?.textContent).toContain('My gateway')
     expect(railButtons.at(-1)?.textContent).toContain(en.add)
-    expect(screen.getByRole('heading', { level: 2, name: 'Free' })).toBeTruthy()
+    // 详情不再重复渠道名，改用详情区域的名称标识当前渠道。
+    expect(screen.getByRole('main', { name: 'Free' })).toBeTruthy()
     const detail = screen.getByRole('main')
     const outbound = within(detail).getByRole('group', { name: en.channelOutbound })
     // 只读目录与用户渠道共用「模型目录」标题，出站位于它上方。
@@ -149,7 +150,7 @@ describe('内置渠道与用户渠道并存', () => {
     await mount()
     const rail = screen.getByRole('complementary', { name: en.provider })
     fireEvent.click(within(rail).getByRole('button', { name: 'My gateway' }))
-    expect(screen.getByRole('heading', { level: 2, name: 'My gateway' })).toBeTruthy()
+    expect(screen.getByRole('main', { name: 'My gateway' })).toBeTruthy()
     expect(screen.getByLabelText<HTMLInputElement>(en.baseUrl).value).toBe('https://gateway.example/v1')
     expect(screen.getByRole('button', { name: en.apply })).toBeTruthy()
     // 内置渠道的只读目录不再出现。

@@ -438,23 +438,6 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
     const Customized = props.channelLayout === true ? 'div' : 'details'
     return (
       <>
-        <div className={styles['field']}>
-          <span className={styles['fieldLabel']}>{t('keyInput')}</span>
-          <input
-            className={styles['input']}
-            type="password"
-            autoComplete="off"
-            value={keyDraft}
-            placeholder={keyPlaceholder}
-            aria-label={t('keyInput')}
-            aria-invalid={shownKeyFailure !== undefined}
-            required={props.credentialRequired === true}
-            autoFocus={props.autoFocusCredential === true}
-            disabled={disabled || keyLocked}
-            onChange={(event) => { setKeyDraft(event.target.value) }}
-          />
-          {shownKeyFailure === undefined ? null : <p className={styles['error']}>{t(shownKeyFailure)}</p>}
-        </div>
         {family === 'deepseek' && props.credentialOnly !== true ? (
           <div className={styles['field']}>
             <label className={styles['fieldLabel']} htmlFor={channelNameId}>{t('channelName')}</label>
@@ -477,6 +460,43 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
             )}
           </div>
         ) : null}
+        {props.credentialOnly === true
+          ? null
+          : (
+            <div className={styles['field']}>
+              <span className={styles['fieldLabel']}>{t('baseUrl')}</span>
+              <input
+                className={styles['input']}
+                type="text"
+                value={stringAt(draft, 'baseURL') ?? ''}
+                placeholder={family === 'deepseek'
+                  ? DEEPSEEK_PUBLIC_BASE_URL
+                  : stringAt(fallback, 'baseURL') ?? t('baseUrlDefault')}
+                aria-label={t('baseUrl')}
+                disabled={disabled}
+                onChange={(event) => {
+                  setField('baseURL', event.target.value === '' ? undefined : event.target.value)
+                }}
+              />
+            </div>
+          )}
+        <div className={styles['field']}>
+          <span className={styles['fieldLabel']}>{t('keyInput')}</span>
+          <input
+            className={styles['input']}
+            type="password"
+            autoComplete="off"
+            value={keyDraft}
+            placeholder={keyPlaceholder}
+            aria-label={t('keyInput')}
+            aria-invalid={shownKeyFailure !== undefined}
+            required={props.credentialRequired === true}
+            autoFocus={props.autoFocusCredential === true}
+            disabled={disabled || keyLocked}
+            onChange={(event) => { setKeyDraft(event.target.value) }}
+          />
+          {shownKeyFailure === undefined ? null : <p className={styles['error']}>{t(shownKeyFailure)}</p>}
+        </div>
         {props.credentialOnly === true ? null : <Customized
           className={styles['customized']}
           {...props.channelLayout === true ? {} : {
@@ -515,24 +535,8 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
                 </div>
               )
               : null}
-            <div className={styles['field']}>
-              <span className={styles['fieldLabel']}>{t('baseUrl')}</span>
-              <input
-                className={styles['input']}
-                type="text"
-                value={stringAt(draft, 'baseURL') ?? ''}
-                placeholder={family === 'deepseek'
-                  ? DEEPSEEK_PUBLIC_BASE_URL
-                  : stringAt(fallback, 'baseURL') ?? t('baseUrlDefault')}
-                aria-label={t('baseUrl')}
-                disabled={disabled}
-                onChange={(event) => {
-                  setField('baseURL', event.target.value === '' ? undefined : event.target.value)
-                }}
-              />
-            </div>
-            {/* The protocol sits beside the endpoint it describes, as it does
-                on the create card. */}
+            {/* 上游请求格式属于手工声明的路由本身：它描述的是端点讲哪种协议，
+                与创建表单上的同一字段共用目录选项。 */}
             {ownsIdentity
               ? (
                 <div className={styles['field']}>

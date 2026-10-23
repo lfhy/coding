@@ -1143,20 +1143,12 @@ select.input {
 }
 .channelDetail:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: -2px; }
 .channelEditor { width: 100%; }
-.channelHeading {
+/* 详情不再重复渠道名：只有可删除的渠道才在顶部留一行右对齐的删除入口。 */
+.channelActions {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 36px;
-  margin-bottom: 20px;
-  padding-right: 36px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
-}
-.channelHeading h2 {
-  margin: 0 0 12px;
-  font-size: 18px;
-  line-height: 26px;
-  font-weight: 600;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 .channelFields { display: flex; flex-direction: column; gap: 22px; }
 .channelFields .fieldLabel,
@@ -1253,7 +1245,6 @@ select.input {
     font-size: 13px;
     line-height: 20px;
   }
-  .channelHeading { padding: 24px 28px 0 0; }
 }
 
 /* 内置渠道的只读目录：没有行操作，因此列比可编辑表格少两个按钮列。 */

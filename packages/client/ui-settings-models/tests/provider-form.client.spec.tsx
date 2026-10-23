@@ -210,7 +210,7 @@ async function mountSectionWithCreatedRoute(set?: ReturnType<typeof vi.fn>) {
 function openEditor(provider: string): void {
   const rail = screen.getByRole('complementary', { name: en.provider })
   fireEvent.click(within(rail).getByRole('button', { name: provider }))
-  expect(within(screen.getByRole('main')).getByRole('heading', { level: 2, name: provider })).toBeTruthy()
+  expect(screen.getByRole('main', { name: provider })).toBeTruthy()
 }
 
 /** 添加渠道直接打开居中的自定义渠道表单，右侧保留原详情。 */
@@ -825,10 +825,9 @@ describe('channel directory and detail', () => {
     const rail = screen.getByRole('complementary', { name: en.provider })
     expect(within(rail).getByRole('button', { name: 'openai' }).getAttribute('aria-current')).toBe('true')
     expect(within(rail).queryByRole('button', { name: 'anthropic' })).toBeNull()
-    const detail = screen.getByRole('main')
-    expect(within(detail).getByRole('heading', { name: 'openai' })).toBeTruthy()
+    expect(screen.getByRole('main', { name: 'openai' })).toBeTruthy()
     const dialog = openCustomModal()
-    expect(within(detail).getByRole('heading', { name: 'openai' })).toBeTruthy()
+    expect(screen.getByRole('main', { name: 'openai' })).toBeTruthy()
     expect(within(dialog).queryByRole('button', { name: 'anthropic' })).toBeNull()
     expect(within(dialog).queryByRole('combobox', { name: en.provider })).toBeNull()
     expect(within(dialog).queryByRole('textbox', { name: en.searchProviders })).toBeNull()
@@ -852,7 +851,7 @@ describe('channel directory and detail', () => {
     const rail = screen.getByRole('complementary', { name: en.provider })
     const search = within(rail).getByRole('textbox', { name: en.searchProviders })
     expect(within(rail).getByRole('button', { name: 'openai' }).getAttribute('aria-current')).toBe('true')
-    expect(within(screen.getByRole('main')).getByRole('heading', { level: 2, name: 'openai' })).toBeTruthy()
+    expect(screen.getByRole('main', { name: 'openai' })).toBeTruthy()
     fireEvent.change(search, { target: { value: 'ACME' } })
     expect(within(rail).queryByRole('button', { name: 'openai' })).toBeNull()
     openEditor('acme-gateway')
@@ -1539,7 +1538,7 @@ describe('hand-declared providers', () => {
     await mountSection()
     const rail = screen.getByRole('complementary', { name: en.provider })
     const dialog = openCustomModal()
-    expect(within(screen.getByRole('main')).getByRole('heading', { name: 'openai' })).toBeTruthy()
+    expect(screen.getByRole('main', { name: 'openai' })).toBeTruthy()
     fillCustomChannel()
     nextCustomStep()
     addCustomModel()
@@ -1547,7 +1546,7 @@ describe('hand-declared providers', () => {
     await waitFor(() => { expect(screen.queryByRole('dialog', { name: en.add })).toBeNull() })
     expect(screen.getByRole('button', { name: en.add })).toBeTruthy()
     expect(within(rail).getByRole('button', { name: 'openai' }).getAttribute('aria-current')).toBe('true')
-    expect(within(screen.getByRole('main')).getByRole('heading', { name: 'openai' })).toBeTruthy()
+    expect(screen.getByRole('main', { name: 'openai' })).toBeTruthy()
     expect(within(rail).queryByRole('button', { name: GENERATED_ROUTE })).toBeNull()
   })
 
@@ -1564,7 +1563,7 @@ describe('hand-declared providers', () => {
     const rail = screen.getByRole('complementary', { name: en.provider })
     await waitFor(() => {
       expect(within(rail).getByRole('button', { name: 'Acme Gateway' }).getAttribute('aria-current')).toBe('true')
-      expect(within(screen.getByRole('main')).getByRole('heading', { name: 'Acme Gateway' })).toBeTruthy()
+      expect(screen.getByRole('main', { name: 'Acme Gateway' })).toBeTruthy()
     })
   })
 
@@ -1581,7 +1580,7 @@ describe('hand-declared providers', () => {
     const rail = screen.getByRole('complementary', { name: en.provider })
     await waitFor(() => {
       expect(within(rail).getByRole('button', { name: 'Acme Gateway' }).getAttribute('aria-current')).toBe('true')
-      expect(within(screen.getByRole('main')).getByRole('heading', { name: 'Acme Gateway' })).toBeTruthy()
+      expect(screen.getByRole('main', { name: 'Acme Gateway' })).toBeTruthy()
     })
     expect(mutate).toHaveBeenCalledOnce()
     expect(set).toHaveBeenCalledOnce()
