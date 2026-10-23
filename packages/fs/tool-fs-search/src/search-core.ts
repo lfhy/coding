@@ -31,7 +31,6 @@ import {
   RemoteWorkspaceError,
   verifyRemoteWorkspaceTarget,
 } from 'coding-subprocess'
-import type { RemoteWorkspaceTarget } from 'coding-subprocess'
 import { HarnessError } from 'coding-llm'
 import { ItemRetainer, TextRetainer } from 'coding-output-retention'
 import type { RetainedItems } from 'coding-output-retention'
@@ -330,7 +329,6 @@ function remoteSearchError(toolName: string, error: unknown): SearchError {
 
 function bridgeSearchResponse(
   value: unknown,
-  workspace: RemoteWorkspaceTarget,
   kind: RemoteSearchInput['kind'],
 ): { paths: string[]; matches: GrepMatch[]; truncated: boolean; truncatedBy: string[]; payloadBytes: number } {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error('response is not an object')
@@ -441,7 +439,7 @@ export async function runRemoteSearch(
       pattern: input.pattern,
       ...input.include === undefined ? {} : { include: input.include },
       maxBytes: rawOutputMaxBytes,
-    }, value => bridgeSearchResponse(value, verified, input.kind), exec.signal)
+    }, value => bridgeSearchResponse(value, input.kind), exec.signal)
     if (response.payloadBytes > rawOutputMaxBytes) {
       throw new SearchError(
         `remote search returned ${response.payloadBytes} bytes of raw output, over the ${rawOutputMaxBytes}-byte cap; narrow pattern, path, or include and retry`,
