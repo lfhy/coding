@@ -135,11 +135,12 @@ export abstract class FileSystem extends Service {
   abstract fileUrl(target: FsTarget): string
 
   /**
-   * Test canonical containment without exposing or parsing backend target
-   * keys. Both targets must come from this provider.
-   * @param parent - canonical directory target.
-   * @param child - canonical candidate target.
-   * @returns true when `child` is `parent` or a descendant of it.
+   * 在不暴露或解析后端 target key 的前提下判断规范化包含关系；两个目标必须来自
+   * 同一提供方。对远端后端，包含关系仍以工作区根为界：后端可以访问根外路径
+   * （例如 Remote-SSH 的整台远端主机），但可写围栏与工作区归属仍按根判断。
+   * @param parent - 规范化目录目标。
+   * @param child - 待判断的规范化目标。
+   * @returns `child` 等于 `parent` 或是其后代时为 true。
    */
   abstract contains(parent: FsTarget, child: FsTarget): boolean
 
