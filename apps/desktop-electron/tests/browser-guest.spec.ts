@@ -498,6 +498,27 @@ describe('Electron 实时浏览器 guest', () => {
     await manager.dispose()
   })
 
+  it('宿主在后台时模型点击仍经 CDP 落到 guest，不依赖系统焦点', async () => {
+    const hostState = { focused: false }
+    const window = fixture(hostState)
+    const manager = createBrowserGuestManager(window)
+    const navigated = await manager.execute('s1', { kind: 'navigate', url: 'https://example.com/' })
+    manager.present({ sessionId: 's1', tabId: navigated.observation.tabId, visible: true,
+      bounds: { x: 0, y: 0, width: 500, height: 400 } })
+    await manager.lease('s1')
+    const guest = electron.views[0]!.webContents
+    const shield = electron.views[1]!
+    const capture = await manager.execute('s1', { kind: 'snapshot' })
+    const clicked = await manager.execute('s1', { kind: 'click', ref: 'e1', revision: capture.observation.revision })
+    // 模型输入走 guest 自己的 CDP 通道，与屏障是否持有系统键盘焦点无关。
+    expect(guest.debugger.sendCommand).toHaveBeenCalledWith('Input.dispatchMouseEvent',
+      expect.objectContaining({ type: 'mousePressed' }))
+    expect(clicked.observation.cursor).toMatchObject({ kind: 'click' })
+    expect(shield.webContents.focus).not.toHaveBeenCalled()
+    await manager.release('s1')
+    await manager.dispose()
+  })
+
   it('移动动画后按目标当前位置点击，覆盖视图不参与观测', async () => {
     const window = fixture()
     const manager = createBrowserGuestManager(window)
