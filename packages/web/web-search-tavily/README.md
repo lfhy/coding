@@ -9,9 +9,9 @@ Tavily 的专用搜索端点提供 `WebSearchProvider`，以 `tavily` 登记到 
 | `apiKey` | 未设置 | 非空字面密钥；优先于凭据引用，配置描述会遮蔽它。 |
 | `apiKeyEnv` | `TAVILY_API_KEY` | 逐次解析的凭据引用。已挂载 `ctx.credentials` 时只查询它，否则读取启动环境。 |
 | `baseURL` | `https://api.tavily.com` | 独立端点基址，追加 `/search`；只允许至少两个非空域名标签、无凭据、查询和片段的公共 HTTPS 主机，拒绝 IP、localhost、`.local` 和 `.internal`。 |
-| `proxyURL` | 未设置 | 仅此 Host 搜索使用的 HTTP(S) 前向代理；允许 loopback/IP，不允许 URL 内凭据、查询和片段。 |
+| `outbound` | `{ mode: 'direct' }` | 仅此 Host 搜索使用的出站：`direct`（直连）、`pool`（内置代理池，按池自己的出站规则）或 `custom`（自定义 http(s) 代理；允许 loopback/IP，不允许 URL 内凭据、查询和片段）。 |
 
-配置属于 `web-search-tavily` 设置区，保存后的值在下一次搜索生效。每次请求锁定同一份配置与解析所得密钥；代理 dispatcher 只在本次请求使用，响应处理完即释放。未设置代理时使用原生 fetch；环境代理或其他插件的代理设置不会自动成为此配置。
+配置属于 `web-search-tavily` 设置区，保存后的值在下一次搜索生效。每次请求锁定同一份配置与解析所得密钥；代理 dispatcher 只在本次请求使用，响应处理完即释放。出站选择经[共享出站契约](../../net/proxy-pool/README.md#共享出站契约)解析：选 `pool` 时取 `ctx.get('proxyPool')` 的地址，池未装配或池规则为直连时回落直连；`custom` 只用本提供方保存的地址，不受池规则影响。未配置出站时使用原生 fetch；环境代理或其他插件的代理设置不会自动成为此配置。
 
 请求向 `${baseURL}/search` 发送 `Authorization: Bearer`、`query`、`max_results`、`search_depth: basic`、`include_answer: false` 和 `include_raw_content: false`。结果数来自 web 请求的 `maxResults`，缺省为 8，并限制在 Tavily 的 20 项上限。响应的 `results[]` 必须合法，最多映射 20 个来源；每项的 HTTP(S) `url` 不超过 2048 字符，并在拒绝空白、控制字符后规范化与去重，Markdown 链接定界符会编码；可选 `title`、`content` 和 `published_date` 经校验后映射为 `url`、最多 200 字符的 `title`、最多 500 字符的 `snippet` 和 ISO-8601 `publishedAt`，无法解析的发布日期省略。标题和摘要会压平空白并截断，标题中的方括号与反斜杠会移除，避免破坏链接标签。Tavily 的生成答案不进入结果。参见 [Tavily Search API](https://docs.tavily.com/documentation/api-reference/endpoint/search)。
 

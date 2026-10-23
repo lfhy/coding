@@ -147,7 +147,7 @@ async function readBounded(response: Response | UndiciResponse): Promise<string>
 export class DuckDuckGoSearchProvider implements WebSearchProvider {
   readonly id = DUCKDUCKGO_PROVIDER_ID
 
-  /** @param resolveProxyURL - 单次搜索开始时读取最新设置；缺省时直连。 */
+  /** @param resolveProxyURL - 单次搜索开始时解析出站（提供方选择 + 池规则）；返回 `undefined` 即直连。 */
   constructor(private readonly resolveProxyURL: () => string | undefined = () => undefined) {}
 
   available(): boolean { return true }
@@ -164,10 +164,8 @@ export class DuckDuckGoSearchProvider implements WebSearchProvider {
     }
     const url = new URL('/html/', SEARCH_ORIGIN)
     url.searchParams.set('q', request.query)
+    // 出站地址由共享契约解析（提供方选择 + 池规则）；直连时保留原生 fetch 传输。
     const proxyURL = this.resolveProxyURL()
-    if (proxyURL !== undefined && !isValidProxyURL(proxyURL)) {
-      throw new WebError('DuckDuckGo proxy URL must be an HTTP(S) URL without credentials, query, or fragment', 'WEB_PROVIDER_ERROR')
-    }
     const dispatcher = proxyURL === undefined ? undefined : new ProxyAgent(proxyURL)
     let bodyConsumed = false
     try {

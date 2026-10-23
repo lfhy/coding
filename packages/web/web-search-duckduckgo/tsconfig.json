@@ -6,6 +6,7 @@
     { "path": "../../../vendor/cordis" },
     { "path": "../web" },
     { "path": "../../settings/settings" },
+    { "path": "../../net/proxy-pool" },
     { "path": "../../runtime-diagnostics/invariants" }
   ]
 }

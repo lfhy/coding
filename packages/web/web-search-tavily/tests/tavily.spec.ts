@@ -272,13 +272,58 @@ describe('Tavily live settings and proxy', () => {
       for (const baseURL of ['https://intranet', 'https://foo..example.com']) {
         await expect(ctx.settings.update(WEB_SEARCH_TAVILY_SETTINGS_NAMESPACE, { baseURL })).rejects.toThrow()
       }
-      for (const proxyURL of ['http://user:pw@127.0.0.1:8080', 'http://@127.0.0.1:8080', 'socks5://127.0.0.1:1080', 'http://127.0.0.1:8080/?token=x']) {
-        await expect(ctx.settings.update(WEB_SEARCH_TAVILY_SETTINGS_NAMESPACE, { proxyURL })).rejects.toThrow()
+      for (const customUrl of ['http://user:pw@127.0.0.1:8080', 'http://@127.0.0.1:8080', 'socks5://127.0.0.1:1080', 'http://127.0.0.1:8080/?token=x']) {
+        await expect(ctx.settings.update(WEB_SEARCH_TAVILY_SETTINGS_NAMESPACE, { outbound: { mode: 'custom', customUrl } })).rejects.toThrow()
       }
+      // custom 缺地址在共享契约处拒绝，错误点名本提供方的出站配置。
+      await expect(ctx.settings.update(WEB_SEARCH_TAVILY_SETTINGS_NAMESPACE, { outbound: { mode: 'custom' } })).rejects.toThrow(/web-search-tavily.outbound/)
       await fiber.dispose()
       expect(ctx.settings.describe().map(row => String(row.ns))).not.toContain('web-search-tavily')
       await expect(ctx.web.search({ query: 'q' })).rejects.toMatchObject({ code: 'WEB_PROVIDER_CONFIGURED_MISSING' })
     } finally { await ctx.fiber.dispose() }
+  })
+
+  it('resolves the outbound through the proxy pool contract', async () => {
+    const targets: string[] = []
+    const proxy = createServer().on('connect', (request, socket) => {
+      targets.push(request.url ?? '')
+      socket.end('HTTP/1.1 407 Proxy Authentication Required\r\nConnection: close\r\nContent-Length: 0\r\n\r\n')
+    })
+    await new Promise<void>((resolve) => { proxy.listen(0, '127.0.0.1', resolve) })
+    const ctx = new Context()
+    try {
+      await ctx.plugin(WebRuntime, { searchProvider: 'tavily' })
+      await ctx.plugin(MemorySettings).await()
+      await ctx.plugin(plugin, { apiKey: 'literal', baseURL: 'https://tavily.entry.test' }).await()
+      const port = (proxy.address() as AddressInfo).port
+      const disposePool = ctx.provide('proxyPool', { proxyURL: () => `http://127.0.0.1:${port}` })
+      // 未配置出站时直连：请求由原生 fetch 完成，不经过任何代理。
+      const direct = vi.fn(async () => json(answer))
+      vi.stubGlobal('fetch', direct)
+      await ctx.web.search({ query: 'direct' })
+      expect(direct).toHaveBeenCalledTimes(1)
+      expect(targets).toEqual([])
+      // mode: pool 时取池地址；custom 时用自己的地址且不受池规则影响。
+      for (const outbound of [{ mode: 'pool' as const }, { mode: 'custom' as const, customUrl: `http://127.0.0.1:${port}` }]) {
+        vi.stubGlobal('fetch', vi.fn(async () => json(answer)))
+        await ctx.settings.update(WEB_SEARCH_TAVILY_SETTINGS_NAMESPACE, { outbound })
+        await expect(ctx.web.search({ query: 'proxied' })).rejects.toMatchObject({ code: 'WEB_PROVIDER_ERROR' })
+        expect(targets).toEqual(['tavily.entry.test:443'])
+        targets.length = 0
+      }
+      // 清空出站后下一次请求即回到直连。
+      await ctx.settings.replace(WEB_SEARCH_TAVILY_SETTINGS_NAMESPACE, {})
+      await ctx.web.search({ query: 'back-to-direct' })
+      expect(targets).toEqual([])
+      disposePool()
+    } finally {
+      vi.unstubAllGlobals()
+      await ctx.fiber.dispose()
+      await new Promise<void>((resolve, reject) => proxy.close((error) => {
+        if (error === undefined) resolve()
+        else reject(error)
+      }))
+    }
   })
 
   it('sends a real CONNECT to the configured proxy and never silently bypasses it', async () => {
@@ -290,7 +335,7 @@ describe('Tavily live settings and proxy', () => {
     await new Promise<void>((resolve) => { proxy.listen(0, '127.0.0.1', resolve) })
     try {
       const port = (proxy.address() as AddressInfo).port
-      await expect(provider({ ...options, proxyURL: `http://127.0.0.1:${port}` }).search({ query: 'q' }))
+      await expect(provider({ ...options, resolveProxyURL: () => `http://127.0.0.1:${port}` }).search({ query: 'q' }))
         .rejects.toMatchObject({ code: 'WEB_PROVIDER_ERROR' })
       expect(hits).toEqual(['api.tavily.test:443'])
     } finally {
@@ -315,7 +360,7 @@ describe('Tavily live settings and proxy', () => {
     try {
       const port = (proxy.address() as AddressInfo).port
       const controller = new AbortController()
-      const search = provider({ ...options, proxyURL: `http://127.0.0.1:${port}` })
+      const search = provider({ ...options, resolveProxyURL: () => `http://127.0.0.1:${port}` })
         .search({ query: 'q' }, controller.signal)
       await reached
       controller.abort(new Error('cancelled'))
@@ -347,7 +392,7 @@ describe('Tavily live settings and proxy', () => {
     try {
       const controller = new AbortController()
       const port = (proxy.address() as AddressInfo).port
-      const search = provider({ ...options, proxyURL: `http://127.0.0.1:${port}` })
+      const search = provider({ ...options, resolveProxyURL: () => `http://127.0.0.1:${port}` })
         .search({ query: 'q' }, controller.signal)
       await entered
       controller.abort(new Error('stop close'))

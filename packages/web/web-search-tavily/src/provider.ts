@@ -5,6 +5,7 @@ import { fetch as proxyFetch, ProxyAgent } from 'undici'
 import { WebError } from 'coding-web'
 import type { WebSearchProvider, WebSearchRequest, WebSearchResult, WebSearchSource } from 'coding-web'
 import type { CredentialRef } from 'coding-credentials'
+import type { OutboundConfig } from 'coding-proxy-pool'
 
 /** 稳定的搜索提供方 id。 */
 export const TAVILY_PROVIDER_ID = 'tavily'
@@ -60,6 +61,12 @@ export function isSafeProxyUrl(raw: string): boolean {
   }
 }
 
+/** 出站选择是否可用于一次搜索；自定义地址缺地址或形态不安全时返回 false。 */
+function isUsableOutbound(outbound: OutboundConfig | undefined): boolean {
+  if (outbound === undefined || outbound.mode !== 'custom') return true
+  return outbound.customUrl !== undefined && isSafeProxyUrl(outbound.customUrl)
+}
+
 /** 单次操作快照，配置变化不会让密钥被投递到下一版端点。 */
 export interface TavilySearchProviderOptions {
   /** 非空密钥字面值优先于解析器。 */
@@ -70,8 +77,10 @@ export interface TavilySearchProviderOptions {
   apiKeyEnv?: CredentialRef
   /** 搜索 API 基址。 */
   baseURL: string
-  /** 本次搜索专用的 HTTP(S) 前向代理。 */
-  proxyURL?: string
+  /** 提供方自己的出站选择，只用于可用性判断；缺省直连。 */
+  outbound?: OutboundConfig
+  /** 本次搜索的出站地址（提供方选择 + 代理池规则）；返回 `undefined` 即直连。 */
+  resolveProxyURL?: () => string | undefined
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -201,7 +210,7 @@ export class TavilySearchProvider implements WebSearchProvider {
     const options = this.resolveOptions()
     return (Boolean(options.apiKey) || options.resolveApiKey !== undefined)
       && isSafeBaseUrl(options.baseURL)
-      && (options.proxyURL === undefined || isSafeProxyUrl(options.proxyURL))
+      && isUsableOutbound(options.outbound)
   }
 
   /**
@@ -216,9 +225,6 @@ export class TavilySearchProvider implements WebSearchProvider {
     const options = this.resolveOptions()
     if (!isSafeBaseUrl(options.baseURL)) {
       throw new WebError('Tavily search endpoint must be a public HTTPS URL without credentials, query, or fragment', 'WEB_PROVIDER_ERROR')
-    }
-    if (options.proxyURL !== undefined && !isSafeProxyUrl(options.proxyURL)) {
-      throw new WebError('Tavily search proxy must be an HTTP(S) URL without credentials, query, or fragment', 'WEB_PROVIDER_ERROR')
     }
     if (request.maxResults !== undefined && (!Number.isInteger(request.maxResults) || request.maxResults < 1)) {
       throw new WebError('Tavily maxResults must be a positive integer', 'WEB_PROVIDER_ERROR')
@@ -254,7 +260,8 @@ export class TavilySearchProvider implements WebSearchProvider {
       }),
       ...signal !== undefined ? { signal } : {},
     } as const
-    const agent = options.proxyURL === undefined ? undefined : new ProxyAgent(options.proxyURL)
+    const proxyURL = options.resolveProxyURL?.()
+    const agent = proxyURL === undefined ? undefined : new ProxyAgent(proxyURL)
     const destroyOnAbort = (): void => { void agent?.destroy() }
     signal?.addEventListener('abort', destroyOnAbort, { once: true })
     try {

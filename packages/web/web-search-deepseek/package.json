@@ -39,7 +39,8 @@
     "coding-session": "workspace:^",
     "coding-web": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^",
-    "coding-settings": "workspace:^"
+    "coding-settings": "workspace:^",
+    "coding-proxy-pool": "workspace:^"
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "workspace:^",
@@ -54,6 +55,7 @@
     "coding-session": "workspace:^",
     "coding-web": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^",
-    "coding-settings": "workspace:^"
+    "coding-settings": "workspace:^",
+    "coding-proxy-pool": "workspace:^"
   }
 }

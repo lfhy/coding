@@ -68,11 +68,12 @@ describe('DuckDuckGo provider', () => {
     }
   })
 
-  it('rejects an invalid composition proxy at request time before network dispatch', async () => {
+  it('sends a composition-time outbound address without further validation', async () => {
     const directFetch = vi.fn()
     vi.stubGlobal('fetch', directFetch)
     await expect(new DuckDuckGoSearchProvider(() => 'http://user:pass@localhost:8080').search({ query: 'q' }))
       .rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_ERROR' }))
+    // 地址形态校验收敛到设置分节的 validate；请求期只消费共享契约解析出的地址。
     expect(directFetch).not.toHaveBeenCalled()
   })
 
@@ -94,7 +95,7 @@ describe('DuckDuckGo provider', () => {
       await (await ctx.plugin(duckduckgoPlugin)).await()
       expect(await ctx.web.search({ query: 'first' })).toMatchObject({ sources: [{ url: 'https://example.com/post?a=1' }] })
 
-      await ctx.settings.update(WEB_SEARCH_DUCKDUCKGO_SETTINGS_NAMESPACE, { proxyURL })
+      await ctx.settings.update(WEB_SEARCH_DUCKDUCKGO_SETTINGS_NAMESPACE, { outbound: { mode: 'custom', customUrl: proxyURL } })
       await expect(ctx.web.search({ query: 'second' })).rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_ERROR' }))
       expect(targets).toEqual(['html.duckduckgo.com:443'])
       expect(directFetch).toHaveBeenCalledTimes(1)
@@ -108,6 +109,47 @@ describe('DuckDuckGo provider', () => {
     }
   })
 
+  it('resolves the outbound through the proxy pool contract', async () => {
+    const targets: string[] = []
+    const proxy = createServer()
+    proxy.on('connect', (request, socket) => {
+      targets.push(request.url ?? '')
+      socket.end('HTTP/1.1 407 Proxy Authentication Required\r\nContent-Length: 0\r\nConnection: close\r\n\r\n')
+    })
+    await new Promise<void>(resolve => proxy.listen(0, '127.0.0.1', resolve))
+    const proxyURL = `http://127.0.0.1:${String((proxy.address() as AddressInfo).port)}`
+    const ctx = new Context()
+    try {
+      await ctx.plugin(WebRuntime, { searchProvider: 'duckduckgo' })
+      await (await ctx.plugin(MemorySettings)).await()
+      await (await ctx.plugin(duckduckgoPlugin)).await()
+      const disposePool = ctx.provide('proxyPool', { proxyURL: () => proxyURL })
+      // 未配置出站时直连：请求由原生 fetch 完成，不经过任何代理。
+      const direct = vi.fn(async () => new Response(HTML, { headers: { 'content-type': 'text/html' } }))
+      vi.stubGlobal('fetch', direct)
+      await ctx.web.search({ query: 'direct' })
+      expect(direct).toHaveBeenCalledTimes(1)
+      expect(targets).toEqual([])
+      // mode: pool 时取池地址；custom 时用自己的地址且不受池规则影响。
+      for (const outbound of [{ mode: 'pool' as const }, { mode: 'custom' as const, customUrl: proxyURL }]) {
+        await ctx.settings.update(WEB_SEARCH_DUCKDUCKGO_SETTINGS_NAMESPACE, { outbound })
+        await expect(ctx.web.search({ query: 'proxied' })).rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_ERROR' }))
+        expect(targets).toEqual(['html.duckduckgo.com:443'])
+        targets.length = 0
+      }
+      // 清空出站后下一次请求即回到直连。
+      await ctx.settings.replace(WEB_SEARCH_DUCKDUCKGO_SETTINGS_NAMESPACE, {})
+      await ctx.web.search({ query: 'back-to-direct' })
+      expect(direct).toHaveBeenCalledTimes(2)
+      expect(targets).toEqual([])
+      disposePool()
+    } finally {
+      vi.unstubAllGlobals()
+      await ctx.fiber.dispose()
+      await new Promise<void>((resolve) => { proxy.close(() => { resolve() }) })
+    }
+  })
+
   it('rejects invalid settings before persistence and releases its namespace on unload', async () => {
     const ctx = new Context()
     try {
@@ -115,9 +157,11 @@ describe('DuckDuckGo provider', () => {
       await (await ctx.plugin(MemorySettings)).await()
       const fiber = await ctx.plugin(duckduckgoPlugin)
       await fiber.await()
-      for (const proxyURL of ['http://user:password@localhost:8080', 'http://localhost:8080?key=secret', 'https://localhost#fragment', 'socks5://localhost:1080']) {
-        await expect(ctx.settings.update(WEB_SEARCH_DUCKDUCKGO_SETTINGS_NAMESPACE, { proxyURL })).rejects.toThrow()
+      for (const customUrl of ['http://user:password@localhost:8080', 'http://localhost:8080?key=secret', 'https://localhost#fragment', 'socks5://localhost:1080']) {
+        await expect(ctx.settings.update(WEB_SEARCH_DUCKDUCKGO_SETTINGS_NAMESPACE, { outbound: { mode: 'custom', customUrl } })).rejects.toThrow()
       }
+      // custom 缺地址在共享契约处拒绝，错误点名本提供方的出站配置。
+      await expect(ctx.settings.update(WEB_SEARCH_DUCKDUCKGO_SETTINGS_NAMESPACE, { outbound: { mode: 'custom' } })).rejects.toThrow(/web-search-duckduckgo.outbound/)
       expect(ctx.settings.describe().find(row => row.ns === WEB_SEARCH_DUCKDUCKGO_SETTINGS_NAMESPACE)?.user).toBeUndefined()
       await fiber.dispose()
       expect(ctx.settings.describe().map(row => row.ns)).not.toContain(WEB_SEARCH_DUCKDUCKGO_SETTINGS_NAMESPACE)

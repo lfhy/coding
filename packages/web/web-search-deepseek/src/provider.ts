@@ -16,6 +16,7 @@ import type {
   WebSearchSource,
 } from 'coding-web'
 import type { CredentialRef } from 'coding-credentials'
+import type { OutboundConfig } from 'coding-proxy-pool'
 import type {} from 'coding-session'
 import type {
   AnthropicError,
@@ -70,6 +71,12 @@ export function isSafeProxyUrl(raw: string): boolean {
   } catch {
     return false
   }
+}
+
+/** 出站选择是否可用于一次搜索；自定义地址缺地址或形态不安全时返回 false。 */
+function isUsableOutbound(outbound: OutboundConfig | undefined): boolean {
+  if (outbound === undefined || outbound.mode !== 'custom') return true
+  return outbound.customUrl !== undefined && isSafeProxyUrl(outbound.customUrl)
 }
 
 function redactCredential(message: string, apiKey: string): string {
@@ -144,8 +151,10 @@ export interface DeepSeekSearchProviderOptions {
   apiKeyEnv?: CredentialRef
   /** 端点基址；请求会追加 `/messages`。 */
   baseURL: string
-  /** 当前搜索的 HTTP(S) 前向代理；缺省时保留原生 fetch 传输。 */
-  proxyURL?: string
+  /** 提供方自己的出站选择，只用于可用性判断；缺省直连。 */
+  outbound?: OutboundConfig
+  /** 本次搜索的出站地址（提供方选择 + 代理池规则）；返回 `undefined` 即直连。 */
+  resolveProxyURL?: () => string | undefined
   /** Anthropic-format model name. */
   model: string
   /** `anthropic-version` header value. */
@@ -242,7 +251,7 @@ export class DeepSeekSearchProvider implements WebSearchProvider {
     const options = this.resolveOptions()
     return ((options.apiKey?.length ?? 0) > 0 || options.resolveApiKey !== undefined)
       && isSafeBaseUrl(options.baseURL)
-      && (options.proxyURL === undefined || isSafeProxyUrl(options.proxyURL))
+      && isUsableOutbound(options.outbound)
       && isPositiveInteger(options.maxTokens)
       && isPositiveInteger(options.maxUses)
   }
@@ -256,9 +265,6 @@ export class DeepSeekSearchProvider implements WebSearchProvider {
     throwIfSearchAborted(signal)
     if (!isSafeBaseUrl(options.baseURL)) {
       throw new WebError('DeepSeek search endpoint must be an HTTPS URL without credentials, query, or fragment', 'WEB_PROVIDER_ERROR')
-    }
-    if (options.proxyURL !== undefined && !isSafeProxyUrl(options.proxyURL)) {
-      throw new WebError('DeepSeek search proxy must be an HTTP(S) URL without credentials, query, or fragment', 'WEB_PROVIDER_ERROR')
     }
     const endpoint = `${options.baseURL.replace(/\/+$/, '')}/messages`
     const body: DeepSeekSearchLlmRequest['body'] = {
@@ -291,7 +297,8 @@ export class DeepSeekSearchProvider implements WebSearchProvider {
       body: JSON.stringify(body),
       ...signal !== undefined ? { signal } : {},
     } satisfies SearchRequestInit
-    const proxyAgent = options.proxyURL === undefined ? undefined : new ProxyAgent(options.proxyURL)
+    const proxyURL = options.resolveProxyURL?.()
+    const proxyAgent = proxyURL === undefined ? undefined : new ProxyAgent(proxyURL)
     const destroyOnAbort = (): void => { void proxyAgent?.destroy() }
     signal?.addEventListener('abort', destroyOnAbort, { once: true })
     try {

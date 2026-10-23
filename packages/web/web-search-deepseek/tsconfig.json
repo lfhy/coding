@@ -36,6 +36,9 @@
       "path": "../../settings/settings"
     },
     {
+      "path": "../../net/proxy-pool"
+    },
+    {
       "path": "../../runtime-diagnostics/invariants"
     }
   ]

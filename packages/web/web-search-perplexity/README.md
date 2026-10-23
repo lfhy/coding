@@ -13,6 +13,7 @@
 | `model` | `sonar` | 搜索模型名称。 |
 | `maxTokens` | `1024` | 生成答案 token 上限（`max_tokens`）。必须是正整数。 |
 | `searchRecency` | （未设置） | 以 `search_recency_filter` 发送的新近程度窗口：`day`、`week`、`month` 或 `year`。未设置时不发送过滤条件。 |
+| `outbound` | `{ mode: 'direct' }` | 搜索请求的出站：`direct`（直连）、`pool`（内置代理池，按池自己的出站规则，经[共享出站契约](../../net/proxy-pool/README.md#共享出站契约)解析）或 `custom`（自定义 http(s) 代理地址）。池未装配或池规则为直连时回落直连；`custom` 只用本提供方保存的地址。 |
 
 ```yaml
 - id: web-search-perplexity

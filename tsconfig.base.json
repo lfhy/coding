@@ -72,6 +72,7 @@
       "coding-memory-local": ["./packages/memory/memory-local/src/index.ts"],
       "coding-memory-context": ["./packages/memory/memory-context/src/index.ts"],
       "coding-tool-memory": ["./packages/memory/tool-memory/src/index.ts"],
+      "coding-proxy-pool": ["./packages/net/proxy-pool/src/index.ts"],
       "coding-pwsh-local": ["./packages/shell/pwsh-local/src/index.ts"],
       "coding-tool-pwsh": ["./packages/shell/tool-pwsh/src/index.ts"],
       "coding-shell-env": ["./packages/shell/shell-env/src/index.ts"],

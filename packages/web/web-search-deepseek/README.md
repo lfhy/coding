@@ -19,7 +19,7 @@ Exa 和 Perplexity 提供专用搜索端点，DeepSeek 则没有。该提供方�
 | `apiKey` | 未设置 | DeepSeek API 密钥字面值。优先使用 `apiKeyEnv`，避免密钥进入配置；非空字面值优先。 |
 | `apiKeyEnv` | `DEEPSEEK_SEARCH_API_KEY` | 每次搜索通过 `ctx.credentials` 解析搜索专用引用；没有该 seam 时则从进程环境解析。值缺失时以 `WEB_PROVIDER_CREDENTIAL_MISSING` 失败。 |
 | `baseURL` | `https://api.deepseek.com/anthropic/v1` | Anthropic 兼容端点基址；追加 `/messages`。缺省时回退到 `$DEEPSEEK_SEARCH_BASE_URL`；设置只接受无用户信息、查询、片段及内网字面主机名的 HTTPS URL。 |
-| `proxyURL` | 未设置 | 本提供方搜索请求使用的 HTTP(S) 前向代理地址，可指向本机或 IP；拒绝用户信息、查询和片段。缺省时沿用原生请求传输，不读取代理环境变量或修改全局代理。 |
+| `outbound` | `{ mode: 'direct' }` | 本提供方搜索请求的出站：`direct`（直连）、`pool`（内置代理池，按池自己的出站规则）或 `custom`（自定义 http(s) 代理地址，可指向本机或 IP；拒绝用户信息、查询和片段）。缺省时沿用原生请求传输，不读取代理环境变量或修改全局代理。 |
 | `model` | `deepseek-v4-flash` | Anthropic 格式模型名称。 |
 | `apiVersion` | `2023-06-01` | `anthropic-version` 标头值。 |
 | `maxTokens` | `4096` | Messages 请求生成 token 的正整数上限。 |
@@ -31,10 +31,12 @@ Exa 和 Perplexity 提供专用搜索端点，DeepSeek 则没有。该提供方�
   config:
     apiKeyEnv: DEEPSEEK_SEARCH_API_KEY
     baseURL: https://search.example.com/anthropic/v1
-    proxyURL: http://127.0.0.1:8080
+    outbound:
+      mode: custom
+      customUrl: http://127.0.0.1:8080
 ```
 
-上面的条目是 `web-search-deepseek` Settings 段的 base 层：叠加其上的用户层会作用于**下一次**搜索，因为提供方是按次投影该段，而不是在注册时固化它。一次搜索中的端点、代理和凭据选项来自同一份快照；切换代理不会修改其他提供方的连接。`apiKey` 带有 `role('secret')`，所以它在任何一层都不会出现在 `describe()` 响应中——配置表层只能知道 credentials 领域是否为 `apiKeyEnv` 所命名的引用持有值，而无从知道某一层是否带着字面密钥。
+上面的条目是 `web-search-deepseek` Settings 段的 base 层：叠加其上的用户层会作用于**下一次**搜索，因为提供方是按次投影该段，而不是在注册时固化它。一次搜索中的端点、出站和凭据选项来自同一份快照；切换出站不会修改其他提供方的连接。出站选择经[共享出站契约](../../net/proxy-pool/README.md#共享出站契约)解析：选 `pool` 时取 `ctx.get('proxyPool')` 的地址，池未装配或池规则为直连时回落直连；`custom` 只用本提供方保存的地址，不受池规则影响。`apiKey` 带有 `role('secret')`，所以它在任何一层都不会出现在 `describe()` 响应中——配置表层只能知道 credentials 领域是否为 `apiKeyEnv` 所命名的引用持有值，而无从知道某一层是否带着字面密钥。
 
 ## 映射
 

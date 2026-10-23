@@ -85,9 +85,12 @@ Free 渠道自己的出站方式保存在 `llm-opencode` 设置分节，取值�
 `pool`（内置代理池）或 `custom`（自定义代理地址 `customUrl`）。它在**设置 → 模型**
 的 Free 渠道详情里编辑，经 `resolveOutbound` 在每次请求时读取，改动不需要重建注册。
 
-选择内置代理池时使用池自己的出站控制（`proxy-pool` 设置分节）：池为直连或池服务
-缺席时本渠道回落直连，池为 `proxy` 时用本地入站地址，池为自定义代理时用池配置的地址；
-任何情况都不让请求失败。自定义代理要求 `customUrl` 以 `http://` 或 `https://` 开头。
+选择的类型、schema 与地址解析来自 `coding-proxy-pool` 的[共享出站契约](../../net/proxy-pool/README.md#共享出站契约)，
+与 DeepSeek 渠道及联网搜索提供方共用同一套规则：选 `pool` 时按池自己的出站控制
+（`proxy-pool` 设置分节）取地址，池为直连或池服务缺席时本渠道回落直连，任何情况都不
+让请求失败；`custom` 只用本渠道保存的地址，不受池规则影响，且要求 `customUrl` 以
+`http://` 或 `https://` 开头。地址解析后经 undici 全局 dispatcher 替换生效（见
+`src/outbound.ts` 的说明），Free 渠道的串行请求不受并发覆盖限制影响。
 
 ## 错误分类
 

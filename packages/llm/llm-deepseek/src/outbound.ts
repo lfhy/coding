@@ -6,18 +6,16 @@
  * 直连或池服务缺席时回落直连。直连不注入 dispatcher；代理池与自定义代理按
  * 地址复用 `ProxyAgent`，避免每条请求新建连接池。
  *
+ * 出站选择的类型与解析规则归 `coding-proxy-pool`：这里只保留渠道自己的
+ * dispatcher 生命周期，`DeepSeekOutboundConfig` 是对共享 `OutboundConfig` 的
+ * 重命名导出，供本包既有消费者继续使用。
+ *
  * @module coding-llm-deepseek/outbound
  */
 
 import { ProxyAgent } from 'undici'
 
-/** 渠道级出站选择（设置分节里保存的形态）。 */
-export interface DeepSeekOutboundConfig {
-  /** 直连、内置代理池或自定义代理。 */
-  mode: 'direct' | 'pool' | 'custom'
-  /** 自定义模式的 http(s) 代理地址；其余模式省略。 */
-  customUrl?: string
-}
+export type { OutboundConfig as DeepSeekOutboundConfig } from 'coding-proxy-pool'
 
 /** 一次请求实际使用的出站。 */
 export type DeepSeekOutbound =

@@ -1,0 +1,45 @@
+{
+  "name": "coding-web-search-firecrawl",
+  "description": "Firecrawl-backed search provider for the web capability seam, with an optional API key and the official keyless tier",
+  "version": "0.1.0-rc.8",
+  "publishConfig": { "access": "public" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/web/web-search-firecrawl"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" },
+    "./invariant": { "types": "./lib/types/invariant.d.ts", "default": "./lib/invariant.js" },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": ["lib/index.js", "lib/invariant.js", "lib/types/**/*.d.ts"],
+  "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-launch-environment": "workspace:^",
+    "coding-proxy-pool": "workspace:^",
+    "coding-settings": "workspace:^",
+    "coding-web": "workspace:^"
+  },
+  "dependencies": { "@deepseek-ai/schemastery": "workspace:^", "undici": "^8.10.2" },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/cordis-plugin-include": "workspace:^",
+    "@deepseek-ai/cordis-plugin-loader": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-launch-environment": "workspace:^",
+    "coding-llm": "workspace:^",
+    "coding-proxy-pool": "workspace:^",
+    "coding-settings": "workspace:^",
+    "coding-system-prompt": "workspace:^",
+    "coding-tool-web": "workspace:^",
+    "coding-tools": "workspace:^",
+    "coding-web": "workspace:^"
+  }
+}

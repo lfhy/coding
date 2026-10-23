@@ -9,6 +9,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {} from 'coding-agent'
 import { credentialRef } from 'coding-credentials'
+import { assertUsableOutbound, OutboundConfigSchema, resolveOutboundURL } from 'coding-proxy-pool'
+import type { OutboundConfig } from 'coding-proxy-pool'
 import { installSettingsSection, settingsNamespace } from 'coding-settings'
 import { launchEnvironmentOf } from 'coding-launch-environment'
 import type {} from 'coding-session'
@@ -52,8 +54,8 @@ export interface Config {
   apiKeyEnv?: string
   /** Anthropic 兼容端点基址；请求会追加 `/messages`。 */
   baseURL?: string
-  /** 仅当前搜索使用的 HTTP(S) 前向代理地址。 */
-  proxyURL?: string
+  /** 仅当前搜索使用的出站：直连（缺省）、内置代理池或自定义代理。 */
+  outbound?: OutboundConfig
   /** Anthropic-format model name. Defaults to `deepseek-v4-flash`. */
   model?: string
   /** `anthropic-version` header value. Defaults to `2023-06-01`. */
@@ -68,7 +70,7 @@ export const Config: z<Config> = z.object({
   apiKey: z.string().role('secret'),
   apiKeyEnv: z.string().role('credential-ref').default(DEFAULT_API_KEY_ENV),
   baseURL: z.string(),
-  proxyURL: z.string(),
+  outbound: OutboundConfigSchema,
   model: z.string().default(DEEPSEEK_DEFAULT_MODEL),
   apiVersion: z.string().default(DEEPSEEK_DEFAULT_API_VERSION),
   maxTokens: z.number().step(1).min(1).default(DEEPSEEK_DEFAULT_MAX_TOKENS),
@@ -112,7 +114,9 @@ function resolveOptions(ctx: Context, config: Config): DeepSeekSearchProviderOpt
     baseURL: config.baseURL
       ?? launchEnvironmentOf(ctx).get(SEARCH_BASE_URL_ENV)?.value
       ?? DEEPSEEK_DEFAULT_BASE_URL,
-    ...config.proxyURL === undefined ? {} : { proxyURL: config.proxyURL },
+    ...config.outbound === undefined ? {} : { outbound: config.outbound },
+    // 池服务在请求期读取：池未装配、池规则为直连时都回落直连。
+    resolveProxyURL: () => resolveOutboundURL(ctx.get('proxyPool'), config.outbound ?? { mode: 'direct' }),
     model: config.model ?? DEEPSEEK_DEFAULT_MODEL,
     apiVersion: config.apiVersion ?? DEEPSEEK_DEFAULT_API_VERSION,
     maxTokens: config.maxTokens ?? DEEPSEEK_DEFAULT_MAX_TOKENS,
@@ -134,9 +138,8 @@ export function apply(ctx: Context, config: Config): void {
       if (value.baseURL !== undefined && !isSafeBaseUrl(value.baseURL)) {
         throw new TypeError('web-search-deepseek.baseURL must be an HTTPS URL without credentials, query, or fragment')
       }
-      if (value.proxyURL !== undefined && !isSafeProxyUrl(value.proxyURL)) {
-        throw new TypeError('web-search-deepseek.proxyURL must be an HTTP(S) URL without credentials, query, or fragment')
-      }
+      // 自定义地址必须是 http(s) 且不含凭据、查询串或片段，免得明文凭据写进设置。
+      assertUsableOutbound('web-search-deepseek.outbound', value.outbound, isSafeProxyUrl)
       if (value.model !== undefined && value.model.trim().length === 0) {
         throw new TypeError('web-search-deepseek.model must not be blank')
       }

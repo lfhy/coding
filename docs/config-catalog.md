@@ -1013,7 +1013,7 @@ export interface Config {
    * 渠道级出站：直连（缺省）、内置代理池或自定义代理。选择只影响传输；选择内置
    * 代理池时使用池自己的出站控制（直连/本地池/自定义代理）。
    */
-  outbound?: DeepSeekOutboundConfig
+  outbound?: OutboundConfig
 }
 
 /** One optional model entry advertised by the direct-fetch adapter. */
@@ -1033,19 +1033,11 @@ export interface DeepSeekCatalogModel {
   /** 该模型允许的推理档位；省略时使用渠道级能力。 */
   reasoningEfforts?: Array<'off' | 'low' | 'high' | 'max'>
 }
-
-/** 渠道级出站选择（设置分节里保存的形态）。 */
-export interface DeepSeekOutboundConfig {
-  /** 直连、内置代理池或自定义代理。 */
-  mode: 'direct' | 'pool' | 'custom'
-  /** 自定义模式的 http(s) 代理地址；其余模式省略。 */
-  customUrl?: string
-}
 ```
 
-Depends on: [`ModelModality`](subsystems/llm-streaming.md) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
+Depends on: [`ModelModality`](subsystems/llm-streaming.md) · [`OutboundConfig`](../packages/net/proxy-pool/src/index.ts) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
 
-Source: [`packages/llm/llm-deepseek/src/index.ts:70`](../packages/llm/llm-deepseek/src/index.ts)
+Source: [`packages/llm/llm-deepseek/src/index.ts:71`](../packages/llm/llm-deepseek/src/index.ts)
 
 <a id="coding-llm-pi-ai"></a>
 
@@ -1674,7 +1666,7 @@ export interface RefreshConfig {
 }
 ```
 
-Source: [`packages/net/proxy-pool/src/index.ts:108`](../packages/net/proxy-pool/src/index.ts)
+Source: [`packages/net/proxy-pool/src/index.ts:117`](../packages/net/proxy-pool/src/index.ts)
 
 <a id="coding-pwsh-local"></a>
 
@@ -3251,6 +3243,48 @@ export interface Config {
 
 Source: [`packages/web/web-fetch-http/src/index.ts:34`](../packages/web/web-fetch-http/src/index.ts)
 
+<a id="coding-web-search-anysearch"></a>
+
+## `coding-web-search-anysearch`
+
+Requires: `web`
+
+```ts config-catalog
+/** AnySearch 搜索的配置：可选密钥、可选端点与共享出站选择。 */
+export interface Config {
+  /** Bearer 密钥字面值；省略时读 `$ANYSEARCH_API_KEY`，两者都为空则匿名请求。 */
+  apiKey?: string
+  /** 搜索端点基址，请求追加 `/v1/search`；缺省 AnySearch 官方端点。 */
+  baseURL?: string
+  /** 下次搜索的出站；缺省直连，选择内置代理池时按池自己的出站规则走。 */
+  outbound?: OutboundConfig
+}
+```
+
+Depends on: [`OutboundConfig`](../packages/net/proxy-pool/src/index.ts)
+
+Source: [`packages/web/web-search-anysearch/src/index.ts:28`](../packages/web/web-search-anysearch/src/index.ts)
+
+<a id="coding-web-search-bing"></a>
+
+## `coding-web-search-bing`
+
+Requires: `web`
+
+```ts config-catalog
+/** Bing 搜索的配置：一个可选的 market 与共享出站选择。 */
+export interface Config {
+  /** Bing 市场（如 `zh-CN`）；省略时不发 `mkt` 参数，由 Bing 按 Accept-Language 自行本地化。 */
+  market?: string
+  /** 下次搜索的出站；缺省直连，选择内置代理池时按池自己的出站规则走。 */
+  outbound?: OutboundConfig
+}
+```
+
+Depends on: [`OutboundConfig`](../packages/net/proxy-pool/src/index.ts)
+
+Source: [`packages/web/web-search-bing/src/index.ts:18`](../packages/web/web-search-bing/src/index.ts)
+
 <a id="coding-web-search-deepseek"></a>
 
 ## `coding-web-search-deepseek`
@@ -3266,8 +3300,8 @@ export interface Config {
   apiKeyEnv?: string
   /** Anthropic 兼容端点基址；请求会追加 `/messages`。 */
   baseURL?: string
-  /** 仅当前搜索使用的 HTTP(S) 前向代理地址。 */
-  proxyURL?: string
+  /** 仅当前搜索使用的出站：直连（缺省）、内置代理池或自定义代理。 */
+  outbound?: OutboundConfig
   /** Anthropic-format model name. Defaults to `deepseek-v4-flash`. */
   model?: string
   /** `anthropic-version` header value. Defaults to `2023-06-01`. */
@@ -3279,7 +3313,9 @@ export interface Config {
 }
 ```
 
-Source: [`packages/web/web-search-deepseek/src/index.ts:48`](../packages/web/web-search-deepseek/src/index.ts)
+Depends on: [`OutboundConfig`](../packages/net/proxy-pool/src/index.ts)
+
+Source: [`packages/web/web-search-deepseek/src/index.ts:50`](../packages/web/web-search-deepseek/src/index.ts)
 
 <a id="coding-web-search-duckduckgo"></a>
 
@@ -3288,14 +3324,16 @@ Source: [`packages/web/web-search-deepseek/src/index.ts:48`](../packages/web/web
 Requires: `web`
 
 ```ts config-catalog
-/** DuckDuckGo 搜索的可选 HTTP(S) 前向代理配置。 */
+/** DuckDuckGo 搜索的出站选择：直连（缺省）、内置代理池或自定义代理。 */
 export interface Config {
-  /** 下次搜索使用的代理 URL；缺省时直连。 */
-  proxyURL?: string
+  /** 下次搜索的出站；缺省直连，选择内置代理池时按池自己的出站规则走。 */
+  outbound?: OutboundConfig
 }
 ```
 
-Source: [`packages/web/web-search-duckduckgo/src/index.ts:16`](../packages/web/web-search-duckduckgo/src/index.ts)
+Depends on: [`OutboundConfig`](../packages/net/proxy-pool/src/index.ts)
+
+Source: [`packages/web/web-search-duckduckgo/src/index.ts:18`](../packages/web/web-search-duckduckgo/src/index.ts)
 
 <a id="coding-web-search-exa"></a>
 
@@ -3316,10 +3354,80 @@ export interface Config {
   numResults?: number
   /** Highlight sentences requested per result. Defaults to 1. */
   highlightsPerResult?: number
+  /** Outbound path: direct (default), the built-in proxy pool, or a custom proxy. */
+  outbound?: OutboundConfig
 }
 ```
 
-Source: [`packages/web/web-search-exa/src/index.ts:38`](../packages/web/web-search-exa/src/index.ts)
+Depends on: [`OutboundConfig`](../packages/net/proxy-pool/src/index.ts)
+
+Source: [`packages/web/web-search-exa/src/index.ts:40`](../packages/web/web-search-exa/src/index.ts)
+
+<a id="coding-web-search-firecrawl"></a>
+
+## `coding-web-search-firecrawl`
+
+Requires: `web`
+
+```ts config-catalog
+/** Firecrawl 搜索的配置：可选密钥、可选端点基址与共享出站选择。 */
+export interface Config {
+  /** Firecrawl API key；省略时读 `FIRECRAWL_API_KEY`，再为空则走 keyless 匿名额度。 */
+  apiKey?: string
+  /** 搜索端点基址（追加 `/v2/search`）；缺省为官方 API。 */
+  baseURL?: string
+  /** 下次搜索的出站；缺省直连，选择内置代理池时按池自己的出站规则走。 */
+  outbound?: OutboundConfig
+}
+```
+
+Depends on: [`OutboundConfig`](../packages/net/proxy-pool/src/index.ts)
+
+Source: [`packages/web/web-search-firecrawl/src/index.ts:21`](../packages/web/web-search-firecrawl/src/index.ts)
+
+<a id="coding-web-search-keenable"></a>
+
+## `coding-web-search-keenable`
+
+Requires: `web`
+
+```ts config-catalog
+/** Keenable 搜索的配置：可选密钥与端点，加上共享出站选择。 */
+export interface Config {
+  /** Keenable API key；省略时读取 `$KEENABLE_API_KEY`，两者都没有或为空时使用匿名额度。 */
+  apiKey?: string
+  /** MCP 端点；默认 `https://api.keenable.ai/mcp`，必须是不带凭据、查询串与片段的 HTTPS 地址。 */
+  baseURL?: string
+  /** 下次搜索的出站；缺省直连，选择内置代理池时按池自己的出站规则走。 */
+  outbound?: OutboundConfig
+}
+```
+
+Depends on: [`OutboundConfig`](../packages/net/proxy-pool/src/index.ts)
+
+Source: [`packages/web/web-search-keenable/src/index.ts:18`](../packages/web/web-search-keenable/src/index.ts)
+
+<a id="coding-web-search-parallel"></a>
+
+## `coding-web-search-parallel`
+
+Requires: `web`
+
+```ts config-catalog
+/** Parallel 搜索的配置：可选密钥与端点，加上共享出站选择。 */
+export interface Config {
+  /** Parallel API key；省略时读取 `$PARALLEL_API_KEY`，两者都没有或为空时使用匿名额度。 */
+  apiKey?: string
+  /** MCP 端点；默认 `https://search.parallel.ai/mcp`，必须是不带凭据、查询串与片段的 HTTPS 地址。 */
+  baseURL?: string
+  /** 下次搜索的出站；缺省直连，选择内置代理池时按池自己的出站规则走。 */
+  outbound?: OutboundConfig
+}
+```
+
+Depends on: [`OutboundConfig`](../packages/net/proxy-pool/src/index.ts)
+
+Source: [`packages/web/web-search-parallel/src/index.ts:18`](../packages/web/web-search-parallel/src/index.ts)
 
 <a id="coding-web-search-perplexity"></a>
 
@@ -3340,10 +3448,37 @@ export interface Config {
   maxTokens?: number
   /** Recency window sent as `search_recency_filter`. Omitted = no filter. */
   searchRecency?: 'day' | 'week' | 'month' | 'year'
+  /** Outbound path: direct (default), the built-in proxy pool, or a custom proxy. */
+  outbound?: OutboundConfig
 }
 ```
 
-Source: [`packages/web/web-search-perplexity/src/index.ts:32`](../packages/web/web-search-perplexity/src/index.ts)
+Depends on: [`OutboundConfig`](../packages/net/proxy-pool/src/index.ts)
+
+Source: [`packages/web/web-search-perplexity/src/index.ts:34`](../packages/web/web-search-perplexity/src/index.ts)
+
+<a id="coding-web-search-searxng"></a>
+
+## `coding-web-search-searxng`
+
+Requires: `web`
+
+```ts config-catalog
+/** SearXNG 搜索的配置：可选的实例列表与共享出站选择。 */
+export interface Config {
+  /**
+   * 自定义实例基址，按顺序尝试；省略或为空数组时使用内置的 6 个公共实例。
+   * 每项必须是 http(s) 绝对地址，且不带凭据、查询串与片段。
+   */
+  instances?: string[]
+  /** 下次搜索的出站；缺省直连，选择内置代理池时按池自己的出站规则走。 */
+  outbound?: OutboundConfig
+}
+```
+
+Depends on: [`OutboundConfig`](../packages/net/proxy-pool/src/index.ts)
+
+Source: [`packages/web/web-search-searxng/src/index.ts:17`](../packages/web/web-search-searxng/src/index.ts)
 
 <a id="coding-web-search-tavily"></a>
 
@@ -3360,12 +3495,14 @@ export interface Config {
   apiKeyEnv?: string
   /** 搜索端点基址，追加 `/search`。 */
   baseURL?: string
-  /** 只作用于此提供方的 HTTP(S) 前向代理。 */
-  proxyURL?: string
+  /** 只作用于此提供方的出站：直连（缺省）、内置代理池或自定义代理。 */
+  outbound?: OutboundConfig
 }
 ```
 
-Source: [`packages/web/web-search-tavily/src/index.ts:28`](../packages/web/web-search-tavily/src/index.ts)
+Depends on: [`OutboundConfig`](../packages/net/proxy-pool/src/index.ts)
+
+Source: [`packages/web/web-search-tavily/src/index.ts:30`](../packages/web/web-search-tavily/src/index.ts)
 
 <a id="coding-workflow-worker-thread"></a>
 

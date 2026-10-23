@@ -24,6 +24,9 @@
       "path": "../web"
     },
     {
+      "path": "../../net/proxy-pool"
+    },
+    {
       "path": "../../runtime-diagnostics/invariants"
     }
   ]

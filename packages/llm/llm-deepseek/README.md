@@ -127,11 +127,13 @@ loop 保留的响应块会追加到下一个请求，并保留其较早可复用
 （内置代理池）或 `custom`（`customUrl` 为 `http://` / `https://` 代理地址）。它在
 **设置 → 模型**的 DeepSeek 渠道详情里编辑，随该分节一起保存。
 
-对话请求与模型目录探测都在每次请求时解析一次出站：选择内置代理池时使用池自己的出站
-控制（`ctx.proxyPool.outbound`），**池为直连或池服务缺席时回落直连**，池为自定义代理时
-使用池配置的地址；代理地址经 `ProxyAgent` 作为
-`fetch` 的 `dispatcher` 注入，同一地址复用连接池，不修改进程全局 dispatcher，因此并发
-请求互不干扰。`custom` 模式缺少合法地址会在设置解析阶段被拒绝。
+对话请求与模型目录探测都在每次请求时解析一次出站。选择与地址解析使用
+`coding-proxy-pool` 的[共享出站契约](../../net/proxy-pool/README.md#共享出站契约)
+（`OutboundConfig`／`OutboundConfigSchema`／`resolveOutboundURL`），与联网搜索提供方
+共用同一套规则：选择内置代理池时按池自己的出站控制取地址，**池为直连或池服务缺席时
+回落直连**；`custom` 只用本渠道保存的地址，不受池规则影响。解析出的代理地址经
+`ProxyAgent` 作为 `fetch` 的 `dispatcher` 注入，同一地址复用连接池，不修改进程全局
+dispatcher，因此并发请求互不干扰。`custom` 模式缺少合法地址会在设置解析阶段被拒绝。
 
 ## 已知限制与暂缓事项
 

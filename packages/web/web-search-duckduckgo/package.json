@@ -23,7 +23,8 @@
     "@deepseek-ai/cordis": "workspace:^",
     "coding-web": "workspace:^",
     "coding-invariants": "workspace:^",
-    "coding-settings": "workspace:^"
+    "coding-settings": "workspace:^",
+    "coding-proxy-pool": "workspace:^"
   },
   "dependencies": { "@deepseek-ai/schemastery": "workspace:^", "parse5": "^8.0.1", "undici": "^8.10.2" },
   "devDependencies": {
@@ -36,6 +37,7 @@
     "coding-tool-web": "workspace:^",
     "coding-web": "workspace:^",
     "coding-settings": "workspace:^",
-    "coding-invariants": "workspace:^"
+    "coding-invariants": "workspace:^",
+    "coding-proxy-pool": "workspace:^"
   }
 }

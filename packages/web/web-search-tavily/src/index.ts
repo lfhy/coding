@@ -4,6 +4,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { credentialRef } from 'coding-credentials'
 import { launchEnvironmentOf } from 'coding-launch-environment'
+import { assertUsableOutbound, OutboundConfigSchema, resolveOutboundURL } from 'coding-proxy-pool'
+import type { OutboundConfig } from 'coding-proxy-pool'
 import { installSettingsSection, settingsNamespace } from 'coding-settings'
 import type {} from 'coding-web'
 import {
@@ -32,15 +34,15 @@ export interface Config {
   apiKeyEnv?: string
   /** 搜索端点基址，追加 `/search`。 */
   baseURL?: string
-  /** 只作用于此提供方的 HTTP(S) 前向代理。 */
-  proxyURL?: string
+  /** 只作用于此提供方的出站：直连（缺省）、内置代理池或自定义代理。 */
+  outbound?: OutboundConfig
 }
 
 export const Config: z<Config> = z.object({
   apiKey: z.string().role('secret'),
   apiKeyEnv: z.string().role('credential-ref').default(DEFAULT_API_KEY_ENV),
   baseURL: z.string().default(TAVILY_DEFAULT_BASE_URL),
-  proxyURL: z.string(),
+  outbound: OutboundConfigSchema,
 })
 
 /** 本提供方独立的持久设置区。 */
@@ -50,7 +52,7 @@ export const WEB_SEARCH_TAVILY_SETTINGS_NAMESPACE = settingsNamespace('web-searc
  * 投影一次搜索使用的配置和凭据解析器。
  * @param ctx - 拥有设置、凭据和启动环境的上下文。
  * @param config - 当前设置区快照。
- * @returns 同一次请求共用的端点、代理及密钥解析器。
+ * @returns 同一次请求共用的端点、出站解析与密钥解析器。
  */
 function resolveOptions(ctx: Context, config: Config): TavilySearchProviderOptions {
   const apiKeyEnv = credentialRef(config.apiKeyEnv ?? DEFAULT_API_KEY_ENV)
@@ -65,7 +67,9 @@ function resolveOptions(ctx: Context, config: Config): TavilySearchProviderOptio
     },
     apiKeyEnv,
     baseURL: config.baseURL ?? TAVILY_DEFAULT_BASE_URL,
-    ...config.proxyURL === undefined ? {} : { proxyURL: config.proxyURL },
+    ...config.outbound === undefined ? {} : { outbound: config.outbound },
+    // 池服务在请求期读取：池未装配、池规则为直连时都回落直连。
+    resolveProxyURL: () => resolveOutboundURL(ctx.get('proxyPool'), config.outbound ?? { mode: 'direct' }),
   }
 }
 
@@ -82,9 +86,8 @@ export function apply(ctx: Context, config: Config): void {
       if (value.baseURL !== undefined && !isSafeBaseUrl(value.baseURL)) {
         throw new TypeError('web-search-tavily.baseURL must be an HTTPS public URL without credentials, query, or fragment')
       }
-      if (value.proxyURL !== undefined && !isSafeProxyUrl(value.proxyURL)) {
-        throw new TypeError('web-search-tavily.proxyURL must be an HTTP(S) URL without credentials, query, or fragment')
-      }
+      // 自定义地址必须是 http(s) 且不含凭据、查询串或片段，免得明文凭据写进设置。
+      assertUsableOutbound('web-search-tavily.outbound', value.outbound, isSafeProxyUrl)
       credentialRef(value.apiKeyEnv ?? DEFAULT_API_KEY_ENV)
     },
     setSource: (source) => { current = source },

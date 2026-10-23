@@ -1447,12 +1447,30 @@ importers:
       coding-web:
         specifier: workspace:^
         version: link:../../web/web
+      coding-web-search-anysearch:
+        specifier: workspace:^
+        version: link:../../web/web-search-anysearch
+      coding-web-search-bing:
+        specifier: workspace:^
+        version: link:../../web/web-search-bing
       coding-web-search-deepseek:
         specifier: workspace:^
         version: link:../../web/web-search-deepseek
       coding-web-search-duckduckgo:
         specifier: workspace:^
         version: link:../../web/web-search-duckduckgo
+      coding-web-search-firecrawl:
+        specifier: workspace:^
+        version: link:../../web/web-search-firecrawl
+      coding-web-search-keenable:
+        specifier: workspace:^
+        version: link:../../web/web-search-keenable
+      coding-web-search-parallel:
+        specifier: workspace:^
+        version: link:../../web/web-search-parallel
+      coding-web-search-searxng:
+        specifier: workspace:^
+        version: link:../../web/web-search-searxng
       coding-web-search-tavily:
         specifier: workspace:^
         version: link:../../web/web-search-tavily
@@ -3249,6 +3267,9 @@ importers:
       coding-client-test-runtime:
         specifier: workspace:^
         version: link:../../test-support/client-runtime
+      coding-client-ui-primitives:
+        specifier: workspace:^
+        version: link:../ui-primitives
       coding-client-ui-settings:
         specifier: workspace:^
         version: link:../ui-settings
@@ -9438,6 +9459,95 @@ importers:
         specifier: workspace:^
         version: link:../web
 
+  packages/web/web-search-anysearch:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+      undici:
+        specifier: ^8.10.2
+        version: 8.10.2
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/cordis-plugin-include':
+        specifier: workspace:^
+        version: link:../../../vendor/include
+      '@deepseek-ai/cordis-plugin-loader':
+        specifier: workspace:^
+        version: link:../../../vendor/loader
+      coding-invariants:
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      coding-launch-environment:
+        specifier: workspace:^
+        version: link:../../util/launch-environment
+      coding-llm:
+        specifier: workspace:^
+        version: link:../../llm/llm
+      coding-proxy-pool:
+        specifier: workspace:^
+        version: link:../../net/proxy-pool
+      coding-settings:
+        specifier: workspace:^
+        version: link:../../settings/settings
+      coding-system-prompt:
+        specifier: workspace:^
+        version: link:../../core/system-prompt
+      coding-tool-web:
+        specifier: workspace:^
+        version: link:../tool-web
+      coding-tools:
+        specifier: workspace:^
+        version: link:../../core/tools
+      coding-web:
+        specifier: workspace:^
+        version: link:../web
+
+  packages/web/web-search-bing:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+      undici:
+        specifier: ^8.10.2
+        version: 8.10.2
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/cordis-plugin-include':
+        specifier: workspace:^
+        version: link:../../../vendor/include
+      '@deepseek-ai/cordis-plugin-loader':
+        specifier: workspace:^
+        version: link:../../../vendor/loader
+      coding-invariants:
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      coding-llm:
+        specifier: workspace:^
+        version: link:../../llm/llm
+      coding-proxy-pool:
+        specifier: workspace:^
+        version: link:../../net/proxy-pool
+      coding-settings:
+        specifier: workspace:^
+        version: link:../../settings/settings
+      coding-system-prompt:
+        specifier: workspace:^
+        version: link:../../core/system-prompt
+      coding-tool-web:
+        specifier: workspace:^
+        version: link:../tool-web
+      coding-tools:
+        specifier: workspace:^
+        version: link:../../core/tools
+      coding-web:
+        specifier: workspace:^
+        version: link:../web
+
   packages/web/web-search-deepseek:
     dependencies:
       '@deepseek-ai/schemastery':
@@ -9465,6 +9575,9 @@ importers:
       coding-launch-environment:
         specifier: workspace:^
         version: link:../../util/launch-environment
+      coding-proxy-pool:
+        specifier: workspace:^
+        version: link:../../net/proxy-pool
       coding-session:
         specifier: workspace:^
         version: link:../../core/session
@@ -9502,6 +9615,9 @@ importers:
       coding-llm:
         specifier: workspace:^
         version: link:../../llm/llm
+      coding-proxy-pool:
+        specifier: workspace:^
+        version: link:../../net/proxy-pool
       coding-settings:
         specifier: workspace:^
         version: link:../../settings/settings
@@ -9523,6 +9639,9 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
+      undici:
+        specifier: ^8.10.2
+        version: 8.10.2
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -9533,6 +9652,147 @@ importers:
       coding-launch-environment:
         specifier: workspace:^
         version: link:../../util/launch-environment
+      coding-proxy-pool:
+        specifier: workspace:^
+        version: link:../../net/proxy-pool
+      coding-web:
+        specifier: workspace:^
+        version: link:../web
+
+  packages/web/web-search-firecrawl:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+      undici:
+        specifier: ^8.10.2
+        version: 8.10.2
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/cordis-plugin-include':
+        specifier: workspace:^
+        version: link:../../../vendor/include
+      '@deepseek-ai/cordis-plugin-loader':
+        specifier: workspace:^
+        version: link:../../../vendor/loader
+      coding-invariants:
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      coding-launch-environment:
+        specifier: workspace:^
+        version: link:../../util/launch-environment
+      coding-llm:
+        specifier: workspace:^
+        version: link:../../llm/llm
+      coding-proxy-pool:
+        specifier: workspace:^
+        version: link:../../net/proxy-pool
+      coding-settings:
+        specifier: workspace:^
+        version: link:../../settings/settings
+      coding-system-prompt:
+        specifier: workspace:^
+        version: link:../../core/system-prompt
+      coding-tool-web:
+        specifier: workspace:^
+        version: link:../tool-web
+      coding-tools:
+        specifier: workspace:^
+        version: link:../../core/tools
+      coding-web:
+        specifier: workspace:^
+        version: link:../web
+
+  packages/web/web-search-keenable:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+      undici:
+        specifier: ^8.10.2
+        version: 8.10.2
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/cordis-plugin-include':
+        specifier: workspace:^
+        version: link:../../../vendor/include
+      '@deepseek-ai/cordis-plugin-loader':
+        specifier: workspace:^
+        version: link:../../../vendor/loader
+      coding-invariants:
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      coding-launch-environment:
+        specifier: workspace:^
+        version: link:../../util/launch-environment
+      coding-llm:
+        specifier: workspace:^
+        version: link:../../llm/llm
+      coding-proxy-pool:
+        specifier: workspace:^
+        version: link:../../net/proxy-pool
+      coding-settings:
+        specifier: workspace:^
+        version: link:../../settings/settings
+      coding-system-prompt:
+        specifier: workspace:^
+        version: link:../../core/system-prompt
+      coding-tool-web:
+        specifier: workspace:^
+        version: link:../tool-web
+      coding-tools:
+        specifier: workspace:^
+        version: link:../../core/tools
+      coding-web:
+        specifier: workspace:^
+        version: link:../web
+
+  packages/web/web-search-parallel:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+      undici:
+        specifier: ^8.10.2
+        version: 8.10.2
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/cordis-plugin-include':
+        specifier: workspace:^
+        version: link:../../../vendor/include
+      '@deepseek-ai/cordis-plugin-loader':
+        specifier: workspace:^
+        version: link:../../../vendor/loader
+      coding-invariants:
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      coding-launch-environment:
+        specifier: workspace:^
+        version: link:../../util/launch-environment
+      coding-llm:
+        specifier: workspace:^
+        version: link:../../llm/llm
+      coding-proxy-pool:
+        specifier: workspace:^
+        version: link:../../net/proxy-pool
+      coding-settings:
+        specifier: workspace:^
+        version: link:../../settings/settings
+      coding-system-prompt:
+        specifier: workspace:^
+        version: link:../../core/system-prompt
+      coding-tool-web:
+        specifier: workspace:^
+        version: link:../tool-web
+      coding-tools:
+        specifier: workspace:^
+        version: link:../../core/tools
       coding-web:
         specifier: workspace:^
         version: link:../web
@@ -9542,6 +9802,9 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
+      undici:
+        specifier: ^8.10.2
+        version: 8.10.2
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -9552,6 +9815,52 @@ importers:
       coding-launch-environment:
         specifier: workspace:^
         version: link:../../util/launch-environment
+      coding-proxy-pool:
+        specifier: workspace:^
+        version: link:../../net/proxy-pool
+      coding-web:
+        specifier: workspace:^
+        version: link:../web
+
+  packages/web/web-search-searxng:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+      undici:
+        specifier: ^8.10.2
+        version: 8.10.2
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/cordis-plugin-include':
+        specifier: workspace:^
+        version: link:../../../vendor/include
+      '@deepseek-ai/cordis-plugin-loader':
+        specifier: workspace:^
+        version: link:../../../vendor/loader
+      coding-invariants:
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      coding-llm:
+        specifier: workspace:^
+        version: link:../../llm/llm
+      coding-proxy-pool:
+        specifier: workspace:^
+        version: link:../../net/proxy-pool
+      coding-settings:
+        specifier: workspace:^
+        version: link:../../settings/settings
+      coding-system-prompt:
+        specifier: workspace:^
+        version: link:../../core/system-prompt
+      coding-tool-web:
+        specifier: workspace:^
+        version: link:../tool-web
+      coding-tools:
+        specifier: workspace:^
+        version: link:../../core/tools
       coding-web:
         specifier: workspace:^
         version: link:../web
@@ -9589,6 +9898,9 @@ importers:
       coding-llm:
         specifier: workspace:^
         version: link:../../llm/llm
+      coding-proxy-pool:
+        specifier: workspace:^
+        version: link:../../net/proxy-pool
       coding-settings:
         specifier: workspace:^
         version: link:../../settings/settings

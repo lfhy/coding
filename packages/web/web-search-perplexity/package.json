@@ -35,15 +35,18 @@
     "coding-launch-environment": "workspace:^",
     "coding-invariants": "workspace:^",
     "coding-web": "workspace:^",
+    "coding-proxy-pool": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "dependencies": {
-    "@deepseek-ai/schemastery": "workspace:^"
+    "@deepseek-ai/schemastery": "workspace:^",
+    "undici": "^8.10.2"
   },
   "devDependencies": {
     "coding-launch-environment": "workspace:^",
     "coding-invariants": "workspace:^",
     "coding-web": "workspace:^",
+    "coding-proxy-pool": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   }
 }

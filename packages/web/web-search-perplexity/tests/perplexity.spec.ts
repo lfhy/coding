@@ -191,6 +191,43 @@ describe('web-search-perplexity plugin registration', () => {
       .rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_CONFIGURED_MISSING' }))
   })
 
+  it('resolves the outbound through the proxy pool contract', async () => {
+    const targets: string[] = []
+    const proxy = (await import('node:http')).createServer()
+    proxy.on('connect', (request, socket) => {
+      targets.push(request.url ?? '')
+      socket.end('HTTP/1.1 407 Proxy Authentication Required\r\nConnection: close\r\nContent-Length: 0\r\n\r\n')
+    })
+    await new Promise<void>(resolve => proxy.listen(0, '127.0.0.1', resolve))
+    const proxyURL = `http://127.0.0.1:${(proxy.address() as import('node:net').AddressInfo).port}`
+    try {
+      const ctx = new Context()
+      await ctx.plugin(WebRuntime, { searchProvider: PERPLEXITY_PROVIDER_ID })
+      const disposePool = ctx.provide('proxyPool', { proxyURL: () => proxyURL })
+      // 未配置出站时直连：请求不经过任何代理。
+      const direct = vi.fn(async () => jsonResponse({ choices: [{ message: { content: 'a' } }], citations: [] }))
+      vi.stubGlobal('fetch', direct)
+      const fiber = await ctx.plugin(perplexityPlugin, { apiKey: 'pplx-key', baseURL: 'https://api.pplx.test' })
+      await ctx.web.search({ query: 'direct' })
+      expect(direct).toHaveBeenCalledTimes(1)
+      expect(targets).toEqual([])
+      await fiber.dispose()
+      // mode: pool 时取池地址；custom 时用自己的地址且不受池影响。
+      for (const outbound of [{ mode: 'pool' as const }, { mode: 'custom' as const, customUrl: proxyURL }]) {
+        vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ choices: [], citations: [] })))
+        const proxiedFiber = await ctx.plugin(perplexityPlugin, { apiKey: 'pplx-key', baseURL: 'https://api.pplx.test', outbound })
+        await expect(ctx.web.search({ query: 'proxied' })).rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_ERROR' }))
+        expect(targets).toEqual(['api.pplx.test:443'])
+        targets.length = 0
+        await proxiedFiber.dispose()
+      }
+      disposePool()
+      await ctx.fiber.dispose()
+    } finally {
+      await new Promise<void>(resolve => proxy.close(() => { resolve() }))
+    }
+  })
+
   it('has no default export (namespace plugin export shape)', () => {
     expect('default' in perplexityPlugin).toBe(false)
   })

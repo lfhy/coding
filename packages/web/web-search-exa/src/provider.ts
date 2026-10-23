@@ -6,6 +6,7 @@
  * @module coding-web-search-exa/provider
  */
 
+import { fetch as proxyFetch, ProxyAgent } from 'undici'
 import { WebError } from 'coding-web'
 import type {
   WebSearchProvider,
@@ -13,6 +14,7 @@ import type {
   WebSearchResult,
   WebSearchSource,
 } from 'coding-web'
+import type { OutboundConfig } from 'coding-proxy-pool'
 import type { ExaError, ExaResult, ExaSearchResponse } from './types.ts'
 
 /** Stable id this provider registers under. */
@@ -42,6 +44,10 @@ export interface ExaSearchProviderOptions {
   numResults?: number
   /** Highlight sentences requested per result (Exa's `highlightsPerUrl`). */
   highlightsPerResult: number
+  /** 提供方自己的出站选择，只用于可用性判断；缺省直连。 */
+  outbound?: OutboundConfig
+  /** 本次搜索的出站地址（提供方选择 + 代理池规则）；返回 `undefined` 即直连。 */
+  resolveProxyURL?: () => string | undefined
 }
 
 /**
@@ -94,27 +100,56 @@ export class ExaSearchProvider implements WebSearchProvider {
   }
 
   async search(request: WebSearchRequest, signal?: AbortSignal): Promise<WebSearchResult> {
+    const proxyURL = this.options.resolveProxyURL?.()
+    const dispatcher = proxyURL === undefined ? undefined : new ProxyAgent(proxyURL)
+    const destroyOnAbort = (): void => { void dispatcher?.destroy() }
+    signal?.addEventListener('abort', destroyOnAbort, { once: true })
+    try {
+      return await this.dispatch(request, dispatcher, signal)
+    } finally {
+      signal?.removeEventListener('abort', destroyOnAbort)
+      // 拒绝响应或读取中断时，未完成的主体仍占用连接；destroy 立即断开。
+      if (signal?.aborted === true) await dispatcher?.destroy()
+      else await dispatcher?.close()
+    }
+  }
+
+  /**
+   * 发送一次搜索并映射响应；代理请求只使用本次请求自己的 dispatcher。
+   * @param request - 一个搜索词。
+   * @param dispatcher - 本次请求的代理 dispatcher；直连时为 `undefined`。
+   * @param signal - 调用方的取消信号。
+   * @returns 标准化的可引用来源。
+   */
+  private async dispatch(
+    request: WebSearchRequest,
+    dispatcher: ProxyAgent | undefined,
+    signal?: AbortSignal,
+  ): Promise<WebSearchResult> {
     // A per-request bound wins over the configured default; either may be absent.
     const numResults = request.maxResults ?? this.options.numResults
-    let response: Response
+    const init = {
+      method: 'POST',
+      redirect: 'error',
+      headers: {
+        'authorization': `Bearer ${this.options.apiKey}`,
+        'content-type': 'application/json',
+        'accept': 'application/json',
+        'user-agent': USER_AGENT,
+      },
+      body: JSON.stringify({
+        query: request.query,
+        type: this.options.searchType,
+        contents: { highlights: { highlightsPerUrl: this.options.highlightsPerResult } },
+        ...numResults !== undefined ? { numResults } : {},
+      }),
+      ...signal !== undefined ? { signal } : {},
+    } as const
+    let response: Response | Awaited<ReturnType<typeof proxyFetch>>
     try {
-      response = await fetch(`${this.options.baseURL}/search`, {
-        method: 'POST',
-        redirect: 'error',
-        headers: {
-          'authorization': `Bearer ${this.options.apiKey}`,
-          'content-type': 'application/json',
-          'accept': 'application/json',
-          'user-agent': USER_AGENT,
-        },
-        body: JSON.stringify({
-          query: request.query,
-          type: this.options.searchType,
-          contents: { highlights: { highlightsPerUrl: this.options.highlightsPerResult } },
-          ...numResults !== undefined ? { numResults } : {},
-        }),
-        ...signal !== undefined ? { signal } : {},
-      })
+      response = dispatcher === undefined
+        ? await fetch(`${this.options.baseURL}/search`, init)
+        : await proxyFetch(`${this.options.baseURL}/search`, { ...init, dispatcher })
     } catch (error: unknown) {
       if (isAbortError(error)) throw new WebError('Exa search aborted', 'WEB_ABORTED', { cause: error })
       throw new WebError(`Exa search request failed: ${String(error)}`, 'WEB_PROVIDER_ERROR', { cause: error })

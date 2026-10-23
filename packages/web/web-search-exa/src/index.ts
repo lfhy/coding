@@ -11,6 +11,8 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { launchEnvironmentOf } from 'coding-launch-environment'
 import z from '@deepseek-ai/schemastery'
+import { assertUsableOutbound, OutboundConfigSchema, resolveOutboundURL } from 'coding-proxy-pool'
+import type { OutboundConfig } from 'coding-proxy-pool'
 import type {} from 'coding-web'
 import {
   ExaSearchProvider,
@@ -46,6 +48,8 @@ export interface Config {
   numResults?: number
   /** Highlight sentences requested per result. Defaults to 1. */
   highlightsPerResult?: number
+  /** Outbound path: direct (default), the built-in proxy pool, or a custom proxy. */
+  outbound?: OutboundConfig
 }
 
 export const Config: z<Config> = z.object({
@@ -54,10 +58,13 @@ export const Config: z<Config> = z.object({
   searchType: z.union(['auto', 'keyword', 'neural'] as const),
   numResults: z.number().step(1).min(1),
   highlightsPerResult: z.number().step(1).min(1),
+  outbound: OutboundConfigSchema,
 })
 
 /** Register the Exa search provider with `ctx.web`. */
 export function apply(ctx: Context, config: Config): void {
+  // 出站选择在装载时先判一次，坏配置立即失败而不是等到第一次搜索。
+  assertUsableOutbound('web-search-exa.outbound', config.outbound)
   ctx.web.registerSearchProvider(new ExaSearchProvider({
     // Every environment layer may name this key: the product trusts the
     // project it is launched in, and the managed store is not involved here.
@@ -66,5 +73,8 @@ export function apply(ctx: Context, config: Config): void {
     searchType: config.searchType ?? EXA_DEFAULT_SEARCH_TYPE,
     highlightsPerResult: config.highlightsPerResult ?? EXA_DEFAULT_HIGHLIGHTS_PER_RESULT,
     ...config.numResults !== undefined ? { numResults: config.numResults } : {},
+    ...config.outbound === undefined ? {} : { outbound: config.outbound },
+    // 池服务在请求期读取：池未装配、池规则为直连时都回落直连。
+    resolveProxyURL: () => resolveOutboundURL(ctx.get('proxyPool'), config.outbound ?? { mode: 'direct' }),
   }))
 }

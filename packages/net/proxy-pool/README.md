@@ -72,6 +72,32 @@ const url = pool.proxyURL({ kind: 'pool' }) // http://127.0.0.1:<port>
 消费方拿到的 `url` 直接喂给 undici `ProxyAgent` 即可；`proxyURL({ kind: 'direct' })`
 返回 `undefined` 表示直连。
 
+## 共享出站契约
+
+渠道级出站选择（直连／内置代理池／自定义代理）不归池保管，也不在各消费方里各写
+一份：`coding-proxy-pool` 通过 `OutboundConfig` / `OutboundConfigSchema` /
+`toProxyMode` / `resolveOutboundURL` 导出一份共享契约，模型渠道（`llm-deepseek`、
+`llm-opencode`）与联网搜索提供方（`web-search-*`）都在自己的设置分节里保存这份
+选择，请求期用它解析地址。
+
+- **选择与规则分开**：消费方选 `pool` 表示「按池自己的出站规则」——池规则为直连
+  时 `resolveOutboundURL` 返回 `undefined`（消费方回落直连），池规则为自定义代理
+  时返回池配置的地址，池规则为本地池时返回本地入站地址。
+- **`custom` 不受池规则影响**：消费方选 `custom` 时只用它自己保存的 http(s) 地址，
+  即使池正在运行别的出站规则也一样；缺合法地址时抛错（错误信息为
+  `custom outbound requires an http(s) proxy URL`，消费方在自身诊断里点名配置项）。
+- **池缺席回落直连**：`resolveOutboundURL(undefined, config)` 在 `direct` 与 `pool`
+  两种选择下都返回 `undefined`，`custom` 仍返回消费方自己的地址（它不依赖池）；池服务
+  是可选依赖，未装配不阻断消费方请求。
+
+```ts
+import { resolveOutboundURL } from 'coding-proxy-pool'
+
+// 消费方请求期：池是可选服务，缺席即直连。
+const url = resolveOutboundURL(ctx.get('proxyPool'), outbound ?? { mode: 'direct' })
+const dispatcher = url === undefined ? undefined : new ProxyAgent(url)
+```
+
 ## 错误码
 
 | code | 含义 |

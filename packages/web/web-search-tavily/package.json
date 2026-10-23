@@ -25,6 +25,7 @@
     "coding-invariants": "workspace:^",
     "coding-settings": "workspace:^",
     "coding-web": "workspace:^",
+    "coding-proxy-pool": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "dependencies": {
@@ -42,6 +43,7 @@
     "coding-tools": "workspace:^",
     "coding-llm": "workspace:^",
     "coding-system-prompt": "workspace:^",
+    "coding-proxy-pool": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/cordis-plugin-loader": "workspace:^",
     "@deepseek-ai/cordis-plugin-include": "workspace:^"

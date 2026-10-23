@@ -453,6 +453,25 @@
     - id: web-search-duckduckgo
       name: 'coding-web-search-duckduckgo'
 
+    # Bing 免费无 key 搜索提供方；market 省略时按 Accept-Language 自行本地化。
+    - id: web-search-bing
+      name: 'coding-web-search-bing'
+
+    - id: web-search-searxng
+      name: 'coding-web-search-searxng'
+
+    - id: web-search-anysearch
+      name: 'coding-web-search-anysearch'
+
+    - id: web-search-firecrawl
+      name: 'coding-web-search-firecrawl'
+
+    - id: web-search-keenable
+      name: 'coding-web-search-keenable'
+
+    - id: web-search-parallel
+      name: 'coding-web-search-parallel'
+
     - id: web-search-deepseek
       name: 'coding-web-search-deepseek'
       config:

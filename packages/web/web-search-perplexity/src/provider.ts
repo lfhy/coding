@@ -6,6 +6,7 @@
  * @module coding-web-search-perplexity/provider
  */
 
+import { fetch as proxyFetch, ProxyAgent } from 'undici'
 import { WebError } from 'coding-web'
 import type {
   WebSearchProvider,
@@ -13,6 +14,7 @@ import type {
   WebSearchResult,
   WebSearchSource,
 } from 'coding-web'
+import type { OutboundConfig } from 'coding-proxy-pool'
 import type { PerplexityError, PerplexityResponse, PerplexitySearchResult } from './types.ts'
 
 /** Stable id this provider registers under. */
@@ -45,6 +47,10 @@ export interface PerplexitySearchProviderOptions {
   maxTokens: number
   /** Optional recency window sent as `search_recency_filter`; omitted = no filter. */
   searchRecency?: PerplexityRecency
+  /** 提供方自己的出站选择，只用于可用性判断；缺省直连。 */
+  outbound?: OutboundConfig
+  /** 本次搜索的出站地址（提供方选择 + 代理池规则）；返回 `undefined` 即直连。 */
+  resolveProxyURL?: () => string | undefined
 }
 
 /**
@@ -99,25 +105,54 @@ export class PerplexitySearchProvider implements WebSearchProvider {
   /* jscpd:ignore-end */
 
   async search(request: WebSearchRequest, signal?: AbortSignal): Promise<WebSearchResult> {
-    let response: Response
+    const proxyURL = this.options.resolveProxyURL?.()
+    const dispatcher = proxyURL === undefined ? undefined : new ProxyAgent(proxyURL)
+    const destroyOnAbort = (): void => { void dispatcher?.destroy() }
+    signal?.addEventListener('abort', destroyOnAbort, { once: true })
     try {
-      response = await fetch(`${this.options.baseURL}/chat/completions`, {
-        method: 'POST',
-        redirect: 'error',
-        headers: {
-          'authorization': `Bearer ${this.options.apiKey}`,
-          'content-type': 'application/json',
-          'accept': 'application/json',
-          'user-agent': USER_AGENT,
-        },
-        body: JSON.stringify({
-          model: this.options.model,
-          max_tokens: this.options.maxTokens,
-          messages: [{ role: 'user', content: request.query }],
-          ...this.options.searchRecency !== undefined ? { search_recency_filter: this.options.searchRecency } : {},
-        }),
-        ...signal !== undefined ? { signal } : {},
-      })
+      return await this.dispatch(request, dispatcher, signal)
+    } finally {
+      signal?.removeEventListener('abort', destroyOnAbort)
+      // 拒绝响应或读取中断时，未完成的主体仍占用连接；destroy 立即断开。
+      if (signal?.aborted === true) await dispatcher?.destroy()
+      else await dispatcher?.close()
+    }
+  }
+
+  /**
+   * 发送一次搜索并映射响应；代理请求只使用本次请求自己的 dispatcher。
+   * @param request - 一个搜索词。
+   * @param dispatcher - 本次请求的代理 dispatcher；直连时为 `undefined`。
+   * @param signal - 调用方的取消信号。
+   * @returns 标准化的可引用来源。
+   */
+  private async dispatch(
+    request: WebSearchRequest,
+    dispatcher: ProxyAgent | undefined,
+    signal?: AbortSignal,
+  ): Promise<WebSearchResult> {
+    const init = {
+      method: 'POST',
+      redirect: 'error',
+      headers: {
+        'authorization': `Bearer ${this.options.apiKey}`,
+        'content-type': 'application/json',
+        'accept': 'application/json',
+        'user-agent': USER_AGENT,
+      },
+      body: JSON.stringify({
+        model: this.options.model,
+        max_tokens: this.options.maxTokens,
+        messages: [{ role: 'user', content: request.query }],
+        ...this.options.searchRecency !== undefined ? { search_recency_filter: this.options.searchRecency } : {},
+      }),
+      ...signal !== undefined ? { signal } : {},
+    } as const
+    let response: Response | Awaited<ReturnType<typeof proxyFetch>>
+    try {
+      response = dispatcher === undefined
+        ? await fetch(`${this.options.baseURL}/chat/completions`, init)
+        : await proxyFetch(`${this.options.baseURL}/chat/completions`, { ...init, dispatcher })
     } catch (error: unknown) {
       if (isAbortError(error)) throw new WebError('Perplexity search aborted', 'WEB_ABORTED', { cause: error })
       throw new WebError(`Perplexity search request failed: ${String(error)}`, 'WEB_PROVIDER_ERROR', { cause: error })

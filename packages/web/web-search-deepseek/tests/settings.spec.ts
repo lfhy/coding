@@ -102,7 +102,7 @@ describe('web-search-deepseek settings section', () => {
 
   it('rejects credential-bearing and non-HTTP proxy addresses before persistence', async () => {
     const bench = await boot()
-    for (const proxyURL of [
+    for (const customUrl of [
       'socks5://127.0.0.1:1080',
       'http://user:password@127.0.0.1:8080',
       'http://@127.0.0.1:8080',
@@ -113,10 +113,48 @@ describe('web-search-deepseek settings section', () => {
       'https://127.0.0.1:8080#',
       'not-a-url',
     ]) {
-      await expect(bench.ctx.settings.update(WEB_SEARCH_DEEPSEEK_SETTINGS_NAMESPACE, { proxyURL })).rejects.toThrow()
+      await expect(bench.ctx.settings.update(WEB_SEARCH_DEEPSEEK_SETTINGS_NAMESPACE, { outbound: { mode: 'custom', customUrl } })).rejects.toThrow()
     }
+    // custom 缺地址在共享契约处拒绝，错误点名本提供方的出站配置。
+    await expect(bench.ctx.settings.update(WEB_SEARCH_DEEPSEEK_SETTINGS_NAMESPACE, { outbound: { mode: 'custom' } }))
+      .rejects.toThrow(/web-search-deepseek.outbound/)
     expect(bench.ctx.settings.describe().find(row => String(row.ns) === 'web-search-deepseek')?.user).toBeUndefined()
     await bench.ctx.fiber.dispose()
+  })
+
+  it('resolves the outbound through the proxy pool contract', async () => {
+    const bench = await boot()
+    const targets: string[] = []
+    const proxy = createServer().on('connect', (request, socket) => {
+      targets.push(request.url ?? '')
+      socket.end('HTTP/1.1 407 Proxy Authentication Required\r\nConnection: close\r\nContent-Length: 0\r\n\r\n')
+    })
+    try {
+      await new Promise<void>(resolve => proxy.listen(0, '127.0.0.1', resolve))
+      const proxyURL = `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`
+      const disposePool = bench.ctx.provide('proxyPool', { proxyURL: () => proxyURL })
+      // 未配置出站时直连：请求由原生 fetch 完成，不经过任何代理。
+      expect(await searchOnce(bench.ctx)).toContain('https://search.entry.test/v1/messages')
+      expect(targets).toEqual([])
+      // mode: pool 时取池地址；custom 时用自己的地址且不受池规则影响。
+      for (const outbound of [{ mode: 'pool' as const }, { mode: 'custom' as const, customUrl: proxyURL }]) {
+        await bench.ctx.settings.update(WEB_SEARCH_DEEPSEEK_SETTINGS_NAMESPACE, { outbound })
+        await expect(bench.ctx.web.search({ query: 'proxied' })).rejects.toMatchObject({ code: 'WEB_PROVIDER_ERROR' })
+        expect(targets).toEqual(['search.entry.test:443'])
+        targets.length = 0
+      }
+      // 清空出站后下一次请求即回到直连。
+      await bench.ctx.settings.replace(WEB_SEARCH_DEEPSEEK_SETTINGS_NAMESPACE, {})
+      expect(await searchOnce(bench.ctx)).toContain('https://search.entry.test/v1/messages')
+      expect(targets).toEqual([])
+      disposePool()
+    } finally {
+      await bench.ctx.fiber.dispose()
+      await new Promise<void>((resolve, reject) => proxy.close((error) => {
+        if (error === undefined) resolve()
+        else reject(error)
+      }))
+    }
   })
 
   it('uses each committed proxy only for the next search', async () => {
@@ -134,7 +172,7 @@ describe('web-search-deepseek settings section', () => {
       }
       for (let index = 0; index < origins.length; index++) {
         await bench.ctx.settings.update(WEB_SEARCH_DEEPSEEK_SETTINGS_NAMESPACE, {
-          proxyURL: origins[index],
+          outbound: { mode: 'custom', customUrl: origins[index]! },
         })
         await expect(bench.ctx.web.search({ query: 'anything' }))
           .rejects.toMatchObject({ code: 'WEB_PROVIDER_ERROR' })
@@ -170,7 +208,7 @@ describe('web-search-deepseek settings section', () => {
     try {
       await new Promise<void>(resolve => proxy.listen(0, '127.0.0.1', resolve))
       await bench.ctx.settings.update(WEB_SEARCH_DEEPSEEK_SETTINGS_NAMESPACE, {
-        proxyURL: `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`,
+        outbound: { mode: 'custom', customUrl: `http://127.0.0.1:${(proxy.address() as AddressInfo).port}` },
       })
       const controller = new AbortController()
       const search = bench.ctx.web.search({ query: 'anything' }, controller.signal)

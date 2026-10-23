@@ -159,16 +159,12 @@ describe('DeepSeekSearchProvider availability', () => {
     expect(searchProvider({ ...options, baseURL: 'not a url' }).available()).toBe(false)
   })
 
-  it('rejects an unsafe proxy even when called directly outside Settings', async () => {
-    const fetchMock = vi.fn()
-    vi.stubGlobal('fetch', fetchMock)
-    for (const proxyURL of ['http://user:password@127.0.0.1:8080', 'http://@127.0.0.1:8080']) {
-      const provider = searchProvider({ ...options, proxyURL })
-      expect(provider.available()).toBe(false)
-      await expect(provider.search({ query: 'q' }))
-        .rejects.toMatchObject({ code: 'WEB_PROVIDER_ERROR' })
+  it('is misconfigured when the custom outbound address is unsafe', () => {
+    for (const customUrl of ['http://user:password@127.0.0.1:8080', 'http://@127.0.0.1:8080']) {
+      expect(searchProvider({ ...options, outbound: { mode: 'custom', customUrl } }).available()).toBe(false)
     }
-    expect(fetchMock).not.toHaveBeenCalled()
+    expect(searchProvider({ ...options, outbound: { mode: 'custom' } }).available()).toBe(false)
+    expect(searchProvider({ ...options, outbound: { mode: 'pool' } }).available()).toBe(true)
   })
 
   it('rejects local hostname suffixes even with trailing DNS root dots', async () => {

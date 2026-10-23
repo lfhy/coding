@@ -7,6 +7,8 @@
  *   `undefined`（消费方回落直连），自定义代理规则返回池配置的代理地址，本地池
  *   规则返回本地入站地址；
  * - `outbound` 报告池出站规则（`direct` / `pool` / `custom`）；
+ * - 渠道级出站（直连／内置代理池／自定义代理）由消费方自己保存，经 `./outbound.ts`
+ *   的 `resolveOutboundURL` 解析成本请求的地址，语义与 `proxyURL` 一致；
  * - 节点/组变更经 `ctx.on('proxy-pool/node', ...)` 发布。
  *
  * 后台循环（健康探测与订阅刷新）只在池出站规则为 `pool` 时运行。
@@ -69,6 +71,13 @@ export {
   resolvePoolOutbound,
 } from './settings.ts'
 export type { ProxyPoolMode, ProxyPoolSettings } from './settings.ts'
+export {
+  assertUsableOutbound,
+  OutboundConfigSchema,
+  resolveOutboundURL,
+  toProxyMode,
+} from './outbound.ts'
+export type { OutboundConfig, OutboundMode } from './outbound.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
