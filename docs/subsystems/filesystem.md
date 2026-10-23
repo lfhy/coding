@@ -271,6 +271,37 @@ type FsErrorCode =
 
 `read`/`write`/`edit` **不**接受 `timeoutMs`，提供方约定也不设置截止时间——不同于 bash 与 web（它们消费 [`coding-timeout`](../../packages/util/timeout/README.md)）以及 subprocess 支撑的 `glob`/`grep`（其声明的 `timeoutMs` 由 `coding-tool-call-timeout-policy` 强制执行）：那些是进程支撑的，截止时间可以真正终止工作。本地系统调用至多是尽力中止——超时无法迫使进行中的 `fsync`/`rename` 停下，因此这里的 `timeoutMs` 会成为 seam 无法强制执行的截止时间，而且恰好落在「显式优于隐式」禁止隐式默认值的位置。取消仍通过工具执行 signal 传播，在系统调用边界尽力中止。
 
+## 多后端与工作区绑定
+
+### 现状
+
+`FileSystem` 是 Cordis `Service`：`super(ctx, 'fs')` 让一个 Host 只能提供一个实现。因此远端工作区的路由内嵌在 `dsh-fs-local` 里（`remotePath`／`remoteTarget`／各原语的远端分支），而不是一个独立后端；`dsh-fs-e2b` 能作为完整替代实现，只因为 E2B 部署里整个 Host 共享一个远端执行世界。
+
+### 目标
+
+一个 Host 同时服务多个执行世界：本地目录、多个 Remote-SSH 工作区，以及将来的只读分析后端（例如 Git 对象视图）。后端按工作区选择，而 `ctx.fs` 的方法签名与工具层调用面保持不变。
+
+### 设计：注册表 + 工作区匹配
+
+- `FileSystem` 继续作为**后端**契约（十二个原语）。新增 `FsRegistry` 作为 `ctx.fs` 的服务实例：后端通过 `register(backend, { id, matches(cwd) })` 加入，注册返回 disposer，随 fiber 卸载自动撤销。
+- 分派依据：异步方法按 `opts.cwd`（工具层已传入会话工作区）选择后端；`processPath`、`fileUrl`、`contains` 这些同步方法按 `FsTargetKey` 的不透明前缀选择后端，不做 I/O。各后端自带前缀（远端是 `coding-remote-target:v1:`，只读 Git 后端用自有前缀）。
+- 工作区绑定：`SessionHeader.cwd` 仍是唯一键；`matches(cwd)` 由后端声明（本地兜底、Remote-SSH 占位目录、将来的 Git 分析目录）。没有后端匹配时回退到本地后端，保持单后端部署的现有行为。
+- `dsh-fs-sandbox` 从“继承 `LocalFileSystem`”改为“注册时包装选中的后端”：写入围栏仍按会话策略判断，读取直通。
+- 备选方案（每会话 `ctx.isolate('fs')`）：Cordis 支持在子上下文隔离同名服务，但工具执行不在 agent 作用域下解析 `ctx.fs`，需要改动三十余处消费方取服务的方式，因此不作为首选。
+
+### 影响范围
+
+- 消费方：`ctx.fs` 的方法签名不变，`tool-fs`、`tool-str-replace-editor`、`lsp-stdio`、`open-in-app` 等调用点无需改写。
+- `dsh-fs-local`：远端路由搬进独立后端，本地实现回到纯本地语义；`dsh-fs-e2b` 改为注册后端。
+- `dsh-tool-fs-search` 目前绕开 `ctx.fs` 直接走 bridge，后续可改为经注册表取搜索能力。
+- `fs/*` 事件词汇与策略插件不变；事件仍由工具层发出。
+
+### 验收
+
+- 同一 Host 同时打开本地工作区与远端工作区，两个会话的读写各自落在正确执行世界，互不串台。
+- 只读后端（如 Git 分析）：写入被策略拒绝，读取与列表可用，`processPath`／`fileUrl` 返回该后端的执行世界路径。
+- 现有 keyless 测试与 `packages/fs`、`packages/subprocess` 套件保持通过；新增注册表分派、混合工作区与后端缺失回退的集成测试。
+
 ## 服务与插件
 
 `FileSystem`（`ctx.fs`，abstract）拥有提供方原语：`resolve`、`processPath`、`fileUrl`、`contains`、`stat`、`lstat`、`readText`、`streamText`、`readBytes`、`listDir`、`writeText` 与 `editText`。`dsh-fs-observation-policy` **不注册服务**——它是一个通过 `fs/*` 事件门禁添加策略的插件：根据未见/缺失/存在状态对写入与编辑意图 waterfall 作出决策，并记录 `FsObservation` 值。执行器是 `dsh-tool-fs`：它通过 `ctx.fs` 读取/写入/编辑，分发 waterfall，并 emit 记录事件。下方生成的 [`ctx.fs` 小节](#ctxfs--filesystem-abstract-seam) 展示确切的 `ctx.fs` 签名。
