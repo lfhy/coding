@@ -4,6 +4,8 @@
  */
 
 import { Context } from '@deepseek-ai/cordis'
+import { AttachmentId } from 'coding-attachment'
+import type { AttachmentStore, ImageAttachmentRef } from 'coding-attachment'
 import LlmRuntime, {
   CallId,
   createAssistantMessage,
@@ -16,6 +18,15 @@ import { afterEach, describe, expect, it } from 'vitest'
 import * as LlmOpencode from 'coding-llm-opencode'
 import { ensureFreeLaneShape } from '../src/free-lane.ts'
 import { disguiseHeaders, deriveRequestIds } from '../src/ids.ts'
+
+/** 持久化截图的引用；内联测试用它确认图片字节真的进了请求。 */
+const IMAGE_REF: ImageAttachmentRef = {
+  attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
+  mediaType: 'image/png',
+  bytes: 3,
+  width: 2,
+  height: 2,
+}
 
 /** 一次 streamSimple 调用的记录。 */
 interface Call {
@@ -81,14 +92,19 @@ afterEach(async () => {
   for (const ctx of disposers.splice(0)) await ctx.fiber.dispose()
 })
 
-/** 组装一个只挂 LLM 服务与假提供商的上下文。 */
-async function harness(events: AssistantMessageEvent[], calls: Call[]): Promise<Context> {
+/** 组装一个只挂 LLM 服务与假提供商的上下文；`attachments` 供含图片的请求解析附件。 */
+async function harness(
+  events: AssistantMessageEvent[],
+  calls: Call[],
+  options: Pick<LlmOpencode.FreeChannelAdapterOptions, 'resolveAttachments'> = {},
+): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(LlmRuntime)
   await ctx.plugin(LlmOpencode)
   // 注入假提供商：真实提供商由插件在请求时构造，测试观察的是它的调用参数。
   const adapter = new LlmOpencode.FreeChannelAdapter({
     providerOverride: fakeProvider(events, calls) as never,
+    ...options,
   })
   const registration = ctx.llm.registerAdapter(['fake-route'], adapter)
   ctx.effect(() => registration, 'test: fake route')
@@ -252,6 +268,64 @@ describe('adapter wire shape', () => {
     expect(context.systemPrompt).toBe('be brief')
     expect(context.tools?.map(tool => tool.name)).toEqual(['bash'])
     expect(context.messages.map(message => message.role)).toEqual(['user', 'assistant', 'toolResult'])
+  })
+
+  it('把工具结果里的截图内联进请求，而不是压成纯文本', async () => {
+    const calls: Call[] = []
+    const attachments = {
+      readImage: () => Promise.resolve({ ref: IMAGE_REF, data: Uint8Array.of(1, 2, 3) }),
+    } as unknown as AttachmentStore
+    const ctx = await harness(textEvents('done'), calls, { resolveAttachments: () => attachments })
+    for await (const _chunk of ctx.llm.stream({
+      provider: 'fake-route',
+      model: 'deepseek-v4.1-flash-free',
+      messages: [
+        createUserMessage({ content: [{ type: 'text', text: 'look at the app' }], source: { kind: 'user' } }),
+        createAssistantMessage({
+          content: [
+            { type: 'tool-call', id: CallId('shot-1'), name: 'browser_screenshot', arguments: '{}' },
+          ],
+          source: { provider: 'fake-route', model: 'deepseek-v4.1-flash-free' },
+        }),
+        createToolResultMessage({
+          callId: CallId('shot-1'),
+          content: [
+            { type: 'text', text: '{"action":"screenshot"}' },
+            { type: 'image', attachment: IMAGE_REF },
+          ],
+          isError: false,
+        }),
+      ],
+    })) { /* drain */ }
+
+    // 工具结果保留块表：模型的唯一画面来源不能被摊平成文本。
+    const context = calls[0]!.context as { messages: { role: string; content: unknown }[] }
+    expect(context.messages.at(-1)).toEqual({
+      role: 'toolResult',
+      toolCallId: 'shot-1',
+      toolName: 'browser_screenshot',
+      content: [
+        { type: 'text', text: '{"action":"screenshot"}' },
+        { type: 'image', data: 'AQID', mimeType: 'image/png' },
+      ],
+      isError: false,
+      timestamp: 0,
+    })
+  })
+
+  it('含截图却拿不到附件服务时拒绝请求，而不是静默丢图', async () => {
+    const adapter = new LlmOpencode.FreeChannelAdapter({})
+    await expect((async () => {
+      for await (const _chunk of adapter.stream({
+        provider: 'fake-route',
+        model: 'deepseek-v4.1-flash-free',
+        messages: [createToolResultMessage({
+          callId: CallId('shot-1'),
+          content: [{ type: 'image', attachment: IMAGE_REF }],
+          isError: false,
+        })],
+      })) { /* drain */ }
+    })()).rejects.toMatchObject({ code: 'UNSUPPORTED_CONTENT' })
   })
 
   it('适配器拒绝未声明的推理档位，宿主把它交付为错误 finish', async () => {

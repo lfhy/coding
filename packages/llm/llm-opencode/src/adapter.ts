@@ -127,13 +127,6 @@ function flattenText(content: readonly ContentBlock[]): string {
   return content.map(block => (block.type === 'text' ? block.text : '')).join('')
 }
 
-/** 递归摊平一条工具结果里的文本；嵌套的结果块同样计入。 */
-function toolResultText(content: readonly ContentBlock[]): string {
-  return content.map(block => (block.type === 'text'
-    ? block.text
-    : block.type === 'tool-result' ? toolResultText(block.content) : '')).join('')
-}
-
 /** 把 harness 工具 schema 投影成 pi-ai 的工具表。 */
 function toolsOf(options: GenerateOptions): PiTool[] | undefined {
   if (options.tools === undefined || options.tools.length === 0) return undefined
@@ -180,7 +173,15 @@ function toPiAssistant(
   }
 }
 
-/** user 消息可内联的部分：文本原样，图片读成内联载荷。 */
+/**
+ * user 消息与工具结果可内联的部分：文本原样，图片读成内联载荷，嵌套的结果块按同一规则展开。
+ *
+ * 图片必须随容器一起内联，不能被压成纯文本：`browser_screenshot` 这类工具的画面
+ * 只存在于图片块里，丢弃它会让模型看到「已截图」的 JSON 却拿不到画面。
+ * @param content - 待投影的内容块。
+ * @param attachments - 持久附件读取器；缺席时图片被跳过，由 {@link toPiContext} 先行拒绝。
+ * @returns 文本与内联图片块，按内容原序。
+ */
 async function userParts(
   content: readonly ContentBlock[],
   attachments: AttachmentStore | undefined,
@@ -191,6 +192,7 @@ async function userParts(
     if (block.type === 'image' && attachments !== undefined) {
       parts.push(await imagePart(block.attachment, attachments))
     }
+    if (block.type === 'tool-result') parts.push(...await userParts(block.content, attachments))
   }
   return parts
 }
@@ -237,8 +239,14 @@ async function imagePart(
 }
 
 /**
- * 把 harness 历史投影成 pi-ai 上下文。图片只有在附件服务可用时才内联，
- * 否则以文本占位替代——一个缺失的对象不能让整轮请求失败。
+ * 把 harness 历史投影成 pi-ai 上下文。
+ *
+ * 含图片却拿不到附件服务时按契约拒绝整轮请求（构造参数已声明「缺席时拒绝图片输入」），
+ * 不静默丢图：模型的唯一画面来源消失比一次明确的失败更难诊断。文本结果保持字符串
+ * 形状，含图片的结果保留块表，因此工具截图能真正到达模型。
+ * @param options - 一次请求的历史、系统提示词与工具表。
+ * @param attachments - 持久附件读取器；请求不含图片时为 undefined。
+ * @returns pi-ai 的上下文；工具名从先前的 assistant 调用回填。
  */
 async function toPiContext(
   options: GenerateOptions,
@@ -247,6 +255,12 @@ async function toPiContext(
   const toolNames = new Map<string, string>()
   const messages: PiMessage[] = []
   for (const message of options.messages) {
+    if (attachments === undefined && contentHasImage(message.content)) {
+      throw new LlmError(
+        'Free channel image conversion requires the durable attachment service',
+        'UNSUPPORTED_CONTENT',
+      )
+    }
     if (message.role === 'assistant') {
       messages.push(toPiAssistant(message, options.model, toolNames))
       continue
@@ -256,7 +270,11 @@ async function toPiContext(
       continue
     }
     // user 角色：普通块合成一条消息，工具结果各自成为一条 toolResult。
-    const parts = await userParts(message.content, attachments)
+    // 普通块先排除结果块，否则结果内容会同时出现在两条消息里。
+    const parts = await userParts(
+      message.content.filter(block => block.type !== 'tool-result'),
+      attachments,
+    )
     const results = message.content.filter(
       (block): block is Extract<ContentBlock, { type: 'tool-result' }> => block.type === 'tool-result',
     )
@@ -264,11 +282,12 @@ async function toPiContext(
       messages.push({ role: 'user', content: userContent(parts), timestamp: 0 })
     }
     for (const result of results) {
+      const content = userContent(await userParts(result.content, attachments))
       messages.push({
         role: 'toolResult',
         toolCallId: result.toolCallId,
         toolName: toolNames.get(result.toolCallId) ?? 'unknown',
-        content: [{ type: 'text', text: toolResultText(result.content) || '(no output)' }],
+        content: typeof content === 'string' ? [{ type: 'text', text: content || '(no output)' }] : content,
         isError: result.isError ?? false,
         timestamp: 0,
       })
