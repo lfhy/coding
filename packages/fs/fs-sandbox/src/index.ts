@@ -33,19 +33,12 @@
 import { Context } from '@deepseek-ai/cordis'
 import { LocalFileSystem } from 'coding-fs-local'
 import type { Config as LocalConfig } from 'coding-fs-local'
-import { FsError } from 'coding-fs'
 import type { FsEditOutcome, FsEditRequest, FsTarget, FsVersion, FsWriteIntent, FsWriteOutcome } from 'coding-fs'
-import {
-  parseRemoteWorkspaceTargetKey,
-  isRemotePathWithin,
-  remoteWorkspacePath,
-  verifyRemoteWorkspaceTarget,
-  RemoteWorkspaceError,
-} from 'coding-subprocess'
-import { writableRoots } from 'coding-sandbox'
 import type { SandboxExecutionPolicy, SandboxMode } from 'coding-sandbox'
 import type {} from 'coding-sandbox-policy'
-import { isPathUnder } from './containment.ts'
+import { fencedTarget } from './backend.ts'
+
+export { SandboxedBackend, fencedTarget } from './backend.ts'
 
 /**
  * Plugin config: the local backend's knobs verbatim (`cwd` resolution default
@@ -120,73 +113,15 @@ export class SandboxedFileSystem extends LocalFileSystem {
   }
 
   /**
-   * Enforce the per-call policy against `target` and return the EXACT target the
-   * mutation must use, so the checked identity is the mutated one (no
-   * check-here-write-there TOCTOU). `read-only` denies; `workspace-write`
-   * re-canonicalizes NOW (`resolve` realpaths the deepest existing ancestor,
-   * reflecting a concurrently swapped symlink), requires containment under a
-   * writable root, and returns THAT fresh target; `danger-full-access` returns
-   * the caller's target unfenced. Throws the structured `FS_SANDBOX_DENIED` on
-   * refusal — the tool layer maps it to the model-facing `[sandbox: …]` marker
-   * and the escalation hint.
+   * 按调用策略围栏目标；实现与多后端装饰器共用 {@link fencedTarget}。
+   * @param target - 待变更的目标。
+   * @param sandboxPolicy - 本次调用的策略；省略时用部署默认值。
+   * @returns 允许变更时应使用的目标。
    */
   private async checkedTarget(target: FsTarget, sandboxPolicy?: SandboxExecutionPolicy): Promise<FsTarget> {
-    const policy = sandboxPolicy ?? this.ctx.sandboxPolicy.resolve()
-    const { mode } = policy
-    let remote
-    try {
-      remote = parseRemoteWorkspaceTargetKey(String(target.targetKey))
-    } catch (error: unknown) {
-      throw this.remoteMarkerError(target, error)
-    }
-    if (remote !== undefined) {
-      if (mode === 'read-only') {
-        throw new FsError(`cannot write "${target.displayPath}": file access denied under read-only mode`, 'FS_SANDBOX_DENIED')
-      }
-      if (mode === 'danger-full-access') return target
-      try {
-        const verified = await verifyRemoteWorkspaceTarget(remote)
-        const workspace = await remoteWorkspacePath(policy.workspaceRoot)
-        // workspace-write 的本地 root 必须就是本 target 所属 marker；不能让
-        // 一个会话借由绝对本地 marker 路径写入另一个 SSH 工作区。
-        if (workspace === undefined || workspace.markerRoot !== verified.markerRoot
-          || workspace.remoteRoot !== verified.remoteRoot || workspace.connectionId !== verified.connectionId
-          || !isRemotePathWithin(workspace.remotePath, verified.remotePath)) {
-          throw new FsError(`cannot write "${target.displayPath}": file access denied under workspace-write mode`, 'FS_SANDBOX_DENIED')
-        }
-        return target
-      } catch (error: unknown) {
-        if (error instanceof FsError) throw error
-        throw this.remoteMarkerError(target, error)
-      }
-    }
-    if (mode === 'danger-full-access') return target
-    if (mode === 'read-only') {
-      throw new FsError(`cannot write "${target.displayPath}": file access denied under read-only mode`, 'FS_SANDBOX_DENIED')
-    }
-    // workspace-write: containment on the FRESH canonical path (catches a
-    // symlink ancestor swapped since the tool resolved this target), and the
-    // mutation delegates with THIS fresh target — never the stale one.
-    const fresh = await this.resolve(target.displayPath)
-    let contained = false
-    for (const root of writableRoots(policy)) {
-      if (await isPathUnder(fresh.targetKey, root)) {
-        contained = true
-        break
-      }
-    }
-    if (!contained) {
-      throw new FsError(`cannot write "${target.displayPath}": file access denied under workspace-write mode`, 'FS_SANDBOX_DENIED')
-    }
-    return fresh
-  }
-
-  /** 将 marker 校验失败归入 filesystem seam，而不泄漏 bridge 或认证细节。 */
-  private remoteMarkerError(target: FsTarget, error: unknown): FsError {
-    if (error instanceof RemoteWorkspaceError && error.code === 'REMOTE_BRIDGE_ABORTED') {
-      return new FsError('write aborted', 'FS_ABORTED')
-    }
-    return new FsError(`cannot write "${target.displayPath}": remote workspace marker is unavailable`, 'FS_IO_ERROR')
+    return await fencedTarget({
+      ctx: this.ctx, resolve: path => this.resolve(path), target, policy: sandboxPolicy,
+    })
   }
 }
 
