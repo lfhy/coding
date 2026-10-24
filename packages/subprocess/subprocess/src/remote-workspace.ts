@@ -139,6 +139,16 @@ export function requireRemoteWorkspaceCapability(
 }
 
 /**
+ * 判断一个 target key 是否来自远端 marker 工作区；只做前缀判定，不解码载荷，
+ * 供同步分派使用。
+ * @param targetKey - 待判断的 FsTargetKey 字符串。
+ * @returns 带远端前缀时为 true。
+ */
+export function isRemoteWorkspaceTargetKey(targetKey: string): boolean {
+  return targetKey.startsWith(REMOTE_TARGET_PREFIX)
+}
+
+/**
  * 判断一条路径是否采用 remote agent 可接受的绝对路径形式。
  * @param value - 待校验的远端路径。
  * @returns 路径采用 POSIX、Windows 驱动器或 UNC 绝对形式时为 true。

@@ -266,7 +266,7 @@ export interface FsProvider {
    * @param cwd - 会话工作区（绝对路径）。
    * @returns 负责该工作区时为 true。
    */
-  matches(cwd: string): boolean
+  matches(cwd: string): boolean | Promise<boolean>
   /**
    * 判断一个不透明 target key 是否由该后端产生。
    * @param targetKey - 后端在 `resolve()` 时写入的身份。
@@ -375,7 +375,7 @@ export class FsRegistry extends FileSystem {
    * @returns 负责该工作区的后端。
    * @throws {FsError} 没有注册任何后端时。
    */
-  private backendForWorkspace(cwd: string | undefined): FsProvider {
+  private async backendForWorkspace(cwd: string | undefined): Promise<FsProvider> {
     if (cwd !== undefined) {
       const bound = this.bindings.get(cwd)
       if (bound !== undefined) {
@@ -383,8 +383,9 @@ export class FsRegistry extends FileSystem {
         if (provider !== undefined) return provider.provider
       }
       // 后注册的后端优先参与匹配，便于在通用后端之后追加专用后端（远端、只读视图）。
-      const matched = [...this.registrations].reverse().find(registration => registration.provider.matches(cwd))
-      if (matched !== undefined) return matched.provider
+      for (const registration of [...this.registrations].reverse()) {
+        if (await registration.provider.matches(cwd)) return registration.provider
+      }
     }
     const fallback = this.registrations.at(-1)
     if (fallback === undefined) throw new FsError('no filesystem backend is registered', 'FS_IO_ERROR')
@@ -406,7 +407,7 @@ export class FsRegistry extends FileSystem {
   }
 
   override async resolve(path: string, opts?: { cwd?: string; signal?: AbortSignal }): Promise<FsTarget> {
-    return await this.backendForWorkspace(opts?.cwd).resolve(path, opts)
+    return await (await this.backendForWorkspace(opts?.cwd)).resolve(path, opts)
   }
 
   override processPath(target: FsTarget): string {
@@ -426,7 +427,7 @@ export class FsRegistry extends FileSystem {
   }
 
   override async lstat(path: string, opts?: { cwd?: string }, signal?: AbortSignal): Promise<FsPathInfo | undefined> {
-    return await this.backendForWorkspace(opts?.cwd).lstat(path, opts, signal)
+    return await (await this.backendForWorkspace(opts?.cwd)).lstat(path, opts, signal)
   }
 
   override readText(target: FsTarget, signal?: AbortSignal): Promise<string> {

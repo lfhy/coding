@@ -23,6 +23,7 @@ export {
   callRemoteWorkspaceBridge,
   isRemoteAbsolutePath,
   isRemotePathWithin,
+  isRemoteWorkspaceTargetKey,
   parseRemoteWorkspaceTargetKey,
   readRemoteWorkspaceMarker,
   requireRemoteWorkspaceCapability,

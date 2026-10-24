@@ -7,6 +7,8 @@
 import { isAbsolute } from 'node:path'
 import {
   callRemoteWorkspaceBridge,
+  isRemoteWorkspaceTargetKey,
+  remoteWorkspaceTargetKey,
   isRemoteAbsolutePath,
   isRemotePathWithin,
   parseRemoteWorkspaceTargetKey,
@@ -16,8 +18,20 @@ import {
   RemoteWorkspaceError,
 } from 'coding-subprocess'
 import type { RemoteWorkspacePath, RemoteWorkspaceTarget } from 'coding-subprocess'
-import { FsError } from 'coding-fs'
-import type { FsTarget } from 'coding-fs'
+import { FsError, FsTargetKey, FsVersion as version_ } from 'coding-fs'
+import { applyLiteralEdit, normalizeLineEndings } from './fsio.ts'
+import type {
+  FsDirEntry,
+  FsEditOutcome,
+  FsEditRequest,
+  FsInfo,
+  FsPathInfo,
+  FsProvider,
+  FsTarget,
+  FsVersion,
+  FsWriteIntent,
+  FsWriteOutcome,
+} from 'coding-fs'
 
 export interface RemotePathInfo {
   path: string
@@ -204,7 +218,31 @@ export function bridgeBytes(record: Record<string, unknown>, maxBytes: number): 
 
 
 /** marker 路由的拥有者；`LocalFileSystem` 把远端分支委托给它。 */
-export class RemoteWorkspaceRouter {
+export class RemoteWorkspaceRouter implements FsProvider {
+  /** 远端后端的稳定标识。 */
+  readonly id = 'remote-workspace'
+
+  /** 远端后端不自行施加部署级围栏；围栏由 `coding-fs-sandbox` 负责。 */
+  get sandboxMode(): undefined { return undefined }
+
+  /**
+   * 判断工作区是否落在某个 marker 占位目录内。
+   * @param cwd - 会话工作区路径。
+   * @returns 存在 marker 时为 true。
+   */
+  async matches(cwd: string): Promise<boolean> {
+    return await remoteWorkspacePath('.', cwd) !== undefined
+  }
+
+  /**
+   * 判断不透明目标是否由远端 marker 产生；只做前缀判定，不做 I/O。
+   * @param targetKey - 后端在 resolve 时写入的身份。
+   * @returns 属于远端目标时为 true。
+   */
+  owns(targetKey: string): boolean {
+    return isRemoteWorkspaceTargetKey(targetKey)
+  }
+
   /** 将一个本地调用路径识别为 marker 工作区；普通本地路径保持原有流程。 */
   async workspaceFor(
     path: string,
@@ -280,4 +318,256 @@ export class RemoteWorkspaceRouter {
     }
   }
 
+
+  /**
+   * 解析远端目标；调用方已确认该后端负责这个工作区。
+   * @param path - 模型给出的路径。
+   * @param opts - cwd 与取消信号。
+   * @returns 远端目标身份。
+   */
+  async resolve(path: string, opts?: { cwd?: string; signal?: AbortSignal }): Promise<FsTarget> {
+    const workspace = await this.workspaceFor(path, opts?.cwd ?? process.cwd(), opts?.signal, 'resolve')
+    if (workspace === undefined) throw new FsError(`cannot resolve "${path}": no remote workspace`, 'FS_NOT_FOUND')
+    const target = await this.resolveWorkspace(workspace, opts?.signal)
+    return { targetKey: FsTargetKey(remoteWorkspaceTargetKey(target)), displayPath: target.remotePath }
+  }
+
+  /** 远端目标的执行世界路径就是远端绝对路径。 */
+  processPath(target: FsTarget): string {
+    return this.remoteTargetOrThrow(target, 'processPath').remotePath
+  }
+
+  /** 远端目标的 `file:` URI 由远端平台语法编码。 */
+  fileUrl(target: FsTarget): string {
+    return remoteFileUrl(this.remoteTargetOrThrow(target, 'fileUrl').remotePath)
+  }
+
+  /** 同一 marker 身份下按远端路径判断包含关系。 */
+  contains(parent: FsTarget, child: FsTarget): boolean {
+    const remoteParent = parseRemoteWorkspaceTargetKey(String(parent.targetKey))
+    const remoteChild = parseRemoteWorkspaceTargetKey(String(child.targetKey))
+    return remoteParent !== undefined && remoteChild !== undefined
+      && remoteParent.markerRoot === remoteChild.markerRoot
+      && remoteParent.remoteRoot === remoteChild.remoteRoot
+      && remoteParent.connectionId === remoteChild.connectionId
+      && remoteParent.markerGeneration === remoteChild.markerGeneration
+      && remoteParent.mode === remoteChild.mode
+      && isRemotePathWithin(remoteParent.remotePath, remoteChild.remotePath)
+  }
+
+  async stat(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined> {
+    const remote = await this.verified(target, signal, 'stat')
+    try {
+      const info = await callRemoteWorkspaceBridge(remote, '/v1/stat', 'POST', { path: remote.remotePath }, (value) => {
+        const record = bridgeRecord(value)
+        if (record.info === undefined) return undefined
+        const response = bridgeInfo(record.info)
+        if (!sameRemotePath(bridgeRemotePath(response.path), remote.remotePath)) {
+          throw new RemoteWorkspaceError('REMOTE_BRIDGE_RESPONSE_INVALID', 'remote workspace bridge returned metadata for a different path')
+        }
+        return response
+      }, signal)
+      return info === undefined ? undefined : {
+        version: version_(info.version),
+        type: info.type,
+        ...info.size === undefined ? {} : { size: info.size },
+      }
+    } catch (error: unknown) {
+      throw fsRemoteError(error, 'stat', target.displayPath)
+    }
+  }
+
+  async lstat(path: string, opts?: { cwd?: string }, signal?: AbortSignal): Promise<FsPathInfo | undefined> {
+    const workspace = await this.workspaceFor(path, opts?.cwd ?? process.cwd(), signal, 'lstat')
+    if (workspace === undefined) throw new FsError(`cannot lstat "${path}": no remote workspace`, 'FS_NOT_FOUND')
+    const remote = await this.verifyTarget({ targetKey: FsTargetKey(remoteWorkspaceTargetKey(workspace)), displayPath: workspace.remotePath }, signal, 'lstat')
+      ?? { ...workspace }
+    try {
+      const info = await callRemoteWorkspaceBridge(remote, '/v1/stat', 'POST', { path: remote.remotePath, noFollow: true }, (value) => {
+        const record = bridgeRecord(value)
+        if (record.info === undefined) return undefined
+        const response = bridgeInfo(record.info, true)
+        if (!sameRemotePath(bridgeRemotePath(response.path), remote.remotePath)) {
+          throw new RemoteWorkspaceError('REMOTE_BRIDGE_RESPONSE_INVALID', 'remote workspace bridge returned metadata for a different path')
+        }
+        return response
+      }, signal)
+      return info === undefined ? undefined : {
+        version: version_(info.version),
+        type: info.type,
+        ...info.size === undefined ? {} : { size: info.size },
+      }
+    } catch (error: unknown) {
+      throw fsRemoteError(error, 'lstat', path)
+    }
+  }
+
+  async readText(target: FsTarget, signal?: AbortSignal): Promise<string> {
+    const remote = await this.verified(target, signal, 'read')
+    try {
+      return await callRemoteWorkspaceBridge(remote, '/v1/read_file', 'POST', {
+        path: remote.remotePath,
+        maxBytes: REMOTE_READ_MAX_BYTES,
+      }, (value) => {
+        const record = bridgeRecord(value)
+        const path = bridgeRemotePath(bridgeString(record, 'path'))
+        const content = bridgeString(record, 'content')
+        const version = bridgeString(record, 'version')
+        if (!sameRemotePath(path, remote.remotePath) || version.length === 0) {
+          throw new RemoteWorkspaceError('REMOTE_BRIDGE_RESPONSE_INVALID', 'remote workspace bridge returned an invalid response')
+        }
+        return content
+      }, signal)
+    } catch (error: unknown) {
+      throw fsRemoteError(error, 'read', target.displayPath)
+    }
+  }
+
+  streamText(target: FsTarget, signal?: AbortSignal): Promise<AsyncIterable<string>> {
+    return this.readText(target, signal).then(singleTextChunk)
+  }
+
+  async readBytes(target: FsTarget, signal: AbortSignal | undefined, maxBytes: number): Promise<Uint8Array> {
+    const remote = await this.verified(target, signal, 'read')
+    if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) {
+      throw new FsError(`cannot read "${target.displayPath}": maxBytes must be a non-negative safe integer`, 'FS_TOO_LARGE')
+    }
+    try {
+      return await callRemoteWorkspaceBridge(remote, '/v1/read_bytes', 'POST', {
+        path: remote.remotePath,
+        maxBytes: Math.min(maxBytes, REMOTE_READ_MAX_BYTES),
+      }, (value) => {
+        const record = bridgeRecord(value)
+        const path = bridgeRemotePath(bridgeString(record, 'path'))
+        const version = bridgeString(record, 'version')
+        if (!sameRemotePath(path, remote.remotePath) || version.length === 0) {
+          throw new RemoteWorkspaceError('REMOTE_BRIDGE_RESPONSE_INVALID', 'remote workspace bridge returned an invalid response')
+        }
+        return bridgeBytes(record, maxBytes)
+      }, signal)
+    } catch (error: unknown) {
+      throw fsRemoteError(error, 'read', target.displayPath)
+    }
+  }
+
+  async listDir(target: FsTarget, signal?: AbortSignal): Promise<FsDirEntry[]> {
+    const remote = await this.verified(target, signal, 'list')
+    try {
+      return await callRemoteWorkspaceBridge(remote, '/v1/directories', 'POST', { path: remote.remotePath }, (value) => {
+        const record = bridgeRecord(value)
+        const path = bridgeRemotePath(bridgeString(record, 'path'))
+        if (!sameRemotePath(path, remote.remotePath) || !Array.isArray(record.entries)) {
+          throw new RemoteWorkspaceError('REMOTE_BRIDGE_RESPONSE_INVALID', 'remote workspace bridge returned an invalid response')
+        }
+        return record.entries.map((entry): FsDirEntry => {
+          const info = bridgeInfo(entry)
+          if (!isRemotePathWithin(path, info.path)) {
+            throw new RemoteWorkspaceError('REMOTE_BRIDGE_RESPONSE_INVALID', 'remote workspace bridge returned an invalid directory entry')
+          }
+          const expectedName = info.path.slice(path.length).replace(/^[\\/]/u, '')
+          if (expectedName.length === 0 || expectedName.includes('/') || expectedName.includes('\\') || bridgeString(bridgeRecord(entry), 'name') !== expectedName) {
+            throw new RemoteWorkspaceError('REMOTE_BRIDGE_RESPONSE_INVALID', 'remote workspace bridge returned an invalid directory entry')
+          }
+          const child: RemoteWorkspaceTarget = { ...remote, remotePath: info.path }
+          return {
+            name: expectedName,
+            type: info.type,
+            target: { targetKey: FsTargetKey(remoteWorkspaceTargetKey(child)), displayPath: info.path },
+            version: version_(info.version),
+            ...info.size === undefined ? {} : { size: info.size },
+          }
+        })
+      }, signal)
+    } catch (error: unknown) {
+      throw fsRemoteError(error, 'list', target.displayPath)
+    }
+  }
+
+  async writeText(
+    target: FsTarget,
+    content: string,
+    expected?: FsWriteIntent,
+    signal?: AbortSignal,
+  ): Promise<FsWriteOutcome> {
+    const remote = await this.verified(target, signal, 'write')
+    try {
+      return await callRemoteWorkspaceBridge(remote, '/v1/update_file', 'POST', {
+        path: remote.remotePath,
+        content,
+        ...expected === undefined ? {} : {
+          expected: expected.kind === 'createIfAbsent'
+            ? { kind: 'createIfAbsent' }
+            : { kind: 'replaceIfVersion', version: String(expected.version) },
+        },
+      }, (value) => {
+        const record = bridgeRecord(value)
+        const operation = bridgeString(record, 'operation')
+        const version = bridgeString(record, 'version')
+        const after = bridgeString(record, 'after')
+        const expectedAfter = normalizeLineEndings(content)
+        if ((operation !== 'create' && operation !== 'update') || version.length === 0
+          || (record.before !== null && typeof record.before !== 'string') || after !== expectedAfter
+          || (typeof record.before === 'string' && record.before.includes('\r\n'))
+          || (operation === 'create' && record.before !== null)
+          || (expected?.kind === 'createIfAbsent' && operation !== 'create')
+          || (expected?.kind === 'replaceIfVersion' && operation !== 'update')) {
+          throw new RemoteWorkspaceError('REMOTE_BRIDGE_RESPONSE_INVALID', 'remote workspace bridge returned an invalid response')
+        }
+        return { operation, version: version_(version), before: record.before, after }
+      }, signal, true)
+    } catch (error: unknown) {
+      throw fsRemoteError(error, 'write', target.displayPath)
+    }
+  }
+
+  async editText(
+    target: FsTarget,
+    edit: FsEditRequest,
+    expected?: { version: FsVersion },
+    signal?: AbortSignal,
+  ): Promise<FsEditOutcome> {
+    const remote = await this.verified(target, signal, 'edit')
+    try {
+      return await callRemoteWorkspaceBridge(remote, '/v1/edit_file', 'POST', {
+        path: remote.remotePath,
+        oldString: edit.oldString,
+        newString: edit.newString,
+        replaceAll: edit.replaceAll,
+        ...expected === undefined ? {} : { expected: { kind: 'replaceIfVersion', version: String(expected.version) } },
+      }, (value) => {
+        const record = bridgeRecord(value)
+        const version = bridgeString(record, 'version')
+        const before = bridgeString(record, 'before')
+        const after = bridgeString(record, 'after')
+        let expectedAfter: string
+        try {
+          expectedAfter = applyLiteralEdit(before, edit.oldString, edit.newString, edit.replaceAll, target.displayPath).content
+        } catch {
+          throw new RemoteWorkspaceError('REMOTE_BRIDGE_RESPONSE_INVALID', 'remote workspace bridge returned an invalid response')
+        }
+        if (version.length === 0 || before.includes('\r\n') || after.includes('\r\n') || after !== expectedAfter) {
+          throw new RemoteWorkspaceError('REMOTE_BRIDGE_RESPONSE_INVALID', 'remote workspace bridge returned an invalid response')
+        }
+        return { version: version_(version), before, after }
+      }, signal, true)
+    } catch (error: unknown) {
+      throw fsRemoteError(error, 'edit', target.displayPath)
+    }
+  }
+
+  /** 校验目标属于本后端；注册表只在 owns 成立时调用这里。 */
+  private remoteTargetOrThrow(target: FsTarget, operation: string): RemoteWorkspaceTarget {
+    const parsed = parseRemoteWorkspaceTargetKey(String(target.targetKey))
+    if (parsed === undefined) {
+      throw new FsError(`cannot ${operation} "${target.displayPath}": not a remote target`, 'FS_IO_ERROR')
+    }
+    return parsed
+  }
+
+  /** 每次 I/O 前复核 marker；目标不再属于该工作区时按统一错误失败。 */
+  private async verified(target: FsTarget, signal: AbortSignal | undefined, operation: string): Promise<RemoteWorkspaceTarget> {
+    const parsed = this.remoteTargetOrThrow(target, operation)
+    const current = await this.verifyTarget(target, signal, operation)
+    return current ?? parsed
+  }
 }

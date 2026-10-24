@@ -114,7 +114,7 @@ export class SandboxedBackend implements FsProvider {
 
   get sandboxMode(): SandboxMode | undefined { return this.ctx.sandboxPolicy.defaultMode }
 
-  matches(cwd: string): boolean { return this.inner.matches(cwd) }
+  matches(cwd: string): boolean | Promise<boolean> { return this.inner.matches(cwd) }
 
   owns(targetKey: string): boolean { return this.inner.owns(targetKey) }
 
