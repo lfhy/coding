@@ -325,11 +325,25 @@ export class RemoteWorkspaceRouter implements FsProvider {
    * @param opts - cwd 与取消信号。
    * @returns 远端目标身份。
    */
-  async resolve(path: string, opts?: { cwd?: string; signal?: AbortSignal }): Promise<FsTarget> {
+  /**
+   * 尝试把路径解析为远端目标；路径不在 marker 工作区内时返回 undefined，
+   * 由调用方回退本地后端。
+   * @param path - 模型给出的路径。
+   * @param opts - cwd 与取消信号。
+   * @returns 远端目标，或不在远端工作区时的 undefined。
+   */
+  async tryResolve(path: string, opts?: { cwd?: string | undefined; signal?: AbortSignal | undefined }): Promise<FsTarget | undefined> {
     const workspace = await this.workspaceFor(path, opts?.cwd ?? process.cwd(), opts?.signal, 'resolve')
-    if (workspace === undefined) throw new FsError(`cannot resolve "${path}": no remote workspace`, 'FS_NOT_FOUND')
+    if (workspace === undefined) return undefined
     const target = await this.resolveWorkspace(workspace, opts?.signal)
     return { targetKey: FsTargetKey(remoteWorkspaceTargetKey(target)), displayPath: target.remotePath }
+  }
+
+  /** `FsProvider` 契约下的解析：非远端路径视为错误。 */
+  async resolve(path: string, opts?: { cwd?: string; signal?: AbortSignal }): Promise<FsTarget> {
+    const target = await this.tryResolve(path, opts)
+    if (target === undefined) throw new FsError(`cannot resolve "${path}": no remote workspace`, 'FS_NOT_FOUND')
+    return target
   }
 
   /** 远端目标的执行世界路径就是远端绝对路径。 */
@@ -377,9 +391,27 @@ export class RemoteWorkspaceRouter implements FsProvider {
     }
   }
 
-  async lstat(path: string, opts?: { cwd?: string }, signal?: AbortSignal): Promise<FsPathInfo | undefined> {
+  /**
+   * 尝试读取远端路径元数据；不在 marker 工作区内时返回 undefined。
+   * @param path - 待检查的路径。
+   * @param opts - cwd 覆盖。
+   * @param signal - 取消信号。
+   * @returns 元数据，或不属于远端工作区时的 undefined。
+   */
+  async tryLstat(path: string, opts?: { cwd?: string }, signal?: AbortSignal): Promise<FsPathInfo | undefined> {
     const workspace = await this.workspaceFor(path, opts?.cwd ?? process.cwd(), signal, 'lstat')
-    if (workspace === undefined) throw new FsError(`cannot lstat "${path}": no remote workspace`, 'FS_NOT_FOUND')
+    if (workspace === undefined) return undefined
+    return await this.remoteLstat({ ...workspace }, path, signal)
+  }
+
+  /** `FsProvider` 契约下的 lstat：非远端路径视为错误。 */
+  async lstat(path: string, opts?: { cwd?: string }, signal?: AbortSignal): Promise<FsPathInfo | undefined> {
+    const info = await this.tryLstat(path, opts, signal)
+    if (info === undefined) throw new FsError(`cannot lstat "${path}": no remote workspace`, 'FS_NOT_FOUND')
+    return info
+  }
+
+  private async remoteLstat(workspace: RemoteWorkspacePath, path: string, signal?: AbortSignal): Promise<FsPathInfo | undefined> {
     const remote = await this.verifyTarget({ targetKey: FsTargetKey(remoteWorkspaceTargetKey(workspace)), displayPath: workspace.remotePath }, signal, 'lstat')
       ?? { ...workspace }
     try {
