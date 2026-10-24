@@ -57,6 +57,7 @@ import * as ToolPwshPersistent from 'coding-tool-pwsh-persistent'
 import CordisHostRunner from 'coding-cordis-host-runner'
 import * as ToolCordis from 'coding-tool-cordis'
 import * as ToolFs from 'coding-tool-fs'
+import * as ToolApplyPatch from 'coding-tool-apply-patch'
 import * as ToolFsSearch from 'coding-tool-fs-search'
 import * as ToolStrReplaceEditor from 'coding-tool-str-replace-editor'
 import TerminalSessionService from 'coding-terminal'
@@ -436,6 +437,19 @@ const TOOL_PACKAGES: ToolPackage[] = [
       'The read-before-write/edit policy is added by `coding-fs-observation-policy` (an `fs/*` event-gate plugin, no schema change); a deployment that loads these tools is expected to also load it. `read_image` is not registered without `ctx.attachments`; its schema is route-independent, and execution refuses unless the exact routed model declares image input.',
   },
   {
+    pkg: 'coding-tool-apply-patch',
+    dir: 'tool-apply-patch',
+    source: 'packages/fs/tool-apply-patch/src/index.ts',
+    requires: ['ctx.tools', 'ctx.fs', 'ctx.systemPrompt'],
+    writes: ['tool/call', 'fs/write-intent or fs/edit-intent', 'fs/observed after successful mutation', 'tool/result'],
+    async mount(ctx) {
+      await ctx.plugin(LocalFileSystem)
+      await ctx.plugin(ToolApplyPatch)
+    },
+    note:
+      'Codex-style patch envelope over the filesystem seam. Add File and Update File are supported; Delete File and Move to are explicitly rejected because the filesystem service has no delete or rename primitive.',
+  },
+  {
     pkg: 'coding-tool-fs-search',
     dir: 'tool-fs-search',
     source: 'packages/fs/tool-fs-search/src/index.ts',
@@ -580,6 +594,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
     dir: 'tool-subagent-control',
     source: {
       interrupt_agent: 'packages/subagent/tool-subagent-control/src/index.ts',
+      followup_task: 'packages/subagent/tool-subagent-control/src/index.ts',
       list_agents: 'packages/subagent/tool-subagent-control/src/list-agents.ts',
       send_message: 'packages/subagent/tool-subagent-control/src/index.ts',
     },

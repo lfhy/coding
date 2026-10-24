@@ -132,7 +132,7 @@ afterAll(async () => {
   if (root !== undefined) await rm(root, { recursive: true, force: true })
 })
 
-async function agent(preset: 'standard' | 'code' | 'minimal', cwd: string) {
+async function agent(preset: 'standard' | 'code' | 'minimal' | 'codex', cwd: string) {
   const handle = await ctx.agents.create({
     sessionId: SessionId(`browser-${preset}-${Math.random().toString(36).slice(2)}`),
     meta: { cwd },
@@ -264,6 +264,7 @@ describe('browser tools and skill in the shipped Web preset composition', () => 
   it('lists and loads bundled browser and frontend skills only for presets with browser tools', async () => {
     const native = await agent('standard', root)
     const coded = await agent('code', root)
+    const codex = await agent('codex', root)
     const minimal = await agent('minimal', root)
     const entries = (target: Agent) => ctx.skills.list({ cwd: root, scope: target })
     try {
@@ -281,12 +282,14 @@ describe('browser tools and skill in the shipped Web preset composition', () => 
       })
       expect((await entries(coded.agent)).map(skill => skill.name)).toContain('frontend-development')
       expect((await entries(coded.agent)).map(skill => skill.name)).toContain('stylekit')
+      expect((await entries(codex.agent)).map(skill => skill.name)).toContain('frontend-development')
+      expect((await entries(codex.agent)).map(skill => skill.name)).toContain('browser-use')
       expect((await entries(minimal.agent)).map(skill => skill.name)).not.toContain('frontend-development')
       expect((await entries(minimal.agent)).map(skill => skill.name)).not.toContain('stylekit')
       expect((await ctx.skills.list()).map(skill => skill.name)).not.toContain('frontend-development')
       expect(ctx.tools.schemas(minimal.agent).map(tool => tool.name).filter(name => name.startsWith('browser_'))).toEqual([])
 
-      for (const target of [native.agent, coded.agent]) {
+      for (const target of [native.agent, coded.agent, codex.agent]) {
         const decision = await agentEvents(target.ctx, target).waterfall(
           'agent/pre-step',
           { messages: [], turn: 1, step: 1, signal },
@@ -334,6 +337,7 @@ describe('browser tools and skill in the shipped Web preset composition', () => 
       expect((await call(minimal.agent, 'skill', { name: 'browser-use' })).error?.info)
         .toMatchObject({ code: 'UNKNOWN_TOOL' })
     } finally {
+      await codex.dispose()
       await minimal.dispose()
       await coded.dispose()
       await native.dispose()

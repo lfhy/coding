@@ -246,6 +246,9 @@ importers:
       coding-token-meter:
         specifier: workspace:^
         version: link:../../packages/llm/token-meter
+      coding-tool-apply-patch:
+        specifier: workspace:^
+        version: link:../../packages/fs/tool-apply-patch
       coding-tool-ask-user:
         specifier: workspace:^
         version: link:../../packages/interaction/tool-ask-user
@@ -1378,6 +1381,9 @@ importers:
       coding-token-meter:
         specifier: workspace:^
         version: link:../../llm/token-meter
+      coding-tool-apply-patch:
+        specifier: workspace:^
+        version: link:../../fs/tool-apply-patch
       coding-tool-bash:
         specifier: workspace:^
         version: link:../../shell/tool-bash
@@ -5168,6 +5174,52 @@ importers:
       coding-subprocess:
         specifier: workspace:^
         version: link:../../subprocess/subprocess
+
+  packages/fs/tool-apply-patch:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      coding-agent:
+        specifier: workspace:^
+        version: link:../../core/agent
+      coding-fs:
+        specifier: workspace:^
+        version: link:../fs
+      coding-fs-local:
+        specifier: workspace:^
+        version: link:../fs-local
+      coding-fs-observation-policy:
+        specifier: workspace:^
+        version: link:../fs-observation-policy
+      coding-invariants:
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      coding-llm:
+        specifier: workspace:^
+        version: link:../../llm/llm
+      coding-sandbox:
+        specifier: workspace:^
+        version: link:../../sandbox/sandbox
+      coding-sandbox-policy:
+        specifier: workspace:^
+        version: link:../../sandbox/sandbox-policy
+      coding-session:
+        specifier: workspace:^
+        version: link:../../core/session
+      coding-system-prompt:
+        specifier: workspace:^
+        version: link:../../core/system-prompt
+      coding-tools:
+        specifier: workspace:^
+        version: link:../../core/tools
+      coding-user-approval:
+        specifier: workspace:^
+        version: link:../../interaction/user-approval
 
   packages/fs/tool-fs:
     dependencies:

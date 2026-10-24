@@ -353,10 +353,16 @@
 - id: tool-fs
   disabled: true
 
+- id: tool-apply-patch
+  disabled: true
+
 - id: tool-fs-search
   disabled: true
 
 - id: tool-str-replace-editor
+  disabled: true
+
+- id: tool-apply-patch
   disabled: true
 
 # The `skill` REGISTRY stays in the host plane. It is host+per-scope layered

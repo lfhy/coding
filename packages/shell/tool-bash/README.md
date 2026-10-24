@@ -8,7 +8,7 @@
 
 插件还会提供 `tool:bash` 提示词段落（顺序 105）：检查每个结果中的 `[exit code: N]` 标记，发现失败时先调查原因再继续。
 
-## 工具
+| `toolName` | `bash` | 模型侧工具名称；Codex 风格 preset 可选择其他名称，但 Free 通道仍要求保留 `bash` 兼容工具。 |
 
 ### `bash`
 

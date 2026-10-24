@@ -250,6 +250,9 @@
     - id: tool-fs
       name: 'coding-tool-fs'
 
+    - id: tool-apply-patch
+      name: 'coding-tool-apply-patch'
+
     - id: tool-fs-search
       name: 'coding-tool-fs-search'
       config:

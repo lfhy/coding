@@ -3,7 +3,7 @@
 
 # 包清单
 
-workspace 共 259 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
+workspace 共 260 个包，按 group 分节。每行给出包目录、职责（README 首段）、源码入口与 `tests/` 下的 spec 文件数；标 `client` 的包导出 `./client` 浏览器半，标 `bundle` 的包是 profile/bundle 装配层。
 
 模型可见工具的名称与 schema 见 [tool-catalog.md](../tool-catalog.md)，插件可配置项见 [config-catalog.md](../config-catalog.md)，依赖边见 [module-graph.md](../module-graph.md)。
 
@@ -166,6 +166,7 @@ workspace 共 259 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/fs/fs-observation-policy` — **fs-observation-policy 插件**：它记录观测到的存在或缺失状态，并在 `ctx.fs` 提供方约定… 入口 `src/index.ts`（tests 1）
 - `packages/fs/fs-sandbox` — 它原样复用本地后端配置：`cwd` 仍是相对路径的解析默认值，`diffBasisMaxBytes` 则限制可选的覆写上下文 diff 基础 入口 `src/index.ts`（tests 3）
 - `packages/fs/fs-workspace` — `coding-fs` 的多后端装配：加载它即由 `ctx.fs` 提供 `FsRegistry`，默认注册两个后端——包了沙箱围栏的本地后端… 入口 `src/index.ts`（tests 1）
+- `packages/fs/tool-apply-patch` — The parser accepts Codex's `*** Begin Patch` / `*** End Patch` envelope,… 入口 `src/index.ts`（tests 1）
 - `packages/fs/tool-fs` — **面向模型的文件系统工具**（`read`、`read_image`、`write`、`edit`）及其**执行器** 入口 `src/index.ts`（tests 6）
 - `packages/fs/tool-fs-search` — **面向模型的文件系统发现工具**（`glob`、`grep`）在普通本地 Workspace 中使用打包的 ripgrep 二进制… 入口 `src/index.ts`（tests 7）
 - `packages/fs/tool-str-replace-editor` — 基于 `ctx.fs`、面向模型的独立 `str_replace_editor` 入口 `src/index.ts`（tests 1）

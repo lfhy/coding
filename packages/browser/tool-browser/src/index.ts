@@ -17,6 +17,12 @@ export const name = 'tool-browser'
 /** 浏览器操作、提示词路由及持久截图所需服务；审批缺席时执行仍须明确拒绝。 */
 export const inject = ['tools', 'browserUse', 'attachments', 'systemPrompt']
 
+/** Optional Codex-style overrides for the stable browser tool descriptions. */
+export interface DescriptionConfig {
+  promptSection?: string
+  descriptions?: Record<BrowserCommand['kind'], string>
+}
+
 const MAX_SNAPSHOT_CHARS = 12_000
 const MAX_TITLE_CHARS = 512
 const MAX_URL_CHARS = 2_048
@@ -236,18 +242,21 @@ function browserFailure(command: BrowserCommand, error: BrowserUseError): Browse
  * @param ctx - 持有浏览器服务、附件存储、工具注册表和系统提示词的上下文。
  * @returns 无返回值；注册随插件卸载撤销。
  */
-export function apply(ctx: Context): void {
+export function apply(ctx: Context, config: DescriptionConfig = {}): void {
   // 跨调用路由属于系统提示词：模型最容易走错的替代方案是在 bash 里自建无头浏览器脚本，
   // 而八项工具的 schema 只在模型已决定调用浏览器后才生效。
+  const sectionText = config.promptSection
+    ?? 'Use the browser tools, not a headless browser script run in bash, when a task needs a rendered page read, reproduced, verified, or driven, including your own app on localhost or a dev server.'
   ctx.systemPrompt.section({
     name: 'tool:browser',
     order: 107,
-    text: 'Use the browser tools, not a headless browser script run in bash, when a task needs a rendered page read, reproduced, verified, or driven, including your own app on localhost or a dev server.',
+    text: sectionText,
   })
 
   function register(action: BrowserCommand['kind'], description: string, parameters: ParameterSchemaSpec): void {
+    const modelDescription = config.descriptions?.[action] ?? description
     ctx.tools.register(defineTool({
-      name: `browser_${action}`, description, parameters,
+      name: `browser_${action}`, description: modelDescription, parameters,
       output: {
         schema: {
           type: 'object', additionalProperties: false,

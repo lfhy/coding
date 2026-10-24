@@ -29,13 +29,15 @@ describe('gen-tool-catalog collectToolCatalog', () => {
     const catalog = await collectToolCatalog()
     const names = catalog.flatMap(entry => entry.schemas.map(s => s.name)).sort()
     expect(names).toEqual([
-      'ask_user_question', 'bash', 'bash', 'browser_click', 'browser_close', 'browser_fill',
+      'apply_patch', 'ask_user_question', 'bash', 'bash', 'browser_click', 'browser_close', 'browser_fill',
       'browser_navigate', 'browser_screenshot', 'browser_scroll', 'browser_snapshot', 'browser_viewport',
+      'computer_click', 'computer_confirm', 'computer_drag', 'computer_list_apps', 'computer_observe', 'computer_perform_action',
+      'computer_press_key', 'computer_scroll', 'computer_set_value', 'computer_type_text', 'computer_wait',
       'cordis_define', 'cordis_inspect_list',
       'cordis_inspect_query', 'cordis_inspect_self', 'cordis_run', 'cordis_stop',
-      'cordis_undefine', 'create_goal', 'edit', 'exit_plan_mode', 'followup_task', 'get_goal', 'glob', 'grep',
+      'cordis_undefine', 'create_goal', 'edit', 'exit_plan_mode', 'followup_task', 'followup_task', 'get_goal', 'glob', 'grep',
       'interrupt_agent', 'interrupt_agent', 'job_kill', 'job_list', 'job_output',
-      'list_agents', 'list_agents', 'lsp', 'pwsh', 'pwsh', 'ralph',
+      'list_agents', 'list_agents', 'lsp', 'memory_delete', 'memory_list', 'memory_read', 'memory_save', 'memory_update', 'pwsh', 'pwsh', 'ralph',
       'read', 'read_image', 'report', 'run_code', 'schedule_create', 'schedule_delete',
       'schedule_list', 'send_message', 'send_message', 'session_event_read', 'session_event_search',
       'session_event_trace', 'session_search', 'session_trace', 'skill', 'spawn_teammate',
@@ -60,7 +62,10 @@ describe('gen-tool-catalog collectToolCatalog', () => {
     expect(browser?.note).toContain('active tab and session revision')
 
     const definitions: ToolDefinition[] = []
-    ToolBrowser.apply({ tools: { register: (tool: ToolDefinition) => { definitions.push(tool) } } } as unknown as Context)
+    ToolBrowser.apply({
+      tools: { register: (tool: ToolDefinition) => { definitions.push(tool) } },
+      systemPrompt: { section: () => () => {} },
+    } as unknown as Context)
     expect(definitions.map(definition => definition.name)).toEqual(actions.map(action => `browser_${action}`))
     for (const definition of definitions) {
       const parameters = definition.parameters as unknown as JsonSchema
@@ -93,6 +98,7 @@ describe('gen-tool-catalog collectToolCatalog', () => {
     const control = catalog.find(entry => entry.pkg === 'coding-tool-subagent-control')
     expect(control?.sources).toEqual({
       interrupt_agent: 'packages/subagent/tool-subagent-control/src/index.ts',
+      followup_task: 'packages/subagent/tool-subagent-control/src/index.ts',
       list_agents: 'packages/subagent/tool-subagent-control/src/list-agents.ts',
       send_message: 'packages/subagent/tool-subagent-control/src/index.ts',
     })

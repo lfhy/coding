@@ -38,12 +38,15 @@ export const inject = ['tools', 'shell', 'systemPrompt', 'shellEnv']
 
 /** Configuration for the bash tool. */
 export interface Config {
+  /** Model-facing tool name (default `bash`). */
+  toolName?: string
   /** Expose `run_in_background` (default true); disabled calls are also rejected. */
   enableRunInBackground?: boolean
 }
 
 /** Runtime configuration schema for the bash tool plugin. */
 export const Config: z<Config> = z.object({
+  toolName: z.string().default('bash'),
   enableRunInBackground: z.boolean().default(true),
 })
 
@@ -103,7 +106,7 @@ function bashDescription(backgroundEnabled: boolean, escalationModes: readonly S
  */
 type BashCallArgs = { command: string; description: string; workdir?: string; run_in_background?: boolean }
 
-function presentBashCall(args: BashCallArgs): GenericCallView | TerminalCallView {
+function presentBashCall(args: BashCallArgs, _toolName: string): GenericCallView | TerminalCallView {
   if (args.run_in_background === true) {
     return {
       card: 'generic',
@@ -203,6 +206,8 @@ const BACKGROUND_OUTPUT_PROPERTIES = {
 } as const
 
 export function apply(ctx: Context, config: Config = {}): void {
+  const toolName = config.toolName ?? 'bash'
+  if (toolName.trim().length === 0) throw new Error('tool-bash: toolName must be non-empty')
   const backgroundEnabled = config.enableRunInBackground ?? true
   const defaultMode = ctx.shell.sandboxMode
   const escalationModes: readonly SandboxMode[] = defaultMode === undefined ? [] : ESCALATION_TARGETS
@@ -237,7 +242,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         approver: ctx.get('approval'),
         agent: exec.agent,
         callId: exec.callId,
-        toolName: 'bash',
+        toolName: toolName,
         signal: exec.signal,
       },
     )
@@ -251,7 +256,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   })
 
   ctx.tools.register(defineTool({
-    name: 'bash',
+    name: toolName,
     description: bashDescription(backgroundEnabled, escalationModes),
     parameters: {
       command: { type: 'string', required: true, description: 'The bash command to execute.' },
@@ -399,7 +404,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       }
       return { kind: 'foreground' as const, ...canonicalBashResult(result) }
     },
-    presentCall: presentBashCall,
+    presentCall: args => presentBashCall(args, toolName),
     presentResult: presentBashResult,
   }))
 }

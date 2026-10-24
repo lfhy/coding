@@ -1,0 +1,54 @@
+{
+  "name": "coding-tool-apply-patch",
+  "description": "Model-facing Codex-style patch tool over the Harness filesystem service",
+  "version": "0.1.0-rc.8",
+  "publishConfig": { "access": "public" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/fs/tool-apply-patch"
+  },
+  "type": "module",
+  "main": "lib/index.mjs",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.mjs" },
+    "./invariant": { "types": "./lib/types/invariant.d.ts", "default": "./lib/invariant.mjs" },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.mjs",
+    "lib/invariant.mjs",
+    "lib/types/**/*.d.ts"
+  ],
+  "license": "MIT",
+  "dependencies": { "@deepseek-ai/schemastery": "workspace:^" },
+  "peerDependencies": {
+    "coding-fs": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-llm": "workspace:^",
+    "coding-sandbox": "workspace:^",
+    "coding-sandbox-policy": "workspace:^",
+    "coding-session": "workspace:^",
+    "coding-system-prompt": "workspace:^",
+    "coding-tools": "workspace:^",
+    "coding-user-approval": "workspace:^",
+    "@deepseek-ai/cordis": "workspace:^"
+  },
+  "devDependencies": {
+    "coding-agent": "workspace:^",
+    "coding-fs": "workspace:^",
+    "coding-fs-local": "workspace:^",
+    "coding-fs-observation-policy": "workspace:^",
+    "coding-invariants": "workspace:^",
+    "coding-llm": "workspace:^",
+    "coding-sandbox": "workspace:^",
+    "coding-sandbox-policy": "workspace:^",
+    "coding-session": "workspace:^",
+    "coding-system-prompt": "workspace:^",
+    "coding-tools": "workspace:^",
+    "coding-user-approval": "workspace:^",
+    "@deepseek-ai/cordis": "workspace:^"
+  }
+}

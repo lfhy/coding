@@ -27,6 +27,8 @@ const STATUSES = ['pending', 'in_progress', 'completed'] as const
 
 /** Model-facing todo tool configuration. */
 export interface Config {
+  /** Model-facing tool name (default `todo_write`). */
+  toolName?: string
   /**
    * Required deployment choice for whether several todos may be `in_progress` at once. True suits
    * agents that run work concurrently — subagents, background commands, workflow fan-out — and the
@@ -39,6 +41,7 @@ export interface Config {
 
 /** Schemastery configuration for the todo tool consumer. */
 export const Config: z<Config> = z.object({
+  toolName: z.string().default('todo_write'),
   allowParallelInProgress: z.boolean().required(),
 })
 
@@ -127,6 +130,8 @@ const todosProjectionSchema: ZodType<TodoItem[] | null> = zod.union([
  */
 export function apply(ctx: Context, config: Config): void {
   const allowParallel = config.allowParallelInProgress
+  const toolName = config.toolName ?? 'todo_write'
+  if (toolName.trim().length === 0) throw new Error('tool-todo: toolName must be non-empty')
   // The unit child activates only when a projection registry is composed
   // (headless assemblies without the seam stay unaffected). Standing-plan fold:
   // latest whole todo/write list, cleared by the next turn/start (turn/end keeps
@@ -147,7 +152,7 @@ export function apply(ctx: Context, config: Config): void {
     })
   })
   ctx.tools.register(defineTool({
-    name: 'todo_write',
+    name: toolName,
     description: describe(allowParallel),
     parameters: {
       todos: {

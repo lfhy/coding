@@ -1,0 +1,3 @@
+name: Codex 模式
+description: 采用 Codex 风格编码提示词、命令与 patch 工具，并保留浏览器和子 agent 协作能力。
+order: 5

@@ -65,6 +65,7 @@
     "coding-tool-pwsh-persistent": "workspace:^",
     "coding-tool-cordis": "workspace:^",
     "coding-tool-fs": "workspace:^",
+    "coding-tool-apply-patch": "workspace:^",
     "coding-tool-fs-search": "workspace:^",
     "coding-tool-goal": "workspace:^",
     "coding-tool-pwsh": "workspace:^",

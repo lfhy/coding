@@ -981,6 +981,14 @@ describe('browser action tools', () => {
       .toContain('Do not pass a Markdown link')
   })
 
+  it('accepts Codex-style prompt and description overrides', async () => {
+    const { ctx } = await setup()
+    const browser = ctx.tools.get('browser_navigate')
+    expect(browser).toBeDefined()
+    const section = await ctx.systemPrompt.assemble()
+    expect(browser?.description).toContain('absolute HTTP(S)')
+    expect(section.sections.find(item => item.name === 'tool:browser')?.text).toContain('Use the browser tools')
+  })
   it('rejects mismatched fields and bounds before approval or browser execution', async () => {
     const { ctx, call } = await setup()
     const asked = vi.fn(() => Promise.resolve('allowed-once' as const))
@@ -998,6 +1006,7 @@ describe('browser action tools', () => {
     expect(asked).not.toHaveBeenCalled()
     expect((ctx.browserUse as FakeBrowser).commands).not.toHaveBeenCalled()
   })
+
 
   it.each([false, true])('blocks a remote marker without local fallback (full access: %s)', async (fullAccess) => {
     const { ctx, call, agent } = await setup(true, fullAccess ? { mode: 'danger-full-access', policy: 'never' } : {})
