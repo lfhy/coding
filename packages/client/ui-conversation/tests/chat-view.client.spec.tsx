@@ -164,6 +164,7 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
     read: () => savedScroll,
   }
   const forkAt = vi.fn()
+  const retryTurn = vi.fn<(turn: number) => Promise<void>>().mockResolvedValue(undefined)
   // Selection rides the REAL chat store (same construction path as
   // production; the view reads it through the PropsStore useStore share).
   const chat = createChatStore().create()
@@ -293,6 +294,7 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
     inspectCall,
     chatScroll,
     forkAt,
+    retryTurn,
     // Absent-service default; mention tests override with a real resolver.
     fileMentions: () => undefined,
     // Mirrors the real lookup chain (conversation namespace, then common).
@@ -301,7 +303,7 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
   const setSelection = (next: SelectionTarget | null): void => { chat.actions.select(next) }
   return {
     set, ChatView, props, openDetails, openFile, openBrowserUrl, loadOlder, inspectCall,
-    chatScroll, forkAt, setSelection, toolOwners,
+    chatScroll, forkAt, retryTurn, setSelection, toolOwners,
   }
 }
 
@@ -745,9 +747,30 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
     const statuses = view.getAllByRole('status')
     expect(statuses.map(status => status.textContent)).toEqual([
-      '本轮运行失败API key is invalidAUTH',
-      '本轮运行失败plugin exploded',
+      '本轮运行失败API key is invalidAUTH重试',
+      '本轮运行失败plugin exploded重试',
     ])
+  })
+
+  it('resends the failed turn from its error row and restores the button once the send settles', async () => {
+    const h = makeHarness({ nodes: [user(1, 'try'), turnError(2)] })
+    const view = render(<h.ChatView {...h.props} />)
+    const retryButton = view.getByRole('button', { name: '重试' })
+    let settle!: () => void
+    h.retryTurn.mockImplementationOnce(() => new Promise<void>((resolve) => { settle = resolve }))
+    fireEvent.click(retryButton)
+    expect(h.retryTurn).toHaveBeenCalledWith(1)
+    // Waiting on admission: a second click must not enqueue a second resend.
+    expect(retryButton.hasAttribute('disabled')).toBe(true)
+    fireEvent.click(retryButton)
+    expect(h.retryTurn).toHaveBeenCalledTimes(1)
+    await act(async () => { settle() })
+    expect(retryButton.hasAttribute('disabled')).toBe(false)
+    // A rejected resend (reported through promptError) still restores the button.
+    h.retryTurn.mockRejectedValueOnce(new Error('agent-busy'))
+    await act(async () => { fireEvent.click(retryButton) })
+    expect(h.retryTurn).toHaveBeenCalledTimes(2)
+    expect(retryButton.hasAttribute('disabled')).toBe(false)
   })
 
   it('renders the max-tokens notice with localized guidance, distinct from turn errors', () => {

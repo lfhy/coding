@@ -295,6 +295,7 @@ function panelProps(data: WorkflowRunChatData, sessions = listState(), openSessi
     openBrowserUrl: vi.fn(),
     inspectCall: () => {},
     forkAt: () => {},
+    retryTurn: async () => {},
     renderMessageImages: () => null,
     fileMentions: () => undefined,
     openSession,

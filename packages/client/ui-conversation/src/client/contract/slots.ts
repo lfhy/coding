@@ -445,6 +445,11 @@ export interface ChatNodeOwnerProps {
   openBrowserUrl: (url: string) => void
   inspectCall: (callId: CallId) => void
   forkAt: (seq: number) => void
+  /**
+   * 重发某个失败轮次开头的用户消息；只由 terminal `turn-error` 行的重试按钮使用。
+   * 拒绝表示这次重发没有被接纳，原因已由 promptError 承载。
+   */
+  retryTurn: (turn: number) => Promise<void>
   /** Render a historical image group through the attachment slot. */
   renderMessageImages: RenderMessageImages
   /** Resolve one session-authorized image for tool-result previews. */
@@ -815,6 +820,12 @@ export interface ChatViewInjected {
   }
   /** Fork through the completed turn ending at the eligible message `seq`, then open the child. */
   forkAt: (seq: number) => void
+  /**
+   * 回到失败轮次开头的用户消息重发一次：失败轮次的 terminal 错误行用它提供重试按钮。
+   * @param turn - 失败的轮次编号。
+   * @returns 完成或拒绝；业务失败已经写进 promptError。
+   */
+  retryTurn: (turn: number) => Promise<void>
   /**
    * Prose file-mention vocabulary for one closing message, from the optional
    * {@link ChatFileMentions} service (resolved lazily per call, so composing

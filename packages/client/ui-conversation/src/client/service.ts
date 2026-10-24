@@ -12,7 +12,9 @@ import type { Context } from '@deepseek-ai/cordis'
 // Type-only imports: a plugin-to-plugin value import is a bundle purity
 // error, so scope resolution goes through the sessions service (scopeOf
 // method) instead of the standalone helper.
-import type { ISessions, SessionFace, SessionId } from 'coding-client-runtime/client'
+import type {
+  ConversationSnapshot, ISessions, SessionFace, SessionId, UserMessageNode,
+} from 'coding-client-runtime/client'
 import type { SubmitImageAttachment, SubmitOutcome } from 'coding-client-ui-input-trigger/client'
 import type { ImageAttachmentRef, ImageMediaType } from 'coding-attachment'
 import type { ComposerAttachment } from './contract/slots.ts'
@@ -20,6 +22,9 @@ import type { QueueAction, QueueItemId } from './contract/queue.ts'
 import type { ComposerBlocks } from './input/blocks.ts'
 import type { DraftAttachmentId, SessionInputResolver } from './input/contract.ts'
 import type { InputSubmitMode } from './contract/composer-submission.ts'
+
+/** 一次 prompt 提交的完整内容（文本与已编码图片，顺序即提交顺序）。 */
+type PromptParts = Parameters<SessionFace['prompt']>[0]
 
 /**
  * The outward conversation face (`ctx.conversation`): the scope-addressed
@@ -40,6 +45,14 @@ export interface IConversation {
    * @returns completion; business failures reject (and land in promptError).
    */
   send(text: string): Promise<void>
+  /**
+   * 重发某个失败轮次开头的那条用户消息：文本原样重发，图片按会话附件重新取字节，
+   * 作为一次新的排队发送（不改写历史，也不复用原消息）。
+   * @param turn - 失败的轮次编号（terminal `turn-error` 节点携带）。
+   * @returns 完成或拒绝；发送失败与 `send` 一样写进 promptError，
+   * 找不到该轮用户消息或附件读取失败时只拒绝、不发送任何内容。
+   */
+  retryTurn(turn: number): Promise<void>
   /**
    * Apply one edit, remove, or strict steer operation to a pending queue occurrence.
    * @param itemId - agent-owned inbox occurrence identity.
@@ -131,6 +144,17 @@ export class ConversationController extends Service implements IConversation {
     const session = this.scopedSession('send')
     const result = await session.prompt([{ type: 'text', text }], 'queue')
     if (!result.ok) throw new Error(`conversation.send failed: ${result.error.code}: ${result.error.message}`)
+  }
+
+  /**
+   * 重发失败轮次开头的用户消息（一次新的排队发送，历史保持不变）。
+   * @param turn - 失败的轮次编号。
+   */
+  async retryTurn(turn: number): Promise<void> {
+    const session = this.scopedSession('retryTurn')
+    const content = await replayContent(session, turn)
+    const result = await session.prompt(content, 'queue')
+    if (!result.ok) throw new Error(`conversation.retryTurn failed: ${result.error.code}: ${result.error.message}`)
   }
 
   /**
@@ -345,6 +369,64 @@ export class ConversationController extends Service implements IConversation {
       ...(file.name === '' ? {} : { name: file.name }),
     }
   }
+}
+
+/**
+ * 找出开启某个轮次的那条用户消息。Host 先记录 `turn/start`，认领的提示词随后作为
+ * 该轮的第一条 `user` 节点落到窗口内，因此边界齐全时取轮次起点与终点之间的第一条；
+ * 边界已滑出加载窗口（分页）时退回窗口内最后一条用户消息。
+ * @param snapshot - 当前会话投影。
+ * @param turn - 目标轮次编号。
+ * @returns 开启该轮次的用户消息；窗口内没有时为 undefined。
+ */
+function openingUserNode(snapshot: ConversationSnapshot, turn: number): UserMessageNode | undefined {
+  const location = snapshot.chat.timeline.turns.get(turn)
+  const startSeq = location?.start?.seq
+  const endSeq = location?.end?.seq
+  const users: UserMessageNode[] = []
+  for (const node of snapshot.chat.nodes.values()) {
+    if (node.kind !== 'user' || node.visibility === 'hidden') continue
+    users.push(node.data as UserMessageNode)
+  }
+  if (startSeq !== undefined && endSeq !== undefined) {
+    return users.filter(node => node.seq >= startSeq && node.seq <= endSeq)
+      .sort((left, right) => left.seq - right.seq)[0]
+  }
+  return users.sort((left, right) => left.seq - right.seq).at(-1)
+}
+
+/**
+ * 把一条已持久化的用户消息还原成可再次提交的内容：文本原样，图片重新读取会话附件字节。
+ * 用户消息只承载文本与图片，其他块不进入重发内容。
+ * @param session - 目标会话。
+ * @param turn - 失败的轮次编号。
+ * @returns 可直接提交给 `prompt` 的内容。
+ */
+async function replayContent(session: SessionFace, turn: number): Promise<PromptParts> {
+  const node = openingUserNode(session.getSnapshot(), turn)
+  if (node === undefined) {
+    throw new Error(`conversation.retryTurn: turn ${turn} has no user message in the loaded window`)
+  }
+  const content: PromptParts = []
+  for (const block of node.content) {
+    if (block.type === 'text') {
+      content.push({ type: 'text', text: block.text })
+      continue
+    }
+    if (block.type !== 'image') continue
+    const stored = await session.readAttachment(block.attachment.attachmentId)
+    if (!stored.ok) throw new Error(`conversation.retryTurn: ${stored.error.code}: ${stored.error.message}`)
+    content.push({
+      type: 'image',
+      mediaType: stored.value.attachment.mediaType,
+      data: bytesToBase64(stored.value.data),
+      ...stored.value.attachment.name === undefined ? {} : { name: stored.value.attachment.name },
+    })
+  }
+  if (content.length === 0) {
+    throw new Error(`conversation.retryTurn: turn ${turn} opening user message carries nothing to resend`)
+  }
+  return content
 }
 
 function imageMediaType(value: string): ImageMediaType {

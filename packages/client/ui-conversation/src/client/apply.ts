@@ -508,6 +508,9 @@ export function apply(ctx: Context): void {
               // Fork or child-rename failure keeps the source view untouched.
             })
         },
+        // 重发同一条用户消息就是一次新的排队发送；拒绝时 promptError 已承载原因，
+        // 失败轮次行只负责把按钮恢复成可再点状态。
+        retryTurn: turn => scopedConversation(sessions, sessionId).retryTurn(turn),
       }
     },
   }, ChatView)

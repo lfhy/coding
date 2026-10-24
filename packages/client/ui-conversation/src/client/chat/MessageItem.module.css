@@ -237,6 +237,13 @@
   font: var(--dsw-font-markdown-code-block-small);
 }
 
+/* 失败行的右侧动作格：错误码与重试按钮共用一列，窄屏时仍贴住原因文本。 */
+.turnErrorActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .maxTokensTitle {
   margin-right: 6px;
   color: var(--dsw-alias-state-warn-primary);

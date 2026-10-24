@@ -8,7 +8,7 @@ import type { ReactNode } from 'react'
 import type {
   ModelRetryNode, TurnErrorNode, UserMessageNode,
 } from 'coding-client-runtime/client'
-import { ChatUserBubble, JsonBlock, MessageText, StateDot } from 'coding-client-ui-primitives'
+import { Button, ChatUserBubble, IconRefreshOutline16, JsonBlock, MessageText, StateDot } from 'coding-client-ui-primitives'
 import type { ChatNodeOwnerProps, ChatNodeViewProps, ChatViewSlotProps } from '../contract/slots.ts'
 import { ReferenceIcon } from '../reference/ReferenceIcon.tsx'
 import { CompactionItem } from './CompactionItem.tsx'
@@ -112,11 +112,24 @@ function ModelRetryItem({ node, active, t }: {
   )
 }
 
-/** Persistent, turn-positioned feedback for a terminal failure. */
-function TurnErrorItem({ node, t }: {
+/** 终态失败行：失败原因、可选错误码，以及回到该轮用户消息的一次重发。 */
+function TurnErrorItem({ node, onRetry, t }: {
   node: TurnErrorNode
+  /** 重发该失败轮次开头的用户消息；拒绝表示这次重发没有被接纳。 */
+  onRetry: () => Promise<void>
   t: ChatViewSlotProps['t']
 }) {
+  // 接纳前禁用按钮，避免同一行被连点成多次重发；接纳后立刻恢复可点。
+  const [pending, setPending] = useState(false)
+  const retry = (): void => {
+    if (pending) return
+    setPending(true)
+    void onRetry()
+      .catch(() => {
+        // 拒绝原因由 promptError 在输入区呈现，这里只负责恢复按钮。
+      })
+      .finally(() => { setPending(false) })
+  }
   return (
     <div className={css.turnErrorRow} role="status">
       <StateDot state="error" className={css.turnErrorDot} />
@@ -124,7 +137,19 @@ function TurnErrorItem({ node, t }: {
         <span className={css.turnErrorTitle}>{t('message.turnError')}</span>
         <span className={css.turnErrorMessage}>{node.message}</span>
       </div>
-      {node.code !== undefined && <code className={css.turnErrorCode}>{node.code}</code>}
+      <div className={css.turnErrorActions}>
+        {node.code !== undefined && <code className={css.turnErrorCode}>{node.code}</code>}
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={<IconRefreshOutline16 />}
+          title={t('message.turnError.retryHint')}
+          disabled={pending}
+          onClick={retry}
+        >
+          {t('retry')}
+        </Button>
+      </div>
     </div>
   )
 }
@@ -327,8 +352,11 @@ export const RetryNodeView = memo(function RetryNodeView({ node, t }: ChatNodeVi
 })
 
 /** Terminal turn-error keyed Chat renderer. */
-export const TurnErrorNodeView = memo(function TurnErrorNodeView({ node, t }: ChatNodeViewProps<'turn-error'>) {
-  return <TurnErrorItem node={node.data} t={t} />
+export const TurnErrorNodeView = memo(function TurnErrorNodeView({
+  node, retryTurn, t,
+}: ChatNodeViewProps<'turn-error'>) {
+  const data = node.data
+  return <TurnErrorItem node={data} onRetry={() => retryTurn(data.turn)} t={t} />
 })
 
 /** Max-tokens turn-end notice keyed Chat renderer. */

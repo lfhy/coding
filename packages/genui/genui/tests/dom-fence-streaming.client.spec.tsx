@@ -77,6 +77,7 @@ function harness(initial: string, options: { sourceInitiallyMissing?: boolean } 
   const translate = ((key: string) => key) as ChatViewSlotProps['t']
   const owner: ChatNodeOwnerProps = {
     openFile: () => {}, openBrowserUrl: () => {}, inspectCall: () => {}, forkAt: () => {},
+    retryTurn: async () => {},
     renderMessageImages: () => null, fileMentions: () => undefined,
   }
   const renderListeners = new Set<() => void>()

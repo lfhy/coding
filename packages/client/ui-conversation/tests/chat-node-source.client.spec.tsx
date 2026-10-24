@@ -26,6 +26,7 @@ describe('ChatNodeSeat 源码身份', () => {
       renderSlot: (() => node.data.status) as ChatViewSlotProps['renderSlot'],
       t: ((value: string) => value) as ChatViewSlotProps['t'],
       openFile: () => {}, openBrowserUrl: () => {}, inspectCall: () => {}, forkAt: () => {},
+      retryTurn: async () => {},
       renderMessageImages: () => null, fileMentions: () => undefined,
     }
     const view = render(<ChatNodeSeat {...props} />)

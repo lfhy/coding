@@ -17,7 +17,7 @@ type RoutedChatNodeOwner = {
 
 /** 按稳定 Context key 订阅和派发单行业务节点；DOM key 供扩展按同一身份读取源码。 */
 export const ChatNodeSeat = memo(function ChatNodeSeat({
-  nodeKey, selectedCallId, cwd, openFile, loadImage, openBrowserUrl, inspectCall, forkAt,
+  nodeKey, selectedCallId, cwd, openFile, loadImage, openBrowserUrl, inspectCall, forkAt, retryTurn,
   renderMessageImages, fileMentions, useSession, renderSlot, t,
 }: ChatNodeSeatProps) {
   const node = useSession(snapshot => snapshot.chat.nodes.get(nodeKey))
@@ -32,10 +32,12 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
       openBrowserUrl,
       inspectCall,
       forkAt,
+      retryTurn,
       renderMessageImages,
       fileMentions,
     }, [
-    node, selectedCallId, cwd, openFile, loadImage, openBrowserUrl, inspectCall, forkAt, renderMessageImages, fileMentions,
+    node, selectedCallId, cwd, openFile, loadImage, openBrowserUrl, inspectCall, forkAt, retryTurn,
+    renderMessageImages, fileMentions,
   ])
   if (routedNode === undefined || owner === null) return null
   // keyed slot 与节点判别字段使用同一份运行时身份；TypeScript 不会自动把

@@ -7,13 +7,16 @@ import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import { AttachmentId } from 'coding-attachment'
 import { makeTranslate, SlotTestRuntime } from 'coding-client-test-runtime'
-import type { QueuedMessage, SessionFace } from 'coding-client-runtime/client'
+import { EMPTY_CHAT_SNAPSHOT } from 'coding-client-runtime/client'
+import type {
+  ConversationSnapshot, QueuedMessage, SessionFace, TurnLocation,
+} from 'coding-client-runtime/client'
 import { ComposerBlockRegistry } from '../src/client/input/blocks.ts'
 import { InputHub } from '../src/client/input/hub.ts'
 import { ConversationController, UnsupportedImageMediaTypeError } from '../src/client/service.ts'
 import { zh } from '../src/client/locales.ts'
 
-async function bench(readAttachment?: SessionFace['readAttachment']) {
+async function bench(readAttachment?: SessionFace['readAttachment'], snapshot?: Partial<ConversationSnapshot>) {
   const runtime = await SlotTestRuntime.create()
   const prompt = vi.fn(() => Promise.resolve({ ok: true as const, value: { accepted: true as const } }))
   const updateQueue = vi.fn(() => Promise.resolve({ ok: true as const, value: { accepted: true as const } }))
@@ -21,6 +24,7 @@ async function bench(readAttachment?: SessionFace['readAttachment']) {
   const loadOlder = vi.fn(() => Promise.resolve())
   await runtime.sessions.add({
     id: 's1',
+    ...(snapshot === undefined ? {} : { snapshot }),
     session: { prompt, updateQueue, cancel, loadOlder, ...(readAttachment === undefined ? {} : { readAttachment }) },
   })
   // config.input is required (the apply shares its hub with the inject
@@ -35,6 +39,57 @@ async function bench(readAttachment?: SessionFace['readAttachment']) {
   const scoped = runtime.sessions.scope('s1')!.get('conversation') as ConversationController
   const shell = hub.shellFor(runtime.sessions.binding('s1')!)
   return { runtime, fiber, root, scoped, hub, shell, prompt, updateQueue, cancel, loadOlder }
+}
+
+/** 失败轮次重发的快照：轮次 1 的开头用户消息是 seq 6，seq 20 属于后面的排队消息。 */
+function retryChat(): Partial<ConversationSnapshot> {
+  const attachment = {
+    attachmentId: AttachmentId('image-1'),
+    mediaType: 'image/png' as const,
+    bytes: 1,
+    width: 1,
+    height: 1,
+    name: '截图.png',
+  }
+  const userNode = (seq: number, content: readonly unknown[]) => ({
+    key: `user:${seq}`,
+    kind: 'user',
+    id: `user-${seq}`,
+    target: 'chat',
+    anchorSeq: seq,
+    visibility: 'visible',
+    location: { kind: 'session' },
+    data: { kind: 'user', seq, time: seq, content, source: { kind: 'user' } },
+  })
+  // Host 先写 turn/start（seq 5），认领的提示词随后落在该轮内（seq 6）；
+  // seq 20 是后面轮次里才认领的排队消息，不属于这次失败。
+  // 推理块不属于可重发的用户输入，图片保留附件名。
+  const opener = userNode(6, [
+    { type: 'text', text: '再来一次' },
+    { type: 'reasoning', text: '不该被重发的推理' },
+    { type: 'image', attachment },
+  ])
+  const queued = userNode(20, [{ type: 'text', text: '排队里的下一条' }])
+  const nodes = [opener, queued]
+  const turn: TurnLocation = {
+    turn: 1,
+    status: 'closed',
+    steps: [],
+    start: { seq: 5 } as never,
+    end: { seq: 9 } as never,
+    data: { get: () => undefined },
+  }
+  return {
+    chat: {
+      ...EMPTY_CHAT_SNAPSHOT,
+      order: nodes.map(node => node.key),
+      nodes: {
+        get: key => nodes.find(node => node.key === key),
+        values: () => nodes,
+      },
+      timeline: { turnOrder: [1], turns: new Map([[1, turn]]) },
+    },
+  } as Partial<ConversationSnapshot>
 }
 
 describe('ConversationController', () => {
@@ -127,6 +182,44 @@ describe('ConversationController', () => {
     read.resolve({ ok: true, value: { attachment, data: Uint8Array.of(1) } })
     await expect(pending).rejects.toThrow('historical image scope was released')
     await b.runtime.dispose()
+  })
+
+  it('resends the failed turn opening user message with its images', async () => {
+    const attachment = {
+      attachmentId: AttachmentId('image-1'),
+      mediaType: 'image/png',
+      bytes: 1,
+      width: 1,
+      height: 1,
+      name: '截图.png',
+    }
+    const b = await bench(
+      () => Promise.resolve({ ok: true, value: { attachment, data: Uint8Array.of(1, 2) } } as never),
+      retryChat(),
+    )
+    await b.scoped.retryTurn(1)
+    expect(b.prompt).toHaveBeenCalledWith([
+      { type: 'text', text: '再来一次' },
+      { type: 'image', mediaType: 'image/png', data: 'AQI=', name: '截图.png' },
+    ], 'queue')
+    // Business failures fold into the callback rejection like send.
+    b.prompt.mockResolvedValueOnce({ ok: false, error: { code: 'agent-busy', message: 'busy', details: {} } } as never)
+    await expect(b.scoped.retryTurn(1)).rejects.toThrow('conversation.retryTurn failed: agent-busy: busy')
+    await b.runtime.dispose()
+  })
+
+  it('rejects a resend it cannot rebuild instead of sending partial content', async () => {
+    const empty = await bench()
+    await expect(empty.scoped.retryTurn(1)).rejects.toThrow(/has no user message in the loaded window/)
+    expect(empty.prompt).not.toHaveBeenCalled()
+    await empty.runtime.dispose()
+    const missing = await bench(
+      () => Promise.resolve({ ok: false, error: { code: 'attachment-error', message: 'gone', details: {} } } as never),
+      retryChat(),
+    )
+    await expect(missing.scoped.retryTurn(1)).rejects.toThrow('conversation.retryTurn: attachment-error: gone')
+    expect(missing.prompt).not.toHaveBeenCalled()
+    await missing.runtime.dispose()
   })
 
   it('fails loudly from the root scope, on an unbound session, or without SessionRuntime', async () => {
