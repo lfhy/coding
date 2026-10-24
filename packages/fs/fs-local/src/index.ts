@@ -13,6 +13,7 @@ import { FileSystem, FsError, FsVersion } from 'coding-fs'
 import { RemoteWorkspaceRouter, awaitMetadataProbe } from './remote.ts'
 import type {
   FsDirEntry,
+  FsProvider,
   FsEditOutcome,
   FsEditRequest,
   FsInfo,
@@ -62,11 +63,18 @@ const MAX_DIFF_BASIS_BYTES = Math.min(
  * capability-seam design record); enforce
  * containment with a stricter backend or a `tools/execute` permission plugin.
  */
-export class LocalFileSystem extends FileSystem {
-  static Config: z<Config> = z.object({
-    cwd: z.string().default(process.cwd()),
-    diffBasisMaxBytes: z.number().default(DEFAULT_DIFF_BASIS_MAX_BYTES),
-  })
+export class LocalFileSystemBackend implements FsProvider {
+  /** 本地后端的稳定标识。 */
+  readonly id = 'local'
+
+  /** 本地后端不自行施加部署级围栏；围栏由 `coding-fs-sandbox` 负责。 */
+  get sandboxMode(): undefined { return undefined }
+
+  /** 本地后端是兜底后端：任何工作区都可以由它处理。 */
+  matches(): boolean { return true }
+
+  /** 本地目标都不带远端前缀，因此后端自己拥有全部剩余 target。 */
+  owns(): boolean { return true }
 
   /** Validated config (schemastery applied the defaults before construction). */
   readonly config: ResolvedConfig
@@ -77,10 +85,10 @@ export class LocalFileSystem extends FileSystem {
   /** Per-targetKey tail promise: serializes mutating ops so the read→guard→write
    * window can't interleave, making concurrent writes/edits deterministically
    * ordered (one wins, the rest see the new version and reject as stale). */
-  private locks = new Map<string, Promise<unknown>>()
+  /** 每目标的锁链；测试用它断言临界区是否释放。 */
+  readonly locks = new Map<string, Promise<unknown>>()
 
-  constructor(ctx: Context, config: Config) {
-    super(ctx)
+  constructor(config: Config) {
     const resolved = config as ResolvedConfig
     if (!Number.isSafeInteger(resolved.diffBasisMaxBytes)
       || resolved.diffBasisMaxBytes <= 0
@@ -107,7 +115,7 @@ export class LocalFileSystem extends FileSystem {
     }
   }
 
-  override async resolve(path: string, opts?: { cwd?: string; signal?: AbortSignal }): Promise<FsTarget> {
+  async resolve(path: string, opts?: { cwd?: string; signal?: AbortSignal }): Promise<FsTarget> {
     if (opts?.signal?.aborted) throw new FsError('resolve aborted', 'FS_ABORTED')
     if (path.trim().length === 0) throw new FsError('file_path must be a non-empty string', 'FS_NOT_FOUND')
     const cwd = opts?.cwd ?? this.config.cwd
@@ -121,17 +129,17 @@ export class LocalFileSystem extends FileSystem {
     return { targetKey: local.targetKey, displayPath: local.displayPath }
   }
 
-  override processPath(target: FsTarget): string {
+  processPath(target: FsTarget): string {
     if (this.remoteRouter.owns(String(target.targetKey))) return this.remoteRouter.processPath(target)
     return String(target.targetKey)
   }
 
-  override fileUrl(target: FsTarget): string {
+  fileUrl(target: FsTarget): string {
     if (this.remoteRouter.owns(String(target.targetKey))) return this.remoteRouter.fileUrl(target)
     return pathToFileURL(this.processPath(target)).href
   }
 
-  override contains(parent: FsTarget, child: FsTarget): boolean {
+  contains(parent: FsTarget, child: FsTarget): boolean {
     if (this.remoteRouter.owns(String(parent.targetKey)) || this.remoteRouter.owns(String(child.targetKey))) {
       return this.remoteRouter.contains(parent, child)
     }
@@ -139,7 +147,7 @@ export class LocalFileSystem extends FileSystem {
     return path === '' || (path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path))
   }
 
-  override async stat(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined> {
+  async stat(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined> {
     if (signal?.aborted) throw new FsError('stat aborted', 'FS_ABORTED')
     if (this.remoteRouter.owns(String(target.targetKey))) return await this.remoteRouter.stat(target, signal)
     const info = await awaitMetadataProbe(() => probe(target.targetKey), signal, 'stat')
@@ -148,7 +156,7 @@ export class LocalFileSystem extends FileSystem {
     return { version: info.version, type: info.type, size: info.size }
   }
 
-  override async lstat(path: string, opts?: { cwd?: string }, signal?: AbortSignal): Promise<FsPathInfo | undefined> {
+  async lstat(path: string, opts?: { cwd?: string }, signal?: AbortSignal): Promise<FsPathInfo | undefined> {
     if (signal?.aborted) throw new FsError('lstat aborted', 'FS_ABORTED')
     if (path.trim().length === 0) throw new FsError('file_path must be a non-empty string', 'FS_NOT_FOUND')
     const cwd = opts?.cwd ?? this.config.cwd
@@ -163,22 +171,22 @@ export class LocalFileSystem extends FileSystem {
     return { version: info.version, type: info.type, size: info.size }
   }
 
-  override async readText(target: FsTarget, signal?: AbortSignal): Promise<string> {
+  async readText(target: FsTarget, signal?: AbortSignal): Promise<string> {
     if (this.remoteRouter.owns(String(target.targetKey))) return await this.remoteRouter.readText(target, signal)
     return readWholeText({ displayPath: target.displayPath, targetKey: target.targetKey }, signal)
   }
 
-  override streamText(target: FsTarget, signal?: AbortSignal): Promise<AsyncIterable<string>> {
+  streamText(target: FsTarget, signal?: AbortSignal): Promise<AsyncIterable<string>> {
     if (this.remoteRouter.owns(String(target.targetKey))) return this.remoteRouter.streamText(target, signal)
     return Promise.resolve(streamWholeText({ displayPath: target.displayPath, targetKey: target.targetKey }, signal))
   }
 
-  override async readBytes(target: FsTarget, signal: AbortSignal | undefined, maxBytes: number): Promise<Uint8Array> {
+  async readBytes(target: FsTarget, signal: AbortSignal | undefined, maxBytes: number): Promise<Uint8Array> {
     if (this.remoteRouter.owns(String(target.targetKey))) return await this.remoteRouter.readBytes(target, signal, maxBytes)
     return readWholeBytes({ displayPath: target.displayPath, targetKey: target.targetKey }, signal, maxBytes, this.internals)
   }
 
-  override async listDir(target: FsTarget, signal?: AbortSignal): Promise<FsDirEntry[]> {
+  async listDir(target: FsTarget, signal?: AbortSignal): Promise<FsDirEntry[]> {
     if (this.remoteRouter.owns(String(target.targetKey))) return await this.remoteRouter.listDir(target, signal)
     const entries = await listDirectory({ displayPath: target.displayPath, targetKey: target.targetKey }, signal)
     return entries.map(entry => ({
@@ -190,7 +198,7 @@ export class LocalFileSystem extends FileSystem {
     }))
   }
 
-  override async writeText(
+  async writeText(
     target: FsTarget,
     content: string,
     expected?: FsWriteIntent,
@@ -249,7 +257,7 @@ export class LocalFileSystem extends FileSystem {
     })
   }
 
-  override async editText(
+  async editText(
     target: FsTarget,
     edit: FsEditRequest,
     expected?: { version: FsVersion },
@@ -294,6 +302,88 @@ export class LocalFileSystem extends FileSystem {
   private versionAfterWrite(after: { version: FsVersion } | null, target: FsTarget): FsVersion {
     if (after) return after.version
     return FsVersion(`missing:${target.targetKey}`)
+  }
+}
+
+/**
+ * `ctx.fs` 的本地服务入口：保留单后端部署与既有测试的用法，内部委托给
+ * {@link LocalFileSystemBackend}。多后端装配直接注册 backend，不经过这里。
+ */
+export class LocalFileSystem extends FileSystem {
+  static Config: z<Config> = z.object({
+    cwd: z.string().default(process.cwd()),
+    diffBasisMaxBytes: z.number().default(DEFAULT_DIFF_BASIS_MAX_BYTES),
+  })
+
+  /** 单后端部署的本地实现；多后端装配直接注册它。 */
+  readonly backend: LocalFileSystemBackend
+
+  constructor(ctx: Context, config: Config) {
+    super(ctx)
+    this.backend = new LocalFileSystemBackend(config)
+  }
+
+  /** 校验后的配置（schemastery 已在构造前填入默认值）。 */
+  get config(): ResolvedConfig { return this.backend.config }
+
+  /** 测试用：当前的 per-target 锁。 */
+  get locks(): Map<string, Promise<unknown>> { return this.backend.locks }
+
+  /** 测试钩子转发给本地后端。 */
+  get internals(): FsIoInternals { return this.backend.internals }
+
+  set internals(value: FsIoInternals) { this.backend.internals = value }
+
+  resolve(path: string, opts?: { cwd?: string; signal?: AbortSignal }): Promise<FsTarget> {
+    return this.backend.resolve(path, opts)
+  }
+
+  processPath(target: FsTarget): string { return this.backend.processPath(target) }
+
+  fileUrl(target: FsTarget): string { return this.backend.fileUrl(target) }
+
+  contains(parent: FsTarget, child: FsTarget): boolean { return this.backend.contains(parent, child) }
+
+  stat(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined> {
+    return this.backend.stat(target, signal)
+  }
+
+  lstat(path: string, opts?: { cwd?: string }, signal?: AbortSignal): Promise<FsPathInfo | undefined> {
+    return this.backend.lstat(path, opts, signal)
+  }
+
+  readText(target: FsTarget, signal?: AbortSignal): Promise<string> {
+    return this.backend.readText(target, signal)
+  }
+
+  streamText(target: FsTarget, signal?: AbortSignal): Promise<AsyncIterable<string>> {
+    return this.backend.streamText(target, signal)
+  }
+
+  readBytes(target: FsTarget, signal: AbortSignal | undefined, maxBytes: number): Promise<Uint8Array> {
+    return this.backend.readBytes(target, signal, maxBytes)
+  }
+
+  listDir(target: FsTarget, signal?: AbortSignal): Promise<FsDirEntry[]> {
+    return this.backend.listDir(target, signal)
+  }
+
+  writeText(
+    target: FsTarget,
+    content: string,
+    expected?: FsWriteIntent,
+    signal?: AbortSignal,
+  ): Promise<FsWriteOutcome> {
+    return this.backend.writeText(target, content, expected, signal)
+  }
+
+  editText(
+    target: FsTarget,
+    edit: FsEditRequest,
+    expected?: { version: FsVersion },
+    signal?: AbortSignal,
+  ): Promise<FsEditOutcome> {
+    return this.backend.editText(target, edit, expected, signal)
   }
 }
 

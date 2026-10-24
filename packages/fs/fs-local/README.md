@@ -1,6 +1,6 @@
 # coding-fs-local
 
-`ctx.fs` 提供方约定（[`coding-fs`](../fs)）的**本地文件系统实现**。它使用宿主文件系统支持十二个 `FileSystem` 原语；将其作为插件加载会填充 `ctx.fs`。在桌面端组合中，它识别无凭据的 Remote-SSH Workspace marker，并经已认证的本地 bridge 将文件系统原语路由到所选远程根目录。`basic` 模式经 SFTP 读写，`agent` 模式经远端 agent 读写；普通本地路径仍保留宿主文件系统行为。模式与能力定义见 [`dsh-subprocess`](../../subprocess/subprocess/README.md)。
+`ctx.fs` 提供方约定（[`coding-fs`](../fs)）的**本地文件系统实现**：`LocalFileSystemBackend` 是纯实现（`FsProvider`，`id: local`），`LocalFileSystem` 是把它注册为 `ctx.fs` 的单后端服务入口；多后端装配直接注册 backend。它使用宿主文件系统支持十二个 `FileSystem` 原语；将其作为插件加载会填充 `ctx.fs`。在桌面端组合中，它识别无凭据的 Remote-SSH Workspace marker，并经已认证的本地 bridge 将文件系统原语路由到所选远程根目录。`basic` 模式经 SFTP 读写，`agent` 模式经远端 agent 读写；普通本地路径仍保留宿主文件系统行为。模式与能力定义见 [`dsh-subprocess`](../../subprocess/subprocess/README.md)。
 
 ```ts ignore-check
 import { LocalFileSystem } from 'coding-fs-local'
