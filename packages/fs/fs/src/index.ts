@@ -303,14 +303,15 @@ export interface FsProvider {
 /** 已注册后端；dispose 后注册表不再选择它。 */
 interface Registration {
   provider: FsProvider
+  /** 无可选后端时优先选择的默认后端。 */
+  fallback: boolean
   dispose(): void
 }
 
 /**
  * `ctx.fs` 的分派实现。异步原语按 `opts.cwd` 选择后端：显式工作区绑定优先，
- * 其次是后端自己的 `matches(cwd)`，最后回退到最近注册的后端（单后端部署与
- * 无会话调用的现状行为）。同步原语按 `owns(targetKey)` 找回后端。
- *
+ * 其次是后端自己的 `matches(cwd)`，最后使用显式标记的回退后端，再回退到最近注册的后端；
+ * 同步原语按 `owns(targetKey)` 找回后端。
  * 后端注册是 effect：注册返回 disposer，随宿主 fiber 卸载撤销。
  */
 export class FsRegistry extends FileSystem {
@@ -320,16 +321,22 @@ export class FsRegistry extends FileSystem {
   /**
    * 注册一个后端。
    * @param provider - 后端实现。
+   * @param options - `fallback: true` 把该后端标记为无 cwd 或无匹配时的默认后端；
+   *   同一注册表最多只能有一个回退后端。
    * @returns 撤销该注册的 disposer；重复调用无副作用。
-   * @throws {FsError} 当同一 id 已注册时。
+   * @throws {FsError} 当同一 id 已注册、或第二个后端要求默认身份时。
    */
-  register(provider: FsProvider): () => void {
+  register(provider: FsProvider, options: { fallback?: boolean } = {}): () => void {
     if (provider.id === '') throw new FsError('filesystem backend id must be non-empty', 'FS_IO_ERROR')
     if (this.registrations.some(registration => registration.provider.id === provider.id)) {
       throw new FsError(`filesystem backend "${provider.id}" is already registered`, 'FS_IO_ERROR')
     }
+    if (options.fallback === true && this.registrations.some(registration => registration.fallback)) {
+      throw new FsError('a filesystem backend is already marked as the fallback', 'FS_IO_ERROR')
+    }
     const registration: Registration = {
       provider,
+      fallback: options.fallback === true,
       dispose: () => {
         const index = this.registrations.indexOf(registration)
         if (index >= 0) this.registrations.splice(index, 1)
@@ -378,7 +385,7 @@ export class FsRegistry extends FileSystem {
 
   /**
    * 按工作区选择后端。
-   * @param cwd - 会话工作区；缺省时使用回退后端。
+   * @param cwd - 会话工作区；缺省时使用显式标记的回退后端（若已注册），否则使用最近注册的后端。
    * @returns 负责该工作区的后端。
    * @throws {FsError} 没有注册任何后端时。
    */
@@ -394,7 +401,7 @@ export class FsRegistry extends FileSystem {
         if (await registration.provider.matches(cwd)) return registration.provider
       }
     }
-    const fallback = this.registrations.at(-1)
+    const fallback = this.registrations.find(registration => registration.fallback) ?? this.registrations.at(-1)
     if (fallback === undefined) throw new FsError('no filesystem backend is registered', 'FS_IO_ERROR')
     return fallback.provider
   }
@@ -402,13 +409,13 @@ export class FsRegistry extends FileSystem {
   /**
    * 按不透明 target key 选择后端；同步方法只走这一步。
    * @param targetKey - 后端在 resolve 时写入的身份。
-   * @returns 产生该目标的、或回退的后端。
+   * @returns 产生该目标的后端；若没有后端拥有该 key，则优先返回显式标记的回退后端，再回退到最近注册的后端。
    * @throws {FsError} 没有注册任何后端时。
    */
   private backendForTarget(targetKey: string): FsProvider {
     const owner = [...this.registrations].reverse().find(registration => registration.provider.owns(targetKey))
     if (owner !== undefined) return owner.provider
-    const fallback = this.registrations.at(-1)
+    const fallback = this.registrations.find(registration => registration.fallback) ?? this.registrations.at(-1)
     if (fallback === undefined) throw new FsError('no filesystem backend is registered', 'FS_IO_ERROR')
     return fallback.provider
   }

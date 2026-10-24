@@ -105,7 +105,8 @@ function markerError(target: FsTarget, error: unknown): FsError {
 
 /**
  * 包装任意后端：变更按策略围栏，其余原语原样委托。`id`、`matches`、`owns`
- * 与被包装后端一致，因此注册表分派不需要知道围栏的存在。
+ * 与被包装后端一致，因此注册表分派不需要知道围栏的存在。远端后端也必须通过此装饰器
+ * 注册；否则远端变更不会经过同一份 `sandboxPolicy`。
  */
 export class SandboxedBackend implements FsProvider {
   constructor(private readonly ctx: Context, private readonly inner: FsProvider) {}

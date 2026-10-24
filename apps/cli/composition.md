@@ -44,6 +44,8 @@ flowchart LR
   cfg --> plugin_dsh_base_credentials
   plugin_dsh_base_llm_pi_ai["llm-pi-ai<br/>coding-llm-pi-ai"]
   cfg --> plugin_dsh_base_llm_pi_ai
+  plugin_dsh_base_proxy_pool["proxy-pool<br/>coding-proxy-pool"]
+  cfg --> plugin_dsh_base_proxy_pool
   plugin_dsh_base_llm_opencode["llm-opencode<br/>coding-llm-opencode"]
   cfg --> plugin_dsh_base_llm_opencode
   plugin_dsh_base_session_persistence_jsonl["session-persistence-jsonl<br/>coding-session-persistence-jsonl"]
@@ -166,6 +168,18 @@ flowchart LR
   cfg --> plugin_dsh_base_web
   plugin_dsh_base_web_search_duckduckgo["web-search-duckduckgo<br/>coding-web-search-duckduckgo"]
   cfg --> plugin_dsh_base_web_search_duckduckgo
+  plugin_dsh_base_web_search_bing["web-search-bing<br/>coding-web-search-bing"]
+  cfg --> plugin_dsh_base_web_search_bing
+  plugin_dsh_base_web_search_searxng["web-search-searxng<br/>coding-web-search-searxng"]
+  cfg --> plugin_dsh_base_web_search_searxng
+  plugin_dsh_base_web_search_anysearch["web-search-anysearch<br/>coding-web-search-anysearch"]
+  cfg --> plugin_dsh_base_web_search_anysearch
+  plugin_dsh_base_web_search_firecrawl["web-search-firecrawl<br/>coding-web-search-firecrawl"]
+  cfg --> plugin_dsh_base_web_search_firecrawl
+  plugin_dsh_base_web_search_keenable["web-search-keenable<br/>coding-web-search-keenable"]
+  cfg --> plugin_dsh_base_web_search_keenable
+  plugin_dsh_base_web_search_parallel["web-search-parallel<br/>coding-web-search-parallel"]
+  cfg --> plugin_dsh_base_web_search_parallel
   plugin_dsh_base_web_search_deepseek["web-search-deepseek<br/>coding-web-search-deepseek"]
   cfg --> plugin_dsh_base_web_search_deepseek
   plugin_dsh_base_web_search_tavily["web-search-tavily<br/>coding-web-search-tavily"]
@@ -182,8 +196,8 @@ flowchart LR
   cfg --> plugin_dsh_base_system_prompt
   plugin_dsh_base_agent_loop["agent-loop<br/>coding-agent-loop"]
   cfg --> plugin_dsh_base_agent_loop
-  plugin_dsh_base_fs_sandbox["fs-sandbox<br/>coding-fs-sandbox"]
-  cfg --> plugin_dsh_base_fs_sandbox
+  plugin_dsh_base_fs_workspace["fs-workspace<br/>coding-fs-workspace"]
+  cfg --> plugin_dsh_base_fs_workspace
   plugin_dsh_base_llm_deepseek["llm-deepseek<br/>coding-llm-deepseek"]
   cfg --> plugin_dsh_base_llm_deepseek
 ```
@@ -208,6 +222,7 @@ flowchart LR
 | `settings` | `coding-settings-file` |
 | `credentials` | `coding-credentials-local` |
 | `llm-pi-ai` | `coding-llm-pi-ai` |
+| `proxy-pool` | `coding-proxy-pool` |
 | `llm-opencode` | `coding-llm-opencode` |
 | `session-persistence-jsonl` | `coding-session-persistence-jsonl` |
 | `attachment-local` | `coding-attachment-local` |
@@ -269,6 +284,12 @@ flowchart LR
 | `progress-reminder` | `coding-progress-reminder` |
 | `web` | `coding-web` |
 | `web-search-duckduckgo` | `coding-web-search-duckduckgo` |
+| `web-search-bing` | `coding-web-search-bing` |
+| `web-search-searxng` | `coding-web-search-searxng` |
+| `web-search-anysearch` | `coding-web-search-anysearch` |
+| `web-search-firecrawl` | `coding-web-search-firecrawl` |
+| `web-search-keenable` | `coding-web-search-keenable` |
+| `web-search-parallel` | `coding-web-search-parallel` |
 | `web-search-deepseek` | `coding-web-search-deepseek` |
 | `web-search-tavily` | `coding-web-search-tavily` |
 | `browser-playwright` | `coding-browser-playwright` |
@@ -277,7 +298,7 @@ flowchart LR
 | `tools` | `coding-tools` |
 | `system-prompt` | `coding-system-prompt` |
 | `agent-loop` | `coding-agent-loop` |
-| `fs-sandbox` | `coding-fs-sandbox` |
+| `fs-workspace` | `coding-fs-workspace` |
 | `llm-deepseek` | `coding-llm-deepseek` |
 
 Source config: [`packages/bundle/base/cordis.patch.yml`](../../packages/bundle/base/cordis.patch.yml).

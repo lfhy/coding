@@ -106,8 +106,8 @@ flowchart LR
   svc_skills["ctx.skills<br/>Skill provider registry"]
   pkg_skill_badge["skill-badge"]
   pkg_skill_browser_use["skill-browser-use"]
-  pkg_skill_filesystem["skill-filesystem"]
   pkg_skill_frontend_development["skill-frontend-development"]
+  pkg_skill_filesystem["skill-filesystem"]
   pkg_skill_stylekit["skill-stylekit"]
   svc_agents["ctx.agents<br/>Agent service"]
   pkg_acp["acp"]
@@ -194,6 +194,14 @@ flowchart LR
   pkg_web_search_duckduckgo["web-search-duckduckgo"]
   pkg_web_search_tavily["web-search-tavily"]
   pkg_web_fetch_http["web-fetch-http"]
+  pkg_proxy_pool["proxy-pool"]
+  svc_proxyPool["ctx.proxyPool<br/>Outbound proxy pool service"]
+  pkg_web_search_bing["web-search-bing"]
+  pkg_web_search_searxng["web-search-searxng"]
+  pkg_web_search_firecrawl["web-search-firecrawl"]
+  pkg_web_search_keenable["web-search-keenable"]
+  pkg_web_search_parallel["web-search-parallel"]
+  pkg_web_search_anysearch["web-search-anysearch"]
   pkg_spill["spill"]
   svc_spillStore["ctx.spillStore<br/>Spill storage seam"]
   pkg_spill_local["spill-local"]
@@ -275,6 +283,7 @@ flowchart LR
   pkg_modules --> svc_clientModules
   pkg_permission_presets --> svc_permissionPresets
   pkg_plan_mode --> svc_planMode
+  pkg_proxy_pool --> svc_proxyPool
   pkg_pwsh_local --> svc_shell
   pkg_sandbox --> svc_sandbox
   pkg_sandbox_local --> svc_sandbox
@@ -378,6 +387,20 @@ flowchart LR
   svc_lsp --> pkg_tool_lsp
   svc_memory --> pkg_memory_context
   svc_memory --> pkg_tool_memory
+  svc_proxyPool --> pkg_host_apiproxy
+  svc_proxyPool --> pkg_llm_deepseek
+  svc_proxyPool --> pkg_llm_opencode
+  svc_proxyPool --> pkg_web_search_anysearch
+  svc_proxyPool --> pkg_web_search_bing
+  svc_proxyPool --> pkg_web_search_deepseek
+  svc_proxyPool --> pkg_web_search_duckduckgo
+  svc_proxyPool --> pkg_web_search_exa
+  svc_proxyPool --> pkg_web_search_firecrawl
+  svc_proxyPool --> pkg_web_search_keenable
+  svc_proxyPool --> pkg_web_search_parallel
+  svc_proxyPool --> pkg_web_search_perplexity
+  svc_proxyPool --> pkg_web_search_searxng
+  svc_proxyPool --> pkg_web_search_tavily
   svc_sandbox --> pkg_bash_sandbox
   svc_sandbox --> pkg_terminal_bash
   svc_sandboxPolicy --> pkg_bash_sandbox
@@ -491,7 +514,7 @@ flowchart LR
 | `ctx.commands` | `core` | [`commands`](../packages/interaction/commands) | - | - | - | Plugins register direct human commands without sending invocations to the model. |
 | `ctx.sessionProjections` | `core` | [`session-projection`](../packages/session/session-projection) | - | [`tool-todo`](../packages/todo/tool-todo), [`session-title`](../packages/session/session-title), [`host-apiproxy`](../packages/host/apiproxy) | - | Domains register state-driven fold units; the eager drive keeps per-session watermark states and api-proxy serves baselines and pushes changed values. |
 | `ctx.sessionProjectionCache` | `core` | [`session-projection-cache`](../packages/session/session-projection-cache) | - | [`host-apiproxy`](../packages/host/apiproxy) | - | Durably checkpoints projection unit states per session (throttled + turn/end/detach mandatory points) and serves the cold-read ladder: cache row + persistence tail replay, so listings never load full logs. |
-| `ctx.skills` | `seam` | [`skill`](../packages/skill/skill) | [`skill-badge`](../packages/skill/skill-badge), [`skill-browser-use`](../packages/skill/skill-browser-use), [`skill-filesystem`](../packages/skill/skill-filesystem), [`skill-frontend-development`](../packages/skill/skill-frontend-development), [`skill-stylekit`](../packages/skill/skill-stylekit) | [`tool-skill`](../packages/skill/tool-skill) | - | Merges provider skill catalogs; tool-skill renders the session-prefix catalog and loads complete skill bodies. |
+| `ctx.skills` | `seam` | [`skill`](../packages/skill/skill) | [`skill-badge`](../packages/skill/skill-badge), [`skill-browser-use`](../packages/skill/skill-browser-use), [`skill-frontend-development`](../packages/skill/skill-frontend-development), [`skill-filesystem`](../packages/skill/skill-filesystem), [`skill-stylekit`](../packages/skill/skill-stylekit) | [`tool-skill`](../packages/skill/tool-skill) | - | Merges provider skill catalogs; tool-skill renders the session-prefix catalog and loads complete skill bodies. |
 | `ctx.agents` | `core` | [`agent`](../packages/core/agent) | - | [`agent-loop`](../packages/core/agent-loop), [`acp`](../packages/acp/acp), `subagent-inprocess` | - | Owns live Agent handles, the create/resume factory seam, and process-local initiator propagation. |
 | `ctx.agentDefaultModel` | `core` | [`agent-default-model`](../packages/core/agent-default-model) | - | [`headless`](../packages/bundle/headless), [`host-apiproxy`](../packages/host/apiproxy) | - | Layers the default ModelSelection through settings so direct and Host-backed Agent entry points share one state owner. |
 | `ctx.agentLoop` | `bundle` | [`agent-loop`](../packages/core/agent-loop) | - | [`agent-spine-demo`](../packages/examples/agent-spine-demo) | - | The one concrete loop plugin; extension packages depend on dsh-agent events and services, not on this package. |
@@ -515,6 +538,7 @@ flowchart LR
 | `ctx.memory` | `seam` | [`memory`](../packages/memory/memory) | [`memory-local`](../packages/memory/memory-local) | [`memory-context`](../packages/memory/memory-context), [`tool-memory`](../packages/memory/tool-memory) | - | The service owns project-key resolution, file-name and size policy, the Markdown entry format and the injected excerpt; memory-local only implements the four storage primitives on the host filesystem. |
 | `ctx.computerUse` | `core` | [`computer-use`](../packages/computer-use/computer-use) | - | [`tool-computer-use`](../packages/computer-use/tool-computer-use) | - | One host-plane provider owns the fixed-argv Swift helper, observation cache, per-app leases and confirmation tokens for every Session; tool-computer-use contributes the Skill-gated model surface in the agent presets. |
 | `ctx.web` | `seam` | [`web`](../packages/web/web) | [`web-search-exa`](../packages/web/web-search-exa), [`web-search-perplexity`](../packages/web/web-search-perplexity), [`web-search-deepseek`](../packages/web/web-search-deepseek), [`web-search-duckduckgo`](../packages/web/web-search-duckduckgo), [`web-search-tavily`](../packages/web/web-search-tavily), [`web-fetch-http`](../packages/web/web-fetch-http) | [`tool-web`](../packages/web/tool-web) | - | Search and fetch providers register into one ctx.web seam; tool-web owns the stable model-facing names. |
+| `ctx.proxyPool` | `seam` | [`proxy-pool`](../packages/net/proxy-pool) | - | [`llm-deepseek`](../packages/llm/llm-deepseek), [`llm-opencode`](../packages/llm/llm-opencode), [`web-search-exa`](../packages/web/web-search-exa), [`web-search-perplexity`](../packages/web/web-search-perplexity), [`web-search-deepseek`](../packages/web/web-search-deepseek), [`web-search-duckduckgo`](../packages/web/web-search-duckduckgo), [`web-search-tavily`](../packages/web/web-search-tavily), [`web-search-bing`](../packages/web/web-search-bing), [`web-search-searxng`](../packages/web/web-search-searxng), [`web-search-firecrawl`](../packages/web/web-search-firecrawl), [`web-search-keenable`](../packages/web/web-search-keenable), [`web-search-parallel`](../packages/web/web-search-parallel), [`web-search-anysearch`](../packages/web/web-search-anysearch), [`host-apiproxy`](../packages/host/apiproxy) | - | Owns the optional local proxy frontend, node/group registry, health checks, subscription refresh, and pool-level outbound policy; model channels and search providers resolve their own outbound choice against this service, while the Host API exposes management operations. |
 | `ctx.spillStore` | `seam` | [`spill`](../packages/spill/spill) | [`spill-local`](../packages/spill/spill-local) | [`spill-policy`](../packages/spill/spill-policy) | - | The backend saves oversized tool text and returns a model-facing locator plus retrieval hint; spill-policy is the tools/post-execute consumer that decides when to spill. |
 | `ctx.directoryPicker` | `seam` | `directory-picker` | `directory-picker-native`, `directory-picker-browse` | `apiproxy` | - | Discriminated interaction capability: the native backend opens one OS chooser on the host display, the browse backend serves listing/creation primitives for the in-app browser; dual-face backends fill ui-workspace directory-flow slots from their browser halves (no wire advertisement). |
 | `ctx.webServer` | `core` | `webserver` | - | `connection`, `modules`, `hmr` | - | Plain node:http carrier: named-route registry, index transform taps, and the static dist fallback; web-transport plugins register their own routes. |

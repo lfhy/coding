@@ -793,9 +793,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'abstract contains(parent: FsTarget, child: FsTarget): boolean',
-        description: 'Test canonical containment without exposing or parsing backend target keys. Both targets must come from this provider.',
-        parameters: [{ name: 'parent', description: 'canonical directory target.' }, { name: 'child', description: 'canonical candidate target.' }],
-        returns: 'true when `child` is `parent` or a descendant of it.',
+        description: '在不暴露或解析后端 target key 的前提下判断规范化包含关系；两个目标必须来自 同一提供方。对远端后端，包含关系仍以工作区根为界：后端可以访问根外路径 （例如 Remote-SSH 的整台远端主机），但可写围栏与工作区归属仍按根判断。',
+        parameters: [{ name: 'parent', description: '规范化目录目标。' }, { name: 'child', description: '待判断的规范化目标。' }],
+        returns: '`child` 等于 `parent` 或是其后代时为 true。',
       },
       {
         signature: 'abstract stat(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined>',
@@ -992,14 +992,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   {
     key: 'llm',
     summary: 'The abstract `llm` service: an adapter registry plus a streaming model-call API, interceptable via the `llm/stream` waterfall.',
-    description: 'The abstract `llm` service: an adapter registry plus a streaming model-call API, interceptable via the `llm/stream` waterfall.',
+    description: 'The abstract `llm` service: an adapter registry plus a streaming model-call API, interceptable via the `llm/stream` waterfall.\n\n模型请求 User-Agent 不是本服务的设置：它属于每个提供方渠道自己的配置， 由该渠道连同端点、凭据一起按请求解析。',
     methods: [
-      {
-        signature: 'getUserAgent(): string',
-        description: '每个请求在首次异步操作前读取一次，进行中的请求保留自己的标头。',
-        parameters: [],
-        returns: '当前配置的 User-Agent，未配置时使用运行时默认值。',
-      },
       {
         signature: 'registerAdapter(providers: string[], adapter: LlmAdapter): AdapterRegistrationHandle',
         description: 'Register an adapter for the given provider routes. Throws `LlmError` with code `DUPLICATE_ADAPTER` if any provider already has an adapter (all-or-nothing). Disposed with the fiber.',
@@ -1124,6 +1118,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['条目为空、或越过任一限额时抛出，诊断里带上实际数值。'],
       },
       {
+        signature: 'async update( project: MemoryProject, request: MemoryUpdateRequest, ): Promise<{ summary: MemoryFileSummary; previous: string }>',
+        description: '替换一条已有记忆：命中必须在目标文件（或指定小节）内唯一，其余内容原样保留。\n\n与 save 共用单条、单文件与每项目总量三项限额；文件数不变，因此不检查 文件数上限。命中零条或多条都抛错，避免模型改错条目。',
+        parameters: [{ name: 'project', description: '项目身份。' }, { name: 'request', description: '匹配片段、新条目内容与目标文件／小节。' }],
+        returns: '写入后的文件元数据与被替换掉的原文。',
+        throws: ['目标文件不存在、未唯一命中或越过任一限额时抛出，诊断里带上实际数值。'],
+      },
+      {
         signature: 'async remove(project: MemoryProject, name: string, section?: string): Promise<boolean>',
         description: '删除整个记忆文件，或只删除其中一个小节。',
         parameters: [{ name: 'project', description: '项目身份。' }, { name: 'name', description: '记忆文件名。' }, { name: 'section', description: '省略时删除整个文件。' }],
@@ -1216,6 +1217,87 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Select whether plan mode should be active. Between turns the method appends the change immediately because no in-turn pre-step will run until another prompt starts a turn. The open-turn fold is the idle signal: agent status stays `running` through post-turn checkpointing, when no further in-turn pre-step runs. During an open turn the selection remains pending until the next accepted in-turn pre-step. Repeated selection of the current or already-pending state is a no-op.',
         parameters: [{ name: 'agent', description: 'The agent to switch.' }, { name: 'active', description: 'Whether plan mode should be active.' }],
         returns: 'what happened: `committed` (logged now), `queued` (awaiting the next accepted in-turn pre-step), `cancelled` (an opposite pending selection was cleared; the logged state already matches), or `noop` (already in that state).',
+      },
+    ],
+  },
+  {
+    key: 'proxyPool',
+    summary: '代理池服务。一个实例伴随宿主存活：构造后启动本地 HTTP 入站，fiber 释放时 停止监听与后台循环，不留下端口或悬挂定时器。',
+    description: '代理池服务。一个实例伴随宿主存活：构造后启动本地 HTTP 入站，fiber 释放时 停止监听与后台循环，不留下端口或悬挂定时器。\n\n池规则（`proxy-pool` 设置分节的 `mode`）决定后台是否工作：`direct` 时既 不探测节点也不拉订阅，`proxyURL({ kind: \'pool\' })` 返回 undefined，消费方 据此回落直连；`pool` 时才启动健康检查与周期刷新。',
+    methods: [
+      {
+        signature: 'async ready(): Promise<void>',
+        description: '等待本地入站完成监听；服务已停止时立即返回。',
+        parameters: [],
+      },
+      {
+        signature: 'registerNode(node: ProxyNode): () => void',
+        description: '注册一个节点；重复 id 抛 `PROXY_NODE_DUPLICATE`。',
+        parameters: [{ name: 'node', description: '节点描述符。' }],
+        returns: '注销该节点的 disposer。',
+      },
+      {
+        signature: 'renameNode(nodeId: string, name: string): void',
+        description: '原地改节点显示名：订阅刷新把探测通过的候选改成 `feed:` 前缀时使用， id 与健康记录保持不变（重注册会两者皆失）。',
+        parameters: [{ name: 'nodeId', description: '节点 id。' }, { name: 'name', description: '新显示名。' }],
+      },
+      {
+        signature: 'unregisterNode(nodeId: string): boolean',
+        description: '按注销一个节点；未知 id 返回 false。管理面（RPC `proxyPool.removeNode`） 与设置持久化的重放都用它，不需要先取出描述符再注册取 disposer。',
+        parameters: [{ name: 'nodeId', description: '节点 id。' }],
+        returns: '节点存在并被移除时为 true。',
+      },
+      {
+        signature: 'registerGroup(group: ProxyGroup): () => void',
+        description: '注册一个连接组；成员必须已注册或随后注册。',
+        parameters: [{ name: 'group', description: '组描述符。' }],
+        returns: '注销该组的 disposer。',
+      },
+      {
+        signature: 'listNodes(): ProxyNode[]',
+        description: '当前全部节点的快照。',
+        parameters: [],
+        returns: '按注册顺序排列的节点描述符副本。',
+      },
+      {
+        signature: 'listGroups(): ProxyGroup[]',
+        description: '当前全部组的快照。',
+        parameters: [],
+        returns: '按注册顺序排列的连接组描述符副本。',
+      },
+      {
+        signature: 'snapshotHealth(): ProxyHealth[]',
+        description: '节点健康快照。',
+        parameters: [],
+        returns: '按最近写入顺序排列的健康状态副本。',
+      },
+      {
+        signature: 'proxyURL(mode: ProxyMode): string | undefined',
+        description: '按出站模式解析出 undici 可用的代理 URL。\n\n渠道选择「内置代理池」时使用池自己的出站控制：直连规则返回 undefined （消费方回落直连），自定义代理规则返回池配置的地址，本地池规则返回入站地址。 渠道自己的自定义代理不受池规则影响。',
+        parameters: [{ name: 'mode', description: '消费方声明的出站模式。' }],
+        returns: '可注入 ProxyAgent 的地址，或直连时的 undefined。',
+      },
+      {
+        signature: 'useGroup(groupId: string | undefined): void',
+        description: '设置入站使用的组；未设置或组不存在时按 fallback 全池选择。',
+        parameters: [{ name: 'groupId', description: '组 id 或 undefined。' }],
+      },
+      {
+        signature: 'async checkAll(): Promise<void>',
+        description: '对全部节点执行一轮健康检查并发事件。',
+        parameters: [],
+      },
+      {
+        signature: 'async refresh(): Promise<RefreshResult>',
+        description: '触发一次订阅刷新（手动与周期共用；进行中时复用同一个 Promise）。 失败不抛出——摘要里的 `failures` 承载每个源的错误，管理面据此展示。',
+        parameters: [],
+        returns: '本次刷新的摘要。',
+      },
+      {
+        signature: 'async checkNode(nodeId: string, timeoutMs?: number): Promise<ProxyHealth | undefined>',
+        description: '探测单个节点：经该节点拨号到公网目标并立即关闭。',
+        parameters: [{ name: 'nodeId', description: '节点 id。' }, { name: 'timeoutMs', description: '本次探测的超时；缺省用健康检查配置的值（订阅刷新 用更紧的值轮询海量候选，避免单个死节点占满探测窗口）。' }],
+        returns: '节点仍注册时返回健康快照；节点不存在时返回 `undefined`。',
       },
     ],
   },
@@ -2539,7 +2621,7 @@ export const EVENT_API: readonly EventApiEntry[] = [
     signature: '\'agent/request-history\'(this: Scoped<Agent>, payload: { agent: Agent; session: Session; config: LlmCallConfig; inputModalities?: readonly ModelModality[]; turn: number; step: number; signal: AbortSignal }, next: () => Promise<void>): Promise<void>',
     summary: '在生效配置经精确适配器解析后、主请求读取会话历史前运行。 监听器可在会话日志中持久替换表层节点，必须调用 `next()`； 返回值不能替代历史，主请求随后重新调用 `session.deriveMessages()`。 无已注册适配器时，`inputModalities` 缺席，不能据此推断能力。',
     description: '在生效配置经精确适配器解析后、主请求读取会话历史前运行。 监听器可在会话日志中持久替换表层节点，必须调用 `next()`； 返回值不能替代历史，主请求随后重新调用 `session.deriveMessages()`。 无已注册适配器时，`inputModalities` 缺席，不能据此推断能力。',
-    parameters: [{ name: 'payload', description: '.signal - 当前轮次的取消信号。 按 agent 作用域筛选分发：带作用域的监听器只接收其所属 agent。' }],
+    parameters: [{ name: 'payload', description: '.signal - 当前轮次的取消信号。 Scope-filtered dispatch（`coding-scope`）：带作用域的监听器只接收其所属 agent。 按 agent 作用域筛选分发：带作用域的监听器只接收其所属 agent。' }],
   },
   {
     name: 'agent/session-start',
@@ -2692,6 +2774,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'Waterfall around every streaming model call (retry, replay, routing).',
     description: 'Waterfall around every streaming model call (retry, replay, routing). Bound to the LlmRuntime; call `next()` to reach the resolved adapter\'s stream, or yield your own chunks to short-circuit.',
     parameters: [{ name: 'options', description: 'the full request. A LOOP-built request carries the process-local {@link markAgentLoopRequest} identity and arrives deep-frozen (mutation throws): its content is a pure function of the session log (the reconstructability design record), so listeners read it, never rewrite it. Hand-built calls do not carry that marker; their messages already obey the immutable creation contract.' }],
+  },
+  {
+    name: 'proxy-pool/node',
+    mode: 'emit',
+    signature: '\'proxy-pool/node\'(event: ProxyPoolNodeEvent): void',
+    summary: '节点级事件：新增/更新/移除/健康变化。监听方（代理池管理页）据此刷新 展示；事件在状态已提交后同步派发。',
+    description: '节点级事件：新增/更新/移除/健康变化。监听方（代理池管理页）据此刷新 展示；事件在状态已提交后同步派发。',
+    parameters: [{ name: 'event', description: '已提交的节点变化事件。' }],
   },
   {
     name: 'session-telemetry/record',
@@ -3035,7 +3125,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BrowserCommand',
-    declaration: 'export type BrowserCommand = {\n    readonly kind: \'navigate\';\n    readonly url: string;\n} | {\n    readonly kind: \'snapshot\';\n} | {\n    readonly kind: \'click\';\n    readonly ref: string;\n    readonly revision: number;\n} | {\n    readonly kind: \'fill\';\n    readonly ref: string;\n    readonly text: string;\n    readonly revision: number;\n} | {\n    readonly kind: \'scroll\';\n    readonly direction: \'up\' | \'down\';\n    readonly pixels: number;\n} | {\n    readonly kind: \'screenshot\';\n} | {\n    readonly kind: \'close\';\n};',
+    declaration: 'export type BrowserCommand = {\n    readonly kind: \'navigate\';\n    readonly url: string;\n} | {\n    readonly kind: \'snapshot\';\n} | {\n    readonly kind: \'click\';\n    readonly ref: string;\n    readonly revision: number;\n} | {\n    readonly kind: \'fill\';\n    readonly ref: string;\n    readonly text: string;\n    readonly revision: number;\n} | {\n    readonly kind: \'scroll\';\n    readonly direction: \'up\' | \'down\';\n    readonly pixels: number;\n} | {\n    readonly kind: \'viewport\';\n    readonly width: number;\n    readonly height: number;\n} | {\n    readonly kind: \'screenshot\';\n} | {\n    readonly kind: \'close\';\n};',
   },
   {
     name: 'BrowserExpectedTarget',
@@ -3803,11 +3893,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'LlmRuntime',
-    declaration: 'export class LlmRuntime extends Service {\n    static Config: z<LlmSettingsConfig>;\n    constructor(ctx: Context, config: LlmSettingsConfig = {});\n    getUserAgent(): string;\n    registerAdapter(providers: string[], adapter: LlmAdapter): AdapterRegistrationHandle;\n    listProviders(): LlmProviderInfo[];\n    registerConfigurableProviders(entries: readonly LlmConfigurableProvider[]): DirectoryRegistrationHandle;\n    listConfigurableProviders(): LlmConfigurableProvider[];\n    registerModelDiscovery(settingsNs: string, discover: (request: LlmModelDiscoveryRequest) => Promise<readonly LlmDiscoveredModel[]>): () => void;\n    async discoverModels(settingsNs: string, request: LlmModelDiscoveryRequest): Promise<LlmDiscoveredModel[]>;\n    providerRetryPolicy(provider: string): ResolvedRetryPolicy;\n    async listModels(provider: string): Promise<LlmModelInfo[]>;\n    async resolveModelInfo(provider: string, model: string, signal?: AbortSignal): Promise<LlmResolvedModelInfo>;\n    async resolveCallConfig(config: LlmCallConfig, signal?: AbortSignal): Promise<LlmCallConfig>;\n    async prepareCall(config: LlmCallConfig, signal?: AbortSignal): Promise<PreparedLlmCall>;\n    stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
-  },
-  {
-    name: 'LlmSettingsConfig',
-    declaration: 'export interface LlmSettingsConfig {\n    userAgent?: string;\n}',
+    declaration: 'export class LlmRuntime extends Service {\n    constructor(ctx: Context);\n    registerAdapter(providers: string[], adapter: LlmAdapter): AdapterRegistrationHandle;\n    listProviders(): LlmProviderInfo[];\n    registerConfigurableProviders(entries: readonly LlmConfigurableProvider[]): DirectoryRegistrationHandle;\n    listConfigurableProviders(): LlmConfigurableProvider[];\n    registerModelDiscovery(settingsNs: string, discover: (request: LlmModelDiscoveryRequest) => Promise<readonly LlmDiscoveredModel[]>): () => void;\n    async discoverModels(settingsNs: string, request: LlmModelDiscoveryRequest): Promise<LlmDiscoveredModel[]>;\n    providerRetryPolicy(provider: string): ResolvedRetryPolicy;\n    async listModels(provider: string): Promise<LlmModelInfo[]>;\n    async resolveModelInfo(provider: string, model: string, signal?: AbortSignal): Promise<LlmResolvedModelInfo>;\n    async resolveCallConfig(config: LlmCallConfig, signal?: AbortSignal): Promise<LlmCallConfig>;\n    async prepareCall(config: LlmCallConfig, signal?: AbortSignal): Promise<PreparedLlmCall>;\n    stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
   },
   {
     name: 'LspHover',
@@ -3872,6 +3958,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'MemorySaveRequest',
     declaration: 'export interface MemorySaveRequest {\n    content: string;\n    file?: string;\n    section?: string;\n}',
+  },
+  {
+    name: 'MemoryUpdateRequest',
+    declaration: 'export interface MemoryUpdateRequest {\n    match: string;\n    content: string;\n    file?: string;\n    section?: string;\n}',
   },
   {
     name: 'Message',
@@ -4062,6 +4152,46 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ProviderRequestId = Branded<\'ProviderRequestId\'>;',
   },
   {
+    name: 'ProxyGroup',
+    declaration: 'export interface ProxyGroup {\n    id: string;\n    name: string;\n    members: readonly string[];\n    strategy: ProxyGroupStrategy;\n}',
+  },
+  {
+    name: 'ProxyGroupStrategy',
+    declaration: 'export type ProxyGroupStrategy = \'fallback\' | \'url-test\';',
+  },
+  {
+    name: 'ProxyHealth',
+    declaration: 'export interface ProxyHealth {\n    nodeId: string;\n    alive: boolean;\n    latencyMs?: number;\n    failure?: string;\n    checkedAt: number;\n}',
+  },
+  {
+    name: 'ProxyMode',
+    declaration: 'export type ProxyMode = {\n    kind: \'direct\';\n} | {\n    kind: \'pool\';\n    groupId?: string;\n} | {\n    kind: \'custom\';\n    url: string;\n};',
+  },
+  {
+    name: 'ProxyNode',
+    declaration: 'export interface ProxyNode {\n    id: string;\n    name: string;\n    protocol: ProxyProtocol;\n    address: string;\n    port: number;\n    username?: string;\n    secret?: string;\n    alterId?: number;\n    tls?: ProxyTls;\n    transport?: ProxyTransport;\n}',
+  },
+  {
+    name: 'ProxyPoolNodeEvent',
+    declaration: 'export interface ProxyPoolNodeEvent {\n    kind: \'node-added\' | \'node-updated\' | \'node-removed\' | \'node-health\';\n    nodeId: string;\n    health?: ProxyHealth;\n}',
+  },
+  {
+    name: 'ProxyProtocol',
+    declaration: 'export type ProxyProtocol = \'http\' | \'socks5\' | \'vless\' | \'vmess\' | \'hysteria2\';',
+  },
+  {
+    name: 'ProxyTls',
+    declaration: 'export interface ProxyTls {\n    serverName?: string;\n    allowInsecure?: boolean;\n}',
+  },
+  {
+    name: 'ProxyTransport',
+    declaration: 'export type ProxyTransport = {\n    type: \'tcp\';\n} | {\n    type: \'ws\';\n    ws: ProxyWsTransport;\n};',
+  },
+  {
+    name: 'ProxyWsTransport',
+    declaration: 'export interface ProxyWsTransport {\n    path: string;\n    headers?: Readonly<Record<string, string>>;\n}',
+  },
+  {
     name: 'PrunedEntry',
     declaration: 'export interface PrunedEntry {\n    readonly originalSeq: number;\n    readonly replacementSeq: number;\n    readonly callId: CallId;\n    readonly charsBefore: number;\n    readonly charsAfter: number;\n}',
   },
@@ -4088,6 +4218,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'RedactedSecret',
     declaration: 'export interface RedactedSecret {\n    path: string[];\n    set: boolean;\n}',
+  },
+  {
+    name: 'RefreshResult',
+    declaration: 'export interface RefreshResult {\n    admitted: ProxyNode[];\n    evicted: string[];\n    failures: string[];\n}',
   },
   {
     name: 'RemoteWorkspace',
@@ -4467,7 +4601,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionTitleProvider',
-    declaration: 'export interface SessionTitleProvider {\n    readonly id: SessionTitleProviderId;\n    readonly automatic: SessionTitleAutomaticMode;\n    generate(request: SessionTitleProviderRequest): Promise<SessionTitleProviderResult>;\n}',
+    declaration: 'export interface SessionTitleProvider {\n    readonly id: SessionTitleProviderId;\n    readonly automatic: SessionTitleAutomaticMode;\n    readonly enabled?: () => boolean;\n    readonly ownRoute?: () => SessionTitleModelProvenance | undefined;\n    generate(request: SessionTitleProviderRequest): Promise<SessionTitleProviderResult>;\n}',
   },
   {
     name: 'SessionTitleProviderId',

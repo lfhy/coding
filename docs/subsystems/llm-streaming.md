@@ -751,13 +751,9 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 
 The abstract `llm` service: an adapter registry plus a streaming model-call API, interceptable via the `llm/stream` waterfall.
 
-```ts cordis-catalog
-/**
- * 每个请求在首次异步操作前读取一次，进行中的请求保留自己的标头。
- * @returns 当前配置的 User-Agent，未配置时使用运行时默认值。
- */
-getUserAgent(): string
+模型请求 User-Agent 不是本服务的设置：它属于每个提供方渠道自己的配置， 由该渠道连同端点、凭据一起按请求解析。
 
+```ts cordis-catalog
 /**
  * Register an adapter for the given provider routes. Throws `LlmError` with code
  * `DUPLICATE_ADAPTER` if any provider already has an adapter (all-or-nothing).
@@ -875,7 +871,7 @@ async prepareCall(config: LlmCallConfig, signal?: AbortSignal): Promise<Prepared
 stream(options: GenerateOptions): AsyncIterable<StreamChunk>
 ```
 
-Source: [`packages/llm/llm/src/index.ts:299`](../../packages/llm/llm/src/index.ts)
+Source: [`packages/llm/llm/src/index.ts:286`](../../packages/llm/llm/src/index.ts)
 
 <a id="llm-events"></a>
 
@@ -924,5 +920,5 @@ Waterfall around every streaming model call (retry, replay, routing). Bound to t
 'llm/stream'(this: LlmRuntime, options: GenerateOptions, next: () => AsyncIterable<StreamChunk>): AsyncIterable<StreamChunk>
 ```
 
-Source: [`packages/llm/llm/src/index.ts:80`](../../packages/llm/llm/src/index.ts)
+Source: [`packages/llm/llm/src/index.ts:63`](../../packages/llm/llm/src/index.ts)
 <!-- END GENERATED cordis-surface -->

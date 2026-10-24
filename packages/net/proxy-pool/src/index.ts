@@ -89,7 +89,8 @@ declare module '@deepseek-ai/cordis' {
     /**
      * 节点级事件：新增/更新/移除/健康变化。监听方（代理池管理页）据此刷新
      * 展示；事件在状态已提交后同步派发。
-     * @mode broadcast
+     * @param event - 已提交的节点变化事件。
+     * @mode emit
      */
     'proxy-pool/node'(event: ProxyPoolNodeEvent): void
   }
@@ -316,17 +317,23 @@ export class ProxyPoolService extends Service {
     }
   }
 
-  /** 当前全部节点的快照。 */
+  /** 当前全部节点的快照。
+   * @returns 按注册顺序排列的节点描述符副本。
+   */
   listNodes(): ProxyNode[] {
     return [...this.nodes.values()]
   }
 
-  /** 当前全部组的快照。 */
+  /** 当前全部组的快照。
+   * @returns 按注册顺序排列的连接组描述符副本。
+   */
   listGroups(): ProxyGroup[] {
     return [...this.groups.values()]
   }
 
-  /** 节点健康快照。 */
+  /** 节点健康快照。
+   * @returns 按最近写入顺序排列的健康状态副本。
+   */
   snapshotHealth(): ProxyHealth[] {
     return [...this.health.values()]
   }
@@ -517,6 +524,7 @@ export class ProxyPoolService extends Service {
    * @param nodeId - 节点 id。
    * @param timeoutMs - 本次探测的超时；缺省用健康检查配置的值（订阅刷新
    *   用更紧的值轮询海量候选，避免单个死节点占满探测窗口）。
+   * @returns 节点仍注册时返回健康快照；节点不存在时返回 `undefined`。
    */
   async checkNode(nodeId: string, timeoutMs?: number): Promise<ProxyHealth | undefined> {
     const node = this.nodes.get(nodeId)

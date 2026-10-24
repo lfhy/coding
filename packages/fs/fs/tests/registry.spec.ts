@@ -66,7 +66,7 @@ describe('FsRegistry', () => {
     const registry = new FsRegistry(ctx)
     const local = backend('local', 'local', { matches: () => true })
     const remote = backend('remote', 'remote', { matches: cwd => cwd.includes('remote-workspaces') })
-    const disposeLocal = registry.register(local)
+    const disposeLocal = registry.register(local, { fallback: true })
     registry.register(remote)
     expect(registry.backends).toEqual(['local', 'remote'])
 
@@ -81,9 +81,9 @@ describe('FsRegistry', () => {
     expect(local.calls).toEqual(['resolve:file.ts'])
     unbind()
 
-    // 没有 cwd 时回退到最近注册的后端。
+    // 没有 cwd 时使用显式标记的本地回退后端。
     const fallback = await registry.resolve('other.ts')
-    expect(fallback.displayPath).toBe('remote://other.ts')
+    expect(fallback.displayPath).toBe('local://other.ts')
 
     disposeLocal()
     expect(registry.backends).toEqual(['remote'])
@@ -114,13 +114,14 @@ describe('FsRegistry', () => {
     expect(registry.sandboxMode).toBe('workspace-write')
   })
 
-  it('拒绝重复 id 与未注册的绑定，并在没有后端时报错', async () => {
+  it('拒绝重复 id、重复回退与未注册的绑定，并在没有后端时报错', async () => {
     const ctx = new Context()
     const registry = new FsRegistry(ctx)
     expect(() => registry.bind('/w', 'local')).toThrow(FsError)
     await expect(registry.resolve('a.ts')).rejects.toMatchObject({ code: 'FS_IO_ERROR' })
-    registry.register(backend('local', 'local'))
+    registry.register(backend('local', 'local'), { fallback: true })
     expect(() => registry.register(backend('local', 'local2'))).toThrow(/already registered/u)
+    expect(() => registry.register(backend('other', 'other'), { fallback: true })).toThrow(/already marked as the fallback/u)
     expect(() => registry.bind('/w', 'remote')).toThrow(/not registered/u)
   })
 })

@@ -72,6 +72,18 @@ async read(project: MemoryProject, name: string): Promise<MemoryReadResult | und
 async save(project: MemoryProject, request: MemorySaveRequest): Promise<MemoryFileSummary>
 
 /**
+ * 替换一条已有记忆：命中必须在目标文件（或指定小节）内唯一，其余内容原样保留。
+ *
+ * 与 {@link save} 共用单条、单文件与每项目总量三项限额；文件数不变，因此不检查
+ * 文件数上限。命中零条或多条都抛错，避免模型改错条目。
+ * @param project - 项目身份。
+ * @param request - 匹配片段、新条目内容与目标文件／小节。
+ * @returns 写入后的文件元数据与被替换掉的原文。
+ * @throws 目标文件不存在、未唯一命中或越过任一限额时抛出，诊断里带上实际数值。
+ */
+async update( project: MemoryProject, request: MemoryUpdateRequest, ): Promise<{ summary: MemoryFileSummary; previous: string }>
+
+/**
  * 删除整个记忆文件，或只删除其中一个小节。
  * @param project - 项目身份。
  * @param name - 记忆文件名。
@@ -89,5 +101,5 @@ async remove(project: MemoryProject, name: string, section?: string): Promise<bo
 async excerpt(project: MemoryProject): Promise<MemoryExcerpt>
 ```
 
-Source: [`packages/memory/memory/src/index.ts:256`](../../packages/memory/memory/src/index.ts)
+Source: [`packages/memory/memory/src/index.ts:328`](../../packages/memory/memory/src/index.ts)
 <!-- END GENERATED cordis-surface -->

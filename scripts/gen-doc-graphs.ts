@@ -540,6 +540,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Search and fetch providers register into one ctx.web seam; tool-web owns the stable model-facing names.',
   },
   {
+    key: 'proxyPool',
+    pkg: 'proxy-pool',
+    title: 'Outbound proxy pool service',
+    mode: 'seam',
+    consumers: ['llm-deepseek', 'llm-opencode', 'web-search-exa', 'web-search-perplexity', 'web-search-deepseek', 'web-search-duckduckgo', 'web-search-tavily', 'web-search-bing', 'web-search-searxng', 'web-search-firecrawl', 'web-search-keenable', 'web-search-parallel', 'web-search-anysearch', 'host-apiproxy'],
+    note: 'Owns the optional local proxy frontend, node/group registry, health checks, subscription refresh, and pool-level outbound policy; model channels and search providers resolve their own outbound choice against this service, while the Host API exposes management operations.',
+  },
+  {
     key: 'spillStore',
     pkg: 'spill',
     title: 'Spill storage seam',

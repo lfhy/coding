@@ -10,7 +10,8 @@
 
 1. `ctx.fs.bind(cwd, backendId)` 记录的显式工作区绑定；
 2. 后端的 `matches(cwd)`，后注册者优先（远端后端异步识别 marker 占位目录）；
-3. 最近注册的后端兜底，也就是本地后端。
+3. 显式标记为回退后端的实现（本装配中是本地后端）；
+4. 最近注册的后端兜底，仅用于没有回退标记的单后端或兼容装配。
 
 ## 装配内容
 
@@ -19,7 +20,7 @@
 | `SandboxedBackend` 包装 `LocalFileSystemBackend` | `local` | 本地执行世界；变更按调用策略围栏（`read-only` 拒绝、`workspace-write` 限工作区与临时区、`danger-full-access` 放行） |
 | `RemoteWorkspaceRouter` | `remote-workspace` | Remote-SSH 执行世界；经已认证回环 bridge 读写远端文件，可访问整台远端主机 |
 
-`ctx.fs.sandboxMode` 返回第一个声明了模式的后端（即沙箱包装层）的部署默认值，`coding-tool-fs` 用它决定是否展示升权提示。
+`ctx.fs.sandboxMode` 返回沙箱后端声明的部署默认值，`coding-tool-fs` 用它决定是否展示升权提示。远端后端也经过同一个 `SandboxedBackend`：`read-only` 拒绝所有变更，`workspace-write` 只允许会话 cwd 映射到远端工作区根内的目标，`danger-full-access` 才允许远端根外变更。
 
 装配配置就是本地后端的两项参数：`cwd`（相对路径的解析默认值，默认 `process.cwd()`）与 `diffBasisMaxBytes`（覆写 diff 的基准上限，默认 10 MiB）。
 

@@ -13,7 +13,7 @@
 
 `fs-sandbox` 与 `fs-e2b` 实现该接口，无需更改政策层和工具层。
 
-## 服务 API（`ctx.fs`）
+`FsRegistry` 按显式绑定、后端 `matches(cwd)`、显式回退标记和最近注册顺序选择异步后端；无 `cwd` 时跳过 `matches`，使用标记的回退后端。同步原语按 `owns(targetKey)` 找回拥有目标的后端。多后端装配必须为无会话调用明确注册一个回退后端。
 
 后端继承 `FileSystem` 并实现十二个原语。
 

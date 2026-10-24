@@ -785,7 +785,7 @@ A step or turn errored. The machine reports a failure here even when the error h
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/agent/src/runtime-types.ts:305`](../../packages/core/agent/src/runtime-types.ts)
+Source: [`packages/core/agent/src/runtime-types.ts:306`](../../packages/core/agent/src/runtime-types.ts)
 
 <a id="agentinboxclaimed--emit"></a>
 
@@ -931,7 +931,7 @@ Handle one failed model-request attempt before the loop retries or closes its st
 
 Types: [LlmFailure](llm-streaming.md) · [ResolvedRetryPolicy](llm-streaming.md) · [Scoped](scope.md)
 
-Source: [`packages/core/agent/src/runtime-types.ts:275`](../../packages/core/agent/src/runtime-types.ts)
+Source: [`packages/core/agent/src/runtime-types.ts:276`](../../packages/core/agent/src/runtime-types.ts)
 
 <a id="agentrequest-history--waterfall"></a>
 
@@ -952,6 +952,7 @@ Source: [`packages/core/agent/src/runtime-types.ts:275`](../../packages/core/age
  * @param payload.turn - 当前轮次编号。
  * @param payload.step - 当前步骤编号。
  * @param payload.signal - 当前轮次的取消信号。
+ * Scope-filtered dispatch（`coding-scope`）：带作用域的监听器只接收其所属 agent。
  * 按 agent 作用域筛选分发：带作用域的监听器只接收其所属 agent。
  * @mode waterfall
  */
@@ -960,7 +961,7 @@ Source: [`packages/core/agent/src/runtime-types.ts:275`](../../packages/core/age
 
 Types: [LlmCallConfig](llm-streaming.md) · [ModelModality](llm-streaming.md) · [Scoped](scope.md) · [Session](session.md)
 
-Source: [`packages/core/agent/src/runtime-types.ts:259`](../../packages/core/agent/src/runtime-types.ts)
+Source: [`packages/core/agent/src/runtime-types.ts:260`](../../packages/core/agent/src/runtime-types.ts)
 
 <a id="agentsession-start--emit"></a>
 
@@ -1038,7 +1039,7 @@ The turn is about to close: the model owes no response (no live tool calls, no f
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/agent/src/runtime-types.ts:293`](../../packages/core/agent/src/runtime-types.ts)
+Source: [`packages/core/agent/src/runtime-types.ts:294`](../../packages/core/agent/src/runtime-types.ts)
 
 <a id="agent-loop-events"></a>
 

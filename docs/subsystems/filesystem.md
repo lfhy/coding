@@ -355,11 +355,12 @@ abstract processPath(target: FsTarget): string
 abstract fileUrl(target: FsTarget): string
 
 /**
- * Test canonical containment without exposing or parsing backend target
- * keys. Both targets must come from this provider.
- * @param parent - canonical directory target.
- * @param child - canonical candidate target.
- * @returns true when `child` is `parent` or a descendant of it.
+ * 在不暴露或解析后端 target key 的前提下判断规范化包含关系；两个目标必须来自
+ * 同一提供方。对远端后端，包含关系仍以工作区根为界：后端可以访问根外路径
+ * （例如 Remote-SSH 的整台远端主机），但可写围栏与工作区归属仍按根判断。
+ * @param parent - 规范化目录目标。
+ * @param child - 待判断的规范化目标。
+ * @returns `child` 等于 `parent` 或是其后代时为 true。
  */
 abstract contains(parent: FsTarget, child: FsTarget): boolean
 
@@ -459,7 +460,7 @@ abstract editText( target: FsTarget, edit: FsEditRequest, expected?: { version: 
 
 Types: [SandboxExecutionPolicy](sandbox.md)
 
-Source: [`packages/fs/fs/src/index.ts:86`](../../packages/fs/fs/src/index.ts)
+Source: [`packages/fs/fs/src/index.ts:87`](../../packages/fs/fs/src/index.ts)
 
 <a id="fs-events"></a>
 
@@ -482,7 +483,7 @@ Single-slot decision for the next FileSystem.editText. Calling `next()` yields a
 'fs/edit-intent'(target: FsTarget, actor: object | undefined, next: () => { version: FsVersion } | undefined | Promise<{ version: FsVersion } | undefined>): Promise<{ version: FsVersion } | undefined>
 ```
 
-Source: [`packages/fs/fs/src/index.ts:66`](../../packages/fs/fs/src/index.ts)
+Source: [`packages/fs/fs/src/index.ts:67`](../../packages/fs/fs/src/index.ts)
 
 <a id="fsobserved--emit"></a>
 
@@ -503,7 +504,7 @@ Record an authoritative positive or negative observation. Listeners must be sync
 'fs/observed'(target: FsTarget, observation: FsObservation, actor: object | undefined): void
 ```
 
-Source: [`packages/fs/fs/src/index.ts:76`](../../packages/fs/fs/src/index.ts)
+Source: [`packages/fs/fs/src/index.ts:77`](../../packages/fs/fs/src/index.ts)
 
 <a id="fswrite-intent--waterfall"></a>
 
@@ -523,5 +524,5 @@ Single-slot decision for the next FileSystem.writeText. Calling `next()` yields 
 'fs/write-intent'(target: FsTarget, actor: object | undefined, next: () => FsWriteIntent | undefined | Promise<FsWriteIntent | undefined>): Promise<FsWriteIntent | undefined>
 ```
 
-Source: [`packages/fs/fs/src/index.ts:58`](../../packages/fs/fs/src/index.ts)
+Source: [`packages/fs/fs/src/index.ts:59`](../../packages/fs/fs/src/index.ts)
 <!-- END GENERATED cordis-surface -->
