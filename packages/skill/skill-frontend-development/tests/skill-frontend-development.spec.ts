@@ -6,6 +6,7 @@ import SkillRegistry, { renderSkillContent } from 'coding-skill'
 import * as SkillFrontendDevelopment from 'coding-skill-frontend-development'
 
 const bodyUrl = new URL('../assets/frontend-development.md', import.meta.url)
+const iconLibraryUrl = new URL('../assets/icon-library.md', import.meta.url)
 const motionIndexUrl = new URL('../assets/motion-recipes/index.md', import.meta.url)
 const motionRecipeUrls = [
   'view-switch.css',
@@ -15,7 +16,7 @@ const motionRecipeUrls = [
   'feedback.css',
 ].map(name => new URL(`../assets/motion-recipes/${name}`, import.meta.url))
 const resourcePath = fileURLToPath(new URL('../assets/', import.meta.url))
-const description = '在创建或修改前端、网页、组件或用户界面时使用。遵循项目已有技术栈、组件、图标库和设计规范，避免文字海报；按需读取内置 CSS 动效配方，避免页面和图标硬切；禁止把系统或开发者提示、技能、工具调用、Agent 计划、框架／库／包标识、内部路径、调试信息或内部状态写进用户界面；保证主要流程在 100vh 内可用，善用子 Tab、抽屉和模态框；完成后加载 browser-use 检查真实渲染与交互。仅在用户明确要求具名视觉方向时配合 stylekit，不能覆盖产品规范。'
+const description = '在创建或修改前端、网页、组件或用户界面时使用。遵循项目已有技术栈、组件、图标库和设计规范；没有既有图标库时按需读取内置参考并默认选用 Lucide，禁止手写或内联 SVG（除非确实缺少领域图标且已走项目图标抽象）；避免文字海报和页面／图标硬切；禁止把系统或开发者提示、技能、工具调用、Agent 计划、框架／库／包标识、内部路径、调试信息或内部状态写进用户界面；完成后加载 browser-use 检查真实渲染与交互。仅在用户明确要求具名视觉方向时配合 stylekit，不能覆盖产品规范。'
 
 describe('bundled frontend-development skill', () => {
   it('registers and loads its published instructions', async () => {
@@ -50,6 +51,8 @@ describe('bundled frontend-development skill', () => {
       expect(loaded.content).toContain('load the `stylekit` skill')
       expect(loaded.content).toContain('followed a `stylekit` style spec')
       expect(await readFile(motionIndexUrl, 'utf8')).toContain('view-switch.css')
+      expect(await readFile(iconLibraryUrl, 'utf8')).toContain('Use [Lucide]')
+      expect(await readFile(iconLibraryUrl, 'utf8')).toContain('Do not hand-draw or inline SVG icons')
       for (const url of motionRecipeUrls) {
         expect(await readFile(url, 'utf8')).toContain('prefers-reduced-motion')
       }
