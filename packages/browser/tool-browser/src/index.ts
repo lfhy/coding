@@ -238,7 +238,7 @@ function browserFailure(command: BrowserCommand, error: BrowserUseError): Browse
  */
 export function apply(ctx: Context): void {
   // 跨调用路由属于系统提示词：模型最容易走错的替代方案是在 bash 里自建无头浏览器脚本，
-  // 而七项工具的 schema 只在模型已决定调用浏览器后才生效。
+  // 而八项工具的 schema 只在模型已决定调用浏览器后才生效。
   ctx.systemPrompt.section({
     name: 'tool:browser',
     order: 107,
