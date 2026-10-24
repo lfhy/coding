@@ -73,12 +73,13 @@ Host 与 Client 保持两个 aggregate program，是因为两侧在相同键下�
 根构建按生成依赖排序：
 
 ```sh
-tsc -b tsconfig.host.json
-tsdown --env.DSH_BUILD_FACE host
+pnpm run build:lib:host
 tsc -b tsconfig.client.json
 tsdown --env.DSH_BUILD_FACE client
 pnpm run build:web
 ```
+
+Host 阶段先运行 `tsc -b tsconfig.host.json` 发射 `lib/types`，再由 Host tsdown 生成 Typert 约定。干净检出没有 Host-for-Client Remote 投影，而 Host aggregate 经 Web 测试会连带检查导入这些投影的 Client 代码，因此该阶段在首遍 tsc 报缺模块时先生成约定、再重跑 tsc，类型结论以后一次为准。
 
 两次 tsdown 都使用同一组完整 workspace 匹配，不扫描构建产物来发现 Client 包，也不维护 Host/Client 包过滤表。包内 tsdown 配置根据 `DSH_BUILD_FACE` 决定当前阶段的入口：普通 Client 插件在 Client 阶段同时生成 Node loader 与 browser bundle；`api-remotes` 通过 `hostPhase: true` 提前生成 Host 入口，再在 Client 阶段只生成 browser bundle。tsdown 只消费 `lib/types` 中由前置 tsc 发射的 JavaScript。
 
