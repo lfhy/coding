@@ -5,7 +5,7 @@
 
 包根还导出桌面 Remote-SSH 提供方共用的无凭据 marker 和已认证回环 bridge helper。这些 helper 会校验本地 marker 路径映射后位于其声明的远程根目录下，在每次请求前重新校验 marker，并只让本地 Host 环境持有 bridge token。官方 `$DSH_HOME/remote-workspaces/<target-hash>/<label>-<root-hash>` 目录即使缺少 marker 也抛出 `REMOTE_WORKSPACE_MARKER_INVALID`，不能当成本地工作区执行；其他无 marker 的本地目录仍可使用。marker v3 包含由 Go 活连接确定的 `basic` 或 `agent` 模式；v2 仅按 `agent` 读取，v1 不可用于 Host 执行。mode 会写入 target key 并参与每次复核，旧无 mode 的 key 只可与 agent marker 匹配；重绑后的 generation 改变也会使旧 target 失效。marker 仅供 Host 展示与预检，bridge 仍独立核验活连接权限；marker 过期、bridge 断开或能力不足时绝不回退到本地路径或进程。
 
-Consumer 对已识别的远端 target 调用 `requireRemoteWorkspaceCapability(target, capability)`：`basic` 支持 `files-read`、`files-write`、`exec`、`process`、`terminal`、`search` 和 `code`，仅 `lsp` 暂不可用；`agent` 还支持 `lsp`。基础模式请求 LSP 抛出 `REMOTE_CAPABILITY_UNAVAILABLE`，不是“没有 marker”。基础模式的文件能力经 SFTP、执行与进程终端经 SSH、Code Mode 使用本机 Goja isolate 和远端工具绑定；agent 模式则经目标上的仅回环 Go agent。Consumer 获得远程执行世界而非本地 marker 别名，bridge 继续按活连接授权。
+Consumer 对已识别的远端 target 调用 `requireRemoteWorkspaceCapability(target, capability)`：`basic` 支持 `files-read`、`files-write`、`exec`、`process`、`terminal`、`search` 和 `code`，仅 `lsp` 暂不可用；`agent` 还支持 `lsp`。基础模式请求 LSP 抛出 `REMOTE_CAPABILITY_UNAVAILABLE`，不是“没有 marker”。基础模式的文件内容读写与搜索经 SFTP、目录列举与路径规范化在 POSIX 远端经常驻 Shell 控制面、执行与进程终端经 SSH、Code Mode 使用本机 Goja isolate 和远端工具绑定；agent 模式则经目标上的仅回环 Go agent。Consumer 获得远程执行世界而非本地 marker 别名，bridge 继续按活连接授权。
 
 ## 约定
 

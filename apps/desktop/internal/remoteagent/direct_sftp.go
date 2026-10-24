@@ -15,6 +15,7 @@ import (
 	"os"
 	"path"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -28,6 +29,8 @@ type directSFTPBackend struct {
 	sftp           *sftp.Client
 	hasHardlink    bool
 	hasPosixRename bool
+	// shell 是 basic 连接的常驻控制面；为 nil 或不可用时全部操作走 SFTP。
+	shell *directShell
 }
 
 func newDirectSFTPBackend(client *ssh.Client) (*directSFTPBackend, error) {
@@ -43,7 +46,22 @@ func newDirectSFTPBackend(client *ssh.Client) (*directSFTPBackend, error) {
 	return &directSFTPBackend{ssh: client, sftp: files, hasHardlink: hardlink, hasPosixRename: posixRename}, nil
 }
 
-func (backend *directSFTPBackend) Close() error { return backend.sftp.Close() }
+// useShell 为 POSIX 远端启用常驻 shell 控制面。
+// 文件内容读写仍走 SFTP；远端没有 sh 时控制面会自行降级。
+func (backend *directSFTPBackend) useShell() {
+	if backend.shell == nil {
+		backend.shell = newDirectShell(backend.ssh)
+	}
+}
+
+// Close 释放 SFTP 子系统与控制面会话。
+func (backend *directSFTPBackend) Close() error {
+	var shellErr error
+	if backend.shell != nil {
+		shellErr = backend.shell.Close()
+	}
+	return errors.Join(shellErr, backend.sftp.Close())
+}
 
 // Home 只使用现有 SSH 探测命令获取远端用户目录，不在本机猜测路径。
 func (backend *directSFTPBackend) Home(ctx context.Context) (string, error) {
@@ -247,6 +265,13 @@ func directRemoteError(err error) error {
 func (backend *directSFTPBackend) check(ctx context.Context) error { return activeRequest(ctx) }
 
 func (backend *directSFTPBackend) canonical(ctx context.Context, name string) (string, error) {
+	if backend.shell != nil {
+		// 控制面是加速层而不是权威：它报错时由 SFTP 给出最终结果。
+		resolved, ok, err := backend.shell.canonical(ctx, name)
+		if err == nil && ok {
+			return resolved, nil
+		}
+	}
 	missing := make([]string, 0, 4)
 	for {
 		if err := backend.check(ctx); err != nil {
@@ -349,6 +374,23 @@ func (backend *directSFTPBackend) info(ctx context.Context, name string, noFollo
 	if err := backend.check(ctx); err != nil {
 		return nil, err
 	}
+	// 控制面按符号链接本身描述路径；调用方传入的名字要么已规范化，要么正是
+	// 需要 noFollow 语义的最后一个分量，因此与 SFTP 的 Stat/Lstat 分支等价。
+	if backend.shell != nil {
+		probe, ok, err := backend.shell.info(ctx, name)
+		if err == nil && ok {
+			if probe.kind == "missing" {
+				return nil, os.ErrNotExist
+			}
+			item := &PathInfo{Path: name, Type: probe.kind, Version: shellVersion(name, probe.kind, probe.meta)}
+			if probe.kind == "file" {
+				if size, sizeErr := shellMetaSize(probe.meta); sizeErr == nil {
+					item.Size = &size
+				}
+			}
+			return item, nil
+		}
+	}
 	var info os.FileInfo
 	var err error
 	if noFollow {
@@ -423,9 +465,77 @@ func directType(info os.FileInfo) string {
 	return "other"
 }
 
+// shellList 用常驻控制面列举目录的一层子项。第二个返回值是 false 时调用方
+// 必须回退 SFTP：控制面不可用（例如 Windows 远端或缺少 sh）。
+// 条目的版本令牌由控制面元数据派生，只用于展示；写入守卫仍是 SFTP 强版本。
+func (backend *directSFTPBackend) shellList(ctx context.Context, name string) ([]DirectoryEntry, bool, error) {
+	if backend.shell == nil {
+		return nil, false, nil
+	}
+	listed, ok, err := backend.shell.list(ctx, name)
+	if err != nil || !ok {
+		// 控制面失败时回退 SFTP，由权威路径产出一致结果或错误。
+		return nil, false, nil
+	}
+	entries := make([]DirectoryEntry, 0, len(listed))
+	responseBytes := len(name) + 64
+	for _, entry := range listed {
+		if err := backend.check(ctx); err != nil {
+			return nil, false, err
+		}
+		if entry.name == "" || strings.ContainsAny(entry.name, "/\x00") || !utf8.ValidString(entry.name) {
+			return nil, false, fail(http.StatusUnprocessableEntity, "invalid-path", "remote shell returned an invalid directory entry")
+		}
+		if len(entries) >= maxDirectoryItems {
+			return nil, false, fail(http.StatusRequestEntityTooLarge, "too-many-entries", "directory exceeds the item limit")
+		}
+		child := path.Join(name, entry.name)
+		if len(child) > maxRemotePathBytes {
+			return nil, false, fail(http.StatusBadRequest, "invalid-path", "directory entry path exceeds the byte limit")
+		}
+		row := DirectoryEntry{
+			Name: entry.name, Path: child, Type: entry.kind,
+			Version: shellVersion(child, entry.kind, entry.meta),
+		}
+		if entry.kind == "file" {
+			if size, sizeErr := shellMetaSize(entry.meta); sizeErr == nil {
+				row.Size = &size
+			}
+		}
+		encoded, err := json.Marshal(row)
+		if err != nil {
+			return nil, false, err
+		}
+		responseBytes += len(encoded) + 1
+		if responseBytes > maxResponseBytes {
+			return nil, false, fail(http.StatusRequestEntityTooLarge, "response-too-large", "directory response exceeds the byte limit")
+		}
+		entries = append(entries, row)
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
+	if err := ensureResponseFits(ListResponse{Path: name, Entries: entries}); err != nil {
+		return nil, false, err
+	}
+	return entries, true, nil
+}
+
+// shellMetaSize 读取控制面元数据串的第一段大小字段；格式见 direct_shell.go。
+func shellMetaSize(meta string) (int64, error) {
+	size, _, _ := strings.Cut(meta, "|")
+	if size == "" {
+		return 0, errors.New("remote shell metadata has no size field")
+	}
+	return strconv.ParseInt(size, 10, 64)
+}
+
 func (backend *directSFTPBackend) list(ctx context.Context, name, root string) ([]DirectoryEntry, error) {
 	if err := backend.check(ctx); err != nil {
 		return nil, err
+	}
+	if entries, ok, err := backend.shellList(ctx, name); err != nil {
+		return nil, err
+	} else if ok {
+		return entries, nil
 	}
 	info, err := backend.sftp.Stat(name)
 	if err != nil {

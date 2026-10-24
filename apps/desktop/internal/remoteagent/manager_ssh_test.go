@@ -765,3 +765,35 @@ func (fixture *managerSSHFixture) serveAgent(writer http.ResponseWriter, request
 		_, _ = writer.Write([]byte(`{"error":{"code":"not-found","message":"missing"}}`))
 	}
 }
+
+// basic 连接断开后必须立即从连接表摘除，后续调用快速失败而不是挂在死连接上。
+func TestManagerDropsDisconnectedBasicConnection(t *testing.T) {
+	server := newManagerSSHFixture(t)
+	manager, err := NewManager(ManagerOptions{
+		KnownHostsPath: filepath.Join(t.TempDir(), "remote-ssh", "known_hosts"),
+		AgentPathFor:   func(RemotePlatform) (string, error) { return "", errors.New("unused") },
+		ConnectTimeout: time.Second, StartupTimeout: 2 * time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := ConnectRequest{Mode: ModeBasic, Host: server.host(), Port: server.port(), User: "coding", Auth: SSHAuth{Password: "password"}}
+	_, err = manager.Connect(context.Background(), request)
+	var unknown *ErrUnknownHostKey
+	if !errors.As(err, &unknown) {
+		t.Fatalf("first host key = %v", err)
+	}
+	info, err := manager.ConfirmHostKey(context.Background(), unknown.ConfirmationID, request, unknown.Fingerprint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.transport.Close()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := manager.Connection(info.ID); errors.Is(err, ErrConnectionNotFound) {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("disconnected basic connection stayed published")
+}

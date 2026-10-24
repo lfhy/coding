@@ -597,3 +597,28 @@ func TestFixtureRunsUploadedRemoteAgent(t *testing.T) {
 		t.Fatal("agent survived fixture shutdown")
 	}
 }
+
+// 控制面会话只在测试显式 EnableShell 后才可达；默认回环机仍拒绝任意 shell。
+func TestFixtureRejectsShellUnlessEnabled(t *testing.T) {
+	server, err := StartWithoutForwarding()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+	client, err := ssh.Dial("tcp", net.JoinHostPort(server.Host, fmt.Sprint(server.Port)), &ssh.ClientConfig{
+		User: server.Username, Auth: []ssh.AuthMethod{ssh.Password(server.Password)},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(), Timeout: 10 * time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	session, err := client.NewSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	if err := session.Start("/bin/sh"); err == nil {
+		t.Fatal("fixture accepted a shell session without EnableShell")
+	}
+}

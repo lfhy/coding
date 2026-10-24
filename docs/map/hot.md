@@ -24,7 +24,8 @@
 
 ## 远程连接模式与能力
 
-- **路线**：`packages/client/ui-workspace/src/client/WorkspacePicker.tsx` 与 `remote.ts` 持有模式选择和桌面调用；Electron `remote-ipc.ts` 经 `apps/desktop/internal/desktopremote/service.go` 与 `bridge.go` 连接 `apps/desktop/internal/remoteagent/manager_ssh.go`。基础模式由 `direct_sftp.go`、`direct_search.go`、`direct_exec.go`、`direct_process.go`、`direct_terminal.go` 与 `direct_code.go` 提供，Agent 模式由远端 Go agent 提供。
+- **路线**：`packages/client/ui-workspace/src/client/WorkspacePicker.tsx` 与 `remote.ts` 持有模式选择和桌面调用；Electron `remote-ipc.ts` 经 `apps/desktop/internal/desktopremote/service.go` 与 `bridge.go` 连接 `apps/desktop/internal/remoteagent/manager_ssh.go`。基础模式由 `direct_sftp.go`、`direct_shell.go`、`direct_search.go`、`direct_exec.go`、`direct_process.go`、`direct_terminal.go` 与 `direct_code.go` 提供，Agent 模式由远端 Go agent 提供。
+- **控制面与数据面**：POSIX 远端的基础模式复用一条常驻 `/bin/sh`（`direct_shell.go`）做列目录、路径规范化与单路径元数据，每次操作只付一次往返；文件内容、强版本与搜索仍走 SFTP。远端没有 POSIX Shell（含 Windows 远端）时控制面标记不可用并整条回退 SFTP；`manager_ssh.go` 的 `monitorBasic` 监视 SSH 传输，断线即摘除连接，后续操作快速失败。
 - **能力边界**：`packages/subprocess/subprocess/src/remote-workspace.ts` 验证 marker、派生 target 并预检能力，bridge 再按活连接授权；`fs-local`、`subprocess-local`、Bash、搜索、LSP 与 Code Mode 的 Provider 在操作入口遵守模式。基础模式支持远端文件读写编辑、前后台命令、PTY、搜索及带远端 binding 的本机隔离 Code Mode，LSP 不可用；任一远端能力失败都不可转到本机工作区或 Host 进程。具体限制见[用户指南](../user/guide/index.md#选择开始方式)及所属包 README。
 - **连带与验证**：模式字段或 bridge 路由变化时同步 Electron 壳、`ui-workspace`、`subprocess` 类型与[子系统页](../subsystems/subprocess.md#可执行文件查找)、相关能力包 README 与定向测试；原生 SSH fixture 和打包版验证分开运行，不把开发态覆盖等同于生产包或真实服务器验收。
 

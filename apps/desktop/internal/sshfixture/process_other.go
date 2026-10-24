@@ -22,3 +22,7 @@ func fixtureSignal(*exec.Cmd, string) bool         { return false }
 func (s *Server) directSession(ssh.Channel, string, *fixtureTerminal) (*exec.Cmd, <-chan uint32, error) {
 	return nil, nil, errors.New("fixture direct sessions require POSIX")
 }
+
+func (s *Server) shellSession(ssh.Channel) (*exec.Cmd, <-chan uint32, error) {
+	return nil, nil, errors.New("fixture shell sessions require POSIX")
+}

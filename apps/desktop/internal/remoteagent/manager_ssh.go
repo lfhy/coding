@@ -220,6 +220,10 @@ func (m *Manager) Connect(ctx context.Context, request ConnectRequest) (Connecti
 		if err != nil {
 			return ConnectionInfo{}, err
 		}
+		// Windows 远端没有 POSIX shell；控制面在该平台不会启动，保留 SFTP 路径。
+		if platform.OS != "windows" {
+			fs.useShell()
+		}
 		home, err := fs.Home(ctx)
 		if err != nil {
 			_ = fs.Close()
@@ -249,6 +253,7 @@ func (m *Manager) Connect(ctx context.Context, request ConnectRequest) (Connecti
 		m.states[connectionID] = state
 		m.mu.Unlock()
 		keepClient = true
+		go m.monitorBasic(connectionID, state)
 		emitProgress(request.OnProgress, "ready", 1, 1)
 		return state.info, nil
 	}
@@ -512,6 +517,27 @@ func (m *Manager) monitor(connectionID string, state *connectionState) {
 	m.mu.Unlock()
 	state.close()
 	close(state.done)
+}
+
+// monitorBasic 观察 basic 连接的 SSH 传输。它没有远端 agent 会话可等待，
+// 因此以传输本身作为断开信号：断线后立即从连接表摘除并关闭 done，让后续
+// 操作快速失败，而不是挂在一个已经断开的连接上。
+func (m *Manager) monitorBasic(connectionID string, state *connectionState) {
+	if state.client == nil {
+		return
+	}
+	_ = state.client.Wait()
+	m.mu.Lock()
+	owned := m.states[connectionID] == state
+	if owned {
+		delete(m.states, connectionID)
+	}
+	m.mu.Unlock()
+	if !owned {
+		// 显式 Close 已经接管了这条连接。
+		return
+	}
+	state.close()
 }
 
 func closeConnection(ctx context.Context, state *connectionState) error {

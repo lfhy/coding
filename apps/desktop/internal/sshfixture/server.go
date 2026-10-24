@@ -59,6 +59,7 @@ type Server struct {
 	stopping       bool
 	denyForwarding bool
 	allowDirect    bool
+	allowShell     bool
 	wg             sync.WaitGroup
 	once           sync.Once
 }
@@ -102,6 +103,15 @@ func StartWithoutForwarding() (*Server, error) {
 	server.allowDirect = true
 	server.mu.Unlock()
 	return server, nil
+}
+
+// EnableShell 允许该回环机接受固定的 `/bin/sh` exec 会话。
+// 常驻 shell 控制面测试需要真实 POSIX shell；脚本由产品代码生成，不是任意
+// 用户命令，因此这里只放行两个固定可执行名，其他命令仍在摘要白名单之外。
+func (s *Server) EnableShell() {
+	s.mu.Lock()
+	s.allowShell = true
+	s.mu.Unlock()
 }
 
 // StartWithHooks 在同一回环 SSH 生命周期上运行旧测试的合成 agent。
@@ -400,8 +410,10 @@ func (s *Server) session(stream ssh.Channel, requests <-chan *ssh.Request) {
 				}
 				s.mu.Lock()
 				allowDirect := s.allowDirect
+				allowShell := s.allowShell
 				s.mu.Unlock()
-				allowed := payload.Command == probe || s.isAgentCommand(payload.Command) ||
+				shellRequested := allowShell && (payload.Command == "sh" || payload.Command == "/bin/sh")
+				allowed := payload.Command == probe || s.isAgentCommand(payload.Command) || shellRequested ||
 					allowDirect && fixtureDirectScript(payload.Command, false)
 				if terminal != nil {
 					allowed = allowDirect && fixtureDirectScript(payload.Command, true)
@@ -411,6 +423,15 @@ func (s *Server) session(stream ssh.Channel, requests <-chan *ssh.Request) {
 					continue
 				}
 				_ = request.Reply(true, nil)
+				if shellRequested {
+					var shellErr error
+					running, done, shellErr = s.shellSession(stream)
+					if shellErr != nil {
+						_, _ = stream.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{1}))
+						return
+					}
+					continue
+				}
 				if payload.Command == probe {
 					_, _ = fmt.Fprintf(stream, "%s %s\nHOME=%s\n", platformName(), archName(), s.root)
 					_, _ = stream.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{0}))

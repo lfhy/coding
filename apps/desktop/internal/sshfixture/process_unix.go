@@ -153,6 +153,53 @@ func (s *Server) directSession(stream ssh.Channel, command string, terminal *fix
 	return cmd, done, nil
 }
 
+// shellSession 把一条 SSH 会话接到真实 /bin/sh，供常驻控制面测试使用。
+// HOME 与工作目录仍局限在临时根内；它只在测试开启 EnableShell 后才可达。
+func (s *Server) shellSession(stream ssh.Channel) (*exec.Cmd, <-chan uint32, error) {
+	cmd := exec.CommandContext(s.ctx, "/bin/sh")
+	cmd.Dir = s.root
+	cmd.Env = []string{"PATH=/usr/local/bin:/usr/bin:/bin", "HOME=" + s.root, "LANG=C", "LC_ALL=C"}
+	prepareAgentProcess(cmd)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, nil, err
+	}
+	cmd.Stdout = stream
+	cmd.Stderr = stream.Stderr()
+	s.mu.Lock()
+	if s.stopping || s.ctx.Err() != nil {
+		s.mu.Unlock()
+		return nil, nil, context.Canceled
+	}
+	if err := cmd.Start(); err != nil {
+		s.mu.Unlock()
+		return nil, nil, err
+	}
+	s.agents[cmd] = struct{}{}
+	s.mu.Unlock()
+	go func() {
+		_, _ = io.Copy(stdin, stream)
+		_ = stdin.Close()
+	}()
+	done := make(chan uint32, 1)
+	go func() {
+		err := cmd.Wait()
+		status := uint32(0)
+		if err != nil {
+			status = 1
+			var exited *exec.ExitError
+			if errors.As(err, &exited) && exited.ExitCode() >= 0 {
+				status = uint32(exited.ExitCode())
+			}
+		}
+		s.mu.Lock()
+		delete(s.agents, cmd)
+		s.mu.Unlock()
+		done <- status
+	}()
+	return cmd, done, nil
+}
+
 func (s *Server) copyScopedFixtureInput(destination io.Writer, source io.Reader, script string) error {
 	reader := bufio.NewReader(source)
 	var frame bytes.Buffer
