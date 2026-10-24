@@ -378,10 +378,8 @@ func (backend *directSFTPBackend) info(ctx context.Context, name string, noFollo
 	// 需要 noFollow 语义的最后一个分量，因此与 SFTP 的 Stat/Lstat 分支等价。
 	if backend.shell != nil {
 		probe, ok, err := backend.shell.info(ctx, name)
-		if err == nil && ok {
-			if probe.kind == "missing" {
-				return nil, os.ErrNotExist
-			}
+		// 控制面把不可读目录也报成 missing；缺失语义交给 SFTP 给出权威结果。
+		if err == nil && ok && probe.kind != "missing" {
 			item := &PathInfo{Path: name, Type: probe.kind, Version: shellVersion(name, probe.kind, probe.meta)}
 			if probe.kind == "file" {
 				if size, sizeErr := shellMetaSize(probe.meta); sizeErr == nil {

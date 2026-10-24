@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -110,8 +111,9 @@ func TestShellControlPlaneReportsDirectoryFailures(t *testing.T) {
 	if _, err := backend.ListDirectories(ctx, filepath.Join(root, "seed.txt")); err == nil {
 		t.Fatal("expected a not-directory failure")
 	}
-	if _, err := backend.ListDirectories(ctx, filepath.Join(root, "missing")); err == nil {
-		t.Fatal("expected a missing-directory failure")
+	// 缺失目录必须保留 not-found 语义，Host 据此映射 FS_NOT_FOUND。
+	if _, err := backend.ListDirectories(ctx, filepath.Join(root, "missing")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("missing directory error = %v", err)
 	}
 }
 

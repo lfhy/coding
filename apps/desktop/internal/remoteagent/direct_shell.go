@@ -24,6 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path"
 	"sort"
 	"strconv"
@@ -370,8 +371,11 @@ func (shell *directShell) list(ctx context.Context, dir string) ([]shellEntry, b
 	if !shell.available() {
 		return nil, false, nil
 	}
+	// 与 SFTP 的失败分类对齐：缺失、非目录、不可读分别报告，Host 据此映射错误码。
 	script := fmt.Sprintf(
-		"d=$(printf '%%b' %s); if [ ! -d \"$d\" ]; then printf 'E\\000not-directory\\000'; elif [ ! -r \"$d\" ]; then printf 'E\\000permission-denied\\000'; else %s; fi",
+		"d=$(printf '%%b' %s); if [ ! -e \"$d\" ] && [ ! -L \"$d\" ]; then printf 'E\\000missing\\000'; "+
+			"elif [ ! -d \"$d\" ]; then printf 'E\\000not-directory\\000'; "+
+			"elif [ ! -r \"$d\" ]; then printf 'E\\000permission-denied\\000'; else %s; fi",
 		shellLiteral(dir), shell.listScript(),
 	)
 	output, status, err := shell.run(ctx, script)
@@ -450,6 +454,8 @@ func parseShellListing(output []byte) ([]shellEntry, error) {
 			return nil, errors.New("remote shell directory listing is malformed")
 		}
 		switch fields[1] {
+		case "missing":
+			return nil, os.ErrNotExist
 		case "not-directory":
 			return nil, fail(400, "not-directory", "path is not a directory")
 		case "permission-denied":
