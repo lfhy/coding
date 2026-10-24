@@ -44,6 +44,14 @@ worktrees/
 .agents/worktrees/
 .typert-*/
 
+# package 内 src 只放源码。本地误用包内 tsconfig 就地编译时，tsc 会把 .js、sourcemap
+# 和声明产物写到源码旁；正常构建输出在 lib/、dist/。src 下新增手写 *.d.ts 环境声明
+# （例如 css-modules.d.ts）时需显式 `git add -f`。
+packages/*/*/src/**/*.js
+packages/*/*/src/**/*.js.map
+packages/*/*/src/**/*.d.ts
+packages/*/*/src/**/*.d.ts.map
+
 # Computer Use helper：本地用 native/macos 的 Swift 源码编译，产物与它的哈希清单不入库。
 packages/computer-use/computer-use/native/macos/bin/
 packages/computer-use/computer-use/native/macos/manifest.json
