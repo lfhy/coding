@@ -431,6 +431,27 @@ describe.skipIf(process.env.DSH_BROWSER_E2E !== '1' || !existsSync(chromium.exec
       } finally { await close() }
     })
 
+    it('resizes a loaded page to a mobile viewport for the model', { timeout: 40_000 }, async () => {
+      const { ctx, origin, close } = await fixture()
+      const id = SessionId('model-responsive-viewport')
+      const signal = new AbortController().signal
+      try {
+        const desktop = await ctx.browserUse.execute(id, { kind: 'navigate', url: `${origin}/responsive` }, signal)
+        expect(desktop.observation.snapshot).toContain('1280x720 desktop')
+        const mobile = await ctx.browserUse.execute(id, { kind: 'viewport', width: 390, height: 844 }, signal)
+        expect(mobile.observation.viewport).toEqual({ width: 390, height: 844 })
+        expect(mobile.observation.snapshot).toContain('390x844 mobile')
+        expect(pngSize(mobile.png)).toEqual({ width: 780, height: 1688 })
+        // 换个尺寸再验证，旧引用在观测更新后失效。
+        const resized = await ctx.browserUse.execute(id, { kind: 'viewport', width: 900, height: 600 }, signal)
+        expect(resized.observation.snapshot).toContain('900x600 desktop')
+        expect(pngSize(resized.png)).toEqual({ width: 1800, height: 1200 })
+        await expect(ctx.browserUse.execute(id, { kind: 'click',
+          ref: element(mobile.observation.snapshot, 'button', 'Reach'),
+          revision: mobile.observation.revision }, signal)).rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
+      } finally { await close() }
+    })
+
     it('normalizes a noisy device-density PNG without replaying navigation', { timeout: 40_000 }, async () => {
       let navigationCount = 0
       const { ctx, origin, close } = await fixture(undefined, () => { navigationCount++ })

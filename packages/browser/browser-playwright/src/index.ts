@@ -530,6 +530,10 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
           Math.min(Math.max(command.pixels, 0), owner.viewport.height))
         cursor = { x: owner.viewport.width / 2, y: owner.viewport.height / 2, kind: 'scroll', at: Date.now() }
         break
+      case 'viewport':
+        await this.applyViewport(owner, command.width, command.height)
+        await this.settleViewport(page)
+        break
       case 'snapshot':
       case 'screenshot': break
       case 'close': throw fail('close is handled outside page operations', 'BROWSER_FAILED')
@@ -539,8 +543,10 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
   }
 
   /** @inheritdoc */
-  execute(sessionId: SessionId, command: BrowserCommand, signal: AbortSignal,
+  async execute(sessionId: SessionId, command: BrowserCommand, signal: AbortSignal,
     expectedTarget?: BrowserExpectedTarget): Promise<BrowserCapture> {
+    // 越界尺寸在排队前拒绝，且不触发队列失败时的会话销毁。
+    if (command.kind === 'viewport') this.validateViewport(command.width, command.height)
     return this.enqueue(sessionId, signal, async () => {
       let owner = this.pages.get(sessionId)
       if (expectedTarget) {
@@ -735,13 +741,7 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
           break
         }
         case 'set-viewport': {
-          if (owner.viewport.width === command.width && owner.viewport.height === command.height) break
-          owner.viewport = { width: command.width, height: command.height }
-          owner.stateRevision++
-          for (const tab of owner.tabs.values()) {
-            await this.clearRefs(tab)
-            await tab.page.setViewportSize(owner.viewport)
-          }
+          await this.applyViewport(owner, command.width, command.height)
           const active = this.active(owner)
           if (this.needsObservation(owner, active)) {
             await this.settleViewport(active.page)
@@ -793,6 +793,25 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
   }
 
   private currentCapture(tab: SessionTab): BrowserCapture | undefined { return tab.capture }
+
+  /**
+   * 把会话所有页面改成给定 CSS 视口；尺寸未变时保留现有观测，变了则撤销全部元素引用。
+   * 调用方负责在需要时重新观测，视口本身不产生截图。
+   * @param owner - 目标会话页面。
+   * @param width - 新的视口宽度，单位为 CSS 像素。
+   * @param height - 新的视口高度，单位为 CSS 像素。
+   * @returns 所有页面改完尺寸后兑现。
+   */
+  private async applyViewport(owner: SessionPage, width: number, height: number): Promise<void> {
+    this.validateViewport(width, height)
+    if (owner.viewport.width === width && owner.viewport.height === height) return
+    owner.viewport = { width, height }
+    owner.stateRevision++
+    for (const tab of owner.tabs.values()) {
+      await this.clearRefs(tab)
+      await tab.page.setViewportSize(owner.viewport)
+    }
+  }
 
   private validateViewport(width: number, height: number): void {
     if (!Number.isInteger(width) || !Number.isInteger(height) ||

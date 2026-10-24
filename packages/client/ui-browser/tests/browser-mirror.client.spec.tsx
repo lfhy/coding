@@ -1026,6 +1026,22 @@ describe('browser UI', () => {
     expect(result.command).toHaveBeenCalledWith({ kind: 'set-viewport', width: 940, height: 620 })
   })
 
+  it('keeps a viewport the agent set until the pane itself is resized', async () => {
+    mockResizeObserver()
+    const result = mount(ready())
+    act(() => { observers[0]!.fire(940, 620) })
+    await act(async () => { await vi.advanceTimersByTimeAsync(200) })
+    expect(result.command).toHaveBeenCalledTimes(1)
+    const agentSized: BrowserView = { ...ready(2), state: { ...state(2), viewport: { width: 390, height: 844 } } as never }
+    result.rerender(<BrowserMirror {...result.props} useBrowserMirror={viewHook(agentSized)} />)
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+    expect(result.command).toHaveBeenCalledTimes(1)
+    act(() => { observers[0]!.fire(375, 680) })
+    await act(async () => { await vi.advanceTimersByTimeAsync(200) })
+    expect(result.command).toHaveBeenLastCalledWith({ kind: 'set-viewport', width: 375, height: 680 })
+    expect(result.command).toHaveBeenCalledTimes(2)
+  })
+
   it('disables controls while pending and displays actionable error', () => {
     const pending = mount({ ...ready(), pending: true })
     expect(screen.getByRole('status').textContent).toContain('Opening')

@@ -60,6 +60,8 @@ interface BrowserArgs {
   text?: string
   direction?: 'up' | 'down'
   pixels?: number
+  width?: number
+  height?: number
 }
 
 /**
@@ -71,7 +73,8 @@ interface BrowserArgs {
 export function parseBrowserCommand(action: BrowserCommand['kind'], args: BrowserArgs): BrowserCommand {
   const allowed: Record<BrowserCommand['kind'], readonly (keyof BrowserArgs)[]> = {
     navigate: ['url'], snapshot: [], click: ['ref', 'revision'],
-    fill: ['ref', 'revision', 'text'], scroll: ['direction', 'pixels'], screenshot: [], close: [],
+    fill: ['ref', 'revision', 'text'], scroll: ['direction', 'pixels'], viewport: ['width', 'height'],
+    screenshot: [], close: [],
   }
   const toolName = `browser_${action}`
   const unexpected = Object.keys(args).filter(key => !allowed[action].includes(key as keyof BrowserArgs))
@@ -104,6 +107,13 @@ export function parseBrowserCommand(action: BrowserCommand['kind'], args: Browse
         throw new Error(`${toolName}: direction and pixels (1..2000) are required`)
       }
       return { kind: 'scroll', direction: args.direction, pixels: args.pixels }
+    case 'viewport':
+      if (!Number.isSafeInteger(args.width) || args.width === undefined || args.width < 200 || args.width > 1920 ||
+        !Number.isSafeInteger(args.height) || args.height === undefined || args.height < 240 ||
+        args.height > 1400 || args.width * args.height > 1_800_000) {
+        throw new Error(`${toolName}: width (200..1920) and height (240..1400) are required, and width times height must not exceed 1800000`)
+      }
+      return { kind: 'viewport', width: args.width, height: args.height }
     case 'snapshot': return { kind: 'snapshot' }
     case 'screenshot': return { kind: 'screenshot' }
     case 'close': return { kind: 'close' }
@@ -153,6 +163,9 @@ function approvalOrigin(url: string | undefined): string | undefined {
 function approvalReason(command: BrowserCommand, currentUrl: string | undefined): string {
   if (command.kind === 'navigate') {
     return `Browser navigate (target origin: ${approvalOrigin(command.url) ?? 'invalid target'}; may redirect or load subresources; approval is for this call only)`
+  }
+  if (command.kind === 'viewport') {
+    return `Browser viewport ${command.width}x${command.height} (current origin: ${approvalOrigin(currentUrl) ?? 'unknown'}; approval is for this call only)`
   }
   const ref = command.kind === 'click' || command.kind === 'fill'
     ? ` ref ${/^[a-zA-Z0-9_-]{1,64}$/.test(command.ref) ? command.ref : '[opaque]'}`
@@ -210,7 +223,9 @@ function browserFailure(command: BrowserCommand, error: BrowserUseError): Browse
     case 'BROWSER_FAILED':
       guidance = error.message.includes('navigation timed out; loading stopped')
         ? 'navigation timed out and loading stopped; take one fresh browser_snapshot before deciding whether another navigation is needed'
-        : 'browser operation failed; do not replay a click or fill without checking whether it took effect'
+        : command.kind === 'viewport'
+          ? 'the viewport change failed; keep width 200..1920 and height 240..1400 with an area of at most 1800000 pixels'
+          : 'browser operation failed; do not replay a click or fill without checking whether it took effect'
       break
   }
   return new BrowserUseError(`${toolName}: ${error.code}: ${guidance}`, error.code, { cause: error })
@@ -287,6 +302,10 @@ export function apply(ctx: Context): void {
   register('scroll', 'Scroll the active page, then return a fresh observation with refs and revision.', {
     direction: { type: 'string', enum: ['up', 'down'], required: true, description: 'Scroll direction.' },
     pixels: { type: 'integer', required: true, description: 'Requested wheel delta, 1..2000 pixels; capped at one viewport height per call.' },
+  })
+  register('viewport', 'Change the CSS viewport of the session browser, for example 390x844 to check a phone layout, then take browser_screenshot to see how the page renders. Refs and earlier screenshots go stale; the returned observation is fresh.', {
+    width: { type: 'integer', required: true, description: 'CSS viewport width in pixels, 200..1920; width times height must not exceed 1800000.' },
+    height: { type: 'integer', required: true, description: 'CSS viewport height in pixels, 240..1400.' },
   })
   register('screenshot', 'Capture and persist a PNG of the active page; also return its current observation.', {})
   register('close', 'Close the session browser only when requested; the returned observation is no longer a live page.', {})

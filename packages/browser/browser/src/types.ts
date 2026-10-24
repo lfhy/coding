@@ -10,6 +10,7 @@ export type BrowserCommand =
   | { readonly kind: 'click'; readonly ref: string; readonly revision: number }
   | { readonly kind: 'fill'; readonly ref: string; readonly text: string; readonly revision: number }
   | { readonly kind: 'scroll'; readonly direction: 'up' | 'down'; readonly pixels: number }
+  | { readonly kind: 'viewport'; readonly width: number; readonly height: number }
   | { readonly kind: 'screenshot' }
   | { readonly kind: 'close' }
 

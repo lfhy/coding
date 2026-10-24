@@ -425,6 +425,8 @@ export function BrowserMirror({ sessionId, shown, selectedTabId, newTabRequest, 
   const viewportRetryTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const viewportRetryCount = useRef(0)
   const viewportTarget = useRef<string | null>(null)
+  // 已成功写回的「面板尺寸」目标；同一目标不再重发，Agent 自己设置过的视口因此得以保留。
+  const appliedViewportTarget = useRef<string | null>(null)
   const [viewportRetryRevision, setViewportRetryRevision] = useState(0)
   const [desiredViewport, setDesiredViewport] = useState<(BrowserViewport & { epoch: number }) | null>(null)
   function clearViewportRetry(): void {
@@ -458,6 +460,7 @@ export function BrowserMirror({ sessionId, shown, selectedTabId, newTabRequest, 
       lastViewportAttempt.current = null
       viewportRetryCount.current = 0
       viewportTarget.current = null
+      appliedViewportTarget.current = null
     }
   }, [native, shown, pendingBrowserLink, awaitingSelectedTab, tabId, browserGeneration])
   const currentViewport = view.state?.viewport
@@ -485,6 +488,8 @@ export function BrowserMirror({ sessionId, shown, selectedTabId, newTabRequest, 
       viewportRetryCount.current = 0
       return
     }
+    // 同一面板尺寸只回写一次：Agent 用 browser_viewport 改过尺寸后，工作台不能把它盖回去。
+    if (appliedViewportTarget.current === target) return
     if (viewportRetryTimer.current !== undefined || viewportRetryCount.current >= 4) return
     const attempt = `${String(desiredViewport.epoch)}:${String(stateRevision)}:${String(desiredViewport.width)}x${String(desiredViewport.height)}`
     if (lastViewportAttempt.current === attempt) return
@@ -504,7 +509,11 @@ export function BrowserMirror({ sessionId, shown, selectedTabId, newTabRequest, 
       }, delay)
     }
     void command({ kind: 'set-viewport', width: desiredViewport.width, height: desiredViewport.height })
-      .then((success) => { if (success) viewportRetryCount.current = 0; else failed() }, failed)
+      .then((success) => {
+        if (!success) { failed(); return }
+        viewportRetryCount.current = 0
+        appliedViewportTarget.current = target
+      }, failed)
   }, [native, shown, pendingBrowserLink, awaitingSelectedTab, tabId, browserGeneration, desiredViewport,
     view.pending, view.phase, agentBusy,
     currentViewport?.width, currentViewport?.height, stateRevision, command, retry, viewportRetryRevision])

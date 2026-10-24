@@ -43,6 +43,7 @@ const EXPECTED_TOOLS = [
   'browser_screenshot',
   'browser_scroll',
   'browser_snapshot',
+  'browser_viewport',
   'create_goal',
   'edit',
   'exit_plan_mode',

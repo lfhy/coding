@@ -728,6 +728,26 @@ describe('Playwright browser owner', () => {
     await ctx.fiber.dispose()
   })
 
+  it('applies a model viewport to every tab and invalidates earlier refs', async () => {
+    const { ctx, service } = await provider()
+    const id = SessionId('model-viewport')
+    const signal = new AbortController().signal
+    const first = await service.execute(id, { kind: 'navigate', url: 'http://127.0.0.1:8080/' }, signal)
+    page.setViewportSize.mockClear()
+    const resized = await service.execute(id, { kind: 'viewport', width: 390, height: 844 }, signal)
+    expect(page.setViewportSize).toHaveBeenCalledWith({ width: 390, height: 844 })
+    expect(resized.observation).toMatchObject({ viewport: { width: 390, height: 844 },
+      revision: first.observation.revision + 1 })
+    expect(service.state(id)).toMatchObject({ viewport: { width: 390, height: 844 } })
+    await expect(service.execute(id, { kind: 'click', ref: ref(first.observation.snapshot),
+      revision: first.observation.revision }, signal)).rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
+    await expect(service.execute(SessionId('model-viewport-closed'), { kind: 'viewport', width: 390, height: 844 }, signal))
+      .rejects.toMatchObject({ code: 'BROWSER_CLOSED' })
+    await expect(service.execute(id, { kind: 'viewport', width: 1, height: 1 }, signal))
+      .rejects.toMatchObject({ code: 'BROWSER_FAILED' })
+    await ctx.fiber.dispose()
+  })
+
   it('continues destroying the session for an uncertain screenshot failure', async () => {
     const { ctx, service } = await headlessProvider()
     const id = SessionId('failed-capture')

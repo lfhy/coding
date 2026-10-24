@@ -8,6 +8,7 @@ import { createBrowserInputOverlay } from './browser-input-overlay.ts'
 import { createGuestObserver } from './browser-guest-observation.ts'
 import { createBackgroundStage } from './browser-guest-stage.ts'
 import { performModelOperation } from './browser-guest-model.ts'
+import { emulateViewport, restoreViewport } from './browser-guest-viewport.ts'
 import { navigateGuest } from './browser-guest-navigation.ts'
 import type { TargetOutcome } from './browser-guest-snapshot.ts'
 import { INITIAL_VIEWPORT, MAX_SESSIONS, MAX_TABS, GuestError, STALE_TARGET_REASONS, active, allowedUrl, fail, invalidate,
@@ -286,8 +287,14 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     }, human)
   }
 
-  function checkHumanTarget(owner: Owner, tab: Tab, target: BrowserHumanTarget, x: number, y: number): void {
+  function checkHumanTarget(sessionId: string, owner: Owner, tab: Tab, target: BrowserHumanTarget,
+    x: number, y: number): void {
     const observation = tab.capture?.observation
+    // 模型视口与面板尺寸不同时页面布局不再对应面板坐标，人工点击会落到别的元素上。
+    if (presented?.sessionId === sessionId && presented.tabId === tab.id &&
+      (presented.bounds.width !== owner.viewport.width || presented.bounds.height !== owner.viewport.height)) {
+      fail('browser viewport is controlled by the agent; resize the browser panel to take it over', 'BROWSER_STALE_REF')
+    }
     if (target.browserGeneration !== owner.generation || target.stateRevision !== owner.revision ||
       target.tabId !== owner.active || target.generation !== tab.generation ||
       target.revision !== observation?.revision || target.viewport.width !== owner.viewport.width ||
@@ -295,6 +302,29 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
       !Number.isSafeInteger(x) || !Number.isSafeInteger(y) || x < 0 || y < 0 ||
       x >= owner.viewport.width || y >= owner.viewport.height || observation.url !== tab.view.webContents.getURL()) {
       fail('browser screenshot is no longer current', 'BROWSER_STALE_REF')
+    }
+  }
+
+  /**
+   * 把会话切到模型要求的目标视口：真实视图改成该尺寸，已呈现的标签页改用设备度量覆盖。
+   * 面板尺寸由真人决定，因此呈现时仍以面板为准；同一个调试器连接保证覆盖与尺寸指令有序。
+   * @param sessionId - 所属会话标识。
+   * @param owner - 目标会话状态。
+   * @param width - 目标 CSS 视口宽度，单位为像素。
+   * @param height - 目标 CSS 视口高度，单位为像素。
+   * @returns 所有标签页改完后兑现。
+   */
+  async function applyViewport(sessionId: string, owner: Owner, width: number, height: number): Promise<void> {
+    validateViewport(width, height)
+    if (owner.viewport.width === width && owner.viewport.height === height) return
+    owner.viewport = { width, height }
+    owner.revision++
+    owner.targetRevision++
+    for (const item of owner.tabs.values()) {
+      delete item.capture
+      const shown = presented?.sessionId === sessionId && presented.tabId === item.id
+      if (!shown) item.view.setBounds({ x: 0, y: 0, width, height })
+      await emulateViewport(item, width, height)
     }
   }
 
@@ -351,6 +381,8 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
     if (!owner.lease) showCursor()
     if (owner.viewport.width !== boundedWidth || owner.viewport.height !== boundedHeight) {
       owner.viewport = { width: boundedWidth, height: boundedHeight }
+      // 呈现尺寸重新定义页面视口，模型设置的设备度量覆盖随之失效。
+      for (const item of owner.tabs.values()) restoreViewport(item)
       invalidate(owner, tab)
       emit(sessionId, owner)
     }
@@ -400,6 +432,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
           },
           mutate: () => { mutation.occurred = true },
           navigate: url => navigate(sessionId, owner, tab, url),
+          setViewport: (width, height) => applyViewport(sessionId, owner, width, height),
           fail: message => fail(message, 'BROWSER_STALE_REF'),
         })
         const capture = await observe(sessionId, owner, tab, cursor, command.kind === 'screenshot')
@@ -501,6 +534,8 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
               owner.targetRevision++
               for (const item of owner.tabs.values()) {
                 delete item.capture
+                // 人工尺寸由真实视图承载，先撤掉模型留下的设备度量覆盖。
+                restoreViewport(item)
                 if (presented?.sessionId !== sessionId || presented.tabId !== item.id) {
                   item.view.setBounds({ x: 0, y: 0, ...owner.viewport })
                 }
@@ -512,7 +547,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
           case 'scroll':
           case 'type': {
             await refreshMutation(sessionId, owner, tab)
-            checkHumanTarget(owner, tab, command.target, command.x, command.y)
+            checkHumanTarget(sessionId, owner, tab, command.target, command.x, command.y)
             const wc = tab.view.webContents
             if (command.kind === 'scroll') {
               if (!Number.isSafeInteger(command.pixels) || command.pixels < 1 || command.pixels > 2000) {

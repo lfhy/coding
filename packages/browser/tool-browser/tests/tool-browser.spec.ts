@@ -170,6 +170,7 @@ describe('browser action tools', () => {
     { action: 'click', ref: 'e1', revision: 1 },
     { action: 'fill', ref: 'e1', revision: 1, text: 'hello' },
     { action: 'scroll', direction: 'down', pixels: 10 },
+    { action: 'viewport', width: 390, height: 844 },
     { action: 'screenshot' },
     { action: 'close' },
   ])('executes $action in full access without approval requests or audits', async (args) => {
@@ -304,6 +305,22 @@ describe('browser action tools', () => {
     expect(browser.commands).toHaveBeenCalledTimes(1)
     expect(browser.commands.mock.calls[0]?.[1]).toEqual({ kind: 'snapshot' })
     expect(approval).toHaveBeenCalledTimes(1)
+  })
+
+  it('passes the requested viewport through and describes it in the approval prompt', async () => {
+    const { ctx, call } = await setup()
+    const browser = ctx.browserUse as FakeBrowser
+    browser.currentState = activeState()
+    const asked = vi.fn((_request: { reason?: string }) => Promise.resolve('allowed-once' as const))
+    ctx.on('approval/request', asked)
+
+    const result = await call({ action: 'viewport', width: 390, height: 844 })
+    expect(result.isError).toBe(false)
+    expect(browser.commands.mock.calls[0]?.[1]).toEqual({ kind: 'viewport', width: 390, height: 844 })
+    expect(asked).toHaveBeenCalledTimes(1)
+    expect(asked.mock.calls[0]?.[0].reason).toBe(
+      'Browser viewport 390x844 (current origin: https://example.com; approval is for this call only)')
+    expect(result.value).toMatchObject({ action: 'viewport', image: null })
   })
 
   it('treats an invisible click target as uncertain without replaying it', async () => {
@@ -590,11 +607,12 @@ describe('browser action tools', () => {
     for (const args of [
       { action: 'navigate', url: 'https://example.com' }, { action: 'snapshot' },
       { action: 'click', ref: 'e1', revision: 1 }, { action: 'fill', ref: 'e1', revision: 1, text: 'hello' },
-      { action: 'scroll', direction: 'down', pixels: 10 }, { action: 'screenshot' }, { action: 'close' },
+      { action: 'scroll', direction: 'down', pixels: 10 }, { action: 'viewport', width: 390, height: 844 },
+      { action: 'screenshot' }, { action: 'close' },
     ] as const) expect((await call(args)).isError).toBe(true)
     expect(names).toEqual([
       'browser_navigate', 'browser_snapshot', 'browser_click', 'browser_fill',
-      'browser_scroll', 'browser_screenshot', 'browser_close',
+      'browser_scroll', 'browser_viewport', 'browser_screenshot', 'browser_close',
     ])
     expect(browser.commands).not.toHaveBeenCalled()
   })
@@ -941,17 +959,17 @@ describe('browser action tools', () => {
     expect((ctx.browserUse as FakeBrowser).commands).not.toHaveBeenCalled()
   })
 
-  it('publishes only seven action-specific tool schemas with required parameters', async () => {
+  it('publishes only eight action-specific tool schemas with required parameters', async () => {
     const { ctx } = await setup()
     const schemas = ctx.tools.schemas().filter(tool => tool.name.startsWith('browser_'))
     expect(schemas.map(tool => tool.name)).toEqual([
       'browser_navigate', 'browser_snapshot', 'browser_click', 'browser_fill',
-      'browser_scroll', 'browser_screenshot', 'browser_close',
+      'browser_scroll', 'browser_viewport', 'browser_screenshot', 'browser_close',
     ])
     expect(ctx.tools.get('browser_use')).toBeUndefined()
     expect(schemas.map(tool => (tool.parameters as { required?: string[] }).required ?? [])).toEqual([
       ['url'], [], ['ref', 'revision'], ['ref', 'revision', 'text'],
-      ['direction', 'pixels'], [], [],
+      ['direction', 'pixels'], ['width', 'height'], [], [],
     ])
     for (const schema of schemas) {
       expect((schema.parameters as { properties: Record<string, unknown> }).properties).not.toHaveProperty('action')
@@ -974,6 +992,8 @@ describe('browser action tools', () => {
       { action: 'click', ref: 'x'.repeat(257), revision: 1 },
       { action: 'fill', ref: 'e1', revision: 1, text: 'x'.repeat(2001) },
       { action: 'scroll', direction: 'up', pixels: 2001 },
+      { action: 'viewport', width: 199, height: 844 }, { action: 'viewport', width: 390, height: 239 },
+      { action: 'viewport', width: 1920, height: 1400 }, { action: 'viewport', width: 390 },
     ]) expect((await call(args)).isError).toBe(true)
     expect(asked).not.toHaveBeenCalled()
     expect((ctx.browserUse as FakeBrowser).commands).not.toHaveBeenCalled()

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { runInNewContext } from 'node:vm'
 import type { BrowserWindow } from 'electron'
+import type { BrowserSessionState } from 'coding-browser'
 import { parseBridgeEvent, parseBridgeResponse } from '../../../packages/browser/browser-electron/src/protocol.ts'
 import { createBrowserGuestManager } from '../src/browser-guest.ts'
 import { allowedUrl } from '../src/browser-guest-state.ts'
@@ -303,6 +304,46 @@ describe('Electron 实时浏览器 guest', () => {
     expect(remaining!.activeTabId).toBe(next!.activeTabId)
     await manager.close('s1')
     expect(electron.views.every(view => view.webContents.close.mock.calls.length === 1)).toBe(true)
+  })
+
+  it('模型视口用设备度量改写布局，面板重新呈现时恢复并挡住错位的人工点击', async () => {
+    let latest: BrowserSessionState | null = null
+    const manager = createBrowserGuestManager(fixture(), { onState: (_id, state) => { latest = state } })
+    const navigated = await manager.execute('s1', { kind: 'navigate', url: 'https://example.com/' })
+    const view = electron.views[0]!
+    const wc = view.webContents
+    wc.debugger.sendCommand.mockClear()
+    const resized = await manager.execute('s1', { kind: 'viewport', width: 390, height: 844 })
+    expect(wc.debugger.sendCommand).toHaveBeenCalledWith('Emulation.setDeviceMetricsOverride',
+      { width: 390, height: 844, deviceScaleFactor: 0, mobile: false })
+    expect(resized.observation.viewport).toEqual({ width: 390, height: 844 })
+    expect(latest).toMatchObject({ viewport: { width: 390, height: 844 },
+      observation: { viewport: { width: 390, height: 844 }, cursor: null } })
+    expect(view.setBounds).toHaveBeenLastCalledWith({ x: 0, y: 0, width: 390, height: 844 })
+    // 同一尺寸不再重发设备度量，也不会被后续观测撤销。
+    wc.debugger.sendCommand.mockClear()
+    await manager.execute('s1', { kind: 'snapshot' })
+    await manager.execute('s1', { kind: 'viewport', width: 390, height: 844 })
+    expect(wc.debugger.sendCommand).not.toHaveBeenCalledWith('Emulation.setDeviceMetricsOverride', expect.anything())
+    expect(wc.debugger.sendCommand).not.toHaveBeenCalledWith('Emulation.clearDeviceMetricsOverride')
+
+    // 面板按自身尺寸重新呈现后，页面恢复面板布局。
+    expect(latest!.observation).not.toBeNull()
+    manager.present({ sessionId: 's1', tabId: navigated.observation.tabId, visible: true,
+      bounds: { x: 0, y: 0, width: 800, height: 600 } })
+    expect(wc.debugger.sendCommand).toHaveBeenCalledWith('Emulation.clearDeviceMetricsOverride')
+    expect(latest).toMatchObject({ viewport: { width: 800, height: 600 } })
+
+    // 面板显示期间模型设置视口：页面按新尺寸布局，人工点击必须被拒绝而不是落到别的元素上。
+    const mobile = await manager.execute('s1', { kind: 'viewport', width: 390, height: 844 })
+    const observation = mobile.observation
+    await expect(manager.control('s1', { kind: 'click', x: 10, y: 20, target: {
+      browserGeneration: latest!.browserGeneration, stateRevision: latest!.stateRevision,
+      tabId: observation.tabId, generation: observation.generation, revision: observation.revision,
+      viewport: observation.viewport,
+    } })).rejects.toMatchObject({ code: 'BROWSER_STALE_REF',
+      message: 'browser viewport is controlled by the agent; resize the browser panel to take it over' })
+    await manager.dispose()
   })
 
   it('覆盖层重建时按上次指针位置续接，点击不再从视口中心重新出现', async () => {

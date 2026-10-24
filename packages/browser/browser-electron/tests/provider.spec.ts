@@ -89,6 +89,14 @@ describe('desktop browser bridge', () => {
       command: { kind: 'open-url', url: 'https://example.com/' } })).toThrow()
     expect(() => parseBridgeRequest({ v: 1, id: 'x', method: 'execute', sessionId: id,
       command: { kind: 'click', ref: 'r', revision: -1 } })).toThrow()
+    expect(parseBridgeRequest({ v: 1, id: 'resize', method: 'execute', sessionId: id,
+      command: { kind: 'viewport', width: 390, height: 844 } }).command).toEqual({
+      kind: 'viewport', width: 390, height: 844,
+    })
+    for (const command of [{ kind: 'viewport', width: 390 }, { kind: 'viewport', width: 199, height: 844 },
+      { kind: 'viewport', width: 1920, height: 1400 }, { kind: 'viewport', width: 390, height: 844, mobile: true }]) {
+      expect(() => parseBridgeRequest({ v: 1, id: 'resize', method: 'execute', sessionId: id, command })).toThrow()
+    }
     expect(() => parseBridgeResponse({ v: 1, id: 'x', ok: true, value: { observation, png: 'broken' } }, 'execute')).toThrow()
     expect(() => parseBridgeEvent({ v: 1, type: 'state', sessionId: id, state,
       capture: { observation: { ...observation, revision: 2 }, png } })).toThrow()

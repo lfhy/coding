@@ -224,7 +224,7 @@ describe('browser tools and skill in the shipped Web preset composition', () => 
       const codePrompt = await ctx.systemPrompt.assemble({ scope: coded.agent })
       const browserTools = [
         'browser_navigate', 'browser_snapshot', 'browser_click', 'browser_fill',
-        'browser_scroll', 'browser_screenshot', 'browser_close',
+        'browser_scroll', 'browser_viewport', 'browser_screenshot', 'browser_close',
       ]
       expect(standardPrompt.tools.map(tool => tool.name).filter(name => name.startsWith('browser_')))
         .toEqual([...browserTools].sort())

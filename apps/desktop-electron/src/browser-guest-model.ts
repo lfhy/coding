@@ -17,6 +17,7 @@ interface ModelOperation {
   pointers: Map<string, { x: number; y: number }>
   mutate(): void
   navigate(url: string): Promise<void>
+  setViewport(width: number, height: number): Promise<void>
   fail(message: string): never
 }
 
@@ -132,6 +133,7 @@ export async function performModelOperation(operation: ModelOperation): Promise<
       cursor = { x, y, kind: 'scroll', at: Date.now() }
       break
     }
+    case 'viewport': await operation.setViewport(command.width, command.height); break
     case 'snapshot': case 'screenshot': break
     default: { const never: never = command; throw new Error(`unknown browser command: ${String(never)}`) }
   }

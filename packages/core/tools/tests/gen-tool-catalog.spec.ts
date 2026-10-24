@@ -30,7 +30,7 @@ describe('gen-tool-catalog collectToolCatalog', () => {
     const names = catalog.flatMap(entry => entry.schemas.map(s => s.name)).sort()
     expect(names).toEqual([
       'ask_user_question', 'bash', 'bash', 'browser_click', 'browser_close', 'browser_fill',
-      'browser_navigate', 'browser_screenshot', 'browser_scroll', 'browser_snapshot',
+      'browser_navigate', 'browser_screenshot', 'browser_scroll', 'browser_snapshot', 'browser_viewport',
       'cordis_define', 'cordis_inspect_list',
       'cordis_inspect_query', 'cordis_inspect_self', 'cordis_run', 'cordis_stop',
       'cordis_undefine', 'create_goal', 'edit', 'exit_plan_mode', 'followup_task', 'get_goal', 'glob', 'grep',
@@ -52,10 +52,10 @@ describe('gen-tool-catalog collectToolCatalog', () => {
     }
   })
 
-  it('harvests seven browser operations with action-specific arguments and one result shape', async () => {
+  it('harvests eight browser operations with action-specific arguments and one result shape', async () => {
     const catalog = await collectToolCatalog()
     const browser = catalog.find(entry => entry.pkg === 'coding-tool-browser')
-    const actions = ['navigate', 'snapshot', 'click', 'fill', 'scroll', 'screenshot', 'close']
+    const actions = ['navigate', 'snapshot', 'click', 'fill', 'scroll', 'viewport', 'screenshot', 'close']
     expect(browser?.schemas.map(schema => schema.name)).toEqual(actions.map(action => `browser_${action}`).sort())
     expect(browser?.note).toContain('active tab and session revision')
 

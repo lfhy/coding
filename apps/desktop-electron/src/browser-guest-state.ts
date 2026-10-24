@@ -42,6 +42,8 @@ export interface Tab {
   syntheticInput: boolean
   domRevision?: number
   everPresented: boolean
+  /** 模型设置的设备度量视口；存在时页面按该 CSS 尺寸布局，与原生视图尺寸无关。 */
+  emulated?: { width: number; height: number }
 }
 
 /** 一个浏览器工具会话的标签页、视口、租约和版本状态。 */

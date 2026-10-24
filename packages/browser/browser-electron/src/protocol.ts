@@ -129,6 +129,8 @@ function command(value: unknown, human: boolean): boolean {
     return kind === 'scroll' && ['up', 'down'].includes(String(value.direction)) && integer(value.pixels, 1, 2000)
   }
   if (['snapshot', 'screenshot', 'close'].includes(kind)) return fields(value, ['kind'])
+  if (kind === 'viewport') return fields(value, ['kind', 'width', 'height']) &&
+    viewport({ width: value.width, height: value.height })
   if (kind === 'click') return fields(value, ['kind', 'ref', 'revision']) && bounded(value.ref, 256) && integer(value.revision, 1)
   if (kind === 'fill') return fields(value, ['kind', 'ref', 'revision', 'text']) && bounded(value.ref, 256) &&
     integer(value.revision, 1) && typeof value.text === 'string' && value.text.length <= 2000
