@@ -1,0 +1,28 @@
+.motionFeedback {
+  animation: motion-feedback-in var(--motion-duration, var(--ds-transition-duration, 200ms))
+    var(--motion-ease, var(--ds-ease-in-out, ease-out)) both;
+}
+
+.motionFeedback[data-state='leaving'] {
+  animation-name: motion-feedback-out;
+}
+
+@keyframes motion-feedback-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--motion-distance, 6px));
+  }
+}
+
+@keyframes motion-feedback-out {
+  to {
+    opacity: 0;
+    transform: translateY(var(--motion-distance, -6px));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .motionFeedback {
+    animation: none;
+  }
+}

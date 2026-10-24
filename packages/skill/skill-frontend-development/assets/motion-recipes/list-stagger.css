@@ -1,0 +1,18 @@
+.motionStagger > * {
+  animation: motion-stagger-in var(--motion-duration, var(--ds-transition-duration, 200ms))
+    var(--motion-ease, var(--ds-ease-in-out, ease-out)) both;
+  animation-delay: calc(var(--motion-index, 0) * var(--motion-stagger, 40ms));
+}
+
+@keyframes motion-stagger-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--motion-distance, 8px));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .motionStagger > * {
+    animation: none;
+  }
+}

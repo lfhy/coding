@@ -1,0 +1,51 @@
+.motionIcon {
+  transition: transform var(--motion-duration, var(--ds-transition-duration-fast, 100ms))
+    var(--motion-ease, var(--ds-ease-in-out, ease-out));
+}
+
+.motionIcon:hover {
+  transform: translateY(-1px);
+}
+
+.motionIcon[data-state='success'] {
+  animation: motion-icon-pop var(--motion-duration, 220ms)
+    var(--motion-ease, var(--ds-ease-in-out, ease-out)) both;
+}
+
+.motionIcon[data-state='loading'] {
+  animation: motion-icon-spin var(--motion-spin-duration, 900ms) linear infinite;
+}
+
+.motionIcon[data-state='attention'] {
+  animation: motion-icon-nudge var(--motion-duration, 260ms)
+    var(--motion-ease, var(--ds-ease-in-out, ease-out)) both;
+}
+
+@keyframes motion-icon-pop {
+  50% {
+    transform: scale(1.16);
+  }
+}
+
+@keyframes motion-icon-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+@keyframes motion-icon-nudge {
+  25% {
+    transform: translateX(-2px);
+  }
+
+  75% {
+    transform: translateX(2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .motionIcon {
+    transition: none;
+    animation: none;
+  }
+}

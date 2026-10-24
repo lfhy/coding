@@ -1,0 +1,30 @@
+.motionViewEnter {
+  animation: motion-view-enter var(--motion-duration, var(--ds-transition-duration-slow, 300ms))
+    var(--motion-ease, var(--ds-ease-in-out, ease-out)) both;
+}
+
+.motionViewExit {
+  animation: motion-view-exit var(--motion-duration, var(--ds-transition-duration-slow, 300ms))
+    var(--motion-ease, var(--ds-ease-in-out, ease-out)) both;
+}
+
+@keyframes motion-view-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(var(--motion-enter-x, 12px), var(--motion-enter-y, 0), 0);
+  }
+}
+
+@keyframes motion-view-exit {
+  to {
+    opacity: 0;
+    transform: translate3d(var(--motion-exit-x, -12px), var(--motion-exit-y, 0), 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .motionViewEnter,
+  .motionViewExit {
+    animation: none;
+  }
+}

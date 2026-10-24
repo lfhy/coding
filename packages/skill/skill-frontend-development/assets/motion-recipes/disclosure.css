@@ -1,0 +1,36 @@
+.motionDisclosurePanel {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows var(--motion-duration, var(--ds-transition-duration, 200ms))
+      var(--motion-ease, var(--ds-ease-in-out, ease-out)),
+    opacity var(--motion-duration, var(--ds-transition-duration, 200ms))
+      var(--motion-ease, var(--ds-ease-in-out, ease-out));
+}
+
+.motionDisclosurePanel > * {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.motionDisclosure[data-open='true'] .motionDisclosurePanel {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.motionDisclosureIcon {
+  transition: transform var(--motion-duration, var(--ds-transition-duration, 200ms))
+    var(--motion-ease, var(--ds-ease-in-out, ease-out));
+}
+
+.motionDisclosure[data-open='true'] .motionDisclosureIcon {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .motionDisclosurePanel,
+  .motionDisclosureIcon {
+    transition: none;
+  }
+}

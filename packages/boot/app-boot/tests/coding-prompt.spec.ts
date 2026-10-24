@@ -32,6 +32,9 @@ describe('addCodingPromptSections', () => {
       expect(rendered).toContain('总入口，再按任务读相关模块地图与专项文档')
       expect(rendered).toContain('仓库内相对链接')
       expect(rendered).toContain('# Git 工作')
+      expect(rendered).toContain('调用 edit 前必须读取目标文件的最新内容')
+      expect(rendered).toContain('old_string was not found')
+      expect(rendered).toContain('页面是给用户使用的产品界面，不是模型或开发者的调试面板')
       expect(rendered).not.toContain('未经要求不提交')
     } finally {
       await ctx.fiber.dispose()

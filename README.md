@@ -31,7 +31,7 @@ Coding 是面向个人开发的开源 AI 编程桌面客户端。它将模型对
 | Skill | 用途 |
 | --- | --- |
 | [`browser-use`](packages/skill/skill-browser-use/README.md) | 指导 Agent 先观察页面，再使用有效的元素引用操作网页，完成页面阅读、交互、截图和界面验收。 |
-| [`frontend-development`](packages/skill/skill-frontend-development/README.md) | 指导前端实现遵循项目已有技术栈、组件和设计规范，关注布局与交互，并结合浏览器检查实际效果。 |
+| [`frontend-development`](packages/skill/skill-frontend-development/README.md) | 指导前端实现遵循项目已有技术栈、组件和设计规范，使用图标与按需 CSS 动效配方，避免内部实现文案和文字海报，并结合浏览器检查实际效果。 |
 | [`genui`](packages/genui/genui/README.md) | 提供交互式回答的组件与语法指引，用于生成表格、图表、表单和流程图等内容。 |
 | [`stylekit`](packages/skill/skill-stylekit/README.md) | 为界面选定具名视觉风格（玻璃拟态、新野兽派、赛博朋克、Apple／Stripe 风格等），给出配色、设计令牌与 do／don't 规则，并在项目现有技术栈内落地和验收。 |
 
