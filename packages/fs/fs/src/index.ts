@@ -364,9 +364,16 @@ export class FsRegistry extends FileSystem {
     return this.registrations.map(registration => registration.provider.id)
   }
 
-  /** 沙箱模式由最近注册的后端决定；分派不改变部署级事实。 */
+  /**
+   * 部署级沙箱模式：取第一个声明了模式的后端（后注册优先）。普通后端不围栏、
+   * 返回 `undefined`，因此包了沙箱装饰器的后端总会胜出，分派本身不改变这个事实。
+   */
   override get sandboxMode(): SandboxMode | undefined {
-    return this.registrations.at(-1)?.provider.sandboxMode
+    for (const registration of [...this.registrations].reverse()) {
+      const mode = registration.provider.sandboxMode
+      if (mode !== undefined) return mode
+    }
+    return undefined
   }
 
   /**

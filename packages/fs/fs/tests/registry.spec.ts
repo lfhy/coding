@@ -104,6 +104,16 @@ describe('FsRegistry', () => {
     expect(remote.calls).toEqual([])
   })
 
+  it('部署级沙箱模式取第一个声明了模式的后端', async () => {
+    const ctx = new Context()
+    const registry = new FsRegistry(ctx)
+    const plain = backend('local', 'local')
+    const fenced = { ...backend('fenced', 'fenced'), sandboxMode: 'workspace-write' as const }
+    registry.register(fenced)
+    registry.register(plain)
+    expect(registry.sandboxMode).toBe('workspace-write')
+  })
+
   it('拒绝重复 id 与未注册的绑定，并在没有后端时报错', async () => {
     const ctx = new Context()
     const registry = new FsRegistry(ctx)
