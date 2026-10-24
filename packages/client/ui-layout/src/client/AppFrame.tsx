@@ -29,12 +29,12 @@ import {
 import type { createLayoutStore } from './stores.ts'
 import css from './AppFrame.module.css'
 
-/** AppFrame 向布局服务回报会话级工作台投影的注入面。 */
+/** AppFrame 向布局服务回报工作区级工作台投影的注入面。 */
 export interface AppFrameInjected {
-  /** 发布当前 Session 的工作台状态。 */
-  publishWorkbench: (sessionId: SessionId, state: WorkbenchLayoutSnapshot) => void
-  /** 清理已离开会话列表的工作台投影。 */
-  retainWorkbenchViews: (sessionIds: readonly SessionId[]) => void
+  /** 发布当前工作区的工作台状态。 */
+  publishWorkbench: (key: string, state: WorkbenchLayoutSnapshot) => void
+  /** 清理已离开会话列表的工作区工作台投影。 */
+  retainWorkbenchViews: (keys: readonly string[]) => void
   /** 解析会话所属的工作区键；工作台偏好按它保存。 */
   workspaceKeyOf: (sessionId: SessionId) => string
 }
@@ -297,7 +297,7 @@ export function AppFrame({
   // 工作台布局与 Session 生命周期绑定；离开会话列表时同步释放瞬时状态与页头投影。
   useEffect(() => {
     actions.retainWorkbenchSessions(liveSessionIds.map(workspaceKeyOf))
-    retainWorkbenchViews(liveSessionIds)
+    retainWorkbenchViews(liveSessionIds.map(workspaceKeyOf))
   }, [actions, liveSessionIds, retainWorkbenchViews, workspaceKeyOf])
 
   useLayoutEffect(() => {
@@ -363,13 +363,13 @@ export function AppFrame({
   const bottomShown = bottomRequested && bottomHeight > 0
 
   useEffect(() => {
-    if (activeSession === undefined) return
-    publishWorkbench(activeSession, {
+    if (activeKey === undefined) return
+    publishWorkbench(activeKey, {
       open: workbenchShown,
       fullscreen: workbenchShown && panels.fullscreen,
       bottomOpen: bottomRequested,
     })
-  }, [activeSession, bottomRequested, panels.fullscreen, publishWorkbench, workbenchShown])
+  }, [activeKey, bottomRequested, panels.fullscreen, publishWorkbench, workbenchShown])
 
   const geometry = useRef({ sidebarWidth, detailsWidth, workbenchWidth, bottomHeight })
   geometry.current = { sidebarWidth, detailsWidth, workbenchWidth, bottomHeight }
@@ -386,25 +386,25 @@ export function AppFrame({
   const onSidebarDrag = useCallback((delta: number) => { actions.setSidebar(sidebarBase.current + delta) }, [actions])
   const onDetailsDrag = useCallback((delta: number) => { actions.setDetails(detailsBase.current - delta) }, [actions])
   const onWorkbenchDrag = useCallback((delta: number) => {
-    if (activeSession !== undefined) actions.setWorkbench(activeSession, workbenchBase.current - delta)
-  }, [actions, activeSession])
+    if (activeKey !== undefined) actions.setWorkbench(activeKey, workbenchBase.current - delta)
+  }, [actions, activeKey])
   const onBottomDrag = useCallback((delta: number) => {
     if (activeKey !== undefined) actions.setWorkbenchBottom(activeKey, bottomBase.current - delta)
-  }, [actions, activeSession])
+  }, [actions, activeKey])
   const nudgeSidebar = useCallback((delta: number) => { actions.setSidebar(geometry.current.sidebarWidth + delta) }, [actions])
   const nudgeDetails = useCallback((delta: number) => { actions.setDetails(geometry.current.detailsWidth - delta) }, [actions])
   const nudgeWorkbench = useCallback((delta: number) => {
-    if (activeSession !== undefined) actions.setWorkbench(activeSession, geometry.current.workbenchWidth + delta)
-  }, [actions, activeSession])
+    if (activeKey !== undefined) actions.setWorkbench(activeKey, geometry.current.workbenchWidth + delta)
+  }, [actions, activeKey])
   const nudgeBottom = useCallback((delta: number) => {
     if (activeKey !== undefined) actions.setWorkbenchBottom(activeKey, geometry.current.bottomHeight - delta)
-  }, [actions, activeSession])
+  }, [actions, activeKey])
   const setWorkbench = useCallback((value: number) => {
-    if (activeSession !== undefined) actions.setWorkbench(activeSession, value)
-  }, [actions, activeSession])
+    if (activeKey !== undefined) actions.setWorkbench(activeKey, value)
+  }, [actions, activeKey])
   const setWorkbenchBottom = useCallback((value: number) => {
-    if (activeSession !== undefined) actions.setWorkbenchBottom(activeSession, value)
-  }, [actions, activeSession])
+    if (activeKey !== undefined) actions.setWorkbenchBottom(activeKey, value)
+  }, [actions, activeKey])
   return (
     <div
       ref={frameRef}

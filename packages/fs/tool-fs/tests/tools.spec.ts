@@ -264,7 +264,7 @@ describe('read tool', () => {
     const { ctx } = await setup()
     const result = await call(ctx, 'read', { file_path: 'a.txt', limit: 99999 })
     expect(result.isError).toBe(true)
-    expect(text(result)).toContain('less than or equal to 2000')
+    expect(text(result)).toContain('less than or equal to 10000')
   })
 
   it('rejects a blank file_path', async () => {

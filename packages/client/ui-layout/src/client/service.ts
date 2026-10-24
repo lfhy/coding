@@ -7,7 +7,6 @@ import {
   type ObservableSnapshot,
   type SnapshotStore,
 } from 'coding-client-runtime/client'
-import type { SessionId } from 'coding-session/types'
 import type { BoundActions } from 'coding-client-ui-slots'
 import type { createLayoutStore } from './stores.ts'
 
@@ -35,19 +34,19 @@ export interface ILayout {
   openDetails(): void
   /** 关闭详情栏。 */
   closeDetails(): void
-  /** 返回指定 Session 的工作台状态源。 */
+  /** 返回指定工作区的工作台状态源。 */
   workbench(key: string): ObservableSnapshot<WorkbenchLayoutSnapshot>
-  /** 打开指定 Session 的工作台并关闭详情栏。 */
+  /** 打开指定工作区的工作台并关闭详情栏。 */
   openWorkbench(key: string): void
-  /** 关闭指定 Session 的右侧工作台，保留正在显示的底栏。 */
+  /** 关闭指定工作区的右侧工作台，保留正在显示的底栏。 */
   closeWorkbench(key: string): void
-  /** 切换指定 Session 的工作台；打开时同时关闭详情栏。 */
+  /** 切换指定工作区的工作台；打开时同时关闭详情栏。 */
   toggleWorkbench(key: string): void
-  /** 切换指定 Session 的工作台最大化偏好。 */
+  /** 切换指定工作区的工作台最大化偏好。 */
   toggleWorkbenchFullscreen(key: string): void
-  /** 切换指定 Session 的终端底栏；右侧工作台关闭时仅显示底栏。 */
+  /** 切换指定工作区的终端底栏；右侧工作台关闭时仅显示底栏。 */
   toggleWorkbenchBottom(key: string): void
-  /** 隐藏指定 Session 的终端底栏；已隐藏时不改变工作台或详情栏。 */
+  /** 隐藏指定工作区的终端底栏；已隐藏时不改变工作台或详情栏。 */
   closeWorkbenchBottom(key: string): void
   /** 欢迎页两面板入口：打开其中一个时隐藏另一面板。 */
   toggleHeroPanel(key: string, panel: 'bottom' | 'files'): void
@@ -68,7 +67,7 @@ export class LayoutController implements ILayout {
     this.#panels = actions
   }
 
-  /** 返回指定 Session 的工作台状态源。 */
+  /** 返回指定工作区的工作台状态源。 */
   workbench(key: string): ObservableSnapshot<WorkbenchLayoutSnapshot> {
     let source = this.#sources.get(key)
     if (source !== undefined) return source
@@ -80,37 +79,36 @@ export class LayoutController implements ILayout {
     return source
   }
 
-  /**
-   * 由 AppFrame 发送一个 Session 的已解析工作台状态。
-   * @param sessionId - 当前渲染的 Session。
+  /** 由 AppFrame 发送一个工作区的已解析工作台状态。
+   * @param key - 工作区键；没有工作区服务时可使用会话 id。
    * @param next - 只包含页头入口与视图控制需要的状态。
    * @returns 无返回值。
    */
-  publishWorkbench(sessionId: SessionId, next: WorkbenchLayoutSnapshot): void {
-    const current = this.#views.getSnapshot()[sessionId]
+  publishWorkbench(key: string, next: WorkbenchLayoutSnapshot): void {
+    const current = this.#views.getSnapshot()[key]
     if (current?.open === next.open
       && current.fullscreen === next.fullscreen
       && current.bottomOpen === next.bottomOpen) return
-    this.#views.set({ ...this.#views.getSnapshot(), [sessionId]: next })
+    this.#views.set({ ...this.#views.getSnapshot(), [key]: next })
   }
 
   /**
-   * 删除已经不在会话列表中的状态源快照。
-   * @param sessionIds - 仍然存活的 Session。
+   * 删除已经不再被活动会话使用的工作区状态源快照。
+   * @param keys - 仍然存活的工作区键。
    * @returns 无返回值。
    */
-  retainWorkbenchViews(sessionIds: readonly string[]): void {
-    const retained = new Set<string>(sessionIds)
+  retainWorkbenchViews(keys: readonly string[]): void {
+    const retained = new Set<string>(keys)
     const current = this.#views.getSnapshot()
     let changed = false
     const next: Record<string, WorkbenchLayoutSnapshot | undefined> = {}
-    for (const [sessionId, state] of Object.entries(current)) {
-      if (!retained.has(sessionId)) {
+    for (const [key, state] of Object.entries(current)) {
+      if (!retained.has(key)) {
         changed = true
-        this.#sources.delete(sessionId)
+        this.#sources.delete(key)
         continue
       }
-      next[sessionId] = state
+      next[key] = state
     }
     if (changed) this.#views.set(next)
   }
@@ -130,39 +128,39 @@ export class LayoutController implements ILayout {
     this.#require().closeDetails()
   }
 
-  /** 打开指定 Session 的工作台。 */
+  /** 打开指定工作区的工作台。 */
   openWorkbench(key: string): void {
     this.#require().openWorkbench(key)
   }
 
-  /** 关闭指定 Session 的右侧工作台，保留正在显示的底栏。 */
+  /** 关闭指定工作区的右侧工作台，保留正在显示的底栏。 */
   closeWorkbench(key: string): void {
     this.#require().closeWorkbench(key)
   }
 
-  /** 切换指定 Session 的工作台。 */
+  /** 切换指定工作区的工作台。 */
   toggleWorkbench(key: string): void {
     this.#require().toggleWorkbench(key)
   }
 
-  /** 切换指定 Session 的工作台最大化偏好。 */
+  /** 切换指定工作区的工作台最大化偏好。 */
   toggleWorkbenchFullscreen(key: string): void {
     this.#require().toggleWorkbenchFullscreen(key)
   }
 
-  /** 切换指定 Session 的终端底栏；右侧工作台关闭时仅显示底栏。 */
+  /** 切换指定工作区的终端底栏；右侧工作台关闭时仅显示底栏。 */
   toggleWorkbenchBottom(key: string): void {
     this.#require().toggleWorkbenchBottom(key)
   }
 
-  /** 隐藏指定 Session 的终端底栏。 */
+  /** 隐藏指定工作区的终端底栏。 */
   closeWorkbenchBottom(key: string): void {
     this.#require().closeWorkbenchBottom(key)
   }
 
   /**
    * 欢迎页专用互斥面板入口。
-   * @param sessionId - 当前会话。
+   * @param key - 当前工作区键。
    * @param panel - 要切换的底栏或 `files` 工作台右栏。
    * @returns 无返回值。
    */

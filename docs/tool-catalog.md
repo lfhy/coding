@@ -1858,7 +1858,7 @@ Read a UTF-8 text file and return line-numbered content.
     },
     "limit": {
       "type": "number",
-      "description": "Maximum number of lines to return. Defaults to 2000."
+      "description": "Maximum number of lines to return in this call (up to 10000). Defaults to 10000. For a large file, set offset to the first line you need and use the continuation offset from the footer."
     }
   },
   "required": [

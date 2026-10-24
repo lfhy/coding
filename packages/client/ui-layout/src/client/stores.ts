@@ -1,7 +1,5 @@
 /**
- * root entry 的瞬时布局 store。它持有导航与详情栏的全局偏好，以及按
- * Session 隔离的工作台开关和尺寸偏好；响应式让步只影响 AppFrame 的实际
- * 几何，不改写这些偏好。模块只导出工厂，避免热重载之间共享实例。
+ * root entry 的瞬时布局 store。它持有导航与详情栏的全局偏好，以及按工作区键保存的工作台开关和尺寸偏好；响应式让步只影响 AppFrame 的实际几何，不改写这些偏好。模块只导出工厂，避免热重载之间共享实例。
  */
 import { defineStore, type EngineStoreHandle } from 'coding-client-runtime/client'
 import {
@@ -20,7 +18,7 @@ import {
   WORKBENCH_MIN,
 } from './columns.ts'
 
-/** 单个 Session 的工作台瞬时状态。 */
+/** 单个工作区的工作台瞬时状态。 */
 export type WorkbenchState = {
   open: boolean
   fullscreen: boolean
@@ -73,7 +71,7 @@ type LayoutActions = {
 }
 
 /**
- * 创建布局 store。工作台状态按 Session 隔离；工作台打开会关闭详情栏，而详情栏仅暂时覆盖当前工作台，保留其 Session 偏好。关闭右侧工作台时已显示的底栏保持可见，尺寸偏好也保留。
+ * 创建布局 store。工作台状态按工作区键保存；工作台打开会关闭详情栏，而详情栏仅暂时覆盖当前工作台，保留其工作区偏好。关闭右侧工作台时已显示的底栏保持可见，尺寸偏好也保留。
  * @returns 包含定义、身份和实例工厂的 store handle。
  */
 export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutActions> {

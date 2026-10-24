@@ -107,8 +107,8 @@ export function apply(ctx: ClientContext): void {
         const workspaces = ctx.get('workspaces') as { workspaceKeyOf?: (id: SessionId) => string } | undefined
         return {
           workspaceKeyOf: sessionId => workspaces?.workspaceKeyOf?.(sessionId) ?? sessionId,
-          publishWorkbench: (sessionId, state) => { layout.publishWorkbench(sessionId, state) },
-          retainWorkbenchViews: (sessionIds) => { layout.retainWorkbenchViews(sessionIds) },
+          publishWorkbench: (key, state) => { layout.publishWorkbench(key, state) },
+          retainWorkbenchViews: (keys) => { layout.retainWorkbenchViews(keys) },
         }
       },
     }, AppFrame)

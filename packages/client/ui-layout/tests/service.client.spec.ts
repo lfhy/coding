@@ -74,7 +74,7 @@ describe('LayoutController', () => {
     expect(() => { service.toggleHeroPanel(SESSION, 'files') }).toThrow(/panel actions not wired/)
   })
 
-  it('publishes stable per-session workbench snapshots for header controls', () => {
+  it('publishes stable per-workspace workbench snapshots for header controls', () => {
     const service = new LayoutController()
     const source = service.workbench(SESSION)
     const listener = vi.fn()

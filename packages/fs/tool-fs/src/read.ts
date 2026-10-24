@@ -13,7 +13,7 @@ import { buildWindow, formatReadOutput, langFromPath, readMetaFromMeta } from '.
 import { resolveRegularReadTarget } from './read-target.ts'
 
 /** Default and maximum number of lines returned by one `read` call (the `readLimit` config). */
-export const READ_LIMIT = 2000
+export const READ_LIMIT = 10000
 
 /**
  * Default streaming threshold (the `readStreamMinSize` config): files at or
@@ -70,7 +70,7 @@ export function applyReadTool(ctx: Context, caps: ReadToolCaps): void {
   ctx.systemPrompt.section({
     name: 'tool:read',
     order: 100,
-    text: 'Use the read tool — not shell commands like cat — to inspect text files. Results include line numbers. Use offset and limit to continue reading large files.',
+    text: `Use the read tool — not shell commands like cat — to inspect text files. Results include line numbers. You may read up to ${caps.limit} lines per call; for larger files or when you only need a section, use offset and limit to page through the file. If the result ends with a continuation footer, pass its suggested offset to the next read call.`,
   })
 
   ctx.tools.register(defineTool({
@@ -79,7 +79,7 @@ export function applyReadTool(ctx: Context, caps: ReadToolCaps): void {
     parameters: {
       file_path: { type: 'string', required: true, description: 'Path to read, resolved by the filesystem backend.' },
       offset: { type: 'number', description: '1-based first line to return. Defaults to 1.' },
-      limit: { type: 'number', description: `Maximum number of lines to return. Defaults to ${caps.limit}.` },
+      limit: { type: 'number', description: `Maximum number of lines to return in this call (up to ${caps.limit}). Defaults to ${caps.limit}. For a large file, set offset to the first line you need and use the continuation offset from the footer.` },
     },
     output: {
       schema: {

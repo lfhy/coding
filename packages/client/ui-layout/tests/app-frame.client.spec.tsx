@@ -52,7 +52,7 @@ function hookOf<T>(inst: { subscribe: (fn: () => void) => () => void; getSnapsho
   return function useSelector<S>(sel: (s: T) => S): S { return sel(useSyncExternalStore(inst.subscribe, inst.getSnapshot)) }
 }
 
-function mountFrame() {
+function mountFrame(options: { workspaceKeyOf?: (id: SessionId) => string } = {}) {
   window.innerWidth = frameWidth
   window.innerHeight = frameHeight
   const rawInstance = createLayoutStore().create()
@@ -95,6 +95,7 @@ function mountFrame() {
     items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
     baselinesReady: baselinesReady.current, recentWorkspaceId: undefined,
   }
+  const workspaceKeyOf = (id: SessionId): string => id
   const element = () => (
     <AppFrame
       useStore={hookOf(rawInstance)}
@@ -105,7 +106,7 @@ function mountFrame() {
       SessionProvider={SessionProviderStub}
       publishWorkbench={publishWorkbench}
       retainWorkbenchViews={retainWorkbenchViews}
-      workspaceKeyOf={(id: string) => id}
+      workspaceKeyOf={options.workspaceKeyOf ?? workspaceKeyOf}
     />
   )
   const utils = render(element())
@@ -361,6 +362,26 @@ describe('AppFrame — fixed workbench', () => {
     })
   })
 
+  it('closes the right workbench when the header toggle is clicked again', () => {
+    const { frame, instance } = mountFrame({ workspaceKeyOf: () => 'shared-workspace' })
+    act(() => { instance.actions.openWorkbench('shared-workspace') })
+    expect(frame.hasAttribute('data-workbench-shown')).toBe(true)
+    act(() => { instance.actions.toggleWorkbench('shared-workspace') })
+    expect(frame.hasAttribute('data-workbench-shown')).toBe(false)
+  })
+  it('uses one workbench projection for sessions in the same workspace', () => {
+    const { frame, instance, rerenderFrame, publishWorkbench } = mountFrame({
+      workspaceKeyOf: () => 'shared-workspace',
+    })
+    act(() => { instance.actions.openWorkbench('shared-workspace') })
+    expect(publishWorkbench).toHaveBeenLastCalledWith('shared-workspace', expect.objectContaining({ open: true }))
+
+    selectedSession.current = 's-next' as SessionId
+    act(() => { rerenderFrame() })
+    expect(tracks(frame)).toEqual([280, 1020])
+    expect(publishWorkbench).toHaveBeenLastCalledWith('shared-workspace', expect.objectContaining({ open: true }))
+  })
+
   it('fits the default split at a 1110px viewport while keeping the sidebar', () => {
     frameWidth = 1110
     const { frame, instance } = mountFrame()
@@ -368,7 +389,7 @@ describe('AppFrame — fixed workbench', () => {
     expect(tracks(frame)).toEqual([280, 430])
   })
 
-  it('responds to the external workbench controls through per-session layout state', () => {
+  it('responds to the external workbench controls through per-workspace layout state', () => {
     const { frame, instance, ownerFor, getByTestId } = mountFrame()
     act(() => { instance.actions.openWorkbench('s-test' as SessionId) })
 
@@ -533,7 +554,7 @@ describe('AppFrame — fixed workbench', () => {
   })
 
   it('restores each session workbench independently after switching sessions', () => {
-    const { frame, instance, rerenderFrame } = mountFrame()
+    const { frame, instance, rerenderFrame } = mountFrame({ workspaceKeyOf: id => id })
     act(() => { instance.actions.openWorkbench('s-test' as SessionId) })
     selectedSession.current = 's-next' as SessionId
     act(() => { rerenderFrame() })

@@ -120,8 +120,16 @@ export function apply(ctx: ClientContext): void {
   const controller = new OpenInAppController()
   const connection = ctx.get('connection') as ConnectionHandle
   const workbench = createRetainedWorkbenchStore()
+  // 底栏终端与工作台偏好按工作区共享；没有 workspaces 服务的部署退回会话 id。
+  const workspaceKey = (sessionId: SessionId): string =>
+    (ctx.get('workspaces') as { workspaceKeyOf?: (id: SessionId) => string } | undefined)
+      ?.workspaceKeyOf?.(sessionId) ?? sessionId
   const sidebarRightTabs = new SidebarRightTabRegistry()
-  const sidebarRight = new SidebarRightController(sidebarRightTabs, ctx.layout, () => activeSessionId(ctx))
+  const sidebarRight = new SidebarRightController(
+    sidebarRightTabs,
+    { openWorkbench: (sessionId) => { ctx.layout.openWorkbench(workspaceKey(sessionId)) } },
+    () => activeSessionId(ctx),
+  )
   const chatFileOpener: ChatFileOpener = {
     open: (sessionId, path) => {
       if (path === '.') return sidebarRight.openFileManagerForSession(sessionId) ? Promise.resolve() : undefined
@@ -159,11 +167,6 @@ export function apply(ctx: ClientContext): void {
   }, 'open-in-app: close unloaded tab definitions')
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'open-in-app: dictionaries')
 
-  // 底栏终端与工作台偏好按工作区共享；没有 workspaces 服务的部署退回会话 id。
-  const workspaceKey = (sessionId: SessionId): string =>
-    (ctx.get('workspaces') as { workspaceKeyOf?: (id: SessionId) => string } | undefined)
-      ?.workspaceKeyOf?.(sessionId) ?? sessionId
-
   ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
     name: 'conversation.session.header.utilities',
     id: 'open-in-app',
@@ -179,7 +182,7 @@ export function apply(ctx: ClientContext): void {
       launch: (appId, path) => controller.launch(appId, path),
       choose: (appId) => { controller.choose(appId) },
       iconUrl: appId => `${OPEN_IN_APP_ICON_PREFIX}/${appId}`,
-      openWorkbench: () => { ctx.layout.openWorkbench(sessionId) },
+      openWorkbench: () => { ctx.layout.openWorkbench(workspaceKey(sessionId)) },
     }),
   }, OpenInAppAction))
 
@@ -206,8 +209,8 @@ export function apply(ctx: ClientContext): void {
             return response.result.value
           },
           terminalUrl: (sessionId, cols, rows) => controller.terminalUrl(sessionId, cols, rows),
-          closeWorkbench: (sessionId) => { ctx.layout.closeWorkbench(sessionId) },
-          openWorkbench: (sessionId) => { ctx.layout.openWorkbench(sessionId) },
+          closeWorkbench: (sessionId) => { ctx.layout.closeWorkbench(workspaceKey(sessionId)) },
+          openWorkbench: (sessionId) => { ctx.layout.openWorkbench(workspaceKey(sessionId)) },
           toggleWorkbenchFullscreen: (sessionId) => { ctx.layout.toggleWorkbenchFullscreen(workspaceKey(sessionId)) },
           toggleBottom: (sessionId) => { ctx.layout.toggleWorkbenchBottom(workspaceKey(sessionId)) },
           openSidebarTab: (sessionId, kind) => { sidebarRight.openTabForSession(sessionId, kind) },
@@ -251,7 +254,7 @@ export function apply(ctx: ClientContext): void {
       if (ctx.sessions.list.getSnapshot().current !== undefined) return
       ctx.sessions.open(sessionId)
     }
-    ctx.layout.toggleHeroPanel(sessionId, panel)
+    ctx.layout.toggleHeroPanel(workspaceKey(sessionId), panel)
   }
   ctx.slots.inject('conversation.hero.actions', () => ctx.slots.register({
     name: 'conversation.hero.actions',
