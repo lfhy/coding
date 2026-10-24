@@ -308,7 +308,7 @@
 - `tools` → `coding-tools`
 - `system-prompt` → `coding-system-prompt`
 - `agent-loop` → `coding-agent-loop`
-- `fs-sandbox` → `coding-fs-sandbox`
+- `fs-workspace` → `coding-fs-workspace`
 - `llm-deepseek` → `coding-llm-deepseek`
 
 ## `packages/bundle/headless/cordis.patch.yml`

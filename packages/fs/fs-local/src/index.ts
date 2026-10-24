@@ -64,6 +64,11 @@ const MAX_DIFF_BASIS_BYTES = Math.min(
  * containment with a stricter backend or a `tools/execute` permission plugin.
  */
 export class LocalFileSystemBackend implements FsProvider {
+  static Config: z<Config> = z.object({
+    cwd: z.string().default(process.cwd()),
+    diffBasisMaxBytes: z.number().default(DEFAULT_DIFF_BASIS_MAX_BYTES),
+  })
+
   /** 本地后端的稳定标识。 */
   readonly id = 'local'
 
@@ -310,6 +315,7 @@ export class LocalFileSystemBackend implements FsProvider {
  * {@link LocalFileSystemBackend}。多后端装配直接注册 backend，不经过这里。
  */
 export class LocalFileSystem extends FileSystem {
+  // Inline schema call: the config catalog walks `static Config` statically.
   static Config: z<Config> = z.object({
     cwd: z.string().default(process.cwd()),
     diffBasisMaxBytes: z.number().default(DEFAULT_DIFF_BASIS_MAX_BYTES),
@@ -386,5 +392,7 @@ export class LocalFileSystem extends FileSystem {
     return this.backend.editText(target, edit, expected, signal)
   }
 }
+
+export { RemoteWorkspaceRouter } from './remote.ts'
 
 export default LocalFileSystem

@@ -60,7 +60,6 @@
     "coding-credentials-local": "workspace:^",
     "coding-fs-local": "workspace:^",
     "coding-fs-observation-policy": "workspace:^",
-    "coding-fs-sandbox": "workspace:^",
     "coding-goal": "workspace:^",
     "coding-goal-round-driver": "workspace:^",
     "coding-jobs-local": "workspace:^",
@@ -134,7 +133,8 @@
     "coding-web-search-deepseek": "workspace:^",
     "coding-web-search-duckduckgo": "workspace:^",
     "coding-web-search-tavily": "workspace:^",
-    "coding-workflow-worker-thread": "workspace:^"
+    "coding-workflow-worker-thread": "workspace:^",
+    "coding-fs-workspace": "workspace:^"
   },
   "peerDependencies": {
     "coding-invariants": "workspace:^",

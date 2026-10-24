@@ -712,7 +712,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/fs/fs-local/src/index.ts:52`](../packages/fs/fs-local/src/index.ts)
+Source: [`packages/fs/fs-local/src/index.ts:43`](../packages/fs/fs-local/src/index.ts)
 
 <a id="coding-fs-sandbox"></a>
 
@@ -732,7 +732,22 @@ export type Config = LocalConfig
 
 Depends on: [`LocalConfig`](#coding-fs-local)
 
-Source: [`packages/fs/fs-sandbox/src/index.ts:56`](../packages/fs/fs-sandbox/src/index.ts)
+Source: [`packages/fs/fs-sandbox/src/index.ts:49`](../packages/fs/fs-sandbox/src/index.ts)
+
+<a id="coding-fs-workspace"></a>
+
+## `coding-fs-workspace`
+
+Requires: `sandboxPolicy`
+
+```ts config-catalog
+/** 装配配置：本地后端的参数原样转发。 */
+export type Config = LocalConfig
+```
+
+Depends on: [`LocalConfig`](#coding-fs-local)
+
+Source: [`packages/fs/fs-workspace/src/index.ts:21`](../packages/fs/fs-workspace/src/index.ts)
 
 <a id="coding-goal"></a>
 
@@ -3252,8 +3267,10 @@ Requires: `web`
 ```ts config-catalog
 /** AnySearch 搜索的配置：可选密钥、可选端点与共享出站选择。 */
 export interface Config {
-  /** Bearer 密钥字面值；省略时读 `$ANYSEARCH_API_KEY`，两者都为空则匿名请求。 */
+  /** 密钥字面值（部署层）；页面与设置文件用 `apiKeyEnv` 指向凭据服务。 */
   apiKey?: string
+  /** 凭据引用，默认 `ANYSEARCH_API_KEY`；密钥只存在凭据服务里，由设置页写入。 */
+  apiKeyEnv?: string
   /** 搜索端点基址，请求追加 `/v1/search`；缺省 AnySearch 官方端点。 */
   baseURL?: string
   /** 下次搜索的出站；缺省直连，选择内置代理池时按池自己的出站规则走。 */
@@ -3315,7 +3332,7 @@ export interface Config {
 
 Depends on: [`OutboundConfig`](../packages/net/proxy-pool/src/index.ts)
 
-Source: [`packages/web/web-search-deepseek/src/index.ts:50`](../packages/web/web-search-deepseek/src/index.ts)
+Source: [`packages/web/web-search-deepseek/src/index.ts:49`](../packages/web/web-search-deepseek/src/index.ts)
 
 <a id="coding-web-search-duckduckgo"></a>
 
@@ -3344,8 +3361,10 @@ Requires: `web`
 ```ts config-catalog
 /** Plugin config (all optional — `apply` fills env-var and constant defaults). */
 export interface Config {
-  /** Exa API key. Falls back to `$EXA_API_KEY`. Empty → provider unavailable. */
+  /** 密钥字面值（部署层）；页面与设置文件用 `apiKeyEnv` 指向凭据服务。 */
   apiKey?: string
+  /** 凭据引用，默认 `EXA_API_KEY`；密钥只存在凭据服务里，由设置页写入。 */
+  apiKeyEnv?: string
   /** Endpoint base; `/search` is appended. Defaults to the public API. */
   baseURL?: string
   /** Retrieval mode sent as Exa's `type`. Defaults to `auto`. */
@@ -3372,8 +3391,10 @@ Requires: `web`
 ```ts config-catalog
 /** Firecrawl 搜索的配置：可选密钥、可选端点基址与共享出站选择。 */
 export interface Config {
-  /** Firecrawl API key；省略时读 `FIRECRAWL_API_KEY`，再为空则走 keyless 匿名额度。 */
+  /** 密钥字面值（部署层）；页面与设置文件用 `apiKeyEnv` 指向凭据服务。 */
   apiKey?: string
+  /** 凭据引用，默认 `FIRECRAWL_API_KEY`；密钥只存在凭据服务里，由设置页写入。 */
+  apiKeyEnv?: string
   /** 搜索端点基址（追加 `/v2/search`）；缺省为官方 API。 */
   baseURL?: string
   /** 下次搜索的出站；缺省直连，选择内置代理池时按池自己的出站规则走。 */
@@ -3394,8 +3415,10 @@ Requires: `web`
 ```ts config-catalog
 /** Keenable 搜索的配置：可选密钥与端点，加上共享出站选择。 */
 export interface Config {
-  /** Keenable API key；省略时读取 `$KEENABLE_API_KEY`，两者都没有或为空时使用匿名额度。 */
+  /** 密钥字面值（部署层）；页面与设置文件用 `apiKeyEnv` 指向凭据服务。 */
   apiKey?: string
+  /** 凭据引用，默认 `KEENABLE_API_KEY`；密钥只存在凭据服务里，由设置页写入。 */
+  apiKeyEnv?: string
   /** MCP 端点；默认 `https://api.keenable.ai/mcp`，必须是不带凭据、查询串与片段的 HTTPS 地址。 */
   baseURL?: string
   /** 下次搜索的出站；缺省直连，选择内置代理池时按池自己的出站规则走。 */
@@ -3416,8 +3439,10 @@ Requires: `web`
 ```ts config-catalog
 /** Parallel 搜索的配置：可选密钥与端点，加上共享出站选择。 */
 export interface Config {
-  /** Parallel API key；省略时读取 `$PARALLEL_API_KEY`，两者都没有或为空时使用匿名额度。 */
+  /** 密钥字面值（部署层）；页面与设置文件用 `apiKeyEnv` 指向凭据服务。 */
   apiKey?: string
+  /** 凭据引用，默认 `PARALLEL_API_KEY`；密钥只存在凭据服务里，由设置页写入。 */
+  apiKeyEnv?: string
   /** MCP 端点；默认 `https://search.parallel.ai/mcp`，必须是不带凭据、查询串与片段的 HTTPS 地址。 */
   baseURL?: string
   /** 下次搜索的出站；缺省直连，选择内置代理池时按池自己的出站规则走。 */
@@ -3438,8 +3463,10 @@ Requires: `web`
 ```ts config-catalog
 /** Plugin config (all optional — `apply` fills env-var and constant defaults). */
 export interface Config {
-  /** Perplexity API key. Falls back to `$PERPLEXITY_API_KEY`. Empty → unavailable. */
+  /** 密钥字面值（部署层）；页面与设置文件用 `apiKeyEnv` 指向凭据服务。 */
   apiKey?: string
+  /** 凭据引用，默认 `PERPLEXITY_API_KEY`；密钥只存在凭据服务里，由设置页写入。 */
+  apiKeyEnv?: string
   /** Endpoint base; `/chat/completions` is appended. Defaults to the public API. */
   baseURL?: string
   /** Search model name. Defaults to `sonar`. */
@@ -3502,7 +3529,7 @@ export interface Config {
 
 Depends on: [`OutboundConfig`](../packages/net/proxy-pool/src/index.ts)
 
-Source: [`packages/web/web-search-tavily/src/index.ts:30`](../packages/web/web-search-tavily/src/index.ts)
+Source: [`packages/web/web-search-tavily/src/index.ts:29`](../packages/web/web-search-tavily/src/index.ts)
 
 <a id="coding-workflow-worker-thread"></a>
 

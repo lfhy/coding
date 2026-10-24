@@ -523,10 +523,11 @@
       config:
         agents: []
 
-    # The sandboxed filesystem provider. `cwd` defaults to `process.cwd()`; an
-    # overlay can pin another workspace.
-    - id: fs-sandbox
-      name: 'coding-fs-sandbox'
+    # The multi-backend filesystem assembly: a sandboxed local backend plus the
+    # Remote-SSH backend behind one `ctx.fs` registry. `cwd` defaults to
+    # `process.cwd()`; an overlay can pin another workspace.
+    - id: fs-workspace
+      name: 'coding-fs-workspace'
 
     # The native DeepSeek adapter. No key or endpoint is inlined: both resolve per
     # request from the `llm-deepseek:` settings section over this entry, with the
