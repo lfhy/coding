@@ -101,6 +101,12 @@
 - id: skill-frontend-development
   name: 'coding-skill-frontend-development'
 
+- id: skill-project-init
+  name: 'coding-skill-project-init'
+
+- id: skill-go-backend
+  name: 'coding-skill-go-backend'
+
 - id: tool-skill
   name: 'coding-tool-skill'
 

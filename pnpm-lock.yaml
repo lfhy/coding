@@ -228,6 +228,12 @@ importers:
       coding-skill-frontend-development:
         specifier: workspace:^
         version: link:../../packages/skill/skill-frontend-development
+      coding-skill-go-backend:
+        specifier: workspace:^
+        version: link:../../packages/skill/skill-go-backend
+      coding-skill-project-init:
+        specifier: workspace:^
+        version: link:../../packages/skill/skill-project-init
       coding-skill-stylekit:
         specifier: workspace:^
         version: link:../../packages/skill/skill-stylekit
@@ -8238,6 +8244,30 @@ importers:
         specifier: workspace:^
         version: link:../skill
 
+  packages/skill/skill-go-backend:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      coding-invariants:
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      coding-skill:
+        specifier: workspace:^
+        version: link:../skill
+
+  packages/skill/skill-project-init:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      coding-invariants:
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      coding-skill:
+        specifier: workspace:^
+        version: link:../skill
+
   packages/skill/skill-stylekit:
     devDependencies:
       '@deepseek-ai/cordis':
@@ -10444,6 +10474,12 @@ importers:
       coding-skill-frontend-development:
         specifier: workspace:^
         version: link:../../packages/skill/skill-frontend-development
+      coding-skill-go-backend:
+        specifier: workspace:^
+        version: link:../../packages/skill/skill-go-backend
+      coding-skill-project-init:
+        specifier: workspace:^
+        version: link:../../packages/skill/skill-project-init
       coding-skill-stylekit:
         specifier: workspace:^
         version: link:../../packages/skill/skill-stylekit

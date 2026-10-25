@@ -195,6 +195,8 @@
     { "path": "./packages/skill/skill" },
     { "path": "./packages/skill/skill-badge" },
     { "path": "./packages/skill/skill-browser-use" },
+    { "path": "./packages/skill/skill-go-backend" },
+    { "path": "./packages/skill/skill-project-init" },
     { "path": "./packages/skill/skill-frontend-development" },
     { "path": "./packages/skill/skill-stylekit" },
     { "path": "./packages/skill/skill-filesystem" },

@@ -84,6 +84,8 @@ flowchart LR
   cfg --> plugin_dsh_base_fs_observation_policy
   plugin_dsh_base_tool_fs["tool-fs<br/>coding-tool-fs"]
   cfg --> plugin_dsh_base_tool_fs
+  plugin_dsh_base_tool_apply_patch["tool-apply-patch<br/>coding-tool-apply-patch"]
+  cfg --> plugin_dsh_base_tool_apply_patch
   plugin_dsh_base_tool_fs_search["tool-fs-search<br/>coding-tool-fs-search"]
   cfg --> plugin_dsh_base_tool_fs_search
   plugin_dsh_base_agent_instructions["agent-instructions<br/>coding-agent-instructions"]
@@ -242,6 +244,7 @@ flowchart LR
 | `tool-jobs` | `coding-tool-jobs` |
 | `fs-observation-policy` | `coding-fs-observation-policy` |
 | `tool-fs` | `coding-tool-fs` |
+| `tool-apply-patch` | `coding-tool-apply-patch` |
 | `tool-fs-search` | `coding-tool-fs-search` |
 | `agent-instructions` | `coding-agent-instructions` |
 | `memory-local` | `coding-memory-local` |

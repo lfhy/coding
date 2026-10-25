@@ -50,7 +50,7 @@ export const en: Record<AgentPresetSettingsKey, string> = {
     'Built for creating custom agent presets, with all Standard mode capabilities plus runtime inspection, plugin experiments, and preset-authoring guidance.',
   presetCodexName: 'Codex mode',
   presetCodexDescription:
-    'Codex prompt and tool surface: shell, apply_patch, update_plan, web search, and continuable subagents with wait_agent.',
+    'Codex prompt and tool surface: shell, apply_patch, update_plan, web search, and continuable subagents with wait_agent, plus bundled skills for project setup, Go backend, frontend, and visual style.',
   presetReverseName: 'Reverse engineering mode',
   presetReverseDescription:
     'All Standard mode capabilities plus the REA engine as MCP tools and bundled reverse-engineering skills, for binaries, installers, firmware, and runtime behavior.',
@@ -115,7 +115,7 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   presetCordisName: '创造模式',
   presetCordisDescription: '用于创建自定义 Agent preset：具备标准模式的全部能力，并提供运行时检查、插件实验和 preset 创作指导。',
   presetCodexName: 'Codex 模式',
-  presetCodexDescription: '对齐 Codex 的提示词与工具面：Shell、apply_patch、update_plan、联网搜索，以及带 wait_agent 的可继续子 agent。',
+  presetCodexDescription: '对齐 Codex 的提示词与工具面：Shell、apply_patch、update_plan、联网搜索，以及带 wait_agent 的可继续子 agent；随包技能提供项目初始化、Go 后端、前端与视觉风格指引。',
   presetReverseName: '逆向分析模式',
   presetReverseDescription: '具备标准模式的全部能力，并接入 REA 逆向引擎的 MCP 工具与随模式分发的逆向调查技能，用于二进制、安装包、固件与运行时行为分析。',
   duplicate: '复制',

@@ -46,6 +46,8 @@ flowchart TD
     pkg_fs_local["fs-local"]
     pkg_fs_observation_policy["fs-observation-policy"]
     pkg_fs_sandbox["fs-sandbox"]
+    pkg_fs_workspace["fs-workspace"]
+    pkg_tool_apply_patch["tool-apply-patch"]
     pkg_tool_fs["tool-fs"]
     pkg_tool_fs_search["tool-fs-search"]
     pkg_tool_str_replace_editor["tool-str-replace-editor"]
@@ -56,6 +58,8 @@ flowchart TD
     pkg_skill_browser_use["skill-browser-use"]
     pkg_skill_filesystem["skill-filesystem"]
     pkg_skill_frontend_development["skill-frontend-development"]
+    pkg_skill_go_backend["skill-go-backend"]
+    pkg_skill_project_init["skill-project-init"]
     pkg_skill_stylekit["skill-stylekit"]
     pkg_tool_skill["tool-skill"]
   end
@@ -76,10 +80,16 @@ flowchart TD
     pkg_tool_web["tool-web"]
     pkg_web["web"]
     pkg_web_fetch_http["web-fetch-http"]
+    pkg_web_search_anysearch["web-search-anysearch"]
+    pkg_web_search_bing["web-search-bing"]
     pkg_web_search_deepseek["web-search-deepseek"]
     pkg_web_search_duckduckgo["web-search-duckduckgo"]
     pkg_web_search_exa["web-search-exa"]
+    pkg_web_search_firecrawl["web-search-firecrawl"]
+    pkg_web_search_keenable["web-search-keenable"]
+    pkg_web_search_parallel["web-search-parallel"]
     pkg_web_search_perplexity["web-search-perplexity"]
+    pkg_web_search_searxng["web-search-searxng"]
     pkg_web_search_tavily["web-search-tavily"]
   end
   subgraph group_spill["packages/spill"]
@@ -505,23 +515,59 @@ flowchart TD
   pkg_skill_browser_use --> pkg_skill
   pkg_skill_frontend_development --> pkg_invariants
   pkg_skill_frontend_development --> pkg_skill
+  pkg_skill_go_backend --> pkg_invariants
+  pkg_skill_go_backend --> pkg_skill
+  pkg_skill_project_init --> pkg_invariants
+  pkg_skill_project_init --> pkg_skill
   pkg_skill_stylekit --> pkg_invariants
   pkg_skill_stylekit --> pkg_skill
   pkg_web_fetch_http --> pkg_invariants
   pkg_web_fetch_http --> pkg_timeout
   pkg_web_fetch_http --> pkg_web
+  pkg_web_search_anysearch --> pkg_invariants
+  pkg_web_search_anysearch --> pkg_launch_environment
+  pkg_web_search_anysearch --> pkg_proxy_pool
+  pkg_web_search_anysearch --> pkg_settings
+  pkg_web_search_anysearch --> pkg_web
+  pkg_web_search_bing --> pkg_invariants
+  pkg_web_search_bing --> pkg_proxy_pool
+  pkg_web_search_bing --> pkg_settings
+  pkg_web_search_bing --> pkg_web
   pkg_web_search_duckduckgo --> pkg_invariants
+  pkg_web_search_duckduckgo --> pkg_proxy_pool
   pkg_web_search_duckduckgo --> pkg_settings
   pkg_web_search_duckduckgo --> pkg_web
   pkg_web_search_exa --> pkg_invariants
   pkg_web_search_exa --> pkg_launch_environment
+  pkg_web_search_exa --> pkg_proxy_pool
   pkg_web_search_exa --> pkg_web
+  pkg_web_search_firecrawl --> pkg_invariants
+  pkg_web_search_firecrawl --> pkg_launch_environment
+  pkg_web_search_firecrawl --> pkg_proxy_pool
+  pkg_web_search_firecrawl --> pkg_settings
+  pkg_web_search_firecrawl --> pkg_web
+  pkg_web_search_keenable --> pkg_invariants
+  pkg_web_search_keenable --> pkg_launch_environment
+  pkg_web_search_keenable --> pkg_proxy_pool
+  pkg_web_search_keenable --> pkg_settings
+  pkg_web_search_keenable --> pkg_web
+  pkg_web_search_parallel --> pkg_invariants
+  pkg_web_search_parallel --> pkg_launch_environment
+  pkg_web_search_parallel --> pkg_proxy_pool
+  pkg_web_search_parallel --> pkg_settings
+  pkg_web_search_parallel --> pkg_web
   pkg_web_search_perplexity --> pkg_invariants
   pkg_web_search_perplexity --> pkg_launch_environment
+  pkg_web_search_perplexity --> pkg_proxy_pool
   pkg_web_search_perplexity --> pkg_web
+  pkg_web_search_searxng --> pkg_invariants
+  pkg_web_search_searxng --> pkg_proxy_pool
+  pkg_web_search_searxng --> pkg_settings
+  pkg_web_search_searxng --> pkg_web
   pkg_web_search_tavily --> pkg_credentials
   pkg_web_search_tavily --> pkg_invariants
   pkg_web_search_tavily --> pkg_launch_environment
+  pkg_web_search_tavily --> pkg_proxy_pool
   pkg_web_search_tavily --> pkg_settings
   pkg_web_search_tavily --> pkg_web
   pkg_spill --> pkg_brand
@@ -591,6 +637,7 @@ flowchart TD
   pkg_web_search_deepseek --> pkg_credentials
   pkg_web_search_deepseek --> pkg_invariants
   pkg_web_search_deepseek --> pkg_launch_environment
+  pkg_web_search_deepseek --> pkg_proxy_pool
   pkg_web_search_deepseek --> pkg_session
   pkg_web_search_deepseek --> pkg_settings
   pkg_web_search_deepseek --> pkg_web
@@ -844,6 +891,15 @@ flowchart TD
   pkg_fs_sandbox --> pkg_sandbox
   pkg_fs_sandbox --> pkg_sandbox_policy
   pkg_fs_sandbox --> pkg_subprocess
+  pkg_tool_apply_patch --> pkg_fs
+  pkg_tool_apply_patch --> pkg_invariants
+  pkg_tool_apply_patch --> pkg_llm
+  pkg_tool_apply_patch --> pkg_sandbox
+  pkg_tool_apply_patch --> pkg_sandbox_policy
+  pkg_tool_apply_patch --> pkg_session
+  pkg_tool_apply_patch --> pkg_system_prompt
+  pkg_tool_apply_patch --> pkg_tools
+  pkg_tool_apply_patch --> pkg_user_approval
   pkg_tool_fs --> pkg_attachment
   pkg_tool_fs --> pkg_fs
   pkg_tool_fs --> pkg_invariants
@@ -1097,6 +1153,11 @@ flowchart TD
   pkg_tool_workflow --> pkg_system_prompt
   pkg_tool_workflow --> pkg_tools
   pkg_tool_workflow --> pkg_workflow
+  pkg_fs_workspace --> pkg_fs
+  pkg_fs_workspace --> pkg_fs_local
+  pkg_fs_workspace --> pkg_fs_sandbox
+  pkg_fs_workspace --> pkg_invariants
+  pkg_fs_workspace --> pkg_sandbox_policy
   pkg_subagent_acp --> pkg_agent
   pkg_subagent_acp --> pkg_invariants
   pkg_subagent_acp --> pkg_llm
@@ -1702,12 +1763,20 @@ flowchart TD
 | [`skill-badge`](../packages/skill/skill-badge) | `skill` | [`invariants`](../packages/runtime-diagnostics/invariants), [`skill`](../packages/skill/skill) |
 | [`skill-browser-use`](../packages/skill/skill-browser-use) | `skill` | [`invariants`](../packages/runtime-diagnostics/invariants), [`skill`](../packages/skill/skill) |
 | [`skill-frontend-development`](../packages/skill/skill-frontend-development) | `skill` | [`invariants`](../packages/runtime-diagnostics/invariants), [`skill`](../packages/skill/skill) |
+| [`skill-go-backend`](../packages/skill/skill-go-backend) | `skill` | [`invariants`](../packages/runtime-diagnostics/invariants), [`skill`](../packages/skill/skill) |
+| [`skill-project-init`](../packages/skill/skill-project-init) | `skill` | [`invariants`](../packages/runtime-diagnostics/invariants), [`skill`](../packages/skill/skill) |
 | [`skill-stylekit`](../packages/skill/skill-stylekit) | `skill` | [`invariants`](../packages/runtime-diagnostics/invariants), [`skill`](../packages/skill/skill) |
 | [`web-fetch-http`](../packages/web/web-fetch-http) | `web` | [`invariants`](../packages/runtime-diagnostics/invariants), [`timeout`](../packages/util/timeout), [`web`](../packages/web/web) |
-| [`web-search-duckduckgo`](../packages/web/web-search-duckduckgo) | `web` | [`invariants`](../packages/runtime-diagnostics/invariants), [`settings`](../packages/settings/settings), [`web`](../packages/web/web) |
-| [`web-search-exa`](../packages/web/web-search-exa) | `web` | [`invariants`](../packages/runtime-diagnostics/invariants), [`launch-environment`](../packages/util/launch-environment), [`web`](../packages/web/web) |
-| [`web-search-perplexity`](../packages/web/web-search-perplexity) | `web` | [`invariants`](../packages/runtime-diagnostics/invariants), [`launch-environment`](../packages/util/launch-environment), [`web`](../packages/web/web) |
-| [`web-search-tavily`](../packages/web/web-search-tavily) | `web` | [`credentials`](../packages/credentials/credentials), [`invariants`](../packages/runtime-diagnostics/invariants), [`launch-environment`](../packages/util/launch-environment), [`settings`](../packages/settings/settings), [`web`](../packages/web/web) |
+| [`web-search-anysearch`](../packages/web/web-search-anysearch) | `web` | [`invariants`](../packages/runtime-diagnostics/invariants), [`launch-environment`](../packages/util/launch-environment), [`proxy-pool`](../packages/net/proxy-pool), [`settings`](../packages/settings/settings), [`web`](../packages/web/web) |
+| [`web-search-bing`](../packages/web/web-search-bing) | `web` | [`invariants`](../packages/runtime-diagnostics/invariants), [`proxy-pool`](../packages/net/proxy-pool), [`settings`](../packages/settings/settings), [`web`](../packages/web/web) |
+| [`web-search-duckduckgo`](../packages/web/web-search-duckduckgo) | `web` | [`invariants`](../packages/runtime-diagnostics/invariants), [`proxy-pool`](../packages/net/proxy-pool), [`settings`](../packages/settings/settings), [`web`](../packages/web/web) |
+| [`web-search-exa`](../packages/web/web-search-exa) | `web` | [`invariants`](../packages/runtime-diagnostics/invariants), [`launch-environment`](../packages/util/launch-environment), [`proxy-pool`](../packages/net/proxy-pool), [`web`](../packages/web/web) |
+| [`web-search-firecrawl`](../packages/web/web-search-firecrawl) | `web` | [`invariants`](../packages/runtime-diagnostics/invariants), [`launch-environment`](../packages/util/launch-environment), [`proxy-pool`](../packages/net/proxy-pool), [`settings`](../packages/settings/settings), [`web`](../packages/web/web) |
+| [`web-search-keenable`](../packages/web/web-search-keenable) | `web` | [`invariants`](../packages/runtime-diagnostics/invariants), [`launch-environment`](../packages/util/launch-environment), [`proxy-pool`](../packages/net/proxy-pool), [`settings`](../packages/settings/settings), [`web`](../packages/web/web) |
+| [`web-search-parallel`](../packages/web/web-search-parallel) | `web` | [`invariants`](../packages/runtime-diagnostics/invariants), [`launch-environment`](../packages/util/launch-environment), [`proxy-pool`](../packages/net/proxy-pool), [`settings`](../packages/settings/settings), [`web`](../packages/web/web) |
+| [`web-search-perplexity`](../packages/web/web-search-perplexity) | `web` | [`invariants`](../packages/runtime-diagnostics/invariants), [`launch-environment`](../packages/util/launch-environment), [`proxy-pool`](../packages/net/proxy-pool), [`web`](../packages/web/web) |
+| [`web-search-searxng`](../packages/web/web-search-searxng) | `web` | [`invariants`](../packages/runtime-diagnostics/invariants), [`proxy-pool`](../packages/net/proxy-pool), [`settings`](../packages/settings/settings), [`web`](../packages/web/web) |
+| [`web-search-tavily`](../packages/web/web-search-tavily) | `web` | [`credentials`](../packages/credentials/credentials), [`invariants`](../packages/runtime-diagnostics/invariants), [`launch-environment`](../packages/util/launch-environment), [`proxy-pool`](../packages/net/proxy-pool), [`settings`](../packages/settings/settings), [`web`](../packages/web/web) |
 | [`spill`](../packages/spill/spill) | `spill` | [`brand`](../packages/util/brand), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`session`](../packages/core/session) |
 | [`app-boot`](../packages/boot/app-boot) | `boot` | [`home-paths`](../packages/util/home-paths), [`invariants`](../packages/runtime-diagnostics/invariants), [`launch-environment`](../packages/util/launch-environment), [`system-prompt`](../packages/core/system-prompt) |
 | [`browser`](../packages/browser/browser) | `browser` | [`invariants`](../packages/runtime-diagnostics/invariants), [`session`](../packages/core/session) |
@@ -1725,7 +1794,7 @@ flowchart TD
 | [`agent-default-model`](../packages/core/agent-default-model) | `core` | [`agent`](../packages/core/agent), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`settings`](../packages/settings/settings) |
 | [`goal`](../packages/goal/goal) | `goal` | [`agent`](../packages/core/agent), [`brand`](../packages/util/brand), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`scope`](../packages/core/scope), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection), [`typert-protocol`](../packages/typert/protocol) |
 | [`fs`](../packages/fs/fs) | `fs` | [`brand`](../packages/util/brand), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`sandbox`](../packages/sandbox/sandbox) |
-| [`web-search-deepseek`](../packages/web/web-search-deepseek) | `web` | [`agent`](../packages/core/agent), [`credentials`](../packages/credentials/credentials), [`invariants`](../packages/runtime-diagnostics/invariants), [`launch-environment`](../packages/util/launch-environment), [`session`](../packages/core/session), [`settings`](../packages/settings/settings), [`web`](../packages/web/web) |
+| [`web-search-deepseek`](../packages/web/web-search-deepseek) | `web` | [`agent`](../packages/core/agent), [`credentials`](../packages/credentials/credentials), [`invariants`](../packages/runtime-diagnostics/invariants), [`launch-environment`](../packages/util/launch-environment), [`proxy-pool`](../packages/net/proxy-pool), [`session`](../packages/core/session), [`settings`](../packages/settings/settings), [`web`](../packages/web/web) |
 | [`spill-local`](../packages/spill/spill-local) | `spill` | [`invariants`](../packages/runtime-diagnostics/invariants), [`spill`](../packages/spill/spill) |
 | [`file-reference`](../packages/context/file-reference) | `context` | [`agent`](../packages/core/agent), [`invariants`](../packages/runtime-diagnostics/invariants), [`typert-protocol`](../packages/typert/protocol) |
 | [`time-context`](../packages/context/time-context) | `context` | [`agent`](../packages/core/agent), [`invariants`](../packages/runtime-diagnostics/invariants), [`session`](../packages/core/session) |
@@ -1777,6 +1846,7 @@ flowchart TD
 | [`agent-tool-presentation`](../packages/core/agent-tool-presentation) | `core` | [`invariants`](../packages/runtime-diagnostics/invariants), [`tools`](../packages/core/tools) |
 | [`tool-goal`](../packages/goal/tool-goal) | `goal` | [`agent`](../packages/core/agent), [`goal`](../packages/goal/goal), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`system-prompt`](../packages/core/system-prompt), [`tools`](../packages/core/tools) |
 | [`fs-sandbox`](../packages/fs/fs-sandbox) | `fs` | [`fs`](../packages/fs/fs), [`fs-local`](../packages/fs/fs-local), [`invariants`](../packages/runtime-diagnostics/invariants), [`sandbox`](../packages/sandbox/sandbox), [`sandbox-policy`](../packages/sandbox/sandbox-policy), [`subprocess`](../packages/subprocess/subprocess) |
+| [`tool-apply-patch`](../packages/fs/tool-apply-patch) | `fs` | [`fs`](../packages/fs/fs), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`sandbox`](../packages/sandbox/sandbox), [`sandbox-policy`](../packages/sandbox/sandbox-policy), [`session`](../packages/core/session), [`system-prompt`](../packages/core/system-prompt), [`tools`](../packages/core/tools), [`user-approval`](../packages/interaction/user-approval) |
 | [`tool-fs`](../packages/fs/tool-fs) | `fs` | [`attachment`](../packages/attachment/attachment), [`fs`](../packages/fs/fs), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`sandbox`](../packages/sandbox/sandbox), [`sandbox-policy`](../packages/sandbox/sandbox-policy), [`session`](../packages/core/session), [`system-prompt`](../packages/core/system-prompt), [`tools`](../packages/core/tools), [`user-approval`](../packages/interaction/user-approval) |
 | [`tool-fs-search`](../packages/fs/tool-fs-search) | `fs` | [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`output-retention`](../packages/util/output-retention), [`session`](../packages/core/session), [`spill`](../packages/spill/spill), [`subprocess`](../packages/subprocess/subprocess), [`system-prompt`](../packages/core/system-prompt), [`timeout`](../packages/util/timeout), [`tools`](../packages/core/tools) |
 | [`tool-str-replace-editor`](../packages/fs/tool-str-replace-editor) | `fs` | [`fs`](../packages/fs/fs), [`invariants`](../packages/runtime-diagnostics/invariants), [`sandbox`](../packages/sandbox/sandbox), [`sandbox-policy`](../packages/sandbox/sandbox-policy), [`subprocess`](../packages/subprocess/subprocess), [`tools`](../packages/core/tools) |
@@ -1817,6 +1887,7 @@ flowchart TD
 | [`agent-loop-testkit`](../packages/test-support/agent-loop-testkit) | `test-support` | [`agent`](../packages/core/agent), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`system-prompt`](../packages/core/system-prompt), [`tools`](../packages/core/tools) |
 | [`llm-replay`](../packages/test-support/llm-replay) | `test-support` | [`compaction`](../packages/compaction/compaction), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`session`](../packages/core/session) |
 | [`tool-workflow`](../packages/workflow/tool-workflow) | `workflow` | [`agent`](../packages/core/agent), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`system-prompt`](../packages/core/system-prompt), [`tools`](../packages/core/tools), [`workflow`](../packages/workflow/workflow) |
+| [`fs-workspace`](../packages/fs/fs-workspace) | `fs` | [`fs`](../packages/fs/fs), [`fs-local`](../packages/fs/fs-local), [`fs-sandbox`](../packages/fs/fs-sandbox), [`invariants`](../packages/runtime-diagnostics/invariants), [`sandbox-policy`](../packages/sandbox/sandbox-policy) |
 | [`subagent-acp`](../packages/subagent/subagent-acp) | `subagent` | [`agent`](../packages/core/agent), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`subprocess`](../packages/subprocess/subprocess), [`timeout`](../packages/util/timeout) |
 | [`subagent-claude-code`](../packages/subagent/subagent-claude-code) | `subagent` | [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`subprocess`](../packages/subprocess/subprocess), [`timeout`](../packages/util/timeout) |
 | [`subagent-codex`](../packages/subagent/subagent-codex) | `subagent` | [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`subprocess`](../packages/subprocess/subprocess), [`timeout`](../packages/util/timeout) |

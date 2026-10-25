@@ -26,12 +26,14 @@ Coding 是面向个人开发的开源 AI 编程桌面客户端。它将模型对
 
 ## 内置 Skills：让 Agent 按任务采用合适的做法
 
-插件提供工具和界面，Skills 提供任务相关的工作指引。默认标准模式会向 Agent 提供可用技能目录，正文按需加载，不必把所有技能一次性塞进对话。以下技能随应用提供，不依赖当前项目是否配置了技能目录：
+插件提供工具和界面，Skills 提供任务相关的工作指引。标准模式、PTC 模式、Codex 模式与逆向分析模式都提供同一组随包交付技能，正文按需加载，不必把所有技能一次性塞进对话；逆向分析模式另有 13 个逆向调查技能。以下技能随应用提供，不依赖当前项目是否配置了技能目录：
 
 | Skill | 用途 |
 | --- | --- |
 | [`browser-use`](packages/skill/skill-browser-use/README.md) | 指导 Agent 先观察页面，再使用有效的元素引用操作网页，完成页面阅读、交互、截图和界面验收。 |
 | [`frontend-development`](packages/skill/skill-frontend-development/README.md) | 指导前端实现遵循项目已有技术栈、组件和设计规范，使用图标与按需 CSS 动效配方，避免内部实现文案和文字海报，并结合浏览器检查实际效果。 |
+| [`go-backend`](packages/skill/skill-go-backend/README.md) | 写 Go 服务端时给出布局、HTTP、context 与并发、错误包装、数据访问与交付验证的默认约定，并优先沿用项目已有做法。 |
+| [`project-init`](packages/skill/skill-project-init/README.md) | 在改动前建好可回滚的版本基线：判断是否已在 Git 工作区、`git init`、忽略规则、逐条确认后建基线提交，并给出新项目最小的 README／AGENTS。 |
 | [`genui`](packages/genui/genui/README.md) | 提供交互式回答的组件与语法指引，用于生成表格、图表、表单和流程图等内容。 |
 | [`stylekit`](packages/skill/skill-stylekit/README.md) | 为界面选定具名视觉风格（玻璃拟态、新野兽派、赛博朋克、Apple／Stripe 风格等），给出配色、设计令牌与 do／don't 规则，并在项目现有技术栈内落地和验收。 |
 
@@ -43,7 +45,7 @@ Coding 是面向个人开发的开源 AI 编程桌面客户端。它将模型对
 
 在会话的模式选择里切到「逆向分析模式」后，这个会话才获得 [REA（Reverse Engineer Anything）](https://github.com/morluto/rea) 提供的 `mcp__rea__*` 工具：原生二进制的反汇编与反编译、安装包与固件拆解、JavaScript／Electron 与 Android 分析、版本对比、崩溃记录与运行时观测。其它模式不注册这些工具，也不为本模式以外的会话启动该服务。
 
-该模式的系统提示词按分析任务单独编写：沿用通用约定「每步改动都可回滚」的目的，把分析会话做成可撤回的操作——目标只读并先记哈希、只在副本上操作，运行目标或附加调试器前先说明副作用与恢复方式，只有你要求实现时才回到常规的提交节奏。它还要求先列问题清单与证据台账、大目标摘要优先、收尾关闭原生会话并导出证据。它随附一组按需加载的逆向调查技能，与模式目录一起分发：`reverse-engineering`（授权边界、调查计划与证据台账）、`rea-tool-workflow`（工具路由、证据分页、引擎缺失时的恢复路径），以及按目标类型划分的 `feature-tracing`、`native-binary-analysis`、`javascript-electron-analysis`、`android-apk-analysis`、`firmware-embedded-analysis`、`kernel-driver-analysis`、`vulnerability-research`、`protection-research`、`clean-room-cloning`、`game-analysis` 与 `version-comparison`。
+该模式的系统提示词按分析任务单独编写：沿用通用约定「每步改动都可回滚」的目的，把分析会话做成可撤回的操作——目标只读并先记哈希、只在副本上操作，分析目录不在 Git 工作区内时先 `git init`、检查忽略规则并建基线提交，运行目标或附加调试器前先说明副作用与恢复方式，只有你要求实现时才回到常规的提交节奏。它还要求先列问题清单与证据台账、大目标摘要优先、收尾关闭原生会话并导出证据。它随附一组按需加载的逆向调查技能，与模式目录一起分发：`reverse-engineering`（授权边界、调查计划与证据台账）、`rea-tool-workflow`（工具路由、证据分页、引擎缺失时的恢复路径），以及按目标类型划分的 `feature-tracing`、`native-binary-analysis`、`javascript-electron-analysis`、`android-apk-analysis`、`firmware-embedded-analysis`、`kernel-driver-analysis`、`vulnerability-research`、`protection-research`、`clean-room-cloning`、`game-analysis` 与 `version-comparison`。
 
 使用前提：本机有 Node.js 与 npm，且版本满足 REA 的要求（Node 22.23.4+、24.22.1+ 或 26.12.1+）；首次切入该模式时 `npx` 会下载固定版本的 `rea-agents` 包，需要联网。原生分析使用本机已安装的 Hopper、Ghidra 或 IDA，Android 分析需要自备 JADX 与 Java，纯静态的 JavaScript／Electron 分析不需要引擎。引擎缺失时只有依赖它的调用失败，Agent 会按技能里的恢复路径诊断，其余工具照常可用。
 

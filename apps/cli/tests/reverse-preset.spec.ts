@@ -235,6 +235,10 @@ describe('reverse mode skills ship with the preset', () => {
     expect(text).toContain('哈希')
     expect(text).toContain('恢复')
     expect(text).toContain('提交')
+    // 回滚手段要写成可执行步骤：不进 Git 工作区就先 `git init`、检查忽略规则、建基线提交。
+    expect(text).toContain('git init')
+    expect(text).toContain('.gitignore')
+    expect(text).toContain('基线提交')
     // persona 不能被设成 complete：工具指引、技能目录与运行时上下文仍需参与组装。
     expect(config.complete).toBeUndefined()
     // 一段完整的模式提示词，而不是一句身份描述。

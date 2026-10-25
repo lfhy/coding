@@ -15,7 +15,9 @@
 #
 # Read files and search with the shell (`rg`), exactly like Codex; the
 # `read`/`write`/`edit`/`glob`/`grep` file tools stay out of this preset, as do
-# plan mode, goals, skills, browser tools, workflows, and ralph. Local Host
+# plan mode, goals, browser tools, workflows, and ralph. The skill catalog is
+# limited to the four bundled delivery skills (project init, Go backend, frontend,
+# stylekit); project and user skill roots stay out of this preset. Local Host
 # capabilities and the Cordis composition are unchanged; no app-server, ACP,
 # websocket, remote-control, identity, or encrypted communication layer is
 # introduced here.
@@ -365,6 +367,25 @@
   config:
     toolName: update_plan
     allowParallelInProgress: false
+
+# ── 技能 ─────────────────────────────────────────────────────────────────────
+
+# 随包技能：初始化本地仓库、Go 后端、前端实现与视觉风格。Codex 模式的工具面保持对齐，
+# 但这几项是跨语言的交付约定，抽到技能里按需加载，不占常驻提示词。
+- id: skill-project-init
+  name: 'coding-skill-project-init'
+
+- id: skill-go-backend
+  name: 'coding-skill-go-backend'
+
+- id: skill-frontend-development
+  name: 'coding-skill-frontend-development'
+
+- id: skill-stylekit
+  name: 'coding-skill-stylekit'
+
+- id: tool-skill
+  name: 'coding-tool-skill'
 
 # ── web search ──────────────────────────────────────────────────────────────
 
