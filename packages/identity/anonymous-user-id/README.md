@@ -1,6 +1,6 @@
 # coding-anonymous-user-id
 
-会话遥测、直接反馈确认与 DeepSeek 提供方请求共用的匿名身份。`getOrCreateAnonymousUserId()` 返回一个限定于单个 harness home 的随机 UUID v4，并以裸行形式持久化到 `$DSH_HOME/.anonymous-user-id`（未设置 `DSH_HOME` 时为 `~/.dsh/.anonymous-user-id`）。OpenTelemetry 后端将其作为 Resource 的 `user.id` 上报；`/feedback` 在确认文本中包含同一个值；`dsh-llm-deepseek` 则通过 `x-deepseek-harness-user-id` 发送该值，使接收系统无需独立生成身份即可关联记录。
+会话遥测、直接反馈确认与 DeepSeek 提供方请求共用的匿名身份。`getOrCreateAnonymousUserId()` 返回一个限定于单个 harness home 的随机 UUID v4，并以裸行形式持久化到 `$DSH_HOME/.anonymous-user-id`（未设置任何主目录环境变量时为 `~/.coding/.anonymous-user-id`，只有遗留 `~/.dsh` 才回退过去）。OpenTelemetry 后端将其作为 Resource 的 `user.id` 上报；`/feedback` 在确认文本中包含同一个值；`dsh-llm-deepseek` 则通过 `x-deepseek-harness-user-id` 发送该值，使接收系统无需独立生成身份即可关联记录。
 
 该身份绝不从 hostname、网络地址、git remote 或其他可用于识别身份的来源派生。删除 `.anonymous-user-id` 后，下次启动进程时会重置身份。不同 harness home 拥有不同身份。
 

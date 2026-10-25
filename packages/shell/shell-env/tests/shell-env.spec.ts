@@ -4,7 +4,8 @@
  * the explicit disposer contract.
  */
 
-import { homedir } from 'node:os'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
@@ -48,14 +49,23 @@ describe('ShellEnvRegistry', () => {
     })
   })
 
-  it('resolves DSH_HOME from the ambient override or the user-home default', () => {
+  it('resolves DSH_HOME from the ambient override or the default Coding home', () => {
+    vi.stubEnv('CODING_HOME', undefined)
     vi.stubEnv('DSH_HOME', './ambient-dsh-home')
     const fromEnvironment = new ShellEnvRegistry(new Context())
     expect(fromEnvironment.collect(execution()).DSH_HOME).toBe(resolve('./ambient-dsh-home'))
 
-    vi.stubEnv('DSH_HOME', undefined)
-    const fromDefault = new ShellEnvRegistry(new Context())
-    expect(fromDefault.collect(execution()).DSH_HOME).toBe(join(homedir(), '.dsh'))
+    // 项目主目录默认是 ~/.coding；空的 HOME 里既没有 ~/.coding 数据也没有遗留
+    // ~/.dsh，默认解析因此不依赖本机实际主目录。
+    const emptyHome = mkdtempSync(join(tmpdir(), 'dsh-shell-env-home-'))
+    try {
+      vi.stubEnv('DSH_HOME', undefined)
+      vi.stubEnv('HOME', emptyHome)
+      const fromDefault = new ShellEnvRegistry(new Context())
+      expect(fromDefault.collect(execution()).DSH_HOME).toBe(join(emptyHome, '.coding'))
+    } finally {
+      rmSync(emptyHome, { recursive: true, force: true })
+    }
   })
 
   it('collects declared contributor variables and omits unavailable values', () => {

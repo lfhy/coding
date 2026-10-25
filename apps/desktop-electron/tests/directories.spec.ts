@@ -13,7 +13,8 @@ afterEach(async () => {
 async function fixture() {
   const home = await mkdtemp(join(tmpdir(), 'dsh-electron-dirs-'))
   temporaryHomes.push(home)
-  const installedHome = join(home, '.dsh')
+  // 安装版主目录是项目的 ~/.coding；开发 Home 必须拒绝指向它。
+  const installedHome = join(home, '.coding')
   const legacyDevelopmentHome = join(home, '.dsh-dev')
   const hostHome = join(home, '.dsh-electron-dev')
   return {
