@@ -21,6 +21,7 @@ const COMPOSITION = join(REVERSE_DIR, 'agent.cordis.yml')
 
 /** REA 只在这个预设里注册工具；这些名字出现在别处就说明模式约束被破坏。 */
 const MCP_PACKAGE = 'coding-mcp-client'
+const SKILL_FILESYSTEM_PACKAGE = 'coding-skill-filesystem'
 const PINNED_REA_PACKAGE = 'rea-agents@6.7.0'
 
 /** 随本模式分发的技能目录。新增或删除技能时同步这份清单与 `preset.yml` 的描述。 */
@@ -160,12 +161,25 @@ describe('REA tools are available only in the reverse mode', () => {
 
     for (const preset of others) {
       const entries = await loadEntries(join(PRESET_ROOT, preset, 'agent.cordis.yml'))
+      const source = await readFile(join(PRESET_ROOT, preset, 'agent.cordis.yml'), 'utf8')
       expect(rowsOf(entries, MCP_PACKAGE), `${preset} must not mount an MCP server`).toEqual([])
+      // 反向检验：逆向模式的技能目录与提示词只能出现在 reverse 自己的组装里。
+      // 其它预设可以有各自的 customSkillDirs（`cordis` 就有），但都不能指向本模式的目录。
+      const skillDirs = rowsOf(entries, SKILL_FILESYSTEM_PACKAGE)
+        .flatMap(entry => (configOf(entry).customSkillDirs ?? []) as { __jsExpr?: string }[])
+        .map(dir => dir.__jsExpr ?? '')
+        .join('\n')
+      expect(skillDirs, `${preset} must not load the reverse skills`).not.toContain('agent-presets/reverse')
+      expect(source).not.toContain('mcp__rea__')
+      expect(source).not.toContain('逆向分析模式')
     }
-    // 宿主组合挂载的 MCP 服务器对每个会话可见，那会绕过模式约束。
+    // 宿主组合挂载的 MCP 服务器对每个会话可见，那会绕过模式约束；技能目录同理。
     for (const bundle of ['base', 'web-app']) {
+      const source = await readFile(join(ROOT, 'packages/bundle', bundle, 'cordis.patch.yml'), 'utf8')
       const entries = await loadEntries(join(ROOT, 'packages/bundle', bundle, 'cordis.patch.yml'))
       expect(rowsOf(entries, MCP_PACKAGE), `${bundle} must not mount an MCP server`).toEqual([])
+      expect(source).not.toContain('mcp__rea__')
+      expect(source).not.toContain('agent-presets/reverse')
     }
   })
 })
@@ -213,9 +227,13 @@ describe('reverse mode skills ship with the preset', () => {
     // 证据台账与摘要优先策略写在提示词里，因为技能按需加载、不保证已读。
     expect(text).toContain('INVESTIGATION.md')
     expect(text).toContain('inspect_analysis_view')
-    // 部署的 `coding:guidelines`（order −98）先于 persona 渲染，且预设无法遮蔽它，
-    // 因此分析会话必须在自己的段里显式收窄「直接改文件、每步提交」的编码节奏。
-    expect(text).toContain('不要为了让任务看起来完成而修改分析目标')
+    // 部署的 `coding:guidelines`（order −98）先于 persona 渲染，且预设无法遮蔽它。
+    // 那一段的「小步改动、每步提交」是为可回滚服务的，因此 persona 必须把这条目的
+    // 接到分析会话的作用对象上：目标只读并留哈希、产物目录可提交、运行时操作先讲恢复。
+    expect(text).toContain('可回滚')
+    expect(text).toContain('副本')
+    expect(text).toContain('哈希')
+    expect(text).toContain('恢复')
     expect(text).toContain('提交')
     // persona 不能被设成 complete：工具指引、技能目录与运行时上下文仍需参与组装。
     expect(config.complete).toBeUndefined()

@@ -43,7 +43,7 @@ Coding 是面向个人开发的开源 AI 编程桌面客户端。它将模型对
 
 在会话的模式选择里切到「逆向分析模式」后，这个会话才获得 [REA（Reverse Engineer Anything）](https://github.com/morluto/rea) 提供的 `mcp__rea__*` 工具：原生二进制的反汇编与反编译、安装包与固件拆解、JavaScript／Electron 与 Android 分析、版本对比、崩溃记录与运行时观测。其它模式不注册这些工具，也不为本模式以外的会话启动该服务。
 
-该模式的系统提示词按分析任务单独编写：把对话定为分析会话而非编码会话（不主动改目标、不提交仓库、运行目标前先说明副作用），并要求先列问题清单与证据台账、大目标摘要优先、收尾关闭原生会话并导出证据。它随附一组按需加载的逆向调查技能，与模式目录一起分发：`reverse-engineering`（授权边界、调查计划与证据台账）、`rea-tool-workflow`（工具路由、证据分页、引擎缺失时的恢复路径），以及按目标类型划分的 `feature-tracing`、`native-binary-analysis`、`javascript-electron-analysis`、`android-apk-analysis`、`firmware-embedded-analysis`、`kernel-driver-analysis`、`vulnerability-research`、`protection-research`、`clean-room-cloning`、`game-analysis` 与 `version-comparison`。
+该模式的系统提示词按分析任务单独编写：沿用通用约定「每步改动都可回滚」的目的，把分析会话做成可撤回的操作——目标只读并先记哈希、只在副本上操作，运行目标或附加调试器前先说明副作用与恢复方式，只有你要求实现时才回到常规的提交节奏。它还要求先列问题清单与证据台账、大目标摘要优先、收尾关闭原生会话并导出证据。它随附一组按需加载的逆向调查技能，与模式目录一起分发：`reverse-engineering`（授权边界、调查计划与证据台账）、`rea-tool-workflow`（工具路由、证据分页、引擎缺失时的恢复路径），以及按目标类型划分的 `feature-tracing`、`native-binary-analysis`、`javascript-electron-analysis`、`android-apk-analysis`、`firmware-embedded-analysis`、`kernel-driver-analysis`、`vulnerability-research`、`protection-research`、`clean-room-cloning`、`game-analysis` 与 `version-comparison`。
 
 使用前提：本机有 Node.js 与 npm，且版本满足 REA 的要求（Node 22.23.4+、24.22.1+ 或 26.12.1+）；首次切入该模式时 `npx` 会下载固定版本的 `rea-agents` 包，需要联网。原生分析使用本机已安装的 Hopper、Ghidra 或 IDA，Android 分析需要自备 JADX 与 Java，纯静态的 JavaScript／Electron 分析不需要引擎。引擎缺失时只有依赖它的调用失败，Agent 会按技能里的恢复路径诊断，其余工具照常可用。
 
