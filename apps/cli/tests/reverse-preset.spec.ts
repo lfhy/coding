@@ -199,13 +199,27 @@ describe('reverse mode skills ship with the preset', () => {
     }
   })
 
-  it('tells the model how the REA tools are named', async () => {
+  it('ships a reverse-specific persona that scopes the deployment guidance', async () => {
     const [persona] = (await loadEntries(COMPOSITION)).filter(entry => entry.id === 'persona')
-    const text = String(configOf(persona!).text)
+    const config = configOf(persona!)
+    const text = String(config.text)
 
+    // 工具与技能入口：模型可以从提示词本身找到 REA 工具与总纲技能。
     expect(text).toContain('mcp__rea__')
     expect(text).toContain('reverse-engineering')
-    // 授权边界是这个模式的必要约束，不是一个可选的礼貌提示。
+    // 授权边界与静态／运行时之分是模式的必要约束，不是可选礼貌提示。
     expect(text).toContain('授权')
+    expect(text).toContain('静态')
+    // 证据台账与摘要优先策略写在提示词里，因为技能按需加载、不保证已读。
+    expect(text).toContain('INVESTIGATION.md')
+    expect(text).toContain('inspect_analysis_view')
+    // 部署的 `coding:guidelines`（order −98）先于 persona 渲染，且预设无法遮蔽它，
+    // 因此分析会话必须在自己的段里显式收窄「直接改文件、每步提交」的编码节奏。
+    expect(text).toContain('不要为了让任务看起来完成而修改分析目标')
+    expect(text).toContain('提交')
+    // persona 不能被设成 complete：工具指引、技能目录与运行时上下文仍需参与组装。
+    expect(config.complete).toBeUndefined()
+    // 一段完整的模式提示词，而不是一句身份描述。
+    expect(text.length).toBeGreaterThan(1500)
   })
 })
