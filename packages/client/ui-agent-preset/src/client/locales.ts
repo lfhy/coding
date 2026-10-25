@@ -49,7 +49,7 @@ export const en: Record<AgentPresetSettingsKey, string> = {
     'Built for creating custom agent presets, with all Standard mode capabilities plus runtime inspection, plugin experiments, and preset-authoring guidance.',
   presetCodexName: 'Codex mode',
   presetCodexDescription:
-    'Codex-style coding workflow with command, patch, browser, and subagent tools over the local Coding workspace.',
+    'Codex prompt and tool surface: shell, apply_patch, update_plan, web search, and continuable subagents with wait_agent.',
   duplicate: 'Duplicate',
   duplicateUnavailable: 'This deployment has no writable preset directory',
   delete: 'Delete',
@@ -111,7 +111,7 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   presetCordisName: '创造模式',
   presetCordisDescription: '用于创建自定义 Agent preset：具备标准模式的全部能力，并提供运行时检查、插件实验和 preset 创作指导。',
   presetCodexName: 'Codex 模式',
-  presetCodexDescription: '采用 Codex 风格的编码流程，提供命令、patch、浏览器与子 agent 工具，并使用本地 Coding 工作区。',
+  presetCodexDescription: '对齐 Codex 的提示词与工具面：Shell、apply_patch、update_plan、联网搜索，以及带 wait_agent 的可继续子 agent。',
   duplicate: '复制',
   duplicateUnavailable: '此部署未配置可写的预设目录',
   delete: '删除',

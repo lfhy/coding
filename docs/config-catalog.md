@@ -1681,7 +1681,7 @@ export interface RefreshConfig {
 }
 ```
 
-Source: [`packages/net/proxy-pool/src/index.ts:117`](../packages/net/proxy-pool/src/index.ts)
+Source: [`packages/net/proxy-pool/src/index.ts:118`](../packages/net/proxy-pool/src/index.ts)
 
 <a id="coding-pwsh-local"></a>
 
@@ -2663,6 +2663,8 @@ Requires: `tools` · `shell` · `systemPrompt` · `shellEnv`
 ```ts config-catalog
 /** Configuration for the bash tool. */
 export interface Config {
+  /** Model-facing tool name (default `bash`). */
+  toolName?: string
   /** Expose `run_in_background` (default true); disabled calls are also rejected. */
   enableRunInBackground?: boolean
 }
@@ -2996,6 +2998,22 @@ Depends on: [`AgentOptions`](subsystems/core.md)
 
 Source: [`packages/subagent/tool-subagent/src/index.ts:30`](../packages/subagent/tool-subagent/src/index.ts)
 
+<a id="coding-tool-subagent-control"></a>
+
+## `coding-tool-subagent-control`
+
+Requires: `tools` · `subagents`
+
+```ts config-catalog
+/** 可选配置：后续任务工具的模型可见名称。 */
+export interface Config {
+  /** 后续任务工具的模型可见名称，默认 `followup_task`；空名在装载时直接失败。 */
+  followupToolName?: string
+}
+```
+
+Source: [`packages/subagent/tool-subagent-control/src/index.ts:22`](../packages/subagent/tool-subagent-control/src/index.ts)
+
 <a id="coding-tool-subagent-report"></a>
 
 ## `coding-tool-subagent-report`
@@ -3045,6 +3063,8 @@ Requires: `tools`
 ```ts config-catalog
 /** Model-facing todo tool configuration. */
 export interface Config {
+  /** Model-facing tool name (default `todo_write`). */
+  toolName?: string
   /**
    * Required deployment choice for whether several todos may be `in_progress` at once. True suits
    * agents that run work concurrently — subagents, background commands, workflow fan-out — and the
@@ -3639,13 +3659,13 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `coding-subagent` ([`packages/subagent/subagent/src/index.ts`](../packages/subagent/subagent/src/index.ts))
 - `coding-subprocess-local` ([`packages/subprocess/subprocess-local/src/index.ts`](../packages/subprocess/subprocess-local/src/index.ts))
 - `coding-terminal` ([`packages/terminal/terminal/src/index.ts`](../packages/terminal/terminal/src/index.ts))
+- `coding-tool-apply-patch` — requires `tools` · `fs` · `systemPrompt` ([`packages/fs/tool-apply-patch/src/index.ts`](../packages/fs/tool-apply-patch/src/index.ts))
 - `coding-tool-ask-user` — requires `tools` · `userQuestions` ([`packages/interaction/tool-ask-user/src/index.ts`](../packages/interaction/tool-ask-user/src/index.ts))
 - `coding-tool-browser` — requires `tools` · `browserUse` · `attachments` · `systemPrompt` ([`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts))
 - `coding-tool-call-timeout-policy` — requires `tools` ([`packages/guard/timeout-policy/src/index.ts`](../packages/guard/timeout-policy/src/index.ts))
 - `coding-tool-computer-use` — requires `tools` · `skills` · `agents` · `computerUse` ([`packages/computer-use/tool-computer-use/src/index.ts`](../packages/computer-use/tool-computer-use/src/index.ts))
 - `coding-tool-cordis` — requires `tools` · `systemPrompt` · `dynamicCordisRunner` · `cordisInspect` ([`packages/extensions/tool-cordis/src/index.ts`](../packages/extensions/tool-cordis/src/index.ts))
 - `coding-tool-memory` — requires `tools` · `memory` ([`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts))
-- `coding-tool-subagent-control` — requires `tools` · `subagents` ([`packages/subagent/tool-subagent-control/src/index.ts`](../packages/subagent/tool-subagent-control/src/index.ts))
 - `coding-user-questions` ([`packages/interaction/user-questions/src/index.ts`](../packages/interaction/user-questions/src/index.ts))
 - `coding-workspace` — requires `storageDomain` · `sessionPersistence` ([`packages/workspace/workspace/src/index.ts`](../packages/workspace/workspace/src/index.ts))
 

@@ -102,6 +102,7 @@
       "coding-tools/types": ["./packages/core/tools/src/types.ts"],
       "coding-tool-subagent-control/list-agents": ["./packages/subagent/tool-subagent-control/src/list-agents.ts"],
       "coding-tool-subagent-control/list-models": ["./packages/subagent/tool-subagent-control/src/list-models.ts"],
+      "coding-tool-subagent-control/wait-agent": ["./packages/subagent/tool-subagent-control/src/wait-agent.ts"],
       "coding-user-approval/types": ["./packages/interaction/user-approval/src/types.ts"],
       "coding-user-questions/types": ["./packages/interaction/user-questions/src/types.ts"],
       "coding-agent/types": ["./packages/core/agent/src/types.ts"],

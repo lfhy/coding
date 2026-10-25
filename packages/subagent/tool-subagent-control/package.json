@@ -1,6 +1,6 @@
 {
   "name": "coding-tool-subagent-control",
-  "description": "Globally named send_message, interrupt_agent, and list_agents tools over ctx.subagents continuations",
+  "description": "Globally named send_message, interrupt_agent, wait_agent, and list_agents tools over ctx.subagents continuations",
   "version": "0.1.0-rc.8",
   "publishConfig": {
     "access": "public"
@@ -30,6 +30,10 @@
       "types": "./lib/types/list-models.d.ts",
       "default": "./lib/types/list-models.js"
     },
+    "./wait-agent": {
+      "types": "./lib/types/wait-agent.d.ts",
+      "default": "./lib/types/wait-agent.js"
+    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
@@ -40,6 +44,9 @@
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",
+  "dependencies": {
+    "@deepseek-ai/schemastery": "workspace:^"
+  },
   "peerDependencies": {
     "coding-invariants": "workspace:^",
     "coding-llm": "workspace:^",

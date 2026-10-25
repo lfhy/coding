@@ -18,8 +18,9 @@ import type {} from 'coding-subagent'
 export const name = 'tool-subagent-control'
 export const inject = ['tools', 'subagents']
 
-/** Optional model-facing name for the next-turn follow-up operation. */
+/** 可选配置：后续任务工具的模型可见名称。 */
 export interface Config {
+  /** 后续任务工具的模型可见名称，默认 `followup_task`；空名在装载时直接失败。 */
   followupToolName?: string
 }
 

@@ -282,14 +282,17 @@ describe('browser tools and skill in the shipped Web preset composition', () => 
       })
       expect((await entries(coded.agent)).map(skill => skill.name)).toContain('frontend-development')
       expect((await entries(coded.agent)).map(skill => skill.name)).toContain('stylekit')
-      expect((await entries(codex.agent)).map(skill => skill.name)).toContain('frontend-development')
-      expect((await entries(codex.agent)).map(skill => skill.name)).toContain('browser-use')
+      // Codex 模式对齐 Codex 工具面：不含浏览器、前端与 StyleKit 技能（宿主半的 GenUI 技能不属预设）。
+      const codexSkills = (await entries(codex.agent)).map(skill => skill.name)
+      expect(codexSkills).not.toContain('browser-use')
+      expect(codexSkills).not.toContain('frontend-development')
+      expect(codexSkills).not.toContain('stylekit')
       expect((await entries(minimal.agent)).map(skill => skill.name)).not.toContain('frontend-development')
       expect((await entries(minimal.agent)).map(skill => skill.name)).not.toContain('stylekit')
       expect((await ctx.skills.list()).map(skill => skill.name)).not.toContain('frontend-development')
       expect(ctx.tools.schemas(minimal.agent).map(tool => tool.name).filter(name => name.startsWith('browser_'))).toEqual([])
 
-      for (const target of [native.agent, coded.agent, codex.agent]) {
+      for (const target of [native.agent, coded.agent]) {
         const decision = await agentEvents(target.ctx, target).waterfall(
           'agent/pre-step',
           { messages: [], turn: 1, step: 1, signal },

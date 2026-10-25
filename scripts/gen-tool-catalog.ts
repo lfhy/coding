@@ -41,6 +41,7 @@ import SubagentRuntime from 'coding-subagent'
 import type { SubagentProvider, SubagentReportDelivery } from 'coding-subagent'
 import * as ToolSubagentControl from 'coding-tool-subagent-control'
 import * as ToolSubagentListAgents from 'coding-tool-subagent-control/list-agents'
+import * as ToolSubagentWaitAgent from 'coding-tool-subagent-control/wait-agent'
 import * as ToolSubagentReport from 'coding-tool-subagent-report'
 import SkillRegistry from 'coding-skill'
 import * as SkillFileSystem from 'coding-skill-filesystem'
@@ -597,8 +598,9 @@ const TOOL_PACKAGES: ToolPackage[] = [
       followup_task: 'packages/subagent/tool-subagent-control/src/index.ts',
       list_agents: 'packages/subagent/tool-subagent-control/src/list-agents.ts',
       send_message: 'packages/subagent/tool-subagent-control/src/index.ts',
+      wait_agent: 'packages/subagent/tool-subagent-control/src/wait-agent.ts',
     },
-    requires: ['ctx.tools', 'ctx.subagents', 'ctx.agents and ctx.sessionProjections (list_agents only)'],
+    requires: ['ctx.tools', 'ctx.subagents', 'ctx.agents and ctx.sessionProjections (list_agents only); a calling Agent inbox (wait_agent only)'],
     writes: ['tool/call', 'tool/result', 'child session events through ctx.subagents'],
     async mount(ctx) {
       await ctx.plugin(SubagentRuntime)
@@ -608,9 +610,10 @@ const TOOL_PACKAGES: ToolPackage[] = [
       await ctx.plugin(SessionProjectionRegistry)
       await ctx.plugin(ToolSubagentControl)
       await ctx.plugin(ToolSubagentListAgents)
+      await ctx.plugin(ToolSubagentWaitAgent)
     },
     note:
-      'The globally named control tools over continuable background subagents: provider-bound `tool-subagent` instances register distinct delegation tools, while this package registers `send_message` and `interrupt_agent` once, plus `list_agents` from its separately loaded `/list-agents` plugin (whose catalog rows use the sessionProjections and live Agent registries).',
+      'The globally named control tools over continuable background subagents: provider-bound `tool-subagent` instances register distinct delegation tools, while this package registers `send_message` and `interrupt_agent` once, plus `list_agents` from its separately loaded `/list-agents` plugin (whose catalog rows use the sessionProjections and live Agent registries) and `wait_agent` from `/wait-agent`, which blocks on the inbox of the calling Agent instead of polling. The `wait_agent` schema above is rendered with its default budget; a deployment configures `defaultTimeoutMs`, `minTimeoutMs`, and `maxTimeoutMs`.',
   },
   {
     pkg: 'coding-tool-subagent-report',
