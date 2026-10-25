@@ -8,9 +8,10 @@
 #   `codex-rs/core/templates/collab/experimental_prompt.md`. Only the
 #   `close_agent` reference is rewritten, because Codex multi-agent v2 replaces
 #   it with `interrupt_agent` and this composition never registers close_agent.
-# - Tools: Codex's own set — shell, `apply_patch`, `update_plan`, `web_search`,
-#   and the v2 collaboration tools (`spawn_agent`, `send_message`,
-#   `followup_task`, `wait_agent`, `interrupt_agent`, `list_agents`).
+# - Tools: Codex's own set — `exec_command`/`write_stdin`, `apply_patch`,
+#   `update_plan`, `web_search`/`web_fetch`, and the v2 collaboration tools
+#   (`spawn_agent`, `send_message`, `followup_task`, `wait_agent`,
+#   `interrupt_agent`, `list_agents`).
 #
 # Read files and search with the shell (`rg`), exactly like Codex; the
 # `read`/`write`/`edit`/`glob`/`grep` file tools stay out of this preset, as do
@@ -330,11 +331,17 @@
 
 # ── shell ───────────────────────────────────────────────────────────────────
 
-# Codex `exec_command`/`write_stdin`: one shell tool plus the job controls that
-# collect and stop background commands.
+# Codex's shell pair: `exec_command` runs a command and hands back a session id
+# when it is still running, and `write_stdin` reads that session, waits on it, or
+# interrupts it with Ctrl-C. Both config values have to agree — the background
+# hint in `exec_command` and the collector it points the model at are one
+# contract.
 - id: tool-bash
   name: 'coding-tool-bash'
   disabled: !!js process.platform === 'win32'
+  config:
+    toolName: exec_command
+    backgroundSessionTools: write_stdin
 
 - id: tool-pwsh
   name: 'coding-tool-pwsh'
@@ -342,6 +349,8 @@
 
 - id: tool-jobs
   name: 'coding-tool-jobs'
+  config:
+    vocabulary: write_stdin
 
 # ── edits and planning ──────────────────────────────────────────────────────
 
@@ -359,11 +368,12 @@
 
 # ── web search ──────────────────────────────────────────────────────────────
 
-# Codex exposes hosted `web_search`; page fetching is not part of its catalog.
+# Codex's hosted `web_search` searches and opens pages server-side; a client-side
+# provider cannot, so this preset keeps the whole web family (`web_search` plus
+# `web_fetch`) instead of search alone.
 - id: tool-web
   name: 'coding-tool-web'
   config:
-    fetch: false
     searchTimeoutMs: 60000
 
 # ── compaction ──────────────────────────────────────────────────────────────

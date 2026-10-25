@@ -645,9 +645,12 @@ const TOOL_PACKAGES: ToolPackage[] = [
     async mount(ctx) {
       await ctx.plugin(LocalJobRegistry)
       await ctx.plugin(ToolTasks)
+      // The `write_stdin` vocabulary is the second model-facing face of the same
+      // registry; harvesting it here keeps one catalog row for the package.
+      await ctx.plugin(ToolTasks, { vocabulary: 'write_stdin' })
     },
     note:
-      'The kind-agnostic background-job controller: background bash commands, PTY sends, and subagents are read, listed, and killed through the same three tools. Loading the plugin attaches the controller that arms producers\' `ctx.jobs.start()`.',
+      'The kind-agnostic background-job controller: background bash commands, PTY sends, and subagents are read, listed, and killed through the same three tools. Loading the plugin attaches the controller that arms producers\' `ctx.jobs.start()`. The `vocabulary: write_stdin` config swaps that face for Codex\'s single session controller: it reads the output produced since the previous read, waits up to `yield_time_ms`, and interrupts with `\\u0003` (Ctrl-C); background commands have no stdin channel, so any other input is rejected.',
   },
   {
     pkg: 'coding-experimental-tool-agent-team',

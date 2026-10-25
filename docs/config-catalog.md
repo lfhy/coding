@@ -2667,10 +2667,19 @@ export interface Config {
   toolName?: string
   /** Expose `run_in_background` (default true); disabled calls are also rejected. */
   enableRunInBackground?: boolean
+  /** Tools that read and stop a background session (default `jobs`, i.e. `job_output`/`job_kill`). */
+  backgroundSessionTools?: BackgroundSessionTools
 }
+
+/**
+ * 后台会话由哪组工具收尾。`jobs` 是默认的 `job_output`/`job_kill` 组合；
+ * `write_stdin` 表示同一个部署装的是 Codex 风格的单会话控制器，因此背景提示必须
+ * 指向它才不会让模型去找不存在的 job 工具。
+ */
+export type BackgroundSessionTools = 'jobs' | 'write_stdin'
 ```
 
-Source: [`packages/shell/tool-bash/src/index.ts:40`](../packages/shell/tool-bash/src/index.ts)
+Source: [`packages/shell/tool-bash/src/index.ts:47`](../packages/shell/tool-bash/src/index.ts)
 
 <a id="coding-tool-bash-persistent"></a>
 
@@ -2789,6 +2798,12 @@ export interface Config {
    * completion wakes it again.
    */
   maxConsecutiveWakes?: number
+  /**
+   * 模型可见的控制词汇。`jobs`（默认）注册 `job_output`、`job_list`、`job_kill`；
+   * `write_stdin` 改装 Codex 风格的单会话控制器：读输出、等待、用 Ctrl-C 打断。
+   * 两种词汇共用同一个注册表、控制器与完成通知。
+   */
+  vocabulary?: 'jobs' | 'write_stdin'
 }
 
 /**

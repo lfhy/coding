@@ -176,6 +176,72 @@ describe('tool-jobs setup', () => {
   })
 })
 
+describe('write_stdin vocabulary', () => {
+  it('registers the single session controller instead of the job controls', async () => {
+    const { ctx } = await setup({ vocabulary: 'write_stdin' })
+    expect(ctx.tools.get('write_stdin')).toBeDefined()
+    for (const legacy of ['job_output', 'job_list', 'job_kill']) {
+      expect(ctx.tools.get(legacy)).toBeUndefined()
+    }
+    const parameters = ctx.tools.get('write_stdin')?.parameters as {
+      properties?: Record<string, unknown>
+      required?: string[]
+    }
+    expect(Object.keys(parameters.properties ?? {})).toEqual(['session_id', 'chars', 'yield_time_ms'])
+    expect(parameters.required).toEqual(['session_id'])
+    // 跨调用提示同样改用会话词汇，避免模型回头找 job_output。
+    expect(ctx.tools.get('write_stdin')?.description).toContain('`[status: ...]`')
+  })
+
+  it('polls a running session and reports only new output', async () => {
+    const { ctx } = await setup({ vocabulary: 'write_stdin' })
+    const chunks = ['first line\n', '']
+    ctx.jobs.start(producer({ readOutput: () => chunks.shift() ?? '' }).spec)
+
+    expect(text(await call(ctx, 'write_stdin', { session_id: 'bash-1', yield_time_ms: 1 })))
+      .toBe('first line\n[status: running]')
+    expect(text(await call(ctx, 'write_stdin', { session_id: 'bash-1', yield_time_ms: 1 })))
+      .toBe('(no new output)\n[status: running]')
+  })
+
+  it('interrupts the session on Ctrl-C and reports the settled status', async () => {
+    const { ctx } = await setup({ vocabulary: 'write_stdin' })
+    const p = producer({ readOutput: () => 'still here\n' })
+    ctx.jobs.start(p.spec)
+
+    const interrupted = await call(ctx, 'write_stdin', { session_id: 'bash-1', chars: '\u0003', yield_time_ms: 1 })
+    expect(p.cancels).toEqual(['ctrl-c'])
+    expect(text(interrupted)).toBe('still here\n[status: stopping]')
+
+    p.settle({ status: 'killed' })
+    await tick()
+    expect(text(await call(ctx, 'write_stdin', { session_id: 'bash-1', yield_time_ms: 1 })))
+      .toContain('[status: killed]')
+  })
+
+  it('accepts the literal \\u0003 escape as Ctrl-C too', async () => {
+    const { ctx } = await setup({ vocabulary: 'write_stdin' })
+    const p = producer({ readOutput: () => '' })
+    ctx.jobs.start(p.spec)
+    await call(ctx, 'write_stdin', { session_id: 'bash-1', chars: '\\u0003', yield_time_ms: 1 })
+    expect(p.cancels).toEqual(['ctrl-c'])
+  })
+
+  it('rejects plain stdin writes because background commands have no stdin channel', async () => {
+    const { ctx } = await setup({ vocabulary: 'write_stdin' })
+    ctx.jobs.start(producer().spec)
+    const result = await call(ctx, 'write_stdin', { session_id: 'bash-1', chars: 'y\n' })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('stdin channel')
+  })
+
+  it('rejects an unknown session id', async () => {
+    const { ctx } = await setup({ vocabulary: 'write_stdin' })
+    const result = await call(ctx, 'write_stdin', { session_id: 'nope-1', yield_time_ms: 1 })
+    expect(result.isError).toBe(true)
+  })
+})
+
 describe('job_output', () => {
   it('reads a consuming delta with a trailing status line', async () => {
     const { ctx } = await setup()

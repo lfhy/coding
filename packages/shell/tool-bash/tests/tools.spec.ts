@@ -224,6 +224,29 @@ function sandboxAgent(
   } as unknown as Agent
 }
 
+describe('exec_command vocabulary', () => {
+  it('renames the shell tool and points background sessions at write_stdin', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(LocalSubprocessRuntime)
+    await ctx.plugin(BashEnvPlugin)
+    await ctx.plugin(LocalBashExecutor, { timeoutMs: 10_000, graceMs: 200 })
+    await ctx.plugin(ToolBash, { toolName: 'exec_command', backgroundSessionTools: 'write_stdin' })
+
+    const tool = ctx.tools.get('exec_command')
+    expect(tool).toBeDefined()
+    expect(ctx.tools.get('bash')).toBeUndefined()
+    // 背景提示与收集工具必须同名：模型只会看到 write_stdin，不会有 job_output。
+    expect(tool?.description).toContain('`write_stdin`')
+    expect(tool?.description).not.toContain('job_output')
+    const parameters = tool?.parameters as { properties?: Record<string, { description?: string }> }
+    expect(parameters.properties?.run_in_background?.description).toContain('write_stdin')
+    expect(parameters.properties?.run_in_background?.description).not.toContain('job_output')
+  })
+})
+
 describe('bash tool', () => {
   it('returns stdout for a successful command', async () => {
     const ctx = await setup()

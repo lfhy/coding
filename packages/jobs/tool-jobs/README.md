@@ -10,6 +10,10 @@
 
 三个工具都使用通用 UI 卡片：output 和 list 使用 `read`，kill 使用 `execute`。
 
+`vocabulary: write_stdin` 把同一注册表的模型可见面换成 Codex 风格的单个会话控制器：
+
+- `write_stdin(session_id, chars?, yield_time_ms?)` 读取自上次读取以来产生的新输出，等待最多 `yield_time_ms`（默认用 `waitTimeoutMs`，上限 `maxWaitTimeoutMs`）。`chars` 为空表示只轮询；`\u0003`（Ctrl-C）请求打断会话；其余输入被拒绝，因为后台命令没有 stdin 通道。结果与 `job_output` 同构，同样以 `[status: ...]` 结尾。
+
 它们的规范值依次为 `{ text, job }`、`PublicJobSnapshot[]` 和 `{ outcome: 'cancellation-requested' | 'already-finished', job }`。公共快照携带 id、kind、label、status/detail 及开始／结束时间；它有意省略 `ownerSession` 和内部 `reported` 通知位。原生 renderer 保留上述状态与确认文本。
 
 当生产方提供 `outputLimitBytes` 时，`job_output`、针对已终止任务的 `job_kill` 和完成通知会在添加状态或通知文本后，对完整的原生 UTF-8 结果施加上限。只要能够容纳，读取就会保留输出尾部与控制后缀；有界完成通知则先为 `background job <id>` 和 `job_output` 收集指令预留空间，再把剩余字节用于可变的 kind、label、status、detail 与截断标记。一个前置 pre-execute 监听器会在策略运行前捕获调用方可见任务；每个任务控制定义的 final-content 回调会把其生产方上限应用到单文本拒绝、短路、规范化工具或流水线失败、替换和阻止；结构化多块策略结果保持自身形状。已有的生产方截断标记会复用，不会重复添加。省略该字段的生产方保留现有的无界控制器行为。
@@ -32,6 +36,7 @@
 | `maxWaitTimeoutMs` | `600000` | 模型所给等待时间的上限 |
 | `completionDelivery` | `wakeup` | `wakeup` 为空闲所有者开启一轮；`quiet` 让通知继续待领 |
 | `maxConsecutiveWakes` | `3` | 一个所有者可由唤醒开启的轮数，超出后通知降级为注入 |
+| `vocabulary` | `jobs` | `jobs` 注册 `job_output`/`job_list`/`job_kill`；`write_stdin` 改装单个 Codex 风格会话控制器 |
 
 默认值高于上限时，插件会在加载时失败。
 
@@ -49,6 +54,12 @@
 Track every background job id you start. You are notified in-session when a job finishes — do not busy-poll or sleep on one; keep working on independent steps and do not duplicate a running job's work. Before giving a final answer, collect every still-relevant job with job_output (set wait: true only when you are genuinely blocked on it), and job_kill jobs that stopped mattering.
 ```
 
+##### 后台会话指引（`vocabulary: write_stdin`）
+
+```markdown
+Track every background session id you start. You are notified in-session when a background command finishes — do not busy-poll or sleep on one; keep working on independent steps and do not duplicate a running session's work. Before giving a final answer, collect every still-relevant session with write_stdin (a longer yield_time_ms only when you are genuinely blocked on it), and send Ctrl-C (`\u0003`) to sessions that stopped mattering.
+```
+
 #### Token 影响
 
 激活期间，每次请求都会产生少量固定的输入 token 开销。
@@ -61,7 +72,7 @@ Track every background job id you start. You are notified in-session when a job 
 
 #### 模型看到的内容
 
-该工具集可见时，会看到生成的 [`job_output`、`job_list` 和 `job_kill` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-jobs)。
+该工具集可见时，会看到生成的 [`job_output`、`job_list`、`job_kill` 与 `write_stdin` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-jobs)；`write_stdin` 只在 `vocabulary: write_stdin` 的部署里出现。
 
 #### Token 影响
 

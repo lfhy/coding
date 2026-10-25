@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import { boot, healProfilesModuleFallback, loadOverlayPatches } from 'coding-app-boot'
 import { provideCmdline } from 'coding-cmdline'
+import { CallId } from 'coding-llm'
 import { SessionId } from 'coding-session'
 import type { Agent } from 'coding-agent'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -64,14 +65,30 @@ function toolNames(agent: Agent): string[] {
   return ctx.tools.schemas(agent).map(schema => schema.name).sort()
 }
 
+/** 结果内容就是模型读到的那段文本。 */
+function text(result: { content: { type: string; text?: string }[] }): string {
+  return result.content.filter(block => block.type === 'text').map(block => block.text).join('')
+}
+
+let calls = 0
+function call(agent: Agent, name: string, args: unknown) {
+  return ctx.tools.execute({
+    signal: new AbortController().signal,
+    callId: CallId(`codex-${name}-${++calls}`),
+    name,
+    arguments: args,
+    agent,
+  })
+}
+
 describe('the shipped Codex preset', () => {
   it('exposes exactly the Codex tool surface', async () => {
     const codex = await mountCodex()
     try {
-      // Codex 的工具面本身。
+      // Codex 的工具面本身：shell 是 exec_command + write_stdin，联网是 search + fetch。
       expect(toolNames(codex.agent)).toEqual(expect.arrayContaining([
         'apply_patch',
-        'bash',
+        'exec_command',
         'followup_task',
         'interrupt_agent',
         'list_agents',
@@ -79,21 +96,45 @@ describe('the shipped Codex preset', () => {
         'spawn_agent',
         'update_plan',
         'wait_agent',
+        'web_fetch',
         'web_search',
+        'write_stdin',
       ]))
-      // 背景命令控制与宿主半的跨模式工具（记忆、GenUI、子级模型目录）不属于预设。
+      // 宿主半的跨模式工具（记忆、GenUI、子级模型目录）不属于预设。
       expect(toolNames(codex.agent)).toEqual(expect.arrayContaining([
-        'job_kill', 'job_list', 'job_output', 'list_subagent_models',
+        'list_subagent_models',
         'memory_delete', 'memory_list', 'memory_read', 'memory_save', 'memory_update',
         'render_ui', 'validate_dsh_ui',
       ]))
       // 这些工具在标准模式里存在，Codex 模式不再暴露它们。
       expect(toolNames(codex.agent)).toEqual(expect.not.arrayContaining([
+        'bash', 'job_kill', 'job_list', 'job_output',
         'read', 'write', 'edit', 'read_image', 'glob', 'grep',
         'skill', 'subagent_fork', 'workflow', 'ralph',
         'get_goal', 'create_goal', 'update_goal', 'exit_plan_mode', 'ask_user_question',
-        'todo_write', 'web_fetch',
+        'todo_write',
       ]))
+    } finally {
+      await codex.dispose()
+    }
+  }, 30_000)
+
+  it('runs a background command through exec_command and collects it with write_stdin', async () => {
+    const codex = await mountCodex()
+    try {
+      const started = await call(codex.agent, 'exec_command', {
+        command: 'sleep 0.2; echo background-done',
+        description: 'Run the smoke command in the background',
+        run_in_background: true,
+      })
+      expect(started.isError).toBe(false)
+      const sessionId = (started.value as { jobId?: string }).jobId
+      expect(sessionId).toBeTruthy()
+
+      const collected = await call(codex.agent, 'write_stdin', { session_id: sessionId, yield_time_ms: 5_000 })
+      expect(collected.isError).toBe(false)
+      expect(text(collected)).toContain('background-done')
+      expect(text(collected)).toContain('[status: completed, exit code: 0]')
     } finally {
       await codex.dispose()
     }

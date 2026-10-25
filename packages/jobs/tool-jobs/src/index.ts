@@ -43,6 +43,12 @@ export interface Config {
    * completion wakes it again.
    */
   maxConsecutiveWakes?: number
+  /**
+   * 模型可见的控制词汇。`jobs`（默认）注册 `job_output`、`job_list`、`job_kill`；
+   * `write_stdin` 改装 Codex 风格的单会话控制器：读输出、等待、用 Ctrl-C 打断。
+   * 两种词汇共用同一个注册表、控制器与完成通知。
+   */
+  vocabulary?: 'jobs' | 'write_stdin'
 }
 
 export const Config: z<Config> = z.object({
@@ -50,6 +56,7 @@ export const Config: z<Config> = z.object({
   maxWaitTimeoutMs: z.number().min(1).default(600_000),
   completionDelivery: z.union(['quiet', 'wakeup'] as const).default('wakeup'),
   maxConsecutiveWakes: z.number().min(1).default(3),
+  vocabulary: z.union(['jobs', 'write_stdin'] as const).default('jobs'),
 })
 
 /** Task state safe for model-authored programs; ownership/bookkeeping fields are omitted. */
@@ -202,11 +209,28 @@ function presentTaskCall(title: string, kind: 'read' | 'execute', rawInput?: str
   return { card: 'generic', title, kind, ...rawInput !== undefined ? { rawInput } : {} }
 }
 
+/**
+ * Render one job read: the output since the previous read (or a marker) plus the
+ * bracketed status line both read tools append.
+ * @param _args - validated arguments; unused by this projection.
+ * @param value - canonical read value.
+ * @returns one text block.
+ */
+function renderJobRead(
+  _args: unknown,
+  value: { text: string; job: PublicJobSnapshot },
+): ContentBlock[] {
+  const body = value.text.length > 0 ? value.text : '(no new output)'
+  const separator = body.endsWith('\n') ? '' : '\n'
+  return [{ type: 'text', text: `${body}${separator}${statusLine(value.job)}` }]
+}
+
 export function apply(ctx: Context, config: Config): void {
   const waitDefault = config.waitTimeoutMs ?? 30_000
   const waitCap = config.maxWaitTimeoutMs ?? 600_000
   const delivery = config.completionDelivery ?? 'wakeup'
   const wakeBudget = config.maxConsecutiveWakes ?? 3
+  const vocabulary = config.vocabulary ?? 'jobs'
 
   // Turns this plugin opened on each owner since that owner last consumed
   // human input. Keyed by the exact Agent, so a same-session replacement
@@ -239,7 +263,7 @@ export function apply(ctx: Context, config: Config): void {
     const maxBytes = outputLimits.get(exec) ?? visibleOutputLimit(ctx, exec)
     outputLimits.delete(exec)
     if (maxBytes === undefined) return undefined
-    if (exec.name === 'job_output' && !result.isError) {
+    if ((exec.name === 'job_output' || exec.name === 'write_stdin') && !result.isError) {
       // This definition owns and schema-validates the canonical value. Preserve
       // its output/status split only while policy left the default rendering intact.
       const value = result.value as unknown as { text: string; job: PublicJobSnapshot }
@@ -261,9 +285,12 @@ export function apply(ctx: Context, config: Config): void {
 
   // Cross-call guidance follows the bash section and precedes product sections.
   ctx.systemPrompt.section({
-    name: 'tool:jobs',
+    // 词汇不同即不同提示段：同一 scope 里同时装载两种词汇时各自独立，且段名与工具面一致。
+    name: vocabulary === 'write_stdin' ? 'tool:write_stdin' : 'tool:jobs',
     order: 106,
-    text: 'Track every background job id you start. You are notified in-session when a job finishes — do not busy-poll or sleep on one; keep working on independent steps and do not duplicate a running job\'s work. Before giving a final answer, collect every still-relevant job with job_output (set wait: true only when you are genuinely blocked on it), and job_kill jobs that stopped mattering.',
+    text: vocabulary === 'write_stdin'
+      ? 'Track every background session id you start. You are notified in-session when a background command finishes — do not busy-poll or sleep on one; keep working on independent steps and do not duplicate a running session\'s work. Before giving a final answer, collect every still-relevant session with write_stdin (a longer yield_time_ms only when you are genuinely blocked on it), and send Ctrl-C (`\\u0003`) to sessions that stopped mattering.'
+      : 'Track every background job id you start. You are notified in-session when a job finishes — do not busy-poll or sleep on one; keep working on independent steps and do not duplicate a running job\'s work. Before giving a final answer, collect every still-relevant job with job_output (set wait: true only when you are genuinely blocked on it), and job_kill jobs that stopped mattering.',
   })
 
   // Use the exact lifecycle owner; reusable ids could resolve to a replacement.
@@ -299,6 +326,50 @@ export function apply(ctx: Context, config: Config): void {
     owner.inject(message)
   })
 
+  if (vocabulary === 'write_stdin') {
+    // Codex 词汇：一个会话控制器同时负责读输出、等待和打断。后台命令没有 stdin 通道，
+    // 因此只有 Ctrl-C 是可写的输入；其余字符明确拒绝，避免模型以为输入已经送达进程。
+    ctx.tools.register(defineTool({
+      name: 'write_stdin',
+      description: 'Read the output of a background session, wait for more, and interrupt it. '
+        + 'An empty `chars` polls without writing; `\\u0003` (Ctrl-C) interrupts the session; any other input '
+        + 'is rejected because background commands run without a stdin channel. Every response ends with '
+        + '`[status: ...]` and carries only output produced since the previous read.',
+      parameters: {
+        session_id: { type: 'string', required: true, description: 'Background session id returned when the session started (the `jobId` field).' },
+        chars: { type: 'string', description: 'Characters to write. Empty polls without writing; `\\u0003` (Ctrl-C) interrupts the session.' },
+        yield_time_ms: { type: 'number', description: `How long to wait for output before returning. Defaults to ${waitDefault} ms and is capped at ${waitCap} ms.` },
+      },
+      finalizeContent: finalizeTaskContent,
+      // A timed-out wait returns session state rather than a TOOL_TIMEOUT error, so this tool owns its deadline.
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            text: { type: 'string', required: true },
+            job: { ...PUBLIC_TASK_SCHEMA, required: true },
+          },
+        },
+        render: renderJobRead,
+      },
+      async execute(args, exec) {
+        const id = validateJobId(args.session_id)
+        const chars = args.chars ?? ''
+        // 模型可能发真正的控制字符，也可能发字面量 \u0003；两者都按 Ctrl-C 处理。
+        if (chars.includes('\u0003') || chars.includes('\\u0003')) ctx.jobs.kill(id, exec.agent, 'ctrl-c')
+        else if (chars.length > 0) {
+          throw new Error(`write_stdin cannot forward input to ${id}: background commands run without a stdin channel; send Ctrl-C (\\u0003) to interrupt one.`)
+        }
+        await ctx.jobs.wait(id, Math.min(args.yield_time_ms ?? waitDefault, waitCap), exec.agent, exec.signal)
+        const read = ctx.jobs.read(id, exec.agent)
+        return { text: read.text, job: publicJob(read.snapshot) }
+      },
+      presentCall: args => presentTaskCall(`Read output from background session ${args.session_id}`, 'read', args.session_id),
+    }))
+    return
+  }
+
   ctx.tools.register(defineTool({
     name: 'job_output',
     description: 'Read a background job. Stream jobs return only output since the previous read; '
@@ -321,11 +392,7 @@ export function apply(ctx: Context, config: Config): void {
           job: { ...PUBLIC_TASK_SCHEMA, required: true },
         },
       },
-      render: (_args, value) => {
-        const body = value.text.length > 0 ? value.text : '(no new output)'
-        const separator = body.endsWith('\n') ? '' : '\n'
-        return [{ type: 'text', text: `${body}${separator}${statusLine(value.job)}` }]
-      },
+      render: renderJobRead,
     },
     async execute(args, exec) {
       const id = validateJobId(args.job_id)

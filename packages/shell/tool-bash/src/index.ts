@@ -36,18 +36,28 @@ import { parseExitStatus, renderProcessRead, renderResult } from './render.ts'
 export const name = 'tool-bash'
 export const inject = ['tools', 'shell', 'systemPrompt', 'shellEnv']
 
+/**
+ * 后台会话由哪组工具收尾。`jobs` 是默认的 `job_output`/`job_kill` 组合；
+ * `write_stdin` 表示同一个部署装的是 Codex 风格的单会话控制器，因此背景提示必须
+ * 指向它才不会让模型去找不存在的 job 工具。
+ */
+export type BackgroundSessionTools = 'jobs' | 'write_stdin'
+
 /** Configuration for the bash tool. */
 export interface Config {
   /** Model-facing tool name (default `bash`). */
   toolName?: string
   /** Expose `run_in_background` (default true); disabled calls are also rejected. */
   enableRunInBackground?: boolean
+  /** Tools that read and stop a background session (default `jobs`, i.e. `job_output`/`job_kill`). */
+  backgroundSessionTools?: BackgroundSessionTools
 }
 
 /** Runtime configuration schema for the bash tool plugin. */
 export const Config: z<Config> = z.object({
   toolName: z.string().default('bash'),
   enableRunInBackground: z.boolean().default(true),
+  backgroundSessionTools: z.union(['jobs', 'write_stdin'] as const).default('jobs'),
 })
 
 /** Parsed tool args; execute validates value constraints absent from ParameterSchemaSpec. */
@@ -74,10 +84,16 @@ function validateBashArgs(args: BashToolArgs, effectiveMode?: SandboxMode): void
   validateEscalationArgs(args.sandbox_permissions, args.justification, effectiveMode)
 }
 
-function bashDescription(backgroundEnabled: boolean, escalationModes: readonly SandboxMode[]): string {
-  const background = backgroundEnabled
-    ? 'Set `run_in_background: true` for long-running commands: the call returns a job id immediately; read its output with `job_output` and stop it with `job_kill`.'
-    : 'Background execution is not available; long-running commands must finish within the timeout.'
+function bashDescription(
+  backgroundEnabled: boolean,
+  backgroundTools: BackgroundSessionTools,
+  escalationModes: readonly SandboxMode[],
+): string {
+  const background = !backgroundEnabled
+    ? 'Background execution is not available; long-running commands must finish within the timeout.'
+    : backgroundTools === 'write_stdin'
+      ? 'Set `run_in_background: true` for long-running commands: the call returns a session id immediately; read its output, wait on it, or interrupt it with `write_stdin`.'
+      : 'Set `run_in_background: true` for long-running commands: the call returns a job id immediately; read its output with `job_output` and stop it with `job_kill`.'
   const base = 'Execute a bash command (`bash -c`) and return its stdout/stderr. '
     + 'Each call runs in a fresh shell: no state (cwd, variables, functions) persists between calls — '
     + 'pass `workdir` instead of using `cd`. Non-zero exits are reported as `[exit code: N]`. '
@@ -209,6 +225,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   const toolName = config.toolName ?? 'bash'
   if (toolName.trim().length === 0) throw new Error('tool-bash: toolName must be non-empty')
   const backgroundEnabled = config.enableRunInBackground ?? true
+  const backgroundSessionTools: BackgroundSessionTools = config.backgroundSessionTools ?? 'jobs'
   const defaultMode = ctx.shell.sandboxMode
   const escalationModes: readonly SandboxMode[] = defaultMode === undefined ? [] : ESCALATION_TARGETS
   const sandboxPolicy: SandboxPolicyService | undefined = defaultMode === undefined ? undefined : ctx.get('sandboxPolicy')
@@ -257,7 +274,7 @@ export function apply(ctx: Context, config: Config = {}): void {
 
   ctx.tools.register(defineTool({
     name: toolName,
-    description: bashDescription(backgroundEnabled, escalationModes),
+    description: bashDescription(backgroundEnabled, backgroundSessionTools, escalationModes),
     parameters: {
       command: { type: 'string', required: true, description: 'The bash command to execute.' },
       description: {
@@ -270,7 +287,12 @@ export function apply(ctx: Context, config: Config = {}): void {
       timeoutMs: { type: 'number', description: 'Timeout in milliseconds. The executor applies its configured default and cap, and kills the command on expiry.' },
       workdir: { type: 'string', description: 'Working directory for this command. Defaults to the session workspace; a relative path is resolved against it.' },
       ...backgroundEnabled ? {
-        run_in_background: { type: 'boolean' as const, description: 'Run in the background and return a job id immediately (collect with job_output, stop with job_kill). No timeout applies.' },
+        run_in_background: {
+          type: 'boolean' as const,
+          description: backgroundSessionTools === 'write_stdin'
+            ? 'Run in the background and return a session id immediately (read, wait on, or interrupt it with write_stdin). No timeout applies.'
+            : 'Run in the background and return a job id immediately (collect with job_output, stop with job_kill). No timeout applies.',
+        },
       } : {},
       ...escalationModes.length > 0 ? {
         sandbox_permissions: {
