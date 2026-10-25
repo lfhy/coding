@@ -39,6 +39,16 @@ Coding 是面向个人开发的开源 AI 编程桌面客户端。它将模型对
 
 自有规范也能接入：将技能放入项目的 `.agents/skills/<name>/SKILL.md`，或数据主目录的 `skills/<name>/SKILL.md`，即可由本地技能发现机制读取。格式、发现范围与优先级见[本地 Skills 说明](packages/skill/skill-filesystem/README.md)。本仓库还随源码提供 [Go 项目约定](.agents/skills/go-project-conventions/SKILL.md)、[CLI 配置](.agents/skills/go-cli-config/SKILL.md)、[数据库](.agents/skills/go-database/SKILL.md)与[质量检查](.agents/skills/go-quality/SKILL.md)等项目级技能，供在本仓库开发时使用；它们不属于安装版面向所有项目的内置技能。
 
+## 逆向分析模式：只在需要时接入 REA
+
+在会话的模式选择里切到「逆向分析模式」后，这个会话才获得 [REA（Reverse Engineer Anything）](https://github.com/morluto/rea) 提供的 `mcp__rea__*` 工具：原生二进制的反汇编与反编译、安装包与固件拆解、JavaScript／Electron 与 Android 分析、版本对比、崩溃记录与运行时观测。其它模式不注册这些工具，也不为本模式以外的会话启动该服务。
+
+该模式随附一组按需加载的逆向调查技能，与模式目录一起分发：`reverse-engineering`（授权边界、调查计划与证据台账）、`rea-tool-workflow`（工具路由、证据分页、引擎缺失时的恢复路径），以及按目标类型划分的 `feature-tracing`、`native-binary-analysis`、`javascript-electron-analysis`、`android-apk-analysis`、`firmware-embedded-analysis`、`kernel-driver-analysis`、`vulnerability-research`、`protection-research`、`clean-room-cloning`、`game-analysis` 与 `version-comparison`。
+
+使用前提：本机有 Node.js 与 npm，且版本满足 REA 的要求（Node 22.23.4+、24.22.1+ 或 26.12.1+）；首次切入该模式时 `npx` 会下载固定版本的 `rea-agents` 包，需要联网。原生分析使用本机已安装的 Hopper、Ghidra 或 IDA，Android 分析需要自备 JADX 与 Java，纯静态的 JavaScript／Electron 分析不需要引擎。引擎缺失时只有依赖它的调用失败，Agent 会按技能里的恢复路径诊断，其余工具照常可用。
+
+这个模式的适用边界是授权：只分析你自己拥有、或你明确获授权测试的软件。来源归属见[模式来源说明](apps/cli/config/agent-presets/reverse/NOTICE.md)，操作与排错见[界面指南](docs/user/guide/index.md#逆向分析模式)。
+
 ## 快速开始：桌面应用
 
 在 macOS arm64 的原生终端中构建并打开应用。若系统缺少 Git 或 `make`，先运行 `xcode-select --install` 并完成 Xcode 命令行工具安装。

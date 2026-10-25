@@ -47,6 +47,12 @@
 - **技术与边界**：输入和视图通过 slot/领域注册表组合，持久事件仍由 Session/Host 拥有；工具卡片、轨迹、命令 UI 不往 runtime 增加中央事件 switch。参见 [ui-conversation](../../packages/client/ui-conversation/README.md)、[ui-commands](../../packages/client/ui-commands/README.md) 与 [ui-trajectory](../../packages/client/ui-trajectory/README.md)。
 - **连带与验证**：改变输入提交要核对 `packages/client/runtime` 的 Session 与 Host RPC；改变持久 Chat 行须更新 `ConversationNodeDefinition` 和 keyed renderer；改模型可见内容还要核对 session 事件与 snapshot。定向运行 `pnpm exec vitest run packages/client/ui-conversation/tests packages/client/ui-commands/tests packages/client/ui-input-trigger/tests packages/client/ui-tool/tests packages/client/ui-trajectory/tests`，可见输出再跑 keyless `DSH_SNAPSHOT=replay pnpm run test:web`。
 
+## 模式与预设分发（agent preset）
+
+- **路线**：随包模式是 `apps/cli/config/agent-presets/<id>/` 下的一个目录（`agent.cordis.yml`、`preset.yml`，可选 `skills/`），由 `apps/cli/src/profile-boot.ts` 作为 `agent-presets` 行的 `roots` 注入；`packages/preset/agent-presets` 负责发现、常驻挂载与按会话切换，模式名与描述的本地化在 `packages/client/ui-agent-preset/src/client/locales.ts`。`reverse` 模式另在组装里挂 `coding-mcp-client`（`npx -y rea-agents@<version> mcp`）与自带的 `skills/` 目录。
+- **技术与边界**：预设只贡献「一个会话向宿主注册表添加什么」，发布服务的行必须落进 `isolate` realm，否则挂载被拒。MCP 服务器挂在 preset 平面，`mcp__rea__*` 工具因此只对命名该预设的会话可见；宿主组合与其它预设都不挂它。预设自带的技能目录经 `skill-filesystem` 的 `customSkillDirs` 发现，路径由 `baseUrl` 解析，随目录一起复制与安装。
+- **连带与验证**：新增或改动模式要同步 `preset.yml` 元信息、客户端 locale 键（`preset<Id>Name`/`preset<Id>Description` 与 `BUILT_IN_PRESET_KEYS`）、`apps/cli/tests/web-agent-presets.e2e.ts` 的预设名单，以及 `python/sdk-runtime/package.json`——`verify-runtime-closure` 要求组装里出现的每个插件包都已在运行时依赖中。改 `reverse` 时还要保持技能目录、`NOTICE.md` 的来源说明与 `apps/cli/tests/reverse-preset.spec.ts` 的清单一致，改 `agent.cordis.yml` 中钉住的 REA 版本时同步 `rea-tool-workflow` 技能的工具路由。定向运行 `pnpm exec vitest run apps/cli/tests/reverse-preset.spec.ts packages/client/ui-agent-preset/tests` 与 `pnpm run verify-cordis-config`。
+
 ## packages/core/agent
 
 - **拥有**：`Agent` handle 接口、活跃 agent 注册表 `AgentRegistry`（ctx 键 `agents`）、进程内 initiator 作用域（`withInitiator`/`requireInitiator`）、`agent/*` 实时事件词汇，以及经 `setFactory` 暴露的 `create`/`resume` 创建 API。

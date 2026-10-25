@@ -1,0 +1,253 @@
+# `reverse` agent preset：逆向分析模式。
+#
+# 它是标准模式的工具面，加上两层本模式独有的能力：
+#
+# 1. REA（Reverse Engineer Anything）以 `coding-mcp-client` 行挂成 `mcp__rea__*` 工具，
+#    提供反汇编／反编译、包与固件拆解、JavaScript／Electron 与运行时观测。
+#    这些工具只在本 preset 的组装里注册，因此只有命名了 `reverse` 的会话看得到它们；
+#    其他模式的目录不受影响。
+# 2. `skills/` 目录随 preset 一同分发，由 `skill-filesystem` 的 `customSkillDirs` 发现，
+#    承载逆向调查的方法与证据要求。
+#
+# 这是 AGENT-PLANE 组装：宿主组合（`base.cordis.yml` + `web.cordis.yml`）持有工具与技能
+# 注册表、沙箱与审批栈、持久化、模型路由以及 MCP 消费的 subprocess 能力；本文件只贡献
+# 一个会话向这些注册表添加的行。发布服务的行必须放进带 `isolate` realm 的 group，否则会
+# 落到根 realm，`coding-agent-presets` 在挂载时拒绝；`tool-bash`、`tool-fs`、`coding-mcp-client`
+# 一类只注册工具、不发布服务的行不需要 realm。
+
+# ── 身份 ────────────────────────────────────────────────────────────────────
+
+- id: persona
+  name: 'coding-persona'
+  config:
+    text: |-
+      你运行在 {{model}} 模型上，当前工作目录是 {{cwd}}，这是一个逆向分析会话：目标通常是已发布的二进制、安装包、固件或正在运行的程序，而不是可读的源码。
+
+      只分析用户自己拥有、或用户明确说明已获授权测试的软件。目标超出这个范围时，先停下来说清你需要什么授权与范围，不要自行扩大目标、不要把结论用于绕过未获授权的保护措施。发现漏洞时报告影响与复现证据，不写武器化载荷。
+
+      REA 引擎以 `mcp__rea__*` 工具提供分析能力。它的工具名、参数和可用 provider 以本次会话实际注册的列表为准；引擎缺失、provider 不可用或调用被拒绝时，按 `rea-tool-workflow` 技能里的恢复路径定位原因，不要重复执行同一个失败调用。
+
+      每个结论都要区分已确认的事实、推断和未知，并给出证据：函数名与地址、文件与偏移、字符串、类与方法、抓包记录或运行时观测。静态分析得出的路径不得描述成观察到的执行；没有证据的部分直接写未知。
+
+      开始调查前先加载 `reverse-engineering` 技能确定计划与证据台账，再按目标类型加载对应技能（原生二进制、JavaScript／Electron、Android、固件、内核驱动、漏洞研究、保护措施研究、功能追踪、行为克隆、游戏、版本对比）。需要产出可运行代码时，用常规文件与 Shell 工具写出与原始行为分开的复现程序与测试。
+
+- id: agent-instructions
+  name: 'coding-agent-instructions'
+  config:
+    maxBytes: 65536
+
+# ── shell ───────────────────────────────────────────────────────────────────
+
+# 两个 shell 工具消费宿主的执行器；REA 的 CLI 回退路径（`npx -y rea-agents@latest …`）
+# 也走这里，因此本模式必须保留 shell。`shell-env` 留在宿主组合。
+- id: tool-bash
+  name: 'coding-tool-bash'
+  disabled: !!js process.platform === 'win32'
+
+- id: tool-pwsh
+  name: 'coding-tool-pwsh'
+  disabled: !!js process.platform !== 'win32'
+
+# ── 文件系统 ────────────────────────────────────────────────────────────────
+
+- id: tool-fs
+  name: 'coding-tool-fs'
+
+- id: tool-apply-patch
+  name: 'coding-tool-apply-patch'
+
+- id: tool-fs-search
+  name: 'coding-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
+
+# ── 后台任务 ────────────────────────────────────────────────────────────────
+
+- id: tool-jobs
+  name: 'coding-tool-jobs'
+
+# ── 技能 ────────────────────────────────────────────────────────────────────
+
+# `customSkillDirs` 指向 preset 自带的 `skills/`：`baseUrl` 是组装文件所在目录，因此这份
+# 技能目录随 preset 一起安装与复制。其余根目录（项目、用户）仍按默认规则发现。
+- id: skill-filesystem
+  name: 'coding-skill-filesystem'
+  config:
+    customSkillDirs:
+      - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"
+
+# 调查网站、Electron 应用和浏览器内行为时仍用本产品自己的浏览器工具。
+- id: skill-browser-use
+  name: 'coding-skill-browser-use'
+
+- id: tool-skill
+  name: 'coding-tool-skill'
+
+# ── 目标 ────────────────────────────────────────────────────────────────────
+
+# 目标服务与注册表在宿主组合，这里只有面向模型的工具。
+- id: tool-goal
+  name: 'coding-tool-goal'
+
+# 计划状态天然按 agent 归属，这里的 realm 就是正确寿命。
+- id: planning
+  name: cordis:group
+  group: true
+  isolate:
+    planMode: true
+  config:
+    - id: plan-mode
+      name: 'coding-plan-mode'
+      config:
+        section: |
+              You are in plan mode. Stay in plan mode until exit_plan_mode succeeds or the user switches the session mode. Imperative language to implement changes means plan the implementation, not execute it. A user's conversational agreement — including an answer confirming something you asked — approves nothing and does not end plan mode; fold the confirmed decision into the plan and submit it through exit_plan_mode.
+
+              Explore first. Use non-mutating reads, searches, static analysis, and checks to ground the plan in the actual repository. Do not edit or write files, change configuration, run formatters or code generation that rewrites tracked files, commit, or otherwise carry out the plan. Prefer existing functions and patterns over new machinery.
+
+              The tool catalog stays the same across modes for request-cache stability. These plan-mode rules override any later tool description or guidance that suggests using mutation tools; those tools remain listed to keep the tool catalog unchanged. Do not use todo_write to track this planning phase: it tracks implementation after an approved plan, while the plan itself belongs in exit_plan_mode.
+
+              Resolve discoverable facts by inspection. Use ask_user_question only for user-owned choices or material ambiguity that inspection cannot answer. Do not ask the user where code lives or how current behavior works when you can find out.
+
+              Make the plan decision-complete: state the goal and success criteria; group implementation changes by subsystem; identify public API, schema, and data-flow changes; cover edge cases, failure modes, tests, acceptance criteria, and explicit assumptions. Keep it concise enough to review but detailed enough that another engineer can implement it without making design decisions.
+
+              When ready, call exit_plan_mode with the complete plan markdown, starting with a # title. Make exit_plan_mode the only and final tool call in that assistant response: it presents the plan for approval, and implementation begins only in a later step after approval. Do not paste the final plan as a plain reply or ask "should I proceed?" through prose or ask_user_question. If review rejects it, incorporate the feedback and present again. If the review channel is unavailable or aborted, stay in plan mode and ask the user to switch modes manually; do not proceed with implementation.
+
+# ── 上下文压缩 ──────────────────────────────────────────────────────────────
+
+# `compaction-basic` 通过 `ctx.get` 读取 `toolResultPrune`，两者必须同 realm。
+# `tokenMeter` 留在宿主平面：它按 Session 记账，并持有浏览器读取的上下文投影单元。
+- id: compaction
+  name: cordis:group
+  group: true
+  isolate:
+    compaction: true
+    toolResultPruner: true
+  config:
+    - id: compaction-basic
+      name: 'coding-compaction-basic'
+
+    - id: command-compact
+      name: 'coding-command-compact'
+
+    - id: tool-result-pruner
+      name: 'coding-compaction-tool-result-pruner'
+      config:
+        thresholdChars: 8192
+        headChars: 4096
+        tailChars: 1024
+
+# ── 委派与工作流 ────────────────────────────────────────────────────────────
+
+# 子代理注册表与 spawn／fork 后端在宿主组合：注册表是进程单例，跨会话查询由 api-proxy 提供。
+# 本 preset 只贡献委派工具；`workflowEngine` 没有外部读取方，因此行内共享一个 entry realm。
+# 逆向调查常按目标子系统拆成互不依赖的子任务，因此保留完整的委派面。
+- id: delegation
+  name: cordis:group
+  group: true
+  isolate:
+    workflowEngine: true
+  config:
+    - id: tool-subagent-control
+      name: 'coding-tool-subagent-control'
+
+    - id: tool-subagent-list-agents
+      name: 'coding-tool-subagent-control/list-agents'
+
+    - id: tool-subagent
+      name: 'coding-tool-subagent'
+      config:
+        provider: spawn
+        toolName: subagent
+        backgroundMode: continuable
+
+    - id: tool-subagent-fork
+      name: 'coding-tool-subagent'
+      config:
+        provider: fork
+        toolName: subagent_fork
+        backgroundMode: continuable
+
+    # 生产安装不包含这两个可选 provider；装好对应 Bundle 后复制本 preset 并去掉 `disabled`。
+    - id: tool-subagent-codex
+      name: 'coding-tool-subagent'
+      disabled: true
+      config:
+        provider: codex
+        toolName: subagent_codex
+        backgroundMode: one-shot
+        maxDepth: provider-managed
+
+    - id: tool-subagent-claude-code
+      name: 'coding-tool-subagent'
+      disabled: true
+      config:
+        provider: claude-code
+        toolName: subagent_claude_code
+        backgroundMode: one-shot
+        maxDepth: provider-managed
+
+    - id: workflow-worker-thread
+      name: 'coding-workflow-worker-thread'
+      config:
+        provider: spawn
+
+    - id: tool-workflow
+      name: 'coding-tool-workflow'
+
+    - id: tool-ralph
+      name: 'coding-tool-ralph'
+      config:
+        subagentProvider: spawn
+        maxRounds: 64
+
+# ── 其余面向模型的行 ────────────────────────────────────────────────────────
+
+- id: tool-ask-user
+  name: 'coding-tool-ask-user'
+
+- id: tool-todo
+  name: 'coding-tool-todo'
+  config:
+    allowParallelInProgress: true
+
+# `web` 服务与搜索提供方在宿主组合；这里只有模型侧工具。
+- id: tool-web
+  name: 'coding-tool-web'
+  config:
+    fetch: false
+    searchTimeoutMs: 60000
+
+- id: tool-browser
+  name: 'coding-tool-browser'
+
+# ── REA MCP 服务器 ──────────────────────────────────────────────────────────
+
+# REA 只在本模式注册工具：这里的行属于 preset 的常驻组装，只有认父到它的会话能看到
+# `mcp__rea__*`。工具名固定为 `mcp__rea__<原始名称>`，重新连接不会改变名称。
+#
+# 版本按 REA 的建议固定在具体版本：本 preset 随附的技能正文按同一版本的工具面编写，
+# 未固定的版本会让正文描述的能力与服务器不一致。升级时改动下面两行的版本号，并核对技能正文。
+#
+# `npx` 首次启动会下载 rea-agents 包；`failOnStartupError: false` 让引擎不可用时本模式
+# 仍然可用（其余工具照常工作，Agent 会按技能里的恢复路径诊断），而不是让整个 preset 挂载失败。
+# 长时间分析（Ghidra 冷启动默认 330 秒）需要远超默认 60 秒的调用超时。
+- id: mcp-rea
+  name: 'coding-mcp-client'
+  disabled: !!js process.platform === 'win32'
+  config:
+    serverName: rea
+    transport: stdio
+    command: npx
+    args: ['-y', 'rea-agents@6.7.0', 'mcp']
+    toolCallTimeoutMs: 900000
+
+# Windows 上 `npx` 是命令垫片，必须经 `cmd.exe` 启动。
+- id: mcp-rea-windows
+  name: 'coding-mcp-client'
+  disabled: !!js process.platform !== 'win32'
+  config:
+    serverName: rea
+    transport: stdio
+    command: cmd.exe
+    args: ['/d', '/c', 'npx', '-y', 'rea-agents@6.7.0', 'mcp']
+    toolCallTimeoutMs: 900000
