@@ -140,6 +140,39 @@ describe('the shipped Codex preset', () => {
     }
   }, 30_000)
 
+  it('types into an interactive exec_command session through write_stdin', async () => {
+    const codex = await mountCodex()
+    try {
+      const started = await call(codex.agent, 'exec_command', {
+        command: 'read -r line; printf "echo:%s\\n" "$line"',
+        description: 'Start an interactive PTY session',
+        tty: true,
+        run_in_background: true,
+      })
+      expect(started.isError).toBe(false)
+      const sessionId = (started.value as { jobId?: string }).jobId
+      expect(sessionId).toBeTruthy()
+
+      const typed = await call(codex.agent, 'write_stdin', {
+        session_id: sessionId,
+        chars: 'hello-pty\n',
+        yield_time_ms: 2_000,
+      })
+      expect(typed.isError).toBe(false)
+
+      // 回显可能落在后续读取里：继续轮询直到会话给出结果或超时。
+      let transcript = text(typed)
+      const deadline = Date.now() + 5_000
+      while (!transcript.includes('echo:hello-pty') && Date.now() < deadline) {
+        const next = await call(codex.agent, 'write_stdin', { session_id: sessionId, yield_time_ms: 200 })
+        transcript += text(next)
+      }
+      expect(transcript).toContain('echo:hello-pty')
+    } finally {
+      await codex.dispose()
+    }
+  }, 30_000)
+
   it('starts its persona with the Codex base instructions', async () => {
     const codex = await mountCodex()
     try {

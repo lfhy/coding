@@ -22,6 +22,9 @@
 | `sandboxMode` | 工具层的能力事实：沙箱执行器用于限制执行的默认模式（基类中为 `undefined`，即「此执行器不使用沙箱」）。`dsh-tool-bash` 会在注册时读取它，仅当组合确实支持升权字段时才公布这些字段。 |
 | `ShellProcess.readOutput()` | **增量** 读取输出：连续读取绝不会重复交付。因缓冲区容量限制而丢失数据的读取会标记 `lossy`，并指向完整流 spill 文件；provider failure 提示会与未读 stderr 一起追加一次。 |
 | `ShellProcess.kill()` | 发出幂等的终止请求；首次请求返回 `true`，重复请求或已结算时返回 `false`。请求本身不改变进程结算状态。 |
+| `ShellProcess.write(data)` | 只有伪终端进程提供：把字符原样写入交互式 stdin，返回 `false` 表示进程已结算。管道会话没有该字段，调用方据此区分"已送达"与"没有输入通道"。 |
+| `tty` | 能力事实：执行器能否分配伪终端。`dsh-tool-bash` 在注册时读取它，只有为真才公开 `tty` 参数，后台会话因此可以接收运行中的 stdin 写入。 |
+| `ShellExecSpec.tty` | 已归一化的伪终端请求；与 `stdin`/`env` 一样按需出现，缺省表示管道执行。 |
 
 实现会继承 `ShellExecutor` 并实现抽象方法。dispose（资源释放）必须终止每个运行中的进程并等待其退出。
 

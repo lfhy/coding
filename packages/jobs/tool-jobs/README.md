@@ -12,7 +12,7 @@
 
 `vocabulary: write_stdin` 把同一注册表的模型可见面换成 Codex 风格的单个会话控制器：
 
-- `write_stdin(session_id, chars?, yield_time_ms?)` 读取自上次读取以来产生的新输出，等待最多 `yield_time_ms`（默认用 `waitTimeoutMs`，上限 `maxWaitTimeoutMs`）。`chars` 为空表示只轮询；`\u0003`（Ctrl-C）请求打断会话；其余输入被拒绝，因为后台命令没有 stdin 通道。结果与 `job_output` 同构，同样以 `[status: ...]` 结尾。
+- `write_stdin(session_id, chars?, yield_time_ms?)` 读取自上次读取以来产生的新输出，等待最多 `yield_time_ms`（默认用 `waitTimeoutMs`，上限 `maxWaitTimeoutMs`）。`chars` 为空表示只轮询；伪终端会话接收任意输入（`\u0003` 因此成为真实终端 Ctrl-C）；管道会话没有 stdin 通道，只把 `\u0003` 解释为打断，其余输入明确拒绝。结果与 `job_output` 同构，同样以 `[status: ...]` 结尾。
 
 它们的规范值依次为 `{ text, job }`、`PublicJobSnapshot[]` 和 `{ outcome: 'cancellation-requested' | 'already-finished', job }`。公共快照携带 id、kind、label、status/detail 及开始／结束时间；它有意省略 `ownerSession` 和内部 `reported` 通知位。原生 renderer 保留上述状态与确认文本。
 

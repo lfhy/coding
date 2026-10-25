@@ -392,7 +392,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/shell/bash-local/src/index.ts:44`](../packages/shell/bash-local/src/index.ts)
+Source: [`packages/shell/bash-local/src/index.ts:51`](../packages/shell/bash-local/src/index.ts)
 
 <a id="coding-bash-sandbox"></a>
 

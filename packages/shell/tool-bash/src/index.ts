@@ -67,6 +67,7 @@ interface BashToolArgs {
   timeoutMs?: number
   workdir?: string
   run_in_background?: boolean
+  tty?: boolean
   sandbox_permissions?: string
   justification?: string
 }
@@ -226,6 +227,8 @@ export function apply(ctx: Context, config: Config = {}): void {
   if (toolName.trim().length === 0) throw new Error('tool-bash: toolName must be non-empty')
   const backgroundEnabled = config.enableRunInBackground ?? true
   const backgroundSessionTools: BackgroundSessionTools = config.backgroundSessionTools ?? 'jobs'
+  // 交互式会话只有能分配伪终端的执行器才存在；不支持时不公开 `tty`，调用也会被拒。
+  const ttySupported = ctx.shell.tty
   const defaultMode = ctx.shell.sandboxMode
   const escalationModes: readonly SandboxMode[] = defaultMode === undefined ? [] : ESCALATION_TARGETS
   const sandboxPolicy: SandboxPolicyService | undefined = defaultMode === undefined ? undefined : ctx.get('sandboxPolicy')
@@ -286,6 +289,15 @@ export function apply(ctx: Context, config: Config = {}): void {
       },
       timeoutMs: { type: 'number', description: 'Timeout in milliseconds. The executor applies its configured default and cap, and kills the command on expiry.' },
       workdir: { type: 'string', description: 'Working directory for this command. Defaults to the session workspace; a relative path is resolved against it.' },
+      ...ttySupported ? {
+        tty: {
+          type: 'boolean' as const,
+          description: 'Run the command in a pseudo-terminal so it can read from an interactive stdin. '
+            + (backgroundSessionTools === 'write_stdin'
+              ? 'Background tty sessions accept live input through write_stdin and receive Ctrl-C as terminal input.'
+              : 'A background tty session can only be collected with the job tools; typing into it requires a stdin-capable session controller.'),
+        },
+      } : {},
       ...backgroundEnabled ? {
         run_in_background: {
           type: 'boolean' as const,
@@ -377,12 +389,16 @@ export function apply(ctx: Context, config: Config = {}): void {
         : { ...(standingPolicy as SandboxExecutionPolicy), mode: approvedMode }
       const workdir = resolveWorkdir(args.workdir, exec, standingPolicy?.workspaceRoot)
       const dshEnv = ctx.shellEnv.collect(exec)
+      if (args.tty === true && !ttySupported) {
+        throw new Error('tty is not available in this composition (the mounted shell executor cannot allocate a pseudo-terminal)')
+      }
       const request = {
         command: args.command,
         ...workdir !== undefined ? { workdir } : {},
         ...args.timeoutMs !== undefined ? { timeoutMs: args.timeoutMs } : {},
         dshEnv,
         ...policy !== undefined ? { sandboxPolicy: policy } : {},
+        ...args.tty === true ? { tty: true } : {},
       }
       if (args.run_in_background === true) {
         // 未公开的键仍可能到达执行期，因此禁用后台任务也必须在此拒绝。
@@ -410,6 +426,8 @@ export function apply(ctx: Context, config: Config = {}): void {
               cancel: () => void proc.kill(),
               done: proc.done.then(() => processOutcome(proc)),
               readOutput: () => renderProcessRead(proc.readOutput(), proc.sandbox, escalationModes),
+              // 只有伪终端会话有 stdin 通道；管道会话省略该钩子，写入会被明确拒绝。
+              ...proc.write === undefined ? {} : { write: (data: string) => proc.write?.(data) ?? false },
             }
           },
         })

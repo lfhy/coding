@@ -46,6 +46,8 @@ interface TrackedTask {
   owner: Agent | undefined
   cancel: (reason?: string) => void
   readOutput: (() => string) | undefined
+  /** 伪终端会话的 stdin 写入；无输入通道时缺省。 */
+  write: ((data: string) => boolean) | undefined
   status: JobStatus
   detail: string | undefined
   output: string | undefined
@@ -162,6 +164,7 @@ export class LocalJobRegistry extends JobRegistry {
       owner: spec.owner,
       cancel: hooks.cancel.bind(hooks),
       readOutput: hooks.readOutput?.bind(hooks),
+      write: hooks.write?.bind(hooks),
       status: 'running',
       detail: undefined,
       output: undefined,
@@ -210,6 +213,18 @@ export class LocalJobRegistry extends JobRegistry {
       : isTerminal(job.status) ? job.output ?? '' : ''
     if (isTerminal(job.status)) job.reported = true
     return { text, snapshot: this.snapshot(job) }
+  }
+
+  write(id: JobId, data: string, caller?: Agent): 'written' | 'no-stdin' {
+    const job = this.expect(id)
+    this.assertAccess(job, caller)
+    if (isTerminal(job.status)) {
+      job.reported = true
+      return 'no-stdin'
+    }
+    if (job.write === undefined) return 'no-stdin'
+    // 生产方拒绝写入意味着会话已不可交互；按无通道处理，结算由 done 继续驱动。
+    return job.write(data) ? 'written' : 'no-stdin'
   }
 
   kill(id: JobId, caller?: Agent, reason?: string): 'requested' | 'already-finished' {

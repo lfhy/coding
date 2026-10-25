@@ -18,7 +18,14 @@ import {
   scrubbedParentEnv,
   verifyRemoteWorkspaceTarget,
 } from 'coding-subprocess'
-import type { SubprocessCollect, SubprocessHandle, SubprocessOutputReader, SubprocessSpawnSpec } from 'coding-subprocess'
+import type {
+  SubprocessCollect,
+  SubprocessHandle,
+  SubprocessOutputReader,
+  SubprocessSpawnSpec,
+  SubprocessTerminalHandle,
+  SubprocessTerminalSpawnSpec,
+} from 'coding-subprocess'
 import { installSettingsSection } from 'coding-settings'
 import { clampTimeout, deadline, MAX_TIMER_DELAY_MS, timeoutOf } from 'coding-timeout'
 
@@ -143,6 +150,72 @@ export function assertServiceableBashConfig(config: Config): void {
   }
 }
 
+/** 伪终端会话的初始尺寸；交互式命令只需要一个可用终端，后续尺寸由 resize 负责。 */
+const DEFAULT_TTY_ROWS = 24
+const DEFAULT_TTY_COLS = 80
+
+/** 交互式会话声明的终端类型；管道执行器刻意使用 `TERM=dumb`，PTY 不能沿用。 */
+const TTY_TERM = 'xterm-256color'
+
+/**
+ * 伪终端把 stdout 与 stderr 合流成一个字节流，因此这里只有一个有界缓冲：保留下来的
+ * 是尾部字节，丢弃发生时标记 `lossy`。前台结算与后台 `readOutput()` 共用同一预算。
+ */
+class TerminalOutputBuffer {
+  private pending = ''
+  private lossy = false
+
+  constructor(private readonly maxBytes: number) {}
+
+  /** 追加一个解码后的数据块，超出预算时只保留尾部。 */
+  push(chunk: string): void {
+    this.pending += chunk
+    const bytes = Buffer.byteLength(this.pending, 'utf8')
+    if (bytes <= this.maxBytes) return
+    const raw = Buffer.from(this.pending, 'utf8')
+    this.pending = raw.subarray(raw.length - this.maxBytes).toString('utf8').replace(/^\uFFFD+/u, '')
+    this.lossy = true
+  }
+
+  /** 消费式取出：返回自上次取出以来的文本并清空缓冲。 */
+  take(): { text: string; lossy: boolean } {
+    const result = { text: this.pending, lossy: this.lossy }
+    this.pending = ''
+    this.lossy = false
+    return result
+  }
+
+  /** 非消费式快照，用于前台结算。 */
+  finish(): CollectedOutput {
+    return { text: this.pending, truncated: this.lossy }
+  }
+}
+
+/**
+ * Provider rejection 没有可展示的直接结果，而且不公开失败阶段：提示通过读取路径
+ * 恰好交付一次。两个后台实现（管道与伪终端）共用这一份一次性状态。
+ */
+class ProviderFailureNote {
+  private note: string | undefined
+
+  /** 记录待交付的中性提示。 */
+  set(note: string): void {
+    this.note = note
+  }
+
+  /** 非消费式读取，供结算钩子分类使用；交付仍留给读取路径。 */
+  peek(): string {
+    return this.note ?? ''
+  }
+
+  /** 取出并清空提示；没有提示时返回空串。 */
+  consume(): string {
+    const note = this.note ?? ''
+    this.note = undefined
+    return note
+  }
+}
+
 /**
  * Local bash executor over `ctx.subprocess`. Bounded output, spill files, and
  * process-group SIGTERM→SIGKILL escalation are the subprocess service's
@@ -161,6 +234,11 @@ export class LocalBashExecutor extends ShellExecutor {
     maxSpillBytes: z.number().default(DEFAULT_MAX_SPILL_BYTES),
     graceMs: z.number().default(DEFAULT_GRACE_MS),
   })
+
+  /** 本地执行器能分配伪终端，因此模型可见的 shell 工具公开 `tty`。 */
+  override get tty(): boolean {
+    return true
+  }
 
   /** The currently authoritative config: the settings section, or the composition entry. */
   private source: () => ResolvedConfig
@@ -221,6 +299,8 @@ export class LocalBashExecutor extends ShellExecutor {
       // confines, so the field is inert here (the seam contract) — a
       // sandboxing subclass overrides resolve() to stamp its default instead.
       sandboxPolicy: request.sandboxPolicy,
+      // basic 远端只有一个一次性 SSH exec，没有可写回的终端会话。
+      tty: request.tty === true && remoteTarget?.mode !== 'basic',
     }
   }
 
@@ -265,6 +345,7 @@ export class LocalBashExecutor extends ShellExecutor {
 
   async run(spec: ShellExecSpec): Promise<ShellRunResult> {
     if (spec.remoteTarget?.mode === 'basic') return this.runBasicRemote(spec)
+    if (spec.tty) return this.runTerminal(spec, ['bash', '-c', spec.command])
     return this.runArgv(spec, ['bash', '-c', spec.command])
   }
 
@@ -339,7 +420,120 @@ export class LocalBashExecutor extends ShellExecutor {
     }
   }
 
+  /** 组装一次伪终端分配：环境、尺寸、宽限与分配取消。 */
+  private terminalSpec(
+    spec: ShellExecSpec,
+    argv: readonly string[],
+    signal: AbortSignal | undefined,
+  ): SubprocessTerminalSpawnSpec {
+    return {
+      argv,
+      cwd: spec.remoteTarget?.remotePath ?? spec.workdir,
+      ...spec.remoteTarget === undefined ? {} : { remoteTarget: spec.remoteTarget },
+      // 交互式会话保留真实终端环境：不叠加管道路径的 NO_COLOR/TERM=dumb 覆盖。
+      env: { TERM: TTY_TERM, ...spec.env, ...spec.dshEnv },
+      rows: DEFAULT_TTY_ROWS,
+      cols: DEFAULT_TTY_COLS,
+      graceMs: this.config.graceMs,
+      ...signal === undefined ? {} : { signal },
+    }
+  }
+
+  /**
+   * 前台在伪终端里运行显式 argv。`spawnTerminal` 的 signal 只管分配，发布后的会话
+   * 生命周期归调用方，因此超时与取消由本方法终止会话。伪终端合流后 stderr 恒为空，
+   * 合并输出进入 `stdout`。
+   */
+  protected async runTerminal(spec: ShellExecSpec, argv: readonly string[]): Promise<ShellRunResult> {
+    using d = deadline(spec.signal, spec.timeoutMs, 'BASH_TIMEOUT')
+    const handle = await this.ctx.subprocess.spawnTerminal(this.terminalSpec(spec, argv, d.signal))
+    const buffer = new TerminalOutputBuffer(this.config.maxOutputBytes)
+    handle.output.setEncoding('utf8')
+    handle.output.on('data', (chunk: string) => { buffer.push(chunk) })
+    const terminate = (): void => { void handle.terminate().catch(() => {}) }
+    d.signal.addEventListener('abort', terminate, { once: true })
+    try {
+      const outcome = await handle.done
+      const timedOut = timeoutOf(d.signal, 'BASH_TIMEOUT') !== undefined
+      const aborted = d.signal.aborted && !timedOut
+      return {
+        ...outcome,
+        timedOut,
+        aborted,
+        timeoutMs: spec.timeoutMs,
+        stdout: buffer.finish(),
+        stderr: { text: '', truncated: false },
+      }
+    } finally {
+      d.signal.removeEventListener('abort', terminate)
+    }
+  }
+
+  /**
+   * 后台启动一个伪终端会话。分配是异步的，而 `start()` 必须同步返回句柄：句柄先以
+   * `running` 交给调用方，分配完成后接上输出、写入与终止；分配失败按 provider 失败
+   * 结算为 `failed`。写入在分配完成前排队，模型不必等待会话就绪。
+   */
+  protected startTerminal(spec: ShellExecSpec, argv: readonly string[]): ShellProcess {
+    const buffer = new TerminalOutputBuffer(this.config.maxOutputBytes)
+    const queuedWrites: string[] = []
+    let handle: SubprocessTerminalHandle | undefined
+    let killRequested = false
+    const failures = new ProviderFailureNote()
+    const proc: ShellProcess = {
+      status: 'running',
+      exitCode: null,
+      signal: null,
+      done: this.ctx.subprocess.spawnTerminal(this.terminalSpec(spec, argv, spec.signal)).then(
+        (terminal) => {
+          handle = terminal
+          terminal.output.setEncoding('utf8')
+          terminal.output.on('data', (chunk: string) => { buffer.push(chunk) })
+          for (const data of queuedWrites.splice(0)) void terminal.write(data).catch(() => {})
+          if (killRequested) void terminal.terminate().catch(() => {})
+          return terminal.done
+        },
+      ).then((outcome) => {
+        proc.status = outcome.signal !== null ? 'killed' : 'completed'
+        proc.exitCode = outcome.exitCode
+        proc.signal = outcome.signal
+        this.onProcessDone(proc, '', false)
+      }, (error: unknown) => {
+        proc.status = 'failed'
+        failures.set(`interactive session failed before reporting an outcome: ${String(error)}`)
+        this.onProcessDone(proc, failures.peek(), true, error)
+      }),
+      readOutput: (): ShellProcessRead => {
+        const read = buffer.take()
+        const providerFailure = failures.consume()
+        const separator = read.text.length > 0 && !read.text.endsWith('\n') ? '\n' : ''
+        return {
+          delta: read.text + (providerFailure.length > 0 ? `${separator}${providerFailure}` : ''),
+          lossy: read.lossy,
+        }
+      },
+      kill: (): boolean => {
+        if (proc.status !== 'running' || killRequested) return false
+        killRequested = true
+        if (handle !== undefined) void handle.terminate().catch(() => {})
+        return true
+      },
+      write: (data: string): boolean => {
+        if (proc.status !== 'running') return false
+        if (handle === undefined) {
+          queuedWrites.push(data)
+          return true
+        }
+        // 写入失败说明会话已不可交互；结算事实与终止由同一句柄的 done 给出。
+        void handle.write(data).catch(() => {})
+        return true
+      },
+    }
+    return proc
+  }
+
   start(spec: ShellExecSpec): ShellProcess {
+    if (spec.tty) return this.startTerminal(spec, ['bash', '-c', spec.command])
     return this.startArgv(spec, ['bash', '-c', spec.command])
   }
 
@@ -358,12 +552,7 @@ export class LocalBashExecutor extends ShellExecutor {
 
     // Provider rejection 没有可展示的直接结果，且不公开失败阶段；通过读取
     // 路径恰好交付一次中性提示。
-    let providerFailureNote: string | undefined
-    const consumeProviderFailure = (): string => {
-      const note = providerFailureNote ?? ''
-      providerFailureNote = undefined
-      return note
-    }
+    const failures = new ProviderFailureNote()
 
     let stdoutOffset = 0
     let stderrOffset = 0
@@ -381,10 +570,10 @@ export class LocalBashExecutor extends ShellExecutor {
       }, (error: unknown) => {
         // Basic SSH 的清理失败无法证明远端进程已退出；也不将桥接错误原文暴露给模型。
         proc.status = 'failed'
-        providerFailureNote = spec.remoteTarget?.mode === 'basic'
+        failures.set(spec.remoteTarget?.mode === 'basic'
           ? 'subprocess failed before reporting an outcome; remote process status is unknown'
-          : `subprocess failed before reporting an outcome: ${String(error)}`
-        this.onProcessDone(proc, providerFailureNote, true, error)
+          : `subprocess failed before reporting an outcome: ${String(error)}`)
+        this.onProcessDone(proc, failures.peek(), true, error)
       }),
       readOutput: (): ShellProcessRead => {
         const out = collected.stdout.readFrom(stdoutOffset)
@@ -392,7 +581,7 @@ export class LocalBashExecutor extends ShellExecutor {
         stdoutOffset = out.nextOffset
         stderrOffset = err.nextOffset
 
-        const providerFailure = consumeProviderFailure()
+        const providerFailure = failures.consume()
         const failureSeparator = err.text.length > 0 && !err.text.endsWith('\n') ? '\n' : ''
         const errText = err.text
           + (providerFailure.length > 0 ? `${failureSeparator}${providerFailure}` : '')

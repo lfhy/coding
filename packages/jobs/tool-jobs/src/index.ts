@@ -331,10 +331,10 @@ export function apply(ctx: Context, config: Config): void {
     // 因此只有 Ctrl-C 是可写的输入；其余字符明确拒绝，避免模型以为输入已经送达进程。
     ctx.tools.register(defineTool({
       name: 'write_stdin',
-      description: 'Read the output of a background session, wait for more, and interrupt it. '
-        + 'An empty `chars` polls without writing; `\\u0003` (Ctrl-C) interrupts the session; any other input '
-        + 'is rejected because background commands run without a stdin channel. Every response ends with '
-        + '`[status: ...]` and carries only output produced since the previous read.',
+      description: 'Read the output of a background session, wait for more, and write to it. '
+        + 'An empty `chars` polls without writing; `\\u0003` (Ctrl-C) interrupts the session. Interactive '
+        + '(pseudo-terminal) sessions deliver any input; pipe-only sessions accept only Ctrl-C, which stops '
+        + 'them. Every response ends with `[status: ...]` and carries only output produced since the previous read.',
       parameters: {
         session_id: { type: 'string', required: true, description: 'Background session id returned when the session started (the `jobId` field).' },
         chars: { type: 'string', description: 'Characters to write. Empty polls without writing; `\\u0003` (Ctrl-C) interrupts the session.' },
@@ -357,9 +357,16 @@ export function apply(ctx: Context, config: Config): void {
         const id = validateJobId(args.session_id)
         const chars = args.chars ?? ''
         // 模型可能发真正的控制字符，也可能发字面量 \u0003；两者都按 Ctrl-C 处理。
-        if (chars.includes('\u0003') || chars.includes('\\u0003')) ctx.jobs.kill(id, exec.agent, 'ctrl-c')
-        else if (chars.length > 0) {
-          throw new Error(`write_stdin cannot forward input to ${id}: background commands run without a stdin channel; send Ctrl-C (\\u0003) to interrupt one.`)
+        if (chars.length > 0) {
+          // 伪终端会话直接接收字节（Ctrl-C 因此变成真实终端输入）；管道会话没有
+          // stdin 通道，只保留 Ctrl-C 的打断语义。
+          const written = ctx.jobs.write(id, chars, exec.agent)
+          if (written === 'no-stdin') {
+            if (chars.includes('\u0003') || chars.includes('\\u0003')) ctx.jobs.kill(id, exec.agent, 'ctrl-c')
+            else {
+              throw new Error(`write_stdin cannot forward input to ${id}: this session has no interactive stdin; send Ctrl-C (\\u0003) to stop it.`)
+            }
+          }
         }
         await ctx.jobs.wait(id, Math.min(args.yield_time_ms ?? waitDefault, waitCap), exec.agent, exec.signal)
         const read = ctx.jobs.read(id, exec.agent)

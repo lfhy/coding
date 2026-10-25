@@ -72,6 +72,15 @@ export abstract class ShellExecutor extends Service {
   }
 
   /**
+   * 该执行器能否分配伪终端。为真时模型可见的 shell 工具公开 `tty` 参数，后台会话
+   * 因此可以接收运行中的 stdin 写入。
+   * @returns 是否支持 `tty` 请求。
+   */
+  get tty(): boolean {
+    return false
+  }
+
+  /**
    * Apply implementation-owned defaults and caps to a request before execution.
    * @param request - the caller's request; omitted fields get this
    *   implementation's defaults, capped fields are clamped.

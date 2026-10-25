@@ -76,6 +76,11 @@ export interface ShellExecRequest {
   dshEnv?: DshEnvironment | undefined
   /** Fully resolved per-call sandbox policy; sandboxing executors default it. */
   sandboxPolicy?: SandboxExecutionPolicy | undefined
+  /**
+   * 在伪终端里运行命令，让进程拥有可写的交互式 stdin。只在执行器声明
+   * {@link ShellExecutor.tty} 时生效；后台进程因此可以在运行中被写入输入。
+   */
+  tty?: boolean | undefined
 }
 
 /**
@@ -109,6 +114,11 @@ export interface ShellExecSpec {
   dshEnv?: DshEnvironment | undefined
   /** Resolved sandbox policy; ignored by executors that do not confine. */
   sandboxPolicy: SandboxExecutionPolicy | undefined
+  /**
+   * 已归一化的伪终端请求，缺省表示管道。与 `stdin`/`env` 同理保持可选：既有执行器
+   * 与测试按"不写就是不请求"构造 spec，执行器用 `spec.tty === true` 判断。
+   */
+  tty?: boolean | undefined
 }
 
 /** The outcome of one completed (or killed) foreground run. */
@@ -182,4 +192,11 @@ export interface ShellProcess {
    * (no-op); idempotent.
    */
   kill(): boolean
+  /**
+   * 向交互式会话的 stdin 写入文本；仅伪终端进程提供。返回 false 表示进程已结算，
+   * 不是通道错误 — `done` 会随后给出结算事实。声明为函数型属性而不是方法，这样
+   * 调用方可以安全地取出引用再调用，不必隐式依赖接收者。
+   * @param data - 原样投递的字符，不做换行转换。
+   */
+  write?: (data: string) => boolean
 }

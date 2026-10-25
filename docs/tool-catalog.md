@@ -1376,6 +1376,10 @@ Execute a bash command (`bash -c`) and return its stdout/stderr. Each call runs 
       "type": "string",
       "description": "Working directory for this command. Defaults to the session workspace; a relative path is resolved against it."
     },
+    "tty": {
+      "type": "boolean",
+      "description": "Run the command in a pseudo-terminal so it can read from an interactive stdin. A background tty session can only be collected with the job tools; typing into it requires a stdin-capable session controller."
+    },
     "run_in_background": {
       "type": "boolean",
       "description": "Run in the background and return a job id immediately (collect with job_output, stop with job_kill). No timeout applies."
@@ -2964,7 +2968,7 @@ Source: [`packages/jobs/tool-jobs/src/index.ts`](../packages/jobs/tool-jobs/src/
 
 ### `write_stdin`
 
-Read the output of a background session, wait for more, and interrupt it. An empty `chars` polls without writing; `\u0003` (Ctrl-C) interrupts the session; any other input is rejected because background commands run without a stdin channel. Every response ends with `[status: ...]` and carries only output produced since the previous read.
+Read the output of a background session, wait for more, and write to it. An empty `chars` polls without writing; `\u0003` (Ctrl-C) interrupts the session. Interactive (pseudo-terminal) sessions deliver any input; pipe-only sessions accept only Ctrl-C, which stops them. Every response ends with `[status: ...]` and carries only output produced since the previous read.
 
 ```json
 {

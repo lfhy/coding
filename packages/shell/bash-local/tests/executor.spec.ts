@@ -549,6 +549,54 @@ describe('LocalBashExecutor.run', () => {
   })
 })
 
+describe('pseudo-terminal sessions', () => {
+  it('advertises the tty capability and runs a foreground command in a PTY', async () => {
+    const { bash } = await setup()
+    expect(bash.tty).toBe(true)
+    const result = await bash.run(bash.resolve({ command: 'printf "tty-hello\\n"', tty: true }))
+    // 伪终端合流：输出落在 stdout，stderr 恒为空。
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout.text).toContain('tty-hello')
+    expect(result.stderr.text).toBe('')
+  }, 20_000)
+
+  it('keeps the PTY alive for background input and maps a written exit command', async () => {
+    const { bash } = await setup()
+    // 交互式 bash：读取一行，回显后退出。
+    const proc = bash.start(bash.resolve({
+      command: 'read -r line; printf "got:%s\\n" "$line"',
+      tty: true,
+    }))
+    const write = proc.write
+    expect(write).toBeDefined()
+    if (write === undefined) throw new Error('a tty process must expose write()')
+    // 经由 call 绑定接收者，避免引用未绑定方法。
+    expect(write.call(proc, 'hello-from-model\n')).toBe(true)
+    const output = await readUntil(proc, 'got:hello-from-model')
+    expect(output).toContain('got:hello-from-model')
+    await proc.done
+    expect(proc.status).toBe('completed')
+  }, 20_000)
+
+  it('kills a background PTY session that never exits', async () => {
+    const { bash } = await setup()
+    const proc = bash.start(bash.resolve({ command: 'sleep 60', tty: true }))
+    expect(proc.kill()).toBe(true)
+    await proc.done
+    expect(proc.status).toBe('killed')
+  }, 20_000)
+
+  it('ignores a tty request that basic remote mode cannot honour', async () => {
+    await withBasicBridge(() => ({ body: execResponse({ stdout: 'once', stderr: '' }) }), async (markerRoot) => {
+      const { bash } = await setup()
+      const spec = bash.resolve({ command: 'printf once', workdir: markerRoot, tty: true })
+      expect(spec.tty).toBe(false)
+      const result = await bash.run(spec)
+      expect(result.stdout.text).toBe('once')
+    })
+  })
+})
+
 describe('LocalBashExecutor.start (background process handles)', () => {
   it('publishes a marker workdir as a remote process handle', async () => {
     const markerRoot = mkdtempSync(join(tmpdir(), 'dsh-bash-remote-background-'))

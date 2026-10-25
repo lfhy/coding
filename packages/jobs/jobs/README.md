@@ -8,6 +8,7 @@
 - `get(id, caller?)` 和 `list(caller?)` 返回非消费式快照。列表只包含调用方拥有及无 owner 的任务。
 - `read(id, caller?)` 消费流任务的唯一游标；对于最终输出任务，则以幂等方式读取终止输出。
 - `kill(id, caller?, reason?)` 在更改状态前调用生产方取消。取消抛出异常时任务保持运行；成功则把状态改为 `stopping`，并将终止交付标记为已报告。
+- `write(id, data, caller?)` 把字符写进运行中的伪终端会话，返回 `written`；任务已结算或生产方没有 stdin 通道时返回 `no-stdin`（权限与未知 id 仍按 `read`/`kill` 的方式失败）。
 - `wait(id, timeoutMs, caller?, signal?)` 返回终止快照，或在超时时返回存活快照。中止只会停止等待；一旦终止交付已向该等待方提交，终止结果优先。
 - `onJobDone(listener)` 观察每条终止记录及其精确 owner。监听器抛出的异常和产生的拒绝都会被隔离；系统不会等待监听器工作。
 - `onJobsChanged(listener)` 观察可见集合的变化——注册、每一次转入 stopping（包括 teardown 在等待缓慢生产者之前的那一次）、结算、owner 销毁时的移除，以及服务销毁提交的清空——只携带集合发生变化的那个 owner，或在无主任务变化、因而每个调用方的集合都随之变化时携带 `undefined`。它按 owner 分粒度，因为移除是任何逐任务记录都无法表达的变化；它也不是 `onJobDone` 的超集：它不含任何投递含义，也不把任何东西标为已上报。注册绑定的是调用方 fiber，因此挂在注册表之外的观察者仍能收到销毁时的清空。

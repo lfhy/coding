@@ -42,6 +42,18 @@ export type Config = LocalConfig
  * calls fall back to deployment policy. `result.sandbox` reports the mode and
  * enforcement actually used.
  */
+/**
+ * 伪终端把 stderr 合流进 stdout，而沙箱分类器只读 stderr；交互式运行的分类证据因此
+ * 取自合流输出。返回值只用于分类，不替换面向调用方的结果。
+ * @param result - 伪终端运行结果。
+ * @returns 证据视图。
+ */
+function terminalEvidence(result: ShellRunResult): ShellRunResult {
+  return result.stderr.text.length > 0
+    ? result
+    : { ...result, stderr: { text: result.stdout.text, truncated: result.stdout.truncated } }
+}
+
 export class SandboxBashExecutor extends LocalBashExecutor {
   static override inject = ['subprocess', 'sandbox', 'sandboxPolicy']
 
@@ -100,7 +112,9 @@ export class SandboxBashExecutor extends LocalBashExecutor {
     const confined = this.confine(spec.command, { ...policy, mode })
     let result: ShellRunResult
     try {
-      result = await this.runArgv(spec, confined.argv)
+      result = spec.tty
+        ? await this.runTerminal(spec, confined.argv)
+        : await this.runArgv(spec, confined.argv)
     } catch (error) {
       // An upstream abort remains cancellation even when it prevents spawn.
       if (spec.signal?.aborted === true) spec.signal.throwIfAborted()
@@ -109,13 +123,15 @@ export class SandboxBashExecutor extends LocalBashExecutor {
       }
       throw error
     }
+    // 伪终端合流后 stderr 为空，分类证据改看 stdout，返回结果仍保留原始分流。
+    const evidence = spec.tty ? terminalEvidence(result) : result
     // Runner failure outranks denial because the command did not run. Carry
     // the matched fatal line, not an informational line that preceded it.
-    const runnerFailure = classifyRunnerFailure(result.exitCode, result.stderr.text, confined.runnerFailureRules)
+    const runnerFailure = classifyRunnerFailure(evidence.exitCode, evidence.stderr.text, confined.runnerFailureRules)
     if (runnerFailure !== undefined) {
       throw new SandboxUnavailableError(mode, runnerFailure.detail)
     }
-    return { ...result, sandbox: { mode, denied: classifyDenial(result, confined.denialSignatures), enforcement: confined.enforcement } }
+    return { ...result, sandbox: { mode, denied: classifyDenial(evidence, confined.denialSignatures), enforcement: confined.enforcement } }
   }
 
   override start(spec: ShellExecSpec): ShellProcess {
@@ -130,7 +146,7 @@ export class SandboxBashExecutor extends LocalBashExecutor {
     const confined = this.confine(spec.command, { ...policy, mode })
     let proc: ShellProcess
     try {
-      proc = this.startArgv(spec, confined.argv)
+      proc = spec.tty ? this.startTerminal(spec, confined.argv) : this.startArgv(spec, confined.argv)
     } catch (error) {
       // LocalSubprocessRuntime reports ENOENT/EACCES with the failed executable path through async
       // `done` rejection; this covers alternatives that throw the same error synchronously.

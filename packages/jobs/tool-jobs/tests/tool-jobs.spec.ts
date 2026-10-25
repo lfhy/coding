@@ -227,12 +227,31 @@ describe('write_stdin vocabulary', () => {
     expect(p.cancels).toEqual(['ctrl-c'])
   })
 
-  it('rejects plain stdin writes because background commands have no stdin channel', async () => {
+  it('rejects plain stdin writes when the session has no interactive stdin', async () => {
     const { ctx } = await setup({ vocabulary: 'write_stdin' })
     ctx.jobs.start(producer().spec)
     const result = await call(ctx, 'write_stdin', { session_id: 'bash-1', chars: 'y\n' })
     expect(result.isError).toBe(true)
-    expect(text(result)).toContain('stdin channel')
+    expect(text(result)).toContain('no interactive stdin')
+  })
+
+  it('delivers input to a session that advertises a stdin channel', async () => {
+    const { ctx } = await setup({ vocabulary: 'write_stdin' })
+    const written: string[] = []
+    const p = producer({ readOutput: () => '', write: (data) => { written.push(data); return true } })
+    ctx.jobs.start(p.spec)
+
+    const result = await call(ctx, 'write_stdin', { session_id: 'bash-1', chars: 'echo hi\n', yield_time_ms: 1 })
+    expect(result.isError).toBe(false)
+    expect(written).toEqual(['echo hi\n'])
+  })
+
+  it('falls back to Ctrl-C when the interactive channel is gone', async () => {
+    const { ctx } = await setup({ vocabulary: 'write_stdin' })
+    const p = producer({ readOutput: () => '', write: () => false })
+    ctx.jobs.start(p.spec)
+    await call(ctx, 'write_stdin', { session_id: 'bash-1', chars: '\u0003', yield_time_ms: 1 })
+    expect(p.cancels).toEqual(['ctrl-c'])
   })
 
   it('rejects an unknown session id', async () => {

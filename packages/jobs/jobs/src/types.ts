@@ -88,6 +88,12 @@ export interface JobHooks {
    * job has one consuming cursor.
    */
   readOutput?(): string
+  /**
+   * 向运行中的工作写入 stdin。只有伪终端会话提供；返回 false 表示工作已结算或
+   * 无法接收输入，调用方据此区分"已送达"与"没有输入通道"。
+   * @param data - 原样投递的字符，不做换行转换。
+   */
+  write?(data: string): boolean
 }
 
 /**

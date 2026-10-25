@@ -120,6 +120,15 @@ export abstract class JobRegistry extends Service {
   abstract kill(id: JobId, caller?: Agent, reason?: string): 'requested' | 'already-finished'
 
   /**
+   * 向运行中的工作写入 stdin（伪终端会话）。
+   * @param id - 目标任务 id。
+   * @param data - 原样投递的字符。
+   * @param caller - 发起调用的 agent；访问受限实现据此鉴权。
+   * @returns `written` 表示已交给生产方；`no-stdin` 表示该任务已结算或没有输入通道。
+   */
+  abstract write(id: JobId, data: string, caller?: Agent): 'written' | 'no-stdin'
+
+  /**
    * Wait for settlement or timeout without cancelling the job. Caller abort
    * rejects only while the job is live; after settlement the terminal
    * snapshot wins so a notice suppressed for this waiter is still delivered.
