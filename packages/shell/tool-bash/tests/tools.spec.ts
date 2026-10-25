@@ -248,6 +248,21 @@ describe('exec_command vocabulary', () => {
 })
 
 describe('bash tool', () => {
+  it('exposes tty and runs the command in a pseudo-terminal', async () => {
+    const ctx = await setup()
+    const tool = ctx.tools.get('bash')
+    const parameters = tool?.parameters as { properties?: Record<string, { description?: string }> }
+    expect(Object.keys(parameters.properties ?? {})).toContain('tty')
+    expect(parameters.properties?.tty?.description).toContain('pseudo-terminal')
+
+    const result = await call(ctx, 'bash', { command: 'printf "pty-ok\\n"', description: 'tty command', tty: true })
+    expect(result.isError).toBe(false)
+    if (result.isError) throw new Error('expected tty bash success')
+    // 伪终端合流：输出进入 stdout，stderr 为空。
+    expect(result.value).toMatchObject({ kind: 'foreground', exitCode: 0, stderr: { text: '', truncated: false } })
+    expect(text(result)).toContain('pty-ok')
+  }, 20_000)
+
   it('returns stdout for a successful command', async () => {
     const ctx = await setup()
     const result = await call(ctx, 'bash', { command: 'echo hello', description: 'test command' })
@@ -646,8 +661,9 @@ describe('background execution through the job runtime', () => {
     await ctx.plugin(ToolBash, { enableRunInBackground: false })
 
     const schema = ctx.tools.schemas().find(s => s.name === 'bash')!
+    // `tty` 与后台开关无关：执行器支持伪终端时它始终公开。
     expect(Object.keys(schema.parameters.properties as Record<string, unknown>))
-      .toEqual(['command', 'description', 'timeoutMs', 'workdir'])
+      .toEqual(['command', 'description', 'timeoutMs', 'workdir', 'tty'])
     expect(schema.description).toContain('Background execution is not available')
     expect(schema.description).not.toContain('run_in_background')
     // The registry-held definition agrees (schema and capability never disagree).
