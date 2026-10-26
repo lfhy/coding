@@ -572,6 +572,47 @@ describe('ModelsSection', () => {
     })
   })
 
+  it('把高级设置里的出站选择交给共享分段控件并写入 outbound 路径', async () => {
+    const { mutate } = await mountDeepSeekCard({
+      mutate: vi.fn(() => Promise.resolve(ok(wireNamespaces()[0]))),
+    })
+    openAdvanced()
+    openAdvancedSettings()
+    // 与 Free 渠道、代理池、联网搜索是同一个控件：一个 group、三个分段按钮，按下状态即当前值。
+    const group = screen.getByRole('group', { name: en.channelOutbound })
+    expect(within(group).getAllByRole('button').map(button => button.textContent)).toEqual([
+      en.channelOutboundDirect, en.channelOutboundPool, en.channelOutboundCustom,
+    ])
+    expect(within(group).getByRole('button', { name: en.channelOutboundDirect }).getAttribute('aria-pressed')).toBe('true')
+
+    fireEvent.click(within(group).getByRole('button', { name: en.channelOutboundPool }))
+    fireEvent.click(screen.getByText(en.apply))
+    await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(1) })
+    expect(mutate.mock.calls[0]?.[0]).toEqual({
+      ns: 'llm-deepseek',
+      ops: [{ op: 'set', path: ['outbound'], value: { mode: 'pool' } }],
+      expectedRevision: 0,
+    })
+
+    // 自定义模式展开同一个地址输入；地址不合法时保存被拦住并就地报错。
+    // 保存成功后详情按新快照重画，因此控件要重新取一次。
+    fireEvent.click(within(screen.getByRole('group', { name: en.channelOutbound }))
+      .getByRole('button', { name: en.channelOutboundCustom }))
+    const url = screen.getByLabelText<HTMLInputElement>(en.channelOutboundUrl)
+    fireEvent.change(url, { target: { value: 'ftp://proxy.test' } })
+    expect(screen.getByRole('alert').textContent).toBe(en.channelOutboundInvalid)
+    fireEvent.click(screen.getByText(en.apply))
+    expect(mutate).toHaveBeenCalledTimes(1)
+    fireEvent.change(url, { target: { value: 'http://10.0.0.1:8080' } })
+    fireEvent.click(screen.getByText(en.apply))
+    await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(2) })
+    expect(mutate.mock.calls[1]?.[0]).toEqual({
+      ns: 'llm-deepseek',
+      ops: [{ op: 'set', path: ['outbound'], value: { mode: 'custom', customUrl: 'http://10.0.0.1:8080' } }],
+      expectedRevision: 0,
+    })
+  })
+
   it('edits and reloads the DeepSeek channel name without changing route or credential', async () => {
     const original = wireNamespaces()[0]!
     const profile = { ...original.user as object, reasoningEffort: 'high', models: DEFAULT_DEEPSEEK_MODELS }

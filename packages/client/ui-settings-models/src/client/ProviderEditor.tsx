@@ -12,6 +12,7 @@
 import { useEffect, useId, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { CredentialView, IApiClient, SettingsNamespaceView, SettingsPathOpView } from 'coding-api-remotes/client'
+import { OutboundSelect } from 'coding-client-ui-primitives'
 import {
   DeepSeekModelsEditor, modelDrafts, validateDeepSeekModels,
 } from './DeepSeekModelsEditor.tsx'
@@ -403,6 +404,8 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
     /**
      * 渠道级出站：直连／内置代理池／自定义代理。写入草稿的 `outbound` 路径，
      * 与端点、模型一起随保存提交；池规则为直连时选择内置池也按直连处理。
+     * 控件用共享的 `OutboundSelect`：设置页里其余出站选择（Free 渠道、代理池、
+     * 联网搜索）都渲染同一份语义与样式。
      */
     const outboundField = (): ReactNode => {
       const record = typeof outboundDraft === 'object' && outboundDraft !== null
@@ -416,22 +419,25 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
       }
       return <div className={styles['field']}>
         <span className={styles['fieldLabel']}>{t('channelOutbound')}</span>
-        <div className={styles['outboundSegmented']} role="group" aria-label={t('channelOutbound')}>
-          {(['direct', 'pool', 'custom'] as const).map(choice => (
-            <button key={choice} type="button" className={styles['outboundSegment']} aria-pressed={mode === choice}
-              disabled={disabled}
-              onClick={() => { write(choice === 'custom' ? { mode: 'custom', customUrl } : { mode: choice }) }}>
-              {t(choice === 'direct' ? 'channelOutboundDirect'
-                : choice === 'pool' ? 'channelOutboundPool' : 'channelOutboundCustom')}
-            </button>
-          ))}
-        </div>
-        {mode === 'custom' ? <div className={styles['outboundCustomRow']}>
-          <input className={styles['input']} value={customUrl} aria-label={t('channelOutboundUrl')}
-            placeholder="http://proxy.example:8080" disabled={disabled}
-            aria-invalid={outboundFailure !== undefined}
-            onChange={(event) => { write({ mode: 'custom', customUrl: event.target.value }) }} />
-        </div> : null}
+        <OutboundSelect
+          value={{ mode, customUrl }}
+          disabled={disabled}
+          invalid={outboundFailure !== undefined}
+          urlPlaceholder="http://proxy.example:8080"
+          labels={{
+            group: t('channelOutbound'),
+            direct: t('channelOutboundDirect'),
+            pool: t('channelOutboundPool'),
+            custom: t('channelOutboundCustom'),
+            url: t('channelOutboundUrl'),
+          }}
+          onChange={(next) => {
+            write(next.mode === 'custom'
+              ? { mode: 'custom', customUrl: next.customUrl ?? '' }
+              : { mode: next.mode })
+          }}
+          onCustomUrlChange={(next) => { write({ mode: 'custom', customUrl: next }) }}
+        />
         {outboundFailure === undefined ? null : <p className={styles['error']} role="alert">{t(outboundFailure)}</p>}
       </div>
     }
