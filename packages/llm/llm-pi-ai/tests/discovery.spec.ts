@@ -247,6 +247,7 @@ describe('draft-provider model discovery', () => {
   it.each([
     'file:///tmp/', 'ftp://gateway.example', 'https://name:secret@gateway.example',
     'https://gateway.example/v1?token=secret', 'https://gateway.example/v1#fragment',
+    'not a url', 'https://gateway.example/v1 ',
   ])('rejects an unsafe endpoint before sending a request: %s', async (baseURL) => {
     const requests: string[] = []
     vi.stubGlobal('fetch', async (url: string) => {
@@ -403,16 +404,45 @@ describe('draft-provider model discovery', () => {
     })).rejects.toMatchObject({ code: 'ABORTED' })
   })
 
-  it('times out a provider that never answers', async () => {
+  it('times out a provider that never answers, and says so only after retrying once', async () => {
     vi.useFakeTimers()
     try {
-      vi.stubGlobal('fetch', (_url: string, init?: RequestInit) => new Promise((_resolve, reject) => {
-        init?.signal?.addEventListener('abort', () => { reject(new Error('timed out')) }, { once: true })
-      }))
+      let calls = 0
+      vi.stubGlobal('fetch', (_url: string, init?: RequestInit) => {
+        calls += 1
+        return new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => { reject(new Error('timed out')) }, { once: true })
+        })
+      })
       const pending = discoverModels({ baseURL: 'https://slow.example/v1' })
-      const result = expect(pending).rejects.toMatchObject({ code: 'DISCOVERY_FAILED' })
+      const result = expect(pending).rejects.toThrow(/did not answer within 20s \(2 attempts\)/)
+      await vi.advanceTimersByTimeAsync(10_000)
+      // 第一次尝试超时后换连接重来，第二次仍然沉默才放弃。
       await vi.advanceTimersByTimeAsync(10_000)
       await result
+      expect(calls).toBe(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('returns the listing when only the first attempt stalls', async () => {
+    vi.useFakeTimers()
+    try {
+      let calls = 0
+      vi.stubGlobal('fetch', (_url: string, init?: RequestInit) => {
+        calls += 1
+        if (calls === 1) {
+          return new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => { reject(new Error('stalled')) }, { once: true })
+          })
+        }
+        return Promise.resolve(new Response(JSON.stringify({ data: [{ id: 'second-try' }] })))
+      })
+      const pending = discoverModels({ baseURL: 'https://slow.example/v1' })
+      await vi.advanceTimersByTimeAsync(10_000)
+      await expect(pending).resolves.toEqual([{ id: 'second-try' }])
+      expect(calls).toBe(2)
     } finally {
       vi.useRealTimers()
     }
@@ -434,6 +464,19 @@ describe('draft-provider model discovery', () => {
     await expect(pending).rejects.toMatchObject({ code: 'ABORTED' })
     credential.reject(new Error('late credential failure'))
     await Promise.resolve()
+    expect(requests).toEqual([])
+  })
+
+  it('refuses a saved credential the caller already canceled', async () => {
+    const requests: string[] = []
+    vi.stubGlobal('fetch', async (url: string) => {
+      requests.push(url)
+      return new Response(JSON.stringify({ data: [] }))
+    })
+    await expect(discoverModels(
+      { baseURL: 'https://saved.example/v1', signal: AbortSignal.abort('already canceled') },
+      () => ({ baseURL: 'https://saved.example/v1', hasStoredKey: true, apiKey: () => Promise.resolve('stored-secret') }),
+    )).rejects.toMatchObject({ code: 'ABORTED' })
     expect(requests).toEqual([])
   })
 
@@ -485,6 +528,73 @@ describe('draft-provider model discovery', () => {
 
     await expect(ctx.llm.discoverModels('llm-pi-ai', { provider: 'openai' }))
       .rejects.toMatchObject({ code: 'NO_DISCOVERY' })
+  })
+})
+
+describe('unreachable endpoints', () => {
+  /** undici 的失败形状：`TypeError: fetch failed`，可操作的原因挂在 `cause` 链上。 */
+  function transportFailure(code: string | undefined, layers = 0): Error {
+    let cause: Error = Object.assign(new Error('connect error'), code === undefined ? {} : { code })
+    for (let layer = 0; layer < layers; layer++) cause = Object.assign(new Error(`layer ${String(layer)}`), { cause })
+    return Object.assign(new TypeError('fetch failed'), { cause })
+  }
+
+  it.each([
+    ['ENOTFOUND', 'the host name does not resolve; check the address and this machine\'s network or VPN'],
+    ['EAI_AGAIN', 'the host name does not resolve; check the address and this machine\'s network or VPN'],
+    ['ECONNREFUSED', 'the endpoint refused the connection; check its port and that it is running'],
+    ['CERT_HAS_EXPIRED', 'the TLS handshake was refused; this machine may not trust the endpoint\'s certificate'],
+    ['UNABLE_TO_VERIFY_LEAF_SIGNATURE', 'the TLS handshake was refused; this machine may not trust the endpoint\'s certificate'],
+    ['UND_ERR_SOCKET', 'the connection dropped before the reply arrived'],
+    ['ECONNRESET', 'the connection dropped before the reply arrived'],
+    ['EPIPE', 'the connection dropped before the reply arrived'],
+    ['UND_ERR_CLOSED', 'the connection dropped before the reply arrived'],
+    ['EACCES', 'the connection failed before any reply arrived'],
+  ])('names %s instead of reporting a bare timeout', async (code, hint) => {
+    let calls = 0
+    vi.stubGlobal('fetch', () => {
+      calls += 1
+      return Promise.reject(transportFailure(code))
+    })
+
+    const error = await discoverModels({ baseURL: 'https://gateway.example/v1' })
+      .catch((reason: unknown) => reason) as { code: string; message: string }
+
+    expect(error).toMatchObject({ code: 'DISCOVERY_FAILED' })
+    expect(error.message).toBe(`could not read https://gateway.example/v1/models: ${code} (${hint})`)
+    // 传输失败同样换来连接重试一次，端点恢复时用户不必再点一次。
+    expect(calls).toBe(2)
+  })
+
+  it('reports an endpoint whose failure carries no cause at all', async () => {
+    vi.stubGlobal('fetch', () => Promise.reject(new Error('socket hang up')))
+
+    await expect(discoverModels({ baseURL: 'https://gateway.example/v1' }))
+      .rejects.toThrow(/^could not read https:\/\/gateway\.example\/v1\/models$/)
+  })
+
+  it('ignores an empty code and a cause chain deeper than it walks', async () => {
+    const empty = vi.fn(() => Promise.reject(transportFailure('')))
+    vi.stubGlobal('fetch', empty)
+    await expect(discoverModels({ baseURL: 'https://gateway.example/v1' }))
+      .rejects.toThrow(/^could not read https:\/\/gateway\.example\/v1\/models$/)
+
+    vi.stubGlobal('fetch', () => Promise.reject(transportFailure(undefined, 4)))
+    await expect(discoverModels({ baseURL: 'https://gateway.example/v1' }))
+      .rejects.toThrow(/^could not read https:\/\/gateway\.example\/v1\/models$/)
+  })
+
+  it('reports a stored credential it could not read', async () => {
+    vi.stubGlobal('fetch', () => Promise.resolve(new Response(JSON.stringify({ data: [] }))))
+
+    await expect(discoverModels(
+      { baseURL: 'https://saved.example/v1' },
+      () => ({
+        baseURL: 'https://saved.example/v1',
+        hasStoredKey: true,
+        apiKey: () => Promise.reject(new Error('keychain is locked')),
+      }),
+    )).rejects.toThrow(/could not read this provider's stored API key for https:\/\/saved\.example\/v1/)
   })
 })
 

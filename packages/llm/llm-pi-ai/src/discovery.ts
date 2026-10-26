@@ -1,6 +1,5 @@
 /**
- * Answering "which models can this provider serve?" for the configuration
- * surface's "fetch available models" action.
+ * 回答配置界面「获取可用模型」动作提出的问题：这个提供方能服务哪些模型。
  *
  * 仅向当前草稿明确指定、或已配置路由保存的端点发送 GET /models。
  * 已安装目录仅提供缺省端点，不充当网络查询结果。
@@ -8,6 +7,10 @@
  * 查询不会刷新服务目录：草稿与候选结果都不写入 settings.yaml。
  *
  * 仅探测具有 OpenAI 兼容 GET /models 格式的协议，其余协议要求手工录入。
+ *
+ * 一次探测最多尝试两次：闲置连接被中间设备丢弃、DNS 首次答到不可达地址这类
+ * 一次性故障在换连接后通常就消失。失败说明带上传输原因码，否则界面上只剩
+ * 「超时」，用户无从判断是地址、证书还是网络的问题。
  *
  * @module dsh-llm-pi-ai/discovery
  */
@@ -18,12 +21,10 @@ import { userAgent } from 'coding-llm'
 import { catalogProvider } from './catalog.ts'
 
 /**
- * Protocols whose model listing this module can read: the two that speak
- * OpenAI's `GET /models` shape with bearer auth. Azure is absent despite its
- * OpenAI lineage — it authenticates with an `api-key` header and requires an
- * `api-version` query — and Codex authenticates through OAuth; guessing at
- * either would report an authentication failure as a provider with no models.
- * pi-ai's remaining protocols are absent for the same reason.
+ * 本模块能读取模型清单的协议：以 bearer 认证说 OpenAI `GET /models` 的那两种。
+ * Azure 虽出身 OpenAI 也被排除——它用 `api-key` 标头认证并要求 `api-version`
+ * 查询参数——Codex 则走 OAuth；对这两者靠猜只会把认证失败报成一个没有模型的
+ * 提供方。pi-ai 其余的协议同理缺席。
  */
 const LISTABLE_PROTOCOLS: ReadonlySet<string> = new Set([
   'openai-completions',
@@ -31,14 +32,20 @@ const LISTABLE_PROTOCOLS: ReadonlySet<string> = new Set([
 ])
 
 /**
- * Endpoint replies larger than this are refused. The endpoint is whatever URL
- * the user typed, so the ceiling holds on the bytes actually read rather than
- * on the length the server claims — the same two-stage shape `dsh-web-fetch`
- * uses for its own caller-supplied URLs, except that a truncated model listing
- * is not parseable, so overflow rejects instead of truncating.
+ * 超过这个字节数的回复一律拒绝。端点地址由用户填写，因此上限落在实际读到的
+ * 字节上，而不是服务端声明的长度——这与 `dsh-web-fetch` 处理调用方给出地址的
+ * 两段结构一致，区别在于被截断的模型清单无法解析，所以溢出是拒绝而不是截断。
  */
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024
-const DISCOVERY_TIMEOUT_MS = 10_000
+
+/**
+ * 每次尝试的沉默上限。端点本身通常毫秒级回答，但网关冷启动、DNS 答到不可达
+ * 地址、中间设备丢弃闲置连接都会长时间没有响应，所以按次计时而不是给整个动作
+ * 一个总上限：故障在第二次尝试上消失时，用户仍能拿到清单。
+ */
+const ATTEMPT_TIMEOUT_MS = 10_000
+/** `{@link ATTEMPT_TIMEOUT_MS}` 之上的尝试次数：一次重试覆盖一次性故障。 */
+const DISCOVERY_ATTEMPTS = 2
 
 /** One entry of an OpenAI-compatible `GET /models` reply. */
 interface ListingEntry {
@@ -165,12 +172,10 @@ function readListing(body: unknown): LlmDiscoveredModel[] {
 }
 
 /**
- * Accept one probe key, or refuse it before the header is built. Without this
- * the `fetch` below would throw a ByteString `TypeError` that this function's
- * catch reports as `could not reach <url>` — blaming the network for a local,
- * deterministic fault.
- * @param raw - the key typed into the form or read from storage.
- * @returns the trimmed, usable key.
+ * 校验一个探测密钥，不合格时在构造标头之前拒绝。缺了这一步，下面的 `fetch`
+ * 会抛 ByteString `TypeError`，被当成「读不到端点」，把本地确定的错误说成网络问题。
+ * @param raw - 表单里输入或从存储读到的一次性密钥。
+ * @returns 去掉首尾空白后可直接使用的密钥。
  */
 function usableProbeKey(raw: string): string {
   const checked = normalizeApiKey(raw)
@@ -184,7 +189,169 @@ function usableProbeKey(raw: string): string {
 }
 
 /**
+ * 一次尝试自己的窗口：调用方取消与本次超时合并成一个信号，并记下是哪一个到期。
+ */
+interface ProbeWindow {
+  /** 这次尝试使用的信号。 */
+  signal: AbortSignal
+  /** 本次自己的超时是否到期（调用方取消不算）。 */
+  expired: () => boolean
+  /** 停表并解除调用方监听。 */
+  close: () => void
+}
+
+/**
+ * 开一个受限窗口。
+ * @param caller - 已接上调用方取消的信号。
+ * @param timeoutMs - 本次窗口的上限。
+ * @returns 窗口信号、到期判定与清理函数。
+ */
+function probeWindow(caller: AbortSignal, timeoutMs: number): ProbeWindow {
+  const controller = new AbortController()
+  let expired = false
+  const onAbort = (): void => { controller.abort(caller.reason) }
+  caller.addEventListener('abort', onAbort, { once: true })
+  if (caller.aborted) onAbort()
+  const timer = setTimeout(() => {
+    expired = true
+    controller.abort(new Error('model discovery attempt expired'))
+  }, timeoutMs)
+  return {
+    signal: controller.signal,
+    expired: () => expired,
+    close: () => {
+      clearTimeout(timer)
+      caller.removeEventListener('abort', onAbort)
+    },
+  }
+}
+
+/**
+ * 沿 undici 的 `cause` 链取第一个传输原因码。`fetch` 只抛 `TypeError: fetch failed`，
+ * 可操作的信息（ENOTFOUND、ECONNRESET、证书错误）都在原因链上。
+ * @param error - `fetch` 抛出的错误。
+ * @returns 首个带非空 `code` 的原因码；链上没有时 undefined。
+ */
+function transportCode(error: unknown): string | undefined {
+  let current: unknown = error
+  // 真实原因链只有两三层，走四层足够，也不会被构造出来的环拖住。
+  for (let depth = 0; current instanceof Error && depth < 4; depth++) {
+    const code: unknown = (current as { code?: unknown }).code
+    if (typeof code === 'string' && code.length > 0) return code
+    current = (current as { cause?: unknown }).cause
+  }
+  return undefined
+}
+
+/**
+ * 常见传输原因码对应的下一步。未列出的码只给通用结论，不替用户猜是哪一层出的问题。
+ * @param code - {@link transportCode} 取到的原因码。
+ * @returns 附在失败说明里的短句。
+ */
+function transportHint(code: string): string {
+  if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') {
+    return 'the host name does not resolve; check the address and this machine\'s network or VPN'
+  }
+  if (code === 'ECONNREFUSED') return 'the endpoint refused the connection; check its port and that it is running'
+  if (/CERT|SSL|TLS|SELF_SIGNED|UNABLE_TO_VERIFY/.test(code)) {
+    return 'the TLS handshake was refused; this machine may not trust the endpoint\'s certificate'
+  }
+  if (code === 'ECONNRESET' || code === 'EPIPE' || code === 'UND_ERR_SOCKET' || code === 'UND_ERR_CLOSED') {
+    return 'the connection dropped before the reply arrived'
+  }
+  return 'the connection failed before any reply arrived'
+}
+
+/**
+ * 发出一次探测请求并解析清单。端点已经给出的答案（状态码、非 JSON、清单结构）
+ * 以 {@link LlmError} 抛出，传输层失败原样抛出，由调用方决定是否重试。
+ * @param url - GET /models 地址。
+ * @param headers - 本次探测的请求标头。
+ * @param signal - 本次尝试的窗口信号（调用方取消与本次超时的合并）。
+ * @returns 端点返回顺序的候选模型。
+ */
+async function attemptListing(
+  url: string,
+  headers: Record<string, string>,
+  signal: AbortSignal,
+): Promise<readonly LlmDiscoveredModel[]> {
+  const response = await fetch(url, { method: 'GET', redirect: 'error', headers, signal })
+  if (!response.ok) {
+    throw new LlmError(
+      `${url} answered ${response.status}${response.status === 401 || response.status === 403 ? '; check the API key' : ''}`,
+      'DISCOVERY_FAILED',
+    )
+  }
+  const text = await readBounded(response, url)
+  let body: unknown
+  try {
+    body = JSON.parse(text)
+  } catch (error: unknown) {
+    throw new LlmError(`${url} did not answer with JSON`, 'DISCOVERY_FAILED', { cause: error })
+  }
+  return readListing(body)
+}
+
+/**
+ * 把取消信号变成一次拒绝，用来与非取消式的 Promise（凭据读取）竞速。
+ * @param signal - 本次尝试的窗口信号。
+ * @returns 信号生效时以它的原因为由拒绝的 Promise。
+ */
+function windowAborted(signal: AbortSignal): Promise<never> {
+  const reason = (): Error => signal.reason instanceof Error ? signal.reason : new Error('model discovery aborted')
+  if (signal.aborted) return Promise.reject(reason())
+  return new Promise<never>((_resolve, reject) => {
+    signal.addEventListener('abort', () => { reject(reason()) }, { once: true })
+  })
+}
+
+/**
+ * 读取已保存路由的密钥，并让读取同样受一次尝试的上限约束。凭据服务没有取消信号，
+ * race 会丢弃它迟到的结果，因此窗口结束后绝不会再发出请求。
+ * @param url - 本次探测地址，只用于失败说明。
+ * @param saved - 已保存路由的凭据解析器。
+ * @param callerSignal - 已接上调用方取消的探测信号。
+ * @param caller - 调用方原始信号，用来区分「用户取消」与「本地超时」。
+ * @returns 存储的密钥；没有存储时为 undefined。
+ * @throws LlmError 调用方取消、读取超时或读取失败时抛出。
+ */
+async function storedProbeKey(
+  url: string,
+  saved: { apiKey: () => Promise<string | undefined> },
+  callerSignal: AbortSignal,
+  caller: AbortSignal | undefined,
+): Promise<string | undefined> {
+  const window = probeWindow(callerSignal, ATTEMPT_TIMEOUT_MS)
+  try {
+    return await Promise.race([Promise.resolve().then(saved.apiKey), windowAborted(window.signal)])
+  } catch (error: unknown) {
+    if (caller?.aborted === true) {
+      throw new LlmError('model discovery aborted by caller', 'ABORTED', { cause: error })
+    }
+    // 读本地凭据超时不是网络问题：重试只会在同一个地方再等一次。
+    if (window.expired()) {
+      throw new LlmError(
+        `${url} model discovery timed out after ${String(ATTEMPT_TIMEOUT_MS / 1000)}s while reading this provider's stored API key`,
+        'DISCOVERY_FAILED',
+        { cause: error },
+      )
+    }
+    if (error instanceof LlmError) throw error
+    throw new LlmError(
+      `could not read this provider's stored API key for ${url}`,
+      'DISCOVERY_FAILED',
+      { cause: error },
+    )
+  } finally {
+    window.close()
+  }
+}
+
+/**
  * 读取草稿端点公布的模型，不保存候选结果。
+ *
+ * 传输失败与超时会换连接重试一次；两次都失败时，失败说明区分「一直没响应」
+ * 与「连接直接失败」，后者带上原因码和对应的下一步。
  * @param request - 草稿端点、协议、一次性凭据及取消信号。
  * @param storedRoute - 已保存的端点及其凭据解析器，仅在草稿端点与之相同时读取凭据。
  * @param requestUserAgent - 本次请求的 User-Agent；调用方的渠道级配置解析在这里，
@@ -229,63 +396,59 @@ export async function discoverModels(
   const onAbort = (): void => { controller.abort(request.signal?.reason) }
   request.signal?.addEventListener('abort', onAbort, { once: true })
   if (request.signal?.aborted) onAbort()
-  const timeout = setTimeout(() => { controller.abort(new Error('model discovery timed out')) }, DISCOVERY_TIMEOUT_MS)
   try {
     let supplied = request.apiKey
     if (supplied === undefined && saved !== undefined) {
-      let rejectOnAbort: () => void = () => {}
-      const aborted = new Promise<never>((_resolve, reject) => {
-        rejectOnAbort = () => {
-          reject(controller.signal.reason instanceof Error
-            ? controller.signal.reason : new Error('model discovery aborted'))
-        }
-        controller.signal.addEventListener('abort', rejectOnAbort, { once: true })
-        if (controller.signal.aborted) rejectOnAbort()
-      })
-      try {
-        // 凭据服务没有取消信号；race 会处理其迟到的拒绝，超时后不会发出请求。
-        supplied = await Promise.race([Promise.resolve().then(saved.apiKey), aborted])
-      } finally {
-        controller.signal.removeEventListener('abort', rejectOnAbort)
-      }
+      supplied = await storedProbeKey(url, saved, controller.signal, request.signal)
     }
     controller.signal.throwIfAborted()
     const apiKey = supplied === undefined ? undefined : usableProbeKey(supplied)
-    const response = await fetch(url, {
-      method: 'GET',
-      redirect: 'error',
-      headers: {
-        accept: 'application/json',
-        ...apiKey === undefined ? {} : { authorization: `Bearer ${apiKey}` },
-        'user-agent': requestUserAgent,
-      },
-      signal: controller.signal,
-    })
-    if (!response.ok) {
+    const headers: Record<string, string> = {
+      accept: 'application/json',
+      ...apiKey === undefined ? {} : { authorization: `Bearer ${apiKey}` },
+      'user-agent': requestUserAgent,
+    }
+    // 只有超时与传输失败进入下一次尝试：端点已经给出的答案（状态码、非 JSON、
+    // 清单结构）重试只会重复同一结果。
+    let stalled = false
+    let lastError: unknown
+    for (let attempt = 0; attempt < DISCOVERY_ATTEMPTS; attempt++) {
+      const window = probeWindow(controller.signal, ATTEMPT_TIMEOUT_MS)
+      try {
+        return await attemptListing(url, headers, window.signal)
+      } catch (error: unknown) {
+        if (request.signal?.aborted === true) {
+          throw new LlmError('model discovery aborted by caller', 'ABORTED', { cause: error })
+        }
+        if (error instanceof LlmError) throw error
+        lastError = error
+        stalled = window.expired()
+      } finally {
+        window.close()
+      }
+    }
+    if (stalled) {
       throw new LlmError(
-        `${url} answered ${response.status}${response.status === 401 || response.status === 403 ? '; check the API key' : ''}`,
+        `${url} did not answer within ${String(ATTEMPT_TIMEOUT_MS * DISCOVERY_ATTEMPTS / 1000)}s`
+        + ` (${String(DISCOVERY_ATTEMPTS)} attempts); check the endpoint, and the network or VPN this machine is on`,
         'DISCOVERY_FAILED',
+        { cause: lastError },
       )
     }
-    const text = await readBounded(response, url)
-    let body: unknown
-    try {
-      body = JSON.parse(text)
-    } catch (error: unknown) {
-      throw new LlmError(`${url} did not answer with JSON`, 'DISCOVERY_FAILED', { cause: error })
-    }
-    return readListing(body)
+    const code = transportCode(lastError)
+    throw new LlmError(
+      code === undefined
+        ? `could not read ${url}`
+        : `could not read ${url}: ${code} (${transportHint(code)})`,
+      'DISCOVERY_FAILED',
+      { cause: lastError },
+    )
   } catch (error: unknown) {
-    if (request.signal?.aborted) {
+    if (request.signal?.aborted === true) {
       throw new LlmError('model discovery aborted by caller', 'ABORTED', { cause: error })
     }
-    if (controller.signal.aborted) {
-      throw new LlmError(`${url} model discovery timed out`, 'DISCOVERY_FAILED', { cause: error })
-    }
-    if (error instanceof LlmError) throw error
-    throw new LlmError(`could not read ${url}`, 'DISCOVERY_FAILED', { cause: error })
+    throw error
   } finally {
-    clearTimeout(timeout)
     request.signal?.removeEventListener('abort', onAbort)
   }
 }
