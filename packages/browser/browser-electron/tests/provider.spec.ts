@@ -98,6 +98,22 @@ describe('desktop browser bridge', () => {
       expect(() => parseBridgeRequest({ v: 1, id: 'resize', method: 'execute', sessionId: id, command })).toThrow()
     }
     expect(() => parseBridgeResponse({ v: 1, id: 'x', ok: true, value: { observation, png: 'broken' } }, 'execute')).toThrow()
+    expect(parseBridgeRequest({ v: 1, id: 'batch', method: 'execute', sessionId: id,
+      command: { kind: 'act', revision: 2,
+        steps: [{ kind: 'fill', ref: 'r', text: 'x' }, { kind: 'click', ref: 'r' }] } }).command)
+      .toMatchObject({ kind: 'act', revision: 2 })
+    for (const command of [
+      { kind: 'act', revision: 2, steps: [] },
+      { kind: 'act', revision: 0, steps: [{ kind: 'click', ref: 'r' }] },
+      { kind: 'act', revision: 2, steps: [{ kind: 'click', ref: 'r' }, { kind: 'scroll', ref: 'r' }] },
+      { kind: 'act', revision: 2, steps: [{ kind: 'fill', ref: 'r' }] },
+      { kind: 'act', revision: 2, steps: Array.from({ length: 9 }, () => ({ kind: 'click', ref: 'r' })) },
+      { kind: 'act', revision: 2, steps: [{ kind: 'click', ref: 'r' }], url: 'https://example.com/' },
+    ]) expect(() => parseBridgeRequest({ v: 1, id: 'batch', method: 'execute', sessionId: id, command })).toThrow()
+    expect(parseBridgeResponse({ v: 1, id: 'x', ok: true, value: { observation, png,
+      steps: [{ kind: 'fill', ok: true }, { kind: 'click', ok: false, reason: 'is hidden' }] } }, 'execute').ok).toBe(true)
+    expect(() => parseBridgeResponse({ v: 1, id: 'x', ok: true,
+      value: { observation, png, steps: [{ kind: 'fill', ok: 'yes' }] } }, 'execute')).toThrow()
     expect(() => parseBridgeEvent({ v: 1, type: 'state', sessionId: id, state,
       capture: { observation: { ...observation, revision: 2 }, png } })).toThrow()
     expect(decodeBridgePng(png)).toHaveLength(8)

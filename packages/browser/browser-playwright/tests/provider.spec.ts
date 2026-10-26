@@ -61,6 +61,8 @@ const page = {
   title: vi.fn(async () => 'Title'), url: vi.fn(() => 'http://127.0.0.1:8080/'),
   mainFrame: vi.fn(() => mainFrame),
   on: vi.fn((_event: string, _listener: (dialog: { dismiss: () => Promise<void> }) => void) => {}),
+  // 模拟页面不导航：批次内点击后的等待窗口立即超时，测试不会真的等满一格。
+  waitForEvent: vi.fn(async () => { throw new Error('Timeout') }),
   mouse: { wheel: vi.fn(async () => {}), click: vi.fn(async () => {}), move: vi.fn(async () => {}) },
   keyboard: { insertText: vi.fn(async () => {}) },
 }
@@ -437,6 +439,85 @@ describe('Playwright browser owner', () => {
     page.url.mockReturnValue('http://127.0.0.1:8080/')
     await service.control(id, { kind: 'back' }, signal)
     await service.control(id, { kind: 'back' }, signal)
+    await ctx.fiber.dispose()
+  })
+
+  it('runs a batch of element steps against one observation revision', async () => {
+    const { ctx, service } = await headlessProvider()
+    const id = SessionId('batch')
+    const signal = new AbortController().signal
+    const first = await service.execute(id, { kind: 'navigate', url: 'http://localhost/' }, signal)
+    const captured = ref(first.observation.snapshot)
+    const capture = await service.execute(id, {
+      kind: 'act', revision: first.observation.revision,
+      steps: [
+        { kind: 'fill', ref: captured, text: 'alice' },
+        { kind: 'fill', ref: captured, text: 'secret' },
+        { kind: 'click', ref: captured },
+      ],
+    }, signal)
+    expect(handle.fill).toHaveBeenNthCalledWith(1, 'alice', { timeout: 10_000 })
+    expect(handle.fill).toHaveBeenNthCalledWith(2, 'secret', { timeout: 10_000 })
+    expect(handle.click).toHaveBeenCalledWith({ timeout: 10_000 })
+    expect(capture.steps).toEqual([
+      { kind: 'fill', ok: true }, { kind: 'fill', ok: true }, { kind: 'click', ok: true },
+    ])
+    // 整个批次只发布一次新观测，模型拿到的 revision 只前进一格。
+    expect(capture.observation.revision).toBe(first.observation.revision + 1)
+    expect(service.latest(id)?.observation.revision).toBe(capture.observation.revision)
+    await ctx.fiber.dispose()
+  })
+
+  it('stops a batch after a click that starts a navigation', async () => {
+    const { ctx, service } = await headlessProvider()
+    const id = SessionId('batch-navigation')
+    const signal = new AbortController().signal
+    const first = await service.execute(id, { kind: 'navigate', url: 'http://localhost/' }, signal)
+    const captured = ref(first.observation.snapshot)
+    page.waitForEvent.mockResolvedValueOnce(mainFrame as never)
+    const capture = await service.execute(id, {
+      kind: 'act', revision: first.observation.revision,
+      steps: [{ kind: 'click', ref: captured }, { kind: 'fill', ref: captured, text: 'never' }],
+    }, signal)
+    expect(handle.click).toHaveBeenCalledTimes(1)
+    expect(handle.fill).not.toHaveBeenCalled()
+    expect(capture.steps).toEqual([{ kind: 'click', ok: true }])
+    await ctx.fiber.dispose()
+  })
+
+  it('reports the failing batch step and executes nothing after it', async () => {
+    const { ctx, service } = await headlessProvider()
+    const id = SessionId('batch-failure')
+    const signal = new AbortController().signal
+    const first = await service.execute(id, { kind: 'navigate', url: 'http://localhost/' }, signal)
+    const captured = ref(first.observation.snapshot)
+    handle.click.mockRejectedValueOnce(new Error('element is not visible'))
+    const capture = await service.execute(id, {
+      kind: 'act', revision: first.observation.revision,
+      steps: [
+        { kind: 'fill', ref: captured, text: 'alice' },
+        { kind: 'click', ref: captured },
+        { kind: 'fill', ref: captured, text: 'never' },
+      ],
+    }, signal)
+    expect(handle.fill).toHaveBeenCalledTimes(1)
+    expect(capture.steps).toHaveLength(2)
+    expect(capture.steps?.[0]).toEqual({ kind: 'fill', ok: true })
+    expect(capture.steps?.[1]).toMatchObject({ kind: 'click', ok: false })
+    expect(capture.steps?.[1]?.reason).toContain('is hidden')
+    await ctx.fiber.dispose()
+  })
+
+  it('rejects a batch whose revision is not the current observation', async () => {
+    const { ctx, service } = await headlessProvider()
+    const id = SessionId('batch-stale')
+    const signal = new AbortController().signal
+    const first = await service.execute(id, { kind: 'navigate', url: 'http://localhost/' }, signal)
+    const captured = ref(first.observation.snapshot)
+    await expect(service.execute(id, {
+      kind: 'act', revision: first.observation.revision + 1, steps: [{ kind: 'click', ref: captured }],
+    }, signal)).rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
+    expect(handle.click).not.toHaveBeenCalled()
     await ctx.fiber.dispose()
   })
 

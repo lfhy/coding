@@ -336,6 +336,51 @@ describe.skipIf(process.env.DSH_BROWSER_E2E !== '1' || !existsSync(chromium.exec
       } finally { await close() }
     })
 
+    it('submits a login form with one batch of fills and a click', { timeout: 40_000 }, async () => {
+      const html = `<!doctype html><title>Sign in</title>
+        <form onsubmit="event.preventDefault();
+          document.querySelector('output').textContent =
+            document.querySelector('#account').value + ':' + document.querySelector('#password').value">
+          <input id="account" aria-label="Account">
+          <input id="password" type="password" aria-label="Password">
+          <button type="submit">Sign in</button>
+          <output>Waiting</output>
+        </form>`
+      const server = createServer((_req, res) => { res.setHeader('content-type', 'text/html'); res.end(html) })
+      await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+      const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+      const ctx = new Context()
+      try {
+        await ctx.plugin(PlaywrightBrowserUse).await()
+        const id = SessionId('login-form')
+        const signal = new AbortController().signal
+        const first = await ctx.browserUse.execute(id, { kind: 'navigate', url: origin }, signal)
+        const account = element(first.observation.snapshot, 'input', 'Account')
+        const password = element(first.observation.snapshot, 'input', 'Password')
+        const submit = element(first.observation.snapshot, 'button', 'Sign in')
+        const capture = await ctx.browserUse.execute(id, {
+          kind: 'act', revision: first.observation.revision,
+          steps: [
+            { kind: 'fill', ref: account, text: 'alice' },
+            { kind: 'fill', ref: password, text: 'secret' },
+            { kind: 'click', ref: submit },
+          ],
+        }, signal)
+        expect(capture.steps).toEqual([
+          { kind: 'fill', ok: true }, { kind: 'fill', ok: true }, { kind: 'click', ok: true },
+        ])
+        expect(capture.observation.snapshot).toContain('alice:secret')
+        expect(capture.observation.revision).toBe(first.observation.revision + 1)
+        // 旧观测的引用在批次结束后仍然失效，模型必须用新观测重新取 ref。
+        await expect(ctx.browserUse.execute(id, {
+          kind: 'click', ref: submit, revision: first.observation.revision,
+        }, signal)).rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
+      } finally {
+        await ctx.fiber.dispose()
+        await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
+      }
+    })
+
     it('keeps tabs independent and navigates real browser history', { timeout: 40_000 }, async () => {
       const { ctx, origin, close } = await fixture()
       const id = SessionId('real-tabs')

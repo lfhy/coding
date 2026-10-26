@@ -482,7 +482,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'abstract execute(sessionId: SessionId, command: BrowserCommand, signal: AbortSignal, expectedTarget?: BrowserExpectedTarget): Promise<BrowserCapture>',
-        description: '对指定会话执行一个命令，成功时发布对应的观测与可选截图。 元素操作必须拒绝跨标签页或过期 revision；拒绝与取消不得发布虚假的新观测。',
+        description: '对指定会话执行一个命令，成功时发布对应的观测与可选截图。 元素操作必须拒绝跨标签页或过期 revision；拒绝与取消不得发布虚假的新观测。 `act` 在同一文档内顺序执行多步元素操作，全部步骤共用一个 revision，只在批次结束时观测一次； 页面在批次中途导航即停止，改用新页面的观测，并由 `BrowserCapture.steps` 报告实际执行的步骤。',
         parameters: [{ name: 'sessionId', description: '独占浏览器上下文的会话身份。' }, { name: 'command', description: '导航、快照、交互或关闭命令。' }, { name: 'signal', description: '中止当前操作；提供方应保留调用方给出的中止原因。' }, { name: 'expectedTarget', description: '审批前采样的可选空会话或活跃标签页与状态修订版，执行队列中必须再次核对。' }],
         returns: '成功命令产生的观测和可选 PNG 字节。',
       },
@@ -3121,11 +3121,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BrowserCapture',
-    declaration: 'export interface BrowserCapture {\n    readonly observation: BrowserObservation;\n    readonly png: Uint8Array | null;\n}',
+    declaration: 'export interface BrowserCapture {\n    readonly observation: BrowserObservation;\n    readonly png: Uint8Array | null;\n    readonly steps?: readonly BrowserStepResult[];\n}',
   },
   {
     name: 'BrowserCommand',
-    declaration: 'export type BrowserCommand = {\n    readonly kind: \'navigate\';\n    readonly url: string;\n} | {\n    readonly kind: \'snapshot\';\n} | {\n    readonly kind: \'click\';\n    readonly ref: string;\n    readonly revision: number;\n} | {\n    readonly kind: \'fill\';\n    readonly ref: string;\n    readonly text: string;\n    readonly revision: number;\n} | {\n    readonly kind: \'scroll\';\n    readonly direction: \'up\' | \'down\';\n    readonly pixels: number;\n} | {\n    readonly kind: \'viewport\';\n    readonly width: number;\n    readonly height: number;\n} | {\n    readonly kind: \'screenshot\';\n} | {\n    readonly kind: \'close\';\n};',
+    declaration: 'export type BrowserCommand = {\n    readonly kind: \'navigate\';\n    readonly url: string;\n} | {\n    readonly kind: \'snapshot\';\n} | {\n    readonly kind: \'click\';\n    readonly ref: string;\n    readonly revision: number;\n} | {\n    readonly kind: \'fill\';\n    readonly ref: string;\n    readonly text: string;\n    readonly revision: number;\n} | {\n    readonly kind: \'act\';\n    readonly revision: number;\n    readonly steps: readonly BrowserStep[];\n} | {\n    readonly kind: \'scroll\';\n    readonly direction: \'up\' | \'down\';\n    readonly pixels: number;\n} | {\n    readonly kind: \'viewport\';\n    readonly width: number;\n    readonly height: number;\n} | {\n    readonly kind: \'screenshot\';\n} | {\n    readonly kind: \'close\';\n};',
   },
   {
     name: 'BrowserExpectedTarget',
@@ -3146,6 +3146,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'BrowserSessionState',
     declaration: 'export interface BrowserSessionState {\n    readonly operationActive: boolean;\n    readonly browserGeneration: string;\n    readonly stateRevision: number;\n    readonly viewport: {\n        readonly width: number;\n        readonly height: number;\n    };\n    readonly tabs: BrowserTabSummary[];\n    readonly activeTabId: BrowserTabId | null;\n    readonly observation: BrowserObservation | null;\n    readonly hasFrame: boolean;\n}',
+  },
+  {
+    name: 'BrowserStep',
+    declaration: 'export type BrowserStep = {\n    readonly kind: \'click\';\n    readonly ref: string;\n} | {\n    readonly kind: \'fill\';\n    readonly ref: string;\n    readonly text: string;\n};',
+  },
+  {
+    name: 'BrowserStepResult',
+    declaration: 'export interface BrowserStepResult {\n    readonly kind: \'click\' | \'fill\';\n    readonly ok: boolean;\n    readonly reason?: string;\n}',
   },
   {
     name: 'BrowserTabId',

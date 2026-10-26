@@ -15,9 +15,18 @@ const MAX_SESSIONS = 32
 const CODES = new Set<BrowserUseErrorCode>(['BROWSER_INVALID_URL', 'BROWSER_STALE_REF', 'BROWSER_CLOSED',
   'BROWSER_DENIED', 'BROWSER_UNAVAILABLE', 'BROWSER_FAILED', 'BROWSER_BUSY'])
 
-function wireCapture(capture: BrowserCapture): { observation: BrowserCapture['observation']; png: string | null } {
+function wireCapture(capture: BrowserCapture): {
+  observation: BrowserCapture['observation']
+  png: string | null
+  steps?: NonNullable<BrowserCapture['steps']>
+} {
   if (capture.png && capture.png.byteLength > MAX_PNG_BYTES) throw new Error('desktop browser PNG exceeds limit')
-  return { observation: capture.observation, png: capture.png ? Buffer.from(capture.png).toString('base64') : null }
+  return {
+    observation: capture.observation,
+    png: capture.png ? Buffer.from(capture.png).toString('base64') : null,
+    // 批量动作的逐步骤结果随捕获返回；其余命令没有该字段。
+    ...capture.steps === undefined ? {} : { steps: capture.steps },
+  }
 }
 
 function failure(error: unknown): { code: BrowserUseErrorCode; message: string } {

@@ -3,12 +3,26 @@
 /** 会话内标签页的稳定身份；关闭后不可复用。 */
 export type BrowserTabId = string & { readonly __browserTabId: unique symbol }
 
+/** 批量交互中的一步元素操作；同一批次的每一步共用产生它们的观测修订版。 */
+export type BrowserStep =
+  | { readonly kind: 'click'; readonly ref: string }
+  | { readonly kind: 'fill'; readonly ref: string; readonly text: string }
+
+/** 批量交互中一步的实际结果；未被执行的步骤不出现在结果里。 */
+export interface BrowserStepResult {
+  readonly kind: 'click' | 'fill'
+  readonly ok: boolean
+  /** 仅失败步骤提供：提供方对该步失败原因的一句话说明，已去掉控制字符并按长度截断。 */
+  readonly reason?: string
+}
+
 /** 一次会话浏览器操作。元素引用只在产生它的标签页与观测修订版中有效。 */
 export type BrowserCommand =
   | { readonly kind: 'navigate'; readonly url: string }
   | { readonly kind: 'snapshot' }
   | { readonly kind: 'click'; readonly ref: string; readonly revision: number }
   | { readonly kind: 'fill'; readonly ref: string; readonly text: string; readonly revision: number }
+  | { readonly kind: 'act'; readonly revision: number; readonly steps: readonly BrowserStep[] }
   | { readonly kind: 'scroll'; readonly direction: 'up' | 'down'; readonly pixels: number }
   | { readonly kind: 'viewport'; readonly width: number; readonly height: number }
   | { readonly kind: 'screenshot' }
@@ -102,6 +116,11 @@ export interface BrowserObservation {
 export interface BrowserCapture {
   readonly observation: BrowserObservation
   readonly png: Uint8Array | null
+  /**
+   * 批量交互各步的结果，顺序与请求一致；`act` 之外的操作不提供。
+   * 批次在第一个无法执行的步骤处停止，因此较短的数组表示其余步骤没有执行。
+   */
+  readonly steps?: readonly BrowserStepResult[]
 }
 
 /** 可供消费方识别的浏览器失败种类；调用方取消保留 AbortSignal 的原因。 */

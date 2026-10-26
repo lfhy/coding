@@ -589,6 +589,55 @@ describe('Electron 实时浏览器 guest', () => {
     await manager.dispose()
   })
 
+  it('一次批次内顺序填写并提交，只发布一个观测', async () => {
+    const manager = createBrowserGuestManager(fixture())
+    await manager.execute('s1', { kind: 'navigate', url: 'https://example.com/' })
+    const wc = electron.views[0]!.webContents
+    const snapshot = await manager.execute('s1', { kind: 'snapshot' })
+    const capture = await manager.execute('s1', { kind: 'act', revision: snapshot.observation.revision, steps: [
+      { kind: 'fill', ref: 'e1', text: 'alice' },
+      { kind: 'fill', ref: 'e1', text: 'secret' },
+      { kind: 'click', ref: 'e1' },
+    ] })
+    expect(wc.debugger.sendCommand.mock.calls.filter(([method]) => method === 'Input.insertText')
+      .map(([, params]) => (params as { text: string }).text)).toEqual(['alice', 'secret'])
+    expect(capture.steps).toEqual([
+      { kind: 'fill', ok: true }, { kind: 'fill', ok: true }, { kind: 'click', ok: true },
+    ])
+    // 批次只观测一次；模型拿到的 revision 前进一格，旧引用随之失效。
+    expect(capture.observation.revision).toBe(snapshot.observation.revision + 1)
+    expect(capture.observation.cursor).toMatchObject({ kind: 'click' })
+    await manager.dispose()
+  })
+
+  it('批次内一步被遮挡即停止，不执行余下步骤', async () => {
+    const manager = createBrowserGuestManager(fixture())
+    await manager.execute('s1', { kind: 'navigate', url: 'https://example.com/' })
+    const wc = electron.views[0]!.webContents
+    const snapshot = await manager.execute('s1', { kind: 'snapshot' })
+    wc.changeTarget()
+    const capture = await manager.execute('s1', { kind: 'act', revision: snapshot.observation.revision, steps: [
+      { kind: 'fill', ref: 'e1', text: 'alice' },
+      { kind: 'click', ref: 'e1' },
+    ] })
+    expect(wc.debugger.sendCommand.mock.calls.filter(([method]) => method === 'Input.insertText')).toEqual([])
+    expect(capture.steps).toEqual([
+      { kind: 'fill', ok: false, reason: 'browser element e1 is covered by another element (div "overlay")' },
+    ])
+    await manager.dispose()
+  })
+
+  it('批次修订版不是当前观测时整体拒绝', async () => {
+    const manager = createBrowserGuestManager(fixture())
+    await manager.execute('s1', { kind: 'navigate', url: 'https://example.com/' })
+    const snapshot = await manager.execute('s1', { kind: 'snapshot' })
+    await expect(manager.execute('s1', { kind: 'act', revision: snapshot.observation.revision + 1,
+      steps: [{ kind: 'click', ref: 'e1' }] })).rejects.toMatchObject({ code: 'BROWSER_STALE_REF' })
+    expect(electron.views[0]!.webContents.debugger.sendCommand.mock.calls
+      .some(([method]) => method === 'Input.dispatchMouseEvent')).toBe(false)
+    await manager.dispose()
+  })
+
   it('原生页面人工输入撤销旧画面，人工导航可建立会话', async () => {
     const updates: unknown[] = []
     const manager = createBrowserGuestManager(fixture(), { onState: (_id, state) => updates.push(state) })

@@ -6,7 +6,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { DEFAULT_MAX_SOURCE_IMAGE_BYTES, DEFAULT_MAX_SOURCE_IMAGE_PIXELS, normalizeImage } from 'coding-attachment-local'
 import { AttachmentError } from 'coding-attachment'
 import { BrowserUseError, BrowserUseService } from 'coding-browser'
-import type { BrowserCapture, BrowserCommand, BrowserExpectedTarget, BrowserHumanCommand, BrowserHumanTarget, BrowserObservation, BrowserSessionState, BrowserTabId, BrowserTabSummary } from 'coding-browser'
+import type { BrowserCapture, BrowserCommand, BrowserExpectedTarget, BrowserHumanCommand, BrowserHumanTarget, BrowserObservation, BrowserSessionState, BrowserStep, BrowserStepResult, BrowserTabId, BrowserTabSummary } from 'coding-browser'
 import type {} from 'coding-host-webserver'
 import type {} from 'coding-session'
 import type { SessionId } from 'coding-session/types'
@@ -25,6 +25,10 @@ const ELEMENT_LIMIT = 150
 const ELEMENT_SCAN_LIMIT = 50_000
 const MAX_SESSIONS = 8
 const MAX_TABS = 8
+const MAX_ACT_STEPS = 8
+// 批次内中间点击后等待主框架导航的上限；仅用于避免后续步骤落进即将卸载的文档。
+const ACT_SETTLE_MS = 500
+const MAX_STEP_REASON_CHARS = 200
 const IDLE_TIMEOUT = 10 * 60_000
 const ELEMENT_SELECTOR = 'button, a[href], input, textarea, select, [role="button"], [role="link"], [role="textbox"]'
 
@@ -76,11 +80,22 @@ function actionabilityReason(error: unknown): string {
   return 'did not become actionable'
 }
 
+/**
+ * 批次内一步失败的原因文本：去掉控制字符并限长后交给模型，避免页面内容过长撑大结果。
+ * @param error 该步抛出的错误。
+ * @param ref 该步的模型输入引用。
+ * @returns 一句话失败原因。
+ */
+function stepFailureReason(error: BrowserUseError, ref: string): string {
+  const message = error.message.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim()
+  const reason = message === '' ? `${ref} could not be used` : message
+  return reason.slice(0, MAX_STEP_REASON_CHARS)
+}
+
 /** 已知的画面限额不会使页面执行状态失控；其余 BROWSER_FAILED 仍销毁会话。 */
 class OversizedFrameError extends BrowserUseError {
   constructor() { super(`browser screenshot exceeds ${FRAME_LIMIT} bytes`, 'BROWSER_FAILED') }
 }
-
 /** 新标签导航失败且仅回收该标签页后，保留原会话。 */
 class RolledBackTabError extends BrowserUseError {
   constructor(cause: unknown) { super('browser new tab navigation failed', 'BROWSER_FAILED', { cause }) }
@@ -494,34 +509,82 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
     return capture
   }
 
+  /**
+   * 在当前观测的元素引用上执行一步点击或填写，并给出指针落点。
+   * 元素缺失、移出视口或当下不可用一律以 `BROWSER_STALE_REF` 拒绝，不重试、不换目标。
+   * @param owner 元素所属会话；用于视口边界。
+   * @param tab 元素引用所属标签页。
+   * @param step 要执行的一步元素操作；`ref` 必须来自该标签页当前观测。
+   * @returns 这一步的指针位置与时间。
+   */
+  private async elementStep(owner: SessionPage, tab: SessionTab, step: BrowserStep): Promise<BrowserObservation['cursor']> {
+    const handle = tab.refs.get(step.ref)
+    if (handle === undefined) throw fail(`browser element is no longer current: ${step.ref}`, 'BROWSER_STALE_REF')
+    const box = await handle.boundingBox()
+    if (box === null) throw fail(`browser element no longer visible: ${step.ref}`, 'BROWSER_STALE_REF')
+    if (box.x + box.width <= 0 || box.y + box.height <= 0 || box.x >= owner.viewport.width ||
+      box.y >= owner.viewport.height) throw fail(`browser element outside viewport: ${step.ref}`, 'BROWSER_STALE_REF')
+    const cursor = { x: Math.round((Math.max(0, box.x) + Math.min(owner.viewport.width, box.x + box.width)) / 2),
+      y: Math.round((Math.max(0, box.y) + Math.min(owner.viewport.height, box.y + box.height)) / 2),
+      kind: step.kind, at: Date.now() }
+    try {
+      if (step.kind === 'click') await handle.click({ timeout: 10_000 })
+      else await handle.fill(step.text, { timeout: 10_000 })
+    } catch (error) {
+      if (error instanceof BrowserUseError) throw error
+      // Playwright 的可用性检查失败表示元素当下点不动；报成过期引用并带上原因，
+      // 模型才知道该关掉遮挡、滚动还是换目标，而不是收到一句笼统的操作失败。
+      throw fail(`browser element ${step.ref} ${actionabilityReason(error)}`, 'BROWSER_STALE_REF')
+    }
+    return cursor
+  }
+
+  /**
+   * 批次内非末步的点击可能异步提交表单；给导航一个短暂窗口，
+   * 让下一步在文档已被替换时停下，而不是把输入丢进即将卸载的文档。
+   * @param tab 刚被点击的标签页。
+   * @returns 是否已经开始主框架导航。
+   */
+  private async navigatedAfterClick(tab: SessionTab): Promise<boolean> {
+    const navigated = await tab.page.waitForEvent('framenavigated', {
+      timeout: ACT_SETTLE_MS, predicate: (frame: unknown) => frame === tab.page.mainFrame(),
+    }).then(() => true, () => false)
+    return navigated || !await this.sameDocument(tab)
+  }
+
   private async perform(owner: SessionPage, tab: SessionTab, command: BrowserCommand): Promise<BrowserCapture> {
     const page = tab.page
     let cursor: BrowserObservation['cursor'] = null
+    let steps: BrowserStepResult[] | undefined
     switch (command.kind) {
       case 'navigate':
         await page.goto(command.url, { waitUntil: 'domcontentloaded', timeout: 15_000 })
         break
       case 'click':
       case 'fill': {
-        const handle = tab.refs.get(command.ref)
-        if (tab.revision !== command.revision || handle === undefined) {
+        if (tab.revision !== command.revision) {
           throw fail(`stale browser element ${command.ref} at revision ${command.revision}`, 'BROWSER_STALE_REF')
         }
-        const box = await handle.boundingBox()
-        if (box === null) throw fail(`browser element no longer visible: ${command.ref}`, 'BROWSER_STALE_REF')
-        if (box.x + box.width <= 0 || box.y + box.height <= 0 || box.x >= owner.viewport.width ||
-          box.y >= owner.viewport.height) throw fail(`browser element outside viewport: ${command.ref}`, 'BROWSER_STALE_REF')
-        cursor = { x: Math.round((Math.max(0, box.x) + Math.min(owner.viewport.width, box.x + box.width)) / 2),
-          y: Math.round((Math.max(0, box.y) + Math.min(owner.viewport.height, box.y + box.height)) / 2),
-          kind: command.kind, at: Date.now() }
-        try {
-          if (command.kind === 'click') await handle.click({ timeout: 10_000 })
-          else await handle.fill(command.text, { timeout: 10_000 })
-        } catch (error) {
-          if (error instanceof BrowserUseError) throw error
-          // Playwright 的可用性检查失败表示元素当下点不动；报成过期引用并带上原因，
-          // 模型才知道该关掉遮挡、滚动还是换目标，而不是收到一句笼统的操作失败。
-          throw fail(`browser element ${command.ref} ${actionabilityReason(error)}`, 'BROWSER_STALE_REF')
+        cursor = await this.elementStep(owner, tab, command)
+        break
+      }
+      case 'act': {
+        // 整个批次共用一个观测修订版与一份元素引用；页面一旦离开该文档，余下步骤全部作废。
+        if (tab.revision !== command.revision) throw fail(`stale browser element revision ${command.revision}`, 'BROWSER_STALE_REF')
+        const documentRevision = owner.stateRevision
+        steps = []
+        for (const [index, step] of command.steps.entries()) {
+          if (steps.length >= MAX_ACT_STEPS) break
+          if (owner.stateRevision !== documentRevision || !await this.sameDocument(tab)) break
+          try {
+            cursor = await this.elementStep(owner, tab, step)
+          } catch (error) {
+            if (!(error instanceof BrowserUseError)) throw error
+            steps.push({ kind: step.kind, ok: false, reason: stepFailureReason(error, step.ref) })
+            break
+          }
+          steps.push({ kind: step.kind, ok: true })
+          if (step.kind === 'click' && index < command.steps.length - 1 && await this.navigatedAfterClick(tab)) break
         }
         break
       }
@@ -539,7 +602,8 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
       case 'close': throw fail('close is handled outside page operations', 'BROWSER_FAILED')
       default: { const unreachable: never = command; throw new Error(`unknown browser command: ${String(unreachable)}`) }
     }
-    return this.observe(owner, tab, cursor)
+    const capture = await this.observe(owner, tab, cursor)
+    return steps === undefined ? capture : { ...capture, steps }
   }
 
   /** @inheritdoc */
@@ -579,7 +643,8 @@ export default class PlaywrightBrowserUse extends BrowserUseService {
       if (command.kind === 'navigate') validateBrowserUrl(command.url)
       if (!owner) owner = await this.createOwner(sessionId, signal)
       const tab = this.active(owner)
-      if ((command.kind === 'click' || command.kind === 'fill') && tab.capture?.observation.url !== tab.page.url()) {
+      if ((command.kind === 'click' || command.kind === 'fill' || command.kind === 'act') &&
+        tab.capture?.observation.url !== tab.page.url()) {
         throw fail('browser page changed since the element was observed', 'BROWSER_STALE_REF')
       }
       return this.perform(owner, tab, command)

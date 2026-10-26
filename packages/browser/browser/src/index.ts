@@ -4,7 +4,7 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import type { SessionId } from 'coding-session'
 import type { BrowserCapture, BrowserCommand, BrowserExpectedTarget, BrowserHumanCommand, BrowserSessionState, BrowserUseErrorCode } from './types.ts'
 
-export type { BrowserCapture, BrowserCommand, BrowserExpectedTarget, BrowserHumanCommand, BrowserHumanTarget, BrowserObservation, BrowserOperationOnlyState, BrowserSessionState, BrowserTabId, BrowserTabSummary, BrowserUseErrorCode } from './types.ts'
+export type { BrowserCapture, BrowserCommand, BrowserExpectedTarget, BrowserHumanCommand, BrowserHumanTarget, BrowserObservation, BrowserOperationOnlyState, BrowserSessionState, BrowserStep, BrowserStepResult, BrowserTabId, BrowserTabSummary, BrowserUseErrorCode } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -64,6 +64,8 @@ export abstract class BrowserUseService extends Service {
   /**
    * 对指定会话执行一个命令，成功时发布对应的观测与可选截图。
    * 元素操作必须拒绝跨标签页或过期 revision；拒绝与取消不得发布虚假的新观测。
+   * `act` 在同一文档内顺序执行多步元素操作，全部步骤共用一个 revision，只在批次结束时观测一次；
+   * 页面在批次中途导航即停止，改用新页面的观测，并由 `BrowserCapture.steps` 报告实际执行的步骤。
    * @param sessionId - 独占浏览器上下文的会话身份。
    * @param command - 导航、快照、交互或关闭命令。
    * @param signal - 中止当前操作；提供方应保留调用方给出的中止原因。

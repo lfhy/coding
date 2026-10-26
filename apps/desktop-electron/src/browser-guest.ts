@@ -419,7 +419,7 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
       park(sessionId, owner, tab)
       const mutation = { occurred: false }
       try {
-        const { cursor, feedback } = await performModelOperation({
+        const { cursor, feedback, steps } = await performModelOperation({
           command, owner, tab, evaluate, requireTarget, pointers,
           assertStable: (navigation) => { assertStable(sessionId, owner, tab, navigation) },
           assertTarget: () => { assertTarget(owner, expectedTarget) },
@@ -438,7 +438,8 @@ export function createBrowserGuestManager(window: BrowserWindow, options: Browse
         const capture = await observe(sessionId, owner, tab, cursor, command.kind === 'screenshot')
         await feedback
         unpark(tab)
-        return capture
+        // 批量动作把实际执行到的步骤随观测一起返回；未列出的步骤没有执行。
+        return steps === undefined ? capture : { ...capture, steps }
       } catch (error) {
         unpark(tab)
         if (mutation.occurred && owners.get(sessionId) === owner && owner.tabs.has(tab.id)) {

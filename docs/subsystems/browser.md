@@ -1,6 +1,6 @@
 # 浏览器使用
 
-浏览器使用能力由 [`coding-browser`](../../packages/browser/browser/README.md) 定义 `ctx.browserUse`，由 Web/CLI 的 [Playwright 提供方](../../packages/browser/browser-playwright/README.md)或桌面 Host 的 [Electron 提供方](../../packages/browser/browser-electron/README.md)实现，并由[八项浏览器工具](../../packages/browser/tool-browser/README.md)消费。服务按 `SessionId` 隔离浏览器资源与标签页；工具负责调用会话的权限判断、所需审批和模型结果，完全访问的免逐次审批条件见[工具 README](../../packages/browser/tool-browser/README.md)。提供方负责导航输入校验、页面资源及清理，使用 Chromium 原生联网，不过滤目的地、重定向或子资源。工作台读取 Host 标签页状态；Web/CLI 绘制 Host 操作后捕获的 PNG，桌面端呈现与 Agent 共用的实时 `WebContentsView` guest。预览 API 的入站信任限制由提供方持有，与页面出站联网无关。
+浏览器使用能力由 [`coding-browser`](../../packages/browser/browser/README.md) 定义 `ctx.browserUse`，由 Web/CLI 的 [Playwright 提供方](../../packages/browser/browser-playwright/README.md)或桌面 Host 的 [Electron 提供方](../../packages/browser/browser-electron/README.md)实现，并由[九项浏览器工具](../../packages/browser/tool-browser/README.md)消费。服务按 `SessionId` 隔离浏览器资源与标签页；工具负责调用会话的权限判断、所需审批和模型结果，完全访问的免逐次审批条件见[工具 README](../../packages/browser/tool-browser/README.md)。提供方负责导航输入校验、页面资源及清理，使用 Chromium 原生联网，不过滤目的地、重定向或子资源。工作台读取 Host 标签页状态；Web/CLI 绘制 Host 操作后捕获的 PNG，桌面端呈现与 Agent 共用的实时 `WebContentsView` guest。预览 API 的入站信任限制由提供方持有，与页面出站联网无关。
 
 以下跨包类型声明来自 [`packages/browser/browser/src/types.ts`](../../packages/browser/browser/src/types.ts)。服务方法的完整签名与 JSDoc 由下方 Cordis API 区域生成。
 
@@ -170,6 +170,8 @@ prepareTarget(sessionId: SessionId, signal: AbortSignal): Promise<BrowserExpecte
 /**
  * 对指定会话执行一个命令，成功时发布对应的观测与可选截图。
  * 元素操作必须拒绝跨标签页或过期 revision；拒绝与取消不得发布虚假的新观测。
+ * `act` 在同一文档内顺序执行多步元素操作，全部步骤共用一个 revision，只在批次结束时观测一次；
+ * 页面在批次中途导航即停止，改用新页面的观测，并由 `BrowserCapture.steps` 报告实际执行的步骤。
  * @param sessionId - 独占浏览器上下文的会话身份。
  * @param command - 导航、快照、交互或关闭命令。
  * @param signal - 中止当前操作；提供方应保留调用方给出的中止原因。

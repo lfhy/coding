@@ -1,9 +1,11 @@
 /** Electron 主进程与 Host 的私有、逐字段校验的浏览器协议。 @module coding-browser-electron/protocol */
 
-import type { BrowserCapture, BrowserCommand, BrowserExpectedTarget, BrowserHumanCommand, BrowserObservation, BrowserSessionState, BrowserTabId, BrowserUseErrorCode } from 'coding-browser'
+import type { BrowserCapture, BrowserCommand, BrowserExpectedTarget, BrowserHumanCommand, BrowserObservation, BrowserSessionState, BrowserStep, BrowserStepResult, BrowserTabId, BrowserUseErrorCode } from 'coding-browser'
 
 export const MAX_PNG_BYTES = 2 * 1024 * 1024
 export const MAX_BRIDGE_FRAME_BYTES = 3 * 1024 * 1024
+/** 与工具层一致的批量上限；主进程在执行任何命令前再次检查。 */
+export const MAX_ACT_STEPS = 8
 const CODES = new Set<BrowserUseErrorCode>(['BROWSER_INVALID_URL', 'BROWSER_STALE_REF', 'BROWSER_CLOSED',
   'BROWSER_DENIED', 'BROWSER_UNAVAILABLE', 'BROWSER_FAILED', 'BROWSER_BUSY'])
 
@@ -16,8 +18,11 @@ export interface BridgeRequest {
   readonly command?: BrowserCommand | BrowserHumanCommand
   readonly expectedTarget?: BrowserExpectedTarget
 }
-export type BridgeValue = BrowserExpectedTarget | { readonly observation: BrowserObservation; readonly png: string | null } |
-  BrowserSessionState | null
+export type BridgeValue = BrowserExpectedTarget | {
+  readonly observation: BrowserObservation
+  readonly png: string | null
+  readonly steps?: readonly BrowserStepResult[]
+} | BrowserSessionState | null
 export type BridgeResponse = {
   readonly v: 1
   readonly id: string
@@ -83,9 +88,28 @@ export function decodeBridgePng(value: unknown): Uint8Array | null {
     bytes.toString('base64') !== value) throw new Error('invalid desktop browser PNG bytes')
   return bytes
 }
-function capture(value: unknown): value is { observation: BrowserObservation; png: string | null } {
-  if (!fields(value, ['observation', 'png']) || !observation(value.observation)) return false
+function capture(value: unknown): value is {
+  readonly observation: BrowserObservation
+  readonly png: string | null
+  readonly steps?: readonly BrowserStepResult[]
+} {
+  if (!fields(value, ['observation', 'png'], ['steps']) || !observation(value.observation)) return false
+  if (value.steps !== undefined && !stepResults(value.steps)) return false
   try { decodeBridgePng(value.png); return true } catch { return false }
+}
+function steps(value: unknown): value is readonly BrowserStep[] {
+  return Array.isArray(value) && value.length > 0 && value.length <= MAX_ACT_STEPS && value.every((step: unknown) => {
+    if (!record(step) || typeof step.kind !== 'string') return false
+    if (step.kind === 'click') return fields(step, ['kind', 'ref']) && bounded(step.ref, 256)
+    return step.kind === 'fill' && fields(step, ['kind', 'ref', 'text']) && bounded(step.ref, 256) &&
+      typeof step.text === 'string' && step.text.length <= 2000
+  })
+}
+function stepResults(value: unknown): value is readonly BrowserStepResult[] {
+  return Array.isArray(value) && value.length <= MAX_ACT_STEPS && value.every((step: unknown) =>
+    fields(step, ['kind', 'ok'], ['reason']) && ['click', 'fill'].includes(String(step.kind)) &&
+    typeof step.ok === 'boolean' &&
+    (step.reason === undefined || typeof step.reason === 'string' && step.reason.length <= 200))
 }
 function state(value: unknown): value is BrowserSessionState {
   if (!fields(value, ['operationActive', 'browserGeneration', 'stateRevision', 'viewport', 'tabs',
@@ -134,6 +158,8 @@ function command(value: unknown, human: boolean): boolean {
   if (kind === 'click') return fields(value, ['kind', 'ref', 'revision']) && bounded(value.ref, 256) && integer(value.revision, 1)
   if (kind === 'fill') return fields(value, ['kind', 'ref', 'revision', 'text']) && bounded(value.ref, 256) &&
     integer(value.revision, 1) && typeof value.text === 'string' && value.text.length <= 2000
+  if (kind === 'act') return fields(value, ['kind', 'revision', 'steps']) && integer(value.revision, 1) &&
+    steps(value.steps)
   return kind === 'scroll' && fields(value, ['kind', 'direction', 'pixels']) &&
     ['up', 'down'].includes(String(value.direction)) && integer(value.pixels, 1, 2000)
 }
@@ -177,8 +203,15 @@ export function parseBridgeEvent(value: unknown): BridgeStateEvent {
 }
 
 /** 将已校验的 wire 截图转为服务使用的字节，不能把 base64 暴露给 HTTP 路由。 */
-export function decodeBridgeCapture(value: { readonly observation: BrowserObservation; readonly png: string | null }): BrowserCapture {
-  return { observation: value.observation, png: decodeBridgePng(value.png) }
+export function decodeBridgeCapture(value: {
+  readonly observation: BrowserObservation
+  readonly png: string | null
+  readonly steps?: readonly BrowserStepResult[]
+}): BrowserCapture {
+  return {
+    observation: value.observation, png: decodeBridgePng(value.png),
+    ...value.steps === undefined ? {} : { steps: value.steps },
+  }
 }
 
 /** 检查 WebSocket 单帧体积后再执行 JSON.parse。 */
