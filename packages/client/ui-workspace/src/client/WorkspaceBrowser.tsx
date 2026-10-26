@@ -770,6 +770,12 @@ export function WorkspaceBrowser({
   const workspaces = useWorkspaces(state => state.items)
   const workspacePhase = useWorkspaces(state => state.phase)
   const archivedSessionIds = useWorkspaces(state => state.archivedSessionIds)
+  const newSessionError = useWorkspaces(state => state.startSessionError)
+  // 关闭后的错误保持关闭，直到运行时发布新的 attempt。错误由运行时持有，
+  // 因而壳层、分组行和选择器的 New Session 入口共享同一份可重试结果。
+  const [dismissedNewSessionAttempt, setDismissedNewSessionAttempt] = useState<number | undefined>()
+  const newSessionErrorVisible = newSessionError !== undefined
+    && newSessionError.attempt !== dismissedNewSessionAttempt
   // Live occupancy of this surface's directory-flow hole (the same source the
   // flow reads): a composition without a picking affordance can add nothing.
   const directoryFlowAvailable = useDirectoryFlow(occupied => occupied)
@@ -1258,6 +1264,41 @@ export function WorkspaceBrowser({
           }}
         />
         {sessionRenameError !== null && <div className={css.renameError} role="alert">{sessionRenameError}</div>}
+      </Modal>
+      <Modal
+        open={newSessionErrorVisible}
+        onClose={() => {
+          /* v8 ignore next -- 对话框只有在错误对象存在时才会打开。 */
+          if (newSessionError !== undefined) setDismissedNewSessionAttempt(newSessionError.attempt)
+        }}
+        closeLabel={t('close')}
+        title={t('picker.sessionError.title')}
+        footer={(
+          <>
+            <Button
+              variant="outline"
+              onClick={() => {
+                /* v8 ignore next -- 对话框只有在错误对象存在时才会挂载按钮。 */
+                if (newSessionError !== undefined) setDismissedNewSessionAttempt(newSessionError.attempt)
+              }}
+            >
+              {t('cancel')}
+            </Button>
+            <Button
+              variant="primary"
+              onClick={() => {
+                /* v8 ignore next -- 对话框只有在错误对象存在时才会挂载按钮。 */
+                if (newSessionError === undefined) return
+                setDismissedNewSessionAttempt(newSessionError.attempt)
+                startSession(newSessionError.workspaceId)
+              }}
+            >
+              {t('picker.sessionError.retry')}
+            </Button>
+          </>
+        )}
+      >
+        <div className={css.sessionError} role="alert">{newSessionError?.message}</div>
       </Modal>
       <Modal
         open={deleteTarget !== null}

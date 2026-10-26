@@ -515,6 +515,14 @@
   color: var(--dsw-alias-state-error-primary);
 }
 
+/* New Session 失败留在浏览器区域统一解释并提供重试，不再只写入控制台。 */
+.sessionError {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-state-error-primary);
+}
+
 .deleteAction:not(:disabled) {
   color: var(--dsw-alias-state-error-primary);
 }

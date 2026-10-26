@@ -21,11 +21,9 @@ export interface IWorkspaces {
    */
   connectWorkspace(workspaceId: WorkspaceId): Promise<SessionId>
   /**
-   * The New Session flow: connect the explicit, current-Session, or recent
-   * Workspace and open the resulting session; failures surface on the session
-   * list state.
-   * @param workspaceId - explicit target; omitted inherits the current
-   * Session's Workspace before falling back to the recency projection.
+   * 新建会话流程：连接显式、当前会话所属或最近使用的工作区并打开结果；
+   * 失败通过 `WorkspaceListState.startSessionError` 投影为可重试的 UI 动作。
+   * @param workspaceId - 显式目标；省略时先沿用当前会话工作区，再回退到最近工作区。
    */
   startSession(workspaceId?: WorkspaceId): void
   /**

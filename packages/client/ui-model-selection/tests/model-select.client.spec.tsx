@@ -77,6 +77,23 @@ describe('ModelSelect 刷新状态', () => {
     expect(within(menu).queryByText(zh['status.loading'])).toBeNull()
     expect(within(menu).getByRole('button', { name: /DeepSeek-V4-Flash/ })).toBeTruthy()
   })
+
+  it('用户重试目录时先中断旧连接再发起加载', () => {
+    const directory = createSnapshotStore<ModelDirectoryState>(state({
+      current: null, groups: [], status: 'error', error: 'Failed to fetch', routable: null,
+    }))
+    const load = vi.fn()
+    const reconnect = vi.fn()
+    render(<ModelSelect
+      locked={false} available directory={directory} load={load} reconnect={reconnect} select={vi.fn()} t={t}
+    />)
+    const menu = openMenu()
+    reconnect.mockClear()
+    load.mockClear()
+    fireEvent.click(within(menu).getByRole('button', { name: '重新加载' }))
+    expect(reconnect).toHaveBeenCalledOnce()
+    expect(load).toHaveBeenCalled()
+  })
 })
 
 describe('ModelSelect reasoning effort', () => {

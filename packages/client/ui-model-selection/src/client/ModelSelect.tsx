@@ -50,7 +50,7 @@ function measureMenuPlacement(root: HTMLElement, wide: boolean): MenuPlacement {
  * @returns 触发器及打开时的推理强度或模型选择面板。
  */
 export function ModelSelect(
-  { locked, available, directory, load, select, t }:
+  { locked, available, directory, load, reconnect, select, t }:
   ModelSelectInjected & { locked: boolean } & PropsLocale<'model'>,
 ) {
   const state = useSyncExternalStore(
@@ -136,8 +136,9 @@ export function ModelSelect(
   ) ?? []
   const busy = state.status === 'selecting'
 
-  const reload = (): void => {
+  const reload = (forceReconnect = true): void => {
     lastActionRef.current = 'load'
+    if (forceReconnect) reconnect?.()
     load()
   }
 
@@ -208,7 +209,7 @@ export function ModelSelect(
     setDraftIndex(null)
     restoreEffortFocusRef.current = false
     setOpen(true)
-    reload()
+    reload(false)
   }
 
   const close = (restoreFocus = false): void => {
@@ -365,13 +366,13 @@ export function ModelSelect(
                 {state.error !== null && lastActionRef.current === 'load' && (
                   <div role="alert" className={css.error}>
                     <span>{t('error.action', { message: state.error })}</span>
-                    <button type="button" className={css.retry} onClick={reload}>{t('action.reload')}</button>
+                    <button type="button" className={css.retry} onClick={() => { reload() }}>{t('action.reload')}</button>
                   </div>
                 )}
                 {state.failures.map(failure => (
                   <div className={css.warning} key={failure.id}>
                     <span>{t('warning.groupLoad', { name: failure.name, message: failure.message })}</span>
-                    <button type="button" className={css.retry} onClick={reload}>{t('action.reload')}</button>
+                    <button type="button" className={css.retry} onClick={() => { reload() }}>{t('action.reload')}</button>
                   </div>
                 ))}
               </div>
@@ -485,13 +486,13 @@ export function ModelSelect(
                 {state.error !== null && lastActionRef.current === 'load' && (
                   <div role="alert" className={css.error}>
                     <span>{t('error.action', { message: state.error })}</span>
-                    <button type="button" className={css.retry} onClick={reload}>{t('action.reload')}</button>
+                    <button type="button" className={css.retry} onClick={() => { reload() }}>{t('action.reload')}</button>
                   </div>
                 )}
                 {state.failures.map(failure => (
                   <div className={css.warning} key={failure.id}>
                     <span>{t('warning.groupLoad', { name: failure.name, message: failure.message })}</span>
-                    <button type="button" className={css.retry} onClick={reload}>{t('action.reload')}</button>
+                    <button type="button" className={css.retry} onClick={() => { reload() }}>{t('action.reload')}</button>
                   </div>
                 ))}
                 <div className={clsx(css.groups, 'scrollable')}>

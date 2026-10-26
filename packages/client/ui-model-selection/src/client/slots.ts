@@ -16,6 +16,8 @@ export interface ModelSelectInjected {
   directory: SnapshotStore<ModelDirectoryState>
   /** Refresh the advisory directory (fire-and-forget; errors land on the store). */
   load: () => void
+  /** Interrupt the current connection generation before a user-requested reload. */
+  reconnect?: () => void
   /**
    * Select a complete provider/model/reasoning selection.
    * @param selection - model selection and optional adapter-owned effort.

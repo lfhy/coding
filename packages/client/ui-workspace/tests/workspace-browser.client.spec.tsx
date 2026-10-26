@@ -413,6 +413,39 @@ describe('WorkspaceBrowser', () => {
     expect(startSession).toHaveBeenCalledWith(wid('alpha'))
   })
 
+  it('shows a retryable New Session failure without losing the selected Workspace', () => {
+    const startSession = vi.fn()
+    const b = mount({
+      useWorkspaces: hook({
+        ...workspaceState([workspace('alpha', ['alpha-s'])]),
+        startSessionError: {
+          attempt: 1,
+          workspaceId: wid('alpha'),
+          message: '会话服务不可用',
+        },
+      }),
+      startSession,
+    })
+    expect(screen.getByRole('dialog', { name: '无法开始会话' })).toBeTruthy()
+    expect(screen.getByRole('alert').textContent).toBe('会话服务不可用')
+
+    fireEvent.click(screen.getByRole('button', { name: '重试' }))
+    expect(startSession).toHaveBeenCalledWith(wid('alpha'))
+    expect(screen.queryByRole('dialog', { name: '无法开始会话' })).toBeNull()
+
+    // 列表携带同一个 attempt 重渲染时不能重新打开已关闭的错误；只有新的
+    // 运行时 attempt 才可再次操作。
+    rerender(b, { useWorkspaces: hook({
+      ...workspaceState([workspace('alpha', ['alpha-s'])]),
+      startSessionError: {
+        attempt: 1,
+        workspaceId: wid('alpha'),
+        message: '会话服务不可用',
+      },
+    }) })
+    expect(screen.queryByRole('dialog', { name: '无法开始会话' })).toBeNull()
+  })
+
   it('auto-expands the Ungrouped bucket for a loose current session; its header has no menu and its ＋ is inert', () => {
     const startSession = vi.fn()
     mount({

@@ -29,6 +29,33 @@ export interface WorkspaceListState {
   baselinesReady: boolean
   /** Most recently active Workspace, derived without changing `items` order. */
   recentWorkspaceId: WorkspaceId | undefined
+  /**
+   * 最近一次显式新建会话失败。该字段可选，便于只构造工作区列表的
+   * 消费方无需建模瞬态动作通道。
+   */
+  startSessionError?: WorkspaceStartSessionError
+}
+
+/** 面向 UI 投影、可重试的新建会话失败。 */
+export interface WorkspaceStartSessionError {
+  /** 单调递增的 attempt；新尝试会替换旧错误。 */
+  attempt: number
+  /** 失败动作选中的工作区，供重试沿用。 */
+  workspaceId: WorkspaceId
+  /** 从拒绝原因提取、可安全展示的文本。 */
+  message: string
+}
+
+/** 将会话创建错误压成不重复操作前缀的可显示文本。 */
+function startSessionErrorMessage(reason: unknown): string {
+  if (!(reason instanceof Error)) return String(reason)
+  const rpcError = (reason as { rpcError?: { message?: unknown } }).rpcError
+  return typeof rpcError?.message === 'string' ? rpcError.message : reason.message
+}
+
+/** 判断一次新会话失败是否来自浏览器到 Host 的传输层。 */
+function isTransportFailure(message: string): boolean {
+  return /failed to fetch|fetch failed|networkerror|transport failure/iu.test(message)
 }
 
 /** Structured create failure for UI flows that distinguish Host business errors. */
@@ -78,6 +105,10 @@ export class WorkspaceRuntime implements IWorkspaces {
   private readonly connecting = new Map<WorkspaceId, Promise<SessionId>>()
   /** Guards the runtime-owned one-shot initial-selection subscription. */
   private initialSelectionStarted = false
+  /** 显式新建会话的单调 attempt，旧完成结果不能覆盖新尝试。 */
+  private startSessionAttempt = 0
+  /** 最近一次显式新建会话失败，随工作区列表一起投影。 */
+  private startSessionError: WorkspaceStartSessionError | undefined
 
   /**
    * @param ctx - client root context.
@@ -221,6 +252,11 @@ export class WorkspaceRuntime implements IWorkspaces {
    * @param workspaceId - explicit target Workspace for scoped actions.
    */
   startSession(workspaceId?: WorkspaceId): void {
+    const attempt = ++this.startSessionAttempt
+    // 立即清除上一次失败，重试发出后不要继续显示过时的弹窗。
+    const hadError = this.startSessionError !== undefined
+    this.startSessionError = undefined
+    if (hadError) this.project()
     const workspace = this.list.getSnapshot()
     const current = this.sessions.list.getSnapshot().current
     const currentWorkspaceId = current === undefined
@@ -232,8 +268,24 @@ export class WorkspaceRuntime implements IWorkspaces {
       return
     }
     void this.connectWorkspace(target).then(
-      (sessionId) => { this.sessions.open(sessionId) },
-      (reason: unknown) => { console.warn('new session failed:', reason) },
+      (sessionId) => {
+        // 较新的点击拥有导航权；重试与原请求并发时，两次完成可能解析到同一空白行。
+        if (attempt !== this.startSessionAttempt) return
+        this.sessions.open(sessionId)
+        this.startSessionError = undefined
+        this.project()
+      },
+      (reason: unknown) => {
+        if (attempt !== this.startSessionAttempt) return
+        const message = startSessionErrorMessage(reason)
+        if (isTransportFailure(message)) {
+          const connection = this.ctx.get('connection') as { reconnect?: () => void } | undefined
+          connection?.reconnect?.()
+        }
+        this.startSessionError = { attempt, workspaceId: target, message }
+        this.project()
+        console.warn('new session failed:', reason)
+      },
     )
   }
 
@@ -412,6 +464,7 @@ export class WorkspaceRuntime implements IWorkspaces {
       error: workspace.error,
       baselinesReady,
       recentWorkspaceId: baselinesReady ? recentWorkspace(workspace.items, sessions.byId) : undefined,
+      ...(this.startSessionError === undefined ? {} : { startSessionError: this.startSessionError }),
     })
   }
 }

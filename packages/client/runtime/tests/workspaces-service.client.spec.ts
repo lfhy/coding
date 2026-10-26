@@ -467,6 +467,81 @@ describe('WorkspaceRuntime', () => {
     expect(clear).toHaveBeenCalledOnce()
   })
 
+  it('projects a failed New Session for a retryable UI action and clears it on retry', async () => {
+    const ctx = new Context()
+    const api = new FakeApiClient()
+    const sessions = new SessionRuntime(ctx, api, fakeRemote())
+    const reconnect = vi.fn()
+    ctx.provide('connection', { reconnect })
+    const workspaces = new WorkspaceRuntime(ctx, api, sessions)
+    api.onWorkspaceList = () => Promise.resolve(ok({ items: [workspace('alpha')] as never[] }))
+    api.onList = () => Promise.resolve(ok({ items: [] as never[] }))
+    await Promise.all([workspaces.refresh(), sessions.refresh()])
+    await Promise.resolve()
+
+    api.onCreate = () => Promise.resolve(err({ code: 'internal', message: '会话服务不可用', details: {} }))
+    workspaces.startSession(wid('alpha'))
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(workspaces.list.getSnapshot().startSessionError).toMatchObject({
+      attempt: 1, workspaceId: wid('alpha'), message: '会话服务不可用',
+    })
+
+    api.onCreate = () => Promise.reject(new Error('Failed to fetch'))
+    workspaces.startSession(wid('alpha'))
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(reconnect).toHaveBeenCalledOnce()
+
+    api.onCreate = () => Promise.resolve(ok({ sessionId: sid('s-retry') }))
+    workspaces.startSession(wid('alpha'))
+    expect(workspaces.list.getSnapshot().startSessionError).toBeUndefined()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(sessions.list.getSnapshot().current).toBe(sid('s-retry'))
+    expect(workspaces.list.getSnapshot().startSessionError).toBeUndefined()
+
+    // 传输适配器可能以非 Error 值拒绝；UI 仍应收到稳定字符串而不是空诊断。
+    const connect = vi.spyOn(workspaces, 'connectWorkspace').mockRejectedValueOnce('offline')
+    workspaces.startSession(wid('alpha'))
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(workspaces.list.getSnapshot().startSessionError?.message).toBe('offline')
+    connect.mockRestore()
+  })
+
+  it('lets the newest New Session attempt own navigation and diagnostics', async () => {
+    const ctx = new Context()
+    const api = new FakeApiClient()
+    const sessions = new SessionRuntime(ctx, api, fakeRemote())
+    const workspaces = new WorkspaceRuntime(ctx, api, sessions)
+    api.onWorkspaceList = () => Promise.resolve(ok({ items: [workspace('alpha')] as never[] }))
+    api.onList = () => Promise.resolve(ok({ items: [] as never[] }))
+    await Promise.all([workspaces.refresh(), sessions.refresh()])
+    await Promise.resolve()
+
+    const first = deferred<SessionId>()
+    const second = deferred<SessionId>()
+    const connect = vi.spyOn(workspaces, 'connectWorkspace')
+      .mockImplementationOnce(() => first.promise)
+      .mockImplementationOnce(() => second.promise)
+    const open = vi.spyOn(sessions, 'open')
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      workspaces.startSession(wid('alpha'))
+      workspaces.startSession(wid('alpha'))
+      first.resolve(sid('stale'))
+      await Promise.resolve()
+      expect(open).not.toHaveBeenCalled()
+
+      second.reject(new Error('latest failed'))
+      await Promise.resolve()
+      expect(workspaces.list.getSnapshot().startSessionError).toMatchObject({
+        attempt: 2, workspaceId: wid('alpha'), message: 'latest failed',
+      })
+    } finally {
+      connect.mockRestore()
+      open.mockRestore()
+      warn.mockRestore()
+    }
+  })
+
   it('creates and selects a session outside every Workspace', async () => {
     const ctx = new Context()
     const api = new FakeApiClient()

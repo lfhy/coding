@@ -62,7 +62,7 @@ export type {
 export type { SessionListPhase, SessionSearchResultItem, SubagentCatalogSnapshot } from './sessions/manager.ts'
 export type { SubagentAddress, JobView } from 'coding-client-connection/client'
 export type { WorkspaceListPhase } from './workspaces/manager.ts'
-export type { WorkspaceListState } from './workspaces/service.ts'
+export type { WorkspaceListState, WorkspaceStartSessionError } from './workspaces/service.ts'
 export type {
   DirectoryEntry, DirectoryListing, WorkspaceId, WorkspaceView,
 } from 'coding-client-connection/client'

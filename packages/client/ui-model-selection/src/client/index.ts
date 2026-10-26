@@ -12,7 +12,7 @@
  * history outside the direct-parent continuation path.
  */
 // Type-only: the carrier types, the forwarded Host-event face and the ctx.remote merge.
-import type { ModelSelection, SessionModels } from 'coding-api-remotes/client'
+import type { ConnectionHandle, ModelSelection, SessionModels } from 'coding-api-remotes/client'
 import type { ClientContext } from 'coding-client-runtime/client'
 import type { CommandUiContract, SelectOption } from 'coding-client-ui-commands/client'
 // Type-only: pulls the ui-conversation SlotMap merge (the input.model seat).
@@ -107,6 +107,7 @@ export const inject = ['commandUi', 'connection', 'locale', 'sessions', 'slots',
  */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-model-selection: dictionaries')
+  const connection = ctx.get('connection') as ConnectionHandle
 
   // Non-slot faces (the command description, the popup option builder) read
   // through the bound translate; the seat component reads the standard seat.
@@ -166,6 +167,7 @@ export function apply(ctx: ClientContext): void {
           load: () => {
             if (available) directory.load().catch(() => { /* surfaced on the store */ })
           },
+          ...(available ? { reconnect: () => { connection.reconnect() } } : {}),
           select: (selection: ModelSelection) => available
             ? directory.select(selection).then(() => true, () => false)
             : Promise.resolve(false),
