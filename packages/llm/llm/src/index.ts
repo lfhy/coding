@@ -175,8 +175,8 @@ export interface PreparedLlmCall {
  * 都必须携带模型请求 User-Agent：它按渠道配置解析，省略时由 `resolveUserAgent()`
  * 填入产品默认值，并且必须在发出的线路请求或所用库的标头钩子里可验证；直连 fetch
  * 的 DeepSeek 适配器与基于 pi-ai 的适配器内部机制不同，但都履行这一约定。上游
- * 要求专用客户端身份的路由改发那个身份，并记录这处偏差：内置 OpenCode Zen 路由
- * 必须呈现 OpenCode CLI 的 User-Agent，harness 的归因 UA 会让它的免费通道回 403。
+ * 要求专用客户端身份的路由改发那个身份，并记录这处偏差：内置 Free 渠道的上游都
+ * 是匿名免费层，不校验客户端身份，因此它发产品默认 UA。
  */
 export abstract class LlmAdapter {
   /**
