@@ -50,6 +50,14 @@ export interface HostDescriptionSource {
   subscribe(listener: () => void): () => void
 }
 
+/** Observable recovery lifecycle of the owned Connection loop. */
+export interface ConnectionStateSource {
+  /** Current state, or undefined before the first connection outcome and after stop. */
+  getSnapshot(): ConnectionState | undefined
+  /** Subscribe to state changes. */
+  subscribe(listener: () => void): () => void
+}
+
 /** Required services (none — this is the wire root). */
 export const inject: string[] = []
 
@@ -65,8 +73,12 @@ export interface ConnectionHandle {
   readonly isLoopback: boolean
   /** Generation-scoped Host facts, including the account home and native path-open capability. */
   readonly hostDescription: HostDescriptionSource
+  /** Current transport lifecycle; undefined before start and after stop. */
+  readonly state: ConnectionStateSource
   /** Generic logical RPC channels over the same Connection transport. */
   readonly rpc: ClientConnectionRpc
+  /** Drop the current generation and retry immediately; no-op before start/after stop. */
+  reconnect(): void
   /**
    * Start the connect/pump/reconnect loop with the consumer's frame sinks.
    * One consumer owns the streams (the runtime object layer); a second call
@@ -89,8 +101,11 @@ export function apply(ctx: Context): void {
   const api: IApiClient = fixtureClient ?? new WebApiClient()
   const rpc = fixtureClient?.rpc ?? createWebConnectionRpc()
   let started = false
+  let controller: ConnectionController | undefined
   let description: HostDescription | undefined
   const descriptionListeners = new Set<() => void>()
+  let state: ConnectionState | undefined
+  const stateListeners = new Set<() => void>()
   const publishDescription = (next: HostDescription | undefined): void => {
     if (Object.is(description, next)) return
     description = next
@@ -99,6 +114,17 @@ export function apply(ctx: Context): void {
         listener()
       } catch (error) {
         console.error('[web-runtime] host-description listener threw:', error)
+      }
+    }
+  }
+  const publishState = (next: ConnectionState | undefined): void => {
+    if (Object.is(state, next)) return
+    state = next
+    for (const listener of [...stateListeners]) {
+      try {
+        listener()
+      } catch (error) {
+        console.error('[web-runtime] connection-state listener threw:', error)
       }
     }
   }
@@ -112,13 +138,22 @@ export function apply(ctx: Context): void {
         return () => { descriptionListeners.delete(listener) }
       },
     },
+    state: {
+      getSnapshot: () => state,
+      subscribe: (listener) => {
+        stateListeners.add(listener)
+        return () => { stateListeners.delete(listener) }
+      },
+    },
     rpc,
+    reconnect: () => { controller?.reconnect() },
     start(sinks, config) {
       if (started) throw new Error('connection: the stream loop is already owned by another consumer')
       started = true
-      const controller = new ConnectionController(api, {
+      const nextController = new ConnectionController(api, {
         ...sinks,
         onConnected: (next) => {
+          if (controller !== nextController) return
           publishDescription(next)
           // A description subscriber may synchronously stop the loop. In that
           // case publishDescription(undefined) has already retracted this
@@ -128,15 +163,20 @@ export function apply(ctx: Context): void {
           sinks.onConnected?.(next)
         },
         onStateChange: (state) => {
+          if (controller !== nextController) return
           if (state === 'reconnecting') publishDescription(undefined)
+          publishState(state)
           sinks.onStateChange?.(state)
         },
       }, config ?? {})
-      controller.start()
+      controller = nextController
+      nextController.start()
       return {
         stop: () => {
-          controller.stop()
+          nextController.stop()
+          if (controller === nextController) controller = undefined
           publishDescription(undefined)
+          publishState(undefined)
         },
       }
     },

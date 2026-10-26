@@ -3,6 +3,10 @@
 
 协议消费层：客户端插件的 apply 会挂载 `ctx.connection`（共享 API 客户端 + 当前页面的 loopback 状态 + 可观察且按 generation 生效的 `hostDescription` + 单消费方流循环启动器）；导出表层携带协议约定类型、`AbstractApiClient` 抽象，以及循环的 sink／配置类型。每次就绪握手成功后，都会在 `onConnected` 之前发布完整的 `host.describe` 值；generation 失效或显式 stop 会清空它，因此原生能力消费者不会保留已经断线的判断。浏览器载体以 HTTP POST 发送 unary／respond，并为 `events.mux` 与 `events.host` 各开一条只下行的 WebSocket；进程内载体满足同一双流抽象。Host half 持有唯一 `/api` route 及其 Fetch bridge；已注册的 Typert interceptor 会先认领自己的 Remote endpoint，未认领请求再回退 API Proxy。Loopback hostname 判定逻辑留在包内部：`/api` Host fence 与 WebSocket upgrade 会直接使用它，其他客户端插件则消费派生的 `ctx.connection.isLoopback` 状态。node 半侧的 `/api` 路由让特权方法集（`host.pickDirectory`、`host.openPath`，以及整个配置面——`settings.describe`/`openDocument`/`update`/`replace`/`mutate` 与 `credentials.describe`/`set`/`unset`；读取与原生操作也在内，因为 describe 会返回已暴露的配置、打开操作会作用于 Host 桌面，而探测任意引用会报出某条凭据来自何处——以及 agent（智能体） preset 的创作面 `agentPreset.read`/`copy`/`openDocument`/`remove`，因为组装指明了一个会话所运行的插件，读取它是侦察，而 copy/remove/openDocument 管理名单并驱动宿主桌面（创作只有复制一种写入，因此这些方法都不接收组装文本或路径）；`agentPreset.list` 与 `agentPreset.select` 不在其中——名单只携带 id 与信任级别，而选择一个 preset 并不比 `session.create` 自带的 `agentPreset` 多给任何能力，何况默认 preset 本就带着 bash）以空信任表过信任 fence，从而钉在回环——已声明的 `trustedHosts` 授权可达其余全部方法，而这些方法在真正的认证层出现之前仍只限回环本机。平台载体与 ConnectionController 循环属于包内部；apply 负责选择并驱动它们。下行边界见 WebSocket 下行载体 设计记录。
 
+## 客户端连接状态与手动恢复
+
+`ctx.connection.state` 是一个可订阅的状态源：循环首次建立连接前快照为 `undefined`，就绪握手成功后为 `connected`，当前 generation 失败或正在重试时为 `reconnecting`，显式 `stop()` 后再次回到 `undefined`。状态源只发布去重后的变化，订阅回调抛错不会影响连接循环。需要立刻丢弃当前 generation 并重建双流时调用 `ctx.connection.reconnect()`；它会中断当前连接或退避等待、重置退避计数并立即发起下一次握手，循环未启动或已停止时调用为空操作。手动恢复与自动恢复共用同一 `onConnected`/`hostDescription` 发布路径，业务层不应自行创建第二套流循环。
+
 ## /api 浏览器信任栅栏
 
 `browser.control` 和 `workspace.gitStatus`/`gitBranches`/`gitHistory`/`gitCheckout`/`gitPush`/`gitPull` 属于只允许回环同源的特权方法，即使部署声明了 `trustedHosts`，也不向 LAN 授权人工浏览器导航、仓库路径与分支及提交历史读取、Git 分支切换、提交或远端同步。它们仍由现有的 Host、Origin 与 Fetch-Metadata 栅栏约束；push/pull 的可选一次性 `credentials` 请求与 `git-auth-required`／`git-auth-failed` 回复同样受此限制，且客户端不得记录或持久化输入的密码；回环限制是本地单用户 Host 的可达性边界，并非身份认证。

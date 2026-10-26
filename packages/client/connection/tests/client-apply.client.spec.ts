@@ -134,6 +134,27 @@ describe('connection client apply', () => {
     }
   })
 
+  it('publishes observable state and supports manual reconnect through the handle', async () => {
+    ;(globalThis as Win).location = { hostname: 'localhost', search: '?fixture' }
+    const handle = await mount()
+    const states: Array<string | undefined> = []
+    const stopState = handle.state.subscribe(() => {
+      states.push(handle.state.getSnapshot())
+    })
+    const loop = handle.start({}, { backoffBaseMs: 10, backoffFactor: 1, backoffMaxMs: 10, streamOpenTimeoutMs: 500 })
+    try {
+      await vi.waitFor(() => { expect(handle.state.getSnapshot()).toBe('connected') })
+      handle.reconnect()
+      await vi.waitFor(() => { expect(states).toContain('reconnecting') })
+      await vi.waitFor(() => { expect(handle.state.getSnapshot()).toBe('connected') })
+      expect(states).toEqual(['connected', 'reconnecting', 'connected'])
+    } finally {
+      stopState()
+      loop.stop()
+    }
+    expect(handle.state.getSnapshot()).toBeUndefined()
+  })
+
   it('retracts the host description while reconnecting and republishes the next generation', async () => {
     ;(globalThis as Win).location = { hostname: 'localhost', search: '?fixture' }
     const handle = await mount()

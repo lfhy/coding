@@ -62,7 +62,10 @@ export class ConnectionController {
   private generation = 0
   private attempt = 0
   private current: AbortController | null = null
+  private retryDelay: AbortController | null = null
   private running = false
+  /** A reconnect request interrupts the current generation or pending backoff. */
+  private reconnectRequested = false
   private lastState: ConnectionState | null = null
   private readonly config: Required<ConnectionConfig>
 
@@ -84,8 +87,28 @@ export class ConnectionController {
   /** Stop the loop and abort the current generation's streams. */
   stop(): void {
     this.running = false
+    this.reconnectRequested = false
     this.current?.abort()
     this.current = null
+    this.retryDelay?.abort()
+    this.retryDelay = null
+  }
+
+  /**
+   * Drop the current transport generation and retry without waiting for the
+   * exponential backoff. A request made while the controller is stopped is a
+   * no-op; the owner must start the loop before it can be repaired.
+   */
+  reconnect(): void {
+    if (!this.running) return
+    this.attempt = 0
+    this.reconnectRequested = true
+    // Publish the outage before the sockets finish closing. This lets
+    // generation-scoped consumers stop issuing requests immediately.
+    this.emitState('reconnecting')
+    if (!this.isRunning()) return
+    this.current?.abort()
+    this.retryDelay?.abort()
   }
 
   private backoffDelay(attempt: number): number {
@@ -159,12 +182,29 @@ export class ConnectionController {
       }
 
       await failed
+      if (this.current === ac) this.current = null
       if (!this.isRunning()) return
+
+      // A manual reconnect already emitted the outage state and should start a
+      // fresh generation immediately, with no backoff tier consumed.
+      if (this.reconnectRequested) {
+        this.reconnectRequested = false
+        continue
+      }
+
       this.emitState('reconnecting')
       this.attempt += 1
       console.warn(`[web-runtime] connection lost, retry #${this.attempt}`)
       const idle = new AbortController()
+      this.retryDelay = idle
       await sleep(this.backoffDelay(this.attempt), idle.signal)
+      if (this.retryDelay === idle) this.retryDelay = null
+      // reconnect() aborts this delay; the request has been consumed and the
+      // next loop iteration opens a generation immediately.
+      if (idle.signal.aborted) {
+        this.reconnectRequested = false
+        continue
+      }
     }
   }
 

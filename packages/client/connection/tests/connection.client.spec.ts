@@ -270,6 +270,29 @@ describe('connection lifecycle', () => {
     }
   })
 
+  it('reconnects immediately on demand and resets the retry progression', async () => {
+    const api = new FakeApiClient()
+    const states: ConnectionState[] = []
+    let connected = 0
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const controller = new ConnectionController(api, {
+      onConnected: () => { connected++ },
+      onStateChange: state => states.push(state),
+    }, { ...FAST, backoffBaseMs: 200, backoffFactor: 2, backoffMaxMs: 200 })
+    controller.start()
+    try {
+      await vi.waitFor(() => { expect(connected).toBe(1) })
+      controller.reconnect()
+      await vi.waitFor(() => { expect(connected).toBe(2) })
+      expect(api.callsOf('host.describe')).toHaveLength(2)
+      expect(states).toEqual(['connected', 'reconnecting', 'connected'])
+      expect(warnSpy).not.toHaveBeenCalled()
+    } finally {
+      controller.stop()
+      warnSpy.mockRestore()
+    }
+  })
+
   it('does not announce a generation stopped synchronously by its connected state sink', async () => {
     const api = new FakeApiClient()
     const states: ConnectionState[] = []
