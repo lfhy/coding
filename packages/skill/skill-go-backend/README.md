@@ -4,7 +4,7 @@
 
 技能的第一条要求是沿用项目已有做法：目录布局、路由库、日志与迁移工具都以项目为准，本文只补项目没有约定的部分。默认约定覆盖六块——根 `main.go` 只做装配、`cmd/<name>` 放子命令、`conf/` 放类型化配置、`core/<domain>` 放领域能力的布局（新项目不建 `internal/`）；前端工程放 Go 模块的 `web/`、产物进 `web/dist`、经 `//go:embed all:dist` 嵌进二进制并由 `http.ServeMux` 提供、未命中回退 `index.html`，且交付前前端必须真的构建得出来；HTTP 的请求体上限、超时与集中错误映射；`context.Context` 一路下传、goroutine 生命周期可等待、`go test -race` 干净；错误用 `%w` 包装并以 `errors.Is`／`errors.As` 判定；`database/sql` 的参数化查询、可前滚迁移与事务收尾。交付前要求实际跑 `gofmt`、`go build`、`go vet`、`go test`（必要时 `-race`）并把结果写进回复。
 
-配置一律走 `conf/`：命令行参数 > 配置文件 > 环境变量，环境变量只用于 CI、容器与临时覆盖，缺省值要能让服务不写任何配置也能启动。
+配置一律走 `conf/`，配置文件用 TOML，解析统一用 `github.com/lfhy/flag`（`NewFlagSet` + `ConfigFile("config.toml")` + `IntFullVar` 这类完整绑定），不混用标准库 `flag`、pflag、Cobra，也不手写 `switch os.Args[1]`。覆盖顺序按该库实测行为：命令行 > 环境变量 > 配置文件 > 默认值，因此环境变量只给运维型配置绑定，缺省值要能让服务不写任何配置就启动。子命令实现 `Name`／`Run`（可选 `Init`）后用 `RegisterCommand`／`AliasCmd` 挂到根 `FlagSet`。
 
 它不做的：不引入框架、ORM 或新依赖（除非用户要求或项目已在用），不规定具体框架与部署形态，不代替项目自己的 lint 与 CI 配置，也不替已有模块决定是否迁移既有 `internal/`。
 

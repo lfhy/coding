@@ -60,11 +60,16 @@ describe('bundled project-init skill', () => {
       expect(loaded.content).toContain('https://gh-proxy.com/https://github.com/')
       expect(loaded.content).toContain('UNSUPPORTED_HOST')
       expect(loaded.content).toContain('不写镜像地址')
-      // 配置优先级与 0 配置启动：环境变量不作主入口，有页面就必须有系统设置页。
+      // 配置走 TOML + lfhy/flag 统一解析；环境变量不作主入口，有页面就必须有系统设置页。
       expect(loaded.content).toContain('0 配置启动')
-      expect(loaded.content).toContain('命令行参数 > 配置文件 > 环境变量')
+      expect(loaded.content).toContain('github.com/lfhy/flag')
+      expect(loaded.content).toContain('命令行 > 环境变量 > 配置文件 > 默认值')
       expect(loaded.content).toContain('系统设置页面')
       expect(loaded.content).toContain('不要让他手动编辑文件')
+      // 陌生领域迁入项目级 skill；分层 AGENTS.md 与代码地图机制必须保留。
+      expect(loaded.content).toContain('.agents/skills/<kebab-name>/SKILL.md')
+      expect(loaded.content).toContain('每个服务层／子系统目录有自己的 `AGENTS.md`')
+      expect(loaded.content).toContain('docs/codemap/README.md')
       expect(loaded.content).toContain('npx degit')
       // 前端进 Go 工程的 web/ 并由 go:embed 提供；后端不用模板定型，按分层技能搭。
       expect(loaded.content).toContain('go-backend')

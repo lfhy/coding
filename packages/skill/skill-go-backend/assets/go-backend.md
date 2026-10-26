@@ -5,8 +5,8 @@
 ## 布局
 
 - 根 `main.go` 只做装配：读配置、建依赖、分发 `cmd/<name>/` 子命令、处理退出信号；不往里堆业务流程。
-- `cmd/<name>/` 是一个子命令的执行目录：输入适配加调用核心能力，不重复配置加载与数据库初始化。
-- `conf/` 放类型化配置、默认值与校验；解析完成后把类型化配置交给装配边界。优先级固定为命令行参数 > 配置文件 > 环境变量，环境变量只用于 CI、容器和临时覆盖；缺省值要让服务不写任何配置也能启动。
+- `cmd/<name>/` 是一个子命令的执行目录：输入适配加调用核心能力，不重复配置加载与数据库初始化。子命令实现 `Name() string` 与 `Run(args ...string) error`（可选 `Init`），用 `RegisterCommand`／`AliasCmd` 挂到根 `FlagSet`，不在 `main` 里手写 `switch os.Args[1]`。
+- `conf/` 放类型化配置、默认值与校验；解析完成后把类型化配置交给装配边界。配置文件一律 TOML，解析统一走 `github.com/lfhy/flag`，见「配置与子命令」一节。
 - `core/<domain>/` 放项目自己的领域能力，按 `core/user`、`core/job` 这类真实领域分包。新项目不建 `internal/`；已有模块的 `internal/` 不为对齐本约定强行迁移，也不为「以后复用」建 `pkg/` 泛容器。
 - 只在确有独立外部存储边界时才建 `storage/`。
 - 带前端的项目把前端工程放在 `web/`，产物由 `go:embed` 嵌进二进制，见下一节。
@@ -19,6 +19,22 @@
 - 前端必须真的构建得出来：跑通项目自己的前端构建命令（例如 `npm --prefix web install && npm --prefix web run build`）产出 `web/dist`，之后 `go build ./...` 才能过——`go:embed` 匹配不到文件是编译错误。
 - 产物不入库时，在 README 与构建步骤里写清先构建前端再 `go build`；需要干净检出就能编译时，先提交一个 `web/dist/index.html` 占位，别让首次 `go build ./...` 直接失败。
 - 交付前跑通一次真实链路：前端构建成功、`go build ./...` 成功、启动二进制后用浏览器打开首页并走一条 API 请求。
+
+## 配置与子命令
+
+- 用 `github.com/lfhy/flag` 统一解析命令行参数、TOML 配置文件、默认值与环境变量；不混用标准库 `flag`、pflag、Cobra，也不手写 `os.Args` 分支。
+- 覆盖顺序按该库实现：命令行 > 环境变量 > 配置文件 > 默认值。环境变量只给运维型配置（端口、日志级别、CI 与容器）绑定，用户会改的业务配置不绑环境变量，免得一个环境变量静默盖掉用户在设置页存的值。
+- 解析在 `conf` 或根入口做一次，得到类型化配置后交给 `cmd` 与 `core`；`cmd` 不再读环境变量或配置文件，`core` 不认识参数名。
+- 缺省值要能让服务不写任何配置就启动：数据目录、端口、路径自动落到默认位置并自行创建。
+
+```go
+fs := flag.NewFlagSet("app", flag.ContinueOnError)
+fs.ConfigFile("config.toml")                                                 // 注册隐藏的 -c；文件不存在时跳过
+fs.IntFullVar(&port, "port", "server", "port", "APP_PORT", 8080, "服务端口") // 同时绑参数、节键与环境变量
+fs.RegisterCommand(&ServeCmd{})
+fs.AliasCmd("serve", "s")
+if err := fs.Run(os.Args[1:]...); err != nil { /* 返回错误，交给 main 决定退出码 */ }
+```
 
 ## HTTP
 

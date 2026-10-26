@@ -45,9 +45,12 @@ describe('bundled go-backend skill', () => {
       expect(loaded.content).toContain('//go:embed all:dist')
       expect(loaded.content).toContain('web/dist')
       expect(loaded.content).toContain('回退到 `index.html`')
-      // 配置走 conf/：命令行 > 配置文件 > 环境变量，缺省值支持空配置启动。
-      expect(loaded.content).toContain('命令行参数 > 配置文件 > 环境变量')
-      expect(loaded.content).toContain('不写任何配置也能启动')
+      // 配置走 conf/ 与 TOML，解析统一用 lfhy/flag，子命令用 RegisterCommand。
+      expect(loaded.content).toContain('github.com/lfhy/flag')
+      expect(loaded.content).toContain('命令行 > 环境变量 > 配置文件 > 默认值')
+      expect(loaded.content).toContain('ConfigFile("config.toml")')
+      expect(loaded.content).toContain('RegisterCommand')
+      expect(loaded.content).toContain('不写任何配置就启动')
       expect(loaded.content).toContain('go vet ./...')
       expect(loaded.content).toContain('go test ./...')
       expect(loaded.content).toContain('go test -race')
