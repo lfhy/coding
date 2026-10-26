@@ -532,36 +532,28 @@ describe('draft-provider model discovery', () => {
 })
 
 describe('unreachable endpoints', () => {
-  /** undici 的失败形状：`TypeError: fetch failed`，可操作的原因挂在 `cause` 链上。 */
-  function transportFailure(code: string | undefined, layers = 0): Error {
-    let cause: Error = Object.assign(new Error('connect error'), code === undefined ? {} : { code })
-    for (let layer = 0; layer < layers; layer++) cause = Object.assign(new Error(`layer ${String(layer)}`), { cause })
-    return Object.assign(new TypeError('fetch failed'), { cause })
+  /** undici 的失败形状：`TypeError: fetch failed`，底层原因挂在 `cause` 上。 */
+  function transportFailure(detail: string): Error {
+    return Object.assign(new TypeError('fetch failed'), { cause: new Error(detail) })
   }
 
   it.each([
-    ['ENOTFOUND', 'the host name does not resolve; check the address and this machine\'s network or VPN'],
-    ['EAI_AGAIN', 'the host name does not resolve; check the address and this machine\'s network or VPN'],
-    ['ECONNREFUSED', 'the endpoint refused the connection; check its port and that it is running'],
-    ['CERT_HAS_EXPIRED', 'the TLS handshake was refused; this machine may not trust the endpoint\'s certificate'],
-    ['UNABLE_TO_VERIFY_LEAF_SIGNATURE', 'the TLS handshake was refused; this machine may not trust the endpoint\'s certificate'],
-    ['UND_ERR_SOCKET', 'the connection dropped before the reply arrived'],
-    ['ECONNRESET', 'the connection dropped before the reply arrived'],
-    ['EPIPE', 'the connection dropped before the reply arrived'],
-    ['UND_ERR_CLOSED', 'the connection dropped before the reply arrived'],
-    ['EACCES', 'the connection failed before any reply arrived'],
-  ])('names %s instead of reporting a bare timeout', async (code, hint) => {
+    'getaddrinfo ENOTFOUND ai-cloud.ihep.ac.cn',
+    'connect ECONNREFUSED 127.0.0.1:9',
+    'unable to verify the first certificate',
+    'other side closed',
+  ])('names the transport cause instead of reporting a bare timeout: %s', async (detail) => {
     let calls = 0
     vi.stubGlobal('fetch', () => {
       calls += 1
-      return Promise.reject(transportFailure(code))
+      return Promise.reject(transportFailure(detail))
     })
 
     const error = await discoverModels({ baseURL: 'https://gateway.example/v1' })
       .catch((reason: unknown) => reason) as { code: string; message: string }
 
     expect(error).toMatchObject({ code: 'DISCOVERY_FAILED' })
-    expect(error.message).toBe(`could not read https://gateway.example/v1/models: ${code} (${hint})`)
+    expect(error.message).toBe(`could not read https://gateway.example/v1/models: fetch failed: ${detail}`)
     // 传输失败同样换来连接重试一次，端点恢复时用户不必再点一次。
     expect(calls).toBe(2)
   })
@@ -570,18 +562,7 @@ describe('unreachable endpoints', () => {
     vi.stubGlobal('fetch', () => Promise.reject(new Error('socket hang up')))
 
     await expect(discoverModels({ baseURL: 'https://gateway.example/v1' }))
-      .rejects.toThrow(/^could not read https:\/\/gateway\.example\/v1\/models$/)
-  })
-
-  it('ignores an empty code and a cause chain deeper than it walks', async () => {
-    const empty = vi.fn(() => Promise.reject(transportFailure('')))
-    vi.stubGlobal('fetch', empty)
-    await expect(discoverModels({ baseURL: 'https://gateway.example/v1' }))
-      .rejects.toThrow(/^could not read https:\/\/gateway\.example\/v1\/models$/)
-
-    vi.stubGlobal('fetch', () => Promise.reject(transportFailure(undefined, 4)))
-    await expect(discoverModels({ baseURL: 'https://gateway.example/v1' }))
-      .rejects.toThrow(/^could not read https:\/\/gateway\.example\/v1\/models$/)
+      .rejects.toThrow(/^could not read https:\/\/gateway\.example\/v1\/models: socket hang up$/)
   })
 
   it('reports a stored credential it could not read', async () => {

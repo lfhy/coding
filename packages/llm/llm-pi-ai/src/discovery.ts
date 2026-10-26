@@ -17,7 +17,7 @@
 
 import { INVALID_CREDENTIAL_CODE, LlmError, normalizeApiKey } from 'coding-llm'
 import type { LlmDiscoveredModel, LlmModelDiscoveryRequest } from 'coding-llm'
-import { userAgent } from 'coding-llm'
+import { errorChain, userAgent } from 'coding-llm'
 import { catalogProvider } from './catalog.ts'
 
 /**
@@ -227,42 +227,6 @@ function probeWindow(caller: AbortSignal, timeoutMs: number): ProbeWindow {
 }
 
 /**
- * 沿 undici 的 `cause` 链取第一个传输原因码。`fetch` 只抛 `TypeError: fetch failed`，
- * 可操作的信息（ENOTFOUND、ECONNRESET、证书错误）都在原因链上。
- * @param error - `fetch` 抛出的错误。
- * @returns 首个带非空 `code` 的原因码；链上没有时 undefined。
- */
-function transportCode(error: unknown): string | undefined {
-  let current: unknown = error
-  // 真实原因链只有两三层，走四层足够，也不会被构造出来的环拖住。
-  for (let depth = 0; current instanceof Error && depth < 4; depth++) {
-    const code: unknown = (current as { code?: unknown }).code
-    if (typeof code === 'string' && code.length > 0) return code
-    current = (current as { cause?: unknown }).cause
-  }
-  return undefined
-}
-
-/**
- * 常见传输原因码对应的下一步。未列出的码只给通用结论，不替用户猜是哪一层出的问题。
- * @param code - {@link transportCode} 取到的原因码。
- * @returns 附在失败说明里的短句。
- */
-function transportHint(code: string): string {
-  if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') {
-    return 'the host name does not resolve; check the address and this machine\'s network or VPN'
-  }
-  if (code === 'ECONNREFUSED') return 'the endpoint refused the connection; check its port and that it is running'
-  if (/CERT|SSL|TLS|SELF_SIGNED|UNABLE_TO_VERIFY/.test(code)) {
-    return 'the TLS handshake was refused; this machine may not trust the endpoint\'s certificate'
-  }
-  if (code === 'ECONNRESET' || code === 'EPIPE' || code === 'UND_ERR_SOCKET' || code === 'UND_ERR_CLOSED') {
-    return 'the connection dropped before the reply arrived'
-  }
-  return 'the connection failed before any reply arrived'
-}
-
-/**
  * 发出一次探测请求并解析清单。端点已经给出的答案（状态码、非 JSON、清单结构）
  * 以 {@link LlmError} 抛出，传输层失败原样抛出，由调用方决定是否重试。
  * @param url - GET /models 地址。
@@ -351,7 +315,7 @@ async function storedProbeKey(
  * 读取草稿端点公布的模型，不保存候选结果。
  *
  * 传输失败与超时会换连接重试一次；两次都失败时，失败说明区分「一直没响应」
- * 与「连接直接失败」，后者带上原因码和对应的下一步。
+ * 与「连接直接失败」，后者用 `errorChain` 带上 `cause` 链里的底层原因。
  * @param request - 草稿端点、协议、一次性凭据及取消信号。
  * @param storedRoute - 已保存的端点及其凭据解析器，仅在草稿端点与之相同时读取凭据。
  * @param requestUserAgent - 本次请求的 User-Agent；调用方的渠道级配置解析在这里，
@@ -435,14 +399,7 @@ export async function discoverModels(
         { cause: lastError },
       )
     }
-    const code = transportCode(lastError)
-    throw new LlmError(
-      code === undefined
-        ? `could not read ${url}`
-        : `could not read ${url}: ${code} (${transportHint(code)})`,
-      'DISCOVERY_FAILED',
-      { cause: lastError },
-    )
+    throw new LlmError(`could not read ${url}: ${errorChain(lastError)}`, 'DISCOVERY_FAILED', { cause: lastError })
   } catch (error: unknown) {
     if (request.signal?.aborted === true) {
       throw new LlmError('model discovery aborted by caller', 'ABORTED', { cause: error })

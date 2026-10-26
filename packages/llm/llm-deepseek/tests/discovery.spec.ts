@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import LlmRuntime, { ReasoningEffortId } from 'coding-llm'
+import LlmRuntime, { LlmError, ReasoningEffortId } from 'coding-llm'
 import * as DeepSeek from 'coding-llm-deepseek'
 import { discoverModels } from '../src/discovery.ts'
 
@@ -141,6 +141,71 @@ describe('DeepSeek official model discovery', () => {
     await expect(result).rejects.toMatchObject({ code: 'ABORTED' })
     rejectFetch(new Error('late fetch rejection'))
     await Promise.resolve()
+  })
+
+  it('retries a transport failure and returns the answer of the second attempt', async () => {
+    const fetcher = vi.fn()
+      .mockRejectedValueOnce(Object.assign(new TypeError('fetch failed'), {
+        cause: Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:9'), { code: 'ECONNREFUSED' }),
+      }))
+      .mockResolvedValueOnce(Response.json({ data: [{ id: 'second-try' }] }))
+    vi.stubGlobal('fetch', fetcher)
+    const ctx = await boot()
+
+    await expect(ctx.llm.discoverModels('llm-deepseek', { provider: 'deepseek-official' }))
+      .resolves.toEqual([{ id: 'second-try' }])
+    expect(fetcher).toHaveBeenCalledTimes(2)
+  })
+
+  it('names the transport cause when both attempts fail to connect', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(Object.assign(new TypeError('fetch failed'), {
+      cause: Object.assign(new Error('getaddrinfo ENOTFOUND gateway.test'), { code: 'ENOTFOUND' }),
+    }))))
+    const ctx = await boot()
+
+    await expect(ctx.llm.discoverModels('llm-deepseek', { provider: 'deepseek-official' }))
+      .rejects.toThrow(/could not read https:\/\/api\.deepseek\.com\/v1\/models: fetch failed: getaddrinfo ENOTFOUND gateway\.test/)
+  })
+
+  it('reports a probe that never answers after retrying, before it sends anything', async () => {
+    const deadline = new AbortController()
+    deadline.abort(new Error('deadline exceeded'))
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(deadline.signal)
+    const fetcher = vi.fn()
+    vi.stubGlobal('fetch', fetcher)
+    try {
+      const ctx = await boot()
+      // 草稿自带密钥，因此十秒窗口只属于探测本身：两次都到期才报超时。
+      await expect(ctx.llm.discoverModels('llm-deepseek', { provider: 'deepseek-official', apiKey: 'draft-key' }))
+        .rejects.toThrow(/did not answer within 20s \(2 attempts\)/)
+      expect(fetcher).not.toHaveBeenCalled()
+    } finally {
+      timeout.mockRestore()
+    }
+  })
+
+  it('reports a reply that is not JSON', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response('not json at all'))))
+    const ctx = await boot()
+
+    await expect(ctx.llm.discoverModels('llm-deepseek', { provider: 'deepseek-official' }))
+      .rejects.toThrow(/Model listing is not JSON/)
+  })
+
+  it('reports a stored credential it could not read, keeping its own failure code', async () => {
+    const options = DeepSeek.resolveAdapterOptions({ baseURL: 'https://api.deepseek.com' })
+
+    await expect(discoverModels(
+      { provider: 'deepseek-official' },
+      options,
+      () => Promise.reject(new Error('keychain is locked')),
+    )).rejects.toThrow(/could not read this route's stored API key for https:\/\/api\.deepseek\.com\/v1\/models/)
+
+    await expect(discoverModels(
+      { provider: 'deepseek-official' },
+      options,
+      () => Promise.reject(new LlmError('no credential for this route', 'MISSING_CREDENTIAL')),
+    )).rejects.toMatchObject({ code: 'MISSING_CREDENTIAL' })
   })
 
   it('resolves and enforces explicit per-model reasoning levels without changing unlisted models', async () => {
