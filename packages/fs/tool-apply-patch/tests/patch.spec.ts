@@ -1,7 +1,20 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { applyPatchHunks, parsePatch } from '../src/patch.ts'
 
 describe('Codex patch parser', () => {
+  it('publishes JavaScript runtime entrypoints matching the build output', () => {
+    const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
+      main?: unknown
+      exports?: Record<string, { default?: unknown }>
+      files?: readonly string[]
+    }
+    expect(manifest.main).toBe('lib/index.js')
+    expect(manifest.exports?.['.']?.default).toBe('./lib/index.js')
+    expect(manifest.exports?.['./invariant']?.default).toBe('./lib/invariant.js')
+    expect(manifest.files).toEqual(['lib/index.js', 'lib/invariant.js', 'lib/types/**/*.d.ts'])
+  })
+
   it('parses Add File and Update File sections', () => {
     const parsed = parsePatch('*** Begin Patch\n*** Add File: new.txt\n+hello\n*** Update File: old.txt\n@@ heading\n-old\n+new\n*** End Patch')
     expect(parsed.files).toEqual([
