@@ -293,6 +293,35 @@ describe('connection lifecycle', () => {
     }
   })
 
+  it('interrupts a pending backoff when reconnect is requested', async () => {
+    const api = new FakeApiClient()
+    let describeCalls = 0
+    api.onDescribe = () => {
+      describeCalls++
+      return describeCalls === 1
+        ? Promise.reject(new Error('host down'))
+        : Promise.resolve(ok({ version: '0', cwd: '/f', attachedSessions: 0, home: '/h', canOpenPath: true }))
+    }
+    const states: ConnectionState[] = []
+    let connected = 0
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const controller = new ConnectionController(api, {
+      onConnected: () => { connected++ },
+      onStateChange: state => states.push(state),
+    }, { ...FAST, backoffBaseMs: 1_000, backoffFactor: 1, backoffMaxMs: 1_000 })
+    controller.start()
+    try {
+      await vi.waitFor(() => { expect(states).toEqual(['reconnecting']) })
+      controller.reconnect()
+      await vi.waitFor(() => { expect(connected).toBe(1) })
+      expect(describeCalls).toBe(2)
+      expect(states).toEqual(['reconnecting', 'connected'])
+    } finally {
+      controller.stop()
+      warnSpy.mockRestore()
+    }
+  })
+
   it('does not announce a generation stopped synchronously by its connected state sink', async () => {
     const api = new FakeApiClient()
     const states: ConnectionState[] = []
