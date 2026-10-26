@@ -50,11 +50,11 @@ export interface HostDescriptionSource {
   subscribe(listener: () => void): () => void
 }
 
-/** Observable recovery lifecycle of the owned Connection loop. */
+/** 所有者连接循环的可观察恢复状态。 */
 export interface ConnectionStateSource {
-  /** Current state, or undefined before the first connection outcome and after stop. */
+  /** 当前状态；首次连接结果之前以及停止后为 undefined。 */
   getSnapshot(): ConnectionState | undefined
-  /** Subscribe to state changes. */
+  /** 订阅状态变化。 */
   subscribe(listener: () => void): () => void
 }
 
@@ -73,11 +73,11 @@ export interface ConnectionHandle {
   readonly isLoopback: boolean
   /** Generation-scoped Host facts, including the account home and native path-open capability. */
   readonly hostDescription: HostDescriptionSource
-  /** Current transport lifecycle; undefined before start and after stop. */
+  /** 当前传输生命周期；启动前及停止后为 undefined。 */
   readonly state: ConnectionStateSource
   /** Generic logical RPC channels over the same Connection transport. */
   readonly rpc: ClientConnectionRpc
-  /** Drop the current generation and retry immediately; no-op before start/after stop. */
+  /** 丢弃当前 generation 并立即重试；启动前及停止后为空操作。 */
   reconnect(): void
   /**
    * Start the connect/pump/reconnect loop with the consumer's frame sinks.

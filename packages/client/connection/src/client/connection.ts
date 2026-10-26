@@ -64,7 +64,7 @@ export class ConnectionController {
   private current: AbortController | null = null
   private retryDelay: AbortController | null = null
   private running = false
-  /** A reconnect request interrupts the current generation or pending backoff. */
+  /** 手动重连会中断当前 generation 或尚未结束的退避等待。 */
   private reconnectRequested = false
   private lastState: ConnectionState | null = null
   private readonly config: Required<ConnectionConfig>
@@ -95,16 +95,14 @@ export class ConnectionController {
   }
 
   /**
-   * Drop the current transport generation and retry without waiting for the
-   * exponential backoff. A request made while the controller is stopped is a
-   * no-op; the owner must start the loop before it can be repaired.
+   * 丢弃当前传输 generation 并跳过指数退避立即重试。
+   * 控制器停止后调用为空操作，必须先由所有者启动循环才能恢复。
    */
   reconnect(): void {
     if (!this.running) return
     this.attempt = 0
     this.reconnectRequested = true
-    // Publish the outage before the sockets finish closing. This lets
-    // generation-scoped consumers stop issuing requests immediately.
+    // 在 socket 完成关闭前先发布中断状态，让按 generation 作用域的消费者立即停止发请求。
     this.emitState('reconnecting')
     if (!this.isRunning()) return
     this.current?.abort()
@@ -185,8 +183,7 @@ export class ConnectionController {
       if (this.current === ac) this.current = null
       if (!this.isRunning()) return
 
-      // A manual reconnect already emitted the outage state and should start a
-      // fresh generation immediately, with no backoff tier consumed.
+      // 手动重连已经发布中断状态，直接启动新的 generation，不消耗退避层级。
       if (this.reconnectRequested) {
         this.reconnectRequested = false
         continue
@@ -199,8 +196,7 @@ export class ConnectionController {
       this.retryDelay = idle
       await sleep(this.backoffDelay(this.attempt), idle.signal)
       if (this.retryDelay === idle) this.retryDelay = null
-      // reconnect() aborts this delay; the request has been consumed and the
-      // next loop iteration opens a generation immediately.
+      // reconnect() 会中止这段等待；请求已消费，下一轮循环立即打开新的 generation。
       if (idle.signal.aborted) {
         this.reconnectRequested = false
         continue
