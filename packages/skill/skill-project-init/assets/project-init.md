@@ -24,9 +24,12 @@
 
 落地模板时用 `npx degit <owner>/<repo>`，或 `git clone --depth 1` 到临时目录再把内容拷进当前目录，不要留下模板自己的 `.git`，使当前目录成为模板原状而不是嵌套仓库。先跑通模板自带的安装与启动命令，再改业务代码；在 `README.md` 里写明模板来源仓库、版本或 commit、许可证和本地改动范围，许可证要求保留声明时照办，不删它的 LICENSE 与署名。
 
-## 后端按分层技能自己搭
+## 前后端按分层技能自己搭
 
-后端不靠抄模板的目录结构定型：按已加载的分层技能搭。Go 服务端用 `go-backend` 的 `cmd/<binary>/` 加 `internal/<domain>/` 分层，以及其中 HTTP、context、错误包装、数据访问与测试的默认约定。模板与参考仓库只决定前端地基和业务形状，分层与依赖选择以技能和项目已有做法为准。
+模板与参考仓库只决定前端地基和业务形状，不决定目录分层与交付方式。
+
+- 前端进 Go 工程的 `web/`：Go 项目的前端工程一律放在 Go 模块的 `web/` 下，构建产物进 `web/dist`，由 `go:embed` 嵌进二进制并由 Go 服务端提供访问。必须真的构建得出来——先跑通 `npm --prefix web install && npm --prefix web run build` 产出 `web/dist`，再 `go build ./...`，两者都过才算能交付；干净检出就要能编译时补一个 `web/dist/index.html` 占位。纯前端项目仍按 `frontend-development` 的模板与脚手架规范落地。
+- 后端按已加载的分层技能搭：Go 服务端用 `go-backend` 的根 `main.go` 装配加 `cmd/<name>/`、`conf/`、`core/<domain>/` 分层，新项目不建 `internal/`；HTTP、context、错误包装、数据访问与测试按该技能的默认约定。
 
 ## 建立基线
 

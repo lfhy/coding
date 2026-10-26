@@ -21,7 +21,7 @@ const RESOURCE_BASE = {
   path: fileURLToPath(new URL('../assets/', import.meta.url)),
 } as const
 const INVOCATION = { modelInvocable: true, userInvocable: true } as const
-const DESCRIPTION = '在写或改 Go 后端代码时使用：按项目已有布局与依赖实现 HTTP、后台任务、数据库访问与测试，涵盖 cmd／internal 分层、context 与并发生命周期、错误包装、参数化查询与迁移，以及 go vet、go test -race 的交付验证。'
+const DESCRIPTION = '在写或改 Go 后端代码时使用：按项目已有布局与依赖实现 HTTP、后台任务、数据库访问与测试，涵盖根 main.go 加 cmd／conf／core 分层、web 目录经 go:embed 提供前端、context 与并发生命周期、错误包装、参数化查询与迁移，以及 go vet、go test -race 的交付验证。'
 const CANDIDATE: SkillCandidate = {
   name: 'go-backend',
   description: DESCRIPTION,
