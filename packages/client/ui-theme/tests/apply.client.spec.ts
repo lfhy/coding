@@ -7,11 +7,14 @@ import { SlotRegistry } from 'coding-client-runtime/client'
 import { LocaleRuntime } from 'coding-client-locale/client'
 import { TestRemote } from 'coding-client-test-runtime'
 import { apply as settingsApply, inject as settingsInject } from 'coding-client-ui-settings/client'
+import { resolveSlotLabel } from 'coding-client-ui-slots'
 import { apply, inject, SETTINGS_NS } from 'coding-client-ui-theme/client'
-import type { AppearanceRowInjected, ThemeRuntime } from 'coding-client-ui-theme/client'
+import type { AppearanceRowInjected, ThemeGalleryInjected, ThemeRuntime } from 'coding-client-ui-theme/client'
 import { THEME_SETTINGS_NAMESPACE, ThemeSettingsSchema } from '../src/theme-settings.ts'
 import { AppearanceRow } from '../src/client/AppearanceRow.tsx'
+import { ThemeGallery } from '../src/client/ThemeGallery.tsx'
 import type { createAppearanceRowStore } from '../src/client/settings-store.ts'
+import type { createThemeGalleryStore } from '../src/client/gallery-store.ts'
 
 const SLOT = 'settings.general.item'
 
@@ -60,10 +63,16 @@ async function bench(isLoopback = true) {
   }
 }
 
-/** Stand in for the settings shell: declare the General item slot from root. */
+/** Stand in for the settings shell: declare the item and section slots from root. */
 function declareItems(slots: SlotRegistry): () => void {
   return slots.register(
-    { name: 'root', children: { [SLOT]: { kind: 'list', scope: 'root' } } } as never,
+    {
+      name: 'root',
+      children: {
+        [SLOT]: { kind: 'list', scope: 'root' },
+        'settings.section': { kind: 'list', scope: 'root' },
+      },
+    } as never,
     () => null,
   )
 }
@@ -172,13 +181,52 @@ describe('ui-theme apply', () => {
     await fiber.dispose()
   })
 
-  it('ignores an invalid preference crossing the settings wire', async () => {
+  it('falls back to the base palette for an unknown preference crossing the settings wire', async () => {
     const b = await bench()
     b.setHostPreference('sepia')
     b.ctx.remote.$dispatch('settings/document-updated', [THEME_SETTINGS_NAMESPACE, 0])
     await b.ctx.plugin({ inject: [...inject], apply }).await()
     const theme = b.ctx.get('theme') as ThemeRuntime
     await vi.waitFor(() => { expect(b.describe).toHaveBeenCalledTimes(2) })
+    // 选择值保留（提供方可能稍后才注册），但界面不会停在一个不存在的主题上。
+    expect(theme.getTheme().preference).toBe('sepia')
+    expect(theme.getTheme().active.id).toBe('light')
+  })
+
+  it('registers the localized theme page and routes its actions into the runtimes', async () => {
+    const b = await bench()
+    declareItems(b.slots)
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const entry = b.slots.entries('settings.section').find(candidate => candidate.component === ThemeGallery)!
+    expect(entry.options).toMatchObject({ id: 'appearance', order: 11 })
+    expect(resolveSlotLabel(entry.options.label)).toBe('主题外观')
+    b.locale.setLocale('en')
+    expect(resolveSlotLabel(entry.options.label)).toBe('Theme')
+
+    const handle = entry.store as ReturnType<typeof createThemeGalleryStore>
+    const instance = handle.create()
+    const theme = b.ctx.get('theme') as ThemeRuntime
+    const face = (entry.inject as unknown as (a: typeof instance.actions) => ThemeGalleryInjected)(instance.actions)
+    // 首次绑定时就从两个运行时同步一次，卡片墙能直接点亮当前主题。
+    expect(instance.getSnapshot().preference).toBe('system')
+
+    face.selectTheme('dream-abyss')
+    expect(theme.getTheme().preference).toBe('dream-abyss')
+    await vi.waitFor(() => {
+      expect(b.mutate).toHaveBeenCalledWith(expect.objectContaining({
+        ops: [{ op: 'set', path: ['preference'], value: 'dream-abyss' }],
+      }))
+    })
+    expect(instance.getSnapshot().activeId).toBe('dream-abyss')
+
+    face.toggleFavorite('dream-abyss')
+    expect(instance.getSnapshot().favorites).toEqual(['dream-abyss'])
+    face.setAccent('#ff2200')
+    expect(instance.getSnapshot().accent).toBe('#ff2200')
+    expect(theme.getTheme().active.tokens['--dsw-alias-brand-primary']).toBe('#ff2200')
+
+    face.resetAppearance()
+    expect(instance.getSnapshot().accent).toBe('')
     expect(theme.getTheme().preference).toBe('system')
   })
 

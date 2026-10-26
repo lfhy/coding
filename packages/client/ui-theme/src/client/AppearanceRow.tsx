@@ -10,7 +10,7 @@ import {
   IconDarkOutline16, IconFollowsystemOutline16, IconLightOutline16,
 } from 'coding-client-ui-primitives'
 import type { PropsLocale, PropsRuntime, PropsStore } from 'coding-client-ui-slots'
-import type { ThemePreference } from '../theme-settings.ts'
+import { isThemePreference, type ThemePreference } from '../theme-settings.ts'
 import type { ThemeKey } from './locales.ts'
 import type {} from 'coding-client-ui-settings/client'
 import type { createAppearanceRowStore } from './settings-store.ts'
@@ -41,6 +41,10 @@ const CUBES: readonly { id: ThemePreference; labelKey: ThemeKey; Icon: typeof Ic
  */
 export function AppearanceRow({ t, setTheme, useStore }: AppearanceRowComponentProps) {
   const preference = useStore(s => s.preference)
+  const scheme = useStore(s => s.scheme)
+  // 选中态按持久化偏好显示；选择的是某个主题预设时，用解析后的明暗点亮对应的
+  // 方块——行上始终能读出"现在到底是浅色还是深色"，再点方块则离开该预设。
+  const shown = isThemePreference(preference) ? preference : scheme
   return (
     <div className={css.group}>
       <div className={css.title}>{t('appearance.title')}</div>
@@ -49,8 +53,8 @@ export function AppearanceRow({ t, setTheme, useStore }: AppearanceRowComponentP
           <button
             key={id}
             type="button"
-            className={clsx(css.themeCube, preference === id && css.selected)}
-            aria-pressed={preference === id}
+            className={clsx(css.themeCube, shown === id && css.selected)}
+            aria-pressed={shown === id}
             onClick={() => { setTheme(id) }}
           >
             <Icon />

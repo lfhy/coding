@@ -1,0 +1,27 @@
+/* 壁纸层：铺在画布之下的固定背景。
+ *
+ * body 的负 z-index 伪元素画在自己的背景之前——外观层会把
+ * `--dsw-alias-bg-base` 与 `--dsw-specific-sidebar-fill` 按可见度稀释成半透明，
+ * 壁纸才透得出来；`--dsh-wallpaper-*` 由同一层覆盖以 body 行内自定义属性下发。
+ * 未设置壁纸时 `--dsh-wallpaper-opacity` 缺失，取 0，这一层完全不画。 */
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: -1px;
+  z-index: -1;
+  pointer-events: none;
+  background-image: var(--dsh-wallpaper-image, none);
+  background-position: center;
+  background-size: var(--dsh-wallpaper-size, cover);
+  background-repeat: var(--dsh-wallpaper-repeat, no-repeat);
+  filter: blur(var(--dsh-wallpaper-blur, 0px));
+  opacity: var(--dsh-wallpaper-opacity, 0);
+  transition: opacity var(--ds-transition-duration-slow) var(--ds-ease-in-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body::before {
+    transition: none;
+  }
+}

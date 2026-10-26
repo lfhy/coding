@@ -1,0 +1,133 @@
+/* 主题卡片：预览块 + 名称 + 明暗标签，收藏开关在卡片下方。
+ * 选中态用品牌色描边，不改变尺寸，切换主题时卡片墙不会跳动。 */
+
+.item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 14px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.item:hover {
+  border-color: var(--dsw-static-neutral-bluish-400);
+}
+
+.selected {
+  border-color: var(--dsw-alias-state-business-primary);
+  box-shadow: 0 0 0 1px var(--dsw-alias-state-business-primary);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--dsw-alias-label-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.card:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+  border-radius: 10px;
+}
+
+.swatch {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 5px;
+  height: 54px;
+  padding: 9px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 10px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.accent {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px color-mix(in srgb, #000 18%, transparent);
+}
+
+.line {
+  width: 34px;
+  height: 5px;
+  border-radius: 3px;
+  opacity: 0.85;
+}
+
+.meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.name {
+  font-size: 13px;
+  line-height: 20px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-height: 16px;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.tag {
+  padding: 0 5px;
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-module-platform);
+}
+
+.current {
+  padding: 0 5px;
+  border-radius: 6px;
+  color: var(--dsw-alias-brand-text);
+  background: var(--dsw-alias-brand-primary);
+}
+
+.favorite {
+  align-self: flex-start;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.favorite:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.favorite:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.favoriteOn {
+  color: var(--dsw-alias-state-business-primary);
+}

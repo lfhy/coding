@@ -4,6 +4,7 @@ import designPlatform from '../styles/design-platform.css?inline'
 import scrollbar from '../styles/scrollbar.css?inline'
 import gradientShadowText from '../styles/gradient-shadow-text.css?inline'
 import shiki from '../styles/shiki.css?inline'
+import wallpaper from '../styles/wallpaper.css?inline'
 
 const PLUGIN_ID = 'coding-client-ui-theme'
 
@@ -13,6 +14,7 @@ const STYLES = [
   ['scrollbar.css', scrollbar],
   ['gradient-shadow-text.css', gradientShadowText],
   ['shiki.css', shiki],
+  ['wallpaper.css', wallpaper],
 ] as const
 
 /**

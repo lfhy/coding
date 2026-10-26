@@ -8,6 +8,19 @@ import type {
   ThemeTokenOverrides,
 } from 'coding-client-ui-theme/client'
 import { ThemeRuntime } from 'coding-client-ui-theme/client'
+import {
+  DEFAULT_GLASS, DEFAULT_WALLPAPER,
+} from '../src/theme-settings.ts'
+
+/** 一份完整的设置分节（schema 会给缺省字段补默认值，测试里显式给全）。 */
+const section = (preference: string): ThemeSettings => ({
+  preference,
+  accent: '',
+  wallpaper: DEFAULT_WALLPAPER,
+  glass: DEFAULT_GLASS,
+  favorites: [],
+  packs: [],
+})
 
 const make = (host = stubSettingsScope<ThemeSettings>()): {
   ctx: Context
@@ -50,17 +63,17 @@ describe('ThemeRuntime', () => {
 
   it('adopts a published Host section without writing it back', () => {
     const { theme, events, host } = make()
-    host.publish({ status: 'ready', value: { preference: 'dark' }, revision: 1, writable: true })
+    host.publish({ status: 'ready', value: section('dark'), revision: 1, writable: true })
     expect(theme.getTheme().preference).toBe('dark')
     expect(events).toHaveLength(1)
     expect(host.set).not.toHaveBeenCalled()
-    host.publish({ value: { preference: 'dark' }, revision: 2 })
+    host.publish({ value: section('dark'), revision: 2 })
     expect(events).toHaveLength(1)
   })
 
   it('adopts a section already standing at construction', () => {
     const host = stubSettingsScope<ThemeSettings>()
-    host.publish({ status: 'ready', value: { preference: 'dark' }, revision: 1, writable: true })
+    host.publish({ status: 'ready', value: section('dark'), revision: 1, writable: true })
     const { theme } = make(host)
     expect(theme.getTheme().preference).toBe('dark')
   })
@@ -78,12 +91,12 @@ describe('ThemeRuntime', () => {
     expect(theme.getTheme().themes.map(t => t.id)).toEqual(['light', 'dark', 'sepia'])
     theme.setTheme('sepia')
     expect(theme.getTheme().active.tokens['--dsw-alias-bg-base']).toBe('red')
+    // 已注册主题的选择同样持久化，重启后仍是这套外观。
+    expect(host.set).toHaveBeenCalledWith('preference', 'sepia')
     dispose()
     expect(theme.getTheme().preference).toBe('system')
     expect(theme.getTheme().themes.map(t => t.id)).toEqual(['light', 'dark'])
-    // Custom ids are in-process extension themes; only the built-in product
-    // preferences cross the Host settings schema.
-    expect(host.set).not.toHaveBeenCalled()
+    expect(host.set).toHaveBeenLastCalledWith('preference', 'system')
     // register + set + dispose = three publishes; disposer is idempotent.
     expect(events.length).toBe(3)
     dispose()
@@ -237,6 +250,31 @@ describe('ThemeRuntime', () => {
       media.flip()
       expect(events).toHaveLength(1)
       expect(theme.getTheme().active.id).toBe('light')
+    })
+
+    it('auto themes follow the OS scheme and pick the matching palette', () => {
+      const media = stubMedia(false)
+      const { theme, events } = make()
+      theme.register({
+        id: 'duo',
+        colorScheme: 'auto',
+        tokens: {},
+        palettes: { light: { '--x': 'light' }, dark: { '--x': 'dark' } },
+      })
+      theme.setTheme('duo')
+      expect(theme.getTheme().active.colorScheme).toBe('light')
+      expect(theme.getTheme().active.tokens['--x']).toBe('light')
+      const before = events.length
+      media.flip()
+      expect(events.length).toBe(before + 1)
+      expect(theme.getTheme().active.colorScheme).toBe('dark')
+      expect(theme.getTheme().active.tokens['--x']).toBe('dark')
+    })
+
+    it('rejects an auto theme without palettes', () => {
+      const { theme } = make()
+      expect(() => theme.register({ id: 'empty', colorScheme: 'auto', tokens: {} }))
+        .toThrow(/without palettes/)
     })
 
     it('context dispose releases the media listener', async () => {
