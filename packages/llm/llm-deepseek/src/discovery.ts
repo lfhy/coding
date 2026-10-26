@@ -13,11 +13,11 @@ function endpoint(raw: string): URL {
   try {
     url = new URL(raw)
   } catch {
-    throw new LlmError('DeepSeek model discovery needs a valid HTTP(S) baseURL', 'INVALID_DISCOVERY')
+    throw new LlmError('Model discovery needs a valid HTTP(S) baseURL', 'INVALID_DISCOVERY')
   }
   if (!['http:', 'https:'].includes(url.protocol) || !url.hostname || url.username || url.password
     || url.search || url.hash) {
-    throw new LlmError('DeepSeek model discovery baseURL must be HTTP(S) without credentials, query, or fragment', 'INVALID_DISCOVERY')
+    throw new LlmError('Model discovery baseURL must be HTTP(S) without credentials, query, or fragment', 'INVALID_DISCOVERY')
   }
   return url
 }
@@ -30,7 +30,7 @@ function listingUrl(base: URL): string {
 }
 
 async function readBounded(response: Response, signal: AbortSignal): Promise<string> {
-  const tooLarge = (): LlmError => new LlmError('DeepSeek model listing exceeds 4 MiB', 'DISCOVERY_FAILED')
+  const tooLarge = (): LlmError => new LlmError('Model listing exceeds 4 MiB', 'DISCOVERY_FAILED')
   const declared = Number(response.headers.get('content-length') ?? Number.NaN)
   if (Number.isFinite(declared) && declared > MAX_RESPONSE_BYTES) {
     await response.body?.cancel()
@@ -63,7 +63,7 @@ async function readBounded(response: Response, signal: AbortSignal): Promise<str
 
 function parseListing(value: unknown): LlmDiscoveredModel[] {
   if (value === null || typeof value !== 'object' || !('data' in value) || !Array.isArray(value.data)) {
-    throw new LlmError('DeepSeek model listing has no data array', 'DISCOVERY_FAILED')
+    throw new LlmError('Model listing has no data array', 'DISCOVERY_FAILED')
   }
   const models: LlmDiscoveredModel[] = []
   for (const raw of value.data) {
@@ -86,7 +86,7 @@ function parseListing(value: unknown): LlmDiscoveredModel[] {
 function awaitWithSignal<T>(signal: AbortSignal, operation: () => Promise<T>): Promise<T> {
   const abortReason = (): Error => {
     const reason: unknown = signal.reason
-    return reason instanceof Error ? reason : new Error('DeepSeek discovery aborted', { cause: reason })
+    return reason instanceof Error ? reason : new Error('Model discovery aborted', { cause: reason })
   }
   if (signal.aborted) return Promise.reject(abortReason())
   return new Promise<T>((resolve, reject) => {
@@ -105,7 +105,7 @@ function awaitWithSignal<T>(signal: AbortSignal, operation: () => Promise<T>): P
       },
       (error: unknown) => {
         signal.removeEventListener('abort', onAbort)
-        reject(error instanceof Error ? error : new Error('DeepSeek discovery operation failed', { cause: error }))
+        reject(error instanceof Error ? error : new Error('Model discovery operation failed', { cause: error }))
       },
     )
   })
@@ -126,7 +126,7 @@ export async function discoverModels(
   resolveOutbound?: (selection: DeepSeekOutboundConfig) => DeepSeekOutbound,
 ): Promise<readonly LlmDiscoveredModel[]> {
   if (request.provider !== undefined && request.provider !== 'deepseek-official') {
-    throw new LlmError(`DeepSeek discovery cannot query provider "${request.provider}"`, 'INVALID_DISCOVERY')
+    throw new LlmError(`Model discovery cannot query provider "${request.provider}"`, 'INVALID_DISCOVERY')
   }
   const base = endpoint(request.baseURL ?? connection.baseURL)
   const url = listingUrl(base)
@@ -157,20 +157,20 @@ export async function discoverModels(
     }))
     if (!response.ok) {
       await response.body?.cancel()
-      throw new LlmError(`DeepSeek model listing answered HTTP ${response.status}`, 'DISCOVERY_FAILED')
+      throw new LlmError(`Model listing answered HTTP ${response.status}`, 'DISCOVERY_FAILED')
     }
     const body = await awaitWithSignal(signal, () => readBounded(response, signal))
     let parsed: unknown
     try {
       parsed = JSON.parse(body)
     } catch (error) {
-      throw new LlmError('DeepSeek model listing is not JSON', 'DISCOVERY_FAILED', { cause: error })
+      throw new LlmError('Model listing is not JSON', 'DISCOVERY_FAILED', { cause: error })
     }
     return parseListing(parsed)
   } catch (error) {
-    if (request.signal?.aborted) throw new LlmError('DeepSeek model discovery aborted', 'ABORTED', { cause: error })
-    if (signal.aborted) throw new LlmError('DeepSeek model discovery timed out', 'DISCOVERY_FAILED', { cause: error })
+    if (request.signal?.aborted) throw new LlmError('Model discovery aborted', 'ABORTED', { cause: error })
+    if (signal.aborted) throw new LlmError('Model discovery timed out', 'DISCOVERY_FAILED', { cause: error })
     if (error instanceof LlmError) throw error
-    throw new LlmError(`DeepSeek model discovery failed for ${url}`, 'DISCOVERY_FAILED', { cause: error })
+    throw new LlmError(`Model discovery failed for ${url}`, 'DISCOVERY_FAILED', { cause: error })
   }
 }

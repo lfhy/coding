@@ -535,7 +535,7 @@ describe('DeepSeekAdapter against a mock server', () => {
       kind: 'error',
       failure: {
         code: 'TRANSPORT',
-        message: 'DeepSeek API request to http://127.0.0.1:1 failed',
+        message: 'API request to http://127.0.0.1:1 failed',
       },
     })
   })
@@ -577,7 +577,7 @@ describe('DeepSeekAdapter against a mock server', () => {
     expect(result.finish.kind).toBe('error')
     if (result.finish.kind !== 'error') throw new Error('expected an error finish')
     expect(result.finish.failure.code).toBe('TRANSPORT')
-    expect(result.finish.failure.message).toMatch(/^DeepSeek API stream from .* failed$/)
+    expect(result.finish.failure.message).toMatch(/^API stream from .* failed$/)
   })
 
   it('aborts mid-stream via the request signal', async () => {
@@ -634,7 +634,7 @@ describe('DeepSeekAdapter against a mock server', () => {
         for await (const _chunk of adapter.stream({ provider: 'deepseek-official', model: 'm', messages: [] })) { /* drain */ }
       }
       await expect(drain()).rejects.toMatchObject({
-        message: 'DeepSeek API request to https://example.invalid failed',
+        message: 'API request to https://example.invalid failed',
         code: 'TRANSPORT',
         cause: 'offline',
       })
