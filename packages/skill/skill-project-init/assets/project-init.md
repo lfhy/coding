@@ -28,6 +28,8 @@
 
 模板落地后就在这份真实代码上改：直接编辑它的文件，改配置、删掉示例页面、把它的组件接到自己的数据与接口上。不要读完它的目录布局再另建一套「差不多」的实现——只凭观感重写，模板里已经处理好的边界、状态与时序会丢掉，看起来像，实际差得远。
 
+**GitHub 直连不通或很慢时用镜像，不要干等。** 给原始地址加前缀就能下载：`git clone https://gh-proxy.com/https://github.com/<owner>/<repo>.git`，raw 文件同样加这个前缀。`npx degit <owner>/<repo>` 只认直连主机，加镜像前缀会报 `UNSUPPORTED_HOST`，所以直连不可用时改用前缀 `git clone`，再把克隆里的 `.git` 删掉。镜像没有长期稳定的名单，先试直连与 `gh-proxy.com`，不通再逐个换（`kkgithub.com`、`bgithub.xyz`、`ghfast.top`、`ghproxy.net` 等时好时坏），试过两三个仍失败就把网络情况告诉用户、请他给可用的代理或镜像，不要空转重试。镜像只是下载通道：`README.md` 的来源字段仍写 `github.com` 上的 `owner/repo` 与 commit，不写镜像地址。
+
 ## 前后端按分层技能自己搭
 
 模板与参考仓库只决定前端地基和业务形状，不决定目录分层与交付方式。

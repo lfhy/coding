@@ -56,6 +56,10 @@ describe('bundled project-init skill', () => {
       // 模板不是照布局重写：在落地的那份真实代码上改，否则会丢掉模板已处理的边界与时序。
       expect(loaded.content).toContain('就在这份真实代码上改')
       expect(loaded.content).toContain('另建一套「差不多」的实现')
+      // 直连 GitHub 不通时走镜像前缀；degit 不认镜像，来源仍写 github.com。
+      expect(loaded.content).toContain('https://gh-proxy.com/https://github.com/')
+      expect(loaded.content).toContain('UNSUPPORTED_HOST')
+      expect(loaded.content).toContain('不写镜像地址')
       expect(loaded.content).toContain('npx degit')
       // 前端进 Go 工程的 web/ 并由 go:embed 提供；后端不用模板定型，按分层技能搭。
       expect(loaded.content).toContain('go-backend')
