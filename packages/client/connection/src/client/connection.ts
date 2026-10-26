@@ -190,6 +190,8 @@ export class ConnectionController {
       }
 
       this.emitState('reconnecting')
+      // 状态回调可能同步停止循环；不要在停止后再创建退避计时器。
+      if (!this.isRunning()) return
       this.attempt += 1
       console.warn(`[web-runtime] connection lost, retry #${this.attempt}`)
       const idle = new AbortController()

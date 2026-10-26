@@ -322,6 +322,31 @@ describe('connection lifecycle', () => {
     }
   })
 
+  it('does not schedule a retry after a reconnecting state sink stops the controller', async () => {
+    const api = new FakeApiClient()
+    let describeCalls = 0
+    api.onDescribe = () => {
+      describeCalls++
+      return Promise.reject(new Error('host down'))
+    }
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const controller = new ConnectionController(api, {
+      onStateChange: (state) => {
+        if (state === 'reconnecting') controller.stop()
+      },
+    }, { ...FAST, backoffBaseMs: 1_000, backoffFactor: 1, backoffMaxMs: 1_000 })
+    controller.start()
+    try {
+      await vi.waitFor(() => { expect(describeCalls).toBe(1) })
+      await new Promise(resolve => setTimeout(resolve, 20))
+      expect(describeCalls).toBe(1)
+      expect(warnSpy).not.toHaveBeenCalled()
+    } finally {
+      controller.stop()
+      warnSpy.mockRestore()
+    }
+  })
+
   it('does not announce a generation stopped synchronously by its connected state sink', async () => {
     const api = new FakeApiClient()
     const states: ConnectionState[] = []
