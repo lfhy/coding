@@ -53,6 +53,9 @@ describe('bundled project-init skill', () => {
       expect(loaded.content).toContain('deepseek-ai/deepseek-harness')
       expect(loaded.content).toContain('不要自己再写一遍')
       expect(loaded.content).toContain('AGPL-3.0')
+      // 模板不是照布局重写：在落地的那份真实代码上改，否则会丢掉模板已处理的边界与时序。
+      expect(loaded.content).toContain('就在这份真实代码上改')
+      expect(loaded.content).toContain('另建一套「差不多」的实现')
       expect(loaded.content).toContain('npx degit')
       // 前端进 Go 工程的 web/ 并由 go:embed 提供；后端不用模板定型，按分层技能搭。
       expect(loaded.content).toContain('go-backend')

@@ -19,12 +19,14 @@
 搜 GitHub 按下面的优先级进行，找到能用的就停下，并告诉用户用了哪个仓库：
 
 1. **template 仓库优先。** 搜与需求同栈的模板或脚手架，例如 `site:github.com <技术栈> template`、`<技术栈> starter`、`awesome <技术栈> templates`。挑最近仍在提交、README 写清安装与启动、LICENSE 明确的那一个，它的目录结构就是本项目的地基。对话／Agent 类项目先看带聊天骨架的模板：`vercel/ai-chatbot`（AI SDK 官方模板）、HeroUI 的 chat 模板（组件库 `heroui-inc/heroui`，起步模板 `heroui-inc/next-app-template`）。
-2. **其次找同类项目做参考。** 没有可用模板时再搜已经做成同类产品的仓库：后台管理系统先看 `vue-vben-admin`（vben）、`shadcn-admin` 这类成熟管理后台模版及其衍生项目；对话／Agent 页面读 `assistant-ui/assistant-ui`（聊天运行时与组件，样式件在 `assistant-ui/assistant-ui-react-ui`）、`CherryHQ/cherry-studio` 与 `deepseek-ai/deepseek-harness`（`dsh`）的会话组织、消息渲染与工具调用实现；仍不够再找同领域的业务仓库。只借目录结构、路由与状态管理、鉴权、表格与表单抽象，不整块搬业务代码。
+2. **其次找同类项目做参考。** 没有可用模板时再搜已经做成同类产品的仓库：后台管理系统先看 `vue-vben-admin`（vben）、`shadcn-admin` 这类成熟管理后台模版及其衍生项目；对话／Agent 页面读 `assistant-ui/assistant-ui`（聊天运行时与组件，样式件在 `assistant-ui/assistant-ui-react-ui`）、`CherryHQ/cherry-studio` 与 `deepseek-ai/deepseek-harness`（`dsh`）的会话组织、消息渲染与工具调用实现；仍不够再找同领域的业务仓库。要借的是实现本身：能装它的包就装包，许可证允许就移植那段代码并保留声明，别只读一遍目录结构再自己写一份差不多的。
 3. **两者都找不到**才从零搭，并在回复里说明搜过但没有可用的现成方案。
 
 对话与 Agent 页面最容易重复造轮子并写出一批状态与时序 bug：流式增量、消息列表与虚拟滚动、markdown 与代码块渲染、工具调用和推理过程展示、停止与重试、附件与多模态，这些都有成熟实现。直接接 `assistant-ui` 这类库，或沿用选定模板已有的组件，不要自己再写一遍；`CherryHQ/cherry-studio` 是 AGPL-3.0，只读它的做法，不复制它的代码。
 
 落地模板时用 `npx degit <owner>/<repo>`，或 `git clone --depth 1` 到临时目录再把内容拷进当前目录，不要留下模板自己的 `.git`，使当前目录成为模板原状而不是嵌套仓库。先跑通模板自带的安装与启动命令，再改业务代码；在 `README.md` 里写明模板来源仓库、版本或 commit、许可证和本地改动范围，许可证要求保留声明时照办，不删它的 LICENSE 与署名。
+
+模板落地后就在这份真实代码上改：直接编辑它的文件，改配置、删掉示例页面、把它的组件接到自己的数据与接口上。不要读完它的目录布局再另建一套「差不多」的实现——只凭观感重写，模板里已经处理好的边界、状态与时序会丢掉，看起来像，实际差得远。
 
 ## 前后端按分层技能自己搭
 
