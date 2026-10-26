@@ -15,7 +15,7 @@ import * as SkillProjectInit from 'coding-skill-project-init'
 
 const bodyUrl = new URL('../assets/project-init.md', import.meta.url)
 const resourcePath = fileURLToPath(new URL('../assets/', import.meta.url))
-const description = '在新建项目、空目录或需要让改动可回滚时使用：已在 Git 工作区就不重复初始化；新项目且有联网时先在 GitHub 按优先级找 template 或同类开源仓库（如 vben、shadcn-admin）当地基；前端进 Go 工程的 web 目录并由 go:embed 提供、后端按分层技能自己搭；未初始化就 git init、写 .gitignore、逐条确认后建基线提交，并给出新项目最小的 README／AGENTS；之后每一步改动都小步验证并本地提交。'
+const description = '在新建项目（含 AI 对话／Agent 页面）、空目录或需要让改动可回滚时使用：已在 Git 工作区就不重复初始化；新项目且有联网时先在 GitHub 按优先级找 template 或同类开源仓库（如 vben、shadcn-admin、assistant-ui、Cherry Studio）当地基，对话页面直接接成熟实现不重写；前端进 Go 工程的 web 目录并由 go:embed 提供、后端按分层技能自己搭；未初始化就 git init、写 .gitignore、逐条确认后建基线提交，并给出新项目最小的 README／AGENTS；之后每一步改动都小步验证并本地提交。'
 
 describe('bundled project-init skill', () => {
   it('registers, loads, and unregisters its published instructions', async () => {
@@ -46,6 +46,13 @@ describe('bundled project-init skill', () => {
       expect(loaded.content).toContain('template 仓库优先')
       expect(loaded.content).toContain('vue-vben-admin')
       expect(loaded.content).toContain('shadcn-admin')
+      // 对话／Agent 页面按成熟实现走：模板、同类项目与「不重写基础件」的规则都要在正文里。
+      expect(loaded.content).toContain('vercel/ai-chatbot')
+      expect(loaded.content).toContain('heroui-inc/heroui')
+      expect(loaded.content).toContain('assistant-ui/assistant-ui')
+      expect(loaded.content).toContain('deepseek-ai/deepseek-harness')
+      expect(loaded.content).toContain('不要自己再写一遍')
+      expect(loaded.content).toContain('AGPL-3.0')
       expect(loaded.content).toContain('npx degit')
       // 前端进 Go 工程的 web/ 并由 go:embed 提供；后端不用模板定型，按分层技能搭。
       expect(loaded.content).toContain('go-backend')
