@@ -93,6 +93,7 @@ describe('connection client apply', () => {
     const stopDescription = handle.hostDescription.subscribe(() => {
       descriptions.push(handle.hostDescription.getSnapshot()?.canOpenPath)
     })
+    const stopThrowingState = handle.state.subscribe(() => { throw new Error('state subscriber bug') })
     expect(handle.hostDescription.getSnapshot()).toBeUndefined()
     // config omitted: the `config ?? {}` default arm is part of the surface.
     let connected = 0
@@ -105,9 +106,10 @@ describe('connection client apply', () => {
     expect(handle.hostDescription.getSnapshot()).toBeUndefined()
     expect(descriptions).toEqual([true, undefined])
     expect(connected).toBe(1)
-    expect(errorSpy).toHaveBeenCalledTimes(2)
+    expect(errorSpy).toHaveBeenCalledTimes(4)
     stopThrowing()
     stopDescription()
+    stopThrowingState()
     errorSpy.mockRestore()
   })
 

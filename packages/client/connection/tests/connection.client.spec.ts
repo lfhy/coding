@@ -347,6 +347,45 @@ describe('connection lifecycle', () => {
     }
   })
 
+  it('makes reconnect a no-op when stopped and tolerates a synchronous stop from its state sink', async () => {
+    const api = new FakeApiClient()
+    const states: ConnectionState[] = []
+    let connected = 0
+    const controller = new ConnectionController(api, {
+      onConnected: () => { connected++ },
+      onStateChange: (state) => {
+        states.push(state)
+        if (state === 'reconnecting') controller.stop()
+      },
+    }, FAST)
+    controller.start()
+    await vi.waitFor(() => { expect(connected).toBe(1) })
+    controller.reconnect()
+    await vi.waitFor(() => { expect(states).toEqual(['connected', 'reconnecting']) })
+    controller.reconnect()
+    await vi.waitFor(() => { expect(api.openMuxCount).toBe(0) })
+  })
+
+  it('cleans a retry delay that is stopped before its sleep settles', async () => {
+    const api = new FakeApiClient()
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const controller = new ConnectionController(api, {
+      onStateChange: (state) => {
+        if (state === 'reconnecting') setTimeout(() => { controller.stop() }, 0)
+      },
+    }, { ...FAST, backoffBaseMs: 1_000, backoffFactor: 1, backoffMaxMs: 1_000 })
+    api.onDescribe = () => Promise.reject(new Error('host down'))
+    controller.start()
+    try {
+      await vi.waitFor(() => { expect(api.callsOf('host.describe')).toHaveLength(1) })
+      await new Promise(resolve => setTimeout(resolve, 20))
+      expect(warnSpy).toHaveBeenCalledOnce()
+    } finally {
+      controller.stop()
+      warnSpy.mockRestore()
+    }
+  })
+
   it('does not announce a generation stopped synchronously by its connected state sink', async () => {
     const api = new FakeApiClient()
     const states: ConnectionState[] = []

@@ -153,7 +153,6 @@ export function apply(ctx: Context): void {
       const nextController = new ConnectionController(api, {
         ...sinks,
         onConnected: (next) => {
-          if (controller !== nextController) return
           publishDescription(next)
           // A description subscriber may synchronously stop the loop. In that
           // case publishDescription(undefined) has already retracted this
@@ -163,7 +162,6 @@ export function apply(ctx: Context): void {
           sinks.onConnected?.(next)
         },
         onStateChange: (state) => {
-          if (controller !== nextController) return
           if (state === 'reconnecting') publishDescription(undefined)
           publishState(state)
           sinks.onStateChange?.(state)
