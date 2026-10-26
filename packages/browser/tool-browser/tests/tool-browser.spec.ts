@@ -169,6 +169,7 @@ describe('browser action tools', () => {
     { action: 'snapshot' },
     { action: 'click', ref: 'e1', revision: 1 },
     { action: 'fill', ref: 'e1', revision: 1, text: 'hello' },
+    { action: 'act', revision: 1, steps: [{ kind: 'fill', ref: 'e1', text: 'hello' }, { kind: 'click', ref: 'e1' }] },
     { action: 'scroll', direction: 'down', pixels: 10 },
     { action: 'viewport', width: 390, height: 844 },
     { action: 'screenshot' },
@@ -363,6 +364,75 @@ describe('browser action tools', () => {
     const result = await call({ action: 'click', ref: 'e1', revision: 1 })
     expect(result.isError).toBe(true)
     expect(text(result)).toContain('BROWSER_STALE_REF: target or element changed; take a fresh browser_snapshot before acting')
+    expect(browser.commands).toHaveBeenCalledTimes(1)
+  })
+
+  it('submits a whole form as one batch behind a single approval', async () => {
+    const { ctx, call } = await setup()
+    const browser = ctx.browserUse as FakeBrowser
+    browser.currentState = activeState()
+    const asked = vi.fn((_request: { reason?: string }) => Promise.resolve('allowed-once' as const))
+    ctx.on('approval/request', asked)
+    const steps = [
+      { kind: 'fill', ref: 'e1', text: 'alice' },
+      { kind: 'fill', ref: 'e2', text: 'secret' },
+      { kind: 'click', ref: 'e3' },
+    ]
+    browser.commands.mockResolvedValueOnce({ observation, png: null,
+      steps: [{ kind: 'fill', ok: true }, { kind: 'fill', ok: true }, { kind: 'click', ok: true }] })
+
+    const result = await call({ action: 'act', revision: 4, steps })
+    expect(result.isError).toBe(false)
+    expect(asked).toHaveBeenCalledTimes(1)
+    expect(asked.mock.calls[0]?.[0].reason).toBe(
+      'Browser act 3 steps (2 fill, 1 click) (current origin: https://example.com; approval covers every step in this call)')
+    expect(browser.commands).toHaveBeenCalledTimes(1)
+    expect(browser.commands.mock.calls[0]?.[1]).toEqual({ kind: 'act', revision: 4, steps })
+    expect(result.value).toMatchObject({ action: 'act',
+      steps: [{ kind: 'fill', ok: true }, { kind: 'fill', ok: true }, { kind: 'click', ok: true }] })
+    expect(JSON.parse(text(result))).toMatchObject({ action: 'act',
+      steps: [{ kind: 'fill', ok: true }, { kind: 'fill', ok: true }, { kind: 'click', ok: true }] })
+  })
+
+  it('reports only the steps the provider actually executed', async () => {
+    const { ctx, call } = await setup(true, { mode: 'danger-full-access', policy: 'never' })
+    const browser = ctx.browserUse as FakeBrowser
+    browser.currentState = activeState()
+    browser.commands.mockResolvedValueOnce({ observation: { ...observation, revision: 5 }, png: null,
+      steps: [{ kind: 'fill', ok: true },
+        { kind: 'click', ok: false, reason: 'browser element e2 is covered by another element' }] })
+
+    const result = await call({ action: 'act', revision: 4, steps: [
+      { kind: 'fill', ref: 'e1', text: 'alice' },
+      { kind: 'click', ref: 'e2' },
+      { kind: 'fill', ref: 'e3', text: 'never' },
+    ] })
+    expect(result.isError).toBe(false)
+    expect(result.value).toMatchObject({ action: 'act', observation: { revision: 5 },
+      steps: [{ kind: 'fill', ok: true },
+        { kind: 'click', ok: false, reason: 'browser element e2 is covered by another element' }] })
+  })
+
+  it('reports an empty step list when the provider omits batch results', async () => {
+    const { ctx, call } = await setup(true, { mode: 'danger-full-access', policy: 'never' })
+    const browser = ctx.browserUse as FakeBrowser
+    browser.currentState = activeState()
+    const result = await call({ action: 'act', revision: 1, steps: [{ kind: 'click', ref: 'e1' }] })
+    expect(result.isError).toBe(false)
+    expect(result.value).toMatchObject({ action: 'act', steps: [] })
+  })
+
+  it('keeps executed batch steps out of any replay advice', async () => {
+    const { ctx, call } = await setup(true, { mode: 'danger-full-access', policy: 'never' })
+    const browser = ctx.browserUse as FakeBrowser
+    browser.currentState = activeState()
+    browser.commands.mockRejectedValueOnce(new BrowserUseError(
+      'browser element is no longer current: e2', 'BROWSER_STALE_REF'))
+
+    const result = await call({ action: 'act', revision: 4, steps: [{ kind: 'click', ref: 'e2' }] })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('browser_act: BROWSER_STALE_REF: browser element is no longer current: e2;')
+    expect(text(result)).toContain('Steps already executed may have taken effect: do not replay them')
     expect(browser.commands).toHaveBeenCalledTimes(1)
   })
 
@@ -959,16 +1029,16 @@ describe('browser action tools', () => {
     expect((ctx.browserUse as FakeBrowser).commands).not.toHaveBeenCalled()
   })
 
-  it('publishes only eight action-specific tool schemas with required parameters', async () => {
+  it('publishes only nine action-specific tool schemas with required parameters', async () => {
     const { ctx } = await setup()
     const schemas = ctx.tools.schemas().filter(tool => tool.name.startsWith('browser_'))
     expect(schemas.map(tool => tool.name)).toEqual([
-      'browser_navigate', 'browser_snapshot', 'browser_click', 'browser_fill',
+      'browser_navigate', 'browser_snapshot', 'browser_click', 'browser_fill', 'browser_act',
       'browser_scroll', 'browser_viewport', 'browser_screenshot', 'browser_close',
     ])
     expect(ctx.tools.get('browser_use')).toBeUndefined()
     expect(schemas.map(tool => (tool.parameters as { required?: string[] }).required ?? [])).toEqual([
-      ['url'], [], ['ref', 'revision'], ['ref', 'revision', 'text'],
+      ['url'], [], ['ref', 'revision'], ['ref', 'revision', 'text'], ['revision', 'steps'],
       ['direction', 'pixels'], ['width', 'height'], [], [],
     ])
     for (const schema of schemas) {
@@ -976,6 +1046,7 @@ describe('browser action tools', () => {
     }
     expect(schemas.find(tool => tool.name === 'browser_snapshot')?.description).toContain('ref and revision')
     expect(schemas.find(tool => tool.name === 'browser_click')?.description).toContain('current browser observation')
+    expect(schemas.find(tool => tool.name === 'browser_act')?.description).toContain('for example fill two fields and then click submit')
     const navigate = schemas.find(tool => tool.name === 'browser_navigate')
     expect((navigate?.parameters as { properties: { url: { description: string } } }).properties.url.description)
       .toContain('Do not pass a Markdown link')
@@ -991,6 +1062,13 @@ describe('browser action tools', () => {
       { action: 'click', ref: '', revision: 1 }, { action: 'click', ref: 'e1', revision: 0 },
       { action: 'click', ref: 'x'.repeat(257), revision: 1 },
       { action: 'fill', ref: 'e1', revision: 1, text: 'x'.repeat(2001) },
+      { action: 'act', revision: 1, steps: [] },
+      { action: 'act', revision: 0, steps: [{ kind: 'click', ref: 'e1' }] },
+      { action: 'act', revision: 1, steps: Array.from({ length: 9 }, () => ({ kind: 'click', ref: 'e1' })) },
+      { action: 'act', revision: 1, steps: [{ kind: 'click', ref: '' }] },
+      { action: 'act', revision: 1, steps: [{ kind: 'fill', ref: 'e1' }] },
+      { action: 'act', revision: 1, steps: [{ kind: 'fill', ref: 'e1', text: 'x'.repeat(2001) }] },
+      { action: 'act', revision: 1, steps: [{ kind: 'scroll', ref: 'e1' }] },
       { action: 'scroll', direction: 'up', pixels: 2001 },
       { action: 'viewport', width: 199, height: 844 }, { action: 'viewport', width: 390, height: 239 },
       { action: 'viewport', width: 1920, height: 1400 }, { action: 'viewport', width: 390 },

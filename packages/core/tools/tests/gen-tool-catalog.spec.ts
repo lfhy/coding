@@ -29,8 +29,8 @@ describe('gen-tool-catalog collectToolCatalog', () => {
     const catalog = await collectToolCatalog()
     const names = catalog.flatMap(entry => entry.schemas.map(s => s.name)).sort()
     expect(names).toEqual([
-      'apply_patch', 'ask_user_question', 'bash', 'bash', 'browser_click', 'browser_close', 'browser_fill',
-      'browser_navigate', 'browser_screenshot', 'browser_scroll', 'browser_snapshot', 'browser_viewport',
+      'apply_patch', 'ask_user_question', 'bash', 'bash', 'browser_act', 'browser_click', 'browser_close',
+      'browser_fill', 'browser_navigate', 'browser_screenshot', 'browser_scroll', 'browser_snapshot', 'browser_viewport',
       'computer_click', 'computer_confirm', 'computer_drag', 'computer_list_apps', 'computer_observe', 'computer_perform_action',
       'computer_press_key', 'computer_scroll', 'computer_set_value', 'computer_type_text', 'computer_wait',
       'cordis_define', 'cordis_inspect_list',
@@ -54,10 +54,10 @@ describe('gen-tool-catalog collectToolCatalog', () => {
     }
   })
 
-  it('harvests eight browser operations with action-specific arguments and one result shape', async () => {
+  it('harvests nine browser operations with action-specific arguments and one result shape', async () => {
     const catalog = await collectToolCatalog()
     const browser = catalog.find(entry => entry.pkg === 'coding-tool-browser')
-    const actions = ['navigate', 'snapshot', 'click', 'fill', 'scroll', 'viewport', 'screenshot', 'close']
+    const actions = ['navigate', 'snapshot', 'click', 'fill', 'act', 'scroll', 'viewport', 'screenshot', 'close']
     expect(browser?.schemas.map(schema => schema.name)).toEqual(actions.map(action => `browser_${action}`).sort())
     expect(browser?.note).toContain('active tab and session revision')
 
@@ -71,7 +71,9 @@ describe('gen-tool-catalog collectToolCatalog', () => {
       const parameters = definition.parameters as unknown as JsonSchema
       expect(parameters.properties).not.toHaveProperty('action')
       const result = definition.output.schema as JsonSchema
-      expect(Object.keys(result.properties ?? {})).toEqual(['action', 'observation', 'image'])
+      // 批量动作额外报告逐步骤结果；其余动作只有固定的三段结果。
+      const extras = definition.name === 'browser_act' ? ['steps'] : []
+      expect(Object.keys(result.properties ?? {})).toEqual(['action', 'observation', 'image', ...extras])
       expect(result.required).toEqual(['action', 'observation', 'image'])
       expect(result.properties?.action).toMatchObject({ const: definition.name.slice('browser_'.length) })
       const observation = result.properties?.observation

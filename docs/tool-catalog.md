@@ -17,7 +17,7 @@ This table connects model-visible tool names to the plugin package and service s
 | --- | --- | --- | --- | --- | --- |
 | `coding-tool-memory` | `memory_delete`, `memory_list`, `memory_read`, `memory_save`, `memory_update` | `ctx.tools`, `ctx.memory` | `tool/call`, `tool/result for project-scoped memory reads and writes` | - | The five memory tools take no path: the owning session decides which project they read and write, and each call resolves it from the session cwd. |
 | `coding-tool-ask-user` | `ask_user_question` | `ctx.tools`, `ctx.userQuestions` | `tool/call`, `tool/result after a UI/provider answers the question` | - | ask_user_question pauses the tool call until the active UI provider returns a human answer. |
-| `coding-tool-browser` | `browser_click`, `browser_close`, `browser_fill`, `browser_navigate`, `browser_screenshot`, `browser_scroll`, `browser_snapshot`, `browser_viewport` | `ctx.tools`, `ctx.browserUse`, `ctx.attachments`, `ctx.approval and a calling Agent at execution time` | `tool/call`, `durable attachment on screenshot`, `tool/result` | - | Each operation is bound to the active tab and session revision. Full access with approval prompts disabled proceeds directly; otherwise only allowed-once approval proceeds if that target remains current. A remote workspace is rejected. Only explicit screenshots save a PNG attachment and render an image block. The browser provider owns URL/network policy and session tab lifetime. |
+| `coding-tool-browser` | `browser_act`, `browser_click`, `browser_close`, `browser_fill`, `browser_navigate`, `browser_screenshot`, `browser_scroll`, `browser_snapshot`, `browser_viewport` | `ctx.tools`, `ctx.browserUse`, `ctx.attachments`, `ctx.approval and a calling Agent at execution time` | `tool/call`, `durable attachment on screenshot`, `tool/result` | - | Each operation is bound to the active tab and session revision. Full access with approval prompts disabled proceeds directly; otherwise only allowed-once approval proceeds if that target remains current. A remote workspace is rejected. Only explicit screenshots save a PNG attachment and render an image block. The browser provider owns URL/network policy and session tab lifetime. |
 | `coding-tool-computer-use` | `computer_click`, `computer_confirm`, `computer_drag`, `computer_list_apps`, `computer_observe`, `computer_perform_action`, `computer_press_key`, `computer_scroll`, `computer_set_value`, `computer_type_text`, `computer_wait` | `ctx.tools`, `ctx.skills`, `ctx.computerUse and a calling Agent at execution time` | `tool/call`, `tool/result`, `workspace screenshot Artifact on request`, `one computer_use_state read/control lease decision after an approval or a configured grant` | - | The only globally visible tool is computer_use_activate; loading the Skill replaces it with the execution vocabulary for that Agent alone. Every action binds to a fresh observation, so a stale element index fails closed, and a coordinate target is only accepted after a screenshot delivered the raster it was chosen from. Accessibility actions are preferred over pointer input, and pointer input is routed to the selected process instead of the global cursor. |
 | `coding-tools` | `run_code` | `ctx.tools`, `ctx.codeRuntime (execution time)`, `ctx.systemPrompt` | `tool/call`, `one tool/code-dispatch-start + tool/code-dispatch pair per bridged sub-call`, `tool/result` | - | Owned by the tool registry as a reserved transport outside filterable capability layers under `mode: code` / `mode: both` (see the Code Mode design record). Under `code` it is the registry's only wire contribution; the other visible capabilities are declared in a generated SDK section in the loaded runtime's language, and a program calls them through bindings scheduled under the native concurrency contract (submission-ordered starts and policy; concurrency-safe bodies overlap up to `maxParallelSubCalls`) that re-enter the complete guarded tool pipeline and link each nested execution to this outer result. |
 | `coding-plan-mode` | `exit_plan_mode` | `ctx.tools`, `ctx.systemPrompt`, `ctx.userQuestions (execution time, opportunistic)` | `tool/call`, `plan/mode inactive on an approved review`, `tool/result` | - | exit_plan_mode stays in the model-facing schema while planning is inactive so transitions add no tool-catalog churn on top of the plan-policy change. Its execute path rejects calls outside plan mode; in plan mode it presents the plan over the user-questions seam (approve / keep planning with feedback), and approval logs plan mode inactive at the step boundary. |
@@ -251,6 +251,77 @@ ask_user_question pauses the tool call until the active UI provider returns a hu
 <a id="coding-tool-browser"></a>
 
 ## `coding-tool-browser`
+
+### `browser_act`
+
+Run several element actions from one observation in a single call, for example fill two fields and then click submit. Steps run in order with the same revision; the batch stops at the first step that cannot run and returns a fresh observation with each attempted step's outcome. Load the browser-use skill first when available.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "revision": {
+      "type": "integer",
+      "description": "Positive revision from the observation that produced every ref in this batch."
+    },
+    "steps": {
+      "type": "array",
+      "description": "Actions in order, 1..8. Every ref must come from the observation named by revision.",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "click"
+              },
+              "ref": {
+                "type": "string",
+                "description": "Opaque ref from the same observation, not a selector."
+              }
+            },
+            "required": [
+              "kind",
+              "ref"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "fill"
+              },
+              "ref": {
+                "type": "string",
+                "description": "Opaque ref from the same observation, not a selector."
+              },
+              "text": {
+                "type": "string",
+                "description": "Text to enter, at most 2000 characters."
+              }
+            },
+            "required": [
+              "kind",
+              "ref",
+              "text"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "required": [
+    "revision",
+    "steps"
+  ]
+}
+```
+
+Source: [`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts)
 
 ### `browser_click`
 

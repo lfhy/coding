@@ -1,7 +1,7 @@
 /** 面向模型的浏览器操作；调用会话的权限决定是否审批，页面、安全策略及资源生命周期属于提供方。 @module coding-tool-browser */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { BrowserCommand, BrowserExpectedTarget, BrowserObservation } from 'coding-browser'
+import type { BrowserCommand, BrowserExpectedTarget, BrowserObservation, BrowserStep, BrowserStepResult } from 'coding-browser'
 import { BrowserUseError } from 'coding-browser'
 import type { ImageAttachmentRef } from 'coding-attachment'
 import type { ContentBlock } from 'coding-llm'
@@ -22,6 +22,8 @@ const MAX_TITLE_CHARS = 512
 const MAX_URL_CHARS = 2_048
 const MAX_GENERATION_CHARS = 128
 const MAX_FILL_CHARS = 2_000
+const MAX_REF_CHARS = 256
+const MAX_ACT_STEPS = 8
 const MAX_APPROVAL_ORIGIN_CHARS = 256
 const MAX_STALE_REASON_CHARS = 200
 const STOPPED_NAVIGATION_DIAGNOSTIC = 'browser navigation timed out; loading stopped, take a new snapshot of the current page'
@@ -51,6 +53,12 @@ export interface BrowserUseValue {
     height: number
     name?: string
   } | null
+  /** `browser_act` 各步结果；其它工具不提供，缺失的步骤表示没有执行。 */
+  steps?: {
+    readonly kind: BrowserStepResult['kind']
+    readonly ok: boolean
+    readonly reason?: string
+  }[]
 }
 
 interface BrowserArgs {
@@ -62,6 +70,36 @@ interface BrowserArgs {
   pixels?: number
   width?: number
   height?: number
+  steps?: readonly unknown[]
+}
+
+/** 每一步允许出现的字段；模型只能给出这些字段。 */
+const ACT_STEP_FIELDS = { click: ['kind', 'ref'], fill: ['kind', 'ref', 'text'] } as const
+
+function parseActStep(raw: unknown, index: number, toolName: string): BrowserStep {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    throw new Error(`${toolName}: steps[${index}] must be an object with kind and ref`)
+  }
+  const step = raw as Record<string, unknown>
+  if (step.kind !== 'click' && step.kind !== 'fill') {
+    throw new Error(`${toolName}: steps[${index}].kind must be click or fill`)
+  }
+  const allowed: readonly string[] = ACT_STEP_FIELDS[step.kind]
+  const unexpected = Object.keys(step).filter(key => !allowed.includes(key))
+  if (unexpected.length > 0) {
+    throw new Error(`${toolName}: unexpected field in steps[${index}]: ${unexpected.join(', ')}; only ${allowed.join(', ')} allowed`)
+  }
+  if (typeof step.ref !== 'string' || step.ref.trim().length === 0) {
+    throw new Error(`${toolName}: steps[${index}].ref must be non-empty`)
+  }
+  if (step.ref.length > MAX_REF_CHARS) {
+    throw new Error(`${toolName}: steps[${index}].ref exceeds ${MAX_REF_CHARS} characters`)
+  }
+  if (step.kind === 'click') return { kind: 'click', ref: step.ref }
+  if (typeof step.text !== 'string' || step.text.length > MAX_FILL_CHARS) {
+    throw new Error(`${toolName}: steps[${index}].text is required and must not exceed ${MAX_FILL_CHARS} characters`)
+  }
+  return { kind: 'fill', ref: step.ref, text: step.text }
 }
 
 /**
@@ -73,8 +111,8 @@ interface BrowserArgs {
 export function parseBrowserCommand(action: BrowserCommand['kind'], args: BrowserArgs): BrowserCommand {
   const allowed: Record<BrowserCommand['kind'], readonly (keyof BrowserArgs)[]> = {
     navigate: ['url'], snapshot: [], click: ['ref', 'revision'],
-    fill: ['ref', 'revision', 'text'], scroll: ['direction', 'pixels'], viewport: ['width', 'height'],
-    screenshot: [], close: [],
+    fill: ['ref', 'revision', 'text'], act: ['revision', 'steps'], scroll: ['direction', 'pixels'],
+    viewport: ['width', 'height'], screenshot: [], close: [],
   }
   const toolName = `browser_${action}`
   const unexpected = Object.keys(args).filter(key => !allowed[action].includes(key as keyof BrowserArgs))
@@ -91,7 +129,7 @@ export function parseBrowserCommand(action: BrowserCommand['kind'], args: Browse
     case 'click':
     case 'fill': {
       if (args.ref === undefined || args.ref.trim().length === 0) throw new Error(`${toolName}: ref must be non-empty`)
-      if (args.ref.length > 256) throw new Error(`${toolName}: ref exceeds 256 characters`)
+      if (args.ref.length > MAX_REF_CHARS) throw new Error(`${toolName}: ref exceeds ${MAX_REF_CHARS} characters`)
       if (!Number.isSafeInteger(args.revision) || args.revision === undefined || args.revision < 1) {
         throw new Error(`${toolName}: revision must be a positive integer`)
       }
@@ -100,6 +138,15 @@ export function parseBrowserCommand(action: BrowserCommand['kind'], args: Browse
         throw new Error(`${toolName}: text is required and must not exceed ${MAX_FILL_CHARS} characters`)
       }
       return { kind: 'fill', ref: args.ref, revision: args.revision, text: args.text }
+    }
+    case 'act': {
+      if (!Array.isArray(args.steps) || args.steps.length === 0 || args.steps.length > MAX_ACT_STEPS) {
+        throw new Error(`${toolName}: steps must be a non-empty array of at most ${MAX_ACT_STEPS} actions`)
+      }
+      if (!Number.isSafeInteger(args.revision) || args.revision === undefined || args.revision < 1) {
+        throw new Error(`${toolName}: revision must be a positive integer`)
+      }
+      return { kind: 'act', revision: args.revision, steps: args.steps.map((step, index) => parseActStep(step, index, toolName)) }
     }
     case 'scroll':
       if (args.direction === undefined || !Number.isSafeInteger(args.pixels)
@@ -141,8 +188,12 @@ function imageRef(image: NonNullable<BrowserUseValue['image']>): ImageAttachment
   }
 }
 
-function renderBrowserResult(value: Pick<BrowserUseValue, 'action' | 'image'> & { observation: { tabId: string } }): ContentBlock[] {
-  const text = JSON.stringify({ action: value.action, observation: value.observation, image: value.image })
+function renderBrowserResult(value: Pick<BrowserUseValue, 'action' | 'image' | 'steps'> & { observation: { tabId: string } }): ContentBlock[] {
+  const text = JSON.stringify({
+    action: value.action, observation: value.observation, image: value.image,
+    // 批量交互只报告实际尝试过的步骤；缺失的尾部步骤表示没有执行。
+    ...value.steps === undefined ? {} : { steps: value.steps },
+  })
   if (value.action !== 'screenshot' || value.image === null) return [{ type: 'text', text }]
   return [{ type: 'text', text }, { type: 'image', attachment: imageRef(value.image) }]
 }
@@ -167,6 +218,13 @@ function approvalReason(command: BrowserCommand, currentUrl: string | undefined)
   if (command.kind === 'viewport') {
     return `Browser viewport ${command.width}x${command.height} (current origin: ${approvalOrigin(currentUrl) ?? 'unknown'}; approval is for this call only)`
   }
+  if (command.kind === 'act') {
+    // 一次审批覆盖整批元素操作，理由必须给出次数，便于判断这一批要做什么。
+    const fills = command.steps.filter(step => step.kind === 'fill').length
+    const clicks = command.steps.length - fills
+    const counts = [fills === 0 ? '' : `${fills} fill`, clicks === 0 ? '' : `${clicks} click`].filter(part => part !== '').join(', ')
+    return `Browser act ${command.steps.length} step${command.steps.length === 1 ? '' : 's'} (${counts}) (current origin: ${approvalOrigin(currentUrl) ?? 'unknown'}; approval covers every step in this call)`
+  }
   const ref = command.kind === 'click' || command.kind === 'fill'
     ? ` ref ${/^[a-zA-Z0-9_-]{1,64}$/.test(command.ref) ? command.ref : '[opaque]'}`
     : ''
@@ -174,9 +232,18 @@ function approvalReason(command: BrowserCommand, currentUrl: string | undefined)
 }
 
 /**
+ * 面向模型的工具名；`browser_act` 是批量动作的唯一工具，其余动作与命令同名。
+ * @param command 正在执行的浏览器命令。
+ * @returns 该命令对应的公开工具名。
+ */
+function toolNameOf(command: BrowserCommand): string {
+  return command.kind === 'act' ? 'browser_act' : `browser_${command.kind}`
+}
+
+/**
  * 提供方对过期引用的具体诊断（遮挡、禁用、移出视口、结构变化）。模型只有拿到原因才
  * 能决定是重拍快照、滚动，还是换目标；统一成一句「元素变了」会让它原地循环。
- * 仅用于点击与填写，且限长并去掉控制字符：文本可能夹带页面内容。
+ * 仅用于元素交互（点击、填写与批量动作），且限长并去掉控制字符：文本可能夹带页面内容。
  * @param error 提供方拒绝的原因。
  * @returns 可拼接的原因前缀，空原因返回空串。
  */
@@ -190,19 +257,23 @@ function browserFailure(command: BrowserCommand, error: BrowserUseError): Browse
   if (command.kind === 'navigate' && error.code === 'BROWSER_FAILED' && error.message === STOPPED_NAVIGATION_DIAGNOSTIC) {
     return new BrowserUseError(STOPPED_NAVIGATION_DIAGNOSTIC, error.code, { cause: error })
   }
-  const toolName = `browser_${command.kind}`
+  const toolName = toolNameOf(command)
+  // 批量动作的各步可能已经生效，恢复提示必须提醒不要整批重放。
+  const replay = command.kind === 'act'
+    ? 'Steps already executed may have taken effect: do not replay them without checking the new page'
+    : 'A click or fill may have taken effect: do not replay it without checking the new page'
   let guidance: string
   switch (error.code) {
     case 'BROWSER_STALE_REF':
       if (command.kind === 'snapshot' && error.message.includes('document changed during observation')) {
         guidance = 'document changed during observation; try at most two fresh browser_snapshot calls. If both fail, reopen the last successfully observed HTTP(S) or local file:/// URL once with browser_navigate only when still relevant, then inspect its observation; stop if that fails. The last observed URL may not be the current URL'
-      } else if (command.kind === 'click' || command.kind === 'fill') {
+      } else if (command.kind === 'click' || command.kind === 'fill' || command.kind === 'act') {
         const reason = staleTargetReason(error)
         guidance = reason === ''
-          ? 'target or element changed; take a fresh browser_snapshot before acting. A click or fill may have taken effect: do not replay it without checking the new page'
-          : `${reason}take a fresh browser_snapshot for the current state, or pick a different element. A click or fill may have taken effect: do not replay it without checking the new page`
+          ? `target or element changed; take a fresh browser_snapshot before acting. ${replay}`
+          : `${reason}take a fresh browser_snapshot for the current state, or pick a different element. ${replay}`
       } else {
-        guidance = 'target or element changed; take a fresh browser_snapshot before acting. A click or fill may have taken effect: do not replay it without checking the new page'
+        guidance = `target or element changed; take a fresh browser_snapshot before acting. ${replay}`
       }
       break
     case 'BROWSER_CLOSED':
@@ -225,27 +296,30 @@ function browserFailure(command: BrowserCommand, error: BrowserUseError): Browse
         ? 'navigation timed out and loading stopped; take one fresh browser_snapshot before deciding whether another navigation is needed'
         : command.kind === 'viewport'
           ? 'the viewport change failed; keep width 200..1920 and height 240..1400 with an area of at most 1800000 pixels'
-          : 'browser operation failed; do not replay a click or fill without checking whether it took effect'
+          : command.kind === 'act'
+            ? 'the batch failed; steps already executed may have taken effect: do not replay them without checking the new page'
+            : 'browser operation failed; do not replay a click or fill without checking whether it took effect'
       break
   }
   return new BrowserUseError(`${toolName}: ${error.code}: ${guidance}`, error.code, { cause: error })
 }
 
 /**
- * 注册七个动作工具和它们的系统提示词路由；仅全权限且关闭审批提示的会话免于一次性审批，审批服务缺席仍拒绝。
+ * 注册九个动作工具和它们的系统提示词路由；仅全权限且关闭审批提示的会话免于一次性审批，审批服务缺席仍拒绝。
  * @param ctx - 持有浏览器服务、附件存储、工具注册表和系统提示词的上下文。
  * @returns 无返回值；注册随插件卸载撤销。
  */
 export function apply(ctx: Context): void {
   // 跨调用路由属于系统提示词：模型最容易走错的替代方案是在 bash 里自建无头浏览器脚本，
-  // 而八项工具的 schema 只在模型已决定调用浏览器后才生效。
+  // 而九项工具的 schema 只在模型已决定调用浏览器后才生效。
   ctx.systemPrompt.section({
     name: 'tool:browser',
     order: 107,
     text: 'Use the browser tools, not a headless browser script run in bash, when a task needs a rendered page read, reproduced, verified, or driven, including your own app on localhost or a dev server.',
   })
 
-  function register(action: BrowserCommand['kind'], description: string, parameters: ParameterSchemaSpec): void {
+  function register(action: BrowserCommand['kind'], description: string, parameters: ParameterSchemaSpec,
+    extraOutput?: ParameterSchemaSpec): void {
     ctx.tools.register(defineTool({
       name: `browser_${action}`, description, parameters,
       output: {
@@ -278,6 +352,7 @@ export function apply(ctx: Context): void {
                 height: { type: 'integer', required: true }, name: { type: 'string' },
               } },
             ], required: true },
+            ...extraOutput ?? {},
           },
         },
         render: (_args, value) => renderBrowserResult(value),
@@ -299,6 +374,31 @@ export function apply(ctx: Context): void {
   register('fill', 'Fill an element using its ref and revision from the current browser observation; never use selectors.', {
     ref, revision, text: { type: 'string', required: true, description: 'Text to enter, at most 2000 characters.' },
   })
+  register('act',
+    'Run several element actions from one observation in a single call, for example fill two fields and then click submit. Steps run in order with the same revision; the batch stops at the first step that cannot run and returns a fresh observation with each attempted step\'s outcome. Load the browser-use skill first when available.', {
+      revision: { type: 'integer', required: true, description: 'Positive revision from the observation that produced every ref in this batch.' },
+      steps: {
+        type: 'array', required: true,
+        description: 'Actions in order, 1..8. Every ref must come from the observation named by revision.',
+        items: { oneOf: [
+          { type: 'object', additionalProperties: false, properties: {
+            kind: { type: 'string', const: 'click', required: true },
+            ref: { type: 'string', required: true, description: 'Opaque ref from the same observation, not a selector.' },
+          } },
+          { type: 'object', additionalProperties: false, properties: {
+            kind: { type: 'string', const: 'fill', required: true },
+            ref: { type: 'string', required: true, description: 'Opaque ref from the same observation, not a selector.' },
+            text: { type: 'string', required: true, description: 'Text to enter, at most 2000 characters.' },
+          } },
+        ] },
+      },
+    }, {
+      steps: { type: 'array', items: { type: 'object', additionalProperties: false, properties: {
+        kind: { type: 'string', enum: ['click', 'fill'], required: true },
+        ok: { type: 'boolean', required: true },
+        reason: { type: 'string' },
+      } } },
+    })
   register('scroll', 'Scroll the active page, then return a fresh observation with refs and revision.', {
     direction: { type: 'string', enum: ['up', 'down'], required: true, description: 'Scroll direction.' },
     pixels: { type: 'integer', required: true, description: 'Requested wheel delta, 1..2000 pixels; capped at one viewport height per call.' },
@@ -312,7 +412,7 @@ export function apply(ctx: Context): void {
 }
 
 async function executeBrowserCommand(ctx: Context, command: BrowserCommand, exec: ToolRunContext): Promise<BrowserUseValue> {
-  const toolName = `browser_${command.kind}`
+  const toolName = toolNameOf(command)
   const agent = exec.agent
   if (agent === undefined) throw new Error(`${toolName}: calling agent is required`)
   const cwd = agent.session.header.cwd
@@ -359,7 +459,16 @@ async function executeBrowserCommand(ctx: Context, command: BrowserCommand, exec
         ...ref.name === undefined ? {} : { name: ref.name },
       }
     }
-    return { action: command.kind, observation: boundedObservation(capture.observation), image }
+    // 批量动作总是报告步骤结果：提供方省略时给出空数组，模型看到的是「一步都没执行」。
+    const steps = command.kind === 'act'
+      ? (capture.steps ?? []).map(step => ({
+        kind: step.kind, ok: step.ok, ...step.reason === undefined ? {} : { reason: step.reason },
+      }))
+      : undefined
+    return {
+      action: command.kind, observation: boundedObservation(capture.observation), image,
+      ...steps === undefined ? {} : { steps },
+    }
   } catch (error) {
     if (error instanceof BrowserUseError) throw browserFailure(command, error)
     throw error

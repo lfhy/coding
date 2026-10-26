@@ -38,6 +38,7 @@ const EXPECTED_TOOLS = [
   'bash',
   'browser_click',
   'browser_close',
+  'browser_act',
   'browser_fill',
   'browser_navigate',
   'browser_screenshot',
