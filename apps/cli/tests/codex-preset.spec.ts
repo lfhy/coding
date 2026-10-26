@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -116,6 +116,27 @@ describe('the shipped Codex preset', () => {
       ]))
     } finally {
       await codex.dispose()
+    }
+  }, 30_000)
+
+  it('applies an update patch without a separate read tool call', async () => {
+    const codex = await mountCodex()
+    const path = join(root, 'codex-target.txt')
+    try {
+      await writeFile(path, 'before\n')
+      const result = await call(codex.agent, 'apply_patch', {
+        input: `*** Begin Patch
+*** Update File: codex-target.txt
+@@
+-before
++after
+*** End Patch`,
+      })
+      expect(result.isError).toBe(false)
+      expect(await readFile(path, 'utf8')).toBe('after\n')
+    } finally {
+      await codex.dispose()
+      await rm(path, { force: true })
     }
   }, 30_000)
 

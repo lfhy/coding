@@ -85,7 +85,10 @@ async function readExisting(
   const info = await ctx.fs.stat(target, exec.signal)
   if (info === undefined) return { target, content: undefined }
   if (info.type !== 'file') throw new PatchError(`${path} is not a regular file`)
-  return { target, content: await ctx.fs.readText(target, exec.signal) }
+  const content = await ctx.fs.readText(target, exec.signal)
+  // 更新补丁的后续 edit-intent 依赖这次成功读取的版本；必须在内容读取完成后发布观测。
+  ctx.emit('fs/observed', target, { kind: 'present', version: info.version }, exec)
+  return { target, content }
 }
 
 function policyOf(ctx: Context, exec: ToolExecution): SandboxExecutionPolicy | undefined {
