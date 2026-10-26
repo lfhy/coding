@@ -334,7 +334,7 @@ workspace 共 262 个包，按 group 分节。每行给出包目录、职责（R
 - `packages/skill/skill-filesystem` — 该包实现一个 skill（技能）来源 入口 `src/index.ts`（tests 2）
 - `packages/skill/skill-frontend-development` — 前端开发技能提供方，向 `ctx.skills` 登记 `frontend-development` 入口 `src/index.ts`（tests 1）
 - `packages/skill/skill-go-backend` — 随包分发 `go-backend` 技能：写 Go 服务端时的默认约定 入口 `src/index.ts`（tests 1）
-- `packages/skill/skill-project-init` — 随包分发 `project-init` 技能：在改动业务代码之前建立可回滚的版本基线 入口 `src/index.ts`（tests 1）
+- `packages/skill/skill-project-init` — 随包分发 `project-init` 技能：在改动业务代码之前先定地基与可回滚的版本基线 入口 `src/index.ts`（tests 1）
 - `packages/skill/skill-stylekit` — 随包分发的视觉风格技能提供方，向 `ctx.skills` 登记 `stylekit` 入口 `src/index.ts`（tests 1）
 - `packages/skill/tool-skill` — 面向模型的 skill（技能）目录和 `skill` 工具 入口 `src/index.ts`（tests 1）
 
