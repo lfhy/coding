@@ -4,9 +4,9 @@
  *
  * 渠道名、端点、匿名凭据与模型目录都是包内事实（见 `channel.ts`），不挂载任何
  * 设置分节：设置 → 模型 里能直接看到这条渠道与它的模型，但没有改端点、换密钥、
- * 改名称或增删模型的入口，用户改不到连接事实。请求与官方 OpenCode CLI 同形——
- * 同一个 User-Agent、同一套按会话派生的关联头、同一个工具形状门——因此无需登录、
- * 无需注册即可使用该通道。接入更多免费上游见 `channel.ts` 的上游表。
+ * 改名称或增删模型的入口，用户改不到连接事实。上游是匿名免费层，请求只需一个
+ * 空 Bearer，因此无需登录、无需注册即可使用该通道。接入更多免费上游见
+ * `channel.ts` 的上游表。
  *
  * 出站路径可经设置分节选择：直连（缺省）、代理池（`ctx.proxyPool` 的本地入站）
  * 或自定义代理地址。选择只影响传输，不改渠道目录与请求形状；类型与解析规则来自
@@ -49,8 +49,6 @@ export type {
   FreeUpstreamModel,
   ReasoningEffortLevel,
 } from './channel.ts'
-export { disguiseHeaders, deriveRequestIds, opencodeUserAgent } from './ids.ts'
-export { ensureFreeLaneShape, FREE_LANE_GATE_TOOL_NAMES } from './free-lane.ts'
 export { isFailoverError, isFailoverCode, FAILOVER_CODES } from './stream.ts'
 
 /** Cordis 插件名。 */

@@ -114,10 +114,10 @@
     # install has a usable model without anyone storing a key — each free
     # upstream's credential is a literal resolved inside the adapter rather than
     # through the credential store, and the channel's endpoint, name, and model
-    # catalog are package facts, not settings. Requests carry the OpenCode CLI
-    # fingerprint (user-agent plus session-correlation headers) the upstream
-    # free tier requires. The channel name is language-neutral on purpose: it is
-    # a product name, not a translation.
+    # catalog are package facts, not settings. Every upstream is an anonymous
+    # free tier that reads an empty bearer as the free lane, so requests carry no
+    # fingerprint or tool-shape gate. The channel name is language-neutral on
+    # purpose: it is a product name, not a translation.
     - id: llm-opencode
       name: 'coding-llm-opencode'
 

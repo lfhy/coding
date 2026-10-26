@@ -27,7 +27,7 @@ export const STREAM_IDLE_TIMEOUT_MS = 300_000
 
 /**
  * 渠道的重试策略。免费上游按出口 IP 限流，突发 429 由 `dsh-llm-retry` 按这条
- * 策略吸收；确定性的 `FREE_TIER_RESTRICTED`、`REGION_BLOCKED` 不在可重试集合里。
+ * 策略吸收；确定性的 `REGION_BLOCKED` 与 `AUTH` 不在可重试集合里。
  */
 export const CHANNEL_RETRY_POLICY: ResolvedRetryPolicy = resolveRetryPolicy(undefined, 'llm-opencode: retryPolicy')
 
@@ -79,81 +79,33 @@ export interface FreeUpstream {
    * 因此不进凭据存储，也不出现在任何设置描述里。
    */
   apiKey: string
-  /**
-   * 该上游是否要求 OpenCode CLI 同形伪装：User-Agent 指纹头与请求体工具门。
-   * Zen 按客户端指纹过滤免费流量因此必须伪装；OVH 的匿名免费层对任何客户端
-   * 开放，伪装反而会干扰其正常的匿名鉴权。
-   */
-  disguise: boolean
   models: readonly FreeUpstreamModel[]
 }
 
 /**
- * 内置免费上游表。每个上游的请求形状由适配器按它的指纹决定
- * （见 `ids.ts` 的 OpenCode CLI 伪装与 `free-lane.ts` 的工具形状门），
- * 因此新增上游时除了这条记录，还要有对应的请求改写。
+ * 内置免费上游表。两条上游都是匿名免费层：空 Bearer 就是它们的免费标识，
+ * 因此不需要伪装、指纹或工具形状门，请求形状就是标准 `chat/completions`。
  *
- * OpenCode Zen 的模型显示名固定、能力取自 models.dev 的提供方元数据：
- * MiMo 与 DeepSeek V4.1 Flash 接受图片，Nemotron 3.5 Lightning 只接受文本；
- * 三者都会推理，但只有 DeepSeek V4.1 Flash 暴露可选档位。
- * OVHcloud AI Endpoints 提供持久的匿名免费层（按出口 IP 限流），凭据是
- * 空 Bearer——上游把空凭据读作匿名免费层，任何非空值都会被当成失效的
- * OAuth 令牌而 403。OVH 的能力事实以 2026-10-22 的线协议实测为准（对照
- * models.dev 的 `ovhcloud` 提供方元数据）：Qwen3.5 397B 实际接受图片并
- * 按档位调节推理深度（none 到 xhigh 都被接受且确实改变推理量），gpt-oss
- * 120B 是纯文本（附图请求被静默丢弃，模型自述看不到图片）。
+ * OVHcloud AI Endpoints（`ovh-ai-endpoints`）按出口 IP 限流，能力以 2026-10-26 的
+ * 线协议实测为准：Qwen3.5 397B、Qwen3.8 27B、Qwen3.5 9B 与 Mistral Small 3.2 24B
+ * 真的读图（红色方块答 "Red"），gpt-oss 两个模型对附图答错或答 "unknown"（图片被
+ * 上游丢弃），因此声明纯文本；Qwen3.x 接受 `none` 到 `xhigh` 的档位，gpt-oss 120B
+ * 只接受 `low`／`medium`／`high`（`none` 被拒），Mistral Small 与 Qwen2.5 VL 不接受
+ * `reasoning_effort`。Qwen2.5 VL 72B 另有一条硬限制：上游对带工具表的请求直接回
+ * `feature 'tool calls' is not currently supported`，编码会话每轮都带工具，因此它不在目录里。
+ *
+ * Kilo AI 的公共网关（`kilo-free-pool`）把一批 `:free` 模型挂在 `isFree` 清单里，
+ * 无账号、无密钥、无指纹即可使用；目录只收 2026-10-26 实测能流式返回工具调用的条目，
+ * 上游当时失败的（`nemotron-3.5-super-vl` 502、`nemotron-3-super-120b-a12b` 404、
+ * `laguna-xs-2.1` 429）没有收录。Kilo 的模型价格为零，但上游明确声明免费池的提示词
+ * 可能被记录用于改进服务，因此这条上游只适合可丢弃的内容。
  */
 export const FREE_UPSTREAMS: readonly FreeUpstream[] = [
-  {
-    id: 'opencode-zen',
-    baseURL: 'https://opencode.ai/zen/v1',
-    apiKey: 'public',
-    disguise: true,
-    models: [
-      {
-        id: 'mimo-v2.6-flash-free',
-        name: 'Mimo V2.6 Flash',
-        contextWindow: 1_048_576,
-        maxTokens: 32_768,
-        inputModalities: ['text', 'image'],
-        reasoning: true,
-        reasoningEfforts: [],
-      },
-      {
-        id: 'deepseek-v4.1-flash-free',
-        name: 'Deepseek V4.1 Flash',
-        contextWindow: 262_144,
-        maxTokens: 32_768,
-        inputModalities: ['text', 'image'],
-        reasoning: true,
-        reasoningEfforts: ['low', 'high', 'max'],
-      },
-      {
-        id: 'nemotron-3.5-lightning-free',
-        name: 'Nemotron 3.5 Lightning',
-        contextWindow: 262_144,
-        maxTokens: 32_768,
-        inputModalities: ['text'],
-        reasoning: true,
-        reasoningEfforts: [],
-      },
-    ],
-  },
   {
     id: 'ovh-ai-endpoints',
     baseURL: 'https://oai.endpoints.kepler.ai.cloud.ovh.net/v1',
     apiKey: '',
-    disguise: false,
     models: [
-      {
-        id: 'gpt-oss-120b',
-        name: 'GPT-OSS 120B (OVH)',
-        contextWindow: 131_072,
-        maxTokens: 32_768,
-        inputModalities: ['text'],
-        reasoning: true,
-        reasoningEfforts: ['low', 'medium', 'high'],
-      },
       {
         id: 'Qwen3.5-397B-A17B',
         name: 'Qwen3.5 397B A17B (OVH)',
@@ -164,12 +116,136 @@ export const FREE_UPSTREAMS: readonly FreeUpstream[] = [
         reasoningEfforts: ['none', 'low', 'medium', 'high', 'xhigh'],
       },
       {
-        id: 'Qwen2.5-VL-72B-Instruct',
-        name: 'Qwen2.5 VL 72B (OVH)',
-        contextWindow: 32_768,
-        maxTokens: 8_192,
+        id: 'Qwen3.8-27B',
+        name: 'Qwen3.8 27B (OVH)',
+        contextWindow: 262_144,
+        maxTokens: 32_768,
+        inputModalities: ['text', 'image'],
+        reasoning: true,
+        reasoningEfforts: ['none', 'low', 'medium', 'high'],
+      },
+      {
+        id: 'Qwen3.5-9B',
+        name: 'Qwen3.5 9B (OVH)',
+        contextWindow: 262_144,
+        maxTokens: 32_768,
+        inputModalities: ['text', 'image'],
+        reasoning: true,
+        reasoningEfforts: ['none', 'low', 'medium', 'high', 'xhigh'],
+      },
+      {
+        id: 'gpt-oss-120b',
+        name: 'GPT-OSS 120B (OVH)',
+        contextWindow: 131_072,
+        maxTokens: 32_768,
+        inputModalities: ['text'],
+        reasoning: true,
+        reasoningEfforts: ['low', 'medium', 'high'],
+      },
+      {
+        id: 'gpt-oss-20b',
+        name: 'GPT-OSS 20B (OVH)',
+        contextWindow: 131_072,
+        maxTokens: 32_768,
+        inputModalities: ['text'],
+        reasoning: true,
+        reasoningEfforts: [],
+      },
+      {
+        id: 'Mistral-Small-3.2-24B-Instruct-2506',
+        name: 'Mistral Small 3.2 24B (OVH)',
+        contextWindow: 131_072,
+        maxTokens: 32_768,
         inputModalities: ['text', 'image'],
         reasoning: false,
+        reasoningEfforts: [],
+      },
+    ],
+  },
+  {
+    id: 'kilo-free-pool',
+    baseURL: 'https://api.kilo.ai/api/gateway',
+    apiKey: '',
+    models: [
+      {
+        id: 'nvidia/nemotron-3-ultra-550b-a55b:free',
+        name: 'Nemotron 3 Ultra 550B (Kilo)',
+        contextWindow: 1_000_000,
+        maxTokens: 65_536,
+        inputModalities: ['text'],
+        reasoning: true,
+        reasoningEfforts: [],
+      },
+      {
+        id: 'nvidia/nemotron-3.5-lightning:free',
+        name: 'Nemotron 3.5 Lightning (Kilo)',
+        contextWindow: 1_000_000,
+        maxTokens: 65_536,
+        inputModalities: ['text'],
+        reasoning: true,
+        reasoningEfforts: [],
+      },
+      {
+        id: 'cohere/north-mini-code:free',
+        name: 'North Mini Code (Kilo)',
+        contextWindow: 256_000,
+        maxTokens: 64_000,
+        inputModalities: ['text'],
+        reasoning: true,
+        reasoningEfforts: [],
+      },
+      {
+        id: 'dots-studio/dots-3-note-preview:free',
+        name: 'Dots3 Note Preview (Kilo)',
+        contextWindow: 512_000,
+        maxTokens: 460_800,
+        inputModalities: ['text', 'image'],
+        reasoning: true,
+        reasoningEfforts: [],
+      },
+      {
+        id: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
+        name: 'Nemotron 3 Nano Omni (Kilo)',
+        contextWindow: 256_000,
+        maxTokens: 65_536,
+        inputModalities: ['text', 'image'],
+        reasoning: true,
+        reasoningEfforts: [],
+      },
+      {
+        id: 'recursive/flint-v1.0:free',
+        name: 'Flint 1.0 (Kilo)',
+        contextWindow: 262_144,
+        maxTokens: 235_929,
+        inputModalities: ['text'],
+        reasoning: true,
+        reasoningEfforts: [],
+      },
+      {
+        id: 'reflection/beam-free',
+        name: 'Beam 1.0 (Kilo)',
+        contextWindow: 1_048_576,
+        maxTokens: 131_072,
+        inputModalities: ['text'],
+        reasoning: true,
+        reasoningEfforts: [],
+      },
+      {
+        id: 'poolside/laguna-s-2.1:free',
+        name: 'Laguna S 2.1 (Kilo)',
+        contextWindow: 262_144,
+        maxTokens: 32_768,
+        inputModalities: ['text'],
+        reasoning: false,
+        reasoningEfforts: [],
+      },
+      {
+        id: 'kilo-auto/free',
+        name: 'Auto Free (Kilo)',
+        contextWindow: 256_000,
+        maxTokens: 32_768,
+        inputModalities: ['text'],
+        reasoning: true,
         reasoningEfforts: [],
       },
     ],
@@ -209,15 +285,17 @@ export const AUTO_MODEL_NAME = 'Auto'
 
 /**
  * Auto 的候选顺序即尝试顺序：一次请求按序尝试，命中确定性失败（地区封锁、
- * 通道受限、鉴权无效）或最后一个候选时停止。顺序是可用性优先：能力最强、
- * 最常用的模型在前；Zen 与 OVH 交替，单上游整段限流时尽快切到另一家。
+ * 鉴权无效）或暂时性失败（限流、上游故障）时换下一个候选，已产出内容后不再转移。
+ * 顺序是能力优先：编码能力最强的模型在前，OVH 与 Kilo 交替，单上游整段限流时
+ * 尽快切到另一家。
  */
 const AUTO_CANDIDATE_IDS = [
-  'mimo-v2.6-flash-free',
-  'deepseek-v4.1-flash-free',
-  'gpt-oss-120b',
   'Qwen3.5-397B-A17B',
-  'nemotron-3.5-lightning-free',
+  'nvidia/nemotron-3-ultra-550b-a55b:free',
+  'gpt-oss-120b',
+  'nvidia/nemotron-3.5-lightning:free',
+  'Mistral-Small-3.2-24B-Instruct-2506',
+  'kilo-auto/free',
 ] as const
 
 /** Auto 的候选条目表；目录里不存在的 id 在这里会直接被过滤掉。 */

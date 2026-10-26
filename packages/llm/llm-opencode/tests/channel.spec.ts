@@ -22,63 +22,82 @@ describe('built-in catalog', () => {
     expect(PROVIDER_ID).toBe('free')
     expect(CHANNEL_NAME).toBe('Free')
     expect(FREE_CHANNEL_MODELS.map(model => model.id)).toEqual([
-      'mimo-v2.6-flash-free', 'deepseek-v4.1-flash-free', 'nemotron-3.5-lightning-free',
-      'gpt-oss-120b', 'Qwen3.5-397B-A17B', 'Qwen2.5-VL-72B-Instruct',
+      'Qwen3.5-397B-A17B', 'Qwen3.8-27B', 'Qwen3.5-9B', 'gpt-oss-120b', 'gpt-oss-20b',
+      'Mistral-Small-3.2-24B-Instruct-2506',
+      'nvidia/nemotron-3-ultra-550b-a55b:free', 'nvidia/nemotron-3.5-lightning:free',
+      'cohere/north-mini-code:free', 'dots-studio/dots-3-note-preview:free',
+      'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free', 'recursive/flint-v1.0:free',
+      'reflection/beam-free', 'poolside/laguna-s-2.1:free', 'kilo-auto/free',
     ])
     expect(FREE_CHANNEL_MODELS.map(model => model.name)).toEqual([
-      'Mimo V2.6 Flash', 'Deepseek V4.1 Flash', 'Nemotron 3.5 Lightning',
-      'GPT-OSS 120B (OVH)', 'Qwen3.5 397B A17B (OVH)', 'Qwen2.5 VL 72B (OVH)',
+      'Qwen3.5 397B A17B (OVH)', 'Qwen3.8 27B (OVH)', 'Qwen3.5 9B (OVH)', 'GPT-OSS 120B (OVH)',
+      'GPT-OSS 20B (OVH)', 'Mistral Small 3.2 24B (OVH)',
+      'Nemotron 3 Ultra 550B (Kilo)', 'Nemotron 3.5 Lightning (Kilo)', 'North Mini Code (Kilo)',
+      'Dots3 Note Preview (Kilo)', 'Nemotron 3 Nano Omni (Kilo)', 'Flint 1.0 (Kilo)',
+      'Beam 1.0 (Kilo)', 'Laguna S 2.1 (Kilo)', 'Auto Free (Kilo)',
     ])
     // 每个模型都记得自己属于哪条上游记录，端点与凭据由它携带。
     expect(FREE_CHANNEL_MODELS.every(model => FREE_UPSTREAMS.includes(model.upstream))).toBe(true)
   })
 
-  it('上游伪装标志与端点一一对应：Zen 伪装，OVH 匿名直连', () => {
+  it('两条上游都是匿名免费层：端点固定、凭据为空串', () => {
     const upstreams = new Map(FREE_UPSTREAMS.map(upstream => [upstream.id, upstream]))
-    expect(upstreams.get('opencode-zen')).toMatchObject({
-      baseURL: 'https://opencode.ai/zen/v1',
-      apiKey: 'public',
-      disguise: true,
-    })
     expect(upstreams.get('ovh-ai-endpoints')).toMatchObject({
       baseURL: 'https://oai.endpoints.kepler.ai.cloud.ovh.net/v1',
       apiKey: '',
-      disguise: false,
+    })
+    expect(upstreams.get('kilo-free-pool')).toMatchObject({
+      baseURL: 'https://api.kilo.ai/api/gateway',
+      apiKey: '',
     })
   })
 
-  it('内置模型声明上游元数据里的模态与推理能力', () => {
+  it('内置模型声明实测得到的模态与推理能力', () => {
     const models = new Map(FREE_CHANNEL_MODELS.map(model => [model.id, model]))
-    // MiMo 与 DeepSeek V4.1 Flash 接受图片；Nemotron 3.5 Lightning 只接受文本。
-    expect(models.get('mimo-v2.6-flash-free')?.inputModalities).toEqual(['text', 'image'])
-    expect(models.get('deepseek-v4.1-flash-free')?.inputModalities).toEqual(['text', 'image'])
-    expect(models.get('nemotron-3.5-lightning-free')?.inputModalities).toEqual(['text'])
-    // OVH 侧：Qwen3.5 397B 实测接受图片（2026-10-22 线协议验证），gpt-oss 是
-    // 纯文本（附图被上游静默丢弃），Qwen2.5 VL 收图片且不推理。
+    // OVH：红色方块实测被 Qwen3.x 与 Mistral Small 读出，gpt-oss 两个模型答错，
+    // 因此只有前者与 Mistral 声明图片输入。
     expect(models.get('Qwen3.5-397B-A17B')?.inputModalities).toEqual(['text', 'image'])
+    expect(models.get('Qwen3.8-27B')?.inputModalities).toEqual(['text', 'image'])
+    expect(models.get('Qwen3.5-9B')?.inputModalities).toEqual(['text', 'image'])
+    expect(models.get('Mistral-Small-3.2-24B-Instruct-2506')?.inputModalities).toEqual(['text', 'image'])
+    expect(models.get('Mistral-Small-3.2-24B-Instruct-2506')?.reasoning).toBe(false)
     expect(models.get('gpt-oss-120b')?.inputModalities).toEqual(['text'])
-    expect(models.get('Qwen2.5-VL-72B-Instruct')?.inputModalities).toEqual(['text', 'image'])
-    expect(models.get('Qwen2.5-VL-72B-Instruct')?.reasoning).toBe(false)
-    // 五个目录模型都会推理，但只有 DeepSeek V4.1 Flash、GPT-OSS 与 Qwen3.5 暴露可选档位。
-    expect(FREE_CHANNEL_MODELS.map(model => model.reasoning)).toEqual([true, true, true, true, true, false])
-    expect(models.get('deepseek-v4.1-flash-free')?.reasoningEfforts).toEqual(['low', 'high', 'max'])
-    expect(models.get('gpt-oss-120b')?.reasoningEfforts).toEqual(['low', 'medium', 'high'])
-    // Qwen3.5 的档位含 `none`：OVH 线协议认得的显式关闭值，其余档位逐一实测接受。
+    expect(models.get('gpt-oss-20b')?.inputModalities).toEqual(['text'])
+    // Kilo：图片只给实测读图的条目。
+    expect(models.get('dots-studio/dots-3-note-preview:free')?.inputModalities).toEqual(['text', 'image'])
+    expect(models.get('nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free')?.inputModalities).toEqual(['text', 'image'])
+    expect(models.get('reflection/beam-free')?.inputModalities).toEqual(['text'])
+    // Laguna S 2.1 不产出推理增量。
+    expect(models.get('poolside/laguna-s-2.1:free')?.reasoning).toBe(false)
+    // 档位只在实测接受过的模型上声明：Qwen3.x 认 none 到 xhigh，gpt-oss 120B 不认 none，
+    // Kilo 侧未逐个实测，因此不给档位。
     expect(models.get('Qwen3.5-397B-A17B')?.reasoningEfforts).toEqual(['none', 'low', 'medium', 'high', 'xhigh'])
-    expect(models.get('mimo-v2.6-flash-free')?.reasoningEfforts).toEqual([])
+    expect(models.get('Qwen3.8-27B')?.reasoningEfforts).toEqual(['none', 'low', 'medium', 'high'])
+    expect(models.get('Qwen3.5-9B')?.reasoningEfforts).toEqual(['none', 'low', 'medium', 'high', 'xhigh'])
+    expect(models.get('gpt-oss-120b')?.reasoningEfforts).toEqual(['low', 'medium', 'high'])
+    expect(models.get('gpt-oss-20b')?.reasoningEfforts).toEqual([])
+    expect(models.get('kilo-auto/free')?.reasoningEfforts).toEqual([])
   })
 
   it('Auto 候选表非空、按序展开且都指向已收录目录条目', () => {
     expect(AUTO_MODEL_ID).toBe('auto')
     expect(AUTO_MODEL_CANDIDATES.map(model => model.id)).toEqual([
-      'mimo-v2.6-flash-free',
-      'deepseek-v4.1-flash-free',
-      'gpt-oss-120b',
       'Qwen3.5-397B-A17B',
-      'nemotron-3.5-lightning-free',
+      'nvidia/nemotron-3-ultra-550b-a55b:free',
+      'gpt-oss-120b',
+      'nvidia/nemotron-3.5-lightning:free',
+      'Mistral-Small-3.2-24B-Instruct-2506',
+      'kilo-auto/free',
     ])
-    // 候选跨两家上游：单上游整段不可用时仍有可转移的后备。
-    expect(new Set(AUTO_MODEL_CANDIDATES.map(model => model.upstream.id))).toEqual(new Set(['opencode-zen', 'ovh-ai-endpoints']))
+    // 候选跨两条上游交替：单上游整段限流时尽快切到另一家。
+    expect(AUTO_MODEL_CANDIDATES.map(model => model.upstream.id)).toEqual([
+      'ovh-ai-endpoints',
+      'kilo-free-pool',
+      'ovh-ai-endpoints',
+      'kilo-free-pool',
+      'ovh-ai-endpoints',
+      'kilo-free-pool',
+    ])
   })
 
   it('上游表自身完整：端点可用、凭据形状合法、模型 id 全局唯一', () => {
@@ -87,8 +106,8 @@ describe('built-in catalog', () => {
       expect(baseURL.protocol).toBe('https:')
       // 适配器直接拼 `{baseURL}/chat/completions`，尾斜杠会拼出双斜杠地址。
       expect(upstream.baseURL.endsWith('/')).toBe(false)
-      // 凭据允许空串：OVH 匿名层把空 Bearer 读作免费通道。
-      expect(typeof upstream.apiKey).toBe('string')
+      // 两条上游都用空 Bearer 表达匿名免费层，凭据因此是空串。
+      expect(upstream.apiKey).toBe('')
       expect(upstream.models.length).toBeGreaterThan(0)
     }
     const ids = FREE_CHANNEL_MODELS.map(model => model.id)
@@ -106,7 +125,8 @@ describe('built-in catalog', () => {
   })
 
   it('按 id 查找目录条目', () => {
-    expect(freeChannelModel('mimo-v2.6-flash-free')?.upstream.id).toBe('opencode-zen')
+    expect(freeChannelModel('Qwen3.5-397B-A17B')?.upstream.id).toBe('ovh-ai-endpoints')
+    expect(freeChannelModel('kilo-auto/free')?.upstream.id).toBe('kilo-free-pool')
     expect(freeChannelModel('not-a-free-model')).toBeUndefined()
   })
 })
@@ -139,13 +159,14 @@ describe('plugin apply', () => {
 
   it('描述内置模型时给出显示名、容量与请求默认值', async () => {
     const ctx = await mounted()
-    expect(await ctx.llm.resolveModelInfo(PROVIDER_ID, 'mimo-v2.6-flash-free')).toMatchObject({
-      name: 'Mimo V2.6 Flash',
-      context: { contextWindow: 1_048_576 },
+    expect(await ctx.llm.resolveModelInfo(PROVIDER_ID, 'Qwen3.5-397B-A17B')).toMatchObject({
+      name: 'Qwen3.5 397B A17B (OVH)',
+      context: { contextWindow: 262_144 },
       defaultMaxTokens: 32_768,
     })
-    expect(await ctx.llm.resolveModelInfo(PROVIDER_ID, 'deepseek-v4.1-flash-free')).toMatchObject({
-      name: 'Deepseek V4.1 Flash',
+    expect(await ctx.llm.resolveModelInfo(PROVIDER_ID, 'nvidia/nemotron-3.5-lightning:free')).toMatchObject({
+      name: 'Nemotron 3.5 Lightning (Kilo)',
+      context: { contextWindow: 1_000_000 },
     })
     // 未收录的模型按纯文本处理，不把未经验证的能力写进会话。
     expect(await ctx.llm.resolveModelInfo(PROVIDER_ID, 'unlisted')).toMatchObject({

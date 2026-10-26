@@ -2,10 +2,8 @@
  * `FreeChannelAdapter`：Free 渠道的 LlmAdapter 实现。
  *
  * 线协议层复用 `@earendil-works/pi-ai` 的 `openai-completions`（与通用
- * llm-pi-ai 适配器同一实现），本模块只补三件它不提供的东西：
- * 1. 上游要求的客户端指纹头与按会话派生的关联 id（{@link disguiseHeaders}）；
- * 2. 免费通道的工具形状门（{@link ensureFreeLaneShape}，经 pi-ai `onPayload`）；
- * 3. 匿名凭据：上游对免费模型只认固定字面量，无需凭据存储。
+ * llm-pi-ai 适配器同一实现），本模块只补它不提供的一件事：匿名凭据。免费上游把
+ * 空 Bearer 读作免费通道，因此凭据是包内字面量，不进凭据存储。
  *
  * 连接事实按模型取自 {@link FREE_CHANNEL_MODELS}：同一个渠道下的模型可以来自
  * 不同上游，端点与凭据因此是每条请求按模型解析的，而不是整条路由共用一个。
@@ -56,8 +54,6 @@ import {
   REASONING_EFFORT_LEVELS,
   STREAM_IDLE_TIMEOUT_MS,
 } from './channel.ts'
-import { deriveRequestIds, disguiseHeaders } from './ids.ts'
-import { ensureFreeLaneShape } from './free-lane.ts'
 import { applyOutbound } from './outbound.ts'
 import { isFailoverCode, isFailoverError, toStreamChunks } from './stream.ts'
 
@@ -445,7 +441,6 @@ export class FreeChannelAdapter extends LlmAdapter {
       : effort as ThinkingLevel
     const containsImage = options.messages.some(message => contentHasImage(message.content))
     const attachments = containsImage ? this.config.resolveAttachments?.() : undefined
-    const ids = deriveRequestIds(options.messages)
     let context: PiContext
     try {
       context = await toPiContext(options, attachments)
@@ -461,22 +456,12 @@ export class FreeChannelAdapter extends LlmAdapter {
     using watchdog = idleWatchdog(upstream, STREAM_IDLE_TIMEOUT_MS, STREAM_IDLE_TIMEOUT_CODE)
 
     try {
-      // 上游差异只落在请求形状上：Zen 要 CLI 伪装头与工具门，OVH 要空 Bearer。
-      // 两者的注释都描述上游事实，改写逻辑分别在 ids.ts 与 free-lane.ts。
-      const shape = served.upstream.disguise
-        ? {
-          // 上游只接受 OpenCode CLI 形态的 User-Agent：harness 归因 UA 会 403，
-          // 因此本路由的指纹头是最终值，不再叠加共享的模型请求 UA。
-          headers: disguiseHeaders(ids),
-          // 上游免费通道只在请求体带上 agent 形状的工具表时才放行；
-          // pi-ai 没有对应选项，因此改写在序列化后的请求体上进行。
-          onPayload: (payload: unknown) => ensureFreeLaneShape(payload),
-        }
-        : {
-          // OVH 的匿名层把空 Bearer 读作免费通道；OpenAI SDK 要求非空 key，
-          // 因此经 headers 显式携带空 Authorization 覆盖 SDK 的默认拼接。
-          headers: { Authorization: 'Bearer ' },
-        }
+      // 上游的匿名免费层把空 Bearer 读作免费通道；OpenAI SDK 要求非空 key，
+      // 因此经 headers 显式携带空 Authorization 覆盖 SDK 的默认拼接。请求体
+      // 不做改写：免费上游接受标准 `chat/completions` 形状。
+      const shape = {
+        headers: { Authorization: 'Bearer ' },
+      }
       const events = this.provider(served).streamSimple(model, context, {
         apiKey: served.upstream.apiKey,
         ...shape,

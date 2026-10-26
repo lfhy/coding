@@ -4,27 +4,38 @@
 
 ## 内置渠道：Free
 
-部署自带一条 **Free** 渠道（路由 `free`），注册即为可用，因此默认模型就是它下面的 **Auto**，欢迎引导不会出现。它不使用任何密钥：免费上游对匿名客户端只认固定凭据（或不需凭据），由适配器在请求时使用。
+部署自带一条 **Free** 渠道（路由 `free`），注册即为可用，因此默认模型就是它下面的 **Auto**，欢迎引导不会出现。它不使用任何密钥：免费上游把空凭据读作匿名免费层，由适配器在请求时使用。
 
-渠道首位是 **Auto**（`auto`）虚拟模型：它不指向单一上游，而是按固定顺序依次尝试下面的候选模型，命中地区封锁、通道受限、限流或上游故障时自动换下一个候选，直到一个候选真正开始回复。已经产出内容的候选中途失败时不会切换，以免把两个模型的半截回复拼在一起。
+渠道首位是 **Auto**（`auto`）虚拟模型：它不指向单一上游，而是按固定顺序依次尝试下面的候选模型，命中地区封锁、鉴权无效、限流或上游故障时自动换下一个候选，直到一个候选真正开始回复。已经产出内容的候选中途失败时不会切换，以免把两个模型的半截回复拼在一起。
 
 渠道可选的模型如下，显示名固定：
 
 | 模型 | 显示名 |
 | --- | --- |
 | `auto` | Auto（跨上游自动故障转移） |
-| `mimo-v2.6-flash-free` | Mimo V2.6 Flash |
-| `deepseek-v4.1-flash-free` | Deepseek V4.1 Flash |
-| `nemotron-3.5-lightning-free` | Nemotron 3.5 Lightning |
-| `gpt-oss-120b` | GPT-OSS 120B (OVH) |
 | `Qwen3.5-397B-A17B` | Qwen3.5 397B A17B (OVH) |
-| `Qwen2.5-VL-72B-Instruct` | Qwen2.5 VL 72B (OVH) |
+| `Qwen3.8-27B` | Qwen3.8 27B (OVH) |
+| `Qwen3.5-9B` | Qwen3.5 9B (OVH) |
+| `gpt-oss-120b` | GPT-OSS 120B (OVH) |
+| `gpt-oss-20b` | GPT-OSS 20B (OVH) |
+| `Mistral-Small-3.2-24B-Instruct-2506` | Mistral Small 3.2 24B (OVH) |
+| `nvidia/nemotron-3-ultra-550b-a55b:free` | Nemotron 3 Ultra 550B (Kilo) |
+| `nvidia/nemotron-3.5-lightning:free` | Nemotron 3.5 Lightning (Kilo) |
+| `cohere/north-mini-code:free` | North Mini Code (Kilo) |
+| `dots-studio/dots-3-note-preview:free` | Dots3 Note Preview (Kilo) |
+| `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` | Nemotron 3 Nano Omni (Kilo) |
+| `recursive/flint-v1.0:free` | Flint 1.0 (Kilo) |
+| `reflection/beam-free` | Beam 1.0 (Kilo) |
+| `poolside/laguna-s-2.1:free` | Laguna S 2.1 (Kilo) |
+| `kilo-auto/free` | Auto Free (Kilo) |
 
-前三个来自 OpenCode Zen，后三个来自 OVHcloud AI Endpoints 的匿名免费层。除 Qwen2.5 VL 外各模型都会推理：DeepSeek V4.1 Flash 可选 `low`、`high`、`max` 档位，GPT-OSS 120B 可选 `low`、`medium`、`high`，其余按模型自身默认行为推理、没有档位可选。MiMo V2.6 Flash、DeepSeek V4.1 Flash 与 Qwen2.5 VL 72B 接受图片输入，其余只接受文本。
+前面的 OVH 条目来自 OVHcloud AI Endpoints 的匿名免费层，后面的 Kilo 条目来自 Kilo AI 公共网关的免费池。OVH 的 Qwen3.x 可选关闭到 `xhigh` 的推理档位，GPT-OSS 120B 可选 `low`、`medium`、`high`，其余模型按自身默认行为推理；Kilo 的条目没有逐个实测档位，因此只提供提供方默认。Qwen3.5 397B、Qwen3.8 27B、Qwen3.5 9B、Mistral Small 3.2 24B、Dots3 Note Preview 与 Nemotron 3 Nano Omni 接受图片输入，其余只接受文本。
+
+Kilo 免费池的模型卡明确声明免费请求的提示词**可能被上游记录并用于改进服务**，因此这些条目只适合可丢弃的内容；涉及密钥或私人数据的工作请改用自己配置的渠道。
 
 **Free 渠道的端点、密钥、渠道名称与模型目录随应用发布**，由本项目维护：在**设置 → 模型**里选中它，只读展示当前服务的模型与能力，没有修改这些事实的入口。要指向自己的网关，用**添加渠道**另建一条自定义渠道。
 
-该通道由上游按出口 IP 限流并按地区提供：当前网络被地区封锁时请求会以 `REGION_BLOCKED` 失败，上游不再接受本客户端指纹时以 `FREE_TIER_RESTRICTED` 失败。两种失败都不重试；直接选模型时可换一个当前地区可用的模型，选 Auto 时这两类失败会自动转移到下一个候选，或换用其他渠道。
+该通道由上游按出口 IP 限流并按地区提供：当前网络被地区封锁时请求会以 `REGION_BLOCKED` 失败，鉴权不被接受时以 `AUTH` 失败，单模型限流时以 `RATE_LIMIT` 失败。前两者不重试；直接选模型时可换一个当前地区可用的模型，选 Auto 时这些失败都会自动转移到下一个候选，或换用其他渠道。
 
 选中 Free 渠道后，模型目录上方的**出站**决定这条渠道的请求走哪条路：**直连**、**内置代理池**或**自定义代理**（填写自己的 `http://` / `https://` 代理地址）。选择内置代理池时实际使用**设置 → 代理池**里池自己的出站控制：池为直连时这条渠道也直连，池为自定义代理时经池配置的地址。DeepSeek 渠道和其他自定义渠道的详情里也有同一组出站选择，彼此互不影响。
 

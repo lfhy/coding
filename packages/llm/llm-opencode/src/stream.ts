@@ -2,9 +2,9 @@
  * pi-ai 助手事件到 harness 流式分片的转换。
  *
  * 与 `llm-pi-ai` 同一协议约定：`finish` 之前先发 `usage`，工具参数全程保持原始
- * JSON 字符串，失败以错误 `finish` 交付而不是从 `stream()` 抛出。上游免费通道
- * 用 403 表达两种不同含义（客户端受限与地区封锁），因此这里的分类必须先把它们
- * 从通用的 AUTH 里分出来——否则用户会看到「API 密钥无效」这种误导性诊断。
+ * JSON 字符串，失败以错误 `finish` 交付而不是从 `stream()` 抛出。上游用 403
+ * 表达地区封锁，因此这里的分类必须先把地区从通用的 AUTH 里分出来——否则用户会
+ * 看到「API 密钥无效」这种误导性诊断。
  *
  * @module coding-llm-opencode/stream
  */
@@ -22,20 +22,16 @@ import type { FinishReason, StreamChunk, TokenUsage } from 'coding-llm'
 import { isContextOverflow } from '@earendil-works/pi-ai'
 import type { AssistantMessage, AssistantMessageEvent, Usage as PiUsage } from '@earendil-works/pi-ai'
 
-/** 上游客户端受限时的稳定错误码；不可重试，因为重发同样会被拒。 */
-export const FREE_TIER_RESTRICTED_CODE = 'FREE_TIER_RESTRICTED'
-
 /** 上游按出口地区封锁模型时的稳定错误码。 */
 export const REGION_BLOCKED_CODE = 'REGION_BLOCKED'
 
 /**
- * Auto 路由允许转移到下一候选的错误码集合：确定性拒绝（地区封锁、通道
- * 受限、鉴权无效）与暂时性耗尽（限流、上游故障）。其余失败（调用方中止、
- * 上下文溢出、非法请求）换候选也救不回来，直接原样抛出。
+ * Auto 路由允许转移到下一候选的错误码集合：确定性拒绝（地区封锁、鉴权无效）
+ * 与暂时性耗尽（限流、上游故障）。其余失败（调用方中止、上下文溢出、非法请求）
+ * 换候选也救不回来，直接原样抛出。
  */
 export const FAILOVER_CODES: ReadonlySet<string> = new Set([
   REGION_BLOCKED_CODE,
-  FREE_TIER_RESTRICTED_CODE,
   'AUTH',
   'RATE_LIMIT',
   'QUOTA_EXCEEDED',
@@ -77,16 +73,13 @@ export function mapUsage(usage: PiUsage): TokenUsage {
 }
 
 /**
- * 给上游错误文本分类。顺序有语义：地区与客户端受限都走 403，
- * 必须在通用的 401/403 判定之前分出来。
+ * 给上游错误文本分类。顺序有语义：地区封锁走 403，必须在通用的 401/403 判定
+ * 之前分出来。
  * @param message - pi-ai 交付的错误文本。
  * @returns harness 的稳定错误码。
  */
 export function classifyUpstreamError(message: string): string {
   if (/\bRegionError\b|not available in your country/i.test(message)) return REGION_BLOCKED_CODE
-  if (/\bFreeTierError\b|free tier can only be used from within OpenCode/i.test(message)) {
-    return FREE_TIER_RESTRICTED_CODE
-  }
   if (/\b(?:401|403)\b/.test(message)) return 'AUTH'
   if (isQuotaExceededError(message)) return QUOTA_EXCEEDED_CODE
   if (/\b429\b|rate.?limit/i.test(message)) return 'RATE_LIMIT'
@@ -142,10 +135,10 @@ export function mapStopReason(message: AssistantMessage, contextWindow: number):
     case 'toolUse': return { kind: 'tool-calls' }
     case 'aborted': return {
       kind: 'aborted',
-      failure: { message: message.errorMessage ?? 'OpenCode Zen stream aborted', code: 'ABORTED' },
+      failure: { message: message.errorMessage ?? 'Free channel stream aborted', code: 'ABORTED' },
     }
     case 'error': {
-      const text = message.errorMessage ?? 'OpenCode Zen stream error'
+      const text = message.errorMessage ?? 'Free channel stream error'
       return { kind: 'error', failure: { message: text, code: classifyUpstreamError(text) } }
     }
   }
@@ -228,5 +221,5 @@ export async function* toStreamChunks(
         return
     }
   }
-  throw new LlmError('OpenCode Zen event stream ended without a terminal event', 'STREAM_CLOSED')
+  throw new LlmError('Free channel event stream ended without a terminal event', 'STREAM_CLOSED')
 }

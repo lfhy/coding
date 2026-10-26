@@ -1,6 +1,6 @@
 /**
  * 适配器端到端测试：用注入的假提供商观察发往上游的构造函数调用，
- * 断言请求头、请求体门与流式分片的形状——这些正是上游按指纹拒绝的点。
+ * 断言请求头、端点选择与流式分片的形状。
  */
 
 import { Context } from '@deepseek-ai/cordis'
@@ -16,8 +16,6 @@ import LlmRuntime, {
 import type { AssistantMessageEvent } from '@earendil-works/pi-ai'
 import { afterEach, describe, expect, it } from 'vitest'
 import * as LlmOpencode from 'coding-llm-opencode'
-import { ensureFreeLaneShape } from '../src/free-lane.ts'
-import { disguiseHeaders, deriveRequestIds } from '../src/ids.ts'
 
 /** 持久化截图的引用；内联测试用它确认图片字节真的进了请求。 */
 const IMAGE_REF: ImageAttachmentRef = {
@@ -45,7 +43,7 @@ interface Call {
 /** 假 pi-ai 提供商：记录调用并回放一段固定事件流。 */
 function fakeProvider(events: AssistantMessageEvent[], calls: Call[]) {
   return {
-    id: 'opencode-zen',
+    id: 'free',
     name: 'fake',
     auth: {},
     getModels: () => [],
@@ -69,8 +67,8 @@ function textEvents(text: string): AssistantMessageEvent[] {
       type: 'done',
       message: {
         api: 'openai-completions',
-        provider: 'opencode-zen',
-        model: 'mimo-v2.6-flash-free',
+        provider: 'free',
+        model: 'gpt-oss-120b',
         content: [{ type: 'text', text }],
         usage: {
           input: 5,
@@ -113,47 +111,47 @@ async function harness(
 }
 
 describe('adapter wire shape', () => {
-  it('发出 CLI 同形的伪装头，并把请求体改成免费通道形状', async () => {
+  it('匿名免费层只发空 Bearer，端点与凭据按模型所属上游解析', async () => {
     const calls: Call[] = []
     const ctx = await harness(textEvents('hi'), calls)
     const chunks = []
     for await (const chunk of ctx.llm.stream({
       provider: 'fake-route',
-      model: 'mimo-v2.6-flash-free',
+      model: 'gpt-oss-120b',
       messages: [createUserMessage({ content: [{ type: 'text', text: 'hello' }], source: { kind: 'user' } })],
     })) chunks.push(chunk)
 
     const call = calls[0]!
     const options = call.options
     const headers = options.headers as Record<string, string>
-    // 会话头必须是官方形状且时钟段来自真实时钟；四个关联头同值。
-    const session = headers['x-opencode-session']!
-    expect(session).toMatch(/^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/)
-    expect(session.slice(4, 16)).toMatch(/^[0-9a-f]{9}f[c-f][0-9a-f]$/)
-    expect(headers['x-opencode-session-id']).toBe(session)
-    expect(headers['x-session-affinity']).toBe(session)
-    expect(headers['X-Session-Id']).toBe(session)
-    expect(headers['x-opencode-client']).toBe('cli')
-    expect(headers['x-opencode-project']).toMatch(/^[0-9a-f]{40}$/)
-    // 上游会拒收请求级关联头，因此它不能出现在线上头里。
-    expect(headers).not.toHaveProperty('x-opencode-request')
-    // 指纹 UA 是这条路由的最终值：换成 harness 归因 UA 会被上游 403。
-    expect(headers['user-agent']).toMatch(/^opencode\//)
-    expect(options.apiKey).toBe('public')
-    expect(call.model.baseUrl).toBe('https://opencode.ai/zen/v1')
+    // OVH 与 Kilo 都把空 Bearer 读作免费层；SDK 默认拼接的 Authorization 因此必须被覆盖。
+    expect(headers.Authorization).toBe('Bearer ')
+    // 没有伪装、指纹或工具形状门：请求形状就是标准 chat/completions。
+    expect(options.onPayload).toBeUndefined()
+    expect(options.apiKey).toBe('')
+    expect(call.model.baseUrl).toBe('https://oai.endpoints.kepler.ai.cloud.ovh.net/v1')
     // 能力声明进入 pi-ai 的模型描述符：模态决定图片是否内联。
-    expect(call.model.input).toEqual(['text', 'image'])
+    expect(call.model.input).toEqual(['text'])
     expect(call.model.reasoning).toBe(true)
-    expect(call.model.thinkingLevelMap).toBeUndefined()
     expect(options.reasoning).toBeUndefined()
-
-    // onPayload 是 pi-ai 在序列化后改写请求体的钩子：这里断言它确实补了门工具。
-    const shape = options.onPayload as (payload: unknown) => unknown
-    const shaped = shape({ model: 'mimo-v2.6-flash-free', messages: [], stream: true }) as { tools: unknown[] }
-    expect(shaped.tools).toHaveLength(2)
 
     expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
     expect(chunks.at(-2)).toMatchObject({ type: 'usage', usage: { inputTokens: 5, outputTokens: 2 } })
+  })
+
+  it('Kilo 的免费池整体：同一种凭据形状、另一条端点', async () => {
+    const calls: Call[] = []
+    const ctx = await harness(textEvents('hi'), calls)
+    for await (const _chunk of ctx.llm.stream({
+      provider: 'fake-route',
+      model: 'nvidia/nemotron-3.5-lightning:free',
+      messages: [createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' } })],
+    })) { /* drain */ }
+    const call = calls[0]!
+    expect((call.options.headers as Record<string, string>).Authorization).toBe('Bearer ')
+    expect(call.model.baseUrl).toBe('https://api.kilo.ai/api/gateway')
+    expect(call.model.input).toEqual(['text'])
+    expect(call.model.thinkingLevelMap).toBeUndefined()
   })
 
   it('把选中的推理档位转发给 pi-ai，并把未声明的档位钉成不支持', async () => {
@@ -161,7 +159,7 @@ describe('adapter wire shape', () => {
     const ctx = await harness(textEvents('hi'), calls)
     for await (const _chunk of ctx.llm.stream({
       provider: 'fake-route',
-      model: 'deepseek-v4.1-flash-free',
+      model: 'gpt-oss-120b',
       messages: [createUserMessage({ content: [{ type: 'text', text: 'think' }], source: { kind: 'user' } })],
       reasoningEffort: ReasoningEffortId('high'),
     })) { /* drain */ }
@@ -171,9 +169,8 @@ describe('adapter wire shape', () => {
     // 声明的档位带上自身拼写（pi-ai 据此发出 reasoning_effort），未声明的档位钉成 null，
     // 因此选择器给出的档位都能真正转发。`none` 不在 pi-ai 词汇里，不出现为键。
     expect(call.model.thinkingLevelMap).toEqual({
-      off: null, minimal: null, low: 'low', medium: null, high: 'high', xhigh: null, max: 'max',
+      off: null, minimal: null, low: 'low', medium: 'medium', high: 'high', xhigh: null, max: null,
     })
-    expect(call.model.input).toEqual(['text', 'image'])
   })
 
   it('声明 none 档位的模型把 off 与未选档位都折算成显式关闭值', async () => {
@@ -189,7 +186,7 @@ describe('adapter wire shape', () => {
       messages,
       reasoningEffort: ReasoningEffortId('off'),
     })) { /* drain */ }
-    // OVH 的 Qwen3.5 把省略参数读作默认深推理，关闭必须显式发 `none`。
+    // OVH 的 Qwen3.x 把省略参数读作默认深推理，关闭必须显式发 `none`。
     expect(calls.map(call => call.options.reasoning)).toEqual(['none'])
     // 未点名档位同样显式关闭：省略参数会被上游读作默认深推理。
     for await (const _chunk of ctx.llm.stream({
@@ -212,9 +209,9 @@ describe('adapter wire shape', () => {
     expect(qwen.reasoning?.efforts.map(effort => effort.name)).toEqual(
       ['Off', 'Low', 'Medium', 'High', 'Xhigh'],
     )
-    const deepseek = await ctx.llm.resolveModelInfo('fake-route', 'deepseek-v4.1-flash-free')
-    expect(deepseek.reasoning?.efforts.map(effort => effort.name)).toEqual(
-      ['Off', 'Low', 'High', 'Max'],
+    const gptOss = await ctx.llm.resolveModelInfo('fake-route', 'gpt-oss-120b')
+    expect(gptOss.reasoning?.efforts.map(effort => effort.name)).toEqual(
+      ['Off', 'Low', 'Medium', 'High'],
     )
   })
 
@@ -223,7 +220,7 @@ describe('adapter wire shape', () => {
     const ctx = await harness(textEvents('hi'), calls)
     for await (const _chunk of ctx.llm.stream({
       provider: 'fake-route',
-      model: 'nemotron-3.5-lightning-free',
+      model: 'kilo-auto/free',
       messages: [createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' } })],
     })) { /* drain */ }
     expect(calls[0]?.model.input).toEqual(['text'])
@@ -231,25 +228,12 @@ describe('adapter wire shape', () => {
     expect(calls[0]?.model.thinkingLevelMap).toBeUndefined()
   })
 
-  it('同一会话的两次调用复用同一个会话 id 与项目头', async () => {
-    const calls: Call[] = []
-    const ctx = await harness(textEvents('hi'), calls)
-    const messages = [createUserMessage({ content: [{ type: 'text', text: 'stable' }], source: { kind: 'user' } })]
-    for (let index = 0; index < 2; index += 1) {
-      for await (const _chunk of ctx.llm.stream({ provider: 'fake-route', model: 'mimo-v2.6-flash-free', messages })) { /* drain */ }
-    }
-    const headerAt = (index: number, name: string): string | undefined =>
-      (calls[index]?.options.headers as Record<string, string>)[name]
-    expect(headerAt(1, 'x-opencode-session')).toBe(headerAt(0, 'x-opencode-session'))
-    expect(headerAt(1, 'x-opencode-project')).toBe(headerAt(0, 'x-opencode-project'))
-  })
-
   it('把工具 schema 与历史里的工具调用/结果投影到 pi-ai 词汇', async () => {
     const calls: Call[] = []
     const ctx = await harness(textEvents('done'), calls)
     for await (const _chunk of ctx.llm.stream({
       provider: 'fake-route',
-      model: 'mimo-v2.6-flash-free',
+      model: 'gpt-oss-120b',
       system: 'be brief',
       tools: [{ name: 'bash', description: 'run', parameters: { type: 'object', properties: {} } }],
       messages: [
@@ -258,7 +242,7 @@ describe('adapter wire shape', () => {
           content: [
             { type: 'tool-call', id: CallId('call-1'), name: 'bash', arguments: '{"command":"ls"}' },
           ],
-          source: { provider: 'fake-route', model: 'mimo-v2.6-flash-free' },
+          source: { provider: 'fake-route', model: 'gpt-oss-120b' },
         }),
         createToolResultMessage({ callId: CallId('call-1'), content: [{ type: 'text', text: 'a.txt' }], isError: false }),
       ],
@@ -278,14 +262,14 @@ describe('adapter wire shape', () => {
     const ctx = await harness(textEvents('done'), calls, { resolveAttachments: () => attachments })
     for await (const _chunk of ctx.llm.stream({
       provider: 'fake-route',
-      model: 'deepseek-v4.1-flash-free',
+      model: 'Qwen3.5-397B-A17B',
       messages: [
         createUserMessage({ content: [{ type: 'text', text: 'look at the app' }], source: { kind: 'user' } }),
         createAssistantMessage({
           content: [
             { type: 'tool-call', id: CallId('shot-1'), name: 'browser_screenshot', arguments: '{}' },
           ],
-          source: { provider: 'fake-route', model: 'deepseek-v4.1-flash-free' },
+          source: { provider: 'fake-route', model: 'Qwen3.5-397B-A17B' },
         }),
         createToolResultMessage({
           callId: CallId('shot-1'),
@@ -318,7 +302,7 @@ describe('adapter wire shape', () => {
     await expect((async () => {
       for await (const _chunk of adapter.stream({
         provider: 'fake-route',
-        model: 'deepseek-v4.1-flash-free',
+        model: 'Qwen3.5-397B-A17B',
         messages: [createToolResultMessage({
           callId: CallId('shot-1'),
           content: [{ type: 'image', attachment: IMAGE_REF }],
@@ -334,7 +318,7 @@ describe('adapter wire shape', () => {
     const chunks = []
     for await (const chunk of ctx.llm.stream({
       provider: 'fake-route',
-      model: 'mimo-v2.6-flash-free',
+      model: 'kilo-auto/free',
       messages: [createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' } })],
       reasoningEffort: ReasoningEffortId('high'),
     })) chunks.push(chunk)
@@ -352,7 +336,7 @@ describe('adapter wire shape', () => {
     const adapter = new LlmOpencode.FreeChannelAdapter({})
     const rejected = adapter.stream({
       provider: 'fake-route',
-      model: 'mimo-v2.6-flash-free',
+      model: 'gpt-oss-120b',
       messages: [createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' } })],
       stop: ['\n\n'],
     })
@@ -378,50 +362,17 @@ describe('adapter wire shape', () => {
   })
 })
 
-describe('OVH anonymous upstream', () => {
-  it('OVH 模型不带伪装头与工具门，凭据经空 Authorization 覆盖', async () => {
+describe('vision declarations', () => {
+  it('声明图片输入的模型把视觉请求发往自己的上游', async () => {
     const calls: Call[] = []
     const ctx = await harness(textEvents('hi'), calls)
     for await (const _chunk of ctx.llm.stream({
       provider: 'fake-route',
-      model: 'gpt-oss-120b',
-      messages: [createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' } })],
-    })) { /* drain */ }
-    const options = calls[0]!.options
-    const headers = options.headers as Record<string, string>
-    // OVH 匿名层把空 Bearer 读作免费通道；SDK 默认拼接的 Authorization 必须被覆盖。
-    expect(headers.Authorization).toBe('Bearer ')
-    // 伪装头属于 Zen 的客户端指纹门；对 OVH 发出反而是一次无关的身份声明。
-    expect(headers).not.toHaveProperty('user-agent')
-    expect(headers).not.toHaveProperty('x-opencode-session')
-    expect(options.onPayload).toBeUndefined()
-    expect(calls[0]!.model.baseUrl).toBe('https://oai.endpoints.kepler.ai.cloud.ovh.net/v1')
-    expect(options.apiKey).toBe('')
-  })
-
-  it('OVH 模型的推理档位按目录声明转发', async () => {
-    const calls: Call[] = []
-    const ctx = await harness(textEvents('hi'), calls)
-    for await (const _chunk of ctx.llm.stream({
-      provider: 'fake-route',
-      model: 'gpt-oss-120b',
-      messages: [createUserMessage({ content: [{ type: 'text', text: 'think' }], source: { kind: 'user' } })],
-      reasoningEffort: ReasoningEffortId('low'),
-    })) { /* drain */ }
-    expect(calls[0]!.options.reasoning).toBe('low')
-    expect(calls[0]!.model.thinkingLevelMap).toMatchObject({ low: 'low', high: 'high', medium: 'medium', max: null })
-  })
-
-  it('Qwen3.5 声明图片输入：视觉请求会内联图片', async () => {
-    const calls: Call[] = []
-    const ctx = await harness(textEvents('hi'), calls)
-    for await (const _chunk of ctx.llm.stream({
-      provider: 'fake-route',
-      model: 'Qwen3.5-397B-A17B',
+      model: 'dots-studio/dots-3-note-preview:free',
       messages: [createUserMessage({ content: [{ type: 'text', text: 'look' }], source: { kind: 'user' } })],
     })) { /* drain */ }
     expect(calls[0]!.model.input).toEqual(['text', 'image'])
-    expect(calls[0]!.model.baseUrl).toBe('https://oai.endpoints.kepler.ai.cloud.ovh.net/v1')
+    expect(calls[0]!.model.baseUrl).toBe('https://api.kilo.ai/api/gateway')
   })
 })
 
@@ -432,8 +383,20 @@ describe('Auto failover route', () => {
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
   }
 
-  /** 按候选顺序依次失败的假事件流：错误 finish 携带给定 code。 */
-  function errorEvents(code: string): AssistantMessageEvent[] {
+  /** 让假提供商按模型 id 返回各自的错误事件流。 */
+  function providerWith(eventsFor: Map<string, AssistantMessageEvent[]>, calls: Call[]) {
+    return {
+      ...fakeProvider([], calls),
+      streamSimple: (model: Call['model'], context: unknown, options: Record<string, unknown>) => {
+        calls.push({ model, context, options })
+        const events = eventsFor.get(model.id) ?? textEvents('hi')
+        return (async function* () { for (const event of events) yield event })()
+      },
+    }
+  }
+
+  /** 错误事件流：错误文本按 code 分类。 */
+  function errorEvents(message: string): AssistantMessageEvent[] {
     const partial = { content: [], usage: undefined } as never
     return [
       { type: 'start', partial },
@@ -441,39 +404,36 @@ describe('Auto failover route', () => {
         type: 'error',
         error: {
           api: 'openai-completions',
-          provider: 'opencode-zen',
-          model: 'mimo-v2.6-flash-free',
+          provider: 'free',
+          model: 'gpt-oss-120b',
           content: [],
           usage: zeroUsage,
           stopReason: 'error',
-          errorMessage: `upstream failure ${code}`,
+          errorMessage: message,
           timestamp: 0,
         },
       } as unknown as AssistantMessageEvent,
     ]
   }
 
-  it('候选按序尝试，可转移失败换下一候选，成功候选的分片原样交付', async () => {
-    const calls: Call[] = []
-    // 首选两个候选都返回可转移错误，第三个候选成功。
-    const eventsFor = new Map<string, AssistantMessageEvent[]>([
-      ['mimo-v2.6-flash-free', errorEvents('FreeTierError 403')],
-      ['deepseek-v4.1-flash-free', errorEvents('RegionError 403')],
-    ])
-    const provider = {
-      ...fakeProvider([], calls),
-      streamSimple: (model: Call['model'], _context: unknown, options: Record<string, unknown>) => {
-        calls.push({ model, context: _context, options })
-        const events = eventsFor.get(model.id) ?? textEvents('hi')
-        return (async function* () { for (const event of events) yield event })()
-      },
-    }
+  /** 用指定提供商组装路由。 */
+  async function mountedWith(provider: unknown): Promise<Context> {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(LlmOpencode)
     const adapter = new LlmOpencode.FreeChannelAdapter({ providerOverride: provider as never })
     ctx.effect(() => ctx.llm.registerAdapter(['fake-route'], adapter), 'test: fake route')
     disposers.push(ctx)
+    return ctx
+  }
+
+  it('候选按序尝试，可转移失败换下一候选，成功候选的分片原样交付', async () => {
+    const calls: Call[] = []
+    const [first, second, third] = LlmOpencode.AUTO_MODEL_CANDIDATES.map(model => model.id)
+    const ctx = await mountedWith(providerWith(new Map([
+      [first!, errorEvents('RegionError 403')],
+      [second!, errorEvents('429 rate limit exceeded')],
+    ]), calls))
     const chunks = []
     for await (const chunk of ctx.llm.stream({
       provider: 'fake-route',
@@ -481,22 +441,13 @@ describe('Auto failover route', () => {
       messages: [createUserMessage({ content: [{ type: 'text', text: 'hello' }], source: { kind: 'user' } })],
     })) chunks.push(chunk)
     // 前两个候选各尝试一次，第三个候选成功收尾。
-    expect(calls.map(call => call.model.id)).toEqual([
-      'mimo-v2.6-flash-free', 'deepseek-v4.1-flash-free', 'gpt-oss-120b',
-    ])
+    expect(calls.map(call => call.model.id)).toEqual([first, second, third])
     expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
   })
 
   it('全部候选失败时，最后一个候选的失败原样交付', async () => {
     const calls: Call[] = []
-    const events = errorEvents('FreeTierError 403')
-    const provider = fakeProvider(events, calls)
-    const ctx = new Context()
-    await ctx.plugin(LlmRuntime)
-    await ctx.plugin(LlmOpencode)
-    const adapter = new LlmOpencode.FreeChannelAdapter({ providerOverride: provider as never })
-    ctx.effect(() => ctx.llm.registerAdapter(['fake-route'], adapter), 'test: fake route')
-    disposers.push(ctx)
+    const ctx = await mountedWith(fakeProvider(errorEvents('401 unauthorized'), calls))
     const chunks = []
     for await (const chunk of ctx.llm.stream({
       provider: 'fake-route',
@@ -506,19 +457,13 @@ describe('Auto failover route', () => {
     expect(calls.length).toBe(LlmOpencode.AUTO_MODEL_CANDIDATES.length)
     expect(chunks.at(-1)).toMatchObject({
       type: 'finish',
-      reason: { kind: 'error', failure: { code: 'FREE_TIER_RESTRICTED' } },
+      reason: { kind: 'error', failure: { code: 'AUTH' } },
     })
   })
 
   it('不可转移的失败立即停止，不再尝试后续候选', async () => {
     const calls: Call[] = []
-    const provider = fakeProvider(errorEvents('bad request 400'), calls)
-    const ctx = new Context()
-    await ctx.plugin(LlmRuntime)
-    await ctx.plugin(LlmOpencode)
-    const adapter = new LlmOpencode.FreeChannelAdapter({ providerOverride: provider as never })
-    ctx.effect(() => ctx.llm.registerAdapter(['fake-route'], adapter), 'test: fake route')
-    disposers.push(ctx)
+    const ctx = await mountedWith(fakeProvider(errorEvents('bad request 400'), calls))
     const chunks = []
     for await (const chunk of ctx.llm.stream({
       provider: 'fake-route',
@@ -543,13 +488,5 @@ describe('Auto failover route', () => {
     const models = await ctx.llm.listModels('free')
     expect(models.map(model => model.id)).toContain('auto')
     await ctx.fiber.dispose()
-  })
-})
-
-describe('wire helpers stay used', () => {
-  it('导出面覆盖指纹与门', () => {
-    const ids = deriveRequestIds([{ role: 'user', content: 'x' }])
-    expect(disguiseHeaders(ids)['x-opencode-client']).toBe('cli')
-    expect(ensureFreeLaneShape({ messages: [], stream: true })).toBeDefined()
   })
 })
